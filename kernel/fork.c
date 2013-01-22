@@ -610,6 +610,7 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p)
 	INIT_LIST_HEAD(&mm->mmlist);
 	mm->core_state = NULL;
 	atomic_long_set(&mm->nr_ptes, 0);
+	mm->nr_ptds = 0;
 	memset(&mm->rss_stat, 0, sizeof(mm->rss_stat));
 	atomic_long_set(&mm->mm_shmempages, 0);
 	spin_lock_init(&mm->page_table_lock);
