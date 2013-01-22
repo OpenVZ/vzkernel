@@ -55,6 +55,8 @@ struct sched_param {
 
 #include <asm/processor.h>
 
+#include <bc/task.h>
+
 struct exec_domain;
 struct futex_pi_state;
 struct robust_list_head;
@@ -82,6 +84,8 @@ struct filename;
  */
 extern unsigned long avenrun[];		/* Load averages */
 extern void get_avenrun(unsigned long *loads, unsigned long offset, int shift);
+extern void get_avenrun_ve(unsigned long *loads,
+			unsigned long offset, int shift);
 
 #define FSHIFT		11		/* nr of bits of precision */
 #define FIXED_1		(1<<FSHIFT)	/* 1.0 as fixed-point */
@@ -95,15 +99,28 @@ extern void get_avenrun(unsigned long *loads, unsigned long offset, int shift);
 	load += n*(FIXED_1-exp); \
 	load >>= FSHIFT;
 
+#define LOAD_INT(x) ((x) >> FSHIFT)
+#define LOAD_FRAC(x) LOAD_INT(((x) & (FIXED_1-1)) * 100)
+
 extern unsigned long total_forks;
 extern int nr_threads;
 DECLARE_PER_CPU(unsigned long, process_counts);
 extern int nr_processes(void);
 extern unsigned long nr_running(void);
 extern bool single_task_running(void);
+extern unsigned long nr_sleeping(void);
+extern unsigned long nr_stopped(void);
 extern unsigned long nr_iowait(void);
 extern unsigned long nr_iowait_cpu(int cpu);
-extern unsigned long this_cpu_load(void);
+extern unsigned long nr_active_cpu(void);
+extern atomic_t nr_dead;
+extern unsigned long nr_zombie;
+
+#ifdef CONFIG_VE
+extern unsigned long nr_running_ve(void);
+#else
+#define nr_running_ve()				0
+#endif
 
 
 extern void calc_global_load(unsigned long ticks);
@@ -472,6 +489,9 @@ struct thread_group_cputimer {
 
 #include <linux/rwsem.h>
 struct autogroup;
+
+#include <linux/ve.h>
+#include <linux/ve_task.h>
 
 /*
  * NOTE! "signal_struct" does not have its own
@@ -1201,6 +1221,7 @@ struct task_struct {
 	unsigned in_execve:1;	/* Tell the LSMs that the process is doing an
 				 * execve */
 	unsigned in_iowait:1;
+	unsigned did_ve_enter:1;
 
 	/* task may not gain privileges */
 	unsigned no_new_privs:1;
@@ -1518,6 +1539,12 @@ struct task_struct {
 	/* bitmask and counter of trace recursion */
 	unsigned long trace_recursion;
 #endif /* CONFIG_TRACING */
+#ifdef CONFIG_BEANCOUNTERS
+	struct task_beancounter task_bc;
+#endif
+#ifdef CONFIG_VE
+	struct ve_task_info ve_task_info;
+#endif
 #ifdef CONFIG_MEMCG /* memcg uses this to do batch job */
 	struct memcg_batch_info {
 		int do_batch;	/* incremented when batch uncharge started */
@@ -2105,6 +2132,13 @@ static inline void sched_autogroup_fork(struct signal_struct *sig) { }
 static inline void sched_autogroup_exit(struct signal_struct *sig) { }
 #endif
 
+#ifdef CONFIG_CFS_CPULIMIT
+extern int sched_cgroup_set_rate(struct cgroup *cgrp, unsigned long rate);
+extern unsigned long sched_cgroup_get_rate(struct cgroup *cgrp);
+extern int sched_cgroup_set_nr_cpus(struct cgroup *cgrp, unsigned int nr_cpus);
+extern unsigned int sched_cgroup_get_nr_cpus(struct cgroup *cgrp);
+#endif
+
 extern int yield_to(struct task_struct *p, bool preempt);
 extern void set_user_nice(struct task_struct *p, long nice);
 extern int task_prio(const struct task_struct *p);
@@ -2223,6 +2257,7 @@ extern void block_all_signals(int (*notifier)(void *priv), void *priv,
 			      sigset_t *mask);
 extern void unblock_all_signals(void);
 extern void release_task(struct task_struct * p);
+extern int reap_zombie(struct task_struct *p);
 extern int send_sig_info(int, struct siginfo *, struct task_struct *);
 extern int force_sigsegv(int, struct task_struct *);
 extern int force_sig_info(int, struct siginfo *, struct task_struct *);
@@ -2346,6 +2381,12 @@ extern int do_execve(struct filename *,
 		     const char __user * const __user *,
 		     const char __user * const __user *);
 extern long do_fork(unsigned long, unsigned long, unsigned long, int __user *, int __user *);
+extern long do_fork_kthread(unsigned long clone_flags,
+	      unsigned long stack_start,
+	      struct pt_regs *regs,
+	      unsigned long stack_size,
+	      int __user *parent_tidptr,
+	      int __user *child_tidptr);
 struct task_struct *fork_idle(int);
 extern pid_t kernel_thread(int (*fn)(void *), void *arg, unsigned long flags);
 
@@ -2425,8 +2466,14 @@ int same_thread_group(struct task_struct *p1, struct task_struct *p2)
 
 static inline struct task_struct *next_thread(const struct task_struct *p)
 {
-	return list_entry_rcu(p->thread_group.next,
+	struct task_struct *tsk;
+	tsk = list_entry_rcu(p->thread_group.next,
 			      struct task_struct, thread_group);
+#ifdef CONFIG_VE
+	/* all threads should belong to ONE ve! */
+	BUG_ON(VE_TASK_INFO(tsk)->owner_env != VE_TASK_INFO(p)->owner_env);
+#endif
+	return tsk;
 }
 
 static inline int thread_group_empty(struct task_struct *p)
@@ -2523,6 +2570,40 @@ static inline void threadgroup_change_end(struct task_struct *tsk) {}
 static inline void threadgroup_lock(struct task_struct *tsk) {}
 static inline void threadgroup_unlock(struct task_struct *tsk) {}
 #endif
+
+#ifndef CONFIG_VE
+
+#define ve_is_super(env)				1
+#define ve_accessible(target, owner)			1
+#define ve_accessible_strict(target, owner)		1
+#define ve_accessible_veid(target, owner)		1
+#define ve_accessible_strict_veid(target, owner)	1
+
+#define VEID(ve)					0
+
+#else	/* CONFIG_VE */
+
+#include <linux/ve.h>
+
+#define ve_is_super(env)			((env) == get_ve0())
+
+#define ve_accessible_strict(target, owner)	((target) == (owner))
+static inline int ve_accessible(struct ve_struct *target,
+		struct ve_struct *owner)
+{
+	return ve_is_super(owner) || ve_accessible_strict(target, owner);
+}
+
+#define ve_accessible_strict_veid(target, owner) ((target) == (owner))
+static inline int ve_accessible_veid(envid_t target, envid_t owner)
+{
+	return get_ve0()->veid == owner ||
+		ve_accessible_strict_veid(target, owner);
+}
+
+#define VEID(ve)	(ve->veid)
+
+#endif	/* CONFIG_VE */
 
 #ifndef __HAVE_THREAD_FUNCTIONS
 
@@ -2857,11 +2938,42 @@ static inline void set_task_cpu(struct task_struct *p, unsigned int cpu)
 
 #endif /* CONFIG_SMP */
 
+#ifdef CONFIG_CFS_CPULIMIT
+extern unsigned int task_nr_cpus(struct task_struct *p);
+extern unsigned int task_vcpu_id(struct task_struct *p);
+extern unsigned int sysctl_sched_cpulimit_scale_cpufreq;
+extern unsigned int sched_cpulimit_scale_cpufreq(unsigned int freq);
+#else
+static inline unsigned int task_nr_cpus(struct task_struct *p)
+{
+	return num_online_cpus();
+}
+
+static inline unsigned int task_vcpu_id(struct task_struct *p)
+{
+	return task_cpu(p);
+}
+
+static inline unsigned int sched_cpulimit_scale_cpufreq(unsigned int freq)
+{
+	return freq;
+}
+#endif
+
+#define num_online_vcpus() task_nr_cpus(current)
+
 extern long sched_setaffinity(pid_t pid, const struct cpumask *new_mask);
 extern long sched_getaffinity(pid_t pid, struct cpumask *mask);
 
 #ifdef CONFIG_CGROUP_SCHED
 extern struct task_group root_task_group;
+#ifdef CONFIG_RT_GROUP_SCHED
+extern int sched_cgroup_set_rt_runtime(struct cgroup *cgrp,
+				       long rt_runtime_us);
+#else
+static inline int sched_cgroup_set_rt_runtime(struct cgroup *cgrp,
+					      long rt_runtime_us) { return 0; }
+#endif
 #endif /* CONFIG_CGROUP_SCHED */
 
 extern int task_can_switch_user(struct user_struct *up,

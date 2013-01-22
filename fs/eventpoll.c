@@ -307,7 +307,7 @@ ctl_table epoll_table[] = {
 };
 #endif /* CONFIG_SYSCTL */
 
-static const struct file_operations eventpoll_fops;
+const static struct file_operations eventpoll_fops;
 
 static inline int is_file_epoll(struct file *f)
 {

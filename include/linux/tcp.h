@@ -345,6 +345,11 @@ static inline struct tcp_sock *tcp_sk(const struct sock *sk)
 	return (struct tcp_sock *)sk;
 }
 
+static inline int tcp_urg_mode(const struct tcp_sock *tp)
+{
+	return tp->snd_una != tp->snd_up;
+}
+
 struct tcp_timewait_sock {
 	struct inet_timewait_sock tw_sk;
 	u32			  tw_rcv_nxt;

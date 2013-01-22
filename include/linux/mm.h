@@ -79,7 +79,9 @@ extern int overcommit_kbytes_handler(struct ctl_table *, int, void __user *,
  * mmap() functions).
  */
 
-extern struct kmem_cache *vm_area_cachep;
+extern struct kmem_cache *__vm_area_cachep;
+#define allocate_vma(mm, gfp_flags)	kmem_cache_alloc(__vm_area_cachep, gfp_flags)
+#define free_vma(mm, vma)		kmem_cache_free(__vm_area_cachep, vma)
 
 #ifndef CONFIG_MMU
 extern struct rb_root nommu_region_tree;
@@ -1155,6 +1157,7 @@ static inline int fixup_user_fault(struct task_struct *tsk,
 }
 #endif
 
+extern unsigned long vma_address(struct page *page, struct vm_area_struct *vma);
 extern int access_process_vm(struct task_struct *tsk, unsigned long addr, void *buf, int len, int write);
 extern int access_remote_vm(struct mm_struct *mm, unsigned long addr,
 		void *buf, int len, int write);
@@ -1198,6 +1201,7 @@ int redirty_page_for_writepage(struct writeback_control *wbc,
 void account_page_dirtied(struct page *page, struct address_space *mapping);
 void account_page_writeback(struct page *page);
 int set_page_dirty(struct page *page);
+int set_page_dirty_mm(struct page *page, struct mm_struct *mm);
 int set_page_dirty_lock(struct page *page);
 int clear_page_dirty_for_io(struct page *page);
 
@@ -2022,7 +2026,12 @@ unsigned long shrink_slab(struct shrink_control *shrink,
 #ifndef CONFIG_MMU
 #define randomize_va_space 0
 #else
-extern int randomize_va_space;
+extern int _randomize_va_space;
+#ifndef CONFIG_VE
+#define randomize_va_space _randomize_va_space
+#else
+#define randomize_va_space (get_exec_env()->_randomize_va_space)
+#endif
 #endif
 
 const char * arch_vma_name(struct vm_area_struct *vma);

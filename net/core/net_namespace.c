@@ -3,6 +3,7 @@
 #include <linux/workqueue.h>
 #include <linux/rtnetlink.h>
 #include <linux/cache.h>
+#include <linux/proc_fs.h>
 #include <linux/slab.h>
 #include <linux/list.h>
 #include <linux/delay.h>
@@ -16,6 +17,7 @@
 #include <linux/export.h>
 #include <linux/user_namespace.h>
 #include <linux/net_namespace.h>
+#include <linux/netdevice.h>
 #ifndef __GENKSYMS__
 #include <net/sock.h>
 #endif
@@ -55,7 +57,7 @@ static struct net_generic *net_alloc_generic(void)
 	return ng;
 }
 
-static int net_assign_generic(struct net *net, int id, void *data)
+int net_assign_generic(struct net *net, int id, void *data)
 {
 	struct net_generic *ng, *old_ng;
 
@@ -91,6 +93,7 @@ assign:
 	ng->ptr[id - 1] = data;
 	return 0;
 }
+EXPORT_SYMBOL_GPL(net_assign_generic);
 
 static int ops_init(const struct pernet_operations *ops, struct net *net)
 {
@@ -278,6 +281,10 @@ static __net_init int setup_net(struct net *net, struct user_namespace *user_ns)
 	int error = 0;
 	LIST_HEAD(net_exit_list);
 
+#ifdef CONFIG_VE
+	net->owner_ve = get_exec_env();
+#endif
+
 	atomic_set(&net->count, 1);
 	atomic_set(&net->passive, 1);
 	net->dev_base_seq = 1;
@@ -435,6 +442,9 @@ static void cleanup_net(struct work_struct *work)
 	/* Free the net generic variables */
 	list_for_each_entry_reverse(ops, &pernet_list, list)
 		ops_free_list(ops, &net_exit_list);
+
+	list_for_each_entry(net, &net_kill_list, cleanup_list)
+		net->owner_ve->ve_netns = NULL;
 
 	mutex_unlock(&net_mutex);
 

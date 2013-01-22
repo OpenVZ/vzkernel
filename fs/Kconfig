@@ -69,6 +69,14 @@ source "fs/autofs4/Kconfig"
 source "fs/fuse/Kconfig"
 source "fs/overlayfs/Kconfig"
 
+config SIM_FS
+	tristate "VPS filesystem"
+	default m
+	help
+	  This file system is a part of Virtuozzo. It intoduces a fake
+	  superblock and blockdev to VE to hide real device and show
+	  statfs results taken from quota.
+
 config GENERIC_ACL
 	bool
 	select FS_POSIX_ACL

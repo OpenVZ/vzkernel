@@ -179,11 +179,9 @@ static void fib6_link_table(struct net *net, struct fib6_table *tb)
 
 	h = tb->tb6_id & (FIB6_TABLE_HASHSZ - 1);
 
-	/*
-	 * No protection necessary, this is the only list mutatation
-	 * operation, tables never disappear once they exist.
-	 */
+	write_lock_bh(&tb->tb6_lock);
 	hlist_add_head_rcu(&tb->tb6_hlist, &net->ipv6.fib_table_hash[h]);
+	write_unlock_bh(&tb->tb6_lock);
 }
 
 #ifdef CONFIG_IPV6_MULTIPLE_TABLES
@@ -1591,6 +1589,7 @@ void fib6_clean_all(struct net *net, int (*func)(struct rt6_info *, void *arg),
 	for (h = 0; h < FIB6_TABLE_HASHSZ; h++) {
 		head = &net->ipv6.fib_table_hash[h];
 		hlist_for_each_entry_rcu(table, head, tb6_hlist) {
+
 			write_lock_bh(&table->tb6_lock);
 			fib6_clean_tree(net, &table->tb6_root,
 					func, 0, arg);
@@ -1756,6 +1755,7 @@ static int __net_init fib6_net_init(struct net *net)
 					   GFP_KERNEL);
 	if (!net->ipv6.fib6_local_tbl)
 		goto out_fib6_main_tbl;
+
 	net->ipv6.fib6_local_tbl->tb6_id = RT6_TABLE_LOCAL;
 	net->ipv6.fib6_local_tbl->tb6_root.leaf = net->ipv6.ip6_null_entry;
 	net->ipv6.fib6_local_tbl->tb6_root.fn_flags =

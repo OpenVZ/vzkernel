@@ -883,6 +883,7 @@ static int unuse_pte(struct vm_area_struct *vma, pmd_t *pmd,
 	spinlock_t *ptl;
 	pte_t *pte;
 	int ret = 1;
+	struct mm_struct *mm = vma->vm_mm;
 
 	swapcache = page;
 	page = ksm_might_need_to_copy(page, vma, addr);
@@ -903,9 +904,9 @@ static int unuse_pte(struct vm_area_struct *vma, pmd_t *pmd,
 	}
 
 	dec_mm_counter(vma->vm_mm, MM_SWAPENTS);
-	inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
+	inc_mm_counter(mm, MM_ANONPAGES);
 	get_page(page);
-	set_pte_at(vma->vm_mm, addr, pte,
+	set_pte_at(mm, addr, pte,
 		   pte_mkold(mk_pte(page, vma->vm_page_prot)));
 	if (page == swapcache)
 		page_add_anon_rmap(page, vma, addr);
@@ -1251,6 +1252,7 @@ int try_to_unuse(unsigned int type, bool frontswap,
 			mmput(start_mm);
 			start_mm = new_start_mm;
 		}
+
 		if (retval) {
 			unlock_page(page);
 			page_cache_release(page);
@@ -1579,6 +1581,10 @@ SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)
 	struct filename *pathname;
 	int err, found = 0;
 
+	/* VE admin check is just to be on the safe side, the admin may affect
+	 * swaps only if he has access to special, i.e. if he has been granted
+	 * access to the block device or if the swap file is in the area
+	 * visible to him. */
 	if (!capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
@@ -1800,10 +1806,41 @@ static const struct seq_operations swaps_op = {
 	.show =		swap_show
 };
 
+#include <linux/virtinfo.h>
+
+static int swap_show_ve(struct seq_file *swap, void *v)
+{
+	struct user_beancounter *old_ub;
+	struct sysinfo si;
+	int ret;
+
+	si_swapinfo(&si);
+	old_ub = set_exec_ub(current->mm->mm_ub);
+	ret = virtinfo_notifier_call(VITYPE_GENERAL, VIRTINFO_SYSINFO, &si);
+	(void)set_exec_ub(old_ub);
+	if (ret & NOTIFY_FAIL)
+		goto out;
+
+	seq_printf(swap, "Filename\t\t\t\tType\t\tSize\tUsed\tPriority\n");
+	if (!si.totalswap)
+		goto out;
+	seq_printf(swap, "%-40s%s\t%lu\t%lu\t%d\n",
+			"/dev/null",
+			"partition",
+			si.totalswap  << (PAGE_SHIFT - 10),
+			(si.totalswap - si.freeswap) << (PAGE_SHIFT - 10),
+			-1);
+out:
+	return 0;
+}
+
 static int swaps_open(struct inode *inode, struct file *file)
 {
 	struct seq_file *seq;
 	int ret;
+
+	if (!ve_is_super(get_exec_env()))
+		return single_open(file, &swap_show_ve, NULL);
 
 	ret = seq_open(file, &swaps_op);
 	if (ret)
@@ -1814,17 +1851,26 @@ static int swaps_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static int swaps_release(struct inode *inode, struct file *file)
+{
+	struct seq_file *f = file->private_data;
+
+	if (f->op != &swaps_op)
+		return single_release(inode, file);
+	return seq_release(inode, file);
+}
+
 static const struct file_operations proc_swaps_operations = {
 	.open		= swaps_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
-	.release	= seq_release,
+	.release	= swaps_release,
 	.poll		= swaps_poll,
 };
 
 static int __init procswaps_init(void)
 {
-	proc_create("swaps", 0, NULL, &proc_swaps_operations);
+	proc_create("swaps", 0, &glob_proc_root, &proc_swaps_operations);
 	return 0;
 }
 __initcall(procswaps_init);

@@ -21,6 +21,9 @@ struct shmem_inode_info {
 	struct list_head	swaplist;	/* chain of maybes on swap */
 	struct simple_xattrs	xattrs;		/* list of xattrs */
 	struct inode		vfs_inode;
+#ifdef CONFIG_BEANCOUNTERS
+	struct user_beancounter	*shmi_ub;
+#endif
 };
 
 struct shmem_sb_info {

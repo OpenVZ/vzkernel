@@ -566,6 +566,10 @@ struct sk_buff {
 	kmemcheck_bitfield_end(flags1);
 	__be16			protocol;
 
+#ifdef CONFIG_VE
+	unsigned int		accounted:1;
+	unsigned int		redirected:1;
+#endif
 	void			(*destructor)(struct sk_buff *skb);
 #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
 	struct nf_conntrack	*nfct;
@@ -1072,8 +1076,15 @@ static inline int skb_unclone(struct sk_buff *skb, gfp_t pri)
 {
 	might_sleep_if(pri & __GFP_WAIT);
 
-	if (skb_cloned(skb))
-		return pskb_expand_head(skb, 0, 0, pri);
+	if (skb_cloned(skb)) {
+		int err;
+
+		if (err = pskb_expand_head(skb, 0, 0, pri))
+			return err;
+
+		ub_skb_uncharge(skb);
+		ub_tcpsndbuf_charge_forced(sk, skb);
+	}
 
 	return 0;
 }
