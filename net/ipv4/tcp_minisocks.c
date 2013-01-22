@@ -31,6 +31,11 @@ int sysctl_tcp_syncookies __read_mostly = 1;
 EXPORT_SYMBOL(sysctl_tcp_syncookies);
 
 int sysctl_tcp_abort_on_overflow __read_mostly;
+int sysctl_tcp_max_tw_kmem_fraction __read_mostly = 384;
+int sysctl_tcp_max_tw_buckets_ub __read_mostly = 16536;
+
+EXPORT_SYMBOL(sysctl_tcp_max_tw_kmem_fraction);
+EXPORT_SYMBOL(sysctl_tcp_max_tw_buckets_ub);
 
 struct inet_timewait_death_row tcp_death_row = {
 	.sysctl_max_tw_buckets = NR_FILE * 2,
@@ -304,6 +309,8 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 		tcptw->tw_ts_recent_stamp = tp->rx_opt.ts_recent_stamp;
 		tcptw->tw_ts_offset	= tp->tsoffset;
 		tcptw->tw_last_oow_ack_time = 0;
+		if (sk->sk_user_data != NULL)
+			tw->tw_rcv_wscale |= TW_WSCALE_SPEC;
 
 #if IS_ENABLED(CONFIG_IPV6)
 		if (tw->tw_family == PF_INET6) {
@@ -459,7 +466,6 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 		struct inet_connection_sock *newicsk = inet_csk(newsk);
 		struct tcp_sock *newtp = tcp_sk(newsk);
 
-		/* Now setup tcp_sock */
 		newtp->pred_flags = 0;
 
 		newtp->rcv_wup = newtp->copied_seq =

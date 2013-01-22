@@ -7,6 +7,7 @@
 #include <linux/init.h>
 #include <linux/fs.h>
 #include <linux/mm.h>
+#include <linux/ratelimit.h>
 #include <linux/hugetlb.h>
 #include <linux/pagemap.h>
 #include <linux/err.h>
@@ -64,6 +65,7 @@ int pmd_huge(pmd_t pmd)
 	return !pmd_none(pmd) &&
 		(pmd_val(pmd) & (_PAGE_PRESENT|_PAGE_PSE)) != _PAGE_PRESENT;
 }
+EXPORT_SYMBOL(pmd_huge);
 
 int pud_huge(pud_t pud)
 {

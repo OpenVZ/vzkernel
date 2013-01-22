@@ -1,0 +1,97 @@
+#
+# User resources part (UBC)
+#
+# Copyright (C) 2005  SWsoft
+# All rights reserved.
+#
+# Licensing governed by "linux/COPYING.SWsoft" file.
+
+menu "User resources"
+
+config BEANCOUNTERS
+	bool "Enable user resource accounting"
+	default y
+	help 
+          This patch provides accounting and allows to configure
+          limits for user's consumption of exhaustible system resources.
+          The most important resource controlled by this patch is unswappable 
+          memory (either mlock'ed or used by internal kernel structures and 
+          buffers). The main goal of this patch is to protect processes
+          from running short of important resources because of an accidental
+          misbehavior of processes or malicious activity aiming to ``kill'' 
+          the system. It's worth to mention that resource limits configured 
+          by setrlimit(2) do not give an acceptable level of protection 
+          because they cover only small fraction of resources and work on a 
+          per-process basis.  Per-process accounting doesn't prevent malicious
+          users from spawning a lot of resource-consuming processes.
+
+config BC_RSS_ACCOUNTING
+	bool "Account physical memory usage"
+	default y
+	depends on BEANCOUNTERS
+	help
+          This allows to estimate per beancounter physical memory usage.
+          Implemented alghorithm accounts shared pages of memory as well,
+          dividing them by number of beancounter which use the page.
+
+config BC_IO_ACCOUNTING
+	bool "Account file I/O"
+	default y
+	depends on BEANCOUNTERS
+	help
+	  This option allows seeing I/O activity caused by tasks from each UB
+
+config BC_IO_PRIORITY
+	bool "Disk I/O priority"
+	default y
+	depends on BEANCOUNTERS
+	select BLK_CGROUP
+	help
+	  This option add compat-layer on top of the blkio-cgroup for groupping
+	  and prioritizing disk access.
+
+config BC_PROC
+	bool "Report resource usage in /proc"
+	default y
+	depends on BEANCOUNTERS
+	help
+          Allows a system administrator to inspect resource accounts and limits.
+
+config BC_DEBUG
+	bool "User resources debug features"
+	default y
+	depends on BEANCOUNTERS
+	help
+	  Enables to setup debug features for user resource accounting
+
+config BC_DEBUG_KMEM
+	bool "Debug kmemsize with cache counters"
+	default n
+	depends on BC_DEBUG
+	help
+	  Adds /proc/user_beancounters_debug entry to get statistics
+	  about cache usage of each beancounter
+
+config BC_KEEP_UNUSED
+	bool "Keep unused beancounter alive"
+	default n
+	depends on BC_DEBUG
+	help
+	  If on, unused beancounters are kept on the hash and maxheld value
+	  can be looked through.
+
+config BC_DEBUG_ITEMS
+	bool "Account resources in items rather than in bytes"
+	default n
+	depends on BC_DEBUG
+	help
+	  When true some of the resources (e.g. kmemsize) are accounted
+	  in items instead of bytes.
+
+config BC_UNLIMITED
+	bool "Use unlimited ubc settings"
+	default n
+	depends on BC_DEBUG
+	help
+	  When ON all limits and barriers are set to max values.
+endmenu

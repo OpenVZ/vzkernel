@@ -25,6 +25,7 @@
 
 struct address_space;
 struct hmm;
+struct gang;
 
 #define USE_SPLIT_PTE_PTLOCKS	(NR_CPUS >= CONFIG_SPLIT_PTLOCK_CPUS)
 #define USE_SPLIT_PMD_PTLOCKS	(USE_SPLIT_PTE_PTLOCKS && \
@@ -200,6 +201,12 @@ struct page {
 #ifdef LAST_CPUPID_NOT_IN_PAGE_FLAGS
 	int _last_cpupid;
 #endif
+	union {
+#ifdef CONFIG_BEANCOUNTERS
+		struct user_beancounter *kmem_ub;
+		struct user_beancounter **slub_ubs;
+#endif
+	};
 }
 /*
  * The struct page can be forced to be double word aligned so that atomic ops
@@ -219,6 +226,12 @@ struct page_frag {
 	__u16 offset;
 	__u16 size;
 #endif
+	union {
+#ifdef CONFIG_BEANCOUNTERS
+		struct user_beancounter *kmem_ub;
+		struct user_beancounter **slub_ubs;
+#endif
+	};
 };
 
 #define PAGE_FRAG_CACHE_MAX_SIZE	__ALIGN_MASK(32768, ~PAGE_MASK)
@@ -457,6 +470,13 @@ struct mm_struct {
 
 	unsigned long flags; /* Must use atomic bitops to access the bits */
 
+	unsigned int vps_dumpable:2;
+	unsigned int global_oom:1;
+	unsigned int ub_oom:1;
+
+#ifdef CONFIG_BEANCOUNTERS
+	struct user_beancounter *mm_ub;
+#endif
 	struct core_state *core_state; /* coredumping support */
 #ifdef CONFIG_AIO
 	spinlock_t		ioctx_lock;
