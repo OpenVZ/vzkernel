@@ -246,7 +246,6 @@ static struct hlist_head *dquot_hash;
 struct dqstats dqstats;
 EXPORT_SYMBOL(dqstats);
 
-static qsize_t inode_get_rsv_space(struct inode *inode);
 static void __dquot_initialize(struct inode *inode, int type);
 
 static inline unsigned int
@@ -1505,13 +1504,14 @@ EXPORT_SYMBOL(dquot_drop);
  * inode_reserved_space is managed internally by quota, and protected by
  * i_lock similar to i_blocks+i_bytes.
  */
-static qsize_t *inode_reserved_space(struct inode * inode)
+qsize_t *inode_reserved_space(struct inode * inode)
 {
 	/* Filesystem must explicitly define it's own method in order to use
 	 * quota reservation interface */
 	BUG_ON(!inode->i_sb->dq_op->get_reserved_space);
 	return inode->i_sb->dq_op->get_reserved_space(inode);
 }
+EXPORT_SYMBOL(inode_reserved_space);
 
 void inode_add_rsv_space(struct inode *inode, qsize_t number)
 {
@@ -1547,7 +1547,7 @@ void inode_sub_rsv_space(struct inode *inode, qsize_t number)
 }
 EXPORT_SYMBOL(inode_sub_rsv_space);
 
-static qsize_t inode_get_rsv_space(struct inode *inode)
+qsize_t inode_get_rsv_space(struct inode *inode)
 {
 	qsize_t ret;
 
@@ -1558,8 +1558,9 @@ static qsize_t inode_get_rsv_space(struct inode *inode)
 	spin_unlock(&inode->i_lock);
 	return ret;
 }
+EXPORT_SYMBOL(inode_get_rsv_space);
 
-static void inode_incr_space(struct inode *inode, qsize_t number,
+void inode_incr_space(struct inode *inode, qsize_t number,
 				int reserve)
 {
 	if (reserve)
@@ -1567,14 +1568,16 @@ static void inode_incr_space(struct inode *inode, qsize_t number,
 	else
 		inode_add_bytes(inode, number);
 }
+EXPORT_SYMBOL(inode_incr_space);
 
-static void inode_decr_space(struct inode *inode, qsize_t number, int reserve)
+void inode_decr_space(struct inode *inode, qsize_t number, int reserve)
 {
 	if (reserve)
 		inode_sub_rsv_space(inode, number);
 	else
 		inode_sub_bytes(inode, number);
 }
+EXPORT_SYMBOL(inode_decr_space);
 
 /*
  * This functions updates i_blocks+i_bytes fields and quota information

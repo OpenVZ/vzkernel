@@ -70,6 +70,8 @@
 #include <linux/sysctl.h>
 #endif
 
+#include <bc/kmem.h>
+
 enum rt6_nud_state {
 	RT6_NUD_FAIL_HARD = -3,
 	RT6_NUD_FAIL_PROBE = -2,
@@ -1184,7 +1186,7 @@ static struct dst_entry *ip6_route_input_lookup(struct net *net,
 	return fib6_rule_lookup(net, fl6, flags, ip6_pol_route_input);
 }
 
-void ip6_route_input(struct sk_buff *skb)
+void __ip6_route_input(struct sk_buff *skb, struct in6_addr *daddr)
 {
 	const struct ipv6hdr *iph = ipv6_hdr(skb);
 	struct net *net = dev_net(skb->dev);
@@ -1192,7 +1194,7 @@ void ip6_route_input(struct sk_buff *skb)
 	struct ip_tunnel_info *tun_info;
 	struct flowi6 fl6 = {
 		.flowi6_iif = skb->dev->ifindex,
-		.daddr = iph->daddr,
+		.daddr = *daddr,
 		.saddr = iph->saddr,
 		.flowlabel = ip6_flowinfo(iph),
 		.flowi6_mark = skb->mark,
@@ -1204,6 +1206,12 @@ void ip6_route_input(struct sk_buff *skb)
 		flowi6_tun_id_set(&fl6, tun_info->key.tun_id);
 	skb_dst_drop(skb);
 	skb_dst_set(skb, ip6_route_input_lookup(net, skb->dev, &fl6, flags));
+}
+EXPORT_SYMBOL(__ip6_route_input);
+
+void ip6_route_input(struct sk_buff *skb)
+{
+	__ip6_route_input(skb, &ipv6_hdr(skb)->daddr);
 }
 
 static struct rt6_info *ip6_pol_route_output(struct net *net, struct fib6_table *table,
@@ -2461,7 +2469,7 @@ int ipv6_route_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 	switch(cmd) {
 	case SIOCADDRT:		/* Add a route */
 	case SIOCDELRT:		/* Delete a route */
-		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+		if (!ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
 			return -EPERM;
 		err = copy_from_user(&rtmsg, arg,
 				     sizeof(struct in6_rtmsg));
@@ -3729,6 +3737,26 @@ void __init ip6_route_init_special_entries(void)
   #endif
 }
 
+static void ip6_rt_dump_dst(void *o)
+{
+	struct rt6_info *r = (struct rt6_info *)o;
+
+	if (r->dst.flags & DST_FREE)
+		return;
+
+	printk("=== %p\n", o);
+	dst_dump_one(&r->dst);
+	printk("\tflags %x ref %d prot %d\n",
+			r->rt6i_flags, atomic_read(&r->rt6i_ref),
+			(int)r->rt6i_protocol);
+}
+
+static void _ip6_rt_dump_dsts(void)
+{
+	printk("IPv6 dst cache:\n");
+	slab_obj_walk(ip6_dst_ops_template.kmem_cachep, ip6_rt_dump_dst);
+}
+
 int __init ip6_route_init(void)
 {
 	int ret;
@@ -3788,6 +3816,7 @@ int __init ip6_route_init(void)
 		spin_lock_init(&ul->lock);
 	}
 
+	ip6_rt_dump_dsts = _ip6_rt_dump_dsts;
 out:
 	return ret;
 
