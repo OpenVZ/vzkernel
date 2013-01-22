@@ -33,6 +33,7 @@
 #include <linux/uprobes.h>
 #include <linux/compat.h>
 #include <linux/cn_proc.h>
+#include <linux/interrupt.h>
 #define CREATE_TRACE_POINTS
 #include <trace/events/signal.h>
 
@@ -41,6 +42,7 @@
 #include <asm/unistd.h>
 #include <asm/siginfo.h>
 #include <asm/cacheflush.h>
+#include <bc/misc.h>
 #include "audit.h"	/* audit_signal_info() */
 
 /*
@@ -48,8 +50,31 @@
  */
 
 static struct kmem_cache *sigqueue_cachep;
+static inline int is_si_special(const struct siginfo *info);
 
 int print_fatal_signals __read_mostly;
+
+static inline int is_si_special(const struct siginfo *info)
+{
+	return info <= SEND_SIG_FORCED;
+}
+
+static int sig_ve_ignored(int sig, struct siginfo *info, struct task_struct *t)
+{
+	struct ve_struct *ve;
+
+	/* always allow signals from the kernel */
+	if (info == SEND_SIG_FORCED ||
+		       (!is_si_special(info) && SI_FROMKERNEL(info)))
+		return 0;
+
+	ve = current->ve_task_info.owner_env;
+	if (get_env_init(ve) != t)
+		return 0;
+	if (ve_is_super(get_exec_env()))
+		return 0;
+	return !sig_user_defined(t, sig) || sig_kernel_only(sig);
+}
 
 static void __user *sig_handler(struct task_struct *t, int sig)
 {
@@ -373,6 +398,10 @@ __sigqueue_alloc(int sig, struct task_struct *t, gfp_t flags, int override_rlimi
 	    atomic_read(&user->sigpending) <=
 			task_rlimit(t, RLIMIT_SIGPENDING)) {
 		q = kmem_cache_alloc(sigqueue_cachep, flags);
+		if (q && ub_siginfo_charge(q, get_task_ub(t), flags)) {
+			kmem_cache_free(sigqueue_cachep, q);
+			q = NULL;
+		}
 	} else {
 		print_dropped_signal(sig);
 	}
@@ -395,6 +424,7 @@ static void __sigqueue_free(struct sigqueue *q)
 		return;
 	atomic_dec(&q->user->sigpending);
 	free_uid(q->user);
+	ub_siginfo_uncharge(q);
 	kmem_cache_free(sigqueue_cachep, q);
 }
 
@@ -580,7 +610,18 @@ still_pending:
 static int __dequeue_signal(struct sigpending *pending, sigset_t *mask,
 			siginfo_t *info)
 {
-	int sig = next_signal(pending, mask);
+	int sig = 0;
+
+	/* SIGKILL must have priority, otherwise it is quite easy
+	 * to create an unkillable process, sending sig < SIGKILL
+	 * to self */
+	if (unlikely(sigismember(&pending->signal, SIGKILL))) {
+		if (!sigismember(mask, SIGKILL))
+			sig = SIGKILL;
+	}
+
+	if (likely(!sig))
+		sig = next_signal(pending, mask);
 
 	if (sig) {
 		if (current->notifier) {
@@ -747,11 +788,6 @@ static int rm_from_queue(unsigned long mask, struct sigpending *s)
 		}
 	}
 	return 1;
-}
-
-static inline int is_si_special(const struct siginfo *info)
-{
-	return info <= SEND_SIG_FORCED;
 }
 
 static inline bool si_fromuser(const struct siginfo *info)
@@ -1320,7 +1356,8 @@ int group_send_sig_info(int sig, struct siginfo *info, struct task_struct *p)
 	rcu_read_unlock();
 
 	if (!ret && sig)
-		ret = do_send_sig_info(sig, info, p, true);
+		ret = sig_ve_ignored(sig, info, p) ? 0 :
+			do_send_sig_info(sig, info, p, true);
 
 	return ret;
 }
@@ -1655,6 +1692,14 @@ bool do_notify_parent(struct task_struct *tsk, int sig)
 		if (tsk->parent_exec_id != tsk->parent->self_exec_id)
 			sig = SIGCHLD;
 	}
+
+#ifdef CONFIG_VE
+	/* Allow to send only SIGCHLD from VE */
+	if (sig != SIGCHLD &&
+			tsk->ve_task_info.owner_env != 
+			tsk->parent->ve_task_info.owner_env)
+		sig = SIGCHLD;
+#endif
 
 	info.si_signo = sig;
 	info.si_errno = 0;
@@ -2934,7 +2979,8 @@ do_send_specific(pid_t tgid, pid_t pid, int sig, struct siginfo *info)
 		 * probe.  No signal is actually delivered.
 		 */
 		if (!error && sig) {
-			error = do_send_sig_info(sig, info, p, false);
+			if (!sig_ve_ignored(sig, info, p))
+				error = do_send_sig_info(sig, info, p, false);
 			/*
 			 * If lock_task_sighand() failed we pretend the task
 			 * dies after receiving the signal. The window is tiny,

@@ -20,6 +20,7 @@
 #include <linux/gfp.h>
 #include <asm/tlbflush.h>
 #include <asm/io.h>
+#include <bc/vmpages.h>
 
 /*
  * We do use our own empty page to avoid interference with other users

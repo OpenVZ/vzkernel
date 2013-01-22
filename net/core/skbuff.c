@@ -847,6 +847,10 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 	new->vlan_proto		= old->vlan_proto;
 	new->vlan_tci		= old->vlan_tci;
 
+#ifdef CONFIG_VE
+	new->accounted = old->accounted;
+	new->redirected = old->redirected;
+#endif
 	skb_copy_secmark(new, old);
 
 #ifdef CONFIG_NET_RX_BUSY_POLL
@@ -880,6 +884,11 @@ static struct sk_buff *__skb_clone(struct sk_buff *n, struct sk_buff *skb)
 	C(data);
 	C(truesize);
 	atomic_set(&n->users, 1);
+
+#ifdef CONFIG_VE
+	C(accounted);
+	C(redirected);
+#endif
 
 	atomic_inc(&(skb_shinfo(skb)->dataref));
 	skb->cloned = 1;

@@ -61,6 +61,9 @@
 #include <linux/hugetlb.h>
 #include <linux/sched/rt.h>
 
+#include <bc/oom_kill.h>
+#include <bc/kmem.h>
+
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
 #include <asm/div64.h>
@@ -2282,6 +2285,8 @@ __perform_reclaim(gfp_t gfp_mask, unsigned int order, struct zonelist *zonelist,
 	struct reclaim_state reclaim_state;
 	int progress;
 
+	//ub_oom_start(&global_oom_ctrl);
+
 	cond_resched();
 
 	/* We now go into synchronous reclaim */
@@ -2451,6 +2456,8 @@ bool gfp_pfmemalloc_allowed(gfp_t gfp_mask)
 {
 	return !!(gfp_to_alloc_flags(gfp_mask) & ALLOC_NO_WATERMARKS);
 }
+
+int alloc_fail_warn;
 
 static inline struct page *
 __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
@@ -2657,6 +2664,34 @@ got_pg:
 	return page;
 }
 
+static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
+		struct page *page, u64 time)
+{
+#ifdef CONFIG_VE
+	int ind, cpu;
+
+	time = jiffies_to_usecs(jiffies - time) * 1000;
+	if (!(gfp_mask & __GFP_WAIT))
+		ind = KSTAT_ALLOCSTAT_ATOMIC;
+	else if (!(gfp_mask & __GFP_HIGHMEM))
+		if (order > 0)
+			ind = KSTAT_ALLOCSTAT_LOW_MP;
+		else
+			ind = KSTAT_ALLOCSTAT_LOW;
+	else
+		if (order > 0)
+			ind = KSTAT_ALLOCSTAT_HIGH_MP;
+		else
+			ind = KSTAT_ALLOCSTAT_HIGH;
+
+	cpu = get_cpu();
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.alloc_lat[ind], cpu, time);
+	if (!page)
+		kstat_glob.alloc_fails[cpu][ind]++;
+	put_cpu();
+#endif
+}
+
 /*
  * This is the 'heart' of the zoned buddy allocator.
  */
@@ -2671,6 +2706,7 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 	unsigned int cpuset_mems_cookie;
 	int alloc_flags = ALLOC_WMARK_LOW|ALLOC_CPUSET|ALLOC_FAIR;
 	struct mem_cgroup *memcg = NULL;
+	cycles_t start;
 
 	gfp_mask &= gfp_allowed_mask;
 
@@ -2711,6 +2747,7 @@ retry_cpuset:
 		alloc_flags |= ALLOC_CMA;
 #endif
 retry:
+	start = jiffies;
 	/* First allocation attempt */
 	page = get_page_from_freelist(gfp_mask|__GFP_HARDWALL, nodemask, order,
 			zonelist, high_zoneidx, alloc_flags,
@@ -2743,6 +2780,7 @@ retry:
 				preferred_zone, migratetype);
 	}
 
+	__alloc_collect_stats(gfp_mask, order, page, start);
 	trace_mm_page_alloc(page, order, gfp_mask, migratetype);
 
 out:

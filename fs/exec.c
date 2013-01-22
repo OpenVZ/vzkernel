@@ -26,6 +26,7 @@
 #include <linux/file.h>
 #include <linux/fdtable.h>
 #include <linux/mm.h>
+#include <linux/virtinfo.h>
 #include <linux/stat.h>
 #include <linux/fcntl.h>
 #include <linux/swap.h>
@@ -66,6 +67,11 @@
 
 #include <trace/events/sched.h>
 
+#include <bc/kmem.h>
+
+int core_uses_pid;
+char core_pattern[CORENAME_MAX_SIZE] = "core";
+unsigned int core_pipe_limit;
 int suid_dumpable = 0;
 
 static LIST_HEAD(formats);
@@ -249,7 +255,7 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 	struct vm_area_struct *vma = NULL;
 	struct mm_struct *mm = bprm->mm;
 
-	bprm->vma = vma = kmem_cache_zalloc(vm_area_cachep, GFP_KERNEL);
+	bprm->vma = vma = allocate_vma(mm, GFP_KERNEL | __GFP_ZERO);
 	if (!vma)
 		return -ENOMEM;
 
@@ -280,7 +286,7 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 err:
 	up_write(&mm->mmap_sem);
 	bprm->vma = NULL;
-	kmem_cache_free(vm_area_cachep, vma);
+	free_vma(mm, vma);
 	return err;
 }
 
@@ -822,10 +828,10 @@ ssize_t read_code(struct file *file, unsigned long addr, loff_t pos, size_t len)
 }
 EXPORT_SYMBOL(read_code);
 
-static int exec_mmap(struct mm_struct *mm)
+static int exec_mmap(struct linux_binprm *bprm)
 {
 	struct task_struct *tsk;
-	struct mm_struct * old_mm, *active_mm;
+	struct mm_struct *old_mm, *active_mm, *mm;
 
 	/* Notify parent that we're no longer interested in the old VM */
 	tsk = current;
@@ -846,6 +852,9 @@ static int exec_mmap(struct mm_struct *mm)
 			return -EINTR;
 		}
 	}
+
+	mm = bprm->mm;
+	mm->vps_dumpable = 1;
 	task_lock(tsk);
 	active_mm = tsk->active_mm;
 	tsk->mm = mm;
@@ -853,6 +862,8 @@ static int exec_mmap(struct mm_struct *mm)
 	activate_mm(active_mm, mm);
 	task_unlock(tsk);
 	arch_pick_mmap_layout(mm);
+	bprm->mm = NULL;		/* We're using it now */
+
 	if (old_mm) {
 		up_read(&old_mm->mmap_sem);
 		BUG_ON(active_mm != old_mm);
@@ -1089,11 +1100,9 @@ int flush_old_exec(struct linux_binprm * bprm)
 	 * Release all of the old mmap stuff
 	 */
 	acct_arg_size(bprm, 0);
-	retval = exec_mmap(bprm->mm);
+	retval = exec_mmap(bprm);
 	if (retval)
 		goto out;
-
-	bprm->mm = NULL;		/* We're using it now */
 
 	set_fs(USER_DS);
 	current->flags &=

@@ -8,6 +8,7 @@
 #include <linux/mm.h>
 #include <linux/utsname.h>
 #include <linux/mman.h>
+#include <linux/virtinfo.h>
 #include <linux/reboot.h>
 #include <linux/prctl.h>
 #include <linux/highuid.h>
@@ -122,6 +123,122 @@ EXPORT_SYMBOL(fs_overflowgid);
 int C_A_D = 1;
 struct pid *cad_pid;
 EXPORT_SYMBOL(cad_pid);
+
+DEFINE_SEMAPHORE(virtinfo_sem);
+EXPORT_SYMBOL(virtinfo_sem);
+static struct vnotifier_block *virtinfo_chain[VIRT_TYPES];
+
+void __virtinfo_notifier_register(int type, struct vnotifier_block *nb)
+{
+	struct vnotifier_block **p;
+
+	for (p = &virtinfo_chain[type];
+	     *p != NULL && nb->priority < (*p)->priority;
+	     p = &(*p)->next);
+	nb->next = *p;
+	smp_wmb();
+	*p = nb;
+}
+
+EXPORT_SYMBOL(__virtinfo_notifier_register);
+
+void virtinfo_notifier_register(int type, struct vnotifier_block *nb)
+{
+	down(&virtinfo_sem);
+	__virtinfo_notifier_register(type, nb);
+	up(&virtinfo_sem);
+}
+
+EXPORT_SYMBOL(virtinfo_notifier_register);
+
+struct virtinfo_cnt_struct {
+	volatile unsigned long exit[NR_CPUS];
+	volatile unsigned long entry;
+};
+static DEFINE_PER_CPU(struct virtinfo_cnt_struct, virtcnt);
+
+void virtinfo_notifier_unregister(int type, struct vnotifier_block *nb)
+{
+	struct vnotifier_block **p;
+	int entry_cpu, exit_cpu;
+	unsigned long cnt, ent;
+
+	down(&virtinfo_sem);
+	for (p = &virtinfo_chain[type]; *p != nb; p = &(*p)->next);
+	*p = nb->next;
+	smp_mb();
+
+	for_each_possible_cpu(entry_cpu) {
+		while (1) {
+			cnt = 0;
+			for_each_possible_cpu(exit_cpu)
+				cnt +=
+				    per_cpu(virtcnt, entry_cpu).exit[exit_cpu];
+			smp_rmb();
+			ent = per_cpu(virtcnt, entry_cpu).entry;
+			if (cnt == ent)
+				break;
+			__set_current_state(TASK_UNINTERRUPTIBLE);
+			schedule_timeout(HZ / 100);
+		}
+	}
+
+	/* FIXME: replace virtinfo with srcu-notifier-chains */
+	rcu_barrier_sched();
+
+	up(&virtinfo_sem);
+}
+
+EXPORT_SYMBOL(virtinfo_notifier_unregister);
+
+static int do_virtinfo_notifier_call(int type, unsigned long n, void *data)
+{
+	int ret;
+	struct vnotifier_block *nb;
+
+	nb = virtinfo_chain[type];
+	ret = NOTIFY_DONE;
+	while (nb)
+	{
+		ret = nb->notifier_call(nb, n, data, ret);
+		if(ret & NOTIFY_STOP_MASK) {
+			ret &= ~NOTIFY_STOP_MASK;
+			break;
+		}
+		nb = nb->next;
+	}
+
+	return ret;
+}
+
+int virtinfo_notifier_call(int type, unsigned long n, void *data)
+{
+	int ret;
+	int entry_cpu, exit_cpu;
+
+	entry_cpu = get_cpu();
+	per_cpu(virtcnt, entry_cpu).entry++;
+	smp_wmb();
+	put_cpu();
+
+	ret = do_virtinfo_notifier_call(type, n, data);
+
+	exit_cpu = get_cpu();
+	smp_wmb();
+	per_cpu(virtcnt, entry_cpu).exit[exit_cpu]++;
+	put_cpu();
+
+	return ret;
+}
+EXPORT_SYMBOL(virtinfo_notifier_call);
+
+int virtinfo_notifier_call_irq(int type, unsigned long n, void *data)
+{
+	if (!in_interrupt())
+		return virtinfo_notifier_call(type, n, data);
+	return do_virtinfo_notifier_call(type, n, data);
+}
+EXPORT_SYMBOL(virtinfo_notifier_call_irq);
 
 /*
  * If set, this is used for preparing the system to power off.
@@ -487,6 +604,26 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 	ret = reboot_pid_ns(pid_ns, cmd);
 	if (ret)
 		return ret;
+
+#ifdef CONFIG_VE
+	if (!ve_is_super(get_exec_env()))
+		switch (cmd) {
+		case LINUX_REBOOT_CMD_RESTART:
+		case LINUX_REBOOT_CMD_RESTART2:
+			set_bit(VE_REBOOT, &get_exec_env()->flags);
+
+		case LINUX_REBOOT_CMD_HALT:
+		case LINUX_REBOOT_CMD_POWER_OFF:
+			force_sig(SIGKILL, get_exec_env_init());
+
+		case LINUX_REBOOT_CMD_CAD_ON:
+		case LINUX_REBOOT_CMD_CAD_OFF:
+			return 0;
+
+		default:
+			return -EINVAL;
+		}
+#endif
 
 	/* Instead of trying to make the power_off code look like
 	 * halt when pm_power_off is not set do it the easy way.
@@ -1103,7 +1240,7 @@ SYSCALL_DEFINE0(getppid)
 	int pid;
 
 	rcu_read_lock();
-	pid = task_tgid_vnr(rcu_dereference(current->real_parent));
+	pid = ve_task_ppid_nr_ns(current, current->nsproxy->pid_ns);
 	rcu_read_unlock();
 
 	return pid;
@@ -1146,8 +1283,27 @@ void do_sys_times(struct tms *tms)
 	tms->tms_cstime = cputime_to_clock_t(cstime);
 }
 
+#ifdef CONFIG_VE
+unsigned long long ve_relative_clock(struct timespec * ts)
+{
+	unsigned long long offset = 0;
+
+	if (ts->tv_sec > get_exec_env()->start_timespec.tv_sec ||
+	    (ts->tv_sec == get_exec_env()->start_timespec.tv_sec &&
+	     ts->tv_nsec >= get_exec_env()->start_timespec.tv_nsec))
+		offset = (unsigned long long)(ts->tv_sec -
+			get_exec_env()->start_timespec.tv_sec) * NSEC_PER_SEC
+			+ ts->tv_nsec -	get_exec_env()->start_timespec.tv_nsec;
+	return nsec_to_clock_t(offset);
+}
+#endif
+
 SYSCALL_DEFINE1(times, struct tms __user *, tbuf)
 {
+#ifdef CONFIG_VE
+	struct timespec now;
+#endif
+
 	if (tbuf) {
 		struct tms tmp;
 
@@ -1155,8 +1311,15 @@ SYSCALL_DEFINE1(times, struct tms __user *, tbuf)
 		if (copy_to_user(tbuf, &tmp, sizeof(struct tms)))
 			return -EFAULT;
 	}
+#ifndef CONFIG_VE
 	force_successful_syscall_return();
 	return (long) jiffies_64_to_clock_t(get_jiffies_64());
+#else
+	/* Compare to calculation in fs/proc/array.c */
+	do_posix_clock_monotonic_gettime(&now);
+	force_successful_syscall_return();
+	return ve_relative_clock(&now);
+#endif
 }
 
 /*
@@ -1341,6 +1504,7 @@ out:
 }
 
 DECLARE_RWSEM(uts_sem);
+EXPORT_SYMBOL_GPL(uts_sem);
 
 #ifdef COMPAT_UTS_MACHINE
 #define override_architecture(name) \
@@ -1460,7 +1624,7 @@ SYSCALL_DEFINE2(sethostname, char __user *, name, int, len)
 	int errno;
 	char tmp[__NEW_UTS_LEN];
 
-	if (!ns_capable(current->nsproxy->uts_ns->user_ns, CAP_SYS_ADMIN))
+	if (!ns_capable(current->nsproxy->uts_ns->user_ns, CAP_VE_SYS_ADMIN))
 		return -EPERM;
 
 	if (len < 0 || len > __NEW_UTS_LEN)
@@ -1511,7 +1675,7 @@ SYSCALL_DEFINE2(setdomainname, char __user *, name, int, len)
 	int errno;
 	char tmp[__NEW_UTS_LEN];
 
-	if (!ns_capable(current->nsproxy->uts_ns->user_ns, CAP_SYS_ADMIN))
+	if (!ns_capable(current->nsproxy->uts_ns->user_ns, CAP_VE_SYS_ADMIN))
 		return -EPERM;
 	if (len < 0 || len > __NEW_UTS_LEN)
 		return -EINVAL;
@@ -2594,20 +2758,36 @@ static int do_sysinfo(struct sysinfo *info)
 	unsigned long mem_total, sav_total;
 	unsigned int mem_unit, bitcount;
 	struct timespec tp;
+	struct ve_struct *ve;
 
 	memset(info, 0, sizeof(struct sysinfo));
+
+	si_meminfo(info);
+	si_swapinfo(info);
+
+	ve = get_exec_env();
 
 	ktime_get_ts(&tp);
 	monotonic_to_bootbased(&tp);
 	info->uptime = tp.tv_sec + (tp.tv_nsec ? 1 : 0);
 
-	get_avenrun(info->loads, 0, SI_LOAD_SHIFT - FSHIFT);
+	if (ve_is_super(ve)) {
+		get_avenrun(info->loads, 0, SI_LOAD_SHIFT - FSHIFT);
 
-	info->procs = nr_threads;
+		info->procs = nr_threads;
+	} else {
+		info->uptime -= ve->real_start_timespec.tv_sec;
 
-	si_meminfo(info);
-	si_swapinfo(info);
+		info->procs = ve->pcounter;
 
+		get_avenrun_ve(info->loads, 0, SI_LOAD_SHIFT - FSHIFT);
+	}
+
+#ifdef CONFIG_BEANCOUNTERS
+	if (virtinfo_notifier_call(VITYPE_GENERAL, VIRTINFO_SYSINFO, info)
+			& NOTIFY_FAIL)
+		return -ENOMSG;
+#endif
 	/*
 	 * If the sum of all the available memory (i.e. ram + swap)
 	 * is less than can be stored in a 32 bit unsigned long then

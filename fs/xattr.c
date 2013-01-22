@@ -125,6 +125,15 @@ vfs_setxattr(struct dentry *dentry, const char *name, const void *value,
 	struct inode *inode = dentry->d_inode;
 	int error;
 
+#if defined(CONFIG_VE) && defined(CONFIG_SYSCTL)
+	if (!ve_is_super(get_exec_env())) {
+		if (ve_xattr_policy == VE_XATTR_POLICY_IGNORE)
+			return 0;
+		else if (ve_xattr_policy == VE_XATTR_POLICY_REJECT)
+			return -EPERM;
+	}
+#endif
+
 	error = xattr_permission(inode, name, MAY_WRITE);
 	if (error)
 		return error;

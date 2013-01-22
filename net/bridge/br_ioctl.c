@@ -351,6 +351,9 @@ static int old_deviceless(struct net *net, void __user *uarg)
 
 int br_ioctl_deviceless_stub(struct net *net, unsigned int cmd, void __user *uarg)
 {
+	if (!(net->owner_ve->features & VE_FEATURE_BRIDGE))
+		return -ENOTTY;
+
 	switch (cmd) {
 	case SIOCGIFBR:
 	case SIOCSIFBR:

@@ -2094,7 +2094,7 @@ static size_t calculate_slab_order(struct kmem_cache *cachep,
 			offslab_limit = size - sizeof(struct slab);
 			offslab_limit /= sizeof(kmem_bufctl_t);
 
- 			if (num > offslab_limit)
+			if (num > offslab_limit)
 				break;
 		}
 
@@ -4180,7 +4180,7 @@ static unsigned long get_cache_size(struct kmem_cache *cachep)
 
 	return slabs * (PAGE_SIZE << cachep->gfporder) +
 		(OFF_SLAB(cachep) ?
-		 cachep->slabp_cache->buffer_size * slabs : 0);
+		 cachep->slabp_cache->size * slabs : 0);
 }
 
 void show_slab_info(void)
@@ -4215,7 +4215,7 @@ void show_slab_info(void)
 		if (top[i])
 			printk("%-21s: size %10lu objsize %10u\n",
 					top[i]->name, sizes[i],
-					top[i]->buffer_size);
+					top[i]->size);
 //	spin_unlock(&cache_chain_lock);
 }
 

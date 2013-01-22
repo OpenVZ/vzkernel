@@ -289,6 +289,7 @@ int sysctl_tcp_autocorking __read_mostly = 1;
 struct percpu_counter tcp_orphan_count;
 EXPORT_SYMBOL_GPL(tcp_orphan_count);
 
+int sysctl_tcp_mem[3] __read_mostly;
 int sysctl_tcp_wmem[3] __read_mostly;
 int sysctl_tcp_rmem[3] __read_mostly;
 
@@ -399,6 +400,8 @@ void tcp_init_sock(struct sock *sk)
 	tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
 	tp->snd_cwnd_clamp = ~0;
 	tp->mss_cache = TCP_MSS_DEFAULT;
+
+	tp->advmss = 65535; /* max value */
 
 	tp->reordering = sysctl_tcp_reordering;
 	tcp_enable_early_retrans(tp);
@@ -1248,7 +1251,7 @@ new_segment:
 wait_for_sndbuf:
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 wait_for_memory:
-			if (copied)
+			if (copied && likely(!tp->repair))
 				tcp_push(sk, flags & ~MSG_MORE, mss_now,
 					 TCP_NAGLE_PUSH, size_goal);
 
@@ -1367,8 +1370,10 @@ static void tcp_cleanup_rbuf(struct sock *sk, int copied)
 	struct sk_buff *skb = skb_peek(&sk->sk_receive_queue);
 
 	WARN(skb && !before(tp->copied_seq, TCP_SKB_CB(skb)->end_seq),
-	     "cleanup rbuf bug: copied %X seq %X rcvnxt %X\n",
-	     tp->copied_seq, TCP_SKB_CB(skb)->end_seq, tp->rcv_nxt);
+	     KERN_INFO "cleanup rbuf bug (%d/%s): copied %X seq %X/%X rcvnxt %X\n",
+	     sock_net(sk)->owner_ve->veid, current->comm,
+	     tp->copied_seq, TCP_SKB_CB(skb)->end_seq,
+	     TCP_SKB_CB(skb)->seq, tp->rcv_nxt);
 
 	if (inet_csk_ack_scheduled(sk)) {
 		const struct inet_connection_sock *icsk = inet_csk(sk);
@@ -1637,7 +1642,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			if (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN)
 				goto found_fin_ok;
 			WARN(!(flags & MSG_PEEK),
-			     "recvmsg bug 2: copied %X seq %X rcvnxt %X fl %X\n",
+			     "recvmsg bug 2 (%d/%s): "
+			     "copied %X seq %X rcvnxt %X fl %X\n",
+			     sock_net(sk)->owner_ve->veid, current->comm,
 			     *seq, TCP_SKB_CB(skb)->seq, tp->rcv_nxt, flags);
 		}
 
@@ -1699,8 +1706,18 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 			tp->ucopy.len = len;
 
-			WARN_ON(tp->copied_seq != tp->rcv_nxt &&
-				!(flags & (MSG_PEEK | MSG_TRUNC)));
+			if (WARN_ON(tp->copied_seq != tp->rcv_nxt &&
+				!(flags & (MSG_PEEK | MSG_TRUNC)))) {
+				printk("KERNEL: assertion: tp->copied_seq == "
+						"tp->rcv_nxt || ...\n");
+				printk("VE%u pid %d comm %.16s\n",
+						sock_net(sk)->owner_ve->veid,
+						current->pid, current->comm);
+				printk("flags=0x%x, len=%d, copied_seq=%d, "
+						"rcv_nxt=%d\n", flags,
+						(int)len, tp->copied_seq,
+						tp->rcv_nxt);
+			}
 
 			/* Ugly... If prequeue is not empty, we have to
 			 * process it before releasing socket, otherwise
@@ -2219,6 +2236,7 @@ int tcp_disconnect(struct sock *sk, int flags)
 	tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
 	tp->snd_cwnd_cnt = 0;
 	tp->window_clamp = 0;
+	tp->advmss = 65535;
 	tcp_set_ca_state(sk, TCP_CA_Open);
 	tcp_clear_retrans(tp);
 	inet_csk_delack_init(sk);
@@ -3064,6 +3082,11 @@ void __init tcp_init(void)
 	tcp_death_row.sysctl_max_tw_buckets = cnt / 2;
 	sysctl_tcp_max_orphans = cnt / 2;
 	sysctl_max_syn_backlog = max(128, cnt / 256);
+
+	if (sysctl_tcp_mem[2] - sysctl_tcp_mem[1] > 4096)
+		sysctl_tcp_mem[1] = sysctl_tcp_mem[2] - 4096;
+	if (sysctl_tcp_mem[1] - sysctl_tcp_mem[0] > 4096)
+		sysctl_tcp_mem[0] = sysctl_tcp_mem[1] - 4096;
 
 	tcp_init_mem(&init_net);
 	/* Set per-socket limits to no more than 1/128 the pressure threshold */

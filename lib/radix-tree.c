@@ -34,7 +34,6 @@
 #include <linux/rcupdate.h>
 #include <linux/hardirq.h>		/* in_interrupt() */
 
-
 /*
  * The height_to_maxindex array needs to be one deeper than the maximum
  * path as height 0 holds only 1 entry.
@@ -483,6 +482,7 @@ void *__radix_tree_lookup(struct radix_tree_root *root, unsigned long index,
 	struct radix_tree_node *node, *parent;
 	unsigned int height, shift;
 	void **slot;
+	int right_prev[RADIX_TREE_MAX_TAGS] = {0,};
 
 	node = rcu_dereference_raw(root->rnode);
 	if (node == NULL)
@@ -1384,6 +1384,8 @@ void *radix_tree_delete_item(struct radix_tree_root *root,
 	for (tag = 0; tag < RADIX_TREE_MAX_TAGS; tag++) {
 		if (tag_get(node, tag, offset))
 			radix_tree_tag_clear(root, index, tag);
+		else
+			prev_tag_clear(root, tag);
 	}
 
 	node->slots[offset] = NULL;

@@ -362,6 +362,7 @@ static void ip_copy_addrs(struct iphdr *iph, const struct flowi4 *fl4)
 	memcpy(&iph->saddr, &fl4->saddr,
 	       sizeof(fl4->saddr) + sizeof(fl4->daddr));
 }
+EXPORT_SYMBOL(ip_output);
 
 int ip_queue_xmit(struct sk_buff *skb, struct flowi *fl)
 {
@@ -1519,6 +1520,7 @@ void ip_send_unicast_reply(struct sock *sk, struct sk_buff *skb,
 	if (__ip_options_echo(&replyopts.opt.opt, skb, sopt))
 		return;
 
+	saddr = ip_hdr(skb)->daddr;
 	ipc.addr = daddr;
 	ipc.opt = NULL;
 	ipc.tx_flags = 0;

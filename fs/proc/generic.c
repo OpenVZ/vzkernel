@@ -295,7 +295,7 @@ int proc_readdir_de(struct proc_dir_entry *de, struct file *filp, void *dirent,
 	}
 	ret = 1;
 out:
-	return ret;	
+	return ret;
 }
 
 int proc_readdir(struct file *filp, void *dirent, filldir_t filldir)
