@@ -23,6 +23,8 @@
 #include <linux/rcupdate.h>
 #include <linux/workqueue.h>
 
+#include <bc/kmem.h>
+
 int sysctl_nr_open __read_mostly = 1024*1024;
 int sysctl_nr_open_min = BITS_PER_LONG;
 int sysctl_nr_open_max = 1024 * 1024; /* raised later */

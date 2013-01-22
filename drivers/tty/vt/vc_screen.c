@@ -38,6 +38,7 @@
 #include <linux/signal.h>
 #include <linux/slab.h>
 #include <linux/notifier.h>
+#include <linux/ve_task.h>
 
 #include <asm/uaccess.h>
 #include <asm/byteorder.h>
@@ -640,16 +641,22 @@ static struct class *vc_class;
 
 void vcs_make_sysfs(int index)
 {
+	struct ve_struct *ve = set_exec_env(get_ve0());
+
 	device_create(vc_class, NULL, MKDEV(VCS_MAJOR, index + 1), NULL,
 		      "vcs%u", index + 1);
 	device_create(vc_class, NULL, MKDEV(VCS_MAJOR, index + 129), NULL,
 		      "vcsa%u", index + 1);
+	set_exec_env(ve);
 }
 
 void vcs_remove_sysfs(int index)
 {
+	struct ve_struct *ve = set_exec_env(get_ve0());
+
 	device_destroy(vc_class, MKDEV(VCS_MAJOR, index + 1));
 	device_destroy(vc_class, MKDEV(VCS_MAJOR, index + 129));
+	set_exec_env(ve);
 }
 
 int __init vcs_init(void)

@@ -325,6 +325,19 @@
 320	common	kexec_file_load		sys_kexec_file_load
 323	common	userfaultfd		sys_userfaultfd
 
+497	64	fairsched_nodemask	sys_fairsched_nodemask
+498	64	fairsched_cpumask	sys_fairsched_cpumask
+499	64	fairsched_vcpus		sys_fairsched_vcpus
+500	64	getluid			sys_getluid
+501	64	setluid			sys_setluid
+502	64	setublimit		sys_setublimit
+503	64	ubstat			sys_ubstat
+504	64	fairsched_mknod		sys_fairsched_mknod
+505	64	fairsched_rmnod		sys_fairsched_rmnod
+506	64	fairsched_chwt		sys_fairsched_chwt
+507	64	fairsched_mvpr		sys_fairsched_mvpr
+508	64	fairsched_rate		sys_fairsched_rate
+
 #
 # x32-specific system call numbers start at 512 to avoid cache impact
 # for native 64-bit operation.

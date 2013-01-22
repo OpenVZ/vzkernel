@@ -83,6 +83,8 @@
 #include <linux/tracehook.h>
 #include <linux/user_namespace.h>
 
+#include <bc/beancounter.h>
+
 #include <asm/pgtable.h>
 #include <asm/processor.h>
 #include "internal.h"
@@ -160,6 +162,18 @@ static inline const char *get_task_state(struct task_struct *tsk)
 	return *p;
 }
 
+static int task_virtual_pid(struct task_struct *t)
+{
+	struct pid *pid;
+
+	pid = task_pid(t);
+	/*
+	 * this will give wrong result for tasks,
+	 * that failed to enter VE, but that's OK
+	 */
+	return pid ? pid->numbers[pid->level].nr : 0;
+}
+
 static inline void task_state(struct seq_file *m, struct pid_namespace *ns,
 				struct pid *pid, struct task_struct *p)
 {
@@ -168,17 +182,17 @@ static inline void task_state(struct seq_file *m, struct pid_namespace *ns,
 	int g;
 	struct fdtable *fdt = NULL;
 	const struct cred *cred;
-	pid_t ppid, tpid;
+	pid_t ppid, tpid, vpid;
 
 	rcu_read_lock();
-	ppid = pid_alive(p) ?
-		task_tgid_nr_ns(rcu_dereference(p->real_parent), ns) : 0;
+	ppid = pid_alive(p) ? ve_task_ppid_nr_ns(p, ns) : 0;
 	tpid = 0;
 	if (pid_alive(p)) {
 		struct task_struct *tracer = ptrace_parent(p);
 		if (tracer)
 			tpid = task_pid_nr_ns(tracer, ns);
 	}
+	vpid = task_virtual_pid(p);
 	cred = get_task_cred(p);
 	seq_printf(m,
 		"State:\t%s\n"
@@ -221,6 +235,9 @@ static inline void task_state(struct seq_file *m, struct pid_namespace *ns,
 	put_cred(cred);
 
 	seq_putc(m, '\n');
+
+	seq_printf(m, "envID:\t%d\nVPid:\t%d\n",
+			p->ve_task_info.owner_env->veid, vpid);
 }
 
 void render_sigset_t(struct seq_file *m, const char *header,
@@ -260,10 +277,10 @@ static void collect_sigign_sigcatch(struct task_struct *p, sigset_t *ign,
 	}
 }
 
-static inline void task_sig(struct seq_file *m, struct task_struct *p)
+void task_sig(struct seq_file *m, struct task_struct *p)
 {
 	unsigned long flags;
-	sigset_t pending, shpending, blocked, ignored, caught;
+	sigset_t pending, shpending, blocked, ignored, caught, saved;
 	int num_threads = 0;
 	unsigned long qsize = 0;
 	unsigned long qlim = 0;
@@ -273,11 +290,13 @@ static inline void task_sig(struct seq_file *m, struct task_struct *p)
 	sigemptyset(&blocked);
 	sigemptyset(&ignored);
 	sigemptyset(&caught);
+	sigemptyset(&saved);
 
 	if (lock_task_sighand(p, &flags)) {
 		pending = p->pending.signal;
 		shpending = p->signal->shared_pending.signal;
 		blocked = p->blocked;
+		saved = p->saved_sigmask;
 		collect_sigign_sigcatch(p, &ignored, &caught);
 		num_threads = get_nr_threads(p);
 		rcu_read_lock();  /* FIXME: is this correct? */
@@ -296,6 +315,7 @@ static inline void task_sig(struct seq_file *m, struct task_struct *p)
 	render_sigset_t(m, "SigBlk:\t", &blocked);
 	render_sigset_t(m, "SigIgn:\t", &ignored);
 	render_sigset_t(m, "SigCgt:\t", &caught);
+	render_sigset_t(m, "SigSvd:\t", &saved);
 }
 
 static void render_cap_t(struct seq_file *m, const char *header,
@@ -337,6 +357,20 @@ static inline void task_seccomp(struct seq_file *m, struct task_struct *p)
 #endif
 }
 
+#ifdef CONFIG_BEANCOUNTERS
+static inline void ub_dump_task_info(struct task_struct *tsk,
+		char *stsk, int ltsk, char *smm, int lmm)
+{
+	snprintf(stsk, ltsk, "%u", tsk->task_bc.task_ub->ub_uid);
+	task_lock(tsk);
+	if (tsk->mm)
+		snprintf(smm, lmm, "%u", tsk->mm->mm_ub->ub_uid);
+	else
+		strncpy(smm, "N/A", lmm);
+	task_unlock(tsk);
+}
+#endif
+
 static inline void task_context_switch_counts(struct seq_file *m,
 						struct task_struct *p)
 {
@@ -360,6 +394,9 @@ int proc_pid_status(struct seq_file *m, struct pid_namespace *ns,
 			struct pid *pid, struct task_struct *task)
 {
 	struct mm_struct *mm = get_task_mm(task);
+#ifdef CONFIG_BEANCOUNTERS
+	char tsk_ub_info[64], mm_ub_info[64];
+#endif
 
 	task_name(m, task);
 	task_state(m, ns, pid, task);
@@ -374,6 +411,14 @@ int proc_pid_status(struct seq_file *m, struct pid_namespace *ns,
 	task_cpus_allowed(m, task);
 	cpuset_task_status_allowed(m, task);
 	task_context_switch_counts(m, task);
+#ifdef CONFIG_BEANCOUNTERS
+	ub_dump_task_info(task,
+			tsk_ub_info, sizeof(tsk_ub_info),
+			mm_ub_info, sizeof(mm_ub_info));
+
+	seq_printf(m, "TaskUB:\t%s\n", tsk_ub_info);
+	seq_printf(m, "MMUB:\t%s\n", mm_ub_info);
+#endif
 	return 0;
 }
 
@@ -397,6 +442,11 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 	unsigned long rsslim = 0;
 	char tcomm[sizeof(task->comm)];
 	unsigned long flags;
+	int is_super = ve_is_super(get_exec_env());
+#ifdef CONFIG_BEANCOUNTERS
+	char ub_task_info[64];
+	char ub_mm_info[64];
+#endif
 
 	state = *get_task_state(task);
 	vsize = eip = esp = 0;
@@ -454,7 +504,7 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 		}
 
 		sid = task_session_nr_ns(task, ns);
-		ppid = task_tgid_nr_ns(task->real_parent, ns);
+		ppid = ve_task_ppid_nr_ns(task, ns);
 		pgid = task_pgrp_nr_ns(task, ns);
 
 		unlock_task_sighand(task, &flags);
@@ -474,6 +524,7 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 	priority = task_prio(task);
 	nice = task_nice(task);
 
+#ifndef CONFIG_VE
 	/* Temporary variable needed for gcc-2.96 */
 	/* convert timespec -> nsec*/
 	start_time =
@@ -481,6 +532,14 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 				+ task->real_start_time.tv_nsec;
 	/* convert nsec -> ticks */
 	start_time = nsec_to_clock_t(start_time);
+#else
+	start_time = ve_relative_clock(&task->start_time);
+#endif
+
+#ifdef CONFIG_BEANCOUNTERS
+	ub_dump_task_info(task, ub_task_info, sizeof(ub_task_info),
+			ub_mm_info, sizeof(ub_mm_info));
+#endif
 
 	seq_printf(m, "%d (%s) %c", pid_nr_ns(pid, ns), tcomm, state);
 	seq_put_decimal_ll(m, ' ', ppid);
@@ -522,7 +581,7 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 	seq_put_decimal_ull(m, ' ', 0);
 	seq_put_decimal_ull(m, ' ', 0);
 	seq_put_decimal_ll(m, ' ', task->exit_signal);
-	seq_put_decimal_ll(m, ' ', task_cpu(task));
+	seq_put_decimal_ll(m, ' ', is_super ? task_cpu(task) : task_vcpu_id(task));
 	seq_put_decimal_ull(m, ' ', task->rt_priority);
 	seq_put_decimal_ull(m, ' ', task->policy);
 	seq_put_decimal_ull(m, ' ', delayacct_blkio_ticks(task));
@@ -544,6 +603,16 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 		seq_put_decimal_ll(m, ' ', task->exit_code);
 	else
 		seq_put_decimal_ll(m, ' ', 0);
+
+#ifdef CONFIG_VE
+	seq_printf(m, " %s", " 0 0 0 0 0");
+	seq_put_decimal_ll(m, ' ', task_pid_nr_ns(task, task_active_pid_ns(task)));
+	seq_put_decimal_ull(m, ' ', VEID(VE_TASK_INFO(task)->owner_env));
+#endif
+#ifdef CONFIG_BEANCOUNTERS
+	seq_printf(m, " %s", ub_task_info);
+	seq_printf(m, " %s", ub_mm_info);
+#endif
 
 	seq_putc(m, '\n');
 	if (mm)

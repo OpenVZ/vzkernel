@@ -27,6 +27,9 @@
 #include <linux/slab.h>
 #include <linux/audit.h>
 #include <net/net_namespace.h>
+#include <bc/beancounter.h>
+
+#include <bc/kmem.h>
 
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter_arp.h>

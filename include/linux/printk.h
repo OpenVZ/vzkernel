@@ -43,6 +43,14 @@ extern int console_printk[];
 #define minimum_console_loglevel (console_printk[2])
 #define default_console_loglevel (console_printk[3])
 
+#define VE0_LOG		1
+#define VE_LOG		2
+#define VE_LOG_BOTH	(VE0_LOG | VE_LOG)
+
+#define ve_vprintk(dst, fmt, args)	vprintk(fmt, args)
+#define ve_printk(dst, fmt, ...)	printk(fmt, ##__VA_ARGS__)
+#define prepare_printk()		do { } while (0)
+
 static inline void console_silent(void)
 {
 	console_loglevel = 0;

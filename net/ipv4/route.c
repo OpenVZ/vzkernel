@@ -70,6 +70,7 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
+#include <linux/nsproxy.h>
 #include <linux/string.h>
 #include <linux/socket.h>
 #include <linux/sockios.h>
@@ -109,11 +110,14 @@
 #endif
 #include <net/secure_seq.h>
 
+#include <bc/kmem.h>
+
 #define RT_FL_TOS(oldflp4) \
 	((oldflp4)->flowi4_tos & (IPTOS_RT_MASK | RTO_ONLINK))
 
 #define RT_GC_TIMEOUT (300*HZ)
 
+int ip_rt_src_check		= 1;
 static int ip_rt_max_size;
 static int ip_rt_redirect_number __read_mostly	= 9;
 static int ip_rt_redirect_load __read_mostly	= HZ / 50;
@@ -936,6 +940,7 @@ static int ip_error(struct sk_buff *skb)
 out:	kfree_skb(skb);
 	return 0;
 }
+EXPORT_SYMBOL(rt_cache_flush);
 
 static void __ip_rt_update_pmtu(struct rtable *rt, struct flowi4 *fl4, u32 mtu)
 {
@@ -2014,7 +2019,7 @@ struct rtable *__ip_route_output_key(struct net *net, struct flowi4 *fl4)
 			goto make_route;
 		}
 
-		if (!(fl4->flowi4_flags & FLOWI_FLAG_ANYSRC)) {
+		if (!(fl4->flowi4_flags & FLOWI_FLAG_ANYSRC) && ip_rt_src_check) {
 			/* It is equivalent to inet_addr_type(saddr) == RTN_LOCAL */
 			if (!__ip_dev_find(net, fl4->saddr, false))
 				goto out;
@@ -2727,3 +2732,25 @@ void __init ip_static_sysctl_init(void)
 	register_net_sysctl(&init_net, "net/ipv4/route", ipv4_route_table);
 }
 #endif
+
+static void ip_rt_dump_dst(void *o)
+{
+	struct rtable *rt = (struct rtable *)o;
+
+	if (rt->dst.flags & DST_FREE)
+		return;
+
+	printk("=== %p\n", o);
+	dst_dump_one(&rt->dst);
+	printk("\tgen %x flags %x type %d\n",
+			rt->rt_genid, rt->rt_flags, (int)rt->rt_type);
+}
+
+void ip_rt_dump_dsts(void)
+{
+	printk("IPv4 dst cache:\n");
+	slab_obj_walk(ipv4_dst_ops.kmem_cachep, ip_rt_dump_dst);
+}
+
+void (*ip6_rt_dump_dsts)(void);
+EXPORT_SYMBOL_GPL(ip6_rt_dump_dsts);
