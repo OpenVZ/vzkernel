@@ -10,6 +10,7 @@
 #include <linux/seq_file.h>
 #include <linux/swap.h>
 #include <linux/vmstat.h>
+#include <linux/virtinfo.h>
 #include <linux/atomic.h>
 #include <linux/vmalloc.h>
 #include <asm/page.h>
@@ -20,9 +21,62 @@ void __attribute__((weak)) arch_report_meminfo(struct seq_file *m)
 {
 }
 
-static int meminfo_proc_show(struct seq_file *m, void *v)
+#define K(x) ((x) << (PAGE_SHIFT - 10))
+
+static int meminfo_proc_show_mi(struct seq_file *m, struct meminfo *mi)
 {
+	seq_printf(m,
+		"MemTotal:       %8lu kB\n"
+		"MemFree:        %8lu kB\n"
+		"Cached:         %8lu kB\n"
+		"Active:         %8lu kB\n"
+		"Inactive:       %8lu kB\n"
+		"Active(anon):   %8lu kB\n"
+		"Inactive(anon): %8lu kB\n"
+		"Active(file):   %8lu kB\n"
+		"Inactive(file): %8lu kB\n"
+		"Unevictable:    %8lu kB\n"
+		"Mlocked:        %8lu kB\n"
+		"SwapTotal:      %8lu kB\n"
+		"SwapFree:       %8lu kB\n"
+		"Dirty:          %8lu kB\n"
+		"Writeback:      %8lu kB\n"
+		"AnonPages:      %8lu kB\n"
+		"Shmem:          %8lu kB\n"
+		"Slab:           %8lu kB\n"
+		"SReclaimable:   %8lu kB\n"
+		"SUnreclaim:     %8lu kB\n"
+		,
+		K(mi->si->totalram),
+		K(mi->si->freeram),
+		K(mi->cached),
+		K(mi->pages[LRU_ACTIVE_ANON]   + mi->pages[LRU_ACTIVE_FILE]),
+		K(mi->pages[LRU_INACTIVE_ANON] + mi->pages[LRU_INACTIVE_FILE]),
+		K(mi->pages[LRU_ACTIVE_ANON]),
+		K(mi->pages[LRU_INACTIVE_ANON]),
+		K(mi->pages[LRU_ACTIVE_FILE]),
+		K(mi->pages[LRU_INACTIVE_FILE]),
+		K(mi->pages[LRU_UNEVICTABLE]),
+		K(mi->locked),
+		K(mi->si->totalswap),
+		K(mi->si->freeswap),
+		K(mi->dirty_pages),
+		K(mi->writeback_pages),
+		K(mi->pages[LRU_ACTIVE_ANON] + mi->pages[LRU_INACTIVE_ANON]),
+		K(mi->shmem),
+		K(mi->slab_reclaimable + mi->slab_unreclaimable),
+		K(mi->slab_reclaimable),
+		K(mi->slab_unreclaimable));
+
+	return 0;
+}
+
+int meminfo_proc_show_ub(struct seq_file *m, void *v,
+		struct user_beancounter *ub, unsigned long meminfo_val)
+{
+	int ret;
 	struct sysinfo i;
+	struct meminfo mi;
 	unsigned long committed;
 	struct vmalloc_info vmi;
 	long cached;
@@ -33,12 +87,23 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	struct zone *zone;
 	int lru;
 
+	si_meminfo(&i);
+	si_swapinfo(&i);
+
+	memset(&mi, 0, sizeof(mi));
+	mi.si = &i;
+	mi.ub = ub;
+	mi.meminfo_val = meminfo_val;
+
+	ret = virtinfo_notifier_call(VITYPE_GENERAL, VIRTINFO_MEMINFO, &mi);
+	if (ret & NOTIFY_FAIL)
+		return 0;
+	if (ret & NOTIFY_OK)
+		return meminfo_proc_show_mi(m, &mi);
+
 /*
  * display in kilobytes.
  */
-#define K(x) ((x) << (PAGE_SHIFT - 10))
-	si_meminfo(&i);
-	si_swapinfo(&i);
 	committed = percpu_counter_read_positive(&vm_committed_as);
 
 	cached = global_page_state(NR_FILE_PAGES) -
@@ -209,6 +274,12 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 #undef K
 }
 
+static int meminfo_proc_show(struct seq_file *m, void *v)
+{
+	return meminfo_proc_show_ub(m, v, current->mm->mm_ub,
+			get_exec_env()->meminfo_val);
+}
+
 static int meminfo_proc_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, meminfo_proc_show, NULL);
@@ -223,7 +294,7 @@ static const struct file_operations meminfo_proc_fops = {
 
 static int __init proc_meminfo_init(void)
 {
-	proc_create("meminfo", 0, NULL, &meminfo_proc_fops);
+	proc_create("meminfo", 0, &glob_proc_root, &meminfo_proc_fops);
 	return 0;
 }
 module_init(proc_meminfo_init);

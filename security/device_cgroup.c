@@ -13,11 +13,24 @@
 #include <linux/slab.h>
 #include <linux/rcupdate.h>
 #include <linux/mutex.h>
+#include <linux/ve.h>
+#include <linux/vzcalluser.h>
+#include <linux/major.h>
+#include <linux/module.h>
 
 #define ACC_MKNOD 1
 #define ACC_READ  2
 #define ACC_WRITE 4
-#define ACC_MASK (ACC_MKNOD | ACC_READ | ACC_WRITE)
+#define ACC_QUOTA 8
+#define ACC_HIDDEN 16
+#define ACC_MASK (ACC_MKNOD | ACC_READ | ACC_WRITE | ACC_QUOTA)
+
+static inline int convert_bits(int acc)
+{
+	/* ...10x <-> ...01x   trial: guess hwy */
+	return ((((acc & 06) == 00) || ((acc & 06) == 06)) ? acc : acc ^06) &
+		(ACC_READ | ACC_WRITE | ACC_QUOTA);
+}
 
 #define DEV_BLOCK 1
 #define DEV_CHAR  2
@@ -84,6 +97,41 @@ static int devcgroup_can_attach(struct cgroup *new_cgrp,
  * called under devcgroup_mutex
  */
 static int dev_exceptions_copy(struct list_head *dest, struct list_head *orig)
+#ifdef CONFIG_VE
+static struct dev_whitelist_item default_whitelist_items[] = {
+	{ ~0,                     ~0, DEV_ALL,  ACC_MKNOD },
+	{ UNIX98_PTY_MASTER_MAJOR, ~0, DEV_CHAR, ACC_READ | ACC_WRITE },
+	{ UNIX98_PTY_SLAVE_MAJOR, ~0, DEV_CHAR, ACC_READ | ACC_WRITE },
+	{ PTY_MASTER_MAJOR,       ~0, DEV_CHAR, ACC_READ | ACC_WRITE },
+	{ PTY_SLAVE_MAJOR,        ~0, DEV_CHAR, ACC_READ | ACC_WRITE },
+	{ MEM_MAJOR,	/* null */ 3, DEV_CHAR, ACC_READ | ACC_WRITE },
+	{ MEM_MAJOR,    /* zero */ 5, DEV_CHAR, ACC_READ | ACC_WRITE },
+	{ MEM_MAJOR,    /* full */ 7, DEV_CHAR, ACC_READ | ACC_WRITE },
+	{ TTYAUX_MAJOR,  /* tty */ 0, DEV_CHAR, ACC_READ | ACC_WRITE },
+	{ TTYAUX_MAJOR, /* console */ 1, DEV_CHAR, ACC_READ | ACC_WRITE },
+	{ TTYAUX_MAJOR, /* ptmx */ 2, DEV_CHAR, ACC_READ | ACC_WRITE },
+	{ MEM_MAJOR,  /* random */ 8, DEV_CHAR, ACC_READ },
+	{ MEM_MAJOR, /* urandom */ 9, DEV_CHAR, ACC_READ | ACC_WRITE },
+	{ MEM_MAJOR, /* kmsg */ 11, DEV_CHAR, ACC_WRITE },
+};
+
+static LIST_HEAD(default_perms);
+#define parent_whitelist(p)	(&default_perms)
+static void prepare_def_perms(void)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(default_whitelist_items); i++) {
+		default_whitelist_items[i].access |= ACC_HIDDEN;
+		list_add(&default_whitelist_items[i].list, &default_perms);
+	}
+}
+#else
+#define prepare_def_perms()	do { } while(0)
+#define parent_whitelist(p)	(&parent_dev_cgroup->whitelist)
+#endif
+
+static int dev_whitelist_copy(struct list_head *dest, struct list_head *orig)
 {
 	struct dev_exception_item *ex, *tmp, *new;
 
@@ -210,9 +258,10 @@ static int devcgroup_online(struct cgroup *cgroup)
 
 	if (parent_dev_cgroup == NULL)
 		dev_cgroup->behavior = DEVCG_DEFAULT_ALLOW;
+		prepare_def_perms();
 	else {
 		ret = dev_exceptions_copy(&dev_cgroup->exceptions,
-					  &parent_dev_cgroup->exceptions);
+					  parent_whitelist(parent_dev_cgroup));
 		if (!ret)
 			dev_cgroup->behavior = parent_dev_cgroup->behavior;
 	}
@@ -321,6 +370,20 @@ static int devcgroup_seq_read(struct cgroup *cgroup, struct cftype *cft,
 			set_majmin(min, ex->minor);
 			seq_printf(m, "%c %s:%s %s\n", type_to_char(ex->type),
 				   maj, min, acc);
+			if (cft != NULL)
+				seq_printf(m, "%c %s:%s %s\n", type_to_char(wh->type),
+					maj, min, acc);
+			else if (!(wh->access & ACC_HIDDEN)) {
+				int access;
+
+				access = convert_bits(wh->access);
+				if (access & (ACC_READ | ACC_WRITE))
+					access |= S_IXOTH;
+
+				seq_printf(m, "%10u %c %03o %s:%s\n",
+					(unsigned)(unsigned long)m->private,
+					type_to_char(wh->type),
+					access, maj, min);
 		}
 	}
 	rcu_read_unlock();
@@ -904,6 +967,37 @@ int __devcgroup_inode_permission(struct inode *inode, int mask)
 			access);
 }
 
+int devcgroup_device_visible(int type, int major, int start_minor, int nr_minors)
+{
+	struct dev_cgroup *dev_cgroup;
+	struct dev_whitelist_item *wh;
+
+	rcu_read_lock();
+	dev_cgroup = task_devcgroup(current);
+
+	list_for_each_entry_rcu(wh, &dev_cgroup->whitelist, list) {
+		if (wh->type & DEV_ALL)
+			goto found;
+		if ((wh->type & DEV_BLOCK) && (type == S_IFCHR))
+			continue;
+		if ((wh->type & DEV_CHAR) && (type == S_IFBLK))
+			continue;
+		if (wh->major != ~0 && wh->major != major)
+			continue;
+		if (wh->minor != ~0 && !(start_minor <= wh->minor &&
+					wh->minor < start_minor + nr_minors))
+			continue;
+found:
+		if (!(wh->access & (ACC_READ | ACC_WRITE | ACC_QUOTA)))
+			continue;
+		rcu_read_unlock();
+		return 1;
+	}
+
+	rcu_read_unlock();
+	return 0;
+}
+
 int devcgroup_inode_mknod(int mode, dev_t dev)
 {
 	short type;
@@ -920,3 +1014,71 @@ int devcgroup_inode_mknod(int mode, dev_t dev)
 			ACC_MKNOD);
 
 }
+
+#ifdef CONFIG_VE
+int get_device_perms_ve(int dev_type, dev_t dev, int access_mode)
+{
+	int mask = 0;
+
+	mask |= (access_mode & FMODE_READ ? MAY_READ : 0);
+	mask |= (access_mode & FMODE_WRITE ? MAY_WRITE : 0);
+	mask |= (access_mode & FMODE_QUOTACTL ? MAY_QUOTACTL : 0);
+
+	return __devcgroup_inode_permission(dev_type == S_IFBLK, dev, mask);
+}
+EXPORT_SYMBOL(get_device_perms_ve);
+
+int set_device_perms_ve(struct ve_struct *ve,
+		unsigned type, dev_t dev, unsigned mask)
+{
+	int err = -EINVAL;
+	struct dev_whitelist_item new;
+
+	if ((type & S_IFMT) == S_IFBLK)
+		new.type = DEV_BLOCK;
+	else if ((type & S_IFMT) == S_IFCHR)
+		new.type = DEV_CHAR;
+	else
+		return -EINVAL;
+
+	new.access = convert_bits(mask);
+	new.major = new.minor = ~0;
+
+	switch (type & VE_USE_MASK) {
+	default:
+		new.minor = MINOR(dev);
+	case VE_USE_MAJOR:
+		new.major = MAJOR(dev);
+	case 0:
+		;
+	}
+
+	mutex_lock(&devcgroup_mutex);
+	err = dev_whitelist_add(cgroup_to_devcgroup(ve->ve_cgroup), &new);
+	mutex_unlock(&devcgroup_mutex);
+
+	return err;
+}
+EXPORT_SYMBOL(set_device_perms_ve);
+
+#ifdef CONFIG_PROC_FS
+int devperms_seq_show(struct seq_file *m, void *v)
+{
+	struct ve_struct *ve = list_entry(v, struct ve_struct, ve_list);
+
+	if (m->private == (void *)0) {
+		seq_printf(m, "Version: 2.7\n");
+		m->private = (void *)-1;
+	}
+
+	if (ve_is_super(ve)) {
+		seq_printf(m, "%10u b 016 *:*\n%10u c 006 *:*\n", 0, 0);
+		return 0;
+	}
+
+	m->private = (void *)(unsigned long)ve->veid;
+	return devcgroup_seq_read(ve->ve_cgroup, NULL, m);
+}
+EXPORT_SYMBOL(devperms_seq_show);
+#endif
+#endif

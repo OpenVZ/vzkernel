@@ -66,6 +66,8 @@ enum {
 	NETIF_F_GSO_GRE_CSUM_BIT,	/* ... GRE with csum with TSO */
 	NETIF_F_GSO_UDP_TUNNEL_CSUM_BIT,/* ... UDP TUNNEL with TSO & CSUM */
 	NETIF_F_GSO_TUNNEL_REMCSUM_BIT, /* ... TUNNEL with TSO & REMCSUM */
+	NETIF_F_VENET_BIT,		/* device is venet device */
+	NETIF_F_VIRTUAL_BIT,		/* can be registered inside VE */
 
 	/*
 	 * Add your fresh new feature above and remember to update
@@ -124,6 +126,8 @@ enum {
 #define NETIF_F_HW_VLAN_STAG_RX	__NETIF_F(HW_VLAN_STAG_RX)
 #define NETIF_F_HW_VLAN_STAG_TX	__NETIF_F(HW_VLAN_STAG_TX)
 #define NETIF_F_BUSY_POLL	__NETIF_F(BUSY_POLL)
+#define NETIF_F_VENET		__NETIF_F(VENET)
+#define NETIF_F_VIRTUAL		__NETIF_F(VIRTUAL)
 
 /* Features valid for ethtool to change */
 /* = all defined minus driver/device-class-related */

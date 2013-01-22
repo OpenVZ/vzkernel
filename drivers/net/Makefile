@@ -24,6 +24,10 @@ obj-$(CONFIG_VIRTIO_NET) += virtio_net.o
 obj-$(CONFIG_VXLAN) += vxlan.o
 obj-$(CONFIG_NLMON) += nlmon.o
 
+obj-$(CONFIG_VE_NETDEV) += vznetdev.o
+vznetdev-objs := venetdev.o veip_mgmt.o
+obj-$(CONFIG_VE_ETHDEV) += vzethdev.o
+
 #
 # Networking Drivers
 #

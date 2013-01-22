@@ -20,6 +20,10 @@
 #include <net/route.h>
 #include <linux/if_vlan.h>
 
+#include <linux/ve.h>
+#include <linux/ve_proto.h>
+#include <linux/vzcalluser.h>
+
 #define BR_HASH_BITS 8
 #define BR_HASH_SIZE (1 << BR_HASH_BITS)
 

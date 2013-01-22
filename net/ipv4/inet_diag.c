@@ -893,7 +893,6 @@ void inet_diag_dump_icsk(struct inet_hashinfo *hashinfo, struct sk_buff *skb,
 
 				if (!net_eq(sock_net(sk), net))
 					continue;
-
 				if (num < s_num) {
 					num++;
 					continue;
