@@ -17,10 +17,13 @@
 #include <linux/syscalls.h>
 #include <linux/mmu_notifier.h>
 #include <linux/userfaultfd_k.h>
+#include <linux/module.h>
 
 #include <asm/mmu_context.h>
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
+
+#include <bc/vmpages.h>
 
 #include "internal.h"
 
@@ -37,7 +40,7 @@ static void zap_pte(struct mm_struct *mm, struct vm_area_struct *vma,
 		page = vm_normal_page(vma, addr, pte);
 		if (page) {
 			if (pte_dirty(pte))
-				set_page_dirty(page);
+				set_page_dirty_mm(page, mm);
 			page_remove_rmap(page);
 			page_cache_release(page);
 			update_hiwater_rss(mm);

@@ -20,6 +20,7 @@
 #include <linux/skbuff.h>
 #include <linux/rtnetlink.h>
 #include <linux/slab.h>
+#include <linux/sched.h>
 
 #include <net/sock.h>
 #include <net/inet_frag.h>
@@ -295,6 +296,7 @@ static struct inet_frag_queue *inet_frag_alloc(struct netns_frags *nf,
 		return NULL;
 
 	q->net = nf;
+
 	f->constructor(q, arg);
 	add_frag_mem_limit(q, f->qsize);
 

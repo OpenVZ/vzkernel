@@ -141,7 +141,8 @@ static int pfkey_create(struct net *net, struct socket *sock, int protocol,
 	struct sock *sk;
 	int err;
 
-	if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+	if (!ns_capable(net->user_ns, CAP_NET_ADMIN) &&
+		!ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
 		return -EPERM;
 	if (sock->type != SOCK_RAW)
 		return -ESOCKTNOSUPPORT;

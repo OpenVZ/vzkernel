@@ -22,6 +22,7 @@
 #define part_to_dev(part)	(&((part)->__dev))
 
 extern struct device_type part_type;
+extern struct device_type disk_type;
 extern struct kobject *block_depr;
 extern struct class block_class;
 

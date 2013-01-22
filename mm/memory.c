@@ -42,6 +42,7 @@
 #include <linux/mm.h>
 #include <linux/hugetlb.h>
 #include <linux/mman.h>
+#include <linux/virtinfo.h>
 #include <linux/swap.h>
 #include <linux/highmem.h>
 #include <linux/pagemap.h>
@@ -63,6 +64,11 @@
 #include <linux/string.h>
 #include <linux/userfaultfd_k.h>
 #include <linux/dax.h>
+
+#include <bc/beancounter.h>
+#include <bc/io_acct.h>
+#include <bc/kmem.h>
+#include <bc/vmpages.h>
 
 #include <asm/io.h>
 #include <asm/pgalloc.h>
@@ -105,7 +111,7 @@ EXPORT_SYMBOL(high_memory);
  * ( When CONFIG_COMPAT_BRK=y we exclude brk from randomization,
  *   as ancient (libc5 based) binaries can segfault. )
  */
-int randomize_va_space __read_mostly =
+int _randomize_va_space __read_mostly =
 #ifdef CONFIG_COMPAT_BRK
 					1;
 #else
@@ -928,6 +934,13 @@ out_set_pte:
 	return 0;
 }
 
+#define pte_ptrs(a)	(PTRS_PER_PTE - ((a >> PAGE_SHIFT)&(PTRS_PER_PTE - 1)))
+#ifdef CONFIG_BEANCOUNTERS
+#define same_ub(mm1, mm2)      ((mm1)->mm_ub == (mm2)->mm_ub)
+#else
+#define same_ub(mm1, mm2)      1
+#endif
+
 int copy_pte_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 		   pmd_t *dst_pmd, pmd_t *src_pmd, struct vm_area_struct *vma,
 		   unsigned long addr, unsigned long end)
@@ -1176,7 +1189,7 @@ again:
 			}
 			if (!PageAnon(page)) {
 				if (pte_dirty(ptent))
-					set_page_dirty(page);
+					set_page_dirty_mm(page, mm);
 				if (pte_young(ptent) &&
 				    likely(!VM_SequentialReadHint(vma)))
 					mark_page_accessed(page);
@@ -1547,7 +1560,7 @@ static int insert_page(struct vm_area_struct *vma, unsigned long addr,
 	/* Ok, finally just insert the thing.. */
 	get_page(page);
 	inc_mm_counter_fast(mm, mm_counter_file(page));
-	page_add_file_rmap(page);
+	page_add_file_rmap(page, mm);
 	set_pte_at(mm, addr, pte, mk_pte(page, prot));
 
 	retval = 0;
@@ -2557,7 +2570,9 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	struct mem_cgroup *ptr;
 	int exclusive = 0;
 	int ret = 0;
+	cycles_t start;
 
+	start = get_cycles();
 	if (!pte_unmap_same(mm, pmd, page_table, orig_pte))
 		goto out;
 
@@ -2690,7 +2705,8 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	mem_cgroup_commit_charge_swapin(page, ptr);
 
 	swap_free(entry);
-	if (vm_swap_full() || (vma->vm_flags & VM_LOCKED) || PageMlocked(page))
+	if (vm_swap_full() || ub_swap_full(mm->mm_ub) ||
+			(vma->vm_flags & VM_LOCKED) || PageMlocked(page))
 		try_to_free_swap(page);
 	unlock_page(page);
 	if (page != swapcache) {
@@ -2718,6 +2734,10 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 unlock:
 	pte_unmap_unlock(page_table, ptl);
 out:
+	spin_lock_irq(&kstat_glb_lock);
+	KSTAT_LAT_ADD(&kstat_glob.swap_in, get_cycles() - start);
+	spin_unlock_irq(&kstat_glb_lock);
+
 	return ret;
 out_nomap:
 	mem_cgroup_cancel_charge_swapin(ptr);
@@ -2768,7 +2788,6 @@ static int do_anonymous_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		goto setpte;
 	}
 
-	/* Allocate our own private page. */
 	if (unlikely(anon_vma_prepare(vma)))
 		goto oom;
 	page = alloc_zeroed_user_highpage_movable(vma, address);
@@ -2828,6 +2847,7 @@ static int __do_fault(struct vm_area_struct *vma, unsigned long address,
 {
 	struct vm_fault vmf;
 	int ret;
+	cycles_t start;
 
 	vmf.virtual_address = (void __user *)(address & PAGE_MASK);
 	vmf.pgoff = pgoff;
@@ -2835,6 +2855,7 @@ static int __do_fault(struct vm_area_struct *vma, unsigned long address,
 	vmf.page = NULL;
 	vmf.cow_page = cow_page;
 
+	start = get_cycles();
 	ret = vma->vm_ops->fault(vma, &vmf);
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
 		return ret;
@@ -2854,6 +2875,11 @@ static int __do_fault(struct vm_area_struct *vma, unsigned long address,
 		lock_page(vmf.page);
 	else
 		VM_BUG_ON_PAGE(!PageLocked(vmf.page), vmf.page);
+
+	preempt_disable();
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.page_in, smp_processor_id(),
+			get_cycles() - start);
+	preempt_enable();
 
 	*page = vmf.page;
 	return ret;
@@ -2875,7 +2901,7 @@ static void do_set_pte(struct vm_area_struct *vma, unsigned long address,
 		page_add_new_anon_rmap(page, vma, address);
 	} else {
 		inc_mm_counter_fast(vma->vm_mm, mm_counter_file(page));
-		page_add_file_rmap(page);
+		page_add_file_rmap(page, vma->vm_mm);
 	}
 	set_pte_at(vma->vm_mm, address, pte, entry);
 
