@@ -66,6 +66,7 @@
 #include <net/sock.h>
 #include <net/scm.h>
 #include <net/netlink.h>
+#include <net/netlink_sock.h>
 
 #include "af_netlink.h"
 
@@ -1375,7 +1376,7 @@ EXPORT_SYMBOL(netlink_net_capable);
 static inline int netlink_allowed(const struct socket *sock, unsigned int flag)
 {
 	return (nl_table[sock->sk->sk_protocol].flags & flag) ||
-		ns_capable(sock_net(sock->sk)->user_ns, CAP_NET_ADMIN);
+		ns_capable(sock_net(sock->sk)->user_ns, CAP_VE_NET_ADMIN);
 }
 
 static void

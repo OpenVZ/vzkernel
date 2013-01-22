@@ -41,6 +41,14 @@ struct nsproxy init_nsproxy = {
 #endif
 };
 
+void get_task_namespaces(struct task_struct *tsk)
+{
+	struct nsproxy *ns = tsk->nsproxy;
+	if (ns) {
+		get_nsproxy(ns);
+	}
+}
+
 static inline struct nsproxy *create_nsproxy(void)
 {
 	struct nsproxy *nsproxy;
@@ -120,7 +128,8 @@ out_ns:
  * called from clone.  This now handles copy for nsproxy and all
  * namespaces therein.
  */
-int copy_namespaces(unsigned long flags, struct task_struct *tsk)
+int copy_namespaces(unsigned long flags, struct task_struct *tsk,
+		int force_admin)
 {
 	struct nsproxy *old_ns = tsk->nsproxy;
 	struct user_namespace *user_ns = task_cred_xxx(tsk, user_ns);
@@ -136,9 +145,27 @@ int copy_namespaces(unsigned long flags, struct task_struct *tsk)
 				CLONE_NEWPID | CLONE_NEWNET)))
 		return 0;
 
-	if (!ns_capable(user_ns, CAP_SYS_ADMIN)) {
-		err = -EPERM;
-		goto out;
+	if (!force_admin) {
+		if (!ns_capable(user_ns, CAP_SYS_ADMIN) &&
+		    !ns_capable(user_ns, CAP_VE_SYS_ADMIN)) {
+			err = -EPERM;
+			goto out;
+		}
+
+		if (!ns_capable(user_ns, CAP_SYS_ADMIN) &&
+		    (flags & (CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWNET))) {
+			err = -EPERM;
+			goto out;
+		}
+
+		/*
+		 * netns-vs-sysfs is deadly broken, thus new namespace
+		 * (even in ve0) can bring the node down
+		 */
+		if (flags & CLONE_NEWNET) {
+			err = -EINVAL;
+			goto out;
+		}
 	}
 
 	/*
@@ -165,6 +192,7 @@ out:
 	put_nsproxy(old_ns);
 	return err;
 }
+EXPORT_SYMBOL(copy_namespaces);
 
 void free_nsproxy(struct nsproxy *ns)
 {
@@ -179,6 +207,7 @@ void free_nsproxy(struct nsproxy *ns)
 	put_net(ns->net_ns);
 	kmem_cache_free(nsproxy_cachep, ns);
 }
+EXPORT_SYMBOL(free_nsproxy);
 
 /*
  * Called from unshare. Unshare all the namespaces part of nsproxy.
@@ -195,9 +224,16 @@ int unshare_nsproxy_namespaces(unsigned long unshare_flags,
 		return 0;
 
 	user_ns = new_cred ? new_cred->user_ns : current_user_ns();
-	if (!ns_capable(user_ns, CAP_SYS_ADMIN))
+	if (!ns_capable(user_ns, CAP_SYS_ADMIN) &&
+		!ns_capable(user_ns, CAP_VE_SYS_ADMIN))
 		return -EPERM;
 
+	if (!ns_capable(user_ns, CAP_SYS_ADMIN) &&
+	    (unshare_flags & (CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWNET)))
+		return -EPERM;
+
+	if (unshare_flags & CLONE_NEWNET)
+		return -EINVAL;
 	*new_nsp = create_new_namespaces(unshare_flags, current, user_ns,
 					 new_fs ? new_fs : current->fs);
 	if (IS_ERR(*new_nsp)) {

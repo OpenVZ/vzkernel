@@ -63,6 +63,7 @@
 #include <linux/binfmts.h>
 #include <linux/sched/sysctl.h>
 #include <linux/kexec.h>
+#include <linux/ve_task.h>
 
 #include <asm/uaccess.h>
 #include <asm/processor.h>
@@ -103,7 +104,6 @@ extern int core_uses_pid;
 extern char core_pattern[];
 extern unsigned int core_pipe_limit;
 #endif
-extern int pid_max;
 extern int pid_max_min, pid_max_max;
 extern int percpu_pagelist_fraction;
 extern int compat_log;
@@ -270,6 +270,16 @@ static int max_sched_tunable_scaling = SCHED_TUNABLESCALING_END-1;
 static int min_extfrag_threshold;
 static int max_extfrag_threshold = 1000;
 #endif
+
+static int proc_dointvec_pidmax(struct ctl_table *table, int write,
+		  void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	struct ctl_table tmp;
+
+	tmp = *table;
+	tmp.data = &current->nsproxy->pid_ns->pid_max;
+	return proc_dointvec_minmax(&tmp, write, buffer, lenp, ppos);
+}
 
 static struct ctl_table kern_table[] = {
 	{
@@ -444,6 +454,17 @@ static struct ctl_table kern_table[] = {
 		.extra1		= &one,
 	},
 #endif
+#ifdef CONFIG_CFS_CPULIMIT
+	{
+		.procname	= "sched_cpulimit_scale_cpufreq",
+		.data		= &sysctl_sched_cpulimit_scale_cpufreq,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+		.extra1		= &zero,
+		.extra2		= &one,
+	},
+#endif
 #ifdef CONFIG_PROVE_LOCKING
 	{
 		.procname	= "prove_locking",
@@ -557,6 +578,13 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= proc_dointvec,
 	},
 #endif
+	{
+		.procname	= "alloc_fail_warn",
+		.data		= &alloc_fail_warn,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
 #ifdef __hppa__
 	{
 		.procname	= "soft-power",
@@ -652,7 +680,7 @@ static struct ctl_table kern_table[] = {
 		.procname	= "hotplug",
 		.data		= &uevent_helper,
 		.maxlen		= UEVENT_HELPER_PATH_LEN,
-		.mode		= 0644,
+		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= proc_dostring,
 	},
 
@@ -747,10 +775,10 @@ static struct ctl_table kern_table[] = {
 #endif
 	{
 		.procname	= "pid_max",
-		.data		= &pid_max,
+		.data		= NULL,
 		.maxlen		= sizeof (int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec_minmax,
+		.mode		= 0644 | S_ISVTX,
+		.proc_handler	= proc_dointvec_pidmax,
 		.extra1		= &pid_max_min,
 		.extra2		= &pid_max_max,
 	},
@@ -766,7 +794,7 @@ static struct ctl_table kern_table[] = {
 		.procname	= "printk",
 		.data		= &console_loglevel,
 		.maxlen		= 4*sizeof(int),
-		.mode		= 0644,
+		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= proc_dointvec,
 	},
 	{
@@ -809,6 +837,15 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= proc_dointvec_minmax_sysadmin,
 		.extra1		= &zero,
 		.extra2		= &two,
+	},
+#endif
+#ifdef CONFIG_VE
+	{
+		.procname	= "ve_meminfo",
+		.data		= &glob_ve_meminfo,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec,
 	},
 #endif
 	{
@@ -939,9 +976,11 @@ static struct ctl_table kern_table[] = {
 #if defined(CONFIG_MMU)
 	{
 		.procname	= "randomize_va_space",
-		.data		= &randomize_va_space,
+		.data		= &_randomize_va_space,
+		.extra1		= (void *)offsetof(struct ve_struct,
+							_randomize_va_space),
 		.maxlen		= sizeof(int),
-		.mode		= 0644,
+		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= proc_dointvec,
 	},
 #endif
@@ -1431,7 +1470,7 @@ static struct ctl_table vm_table[] = {
 		.procname	= "mmap_min_addr",
 		.data		= &dac_mmap_min_addr,
 		.maxlen		= sizeof(unsigned long),
-		.mode		= 0644,
+		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= mmap_min_addr_handler,
 	},
 #endif
@@ -1500,6 +1539,38 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_doulongvec_minmax,
 	},
+#ifdef CONFIG_MEMORY_GANGS_MIGRATION
+	{
+		.procname	= "gangs_migration_max_isolate",
+		.data		= &gangs_migration_max_isolate,
+		.maxlen		= sizeof(gangs_migration_max_isolate),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec_minmax,
+		.extra1		= &one,
+	},
+	{
+		.procname	= "gangs_migration_min_batch",
+		.data		= &gangs_migration_min_batch,
+		.maxlen		= sizeof(gangs_migration_min_batch),
+		.mode		= 0644,
+		.proc_handler	= &gangs_migration_batch_sysctl_handler,
+	},
+	{
+		.procname	= "gangs_migration_max_batch",
+		.data		= &gangs_migration_max_batch,
+		.maxlen		= sizeof(gangs_migration_max_batch),
+		.mode		= 0644,
+		.proc_handler	= &gangs_migration_batch_sysctl_handler,
+	},
+	{
+		.procname	= "gangs_migration_interval",
+		.data		= &gangs_migration_interval,
+		.maxlen		= sizeof(gangs_migration_interval),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec_minmax,
+		.extra1		= &zero,
+	},
+#endif
 	{ }
 };
 
@@ -1677,6 +1748,13 @@ static struct ctl_table fs_table[] = {
 };
 
 static struct ctl_table debug_table[] = {
+	{
+		.procname	= "decode_call_traces",
+		.data		= &decode_call_traces,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
 #ifdef CONFIG_SYSCTL_EXCEPTION_TRACE
 	{
 		.procname	= "exception-trace",
@@ -2698,6 +2776,55 @@ int proc_doulongvec_ms_jiffies_minmax(struct ctl_table *table, int write,
 
 
 #endif /* CONFIG_PROC_SYSCTL */
+
+#ifdef CONFIG_PID_NS
+#include <linux/pid_namespace.h>
+
+static int proc_pid_ns_hide_child(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int tmp, res;
+
+	tmp = (current->nsproxy->pid_ns->flags & PID_NS_HIDE_CHILD) ? 1 : 0;
+
+	res = __do_proc_dointvec(&tmp, table, write, buffer,
+			       lenp, ppos, NULL, NULL);
+	if (res || !write)
+		return res;
+
+	if (tmp)
+		current->nsproxy->pid_ns->flags |= PID_NS_HIDE_CHILD;
+	else
+		current->nsproxy->pid_ns->flags &= ~PID_NS_HIDE_CHILD;
+	return 0;
+}
+
+static struct ctl_table pid_ns_kern_table[] = {
+	{
+		.procname	= "pid_ns_hide_child",
+		.maxlen		= sizeof(int),
+		.mode		= 0600,
+		.proc_handler	= proc_pid_ns_hide_child,
+	},
+	{}
+};
+
+static struct ctl_table pid_ns_root_table[] = {
+	{
+		.procname	= "kernel",
+		.mode		= 0555,
+		.child		= pid_ns_kern_table,
+	},
+	{}
+};
+
+static __init int pid_ns_sysctl_init(void)
+{
+	register_sysctl_table(pid_ns_root_table);
+	return 0;
+}
+postcore_initcall(pid_ns_sysctl_init);
+#endif /* CONFIG_PID_NS */
 
 /*
  * No sense putting this after each symbol definition, twice,

@@ -3825,7 +3825,7 @@ static struct file_lock *nfs4_alloc_init_lease(struct nfs4_file *fp, int flag)
 {
 	struct file_lock *fl;
 
-	fl = locks_alloc_lock();
+	fl = locks_alloc_lock(1);
 	if (!fl)
 		return NULL;
 	fl->fl_lmops = &nfsd_lease_mng_ops;

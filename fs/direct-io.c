@@ -721,6 +721,8 @@ submit_page_section(struct dio *dio, struct dio_submit *sdio, struct page *page,
 {
 	int ret = 0;
 
+	virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_PREPARE, NULL);
+
 	if (dio->rw & WRITE) {
 		/*
 		 * Read accounting is performed in submit_bio()

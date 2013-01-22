@@ -399,7 +399,7 @@ config TASK_XACCT
 
 config TASK_IO_ACCOUNTING
 	bool "Enable per-task storage I/O accounting"
-	depends on TASK_XACCT
+	depends on TASK_XACCT && BEANCOUNTERS
 	help
 	  Collect information on the number of bytes of storage I/O which this
 	  task has caused.
@@ -815,6 +815,19 @@ config NUMA_BALANCING
 
 	  This system will be inactive on UMA systems.
 
+config VZ_FAIRSCHED
+	bool "OpenVZ fairsched compat"
+	select CPUSETS
+	select CGROUP_CPUACCT
+	select CGROUP_SCHED
+	select FAIR_GROUP_SCHED
+	select CFS_BANDWIDTH
+	select CFS_CPULIMIT
+	default y
+	help
+	  This option add task cpu cgroup control with OpenVZ compatible
+	  syscall and procfs interface.
+
 menuconfig CGROUPS
 	boolean "Control Group support"
 	depends on EVENTFD
@@ -876,6 +889,7 @@ config CGROUP_CPUACCT
 
 config RESOURCE_COUNTERS
 	bool "Resource counters"
+	depends on !BEANCOUNTERS
 	help
 	  This option enables controller independent resource accounting
 	  infrastructure that works with cgroups.
@@ -994,6 +1008,10 @@ config CFS_BANDWIDTH
 	  set are considered to be unconstrained and will run with no
 	  restriction.
 	  See tip/Documentation/scheduler/sched-bwc.txt for more information.
+
+config CFS_CPULIMIT
+	bool
+	depends on CFS_BANDWIDTH
 
 config RT_GROUP_SCHED
 	bool "Group scheduling for SCHED_RR/FIFO"

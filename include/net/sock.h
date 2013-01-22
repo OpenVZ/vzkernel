@@ -1442,6 +1442,7 @@ sk_rmem_schedule(struct sock *sk, struct sk_buff *skb, int size)
 {
 	if (!sk_has_account(sk))
 		return true;
+
 	return size<= sk->sk_forward_alloc ||
 		__sk_mem_schedule(sk, size, SK_MEM_RECV) ||
 		skb_pfmemalloc(skb);
@@ -2305,6 +2306,13 @@ static inline void sk_change_net(struct sock *sk, struct net *net)
 		put_net(current_net);
 		sock_net_set(sk, net);
 	}
+}
+
+static inline void sk_change_net_get(struct sock *sk, struct net *net)
+{
+	struct net *old_net = sock_net(sk);
+	sock_net_set(sk, get_net(net));
+	put_net(old_net);
 }
 
 static inline struct sock *skb_steal_sock(struct sk_buff *skb)

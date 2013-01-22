@@ -248,11 +248,6 @@ static inline struct task_struct *task_of(struct sched_entity *se)
 #define for_each_sched_entity(se) \
 		for (; se; se = se->parent)
 
-static inline struct cfs_rq *task_cfs_rq(struct task_struct *p)
-{
-	return p->se.cfs_rq;
-}
-
 /* runqueue on which this entity is (to be) queued */
 static inline struct cfs_rq *cfs_rq_of(struct sched_entity *se)
 {
@@ -379,11 +374,6 @@ static inline struct rq *rq_of(struct cfs_rq *cfs_rq)
 #define for_each_sched_entity(se) \
 		for (; se; se = NULL)
 
-static inline struct cfs_rq *task_cfs_rq(struct task_struct *p)
-{
-	return &task_rq(p)->cfs;
-}
-
 static inline struct cfs_rq *cfs_rq_of(struct sched_entity *se)
 {
 	struct task_struct *p = task_of(se);
@@ -426,6 +416,47 @@ find_matching_se(struct sched_entity **se, struct sched_entity **pse)
 }
 
 #endif	/* CONFIG_FAIR_GROUP_SCHED */
+
+#ifdef CONFIG_CFS_BANDWIDTH
+
+#ifdef HAVE_JUMP_LABEL
+static struct static_key __cfs_bandwidth_used;
+
+static inline bool cfs_bandwidth_used(void)
+{
+	return static_key_false(&__cfs_bandwidth_used);
+}
+
+void account_cfs_bandwidth_used(int enabled, int was_enabled)
+{
+	/* only need to count groups transitioning between enabled/!enabled */
+	if (enabled && !was_enabled)
+		static_key_slow_inc(&__cfs_bandwidth_used);
+	else if (!enabled && was_enabled)
+		static_key_slow_dec(&__cfs_bandwidth_used);
+}
+#else /* HAVE_JUMP_LABEL */
+static bool cfs_bandwidth_used(void)
+{
+	return true;
+}
+
+void account_cfs_bandwidth_used(int enabled, int was_enabled) {}
+#endif /* HAVE_JUMP_LABEL */
+
+static inline int cfs_rq_throttled(struct cfs_rq *cfs_rq)
+{
+	return cfs_bandwidth_used() && cfs_rq->throttled;
+}
+
+#else /* !CONFIG_CFS_BANDWIDTH */
+
+static inline int cfs_rq_throttled(struct cfs_rq *cfs_rq)
+{
+	return 0;
+}
+
+#endif /* CONFIG_CFS_BANDWIDTH */
 
 static __always_inline
 void account_cfs_rq_runtime(struct cfs_rq *cfs_rq, u64 delta_exec);
@@ -2607,12 +2638,14 @@ static void enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 			se->statistics.sleep_max = delta;
 
 		se->statistics.sleep_start = 0;
-		se->statistics.sum_sleep_runtime += delta;
 
 		if (tsk) {
 			account_scheduler_latency(tsk, delta >> 10, 1);
 			trace_sched_stat_sleep(tsk, delta);
-		}
+		} else
+			delta = SCALE_IDLE_TIME(delta, se);
+
+		se->statistics.sum_sleep_runtime += delta;
 	}
 	if (se->statistics.block_start) {
 		u64 delta = rq_clock(rq_of(cfs_rq)) - se->statistics.block_start;
@@ -2624,7 +2657,6 @@ static void enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 			se->statistics.block_max = delta;
 
 		se->statistics.block_start = 0;
-		se->statistics.sum_sleep_runtime += delta;
 
 		if (tsk) {
 			if (tsk->in_iowait) {
@@ -2646,9 +2678,63 @@ static void enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 						delta >> 20);
 			}
 			account_scheduler_latency(tsk, delta >> 10, 0);
+		} else {
+			delta = SCALE_IDLE_TIME(delta, se);
+			se->statistics.iowait_sum += delta;
 		}
+
+		se->statistics.sum_sleep_runtime += delta;
 	}
 #endif
+}
+
+static void dequeue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+#ifdef CONFIG_SCHEDSTATS
+	if (entity_is_task(se)) {
+		struct task_struct *tsk = task_of(se);
+
+		if (tsk->state & TASK_INTERRUPTIBLE)
+			se->statistics.sleep_start = rq_clock(rq_of(cfs_rq));
+		if (tsk->state & TASK_UNINTERRUPTIBLE)
+			se->statistics.block_start = rq_clock(rq_of(cfs_rq));
+		if (tsk->in_iowait)
+			cfs_rq->nr_iowait++;
+	} else if (!cfs_rq_throttled(group_cfs_rq(se))) {
+		if (group_cfs_rq(se)->nr_iowait)
+			se->statistics.block_start = rq_clock(rq_of(cfs_rq));
+		else
+			se->statistics.sleep_start = rq_clock(rq_of(cfs_rq));
+	}
+#endif
+}
+
+void start_cfs_idle_time_accounting(int cpu)
+{
+	struct task_group *tg;
+	struct sched_entity *se;
+
+	list_for_each_entry(tg, &task_groups, list) {
+		if (tg != &root_task_group &&
+		    !tg->cfs_rq[cpu]->nr_running) {
+			se = tg->se[cpu];
+			dequeue_sleeper(cfs_rq_of(se), se);
+		}
+	}
+}
+
+void stop_cfs_idle_time_accounting(int cpu)
+{
+	struct task_group *tg;
+	struct sched_entity *se;
+
+	list_for_each_entry(tg, &task_groups, list) {
+		if (tg != &root_task_group &&
+		    !tg->cfs_rq[cpu]->nr_running) {
+			se = tg->se[cpu];
+			enqueue_sleeper(cfs_rq_of(se), se);
+		}
+	}
 }
 
 static void check_spread(struct cfs_rq *cfs_rq, struct sched_entity *se)
@@ -2790,18 +2876,8 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	dequeue_entity_load_avg(cfs_rq, se, flags & DEQUEUE_SLEEP);
 
 	update_stats_dequeue(cfs_rq, se);
-	if (flags & DEQUEUE_SLEEP) {
-#ifdef CONFIG_SCHEDSTATS
-		if (entity_is_task(se)) {
-			struct task_struct *tsk = task_of(se);
-
-			if (tsk->state & TASK_INTERRUPTIBLE)
-				se->statistics.sleep_start = rq_clock(rq_of(cfs_rq));
-			if (tsk->state & TASK_UNINTERRUPTIBLE)
-				se->statistics.block_start = rq_clock(rq_of(cfs_rq));
-		}
-#endif
-	}
+	if (flags & DEQUEUE_SLEEP)
+		dequeue_sleeper(cfs_rq, se);
 
 	clear_buddies(cfs_rq, se);
 
@@ -3005,43 +3081,58 @@ entity_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr, int queued)
 
 #ifdef CONFIG_CFS_BANDWIDTH
 
-#ifdef HAVE_JUMP_LABEL
-static struct static_key __cfs_bandwidth_used;
-
-static inline bool cfs_bandwidth_used(void)
-{
-	return static_key_false(&__cfs_bandwidth_used);
-}
-
-void account_cfs_bandwidth_used(int enabled, int was_enabled)
-{
-	/* only need to count groups transitioning between enabled/!enabled */
-	if (enabled && !was_enabled)
-		static_key_slow_inc(&__cfs_bandwidth_used);
-	else if (!enabled && was_enabled)
-		static_key_slow_dec(&__cfs_bandwidth_used);
-}
-#else /* HAVE_JUMP_LABEL */
-static bool cfs_bandwidth_used(void)
-{
-	return true;
-}
-
-void account_cfs_bandwidth_used(int enabled, int was_enabled) {}
-#endif /* HAVE_JUMP_LABEL */
-
-/*
- * default period for cfs group bandwidth.
- * default: 0.1s, units: nanoseconds
- */
-static inline u64 default_cfs_period(void)
-{
-	return 100000000ULL;
-}
-
 static inline u64 sched_cfs_bandwidth_slice(void)
 {
 	return (u64)sysctl_sched_cfs_bandwidth_slice * NSEC_PER_USEC;
+}
+
+static void restart_tg_idle_time_accounting(struct task_group *tg)
+{
+#ifdef CONFIG_SCHEDSTATS
+	int cpu;
+
+	if (tg == &root_task_group)
+		return;
+
+	/*
+	 * XXX: We call enqueue_sleeper/dequeue_sleeper without rq lock for
+	 * the sake of performance, because in the worst case this can only
+	 * lead to an idle/iowait period lost in stats.
+	 */
+	for_each_online_cpu(cpu) {
+		struct sched_entity *se = tg->se[cpu];
+		struct cfs_rq *cfs_rq = tg->cfs_rq[cpu];
+
+		if (!cfs_rq->load.weight) {
+			enqueue_sleeper(cfs_rq_of(se), se);
+			dequeue_sleeper(cfs_rq_of(se), se);
+		}
+	}
+#endif
+}
+
+void update_cfs_bandwidth_idle_scale(struct cfs_bandwidth *cfs_b)
+{
+	u64 runtime = cfs_b->runtime;
+	u64 quota = cfs_b->quota;
+	u64 max_quota = ktime_to_ns(cfs_b->period) * num_online_cpus();
+	struct task_group *tg =
+		container_of(cfs_b, struct task_group, cfs_bandwidth);
+
+	restart_tg_idle_time_accounting(tg);
+
+	/*
+	 * idle_scale = quota_left / (period * nr_idle_cpus)
+	 * nr_idle_cpus = nr_cpus - nr_busy_cpus
+	 * nr_busy_cpus = (quota - quota_left) / period
+	 */
+	if (quota == RUNTIME_INF || quota >= max_quota)
+		cfs_b->idle_scale_inv = CFS_IDLE_SCALE;
+	else if (runtime)
+		cfs_b->idle_scale_inv = div64_u64(CFS_IDLE_SCALE *
+				(max_quota - quota + runtime), runtime);
+	else
+		cfs_b->idle_scale_inv = 0;
 }
 
 /*
@@ -3054,6 +3145,8 @@ static inline u64 sched_cfs_bandwidth_slice(void)
 void __refill_cfs_bandwidth_runtime(struct cfs_bandwidth *cfs_b)
 {
 	u64 now;
+
+	update_cfs_bandwidth_idle_scale(cfs_b);
 
 	if (cfs_b->quota == RUNTIME_INF)
 		return;
@@ -3182,11 +3275,6 @@ void account_cfs_rq_runtime(struct cfs_rq *cfs_rq, u64 delta_exec)
 	__account_cfs_rq_runtime(cfs_rq, delta_exec);
 }
 
-static inline int cfs_rq_throttled(struct cfs_rq *cfs_rq)
-{
-	return cfs_bandwidth_used() && cfs_rq->throttled;
-}
-
 /* check whether cfs_rq, or any parent, is throttled */
 static inline int throttled_hierarchy(struct cfs_rq *cfs_rq)
 {
@@ -3255,6 +3343,8 @@ static void throttle_cfs_rq(struct cfs_rq *cfs_rq)
 	walk_tg_tree_from(cfs_rq->tg, tg_throttle_down, tg_nop, (void *)rq);
 	rcu_read_unlock();
 
+	cfs_rq->throttled = 1;
+
 	task_delta = cfs_rq->h_nr_running;
 	for_each_sched_entity(se) {
 		struct cfs_rq *qcfs_rq = cfs_rq_of(se);
@@ -3273,7 +3363,6 @@ static void throttle_cfs_rq(struct cfs_rq *cfs_rq)
 	if (!se)
 		rq->nr_running -= task_delta;
 
-	cfs_rq->throttled = 1;
 	cfs_rq->throttled_clock = rq_clock(rq);
 	raw_spin_lock(&cfs_b->lock);
 	list_add_tail_rcu(&cfs_rq->throttled_list, &cfs_b->throttled_cfs_rq);
@@ -3631,6 +3720,7 @@ void init_cfs_bandwidth(struct cfs_bandwidth *cfs_b)
 	cfs_b->runtime = 0;
 	cfs_b->quota = RUNTIME_INF;
 	cfs_b->period = ns_to_ktime(default_cfs_period());
+	cfs_b->idle_scale_inv = CFS_IDLE_SCALE;
 
 	INIT_LIST_HEAD(&cfs_b->throttled_cfs_rq);
 	hrtimer_init(&cfs_b->period_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
@@ -3705,11 +3795,6 @@ static void account_cfs_rq_runtime(struct cfs_rq *cfs_rq, u64 delta_exec) {}
 static void check_cfs_rq_runtime(struct cfs_rq *cfs_rq) {}
 static void check_enqueue_throttle(struct cfs_rq *cfs_rq) {}
 static __always_inline void return_cfs_rq_runtime(struct cfs_rq *cfs_rq) {}
-
-static inline int cfs_rq_throttled(struct cfs_rq *cfs_rq)
-{
-	return 0;
-}
 
 static inline int throttled_hierarchy(struct cfs_rq *cfs_rq)
 {
@@ -7363,6 +7448,11 @@ void init_tg_cfs_entry(struct task_group *tg, struct cfs_rq *cfs_rq,
 	se->my_q = cfs_rq;
 	update_load_set(&se->load, 0);
 	se->parent = parent;
+
+#ifdef CONFIG_SCHEDSTATS
+	if (cpu_online(cpu))
+		se->statistics.sleep_start = cpu_clock(cpu);
+#endif
 }
 
 static DEFINE_MUTEX(shares_mutex);
@@ -7430,6 +7520,71 @@ static unsigned int get_rr_interval_fair(struct rq *rq, struct task_struct *task
 	return rr_interval;
 }
 
+#ifdef CONFIG_FAIR_GROUP_SCHED
+static void nr_iowait_dec_fair(struct task_struct *p)
+{
+	struct cfs_rq *cfs_rq = task_cfs_rq(p);
+	struct sched_entity *se = p->se.parent;
+
+	cfs_rq->nr_iowait--;
+
+#ifdef CONFIG_SCHEDSTATS
+	if (!cfs_rq->nr_iowait && se && se->statistics.block_start) {
+		u64 delta;
+		struct rq *rq = rq_of(cfs_rq);
+
+		update_rq_clock(rq);
+
+		delta = rq->clock - se->statistics.block_start;
+
+		if ((s64)delta < 0)
+			delta = 0;
+
+		if (unlikely(delta > se->statistics.block_max))
+			se->statistics.block_max = delta;
+
+		se->statistics.block_start = 0;
+		se->statistics.sleep_start = rq->clock;
+
+		delta = SCALE_IDLE_TIME(delta, se);
+		se->statistics.iowait_sum += delta;
+		se->statistics.sum_sleep_runtime += delta;
+	}
+#endif
+}
+
+static void nr_iowait_inc_fair(struct task_struct *p)
+{
+	struct cfs_rq *cfs_rq = task_cfs_rq(p);
+	struct sched_entity *se = p->se.parent;
+
+	cfs_rq->nr_iowait++;
+
+#ifdef CONFIG_SCHEDSTATS
+	if (cfs_rq->nr_iowait && se && se->statistics.sleep_start) {
+		u64 delta;
+		struct rq *rq = rq_of(cfs_rq);
+
+		update_rq_clock(rq);
+
+		delta = rq->clock - se->statistics.sleep_start;
+
+		if ((s64)delta < 0)
+			delta = 0;
+
+		if (unlikely(delta > se->statistics.sleep_max))
+			se->statistics.sleep_max = delta;
+
+		se->statistics.sleep_start = 0;
+		se->statistics.block_start = rq->clock;
+
+		delta = SCALE_IDLE_TIME(delta, se);
+		se->statistics.sum_sleep_runtime += delta;
+	}
+#endif
+}
+#endif
+
 /*
  * All the scheduling class methods:
  */
@@ -7470,6 +7625,8 @@ const struct sched_class fair_sched_class = {
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	.task_move_group	= task_move_group_fair,
+	.nr_iowait_inc		= nr_iowait_inc_fair,
+	.nr_iowait_dec		= nr_iowait_dec_fair,
 #endif
 };
 

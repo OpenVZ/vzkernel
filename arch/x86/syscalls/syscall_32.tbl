@@ -359,3 +359,17 @@
 350	i386	finit_module		sys_finit_module
 356	i386	memfd_create		sys_memfd_create
 374	i386	userfaultfd		sys_userfaultfd
+
+500	i386	fairsched_mknod		sys_fairsched_mknod
+501	i386	fairsched_rmnod		sys_fairsched_rmnod
+502	i386	fairsched_chwt		sys_fairsched_chwt
+503	i386	fairsched_mvpr		sys_fairsched_mvpr
+504	i386	fairsched_rate		sys_fairsched_rate
+505	i386	fairsched_vcpus		sys_fairsched_vcpus
+506	i386	fairsched_cpumask	sys_fairsched_cpumask
+507	i386	fairsched_nodemask	sys_fairsched_nodemask
+
+510	i386	getluid			sys_getluid
+511	i386	setluid			sys_setluid
+512	i386	setublimit		sys_setublimit			compat_sys_setublimit
+513	i386	ubstat			sys_ubstat			compat_sys_ubstat

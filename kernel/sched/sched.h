@@ -126,6 +126,9 @@ struct cfs_bandwidth {
 	struct hrtimer period_timer, slack_timer;
 	struct list_head throttled_cfs_rq;
 
+#define CFS_IDLE_SCALE 100
+	u64 idle_scale_inv;
+
 	/* statistics */
 	int nr_periods, nr_throttled;
 	u64 throttled_time;
@@ -166,7 +169,18 @@ struct task_group {
 	struct autogroup *autogroup;
 #endif
 
+	struct kernel_cpustat __percpu *cpustat;
+	struct taskstats __percpu *taskstats;
+	unsigned long avenrun[3];	/* loadavg data */
+	struct timespec start_time;
+
 	struct cfs_bandwidth cfs_bandwidth;
+
+#ifdef CONFIG_CFS_CPULIMIT
+#define MAX_CPU_RATE 1024
+	unsigned long cpu_rate;
+	unsigned int nr_cpus;
+#endif
 
 #if defined(CONFIG_FAIR_GROUP_SCHED)
 	/*
@@ -219,6 +233,9 @@ extern void init_tg_cfs_entry(struct task_group *tg, struct cfs_rq *cfs_rq,
 			struct sched_entity *parent);
 extern void init_cfs_bandwidth(struct cfs_bandwidth *cfs_b);
 extern int sched_group_set_shares(struct task_group *tg, unsigned long shares);
+extern int sched_cgroup_set_shares(struct cgroup *cgrp, unsigned long shares);
+unsigned long sched_cgroup_get_shares(struct cgroup *cgrp);
+extern unsigned long sched_cgroup_get_nr_running(struct cgroup *cgrp);
 
 extern void __refill_cfs_bandwidth_runtime(struct cfs_bandwidth *cfs_b);
 extern void __start_cfs_bandwidth(struct cfs_bandwidth *cfs_b);
@@ -252,6 +269,9 @@ struct cfs_bandwidth { };
 struct cfs_rq {
 	struct load_weight load;
 	unsigned int nr_running, h_nr_running;
+
+	unsigned long nr_iowait;
+	unsigned long nr_unint;
 
 	u64 exec_clock;
 	u64 min_vruntime;
@@ -453,6 +473,9 @@ struct rq {
 	struct list_head leaf_rt_rq_list;
 #endif
 
+	/* nr_running last seen in update_cpu_load() */
+	unsigned long nr_active;
+
 	/*
 	 * This is part of a global counter where only the total sum
 	 * over all CPUs matters. A task can increase this counter on
@@ -460,6 +483,9 @@ struct rq {
 	 * it on another CPU. Always updated under the runqueue lock:
 	 */
 	unsigned long nr_uninterruptible;
+
+	unsigned long nr_sleeping;
+	unsigned long nr_stopped;
 
 	struct task_struct *curr, *idle, *stop;
 	unsigned long next_balance;
@@ -1068,6 +1094,8 @@ struct sched_class {
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	void (*task_move_group) (struct task_struct *p, int on_rq);
 #endif
+	void (*nr_iowait_inc) (struct task_struct *p);
+	void (*nr_iowait_dec) (struct task_struct *p);
 	RH_KABI_EXTEND(void (*update_curr) (struct rq *rq))
 };
 
@@ -1401,6 +1429,49 @@ extern void init_cfs_rq(struct cfs_rq *cfs_rq);
 extern void init_rt_rq(struct rt_rq *rt_rq, struct rq *rq);
 
 extern void account_cfs_bandwidth_used(int enabled, int was_enabled);
+
+#ifdef CONFIG_FAIR_GROUP_SCHED
+static inline struct cfs_rq *task_cfs_rq(struct task_struct *p)
+{
+	return p->se.cfs_rq;
+}
+#else
+static inline struct cfs_rq *task_cfs_rq(struct task_struct *p)
+{
+	return &task_rq(p)->cfs;
+}
+#endif
+
+#ifdef CONFIG_CFS_BANDWIDTH
+/*
+ * default period for cfs group bandwidth.
+ * default: 0.1s, units: nanoseconds
+ */
+static inline u64 default_cfs_period(void)
+{
+	return 100000000ULL;
+}
+
+static inline u64 SCALE_IDLE_TIME(u64 delta, struct sched_entity *se)
+{
+	struct cfs_bandwidth *cfs_b = &se->my_q->tg->cfs_bandwidth;
+	unsigned long idle_scale_inv = cfs_b->idle_scale_inv;
+
+	if (!idle_scale_inv)
+		delta = 0;
+	else if (idle_scale_inv != CFS_IDLE_SCALE)
+		delta = div64_u64(delta * CFS_IDLE_SCALE, idle_scale_inv);
+
+	return delta;
+}
+
+extern void update_cfs_bandwidth_idle_scale(struct cfs_bandwidth *cfs_b);
+#else
+#define SCALE_IDLE_TIME(delta, se) (delta)
+#endif
+
+extern void start_cfs_idle_time_accounting(int cpu);
+extern void stop_cfs_idle_time_accounting(int cpu);
 
 #ifdef CONFIG_NO_HZ_COMMON
 enum rq_nohz_flag_bits {

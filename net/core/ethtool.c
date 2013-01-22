@@ -1662,8 +1662,12 @@ int dev_ethtool(struct net *net, struct ifreq *ifr)
 	case ETHTOOL_GET_TS_INFO:
 	case ETHTOOL_GEEE:
 		break;
-	default:
+	case ETHTOOL_SEEPROM:
 		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+			return -EPERM;
+	default:
+		if (!ns_capable(net->user_ns, CAP_NET_ADMIN) &&
+			!ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
 			return -EPERM;
 	}
 

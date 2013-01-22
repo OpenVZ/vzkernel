@@ -48,6 +48,7 @@
 #include <linux/memblock.h>
 #include <linux/seq_file.h>
 #include <linux/crash_dump.h>
+#include <linux/ratelimit.h>
 
 #include <trace/events/xen.h>
 

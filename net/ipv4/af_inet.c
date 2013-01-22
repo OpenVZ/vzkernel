@@ -306,6 +306,10 @@ lookup_protocol:
 			goto out_rcu_unlock;
 	}
 
+	err = vz_security_protocol_check(answer->protocol);
+	if (err < 0)
+		goto out_rcu_unlock;
+
 	err = -EPERM;
 	if (sock->type == SOCK_RAW && !kern &&
 	    !ns_capable(net->user_ns, CAP_NET_RAW))

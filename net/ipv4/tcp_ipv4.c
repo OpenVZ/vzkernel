@@ -790,7 +790,8 @@ static void tcp_v4_timewait_ack(struct sock *sk, struct sk_buff *skb)
 	struct tcp_timewait_sock *tcptw = tcp_twsk(sk);
 
 	tcp_v4_send_ack(skb, tcptw->tw_snd_nxt, tcptw->tw_rcv_nxt,
-			tcptw->tw_rcv_wnd >> tw->tw_rcv_wscale,
+			tcptw->tw_rcv_wnd >>
+				(tw->tw_rcv_wscale & TW_WSCALE_MASK),
 			tcp_time_stamp + tcptw->tw_ts_offset,
 			tcptw->tw_ts_recent,
 			tw->tw_bound_dev_if,
@@ -1475,7 +1476,7 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 			}
 		}
 		tcp_rcv_established(sk, skb, tcp_hdr(skb), skb->len);
-		return 0;
+		goto restore_context;
 	}
 
 	if (skb->len < tcp_hdrlen(skb) || tcp_checksum_complete(skb))
@@ -1492,7 +1493,7 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 				rsk = nsk;
 				goto reset;
 			}
-			return 0;
+			goto restore_context;
 		}
 	} else
 		sock_rps_save_rxhash(sk, skb);
@@ -1501,6 +1502,8 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 		rsk = sk;
 		goto reset;
 	}
+
+restore_context:
 	return 0;
 
 reset:
@@ -1512,7 +1515,7 @@ discard:
 	 * might be destroyed here. This current version compiles correctly,
 	 * but you have been warned.
 	 */
-	return 0;
+	goto restore_context;
 
 csum_err:
 	TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_CSUMERRORS);
@@ -1939,7 +1942,7 @@ get_req:
 	}
 get_sk:
 	sk_nulls_for_each_from(sk, node) {
-		if (!net_eq(sock_net(sk), net))
+		if (!net_access_allowed(sock_net(sk), net))
 			continue;
 		if (sk->sk_family == st->family) {
 			cur = sk;
@@ -2014,7 +2017,7 @@ static void *established_get_first(struct seq_file *seq)
 		spin_lock_bh(lock);
 		sk_nulls_for_each(sk, node, &tcp_hashinfo.ehash[st->bucket].chain) {
 			if (sk->sk_family != st->family ||
-			    !net_eq(sock_net(sk), net)) {
+			    !net_access_allowed(sock_net(sk), net)) {
 				continue;
 			}
 			rc = sk;
@@ -2039,7 +2042,8 @@ static void *established_get_next(struct seq_file *seq, void *cur)
 	sk = sk_nulls_next(sk);
 
 	sk_nulls_for_each_from(sk, node) {
-		if (sk->sk_family == st->family && net_eq(sock_net(sk), net))
+		if (sk->sk_family == st->family &&
+		    net_access_allowed(sock_net(sk), net))
 			return sk;
 	}
 
@@ -2510,3 +2514,90 @@ void __init tcp_v4_init(void)
 	if (register_pernet_subsys(&tcp_sk_ops))
 		panic("Failed to create the TCP control socket.\n");
 }
+
+#ifdef CONFIG_VE
+static void tcp_kill_ve_onesk(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	/* Check the assumed state of the socket. */
+	if (!sock_flag(sk, SOCK_DEAD)) {
+		printk(KERN_WARNING "Killing sk: dead %d, state %d, "
+			"wrseq %u unseq %u, wrqu %d.\n",
+			sock_flag(sk, SOCK_DEAD), sk->sk_state,
+			tp->write_seq, tp->snd_una,
+			!skb_queue_empty(&sk->sk_write_queue));
+		sk->sk_err = ECONNRESET;
+		sk->sk_error_report(sk);
+	}
+
+	tcp_send_active_reset(sk, GFP_ATOMIC);
+	switch (sk->sk_state) {
+		case TCP_FIN_WAIT1:
+		case TCP_CLOSING:
+			/* In these 2 states the peer may want us to retransmit
+			 * some data and/or FIN.  Entering "resetting mode"
+			 * instead.
+			 */
+			tcp_time_wait(sk, TCP_CLOSE, 0);
+			break;
+		case TCP_FIN_WAIT2:
+			/* By some reason the socket may stay in this state
+			 * without turning into a TW bucket.  Fix it.
+			 */
+			tcp_time_wait(sk, TCP_FIN_WAIT2, 0);
+			break;
+		default:
+			/* Just jump into CLOSED state. */
+			tcp_done(sk);
+			break;
+	}
+}
+
+void tcp_v4_kill_ve_sockets(struct ve_struct *envid)
+{
+	struct inet_ehash_bucket *head;
+	int i, retry;
+
+	/* alive */
+again:
+	retry = 0;
+	local_bh_disable();
+	head = tcp_hashinfo.ehash;
+	for (i = 0; i < tcp_hashinfo.ehash_mask; i++) {
+		struct sock *sk;
+		struct hlist_nulls_node *node;
+		spinlock_t *lock = inet_ehash_lockp(&tcp_hashinfo, i);
+more_work:
+		spin_lock(lock);
+		sk_nulls_for_each(sk, node, &head[i].chain) {
+			if (sock_net(sk)->owner_ve == envid) {
+				sock_hold(sk);
+				spin_unlock(lock);
+
+				bh_lock_sock(sk);
+				if (sock_owned_by_user(sk)) {
+					retry = 1;
+					bh_unlock_sock(sk);
+					sock_put(sk);
+					break;
+				}
+				/* sk might have disappeared from the hash before
+				 * we got the lock */
+				if (sk->sk_state != TCP_CLOSE)
+					tcp_kill_ve_onesk(sk);
+				bh_unlock_sock(sk);
+				sock_put(sk);
+				goto more_work;
+			}
+		}
+		spin_unlock(lock);
+	}
+	local_bh_enable();
+	if (retry) {
+		schedule_timeout_interruptible(HZ);
+		goto again;
+	}
+}
+EXPORT_SYMBOL(tcp_v4_kill_ve_sockets);
+#endif

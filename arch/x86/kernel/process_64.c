@@ -52,6 +52,11 @@
 
 asmlinkage extern void ret_from_fork(void);
 
+
+asmlinkage void kernel_execve(const char *filename, char *const argv[], 
+				char *const envp[]) __asm__ ("kernel_execve");
+EXPORT_SYMBOL(kernel_execve);
+
 DEFINE_PER_CPU(unsigned long, old_rsp);
 
 /* Prints also some state that isn't saved in the pt_regs */
@@ -595,4 +600,21 @@ unsigned long KSTK_ESP(struct task_struct *task)
 {
 	return (test_tsk_thread_flag(task, TIF_IA32)) ?
 			(task_pt_regs(task)->sp) : ((task)->thread.usersp);
+}
+
+long do_fork_kthread(unsigned long clone_flags,
+	      unsigned long stack_start,
+	      struct pt_regs *regs,
+	      unsigned long stack_size,
+	      int __user *parent_tidptr,
+	      int __user *child_tidptr)
+{
+	if (ve_allow_kthreads || ve_is_super(get_exec_env()))
+		return do_fork(clone_flags, stack_start, regs, stack_size,
+				parent_tidptr, child_tidptr);
+
+	/* Don't allow kernel_thread() inside VE */
+	printk("kernel_thread call inside container\n");
+	dump_stack();
+	return -EPERM;
 }

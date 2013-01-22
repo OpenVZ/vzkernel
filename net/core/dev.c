@@ -137,6 +137,9 @@
 
 #include "net-sysfs.h"
 
+#include <bc/beancounter.h>
+#include <bc/kmem.h>
+
 /* Instead of increasing this, you should create a hash table. */
 #define MAX_GRO_SKBS 8
 
@@ -182,18 +185,6 @@ seqcount_t devnet_rename_seq;
 static inline void dev_base_seq_inc(struct net *net)
 {
 	while (++net->dev_base_seq == 0);
-}
-
-static inline struct hlist_head *dev_name_hash(struct net *net, const char *name)
-{
-	unsigned int hash = full_name_hash(name, strnlen(name, IFNAMSIZ));
-
-	return &net->dev_name_head[hash_32(hash, NETDEV_HASHBITS)];
-}
-
-static inline struct hlist_head *dev_index_hash(struct net *net, int ifindex)
-{
-	return &net->dev_index_head[ifindex & (NETDEV_HASHENTRIES - 1)];
 }
 
 static inline void rps_lock(struct softnet_data *sd)
@@ -4751,8 +4742,13 @@ static int __dev_set_promiscuity(struct net_device *dev, int inc, bool notify)
 			return -EOVERFLOW;
 		}
 	}
-	if (dev->flags != old_flags) {
-		pr_info("device %s %s promiscuous mode\n",
+	/*
+	 * Promiscous mode on LOOPBACK/POINTTOPOINT devices does
+	 * not mean anything
+	 */
+	if ((dev->flags != old_flags) &&
+			!(dev->flags & (IFF_LOOPBACK | IFF_POINTOPOINT))) {
+		ve_printk(VE_LOG, KERN_INFO "device %s %s promiscuous mode\n",
 			dev->name,
 			dev->flags & IFF_PROMISC ? "entered" : "left");
 		if (audit_enabled) {
@@ -5518,6 +5514,10 @@ int register_netdevice(struct net_device *dev)
 	BUG_ON(dev->reg_state != NETREG_UNINITIALIZED);
 	BUG_ON(!net);
 
+	ret = -EPERM;
+	if (!ve_is_super(net->owner_ve) && ve_is_dev_movable(dev))
+		goto out;
+
 	spin_lock_init(&dev->addr_list_lock);
 	netdev_set_addr_lockdep_class(dev);
 
@@ -5651,6 +5651,59 @@ err_uninit:
 }
 EXPORT_SYMBOL(register_netdevice);
 
+/*
+ * We do horrible things -- we left a netdevice
+ * in "leaked" state, which means we release as much
+ * resources as possible but the device will remain
+ * present in namespace because someone holds a reference.
+ *
+ * The idea is to be able to force stop VE.
+ */
+static void ve_netdev_leak(struct net_device *dev)
+{
+	struct napi_struct *p, *n;
+
+	dev->is_leaked = 1;
+	barrier();
+
+	/*
+	 * Make sure we're unable to tx/rx
+	 * network packets to outside.
+	 */
+	WARN_ON_ONCE(dev->flags & IFF_UP);
+	WARN_ON_ONCE(dev->qdisc != &noop_qdisc);
+
+	rtnl_lock();
+
+	/*
+	 * No address and napi after that.
+	 */
+	dev_addr_flush(dev);
+	list_for_each_entry_safe(p, n, &dev->napi_list, dev_list)
+		netif_napi_del(p);
+
+	/*
+	 * No release_net() here since the device remains
+	 * present in the namespace.
+	 */
+
+	__rtnl_unlock();
+
+	/*
+	 * Since we've already screwed the device and releasing
+	 * it in a normal way is not possible anymore, we're
+	 * to be sure the device will remain here forever.
+	 */
+	dev_hold(dev);
+
+	synchronize_net();
+
+	pr_emerg("Device (%s:%d:%u:%p) marked as leaked\n",
+			dev->name, netdev_refcnt_read(dev) - 1,
+			dev_net(dev)->owner_ve->veid, dev);
+	dst_cache_dump();
+}
+
 /**
  *	init_dummy_netdev	- init a dummy network device for NAPI
  *	@dev: device to init
@@ -5738,10 +5791,11 @@ EXPORT_SYMBOL(netdev_refcnt_read);
  * We can get stuck here if buggy protocols don't correctly
  * call dev_put.
  */
-static void netdev_wait_allrefs(struct net_device *dev)
+static int netdev_wait_allrefs(struct net_device *dev)
 {
 	unsigned long rebroadcast_time, warning_time;
 	int refcnt;
+	int i = 0;
 
 	linkwatch_forget_dev(dev);
 
@@ -5781,11 +5835,25 @@ static void netdev_wait_allrefs(struct net_device *dev)
 		refcnt = netdev_refcnt_read(dev);
 
 		if (time_after(jiffies, warning_time + 10 * HZ)) {
-			pr_emerg("unregister_netdevice: waiting for %s to become free. Usage count = %d\n",
-				 dev->name, refcnt);
+			pr_emerg("unregister_netdevice: waiting for %s=%p to "
+				"become free. Usage count = %d\n ve=%u",
+				 dev->name, dev, refcnt,
+				 dev_net(dev)->owner_ve->veid);
 			warning_time = jiffies;
 		}
+
+		/*
+		 * If device has lost the reference we might stuck
+		 * in this loop forever not having a chance the VE
+		 * to stop.
+		 */
+		if (++i > 200) { /* give 50 seconds to try */
+			ve_netdev_leak(dev);
+			return -EBUSY;
+		}
 	}
+
+	return 0;
 }
 
 /* The sequence is:
@@ -5821,7 +5889,6 @@ void netdev_run_todo(void)
 
 	__rtnl_unlock();
 
-
 	/* Wait for rcu callbacks to finish before next phase */
 	if (!list_empty(&list))
 		rcu_barrier();
@@ -5844,7 +5911,12 @@ void netdev_run_todo(void)
 
 		dev->reg_state = NETREG_UNREGISTERED;
 
-		netdev_wait_allrefs(dev);
+		/*
+		 * Even if device get stuck here we are
+		 * to proceed the rest of the list.
+		 */
+		if (netdev_wait_allrefs(dev))
+			continue;
 
 		/* paranoia */
 		BUG_ON(netdev_refcnt_read(dev));
@@ -5852,6 +5924,9 @@ void netdev_run_todo(void)
 		WARN_ON(rcu_access_pointer(dev->ip6_ptr));
 		WARN_ON(dev->dn_ptr);
 
+		/* It must be the very last action,
+		 * after this 'dev' may point to freed up memory.
+		 */
 		if (dev->destructor)
 			dev->destructor(dev);
 
@@ -6000,8 +6075,10 @@ struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
 	p = kzalloc(alloc_size, GFP_KERNEL | __GFP_NOWARN | __GFP_REPEAT);
 	if (!p)
 		p = vzalloc(alloc_size);
-	if (!p)
+	if (!p) {
+		pr_err("alloc_netdev: Unable to allocate device\n");
 		return NULL;
+	}
 
 	dev = PTR_ALIGN(p, NETDEV_ALIGN);
 	dev->padded = (char *)dev - (char *)p;
@@ -6070,6 +6147,13 @@ EXPORT_SYMBOL(alloc_netdev_mqs);
 void free_netdev(struct net_device *dev)
 {
 	struct napi_struct *p, *n;
+
+	if (dev->is_leaked) {
+		pr_emerg("%s: device %s=%p is leaked\n",
+				__func__, dev->name, dev);
+		dump_stack();
+		return;
+	}
 
 	netif_free_tx_queues(dev);
 #ifdef CONFIG_RPS
@@ -6179,6 +6263,47 @@ void unregister_netdev(struct net_device *dev)
 }
 EXPORT_SYMBOL(unregister_netdev);
 
+#if defined(CONFIG_SYSFS) && defined(CONFIG_VE)
+extern int ve_netdev_add(struct device *dev, struct ve_struct *ve);
+extern int ve_netdev_delete(struct device *dev, struct ve_struct *ve);
+
+/*
+ *     netdev_fixup_sysfs - create/remove dirlinks to the net device directory
+ *     @dev: net device
+ *     @op: operation type registration/deregistration
+ */
+static void netdev_fixup_sysfs(struct net_device *dev,
+				unsigned long op)
+{
+	struct ve_struct *ve = get_exec_env();
+	int err;
+
+	/* Super VE do not need to patch sysfs entries */
+	if (ve_is_super(ve))
+		return;
+
+	/* FIXME
+	if (op == NETDEV_REGISTER)
+		err = ve_netdev_add(&dev->dev, ve);
+	else
+		err = ve_netdev_delete(&dev->dev, ve);
+	*/
+
+	/*
+	 * Just tell about error in case the state can't
+	 * be properly reverted at net device namespace
+	 * changing
+	 */
+	WARN_ON(err);
+}
+#else
+static inline void netdev_fixup_sysfs(struct net_device *dev,
+					unsigned long op)
+{
+	return 0;
+}
+#endif
+
 /**
  *	dev_change_net_namespace - move device to different nethost namespace
  *	@dev: device
@@ -6262,6 +6387,8 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
 	/* Send a netdev-removed uevent to the old namespace */
 	kobject_uevent(&dev->dev.kobj, KOBJ_REMOVE);
 
+	netdev_fixup_sysfs(dev, NETDEV_UNREGISTER);
+
 	/* Actually switch the network namespace */
 	dev_net_set(dev, net);
 
@@ -6278,6 +6405,7 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
 
 	/* Fixup kobjects */
 	err = device_rename(&dev->dev, dev->name);
+	netdev_fixup_sysfs(dev, NETDEV_REGISTER);
 	WARN_ON(err);
 
 	/* Add the device back in the hashes */
@@ -6371,7 +6499,7 @@ netdev_features_t netdev_increment_features(netdev_features_t all,
 		mask |= NETIF_F_ALL_CSUM;
 	mask |= NETIF_F_VLAN_CHALLENGED;
 
-	all |= one & (NETIF_F_ONE_FOR_ALL|NETIF_F_ALL_CSUM) & mask;
+	all |= one & (NETIF_F_ONE_FOR_ALL|NETIF_F_ALL_CSUM|NETIF_F_VIRTUAL) & mask;
 	all &= one | ~NETIF_F_ALL_FOR_ALL;
 
 	/* If one device supports hw checksumming, set for all. */

@@ -1297,7 +1297,7 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 		tcp_rcv_established(sk, skb, tcp_hdr(skb), skb->len);
 		if (opt_skb)
 			goto ipv6_pktoptions;
-		return 0;
+		goto restore_context;
 	}
 
 	if (skb->len < tcp_hdrlen(skb) || tcp_checksum_complete(skb))
@@ -1319,7 +1319,7 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 				goto reset;
 			if (opt_skb)
 				__kfree_skb(opt_skb);
-			return 0;
+			goto restore_context;
 		}
 	} else
 		sock_rps_save_rxhash(sk, skb);
@@ -1328,6 +1328,8 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 		goto reset;
 	if (opt_skb)
 		goto ipv6_pktoptions;
+
+restore_context:
 	return 0;
 
 reset:
@@ -1336,7 +1338,7 @@ discard:
 	if (opt_skb)
 		__kfree_skb(opt_skb);
 	kfree_skb(skb);
-	return 0;
+	goto restore_context;
 csum_err:
 	TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_CSUMERRORS);
 	TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_INERRS);
@@ -1370,7 +1372,7 @@ ipv6_pktoptions:
 	}
 
 	kfree_skb(opt_skb);
-	return 0;
+	goto restore_context;
 }
 
 static int tcp_v6_rcv(struct sk_buff *skb)

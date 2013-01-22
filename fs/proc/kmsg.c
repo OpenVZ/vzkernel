@@ -13,6 +13,10 @@
 #include <linux/proc_fs.h>
 #include <linux/fs.h>
 #include <linux/syslog.h>
+#include <linux/veprintk.h>
+#include <linux/sched.h>
+#include <linux/module.h>
+#include <linux/ve.h>
 
 #include <asm/uaccess.h>
 #include <asm/io.h>
@@ -41,7 +45,7 @@ static ssize_t kmsg_read(struct file *file, char __user *buf,
 
 static unsigned int kmsg_poll(struct file *file, poll_table *wait)
 {
-	poll_wait(file, &log_wait, wait);
+	poll_wait(file, &ve_log_wait, wait);
 	if (do_syslog(SYSLOG_ACTION_SIZE_UNREAD, NULL, 0, SYSLOG_FROM_PROC))
 		return POLLIN | POLLRDNORM;
 	return 0;
@@ -58,7 +62,7 @@ static const struct file_operations proc_kmsg_operations = {
 
 static int __init proc_kmsg_init(void)
 {
-	proc_create("kmsg", S_IRUSR, NULL, &proc_kmsg_operations);
+	proc_create("kmsg", S_IRUSR|S_ISVTX, NULL, &proc_kmsg_operations);
 	return 0;
 }
 module_init(proc_kmsg_init);

@@ -59,6 +59,9 @@
 #ifdef CONFIG_IPV6_TUNNEL
 #include <net/ip6_tunnel.h>
 #endif
+#ifdef CONFIG_IPV6_MIP6
+#include <net/mip6.h>
+#endif
 
 #include <asm/uaccess.h>
 #include <linux/mroute6.h>
@@ -152,6 +155,10 @@ lookup_protocol:
 		} else
 			goto out_rcu_unlock;
 	}
+
+	err = vz_security_protocol_check(answer->protocol);
+	if (err < 0)
+		goto out_rcu_unlock;
 
 	err = -EPERM;
 	if (sock->type == SOCK_RAW && !kern &&

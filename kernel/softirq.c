@@ -24,6 +24,8 @@
 #include <linux/smpboot.h>
 #include <linux/tick.h>
 
+#include <bc/beancounter.h>
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/irq.h>
 
@@ -210,12 +212,17 @@ EXPORT_SYMBOL(local_bh_enable_ip);
 
 asmlinkage void __do_softirq(void)
 {
+	struct user_beancounter *ub;
 	struct softirq_action *h;
 	__u32 pending;
 	unsigned long end = jiffies + MAX_SOFTIRQ_TIME;
 	int cpu;
 	unsigned long old_flags = current->flags;
 	int max_restart = MAX_SOFTIRQ_RESTART;
+
+	struct ve_struct *envid;
+
+	envid = set_exec_env(get_ve0());
 
 	/*
 	 * Mask out PF_MEMALLOC s current task context is borrowed for the
@@ -240,6 +247,7 @@ restart:
 
 	h = softirq_vec;
 
+	ub = set_exec_ub(get_ub0());
 	do {
 		if (pending & 1) {
 			unsigned int vec_nr = h - softirq_vec;
@@ -264,6 +272,7 @@ restart:
 		h++;
 		pending >>= 1;
 	} while (pending);
+	(void)set_exec_ub(ub);
 
 	local_irq_disable();
 
@@ -279,6 +288,7 @@ restart:
 	lockdep_softirq_exit();
 
 	account_irq_exit_time(current);
+	(void)set_exec_env(envid);
 	__local_bh_enable(SOFTIRQ_OFFSET);
 	tsk_restore_flags(current, old_flags, PF_MEMALLOC);
 }
@@ -367,6 +377,7 @@ void irq_exit(void)
 
 	account_irq_exit_time(current);
 	trace_hardirq_exit();
+	restore_context();
 	sub_preempt_count(HARDIRQ_OFFSET);
 	if (!in_interrupt() && local_softirq_pending())
 		invoke_softirq();

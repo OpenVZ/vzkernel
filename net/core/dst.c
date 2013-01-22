@@ -248,6 +248,7 @@ again:
 		dst->ops->destroy(dst);
 	if (dst->dev)
 		dev_put(dst->dev);
+	dst->flags |= DST_FREE;
 	kmem_cache_free(dst->ops->kmem_cachep, dst);
 
 	dst = child;
@@ -276,6 +277,21 @@ static void dst_destroy_rcu(struct rcu_head *head)
 	dst = dst_destroy(dst);
 	if (dst)
 		__dst_free(dst);
+}
+
+void dst_dump_one(struct dst_entry *d)
+{
+	printk("\tdev %p err %d obs %d flags %x i/o %p/%p ref %d use %d\n",
+			d->dev, (int)d->error, (int)d->obsolete, d->flags,
+			d->input, d->output, atomic_read(&d->__refcnt), d->__use);
+}
+EXPORT_SYMBOL(dst_dump_one);
+
+void dst_cache_dump(void)
+{
+	ip_rt_dump_dsts();
+	if (ip6_rt_dump_dsts)
+		ip6_rt_dump_dsts();
 }
 
 void dst_release(struct dst_entry *dst)
@@ -366,6 +382,7 @@ static int dst_dev_event(struct notifier_block *this, unsigned long event,
 	switch (event) {
 	case NETDEV_UNREGISTER_FINAL:
 	case NETDEV_DOWN:
+		dst_gc_task(NULL);
 		mutex_lock(&dst_gc_mutex);
 		for (dst = dst_busy_list; dst; dst = dst->next) {
 			last = dst;

@@ -35,6 +35,7 @@
 #include <linux/init.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/if_ether.h>
+#include <linux/vzcalluser.h>
 
 #include <net/sock.h>
 #include <net/snmp.h>
@@ -97,6 +98,9 @@ static struct ip_tunnel *ipip6_tunnel_lookup(struct net *net,
 	unsigned int h1 = HASH(local);
 	struct ip_tunnel *t;
 	struct sit_net *sitn = net_generic(net, sit_net_id);
+
+	if (sitn == NULL)
+		return NULL;
 
 	for_each_ip_tunnel_rcu(t, sitn->tunnels_r_l[h0 ^ h1]) {
 		if (local == t->parms.iph.saddr &&
@@ -304,7 +308,7 @@ static int ipip6_tunnel_get_prl(struct ip_tunnel *t,
 	/* For simple GET or for root users,
 	 * we try harder to allocate.
 	 */
-	kp = (cmax <= 1 || capable(CAP_NET_ADMIN)) ?
+	kp = (cmax <= 1 || capable(CAP_NET_ADMIN) || capable(CAP_VE_NET_ADMIN)) ?
 		kcalloc(cmax, sizeof(*kp), GFP_KERNEL) :
 		NULL;
 
@@ -1088,7 +1092,8 @@ ipip6_tunnel_ioctl (struct net_device *dev, struct ifreq *ifr, int cmd)
 	case SIOCADDTUNNEL:
 	case SIOCCHGTUNNEL:
 		err = -EPERM;
-		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+		if (!ns_capable(net->user_ns, CAP_NET_ADMIN) &&
+			!ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
 			goto done;
 
 		err = -EFAULT;
@@ -1136,7 +1141,8 @@ ipip6_tunnel_ioctl (struct net_device *dev, struct ifreq *ifr, int cmd)
 
 	case SIOCDELTUNNEL:
 		err = -EPERM;
-		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+		if (!ns_capable(net->user_ns, CAP_NET_ADMIN) &&
+			!ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
 			goto done;
 
 		if (dev == sitn->fb_tunnel_dev) {
@@ -1169,7 +1175,8 @@ ipip6_tunnel_ioctl (struct net_device *dev, struct ifreq *ifr, int cmd)
 	case SIOCDELPRL:
 	case SIOCCHGPRL:
 		err = -EPERM;
-		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+		if (!ns_capable(net->user_ns, CAP_NET_ADMIN) &&
+			!ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
 			goto done;
 		err = -EINVAL;
 		if (dev == sitn->fb_tunnel_dev)
@@ -1647,6 +1654,9 @@ static int __net_init sit_init_net(struct net *net)
 	struct ip_tunnel *t;
 	int err;
 
+	if (!(net->owner_ve->features & VE_FEATURE_SIT))
+		return net_assign_generic(net, sit_net_id, NULL);
+
 	sitn->tunnels[0] = sitn->tunnels_wc;
 	sitn->tunnels[1] = sitn->tunnels_l;
 	sitn->tunnels[2] = sitn->tunnels_r;
@@ -1691,10 +1701,14 @@ static void __net_exit sit_exit_net(struct net *net)
 {
 	LIST_HEAD(list);
 
+	if (sitn == NULL) /* no VE_FEATURE_SIT */
+		return;
+
 	rtnl_lock();
 	sit_destroy_tunnels(net, &list);
 	unregister_netdevice_many(&list);
 	rtnl_unlock();
+	net_assign_generic(net, sit_net_id, NULL);
 }
 
 static struct pernet_operations sit_net_ops = {
