@@ -58,6 +58,13 @@ extern struct fs_struct init_fs;
 	INIT_GROUP_RWSEM(sig)						\
 }
 
+#ifdef CONFIG_VE
+/* one more for ve0 */
+#define INIT_NSPROXY_COUNT	ATOMIC_INIT(3)
+#else
+#define INIT_NSPROXY_COUNT	ATOMIC_INIT(2)
+#endif
+
 extern struct nsproxy init_nsproxy;
 
 #define INIT_SIGHAND(sighand) {						\

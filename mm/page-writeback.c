@@ -1403,6 +1403,13 @@ pause:
 	if (!dirty_exceeded && bdi->dirty_exceeded)
 		bdi->dirty_exceeded = 0;
 
+	virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_BALANCE_DIRTY,
+			       (void*)pages_dirtied);
+
+	/*
+	 * Even if this is filtered writeback for other ub it will write
+	 * inodes for this ub, because ub->dirty_exceeded is set.
+	 */
 	if (writeback_in_progress(bdi))
 		return;
 
@@ -1787,6 +1794,8 @@ retry:
 
 			done_index = page->index;
 
+			virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_PREPARE, NULL);
+
 			lock_page(page);
 
 			/*
@@ -2039,6 +2048,11 @@ int __set_page_dirty_nobuffers(struct page *page)
 			account_page_dirtied(page, mapping);
 			radix_tree_tag_set(&mapping->page_tree,
 				page_index(page), PAGECACHE_TAG_DIRTY);
+			if (mapping_cap_account_dirty(mapping) &&
+					!radix_tree_prev_tag_get(
+						&mapping->page_tree,
+						PAGECACHE_TAG_DIRTY))
+				ub_io_account_dirty(mapping);
 		}
 		spin_unlock_irqrestore(&mapping->tree_lock, flags);
 		if (mapping->host) {
@@ -2123,6 +2137,18 @@ int set_page_dirty(struct page *page)
 	return 0;
 }
 EXPORT_SYMBOL(set_page_dirty);
+
+int set_page_dirty_mm(struct page *page, struct mm_struct *mm)
+{
+	struct user_beancounter *old_ub;
+	int ret;
+
+	old_ub = set_exec_ub(mm_ub(mm));
+	ret = set_page_dirty(page);
+	(void)set_exec_ub(old_ub);
+	return ret;
+}
+EXPORT_SYMBOL(set_page_dirty_mm);
 
 /*
  * set_page_dirty() is racy if the caller has no reference against
@@ -2231,6 +2257,9 @@ int test_clear_page_writeback(struct page *page)
 						page_index(page),
 						PAGECACHE_TAG_WRITEBACK);
 			if (bdi_cap_account_writeback(bdi)) {
+				if (radix_tree_prev_tag_get(&mapping->page_tree,
+							PAGECACHE_TAG_WRITEBACK))
+					ub_io_writeback_dec(mapping);
 				__dec_bdi_stat(bdi, BDI_WRITEBACK);
 				__bdi_writeout_inc(bdi);
 			}
@@ -2261,13 +2290,23 @@ int test_set_page_writeback(struct page *page)
 			radix_tree_tag_set(&mapping->page_tree,
 						page_index(page),
 						PAGECACHE_TAG_WRITEBACK);
-			if (bdi_cap_account_writeback(bdi))
+			if (bdi_cap_account_writeback(bdi)) {
+				if (!radix_tree_prev_tag_get(&mapping->page_tree,
+							PAGECACHE_TAG_WRITEBACK))
+					ub_io_writeback_inc(mapping);
 				__inc_bdi_stat(bdi, BDI_WRITEBACK);
+			}
 		}
-		if (!PageDirty(page))
+		if (!PageDirty(page)) {
 			radix_tree_tag_clear(&mapping->page_tree,
 						page_index(page),
 						PAGECACHE_TAG_DIRTY);
+			if (mapping_cap_account_dirty(mapping) &&
+					radix_tree_prev_tag_get(
+						&mapping->page_tree,
+						PAGECACHE_TAG_DIRTY))
+				ub_io_account_clean(mapping);
+		}
 		radix_tree_tag_clear(&mapping->page_tree,
 				     page_index(page),
 				     PAGECACHE_TAG_TOWRITE);

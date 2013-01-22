@@ -89,6 +89,8 @@
 #include <linux/errqueue.h>
 #include <linux/net_tstamp.h>
 
+#include <bc/net.h>
+
 #ifdef CONFIG_INET
 #include <net/inet_common.h>
 #endif
@@ -1638,6 +1640,8 @@ static int packet_rcv(struct sk_buff *skb, struct net_device *dev,
 	if (!net_eq(dev_net(dev), sock_net(sk)))
 		goto drop;
 
+	skb_orphan(skb);
+
 	skb->dev = dev;
 
 	if (dev->header_ops) {
@@ -1700,6 +1704,9 @@ static int packet_rcv(struct sk_buff *skb, struct net_device *dev,
 	if (pskb_trim(skb, snaplen))
 		goto drop_n_acct;
 
+	if (ub_sockrcvbuf_charge(sk, skb))
+		goto drop_n_acct;
+
 	skb_set_owner_r(skb, sk);
 	skb->dev = NULL;
 	skb_dst_drop(skb);
@@ -1756,6 +1763,8 @@ static int tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
 	if (!net_eq(dev_net(dev), sock_net(sk)))
 		goto drop;
 
+	skb_orphan(skb);
+
 	if (dev->header_ops) {
 		if (sk->sk_type != SOCK_DGRAM)
 			skb_push(skb, skb->data - skb_mac_header(skb));
@@ -1804,6 +1813,13 @@ static int tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
 				snaplen = 0;
 		}
 	}
+
+	if (copy_skb &&
+			ub_sockrcvbuf_charge(sk, copy_skb)) {
+		spin_lock(&sk->sk_receive_queue.lock);
+		goto ring_is_full;
+	}
+
 	spin_lock(&sk->sk_receive_queue.lock);
 	h.raw = packet_current_rx_frame(po, skb,
 					TP_STATUS_KERNEL, (macoff+snaplen));
@@ -2618,6 +2634,8 @@ static int packet_create(struct net *net, struct socket *sock, int protocol,
 	sk = sk_alloc(net, PF_PACKET, GFP_KERNEL, &packet_proto);
 	if (sk == NULL)
 		goto out;
+	if (ub_other_sock_charge(sk))
+		goto out_free;
 
 	sock->ops = &packet_ops;
 	if (sock->type == SOCK_PACKET)
@@ -2661,6 +2679,9 @@ static int packet_create(struct net *net, struct socket *sock, int protocol,
 	preempt_enable();
 
 	return 0;
+
+out_free:
+	sk_free(sk);
 out:
 	return err;
 }
@@ -3534,7 +3555,7 @@ static void free_pg_vec(struct pgv *pg_vec, unsigned int order,
 static char *alloc_one_pg_vec_page(unsigned long order)
 {
 	char *buffer = NULL;
-	gfp_t gfp_flags = GFP_KERNEL | __GFP_COMP |
+	gfp_t gfp_flags = GFP_KERNEL_UBC | __GFP_COMP |
 			  __GFP_ZERO | __GFP_NOWARN | __GFP_NORETRY;
 
 	buffer = (char *) __get_free_pages(gfp_flags, order);
@@ -3570,7 +3591,7 @@ static struct pgv *alloc_pg_vec(struct tpacket_req *req, int order)
 	struct pgv *pg_vec;
 	int i;
 
-	pg_vec = kcalloc(block_nr, sizeof(struct pgv), GFP_KERNEL);
+	pg_vec = kcalloc(block_nr, sizeof(struct pgv), GFP_KERNEL_UBC);
 	if (unlikely(!pg_vec))
 		goto out;
 

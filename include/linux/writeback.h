@@ -83,12 +83,15 @@ struct writeback_control {
 	/* reserved for Red Hat */
 	unsigned long rh_reserved1;
 	unsigned long rh_reserved2;
+
+	struct user_beancounter *wb_ub;	/* only for this beancounter */
 };
 
 /*
  * fs/fs-writeback.c
  */	
 struct bdi_writeback;
+struct user_beancounter;
 int inode_wait(void *);
 void writeback_inodes_sb(struct super_block *, enum wb_reason reason);
 void writeback_inodes_sb_nr(struct super_block *, unsigned long nr,
@@ -97,6 +100,8 @@ int try_to_writeback_inodes_sb(struct super_block *, enum wb_reason reason);
 int try_to_writeback_inodes_sb_nr(struct super_block *, unsigned long nr,
 				  enum wb_reason reason);
 void sync_inodes_sb(struct super_block *sb, unsigned long older_than_this);
+void sync_inodes_sb_ub(struct super_block *sb, unsigned long older_than_this,
+		       struct user_beancounter *);
 void wakeup_flusher_threads(long nr_pages, enum wb_reason reason);
 void inode_wait_for_writeback(struct inode *inode);
 

@@ -3009,7 +3009,7 @@ static struct file_lock *nfs4_alloc_init_lease(struct nfs4_delegation *dp, int f
 {
 	struct file_lock *fl;
 
-	fl = locks_alloc_lock();
+	fl = locks_alloc_lock(1);
 	if (!fl)
 		return NULL;
 	locks_init_lock(fl);

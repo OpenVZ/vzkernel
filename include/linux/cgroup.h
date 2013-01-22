@@ -206,6 +206,9 @@ struct cgroup {
 
 	struct cgroupfs_root *root;
 
+	/* The path to use for release notifications. */
+	char *release_agent;
+
 	/*
 	 * List of cg_cgroup_links pointing at css_sets with
 	 * tasks in this cgroup. Protected by css_set_lock

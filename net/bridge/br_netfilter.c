@@ -182,9 +182,17 @@ static inline struct rtable *bridge_parent_rtable(const struct net_device *dev)
 static inline struct net_device *bridge_parent(const struct net_device *dev)
 {
 	struct net_bridge_port *port;
+	struct net_bridge *br;
 
 	port = br_port_get_rcu(dev);
-	return port ? port->br->dev : NULL;
+	if (!port)
+		return NULL;
+
+	br = port->br;
+	if (br->via_phys_dev && br->master_dev)
+		return br->master_dev;
+	else
+		return br->dev;
 }
 
 static inline struct nf_bridge_info *nf_bridge_alloc(struct sk_buff *skb)
@@ -863,6 +871,7 @@ static int br_nf_dev_queue_xmit(struct sk_buff *skb)
 	int ret;
 
 	if (skb->nfct != NULL && skb->protocol == htons(ETH_P_IP) &&
+	    !(skb->dev->features & NETIF_F_VENET) &&
 	    skb->len + nf_bridge_mtu_reduction(skb) > skb->dev->mtu &&
 	    !skb_is_gso(skb)) {
 		if (br_parse_ip_options(skb))

@@ -75,6 +75,12 @@ static netdev_tx_t loopback_xmit(struct sk_buff *skb,
 	struct pcpu_lstats *lb_stats;
 	int len;
 
+#ifdef CONFIG_VE
+	if (unlikely(get_exec_env()->disable_net)) {
+		kfree_skb(skb);
+		return 0;
+	}
+#endif
 	skb_orphan(skb);
 
 	/* Before queueing this packet to netif_rx(),
@@ -150,10 +156,16 @@ static void loopback_dev_free(struct net_device *dev)
 	free_netdev(dev);
 }
 
+static void loopback_cpt(struct net_device *dev,
+		struct cpt_ops *ops, struct cpt_context *ctx)
+{
+}
+
 static const struct net_device_ops loopback_ops = {
 	.ndo_init      = loopback_dev_init,
 	.ndo_start_xmit= loopback_xmit,
 	.ndo_get_stats64 = loopback_get_stats64,
+	.ndo_cpt = loopback_cpt,
 };
 
 /*
@@ -178,6 +190,7 @@ static void loopback_setup(struct net_device *dev)
 		| NETIF_F_HIGHDMA
 		| NETIF_F_LLTX
 		| NETIF_F_NETNS_LOCAL
+		| NETIF_F_VIRTUAL
 		| NETIF_F_VLAN_CHALLENGED
 		| NETIF_F_LOOPBACK;
 	dev->ethtool_ops	= &loopback_ethtool_ops;

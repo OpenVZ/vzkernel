@@ -117,6 +117,11 @@ static inline void set_mems_allowed(nodemask_t nodemask)
 	task_unlock(current);
 }
 
+extern int cgroup_set_cpumask(struct cgroup *cgrp,
+			      const struct cpumask *cpus_allowed);
+extern int cgroup_set_nodemask(struct cgroup *cgrp,
+			       const nodemask_t *nodes_allowed);
+
 #else /* !CONFIG_CPUSETS */
 
 static inline int cpuset_init(void) { return 0; }

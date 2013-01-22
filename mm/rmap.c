@@ -205,6 +205,7 @@ int anon_vma_prepare(struct vm_area_struct *vma)
  out_enomem:
 	return -ENOMEM;
 }
+EXPORT_SYMBOL(anon_vma_prepare);
 
 /*
  * This is a useful helper function for locking the anon_vma root as
@@ -503,11 +504,13 @@ out:
 	rcu_read_unlock();
 	return anon_vma;
 }
+EXPORT_SYMBOL(page_lock_anon_vma_read);
 
 void page_unlock_anon_vma_read(struct anon_vma *anon_vma)
 {
 	anon_vma_unlock_read(anon_vma);
 }
+EXPORT_SYMBOL(page_unlock_anon_vma_read);
 
 /*
  * At what user virtual address is page expected in @vma?
@@ -533,6 +536,7 @@ vma_address(struct page *page, struct vm_area_struct *vma)
 
 	return address;
 }
+EXPORT_SYMBOL(vma_address);
 
 /*
  * At what user virtual address is page expected in vma?
@@ -1103,7 +1107,7 @@ void page_add_new_anon_rmap(struct page *page,
  *
  * The caller needs to hold the pte lock.
  */
-void page_add_file_rmap(struct page *page)
+void page_add_file_rmap(struct page *page, struct mm_struct *mm)
 {
 	bool locked;
 	unsigned long flags;
@@ -1217,7 +1221,7 @@ int try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 
 	/* Move the dirty bit to the physical page now the pte is gone. */
 	if (pte_dirty(pteval))
-		set_page_dirty(page);
+		set_page_dirty_mm(page, mm);
 
 	/* Update high watermark before we lower rss */
 	update_hiwater_rss(mm);
@@ -1413,7 +1417,7 @@ static int try_to_unmap_cluster(unsigned long cursor, unsigned int *mapcount,
 
 		/* Move the dirty bit to the physical page now the pte is gone. */
 		if (pte_dirty(pteval))
-			set_page_dirty(page);
+			set_page_dirty_mm(page, mm);
 
 		page_remove_rmap(page);
 		page_cache_release(page);

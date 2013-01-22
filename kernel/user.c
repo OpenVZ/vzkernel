@@ -206,13 +206,14 @@ struct user_struct *alloc_uid(kuid_t uid)
 out_unlock:
 	return NULL;
 }
+EXPORT_SYMBOL(alloc_uid);
 
 static int __init uid_cache_init(void)
 {
 	int n;
 
 	uid_cachep = kmem_cache_create("uid_cache", sizeof(struct user_struct),
-			0, SLAB_HWCACHE_ALIGN|SLAB_PANIC, NULL);
+			0, SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_UBC, NULL);
 
 	for(n = 0; n < UIDHASH_SZ; ++n)
 		INIT_HLIST_HEAD(uidhash_table + n);
@@ -224,5 +225,6 @@ static int __init uid_cache_init(void)
 
 	return 0;
 }
+EXPORT_SYMBOL(free_uid);
 
 module_init(uid_cache_init);

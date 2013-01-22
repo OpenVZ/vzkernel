@@ -104,6 +104,7 @@
 
 #include <linux/kmod.h>
 #include <linux/nsproxy.h>
+#include <bc/kmem.h>
 
 #undef TTY_DEBUG_HANGUP
 
@@ -167,7 +168,7 @@ static void proc_set_tty(struct task_struct *tsk, struct tty_struct *tty);
 
 struct tty_struct *alloc_tty_struct(void)
 {
-	return kzalloc(sizeof(struct tty_struct), GFP_KERNEL);
+	return kzalloc(sizeof(struct tty_struct), GFP_KERNEL_UBC);
 }
 
 /**

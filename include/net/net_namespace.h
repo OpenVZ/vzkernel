@@ -76,9 +76,18 @@ struct net {
 	unsigned int		dev_base_seq;	/* protected by rtnl_mutex */
 	int			ifindex;
 
+	int			ifindex;
+
+#ifdef CONFIG_VE
+	struct completion	*sysfs_completion;
+	struct ve_struct	*owner_ve;
+#endif
+
 	/* core fib_rules */
 	struct list_head	rules_ops;
 
+	struct sock		*_audit_sock;		/* audit socket */
+	struct sock		*uevent_sock;		/* kobject uevent socket */
 
 	struct net_device       *loopback_dev;          /* The loopback */
 	struct netns_core	core;
@@ -233,6 +242,12 @@ static inline void release_net(struct net *net)
 	if (net)
 		atomic_dec(&net->use_count);
 }
+
+/* Returns whether curr can mess with net's objects */
+static inline int net_access_allowed(const struct net *net, const struct net *curr)
+{
+	return net_eq(curr, &init_net) || net_eq(curr, net);
+}
 #else
 static inline struct net *hold_net(struct net *net)
 {
@@ -241,6 +256,11 @@ static inline struct net *hold_net(struct net *net)
 
 static inline void release_net(struct net *net)
 {
+}
+
+static inline int net_access_allowed(const struct net *net, const struct net *curr)
+{
+	return 1;
 }
 #endif
 

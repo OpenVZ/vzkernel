@@ -40,6 +40,7 @@
 #include <linux/falloc.h>
 #include <asm/uaccess.h>
 #include <linux/fiemap.h>
+#include <linux/module.h>
 #include "ext4_jbd2.h"
 #include "ext4_extents.h"
 #include "xattr.h"
@@ -578,6 +579,7 @@ void ext4_ext_drop_refs(struct ext4_ext_path *path)
 			path->p_bh = NULL;
 		}
 }
+EXPORT_SYMBOL(ext4_ext_drop_refs);
 
 /*
  * ext4_ext_binsearch_idx:

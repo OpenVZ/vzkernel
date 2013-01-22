@@ -26,6 +26,8 @@
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 
+#include <bc/kmem.h>
+
 #include "internal.h"
 
 /*
@@ -577,7 +579,7 @@ redo1:
 			int error, atomic = 1;
 
 			if (!page) {
-				page = alloc_page(GFP_HIGHUSER);
+				page = alloc_page(GFP_HIGHUSER | __GFP_UBC);
 				if (unlikely(!page)) {
 					ret = ret ? : -ENOMEM;
 					break;
@@ -786,7 +788,7 @@ struct pipe_inode_info *alloc_pipe_info(void)
 {
 	struct pipe_inode_info *pipe;
 
-	pipe = kzalloc(sizeof(struct pipe_inode_info), GFP_KERNEL);
+	pipe = kzalloc(sizeof(struct pipe_inode_info), GFP_KERNEL_UBC);
 	if (pipe) {
 		pipe->bufs = kzalloc(sizeof(struct pipe_buffer) * PIPE_DEF_BUFFERS, GFP_KERNEL);
 		if (pipe->bufs) {
@@ -956,6 +958,7 @@ static int __do_pipe_flags(int *fd, struct file **files, int flags)
 	fput(files[1]);
 	return error;
 }
+EXPORT_SYMBOL(do_pipe_flags);
 
 int do_pipe_flags(int *fd, int flags)
 {

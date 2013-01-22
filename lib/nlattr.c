@@ -201,7 +201,7 @@ int nla_parse(struct nlattr **tb, int maxtype, const struct nlattr *head,
 	}
 
 	if (unlikely(rem > 0))
-		printk(KERN_WARNING "netlink: %d bytes leftover after parsing "
+		ve_printk(VE_LOG, KERN_WARNING "netlink: %d bytes leftover after parsing "
 		       "attributes.\n", rem);
 
 	err = 0;

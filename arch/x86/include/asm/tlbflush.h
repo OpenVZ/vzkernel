@@ -100,6 +100,7 @@ static inline void flush_tlb_page(struct vm_area_struct *vma,
 	if (vma->vm_mm == current->active_mm)
 		__flush_tlb_one(addr);
 }
+EXPORT_SYMBOL(flush_tlb_page);
 
 static inline void flush_tlb_range(struct vm_area_struct *vma,
 				   unsigned long start, unsigned long end)

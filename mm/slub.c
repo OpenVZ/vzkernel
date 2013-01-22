@@ -5128,6 +5128,8 @@ static char *create_unique_id(struct kmem_cache *s)
 		*p++ = 'a';
 	if (s->flags & SLAB_DEBUG_FREE)
 		*p++ = 'F';
+	if (s->flags & SLAB_UBC)
+		*p++ = 'b';
 	if (!(s->flags & SLAB_NOTRACK))
 		*p++ = 't';
 	if (p != name + 1)

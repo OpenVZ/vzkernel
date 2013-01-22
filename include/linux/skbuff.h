@@ -405,6 +405,8 @@ typedef unsigned char *sk_buff_data_t;
  *	@users: User count - see {datagram,tcp}.c
  */
 
+#include <bc/sock.h>
+
 struct sk_buff {
 	/* These two members must be first. */
 	struct sk_buff		*next;
@@ -453,6 +455,13 @@ struct sk_buff {
 	kmemcheck_bitfield_end(flags1);
 	__be16			protocol;
 
+#ifdef CONFIG_VE
+	unsigned int		accounted:1;
+	unsigned int		redirected:1;
+#endif
+#if defined(CONFIG_BRIDGE) || defined (CONFIG_BRIDGE_MODULE)
+	__u8			brmark;
+#endif
 	void			(*destructor)(struct sk_buff *skb);
 #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
 	struct nf_conntrack	*nfct;
@@ -538,6 +547,7 @@ struct sk_buff {
 				*data;
 	unsigned int		truesize;
 	atomic_t		users;
+	struct skb_beancounter	skb_bc;
 };
 
 #ifdef __KERNEL__
@@ -545,6 +555,7 @@ struct sk_buff {
  *	Handling routines are only of interest to the kernel
  */
 #include <linux/slab.h>
+#include <bc/net.h>
 
 
 #define SKB_ALLOC_FCLONE	0x01
@@ -925,8 +936,15 @@ static inline int skb_unclone(struct sk_buff *skb, gfp_t pri)
 {
 	might_sleep_if(pri & __GFP_WAIT);
 
-	if (skb_cloned(skb))
-		return pskb_expand_head(skb, 0, 0, pri);
+	if (skb_cloned(skb)) {
+		int err;
+
+		if (err = pskb_expand_head(skb, 0, 0, pri))
+			return err;
+
+		ub_skb_uncharge(skb);
+		ub_tcpsndbuf_charge_forced(sk, skb);
+	}
 
 	return 0;
 }
@@ -1863,7 +1881,7 @@ static inline void pskb_trim_unique(struct sk_buff *skb, unsigned int len)
  *	destructor function and make the @skb unowned. The buffer continues
  *	to exist but is no longer charged to its former owner.
  */
-static inline void skb_orphan(struct sk_buff *skb)
+static inline void __skb_orphan(struct sk_buff *skb)
 {
 	if (skb->destructor)
 		skb->destructor(skb);
@@ -1885,6 +1903,14 @@ static inline int skb_orphan_frags(struct sk_buff *skb, gfp_t gfp_mask)
 	if (likely(!(skb_shinfo(skb)->tx_flags & SKBTX_DEV_ZEROCOPY)))
 		return 0;
 	return skb_copy_ubufs(skb, gfp_mask);
+}
+
+static inline void skb_orphan(struct sk_buff *skb)
+{
+	if (skb->sk)
+		ub_skb_uncharge(skb);
+
+	__skb_orphan(skb);
 }
 
 /**
@@ -2734,6 +2760,26 @@ static inline void skb_copy_secmark(struct sk_buff *to, const struct sk_buff *fr
 
 static inline void skb_init_secmark(struct sk_buff *skb)
 { }
+#endif
+
+#if defined(CONFIG_BRIDGE) || defined (CONFIG_BRIDGE_MODULE)
+static inline void skb_copy_brmark(struct sk_buff *to, const struct sk_buff *from)
+{
+	to->brmark = from->brmark;
+}
+
+static inline void skb_init_brmark(struct sk_buff *skb)
+{
+	skb->brmark = 0;
+}
+#else
+static inline void skb_copy_brmark(struct sk_buff *to, const struct sk_buff *from)
+{
+}
+
+static inline void skb_init_brmark(struct sk_buff *skb)
+{
+}
 #endif
 
 static inline void skb_set_queue_mapping(struct sk_buff *skb, u16 queue_mapping)

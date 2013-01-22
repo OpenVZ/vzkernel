@@ -569,6 +569,7 @@ retry_deleg:
 	}
 	return error;
 }
+EXPORT_SYMBOL(sys_chown);
 
 SYSCALL_DEFINE5(fchownat, int, dfd, const char __user *, filename, uid_t, user,
 		gid_t, group, int, flag)
@@ -989,6 +990,7 @@ SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)
 
 	return do_sys_open(AT_FDCWD, filename, flags, mode);
 }
+EXPORT_SYMBOL(sys_open);
 
 SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags,
 		umode_t, mode)

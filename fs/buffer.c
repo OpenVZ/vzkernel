@@ -662,6 +662,11 @@ static void __set_page_dirty(struct page *page,
 		account_page_dirtied(page, mapping);
 		radix_tree_tag_set(&mapping->page_tree,
 				page_index(page), PAGECACHE_TAG_DIRTY);
+		if (mapping_cap_account_dirty(mapping) &&
+				!radix_tree_prev_tag_get(
+					&mapping->page_tree,
+					PAGECACHE_TAG_DIRTY))
+			ub_io_account_dirty(mapping);
 	}
 	spin_unlock_irqrestore(&mapping->tree_lock, flags);
 	__mark_inode_dirty(mapping->host, I_DIRTY_PAGES);
@@ -1009,7 +1014,8 @@ grow_dev_page(struct block_device *bdev, sector_t block,
 	int ret = 0;		/* Will call free_more_memory() */
 
 	page = find_or_create_page(inode->i_mapping, index,
-		(mapping_gfp_mask(inode->i_mapping) & ~__GFP_FS)|__GFP_MOVABLE);
+		(mapping_gfp_mask(inode->i_mapping) & ~__GFP_FS) |
+		__GFP_MOVABLE | __GFP_NOFAIL);
 	if (!page)
 		return ret;
 

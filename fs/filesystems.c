@@ -52,6 +52,7 @@ static struct file_system_type **find_filesystem(const char *name, unsigned len)
 			break;
 	return p;
 }
+EXPORT_SYMBOL(put_filesystem);
 
 /**
  *	register_filesystem - register a new filesystem

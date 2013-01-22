@@ -23,6 +23,8 @@
 #include <linux/rcupdate.h>
 #include <linux/workqueue.h>
 
+#include <bc/kmem.h>
+
 int sysctl_nr_open __read_mostly = 1024*1024;
 int sysctl_nr_open_min = BITS_PER_LONG;
 int sysctl_nr_open_max = 1024 * 1024; /* raised later */
@@ -34,11 +36,11 @@ static void *alloc_fdmem(size_t size)
 	 * vmalloc() if the allocation size will be considered "large" by the VM.
 	 */
 	if (size <= (PAGE_SIZE << PAGE_ALLOC_COSTLY_ORDER)) {
-		void *data = kmalloc(size, GFP_KERNEL|__GFP_NOWARN);
+		void *data = kmalloc(size, GFP_KERNEL_UBC|__GFP_NOWARN);
 		if (data != NULL)
 			return data;
 	}
-	return vmalloc(size);
+	return ub_vmalloc(size);
 }
 
 static void free_fdmem(void *ptr)
@@ -107,7 +109,7 @@ static struct fdtable * alloc_fdtable(unsigned int nr)
 	if (unlikely(nr > sysctl_nr_open))
 		nr = ((sysctl_nr_open - 1) | (BITS_PER_LONG - 1)) + 1;
 
-	fdt = kmalloc(sizeof(struct fdtable), GFP_KERNEL);
+	fdt = kmalloc(sizeof(struct fdtable), GFP_KERNEL_UBC);
 	if (!fdt)
 		goto out;
 	fdt->max_fds = nr;
@@ -141,7 +143,7 @@ out:
  * Return <0 error code on error; 1 on successful completion.
  * The files->file_lock should be held on entry, and will be held on exit.
  */
-static int expand_fdtable(struct files_struct *files, int nr)
+int expand_fdtable(struct files_struct *files, int nr)
 	__releases(files->file_lock)
 	__acquires(files->file_lock)
 {
@@ -177,6 +179,7 @@ static int expand_fdtable(struct files_struct *files, int nr)
 	}
 	return 1;
 }
+EXPORT_SYMBOL(expand_fdtable);
 
 /*
  * Expand files.
@@ -412,6 +415,7 @@ void put_files_struct(struct files_struct *files)
 		kmem_cache_free(files_cachep, files);
 	}
 }
+EXPORT_SYMBOL_GPL(put_files_struct);
 
 void reset_files_struct(struct files_struct *files)
 {
@@ -890,6 +894,7 @@ SYSCALL_DEFINE2(dup2, unsigned int, oldfd, unsigned int, newfd)
 	}
 	return sys_dup3(oldfd, newfd, 0);
 }
+EXPORT_SYMBOL(sys_dup2);
 
 SYSCALL_DEFINE1(dup, unsigned int, fildes)
 {
