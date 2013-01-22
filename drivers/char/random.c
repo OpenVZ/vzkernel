@@ -1335,6 +1335,11 @@ static ssize_t random_write(struct file *file, const char __user *buffer,
 {
 	size_t ret;
 
+#ifdef CONFIG_VE
+	if (!ve_is_super(get_exec_env()))
+		return count;
+#endif
+
 	ret = write_pool(&blocking_pool, buffer, count);
 	if (ret)
 		return ret;

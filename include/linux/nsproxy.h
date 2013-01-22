@@ -73,9 +73,10 @@ static inline void put_nsproxy(struct nsproxy *ns)
 	}
 }
 
-static inline void get_nsproxy(struct nsproxy *ns)
+static inline struct nsproxy *get_nsproxy(struct nsproxy *ns)
 {
 	atomic_inc(&ns->count);
+	return ns;
 }
 
 #endif

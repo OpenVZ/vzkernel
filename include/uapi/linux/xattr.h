@@ -10,6 +10,13 @@
 #ifndef _UAPI_LINUX_XATTR_H
 #define _UAPI_LINUX_XATTR_H
 
+#ifdef CONFIG_VE
+extern int ve_xattr_policy;
+#define VE_XATTR_POLICY_ACCEPT 0
+#define VE_XATTR_POLICY_IGNORE 1
+#define VE_XATTR_POLICY_REJECT 2
+#endif
+
 #define XATTR_CREATE	0x1	/* set value, fail if attr already exists */
 #define XATTR_REPLACE	0x2	/* set value, fail if attr does not exist */
 

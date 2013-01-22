@@ -21,6 +21,8 @@
 
 #include "util.h"
 
+#include <bc/kmem.h>
+
 DEFINE_SPINLOCK(mq_lock);
 
 /*
