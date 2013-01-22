@@ -131,6 +131,8 @@
 #include <net/cls_cgroup.h>
 #include <net/netprio_cgroup.h>
 
+#include <bc/beancounter.h>
+
 #include <linux/filter.h>
 
 #include <trace/events/sock.h>
@@ -366,8 +368,8 @@ static void sock_warn_obsolete_bsdism(const char *name)
 	static char warncomm[TASK_COMM_LEN];
 	if (strcmp(warncomm, current->comm) && warned < 5) {
 		strcpy(warncomm,  current->comm);
-		pr_warn("process `%s' is using obsolete %s SO_BSDCOMPAT\n",
-			warncomm, name);
+		ve_printk(VE_LOG, KERN_WARNING "process `%s' is using obsolete "
+			"%s SO_BSDCOMPAT\n", warncomm, name);
 		warned++;
 	}
 }
@@ -1557,6 +1559,8 @@ EXPORT_SYMBOL_GPL(sk_clone_lock);
 
 void sk_setup_caps(struct sock *sk, struct dst_entry *dst)
 {
+	extern int sysctl_tcp_use_sg;
+
 	__sk_dst_set(sk, dst);
 	sk->sk_route_caps = dst->dev->features;
 	if (sk->sk_route_caps & NETIF_F_GSO)
@@ -1571,6 +1575,8 @@ void sk_setup_caps(struct sock *sk, struct dst_entry *dst)
 			sk->sk_gso_max_segs = dst->dev->gso_max_segs;
 		}
 	}
+	if (!sysctl_tcp_use_sg)
+		sk->sk_route_caps &= ~NETIF_F_SG;
 }
 EXPORT_SYMBOL_GPL(sk_setup_caps);
 

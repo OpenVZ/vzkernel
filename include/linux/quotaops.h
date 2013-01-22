@@ -42,6 +42,10 @@ void inode_add_rsv_space(struct inode *inode, qsize_t number);
 void inode_claim_rsv_space(struct inode *inode, qsize_t number);
 void inode_sub_rsv_space(struct inode *inode, qsize_t number);
 void inode_reclaim_rsv_space(struct inode *inode, qsize_t number);
+qsize_t *inode_reserved_space(struct inode * inode);
+qsize_t inode_get_rsv_space(struct inode *inode);
+void inode_incr_space(struct inode *inode, qsize_t number, int reserve);
+void inode_decr_space(struct inode *inode, qsize_t number, int reserve);
 
 void dquot_initialize(struct inode *inode);
 void dquot_drop(struct inode *inode);

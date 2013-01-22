@@ -45,6 +45,8 @@
 
 #include <asm/mman.h>
 
+#include <bc/io_acct.h>
+
 /*
  * Shared mappings implemented 30.11.1994. It's not fully working yet,
  * though.
@@ -191,6 +193,15 @@ void __delete_from_page_cache(struct page *page, void *shadow)
 		cleancache_invalidate_page(mapping, page);
 
 	page_cache_tree_delete(mapping, page, shadow);
+	if (mapping_cap_account_dirty(mapping) &&
+			radix_tree_prev_tag_get(&mapping->page_tree,
+				PAGECACHE_TAG_DIRTY))
+		ub_io_account_cancel(mapping);
+
+	if (mapping_cap_account_writeback(mapping) &&
+			radix_tree_prev_tag_get(&mapping->page_tree,
+				PAGECACHE_TAG_WRITEBACK))
+		ub_io_writeback_dec(mapping);
 
 	page->mapping = NULL;
 	/* Leave page->index set: truncation lookup relies upon it */
@@ -1713,6 +1724,8 @@ page_ok:
 		goto out;
 
 page_not_up_to_date:
+		virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_PREPARE, NULL);
+
 		/* Get exclusive access to the page ... */
 		error = lock_page_killable(page);
 		if (unlikely(error))
@@ -1780,6 +1793,8 @@ readpage_error:
 		goto out;
 
 no_cached_page:
+		virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_PREPARE, NULL);
+
 		/*
 		 * Ok, it wasn't cached, so we need to create a new
 		 * page..
@@ -2003,6 +2018,8 @@ static int page_cache_read(struct file *file, pgoff_t offset)
 	struct page *page; 
 	int ret;
 
+	virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_PREPARE, NULL);
+
 	do {
 		page = page_cache_alloc_cold(mapping);
 		if (!page)
@@ -2126,6 +2143,11 @@ int filemap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 		 * waiting for the lock.
 		 */
 		do_async_mmap_readahead(vma, ra, file, page, offset);
+
+		if (unlikely(!PageUptodate(page)))
+			virtinfo_notifier_call(VITYPE_IO,
+					VIRTINFO_IO_PREPARE, NULL);
+
 	} else if (!page) {
 		/* No page in the page cache at all */
 		do_sync_mmap_readahead(vma, ra, file, offset);
@@ -2892,6 +2914,8 @@ generic_file_buffered_write(struct kiocb *iocb, const struct iovec *iov,
 	struct file *file = iocb->ki_filp;
 	ssize_t status;
 	struct iov_iter i;
+
+	virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_PREPARE, NULL);
 
 	iov_iter_init(&i, iov, nr_segs, count, written);
 	status = generic_perform_write(file, &i, pos);

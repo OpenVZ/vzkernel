@@ -923,7 +923,8 @@ static int br_nf_dev_queue_xmit(struct sock *sk, struct sk_buff *skb)
 	/* This is wrong! We should preserve the original fragment
 	 * boundaries by preserving frag_list rather than refragmenting.
 	 */
-	if (skb->protocol == htons(ETH_P_IP)) {
+	if (skb->protocol == htons(ETH_P_IP) &&
+	    !(skb->dev->features & NETIF_F_VENET)) {
 		if (br_parse_ip_options(skb))
 			/* Drop invalid packet */
 			goto drop;

@@ -6,6 +6,8 @@
 #include <linux/types.h>
 #include <linux/nodemask.h>
 #include <uapi/linux/oom.h>
+#include <linux/spinlock_types.h>
+#include <linux/wait.h>
 
 struct zonelist;
 struct notifier_block;
@@ -47,9 +49,11 @@ static inline bool oom_task_origin(const struct task_struct *p)
 	return !!(p->signal->oom_flags & OOM_FLAG_ORIGIN);
 }
 
-extern unsigned long oom_badness(struct task_struct *p,
-		struct mem_cgroup *memcg, const nodemask_t *nodemask,
-		unsigned long totalpages);
+/* linux/mm/oom_group.c */
+extern int get_task_oom_score_adj(struct task_struct *t);
+
+extern unsigned long oom_badness(struct task_struct *p, struct mem_cgroup *memcg,
+			  const nodemask_t *nodemask, unsigned long totalpages);
 extern void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 			     unsigned int points, unsigned long totalpages,
 			     struct mem_cgroup *memcg, nodemask_t *nodemask,
@@ -83,6 +87,22 @@ static inline void oom_killer_enable(void)
 }
 
 extern struct task_struct *find_lock_task_mm(struct task_struct *p);
+
+struct oom_control {
+	int			generation;
+	int			kill_counter;
+	unsigned long		last_kill;
+	int			oom_rage;
+	spinlock_t		lock;
+	wait_queue_head_t	wq;
+};
+
+extern struct oom_control global_oom_ctrl;
+
+static inline void init_oom_control(struct oom_control *oom_ctrl) { }
+
+void oom_report_invocation(char *type, struct user_beancounter *ub,
+		gfp_t gfp_mask, int order);
 
 /* sysctls */
 extern int sysctl_oom_dump_tasks;

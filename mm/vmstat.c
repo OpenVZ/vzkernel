@@ -18,6 +18,7 @@
 #include <linux/cpumask.h>
 #include <linux/vmstat.h>
 #include <linux/sched.h>
+#include <linux/virtinfo.h>
 #include <linux/math64.h>
 #include <linux/writeback.h>
 #include <linux/compaction.h>
@@ -1165,19 +1166,32 @@ static void *vmstat_start(struct seq_file *m, loff_t *pos)
 	m->private = v;
 	if (!v)
 		return ERR_PTR(-ENOMEM);
-	for (i = 0; i < NR_VM_ZONE_STAT_ITEMS; i++)
-		v[i] = global_page_state(i);
-	v += NR_VM_ZONE_STAT_ITEMS;
 
-	global_dirty_limits(v + NR_DIRTY_BG_THRESHOLD,
-			    v + NR_DIRTY_THRESHOLD);
-	v += NR_VM_WRITEBACK_STAT_ITEMS;
+	if (ve_is_super(get_exec_env())) {
+		for (i = 0; i < NR_VM_ZONE_STAT_ITEMS; i++)
+			v[i] = global_page_state(i);
+
+		v += NR_VM_ZONE_STAT_ITEMS;
+
+		global_dirty_limits(v + NR_DIRTY_BG_THRESHOLD,
+				    v + NR_DIRTY_THRESHOLD);
+		v += NR_VM_WRITEBACK_STAT_ITEMS;
 
 #ifdef CONFIG_VM_EVENT_COUNTERS
-	all_vm_events(v);
-	v[PGPGIN] /= 2;		/* sectors -> kbytes */
-	v[PGPGOUT] /= 2;
+		all_vm_events(v);
+		v[PGPGIN] /= 2;		/* sectors -> kbytes */
+		v[PGPGOUT] /= 2;
 #endif
+	} else
+		memset(v, 0, stat_items_size);
+
+	if (virtinfo_notifier_call(VITYPE_GENERAL,
+				VIRTINFO_VMSTAT, v) & NOTIFY_FAIL) {
+		kfree(v);
+		m->private = NULL;
+		return ERR_PTR(-ENOMSG);
+	}
+
 	return (unsigned long *)m->private + *pos;
 }
 
@@ -1383,7 +1397,7 @@ static int __init setup_vmstat(void)
 #ifdef CONFIG_PROC_FS
 	proc_create("buddyinfo", S_IRUGO, NULL, &fragmentation_file_operations);
 	proc_create("pagetypeinfo", S_IRUGO, NULL, &pagetypeinfo_file_ops);
-	proc_create("vmstat", S_IRUGO, NULL, &proc_vmstat_file_operations);
+	proc_create("vmstat", S_IRUGO, &glob_proc_root, &proc_vmstat_file_operations);
 	proc_create("zoneinfo", S_IRUGO, NULL, &proc_zoneinfo_file_operations);
 #endif
 	return 0;

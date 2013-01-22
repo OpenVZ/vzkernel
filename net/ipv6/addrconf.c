@@ -2527,7 +2527,8 @@ static int inet6_addr_del(struct net *net, int ifindex, const struct in6_addr *p
 			   disable IPv6 on this interface.
 			 */
 			if (list_empty(&idev->addr_list))
-				addrconf_ifdown(idev->dev, 1);
+				addrconf_ifdown(idev->dev,
+						!(idev->dev->flags & IFF_LOOPBACK));
 			return 0;
 		}
 	}
@@ -2541,7 +2542,7 @@ int addrconf_add_ifaddr(struct net *net, void __user *arg)
 	struct in6_ifreq ireq;
 	int err;
 
-	if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+	if (!ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
 		return -EPERM;
 
 	if (copy_from_user(&ireq, arg, sizeof(struct in6_ifreq)))
@@ -2560,7 +2561,7 @@ int addrconf_del_ifaddr(struct net *net, void __user *arg)
 	struct in6_ifreq ireq;
 	int err;
 
-	if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+	if (!ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
 		return -EPERM;
 
 	if (copy_from_user(&ireq, arg, sizeof(struct in6_ifreq)))
@@ -3190,6 +3191,7 @@ static void addrconf_dad_begin(struct inet6_ifaddr *ifp)
 	if (dev->flags&(IFF_NOARP|IFF_LOOPBACK) ||
 	    idev->cnf.accept_dad < 1 ||
 	    !(ifp->flags&IFA_F_TENTATIVE) ||
+	    dev_net(dev)->owner_ve->disable_net ||
 	    ifp->flags & IFA_F_NODAD) {
 		ifp->flags &= ~(IFA_F_TENTATIVE|IFA_F_OPTIMISTIC|IFA_F_DADFAILED);
 		spin_unlock(&ifp->lock);

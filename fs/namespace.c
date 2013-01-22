@@ -39,7 +39,8 @@ static int mnt_group_start = 1;
 static struct list_head mount_hashtable[HASH_SIZE];
 static struct list_head mountpoint_hashtable[HASH_SIZE];
 static struct kmem_cache *mnt_cache __read_mostly;
-static struct rw_semaphore namespace_sem;
+struct rw_semaphore namespace_sem;
+EXPORT_SYMBOL(namespace_sem);
 
 /* /sys/fs */
 struct kobject *fs_kobj;
@@ -54,6 +55,7 @@ EXPORT_SYMBOL_GPL(fs_kobj);
  * tree or hash is modified or when a vfsmount structure is modified.
  */
 DEFINE_BRLOCK(vfsmount_lock);
+EXPORT_SYMBOL(vfsmount_lock);
 
 static inline unsigned long hash(struct vfsmount *mnt, struct dentry *dentry)
 {
@@ -173,7 +175,7 @@ static struct mount *alloc_vfsmnt(const char *name)
 			goto out_free_cache;
 
 		if (name) {
-			mnt->mnt_devname = kstrdup(name, GFP_KERNEL);
+			mnt->mnt_devname = kstrdup(name, GFP_KERNEL_UBC);
 			if (!mnt->mnt_devname)
 				goto out_free_id;
 		}
@@ -744,7 +746,7 @@ static void commit_tree(struct mount *mnt)
 	touch_mnt_namespace(n);
 }
 
-static struct mount *next_mnt(struct mount *p, struct mount *root)
+struct mount *next_mnt(struct mount *p, struct mount *root)
 {
 	struct list_head *next = p->mnt_mounts.next;
 	if (next == &p->mnt_mounts) {
@@ -759,6 +761,7 @@ static struct mount *next_mnt(struct mount *p, struct mount *root)
 	}
 	return list_entry(next, struct mount, mnt_child);
 }
+EXPORT_SYMBOL(next_mnt);
 
 static struct mount *skip_mnt_tree(struct mount *p)
 {
@@ -2609,6 +2612,7 @@ out_dir:
 out_type:
 	return ret;
 }
+EXPORT_SYMBOL(sys_mount);
 
 /*
  * Return true if path is reachable from root
@@ -2784,7 +2788,7 @@ void __init mnt_init(void)
 	init_rwsem(&namespace_sem);
 
 	mnt_cache = kmem_cache_create("mnt_cache", sizeof(struct mount),
-			0, SLAB_HWCACHE_ALIGN | SLAB_PANIC, NULL);
+			0, SLAB_HWCACHE_ALIGN | SLAB_PANIC | SLAB_UBC, NULL);
 
 	printk(KERN_INFO "Mount-cache hash table entries: %lu\n", HASH_SIZE);
 
@@ -2963,3 +2967,18 @@ const struct proc_ns_operations mntns_operations = {
 	.install	= mntns_install,
 	.inum		= mntns_inum,
 };
+
+struct mnt_namespace * get_task_mnt_ns(struct task_struct *tsk)
+{
+	struct mnt_namespace *mnt_ns = NULL;
+
+	task_lock(tsk);
+	if (tsk->nsproxy)
+		mnt_ns = tsk->nsproxy->mnt_ns;
+	if (mnt_ns)
+		get_mnt_ns(mnt_ns);
+	task_unlock(tsk);
+
+	return mnt_ns;
+}
+EXPORT_SYMBOL(get_task_mnt_ns);

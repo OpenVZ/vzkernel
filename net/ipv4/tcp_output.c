@@ -412,11 +412,6 @@ static void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags)
 	TCP_SKB_CB(skb)->end_seq = seq;
 }
 
-static inline bool tcp_urg_mode(const struct tcp_sock *tp)
-{
-	return tp->snd_una != tp->snd_up;
-}
-
 #define OPTION_SACK_ADVERTISE	(1 << 0)
 #define OPTION_TS		(1 << 1)
 #define OPTION_MD5		(1 << 2)

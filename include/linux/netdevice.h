@@ -289,7 +289,6 @@ enum netdev_state_t {
 	__LINK_STATE_DORMANT,
 };
 
-
 /*
  * This structure holds at boot time configured netdevice settings. They
  * are then used in the device probing.
@@ -752,6 +751,11 @@ struct netdev_tc_txq {
 	u16 count;
 	u16 offset;
 };
+
+struct cpt_context;
+struct cpt_ops;
+struct rst_ops;
+struct cpt_netdev_image;
 
 #if defined(CONFIG_FCOE) || defined(CONFIG_FCOE_MODULE)
 /*
@@ -1443,6 +1447,7 @@ struct net_device {
 						   because most packets are
 						   unicast) */
 
+	unsigned char		is_leaked;
 
 #ifdef CONFIG_RPS
 	struct netdev_rx_queue	*_rx;
@@ -1613,6 +1618,20 @@ struct net_device {
 	RH_KABI_RESERVE_P(16)
 };
 #define to_net_dev(d) container_of(d, struct net_device, dev)
+
+#define NETDEV_HASHBITS	8
+#define NETDEV_HASHENTRIES (1 << NETDEV_HASHBITS)
+
+static inline struct hlist_head *dev_name_hash(struct net *net, const char *name)
+{
+	unsigned hash = full_name_hash(name, strnlen(name, IFNAMSIZ));
+	return &net->dev_name_head[hash & ((1 << NETDEV_HASHBITS) - 1)];
+}
+
+static inline struct hlist_head *dev_index_hash(struct net *net, int ifindex)
+{
+	return &net->dev_index_head[ifindex & ((1 << NETDEV_HASHBITS) - 1)];
+}
 
 #define	NETDEV_ALIGN		32
 
@@ -3414,6 +3433,18 @@ netdev_features_t passthru_features_check(struct sk_buff *skb,
 					  struct net_device *dev,
 					  netdev_features_t features);
 netdev_features_t netif_skb_features(struct sk_buff *skb);
+
+#if defined(CONFIG_VE) && defined(CONFIG_NET)
+static inline int ve_is_dev_movable(struct net_device *dev)
+{
+	return !(dev->features & (NETIF_F_VIRTUAL | NETIF_F_NETNS_LOCAL));
+}
+#else
+static inline int ve_is_dev_movable(struct net_device *dev)
+{
+	return 0;
+}
+#endif
 
 static inline bool net_gso_ok(netdev_features_t features, int gso_type)
 {
