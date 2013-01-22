@@ -13,14 +13,25 @@
 static int loadavg_proc_show(struct seq_file *m, void *v)
 {
 	unsigned long avnrun[3];
+	long running, threads;
+	struct ve_struct *ve;
 
-	get_avenrun(avnrun, FIXED_1/200, 0);
+	ve = get_exec_env();
+	if (ve_is_super(ve)) {
+		get_avenrun(avnrun, FIXED_1/200, 0);
+		running = nr_running();
+		threads = nr_threads;
+	} else {
+		get_avenrun_ve(avnrun, FIXED_1/200, 0);
+		running = nr_running_ve();
+		threads = ve->pcounter;
+	}
 
-	seq_printf(m, "%lu.%02lu %lu.%02lu %lu.%02lu %ld/%d %d\n",
+	seq_printf(m, "%lu.%02lu %lu.%02lu %lu.%02lu %ld/%ld %d\n",
 		LOAD_INT(avnrun[0]), LOAD_FRAC(avnrun[0]),
 		LOAD_INT(avnrun[1]), LOAD_FRAC(avnrun[1]),
 		LOAD_INT(avnrun[2]), LOAD_FRAC(avnrun[2]),
-		nr_running(), nr_threads,
+		running, threads,
 		task_active_pid_ns(current)->last_pid);
 	return 0;
 }
@@ -39,7 +50,7 @@ static const struct file_operations loadavg_proc_fops = {
 
 static int __init proc_loadavg_init(void)
 {
-	proc_create("loadavg", 0, NULL, &loadavg_proc_fops);
+	proc_create("loadavg", 0, &glob_proc_root, &loadavg_proc_fops);
 	return 0;
 }
 module_init(proc_loadavg_init);

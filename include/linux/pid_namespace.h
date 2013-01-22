@@ -20,15 +20,25 @@ struct pidmap {
 
 struct bsd_acct_struct;
 
+/* pid namespace flags */
+
+/* if set newly created pid ns got PID_NS_HIDE_CHILD flag */
+#define PID_NS_HIDE_CHILD	0x00000001
+
+/* if set newly created processes invisible from parent ns*/
+#define PID_NS_HIDDEN		0x00000002
+
 struct pid_namespace {
 	struct kref kref;
 	struct pidmap pidmap[PIDMAP_ENTRIES];
 	int last_pid;
+	int pid_max;
 	unsigned int nr_hashed;
 	struct task_struct *child_reaper;
 	struct kmem_cache *pid_cachep;
 	unsigned int level;
 	struct pid_namespace *parent;
+	unsigned flags;
 #ifdef CONFIG_PROC_FS
 	struct vfsmount *proc_mnt;
 	struct dentry *proc_self;

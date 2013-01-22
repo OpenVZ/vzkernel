@@ -48,6 +48,7 @@
 #include <linux/slab.h>
 #include <linux/pagemap.h>
 #include <linux/aio.h>
+#include <linux/ve_proto.h>
 
 #include <asm/uaccess.h>
 #include <asm/mmu_context.h>
@@ -64,6 +65,20 @@ int compat_printk(const char *fmt, ...)
 		return 0;
 	va_start(ap, fmt);
 	ret = vprintk(fmt, ap);
+	va_end(ap);
+	return ret;
+}
+
+#include "read_write.h"
+
+int ve_compat_printk(int dst, const char *fmt, ...)
+{
+	va_list ap;
+	int ret;
+	if (!compat_log)
+		return 0;
+	va_start(ap, fmt);
+	ret = ve_vprintk(dst, fmt, ap);
 	va_end(ap);
 	return ret;
 }
@@ -335,7 +350,15 @@ asmlinkage long compat_sys_ustat(unsigned dev, struct compat_ustat __user *u)
 {
 	struct compat_ustat tmp;
 	struct kstatfs sbuf;
-	int err = vfs_ustat(new_decode_dev(dev), &sbuf);
+	int err;
+	dev_t kdev;
+
+	kdev = new_decode_dev(dev);
+	err = get_device_perms_ve(S_IFBLK, kdev, FMODE_READ);
+	if (err)
+		return err;
+
+	err = vfs_ustat(kdev, &sbuf);
 	if (err)
 		return err;
 

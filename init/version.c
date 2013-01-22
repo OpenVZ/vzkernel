@@ -13,6 +13,7 @@
 #include <generated/utsrelease.h>
 #include <linux/version.h>
 #include <linux/proc_ns.h>
+#include <linux/init_task.h>
 
 #ifndef CONFIG_KALLSYMS
 #define version(a) Version_ ## a
@@ -24,7 +25,7 @@ int version_string(LINUX_VERSION_CODE);
 
 struct uts_namespace init_uts_ns = {
 	.kref = {
-		.refcount	= ATOMIC_INIT(2),
+		.refcount	= INIT_NSPROXY_COUNT,
 	},
 	.name = {
 		.sysname	= UTS_SYSNAME,
@@ -38,6 +39,12 @@ struct uts_namespace init_uts_ns = {
 	.proc_inum = PROC_UTS_INIT_INO,
 };
 EXPORT_SYMBOL_GPL(init_uts_ns);
+
+struct new_utsname virt_utsname = {
+	/* we need only this field */
+	.release        = UTS_RELEASE,
+};
+EXPORT_SYMBOL(virt_utsname);
 
 /* FIXED STRINGS! Don't touch! */
 const char linux_banner[] =
