@@ -24,6 +24,7 @@
 #include <linux/migrate.h>
 #include <linux/perf_event.h>
 #include <linux/ksm.h>
+#include <linux/module.h>
 #include <asm/uaccess.h>
 #include <asm/pgtable.h>
 #include <asm/cacheflush.h>
@@ -440,3 +441,4 @@ out:
 	up_write(&current->mm->mmap_sem);
 	return error;
 }
+EXPORT_SYMBOL(sys_mprotect);

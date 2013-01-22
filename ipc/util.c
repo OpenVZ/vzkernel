@@ -62,6 +62,8 @@
 
 #include <asm/unistd.h>
 
+#include <bc/kmem.h>
+
 #include "util.h"
 
 struct ipc_proc_iface {
@@ -466,7 +468,7 @@ void *ipc_alloc(int size)
 {
 	void *out;
 	if(size > PAGE_SIZE)
-		out = vmalloc(size);
+		out = ub_vmalloc(size);
 	else
 		out = kmalloc(size, GFP_KERNEL);
 	return out;
@@ -692,6 +694,7 @@ struct kern_ipc_perm *ipc_obtain_object_check(struct ipc_ids *ids, int id)
 out:
 	return out;
 }
+EXPORT_SYMBOL(ipc_lock);
 
 /**
  * ipcget - Common sys_*get() code
@@ -771,7 +774,7 @@ struct kern_ipc_perm *ipcctl_pre_down_nolock(struct ipc_namespace *ns,
 
 	euid = current_euid();
 	if (uid_eq(euid, ipcp->cuid) || uid_eq(euid, ipcp->uid)  ||
-	    ns_capable(ns->user_ns, CAP_SYS_ADMIN))
+	    ns_capable(ns->user_ns, CAP_VE_SYS_ADMIN))
 		return ipcp; /* successful lookup */
 err:
 	return ERR_PTR(err);

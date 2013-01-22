@@ -131,6 +131,9 @@
 #include <net/cls_cgroup.h>
 #include <net/netprio_cgroup.h>
 
+#include <bc/net.h>
+#include <bc/beancounter.h>
+
 #include <linux/filter.h>
 
 #include <trace/events/sock.h>
@@ -366,8 +369,8 @@ static void sock_warn_obsolete_bsdism(const char *name)
 	static char warncomm[TASK_COMM_LEN];
 	if (strcmp(warncomm, current->comm) && warned < 5) {
 		strcpy(warncomm,  current->comm);
-		pr_warn("process `%s' is using obsolete %s SO_BSDCOMPAT\n",
-			warncomm, name);
+		ve_printk(VE_LOG, KERN_WARNING "process `%s' is using obsolete "
+			"%s SO_BSDCOMPAT\n", warncomm, name);
 		warned++;
 	}
 }
@@ -1299,6 +1302,7 @@ static void sk_prot_free(struct proto *prot, struct sock *sk)
 	slab = prot->slab;
 
 	security_sk_free(sk);
+	ub_sock_uncharge(sk);
 	if (slab != NULL)
 		kmem_cache_free(slab, sk);
 	else
@@ -1479,15 +1483,11 @@ struct sock *sk_clone_lock(const struct sock *sk, const gfp_t priority)
 		if (filter != NULL)
 			sk_filter_charge(newsk, filter);
 
-		if (unlikely(xfrm_sk_clone_policy(newsk))) {
-			/* It is still raw copy of parent, so invalidate
-			 * destructor and make plain sk_free() */
-			newsk->sk_destruct = NULL;
-			bh_unlock_sock(newsk);
-			sk_free(newsk);
-			newsk = NULL;
-			goto out;
-		}
+		if (ub_sock_charge(newsk, newsk->sk_family, newsk->sk_type) < 0)
+			goto out_err;
+
+		if (unlikely(xfrm_sk_clone_policy(newsk)))
+			goto out_err;
 
 		newsk->sk_err	   = 0;
 		newsk->sk_priority = 0;
@@ -1521,13 +1521,22 @@ struct sock *sk_clone_lock(const struct sock *sk, const gfp_t priority)
 		if (newsk->sk_flags & SK_FLAGS_TIMESTAMP)
 			net_enable_timestamp();
 	}
-out:
 	return newsk;
+
+out_err:
+	/* It is still raw copy of parent, so invalidate
+	 * destructor and make plain sk_free() */
+	sock_reset_flag(newsk, SOCK_TIMESTAMP);
+	newsk->sk_destruct = NULL;
+	sk_free(newsk);
+	return NULL;
 }
 EXPORT_SYMBOL_GPL(sk_clone_lock);
 
 void sk_setup_caps(struct sock *sk, struct dst_entry *dst)
 {
+	extern int sysctl_tcp_use_sg;
+
 	__sk_dst_set(sk, dst);
 	sk->sk_route_caps = dst->dev->features;
 	if (sk->sk_route_caps & NETIF_F_GSO)
@@ -1542,6 +1551,8 @@ void sk_setup_caps(struct sock *sk, struct dst_entry *dst)
 			sk->sk_gso_max_segs = dst->dev->gso_max_segs;
 		}
 	}
+	if (!sysctl_tcp_use_sg)
+		sk->sk_route_caps &= ~NETIF_F_SG;
 }
 EXPORT_SYMBOL_GPL(sk_setup_caps);
 
@@ -1747,7 +1758,23 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 		err = -EPIPE;
 		if (sk->sk_shutdown & SEND_SHUTDOWN)
 			goto failure;
-
+#if 0
+		if (ub_sock_getwres_other(sk, skb_charge_size(size))) {
+			if (data_len < size) {
+				size = data_len;
+				continue;
+			}
+			set_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
+			err = -EAGAIN;
+			if (!timeo)
+				goto failure;
+			if (signal_pending(current))
+				goto interrupted;
+			timeo = ub_sock_wait_for_space(sk, timeo,
+					skb_charge_size(size));
+			continue;
+		}
+#endif
 		if (atomic_read(&sk->sk_wmem_alloc) < sk->sk_sndbuf) {
 			skb = alloc_skb(header_len, gfp_mask);
 			if (skb) {
@@ -1781,9 +1808,18 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 				/* Full success... */
 				break;
 			}
+#if 0
+			ub_sock_retwres_other(sk, skb_charge_size(size),
+					SOCK_MIN_UBCSPACE_CH);
+#endif
 			err = -ENOBUFS;
 			goto failure;
 		}
+#if 0
+		ub_sock_retwres_other(sk,
+				skb_charge_size(size),
+				SOCK_MIN_UBCSPACE_CH);
+#endif
 		set_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
 		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 		err = -EAGAIN;
@@ -1794,6 +1830,7 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 		timeo = sock_wait_for_wmem(sk, timeo);
 	}
 
+	ub_skb_set_charge(skb, sk, skb_charge_size(skb->truesize), UB_OTHERSOCKBUF);
 	skb_set_owner_w(skb, sk);
 	return skb;
 

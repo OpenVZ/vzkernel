@@ -26,11 +26,17 @@
 #include <net/tcp.h>
 #include <net/inet_common.h>
 #include <net/xfrm.h>
+#include <bc/sock_orphan.h>
 
 int sysctl_tcp_syncookies __read_mostly = 1;
 EXPORT_SYMBOL(sysctl_tcp_syncookies);
 
 int sysctl_tcp_abort_on_overflow __read_mostly;
+int sysctl_tcp_max_tw_kmem_fraction __read_mostly = 384;
+int sysctl_tcp_max_tw_buckets_ub __read_mostly = 16536;
+
+EXPORT_SYMBOL(sysctl_tcp_max_tw_kmem_fraction);
+EXPORT_SYMBOL(sysctl_tcp_max_tw_buckets_ub);
 
 struct inet_timewait_death_row tcp_death_row = {
 	.sysctl_max_tw_buckets = NR_FILE * 2,
@@ -46,6 +52,7 @@ struct inet_timewait_death_row tcp_death_row = {
 	.twcal_hand	= -1,
 	.twcal_timer	= TIMER_INITIALIZER(inet_twdr_twcal_tick, 0,
 					    (unsigned long)&tcp_death_row),
+	.ub_managed	= 1,
 };
 EXPORT_SYMBOL_GPL(tcp_death_row);
 
@@ -273,7 +280,8 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 	if (tcp_death_row.sysctl_tw_recycle && tp->rx_opt.ts_recent_stamp)
 		recycle_ok = tcp_remember_stamp(sk);
 
-	if (tcp_death_row.tw_count < tcp_death_row.sysctl_max_tw_buckets)
+	if (tcp_death_row.tw_count < tcp_death_row.sysctl_max_tw_buckets &&
+			ub_timewait_check(sk, &tcp_death_row))
 		tw = inet_twsk_alloc(sk, state);
 
 	if (tw != NULL) {
@@ -289,6 +297,8 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 		tcptw->tw_ts_recent	= tp->rx_opt.ts_recent;
 		tcptw->tw_ts_recent_stamp = tp->rx_opt.ts_recent_stamp;
 		tcptw->tw_ts_offset	= tp->tsoffset;
+		if (sk->sk_user_data != NULL)
+			tw->tw_rcv_wscale |= TW_WSCALE_SPEC;
 
 #if IS_ENABLED(CONFIG_IPV6)
 		if (tw->tw_family == PF_INET6) {
@@ -385,7 +395,6 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 		struct inet_connection_sock *newicsk = inet_csk(newsk);
 		struct tcp_sock *newtp = tcp_sk(newsk);
 
-		/* Now setup tcp_sock */
 		newtp->pred_flags = 0;
 
 		newtp->rcv_wup = newtp->copied_seq =

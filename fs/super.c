@@ -34,12 +34,15 @@
 #include <linux/cleancache.h>
 #include <linux/fsnotify.h>
 #include <linux/lockdep.h>
+#include <linux/ve_proto.h>
 #include "internal.h"
 
 const unsigned super_block_wrapper_version = 0;
 
 LIST_HEAD(super_blocks);
+EXPORT_SYMBOL(super_blocks);
 DEFINE_SPINLOCK(sb_lock);
+EXPORT_SYMBOL(sb_lock);
 
 static char *sb_writers_name[SB_FREEZE_LEVELS] = {
 	"sb_writers",
@@ -642,6 +645,7 @@ rescan:
 	spin_unlock(&sb_lock);
 	return NULL;
 }
+EXPORT_SYMBOL(user_get_super);
 
 /**
  *	do_remount_sb - asks filesystem to change mount options.

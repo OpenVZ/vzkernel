@@ -3,6 +3,7 @@
 #include <linux/workqueue.h>
 #include <linux/rtnetlink.h>
 #include <linux/cache.h>
+#include <linux/proc_fs.h>
 #include <linux/slab.h>
 #include <linux/list.h>
 #include <linux/delay.h>
@@ -15,6 +16,7 @@
 #include <linux/file.h>
 #include <linux/export.h>
 #include <linux/user_namespace.h>
+#include <linux/netdevice.h>
 #include <net/net_namespace.h>
 #include <net/netns/generic.h>
 
@@ -38,6 +40,12 @@ EXPORT_SYMBOL(init_net);
 
 static unsigned int max_gen_ptrs = INITIAL_NET_GEN_PTRS;
 
+static inline void set_net_context(struct net *net)
+{
+	if (net->loopback_dev)
+		set_exec_ub(netdev_bc(net->loopback_dev)->exec_ub);
+}
+
 static struct net_generic *net_alloc_generic(void)
 {
 	struct net_generic *ng;
@@ -50,7 +58,7 @@ static struct net_generic *net_alloc_generic(void)
 	return ng;
 }
 
-static int net_assign_generic(struct net *net, int id, void *data)
+int net_assign_generic(struct net *net, int id, void *data)
 {
 	struct net_generic *ng, *old_ng;
 
@@ -86,6 +94,7 @@ assign:
 	ng->ptr[id - 1] = data;
 	return 0;
 }
+EXPORT_SYMBOL_GPL(net_assign_generic);
 
 static int ops_init(const struct pernet_operations *ops, struct net *net)
 {
@@ -127,8 +136,11 @@ static void ops_exit_list(const struct pernet_operations *ops,
 {
 	struct net *net;
 	if (ops->exit) {
-		list_for_each_entry(net, net_exit_list, exit_list)
+		list_for_each_entry(net, net_exit_list, exit_list) {
+			set_net_context(net);
 			ops->exit(net);
+			set_net_context(&init_net);
+		}
 	}
 	if (ops->exit_batch)
 		ops->exit_batch(net_exit_list);
@@ -153,6 +165,10 @@ static __net_init int setup_net(struct net *net, struct user_namespace *user_ns)
 	const struct pernet_operations *ops, *saved_ops;
 	int error = 0;
 	LIST_HEAD(net_exit_list);
+
+#ifdef CONFIG_VE
+	net->owner_ve = get_exec_env();
+#endif
 
 	atomic_set(&net->count, 1);
 	atomic_set(&net->passive, 1);
@@ -217,6 +233,8 @@ out_free:
 
 static void net_free(struct net *net)
 {
+	struct completion *sysfs_completion;
+
 #ifdef NETNS_REFCNT_DEBUG
 	if (unlikely(atomic_read(&net->use_count) != 0)) {
 		pr_emerg("network namespace not free! Usage: %d\n",
@@ -224,8 +242,11 @@ static void net_free(struct net *net)
 		return;
 	}
 #endif
+	sysfs_completion = net->sysfs_completion;
 	kfree(net->gen);
 	kmem_cache_free(net_cachep, net);
+	if (sysfs_completion)
+		complete(sysfs_completion);
 }
 
 void net_drop_ns(void *p)
@@ -305,6 +326,9 @@ static void cleanup_net(struct work_struct *work)
 	/* Free the net generic variables */
 	list_for_each_entry_reverse(ops, &pernet_list, list)
 		ops_free_list(ops, &net_exit_list);
+
+	list_for_each_entry(net, &net_kill_list, cleanup_list)
+		net->owner_ve->ve_netns = NULL;
 
 	mutex_unlock(&net_mutex);
 
@@ -446,7 +470,9 @@ static int __register_pernet_operations(struct list_head *list,
 	list_add_tail(&ops->list, list);
 	if (ops->init || (ops->id && ops->size)) {
 		for_each_net(net) {
+			set_net_context(net);
 			error = ops_init(ops, net);
+			set_net_context(&init_net);
 			if (error)
 				goto out_undo;
 			list_add_tail(&net->exit_list, &net_exit_list);

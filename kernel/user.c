@@ -206,6 +206,7 @@ struct user_struct *alloc_uid(kuid_t uid)
 out_unlock:
 	return NULL;
 }
+EXPORT_SYMBOL(alloc_uid);
 
 static int __init uid_cache_init(void)
 {
@@ -224,5 +225,6 @@ static int __init uid_cache_init(void)
 
 	return 0;
 }
+EXPORT_SYMBOL(free_uid);
 
 module_init(uid_cache_init);

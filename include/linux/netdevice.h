@@ -289,6 +289,11 @@ enum netdev_state_t {
 	__LINK_STATE_DORMANT,
 };
 
+struct netdev_bc {
+	struct user_beancounter *exec_ub, *owner_ub;
+};
+
+#define netdev_bc(dev)		(&(dev)->dev_bc)
 
 /*
  * This structure holds at boot time configured netdevice settings. They
@@ -712,6 +717,11 @@ struct netdev_tc_txq {
 	u16 count;
 	u16 offset;
 };
+
+struct cpt_context;
+struct cpt_ops;
+struct rst_ops;
+struct cpt_netdev_image;
 
 #if defined(CONFIG_FCOE) || defined(CONFIG_FCOE_MODULE)
 /*
@@ -1293,6 +1303,7 @@ struct net_device {
 						   because most packets are
 						   unicast) */
 
+	unsigned char		is_leaked;
 
 #ifdef CONFIG_RPS
 	struct netdev_rx_queue	*_rx;
@@ -1401,6 +1412,8 @@ struct net_device {
 	/* MRP */
 	struct mrp_port __rcu	*mrp_port;
 
+	struct netdev_bc	dev_bc;
+
 	/* class/net/name entry */
 	struct device		dev;
 	/* space for optional device, statistics, and wireless sysfs groups */
@@ -1465,6 +1478,20 @@ struct net_device {
 	RH_KABI_RESERVE_P(16)
 };
 #define to_net_dev(d) container_of(d, struct net_device, dev)
+
+#define NETDEV_HASHBITS	8
+#define NETDEV_HASHENTRIES (1 << NETDEV_HASHBITS)
+
+static inline struct hlist_head *dev_name_hash(struct net *net, const char *name)
+{
+	unsigned hash = full_name_hash(name, strnlen(name, IFNAMSIZ));
+	return &net->dev_name_head[hash & ((1 << NETDEV_HASHBITS) - 1)];
+}
+
+static inline struct hlist_head *dev_index_hash(struct net *net, int ifindex)
+{
+	return &net->dev_index_head[ifindex & ((1 << NETDEV_HASHBITS) - 1)];
+}
 
 #define	NETDEV_ALIGN		32
 
@@ -2492,6 +2519,8 @@ void			__dev_notify_flags(struct net_device *,
 					   unsigned int old_flags,
 					   unsigned int gchanges);
 extern int		dev_change_name(struct net_device *, const char *);
+int __dev_change_net_namespace(struct net_device *, struct net *, const char *,
+			struct user_beancounter *exec_ub);
 extern int		dev_set_alias(struct net_device *, const char *, size_t);
 extern int		dev_change_net_namespace(struct net_device *,
 						 struct net *, const char *);
@@ -3020,6 +3049,18 @@ void netif_stacked_transfer_operstate(const struct net_device *rootdev,
 					struct net_device *dev);
 
 netdev_features_t netif_skb_features(struct sk_buff *skb);
+
+#if defined(CONFIG_VE) && defined(CONFIG_NET)
+static inline int ve_is_dev_movable(struct net_device *dev)
+{
+	return !(dev->features & (NETIF_F_VIRTUAL | NETIF_F_NETNS_LOCAL));
+}
+#else
+static inline int ve_is_dev_movable(struct net_device *dev)
+{
+	return 0;
+}
+#endif
 
 static inline bool net_gso_ok(netdev_features_t features, int gso_type)
 {

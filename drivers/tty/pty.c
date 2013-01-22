@@ -25,6 +25,7 @@
 #include <linux/slab.h>
 #include <linux/mutex.h>
 
+#include <bc/misc.h>
 
 #ifdef CONFIG_UNIX98_PTYS
 static struct tty_driver *ptm_driver;
@@ -35,6 +36,8 @@ static DEFINE_MUTEX(devpts_mutex);
 static void pty_close(struct tty_struct *tty, struct file *filp)
 {
 	BUG_ON(!tty);
+
+	ub_pty_uncharge(tty);
 	if (tty->driver->subtype == PTY_TYPE_MASTER)
 		WARN_ON(tty->count > 1);
 	else {
@@ -252,6 +255,10 @@ static int pty_open(struct tty_struct *tty, struct file *filp)
 	if (test_bit(TTY_PTY_LOCK, &tty->link->flags))
 		goto out;
 	if (tty->driver->subtype == PTY_TYPE_SLAVE && tty->link->count != 1)
+		goto out;
+
+	retval = -ENOMEM;
+	if (ub_pty_charge(tty))
 		goto out;
 
 	clear_bit(TTY_IO_ERROR, &tty->flags);

@@ -24,6 +24,8 @@
 #include <linux/socket.h>
 #include <linux/netdevice.h>
 #include <linux/proc_fs.h>
+#include <linux/sched.h>
+#include <linux/ve.h>
 #ifdef CONFIG_SYSCTL
 #include <linux/sysctl.h>
 #endif
@@ -40,6 +42,7 @@
 #include <linux/log2.h>
 #include <linux/inetdevice.h>
 #include <net/addrconf.h>
+#include <bc/beancounter.h>
 
 #define DEBUG
 #define NEIGH_DEBUG 1
@@ -276,6 +279,7 @@ static struct neighbour *neigh_alloc(struct neigh_table *tbl, struct net_device 
 	int entries;
 
 	entries = atomic_inc_return(&tbl->entries) - 1;
+	n = ERR_PTR(-ENOBUFS);
 	if (entries >= tbl->gc_thresh3 ||
 	    (entries >= tbl->gc_thresh2 &&
 	     time_after(now, tbl->last_flush + 5 * HZ))) {
@@ -286,7 +290,7 @@ static struct neighbour *neigh_alloc(struct neigh_table *tbl, struct net_device 
 
 	n = kzalloc(tbl->entry_size + dev->neigh_priv_len, GFP_ATOMIC);
 	if (!n)
-		goto out_entries;
+		goto out_nomem;
 
 	__skb_queue_head_init(&n->arp_queue);
 	rwlock_init(&n->lock);
@@ -305,6 +309,8 @@ static struct neighbour *neigh_alloc(struct neigh_table *tbl, struct net_device 
 out:
 	return n;
 
+out_nomem:
+	n = ERR_PTR(-ENOMEM);
 out_entries:
 	atomic_dec(&tbl->entries);
 	goto out;
@@ -466,13 +472,12 @@ struct neighbour *__neigh_create(struct neigh_table *tbl, const void *pkey,
 	u32 hash_val;
 	int key_len = tbl->key_len;
 	int error;
-	struct neighbour *n1, *rc, *n = neigh_alloc(tbl, dev);
+	struct neighbour *n1, *rc, *n;
 	struct neigh_hash_table *nht;
 
-	if (!n) {
-		rc = ERR_PTR(-ENOBUFS);
+	rc = n = neigh_alloc(tbl, dev);
+	if (IS_ERR(n))
 		goto out;
-	}
 
 	memcpy(n->primary_key, pkey, key_len);
 	n->dev = dev;
@@ -701,6 +706,13 @@ void neigh_destroy(struct neighbour *neigh)
 
 	NEIGH_CACHE_STAT_INC(neigh->tbl, destroys);
 
+	if (neigh->dev->is_leaked) {
+		printk(KERN_WARNING
+		       "Destroying neighbour %p on leaked device\n", neigh);
+		dump_stack();
+		return;
+	}
+
 	if (!neigh->dead) {
 		pr_warn("Destroying alive neighbour %p\n", neigh);
 		dump_stack();
@@ -802,10 +814,18 @@ static void neigh_periodic_work(struct work_struct *work)
 			if (atomic_read(&n->refcnt) == 1 &&
 			    (state == NUD_FAILED ||
 			     time_after(jiffies, n->used + NEIGH_VAR(n->parms, GC_STALETIME)))) {
+				struct net_device *dev = n->dev;
+				struct user_beancounter *ub;
+
 				*np = n->next;
 				n->dead = 1;
 				write_unlock(&n->lock);
+
+				ub = set_exec_ub(netdev_bc(dev)->owner_ub);
+
 				neigh_cleanup_and_release(n);
+
+				set_exec_ub(ub);
 				continue;
 			}
 			write_unlock(&n->lock);
@@ -1393,9 +1413,13 @@ static void neigh_proxy_process(unsigned long arg)
 
 			__skb_unlink(skb, &tbl->proxy_queue);
 			if (tbl->proxy_redo && netif_running(dev)) {
+				struct user_beancounter *ub;
+
+				ub = set_exec_ub(netdev_bc(dev)->owner_ub);
 				rcu_read_lock();
 				tbl->proxy_redo(skb);
 				rcu_read_unlock();
+				set_exec_ub(ub);
 			} else {
 				kfree_skb(skb);
 			}

@@ -66,6 +66,10 @@
 #include <net/sock.h>
 #include <net/scm.h>
 #include <net/netlink.h>
+#include <net/netlink_sock.h>
+
+#include <bc/beancounter.h>
+#include <bc/net.h>
 
 #include "af_netlink.h"
 
@@ -1128,6 +1132,8 @@ static int __netlink_create(struct net *net, struct socket *sock,
 	sk = sk_alloc(net, PF_NETLINK, GFP_KERNEL, &netlink_proto);
 	if (!sk)
 		return -ENOMEM;
+	if (ub_other_sock_charge(sk))
+		goto out_free;
 
 	sock_init_data(sock, sk);
 
@@ -1146,6 +1152,10 @@ static int __netlink_create(struct net *net, struct socket *sock,
 	sk->sk_destruct = netlink_sock_destruct;
 	sk->sk_protocol = protocol;
 	return 0;
+
+out_free:
+	sk_free(sk);
+	return -ENOMEM;
 }
 
 static int netlink_create(struct net *net, struct socket *sock, int protocol,
@@ -1373,7 +1383,7 @@ EXPORT_SYMBOL(netlink_net_capable);
 static inline int netlink_allowed(const struct socket *sock, unsigned int flag)
 {
 	return (nl_table[sock->sk->sk_protocol].flags & flag) ||
-		ns_capable(sock_net(sock->sk)->user_ns, CAP_NET_ADMIN);
+		ns_capable(sock_net(sock->sk)->user_ns, CAP_VE_NET_ADMIN);
 }
 
 static void
@@ -1612,13 +1622,21 @@ int netlink_attachskb(struct sock *sk, struct sk_buff *skb,
 		      long *timeo, struct sock *ssk)
 {
 	struct netlink_sock *nlk;
+	unsigned long chargesize;
+	int no_ubc;
 
 	nlk = nlk_sk(sk);
 
-	if ((atomic_read(&sk->sk_rmem_alloc) > sk->sk_rcvbuf ||
+	chargesize = skb_charge_fullsize(skb);
+	no_ubc = ub_sock_getwres_other(sk, chargesize);
+	if ((no_ubc || atomic_read(&sk->sk_rmem_alloc) > sk->sk_rcvbuf ||
 	     test_bit(NETLINK_CONGESTED, &nlk->state)) &&
 	    !netlink_skb_is_mmaped(skb)) {
 		DECLARE_WAITQUEUE(wait, current);
+
+		if (!no_ubc)
+			ub_sock_retwres_other(sk, chargesize,
+					      SOCK_MIN_UBCSPACE_CH);
 		if (!*timeo) {
 			if (!ssk || netlink_is_kernel(ssk))
 				netlink_overrun(sk);
@@ -1630,13 +1648,20 @@ int netlink_attachskb(struct sock *sk, struct sk_buff *skb,
 		__set_current_state(TASK_INTERRUPTIBLE);
 		add_wait_queue(&nlk->wait, &wait);
 
+		/* this if can't be moved upper because ub_sock_snd_queue_add()
+		 * may change task state to TASK_RUNNING */
+		if (no_ubc)
+			ub_sock_sndqueueadd_other(sk, chargesize);
+
 		if ((atomic_read(&sk->sk_rmem_alloc) > sk->sk_rcvbuf ||
-		     test_bit(NETLINK_CONGESTED, &nlk->state)) &&
+		     test_bit(NETLINK_CONGESTED, &nlk->state) || no_ubc) &&
 		    !sock_flag(sk, SOCK_DEAD))
 			*timeo = schedule_timeout(*timeo);
 
 		__set_current_state(TASK_RUNNING);
 		remove_wait_queue(&nlk->wait, &wait);
+		if (no_ubc)
+			ub_sock_sndqueuedel(sk);
 		sock_put(sk);
 
 		if (signal_pending(current)) {
@@ -1646,6 +1671,7 @@ int netlink_attachskb(struct sock *sk, struct sk_buff *skb,
 		return 1;
 	}
 	netlink_skb_set_owner_r(skb, sk);
+	ub_skb_set_charge(skb, sk, chargesize, UB_OTHERSOCKBUF);
 	return 0;
 }
 
@@ -2647,6 +2673,10 @@ static int netlink_dump(struct sock *sk)
 					GFP_KERNEL);
 	if (!skb)
 		goto errout_skb;
+	if (ub_nlrcvbuf_charge(skb, sk) < 0) {
+		err = -EACCES;
+		goto errout_skb;
+	}
 	netlink_skb_set_owner_r(skb, sk);
 
 	len = cb->dump(skb, cb);

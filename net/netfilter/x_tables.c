@@ -28,6 +28,8 @@
 #include <linux/audit.h>
 #include <net/net_namespace.h>
 
+#include <bc/kmem.h>
+
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter_arp.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
@@ -69,6 +71,51 @@ static const char *const xt_prefix[NFPROTO_NUMPROTO] = {
 
 /* Allow this many total (re)entries. */
 static const unsigned int xt_jumpstack_multiplier = 2;
+
+#ifdef CONFIG_BEANCOUNTERS
+static inline struct user_beancounter *xt_table_ub(struct xt_table_info *info)
+{
+	return &ub0;
+}
+
+static void uncharge_xtables(struct xt_table_info *info, unsigned long size)
+{
+	struct user_beancounter *ub;
+
+	ub = xt_table_ub(info);
+	uncharge_beancounter(ub, UB_NUMXTENT, size);
+}
+
+static int recharge_xtables(struct xt_table_info *new, struct xt_table_info *old)
+{
+	struct user_beancounter *ub, *old_ub;
+	long change;
+
+	ub = xt_table_ub(new);
+	old_ub = old->number ? xt_table_ub(old) : ub;
+	change = (long)new->number - (long)old->number;
+	if (old_ub != ub) {
+		printk(KERN_WARNING "iptables resources are charged"
+				" from different UB (%d -> %d)\n",
+				old_ub->ub_uid, ub->ub_uid);
+		change = new->number;
+	}
+
+	if (change > 0) {
+		if (charge_beancounter(ub, UB_NUMXTENT, change, UB_SOFT))
+			return -ENOMEM;
+	} else if (change < 0)
+		uncharge_beancounter(ub, UB_NUMXTENT, -change);
+
+	if (old_ub != ub)
+		uncharge_beancounter(old_ub, UB_NUMXTENT, old->number);
+
+	return 0;
+}
+#else
+#define recharge_xtables(c, new, old)	(0)
+#define uncharge_xtables(info, s)	do { } while (0)
+#endif	/* CONFIG_BEANCOUNTERS */
 
 /* Registration hooks for targets. */
 int
@@ -694,7 +741,7 @@ struct xt_table_info *xt_alloc_table_info(unsigned int size)
 							GFP_KERNEL,
 							cpu_to_node(cpu));
 		else
-			newinfo->entries[cpu] = vmalloc_node(size,
+			newinfo->entries[cpu] = ub_vmalloc_node(size,
 							cpu_to_node(cpu));
 
 		if (newinfo->entries[cpu] == NULL) {
@@ -845,6 +892,12 @@ xt_replace_table(struct xt_table *table,
 		return NULL;
 	}
 
+	if (recharge_xtables(newinfo, private)) {
+		local_bh_enable();
+		*error = -ENOMEM;
+		return NULL;
+	}
+
 	newinfo->initial_entries = private->initial_entries;
 	/*
 	 * Ensure contents of newinfo are visible before assigning to
@@ -942,6 +995,7 @@ void *xt_unregister_table(struct xt_table *table)
 	list_del(&table->list);
 	mutex_unlock(&xt[table->af].mutex);
 	kfree(table);
+	uncharge_xtables(private, private->number);
 
 	return private;
 }

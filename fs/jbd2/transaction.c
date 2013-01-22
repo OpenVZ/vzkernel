@@ -29,6 +29,7 @@
 #include <linux/backing-dev.h>
 #include <linux/bug.h>
 #include <linux/module.h>
+#include <linux/virtinfo.h>
 
 #include <trace/events/jbd2.h>
 
@@ -272,6 +273,8 @@ static int start_this_handle(journal_t *journal, handle_t *handle,
 		       journal->j_max_transaction_buffers / 2);
 		return -ENOSPC;
 	}
+
+	virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_JOURNAL, NULL);
 
 	if (handle->h_rsv_handle)
 		rsv_blocks = handle->h_rsv_handle->h_buffer_credits;

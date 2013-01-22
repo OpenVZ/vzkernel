@@ -132,6 +132,7 @@ getname_flags(const char __user *filename, int flags, int *empty)
 	if (result)
 		return result;
 
+	/*ub_dentry_checkup();*/
 	result = __getname();
 	if (unlikely(!result))
 		return ERR_PTR(-ENOMEM);
@@ -1300,6 +1301,12 @@ static void follow_dotdot(struct nameidata *nd)
 		    nd->path.mnt == nd->root.mnt) {
 			break;
 		}
+#ifdef CONFIG_VE
+		if (nd->path.dentry == get_exec_env()->root_path.dentry &&
+			nd->path.mnt == get_exec_env()->root_path.mnt) {
+			break;
+		}
+#endif
 		if (nd->path.dentry != nd->path.mnt->mnt_root) {
 			/* rare case of legitimate dget_parent()... */
 			nd->path.dentry = dget_parent(nd->path.dentry);
@@ -2566,6 +2573,7 @@ int vfs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 		fsnotify_create(dir, dentry);
 	return error;
 }
+EXPORT_SYMBOL(sys_mknod);
 
 static int may_open(struct path *path, int acc_mode, int flag)
 {
@@ -3527,6 +3535,7 @@ SYSCALL_DEFINE2(mkdir, const char __user *, pathname, umode_t, mode)
 {
 	return sys_mkdirat(AT_FDCWD, pathname, mode);
 }
+EXPORT_SYMBOL(sys_mkdir);
 
 /*
  * The dentry_unhash() helper will try to drop the dentry early: we
@@ -3650,6 +3659,7 @@ SYSCALL_DEFINE1(rmdir, const char __user *, pathname)
 {
 	return do_rmdir(AT_FDCWD, pathname);
 }
+EXPORT_SYMBOL(sys_rmdir);
 
 /**
  * vfs_unlink - unlink a filesystem object

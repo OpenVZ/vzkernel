@@ -276,6 +276,10 @@
 #include <net/ip.h>
 #include <net/sock.h>
 
+#include <bc/sock_orphan.h>
+#include <bc/net.h>
+#include <bc/tcp.h>
+
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 #include <net/busy_poll.h>
@@ -287,6 +291,7 @@ int sysctl_tcp_min_tso_segs __read_mostly = 2;
 struct percpu_counter tcp_orphan_count;
 EXPORT_SYMBOL_GPL(tcp_orphan_count);
 
+int sysctl_tcp_mem[3] __read_mostly;
 int sysctl_tcp_wmem[3] __read_mostly;
 int sysctl_tcp_rmem[3] __read_mostly;
 
@@ -398,6 +403,8 @@ void tcp_init_sock(struct sock *sk)
 	tp->snd_cwnd_clamp = ~0;
 	tp->mss_cache = TCP_MSS_DEFAULT;
 
+	tp->advmss = 65535; /* max value */
+
 	tp->reordering = sysctl_tcp_reordering;
 	tcp_enable_early_retrans(tp);
 	icsk->icsk_ca_ops = &tcp_init_congestion_ops;
@@ -437,6 +444,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	unsigned int mask;
 	struct sock *sk = sock->sk;
 	const struct tcp_sock *tp = tcp_sk(sk);
+	int check_send_space;
 
 	sock_poll_wait(file, sk_sleep(sk), wait);
 	if (sk->sk_state == TCP_LISTEN)
@@ -448,6 +456,21 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	 */
 
 	mask = 0;
+
+	check_send_space = 1;
+#ifdef CONFIG_BEANCOUNTERS
+	if (!(sk->sk_shutdown & SEND_SHUTDOWN) && sock_has_ubc(sk)) {
+		unsigned long size;
+		size = MAX_TCP_HEADER + tp->mss_cache;
+		if (size > SOCK_MIN_UBCSPACE)
+			size = SOCK_MIN_UBCSPACE;
+		size = skb_charge_size(size);   
+		if (ub_sock_makewres_tcp(sk, size)) {
+			check_send_space = 0;
+			ub_sock_sndqueueadd_tcp(sk, size);
+		}
+	}
+#endif
 
 	/*
 	 * POLLHUP is certainly not done right. But poll() doesn't
@@ -497,7 +520,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 		if (tp->rcv_nxt - tp->copied_seq >= target)
 			mask |= POLLIN | POLLRDNORM;
 
-		if (!(sk->sk_shutdown & SEND_SHUTDOWN)) {
+		if (check_send_space && !(sk->sk_shutdown & SEND_SHUTDOWN)) {
 			if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk)) {
 				mask |= POLLOUT | POLLWRNORM;
 			} else {  /* send SIGIO later */
@@ -868,15 +891,23 @@ static ssize_t do_tcp_sendpages(struct sock *sk, struct page *page, int offset,
 		struct sk_buff *skb = tcp_write_queue_tail(sk);
 		int copy, i;
 		bool can_coalesce;
+		unsigned long chargesize = 0;
 
 		if (!tcp_send_head(sk) || (copy = size_goal - skb->len) <= 0) {
 new_segment:
+			chargesize = 0;
 			if (!sk_stream_memory_free(sk))
 				goto wait_for_sndbuf;
 
+			chargesize = skb_charge_size(MAX_TCP_HEADER +
+					tp->mss_cache);
+			if (ub_sock_getwres_tcp(sk, chargesize) < 0)
+				goto wait_for_ubspace;
 			skb = sk_stream_alloc_skb(sk, 0, sk->sk_allocation);
 			if (!skb)
 				goto wait_for_memory;
+			ub_skb_set_charge(skb, sk, chargesize, UB_TCPSNDBUF);
+			chargesize = 0;
 
 			skb_entail(sk, skb);
 			copy = size_goal;
@@ -933,9 +964,14 @@ new_segment:
 wait_for_sndbuf:
 		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 wait_for_memory:
+		ub_sock_retwres_tcp(sk, chargesize,
+				skb_charge_size(MAX_TCP_HEADER + tp->mss_cache));
+		chargesize = 0;
+wait_for_ubspace:
 		tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
 
-		if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
+		err = __sk_stream_wait_memory(sk, &timeo, chargesize);
+		if (err != 0)
 			goto do_error;
 
 		mss_now = tcp_send_mss(sk, &size_goal, flags);
@@ -970,9 +1006,8 @@ int tcp_sendpage(struct sock *sk, struct page *page, int offset,
 }
 EXPORT_SYMBOL(tcp_sendpage);
 
-static inline int select_size(const struct sock *sk, bool sg)
+static inline int select_size(const struct sock *sk, bool sg, struct tcp_sock *tp)
 {
-	const struct tcp_sock *tp = tcp_sk(sk);
 	int tmp = tp->mss_cache;
 
 	if (sg) {
@@ -1092,6 +1127,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	while (--iovlen >= 0) {
 		size_t seglen = iov->iov_len;
 		unsigned char __user *from = iov->iov_base;
+		unsigned long chargesize = 0;
 
 		iov++;
 		if (unlikely(offset > 0)) {  /* Skip bytes copied in SYN */
@@ -1116,18 +1152,27 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			}
 
 			if (copy <= 0) {
+				unsigned long size;
 new_segment:
 				/* Allocate new segment. If the interface is SG,
 				 * allocate skb fitting to single page.
 				 */
+				chargesize = 0;
 				if (!sk_stream_memory_free(sk))
 					goto wait_for_sndbuf;
 
-				skb = sk_stream_alloc_skb(sk,
-							  select_size(sk, sg),
+				size = select_size(sk, sg, tp);
+				chargesize = skb_charge_size(MAX_TCP_HEADER +
+						size);
+				if (ub_sock_getwres_tcp(sk, chargesize) < 0)
+					goto wait_for_ubspace;
+				skb = sk_stream_alloc_skb(sk, size,
 							  sk->sk_allocation);
 				if (!skb)
 					goto wait_for_memory;
+				ub_skb_set_charge(skb, sk, chargesize,
+						UB_TCPSNDBUF);
+				chargesize = 0;
 
 				/*
 				 * All packets are restored as if they have
@@ -1223,10 +1268,15 @@ new_segment:
 wait_for_sndbuf:
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 wait_for_memory:
-			if (copied)
+			ub_sock_retwres_tcp(sk, chargesize,
+					skb_charge_size(MAX_TCP_HEADER+tp->mss_cache));
+			chargesize = 0;
+wait_for_ubspace:
+			if (copied && likely(!tp->repair))
 				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
 
-			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
+			err = __sk_stream_wait_memory(sk, &timeo, chargesize);
+			if (err != 0)
 				goto do_error;
 
 			mss_now = tcp_send_mss(sk, &size_goal, flags);
@@ -1340,8 +1390,10 @@ static void tcp_cleanup_rbuf(struct sock *sk, int copied)
 	struct sk_buff *skb = skb_peek(&sk->sk_receive_queue);
 
 	WARN(skb && !before(tp->copied_seq, TCP_SKB_CB(skb)->end_seq),
-	     "cleanup rbuf bug: copied %X seq %X rcvnxt %X\n",
-	     tp->copied_seq, TCP_SKB_CB(skb)->end_seq, tp->rcv_nxt);
+	     KERN_INFO "cleanup rbuf bug (%d/%s): copied %X seq %X/%X rcvnxt %X\n",
+	     sock_net(sk)->owner_ve->veid, current->comm,
+	     tp->copied_seq, TCP_SKB_CB(skb)->end_seq,
+	     TCP_SKB_CB(skb)->seq, tp->rcv_nxt);
 
 	if (inet_csk_ack_scheduled(sk)) {
 		const struct inet_connection_sock *icsk = inet_csk(sk);
@@ -1608,7 +1660,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			if (tcp_hdr(skb)->fin)
 				goto found_fin_ok;
 			WARN(!(flags & MSG_PEEK),
-			     "recvmsg bug 2: copied %X seq %X rcvnxt %X fl %X\n",
+			     "recvmsg bug 2 (%d/%s): "
+			     "copied %X seq %X rcvnxt %X fl %X\n",
+			     sock_net(sk)->owner_ve->veid, current->comm,
 			     *seq, TCP_SKB_CB(skb)->seq, tp->rcv_nxt, flags);
 		}
 
@@ -1670,8 +1724,18 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 			tp->ucopy.len = len;
 
-			WARN_ON(tp->copied_seq != tp->rcv_nxt &&
-				!(flags & (MSG_PEEK | MSG_TRUNC)));
+			if (WARN_ON(tp->copied_seq != tp->rcv_nxt &&
+				!(flags & (MSG_PEEK | MSG_TRUNC)))) {
+				printk("KERNEL: assertion: tp->copied_seq == "
+						"tp->rcv_nxt || ...\n");
+				printk("VE%u pid %d comm %.16s\n",
+						sock_net(sk)->owner_ve->veid,
+						current->pid, current->comm);
+				printk("flags=0x%x, len=%d, copied_seq=%d, "
+						"rcv_nxt=%d\n", flags,
+						(int)len, tp->copied_seq,
+						tp->rcv_nxt);
+			}
 
 			/* Ugly... If prequeue is not empty, we have to
 			 * process it before releasing socket, otherwise
@@ -1946,12 +2010,20 @@ EXPORT_SYMBOL(tcp_shutdown);
 bool tcp_check_oom(struct sock *sk, int shift)
 {
 	bool too_many_orphans, out_of_socket_memory;
+	int orphans = ub_get_orphan_count(sk);
 
-	too_many_orphans = tcp_too_many_orphans(sk, shift);
+	too_many_orphans = ub_too_many_orphans(sk, orphans);
 	out_of_socket_memory = tcp_out_of_memory(sk);
 
-	if (too_many_orphans)
-		net_info_ratelimited("too many orphaned sockets\n");
+	if (too_many_orphans) {
+		int ubid = 0;
+#ifdef CONFIG_BEANCOUNTERS
+		ubid = sock_has_ubc(sk) ?
+			sock_bc(sk)->ub->ub_uid : 0;
+#endif
+		net_info_ratelimited("too many orphaned sockets (%d in CT%d)\n",
+				     orphans, ubid);
+	}
 	if (out_of_socket_memory)
 		net_info_ratelimited("out of memory -- consider tuning tcp_mem\n");
 	return too_many_orphans || out_of_socket_memory;
@@ -2061,7 +2133,7 @@ adjudge_to_death:
 	bh_lock_sock(sk);
 	WARN_ON(sock_owned_by_user(sk));
 
-	percpu_counter_inc(sk->sk_prot->orphan_count);
+	ub_inc_orphan_count(sk);
 
 	/* Have we already been destroyed by a softirq or backlog? */
 	if (state != TCP_CLOSE && sk->sk_state == TCP_CLOSE)
@@ -2187,6 +2259,7 @@ int tcp_disconnect(struct sock *sk, int flags)
 	tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
 	tp->snd_cwnd_cnt = 0;
 	tp->window_clamp = 0;
+	tp->advmss = 65535;
 	tcp_set_ca_state(sk, TCP_CA_Open);
 	tcp_clear_retrans(tp);
 	inet_csk_delack_init(sk);
@@ -3043,6 +3116,7 @@ void __init tcp_init(void)
 
 	percpu_counter_init(&tcp_sockets_allocated, 0);
 	percpu_counter_init(&tcp_orphan_count, 0);
+	percpu_counter_init(&get_ub0()->ub_orphan_count, 0);
 	tcp_hashinfo.bind_bucket_cachep =
 		kmem_cache_create("tcp_bind_bucket",
 				  sizeof(struct inet_bind_bucket), 0,
@@ -3090,6 +3164,11 @@ void __init tcp_init(void)
 	tcp_death_row.sysctl_max_tw_buckets = cnt / 2;
 	sysctl_tcp_max_orphans = cnt / 2;
 	sysctl_max_syn_backlog = max(128, cnt / 256);
+
+	if (sysctl_tcp_mem[2] - sysctl_tcp_mem[1] > 4096)
+		sysctl_tcp_mem[1] = sysctl_tcp_mem[2] - 4096;
+	if (sysctl_tcp_mem[1] - sysctl_tcp_mem[0] > 4096)
+		sysctl_tcp_mem[0] = sysctl_tcp_mem[1] - 4096;
 
 	tcp_init_mem(&init_net);
 	/* Set per-socket limits to no more than 1/128 the pressure threshold */

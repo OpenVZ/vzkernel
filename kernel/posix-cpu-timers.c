@@ -12,6 +12,7 @@
 #include <linux/random.h>
 #include <linux/tick.h>
 #include <linux/workqueue.h>
+#include <linux/module.h>
 
 /*
  * Called after updating RLIMIT_CPU to run cpu timer and update
@@ -1428,6 +1429,7 @@ void set_process_cpu_timer(struct task_struct *tsk, unsigned int clock_idx,
 out:
 	posix_cpu_timer_kick_nohz();
 }
+EXPORT_SYMBOL(set_process_cpu_timer);
 
 static int do_cpu_nanosleep(const clockid_t which_clock, int flags,
 			    struct timespec *rqtp, struct itimerspec *it)

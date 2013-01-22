@@ -2400,6 +2400,8 @@ config X86_DMA_REMAP
 	bool
 	depends on STA2X11
 
+source "kernel/Kconfig.openvz"
+
 source "net/Kconfig"
 
 source "drivers/Kconfig"
@@ -2417,3 +2419,5 @@ source "crypto/Kconfig"
 source "arch/x86/kvm/Kconfig"
 
 source "lib/Kconfig"
+
+source "kernel/bc/Kconfig"

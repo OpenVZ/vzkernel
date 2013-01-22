@@ -74,6 +74,8 @@
 #include <linux/ipsec.h>
 #include <asm/unaligned.h>
 
+#include <bc/tcp.h>
+
 int sysctl_tcp_timestamps __read_mostly = 1;
 int sysctl_tcp_window_scaling __read_mostly = 1;
 int sysctl_tcp_sack __read_mostly = 1;
@@ -403,6 +405,8 @@ void tcp_init_buffer_space(struct sock *sk)
 
 	tp->rcv_ssthresh = min(tp->rcv_ssthresh, tp->window_clamp);
 	tp->snd_cwnd_stamp = tcp_time_stamp;
+
+	ub_tcp_update_maxadvmss(sk);
 }
 
 /* 5. Recalculate window clamp after socket hit its memory bounds. */
@@ -4382,7 +4386,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 queue_and_out:
 			if (eaten < 0 &&
 			    tcp_try_rmem_schedule(sk, skb, skb->truesize))
-				goto drop;
+				goto drop_part;
 
 			eaten = tcp_queue_rcv(sk, skb, 0, &fragstolen);
 		}
@@ -4423,6 +4427,12 @@ out_of_window:
 		tcp_enter_quickack_mode(sk);
 		inet_csk_schedule_ack(sk);
 drop:
+		__kfree_skb(skb);
+		return;
+
+drop_part:
+		if (after(tp->copied_seq, tp->rcv_nxt))
+			tp->rcv_nxt = tp->copied_seq;
 		__kfree_skb(skb);
 		return;
 	}
@@ -4539,6 +4549,10 @@ restart:
 		nskb = alloc_skb(copy + header, GFP_ATOMIC);
 		if (!nskb)
 			return;
+		if (ub_tcprcvbuf_charge_forced(skb->sk, nskb) < 0) {
+			kfree_skb(nskb);
+			return;
+		}
 
 		skb_set_mac_header(nskb, skb_mac_header(skb) - skb->head);
 		skb_set_network_header(nskb, (skb_network_header(skb) -
@@ -5180,6 +5194,11 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 					goto csum_error;
 
 				if ((int)skb->truesize > sk->sk_forward_alloc)
+					goto step5;
+
+				/* This is OK not to try to free memory here.
+				 * Do this below on slow path. Den */
+				if (ub_tcprcvbuf_charge(sk, skb) < 0)
 					goto step5;
 
 				/* Predicted packet is in window by definition.

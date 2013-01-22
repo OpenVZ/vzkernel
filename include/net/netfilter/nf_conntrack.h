@@ -254,6 +254,7 @@ void nf_conntrack_free(struct nf_conn *ct);
 struct nf_conn *nf_conntrack_alloc(struct net *net, u16 zone,
 				   const struct nf_conntrack_tuple *orig,
 				   const struct nf_conntrack_tuple *repl,
+				   struct user_beancounter *,
 				   gfp_t gfp);
 
 static inline int nf_ct_is_template(const struct nf_conn *ct)

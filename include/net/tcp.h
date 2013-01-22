@@ -46,6 +46,14 @@
 #include <linux/seq_file.h>
 #include <linux/memcontrol.h>
 
+#include <bc/net.h>
+
+#define TCP_PAGE(sk)	(sk->sk_sndmsg_page)
+#define TCP_OFF(sk)	(sk->sk_sndmsg_off)
+
+#define TW_WSCALE_MASK		0x0f
+#define TW_WSCALE_SPEC		0x10
+
 extern struct inet_hashinfo tcp_hashinfo;
 
 extern struct percpu_counter tcp_orphan_count;
@@ -265,10 +273,13 @@ extern int sysctl_tcp_max_orphans;
 extern int sysctl_tcp_fack;
 extern int sysctl_tcp_reordering;
 extern int sysctl_tcp_dsack;
+extern int sysctl_tcp_mem[3];
 extern int sysctl_tcp_wmem[3];
 extern int sysctl_tcp_rmem[3];
 extern int sysctl_tcp_app_win;
+#ifndef sysctl_tcp_adv_win_scale
 extern int sysctl_tcp_adv_win_scale;
+#endif
 extern int sysctl_tcp_tw_reuse;
 extern int sysctl_tcp_frto;
 extern int sysctl_tcp_low_latency;
@@ -286,6 +297,9 @@ extern int sysctl_tcp_early_retrans;
 extern int sysctl_tcp_limit_output_bytes;
 extern int sysctl_tcp_challenge_ack_limit;
 extern int sysctl_tcp_min_tso_segs;
+extern int sysctl_tcp_use_sg;
+extern int sysctl_tcp_max_tw_kmem_fraction;
+extern int sysctl_tcp_max_tw_buckets_ub;
 
 extern atomic_long_t tcp_memory_allocated;
 extern struct percpu_counter tcp_sockets_allocated;
@@ -695,7 +709,11 @@ void tcp_send_window_probe(struct sock *sk);
  * to use only the low 32-bits of jiffies and hide the ugly
  * casts with the following macro.
  */
+#ifdef CONFIG_VE
+#define tcp_time_stamp		((__u32)(jiffies + get_exec_env()->jiffies_fixup))
+#else
 #define tcp_time_stamp		((__u32)(jiffies))
+#endif
 
 #define tcp_flag_byte(th) (((u_int8_t *)th)[13])
 
@@ -1599,8 +1617,12 @@ struct tcp_request_sock_ops {
 #endif
 };
 
-extern int tcpv4_offload_init(void);
+#ifdef CONFIG_TCP_MD5SIG
+extern const struct tcp_request_sock_ops tcp_request_sock_ipv4_ops;
+extern const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops;
+#endif
 
+extern int tcpv4_offload_init(void);
 extern void tcp_v4_init(void);
 extern void tcp_init(void);
 

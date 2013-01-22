@@ -355,4 +355,8 @@ int if6_proc_init(void);
 void if6_proc_exit(void);
 #endif
 
+int inet6_addr_add(struct net *net, int ifindex, struct in6_addr *pfx,
+		unsigned int plen, __u8 ifa_flags, __u32 prefered_lft,
+		__u32 valid_lft);
+
 #endif

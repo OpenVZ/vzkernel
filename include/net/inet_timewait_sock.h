@@ -86,6 +86,7 @@ struct inet_timewait_death_row {
 	struct inet_hashinfo 	*hashinfo;
 	int			sysctl_tw_recycle;
 	int			sysctl_max_tw_buckets;
+	int			ub_managed;
 };
 
 void inet_twdr_hangman(unsigned long data);

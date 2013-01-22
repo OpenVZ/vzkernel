@@ -49,6 +49,8 @@
 #include <linux/export.h>
 #include <linux/hashtable.h>
 
+#include <bc/beancounter.h>
+
 /*
  * Management arrays for POSIX timers. Timers are now kept in static hash table
  * with 512 entries.
@@ -339,8 +341,8 @@ static __init int init_posix_timers(void)
 	posix_timers_register_clock(CLOCK_TAI, &clock_tai);
 
 	posix_timers_cache = kmem_cache_create("posix_timers_cache",
-					sizeof (struct k_itimer), 0, SLAB_PANIC,
-					NULL);
+					sizeof (struct k_itimer), 0,
+					SLAB_PANIC, NULL);
 	return 0;
 }
 
@@ -414,8 +416,17 @@ int posix_timer_event(struct k_itimer *timr, int si_private)
 	rcu_read_lock();
 	task = pid_task(timr->it_pid, PIDTYPE_PID);
 	if (task) {
+		struct ve_struct *ve;
+		struct user_beancounter *ub;
+
+		ve = set_exec_env(task->ve_task_info.owner_env);
+		ub = set_exec_ub(task->task_bc.task_ub);
+
 		shared = !(timr->it_sigev_notify & SIGEV_THREAD_ID);
 		ret = send_sigqueue(timr->sigq, task, shared);
+
+		(void)set_exec_ub(ub);
+		(void)set_exec_env(ve);
 	}
 	rcu_read_unlock();
 	/* If we failed to send the signal the timer stops. */

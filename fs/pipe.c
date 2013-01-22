@@ -26,6 +26,8 @@
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 
+#include <bc/kmem.h>
+
 #include "internal.h"
 
 /*
@@ -966,6 +968,7 @@ static int __do_pipe_flags(int *fd, struct file **files, int flags)
 	fput(files[1]);
 	return error;
 }
+EXPORT_SYMBOL(do_pipe_flags);
 
 int do_pipe_flags(int *fd, int flags)
 {

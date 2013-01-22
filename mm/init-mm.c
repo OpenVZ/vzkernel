@@ -4,6 +4,7 @@
 #include <linux/spinlock.h>
 #include <linux/list.h>
 #include <linux/cpumask.h>
+#include <linux/module.h>
 
 #include <linux/atomic.h>
 #include <asm/pgtable.h>
@@ -23,3 +24,4 @@ struct mm_struct init_mm = {
 	.mmlist		= LIST_HEAD_INIT(init_mm.mmlist),
 	INIT_MM_CONTEXT(init_mm)
 };
+EXPORT_SYMBOL(init_mm);

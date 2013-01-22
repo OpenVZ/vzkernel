@@ -64,6 +64,8 @@
 #include <net/tcp_memcontrol.h>
 #include <net/busy_poll.h>
 
+#include <bc/tcp.h>
+
 #include <asm/uaccess.h>
 
 #include <linux/proc_fs.h>
@@ -78,7 +80,7 @@ static void	tcp_v6_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 
 static int	tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
 
-static const struct inet_connection_sock_af_ops ipv6_mapped;
+const struct inet_connection_sock_af_ops ipv6_mapped;
 static const struct inet_connection_sock_af_ops ipv6_specific;
 #ifdef CONFIG_TCP_MD5SIG
 static const struct tcp_sock_af_ops tcp_sock_ipv6_specific;
@@ -714,12 +716,14 @@ struct request_sock_ops tcp6_request_sock_ops __read_mostly = {
 	.send_reset	=	tcp_v6_send_reset,
 	.syn_ack_timeout = 	tcp_syn_ack_timeout,
 };
+EXPORT_SYMBOL(tcp6_request_sock_ops);
 
 #ifdef CONFIG_TCP_MD5SIG
-static const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops = {
+const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops = {
 	.md5_lookup	=	tcp_v6_reqsk_md5_lookup,
 	.calc_md5_hash	=	tcp_v6_md5_hash_skb,
 };
+EXPORT_SYMBOL(tcp_request_sock_ipv6_ops);
 #endif
 
 static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack, u32 win,
@@ -1292,6 +1296,7 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 	struct ipv6_pinfo *np = inet6_sk(sk);
 	struct tcp_sock *tp;
 	struct sk_buff *opt_skb = NULL;
+	struct user_beancounter *ub;
 
 	/* Imagine: socket is IPv6. IPv4 packet arrives,
 	   goes to IPv4 receive handler and backlogged.
@@ -1303,6 +1308,8 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 
 	if (skb->protocol == htons(ETH_P_IP))
 		return tcp_v4_do_rcv(sk, skb);
+
+	ub = set_exec_ub(sock_bc(sk)->ub);
 
 #ifdef CONFIG_TCP_MD5SIG
 	if (tcp_v6_inbound_md5_hash (sk, skb))
@@ -1349,7 +1356,7 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 			goto reset;
 		if (opt_skb)
 			goto ipv6_pktoptions;
-		return 0;
+		goto restore_context;
 	}
 
 	if (skb->len < tcp_hdrlen(skb) || tcp_checksum_complete(skb))
@@ -1371,7 +1378,7 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 				goto reset;
 			if (opt_skb)
 				__kfree_skb(opt_skb);
-			return 0;
+			goto restore_context;
 		}
 	} else
 		sock_rps_save_rxhash(sk, skb);
@@ -1380,6 +1387,9 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 		goto reset;
 	if (opt_skb)
 		goto ipv6_pktoptions;
+
+restore_context:
+	(void)set_exec_ub(ub);
 	return 0;
 
 reset:
@@ -1388,7 +1398,7 @@ discard:
 	if (opt_skb)
 		__kfree_skb(opt_skb);
 	kfree_skb(skb);
-	return 0;
+	goto restore_context;
 csum_err:
 	TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_CSUMERRORS);
 	TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_INERRS);
@@ -1422,7 +1432,7 @@ ipv6_pktoptions:
 	}
 
 	kfree_skb(opt_skb);
-	return 0;
+	goto restore_context;
 }
 
 static int tcp_v6_rcv(struct sk_buff *skb)
@@ -1641,7 +1651,7 @@ static const struct tcp_sock_af_ops tcp_sock_ipv6_specific = {
  *	TCP over IPv4 via INET6 API
  */
 
-static const struct inet_connection_sock_af_ops ipv6_mapped = {
+const struct inet_connection_sock_af_ops ipv6_mapped = {
 	.queue_xmit	   = ip_queue_xmit,
 	.send_check	   = tcp_v4_send_check,
 	.rebuild_header	   = inet_sk_rebuild_header,
@@ -1659,6 +1669,7 @@ static const struct inet_connection_sock_af_ops ipv6_mapped = {
 	.compat_getsockopt = compat_ipv6_getsockopt,
 #endif
 };
+EXPORT_SYMBOL(ipv6_mapped);
 
 #ifdef CONFIG_TCP_MD5SIG
 static const struct tcp_sock_af_ops tcp_sock_ipv6_mapped_specific = {

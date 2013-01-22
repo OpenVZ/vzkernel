@@ -53,6 +53,9 @@
 #include <net/netfilter/nf_nat_core.h>
 #include <net/netfilter/nf_nat_helper.h>
 
+#include <net/sock.h>
+#include <bc/sock.h>
+
 #define NF_CONNTRACK_VERSION	"0.5.0"
 
 int (*nfnetlink_parse_nat_setup_hook)(struct nf_conn *ct,
@@ -837,9 +840,11 @@ static struct nf_conn *
 __nf_conntrack_alloc(struct net *net, u16 zone,
 		     const struct nf_conntrack_tuple *orig,
 		     const struct nf_conntrack_tuple *repl,
+		     struct user_beancounter *ub,
 		     gfp_t gfp, u32 hash)
 {
 	struct nf_conn *ct;
+	struct user_beancounter *old_ub;
 
 	if (unlikely(!nf_conntrack_hash_rnd)) {
 		init_nf_conntrack_hash_rnd();
@@ -863,7 +868,9 @@ __nf_conntrack_alloc(struct net *net, u16 zone,
 	 * Do not use kmem_cache_zalloc(), as this cache uses
 	 * SLAB_DESTROY_BY_RCU.
 	 */
+	old_ub = set_exec_ub(ub);
 	ct = kmem_cache_alloc(net->ct.nf_conntrack_cachep, gfp);
+	(void)set_exec_ub(old_ub);
 	if (ct == NULL) {
 		atomic_dec(&net->ct.count);
 		return ERR_PTR(-ENOMEM);
@@ -911,9 +918,10 @@ out_free:
 struct nf_conn *nf_conntrack_alloc(struct net *net, u16 zone,
 				   const struct nf_conntrack_tuple *orig,
 				   const struct nf_conntrack_tuple *repl,
+				   struct user_beancounter *ub,
 				   gfp_t gfp)
 {
-	return __nf_conntrack_alloc(net, zone, orig, repl, gfp, 0);
+	return __nf_conntrack_alloc(net, zone, orig, repl, ub, gfp, 0);
 }
 EXPORT_SYMBOL_GPL(nf_conntrack_alloc);
 
@@ -953,13 +961,20 @@ init_conntrack(struct net *net, struct nf_conn *tmpl,
 	u16 zone = tmpl ? nf_ct_zone(tmpl) : NF_CT_DEFAULT_ZONE;
 	struct nf_conn_timeout *timeout_ext;
 	unsigned int *timeouts;
+	struct user_beancounter *ub = NULL;
 
 	if (!nf_ct_invert_tuple(&repl_tuple, tuple, l3proto, l4proto)) {
 		pr_debug("Can't invert tuple.\n");
 		return NULL;
 	}
 
-	ct = __nf_conntrack_alloc(net, zone, tuple, &repl_tuple, GFP_ATOMIC,
+#ifdef CONFIG_BEANCOUNTERS
+	if (skb->dev != NULL)  /* received skb */
+		ub = netdev_bc(skb->dev)->exec_ub;
+	else if (skb->sk != NULL) /* sent skb */
+		ub = sock_bc(skb->sk)->ub;
+#endif
+	ct = __nf_conntrack_alloc(net, zone, tuple, &repl_tuple, ub, GFP_ATOMIC,
 				  hash);
 	if (IS_ERR(ct))
 		return (struct nf_conntrack_tuple_hash *)ct;
