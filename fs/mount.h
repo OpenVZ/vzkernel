@@ -20,13 +20,6 @@ struct mnt_pcp {
 	int mnt_writers;
 };
 
-struct mountpoint {
-	struct hlist_node m_hash;
-	struct dentry *m_dentry;
-	struct hlist_head m_list;
-	int m_count;
-};
-
 struct mount {
 	struct hlist_node mnt_hash;
 	struct mount *mnt_parent;

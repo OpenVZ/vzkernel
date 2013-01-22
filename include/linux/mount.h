@@ -51,6 +51,7 @@ struct mnt_namespace;
 
 #define MNT_LOCK_READONLY	0x400000
 #define MNT_LOCKED		0x800000
+
 #define MNT_DOOMED		0x1000000
 #define MNT_SYNC_UMOUNT		0x2000000
 #define MNT_MARKED		0x4000000
@@ -60,6 +61,13 @@ struct vfsmount {
 	struct dentry *mnt_root;	/* root of the mounted tree */
 	struct super_block *mnt_sb;	/* pointer to superblock */
 	int mnt_flags;
+};
+
+struct mountpoint {
+	struct hlist_node m_hash;
+	struct dentry *m_dentry;
+	struct hlist_head m_list;
+	int m_count;
 };
 
 struct file; /* forward dec */
