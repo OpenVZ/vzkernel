@@ -156,8 +156,9 @@ extern int __srcu_notifier_call_chain(struct srcu_notifier_head *nh,
 
 #define NOTIFY_DONE		0x0000		/* Don't care */
 #define NOTIFY_OK		0x0001		/* Suits me */
+#define NOTIFY_FAIL		0x0002		/* Reject */
 #define NOTIFY_STOP_MASK	0x8000		/* Don't call further */
-#define NOTIFY_BAD		(NOTIFY_STOP_MASK|0x0002)
+#define NOTIFY_BAD		(NOTIFY_STOP_MASK|NOTIFY_FAIL)
 						/* Bad/Veto action */
 /*
  * Clean way to return from the notifier and stop further calls.

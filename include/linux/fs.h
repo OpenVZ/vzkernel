@@ -60,6 +60,7 @@ extern struct inodes_stat_t inodes_stat;
 extern int leases_enable, lease_break_time;
 extern int sysctl_protected_symlinks;
 extern int sysctl_protected_hardlinks;
+extern int sysctl_fsync_enable;
 
 struct buffer_head;
 typedef int (get_block_t)(struct inode *inode, sector_t iblock,
@@ -78,6 +79,8 @@ typedef void (dax_iodone_t)(struct buffer_head *bh_map, int uptodate);
 #define MAY_CHDIR		0x00000040
 /* called from RCU mode, don't block */
 #define MAY_NOT_BLOCK		0x00000080
+/* for devgroup-vs-openvz only */
+#define MAY_QUOTACTL		0x00010000
 
 /*
  * flags in file.f_mode.  Note that FMODE_READ and FMODE_WRITE must correspond
@@ -127,6 +130,9 @@ typedef void (dax_iodone_t)(struct buffer_head *bh_map, int uptodate);
 
 /* File needs atomic accesses to f_pos */
 #define FMODE_ATOMIC_POS	((__force fmode_t)0x8000)
+
+/* Can do sys_quotactl (for devperms) */
+#define FMODE_QUOTACTL		((__force fmode_t)0x8000)
 
 /* File was opened by fanotify and shouldn't generate fanotify events */
 #define FMODE_NONOTIFY		((__force fmode_t)0x1000000)
@@ -458,6 +464,7 @@ struct address_space {
 	spinlock_t		private_lock;	/* for use by the address_space */
 	struct list_head	private_list;	/* ditto */
 	void			*private_data;	/* ditto */
+	struct user_beancounter *dirtied_ub;
 } __attribute__((aligned(sizeof(long))));
 	/*
 	 * On most architectures that alignment is already the case; but
@@ -867,6 +874,7 @@ struct file {
 	struct fown_struct	f_owner;
 	const struct cred	*f_cred;
 	struct file_ra_state	f_ra;
+	struct user_beancounter	*f_ub;
 
 	u64			f_version;
 #ifdef CONFIG_SECURITY
@@ -1042,6 +1050,9 @@ struct file_lock {
 	fl_owner_t fl_owner;
 	unsigned int fl_flags;
 	unsigned char fl_type;
+#ifdef CONFIG_BEANCOUNTERS
+	unsigned char fl_charged;
+#endif
 	unsigned int fl_pid;
 	int fl_link_cpu;		/* what cpu's list is this on? */
 	struct pid *fl_nspid;
@@ -1095,7 +1106,7 @@ extern int fcntl_getlease(struct file *filp);
 /* fs/locks.c */
 void locks_free_lock(struct file_lock *fl);
 extern void locks_init_lock(struct file_lock *);
-extern struct file_lock * locks_alloc_lock(void);
+extern struct file_lock * locks_alloc_lock(int charge);
 extern void locks_copy_lock(struct file_lock *, struct file_lock *);
 extern void __locks_copy_lock(struct file_lock *, const struct file_lock *);
 extern void locks_remove_posix(struct file *, fl_owner_t);
@@ -2010,6 +2021,7 @@ struct file_system_type {
 #define FS_HAS_SUBTYPE		4
 #define FS_USERNS_MOUNT		8	/* Can be mounted by userns root */
 #define FS_USERNS_DEV_MOUNT	16 /* A userns mount does not imply MNT_NODEV */
+#define FS_VIRTUALIZED		64	/* Can mount this fstype inside ve */
 #define FS_HAS_RM_XQUOTA	256	/* KABI: fs has the rm_xquota quota op */
 #define FS_HAS_INVALIDATE_RANGE	512	/* FS has new ->invalidatepage with length arg */
 #define FS_HAS_DIO_IODONE2	1024	/* KABI: fs supports new iodone */
@@ -2678,6 +2690,12 @@ extern struct file * open_exec(const char *);
 extern int is_subdir(struct dentry *, struct dentry *);
 extern int path_is_under(struct path *, struct path *);
 extern ino_t find_inode_number(struct dentry *, struct qstr *);
+
+int ve_fsync_behavior(void);
+
+#define FSYNC_NEVER	0	/* ve syncs are ignored    */
+#define FSYNC_ALWAYS	1	/* ve syncs work as ususal */
+#define FSYNC_FILTERED	2	/* ve syncs only its files */
 
 #include <linux/err.h>
 

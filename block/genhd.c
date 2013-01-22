@@ -20,6 +20,7 @@
 #include <linux/log2.h>
 #include <linux/pm_runtime.h>
 #include <linux/badblocks.h>
+#include <linux/device_cgroup.h>
 
 #include "blk.h"
 
@@ -35,7 +36,7 @@ struct kobject *block_depr;
 static DEFINE_SPINLOCK(ext_devt_lock);
 static DEFINE_IDR(ext_devt_idr);
 
-static struct device_type disk_type;
+struct device_type disk_type;
 
 static void disk_check_events(struct disk_events *ev,
 			      unsigned int *clearing_ptr);
@@ -260,8 +261,12 @@ void blkdev_show(struct seq_file *seqf, off_t offset)
 
 	if (offset < BLKDEV_MAJOR_HASH_SIZE) {
 		mutex_lock(&block_class_lock);
-		for (dp = major_names[offset]; dp; dp = dp->next)
+		for (dp = major_names[offset]; dp; dp = dp->next) {
+			if (!devcgroup_device_visible(S_IFBLK, dp->major,
+						0, INT_MAX))
+				continue;
 			seq_printf(seqf, "%3d %s\n", dp->major, dp->name);
+		}
 		mutex_unlock(&block_class_lock);
 	}
 }
@@ -1140,6 +1145,7 @@ static void disk_release(struct device *dev)
 struct class block_class = {
 	.name		= "block",
 };
+EXPORT_SYMBOL(block_class);
 
 static char *block_devnode(struct device *dev, umode_t *mode,
 			   kuid_t *uid, kgid_t *gid)
@@ -1151,12 +1157,13 @@ static char *block_devnode(struct device *dev, umode_t *mode,
 	return NULL;
 }
 
-static struct device_type disk_type = {
+struct device_type disk_type = {
 	.name		= "disk",
 	.groups		= disk_attr_groups,
 	.release	= disk_release,
 	.devnode	= block_devnode,
 };
+EXPORT_SYMBOL(disk_type);
 
 #ifdef CONFIG_PROC_FS
 /*

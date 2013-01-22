@@ -79,6 +79,8 @@
 #include <linux/list.h>
 #include <linux/io.h>
 
+#include <bc/beancounter.h>
+
 #include <asm/io.h>
 #include <asm/bugs.h>
 #include <asm/setup.h>
@@ -115,6 +117,16 @@ bool early_boot_irqs_disabled __read_mostly;
 
 enum system_states system_state __read_mostly;
 EXPORT_SYMBOL(system_state);
+
+#ifdef CONFIG_VE
+extern void init_ve_system(void);
+extern void init_ve0(void);
+extern void prepare_ve0_process(struct task_struct *tsk);
+#else
+#define init_ve_system()		do { } while (0)
+#define init_ve0()			do { } while (0)
+#define prepare_ve0_process(tsk)	do { } while (0)
+#endif
 
 /*
  * Boot command-line arguments
@@ -509,6 +521,9 @@ asmlinkage void __init start_kernel(void)
 	setup_command_line(command_line);
 	setup_nr_cpu_ids();
 	setup_per_cpu_areas();
+	init_ve0();
+	ub_init_early();
+	kstat_init();
 	smp_prepare_boot_cpu();	/* arch-specific boot-cpu hooks */
 
 	build_all_zonelists(NULL, NULL);
@@ -581,6 +596,8 @@ asmlinkage void __init start_kernel(void)
 
 	lockdep_info();
 
+	prepare_ve0_process(&init_task);
+
 	/*
 	 * Need to run this when irqs are enabled, because it wants
 	 * to self-test [hard/soft]-irqs on/off lock inversion bugs
@@ -616,6 +633,7 @@ asmlinkage void __init start_kernel(void)
 	cred_init();
 	fork_init(totalram_pages);
 	proc_caches_init();
+	ub_init_late();
 	buffer_init();
 	key_init();
 	security_init();
@@ -843,6 +861,7 @@ static void __init do_initcalls(void)
  */
 static void __init do_basic_setup(void)
 {
+	init_ve_system();
 	cpuset_init_smp();
 	shmem_init();
 	driver_init();

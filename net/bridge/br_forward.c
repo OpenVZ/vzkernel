@@ -42,7 +42,8 @@ static inline unsigned int packet_length(const struct sk_buff *skb)
 
 int br_dev_queue_push_xmit(struct sock *sk, struct sk_buff *skb)
 {
-	if (!is_skb_forwardable(skb->dev, skb))
+	if (!(skb->dev->features & NETIF_F_VENET) &&
+	    !is_skb_forwardable(skb->dev, skb))
 		goto drop;
 
 	skb_push(skb, ETH_HLEN);

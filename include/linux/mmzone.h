@@ -16,6 +16,9 @@
 #include <linux/nodemask.h>
 #include <linux/pageblock-flags.h>
 #include <linux/page-flags-layout.h>
+#include <linux/workqueue.h>
+#include <linux/mutex.h>
+#include <generated/bounds.h>
 #include <linux/atomic.h>
 #include <asm/page.h>
 
