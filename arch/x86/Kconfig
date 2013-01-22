@@ -2449,6 +2449,8 @@ config VMD
 	  single domain. If you know your system provides one of these and
 	  has devices attached to it, say Y; if you are not sure, say N.
 
+source "kernel/Kconfig.openvz"
+
 source "net/Kconfig"
 
 source "drivers/Kconfig"
@@ -2466,3 +2468,5 @@ source "crypto/Kconfig"
 source "arch/x86/kvm/Kconfig"
 
 source "lib/Kconfig"
+
+source "kernel/bc/Kconfig"

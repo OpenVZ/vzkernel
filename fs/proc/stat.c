@@ -11,6 +11,9 @@
 #include <linux/irqnr.h>
 #include <linux/cputime.h>
 #include <linux/tick.h>
+#include <linux/fairsched.h>
+#include <linux/mm.h>
+#include <linux/vmstat.h>
 
 #ifndef arch_irq_stat_cpu
 #define arch_irq_stat_cpu(cpu) 0
@@ -87,12 +90,22 @@ static int show_stat(struct seq_file *p, void *v)
 	u64 sum_softirq = 0;
 	unsigned int per_softirq_sums[NR_SOFTIRQS] = {0};
 	struct timespec boottime;
+	struct ve_struct *ve;
+
+	getboottime(&boottime);
+	jif = boottime.tv_sec;
+
+	ve = get_exec_env();
+	if (!ve_is_super(ve)) {
+		int ret;
+		ret = fairsched_show_stat(p, ve->veid);
+		if (ret != -ENOSYS)
+			return ret;
+	}
 
 	user = nice = system = idle = iowait =
 		irq = softirq = steal = 0;
 	guest = guest_nice = 0;
-	getboottime(&boottime);
-	jif = boottime.tv_sec;
 
 	for_each_possible_cpu(i) {
 		user += kcpustat_cpu(i).cpustat[CPUTIME_USER];
@@ -200,7 +213,7 @@ static const struct file_operations proc_stat_operations = {
 
 static int __init proc_stat_init(void)
 {
-	proc_create("stat", 0, NULL, &proc_stat_operations);
+	proc_create("stat", 0, &glob_proc_root, &proc_stat_operations);
 	return 0;
 }
 module_init(proc_stat_init);

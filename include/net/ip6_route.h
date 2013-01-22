@@ -64,6 +64,7 @@ static inline bool rt6_need_strict(const struct in6_addr *daddr)
 
 
 void ip6_route_input(struct sk_buff *skb);
+void __ip6_route_input(struct sk_buff *skb, struct in6_addr *daddr);
 
 struct dst_entry *ip6_route_output(struct net *net, const struct sock *sk,
 				   struct flowi6 *fl6);

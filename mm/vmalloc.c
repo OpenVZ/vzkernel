@@ -33,6 +33,8 @@
 #include <asm/tlbflush.h>
 #include <asm/shmparam.h>
 
+#include <bc/kmem.h>
+
 struct vfree_deferred {
 	struct llist_head list;
 	struct work_struct wq;

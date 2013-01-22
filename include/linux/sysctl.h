@@ -189,6 +189,8 @@ struct ctl_table_header *register_sysctl_paths(const struct ctl_path *path,
 
 void unregister_sysctl_table(struct ctl_table_header * table);
 
+extern int ve_allow_kthreads;
+
 extern int sysctl_init(void);
 #else /* CONFIG_SYSCTL */
 static inline struct ctl_table_header *register_sysctl_table(struct ctl_table * table)
