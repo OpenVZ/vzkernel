@@ -13,6 +13,7 @@
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <linux/mmiotrace.h>
+#include <linux/ratelimit.h>
 
 #include <asm/cacheflush.h>
 #include <asm/e820.h>

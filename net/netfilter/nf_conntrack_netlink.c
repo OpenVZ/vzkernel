@@ -54,6 +54,9 @@
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nfnetlink_conntrack.h>
 
+#include <net/sock.h>
+#include <bc/beancounter.h>
+
 MODULE_LICENSE("GPL");
 
 static char __initdata version[] = "0.93";

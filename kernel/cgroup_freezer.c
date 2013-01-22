@@ -22,23 +22,6 @@
 #include <linux/freezer.h>
 #include <linux/seq_file.h>
 
-/*
- * A cgroup is freezing if any FREEZING flags are set.  FREEZING_SELF is
- * set if "FROZEN" is written to freezer.state cgroupfs file, and cleared
- * for "THAWED".  FREEZING_PARENT is set if the parent freezer is FREEZING
- * for whatever reason.  IOW, a cgroup has FREEZING_PARENT set if one of
- * its ancestors has FREEZING_SELF set.
- */
-enum freezer_state_flags {
-	CGROUP_FREEZER_ONLINE	= (1 << 0), /* freezer is fully online */
-	CGROUP_FREEZING_SELF	= (1 << 1), /* this freezer is freezing */
-	CGROUP_FREEZING_PARENT	= (1 << 2), /* the parent freezer is freezing */
-	CGROUP_FROZEN		= (1 << 3), /* this and its descendants frozen */
-
-	/* mask for all FREEZING flags */
-	CGROUP_FREEZING		= CGROUP_FREEZING_SELF | CGROUP_FREEZING_PARENT,
-};
-
 struct freezer {
 	struct cgroup_subsys_state	css;
 	unsigned int			state;
@@ -393,7 +376,7 @@ static void freezer_apply_state(struct freezer *freezer, bool freeze,
  * Freeze or thaw @freezer according to @freeze.  The operations are
  * recursive - all descendants of @freezer will be affected.
  */
-static void freezer_change_state(struct freezer *freezer, bool freeze)
+void freezer_change_state(struct freezer *freezer, bool freeze)
 {
 	struct cgroup *pos;
 

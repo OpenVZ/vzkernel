@@ -4518,7 +4518,7 @@ queue_and_out:
 				if (skb_queue_len(&sk->sk_receive_queue) == 0)
 					sk_forced_mem_schedule(sk, skb->truesize);
 				else if (tcp_try_rmem_schedule(sk, skb, skb->truesize))
-					goto drop;
+					goto drop_part;
 			}
 			eaten = tcp_queue_rcv(sk, skb, 0, &fragstolen);
 		}
@@ -4559,6 +4559,12 @@ out_of_window:
 		tcp_enter_quickack_mode(sk);
 		inet_csk_schedule_ack(sk);
 drop:
+		__kfree_skb(skb);
+		return;
+
+drop_part:
+		if (after(tp->copied_seq, tp->rcv_nxt))
+			tp->rcv_nxt = tp->copied_seq;
 		__kfree_skb(skb);
 		return;
 	}

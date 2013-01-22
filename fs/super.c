@@ -33,6 +33,7 @@
 #include <linux/cleancache.h>
 #include <linux/fsnotify.h>
 #include <linux/lockdep.h>
+#include <linux/ve_proto.h>
 #include "internal.h"
 
 static int thaw_super_locked(struct super_block *sb);

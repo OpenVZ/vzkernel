@@ -313,7 +313,7 @@ static inline void freezer_count(void) {}
 static inline int freezer_should_skip(struct task_struct *p) { return 0; }
 static inline void set_freezable(void) {}
 
-#define freezable_schedule()  schedule()
+#define __freezable_schedule()  schedule()
 
 #define freezable_schedule_unsafe()  schedule()
 
