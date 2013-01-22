@@ -102,6 +102,25 @@ static inline int delayacct_add_tsk(struct taskstats *d,
 	return __delayacct_add_tsk(d, tsk);
 }
 
+static inline void delayacct_add_stats(struct taskstats *d,
+					struct taskstats *s)
+{
+	if (!delayacct_on)
+		return;
+
+	d->cpu_count			+= s->cpu_count;
+	d->cpu_delay_total		+= s->cpu_delay_total;
+	d->cpu_run_real_total		+= s->cpu_run_real_total;
+	d->cpu_run_virtual_total	+= s->cpu_run_virtual_total;
+	d->cpu_scaled_run_real_total	+= s->cpu_scaled_run_real_total;
+	d->blkio_count			+= s->blkio_count;
+	d->blkio_delay_total		+= s->blkio_delay_total;
+	d->swapin_count			+= s->swapin_count;
+	d->swapin_delay_total		+= s->swapin_delay_total;
+	d->freepages_count		+= s->freepages_count;
+	d->freepages_delay_total	+= s->freepages_delay_total;
+}
+
 static inline __u64 delayacct_blkio_ticks(struct task_struct *tsk)
 {
 	if (tsk->delays)
@@ -139,6 +158,9 @@ static inline void delayacct_blkio_end(void)
 static inline int delayacct_add_tsk(struct taskstats *d,
 					struct task_struct *tsk)
 { return 0; }
+static inline void delayacct_add_stats(struct taskstats *d,
+					struct taskstats *s)
+{}
 static inline __u64 delayacct_blkio_ticks(struct task_struct *tsk)
 { return 0; }
 static inline int delayacct_is_task_waiting_on_io(struct task_struct *p)

@@ -151,16 +151,3 @@ extern int devtmpfs_init(void);
 #else
 static inline int devtmpfs_init(void) { return 0; }
 #endif
-
-extern struct device_type part_type;
-#ifdef CONFIG_BLOCK
-static inline int device_is_not_partition(struct device *dev)
-{
-	return !(dev->type == &part_type);
-}
-#else
-static inline int device_is_not_partition(struct device *dev)
-{
-	return 1;
-}
-#endif

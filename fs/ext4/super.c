@@ -192,6 +192,7 @@ ext4_fsblk_t ext4_block_bitmap(struct super_block *sb,
 		(EXT4_DESC_SIZE(sb) >= EXT4_MIN_DESC_SIZE_64BIT ?
 		 (ext4_fsblk_t)le32_to_cpu(bg->bg_block_bitmap_hi) << 32 : 0);
 }
+EXPORT_SYMBOL(ext4_block_bitmap);
 
 ext4_fsblk_t ext4_inode_bitmap(struct super_block *sb,
 			       struct ext4_group_desc *bg)
@@ -200,6 +201,7 @@ ext4_fsblk_t ext4_inode_bitmap(struct super_block *sb,
 		(EXT4_DESC_SIZE(sb) >= EXT4_MIN_DESC_SIZE_64BIT ?
 		 (ext4_fsblk_t)le32_to_cpu(bg->bg_inode_bitmap_hi) << 32 : 0);
 }
+EXPORT_SYMBOL(ext4_inode_bitmap);
 
 ext4_fsblk_t ext4_inode_table(struct super_block *sb,
 			      struct ext4_group_desc *bg)
@@ -208,6 +210,7 @@ ext4_fsblk_t ext4_inode_table(struct super_block *sb,
 		(EXT4_DESC_SIZE(sb) >= EXT4_MIN_DESC_SIZE_64BIT ?
 		 (ext4_fsblk_t)le32_to_cpu(bg->bg_inode_table_hi) << 32 : 0);
 }
+EXPORT_SYMBOL(ext4_inode_table);
 
 __u32 ext4_free_group_clusters(struct super_block *sb,
 			       struct ext4_group_desc *bg)
@@ -5592,7 +5595,7 @@ static struct file_system_type ext4_fs_type = {
 	.mount		= ext4_mount,
 	.kill_sb	= kill_block_super,
 	.fs_flags	= FS_REQUIRES_DEV | FS_HAS_INVALIDATE_RANGE |
-			  FS_HAS_DIO_IODONE2,
+			  FS_HAS_DIO_IODONE2 | FS_VIRTUALIZED,
 };
 MODULE_ALIAS_FS("ext4");
 

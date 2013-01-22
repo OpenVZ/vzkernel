@@ -215,17 +215,21 @@ static inline int qdisc_restart(struct Qdisc *q)
 	struct net_device *dev;
 	spinlock_t *root_lock;
 	struct sk_buff *skb;
+	int ret;
 
 	/* Dequeue packet */
 	skb = dequeue_skb(q);
 	if (unlikely(!skb))
 		return 0;
 
+	WARN_ON_ONCE(skb_dst_is_noref(skb));
 	root_lock = qdisc_lock(q);
 	dev = qdisc_dev(q);
 	txq = skb_get_tx_queue(dev, skb);
 
-	return sch_direct_xmit(skb, q, dev, txq, root_lock);
+	ret = sch_direct_xmit(skb, q, dev, txq, root_lock);
+
+	return ret;
 }
 
 void __qdisc_run(struct Qdisc *q)

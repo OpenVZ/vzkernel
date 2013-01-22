@@ -3,6 +3,7 @@
 #include <linux/string.h>
 #include <linux/seq_file.h>
 #include <linux/cpufreq.h>
+#include <linux/sched.h>
 
 /*
  *	Get CPU information for use by the procfs.
@@ -51,10 +52,34 @@ static void show_cpuinfo_misc(struct seq_file *m, struct cpuinfo_x86 *c)
 }
 #endif
 
+struct cpu_flags {
+	u32 val[NCAPINTS];
+};
+
+static DEFINE_PER_CPU(struct cpu_flags, cpu_flags);
+
+static void init_cpu_flags(void *dummy)
+{
+	int cpu = smp_processor_id();
+	struct cpu_flags *flags = &per_cpu(cpu_flags, cpu);
+	struct cpuinfo_x86 *c = &cpu_data(cpu);
+	unsigned int tmp1, tmp2;
+	int i;
+
+	bitmap_zero((unsigned long *)flags, NCAPINTS);
+	for (i = 0; i < 32*NCAPINTS; i++)
+		if (cpu_has(c, i))
+			set_bit(i, (unsigned long *)flags);
+
+	cpuid(0x00000001, &tmp1, &tmp2, &flags->val[4], &flags->val[0]);
+	cpuid(0x80000001, &tmp1, &tmp2, &flags->val[6], &flags->val[1]);
+}
+
 static int show_cpuinfo(struct seq_file *m, void *v)
 {
 	struct cpuinfo_x86 *c = v;
 	unsigned int cpu;
+	int is_super = ve_is_super(get_exec_env());
 	int i;
 
 	cpu = c->cpu_index;
@@ -81,6 +106,7 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 
 		if (!freq)
 			freq = cpu_khz;
+		freq = sched_cpulimit_scale_cpufreq(freq);
 		seq_printf(m, "cpu MHz\t\t: %u.%03u\n",
 			   freq / 1000, (freq % 1000));
 	}
@@ -94,7 +120,10 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 
 	seq_printf(m, "flags\t\t:");
 	for (i = 0; i < 32*NCAPINTS; i++)
-		if (cpu_has(c, i) && x86_cap_flags[i] != NULL)
+		if (x86_cap_flags[i] != NULL &&
+				((is_super && cpu_has(c, i)) ||
+				 (!is_super && test_bit(i, (unsigned long *)
+							&per_cpu(cpu_flags, cpu)))))
 			seq_printf(m, " %s", x86_cap_flags[i]);
 
 	seq_printf(m, "\nbogomips\t: %lu.%02lu\n",
@@ -130,8 +159,10 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 
 static void *c_start(struct seq_file *m, loff_t *pos)
 {
+	smp_call_function(init_cpu_flags, NULL, 1);
+
 	*pos = cpumask_next(*pos - 1, cpu_online_mask);
-	if ((*pos) < nr_cpu_ids)
+	if (__cpus_weight(cpu_online_mask, *pos) < num_online_vcpus())
 		return &cpu_data(*pos);
 	return NULL;
 }
