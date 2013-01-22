@@ -48,18 +48,20 @@
 #include <linux/fs_struct.h>
 #include <linux/init_task.h>
 #include <linux/perf_event.h>
+#include <linux/ve_proto.h>
 #include <trace/events/sched.h>
 #include <linux/hw_breakpoint.h>
 #include <linux/oom.h>
 #include <linux/writeback.h>
 #include <linux/shm.h>
 
+#include <bc/misc.h>
+#include <bc/oom_kill.h>
+
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
 #include <asm/pgtable.h>
 #include <asm/mmu_context.h>
-
-static void exit_mm(struct task_struct * tsk);
 
 static void __unhash_process(struct task_struct *p, bool group_dead)
 {
@@ -172,7 +174,7 @@ static void delayed_put_task_struct(struct rcu_head *rhp)
 void release_task(struct task_struct * p)
 {
 	struct task_struct *leader;
-	int zap_leader;
+	int zap_leader, zap_ve;
 repeat:
 	/* don't need to get the RCU readlock here - the process is dead and
 	 * can't be modifying its own credentials. But shut RCU-lockdep up */
@@ -185,6 +187,8 @@ repeat:
 	write_lock_irq(&tasklist_lock);
 	ptrace_release_task(p);
 	__exit_signal(p);
+	nr_zombie--;
+	atomic_inc(&nr_dead);
 
 	/*
 	 * If we are the last non-leader member of the thread
@@ -192,6 +196,7 @@ repeat:
 	 * group leader's parent process. (if it wants notification.)
 	 */
 	zap_leader = 0;
+	zap_ve = 0;
 	leader = p->group_leader;
 	if (leader != p && thread_group_empty(leader) && leader->exit_state == EXIT_ZOMBIE) {
 		/*
@@ -204,8 +209,13 @@ repeat:
 			leader->exit_state = EXIT_DEAD;
 	}
 
+	if (--p->ve_task_info.owner_env->pcounter == 0)
+		zap_ve = 1;
 	write_unlock_irq(&tasklist_lock);
 	release_thread(p);
+	ub_task_uncharge(p->task_bc.task_ub);
+	if (zap_ve)
+		ve_cleanup_schedule(p->ve_task_info.owner_env);
 	call_rcu(&p->rcu, delayed_put_task_struct);
 
 	p = leader;
@@ -379,6 +389,7 @@ retry:
 	 */
 	if (mm->owner != p)
 		return;
+
 	/*
 	 * The current owner is exiting/execing and there are no other
 	 * candidates.  Do not leave the mm pointing to a possibly
@@ -670,6 +681,7 @@ static void exit_notify(struct task_struct *tsk, int group_dead)
 	}
 
 	tsk->exit_state = autoreap ? EXIT_DEAD : EXIT_ZOMBIE;
+	nr_zombie++;
 
 	/* mt-exec, de_thread() is waiting for group leader */
 	if (unlikely(tsk->signal->notify_count < 0))
@@ -706,6 +718,30 @@ static void check_stack_usage(void)
 static inline void check_stack_usage(void) {}
 #endif
 
+#ifdef CONFIG_VE
+static void do_initproc_exit(struct task_struct *tsk)
+{
+	struct ve_struct *env;
+
+	env = get_exec_env();
+	if (tsk == get_env_init(env)) {
+		/*
+		 * Here the VE changes its state into "not running".
+		 * op_sem taken for write is a barrier to all VE manipulations from
+		 * ioctl: it waits for operations currently in progress and blocks all
+		 * subsequent operations until is_running is set to 0 and op_sem is
+		 * released.
+		 */
+
+		down_write(&env->op_sem);
+		env->is_running = 0;
+		up_write(&env->op_sem);
+	}
+}
+#else
+#define do_initproc_exit(tsk)  do { } while (0)
+#endif
+
 void do_exit(long code)
 {
 	struct task_struct *tsk = current;
@@ -728,6 +764,8 @@ void do_exit(long code)
 	 * kernel address.
 	 */
 	set_fs(USER_DS);
+
+	do_initproc_exit(tsk);
 
 	ptrace_event(PTRACE_EVENT_EXIT, code);
 
@@ -895,7 +933,6 @@ void complete_and_exit(struct completion *comp, long code)
 
 	do_exit(code);
 }
-
 EXPORT_SYMBOL(complete_and_exit);
 
 SYSCALL_DEFINE1(exit, int, error_code)
@@ -967,10 +1004,38 @@ struct pid *task_pid_type(struct task_struct *task, enum pid_type type)
 	return task->pids[type].pid;
 }
 
-static int eligible_pid(struct wait_opts *wo, struct task_struct *p)
+static int __eligible_pid(struct wait_opts *wo, struct task_struct *p)
 {
 	return	wo->wo_type == PIDTYPE_MAX ||
 		task_pid_type(p, wo->wo_type) == wo->wo_pid;
+}
+
+static int __entered_pid(struct wait_opts *wo, struct task_struct *p)
+{
+	struct pid *pid, *wo_pid;
+
+	wo_pid = wo->wo_pid;
+	if ((wo_pid == NULL) || (wo_pid->level != 0))
+		return 0;
+
+	pid = task_pid_type(p, wo->wo_type);
+	if (pid->level != 1)
+		return 0;
+
+	if (wo_pid->numbers[0].nr != pid->numbers[0].nr)
+		return 0;
+
+	wo->wo_pid = get_pid(pid);
+	put_pid(wo_pid);
+	return 1;
+}
+
+static int eligible_pid(struct wait_opts *wo, struct task_struct *p)
+{
+	if (__eligible_pid(wo, p))
+		return 1;
+	else
+		return __entered_pid(wo, p);
 }
 
 static int eligible_child(struct wait_opts *wo, struct task_struct *p)
@@ -1632,7 +1697,7 @@ SYSCALL_DEFINE5(waitid, int, which, pid_t, upid, struct siginfo __user *,
 			ret = put_user(0, &infop->si_status);
 	}
 
-	put_pid(pid);
+	put_pid(wo.wo_pid);
 	return ret;
 }
 
@@ -1668,7 +1733,7 @@ SYSCALL_DEFINE4(wait4, pid_t, upid, int __user *, stat_addr,
 	wo.wo_stat	= stat_addr;
 	wo.wo_rusage	= ru;
 	ret = do_wait(&wo);
-	put_pid(pid);
+	put_pid(wo.wo_pid);
 
 	return ret;
 }
@@ -1685,3 +1750,22 @@ SYSCALL_DEFINE3(waitpid, pid_t, pid, int __user *, stat_addr, int, options)
 }
 
 #endif
+
+/**
+ * This reaps non-child zombies. We hold read_lock(&tasklist_lock) on entry.
+ * If we return zero, we still hold the lock and this task is uninteresting.
+ */
+int reap_zombie(struct task_struct *p)
+{
+	struct wait_opts wo = {
+		.wo_flags = WEXITED,
+	};
+	int ret = 0;
+
+	if (p->exit_state == EXIT_ZOMBIE && !delay_group_leader(p)) {
+		p->exit_signal = -1;
+		ret = wait_task_zombie(&wo, p);
+	}
+
+	return ret;
+}

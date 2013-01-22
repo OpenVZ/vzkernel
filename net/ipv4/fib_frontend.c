@@ -262,7 +262,8 @@ static int __fib_validate_source(struct sk_buff *skb, __be32 src, __be32 dst,
 	if (fib_lookup(net, &fl4, &res))
 		goto last_resort;
 	if (res.type != RTN_UNICAST) {
-		if (res.type != RTN_LOCAL || !accept_local)
+		if (!(dev->features & NETIF_F_VENET) ||
+		    res.type != RTN_LOCAL || !accept_local)
 			goto e_inval;
 	}
 	fib_combine_itag(itag, &res);
@@ -483,7 +484,7 @@ int ip_rt_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 	switch (cmd) {
 	case SIOCADDRT:		/* Add a route */
 	case SIOCDELRT:		/* Delete a route */
-		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+		if (!ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
 			return -EPERM;
 
 		if (copy_from_user(&rt, arg, sizeof(rt)))

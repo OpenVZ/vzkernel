@@ -1021,12 +1021,8 @@ static struct sk_buff *tun_alloc_skb(struct tun_file *tfile,
 	struct sk_buff *skb;
 	int err;
 
-	/* Under a page?  Don't bother with paged skb. */
-	if (prepad + len < PAGE_SIZE || !linear)
-		linear = len;
-
-	skb = sock_alloc_send_pskb(sk, prepad + linear, len - linear, noblock,
-				   &err, 0);
+	linear = len;
+	skb = sock_alloc_send_skb(sk, prepad + linear, noblock, &err);
 	if (!skb)
 		return ERR_PTR(err);
 
@@ -1558,6 +1554,7 @@ static void tun_setup(struct net_device *dev)
 
 	dev->ethtool_ops = &tun_ethtool_ops;
 	dev->destructor = tun_free_netdev;
+	dev->features |= NETIF_F_VIRTUAL;
 }
 
 /* Trivial set of netlink ops to allow deleting tun or tap
@@ -1718,7 +1715,9 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
 		    !!(tun->flags & IFF_MULTI_QUEUE))
 			return -EINVAL;
 
-		if (tun_not_capable(tun))
+		if (((tun->owner != -1 && cred->euid != tun->owner) ||
+		     (tun->group != -1 && !in_egroup_p(tun->group))) &&
+		    !capable(CAP_NET_ADMIN) && !capable(CAP_VE_NET_ADMIN))
 			return -EPERM;
 		err = security_tun_dev_open(tun->security);
 		if (err < 0)
@@ -1742,7 +1741,7 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
 		int queues = ifr->ifr_flags & IFF_MULTI_QUEUE ?
 			     MAX_TAP_QUEUES : 1;
 
-		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+		if (!capable(CAP_NET_ADMIN) && !capable(CAP_VE_NET_ADMIN))
 			return -EPERM;
 		err = security_tun_dev_create();
 		if (err < 0)
@@ -1811,9 +1810,10 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
 		if (err < 0)
 			goto err_detach;
 
-		if (device_create_file(&tun->dev->dev, &dev_attr_tun_flags) ||
+		if ((dev_net(tun->dev) == &init_net) &&
+		    (device_create_file(&tun->dev->dev, &dev_attr_tun_flags) ||
 		    device_create_file(&tun->dev->dev, &dev_attr_owner) ||
-		    device_create_file(&tun->dev->dev, &dev_attr_group))
+		    device_create_file(&tun->dev->dev, &dev_attr_group)))
 			pr_err("Failed to create tun sysfs files\n");
 	}
 

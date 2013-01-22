@@ -69,6 +69,8 @@ static struct vfsmount *shm_mnt;
 #include <linux/seq_file.h>
 #include <linux/magic.h>
 
+#include <bc/kmem.h>
+
 #include <asm/uaccess.h>
 #include <asm/pgtable.h>
 
@@ -104,14 +106,39 @@ enum sgp_type {
 };
 
 #ifdef CONFIG_TMPFS
+
+#include <linux/virtinfo.h>
+
+static unsigned long tmpfs_ram_pages(void)
+{
+	unsigned long ub_rampages = ULONG_MAX;
+	struct user_beancounter *ub;
+
+	/*
+	 * tmpfs can be mounted by a kthread
+	 * (e.g. by init during devtmpfs intialization)
+	 */
+	if (unlikely(!current->mm))
+		goto out;
+
+	ub = current->mm->mm_ub;
+	if (ub != get_ub0()) {
+		ub_rampages = ub->ub_parms[UB_PHYSPAGES].limit;
+		if (ub_rampages == UB_MAXVALUE)
+			ub_rampages = ub->ub_parms[UB_PRIVVMPAGES].limit;
+	}
+out:
+	return min(totalram_pages, ub_rampages);
+}
+
 static unsigned long shmem_default_max_blocks(void)
 {
-	return totalram_pages / 2;
+	return tmpfs_ram_pages() / 2;
 }
 
 static unsigned long shmem_default_max_inodes(void)
 {
-	return min(totalram_pages - totalhigh_pages, totalram_pages / 2);
+	return min(totalram_pages - totalhigh_pages, tmpfs_ram_pages() / 2);
 }
 #endif
 
@@ -719,6 +746,8 @@ out:
 	page_cache_release(page);
 	return error;
 }
+
+#define shm_get_swap_page(info)	(get_swap_page())
 
 /*
  * Move the page from the page cache to the swap cache.
@@ -2514,7 +2543,7 @@ static int shmem_parse_options(char *options, struct shmem_sb_info *sbinfo,
 			size = memparse(value,&rest);
 			if (*rest == '%') {
 				size <<= PAGE_SHIFT;
-				size *= totalram_pages;
+				size *= tmpfs_ram_pages();
 				do_div(size, 100);
 				rest++;
 			}
@@ -2796,17 +2825,24 @@ static struct kmem_cache *shmem_inode_cachep;
 
 static struct inode *shmem_alloc_inode(struct super_block *sb)
 {
+	struct user_beancounter *ub = get_exec_ub();
 	struct shmem_inode_info *info;
+	info = kmem_cache_alloc(shmem_inode_cachep, GFP_KERNEL);
 	info = kmem_cache_alloc(shmem_inode_cachep, GFP_KERNEL);
 	if (!info)
 		return NULL;
+	info->shmi_ub = get_beancounter(ub);
 	return &info->vfs_inode;
 }
 
 static void shmem_destroy_callback(struct rcu_head *head)
 {
 	struct inode *inode = container_of(head, struct inode, i_rcu);
-	kmem_cache_free(shmem_inode_cachep, SHMEM_I(inode));
+	struct shmem_inode_info *p = SHMEM_I(inode);
+	struct user_beancounter *ub = p->shmi_ub;
+
+	kmem_cache_free(shmem_inode_cachep, p);
+	put_beancounter(ub);
 }
 
 static void shmem_destroy_inode(struct inode *inode)
@@ -2860,6 +2896,7 @@ static const struct file_operations shmem_file_operations = {
 	.fallocate	= shmem_fallocate,
 #endif
 };
+EXPORT_SYMBOL(shmem_file_operations);
 
 static const struct inode_operations shmem_inode_operations = {
 	.setattr	= shmem_setattr,

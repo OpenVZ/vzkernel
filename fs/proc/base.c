@@ -49,6 +49,7 @@
 
 #include <asm/uaccess.h>
 
+#include <linux/module.h>
 #include <linux/errno.h>
 #include <linux/time.h>
 #include <linux/proc_fs.h>
@@ -93,6 +94,8 @@
 #include <trace/events/oom.h>
 #include "internal.h"
 #include "fd.h"
+
+#include <bc/oom_kill.h>
 
 /* NOTE:
  *	Implementing inode permission operations in /proc is almost
@@ -165,9 +168,13 @@ static int get_task_root(struct task_struct *task, struct path *root)
 	task_lock(task);
 	if (task->fs) {
 		get_fs_root(task->fs, root);
-		result = 0;
-	}
-	task_unlock(task);
+		task_unlock(task);
+
+		result = d_root_check(root);
+		if (result)
+			path_put(root);
+	} else
+		task_unlock(task);
 	return result;
 }
 
@@ -180,9 +187,13 @@ static int proc_cwd_link(struct dentry *dentry, struct path *path)
 		task_lock(task);
 		if (task->fs) {
 			get_fs_pwd(task->fs, path);
-			result = 0;
-		}
-		task_unlock(task);
+			task_unlock(task);
+
+			result = d_root_check(path);
+			if (result)
+				path_put(path);
+		} else
+			task_unlock(task);
 		put_task_struct(task);
 	}
 	return result;
@@ -600,15 +611,15 @@ static const struct file_operations proc_cpuset_operations = {
 
 static int proc_oom_score(struct task_struct *task, char *buffer)
 {
-	unsigned long totalpages = totalram_pages + total_swap_pages;
-	unsigned long points = 0;
+	int points = 0;
 
 	read_lock(&tasklist_lock);
-	if (pid_alive(task))
-		points = oom_badness(task, NULL, NULL, totalpages) *
-						1000 / totalpages;
+	if (pid_alive(task)) {
+		points = oom_badness(task, NULL, NULL, ub_oom_total_pages(get_exec_ub()));
+		points = clamp(points, 0, 1000);
+	}
 	read_unlock(&tasklist_lock);
-	return sprintf(buffer, "%lu\n", points);
+	return sprintf(buffer, "%d\n", points);
 }
 
 struct limit_names {
@@ -712,17 +723,36 @@ static int proc_pid_syscall(struct task_struct *task, char *buffer)
 static int proc_fd_access_allowed(struct inode *inode)
 {
 	struct task_struct *task;
-	int allowed = 0;
+	int err;
+
 	/* Allow access to a task's file descriptors if it is us or we
 	 * may use ptrace attach to the process and find out that
 	 * information.
 	 */
+	err = -ENOENT;
 	task = get_proc_task(inode);
 	if (task) {
-		allowed = ptrace_may_access(task, PTRACE_MODE_READ);
+		if (task->flags & PF_KTHREAD)
+			/*
+			 * Always allow access to kernel threads /proc entries.
+			 */
+			err = 0;
+		else if (ptrace_may_access(task, PTRACE_MODE_READ))
+			err = 0;
+		else
+			/*
+			 * This clever ptrace_may_attach() may play a trick
+			 * on us. If the task is zombie it will consider this
+			 * task to be not dumpable at all and will deny any
+			 * ptracing in VE. Not a big deal for ptrace(), but
+			 * following the link will fail with the -EACCESS
+			 * reason. Some software is unable to stand such a
+			 * swindle and refuses to work :(
+			 */
+			err = (task->mm ? -EACCES : -ENOENT);
 		put_task_struct(task);
 	}
-	return allowed;
+	return err;
 }
 
 int proc_setattr(struct dentry *dentry, struct iattr *attr)
@@ -1180,7 +1210,7 @@ static ssize_t oom_score_adj_read(struct file *file, char __user *buf,
 	if (!task)
 		return -ESRCH;
 	if (lock_task_sighand(task, &flags)) {
-		oom_score_adj = task->signal->oom_score_adj;
+		oom_score_adj = get_task_oom_score_adj(task);
 		unlock_task_sighand(task, &flags);
 	}
 	put_task_struct(task);
@@ -1213,6 +1243,8 @@ static ssize_t oom_score_adj_write(struct file *file, const char __user *buf,
 		err = -EINVAL;
 		goto out;
 	}
+	if (!ve_is_super(get_exec_env()))
+		goto out;
 
 	task = get_proc_task(file_inode(file));
 	if (!task) {
@@ -1241,6 +1273,12 @@ static ssize_t oom_score_adj_write(struct file *file, const char __user *buf,
 	if (has_capability_noaudit(current, CAP_SYS_RESOURCE))
 		task->signal->oom_score_adj_min = (short)oom_score_adj;
 	trace_oom_score_adj_update(task);
+
+	/*
+	 * Container uses modern interface, seems like it know what to do.
+	 * So, we can disable automaic oom-score adjustments.
+	 */
+	set_bit(UB_OOM_MANUAL_SCORE_ADJ, &get_exec_ub()->ub_flags);
 
 err_sighand:
 	unlock_task_sighand(task, &flags);
@@ -1614,10 +1652,15 @@ static int proc_exe_link(struct dentry *dentry, struct path *exe_path)
 	exe_file = get_mm_exe_file(mm);
 	mmput(mm);
 	if (exe_file) {
-		*exe_path = exe_file->f_path;
-		path_get(&exe_file->f_path);
+		int result;
+
+		result = d_root_check(&exe_file->f_path);
+		if (result == 0) {
+			*exe_path = exe_file->f_path;
+			path_get(&exe_file->f_path);
+		}
 		fput(exe_file);
-		return 0;
+		return result;
 	} else
 		return -ENOENT;
 }
@@ -1626,10 +1669,11 @@ static void *proc_pid_follow_link(struct dentry *dentry, struct nameidata *nd)
 {
 	struct inode *inode = dentry->d_inode;
 	struct path path;
-	int error = -EACCES;
+	int error;
 
 	/* Are we allowed to snoop on the tasks file descriptors? */
-	if (!proc_fd_access_allowed(inode))
+	error = proc_fd_access_allowed(inode);
+	if (error < 0)
 		goto out;
 
 	error = PROC_I(inode)->op.proc_get_link(dentry, &path);
@@ -1668,12 +1712,13 @@ static int do_proc_readlink(struct path *path, char __user *buffer, int buflen)
 
 static int proc_pid_readlink(struct dentry * dentry, char __user * buffer, int buflen)
 {
-	int error = -EACCES;
+	int error;
 	struct inode *inode = dentry->d_inode;
 	struct path path;
 
 	/* Are we allowed to snoop on the tasks file descriptors? */
-	if (!proc_fd_access_allowed(inode))
+	error = proc_fd_access_allowed(inode);
+	if (error < 0)
 		goto out;
 
 	error = PROC_I(inode)->op.proc_get_link(dentry, &path);
@@ -3552,3 +3597,35 @@ static const struct file_operations proc_task_operations = {
 	.readdir	= proc_task_readdir,
 	.llseek		= default_llseek,
 };
+
+/* Check whether dentry belongs to a task that already died */
+int proc_dentry_of_dead_task(struct dentry *dentry)
+{
+	if (dentry->d_inode->i_fop == &dummy_proc_pid_file_operations)
+		return 1;
+
+	return (dentry->d_op == &pid_dentry_operations &&
+		 proc_pid(dentry->d_inode)->tasks[PIDTYPE_PID].first == NULL);
+}
+EXPORT_SYMBOL(proc_dentry_of_dead_task);
+
+/* Place it here to avoid use vzrst module count */
+static ssize_t dummy_proc_pid_read(struct file * file, char __user * buf,
+				 size_t count, loff_t *ppos)
+{
+	return -ESRCH;
+}
+
+static ssize_t dummy_proc_pid_write(struct file * file, const char * buf,
+				  size_t count, loff_t *ppos)
+{
+	return -ESRCH;
+}
+
+struct file_operations dummy_proc_pid_file_operations = {
+	.read		= dummy_proc_pid_read,
+	.write		= dummy_proc_pid_write,
+};
+
+EXPORT_SYMBOL(dummy_proc_pid_file_operations);
+

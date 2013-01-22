@@ -27,6 +27,7 @@
 #include <linux/skbuff.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
+#include <linux/sched.h>
 #include <linux/ethtool.h>
 #include <net/arp.h>
 
@@ -155,6 +156,7 @@ static netdev_tx_t vlan_dev_hard_start_xmit(struct sk_buff *skb,
 
 	skb->dev = vlan->real_dev;
 	len = skb->len;
+
 	if (unlikely(netpoll_tx_running(dev)))
 		return vlan_netpoll_send_skb(vlan, skb);
 
@@ -802,4 +804,6 @@ void vlan_setup(struct net_device *dev)
 	dev->ethtool_ops	= &vlan_ethtool_ops;
 
 	memset(dev->broadcast, 0, ETH_ALEN);
+	if (!ve_is_super(dev_net(dev)->owner_ve))
+		dev->features |= NETIF_F_VIRTUAL;
 }

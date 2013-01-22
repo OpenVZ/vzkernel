@@ -84,6 +84,7 @@
 #include <linux/kmod.h>
 #include <linux/audit.h>
 #include <linux/wireless.h>
+#include <linux/in.h>
 #include <linux/nsproxy.h>
 #include <linux/magic.h>
 #include <linux/slab.h>
@@ -195,6 +196,7 @@ int move_addr_to_kernel(void __user *uaddr, int ulen, struct sockaddr_storage *k
 		return -EFAULT;
 	return audit_sockaddr(ulen, kaddr);
 }
+EXPORT_SYMBOL(move_addr_to_kernel);
 
 /**
  *	move_addr_to_user	-	copy an address to user space
@@ -1230,6 +1232,54 @@ call_kill:
 }
 EXPORT_SYMBOL(sock_wake_async);
 
+int vz_security_family_check(int family)
+{
+#ifdef CONFIG_VE
+	if (ve_is_super(get_exec_env()))
+		return 0;
+
+	switch (family) {
+	case PF_UNSPEC:
+	case PF_PACKET:
+	case PF_NETLINK:
+	case PF_UNIX:
+	case PF_INET:
+	case PF_INET6:
+	case PF_PPPOX:
+	case PF_KEY:
+		break;
+	default:
+		return -EAFNOSUPPORT;
+        }
+#endif
+	return 0;
+}
+EXPORT_SYMBOL_GPL(vz_security_family_check);
+
+int vz_security_protocol_check(int protocol)
+{
+#ifdef CONFIG_VE
+	if (ve_is_super(get_exec_env()))
+		return 0;
+
+	switch (protocol) {
+	case  IPPROTO_IP:
+	case  IPPROTO_TCP:
+	case  IPPROTO_UDP:
+	case  IPPROTO_RAW:
+	case  IPPROTO_DCCP:
+	case  IPPROTO_GRE:
+	case  IPPROTO_ESP:
+	case  IPPROTO_AH:
+		break;
+	default:
+		return -EAFNOSUPPORT;
+	}
+#endif
+	return 0;
+}
+EXPORT_SYMBOL_GPL(vz_security_protocol_check);
+
 int __sock_create(struct net *net, int family, int type, int protocol,
 			 struct socket **res, int kern)
 {
@@ -1259,6 +1309,11 @@ int __sock_create(struct net *net, int family, int type, int protocol,
 		}
 		family = PF_PACKET;
 	}
+
+	/* VZ compatibility layer */
+	err = vz_security_family_check(family);
+	if (err < 0)
+		return err;
 
 	err = security_socket_create(family, type, protocol, kern);
 	if (err)

@@ -44,7 +44,8 @@ int br_dev_queue_push_xmit(struct sock *sk, struct sk_buff *skb)
 {
 	/* ip_fragment doesn't copy the MAC header */
 	if (nf_bridge_maybe_copy_header(skb) ||
-	    (packet_length(skb) > skb->dev->mtu && !skb_is_gso(skb))) {
+	    (!(skb->dev->features & NETIF_F_VENET) &&
+	     packet_length(skb) > skb->dev->mtu && !skb_is_gso(skb))) {
 		kfree_skb(skb);
 	} else {
 		skb_push(skb, ETH_HLEN);

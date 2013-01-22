@@ -194,10 +194,11 @@ static void ip_evictor(struct net *net)
  */
 static void ip_expire(unsigned long arg)
 {
+	struct inet_frag_queue *q = (struct inet_frag_queue *)arg;
 	struct ipq *qp;
 	struct net *net;
 
-	qp = container_of((struct inet_frag_queue *) arg, struct ipq, q);
+	qp = container_of(q, struct ipq, q);
 	net = container_of(qp->q.net, struct net, ipv4.frags);
 
 	spin_lock(&qp->q.lock);

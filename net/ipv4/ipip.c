@@ -107,6 +107,7 @@
 #include <linux/init.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/if_ether.h>
+#include <linux/vzcalluser.h>
 
 #include <net/sock.h>
 #include <net/ip.h>
@@ -142,6 +143,9 @@ static int ipip_err(struct sk_buff *skb, u32 info)
 	const int code = icmp_hdr(skb)->code;
 
 	err = -ENOENT;
+	if (itn == NULL)
+		goto out;
+
 	t = ip_tunnel_lookup(itn, skb->dev->ifindex, TUNNEL_NO_KEY,
 			     iph->daddr, iph->saddr, 0);
 	if (t == NULL)
@@ -191,6 +195,10 @@ static int ipip_rcv(struct sk_buff *skb)
 	const struct iphdr *iph;
 
 	iph = ip_hdr(skb);
+
+	if (itn == NULL)
+		return -1;
+
 	tunnel = ip_tunnel_lookup(itn, skb->dev->ifindex, TUNNEL_NO_KEY,
 			iph->saddr, iph->daddr, 0);
 	if (tunnel) {
@@ -433,13 +441,21 @@ static struct xfrm_tunnel ipip_handler __read_mostly = {
 
 static int __net_init ipip_init_net(struct net *net)
 {
+	if (!(net->owner_ve->features & VE_FEATURE_IPIP))
+		return net_assign_generic(net, ipip_net_id, NULL);
+
 	return ip_tunnel_init_net(net, ipip_net_id, &ipip_link_ops, "tunl0");
 }
 
 static void __net_exit ipip_exit_net(struct net *net)
 {
 	struct ip_tunnel_net *itn = net_generic(net, ipip_net_id);
+
+	if (itn == NULL) /* no VE_FEATURE_IPIP */
+		return;
+
 	ip_tunnel_delete_net(itn, &ipip_link_ops);
+	net_assign_generic(net, ipip_net_id, NULL);
 }
 
 static struct pernet_operations ipip_net_ops = {

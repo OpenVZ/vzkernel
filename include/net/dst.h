@@ -61,6 +61,7 @@ struct dst_entry {
 #define DST_FAKE_RTABLE		0x0080
 #define DST_XFRM_TUNNEL		0x0100
 #define DST_XFRM_QUEUE		0x0200
+#define DST_FREE		0x0400
 
 	unsigned short		pending_confirm;
 
@@ -195,6 +196,11 @@ dst_metric_raw(const struct dst_entry *dst, const int metric)
 
 	return p[metric-1];
 }
+
+void dst_dump_one(struct dst_entry *d);
+void ip_rt_dump_dsts(void);
+void dst_cache_dump(void);
+extern void (*ip6_rt_dump_dsts)(void);
 
 static inline u32
 dst_metric(const struct dst_entry *dst, const int metric)
