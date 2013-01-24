@@ -1283,6 +1283,15 @@ static int parse_cgroupfs_options(char *data, struct cgroup_sb_opts *opts)
 	if (!opts->subsys_mask && !opts->name)
 		return -EINVAL;
 
+	if (!ve_is_super(get_exec_env())) {
+		/* Forbid all subsystems inside container */
+		if (opts->subsys_bits)
+			return -ENOENT;
+		/* Allow only one hierarchy: "systemd" */
+		if (strcmp(opts->name, "systemd"))
+			return -EPERM;
+	}
+
 	/*
 	 * Grab references on all the modules we'll need, so the subsystems
 	 * don't dance around before rebind_subsystems attaches them. This may
