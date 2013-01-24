@@ -29,7 +29,6 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 
-#include <asm/system.h>
 #include <asm/uaccess.h>
 #include <asm/io.h>
 #include <asm/unistd.h>
@@ -53,12 +52,14 @@
 #include <linux/spinlock.h>
 #include <linux/vzcalluser.h>
 
+#ifdef CONFIG_VZ_CHECKPOINT
 #include <linux/cpt_image.h>
 #include <linux/cpt_export.h>
+#endif
 
 static LIST_HEAD(veth_hwaddr_list);
 static DEFINE_RWLOCK(ve_hwaddr_lock);
-static DECLARE_MUTEX(hwaddr_sem);
+static DEFINE_SEMAPHORE(hwaddr_sem);
 
 static struct net_device * veth_dev_start(char *dev_addr, char *name);
 
@@ -292,13 +293,13 @@ static int veth_xmit(struct sk_buff *skb, struct net_device *dev)
 		if (is_multicast_ether_addr(
 					((struct ethhdr *)skb->data)->h_dest))
 			goto out;
-		if (!rcv->br_port &&
+		if (!(rcv->priv_flags & IFF_BRIDGE_PORT) &&
 			compare_ether_addr(((struct ethhdr *)skb->data)->h_dest, rcv->dev_addr))
 				goto outf;
 	} else if (!ve_is_super(dev->owner_env) &&
 			!entry->allow_mac_change) {
 		/* from VEX to VE0 */
-		if (!skb->dev->br_port &&
+		if (!(skb->dev->priv_flags & IFF_BRIDGE_PORT) &&
 			compare_ether_addr(((struct ethhdr *)skb->data)->h_source, dev->dev_addr))
 				goto outf;
 	}
@@ -362,53 +363,78 @@ static int veth_init_dev(struct net_device *dev)
 	return 0;
 }
 
-static int
-veth_set_op(struct net_device *dev, u32 data,
-	     int (*fop)(struct net_device *, u32))
-{
-	struct net_device *pair;
-	int ret = 0;
+#define DRV_NAME	"vz-veth"
+#define DRV_VERSION	"1.0"
 
-	ret = fop(dev, data);
-	if (ret < 0)
-		goto out;
+/*
+ * ethtool interface
+ */
 
-	pair = veth_from_netdev(dev)->pair;
-	if (pair)
-		ret = fop(pair, data);
-out:
-	return ret;
-}
-
-static int veth_op_set_sg(struct net_device *dev, u32 data)
-{
-	return veth_set_op(dev, data, ethtool_op_set_sg);
-}
-
-static int veth_op_set_tx_csum(struct net_device *dev, u32 data)
-{
-	return veth_set_op(dev, data, ethtool_op_set_tx_csum);
-}
-
-static int
-veth_op_set_tso(struct net_device *dev, u32 data)
-{
-	return veth_set_op(dev, data, ethtool_op_set_tso);
-}
-
-#define veth_op_set_rx_csum veth_op_set_tx_csum
-
-static struct ethtool_ops veth_ethtool_ops = {
-	.get_sg = ethtool_op_get_sg,
-	.set_sg = veth_op_set_sg,
-	.get_tx_csum = ethtool_op_get_tx_csum,
-	.set_tx_csum = veth_op_set_tx_csum,
-	.get_rx_csum = ethtool_op_get_tx_csum,
-	.set_rx_csum = veth_op_set_rx_csum,
-	.get_tso = ethtool_op_get_tso,
-	.set_tso = veth_op_set_tso,
+static struct {
+	const char string[ETH_GSTRING_LEN];
+} ethtool_stats_keys[] = {
+	{ "peer_ifindex" },
 };
 
+static int veth_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
+{
+	cmd->supported		= 0;
+	cmd->advertising	= 0;
+	ethtool_cmd_speed_set(cmd, SPEED_10000);
+	cmd->duplex		= DUPLEX_FULL;
+	cmd->port		= PORT_TP;
+	cmd->phy_address	= 0;
+	cmd->transceiver	= XCVR_INTERNAL;
+	cmd->autoneg		= AUTONEG_DISABLE;
+	cmd->maxtxpkt		= 0;
+	cmd->maxrxpkt		= 0;
+	return 0;
+}
+
+static void veth_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info)
+{
+	strlcpy(info->driver, DRV_NAME, sizeof(info->driver));
+	strlcpy(info->version, DRV_VERSION, sizeof(info->version));
+}
+
+static void veth_get_strings(struct net_device *dev, u32 stringset, u8 *buf)
+{
+	switch(stringset) {
+	case ETH_SS_STATS:
+		memcpy(buf, &ethtool_stats_keys, sizeof(ethtool_stats_keys));
+		break;
+	}
+}
+
+static int veth_get_sset_count(struct net_device *dev, int sset)
+{
+	switch (sset) {
+	case ETH_SS_STATS:
+		return ARRAY_SIZE(ethtool_stats_keys);
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
+static void veth_get_ethtool_stats(struct net_device *dev,
+		struct ethtool_stats *stats, u64 *data)
+{
+	struct veth_struct *veth;
+
+	veth = veth_from_netdev(dev);
+	data[0] = veth->pair->ifindex;
+}
+
+static const struct ethtool_ops veth_ethtool_ops = {
+	.get_settings		= veth_get_settings,
+	.get_drvinfo		= veth_get_drvinfo,
+	.get_link		= ethtool_op_get_link,
+	.get_strings		= veth_get_strings,
+	.get_sset_count		= veth_get_sset_count,
+	.get_ethtool_stats	= veth_get_ethtool_stats,
+};
+
+#ifdef CONFIG_VZ_CHECKPOINT
 static void veth_cpt(struct net_device *dev,
 		struct cpt_ops *ops, struct cpt_context *ctx)
 {
@@ -457,6 +483,7 @@ static struct netdev_rst veth_netdev_rst = {
 	.cpt_object = CPT_OBJ_NET_VETH,
 	.ndo_rst = veth_rst,
 };
+#endif
 
 static const struct net_device_ops veth_ops = {
 	.ndo_init = veth_init_dev,
@@ -465,7 +492,9 @@ static const struct net_device_ops veth_ops = {
 	.ndo_open = veth_open,
 	.ndo_stop = veth_close,
 	.ndo_set_mac_address = veth_set_mac,
+#ifdef CONFIG_VZ_CHECKPOINT
 	.ndo_cpt = veth_cpt,
+#endif
 };
 
 static void veth_setup(struct net_device *dev)
@@ -482,6 +511,8 @@ static void veth_setup(struct net_device *dev)
 	 */
 	dev->features |= NETIF_F_VENET | NETIF_F_VIRTUAL | NETIF_F_LLTX |
 		NETIF_F_HIGHDMA;
+
+	dev->hw_features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_TSO;
 
 	SET_ETHTOOL_OPS(dev, &veth_ethtool_ops);
 }
@@ -700,7 +731,9 @@ static __init int veth_init(void)
 		printk(KERN_WARNING "veth: can't make vehwaddr proc entry\n");
 #endif
 
+#ifdef CONFIG_VZ_CHECKPOINT
 	register_netdev_rst(&veth_netdev_rst);
+#endif
 	ve_hook_register(VE_SS_CHAIN, &veth_ve_hook);
 	vzioctl_register(&vethcalls);
 	return 0;
@@ -714,7 +747,9 @@ static __exit void veth_exit(void)
 
 	vzioctl_unregister(&vethcalls);
 	ve_hook_unregister(&veth_ve_hook);
+#ifdef CONFIG_VZ_CHECKPOINT
 	unregister_netdev_rst(&veth_netdev_rst);
+#endif
 
 #ifdef CONFIG_PROC_FS
 	remove_proc_entry("veth", proc_vz_dir);
