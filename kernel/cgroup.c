@@ -5493,3 +5493,33 @@ struct cgroup_subsys debug_subsys = {
 	.base_cftypes = debug_files,
 };
 #endif /* CONFIG_CGROUP_DEBUG */
+
+
+struct vfsmount *cgroup_kernel_mount(struct cgroup_sb_opts *opts)
+{
+}
+
+struct cgroup *cgroup_get_root(struct vfsmount *mnt)
+{
+
+}
+
+struct cgroup *cgroup_kernel_open(struct cgroup *parent,
+		enum cgroup_open_flags flags, char *name)
+{
+
+}
+
+int cgroup_kernel_remove(struct cgroup *parent, char *name)
+{
+}
+
+int cgroup_kernel_attach(struct cgroup *cgrp, struct task_struct *tsk)
+{
+
+}
+
+void cgroup_kernel_close(struct cgroup *cgrp)
+{
+
+}
