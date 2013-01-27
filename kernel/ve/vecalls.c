@@ -250,22 +250,20 @@ static void free_ve_filesystems(struct ve_struct *ve)
 
 static int init_printk(struct ve_struct *ve)
 {
-	struct ve_prep_printk {
-		wait_queue_head_t       log_wait;
-		unsigned		log_start;
-		unsigned		log_end;
-		unsigned		logged_chars;
-	} *tmp;
+	int err;
 
-	tmp = kzalloc(sizeof(struct ve_prep_printk), GFP_KERNEL);
-	if (!tmp)
+	err = -ENOMEM;
+	ve->log_wait = kmalloc(sizeof(*ve->log_wait), GFP_KERNEL);
+	if (!ve->log_wait)
 		return -ENOMEM;
 
-	init_waitqueue_head(&tmp->log_wait);
-	ve->_log_wait = &tmp->log_wait;
-	ve->_log_start = &tmp->log_start;
-	ve->_log_end = &tmp->log_end;
-	ve->_logged_chars = &tmp->logged_chars;
+	init_waitqueue_head(ve->log_wait);
+	err = init_ve_log_state(ve);
+	if (err) {
+		kfree(ve->log_wait);
+		return err;
+	}
+
 	/* ve->log_buf will be initialized later by ve_log_init() */
 	return 0;
 }
@@ -277,7 +275,8 @@ static void fini_printk(struct ve_struct *ve)
 	 * log_buf at the moments when this code is called. 
 	 */
 	kfree(ve->log_buf);
-	kfree(ve->_log_wait);
+	kfree(ve->log_state);
+	kfree(ve->log_wait);
 }
 
 static void fini_venet(struct ve_struct *ve)
