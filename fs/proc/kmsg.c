@@ -13,7 +13,6 @@
 #include <linux/proc_fs.h>
 #include <linux/fs.h>
 #include <linux/syslog.h>
-#include <linux/veprintk.h>
 #include <linux/sched.h>
 #include <linux/module.h>
 #include <linux/ve.h>
@@ -22,6 +21,12 @@
 #include <asm/io.h>
 
 extern wait_queue_head_t log_wait;
+
+#ifdef CONFIG_VE
+# define ve_log_wait	(*get_exec_env()->log_wait)
+#else
+# define ve_log_wait	log_wait
+#endif
 
 static int kmsg_open(struct inode * inode, struct file * file)
 {

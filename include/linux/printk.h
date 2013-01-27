@@ -47,10 +47,6 @@ extern int console_printk[];
 #define VE_LOG		2
 #define VE_LOG_BOTH	(VE0_LOG | VE_LOG)
 
-#define ve_vprintk(dst, fmt, args)	vprintk(fmt, args)
-#define ve_printk(dst, fmt, ...)	printk(fmt, ##__VA_ARGS__)
-#define prepare_printk()		do { } while (0)
-
 static inline void console_silent(void)
 {
 	console_loglevel = 0;
@@ -117,6 +113,8 @@ static inline __printf(1, 2) __cold
 void early_printk(const char *s, ...) { }
 #endif
 
+struct ve_struct;
+
 #ifdef CONFIG_PRINTK
 asmlinkage __printf(5, 0)
 int vprintk_emit(int facility, int level,
@@ -133,6 +131,14 @@ asmlinkage int printk_emit(int facility, int level,
 
 asmlinkage __printf(1, 2) __cold
 int printk(const char *fmt, ...);
+
+asmlinkage __printf(2, 0)
+int ve_vprintk(int dst, const char *fmt, va_list args);
+
+asmlinkage __printf(2, 3) __cold
+int ve_printk(int dst, const char *fmt, ...);
+
+int init_ve_log_state(struct ve_struct *ve);
 
 /*
  * Special printk facility for scheduler use only, _DO_NOT_USE_ !
@@ -168,6 +174,21 @@ int vprintk(const char *s, va_list args)
 }
 static inline __printf(1, 2) __cold
 int printk(const char *s, ...)
+{
+	return 0;
+}
+static inline __printf(2, 0)
+int ve_vprintk(int dst, const char *s, va_list args)
+{
+	return 0;
+}
+static inline __printf(2, 3) __cold
+int ve_printk(int dst, const char *s, ...)
+{
+	return 0;
+}
+static inline
+int init_ve_log_state(struct ve_struct *ve)
 {
 	return 0;
 }

@@ -218,19 +218,59 @@ static DEFINE_RAW_SPINLOCK(logbuf_lock);
 
 #ifdef CONFIG_PRINTK
 DECLARE_WAIT_QUEUE_HEAD(log_wait);
+static struct log_state {
+	u64			_syslog_seq;
+	u32			_syslog_idx;
+	enum log_flags		_syslog_prev;
+	size_t			_syslog_partial;
+	u64			_log_first_seq;
+	u32			_log_first_idx;
+	u64			_log_next_seq;
+	u32			_log_next_idx;
+	u64			_clear_seq;
+	u32			_clear_idx;
+	u64			_seen_seq;
+} log_state;
+
+#define LOG_STATE(field)	(log_state._##field)
+
+#ifdef CONFIG_VE
+#define VE_LOG_STATE(field)	\
+	(((struct log_state *)get_exec_env()->log_state)->_##field)
+#define ve_log_wait		(*get_exec_env()->log_wait)
+#define ve_log_buf		(get_exec_env()->log_buf)
+#define ve_log_buf_len		\
+	(ve_is_super(get_exec_env()) ? log_buf_len : VE_LOG_BUF_LEN)
+#else
+#define VE_LOG_STATE(field)	LOG_STATE(field)
+#define ve_log_wait		log_wait
+#define ve_log_buf		log_buf
+#define ve_log_buf_len		log_buf_len
+#endif
+
 /* the next printk record to read by syslog(READ) or /proc/kmsg */
-static u64 syslog_seq;
-static u32 syslog_idx;
-static enum log_flags syslog_prev;
-static size_t syslog_partial;
+#define syslog_seq		LOG_STATE(syslog_seq)
+#define syslog_idx		LOG_STATE(syslog_idx)
+#define syslog_prev		LOG_STATE(syslog_prev)
+
+#define ve_syslog_seq		VE_LOG_STATE(syslog_seq)
+#define ve_syslog_idx		VE_LOG_STATE(syslog_idx)
+#define ve_syslog_prev		VE_LOG_STATE(syslog_prev)
+#define ve_syslog_partial	VE_LOG_STATE(syslog_partial)
 
 /* index and sequence number of the first record stored in the buffer */
-static u64 log_first_seq;
-static u32 log_first_idx;
+#define log_first_seq		LOG_STATE(log_first_seq)
+#define log_first_idx		LOG_STATE(log_first_idx)
+
+#define ve_log_first_seq	VE_LOG_STATE(log_first_seq)
+#define ve_log_first_idx	VE_LOG_STATE(log_first_idx)
 
 /* index and sequence number of the next record to store in the buffer */
-static u64 log_next_seq;
-static u32 log_next_idx;
+#define log_next_seq		LOG_STATE(log_next_seq)
+#define log_next_idx		LOG_STATE(log_next_idx)
+
+#define ve_log_next_seq		VE_LOG_STATE(log_next_seq)
+#define ve_log_next_idx		VE_LOG_STATE(log_next_idx)
 
 /* the next printk record to write to the console */
 static u64 console_seq;
@@ -238,8 +278,11 @@ static u32 console_idx;
 static enum log_flags console_prev;
 
 /* the next printk record to read after the last 'clear' command */
-static u64 clear_seq;
-static u32 clear_idx;
+#define ve_clear_seq		VE_LOG_STATE(clear_seq)
+#define ve_clear_idx		VE_LOG_STATE(clear_idx)
+
+#define seen_seq		LOG_STATE(seen_seq)
+#define ve_seen_seq		VE_LOG_STATE(seen_seq)
 
 #define PREFIX_MAX		32
 #define LOG_LINE_MAX		1024 - PREFIX_MAX
@@ -285,21 +328,21 @@ static char *log_dict(const struct log *msg)
 /* get record by index; idx must point to valid msg */
 static struct log *log_from_idx(u32 idx)
 {
-	struct log *msg = (struct log *)(log_buf + idx);
+	struct log *msg = (struct log *)(ve_log_buf + idx);
 
 	/*
 	 * A length == 0 record is the end of buffer marker. Wrap around and
 	 * read the message at the start of the buffer.
 	 */
 	if (!msg->len)
-		return (struct log *)log_buf;
+		return (struct log *)ve_log_buf;
 	return msg;
 }
 
 /* get next record; idx must point to valid msg */
 static u32 log_next(u32 idx)
 {
-	struct log *msg = (struct log *)(log_buf + idx);
+	struct log *msg = (struct log *)(ve_log_buf + idx);
 
 	/* length == 0 indicates the end of the buffer; wrap */
 	/*
@@ -308,7 +351,7 @@ static u32 log_next(u32 idx)
 	 * return the one after that.
 	 */
 	if (!msg->len) {
-		msg = (struct log *)log_buf;
+		msg = (struct log *)ve_log_buf;
 		return msg->len;
 	}
 	return idx + msg->len;
@@ -328,34 +371,35 @@ static void log_store(int facility, int level,
 	pad_len = (-size) & (LOG_ALIGN - 1);
 	size += pad_len;
 
-	while (log_first_seq < log_next_seq) {
+	while (ve_log_first_seq < ve_log_next_seq) {
 		u32 free;
 
-		if (log_next_idx > log_first_idx)
-			free = max(log_buf_len - log_next_idx, log_first_idx);
+		if (ve_log_next_idx > ve_log_first_idx)
+			free = max(ve_log_buf_len - ve_log_next_idx,
+				   ve_log_first_idx);
 		else
-			free = log_first_idx - log_next_idx;
+			free = ve_log_first_idx - ve_log_next_idx;
 
 		if (free > size + sizeof(struct log))
 			break;
 
 		/* drop old messages until we have enough contiuous space */
-		log_first_idx = log_next(log_first_idx);
-		log_first_seq++;
+		ve_log_first_idx = log_next(ve_log_first_idx);
+		ve_log_first_seq++;
 	}
 
-	if (log_next_idx + size + sizeof(struct log) >= log_buf_len) {
+	if (ve_log_next_idx + size + sizeof(struct log) >= ve_log_buf_len) {
 		/*
 		 * This message + an additional empty header does not fit
 		 * at the end of the buffer. Add an empty header with len == 0
 		 * to signify a wrap around.
 		 */
-		memset(log_buf + log_next_idx, 0, sizeof(struct log));
-		log_next_idx = 0;
+		memset(ve_log_buf + ve_log_next_idx, 0, sizeof(struct log));
+		ve_log_next_idx = 0;
 	}
 
 	/* fill message */
-	msg = (struct log *)(log_buf + log_next_idx);
+	msg = (struct log *)(ve_log_buf + ve_log_next_idx);
 	memcpy(log_text(msg), text, text_len);
 	msg->text_len = text_len;
 	memcpy(log_dict(msg), dict, dict_len);
@@ -371,8 +415,8 @@ static void log_store(int facility, int level,
 	msg->len = sizeof(struct log) + text_len + dict_len + pad_len;
 
 	/* insert message */
-	log_next_idx += msg->len;
-	log_next_seq++;
+	ve_log_next_idx += msg->len;
+	ve_log_next_seq++;
 }
 
 #ifdef CONFIG_SECURITY_DMESG_RESTRICT
@@ -441,6 +485,9 @@ static ssize_t devkmsg_writev(struct kiocb *iocb, const struct iovec *iv,
 	size_t len = iov_length(iv, count);
 	ssize_t ret = len;
 
+	if (!ve_is_super(get_exec_env()))
+		return count;
+
 	if (len > LOG_LINE_MAX)
 		return -EINVAL;
 	buf = kmalloc(len+1, GFP_KERNEL);
@@ -505,7 +552,7 @@ static ssize_t devkmsg_read(struct file *file, char __user *buf,
 	if (ret)
 		return ret;
 	raw_spin_lock_irq(&logbuf_lock);
-	while (user->seq == log_next_seq) {
+	while (user->seq == ve_log_next_seq) {
 		if (file->f_flags & O_NONBLOCK) {
 			ret = -EAGAIN;
 			raw_spin_unlock_irq(&logbuf_lock);
@@ -513,17 +560,17 @@ static ssize_t devkmsg_read(struct file *file, char __user *buf,
 		}
 
 		raw_spin_unlock_irq(&logbuf_lock);
-		ret = wait_event_interruptible(log_wait,
-					       user->seq != log_next_seq);
+		ret = wait_event_interruptible(ve_log_wait,
+				user->seq != ve_log_next_seq);
 		if (ret)
 			goto out;
 		raw_spin_lock_irq(&logbuf_lock);
 	}
 
-	if (user->seq < log_first_seq) {
+	if (user->seq < ve_log_first_seq) {
 		/* our last seen message is gone, return error and reset */
-		user->idx = log_first_idx;
-		user->seq = log_first_seq;
+		user->idx = ve_log_first_idx;
+		user->seq = ve_log_first_seq;
 		ret = -EPIPE;
 		raw_spin_unlock_irq(&logbuf_lock);
 		goto out;
@@ -623,8 +670,8 @@ static loff_t devkmsg_llseek(struct file *file, loff_t offset, int whence)
 	switch (whence) {
 	case SEEK_SET:
 		/* the first record */
-		user->idx = log_first_idx;
-		user->seq = log_first_seq;
+		user->idx = ve_log_first_idx;
+		user->seq = ve_log_first_seq;
 		break;
 	case SEEK_DATA:
 		/*
@@ -632,13 +679,13 @@ static loff_t devkmsg_llseek(struct file *file, loff_t offset, int whence)
 		 * like issued by 'dmesg -c'. Reading /dev/kmsg itself
 		 * changes no global state, and does not clear anything.
 		 */
-		user->idx = clear_idx;
-		user->seq = clear_seq;
+		user->idx = ve_clear_idx;
+		user->seq = ve_clear_seq;
 		break;
 	case SEEK_END:
 		/* after the last record */
-		user->idx = log_next_idx;
-		user->seq = log_next_seq;
+		user->idx = ve_log_next_idx;
+		user->seq = ve_log_next_seq;
 		break;
 	default:
 		ret = -EINVAL;
@@ -655,12 +702,12 @@ static unsigned int devkmsg_poll(struct file *file, poll_table *wait)
 	if (!user)
 		return POLLERR|POLLNVAL;
 
-	poll_wait(file, &log_wait, wait);
+	poll_wait(file, &ve_log_wait, wait);
 
 	raw_spin_lock_irq(&logbuf_lock);
-	if (user->seq < log_next_seq) {
+	if (user->seq < ve_log_next_seq) {
 		/* return error when data has vanished underneath us */
-		if (user->seq < log_first_seq)
+		if (user->seq < ve_log_first_seq)
 			ret = POLLIN|POLLRDNORM|POLLERR|POLLPRI;
 		else
 			ret = POLLIN|POLLRDNORM;
@@ -691,8 +738,8 @@ static int devkmsg_open(struct inode *inode, struct file *file)
 	mutex_init(&user->lock);
 
 	raw_spin_lock_irq(&logbuf_lock);
-	user->idx = log_first_idx;
-	user->seq = log_first_seq;
+	user->idx = ve_log_first_idx;
+	user->seq = ve_log_first_seq;
 	raw_spin_unlock_irq(&logbuf_lock);
 
 	file->private_data = user;
@@ -993,33 +1040,33 @@ static int syslog_print(char __user *buf, int size)
 		size_t skip;
 
 		raw_spin_lock_irq(&logbuf_lock);
-		if (syslog_seq < log_first_seq) {
+		if (ve_syslog_seq < ve_log_first_seq) {
 			/* messages are gone, move to first one */
-			syslog_seq = log_first_seq;
-			syslog_idx = log_first_idx;
-			syslog_prev = 0;
-			syslog_partial = 0;
+			ve_syslog_seq = ve_log_first_seq;
+			ve_syslog_idx = ve_log_first_idx;
+			ve_syslog_prev = 0;
+			ve_syslog_partial = 0;
 		}
-		if (syslog_seq == log_next_seq) {
+		if (ve_syslog_seq == ve_log_next_seq) {
 			raw_spin_unlock_irq(&logbuf_lock);
 			break;
 		}
 
-		skip = syslog_partial;
-		msg = log_from_idx(syslog_idx);
-		n = msg_print_text(msg, syslog_prev, true, text,
+		skip = ve_syslog_partial;
+		msg = log_from_idx(ve_syslog_idx);
+		n = msg_print_text(msg, ve_syslog_prev, true, text,
 				   LOG_LINE_MAX + PREFIX_MAX);
-		if (n - syslog_partial <= size) {
+		if (n - ve_syslog_partial <= size) {
 			/* message fits into buffer, move forward */
-			syslog_idx = log_next(syslog_idx);
-			syslog_seq++;
-			syslog_prev = msg->flags;
-			n -= syslog_partial;
-			syslog_partial = 0;
+			ve_syslog_idx = log_next(ve_syslog_idx);
+			ve_syslog_seq++;
+			ve_syslog_prev = msg->flags;
+			n -= ve_syslog_partial;
+			ve_syslog_partial = 0;
 		} else if (!len){
 			/* partial read(), remember position */
 			n = size;
-			syslog_partial += n;
+			ve_syslog_partial += n;
 		} else
 			n = 0;
 		raw_spin_unlock_irq(&logbuf_lock);
@@ -1058,20 +1105,20 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 		u32 idx;
 		enum log_flags prev;
 
-		if (clear_seq < log_first_seq) {
+		if (ve_clear_seq < ve_log_first_seq) {
 			/* messages are gone, move to first available one */
-			clear_seq = log_first_seq;
-			clear_idx = log_first_idx;
+			ve_clear_seq = ve_log_first_seq;
+			ve_clear_idx = ve_log_first_idx;
 		}
 
 		/*
 		 * Find first record that fits, including all following records,
 		 * into the user-provided buffer for this dump.
 		 */
-		seq = clear_seq;
-		idx = clear_idx;
+		seq = ve_clear_seq;
+		idx = ve_clear_idx;
 		prev = 0;
-		while (seq < log_next_seq) {
+		while (seq < ve_log_next_seq) {
 			struct log *msg = log_from_idx(idx);
 
 			len += msg_print_text(msg, prev, true, NULL, 0);
@@ -1081,10 +1128,10 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 		}
 
 		/* move first record forward until length fits into the buffer */
-		seq = clear_seq;
-		idx = clear_idx;
+		seq = ve_clear_seq;
+		idx = ve_clear_idx;
 		prev = 0;
-		while (len > size && seq < log_next_seq) {
+		while (len > size && seq < ve_log_next_seq) {
 			struct log *msg = log_from_idx(idx);
 
 			len -= msg_print_text(msg, prev, true, NULL, 0);
@@ -1094,7 +1141,7 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 		}
 
 		/* last message fitting into this dump */
-		next_seq = log_next_seq;
+		next_seq = ve_log_next_seq;
 
 		len = 0;
 		prev = 0;
@@ -1119,18 +1166,18 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 				len += textlen;
 			raw_spin_lock_irq(&logbuf_lock);
 
-			if (seq < log_first_seq) {
+			if (seq < ve_log_first_seq) {
 				/* messages are gone, move to next one */
-				seq = log_first_seq;
-				idx = log_first_idx;
+				seq = ve_log_first_seq;
+				idx = ve_log_first_idx;
 				prev = 0;
 			}
 		}
 	}
 
 	if (clear) {
-		clear_seq = log_next_seq;
-		clear_idx = log_next_idx;
+		ve_clear_seq = ve_log_next_seq;
+		ve_clear_idx = ve_log_next_idx;
 	}
 	raw_spin_unlock_irq(&logbuf_lock);
 
@@ -1152,6 +1199,12 @@ int do_syslog(int type, char __user *buf, int len, bool from_file)
 	if (error)
 		return error;
 
+	error = 0;
+	if (!ve_is_super(get_exec_env()) &&
+	    (type == SYSLOG_ACTION_CONSOLE_OFF ||
+	     type == SYSLOG_ACTION_CONSOLE_ON))
+		goto out;
+
 	switch (type) {
 	case SYSLOG_ACTION_CLOSE:	/* Close log */
 		break;
@@ -1168,8 +1221,8 @@ int do_syslog(int type, char __user *buf, int len, bool from_file)
 			error = -EFAULT;
 			goto out;
 		}
-		error = wait_event_interruptible(log_wait,
-						 syslog_seq != log_next_seq);
+		error = wait_event_interruptible(ve_log_wait,
+				ve_syslog_seq != ve_log_next_seq);
 		if (error)
 			goto out;
 		error = syslog_print(buf, len);
@@ -1214,6 +1267,10 @@ int do_syslog(int type, char __user *buf, int len, bool from_file)
 		error = -EINVAL;
 		if (len < 1 || len > 8)
 			goto out;
+		error = 0;
+		/* VE has no console, so return success */
+		if (!ve_is_super(get_exec_env()))
+			goto out;
 		if (len < minimum_console_loglevel)
 			len = minimum_console_loglevel;
 		console_loglevel = len;
@@ -1224,12 +1281,12 @@ int do_syslog(int type, char __user *buf, int len, bool from_file)
 	/* Number of chars in the log buffer */
 	case SYSLOG_ACTION_SIZE_UNREAD:
 		raw_spin_lock_irq(&logbuf_lock);
-		if (syslog_seq < log_first_seq) {
+		if (ve_syslog_seq < ve_log_first_seq) {
 			/* messages are gone, move to first one */
-			syslog_seq = log_first_seq;
-			syslog_idx = log_first_idx;
-			syslog_prev = 0;
-			syslog_partial = 0;
+			ve_syslog_seq = ve_log_first_seq;
+			ve_syslog_idx = ve_log_first_idx;
+			ve_syslog_prev = 0;
+			ve_syslog_partial = 0;
 		}
 		if (from_file) {
 			/*
@@ -1237,14 +1294,14 @@ int do_syslog(int type, char __user *buf, int len, bool from_file)
 			 * for pending data, not the size; return the count of
 			 * records, not the length.
 			 */
-			error = log_next_idx - syslog_idx;
+			error = ve_log_next_idx - ve_syslog_idx;
 		} else {
-			u64 seq = syslog_seq;
-			u32 idx = syslog_idx;
-			enum log_flags prev = syslog_prev;
+			u64 seq = ve_syslog_seq;
+			u32 idx = ve_syslog_idx;
+			enum log_flags prev = ve_syslog_prev;
 
 			error = 0;
-			while (seq < log_next_seq) {
+			while (seq < ve_log_next_seq) {
 				struct log *msg = log_from_idx(idx);
 
 				error += msg_print_text(msg, prev, true, NULL, 0);
@@ -1252,13 +1309,13 @@ int do_syslog(int type, char __user *buf, int len, bool from_file)
 				seq++;
 				prev = msg->flags;
 			}
-			error -= syslog_partial;
+			error -= ve_syslog_partial;
 		}
 		raw_spin_unlock_irq(&logbuf_lock);
 		break;
 	/* Size of the log buffer */
 	case SYSLOG_ACTION_SIZE_BUFFER:
-		error = log_buf_len;
+		error = ve_log_buf_len;
 		break;
 	default:
 		error = -EINVAL;
@@ -1505,9 +1562,40 @@ static size_t cont_print_text(char *text, size_t size)
 	return textlen;
 }
 
-asmlinkage int vprintk_emit(int facility, int level,
-			    const char *dict, size_t dictlen,
-			    const char *fmt, va_list args)
+#ifdef CONFIG_VE
+int init_ve_log_state(struct ve_struct *ve)
+{
+	ve->log_state = kzalloc(sizeof(struct log_state), GFP_KERNEL);
+	if (!ve->log_state)
+		return -ENOMEM;
+	return 0;
+}
+EXPORT_SYMBOL(init_ve_log_state);
+#endif
+
+static int ve_log_init(void)
+{
+#ifdef CONFIG_VE
+	if (ve_log_buf != NULL)
+		return 0;
+
+	if (ve_is_super(get_exec_env())) {
+		ve0.log_wait = &log_wait;
+		ve0.log_state = &log_state;
+		ve0.log_buf = log_buf;
+		return 0;
+	}
+
+	ve_log_buf = kzalloc(ve_log_buf_len, GFP_ATOMIC);
+	if (!ve_log_buf)
+		return -ENOMEM;
+#endif
+	return 0;
+}
+
+static int __vprintk_emit(int facility, int level,
+			  const char *dict, size_t dictlen,
+			  const char *fmt, va_list args)
 {
 	static int recursion_bug;
 	static char textbuf[LOG_LINE_MAX];
@@ -1517,6 +1605,8 @@ asmlinkage int vprintk_emit(int facility, int level,
 	unsigned long flags;
 	int this_cpu;
 	int printed_len = 0;
+	bool need_wake = false;
+	int err;
 
 	boot_delay_msec(level);
 	printk_delay();
@@ -1546,6 +1636,13 @@ asmlinkage int vprintk_emit(int facility, int level,
 	lockdep_off();
 	raw_spin_lock(&logbuf_lock);
 	logbuf_cpu = this_cpu;
+
+	err = ve_log_init();
+	if (err) {
+		raw_spin_unlock(&logbuf_lock);
+		printed_len = err;
+		goto out_lockdep;
+	}
 
 	if (recursion_bug) {
 		static const char recursion_msg[] =
@@ -1637,15 +1734,46 @@ asmlinkage int vprintk_emit(int facility, int level,
 	 * The console_trylock_for_printk() function will release 'logbuf_lock'
 	 * regardless of whether it actually gets the console semaphore or not.
 	 */
-	if (console_trylock_for_printk(this_cpu))
+	if (!ve_is_super(get_exec_env())) {
+		if (ve_seen_seq != ve_log_next_seq && !oops_in_progress) {
+			ve_seen_seq = ve_log_next_seq;
+			need_wake = true;
+		}
+		logbuf_cpu = UINT_MAX;
+		raw_spin_unlock(&logbuf_lock);
+	} else if (console_trylock_for_printk(this_cpu))
 		console_unlock();
 
+out_lockdep:
 	lockdep_on();
 out_restore_irqs:
 	local_irq_restore(flags);
 
+	if (need_wake)
+		wake_up_interruptible(&ve_log_wait);
+
 	return printed_len;
 }
+
+static int __vprintk(const char *fmt, va_list args)
+{
+	return __vprintk_emit(0, -1, NULL, 0, fmt, args);
+}
+
+asmlinkage int vprintk_emit(int facility, int level,
+			    const char *dict, size_t dictlen,
+			    const char *fmt, va_list args)
+{
+	struct ve_struct *env;
+	int r;
+
+	env = set_exec_env(get_ve0());
+	r = __vprintk_emit(facility, level, dict, dictlen, fmt, args);
+	(void)set_exec_env(env);
+
+	return r;
+}
+
 EXPORT_SYMBOL(vprintk_emit);
 
 asmlinkage int vprintk(const char *fmt, va_list args)
@@ -1668,6 +1796,33 @@ asmlinkage int printk_emit(int facility, int level,
 	return r;
 }
 EXPORT_SYMBOL(printk_emit);
+
+asmlinkage int ve_vprintk(int dst, const char *fmt, va_list args)
+{
+	va_list args2;
+	int r = 0;
+
+	va_copy(args2, args);
+	if (ve_is_super(get_exec_env()) || (dst & VE0_LOG))
+		r = vprintk(fmt, args);
+	if (!ve_is_super(get_exec_env()) && (dst & VE_LOG))
+		r = __vprintk(fmt, args2);
+
+	return r;
+}
+
+asmlinkage int ve_printk(int dst, const char *fmt, ...)
+{
+	va_list args;
+	int r;
+
+	va_start(args, fmt);
+	r = ve_vprintk(dst, fmt, args);
+	va_end(args);
+
+	return r;
+}
+EXPORT_SYMBOL(ve_printk);
 
 /**
  * printk - print a kernel message
@@ -2042,7 +2197,6 @@ out:
 void console_unlock(void)
 {
 	static char text[LOG_LINE_MAX + PREFIX_MAX];
-	static u64 seen_seq;
 	unsigned long flags;
 	bool wake_klogd = false;
 	bool retry;
@@ -2648,10 +2802,10 @@ void kmsg_dump(enum kmsg_dump_reason reason)
 		dumper->active = true;
 
 		raw_spin_lock_irqsave(&logbuf_lock, flags);
-		dumper->cur_seq = clear_seq;
-		dumper->cur_idx = clear_idx;
-		dumper->next_seq = log_next_seq;
-		dumper->next_idx = log_next_idx;
+		dumper->cur_seq = ve_clear_seq;
+		dumper->cur_idx = ve_clear_idx;
+		dumper->next_seq = ve_log_next_seq;
+		dumper->next_idx = ve_log_next_idx;
 		raw_spin_unlock_irqrestore(&logbuf_lock, flags);
 
 		/* invoke dumper which will iterate over records */
@@ -2692,14 +2846,14 @@ bool kmsg_dump_get_line_nolock(struct kmsg_dumper *dumper, bool syslog,
 	if (!dumper->active)
 		goto out;
 
-	if (dumper->cur_seq < log_first_seq) {
+	if (dumper->cur_seq < ve_log_first_seq) {
 		/* messages are gone, move to first available one */
-		dumper->cur_seq = log_first_seq;
-		dumper->cur_idx = log_first_idx;
+		dumper->cur_seq = ve_log_first_seq;
+		dumper->cur_idx = ve_log_first_idx;
 	}
 
 	/* last entry */
-	if (dumper->cur_seq >= log_next_seq)
+	if (dumper->cur_seq >= ve_log_next_seq)
 		goto out;
 
 	msg = log_from_idx(dumper->cur_idx);
@@ -2780,10 +2934,10 @@ bool kmsg_dump_get_buffer(struct kmsg_dumper *dumper, bool syslog,
 		goto out;
 
 	raw_spin_lock_irqsave(&logbuf_lock, flags);
-	if (dumper->cur_seq < log_first_seq) {
+	if (dumper->cur_seq < ve_log_first_seq) {
 		/* messages are gone, move to first available one */
-		dumper->cur_seq = log_first_seq;
-		dumper->cur_idx = log_first_idx;
+		dumper->cur_seq = ve_log_first_seq;
+		dumper->cur_idx = ve_log_first_idx;
 	}
 
 	/* last entry */
@@ -2856,10 +3010,10 @@ EXPORT_SYMBOL_GPL(kmsg_dump_get_buffer);
  */
 void kmsg_dump_rewind_nolock(struct kmsg_dumper *dumper)
 {
-	dumper->cur_seq = clear_seq;
-	dumper->cur_idx = clear_idx;
-	dumper->next_seq = log_next_seq;
-	dumper->next_idx = log_next_idx;
+	dumper->cur_seq = ve_clear_seq;
+	dumper->cur_idx = ve_clear_idx;
+	dumper->next_seq = ve_log_next_seq;
+	dumper->next_idx = ve_log_next_idx;
 }
 
 /**
