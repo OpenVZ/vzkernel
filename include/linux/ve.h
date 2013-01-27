@@ -186,12 +186,11 @@ struct ve_struct {
 	struct ve_xt_hashlimit	*_xt_hashlimit;
 #endif /* CONFIG_VE_IPTABLES */
 #endif
-	wait_queue_head_t	*_log_wait;
-	unsigned		*_log_start;
-	unsigned		*_log_end;
-	unsigned		*_logged_chars;
+
+	wait_queue_head_t	*log_wait;
+	void			*log_state;
 	char			*log_buf;
-#define VE_DEFAULT_LOG_BUF_LEN	4096
+#define VE_LOG_BUF_LEN		4096
 
 	unsigned long		down_at;
 	struct list_head	cleanup_list;
