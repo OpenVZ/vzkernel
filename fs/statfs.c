@@ -46,7 +46,7 @@ static int calculate_f_flags(struct vfsmount *mnt)
 		flags_by_sb(mnt->mnt_sb->s_flags);
 }
 
-static int statfs_by_dentry(struct dentry *dentry, struct kstatfs *buf)
+int statfs_by_dentry(struct dentry *dentry, struct kstatfs *buf)
 {
 	int retval;
 
@@ -62,7 +62,6 @@ static int statfs_by_dentry(struct dentry *dentry, struct kstatfs *buf)
 		buf->f_frsize = buf->f_bsize;
 	return retval;
 }
-EXPORT_SYMBOL_GPL(statfs_by_dentry);
 
 int vfs_statfs(struct path *path, struct kstatfs *buf)
 {
