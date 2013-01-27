@@ -53,8 +53,6 @@ obj-$(CONFIG_FHANDLE)		+= fhandle.o
 
 obj-y				+= quota/
 
-obj-$(CONFIG_SIM_FS)		+= simfs.o
-
 obj-$(CONFIG_PROC_FS)		+= proc/
 obj-$(CONFIG_SYSFS)		+= sysfs/
 obj-$(CONFIG_CONFIGFS_FS)	+= configfs/
