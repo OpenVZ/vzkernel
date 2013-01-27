@@ -962,11 +962,11 @@ vfs_kern_mount(struct file_system_type *type, int flags, const char *name, void 
 	if (IS_ERR(root)) {
 		mnt_free_id(mnt);
 		free_vfsmnt(mnt);
-		return ERR_CAST(root);
+		return ERR_PTR(err);
 	}
 
-	mnt->mnt.mnt_root = root;
-	mnt->mnt.mnt_sb = root->d_sb;
+	mnt->mnt.mnt_root = vfsmnt.mnt_root;
+	mnt->mnt.mnt_sb = vfsmnt.mnt_sb;
 	mnt->mnt_mountpoint = mnt->mnt.mnt_root;
 	mnt->mnt_parent = mnt;
 	lock_mount_hash();
