@@ -776,8 +776,9 @@ static struct mount *skip_mnt_tree(struct mount *p)
 struct vfsmount *
 vfs_kern_mount(struct file_system_type *type, int flags, const char *name, void *data)
 {
+	struct vfsmount vfsmnt;
 	struct mount *mnt;
-	struct dentry *root;
+	int err;
 
 	if (!type)
 		return ERR_PTR(-ENODEV);
@@ -789,18 +790,18 @@ vfs_kern_mount(struct file_system_type *type, int flags, const char *name, void 
 	if (flags & MS_KERNMOUNT)
 		mnt->mnt.mnt_flags = MNT_INTERNAL;
 
-	root = mount_fs(type, flags, name, data);
-	if (IS_ERR(root)) {
+	err = mount_fs(type, flags, name, data, &vfsmnt);
+	if (err) {
 		free_vfsmnt(mnt);
-		return ERR_CAST(root);
+		return ERR_PTR(err);
 	}
 
-	mnt->mnt.mnt_root = root;
-	mnt->mnt.mnt_sb = root->d_sb;
+	mnt->mnt.mnt_root = vfsmnt.mnt_root;
+	mnt->mnt.mnt_sb = vfsmnt.mnt_sb;
 	mnt->mnt_mountpoint = mnt->mnt.mnt_root;
 	mnt->mnt_parent = mnt;
 	br_write_lock(&vfsmount_lock);
-	list_add_tail(&mnt->mnt_instance, &root->d_sb->s_mounts);
+	list_add_tail(&mnt->mnt_instance, &vfsmnt.mnt_sb->s_mounts);
 	br_write_unlock(&vfsmount_lock);
 	return &mnt->mnt;
 }

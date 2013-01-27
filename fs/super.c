@@ -1032,8 +1032,8 @@ struct dentry *mount_single(struct file_system_type *fs_type,
 }
 EXPORT_SYMBOL(mount_single);
 
-struct dentry *
-mount_fs(struct file_system_type *type, int flags, const char *name, void *data)
+int mount_fs(struct file_system_type *type, int flags,
+	     const char *name, void *data, struct vfsmount *mnt)
 {
 	struct dentry *root;
 	struct super_block *sb;
@@ -1050,12 +1050,22 @@ mount_fs(struct file_system_type *type, int flags, const char *name, void *data)
 			goto out_free_secdata;
 	}
 
-	root = type->mount(type, flags, name, data);
-	if (IS_ERR(root)) {
-		error = PTR_ERR(root);
-		goto out_free_secdata;
+	if (type->get_sb) {
+		error = type->get_sb(type, flags, name, data, mnt);
+		if (error)
+			goto out_free_secdata;
+		sb = mnt->mnt_sb;
+		root = mnt->mnt_root;
+	} else {
+		root = type->mount(type, flags, name, data);
+		if (IS_ERR(root)) {
+			error = PTR_ERR(root);
+			goto out_free_secdata;
+		}
+		sb = root->d_sb;
+		mnt->mnt_sb = sb;
+		mnt->mnt_root = root;
 	}
-	sb = root->d_sb;
 	BUG_ON(!sb);
 	WARN_ON(!sb->s_bdi);
 	WARN_ON(sb->s_bdi == &default_backing_dev_info);
@@ -1076,14 +1086,14 @@ mount_fs(struct file_system_type *type, int flags, const char *name, void *data)
 
 	up_write(&sb->s_umount);
 	free_secdata(secdata);
-	return root;
+	return 0;
 out_sb:
 	dput(root);
 	deactivate_locked_super(sb);
 out_free_secdata:
 	free_secdata(secdata);
 out:
-	return ERR_PTR(error);
+	return error;
 }
 
 /*
