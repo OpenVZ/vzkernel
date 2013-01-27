@@ -46,7 +46,7 @@ static int calculate_f_flags(struct vfsmount *mnt)
 		flags_by_sb(mnt->mnt_sb->s_flags);
 }
 
-static int statfs_by_dentry(struct dentry *dentry, struct kstatfs *buf)
+int statfs_by_dentry(struct dentry *dentry, struct kstatfs *buf)
 {
 	int retval;
 

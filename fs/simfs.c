@@ -165,12 +165,12 @@ static void sim_show_type(struct seq_file *m, struct super_block *sb)
 		seq_escape(m, sb->s_type->name, " \t\n\\");
 }
 
-static int sim_show_options(struct seq_file *m, struct vfsmount *mnt)
+static int sim_show_options(struct seq_file *m, struct dentry *de)
 {
 #ifdef CONFIG_QUOTA
-	if (sb_has_quota_loaded(mnt->mnt_sb, USRQUOTA))
+	if (sb_has_quota_loaded(de->d_sb, USRQUOTA))
 		seq_puts(m, ",usrquota");
-	if (sb_has_quota_loaded(mnt->mnt_sb, GRPQUOTA))
+	if (sb_has_quota_loaded(de->d_sb, GRPQUOTA))
 		seq_puts(m, ",grpquota");
 #endif
 	return 0;
@@ -202,10 +202,18 @@ static struct super_operations sim_super_ops = {
 	lop = lsb->s_export_op;				\
 	return lop->method(dentry, ## args)
 
-static int sim_encode_fh(struct dentry *de, __u32 *fh, int *max_len,
-			int connectable)
+#define SIM_CALL_INODE(method, inode, args...)		\
+	struct super_block *lsb;			\
+	const struct export_operations *lop;		\
+							\
+	lsb = (inode)->i_sb;				\
+	lop = lsb->s_export_op;				\
+	return lop->method(inode, ## args)
+
+static int sim_encode_fh(struct inode *inode, __u32 *fh, int *max_len,
+			struct inode *parent)
 {
-	SIM_CALL_DENTRY(encode_fh, de, fh, max_len, connectable);
+	SIM_CALL_INODE(encode_fh, inode, fh, max_len, parent);
 }
 
 static struct dentry * sim_fh_to_dentry(struct super_block *sb, struct fid *fid,
@@ -273,10 +281,10 @@ static void sim_free_export_op(struct super_block *sb)
 
 static int sim_fill_super(struct super_block *s, void *data, int silent)
 {
-	struct nameidata *nd = data;
+	struct path *path = data;
 	int err;
 
-	err = sim_init_export_op(s, nd->path.dentry->d_sb);
+	err = sim_init_export_op(s, path->dentry->d_sb);
 	if (err)
 		goto out;
 
@@ -285,8 +293,8 @@ static int sim_fill_super(struct super_block *s, void *data, int silent)
 		goto out;
 
 	err = 0;
-	s->s_fs_info = mntget(nd->path.mnt);
-	s->s_root = dget(nd->path.dentry);
+	s->s_fs_info = mntget(path->mnt);
+	s->s_root = dget(path->dentry);
 	s->s_op = &sim_super_ops;
 
 	sim_quota_init(s);
@@ -294,25 +302,23 @@ out:
 	return err;
 }
 
-static int sim_get_sb(struct file_system_type *type, int flags,
-		const char *dev_name, void *opt, struct vfsmount *mnt)
+static struct dentry *sim_mount(struct file_system_type *type, int flags,
+		const char *dev_name, void *data)
 {
 	int err;
-	struct nameidata nd;
+	struct path path;
+	struct dentry *root;
 
-	err = -EINVAL;
-	if (opt == NULL)
-		goto out;
+	if (data == NULL)
+		return ERR_PTR(-EINVAL);
 
-	err = path_lookup(opt, LOOKUP_FOLLOW|LOOKUP_DIRECTORY, &nd);
+	err = kern_path(data, LOOKUP_FOLLOW|LOOKUP_DIRECTORY, &path);
 	if (err)
-		goto out;
+		return ERR_PTR(err);
 
-	err = get_sb_nodev(type, flags, &nd, sim_fill_super, mnt);
-
-	path_put(&nd.path);
-out:
-	return err;
+	root = mount_nodev(type, flags, &path, sim_fill_super);
+	path_put(&path);
+	return root;
 }
 
 static void sim_kill_sb(struct super_block *sb)
@@ -331,7 +337,7 @@ static void sim_kill_sb(struct super_block *sb)
 static struct file_system_type sim_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "simfs",
-	.get_sb		= sim_get_sb,
+	.mount		= sim_mount,
 	.kill_sb	= sim_kill_sb,
 	.fs_flags	= FS_MANGLE_PROC,
 };
