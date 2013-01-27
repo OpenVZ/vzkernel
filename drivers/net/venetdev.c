@@ -30,7 +30,6 @@
 #include <linux/seq_file.h>
 #include <net/addrconf.h>
 
-#include <asm/system.h>
 #include <asm/uaccess.h>
 #include <asm/io.h>
 #include <asm/unistd.h>
@@ -398,7 +397,7 @@ int sockaddr_to_veaddr(struct sockaddr __user *uaddr, int addrlen,
 	int err;
 	char addr[MAX_SOCK_ADDR];
 
-	err = move_addr_to_kernel(uaddr, addrlen, (struct sockaddr *)&addr);
+	err = move_addr_to_kernel(uaddr, addrlen, (struct sockaddr_storage *)&addr);
 	if (err < 0)
 		goto out;
 
@@ -578,7 +577,7 @@ static struct net_device_stats *get_stats(struct net_device *dev)
 }
 
 /* Initialize the rest of the LOOPBACK device. */
-int venet_init_dev(struct net_device *dev)
+static int venet_init_dev(struct net_device *dev)
 {
 	struct venet_stats *stats;
 
@@ -610,17 +609,16 @@ fail:
 	return -ENOMEM;
 }
 
+static netdev_features_t common_features;
 static const struct net_device_ops venet_netdev_ops;
 
-static int
-venet_set_op(struct net_device *dev, u32 data,
-	     int (*fop)(struct net_device *, u32))
+static int venet_set_features(struct net_device *dev,
+			      netdev_features_t features)
 {
-
 	struct ve_struct *ve;
-	int ret = 0;
 
 	mutex_lock(&ve_list_lock);
+	common_features = features;
 	for_each_ve(ve) {
 		struct ve_struct *ve_old;
 
@@ -628,71 +626,83 @@ venet_set_op(struct net_device *dev, u32 data,
 		read_lock(&dev_base_lock);
 		for_each_netdev(ve->ve_netns, dev) {
 			if (dev->netdev_ops == &venet_netdev_ops)
-				ret = fop(dev, data);
+				dev->features = features;
 		}
 		read_unlock(&dev_base_lock);
 		set_exec_env(ve_old);
-
-		if (ret < 0)
-			break;
 	}
 	mutex_unlock(&ve_list_lock);
-	return ret;
+	return 0;
 }
+#define DRV_NAME	"vz-venet"
+#define DRV_VERSION	"1.0"
 
-static unsigned long common_features;
+/*
+ * ethtool interface
+ */
 
-static int venet_op_set_sg(struct net_device *dev, u32 data)
+static struct {
+	const char string[ETH_GSTRING_LEN];
+} ethtool_stats_keys[] = {
+	{ "ifindex" },
+};
+
+static int venet_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
 {
-	if (!ve_is_super(get_exec_env()))
-		return -EPERM;
-
-	if (data)
-		common_features |= NETIF_F_SG;
-	else
-		common_features &= ~NETIF_F_SG;
-
-	return venet_set_op(dev, data, ethtool_op_set_sg);
+	cmd->supported		= 0;
+	cmd->advertising	= 0;
+	ethtool_cmd_speed_set(cmd, SPEED_10000);
+	cmd->duplex		= DUPLEX_FULL;
+	cmd->port		= PORT_TP;
+	cmd->phy_address	= 0;
+	cmd->transceiver	= XCVR_INTERNAL;
+	cmd->autoneg		= AUTONEG_DISABLE;
+	cmd->maxtxpkt		= 0;
+	cmd->maxrxpkt		= 0;
+	return 0;
 }
 
-static int venet_op_set_tx_csum(struct net_device *dev, u32 data)
+static void venet_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info)
 {
-	if (!ve_is_super(get_exec_env()))
-		return -EPERM;
-
-	if (data)
-		common_features |= NETIF_F_IP_CSUM;
-	else
-		common_features &= ~NETIF_F_IP_CSUM;
-
-	return venet_set_op(dev, data, ethtool_op_set_tx_csum);
+	strlcpy(info->driver, DRV_NAME, sizeof(info->driver));
+	strlcpy(info->version, DRV_VERSION, sizeof(info->version));
 }
 
-static int
-venet_op_set_tso(struct net_device *dev, u32 data)
+static void venet_get_strings(struct net_device *dev, u32 stringset, u8 *buf)
 {
-	if (!ve_is_super(get_exec_env()))
-		return -EPERM;
-
-	if (data)
-		common_features |= NETIF_F_TSO;
-	else
-		common_features &= ~NETIF_F_TSO;
-
-	return venet_set_op(dev, data, ethtool_op_set_tso);
+	switch(stringset) {
+	case ETH_SS_STATS:
+		memcpy(buf, &ethtool_stats_keys, sizeof(ethtool_stats_keys));
+		break;
+	}
 }
 
-#define venet_op_set_rx_csum venet_op_set_tx_csum
+static int venet_get_sset_count(struct net_device *dev, int sset)
+{
+	switch (sset) {
+	case ETH_SS_STATS:
+		return ARRAY_SIZE(ethtool_stats_keys);
+	default:
+		return -EOPNOTSUPP;
+	}
+}
 
-static struct ethtool_ops venet_ethtool_ops = {
-	.get_sg = ethtool_op_get_sg,
-	.set_sg = venet_op_set_sg,
-	.get_tx_csum = ethtool_op_get_tx_csum,
-	.set_tx_csum = venet_op_set_tx_csum,
-	.get_rx_csum = ethtool_op_get_tx_csum,
-	.set_rx_csum = venet_op_set_rx_csum,
-	.get_tso = ethtool_op_get_tso,
-	.set_tso = venet_op_set_tso,
+static void venet_get_ethtool_stats(struct net_device *dev,
+		struct ethtool_stats *stats, u64 *data)
+{
+	/*
+	 * TODO: copy proper statistics here.
+	 */
+	data[0] = dev->ifindex;
+}
+
+static const struct ethtool_ops venet_ethtool_ops = {
+	.get_settings		= venet_get_settings,
+	.get_drvinfo		= venet_get_drvinfo,
+	.get_link		= ethtool_op_get_link,
+	.get_strings		= venet_get_strings,
+	.get_sset_count		= venet_get_sset_count,
+	.get_ethtool_stats	= venet_get_ethtool_stats,
 };
 
 static const struct net_device_ops venet_netdev_ops = {
@@ -715,6 +725,8 @@ static void venet_setup(struct net_device *dev)
 
 	dev->netdev_ops = &venet_netdev_ops;
 	dev->destructor = venet_destructor;
+
+	dev->hw_features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_TSO;
 
 	dev->features |= common_features;
 
@@ -958,7 +970,7 @@ static struct vzioctlinfo venetcalls = {
 	.owner		= THIS_MODULE,
 };
 
-int venet_dev_start(struct ve_struct *ve)
+static int venet_dev_start(struct ve_struct *ve)
 {
 	struct net_device *dev_venet;
 	int err;
