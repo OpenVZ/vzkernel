@@ -2869,6 +2869,11 @@ long tty_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			break;
 		}
 		break;
+	case TIOSAK:
+		if (real_tty == tty && !capable(CAP_SYS_ADMIN))
+			return -EPERM;
+		__do_SAK(real_tty);
+		return 0;
 	}
 	if (tty->ops->ioctl) {
 		retval = (tty->ops->ioctl)(tty, cmd, arg);
