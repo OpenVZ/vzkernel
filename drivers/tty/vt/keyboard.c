@@ -43,6 +43,7 @@
 #include <linux/notifier.h>
 #include <linux/jiffies.h>
 #include <linux/uaccess.h>
+#include <linux/device.h>
 
 #include <asm/irq_regs.h>
 
@@ -1525,7 +1526,7 @@ static bool kbd_match(struct input_handler *handler, struct input_dev *dev)
  * likes it, it can open it and get events from it. In this (kbd_connect)
  * function, we should decide which VT to bind that keyboard to initially.
  */
-static int kbd_connect(struct input_handler *handler, struct input_dev *dev,
+static int __kbd_connect(struct input_handler *handler, struct input_dev *dev,
 			const struct input_device_id *id)
 {
 	struct input_handle *handle;
@@ -1556,11 +1557,80 @@ static int kbd_connect(struct input_handler *handler, struct input_dev *dev,
 	return error;
 }
 
-static void kbd_disconnect(struct input_handle *handle)
+static void __kbd_disconnect(struct input_handle *handle)
 {
 	input_close_device(handle);
 	input_unregister_handle(handle);
 	kfree(handle);
+}
+
+extern struct mutex input_mutex;
+/*
+ * To unbind keyboard need write "unbind" in kbd_bind
+ * To bind keyboard to all TTYs need write "all" in kbd_bind (by default)
+ * To bind keyboard to specified TTY... (not implemented)
+ */
+static ssize_t kbd_bind_store(struct device *dev,
+                                struct device_attribute *attr,
+                                const char *buf, size_t len)
+{
+	struct list_head *node;
+	int ret = -EINVAL;
+	struct input_dev *idev;
+	char *s;
+
+	if (buf[len] != '\0')
+		return -EINVAL;
+
+/*	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
+*/
+	s = strchr(buf, '\n');
+	if (s)
+		*s = '\0';
+
+	mutex_lock(&input_mutex);
+	if (!strcmp(buf, "unbind")) {
+		list_for_each(node, &kbd_handler.h_list) {
+			struct input_handle *handle = container_of(node,
+					struct input_handle, h_node);
+			idev = handle->dev;
+			if (&idev->dev == dev) {
+				__kbd_disconnect(handle);
+				ret = len;
+				break;
+			}
+		}
+	} else if (!strcmp(buf, "all")) {
+		idev = container_of(dev, struct input_dev, dev);
+		ret = __kbd_connect(&kbd_handler, idev, NULL);
+		if (!ret)
+			ret = len;
+	}
+	mutex_unlock(&input_mutex);
+
+	return ret;
+}
+
+static DEVICE_ATTR(kbd_bind, S_IWUSR, NULL , kbd_bind_store);
+
+static int kbd_connect(struct input_handler *handler, struct input_dev *dev,
+			const struct input_device_id *id)
+{
+	int error;
+	error = device_create_file(&dev->dev, &dev_attr_kbd_bind);
+	if (error)
+		return error;
+	error = __kbd_connect(handler, dev, id);
+	if (error)
+		device_remove_file(&dev->dev, &dev_attr_kbd_bind);
+	return error;
+}
+
+static void kbd_disconnect(struct input_handle *handle)
+{
+	device_remove_file(&handle->dev->dev, &dev_attr_kbd_bind);
+	__kbd_disconnect(handle);
 }
 
 /*
