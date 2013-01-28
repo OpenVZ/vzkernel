@@ -732,6 +732,20 @@ static struct cpuidle_state bxt_cstates[] = {
 		.enter = NULL }
 };
 
+static int force_auto_demotion = 0;
+
+static int __init parse_intel_auto_demotion(char *arg)
+{
+	if (!arg)
+		return -EINVAL;
+	if (strcmp(arg, "force") == 0)
+		force_auto_demotion = 1;
+	else
+		return -EINVAL;
+	return 0;
+}
+early_param("intel_auto_demotion", parse_intel_auto_demotion);
+
 /**
  * intel_idle
  * @dev: cpuidle_device
@@ -1246,7 +1260,7 @@ static int intel_idle_cpu_init(int cpu)
 		return -EIO;
 	}
 
-	if (icpu->auto_demotion_disable_flags)
+	if (icpu->auto_demotion_disable_flags && !force_auto_demotion)
 		smp_call_function_single(cpu, auto_demotion_disable, NULL, 1);
 
 	if (icpu->disable_promotion_to_c1e)
