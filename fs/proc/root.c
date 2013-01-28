@@ -125,6 +125,8 @@ static struct dentry *proc_mount(struct file_system_type *fs_type,
 	}
 
 	if (!sb->s_root) {
+		sb->s_flags &= ~MS_RDONLY;
+
 		err = proc_fill_super(sb);
 		if (err) {
 			deactivate_locked_super(sb);
