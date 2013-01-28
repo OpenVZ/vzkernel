@@ -125,6 +125,7 @@ EXPORT_SYMBOL(console_set_on_cmdline);
 
 /* Flag: console code may call schedule() */
 static int console_may_schedule;
+int console_silence_loglevel;
 
 /*
  * The printk log buffer consists of a chain of concatenated variable
@@ -799,6 +800,19 @@ void log_buf_kexec_setup(void)
 	VMCOREINFO_OFFSET(log, dict_len);
 }
 #endif
+
+static int __init setup_console_silencelevel(char *str)
+{
+	int level;
+
+	if (get_option(&str, &level) != 1)
+		return 0;
+
+	console_silence_loglevel = level;
+	return 1;
+}
+
+__setup("silencelevel=", setup_console_silencelevel);
 
 /* requested log_buf_len from kernel cmdline */
 static unsigned long __initdata new_log_buf_len;

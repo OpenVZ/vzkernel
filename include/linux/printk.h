@@ -47,11 +47,6 @@ extern int console_printk[];
 #define VE_LOG		2
 #define VE_LOG_BOTH	(VE0_LOG | VE_LOG)
 
-static inline void console_silent(void)
-{
-	console_loglevel = 0;
-}
-
 static inline void console_verbose(void)
 {
 	if (console_loglevel)
@@ -404,6 +399,17 @@ extern void print_hex_dump(const char *level, const char *prefix_str,
 extern void print_hex_dump_bytes(const char *prefix_str, int prefix_type,
 				 const void *buf, size_t len);
 #endif /* defined(CONFIG_DYNAMIC_DEBUG) */
+
+extern int console_silence_loglevel;
+
+static inline void console_silent(void)
+{
+	if (console_loglevel > console_silence_loglevel) {
+		printk(KERN_EMERG "console shuts up ...\n");
+		console_loglevel = 0;
+	}
+}
+
 #else
 static inline void print_hex_dump(const char *level, const char *prefix_str,
 				  int prefix_type, int rowsize, int groupsize,
