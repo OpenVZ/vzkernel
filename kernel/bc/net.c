@@ -894,6 +894,8 @@ static void ub_socksndbuf_uncharge(struct sk_buff *skb)
 /* expected to be called under socket lock */
 static void ub_tcpsndbuf_uncharge(struct sk_buff *skb)
 {
+	if (WARN_ON(!skb->sk))
+		return;
 	/*
 	 * ub_sock_ret_wreserv call is abused here, we just want to uncharge
 	 * skb size.  However, to reduce duplication of the code doing
