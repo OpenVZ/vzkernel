@@ -5518,6 +5518,77 @@ __initcall(slab_sysfs_init);
  * The /proc/slabinfo ABI
  */
 #ifdef CONFIG_SLABINFO
+
+#define SHOW_TOP_SLABS	10
+
+static unsigned long get_cache_size(struct kmem_cache *cache)
+{
+	unsigned long flags;
+	unsigned long slabs;
+	struct kmem_cache_node *n;
+	struct list_head *lh;
+	int cpu, node;
+
+	slabs = 0;
+
+	for_each_online_cpu(cpu)
+		slabs++;
+
+	for_each_online_node(node) {
+		n = get_node(cache, node);
+		if (!n)
+			continue;
+		spin_lock_irqsave(&n->list_lock, flags);
+#ifdef CONFIG_SLUB_DEBUG
+		list_for_each(lh, &n->full)
+			slabs++;
+#endif
+		list_for_each(lh, &n->partial)
+			slabs++;
+		spin_unlock_irqrestore(&n->list_lock, flags);
+	}
+
+	return slabs * (PAGE_SIZE << oo_order(cache->oo));
+}
+
+void show_slab_info(void)
+{
+	int i, j;
+	unsigned long size;
+	struct kmem_cache *ptr;
+	unsigned long sizes[SHOW_TOP_SLABS];
+	struct kmem_cache *top[SHOW_TOP_SLABS];
+
+	memset(top, 0, sizeof(top));
+	memset(sizes, 0, sizeof(sizes));
+
+	printk("Top %d caches:\n", SHOW_TOP_SLABS);
+
+//	spin_lock(&cache_chain_lock);
+	list_for_each_entry(ptr, &slab_caches, list) {
+		size = get_cache_size(ptr);
+
+		j = 0;
+		for (i = 1; i < SHOW_TOP_SLABS; i++) {
+			if (sizes[i] < sizes[j])
+				j = i;
+		}
+		if (size > sizes[j]) {
+			sizes[j] = size;
+			top[j] = ptr;
+		}
+	}
+
+	for (i = 0; i < SHOW_TOP_SLABS; i++) {
+		if (top[i])
+			printk("%-21s: size %10lu objsize %10u\n",
+				top[i]->name, sizes[i],
+				top[i]->size);
+	}
+
+//	spin_unlock(&cache_chain_lock);
+}
+
 void get_slabinfo(struct kmem_cache *s, struct slabinfo *sinfo)
 {
 	unsigned long nr_partials = 0;
