@@ -65,6 +65,10 @@ const struct address_space_operations empty_aops = {
 };
 EXPORT_SYMBOL(empty_aops);
 
+const struct inode_operations empty_iops = {
+};
+EXPORT_SYMBOL(empty_iops);
+
 /*
  * Statistics gathering..
  */
@@ -123,7 +127,6 @@ int proc_nr_inodes(ctl_table *table, int write,
  */
 int inode_init_always(struct super_block *sb, struct inode *inode)
 {
-	static const struct inode_operations empty_iops;
 	static const struct file_operations empty_fops;
 	struct address_space *const mapping = &inode->i_data;
 
