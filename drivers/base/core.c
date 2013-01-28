@@ -49,18 +49,6 @@ static struct kobject *dev_kobj;
 struct kobject *sysfs_dev_char_kobj;
 struct kobject *sysfs_dev_block_kobj;
 
-#ifdef CONFIG_BLOCK
-static inline int device_is_not_partition(struct device *dev)
-{
-	return !(dev->type == &part_type);
-}
-#else
-static inline int device_is_not_partition(struct device *dev)
-{
-	return 1;
-}
-#endif
-
 /**
  * dev_driver_string - Return a device's driver name, if at all possible
  * @dev: struct device to get the name of
