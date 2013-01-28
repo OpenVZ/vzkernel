@@ -4164,6 +4164,74 @@ out:
 	schedule_delayed_work(work, round_jiffies_relative(REAPTIMEOUT_CPUC));
 }
 
+#define SHOW_TOP_SLABS	10
+
+static unsigned long get_cache_size(struct kmem_cache *cachep)
+{
+	unsigned long flags;
+	unsigned long slabs;
+	struct kmem_list3 *l3;
+	struct list_head *lh;
+	int node;
+
+	slabs = 0;
+
+	for_each_online_node (node) {
+		l3 = cachep->nodelists[node];
+		if (l3 == NULL)
+			continue;
+
+		spin_lock_irqsave(&l3->list_lock, flags);
+		list_for_each (lh, &l3->slabs_full)
+			slabs++;
+		list_for_each (lh, &l3->slabs_partial)
+			slabs++;
+		list_for_each (lh, &l3->slabs_free)
+			slabs++;
+		spin_unlock_irqrestore(&l3->list_lock, flags);
+	}
+
+	return slabs * (PAGE_SIZE << cachep->gfporder) +
+		(OFF_SLAB(cachep) ?
+		 cachep->slabp_cache->size * slabs : 0);
+}
+
+void show_slab_info(void)
+{
+	int i, j;
+	unsigned long size;
+	struct kmem_cache *ptr;
+	unsigned long sizes[SHOW_TOP_SLABS];
+	struct kmem_cache *top[SHOW_TOP_SLABS];
+
+	memset(top, 0, sizeof(top));
+	memset(sizes, 0, sizeof(sizes));
+
+	printk("Top %d caches:\n", SHOW_TOP_SLABS);
+
+//	spin_lock(&cache_chain_lock);
+	list_for_each_entry (ptr, &slab_caches, list) {
+		size = get_cache_size(ptr);
+
+		j = 0;
+		for (i = 1; i < SHOW_TOP_SLABS; i++)
+			if (sizes[i] < sizes[j])
+				j = i;
+
+		if (size > sizes[j]) {
+			sizes[j] = size;
+			top[j] = ptr;
+		}
+	}
+
+	for (i = 0; i < SHOW_TOP_SLABS; i++)
+		if (top[i])
+			printk("%-21s: size %10lu objsize %10u\n",
+					top[i]->name, sizes[i],
+					top[i]->size);
+//	spin_unlock(&cache_chain_lock);
+}
+
 #ifdef CONFIG_SLABINFO
 void get_slabinfo(struct kmem_cache *cachep, struct slabinfo *sinfo)
 {
