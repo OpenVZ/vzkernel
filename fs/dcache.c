@@ -86,7 +86,7 @@ __cacheline_aligned_in_smp DEFINE_SEQLOCK(rename_lock);
 
 EXPORT_SYMBOL(rename_lock);
 
-static struct kmem_cache *dentry_cache __read_mostly;
+struct kmem_cache *dentry_cache __read_mostly;
 
 /**
  * read_seqbegin_or_lock - begin a sequence number check or locking block
