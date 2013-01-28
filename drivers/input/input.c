@@ -46,7 +46,7 @@ static LIST_HEAD(input_handler_list);
  * be mutually exclusive which simplifies locking in drivers implementing
  * input handlers.
  */
-static DEFINE_MUTEX(input_mutex);
+DEFINE_MUTEX(input_mutex);
 
 static const struct input_value input_value_sync = { EV_SYN, SYN_REPORT, 1 };
 
