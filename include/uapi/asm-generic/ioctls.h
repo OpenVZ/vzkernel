@@ -94,6 +94,8 @@
 #define TIOCMIWAIT	0x545C	/* wait for a change on serial input line(s) */
 #define TIOCGICOUNT	0x545D	/* read serial port inline interrupt counts */
 
+#define TIOSAK		_IO('T', 0x66)  /* "Secure Attention Key" */
+
 /*
  * Some arches already define FIOQSIZE due to a historical
  * conflict with a Hayes modem-specific ioctl value.
