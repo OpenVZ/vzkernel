@@ -256,12 +256,19 @@ bool cgroup_is_descendant(struct cgroup *cgrp, struct cgroup *ancestor)
 }
 EXPORT_SYMBOL_GPL(cgroup_is_descendant);
 
+static int cgroup_is_disposable(const struct cgroup *cgrp)
+{
+	return (cgrp->flags & ((1 << CGRP_NOTIFY_ON_RELEASE) |
+				(1 << CGRP_SELF_DESTRUCTION))) > 0;
+}
+
 static int cgroup_is_releasable(const struct cgroup *cgrp)
 {
 	const int bits =
 		(1 << CGRP_RELEASABLE) |
-		(1 << CGRP_NOTIFY_ON_RELEASE);
-	return (cgrp->flags & bits) == bits;
+		(1 << CGRP_NOTIFY_ON_RELEASE) |
+		(1 << CGRP_SELF_DESTRUCTION);
+	return (cgrp->flags & bits) > (1 << CGRP_RELEASABLE);
 }
 
 static int notify_on_release(const struct cgroup *cgrp)
@@ -415,7 +422,7 @@ static void __put_css_set(struct css_set *cg, int taskexit)
 		 */
 		rcu_read_lock();
 		if (atomic_dec_and_test(&cgrp->count) &&
-		    notify_on_release(cgrp)) {
+		    cgroup_is_disposable(cgrp)) {
 			if (taskexit)
 				set_bit(CGRP_RELEASABLE, &cgrp->flags);
 			check_for_release(cgrp);
@@ -3979,6 +3986,23 @@ static int cgroup_clone_children_write(struct cgroup *cgrp,
 	return 0;
 }
 
+static u64 cgroup_read_self_destruction(struct cgroup *cgrp,
+		struct cftype *cft)
+{
+	return test_bit(CGRP_SELF_DESTRUCTION, &cgrp->flags);
+}
+
+static int cgroup_write_self_destruction(struct cgroup *cgrp,
+		struct cftype *cft, u64 val)
+{
+	clear_bit(CGRP_RELEASABLE, &cgrp->flags);
+	if (val)
+		set_bit(CGRP_SELF_DESTRUCTION, &cgrp->flags);
+	else
+		clear_bit(CGRP_SELF_DESTRUCTION, &cgrp->flags);
+	return 0;
+}
+
 /*
  * for the common functions, 'private' gives the type of file
  */
@@ -4026,6 +4050,11 @@ static struct cftype files[] = {
 		.read_seq_string = cgroup_release_agent_show,
 		.write_string = cgroup_release_agent_write,
 		.max_write_len = PATH_MAX,
+	},
+	{
+		.name = "self_destruction",
+		.read_u64 = cgroup_read_self_destruction,
+		.write_u64 = cgroup_write_self_destruction,
 	},
 	{ }	/* terminate */
 };
@@ -4198,6 +4227,9 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 
 	if (test_bit(CGRP_CPUSET_CLONE_CHILDREN, &parent->flags))
 		set_bit(CGRP_CPUSET_CLONE_CHILDREN, &cgrp->flags);
+
+	if (test_bit(CGRP_SELF_DESTRUCTION, &parent->flags))
+		set_bit(CGRP_SELF_DESTRUCTION, &cgrp->flags);
 
 	for_each_subsys(root, ss) {
 		struct cgroup_subsys_state *css;
@@ -5075,6 +5107,20 @@ static void cgroup_release_agent(struct work_struct *work)
 						    release_list);
 		list_del_init(&cgrp->release_list);
 		raw_spin_unlock(&release_list_lock);
+
+		if (test_bit(CGRP_SELF_DESTRUCTION, &cgrp->flags)) {
+			struct inode *parent = cgrp->dentry->d_parent->d_inode;
+
+			dget(cgrp->dentry);
+			mutex_unlock(&cgroup_mutex);
+			mutex_lock_nested(&parent->i_mutex, I_MUTEX_PARENT);
+			vfs_rmdir(parent, cgrp->dentry);
+			mutex_unlock(&parent->i_mutex);
+			dput(cgrp->dentry);
+			mutex_lock(&cgroup_mutex);
+			goto continue_free;
+		}
+
 		pathbuf = kmalloc(PAGE_SIZE, GFP_KERNEL);
 		if (!pathbuf)
 			goto continue_free;
