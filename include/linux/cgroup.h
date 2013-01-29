@@ -186,6 +186,7 @@ enum {
 	CGRP_CPUSET_CLONE_CHILDREN,
 	/* see the comment above CGRP_ROOT_SANE_BEHAVIOR for details */
 	CGRP_SANE_BEHAVIOR,
+	CGRP_SELF_DESTRUCTION,
 };
 
 struct cgroup_name {
