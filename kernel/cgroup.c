@@ -1600,9 +1600,15 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 	struct inode *inode;
 
 	/* First find the desired set of subsystems */
-	mutex_lock(&cgroup_mutex);
-	ret = parse_cgroupfs_options(data, &opts);
-	mutex_unlock(&cgroup_mutex);
+	if (!(flags & MS_KERNMOUNT)) {
+		mutex_lock(&cgroup_mutex);
+		ret = parse_cgroupfs_options(data, &opts);
+		mutex_unlock(&cgroup_mutex);
+	} else {
+		opts = *(struct cgroup_sb_opts *)data;
+		opts.name = kstrdup(opts.name, GFP_KERNEL);
+		opts.release_agent = kstrdup(opts.release_agent, GFP_KERNEL);
+	}
 	if (ret)
 		goto out_err;
 
@@ -5552,30 +5558,89 @@ struct cgroup_subsys debug_subsys = {
 
 struct vfsmount *cgroup_kernel_mount(struct cgroup_sb_opts *opts)
 {
+	return kern_mount_data(&cgroup_fs_type, opts);
 }
+EXPORT_SYMBOL(cgroup_kernel_mount);
 
 struct cgroup *cgroup_get_root(struct vfsmount *mnt)
 {
-
+	return mnt->mnt_root->d_fsdata;
 }
+EXPORT_SYMBOL(cgroup_get_root);
 
 struct cgroup *cgroup_kernel_open(struct cgroup *parent,
 		enum cgroup_open_flags flags, char *name)
 {
+	struct dentry *dentry;
+	struct cgroup *cgrp;
+	int ret = 0;
 
+	mutex_lock_nested(&parent->dentry->d_inode->i_mutex, I_MUTEX_PARENT);
+	dentry = lookup_one_len(name, parent->dentry, strlen(name));
+	cgrp = ERR_CAST(dentry);
+	if (IS_ERR(dentry))
+		goto out;
+
+	if (flags & CGRP_CREAT) {
+		if ((flags & CGRP_EXCL) && dentry->d_inode)
+			ret = -EEXIST;
+		else if (!dentry->d_inode)
+			ret = vfs_mkdir(parent->dentry->d_inode, dentry, 0755);
+		else
+			flags &= ~CGRP_WEAK;
+	}
+	if (!ret && dentry->d_inode) {
+		cgrp = __d_cgrp(dentry);
+		atomic_inc(&cgrp->count);
+		if (flags & CGRP_WEAK)
+			set_bit(CGRP_SELF_DESTRUCTION, &cgrp->flags);
+	} else
+		cgrp = ret ? ERR_PTR(ret) : NULL;
+	dput(dentry);
+out:
+	mutex_unlock(&parent->dentry->d_inode->i_mutex);
+	return cgrp;
 }
+EXPORT_SYMBOL(cgroup_kernel_open);
 
 int cgroup_kernel_remove(struct cgroup *parent, char *name)
 {
+	struct dentry *dentry;
+	int ret;
+
+	mutex_lock_nested(&parent->dentry->d_inode->i_mutex, I_MUTEX_PARENT);
+	dentry = lookup_one_len(name, parent->dentry, strlen(name));
+	ret = PTR_ERR(dentry);
+	if (IS_ERR(dentry))
+		goto out;
+	ret = -ENOENT;
+	if (dentry->d_inode)
+		ret = vfs_rmdir(parent->dentry->d_inode, dentry);
+	dput(dentry);
+out:
+	mutex_unlock(&parent->dentry->d_inode->i_mutex);
+	return ret;
 }
+EXPORT_SYMBOL(cgroup_kernel_remove);
 
 int cgroup_kernel_attach(struct cgroup *cgrp, struct task_struct *tsk)
 {
+	int ret;
 
+	cgroup_lock();
+	ret = cgroup_attach_task(cgrp, tsk);
+	cgroup_unlock();
+	return ret;
 }
+EXPORT_SYMBOL(cgroup_kernel_attach);
 
 void cgroup_kernel_close(struct cgroup *cgrp)
 {
-
+	if (!cgroup_is_disposable(cgrp)) {
+		atomic_dec(&cgrp->count);
+	} else if (atomic_dec_and_test(&cgrp->count)) {
+		set_bit(CGRP_RELEASABLE, &cgrp->flags);
+		check_for_release(cgrp);
+	}
 }
 EXPORT_SYMBOL(cgroup_kernel_close);
