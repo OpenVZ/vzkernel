@@ -338,6 +338,11 @@ struct sk_buff *build_skb(void *data, unsigned int frag_size)
 	if (!skb)
 		return NULL;
 
+	if (ub_skb_alloc_bc(skb, GFP_ATOMIC)) {
+		kmem_cache_free(skbuff_head_cache, skb);
+		return NULL;
+	}
+
 	size -= SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
 
 	memset(skb, 0, offsetof(struct sk_buff, tail));
