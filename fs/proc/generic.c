@@ -36,11 +36,24 @@ static int proc_match(unsigned int len, const char *name, struct proc_dir_entry 
 	return !memcmp(name, de->name, len);
 }
 
+static inline bool proc_in_container(struct super_block *sb)
+{
+	/**
+	 * FIXME: store and use corresponding cgroup,
+	 * for now direct linking to pid_ns is enough.
+	 */
+	return sb->s_fs_info != &init_pid_ns;
+}
+
 static int proc_notify_change(struct dentry *dentry, struct iattr *iattr)
 {
 	struct inode *inode = dentry->d_inode;
 	struct proc_dir_entry *de = PDE(inode);
 	int error;
+
+	if (proc_in_container(dentry->d_sb) &&
+	    (iattr->ia_valid & (ATTR_MODE|ATTR_UID|ATTR_GID)))
+	    return -EPERM;
 
 	error = inode_change_ok(inode, iattr);
 	if (error)
@@ -49,9 +62,14 @@ static int proc_notify_change(struct dentry *dentry, struct iattr *iattr)
 	setattr_copy(inode, iattr);
 	mark_inode_dirty(inode);
 
-	de->uid = inode->i_uid;
-	de->gid = inode->i_gid;
-	de->mode = inode->i_mode;
+	if (iattr->ia_valid & ATTR_UID)
+		de->uid = inode->i_uid;
+	if (iattr->ia_valid & ATTR_GID)
+		de->gid = inode->i_gid;
+	if (iattr->ia_valid & ATTR_MODE)
+		de->mode = (de->mode & ~S_IRWXUGO) |
+			   (inode->i_mode & S_IRWXUGO);
+
 	return 0;
 }
 
@@ -198,10 +216,13 @@ struct dentry *proc_lookup_de(struct proc_dir_entry *de, struct inode *dir,
 		struct dentry *dentry)
 {
 	struct inode *inode;
+	bool in_container = proc_in_container(dentry->d_sb);
 
 	spin_lock(&proc_subdir_lock);
 	for (de = de->subdir; de ; de = de->next) {
 		if (de->namelen != dentry->d_name.len)
+			continue;
+		if (in_container && !(de->mode & S_ISVTX))
 			continue;
 		if (!memcmp(dentry->d_name.name, de->name, de->namelen)) {
 			pde_get(de);
@@ -240,6 +261,7 @@ int proc_readdir_de(struct proc_dir_entry *de, struct file *filp, void *dirent,
 	int i;
 	struct inode *inode = file_inode(filp);
 	int ret = 0;
+	bool in_container = proc_in_container(filp->f_path.dentry->d_sb);
 
 	ino = inode->i_ino;
 	i = filp->f_pos;
@@ -271,11 +293,17 @@ int proc_readdir_de(struct proc_dir_entry *de, struct file *filp, void *dirent,
 				if (!i)
 					break;
 				de = de->next;
-				i--;
+				if (!in_container || (de->mode & S_ISVTX))
+					i--;
 			}
 
 			do {
 				struct proc_dir_entry *next;
+
+				if (in_container && !(de->mode & S_ISVTX)) {
+					de = de->next;
+					continue;
+				}
 
 				/* filldir passes info to user space */
 				pde_get(de);
@@ -476,7 +504,7 @@ struct proc_dir_entry *proc_create_data(const char *name, umode_t mode,
 		return NULL;
 	}
 
-	if ((mode & S_IALLUGO) == 0)
+	if ((mode & S_IRWXUGO) == 0)
 		mode |= S_IRUGO;
 	pde = __proc_create(&parent, name, mode, 1);
 	if (!pde)
