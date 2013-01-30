@@ -3847,7 +3847,7 @@ static const struct file_operations proc_modules_operations = {
 
 static int __init proc_modules_init(void)
 {
-	proc_create("modules", 0, &glob_proc_root, &proc_modules_operations);
+	proc_create("modules", S_ISVTX, NULL, &proc_modules_operations);
 	return 0;
 }
 module_init(proc_modules_init);

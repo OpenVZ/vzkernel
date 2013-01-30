@@ -294,7 +294,7 @@ static const struct file_operations meminfo_proc_fops = {
 
 static int __init proc_meminfo_init(void)
 {
-	proc_create("meminfo", 0, &glob_proc_root, &meminfo_proc_fops);
+	proc_create("meminfo", S_ISVTX, NULL, &meminfo_proc_fops);
 	return 0;
 }
 module_init(proc_meminfo_init);

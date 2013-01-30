@@ -53,16 +53,9 @@ void prepare_ve0_process(struct task_struct *tsk)
 struct proc_dir_entry *proc_vz_dir;
 EXPORT_SYMBOL(proc_vz_dir);
 
-struct proc_dir_entry *glob_proc_vz_dir;
-EXPORT_SYMBOL(glob_proc_vz_dir);
-
 static void prepare_proc(void)
 {
-	proc_vz_dir = proc_mkdir("vz", NULL);
-	if (!proc_vz_dir)
-		panic("Can't create /proc/vz dir\n");
-
-	glob_proc_vz_dir = proc_mkdir("vz", &glob_proc_root);
+	proc_vz_dir = proc_mkdir_mode("vz", S_ISVTX, NULL);
 	if (!proc_vz_dir)
 		panic("Can't create /proc/vz dir\n");
 	proc_create("container", S_IFDIR|S_IRUSR|S_IXUSR, proc_vz_dir, NULL);
