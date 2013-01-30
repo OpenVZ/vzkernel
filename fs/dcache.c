@@ -3053,6 +3053,46 @@ Elong:
 	return ERR_PTR(-ENAMETOOLONG);
 }
 
+/**
+ * d_root_check - checks if dentry is accessible from current's fs root
+ * @dentry: dentry to be verified
+ * @vfsmnt: vfsmnt to which the dentry belongs
+ */
+int d_root_check(struct path *path)
+{
+	struct dentry *dentry = path->dentry;
+	struct vfsmount *vfsmnt = path->mnt;
+	struct mount *mnt = real_mount(vfsmnt);
+	struct path root;
+	int error = 0;
+
+	if (path->dentry->d_op && path->dentry->d_op->d_dname)
+		return 0;
+
+	get_fs_root(current->fs, &root);
+	write_seqlock(&rename_lock);
+	br_read_lock(&vfsmount_lock);
+	while (dentry != root.dentry || vfsmnt != root.mnt) {
+		if (dentry == vfsmnt->mnt_root || IS_ROOT(dentry)) {
+			/* Global root? */
+			if (!mnt_has_parent(mnt)) {
+				error = -EACCES;
+				break;
+			}
+			dentry = mnt->mnt_mountpoint;
+			mnt = mnt->mnt_parent;
+			vfsmnt = &mnt->mnt;
+			continue;
+		}
+		dentry = dentry->d_parent;
+	}
+	br_read_unlock(&vfsmount_lock);
+	write_sequnlock(&rename_lock);
+	path_put(&root);
+
+	return error;
+}
+
 /*
  * NOTE! The user-level library version returns a
  * character pointer. The kernel system call just
