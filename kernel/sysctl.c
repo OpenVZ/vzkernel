@@ -2723,6 +2723,50 @@ int proc_do_large_bitmap(struct ctl_table *table, int write,
 	}
 }
 
+static bool virtual_ptr(void **ptr, void *base, size_t size, void *cur)
+{
+	unsigned long addr = (unsigned long)*ptr;
+	unsigned long base_addr = (unsigned long)base;
+
+	if (addr >= base_addr && addr < base_addr + size) {
+		*ptr = (char *)cur + (addr - base_addr);
+		return true;
+	}
+	return false;
+}
+
+int proc_dointvec_virtual(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	struct ctl_table tmp = *table;
+
+	if (virtual_ptr(&tmp.data, &ve0, sizeof(ve0), get_exec_env()))
+		return proc_dointvec(&tmp, write, buffer, lenp, ppos);
+	return -EINVAL;
+}
+
+static inline bool sysctl_in_container(void)
+{
+	/* FIXME: see sysctl_root_permissions() */
+	return current->nsproxy->pid_ns != &init_pid_ns;
+}
+
+int proc_dointvec_immutable(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	if (write && sysctl_in_container())
+		return 0;
+	return proc_dointvec(table, write, buffer, lenp, ppos);
+}
+
+int proc_dostring_immutable(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	if (write && sysctl_in_container())
+		return 0;
+	return proc_dostring(table, write, buffer, lenp, ppos);
+}
+
 #else /* CONFIG_PROC_SYSCTL */
 
 int proc_dostring(struct ctl_table *table, int write,
