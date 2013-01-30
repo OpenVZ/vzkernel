@@ -36,6 +36,13 @@ int mmap_min_addr_handler(struct ctl_table *table, int write,
 	if (write && !capable(CAP_SYS_RAWIO))
 		return -EPERM;
 
+	/**
+	 * FIXME Ingnore writes if we not true sysadmin.
+	 * Little bit paranoid, but this stuff too important.
+	 */
+	if (write && !capable(CAP_SYS_ADMIN))
+		return 0;
+
 	ret = proc_doulongvec_minmax(table, write, buffer, lenp, ppos);
 
 	update_mmap_min_addr();
