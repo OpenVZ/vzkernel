@@ -869,7 +869,7 @@ static int __init ub_init_proc(void)
 #endif
 
 	entry = proc_create("user_beancounters",
-			S_IRUSR, &glob_proc_root, &ub_file_operations);
+			S_IRUSR|S_ISVTX, NULL, &ub_file_operations);
 	proc_create("vswap", S_IRUSR, proc_vz_dir, &ub_vswap_fops);
 	proc_create("beancounter", S_IFDIR|S_IRUSR|S_IXUSR, proc_vz_dir, NULL);
 	return 0;
