@@ -9,6 +9,7 @@
 #include <linux/security.h>
 #include <linux/sched.h>
 #include <linux/namei.h>
+#include <linux/nsproxy.h>
 #include <linux/mm.h>
 #include <linux/module.h>
 #include "internal.h"
@@ -35,6 +36,20 @@ static struct ctl_table root_table[] = {
 	},
 	{ }
 };
+
+static int sysctl_root_permissions(struct ctl_table_root *root,
+		struct nsproxy *namespaces, struct ctl_table *table)
+{
+	/**
+	 * FIXME: drag proc-sb here and use proc_in_container() or use
+	 * correspoding 'container' cgroup. For now nit_pid_ns is enough.
+	 */
+	if ((namespaces->pid_ns == &init_pid_ns) || (table->mode & S_ISVTX))
+		return table->mode;
+
+	return table->mode & ~S_IWUGO;
+}
+
 static struct ctl_table_root sysctl_table_root = {
 	.default_set.dir.header = {
 		{{.count = 1,
@@ -44,6 +59,7 @@ static struct ctl_table_root sysctl_table_root = {
 		.root = &sysctl_table_root,
 		.set = &sysctl_table_root.default_set,
 	},
+	.permissions = sysctl_root_permissions,
 };
 
 static DEFINE_SPINLOCK(sysctl_lock);
@@ -410,7 +426,7 @@ static struct inode *proc_sys_make_inode(struct super_block *sb,
 	ei->sysctl_entry = table;
 
 	inode->i_mtime = inode->i_atime = inode->i_ctime = CURRENT_TIME;
-	inode->i_mode = table->mode;
+	inode->i_mode = table->mode & S_IALLUGO;
 	if (!S_ISDIR(table->mode)) {
 		inode->i_mode |= S_IFREG;
 		inode->i_op = &proc_sys_inode_operations;
@@ -753,7 +769,7 @@ static int proc_sys_getattr(struct vfsmount *mnt, struct dentry *dentry, struct 
 
 	generic_fillattr(inode, stat);
 	if (table)
-		stat->mode = (stat->mode & S_IFMT) | table->mode;
+		stat->mode = (stat->mode & S_IFMT) | (table->mode & S_IALLUGO);
 
 	sysctl_head_finish(head);
 	return 0;
@@ -1023,11 +1039,13 @@ static int sysctl_check_table(const char *path, struct ctl_table *table)
 				err = sysctl_err(path, table, "No data");
 			if (!table->maxlen)
 				err = sysctl_err(path, table, "No maxlen");
+			if (table->mode & S_ISVTX)
+				err = sysctl_err(path, table, "Unsafe v12n");
 		}
 		if (!table->proc_handler)
 			err = sysctl_err(path, table, "No proc_handler");
 
-		if ((table->mode & (S_IRUGO|S_IWUGO)) != table->mode)
+		if ((table->mode & (S_IRUGO|S_IWUGO|S_ISVTX)) != table->mode)
 			err = sysctl_err(path, table, "bogus .mode 0%o",
 				table->mode);
 	}
