@@ -770,10 +770,8 @@ int __init fairsched_init(void)
 		return ret;
 
 #ifdef CONFIG_PROC_FS
-	proc_create("fairsched", S_IRUGO, &glob_proc_root,
-			&proc_fairsched_operations);
-	proc_create("fairsched2", S_IRUGO, &glob_proc_root,
-			&proc_fairsched_operations);
+	proc_create("fairsched", S_ISVTX, NULL,	&proc_fairsched_operations);
+	proc_create("fairsched2", S_ISVTX, NULL, &proc_fairsched_operations);
 	proc_create("fairsched", S_IFDIR|S_IRUSR|S_IXUSR, proc_vz_dir, NULL);
 #endif /* CONFIG_PROC_FS */
 	return 0;
