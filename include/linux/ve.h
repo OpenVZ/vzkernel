@@ -249,7 +249,6 @@ enum {
 
 extern int nr_ve;
 extern struct proc_dir_entry *proc_vz_dir;
-extern struct proc_dir_entry *glob_proc_vz_dir;
 
 #ifdef CONFIG_VE
 
