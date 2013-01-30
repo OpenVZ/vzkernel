@@ -1870,7 +1870,7 @@ static const struct file_operations proc_swaps_operations = {
 
 static int __init procswaps_init(void)
 {
-	proc_create("swaps", 0, &glob_proc_root, &proc_swaps_operations);
+	proc_create("swaps", S_ISVTX, NULL, &proc_swaps_operations);
 	return 0;
 }
 __initcall(procswaps_init);
