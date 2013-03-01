@@ -5532,3 +5532,4 @@ void cgroup_kernel_close(struct cgroup *cgrp)
 {
 
 }
+EXPORT_SYMBOL(cgroup_kernel_close);
