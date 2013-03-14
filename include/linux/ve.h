@@ -152,9 +152,7 @@ struct ve_struct {
 /* VE's root */
 	struct path		root_path;
 
-#ifdef CONFIG_UNIX98_PTYS
-	struct vfsmount		*devpts_mnt;
-#endif
+	struct super_block	*devpts_sb;
 
 #define	MAX_NR_VTTY		12
 	struct tty_struct	*vtty[MAX_NR_VTTY];
