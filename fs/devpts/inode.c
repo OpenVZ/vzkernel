@@ -527,9 +527,15 @@ static struct file_system_type devpts_fs_type = {
 int devpts_new_index(struct inode *ptmx_inode)
 {
 	struct super_block *sb = pts_sb_from_inode(ptmx_inode);
-	struct pts_fs_info *fsi = DEVPTS_SB(sb);
+	struct pts_fs_info *fsi;
 	int index;
 	int ida_ret;
+
+	/* devpts not mounted yet */
+	if (!sb)
+		return -ENODEV;
+
+	fsi = DEVPTS_SB(sb);
 
 retry:
 	if (!ida_pre_get(&fsi->allocated_ptys, GFP_KERNEL))
