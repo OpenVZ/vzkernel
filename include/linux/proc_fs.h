@@ -17,8 +17,13 @@ extern void proc_flush_task(struct task_struct *);
 extern int proc_dentry_of_dead_task(struct dentry *dentry);
 extern struct file_operations dummy_proc_pid_file_operations;
 
-extern struct proc_dir_entry *proc_symlink(const char *,
-		struct proc_dir_entry *, const char *);
+extern struct proc_dir_entry *proc_symlink_mode(const char *name, umode_t mode,
+			struct proc_dir_entry *parent, const char *dest);
+static inline struct proc_dir_entry *proc_symlink(const char *name,
+			struct proc_dir_entry *parent, const char *dest)
+{
+	return proc_symlink_mode(name, S_IRWXUGO, parent, dest);
+}
 extern struct proc_dir_entry *proc_mkdir(const char *, struct proc_dir_entry *);
 extern struct proc_dir_entry *proc_mkdir_data(const char *, umode_t,
 					      struct proc_dir_entry *, void *);
@@ -55,6 +60,8 @@ static inline void proc_flush_task(struct task_struct *task)
 
 static inline struct proc_dir_entry *proc_symlink(const char *name,
 		struct proc_dir_entry *parent,const char *dest) { return NULL;}
+static inline struct proc_dir_entry *proc_symlink_mode(const char *name,
+	umode_t m, struct proc_dir_entry *p, const char *d) { return NULL; }
 static inline struct proc_dir_entry *proc_mkdir(const char *name,
 	struct proc_dir_entry *parent) {return NULL;}
 static inline struct proc_dir_entry *proc_mkdir_data(const char *name,
