@@ -13,7 +13,11 @@ RHEL_RELEASE = 693.11.1
 RHEL_DRM_VERSION = 4
 RHEL_DRM_PATCHLEVEL = 10
 RHEL_DRM_SUBLEVEL = 13
-VZVERSION = 046test004
+VZVERSION = ovz.custom
+
+ifeq ($(VZVERSION), ovz.custom)
+  VZVERSION := $(shell if [ -d ".git" ]; then git describe | sed -r 's/^.*\.vz7\./ovz./'; fi)
+endif
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
