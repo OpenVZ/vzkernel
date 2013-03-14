@@ -7847,6 +7847,8 @@ static void task_fork_fair(struct task_struct *p)
 
 	se->vruntime -= cfs_rq->min_vruntime;
 
+	cfs_rq->nr_forks++;
+
 	raw_spin_unlock_irqrestore(&rq->lock, flags);
 }
 
