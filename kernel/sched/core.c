@@ -1661,7 +1661,7 @@ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags)
 	}
 #endif
 
-	if (p->state == TASK_INTERRUPTIBLE)
+	if (p->sched_interruptible_sleep)
 		rq->nr_sleeping--;
 
 	ttwu_activate(rq, p, ENQUEUE_WAKEUP | ENQUEUE_WAKING);
@@ -1879,6 +1879,7 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	}
 
 	p->sched_contributes_to_load = !!task_contributes_to_load(p);
+	p->sched_interruptible_sleep = (p->state == TASK_INTERRUPTIBLE);
 	p->state = TASK_WAKING;
 
 	if (p->sched_class->task_waking)
