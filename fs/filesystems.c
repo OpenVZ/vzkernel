@@ -248,7 +248,7 @@ static const struct file_operations filesystems_proc_fops = {
 
 static int __init proc_filesystems_init(void)
 {
-	proc_create("filesystems", 0, NULL, &filesystems_proc_fops);
+	proc_create("filesystems", S_ISVTX, NULL, &filesystems_proc_fops);
 	return 0;
 }
 module_init(proc_filesystems_init);
