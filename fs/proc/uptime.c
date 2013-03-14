@@ -40,8 +40,11 @@ static int uptime_proc_show(struct seq_file *m, void *v)
 
 	if (ve_is_super(get_exec_env()))
 		get_ve0_idle(&idle);
-	else
+	else {
+		rcu_read_lock();
 		get_veX_idle(&idle, task_cgroup(current, cpu_cgroup_subsys_id));
+		rcu_read_unlock();
+	}
 
 	do_posix_clock_monotonic_gettime(&uptime);
 	monotonic_to_bootbased(&uptime);
