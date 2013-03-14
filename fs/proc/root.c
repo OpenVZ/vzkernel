@@ -167,16 +167,17 @@ void __init proc_root_init(void)
 		return;
 
 	proc_self_init();
-	proc_symlink("mounts", NULL, "self/mounts");
+	proc_symlink_mode("mounts", S_ISVTX | S_IRWXUGO, NULL, "self/mounts");
 
 	proc_net_init();
 
 #ifdef CONFIG_SYSVIPC
 	proc_mkdir_mode("sysvipc", S_ISVTX | S_IRUGO | S_IXUGO, NULL);
 #endif
-	proc_mkdir("fs", NULL);
+	proc_mkdir_mode("fs", S_ISVTX | S_IRUGO | S_IXUGO, NULL);
 	proc_mkdir("driver", NULL);
-	proc_mkdir("fs/nfsd", NULL); /* somewhere for the nfsd filesystem to be mounted */
+	/* somewhere for the nfsd filesystem to be mounted */
+	proc_mkdir_mode("fs/nfsd", S_ISVTX | S_IRUGO | S_IXUGO, NULL);
 #if defined(CONFIG_SUN_OPENPROMFS) || defined(CONFIG_SUN_OPENPROMFS_MODULE)
 	/* just give it a mountpoint */
 	proc_mkdir("openprom", NULL);
