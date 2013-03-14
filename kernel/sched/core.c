@@ -1840,9 +1840,6 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	success = 1; /* we're going to change ->state */
 	cpu = task_cpu(p);
 
-	if (p->in_iowait && p->sched_class->nr_iowait_dec)
-		p->sched_class->nr_iowait_dec(p);
-
 	if (p->on_rq && ttwu_remote(p, wake_flags))
 		goto stat;
 
@@ -1857,6 +1854,12 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	 * Pairs with the smp_wmb() in finish_lock_switch().
 	 */
 	smp_rmb();
+
+	if (p->in_iowait && p->sched_class->nr_iowait_dec) {
+		struct rq *rq = __task_rq_lock(p);
+		p->sched_class->nr_iowait_dec(p);
+		__task_rq_unlock(rq);
+	}
 
 	p->sched_contributes_to_load = !!task_contributes_to_load(p);
 	p->state = TASK_WAKING;
