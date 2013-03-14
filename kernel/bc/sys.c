@@ -72,6 +72,8 @@ out:
 	return error;
 }
 
+int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub);
+
 long do_setublimit(uid_t uid, unsigned long resource,
 		unsigned long *new_limits)
 {
@@ -107,9 +109,9 @@ long do_setublimit(uid_t uid, unsigned long resource,
 	init_beancounter_precharge(ub, resource);
 	spin_unlock_irqrestore(&ub->ub_lock, flags);
 
-	put_beancounter_longterm(ub);
+	error = mem_cgroup_apply_beancounter(ub->ub_cgroup, ub);
 
-	error = 0;
+	put_beancounter_longterm(ub);
 out:
 	return error;
 }
