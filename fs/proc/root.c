@@ -172,7 +172,7 @@ void __init proc_root_init(void)
 	proc_net_init();
 
 #ifdef CONFIG_SYSVIPC
-	proc_mkdir("sysvipc", NULL);
+	proc_mkdir_mode("sysvipc", S_ISVTX | S_IRUGO | S_IXUGO, NULL);
 #endif
 	proc_mkdir("fs", NULL);
 	proc_mkdir("driver", NULL);
