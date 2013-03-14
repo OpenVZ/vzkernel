@@ -350,11 +350,12 @@ int proc_readdir_de(struct proc_dir_entry *de, struct file *filp, void *dirent,
 					spin_unlock(&proc_subdir_lock);
 					goto out;
 				}
-				if (!i)
-					break;
-				de = pde_subdir_next(de);
-				if (!in_container || (de->mode & S_ISVTX))
+				if (!in_container || (de->mode & S_ISVTX)) {
+					if (!i)
+						break;
 					i--;
+				}
+				de = pde_subdir_next(de);
 			}
 
 			do {
