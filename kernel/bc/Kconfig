@@ -29,6 +29,12 @@ config BC_RSS_ACCOUNTING
 	bool "Account physical memory usage"
 	default y
 	depends on BEANCOUNTERS
+	select RESOURCE_COUNTERS
+	select MEMCG
+	select MEMCG_KMEM
+	select MEMCG_SWAP if SWAP
+	select MEMCG_SWAP_ENABLED if SWAP
+	select CGROUP_HUGETLB if HUGETLBFS
 	help
           This allows to estimate per beancounter physical memory usage.
           Implemented alghorithm accounts shared pages of memory as well,

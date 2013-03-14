@@ -919,7 +919,6 @@ config PAGE_COUNTER
 
 config RESOURCE_COUNTERS
 	bool "Resource counters"
-	depends on !BEANCOUNTERS
 	help
 	  This option enables controller independent resource accounting
 	  infrastructure that works with cgroups.
