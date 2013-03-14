@@ -431,13 +431,12 @@ out:
 	return ent;
 }
 
-struct proc_dir_entry *proc_symlink(const char *name,
+struct proc_dir_entry *proc_symlink_mode(const char *name, umode_t mode,
 		struct proc_dir_entry *parent, const char *dest)
 {
 	struct proc_dir_entry *ent;
 
-	ent = __proc_create(&parent, name,
-			  (S_IFLNK | S_IRUGO | S_IWUGO | S_IXUGO),1);
+	ent = __proc_create(&parent, name, S_IFLNK | mode, 1);
 
 	if (ent) {
 		ent->data = kmalloc((ent->size=strlen(dest))+1, GFP_KERNEL);
@@ -455,7 +454,7 @@ struct proc_dir_entry *proc_symlink(const char *name,
 	}
 	return ent;
 }
-EXPORT_SYMBOL(proc_symlink);
+EXPORT_SYMBOL(proc_symlink_mode);
 
 struct proc_dir_entry *proc_mkdir_data(const char *name, umode_t mode,
 		struct proc_dir_entry *parent, void *data)
