@@ -9861,6 +9861,7 @@ int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
 	unsigned long tg_nr_running = 0;
 	unsigned long tg_nr_iowait = 0;
 	unsigned long long tg_nr_switches = 0;
+	unsigned long tg_nr_forks = 0;
 
 	getboottime(&boottime);
 	jif = boottime.tv_sec + tg->start_time.tv_sec;
@@ -9884,6 +9885,7 @@ int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
 		tg_nr_running += tg->cfs_rq[i]->nr_running;
 		tg_nr_iowait += tg->cfs_rq[i]->nr_iowait;
 		tg_nr_switches += tg->cfs_rq[i]->nr_switches;
+		tg_nr_forks += tg->cfs_rq[i]->nr_forks;
 #endif
 #ifdef CONFIG_RT_GROUP_SCHED
 		tg_nr_running += tg->rt_rq[i]->rt_nr_running;
@@ -9932,7 +9934,7 @@ int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
 		"procs_blocked %lu\n",
 		tg_nr_switches,
 		(unsigned long)jif,
-		total_forks,
+		tg_nr_forks,
 		tg_nr_running,
 		tg_nr_iowait);
 
