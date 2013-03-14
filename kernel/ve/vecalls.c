@@ -487,6 +487,11 @@ static void init_ve_cred(struct ve_struct *ve, struct cred *new)
 {
 	const struct cred *cur;
 	kernel_cap_t bset;
+	struct uid_gid_extent extent = {
+		.first = 0,
+		.lower_first = 0,
+		.count = UINT_MAX,
+	};
 
 	bset = ve->ve_cap_bset;
 	cur = current_cred();
@@ -494,6 +499,11 @@ static void init_ve_cred(struct ve_struct *ve, struct cred *new)
 	new->cap_inheritable = cap_intersect(cur->cap_inheritable, bset);
 	new->cap_permitted = cap_intersect(cur->cap_permitted, bset);
 	new->cap_bset = cap_intersect(cur->cap_bset, bset);
+
+	new->user_ns->uid_map.nr_extents = 1;
+	new->user_ns->uid_map.extent[0] = extent;
+	new->user_ns->gid_map.nr_extents = 1;
+	new->user_ns->gid_map.extent[0] = extent;
 
 	ve->init_cred = new;
 	ve->user_ns = new->user_ns;
