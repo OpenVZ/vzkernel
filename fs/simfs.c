@@ -316,7 +316,15 @@ static struct dentry *sim_mount(struct file_system_type *type, int flags,
 	if (err)
 		return ERR_PTR(err);
 
-	root = mount_nodev(type, flags, &path, sim_fill_super);
+//	root = mount_nodev(type, flags, &path, sim_fill_super);
+//
+	/*
+	 * FIXME add virtual dentry for root.
+	 */
+	root = dget(path.dentry);
+	atomic_inc(&root->d_sb->s_active);
+	down_write(&root->d_sb->s_umount);
+
 	path_put(&path);
 	return root;
 }
