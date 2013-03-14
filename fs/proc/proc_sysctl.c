@@ -426,7 +426,7 @@ static struct inode *proc_sys_make_inode(struct super_block *sb,
 	ei->sysctl_entry = table;
 
 	inode->i_mtime = inode->i_atime = inode->i_ctime = CURRENT_TIME;
-	inode->i_mode = table->mode & S_IALLUGO;
+	inode->i_mode = table->mode & S_IRWXUGO;
 	if (!S_ISDIR(table->mode)) {
 		inode->i_mode |= S_IFREG;
 		inode->i_op = &proc_sys_inode_operations;
@@ -762,14 +762,22 @@ static int proc_sys_getattr(struct vfsmount *mnt, struct dentry *dentry, struct 
 {
 	struct inode *inode = dentry->d_inode;
 	struct ctl_table_header *head = grab_header(inode);
+	struct ctl_table_root *root = head->root;
 	struct ctl_table *table = PROC_I(inode)->sysctl_entry;
 
 	if (IS_ERR(head))
 		return PTR_ERR(head);
 
 	generic_fillattr(inode, stat);
-	if (table)
-		stat->mode = (stat->mode & S_IFMT) | (table->mode & S_IALLUGO);
+
+	if (table) {
+		umode_t mode = table->mode;
+
+		if (root->permissions)
+			mode = root->permissions(root, current->nsproxy, table);
+
+		stat->mode = (stat->mode & S_IFMT) | (mode & S_IRWXUGO);
+	}
 
 	sysctl_head_finish(head);
 	return 0;
