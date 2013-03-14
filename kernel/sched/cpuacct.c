@@ -647,6 +647,7 @@ int cpu_cgroup_proc_stat(struct cgroup_subsys_state *cpu_css,
 	struct kernel_cpustat *kcpustat;
 	unsigned long tg_nr_running = 0;
 	unsigned long tg_nr_iowait = 0;
+	unsigned long long tg_nr_switches = 0;
 
 	getboottime64(&boottime);
 
@@ -665,6 +666,7 @@ int cpu_cgroup_proc_stat(struct cgroup_subsys_state *cpu_css,
 #ifdef CONFIG_FAIR_GROUP_SCHED
 		tg_nr_running += tg->cfs_rq[i]->h_nr_running;
 		tg_nr_iowait  += tg->cfs_rq[i]->nr_iowait;
+		tg_nr_switches += tg->cfs_rq[i]->nr_switches;
 #endif
 #ifdef CONFIG_RT_GROUP_SCHED
 		tg_nr_running += tg->rt_rq[i]->rt_nr_running;
@@ -738,7 +740,7 @@ int cpu_cgroup_proc_stat(struct cgroup_subsys_state *cpu_css,
 		   "processes %lu\n"
 		   "procs_running %lu\n"
 		   "procs_blocked %lu\n",
-		   nr_context_switches(),
+		   tg_nr_switches,
 		   (unsigned long long)boot_sec,
 		   total_forks,
 		   tg_nr_running,
