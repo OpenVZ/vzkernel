@@ -1309,7 +1309,8 @@ static int do_umount(struct mount *mnt, int flags)
  */
 static inline bool may_mount(void)
 {
-	return ns_capable(current->nsproxy->mnt_ns->user_ns, CAP_SYS_ADMIN);
+	return ns_capable(current->nsproxy->mnt_ns->user_ns, CAP_SYS_ADMIN) ||
+		nsown_capable(CAP_VE_SYS_ADMIN);
 }
 
 /*
@@ -1864,7 +1865,7 @@ static int do_remount(struct path *path, int flags, int mnt_flags,
 	down_write(&sb->s_umount);
 	if (flags & MS_BIND)
 		err = change_mount_flags(path->mnt, flags);
-	else if (!capable(CAP_SYS_ADMIN))
+	else if (!capable(CAP_SYS_ADMIN) && !nsown_capable(CAP_VE_SYS_ADMIN))
 		err = -EPERM;
 	else
 		err = do_remount_sb(sb, flags, data, 0);
