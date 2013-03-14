@@ -3009,6 +3009,9 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 
 	clear_buddies(cfs_rq, se);
 
+	if (cfs_rq->prev == se)
+		cfs_rq->prev = NULL;
+
 	if (se != cfs_rq->curr)
 		__dequeue_entity(cfs_rq, se);
 	se->on_rq = 0;
@@ -3022,8 +3025,12 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	if (!(flags & DEQUEUE_SLEEP))
 		se->vruntime -= cfs_rq->min_vruntime;
 
-	/* return excess runtime on last dequeue */
-	return_cfs_rq_runtime(cfs_rq);
+	if (!cfs_rq->nr_running) {
+		/* return excess runtime on last dequeue */
+		return_cfs_rq_runtime(cfs_rq);
+		/* account switch to idle task */
+		cfs_rq->nr_switches++;
+	}
 
 	update_min_vruntime(cfs_rq);
 	update_cfs_shares(cfs_rq);
@@ -3086,6 +3093,8 @@ set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 
 	update_stats_curr_start(cfs_rq, se);
 	cfs_rq->curr = se;
+	if (cfs_rq->prev != se)
+		cfs_rq->nr_switches++;
 #ifdef CONFIG_SCHEDSTATS
 	/*
 	 * Track our maximum slice length, if the CPU's load is at
@@ -3167,6 +3176,7 @@ static void put_prev_entity(struct cfs_rq *cfs_rq, struct sched_entity *prev)
 		__enqueue_entity(cfs_rq, prev);
 		/* in !on_rq case, update occurred at dequeue */
 		update_entity_load_avg(prev, 1);
+		cfs_rq->prev = prev;
 	}
 	cfs_rq->curr = NULL;
 }
