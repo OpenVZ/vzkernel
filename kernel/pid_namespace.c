@@ -298,6 +298,8 @@ again:
 				kthreads++;
 				continue;
 			}
+			if (!task_pid_vnr(p))
+				continue;
 			if (p != current) {
 				/*
 				 * by that time no processes other then entered
