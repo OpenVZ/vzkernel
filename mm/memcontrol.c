@@ -5379,6 +5379,64 @@ static int mem_cgroup_move_charge_write(struct cgroup *cgrp,
 }
 #endif
 
+#include <bc/beancounter.h>
+
+void mem_cgroup_sync_beancounter(struct cgroup *cg, struct user_beancounter *ub)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_cont(cg);
+	struct ubparm *p, *s;
+
+	p = ub->ub_parms + UB_PHYSPAGES;
+	p->held	= res_counter_read_u64(&memcg->res, RES_USAGE) >> PAGE_SHIFT;
+	p->maxheld = res_counter_read_u64(&memcg->res, RES_MAX_USAGE) >> PAGE_SHIFT;
+	p->failcnt = res_counter_read_u64(&memcg->res, RES_FAILCNT);
+
+	s = ub->ub_parms + UB_SWAPPAGES;
+	s->held	= res_counter_read_u64(&memcg->memsw, RES_USAGE) >> PAGE_SHIFT;
+	s->maxheld = res_counter_read_u64(&memcg->memsw, RES_MAX_USAGE) >> PAGE_SHIFT;
+	s->failcnt = res_counter_read_u64(&memcg->memsw, RES_FAILCNT);
+
+	s->held -= p->held;
+	s->maxheld -= p->maxheld;
+}
+
+int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_cont(cg);
+	unsigned long long mem, memsw;
+	int ret = 0;
+
+	mem = ub->ub_parms[UB_PHYSPAGES].limit;
+	if (mem < RESOURCE_MAX >> PAGE_SHIFT)
+		mem <<= PAGE_SHIFT;
+	else
+		mem = RESOURCE_MAX;
+
+	if (res_counter_read_u64(&memcg->res, RES_LIMIT) != mem) {
+		ret = mem_cgroup_resize_limit(memcg, mem);
+		if (ret)
+			goto out;
+	}
+
+	memsw = ub->ub_parms[UB_SWAPPAGES].limit;
+	if (memsw < RESOURCE_MAX >> PAGE_SHIFT)
+		memsw <<= PAGE_SHIFT;
+	else
+		memsw = RESOURCE_MAX;
+	if (memsw < RESOURCE_MAX - mem)
+		memsw += mem;
+	else
+		mem = RESOURCE_MAX;
+
+	if (res_counter_read_u64(&memcg->memsw, RES_LIMIT) != memsw) {
+		mem_cgroup_resize_memsw_limit(memcg, memsw);
+		if (ret)
+			goto out;
+	}
+out:
+	return ret;
+}
+
 #ifdef CONFIG_NUMA
 static int memcg_numa_stat_show(struct cgroup *cont, struct cftype *cft,
 				      struct seq_file *m)
