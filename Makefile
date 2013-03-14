@@ -6,7 +6,11 @@ NAME = Unicycling Gorilla
 RHEL_MAJOR = 7
 RHEL_MINOR = 0
 RHEL_RELEASE = 123.1.2
-VZVERSION = 046test004
+VZVERSION = ovz.custom
+
+ifeq ($(VZVERSION), ovz.custom)
+  VZVERSION := $(shell if [ -d ".git" ]; then git describe | sed -r 's/^.*\.ovz\./ovz./'; fi)
+endif
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
