@@ -398,6 +398,7 @@ struct cfs_rq {
 	struct sched_entity *curr, *next, *last, *skip, *prev;
 
 	u64 nr_switches;
+	unsigned long nr_forks;
 
 #ifdef	CONFIG_SCHED_DEBUG
 	unsigned int nr_spread_over;
