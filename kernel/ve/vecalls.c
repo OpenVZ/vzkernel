@@ -198,39 +198,6 @@ static int real_setdevperms(envid_t veid, unsigned type,
  **********************************************************************
  **********************************************************************/
 
-#ifdef CONFIG_UNIX98_PTYS
-#include <linux/devpts_fs.h>
-
-/*
- * DEVPTS needs a virtualization: each environment should see each own list of
- * pseudo-terminals.
- * To implement it we need to have separate devpts superblocks for each
- * VE, and each VE should mount its own one.
- * Thus, separate vfsmount structures are required.
- * To minimize intrusion into vfsmount lookup code, separate file_system_type
- * structures are created.
- *
- * In addition to this, patch fo character device itself is required, as file
- * system itself is used only for MINOR/MAJOR lookup.
- */
-
-static int init_ve_devpts(struct ve_struct *ve)
-{
-	ve->devpts_mnt = kern_mount(&devpts_fs_type);
-	if (IS_ERR(ve->devpts_mnt))
-		return PTR_ERR(ve->devpts_mnt);
-	return 0;
-}
-
-static void fini_ve_devpts(struct ve_struct *ve)
-{
-	kern_umount(ve->devpts_mnt);
-}
-#else
-#define init_ve_devpts(ve)	(0)
-#define fini_ve_devpts(ve)	do { } while (0)
-#endif
-
 static void free_ve_filesystems(struct ve_struct *ve)
 {
 #if defined(CONFIG_FUSE_FS) || defined(CONFIG_FUSE_FS_MODULE)
@@ -777,9 +744,6 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	if ((err = init_ve_netns(ve, &old_ns_net)))
 		goto err_netns;
 
-	if ((err = init_ve_devpts(ve)))
-		goto err_devpts;
-
 	if((err = init_ve_meminfo(ve)))
 		goto err_meminf;
 
@@ -822,8 +786,6 @@ err_vpid:
 	fini_venet(ve);
 	fini_ve_meminfo(ve);
 err_meminf:
-	fini_ve_devpts(ve);
-err_devpts:
 	fini_ve_namespaces(ve, old_ns_net);
 	put_nsproxy(old_ns_net);
 	fini_ve_netns(ve);
@@ -1005,7 +967,9 @@ static void env_cleanup(struct ve_struct *ve)
 
 	fini_ve_sched(ve, 0);
 
-	fini_ve_devpts(ve);
+	if (ve->devpts_sb)
+		deactivate_super(ve->devpts_sb);
+
 	fini_ve_meminfo(ve);
 
 	fini_ve_namespaces(ve, NULL);
