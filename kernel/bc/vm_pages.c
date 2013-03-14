@@ -59,9 +59,13 @@ void ub_update_resources_locked(struct user_beancounter *ub)
 }
 EXPORT_SYMBOL(ub_update_resources_locked);
 
+void mem_cgroup_sync_beancounter(struct cgroup *cg, struct user_beancounter *ub);
+
 void ub_update_resources(struct user_beancounter *ub)
 {
 	unsigned long flags;
+
+	mem_cgroup_sync_beancounter(ub->ub_cgroup, ub);
 
 	spin_lock_irqsave(&ub->ub_lock, flags);
 	ub_update_resources_locked(ub);
