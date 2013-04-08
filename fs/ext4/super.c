@@ -5412,6 +5412,20 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
 	buf->f_fsid.val[0] = fsid & 0xFFFFFFFFUL;
 	buf->f_fsid.val[1] = (fsid >> 32) & 0xFFFFFFFFUL;
 
+	if (sbi->s_balloon_ino) {
+		struct ext4_inode_info *ei;
+		blkcnt_t balloon_blocks;
+
+		balloon_blocks = sbi->s_balloon_ino->i_blocks;
+		ei = EXT4_I(sbi->s_balloon_ino);
+		spin_lock(&ei->i_block_reservation_lock);
+		balloon_blocks += ei->i_reserved_data_blocks;
+		spin_unlock(&ei->i_block_reservation_lock);
+
+		BUG_ON(sbi->s_balloon_ino->i_blkbits < 9);
+		buf->f_blocks -= balloon_blocks >> (sbi->s_balloon_ino->i_blkbits - 9);
+	}
+
 	return 0;
 }
 
