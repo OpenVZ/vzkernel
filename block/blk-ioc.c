@@ -217,6 +217,7 @@ retry:
 
 	put_io_context(ioc);
 }
+EXPORT_SYMBOL(put_io_context_active);
 
 /* Called by the exiting task */
 void exit_io_context(struct task_struct *task)
