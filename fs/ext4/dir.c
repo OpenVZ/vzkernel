@@ -101,6 +101,14 @@ int __ext4_check_dir_entry(const char *function, unsigned int line,
 	return 1;
 }
 
+static inline int ext4_balloon(struct super_block *sb, unsigned ino)
+{
+	struct ext4_sb_info *sbi;
+
+	sbi = EXT4_SB(sb);
+	return sbi->s_balloon_ino && (sbi->s_balloon_ino->i_ino == ino);
+}
+
 static int ext4_readdir(struct file *filp,
 			 void *dirent, filldir_t filldir)
 {
@@ -234,7 +242,8 @@ revalidate:
 			}
 			offset += ext4_rec_len_from_disk(de->rec_len,
 					sb->s_blocksize);
-			if (le32_to_cpu(de->inode)) {
+			if (le32_to_cpu(de->inode) &&
+			    !ext4_balloon(sb, le32_to_cpu(de->inode))) {
 				/* We might block in the next section
 				 * if the data destination is
 				 * currently swapped out.  So, use a
@@ -511,6 +520,9 @@ static int call_filldir(struct file *filp, void *dirent,
 	}
 	curr_pos = hash2pos(filp, fname->hash, fname->minor_hash);
 	while (fname) {
+		if (ext4_balloon(sb, fname->inode))
+			goto skip;
+
 		error = filldir(dirent, fname->name,
 				fname->name_len, curr_pos,
 				fname->inode,
@@ -520,6 +532,7 @@ static int call_filldir(struct file *filp, void *dirent,
 			info->extra_fname = fname;
 			return error;
 		}
+skip:
 		fname = fname->next;
 	}
 	return 0;
