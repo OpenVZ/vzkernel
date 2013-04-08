@@ -607,6 +607,7 @@ enum {
 #define EXT4_IOC_MOVE_EXT		_IOWR('f', 15, struct move_extent)
 #define EXT4_IOC_RESIZE_FS		_IOW('f', 16, __u64)
 #define EXT4_IOC_SWAP_BOOT		_IO('f', 17)
+#define EXT4_IOC_OPEN_BALLOON		_IO('f', 42)
 
 #if defined(__KERNEL__) && defined(CONFIG_COMPAT)
 /*
