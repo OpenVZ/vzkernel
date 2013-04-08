@@ -1441,6 +1441,11 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, unsi
 					 ino);
 			return ERR_PTR(-EIO);
 		}
+		if (!IS_ERR(inode) &&
+		    inode == EXT4_SB(inode->i_sb)->s_balloon_ino) {
+			iput(inode);
+			return ERR_PTR(-EPERM);
+		}
 	}
 	return d_splice_alias(inode, dentry);
 }
@@ -2821,6 +2826,10 @@ static int ext4_unlink(struct inode *dir, struct dentry *dentry)
 
 	if (IS_DIRSYNC(dir))
 		ext4_handle_sync(handle);
+
+	retval = -EPERM;
+	if (inode == EXT4_SB(dir->i_sb)->s_balloon_ino)
+		goto end_unlink;
 
 	if (!inode->i_nlink) {
 		ext4_warning(inode->i_sb,
