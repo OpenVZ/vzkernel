@@ -503,6 +503,7 @@ struct fuse_fs_context {
 	bool group_id_present:1;
 	bool default_permissions:1;
 	bool allow_other:1;
+	bool writeback_cache:1;
 	bool destroy:1;
 	bool no_control:1;
 	bool no_force_umount:1;
