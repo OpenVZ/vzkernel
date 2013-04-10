@@ -449,7 +449,8 @@ enum {
 	OPT_ALLOW_OTHER,
 	OPT_MAX_READ,
 	OPT_BLKSIZE,
-	OPT_ERR
+	OPT_WBCACHE,
+	OPT_ERR,
 };
 
 static const match_table_t tokens = {
@@ -461,6 +462,7 @@ static const match_table_t tokens = {
 	{OPT_ALLOW_OTHER,		"allow_other"},
 	{OPT_MAX_READ,			"max_read=%u"},
 	{OPT_BLKSIZE,			"blksize=%u"},
+	{OPT_WBCACHE,			"writeback_enable"},
 	{OPT_ERR,			NULL}
 };
 
@@ -547,6 +549,10 @@ static int parse_fuse_opt(char *opt, struct fuse_fs_context *d, int is_bdev,
 			d->blksize = value;
 			break;
 
+		case OPT_WBCACHE:
+			d->writeback_cache = 1;
+			break;
+
 		default:
 			return 0;
 		}
@@ -577,6 +583,8 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 		seq_printf(m, ",max_read=%u", fc->max_read);
 	if (sb->s_bdev && sb->s_blocksize != FUSE_DEFAULT_BLKSIZE)
 		seq_printf(m, ",blksize=%lu", sb->s_blocksize);
+	if (fc->writeback_cache)
+		seq_puts(m, ",writeback_enable");
 	return 0;
 }
 
@@ -1183,6 +1191,7 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *d)
 	fc->user_id = d->user_id;
 	fc->group_id = d->group_id;
 	fc->max_read = max_t(unsigned, 4096, d->max_read);
+	fc->writeback_cache = d->writeback_cache;
 	fc->destroy = d->destroy;
 	fc->no_control = d->no_control;
 	fc->no_force_umount = d->no_force_umount;
