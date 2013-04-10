@@ -601,7 +601,8 @@ enum {
 	OPT_ALLOW_OTHER,
 	OPT_MAX_READ,
 	OPT_BLKSIZE,
-	OPT_ERR
+	OPT_WBCACHE,
+	OPT_ERR,
 };
 
 static const struct fs_parameter_spec fuse_fs_parameters[] = {
@@ -614,6 +615,7 @@ static const struct fs_parameter_spec fuse_fs_parameters[] = {
 	fsparam_flag	("allow_other",		OPT_ALLOW_OTHER),
 	fsparam_u32	("max_read",		OPT_MAX_READ),
 	fsparam_u32	("blksize",		OPT_BLKSIZE),
+	fsparam_flag	("writeback_enable",	OPT_WBCACHE),
 	fsparam_string	("subtype",		OPT_SUBTYPE),
 	{}
 };
@@ -698,6 +700,10 @@ static int fuse_parse_param(struct fs_context *fsc, struct fs_parameter *param)
 		ctx->blksize = result.uint_32;
 		break;
 
+	case OPT_WBCACHE:
+		ctx->writeback_cache = 1;
+		break;
+
 	default:
 		return -EINVAL;
 	}
@@ -733,6 +739,8 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 			seq_printf(m, ",max_read=%u", fc->max_read);
 		if (sb->s_bdev && sb->s_blocksize != FUSE_DEFAULT_BLKSIZE)
 			seq_printf(m, ",blksize=%lu", sb->s_blocksize);
+		if (fc->writeback_cache)
+			seq_puts(m, ",writeback_enable");
 	}
 #ifdef CONFIG_FUSE_DAX
 	if (fc->dax)
@@ -1523,6 +1531,7 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *ctx)
 	fc->group_id = ctx->group_id;
 	fc->legacy_opts_show = ctx->legacy_opts_show;
 	fc->max_read = max_t(unsigned int, 4096, ctx->max_read);
+	fc->writeback_cache = ctx->writeback_cache;
 	fc->destroy = ctx->destroy;
 	fc->no_control = ctx->no_control;
 	fc->no_force_umount = ctx->no_force_umount;
