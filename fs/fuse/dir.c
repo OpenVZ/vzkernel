@@ -901,8 +901,11 @@ static void fuse_fillattr(struct inode *inode, struct fuse_attr *attr,
 	struct fuse_conn *fc = get_fuse_conn(inode);
 
 	/* see the comment in fuse_change_attributes() */
-	if (fc->writeback_cache && S_ISREG(inode->i_mode))
+	if (fc->writeback_cache && S_ISREG(inode->i_mode)) {
 		attr->size = i_size_read(inode);
+		attr->mtime = inode->i_mtime.tv_sec;
+		attr->mtimensec = inode->i_mtime.tv_nsec;
+	}
 
 	stat->dev = inode->i_sb->s_dev;
 	stat->ino = attr->ino;
@@ -1629,6 +1632,89 @@ void fuse_release_nowrite(struct inode *inode)
 	spin_unlock(&fc->lock);
 }
 
+static void fuse_setattr_fill(struct fuse_conn *fc, struct fuse_req *req,
+			      struct inode *inode,
+			      struct fuse_setattr_in *inarg_p,
+			      struct fuse_attr_out *outarg_p)
+{
+	req->in.h.opcode = FUSE_SETATTR;
+	req->in.h.nodeid = get_node_id(inode);
+	req->in.numargs = 1;
+	req->in.args[0].size = sizeof(*inarg_p);
+	req->in.args[0].value = inarg_p;
+	req->out.numargs = 1;
+	if (fc->minor < 9)
+		req->out.args[0].size = FUSE_COMPAT_ATTR_OUT_SIZE;
+	else
+		req->out.args[0].size = sizeof(*outarg_p);
+	req->out.args[0].value = outarg_p;
+}
+
+/*
+ * Flush inode->i_mtime to the server
+ */
+int fuse_flush_mtime(struct file *file, bool nofail)
+{
+	struct inode *inode = file->f_mapping->host;
+	struct fuse_inode *fi = get_fuse_inode(inode);
+	struct fuse_conn *fc = get_fuse_conn(inode);
+	struct fuse_req *req = NULL;
+	struct fuse_setattr_in inarg;
+	struct fuse_attr_out outarg;
+	int err;
+
+	if (nofail) {
+		req = fuse_get_req_nofail_nopages(fc, file);
+	} else {
+		req = fuse_get_req_nopages(fc);
+		if (IS_ERR(req))
+			return PTR_ERR(req);
+	}
+
+	memset(&inarg, 0, sizeof(inarg));
+	memset(&outarg, 0, sizeof(outarg));
+
+	inarg.valid |= FATTR_MTIME;
+	inarg.mtime = inode->i_mtime.tv_sec;
+	inarg.mtimensec = inode->i_mtime.tv_nsec;
+
+	fuse_setattr_fill(fc, req, inode, &inarg, &outarg);
+	fuse_request_send(fc, req);
+	err = req->out.h.error;
+	fuse_put_request(fc, req);
+
+	if (!err)
+		clear_bit(FUSE_I_MTIME_UPDATED, &fi->state);
+
+	return err;
+}
+
+static inline void set_mtime_helper(struct inode *inode, struct timespec mtime)
+{
+	struct fuse_inode *fi = get_fuse_inode(inode);
+
+	inode->i_mtime = mtime;
+	clear_bit(FUSE_I_MTIME_UPDATED, &fi->state);
+}
+
+/*
+ * S_NOCMTIME is clear, so we need to update inode->i_mtime manually. But
+ * we can also clear FUSE_I_MTIME_UPDATED if FUSE_SETATTR has just changed
+ * mtime on server.
+ */
+static void fuse_set_mtime_local(struct iattr *iattr, struct inode *inode)
+{
+	unsigned ivalid = iattr->ia_valid;
+
+	if ((ivalid & ATTR_MTIME) && update_mtime(ivalid)) {
+		if (ivalid & ATTR_MTIME_SET)
+			set_mtime_helper(inode, iattr->ia_mtime);
+		else
+			set_mtime_helper(inode, current_fs_time(inode->i_sb));
+	} else if (ivalid & ATTR_SIZE)
+		set_mtime_helper(inode, current_fs_time(inode->i_sb));
+}
+
 /*
  * Set attributes, and at the same time refresh them.
  *
@@ -1688,17 +1774,7 @@ int fuse_do_setattr(struct inode *inode, struct iattr *attr,
 		inarg.valid |= FATTR_LOCKOWNER;
 		inarg.lock_owner = fuse_lock_owner_id(fc, current->files);
 	}
-	req->in.h.opcode = FUSE_SETATTR;
-	req->in.h.nodeid = get_node_id(inode);
-	req->in.numargs = 1;
-	req->in.args[0].size = sizeof(inarg);
-	req->in.args[0].value = &inarg;
-	req->out.numargs = 1;
-	if (fc->minor < 9)
-		req->out.args[0].size = FUSE_COMPAT_ATTR_OUT_SIZE;
-	else
-		req->out.args[0].size = sizeof(outarg);
-	req->out.args[0].value = &outarg;
+	fuse_setattr_fill(fc, req, inode, &inarg, &outarg);
 	fuse_request_send(fc, req);
 	err = req->out.h.error;
 	fuse_put_request(fc, req);
@@ -1715,6 +1791,10 @@ int fuse_do_setattr(struct inode *inode, struct iattr *attr,
 	}
 
 	spin_lock(&fc->lock);
+	/* the kernel maintains i_mtime locally */
+	if (fc->writeback_cache && S_ISREG(inode->i_mode))
+		fuse_set_mtime_local(attr, inode);
+
 	fuse_change_attributes_common(inode, &outarg.attr,
 				      attr_timeout(&outarg));
 	oldsize = inode->i_size;
@@ -1945,6 +2025,17 @@ static int fuse_removexattr(struct dentry *entry, const char *name)
 	return err;
 }
 
+static int fuse_update_time(struct inode *inode, struct timespec *now,
+			    int flags)
+{
+	if (flags & S_MTIME) {
+		inode->i_mtime = *now;
+		set_bit(FUSE_I_MTIME_UPDATED, &get_fuse_inode(inode)->state);
+		BUG_ON(!S_ISREG(inode->i_mode));
+	}
+	return 0;
+}
+
 static const struct inode_operations_wrapper fuse_dir_inode_operations = {
 	.ops = {
 	.lookup		= fuse_lookup,
@@ -1987,6 +2078,7 @@ static const struct inode_operations fuse_common_inode_operations = {
 	.getxattr	= fuse_getxattr,
 	.listxattr	= fuse_listxattr,
 	.removexattr	= fuse_removexattr,
+	.update_time	= fuse_update_time,
 };
 
 static const struct inode_operations fuse_symlink_inode_operations = {
