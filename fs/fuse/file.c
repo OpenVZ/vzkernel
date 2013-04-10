@@ -291,6 +291,10 @@ static int fuse_open(struct inode *inode, struct file *file)
 
 static int fuse_release(struct inode *inode, struct file *file)
 {
+	if (test_bit(FUSE_I_MTIME_UPDATED,
+		     &get_fuse_inode(inode)->state))
+		fuse_flush_mtime(file, true);
+
 	fuse_release_common(file, FUSE_RELEASE);
 
 	/* return value is ignored by VFS */
@@ -457,6 +461,13 @@ int fuse_fsync_common(struct file *file, loff_t start, loff_t end,
 		goto out;
 
 	fuse_sync_writes(inode);
+
+	if (test_bit(FUSE_I_MTIME_UPDATED,
+		     &get_fuse_inode(inode)->state)) {
+		int err = fuse_flush_mtime(file, false);
+		if (err)
+			goto out;
+	}
 
 	req = fuse_get_req_nopages(fc);
 	if (IS_ERR(req)) {
@@ -949,16 +960,21 @@ static size_t fuse_send_write(struct fuse_req *req, struct fuse_io_priv *io,
 	return req->misc.write.out.size;
 }
 
-void fuse_write_update_size(struct inode *inode, loff_t pos)
+bool fuse_write_update_size(struct inode *inode, loff_t pos)
 {
 	struct fuse_conn *fc = get_fuse_conn(inode);
 	struct fuse_inode *fi = get_fuse_inode(inode);
+	bool ret = false;
 
 	spin_lock(&fc->lock);
 	fi->attr_version = ++fc->attr_version;
-	if (pos > inode->i_size)
+	if (pos > inode->i_size) {
 		i_size_write(inode, pos);
+		ret = true;
+	}
 	spin_unlock(&fc->lock);
+
+	return ret;
 }
 
 static size_t fuse_send_write_pages(struct fuse_req *req, struct file *file,
@@ -1430,6 +1446,11 @@ static ssize_t __fuse_direct_write(struct fuse_io_priv *io,
 	res = generic_write_checks(file, ppos, &count, 0);
 	if (!res)
 		res = fuse_direct_io(io, iov, nr_segs, count, ppos, 1);
+		if (res > 0) {
+			struct fuse_inode *fi = get_fuse_inode(inode);
+			fuse_write_update_size(inode, *ppos);
+			clear_bit(FUSE_I_MTIME_UPDATED, &fi->state);
+		}
 
 	fuse_invalidate_attr(inode);
 
