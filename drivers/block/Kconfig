@@ -281,6 +281,21 @@ config BLK_DEV_CRYPTOLOOP
 	  instead, which can be configured to be on-disk compatible with the
 	  cryptoloop device.
 
+config BLK_DEV_PLOOP
+	tristate "Parallels loopback device support"
+	---help---
+	  Saying Y here will allow you to use a regular file as a block
+	  device; you can then create a file system on that block device and
+	  mount it just as you would mount other block devices such as hard
+	  drive partitions, CD-ROM drives or floppy drives. The loop devices
+	  are block special device files with major number 182 and typically
+	  called /dev/ploop0, /dev/ploop1 etc.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called loop.
+
+	  Most users will answer N here.
+
 source "drivers/block/drbd/Kconfig"
 
 config BLK_DEV_NBD
