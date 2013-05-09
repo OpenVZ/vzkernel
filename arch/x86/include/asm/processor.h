@@ -1126,4 +1126,5 @@ enum taa_mitigations {
 extern void (*set_cpuid_faulting_cb)(bool enable);
 extern void set_cpuid_faulting(bool enable);
 
+void df_debug(struct pt_regs *regs, long error_code);
 #endif /* _ASM_X86_PROCESSOR_H */
