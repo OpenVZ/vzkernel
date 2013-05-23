@@ -746,7 +746,6 @@ int __init fairsched_init(void)
 		.name		= "fairsched",
 		.subsys_bits	=
 			(1ul << cpu_cgroup_subsys_id) |
-			(1ul << cpuacct_subsys_id) |
 			(1ul << cpuset_subsys_id),
 	};
 
