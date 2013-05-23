@@ -818,7 +818,6 @@ config NUMA_BALANCING
 config VZ_FAIRSCHED
 	bool "OpenVZ fairsched compat"
 	select CPUSETS
-	select CGROUP_CPUACCT
 	select CGROUP_SCHED
 	select FAIR_GROUP_SCHED
 	select CFS_BANDWIDTH
