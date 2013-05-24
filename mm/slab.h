@@ -88,7 +88,8 @@ __kmem_cache_alias(struct mem_cgroup *memcg, const char *name, size_t size,
 #define SLAB_CACHE_FLAGS (0)
 #endif
 
-#define CACHE_CREATE_MASK (SLAB_CORE_FLAGS | SLAB_DEBUG_FLAGS | SLAB_CACHE_FLAGS)
+#define CACHE_CREATE_MASK (SLAB_CORE_FLAGS | SLAB_DEBUG_FLAGS | \
+			   SLAB_CACHE_FLAGS | SLAB_UBC)
 
 int __kmem_cache_shutdown(struct kmem_cache *);
 
