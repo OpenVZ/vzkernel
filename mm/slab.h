@@ -67,7 +67,7 @@ __kmem_cache_alias(struct mem_cgroup *memcg, const char *name, size_t size,
 
 /* Legal flag mask for kmem_cache_create(), for various configurations */
 #define SLAB_CORE_FLAGS (SLAB_HWCACHE_ALIGN | SLAB_CACHE_DMA | SLAB_PANIC | \
-			 SLAB_DESTROY_BY_RCU | SLAB_DEBUG_OBJECTS )
+			 SLAB_DESTROY_BY_RCU | SLAB_DEBUG_OBJECTS | SLAB_UBC)
 
 #if defined(CONFIG_DEBUG_SLAB)
 #define SLAB_DEBUG_FLAGS (SLAB_RED_ZONE | SLAB_POISON | SLAB_STORE_USER)
@@ -88,8 +88,7 @@ __kmem_cache_alias(struct mem_cgroup *memcg, const char *name, size_t size,
 #define SLAB_CACHE_FLAGS (0)
 #endif
 
-#define CACHE_CREATE_MASK (SLAB_CORE_FLAGS | SLAB_DEBUG_FLAGS | \
-			   SLAB_CACHE_FLAGS | SLAB_UBC)
+#define CACHE_CREATE_MASK (SLAB_CORE_FLAGS | SLAB_DEBUG_FLAGS | SLAB_CACHE_FLAGS)
 
 int __kmem_cache_shutdown(struct kmem_cache *);
 
