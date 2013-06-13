@@ -605,26 +605,6 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 	if (ret)
 		return ret;
 
-#ifdef CONFIG_VE
-	if (!ve_is_super(get_exec_env()))
-		switch (cmd) {
-		case LINUX_REBOOT_CMD_RESTART:
-		case LINUX_REBOOT_CMD_RESTART2:
-			set_bit(VE_REBOOT, &get_exec_env()->flags);
-
-		case LINUX_REBOOT_CMD_HALT:
-		case LINUX_REBOOT_CMD_POWER_OFF:
-			force_sig(SIGKILL, get_exec_env_init());
-
-		case LINUX_REBOOT_CMD_CAD_ON:
-		case LINUX_REBOOT_CMD_CAD_OFF:
-			return 0;
-
-		default:
-			return -EINVAL;
-		}
-#endif
-
 	/* Instead of trying to make the power_off code look like
 	 * halt when pm_power_off is not set do it the easy way.
 	 */
