@@ -173,13 +173,10 @@ EXPORT_SYMBOL_GPL(__inet_twsk_hashdance);
 
 struct inet_timewait_sock *inet_twsk_alloc(const struct sock *sk, const int state)
 {
-	struct user_beancounter *ub;
 	struct inet_timewait_sock *tw;
 
-	ub = set_exec_ub(sock_bc(sk)->ub);
 	tw = kmem_cache_alloc(sk->sk_prot_creator->twsk_prot->twsk_slab,
 			GFP_ATOMIC);
-	(void)set_exec_ub(ub);
 
 	if (tw != NULL) {
 		const struct inet_sock *inet = inet_sk(sk);

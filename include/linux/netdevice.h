@@ -287,12 +287,6 @@ enum netdev_state_t {
 	__LINK_STATE_DORMANT,
 };
 
-struct netdev_bc {
-	struct user_beancounter *exec_ub, *owner_ub;
-};
-
-#define netdev_bc(dev)		(&(dev)->dev_bc)
-
 /*
  * This structure holds at boot time configured netdevice settings. They
  * are then used in the device probing.
@@ -1422,8 +1416,6 @@ struct net_device {
 	/* MRP */
 	struct mrp_port __rcu	*mrp_port;
 
-	struct netdev_bc	dev_bc;
-
 	/* class/net/name entry */
 	struct device		dev;
 	/* space for optional device, statistics, and wireless sysfs groups */
@@ -2426,8 +2418,6 @@ extern int		__dev_change_flags(struct net_device *, unsigned int flags);
 extern int		dev_change_flags(struct net_device *, unsigned int);
 extern void		__dev_notify_flags(struct net_device *, unsigned int old_flags);
 extern int		dev_change_name(struct net_device *, const char *);
-int __dev_change_net_namespace(struct net_device *, struct net *, const char *,
-			struct user_beancounter *exec_ub);
 extern int		dev_set_alias(struct net_device *, const char *, size_t);
 extern int		dev_change_net_namespace(struct net_device *,
 						 struct net *, const char *);
