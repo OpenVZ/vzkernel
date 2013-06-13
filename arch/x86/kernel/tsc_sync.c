@@ -138,10 +138,6 @@ void check_tsc_sync_source(int cpu)
 		return;
 	}
 
-#ifdef CONFIG_VE
-	/* TSC reset. kill whatever might rely on old values */
-	VE_TASK_INFO(current)->wakeup_stamp = 0;
-#endif
 	/*
 	 * Reset it - in case this is a second bootup:
 	 */
