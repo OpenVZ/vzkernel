@@ -145,7 +145,6 @@ struct ve_struct {
 	int			is_running;
 	int			is_locked;
 	atomic_t		suspend;
-	unsigned long		flags;
 	/* see vzcalluser.h for VE_FEATURE_XXX definitions */
 	__u64			features;
 
@@ -240,10 +239,6 @@ struct ve_struct {
 
 #define VE_MEMINFO_DEFAULT      1       /* default behaviour */
 #define VE_MEMINFO_SYSTEM       0       /* disable meminfo virtualization */
-
-enum {
-	VE_REBOOT,
-};
 
 extern int nr_ve;
 extern struct proc_dir_entry *proc_vz_dir;
