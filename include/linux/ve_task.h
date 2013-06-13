@@ -18,7 +18,6 @@ struct ve_task_info {
 /* virtualization */
 	struct ve_struct *owner_env;
 	struct ve_struct *exec_env;
-	struct ve_struct *saved_env;
 /* statistics: scheduling latency */
 	u64 sleep_time;
 	u64 sched_time;
@@ -33,16 +32,6 @@ struct ve_task_info {
 extern struct ve_struct ve0;
 #define get_ve0()	(&ve0)
 
-#define ve_save_context(t)	do {				\
-		t->ve_task_info.saved_env = 			\
-				t->ve_task_info.exec_env;	\
-		t->ve_task_info.exec_env = get_ve0();		\
-	} while (0)
-#define ve_restore_context(t)	do {				\
-		t->ve_task_info.exec_env = 			\
-				t->ve_task_info.saved_env;	\
-	} while (0)
-
 #define get_exec_env()	(current->ve_task_info.exec_env)
 #define set_exec_env(ve)	({		\
 		struct ve_struct *__old;	\
@@ -56,8 +45,6 @@ extern struct ve_struct ve0;
 #define get_ve0()		(NULL)
 #define get_exec_env()		(NULL)
 #define set_exec_env(new_env)	(NULL)
-#define ve_save_context(t)	do { } while (0)
-#define ve_restore_context(t)	do { } while (0)
 #define get_env_init(ve)	(&init_task)
 #define task_veid(t)		(0)
 #endif
