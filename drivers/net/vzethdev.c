@@ -80,7 +80,6 @@ static int veth_entry_add(struct ve_struct *ve, char *dev_addr, char *name,
 {
 	struct net_device *dev_ve;
 	struct net_device *dev_ve0;
-	struct ve_struct *old_env;
 	char dev_name[IFNAMSIZ];
 	int err;
 
@@ -163,7 +162,7 @@ static int veth_entry_del(struct ve_struct *ve, char *name)
 	found = hwaddr_entry_lookup(name);
 	if (found == NULL)
 		goto out;
-	if (veth_to_netdev(found)->owner_env != ve)
+	if (dev_net(veth_to_netdev(found))->owner_ve != ve)
 		goto out;
 
 	err = 0;
@@ -193,7 +192,7 @@ static int veth_allow_change_mac(envid_t veid, char *name, int allow)
 	found = hwaddr_entry_lookup(name);
 	if (found == NULL)
 		goto out_sem;
-	if (veth_to_netdev(found)->owner_env != ve)
+	if (dev_net(veth_to_netdev(found))->owner_ve != ve)
 		goto out_sem;
 
 	err = 0;
