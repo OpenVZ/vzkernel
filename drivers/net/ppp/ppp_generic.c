@@ -384,7 +384,7 @@ static int ppp_open(struct inode *inode, struct file *file)
 	 */
 	if (!capable(CAP_VE_NET_ADMIN))
 		return -EPERM;
-	if (!net_generic(get_exec_env()->ve_netns, ppp_net_id)) /* no VE_FEATURE_PPP */
+	if (!net_generic(current->nsproxy->net_ns, ppp_net_id)) /* no VE_FEATURE_PPP */
 		return -EACCES;
 	return 0;
 }
@@ -884,7 +884,7 @@ static __net_init int ppp_init_net(struct net *net)
 {
 	struct ppp_net *pn = net_generic(net, ppp_net_id);
 
-	if (!(get_exec_env()->features & VE_FEATURE_PPP))
+	if (!(net->owner_ve->features & VE_FEATURE_PPP))
 		return net_assign_generic(net, ppp_net_id, NULL);
 
 	idr_init(&pn->units_idr);
