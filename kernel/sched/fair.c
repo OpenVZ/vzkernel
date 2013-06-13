@@ -757,6 +757,25 @@ static void update_stats_enqueue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 		update_stats_wait_start(cfs_rq, se);
 }
 
+static inline void update_sched_lat(struct task_struct *t, u64 now)
+{
+#ifdef CONFIG_VE
+	int cpu;
+	u64 ve_wstamp;
+
+	/* safe due to runqueue lock */
+	cpu = smp_processor_id();
+	ve_wstamp = t->se.statistics.wait_start;
+
+	if (ve_wstamp && now > ve_wstamp) {
+		KSTAT_LAT_PCPU_ADD(&kstat_glob.sched_lat,
+				cpu, now - ve_wstamp);
+		KSTAT_LAT_PCPU_ADD(&t->ve_task_info.exec_env->sched_lat_ve,
+				cpu, now - ve_wstamp);
+	}
+#endif
+}
+
 static void
 update_stats_wait_end(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
@@ -767,8 +786,11 @@ update_stats_wait_end(struct cfs_rq *cfs_rq, struct sched_entity *se)
 			rq_clock(rq_of(cfs_rq)) - se->statistics.wait_start);
 #ifdef CONFIG_SCHEDSTATS
 	if (entity_is_task(se)) {
-		trace_sched_stat_wait(task_of(se),
-			rq_clock(rq_of(cfs_rq)) - se->statistics.wait_start);
+		u64 now = rq_clock(rq_of(cfs_rq));
+		struct task_struct *p = task_of(se);
+
+		trace_sched_stat_wait(p, now - se->statistics.wait_start);
+		update_sched_lat(p, now);
 	}
 #endif
 	schedstat_set(se->statistics.wait_start, 0);
