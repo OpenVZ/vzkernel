@@ -61,7 +61,7 @@ struct veip_pool_ops {
 	int (*veip_create)(struct ve_struct *);
 	void (*veip_release)(struct ve_struct *);
 	void (*veip_free)(struct veip_struct *);
-	struct ve_struct *(*veip_lookup)(struct sk_buff *);
+	struct ve_struct *(*veip_lookup)(struct ve_struct *, struct sk_buff *);
 };
 
 extern struct veip_pool_ops *veip_pool_ops;
