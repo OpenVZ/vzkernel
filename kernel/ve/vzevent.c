@@ -4,8 +4,10 @@
 #include <net/sock.h>
 #include <linux/netlink.h>
 #include <linux/errno.h>
+#include <linux/ve.h>
 #include <linux/ve_proto.h>
 #include <linux/vzevent.h>
+#include <linux/pid_namespace.h>
 
 #define NETLINK_UEVENT	31
 #define VZ_EVGRP_ALL	0x01
@@ -97,14 +99,12 @@ static int ve_start(void *data)
 
 static void ve_stop(void *data)
 {
-	struct ve_struct *ve;
+	struct ve_struct *ve = data;
 	int event = VE_EVENT_STOP;
 
-	if (test_and_clear_bit(VE_REBOOT, &get_exec_env()->flags) &&
-		reboot_event)
+	if (ve->ve_ns->pid_ns->reboot == SIGHUP && reboot_event)
 		event = VE_EVENT_REBOOT;
 
-	ve = (struct ve_struct *)data;
 	vzevent_send(event, "%d", ve->veid);
 }
 
