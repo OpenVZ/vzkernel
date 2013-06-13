@@ -202,7 +202,6 @@ struct ve_struct {
 	struct file_system_type	*fuse_fs_type;
 	struct file_system_type	*fuse_ctl_fs_type;
 #endif
-	unsigned long		jiffies_fixup;
 	unsigned char		disable_net;
 	struct ve_monitor	*monitor;
 	struct proc_dir_entry	*monitor_proc;
