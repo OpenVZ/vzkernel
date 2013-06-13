@@ -5343,17 +5343,24 @@ static int mem_cgroup_move_charge_write(struct cgroup *cgrp,
 }
 #endif
 
+#ifdef CONFIG_BEANCOUNTERS
+
 #include <bc/beancounter.h>
 
 void mem_cgroup_sync_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cg);
-	struct ubparm *p, *s;
+	struct ubparm *p, *s, *k;
 
 	p = ub->ub_parms + UB_PHYSPAGES;
 	p->held	= res_counter_read_u64(&memcg->res, RES_USAGE) >> PAGE_SHIFT;
 	p->maxheld = res_counter_read_u64(&memcg->res, RES_MAX_USAGE) >> PAGE_SHIFT;
 	p->failcnt = res_counter_read_u64(&memcg->res, RES_FAILCNT);
+
+	k = ub->ub_parms + UB_KMEMSIZE;
+	k->held = res_counter_read_u64(&memcg->kmem, RES_USAGE);
+	k->maxheld = res_counter_read_u64(&memcg->kmem, RES_MAX_USAGE);
+	k->failcnt = res_counter_read_u64(&memcg->kmem, RES_FAILCNT);
 
 	s = ub->ub_parms + UB_SWAPPAGES;
 	s->held	= res_counter_read_u64(&memcg->memsw, RES_USAGE) >> PAGE_SHIFT;
@@ -5367,7 +5374,7 @@ void mem_cgroup_sync_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cg);
-	unsigned long long mem, memsw;
+	unsigned long long mem, memsw, kmem;
 	int ret = 0;
 
 	mem = ub->ub_parms[UB_PHYSPAGES].limit;
@@ -5378,6 +5385,16 @@ int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 
 	if (res_counter_read_u64(&memcg->res, RES_LIMIT) != mem) {
 		ret = mem_cgroup_resize_limit(memcg, mem);
+		if (ret)
+			goto out;
+	}
+
+	kmem = ub->ub_parms[UB_KMEMSIZE].limit;
+	if (kmem >= RESOURCE_MAX)
+		kmem = RESOURCE_MAX - 1; /* not 'unlimited' */
+
+	if (res_counter_read_u64(&memcg->kmem, RES_LIMIT) != kmem) {
+		ret = memcg_update_kmem_limit(cg, kmem);
 		if (ret)
 			goto out;
 	}
@@ -5400,6 +5417,8 @@ int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 out:
 	return ret;
 }
+
+#endif /* CONFIG_BEANCOUNTERS */
 
 #ifdef CONFIG_NUMA
 static int memcg_numa_stat_show(struct cgroup *cont, struct cftype *cft,
