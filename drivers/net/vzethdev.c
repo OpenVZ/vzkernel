@@ -93,7 +93,6 @@ static int veth_entry_add(struct ve_struct *ve, char *dev_addr, char *name,
 		goto err;
 	}
 
-	old_env = set_exec_env(ve);
 	if (name_ve[0] == '\0')
 		sprintf(dev_name, "eth%%d");
 	else {
@@ -105,7 +104,6 @@ static int veth_entry_add(struct ve_struct *ve, char *dev_addr, char *name,
 		err = PTR_ERR(dev_ve);
 		goto err_ve;
 	}
-	set_exec_env(old_env);
 	veth_from_netdev(dev_ve)->pair = dev_ve0;
 	veth_from_netdev(dev_ve)->me = dev_ve;
 	veth_from_netdev(dev_ve0)->pair = dev_ve;
@@ -119,17 +117,15 @@ static int veth_entry_add(struct ve_struct *ve, char *dev_addr, char *name,
 	return 0;
 
 err_ve:
-	set_exec_env(old_env);
 	unregister_netdev(dev_ve0);
 err:
 	up(&hwaddr_sem);
 	return err;
 }
 
-static void veth_pair_del(struct ve_struct *env, struct veth_struct *entry)
+static void veth_pair_del(struct veth_struct *entry)
 {
 	struct net_device *dev;
-	struct ve_struct *old_env;
 
 	write_lock(&ve_hwaddr_lock);
 	list_del(&entry->hwaddr_list);
@@ -141,18 +137,14 @@ static void veth_pair_del(struct ve_struct *env, struct veth_struct *entry)
 	veth_from_netdev(dev)->pair = NULL;
 	entry->pair = NULL;
 	rtnl_lock();
-	old_env = set_exec_env(dev->owner_env);
 	dev_close(dev);
 
 	/*
 	 * Now device from VE0 does not send or receive anything,
 	 * i.e. dev->hard_start_xmit won't be called.
 	 */
-	set_exec_env(env);
 	unregister_netdevice(veth_to_netdev(entry));
-	set_exec_env(dev->owner_env);
 	unregister_netdevice(dev);
-	set_exec_env(old_env);
 	rtnl_unlock();
 }
 
@@ -170,7 +162,7 @@ static int veth_entry_del(struct ve_struct *ve, char *name)
 		goto out;
 
 	err = 0;
-	veth_pair_del(ve, found);
+	veth_pair_del(found);
 
 out:
 	up(&hwaddr_sem);
@@ -260,6 +252,7 @@ static int veth_xmit(struct sk_buff *skb, struct net_device *dev)
 	struct net_device_stats *stats;
 	struct net_device *rcv = NULL;
 	struct veth_struct *entry;
+	struct ve_struct *ve = dev_net(dev)->owner_ve;
 	int length;
 
 	stats = veth_stats(dev, smp_processor_id());
@@ -277,13 +270,13 @@ static int veth_xmit(struct sk_buff *skb, struct net_device *dev)
 		goto outf;
 	}
 
-	if (unlikely(rcv->owner_env->disable_net))
+	if (unlikely(ve->disable_net))
 		goto outf;
 	/* Filtering */
-	if (ve_is_super(dev->owner_env) &&
+	if (ve_is_super(ve) &&
 			!veth_from_netdev(rcv)->allow_mac_change) {
 		/* from VE0 to VEX */
-		if (ve_is_super(rcv->owner_env))
+		if (ve_is_super(ve))
 			goto out;
 		if (is_multicast_ether_addr(
 					((struct ethhdr *)skb->data)->h_dest))
@@ -291,7 +284,7 @@ static int veth_xmit(struct sk_buff *skb, struct net_device *dev)
 		if (!(rcv->priv_flags & IFF_BRIDGE_PORT) &&
 			compare_ether_addr(((struct ethhdr *)skb->data)->h_dest, rcv->dev_addr))
 				goto outf;
-	} else if (!ve_is_super(dev->owner_env) &&
+	} else if (!ve_is_super(ve) &&
 			!entry->allow_mac_change) {
 		/* from VEX to VE0 */
 		if (!(skb->dev->priv_flags & IFF_BRIDGE_PORT) &&
@@ -300,7 +293,6 @@ static int veth_xmit(struct sk_buff *skb, struct net_device *dev)
 	}
 
 out:
-	skb->owner_env = rcv->owner_env;
 
 	skb->pkt_type = PACKET_HOST;
 	skb->protocol = eth_type_trans(skb, rcv);
@@ -335,7 +327,7 @@ static int veth_set_mac(struct net_device *dev, void *p)
 {
 	struct sockaddr *addr = p;
 
-	if (!ve_is_super(dev->owner_env) &&
+	if (!ve_is_super(dev_net(dev)->owner_ve) &&
 			!veth_from_netdev(dev)->allow_mac_change)
 		return -EPERM;
 	if (netif_running(dev))
@@ -477,7 +469,7 @@ static int vehwaddr_seq_show(struct seq_file *m, void *v)
 	seq_printf(m, ADDR_FMT " %16s %10u %5s\n",
 			ADDR_ARG(veth_to_netdev(entry)->dev_addr),
 			veth_to_netdev(entry)->name,
-			VEID(veth_to_netdev(entry)->owner_env),
+			dev_net(veth_to_netdev(entry))->owner_ve->veid,
 			entry->allow_mac_change ? "allow" : "deny");
 	return 0;
 }
@@ -650,8 +642,8 @@ static void veth_stop(void *data)
 	env = (struct ve_struct *)data;
 	down(&hwaddr_sem);
 	list_for_each_entry_safe(entry, tmp, &veth_hwaddr_list, hwaddr_list)
-		if (VEID(env) == VEID(veth_to_netdev(entry)->owner_env))
-			veth_pair_del(env, entry);
+		if (VEID(env) == dev_net(veth_to_netdev(entry))->owner_ve->veid)
+			veth_pair_del(entry);
 	up(&hwaddr_sem);
 }
 
@@ -681,7 +673,6 @@ static __exit void veth_exit(void)
 {
 	struct veth_struct *entry;
 	struct list_head *tmp, *n;
-	struct ve_struct *ve;
 
 	vzioctl_unregister(&vethcalls);
 	ve_hook_unregister(&veth_ve_hook);
@@ -693,11 +684,8 @@ static __exit void veth_exit(void)
 	down(&hwaddr_sem);
 	list_for_each_safe(tmp, n, &veth_hwaddr_list) {
 		entry = list_entry(tmp, struct veth_struct, hwaddr_list);
-		ve = get_ve(veth_to_netdev(entry)->owner_env);
 
-		veth_pair_del(ve, entry);
-
-		put_ve(ve);
+		veth_pair_del(entry);
 	}
 	up(&hwaddr_sem);
 }
