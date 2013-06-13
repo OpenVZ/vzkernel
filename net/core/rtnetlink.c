@@ -39,6 +39,7 @@
 #include <linux/if_vlan.h>
 #include <linux/pci.h>
 #include <linux/etherdevice.h>
+#include <linux/ve.h>
 
 #include <asm/uaccess.h>
 
@@ -2570,6 +2571,7 @@ static int rtnl_dump_all(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	int idx;
 	int s_idx = cb->family;
+	struct net *net = sock_net(skb->sk);
 
 	if (s_idx == 0)
 		s_idx = 1;
@@ -2580,7 +2582,7 @@ static int rtnl_dump_all(struct sk_buff *skb, struct netlink_callback *cb)
 		if (rtnl_msg_handlers[idx] == NULL ||
 		    rtnl_msg_handlers[idx][type].dumpit == NULL)
 			continue;
-		if (vz_security_family_check(idx))
+		if (vz_security_family_check(net, idx))
 			continue;
 		if (idx > s_idx) {
 			memset(&cb->args[0], 0, sizeof(cb->args));
@@ -3868,7 +3870,7 @@ static int rtnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 		return 0;
 
 	family = ((struct rtgenmsg *)nlmsg_data(nlh))->rtgen_family;
-	if (vz_security_family_check(family))
+	if (vz_security_family_check(net, family))
 		return -EAFNOSUPPORT;
 
 	sz_idx = type>>2;
