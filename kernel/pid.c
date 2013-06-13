@@ -581,23 +581,6 @@ pid_t pid_to_vpid(pid_t nr)
 }
 EXPORT_SYMBOL_GPL(pid_to_vpid);
 
-pid_t vpid_to_pid_ve(pid_t vnr, struct ve_struct *env)
-{
-	struct pid *pid;
-	pid_t nr = -1;
-
-	if (unlikely(ve_is_super(env)))
-		return -1;
-
-	rcu_read_lock();
-	pid = find_pid_ns(vnr, env->ve_ns->pid_ns);
-	if (pid != NULL)
-		nr = pid->numbers[0].nr;
-	rcu_read_unlock();
-
-	return nr;
-}
-
 pid_t pid_nr_ns(struct pid *pid, struct pid_namespace *ns)
 {
 	struct upid *upid;
