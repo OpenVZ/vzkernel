@@ -374,13 +374,7 @@ static int init_ve_netns(struct ve_struct *ve, struct nsproxy **old)
 
 static void fini_ve_netns(struct ve_struct *ve)
 {
-	struct net *net;
-	DECLARE_COMPLETION_ONSTACK(sysfs_completion);
-
-	net = ve->ve_netns;
-	net->sysfs_completion = &sysfs_completion;
-	put_net(net);
-	wait_for_completion(&sysfs_completion);
+	put_net(ve->ve_netns);
 }
 
 static inline void switch_ve_namespaces(struct ve_struct *ve,
