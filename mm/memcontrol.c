@@ -5410,7 +5410,7 @@ void mem_cgroup_sync_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cg);
-	unsigned long long mem, memsw, kmem;
+	unsigned long long mem, memsw, kmem, mem_old, memsw_old;
 	int ret = 0;
 
 	mem = ub->ub_parms[UB_PHYSPAGES].limit;
@@ -5418,12 +5418,6 @@ int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 		mem <<= PAGE_SHIFT;
 	else
 		mem = RESOURCE_MAX;
-
-	if (res_counter_read_u64(&memcg->res, RES_LIMIT) != mem) {
-		ret = mem_cgroup_resize_limit(memcg, mem);
-		if (ret)
-			goto out;
-	}
 
 	kmem = ub->ub_parms[UB_KMEMSIZE].limit;
 	if (kmem >= RESOURCE_MAX)
@@ -5445,7 +5439,23 @@ int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 	else
 		mem = RESOURCE_MAX;
 
-	if (res_counter_read_u64(&memcg->memsw, RES_LIMIT) != memsw) {
+	mem_old = res_counter_read_u64(&memcg->res, RES_LIMIT);
+	memsw_old = res_counter_read_u64(&memcg->memsw, RES_LIMIT);
+
+	if (mem != mem_old) {
+		/* first, reset memsw limit since it cannot be < mem limit */
+		if (memsw_old != RESOURCE_MAX) {
+			memsw_old = RESOURCE_MAX;
+			ret = mem_cgroup_resize_memsw_limit(memcg, memsw_old);
+			if (ret)
+				goto out;
+		}
+		ret = mem_cgroup_resize_limit(memcg, mem);
+		if (ret)
+			goto out;
+	}
+
+	if (memsw != memsw_old) {
 		ret = mem_cgroup_resize_memsw_limit(memcg, memsw);
 		if (ret)
 			goto out;
