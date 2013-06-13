@@ -16,6 +16,8 @@
 
 #include <bc/beancounter.h>
 
+int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub);
+
 /*
  *	The (rather boring) getluid syscall
  */
@@ -54,6 +56,8 @@ SYSCALL_DEFINE1(setluid, uid_t, uid)
 	if (ub == NULL)
 		goto out;
 
+	error = mem_cgroup_apply_beancounter(ub->ub_cgroup, ub);
+
 	ub_debug(UBD_ALLOC | UBD_LIMIT, "setluid, bean %p (count %d) "
 			"for %.20s pid %d\n",
 			ub, atomic_read(&ub->ub_refcount),
@@ -65,8 +69,6 @@ SYSCALL_DEFINE1(setluid, uid_t, uid)
 out:
 	return error;
 }
-
-int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub);
 
 long do_setublimit(uid_t uid, unsigned long resource,
 		unsigned long *new_limits)
