@@ -334,8 +334,6 @@ long do_ubstat(int func, unsigned long arg1, unsigned long arg2,
 		return UB_RESOURCES;
 	if (func == UBSTAT_UBLIST)
 		return ubstat_get_list(buf, size);
-	if (!(capable(CAP_DAC_OVERRIDE) || capable(CAP_DAC_READ_SEARCH)))
-		return -EPERM;
 
 	if (func == UBSTAT_GETTIME) {
 		retval = ubstat_gettime(buf, size);
