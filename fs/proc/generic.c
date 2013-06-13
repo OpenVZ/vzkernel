@@ -100,7 +100,7 @@ bool pde_subdir_insert(struct proc_dir_entry *dir,
 	return true;
 }
 
-static inline bool proc_in_container(struct super_block *sb)
+inline bool proc_in_container(struct super_block *sb)
 {
 	/**
 	 * FIXME: store and use corresponding cgroup,
