@@ -47,12 +47,6 @@ SYSCALL_DEFINE1(setluid, uid_t, uid)
 	error = -EPERM;
 	if (!capable(CAP_SETUID))
 		goto out;
-	/*
-	 * The ub once set is irrevocable to all
-	 * unless it's set from ve0.
-	 */
-	if (!ve_is_super(get_exec_env()))
-		goto out;
 
 	/* Ok - set up a beancounter entry for this user */
 	error = -ENOBUFS;
@@ -80,13 +74,6 @@ long do_setublimit(uid_t uid, unsigned long resource,
 	int error;
 	unsigned long flags;
 	struct user_beancounter *ub;
-
-	error = -EPERM;
-	if(!capable(CAP_SYS_RESOURCE))
-		goto out;
-
-	if (!ve_is_super(get_exec_env()))
-		goto out;
 
 	error = -EINVAL;
 	if (resource >= UB_RESOURCES)
@@ -124,6 +111,9 @@ SYSCALL_DEFINE3(setublimit, uid_t, uid, unsigned long, resource,
 {
 	unsigned long new_limits[2];
 
+	if (!capable(CAP_SYS_RESOURCE))
+		return -EPERM;
+
 	if (copy_from_user(&new_limits, limits, sizeof(new_limits)))
 		return -EFAULT;
 
@@ -136,7 +126,7 @@ extern long do_ubstat(int func, unsigned long arg1, unsigned long arg2,
 SYSCALL_DEFINE5(ubstat, int, func, unsigned long, arg1, unsigned long, arg2,
 		void __user, *buf, long, size)
 {
-	if (!ve_is_super(get_exec_env()))
+	if (!capable(CAP_DAC_OVERRIDE) && !capable(CAP_DAC_READ_SEARCH))
 		return -EPERM;
 
 	return do_ubstat(func, arg1, arg2, buf, size);
@@ -151,6 +141,9 @@ asmlinkage long compat_sys_setublimit(uid_t uid,
 {
 	compat_long_t u_new_limits[2];
 	unsigned long new_limits[2];
+
+	if (!capable(CAP_SYS_RESOURCE))
+		return -EPERM;
 
 	if (copy_from_user(&u_new_limits, limits, sizeof(u_new_limits)))
 		return -EFAULT;
