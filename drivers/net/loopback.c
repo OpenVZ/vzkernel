@@ -76,7 +76,7 @@ static netdev_tx_t loopback_xmit(struct sk_buff *skb,
 	int len;
 
 #ifdef CONFIG_VE
-	if (unlikely(get_exec_env()->disable_net)) {
+	if (unlikely(dev_net(dev)->owner_ve->disable_net)) {
 		kfree_skb(skb);
 		return 0;
 	}
