@@ -747,8 +747,6 @@ out:
 	return error;
 }
 
-#define shm_get_swap_page(info)	(get_swap_page())
-
 /*
  * Move the page from the page cache to the swap cache.
  */
@@ -2825,24 +2823,17 @@ static struct kmem_cache *shmem_inode_cachep;
 
 static struct inode *shmem_alloc_inode(struct super_block *sb)
 {
-	struct user_beancounter *ub = get_exec_ub();
 	struct shmem_inode_info *info;
-	info = kmem_cache_alloc(shmem_inode_cachep, GFP_KERNEL);
 	info = kmem_cache_alloc(shmem_inode_cachep, GFP_KERNEL);
 	if (!info)
 		return NULL;
-	info->shmi_ub = get_beancounter(ub);
 	return &info->vfs_inode;
 }
 
 static void shmem_destroy_callback(struct rcu_head *head)
 {
 	struct inode *inode = container_of(head, struct inode, i_rcu);
-	struct shmem_inode_info *p = SHMEM_I(inode);
-	struct user_beancounter *ub = p->shmi_ub;
-
-	kmem_cache_free(shmem_inode_cachep, p);
-	put_beancounter(ub);
+	kmem_cache_free(shmem_inode_cachep, SHMEM_I(inode));
 }
 
 static void shmem_destroy_inode(struct inode *inode)
