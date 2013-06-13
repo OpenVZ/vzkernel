@@ -709,11 +709,7 @@ void tcp_send_window_probe(struct sock *sk);
  * to use only the low 32-bits of jiffies and hide the ugly
  * casts with the following macro.
  */
-#ifdef CONFIG_VE
-#define tcp_time_stamp		((__u32)(jiffies + get_exec_env()->jiffies_fixup))
-#else
 #define tcp_time_stamp		((__u32)(jiffies))
-#endif
 
 #define tcp_flag_byte(th) (((u_int8_t *)th)[13])
 
