@@ -282,7 +282,7 @@ static __net_init int setup_net(struct net *net, struct user_namespace *user_ns)
 	LIST_HEAD(net_exit_list);
 
 #ifdef CONFIG_VE
-	net->owner_ve = get_exec_env();
+	net->owner_ve = get_ve(get_exec_env());
 #endif
 
 	atomic_set(&net->count, 1);
@@ -443,8 +443,10 @@ static void cleanup_net(struct work_struct *work)
 	list_for_each_entry_reverse(ops, &pernet_list, list)
 		ops_free_list(ops, &net_exit_list);
 
-	list_for_each_entry(net, &net_kill_list, cleanup_list)
+	list_for_each_entry(net, &net_kill_list, cleanup_list) {
 		net->owner_ve->ve_netns = NULL;
+		put_ve(net->owner_ve);
+	}
 
 	mutex_unlock(&net_mutex);
 
