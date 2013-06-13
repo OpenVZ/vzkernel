@@ -5429,7 +5429,7 @@ int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 		mem = RESOURCE_MAX;
 
 	if (res_counter_read_u64(&memcg->memsw, RES_LIMIT) != memsw) {
-		mem_cgroup_resize_memsw_limit(memcg, memsw);
+		ret = mem_cgroup_resize_memsw_limit(memcg, memsw);
 		if (ret)
 			goto out;
 	}
