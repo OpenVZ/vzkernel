@@ -30,24 +30,6 @@ extern void rcu_nmi_enter(void);
 extern void rcu_nmi_exit(void);
 #endif
 
-#define save_context()		do {				\
-		struct task_struct *tsk;			\
-		if (hardirq_count() == HARDIRQ_OFFSET) {	\
-			tsk = current;				\
-			ve_save_context(tsk);			\
-			ub_save_context(tsk);			\
-		}						\
-	} while (0)
-
-#define restore_context()		do {			\
-		struct task_struct *tsk;			\
-		if (hardirq_count() == HARDIRQ_OFFSET) {	\
-			tsk = current;				\
-			ve_restore_context(tsk);		\
-			ub_restore_context(tsk);		\
-		}						\
-	} while (0)
-
 /*
  * It is safe to do non-atomic ops on ->hardirq_context,
  * because NMI handlers may not preempt and the ops are
@@ -58,7 +40,6 @@ extern void rcu_nmi_exit(void);
 	do {						\
 		account_irq_enter_time(current);	\
 		add_preempt_count(HARDIRQ_OFFSET);	\
-		save_context();				\
 		trace_hardirq_enter();			\
 	} while (0)
 
@@ -74,7 +55,6 @@ extern void irq_enter(void);
 	do {						\
 		trace_hardirq_exit();			\
 		account_irq_exit_time(current);		\
-		restore_context();			\
 		sub_preempt_count(HARDIRQ_OFFSET);	\
 	} while (0)
 

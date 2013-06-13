@@ -1137,9 +1137,7 @@ static void call_timer_fn(struct timer_list *timer, void (*fn)(unsigned long),
 	lock_map_acquire(&lockdep_map);
 
 	trace_timer_expire_entry(timer);
-	ve = set_exec_env(get_ve0());
 	fn(data);
-	(void)set_exec_env(ve);
 	trace_timer_expire_exit(timer);
 
 	lock_map_release(&lockdep_map);
