@@ -529,6 +529,9 @@ static void ve_move_task(struct ve_struct *new)
 	if (tsk->signal->oom_adj == OOM_DISABLE)
 		tsk->signal->oom_adj = 0;
 
+	/* Leave parent exec domain */
+	tsk->parent_exec_id--;
+
 	old = tsk->ve_task_info.owner_env;
 	tsk->ve_task_info.owner_env = new;
 
