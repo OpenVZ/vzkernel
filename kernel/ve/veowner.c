@@ -33,10 +33,6 @@ void prepare_ve0_process(struct task_struct *tsk)
 {
 	VE_TASK_INFO(tsk)->exec_env = get_ve0();
 	VE_TASK_INFO(tsk)->owner_env = get_ve0();
-	VE_TASK_INFO(tsk)->sleep_time = 0;
-	VE_TASK_INFO(tsk)->wakeup_stamp = 0;
-	VE_TASK_INFO(tsk)->sched_time = 0;
-	seqcount_init(&VE_TASK_INFO(tsk)->wakeup_lock);
 
 	if (tsk->pid) {
 		get_ve0()->pcounter++;

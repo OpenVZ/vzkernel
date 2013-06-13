@@ -91,7 +91,7 @@ extern void kstat_init(void);
 	u64  start, sleep_time;				\
 							\
 	start = ktime_to_ns(ktime_get());		\
-	sleep_time = VE_TASK_INFO(current)->sleep_time;	\
+	sleep_time = current->se.statistics->sum_sleep_runtime;
 
 #define KSTAT_PERF_LEAVE(name)				\
 	start = ktime_to_ns(ktime_get()) - start;	\
@@ -100,8 +100,7 @@ extern void kstat_init(void);
 	if (kstat_glob.name.cur.wall_maxdur < start)	\
 		kstat_glob.name.cur.wall_maxdur = start;\
 	kstat_glob.name.cur.wall_tottime += start;	\
-	start -= VE_TASK_INFO(current)->sleep_time -	\
-					sleep_time;	\
+	start -= current->se.statistics->sum_sleep_runtime - sleep_time; \
 	if (kstat_glob.name.cur.cpu_maxdur < start)	\
 		kstat_glob.name.cur.cpu_maxdur = start;	\
 	kstat_glob.name.cur.cpu_tottime += start;	\
