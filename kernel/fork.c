@@ -1557,9 +1557,6 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	p->ve_task_info.owner_env->pcounter++;
 	(void)get_ve(p->ve_task_info.owner_env);
 
-#ifdef CONFIG_VE
-	seqcount_init(&p->ve_task_info.wakeup_lock);
-#endif
 	total_forks++;
 	spin_unlock(&current->sighand->siglock);
 	write_unlock_irq(&tasklist_lock);
