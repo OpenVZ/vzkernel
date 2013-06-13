@@ -85,13 +85,13 @@ static struct ve_struct *venet_find_ve(struct ve_addr_struct *addr, int dir)
 	return ve;
 }
 
-static struct ve_struct *veip_lookup(struct sk_buff *skb)
+static struct ve_struct *
+veip_lookup(struct ve_struct *ve_old, struct sk_buff *skb)
 {
-	struct ve_struct *ve, *ve_old;
+	struct ve_struct *ve;
 	int dir;
 	struct ve_addr_struct addr;
 
-	ve_old = skb->owner_env;
 	dir = ve_is_super(ve_old);
 	if (skb_extract_addr(skb, &addr, dir) < 0)
 		goto out_drop_nolock;
@@ -130,7 +130,7 @@ out_source:
 		printk(KERN_WARNING "Dropped packet, source wrong "
 		       "veid=%u src-IP=%u.%u.%u.%u "
 		       "dst-IP=%u.%u.%u.%u\n",
-		       skb->owner_env->veid,
+		       ve_old->veid,
 		       NIPQUAD(ip_hdr(skb)->saddr),
 		       NIPQUAD(ip_hdr(skb)->daddr));
 	}
