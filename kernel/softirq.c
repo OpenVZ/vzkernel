@@ -220,10 +220,6 @@ asmlinkage void __do_softirq(void)
 	unsigned long old_flags = current->flags;
 	int max_restart = MAX_SOFTIRQ_RESTART;
 
-	struct ve_struct *envid;
-
-	envid = set_exec_env(get_ve0());
-
 	/*
 	 * Mask out PF_MEMALLOC s current task context is borrowed for the
 	 * softirq. A softirq handled such as network RX might set PF_MEMALLOC
@@ -288,7 +284,6 @@ restart:
 	lockdep_softirq_exit();
 
 	account_irq_exit_time(current);
-	(void)set_exec_env(envid);
 	__local_bh_enable(SOFTIRQ_OFFSET);
 	tsk_restore_flags(current, old_flags, PF_MEMALLOC);
 }
@@ -377,7 +372,6 @@ void irq_exit(void)
 
 	account_irq_exit_time(current);
 	trace_hardirq_exit();
-	restore_context();
 	sub_preempt_count(HARDIRQ_OFFSET);
 	if (!in_interrupt() && local_softirq_pending())
 		invoke_softirq();
