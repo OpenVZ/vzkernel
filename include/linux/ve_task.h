@@ -18,12 +18,6 @@ struct ve_task_info {
 /* virtualization */
 	struct ve_struct *owner_env;
 	struct ve_struct *exec_env;
-/* statistics: scheduling latency */
-	u64 sleep_time;
-	u64 sched_time;
-	u64 sleep_stamp;
-	u64 wakeup_stamp;
-	seqcount_t wakeup_lock;
 };
 
 #define VE_TASK_INFO(task)	(&(task)->ve_task_info)
