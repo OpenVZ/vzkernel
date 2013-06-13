@@ -27,8 +27,6 @@ static DECLARE_MUTEX(vedev_lock);
 extern struct sysfs_dirent *sysfs_get_active(struct sysfs_dirent *sd);
 extern void sysfs_put_active(struct sysfs_dirent *sd);
 
-static void __ve_remove_netdev(struct ve_device *ve_dev);
-
 static struct kobject *ve_kobj_path_create(char *path)
 {
 	char *e, *p = path;
@@ -479,9 +477,7 @@ void fini_ve_devices(struct ve_struct *ve)
 	struct ve_device *ve_dev, *tmp;
 	down(&vedev_lock);
 	list_for_each_entry_safe(ve_dev, tmp, &ve->devices, ve_list) {
-		if (ve_dev->net_link)
-			__ve_remove_netdev(ve_dev);
-		else
+		if (!ve_dev->net_link)
 			ve_device_del_one(ve_dev, 0);
 	}
 	up(&vedev_lock);
@@ -569,102 +565,5 @@ static int ve_netdev_create(struct kobject *net_obj, struct ve_struct *ve)
 
 error:
 	ve_device_del_one(ve_dev, 0);
-	return err;
-}
-
-/*
- * Search for "device" symlink in object directory.
- * If it exists - return physical device, if not
- * this device is virtual one
- */
-static struct kobject *netdev_get_phy(struct device *dev)
-{
-	struct sysfs_dirent *sd, *link;
-	struct kobject *target = NULL;
-
-	sd = sysfs_get_dirent(dev->kobj.sd, "device");
-
-	if (!sd)
-		return NULL;
-
-	if (unlikely(!(sd->s_flags & SYSFS_KOBJ_LINK))) {
-		printk(KERN_ERR "device dirent of dev %s is not symlink.\n",
-			dev_name(dev));
-		goto exit;
-	}
-
-	link = sd->s_symlink.target_sd;
-
-	if (!(link->s_flags & (SYSFS_DIR | SYSFS_DIR_LINK))) {
-		printk(KERN_ERR "device link of %s is not describe phy dev\n",
-			dev_name(dev));
-		goto exit;
-	}
-
-	target = link->s_dir.kobj;
-
-exit:
-	sysfs_put(sd);
-	return target;
-}
-
-int ve_netdev_add(struct device *dev, struct ve_struct *ve)
-{
-	int err = -EINVAL;
-	struct ve_device *ve_dev;
-	struct kobject *phy_dev;
-
-	phy_dev = netdev_get_phy(dev);
-	if (!phy_dev)
-		/* Assume no phy object - virtual device */
-		return 0;
-
-	down(&vedev_lock);
-	ve_dev = __ve_device_find(&phy_dev->env_head, ve);
-
-	if (!ve_dev)
-		err = ve_netdev_create(dev->kobj.parent, ve);
-
-	up(&vedev_lock);
-	return err;
-}
-
-static void __ve_remove_netdev(struct ve_device *ve_dev)
-{
-	kobject_link_del(ve_dev->net_link, ve_dev->ve);
-
-	list_del(&ve_dev->ve_list);
-	list_del(&ve_dev->kobj_list);
-
-	put_device(ve_dev->dev);
-	kfree(ve_dev);
-}
-
-int ve_netdev_delete(struct device *dev, struct ve_struct *ve)
-{
-	int err = 0;
-	struct ve_device *ve_dev;
-	struct kobject *phy_dev;
-
-	phy_dev = netdev_get_phy(dev);
-	if (!phy_dev)
-		/* Assume no phy object - virtual device */
-		return 0;
-
-	down(&vedev_lock);
-
-	ve_dev = __ve_device_find(&phy_dev->env_head, ve);
-
-	if (!ve_dev || !ve_dev->net_link) {
-		printk(KERN_ERR "Can't delete virtual device %s in case "
-			"it is not present in VE.\n", kobject_name(phy_dev));
-		err = -EINVAL;
-		goto out;
-	}
-
-	__ve_remove_netdev(ve_dev);
-
-out:
-	up(&vedev_lock);
 	return err;
 }
