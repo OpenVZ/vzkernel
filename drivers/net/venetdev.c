@@ -459,7 +459,7 @@ static int venet_xmit(struct sk_buff *skb, struct net_device *dev)
 	int length;
 
 	stats = venet_stats(dev, smp_processor_id());
-	ve = get_exec_env();
+	ve = dev_net(dev)->owner_ve;
 	if (unlikely(ve->disable_net))
 		goto outf;
 
@@ -478,11 +478,10 @@ static int venet_xmit(struct sk_buff *skb, struct net_device *dev)
 		goto outf;
 	}
 
-	ve = veip_pool_ops->veip_lookup(skb);
+	ve = veip_pool_ops->veip_lookup(ve, skb);
 	if (IS_ERR(ve))
 		goto outf;
 
-	skb->owner_env = ve;
 	if (unlikely(ve->disable_net))
 		goto outf;
 
