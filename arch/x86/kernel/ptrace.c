@@ -512,14 +512,16 @@ static unsigned long getreg(struct task_struct *task, unsigned long offset)
 		regs = task_pt_regs(task);
 		ret = *pt_regs_access(regs, offset);
 
-		if (ve_is_super(get_exec_env()) &&
-				!ve_is_super(task->ve_task_info.owner_env) &&
-				((regs->orig_ax == __NR_vfork) ||
-				 (regs->orig_ax == __NR_clone) ||
-				 (regs->orig_ax == __NR_fork)) &&
-				(long)ret > 0)
-			ret = vpid_to_pid_ve((pid_t)ret, task->ve_task_info.owner_env);
-
+		if ((regs->orig_ax == __NR_vfork) ||
+		    (regs->orig_ax == __NR_clone) ||
+		    (regs->orig_ax == __NR_fork)) {
+			rcu_read_lock();
+			/* get tracee pid in tracer's pid-namespace */
+			if (task->nsproxy->pid_ns != current->nsproxy->pid_ns)
+				ret = pid_vnr(find_pid_ns(ret,
+						task->nsproxy->pid_ns));
+			rcu_read_unlock();
+		}
 		return ret;
 	}
 #endif
