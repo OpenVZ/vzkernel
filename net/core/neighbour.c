@@ -815,17 +815,13 @@ static void neigh_periodic_work(struct work_struct *work)
 			    (state == NUD_FAILED ||
 			     time_after(jiffies, n->used + NEIGH_VAR(n->parms, GC_STALETIME)))) {
 				struct net_device *dev = n->dev;
-				struct user_beancounter *ub;
 
 				*np = n->next;
 				n->dead = 1;
 				write_unlock(&n->lock);
 
-				ub = set_exec_ub(netdev_bc(dev)->owner_ub);
-
 				neigh_cleanup_and_release(n);
 
-				set_exec_ub(ub);
 				continue;
 			}
 			write_unlock(&n->lock);
@@ -1413,13 +1409,9 @@ static void neigh_proxy_process(unsigned long arg)
 
 			__skb_unlink(skb, &tbl->proxy_queue);
 			if (tbl->proxy_redo && netif_running(dev)) {
-				struct user_beancounter *ub;
-
-				ub = set_exec_ub(netdev_bc(dev)->owner_ub);
 				rcu_read_lock();
 				tbl->proxy_redo(skb);
 				rcu_read_unlock();
-				set_exec_ub(ub);
 			} else {
 				kfree_skb(skb);
 			}

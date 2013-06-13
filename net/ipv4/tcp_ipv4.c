@@ -1767,9 +1767,6 @@ static struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 {
 	struct sock *rsk;
-	struct user_beancounter *ub;
-
-	ub = set_exec_ub(sock_bc(sk)->ub);
 
 #ifdef CONFIG_TCP_MD5SIG
 	/*
@@ -1825,7 +1822,6 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 	}
 
 restore_context:
-	(void)set_exec_ub(ub);
 	return 0;
 
 reset:

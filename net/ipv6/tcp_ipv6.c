@@ -1296,7 +1296,6 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 	struct ipv6_pinfo *np = inet6_sk(sk);
 	struct tcp_sock *tp;
 	struct sk_buff *opt_skb = NULL;
-	struct user_beancounter *ub;
 
 	/* Imagine: socket is IPv6. IPv4 packet arrives,
 	   goes to IPv4 receive handler and backlogged.
@@ -1308,8 +1307,6 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 
 	if (skb->protocol == htons(ETH_P_IP))
 		return tcp_v4_do_rcv(sk, skb);
-
-	ub = set_exec_ub(sock_bc(sk)->ub);
 
 #ifdef CONFIG_TCP_MD5SIG
 	if (tcp_v6_inbound_md5_hash (sk, skb))
@@ -1389,7 +1386,6 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 		goto ipv6_pktoptions;
 
 restore_context:
-	(void)set_exec_ub(ub);
 	return 0;
 
 reset:

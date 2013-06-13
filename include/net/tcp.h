@@ -46,8 +46,6 @@
 #include <linux/seq_file.h>
 #include <linux/memcontrol.h>
 
-#include <bc/net.h>
-
 #define TCP_PAGE(sk)	(sk->sk_sndmsg_page)
 #define TCP_OFF(sk)	(sk->sk_sndmsg_off)
 

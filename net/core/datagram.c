@@ -58,8 +58,6 @@
 #include <trace/events/skb.h>
 #include <net/busy_poll.h>
 
-#include <bc/net.h>
-
 /*
  *	Is a socket 'connection oriented' ?
  */

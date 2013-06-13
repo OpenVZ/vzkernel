@@ -40,12 +40,6 @@ EXPORT_SYMBOL(init_net);
 
 static unsigned int max_gen_ptrs = INITIAL_NET_GEN_PTRS;
 
-static inline void set_net_context(struct net *net)
-{
-	if (net->loopback_dev)
-		set_exec_ub(netdev_bc(net->loopback_dev)->exec_ub);
-}
-
 static struct net_generic *net_alloc_generic(void)
 {
 	struct net_generic *ng;
@@ -136,11 +130,8 @@ static void ops_exit_list(const struct pernet_operations *ops,
 {
 	struct net *net;
 	if (ops->exit) {
-		list_for_each_entry(net, net_exit_list, exit_list) {
-			set_net_context(net);
+		list_for_each_entry(net, net_exit_list, exit_list)
 			ops->exit(net);
-			set_net_context(&init_net);
-		}
 	}
 	if (ops->exit_batch)
 		ops->exit_batch(net_exit_list);
@@ -467,9 +458,7 @@ static int __register_pernet_operations(struct list_head *list,
 	list_add_tail(&ops->list, list);
 	if (ops->init || (ops->id && ops->size)) {
 		for_each_net(net) {
-			set_net_context(net);
 			error = ops_init(ops, net);
-			set_net_context(&init_net);
 			if (error)
 				goto out_undo;
 			list_add_tail(&net->exit_list, &net_exit_list);

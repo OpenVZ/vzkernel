@@ -5468,9 +5468,6 @@ int register_netdevice(struct net_device *dev)
 
 	set_bit(__LINK_STATE_PRESENT, &dev->state);
 
-	netdev_bc(dev)->owner_ub = get_beancounter(get_exec_ub());
-	netdev_bc(dev)->exec_ub = get_beancounter(get_exec_ub());
-
 	linkwatch_init_dev(dev);
 
 	dev_init_scheduler(dev);
@@ -5547,12 +5544,6 @@ static void ve_netdev_leak(struct net_device *dev)
 	 */
 
 	__rtnl_unlock();
-
-	put_beancounter(netdev_bc(dev)->exec_ub);
-	put_beancounter(netdev_bc(dev)->owner_ub);
-
-	netdev_bc(dev)->exec_ub		= get_beancounter(get_ub0());
-	netdev_bc(dev)->owner_ub	= get_beancounter(get_ub0());
 
 	/*
 	 * Since we've already screwed the device and releasing
@@ -5790,11 +5781,6 @@ void netdev_run_todo(void)
 		WARN_ON(rcu_access_pointer(dev->ip_ptr));
 		WARN_ON(rcu_access_pointer(dev->ip6_ptr));
 		WARN_ON(dev->dn_ptr);
-
-		put_beancounter(netdev_bc(dev)->exec_ub);
-		put_beancounter(netdev_bc(dev)->owner_ub);
-		netdev_bc(dev)->exec_ub = NULL;
-		netdev_bc(dev)->owner_ub = NULL;
 
 		/* It must be the very last action,
 		 * after this 'dev' may point to freed up memory.
@@ -6142,11 +6128,9 @@ EXPORT_SYMBOL(unregister_netdev);
  *	Callers must hold the rtnl semaphore.
  */
 
-int __dev_change_net_namespace(struct net_device *dev, struct net *net, const char *pat,
-		struct user_beancounter *exec_ub)
+int dev_change_net_namespace(struct net_device *dev, struct net *net, const char *pat)
 {
 	int err;
-	struct user_beancounter *tmp_ub;
 
 	ASSERT_RTNL();
 
@@ -6186,10 +6170,6 @@ int __dev_change_net_namespace(struct net_device *dev, struct net *net, const ch
 	/* And unlink it from device chain */
 	err = -ENODEV;
 	unlist_netdevice(dev);
-
-	tmp_ub = netdev_bc(dev)->exec_ub;
-	netdev_bc(dev)->exec_ub = get_beancounter(exec_ub);
-	put_beancounter(tmp_ub);
 
 	synchronize_net();
 
@@ -6253,14 +6233,6 @@ out:
 	return err;
 }
 EXPORT_SYMBOL_GPL(dev_change_net_namespace);
-
-int dev_change_net_namespace(struct net_device *dev, struct net *net, const char *pat)
-{
-	struct user_beancounter *ub = get_exec_ub();
-
-	return __dev_change_net_namespace(dev, net, pat, ub);
-}
-EXPORT_SYMBOL(__dev_change_net_namespace);
 
 static int dev_cpu_callback(struct notifier_block *nfb,
 			    unsigned long action,

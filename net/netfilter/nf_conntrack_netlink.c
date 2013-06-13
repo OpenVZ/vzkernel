@@ -1611,15 +1611,14 @@ ctnetlink_create_conntrack(struct net *net, u16 zone,
 			   const struct nlattr * const cda[],
 			   struct nf_conntrack_tuple *otuple,
 			   struct nf_conntrack_tuple *rtuple,
-			   u8 u3,
-			   struct user_beancounter *ub)
+			   u8 u3)
 {
 	struct nf_conn *ct;
 	int err = -EINVAL;
 	struct nf_conntrack_helper *helper;
 	struct nf_conn_tstamp *tstamp;
 
-	ct = nf_conntrack_alloc(net, zone, otuple, rtuple, ub, GFP_ATOMIC);
+	ct = nf_conntrack_alloc(net, zone, otuple, rtuple, GFP_ATOMIC);
 	if (IS_ERR(ct))
 		return ERR_PTR(-ENOMEM);
 
@@ -1795,17 +1794,12 @@ ctnetlink_new_conntrack(struct sock *ctnl, struct sk_buff *skb,
 		err = -ENOENT;
 		if (nlh->nlmsg_flags & NLM_F_CREATE) {
 			enum ip_conntrack_events events;
-			struct user_beancounter *ub = NULL;
 
 			if (!cda[CTA_TUPLE_ORIG] || !cda[CTA_TUPLE_REPLY])
 				return -EINVAL;
 
-#ifdef CONFIG_BEANCOUNTERS
-			if (skb->sk)
-				ub = sock_bc(skb->sk)->ub;
-#endif
 			ct = ctnetlink_create_conntrack(net, zone, cda, &otuple,
-							&rtuple, u3, ub);
+							&rtuple, u3);
 			if (IS_ERR(ct))
 				return PTR_ERR(ct);
 

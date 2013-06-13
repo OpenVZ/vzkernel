@@ -1154,7 +1154,7 @@ static int ve_dev_add(envid_t veid, char *dev_name)
 	if (dev == NULL)
 		goto out_unlock;
 
-	err = __dev_change_net_namespace(dev, dst_net, dev_name, get_exec_ub());
+	err = dev_change_net_namespace(dev, dst_net, dev_name);
 out_unlock:
 	rtnl_unlock();
 	real_put_ve(dst_ve);
@@ -1187,8 +1187,7 @@ static int ve_dev_del(envid_t veid, char *dev_name)
 	if (dev == NULL)
 		goto out_unlock;
 
-	err = __dev_change_net_namespace(dev, &init_net, dev_name,
-					 netdev_bc(dev)->owner_ub);
+	err = dev_change_net_namespace(dev, &init_net, dev_name);
 out_unlock:
 	rtnl_unlock();
 	real_put_ve(src_ve);
