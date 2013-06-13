@@ -255,6 +255,9 @@ extern struct proc_dir_entry *glob_proc_vz_dir;
 
 #ifdef CONFIG_VE
 
+extern int vz_security_family_check(struct net *net, int family);
+extern int vz_security_protocol_check(struct net *net, int protocol);
+
 void do_update_load_avg_ve(void);
 void do_env_free(struct ve_struct *ptr);
 
@@ -290,11 +293,16 @@ static inline int vtty_open_master(int veid, int idx) { return -ENODEV; }
 #endif
 
 #else	/* CONFIG_VE */
+
+static inline int vz_security_family_check(struct net *net, int family) { return 0; }
+static inline int vz_security_protocol_check(struct net *net, int protocol) { return 0; }
+
 #define ve_utsname	system_utsname
 #define get_ve(ve)	(NULL)
 #define put_ve(ve)	do { } while (0)
 #define pget_ve(ve)	do { } while (0)
 #define pput_ve(ve)	do { } while (0)
+
 #endif	/* CONFIG_VE */
 
 #endif /* _LINUX_VE_H */
