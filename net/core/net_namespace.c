@@ -233,8 +233,6 @@ out_free:
 
 static void net_free(struct net *net)
 {
-	struct completion *sysfs_completion;
-
 #ifdef NETNS_REFCNT_DEBUG
 	if (unlikely(atomic_read(&net->use_count) != 0)) {
 		pr_emerg("network namespace not free! Usage: %d\n",
@@ -242,11 +240,8 @@ static void net_free(struct net *net)
 		return;
 	}
 #endif
-	sysfs_completion = net->sysfs_completion;
 	kfree(net->gen);
 	kmem_cache_free(net_cachep, net);
-	if (sysfs_completion)
-		complete(sysfs_completion);
 }
 
 void net_drop_ns(void *p)

@@ -81,7 +81,6 @@ struct net {
 	int			ifindex;
 
 #ifdef CONFIG_VE
-	struct completion	*sysfs_completion;
 	struct ve_struct	*owner_ve;
 #endif
 
