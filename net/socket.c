@@ -89,6 +89,7 @@
 #include <linux/magic.h>
 #include <linux/slab.h>
 #include <linux/xattr.h>
+#include <linux/ve.h>
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -1232,54 +1233,6 @@ call_kill:
 }
 EXPORT_SYMBOL(sock_wake_async);
 
-int vz_security_family_check(int family)
-{
-#ifdef CONFIG_VE
-	if (ve_is_super(get_exec_env()))
-		return 0;
-
-	switch (family) {
-	case PF_UNSPEC:
-	case PF_PACKET:
-	case PF_NETLINK:
-	case PF_UNIX:
-	case PF_INET:
-	case PF_INET6:
-	case PF_PPPOX:
-	case PF_KEY:
-		break;
-	default:
-		return -EAFNOSUPPORT;
-        }
-#endif
-	return 0;
-}
-EXPORT_SYMBOL_GPL(vz_security_family_check);
-
-int vz_security_protocol_check(int protocol)
-{
-#ifdef CONFIG_VE
-	if (ve_is_super(get_exec_env()))
-		return 0;
-
-	switch (protocol) {
-	case  IPPROTO_IP:
-	case  IPPROTO_TCP:
-	case  IPPROTO_UDP:
-	case  IPPROTO_RAW:
-	case  IPPROTO_DCCP:
-	case  IPPROTO_GRE:
-	case  IPPROTO_ESP:
-	case  IPPROTO_AH:
-		break;
-	default:
-		return -EAFNOSUPPORT;
-	}
-#endif
-	return 0;
-}
-EXPORT_SYMBOL_GPL(vz_security_protocol_check);
-
 int __sock_create(struct net *net, int family, int type, int protocol,
 			 struct socket **res, int kern)
 {
@@ -1311,7 +1264,7 @@ int __sock_create(struct net *net, int family, int type, int protocol,
 	}
 
 	/* VZ compatibility layer */
-	err = vz_security_family_check(family);
+	err = vz_security_family_check(net, family);
 	if (err < 0)
 		return err;
 
