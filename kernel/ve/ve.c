@@ -120,15 +120,8 @@ struct ve_struct *get_ve_by_id(envid_t veid)
 }
 EXPORT_SYMBOL(get_ve_by_id);
 
-LIST_HEAD(ve_cleanup_list);
-DEFINE_SPINLOCK(ve_cleanup_lock);
-struct task_struct *ve_cleanup_thread;
-
 EXPORT_SYMBOL(ve_list_lock);
 EXPORT_SYMBOL(ve_list_head);
-EXPORT_SYMBOL(ve_cleanup_lock);
-EXPORT_SYMBOL(ve_cleanup_list);
-EXPORT_SYMBOL(ve_cleanup_thread);
 
 static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, ve0_lat_stats);
 
@@ -139,17 +132,6 @@ void init_ve0(void)
 	ve = get_ve0();
 	ve->sched_lat_ve.cur = &ve0_lat_stats;
 	list_add(&ve->ve_list, &ve_list_head);
-}
-
-void ve_cleanup_schedule(struct ve_struct *ve)
-{
-	BUG_ON(ve_cleanup_thread == NULL);
-
-	spin_lock(&ve_cleanup_lock);
-	list_add_tail(&ve->cleanup_list, &ve_cleanup_list);
-	spin_unlock(&ve_cleanup_lock);
-
-	wake_up_process(ve_cleanup_thread);
 }
 
 int vz_security_family_check(struct net *net, int family)
