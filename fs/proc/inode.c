@@ -118,6 +118,8 @@ static int proc_show_options(struct seq_file *seq, struct dentry *root)
 		seq_printf(seq, ",gid=%u", from_kgid_munged(&init_user_ns, pid->pid_gid));
 	if (pid->hide_pid != 0)
 		seq_printf(seq, ",hidepid=%u", pid->hide_pid);
+	if (pid->hide_pidns)
+		seq_printf(seq, ",hidepidns=%u", pid->hide_pidns);
 
 	return 0;
 }
