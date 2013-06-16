@@ -174,7 +174,7 @@ static void delayed_put_task_struct(struct rcu_head *rhp)
 void release_task(struct task_struct * p)
 {
 	struct task_struct *leader;
-	int zap_leader, zap_ve;
+	int zap_leader;
 repeat:
 	/* don't need to get the RCU readlock here - the process is dead and
 	 * can't be modifying its own credentials. But shut RCU-lockdep up */
@@ -196,7 +196,6 @@ repeat:
 	 * group leader's parent process. (if it wants notification.)
 	 */
 	zap_leader = 0;
-	zap_ve = 0;
 	leader = p->group_leader;
 	if (leader != p && thread_group_empty(leader) && leader->exit_state == EXIT_ZOMBIE) {
 		/*
@@ -209,13 +208,10 @@ repeat:
 			leader->exit_state = EXIT_DEAD;
 	}
 
-	if (--p->ve_task_info.owner_env->pcounter == 0)
-		zap_ve = 1;
+	p->ve_task_info.owner_env->pcounter--;
 	write_unlock_irq(&tasklist_lock);
 	release_thread(p);
 	ub_task_uncharge(p->task_bc.task_ub);
-	if (zap_ve)
-		ve_cleanup_schedule(p->ve_task_info.owner_env);
 	call_rcu(&p->rcu, delayed_put_task_struct);
 
 	p = leader;
@@ -718,30 +714,6 @@ static void check_stack_usage(void)
 static inline void check_stack_usage(void) {}
 #endif
 
-#ifdef CONFIG_VE
-static void do_initproc_exit(struct task_struct *tsk)
-{
-	struct ve_struct *env;
-
-	env = get_exec_env();
-	if (tsk == get_env_init(env)) {
-		/*
-		 * Here the VE changes its state into "not running".
-		 * op_sem taken for write is a barrier to all VE manipulations from
-		 * ioctl: it waits for operations currently in progress and blocks all
-		 * subsequent operations until is_running is set to 0 and op_sem is
-		 * released.
-		 */
-
-		down_write(&env->op_sem);
-		env->is_running = 0;
-		up_write(&env->op_sem);
-	}
-}
-#else
-#define do_initproc_exit(tsk)  do { } while (0)
-#endif
-
 void do_exit(long code)
 {
 	struct task_struct *tsk = current;
@@ -764,8 +736,6 @@ void do_exit(long code)
 	 * kernel address.
 	 */
 	set_fs(USER_DS);
-
-	do_initproc_exit(tsk);
 
 	ptrace_event(PTRACE_EVENT_EXIT, code);
 
@@ -1750,22 +1720,3 @@ SYSCALL_DEFINE3(waitpid, pid_t, pid, int __user *, stat_addr, int, options)
 }
 
 #endif
-
-/**
- * This reaps non-child zombies. We hold read_lock(&tasklist_lock) on entry.
- * If we return zero, we still hold the lock and this task is uninteresting.
- */
-int reap_zombie(struct task_struct *p)
-{
-	struct wait_opts wo = {
-		.wo_flags = WEXITED,
-	};
-	int ret = 0;
-
-	if (p->exit_state == EXIT_ZOMBIE && !delay_group_leader(p)) {
-		p->exit_signal = -1;
-		ret = wait_task_zombie(&wo, p);
-	}
-
-	return ret;
-}
