@@ -614,23 +614,15 @@ static const struct net_device_ops venet_netdev_ops;
 static int venet_set_features(struct net_device *dev,
 			      netdev_features_t features)
 {
-	struct ve_struct *ve;
+	struct net *net;
 
-	mutex_lock(&ve_list_lock);
 	common_features = features;
-	for_each_ve(ve) {
-		struct ve_struct *ve_old;
-
-		ve_old = set_exec_env(ve);
-		read_lock(&dev_base_lock);
-		for_each_netdev(ve->ve_netns, dev) {
+	for_each_net(net) {
+		for_each_netdev(net, dev) {
 			if (dev->netdev_ops == &venet_netdev_ops)
 				dev->features = features;
 		}
-		read_unlock(&dev_base_lock);
-		set_exec_env(ve_old);
 	}
-	mutex_unlock(&ve_list_lock);
 	return 0;
 }
 #define DRV_NAME	"vz-venet"
