@@ -40,6 +40,8 @@
 
 #include <linux/vzcalluser.h>
 
+static struct kmem_cache *ve_cachep;
+
 unsigned long vz_rstamp = 0x37e0f59d;
 EXPORT_SYMBOL(vz_rstamp);
 
@@ -48,31 +50,14 @@ struct module no_module = { .state = MODULE_STATE_GOING };
 EXPORT_SYMBOL(no_module);
 #endif
 
-void (*do_env_free_hook)(struct ve_struct *ve);
-EXPORT_SYMBOL(do_env_free_hook);
-
-void do_env_free(struct ve_struct *env)
-{
-	BUG_ON(env->is_running);
-
-	preempt_disable();
-	do_env_free_hook(env);
-	preempt_enable();
-}
-EXPORT_SYMBOL(do_env_free);
-
-int (*do_ve_enter_hook)(struct ve_struct *ve, unsigned int flags);
-EXPORT_SYMBOL(do_ve_enter_hook);
+static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, ve0_lat_stats);
 
 struct ve_struct ve0 = {
-	.counter		= ATOMIC_INIT(1),
-	.ve_list		= LIST_HEAD_INIT(ve0.ve_list),
 	.start_jiffies		= INITIAL_JIFFIES,
 	.ve_ns			= &init_nsproxy,
 	.ve_netns		= &init_net,
 	.user_ns		= &init_user_ns,
 	.is_running		= 1,
-	.op_sem			= __RWSEM_INITIALIZER(ve0.op_sem),
 #ifdef CONFIG_VE_IPTABLES
 	.ipt_mask		= VE_IP_ALL,	/* everything is allowed */
 	._iptables_modules	= VE_IP_NONE,	/* but nothing yet loaded */
@@ -85,9 +70,8 @@ struct ve_struct ve0 = {
 #else
 					2,
 #endif
-	.devices		= LIST_HEAD_INIT(ve0.devices),
+	.sched_lat_ve.cur	= &ve0_lat_stats,
 	.init_cred		= &init_cred,
-	.sync_mutex		= __MUTEX_INITIALIZER(ve0.sync_mutex),
 };
 
 EXPORT_SYMBOL(ve0);
@@ -126,17 +110,6 @@ EXPORT_SYMBOL(get_ve_by_id);
 
 EXPORT_SYMBOL(ve_list_lock);
 EXPORT_SYMBOL(ve_list_head);
-
-static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, ve0_lat_stats);
-
-void init_ve0(void)
-{
-	struct ve_struct *ve;
-
-	ve = get_ve0();
-	ve->sched_lat_ve.cur = &ve0_lat_stats;
-	list_add(&ve->ve_list, &ve_list_head);
-}
 
 int vz_security_family_check(struct net *net, int family)
 {
@@ -182,5 +155,84 @@ EXPORT_SYMBOL_GPL(vz_security_protocol_check);
 
 int nr_threads_ve(struct ve_struct *ve)
 {
-	return cgroup_task_count(ve->ve_cgroup);
+	return cgroup_task_count(ve->css.cgroup);
 }
+
+static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
+{
+	struct ve_struct *ve = &ve0;
+
+	if (!cg->parent)
+		goto do_init;
+
+	ve = kmem_cache_zalloc(ve_cachep, GFP_KERNEL);
+	if (!ve)
+		return ERR_PTR(-ENOMEM);
+	ve->sched_lat_ve.cur = alloc_percpu(struct kstat_lat_pcpu_snap_struct);
+	if (!ve->sched_lat_ve.cur) {
+		kmem_cache_free(ve_cachep, ve);
+		return ERR_PTR(-ENOMEM);
+	}
+
+do_init:
+	init_rwsem(&ve->op_sem);
+	mutex_init(&ve->sync_mutex);
+	INIT_LIST_HEAD(&ve->devices);
+	ve->meminfo_val = VE_MEMINFO_DEFAULT;
+
+	return &ve->css;
+}
+
+static void ve_destroy(struct cgroup *cg)
+{
+	struct ve_struct *ve = cgroup_ve(cg);
+
+	free_percpu(ve->sched_lat_ve.cur);
+	kmem_cache_free(ve_cachep, ve);
+}
+
+static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
+{
+	if (cgroup_taskset_size(tset) != 1 ||
+	    cgroup_taskset_first(tset) != current)
+		return -EBUSY;
+
+	return 0;
+}
+
+static void ve_attach(struct cgroup *cg, struct cgroup_taskset *tset)
+{
+	struct ve_struct *ve = cgroup_ve(cg);
+	struct task_struct *tsk = current;
+
+	/* this probihibts ptracing of task entered to VE from host system */
+	if (tsk->mm)
+		tsk->mm->vps_dumpable = 0;
+
+	/* Drop OOM protection. */
+	tsk->signal->oom_adj = 0;
+	tsk->signal->oom_score_adj = 0;
+	tsk->signal->oom_score_adj_min = 0;
+
+	/* Leave parent exec domain */
+	tsk->parent_exec_id--;
+
+	tsk->task_ve = ve;
+}
+
+struct cgroup_subsys ve_subsys = {
+	.name		= "ve",
+	.subsys_id	= ve_subsys_id,
+	.create		= ve_create,
+	.destroy	= ve_destroy,
+	.can_attach	= ve_can_attach,
+	.attach		= ve_attach,
+};
+
+static int __init ve_subsys_init(void)
+{
+	ve_cachep = KMEM_CACHE(ve_struct, SLAB_PANIC);
+	list_add(&ve0.ve_list, &ve_list_head);
+	return 0;
+}
+late_initcall(ve_subsys_init);
