@@ -17,6 +17,7 @@
 #include <linux/nsproxy.h>
 #include <linux/mnt_namespace.h>
 #include <linux/lglock.h>
+#include <linux/ve.h>
 
 #include <bc/beancounter.h>
 #include <bc/proc.h>
