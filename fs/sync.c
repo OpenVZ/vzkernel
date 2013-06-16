@@ -270,7 +270,7 @@ SYSCALL_DEFINE1(syncfs, int, fd)
 		 *    by his own later
 		 *  Den
 		 */
-		if (current == get_env_init(ve))
+		if (is_child_reaper(task_pid(current)))
 			goto skip;
 
 		if (!sysctl_fsync_enable)
