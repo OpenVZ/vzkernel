@@ -37,8 +37,6 @@ struct ve_struct {
 	struct list_head	ve_list;
 
 	envid_t			veid;
-	/* capability bounding set */
-	kernel_cap_t		ve_cap_bset;
 	unsigned int		class_id;
 	struct rw_semaphore	op_sem;
 	int			is_running;
@@ -103,7 +101,6 @@ struct ve_struct {
 	int			odirect_enable;
 
 	struct nsproxy		*ve_ns;
-	struct user_namespace	*user_ns;
 	struct cred		*init_cred;
 	struct net		*ve_netns;
 	struct mutex		sync_mutex;
