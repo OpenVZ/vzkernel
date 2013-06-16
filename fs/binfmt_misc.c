@@ -30,7 +30,6 @@
 #include <linux/mount.h>
 #include <linux/syscalls.h>
 #include <linux/fs.h>
-#include <linux/ve_proto.h>
 #include <linux/ve.h>
 
 #include <asm/uaccess.h>
