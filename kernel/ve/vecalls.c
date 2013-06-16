@@ -794,6 +794,9 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	put_nsproxy(old_ns);
 	put_nsproxy(old_ns_net);
 
+	ve->ve_init_task = tsk;
+	tsk->nsproxy->pid_ns->notify_ve = ve;
+
 	ve->is_running = 1;
 	up_write(&ve->op_sem);
 
@@ -996,8 +999,6 @@ static void env_cleanup(struct ve_struct *ve)
 	fini_ve_namespaces(ve, NULL);
 	fini_ve_netns(ve);
 
-	ve_hook_iterate_fini(VE_CLEANUP_CHAIN, ve);
-
 	put_ve_root(ve);
 
 	fini_printk(ve);	/* no printk can happen in ve context anymore */
@@ -1008,6 +1009,9 @@ static void env_cleanup(struct ve_struct *ve)
 	real_put_ve(ve);
 }
 
+static LIST_HEAD(ve_cleanup_list);
+static DEFINE_SPINLOCK(ve_cleanup_lock);
+static struct task_struct *ve_cleanup_thread;
 static DECLARE_COMPLETION(vzmond_complete);
 static int vzmond_helper(void *arg)
 {
@@ -1100,6 +1104,44 @@ static void real_do_env_free(struct ve_struct *ve)
 
 	module_put(THIS_MODULE);
 }
+
+static void vzmon_kill_notifier(void *data)
+{
+	struct ve_struct *ve = data;
+
+	/*
+	 * Here the VE changes its state into "not running".
+	 * op_sem taken for write is a barrier to all VE manipulations from
+	 * ioctl: it waits for operations currently in progress and blocks all
+	 * subsequent operations until is_running is set to 0 and op_sem is
+	 * released.
+	 */
+
+	ve->is_running = 0;
+	ve->ve_init_task = NULL;
+}
+
+static void vzmon_stop_notifier(void *data)
+{
+	struct ve_struct *ve = data;
+
+	spin_lock(&ve_cleanup_lock);
+	list_add_tail(&ve->cleanup_list, &ve_cleanup_list);
+	spin_unlock(&ve_cleanup_lock);
+	wake_up_process(ve_cleanup_thread);
+}
+
+static struct ve_hook vzmon_kill_hook = {
+	.fini		= vzmon_kill_notifier,
+	.priority	= HOOK_PRIO_FINISHING,
+	.owner		= THIS_MODULE,
+};
+
+static struct ve_hook vzmon_stop_hook = {
+	.fini		= vzmon_stop_notifier,
+	.priority	= HOOK_PRIO_FINISHING,
+	.owner		= THIS_MODULE,
+};
 
 /**********************************************************************
  **********************************************************************
@@ -1759,6 +1801,9 @@ static int __init vecalls_init(void)
 {
 	int err;
 
+	ve_hook_register(VE_KILL_CHAIN, &vzmon_kill_hook);
+	ve_hook_register(VE_SS_CHAIN, &vzmon_stop_hook);
+
 	err = init_vecalls_cgroups();
 	if (err)
 		goto out_cgroups;
@@ -1800,6 +1845,9 @@ out_sysctl:
 out_vzmond:
 	fini_vecalls_cgroups();
 out_cgroups:
+	ve_hook_unregister(&vzmon_kill_hook);
+	ve_hook_unregister(&vzmon_stop_hook);
+
 	return err;
 }
 
@@ -1812,6 +1860,8 @@ static void __exit vecalls_exit(void)
 	fini_vzmond();
 	fini_vecalls_sysctl();
 	fini_vecalls_cgroups();
+	ve_hook_unregister(&vzmon_kill_hook);
+	ve_hook_unregister(&vzmon_stop_hook);
 }
 
 MODULE_AUTHOR("SWsoft <info@sw-soft.com>");
