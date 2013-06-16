@@ -208,7 +208,6 @@ repeat:
 			leader->exit_state = EXIT_DEAD;
 	}
 
-	p->ve_task_info.owner_env->pcounter--;
 	write_unlock_irq(&tasklist_lock);
 	release_thread(p);
 	ub_task_uncharge(p->task_bc.task_ub);
