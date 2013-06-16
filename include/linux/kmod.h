@@ -23,7 +23,7 @@
 #include <linux/stddef.h>
 #include <linux/errno.h>
 #include <linux/compiler.h>
-#include <linux/workqueue.h>
+#include <linux/kthread.h>
 #include <linux/sysctl.h>
 
 #define KMOD_PATH_LEN 256
@@ -54,7 +54,7 @@ struct file;
 #define UMH_KILLABLE	4	/* wait for EXEC/PROC killable */
 
 struct subprocess_info {
-	struct work_struct work;
+	struct kthread_work work;
 	struct completion *complete;
 	char *path;
 	char **argv;
@@ -66,6 +66,11 @@ struct subprocess_info {
 	void *data;
 };
 
+extern int
+call_usermodehelper_by(struct kthread_worker *worker,
+			char *path, char **argv, char **envp, int wait,
+			int (*init)(struct subprocess_info *info, struct cred *new),
+			void (*cleanup)(struct subprocess_info *), void *data);
 extern int
 call_usermodehelper(char *path, char **argv, char **envp, int wait);
 
