@@ -523,6 +523,82 @@ static void fini_vecalls_cgroups(void)
 	kern_unmount(ve_cgroup_mnt);
 }
 
+struct kthread_attach_work {
+	struct kthread_work work;
+	struct completion done;
+	struct task_struct *target;
+	int result;
+};
+
+static void kthread_attach_fn(struct kthread_work *w)
+{
+	struct kthread_attach_work *work = container_of(w,
+			struct kthread_attach_work, work);
+	struct task_struct *target = work->target;
+	struct cred *cred;
+	int err;
+
+	switch_task_namespaces(current, get_nsproxy(target->nsproxy));
+
+	/* share fs_struct with target */
+	task_lock(current);
+	spin_lock(&current->fs->lock);
+	current->fs->users--; /* kthreadd holds it */
+	spin_unlock(&current->fs->lock);
+	spin_lock(&target->fs->lock);
+	target->fs->users++;
+	current->fs = target->fs;
+	spin_unlock(&target->fs->lock);
+	task_unlock(current);
+
+	unshare_fs_struct();
+
+	err = -ENOMEM;
+	cred = prepare_kernel_cred(target);
+	if (!cred)
+		goto out;
+	err = commit_creds(cred);
+	if (err)
+		goto out;
+
+	err = change_active_pid_ns(current, task_active_pid_ns(target));
+	if (err)
+		goto out;
+
+	err = cgroup_attach_task_all(target, current);
+	if (err)
+		goto out;
+out:
+	work->result = err;
+	complete(&work->done);
+}
+
+static int start_ve_kthread(struct ve_struct *ve)
+{
+	struct task_struct *t;
+	struct kthread_attach_work attach = {
+		KTHREAD_WORK_INIT(attach.work, kthread_attach_fn),
+		COMPLETION_INITIALIZER_ONSTACK(attach.done),
+		.target = current,
+	};
+
+	init_kthread_worker(&ve->ve_kthread_worker);
+	t = kthread_run(kthread_worker_fn, &ve->ve_kthread_worker,
+			"kthreadd/%u", ve->veid);
+	if (IS_ERR(t))
+		return PTR_ERR(t);
+
+	queue_kthread_work(&ve->ve_kthread_worker, &attach.work);
+	wait_for_completion(&attach.done);
+	if (attach.result) {
+		kthread_stop(t);
+		return attach.result;
+	}
+
+	ve->ve_kthread_task = t;
+	return 0;
+}
+
 static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 			 env_create_param_t *data, int datalen)
 {
@@ -635,6 +711,10 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	if ((err = ve_hook_iterate_init(VE_SS_CHAIN, ve)) < 0)
 		goto err_ve_hook;
 
+	err = start_ve_kthread(ve);
+	if (err)
+		goto err_ve_kthread;
+
 	put_nsproxy(old_ns);
 	put_nsproxy(old_ns_net);
 
@@ -653,6 +733,7 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 
 	return veid;
 
+err_ve_kthread:
 err_ve_hook:
 	cgroup_kernel_attach(ve0.css.cgroup, current);
 err_ve_attach:
@@ -933,6 +1014,13 @@ static void vzmon_kill_notifier(void *data)
 
 	ve->is_running = 0;
 	ve->ve_init_task = NULL;
+
+	/*
+	 * Stop kernel thread, or zap_pid_ns_processes() would wait it forever.
+	 */
+	flush_kthread_worker(&ve->ve_kthread_worker);
+	kthread_stop(ve->ve_kthread_task);
+	ve->ve_kthread_task = NULL;
 }
 
 static void vzmon_stop_notifier(void *data)
