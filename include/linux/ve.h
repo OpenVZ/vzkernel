@@ -20,6 +20,7 @@
 #include <linux/pid.h>
 #include <linux/path.h>
 #include <linux/socket.h>
+#include <linux/kthread.h>
 #include <linux/ve_proto.h>
 #include <net/inet_frag.h>
 #include <linux/cgroup.h>
@@ -48,6 +49,9 @@ struct ve_struct {
 
 	/* protected with ve->op_sem */
 	struct task_struct	*ve_init_task;
+
+	struct task_struct	*ve_kthread_task;
+	struct kthread_worker	ve_kthread_worker;
 
 /* VE's root */
 	struct path		root_path;
