@@ -2789,7 +2789,6 @@ void tcp_connect_init(struct sock *sk)
 	const struct dst_entry *dst = __sk_dst_get(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 	__u8 rcv_wscale;
-	static int once = 0;
 
 	/* We'll fix this up when we get a response from the other end.
 	 * See tcp_input.c:tcp_rcv_state_process case TCP_SYN_SENT.
@@ -2809,26 +2808,11 @@ void tcp_connect_init(struct sock *sk)
 	tcp_mtup_init(sk);
 	tcp_sync_mss(sk, dst_mtu(dst));
 
-	if (!once && dst_metric(dst, RTAX_ADVMSS) == 0) {
-		once = 1;
-
-		printk("Oops in connect_init! dst->advmss=%d\n",
-				dst_metric(dst, RTAX_ADVMSS));
-		printk("dst: pmtu=%u\n", dst_metric(dst, RTAX_MTU));
-		printk("sk->state=%d, tp: ack.rcv_mss=%d, mss_cache=%d, "
-				"advmss=%d, user_mss=%d\n",
-				sk->sk_state, inet_csk(sk)->icsk_ack.rcv_mss,
-				tp->mss_cache, tp->advmss, tp->rx_opt.user_mss);
-	}
-
 	if (!tp->window_clamp)
 		tp->window_clamp = dst_metric(dst, RTAX_WINDOW);
 	tp->advmss = dst_metric_advmss(dst);
 	if (tp->rx_opt.user_mss && tp->rx_opt.user_mss < tp->advmss)
 		tp->advmss = tp->rx_opt.user_mss;
-
-	if (tp->advmss == 0)
-		tp->advmss = 1460;
 
 	tcp_initialize_rcv_mss(sk);
 
