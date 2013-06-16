@@ -521,7 +521,6 @@ static void init_ve_cred(struct ve_struct *ve, struct cred *new)
 static void ve_move_task(struct ve_struct *new)
 {
 	struct task_struct *tsk = current;
-	struct ve_struct *old;
 
 	might_sleep();
 	BUG_ON(!(thread_group_leader(tsk) && thread_group_empty(tsk)));
@@ -540,12 +539,6 @@ static void ve_move_task(struct ve_struct *new)
 
 	/* Leave parent exec domain */
 	tsk->parent_exec_id--;
-
-	old = tsk->ve_task_info.owner_env;
-	tsk->ve_task_info.owner_env = new;
-
-	real_put_ve(old);
-	get_ve(new);
 
 	cgroup_kernel_attach(new->ve_cgroup, tsk);
 }
@@ -665,17 +658,12 @@ static void fini_vecalls_cgroups(void) { ; }
 static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 			 env_create_param_t *data, int datalen)
 {
-	struct task_struct *tsk;
+	struct task_struct *tsk = current;
+	struct ve_struct *old_ve, *ve;
 	struct cred *new_creds;
-	struct ve_struct *old;
-	struct ve_struct *old_exec;
-	struct ve_struct *ve;
- 	__u64 init_mask;
+	__u64 init_mask;
 	int err;
 	struct nsproxy *old_ns, *old_ns_net;
-
-	tsk = current;
-	old = VE_TASK_INFO(tsk)->owner_env;
 
 	if (!thread_group_leader(tsk) || !thread_group_empty(tsk))
 		return -EINVAL;
@@ -738,8 +726,8 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	if ((err = init_printk(ve)) < 0)
 		goto err_log_wait;
 
-	old_exec = tsk->ve_task_info.exec_env;
-	tsk->ve_task_info.exec_env = ve;
+	old_ve = tsk->task_ve;
+	tsk->task_ve = ve;
 
 	if ((err = init_ve_sched(ve, data->total_vcpus)) < 0)
 		goto err_sched;
@@ -798,7 +786,7 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	return veid;
 
 err_ve_hook:
-	ve_move_task(old);
+	ve_move_task(old_ve);
 	/* creds will put user and user ns */
 err_uns:
 	put_cred(new_creds);
@@ -828,23 +816,11 @@ err_netns:
 err_ns:
 	put_ve_root(ve);
 
-	/* It is safe to restore current->envid here because
-	 * ve_fairsched_detach does not use current->envid. */
-	/* Really fairsched code uses current->envid in sys_fairsched_mknod 
-	 * only.  It is correct if sys_fairsched_mknod is called from
-	 * userspace.  If sys_fairsched_mknod is called from
-	 * ve_fairsched_attach, then node->envid and node->parent_node->envid
-	 * are explicitly set to valid value after the call. */
-	/* FIXME */
-	VE_TASK_INFO(tsk)->owner_env = old;
-	VE_TASK_INFO(tsk)->exec_env = old_exec;
-
 	fini_ve_sched(ve, 1);
 err_sched:
-	tsk->ve_task_info.exec_env = old_exec;
+	tsk->task_ve = old_ve;
 
 	/* we can jump here having incorrect envid */
-	VE_TASK_INFO(tsk)->owner_env = old;
 	fini_printk(ve);
 err_log_wait:
 	/* cpustats will be freed in do_env_free */
@@ -954,7 +930,7 @@ static int do_env_enter(struct ve_struct *ve, unsigned int flags)
 		goto out_up;
 #endif
 	switch_ve_namespaces(ve, tsk);
-	tsk->ve_task_info.exec_env = ve;
+	tsk->task_ve = ve;
 	ve_move_task(ve);
 
 	if (alone_in_pgrp(tsk) && !(flags & VE_SKIPLOCK))
@@ -965,7 +941,7 @@ static int do_env_enter(struct ve_struct *ve, unsigned int flags)
 	 * If user space callers wants, it will do setsid() after
 	 * VE_ENTER.
 	 */
-	err = VE_TASK_INFO(tsk)->owner_env->veid;
+	err = task_veid(tsk);
 	tsk->did_ve_enter = 1;
 
 out_up:
