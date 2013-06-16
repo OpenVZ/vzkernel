@@ -60,9 +60,6 @@ struct pid
 	unsigned int level;
 	/* lists of tasks that use this pid */
 	struct hlist_head tasks[PIDTYPE_MAX];
-#ifdef CONFIG_BEANCOUNTERS
-	struct user_beancounter *ub;
-#endif
 	struct rcu_head rcu;
 	struct upid numbers[1];
 };
