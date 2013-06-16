@@ -2819,55 +2819,6 @@ int proc_doulongvec_ms_jiffies_minmax(struct ctl_table *table, int write,
 
 #endif /* CONFIG_PROC_SYSCTL */
 
-#ifdef CONFIG_PID_NS
-#include <linux/pid_namespace.h>
-
-static int proc_pid_ns_hide_child(struct ctl_table *table, int write,
-		void __user *buffer, size_t *lenp, loff_t *ppos)
-{
-	int tmp, res;
-
-	tmp = (current->nsproxy->pid_ns->flags & PID_NS_HIDE_CHILD) ? 1 : 0;
-
-	res = __do_proc_dointvec(&tmp, table, write, buffer,
-			       lenp, ppos, NULL, NULL);
-	if (res || !write)
-		return res;
-
-	if (tmp)
-		current->nsproxy->pid_ns->flags |= PID_NS_HIDE_CHILD;
-	else
-		current->nsproxy->pid_ns->flags &= ~PID_NS_HIDE_CHILD;
-	return 0;
-}
-
-static struct ctl_table pid_ns_kern_table[] = {
-	{
-		.procname	= "pid_ns_hide_child",
-		.maxlen		= sizeof(int),
-		.mode		= 0600,
-		.proc_handler	= proc_pid_ns_hide_child,
-	},
-	{}
-};
-
-static struct ctl_table pid_ns_root_table[] = {
-	{
-		.procname	= "kernel",
-		.mode		= 0555,
-		.child		= pid_ns_kern_table,
-	},
-	{}
-};
-
-static __init int pid_ns_sysctl_init(void)
-{
-	register_sysctl_table(pid_ns_root_table);
-	return 0;
-}
-postcore_initcall(pid_ns_sysctl_init);
-#endif /* CONFIG_PID_NS */
-
 /*
  * No sense putting this after each symbol definition, twice,
  * exception granted :-)
