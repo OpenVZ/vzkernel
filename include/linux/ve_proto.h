@@ -39,6 +39,8 @@ struct env_create_param3;
 extern int real_env_create(envid_t veid, unsigned flags, u32 class_id,
 			   struct env_create_param3 *data, int datalen);
 
+extern int nr_threads_ve(struct ve_struct *ve);
+
 int set_device_perms_ve(struct ve_struct *, unsigned, dev_t, unsigned);
 int get_device_perms_ve(int dev_type, dev_t dev, int access_mode);
 int devperms_seq_show(struct seq_file *m, void *v);
@@ -93,6 +95,8 @@ extern void ve_hook_unregister(struct ve_hook *vh);
 #else /* CONFIG_VE */
 #define ve_hook_register(ch, vh)	do { } while (0)
 #define ve_hook_unregister(ve)		do { } while (0)
+
+#define nr_threads_ve(ve)	(nr_threads)
 
 #define get_device_perms_ve(t, d, a)	(0)
 #endif /* CONFIG_VE */
