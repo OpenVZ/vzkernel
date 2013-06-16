@@ -18,6 +18,7 @@
 #include <linux/pid_namespace.h>
 #include <linux/syscalls.h>
 #include <linux/fairsched.h>
+#include <linux/ve.h>
 #include <linux/uaccess.h>
 
 static struct cgroup *fairsched_root, *fairsched_host;
