@@ -31,6 +31,7 @@
 #include <linux/syscalls.h>
 #include <linux/fs.h>
 #include <linux/ve_proto.h>
+#include <linux/ve.h>
 
 #include <asm/uaccess.h>
 
@@ -64,12 +65,6 @@ struct binfmt_misc {
 	rwlock_t entries_lock;
 	struct vfsmount *bm_mnt;
 	int entry_count;
-};
-
-struct binfmt_misc binfmt_data = {
-	.entries	= LIST_HEAD_INIT(binfmt_data.entries),
-	.enabled	= 1,
-	.entries_lock	= __RW_LOCK_UNLOCKED(binfmt_data.entries_lock),
 };
 
 /* 
@@ -123,7 +118,7 @@ static int load_misc_binary(struct linux_binprm *bprm)
 	const char *iname_addr = iname;
 	int retval;
 	int fd_binary = -1;
-	struct binfmt_misc *bm_data = &binfmt_data;
+	struct binfmt_misc *bm_data = get_exec_env()->binfmt_misc;
 
 	retval = -ENOEXEC;
 	if (!bm_data || !bm_data->enabled)
@@ -686,9 +681,21 @@ static const struct file_operations bm_status_operations = {
 
 /* Superblock handling */
 
+static void bm_put_super(struct super_block *sb)
+{
+	struct binfmt_misc *bm_data = sb->s_fs_info;
+	struct ve_struct *ve = sb->s_ns;
+
+	if (ve)
+		ve->binfmt_misc = NULL;
+	kfree(bm_data);
+	put_ve(ve);
+}
+
 static const struct super_operations s_ops = {
 	.statfs		= simple_statfs,
 	.evict_inode	= bm_evict_inode,
+	.put_super	= bm_put_super,
 };
 
 static int bm_fill_super(struct super_block * sb, void * data, int silent)
@@ -698,18 +705,37 @@ static int bm_fill_super(struct super_block * sb, void * data, int silent)
 		[3] = {"register", &bm_register_operations, S_IWUSR},
 		/* last one */ {""}
 	};
-	int err = simple_fill_super(sb, BINFMTFS_MAGIC, bm_files);
-	if (!err) {
-		sb->s_op = &s_ops;
-		sb->s_fs_info = &binfmt_data;
+	struct binfmt_misc *bm_data;
+	struct ve_struct *ve;
+	int err;
+
+	bm_data = kzalloc(sizeof(struct binfmt_misc), GFP_KERNEL);
+	if (!bm_data)
+		return -ENOMEM;
+
+	INIT_LIST_HEAD(&bm_data->entries);
+	rwlock_init(&bm_data->entries_lock);
+	bm_data->enabled = 1;
+
+	err = simple_fill_super(sb, BINFMTFS_MAGIC, bm_files);
+	if (err) {
+		kfree(bm_data);
+		return err;
 	}
-	return err;
+
+	sb->s_op = &s_ops;
+	sb->s_fs_info = bm_data;
+	ve = get_ve(sb->s_ns);
+	if (ve)
+		ve->binfmt_misc = bm_data;
+
+	return 0;
 }
 
 static struct dentry *bm_mount(struct file_system_type *fs_type,
 	int flags, const char *dev_name, void *data)
 {
-	return mount_single(fs_type, flags, data, bm_fill_super);
+	return mount_ns(fs_type, flags, get_exec_env(), bm_fill_super);
 }
 
 static struct linux_binfmt misc_format = {
@@ -722,6 +748,7 @@ static struct file_system_type bm_fs_type = {
 	.name		= "binfmt_misc",
 	.mount		= bm_mount,
 	.kill_sb	= kill_litter_super,
+	.fs_flags	= FS_VIRTUALIZED,
 };
 MODULE_ALIAS_FS("binfmt_misc");
 
