@@ -39,11 +39,12 @@ static int proc_set_super(struct super_block *sb, void *data)
 }
 
 enum {
-	Opt_gid, Opt_hidepid, Opt_err,
+	Opt_gid, Opt_hidepid, Opt_hidepidns, Opt_err,
 };
 
 static const match_table_t tokens = {
 	{Opt_hidepid, "hidepid=%u"},
+	{Opt_hidepidns, "hidepidns=%u"},
 	{Opt_gid, "gid=%u"},
 	{Opt_err, NULL},
 };
@@ -78,6 +79,15 @@ static int proc_parse_options(char *options, struct pid_namespace *pid)
 				return 0;
 			}
 			pid->hide_pid = option;
+			break;
+		case Opt_hidepidns:
+			if (match_int(&args[0], &option))
+				return 0;
+			if (option < 0 || option > 1) {
+				pr_err("proc: hidepidns value must be between 0 and 1.\n");
+				return 0;
+			}
+			pid->hide_pidns = option;
 			break;
 		default:
 			pr_err("proc: unrecognized mount option \"%s\" "
