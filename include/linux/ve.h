@@ -148,6 +148,9 @@ struct ve_struct {
 	/* see vzcalluser.h for VE_FEATURE_XXX definitions */
 	__u64			features;
 
+	/* protected with ve->op_sem */
+	struct task_struct	*ve_init_task;
+
 /* VE's root */
 	struct path		root_path;
 
@@ -259,12 +262,6 @@ static inline void put_ve(struct ve_struct *ptr)
 	if (ptr && atomic_dec_and_test(&ptr->counter))
 		do_env_free(ptr);
 }
-
-void ve_cleanup_schedule(struct ve_struct *);
-
-extern spinlock_t ve_cleanup_lock;
-extern struct list_head ve_cleanup_list;
-extern struct task_struct *ve_cleanup_thread;
 
 extern int (*do_ve_enter_hook)(struct ve_struct *ve, unsigned int flags);
 extern void (*do_env_free_hook)(struct ve_struct *ve);
