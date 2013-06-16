@@ -55,6 +55,8 @@
 #include <linux/nsproxy.h>
 #include <linux/rcupdate.h>
 
+#include <linux/vzcalluser.h>
+
 #include <asm/uaccess.h>
 
 #include "nfs4_fs.h"
@@ -2619,6 +2621,9 @@ struct dentry *nfs_fs_mount(struct file_system_type *fs_type,
 	struct dentry *mntroot = ERR_PTR(-ENOMEM);
 	struct nfs_subversion *nfs_mod;
 	int error;
+
+	if (!(get_exec_env()->features & VE_FEATURE_NFS))
+		return ERR_PTR(-ENODEV);
 
 	mount_info.parsed = nfs_alloc_parsed_mount_data();
 	mount_info.mntfh = nfs_alloc_fhandle();
