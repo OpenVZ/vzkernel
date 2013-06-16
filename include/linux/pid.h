@@ -61,7 +61,7 @@ struct pid
 	/* lists of tasks that use this pid */
 	struct hlist_head tasks[PIDTYPE_MAX];
 	struct rcu_head rcu;
-	struct upid numbers[1];
+	struct upid numbers[2];
 };
 
 extern struct pid init_struct_pid;
