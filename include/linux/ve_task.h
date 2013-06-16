@@ -27,18 +27,11 @@ extern struct ve_struct ve0;
 #define get_ve0()	(&ve0)
 
 #define get_exec_env()	(current->ve_task_info.exec_env)
-#define set_exec_env(ve)	({		\
-		struct ve_struct *__old;	\
-		__old = current->ve_task_info.exec_env;	\
-		current->ve_task_info.exec_env = ve;	\
-		__old;				\
-	})
 #define get_env_init(ve)	(ve->ve_ns->pid_ns->child_reaper)
 #define task_veid(t)		((t)->ve_task_info.owner_env->veid)
 #else
 #define get_ve0()		(NULL)
 #define get_exec_env()		(NULL)
-#define set_exec_env(new_env)	(NULL)
 #define get_env_init(ve)	(&init_task)
 #define task_veid(t)		(0)
 #endif
