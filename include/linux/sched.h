@@ -1544,7 +1544,7 @@ struct task_struct {
 	struct task_beancounter task_bc;
 #endif
 #ifdef CONFIG_VE
-	struct ve_task_info ve_task_info;
+	struct ve_struct *task_ve;
 #endif
 #ifdef CONFIG_MEMCG /* memcg uses this to do batch job */
 	struct memcg_batch_info {
@@ -2469,10 +2469,6 @@ static inline struct task_struct *next_thread(const struct task_struct *p)
 	struct task_struct *tsk;
 	tsk = list_entry_rcu(p->thread_group.next,
 			      struct task_struct, thread_group);
-#ifdef CONFIG_VE
-	/* all threads should belong to ONE ve! */
-	BUG_ON(VE_TASK_INFO(tsk)->owner_env != VE_TASK_INFO(p)->owner_env);
-#endif
 	return tsk;
 }
 

@@ -14,21 +14,13 @@
 #include <linux/seqlock.h>
 #include <asm/timex.h>
 
-struct ve_task_info {
-/* virtualization */
-	struct ve_struct *owner_env;
-	struct ve_struct *exec_env;
-};
-
-#define VE_TASK_INFO(task)	(&(task)->ve_task_info)
-
 #ifdef CONFIG_VE
 extern struct ve_struct ve0;
 #define get_ve0()	(&ve0)
 
-#define get_exec_env()	(current->ve_task_info.exec_env)
+#define get_exec_env()	(current->task_ve)
 #define get_env_init(ve)	(ve->ve_ns->pid_ns->child_reaper)
-#define task_veid(t)		((t)->ve_task_info.owner_env->veid)
+#define task_veid(t)		((t)->task_ve->veid)
 #else
 #define get_ve0()		(NULL)
 #define get_exec_env()		(NULL)
