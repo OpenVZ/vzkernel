@@ -434,6 +434,40 @@ struct task_struct *pid_task(struct pid *pid, enum pid_type type)
 }
 EXPORT_SYMBOL(pid_task);
 
+int change_active_pid_ns(struct task_struct *task, struct pid_namespace *ns)
+{
+	struct pid *pid = task_pid(task);
+	struct upid *upid = pid->numbers + pid->level;
+	int nr;
+
+	if (upid->ns != ns->parent || upid->ns->pid_cachep != ns->pid_cachep)
+		return -EINVAL;
+
+	nr = alloc_pidmap(ns);
+	if (nr < 0)
+		return -ENOMEM;
+
+	get_pid_ns(ns);
+	put_pid_ns(upid->ns);
+
+	upid++;
+	upid->nr = nr;
+	upid->ns = ns;
+	smp_wmb();
+	pid->level++;
+
+	spin_lock_irq(&pidmap_lock);
+	hlist_add_head_rcu(&upid->pid_chain, &pid_hash[pid_hashfn(nr, ns)]);
+	ns->nr_hashed++;
+	spin_unlock_irq(&pidmap_lock);
+
+	if (is_child_reaper(pid))
+		ns->child_reaper = task;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(change_active_pid_ns);
+
 /*
  * Must be called under rcu_read_lock().
  */
