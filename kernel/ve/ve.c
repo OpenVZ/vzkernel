@@ -52,7 +52,6 @@ EXPORT_SYMBOL(do_env_free_hook);
 
 void do_env_free(struct ve_struct *env)
 {
-	BUG_ON(env->pcounter > 0);
 	BUG_ON(env->is_running);
 
 	preempt_disable();
@@ -66,7 +65,6 @@ EXPORT_SYMBOL(do_ve_enter_hook);
 
 struct ve_struct ve0 = {
 	.counter		= ATOMIC_INIT(1),
-	.pcounter		= 1,
 	.ve_list		= LIST_HEAD_INIT(ve0.ve_list),
 	.start_jiffies		= INITIAL_JIFFIES,
 	.ve_ns			= &init_nsproxy,
@@ -174,3 +172,8 @@ int vz_security_protocol_check(struct net *net, int protocol)
 	}
 }
 EXPORT_SYMBOL_GPL(vz_security_protocol_check);
+
+int nr_threads_ve(struct ve_struct *ve)
+{
+	return cgroup_task_count(ve->ve_cgroup);
+}

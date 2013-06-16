@@ -94,7 +94,6 @@ static void real_do_env_free(struct ve_struct *ve);
 static inline void real_put_ve(struct ve_struct *ve)
 {
 	if (ve && atomic_dec_and_test(&ve->counter)) {
-		BUG_ON(ve->pcounter > 0);
 		BUG_ON(ve->is_running);
 		real_do_env_free(ve);
 	}
@@ -544,11 +543,6 @@ static void ve_move_task(struct ve_struct *new)
 
 	old = tsk->ve_task_info.owner_env;
 	tsk->ve_task_info.owner_env = new;
-
-	write_lock_irq(&tasklist_lock);
-	old->pcounter--;
-	new->pcounter++;
-	write_unlock_irq(&tasklist_lock);
 
 	real_put_ve(old);
 	get_ve(new);
@@ -1427,7 +1421,7 @@ static int veinfo_seq_show(struct seq_file *m, void *v)
 
 	ve = list_entry((struct list_head *)v, struct ve_struct, ve_list);
 
-	seq_printf(m, "%10u %5u %5u", ve->veid, ve->class_id, ve->pcounter);
+	seq_printf(m, "%10u %5u %5u", ve->veid, ve->class_id, nr_threads_ve(ve));
 
 	rcu_read_lock();
 	veaddr_seq_print = rcu_dereference(veaddr_seq_print_cb);
