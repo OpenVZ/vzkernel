@@ -38,7 +38,7 @@
 #include <linux/signal.h>
 #include <linux/slab.h>
 #include <linux/notifier.h>
-#include <linux/ve_task.h>
+#include <linux/ve.h>
 
 #include <asm/uaccess.h>
 #include <asm/byteorder.h>
