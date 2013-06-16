@@ -129,9 +129,6 @@ void init_ve_system(void)
 	ve = get_ve0();
 
 	init_entry = init_pid_ns.child_reaper;
-	/* if ve_move_task to VE0 (e.g. in cpt code)	*
-	 * occurs, ve_cap_bset on VE0 is required	*/
-	ve->ve_cap_bset = CAP_FULL_SET;
 
 	get_fs_root(init_entry->fs, &root);
 	ve->root_path = root;
