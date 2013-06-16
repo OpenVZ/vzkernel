@@ -56,7 +56,6 @@ struct ve_struct ve0 = {
 	.start_jiffies		= INITIAL_JIFFIES,
 	.ve_ns			= &init_nsproxy,
 	.ve_netns		= &init_net,
-	.user_ns		= &init_user_ns,
 	.is_running		= 1,
 #ifdef CONFIG_VE_IPTABLES
 	.ipt_mask		= VE_IP_ALL,	/* everything is allowed */
