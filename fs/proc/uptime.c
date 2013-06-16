@@ -6,6 +6,7 @@
 #include <linux/time.h>
 #include <linux/kernel_stat.h>
 #include <linux/fairsched.h>
+#include <linux/ve.h>
 #include <linux/cgroup.h>
 #include <asm/cputime.h>
 

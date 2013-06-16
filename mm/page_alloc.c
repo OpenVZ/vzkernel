@@ -60,6 +60,7 @@
 #include <linux/page-debug-flags.h>
 #include <linux/hugetlb.h>
 #include <linux/sched/rt.h>
+#include <linux/ve.h>
 
 #include <bc/oom_kill.h>
 #include <bc/kmem.h>
