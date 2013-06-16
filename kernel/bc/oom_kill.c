@@ -219,7 +219,7 @@ void ub_oom_mm_dead(struct mm_struct *mm)
 	printk("OOM killed process %s (pid=%d, ve=%d) exited, "
 			"free=%lu.\n",
 			current->comm, current->pid,
-			VEID(current->ve_task_info.owner_env),
+			task_veid(current),
 			nr_free_pages());
 
 	if (mm->global_oom) {
