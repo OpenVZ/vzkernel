@@ -685,9 +685,7 @@ static void bm_put_super(struct super_block *sb)
 	struct binfmt_misc *bm_data = sb->s_fs_info;
 	struct ve_struct *ve = sb->s_ns;
 
-	if (ve)
-		ve->binfmt_misc = NULL;
-	kfree(bm_data);
+	bm_data->enabled = 0;
 	put_ve(ve);
 }
 
@@ -704,17 +702,20 @@ static int bm_fill_super(struct super_block * sb, void * data, int silent)
 		[3] = {"register", &bm_register_operations, S_IWUSR},
 		/* last one */ {""}
 	};
-	struct binfmt_misc *bm_data;
-	struct ve_struct *ve;
+	struct ve_struct *ve = sb->s_ns;
+	struct binfmt_misc *bm_data = ve->binfmt_misc;
 	int err;
 
-	bm_data = kzalloc(sizeof(struct binfmt_misc), GFP_KERNEL);
-	if (!bm_data)
-		return -ENOMEM;
+	if (!bm_data) {
+		bm_data = kzalloc(sizeof(struct binfmt_misc), GFP_KERNEL);
+		if (!bm_data)
+			return -ENOMEM;
 
-	INIT_LIST_HEAD(&bm_data->entries);
-	rwlock_init(&bm_data->entries_lock);
-	bm_data->enabled = 1;
+		INIT_LIST_HEAD(&bm_data->entries);
+		rwlock_init(&bm_data->entries_lock);
+
+		ve->binfmt_misc = bm_data;
+	}
 
 	err = simple_fill_super(sb, BINFMTFS_MAGIC, bm_files);
 	if (err) {
@@ -724,9 +725,9 @@ static int bm_fill_super(struct super_block * sb, void * data, int silent)
 
 	sb->s_op = &s_ops;
 	sb->s_fs_info = bm_data;
-	ve = get_ve(sb->s_ns);
-	if (ve)
-		ve->binfmt_misc = bm_data;
+
+	bm_data->enabled = 1;
+	get_ve(ve);
 
 	return 0;
 }

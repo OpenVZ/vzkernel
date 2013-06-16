@@ -188,6 +188,7 @@ static void ve_destroy(struct cgroup *cg)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 
+	kfree(ve->binfmt_misc);
 	free_percpu(ve->sched_lat_ve.cur);
 	kmem_cache_free(ve_cachep, ve);
 }
