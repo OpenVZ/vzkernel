@@ -183,6 +183,15 @@ const struct file_operations proc_net_operations = {
 	.readdir	= proc_tgid_net_readdir,
 };
 
+struct proc_dir_entry *proc_net_create_data(const char *name, umode_t mode,
+					    struct proc_dir_entry *parent,
+					    const struct file_operations *fops,
+					    void *data)
+{
+	return proc_create_data(name, S_ISVTX | mode, parent, fops, data);
+}
+EXPORT_SYMBOL_GPL(proc_net_create_data);
+
 static __net_init int proc_net_ns_init(struct net *net)
 {
 	struct proc_dir_entry *netd, *net_statd;
