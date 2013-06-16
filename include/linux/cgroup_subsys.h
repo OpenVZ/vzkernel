@@ -84,3 +84,9 @@ SUBSYS(bcache)
 #endif
 
 /* */
+
+#ifdef CONFIG_VE
+SUBSYS(ve)
+#endif
+
+/* */
