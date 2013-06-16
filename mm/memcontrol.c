@@ -5427,7 +5427,7 @@ int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 	if (memsw < RESOURCE_MAX - mem)
 		memsw += mem;
 	else
-		mem = RESOURCE_MAX;
+		memsw = RESOURCE_MAX;
 
 	kmem = ub->ub_parms[UB_KMEMSIZE].limit;
 	if (kmem >= RESOURCE_MAX)
