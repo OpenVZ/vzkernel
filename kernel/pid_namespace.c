@@ -19,7 +19,7 @@
 #include <linux/reboot.h>
 #include <linux/export.h>
 #include <linux/module.h>
-#include <linux/ve_proto.h>
+#include <linux/ve.h>
 #include <linux/kthread.h>
 
 #include <bc/kmem.h>
