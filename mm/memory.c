@@ -61,6 +61,7 @@
 #include <linux/migrate.h>
 #include <linux/string.h>
 #include <linux/userfaultfd_k.h>
+#include <linux/ve.h>
 
 #include <bc/beancounter.h>
 #include <bc/io_acct.h>

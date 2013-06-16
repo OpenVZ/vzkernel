@@ -5,6 +5,7 @@
 #include <linux/seq_file.h>
 #include <linux/ctype.h>
 #include <linux/oom.h>
+#include <linux/ve.h>
 
 #include <bc/beancounter.h>
 
