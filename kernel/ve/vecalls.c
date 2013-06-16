@@ -744,7 +744,8 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	if ((err = init_printk(ve)) < 0)
 		goto err_log_wait;
 
-	old_exec = set_exec_env(ve);
+	old_exec = tsk->ve_task_info.exec_env;
+	tsk->ve_task_info.exec_env = ve;
 
 	if ((err = init_ve_sched(ve, data->total_vcpus)) < 0)
 		goto err_sched;
@@ -843,7 +844,7 @@ err_ns:
 
 	fini_ve_sched(ve, 1);
 err_sched:
-	(void)set_exec_env(old_exec);
+	tsk->ve_task_info.exec_env = old_exec;
 
 	/* we can jump here having incorrect envid */
 	VE_TASK_INFO(tsk)->owner_env = old;
@@ -956,7 +957,7 @@ static int do_env_enter(struct ve_struct *ve, unsigned int flags)
 		goto out_up;
 #endif
 	switch_ve_namespaces(ve, tsk);
-	set_exec_env(ve);
+	tsk->ve_task_info.exec_env = ve;
 	ve_move_task(ve);
 
 	if (alone_in_pgrp(tsk) && !(flags & VE_SKIPLOCK))
@@ -977,12 +978,9 @@ out_up:
 
 static void env_cleanup(struct ve_struct *ve)
 {
-	struct ve_struct *old_ve;
-
 	VZTRACE("real_do_env_cleanup\n");
 
 	down_read(&ve->op_sem);
-	old_ve = set_exec_env(ve);
 
 	fini_venet(ve);
 
@@ -1002,7 +1000,6 @@ static void env_cleanup(struct ve_struct *ve)
 
 	put_ve_root(ve);
 
-	(void)set_exec_env(old_ve);
 	fini_printk(ve);	/* no printk can happen in ve context anymore */
 
 	ve_list_del(ve);
