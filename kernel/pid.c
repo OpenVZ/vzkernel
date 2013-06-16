@@ -438,7 +438,7 @@ int change_active_pid_ns(struct task_struct *task, struct pid_namespace *ns)
 {
 	struct pid *pid = task_pid(task);
 	struct upid *upid = pid->numbers + pid->level;
-	int nr;
+	int nr, err;
 
 	if (upid->ns != ns->parent || upid->ns->pid_cachep != ns->pid_cachep)
 		return -EINVAL;
@@ -456,15 +456,26 @@ int change_active_pid_ns(struct task_struct *task, struct pid_namespace *ns)
 	smp_wmb();
 	pid->level++;
 
+	if (is_child_reaper(pid)) {
+		err = pid_ns_prepare_proc(ns);
+		if (err)
+			goto undo;
+		ns->child_reaper = task;
+	}
+
 	spin_lock_irq(&pidmap_lock);
 	hlist_add_head_rcu(&upid->pid_chain, &pid_hash[pid_hashfn(nr, ns)]);
 	ns->nr_hashed++;
 	spin_unlock_irq(&pidmap_lock);
 
-	if (is_child_reaper(pid))
-		ns->child_reaper = task;
-
 	return 0;
+
+undo:
+	pid->level--;
+	free_pidmap(upid);
+	get_pid_ns(ns->parent);
+	put_pid_ns(ns);
+	return err;
 }
 EXPORT_SYMBOL_GPL(change_active_pid_ns);
 
