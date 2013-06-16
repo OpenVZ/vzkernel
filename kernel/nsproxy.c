@@ -157,15 +157,6 @@ int copy_namespaces(unsigned long flags, struct task_struct *tsk,
 			err = -EPERM;
 			goto out;
 		}
-
-		/*
-		 * netns-vs-sysfs is deadly broken, thus new namespace
-		 * (even in ve0) can bring the node down
-		 */
-		if (flags & CLONE_NEWNET) {
-			err = -EINVAL;
-			goto out;
-		}
 	}
 
 	/*
