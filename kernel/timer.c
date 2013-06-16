@@ -43,6 +43,7 @@
 #include <linux/slab.h>
 #include <linux/compat.h>
 #include <linux/virtinfo.h>
+#include <linux/ve.h>
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>

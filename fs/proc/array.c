@@ -82,6 +82,7 @@
 #include <linux/ptrace.h>
 #include <linux/tracehook.h>
 #include <linux/user_namespace.h>
+#include <linux/ve.h>
 
 #include <bc/beancounter.h>
 

@@ -20,6 +20,7 @@
 #include <net/ip.h>
 #include <linux/skbuff.h>
 #include <linux/venet.h>
+#include <linux/ve.h>
 
 static void veip_free(struct veip_struct *veip)
 {

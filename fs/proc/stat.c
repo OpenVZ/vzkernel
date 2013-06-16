@@ -14,6 +14,7 @@
 #include <linux/fairsched.h>
 #include <linux/mm.h>
 #include <linux/vmstat.h>
+#include <linux/ve.h>
 
 #ifndef arch_irq_stat_cpu
 #define arch_irq_stat_cpu(cpu) 0
