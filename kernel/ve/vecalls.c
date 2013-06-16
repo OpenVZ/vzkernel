@@ -775,7 +775,7 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 
 	set_ve_caps(ve, tsk);
 
-	if ((err = pid_ns_attach_init(ve->ve_ns->pid_ns, tsk)) < 0)
+	if ((err = change_active_pid_ns(tsk, ve->ve_ns->pid_ns)) < 0)
 		goto err_vpid;
 
 	err = -ENOMEM;
@@ -963,7 +963,7 @@ static int do_env_enter(struct ve_struct *ve, unsigned int flags)
 	ve_move_task(ve);
 
 	if (alone_in_pgrp(tsk) && !(flags & VE_SKIPLOCK))
-		pid_ns_attach_task(ve->ve_ns->pid_ns, tsk);
+		change_active_pid_ns(tsk, ve->ve_ns->pid_ns);
 
 	/* Unlike VE_CREATE, we do not setsid() in VE_ENTER.
 	 * Process is allowed to be in an external group/session.
