@@ -801,6 +801,14 @@ static bool has_pid_permissions(struct pid_namespace *pid,
 	return ptrace_may_access(task, PTRACE_MODE_READ_FSCREDS);
 }
 
+static bool is_visible_task(struct pid_namespace *ns, struct task_struct *tsk)
+{
+	if (ns->hide_pidns == 1 && task_active_pid_ns(tsk) != ns)
+		return false;
+	if (!has_pid_permissions(ns, tsk, 2))
+		return false;
+	return true;
+}
 
 static int proc_pid_permission(struct inode *inode, int mask)
 {
@@ -3288,7 +3296,7 @@ int proc_pid_readdir(struct file * filp, void * dirent, filldir_t filldir)
 	for (iter = next_tgid(ns, iter);
 	     iter.task;
 	     iter.tgid += 1, iter = next_tgid(ns, iter)) {
-		if (has_pid_permissions(ns, iter.task, 2))
+		if (is_visible_task(ns, iter.task))
 			__filldir = filldir;
 		else
 			__filldir = fake_filldir;
