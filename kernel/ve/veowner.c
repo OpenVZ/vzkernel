@@ -29,11 +29,6 @@
 
 #include <net/tcp.h>
 
-void prepare_ve0_process(struct task_struct *tsk)
-{
-	tsk->task_ve = get_ve0();
-}
-
 /*
  * ------------------------------------------------------------------------
  * proc entries
