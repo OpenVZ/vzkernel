@@ -251,7 +251,6 @@ void __put_task_struct(struct task_struct *tsk)
 	put_signal_struct(tsk->signal);
 
 	atomic_dec(&nr_dead);
-	put_ve(VE_TASK_INFO(tsk)->owner_env);
 	if (!profile_handoff_task(tsk))
 		free_task(tsk);
 }
@@ -1549,7 +1548,6 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 		attach_pid(p, PIDTYPE_PID);
 		nr_threads++;
 	}
-	(void)get_ve(p->ve_task_info.owner_env);
 
 	total_forks++;
 	spin_unlock(&current->sighand->siglock);
