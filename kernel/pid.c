@@ -261,8 +261,8 @@ void free_pid(struct pid *pid)
 		struct upid *upid = pid->numbers + i;
 		struct pid_namespace *ns = upid->ns;
 
-		if (!hlist_unhashed(&upid->pid_chain))
-			hlist_del_rcu(&upid->pid_chain);
+		hlist_del_rcu(&upid->pid_chain);
+
 		switch(--ns->nr_hashed) {
 		case 2:
 		case 1:
@@ -327,10 +327,6 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 		hlist_add_head_rcu(&upid->pid_chain,
 				&pid_hash[pid_hashfn(upid->nr, upid->ns)]);
 		upid->ns->nr_hashed++;
-
-		if (upid->ns->flags & PID_NS_HIDDEN)
-			while (--upid)
-				INIT_HLIST_NODE(&pid->numbers[i].pid_chain);
 	}
 	spin_unlock_irq(&pidmap_lock);
 
