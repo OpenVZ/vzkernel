@@ -217,21 +217,20 @@ int __init get_filesystem_list(char *buf)
 	return len;
 }
 
-static inline bool filesystem_containerized(const struct file_system_type *fs)
+static inline bool filesystem_permitted(const struct file_system_type *fs)
 {
-	return fs->fs_flags & FS_VIRTUALIZED;
+	return ve_is_super(get_exec_env()) || (fs->fs_flags & FS_VIRTUALIZED);
 }
 
 #ifdef CONFIG_PROC_FS
 static int filesystems_proc_show(struct seq_file *m, void *v)
 {
 	struct file_system_type * tmp;
-	bool in_container = proc_in_container(m->private);
 
 	read_lock(&file_systems_lock);
 	tmp = file_systems;
 	while (tmp) {
-		if (!in_container || filesystem_containerized(tmp)) {
+		if (filesystem_permitted(tmp)) {
 			seq_printf(m, "%s\t%s\n",
 				(tmp->fs_flags & FS_REQUIRES_DEV) ? "" : "nodev",
 				tmp->name);
@@ -262,18 +261,13 @@ static int __init proc_filesystems_init(void)
 module_init(proc_filesystems_init);
 #endif
 
-static inline bool filesystem_accessible(const struct file_system_type *fs)
-{
-	return fs && (ve_is_super(get_exec_env()) || filesystem_containerized(fs));
-}
-
 static struct file_system_type *__get_fs_type(const char *name, int len)
 {
 	struct file_system_type *fs;
 
 	read_lock(&file_systems_lock);
 	fs = *(find_filesystem(name, len));
-	if (filesystem_accessible(fs) && !try_module_get(fs->owner))
+	if (fs && !try_module_get(fs->owner))
 		fs = NULL;
 	read_unlock(&file_systems_lock);
 	return fs;
@@ -289,7 +283,8 @@ struct file_system_type *get_fs_type(const char *name)
 	if (!fs && (request_module("fs-%.*s", len, name) == 0))
 		fs = __get_fs_type(name, len);
 
-	if (dot && fs && !(fs->fs_flags & FS_HAS_SUBTYPE)) {
+	if (fs && (!filesystem_permitted(fs) ||
+		   (dot && !(fs->fs_flags & FS_HAS_SUBTYPE)))) {
 		put_filesystem(fs);
 		fs = NULL;
 	}
