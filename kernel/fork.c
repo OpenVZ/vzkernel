@@ -1424,11 +1424,6 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 		pid = alloc_pid(p->nsproxy->pid_ns);
 		if (!pid)
 			goto bad_fork_cleanup_io;
-
-		if (clone_flags & CLONE_NEWPID) {
-			if (task_active_pid_ns(current)->flags & PID_NS_HIDE_CHILD)
-				task_active_pid_ns(p)->flags |= PID_NS_HIDDEN;
-		}
 	}
 
 	p->set_child_tid = (clone_flags & CLONE_CHILD_SETTID) ? child_tidptr : NULL;
