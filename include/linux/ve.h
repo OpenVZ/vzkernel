@@ -218,14 +218,6 @@ struct ve_struct {
 #if defined(CONFIG_SUNRPC) || defined(CONFIG_SUNRPC_MODULE)
 	struct ve_rpc_data	*rpc_data;
 #endif
-#if defined(CONFIG_BINFMT_MISC) || defined(CONFIG_BINFMT_MISC_MODULE)
-	struct file_system_type	*bm_fs_type;
-	struct vfsmount		*bm_mnt;
-	int			bm_enabled;
-	int			bm_entry_count;
-	struct list_head	bm_entries;
-#endif
-
 	struct nsproxy		*ve_ns;
 	struct user_namespace	*user_ns;
 	struct cred		*init_cred;
