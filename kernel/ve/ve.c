@@ -157,6 +157,7 @@ int nr_threads_ve(struct ve_struct *ve)
 {
 	return cgroup_task_count(ve->css.cgroup);
 }
+EXPORT_SYMBOL(nr_threads_ve);
 
 static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 {
