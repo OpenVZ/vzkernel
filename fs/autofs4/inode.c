@@ -334,6 +334,7 @@ int autofs4_fill_super(struct super_block *s, void *data, int silent)
 fail_fput:
 	pr_err("pipe file descriptor does not contain proper ops\n");
 	fput(pipe);
+	/* fall through */
 fail_put_pid:
 	put_pid(sbi->oz_pgrp);
 fail_dput:
