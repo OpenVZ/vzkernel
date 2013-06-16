@@ -87,17 +87,6 @@ static void vecalls_exit(void);
 
 static int alone_in_pgrp(struct task_struct *tsk);
 
-/*
- * real_put_ve() MUST be used instead of put_ve() inside vecalls.
- */
-static void real_do_env_free(struct ve_struct *ve);
-static inline void real_put_ve(struct ve_struct *ve)
-{
-	if (ve && atomic_dec_and_test(&ve->counter)) {
-		BUG_ON(ve->is_running);
-		real_do_env_free(ve);
-	}
-}
 static s64 ve_get_uptime(struct ve_struct *ve)
 {
 	struct timespec uptime;
@@ -185,7 +174,7 @@ static int real_setdevperms(envid_t veid, unsigned type,
 	if (ve->is_running)
 		err = set_device_perms_ve(ve, type, dev, mask);
 	up_read(&ve->op_sem);
-	real_put_ve(ve);
+	put_ve(ve);
 	return err;
 }
 
@@ -196,23 +185,6 @@ static int real_setdevperms(envid_t veid, unsigned type,
  *
  **********************************************************************
  **********************************************************************/
-
-static void free_ve_filesystems(struct ve_struct *ve)
-{
-#if defined(CONFIG_FUSE_FS) || defined(CONFIG_FUSE_FS_MODULE)
-	BUG_ON(ve->fuse_fs_type && !list_empty(&ve->_fuse_conn_list));
-	kfree(ve->fuse_fs_type);
-	ve->fuse_fs_type = NULL;
-
-	kfree(ve->fuse_ctl_fs_type);
-	ve->fuse_ctl_fs_type = NULL;
-#endif
-
-#if defined(CONFIG_BINFMT_MISC) || defined(CONFIG_BINFMT_MISC_MODULE)
-	kfree(ve->bm_fs_type);
-	ve->bm_fs_type = NULL;
-#endif
-}
 
 static int init_printk(struct ve_struct *ve)
 {
@@ -362,11 +334,9 @@ static __u64 get_ve_features(env_create_param_t *data, int datalen)
 static int init_ve_struct(struct ve_struct *ve, envid_t veid,
 		u32 class_id, env_create_param_t *data, int datalen)
 {
-	(void)get_ve(ve);
 	ve->veid = veid;
 	ve->class_id = class_id;
 	ve->features = get_ve_features(data, datalen);
-	init_rwsem(&ve->op_sem);
 
 	ve->start_timespec = current->start_time;
 	ve->real_start_timespec = current->real_start_time;
@@ -375,11 +345,8 @@ static int init_ve_struct(struct ve_struct *ve, envid_t veid,
 	ve->start_jiffies = get_jiffies_64();
 
 	ve->_randomize_va_space = ve0._randomize_va_space;
-	INIT_LIST_HEAD(&ve->devices);
 
 	ve->odirect_enable = 2;
-
-	mutex_init(&ve->sync_mutex);
 
 	return 0;
 }
@@ -406,21 +373,11 @@ static int ve_set_meminfo(envid_t veid, unsigned long val)
 		val = VE_MEMINFO_DEFAULT;
 
 	ve->meminfo_val = val;
-	real_put_ve(ve);
+	put_ve(ve);
 	return 0;
 #else
 	return -ENOTTY;
 #endif
-}
-
-static int init_ve_meminfo(struct ve_struct *ve)
-{
-	ve->meminfo_val = VE_MEMINFO_DEFAULT;
-	return 0;
-}
-
-static inline void fini_ve_meminfo(struct ve_struct *ve)
-{
 }
 
 static void set_ve_root(struct ve_struct *ve, struct task_struct *tsk)
@@ -441,20 +398,12 @@ static void set_ve_caps(struct ve_struct *ve, struct task_struct *tsk)
 	memcpy(&ve->ve_cap_bset, &tsk->cred->cap_effective, sizeof(kernel_cap_t));
 }
 
-static int ve_list_add(struct ve_struct *ve)
+static void ve_list_add(struct ve_struct *ve)
 {
 	mutex_lock(&ve_list_lock);
-	if (__find_ve_by_id(ve->veid) != NULL)
-		goto err_exists;
-
 	list_add(&ve->ve_list, &ve_list_head);
 	nr_ve++;
 	mutex_unlock(&ve_list_lock);
-	return 0;
-
-err_exists:
-	mutex_unlock(&ve_list_lock);
-	return -EEXIST;
 }
 
 static void ve_list_del(struct ve_struct *ve)
@@ -504,31 +453,6 @@ static void init_ve_cred(struct ve_struct *ve, struct cred *new)
 	ve->user_ns = new->user_ns;
 }
 
-static void ve_move_task(struct ve_struct *new)
-{
-	struct task_struct *tsk = current;
-
-	might_sleep();
-	BUG_ON(!(thread_group_leader(tsk) && thread_group_empty(tsk)));
-
-	/* this probihibts ptracing of task entered to VE from host system */
-	if (tsk->mm)
-		tsk->mm->vps_dumpable = 0;
-
-	/* setup capabilities before enter */
-	if (commit_creds(get_new_cred(new->init_cred)))
-		BUG();
-
-	/* Drop OOM protection. */
-	if (tsk->signal->oom_adj == OOM_DISABLE)
-		tsk->signal->oom_adj = 0;
-
-	/* Leave parent exec domain */
-	tsk->parent_exec_id--;
-
-	cgroup_kernel_attach(new->ve_cgroup, tsk);
-}
-
 #ifdef CONFIG_VE_IPTABLES
 
 static __u64 setup_iptables_mask(__u64 init_mask)
@@ -556,20 +480,6 @@ static __u64 setup_iptables_mask(__u64 init_mask)
 
 #endif
 
-static inline int init_ve_cpustats(struct ve_struct *ve)
-{
-	ve->sched_lat_ve.cur = alloc_percpu(struct kstat_lat_pcpu_snap_struct);
-	if (ve->sched_lat_ve.cur == NULL)
-		return -ENOMEM;
-	return 0;
-}
-
-static inline void free_ve_cpustats(struct ve_struct *ve)
-{
-	free_percpu(ve->sched_lat_ve.cur);
-	ve->sched_lat_ve.cur = NULL;
-}
-
 static int alone_in_pgrp(struct task_struct *tsk)
 {
 	struct task_struct *p;
@@ -590,34 +500,14 @@ out:
 	return alone;
 }
 
-#ifdef CONFIG_CGROUP_DEVICE
-
 static struct vfsmount *ve_cgroup_mnt;
-static struct cgroup *ve_cgroup_root;
-
-static int init_ve_cgroups(struct ve_struct *ve)
-{
-	char name[16];
-
-	snprintf(name, sizeof(name), "%u", ve->veid);
-	ve->ve_cgroup = cgroup_kernel_open(ve_cgroup_root,
-			CGRP_CREAT|CGRP_WEAK, name);
-	if (IS_ERR(ve->ve_cgroup))
-		return PTR_ERR(ve->ve_cgroup);
-	return 0;
-}
-
-static void fini_ve_cgroups(struct ve_struct *ve)
-{
-	cgroup_kernel_close(ve->ve_cgroup);
-	ve->ve_cgroup = NULL;
-}
 
 static int __init init_vecalls_cgroups(void)
 {
 	struct cgroup_sb_opts opts = {
 		.name		= "container",
 		.subsys_bits	=
+			(1ul << ve_subsys_id) |
 			(1ul << devices_subsys_id) |
 			(1ul << freezer_subsys_id),
 	};
@@ -625,8 +515,6 @@ static int __init init_vecalls_cgroups(void)
 	ve_cgroup_mnt = cgroup_kernel_mount(&opts);
 	if (IS_ERR(ve_cgroup_mnt))
 		return PTR_ERR(ve_cgroup_mnt);
-	ve_cgroup_root = cgroup_get_root(ve_cgroup_mnt);
-	get_ve0()->ve_cgroup = ve_cgroup_root;
 	return 0;
 }
 
@@ -634,12 +522,6 @@ static void fini_vecalls_cgroups(void)
 {
 	kern_unmount(ve_cgroup_mnt);
 }
-#else
-static int init_ve_cgroups(struct ve_struct *ve) { }
-static int fini_ve_cgroups(struct ve_struct *ve) { }
-static int init_vecalls_cgroups(void) { return 0; }
-static void fini_vecalls_cgroups(void) { ; }
-#endif /* CONFIG_CGROUP_DEVICE */
 
 static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 			 env_create_param_t *data, int datalen)
@@ -650,6 +532,8 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	__u64 init_mask;
 	int err;
 	struct nsproxy *old_ns, *old_ns_net;
+	char ve_name[16];
+	struct cgroup *ve_cgroup;
 
 	if (!thread_group_leader(tsk) || !thread_group_empty(tsk))
 		return -EINVAL;
@@ -684,30 +568,23 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	if (err)
 		goto err_sched;
 
-	err = -ENOMEM;
-	ve = kzalloc(sizeof(struct ve_struct), GFP_KERNEL);
-	if (ve == NULL)
-		goto err_struct;
+	snprintf(ve_name, sizeof(ve_name), "%u", veid);
+
+	ve_cgroup = cgroup_kernel_open(ve0.css.cgroup,
+			CGRP_CREAT|CGRP_WEAK|CGRP_EXCL, ve_name);
+	err = PTR_ERR(ve_cgroup);
+	if (IS_ERR(ve_cgroup))
+		goto err_cgroup;
+
+	ve = cgroup_ve(ve_cgroup);
 
 	init_ve_struct(ve, veid, class_id, data, datalen);
-	__module_get(THIS_MODULE);
+
 	down_write(&ve->op_sem);
 	if (flags & VE_LOCK)
 		ve->is_locked = 1;
 
-	/*
-	 * this should be done before adding to list
-	 * because if calc_load_ve finds this ve in
-	 * list it will be very surprised
-	 */
-	if ((err = init_ve_cpustats(ve)) < 0)
-		goto err_cpu_stats;
-
-	if ((err = init_ve_cgroups(ve)))
-		goto err_cgroup;
-
-	if ((err = ve_list_add(ve)) < 0)
-		goto err_exist;
+	ve_list_add(ve);
 
 	/* this should be done before context switching */
 	if ((err = init_printk(ve)) < 0)
@@ -734,9 +611,6 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	if ((err = init_ve_netns(ve, &old_ns_net)))
 		goto err_netns;
 
-	if((err = init_ve_meminfo(ve)))
-		goto err_meminf;
-
 	set_ve_caps(ve, tsk);
 
 	if ((err = change_active_pid_ns(tsk, ve->ve_ns->pid_ns)) < 0)
@@ -752,7 +626,11 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 
 	init_ve_cred(ve, new_creds);
 
-	ve_move_task(ve);
+	commit_creds(get_new_cred(ve->init_cred));
+
+	err = cgroup_kernel_attach(ve->css.cgroup, current);
+	if (err)
+		goto err_ve_attach;
 
 	if ((err = ve_hook_iterate_init(VE_SS_CHAIN, ve)) < 0)
 		goto err_ve_hook;
@@ -763,22 +641,27 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	ve->ve_init_task = tsk;
 	tsk->nsproxy->pid_ns->notify_ve = ve;
 
+	get_ve(ve); /* for env_cleanup() */
+	__module_get(THIS_MODULE);
 	ve->is_running = 1;
+
 	up_write(&ve->op_sem);
 
+	cgroup_kernel_close(ve_cgroup);
+
 	printk(KERN_INFO "CT: %d: started\n", veid);
+
 	return veid;
 
 err_ve_hook:
-	ve_move_task(old_ve);
+	cgroup_kernel_attach(ve0.css.cgroup, current);
+err_ve_attach:
 	/* creds will put user and user ns */
 err_uns:
 	put_cred(new_creds);
 err_creds:
 err_vpid:
 	fini_venet(ve);
-	fini_ve_meminfo(ve);
-err_meminf:
 	fini_ve_namespaces(ve, old_ns_net);
 	put_nsproxy(old_ns_net);
 	fini_ve_netns(ve);
@@ -800,30 +683,18 @@ err_netns:
 err_ns:
 	put_ve_root(ve);
 
-	tsk->task_ve = old_ve;
-
 	/* we can jump here having incorrect envid */
 	fini_printk(ve);
 err_log_wait:
-	/* cpustats will be freed in do_env_free */
 	ve_list_del(ve);
 	up_write(&ve->op_sem);
 
-	real_put_ve(ve);
-err_struct:
+	cgroup_kernel_close(ve_cgroup);
+err_cgroup:
 	fairsched_drop_node(veid, 1);
 err_sched:
 	printk(KERN_INFO "CT: %d: failed to start with err=%d\n", veid, err);
 	return err;
-
-err_exist:
-	fini_ve_cgroups(ve);
-err_cgroup:
-	free_ve_cpustats(ve);
-err_cpu_stats:
-	kfree(ve);
-	module_put(THIS_MODULE);
-	goto err_struct;
 }
 
 
@@ -885,7 +756,7 @@ int real_env_create(envid_t veid, unsigned flags, u32 class_id,
 	/* else: returning EINVAL */
 
 out_put:
-	real_put_ve(ve);
+	put_ve(ve);
 out:
 	return status;
 }
@@ -911,8 +782,12 @@ static int do_env_enter(struct ve_struct *ve, unsigned int flags)
 		goto out_up;
 
 	switch_ve_namespaces(ve, tsk);
-	tsk->task_ve = ve;
-	ve_move_task(ve);
+
+	commit_creds(get_new_cred(ve->init_cred));
+
+	err = cgroup_kernel_attach(ve->css.cgroup, current);
+	if (err)
+		goto out_up;
 
 	if (alone_in_pgrp(tsk) && !(flags & VE_SKIPLOCK))
 		change_active_pid_ns(tsk, ve->ve_ns->pid_ns);
@@ -947,8 +822,6 @@ static void env_cleanup(struct ve_struct *ve)
 	if (ve->devpts_sb)
 		deactivate_super(ve->devpts_sb);
 
-	fini_ve_meminfo(ve);
-
 	fini_ve_namespaces(ve, NULL);
 	fini_ve_netns(ve);
 
@@ -959,7 +832,9 @@ static void env_cleanup(struct ve_struct *ve)
 	ve_list_del(ve);
 	up_read(&ve->op_sem);
 
-	real_put_ve(ve);
+	printk(KERN_INFO "CT: %d: stopped\n", ve->veid);
+
+	put_ve(ve); /* from do_env_create() */
 }
 
 static LIST_HEAD(ve_cleanup_list);
@@ -993,7 +868,6 @@ static void do_pending_env_cleanups(void)
 		list_del(&ve->cleanup_list);
 		spin_unlock(&ve_cleanup_lock);
 
-		__module_get(THIS_MODULE);
 		err = kernel_thread(vzmond_helper, (void *)ve, 0);
 		if (err < 0) {
 			env_cleanup(ve);
@@ -1043,17 +917,6 @@ static void fini_vzmond(void)
 {
 	kthread_stop(ve_cleanup_thread);
 	WARN_ON(!list_empty(&ve_cleanup_list));
-}
-
-static void real_do_env_free(struct ve_struct *ve)
-{
-	fini_ve_cgroups(ve);
-	free_ve_filesystems(ve);
-	free_ve_cpustats(ve);
-	printk(KERN_INFO "CT: %d: stopped\n", ve->veid);
-	kfree(ve);
-
-	module_put(THIS_MODULE);
 }
 
 static void vzmon_kill_notifier(void *data)
@@ -1134,7 +997,7 @@ static int ve_dev_add(envid_t veid, char *dev_name)
 	err = dev_change_net_namespace(dev, dst_net, dev_name);
 out_unlock:
 	rtnl_unlock();
-	real_put_ve(dst_ve);
+	put_ve(dst_ve);
 
 	if (dev == NULL)
 		printk(KERN_WARNING "%s: device %s not found\n",
@@ -1167,7 +1030,7 @@ static int ve_dev_del(envid_t veid, char *dev_name)
 	err = dev_change_net_namespace(dev, &init_net, dev_name);
 out_unlock:
 	rtnl_unlock();
-	real_put_ve(src_ve);
+	put_ve(src_ve);
 
 	if (dev == NULL)
 		printk(KERN_WARNING "%s: device %s not found\n",
@@ -1479,7 +1342,7 @@ static int ve_configure(envid_t veid, unsigned int key,
 		break;
 	}
 
-	real_put_ve(ve);
+	put_ve(ve);
  	return err;
 }
 
@@ -1775,15 +1638,10 @@ static int __init vecalls_init(void)
 	if (err < 0)
 		goto out_ioctls;
 
-	/* We can easy dereference this hook if VE is running
-	 * because in this case vzmon refcount > 0
-	 */
-	do_ve_enter_hook = do_env_enter;
 	/*
 	 * This one can also be dereferenced since not freed
 	 * VE holds reference on module
 	 */
-	do_env_free_hook = real_do_env_free;
 
 	return 0;
 
@@ -1804,8 +1662,6 @@ out_cgroups:
 
 static void __exit vecalls_exit(void)
 {
-	do_env_free_hook = NULL;
-	do_ve_enter_hook = NULL;
 	fini_vecalls_ioctls();
 	fini_vecalls_proc();
 	fini_vzmond();
