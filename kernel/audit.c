@@ -51,6 +51,7 @@
 #include <linux/kthread.h>
 #include <linux/kernel.h>
 #include <linux/syscalls.h>
+#include <linux/ve.h>
 
 #include <linux/audit.h>
 
