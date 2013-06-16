@@ -1549,7 +1549,6 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 		attach_pid(p, PIDTYPE_PID);
 		nr_threads++;
 	}
-	p->ve_task_info.owner_env->pcounter++;
 	(void)get_ve(p->ve_task_info.owner_env);
 
 	total_forks++;
