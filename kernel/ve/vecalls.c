@@ -253,20 +253,6 @@ static void fini_venet(struct ve_struct *ve)
 #endif
 }
 
-static int init_ve_sched(struct ve_struct *ve, unsigned int vcpus)
-{
-	int err;
-
-	err = fairsched_new_node(ve->veid, vcpus);
-
-	return err;
-}
-
-static void fini_ve_sched(struct ve_struct *ve, int leave)
-{
-	fairsched_drop_node(ve->veid, leave);
-}
-
 /*
  * Namespaces
  */
@@ -693,6 +679,11 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 		return -EINVAL;
 	}
 
+	/* create new cpu-cgroup and move current task into it */
+	err = fairsched_new_node(veid, data->total_vcpus);
+	if (err)
+		goto err_sched;
+
 	err = -ENOMEM;
 	ve = kzalloc(sizeof(struct ve_struct), GFP_KERNEL);
 	if (ve == NULL)
@@ -724,9 +715,6 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 
 	old_ve = tsk->task_ve;
 	tsk->task_ve = ve;
-
-	if ((err = init_ve_sched(ve, data->total_vcpus)) < 0)
-		goto err_sched;
 
 	set_ve_root(ve, tsk);
 
@@ -812,8 +800,6 @@ err_netns:
 err_ns:
 	put_ve_root(ve);
 
-	fini_ve_sched(ve, 1);
-err_sched:
 	tsk->task_ve = old_ve;
 
 	/* we can jump here having incorrect envid */
@@ -825,6 +811,8 @@ err_log_wait:
 
 	real_put_ve(ve);
 err_struct:
+	fairsched_drop_node(veid, 1);
+err_sched:
 	printk(KERN_INFO "CT: %d: failed to start with err=%d\n", veid, err);
 	return err;
 
@@ -908,21 +896,20 @@ static int do_env_enter(struct ve_struct *ve, unsigned int flags)
 	struct task_struct *tsk = current;
 	int err;
 
+	if (!thread_group_leader(tsk) || !thread_group_empty(tsk))
+		return -EINVAL;
+
+	err = fairsched_move_task(ve->veid, current);
+	if (err)
+		return err;
+
 	err = -EBUSY;
 	down_read(&ve->op_sem);
 	if (!ve->is_running)
 		goto out_up;
 	if (ve->is_locked && !(flags & VE_SKIPLOCK))
 		goto out_up;
-	err = -EINVAL;
-	if (!thread_group_leader(tsk) || !thread_group_empty(tsk))
-		goto out_up;
 
-#ifdef CONFIG_VZ_FAIRSCHED
-	err = fairsched_move_task(ve->veid, current);
-	if (err)
-		goto out_up;
-#endif
 	switch_ve_namespaces(ve, tsk);
 	tsk->task_ve = ve;
 	ve_move_task(ve);
@@ -940,18 +927,22 @@ static int do_env_enter(struct ve_struct *ve, unsigned int flags)
 
 out_up:
 	up_read(&ve->op_sem);
+
+	if (err < 0)
+		fairsched_move_task(0, current);
+
 	return err;
 }
 
 static void env_cleanup(struct ve_struct *ve)
 {
+	fairsched_drop_node(ve->veid, 0);
+
 	down_read(&ve->op_sem);
 
 	fini_venet(ve);
 
 	/* no new packets in flight beyond this point */
-
-	fini_ve_sched(ve, 0);
 
 	if (ve->devpts_sb)
 		deactivate_super(ve->devpts_sb);
