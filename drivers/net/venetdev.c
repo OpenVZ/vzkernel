@@ -47,6 +47,7 @@
 #include <linux/ve_proto.h>
 #include <linux/vzctl.h>
 #include <linux/vzctl_venet.h>
+#include <linux/ve.h>
 
 struct hlist_head ip_entry_hash_table[VEIP_HASH_SZ];
 DEFINE_SPINLOCK(veip_lock);
