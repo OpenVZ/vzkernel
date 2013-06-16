@@ -483,6 +483,14 @@ static void ve_list_del(struct ve_struct *ve)
 	mutex_unlock(&ve_list_lock);
 }
 
+static void fixup_ve_admin_cap(kernel_cap_t *cap_set)
+{
+	if (cap_raised(*cap_set, CAP_VE_SYS_ADMIN))
+		cap_raise(*cap_set, CAP_SYS_ADMIN);
+	if (cap_raised(*cap_set, CAP_VE_NET_ADMIN))
+		cap_raise(*cap_set, CAP_NET_ADMIN);
+}
+
 static void init_ve_cred(struct ve_struct *ve, struct cred *new)
 {
 	const struct cred *cur;
@@ -499,6 +507,11 @@ static void init_ve_cred(struct ve_struct *ve, struct cred *new)
 	new->cap_inheritable = cap_intersect(cur->cap_inheritable, bset);
 	new->cap_permitted = cap_intersect(cur->cap_permitted, bset);
 	new->cap_bset = cap_intersect(cur->cap_bset, bset);
+
+	fixup_ve_admin_cap(&new->cap_effective);
+	fixup_ve_admin_cap(&new->cap_inheritable);
+	fixup_ve_admin_cap(&new->cap_permitted);
+	fixup_ve_admin_cap(&new->cap_bset);
 
 	new->user_ns->uid_map.nr_extents = 1;
 	new->user_ns->uid_map.extent[0] = extent;
