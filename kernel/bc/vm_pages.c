@@ -15,6 +15,7 @@
 #include <linux/shmem_fs.h>
 #include <linux/vmalloc.h>
 #include <linux/init.h>
+#include <linux/ve.h>
 
 #include <asm/pgtable.h>
 #include <asm/page.h>

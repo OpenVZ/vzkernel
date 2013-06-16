@@ -77,6 +77,7 @@
 #include <linux/random.h>
 #include <linux/context_tracking.h>
 #include <linux/list.h>
+#include <linux/ve.h>
 
 #include <bc/beancounter.h>
 

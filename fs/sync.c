@@ -16,6 +16,7 @@
 #include <linux/pagemap.h>
 #include <linux/quotaops.h>
 #include <linux/backing-dev.h>
+#include <linux/ve.h>
 #include "internal.h"
 
 #include <bc/beancounter.h>
