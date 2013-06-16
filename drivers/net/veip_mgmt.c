@@ -104,7 +104,7 @@ veip_lookup(struct ve_struct *ve_old, struct sk_buff *skb)
 			if (!venet_ext_lookup(ve_old, &addr))
 				goto out_drop;
 		} else {
-			if (!ve_accessible_strict(ve, ve_old))
+			if (ve != ve_old)
 				goto out_source;
 		}
 
