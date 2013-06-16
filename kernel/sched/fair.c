@@ -770,7 +770,7 @@ static inline void update_sched_lat(struct task_struct *t, u64 now)
 	if (ve_wstamp && now > ve_wstamp) {
 		KSTAT_LAT_PCPU_ADD(&kstat_glob.sched_lat,
 				cpu, now - ve_wstamp);
-		KSTAT_LAT_PCPU_ADD(&t->ve_task_info.exec_env->sched_lat_ve,
+		KSTAT_LAT_PCPU_ADD(&t->task_ve->sched_lat_ve,
 				cpu, now - ve_wstamp);
 	}
 #endif
