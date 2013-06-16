@@ -75,6 +75,7 @@
 #include <linux/context_tracking.h>
 #include <linux/compiler.h>
 #include <linux/frame.h>
+#include <linux/ve.h>
 
 #include <asm/switch_to.h>
 #include <asm/tlb.h>

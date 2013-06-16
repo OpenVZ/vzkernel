@@ -20,6 +20,7 @@
 #include <linux/pid.h>
 #include <linux/path.h>
 #include <linux/socket.h>
+#include <linux/ve_proto.h>
 #include <net/inet_frag.h>
 
 #ifdef VZMON_DEBUG
