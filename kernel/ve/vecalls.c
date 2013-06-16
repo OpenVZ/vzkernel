@@ -1069,7 +1069,7 @@ static void real_do_env_free(struct ve_struct *ve)
 	fini_ve_cgroups(ve);
 	free_ve_filesystems(ve);
 	free_ve_cpustats(ve);
-	printk(KERN_INFO "CT: %d: stopped\n", VEID(ve));
+	printk(KERN_INFO "CT: %d: stopped\n", ve->veid);
 	kfree(ve);
 
 	module_put(THIS_MODULE);
