@@ -1740,6 +1740,7 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 	long timeo;
 	int err;
 	int npages = (data_len + (PAGE_SIZE - 1)) >> PAGE_SHIFT;
+	unsigned long size = header_len + data_len;
 
 	err = -EMSGSIZE;
 	if (npages > MAX_SKB_FRAGS)
@@ -1758,12 +1759,8 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 		err = -EPIPE;
 		if (sk->sk_shutdown & SEND_SHUTDOWN)
 			goto failure;
-#if 0
+
 		if (ub_sock_getwres_other(sk, skb_charge_size(size))) {
-			if (data_len < size) {
-				size = data_len;
-				continue;
-			}
 			set_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
 			err = -EAGAIN;
 			if (!timeo)
@@ -1774,7 +1771,7 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 					skb_charge_size(size));
 			continue;
 		}
-#endif
+
 		if (atomic_read(&sk->sk_wmem_alloc) < sk->sk_sndbuf) {
 			skb = alloc_skb(header_len, gfp_mask);
 			if (skb) {
@@ -1808,18 +1805,18 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 				/* Full success... */
 				break;
 			}
-#if 0
+
 			ub_sock_retwres_other(sk, skb_charge_size(size),
 					SOCK_MIN_UBCSPACE_CH);
-#endif
+
 			err = -ENOBUFS;
 			goto failure;
 		}
-#if 0
+
 		ub_sock_retwres_other(sk,
 				skb_charge_size(size),
 				SOCK_MIN_UBCSPACE_CH);
-#endif
+
 		set_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
 		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 		err = -EAGAIN;
@@ -1830,7 +1827,8 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 		timeo = sock_wait_for_wmem(sk, timeo);
 	}
 
-	ub_skb_set_charge(skb, sk, skb_charge_size(skb->truesize), UB_OTHERSOCKBUF);
+	ub_skb_set_charge(skb, sk, skb_charge_size(size), UB_OTHERSOCKBUF);
+
 	skb_set_owner_w(skb, sk);
 	return skb;
 

@@ -317,6 +317,10 @@ static inline void __ub_skb_set_charge(struct sk_buff *skb, struct sock *sk,
 	skb_bc(skb)->ub = sock_bc(sk)->ub;
 	skb_bc(skb)->charged = size;
 	skb_bc(skb)->resource = resource;
+
+	/* Ugly. Ugly. Skb in sk writequeue can live without ref to sk */
+	if (skb->sk == NULL)
+		skb->sk = sk;
 }
 
 void ub_skb_set_charge(struct sk_buff *skb, struct sock *sk,
@@ -329,10 +333,6 @@ void ub_skb_set_charge(struct sk_buff *skb, struct sock *sk,
 		BUG();
 
 	__ub_skb_set_charge(skb, sk, size, resource);
-
-	/* Ugly. Ugly. Skb in sk writequeue can live without ref to sk */
-	if (skb->sk == NULL)
-		skb->sk = sk;
 }
 
 EXPORT_SYMBOL(ub_skb_set_charge);
