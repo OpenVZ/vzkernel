@@ -43,7 +43,7 @@
 #include <linux/if_arp.h>	/* For ARPHRD_ETHER */
 #include <linux/if_bridge.h>
 #include <linux/ethtool.h>
-#include <linux/ve_proto.h>
+#include <linux/ve.h>
 #include <linux/veth.h>
 #include <linux/vzctl.h>
 #include <linux/vzctl_veth.h>
@@ -641,7 +641,7 @@ static void veth_stop(void *data)
 	env = (struct ve_struct *)data;
 	down(&hwaddr_sem);
 	list_for_each_entry_safe(entry, tmp, &veth_hwaddr_list, hwaddr_list)
-		if (VEID(env) == dev_net(veth_to_netdev(entry))->owner_ve->veid)
+		if (env->veid == dev_net(veth_to_netdev(entry))->owner_ve->veid)
 			veth_pair_del(entry);
 	up(&hwaddr_sem);
 }
