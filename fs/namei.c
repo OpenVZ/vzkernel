@@ -34,6 +34,7 @@
 #include <linux/device_cgroup.h>
 #include <linux/fs_struct.h>
 #include <linux/posix_acl.h>
+#include <linux/ve.h>
 #include <asm/uaccess.h>
 
 #include "internal.h"
