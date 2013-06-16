@@ -291,9 +291,6 @@ static inline int init_ve_namespaces(struct ve_struct *ve,
 	memcpy(ve->ve_ns->uts_ns->name.release, virt_utsname.release,
 			sizeof(virt_utsname.release));
 
-	if (cur->pid_ns->flags & PID_NS_HIDE_CHILD)
-		ve->ve_ns->pid_ns->flags |= PID_NS_HIDDEN;
-
 	*old = cur;
 	return 0;
 }
