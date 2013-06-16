@@ -120,12 +120,8 @@ EXPORT_SYMBOL(system_state);
 
 #ifdef CONFIG_VE
 extern void init_ve_system(void);
-extern void init_ve0(void);
-extern void prepare_ve0_process(struct task_struct *tsk);
 #else
 #define init_ve_system()		do { } while (0)
-#define init_ve0()			do { } while (0)
-#define prepare_ve0_process(tsk)	do { } while (0)
 #endif
 
 /*
@@ -520,7 +516,6 @@ asmlinkage void __init start_kernel(void)
 	setup_command_line(command_line);
 	setup_nr_cpu_ids();
 	setup_per_cpu_areas();
-	init_ve0();
 	ub_init_early();
 	kstat_init();
 	smp_prepare_boot_cpu();	/* arch-specific boot-cpu hooks */
@@ -593,8 +588,6 @@ asmlinkage void __init start_kernel(void)
 		panic(panic_later, panic_param);
 
 	lockdep_info();
-
-	prepare_ve0_process(&init_task);
 
 	/*
 	 * Need to run this when irqs are enabled, because it wants

@@ -1054,7 +1054,7 @@ int set_device_perms_ve(struct ve_struct *ve,
 	}
 
 	mutex_lock(&devcgroup_mutex);
-	err = dev_whitelist_add(cgroup_to_devcgroup(ve->ve_cgroup), &new);
+	err = dev_whitelist_add(cgroup_to_devcgroup(ve->css.cgroup), &new);
 	mutex_unlock(&devcgroup_mutex);
 
 	return err;
@@ -1077,7 +1077,7 @@ int devperms_seq_show(struct seq_file *m, void *v)
 	}
 
 	m->private = (void *)(unsigned long)ve->veid;
-	return devcgroup_seq_read(ve->ve_cgroup, NULL, m);
+	return devcgroup_seq_read(ve->css.cgroup, NULL, m);
 }
 EXPORT_SYMBOL(devperms_seq_show);
 #endif
