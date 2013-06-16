@@ -33,7 +33,6 @@
 #include <linux/rculist.h>
 #include <linux/bootmem.h>
 #include <linux/hash.h>
-#include <bc/kmem.h>
 #include <linux/pid_namespace.h>
 #include <linux/init_task.h>
 #include <linux/syscalls.h>
@@ -313,7 +312,6 @@ void free_pid(struct pid *pid)
 
 	for (i = 0; i <= pid->level; i++)
 		free_pidmap(pid->numbers + i);
-	put_beancounter(pid->ub);
 	call_rcu(&pid->rcu, delayed_put_pid);
 }
 EXPORT_SYMBOL_GPL(free_pid);
@@ -325,7 +323,6 @@ struct pid *alloc_pid(struct pid_namespace *ns, pid_t vpid)
 	int i, nr;
 	struct pid_namespace *tmp;
 	struct upid *upid;
-	struct user_beancounter *ub;
 
 	pid = kmem_cache_alloc(ns->pid_cachep, GFP_KERNEL);
 	if (!pid)
@@ -350,11 +347,6 @@ struct pid *alloc_pid(struct pid_namespace *ns, pid_t vpid)
 		if (pid_ns_prepare_proc(ns))
 			goto out_free;
 	}
-
-#ifdef CONFIG_BEANCOUNTERS
-	ub = get_exec_ub();
-	pid->ub = get_beancounter(ub);
-#endif
 
 	get_pid_ns(ns);
 	atomic_set(&pid->count, 1);
