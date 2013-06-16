@@ -37,9 +37,6 @@ enum {
 	VERBOSE_STATUS = 1 /* make it zero to save 400 bytes kernel memory */
 };
 
-static LIST_HEAD(entries);
-static int enabled = 1;
-
 enum {Enabled, Magic};
 #define MISC_FMT_PRESERVE_ARGV0 (1<<31)
 #define MISC_FMT_OPEN_BINARY (1<<30)
@@ -57,22 +54,34 @@ typedef struct {
 	struct dentry *dentry;
 } Node;
 
-static DEFINE_RWLOCK(entries_lock);
 static struct file_system_type bm_fs_type;
-static struct vfsmount *bm_mnt;
-static int entry_count;
+
+struct binfmt_misc {
+	struct list_head entries;
+	int enabled;
+
+	rwlock_t entries_lock;
+	struct vfsmount *bm_mnt;
+	int entry_count;
+};
+
+struct binfmt_misc binfmt_data = {
+	.entries	= LIST_HEAD_INIT(binfmt_data.entries),
+	.enabled	= 1,
+	.entries_lock	= __RW_LOCK_UNLOCKED(binfmt_data.entries_lock),
+};
 
 /* 
  * Check if we support the binfmt
  * if we do, return the node, else NULL
  * locking is done in load_misc_binary
  */
-static Node *check_file(struct linux_binprm *bprm)
+static Node *check_file(struct binfmt_misc *bm_data, struct linux_binprm *bprm)
 {
 	char *p = strrchr(bprm->interp, '.');
 	struct list_head *l;
 
-	list_for_each(l, &entries) {
+	list_for_each(l, &bm_data->entries) {
 		Node *e = list_entry(l, Node, list);
 		char *s;
 		int j;
@@ -113,17 +122,18 @@ static int load_misc_binary(struct linux_binprm *bprm)
 	const char *iname_addr = iname;
 	int retval;
 	int fd_binary = -1;
+	struct binfmt_misc *bm_data = &binfmt_data;
 
 	retval = -ENOEXEC;
-	if (!enabled)
+	if (!bm_data || !bm_data->enabled)
 		goto _ret;
 
 	/* to keep locking time low, we copy the interpreter string */
-	read_lock(&entries_lock);
-	fmt = check_file(bprm);
+	read_lock(&bm_data->entries_lock);
+	fmt = check_file(bm_data, bprm);
 	if (fmt)
 		strlcpy(iname, fmt->interpreter, BINPRM_BUF_SIZE);
-	read_unlock(&entries_lock);
+	read_unlock(&bm_data->entries_lock);
 	if (!fmt)
 		goto _ret;
 
@@ -490,23 +500,23 @@ static void bm_evict_inode(struct inode *inode)
 	kfree(inode->i_private);
 }
 
-static void kill_node(Node *e)
+static void kill_node(struct binfmt_misc *bm_data, Node *e)
 {
 	struct dentry *dentry;
 
-	write_lock(&entries_lock);
+	write_lock(&bm_data->entries_lock);
 	dentry = e->dentry;
 	if (dentry) {
 		list_del_init(&e->list);
 		e->dentry = NULL;
 	}
-	write_unlock(&entries_lock);
+	write_unlock(&bm_data->entries_lock);
 
 	if (dentry) {
 		drop_nlink(dentry->d_inode);
 		d_drop(dentry);
 		dput(dentry);
-		simple_release_fs(&bm_mnt, &entry_count);
+		simple_release_fs(&bm_data->bm_mnt, &bm_data->entry_count);
 	}
 }
 
@@ -536,16 +546,18 @@ static ssize_t bm_entry_write(struct file *file, const char __user *buffer,
 	struct dentry *root;
 	Node *e = file_inode(file)->i_private;
 	int res = parse_command(buffer, count);
+	struct super_block *sb = file->f_path.dentry->d_sb;
+	struct binfmt_misc *bm_data = sb->s_fs_info;
 
 	switch (res) {
 		case 1: clear_bit(Enabled, &e->flags);
 			break;
 		case 2: set_bit(Enabled, &e->flags);
 			break;
-		case 3: root = dget(file->f_path.dentry->d_sb->s_root);
+		case 3: root = dget(sb->s_root);
 			mutex_lock(&root->d_inode->i_mutex);
 
-			kill_node(e);
+			kill_node(bm_data, e);
 
 			mutex_unlock(&root->d_inode->i_mutex);
 			dput(root);
@@ -570,6 +582,7 @@ static ssize_t bm_register_write(struct file *file, const char __user *buffer,
 	struct inode *inode;
 	struct dentry *root, *dentry;
 	struct super_block *sb = file->f_path.dentry->d_sb;
+	struct binfmt_misc *bm_data = sb->s_fs_info;
 	int err = 0;
 
 	e = create_entry(buffer, count);
@@ -594,7 +607,7 @@ static ssize_t bm_register_write(struct file *file, const char __user *buffer,
 	if (!inode)
 		goto out2;
 
-	err = simple_pin_fs(&bm_fs_type, &bm_mnt, &entry_count);
+	err = simple_pin_fs(&bm_fs_type, &bm_data->bm_mnt, &bm_data->entry_count);
 	if (err) {
 		iput(inode);
 		inode = NULL;
@@ -606,9 +619,9 @@ static ssize_t bm_register_write(struct file *file, const char __user *buffer,
 	inode->i_fop = &bm_entry_operations;
 
 	d_instantiate(dentry, inode);
-	write_lock(&entries_lock);
-	list_add(&e->list, &entries);
-	write_unlock(&entries_lock);
+	write_lock(&bm_data->entries_lock);
+	list_add(&e->list, &bm_data->entries);
+	write_unlock(&bm_data->entries_lock);
 
 	err = 0;
 out2:
@@ -634,7 +647,8 @@ static const struct file_operations bm_register_operations = {
 static ssize_t
 bm_status_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 {
-	char *s = enabled ? "enabled\n" : "disabled\n";
+	struct binfmt_misc *bm_data = file->f_dentry->d_sb->s_fs_info;
+	char *s = bm_data->enabled ? "enabled\n" : "disabled\n";
 
 	return simple_read_from_buffer(buf, nbytes, ppos, s, strlen(s));
 }
@@ -642,17 +656,19 @@ bm_status_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 static ssize_t bm_status_write(struct file * file, const char __user * buffer,
 		size_t count, loff_t *ppos)
 {
+	struct binfmt_misc *bm_data = file->f_dentry->d_sb->s_fs_info;
 	int res = parse_command(buffer, count);
 	struct dentry *root;
 
 	switch (res) {
-		case 1: enabled = 0; break;
-		case 2: enabled = 1; break;
+		case 1: bm_data->enabled = 0; break;
+		case 2: bm_data->enabled = 1; break;
 		case 3: root = dget(file->f_path.dentry->d_sb->s_root);
 			mutex_lock(&root->d_inode->i_mutex);
 
-			while (!list_empty(&entries))
-				kill_node(list_entry(entries.next, Node, list));
+			while (!list_empty(&bm_data->entries))
+				kill_node(bm_data, list_first_entry(
+					&bm_data->entries, Node, list));
 
 			mutex_unlock(&root->d_inode->i_mutex);
 			dput(root);
@@ -682,8 +698,10 @@ static int bm_fill_super(struct super_block * sb, void * data, int silent)
 		/* last one */ {""}
 	};
 	int err = simple_fill_super(sb, BINFMTFS_MAGIC, bm_files);
-	if (!err)
+	if (!err) {
 		sb->s_op = &s_ops;
+		sb->s_fs_info = &binfmt_data;
+	}
 	return err;
 }
 
