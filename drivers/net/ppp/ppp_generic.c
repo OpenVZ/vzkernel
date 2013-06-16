@@ -382,7 +382,7 @@ static int ppp_open(struct inode *inode, struct file *file)
 	/*
 	 * This could (should?) be enforced by the permissions on /dev/ppp.
 	 */
-	if (!capable(CAP_VE_NET_ADMIN))
+	if (!ns_capable(current_user_ns(), CAP_NET_ADMIN))
 		return -EPERM;
 	if (!net_generic(current->nsproxy->net_ns, ppp_net_id)) /* no VE_FEATURE_PPP */
 		return -EACCES;
