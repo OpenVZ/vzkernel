@@ -52,6 +52,7 @@ struct sched_param {
 #include <linux/llist.h>
 #include <linux/uidgid.h>
 #include <linux/gfp.h>
+#include <linux/ve_proto.h>
 
 #include <asm/processor.h>
 
@@ -491,7 +492,6 @@ struct thread_group_cputimer {
 struct autogroup;
 
 #include <linux/ve.h>
-#include <linux/ve_task.h>
 
 /*
  * NOTE! "signal_struct" does not have its own
@@ -2566,40 +2566,6 @@ static inline void threadgroup_change_end(struct task_struct *tsk) {}
 static inline void threadgroup_lock(struct task_struct *tsk) {}
 static inline void threadgroup_unlock(struct task_struct *tsk) {}
 #endif
-
-#ifndef CONFIG_VE
-
-#define ve_is_super(env)				1
-#define ve_accessible(target, owner)			1
-#define ve_accessible_strict(target, owner)		1
-#define ve_accessible_veid(target, owner)		1
-#define ve_accessible_strict_veid(target, owner)	1
-
-#define VEID(ve)					0
-
-#else	/* CONFIG_VE */
-
-#include <linux/ve.h>
-
-#define ve_is_super(env)			((env) == get_ve0())
-
-#define ve_accessible_strict(target, owner)	((target) == (owner))
-static inline int ve_accessible(struct ve_struct *target,
-		struct ve_struct *owner)
-{
-	return ve_is_super(owner) || ve_accessible_strict(target, owner);
-}
-
-#define ve_accessible_strict_veid(target, owner) ((target) == (owner))
-static inline int ve_accessible_veid(envid_t target, envid_t owner)
-{
-	return get_ve0()->veid == owner ||
-		ve_accessible_strict_veid(target, owner);
-}
-
-#define VEID(ve)	(ve->veid)
-
-#endif	/* CONFIG_VE */
 
 #ifndef __HAVE_THREAD_FUNCTIONS
 
