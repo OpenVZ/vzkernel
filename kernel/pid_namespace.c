@@ -43,6 +43,9 @@ static struct kmem_cache *create_pid_cachep(int nr_ids)
 	struct pid_cache *pcache;
 	struct kmem_cache *cachep;
 
+	if (nr_ids <= 2)
+		return init_pid_ns.pid_cachep;
+
 	mutex_lock(&pid_caches_mutex);
 	list_for_each_entry(pcache, &pid_caches_lh, list)
 		if (pcache->nr_ids == nr_ids)
@@ -54,7 +57,7 @@ static struct kmem_cache *create_pid_cachep(int nr_ids)
 
 	snprintf(pcache->name, sizeof(pcache->name), "pid_%d", nr_ids);
 	cachep = kmem_cache_create(pcache->name,
-			sizeof(struct pid) + (nr_ids - 1) * sizeof(struct upid),
+			sizeof(struct pid) + (nr_ids - 2) * sizeof(struct upid),
 			0, SLAB_HWCACHE_ALIGN, NULL);
 	if (cachep == NULL)
 		goto err_cachep;
