@@ -83,6 +83,7 @@
 #include <linux/tracehook.h>
 #include <linux/user_namespace.h>
 #include <linux/fs_struct.h>
+#include <linux/ve.h>
 
 #include <bc/beancounter.h>
 

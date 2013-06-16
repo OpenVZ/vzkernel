@@ -47,6 +47,7 @@
 #include <linux/veth.h>
 #include <linux/vzctl.h>
 #include <linux/vzctl_veth.h>
+#include <linux/ve.h>
 
 #include <linux/list.h>
 #include <linux/spinlock.h>
