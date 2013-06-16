@@ -1513,13 +1513,10 @@ int cgroup_set_cpumask(struct cgroup *cgrp, const struct cpumask *cpus_allowed)
 {
 	int ret;
 	struct cpuset *cs = cgroup_cs(cgrp);
-	static DEFINE_MUTEX(lock);
 
-	mutex_lock(&lock);
 	ret = update_cpumask(cs, cpus_allowed);
 	if (!ret)
 		cpumask_copy(cs->cpuset_cpus_allowed, cpus_allowed);
-	mutex_unlock(&lock);
 
 	return ret;
 }
@@ -1528,13 +1525,10 @@ int cgroup_set_nodemask(struct cgroup *cgrp, const nodemask_t *nodes_allowed)
 {
 	int ret;
 	struct cpuset *cs = cgroup_cs(cgrp);
-	static DEFINE_MUTEX(lock);
 
-	mutex_lock(&lock);
 	ret = update_nodemask(cs, nodes_allowed);
 	if (!ret)
 		cs->cpuset_mems_allowed = *nodes_allowed;
-	mutex_unlock(&lock);
 
 	return ret;
 }
