@@ -392,12 +392,6 @@ static void put_ve_root(struct ve_struct *ve)
 	path_put(&ve->root_path);
 }
 
-static void set_ve_caps(struct ve_struct *ve, struct task_struct *tsk)
-{
-	/* required for real_setdevperms from register_ve_<fs> above */
-	memcpy(&ve->ve_cap_bset, &tsk->cred->cap_effective, sizeof(kernel_cap_t));
-}
-
 static void ve_list_add(struct ve_struct *ve)
 {
 	mutex_lock(&ve_list_lock);
@@ -414,43 +408,39 @@ static void ve_list_del(struct ve_struct *ve)
 	mutex_unlock(&ve_list_lock);
 }
 
-static void fixup_ve_admin_cap(kernel_cap_t *cap_set)
-{
-	if (cap_raised(*cap_set, CAP_VE_SYS_ADMIN))
-		cap_raise(*cap_set, CAP_SYS_ADMIN);
-	if (cap_raised(*cap_set, CAP_VE_NET_ADMIN))
-		cap_raise(*cap_set, CAP_NET_ADMIN);
-}
-
 static void init_ve_cred(struct ve_struct *ve, struct cred *new)
 {
-	const struct cred *cur;
+	struct user_namespace *user_ns = new->user_ns;
 	kernel_cap_t bset;
-	struct uid_gid_extent extent = {
-		.first = 0,
-		.lower_first = 0,
-		.count = UINT_MAX,
-	};
 
-	bset = ve->ve_cap_bset;
-	cur = current_cred();
-	new->cap_effective = cap_intersect(cur->cap_effective, bset);
-	new->cap_inheritable = cap_intersect(cur->cap_inheritable, bset);
-	new->cap_permitted = cap_intersect(cur->cap_permitted, bset);
-	new->cap_bset = cap_intersect(cur->cap_bset, bset);
+	bset = current_cred()->cap_effective;
 
-	fixup_ve_admin_cap(&new->cap_effective);
-	fixup_ve_admin_cap(&new->cap_inheritable);
-	fixup_ve_admin_cap(&new->cap_permitted);
-	fixup_ve_admin_cap(&new->cap_bset);
+	/*
+	 * Task capabilities checks now user-ns aware. This deprecates old
+	 * CAP_VE_ADMIN. CAP_SYS/NET_ADMIN in container now completely safe.
+	 */
+	if (cap_raised(bset, CAP_VE_ADMIN)) {
+		cap_raise(bset, CAP_SYS_ADMIN);
+		cap_raise(bset, CAP_NET_ADMIN);
+	}
 
-	new->user_ns->uid_map.nr_extents = 1;
-	new->user_ns->uid_map.extent[0] = extent;
-	new->user_ns->gid_map.nr_extents = 1;
-	new->user_ns->gid_map.extent[0] = extent;
+	/*
+	 * Full set of capabilites in nested user-ns is safe. But vzctl can
+	 * drop some capabilites to create restricted container.
+	 */
+	new->cap_inheritable = CAP_EMPTY_SET;
+	new->cap_effective = bset;
+	new->cap_permitted = bset;
+	new->cap_bset = bset;
 
-	ve->init_cred = new;
-	ve->user_ns = new->user_ns;
+	/*
+	 * Setup equal uid/gid mapping.
+	 * proc_uid_map_write() forbids further changings.
+	 */
+	user_ns->uid_map = user_ns->parent->uid_map;
+	user_ns->gid_map = user_ns->parent->gid_map;
+
+	ve->init_cred = get_new_cred(new);
 }
 
 #ifdef CONFIG_VE_IPTABLES
@@ -687,8 +677,6 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	if ((err = init_ve_netns(ve, &old_ns_net)))
 		goto err_netns;
 
-	set_ve_caps(ve, tsk);
-
 	if ((err = change_active_pid_ns(tsk, ve->ve_ns->pid_ns)) < 0)
 		goto err_vpid;
 
@@ -702,7 +690,7 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 
 	init_ve_cred(ve, new_creds);
 
-	commit_creds(get_new_cred(ve->init_cred));
+	commit_creds(new_creds);
 
 	err = cgroup_kernel_attach(ve->css.cgroup, current);
 	if (err)
