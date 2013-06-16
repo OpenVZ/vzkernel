@@ -11,11 +11,30 @@
 #ifndef __VE_H__
 #define __VE_H__
 
+struct ve_struct;
+struct task_struct;
+struct seq_file;
+struct net;
+
 #ifdef CONFIG_VE
 
-struct ve_struct;
+extern struct ve_struct ve0;
 
-struct seq_file;
+static inline struct ve_struct *get_ve0(void)
+{
+	return &ve0;
+}
+
+static inline bool ve_is_super(struct ve_struct *ve)
+{
+	return ve == &ve0;
+}
+
+#define get_exec_env()		(current->task_ve)
+
+extern unsigned task_veid(struct task_struct *);
+
+extern int ve_task_count(struct ve_struct *);
 
 typedef void (*ve_seq_print_t)(struct seq_file *, struct ve_struct *);
 
@@ -95,6 +114,26 @@ extern void ve_hook_unregister(struct ve_hook *vh);
 #else /* CONFIG_VE */
 #define ve_hook_register(ch, vh)	do { } while (0)
 #define ve_hook_unregister(ve)		do { } while (0)
+
+static inline struct ve_struct *get_ve0(void)
+{
+	return NULL;
+}
+
+static inline struct ve_struct *get_exec_env(void)
+{
+	return NULL;
+}
+
+static inline bool ve_is_super(struct ve_struct *ve)
+{
+	return true;
+}
+
+static inline unsigned task_veid(struct task_struct *task)
+{
+	return 0;
+}
 
 #define nr_threads_ve(ve)	(nr_threads)
 

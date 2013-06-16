@@ -414,6 +414,7 @@ static struct fairsched_dump *fairsched_do_dump(int compat)
 	int nr_nodes;
 	struct dentry *root, *dentry;
 	struct cgroup *cgrp;
+	int veid = task_veid(current);
 	int id;
 
 	root = fairsched_root->dentry;
@@ -445,7 +446,7 @@ static struct fairsched_dump *fairsched_do_dump(int compat)
 		id = fairsched_node_id(dentry->d_name.name);
 		if (id < 0)
 			continue;
-		if (!ve_accessible_veid(id, get_exec_env()->veid))
+		if (veid && id != veid)
 			continue;
 		cgrp = dentry->d_fsdata; /* __d_cgrp */
 		p->id = id;

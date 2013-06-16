@@ -7,7 +7,6 @@
 #include <linux/vtime.h>
 
 #include <bc/task.h>
-#include <linux/ve_task.h>
 
 #if defined(CONFIG_SMP) || defined(CONFIG_GENERIC_HARDIRQS)
 extern void synchronize_irq(unsigned int irq);
