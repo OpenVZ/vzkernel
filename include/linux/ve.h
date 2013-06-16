@@ -22,22 +22,22 @@
 #include <linux/socket.h>
 #include <linux/ve_proto.h>
 #include <net/inet_frag.h>
+#include <linux/cgroup.h>
 
 struct tty_driver;
 struct file_system_type;
 struct veip_struct;
 struct ve_monitor;
 struct nsproxy;
-struct cgroup;
 
 struct ve_struct {
+	struct cgroup_subsys_state	css;
+
 	struct list_head	ve_list;
 
 	envid_t			veid;
 	/* capability bounding set */
 	kernel_cap_t		ve_cap_bset;
-	/* ref counter to ve from ipc */
-	atomic_t		counter;
 	unsigned int		class_id;
 	struct rw_semaphore	op_sem;
 	int			is_running;
@@ -102,7 +102,6 @@ struct ve_struct {
 	struct user_namespace	*user_ns;
 	struct cred		*init_cred;
 	struct net		*ve_netns;
-	struct cgroup		*ve_cgroup;
 	struct mutex		sync_mutex;
 };
 
@@ -118,23 +117,26 @@ extern int vz_security_family_check(struct net *net, int family);
 extern int vz_security_protocol_check(struct net *net, int protocol);
 
 void do_update_load_avg_ve(void);
-void do_env_free(struct ve_struct *ptr);
 
-static inline struct ve_struct *get_ve(struct ve_struct *ptr)
+static inline struct ve_struct *get_ve(struct ve_struct *ve)
 {
-	if (ptr != NULL)
-		atomic_inc(&ptr->counter);
-	return ptr;
+	if (ve)
+		css_get(&ve->css);
+	return ve;
 }
 
-static inline void put_ve(struct ve_struct *ptr)
+static inline void put_ve(struct ve_struct *ve)
 {
-	if (ptr && atomic_dec_and_test(&ptr->counter))
-		do_env_free(ptr);
+	if (ve)
+		css_put(&ve->css);
 }
 
-extern int (*do_ve_enter_hook)(struct ve_struct *ve, unsigned int flags);
-extern void (*do_env_free_hook)(struct ve_struct *ve);
+
+static inline struct ve_struct *cgroup_ve(struct cgroup *cgroup)
+{
+	return container_of(cgroup_subsys_state(cgroup, ve_subsys_id),
+			struct ve_struct, css);
+}
 
 extern unsigned long long ve_relative_clock(struct timespec * ts);
 
