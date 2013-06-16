@@ -137,7 +137,6 @@ struct ve_struct {
 	envid_t			veid;
 	/* capability bounding set */
 	kernel_cap_t		ve_cap_bset;
-	unsigned int		pcounter;
 	/* ref counter to ve from ipc */
 	atomic_t		counter;
 	unsigned int		class_id;
@@ -283,8 +282,6 @@ static inline int vz_security_protocol_check(struct net *net, int protocol) { re
 #define ve_utsname	system_utsname
 #define get_ve(ve)	(NULL)
 #define put_ve(ve)	do { } while (0)
-#define pget_ve(ve)	do { } while (0)
-#define pput_ve(ve)	do { } while (0)
 
 #endif	/* CONFIG_VE */
 

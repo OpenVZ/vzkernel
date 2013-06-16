@@ -33,10 +33,6 @@ void prepare_ve0_process(struct task_struct *tsk)
 {
 	VE_TASK_INFO(tsk)->exec_env = get_ve0();
 	VE_TASK_INFO(tsk)->owner_env = get_ve0();
-
-	if (tsk->pid) {
-		get_ve0()->pcounter++;
-	}
 }
 
 /*

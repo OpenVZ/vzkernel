@@ -2758,7 +2758,7 @@ static int do_sysinfo(struct sysinfo *info)
 	} else {
 		info->uptime -= ve->real_start_timespec.tv_sec;
 
-		info->procs = ve->pcounter;
+		info->procs = nr_threads_ve(ve);
 
 		get_avenrun_ve(info->loads, 0, SI_LOAD_SHIFT - FSHIFT);
 	}
