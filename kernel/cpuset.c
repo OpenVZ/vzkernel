@@ -897,8 +897,10 @@ static void update_tasks_cpumask(struct cpuset *cs, struct ptr_heap *heap)
  * @cs: the cpuset to consider
  * @cpus_allowed: new cpu mask
  */
-static int update_cpumask(struct cpuset *cs, const struct cpumask *cpus_allowed)
+static int update_cpumask(struct cpuset *cs,
+		const struct cpumask *cpus_allowed, int update_allowed)
 {
+	const struct cpumask *cpuset_cpus_allowed = cpu_active_mask;
 	struct cpuset *trialcs;
 	struct ptr_heap heap;
 	int retval;
@@ -908,7 +910,10 @@ static int update_cpumask(struct cpuset *cs, const struct cpumask *cpus_allowed)
 	if (cs == &top_cpuset)
 		return -EACCES;
 
-	if (!cpumask_subset(cpus_allowed, cpu_active_mask))
+	if (!cpumask_empty(cs->cpuset_cpus_allowed) && !update_allowed)
+		cpuset_cpus_allowed = cs->cpuset_cpus_allowed;
+
+	if (!cpumask_subset(cpus_allowed, cpuset_cpus_allowed))
 		return -EINVAL;
 
 	trialcs = alloc_trial_cpuset(cs);
@@ -933,6 +938,8 @@ static int update_cpumask(struct cpuset *cs, const struct cpumask *cpus_allowed)
 
 	mutex_lock(&callback_mutex);
 	cpumask_copy(cs->cpus_allowed, trialcs->cpus_allowed);
+	if (update_allowed)
+		cpumask_copy(cs->cpuset_cpus_allowed, cs->cpus_allowed);
 	mutex_unlock(&callback_mutex);
 
 	/*
@@ -1121,8 +1128,10 @@ static void update_tasks_nodemask(struct cpuset *cs, const nodemask_t *oldmem,
  * lock each such tasks mm->mmap_sem, scan its vma's and rebind
  * their mempolicies to the cpusets new mems_allowed.
  */
-static int update_nodemask(struct cpuset *cs, const nodemask_t *mems_allowed)
+static int update_nodemask(struct cpuset *cs,
+		const nodemask_t *mems_allowed, int update_allowed)
 {
+	const nodemask_t *cpuset_mems_allowed = &node_states[N_HIGH_MEMORY];
 	struct cpuset *trialcs = NULL;
 	NODEMASK_ALLOC(nodemask_t, oldmem, GFP_KERNEL);
 	int retval;
@@ -1140,7 +1149,10 @@ static int update_nodemask(struct cpuset *cs, const nodemask_t *mems_allowed)
 		goto done;
 	}
 
-	if (!nodes_subset(*mems_allowed, node_states[N_HIGH_MEMORY])) {
+	if (!nodes_empty(cs->cpuset_mems_allowed) && !update_allowed)
+		cpuset_mems_allowed = &cs->cpuset_mems_allowed;
+
+	if (!nodes_subset(*mems_allowed, *cpuset_mems_allowed)) {
 		retval = -EINVAL;
 		goto done;
 	}
@@ -1168,6 +1180,8 @@ static int update_nodemask(struct cpuset *cs, const nodemask_t *mems_allowed)
 
 	mutex_lock(&callback_mutex);
 	cs->mems_allowed = trialcs->mems_allowed;
+	if (update_allowed)
+		cs->cpuset_mems_allowed = cs->mems_allowed;
 	mutex_unlock(&callback_mutex);
 
 	update_tasks_nodemask(cs, oldmem, &heap);
@@ -1511,26 +1525,12 @@ static void cpuset_attach(struct cgroup *cgrp, struct cgroup_taskset *tset)
 
 int cgroup_set_cpumask(struct cgroup *cgrp, const struct cpumask *cpus_allowed)
 {
-	int ret;
-	struct cpuset *cs = cgroup_cs(cgrp);
-
-	ret = update_cpumask(cs, cpus_allowed);
-	if (!ret)
-		cpumask_copy(cs->cpuset_cpus_allowed, cpus_allowed);
-
-	return ret;
+	return update_cpumask(cgroup_cs(cgrp), cpus_allowed, 1);
 }
 
 int cgroup_set_nodemask(struct cgroup *cgrp, const nodemask_t *nodes_allowed)
 {
-	int ret;
-	struct cpuset *cs = cgroup_cs(cgrp);
-
-	ret = update_nodemask(cs, nodes_allowed);
-	if (!ret)
-		cs->cpuset_mems_allowed = *nodes_allowed;
-
-	return ret;
+	return update_nodemask(cgroup_cs(cgrp), nodes_allowed, 1);
 }
 
 /* The various types of files and directories in a cpuset file system */
