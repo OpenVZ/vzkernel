@@ -25,7 +25,7 @@ int version_string(LINUX_VERSION_CODE);
 
 struct uts_namespace init_uts_ns = {
 	.kref = {
-		.refcount	= INIT_NSPROXY_COUNT,
+		.refcount	= ATOMIC_INIT(2),
 	},
 	.name = {
 		.sysname	= UTS_SYSNAME,
