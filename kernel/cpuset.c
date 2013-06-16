@@ -1625,6 +1625,7 @@ out_unlock:
 static int cpuset_write_cpumask(struct cgroup *cgrp, struct cftype *cft,
 				const char *buf)
 {
+	cpuset_filetype_t type = cft->private;
 	int retval;
 	cpumask_var_t cpus_allowed;
 
@@ -1668,7 +1669,8 @@ static int cpuset_write_cpumask(struct cgroup *cgrp, struct cftype *cft,
 	}
 
 	if (cgroup_lock_live_group(cgrp)) {
-		retval = update_cpumask(cgroup_cs(cgrp), cpus_allowed);
+		retval = update_cpumask(cgroup_cs(cgrp), cpus_allowed,
+					type == FILE_CPUS_ALLOWED);
 		cgroup_unlock();
 	} else {
 		retval = -ENODEV;
@@ -1683,6 +1685,7 @@ out_unlock:
 static int cpuset_write_nodemask(struct cgroup *cgrp, struct cftype *cft,
 				 const char *buf)
 {
+	cpuset_filetype_t type = cft->private;
 	int retval;
 	nodemask_t mems_allowed;
 
@@ -1701,7 +1704,8 @@ static int cpuset_write_nodemask(struct cgroup *cgrp, struct cftype *cft,
 	}
 
 	if (cgroup_lock_live_group(cgrp)) {
-		retval = update_nodemask(cgroup_cs(cgrp), &mems_allowed);
+		retval = update_nodemask(cgroup_cs(cgrp), &mems_allowed,
+					 type == FILE_MEMS_ALLOWED);
 		cgroup_unlock();
 	} else {
 		retval = -ENODEV;
@@ -1922,12 +1926,16 @@ static struct cftype files[] = {
 	{
 		.name = "cpus_allowed",
 		.read = cpuset_common_file_read,
+		.write_string = cpuset_write_cpumask,
+		.max_write_len = (100U + 6 * NR_CPUS),
 		.private = FILE_CPUS_ALLOWED,
 	},
 
 	{
 		.name = "mems_allowed",
 		.read = cpuset_common_file_read,
+		.write_string = cpuset_write_nodemask,
+		.max_write_len = (100U + 6 * MAX_NUMNODES),
 		.private = FILE_MEMS_ALLOWED,
 	},
 
