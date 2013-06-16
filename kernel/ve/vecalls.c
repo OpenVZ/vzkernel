@@ -693,10 +693,6 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 		return -EINVAL;
 	}
 
-
-	VZTRACE("%s: veid=%d classid=%d pid=%d\n",
-		__FUNCTION__, veid, class_id, current->pid);
-
 	err = -ENOMEM;
 	ve = kzalloc(sizeof(struct ve_struct), GFP_KERNEL);
 	if (ve == NULL)
@@ -912,8 +908,6 @@ static int do_env_enter(struct ve_struct *ve, unsigned int flags)
 	struct task_struct *tsk = current;
 	int err;
 
-	VZTRACE("%s: veid=%d\n", __FUNCTION__, ve->veid);
-
 	err = -EBUSY;
 	down_read(&ve->op_sem);
 	if (!ve->is_running)
@@ -951,8 +945,6 @@ out_up:
 
 static void env_cleanup(struct ve_struct *ve)
 {
-	VZTRACE("real_do_env_cleanup\n");
-
 	down_read(&ve->op_sem);
 
 	fini_venet(ve);
@@ -1064,8 +1056,6 @@ static void fini_vzmond(void)
 
 static void real_do_env_free(struct ve_struct *ve)
 {
-	VZTRACE("real_do_env_free\n");
-
 	fini_ve_cgroups(ve);
 	free_ve_filesystems(ve);
 	free_ve_cpustats(ve);
