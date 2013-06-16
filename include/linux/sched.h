@@ -582,8 +582,6 @@ struct thread_group_cputimer {
 #include <linux/rwsem.h>
 struct autogroup;
 
-#include <linux/ve.h>
-
 /*
  * NOTE! "signal_struct" does not have its own
  * locking, because a shared signal_struct always
@@ -2381,6 +2379,7 @@ static inline void sched_autogroup_exit_task(struct task_struct *p) { }
 #endif
 
 #ifdef CONFIG_CFS_CPULIMIT
+struct cgroup;
 extern int sched_cgroup_set_rate(struct cgroup *cgrp, unsigned long rate);
 extern unsigned long sched_cgroup_get_rate(struct cgroup *cgrp);
 extern int sched_cgroup_set_nr_cpus(struct cgroup *cgrp, unsigned int nr_cpus);

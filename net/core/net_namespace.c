@@ -24,6 +24,7 @@
 #include <net/netlink.h>
 #include <net/net_namespace.h>
 #include <net/netns/generic.h>
+#include <linux/ve.h>
 
 /*
  *	Our network namespace constructor/destructor lists
