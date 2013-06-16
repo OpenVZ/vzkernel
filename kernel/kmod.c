@@ -28,7 +28,7 @@
 #include <linux/cred.h>
 #include <linux/file.h>
 #include <linux/fdtable.h>
-#include <linux/workqueue.h>
+#include <linux/kthread.h>
 #include <linux/security.h>
 #include <linux/mount.h>
 #include <linux/kernel.h>
@@ -46,7 +46,7 @@
 
 extern int max_threads;
 
-static struct workqueue_struct *khelper_wq;
+static DEFINE_KTHREAD_WORKER(khelper_worker);
 
 /*
  * kmod_thread_locker is used for deadlock avoidance.  There is no explicit
@@ -318,7 +318,7 @@ static int wait_for_helper(void *data)
 }
 
 /* This is run by khelper thread  */
-static void __call_usermodehelper(struct work_struct *work)
+static void __call_usermodehelper(struct kthread_work *work)
 {
 	struct subprocess_info *sub_info =
 		container_of(work, struct subprocess_info, work);
@@ -540,7 +540,7 @@ struct subprocess_info *call_usermodehelper_setup(char *path, char **argv,
 	if (!sub_info)
 		goto out;
 
-	INIT_WORK(&sub_info->work, __call_usermodehelper);
+	init_kthread_work(&sub_info->work, __call_usermodehelper);
 	sub_info->path = path;
 	sub_info->argv = argv;
 	sub_info->envp = envp;
@@ -565,13 +565,11 @@ EXPORT_SYMBOL(call_usermodehelper_setup);
  * asynchronously if wait is not set, and runs as a child of keventd.
  * (ie. it runs with full root capabilities).
  */
-int call_usermodehelper_exec(struct subprocess_info *sub_info, int wait)
+static int __call_usermodehelper_exec(struct kthread_worker *worker,
+		struct subprocess_info *sub_info, int wait)
 {
 	DECLARE_COMPLETION_ONSTACK(done);
 	int retval = 0;
-
-	if (!ve_is_super(get_exec_env()))
-		return -EPERM;
 
 	helper_lock();
 	if (!sub_info->path) {
@@ -582,7 +580,7 @@ int call_usermodehelper_exec(struct subprocess_info *sub_info, int wait)
 	if (sub_info->path[0] == '\0')
 		goto out;
 
-	if (!khelper_wq || usermodehelper_disabled) {
+	if (usermodehelper_disabled) {
 		retval = -EBUSY;
 		goto out;
 	}
@@ -600,7 +598,7 @@ int call_usermodehelper_exec(struct subprocess_info *sub_info, int wait)
 	sub_info->complete = &done;
 	sub_info->wait = wait;
 
-	queue_work(khelper_wq, &sub_info->work);
+	queue_kthread_work(worker, &sub_info->work);
 	if (wait == UMH_NO_WAIT)	/* task has freed sub_info */
 		goto unlock;
 
@@ -624,6 +622,14 @@ unlock:
 	helper_unlock();
 	return retval;
 }
+
+int call_usermodehelper_exec(struct subprocess_info *sub_info, int wait)
+{
+	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
+
+	return __call_usermodehelper_exec(&khelper_worker, sub_info, wait);
+}
 EXPORT_SYMBOL(call_usermodehelper_exec);
 
 /**
@@ -641,17 +647,30 @@ EXPORT_SYMBOL(call_usermodehelper_exec);
  */
 int call_usermodehelper(char *path, char **argv, char **envp, int wait)
 {
+	return call_usermodehelper_by(&khelper_worker, path, argv, envp,
+			wait, NULL, NULL, NULL);
+}
+EXPORT_SYMBOL(call_usermodehelper);
+
+int call_usermodehelper_by(struct kthread_worker *worker,
+	char *path, char **argv, char **envp, int wait,
+	int (*init)(struct subprocess_info *info, struct cred *new),
+	void (*cleanup)(struct subprocess_info *), void *data)
+{
 	struct subprocess_info *info;
 	gfp_t gfp_mask = (wait == UMH_NO_WAIT) ? GFP_ATOMIC : GFP_KERNEL;
 
+	if (worker == &khelper_worker && !ve_is_super(get_exec_env()))
+		return -EPERM;
+
 	info = call_usermodehelper_setup(path, argv, envp, gfp_mask,
-					 NULL, NULL, NULL);
+					 init, cleanup, data);
 	if (info == NULL)
 		return -ENOMEM;
 
-	return call_usermodehelper_exec(info, wait);
+	return __call_usermodehelper_exec(worker, info, wait);
 }
-EXPORT_SYMBOL(call_usermodehelper);
+EXPORT_SYMBOL(call_usermodehelper_by);
 
 static int proc_cap_handler(struct ctl_table *table, int write,
 			 void __user *buffer, size_t *lenp, loff_t *ppos)
@@ -733,6 +752,8 @@ struct ctl_table usermodehelper_table[] = {
 
 void __init usermodehelper_init(void)
 {
-	khelper_wq = create_singlethread_workqueue("khelper");
-	BUG_ON(!khelper_wq);
+	struct task_struct *t;
+
+	t = kthread_run(kthread_worker_fn, &khelper_worker, "khelper");
+	BUG_ON(IS_ERR(t));
 }
