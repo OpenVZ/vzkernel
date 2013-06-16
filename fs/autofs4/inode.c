@@ -123,7 +123,7 @@ static const match_table_t tokens = {
 	{Opt_indirect, "indirect"},
 	{Opt_direct, "direct"},
 	{Opt_offset, "offset"},
-	{Opt_err, NULL}
+{Opt_err, NULL}
 };
 
 static int parse_options(char *options, int *pipefd, kuid_t *uid, kgid_t *gid,
@@ -309,7 +309,7 @@ int autofs4_fill_super(struct super_block *s, void *data, int silent)
 
 	if (!pipe) {
 		printk("autofs: could not open pipe file descriptor\n");
-		goto fail_dput;
+		goto fail_put_pid;
 	}
 	ret = autofs_prepare_pipe(pipe);
 	if (ret < 0)
@@ -331,6 +331,8 @@ fail_fput:
 	printk("autofs: pipe file descriptor does not contain proper ops\n");
 	fput(pipe);
 	/* fall through */
+fail_put_pid:
+	put_pid(sbi->oz_pgrp);
 fail_dput:
 	dput(root);
 	goto fail_free;
