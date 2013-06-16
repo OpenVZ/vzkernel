@@ -236,8 +236,10 @@ static inline void task_state(struct seq_file *m, struct pid_namespace *ns,
 
 	seq_putc(m, '\n');
 
+#ifdef CONFIG_VE
 	seq_printf(m, "envID:\t%d\nVPid:\t%d\n",
-			p->ve_task_info.owner_env->veid, vpid);
+			task_veid(p), vpid);
+#endif
 }
 
 void render_sigset_t(struct seq_file *m, const char *header,
@@ -607,7 +609,7 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 #ifdef CONFIG_VE
 	seq_printf(m, " %s", " 0 0 0 0 0");
 	seq_put_decimal_ll(m, ' ', task_pid_nr_ns(task, task_active_pid_ns(task)));
-	seq_put_decimal_ull(m, ' ', VEID(VE_TASK_INFO(task)->owner_env));
+	seq_put_decimal_ull(m, ' ', task_veid(task));
 #endif
 #ifdef CONFIG_BEANCOUNTERS
 	seq_printf(m, " %s", ub_task_info);
