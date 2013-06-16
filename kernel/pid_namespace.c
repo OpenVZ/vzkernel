@@ -187,75 +187,12 @@ void put_pid_ns(struct pid_namespace *ns)
 }
 EXPORT_SYMBOL_GPL(put_pid_ns);
 
-#ifdef CONFIG_VE
-static noinline void show_lost_task(struct task_struct *p)
-{
-	printk("Lost task: %d/%s/%p blocked: %lx pending: %lx\n",
-			p->pid, p->comm, p,
-			p->blocked.sig[0],
-			p->pending.signal.sig[0]);
-}
-
-static void zap_ve_processes(struct ve_struct *env)
-{
-	int kthreads = 0;
-	/* wait for all init childs exit */
-	while (env->pcounter > 1 + kthreads) {
-		struct task_struct *g, *p;
-		long delay = 1;
-
-		if (sys_wait4(-1, NULL, __WALL | WNOHANG, NULL) > 0)
-			continue;
-		/* it was ENOCHLD or no more children somehow */
-		if (env->pcounter == 1)
-			break;
-
-		/* clear all signals to avoid wakeups */
-		if (signal_pending(current))
-			flush_signals(current);
-		/* we have child without signal sent */
-		__set_current_state(TASK_INTERRUPTIBLE);
-		schedule_timeout(delay);
-		delay = (delay < HZ) ? (delay << 1) : HZ;
-again:
-		read_lock(&tasklist_lock);
-		kthreads = 0;
-		do_each_thread(g, p) {
-			if (p->flags & PF_KTHREAD) {
-				kthreads++;
-				continue;
-			}
-			if (!task_pid_vnr(p))
-				continue;
-			if (p != current) {
-				/*
-				 * by that time no processes other then entered
-				 * may exist in the VE. if some were missed by
-				 * zap_pid_ns_processes() this was a BUG
-				 */
-				if (!p->did_ve_enter)
-					show_lost_task(p);
-
-				force_sig_info(SIGKILL, SEND_SIG_FORCED, p);
-
-				if (reap_zombie(p))
-					goto again;
-			}
-		} while_each_thread(g, p);
-		read_unlock(&tasklist_lock);
-	}
-
-	ve_hook_iterate_fini(VE_SS_CHAIN, get_exec_env());
-}
-#endif
-
 void zap_pid_ns_processes(struct pid_namespace *pid_ns)
 {
 	int nr;
 	int rc;
 	struct task_struct *task, *me = current;
 	int init_pids = thread_group_leader(me) ? 1 : 2;
-	struct ve_struct *env = get_exec_env();
 
 	/* Don't allow any more processes into the pid namespace */
 	disable_pid_allocation(pid_ns);
@@ -264,6 +201,14 @@ void zap_pid_ns_processes(struct pid_namespace *pid_ns)
 	spin_lock_irq(&me->sighand->siglock);
 	me->sighand->action[SIGCHLD - 1].sa.sa_handler = SIG_IGN;
 	spin_unlock_irq(&me->sighand->siglock);
+
+#ifdef CONFIG_VE
+	if (pid_ns->notify_ve) {
+		down_write(&pid_ns->notify_ve->op_sem);
+		ve_hook_iterate_fini(VE_KILL_CHAIN, pid_ns->notify_ve);
+		up_write(&pid_ns->notify_ve->op_sem);
+	}
+#endif
 
 	/*
 	 * The last thread in the cgroup-init thread group is terminating.
@@ -317,8 +262,11 @@ void zap_pid_ns_processes(struct pid_namespace *pid_ns)
 	acct_exit_ns(pid_ns);
 
 #ifdef CONFIG_VE
-	if (pid_ns == env->ve_ns->pid_ns)
-		zap_ve_processes(env);
+	if (pid_ns->notify_ve) {
+		down_write(&pid_ns->notify_ve->op_sem);
+		ve_hook_iterate_fini(VE_SS_CHAIN, pid_ns->notify_ve);
+		up_write(&pid_ns->notify_ve->op_sem);
+	}
 #endif
 	return;
 }

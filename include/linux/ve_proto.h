@@ -45,7 +45,7 @@ int devperms_seq_show(struct seq_file *m, void *v);
 
 enum {
 	VE_SS_CHAIN,
-	VE_CLEANUP_CHAIN,
+	VE_KILL_CHAIN,
 
 	VE_MAX_CHAINS
 };
@@ -77,7 +77,8 @@ enum {
 	HOOK_PRIO_NET_ACCT = 100,
 	HOOK_PRIO_NET_ACCT_V6,
 
-	HOOK_PRIO_AFTERALL = INT_MAX
+	HOOK_PRIO_AFTERALL = INT_MAX-1,
+	HOOK_PRIO_FINISHING = INT_MAX,
 };
 
 void *ve_seq_start(struct seq_file *m, loff_t *pos);
