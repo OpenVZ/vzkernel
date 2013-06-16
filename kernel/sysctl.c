@@ -62,7 +62,7 @@
 #include <linux/capability.h>
 #include <linux/binfmts.h>
 #include <linux/sched/sysctl.h>
-#include <linux/ve_task.h>
+#include <linux/ve.h>
 
 #include <asm/uaccess.h>
 #include <asm/processor.h>

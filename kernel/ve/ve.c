@@ -95,6 +95,12 @@ EXPORT_SYMBOL(ve0);
 LIST_HEAD(ve_list_head);
 DEFINE_MUTEX(ve_list_lock);
 
+unsigned task_veid(struct task_struct *task)
+{
+	return task->task_ve->veid;
+}
+EXPORT_SYMBOL(task_veid);
+
 struct ve_struct *__find_ve_by_id(envid_t veid)
 {
 	struct ve_struct *ve;
