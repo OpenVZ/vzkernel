@@ -281,10 +281,6 @@ ok:
 		rcu_read_unlock();
 		return -EPERM;
 	}
-	if (!ve_accessible(VE_TASK_INFO(task)->owner_env, get_exec_env())) {
-		rcu_read_unlock();
-		return -EPERM;
-	}
 	rcu_read_unlock();
 
 	if (!(mode & PTRACE_MODE_NOACCESS_CHK))
