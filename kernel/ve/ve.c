@@ -165,6 +165,10 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 	if (!cg->parent)
 		goto do_init;
 
+	/* forbid nested containers */
+	if (cgroup_ve(cg->parent) != ve)
+		return ERR_PTR(-ENOTDIR);
+
 	ve = kmem_cache_zalloc(ve_cachep, GFP_KERNEL);
 	if (!ve)
 		return ERR_PTR(-ENOMEM);
