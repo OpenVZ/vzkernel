@@ -622,9 +622,6 @@ static void env_cleanup(struct ve_struct *ve)
 
 	/* no new packets in flight beyond this point */
 
-	if (ve->devpts_sb)
-		deactivate_super(ve->devpts_sb);
-
 	up_read(&ve->op_sem);
 
 	printk(KERN_INFO "CT: %s: stopped\n", ve_name(ve));
