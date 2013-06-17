@@ -80,6 +80,25 @@ EXPORT_SYMBOL(ve0);
 LIST_HEAD(ve_list_head);
 DEFINE_MUTEX(ve_list_lock);
 
+int nr_ve = 1;	/* One VE always exists. Compatibility with vestat */
+EXPORT_SYMBOL(nr_ve);
+
+static void ve_list_add(struct ve_struct *ve)
+{
+	mutex_lock(&ve_list_lock);
+	list_add(&ve->ve_list, &ve_list_head);
+	nr_ve++;
+	mutex_unlock(&ve_list_lock);
+}
+
+static void ve_list_del(struct ve_struct *ve)
+{
+	mutex_lock(&ve_list_lock);
+	list_del(&ve->ve_list);
+	nr_ve--;
+	mutex_unlock(&ve_list_lock);
+}
+
 /* caller provides refrence to ve-struct */
 const char *ve_name(struct ve_struct *ve)
 {
@@ -256,6 +275,8 @@ int ve_start_container(struct ve_struct *ve)
 	 * start times */
 	ve->start_jiffies = get_jiffies_64();
 
+	ve_list_add(ve);
+
 	err = ve_start_kthread(ve);
 	if (err)
 		goto err_kthread;
@@ -275,6 +296,7 @@ int ve_start_container(struct ve_struct *ve)
 err_iterate:
 	ve_stop_kthread(ve);
 err_kthread:
+	ve_list_del(ve);
 	return err;
 }
 EXPORT_SYMBOL_GPL(ve_start_container);
@@ -322,6 +344,7 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 	 */
 	down_write(&ve->op_sem);
 	ve_hook_iterate_fini(VE_SS_CHAIN, ve);
+	ve_list_del(ve);
 	up_write(&ve->op_sem);
 }
 
