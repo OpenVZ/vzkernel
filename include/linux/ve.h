@@ -34,6 +34,8 @@ struct nsproxy;
 struct ve_struct {
 	struct cgroup_subsys_state	css;
 
+	const char		*ve_name;
+
 	struct list_head	ve_list;
 
 	envid_t			veid;
