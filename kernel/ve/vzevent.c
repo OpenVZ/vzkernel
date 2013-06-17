@@ -93,7 +93,7 @@ static int ve_start(void *data)
 	struct ve_struct *ve;
 
 	ve = (struct ve_struct *)data;
-	vzevent_send(VE_EVENT_START, "%d", ve->veid);
+	vzevent_send(VE_EVENT_START, "%s", ve_name(ve));
 	return 0;
 }
 
@@ -105,7 +105,7 @@ static void ve_stop(void *data)
 	if (ve->ve_ns->pid_ns->reboot == SIGHUP && reboot_event)
 		event = VE_EVENT_REBOOT;
 
-	vzevent_send(event, "%d", ve->veid);
+	vzevent_send(event, "%s", ve_name(ve));
 }
 
 static struct ve_hook ve_start_stop_hook = {

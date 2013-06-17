@@ -724,7 +724,7 @@ static int do_env_enter(struct ve_struct *ve, unsigned int flags)
 	 * If user space callers wants, it will do setsid() after
 	 * VE_ENTER.
 	 */
-	err = task_veid(tsk);
+	err = ve->veid;
 	tsk->did_ve_enter = 1;
 
 out_up:
@@ -757,7 +757,7 @@ static void env_cleanup(struct ve_struct *ve)
 	ve_list_del(ve);
 	up_read(&ve->op_sem);
 
-	printk(KERN_INFO "CT: %d: stopped\n", ve->veid);
+	printk(KERN_INFO "CT: %s: stopped\n", ve_name(ve));
 
 	put_ve(ve); /* from do_env_create() */
 }
