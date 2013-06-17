@@ -44,9 +44,6 @@ struct pid_namespace {
 	int hide_pidns;
 	int reboot;	/* group exit code if this pidns was rebooted */
 	unsigned int proc_inum;
-#ifdef CONFIG_VE
-	struct ve_struct *notify_ve;
-#endif
 };
 
 extern struct pid_namespace init_pid_ns;

@@ -700,8 +700,6 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	put_nsproxy(old_ns);
 	put_nsproxy(old_ns_net);
 
-	tsk->nsproxy->pid_ns->notify_ve = ve;
-
 	get_ve(ve); /* for env_cleanup() */
 	__module_get(THIS_MODULE);
 	ve->is_running = 1;
@@ -978,28 +976,6 @@ static void fini_vzmond(void)
 	WARN_ON(!list_empty(&ve_cleanup_list));
 }
 
-static void vzmon_kill_notifier(void *data)
-{
-	struct ve_struct *ve = data;
-
-	/*
-	 * Here the VE changes its state into "not running".
-	 * op_sem taken for write is a barrier to all VE manipulations from
-	 * ioctl: it waits for operations currently in progress and blocks all
-	 * subsequent operations until is_running is set to 0 and op_sem is
-	 * released.
-	 */
-
-	ve->is_running = 0;
-
-	/*
-	 * Stop kernel thread, or zap_pid_ns_processes() would wait it forever.
-	 */
-	flush_kthread_worker(&ve->ve_kthread_worker);
-	kthread_stop(ve->ve_kthread_task);
-	ve->ve_kthread_task = NULL;
-}
-
 static void vzmon_stop_notifier(void *data)
 {
 	struct ve_struct *ve = data;
@@ -1009,12 +985,6 @@ static void vzmon_stop_notifier(void *data)
 	spin_unlock(&ve_cleanup_lock);
 	wake_up_process(ve_cleanup_thread);
 }
-
-static struct ve_hook vzmon_kill_hook = {
-	.fini		= vzmon_kill_notifier,
-	.priority	= HOOK_PRIO_FINISHING,
-	.owner		= THIS_MODULE,
-};
 
 static struct ve_hook vzmon_stop_hook = {
 	.fini		= vzmon_stop_notifier,
@@ -1680,7 +1650,6 @@ static int __init vecalls_init(void)
 {
 	int err;
 
-	ve_hook_register(VE_KILL_CHAIN, &vzmon_kill_hook);
 	ve_hook_register(VE_SS_CHAIN, &vzmon_stop_hook);
 
 	err = init_vecalls_cgroups();
@@ -1719,7 +1688,6 @@ out_sysctl:
 out_vzmond:
 	fini_vecalls_cgroups();
 out_cgroups:
-	ve_hook_unregister(&vzmon_kill_hook);
 	ve_hook_unregister(&vzmon_stop_hook);
 
 	return err;
@@ -1732,7 +1700,6 @@ static void __exit vecalls_exit(void)
 	fini_vzmond();
 	fini_vecalls_sysctl();
 	fini_vecalls_cgroups();
-	ve_hook_unregister(&vzmon_kill_hook);
 	ve_hook_unregister(&vzmon_stop_hook);
 }
 
