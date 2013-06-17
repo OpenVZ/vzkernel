@@ -703,7 +703,6 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	put_nsproxy(old_ns);
 	put_nsproxy(old_ns_net);
 
-	ve->ve_init_task = tsk;
 	tsk->nsproxy->pid_ns->notify_ve = ve;
 
 	get_ve(ve); /* for env_cleanup() */
@@ -995,7 +994,6 @@ static void vzmon_kill_notifier(void *data)
 	 */
 
 	ve->is_running = 0;
-	ve->ve_init_task = NULL;
 
 	/*
 	 * Stop kernel thread, or zap_pid_ns_processes() would wait it forever.
