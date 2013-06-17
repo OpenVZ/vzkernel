@@ -255,7 +255,9 @@ int ve_start_container(struct ve_struct *ve)
 	if (err < 0)
 		goto err_iterate;
 
+	cgroup_lock();
 	ve->is_running = 1;
+	cgroup_unlock();
 
 	printk(KERN_INFO "CT: %d: started\n", ve->veid);
 
@@ -283,8 +285,11 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	/*
 	 * Here the VE changes its state into "not running".
 	 * op_sem works as barrier for vzctl ioctls.
+	 * cgroup_mutex works as barrier for ve_can_attach().
 	 */
+	cgroup_lock();
 	ve->is_running = 0;
+	cgroup_unlock();
 	/*
 	 * Stop kernel thread, or zap_pid_ns_processes() would wait it forever.
 	 */
@@ -364,6 +369,7 @@ static void ve_destroy(struct cgroup *cg)
 
 static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 {
+	struct ve_struct *ve = cgroup_ve(cg);
 	struct task_struct *task = current;
 
 	if (cgroup_taskset_size(tset) != 1 ||
@@ -371,6 +377,17 @@ static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 	    !thread_group_leader(task) ||
 	    !thread_group_empty(task))
 		return -EINVAL;
+
+	if (ve->is_locked)
+		return -EBUSY;
+
+	/*
+	 * Forbid userspace tasks to enter during starting or stopping.
+	 * Permit attaching kernel threads and init task for this containers.
+	 */
+	if (!ve->is_running && (ve->ve_ns || nr_threads_ve(ve)) &&
+			!(task->flags & PF_KTHREAD))
+		return -EPIPE;
 
 	return 0;
 }
