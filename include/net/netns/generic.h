@@ -42,7 +42,10 @@ static inline void *net_generic(const struct net *net, int id)
 	ptr = ng->ptr[id - 1];
 	rcu_read_unlock();
 
+#ifndef CONFIG_VE
+	/* May be NULL for disabled VE features */
 	BUG_ON(!ptr);
+#endif
 	return ptr;
 }
 
