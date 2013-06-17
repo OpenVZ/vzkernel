@@ -331,6 +331,33 @@ static __u64 get_ve_features(env_create_param_t *data, int datalen)
 		(VE_FEATURES_DEF & ~known_features);
 }
 
+#ifdef CONFIG_VE_IPTABLES
+
+static __u64 setup_iptables_mask(__u64 init_mask)
+{
+	/* Remove when userspace will start supplying IPv6-related bits. */
+	init_mask &= ~VE_IP_IPTABLES6;
+	init_mask &= ~VE_IP_FILTER6;
+	init_mask &= ~VE_IP_MANGLE6;
+	init_mask &= ~VE_IP_IPTABLE_NAT_MOD;
+	init_mask &= ~VE_NF_CONNTRACK_MOD;
+
+	if (mask_ipt_allow(init_mask, VE_IP_IPTABLES))
+		init_mask |= VE_IP_IPTABLES6;
+	if (mask_ipt_allow(init_mask, VE_IP_FILTER))
+		init_mask |= VE_IP_FILTER6;
+	if (mask_ipt_allow(init_mask, VE_IP_MANGLE))
+		init_mask |= VE_IP_MANGLE6;
+	if (mask_ipt_allow(init_mask, VE_IP_NAT))
+		init_mask |= VE_IP_IPTABLE_NAT;
+	if (mask_ipt_allow(init_mask, VE_IP_CONNTRACK))
+		init_mask |= VE_NF_CONNTRACK;
+
+	return init_mask;
+}
+
+#endif
+
 static int init_ve_struct(struct ve_struct *ve, envid_t veid,
 		u32 class_id, env_create_param_t *data, int datalen)
 {
@@ -347,6 +374,14 @@ static int init_ve_struct(struct ve_struct *ve, envid_t veid,
 	ve->_randomize_va_space = ve0._randomize_va_space;
 
 	ve->odirect_enable = 2;
+
+#ifdef CONFIG_VE_IPTABLES
+	/* Set up ipt_mask as it will be used during
+	 * net namespace initialization
+	 */
+	ve->ipt_mask = setup_iptables_mask(data ? data->iptables_mask
+						: VE_IP_DEFAULT);
+#endif
 
 	return 0;
 }
@@ -442,33 +477,6 @@ static void init_ve_cred(struct ve_struct *ve, struct cred *new)
 
 	ve->init_cred = get_new_cred(new);
 }
-
-#ifdef CONFIG_VE_IPTABLES
-
-static __u64 setup_iptables_mask(__u64 init_mask)
-{
-	/* Remove when userspace will start supplying IPv6-related bits. */
-	init_mask &= ~VE_IP_IPTABLES6;
-	init_mask &= ~VE_IP_FILTER6;
-	init_mask &= ~VE_IP_MANGLE6;
-	init_mask &= ~VE_IP_IPTABLE_NAT_MOD;
-	init_mask &= ~VE_NF_CONNTRACK_MOD;
-
-	if (mask_ipt_allow(init_mask, VE_IP_IPTABLES))
-		init_mask |= VE_IP_IPTABLES6;
-	if (mask_ipt_allow(init_mask, VE_IP_FILTER))
-		init_mask |= VE_IP_FILTER6;
-	if (mask_ipt_allow(init_mask, VE_IP_MANGLE))
-		init_mask |= VE_IP_MANGLE6;
-	if (mask_ipt_allow(init_mask, VE_IP_NAT))
-		init_mask |= VE_IP_IPTABLE_NAT;
-	if (mask_ipt_allow(init_mask, VE_IP_CONNTRACK))
-		init_mask |= VE_NF_CONNTRACK;
-
-	return init_mask;
-}
-
-#endif
 
 static int alone_in_pgrp(struct task_struct *tsk)
 {
@@ -595,7 +603,6 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	struct task_struct *tsk = current;
 	struct ve_struct *old_ve, *ve;
 	struct cred *new_creds;
-	__u64 init_mask;
 	int err;
 	struct nsproxy *old_ns, *old_ns_net;
 	char ve_name[16];
@@ -660,16 +667,6 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 
 	if ((err = init_ve_namespaces(ve, &old_ns)))
 		goto err_ns;
-
-	init_mask = data ? data->iptables_mask : VE_IP_DEFAULT;
-
-#ifdef CONFIG_VE_IPTABLES
-	/* Set up ipt_mask as it will be used during
-	 * net namespace initialization
-	 */
-	init_mask = setup_iptables_mask(init_mask);
-	ve->ipt_mask = init_mask;
-#endif
 
 	if ((err = init_ve_netns(ve, &old_ns_net)))
 		goto err_netns;
