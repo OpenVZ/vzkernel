@@ -383,7 +383,7 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	struct cred *new_creds, *old_creds;
 	int err;
 	struct nsproxy *old_ns;
-	char ve_name[16];
+	char ve_name[VE_LEGACY_NAME_MAXLEN];
 	struct cgroup *ve_cgroup;
 
 	if (tsk->signal->tty) {
@@ -416,7 +416,7 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	if (err)
 		goto err_sched;
 
-	snprintf(ve_name, sizeof(ve_name), "%u", veid);
+	legacy_veid_to_name(veid, ve_name);
 
 	ve_cgroup = cgroup_kernel_open(ve0.css.cgroup,
 			CGRP_CREAT|CGRP_WEAK|CGRP_EXCL, ve_name);
