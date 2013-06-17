@@ -5698,9 +5698,9 @@ static void ve_netdev_leak(struct net_device *dev)
 
 	synchronize_net();
 
-	pr_emerg("Device (%s:%d:%u:%p) marked as leaked\n",
+	pr_emerg("Device (%s:%d:%s:%p) marked as leaked\n",
 			dev->name, netdev_refcnt_read(dev) - 1,
-			dev_net(dev)->owner_ve->veid, dev);
+			ve_name(dev_net(dev)->owner_ve), dev);
 	dst_cache_dump();
 }
 
@@ -5836,9 +5836,9 @@ static int netdev_wait_allrefs(struct net_device *dev)
 
 		if (time_after(jiffies, warning_time + 10 * HZ)) {
 			pr_emerg("unregister_netdevice: waiting for %s=%p to "
-				"become free. Usage count = %d\n ve=%u",
+				"become free. Usage count = %d\n ve=%s",
 				 dev->name, dev, refcnt,
-				 dev_net(dev)->owner_ve->veid);
+				 ve_name(dev_net(dev)->owner_ve));
 			warning_time = jiffies;
 		}
 
