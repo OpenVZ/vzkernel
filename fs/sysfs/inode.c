@@ -22,6 +22,7 @@
 #include <linux/sysfs.h>
 #include <linux/xattr.h>
 #include <linux/security.h>
+#include <linux/ve.h>
 #include "sysfs.h"
 
 extern struct super_block * sysfs_sb;
@@ -112,6 +113,9 @@ int sysfs_setattr(struct dentry *dentry, struct iattr *iattr)
 
 	if (!sd)
 		return -EINVAL;
+
+	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
 
 	mutex_lock(&sysfs_mutex);
 	error = inode_change_ok(inode, iattr);
@@ -339,9 +343,31 @@ int sysfs_hash_and_remove(struct sysfs_dirent *dir_sd, const void *ns, const cha
 		return -ENOENT;
 }
 
+static int sysfs_sd_permission(struct sysfs_dirent *sd, int mask)
+{
+	struct ve_struct *ve = get_exec_env();
+	int perm;
+
+	if (ve_is_super(ve))
+		return 0;
+
+	if (sd->s_ns || sd->s_parent && sd->s_parent->s_ns)
+		return 0;
+
+	if (sysfs_type(sd) == SYSFS_KOBJ_LINK)
+		sd = sd->s_symlink.target_sd;
+
+	perm = kmapset_get_value(sd->s_ve_perms, &ve->ve_sysfs_perms);
+	if ((mask & ~perm & (MAY_READ | MAY_WRITE | MAY_EXEC)) == 0)
+		return 0;
+
+	return -EACCES;
+}
+
 int sysfs_permission(struct inode *inode, int mask)
 {
 	struct sysfs_dirent *sd;
+	int ret;
 
 	if (mask & MAY_NOT_BLOCK)
 		return -ECHILD;
@@ -349,8 +375,12 @@ int sysfs_permission(struct inode *inode, int mask)
 	sd = inode->i_private;
 
 	mutex_lock(&sysfs_mutex);
+	ret = sysfs_sd_permission(sd, mask);
 	sysfs_refresh_inode(sd, inode);
 	mutex_unlock(&sysfs_mutex);
+
+	if (ret)
+		return ret;
 
 	return generic_permission(inode, mask);
 }
