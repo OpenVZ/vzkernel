@@ -195,88 +195,20 @@ static void fini_venet(struct ve_struct *ve)
  * Namespaces
  */
 
-static inline int init_ve_namespaces(struct ve_struct *ve,
-		struct nsproxy **old)
+static inline int init_ve_namespaces(void)
 {
 	int err;
-	struct task_struct *tsk;
-	struct nsproxy *cur;
 
-	tsk = current;
-	cur = tsk->nsproxy;
-
-	err = copy_namespaces(CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWPID,
-			tsk, 1);
+	err = copy_namespaces(CLONE_NEWUTS | CLONE_NEWIPC |
+			      CLONE_NEWPID | CLONE_NEWNET,
+			      current, 1);
 	if (err < 0)
 		return err;
 
-	ve->ve_ns = get_nsproxy(tsk->nsproxy);
-	memcpy(ve->ve_ns->uts_ns->name.release, virt_utsname.release,
+	memcpy(utsname()->release, virt_utsname.release,
 			sizeof(virt_utsname.release));
 
-	*old = cur;
 	return 0;
-}
-
-static inline void fini_ve_namespaces(struct ve_struct *ve,
-		struct nsproxy *old)
-{
-	struct task_struct *tsk = current;
-	struct nsproxy *tmp;
-
-	if (old) {
-		tmp = tsk->nsproxy;
-		tsk->nsproxy = get_nsproxy(old);
-		put_nsproxy(tmp);
-		tmp = ve->ve_ns;
-		ve->ve_ns = get_nsproxy(old);
-		put_nsproxy(tmp);
-	} else {
-		put_cred(ve->init_cred);
-		put_nsproxy(ve->ve_ns);
-		ve->ve_ns = NULL;
-	}
-}
-
-static int init_ve_netns(struct ve_struct *ve, struct nsproxy **old)
-{
-	int err;
-	struct task_struct *tsk;
-	struct nsproxy *cur;
-
-	tsk = current;
-	cur = tsk->nsproxy;
-
-	err = copy_namespaces(CLONE_NEWNET, tsk, 1);
-	if (err < 0)
-		return err;
-
-	put_nsproxy(ve->ve_ns);
-	ve->ve_ns = get_nsproxy(tsk->nsproxy);
-	ve->ve_netns = get_net(ve->ve_ns->net_ns);
-	*old = cur;
-	return 0;
-}
-
-static void fini_ve_netns(struct ve_struct *ve)
-{
-	put_net(ve->ve_netns);
-}
-
-static inline void switch_ve_namespaces(struct ve_struct *ve,
-		struct task_struct *tsk)
-{
-	struct nsproxy *old_ns;
-	struct nsproxy *new_ns;
-
-	BUG_ON(tsk != current);
-	old_ns = tsk->nsproxy;
-	new_ns = ve->ve_ns;
-
-	if (old_ns != new_ns) {
-		tsk->nsproxy = get_nsproxy(new_ns);
-		put_nsproxy(old_ns);
-	}
 }
 
 static __u64 get_ve_features(env_create_param_t *data, int datalen)
@@ -375,19 +307,7 @@ static int ve_set_meminfo(envid_t veid, unsigned long val)
 #endif
 }
 
-static void set_ve_root(struct ve_struct *ve, struct task_struct *tsk)
-{
-	get_fs_root(tsk->fs, &ve->root_path);
-	/* mark_tree_virtual(&ve->root_path); */
-	//ub_dcache_set_owner(ve->root_path.dentry, get_exec_ub());
-}
-
-static void put_ve_root(struct ve_struct *ve)
-{
-	path_put(&ve->root_path);
-}
-
-static void init_ve_cred(struct ve_struct *ve, struct cred *new)
+static void init_ve_cred(struct cred *new)
 {
 	struct user_namespace *user_ns = new->user_ns;
 	kernel_cap_t bset;
@@ -418,8 +338,6 @@ static void init_ve_cred(struct ve_struct *ve, struct cred *new)
 	 */
 	user_ns->uid_map = user_ns->parent->uid_map;
 	user_ns->gid_map = user_ns->parent->gid_map;
-
-	ve->init_cred = get_new_cred(new);
 }
 
 static int alone_in_pgrp(struct task_struct *tsk)
@@ -470,9 +388,9 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 {
 	struct task_struct *tsk = current;
 	struct ve_struct *ve;
-	struct cred *new_creds;
+	struct cred *new_creds, *old_creds;
 	int err;
-	struct nsproxy *old_ns, *old_ns_net;
+	struct nsproxy *old_ns;
 	char ve_name[16];
 	struct cgroup *ve_cgroup;
 
@@ -518,43 +436,43 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 
 	init_ve_struct(ve, veid, class_id, data, datalen);
 
-	err = cgroup_kernel_attach(ve->css.cgroup, current);
+	err = cgroup_kernel_attach(ve->css.cgroup, tsk);
 	if (err)
 		goto err_ve_attach;
-
-	down_write(&ve->op_sem);
-	if (flags & VE_LOCK)
-		ve->is_locked = 1;
-
-	set_ve_root(ve, tsk);
-
-	if ((err = init_ve_namespaces(ve, &old_ns)))
-		goto err_ns;
-
-	if ((err = init_ve_netns(ve, &old_ns_net)))
-		goto err_netns;
-
-	if ((err = change_active_pid_ns(tsk, ve->ve_ns->pid_ns)) < 0)
-		goto err_vpid;
 
 	err = -ENOMEM;
 	new_creds = prepare_creds();
 	if (new_creds == NULL)
 		goto err_creds;
 
-	if ((err = create_user_ns(new_creds)) < 0)
-		goto err_uns;
+	err = create_user_ns(new_creds);
+	if (err) {
+		put_cred(new_creds);
+		goto err_creds;
+	}
 
-	init_ve_cred(ve, new_creds);
+	init_ve_cred(new_creds);
+
+	old_creds = (struct cred *)get_current_cred();
 
 	commit_creds(new_creds);
+
+	old_ns = tsk->nsproxy;
+
+	if ((err = init_ve_namespaces()))
+		goto err_ns;
+
+	/* for compatibility only */
+	if ((err = change_active_pid_ns(tsk, tsk->nsproxy->pid_ns)) < 0)
+		goto err_vpid;
+
+	down_write(&ve->op_sem);
+	if (flags & VE_LOCK)
+		ve->is_locked = 1;
 
 	err = ve_start_container(ve);
 	if (err)
 		goto err_ve_start;
-
-	put_nsproxy(old_ns);
-	put_nsproxy(old_ns_net);
 
 	get_ve(ve); /* for env_cleanup() */
 	__module_get(THIS_MODULE);
@@ -563,38 +481,19 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 
 	cgroup_kernel_close(ve_cgroup);
 
+	put_nsproxy(old_ns);
+	put_cred(old_creds);
+
 	return veid;
 
 err_ve_start:
-	/* creds will put user and user ns */
-err_uns:
-	put_cred(new_creds);
-err_creds:
-err_vpid:
-	fini_venet(ve);
-	fini_ve_namespaces(ve, old_ns_net);
-	put_nsproxy(old_ns_net);
-	fini_ve_netns(ve);
-err_netns:
-	/*
-	 * If process hasn't become VE's init, proc_mnt won't be put during
-	 * pidns death, so this mntput by hand is needed. If it has, we
-	 * compensate with mntget above.
-	 */
-	/* free_ve_utsname() is called inside real_put_ve() */
-	fini_ve_namespaces(ve, old_ns);
-	put_nsproxy(old_ns);
-	/*
-	 * We need to compensate, because fini_ve_namespaces() assumes
-	 * ve->ve_ns will continue to be used after, but VE will be freed soon
-	 * (in kfree() sense).
-	 */
-	put_nsproxy(ve->ve_ns);
-err_ns:
-	put_ve_root(ve);
 	up_write(&ve->op_sem);
-
-	cgroup_kernel_attach(ve0.css.cgroup, current);
+err_vpid:
+	switch_task_namespaces(tsk, old_ns);
+err_ns:
+	commit_creds(old_creds);
+err_creds:
+	cgroup_kernel_attach(ve0.css.cgroup, tsk);
 err_ve_attach:
 	cgroup_kernel_close(ve_cgroup);
 err_cgroup:
@@ -685,7 +584,7 @@ static int do_env_enter(struct ve_struct *ve, unsigned int flags)
 	if (ve->is_locked && !(flags & VE_SKIPLOCK))
 		goto out_up;
 
-	switch_ve_namespaces(ve, tsk);
+	switch_task_namespaces(tsk, get_nsproxy(ve->ve_ns));
 
 	commit_creds(get_new_cred(ve->init_cred));
 
@@ -725,11 +624,6 @@ static void env_cleanup(struct ve_struct *ve)
 
 	if (ve->devpts_sb)
 		deactivate_super(ve->devpts_sb);
-
-	fini_ve_namespaces(ve, NULL);
-	fini_ve_netns(ve);
-
-	put_ve_root(ve);
 
 	up_read(&ve->op_sem);
 
