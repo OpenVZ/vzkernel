@@ -721,11 +721,11 @@ int real_ve_dev_map(envid_t veid, int op, char *dev_name)
 #ifdef CONFIG_PROC_FS
 #if BITS_PER_LONG == 32
 #define VESTAT_LINE_WIDTH (6 * 11 + 6 * 21)
-#define VESTAT_LINE_FMT "%10u %10lu %10lu %10lu %10Lu %20Lu %20Lu %20Lu %20Lu %20Lu %20Lu %10lu\n"
+#define VESTAT_LINE_FMT "%10s %10lu %10lu %10lu %10Lu %20Lu %20Lu %20Lu %20Lu %20Lu %20Lu %10lu\n"
 #define VESTAT_HEAD_FMT "%10s %10s %10s %10s %10s %20s %20s %20s %20s %20s %20s %10s\n"
 #else
 #define VESTAT_LINE_WIDTH (12 * 21)
-#define VESTAT_LINE_FMT "%20u %20lu %20lu %20lu %20Lu %20Lu %20Lu %20Lu %20Lu %20Lu %20Lu %20lu\n"
+#define VESTAT_LINE_FMT "%20s %20lu %20lu %20lu %20Lu %20Lu %20Lu %20Lu %20Lu %20Lu %20Lu %20lu\n"
 #define VESTAT_HEAD_FMT "%20s %20s %20s %20s %20s %20s %20s %20s %20s %20s %20s %20s\n"
 #endif
 
@@ -774,7 +774,7 @@ static int vestat_seq_show(struct seq_file *m, void *v)
 	uptime_cycles = ve_get_uptime(ve);
 	uptime = get_jiffies_64() - ve->start_jiffies;
 
-	seq_printf(m, VESTAT_LINE_FMT, ve->veid,
+	seq_printf(m, VESTAT_LINE_FMT, ve_name(ve),
 				user_ve, nice_ve, system_ve,
 				(unsigned long long)uptime,
 				(unsigned long long)idle_time, 
@@ -899,7 +899,7 @@ static int veinfo_seq_show(struct seq_file *m, void *v)
 
 	ve = list_entry((struct list_head *)v, struct ve_struct, ve_list);
 
-	seq_printf(m, "%10u %5u %5u", ve->veid, ve->class_id, nr_threads_ve(ve));
+	seq_printf(m, "%10s %5u %5u", ve_name(ve), ve->class_id, nr_threads_ve(ve));
 
 	rcu_read_lock();
 	veaddr_seq_print = rcu_dereference(veaddr_seq_print_cb);
