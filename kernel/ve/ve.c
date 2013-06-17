@@ -104,6 +104,15 @@ static void ve_list_del(struct ve_struct *ve)
 	mutex_unlock(&ve_list_lock);
 }
 
+const char *__ve_name(struct ve_struct *ve)
+{
+	if (unlikely(!ve->ve_name))
+		return ve->css.cgroup->dentry->d_name.name;
+
+	return ve->ve_name;
+}
+EXPORT_SYMBOL(__ve_name);
+
 /* caller provides refrence to ve-struct */
 const char *ve_name(struct ve_struct *ve)
 {
