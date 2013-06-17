@@ -158,6 +158,56 @@ int nr_threads_ve(struct ve_struct *ve)
 }
 EXPORT_SYMBOL(nr_threads_ve);
 
+static void ve_stop_kthread(struct ve_struct *ve)
+{
+	flush_kthread_worker(&ve->ve_kthread_worker);
+	kthread_stop(ve->ve_kthread_task);
+	ve->ve_kthread_task = NULL;
+}
+
+void ve_stop_ns(struct pid_namespace *pid_ns)
+{
+	struct ve_struct *ve = current->task_ve;
+
+	/*
+	 * current->cgroups already switched to init_css_set in cgroup_exit(),
+	 * but current->task_ve still points to our exec ve.
+	 */
+	if (!ve->ve_ns || ve->ve_ns->pid_ns != pid_ns)
+		return;
+
+	down_write(&ve->op_sem);
+	/*
+	 * Here the VE changes its state into "not running".
+	 * op_sem works as barrier for vzctl ioctls.
+	 */
+	ve->is_running = 0;
+	/*
+	 * Stop kernel thread, or zap_pid_ns_processes() would wait it forever.
+	 */
+	ve_stop_kthread(ve);
+	up_write(&ve->op_sem);
+}
+
+void ve_exit_ns(struct pid_namespace *pid_ns)
+{
+	struct ve_struct *ve = current->task_ve;
+
+	/*
+	 * current->cgroups already switched to init_css_set in cgroup_exit(),
+	 * but current->task_ve still points to our exec ve.
+	 */
+	if (!ve->ve_ns || ve->ve_ns->pid_ns != pid_ns)
+		return;
+
+	/*
+	 * At this point all userspace tasks in container are dead.
+	 */
+	down_write(&ve->op_sem);
+	ve_hook_iterate_fini(VE_SS_CHAIN, ve);
+	up_write(&ve->op_sem);
+}
+
 static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 {
 	struct ve_struct *ve = &ve0;
