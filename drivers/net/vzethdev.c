@@ -57,7 +57,8 @@ static LIST_HEAD(veth_hwaddr_list);
 static DEFINE_RWLOCK(ve_hwaddr_lock);
 static DEFINE_SEMAPHORE(hwaddr_sem);
 
-static struct net_device * veth_dev_start(char *dev_addr, char *name);
+static struct net_device * veth_dev_start(struct ve_struct *ve,
+						char *dev_addr, char *name);
 
 static struct veth_struct *hwaddr_entry_lookup(char *name)
 {
@@ -87,7 +88,7 @@ static int veth_entry_add(struct ve_struct *ve, char *dev_addr, char *name,
 		memcpy(dev_name, name, IFNAMSIZ - 1);
 		dev_name[IFNAMSIZ - 1] = '\0';
 	}
-	dev_ve0 = veth_dev_start(dev_addr, dev_name);
+	dev_ve0 = veth_dev_start(get_ve0(), dev_addr, dev_name);
 	if (IS_ERR(dev_ve0)) {
 		err = PTR_ERR(dev_ve0);
 		goto err;
@@ -99,7 +100,7 @@ static int veth_entry_add(struct ve_struct *ve, char *dev_addr, char *name,
 		memcpy(dev_name, name_ve, IFNAMSIZ - 1);
 		dev_name[IFNAMSIZ - 1] = '\0';
 	}
-	dev_ve = veth_dev_start(dev_addr_ve, dev_name);
+	dev_ve = veth_dev_start(ve, dev_addr_ve, dev_name);
 	if (IS_ERR(dev_ve)) {
 		err = PTR_ERR(dev_ve);
 		goto err_ve;
@@ -604,7 +605,8 @@ static struct vzioctlinfo vethcalls = {
 	.owner		= THIS_MODULE,
 };
 
-static struct net_device * veth_dev_start(char *dev_addr, char *name)
+static struct net_device * veth_dev_start(struct ve_struct *ve,
+						char *dev_addr, char *name)
 {
 	struct net_device *dev;
 	int err;
@@ -615,7 +617,7 @@ static struct net_device * veth_dev_start(char *dev_addr, char *name)
 	dev = alloc_netdev(sizeof(struct veth_struct), name, veth_setup);
 	if (!dev)
 		return ERR_PTR(-ENOMEM);
-	dev->nd_net = get_exec_env()->ve_netns;
+	dev->nd_net = ve->ve_netns;
 	if (strchr(dev->name, '%')) {
 		err = dev_alloc_name(dev, dev->name);
 		if (err < 0)
