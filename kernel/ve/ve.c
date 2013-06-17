@@ -318,6 +318,8 @@ int ve_start_container(struct ve_struct *ve)
 
 	printk(KERN_INFO "CT: %s: started\n", ve_name(ve));
 
+	get_ve(ve); /* for ve_exit_ns() */
+
 	return 0;
 
 err_iterate:
@@ -378,9 +380,17 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 
 	down_write(&ve->op_sem);
 	ve_hook_iterate_fini(VE_SS_CHAIN, ve);
+#ifdef CONFIG_INET
+	tcp_v4_kill_ve_sockets(ve);
+	synchronize_net();
+#endif
 	ve_list_del(ve);
 	ve_drop_context(ve);
 	up_write(&ve->op_sem);
+
+	printk(KERN_INFO "CT: %s: stopped\n", ve_name(ve));
+
+	put_ve(ve); /* from ve_start_container() */
 }
 
 static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
