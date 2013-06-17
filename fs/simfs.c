@@ -279,54 +279,51 @@ static void sim_free_export_op(struct super_block *sb)
 }
 #endif
 
-static int sim_fill_super(struct super_block *s, void *data, int silent)
-{
-	struct path *path = data;
-	int err;
-
-	err = sim_init_export_op(s, path->dentry->d_sb);
-	if (err)
-		goto out;
-
-	err = sim_init_blkdev(s);
-	if (err)
-		goto out;
-
-	err = 0;
-	s->s_fs_info = mntget(path->mnt);
-	s->s_root = dget(path->dentry);
-	s->s_op = &sim_super_ops;
-
-	sim_quota_init(s);
-out:
-	return err;
-}
-
-static struct dentry *sim_mount(struct file_system_type *type, int flags,
-		const char *dev_name, void *data)
+static int sim_get_sb(struct file_system_type *type, int flags,
+		      const char *dev_name, void *data, struct vfsmount *mnt)
 {
 	int err;
 	struct path path;
-	struct dentry *root;
-
-	if (data == NULL)
-		return ERR_PTR(-EINVAL);
+	struct super_block *s;
 
 	err = kern_path(data, LOOKUP_FOLLOW|LOOKUP_DIRECTORY, &path);
 	if (err)
-		return ERR_PTR(err);
+		goto out;
 
-//	root = mount_nodev(type, flags, &path, sim_fill_super);
-//
-	/*
-	 * FIXME add virtual dentry for root.
-	 */
-	root = dget(path.dentry);
-	atomic_inc(&root->d_sb->s_active);
-	down_write(&root->d_sb->s_umount);
+	s = sget(type, NULL, set_anon_super, flags, NULL);
+	err = PTR_ERR(s);
+	if (IS_ERR(s))
+		goto out_put_path;
+
+	err = sim_init_export_op(s, path.dentry->d_sb);
+	if (err)
+		goto out_deactivate;
+
+	err = sim_init_blkdev(s);
+	if (err)
+		goto out_free_export_op;
+
+	s->s_fs_info = mntget(path.mnt);
+	s->s_root = dget(path.dentry);
+	s->s_op = &sim_super_ops;
+
+	sim_quota_init(s);
+
+	s->s_flags |= MS_ACTIVE;
+	mnt->mnt_sb = s;
+	mnt->mnt_root = dget(s->s_root);
 
 	path_put(&path);
-	return root;
+	return 0;
+
+out_free_export_op:
+	sim_free_export_op(s);
+out_deactivate:
+	deactivate_locked_super(s);
+out_put_path:
+	path_put(&path);
+out:
+	return err;
 }
 
 static void sim_kill_sb(struct super_block *sb)
@@ -345,7 +342,7 @@ static void sim_kill_sb(struct super_block *sb)
 static struct file_system_type sim_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "simfs",
-	.mount		= sim_mount,
+	.get_sb		= sim_get_sb,
 	.kill_sb	= sim_kill_sb,
 	.fs_flags	= FS_MANGLE_PROC,
 };
