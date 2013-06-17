@@ -33,6 +33,7 @@ static inline bool ve_is_super(struct ve_struct *ve)
 #define get_exec_env()		(current->task_ve)
 #define VE_LEGACY_NAME_MAXLEN	16
 
+const char *__ve_name(struct ve_struct *ve);
 const char *ve_name(struct ve_struct *ve);
 void legacy_veid_to_name(envid_t veid, char *name);
 
