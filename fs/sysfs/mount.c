@@ -20,6 +20,9 @@
 #include <linux/magic.h>
 #include <linux/slab.h>
 #include <linux/user_namespace.h>
+#include <linux/seq_file.h>
+#include <linux/xattr.h>
+#include <linux/ve.h>
 
 #include "sysfs.h"
 
@@ -27,10 +30,21 @@
 static struct vfsmount *sysfs_mnt;
 struct kmem_cache *sysfs_dir_cachep;
 
+static int sysfs_show_options(struct seq_file *m, struct dentry *root)
+{
+	struct ve_struct *ve = sysfs_info(root->d_sb)->ve;
+
+	if (!ve_is_super(ve))
+		seq_printf(m, ",ve=%s", ve_name(ve));
+
+	return 0;
+}
+
 static const struct super_operations sysfs_ops = {
 	.statfs		= simple_statfs,
 	.drop_inode	= generic_delete_inode,
 	.evict_inode	= sysfs_evict_inode,
+	.show_options	= sysfs_show_options,
 };
 
 struct sysfs_dirent sysfs_root = {
@@ -84,6 +98,8 @@ static int sysfs_test_super(struct super_block *sb, void *data)
 		if (sb_info->ns[type] != info->ns[type])
 			found = 0;
 	}
+	if (sb_info->ve != info->ve)
+		found = 0;
 	return found;
 }
 
@@ -101,6 +117,7 @@ static void free_sysfs_super_info(struct sysfs_super_info *info)
 	int type;
 	for (type = KOBJ_NS_TYPE_NONE; type < KOBJ_NS_TYPES; type++)
 		kobj_ns_drop(type, info->ns[type]);
+	put_ve(info->ve);
 	kfree(info);
 }
 
@@ -121,6 +138,7 @@ static struct dentry *sysfs_mount(struct file_system_type *fs_type,
 
 	for (type = KOBJ_NS_TYPE_NONE; type < KOBJ_NS_TYPES; type++)
 		info->ns[type] = kobj_ns_grab_current(type);
+	info->ve = get_ve(get_exec_env());
 
 	sb = sget(fs_type, sysfs_test_super, sysfs_set_super, flags, info);
 	if (IS_ERR(sb) || sb->s_fs_info != info)
@@ -159,6 +177,10 @@ static struct file_system_type sysfs_fs_type = {
 int __init sysfs_init(void)
 {
 	int err = -ENOMEM;
+
+	sysfs_root.s_ve_perms = kmapset_new(&ve_sysfs_perms);
+	if (!sysfs_root.s_ve_perms)
+		goto out;
 
 	sysfs_dir_cachep = kmem_cache_create("sysfs_dir_cache",
 					      sizeof(struct sysfs_dirent),
