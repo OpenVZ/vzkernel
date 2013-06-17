@@ -1013,6 +1013,33 @@ static int ve_ip_access_write(struct cgroup *cgrp, struct cftype *cft,
 	return do_ve_ip_map(__ve_name(ve), cft->private, &addr);
 }
 
+int ve_ip_access_seq_read(struct cgroup *cgrp, struct cftype *cft,
+			  struct seq_file *m)
+{
+	struct ve_struct *ve = cgroup_ve(cgrp);
+	struct ip_entry_struct *s;
+        struct hlist_node *p;
+	char buf[40];
+	int family = strncmp(cft->name, "ip6", 3) ? AF_INET : AF_INET6;
+	int i;
+
+	rcu_read_lock();
+	for (i = 0; i < VEIP_HASH_SZ; i++) {
+		hlist_for_each_entry_rcu(s, p, ip_entry_hash_table + i,
+					 ip_hash) {
+			if (s->addr.family == family &&
+			    s->active_env &&
+			    !strcmp(ve_name(s->active_env), __ve_name(ve))) {
+				veaddr_print(buf, sizeof(buf), &s->addr);
+				seq_printf(m, "%s\n", buf);
+			}
+		}
+	}
+	rcu_read_unlock();
+
+	return 0;
+}
+
 static struct cftype ve_cftypes[] = {
 	{
 		.name = "ip_allow",
@@ -1027,6 +1054,11 @@ static struct cftype ve_cftypes[] = {
 		.flags = CFTYPE_NOT_ON_ROOT,
 	},
 	{
+		.name = "ip_list",
+		.read_seq_string = ve_ip_access_seq_read,
+		.flags = CFTYPE_NOT_ON_ROOT,
+	},
+	{
 		.name = "ip6_allow",
 		.write_string = ve_ip_access_write,
 		.private = VE_IP_ADD,
@@ -1036,6 +1068,11 @@ static struct cftype ve_cftypes[] = {
 		.name = "ip6_deny",
 		.write_string = ve_ip_access_write,
 		.private = VE_IP_DEL,
+		.flags = CFTYPE_NOT_ON_ROOT,
+	},
+	{
+		.name = "ip6_list",
+		.read_seq_string = ve_ip_access_seq_read,
 		.flags = CFTYPE_NOT_ON_ROOT,
 	},
 	{ }
