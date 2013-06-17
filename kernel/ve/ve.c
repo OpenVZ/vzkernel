@@ -54,6 +54,7 @@ EXPORT_SYMBOL(no_module);
 static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, ve0_lat_stats);
 
 struct ve_struct ve0 = {
+	.ve_name		= "0",
 	.start_jiffies		= INITIAL_JIFFIES,
 	.ve_ns			= &init_nsproxy,
 	.ve_netns		= &init_net,
@@ -79,11 +80,19 @@ EXPORT_SYMBOL(ve0);
 LIST_HEAD(ve_list_head);
 DEFINE_MUTEX(ve_list_lock);
 
-unsigned task_veid(struct task_struct *task)
+/* caller provides refrence to ve-struct */
+const char *ve_name(struct ve_struct *ve)
 {
-	return task->task_ve->veid;
+	return ve->ve_name;
 }
-EXPORT_SYMBOL(task_veid);
+EXPORT_SYMBOL(ve_name);
+
+/* under rcu_read_lock if task != current */
+const char *task_ve_name(struct task_struct *task)
+{
+	return rcu_dereference_check(task->task_ve, task == current)->ve_name;
+}
+EXPORT_SYMBOL(task_ve_name);
 
 struct ve_struct *__find_ve_by_id(envid_t veid)
 {
@@ -213,7 +222,7 @@ static int ve_start_kthread(struct ve_struct *ve)
 
 	init_kthread_worker(&ve->ve_kthread_worker);
 	t = kthread_run(kthread_worker_fn, &ve->ve_kthread_worker,
-			"kthreadd/%u", ve->veid);
+			"kthreadd/%s", ve_name(ve));
 	if (IS_ERR(t))
 		return PTR_ERR(t);
 
@@ -259,7 +268,7 @@ int ve_start_container(struct ve_struct *ve)
 	ve->is_running = 1;
 	cgroup_unlock();
 
-	printk(KERN_INFO "CT: %d: started\n", ve->veid);
+	printk(KERN_INFO "CT: %s: started\n", ve_name(ve));
 
 	return 0;
 
@@ -364,6 +373,7 @@ static void ve_destroy(struct cgroup *cg)
 	ve_log_destroy(ve);
 	kfree(ve->binfmt_misc);
 	free_percpu(ve->sched_lat_ve.cur);
+	kfree(ve->ve_name);
 	kmem_cache_free(ve_cachep, ve);
 }
 
@@ -388,6 +398,12 @@ static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 	if (!ve->is_running && (ve->ve_ns || nr_threads_ve(ve)) &&
 			!(task->flags & PF_KTHREAD))
 		return -EPIPE;
+
+	if (!ve->ve_name) {
+		ve->ve_name = kstrdup(cg->dentry->d_name.name, GFP_KERNEL);
+		if (!ve->ve_name)
+			return -ENOMEM;
+	}
 
 	return 0;
 }
