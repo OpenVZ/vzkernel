@@ -78,9 +78,6 @@
 
 #include <bc/dcache.h>
 
-int nr_ve = 1;	/* One VE always exists. Compatibility with vestat */
-EXPORT_SYMBOL(nr_ve);
-
 static int	do_env_enter(struct ve_struct *ve, unsigned int flags);
 
 static void vecalls_exit(void);
@@ -390,22 +387,6 @@ static void put_ve_root(struct ve_struct *ve)
 	path_put(&ve->root_path);
 }
 
-static void ve_list_add(struct ve_struct *ve)
-{
-	mutex_lock(&ve_list_lock);
-	list_add(&ve->ve_list, &ve_list_head);
-	nr_ve++;
-	mutex_unlock(&ve_list_lock);
-}
-
-static void ve_list_del(struct ve_struct *ve)
-{
-	mutex_lock(&ve_list_lock);
-	list_del(&ve->ve_list);
-	nr_ve--;
-	mutex_unlock(&ve_list_lock);
-}
-
 static void init_ve_cred(struct ve_struct *ve, struct cred *new)
 {
 	struct user_namespace *user_ns = new->user_ns;
@@ -545,8 +526,6 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	if (flags & VE_LOCK)
 		ve->is_locked = 1;
 
-	ve_list_add(ve);
-
 	set_ve_root(ve, tsk);
 
 	if ((err = init_ve_namespaces(ve, &old_ns)))
@@ -613,8 +592,6 @@ err_netns:
 	put_nsproxy(ve->ve_ns);
 err_ns:
 	put_ve_root(ve);
-
-	ve_list_del(ve);
 	up_write(&ve->op_sem);
 
 	cgroup_kernel_attach(ve0.css.cgroup, current);
@@ -754,7 +731,6 @@ static void env_cleanup(struct ve_struct *ve)
 
 	put_ve_root(ve);
 
-	ve_list_del(ve);
 	up_read(&ve->op_sem);
 
 	printk(KERN_INFO "CT: %s: stopped\n", ve_name(ve));
