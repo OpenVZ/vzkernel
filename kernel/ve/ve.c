@@ -37,6 +37,7 @@
 #include <linux/init_task.h>
 #include <linux/mutex.h>
 #include <linux/percpu.h>
+#include <linux/fs_struct.h>
 
 #include <linux/vzcalluser.h>
 
@@ -158,12 +159,114 @@ int nr_threads_ve(struct ve_struct *ve)
 }
 EXPORT_SYMBOL(nr_threads_ve);
 
+struct kthread_attach_work {
+	struct kthread_work work;
+	struct completion done;
+	struct task_struct *target;
+	int result;
+};
+
+static void kthread_attach_fn(struct kthread_work *w)
+{
+	struct kthread_attach_work *work = container_of(w,
+			struct kthread_attach_work, work);
+	struct task_struct *target = work->target;
+	struct cred *cred;
+	int err;
+
+	switch_task_namespaces(current, get_nsproxy(target->nsproxy));
+
+	err = unshare_fs_struct();
+	if (err)
+		goto out;
+	set_fs_root(current->fs, &target->fs->root);
+	set_fs_pwd(current->fs, &target->fs->root);
+
+	err = -ENOMEM;
+	cred = prepare_kernel_cred(target);
+	if (!cred)
+		goto out;
+	err = commit_creds(cred);
+	if (err)
+		goto out;
+
+	err = change_active_pid_ns(current, task_active_pid_ns(target));
+	if (err)
+		goto out;
+
+	err = cgroup_attach_task_all(target, current);
+	if (err)
+		goto out;
+out:
+	work->result = err;
+	complete(&work->done);
+}
+
+static int ve_start_kthread(struct ve_struct *ve)
+{
+	struct task_struct *t;
+	struct kthread_attach_work attach = {
+		KTHREAD_WORK_INIT(attach.work, kthread_attach_fn),
+		COMPLETION_INITIALIZER_ONSTACK(attach.done),
+		.target = current,
+	};
+
+	init_kthread_worker(&ve->ve_kthread_worker);
+	t = kthread_run(kthread_worker_fn, &ve->ve_kthread_worker,
+			"kthreadd/%u", ve->veid);
+	if (IS_ERR(t))
+		return PTR_ERR(t);
+
+	queue_kthread_work(&ve->ve_kthread_worker, &attach.work);
+	wait_for_completion(&attach.done);
+	if (attach.result) {
+		kthread_stop(t);
+		return attach.result;
+	}
+
+	ve->ve_kthread_task = t;
+	return 0;
+}
+
 static void ve_stop_kthread(struct ve_struct *ve)
 {
 	flush_kthread_worker(&ve->ve_kthread_worker);
 	kthread_stop(ve->ve_kthread_task);
 	ve->ve_kthread_task = NULL;
 }
+
+/* under ve->op_sem write-lock */
+int ve_start_container(struct ve_struct *ve)
+{
+	struct task_struct *tsk = current;
+	int err;
+
+	ve->start_timespec = tsk->start_time;
+	ve->real_start_timespec = tsk->real_start_time;
+	/* The value is wrong, but it is never compared to process
+	 * start times */
+	ve->start_jiffies = get_jiffies_64();
+
+	err = ve_start_kthread(ve);
+	if (err)
+		goto err_kthread;
+
+	err = ve_hook_iterate_init(VE_SS_CHAIN, ve);
+	if (err < 0)
+		goto err_iterate;
+
+	ve->is_running = 1;
+
+	printk(KERN_INFO "CT: %d: started\n", ve->veid);
+
+	return 0;
+
+err_iterate:
+	ve_stop_kthread(ve);
+err_kthread:
+	return err;
+}
+EXPORT_SYMBOL_GPL(ve_start_container);
 
 void ve_stop_ns(struct pid_namespace *pid_ns)
 {
