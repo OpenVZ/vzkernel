@@ -45,9 +45,6 @@ struct ve_struct {
 	/* see vzcalluser.h for VE_FEATURE_XXX definitions */
 	__u64			features;
 
-	/* protected with ve->op_sem */
-	struct task_struct	*ve_init_task;
-
 	struct task_struct	*ve_kthread_task;
 	struct kthread_worker	ve_kthread_worker;
 
