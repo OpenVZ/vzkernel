@@ -29,7 +29,7 @@
 DEFINE_MUTEX(sysfs_mutex);
 DEFINE_SPINLOCK(sysfs_assoc_lock);
 
-#define to_sysfs_dirent(X) rb_entry((X), struct sysfs_dirent, s_rb);
+#define to_sysfs_dirent(X) rb_entry((X), struct sysfs_dirent, s_rb)
 
 static DEFINE_SPINLOCK(sysfs_ino_lock);
 static DEFINE_IDA(sysfs_ino_ida);
@@ -72,6 +72,28 @@ static int sysfs_sd_compare(const struct sysfs_dirent *left,
 {
 	return sysfs_name_compare(left->s_hash, left->s_ns, left->s_name,
 				  right);
+}
+
+static bool sysfs_sd_visible(struct sysfs_dirent *sd, struct super_block *sb)
+{
+	struct ve_struct *ve = sysfs_info(sb)->ve;
+
+	/* Host sees anything */
+	if (ve_is_super(ve))
+		return true;
+
+	/* Entries with namespace tag always visible */
+	if (sd->s_ns || sd->s_parent && sd->s_parent->s_ns)
+		return true;
+
+	/* Symlinks are visible if target sd is visible */
+	if (sysfs_type(sd) == SYSFS_KOBJ_LINK)
+		sd = sd->s_symlink.target_sd;
+
+	if (kmapset_get_value(sd->s_ve_perms, &ve->ve_sysfs_perms))
+		return true;
+
+	return false;
 }
 
 /**
@@ -328,6 +350,9 @@ static int sysfs_dentry_revalidate(struct dentry *dentry, unsigned int flags)
 				sysfs_info(dentry->d_sb)->ns[type] != sd->s_ns)
 			goto out_bad;
 	}
+
+	if (!sysfs_sd_visible(sd, dentry->d_sb))
+		goto out_bad;
 
 	mutex_unlock(&sysfs_mutex);
 out_valid:
@@ -785,7 +810,7 @@ static struct dentry * sysfs_lookup(struct inode *dir, struct dentry *dentry,
 	sd = sysfs_find_dirent(parent_sd, ns, dentry->d_name.name);
 
 	/* no such entry */
-	if (!sd) {
+	if (!sd || !sysfs_sd_visible(sd, dentry->d_sb)) {
 		ret = ERR_PTR(-ENOENT);
 		goto out_unlock;
 	}
@@ -951,8 +976,8 @@ static int sysfs_dir_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-static struct sysfs_dirent *sysfs_dir_pos(const void *ns,
-	struct sysfs_dirent *parent_sd,	loff_t hash, struct sysfs_dirent *pos)
+static struct sysfs_dirent *sysfs_dir_pos(struct sysfs_dirent *parent_sd,
+					  loff_t hash, struct sysfs_dirent *pos)
 {
 	if (pos) {
 		int valid = !(pos->s_flags & SYSFS_FLAG_REMOVED) &&
@@ -975,29 +1000,14 @@ static struct sysfs_dirent *sysfs_dir_pos(const void *ns,
 				break;
 		}
 	}
-	/* Skip over entries in the wrong namespace */
-	while (pos && pos->s_ns != ns) {
-		struct rb_node *node = rb_next(&pos->s_rb);
-		if (!node)
-			pos = NULL;
-		else
-			pos = to_sysfs_dirent(node);
-	}
 	return pos;
 }
 
-static struct sysfs_dirent *sysfs_dir_next_pos(const void *ns,
-	struct sysfs_dirent *parent_sd,	ino_t ino, struct sysfs_dirent *pos)
+static struct sysfs_dirent *sysfs_next_entry(struct sysfs_dirent *cur)
 {
-	pos = sysfs_dir_pos(ns, parent_sd, ino, pos);
-	if (pos) do {
-		struct rb_node *node = rb_next(&pos->s_rb);
-		if (!node)
-			pos = NULL;
-		else
-			pos = to_sysfs_dirent(node);
-	} while (pos && pos->s_ns != ns);
-	return pos;
+	struct rb_node *node = rb_next(&cur->s_rb);
+
+	return node ? to_sysfs_dirent(node) : NULL;
 }
 
 static int sysfs_readdir(struct file * filp, void * dirent, filldir_t filldir)
@@ -1032,12 +1042,15 @@ static int sysfs_readdir(struct file * filp, void * dirent, filldir_t filldir)
 	}
 	mutex_lock(&sysfs_mutex);
 	off = filp->f_pos;
-	for (pos = sysfs_dir_pos(ns, parent_sd, filp->f_pos, pos);
-	     pos;
-	     pos = sysfs_dir_next_pos(ns, parent_sd, filp->f_pos, pos)) {
+	pos = sysfs_dir_pos(parent_sd, filp->f_pos, pos);
+	for (; pos; pos = sysfs_next_entry(pos)) {
 		const char * name;
 		unsigned int type;
 		int len, ret;
+
+		/* Skip invisible entries and extries from wrong namespace */
+		if (pos->s_ns != ns || !sysfs_sd_visible(pos, dentry->d_sb))
+			continue;
 
 		name = pos->s_name;
 		len = strlen(name);
@@ -1051,6 +1064,9 @@ static int sysfs_readdir(struct file * filp, void * dirent, filldir_t filldir)
 		mutex_lock(&sysfs_mutex);
 		if (ret < 0)
 			break;
+
+		/* Revalidate position pointer after reacquiring sysfs_mutex */
+		pos = sysfs_dir_pos(parent_sd, filp->f_pos, pos);
 	}
 	mutex_unlock(&sysfs_mutex);
 
