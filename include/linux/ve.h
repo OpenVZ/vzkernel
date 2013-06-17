@@ -24,6 +24,7 @@
 #include <linux/ve_proto.h>
 #include <net/inet_frag.h>
 #include <linux/cgroup.h>
+#include <linux/kmapset.h>
 
 struct tty_driver;
 struct file_system_type;
@@ -103,6 +104,8 @@ struct ve_struct {
 	struct cred		*init_cred;
 	struct net		*ve_netns;
 	struct mutex		sync_mutex;
+
+	struct kmapset_key	ve_sysfs_perms;
 };
 
 #define VE_MEMINFO_DEFAULT      1       /* default behaviour */
@@ -112,6 +115,8 @@ extern int nr_ve;
 extern struct proc_dir_entry *proc_vz_dir;
 
 #ifdef CONFIG_VE
+
+extern struct kmapset_set ve_sysfs_perms;
 
 extern int vz_security_family_check(struct net *net, int family);
 extern int vz_security_protocol_check(struct net *net, int protocol);
