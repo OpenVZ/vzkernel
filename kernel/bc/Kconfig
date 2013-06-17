@@ -70,14 +70,6 @@ config BC_DEBUG
 	help
 	  Enables to setup debug features for user resource accounting
 
-config BC_DEBUG_KMEM
-	bool "Debug kmemsize with cache counters"
-	default n
-	depends on BC_DEBUG
-	help
-	  Adds /proc/user_beancounters_debug entry to get statistics
-	  about cache usage of each beancounter
-
 config BC_KEEP_UNUSED
 	bool "Keep unused beancounter alive"
 	default n

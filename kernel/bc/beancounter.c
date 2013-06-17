@@ -711,9 +711,6 @@ static void init_beancounter_struct(struct user_beancounter *ub)
 	spin_lock_init(&ub->ub_lock);
 	INIT_LIST_HEAD(&ub->ub_tcp_sk_list);
 	INIT_LIST_HEAD(&ub->ub_other_sk_list);
-#ifdef CONFIG_BC_DEBUG_KMEM
-	INIT_LIST_HEAD(&ub->ub_cclist);
-#endif
 	INIT_LIST_HEAD(&ub->ub_dentry_lru);
 #ifndef CONFIG_BC_KEEP_UNUSED
 	INIT_WORK(&ub->work, delayed_release_beancounter);
