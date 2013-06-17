@@ -601,9 +601,6 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	char ve_name[16];
 	struct cgroup *ve_cgroup;
 
-	if (!thread_group_leader(tsk) || !thread_group_empty(tsk))
-		return -EINVAL;
-
 	if (tsk->signal->tty) {
 		printk("ERR: CT init has controlling terminal\n");
 		return -EINVAL;
@@ -835,9 +832,6 @@ static int do_env_enter(struct ve_struct *ve, unsigned int flags)
 {
 	struct task_struct *tsk = current;
 	int err;
-
-	if (!thread_group_leader(tsk) || !thread_group_empty(tsk))
-		return -EINVAL;
 
 	err = fairsched_move_task(ve->veid, current);
 	if (err)
