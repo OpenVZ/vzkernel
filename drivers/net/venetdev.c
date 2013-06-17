@@ -411,6 +411,24 @@ out:
 	return err;
 }
 
+int in4_to_veaddr(const char *addr, struct ve_addr_struct *veaddr)
+{
+	veaddr->family = AF_INET;
+	if (!in4_pton(addr, -1, (u8 *)(&veaddr->key[3]), -1, NULL))
+		return -EINVAL;
+	return 0;
+}
+EXPORT_SYMBOL(in4_to_veaddr);
+
+int in6_to_veaddr(const char *addr, struct ve_addr_struct *veaddr)
+{
+	veaddr->family = AF_INET6;
+	if (!in6_pton(addr, -1, (u8 *)(veaddr->key), -1, NULL))
+		return -EINVAL;
+	return 0;
+}
+EXPORT_SYMBOL(in6_to_veaddr);
+
 void veaddr_print(char *str, int len, struct ve_addr_struct *a)
 {
 	if (a->family == AF_INET)
@@ -851,60 +869,52 @@ static struct file_operations proc_veip_operations = {
 };
 #endif
 
-static int real_ve_ip_map(envid_t veid, int op, struct sockaddr __user *uaddr,
-		int addrlen)
+static int do_ve_ip_map(const char *name, int op, struct ve_addr_struct *addr)
 {
 	int err;
 	struct ve_struct *ve;
-	struct ve_addr_struct addr;
-	char name[VE_LEGACY_NAME_MAXLEN];
 
 	err = -EPERM;
 	if (!capable_setveid())
 		goto out;
 
-	err = sockaddr_to_veaddr(uaddr, addrlen, &addr);
-	if (err < 0)
-		goto out;
-
 	switch (op)
 	{
 		case VE_IP_ADD:
-			ve = get_ve_by_id(veid);
+			ve = get_ve_by_name(name);
 			err = -ESRCH;
 			if (!ve)
 				goto out;
 
 			down_read(&ve->op_sem);
 			if (ve->is_running)
-				err = veip_entry_add(ve, &addr);
+				err = veip_entry_add(ve, addr);
 			up_read(&ve->op_sem);
 			put_ve(ve);
 			break;
 
 		case VE_IP_DEL:
-			legacy_veid_to_name(veid, name);
-			err = veip_entry_del(name, &addr);
+			err = veip_entry_del(name, addr);
 			break;
 		case VE_IP_EXT_ADD:
-			ve = get_ve_by_id(veid);
+			ve = get_ve_by_name(name);
 			err = -ESRCH;
 			if (!ve)
 				goto out;
 
 			down_read(&ve->op_sem);
-			err = venet_ext_add(ve, &addr);
+			err = venet_ext_add(ve, addr);
 			up_read(&ve->op_sem);
 			put_ve(ve);
 			break;
 		case VE_IP_EXT_DEL:
-			ve = get_ve_by_id(veid);
+			ve = get_ve_by_name(name);
 			err = -ESRCH;
 			if (!ve)
 				goto out;
 
 			down_read(&ve->op_sem);
-			err = venet_ext_del(ve, &addr);
+			err = venet_ext_del(ve, addr);
 			up_read(&ve->op_sem);
 			put_ve(ve);
 			break;
@@ -914,6 +924,22 @@ static int real_ve_ip_map(envid_t veid, int op, struct sockaddr __user *uaddr,
 
 out:
 	return err;
+}
+
+static int real_ve_ip_map(envid_t veid, int op,
+			  struct sockaddr __user *uaddr, int addrlen)
+{
+	int err;
+	struct ve_addr_struct addr;
+	char name[VE_LEGACY_NAME_MAXLEN];
+
+	legacy_veid_to_name(veid, name);
+
+	err = sockaddr_to_veaddr(uaddr, addrlen, &addr);
+	if (err < 0)
+		return err;
+
+	return do_ve_ip_map(name, op, &addr);
 }
 
 int venet_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
@@ -968,6 +994,53 @@ static struct vzioctlinfo venetcalls = {
 	.owner		= THIS_MODULE,
 };
 
+static int ve_ip_access_write(struct cgroup *cgrp, struct cftype *cft,
+			      const char *buffer)
+{
+	struct ve_struct *ve = cgroup_ve(cgrp);
+	struct ve_addr_struct addr;
+	int ret;
+
+	memset(&addr, 0, sizeof(addr));
+	if (strncmp(cft->name, "ip6", 3)) {
+		if ((ret = in4_to_veaddr(buffer, &addr)) != 0)
+			return ret;
+	} else {
+		if ((ret = in6_to_veaddr(buffer, &addr)) != 0)
+			return ret;
+	}
+
+	return do_ve_ip_map(__ve_name(ve), cft->private, &addr);
+}
+
+static struct cftype ve_cftypes[] = {
+	{
+		.name = "ip_allow",
+		.write_string = ve_ip_access_write,
+		.private = VE_IP_ADD,
+		.flags = CFTYPE_NOT_ON_ROOT,
+	},
+	{
+		.name = "ip_deny",
+		.write_string = ve_ip_access_write,
+		.private = VE_IP_DEL,
+		.flags = CFTYPE_NOT_ON_ROOT,
+	},
+	{
+		.name = "ip6_allow",
+		.write_string = ve_ip_access_write,
+		.private = VE_IP_ADD,
+		.flags = CFTYPE_NOT_ON_ROOT,
+	},
+	{
+		.name = "ip6_deny",
+		.write_string = ve_ip_access_write,
+		.private = VE_IP_DEL,
+		.flags = CFTYPE_NOT_ON_ROOT,
+	},
+	{ }
+};
+
 static int venet_dev_start(struct ve_struct *ve)
 {
 	struct net_device *dev_venet;
@@ -1006,6 +1079,7 @@ static int venet_start(void *data)
 	err = venet_dev_start(env);
 	if (err)
 		goto err_free;
+
 	return 0;
 
 err_free:
@@ -1065,6 +1139,7 @@ __init int venet_init(void)
 	ve_hook_register(VE_SS_CHAIN, &venet_ve_hook);
 	vzioctl_register(&venetcalls);
 	vzmon_register_veaddr_print_cb(veaddr_seq_print);
+	WARN_ON(cgroup_add_cftypes(&ve_subsys, ve_cftypes));
 	return 0;
 }
 
