@@ -23,6 +23,7 @@
 #include <linux/slab.h>
 #include <linux/security.h>
 #include <linux/hash.h>
+#include <linux/ve.h>
 #include "sysfs.h"
 
 DEFINE_MUTEX(sysfs_mutex);
@@ -279,6 +280,8 @@ void release_sysfs_dirent(struct sysfs_dirent * sd)
 	if (sd->s_iattr && sd->s_iattr->ia_secdata)
 		security_release_secctx(sd->s_iattr->ia_secdata,
 					sd->s_iattr->ia_secdata_len);
+	if (sd->s_ve_perms)
+		kmapset_put(sd->s_ve_perms);
 	kfree(sd->s_iattr);
 	sysfs_free_ino(sd->s_ino);
 	kmem_cache_free(sysfs_dir_cachep, sd);
@@ -454,6 +457,9 @@ int __sysfs_add_one(struct sysfs_addrm_cxt *acxt, struct sysfs_dirent *sd)
 
 	sd->s_hash = sysfs_name_hash(sd->s_ns, sd->s_name);
 	sd->s_parent = sysfs_get(acxt->parent_sd);
+
+	/* Copy permissions from parent */
+	sd->s_ve_perms = kmapset_get(sd->s_parent->s_ve_perms);
 
 	ret = sysfs_link_sibling(sd);
 	if (ret)
