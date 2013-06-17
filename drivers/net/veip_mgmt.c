@@ -129,9 +129,9 @@ out_source:
 	rcu_read_unlock();
 	if (net_ratelimit() && skb->protocol == __constant_htons(ETH_P_IP)) {
 		printk(KERN_WARNING "Dropped packet, source wrong "
-		       "veid=%u src-IP=%u.%u.%u.%u "
+		       "veid=%s src-IP=%u.%u.%u.%u "
 		       "dst-IP=%u.%u.%u.%u\n",
-		       ve_old->veid,
+		       ve_name(ve_old),
 		       NIPQUAD(ip_hdr(skb)->saddr),
 		       NIPQUAD(ip_hdr(skb)->daddr));
 	}
