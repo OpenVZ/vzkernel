@@ -145,6 +145,9 @@ extern struct tty_driver *vtty_driver;
 static inline int vtty_open_master(int veid, int idx) { return -ENODEV; }
 #endif
 
+void ve_stop_ns(struct pid_namespace *ns);
+void ve_exit_ns(struct pid_namespace *ns);
+
 #else	/* CONFIG_VE */
 
 static inline int vz_security_family_check(struct net *net, int family) { return 0; }
@@ -153,6 +156,9 @@ static inline int vz_security_protocol_check(struct net *net, int protocol) { re
 #define ve_utsname	system_utsname
 #define get_ve(ve)	(NULL)
 #define put_ve(ve)	do { } while (0)
+
+static inline void ve_stop_ns(struct pid_namespace *ns) { }
+static inline void ve_exit_ns(struct pid_namespace *ns) { }
 
 #endif	/* CONFIG_VE */
 
