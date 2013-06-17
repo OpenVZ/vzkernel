@@ -560,12 +560,28 @@ static int ve_state_write(struct cgroup *cg, struct cftype *cft,
 	return ret;
 }
 
+static int ve_legacy_veid_read(struct cgroup *cg, struct cftype *cft,
+		struct seq_file *m)
+{
+	struct ve_struct *ve = cgroup_ve(cg);
+
+	if (!ve->is_running)
+		return -EPIPE;
+
+	return seq_printf(m, "%u\n", ve->veid);
+}
+
 static struct cftype ve_cftypes[] = {
 	{
 		.name = "state",
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.read_seq_string = ve_state_read,
 		.write_string = ve_state_write,
+	},
+	{
+		.name = "legacy_veid",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.read_seq_string = ve_legacy_veid_read,
 	},
 	{ }
 };
