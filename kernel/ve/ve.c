@@ -111,6 +111,12 @@ const char *ve_name(struct ve_struct *ve)
 }
 EXPORT_SYMBOL(ve_name);
 
+void legacy_veid_to_name(envid_t veid, char *name)
+{
+	snprintf(name, VE_LEGACY_NAME_MAXLEN, "%u", veid);
+}
+EXPORT_SYMBOL(legacy_veid_to_name);
+
 /* under rcu_read_lock if task != current */
 const char *task_ve_name(struct task_struct *task)
 {
