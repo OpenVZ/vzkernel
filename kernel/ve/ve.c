@@ -263,6 +263,32 @@ static void ve_stop_kthread(struct ve_struct *ve)
 	ve->ve_kthread_task = NULL;
 }
 
+static void ve_grab_context(struct ve_struct *ve)
+{
+	struct task_struct *tsk = current;
+
+	ve->init_cred = (struct cred *)get_current_cred();
+	ve->ve_ns = get_nsproxy(tsk->nsproxy);
+	ve->ve_netns =  get_net(ve->ve_ns->net_ns);
+	get_fs_root(tsk->fs, &ve->root_path);
+}
+
+static void ve_drop_context(struct ve_struct *ve)
+{
+	path_put(&ve->root_path);
+	ve->root_path.mnt = NULL;
+	ve->root_path.dentry = NULL;
+
+	put_net(ve->ve_netns);
+	ve->ve_netns = NULL;
+
+	put_nsproxy(ve->ve_ns);
+	ve->ve_ns = NULL;
+
+	put_cred(ve->init_cred);
+	ve->init_cred = NULL;
+}
+
 /* under ve->op_sem write-lock */
 int ve_start_container(struct ve_struct *ve)
 {
@@ -275,6 +301,7 @@ int ve_start_container(struct ve_struct *ve)
 	 * start times */
 	ve->start_jiffies = get_jiffies_64();
 
+	ve_grab_context(ve);
 	ve_list_add(ve);
 
 	err = ve_start_kthread(ve);
@@ -297,6 +324,7 @@ err_iterate:
 	ve_stop_kthread(ve);
 err_kthread:
 	ve_list_del(ve);
+	ve_drop_context(ve);
 	return err;
 }
 EXPORT_SYMBOL_GPL(ve_start_container);
@@ -345,6 +373,7 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 	down_write(&ve->op_sem);
 	ve_hook_iterate_fini(VE_SS_CHAIN, ve);
 	ve_list_del(ve);
+	ve_drop_context(ve);
 	up_write(&ve->op_sem);
 }
 
