@@ -186,37 +186,6 @@ static int real_setdevperms(envid_t veid, unsigned type,
  **********************************************************************
  **********************************************************************/
 
-static int init_printk(struct ve_struct *ve)
-{
-	int err;
-
-	err = -ENOMEM;
-	ve->log_wait = kmalloc(sizeof(*ve->log_wait), GFP_KERNEL);
-	if (!ve->log_wait)
-		return -ENOMEM;
-
-	init_waitqueue_head(ve->log_wait);
-	err = init_ve_log_state(ve);
-	if (err) {
-		kfree(ve->log_wait);
-		return err;
-	}
-
-	/* ve->log_buf will be initialized later by ve_log_init() */
-	return 0;
-}
-
-static void fini_printk(struct ve_struct *ve)
-{
-	/* 
-	 * there is no spinlock protection here because nobody can use
-	 * log_buf at the moments when this code is called. 
-	 */
-	kfree(ve->log_buf);
-	kfree(ve->log_state);
-	kfree(ve->log_wait);
-}
-
 static void fini_venet(struct ve_struct *ve)
 {
 #ifdef CONFIG_INET
@@ -578,10 +547,6 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 
 	ve_list_add(ve);
 
-	/* this should be done before context switching */
-	if ((err = init_printk(ve)) < 0)
-		goto err_log_wait;
-
 	set_ve_root(ve, tsk);
 
 	if ((err = init_ve_namespaces(ve, &old_ns)))
@@ -649,9 +614,6 @@ err_netns:
 err_ns:
 	put_ve_root(ve);
 
-	/* we can jump here having incorrect envid */
-	fini_printk(ve);
-err_log_wait:
 	ve_list_del(ve);
 	up_write(&ve->op_sem);
 
@@ -791,8 +753,6 @@ static void env_cleanup(struct ve_struct *ve)
 	fini_ve_netns(ve);
 
 	put_ve_root(ve);
-
-	fini_printk(ve);	/* no printk can happen in ve context anymore */
 
 	ve_list_del(ve);
 	up_read(&ve->op_sem);

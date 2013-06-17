@@ -314,6 +314,7 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 {
 	struct ve_struct *ve = &ve0;
+	int err;
 
 	if (!cg->parent)
 		goto do_init;
@@ -322,14 +323,18 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 	if (cgroup_ve(cg->parent) != ve)
 		return ERR_PTR(-ENOTDIR);
 
+	err = -ENOMEM;
 	ve = kmem_cache_zalloc(ve_cachep, GFP_KERNEL);
 	if (!ve)
-		return ERR_PTR(-ENOMEM);
+		goto err_ve;
+
 	ve->sched_lat_ve.cur = alloc_percpu(struct kstat_lat_pcpu_snap_struct);
-	if (!ve->sched_lat_ve.cur) {
-		kmem_cache_free(ve_cachep, ve);
-		return ERR_PTR(-ENOMEM);
-	}
+	if (!ve->sched_lat_ve.cur)
+		goto err_lat;
+
+	err = ve_log_init(ve);
+	if (err)
+		goto err_log;
 
 do_init:
 	init_rwsem(&ve->op_sem);
@@ -338,12 +343,20 @@ do_init:
 	ve->meminfo_val = VE_MEMINFO_DEFAULT;
 
 	return &ve->css;
+
+err_log:
+	free_percpu(ve->sched_lat_ve.cur);
+err_lat:
+	kmem_cache_free(ve_cachep, ve);
+err_ve:
+	return ERR_PTR(err);
 }
 
 static void ve_destroy(struct cgroup *cg)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 
+	ve_log_destroy(ve);
 	kfree(ve->binfmt_misc);
 	free_percpu(ve->sched_lat_ve.cur);
 	kmem_cache_free(ve_cachep, ve);
