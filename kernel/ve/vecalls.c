@@ -183,14 +183,6 @@ static int real_setdevperms(envid_t veid, unsigned type,
  **********************************************************************
  **********************************************************************/
 
-static void fini_venet(struct ve_struct *ve)
-{
-#ifdef CONFIG_INET
-	tcp_v4_kill_ve_sockets(ve);
-	synchronize_net();
-#endif
-}
-
 /*
  * Namespaces
  */
@@ -474,9 +466,6 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	if (err)
 		goto err_ve_start;
 
-	get_ve(ve); /* for env_cleanup() */
-	__module_get(THIS_MODULE);
-
 	up_write(&ve->op_sem);
 
 	cgroup_kernel_close(ve_cgroup);
@@ -612,113 +601,12 @@ out_up:
 	return err;
 }
 
-static void env_cleanup(struct ve_struct *ve)
-{
-	fairsched_drop_node(ve->veid, 0);
-
-	down_read(&ve->op_sem);
-
-	fini_venet(ve);
-
-	/* no new packets in flight beyond this point */
-
-	up_read(&ve->op_sem);
-
-	printk(KERN_INFO "CT: %s: stopped\n", ve_name(ve));
-
-	put_ve(ve); /* from do_env_create() */
-}
-
-static LIST_HEAD(ve_cleanup_list);
-static DEFINE_SPINLOCK(ve_cleanup_lock);
-static struct task_struct *ve_cleanup_thread;
-static DECLARE_COMPLETION(vzmond_complete);
-static int vzmond_helper(void *arg)
-{
-	char name[18];
-	struct ve_struct *ve;
-
-	ve = (struct ve_struct *)arg;
-	snprintf(name, sizeof(name), "vzmond/%d", ve->veid);
-	daemonize(name);
-	env_cleanup(ve);
-	module_put_and_exit(0);
-}
-
-static void do_pending_env_cleanups(void)
-{
-	int err;
-	struct ve_struct *ve;
-
-	spin_lock(&ve_cleanup_lock);
-	while (1) {
-		if (list_empty(&ve_cleanup_list) || need_resched())
-			break;
-
-		ve = list_first_entry(&ve_cleanup_list,
-				struct ve_struct, cleanup_list);
-		list_del(&ve->cleanup_list);
-		spin_unlock(&ve_cleanup_lock);
-
-		err = kernel_thread(vzmond_helper, (void *)ve, 0);
-		if (err < 0) {
-			env_cleanup(ve);
-			module_put(THIS_MODULE);
-		}
-
-		spin_lock(&ve_cleanup_lock);
-	}
-	spin_unlock(&ve_cleanup_lock);
-}
-
-static inline int have_pending_cleanups(void)
-{
-	return !list_empty(&ve_cleanup_list);
-}
-
-static int vzmond(void *arg)
-{
-	set_current_state(TASK_INTERRUPTIBLE);
-
-	while (!kthread_should_stop() || have_pending_cleanups()) {
-		schedule();
-		try_to_freeze();
-		if (signal_pending(current))
-			flush_signals(current);
-
-		do_pending_env_cleanups();
-		set_current_state(TASK_INTERRUPTIBLE);
-		if (have_pending_cleanups())
-			__set_current_state(TASK_RUNNING);
-	}
-
-	__set_task_state(current, TASK_RUNNING);
-	complete_and_exit(&vzmond_complete, 0);
-}
-
-static int __init init_vzmond(void)
-{
-	ve_cleanup_thread = kthread_run(vzmond, NULL, "vzmond");
-	if (IS_ERR(ve_cleanup_thread))
-		return PTR_ERR(ve_cleanup_thread);
-	else
-		return 0;
-}
-
-static void fini_vzmond(void)
-{
-	kthread_stop(ve_cleanup_thread);
-	WARN_ON(!list_empty(&ve_cleanup_list));
-}
-
 static void vzmon_stop_notifier(void *data)
 {
 	struct ve_struct *ve = data;
 
-	spin_lock(&ve_cleanup_lock);
-	list_add_tail(&ve->cleanup_list, &ve_cleanup_list);
-	spin_unlock(&ve_cleanup_lock);
-	wake_up_process(ve_cleanup_thread);
+	if (ve->veid)
+		fairsched_drop_node(ve->veid, 0);
 }
 
 static struct ve_hook vzmon_stop_hook = {
@@ -1395,10 +1283,6 @@ static int __init vecalls_init(void)
 	if (err)
 		goto out_vzmond;
 
-	err = init_vzmond();
-	if (err < 0)
-		goto out_sysctl;
-
 	err = init_vecalls_proc();
 	if (err < 0)
 		goto out_proc;
@@ -1417,8 +1301,6 @@ static int __init vecalls_init(void)
 out_ioctls:
 	fini_vecalls_proc();
 out_proc:
-	fini_vzmond();
-out_sysctl:
 	fini_vecalls_sysctl();
 out_vzmond:
 	fini_vecalls_cgroups();
@@ -1432,7 +1314,6 @@ static void __exit vecalls_exit(void)
 {
 	fini_vecalls_ioctls();
 	fini_vecalls_proc();
-	fini_vzmond();
 	fini_vecalls_sysctl();
 	fini_vecalls_cgroups();
 	ve_hook_unregister(&vzmon_stop_hook);
