@@ -194,9 +194,13 @@ static void ve_destroy(struct cgroup *cg)
 
 static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 {
+	struct task_struct *task = current;
+
 	if (cgroup_taskset_size(tset) != 1 ||
-	    cgroup_taskset_first(tset) != current)
-		return -EBUSY;
+	    cgroup_taskset_first(tset) != task ||
+	    !thread_group_leader(task) ||
+	    !thread_group_empty(task))
+		return -EINVAL;
 
 	return 0;
 }
