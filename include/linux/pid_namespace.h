@@ -47,9 +47,6 @@ struct pid_namespace {
 	unsigned int proc_inum;
 	RH_KABI_EXTEND(struct rcu_head rcu)
 	RH_KABI_EXTEND(struct ucounts *ucounts)
-#ifdef CONFIG_VE
-	struct ve_struct *notify_ve;
-#endif
 };
 
 extern struct pid_namespace init_pid_ns;
