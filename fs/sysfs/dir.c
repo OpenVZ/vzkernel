@@ -836,6 +836,9 @@ const struct inode_operations sysfs_dir_inode_operations = {
 	.setattr	= sysfs_setattr,
 	.getattr	= sysfs_getattr,
 	.setxattr	= sysfs_setxattr,
+	.getxattr	= sysfs_getxattr,
+	.removexattr	= sysfs_removexattr,
+	.listxattr	= sysfs_listxattr,
 };
 
 static void remove_dir(struct sysfs_dirent *sd)
