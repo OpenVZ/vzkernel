@@ -51,6 +51,8 @@ struct module no_module = { .state = MODULE_STATE_GOING };
 EXPORT_SYMBOL(no_module);
 #endif
 
+struct kmapset_set ve_sysfs_perms;
+
 static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, ve0_lat_stats);
 
 struct ve_struct ve0 = {
@@ -449,6 +451,7 @@ do_init:
 	mutex_init(&ve->sync_mutex);
 	INIT_LIST_HEAD(&ve->devices);
 	ve->meminfo_val = VE_MEMINFO_DEFAULT;
+	kmapset_init_key(&ve->ve_sysfs_perms);
 
 	return &ve->css;
 
@@ -552,6 +555,8 @@ static int ve_state_write(struct cgroup *cg, struct cftype *cft,
 		up_write(&ve->op_sem);
 	}
 
+	kmapset_unlink(&ve->ve_sysfs_perms, &ve_sysfs_perms);
+
 	return ret;
 }
 
@@ -579,6 +584,7 @@ static int __init ve_subsys_init(void)
 {
 	ve_cachep = KMEM_CACHE(ve_struct, SLAB_PANIC);
 	list_add(&ve0.ve_list, &ve_list_head);
+	kmapset_init_set(&ve_sysfs_perms);
 	return 0;
 }
 late_initcall(ve_subsys_init);
