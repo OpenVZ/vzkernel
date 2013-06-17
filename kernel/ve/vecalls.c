@@ -519,7 +519,7 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 			 env_create_param_t *data, int datalen)
 {
 	struct task_struct *tsk = current;
-	struct ve_struct *old_ve, *ve;
+	struct ve_struct *ve;
 	struct cred *new_creds;
 	int err;
 	struct nsproxy *old_ns, *old_ns_net;
@@ -568,6 +568,10 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 
 	init_ve_struct(ve, veid, class_id, data, datalen);
 
+	err = cgroup_kernel_attach(ve->css.cgroup, current);
+	if (err)
+		goto err_ve_attach;
+
 	down_write(&ve->op_sem);
 	if (flags & VE_LOCK)
 		ve->is_locked = 1;
@@ -577,9 +581,6 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	/* this should be done before context switching */
 	if ((err = init_printk(ve)) < 0)
 		goto err_log_wait;
-
-	old_ve = tsk->task_ve;
-	tsk->task_ve = ve;
 
 	set_ve_root(ve, tsk);
 
@@ -604,10 +605,6 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 
 	commit_creds(new_creds);
 
-	err = cgroup_kernel_attach(ve->css.cgroup, current);
-	if (err)
-		goto err_ve_attach;
-
 	err = ve_start_container(ve);
 	if (err)
 		goto err_ve_start;
@@ -625,8 +622,6 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	return veid;
 
 err_ve_start:
-	cgroup_kernel_attach(ve0.css.cgroup, current);
-err_ve_attach:
 	/* creds will put user and user ns */
 err_uns:
 	put_cred(new_creds);
@@ -660,6 +655,8 @@ err_log_wait:
 	ve_list_del(ve);
 	up_write(&ve->op_sem);
 
+	cgroup_kernel_attach(ve0.css.cgroup, current);
+err_ve_attach:
 	cgroup_kernel_close(ve_cgroup);
 err_cgroup:
 	fairsched_drop_node(veid, 1);
