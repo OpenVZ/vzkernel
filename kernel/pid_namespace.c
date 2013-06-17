@@ -202,13 +202,7 @@ void zap_pid_ns_processes(struct pid_namespace *pid_ns)
 	me->sighand->action[SIGCHLD - 1].sa.sa_handler = SIG_IGN;
 	spin_unlock_irq(&me->sighand->siglock);
 
-#ifdef CONFIG_VE
-	if (pid_ns->notify_ve) {
-		down_write(&pid_ns->notify_ve->op_sem);
-		ve_hook_iterate_fini(VE_KILL_CHAIN, pid_ns->notify_ve);
-		up_write(&pid_ns->notify_ve->op_sem);
-	}
-#endif
+	ve_stop_ns(pid_ns);
 
 	/*
 	 * The last thread in the cgroup-init thread group is terminating.
@@ -261,13 +255,8 @@ void zap_pid_ns_processes(struct pid_namespace *pid_ns)
 
 	acct_exit_ns(pid_ns);
 
-#ifdef CONFIG_VE
-	if (pid_ns->notify_ve) {
-		down_write(&pid_ns->notify_ve->op_sem);
-		ve_hook_iterate_fini(VE_SS_CHAIN, pid_ns->notify_ve);
-		up_write(&pid_ns->notify_ve->op_sem);
-	}
-#endif
+	ve_exit_ns(pid_ns);
+
 	return;
 }
 
