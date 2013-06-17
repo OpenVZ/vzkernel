@@ -238,8 +238,10 @@ static inline void task_state(struct seq_file *m, struct pid_namespace *ns,
 	seq_putc(m, '\n');
 
 #ifdef CONFIG_VE
-	seq_printf(m, "envID:\t%d\nVPid:\t%d\n",
-			task_veid(p), vpid);
+	rcu_read_lock();
+	seq_printf(m, "envID:\t%s\nVPid:\t%d\n",
+			task_ve_name(p), vpid);
+	rcu_read_unlock();
 #endif
 }
 
@@ -610,7 +612,9 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 #ifdef CONFIG_VE
 	seq_printf(m, " %s", " 0 0 0 0 0");
 	seq_put_decimal_ll(m, ' ', task_pid_nr_ns(task, task_active_pid_ns(task)));
-	seq_put_decimal_ull(m, ' ', task_veid(task));
+	rcu_read_lock();
+	seq_printf(m, " %s", task_ve_name(task));
+	rcu_read_unlock();
 #endif
 #ifdef CONFIG_BEANCOUNTERS
 	seq_printf(m, " %s", ub_task_info);

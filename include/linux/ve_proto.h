@@ -32,7 +32,10 @@ static inline bool ve_is_super(struct ve_struct *ve)
 
 #define get_exec_env()		(current->task_ve)
 
-extern unsigned task_veid(struct task_struct *);
+const char *ve_name(struct ve_struct *ve);
+
+/* must be called under rcu_read_lock if task != current */
+const char *task_ve_name(struct task_struct *task);
 
 extern int ve_task_count(struct ve_struct *);
 
@@ -129,9 +132,14 @@ static inline bool ve_is_super(struct ve_struct *ve)
 	return true;
 }
 
-static inline unsigned task_veid(struct task_struct *task)
+static inline const char *ve_name(struct ve_struct *ve)
 {
-	return 0;
+	return "0";
+}
+
+static inline const char *task_ve_name(struct task_struct *task)
+{
+	return "0";
 }
 
 #define nr_threads_ve(ve)	(nr_threads)
