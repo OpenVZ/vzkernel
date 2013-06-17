@@ -84,6 +84,9 @@ struct veip_struct *veip_findcreate(const char *ve_name);
 int veip_put(struct veip_struct *veip);
 void veip_cleanup(void);
 
+int in4_to_veaddr(const char *addr, struct ve_addr_struct *veaddr);
+int in6_to_veaddr(const char *addr, struct ve_addr_struct *veaddr);
+
 extern struct list_head veip_lh;
 
 struct ext_entry_struct *venet_ext_lookup(struct ve_struct *ve,
