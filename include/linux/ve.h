@@ -147,6 +147,7 @@ static inline int vtty_open_master(int veid, int idx) { return -ENODEV; }
 
 void ve_stop_ns(struct pid_namespace *ns);
 void ve_exit_ns(struct pid_namespace *ns);
+int ve_start_container(struct ve_struct *ve);
 
 #else	/* CONFIG_VE */
 
