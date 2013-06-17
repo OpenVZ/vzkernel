@@ -73,21 +73,6 @@ config VZ_WDOG
 	help
 	  This option controls building of vzwdog module, which dumps
 	  a lot of useful system info on console periodically.
- 
-config VZ_CHECKPOINT
- 	tristate "Checkpointing & restoring Virtual Environments"
-	depends on X86 || IA64
- 	depends on VE_CALLS
-	select PM
-	select PM_SLEEP
-	select TUN
-	select VE_ETHDEV
-	select VE_NETDEV
- 	default m
- 	help
- 	  This option adds two modules, "cpt" and "rst", which allow
- 	  to save a running Virtual Environment and restore it
- 	  on another host (live migration) or on the same host (checkpointing).
 
 config VZ_EVENT
  	tristate "Enable sending notifications of the VE status change through the netlink socket"

@@ -697,13 +697,6 @@ static const struct ethtool_ops venet_ethtool_ops = {
 	.get_ethtool_stats	= venet_get_ethtool_stats,
 };
 
-#ifdef CONFIG_VZ_CHECKPOINT
-static void venet_cpt(struct net_device *dev,
-		struct cpt_ops *ops, struct cpt_context *ctx)
-{
-}
-#endif
-
 static const struct net_device_ops venet_netdev_ops = {
 	.ndo_start_xmit = venet_xmit,
 	.ndo_get_stats = get_stats,
@@ -711,9 +704,6 @@ static const struct net_device_ops venet_netdev_ops = {
 	.ndo_stop = venet_close,
 	.ndo_init = venet_init_dev,
 	.ndo_set_features = venet_set_features,
-#ifdef CONFIG_VZ_CHECKPOINT
-	.ndo_cpt = venet_cpt,
-#endif
 };
 
 static void venet_setup(struct net_device *dev)

@@ -6546,33 +6546,3 @@ out:
 }
 
 subsys_initcall(net_dev_init);
-
-static LIST_HEAD(dev_cpt_operations);
-
-void register_netdev_rst(struct netdev_rst *ops)
-{
-	rtnl_lock();
-	list_add_tail(&ops->list, &dev_cpt_operations);
-	__rtnl_unlock();
-}
-EXPORT_SYMBOL(register_netdev_rst);
-
-void unregister_netdev_rst(struct netdev_rst *ops)
-{
-	rtnl_lock();
-	list_del(&ops->list);
-	__rtnl_unlock();
-}
-EXPORT_SYMBOL(unregister_netdev_rst);
-
-struct netdev_rst *netdev_find_rst(int cpt_object, struct netdev_rst *ops)
-{
-	ops = list_prepare_entry(ops, &dev_cpt_operations, list);
-
-	list_for_each_entry_continue(ops, &dev_cpt_operations, list)
-		if (ops->cpt_object == cpt_object)
-			return ops;
-
-	return NULL;
-}
-EXPORT_SYMBOL(netdev_find_rst);

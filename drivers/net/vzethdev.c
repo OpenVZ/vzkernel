@@ -53,11 +53,6 @@
 #include <linux/spinlock.h>
 #include <linux/vzcalluser.h>
 
-#ifdef CONFIG_VZ_CHECKPOINT
-#include <linux/cpt_image.h>
-#include <linux/cpt_export.h>
-#endif
-
 static LIST_HEAD(veth_hwaddr_list);
 static DEFINE_RWLOCK(ve_hwaddr_lock);
 static DEFINE_SEMAPHORE(hwaddr_sem);
@@ -427,57 +422,6 @@ static const struct ethtool_ops veth_ethtool_ops = {
 	.get_ethtool_stats	= veth_get_ethtool_stats,
 };
 
-#ifdef CONFIG_VZ_CHECKPOINT
-static void veth_cpt(struct net_device *dev,
-		struct cpt_ops *ops, struct cpt_context *ctx)
-{
-	struct cpt_veth_image v;
-	struct veth_struct *veth;
-
-	veth = veth_from_netdev(dev);
-
-	v.cpt_next = CPT_NULL;
-	v.cpt_object = CPT_OBJ_NET_VETH;
-	v.cpt_hdrlen = sizeof(v);
-	v.cpt_content = CPT_CONTENT_VOID;
-
-	v.cpt_allow_mac_change = veth->allow_mac_change;
-
-	ops->write(&v, sizeof(v), ctx);
-}
-
-static int veth_rst(loff_t pos, struct cpt_netdev_image *di,
-		struct rst_ops *ops,
-		struct cpt_context *ctx)
-
-{
-	int err;
-	struct cpt_veth_image vi;
-	struct veth_struct *veth;
-	struct net_device *dev;
-
-	pos = pos + di->cpt_hdrlen;
-	err = ops->get_object(CPT_OBJ_NET_VETH, pos,
-			&vi, sizeof(vi), ctx);
-	if (err)
-		return err;
-
-	dev = __dev_get_by_name(get_exec_env()->ve_ns->net_ns, di->cpt_name);
-	if (dev == NULL)
-		return -ENODEV;
-
-	veth = veth_from_netdev(dev);
-	veth->allow_mac_change = vi.cpt_allow_mac_change;
-
-	return 0;
-}
-
-static struct netdev_rst veth_netdev_rst = {
-	.cpt_object = CPT_OBJ_NET_VETH,
-	.ndo_rst = veth_rst,
-};
-#endif
-
 static const struct net_device_ops veth_ops = {
 	.ndo_init = veth_init_dev,
 	.ndo_start_xmit = veth_xmit,
@@ -485,9 +429,6 @@ static const struct net_device_ops veth_ops = {
 	.ndo_open = veth_open,
 	.ndo_stop = veth_close,
 	.ndo_set_mac_address = veth_set_mac,
-#ifdef CONFIG_VZ_CHECKPOINT
-	.ndo_cpt = veth_cpt,
-#endif
 };
 
 static void veth_setup(struct net_device *dev)
@@ -725,9 +666,6 @@ static __init int veth_init(void)
 		printk(KERN_WARNING "veth: can't make vehwaddr proc entry\n");
 #endif
 
-#ifdef CONFIG_VZ_CHECKPOINT
-	register_netdev_rst(&veth_netdev_rst);
-#endif
 	ve_hook_register(VE_SS_CHAIN, &veth_ve_hook);
 	vzioctl_register(&vethcalls);
 	return 0;
@@ -740,9 +678,6 @@ static __exit void veth_exit(void)
 
 	vzioctl_unregister(&vethcalls);
 	ve_hook_unregister(&veth_ve_hook);
-#ifdef CONFIG_VZ_CHECKPOINT
-	unregister_netdev_rst(&veth_netdev_rst);
-#endif
 
 #ifdef CONFIG_PROC_FS
 	remove_proc_entry("veth", proc_vz_dir);

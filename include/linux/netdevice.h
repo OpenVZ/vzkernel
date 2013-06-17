@@ -1125,23 +1125,7 @@ struct net_device_ops {
 	void			(*rh_reserved14)(void);
 	void			(*rh_reserved15)(void);
 	void			(*rh_reserved16)(void);
-
-	void                    (*ndo_cpt)(struct net_device *dev,
-						struct cpt_ops *,
-						struct cpt_context *);
 };
-
-struct netdev_rst {
-	int			cpt_object;
-	int			(*ndo_rst)(loff_t, struct cpt_netdev_image *,
-					struct rst_ops *,
-					struct cpt_context *);
-	struct list_head	list;
-};
-
-void register_netdev_rst(struct netdev_rst *ops);
-void unregister_netdev_rst(struct netdev_rst *ops);
-struct netdev_rst *netdev_find_rst(int cpt_object, struct netdev_rst *ops);
 
 /*
  *	The DEVICE structure.

@@ -2350,24 +2350,21 @@ void lock_sock_nested(struct sock *sk, int subclass)
 		__lock_sock(sk);
 	sk->sk_lock.owned = 1;
 	spin_unlock(&sk->sk_lock.slock);
-#if !defined(CONFIG_VZ_CHECKPOINT) && !defined(CONFIG_VZ_CHECKPOINT_MODULE)
 	/*
 	 * The sk_lock has mutex_lock() semantics here:
 	 */
 	mutex_acquire(&sk->sk_lock.dep_map, subclass, 0, _RET_IP_);
-#endif
 	local_bh_enable();
 }
 EXPORT_SYMBOL(lock_sock_nested);
 
 void release_sock(struct sock *sk)
 {
-#if !defined(CONFIG_VZ_CHECKPOINT) && !defined(CONFIG_VZ_CHECKPOINT_MODULE)
 	/*
 	 * The sk_lock has mutex_unlock() semantics:
 	 */
 	mutex_release(&sk->sk_lock.dep_map, 1, _RET_IP_);
-#endif
+
 	spin_lock_bh(&sk->sk_lock.slock);
 	if (sk->sk_backlog.tail)
 		__release_sock(sk);
