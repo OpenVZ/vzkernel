@@ -86,6 +86,9 @@ EXPORT_SYMBOL(nr_ve);
 static void ve_list_add(struct ve_struct *ve)
 {
 	mutex_lock(&ve_list_lock);
+	/* FIXME temporary hack */
+	while (__find_ve_by_id(ve->veid))
+		ve->veid--;
 	list_add(&ve->ve_list, &ve_list_head);
 	nr_ve++;
 	mutex_unlock(&ve_list_lock);
@@ -295,6 +298,12 @@ int ve_start_container(struct ve_struct *ve)
 	struct task_struct *tsk = current;
 	int err;
 
+	if (ve->is_running || ve->ve_ns)
+		return -EBUSY;
+
+	if (tsk->task_ve != ve || !is_child_reaper(task_pid(tsk)))
+		return -ECHILD;
+
 	ve->start_timespec = tsk->start_time;
 	ve->real_start_timespec = tsk->real_start_time;
 	/* The value is wrong, but it is never compared to process
@@ -496,6 +505,49 @@ static void ve_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 	tsk->task_ve = ve;
 }
 
+static int ve_state_read(struct cgroup *cg, struct cftype *cft,
+			 struct seq_file *m)
+{
+	struct ve_struct *ve = cgroup_ve(cg);
+
+	if (ve->is_running)
+		seq_puts(m, "RUNNING");
+	else if (!nr_threads_ve(ve))
+		seq_puts(m, "STOPPED");
+	else if (ve->ve_ns)
+		seq_puts(m, "STOPPING");
+	else
+		seq_puts(m, "STARTING");
+	seq_putc(m, '\n');
+
+	return 0;
+}
+
+static int ve_state_write(struct cgroup *cg, struct cftype *cft,
+			  const char *buffer)
+{
+	struct ve_struct *ve = cgroup_ve(cg);
+	int ret = -EINVAL;
+
+	if (!strcmp(buffer, "START")) {
+		down_write(&ve->op_sem);
+		ret = ve_start_container(ve);
+		up_write(&ve->op_sem);
+	}
+
+	return ret;
+}
+
+static struct cftype ve_cftypes[] = {
+	{
+		.name = "state",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.read_seq_string = ve_state_read,
+		.write_string = ve_state_write,
+	},
+	{ }
+};
+
 struct cgroup_subsys ve_subsys = {
 	.name		= "ve",
 	.subsys_id	= ve_subsys_id,
@@ -503,6 +555,7 @@ struct cgroup_subsys ve_subsys = {
 	.destroy	= ve_destroy,
 	.can_attach	= ve_can_attach,
 	.attach		= ve_attach,
+	.base_cftypes	= ve_cftypes,
 };
 
 static int __init ve_subsys_init(void)
