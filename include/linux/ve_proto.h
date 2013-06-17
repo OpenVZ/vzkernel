@@ -66,7 +66,6 @@ int devperms_seq_show(struct seq_file *m, void *v);
 
 enum {
 	VE_SS_CHAIN,
-	VE_KILL_CHAIN,
 
 	VE_MAX_CHAINS
 };
