@@ -161,10 +161,6 @@ struct ub_percpu_struct {
 	unsigned long long sync_write_bytes;
 	unsigned long long sync_read_bytes;
 #endif
-#ifdef CONFIG_BC_DEBUG_KMEM
-	long	pages_charged;
-	long	vmalloc_charged;
-#endif
 	unsigned long	sync;
 	unsigned long	sync_done;
 
