@@ -85,7 +85,7 @@ int create_user_ns(struct cred *new)
 	 * by verifing that the root directory is at the root of the
 	 * mount namespace which allows all files to be accessed.
 	 */
-	if (current_chrooted())
+	if (!IS_ENABLED(CONFIG_VE) && current_chrooted())
 		return -EPERM;
 
 	/* The creator needs a mapping in the parent user namespace
