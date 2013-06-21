@@ -237,7 +237,6 @@ int pmd_huge(pmd_t pmd)
 {
 	return !!(pmd_val(pmd) & _PAGE_PSE);
 }
-EXPORT_SYMBOL(pmd_huge);
 
 int pud_huge(pud_t pud)
 {

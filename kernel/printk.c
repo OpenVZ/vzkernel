@@ -1785,12 +1785,9 @@ asmlinkage int vprintk_emit(int facility, int level,
 			    const char *dict, size_t dictlen,
 			    const char *fmt, va_list args)
 {
-	struct ve_struct *env;
 	int r;
 
-	env = set_exec_env(get_ve0());
 	r = __vprintk_emit(facility, level, dict, dictlen, fmt, args);
-	(void)set_exec_env(env);
 
 	return r;
 }
