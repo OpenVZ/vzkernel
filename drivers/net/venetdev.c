@@ -103,9 +103,8 @@ int veip_put(struct veip_struct *veip)
 struct ip_entry_struct *venet_entry_lookup(struct ve_addr_struct *addr)
 {
 	struct ip_entry_struct *entry;
-	struct hlist_node *n;
 
-	hlist_for_each_entry_rcu(entry, n, ip_entry_hash_table +
+	hlist_for_each_entry_rcu(entry, ip_entry_hash_table +
 			ip_entry_hash_function(addr->key[3]), ip_hash)
 		if (memcmp(&entry->addr, addr, sizeof(*addr)) == 0)
 			return entry;
@@ -776,7 +775,6 @@ unlock:
 static void *veip_seq_start(struct seq_file *m, loff_t *pos)
 {
 	loff_t l;
-	struct hlist_node *p;
 	struct ip_entry_struct *s;
 	int i;
 
@@ -788,10 +786,10 @@ static void *veip_seq_start(struct seq_file *m, loff_t *pos)
 	}
 
 	for (i = 0; i < VEIP_HASH_SZ; i++) {
-		hlist_for_each_entry_rcu(s, p, ip_entry_hash_table + i, ip_hash) {
+		hlist_for_each_entry_rcu(s, ip_entry_hash_table + i, ip_hash) {
 			if (--l == 0) {
 				m->private = (void *)(long)(i + 1);
-				return p;
+				return &s->ip_hash;
 			}
 		}
 	}
@@ -1018,14 +1016,13 @@ int ve_ip_access_seq_read(struct cgroup *cgrp, struct cftype *cft,
 {
 	struct ve_struct *ve = cgroup_ve(cgrp);
 	struct ip_entry_struct *s;
-        struct hlist_node *p;
 	char buf[40];
 	int family = strncmp(cft->name, "ip6", 3) ? AF_INET : AF_INET6;
 	int i;
 
 	rcu_read_lock();
 	for (i = 0; i < VEIP_HASH_SZ; i++) {
-		hlist_for_each_entry_rcu(s, p, ip_entry_hash_table + i,
+		hlist_for_each_entry_rcu(s, ip_entry_hash_table + i,
 					 ip_hash) {
 			if (s->addr.family == family &&
 			    s->active_env &&
