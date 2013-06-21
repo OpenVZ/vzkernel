@@ -458,9 +458,6 @@ static inline void do_notifies(void)
  */
 static int ubstatd(void *unused)
 {
-	/* daemonize call will take care of signals */
-	daemonize("ubstatd");
-
 	ubs_timer.data = (unsigned long)current;
 	ubs_timer.function = ubstatd_timeout;
 	add_timer(&ubs_timer);
@@ -485,8 +482,7 @@ static int __init ubstatd_init(void)
 	ubs_timer.expires = TIME_MAX_JIF;
 	ubs_min_interval = TIME_MAX_SEC;
 	ubs_start_time = ubs_end_time = 0;
-
-	kernel_thread(ubstatd, NULL, 0);
+	kthread_run(ubstatd, NULL, "ubstatd");
 	return 0;
 }
 
