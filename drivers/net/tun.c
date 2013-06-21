@@ -1715,9 +1715,7 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
 		    !!(tun->flags & IFF_MULTI_QUEUE))
 			return -EINVAL;
 
-		if (((tun->owner != -1 && cred->euid != tun->owner) ||
-		     (tun->group != -1 && !in_egroup_p(tun->group))) &&
-		    !capable(CAP_NET_ADMIN) && !capable(CAP_VE_NET_ADMIN))
+		if (tun_not_capable(tun))
 			return -EPERM;
 		err = security_tun_dev_open(tun->security);
 		if (err < 0)
@@ -1741,7 +1739,7 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
 		int queues = ifr->ifr_flags & IFF_MULTI_QUEUE ?
 			     MAX_TAP_QUEUES : 1;
 
-		if (!capable(CAP_NET_ADMIN) && !capable(CAP_VE_NET_ADMIN))
+		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
 			return -EPERM;
 		err = security_tun_dev_create();
 		if (err < 0)
