@@ -67,10 +67,6 @@ extern int real_env_create(envid_t veid, unsigned flags, u32 class_id,
 
 extern int nr_threads_ve(struct ve_struct *ve);
 
-int set_device_perms_ve(struct ve_struct *, unsigned, dev_t, unsigned);
-int get_device_perms_ve(int dev_type, dev_t dev, int access_mode);
-int devperms_seq_show(struct seq_file *m, void *v);
-
 enum {
 	VE_SS_CHAIN,
 
@@ -148,6 +144,5 @@ static inline const char *task_ve_name(struct task_struct *task)
 
 #define nr_threads_ve(ve)	(nr_threads)
 
-#define get_device_perms_ve(t, d, a)	(0)
 #endif /* CONFIG_VE */
 #endif
