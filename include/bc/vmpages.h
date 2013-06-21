@@ -17,8 +17,6 @@
 #include <bc/beancounter.h>
 #include <bc/decl.h>
 
-extern int glob_ve_meminfo;
-
 struct shmem_inode_info;
 
 extern void __ub_update_oomguarpages(struct user_beancounter *ub);
