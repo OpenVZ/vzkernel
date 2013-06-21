@@ -52,6 +52,9 @@ struct module no_module = { .state = MODULE_STATE_GOING };
 EXPORT_SYMBOL(no_module);
 #endif
 
+int glob_ve_meminfo = 0;
+int ve_allow_kthreads = 1;
+
 struct kmapset_set ve_sysfs_perms;
 
 static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, ve0_lat_stats);
@@ -458,9 +461,11 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 	if (!ve->sched_lat_ve.cur)
 		goto err_lat;
 
+/*
 	err = ve_log_init(ve);
 	if (err)
 		goto err_log;
+*/
 
 do_init:
 	init_rwsem(&ve->op_sem);
@@ -483,7 +488,7 @@ static void ve_destroy(struct cgroup *cg)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 
-	ve_log_destroy(ve);
+	//ve_log_destroy(ve);
 	kfree(ve->binfmt_misc);
 	free_percpu(ve->sched_lat_ve.cur);
 	kfree(ve->ve_name);
@@ -531,7 +536,6 @@ static void ve_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 		tsk->mm->vps_dumpable = 0;
 
 	/* Drop OOM protection. */
-	tsk->signal->oom_adj = 0;
 	tsk->signal->oom_score_adj = 0;
 	tsk->signal->oom_score_adj_min = 0;
 
@@ -605,8 +609,8 @@ static struct cftype ve_cftypes[] = {
 struct cgroup_subsys ve_subsys = {
 	.name		= "ve",
 	.subsys_id	= ve_subsys_id,
-	.create		= ve_create,
-	.destroy	= ve_destroy,
+	.css_alloc	= ve_create,
+	.css_free	= ve_destroy,
 	.can_attach	= ve_can_attach,
 	.attach		= ve_attach,
 	.base_cftypes	= ve_cftypes,
