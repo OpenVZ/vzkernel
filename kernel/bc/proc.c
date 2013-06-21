@@ -339,16 +339,11 @@ static void *ub_start(struct seq_file *f, loff_t *ppos)
 static void *ub_next(struct seq_file *f, void *v, loff_t *ppos)
 {
 	struct user_beancounter *ub;
-	struct list_head *entry;
 	struct user_beancounter *exec_ub;
 
 	exec_ub = get_exec_ub();
 	ub = (struct user_beancounter *)v;
-
-	entry = &ub->ub_list;
-
-	list_for_each_continue_rcu(entry, &ub_list_head) {
-		ub = list_entry(entry, struct user_beancounter, ub_list);
+	list_for_each_entry_continue_rcu(ub, &ub_list_head, ub_list) {
 		if (!ub_accessible(exec_ub, ub))
 			continue;
 		(*ppos)++;
