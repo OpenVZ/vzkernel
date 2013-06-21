@@ -271,8 +271,6 @@ static int min_extfrag_threshold;
 static int max_extfrag_threshold = 1000;
 #endif
 
-extern int glob_ve_meminfo;
-
 static int proc_dointvec_pidmax(struct ctl_table *table, int write,
 		  void __user *buffer, size_t *lenp, loff_t *ppos)
 {
@@ -838,6 +836,13 @@ static struct ctl_table kern_table[] = {
 	{
 		.procname	= "ve_meminfo",
 		.data		= &glob_ve_meminfo,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec,
+	},
+	{
+		.procname	= "ve_allow_kthreads",
+		.data		= &ve_allow_kthreads,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec,
