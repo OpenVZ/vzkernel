@@ -5924,6 +5924,7 @@ struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
 	if (!p) {
 		pr_err("alloc_netdev: Unable to allocate device\n");
 		return NULL;
+	}
 
 	dev = PTR_ALIGN(p, NETDEV_ALIGN);
 	dev->padded = (char *)dev - (char *)p;
