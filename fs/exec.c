@@ -69,9 +69,6 @@
 
 #include <bc/kmem.h>
 
-int core_uses_pid;
-char core_pattern[CORENAME_MAX_SIZE] = "core";
-unsigned int core_pipe_limit;
 int suid_dumpable = 0;
 
 static LIST_HEAD(formats);
