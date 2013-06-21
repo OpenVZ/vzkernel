@@ -83,7 +83,7 @@ static bool sysfs_sd_visible(struct sysfs_dirent *sd, struct super_block *sb)
 		return true;
 
 	/* Entries with namespace tag always visible */
-	if (sd->s_ns || sd->s_parent && sd->s_parent->s_ns)
+	if (sd->s_ns || (sd->s_parent && sd->s_parent->s_ns))
 		return true;
 
 	/* Symlinks are visible if target sd is visible */
