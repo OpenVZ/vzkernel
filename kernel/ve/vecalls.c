@@ -72,6 +72,7 @@
 #include <linux/vzctl.h>
 #include <linux/vzcalluser.h>
 #include <linux/fairsched.h>
+#include <linux/device_cgroup.h>
 
 #include <linux/virtinfo.h>
 #include <linux/major.h>
@@ -169,7 +170,7 @@ static int real_setdevperms(envid_t veid, unsigned type,
 	down_read(&ve->op_sem);
 	err = -ESRCH;
 	if (ve->is_running)
-		err = set_device_perms_ve(ve, type, dev, mask);
+		err = devcgroup_set_perms_ve(ve->css.cgroup, type, dev, mask);
 	up_read(&ve->op_sem);
 	put_ve(ve);
 	return err;
@@ -424,6 +425,10 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	if (IS_ERR(ve_cgroup))
 		goto err_cgroup;
 
+	err = devcgroup_default_perms_ve(ve_cgroup);
+	if (err)
+		goto err_devcgroup;
+
 	ve = cgroup_ve(ve_cgroup);
 
 	init_ve_struct(ve, veid, class_id, data, datalen);
@@ -484,6 +489,7 @@ err_ns:
 err_creds:
 	cgroup_kernel_attach(ve0.css.cgroup, tsk);
 err_ve_attach:
+err_devcgroup:
 	cgroup_kernel_close(ve_cgroup);
 err_cgroup:
 	fairsched_drop_node(veid, 1);
@@ -836,6 +842,23 @@ static struct file_operations proc_vestat_operations = {
         .llseek	 = seq_lseek,
         .release = seq_release
 };
+
+static int devperms_seq_show(struct seq_file *m, void *v)
+{
+	struct ve_struct *ve = list_entry(v, struct ve_struct, ve_list);
+
+	if (m->private == (void *)0) {
+		seq_printf(m, "Version: 2.7\n");
+		m->private = (void *)-1;
+	}
+
+	if (ve_is_super(ve))
+		seq_printf(m, "%10u b 016 *:*\n%10u c 006 *:*\n", 0, 0);
+	else
+		devcgroup_seq_show_ve(ve->css.cgroup, ve->veid, m);
+
+	return 0;
+}
 
 static struct seq_operations devperms_seq_op = {
 	.start  = ve_seq_start,
