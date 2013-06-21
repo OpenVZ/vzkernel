@@ -911,7 +911,7 @@ int __init ub_init_cgroup(void)
 	struct vfsmount *mnt;
 	struct cgroup_sb_opts opts = {
 		.name		= "beancounter",
-		.subsys_bits    = (1ul << blkio_subsys_id) |
+		.subsys_mask    = (1ul << blkio_subsys_id) |
 				  (1ul << mem_cgroup_subsys_id),
 	};
 

@@ -1116,19 +1116,6 @@ static int cgroup_show_options(struct seq_file *seq, struct dentry *dentry)
 	return 0;
 }
 
-struct cgroup_sb_opts {
-	unsigned long subsys_mask;
-	unsigned long flags;
-	char *release_agent;
-	bool cpuset_clone_children;
-	char *name;
-	/* User explicitly requested empty subsystem */
-	bool none;
-
-	struct cgroupfs_root *new_root;
-
-};
-
 /*
  * Convert a hierarchy specifier into a bitmask of subsystems and flags. Call
  * with cgroup_mutex held to protect the subsys[] array. This function takes
@@ -1293,7 +1280,7 @@ static int parse_cgroupfs_options(char *data, struct cgroup_sb_opts *opts)
 
 	if (!ve_is_super(get_exec_env())) {
 		/* Forbid all subsystems inside container */
-		if (opts->subsys_bits)
+		if (opts->subsys_mask)
 			return -ENOENT;
 		/* Allow only one hierarchy: "systemd" */
 		if (strcmp(opts->name, "systemd"))

@@ -31,10 +31,10 @@ struct css_id;
 struct eventfd_ctx;
 
 struct cgroup_sb_opts {
-	unsigned long subsys_bits;
+	unsigned long subsys_mask;
 	unsigned long flags;
 	char *release_agent;
-	bool clone_children;
+	bool cpuset_clone_children;
 	char *name;
 	/* User explicitly requested empty subsystem */
 	bool none;
