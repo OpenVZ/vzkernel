@@ -8,7 +8,6 @@
  */
 #include <linux/mm.h>
 #include <linux/gfp.h>
-#include <linux/module.h>
 #include <linux/kernel_stat.h>
 #include <linux/swap.h>
 #include <linux/swapops.h>
@@ -21,10 +20,6 @@
 #include <linux/page_cgroup.h>
 
 #include <asm/pgtable.h>
-
-#include <bc/vmpages.h>
-#include <bc/io_acct.h>
-#include <bc/kmem.h>
 
 /*
  * swapper_space is a fiction, retained to simplify the path through
@@ -48,17 +43,15 @@ struct address_space swapper_spaces[MAX_SWAPFILES] = {
 		.backing_dev_info = &swap_backing_dev_info,
 	}
 };
-EXPORT_SYMBOL(swapper_space);
 
 #define INC_CACHE_INFO(x)	do { swap_cache_info.x++; } while (0)
 
-struct {
+static struct {
 	unsigned long add_total;
 	unsigned long del_total;
 	unsigned long find_success;
 	unsigned long find_total;
 } swap_cache_info;
-EXPORT_SYMBOL(swap_cache_info);
 
 unsigned long total_swapcache_pages(void)
 {
@@ -136,7 +129,6 @@ int add_to_swap_cache(struct page *page, swp_entry_t entry, gfp_t gfp_mask)
 	}
 	return error;
 }
-EXPORT_SYMBOL(add_to_swap_cache);
 
 /*
  * This must be called only on pages that have
@@ -212,7 +204,6 @@ int add_to_swap(struct page *page, struct list_head *list)
 		return 0;
 	}
 }
-EXPORT_SYMBOL(add_to_swap);
 
 /*
  * This must be called only on pages that have
@@ -379,7 +370,6 @@ struct page *read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
 			/*
 			 * Initiate read into locked page and return.
 			 */
-
 			lru_cache_add_anon(new_page);
 			swap_readpage(new_page);
 			return new_page;
@@ -398,7 +388,6 @@ struct page *read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
 		page_cache_release(new_page);
 	return found_page;
 }
-EXPORT_SYMBOL(read_swap_cache_async);
 
 /**
  * swapin_readahead - swap in pages in hope we need them soon
