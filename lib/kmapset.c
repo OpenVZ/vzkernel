@@ -16,9 +16,9 @@ struct kmapset_map *kmapset_new(struct kmapset_set *set)
 static void kmapset_free(struct kmapset_map *map)
 {
 	struct kmapset_link *link;
-	struct hlist_node *pos, *next;
+	struct hlist_node *next;
 
-	hlist_for_each_entry_safe(link, pos, next, &map->links, map_link)
+	hlist_for_each_entry_safe(link, next, &map->links, map_link)
 		kfree_rcu(link, rcu_head);
 	kfree_rcu(map, rcu_head);
 }
@@ -61,12 +61,11 @@ static bool kmapset_hash(struct kmapset_map *map, struct kmapset_map **old)
 	struct rb_node **p = &map->set->tree.rb_node;
 	struct rb_node *parent = NULL;
 	struct kmapset_map *cur;
-	struct hlist_node *pos;
 	struct kmapset_link *link;
 	long diff;
 
 	map->hash = hash_long(map->default_value, BITS_PER_LONG);
-	hlist_for_each_entry(link, pos, &map->links, map_link)
+	hlist_for_each_entry(link, &map->links, map_link)
 		map->hash ^= hash_ptr(link->key, BITS_PER_LONG) *
 			     hash_long(link->value, BITS_PER_LONG);
 
@@ -114,11 +113,10 @@ static void kmapset_release(struct kref *kref)
 	struct kmapset_map *map = container_of(kref, struct kmapset_map, kref);
 	struct kmapset_set *set = map->set;
 	struct kmapset_link *link;
-	struct hlist_node *pos;
 
 	if (kmapset_hashed(map))
 		kmapset_unhash(map);
-	hlist_for_each_entry(link, pos, &map->links, map_link)
+	hlist_for_each_entry(link, &map->links, map_link)
 		hlist_del(&link->key_link);
 	mutex_unlock(&set->mutex);
 
@@ -158,7 +156,7 @@ static int kmapset_copy(struct kmapset_map *dst, struct kmapset_map *src)
 {
 	struct kmapset_set *set = src->set;
 	struct kmapset_link *old_link, *new_link;
-	struct hlist_node *pos, *next;
+	struct hlist_node *next;
 	int i;
 
 	for (i = src->size; i; i--) {
@@ -171,7 +169,7 @@ static int kmapset_copy(struct kmapset_map *dst, struct kmapset_map *src)
 	kmapset_lock(set);
 	dst->default_value = src->default_value;
 	new_link = hlist_entry(dst->links.first, struct kmapset_link, map_link);
-	hlist_for_each_entry(old_link, pos, &src->links, map_link) {
+	hlist_for_each_entry(old_link, &src->links, map_link) {
 		new_link->key = old_link->key;
 		new_link->value = old_link->value;
 		new_link->map = dst;
@@ -217,9 +215,8 @@ struct kmapset_link *
 kmapset_lookup(struct kmapset_map *map, struct kmapset_key *key)
 {
 	struct kmapset_link *link;
-	struct hlist_node *pos;
 
-	hlist_for_each_entry_rcu(link, pos, &map->links, map_link) {
+	hlist_for_each_entry_rcu(link, &map->links, map_link) {
 		if (link->key == key)
 			return link;
 		if (link->key > key)
@@ -249,7 +246,6 @@ int kmapset_set_value(struct kmapset_map *map,
 {
 	struct kmapset_set *set = map->set;
 	struct kmapset_link *new_link, *old_link;
-	struct hlist_node *pos;
 
 	new_link = kmalloc(sizeof(struct kmapset_link), GFP_KERNEL);
 	if (!new_link)
@@ -263,7 +259,7 @@ int kmapset_set_value(struct kmapset_map *map,
 	if (hlist_empty(&map->links)) {
 		hlist_add_head_rcu(&new_link->map_link, &map->links);
 	} else {
-		hlist_for_each_entry(old_link, pos, &map->links, map_link) {
+		hlist_for_each_entry(old_link, &map->links, map_link) {
 			if (old_link->key < key)
 				continue;
 			if (old_link->key == key) {
@@ -271,7 +267,8 @@ int kmapset_set_value(struct kmapset_map *map,
 				kfree(new_link);
 				goto out;
 			}
-			hlist_add_before_rcu(&new_link->map_link, pos);
+			hlist_add_before_rcu(&new_link->map_link,
+					     &old_link->map_link);
 			goto add;
 		}
 		hlist_add_after_rcu(&old_link->map_link, &new_link->map_link);
@@ -319,10 +316,10 @@ void kmapset_unlink(struct kmapset_key *key, struct kmapset_set *set)
 {
 	struct kmapset_link *link;
 	struct kmapset_map *map;
-	struct hlist_node *pos, *next;
+	struct hlist_node *next;
 
 	kmapset_lock(set);
-	hlist_for_each_entry_safe(link, pos, next, &key->links, key_link) {
+	hlist_for_each_entry_safe(link, next, &key->links, key_link) {
 		map = link->map;
 		hlist_del(&link->key_link);
 		hlist_del_rcu(&link->map_link);
