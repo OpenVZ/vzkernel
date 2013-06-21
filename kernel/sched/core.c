@@ -2297,6 +2297,7 @@ context_switch(struct rq *rq, struct task_struct *prev,
 DECLARE_NR_ONLINE(nr_running);
 DECLARE_NR_ONLINE(nr_sleeping);
 DECLARE_NR_ONLINE(nr_stopped);
+DECLARE_NR_ONLINE(nr_uninterruptible);
 
 unsigned long long nr_context_switches(void)
 {
