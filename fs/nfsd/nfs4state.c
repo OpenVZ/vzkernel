@@ -4357,7 +4357,7 @@ nfsd4_lock(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	if (!locks_in_grace(net) && lock->lk_reclaim)
 		goto out;
 
-	file_lock = locks_alloc_lock();
+	file_lock = locks_alloc_lock(1);
 	if (!file_lock) {
 		dprintk("NFSD: %s: unable to allocate lock!\n", __func__);
 		status = nfserr_jukebox;
@@ -4397,7 +4397,7 @@ nfsd4_lock(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	file_lock->fl_end = last_byte_offset(lock->lk_offset, lock->lk_length);
 	nfs4_transform_lock_offset(file_lock);
 
-	conflock = locks_alloc_lock();
+	conflock = locks_alloc_lock(1);
 	if (!conflock) {
 		dprintk("NFSD: %s: unable to allocate lock!\n", __func__);
 		status = nfserr_jukebox;
@@ -4486,7 +4486,7 @@ nfsd4_lockt(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		goto out;
 
 	inode = cstate->current_fh.fh_dentry->d_inode;
-	file_lock = locks_alloc_lock();
+	file_lock = locks_alloc_lock(1);
 	if (!file_lock) {
 		dprintk("NFSD: %s: unable to allocate lock!\n", __func__);
 		status = nfserr_jukebox;
@@ -4564,7 +4564,7 @@ nfsd4_locku(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		status = nfserr_lock_range;
 		goto out;
 	}
-	file_lock = locks_alloc_lock();
+	file_lock = locks_alloc_lock(1);
 	if (!file_lock) {
 		dprintk("NFSD: %s: unable to allocate lock!\n", __func__);
 		status = nfserr_jukebox;
