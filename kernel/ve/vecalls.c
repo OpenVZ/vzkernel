@@ -32,7 +32,6 @@
 #include <linux/inetdevice.h>
 #include <net/addrconf.h>
 #include <linux/utsname.h>
-#include <linux/sysctl.h>
 #include <linux/proc_fs.h>
 #include <linux/devpts_fs.h>
 #include <linux/shmem_fs.h>
@@ -1256,42 +1255,6 @@ static inline void fini_vecalls_ioctls(void)
 	vzioctl_unregister(&vzcalls);
 }
 
-#ifdef CONFIG_SYSCTL
-static struct ctl_table_header *table_header;
-
-static ctl_table kernel_table[] = {
-	{
-		.procname	= "ve_allow_kthreads",
-		.data		= &ve_allow_kthreads,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= &proc_dointvec,
-	},
-	{ 0 }
-};
-
-static ctl_table root_table[] =  {
-	{"kernel",  NULL, 0, 0555, kernel_table},
-	{ 0 }
-};
-
-static int init_vecalls_sysctl(void)
-{
-	table_header = register_sysctl_table(root_table);
-	if (!table_header)
-		return -ENOMEM ;
-	return 0;
-}
-
-static void fini_vecalls_sysctl(void)
-{
-	unregister_sysctl_table(table_header);
-} 
-#else
-static int init_vecalls_sysctl(void) { return 0; }
-static void fini_vecalls_sysctl(void) { ; }
-#endif
-
 static int __init vecalls_init(void)
 {
 	int err;
@@ -1301,10 +1264,6 @@ static int __init vecalls_init(void)
 	err = init_vecalls_cgroups();
 	if (err)
 		goto out_cgroups;
-
-	err = init_vecalls_sysctl();
-	if (err)
-		goto out_vzmond;
 
 	err = init_vecalls_proc();
 	if (err < 0)
@@ -1324,8 +1283,6 @@ static int __init vecalls_init(void)
 out_ioctls:
 	fini_vecalls_proc();
 out_proc:
-	fini_vecalls_sysctl();
-out_vzmond:
 	fini_vecalls_cgroups();
 out_cgroups:
 	ve_hook_unregister(&vzmon_stop_hook);
@@ -1337,7 +1294,6 @@ static void __exit vecalls_exit(void)
 {
 	fini_vecalls_ioctls();
 	fini_vecalls_proc();
-	fini_vecalls_sysctl();
 	fini_vecalls_cgroups();
 	ve_hook_unregister(&vzmon_stop_hook);
 }

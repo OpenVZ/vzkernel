@@ -1116,7 +1116,6 @@ static void call_timer_fn(struct timer_list *timer, void (*fn)(unsigned long),
 			  unsigned long data)
 {
 	int preempt_count = preempt_count();
-	struct ve_struct *ve;
 
 #ifdef CONFIG_LOCKDEP
 	/*
