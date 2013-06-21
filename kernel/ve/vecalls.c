@@ -358,7 +358,7 @@ static int __init init_vecalls_cgroups(void)
 {
 	struct cgroup_sb_opts opts = {
 		.name		= "container",
-		.subsys_bits	=
+		.subsys_mask	=
 			(1ul << ve_subsys_id) |
 			(1ul << devices_subsys_id) |
 			(1ul << freezer_subsys_id),
