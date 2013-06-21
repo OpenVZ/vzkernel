@@ -586,7 +586,7 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 	int ret = 0;
 
 	/* We only trust the superuser with rebooting the system. */
-	if (!nsown_capable(pid_ns->user_ns, CAP_SYS_BOOT))
+	if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))
 		return -EPERM;
 
 	/* For safety, we require "magic" arguments. */
