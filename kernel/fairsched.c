@@ -741,6 +741,8 @@ EXPORT_SYMBOL(fairsched_get_cpu_stat);
 
 #endif /* CONFIG_PROC_FS */
 
+extern int sysctl_sched_rt_runtime;
+
 int __init fairsched_init(void)
 {
 	struct vfsmount *mnt;

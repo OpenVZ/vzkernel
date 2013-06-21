@@ -1033,7 +1033,7 @@ static int __net_init audit_net_init(struct net *net)
 		.input = audit_receive,
 	};
 
-	sk = netlink_kernel_create(net, NETLINK_AUDIT, THIS_MODULE, &cfg);
+	sk = netlink_kernel_create(net, NETLINK_AUDIT, &cfg);
 	if (!sk) {
 		audit_panic("cannot initialize netlink socket");
 		return -ENODEV;
