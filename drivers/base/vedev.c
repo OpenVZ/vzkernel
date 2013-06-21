@@ -357,7 +357,7 @@ static void ve_device_del_one(struct ve_device *ve_dev, int event)
 	ve_device_del_link(ve_dev);
 	if (MAJOR(ve_dev->dev->devt)) {
 		type = ve_dev->dev->class == &block_class ? S_IFBLK : S_IFCHR;
-		set_device_perms_ve(ve_dev->ve, type, ve_dev->dev->devt, 00);
+		devcgroup_set_perms_ve(ve_dev->ve->css.cgroup, type, ve_dev->dev->devt, 00);
 	}
 	put_device(ve_dev->dev);
 	kfree(ve_dev);
@@ -414,7 +414,7 @@ static int ve_device_add(struct device *dev, struct ve_struct *ve)
 
 	if (MAJOR(dev->devt)) {
 		unsigned type = dev->class == &block_class ? S_IFBLK : S_IFCHR;
-		ret = set_device_perms_ve(ve, type, dev->devt, 06);
+		ret = devcgroup_set_perms_ve(ve->css.cgroup, type, dev->devt, 06);
 		if (ret < 0)
 			goto err;
 	}
