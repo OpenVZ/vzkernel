@@ -676,7 +676,7 @@ resizefs_out:
 		if (!capable(CAP_SYS_ADMIN))
 			return -EACCES;
 
-		return ext4_open_balloon(inode->i_sb, filp->f_vfsmnt);
+		return ext4_open_balloon(inode->i_sb, filp->f_path.mnt);
 
 	default:
 		return -ENOTTY;
