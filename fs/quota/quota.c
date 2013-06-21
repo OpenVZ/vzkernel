@@ -428,6 +428,7 @@ static long compat_quotactl(unsigned int cmds, unsigned int type,
 			struct if_dqblk idq;
 			struct fs_disk_quota fdq;
 			struct compat_dqblk cdq;
+			struct kqid qid;
 
 			sb = quotactl_block(special, cmds);
 			ret = PTR_ERR(sb);
@@ -436,7 +437,11 @@ static long compat_quotactl(unsigned int cmds, unsigned int type,
 			ret = check_quotactl_permission(sb, type, Q_GETQUOTA, id);
 			if (ret)
 				break;
-			ret = sb->s_qcop->get_dqblk(sb, type, id, &fdq);
+			qid = make_kqid(current_user_ns(), type, id);
+			ret = -EINVAL;
+			if (!qid_valid(qid))
+				break;
+			ret = sb->s_qcop->get_dqblk(sb, qid, &fdq);
 			copy_to_if_dqblk(&idq, &fdq);
 			if (ret)
 				break;
@@ -460,6 +465,7 @@ static long compat_quotactl(unsigned int cmds, unsigned int type,
 			struct if_dqblk idq;
 			struct fs_disk_quota fdq;
 			struct compat_dqblk cdq;
+			struct kqid qid;
 
 			sb = quotactl_block(special, cmds);
 			ret = PTR_ERR(sb);
@@ -470,6 +476,10 @@ static long compat_quotactl(unsigned int cmds, unsigned int type,
 				break;
 			ret = -EFAULT;
 			if (copy_from_user(&cdq, addr, sizeof(cdq)))
+				break;
+			qid = make_kqid(current_user_ns(), type, id);
+			ret = -EINVAL;
+			if (!qid_valid(qid))
 				break;
 			idq.dqb_ihardlimit = cdq.dqb_ihardlimit;
 			idq.dqb_isoftlimit = cdq.dqb_isoftlimit;
@@ -483,7 +493,7 @@ static long compat_quotactl(unsigned int cmds, unsigned int type,
 			if (cmds == QC_SETQUOTA || cmds == QC_SETUSE)
 				idq.dqb_valid |= QIF_USAGE;
 			copy_from_if_dqblk(&fdq, &idq);
-			ret = sb->s_qcop->set_dqblk(sb, type, id, &fdq);
+			ret = sb->s_qcop->set_dqblk(sb, qid, &fdq);
 			break;
 		}
 
