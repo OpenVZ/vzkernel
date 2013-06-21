@@ -147,7 +147,6 @@ sysfs_ve_access_list(struct dentry *dentry, char *list, size_t list_size,
 {
 	struct sysfs_dirent *sd = dentry->d_fsdata;
 	struct kmapset_link *link;
-	struct hlist_node *pos;
 	struct ve_struct *ve;
 	size_t ret;
 
@@ -162,7 +161,7 @@ sysfs_ve_access_list(struct dentry *dentry, char *list, size_t list_size,
 	ret = strlcpy(list, XATTR_VE_PREFIX "*", list_size) + 1;
 
 	rcu_read_lock();
-	hlist_for_each_entry_rcu(link, pos, &sd->s_ve_perms->links, map_link) {
+	hlist_for_each_entry_rcu(link, &sd->s_ve_perms->links, map_link) {
 		ve = container_of(link->key, struct ve_struct, ve_sysfs_perms);
 		ret += strlcpy(list + ret, XATTR_VE_PREFIX,
 				list_size > ret ? list_size - ret : 0);
@@ -556,7 +555,7 @@ static int sysfs_sd_permission(struct sysfs_dirent *sd, int mask)
 	if (ve_is_super(ve))
 		return 0;
 
-	if (sd->s_ns || sd->s_parent && sd->s_parent->s_ns)
+	if (sd->s_ns || (sd->s_parent && sd->s_parent->s_ns))
 		return 0;
 
 	if (sysfs_type(sd) == SYSFS_KOBJ_LINK)
