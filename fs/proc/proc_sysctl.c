@@ -37,14 +37,14 @@ static struct ctl_table root_table[] = {
 	{ }
 };
 
-static int sysctl_root_permissions(struct ctl_table_root *root,
-		struct nsproxy *namespaces, struct ctl_table *table)
+static int sysctl_root_permissions(struct ctl_table_header *head,
+		struct ctl_table *table)
 {
 	/**
 	 * FIXME: drag proc-sb here and use proc_in_container() or use
 	 * correspoding 'container' cgroup. For now nit_pid_ns is enough.
 	 */
-	if ((namespaces->pid_ns == &init_pid_ns) || (table->mode & S_ISVTX))
+	if ((current->nsproxy->pid_ns == &init_pid_ns) || (table->mode & S_ISVTX))
 		return table->mode;
 
 	return table->mode & ~S_IWUGO;
@@ -774,7 +774,7 @@ static int proc_sys_getattr(struct vfsmount *mnt, struct dentry *dentry, struct 
 		umode_t mode = table->mode;
 
 		if (root->permissions)
-			mode = root->permissions(root, current->nsproxy, table);
+			mode = root->permissions(head, table);
 
 		stat->mode = (stat->mode & S_IFMT) | (mode & S_IRWXUGO);
 	}
