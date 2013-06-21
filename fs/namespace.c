@@ -173,7 +173,7 @@ static struct mount *alloc_vfsmnt(const char *name)
 			goto out_free_cache;
 
 		if (name) {
-			mnt->mnt_devname = kstrdup(name, GFP_KERNEL_UBC);
+			mnt->mnt_devname = kstrdup(name, GFP_KERNEL);
 			if (!mnt->mnt_devname)
 				goto out_free_id;
 		}
@@ -773,9 +773,8 @@ static struct mount *skip_mnt_tree(struct mount *p)
 struct vfsmount *
 vfs_kern_mount(struct file_system_type *type, int flags, const char *name, void *data)
 {
-	struct vfsmount vfsmnt;
 	struct mount *mnt;
-	int err;
+	struct dentry *root;
 
 	if (!type)
 		return ERR_PTR(-ENODEV);
@@ -787,18 +786,18 @@ vfs_kern_mount(struct file_system_type *type, int flags, const char *name, void 
 	if (flags & MS_KERNMOUNT)
 		mnt->mnt.mnt_flags = MNT_INTERNAL;
 
-	err = mount_fs(type, flags, name, data, &vfsmnt);
-	if (err) {
+	root = mount_fs(type, flags, name, data);
+	if (IS_ERR(root)) {
 		free_vfsmnt(mnt);
-		return ERR_PTR(err);
+		return ERR_CAST(root);
 	}
 
-	mnt->mnt.mnt_root = vfsmnt.mnt_root;
-	mnt->mnt.mnt_sb = vfsmnt.mnt_sb;
+	mnt->mnt.mnt_root = root;
+	mnt->mnt.mnt_sb = root->d_sb;
 	mnt->mnt_mountpoint = mnt->mnt.mnt_root;
 	mnt->mnt_parent = mnt;
 	br_write_lock(&vfsmount_lock);
-	list_add_tail(&mnt->mnt_instance, &vfsmnt.mnt_sb->s_mounts);
+	list_add_tail(&mnt->mnt_instance, &root->d_sb->s_mounts);
 	br_write_unlock(&vfsmount_lock);
 	return &mnt->mnt;
 }
@@ -1306,8 +1305,7 @@ static int do_umount(struct mount *mnt, int flags)
  */
 static inline bool may_mount(void)
 {
-	return ns_capable(current->nsproxy->mnt_ns->user_ns, CAP_SYS_ADMIN) ||
-		nsown_capable(CAP_VE_SYS_ADMIN);
+	return ns_capable(current->nsproxy->mnt_ns->user_ns, CAP_SYS_ADMIN);
 }
 
 /*
@@ -1862,7 +1860,7 @@ static int do_remount(struct path *path, int flags, int mnt_flags,
 	down_write(&sb->s_umount);
 	if (flags & MS_BIND)
 		err = change_mount_flags(path->mnt, flags);
-	else if (!capable(CAP_SYS_ADMIN) && !nsown_capable(CAP_VE_SYS_ADMIN))
+	else if (!capable(CAP_SYS_ADMIN))
 		err = -EPERM;
 	else
 		err = do_remount_sb(sb, flags, data, 0);
@@ -2786,7 +2784,7 @@ void __init mnt_init(void)
 	init_rwsem(&namespace_sem);
 
 	mnt_cache = kmem_cache_create("mnt_cache", sizeof(struct mount),
-			0, SLAB_HWCACHE_ALIGN | SLAB_PANIC | SLAB_UBC, NULL);
+			0, SLAB_HWCACHE_ALIGN | SLAB_PANIC, NULL);
 
 	printk(KERN_INFO "Mount-cache hash table entries: %lu\n", HASH_SIZE);
 
