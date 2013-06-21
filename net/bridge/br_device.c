@@ -115,7 +115,7 @@ int br_xmit(struct sk_buff *skb, struct net_bridge_port *port)
 
 	if (dest[0] & 1)
 		br_xmit_deliver(br, port, skb);
-	else if ((dst = __br_fdb_get(br, dest)) != NULL)
+	else if ((dst = __br_fdb_get(br, dest, 0)) != NULL)
 		ret = br_deliver(dst->dst, skb, 0);
 	else
 		br_xmit_deliver(br, port, skb);
