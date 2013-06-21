@@ -276,12 +276,11 @@ struct user_beancounter *get_beancounter_byuid(uid_t uid, int create)
 	struct user_beancounter *new_ub, *ub;
 	unsigned long flags;
 	struct hlist_head *hash;
-	struct hlist_node *ptr;
 
 	hash = &ub_hash[ub_hash_fun(uid)];
 
 	rcu_read_lock();
-	hlist_for_each_entry_rcu(ub, ptr, hash, ub_hash) {
+	hlist_for_each_entry_rcu(ub, hash, ub_hash) {
 		if (ub->ub_uid != uid)
 			continue;
 
@@ -311,7 +310,7 @@ struct user_beancounter *get_beancounter_byuid(uid_t uid, int create)
 
 	spin_lock_irqsave(&ub_hash_lock, flags);
 
-	hlist_for_each_entry(ub, ptr, hash, ub_hash) {
+	hlist_for_each_entry(ub, hash, ub_hash) {
 		if (ub->ub_uid != uid)
 			continue;
 
@@ -429,7 +428,7 @@ static void delayed_release_beancounter(struct work_struct *w)
 		atomic_add(INT_MIN/2, &ub->ub_refcount);
 		printk(KERN_ERR "UB: leaked beancounter %u (%p)\n",
 				ub->ub_uid, ub);
-		add_taint(TAINT_CRAP);
+		add_taint(TAINT_CRAP, LOCKDEP_STILL_OK);
 		return;
 	}
 
