@@ -78,6 +78,7 @@
 #ifndef __GENKSYMS__
 #include <linux/user_namespace.h>
 #endif
+#include <linux/ve.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
