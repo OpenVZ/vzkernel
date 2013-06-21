@@ -1619,6 +1619,7 @@ out_unlock:
 static int cpuset_write_cpumask(struct cgroup *cgrp, struct cftype *cft,
 				const char *buf)
 {
+	struct cpuset *cs = cgroup_cs(cgrp);
 	cpuset_filetype_t type = cft->private;
 	int retval;
 	cpumask_var_t cpus_allowed;
