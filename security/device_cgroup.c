@@ -1020,6 +1020,7 @@ int devcgroup_default_perms_ve(struct cgroup *cgroup)
 		kfree_rcu(wl, rcu);
 	}
 	err = dev_exceptions_copy(&dev_cgroup->exceptions, &default_whitelist);
+	dev_cgroup->behavior = DEVCG_DEFAULT_DENY;
 	mutex_unlock(&devcgroup_mutex);
 
 	return err;
