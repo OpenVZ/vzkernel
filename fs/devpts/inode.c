@@ -457,7 +457,8 @@ static struct dentry *devpts_mount(struct file_system_type *fs_type,
 	/* Require newinstance for all user namespace mounts to ensure
 	 * the mount options are not changed.
 	 */
-	if ((current_user_ns() != &init_user_ns) && !opts.newinstance)
+	if (!IS_ENABLED(CONFIG_VE) &&
+	    (current_user_ns() != &init_user_ns) && !opts.newinstance)
 		return ERR_PTR(-EINVAL);
 
 	if (opts.newinstance)
