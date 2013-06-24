@@ -234,6 +234,9 @@ static struct log_state {
 	u64			_seen_seq;
 } log_state;
 
+#undef get_exec_env
+#define get_exec_env	get_ve0
+
 #define LOG_STATE(field)	(log_state._##field)
 
 #ifdef CONFIG_VE
