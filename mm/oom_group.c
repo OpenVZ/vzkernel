@@ -57,16 +57,23 @@ int get_task_oom_score_adj(struct task_struct *t)
 {
 	struct oom_group_pattern *gp;
 	unsigned long flags;
+	const struct cred *cred;
+	uid_t task_uid;
 	int adj = 0;
 
 	if (test_bit(UB_OOM_MANUAL_SCORE_ADJ, &get_task_ub(t)->ub_flags))
 		return t->signal->oom_score_adj;
 
+	rcu_read_lock();
+	cred = __task_cred(t);
+	task_uid = from_kuid_munged(cred->user_ns, cred->uid);
+	rcu_read_unlock();
+
 	read_lock_irqsave(&oom_group_lock, flags);
 	list_for_each_entry(gp, &oom_group_list_head, group_list) {
-		if (gp->oom_uid >= 0 && task_uid(t) != gp->oom_uid)
+		if (gp->oom_uid >= 0 && task_uid != gp->oom_uid)
 			continue;
-		if (gp->oom_uid < -1 && task_uid(t) >= -gp->oom_uid)
+		if (gp->oom_uid < -1 && task_uid >= -gp->oom_uid)
 			continue;
 		if (!oom_match_comm(t->comm, gp->comm))
 			continue;
