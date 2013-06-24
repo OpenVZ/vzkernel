@@ -587,8 +587,8 @@ static int bc_lookset(struct inode *ino, void *data)
 	ino->i_mode = S_IFDIR | S_IRUSR | S_IXUSR;
 	/* subbeancounters are not included, but who cares? */
 	ino->__i_nlink = num_entries + 2;
-	ino->i_gid = 0;
-	ino->i_uid = 0;
+	ino->i_gid = GLOBAL_ROOT_GID;
+	ino->i_uid = GLOBAL_ROOT_UID;
 	return 0;
 }
 
@@ -680,8 +680,8 @@ static int bc_lookset_entry(struct inode *ino, void *data)
 	ino->i_fop = &bc_file_ops,
 	ino->i_mode = S_IFREG | S_IRUSR;
 	ino->__i_nlink = 1;
-	ino->i_gid = 0;
-	ino->i_uid = 0;
+	ino->i_gid = GLOBAL_ROOT_GID;
+	ino->i_uid = GLOBAL_ROOT_UID;
 	return 0;
 }
 
@@ -710,8 +710,8 @@ static int bc_lookset_root_entry(struct inode *ino, void *data)
 	ino->i_fop = de->u.fops;
 	ino->i_mode = S_IFREG | S_IRUSR;
 	ino->__i_nlink = 1;
-	ino->i_gid = 0;
-	ino->i_uid = 0;
+	ino->i_gid = GLOBAL_ROOT_GID;
+	ino->i_uid = GLOBAL_ROOT_UID;
 	return 0;
 }
 
