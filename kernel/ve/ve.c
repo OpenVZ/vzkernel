@@ -461,11 +461,9 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 	if (!ve->sched_lat_ve.cur)
 		goto err_lat;
 
-/*
 	err = ve_log_init(ve);
 	if (err)
 		goto err_log;
-*/
 
 do_init:
 	init_rwsem(&ve->op_sem);
@@ -488,7 +486,7 @@ static void ve_destroy(struct cgroup *cg)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 
-	//ve_log_destroy(ve);
+	ve_log_destroy(ve);
 	kfree(ve->binfmt_misc);
 	free_percpu(ve->sched_lat_ve.cur);
 	kfree(ve->ve_name);
