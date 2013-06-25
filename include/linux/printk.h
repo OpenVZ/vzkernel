@@ -133,7 +133,8 @@ int ve_vprintk(int dst, const char *fmt, va_list args);
 asmlinkage __printf(2, 3) __cold
 int ve_printk(int dst, const char *fmt, ...);
 
-int init_ve_log_state(struct ve_struct *ve);
+int ve_log_init(struct ve_struct *ve);
+void ve_log_destroy(struct ve_struct *ve);
 
 /*
  * Special printk facility for scheduler use only, _DO_NOT_USE_ !
@@ -183,9 +184,13 @@ int ve_printk(int dst, const char *s, ...)
 	return 0;
 }
 static inline
-int init_ve_log_state(struct ve_struct *ve)
+int ve_log_init(struct ve_struct *ve)
 {
 	return 0;
+}
+static inline
+void ve_log_destroy(struct ve_struct *ve)
+{
 }
 static inline __printf(1, 2) __cold
 int printk_sched(const char *s, ...)
