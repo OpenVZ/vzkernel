@@ -86,9 +86,7 @@ struct ve_struct {
 #endif /* CONFIG_VE_IPTABLES */
 #endif
 
-	wait_queue_head_t	*log_wait;
 	void			*log_state;
-	char			*log_buf;
 #define VE_LOG_BUF_LEN		4096
 
 	struct list_head	cleanup_list;

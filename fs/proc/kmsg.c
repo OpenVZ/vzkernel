@@ -20,13 +20,7 @@
 #include <asm/uaccess.h>
 #include <asm/io.h>
 
-extern wait_queue_head_t log_wait;
-
-#ifdef CONFIG_VE
-# define ve_log_wait	(*get_exec_env()->log_wait)
-#else
-# define ve_log_wait	log_wait
-#endif
+extern void log_poll_wait(struct file *filp, poll_table *p);
 
 static int kmsg_open(struct inode * inode, struct file * file)
 {
@@ -50,7 +44,7 @@ static ssize_t kmsg_read(struct file *file, char __user *buf,
 
 static unsigned int kmsg_poll(struct file *file, poll_table *wait)
 {
-	poll_wait(file, &ve_log_wait, wait);
+	log_poll_wait(file, wait);
 	if (do_syslog(SYSLOG_ACTION_SIZE_UNREAD, NULL, 0, SYSLOG_FROM_PROC))
 		return POLLIN | POLLRDNORM;
 	return 0;
