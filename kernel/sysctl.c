@@ -2738,8 +2738,7 @@ int proc_dointvec_virtual(struct ctl_table *table, int write,
 
 static inline bool sysctl_in_container(void)
 {
-	/* FIXME: see sysctl_root_permissions() */
-	return current->nsproxy->pid_ns != &init_pid_ns;
+	return !ve_is_super(get_exec_env());
 }
 
 int proc_dointvec_immutable(struct ctl_table *table, int write,
