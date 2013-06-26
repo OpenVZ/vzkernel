@@ -855,6 +855,7 @@ static void cgroup_free_fn(struct work_struct *work)
 		ss->css_free(cgrp);
 
 	cgrp->root->number_of_cgroups--;
+	kfree(cgrp->release_agent);
 	mutex_unlock(&cgroup_mutex);
 
 	/*
@@ -1095,6 +1096,7 @@ static int rebind_subsystems(struct cgroupfs_root *root,
 static int cgroup_show_options(struct seq_file *seq, struct dentry *dentry)
 {
 	struct cgroupfs_root *root = dentry->d_sb->s_fs_info;
+	struct cgroup *top_cgrp;
 	struct cgroup_subsys *ss;
 
 	mutex_lock(&cgroup_root_mutex);
@@ -1106,8 +1108,16 @@ static int cgroup_show_options(struct seq_file *seq, struct dentry *dentry)
 		seq_puts(seq, ",noprefix");
 	if (root->flags & CGRP_ROOT_XATTR)
 		seq_puts(seq, ",xattr");
-	if (strlen(root->release_agent_path))
-		seq_printf(seq, ",release_agent=%s", root->release_agent_path);
+
+	/* bindmount to attribute file? */
+	if (!S_ISDIR(dentry->d_inode->i_mode))
+		dentry = dentry->d_parent;
+	top_cgrp = dentry->d_fsdata;
+	/* release_agent is stored on top cgroup */
+	top_cgrp = top_cgrp->top_cgroup;
+	if (top_cgrp->release_agent)
+		seq_printf(seq, ",release_agent=%s", top_cgrp->release_agent);
+
 	if (test_bit(CGRP_CPUSET_CLONE_CHILDREN, &root->top_cgroup.flags))
 		seq_puts(seq, ",clone_children");
 	if (strlen(root->name))
@@ -1278,14 +1288,13 @@ static int parse_cgroupfs_options(char *data, struct cgroup_sb_opts *opts)
 	if (!opts->subsys_mask && !opts->name)
 		return -EINVAL;
 
-	if (!ve_is_super(get_exec_env())) {
-		/* Forbid all subsystems inside container */
-		if (opts->subsys_mask)
-			return -ENOENT;
-		/* Allow only one hierarchy: "systemd" */
-		if (strcmp(opts->name, "systemd"))
-			return -EPERM;
-	}
+	/* virtualize 'systemd' hierarchy */
+	if (!opts->subsys_mask && opts->name && !strcmp(opts->name, "systemd"))
+		set_bit(CGRP_ROOT_VIRTUAL, &opts->flags);
+
+	/* forbid non-virtualized hierarchies in containers */
+	if (!ve_is_super(get_exec_env()) && !test_bit(CGRP_ROOT_VIRTUAL, &opts->flags))
+		return opts->subsys_mask ? -ENOENT : -EPERM;
 
 	/*
 	 * Grab references on all the modules we'll need, so the subsystems
@@ -1390,8 +1399,11 @@ static int cgroup_remount(struct super_block *sb, int *flags, char *data)
 	/* re-populate subsystem files */
 	cgroup_populate_dir(cgrp, false, added_mask);
 
-	if (opts.release_agent)
-		strcpy(root->release_agent_path, opts.release_agent);
+	if (opts.release_agent) {
+		kfree(cgrp->release_agent);
+		cgrp->release_agent = opts.release_agent;
+		opts.release_agent = NULL;
+	}
  out_unlock:
 	kfree(opts.release_agent);
 	kfree(opts.name);
@@ -1415,6 +1427,7 @@ static void init_cgroup_housekeeping(struct cgroup *cgrp)
 	INIT_LIST_HEAD(&cgrp->files);
 	INIT_LIST_HEAD(&cgrp->css_sets);
 	INIT_LIST_HEAD(&cgrp->allcg_node);
+	INIT_LIST_HEAD(&cgrp->cgroup_ve_list);
 	INIT_LIST_HEAD(&cgrp->release_list);
 	INIT_LIST_HEAD(&cgrp->pidlists);
 	INIT_WORK(&cgrp->free_work, cgroup_free_fn);
@@ -1503,8 +1516,6 @@ static struct cgroupfs_root *cgroup_root_from_opts(struct cgroup_sb_opts *opts)
 	root->subsys_mask = opts->subsys_mask;
 	root->flags = opts->flags;
 	ida_init(&root->cgroup_ida);
-	if (opts->release_agent)
-		strcpy(root->release_agent_path, opts->release_agent);
 	if (opts->name)
 		strcpy(root->name, opts->name);
 	if (opts->cpuset_clone_children)
@@ -1586,6 +1597,7 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 	struct super_block *sb;
 	struct cgroupfs_root *new_root;
 	struct inode *inode;
+	struct dentry *root_dentry;
 
 	/* First find the desired set of subsystems */
 	if (!(flags & MS_KERNMOUNT)) {
@@ -1691,6 +1703,11 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 		BUG_ON(!list_empty(&root_cgrp->children));
 		BUG_ON(root->number_of_cgroups != 1);
 
+		if (!test_bit(CGRP_ROOT_VIRTUAL, &opts.flags)) {
+			root_cgrp->release_agent = opts.release_agent;
+			opts.release_agent = NULL;
+		}
+
 		cred = override_creds(&init_cred);
 		cgroup_populate_dir(root_cgrp, true, root->subsys_mask);
 		revert_creds(cred);
@@ -1718,9 +1735,38 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 		drop_parsed_module_refcounts(opts.subsys_mask);
 	}
 
+	if (!test_bit(CGRP_ROOT_VIRTUAL, &opts.flags)) {
+		root_dentry = dget(sb->s_root);
+	} else {
+		struct ve_struct *ve = get_exec_env();
+		struct cgroup *top_cgrp;
+
+		top_cgrp = cgroup_kernel_open(&root->top_cgroup, 0, ve->ve_name);
+		ret = PTR_ERR(top_cgrp);
+		if (IS_ERR(top_cgrp))
+			goto drop_new_super;
+
+		/* create fake root-cgroup in virtualized hierarchy */
+		if (top_cgrp == NULL) {
+			top_cgrp = cgroup_kernel_open(&root->top_cgroup, CGRP_CREAT, ve->ve_name);
+			ret = PTR_ERR(top_cgrp);
+			if (IS_ERR(top_cgrp))
+				goto drop_new_super;
+
+			mutex_lock(&cgroup_mutex);
+			top_cgrp->release_agent = opts.release_agent;
+			opts.release_agent = NULL;
+			mutex_unlock(&cgroup_mutex);
+		}
+
+		/* mount it as bindmount to fist-level fake root-cgroup */
+		root_dentry = dget(top_cgrp->dentry);
+		cgroup_kernel_close(top_cgrp);
+	}
+
 	kfree(opts.release_agent);
 	kfree(opts.name);
-	return dget(sb->s_root);
+	return root_dentry;
 
  unlock_drop:
 	mutex_unlock(&cgroup_root_mutex);
@@ -1788,6 +1834,7 @@ static struct file_system_type cgroup_fs_type = {
 	.name = "cgroup",
 	.mount = cgroup_mount,
 	.kill_sb = cgroup_kill_sb,
+	.fs_flags = FS_VIRTUALIZED,
 };
 
 static struct kobject *cgroup_kobj;
@@ -1828,6 +1875,10 @@ int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
 		if ((start -= len) < buf)
 			goto out;
 		memcpy(start, name, len);
+
+		/* hide fake top-cgroup in path */
+		if (cgrp == cgrp->top_cgroup)
+			cgrp = &cgrp->root->top_cgroup;
 
 		if (--start < buf)
 			goto out;
@@ -2234,13 +2285,23 @@ static int cgroup_procs_write(struct cgroup *cgrp, struct cftype *cft, u64 tgid)
 static int cgroup_release_agent_write(struct cgroup *cgrp, struct cftype *cft,
 				      const char *buffer)
 {
-	BUILD_BUG_ON(sizeof(cgrp->root->release_agent_path) < PATH_MAX);
+	char *release_agent;
+
 	if (strlen(buffer) >= PATH_MAX)
 		return -EINVAL;
-	if (!cgroup_lock_live_group(cgrp))
+
+	release_agent = kstrdup(buffer, GFP_KERNEL);
+	if (!release_agent)
+		return -ENOMEM;
+
+	if (!cgroup_lock_live_group(cgrp)) {
+		kfree(release_agent);
 		return -ENODEV;
+	}
+
 	mutex_lock(&cgroup_root_mutex);
-	strcpy(cgrp->root->release_agent_path, buffer);
+	kfree(cgrp->release_agent);
+	cgrp->release_agent = release_agent;
 	mutex_unlock(&cgroup_root_mutex);
 	mutex_unlock(&cgroup_mutex);
 	return 0;
@@ -2251,7 +2312,8 @@ static int cgroup_release_agent_show(struct cgroup *cgrp, struct cftype *cft,
 {
 	if (!cgroup_lock_live_group(cgrp))
 		return -ENODEV;
-	seq_puts(seq, cgrp->root->release_agent_path);
+	if (cgrp->release_agent)
+		seq_puts(seq, cgrp->release_agent);
 	seq_putc(seq, '\n');
 	mutex_unlock(&cgroup_mutex);
 	return 0;
@@ -2747,9 +2809,9 @@ static int cgroup_addrm_files(struct cgroup *cgrp, struct cgroup_subsys *subsys,
 		/* does cft->flags tell us to skip this file on @cgrp? */
 		if ((cft->flags & CFTYPE_INSANE) && cgroup_sane_behavior(cgrp))
 			continue;
-		if ((cft->flags & CFTYPE_NOT_ON_ROOT) && !cgrp->parent)
+		if ((cft->flags & CFTYPE_NOT_ON_ROOT) && cgrp->top_cgroup == cgrp)
 			continue;
-		if ((cft->flags & CFTYPE_ONLY_ON_ROOT) && cgrp->parent)
+		if ((cft->flags & CFTYPE_ONLY_ON_ROOT) && cgrp->top_cgroup != cgrp)
 			continue;
 
 		if (is_add) {
@@ -4216,6 +4278,16 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 	cgrp->parent = parent;
 	cgrp->root = parent->root;
 
+	if (test_bit(CGRP_ROOT_VIRTUAL, &root->flags) && parent == &root->top_cgroup) {
+		cgrp->top_cgroup = cgrp;
+		cgrp->cgroup_ve = get_exec_env();
+		list_add(&cgrp->cgroup_ve_list, &cgrp->cgroup_ve->ve_cgroup_head);
+	} else {
+		cgrp->top_cgroup = parent->top_cgroup;
+		cgrp->cgroup_ve = parent->cgroup_ve;
+		list_add(&cgrp->cgroup_ve_list, &parent->cgroup_ve_list);
+	}
+
 	if (notify_on_release(parent))
 		set_bit(CGRP_NOTIFY_ON_RELEASE, &cgrp->flags);
 
@@ -4369,6 +4441,7 @@ static int cgroup_destroy_locked(struct cgroup *cgrp)
 	/* delete this cgroup from parent->children */
 	list_del_rcu(&cgrp->sibling);
 	list_del_init(&cgrp->allcg_node);
+	list_del(&cgrp->cgroup_ve_list);
 
 	dget(d);
 	cgroup_d_remove_dir(d);
@@ -4821,6 +4894,10 @@ static int proc_cgroupstats_show(struct seq_file *m, void *v)
 	int i;
 
 	seq_puts(m, "#subsys_name\thierarchy\tnum_cgroups\tenabled\n");
+
+	if (!ve_is_super(get_exec_env()))
+		return 0;
+
 	/*
 	 * ideally we don't want subsystems moving around while we do this.
 	 * cgroup_mutex is also necessary to guarantee an atomic snapshot of
@@ -5094,11 +5171,12 @@ static void cgroup_release_agent(struct work_struct *work)
 	raw_spin_lock(&release_list_lock);
 	while (!list_empty(&release_list)) {
 		char *argv[3], *envp[3];
-		int i;
+		int i, err;
 		char *pathbuf = NULL, *agentbuf = NULL;
 		struct cgroup *cgrp = list_entry(release_list.next,
 						    struct cgroup,
 						    release_list);
+		struct ve_struct *ve;
 		list_del_init(&cgrp->release_list);
 		raw_spin_unlock(&release_list_lock);
 
@@ -5120,9 +5198,11 @@ static void cgroup_release_agent(struct work_struct *work)
 			goto continue_free;
 		if (cgroup_path(cgrp, pathbuf, PAGE_SIZE) < 0)
 			goto continue_free;
-		agentbuf = kstrdup(cgrp->root->release_agent_path, GFP_KERNEL);
+		agentbuf = kstrdup(cgrp->top_cgroup->release_agent, GFP_KERNEL);
 		if (!agentbuf)
 			goto continue_free;
+
+		ve = get_ve(cgrp->top_cgroup->cgroup_ve);
 
 		i = 0;
 		argv[i++] = agentbuf;
@@ -5139,7 +5219,28 @@ static void cgroup_release_agent(struct work_struct *work)
 		 * since the exec could involve hitting disk and hence
 		 * be a slow process */
 		mutex_unlock(&cgroup_mutex);
-		call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
+
+		if (!ve) {
+			err = call_usermodehelper(argv[0], argv, envp,
+						  UMH_WAIT_EXEC);
+		} else {
+			down_read(&ve->op_sem);
+			err = 0;
+			if (ve->ve_kthread_task)
+				err = call_usermodehelper_by(
+						&ve->ve_kthread_worker,
+						argv[0], argv, envp,
+						UMH_WAIT_EXEC,
+						NULL, NULL, NULL);
+			up_read(&ve->op_sem);
+			put_ve(ve);
+		}
+
+		if (err < 0)
+			pr_warn_ratelimited("cgroup release_agent "
+					    "%s %s failed: %d\n",
+					    agentbuf, pathbuf, err);
+
 		mutex_lock(&cgroup_mutex);
  continue_free:
 		kfree(pathbuf);
@@ -5557,7 +5658,7 @@ struct cgroup *cgroup_get_root(struct vfsmount *mnt)
 EXPORT_SYMBOL(cgroup_get_root);
 
 struct cgroup *cgroup_kernel_open(struct cgroup *parent,
-		enum cgroup_open_flags flags, char *name)
+		enum cgroup_open_flags flags, const char *name)
 {
 	struct dentry *dentry;
 	struct cgroup *cgrp;
@@ -5591,7 +5692,7 @@ out:
 }
 EXPORT_SYMBOL(cgroup_kernel_open);
 
-int cgroup_kernel_remove(struct cgroup *parent, char *name)
+int cgroup_kernel_remove(struct cgroup *parent, const char *name)
 {
 	struct dentry *dentry;
 	int ret;
@@ -5632,3 +5733,11 @@ void cgroup_kernel_close(struct cgroup *cgrp)
 	}
 }
 EXPORT_SYMBOL(cgroup_kernel_close);
+
+void cgroup_kernel_destroy(struct cgroup *cgrp)
+{
+	set_bit(CGRP_SELF_DESTRUCTION, &cgrp->flags);
+	set_bit(CGRP_RELEASABLE, &cgrp->flags);
+	check_for_release(cgrp);
+}
+EXPORT_SYMBOL(cgroup_kernel_destroy);
