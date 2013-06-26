@@ -469,6 +469,7 @@ do_init:
 	init_rwsem(&ve->op_sem);
 	mutex_init(&ve->sync_mutex);
 	INIT_LIST_HEAD(&ve->devices);
+	INIT_LIST_HEAD(&ve->ve_cgroup_head);
 	ve->meminfo_val = VE_MEMINFO_DEFAULT;
 	kmapset_init_key(&ve->ve_sysfs_perms);
 
@@ -480,6 +481,24 @@ err_lat:
 	kmem_cache_free(ve_cachep, ve);
 err_ve:
 	return ERR_PTR(err);
+}
+
+static void ve_offline(struct cgroup *cg)
+{
+	struct ve_struct *ve = cgroup_ve(cg);
+	struct cgroup *cgrp;
+	struct inode *dir;
+	int ret = 0;
+
+	cgroup_lock();
+	while (!list_empty(&ve->ve_cgroup_head)) {
+		cgrp = list_entry(ve->ve_cgroup_head.prev,
+				struct cgroup, cgroup_ve_list);
+		cgrp->cgroup_ve = NULL;
+		list_del_init(&cgrp->cgroup_ve_list);
+		cgroup_kernel_destroy(cgrp);
+	}
+	cgroup_unlock();
 }
 
 static void ve_destroy(struct cgroup *cg)
@@ -608,6 +627,7 @@ struct cgroup_subsys ve_subsys = {
 	.name		= "ve",
 	.subsys_id	= ve_subsys_id,
 	.css_alloc	= ve_create,
+	.css_offline	= ve_offline,
 	.css_free	= ve_destroy,
 	.can_attach	= ve_can_attach,
 	.attach		= ve_attach,
