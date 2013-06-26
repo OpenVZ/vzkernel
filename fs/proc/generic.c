@@ -36,13 +36,9 @@ static int proc_match(unsigned int len, const char *name, struct proc_dir_entry 
 	return !memcmp(name, de->name, len);
 }
 
-inline bool proc_in_container(struct super_block *sb)
+static inline bool proc_in_container(struct super_block *sb)
 {
-	/**
-	 * FIXME: store and use corresponding cgroup,
-	 * for now direct linking to pid_ns is enough.
-	 */
-	return sb->s_fs_info != &init_pid_ns;
+	return !ve_is_super(get_exec_env());
 }
 
 static int proc_notify_change(struct dentry *dentry, struct iattr *iattr)
