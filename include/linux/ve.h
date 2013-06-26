@@ -104,6 +104,7 @@ struct ve_struct {
 	struct mutex		sync_mutex;
 
 	struct kmapset_key	ve_sysfs_perms;
+	struct list_head	ve_cgroup_head;
 };
 
 #define VE_MEMINFO_DEFAULT      1       /* default behaviour */
