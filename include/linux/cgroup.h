@@ -52,10 +52,11 @@ enum cgroup_open_flags {
 struct vfsmount *cgroup_kernel_mount(struct cgroup_sb_opts *opts);
 struct cgroup *cgroup_get_root(struct vfsmount *mnt);
 struct cgroup *cgroup_kernel_open(struct cgroup *parent,
-		enum cgroup_open_flags flags, char *name);
-int cgroup_kernel_remove(struct cgroup *parent, char *name);
+		enum cgroup_open_flags flags, const char *name);
+int cgroup_kernel_remove(struct cgroup *parent, const char *name);
 int cgroup_kernel_attach(struct cgroup *cgrp, struct task_struct *tsk);
 void cgroup_kernel_close(struct cgroup *cgrp);
+void cgroup_kernel_destroy(struct cgroup *cgrp);
 
 extern int cgroup_init_early(void);
 extern int cgroup_init(void);
@@ -237,6 +238,10 @@ struct cgroup {
 	/* The path to use for release notifications. */
 	char *release_agent;
 
+	/* Owner VE for fake cgroup hierarchy */
+	struct ve_struct *cgroup_ve;
+	struct list_head cgroup_ve_list;
+
 	/*
 	 * List of cg_cgroup_links pointing at css_sets with
 	 * tasks in this cgroup. Protected by css_set_lock
@@ -314,6 +319,7 @@ enum {
 
 	CGRP_ROOT_NOPREFIX	= (1 << 1), /* mounted subsystems have no named prefix */
 	CGRP_ROOT_XATTR		= (1 << 2), /* supports extended attributes */
+	CGRP_ROOT_VIRTUAL,	= (1 << 3), /* VE-based root-cgroup virtualization */
 };
 
 /*
@@ -356,9 +362,6 @@ struct cgroupfs_root {
 
 	/* IDs for cgroups in this hierarchy */
 	struct ida cgroup_ida;
-
-	/* The path to use for release notifications. */
-	char release_agent_path[PATH_MAX];
 
 	/* The name for this hierarchy - may be empty */
 	char name[MAX_CGROUP_ROOT_NAMELEN];
