@@ -40,11 +40,7 @@ static struct ctl_table root_table[] = {
 static int sysctl_root_permissions(struct ctl_table_header *head,
 		struct ctl_table *table)
 {
-	/**
-	 * FIXME: drag proc-sb here and use proc_in_container() or use
-	 * correspoding 'container' cgroup. For now nit_pid_ns is enough.
-	 */
-	if ((current->nsproxy->pid_ns == &init_pid_ns) || (table->mode & S_ISVTX))
+	if (ve_is_super(get_exec_env()) || (table->mode & S_ISVTX))
 		return table->mode;
 
 	return table->mode & ~S_IWUGO;
