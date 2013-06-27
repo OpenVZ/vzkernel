@@ -60,6 +60,7 @@ extern struct mutex ve_list_lock;
 extern struct ve_struct *get_ve_by_id(envid_t);
 extern struct ve_struct *__find_ve_by_id(envid_t);
 extern struct ve_struct *get_ve_by_name(const char *name);
+extern struct ve_struct *__find_ve_by_name(const char *name);
 
 struct env_create_param3;
 extern int real_env_create(envid_t veid, unsigned flags, u32 class_id,
