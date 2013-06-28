@@ -1176,6 +1176,7 @@ enum {
 	Opt_dioread_nolock, Opt_dioread_lock,
 	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
 	Opt_max_dir_size_kb, Opt_nojournal_checksum, Opt_balloon_ino,
+	Opt_pfcache_csum, Opt_nopfcache_csum,
 };
 
 static const match_table_t tokens = {
@@ -1254,6 +1255,8 @@ static const match_table_t tokens = {
 	{Opt_noinit_itable, "noinit_itable"},
 	{Opt_max_dir_size_kb, "max_dir_size_kb=%u"},
 	{Opt_balloon_ino, "balloon_ino=%u"},
+	{Opt_pfcache_csum, "pfcache_csum"},
+	{Opt_nopfcache_csum, "nopfcache_csum"},
 	{Opt_removed, "check=none"},	/* mount option from ext2/3 */
 	{Opt_removed, "nocheck"},	/* mount option from ext2/3 */
 	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
@@ -1456,6 +1459,8 @@ static const struct mount_opts {
 	{Opt_jqfmt_vfsv1, QFMT_VFS_V1, MOPT_QFMT},
 	{Opt_max_dir_size_kb, 0, MOPT_GTE0},
 	{Opt_balloon_ino, 0, 0},
+	{Opt_pfcache_csum, 0, 0},
+	{Opt_nopfcache_csum, 0, 0},
 	{Opt_err, 0, 0}
 };
 
@@ -1629,6 +1634,12 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
 			IOPRIO_PRIO_VALUE(IOPRIO_CLASS_BE, arg);
 	} else if (token == Opt_balloon_ino) {
 		*balloon_ino = arg;
+	} else if (token == Opt_pfcache_csum) {
+		if (capable(CAP_SYS_ADMIN))
+			set_opt2(sb, PFCACHE_CSUM);
+	} else if (token == Opt_nopfcache_csum) {
+		if (capable(CAP_SYS_ADMIN))
+			clear_opt2(sb, PFCACHE_CSUM);
 	} else if (m->flags & MOPT_DATAJ) {
 		if (is_remount) {
 			if (!sbi->s_journal)
@@ -1888,6 +1899,13 @@ static int _ext4_show_options(struct seq_file *seq, struct super_block *sb,
 
 	if (sbi->s_balloon_ino)
 		SEQ_OPTS_PRINT("balloon_ino=%ld", sbi->s_balloon_ino->i_ino);
+
+	if (ve_is_super(get_exec_env())) {
+		if (test_opt2(sb, PFCACHE_CSUM))
+			SEQ_OPTS_PUTS("pfcache_csum");
+		else if (nodefs)
+			SEQ_OPTS_PUTS("nopfcache_csum");
+	}
 
 	ext4_show_quota_options(seq, sb);
 	return 0;
