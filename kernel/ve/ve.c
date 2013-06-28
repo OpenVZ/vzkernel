@@ -648,7 +648,6 @@ static int __init ve_subsys_init(void)
 {
 	ve_cachep = KMEM_CACHE(ve_struct, SLAB_PANIC);
 	list_add(&ve0.ve_list, &ve_list_head);
-	kmapset_init_set(&ve_sysfs_perms);
 	return 0;
 }
 late_initcall(ve_subsys_init);
