@@ -1037,7 +1037,7 @@ int ve_ip_access_seq_read(struct cgroup *cgrp, struct cftype *cft,
 	return 0;
 }
 
-static struct cftype ve_cftypes[] = {
+static struct cftype venet_cftypes[] = {
 	{
 		.name = "ip_allow",
 		.write_string = ve_ip_access_write,
@@ -1170,9 +1170,7 @@ static struct pernet_operations venet_net_ops = {
 
 __init int venet_init(void)
 {
-#ifdef CONFIG_PROC_FS
 	struct proc_dir_entry *de;
-#endif
 	int i, err;
 
 	if (get_ve0()->_venet_dev != NULL)
@@ -1183,30 +1181,37 @@ __init int venet_init(void)
 
 	err = register_pernet_device(&venet_net_ops);
 	if (err)
-		return err;
+		goto err_netdev;
 
-#ifdef CONFIG_PROC_FS
 	de = proc_create("veip", S_IFREG | S_IRUSR, proc_vz_dir,
 			&proc_veip_operations);
-	if (de == NULL)
-		printk(KERN_WARNING "venet: can't make veip proc entry\n");
-#endif
+	if (!de)
+		goto err_proc;
+
+	err = cgroup_add_cftypes(&ve_subsys, venet_cftypes);
+	if (err)
+		goto err_cgroup;
 
 	vzioctl_register(&venetcalls);
 	vzmon_register_veaddr_print_cb(veaddr_seq_print);
-	WARN_ON(cgroup_add_cftypes(&ve_subsys, ve_cftypes));
+
 	return 0;
+
+err_cgroup:
+	remove_proc_entry("veip", proc_vz_dir);
+err_proc:
+	unregister_pernet_device(&venet_net_ops);
+err_netdev:
+	return err;
 }
 
 __exit void venet_exit(void)
 {
+	cgroup_rm_cftypes(&ve_subsys, venet_cftypes);
 	vzmon_unregister_veaddr_print_cb(veaddr_seq_print);
 	vzioctl_unregister(&venetcalls);
 	unregister_pernet_device(&venet_net_ops);
-
-#ifdef CONFIG_PROC_FS
 	remove_proc_entry("veip", proc_vz_dir);
-#endif
 	veip_cleanup();
 
 	/* Ensure there are no outstanding rcu callbacks */
