@@ -6618,6 +6618,7 @@ static void mem_cgroup_css_free(struct cgroup *cont)
 	 */
 	mem_cgroup_reparent_charges(memcg);
 
+	vmpressure_cleanup(&memcg->vmpressure);
 	memcg_destroy_kmem(memcg);
 	memcg_free_shrinker_maps(memcg);
 	__mem_cgroup_free(memcg);
