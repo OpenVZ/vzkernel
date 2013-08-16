@@ -1188,6 +1188,7 @@ static struct file_system_type nfsd_fs_type = {
 	.name		= "nfsd",
 	.mount		= nfsd_mount,
 	.kill_sb	= nfsd_umount,
+	.fs_flags	= FS_VIRTUALIZED,
 };
 MODULE_ALIAS_FS("nfsd");
 
