@@ -54,6 +54,7 @@ struct sched_param {
 #include <linux/uidgid.h>
 #include <linux/gfp.h>
 #include <linux/ve_proto.h>
+#include <linux/kernel_stat.h>
 
 #include <asm/processor.h>
 
@@ -1111,6 +1112,8 @@ struct sched_avg {
 
 #ifdef CONFIG_SCHEDSTATS
 struct sched_statistics {
+	u64			cpustat[NR_STATS];
+
 	u64			wait_start;
 	u64			wait_max;
 	u64			wait_count;
