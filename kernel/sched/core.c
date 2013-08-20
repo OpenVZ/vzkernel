@@ -7490,7 +7490,6 @@ void __init sched_init(void)
 	}
 #endif /* CONFIG_CPUMASK_OFFSTACK */
 
-	root_task_group.cpustat = alloc_percpu(struct kernel_cpustat);
 	root_task_group.taskstats = alloc_percpu(struct taskstats);
 
 #ifdef CONFIG_SMP
@@ -7791,7 +7790,6 @@ static void free_sched_group(struct task_group *tg)
 	free_fair_sched_group(tg);
 	free_rt_sched_group(tg);
 	autogroup_free(tg);
-	free_percpu(tg->cpustat);
 	free_percpu(tg->taskstats);
 	kfree(tg);
 }
@@ -7809,10 +7807,6 @@ struct task_group *sched_create_group(struct task_group *parent)
 		goto err;
 
 	if (!alloc_rt_sched_group(tg, parent))
-		goto err;
-
-	tg->cpustat = alloc_percpu(struct kernel_cpustat);
-	if (!tg->cpustat)
 		goto err;
 
 	tg->taskstats = alloc_percpu(struct taskstats);
@@ -8754,34 +8748,16 @@ static u64 cpu_rt_period_read_uint(struct cgroup *cgrp, struct cftype *cft)
 }
 #endif /* CONFIG_RT_GROUP_SCHED */
 
-static u64 cpu_cgroup_usage_cpu(struct task_group *tg, int i)
-{
-#if defined(CONFIG_FAIR_GROUP_SCHED) && defined(CONFIG_SCHEDSTATS)
-	/* root_task_group has not sched entities */
-	if (tg == &root_task_group)
-		return cpu_rq(i)->rq_cpu_time;
-
-	return tg->se[i]->sum_exec_runtime;;
-#else
-	return 0;
-#endif
-}
-
-static void cpu_cgroup_update_stat(struct task_group *tg, int i)
+static void __task_group_get_cpu_stat(struct task_group *tg, int cpu,
+				      struct kernel_cpustat *kcpustat)
 {
 #if defined(CONFIG_SCHEDSTATS) && defined(CONFIG_FAIR_GROUP_SCHED)
-	struct sched_entity *se = tg->se[i];
-	struct kernel_cpustat *kcpustat = per_cpu_ptr(tg->cpustat, i);
-	u64 now = cpu_clock(i);
+	struct sched_entity *se = tg->se[cpu];
+	u64 now = cpu_clock(cpu);
 	u64 delta, idle, iowait;
-
-	/* root_task_group has not sched entities */
-	if (tg == &root_task_group)
-		return;
 
 	iowait = se->statistics.iowait_sum;
 	idle = se->statistics.sum_sleep_runtime;
-	kcpustat->cpustat[CPUTIME_STEAL] = se->statistics.wait_sum;
 
 	if (idle > iowait)
 		idle -= iowait;
@@ -8802,13 +8778,28 @@ static void cpu_cgroup_update_stat(struct task_group *tg, int i)
 			kcpustat->cpustat[CPUTIME_STEAL] += delta;
 	}
 
+	kcpustat->cpustat[CPUTIME_USER] = se->statistics.cpustat[CPUTIME_USER];
+	kcpustat->cpustat[CPUTIME_NICE] = se->statistics.cpustat[CPUTIME_NICE];
+	kcpustat->cpustat[CPUTIME_SYSTEM] =
+		se->statistics.cpustat[CPUTIME_SYSTEM];
 	kcpustat->cpustat[CPUTIME_IDLE] =
 		max(kcpustat->cpustat[CPUTIME_IDLE], idle);
 	kcpustat->cpustat[CPUTIME_IOWAIT] =
 		max(kcpustat->cpustat[CPUTIME_IOWAIT], iowait);
-
-	kcpustat->cpustat[CPUTIME_USED] = cpu_cgroup_usage_cpu(tg, i);
+	kcpustat->cpustat[CPUTIME_STEAL] = se->statistics.wait_sum;
+	kcpustat->cpustat[CPUTIME_USED] = se->sum_exec_runtime;
 #endif
+}
+
+static void task_group_get_cpu_stat(struct task_group *tg, int cpu,
+				    struct kernel_cpustat *kcpustat)
+{
+	if (tg == &root_task_group) {
+		memcpy(kcpustat, &kcpustat_cpu(cpu), sizeof(*kcpustat));
+		return;
+	}
+	memset(kcpustat, 0, sizeof(*kcpustat));
+	__task_group_get_cpu_stat(tg, cpu, kcpustat);
 }
 
 int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
@@ -8820,7 +8811,7 @@ int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
 	u64 user, nice, system, idle, iowait, steal;
 	struct timespec boottime;
 	struct task_group *tg = cgroup_tg(cgrp);
-	struct kernel_cpustat *kcpustat;
+	struct kernel_cpustat st;
 	unsigned long tg_nr_running = 0;
 	unsigned long tg_nr_iowait = 0;
 	unsigned long long tg_nr_switches = 0;
@@ -8832,16 +8823,14 @@ int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
 	user = nice = system = idle = iowait = steal = 0;
 
 	for_each_possible_cpu(i) {
-		kcpustat = per_cpu_ptr(tg->cpustat, i);
+		task_group_get_cpu_stat(tg, i, &st);
 
-		cpu_cgroup_update_stat(tg, i);
-
-		user += kcpustat->cpustat[CPUTIME_USER];
-		nice += kcpustat->cpustat[CPUTIME_NICE];
-		system += kcpustat->cpustat[CPUTIME_SYSTEM];
-		idle += kcpustat->cpustat[CPUTIME_IDLE];
-		iowait += kcpustat->cpustat[CPUTIME_IOWAIT];
-		steal += kcpustat->cpustat[CPUTIME_STEAL];
+		user	+= st.cpustat[CPUTIME_USER];
+		nice	+= st.cpustat[CPUTIME_NICE];
+		system	+= st.cpustat[CPUTIME_SYSTEM];
+		idle	+= st.cpustat[CPUTIME_IDLE];
+		iowait	+= st.cpustat[CPUTIME_IOWAIT];
+		steal	+= st.cpustat[CPUTIME_STEAL];
 
 		/* root task group has autogrouping, so this doesn't hold */
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -8868,14 +8857,15 @@ int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
 		for_each_online_cpu(j) {
 			if (j % nr_ve_vcpus != i)
 				continue;
-			kcpustat = per_cpu_ptr(tg->cpustat, j);
 
-			user += kcpustat->cpustat[CPUTIME_USER];
-			nice += kcpustat->cpustat[CPUTIME_NICE];
-			system += kcpustat->cpustat[CPUTIME_SYSTEM];
-			idle += kcpustat->cpustat[CPUTIME_IDLE];
-			iowait += kcpustat->cpustat[CPUTIME_IOWAIT];
-			steal += kcpustat->cpustat[CPUTIME_STEAL];
+			task_group_get_cpu_stat(tg, i, &st);
+
+			user	+= st.cpustat[CPUTIME_USER];
+			nice	+= st.cpustat[CPUTIME_NICE];
+			system	+= st.cpustat[CPUTIME_SYSTEM];
+			idle	+= st.cpustat[CPUTIME_IDLE];
+			iowait	+= st.cpustat[CPUTIME_IOWAIT];
+			steal	+= st.cpustat[CPUTIME_STEAL];
 		}
 		seq_printf(p,
 			"cpu%d %llu %llu %llu %llu %llu 0 0 %llu\n",
@@ -8912,12 +8902,12 @@ void cpu_cgroup_get_stat(struct cgroup *cgrp, struct kernel_cpustat *kstat)
 	memset(kstat, 0, sizeof(struct kernel_cpustat));
 
 	for_each_possible_cpu(i) {
-		struct kernel_cpustat *st = per_cpu_ptr(tg->cpustat, i);
+		struct kernel_cpustat st;
 
-		cpu_cgroup_update_stat(tg, i);
+		task_group_get_cpu_stat(tg, i, &st);
 
 		for (j = 0; j < NR_STATS; j++)
-			kstat->cpustat[j] += st->cpustat[j];
+			kstat->cpustat[j] += st.cpustat[j];
 	}
 }
 
@@ -8939,55 +8929,6 @@ static const char *cpuacct_stat_desc[] = {
 	[CPUACCT_STAT_USER] = "user",
 	[CPUACCT_STAT_SYSTEM] = "system",
 };
-
-static int cpu_cgroup_stats_show(struct cgroup *cgrp, struct cftype *cft,
-		struct cgroup_map_cb *cb)
-{
-	struct task_group *tg = cgroup_tg(cgrp);
-	int cpu;
-	s64 user = 0, sys = 0;
-
-	for_each_present_cpu(cpu) {
-		struct kernel_cpustat *kcpustat = per_cpu_ptr(tg->cpustat, cpu);
-		user += kcpustat->cpustat[CPUTIME_USER];
-		user += kcpustat->cpustat[CPUTIME_NICE];
-		sys += kcpustat->cpustat[CPUTIME_SYSTEM];
-	}
-
-	user = cputime64_to_clock_t(user);
-	sys = cputime64_to_clock_t(sys);
-	cb->fill(cb, cpuacct_stat_desc[CPUACCT_STAT_USER], user);
-	cb->fill(cb, cpuacct_stat_desc[CPUACCT_STAT_SYSTEM], sys);
-
-	return 0;
-}
-
-static u64 cpu_cgroup_cpuusage_read(struct cgroup *cgrp, struct cftype *cft)
-{
-	struct task_group *tg = cgroup_tg(cgrp);
-	u64 totalcpuusage = 0;
-	int i;
-
-	for_each_present_cpu(i)
-		totalcpuusage += cpu_cgroup_usage_cpu(tg, i);
-
-	return totalcpuusage;
-}
-
-static int cpu_cgroup_percpu_seq_read(struct cgroup *cgroup, struct cftype *cft,
-				      struct seq_file *m)
-{
-	struct task_group *tg = cgroup_tg(cgroup);
-	u64 percpu;
-	int i;
-
-	for_each_present_cpu(i) {
-		percpu = cpu_cgroup_usage_cpu(tg, i);
-		seq_printf(m, "%llu ", (unsigned long long) percpu);
-	}
-	seq_printf(m, "\n");
-	return 0;
-}
 
 static int cpu_cgroup_delay_show(struct cgroup *cgrp, struct cftype *cft,
 				 struct cgroup_map_cb *cb)
@@ -9027,10 +8968,6 @@ static int cpu_cgroup_delay_show(struct cgroup *cgrp, struct cftype *cft,
 }
 
 static struct cftype cpu_files[] = {
-	{
-		.name = "proc.stat",
-		.read_seq_string = cpu_cgroup_proc_stat,
-	},
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	{
 		.name = "shares",
@@ -9079,16 +9016,8 @@ static struct cftype cpu_files[] = {
 	},
 #endif
 	{
-		.name = "acct.stat",
-		.read_map = cpu_cgroup_stats_show,
-	},
-	{
-		.name = "usage",
-		.read_u64 = cpu_cgroup_cpuusage_read,
-	},
-	{
-		.name = "usage_percpu",
-		.read_seq_string = cpu_cgroup_percpu_seq_read,
+		.name = "proc.stat",
+		.read_seq_string = cpu_cgroup_proc_stat,
 	},
 	{
 		.name = "delayacct.total",
