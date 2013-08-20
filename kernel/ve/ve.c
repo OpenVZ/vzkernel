@@ -130,6 +130,19 @@ void legacy_veid_to_name(envid_t veid, char *name)
 }
 EXPORT_SYMBOL(legacy_veid_to_name);
 
+int legacy_name_to_veid(const char *name, envid_t *veid)
+{
+	envid_t tmp;
+
+	if (sscanf(name, "%d", &tmp) == 1) {
+		*veid = tmp;
+		return 0;
+	} else {
+		return -1;
+	}
+}
+EXPORT_SYMBOL(legacy_name_to_veid);
+
 /* under rcu_read_lock if task != current */
 const char *task_ve_name(struct task_struct *task)
 {
