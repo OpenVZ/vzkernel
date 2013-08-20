@@ -68,6 +68,7 @@ static struct file_system_type dev_fs_type = {
 	.name = "devtmpfs",
 	.mount = dev_mount,
 	.kill_sb = kill_litter_super,
+	.fs_flags = FS_VIRTUALIZED,
 };
 
 #ifdef CONFIG_BLOCK
