@@ -149,6 +149,18 @@ extern struct task_struct *kthread_create_on_node_ve(struct ve_struct *ve,
 					void *data, int node,
 					const char namefmt[], ...);
 
+#define kthread_create_ve(ve, threadfn, data, namefmt, arg...) \
+	kthread_create_on_node_ve(ve, threadfn, data, -1, namefmt, ##arg)
+
+#define kthread_run_ve(ve, threadfn, data, namefmt, ...)		   \
+({									   \
+	struct task_struct *__k						   \
+		= kthread_create_ve(ve, threadfn, data, namefmt, ## __VA_ARGS__); \
+	if (!IS_ERR(__k))						   \
+		wake_up_process(__k);					   \
+	__k;								   \
+})
+
 void do_update_load_avg_ve(void);
 
 extern struct ve_struct *get_ve(struct ve_struct *ve);
