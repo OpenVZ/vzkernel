@@ -160,19 +160,8 @@ call_usermodehelper_ve(struct ve_struct *ve, char *path, char **argv,
 }
 void do_update_load_avg_ve(void);
 
-static inline struct ve_struct *get_ve(struct ve_struct *ve)
-{
-	if (ve)
-		css_get(&ve->css);
-	return ve;
-}
-
-static inline void put_ve(struct ve_struct *ve)
-{
-	if (ve)
-		css_put(&ve->css);
-}
-
+extern struct ve_struct *get_ve(struct ve_struct *ve);
+extern void put_ve(struct ve_struct *ve);
 
 static inline struct ve_struct *cgroup_ve(struct cgroup *cgroup)
 {
