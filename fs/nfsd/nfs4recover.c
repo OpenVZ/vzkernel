@@ -44,6 +44,8 @@
 #include <linux/sunrpc/clnt.h>
 #include <linux/nfsd/cld.h>
 
+#include <linux/ve.h>
+
 #include "nfsd.h"
 #include "state.h"
 #include "vfs.h"
@@ -1201,7 +1203,7 @@ nfsd4_umh_cltrack_upcall(char *cmd, char *arg, char *env0, char *env1)
 	argv[2] = arg;
 	argv[3] = NULL;
 
-	ret = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC);
+	ret = call_usermodehelper_ve(get_exec_env(), argv[0], argv, envp, UMH_WAIT_PROC);
 	/*
 	 * Disable the upcall mechanism if we're getting an ENOENT or EACCES
 	 * error. The admin can re-enable it on the fly by using sysfs
@@ -1243,13 +1245,6 @@ nfsd4_umh_cltrack_init(struct net *net)
 	int ret;
 	struct nfsd_net *nn = net_generic(net, nfsd_net_id);
 	char *grace_start = nfsd4_cltrack_grace_start(nn->boot_time);
-
-	/* XXX: The usermode helper s not working in container yet. */
-	if (net != &init_net) {
-		WARN(1, KERN_ERR "NFSD: attempt to initialize umh client "
-			"tracking in a container!\n");
-		return -EINVAL;
-	}
 
 	ret = nfsd4_umh_cltrack_upcall("init", NULL, grace_start, NULL);
 	kfree(grace_start);
