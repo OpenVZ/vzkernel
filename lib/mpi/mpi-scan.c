@@ -125,7 +125,7 @@ unsigned mpi_trailing_zeros(const MPI a)
 			unsigned nn;
 			mpi_limb_t alimb = a->d[n];
 
-			count_trailing_zeros(nn, alimb);
+			nn = count_trailing_zeros(alimb);
 			count += nn;
 			break;
 		}
