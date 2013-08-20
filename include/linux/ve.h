@@ -51,6 +51,9 @@ struct ve_struct {
 	struct task_struct	*ve_kthread_task;
 	struct kthread_worker	ve_kthread_worker;
 
+	struct task_struct	*ve_umh_task;
+	struct kthread_worker	ve_umh_worker;
+
 /* VE's root */
 	struct path		root_path;
 
@@ -141,6 +144,19 @@ extern struct task_struct *kthread_create_on_node_ve(struct ve_struct *ve,
 	__k;								   \
 })
 
+struct subprocess_info;
+extern int call_usermodehelper_fns_ve(struct ve_struct *ve,
+	char *path, char **argv, char **envp, int wait,
+	int (*init)(struct subprocess_info *info, struct cred *new),
+	void (*cleanup)(struct subprocess_info *), void *data);
+
+static inline int
+call_usermodehelper_ve(struct ve_struct *ve, char *path, char **argv,
+		       char **envp, int wait)
+{
+	return call_usermodehelper_fns_ve(ve, path, argv, envp, wait,
+				       NULL, NULL, NULL);
+}
 void do_update_load_avg_ve(void);
 
 static inline struct ve_struct *get_ve(struct ve_struct *ve)
