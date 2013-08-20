@@ -17,6 +17,8 @@
 
 #ifdef __KERNEL__
 
+struct kernel_cpustat;
+
 #ifdef CONFIG_VZ_FAIRSCHED
 
 #define FSCHWEIGHT_MAX		((1 << 16) - 1)
