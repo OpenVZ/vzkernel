@@ -21,6 +21,8 @@
 #include <linux/kthread.h>
 #include <linux/slab.h>
 
+#include <linux/ve.h>
+
 #include <linux/sunrpc/types.h>
 #include <linux/sunrpc/xdr.h>
 #include <linux/sunrpc/stats.h>
@@ -731,8 +733,8 @@ svc_set_num_threads(struct svc_serv *serv, struct svc_pool *pool, int nrservs)
 		}
 
 		__module_get(serv->sv_ops->svo_module);
-		task = kthread_create_on_node(serv->sv_ops->svo_function, rqstp,
-					      node, serv->sv_name);
+		task = kthread_create_on_node_ve(get_exec_env(),
+			serv->sv_ops->svo_function, rqstp, node, serv->sv_name);
 		if (IS_ERR(task)) {
 			error = PTR_ERR(task);
 			module_put(serv->sv_ops->svo_module);
