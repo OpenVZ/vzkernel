@@ -65,7 +65,7 @@ mpihelp_mod_1(mpi_ptr_t dividend_ptr, mpi_size_t dividend_size,
 	    && (UDIV_TIME - (2 * UMUL_TIME + 6)) * dividend_size > UDIV_TIME) {
 		int normalization_steps;
 
-		count_leading_zeros(normalization_steps, divisor_limb);
+		normalization_steps = count_leading_zeros(divisor_limb);
 		if (normalization_steps) {
 			mpi_limb_t divisor_limb_inverted;
 
@@ -142,7 +142,7 @@ mpihelp_mod_1(mpi_ptr_t dividend_ptr, mpi_size_t dividend_size,
 		if (UDIV_NEEDS_NORMALIZATION) {
 			int normalization_steps;
 
-			count_leading_zeros(normalization_steps, divisor_limb);
+			normalization_steps = count_leading_zeros(divisor_limb);
 			if (normalization_steps) {
 				divisor_limb <<= normalization_steps;
 
@@ -421,7 +421,7 @@ mpihelp_divmod_1(mpi_ptr_t quot_ptr,
 	    && (UDIV_TIME - (2 * UMUL_TIME + 6)) * dividend_size > UDIV_TIME) {
 		int normalization_steps;
 
-		count_leading_zeros(normalization_steps, divisor_limb);
+		normalization_steps = count_leading_zeros(divisor_limb);
 		if (normalization_steps) {
 			mpi_limb_t divisor_limb_inverted;
 
@@ -496,7 +496,7 @@ mpihelp_divmod_1(mpi_ptr_t quot_ptr,
 		if (UDIV_NEEDS_NORMALIZATION) {
 			int normalization_steps;
 
-			count_leading_zeros(normalization_steps, divisor_limb);
+			normalization_steps = count_leading_zeros(divisor_limb);
 			if (normalization_steps) {
 				divisor_limb <<= normalization_steps;
 
