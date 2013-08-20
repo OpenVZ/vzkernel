@@ -24,20 +24,6 @@ static DEFINE_SPINLOCK(kthread_create_lock);
 static LIST_HEAD(kthread_create_list);
 struct task_struct *kthreadd_task;
 
-struct kthread_create_info
-{
-	/* Information passed to kthread() from kthreadd. */
-	int (*threadfn)(void *data);
-	void *data;
-	int node;
-
-	/* Result passed back to kthread_create() from kthreadd. */
-	struct task_struct *result;
-	struct completion done;
-
-	struct list_head list;
-};
-
 struct kthread {
 	unsigned long flags;
 	unsigned int cpu;
@@ -230,6 +216,15 @@ static void create_kthread(struct kthread_create_info *create)
 	}
 }
 
+static void kthread_add_to_kthreadd(void *data, struct kthread_create_info *create)
+{
+	spin_lock(&kthread_create_lock);
+	list_add_tail(&create->list, &kthread_create_list);
+	spin_unlock(&kthread_create_lock);
+	wake_up_process(kthreadd_task);
+	wait_for_completion(&create->done);
+}
+
 /**
  * kthread_create_on_node - create a kthread.
  * @threadfn: the function to run until signal_pending(current).
@@ -252,10 +247,13 @@ static void create_kthread(struct kthread_create_info *create)
  *
  * Returns a task_struct or ERR_PTR(-ENOMEM).
  */
-struct task_struct *kthread_create_on_node(int (*threadfn)(void *data),
-					   void *data, int node,
-					   const char namefmt[],
-					   ...)
+struct task_struct *__kthread_create_on_node(
+		void (*addfn)(void *data, struct kthread_create_info *create),
+		void *add_data,
+		int (*threadfn)(void *data),
+		void *data, int node,
+		const char namefmt[],
+		...)
 {
 	struct kthread_create_info create;
 
@@ -264,12 +262,10 @@ struct task_struct *kthread_create_on_node(int (*threadfn)(void *data),
 	create.node = node;
 	init_completion(&create.done);
 
-	spin_lock(&kthread_create_lock);
-	list_add_tail(&create.list, &kthread_create_list);
-	spin_unlock(&kthread_create_lock);
+	if (addfn == NULL)
+		addfn = kthread_add_to_kthreadd;
 
-	wake_up_process(kthreadd_task);
-	wait_for_completion(&create.done);
+	addfn(add_data, &create);
 
 	if (!IS_ERR(create.result)) {
 		static const struct sched_param param = { .sched_priority = 0 };
@@ -288,7 +284,7 @@ struct task_struct *kthread_create_on_node(int (*threadfn)(void *data),
 	}
 	return create.result;
 }
-EXPORT_SYMBOL(kthread_create_on_node);
+EXPORT_SYMBOL(__kthread_create_on_node);
 
 static void __kthread_bind(struct task_struct *p, unsigned int cpu, long state)
 {
