@@ -9638,7 +9638,7 @@ static u64 cpu_cgroup_usage_cpu(struct task_group *tg, int i)
 	if (tg == &root_task_group)
 		return cpu_rq(i)->rq_cpu_time;
 
-	return tg->se[i]->sum_exec_runtime;;
+	return tg->se[i]->sum_exec_runtime;
 #else
 	return 0;
 #endif
@@ -9658,7 +9658,7 @@ static void cpu_cgroup_update_stat(struct task_group *tg, int i)
 
 	iowait = se->statistics->iowait_sum;
 	idle = se->statistics->sum_sleep_runtime;
-	kcpustat->cpustat[CPUTIME_STEAL] = se->statistics.wait_sum;
+	kcpustat->cpustat[CPUTIME_STEAL] = se->statistics->wait_sum;
 
 	if (idle > iowait)
 		idle -= iowait;
@@ -9817,55 +9817,6 @@ static const char *cpuacct_stat_desc[] = {
 	[CPUACCT_STAT_SYSTEM] = "system",
 };
 
-static int cpu_cgroup_stats_show(struct cgroup *cgrp, struct cftype *cft,
-		struct cgroup_map_cb *cb)
-{
-	struct task_group *tg = cgroup_tg(cgrp);
-	int cpu;
-	s64 user = 0, sys = 0;
-
-	for_each_present_cpu(cpu) {
-		struct kernel_cpustat *kcpustat = per_cpu_ptr(tg->cpustat, cpu);
-		user += kcpustat->cpustat[CPUTIME_USER];
-		user += kcpustat->cpustat[CPUTIME_NICE];
-		sys += kcpustat->cpustat[CPUTIME_SYSTEM];
-	}
-
-	user = cputime64_to_clock_t(user);
-	sys = cputime64_to_clock_t(sys);
-	cb->fill(cb, cpuacct_stat_desc[CPUACCT_STAT_USER], user);
-	cb->fill(cb, cpuacct_stat_desc[CPUACCT_STAT_SYSTEM], sys);
-
-	return 0;
-}
-
-static u64 cpu_cgroup_cpuusage_read(struct cgroup *cgrp, struct cftype *cft)
-{
-	struct task_group *tg = cgroup_tg(cgrp);
-	u64 totalcpuusage = 0;
-	int i;
-
-	for_each_present_cpu(i)
-		totalcpuusage += cpu_cgroup_usage_cpu(tg, i);
-
-	return totalcpuusage;
-}
-
-static int cpu_cgroup_percpu_seq_read(struct cgroup *cgroup, struct cftype *cft,
-				      struct seq_file *m)
-{
-	struct task_group *tg = cgroup_tg(cgroup);
-	u64 percpu;
-	int i;
-
-	for_each_present_cpu(i) {
-		percpu = cpu_cgroup_usage_cpu(tg, i);
-		seq_printf(m, "%llu ", (unsigned long long) percpu);
-	}
-	seq_printf(m, "\n");
-	return 0;
-}
-
 static int cpu_cgroup_delay_show(struct cgroup *cgrp, struct cftype *cft,
 				 struct cgroup_map_cb *cb)
 {
@@ -9904,10 +9855,6 @@ static int cpu_cgroup_delay_show(struct cgroup *cgrp, struct cftype *cft,
 }
 
 static struct cftype cpu_files[] = {
-	{
-		.name = "proc.stat",
-		.read_seq_string = cpu_cgroup_proc_stat,
-	},
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	{
 		.name = "shares",
@@ -9956,16 +9903,8 @@ static struct cftype cpu_files[] = {
 	},
 #endif
 	{
-		.name = "acct.stat",
-		.read_map = cpu_cgroup_stats_show,
-	},
-	{
-		.name = "usage",
-		.read_u64 = cpu_cgroup_cpuusage_read,
-	},
-	{
-		.name = "usage_percpu",
-		.read_seq_string = cpu_cgroup_percpu_seq_read,
+		.name = "proc.stat",
+		.read_seq_string = cpu_cgroup_proc_stat,
 	},
 	{
 		.name = "delayacct.total",
