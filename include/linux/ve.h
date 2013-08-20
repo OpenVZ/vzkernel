@@ -124,6 +124,11 @@ extern int ve_allow_kthreads;
 extern int vz_security_family_check(struct net *net, int family);
 extern int vz_security_protocol_check(struct net *net, int protocol);
 
+extern struct task_struct *kthread_create_on_node_ve(struct ve_struct *ve,
+					int (*threadfn)(void *data),
+					void *data, int node,
+					const char namefmt[], ...);
+
 void do_update_load_avg_ve(void);
 
 static inline struct ve_struct *get_ve(struct ve_struct *ve)
@@ -170,6 +175,9 @@ static inline int vz_security_protocol_check(struct net *net, int protocol) { re
 
 static inline void ve_stop_ns(struct pid_namespace *ns) { }
 static inline void ve_exit_ns(struct pid_namespace *ns) { }
+
+#define kthread_create_on_node_ve(ve, threadfn, data, node, namefmt...)	\
+	kthread_create_on_node_ve(threadfn, data, node, namefmt...)
 
 #endif	/* CONFIG_VE */
 
