@@ -280,6 +280,16 @@ out:
 	complete(&work->done);
 }
 
+int call_usermodehelper_fns_ve(struct ve_struct *ve,
+	char *path, char **argv, char **envp, int wait,
+	int (*init)(struct subprocess_info *info, struct cred *new),
+	void (*cleanup)(struct subprocess_info *), void *data)
+{
+	return call_usermodehelper_by(&ve->ve_umh_worker, path, argv, envp,
+			wait, init, cleanup, data);
+}
+EXPORT_SYMBOL(call_usermodehelper_fns_ve);
+
 struct kthread_create_work {
 	struct kthread_work work;
 	struct kthread_create_info *info;
@@ -325,6 +335,27 @@ struct task_struct *kthread_create_on_node_ve(struct ve_struct *ve,
 	return task;
 }
 EXPORT_SYMBOL(kthread_create_on_node_ve);
+
+static int ve_start_umh(struct ve_struct *ve)
+{
+	struct task_struct *t;
+
+	init_kthread_worker(&ve->ve_umh_worker);
+	t = kthread_run_ve(ve, kthread_worker_fn, &ve->ve_umh_worker,
+			"khelper");
+	if (IS_ERR(t))
+		return PTR_ERR(t);
+
+	ve->ve_umh_task = t;
+	return 0;
+}
+
+static void ve_stop_umh(struct ve_struct *ve)
+{
+	flush_kthread_worker(&ve->ve_umh_worker);
+	kthread_stop(ve->ve_umh_task);
+	ve->ve_umh_task = NULL;
+}
 
 static int ve_start_kthread(struct ve_struct *ve)
 {
@@ -410,6 +441,10 @@ int ve_start_container(struct ve_struct *ve)
 	if (err)
 		goto err_kthread;
 
+	err = ve_start_umh(ve);
+	if (err)
+		goto err_umh;
+
 	err = ve_hook_iterate_init(VE_SS_CHAIN, ve);
 	if (err < 0)
 		goto err_iterate;
@@ -425,6 +460,8 @@ int ve_start_container(struct ve_struct *ve)
 	return 0;
 
 err_iterate:
+	ve_stop_umh(ve);
+err_umh:
 	ve_stop_kthread(ve);
 err_kthread:
 	ve_list_del(ve);
@@ -453,6 +490,8 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	cgroup_lock();
 	ve->is_running = 0;
 	cgroup_unlock();
+
+	ve_stop_umh(ve);
 	/*
 	 * Stop kernel thread, or zap_pid_ns_processes() would wait it forever.
 	 */
