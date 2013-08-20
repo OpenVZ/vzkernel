@@ -1013,6 +1013,24 @@ static struct sysfs_dirent *sysfs_next_entry(struct sysfs_dirent *cur)
 	return node ? to_sysfs_dirent(node) : NULL;
 }
 
+struct sysfs_dirent *sysfs_next_recursive(struct sysfs_dirent *sd)
+{
+	struct rb_node *node;
+
+	if (sysfs_type(sd) == SYSFS_DIR &&
+	    !RB_EMPTY_ROOT(&sd->s_dir.children))
+		return to_sysfs_dirent(rb_first(&sd->s_dir.children));
+
+	do {
+		node = rb_next(&sd->s_rb);
+		if (node)
+			return to_sysfs_dirent(node);
+		sd = sd->s_parent;
+	} while (sd);
+
+	return NULL;
+}
+
 static int sysfs_readdir(struct file * filp, void * dirent, filldir_t filldir)
 {
 	struct dentry *dentry = filp->f_path.dentry;
