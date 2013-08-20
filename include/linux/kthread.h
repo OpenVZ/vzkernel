@@ -5,10 +5,30 @@
 #include <linux/sched.h>
 
 __printf(4, 5)
-struct task_struct *kthread_create_on_node(int (*threadfn)(void *data),
-					   void *data,
-					   int node,
-					   const char namefmt[], ...);
+struct kthread_create_info
+{
+	/* Information passed to kthread() from kthreadd. */
+	int (*threadfn)(void *data);
+	void *data;
+	int node;
+
+	/* Result passed back to kthread_create() from kthreadd. */
+	struct task_struct *result;
+	struct completion done;
+
+	struct list_head list;
+};
+
+struct task_struct *__kthread_create_on_node(
+		void (*addfn)(void *data, struct kthread_create_info *create),
+		void *add_data,
+		int (*threadfn)(void *data),
+		void *data, int node,
+		const char namefmt[],
+		...);
+
+#define kthread_create_on_node(threadfn, data, node, namefmt, arg...)	\
+	__kthread_create_on_node(NULL, NULL, threadfn, data, node, namefmt, ##arg)
 
 #define kthread_create(threadfn, data, namefmt, arg...) \
 	kthread_create_on_node(threadfn, data, -1, namefmt, ##arg)
