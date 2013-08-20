@@ -599,6 +599,8 @@ static void ve_destroy(struct cgroup *cg)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 
+	kmapset_unlink(&ve->ve_sysfs_perms, &ve_sysfs_perms);
+
 	ve_log_destroy(ve);
 	kfree(ve->binfmt_misc);
 	free_percpu(ve->sched_lat_ve.cur);
@@ -685,8 +687,6 @@ static int ve_state_write(struct cgroup *cg, struct cftype *cft,
 		ret = ve_start_container(ve);
 		up_write(&ve->op_sem);
 	}
-
-	kmapset_unlink(&ve->ve_sysfs_perms, &ve_sysfs_perms);
 
 	return ret;
 }
