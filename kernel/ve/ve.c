@@ -582,8 +582,6 @@ static void ve_offline(struct cgroup *cg)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 	struct cgroup *cgrp;
-	struct inode *dir;
-	int ret = 0;
 
 	cgroup_lock();
 	while (!list_empty(&ve->ve_cgroup_head)) {
