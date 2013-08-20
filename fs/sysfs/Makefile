@@ -4,3 +4,4 @@
 
 obj-y		:= inode.o file.o dir.o symlink.o mount.o bin.o \
 		   group.o
+obj-$(CONFIG_VE) += ve.o
