@@ -180,9 +180,6 @@ int __init sysfs_init(void)
 
 	kmapset_init_set(&ve_sysfs_perms);
 
-	/* full access for everyone */
-	ve_sysfs_perms.default_value = MAY_READ | MAY_WRITE | MAY_EXEC;
-
 	sysfs_root.s_ve_perms = kmapset_new(&ve_sysfs_perms);
 	if (!sysfs_root.s_ve_perms)
 		goto out;
