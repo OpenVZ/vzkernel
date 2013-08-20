@@ -89,6 +89,22 @@ DEFINE_MUTEX(ve_list_lock);
 int nr_ve = 1;	/* One VE always exists. Compatibility with vestat */
 EXPORT_SYMBOL(nr_ve);
 
+
+struct ve_struct *get_ve(struct ve_struct *ve)
+{
+	if (ve)
+		css_get(&ve->css);
+	return ve;
+}
+EXPORT_SYMBOL(get_ve);
+
+void put_ve(struct ve_struct *ve)
+{
+	if (ve)
+		css_put(&ve->css);
+}
+EXPORT_SYMBOL(put_ve);
+
 static void ve_list_add(struct ve_struct *ve)
 {
 	mutex_lock(&ve_list_lock);
