@@ -217,7 +217,7 @@ int mpi_tdiv_qr(MPI quot, MPI rem, MPI num, MPI den)
 	} else			/* Put quotient at top of remainder. */
 		qp = rp + dsize;
 
-	count_leading_zeros(normalization_steps, dp[dsize - 1]);
+	normalization_steps = count_leading_zeros(dp[dsize - 1]);
 
 	/* Normalize the denominator, i.e. make its most significant bit set by
 	 * shifting it NORMALIZATION_STEPS bits to the left.  Also shift the
