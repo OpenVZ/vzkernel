@@ -221,14 +221,8 @@ int sysfs_setattr(struct dentry *dentry, struct iattr *iattr);
 int sysfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat);
 int sysfs_setxattr(struct dentry *dentry, const char *name, const void *value,
 		size_t size, int flags);
-ssize_t sysfs_getxattr(struct dentry *dentry, const char *name, void *buffer,
-		size_t size);
-int sysfs_removexattr(struct dentry *dentry, const char *name);
-ssize_t sysfs_listxattr(struct dentry *dentry, char *buffer, size_t buffer_size);
 int sysfs_hash_and_remove(struct sysfs_dirent *dir_sd, const void *ns, const char *name);
 int sysfs_inode_init(void);
-
-extern const struct xattr_handler *sysfs_xattr_handlers[];
 
 /*
  * file.c
