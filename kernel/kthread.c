@@ -201,7 +201,7 @@ int tsk_fork_get_node(struct task_struct *tsk)
 	return NUMA_NO_NODE;
 }
 
-static void create_kthread(struct kthread_create_info *create)
+void create_kthread(struct kthread_create_info *create)
 {
 	int pid;
 
@@ -215,6 +215,7 @@ static void create_kthread(struct kthread_create_info *create)
 		complete(&create->done);
 	}
 }
+EXPORT_SYMBOL(create_kthread);
 
 static void kthread_add_to_kthreadd(void *data, struct kthread_create_info *create)
 {
