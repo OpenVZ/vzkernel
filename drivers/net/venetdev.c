@@ -48,10 +48,12 @@
 #include <linux/vzctl.h>
 #include <linux/vzctl_venet.h>
 #include <linux/ve.h>
+#include <linux/venet-netlink.h>
 
 struct hlist_head ip_entry_hash_table[VEIP_HASH_SZ];
 DEFINE_SPINLOCK(veip_lock);
 LIST_HEAD(veip_lh);
+static struct rtnl_link_ops venet_link_ops;
 
 #define ip_entry_hash_function(ip)  (ntohl(ip) & (VEIP_HASH_SZ - 1))
 
@@ -1087,6 +1089,8 @@ static int venet_dev_start(struct ve_struct *ve)
 	err = dev_alloc_name(dev_venet, dev_venet->name);
 	if (err<0)
 		goto err;
+	dev_venet->rtnl_link_ops = &venet_link_ops;
+	dev_venet->rtnl_link_state = RTNL_LINK_INITIALIZING;
 	if ((err = register_netdev(dev_venet)) != 0)
 		goto err;
 	ve->_venet_dev = dev_venet;
@@ -1168,6 +1172,61 @@ static struct pernet_operations venet_net_ops = {
 	.exit_batch = venet_exit_net,
 };
 
+static int venet_changelink(struct net_device *dev, struct nlattr *tb[],
+			    struct nlattr *data[])
+{
+	struct venetaddrmsg *vamp;
+	struct nlattr *nla_addr;
+	struct ve_struct *ve;
+	struct ve_addr_struct addr;
+	int cmd;
+
+	ve = dev_net(dev)->owner_ve;
+	if (ve_is_super(ve))
+		return -EINVAL;
+
+	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
+
+	if (!data[VENET_INFO_CMD])
+		return -EINVAL;
+
+	nla_addr = data[VENET_INFO_CMD];
+	vamp = nla_data(nla_addr);
+
+	memset(&addr, 0, sizeof(addr));
+	addr.family = vamp->va_family;
+
+	if (addr.family == AF_INET)
+		memcpy(&addr.key[3], &vamp->va_addr[0], 4);
+	else if (addr.family == AF_INET6)
+		memcpy(&addr.key[0], &vamp->va_addr[0], sizeof(addr.key));
+	else
+		return -EINVAL;
+
+	if (vamp->va_cmd == VENET_IP_ADD)
+		cmd = VE_IP_ADD;
+	else if (vamp->va_cmd == VENET_IP_DEL)
+		cmd = VE_IP_DEL;
+	else
+		return -EINVAL;
+
+	return do_ve_ip_map(__ve_name(ve), cmd, &addr);
+}
+
+static const struct nla_policy venet_policy[VENET_INFO_MAX + 1] = {
+	[VENET_INFO_CMD]	= { .len = sizeof(struct venetaddrmsg) },
+};
+
+static struct rtnl_link_ops venet_link_ops = {
+	.kind		= "venet",
+	.priv_size	= sizeof(struct veip_struct),
+	.setup		= venet_setup,
+	.changelink	= venet_changelink,
+	.policy		= venet_policy,
+	.maxtype	= VENET_INFO_MAX,
+};
+
 __init int venet_init(void)
 {
 	struct proc_dir_entry *de;
@@ -1195,7 +1254,7 @@ __init int venet_init(void)
 	vzioctl_register(&venetcalls);
 	vzmon_register_veaddr_print_cb(veaddr_seq_print);
 
-	return 0;
+	return rtnl_link_register(&venet_link_ops);
 
 err_cgroup:
 	remove_proc_entry("veip", proc_vz_dir);
@@ -1218,6 +1277,7 @@ __exit void venet_exit(void)
 	rcu_barrier();
 
 	BUG_ON(!list_empty(&veip_lh));
+	rtnl_link_unregister(&venet_link_ops);
 }
 
 module_init(venet_init);
