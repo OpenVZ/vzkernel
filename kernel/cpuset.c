@@ -1630,7 +1630,7 @@ static int cpuset_write_cpumask(struct cgroup *cgrp, struct cftype *cft,
 {
 	struct cpuset *cs = cgroup_cs(cgrp);
 	cpuset_filetype_t type = cft->private;
-	int retval;
+	int retval = 0;
 	cpumask_var_t cpus_allowed;
 
 	if (!alloc_cpumask_var(&cpus_allowed, GFP_KERNEL))
@@ -2188,48 +2188,18 @@ int __init cpuset_init(void)
 	return 0;
 }
 
-/*
- * If CPU and/or memory hotplug handlers, below, unplug any CPUs
- * or memory nodes, we need to walk over the cpuset hierarchy,
- * removing that CPU or node from all cpusets.  If this removes the
- * last CPU or node from a cpuset, then move the tasks in the empty
- * cpuset to its next-highest non-empty parent.
- */
-static void remove_tasks_in_empty_cpuset(struct cpuset *cs)
-{
-	struct cpuset *parent;
-
-	/*
-	 * Find its next-highest non-empty parent, (top cpuset
-	 * has online cpus, so can't be empty).
-	 */
-	parent = parent_cs(cs);
-	while (cpumask_empty(parent->cpus_allowed) ||
-			nodes_empty(parent->mems_allowed))
-		parent = parent_cs(parent);
-
-	if (cgroup_transfer_tasks(parent->css.cgroup, cs->css.cgroup)) {
-		rcu_read_lock();
-		printk(KERN_ERR "cpuset: failed to transfer tasks out of empty cpuset %s\n",
-		       cgroup_name(cs->css.cgroup));
-		rcu_read_unlock();
-	}
-}
-
 /**
  * cpuset_propagate_hotplug_workfn - propagate CPU/memory hotplug to a cpuset
  * @cs: cpuset in interest
  *
  * Compare @cs's cpu and mem masks against top_cpuset and if some have gone
- * offline, update @cs accordingly.  If @cs ends up with no CPU or memory,
- * all its tasks are moved to the nearest ancestor with both resources.
+ * offline, update @cs accordingly.
  */
 static void cpuset_propagate_hotplug_workfn(struct work_struct *work)
 {
 	static cpumask_t off_cpus;
 	static nodemask_t off_mems, tmp_mems;
 	struct cpuset *cs = container_of(work, struct cpuset, hotplug_work);
-	bool is_empty;
 
 	mutex_lock(&cpuset_mutex);
 
@@ -2253,18 +2223,7 @@ static void cpuset_propagate_hotplug_workfn(struct work_struct *work)
 		update_tasks_nodemask(cs, &tmp_mems, NULL);
 	}
 
-	is_empty = cpumask_empty(cs->cpus_allowed) ||
-		nodes_empty(cs->mems_allowed);
-
 	mutex_unlock(&cpuset_mutex);
-
-	/*
-	 * If @cs became empty, move tasks to the nearest ancestor with
-	 * execution resources.  This is full cgroup operation which will
-	 * also call back into cpuset.  Should be done outside any lock.
-	 */
-	if (is_empty)
-		remove_tasks_in_empty_cpuset(cs);
 
 	/* the following may free @cs, should be the last operation */
 	css_put(&cs->css);
