@@ -303,6 +303,27 @@ struct task_struct *kthread_create_on_node_ve(struct ve_struct *ve,
 }
 EXPORT_SYMBOL(kthread_create_on_node_ve);
 
+static int ve_start_umh(struct ve_struct *ve)
+{
+	struct task_struct *t;
+
+	init_kthread_worker(&ve->ve_umh_worker);
+	t = kthread_run_ve(ve, kthread_worker_fn, &ve->ve_umh_worker,
+			"khelper");
+	if (IS_ERR(t))
+		return PTR_ERR(t);
+
+	ve->ve_umh_task = t;
+	return 0;
+}
+
+static void ve_stop_umh(struct ve_struct *ve)
+{
+	flush_kthread_worker(&ve->ve_umh_worker);
+	kthread_stop(ve->ve_umh_task);
+	ve->ve_umh_task = NULL;
+}
+
 static int ve_start_kthread(struct ve_struct *ve)
 {
 	struct task_struct *t;
@@ -402,6 +423,10 @@ static int ve_start_container(struct ve_struct *ve)
 	if (err)
 		goto err_kthread;
 
+	err = ve_start_umh(ve);
+	if (err)
+		goto err_umh;
+
 	err = ve_hook_iterate_init(VE_SS_CHAIN, ve);
 	if (err < 0)
 		goto err_iterate;
@@ -417,6 +442,8 @@ static int ve_start_container(struct ve_struct *ve)
 	return 0;
 
 err_iterate:
+	ve_stop_umh(ve);
+err_umh:
 	ve_stop_kthread(ve);
 err_kthread:
 	ve_list_del(ve);
