@@ -149,6 +149,11 @@ extern struct kmapset_set ve_sysfs_perms;
 extern int vz_security_family_check(struct net *net, int family);
 extern int vz_security_protocol_check(struct net *net, int protocol);
 
+extern struct task_struct *kthread_create_on_node_ve(struct ve_struct *ve,
+					int (*threadfn)(void *data),
+					void *data, int node,
+					const char namefmt[], ...);
+
 void do_update_load_avg_ve(void);
 
 extern struct ve_struct *get_ve(struct ve_struct *ve);
@@ -200,6 +205,10 @@ static inline struct user_namespace *ve_init_user_ns(void)
 {
 	return &init_user_ns;
 }
+
+#define kthread_create_on_node_ve(ve, threadfn, data, node, namefmt...)	\
+	kthread_create_on_node_ve(threadfn, data, node, namefmt...)
+
 #endif	/* CONFIG_VE */
 
 struct seq_file;
