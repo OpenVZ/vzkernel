@@ -299,7 +299,7 @@ static struct ctl_table pid_ns_ctl_table[] = {
 	{
 		.procname = "ns_last_pid",
 		.maxlen = sizeof(int),
-		.mode = 0666, /* permissions are checked in the handler */
+		.mode = 0666 | S_ISVTX, /* permissions are checked in the handler */
 		.proc_handler = pid_ns_ctl_handler,
 		.extra1 = &zero,
 		.extra2 = &pid_max,
