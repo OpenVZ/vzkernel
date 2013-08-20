@@ -44,6 +44,8 @@
 #include <linux/sunrpc/clnt.h>
 #include <linux/nfsd/cld.h>
 
+#include <linux/ve.h>
+
 #include "nfsd.h"
 #include "state.h"
 #include "vfs.h"
@@ -1189,6 +1191,7 @@ nfsd4_cltrack_grace_start(time_t grace_start)
 static int
 nfsd4_umh_cltrack_upcall(char *cmd, char *arg, char *env0, char *env1)
 {
+	struct ve_struct *ve;
 	char *envp[3];
 	char *argv[4];
 	int ret;
@@ -1212,18 +1215,20 @@ nfsd4_umh_cltrack_upcall(char *cmd, char *arg, char *env0, char *env1)
 	argv[2] = arg;
 	argv[3] = NULL;
 
-	ret = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC);
+	ve = get_exec_env();
+	ret = call_usermodehelper_ve(ve, argv[0], argv, envp, UMH_WAIT_PROC);
 	/*
-	 * Disable the upcall mechanism if we're getting an ENOENT or EACCES
-	 * error. The admin can re-enable it on the fly by using sysfs
-	 * once the problem has been fixed.
+	 * - NFSd can be running inside Containers
+	 * - "cltrack_prog" is not virtualized
+	 * => let's don't disable UMH client tracking for all NFS servers
+	 *    on the whole Node due to a single incorrect Container
 	 */
-	if (ret == -ENOENT || ret == -EACCES) {
-		dprintk("NFSD: %s was not found or isn't executable (%d). "
-			"Setting cltrack_prog to blank string!",
-			cltrack_prog, ret);
-		cltrack_prog[0] = '\0';
-	}
+	if (ret == -ENOENT || ret == -EACCES)
+		ve_pr_warn_ratelimited(VE_LOG_BOTH,
+			"NFSD: %s was not found or isn't executable (%d) "
+			"in CT#%s\n",
+			cltrack_prog, ret, ve_name(ve));
+
 	dprintk("%s: %s return value: %d\n", __func__, cltrack_prog, ret);
 
 	return ret;
@@ -1254,13 +1259,6 @@ nfsd4_umh_cltrack_init(struct net *net)
 	int ret;
 	struct nfsd_net *nn = net_generic(net, nfsd_net_id);
 	char *grace_start = nfsd4_cltrack_grace_start(nn->boot_time);
-
-	/* XXX: The usermode helper s not working in container yet. */
-	if (net != &init_net) {
-		pr_warn("NFSD: attempt to initialize umh client tracking in a container ignored.\n");
-		kfree(grace_start);
-		return -EINVAL;
-	}
 
 	ret = nfsd4_umh_cltrack_upcall("init", NULL, grace_start, NULL);
 	kfree(grace_start);
