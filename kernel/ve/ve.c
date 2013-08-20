@@ -257,6 +257,52 @@ out:
 	complete(&work->done);
 }
 
+struct kthread_create_work {
+	struct kthread_work work;
+	struct kthread_create_info *info;
+};
+
+extern void create_kthread(struct kthread_create_info *create);
+
+static void kthread_create_fn(struct kthread_work *w)
+{
+	struct kthread_create_work *work = container_of(w,
+			struct kthread_create_work, work);
+
+	create_kthread(work->info);
+}
+
+static void kthread_create_queue(void *data, struct kthread_create_info *info)
+{
+	struct ve_struct *ve = data;
+	struct kthread_create_work create = {
+		KTHREAD_WORK_INIT(create.work, kthread_create_fn),
+		.info = info,
+	};
+	queue_kthread_work(&ve->ve_kthread_worker, &create.work);
+	wait_for_completion(&info->done);
+}
+
+struct task_struct *kthread_create_on_node_ve(struct ve_struct *ve,
+					int (*threadfn)(void *data),
+					void *data, int node,
+					const char namefmt[], ...)
+{
+	va_list args;
+	struct task_struct *task;
+	void (*queue)(void *data, struct kthread_create_info *info) = NULL;
+
+	if (!ve_is_super(ve))
+		queue = kthread_create_queue;
+
+	va_start(args, namefmt);
+	task = __kthread_create_on_node(queue, ve, threadfn, data,
+					node, namefmt, args);
+	va_end(args);
+	return task;
+}
+EXPORT_SYMBOL(kthread_create_on_node_ve);
+
 static int ve_start_kthread(struct ve_struct *ve)
 {
 	struct task_struct *t;
