@@ -457,6 +457,8 @@ int ve_start_container(struct ve_struct *ve)
 
 	get_ve(ve); /* for ve_exit_ns() */
 
+	tsk->mm->vps_dumpable = 1;
+
 	return 0;
 
 err_iterate:
