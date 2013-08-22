@@ -132,3 +132,4 @@ nomem:
 err_out:
 	return rc;
 }
+EXPORT_SYMBOL(mpi_mulpowm);
