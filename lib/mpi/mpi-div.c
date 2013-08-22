@@ -59,6 +59,7 @@ nomem:
 		mpi_free(temp_divisor);
 	return rc;
 }
+EXPORT_SYMBOL(mpi_fdiv_r);
 
 /****************
  * Division rounding the quotient towards -infinity.
