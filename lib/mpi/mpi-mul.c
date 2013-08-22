@@ -192,3 +192,4 @@ int mpi_mulm(MPI w, MPI u, MPI v, MPI m)
 		return -ENOMEM;
 	return mpi_fdiv_r(w, w, m);
 }
+EXPORT_SYMBOL(mpi_mulm);
