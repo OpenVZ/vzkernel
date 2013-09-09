@@ -342,6 +342,15 @@ __generic_file_splice_read(struct file *in, loff_t *ppos,
 	spd.nr_pages = find_get_pages_contig(mapping, index, nr_pages, spd.pages);
 	index += spd.nr_pages;
 
+	while (spd.nr_pages < nr_pages && mapping->i_peer_file) {
+		page = pick_peer_page(mapping, index, &in->f_ra,
+				      req_pages - spd.nr_pages);
+		if (!page)
+			break;
+		spd.pages[spd.nr_pages++] = page;
+		index++;
+	}
+
 	/*
 	 * If find_get_pages_contig() returned fewer pages than we needed,
 	 * readahead/allocate the rest and fill in the holes.
