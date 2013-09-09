@@ -984,7 +984,8 @@ int devcgroup_inode_mknod(int mode, dev_t dev)
 #ifdef CONFIG_VE
 
 static struct dev_exception_item default_whitelist_items[] = {
-	{ ~0,				~0, DEV_ALL,  ACC_HIDDEN | ACC_MKNOD },
+	{ ~0,				~0, DEV_CHAR, ACC_HIDDEN | ACC_MKNOD },
+	{ ~0,				~0, DEV_BLOCK, ACC_HIDDEN | ACC_MKNOD },
 	{ UNIX98_PTY_MASTER_MAJOR,	~0, DEV_CHAR, ACC_HIDDEN | ACC_READ | ACC_WRITE },
 	{ UNIX98_PTY_SLAVE_MAJOR,	~0, DEV_CHAR, ACC_HIDDEN | ACC_READ | ACC_WRITE },
 	{ PTY_MASTER_MAJOR,		~0, DEV_CHAR, ACC_HIDDEN | ACC_READ | ACC_WRITE },
