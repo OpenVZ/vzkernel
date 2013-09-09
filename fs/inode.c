@@ -362,6 +362,7 @@ void address_space_init_once(struct address_space *mapping)
 	spin_lock_init(&mapping->private_lock);
 	mapping->i_mmap = RB_ROOT;
 	INIT_LIST_HEAD(&mapping->i_mmap_nonlinear);
+	INIT_LIST_HEAD(&mapping->i_peer_list);
 }
 EXPORT_SYMBOL(address_space_init_once);
 
