@@ -30,6 +30,7 @@
 #include <linux/blockgroup_lock.h>
 #include <linux/percpu_counter.h>
 #include <linux/ratelimit.h>
+#include <linux/pfcache.h>
 #include <crypto/hash.h>
 #ifdef __KERNEL__
 #include <linux/compat.h>
@@ -238,6 +239,12 @@ struct ext4_io_submit {
  * Maximal count of links to a file
  */
 #define EXT4_LINK_MAX		65000
+
+#define EXT4_DATA_CSUM_SIZE	20
+#define EXT4_DATA_CSUM_NAME	"pfcache"
+
+#define EXT4_DIR_CSUM_VALUE	"auto"
+#define EXT4_DIR_CSUM_VALUE_LEN	4
 
 /*
  * Macro-instructions used to manage several block sizes
@@ -924,6 +931,11 @@ struct ext4_inode_info {
 
 	/* Precomputed uuid+inum+igen checksum for seeding inode checksums */
 	__u32 i_csum_seed;
+
+	/* SHA-1 rolling data checksum state */
+	loff_t i_data_csum_end;
+	/* FIPS 180-1 digest if i_pfcache_csum_end == -1, partial SHA-1 otherwise */
+	u8 i_data_csum[EXT4_DATA_CSUM_SIZE];
 };
 
 /*
@@ -1320,6 +1332,14 @@ struct ext4_sb_info {
 	struct ratelimit_state s_err_ratelimit_state;
 	struct ratelimit_state s_warning_ratelimit_state;
 	struct ratelimit_state s_msg_ratelimit_state;
+
+	/* data checksumming */
+	struct percpu_counter s_csum_partial;
+	struct percpu_counter s_csum_complete;
+
+	spinlock_t  s_pfcache_lock;
+	struct path s_pfcache_root;
+	struct percpu_counter s_pfcache_peers;
 };
 
 static inline struct ext4_sb_info *EXT4_SB(struct super_block *sb)
@@ -1385,6 +1405,7 @@ enum {
 					   nolocking */
 	EXT4_STATE_MAY_INLINE_DATA,	/* may have in-inode data */
 	EXT4_STATE_ORDERED_MODE,	/* data=ordered mode */
+	EXT4_STATE_PFCACHE_CSUM,	/* Data-checksumming enabled */
 };
 
 #define EXT4_INODE_BIT_FNS(name, field, offset)				\
@@ -2677,6 +2698,28 @@ extern int ext4_multi_mount_protect(struct super_block *, ext4_fsblk_t);
 extern void ext4_mmp_csum_set(struct super_block *sb, struct mmp_struct *mmp);
 extern int ext4_mmp_csum_verify(struct super_block *sb,
 				struct mmp_struct *mmp);
+
+/* pfcache.c */
+extern int ext4_open_pfcache(struct inode *inode);
+extern int ext4_close_pfcache(struct inode *inode);
+extern int ext4_relink_pfcache(struct super_block *sb, char *new_root, bool new_sb);
+extern long ext4_dump_pfcache(struct super_block *sb,
+					struct pfcache_dump_request __user *dump);
+extern int ext4_load_data_csum(struct inode *inode);
+extern void ext4_start_data_csum(struct inode *inode);
+extern void ext4_update_data_csum(struct inode *inode, loff_t pos,
+				  unsigned len, struct page* page);
+extern void ext4_commit_data_csum(struct inode *inode);
+extern void ext4_clear_data_csum(struct inode *inode);
+extern int ext4_truncate_data_csum(struct inode *inode, loff_t end);
+extern void ext4_load_dir_csum(struct inode *inode);
+extern void ext4_save_dir_csum(struct inode *inode);
+static inline int ext4_want_data_csum(struct inode *dir)
+{
+	return test_opt2(dir->i_sb, PFCACHE_CSUM) &&
+		ext4_test_inode_state(dir, EXT4_STATE_PFCACHE_CSUM);
+}
+extern struct xattr_handler ext4_xattr_trusted_csum_handler;
 
 /* BH_Uninit flag: blocks are allocated but uninitialized on disk */
 enum ext4_state_bits {
