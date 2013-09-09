@@ -1707,7 +1707,7 @@ static int rmap_walk_anon(struct page *page, struct rmap_walk_control *rwc)
  */
 static int rmap_walk_file(struct page *page, struct rmap_walk_control *rwc)
 {
-	struct address_space *mapping = page->mapping;
+	struct address_space *mapping = page->mapping, *peer;
 	pgoff_t pgoff;
 	struct vm_area_struct *vma;
 	int ret = SWAP_AGAIN;
@@ -1723,7 +1723,7 @@ static int rmap_walk_file(struct page *page, struct rmap_walk_control *rwc)
 	if (!mapping)
 		return ret;
 	pgoff = page_to_pgoff(page);
-	mutex_lock(&mapping->i_mmap_mutex);
+	mutex_lock_nested(&mapping->i_mmap_mutex, SINGLE_DEPTH_NESTING);
 	vma_interval_tree_foreach(vma, &mapping->i_mmap, pgoff, pgoff) {
 		unsigned long address = vma_address(page, vma);
 
@@ -1739,6 +1739,33 @@ static int rmap_walk_file(struct page *page, struct rmap_walk_control *rwc)
 		cond_resched();
 	}
 
+	list_for_each_entry(peer, &mapping->i_peer_list, i_peer_list) {
+		if (!mapping_mapped(peer))
+			continue;
+
+		mutex_lock(&peer->i_mmap_mutex);
+
+		vma_interval_tree_foreach(vma, &peer->i_mmap, pgoff, pgoff) {
+			unsigned long address = vma_address(page, vma);
+
+			if (rwc->invalid_vma && rwc->invalid_vma(vma, rwc->arg))
+				continue;
+
+			ret = rwc->rmap_one(page, vma, address, rwc->arg);
+			if (ret != SWAP_AGAIN)
+				break;
+			if (rwc->done && rwc->done(page))
+				break;
+
+			cond_resched();
+		}
+		mutex_unlock(&peer->i_mmap_mutex);
+
+		if (ret != SWAP_AGAIN)
+			goto done;
+		if (rwc->done && rwc->done(page))
+			goto done;
+	}
 done:
 	mutex_unlock(&mapping->i_mmap_mutex);
 	return ret;
