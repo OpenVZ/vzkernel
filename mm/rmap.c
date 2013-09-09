@@ -958,7 +958,7 @@ static int page_referenced_file(struct page *page,
 				unsigned long *vm_flags)
 {
 	unsigned int mapcount;
-	struct address_space *mapping = page->mapping;
+	struct address_space *mapping = page->mapping, *peer;
 	pgoff_t pgoff = page_to_pgoff(page);
 	struct vm_area_struct *vma;
 	int referenced = 0;
@@ -978,7 +978,7 @@ static int page_referenced_file(struct page *page,
 	 */
 	BUG_ON(!PageLocked(page));
 
-	mutex_lock(&mapping->i_mmap_mutex);
+	mutex_lock_nested(&mapping->i_mmap_mutex, SINGLE_DEPTH_NESTING);
 
 	/*
 	 * i_mmap_mutex does not stabilize mapcount at all, but mapcount
@@ -998,9 +998,31 @@ static int page_referenced_file(struct page *page,
 		referenced += page_referenced_one(page, vma, address,
 						  &mapcount, vm_flags);
 		if (!mapcount)
-			break;
+			goto out;
 	}
 
+	list_for_each_entry(peer, &mapping->i_peer_list, i_peer_list) {
+		if (!mapping_mapped(peer))
+			continue;
+
+		mutex_lock(&peer->i_mmap_mutex);
+
+		vma_interval_tree_foreach(vma, &peer->i_mmap, pgoff, pgoff) {
+			unsigned long address = vma_address(page, vma);
+			if (memcg && !mm_match_cgroup(vma->vm_mm, memcg))
+				continue;
+			referenced += page_referenced_one(page, vma, address,
+							  &mapcount, vm_flags);
+			if (!mapcount)
+				break;
+		}
+
+		mutex_unlock(&peer->i_mmap_mutex);
+
+		if (!mapcount)
+			goto out;
+	}
+out:
 	mutex_unlock(&mapping->i_mmap_mutex);
 	return referenced;
 }
@@ -1595,14 +1617,13 @@ static int try_to_unmap_anon(struct page *page, enum ttu_flags flags)
  * vm_flags for that VMA.  That should be OK, because that vma shouldn't be
  * 'LOCKED.
  */
-static int try_to_unmap_file(struct page *page, enum ttu_flags flags)
+static int try_to_unmap_mapping(struct page *page,
+		struct address_space *mapping, enum ttu_flags flags)
 {
-	struct address_space *mapping = page->mapping;
 	pgoff_t pgoff = page_to_pgoff(page);
 	struct vm_area_struct *vma;
 	int ret = SWAP_AGAIN;
 
-	mutex_lock(&mapping->i_mmap_mutex);
 	vma_interval_tree_foreach(vma, &mapping->i_mmap, pgoff, pgoff) {
 		unsigned long address = vma_address(page, vma);
 		ret = try_to_unmap_one(page, vma, address, flags);
@@ -1610,6 +1631,34 @@ static int try_to_unmap_file(struct page *page, enum ttu_flags flags)
 			goto out;
 	}
 
+out:
+	return ret;
+}
+
+static int try_to_unmap_file(struct page *page, enum ttu_flags flags)
+{
+	struct address_space *mapping = page->mapping, *peer;
+	int ret;
+
+	mutex_lock_nested(&mapping->i_mmap_mutex, SINGLE_DEPTH_NESTING);
+
+	ret = try_to_unmap_mapping(page, mapping, flags);
+	if (ret != SWAP_AGAIN || !page_mapped(page))
+		goto out;
+
+	/*
+	 * Ignore TTU_MUNLOCK, reclaimer can handle it.
+	 * Handle TTU_MIGRATION like TTU_UNMAP, without migration ptes.
+	 */
+	flags = TTU_UNMAP | (flags & ~TTU_ACTION_MASK);
+
+	list_for_each_entry(peer, &mapping->i_peer_list, i_peer_list) {
+		mutex_lock(&peer->i_mmap_mutex);
+		ret = try_to_unmap_mapping(page, peer, flags);
+		mutex_unlock(&peer->i_mmap_mutex);
+		if (ret != SWAP_AGAIN || !page_mapped(page))
+			break;
+	}
 out:
 	mutex_unlock(&mapping->i_mmap_mutex);
 	return ret;
