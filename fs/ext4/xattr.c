@@ -106,6 +106,7 @@ static const struct xattr_handler *ext4_xattr_handler_map[] = {
 
 const struct xattr_handler *ext4_xattr_handlers[] = {
 	&ext4_xattr_user_handler,
+	&ext4_xattr_trusted_csum_handler,
 	&ext4_xattr_trusted_handler,
 #ifdef CONFIG_EXT4_FS_POSIX_ACL
 	&ext4_xattr_acl_access_handler,

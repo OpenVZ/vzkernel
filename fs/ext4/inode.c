@@ -1049,6 +1049,10 @@ static int ext4_write_end(struct file *file,
 	 * page writeout could otherwise come in and zero beyond i_size.
 	 */
 	i_size_changed = ext4_update_inode_size(inode, pos + copied);
+
+	if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+		ext4_update_data_csum(inode, pos, copied, page);
+
 	unlock_page(page);
 	page_cache_release(page);
 
@@ -1122,6 +1126,9 @@ static int ext4_journalled_write_end(struct file *file,
 	size_changed = ext4_update_inode_size(inode, pos + copied);
 	ext4_set_inode_state(inode, EXT4_STATE_JDATA);
 	EXT4_I(inode)->i_datasync_tid = handle->h_transaction->t_tid;
+
+	if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+		ext4_update_data_csum(inode, pos, copied, page);
 	unlock_page(page);
 	page_cache_release(page);
 
@@ -2665,6 +2672,9 @@ static int ext4_da_write_end(struct file *file,
 		ret2 = generic_write_end(file, mapping, pos, len, copied,
 							page, fsdata);
 
+	if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+		ext4_update_data_csum(inode, pos, copied, page);
+
 	copied = ret2;
 	if (ret2 < 0)
 		ret = ret2;
@@ -3120,6 +3130,10 @@ static ssize_t ext4_direct_IO(int rw, struct kiocb *iocb,
 	/* Let buffer I/O handle the inline data case. */
 	if (ext4_has_inline_data(inode))
 		return 0;
+
+	if ((rw == WRITE) &&
+	    ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+		ext4_truncate_data_csum(inode, -1);
 
 	trace_ext4_direct_IO_enter(inode, offset, iov_length(iov, nr_segs), rw);
 	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
@@ -3604,6 +3618,9 @@ void ext4_truncate(struct inode *inode)
 
 	if (inode->i_size == 0 && !test_opt(inode->i_sb, NO_AUTO_DA_ALLOC))
 		ext4_set_inode_state(inode, EXT4_STATE_DA_ALLOC_CLOSE);
+
+	if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+		ext4_truncate_data_csum(inode, inode->i_size);
 
 	if (ext4_has_inline_data(inode)) {
 		int has_inline = 1;
@@ -4098,10 +4115,14 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 		inode->i_op = &ext4_file_inode_operations;
 		inode->i_fop = &ext4_file_operations;
 		ext4_set_aops(inode);
+		if (test_opt2(sb, PFCACHE_CSUM) && !ext4_load_data_csum(inode))
+			ext4_open_pfcache(inode);
 	} else if (S_ISDIR(inode->i_mode)) {
 		inode->i_op = &ext4_dir_inode_operations.ops;
 		inode->i_fop = &ext4_dir_operations;
 		inode->i_flags |= S_IOPS_WRAPPER;
+		if (test_opt2(sb, PFCACHE_CSUM))
+			ext4_load_dir_csum(inode);
 	} else if (S_ISLNK(inode->i_mode)) {
 		if (ext4_inode_is_fast_symlink(inode)) {
 			inode->i_op = &ext4_fast_symlink_inode_operations;
@@ -4129,6 +4150,8 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 	}
 	brelse(iloc.bh);
 	ext4_set_inode_flags(inode);
+	if (test_opt2(sb, PFCACHE_CSUM))
+		ext4_load_data_csum(inode);
 	unlock_new_inode(inode);
 	return inode;
 
