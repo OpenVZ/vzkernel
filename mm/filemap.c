@@ -1634,6 +1634,12 @@ find_page:
 		}
 
 		page = find_get_page(mapping, index);
+		if (!page && mapping->i_peer_file) {
+			page = pick_peer_page(mapping, index, ra,
+					      last_index - index);
+			if (page)
+				goto page_ok;
+		}
 		if (!page) {
 			page_cache_sync_readahead(mapping,
 					ra, filp,
@@ -2181,6 +2187,13 @@ int filemap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	 * Do we have something in the page cache already?
 	 */
 	page = find_get_page(mapping, offset);
+	if (!page && mapping->i_peer_file) {
+		page = pick_peer_page(mapping, offset, ra, ra->ra_pages);
+		if (page) {
+			vmf->page = page;
+			return 0; /* unlocked page */
+		}
+	}
 	if (likely(page) && !(vmf->flags & FAULT_FLAG_TRIED)) {
 		/*
 		 * We found the page, so try async readahead before
