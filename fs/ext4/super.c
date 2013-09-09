@@ -823,6 +823,9 @@ static void ext4_put_super(struct super_block *sb)
 	percpu_counter_destroy(&sbi->s_dirs_counter);
 	percpu_counter_destroy(&sbi->s_dirtyclusters_counter);
 	percpu_counter_destroy(&sbi->s_extent_cache_cnt);
+	percpu_counter_destroy(&sbi->s_csum_partial);
+	percpu_counter_destroy(&sbi->s_csum_complete);
+	percpu_counter_destroy(&sbi->s_pfcache_peers);
 	brelse(sbi->s_sbh);
 #ifdef CONFIG_QUOTA
 	for (i = 0; i < MAXQUOTAS; i++)
@@ -981,6 +984,10 @@ void ext4_clear_inode(struct inode *inode)
 					       EXT4_I(inode)->jinode);
 		jbd2_free_inode(EXT4_I(inode)->jinode);
 		EXT4_I(inode)->jinode = NULL;
+	}
+	if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM)) {
+		ext4_close_pfcache(inode);
+		ext4_clear_data_csum(inode);
 	}
 }
 
@@ -1170,6 +1177,7 @@ enum {
 	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
 	Opt_max_dir_size_kb, Opt_nojournal_checksum, Opt_balloon_ino,
 	Opt_pfcache_csum, Opt_nopfcache_csum,
+	Opt_pfcache, Opt_nopfcache,
 };
 
 static const match_table_t tokens = {
@@ -1249,6 +1257,8 @@ static const match_table_t tokens = {
 	{Opt_balloon_ino, "balloon_ino=%u"},
 	{Opt_pfcache_csum, "pfcache_csum"},
 	{Opt_nopfcache_csum, "nopfcache_csum"},
+	{Opt_pfcache, "pfcache=%s"},
+	{Opt_nopfcache, "nopfcache"},
 	{Opt_removed, "check=none"},	/* mount option from ext2/3 */
 	{Opt_removed, "nocheck"},	/* mount option from ext2/3 */
 	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
@@ -1491,6 +1501,21 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
 		return 1;
 	case Opt_i_version:
 		sb->s_flags |= MS_I_VERSION;
+		return 1;
+	case Opt_pfcache:
+		if (capable(CAP_SYS_ADMIN)) {
+			char *path;
+			int err;
+
+			path = match_strdup(&args[0]);
+			err = ext4_relink_pfcache(sb, path, !is_remount);
+			kfree(path);
+			return err ? -1 : 1;
+		}
+		return 1;
+	case Opt_nopfcache:
+		if (capable(CAP_SYS_ADMIN))
+			ext4_relink_pfcache(sb, NULL, !is_remount);
 		return 1;
 	}
 
@@ -1881,6 +1906,14 @@ static int _ext4_show_options(struct seq_file *seq, struct super_block *sb,
 			SEQ_OPTS_PUTS("pfcache_csum");
 		else if (nodefs)
 			SEQ_OPTS_PUTS("nopfcache_csum");
+		if (sbi->s_pfcache_root.mnt) {
+			spin_lock(&sbi->s_pfcache_lock);
+			if (sbi->s_pfcache_root.mnt) {
+				SEQ_OPTS_PUTS("pfcache=");
+				seq_path(seq, &sbi->s_pfcache_root, "\\ \t\n");
+			}
+			spin_unlock(&sbi->s_pfcache_lock);
+		}
 	}
 
 	ext4_show_quota_options(seq, sb);
@@ -2635,6 +2668,30 @@ static ssize_t sbi_deprecated_show(struct ext4_attr *a,
 	return snprintf(buf, PAGE_SIZE, "%d\n", a->u.deprecated_val);
 }
 
+static ssize_t csum_partial_show(struct ext4_attr *a,
+					      struct ext4_sb_info *sbi,
+					      char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%llu\n",
+			(s64) percpu_counter_sum(&sbi->s_csum_partial));
+}
+
+static ssize_t csum_complete_show(struct ext4_attr *a,
+					      struct ext4_sb_info *sbi,
+					      char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%llu\n",
+			(s64) percpu_counter_sum(&sbi->s_csum_complete));
+}
+
+static ssize_t pfcache_peers_show(struct ext4_attr *a,
+					      struct ext4_sb_info *sbi,
+					      char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%llu\n",
+			(s64) percpu_counter_sum(&sbi->s_pfcache_peers));
+}
+
 #define EXT4_ATTR_OFFSET(_name,_mode,_show,_store,_elname) \
 static struct ext4_attr ext4_attr_##_name = {			\
 	.attr = {.name = __stringify(_name), .mode = _mode },	\
@@ -2681,6 +2738,9 @@ EXT4_RO_ATTR(delayed_allocation_blocks);
 EXT4_RO_ATTR(session_write_kbytes);
 EXT4_RO_ATTR(lifetime_write_kbytes);
 EXT4_RW_ATTR(reserved_clusters);
+EXT4_RO_ATTR(csum_partial);
+EXT4_RO_ATTR(csum_complete);
+EXT4_RO_ATTR(pfcache_peers);
 EXT4_ATTR_OFFSET(inode_readahead_blks, 0644, sbi_ui_show,
 		 inode_readahead_blks_store, s_inode_readahead_blks);
 EXT4_RW_ATTR_SBI_UI(inode_goal, s_inode_goal);
@@ -2728,6 +2788,9 @@ static struct attribute *ext4_attrs[] = {
 	ATTR_LIST(errors_count),
 	ATTR_LIST(first_error_time),
 	ATTR_LIST(last_error_time),
+	ATTR_LIST(csum_partial),
+	ATTR_LIST(csum_complete),
+	ATTR_LIST(pfcache_peers),
 	NULL,
 };
 
@@ -4017,6 +4080,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	sbi->s_gdb_count = db_count;
 	get_random_bytes(&sbi->s_next_generation, sizeof(u32));
 	spin_lock_init(&sbi->s_next_gen_lock);
+	spin_lock_init(&sbi->s_pfcache_lock);
 
 	init_timer(&sbi->s_err_report);
 	sbi->s_err_report.function = print_daily_error_info;
@@ -4026,7 +4090,16 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	ext4_es_register_shrinker(sbi);
 
 	err = percpu_counter_init(&sbi->s_extent_cache_cnt, 0, GFP_KERNEL);
-	if (err) {
+	if (!err) {
+		err = percpu_counter_init(&sbi->s_csum_partial, 0, GFP_KERNEL);
+	}
+	if (!err) {
+		err = percpu_counter_init(&sbi->s_csum_complete, 0, GFP_KERNEL);
+	}
+	if (!err) {
+		err = percpu_counter_init(&sbi->s_pfcache_peers, 0, GFP_KERNEL);
+	}
+	if (err != 0) {
 		ext4_msg(sb, KERN_ERR, "insufficient memory");
 		goto failed_mount3;
 	}
@@ -4370,6 +4443,9 @@ failed_mount3:
 	ext4_es_unregister_shrinker(sbi);
 	del_timer_sync(&sbi->s_err_report);
 	percpu_counter_destroy(&sbi->s_extent_cache_cnt);
+	percpu_counter_destroy(&sbi->s_csum_partial);
+	percpu_counter_destroy(&sbi->s_csum_complete);
+	percpu_counter_destroy(&sbi->s_pfcache_peers);
 	if (sbi->s_mmp_tsk)
 		kthread_stop(sbi->s_mmp_tsk);
 failed_mount2:
@@ -4383,6 +4459,8 @@ failed_mount:
 		remove_proc_entry("options", sbi->s_proc);
 		remove_proc_entry(sb->s_id, ext4_proc_root);
 	}
+	if (sbi->s_pfcache_root.mnt)
+		ext4_relink_pfcache(sb, NULL, true);
 #ifdef CONFIG_QUOTA
 	for (i = 0; i < MAXQUOTAS; i++)
 		kfree(sbi->s_qf_names[i]);
@@ -5639,6 +5717,9 @@ static void ext4_kill_sb(struct super_block *sb)
 	sbi = EXT4_SB(sb);
 	if (sbi && sbi->s_balloon_ino)
 		iput(sbi->s_balloon_ino);
+
+	if (sbi && sbi->s_pfcache_root.mnt)
+		ext4_relink_pfcache(sb, NULL, false);
 
 	kill_block_super(sb);
 }
