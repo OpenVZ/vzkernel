@@ -2064,6 +2064,14 @@ extern void truncate_inode_pages_final(struct address_space *);
 extern int filemap_fault(struct vm_area_struct *, struct vm_fault *);
 extern int filemap_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf);
 
+struct path;
+struct cred;
+int open_mapping_peer(struct address_space *mapping,
+		struct path *path, const struct cred *cred);
+void close_mapping_peer(struct address_space *mapping);
+struct page *pick_peer_page(struct address_space *mapping, pgoff_t index,
+		struct file_ra_state *ra, unsigned ra_size);
+
 /* mm/page-writeback.c */
 int write_one_page(struct page *page, int wait);
 void task_dirty_inc(struct task_struct *tsk);
