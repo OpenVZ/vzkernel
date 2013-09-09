@@ -4056,3 +4056,178 @@ int add_pages(int nid, unsigned long start,
 	return __add_pages(nid, zone, start >> PAGE_SHIFT, size >> PAGE_SHIFT);
 }
 #endif /* ARCH_HAS_ADD_PAGES */
+
+#include <linux/file.h>
+
+int open_mapping_peer(struct address_space *mapping,
+		struct path *path, const struct cred *cred)
+{
+	struct inode *inode = path->dentry->d_inode;
+	struct address_space *peer = inode->i_mapping;
+	struct file *file = NULL;
+
+restart:
+	if (!peer->i_peer_file) {
+		file = dentry_open(path, O_RDONLY | O_LARGEFILE, cred);
+		if (IS_ERR(file)) {
+			return PTR_ERR(file);
+		}
+
+		spin_lock(&inode->i_lock);
+		if (atomic_read(&inode->i_writecount) > 0) {
+			spin_unlock(&inode->i_lock);
+			fput(file);
+			return -ETXTBSY;
+		}
+		if (inode->i_size != mapping->host->i_size) {
+			spin_unlock(&inode->i_lock);
+			fput(file);
+			return -EINVAL;
+		}
+		if (peer->i_peer_file) {
+			spin_unlock(&inode->i_lock);
+			fput(file);
+			file = NULL;
+			goto restart;
+		}
+		atomic_dec(&inode->i_writecount);
+		rcu_assign_pointer(peer->i_peer_file, get_file(file));
+		spin_unlock(&inode->i_lock);
+	}
+
+	mutex_lock_nested(&peer->i_mmap_mutex, SINGLE_DEPTH_NESTING);
+	if (!peer->i_peer_file) {
+		mutex_unlock(&peer->i_mmap_mutex);
+		goto restart;
+	}
+	mutex_lock(&mapping->i_mmap_mutex);
+	rcu_assign_pointer(mapping->i_peer_file, peer->i_peer_file);
+	list_add(&mapping->i_peer_list, &peer->i_peer_list);
+	mutex_unlock(&mapping->i_mmap_mutex);
+	mutex_unlock(&peer->i_mmap_mutex);
+
+	invalidate_mapping_pages(mapping, 0, -1);
+
+	if (file) {
+		file_accessed(file);
+		fput(file);
+	}
+	return 0;
+}
+EXPORT_SYMBOL(open_mapping_peer);
+
+static bool synchronize_mapping_faults_vma(struct address_space *mapping,
+		struct vm_area_struct *vma)
+{
+	struct mm_struct *mm = vma->vm_mm;
+
+	if (vma->vm_private_data == vma)
+		return false;
+	BUG_ON(vma->vm_private_data);
+	vma->vm_private_data = vma;
+
+	atomic_inc(&mm->mm_count);
+	mutex_unlock(&mapping->i_mmap_mutex);
+	down_write(&mm->mmap_sem);
+	up_write(&mm->mmap_sem);
+	mmdrop(mm);
+	mutex_lock(&mapping->i_mmap_mutex);
+
+	return true;
+}
+
+static void synchronize_mapping_faults(struct address_space *mapping)
+{
+	struct vm_area_struct *vma;
+
+restart:
+	vma_interval_tree_foreach(vma, &mapping->i_mmap, 0, ULONG_MAX)
+		if (synchronize_mapping_faults_vma(mapping, vma))
+			goto restart;
+	vma_interval_tree_foreach(vma, &mapping->i_mmap, 0, ULONG_MAX)
+		vma->vm_private_data = NULL;
+}
+
+void close_mapping_peer(struct address_space *mapping)
+{
+	struct file *file = mapping->i_peer_file;
+	struct address_space *peer;
+
+	if (!file)
+		return;
+
+	mutex_lock(&mapping->i_mmap_mutex);
+
+	rcu_assign_pointer(mapping->i_peer_file, NULL);
+
+	if (mapping_mapped(mapping)) {
+		struct zap_details details = {
+			.check_mapping = file->f_mapping,
+			.first_index = 0,
+			.last_index = -1,
+		};
+
+		synchronize_mapping_faults(mapping);
+		unmap_mapping_range_tree(&mapping->i_mmap, &details);
+	}
+
+	mutex_unlock(&mapping->i_mmap_mutex);
+
+	peer = file->f_mapping;
+
+	mutex_lock(&peer->i_mmap_mutex);
+	list_del_init(&mapping->i_peer_list);
+	if (list_empty(&peer->i_peer_list))
+		rcu_assign_pointer(peer->i_peer_file, NULL);
+	else
+		file = NULL;
+	mutex_unlock(&peer->i_mmap_mutex);
+
+	if (file) {
+		atomic_inc(&file->f_inode->i_writecount);
+		file_accessed(file);
+		fput(file);
+	}
+}
+EXPORT_SYMBOL(close_mapping_peer);
+
+struct page *pick_peer_page(struct address_space *mapping, pgoff_t index,
+		struct file_ra_state *ra, unsigned ra_size)
+{
+	struct address_space *peer;
+	struct page *page;
+	struct file *file;
+
+	rcu_read_lock();
+	file = rcu_dereference(mapping->i_peer_file);
+	if (!file || !atomic_long_inc_not_zero(&file->f_count)) {
+		rcu_read_unlock();
+		return NULL;
+	}
+	rcu_read_unlock();
+
+	peer = file->f_mapping;
+
+	page = find_get_page(peer, index);
+	if (!page) {
+		page_cache_sync_readahead(peer, ra, file, index, ra_size);
+		page = find_get_page(peer, index);
+		if (!page)
+			goto out;
+	}
+	if (PageReadahead(page))
+		page_cache_async_readahead(peer, ra, file,
+				page, index, ra->ra_pages);
+	if (!PageUptodate(page)) {
+		if (!lock_page_killable(page)) {
+			unlock_page(page);
+			if (PageUptodate(page))
+				goto out;;
+		}
+		put_page(page);
+		page = NULL;
+	}
+out:
+	fput(file);
+	return page;
+}
