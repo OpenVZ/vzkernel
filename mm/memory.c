@@ -4561,8 +4561,10 @@ int open_mapping_peer(struct address_space *mapping,
 restart:
 	if (!peer->i_peer_file) {
 		file = dentry_open(path, O_RDONLY | O_LARGEFILE, cred);
-		if (IS_ERR(file))
+		if (IS_ERR(file)) {
+			path_put(path);
 			return PTR_ERR(file);
+		}
 
 		spin_lock(&inode->i_lock);
 		if (atomic_read(&inode->i_writecount) > 0) {
