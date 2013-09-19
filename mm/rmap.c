@@ -1657,10 +1657,10 @@ static int try_to_unmap_file(struct page *page, enum ttu_flags flags)
 		goto out;
 
 	/*
-	 * Ignore TTU_MUNLOCK, reclaimer can handle it.
 	 * Handle TTU_MIGRATION like TTU_UNMAP, without migration ptes.
 	 */
-	flags = TTU_UNMAP | (flags & ~TTU_ACTION_MASK);
+	if (!(flags & TTU_MUNLOCK))
+		flags = TTU_UNMAP | (flags & ~TTU_ACTION_MASK);
 
 	list_for_each_entry(peer, &mapping->i_peer_list, i_peer_list) {
 		mutex_lock(&peer->i_mmap_mutex);
