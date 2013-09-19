@@ -280,7 +280,7 @@ static void veth_setup(struct net_device *dev)
 	dev->netdev_ops = &veth_netdev_ops;
 	dev->ethtool_ops = &veth_ethtool_ops;
 	dev->features |= NETIF_F_LLTX;
-	dev->features |= VETH_FEATURES;
+	dev->features |= VETH_FEATURES | NETIF_F_VIRTUAL;
 	dev->vlan_features = dev->features &
 			     ~(NETIF_F_HW_VLAN_CTAG_TX | NETIF_F_HW_VLAN_STAG_TX);
 	dev->destructor = veth_dev_free;
