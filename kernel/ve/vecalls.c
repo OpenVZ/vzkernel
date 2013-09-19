@@ -490,6 +490,7 @@ err_creds:
 err_ve_attach:
 err_devcgroup:
 	cgroup_kernel_close(ve_cgroup);
+	cgroup_kernel_remove(ve0.css.cgroup, ve_name);
 err_cgroup:
 	fairsched_drop_node(veid, 1);
 err_sched:
