@@ -1739,6 +1739,11 @@ static int rmap_walk_file(struct page *page, struct rmap_walk_control *rwc)
 		cond_resched();
 	}
 
+	/* Does page belong to pfcache mapping? */
+	if (!mapping->i_peer_file ||
+	    mapping->i_peer_file->f_mapping != mapping)
+		goto done;
+
 	list_for_each_entry(peer, &mapping->i_peer_list, i_peer_list) {
 		if (!mapping_mapped(peer))
 			continue;
