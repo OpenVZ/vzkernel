@@ -1001,6 +1001,11 @@ static int page_referenced_file(struct page *page,
 			goto out;
 	}
 
+	/* Does page belong to pfcache mapping? */
+	if (!mapping->i_peer_file ||
+	    mapping->i_peer_file->f_mapping != mapping)
+		goto out;
+
 	list_for_each_entry(peer, &mapping->i_peer_list, i_peer_list) {
 		if (!mapping_mapped(peer))
 			continue;
@@ -1644,6 +1649,11 @@ static int try_to_unmap_file(struct page *page, enum ttu_flags flags)
 
 	ret = try_to_unmap_mapping(page, mapping, flags);
 	if (ret != SWAP_AGAIN || !page_mapped(page))
+		goto out;
+
+	/* Does page belong to pfcache mapping? */
+	if (!mapping->i_peer_file ||
+	    mapping->i_peer_file->f_mapping != mapping)
 		goto out;
 
 	/*
