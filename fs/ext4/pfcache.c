@@ -54,7 +54,7 @@ int ext4_open_pfcache(struct inode *inode)
 	path_get(&root);
 	spin_unlock(&EXT4_SB(sb)->s_pfcache_lock);
 
-	if (!path.mnt)
+	if (!root.mnt)
 		return -ENODEV;
 
 	pfcache_path(inode, name);
