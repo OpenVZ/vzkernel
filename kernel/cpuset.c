@@ -60,8 +60,6 @@
 #include <linux/workqueue.h>
 #include <linux/cgroup.h>
 
-#include <bc/beancounter.h>
-
 /*
  * Tracks how many cpusets are currently defined in system.
  * When there is only one cpuset (the root cpuset) we can
@@ -88,9 +86,6 @@ struct cpuset {
 	unsigned long flags;		/* "unsigned long" so bitops work */
 	cpumask_var_t cpus_allowed;	/* CPUs allowed to tasks in cpuset */
 	nodemask_t mems_allowed;	/* Memory Nodes allowed to tasks */
-
-	cpumask_var_t cpuset_cpus_allowed;
-	nodemask_t cpuset_mems_allowed;
 
 	struct fmeter fmeter;		/* memory_pressure filter */
 
@@ -144,22 +139,6 @@ static inline bool task_has_mempolicy(struct task_struct *task)
 }
 #endif
 
-
-static struct user_beancounter *get_cpuset_beancounter(struct cpuset *cs)
-{
-	struct user_beancounter *ub = NULL;
-	struct dentry *dentry;
-	unsigned long id;
-	char *endp;
-
-	dentry = cs->css.cgroup->dentry;
-	if (dentry) {
-		id = simple_strtoul(dentry->d_name.name, &endp, 10);
-		if (!*endp && id <= INT_MAX)
-			ub = get_beancounter_byuid(id, 0);
-	}
-	return ub;
-}
 
 /* bits in struct cpuset flags field */
 typedef enum {
@@ -434,13 +413,6 @@ static struct cpuset *alloc_trial_cpuset(const struct cpuset *cs)
 	}
 	cpumask_copy(trial->cpus_allowed, cs->cpus_allowed);
 
-	if (!alloc_cpumask_var(&trial->cpuset_cpus_allowed, GFP_KERNEL)) {
-		free_cpumask_var(trial->cpus_allowed);
-		kfree(trial);
-		return NULL;
-	}
-	cpumask_copy(trial->cpuset_cpus_allowed, cs->cpuset_cpus_allowed);
-
 	return trial;
 }
 
@@ -450,7 +422,6 @@ static struct cpuset *alloc_trial_cpuset(const struct cpuset *cs)
  */
 static void free_trial_cpuset(struct cpuset *trial)
 {
-	free_cpumask_var(trial->cpuset_cpus_allowed);
 	free_cpumask_var(trial->cpus_allowed);
 	kfree(trial);
 }
@@ -892,15 +863,9 @@ static void update_tasks_cpumask(struct cpuset *cs, struct ptr_heap *heap)
 	cgroup_scan_tasks(&scan);
 }
 
-/**
- * update_cpumask - update the cpus_allowed mask of a cpuset and all tasks in it
- * @cs: the cpuset to consider
- * @cpus_allowed: new cpu mask
- */
-static int update_cpumask(struct cpuset *cs,
-		const struct cpumask *cpus_allowed, int update_allowed)
+static int __update_cpumask(struct cpuset *cs,
+			    const struct cpumask *cpus_allowed)
 {
-	const struct cpumask *cpuset_cpus_allowed = cpu_active_mask;
 	struct cpuset *trialcs;
 	struct ptr_heap heap;
 	int retval;
@@ -910,10 +875,7 @@ static int update_cpumask(struct cpuset *cs,
 	if (cs == &top_cpuset)
 		return -EACCES;
 
-	if (!cpumask_empty(cs->cpuset_cpus_allowed) && !update_allowed)
-		cpuset_cpus_allowed = cs->cpuset_cpus_allowed;
-
-	if (!cpumask_subset(cpus_allowed, cpuset_cpus_allowed))
+	if (!cpumask_subset(cpus_allowed, cpu_active_mask))
 		return -EINVAL;
 
 	trialcs = alloc_trial_cpuset(cs);
@@ -938,8 +900,6 @@ static int update_cpumask(struct cpuset *cs,
 
 	mutex_lock(&callback_mutex);
 	cpumask_copy(cs->cpus_allowed, trialcs->cpus_allowed);
-	if (update_allowed)
-		cpumask_copy(cs->cpuset_cpus_allowed, cs->cpus_allowed);
 	mutex_unlock(&callback_mutex);
 
 	/*
@@ -956,6 +916,34 @@ static int update_cpumask(struct cpuset *cs,
 	retval = 0;
 done:
 	free_trial_cpuset(trialcs);
+	return retval;
+}
+
+/**
+ * update_cpumask - update the cpus_allowed mask of a cpuset and all tasks in it
+ * @buf: buffer of cpu numbers written to this cpuset
+ */
+static int update_cpumask(struct cpuset *cs, const char *buf)
+{
+	cpumask_var_t cpus_allowed;
+	int retval = 0;
+
+	if (!alloc_cpumask_var(&cpus_allowed, GFP_KERNEL))
+		return -ENOMEM;
+
+	/*
+	 * Since cpulist_parse() fails on an empty mask, we special case
+	 * that parsing.
+	 */
+	if (!*buf)
+		cpumask_clear(cpus_allowed);
+	else
+		retval = cpulist_parse(buf, cpus_allowed);
+
+	if (retval == 0)
+		retval = __update_cpumask(cs, cpus_allowed);
+
+	free_cpumask_var(cpus_allowed);
 	return retval;
 }
 
@@ -1128,10 +1116,9 @@ static void update_tasks_nodemask(struct cpuset *cs, const nodemask_t *oldmem,
  * lock each such tasks mm->mmap_sem, scan its vma's and rebind
  * their mempolicies to the cpusets new mems_allowed.
  */
-static int update_nodemask(struct cpuset *cs,
-		const nodemask_t *mems_allowed, int update_allowed)
+static int __update_nodemask(struct cpuset *cs,
+			   const nodemask_t *mems_allowed)
 {
-	const nodemask_t *cpuset_mems_allowed = &node_states[N_HIGH_MEMORY];
 	struct cpuset *trialcs = NULL;
 	NODEMASK_ALLOC(nodemask_t, oldmem, GFP_KERNEL);
 	int retval;
@@ -1149,10 +1136,7 @@ static int update_nodemask(struct cpuset *cs,
 		goto done;
 	}
 
-	if (!nodes_empty(cs->cpuset_mems_allowed) && !update_allowed)
-		cpuset_mems_allowed = &cs->cpuset_mems_allowed;
-
-	if (!nodes_subset(*mems_allowed, *cpuset_mems_allowed)) {
+	if (!nodes_subset(*mems_allowed, node_states[N_MEMORY])) {
 		retval = -EINVAL;
 		goto done;
 	}
@@ -1180,8 +1164,6 @@ static int update_nodemask(struct cpuset *cs,
 
 	mutex_lock(&callback_mutex);
 	cs->mems_allowed = trialcs->mems_allowed;
-	if (update_allowed)
-		cs->cpuset_mems_allowed = cs->mems_allowed;
 	mutex_unlock(&callback_mutex);
 
 	update_tasks_nodemask(cs, oldmem, &heap);
@@ -1191,6 +1173,30 @@ done:
 	if (trialcs)
 		free_trial_cpuset(trialcs);
 	NODEMASK_FREE(oldmem);
+	return retval;
+}
+
+static int update_nodemask(struct cpuset *cs, const char *buf)
+{
+	NODEMASK_ALLOC(nodemask_t, mems_allowed, GFP_KERNEL);
+	int retval = 0;
+
+	if (!mems_allowed)
+		return -ENOMEM;
+
+	/*
+	 * Since nodelist_parse() fails on an empty mask, we special case
+	 * that parsing.
+	 */
+	if (!*buf)
+		nodes_clear(*mems_allowed);
+	else
+		retval = nodelist_parse(buf, *mems_allowed);
+
+	if (retval == 0)
+		retval = __update_nodemask(cs, mems_allowed);
+
+	NODEMASK_FREE(mems_allowed);
 	return retval;
 }
 
@@ -1525,12 +1531,12 @@ static void cpuset_attach(struct cgroup *cgrp, struct cgroup_taskset *tset)
 
 int cgroup_set_cpumask(struct cgroup *cgrp, const struct cpumask *cpus_allowed)
 {
-	return update_cpumask(cgroup_cs(cgrp), cpus_allowed, 1);
+	return __update_cpumask(cgroup_cs(cgrp), cpus_allowed);
 }
 
 int cgroup_set_nodemask(struct cgroup *cgrp, const nodemask_t *nodes_allowed)
 {
-	return update_nodemask(cgroup_cs(cgrp), nodes_allowed, 1);
+	return __update_nodemask(cgroup_cs(cgrp), nodes_allowed);
 }
 
 /* The various types of files and directories in a cpuset file system */
@@ -1539,9 +1545,6 @@ typedef enum {
 	FILE_MEMORY_MIGRATE,
 	FILE_CPULIST,
 	FILE_MEMLIST,
-	FILE_CPUS_ALLOWED,
-	FILE_MEMS_ALLOWED,
-	FILE_MEM_MIGRATION_PENDING,
 	FILE_CPU_EXCLUSIVE,
 	FILE_MEM_EXCLUSIVE,
 	FILE_MEM_HARDWALL,
@@ -1625,16 +1628,14 @@ out_unlock:
 	return retval;
 }
 
-static int cpuset_write_cpumask(struct cgroup *cgrp, struct cftype *cft,
+/*
+ * Common handling for a write to a "cpus" or "mems" file.
+ */
+static int cpuset_write_resmask(struct cgroup *cgrp, struct cftype *cft,
 				const char *buf)
 {
 	struct cpuset *cs = cgroup_cs(cgrp);
-	cpuset_filetype_t type = cft->private;
-	int retval = 0;
-	cpumask_var_t cpus_allowed;
-
-	if (!alloc_cpumask_var(&cpus_allowed, GFP_KERNEL))
-		return -ENOMEM;
+	int retval = -ENODEV;
 
 	/*
 	 * CPU or memory hotunplug may leave @cs w/o any execution
@@ -1658,103 +1659,22 @@ static int cpuset_write_cpumask(struct cgroup *cgrp, struct cftype *cft,
 	if (!is_cpuset_online(cs))
 		goto out_unlock;
 
-	/*
-	 * An empty cpus_allowed is ok only if the cpuset has no tasks.
-	 * Since cpulist_parse() fails on an empty mask, we special case
-	 * that parsing.  The validate_change() call ensures that cpusets
-	 * with tasks have cpus.
-	 */
-	if (!*buf) {
-		cpumask_clear(cpus_allowed);
-	} else {
-		retval = cpulist_parse(buf, cpus_allowed);
-		if (retval < 0)
-			goto out_unlock;
-	}
-
-	if (cgroup_lock_live_group(cgrp)) {
-		retval = update_cpumask(cgroup_cs(cgrp), cpus_allowed,
-					type == FILE_CPUS_ALLOWED);
-		cgroup_unlock();
-	} else {
-		retval = -ENODEV;
+	switch (cft->private) {
+	case FILE_CPULIST:
+		retval = update_cpumask(cs, buf);
+		break;
+	case FILE_MEMLIST:
+		retval = update_nodemask(cs, buf);
+		break;
+	default:
+		retval = -EINVAL;
+		break;
 	}
 
 out_unlock:
 	mutex_unlock(&cpuset_mutex);
-	free_cpumask_var(cpus_allowed);
 	return retval;
 }
-
-static int cpuset_write_nodemask(struct cgroup *cgrp, struct cftype *cft,
-				 const char *buf)
-{
-	cpuset_filetype_t type = cft->private;
-	int retval;
-	nodemask_t mems_allowed;
-
-	/*
-	 * An empty mems_allowed is ok iff there are no tasks in the cpuset.
-	 * Since nodelist_parse() fails on an empty mask, we special case
-	 * that parsing.  The validate_change() call ensures that cpusets
-	 * with tasks have memory.
-	 */
-	if (!*buf) {
-		nodes_clear(mems_allowed);
-	} else {
-		retval = nodelist_parse(buf, mems_allowed);
-		if (retval < 0)
-			goto done;
-	}
-
-	if (cgroup_lock_live_group(cgrp)) {
-		retval = update_nodemask(cgroup_cs(cgrp), &mems_allowed,
-					 type == FILE_MEMS_ALLOWED);
-		cgroup_unlock();
-	} else {
-		retval = -ENODEV;
-	}
-
-done:
-	return retval;
-}
-
-#ifdef CONFIG_MEMORY_GANGS_MIGRATION
-static int cpuset_write_mem_migration_pending(struct cgroup *cgrp,
-		struct cftype *cft, const char *buf)
-{
-	int retval;
-	nodemask_t pending;
-	struct cpuset *cs;
-	struct user_beancounter *ub;
-
-	if (!*buf) {
-		nodes_clear(pending);
-	} else {
-		retval = nodelist_parse(buf, pending);
-		if (retval < 0)
-			goto done;
-	}
-
-	if (cgroup_lock_live_group(cgrp)) {
-		cs = cgroup_cs(cgrp);
-		ub = get_cpuset_beancounter(cs);
-		if (ub) {
-			cancel_gangs_migration(get_ub_gs(ub));
-			schedule_gangs_migration(get_ub_gs(ub),
-					&pending, &cs->mems_allowed);
-			put_beancounter_longterm(ub);
-		}
-		cgroup_unlock();
-		retval = 0;
-	} else {
-		retval = -ENODEV;
-	}
-
-done:
-	return retval;
-}
-#endif
 
 /*
  * These ascii lists should be read in a single call, by using a user
@@ -1790,21 +1710,6 @@ static size_t cpuset_sprintf_memlist(char *page, struct cpuset *cs)
 	return count;
 }
 
-static int cpuset_sprintf_mem_migration_pending(char *page, struct cpuset *cs)
-{
-	nodemask_t mask;
-	struct user_beancounter *ub;
-
-	ub = get_cpuset_beancounter(cs);
-	if (ub) {
-		put_beancounter_longterm(ub);
-	} else {
-		nodes_clear(mask);
-	}
-
-	return nodelist_scnprintf(page, PAGE_SIZE, mask);
-}
-
 static ssize_t cpuset_common_file_read(struct cgroup *cont,
 				       struct cftype *cft,
 				       struct file *file,
@@ -1828,15 +1733,6 @@ static ssize_t cpuset_common_file_read(struct cgroup *cont,
 		break;
 	case FILE_MEMLIST:
 		s += cpuset_sprintf_memlist(s, cs);
-		break;
-	case FILE_MEM_MIGRATION_PENDING:
-		s += cpuset_sprintf_mem_migration_pending(s, cs);
-		break;
-	case FILE_CPUS_ALLOWED:
-		s += cpulist_scnprintf(s, PAGE_SIZE, cs->cpuset_cpus_allowed);
-		break;
-	case FILE_MEMS_ALLOWED:
-		s += nodelist_scnprintf(s, PAGE_SIZE, cs->cpuset_mems_allowed);
 		break;
 	default:
 		retval = -EINVAL;
@@ -1905,7 +1801,7 @@ static struct cftype files[] = {
 	{
 		.name = "cpus",
 		.read = cpuset_common_file_read,
-		.write_string = cpuset_write_cpumask,
+		.write_string = cpuset_write_resmask,
 		.max_write_len = (100U + 6 * NR_CPUS),
 		.private = FILE_CPULIST,
 	},
@@ -1913,34 +1809,9 @@ static struct cftype files[] = {
 	{
 		.name = "mems",
 		.read = cpuset_common_file_read,
-		.write_string = cpuset_write_nodemask,
+		.write_string = cpuset_write_resmask,
 		.max_write_len = (100U + 6 * MAX_NUMNODES),
 		.private = FILE_MEMLIST,
-	},
-
-#ifdef CONFIG_MEMORY_GANGS_MIGRATION
-	{
-		.name = "mem_migration_pending",
-		.read = cpuset_common_file_read,
-		.write_string = cpuset_write_mem_migration_pending,
-		.max_write_len = (100U + 6 * MAX_NUMNODES),
-		.private = FILE_MEM_MIGRATION_PENDING,
-	},
-#endif
-	{
-		.name = "cpus_allowed",
-		.read = cpuset_common_file_read,
-		.write_string = cpuset_write_cpumask,
-		.max_write_len = (100U + 6 * NR_CPUS),
-		.private = FILE_CPUS_ALLOWED,
-	},
-
-	{
-		.name = "mems_allowed",
-		.read = cpuset_common_file_read,
-		.write_string = cpuset_write_nodemask,
-		.max_write_len = (100U + 6 * MAX_NUMNODES),
-		.private = FILE_MEMS_ALLOWED,
 	},
 
 	{
@@ -2037,17 +1908,10 @@ static struct cgroup_subsys_state *cpuset_css_alloc(struct cgroup *cont)
 		kfree(cs);
 		return ERR_PTR(-ENOMEM);
 	}
-	if (!alloc_cpumask_var(&cs->cpuset_cpus_allowed, GFP_KERNEL)) {
-		free_cpumask_var(cs->cpus_allowed);
-		kfree(cs);
-		return ERR_PTR(-ENOMEM);
-	}
 
 	set_bit(CS_SCHED_LOAD_BALANCE, &cs->flags);
 	cpumask_clear(cs->cpus_allowed);
 	nodes_clear(cs->mems_allowed);
-	cpumask_clear(cs->cpuset_cpus_allowed);
-	nodes_clear(cs->cpuset_mems_allowed);
 	fmeter_init(&cs->fmeter);
 	INIT_WORK(&cs->hotplug_work, cpuset_propagate_hotplug_workfn);
 	cs->relax_domain_level = -1;
@@ -2134,7 +1998,6 @@ static void cpuset_css_free(struct cgroup *cont)
 {
 	struct cpuset *cs = cgroup_cs(cont);
 
-	free_cpumask_var(cs->cpuset_cpus_allowed);
 	free_cpumask_var(cs->cpus_allowed);
 	kfree(cs);
 }
@@ -2165,13 +2028,9 @@ int __init cpuset_init(void)
 
 	if (!alloc_cpumask_var(&top_cpuset.cpus_allowed, GFP_KERNEL))
 		BUG();
-	if (!alloc_cpumask_var(&top_cpuset.cpuset_cpus_allowed, GFP_KERNEL))
-		BUG();
 
 	cpumask_setall(top_cpuset.cpus_allowed);
 	nodes_setall(top_cpuset.mems_allowed);
-	cpumask_clear(top_cpuset.cpuset_cpus_allowed);
-	nodes_clear(top_cpuset.cpuset_mems_allowed);
 
 	fmeter_init(&top_cpuset.fmeter);
 	set_bit(CS_SCHED_LOAD_BALANCE, &top_cpuset.flags);
