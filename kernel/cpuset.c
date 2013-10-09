@@ -1531,12 +1531,22 @@ static void cpuset_attach(struct cgroup *cgrp, struct cgroup_taskset *tset)
 
 int cgroup_set_cpumask(struct cgroup *cgrp, const struct cpumask *cpus_allowed)
 {
-	return __update_cpumask(cgroup_cs(cgrp), cpus_allowed);
+	int retval;
+
+	mutex_lock(&cpuset_mutex);
+	retval = __update_cpumask(cgroup_cs(cgrp), cpus_allowed);
+	mutex_unlock(&cpuset_mutex);
+	return retval;
 }
 
 int cgroup_set_nodemask(struct cgroup *cgrp, const nodemask_t *nodes_allowed)
 {
-	return __update_nodemask(cgroup_cs(cgrp), nodes_allowed);
+	int retval;
+
+	mutex_lock(&cpuset_mutex);
+	retval = __update_nodemask(cgroup_cs(cgrp), nodes_allowed);
+	mutex_unlock(&cpuset_mutex);
+	return retval;
 }
 
 /* The various types of files and directories in a cpuset file system */
