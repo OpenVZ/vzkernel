@@ -460,7 +460,7 @@ struct proc_dir_entry *proc_mkdir_data(const char *name, umode_t mode,
 	if (mode == 0)
 		mode = S_IRUGO | S_IXUGO;
 
-	ent = __proc_create(&parent, name, S_IFDIR | S_ISVTX | mode, 2);
+	ent = __proc_create(&parent, name, S_IFDIR | mode, 2);
 	if (ent) {
 		ent->data = data;
 		if (proc_register(parent, ent) < 0) {
