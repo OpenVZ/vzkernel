@@ -319,7 +319,7 @@ enum {
 
 	CGRP_ROOT_NOPREFIX	= (1 << 1), /* mounted subsystems have no named prefix */
 	CGRP_ROOT_XATTR		= (1 << 2), /* supports extended attributes */
-	CGRP_ROOT_VIRTUAL,	= (1 << 3), /* VE-based root-cgroup virtualization */
+	CGRP_ROOT_VIRTUAL	= (1 << 3), /* VE-based root-cgroup virtualization */
 };
 
 /*
