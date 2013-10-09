@@ -843,8 +843,7 @@ static int __init ub_init_proc(void)
 {
 	struct proc_dir_entry *entry;
 
-	bc_proc_root = create_proc_entry("bc",
-			S_IFDIR | S_IRUSR | S_IXUSR, NULL);
+	bc_proc_root = proc_mkdir_mode("bc", 0, NULL);
 	if (bc_proc_root == NULL)
 		panic("Can't create /proc/bc entry");
 
@@ -867,7 +866,7 @@ static int __init ub_init_proc(void)
 	entry = proc_create("user_beancounters",
 			S_IRUSR|S_ISVTX, NULL, &ub_file_operations);
 	proc_create("vswap", S_IRUSR, proc_vz_dir, &ub_vswap_fops);
-	proc_create("beancounter", S_IFDIR|S_IRUSR|S_IXUSR, proc_vz_dir, NULL);
+	proc_mkdir_mode("beancounter", 0, proc_vz_dir);
 	return 0;
 }
 
