@@ -41,7 +41,7 @@ struct vfree_deferred {
 };
 static DEFINE_PER_CPU(struct vfree_deferred, vfree_deferred);
 
-static void __vunmap(const void *, int);
+static void __vunmap(const void *, int, int);
 
 static void free_work(struct work_struct *w)
 {
@@ -50,7 +50,7 @@ static void free_work(struct work_struct *w)
 	while (llnode) {
 		void *p = llnode;
 		llnode = llist_next(llnode);
-		__vunmap(p, 1);
+		__vunmap(p, 1, 0);
 	}
 }
 
