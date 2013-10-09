@@ -69,8 +69,6 @@ int compat_printk(const char *fmt, ...)
 	return ret;
 }
 
-#include "read_write.h"
-
 int ve_compat_printk(int dst, const char *fmt, ...)
 {
 	va_list ap;
