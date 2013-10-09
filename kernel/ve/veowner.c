@@ -44,7 +44,7 @@ static void prepare_proc(void)
 	proc_vz_dir = proc_mkdir_mode("vz", S_ISVTX | S_IRUGO | S_IXUGO, NULL);
 	if (!proc_vz_dir)
 		panic("Can't create /proc/vz dir\n");
-	proc_create("container", S_IFDIR|S_IRUSR|S_IXUSR, proc_vz_dir, NULL);
+	proc_mkdir_mode("container", 0, proc_vz_dir);
 }
 #endif
 
