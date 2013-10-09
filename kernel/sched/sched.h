@@ -232,9 +232,6 @@ extern void init_tg_cfs_entry(struct task_group *tg, struct cfs_rq *cfs_rq,
 			struct sched_entity *parent);
 extern void init_cfs_bandwidth(struct cfs_bandwidth *cfs_b);
 extern int sched_group_set_shares(struct task_group *tg, unsigned long shares);
-extern int sched_cgroup_set_shares(struct cgroup *cgrp, unsigned long shares);
-unsigned long sched_cgroup_get_shares(struct cgroup *cgrp);
-extern unsigned long sched_cgroup_get_nr_running(struct cgroup *cgrp);
 
 extern void __refill_cfs_bandwidth_runtime(struct cfs_bandwidth *cfs_b);
 extern void __start_cfs_bandwidth(struct cfs_bandwidth *cfs_b);
