@@ -66,7 +66,6 @@
 #include <net/sock.h>
 #include <net/scm.h>
 #include <net/netlink.h>
-#include <net/netlink_sock.h>
 
 #include <bc/beancounter.h>
 #include <bc/net.h>
