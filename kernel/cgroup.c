@@ -1116,7 +1116,7 @@ static int cgroup_show_options(struct seq_file *seq, struct dentry *dentry)
 		dentry = dentry->d_parent;
 	top_cgrp = dentry->d_fsdata;
 	/* release_agent is stored on top cgroup */
-	top_cgrp = top_cgrp->top_cgroup;
+	top_cgrp = &top_cgrp->root->top_cgroup;
 	if (top_cgrp->release_agent)
 		seq_show_option(seq, "release_agent",
 				top_cgrp->release_agent_path);
@@ -1880,7 +1880,7 @@ int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
 		memcpy(start, name, len);
 
 		/* hide fake top-cgroup in path */
-		if (cgrp == cgrp->top_cgroup)
+		if (cgrp == &cgrp->root->top_cgroup)
 			cgrp = &cgrp->root->top_cgroup;
 
 		if (--start < buf)
@@ -2812,9 +2812,9 @@ static int cgroup_addrm_files(struct cgroup *cgrp, struct cgroup_subsys *subsys,
 		/* does cft->flags tell us to skip this file on @cgrp? */
 		if ((cft->flags & CFTYPE_INSANE) && cgroup_sane_behavior(cgrp))
 			continue;
-		if ((cft->flags & CFTYPE_NOT_ON_ROOT) && cgrp->top_cgroup == cgrp)
+		if ((cft->flags & CFTYPE_NOT_ON_ROOT) && &cgrp->root->top_cgroup == cgrp)
 			continue;
-		if ((cft->flags & CFTYPE_ONLY_ON_ROOT) && cgrp->top_cgroup != cgrp)
+		if ((cft->flags & CFTYPE_ONLY_ON_ROOT) && &cgrp->root->top_cgroup != cgrp)
 			continue;
 
 		if (is_add) {
@@ -4283,11 +4283,9 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 	cgrp->root = parent->root;
 
 	if (test_bit(CGRP_ROOT_VIRTUAL, &root->flags) && parent == &root->top_cgroup) {
-		cgrp->top_cgroup = cgrp;
 		cgrp->cgroup_ve = get_exec_env();
 		list_add(&cgrp->cgroup_ve_list, &cgrp->cgroup_ve->ve_cgroup_head);
 	} else {
-		cgrp->top_cgroup = parent->top_cgroup;
 		cgrp->cgroup_ve = parent->cgroup_ve;
 		list_add(&cgrp->cgroup_ve_list, &parent->cgroup_ve_list);
 	}
@@ -5275,11 +5273,11 @@ static void cgroup_release_agent(struct work_struct *work)
 			goto continue_free;
 		if (cgroup_path(cgrp, pathbuf, PAGE_SIZE) < 0)
 			goto continue_free;
-		agentbuf = kstrdup(cgrp->top_cgroup->release_agent, GFP_KERNEL);
+		agentbuf = kstrdup(cgrp->root->top_cgroup.release_agent, GFP_KERNEL);
 		if (!agentbuf)
 			goto continue_free;
 
-		ve = get_ve(cgrp->top_cgroup->cgroup_ve);
+		ve = get_ve(cgrp->root->top_cgroup.cgroup_ve);
 
 		i = 0;
 		argv[i++] = agentbuf;
