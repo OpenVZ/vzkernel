@@ -109,7 +109,7 @@ out:
  *	The setbeanlimit syscall
  */
 SYSCALL_DEFINE3(setublimit, uid_t, uid, unsigned long, resource,
-		unsigned long __user, *limits)
+		unsigned long __user *, limits)
 {
 	unsigned long new_limits[2];
 
@@ -126,7 +126,7 @@ extern long do_ubstat(int func, unsigned long arg1, unsigned long arg2,
 		void __user *buf, long size);
 
 SYSCALL_DEFINE5(ubstat, int, func, unsigned long, arg1, unsigned long, arg2,
-		void __user, *buf, long, size)
+		void __user *, buf, long, size)
 {
 	if (!capable(CAP_DAC_OVERRIDE) && !capable(CAP_DAC_READ_SEARCH))
 		return -EPERM;

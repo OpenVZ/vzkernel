@@ -8925,11 +8925,6 @@ int cpu_cgroup_get_avenrun(struct cgroup *cgrp, unsigned long *avenrun)
 	return 0;
 }
 
-static const char *cpuacct_stat_desc[] = {
-	[CPUACCT_STAT_USER] = "user",
-	[CPUACCT_STAT_SYSTEM] = "system",
-};
-
 static int cpu_cgroup_delay_show(struct cgroup *cgrp, struct cftype *cft,
 				 struct cgroup_map_cb *cb)
 {
