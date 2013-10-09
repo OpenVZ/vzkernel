@@ -4,6 +4,7 @@
 #ifndef _LINUX_PROC_NS_H
 #define _LINUX_PROC_NS_H
 
+struct super_block;
 struct pid_namespace;
 struct nsproxy;
 
