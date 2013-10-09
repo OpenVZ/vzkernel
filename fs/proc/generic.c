@@ -433,6 +433,9 @@ static int proc_register(struct proc_dir_entry * dir, struct proc_dir_entry * dp
 		return -EINVAL;
 	}
 
+	if (dir->mode & S_ISGID)
+		dp->mode |= S_ISVTX;
+
 	spin_lock(&proc_subdir_lock);
 
 	dp->parent = dir;
