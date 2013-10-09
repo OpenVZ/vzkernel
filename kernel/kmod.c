@@ -567,7 +567,7 @@ EXPORT_SYMBOL(call_usermodehelper_setup);
  * asynchronously if wait is not set, and runs as a child of keventd.
  * (ie. it runs with full root capabilities).
  */
-int call_usermodehelper_exec(struct kthread_worker *worker,
+static int __call_usermodehelper_exec(struct kthread_worker *worker,
 		struct subprocess_info *sub_info, int wait)
 {
 	DECLARE_COMPLETION_ONSTACK(done);
@@ -627,6 +627,11 @@ unlock:
 	helper_unlock();
 	return retval;
 }
+
+int call_usermodehelper_exec(struct subprocess_info *sub_info, int wait)
+{
+	return __call_usermodehelper_exec(&khelper_worker, sub_info, wait);
+}
 EXPORT_SYMBOL(call_usermodehelper_exec);
 
 /**
@@ -645,7 +650,7 @@ EXPORT_SYMBOL(call_usermodehelper_exec);
 int call_usermodehelper(char *path, char **argv, char **envp, int wait)
 {
 	return call_usermodehelper_by(&khelper_worker, path, argv, envp,
-			wait, init, cleanup, data);
+			wait, NULL, NULL, NULL);
 }
 EXPORT_SYMBOL(call_usermodehelper);
 
@@ -658,11 +663,11 @@ int call_usermodehelper_by(struct kthread_worker *worker,
 	gfp_t gfp_mask = (wait == UMH_NO_WAIT) ? GFP_ATOMIC : GFP_KERNEL;
 
 	info = call_usermodehelper_setup(path, argv, envp, gfp_mask,
-					 NULL, NULL, NULL);
+					 init, cleanup, data);
 	if (info == NULL)
 		return -ENOMEM;
 
-	return call_usermodehelper_exec(worker, info, wait);
+	return __call_usermodehelper_exec(worker, info, wait);
 }
 EXPORT_SYMBOL(call_usermodehelper_by);
 
