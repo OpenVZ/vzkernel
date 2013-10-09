@@ -5715,9 +5715,9 @@ int cgroup_kernel_attach(struct cgroup *cgrp, struct task_struct *tsk)
 {
 	int ret;
 
-	cgroup_lock();
+	mutex_lock(&cgroup_mutex);
 	ret = cgroup_attach_task(cgrp, tsk, true);
-	cgroup_unlock();
+	mutex_unlock(&cgroup_mutex);
 	return ret;
 }
 EXPORT_SYMBOL(cgroup_kernel_attach);
