@@ -89,7 +89,7 @@ SUBSYS(hugetlb)
 
 /* */
 
-#ifdef CONFIG_CGROUP_BCACHE
+#if IS_SUBSYS_ENABLED(CONFIG_CGROUP_BCACHE)
 SUBSYS(bcache)
 #endif
 
@@ -104,7 +104,7 @@ SUBSYS_TAG(CANFORK_END)
 #endif
 /* */
 
-#ifdef CONFIG_VE
+#if IS_SUBSYS_ENABLED(CONFIG_VE)
 SUBSYS(ve)
 #endif
 

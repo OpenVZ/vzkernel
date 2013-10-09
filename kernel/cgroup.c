@@ -5794,7 +5794,7 @@ int cgroup_kernel_attach(struct cgroup *cgrp, struct task_struct *tsk)
 	int ret;
 
 	cgroup_lock();
-	ret = cgroup_attach_task(cgrp, tsk);
+	ret = cgroup_attach_task(cgrp, tsk, true);
 	cgroup_unlock();
 	return ret;
 }
