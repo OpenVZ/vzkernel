@@ -2926,6 +2926,11 @@ extern long sched_getaffinity(pid_t pid, struct cpumask *mask);
 
 #ifdef CONFIG_CGROUP_SCHED
 extern struct task_group root_task_group;
+#ifdef CONFIG_FAIR_GROUP_SCHED
+extern int sched_cgroup_set_shares(struct cgroup *cgrp, unsigned long shares);
+unsigned long sched_cgroup_get_shares(struct cgroup *cgrp);
+extern unsigned long sched_cgroup_get_nr_running(struct cgroup *cgrp);
+#endif
 #ifdef CONFIG_RT_GROUP_SCHED
 extern int sched_cgroup_set_rt_runtime(struct cgroup *cgrp,
 				       long rt_runtime_us);
