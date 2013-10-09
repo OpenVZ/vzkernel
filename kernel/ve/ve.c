@@ -42,6 +42,8 @@
 #include <linux/vzcalluser.h>
 #include <linux/venet.h>
 
+static DEFINE_MUTEX(ve_mutex);
+
 static struct kmem_cache *ve_cachep;
 
 unsigned long vz_rstamp = 0x37e0f59d;
@@ -478,9 +480,9 @@ int ve_start_container(struct ve_struct *ve)
 	if (err < 0)
 		goto err_iterate;
 
-	cgroup_lock();
+	mutex_lock(&ve_mutex);
 	ve->is_running = 1;
-	cgroup_unlock();
+	mutex_unlock(&ve_mutex);
 
 	printk(KERN_INFO "CT: %s: started\n", ve_name(ve));
 
@@ -516,11 +518,11 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	/*
 	 * Here the VE changes its state into "not running".
 	 * op_sem works as barrier for vzctl ioctls.
-	 * cgroup_mutex works as barrier for ve_can_attach().
+	 * ve_mutex works as barrier for ve_can_attach().
 	 */
-	cgroup_lock();
+	mutex_lock(&ve_mutex);
 	ve->is_running = 0;
-	cgroup_unlock();
+	mutex_unlock(&ve_mutex);
 
 	ve_stop_umh(ve);
 	/*
@@ -613,7 +615,6 @@ static void ve_offline(struct cgroup *cg)
 	struct ve_struct *ve = cgroup_ve(cg);
 	struct cgroup *cgrp;
 
-	cgroup_lock();
 	while (!list_empty(&ve->ve_cgroup_head)) {
 		cgrp = list_entry(ve->ve_cgroup_head.prev,
 				struct cgroup, cgroup_ve_list);
@@ -621,7 +622,6 @@ static void ve_offline(struct cgroup *cg)
 		list_del_init(&cgrp->cgroup_ve_list);
 		cgroup_kernel_destroy(cgrp);
 	}
-	cgroup_unlock();
 }
 
 static void ve_destroy(struct cgroup *cg)
@@ -637,7 +637,7 @@ static void ve_destroy(struct cgroup *cg)
 	kmem_cache_free(ve_cachep, ve);
 }
 
-static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
+static int __ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 	struct task_struct *task = current;
@@ -666,6 +666,16 @@ static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 	}
 
 	return 0;
+}
+
+static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
+{
+	int ret;
+
+	mutex_lock(&ve_mutex);
+	ret = __ve_can_attach(cg, tset);
+	mutex_unlock(&ve_mutex);
+	return ret;
 }
 
 static void ve_attach(struct cgroup *cg, struct cgroup_taskset *tset)
