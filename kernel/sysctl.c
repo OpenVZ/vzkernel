@@ -1537,38 +1537,6 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_doulongvec_minmax,
 	},
-#ifdef CONFIG_MEMORY_GANGS_MIGRATION
-	{
-		.procname	= "gangs_migration_max_isolate",
-		.data		= &gangs_migration_max_isolate,
-		.maxlen		= sizeof(gangs_migration_max_isolate),
-		.mode		= 0644,
-		.proc_handler	= &proc_dointvec_minmax,
-		.extra1		= &one,
-	},
-	{
-		.procname	= "gangs_migration_min_batch",
-		.data		= &gangs_migration_min_batch,
-		.maxlen		= sizeof(gangs_migration_min_batch),
-		.mode		= 0644,
-		.proc_handler	= &gangs_migration_batch_sysctl_handler,
-	},
-	{
-		.procname	= "gangs_migration_max_batch",
-		.data		= &gangs_migration_max_batch,
-		.maxlen		= sizeof(gangs_migration_max_batch),
-		.mode		= 0644,
-		.proc_handler	= &gangs_migration_batch_sysctl_handler,
-	},
-	{
-		.procname	= "gangs_migration_interval",
-		.data		= &gangs_migration_interval,
-		.maxlen		= sizeof(gangs_migration_interval),
-		.mode		= 0644,
-		.proc_handler	= &proc_dointvec_minmax,
-		.extra1		= &zero,
-	},
-#endif
 	{ }
 };
 
