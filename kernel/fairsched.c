@@ -251,9 +251,7 @@ SYSCALL_DEFINE3(fairsched_cpumask, unsigned int, id, unsigned int, len,
 	retval = get_user_cpu_mask(user_mask_ptr, len, in_mask);
 	if (retval == 0) {
 		cpumask_and(new_mask, in_mask, cpu_active_mask);
-		cgroup_lock();
 		retval = cgroup_set_cpumask(cgrp, new_mask);
-		cgroup_unlock();
 	}
 
 	free_cpumask_var(new_mask);
@@ -300,9 +298,7 @@ SYSCALL_DEFINE3(fairsched_nodemask, unsigned int, id, unsigned int, len,
 	retval = get_user_node_mask(user_mask_ptr, len, &in_mask);
 	if (retval == 0) {
 		nodes_and(new_mask, in_mask, node_states[N_HIGH_MEMORY]);
-		cgroup_lock();
 		retval = cgroup_set_nodemask(cgrp, &new_mask);
-		cgroup_unlock();
 	}
 
 	cgroup_kernel_close(cgrp);
