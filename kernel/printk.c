@@ -45,6 +45,7 @@
 #include <linux/poll.h>
 #include <linux/irq_work.h>
 #include <linux/utsname.h>
+#include <linux/vermagic.h>
 #include <linux/ve.h>
 
 #include <asm/uaccess.h>
