@@ -36,7 +36,7 @@ static int proc_match(unsigned int len, const char *name, struct proc_dir_entry 
 	return !memcmp(name, de->name, len);
 }
 
-static inline bool proc_in_container(struct super_block *sb)
+bool proc_in_container(struct super_block *sb)
 {
 	return !ve_is_super(get_exec_env());
 }
