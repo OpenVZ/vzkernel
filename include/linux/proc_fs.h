@@ -110,7 +110,7 @@ struct net;
 static inline struct proc_dir_entry *proc_net_mkdir(
 	struct net *net, const char *name, struct proc_dir_entry *parent)
 {
-	return proc_mkdir_data(name, S_ISVTX|S_IRUGO|S_IXUGO, parent, net);
+	return proc_mkdir_data(name, S_ISGID|S_IRUGO|S_IXUGO, parent, net);
 }
 
 #endif /* _LINUX_PROC_FS_H */
