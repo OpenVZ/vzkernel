@@ -781,10 +781,8 @@ static int __fuse_readpage(struct file *file, struct page *page, size_t count,
 	req->num_pages = 1;
 	req->pages[0] = page;
 	req->page_descs[0].length = count;
-	num_read = fuse_send_read(req, &io, pos, count, NULL);
-	err = req->out.h.error;
 
-	num_read = fuse_send_read(req, file, page_offset(page), count, NULL);
+	num_read = fuse_send_read(req, &io, page_offset(page), count, NULL);
 	*err = req->out.h.error;
 
 	if (*err)
