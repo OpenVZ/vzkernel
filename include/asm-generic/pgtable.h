@@ -498,21 +498,6 @@ static inline pmd_t pmd_mksoft_dirty(pmd_t pmd)
 	return pmd;
 }
 
-static inline pte_t pte_swp_mksoft_dirty(pte_t pte)
-{
-	return pte;
-}
-
-static inline int pte_swp_soft_dirty(pte_t pte)
-{
-	return 0;
-}
-
-static inline pte_t pte_swp_clear_soft_dirty(pte_t pte)
-{
-	return pte;
-}
-
 static inline pte_t pte_file_clear_soft_dirty(pte_t pte)
 {
        return pte;
@@ -526,6 +511,21 @@ static inline pte_t pte_file_mksoft_dirty(pte_t pte)
 static inline int pte_file_soft_dirty(pte_t pte)
 {
        return 0;
+}
+
+static inline pte_t pte_swp_mksoft_dirty(pte_t pte)
+{
+	return pte;
+}
+
+static inline int pte_swp_soft_dirty(pte_t pte)
+{
+	return 0;
+}
+
+static inline pte_t pte_swp_clear_soft_dirty(pte_t pte)
+{
+	return pte;
 }
 #endif
 
