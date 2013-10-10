@@ -685,7 +685,7 @@ static void ve_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 	struct task_struct *tsk = current;
 
 	/* this probihibts ptracing of task entered to VE from host system */
-	if (tsk->mm)
+	if (ve->is_running && tsk->mm)
 		tsk->mm->vps_dumpable = 0;
 
 	/* Drop OOM protection. */
