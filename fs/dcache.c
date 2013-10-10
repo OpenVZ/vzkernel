@@ -3066,6 +3066,9 @@ int d_root_check(struct path *path)
 	struct path root;
 	int error = 0;
 
+	if (ve_is_super(get_exec_env()))
+		return 0;
+
 	if (path->dentry->d_op && path->dentry->d_op->d_dname)
 		return 0;
 
