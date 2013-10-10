@@ -4891,10 +4891,12 @@ out:
 static int proc_cgroupstats_show(struct seq_file *m, void *v)
 {
 	int i;
+	struct ve_struct *ve = get_exec_env();
 
 	seq_puts(m, "#subsys_name\thierarchy\tnum_cgroups\tenabled\n");
 
-	if (!ve_is_super(get_exec_env()))
+	/* cgset wants to read /proc/cgroups and it's used for starting CT */
+	if (!ve_is_super(ve) && ve->is_running)
 		return 0;
 
 	/*
