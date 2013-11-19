@@ -38,6 +38,7 @@
 #include <linux/mutex.h>
 #include <linux/percpu.h>
 #include <linux/fs_struct.h>
+#include <linux/task_work.h>
 
 #include <linux/vzcalluser.h>
 #include <linux/venet.h>
@@ -715,17 +716,73 @@ static int ve_state_read(struct cgroup *cg, struct cftype *cft,
 	return 0;
 }
 
+struct ve_start_callback {
+		struct callback_head head;
+		struct ve_struct *ve;
+};
+
+static void ve_start_work(struct callback_head *head)
+{
+	struct ve_start_callback *work;
+	struct ve_struct *ve;
+	int ret;
+
+	work = container_of(head, struct ve_start_callback, head);
+	ve = work->ve;
+
+	down_write(&ve->op_sem);
+	ret = ve_start_container(ve);
+	up_write(&ve->op_sem);
+	put_ve(ve);
+	if (ret)
+		force_sig(SIGKILL, current);
+
+	kfree(work);
+}
+
 static int ve_state_write(struct cgroup *cg, struct cftype *cft,
 			  const char *buffer)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
+	struct ve_start_callback *work = NULL;
+	struct task_struct *tsk;
 	int ret = -EINVAL;
+	pid_t pid;
 
 	if (!strcmp(buffer, "START")) {
 		down_write(&ve->op_sem);
 		ret = ve_start_container(ve);
 		up_write(&ve->op_sem);
+
+		return ret;
 	}
+
+	ret = sscanf(buffer, "START %d", &pid);
+	if (ret != 1)
+		return -EINVAL;
+
+	work = kmalloc(sizeof(struct ve_start_callback), GFP_KERNEL);
+	if (!work)
+		return -ENOMEM;
+
+	rcu_read_lock();
+	tsk = find_task_by_vpid(pid);
+	if (!tsk) {
+		ret = -ESRCH;
+		goto out_unlock;
+	}
+
+	init_task_work(&work->head, ve_start_work);
+
+	work->ve = get_ve(ve);
+	ret = task_work_add(tsk, &work->head, 1);
+	if (ret)
+		put_ve(ve);
+
+out_unlock:
+	rcu_read_unlock();
+	if (ret)
+		kfree(work);
 
 	return ret;
 }
