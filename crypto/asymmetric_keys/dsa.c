@@ -94,3 +94,6 @@ cleanup:
 	return rc;
 }
 EXPORT_SYMBOL(DSA_verify);
+
+MODULE_DESCRIPTION("DSA Public Key Algorithm");
+MODULE_LICENSE("GPL");
