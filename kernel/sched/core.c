@@ -2574,9 +2574,6 @@ static void calc_load_ve(void)
 			nr_active += tg->cfs_rq[i]->nr_running;
 			nr_active += tg->cfs_rq[i]->nr_unint;
 #endif
-#ifdef CONFIG_RT_GROUP_SCHED
-			nr_active += tg->rt_rq[i]->rt_nr_running;
-#endif
 		}
 		nr_active *= FIXED_1;
 
