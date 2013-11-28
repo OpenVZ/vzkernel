@@ -95,6 +95,8 @@ struct ext_entry_struct *venet_ext_lookup(struct ve_struct *ve,
 extern struct hlist_head ip_entry_hash_table[];
 extern spinlock_t veip_lock;
 
+extern void (*venet_free_stat)(struct ve_struct *);
+
 #define NIPQUAD(addr) \
 	((unsigned char *)&addr)[0], \
 	((unsigned char *)&addr)[1], \
