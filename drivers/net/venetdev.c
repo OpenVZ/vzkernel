@@ -461,6 +461,9 @@ static int venet_close(struct net_device *master)
 	return 0;
 }
 
+void (*venet_free_stat)(struct ve_struct *) = NULL;
+EXPORT_SYMBOL(venet_free_stat);
+
 static void venet_destructor(struct net_device *dev)
 {
 	struct venet_stats *stats = (struct venet_stats *)dev->ml_priv;
@@ -469,6 +472,9 @@ static void venet_destructor(struct net_device *dev)
 	free_percpu(stats->real_stats);
 	kfree(stats);
 	dev->ml_priv = NULL;
+
+	if (venet_free_stat)
+		venet_free_stat(dev->nd_net->owner_ve);
 }
 
 /*
