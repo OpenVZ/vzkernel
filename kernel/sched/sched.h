@@ -351,6 +351,10 @@ struct cfs_rq {
 	int throttled, throttle_count;
 	struct list_head throttled_list;
 #endif /* CONFIG_CFS_BANDWIDTH */
+#ifdef CONFIG_CFS_CPULIMIT
+	int active;
+	struct hrtimer active_timer;
+#endif /* CONFIG_CFS_CPULIMIT */
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 };
 
