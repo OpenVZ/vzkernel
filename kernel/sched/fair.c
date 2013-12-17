@@ -114,6 +114,10 @@ unsigned int __read_mostly sysctl_sched_shares_window = 10000000UL;
 unsigned int sysctl_sched_cfs_bandwidth_slice = 5000UL;
 #endif
 
+#ifdef CONFIG_CFS_CPULIMIT
+unsigned int sysctl_sched_vcpu_hotslice = 5000000UL;
+#endif
+
 /*
  * Increase the granularity value when there are more CPUs,
  * because with more CPUs the 'effective latency' as visible
@@ -462,7 +466,46 @@ static inline int cfs_rq_throttled(struct cfs_rq *cfs_rq)
 #ifdef CONFIG_CFS_CPULIMIT
 static inline int cfs_rq_active(struct cfs_rq *cfs_rq)
 {
-	return !list_empty(&cfs_rq->tasks);
+	return cfs_rq->active;
+}
+
+static void inc_nr_active_cfs_rqs(struct cfs_rq *cfs_rq)
+{
+	/* if we canceled delayed dec, there is no need to do inc */
+	if (hrtimer_try_to_cancel(&cfs_rq->active_timer) != 1)
+		atomic_inc(&cfs_rq->tg->nr_cpus_active);
+	cfs_rq->active = 1;
+}
+
+static void dec_nr_active_cfs_rqs(struct cfs_rq *cfs_rq, int postpone)
+{
+	if (!cfs_rq->runtime_enabled || !sysctl_sched_vcpu_hotslice)
+		postpone = 0;
+
+	if (!postpone) {
+		cfs_rq->active = 0;
+		atomic_dec(&cfs_rq->tg->nr_cpus_active);
+	} else {
+		hrtimer_start_range_ns(&cfs_rq->active_timer,
+				ns_to_ktime(sysctl_sched_vcpu_hotslice), 0,
+				HRTIMER_MODE_REL_PINNED);
+	}
+}
+
+static enum hrtimer_restart sched_cfs_active_timer(struct hrtimer *timer)
+{
+	struct cfs_rq *cfs_rq =
+		container_of(timer, struct cfs_rq, active_timer);
+	struct rq *rq = rq_of(cfs_rq);
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&rq->lock, flags);
+	cfs_rq->active = !!list_empty(&cfs_rq->tasks);
+	raw_spin_unlock_irqrestore(&rq->lock, flags);
+
+	atomic_dec(&cfs_rq->tg->nr_cpus_active);
+
+	return HRTIMER_NORESTART;
 }
 
 static inline int check_cpulimit_spread(struct cfs_rq *cfs_rq, int target_cpu)
@@ -483,17 +526,30 @@ static inline int check_cpulimit_spread(struct cfs_rq *cfs_rq, int target_cpu)
 
 	return cfs_rq_active(tg->cfs_rq[target_cpu]) ? 0 : -1;
 }
-#else
+#else /* !CONFIG_CFS_CPULIMIT */
 static inline int cfs_rq_active(struct cfs_rq *cfs_rq)
 {
 	return 1;
+}
+
+static inline void inc_nr_active_cfs_rqs(struct cfs_rq *cfs_rq)
+{
+}
+
+static inline void dec_nr_active_cfs_rqs(struct cfs_rq *cfs_rq, int postpone)
+{
+}
+
+static inline enum hrtimer_restart sched_cfs_active_timer(struct hrtimer *timer)
+{
+	return 0;
 }
 
 static inline int check_cpulimit_spread(struct cfs_rq *cfs_rq, int target_cpu)
 {
 	return 1;
 }
-#endif
+#endif /* CONFIG_CFS_CPULIMIT */
 
 static __always_inline
 void account_cfs_rq_runtime(struct cfs_rq *cfs_rq, u64 delta_exec);
@@ -3800,10 +3856,16 @@ void init_cfs_bandwidth(struct cfs_bandwidth *cfs_b)
 	cfs_b->slack_timer.function = sched_cfs_slack_timer;
 }
 
+static enum hrtimer_restart sched_cfs_active_timer(struct hrtimer *timer);
+
 static void init_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 {
 	cfs_rq->runtime_enabled = 0;
 	INIT_LIST_HEAD(&cfs_rq->throttled_list);
+#ifdef CONFIG_CFS_CPULIMIT
+	hrtimer_init(&cfs_rq->active_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	cfs_rq->active_timer.function = sched_cfs_active_timer;
+#endif
 }
 
 /* requires cfs_b->lock, may release to reprogram timer */
@@ -3964,11 +4026,9 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se;
 
-#ifdef CONFIG_CFS_CPULIMIT
 	cfs_rq = task_cfs_rq(p);
 	if (list_empty(&cfs_rq->tasks))
-		atomic_inc(&cfs_rq->tg->nr_cpus_active);
-#endif
+		inc_nr_active_cfs_rqs(cfs_rq);
 
 	for_each_sched_entity(se) {
 		if (se->on_rq)
@@ -4067,11 +4127,9 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	}
 	hrtick_update(rq);
 
-#ifdef CONFIG_CFS_CPULIMIT
 	cfs_rq = task_cfs_rq(p);
 	if (list_empty(&cfs_rq->tasks))
-		atomic_dec(&cfs_rq->tg->nr_cpus_active);
-#endif
+		dec_nr_active_cfs_rqs(cfs_rq, task_sleep);
 }
 
 #ifdef CONFIG_SMP
