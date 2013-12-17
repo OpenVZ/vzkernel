@@ -236,6 +236,11 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 			cfs_rq->throttle_count);
 #endif
 
+#ifdef CONFIG_CFS_CPULIMIT
+	SEQ_printf(m, "  .%-30s: %d\n", "nr_cpus_active",
+		   atomic_read(&cfs_rq->tg->nr_cpus_active));
+#endif
+
 	print_cfs_group_stats(m, cpu, cfs_rq->tg);
 #endif
 }
