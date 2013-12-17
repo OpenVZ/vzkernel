@@ -454,9 +454,29 @@ static inline int cfs_rq_throttled(struct cfs_rq *cfs_rq)
 	return cfs_bandwidth_used() && cfs_rq->throttled;
 }
 
+static inline int cfs_rq_has_boosted_entities(struct cfs_rq *cfs_rq)
+{
+	return !list_empty(&cfs_rq->boosted_entities);
+}
+
+static inline int entity_boosted(struct sched_entity *se)
+{
+	return se->boosted;
+}
+
 #else /* !CONFIG_CFS_BANDWIDTH */
 
 static inline int cfs_rq_throttled(struct cfs_rq *cfs_rq)
+{
+	return 0;
+}
+
+static inline int cfs_rq_has_boosted_entities(struct cfs_rq *cfs_rq)
+{
+	return 0;
+}
+
+static inline int entity_boosted(struct sched_entity *se)
 {
 	return 0;
 }
@@ -911,6 +931,96 @@ update_stats_curr_start(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	 */
 	se->exec_start = rq_clock_task(rq_of(cfs_rq));
 }
+
+#ifdef CONFIG_CFS_BANDWIDTH
+static inline void update_entity_boost(struct sched_entity *se)
+{
+	if (!entity_is_task(se))
+		se->boosted = cfs_rq_has_boosted_entities(group_cfs_rq(se));
+	else {
+		struct task_struct *p = task_of(se);
+
+		if (!(preempt_count() & PREEMPT_ACTIVE)) {
+			se->boosted = sched_feat(BOOST_WAKEUPS) &&
+					p->woken_while_running;
+			p->woken_while_running = 0;
+		} else
+			se->boosted = sched_feat(BOOST_PREEMPT);
+	}
+}
+
+static int check_enqueue_boost(struct rq *rq, struct task_struct *p, int flags)
+{
+	if (sched_feat(BOOST_WAKEUPS) && (flags & ENQUEUE_WAKEUP))
+		p->se.boosted = 1;
+	return p->se.boosted;
+}
+
+static inline void __enqueue_boosted_entity(struct cfs_rq *cfs_rq,
+					    struct sched_entity *se)
+{
+	list_add(&se->boost_node, &cfs_rq->boosted_entities);
+}
+
+static inline void __dequeue_boosted_entity(struct cfs_rq *cfs_rq,
+					    struct sched_entity *se)
+{
+	list_del(&se->boost_node);
+}
+
+static int enqueue_boosted_entity(struct cfs_rq *cfs_rq,
+				  struct sched_entity *se)
+{
+	if (entity_is_task(se) || !entity_boosted(se)) {
+		if (se != cfs_rq->curr)
+			__enqueue_boosted_entity(cfs_rq, se);
+		se->boosted = 1;
+		return 1;
+	}
+
+	return 0;
+}
+
+static int dequeue_boosted_entity(struct cfs_rq *cfs_rq,
+				  struct sched_entity *se)
+{
+	if (entity_is_task(se) ||
+	    !cfs_rq_has_boosted_entities(group_cfs_rq(se))) {
+		if (se != cfs_rq->curr)
+			__dequeue_boosted_entity(cfs_rq, se);
+		if (!entity_is_task(se))
+			se->boosted = 0;
+		return 1;
+	}
+
+	return 0;
+}
+#else
+static inline void update_entity_boost(struct sched_entity *se) {}
+
+static inline int check_enqueue_boost(struct rq *rq,
+				      struct task_struct *p, int flags)
+{
+	return 0;
+}
+
+static inline void __enqueue_boosted_entity(struct cfs_rq *cfs_rq,
+					    struct sched_entity *se) {}
+static inline void __dequeue_boosted_entity(struct cfs_rq *cfs_rq,
+					    struct sched_entity *se) {}
+
+static inline int enqueue_boosted_entity(struct cfs_rq *cfs_rq,
+					 struct sched_entity *se)
+{
+	return 0;
+}
+
+static inline int dequeue_boosted_entity(struct cfs_rq *cfs_rq,
+					 struct sched_entity *se)
+{
+	return 0;
+}
+#endif
 
 /**************************************************
  * Scheduling class queueing methods:
@@ -2932,7 +3042,8 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 
 	if (cfs_rq->nr_running == 1) {
 		list_add_leaf_cfs_rq(cfs_rq);
-		check_enqueue_throttle(cfs_rq);
+		if (!(flags & ENQUEUE_BOOST))
+			check_enqueue_throttle(cfs_rq);
 	}
 }
 
@@ -3077,6 +3188,8 @@ set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 		 */
 		update_stats_wait_end(cfs_rq, se);
 		__dequeue_entity(cfs_rq, se);
+		if (entity_boosted(se))
+			__dequeue_boosted_entity(cfs_rq, se);
 	}
 
 	update_stats_curr_start(cfs_rq, se);
@@ -3134,6 +3247,20 @@ static struct sched_entity *pick_next_entity(struct cfs_rq *cfs_rq)
 	if (cfs_rq->next && wakeup_preempt_entity(cfs_rq->next, left) < 1)
 		se = cfs_rq->next;
 
+#ifdef CONFIG_CFS_BANDWIDTH
+	/*
+	 * Give boosted tasks a chance to finish their kernel-mode execution in
+	 * order to avoid prio inversion in case they hold a lock, but resched
+	 * them asap for the sake of fairness.
+	 */
+	if (cfs_rq->runtime_enabled && cfs_rq->runtime_remaining <= 0) {
+		if (cfs_rq_has_boosted_entities(cfs_rq))
+			se = list_first_entry(&cfs_rq->boosted_entities,
+					      struct sched_entity, boost_node);
+		rq_of(cfs_rq)->resched_next = 1;
+	}
+#endif
+
 	clear_buddies(cfs_rq, se);
 
 	return se;
@@ -3149,6 +3276,14 @@ static void put_prev_entity(struct cfs_rq *cfs_rq, struct sched_entity *prev)
 	 */
 	if (prev->on_rq)
 		update_curr(cfs_rq);
+
+	update_entity_boost(prev);
+	if (entity_boosted(prev) && prev->on_rq) {
+		__enqueue_boosted_entity(cfs_rq, prev);
+		if (unlikely(cfs_rq_throttled(cfs_rq)))
+			/* prev was moved to throttled cfs_rq */
+			unthrottle_cfs_rq(cfs_rq);
+	}
 
 	/* throttle cfs_rqs exceeding runtime */
 	check_cfs_rq_runtime(cfs_rq);
@@ -3804,6 +3939,9 @@ static void check_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 	if (cfs_rq_throttled(cfs_rq))
 		return;
 
+	if (cfs_rq_has_boosted_entities(cfs_rq))
+		return;
+
 	throttle_cfs_rq(cfs_rq);
 }
 
@@ -3862,6 +4000,7 @@ static void init_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 {
 	cfs_rq->runtime_enabled = 0;
 	INIT_LIST_HEAD(&cfs_rq->throttled_list);
+	INIT_LIST_HEAD(&cfs_rq->boosted_entities);
 #ifdef CONFIG_CFS_CPULIMIT
 	hrtimer_init(&cfs_rq->active_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	cfs_rq->active_timer.function = sched_cfs_active_timer;
@@ -4025,6 +4164,7 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 {
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se;
+	int boost = check_enqueue_boost(rq, p, flags);
 
 	cfs_rq = task_cfs_rq(p);
 	if (list_empty(&cfs_rq->tasks))
@@ -4034,6 +4174,8 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		if (se->on_rq)
 			break;
 		cfs_rq = cfs_rq_of(se);
+		if (boost)
+			flags |= ENQUEUE_BOOST;
 		enqueue_entity(cfs_rq, se, flags);
 
 		/*
@@ -4046,6 +4188,9 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 			break;
 		cfs_rq->h_nr_running++;
 
+		if (boost)
+			boost = enqueue_boosted_entity(cfs_rq, se);
+
 		flags = ENQUEUE_WAKEUP;
 	}
 
@@ -4056,6 +4201,9 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		if (cfs_rq_throttled(cfs_rq))
 			break;
 
+		if (boost)
+			boost = enqueue_boosted_entity(cfs_rq, se);
+
 		update_cfs_shares(cfs_rq);
 		update_entity_load_avg(se, 1);
 	}
@@ -4063,6 +4211,14 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	if (!se) {
 		update_rq_runnable_avg(rq, rq->nr_running);
 		inc_nr_running(rq);
+	} else if (boost) {
+		for_each_sched_entity(se) {
+			cfs_rq = cfs_rq_of(se);
+			if (!enqueue_boosted_entity(cfs_rq, se))
+				break;
+			if (cfs_rq_throttled(cfs_rq))
+				unthrottle_cfs_rq(cfs_rq);
+		}
 	}
 	hrtick_update(rq);
 }
@@ -4078,6 +4234,7 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 {
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se;
+	int boosted = entity_boosted(se);
 	int task_sleep = flags & DEQUEUE_SLEEP;
 
 	for_each_sched_entity(se) {
@@ -4093,6 +4250,9 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		if (cfs_rq_throttled(cfs_rq))
 			break;
 		cfs_rq->h_nr_running--;
+
+		if (boosted)
+			boosted = dequeue_boosted_entity(cfs_rq, se);
 
 		/* Don't dequeue parent if it has other entities besides us */
 		if (cfs_rq->load.weight) {
@@ -4116,6 +4276,9 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 		if (cfs_rq_throttled(cfs_rq))
 			break;
+
+		if (boosted)
+			boosted = dequeue_boosted_entity(cfs_rq, se);
 
 		update_cfs_shares(cfs_rq);
 		update_entity_load_avg(se, 1);
@@ -4923,6 +5086,15 @@ static struct task_struct *pick_next_task_fair(struct rq *rq)
 	p = task_of(se);
 	if (hrtick_enabled(rq))
 		hrtick_start_fair(rq, p);
+
+	if (rq->resched_next && !entity_boosted(&p->se)) {
+		/*
+		 * seems boosted tasks have gone from the throttled cfs_rq,
+		 * pick another task then
+		 */
+		resched_task(p);
+		rq->resched_next = 0;
+	}
 
 	return p;
 }
