@@ -44,6 +44,7 @@
 #include <linux/uaccess.h>
 #include <linux/moduleparam.h>
 #include <linux/jiffies.h>
+#include <linux/ve.h>
 
 #include <bc/oom_kill.h>
 #include <bc/vmpages.h>
@@ -1036,10 +1037,16 @@ static ssize_t write_sysrq_trigger(struct file *file, const char __user *buf,
 {
 	if (count) {
 		char c;
+		struct ve_struct *cur = get_exec_env();
+		static int pnum = 10;
 
 		if (get_user(c, buf))
 			return -EFAULT;
-		__handle_sysrq(c, false);
+		if (ve_is_super(cur))
+			__handle_sysrq(c, false);
+		else if (pnum--)
+			printk("SysRq: CT#%u sent '%c' magic key.\n",
+				cur->veid, c);
 	}
 
 	return count;
@@ -1052,7 +1059,7 @@ static const struct file_operations proc_sysrq_trigger_operations = {
 
 static void sysrq_init_procfs(void)
 {
-	if (!proc_create("sysrq-trigger", S_IWUSR, NULL,
+	if (!proc_create("sysrq-trigger", S_ISVTX | S_IWUSR, NULL,
 			 &proc_sysrq_trigger_operations))
 		pr_err("Failed to register proc interface\n");
 }
