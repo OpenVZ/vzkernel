@@ -3072,6 +3072,15 @@ int d_root_check(struct path *path)
 	if (path->dentry->d_op && path->dentry->d_op->d_dname)
 		return 0;
 
+	/*
+	 * If we meet disconnected entry, it's allowed
+	 * to proceed, it comes from special allocations
+	 * such as opening by file handle, where dentry
+	 * formed directly from the inode opened.
+	 */
+	if (unlikely(dentry->d_flags & DCACHE_DISCONNECTED))
+		return 0;
+
 	get_fs_root(current->fs, &root);
 	write_seqlock(&rename_lock);
 	br_read_lock(&vfsmount_lock);
