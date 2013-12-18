@@ -227,6 +227,7 @@ int next_pidmap(struct pid_namespace *pid_ns, unsigned int last)
 	}
 	return -1;
 }
+EXPORT_SYMBOL(next_pidmap);
 
 void put_pid(struct pid *pid)
 {
