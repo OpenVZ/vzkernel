@@ -34,7 +34,6 @@
 #include <linux/cleancache.h>
 #include <linux/fsnotify.h>
 #include <linux/lockdep.h>
-#include <linux/ve_proto.h>
 #include "internal.h"
 
 const unsigned super_block_wrapper_version = 0;
