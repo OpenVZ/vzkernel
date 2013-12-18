@@ -109,6 +109,9 @@ struct ve_struct {
 
 	struct kmapset_key	ve_sysfs_perms;
 	struct list_head	ve_cgroup_head;
+#if IS_ENABLED(CONFIG_DEVTMPFS)
+	struct path		devtmpfs_root;
+#endif
 };
 
 #define VE_MEMINFO_DEFAULT      1       /* default behaviour */
