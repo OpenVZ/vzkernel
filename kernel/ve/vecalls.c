@@ -77,6 +77,8 @@
 
 #include <bc/dcache.h>
 
+static struct cgroup *devices_root;
+
 static int	do_env_enter(struct ve_struct *ve, unsigned int flags);
 
 static void vecalls_exit(void);
@@ -157,6 +159,7 @@ static int real_setdevperms(envid_t veid, unsigned type,
 		dev_t dev, unsigned mask)
 {
 	struct ve_struct *ve;
+	struct cgroup *cgroup;
 	int err;
 
 	if (!capable_setveid() || veid == 0)
@@ -167,8 +170,17 @@ static int real_setdevperms(envid_t veid, unsigned type,
 
 	down_read(&ve->op_sem);
 	err = -ESRCH;
+
+	cgroup = ve_cgroup_open(devices_root, 0, ve->veid);
+	err = PTR_ERR(cgroup);
+	if (IS_ERR(cgroup))
+		goto out;
+
 	if (ve->is_running)
-		err = devcgroup_set_perms_ve(ve->css.cgroup, type, dev, mask);
+		err = devcgroup_set_perms_ve(cgroup, type, dev, mask);
+
+	cgroup_kernel_close(cgroup);
+out:
 	up_read(&ve->op_sem);
 	put_ve(ve);
 	return err;
@@ -365,6 +377,8 @@ static int __init init_vecalls_cgroups(void)
 	ve_cgroup_mnt = cgroup_kernel_mount(&opts);
 	if (IS_ERR(ve_cgroup_mnt))
 		return PTR_ERR(ve_cgroup_mnt);
+	devices_root = cgroup_get_root(ve_cgroup_mnt);
+
 	return 0;
 }
 
@@ -383,6 +397,7 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	struct nsproxy *old_ns;
 	char ve_name[VE_LEGACY_NAME_MAXLEN];
 	struct cgroup *ve_cgroup;
+	struct cgroup *dev_cgroup;
 
 	if (tsk->signal->tty) {
 		printk("ERR: CT init has controlling terminal\n");
@@ -416,15 +431,21 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 
 	legacy_veid_to_name(veid, ve_name);
 
-	ve_cgroup = cgroup_kernel_open(ve0.css.cgroup,
-			CGRP_CREAT|CGRP_WEAK|CGRP_EXCL, ve_name);
+	ve_cgroup = ve_cgroup_open(ve0.css.cgroup,
+			CGRP_CREAT|CGRP_WEAK|CGRP_EXCL, veid);
 	err = PTR_ERR(ve_cgroup);
 	if (IS_ERR(ve_cgroup))
-		goto err_cgroup;
+		goto err_ve_cgroup;
 
-	err = devcgroup_default_perms_ve(ve_cgroup);
+	dev_cgroup = ve_cgroup_open(devices_root,
+		CGRP_CREAT|CGRP_WEAK, veid);
+	err = PTR_ERR(dev_cgroup);
+	if (IS_ERR(dev_cgroup))
+		goto err_dev_cgroup;
+
+	err = devcgroup_default_perms_ve(dev_cgroup);
 	if (err)
-		goto err_devcgroup;
+		goto err_devperms;
 
 	ve = cgroup_ve(ve_cgroup);
 
@@ -433,6 +454,10 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	err = cgroup_kernel_attach(ve->css.cgroup, tsk);
 	if (err)
 		goto err_ve_attach;
+
+	err = cgroup_kernel_attach(dev_cgroup, tsk);
+	if (err)
+		goto err_dev_attach;
 
 	err = -ENOMEM;
 	new_creds = prepare_creds();
@@ -471,6 +496,7 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	up_write(&ve->op_sem);
 
 	cgroup_kernel_close(ve_cgroup);
+	cgroup_kernel_close(dev_cgroup);
 
 	put_nsproxy(old_ns);
 	put_cred(old_creds);
@@ -484,12 +510,17 @@ err_vpid:
 err_ns:
 	commit_creds(old_creds);
 err_creds:
+	cgroup_kernel_attach(&dev_cgroup->root->top_cgroup, tsk);
+err_dev_attach:
 	cgroup_kernel_attach(ve0.css.cgroup, tsk);
 err_ve_attach:
-err_devcgroup:
+err_devperms:
+	cgroup_kernel_close(dev_cgroup);
+	ve_cgroup_remove(devices_root, veid);
+err_dev_cgroup:
 	cgroup_kernel_close(ve_cgroup);
-	cgroup_kernel_remove(ve0.css.cgroup, ve_name);
-err_cgroup:
+	ve_cgroup_remove(ve0.css.cgroup, veid);
+err_ve_cgroup:
 	fairsched_drop_node(veid, 1);
 err_sched:
 	printk(KERN_INFO "CT: %d: failed to start with err=%d\n", veid, err);
