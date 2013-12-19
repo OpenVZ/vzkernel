@@ -20,7 +20,6 @@
  *  Copyright (C) 2007 Red Hat, Inc., Peter Zijlstra <pzijlstr@redhat.com>
  */
 
-#include <linux/sched.h>
 #include <linux/latencytop.h>
 #include <linux/cpumask.h>
 #include <linux/slab.h>
@@ -30,6 +29,7 @@
 #include <linux/migrate.h>
 #include <linux/task_work.h>
 #include <linux/ve.h>
+#include <linux/vzstat.h>
 
 #include <trace/events/sched.h>
 

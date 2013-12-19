@@ -1,4 +1,3 @@
-#include <linux/sched.h>
 #include <linux/kobject.h>
 #include <linux/ve.h>
 #include <linux/ve_proto.h>

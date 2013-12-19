@@ -8,7 +8,6 @@
  *
  */
 
-#include <linux/sched.h>
 #include <linux/ve.h>
 #include <linux/ve_proto.h>
 #include <linux/ipc.h>
