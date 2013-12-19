@@ -620,12 +620,13 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 	if (err)
 		goto err_log;
 
+	ve->meminfo_val = VE_MEMINFO_DEFAULT;
+
 do_init:
 	init_rwsem(&ve->op_sem);
 	mutex_init(&ve->sync_mutex);
 	INIT_LIST_HEAD(&ve->devices);
 	INIT_LIST_HEAD(&ve->ve_cgroup_head);
-	ve->meminfo_val = VE_MEMINFO_DEFAULT;
 	kmapset_init_key(&ve->ve_sysfs_perms);
 
 	return &ve->css;
