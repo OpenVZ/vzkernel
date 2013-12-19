@@ -10,7 +10,36 @@
 #include <linux/module.h>
 #include <linux/uaccess.h>
 #include <linux/ve.h>
+#include <net/sock.h>
 #include "sysfs.h"
+
+static void *ve_grab_current_ns(void)
+{
+	return get_ve(get_exec_env());
+}
+
+static const void *ve_initial_ns(void)
+{
+	return get_ve0();
+}
+
+static void ve_drop_ns(void *p)
+{
+	put_ve(p);
+}
+
+const void *ve_netlink_ns(struct sock *sk)
+{
+	return sock_net(sk)->owner_ve;
+}
+
+struct kobj_ns_type_operations ve_ns_type_operations = {
+	.type = KOBJ_NS_TYPE_VE,
+	.grab_current_ns = ve_grab_current_ns,
+	.netlink_ns = ve_netlink_ns,
+	.initial_ns = ve_initial_ns,
+	.drop_ns = ve_drop_ns,
+};
 
 static bool sysfs_perms_shown(struct ve_struct *ve, struct sysfs_dirent *sd)
 {
