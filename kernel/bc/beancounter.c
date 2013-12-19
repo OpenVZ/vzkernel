@@ -97,6 +97,51 @@ int ub_resource_precharge[UB_RESOURCES] = {
 /* natural limits for percpu precharge bounds */
 static int resource_precharge_min = 0;
 static int resource_precharge_max = INT_MAX / NR_CPUS;
+static struct cgroup *mem_cgroup_root, *blkio_cgroup_root;
+
+static int ub_cgroup_create(struct user_beancounter *ub)
+{
+	ub->mem_cgroup = ve_cgroup_open(mem_cgroup_root,
+				CGRP_CREAT|CGRP_EXCL|CGRP_WEAK, ub->ub_uid);
+	if (IS_ERR(ub->mem_cgroup))
+		return PTR_ERR(ub->mem_cgroup);
+
+	if (!ubc_ioprio)
+		return 0;
+
+	ub->blkio_cgroup = ve_cgroup_open(blkio_cgroup_root,
+				CGRP_CREAT|CGRP_WEAK, ub->ub_uid);
+	if (IS_ERR(ub->blkio_cgroup)) {
+		cgroup_kernel_close(ub->mem_cgroup);
+		return PTR_ERR(ub->blkio_cgroup);
+	}
+
+	return 0;
+}
+
+static void ub_cgroup_close(struct user_beancounter *ub)
+{
+	cgroup_kernel_close(ub->mem_cgroup);
+	cgroup_kernel_close(ub->blkio_cgroup);
+}
+
+static int ub_cgroup_move(struct user_beancounter *ub, struct task_struct *tsk)
+{
+	int ret, err;
+
+	ret = cgroup_kernel_attach(ub->mem_cgroup, tsk);
+	if (ret || !ubc_ioprio)
+		return ret;
+
+	ret = cgroup_kernel_attach(ub->blkio_cgroup, tsk);
+	if (ret) {
+		err = cgroup_kernel_attach(ub0.mem_cgroup, tsk);
+		if (err)
+			printk(KERN_ERR "Cleanup error, can't move process "
+				"back to ve0 mem cgroup, err=%d\n", err);
+	}
+	return ret;
+}
 
 void init_beancounter_precharge(struct user_beancounter *ub, int resource)
 {
@@ -172,17 +217,13 @@ static DEFINE_SPINLOCK(ub_hash_lock);
 LIST_HEAD(ub_list_head); /* protected by ub_hash_lock */
 EXPORT_SYMBOL(ub_list_head);
 
-static struct cgroup *ub_cgroup_root;
-
 int set_task_exec_ub(struct task_struct *tsk, struct user_beancounter *ub)
 {
 	int err;
 
-	if (ub->ub_cgroup) {
-		err = cgroup_kernel_attach(ub->ub_cgroup, tsk);
-		if (err)
-			return err;
-	}
+	err = ub_cgroup_move(ub, tsk);
+	if (err)
+		return err;
 
 	put_beancounter_longterm(tsk->task_bc.exec_ub);
 	tsk->task_bc.exec_ub = get_beancounter_longterm(ub);
@@ -206,8 +247,6 @@ EXPORT_SYMBOL(set_task_exec_ub);
 static struct user_beancounter *alloc_ub(uid_t uid)
 {
 	struct user_beancounter *new_ub;
-	char name[16];
-
 	ub_debug(UBD_ALLOC, "Creating ub %p\n", new_ub);
 
 	new_ub = (struct user_beancounter *)kmem_cache_alloc(ub_cachep, 
@@ -219,15 +258,13 @@ static struct user_beancounter *alloc_ub(uid_t uid)
 	init_beancounter_struct(new_ub);
 
 	init_beancounter_precharges(new_ub);
+	new_ub->ub_uid = uid;
 
-	if (ubc_ioprio) {
-		snprintf(name, sizeof(name), "%u", uid);
-		new_ub->ub_cgroup = cgroup_kernel_open(ub_cgroup_root,
-				CGRP_CREAT|CGRP_WEAK, name);
-		if (IS_ERR(new_ub->ub_cgroup))
-			goto fail_cgroup;
+	if (ub_cgroup_create(new_ub) < 0)
+		goto fail_cgroup;
+
+	if (ubc_ioprio)
 		ub_init_ioprio(new_ub);
-	}
 
 	if (percpu_counter_init(&new_ub->ub_orphan_count, 0))
 		goto fail_pcpu;
@@ -236,16 +273,15 @@ static struct user_beancounter *alloc_ub(uid_t uid)
 	if (new_ub->ub_percpu == NULL)
 		goto fail_free;
 
-	new_ub->ub_uid = uid;
 	return new_ub;
 
 fail_free:
 	percpu_counter_destroy(&new_ub->ub_orphan_count);
 fail_pcpu:
-	if (new_ub->ub_cgroup) {
+	if (new_ub->blkio_cgroup) {
 		ub_fini_ioprio(new_ub);
-		cgroup_kernel_close(new_ub->ub_cgroup);
 	}
+	ub_cgroup_close(new_ub);
 fail_cgroup:
 	kmem_cache_free(ub_cachep, new_ub);
 	return NULL;
@@ -262,10 +298,11 @@ static inline void __free_ub(struct user_beancounter *ub)
 static inline void free_ub(struct user_beancounter *ub)
 {
 	percpu_counter_destroy(&ub->ub_orphan_count);
-	if (ub->ub_cgroup) {
+	if (ub->blkio_cgroup)
 		ub_fini_ioprio(ub);
-		cgroup_kernel_close(ub->ub_cgroup);
-	}
+
+	ub_cgroup_close(ub);
+
 	__free_ub(ub);
 }
 
@@ -434,10 +471,9 @@ static void delayed_release_beancounter(struct work_struct *w)
 
 	forbid_beancounter_precharge(ub);
 	percpu_counter_destroy(&ub->ub_orphan_count);
-	if (ub->ub_cgroup) {
+	if (ub->blkio_cgroup)
 		ub_fini_ioprio(ub);
-		cgroup_kernel_close(ub->ub_cgroup);
-	}
+	ub_cgroup_close(ub);
 
 	call_rcu(&ub->rcu, bc_free_rcu);
 	return;
@@ -907,6 +943,7 @@ late_initcall(ub_init_wq);
 
 int __init ub_init_cgroup(void)
 {
+	int err;
 	struct vfsmount *mnt;
 	struct cgroup_sb_opts opts = {
 		.name		= "beancounter",
@@ -917,16 +954,16 @@ int __init ub_init_cgroup(void)
 	mnt = cgroup_kernel_mount(&opts);
 	if (IS_ERR(mnt))
 		return PTR_ERR(mnt);
-	ub_cgroup_root = cgroup_get_root(mnt);
+	mem_cgroup_root = cgroup_get_root(mnt);
+	blkio_cgroup_root = mem_cgroup_root;
 
-	if (!ubc_ioprio)
-		return 0;
+	err = ub_cgroup_create(&ub0);
+	if (err) {
+		printk(KERN_ALERT"ub_cgroup_create: %d\n", err);
+		return err;
+	}
 
-	ub0.ub_cgroup = cgroup_kernel_open(ub_cgroup_root, CGRP_CREAT, "0");
-	if (IS_ERR(ub0.ub_cgroup))
-		return PTR_ERR(ub0.ub_cgroup);
-
-	return cgroup_kernel_attach(ub0.ub_cgroup, init_pid_ns.child_reaper);
+	return ub_cgroup_move(&ub0, init_pid_ns.child_reaper);
 }
 late_initcall(ub_init_cgroup);
 
