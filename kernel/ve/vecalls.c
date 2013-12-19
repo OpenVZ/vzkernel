@@ -11,7 +11,6 @@
  * along with initialization script
  */
 
-#include <linux/sched.h>
 #include <linux/delay.h>
 #include <linux/capability.h>
 #include <linux/ve.h>
