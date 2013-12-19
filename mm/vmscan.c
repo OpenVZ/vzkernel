@@ -49,6 +49,7 @@
 
 #include <linux/swapops.h>
 #include <linux/balloon_compaction.h>
+#include <linux/vzstat.h>
 
 #include "internal.h"
 
@@ -1609,6 +1610,8 @@ static void shrink_active_list(unsigned long nr_to_scan,
 	int file = is_file_lru(lru);
 	struct zone *zone = lruvec_zone(lruvec);
 
+	KSTAT_PERF_ENTER(refill_inact);
+
 	lru_add_drain();
 
 	if (!sc->may_unmap)
@@ -1688,6 +1691,8 @@ static void shrink_active_list(unsigned long nr_to_scan,
 	spin_unlock_irq(&zone->lru_lock);
 
 	free_hot_cold_page_list(&l_hold, true);
+
+	KSTAT_PERF_LEAVE(refill_inact);
 }
 
 #ifdef CONFIG_SWAP
@@ -2386,6 +2391,7 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
 	unsigned long writeback_threshold;
 	bool aborted_reclaim;
 
+	KSTAT_PERF_ENTER(ttfp);
 	delayacct_freepages_start();
 
 	if (global_reclaim(sc))
@@ -2447,6 +2453,7 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
 
 out:
 	delayacct_freepages_end();
+	KSTAT_PERF_LEAVE(ttfp);
 
 	if (sc->nr_reclaimed)
 		return sc->nr_reclaimed;
