@@ -944,18 +944,28 @@ late_initcall(ub_init_wq);
 int __init ub_init_cgroup(void)
 {
 	int err;
-	struct vfsmount *mnt;
-	struct cgroup_sb_opts opts = {
+	struct vfsmount *blkio_mnt, *mem_mnt;
+	struct cgroup_sb_opts blkio_opts = {
 		.name		= "beancounter",
-		.subsys_mask    = (1ul << blkio_subsys_id) |
-				  (1ul << mem_cgroup_subsys_id),
+		.subsys_mask    = (1ul << blkio_subsys_id),
 	};
 
-	mnt = cgroup_kernel_mount(&opts);
-	if (IS_ERR(mnt))
-		return PTR_ERR(mnt);
-	mem_cgroup_root = cgroup_get_root(mnt);
-	blkio_cgroup_root = mem_cgroup_root;
+	struct cgroup_sb_opts mem_opts = {
+		.name		= "mem",
+		.subsys_mask    = (1ul << mem_cgroup_subsys_id),
+	};
+
+	blkio_mnt = cgroup_kernel_mount(&blkio_opts);
+	if (IS_ERR(blkio_mnt))
+		return PTR_ERR(blkio_mnt);
+	blkio_cgroup_root = cgroup_get_root(blkio_mnt);
+
+	mem_mnt = cgroup_kernel_mount(&mem_opts);
+	if (IS_ERR(mem_mnt)) {
+		kern_unmount(blkio_mnt);
+		return PTR_ERR(mem_mnt);
+	}
+	mem_cgroup_root = cgroup_get_root(mem_mnt);
 
 	err = ub_cgroup_create(&ub0);
 	if (err) {
