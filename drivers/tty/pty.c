@@ -547,6 +547,7 @@ static void __init legacy_pty_init(void)
 	if (tty_register_driver(pty_slave_driver))
 		panic("Couldn't register pty slave driver");
 }
+
 #else
 static inline void legacy_pty_init(void) { }
 #endif
