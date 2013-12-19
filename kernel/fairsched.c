@@ -764,20 +764,31 @@ extern int sysctl_sched_rt_runtime;
 
 int __init fairsched_init(void)
 {
-	struct vfsmount *mnt;
+	struct vfsmount *cpu_mnt, *cpuset_mnt;
 	int ret;
-	struct cgroup_sb_opts opts = {
+	struct cgroup_sb_opts cpu_opts = {
 		.name		= "fairsched",
 		.subsys_mask	=
-			(1ul << cpu_cgroup_subsys_id) |
+			(1ul << cpu_cgroup_subsys_id),
+	};
+
+	struct cgroup_sb_opts cpuset_opts = {
+		.name		= "cpuset",
+		.subsys_mask	=
 			(1ul << cpuset_subsys_id),
 	};
 
-	mnt = cgroup_kernel_mount(&opts);
-	if (IS_ERR(mnt))
-		return PTR_ERR(mnt);
-	root_node.cpu = cgroup_get_root(mnt);
-	root_node.cpuset = cgroup_get_root(mnt);
+	cpu_mnt = cgroup_kernel_mount(&cpu_opts);
+	if (IS_ERR(cpu_mnt))
+		return PTR_ERR(cpu_mnt);
+	root_node.cpu = cgroup_get_root(cpu_mnt);
+
+	cpuset_mnt = cgroup_kernel_mount(&cpuset_opts);
+	if (IS_ERR(cpuset_mnt)) {
+		kern_unmount(cpu_mnt);
+		return PTR_ERR(cpuset_mnt);
+	}
+	root_node.cpuset = cgroup_get_root(cpuset_mnt);
 
 	ret = fairsched_create(&host_node, 0);
 	if (ret)
