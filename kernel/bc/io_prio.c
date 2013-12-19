@@ -18,12 +18,12 @@ static u64 ioprio_weight[UB_IOPRIO_MAX] = {320, 365, 410, 460, 500, 550, 600, 64
 
 void ub_init_ioprio(struct user_beancounter *ub)
 {
-	//blkio_cgroup_set_ub(ub->ub_cgroup, ub);
+	//blkio_cgroup_set_ub(ub->blkio_cgroup, ub);
 }
 
 void ub_fini_ioprio(struct user_beancounter *ub)
 {
-	//blkio_cgroup_set_ub(ub->ub_cgroup, &ub0);
+	//blkio_cgroup_set_ub(ub->blkio_cgroup, &ub0);
 }
 
 int ub_set_ioprio(int id, int ioprio)
@@ -40,8 +40,8 @@ int ub_set_ioprio(int id, int ioprio)
 	if (!ub)
 		goto out;
 
-	if (ub->ub_cgroup)
-//		ret = blkio_cgroup_set_weight(ub->ub_cgroup,
+	if (ub->blkio_cgroup)
+//		ret = blkio_cgroup_set_weight(ub->blkio_cgroup,
 //				ioprio_weight[ioprio])
 		ret = 0;
 	else
@@ -74,10 +74,10 @@ static int bc_iostat(struct seq_file *f, struct user_beancounter *bc)
 			__ub_percpu_sum(bc, fuse_requests),
 			__ub_percpu_sum(bc, fuse_bytes) >> 9);
 
-	if (!bc->ub_cgroup)
+	if (!bc->blkio_cgroup)
 		return 0;
 
-	blkcg = cgroup_to_blkio_cgroup(bc->ub_cgroup);
+	blkcg = cgroup_to_blkio_cgroup(bc->blkio_cgroup);
 
 	rcu_read_lock();
 	hlist_for_each_entry_rcu(blkg, n, &blkcg->blkg_list, blkcg_node) {
@@ -197,10 +197,10 @@ static int bc_ioprio_show(struct seq_file *f, void *v)
 
 	bc = seq_beancounter(f);
 
-	if (!bc->ub_cgroup)
+	if (!bc->blkio_cgroup)
 		return 0;
 
-	blkcg = cgroup_to_blkio_cgroup(bc->ub_cgroup);
+	blkcg = cgroup_to_blkio_cgroup(bc->blkio_cgroup);
 
 	ioprio = UB_IOPRIO_MAX - 1;
 	while (ioprio && blkcg->weight < ioprio_weight[ioprio])
