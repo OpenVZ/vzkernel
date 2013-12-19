@@ -123,6 +123,10 @@ extern struct cgroup_subsys ve_subsys;
 
 #ifdef CONFIG_VE
 
+extern struct kobj_ns_type_operations ve_ns_type_operations;
+extern struct kobject * kobject_create_and_add_ve(const char *name,
+						struct kobject *parent);
+
 extern struct kmapset_set ve_sysfs_perms;
 
 extern int glob_ve_meminfo;
@@ -199,6 +203,8 @@ static inline void ve_exit_ns(struct pid_namespace *ns) { }
 
 #define kthread_create_on_node_ve(ve, threadfn, data, node, namefmt...)	\
 	kthread_create_on_node_ve(threadfn, data, node, namefmt...)
+
+#define kobject_create_and_add_ve		kobject_create_and_add
 
 #endif	/* CONFIG_VE */
 
