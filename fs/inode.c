@@ -17,6 +17,7 @@
 #include <linux/prefetch.h>
 #include <linux/buffer_head.h> /* for inode_has_buffers */
 #include <linux/ratelimit.h>
+#include <linux/vzstat.h>
 #include "internal.h"
 
 /*
@@ -724,6 +725,8 @@ void prune_icache_sb(struct super_block *sb, int nr_to_scan)
 	int nr_scanned;
 	unsigned long reap = 0;
 
+	KSTAT_PERF_ENTER(shrink_icache);
+
 	spin_lock(&sb->s_inode_lru_lock);
 	for (nr_scanned = nr_to_scan; nr_scanned >= 0; nr_scanned--) {
 		struct inode *inode;
@@ -801,6 +804,7 @@ void prune_icache_sb(struct super_block *sb, int nr_to_scan)
 		current->reclaim_state->reclaimed_slab += reap;
 
 	dispose_list(&freeable);
+	KSTAT_PERF_LEAVE(shrink_icache);
 }
 
 static void __wait_on_freeing_inode(struct inode *inode);
