@@ -13,7 +13,6 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/sched.h>
 #include <linux/interrupt.h>
 #include <linux/fs.h>
 #include <linux/types.h>
@@ -43,7 +42,6 @@
 #include <linux/if_arp.h>	/* For ARPHRD_ETHER */
 #include <linux/if_bridge.h>
 #include <linux/ethtool.h>
-#include <linux/ve.h>
 #include <linux/veth.h>
 #include <linux/vzctl.h>
 #include <linux/vzctl_veth.h>
