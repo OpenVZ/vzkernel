@@ -220,7 +220,8 @@ struct user_beancounter
 	unsigned		rl_step;	/* ns per page */
 	ktime_t			rl_wall;	/* wall time */
 
-	struct cgroup		*ub_cgroup;
+	struct cgroup		*blkio_cgroup;
+	struct cgroup		*mem_cgroup;
 
 	void			*private_data2;
 
