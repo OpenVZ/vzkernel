@@ -8,7 +8,6 @@
  *
  */
 
-#include <linux/sched.h>
 #include <linux/fs.h>
 #include <linux/list.h>
 #include <linux/ctype.h>
