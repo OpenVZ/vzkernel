@@ -66,7 +66,7 @@ void ub_update_resources(struct user_beancounter *ub)
 {
 	unsigned long flags;
 
-	mem_cgroup_sync_beancounter(ub->ub_cgroup, ub);
+	mem_cgroup_sync_beancounter(ub->mem_cgroup, ub);
 
 	spin_lock_irqsave(&ub->ub_lock, flags);
 	ub_update_resources_locked(ub);
