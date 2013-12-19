@@ -56,7 +56,7 @@ SYSCALL_DEFINE1(setluid, uid_t, uid)
 	if (ub == NULL)
 		goto out;
 
-	error = mem_cgroup_apply_beancounter(ub->ub_cgroup, ub);
+	error = mem_cgroup_apply_beancounter(ub->mem_cgroup, ub);
 
 	ub_debug(UBD_ALLOC | UBD_LIMIT, "setluid, bean %p (count %d) "
 			"for %.20s pid %d\n",
@@ -98,7 +98,7 @@ long do_setublimit(uid_t uid, unsigned long resource,
 	init_beancounter_precharge(ub, resource);
 	spin_unlock_irqrestore(&ub->ub_lock, flags);
 
-	error = mem_cgroup_apply_beancounter(ub->ub_cgroup, ub);
+	error = mem_cgroup_apply_beancounter(ub->mem_cgroup, ub);
 
 	put_beancounter_longterm(ub);
 out:
