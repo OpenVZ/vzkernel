@@ -9,7 +9,6 @@
  */
 
 #include <linux/module.h>
-#include <linux/sched.h>
 #include <linux/err.h>
 #include <linux/mount.h>
 #include <linux/cgroup.h>
