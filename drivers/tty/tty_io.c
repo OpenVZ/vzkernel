@@ -3292,10 +3292,12 @@ static void destruct_tty_driver(struct kref *kref)
 		 * drivers are removed from the kernel.
 		 */
 		for (i = 0; i < driver->num; i++) {
-			tp = driver->termios[i];
-			if (tp) {
-				driver->termios[i] = NULL;
-				kfree(tp);
+			if (!(driver->flags & TTY_DRIVER_DEVPTS_MEM)) {
+				tp = driver->termios[i];
+				if (tp) {
+					driver->termios[i] = NULL;
+					kfree(tp);
+				}
 			}
 			if (!(driver->flags & TTY_DRIVER_DYNAMIC_DEV))
 				tty_unregister_device(driver, i);
