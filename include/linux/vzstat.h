@@ -46,8 +46,17 @@ struct kstat_perf_snap_struct {
 	u64 wall_maxdur, cpu_maxdur;
 	unsigned long count;
 };
-struct kstat_perf_struct {
-	struct kstat_perf_snap_struct cur, last;
+
+struct kstat_perf_pcpu_snap_struct {
+	u64 wall_tottime, cpu_tottime;
+	u64 wall_maxdur, cpu_maxdur;
+	unsigned long count;
+	seqcount_t lock;
+};
+
+struct kstat_perf_pcpu_struct {
+	struct kstat_perf_pcpu_snap_struct *cur;
+	struct kstat_perf_snap_struct last;
 };
 
 struct kstat_zone_avg {
@@ -74,7 +83,7 @@ struct kernel_stat_glob {
 	struct kstat_lat_pcpu_struct page_in;
 	struct kstat_lat_struct swap_in;
 
-	struct kstat_perf_struct ttfp, cache_reap,
+	struct kstat_perf_pcpu_struct ttfp, cache_reap,
 			refill_inact, shrink_icache, shrink_dcache;
 
 	struct kstat_zone_avg zone_avg[MAX_NR_ZONES];
@@ -85,26 +94,34 @@ extern spinlock_t kstat_glb_lock;
 
 extern void kstat_init(void);
 
+static inline void
+KSTAT_PERF_ADD(struct kstat_perf_pcpu_struct *ptr, u64 real_time, u64 cpu_time)
+{
+	struct kstat_perf_pcpu_snap_struct *cur = get_cpu_ptr(ptr->cur);
+
+	write_seqcount_begin(&cur->lock);
+	cur->count++;
+	if (cur->wall_maxdur < real_time)
+		cur->wall_maxdur = real_time;
+	cur->wall_tottime += real_time;
+	if (cur->cpu_maxdur < cpu_time)
+		cur->cpu_maxdur = cpu_time;
+	cur->cpu_tottime += real_time;
+	write_seqcount_end(&cur->lock);
+	put_cpu_ptr(cur);
+}
+
 #ifdef CONFIG_VE
 #define KSTAT_PERF_ENTER(name)				\
-	unsigned long flags;				\
-	u64  start, sleep_time;				\
+	u64 start, sleep_time;				\
 							\
 	start = ktime_to_ns(ktime_get());		\
-	sleep_time = current->se.statistics->sum_sleep_runtime;
+	sleep_time = current->se.statistics.sum_sleep_runtime; \
 
 #define KSTAT_PERF_LEAVE(name)				\
 	start = ktime_to_ns(ktime_get()) - start;	\
-	spin_lock_irqsave(&kstat_glb_lock, flags);	\
-	kstat_glob.name.cur.count++;			\
-	if (kstat_glob.name.cur.wall_maxdur < start)	\
-		kstat_glob.name.cur.wall_maxdur = start;\
-	kstat_glob.name.cur.wall_tottime += start;	\
-	start -= current->se.statistics->sum_sleep_runtime - sleep_time; \
-	if (kstat_glob.name.cur.cpu_maxdur < start)	\
-		kstat_glob.name.cur.cpu_maxdur = start;	\
-	kstat_glob.name.cur.cpu_tottime += start;	\
-	spin_unlock_irqrestore(&kstat_glb_lock, flags);	\
+	sleep_time = current->se.statistics.sum_sleep_runtime - sleep_time; \
+	KSTAT_PERF_ADD(&kstat_glob.name, start, start - sleep_time);
 
 #else
 #define KSTAT_PERF_ENTER(name)
@@ -124,6 +141,25 @@ static inline void KSTAT_LAT_ADD(struct kstat_lat_struct *p,
 	p->cur.totlat += dur;
 }
 
+/*
+ * Must be called with disabled interrupts to remove any possible
+ * locks and seqcounts under write-lock and avoid this 3-way deadlock:
+ *
+ * timer interrupt:
+ *	write_seqlock(&xtime_lock);
+ *	 spin_lock_irqsave(&kstat_glb_lock);
+ *
+ * update_schedule_latency():
+ *	spin_lock_irq(&kstat_glb_lock);
+ *	 read_seqcount_begin(&cur->lock)
+ *
+ * some-interrupt during KSTAT_LAT_PCPU_ADD()
+ *   KSTAT_LAT_PCPU_ADD()
+ *    write_seqcount_begin(&cur->lock);
+ *     <interrupt>
+ *      ktime_get()
+ *       read_seqcount_begin(&xtime_lock);
+ */
 static inline void KSTAT_LAT_PCPU_ADD(struct kstat_lat_pcpu_struct *p, int cpu,
 		u64 dur)
 {
