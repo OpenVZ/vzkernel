@@ -148,6 +148,28 @@ void legacy_veid_to_name(envid_t veid, char *name)
 }
 EXPORT_SYMBOL(legacy_veid_to_name);
 
+/* Cgroup must be closed with cgroup_kernel_close */
+struct cgroup *ve_cgroup_open(struct cgroup *root, int flags, envid_t veid)
+{
+	char name[VE_LEGACY_NAME_MAXLEN];
+	struct cgroup *cgrp;
+
+	legacy_veid_to_name(veid, name);
+
+	cgrp = cgroup_kernel_open(root, flags, name);
+	return cgrp ? cgrp : ERR_PTR(-ENOENT);
+}
+EXPORT_SYMBOL(ve_cgroup_open);
+
+int ve_cgroup_remove(struct cgroup *root, envid_t veid)
+{
+	char name[VE_LEGACY_NAME_MAXLEN];
+
+	legacy_veid_to_name(veid, name);
+	return cgroup_kernel_remove(root, name);
+}
+EXPORT_SYMBOL(ve_cgroup_remove);
+
 int legacy_name_to_veid(const char *name, envid_t *veid)
 {
 	envid_t tmp;
