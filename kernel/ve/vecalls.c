@@ -363,21 +363,32 @@ out:
 	return alone;
 }
 
-static struct vfsmount *ve_cgroup_mnt;
+static struct vfsmount *ve_cgroup_mnt, *devices_cgroup_mnt;
 
 static int __init init_vecalls_cgroups(void)
 {
-	struct cgroup_sb_opts opts = {
+	struct cgroup_sb_opts devices_opts = {
 		.name		= "container",
 		.subsys_mask	=
-			(1ul << ve_subsys_id) |
 			(1ul << devices_subsys_id),
 	};
 
-	ve_cgroup_mnt = cgroup_kernel_mount(&opts);
-	if (IS_ERR(ve_cgroup_mnt))
+	struct cgroup_sb_opts ve_opts = {
+		.name		= "ve",
+		.subsys_mask	=
+			(1ul << ve_subsys_id),
+	};
+
+	devices_cgroup_mnt = cgroup_kernel_mount(&devices_opts);
+	if (IS_ERR(devices_cgroup_mnt))
+		return PTR_ERR(devices_cgroup_mnt);
+	devices_root = cgroup_get_root(devices_cgroup_mnt);
+
+	ve_cgroup_mnt = cgroup_kernel_mount(&ve_opts);
+	if (IS_ERR(ve_cgroup_mnt)) {
+		kern_unmount(devices_cgroup_mnt);
 		return PTR_ERR(ve_cgroup_mnt);
-	devices_root = cgroup_get_root(ve_cgroup_mnt);
+	}
 
 	return 0;
 }
@@ -385,6 +396,7 @@ static int __init init_vecalls_cgroups(void)
 static void fini_vecalls_cgroups(void)
 {
 	kern_unmount(ve_cgroup_mnt);
+	kern_unmount(devices_cgroup_mnt);
 }
 
 static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
