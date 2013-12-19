@@ -1,6 +1,5 @@
 #include <linux/kernel.h>
 #include <linux/mm.h>
-#include <linux/sched.h>
 #include <linux/ve.h>
 #include <asm/processor.h>
 #include <asm/msr.h>
