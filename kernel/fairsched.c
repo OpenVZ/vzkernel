@@ -769,7 +769,8 @@ int __init fairsched_init(void)
 	struct cgroup_sb_opts cpu_opts = {
 		.name		= "fairsched",
 		.subsys_mask	=
-			(1ul << cpu_cgroup_subsys_id),
+			(1ul << cpu_cgroup_subsys_id) |
+			(1ul << cpuacct_subsys_id),
 	};
 
 	struct cgroup_sb_opts cpuset_opts = {
