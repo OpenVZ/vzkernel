@@ -26,6 +26,7 @@
 #include <linux/async.h>
 #include <linux/pm_runtime.h>
 #include <linux/netdevice.h>
+#include <linux/ve.h>
 
 #include "base.h"
 #include "power/power.h"
@@ -1474,7 +1475,7 @@ int __init devices_init(void)
 	sysfs_dev_block_kobj = kobject_create_and_add("block", dev_kobj);
 	if (!sysfs_dev_block_kobj)
 		goto block_kobj_err;
-	sysfs_dev_char_kobj = kobject_create_and_add("char", dev_kobj);
+	sysfs_dev_char_kobj = kobject_create_and_add_ve("char", dev_kobj);
 	if (!sysfs_dev_char_kobj)
 		goto char_kobj_err;
 
