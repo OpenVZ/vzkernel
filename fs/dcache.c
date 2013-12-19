@@ -37,6 +37,7 @@
 #include <linux/rculist_bl.h>
 #include <linux/prefetch.h>
 #include <linux/ratelimit.h>
+#include <linux/vzstat.h>
 #include "internal.h"
 #include "mount.h"
 
@@ -843,6 +844,7 @@ void prune_dcache_sb(struct super_block *sb, int count)
 	LIST_HEAD(referenced);
 	LIST_HEAD(tmp);
 
+	KSTAT_PERF_ENTER(shrink_dcache);
 relock:
 	spin_lock(&dcache_lru_lock);
 	while (!list_empty(&sb->s_dentry_lru)) {
@@ -874,6 +876,7 @@ relock:
 	spin_unlock(&dcache_lru_lock);
 
 	shrink_dentry_list(&tmp);
+	KSTAT_PERF_LEAVE(shrink_dcache);
 }
 
 /**
