@@ -162,9 +162,21 @@ extern int braille_register_console(struct console *, int index,
 extern int braille_unregister_console(struct console *);
 #ifdef CONFIG_TTY
 extern void console_sysfs_notify(void);
+#ifdef CONFIG_VE
+struct ve_struct;
+extern void ve_tty_console_fini(struct ve_struct *ve);
+extern int ve_tty_console_init(struct ve_struct *ve);
+#endif
 #else
 static inline void console_sysfs_notify(void)
 { }
+#ifdef CONFIG_VE
+struct ve_struct;
+static inline void ve_tty_console_fini(struct ve_struct *ve)
+{ }
+static inline int ve_tty_console_init(struct ve_struct *ve)
+{ return 0; }
+#endif
 #endif
 extern bool console_suspend_enabled;
 
