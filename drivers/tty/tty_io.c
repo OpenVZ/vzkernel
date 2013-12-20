@@ -103,6 +103,7 @@
 
 #include <linux/kmod.h>
 #include <linux/nsproxy.h>
+#include <linux/ve.h>
 #include <bc/kmem.h>
 
 #undef TTY_DEBUG_HANGUP
@@ -3073,7 +3074,17 @@ int tty_put_char(struct tty_struct *tty, unsigned char ch)
 }
 EXPORT_SYMBOL_GPL(tty_put_char);
 
-struct class *tty_class;
+static char *tty_devnode(struct device *dev, umode_t *mode);
+
+static struct class tty_class_base = {
+	.name = "tty",
+	.devnode = tty_devnode,
+	.ns_type = &ve_ns_type_operations,
+	.namespace = ve_namespace,
+	.owner = THIS_MODULE,
+};
+
+struct class *tty_class = &tty_class_base;
 
 static int tty_cdev_add(struct tty_driver *driver, dev_t dev,
 		unsigned int index, unsigned int count)
@@ -3514,11 +3525,7 @@ static char *tty_devnode(struct device *dev, umode_t *mode)
 
 static int __init tty_class_init(void)
 {
-	tty_class = class_create(THIS_MODULE, "tty");
-	if (IS_ERR(tty_class))
-		return PTR_ERR(tty_class);
-	tty_class->devnode = tty_devnode;
-	return 0;
+	return class_register(&tty_class_base);
 }
 
 postcore_initcall(tty_class_init);
