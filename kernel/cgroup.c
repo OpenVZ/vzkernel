@@ -5176,7 +5176,6 @@ static void cgroup_release_agent(struct work_struct *work)
 		struct cgroup *cgrp = list_entry(release_list.next,
 						    struct cgroup,
 						    release_list);
-		struct ve_struct *ve;
 		list_del_init(&cgrp->release_list);
 		raw_spin_unlock(&release_list_lock);
 
@@ -5202,8 +5201,6 @@ static void cgroup_release_agent(struct work_struct *work)
 		if (!agentbuf)
 			goto continue_free;
 
-		ve = get_ve(cgrp->root->top_cgroup.cgroup_ve);
-
 		i = 0;
 		argv[i++] = agentbuf;
 		argv[i++] = pathbuf;
@@ -5220,22 +5217,9 @@ static void cgroup_release_agent(struct work_struct *work)
 		 * be a slow process */
 		mutex_unlock(&cgroup_mutex);
 
-		if (!ve) {
-			err = call_usermodehelper(argv[0], argv, envp,
-						  UMH_WAIT_EXEC);
-		} else {
-			down_read(&ve->op_sem);
-			err = 0;
-			if (ve->ve_kthread_task)
-				err = call_usermodehelper_by(
-						&ve->ve_kthread_worker,
-						argv[0], argv, envp,
-						UMH_WAIT_EXEC,
-						NULL, NULL, NULL);
-			up_read(&ve->op_sem);
-			put_ve(ve);
-		}
-
+		err = call_usermodehelper_ve(cgrp->root->top_cgroup.cgroup_ve,
+					     argv[0], argv, envp,
+					     UMH_WAIT_EXEC);
 		if (err < 0)
 			pr_warn_ratelimited("cgroup release_agent "
 					    "%s %s failed: %d\n",
