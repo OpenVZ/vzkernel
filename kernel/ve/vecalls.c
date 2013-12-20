@@ -463,6 +463,8 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 
 	init_ve_struct(ve, veid, class_id, data, datalen);
 
+	down_write(&ve->op_sem);
+
 	err = cgroup_kernel_attach(ve->css.cgroup, tsk);
 	if (err)
 		goto err_ve_attach;
@@ -497,7 +499,6 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 	if ((err = change_active_pid_ns(tsk, tsk->nsproxy->pid_ns)) < 0)
 		goto err_vpid;
 
-	down_write(&ve->op_sem);
 	if (flags & VE_LOCK)
 		ve->is_locked = 1;
 
