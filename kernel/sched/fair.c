@@ -5493,7 +5493,24 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	int tsk_cache_hot = 0;
 
 	if (check_cpulimit_spread(task_cfs_rq(p), env->dst_cpu) < 0) {
+		int cpu;
+
 		schedstat_inc(p, se.statistics.nr_failed_migrations_cpulimit);
+
+		if (check_cpulimit_spread(task_cfs_rq(p), env->src_cpu) != 0)
+			return 0;
+
+		if (!env->dst_grpmask || (env->flags & LBF_SOME_PINNED))
+			return 0;
+
+		for_each_cpu_and(cpu, env->dst_grpmask, env->cpus) {
+			if (cfs_rq_active(task_cfs_rq(p)->tg->cfs_rq[cpu])) {
+				env->flags |= LBF_SOME_PINNED;
+				env->new_dst_cpu = cpu;
+				break;
+			}
+		}
+
 		return 0;
 	}
 
