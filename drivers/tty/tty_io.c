@@ -3087,9 +3087,25 @@ static struct class tty_class_base = {
 
 struct class *tty_class = &tty_class_base;
 
+#ifdef CONFIG_VE
+static inline bool tty_handle_register(struct tty_driver *driver)
+{
+	if (!ve_is_super(driver->ve) &&
+	    (driver->flags & TTY_DRIVER_CONTAINERIZED))
+		return false;
+	return true;
+}
+#else
+static inline bool tty_handle_register(struct tty_driver *driver)
+{
+	return true;
+}
+#endif
+
 static void tty_cdev_del(struct tty_driver *driver, struct cdev *p)
 {
-	cdev_del(p);
+	if (tty_handle_register(driver))
+		cdev_del(p);
 }
 
 static int tty_cdev_add(struct tty_driver *driver, dev_t dev,
@@ -3098,6 +3114,8 @@ static int tty_cdev_add(struct tty_driver *driver, dev_t dev,
 	/* init here, since reused cdevs cause crashes */
 	cdev_init(&driver->cdevs[index], &tty_fops);
 	driver->cdevs[index].owner = driver->owner;
+	if (!tty_handle_register(driver))
+		return 0;
 	return cdev_add(&driver->cdevs[index], dev, count);
 }
 
@@ -3194,7 +3212,8 @@ struct device *tty_register_device_attr(struct tty_driver *driver,
 	dev->release = tty_device_create_release;
 	dev_set_name(dev, "%s", name);
 	dev->groups = attr_grp;
-	dev_set_drvdata(dev, drvdata);
+	WARN_ON(drvdata && driver->ve);
+	dev_set_drvdata(dev, (drvdata) ? drvdata : driver->ve);
 
 	retval = device_register(dev);
 	if (retval)
@@ -3223,8 +3242,14 @@ EXPORT_SYMBOL_GPL(tty_register_device_attr);
 
 void tty_unregister_device(struct tty_driver *driver, unsigned index)
 {
+#ifdef CONFIG_VE
+	device_destroy_namespace(tty_class,
+		MKDEV(driver->major, driver->minor_start) + index,
+		driver->ve);
+#else
 	device_destroy(tty_class,
 		MKDEV(driver->major, driver->minor_start) + index);
+#endif
 	if (!(driver->flags & TTY_DRIVER_DYNAMIC_ALLOC))
 		tty_cdev_del(driver, &driver->cdevs[index]);
 }
@@ -3359,6 +3384,9 @@ int tty_register_driver(struct tty_driver *driver)
 	dev_t dev;
 	struct device *d;
 
+	if (!tty_handle_register(driver))
+		goto tty_skip_register;
+
 	if (!driver->major) {
 		error = alloc_chrdev_region(&dev, driver->minor_start,
 						driver->num, driver->name);
@@ -3372,6 +3400,8 @@ int tty_register_driver(struct tty_driver *driver)
 	}
 	if (error < 0)
 		goto err;
+
+tty_skip_register:
 
 	if (driver->flags & TTY_DRIVER_DYNAMIC_ALLOC) {
 		error = tty_cdev_add(driver, dev, 0, driver->num);
@@ -3405,7 +3435,8 @@ err_unreg_devs:
 	mutex_unlock(&tty_mutex);
 
 err_unreg_char:
-	unregister_chrdev_region(dev, driver->num);
+	if (tty_handle_register(driver))
+		unregister_chrdev_region(dev, driver->num);
 err:
 	return error;
 }
@@ -3421,8 +3452,9 @@ int tty_unregister_driver(struct tty_driver *driver)
 	if (driver->refcount)
 		return -EBUSY;
 #endif
-	unregister_chrdev_region(MKDEV(driver->major, driver->minor_start),
-				driver->num);
+	if (tty_handle_register(driver))
+		unregister_chrdev_region(MKDEV(driver->major, driver->minor_start),
+					driver->num);
 	mutex_lock(&tty_mutex);
 	list_del(&driver->tty_drivers);
 	mutex_unlock(&tty_mutex);
