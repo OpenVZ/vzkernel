@@ -334,16 +334,6 @@ out:
 	complete(&work->done);
 }
 
-int call_usermodehelper_fns_ve(struct ve_struct *ve,
-	char *path, char **argv, char **envp, int wait,
-	int (*init)(struct subprocess_info *info, struct cred *new),
-	void (*cleanup)(struct subprocess_info *), void *data)
-{
-	return call_usermodehelper_by(&ve->ve_umh_worker, path, argv, envp,
-			wait, init, cleanup, data);
-}
-EXPORT_SYMBOL(call_usermodehelper_fns_ve);
-
 struct kthread_create_work {
 	struct kthread_work work;
 	struct kthread_create_info *info;
