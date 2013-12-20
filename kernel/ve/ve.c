@@ -39,6 +39,7 @@
 #include <linux/fs_struct.h>
 #include <linux/task_work.h>
 #include <linux/tty.h>
+#include <linux/console.h>
 
 #include <linux/vzcalluser.h>
 #include <linux/venet.h>
@@ -499,6 +500,10 @@ int ve_start_container(struct ve_struct *ve)
 	if (err)
 		goto err_unix98_pty;
 
+	err = ve_tty_console_init(ve);
+	if (err)
+		goto err_tty_console;
+
 	err = ve_hook_iterate_init(VE_SS_CHAIN, ve);
 	if (err < 0)
 		goto err_iterate;
@@ -512,6 +517,8 @@ int ve_start_container(struct ve_struct *ve)
 	return 0;
 
 err_iterate:
+	ve_tty_console_fini(ve);
+err_tty_console:
 	ve_unix98_pty_fini(ve);
 err_unix98_pty:
 	ve_legacy_pty_fini(ve);
@@ -587,6 +594,7 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	 */
 	ve->is_running = 0;
 
+	ve_tty_console_fini(ve);
 	ve_unix98_pty_fini(ve);
 	ve_legacy_pty_fini(ve);
 
