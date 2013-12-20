@@ -490,26 +490,33 @@ static const struct tty_operations slave_pty_ops_bsd = {
 	.remove = pty_remove
 };
 
-static void __init legacy_pty_init(void)
+static int __legacy_pty_init(struct tty_driver **pty_driver_p,
+				     struct tty_driver **pty_slave_driver_p)
 {
 	struct tty_driver *pty_driver, *pty_slave_driver;
+	int err;
 
 	if (legacy_count <= 0)
-		return;
+		return 0;
 
 	pty_driver = tty_alloc_driver(legacy_count,
 			TTY_DRIVER_RESET_TERMIOS |
 			TTY_DRIVER_REAL_RAW |
 			TTY_DRIVER_DYNAMIC_ALLOC);
-	if (IS_ERR(pty_driver))
-		panic("Couldn't allocate pty driver");
+	if (IS_ERR(pty_driver)) {
+		printk(KERN_ERR "Couldn't allocate pty driver");
+		return PTR_ERR(pty_driver);
+	}
 
 	pty_slave_driver = tty_alloc_driver(legacy_count,
 			TTY_DRIVER_RESET_TERMIOS |
 			TTY_DRIVER_REAL_RAW |
 			TTY_DRIVER_DYNAMIC_ALLOC);
-	if (IS_ERR(pty_slave_driver))
-		panic("Couldn't allocate pty slave driver");
+	if (IS_ERR(pty_slave_driver)) {
+		printk(KERN_ERR "Couldn't allocate pty slave driver");
+		err = PTR_ERR(pty_slave_driver);
+		goto err_pty_slave_alloc;
+	}
 
 	pty_driver->driver_name = "pty_master";
 	pty_driver->name = "pty";
@@ -540,11 +547,39 @@ static void __init legacy_pty_init(void)
 	pty_slave_driver->other = pty_driver;
 	tty_set_operations(pty_slave_driver, &slave_pty_ops_bsd);
 
-	if (tty_register_driver(pty_driver))
-		panic("Couldn't register pty driver");
-	if (tty_register_driver(pty_slave_driver))
-		panic("Couldn't register pty slave driver");
+	err = tty_register_driver(pty_driver);
+	if (err) {
+		printk(KERN_ERR "Couldn't register pty driver");
+		goto err_pty_master_register;
+	}
+
+	err = tty_register_driver(pty_slave_driver);
+	if (err) {
+		printk(KERN_ERR "Couldn't register pty slave driver");
+		goto err_pty_slave_register;
+	}
+
+	*pty_driver_p = pty_driver;
+	*pty_slave_driver_p = pty_slave_driver;
+	return 0;
+
+err_pty_slave_register:
+	tty_unregister_driver(pty_driver);
+err_pty_master_register:
+	put_tty_driver(pty_slave_driver);
+err_pty_slave_alloc:
+	put_tty_driver(pty_driver);
+	return err;
 }
+
+static void __init legacy_pty_init(void)
+{
+	struct tty_driver *pty_driver, *pty_slave_driver;
+
+	if (__legacy_pty_init(&pty_driver, &pty_slave_driver))
+		panic("Failed to init legacy ptys");
+}
+
 #else
 static inline void legacy_pty_init(void) { }
 #endif
