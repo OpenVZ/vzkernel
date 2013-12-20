@@ -43,8 +43,6 @@
 #include <linux/vzcalluser.h>
 #include <linux/venet.h>
 
-static DEFINE_MUTEX(ve_mutex);
-
 static struct kmem_cache *ve_cachep;
 
 unsigned long vz_rstamp = 0x37e0f59d;
@@ -505,9 +503,7 @@ int ve_start_container(struct ve_struct *ve)
 	if (err < 0)
 		goto err_iterate;
 
-	mutex_lock(&ve_mutex);
 	ve->is_running = 1;
-	mutex_unlock(&ve_mutex);
 
 	printk(KERN_INFO "CT: %s: started\n", ve_name(ve));
 
@@ -549,9 +545,7 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	 * op_sem works as barrier for vzctl ioctls.
 	 * ve_mutex works as barrier for ve_can_attach().
 	 */
-	mutex_lock(&ve_mutex);
 	ve->is_running = 0;
-	mutex_unlock(&ve_mutex);
 
 	ve_unix98_pty_fini(ve);
 	ve_legacy_pty_fini(ve);
@@ -672,7 +666,7 @@ static void ve_destroy(struct cgroup *cg)
 	kmem_cache_free(ve_cachep, ve);
 }
 
-static int __ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
+static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 	struct task_struct *task = current;
@@ -701,16 +695,6 @@ static int __ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 	}
 
 	return 0;
-}
-
-static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
-{
-	int ret;
-
-	mutex_lock(&ve_mutex);
-	ret = __ve_can_attach(cg, tset);
-	mutex_unlock(&ve_mutex);
-	return ret;
 }
 
 static void ve_attach(struct cgroup *cg, struct cgroup_taskset *tset)
