@@ -319,6 +319,9 @@ struct tty_driver {
 
 	const struct tty_operations *ops;
 	struct list_head tty_drivers;
+#ifdef CONFIG_VE
+	struct ve_struct *ve;
+#endif
 };
 
 extern struct list_head tty_drivers;
@@ -409,6 +412,7 @@ static inline struct tty_driver *tty_driver_kref_get(struct tty_driver *d)
 #define TTY_DRIVER_HARDWARE_BREAK	0x0020
 #define TTY_DRIVER_DYNAMIC_ALLOC	0x0040
 #define TTY_DRIVER_UNNUMBERED_NODE	0x0080
+#define TTY_DRIVER_CONTAINERIZED	0x0100
 
 /* tty driver types */
 #define TTY_DRIVER_TYPE_SYSTEM		0x0001

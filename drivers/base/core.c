@@ -1870,6 +1870,23 @@ void device_destroy(struct class *class, dev_t devt)
 }
 EXPORT_SYMBOL_GPL(device_destroy);
 
+void device_destroy_namespace(struct class *class, dev_t devt, void *ns)
+{
+	struct device *dev = NULL;
+
+	do {
+		dev = class_find_device(class, dev, &devt, __match_devt);
+		if (!class->namespace ||
+		    (class->namespace(dev) == ns))
+			break;
+	} while (dev);
+
+	if (dev) {
+		put_device(dev);
+		device_unregister(dev);
+	}
+}
+
 /**
  * device_rename - renames a device
  * @dev: the pointer to the struct device to be renamed
