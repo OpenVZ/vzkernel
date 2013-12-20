@@ -507,6 +507,10 @@ int ve_start_container(struct ve_struct *ve)
 	if (err)
 		goto err_legacy_pty;
 
+	err = ve_unix98_pty_init(ve);
+	if (err)
+		goto err_unix98_pty;
+
 	err = ve_hook_iterate_init(VE_SS_CHAIN, ve);
 	if (err < 0)
 		goto err_iterate;
@@ -522,6 +526,8 @@ int ve_start_container(struct ve_struct *ve)
 	return 0;
 
 err_iterate:
+	ve_unix98_pty_fini(ve);
+err_unix98_pty:
 	ve_legacy_pty_fini(ve);
 err_legacy_pty:
 	ve_fini_devtmpfs(ve);
@@ -557,6 +563,7 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	ve->is_running = 0;
 	mutex_unlock(&ve_mutex);
 
+	ve_unix98_pty_fini(ve);
 	ve_legacy_pty_fini(ve);
 
 	ve_fini_devtmpfs(ve);
