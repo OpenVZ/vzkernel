@@ -660,10 +660,41 @@ int call_usermodehelper_fns_ve(struct ve_struct *ve,
 	int (*init)(struct subprocess_info *info, struct cred *new),
 	void (*cleanup)(struct subprocess_info *), void *data)
 {
-	return call_usermodehelper_by(
-			ve_is_super(ve) ? &khelper_worker : &ve->ve_umh_worker,
-			path, argv, envp,
-			wait, init, cleanup, data);
+	int err;
+	struct kthread_worker *khelper;
+
+	ve = get_ve(ve);
+	if (!ve)
+		return -EFAULT;
+
+	khelper = ve_is_super(ve) ? &khelper_worker : &ve->ve_umh_worker;
+
+	if (ve_is_super(ve) || (get_exec_env() == ve)) {
+		err = call_usermodehelper_by(khelper, path, argv, envp, wait, init,
+					     cleanup, data);
+		goto out_put;
+	}
+
+	if (wait > UMH_WAIT_EXEC) {
+		printk(KERN_ERR "VE#%d: Sleeping call for containers UMH is "
+				"not supported\n", ve->veid);
+		err = -EINVAL;
+		goto out_put;
+	}
+
+	down_read(&ve->op_sem);
+	err = -EPIPE;
+	if (!ve->is_running)
+		goto out;
+
+	err = call_usermodehelper_by(khelper, path, argv, envp, wait, init,
+				     cleanup, data);
+
+out:
+	up_read(&ve->op_sem);
+out_put:
+	put_ve(ve);
+	return err;
 }
 EXPORT_SYMBOL(call_usermodehelper_fns_ve);
 #endif
