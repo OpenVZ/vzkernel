@@ -76,6 +76,10 @@ struct ve_struct {
 	struct mutex		devpts_mutex;
 #endif
 
+#ifdef CONFIG_TTY
+	struct device		*consdev;
+#endif
+
 	struct list_head	devices;
 
 #if defined(CONFIG_VE_NETDEV) || defined (CONFIG_VE_NETDEV_MODULE)
