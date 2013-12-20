@@ -38,6 +38,7 @@
 #include <linux/percpu.h>
 #include <linux/fs_struct.h>
 #include <linux/task_work.h>
+#include <linux/tty.h>
 
 #include <linux/vzcalluser.h>
 #include <linux/venet.h>
@@ -502,6 +503,10 @@ int ve_start_container(struct ve_struct *ve)
 	if (err)
 		goto err_dev;
 
+	err = ve_legacy_pty_init(ve);
+	if (err)
+		goto err_legacy_pty;
+
 	err = ve_hook_iterate_init(VE_SS_CHAIN, ve);
 	if (err < 0)
 		goto err_iterate;
@@ -517,6 +522,8 @@ int ve_start_container(struct ve_struct *ve)
 	return 0;
 
 err_iterate:
+	ve_legacy_pty_fini(ve);
+err_legacy_pty:
 	ve_fini_devtmpfs(ve);
 err_dev:
 	ve_stop_umh(ve);
@@ -549,6 +556,8 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	mutex_lock(&ve_mutex);
 	ve->is_running = 0;
 	mutex_unlock(&ve_mutex);
+
+	ve_legacy_pty_fini(ve);
 
 	ve_fini_devtmpfs(ve);
 
