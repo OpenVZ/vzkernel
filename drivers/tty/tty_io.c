@@ -3609,6 +3609,60 @@ static ssize_t show_cons_active(struct device *dev,
 }
 static DEVICE_ATTR(active, S_IRUGO, show_cons_active, NULL);
 
+#ifdef CONFIG_VE
+void console_sysfs_notify(void)
+{
+	struct ve_struct *ve = get_exec_env();
+
+	if (ve->consdev)
+		sysfs_notify(&ve->consdev->kobj, NULL, "active");
+}
+
+void ve_tty_console_fini(struct ve_struct *ve)
+{
+	struct device *consdev = ve->consdev;
+
+	ve->consdev = NULL;
+	device_remove_file(consdev, &dev_attr_active);
+	device_destroy_namespace(tty_class, MKDEV(TTYAUX_MAJOR, 1), ve);
+	device_destroy_namespace(tty_class, MKDEV(TTYAUX_MAJOR, 0), ve);
+}
+
+int ve_tty_console_init(struct ve_struct *ve)
+{
+	struct device *dev;
+	int err;
+
+	dev = device_create(tty_class, NULL, MKDEV(TTYAUX_MAJOR, 0), ve, "tty");
+	if (IS_ERR(dev))
+		return PTR_ERR(dev);
+	dev = device_create(tty_class, NULL, MKDEV(TTYAUX_MAJOR, 1), ve,
+			      "console");
+	if (IS_ERR(dev)) {
+		err = PTR_ERR(dev);
+		goto err_consdev;
+	}
+
+	err = device_create_file(dev, &dev_attr_active);
+	if (err)
+		goto err_consfile;
+
+	ve->consdev = dev;
+	return 0;
+
+err_consfile:
+	device_destroy_namespace(tty_class, MKDEV(TTYAUX_MAJOR, 1), ve);
+err_consdev:
+	device_destroy_namespace(tty_class, MKDEV(TTYAUX_MAJOR, 0), ve);
+	return err;
+}
+
+static void tty_init_devices(void)
+{
+	if (ve_tty_console_init(get_ve0()))
+	       WARN_ON(get_ve0()->consdev);
+}
+#else
 static struct device *consdev;
 
 void console_sysfs_notify(void)
@@ -3627,6 +3681,7 @@ static void tty_init_devices(void)
 	else
 		WARN_ON(device_create_file(consdev, &dev_attr_active) < 0);
 }
+#endif
 
 /*
  * Ok, now we can initialize the rest of the tty devices and can count
