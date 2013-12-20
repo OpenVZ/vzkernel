@@ -3086,6 +3086,11 @@ static struct class tty_class_base = {
 
 struct class *tty_class = &tty_class_base;
 
+static void tty_cdev_del(struct tty_driver *driver, struct cdev *p)
+{
+	cdev_del(p);
+}
+
 static int tty_cdev_add(struct tty_driver *driver, dev_t dev,
 		unsigned int index, unsigned int count)
 {
@@ -3199,7 +3204,7 @@ struct device *tty_register_device_attr(struct tty_driver *driver,
 error:
 	put_device(dev);
 	if (cdev)
-		cdev_del(&driver->cdevs[index]);
+		tty_cdev_del(driver, &driver->cdevs[index]);
 	return ERR_PTR(retval);
 }
 EXPORT_SYMBOL_GPL(tty_register_device_attr);
@@ -3220,7 +3225,7 @@ void tty_unregister_device(struct tty_driver *driver, unsigned index)
 	device_destroy(tty_class,
 		MKDEV(driver->major, driver->minor_start) + index);
 	if (!(driver->flags & TTY_DRIVER_DYNAMIC_ALLOC))
-		cdev_del(&driver->cdevs[index]);
+		tty_cdev_del(driver, &driver->cdevs[index]);
 }
 EXPORT_SYMBOL(tty_unregister_device);
 
@@ -3315,7 +3320,7 @@ static void destruct_tty_driver(struct kref *kref)
 		}
 		proc_tty_unregister_driver(driver);
 		if (driver->flags & TTY_DRIVER_DYNAMIC_ALLOC)
-			cdev_del(&driver->cdevs[0]);
+			tty_cdev_del(driver, &driver->cdevs[0]);
 	}
 	kfree(driver->cdevs);
 	kfree(driver->ports);
