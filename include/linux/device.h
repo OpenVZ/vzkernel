@@ -1004,6 +1004,7 @@ struct device *device_create_with_groups(struct class *cls,
 			     const struct attribute_group **groups,
 			     const char *fmt, ...);
 extern void device_destroy(struct class *cls, dev_t devt);
+extern void device_destroy_namespace(struct class *cls, dev_t devt, void *ns);
 
 /*
  * Platform "fixup" functions - allow the platform to have their say
