@@ -854,6 +854,9 @@ static int show_partition(struct seq_file *seqf, void *v)
 	struct hd_struct *part;
 	char buf[BDEVNAME_SIZE];
 
+	if (!ve_is_super(get_exec_env()))
+		return 0;
+
 	/* Don't show non-partitionable removeable devices or empty devices */
 	if (!get_capacity(sgp) || (!disk_max_parts(sgp) &&
 				   (sgp->flags & GENHD_FL_REMOVABLE)))
@@ -1210,7 +1213,7 @@ static const struct file_operations proc_diskstats_operations = {
 static int __init proc_genhd_init(void)
 {
 	proc_create("diskstats", 0, NULL, &proc_diskstats_operations);
-	proc_create("partitions", 0, NULL, &proc_partitions_operations);
+	proc_create("partitions", S_ISVTX, NULL, &proc_partitions_operations);
 	return 0;
 }
 module_init(proc_genhd_init);
