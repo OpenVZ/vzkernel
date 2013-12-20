@@ -654,6 +654,20 @@ int call_usermodehelper(char *path, char **argv, char **envp, int wait)
 }
 EXPORT_SYMBOL(call_usermodehelper);
 
+#ifdef CONFIG_VE
+int call_usermodehelper_fns_ve(struct ve_struct *ve,
+	char *path, char **argv, char **envp, int wait,
+	int (*init)(struct subprocess_info *info, struct cred *new),
+	void (*cleanup)(struct subprocess_info *), void *data)
+{
+	return call_usermodehelper_by(
+			ve_is_super(ve) ? &khelper_worker : &ve->ve_umh_worker,
+			path, argv, envp,
+			wait, init, cleanup, data);
+}
+EXPORT_SYMBOL(call_usermodehelper_fns_ve);
+#endif
+
 int call_usermodehelper_by(struct kthread_worker *worker,
 	char *path, char **argv, char **envp, int wait,
 	int (*init)(struct subprocess_info *info, struct cred *new),
