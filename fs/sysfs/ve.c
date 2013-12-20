@@ -33,6 +33,16 @@ const void *ve_netlink_ns(struct sock *sk)
 	return sock_net(sk)->owner_ve;
 }
 
+const void *ve_namespace(struct device *dev)
+{
+	/*
+	 * Below is a hack. We use drvdata as a ve_struct pointer.
+	 * But it can be a valid drvdata. We use dev->groups pointer to differ
+	 * between them: if set, then drvdata is not a ve namespace.
+	 */
+	return (!dev->groups && dev_get_drvdata(dev)) ? dev_get_drvdata(dev) : get_ve0();
+}
+
 struct kobj_ns_type_operations ve_ns_type_operations = {
 	.type = KOBJ_NS_TYPE_VE,
 	.grab_current_ns = ve_grab_current_ns,
