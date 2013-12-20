@@ -490,7 +490,7 @@ static const struct tty_operations slave_pty_ops_bsd = {
 	.remove = pty_remove
 };
 
-static int __legacy_pty_init(struct tty_driver **pty_driver_p,
+static int __legacy_pty_init(struct ve_struct *ve, struct tty_driver **pty_driver_p,
 				     struct tty_driver **pty_slave_driver_p)
 {
 	struct tty_driver *pty_driver, *pty_slave_driver;
@@ -502,6 +502,7 @@ static int __legacy_pty_init(struct tty_driver **pty_driver_p,
 	pty_driver = tty_alloc_driver(legacy_count,
 			TTY_DRIVER_RESET_TERMIOS |
 			TTY_DRIVER_REAL_RAW |
+			TTY_DRIVER_CONTAINERIZED |
 			TTY_DRIVER_DYNAMIC_ALLOC);
 	if (IS_ERR(pty_driver)) {
 		printk(KERN_ERR "Couldn't allocate pty driver");
@@ -511,6 +512,7 @@ static int __legacy_pty_init(struct tty_driver **pty_driver_p,
 	pty_slave_driver = tty_alloc_driver(legacy_count,
 			TTY_DRIVER_RESET_TERMIOS |
 			TTY_DRIVER_REAL_RAW |
+			TTY_DRIVER_CONTAINERIZED |
 			TTY_DRIVER_DYNAMIC_ALLOC);
 	if (IS_ERR(pty_slave_driver)) {
 		printk(KERN_ERR "Couldn't allocate pty slave driver");
@@ -532,6 +534,7 @@ static int __legacy_pty_init(struct tty_driver **pty_driver_p,
 	pty_driver->init_termios.c_ispeed = 38400;
 	pty_driver->init_termios.c_ospeed = 38400;
 	pty_driver->other = pty_slave_driver;
+	pty_driver->ve = ve;
 	tty_set_operations(pty_driver, &master_pty_ops_bsd);
 
 	pty_slave_driver->driver_name = "pty_slave";
@@ -545,6 +548,7 @@ static int __legacy_pty_init(struct tty_driver **pty_driver_p,
 	pty_slave_driver->init_termios.c_ispeed = 38400;
 	pty_slave_driver->init_termios.c_ospeed = 38400;
 	pty_slave_driver->other = pty_driver;
+	pty_slave_driver->ve = ve;
 	tty_set_operations(pty_slave_driver, &slave_pty_ops_bsd);
 
 	err = tty_register_driver(pty_driver);
@@ -572,6 +576,35 @@ err_pty_slave_alloc:
 	return err;
 }
 
+#ifdef CONFIG_VE
+#include <linux/ve.h>
+
+void ve_legacy_pty_fini(struct ve_struct *ve)
+{
+	struct tty_driver *pty_driver = ve->pty_driver;
+	struct tty_driver *pty_slave_driver = ve->pty_slave_driver;
+
+	ve->pty_driver = NULL;
+	ve->pty_slave_driver = NULL;
+
+	tty_unregister_driver(pty_slave_driver);
+	tty_unregister_driver(pty_driver);
+	put_tty_driver(pty_slave_driver);
+	put_tty_driver(pty_driver);
+
+}
+
+int ve_legacy_pty_init(struct ve_struct *ve)
+{
+	return __legacy_pty_init(ve, &ve->pty_driver, &ve->pty_slave_driver);
+}
+
+static void __init legacy_pty_init(void)
+{
+	if (__legacy_pty_init(get_ve0(), &get_ve0()->pty_driver, &get_ve0()->pty_slave_driver))
+		panic("Failed to init legacy ptys");
+}
+#else
 static void __init legacy_pty_init(void)
 {
 	struct tty_driver *pty_driver, *pty_slave_driver;
@@ -579,6 +612,7 @@ static void __init legacy_pty_init(void)
 	if (__legacy_pty_init(&pty_driver, &pty_slave_driver))
 		panic("Failed to init legacy ptys");
 }
+#endif	// CONFIG_VE
 
 #else
 static inline void legacy_pty_init(void) { }
