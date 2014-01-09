@@ -12,6 +12,7 @@
 #include <linux/nsproxy.h>
 #include <linux/ipc_namespace.h>
 #include <linux/sysctl.h>
+#include <linux/stat.h>
 
 #ifdef CONFIG_PROC_SYSCTL
 static void *get_mq(ctl_table *table)
