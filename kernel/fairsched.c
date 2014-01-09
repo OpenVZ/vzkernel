@@ -379,11 +379,13 @@ void fairsched_drop_node(int id, int leave)
 
 	if (leave) {
 		err = fairsched_move(&host_node, current);
+		if (err)
 			printk(KERN_ERR "Can't leave fairsched node %d "
 					"err=%d\n", id, err);
 	}
 
 	err = fairsched_remove(id);
+	if (err)
 		printk(KERN_ERR "Can't remove fairsched node %d err=%d\n", id, err);
 }
 EXPORT_SYMBOL(fairsched_drop_node);
@@ -394,6 +396,7 @@ int fairsched_move_task(int id, struct task_struct *tsk)
 	int err;
 
 	err = fairsched_open(&node, id);
+	if (err)
 		return err;
 
 	err = fairsched_move(&node, tsk);
