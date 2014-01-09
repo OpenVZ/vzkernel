@@ -1,6 +1,22 @@
 #include <linux/sched.h>
 #include <linux/vzstat.h>
 
+void KSTAT_PERF_ADD(struct kstat_perf_pcpu_struct *ptr, u64 real_time, u64 cpu_time)
+{
+	struct kstat_perf_pcpu_snap_struct *cur = get_cpu_ptr(ptr->cur);
+
+	write_seqcount_begin(&cur->lock);
+	cur->count++;
+	if (cur->wall_maxdur < real_time)
+		cur->wall_maxdur = real_time;
+	cur->wall_tottime += real_time;
+	if (cur->cpu_maxdur < cpu_time)
+		cur->cpu_maxdur = cpu_time;
+	cur->cpu_tottime += real_time;
+	write_seqcount_end(&cur->lock);
+	put_cpu_ptr(cur);
+}
+
 /*
  * Add another statistics reading.
  * Serialization is the caller's due.
