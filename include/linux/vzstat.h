@@ -94,24 +94,11 @@ extern spinlock_t kstat_glb_lock;
 
 extern void kstat_init(void);
 
-static inline void
-KSTAT_PERF_ADD(struct kstat_perf_pcpu_struct *ptr, u64 real_time, u64 cpu_time)
-{
-	struct kstat_perf_pcpu_snap_struct *cur = get_cpu_ptr(ptr->cur);
-
-	write_seqcount_begin(&cur->lock);
-	cur->count++;
-	if (cur->wall_maxdur < real_time)
-		cur->wall_maxdur = real_time;
-	cur->wall_tottime += real_time;
-	if (cur->cpu_maxdur < cpu_time)
-		cur->cpu_maxdur = cpu_time;
-	cur->cpu_tottime += real_time;
-	write_seqcount_end(&cur->lock);
-	put_cpu_ptr(cur);
-}
-
 #ifdef CONFIG_VE
+
+extern void KSTAT_PERF_ADD(struct kstat_perf_pcpu_struct *ptr, u64 real_time,
+			   u64 cpu_time);
+
 #define KSTAT_PERF_ENTER(name)				\
 	u64 start, sleep_time;				\
 							\
@@ -129,11 +116,13 @@ extern void KSTAT_LAT_UPDATE(struct kstat_lat_struct *p);
 extern void KSTAT_LAT_PCPU_UPDATE(struct kstat_lat_pcpu_struct *p);
 
 #else
+#define KSTAT_PERF_ENTER(ptr, real_time, cpu_time)
 #define KSTAT_PERF_ENTER(name)
 #define KSTAT_PERF_LEAVE(name)
 #define KSTAT_LAT_ADD(p, dur)
 #define KSTAT_LAT_PCPU_ADD(p, cpu, dur)
 #define KSTAT_LAT_UPDATE(p)
+#define KSTAT_LAT_PCPU_UPDATE(p)
 #define KSTAT_LAT_PCPU_UPDATE(p)
 #endif
 
