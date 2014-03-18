@@ -547,11 +547,9 @@ static bool ve_reap_one(struct pid_namespace *pid_ns)
 		rcu_read_lock();
 
 		task = pid_task(find_vpid(nr), PIDTYPE_PID);
-		if (task && (task != current) && (task->exit_state != EXIT_DEAD)) {
-			/*
-			 * Kthreads should be stopped before in ve_stop_ns().
-			 */
-			BUG_ON(task->flags & PF_KTHREAD);
+		if (task && task != current &&
+		    task->exit_state != EXIT_DEAD &&
+		    !(task->flags & PF_KTHREAD)) {
 			printk(KERN_INFO "VE#%d: found task on stop: %s (pid:"
 				"%d, exit_state: %d)\n", task->task_ve->veid,
 					task->comm, task_pid_nr(task),
