@@ -134,15 +134,6 @@ static void ve_list_del(struct ve_struct *ve)
 	mutex_unlock(&ve_list_lock);
 }
 
-const char *__ve_name(struct ve_struct *ve)
-{
-	if (unlikely(!ve->ve_name))
-		return ve->css.cgroup->dentry->d_name.name;
-
-	return ve->ve_name;
-}
-EXPORT_SYMBOL(__ve_name);
-
 /* caller provides refrence to ve-struct */
 const char *ve_name(struct ve_struct *ve)
 {
@@ -666,6 +657,10 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 	if (!ve)
 		goto err_ve;
 
+	ve->ve_name = kstrdup(cg->dentry->d_name.name, GFP_KERNEL);
+	if (!ve->ve_name)
+		goto err_name;
+
 	ve->sched_lat_ve.cur = alloc_percpu(struct kstat_lat_pcpu_snap_struct);
 	if (!ve->sched_lat_ve.cur)
 		goto err_lat;
@@ -688,6 +683,8 @@ do_init:
 err_log:
 	free_percpu(ve->sched_lat_ve.cur);
 err_lat:
+	kfree(ve->ve_name);
+err_name:
 	kmem_cache_free(ve_cachep, ve);
 err_ve:
 	return ERR_PTR(err);
@@ -741,12 +738,6 @@ static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 	if (!ve->is_running && (ve->ve_ns || nr_threads_ve(ve)) &&
 			!(task->flags & PF_KTHREAD))
 		return -EPIPE;
-
-	if (!ve->ve_name) {
-		ve->ve_name = kstrdup(cg->dentry->d_name.name, GFP_KERNEL);
-		if (!ve->ve_name)
-			return -ENOMEM;
-	}
 
 	return 0;
 }
