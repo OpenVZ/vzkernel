@@ -35,6 +35,7 @@
 #include <linux/random.h>
 #include <linux/cgroup.h>
 #include <linux/pid_namespace.h>
+#include <linux/ve.h>
 
 #include <bc/beancounter.h>
 #include <bc/io_acct.h>
@@ -946,12 +947,11 @@ int __init ub_init_cgroup(void)
 	int err;
 	struct vfsmount *blkio_mnt, *mem_mnt;
 	struct cgroup_sb_opts blkio_opts = {
-		.name		= "beancounter",
+		.name		= vz_compat ? "beancounter" : NULL,
 		.subsys_mask    = (1ul << blkio_subsys_id),
 	};
 
 	struct cgroup_sb_opts mem_opts = {
-		.name		= "mem",
 		.subsys_mask    = (1ul << mem_cgroup_subsys_id),
 	};
 
