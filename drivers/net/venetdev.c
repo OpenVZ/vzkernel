@@ -326,7 +326,7 @@ out:
 	return err;
 }
 
-static int veip_entry_del(envid_t veid, struct ve_addr_struct *addr)
+static int veip_entry_del(struct ve_struct *ve, struct ve_addr_struct *addr)
 {
 	struct ip_entry_struct *found;
 	int err;
@@ -338,7 +338,7 @@ static int veip_entry_del(envid_t veid, struct ve_addr_struct *addr)
 		goto out;
 	if (found->active_env == NULL)
 		goto out;
-	if (found->active_env->veid != veid)
+	if (found->active_env->veid != ve->veid)
 		goto out;
 
 	err = 0;
@@ -870,60 +870,35 @@ static struct file_operations proc_veip_operations = {
 };
 #endif
 
-static int do_ve_ip_map(const char *name, int op, struct ve_addr_struct *addr)
+static int do_ve_ip_map(struct ve_struct *ve, int op, struct ve_addr_struct *addr)
 {
 	int err;
-	struct ve_struct *ve;
 
-	err = -EPERM;
 	if (!capable_setveid())
-		goto out;
+		return -EPERM;
 
+	down_read(&ve->op_sem);
 	switch (op)
 	{
 		case VE_IP_ADD:
-			ve = get_ve_by_name(name);
 			err = -ESRCH;
-			if (!ve)
-				goto out;
-
-			down_read(&ve->op_sem);
 			if (ve->is_running)
 				err = veip_entry_add(ve, addr);
-			up_read(&ve->op_sem);
-			put_ve(ve);
 			break;
 
 		case VE_IP_DEL:
-			err = veip_entry_del(veid, addr);
+			err = veip_entry_del(ve, addr);
 			break;
 		case VE_IP_EXT_ADD:
-			ve = get_ve_by_name(name);
-			err = -ESRCH;
-			if (!ve)
-				goto out;
-
-			down_read(&ve->op_sem);
 			err = venet_ext_add(ve, addr);
-			up_read(&ve->op_sem);
-			put_ve(ve);
 			break;
 		case VE_IP_EXT_DEL:
-			ve = get_ve_by_name(name);
-			err = -ESRCH;
-			if (!ve)
-				goto out;
-
-			down_read(&ve->op_sem);
 			err = venet_ext_del(ve, addr);
-			up_read(&ve->op_sem);
-			put_ve(ve);
 			break;
 		default:
 			err = -EINVAL;
 	}
-
-out:
+	up_read(&ve->op_sem);
 	return err;
 }
 
@@ -932,15 +907,19 @@ static int real_ve_ip_map(envid_t veid, int op,
 {
 	int err;
 	struct ve_addr_struct addr;
-	char name[VE_LEGACY_NAME_MAXLEN];
-
-	legacy_veid_to_name(veid, name);
+	struct ve_struct *ve;
 
 	err = sockaddr_to_veaddr(uaddr, addrlen, &addr);
 	if (err < 0)
 		return err;
 
-	return do_ve_ip_map(name, op, &addr);
+	ve = get_ve_by_id(veid);
+	if (!ve)
+		return -ESRCH;
+
+	err = do_ve_ip_map(ve, op, &addr);
+	put_ve(ve);
+	return err;
 }
 
 int venet_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
@@ -1011,7 +990,7 @@ static int ve_ip_access_write(struct cgroup *cgrp, struct cftype *cft,
 			return ret;
 	}
 
-	return do_ve_ip_map(__ve_name(ve), cft->private, &addr);
+	return do_ve_ip_map(ve, cft->private, &addr);
 }
 
 int ve_ip_access_seq_read(struct cgroup *cgrp, struct cftype *cft,
@@ -1028,8 +1007,7 @@ int ve_ip_access_seq_read(struct cgroup *cgrp, struct cftype *cft,
 		hlist_for_each_entry_rcu(s, ip_entry_hash_table + i,
 					 ip_hash) {
 			if (s->addr.family == family &&
-			    s->active_env &&
-			    !strcmp(ve_name(s->active_env), __ve_name(ve))) {
+			    s->active_env && s->active_env->veid == ve->veid) {
 				veaddr_print(buf, sizeof(buf), &s->addr);
 				seq_printf(m, "%s\n", buf);
 			}
@@ -1212,7 +1190,7 @@ static int venet_changelink(struct net_device *dev, struct nlattr *tb[],
 	else
 		return -EINVAL;
 
-	return do_ve_ip_map(__ve_name(ve), cmd, &addr);
+	return do_ve_ip_map(ve, cmd, &addr);
 }
 
 static const struct nla_policy venet_policy[VENET_INFO_MAX + 1] = {
