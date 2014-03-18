@@ -259,10 +259,9 @@ static __u64 setup_iptables_mask(__u64 init_mask)
 
 #endif
 
-static int init_ve_struct(struct ve_struct *ve, envid_t veid,
+static int init_ve_struct(struct ve_struct *ve,
 		u32 class_id, env_create_param_t *data, int datalen)
 {
-	ve->veid = veid;
 	ve->class_id = class_id;
 	ve->features = get_ve_features(data, datalen);
 
@@ -460,7 +459,7 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 
 	ve = cgroup_ve(ve_cgroup);
 
-	init_ve_struct(ve, veid, class_id, data, datalen);
+	init_ve_struct(ve, class_id, data, datalen);
 
 	down_write(&ve->op_sem);
 
