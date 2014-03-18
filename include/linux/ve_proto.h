@@ -59,8 +59,6 @@ extern struct list_head ve_list_head;
 extern struct mutex ve_list_lock;
 extern struct ve_struct *get_ve_by_id(envid_t);
 extern struct ve_struct *__find_ve_by_id(envid_t);
-extern struct ve_struct *get_ve_by_name(const char *name);
-extern struct ve_struct *__find_ve_by_name(const char *name);
 extern struct cgroup *ve_cgroup_open(struct cgroup *root, int flags, envid_t veid);
 extern int ve_cgroup_remove(struct cgroup *root, envid_t veid);
 
