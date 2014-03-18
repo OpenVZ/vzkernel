@@ -210,32 +210,6 @@ struct ve_struct *get_ve_by_id(envid_t veid)
 }
 EXPORT_SYMBOL(get_ve_by_id);
 
-struct ve_struct *__find_ve_by_name(const char *name)
-{
-	struct ve_struct *ve;
-
-	list_for_each_entry(ve, &ve_list_head, ve_list) {
-		if (!ve->ve_name || strcmp(ve->ve_name, name))
-			continue;
-		return ve;
-	}
-
-	return NULL;
-}
-EXPORT_SYMBOL(__find_ve_by_name);
-
-struct ve_struct *get_ve_by_name(const char *name)
-{
-	struct ve_struct *ve;
-
-	mutex_lock(&ve_list_lock);
-	ve = __find_ve_by_name(name);
-	get_ve(ve);
-	mutex_unlock(&ve_list_lock);
-	return ve;
-}
-EXPORT_SYMBOL(get_ve_by_name);
-
 EXPORT_SYMBOL(ve_list_lock);
 EXPORT_SYMBOL(ve_list_head);
 
