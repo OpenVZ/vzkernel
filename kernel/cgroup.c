@@ -4359,6 +4359,7 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 	return 0;
 
 err_free_all:
+	list_del_init(&cgrp->cgroup_ve_list);
 	for_each_subsys(root, ss) {
 		if (cgrp->subsys[ss->subsys_id])
 			ss->css_free(cgrp);
