@@ -137,6 +137,8 @@ extern struct cgroup_subsys ve_subsys;
 
 #ifdef CONFIG_VE
 
+extern int vz_compat;
+
 extern struct kobj_ns_type_operations ve_ns_type_operations;
 extern struct kobject * kobject_create_and_add_ve(const char *name,
 						struct kobject *parent);
@@ -207,6 +209,8 @@ void ve_reap_external(struct pid_namespace *ns);
 int ve_start_container(struct ve_struct *ve);
 
 #else	/* CONFIG_VE */
+
+#define vz_compat	(0)
 
 static inline int vz_security_family_check(struct net *net, int family) { return 0; }
 static inline int vz_security_protocol_check(struct net *net, int protocol) { return 0; }
