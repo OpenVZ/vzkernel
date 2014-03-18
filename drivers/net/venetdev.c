@@ -205,23 +205,23 @@ static void venet_ext_clean(struct ve_struct *ve)
 	spin_unlock(&veip_lock);
 }
 
-struct veip_struct *veip_find(const char *name)
+struct veip_struct *veip_find(envid_t veid)
 {
 	struct veip_struct *ptr;
 
 	list_for_each_entry(ptr, &veip_lh, list) {
-		if (strcmp(ptr->ve_name, name))
+		if (ptr->veid != veid)
 			continue;
 		return ptr;
 	}
 	return NULL;
 }
 
-struct veip_struct *veip_findcreate(const char *name)
+struct veip_struct *veip_findcreate(envid_t veid)
 {
 	struct veip_struct *ptr;
 
-	ptr = veip_find(name);
+	ptr = veip_find(veid);
 	if (ptr != NULL)
 		return ptr;
 
@@ -229,15 +229,11 @@ struct veip_struct *veip_findcreate(const char *name)
 	if (ptr == NULL)
 		return NULL;
 	memset(ptr, 0, sizeof(struct veip_struct));
-	ptr->ve_name = kstrdup(name, GFP_ATOMIC);
-	if (!ptr->ve_name) {
-		kfree(ptr);
-		return NULL;
-	}
 	INIT_LIST_HEAD(&ptr->ip_lh);
 	INIT_LIST_HEAD(&ptr->src_lh);
 	INIT_LIST_HEAD(&ptr->dst_lh);
 	INIT_LIST_HEAD(&ptr->ext_lh);
+	ptr->veid = veid;
 	list_add(&ptr->list, &veip_lh);
 	return ptr;
 }
@@ -285,7 +281,7 @@ static int veip_entry_conflict(struct ip_entry_struct *entry, struct ve_struct *
 {
 	if (entry->active_env != NULL)
 		return -EADDRINUSE;
-	if (entry->tgt_veip && strcmp(entry->tgt_veip->ve_name, __ve_name(ve)))
+	if (entry->tgt_veip && entry->tgt_veip->veid != ve->veid)
 		return -EADDRNOTAVAIL;
 
 	entry->active_env = ve;
@@ -330,7 +326,7 @@ out:
 	return err;
 }
 
-static int veip_entry_del(const char *name, struct ve_addr_struct *addr)
+static int veip_entry_del(envid_t veid, struct ve_addr_struct *addr)
 {
 	struct ip_entry_struct *found;
 	int err;
@@ -342,7 +338,7 @@ static int veip_entry_del(const char *name, struct ve_addr_struct *addr)
 		goto out;
 	if (found->active_env == NULL)
 		goto out;
-	if (strcmp(found->active_env->ve_name, name))
+	if (found->active_env->veid != veid)
 		goto out;
 
 	err = 0;
@@ -850,7 +846,7 @@ static int veip_seq_show(struct seq_file *m, void *v)
 	entry = hlist_entry(p, struct ip_entry_struct, ip_hash);
 	veaddr_print(s, sizeof(s), &entry->addr);
 	veip = ACCESS_ONCE(entry->tgt_veip);
-	seq_printf(m, "%39s %10s\n", s, veip == NULL ? "0" : veip->ve_name);
+	seq_printf(m, "%39s %10u\n", s, veip == NULL ? 0 : veip->veid);
 	return 0;
 }
 
@@ -899,7 +895,7 @@ static int do_ve_ip_map(const char *name, int op, struct ve_addr_struct *addr)
 			break;
 
 		case VE_IP_DEL:
-			err = veip_entry_del(name, addr);
+			err = veip_entry_del(veid, addr);
 			break;
 		case VE_IP_EXT_ADD:
 			ve = get_ve_by_name(name);
