@@ -93,6 +93,9 @@ EXPORT_SYMBOL(nr_ve);
 int vz_compat;
 EXPORT_SYMBOL(vz_compat);
 
+static DEFINE_IDR(ve_idr);
+#define VE_ID_START	(INT_MAX/2)
+
 static int __init vz_compat_setup(char *arg)
 {
 	get_option(&arg, &vz_compat);
@@ -118,9 +121,8 @@ EXPORT_SYMBOL(put_ve);
 static void ve_list_add(struct ve_struct *ve)
 {
 	mutex_lock(&ve_list_lock);
-	/* FIXME temporary hack */
-	while (__find_ve_by_id(ve->veid))
-		ve->veid--;
+	if (idr_replace(&ve_idr, ve, ve->veid) != NULL)
+		WARN_ON(1);
 	list_add(&ve->ve_list, &ve_list_head);
 	nr_ve++;
 	mutex_unlock(&ve_list_lock);
@@ -129,6 +131,8 @@ static void ve_list_add(struct ve_struct *ve)
 static void ve_list_del(struct ve_struct *ve)
 {
 	mutex_lock(&ve_list_lock);
+	if (idr_replace(&ve_idr, NULL, ve->veid) != ve)
+		WARN_ON(1);
 	list_del(&ve->ve_list);
 	nr_ve--;
 	mutex_unlock(&ve_list_lock);
@@ -191,13 +195,7 @@ EXPORT_SYMBOL(task_ve_name);
 
 struct ve_struct *__find_ve_by_id(envid_t veid)
 {
-	struct ve_struct *ve;
-
-	for_each_ve(ve) {
-		if (ve->veid == veid)
-			return ve;
-	}
-	return NULL;
+	return idr_find(&ve_idr, veid);
 }
 EXPORT_SYMBOL(__find_ve_by_id);
 
@@ -643,6 +641,7 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 {
 	struct ve_struct *ve = &ve0;
+	long id;
 	int err;
 
 	if (!cg->parent)
@@ -652,11 +651,29 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 	if (cgroup_ve(cg->parent) != ve)
 		return ERR_PTR(-ENOTDIR);
 
+	/*
+	 * If the cgroup has a numeric name, allocate ID to match it. This is
+	 * required for compatibility with the old interface where VEs do not
+	 * have names and are identified only by VE ID.
+	 */
+	if (kstrtol(cg->dentry->d_name.name, 10, &id) ||
+	    id < 0 || id >= INT_MAX)
+		id = 0;
+	id = idr_alloc(&ve_idr, NULL,
+		       id ? id : VE_ID_START,
+		       id ? id + 1 : 0,
+		       GFP_KERNEL);
+	if (id < 0) {
+		err = id;
+		goto err_id;
+	}
+
 	err = -ENOMEM;
 	ve = kmem_cache_zalloc(ve_cachep, GFP_KERNEL);
 	if (!ve)
 		goto err_ve;
 
+	ve->veid = id;
 	ve->ve_name = kstrdup(cg->dentry->d_name.name, GFP_KERNEL);
 	if (!ve->ve_name)
 		goto err_name;
@@ -687,6 +704,8 @@ err_lat:
 err_name:
 	kmem_cache_free(ve_cachep, ve);
 err_ve:
+	idr_remove(&ve_idr, id);
+err_id:
 	return ERR_PTR(err);
 }
 
@@ -694,6 +713,8 @@ static void ve_offline(struct cgroup *cg)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 	struct cgroup *cgrp;
+
+	idr_remove(&ve_idr, ve->veid);
 
 	while (!list_empty(&ve->ve_cgroup_head)) {
 		cgrp = list_entry(ve->ve_cgroup_head.prev,
@@ -853,12 +874,7 @@ out_unlock:
 static int ve_legacy_veid_read(struct cgroup *cg, struct cftype *cft,
 		struct seq_file *m)
 {
-	struct ve_struct *ve = cgroup_ve(cg);
-
-	if (!ve->is_running)
-		return -EPIPE;
-
-	return seq_printf(m, "%u\n", ve->veid);
+	return seq_printf(m, "%u\n", cgroup_ve(cg)->veid);
 }
 
 static struct cftype ve_cftypes[] = {
