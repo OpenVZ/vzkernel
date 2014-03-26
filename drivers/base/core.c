@@ -1052,7 +1052,7 @@ static void device_remove_sys_dev_entry(struct device *dev)
 
 	if (kobj) {
 		format_dev_t(devt_str, dev->devt);
-		sysfs_remove_link(kobj, devt_str);
+		sysfs_delete_link(kobj, &dev->kobj, devt_str);
 	}
 }
 
