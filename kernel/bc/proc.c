@@ -180,17 +180,21 @@ static struct bc_proc_entry bc_meminfo_entry = {
 };
 
 #ifdef CONFIG_BC_RSS_ACCOUNTING
+
+#include <linux/memcontrol.h>
+
 #define K(x) ((x) << (PAGE_SHIFT - 10))
+
 static int bc_proc_nodeinfo_show(struct seq_file *f, void *v)
 {
 	int nid;
-	nodemask_t nodemask;
 	struct user_beancounter *ub;
 	unsigned long pages[NR_LRU_LISTS];
 
 	ub = seq_beancounter(f);
 	for_each_node_state(nid, N_HIGH_MEMORY) {
-		nodemask = nodemask_of_node(nid);
+		mem_cgroup_get_nr_pages(mem_cgroup_from_cont(ub->mem_cgroup),
+					nid, pages);
 		seq_printf(f,
 			"Node %d Active:         %8lu kB\n"
 			"Node %d Inactive:       %8lu kB\n"
