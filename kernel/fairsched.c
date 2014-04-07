@@ -123,6 +123,7 @@ SYSCALL_DEFINE3(fairsched_mknod, unsigned int, parent, unsigned int, weight,
 	if (retval)
 		return retval;
 
+	fairsched_close(&node);
 	retval = newid;
 out:
 	return retval;
