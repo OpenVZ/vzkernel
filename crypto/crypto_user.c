@@ -330,6 +330,9 @@ static int crypto_update_alg(struct sk_buff *skb, struct nlmsghdr *nlh,
 	struct nlattr *priority = attrs[CRYPTOCFGA_PRIORITY_VAL];
 	LIST_HEAD(list);
 
+	if (!netlink_capable(skb, CAP_NET_ADMIN))
+		return -EPERM;
+
 	if (!null_terminated(p->cru_name) || !null_terminated(p->cru_driver_name))
 		return -EINVAL;
 
@@ -359,6 +362,9 @@ static int crypto_del_alg(struct sk_buff *skb, struct nlmsghdr *nlh,
 {
 	struct crypto_alg *alg;
 	struct crypto_user_alg *p = nlmsg_data(nlh);
+
+	if (!netlink_capable(skb, CAP_NET_ADMIN))
+		return -EPERM;
 
 	if (!null_terminated(p->cru_name) || !null_terminated(p->cru_driver_name))
 		return -EINVAL;
@@ -443,6 +449,9 @@ static int crypto_add_alg(struct sk_buff *skb, struct nlmsghdr *nlh,
 	struct crypto_alg *alg;
 	struct crypto_user_alg *p = nlmsg_data(nlh);
 	struct nlattr *priority = attrs[CRYPTOCFGA_PRIORITY_VAL];
+
+	if (!netlink_capable(skb, CAP_NET_ADMIN))
+		return -EPERM;
 
 	if (!null_terminated(p->cru_name) || !null_terminated(p->cru_driver_name))
 		return -EINVAL;
@@ -531,9 +540,6 @@ static int crypto_user_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 
 	type -= CRYPTO_MSG_BASE;
 	link = &crypto_dispatch[type];
-
-	if (!netlink_capable(skb, CAP_NET_ADMIN))
-		return -EPERM;
 
 	if ((type == (CRYPTO_MSG_GETALG - CRYPTO_MSG_BASE) &&
 	    (nlh->nlmsg_flags & NLM_F_DUMP))) {
