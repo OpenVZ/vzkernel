@@ -172,7 +172,7 @@ int smp_request_message_ipi(int virq, int msg)
 #endif
 	err = request_irq(virq, smp_ipi_action[msg],
 			  IRQF_PERCPU | IRQF_NO_THREAD | IRQF_NO_SUSPEND,
-			  smp_ipi_name[msg], 0);
+			  smp_ipi_name[msg], NULL);
 	WARN(err < 0, "unable to request_irq %d for %s (rc %d)\n",
 		virq, smp_ipi_name[msg], err);
 
@@ -210,6 +210,12 @@ void smp_muxed_ipi_message_pass(int cpu, int msg)
 	smp_ops->cause_ipi(cpu, info->data);
 }
 
+#ifdef __BIG_ENDIAN__
+#define IPI_MESSAGE(A) (1 << (24 - 8 * (A)))
+#else
+#define IPI_MESSAGE(A) (1 << (8 * (A)))
+#endif
+
 irqreturn_t smp_ipi_demux(void)
 {
 	struct cpu_messages *info = &__get_cpu_var(ipi_message);
@@ -219,19 +225,14 @@ irqreturn_t smp_ipi_demux(void)
 
 	do {
 		all = xchg(&info->messages, 0);
-
-#ifdef __BIG_ENDIAN
-		if (all & (1 << (24 - 8 * PPC_MSG_CALL_FUNCTION)))
+		if (all & IPI_MESSAGE(PPC_MSG_CALL_FUNCTION))
 			generic_smp_call_function_interrupt();
-		if (all & (1 << (24 - 8 * PPC_MSG_RESCHEDULE)))
+		if (all & IPI_MESSAGE(PPC_MSG_RESCHEDULE))
 			scheduler_ipi();
-		if (all & (1 << (24 - 8 * PPC_MSG_CALL_FUNC_SINGLE)))
+		if (all & IPI_MESSAGE(PPC_MSG_CALL_FUNC_SINGLE))
 			generic_smp_call_function_single_interrupt();
-		if (all & (1 << (24 - 8 * PPC_MSG_DEBUGGER_BREAK)))
+		if (all & IPI_MESSAGE(PPC_MSG_DEBUGGER_BREAK))
 			debug_ipi_action(0, NULL);
-#else
-#error Unsupported ENDIAN
-#endif
 	} while (info->messages);
 
 	return IRQ_HANDLED;
@@ -557,7 +558,7 @@ int __cpuinit __cpu_up(unsigned int cpu, struct task_struct *tidle)
 int cpu_to_core_id(int cpu)
 {
 	struct device_node *np;
-	const int *reg;
+	const __be32 *reg;
 	int id = -1;
 
 	np = of_get_cpu_node(cpu, NULL);
@@ -568,7 +569,7 @@ int cpu_to_core_id(int cpu)
 	if (!reg)
 		goto out;
 
-	id = *reg;
+	id = be32_to_cpup(reg);
 out:
 	of_node_put(np);
 	return id;

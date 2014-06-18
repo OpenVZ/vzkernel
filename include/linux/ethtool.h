@@ -246,6 +246,28 @@ struct ethtool_ops {
 	int	(*get_eee)(struct net_device *, struct ethtool_eee *);
 	int	(*set_eee)(struct net_device *, struct ethtool_eee *);
 
-
+	/* RHEL SPECIFIC
+	 *
+	 * The following padding has been inserted before ABI freeze to
+	 * allow extending the structure while preserve ABI. Feel free
+	 * to replace reserved slots with required structure field
+	 * additions of your backport.
+	 */
+	void			(*rh_reserved1)(void);
+	void			(*rh_reserved2)(void);
+	void			(*rh_reserved3)(void);
+	void			(*rh_reserved4)(void);
+	void			(*rh_reserved5)(void);
+	void			(*rh_reserved6)(void);
+	void			(*rh_reserved7)(void);
+	void			(*rh_reserved8)(void);
+	void			(*rh_reserved9)(void);
+	void			(*rh_reserved10)(void);
+	void			(*rh_reserved11)(void);
+	void			(*rh_reserved12)(void);
+	void			(*rh_reserved13)(void);
+	void			(*rh_reserved14)(void);
+	void			(*rh_reserved15)(void);
+	void			(*rh_reserved16)(void);
 };
 #endif /* _LINUX_ETHTOOL_H */

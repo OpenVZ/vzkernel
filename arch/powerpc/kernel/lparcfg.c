@@ -35,7 +35,13 @@
 #include <asm/vdso_datapage.h>
 #include <asm/vio.h>
 #include <asm/mmu.h>
+#include <asm/machdep.h>
 
+
+/*
+ * This isn't a module but we expose that to userspace
+ * via /proc so leave the definitions here
+ */
 #define MODULE_VERS "1.9"
 #define MODULE_NAME "lparcfg"
 
@@ -165,7 +171,7 @@ static void parse_ppp_data(struct seq_file *m)
 	           ppp_data.active_system_procs);
 
 	/* pool related entries are appropriate for shared configs */
-	if (lppaca_of(0).shared_proc) {
+	if (lppaca_shared_proc(get_lppaca())) {
 		unsigned long pool_idle_time, pool_procs;
 
 		seq_printf(m, "pool=%d\n", ppp_data.pool_num);
@@ -387,8 +393,8 @@ static void pseries_cmo_data(struct seq_file *m)
 		return;
 
 	for_each_possible_cpu(cpu) {
-		cmo_faults += lppaca_of(cpu).cmo_faults;
-		cmo_fault_time += lppaca_of(cpu).cmo_fault_time;
+		cmo_faults += be64_to_cpu(lppaca_of(cpu).cmo_faults);
+		cmo_fault_time += be64_to_cpu(lppaca_of(cpu).cmo_fault_time);
 	}
 
 	seq_printf(m, "cmo_faults=%lu\n", cmo_faults);
@@ -406,8 +412,9 @@ static void splpar_dispatch_data(struct seq_file *m)
 	unsigned long dispatch_dispersions = 0;
 
 	for_each_possible_cpu(cpu) {
-		dispatches += lppaca_of(cpu).yield_count;
-		dispatch_dispersions += lppaca_of(cpu).dispersion_count;
+		dispatches += be32_to_cpu(lppaca_of(cpu).yield_count);
+		dispatch_dispersions +=
+			be32_to_cpu(lppaca_of(cpu).dispersion_count);
 	}
 
 	seq_printf(m, "dispatches=%lu\n", dispatches);
@@ -418,7 +425,8 @@ static void parse_em_data(struct seq_file *m)
 {
 	unsigned long retbuf[PLPAR_HCALL_BUFSIZE];
 
-	if (plpar_hcall(H_GET_EM_PARMS, retbuf) == H_SUCCESS)
+	if (firmware_has_feature(FW_FEATURE_LPAR) &&
+	    plpar_hcall(H_GET_EM_PARMS, retbuf) == H_SUCCESS)
 		seq_printf(m, "power_mode_data=%016lx\n", retbuf[0]);
 }
 
@@ -473,7 +481,8 @@ static int pseries_lparcfg_data(struct seq_file *m, void *v)
 	seq_printf(m, "partition_potential_processors=%d\n",
 		   partition_potential_processors);
 
-	seq_printf(m, "shared_processor_mode=%d\n", lppaca_of(0).shared_proc);
+	seq_printf(m, "shared_processor_mode=%d\n",
+		   lppaca_shared_proc(get_lppaca()));
 
 	seq_printf(m, "slb_size=%d\n", mmu_slb_size);
 
@@ -677,7 +686,6 @@ static int lparcfg_open(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations lparcfg_fops = {
-	.owner		= THIS_MODULE,
 	.read		= seq_read,
 	.write		= lparcfg_write,
 	.open		= lparcfg_open,
@@ -699,14 +707,4 @@ static int __init lparcfg_init(void)
 	}
 	return 0;
 }
-
-static void __exit lparcfg_cleanup(void)
-{
-	remove_proc_subtree("powerpc/lparcfg", NULL);
-}
-
-module_init(lparcfg_init);
-module_exit(lparcfg_cleanup);
-MODULE_DESCRIPTION("Interface for LPAR configuration data");
-MODULE_AUTHOR("Dave Engebretsen");
-MODULE_LICENSE("GPL");
+machine_device_initcall(pseries, lparcfg_init);

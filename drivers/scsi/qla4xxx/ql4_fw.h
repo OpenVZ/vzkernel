@@ -1,6 +1,6 @@
 /*
  * QLogic iSCSI HBA Driver
- * Copyright (c)  2003-2012 QLogic Corporation
+ * Copyright (c)  2003-2013 QLogic Corporation
  *
  * See LICENSE.qla4xxx for copyright and licensing details.
  */
@@ -390,6 +390,7 @@ struct qla_flt_region {
 #define MBOX_CMD_CLEAR_DATABASE_ENTRY		0x0031
 #define MBOX_CMD_CONN_OPEN			0x0074
 #define MBOX_CMD_CONN_CLOSE_SESS_LOGOUT		0x0056
+#define DDB_NOT_LOGGED_IN			0x09
 #define LOGOUT_OPTION_CLOSE_SESSION		0x0002
 #define LOGOUT_OPTION_RELOGIN			0x0004
 #define LOGOUT_OPTION_FREE_DDB			0x0008
@@ -458,6 +459,7 @@ struct qla_flt_region {
 #define MBOX_CMD_GET_CONN_EVENT_LOG		0x0077
 
 #define MBOX_CMD_IDC_ACK			0x0101
+#define MBOX_CMD_IDC_TIME_EXTEND		0x0102
 #define MBOX_CMD_PORT_RESET			0x0120
 #define MBOX_CMD_SET_PORT_CONFIG		0x0122
 
@@ -494,14 +496,15 @@ struct qla_flt_region {
 #define MBOX_ASTS_RESPONSE_QUEUE_FULL		0x8028
 #define MBOX_ASTS_IP_ADDR_STATE_CHANGED		0x8029
 #define MBOX_ASTS_IPV6_DEFAULT_ROUTER_CHANGED	0x802A
-#define MBOX_ASTS_IPV6_PREFIX_EXPIRED		0x802B
-#define MBOX_ASTS_IPV6_ND_PREFIX_IGNORED	0x802C
-#define MBOX_ASTS_IPV6_LCL_PREFIX_IGNORED	0x802D
+#define MBOX_ASTS_IPV6_LINK_MTU_CHANGE		0x802B
+#define MBOX_ASTS_IPV6_AUTO_PREFIX_IGNORED	0x802C
+#define MBOX_ASTS_IPV6_ND_LOCAL_PREFIX_IGNORED	0x802D
 #define MBOX_ASTS_ICMPV6_ERROR_MSG_RCVD		0x802E
 #define MBOX_ASTS_INITIALIZATION_FAILED		0x8031
 #define MBOX_ASTS_SYSTEM_WARNING_EVENT		0x8036
 #define MBOX_ASTS_IDC_COMPLETE			0x8100
 #define MBOX_ASTS_IDC_REQUEST_NOTIFICATION	0x8101
+#define MBOX_ASTS_IDC_TIME_EXTEND_NOTIFICATION	0x8102
 #define MBOX_ASTS_DCBX_CONF_CHANGE		0x8110
 #define MBOX_ASTS_TXSCVR_INSERTED		0x8130
 #define MBOX_ASTS_TXSCVR_REMOVED		0x8131
@@ -512,14 +515,18 @@ struct qla_flt_region {
 #define MBOX_ASTS_IPSEC_SYSTEM_FATAL_ERROR	0x8022
 #define MBOX_ASTS_SUBNET_STATE_CHANGE		0x8027
 
-/* ACB State Defines */
-#define ACB_STATE_UNCONFIGURED	0x00
-#define ACB_STATE_INVALID	0x01
-#define ACB_STATE_ACQUIRING	0x02
-#define ACB_STATE_TENTATIVE	0x03
-#define ACB_STATE_DEPRICATED	0x04
-#define ACB_STATE_VALID		0x05
-#define ACB_STATE_DISABLING	0x06
+/* ACB Configuration Defines */
+#define ACB_CONFIG_DISABLE		0x00
+#define ACB_CONFIG_SET			0x01
+
+/* ACB/IP Address State Defines */
+#define IP_ADDRSTATE_UNCONFIGURED	0
+#define IP_ADDRSTATE_INVALID		1
+#define IP_ADDRSTATE_ACQUIRING		2
+#define IP_ADDRSTATE_TENTATIVE		3
+#define IP_ADDRSTATE_DEPRICATED		4
+#define IP_ADDRSTATE_PREFERRED		5
+#define IP_ADDRSTATE_DISABLING		6
 
 /* FLASH offsets */
 #define FLASH_SEGMENT_IFCB	0x04000000
@@ -533,6 +540,10 @@ struct qla_flt_region {
 #define ENABLE_INTERNAL_LOOPBACK	0x04
 #define ENABLE_EXTERNAL_LOOPBACK	0x08
 
+/* generic defines to enable/disable params */
+#define QL4_PARAM_DISABLE	0
+#define QL4_PARAM_ENABLE	1
+
 /*************************************************************************/
 
 /* Host Adapter Initialization Control Block (from host) */
@@ -541,6 +552,7 @@ struct addr_ctrl_blk {
 #define  IFCB_VER_MIN			0x01
 #define  IFCB_VER_MAX			0x02
 	uint8_t control;	/* 01 */
+#define	 CTRLOPT_NEW_CONN_DISABLE	0x0002
 
 	uint16_t fw_options;	/* 02-03 */
 #define	 FWOPT_HEARTBEAT_ENABLE		  0x1000
@@ -572,11 +584,40 @@ struct addr_ctrl_blk {
 	uint32_t shdwreg_addr_hi;	/* 2C-2F */
 
 	uint16_t iscsi_opts;	/* 30-31 */
+#define ISCSIOPTS_HEADER_DIGEST_EN		0x2000
+#define ISCSIOPTS_DATA_DIGEST_EN		0x1000
+#define ISCSIOPTS_IMMEDIATE_DATA_EN		0x0800
+#define ISCSIOPTS_INITIAL_R2T_EN		0x0400
+#define ISCSIOPTS_DATA_SEQ_INORDER_EN		0x0200
+#define ISCSIOPTS_DATA_PDU_INORDER_EN		0x0100
+#define ISCSIOPTS_CHAP_AUTH_EN			0x0080
+#define ISCSIOPTS_SNACK_EN			0x0040
+#define ISCSIOPTS_DISCOVERY_LOGOUT_EN		0x0020
+#define ISCSIOPTS_BIDI_CHAP_EN			0x0010
+#define ISCSIOPTS_DISCOVERY_AUTH_EN		0x0008
+#define ISCSIOPTS_STRICT_LOGIN_COMP_EN		0x0004
+#define ISCSIOPTS_ERL				0x0003
 	uint16_t ipv4_tcp_opts;	/* 32-33 */
+#define TCPOPT_DELAYED_ACK_DISABLE	0x8000
 #define TCPOPT_DHCP_ENABLE		0x0200
+#define TCPOPT_DNS_SERVER_IP_EN		0x0100
+#define TCPOPT_SLP_DA_INFO_EN		0x0080
+#define TCPOPT_NAGLE_ALGO_DISABLE	0x0020
+#define TCPOPT_WINDOW_SCALE_DISABLE	0x0010
+#define TCPOPT_TIMER_SCALE		0x000E
+#define TCPOPT_TIMESTAMP_ENABLE		0x0001
 	uint16_t ipv4_ip_opts;	/* 34-35 */
 #define IPOPT_IPV4_PROTOCOL_ENABLE	0x8000
+#define IPOPT_IPV4_TOS_EN		0x4000
 #define IPOPT_VLAN_TAGGING_ENABLE	0x2000
+#define IPOPT_GRAT_ARP_EN		0x1000
+#define IPOPT_ALT_CID_EN		0x0800
+#define IPOPT_REQ_VID_EN		0x0400
+#define IPOPT_USE_VID_EN		0x0200
+#define IPOPT_LEARN_IQN_EN		0x0100
+#define IPOPT_FRAGMENTATION_DISABLE	0x0010
+#define IPOPT_IN_FORWARD_EN		0x0008
+#define IPOPT_ARP_REDIRECT_EN		0x0004
 
 	uint16_t iscsi_max_pdu_size;	/* 36-37 */
 	uint8_t ipv4_tos;	/* 38 */
@@ -627,15 +668,24 @@ struct addr_ctrl_blk {
 	uint32_t cookie;	/* 200-203 */
 	uint16_t ipv6_port;	/* 204-205 */
 	uint16_t ipv6_opts;	/* 206-207 */
-#define IPV6_OPT_IPV6_PROTOCOL_ENABLE	0x8000
-#define IPV6_OPT_VLAN_TAGGING_ENABLE	0x2000
+#define IPV6_OPT_IPV6_PROTOCOL_ENABLE		0x8000
+#define IPV6_OPT_VLAN_TAGGING_ENABLE		0x2000
+#define IPV6_OPT_GRAT_NEIGHBOR_ADV_EN		0x1000
+#define IPV6_OPT_REDIRECT_EN			0x0004
 
 	uint16_t ipv6_addtl_opts;	/* 208-209 */
+#define IPV6_ADDOPT_IGNORE_ICMP_ECHO_REQ		0x0040
+#define IPV6_ADDOPT_MLD_EN				0x0004
 #define IPV6_ADDOPT_NEIGHBOR_DISCOVERY_ADDR_ENABLE	0x0002 /* Pri ACB
 								  Only */
 #define IPV6_ADDOPT_AUTOCONFIG_LINK_LOCAL_ADDR		0x0001
 
 	uint16_t ipv6_tcp_opts;	/* 20A-20B */
+#define IPV6_TCPOPT_DELAYED_ACK_DISABLE		0x8000
+#define IPV6_TCPOPT_NAGLE_ALGO_DISABLE		0x0020
+#define IPV6_TCPOPT_WINDOW_SCALE_DISABLE	0x0010
+#define IPV6_TCPOPT_TIMER_SCALE			0x000E
+#define IPV6_TCPOPT_TIMESTAMP_EN		0x0001
 	uint8_t ipv6_tcp_wsf;	/* 20C */
 	uint16_t ipv6_flow_lbl;	/* 20D-20F */
 	uint8_t ipv6_dflt_rtr_addr[16]; /* 210-21F */
@@ -643,14 +693,6 @@ struct addr_ctrl_blk {
 	uint8_t ipv6_lnk_lcl_addr_state;/* 222 */
 	uint8_t ipv6_addr0_state;	/* 223 */
 	uint8_t ipv6_addr1_state;	/* 224 */
-#define IP_ADDRSTATE_UNCONFIGURED	0
-#define IP_ADDRSTATE_INVALID		1
-#define IP_ADDRSTATE_ACQUIRING		2
-#define IP_ADDRSTATE_TENTATIVE		3
-#define IP_ADDRSTATE_DEPRICATED		4
-#define IP_ADDRSTATE_PREFERRED		5
-#define IP_ADDRSTATE_DISABLING		6
-
 	uint8_t ipv6_dflt_rtr_state;    /* 225 */
 #define IPV6_RTRSTATE_UNKNOWN                   0
 #define IPV6_RTRSTATE_MANUAL                    1
@@ -955,7 +997,7 @@ struct about_fw_info {
 	uint16_t bootload_minor;	/* 46 - 47 */
 	uint16_t bootload_patch;	/* 48 - 49 */
 	uint16_t bootload_build;	/* 4A - 4B */
-	uint8_t reserved2[180];		/* 4C - FF */
+	uint8_t extended_timestamp[180];/* 4C - FF */
 };
 
 struct crash_record {

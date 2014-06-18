@@ -2026,13 +2026,14 @@ megaraid_abort_and_reset(adapter_t *adapter, Scsi_Cmnd *cmd, int aor)
 static inline int
 make_local_pdev(adapter_t *adapter, struct pci_dev **pdev)
 {
-	*pdev = alloc_pci_dev();
+	*pdev = pci_alloc_dev(NULL);
 
 	if( *pdev == NULL ) return -1;
 
 	memcpy(*pdev, adapter->dev, sizeof(struct pci_dev));
 
 	if( pci_set_dma_mask(*pdev, DMA_BIT_MASK(32)) != 0 ) {
+		kfree((*pdev)->pci_dev_rh);
 		kfree(*pdev);
 		return -1;
 	}
@@ -2043,6 +2044,7 @@ make_local_pdev(adapter_t *adapter, struct pci_dev **pdev)
 static inline void
 free_local_pdev(struct pci_dev *pdev)
 {
+	kfree(pdev->pci_dev_rh);
 	kfree(pdev);
 }
 
@@ -4244,6 +4246,7 @@ static struct scsi_host_template megaraid_template = {
 	.eh_device_reset_handler	= megaraid_reset,
 	.eh_bus_reset_handler		= megaraid_reset,
 	.eh_host_reset_handler		= megaraid_reset,
+	.no_write_same			= 1,
 };
 
 static int

@@ -423,6 +423,9 @@ static int FNAME(fetch)(struct kvm_vcpu *vcpu, gva_t addr,
 	if (FNAME(gpte_changed)(vcpu, gw, top_level))
 		goto out_gpte_changed;
 
+	if (!VALID_PAGE(vcpu->arch.mmu.root_hpa))
+		goto out_gpte_changed;
+
 	for (shadow_walk_init(&it, vcpu, addr);
 	     shadow_walk_okay(&it) && it.level > gw->level;
 	     shadow_walk_next(&it)) {
@@ -552,9 +555,12 @@ static int FNAME(page_fault)(struct kvm_vcpu *vcpu, gva_t addr, u32 error_code,
 
 	pgprintk("%s: addr %lx err %x\n", __func__, addr, error_code);
 
-	if (unlikely(error_code & PFERR_RSVD_MASK))
-		return handle_mmio_page_fault(vcpu, addr, error_code,
+	if (unlikely(error_code & PFERR_RSVD_MASK)) {
+		r = handle_mmio_page_fault(vcpu, addr, error_code,
 					      mmu_is_nested(vcpu));
+		if (likely(r != RET_MMIO_PF_INVALID))
+			return r;
+	};
 
 	r = mmu_topup_memory_caches(vcpu);
 	if (r)
@@ -670,6 +676,11 @@ static void FNAME(invlpg)(struct kvm_vcpu *vcpu, gva_t gva)
 	 * help us to skip pte prefetch later.
 	 */
 	mmu_topup_memory_caches(vcpu);
+
+	if (!VALID_PAGE(vcpu->arch.mmu.root_hpa)) {
+		WARN_ON(1);
+		return;
+	}
 
 	spin_lock(&vcpu->kvm->mmu_lock);
 	for_each_shadow_entry(vcpu, gva, iterator) {
@@ -792,7 +803,8 @@ static int FNAME(sync_page)(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp)
 		pte_access &= gpte_access(vcpu, gpte);
 		protect_clean_gpte(&pte_access, gpte);
 
-		if (sync_mmio_spte(&sp->spt[i], gfn, pte_access, &nr_present))
+		if (sync_mmio_spte(vcpu->kvm, &sp->spt[i], gfn, pte_access,
+		      &nr_present))
 			continue;
 
 		if (gfn != sp->gfns[i]) {

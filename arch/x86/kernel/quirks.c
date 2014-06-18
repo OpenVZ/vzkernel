@@ -571,3 +571,18 @@ DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_15H_NB_F5,
 			quirk_amd_nb_node);
 
 #endif
+/*
+ * RHEL7.0 does not support Intel Corporation 8900 Series Chipset.  Use
+ * the Gigabit Connection to accomplish this.
+ */
+static void quirk_intel_DH8900CC(struct pci_dev *dev)
+{
+	static int printed;
+
+	/* Some platforms have many of these devices.  Print warning once. */
+	if (!printed) {
+		mark_hardware_unsupported("Intel Corporation 8900 Series Chipset");
+		printed = 1;
+	}
+}
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_INTEL, 0x2310, quirk_intel_DH8900CC);

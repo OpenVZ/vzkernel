@@ -50,6 +50,7 @@
 #include <linux/init_ohci1394_dma.h>
 #include <linux/kvm_para.h>
 #include <linux/dma-contiguous.h>
+#include <linux/security.h>
 
 #include <linux/errno.h>
 #include <linux/kernel.h>
@@ -69,6 +70,7 @@
 #include <linux/crash_dump.h>
 #include <linux/tboot.h>
 #include <linux/jiffies.h>
+#include <linux/cpumask.h>
 
 #include <video/edid.h>
 
@@ -426,25 +428,23 @@ static void __init reserve_initrd(void)
 static void __init parse_setup_data(void)
 {
 	struct setup_data *data;
-	u64 pa_data;
+	u64 pa_data, pa_next;
 
 	pa_data = boot_params.hdr.setup_data;
 	while (pa_data) {
-		u32 data_len, map_len;
+		u32 data_len, map_len, data_type;
 
 		map_len = max(PAGE_SIZE - (pa_data & ~PAGE_MASK),
 			      (u64)sizeof(struct setup_data));
 		data = early_memremap(pa_data, map_len);
 		data_len = data->len + sizeof(struct setup_data);
-		if (data_len > map_len) {
-			early_iounmap(data, map_len);
-			data = early_memremap(pa_data, data_len);
-			map_len = data_len;
-		}
+		data_type = data->type;
+		pa_next = data->next;
+		early_iounmap(data, map_len);
 
-		switch (data->type) {
+		switch (data_type) {
 		case SETUP_E820_EXT:
-			parse_e820_ext(data);
+			parse_e820_ext(pa_data, data_len);
 			break;
 		case SETUP_DTB:
 			add_dtb(pa_data);
@@ -452,8 +452,7 @@ static void __init parse_setup_data(void)
 		default:
 			break;
 		}
-		pa_data = data->next;
-		early_iounmap(data, map_len);
+		pa_data = pa_next;
 	}
 }
 
@@ -596,7 +595,22 @@ static void __init reserve_crashkernel(void)
 					high ? CRASH_KERNEL_ADDR_HIGH_MAX :
 					       CRASH_KERNEL_ADDR_LOW_MAX,
 					crash_size, alignment);
-
+#ifdef CONFIG_X86_64
+		/*
+		 * crashkernel=X reserve below 896M fails? Try below 4G
+		 */
+		if (!high && !crash_base)
+			crash_base = memblock_find_in_range(alignment,
+						(1ULL << 32),
+						crash_size, alignment);
+		/*
+		 * crashkernel=X reserve below 4G fails? Try MAXMEM
+		 */
+		if (!high && !crash_base)
+			crash_base = memblock_find_in_range(alignment,
+						CRASH_KERNEL_ADDR_HIGH_MAX,
+						crash_size, alignment);
+#endif
 		if (!crash_base) {
 			pr_info("crashkernel reservation failed - No suitable area found.\n");
 			return;
@@ -826,6 +840,58 @@ static void __init trim_low_memory_range(void)
 	memblock_reserve(0, ALIGN(reserve_low, PAGE_SIZE));
 }
 	
+static void rh_check_supported(void)
+{
+	/* RHEL7 supports single cpu on guests only */
+	if (((boot_cpu_data.x86_max_cores * smp_num_siblings) == 1) &&
+	    !x86_hyper && !cpu_has_hypervisor && !is_kdump_kernel()) {
+		pr_crit("Detected single cpu native boot.\n");
+		pr_crit("Important:  In Red Hat Enterprise Linux 7, single threaded, single CPU 64-bit physical systems are unsupported by Red Hat. Please contact your Red Hat support representative for a list of certified and supported systems.");
+	}
+
+	/* The RHEL7 kernel does not support this hardware.  The kernel will
+	 * attempt to boot, but no support is given for this hardware */
+
+	/* RHEL only supports Intel and AMD processors */
+	if ((boot_cpu_data.x86_vendor != X86_VENDOR_INTEL) &&
+	    (boot_cpu_data.x86_vendor != X86_VENDOR_AMD)) {
+		pr_crit("Detected processor %s %s\n",
+			boot_cpu_data.x86_vendor_id,
+			boot_cpu_data.x86_model_id);
+		mark_hardware_unsupported("Processor");
+	}
+
+	/* Intel CPU family 6, model greater than 60 */
+	if ((boot_cpu_data.x86_vendor == X86_VENDOR_INTEL) &&
+	    ((boot_cpu_data.x86 == 6))) {
+		switch (boot_cpu_data.x86_model) {
+		case 77: /* Atom Avoton */
+		case 70: /* Crystal Well */
+		case 63: /* Grantley/Haswell EP */
+		case 62: /* Ivy Town */
+			break;
+		default:
+			if (boot_cpu_data.x86_model > 60) {
+				printk(KERN_CRIT
+				       "Detected CPU family %d model %d\n",
+				       boot_cpu_data.x86,
+				       boot_cpu_data.x86_model);
+				mark_hardware_unsupported("Intel CPU model");
+			}
+			break;
+		}
+	}
+
+	/*
+	 * Due to the complexity of x86 lapic & ioapic enumeration, and PCI IRQ
+	 * routing, ACPI is required for x86.  acpi=off is a valid debug kernel
+	 * parameter, so just print out a loud warning in case something
+	 * goes wrong (which is most of the time).
+	 */
+	if (acpi_disabled && !x86_hyper && !cpu_has_hypervisor)
+		pr_crit("ACPI has been disabled or is not available on this hardware.  This may result in a single cpu boot, incorrect PCI IRQ routing, or boot failure.\n");
+}
+
 /*
  * Determine if we were loaded by an EFI loader.  If so, then we have also been
  * passed the efi memmap, systab, etc., so we should use these data structures
@@ -1131,6 +1197,14 @@ void __init setup_arch(char **cmdline_p)
 
 	io_delay_init();
 
+#ifdef CONFIG_EFI_SECURE_BOOT_SECURELEVEL
+	if (boot_params.secure_boot) {
+		set_bit(EFI_SECURE_BOOT, &x86_efi_facility);
+		set_securelevel(1);
+		pr_info("Secure boot enabled\n");
+	}
+#endif
+
 	/*
 	 * Parse the ACPI tables for possible boot-time SMP configuration.
 	 */
@@ -1229,6 +1303,8 @@ void __init setup_arch(char **cmdline_p)
 		efi_unmap_memmap();
 	}
 #endif
+
+	rh_check_supported();
 }
 
 #ifdef CONFIG_X86_32

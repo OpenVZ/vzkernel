@@ -510,6 +510,22 @@ static void ath9k_init_misc(struct ath_softc *sc)
 	sc->spec_config.fft_period = 0xF;
 }
 
+static void ath9k_init_platform(struct ath_softc *sc)
+{
+	struct ath_hw *ah = sc->sc_ah;
+	struct ath_common *common = ath9k_hw_common(ah);
+
+	if (common->bus_ops->ath_bus_type != ATH_PCI)
+		return;
+
+	if (sc->driver_data & ATH9K_PCI_CUS198) {
+		ah->config.xlna_gpio = 9;
+		ah->config.xatten_margin_cfg = true;
+
+		ath_info(common, "Set parameters for CUS198\n");
+	}
+}
+
 static void ath9k_eeprom_request_cb(const struct firmware *eeprom_blob,
 				    void *ctx)
 {
@@ -600,6 +616,11 @@ static int ath9k_init_softc(u16 devid, struct ath_softc *sc,
 	common->debug_mask = ath9k_debug;
 	common->btcoex_enabled = ath9k_btcoex_enable == 1;
 	common->disable_ani = false;
+
+	/*
+	 * Platform quirks.
+	 */
+	ath9k_init_platform(sc);
 
 	/*
 	 * Enable Antenna diversity only when BTCOEX is disabled
@@ -767,7 +788,8 @@ void ath9k_set_hw_capab(struct ath_softc *sc, struct ieee80211_hw *hw)
 		IEEE80211_HW_PS_NULLFUNC_STACK |
 		IEEE80211_HW_SPECTRUM_MGMT |
 		IEEE80211_HW_REPORTS_TX_ACK_STATUS |
-		IEEE80211_HW_SUPPORTS_RC_TABLE;
+		IEEE80211_HW_SUPPORTS_RC_TABLE |
+		IEEE80211_HW_SUPPORTS_HT_CCK_RATES;
 
 	if (sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_HT)
 		 hw->flags |= IEEE80211_HW_AMPDU_AGGREGATION;

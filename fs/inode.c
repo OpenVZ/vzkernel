@@ -509,6 +509,7 @@ void clear_inode(struct inode *inode)
 	 */
 	spin_lock_irq(&inode->i_data.tree_lock);
 	BUG_ON(inode->i_data.nrpages);
+	BUG_ON(inode->i_data.nrshadows);
 	spin_unlock_irq(&inode->i_data.tree_lock);
 	BUG_ON(!list_empty(&inode->i_data.private_list));
 	BUG_ON(!(inode->i_state & I_FREEING));
@@ -554,8 +555,7 @@ static void evict(struct inode *inode)
 	if (op->evict_inode) {
 		op->evict_inode(inode);
 	} else {
-		if (inode->i_data.nrpages)
-			truncate_inode_pages(&inode->i_data, 0);
+		truncate_inode_pages_final(&inode->i_data);
 		clear_inode(inode);
 	}
 	if (S_ISBLK(inode->i_mode) && inode->i_bdev)
@@ -978,6 +978,42 @@ void unlock_new_inode(struct inode *inode)
 	spin_unlock(&inode->i_lock);
 }
 EXPORT_SYMBOL(unlock_new_inode);
+
+/**
+ * lock_two_nondirectories - take two i_mutexes on non-directory objects
+ * @inode1: first inode to lock
+ * @inode2: second inode to lock
+ */
+void lock_two_nondirectories(struct inode *inode1, struct inode *inode2)
+{
+	WARN_ON_ONCE(S_ISDIR(inode1->i_mode));
+	if (inode1 == inode2 || !inode2) {
+		mutex_lock(&inode1->i_mutex);
+		return;
+	}
+	WARN_ON_ONCE(S_ISDIR(inode2->i_mode));
+	if (inode1 < inode2) {
+		mutex_lock(&inode1->i_mutex);
+		mutex_lock_nested(&inode2->i_mutex, I_MUTEX_NONDIR2);
+	} else {
+		mutex_lock(&inode2->i_mutex);
+		mutex_lock_nested(&inode1->i_mutex, I_MUTEX_NONDIR2);
+	}
+}
+EXPORT_SYMBOL(lock_two_nondirectories);
+
+/**
+ * unlock_two_nondirectories - release locks from lock_two_nondirectories()
+ * @inode1: first inode to unlock
+ * @inode2: second inode to unlock
+ */
+void unlock_two_nondirectories(struct inode *inode1, struct inode *inode2)
+{
+	mutex_unlock(&inode1->i_mutex);
+	if (inode2 && inode2 != inode1)
+		mutex_unlock(&inode2->i_mutex);
+}
+EXPORT_SYMBOL(unlock_two_nondirectories);
 
 /**
  * iget5_locked - obtain an inode from a mounted file system
@@ -1604,7 +1640,11 @@ static int __remove_suid(struct dentry *dentry, int kill)
 	struct iattr newattrs;
 
 	newattrs.ia_valid = ATTR_FORCE | kill;
-	return notify_change(dentry, &newattrs);
+	/*
+	 * Note we call this on write, so notify_change will not
+	 * encounter any conflicting delegations:
+	 */
+	return notify_change(dentry, &newattrs, NULL);
 }
 
 int file_remove_suid(struct file *file)
@@ -1883,6 +1923,11 @@ void inode_dio_wait(struct inode *inode)
 }
 EXPORT_SYMBOL(inode_dio_wait);
 
+void __inode_dio_done(struct inode *inode)
+{
+	wake_up_bit(&inode->i_state, __I_DIO_WAKEUP);
+}
+
 /*
  * inode_dio_done - signal finish of a direct I/O requests
  * @inode: inode the direct I/O happens on
@@ -1893,6 +1938,6 @@ EXPORT_SYMBOL(inode_dio_wait);
 void inode_dio_done(struct inode *inode)
 {
 	if (atomic_dec_and_test(&inode->i_dio_count))
-		wake_up_bit(&inode->i_state, __I_DIO_WAKEUP);
+		__inode_dio_done(inode);
 }
 EXPORT_SYMBOL(inode_dio_done);

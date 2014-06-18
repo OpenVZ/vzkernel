@@ -612,6 +612,20 @@ On some architectures it is required that an interrupt controller model has
 been previously created with KVM_CREATE_IRQCHIP.  Note that edge-triggered
 interrupts require the level to be set to 1 and then back to 0.
 
+On real hardware, interrupt pins can be active-low or active-high.  This
+does not matter for the level field of struct kvm_irq_level: 1 always
+means active (asserted), 0 means inactive (deasserted).
+
+x86 allows the operating system to program the interrupt polarity
+(active-low/active-high) for level-triggered interrupts, and KVM used
+to consider the polarity.  However, due to bitrot in the handling of
+active-low interrupts, the above convention is now valid on x86 too.
+This is signaled by KVM_CAP_X86_IOAPIC_POLARITY_IGNORED.  Userspace
+should not present interrupts to the guest as active-low unless this
+capability is present (or unless it is not using the in-kernel irqchip,
+of course).
+
+
 ARM can signal an interrupt either at the CPU level, or at the in-kernel irqchip
 (GIC), and for in-kernel irqchip can tell the GIC to use PPIs designated for
 specific cpus.  The irq field is interpreted like this:
@@ -627,7 +641,7 @@ The irq_type field has the following values:
 
 (The irq_id field thus corresponds nicely to the IRQ ID in the ARM GIC specs)
 
-In both cases, level is used to raise/lower the line.
+In both cases, level is used to assert/deassert the line.
 
 struct kvm_irq_level {
 	union {
@@ -2261,7 +2275,7 @@ return indicates the attribute is implemented.  It does not necessarily
 indicate that the attribute can be read or written in the device's
 current state.  "addr" is ignored.
 
-4.77 KVM_ARM_VCPU_INIT
+4.82 KVM_ARM_VCPU_INIT
 
 Capability: basic
 Architectures: arm
@@ -2285,7 +2299,7 @@ Possible features:
 	  Depends on KVM_CAP_ARM_PSCI.
 
 
-4.78 KVM_GET_REG_LIST
+4.83 KVM_GET_REG_LIST
 
 Capability: basic
 Architectures: arm
@@ -2305,7 +2319,7 @@ This ioctl returns the guest registers that are supported for the
 KVM_GET_ONE_REG/KVM_SET_ONE_REG calls.
 
 
-4.80 KVM_ARM_SET_DEVICE_ADDR
+4.84 KVM_ARM_SET_DEVICE_ADDR
 
 Capability: KVM_CAP_ARM_SET_DEVICE_ADDR
 Architectures: arm
@@ -2342,7 +2356,7 @@ and distributor interface, the ioctl must be called after calling
 KVM_CREATE_IRQCHIP, but before calling KVM_RUN on any of the VCPUs.  Calling
 this ioctl twice for any of the base addresses will return -EEXIST.
 
-4.82 KVM_PPC_RTAS_DEFINE_TOKEN
+4.85 KVM_PPC_RTAS_DEFINE_TOKEN
 
 Capability: KVM_CAP_PPC_RTAS
 Architectures: ppc

@@ -10,7 +10,6 @@
 #include <subdev/bios/gpio.h>
 #include <subdev/bios/init.h>
 #include <subdev/devinit.h>
-#include <subdev/clock.h>
 #include <subdev/i2c.h>
 #include <subdev/vga.h>
 #include <subdev/gpio.h>
@@ -300,9 +299,9 @@ init_wrauxr(struct nvbios_init *init, u32 addr, u8 data)
 static void
 init_prog_pll(struct nvbios_init *init, u32 id, u32 freq)
 {
-	struct nouveau_clock *clk = nouveau_clock(init->bios);
-	if (clk && clk->pll_set && init_exec(init)) {
-		int ret = clk->pll_set(clk, id, freq);
+	struct nouveau_devinit *devinit = nouveau_devinit(init->bios);
+	if (devinit->pll_set && init_exec(init)) {
+		int ret = devinit->pll_set(devinit, id, freq);
 		if (ret)
 			warn("failed to prog pll 0x%08x to %dkHz\n", id, freq);
 	}
@@ -366,13 +365,13 @@ static u16
 init_script(struct nouveau_bios *bios, int index)
 {
 	struct nvbios_init init = { .bios = bios };
-	u16 data;
+	u16 bmp_ver = bmp_version(bios), data;
 
-	if (bmp_version(bios) && bmp_version(bios) < 0x0510) {
-		if (index > 1)
+	if (bmp_ver && bmp_ver < 0x0510) {
+		if (index > 1 || bmp_ver < 0x0100)
 			return 0x0000;
 
-		data = bios->bmp_offset + (bios->version.major < 2 ? 14 : 18);
+		data = bios->bmp_offset + (bmp_ver < 0x0200 ? 14 : 18);
 		return nv_ro16(bios, data + (index * 2));
 	}
 
@@ -580,8 +579,22 @@ static void
 init_reserved(struct nvbios_init *init)
 {
 	u8 opcode = nv_ro08(init->bios, init->offset);
-	trace("RESERVED\t0x%02x\n", opcode);
-	init->offset += 1;
+	u8 length, i;
+
+	switch (opcode) {
+	case 0xaa:
+		length = 4;
+		break;
+	default:
+		length = 1;
+		break;
+	}
+
+	trace("RESERVED 0x%02x\t", opcode);
+	for (i = 1; i < length; i++)
+		cont(" 0x%02x", nv_ro08(init->bios, init->offset + i));
+	cont("\n");
+	init->offset += length;
 }
 
 /**
@@ -1281,7 +1294,11 @@ init_jump(struct nvbios_init *init)
 	u16 offset = nv_ro16(bios, init->offset + 1);
 
 	trace("JUMP\t0x%04x\n", offset);
-	init->offset = offset;
+
+	if (init_exec(init))
+		init->offset = offset;
+	else
+		init->offset += 3;
 }
 
 /**
@@ -1438,7 +1455,7 @@ init_configure_mem(struct nvbios_init *init)
 	data = init_rdvgai(init, 0x03c4, 0x01);
 	init_wrvgai(init, 0x03c4, 0x01, data | 0x20);
 
-	while ((addr = nv_ro32(bios, sdata)) != 0xffffffff) {
+	for (; (addr = nv_ro32(bios, sdata)) != 0xffffffff; sdata += 4) {
 		switch (addr) {
 		case 0x10021c: /* CKE_NORMAL */
 		case 0x1002d0: /* CMD_REFRESH */
@@ -2136,6 +2153,7 @@ static struct nvbios_init_opcode {
 	[0x99] = { init_zm_auxch },
 	[0x9a] = { init_i2c_long_if },
 	[0xa9] = { init_gpio_ne },
+	[0xaa] = { init_reserved },
 };
 
 #define init_opcode_nr (sizeof(init_opcode) / sizeof(init_opcode[0]))
@@ -2166,7 +2184,7 @@ nvbios_init(struct nouveau_subdev *subdev, bool execute)
 	u16 data;
 
 	if (execute)
-		nv_info(bios, "running init tables\n");
+		nv_suspend(bios, "running init tables\n");
 	while (!ret && (data = (init_script(bios, ++i)))) {
 		struct nvbios_init init = {
 			.subdev = subdev,
@@ -2196,5 +2214,5 @@ nvbios_init(struct nouveau_subdev *subdev, bool execute)
 		ret = nvbios_exec(&init);
 	}
 
-	return 0;
+	return ret;
 }

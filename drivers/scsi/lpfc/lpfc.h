@@ -1,7 +1,7 @@
 /*******************************************************************
  * This file is part of the Emulex Linux Device Driver for         *
  * Fibre Channel Host Bus Adapters.                                *
- * Copyright (C) 2004-2012 Emulex.  All rights reserved.           *
+ * Copyright (C) 2004-2013 Emulex.  All rights reserved.           *
  * EMULEX and SLI are trademarks of Emulex.                        *
  * www.emulex.com                                                  *
  * Portions Copyright (C) 2004-2005 Christoph Hellwig              *
@@ -421,6 +421,7 @@ struct lpfc_vport {
 	uint32_t cfg_enable_da_id;
 	uint32_t cfg_max_scsicmpl_time;
 	uint32_t cfg_tgt_queue_depth;
+	uint32_t cfg_first_burst_size;
 
 	uint32_t dev_loss_tmo_changed;
 
@@ -707,11 +708,10 @@ struct lpfc_hba {
 	uint32_t cfg_multi_ring_type;
 	uint32_t cfg_poll;
 	uint32_t cfg_poll_tmo;
+	uint32_t cfg_task_mgmt_tmo;
 	uint32_t cfg_use_msi;
 	uint32_t cfg_fcp_imax;
 	uint32_t cfg_fcp_cpu_map;
-	uint32_t cfg_fcp_wq_count;
-	uint32_t cfg_fcp_eq_count;
 	uint32_t cfg_fcp_io_channel;
 	uint32_t cfg_total_seg_cnt;
 	uint32_t cfg_sg_seg_cnt;
@@ -730,6 +730,7 @@ struct lpfc_hba {
 	uint32_t cfg_request_firmware_upgrade;
 	uint32_t cfg_iocb_cnt;
 	uint32_t cfg_suppress_link_up;
+	uint32_t cfg_rrq_xri_bitmap_sz;
 #define LPFC_INITIALIZE_LINK              0	/* do normal init_link mbox */
 #define LPFC_DELAY_INIT_LINK              1	/* layered driver hold off */
 #define LPFC_DELAY_INIT_LINK_INDEFINITELY 2	/* wait, manual intervention */
@@ -835,6 +836,7 @@ struct lpfc_hba {
 	mempool_t *mbox_mem_pool;
 	mempool_t *nlp_mem_pool;
 	mempool_t *rrq_pool;
+	mempool_t *active_rrq_pool;
 
 	struct fc_host_statistics link_stats;
 	enum intr_type_t intr_type;

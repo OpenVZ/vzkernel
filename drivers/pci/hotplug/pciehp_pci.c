@@ -78,7 +78,7 @@ int pciehp_configure_device(struct slot *p_slot)
 
 int pciehp_unconfigure_device(struct slot *p_slot)
 {
-	int ret, rc = 0;
+	int rc = 0;
 	u8 bctl = 0;
 	u8 presence = 0;
 	struct pci_dev *dev, *temp;
@@ -88,11 +88,16 @@ int pciehp_unconfigure_device(struct slot *p_slot)
 
 	ctrl_dbg(ctrl, "%s: domain:bus:dev = %04x:%02x:00\n",
 		 __func__, pci_domain_nr(parent), parent->number);
-	ret = pciehp_get_adapter_status(p_slot, &presence);
-	if (ret)
-		presence = 0;
+	pciehp_get_adapter_status(p_slot, &presence);
 
-	list_for_each_entry_safe(dev, temp, &parent->devices, bus_list) {
+	/*
+	 * Stopping an SR-IOV PF device removes all the associated VFs,
+	 * which will update the bus->devices list and confuse the
+	 * iterator.  Therefore, iterate in reverse so we remove the VFs
+	 * first, then the PF.  We do the same in pci_stop_bus_device().
+	 */
+	list_for_each_entry_safe_reverse(dev, temp, &parent->devices,
+					 bus_list) {
 		pci_dev_get(dev);
 		if (dev->hdr_type == PCI_HEADER_TYPE_BRIDGE && presence) {
 			pci_read_config_byte(dev, PCI_BRIDGE_CONTROL, &bctl);

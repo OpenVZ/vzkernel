@@ -23,16 +23,20 @@
  */
 
 #include <subdev/mc.h>
+#include <core/option.h>
 
 static irqreturn_t
 nouveau_mc_intr(int irq, void *arg)
 {
 	struct nouveau_mc *pmc = arg;
 	const struct nouveau_mc_intr *map = pmc->intr_map;
+	struct nouveau_device *device = nv_device(pmc);
 	struct nouveau_subdev *unit;
 	u32 stat, intr;
 
 	intr = stat = nv_rd32(pmc, 0x000100);
+	if (intr == 0xffffffff)
+		return IRQ_NONE;
 	while (stat && map->stat) {
 		if (stat & map->stat) {
 			unit = nouveau_subdev(pmc, map->unit);
@@ -43,10 +47,15 @@ nouveau_mc_intr(int irq, void *arg)
 		map++;
 	}
 
+	if (pmc->use_msi)
+		nv_wr08(pmc->base.base.parent, 0x00088068, 0xff);
+
 	if (intr) {
 		nv_error(pmc, "unknown intr 0x%08x\n", stat);
 	}
 
+	if (stat == IRQ_HANDLED)
+		pm_runtime_mark_last_busy(&device->pdev->dev);
 	return stat ? IRQ_HANDLED : IRQ_NONE;
 }
 
@@ -75,12 +84,16 @@ _nouveau_mc_dtor(struct nouveau_object *object)
 	struct nouveau_device *device = nv_device(object);
 	struct nouveau_mc *pmc = (void *)object;
 	free_irq(device->pdev->irq, pmc);
+	if (pmc->use_msi)
+		pci_disable_msi(device->pdev);
 	nouveau_subdev_destroy(&pmc->base);
 }
 
 int
 nouveau_mc_create_(struct nouveau_object *parent, struct nouveau_object *engine,
-		   struct nouveau_oclass *oclass, int length, void **pobject)
+		   struct nouveau_oclass *oclass,
+		   const struct nouveau_mc_intr *intr_map,
+		   int length, void **pobject)
 {
 	struct nouveau_device *device = nv_device(parent);
 	struct nouveau_mc *pmc;
@@ -91,6 +104,67 @@ nouveau_mc_create_(struct nouveau_object *parent, struct nouveau_object *engine,
 	pmc = *pobject;
 	if (ret)
 		return ret;
+
+	pmc->intr_map = intr_map;
+
+	switch (device->pdev->device & 0x0ff0) {
+	case 0x00f0: /* BR02? */
+	case 0x02e0: /* BR02? */
+		pmc->use_msi = false;
+		break;
+	default:
+		pmc->use_msi = nouveau_boolopt(device->cfgopt, "NvMSI", false);
+		if (pmc->use_msi) {
+			pmc->use_msi = pci_enable_msi(device->pdev) == 0;
+			if (pmc->use_msi) {
+				nv_info(pmc, "MSI interrupts enabled\n");
+				nv_wr08(device, 0x00088068, 0xff);
+			}
+		}
+		break;
+	}
+
+	if (reset_devices) {
+		/* reset engines, will clear pending interrupts for them too */
+		u32 mask = 0x00001102; /* GR, FIFO, PPP/MD */
+		if (device->card_type < NV_50)
+			mask |= 0x00000000;
+		else
+		if (device->card_type < NV_C0)
+			mask |= 0x07e2e000; /* CS, PDEC/VP2, VLD/BSP, CD, CE0 */
+		else
+			mask |= 0x082680c0; /* CS, CE2, ENC, PDEC, VLD, CE1/0 */
+
+		nv_info(device, "resetting\n");
+		nv_mask(device, 0x000200, mask, 0);
+		nv_rd32(device, 0x000200);
+		nv_mask(device, 0x000200, mask, mask);
+
+		/* various subdev interrupts */
+		nv_wr32(device, 0x000140, 0); /* PMC */
+		nv_wr32(device, 0x001140, 0); /* PBUS */
+		nv_wr32(device, 0x009140, 0); /* PTIMER */
+		if (device->chipset >= 0x84)
+			nv_wr32(device, 0x020000, 0); /* PTHERM */
+
+		/* display interrupts */
+		if (device->card_type < NV_50) {
+			nv_wr32(device, 0x600140, 0);
+			nv_wr32(device, 0x602140, 0);
+		} else
+		if (device->card_type < NV_D0) {
+			nv_wr32(device, 0x610028, 0);
+			nv_wr32(device, 0x61002c, 0);
+		} else {
+			nv_wr32(device, 0x610090, 0);
+			nv_wr32(device, 0x6100a0, 0);
+			nv_wr32(device, 0x6100b0, 0);
+			nv_wr32(device, 0x6100c0, 0);
+			nv_wr32(device, 0x6108c0, 0);
+			nv_wr32(device, 0x6110c0, 0);
+			nv_wr32(device, 0x6118c0, 0);
+		}
+	}
 
 	ret = request_irq(device->pdev->irq, nouveau_mc_intr,
 			  IRQF_SHARED, "nouveau", pmc);

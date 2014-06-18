@@ -79,10 +79,6 @@ struct ath_config {
 		       sizeof(struct ath_buf_state));		\
 	} while (0)
 
-#define ATH_RXBUF_RESET(_bf) do {		\
-		(_bf)->bf_stale = false;	\
-	} while (0)
-
 /**
  * enum buffer_type - Buffer type flags
  *
@@ -316,6 +312,7 @@ struct ath_rx {
 	struct ath_descdma rxdma;
 	struct ath_rx_edma rx_edma[ATH9K_RX_QUEUE_MAX];
 
+	struct ath_buf *buf_hold;
 	struct sk_buff *frag;
 
 	u32 ampdu_ref;
@@ -623,6 +620,8 @@ void ath_ant_comb_update(struct ath_softc *sc);
 /* Main driver core */
 /********************/
 
+#define ATH9K_PCI_CUS198 0x0001
+
 /*
  * Default cache line size, in bytes.
  * Used when PCI device not fully initialized by bootrom/BIOS
@@ -706,6 +705,7 @@ struct ath_softc {
 
 	unsigned int hw_busy_count;
 	unsigned long sc_flags;
+	unsigned long driver_data;
 
 	u32 intrstatus;
 	u16 ps_flags; /* PS_* */

@@ -69,6 +69,7 @@ static int get_power_status	(struct hotplug_slot *slot, u8 *value);
 static int get_attention_status	(struct hotplug_slot *slot, u8 *value);
 static int get_latch_status	(struct hotplug_slot *slot, u8 *value);
 static int get_adapter_status	(struct hotplug_slot *slot, u8 *value);
+static int reset_slot		(struct hotplug_slot *slot, int probe);
 
 /**
  * release_slot - free up the memory used by a slot
@@ -111,6 +112,7 @@ static int init_slot(struct controller *ctrl)
 	ops->disable_slot = disable_slot;
 	ops->get_power_status = get_power_status;
 	ops->get_adapter_status = get_adapter_status;
+	ops->reset_slot = reset_slot;
 	if (MRL_SENS(ctrl))
 		ops->get_latch_status = get_latch_status;
 	if (ATTN_LED(ctrl)) {
@@ -158,7 +160,8 @@ static int set_attention_status(struct hotplug_slot *hotplug_slot, u8 status)
 	ctrl_dbg(slot->ctrl, "%s: physical_slot = %s\n",
 		  __func__, slot_name(slot));
 
-	return pciehp_set_attention_status(slot, status);
+	pciehp_set_attention_status(slot, status);
+	return 0;
 }
 
 
@@ -190,7 +193,8 @@ static int get_power_status(struct hotplug_slot *hotplug_slot, u8 *value)
 	ctrl_dbg(slot->ctrl, "%s: physical_slot = %s\n",
 		  __func__, slot_name(slot));
 
-	return pciehp_get_power_status(slot, value);
+	pciehp_get_power_status(slot, value);
+	return 0;
 }
 
 static int get_attention_status(struct hotplug_slot *hotplug_slot, u8 *value)
@@ -200,7 +204,8 @@ static int get_attention_status(struct hotplug_slot *hotplug_slot, u8 *value)
 	ctrl_dbg(slot->ctrl, "%s: physical_slot = %s\n",
 		  __func__, slot_name(slot));
 
-	return pciehp_get_attention_status(slot, value);
+	pciehp_get_attention_status(slot, value);
+	return 0;
 }
 
 static int get_latch_status(struct hotplug_slot *hotplug_slot, u8 *value)
@@ -210,7 +215,8 @@ static int get_latch_status(struct hotplug_slot *hotplug_slot, u8 *value)
 	ctrl_dbg(slot->ctrl, "%s: physical_slot = %s\n",
 		 __func__, slot_name(slot));
 
-	return pciehp_get_latch_status(slot, value);
+	pciehp_get_latch_status(slot, value);
+	return 0;
 }
 
 static int get_adapter_status(struct hotplug_slot *hotplug_slot, u8 *value)
@@ -220,7 +226,18 @@ static int get_adapter_status(struct hotplug_slot *hotplug_slot, u8 *value)
 	ctrl_dbg(slot->ctrl, "%s: physical_slot = %s\n",
 		 __func__, slot_name(slot));
 
-	return pciehp_get_adapter_status(slot, value);
+	pciehp_get_adapter_status(slot, value);
+	return 0;
+}
+
+static int reset_slot(struct hotplug_slot *hotplug_slot, int probe)
+{
+	struct slot *slot = hotplug_slot->private;
+
+	ctrl_dbg(slot->ctrl, "%s: physical_slot = %s\n",
+		 __func__, slot_name(slot));
+
+	return pciehp_reset_slot(slot, probe);
 }
 
 static int pciehp_probe(struct pcie_device *dev)
@@ -266,8 +283,11 @@ static int pciehp_probe(struct pcie_device *dev)
 	slot = ctrl->slot;
 	pciehp_get_adapter_status(slot, &occupied);
 	pciehp_get_power_status(slot, &poweron);
-	if (occupied && pciehp_force)
+	if (occupied && pciehp_force) {
+		mutex_lock(&slot->hotplug_lock);
 		pciehp_enable_slot(slot);
+		mutex_unlock(&slot->hotplug_lock);
+	}
 	/* If empty slot's power status is on, turn power off */
 	if (!occupied && poweron && POWER_CTRL(ctrl))
 		pciehp_power_off_slot(slot);
@@ -311,10 +331,12 @@ static int pciehp_resume (struct pcie_device *dev)
 
 	/* Check if slot is occupied */
 	pciehp_get_adapter_status(slot, &status);
+	mutex_lock(&slot->hotplug_lock);
 	if (status)
 		pciehp_enable_slot(slot);
 	else
 		pciehp_disable_slot(slot);
+	mutex_unlock(&slot->hotplug_lock);
 	return 0;
 }
 #endif /* PM */
@@ -339,8 +361,8 @@ static int __init pcied_init(void)
 
 	pciehp_firmware_init();
 	retval = pcie_port_service_register(&hpdriver_portdrv);
- 	dbg("pcie_port_service_register = %d\n", retval);
-  	info(DRIVER_DESC " version: " DRIVER_VERSION "\n");
+	dbg("pcie_port_service_register = %d\n", retval);
+	info(DRIVER_DESC " version: " DRIVER_VERSION "\n");
 	if (retval)
 		dbg("Failure to register service\n");
 

@@ -34,8 +34,8 @@ int cpufreq_frequency_table_cpuinfo(struct cpufreq_policy *policy,
 
 			continue;
 		}
-		pr_debug("table entry %u: %u kHz, %u index\n",
-					i, freq, table[i].index);
+		pr_debug("table entry %u: %u kHz, %u driver_data\n",
+					i, freq, table[i].driver_data);
 		if (freq < min_freq)
 			min_freq = freq;
 		if (freq > max_freq)
@@ -56,31 +56,30 @@ EXPORT_SYMBOL_GPL(cpufreq_frequency_table_cpuinfo);
 int cpufreq_frequency_table_verify(struct cpufreq_policy *policy,
 				   struct cpufreq_frequency_table *table)
 {
-	unsigned int next_larger = ~0;
-	unsigned int i;
-	unsigned int count = 0;
+	unsigned int next_larger = ~0, freq, i = 0;
+	bool found = false;
 
 	pr_debug("request for verification of policy (%u - %u kHz) for cpu %u\n",
 					policy->min, policy->max, policy->cpu);
 
-	cpufreq_verify_within_limits(policy, policy->cpuinfo.min_freq,
-				     policy->cpuinfo.max_freq);
+	cpufreq_verify_within_cpu_limits(policy);
 
-	for (i = 0; (table[i].frequency != CPUFREQ_TABLE_END); i++) {
-		unsigned int freq = table[i].frequency;
+	for (; freq = table[i].frequency, freq != CPUFREQ_TABLE_END; i++) {
 		if (freq == CPUFREQ_ENTRY_INVALID)
 			continue;
-		if ((freq >= policy->min) && (freq <= policy->max))
-			count++;
-		else if ((next_larger > freq) && (freq > policy->max))
+		if ((freq >= policy->min) && (freq <= policy->max)) {
+			found = true;
+			break;
+		}
+
+		if ((next_larger > freq) && (freq > policy->max))
 			next_larger = freq;
 	}
 
-	if (!count)
+	if (!found) {
 		policy->max = next_larger;
-
-	cpufreq_verify_within_limits(policy, policy->cpuinfo.min_freq,
-				     policy->cpuinfo.max_freq);
+		cpufreq_verify_within_cpu_limits(policy);
+	}
 
 	pr_debug("verification lead to (%u - %u kHz) for cpu %u\n",
 				policy->min, policy->max, policy->cpu);
@@ -97,11 +96,11 @@ int cpufreq_frequency_table_target(struct cpufreq_policy *policy,
 				   unsigned int *index)
 {
 	struct cpufreq_frequency_table optimal = {
-		.index = ~0,
+		.driver_data = ~0,
 		.frequency = 0,
 	};
 	struct cpufreq_frequency_table suboptimal = {
-		.index = ~0,
+		.driver_data = ~0,
 		.frequency = 0,
 	};
 	unsigned int i;
@@ -129,12 +128,12 @@ int cpufreq_frequency_table_target(struct cpufreq_policy *policy,
 			if (freq <= target_freq) {
 				if (freq >= optimal.frequency) {
 					optimal.frequency = freq;
-					optimal.index = i;
+					optimal.driver_data = i;
 				}
 			} else {
 				if (freq <= suboptimal.frequency) {
 					suboptimal.frequency = freq;
-					suboptimal.index = i;
+					suboptimal.driver_data = i;
 				}
 			}
 			break;
@@ -142,26 +141,26 @@ int cpufreq_frequency_table_target(struct cpufreq_policy *policy,
 			if (freq >= target_freq) {
 				if (freq <= optimal.frequency) {
 					optimal.frequency = freq;
-					optimal.index = i;
+					optimal.driver_data = i;
 				}
 			} else {
 				if (freq >= suboptimal.frequency) {
 					suboptimal.frequency = freq;
-					suboptimal.index = i;
+					suboptimal.driver_data = i;
 				}
 			}
 			break;
 		}
 	}
-	if (optimal.index > i) {
-		if (suboptimal.index > i)
+	if (optimal.driver_data > i) {
+		if (suboptimal.driver_data > i)
 			return -EINVAL;
-		*index = suboptimal.index;
+		*index = suboptimal.driver_data;
 	} else
-		*index = optimal.index;
+		*index = optimal.driver_data;
 
 	pr_debug("target is %u (%u kHz, %u)\n", *index, table[*index].frequency,
-		table[*index].index);
+		table[*index].driver_data);
 
 	return 0;
 }

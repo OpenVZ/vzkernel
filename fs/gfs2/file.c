@@ -390,6 +390,7 @@ static int gfs2_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
 	struct inode *inode = file_inode(vma->vm_file);
 	struct gfs2_inode *ip = GFS2_I(inode);
 	struct gfs2_sbd *sdp = GFS2_SB(inode);
+	struct gfs2_alloc_parms ap = { .aflags = 0, };
 	unsigned long last_index;
 	u64 pos = page->index << PAGE_CACHE_SHIFT;
 	unsigned int data_blocks, ind_blocks, rblocks;
@@ -437,7 +438,8 @@ static int gfs2_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
 	if (ret)
 		goto out_unlock;
 	gfs2_write_calc_reserv(ip, PAGE_CACHE_SIZE, &data_blocks, &ind_blocks);
-	ret = gfs2_inplace_reserve(ip, data_blocks + ind_blocks, 0);
+	ap.target = data_blocks + ind_blocks;
+	ret = gfs2_inplace_reserve(ip, &ap);
 	if (ret)
 		goto out_quota_unlock;
 
@@ -538,9 +540,50 @@ static int gfs2_mmap(struct file *file, struct vm_area_struct *vma)
 }
 
 /**
+ * gfs2_open_common - This is common to open and atomic_open
+ * @inode: The inode being opened
+ * @file: The file being opened
+ *
+ * This maybe called under a glock or not depending upon how it has
+ * been called. We must always be called under a glock for regular
+ * files, however. For other file types, it does not matter whether
+ * we hold the glock or not.
+ *
+ * Returns: Error code or 0 for success
+ */
+
+int gfs2_open_common(struct inode *inode, struct file *file)
+{
+	struct gfs2_file *fp;
+	int ret;
+
+	if (S_ISREG(inode->i_mode)) {
+		ret = generic_file_open(inode, file);
+		if (ret)
+			return ret;
+	}
+
+	fp = kzalloc(sizeof(struct gfs2_file), GFP_NOFS);
+	if (!fp)
+		return -ENOMEM;
+
+	mutex_init(&fp->f_fl_mutex);
+
+	gfs2_assert_warn(GFS2_SB(inode), !file->private_data);
+	file->private_data = fp;
+	return 0;
+}
+
+/**
  * gfs2_open - open a file
  * @inode: the inode to open
  * @file: the struct file for this opening
+ *
+ * After atomic_open, this function is only used for opening files
+ * which are already cached. We must still get the glock for regular
+ * files to ensure that we have the file size uptodate for the large
+ * file check which is in the common code. That is only an issue for
+ * regular files though.
  *
  * Returns: errno
  */
@@ -549,40 +592,22 @@ static int gfs2_open(struct inode *inode, struct file *file)
 {
 	struct gfs2_inode *ip = GFS2_I(inode);
 	struct gfs2_holder i_gh;
-	struct gfs2_file *fp;
 	int error;
-
-	fp = kzalloc(sizeof(struct gfs2_file), GFP_KERNEL);
-	if (!fp)
-		return -ENOMEM;
-
-	mutex_init(&fp->f_fl_mutex);
-
-	gfs2_assert_warn(GFS2_SB(inode), !file->private_data);
-	file->private_data = fp;
+	bool need_unlock = false;
 
 	if (S_ISREG(ip->i_inode.i_mode)) {
 		error = gfs2_glock_nq_init(ip->i_gl, LM_ST_SHARED, LM_FLAG_ANY,
 					   &i_gh);
 		if (error)
-			goto fail;
-
-		if (!(file->f_flags & O_LARGEFILE) &&
-		    i_size_read(inode) > MAX_NON_LFS) {
-			error = -EOVERFLOW;
-			goto fail_gunlock;
-		}
-
-		gfs2_glock_dq_uninit(&i_gh);
+			return error;
+		need_unlock = true;
 	}
 
-	return 0;
+	error = gfs2_open_common(inode, file);
 
-fail_gunlock:
-	gfs2_glock_dq_uninit(&i_gh);
-fail:
-	file->private_data = NULL;
-	kfree(fp);
+	if (need_unlock)
+		gfs2_glock_dq_uninit(&i_gh);
+
 	return error;
 }
 
@@ -634,7 +659,7 @@ static int gfs2_fsync(struct file *file, loff_t start, loff_t end,
 {
 	struct address_space *mapping = file->f_mapping;
 	struct inode *inode = mapping->host;
-	int sync_state = inode->i_state & (I_DIRTY_SYNC|I_DIRTY_DATASYNC);
+	int sync_state = inode->i_state & I_DIRTY;
 	struct gfs2_inode *ip = GFS2_I(inode);
 	int ret = 0, ret1 = 0;
 
@@ -644,6 +669,8 @@ static int gfs2_fsync(struct file *file, loff_t start, loff_t end,
 			return ret1;
 	}
 
+	if (!gfs2_is_jdata(ip))
+		sync_state &= ~I_DIRTY_PAGES;
 	if (datasync)
 		sync_state &= ~I_DIRTY_SYNC;
 
@@ -782,6 +809,7 @@ static long gfs2_fallocate(struct file *file, int mode, loff_t offset,
 	struct inode *inode = file_inode(file);
 	struct gfs2_sbd *sdp = GFS2_SB(inode);
 	struct gfs2_inode *ip = GFS2_I(inode);
+	struct gfs2_alloc_parms ap = { .aflags = 0, };
 	unsigned int data_blocks = 0, ind_blocks = 0, rblocks;
 	loff_t bytes, max_bytes;
 	int error;
@@ -790,6 +818,8 @@ static long gfs2_fallocate(struct file *file, int mode, loff_t offset,
 	loff_t bsize_mask = ~((loff_t)sdp->sd_sb.sb_bsize - 1);
 	loff_t next = (offset + len - 1) >> sdp->sd_sb.sb_bsize_shift;
 	loff_t max_chunk_size = UINT_MAX & bsize_mask;
+	struct gfs2_holder gh;
+
 	next = (next + 1) << sdp->sd_sb.sb_bsize_shift;
 
 	/* We only support the FALLOC_FL_KEEP_SIZE mode */
@@ -810,8 +840,10 @@ static long gfs2_fallocate(struct file *file, int mode, loff_t offset,
 	if (error)
 		return error;
 
-	gfs2_holder_init(ip->i_gl, LM_ST_EXCLUSIVE, 0, &ip->i_gh);
-	error = gfs2_glock_nq(&ip->i_gh);
+	mutex_lock(&inode->i_mutex);
+
+	gfs2_holder_init(ip->i_gl, LM_ST_EXCLUSIVE, 0, &gh);
+	error = gfs2_glock_nq(&gh);
 	if (unlikely(error))
 		goto out_uninit;
 
@@ -832,7 +864,8 @@ static long gfs2_fallocate(struct file *file, int mode, loff_t offset,
 retry:
 		gfs2_write_calc_reserv(ip, bytes, &data_blocks, &ind_blocks);
 
-		error = gfs2_inplace_reserve(ip, data_blocks + ind_blocks, 0);
+		ap.target = data_blocks + ind_blocks;
+		error = gfs2_inplace_reserve(ip, &ap);
 		if (error) {
 			if (error == -ENOSPC && bytes > sdp->sd_sb.sb_bsize) {
 				bytes >>= 1;
@@ -878,9 +911,10 @@ out_trans_fail:
 out_qunlock:
 	gfs2_quota_unlock(ip);
 out_unlock:
-	gfs2_glock_dq(&ip->i_gh);
+	gfs2_glock_dq(&gh);
 out_uninit:
-	gfs2_holder_uninit(&ip->i_gh);
+	gfs2_holder_uninit(&gh);
+	mutex_unlock(&inode->i_mutex);
 	return error;
 }
 
@@ -896,7 +930,7 @@ out_uninit:
  * cluster; until we do, disable leases (by just returning -EINVAL),
  * unless the administrator has requested purely local locking.
  *
- * Locking: called under lock_flocks
+ * Locking: called under i_lock
  *
  * Returns: errno
  */

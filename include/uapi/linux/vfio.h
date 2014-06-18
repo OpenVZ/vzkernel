@@ -323,6 +323,44 @@ enum {
 	VFIO_PCI_NUM_IRQS
 };
 
+/**
+ * VFIO_DEVICE_GET_PCI_HOT_RESET_INFO - _IORW(VFIO_TYPE, VFIO_BASE + 12,
+ *					      struct vfio_pci_hot_reset_info)
+ *
+ * Return: 0 on success, -errno on failure:
+ *	-enospc = insufficient buffer, -enodev = unsupported for device.
+ */
+struct vfio_pci_dependent_device {
+	__u32	group_id;
+	__u16	segment;
+	__u8	bus;
+	__u8	devfn; /* Use PCI_SLOT/PCI_FUNC */
+};
+
+struct vfio_pci_hot_reset_info {
+	__u32	argsz;
+	__u32	flags;
+	__u32	count;
+	struct vfio_pci_dependent_device	devices[];
+};
+
+#define VFIO_DEVICE_GET_PCI_HOT_RESET_INFO	_IO(VFIO_TYPE, VFIO_BASE + 12)
+
+/**
+ * VFIO_DEVICE_PCI_HOT_RESET - _IOW(VFIO_TYPE, VFIO_BASE + 13,
+ *				    struct vfio_pci_hot_reset)
+ *
+ * Return: 0 on success, -errno on failure.
+ */
+struct vfio_pci_hot_reset {
+	__u32	argsz;
+	__u32	flags;
+	__u32	count;
+	__s32	group_fds[];
+};
+
+#define VFIO_DEVICE_PCI_HOT_RESET	_IO(VFIO_TYPE, VFIO_BASE + 13)
+
 /* -------- API for Type1 VFIO IOMMU -------- */
 
 /**
@@ -361,10 +399,14 @@ struct vfio_iommu_type1_dma_map {
 #define VFIO_IOMMU_MAP_DMA _IO(VFIO_TYPE, VFIO_BASE + 13)
 
 /**
- * VFIO_IOMMU_UNMAP_DMA - _IOW(VFIO_TYPE, VFIO_BASE + 14, struct vfio_dma_unmap)
+ * VFIO_IOMMU_UNMAP_DMA - _IOWR(VFIO_TYPE, VFIO_BASE + 14,
+ *							struct vfio_dma_unmap)
  *
  * Unmap IO virtual addresses using the provided struct vfio_dma_unmap.
- * Caller sets argsz.
+ * Caller sets argsz.  The actual unmapped size is returned in the size
+ * field.  No guarantee is made to the user that arbitrary unmaps of iova
+ * or size different from those used in the original mapping call will
+ * succeed.
  */
 struct vfio_iommu_type1_dma_unmap {
 	__u32	argsz;

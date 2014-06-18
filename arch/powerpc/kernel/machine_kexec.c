@@ -18,6 +18,7 @@
 #include <linux/ftrace.h>
 
 #include <asm/machdep.h>
+#include <asm/pgalloc.h>
 #include <asm/prom.h>
 #include <asm/sections.h>
 
@@ -75,6 +76,17 @@ void arch_crash_save_vmcoreinfo(void)
 #ifndef CONFIG_NEED_MULTIPLE_NODES
 	VMCOREINFO_SYMBOL(contig_page_data);
 #endif
+#if defined(CONFIG_PPC64) && defined(CONFIG_SPARSEMEM_VMEMMAP)
+	VMCOREINFO_SYMBOL(vmemmap_list);
+	VMCOREINFO_SYMBOL(mmu_vmemmap_psize);
+	VMCOREINFO_SYMBOL(mmu_psize_defs);
+	VMCOREINFO_STRUCT_SIZE(vmemmap_backing);
+	VMCOREINFO_OFFSET(vmemmap_backing, list);
+	VMCOREINFO_OFFSET(vmemmap_backing, phys);
+	VMCOREINFO_OFFSET(vmemmap_backing, virt_addr);
+	VMCOREINFO_STRUCT_SIZE(mmu_psize_def);
+	VMCOREINFO_OFFSET(mmu_psize_def, shift);
+#endif
 }
 
 /*
@@ -98,6 +110,45 @@ void machine_kexec(struct kimage *image)
 	machine_restart(NULL);
 	for(;;);
 }
+
+#ifdef CONFIG_KEXEC_AUTO_RESERVE
+unsigned long long __init arch_default_crash_base(void)
+{
+#ifndef CONFIG_RELOCATABLE
+	return KDUMP_KERNELBASE;
+#else
+	return 0;
+#endif
+}
+
+unsigned long long __init arch_default_crash_size(unsigned long long total_size)
+{
+	if (total_size < KEXEC_AUTO_THRESHOLD)
+		return 0;
+
+#ifdef CONFIG_64BIT
+	/*
+	 * crashkernel 'auto' reservation scheme
+	 * 2G-4G:256M,4G-32G:512M,32G-64G:1G,64G-128G:2G,128G-:4G
+	 */
+	if (total_size < (1ULL<<32)) /* 4G */
+		return 1ULL<<28; /* 256M */
+	if (total_size < (1ULL<<35)) /* 32G */
+		return 1ULL<<29; /* 512M */
+	if (total_size < (1ULL<<36)) /* 64G */
+		return 1ULL<<30; /* 1G */
+	if (total_size < (1ULL<<37)) /* 128G */
+		return 1ULL<<31; /* 2G */
+
+	return 1ULL<<32; /* 4G */
+#else
+	if (total_size < (1ULL<<32))
+		return 1ULL<<27;
+	else
+		return 1ULL<<28;
+#endif
+}
+#endif
 
 void __init reserve_crashkernel(void)
 {

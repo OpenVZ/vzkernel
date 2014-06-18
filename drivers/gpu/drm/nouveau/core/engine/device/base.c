@@ -158,22 +158,23 @@ nouveau_devobj_ctor(struct nouveau_object *parent,
 		iounmap(map);
 
 		/* determine chipset and derive architecture from it */
-		if ((boot0 & 0x0f000000) > 0) {
-			device->chipset = (boot0 & 0xff00000) >> 20;
-			switch (device->chipset & 0xf0) {
-			case 0x10: device->card_type = NV_10; break;
-			case 0x20: device->card_type = NV_20; break;
-			case 0x30: device->card_type = NV_30; break;
-			case 0x40:
-			case 0x60: device->card_type = NV_40; break;
-			case 0x50:
-			case 0x80:
-			case 0x90:
-			case 0xa0: device->card_type = NV_50; break;
-			case 0xc0: device->card_type = NV_C0; break;
-			case 0xd0: device->card_type = NV_D0; break;
-			case 0xe0:
-			case 0xf0: device->card_type = NV_E0; break;
+		if ((boot0 & 0x1f000000) > 0) {
+			device->chipset = (boot0 & 0x1ff00000) >> 20;
+			switch (device->chipset & 0x1f0) {
+			case 0x010: device->card_type = NV_10; break;
+			case 0x020: device->card_type = NV_20; break;
+			case 0x030: device->card_type = NV_30; break;
+			case 0x040:
+			case 0x060: device->card_type = NV_40; break;
+			case 0x050:
+			case 0x080:
+			case 0x090:
+			case 0x0a0: device->card_type = NV_50; break;
+			case 0x0c0: device->card_type = NV_C0; break;
+			case 0x0d0: device->card_type = NV_D0; break;
+			case 0x0e0:
+			case 0x0f0:
+			case 0x100: device->card_type = NV_E0; break;
 			default:
 				break;
 			}
@@ -255,6 +256,8 @@ nouveau_devobj_ctor(struct nouveau_object *parent,
 			continue;
 		if (ret)
 			return ret;
+
+		device->subdev[i] = devobj->subdev[i];
 
 		/* note: can't init *any* subdevs until devinit has been run
 		 * due to not knowing exactly what the vbios init tables will

@@ -35,6 +35,9 @@
 #include <linux/eventfd.h>
 #include <linux/blkdev.h>
 #include <linux/compat.h>
+#include <linux/migrate.h>
+#include <linux/ramfs.h>
+#include <linux/mount.h>
 
 #include <asm/kmap_types.h>
 #include <asm/uaccess.h>
@@ -108,6 +111,7 @@ struct kioctx {
 	} ____cacheline_aligned_in_smp;
 
 	struct page		*internal_pages[AIO_RING_PAGES];
+	struct file		*aio_ring_file;
 };
 
 /*------ sysctl variables----*/
@@ -119,12 +123,67 @@ unsigned long aio_max_nr = 0x10000; /* system wide maximum number of aio request
 static struct kmem_cache	*kiocb_cachep;
 static struct kmem_cache	*kioctx_cachep;
 
+static struct vfsmount *aio_mnt;
+
+static const struct file_operations aio_ring_fops;
+static const struct address_space_operations aio_ctx_aops;
+
+static struct file *aio_private_file(struct kioctx *ctx, loff_t nr_pages)
+{
+	struct qstr this = QSTR_INIT("[aio]", 5);
+	struct file *file;
+	struct path path;
+	struct inode *inode = alloc_anon_inode(aio_mnt->mnt_sb);
+	if (IS_ERR(inode))
+		return ERR_CAST(inode);
+
+	inode->i_mapping->a_ops = &aio_ctx_aops;
+	inode->i_mapping->private_data = ctx;
+	inode->i_size = PAGE_SIZE * nr_pages;
+
+	path.dentry = d_alloc_pseudo(aio_mnt->mnt_sb, &this);
+	if (!path.dentry) {
+		iput(inode);
+		return ERR_PTR(-ENOMEM);
+	}
+	path.mnt = mntget(aio_mnt);
+
+	d_instantiate(path.dentry, inode);
+	file = alloc_file(&path, FMODE_READ | FMODE_WRITE, &aio_ring_fops);
+	if (IS_ERR(file)) {
+		path_put(&path);
+		return file;
+	}
+
+	file->f_flags = O_RDWR;
+	file->private_data = ctx;
+	return file;
+}
+
+static struct dentry *aio_mount(struct file_system_type *fs_type,
+				int flags, const char *dev_name, void *data)
+{
+	static const struct dentry_operations ops = {
+		.d_dname	= simple_dname,
+	};
+	return mount_pseudo(fs_type, "aio:", NULL, &ops, 0xa10a10a1);
+}
+
 /* aio_setup
  *	Creates the slab caches used by the aio routines, panic on
  *	failure as this is done early during the boot sequence.
  */
 static int __init aio_setup(void)
 {
+	static struct file_system_type aio_fs = {
+		.name		= "aio",
+		.mount		= aio_mount,
+		.kill_sb	= kill_anon_super,
+	};
+	aio_mnt = kern_mount(&aio_fs);
+	if (IS_ERR(aio_mnt))
+		panic("Failed to create aio fs mount.");
+
 	kiocb_cachep = KMEM_CACHE(kiocb, SLAB_HWCACHE_ALIGN|SLAB_PANIC);
 	kioctx_cachep = KMEM_CACHE(kioctx,SLAB_HWCACHE_ALIGN|SLAB_PANIC);
 
@@ -134,16 +193,101 @@ static int __init aio_setup(void)
 }
 __initcall(aio_setup);
 
+static void put_aio_ring_file(struct kioctx *ctx)
+{
+	struct file *aio_ring_file = ctx->aio_ring_file;
+	if (aio_ring_file) {
+		truncate_setsize(aio_ring_file->f_inode, 0);
+
+		/* Prevent further access to the kioctx from migratepages */
+		spin_lock(&aio_ring_file->f_inode->i_mapping->private_lock);
+		aio_ring_file->f_inode->i_mapping->private_data = NULL;
+		ctx->aio_ring_file = NULL;
+		spin_unlock(&aio_ring_file->f_inode->i_mapping->private_lock);
+
+		fput(aio_ring_file);
+	}
+}
+
 static void aio_free_ring(struct kioctx *ctx)
 {
-	long i;
+	int i;
 
-	for (i = 0; i < ctx->nr_pages; i++)
+	for (i = 0; i < ctx->nr_pages; i++) {
+		pr_debug("pid(%d) [%d] page->count=%d\n", current->pid, i,
+				page_count(ctx->ring_pages[i]));
 		put_page(ctx->ring_pages[i]);
+	}
+
+	put_aio_ring_file(ctx);
 
 	if (ctx->ring_pages && ctx->ring_pages != ctx->internal_pages)
 		kfree(ctx->ring_pages);
 }
+
+static int aio_ring_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	vma->vm_ops = &generic_file_vm_ops;
+	return 0;
+}
+
+static const struct file_operations aio_ring_fops = {
+	.mmap = aio_ring_mmap,
+};
+
+static int aio_set_page_dirty(struct page *page)
+{
+	return 0;
+}
+
+#if IS_ENABLED(CONFIG_MIGRATION)
+static int aio_migratepage(struct address_space *mapping, struct page *new,
+			struct page *old, enum migrate_mode mode)
+{
+	struct kioctx *ctx;
+	unsigned long flags;
+	int rc;
+
+	/* Writeback must be complete */
+	BUG_ON(PageWriteback(old));
+	put_page(old);
+
+	rc = migrate_page_move_mapping(mapping, new, old, NULL, mode);
+	if (rc != MIGRATEPAGE_SUCCESS) {
+		get_page(old);
+		return rc;
+	}
+
+	get_page(new);
+
+	/* We can potentially race against kioctx teardown here.  Use the
+	 * address_space's private data lock to protect the mapping's
+	 * private_data.
+	 */
+	spin_lock(&mapping->private_lock);
+	ctx = mapping->private_data;
+	if (ctx) {
+		pgoff_t idx;
+		spin_lock_irqsave(&ctx->completion_lock, flags);
+		migrate_page_copy(new, old);
+		idx = old->index;
+		if (idx < (pgoff_t)ctx->nr_pages)
+			ctx->ring_pages[idx] = new;
+		spin_unlock_irqrestore(&ctx->completion_lock, flags);
+	} else
+		rc = -EBUSY;
+	spin_unlock(&mapping->private_lock);
+
+	return rc;
+}
+#endif
+
+static const struct address_space_operations aio_ctx_aops = {
+	.set_page_dirty = aio_set_page_dirty,
+#if IS_ENABLED(CONFIG_MIGRATION)
+	.migratepage	= aio_migratepage,
+#endif
+};
 
 static int aio_setup_ring(struct kioctx *ctx)
 {
@@ -152,20 +296,42 @@ static int aio_setup_ring(struct kioctx *ctx)
 	struct mm_struct *mm = current->mm;
 	unsigned long size, populate;
 	int nr_pages;
+	int i;
+	struct file *file;
+	unsigned long flags;
 
 	/* Compensate for the ring buffer's head/tail overlap entry */
 	nr_events += 2;	/* 1 is required, 2 for good luck */
 
 	size = sizeof(struct aio_ring);
 	size += sizeof(struct io_event) * nr_events;
-	nr_pages = (size + PAGE_SIZE-1) >> PAGE_SHIFT;
 
+	nr_pages = PFN_UP(size);
 	if (nr_pages < 0)
 		return -EINVAL;
 
-	nr_events = (PAGE_SIZE * nr_pages - sizeof(struct aio_ring)) / sizeof(struct io_event);
+	file = aio_private_file(ctx, nr_pages);
+	if (IS_ERR(file)) {
+		ctx->aio_ring_file = NULL;
+		return -EAGAIN;
+	}
 
-	ctx->nr_events = 0;
+	for (i = 0; i < nr_pages; i++) {
+		struct page *page;
+		page = find_or_create_page(file->f_inode->i_mapping,
+					   i, GFP_HIGHUSER | __GFP_ZERO);
+		if (!page)
+			break;
+		pr_debug("pid(%d) page[%d]->count=%d\n",
+			 current->pid, i, page_count(page));
+		SetPageUptodate(page);
+		SetPageDirty(page);
+		unlock_page(page);
+	}
+	ctx->aio_ring_file = file;
+	nr_events = (PAGE_SIZE * nr_pages - sizeof(struct aio_ring))
+			/ sizeof(struct io_event);
+
 	ctx->ring_pages = ctx->internal_pages;
 	if (nr_pages > AIO_RING_PAGES) {
 		ctx->ring_pages = kcalloc(nr_pages, sizeof(struct page *),
@@ -176,10 +342,11 @@ static int aio_setup_ring(struct kioctx *ctx)
 
 	ctx->mmap_size = nr_pages * PAGE_SIZE;
 	pr_debug("attempting mmap of %lu bytes\n", ctx->mmap_size);
+
 	down_write(&mm->mmap_sem);
-	ctx->mmap_base = do_mmap_pgoff(NULL, 0, ctx->mmap_size,
-				       PROT_READ|PROT_WRITE,
-				       MAP_ANONYMOUS|MAP_PRIVATE, 0, &populate);
+	ctx->mmap_base = do_mmap_pgoff(ctx->aio_ring_file, 0, ctx->mmap_size,
+				       PROT_READ | PROT_WRITE,
+				       MAP_SHARED | MAP_POPULATE, 0, &populate);
 	if (IS_ERR((void *)ctx->mmap_base)) {
 		up_write(&mm->mmap_sem);
 		ctx->mmap_size = 0;
@@ -188,19 +355,38 @@ static int aio_setup_ring(struct kioctx *ctx)
 	}
 
 	pr_debug("mmap address: 0x%08lx\n", ctx->mmap_base);
+
+	/* We must do this while still holding mmap_sem for write, as we
+	 * need to be protected against userspace attempting to mremap()
+	 * or munmap() the ring buffer.
+	 */
 	ctx->nr_pages = get_user_pages(current, mm, ctx->mmap_base, nr_pages,
 				       1, 0, ctx->ring_pages, NULL);
+
+	/* Dropping the reference here is safe as the page cache will hold
+	 * onto the pages for us.  It is also required so that page migration
+	 * can unmap the pages and get the right reference count.
+	 */
+	for (i = 0; i < ctx->nr_pages; i++)
+		put_page(ctx->ring_pages[i]);
+
 	up_write(&mm->mmap_sem);
 
 	if (unlikely(ctx->nr_pages != nr_pages)) {
 		aio_free_ring(ctx);
 		return -EAGAIN;
 	}
-	if (populate)
-		mm_populate(ctx->mmap_base, populate);
 
 	ctx->user_id = ctx->mmap_base;
 	ctx->nr_events = nr_events; /* trusted copy */
+
+	/*
+	 * The aio ring pages are user space pages, so they can be migrated.
+	 * When writing to an aio ring page, we should ensure the page is not
+	 * being migrated. Aio page migration procedure is protected by
+	 * ctx->completion_lock, so we add this lock here.
+	 */
+	spin_lock_irqsave(&ctx->completion_lock, flags);
 
 	ring = kmap_atomic(ctx->ring_pages[0]);
 	ring->nr = nr_events;	/* user copy */
@@ -212,6 +398,8 @@ static int aio_setup_ring(struct kioctx *ctx)
 	ring->header_length = sizeof(struct aio_ring);
 	kunmap_atomic(ring);
 	flush_dcache_page(ctx->ring_pages[0]);
+
+	spin_unlock_irqrestore(&ctx->completion_lock, flags);
 
 	return 0;
 }
@@ -397,6 +585,7 @@ out_cleanup:
 	err = -EAGAIN;
 	aio_free_ring(ctx);
 out_freectx:
+	put_aio_ring_file(ctx);
 	kmem_cache_free(kioctx_cachep, ctx);
 	pr_debug("error allocating ioctx %d\n", err);
 	return ERR_PTR(err);
@@ -423,10 +612,12 @@ static void kill_ioctx_rcu(struct rcu_head *head)
  *	when the processes owning a context have all exited to encourage
  *	the rapid destruction of the kioctx.
  */
-static void kill_ioctx(struct kioctx *ctx)
+static void kill_ioctx(struct mm_struct *mm, struct kioctx *ctx)
 {
 	if (!atomic_xchg(&ctx->dead, 1)) {
+		spin_lock(&mm->ioctx_lock);
 		hlist_del_rcu(&ctx->list);
+		spin_unlock(&mm->ioctx_lock);
 
 		/*
 		 * It'd be more correct to do this in free_ioctx(), after all
@@ -494,7 +685,7 @@ void exit_aio(struct mm_struct *mm)
 		 */
 		ctx->mmap_size = 0;
 
-		kill_ioctx(ctx);
+		kill_ioctx(mm, ctx);
 	}
 }
 
@@ -703,6 +894,7 @@ static long aio_read_events_ring(struct kioctx *ctx,
 	unsigned head, pos;
 	long ret = 0;
 	int copy_ret;
+	unsigned long flags;
 
 	mutex_lock(&ctx->ring_lock);
 
@@ -747,10 +939,20 @@ static long aio_read_events_ring(struct kioctx *ctx,
 		head %= ctx->nr_events;
 	}
 
+	/*
+	 * The aio ring pages are user space pages, so they can be migrated.
+	 * When writing to an aio ring page, we should ensure the page is not
+	 * being migrated. Aio page migration procedure is protected by
+	 * ctx->completion_lock, so we add this lock here.
+	 */
+	spin_lock_irqsave(&ctx->completion_lock, flags);
+
 	ring = kmap_atomic(ctx->ring_pages[0]);
 	ring->head = head;
 	kunmap_atomic(ring);
 	flush_dcache_page(ctx->ring_pages[0]);
+
+	spin_unlock_irqrestore(&ctx->completion_lock, flags);
 
 	pr_debug("%li  h%u t%u\n", ret, head, ctx->tail);
 
@@ -852,7 +1054,7 @@ SYSCALL_DEFINE2(io_setup, unsigned, nr_events, aio_context_t __user *, ctxp)
 	if (!IS_ERR(ioctx)) {
 		ret = put_user(ioctx->user_id, ctxp);
 		if (ret)
-			kill_ioctx(ioctx);
+			kill_ioctx(current->mm, ioctx);
 		put_ioctx(ioctx);
 	}
 
@@ -870,7 +1072,7 @@ SYSCALL_DEFINE1(io_destroy, aio_context_t, ctx)
 {
 	struct kioctx *ioctx = lookup_ioctx(ctx);
 	if (likely(NULL != ioctx)) {
-		kill_ioctx(ioctx);
+		kill_ioctx(current->mm, ioctx);
 		put_ioctx(ioctx);
 		return 0;
 	}

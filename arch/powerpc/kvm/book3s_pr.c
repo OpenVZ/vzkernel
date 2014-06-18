@@ -444,7 +444,7 @@ void kvmppc_giveup_ext(struct kvm_vcpu *vcpu, ulong msr)
 #ifdef CONFIG_VSX
 	u64 *vcpu_vsx = vcpu->arch.vsr;
 #endif
-	u64 *thread_fpr = (u64*)t->fpr;
+	u64 *thread_fpr = &t->fp_state.fpr[0][0];
 	int i;
 
 	/*
@@ -466,13 +466,14 @@ void kvmppc_giveup_ext(struct kvm_vcpu *vcpu, ulong msr)
 		/*
 		 * Note that on CPUs with VSX, giveup_fpu stores
 		 * both the traditional FP registers and the added VSX
-		 * registers into thread.fpr[].
+		 * registers into thread.fp_state.fpr[].
 		 */
-		giveup_fpu(current);
+		if (current->thread.regs->msr & MSR_FP)
+			giveup_fpu(current);
 		for (i = 0; i < ARRAY_SIZE(vcpu->arch.fpr); i++)
 			vcpu_fpr[i] = thread_fpr[get_fpr_index(i)];
 
-		vcpu->arch.fpscr = t->fpscr.val;
+		vcpu->arch.fpscr = t->fp_state.fpscr;
 
 #ifdef CONFIG_VSX
 		if (cpu_has_feature(CPU_FTR_VSX))
@@ -483,9 +484,10 @@ void kvmppc_giveup_ext(struct kvm_vcpu *vcpu, ulong msr)
 
 #ifdef CONFIG_ALTIVEC
 	if (msr & MSR_VEC) {
-		giveup_altivec(current);
-		memcpy(vcpu->arch.vr, t->vr, sizeof(vcpu->arch.vr));
-		vcpu->arch.vscr = t->vscr;
+		if (current->thread.regs->msr & MSR_VEC)
+			giveup_altivec(current);
+		memcpy(vcpu->arch.vr, t->vr_state.vr, sizeof(vcpu->arch.vr));
+		vcpu->arch.vscr = t->vr_state.vscr;
 	}
 #endif
 
@@ -537,7 +539,7 @@ static int kvmppc_handle_ext(struct kvm_vcpu *vcpu, unsigned int exit_nr,
 #ifdef CONFIG_VSX
 	u64 *vcpu_vsx = vcpu->arch.vsr;
 #endif
-	u64 *thread_fpr = (u64*)t->fpr;
+	u64 *thread_fpr = &t->fp_state.fpr[0][0];
 	int i;
 
 	/* When we have paired singles, we emulate in software */
@@ -575,8 +577,6 @@ static int kvmppc_handle_ext(struct kvm_vcpu *vcpu, unsigned int exit_nr,
 	printk(KERN_INFO "Loading up ext 0x%lx\n", msr);
 #endif
 
-	current->thread.regs->msr |= msr;
-
 	if (msr & MSR_FP) {
 		for (i = 0; i < ARRAY_SIZE(vcpu->arch.fpr); i++)
 			thread_fpr[get_fpr_index(i)] = vcpu_fpr[i];
@@ -584,24 +584,44 @@ static int kvmppc_handle_ext(struct kvm_vcpu *vcpu, unsigned int exit_nr,
 		for (i = 0; i < ARRAY_SIZE(vcpu->arch.vsr) / 2; i++)
 			thread_fpr[get_fpr_index(i) + 1] = vcpu_vsx[i];
 #endif
-		t->fpscr.val = vcpu->arch.fpscr;
+		t->fp_state.fpscr = vcpu->arch.fpscr;
 		t->fpexc_mode = 0;
 		kvmppc_load_up_fpu();
 	}
 
 	if (msr & MSR_VEC) {
 #ifdef CONFIG_ALTIVEC
-		memcpy(t->vr, vcpu->arch.vr, sizeof(vcpu->arch.vr));
-		t->vscr = vcpu->arch.vscr;
+		memcpy(t->vr_state.vr, vcpu->arch.vr, sizeof(vcpu->arch.vr));
+		t->vr_state.vscr = vcpu->arch.vscr;
 		t->vrsave = -1;
 		kvmppc_load_up_altivec();
 #endif
 	}
 
+	current->thread.regs->msr |= msr;
 	vcpu->arch.guest_owned_ext |= msr;
 	kvmppc_recalc_shadow_msr(vcpu);
 
 	return RESUME_GUEST;
+}
+
+/*
+ * Kernel code using FP or VMX could have flushed guest state to
+ * the thread_struct; if so, get it back now.
+ */
+static void kvmppc_handle_lost_ext(struct kvm_vcpu *vcpu)
+{
+	unsigned long lost_ext;
+
+	lost_ext = vcpu->arch.guest_owned_ext & ~current->thread.regs->msr;
+	if (!lost_ext)
+		return;
+
+	if (lost_ext & MSR_FP)
+		kvmppc_load_up_fpu();
+	if (lost_ext & MSR_VEC)
+		kvmppc_load_up_altivec();
+	current->thread.regs->msr |= lost_ext;
 }
 
 int kvmppc_handle_exit(struct kvm_run *run, struct kvm_vcpu *vcpu,
@@ -892,6 +912,7 @@ program_interrupt:
 		} else {
 			kvmppc_lazy_ee_enable();
 		}
+		kvmppc_handle_lost_ext(vcpu);
 	}
 
 	trace_kvm_book3s_reenter(r, vcpu);
@@ -1094,12 +1115,10 @@ void kvmppc_core_vcpu_free(struct kvm_vcpu *vcpu)
 int kvmppc_vcpu_run(struct kvm_run *kvm_run, struct kvm_vcpu *vcpu)
 {
 	int ret;
-	double fpr[32][TS_FPRWIDTH];
-	unsigned int fpscr;
+	struct thread_fp_state fp;
 	int fpexc_mode;
 #ifdef CONFIG_ALTIVEC
-	vector128 vr[32];
-	vector128 vscr;
+	struct thread_vr_state vr;
 	unsigned long uninitialized_var(vrsave);
 	int used_vr;
 #endif
@@ -1131,8 +1150,7 @@ int kvmppc_vcpu_run(struct kvm_run *kvm_run, struct kvm_vcpu *vcpu)
 	/* Save FPU state in stack */
 	if (current->thread.regs->msr & MSR_FP)
 		giveup_fpu(current);
-	memcpy(fpr, current->thread.fpr, sizeof(current->thread.fpr));
-	fpscr = current->thread.fpscr.val;
+	fp = current->thread.fp_state;
 	fpexc_mode = current->thread.fpexc_mode;
 
 #ifdef CONFIG_ALTIVEC
@@ -1141,8 +1159,7 @@ int kvmppc_vcpu_run(struct kvm_run *kvm_run, struct kvm_vcpu *vcpu)
 	if (used_vr) {
 		if (current->thread.regs->msr & MSR_VEC)
 			giveup_altivec(current);
-		memcpy(vr, current->thread.vr, sizeof(current->thread.vr));
-		vscr = current->thread.vscr;
+		vr = current->thread.vr_state;
 		vrsave = current->thread.vrsave;
 	}
 #endif
@@ -1174,15 +1191,13 @@ int kvmppc_vcpu_run(struct kvm_run *kvm_run, struct kvm_vcpu *vcpu)
 	current->thread.regs->msr = ext_msr;
 
 	/* Restore FPU/VSX state from stack */
-	memcpy(current->thread.fpr, fpr, sizeof(current->thread.fpr));
-	current->thread.fpscr.val = fpscr;
+	current->thread.fp_state = fp;
 	current->thread.fpexc_mode = fpexc_mode;
 
 #ifdef CONFIG_ALTIVEC
 	/* Restore Altivec state from stack */
 	if (used_vr && current->thread.used_vr) {
-		memcpy(current->thread.vr, vr, sizeof(current->thread.vr));
-		current->thread.vscr = vscr;
+		current->thread.vr_state = vr;
 		current->thread.vrsave = vrsave;
 	}
 	current->thread.used_vr = used_vr;

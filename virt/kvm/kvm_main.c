@@ -889,21 +889,6 @@ int __kvm_set_memory_region(struct kvm *kvm,
 			goto out_free;
 	}
 
-	/*
-	 * IOMMU mapping:  New slots need to be mapped.  Old slots need to be
-	 * un-mapped and re-mapped if their base changes.  Since base change
-	 * unmapping is handled above with slot deletion, mapping alone is
-	 * needed here.  Anything else the iommu might care about for existing
-	 * slots (size changes, userspace addr changes and read-only flag
-	 * changes) is disallowed above, so any other attribute changes getting
-	 * here can be skipped.
-	 */
-	if ((change == KVM_MR_CREATE) || (change == KVM_MR_MOVE)) {
-		r = kvm_iommu_map_pages(kvm, &new);
-		if (r)
-			goto out_slots;
-	}
-
 	/* actual memory is freed via old in kvm_free_physmem_slot below */
 	if (change == KVM_MR_DELETE) {
 		new.dirty_bitmap = NULL;
@@ -916,6 +901,20 @@ int __kvm_set_memory_region(struct kvm *kvm,
 
 	kvm_free_physmem_slot(&old, &new);
 	kfree(old_memslots);
+
+	/*
+	 * IOMMU mapping:  New slots need to be mapped.  Old slots need to be
+	 * un-mapped and re-mapped if their base changes.  Since base change
+	 * unmapping is handled above with slot deletion, mapping alone is
+	 * needed here.  Anything else the iommu might care about for existing
+	 * slots (size changes, userspace addr changes and read-only flag
+	 * changes) is disallowed above, so any other attribute changes getting
+	 * here can be skipped.
+	 */
+	if ((change == KVM_MR_CREATE) || (change == KVM_MR_MOVE)) {
+		r = kvm_iommu_map_pages(kvm, &new);
+		return r;
+	}
 
 	return 0;
 
@@ -1904,6 +1903,9 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, u32 id)
 	int r;
 	struct kvm_vcpu *vcpu, *v;
 
+	if (id >= KVM_MAX_VCPUS)
+		return -EINVAL;
+
 	vcpu = kvm_arch_vcpu_create(kvm, id);
 	if (IS_ERR(vcpu))
 		return PTR_ERR(vcpu);
@@ -2280,6 +2282,11 @@ static int kvm_ioctl_create_device(struct kvm *kvm,
 #ifdef CONFIG_KVM_XICS
 	case KVM_DEV_TYPE_XICS:
 		ops = &kvm_xics_ops;
+		break;
+#endif
+#ifdef CONFIG_KVM_VFIO
+	case KVM_DEV_TYPE_VFIO:
+		ops = &kvm_vfio_ops;
 		break;
 #endif
 	default:
@@ -2729,18 +2736,28 @@ static void hardware_disable_all_nolock(void)
 
 static void hardware_disable_all(void)
 {
+	int count;
+	char count_string[20];
+	char event_string[] = "EVENT=terminate";
+	char *envp[] = { event_string, count_string, NULL };
+
 	raw_spin_lock(&kvm_lock);
 	hardware_disable_all_nolock();
+	count = kvm_usage_count;
 	raw_spin_unlock(&kvm_lock);
+
+	sprintf(count_string, "COUNT=%d", count);
+	kobject_uevent_env(&kvm_dev.this_device->kobj, KOBJ_CHANGE, envp);
 }
 
 static int hardware_enable_all(void)
 {
 	int r = 0;
+	int count;
 
 	raw_spin_lock(&kvm_lock);
 
-	kvm_usage_count++;
+	count = ++kvm_usage_count;
 	if (kvm_usage_count == 1) {
 		atomic_set(&hardware_enable_failed, 0);
 		on_each_cpu(hardware_enable_nolock, NULL, 1);
@@ -2753,6 +2770,14 @@ static int hardware_enable_all(void)
 
 	raw_spin_unlock(&kvm_lock);
 
+	if (r == 0) {
+		char count_string[20];
+		char event_string[] = "EVENT=create";
+		char *envp[] = { event_string, count_string, NULL };
+
+		sprintf(count_string, "COUNT=%d", count);
+		kobject_uevent_env(&kvm_dev.this_device->kobj, KOBJ_CHANGE, envp);
+	}
 	return r;
 }
 
@@ -2863,11 +2888,48 @@ static int kvm_io_bus_get_first_dev(struct kvm_io_bus *bus,
 	return off;
 }
 
+static int __kvm_io_bus_write(struct kvm_io_bus *bus,
+			      struct kvm_io_range *range, const void *val)
+{
+	int idx;
+
+	idx = kvm_io_bus_get_first_dev(bus, range->addr, range->len);
+	if (idx < 0)
+		return -EOPNOTSUPP;
+
+	while (idx < bus->dev_count &&
+		kvm_io_bus_sort_cmp(range, &bus->range[idx]) == 0) {
+		if (!kvm_iodevice_write(bus->range[idx].dev, range->addr,
+					range->len, val))
+			return idx;
+		idx++;
+	}
+
+	return -EOPNOTSUPP;
+}
+
 /* kvm_io_bus_write - called under kvm->slots_lock */
 int kvm_io_bus_write(struct kvm *kvm, enum kvm_bus bus_idx, gpa_t addr,
 		     int len, const void *val)
 {
-	int idx;
+	struct kvm_io_bus *bus;
+	struct kvm_io_range range;
+	int r;
+
+	range = (struct kvm_io_range) {
+		.addr = addr,
+		.len = len,
+	};
+
+	bus = srcu_dereference(kvm->buses[bus_idx], &kvm->srcu);
+	r = __kvm_io_bus_write(bus, &range, val);
+	return r < 0 ? r : 0;
+}
+
+/* kvm_io_bus_write_cookie - called under kvm->slots_lock */
+int kvm_io_bus_write_cookie(struct kvm *kvm, enum kvm_bus bus_idx, gpa_t addr,
+			    int len, const void *val, long cookie)
+{
 	struct kvm_io_bus *bus;
 	struct kvm_io_range range;
 
@@ -2877,14 +2939,35 @@ int kvm_io_bus_write(struct kvm *kvm, enum kvm_bus bus_idx, gpa_t addr,
 	};
 
 	bus = srcu_dereference(kvm->buses[bus_idx], &kvm->srcu);
-	idx = kvm_io_bus_get_first_dev(bus, addr, len);
+
+	/* First try the device referenced by cookie. */
+	if ((cookie >= 0) && (cookie < bus->dev_count) &&
+	    (kvm_io_bus_sort_cmp(&range, &bus->range[cookie]) == 0))
+		if (!kvm_iodevice_write(bus->range[cookie].dev, addr, len,
+					val))
+			return cookie;
+
+	/*
+	 * cookie contained garbage; fall back to search and return the
+	 * correct cookie value.
+	 */
+	return __kvm_io_bus_write(bus, &range, val);
+}
+
+static int __kvm_io_bus_read(struct kvm_io_bus *bus, struct kvm_io_range *range,
+			     void *val)
+{
+	int idx;
+
+	idx = kvm_io_bus_get_first_dev(bus, range->addr, range->len);
 	if (idx < 0)
 		return -EOPNOTSUPP;
 
 	while (idx < bus->dev_count &&
-		kvm_io_bus_sort_cmp(&range, &bus->range[idx]) == 0) {
-		if (!kvm_iodevice_write(bus->range[idx].dev, addr, len, val))
-			return 0;
+		kvm_io_bus_sort_cmp(range, &bus->range[idx]) == 0) {
+		if (!kvm_iodevice_read(bus->range[idx].dev, range->addr,
+				       range->len, val))
+			return idx;
 		idx++;
 	}
 
@@ -2895,7 +2978,24 @@ int kvm_io_bus_write(struct kvm *kvm, enum kvm_bus bus_idx, gpa_t addr,
 int kvm_io_bus_read(struct kvm *kvm, enum kvm_bus bus_idx, gpa_t addr,
 		    int len, void *val)
 {
-	int idx;
+	struct kvm_io_bus *bus;
+	struct kvm_io_range range;
+	int r;
+
+	range = (struct kvm_io_range) {
+		.addr = addr,
+		.len = len,
+	};
+
+	bus = srcu_dereference(kvm->buses[bus_idx], &kvm->srcu);
+	r = __kvm_io_bus_read(bus, &range, val);
+	return r < 0 ? r : 0;
+}
+
+/* kvm_io_bus_read_cookie - called under kvm->slots_lock */
+int kvm_io_bus_read_cookie(struct kvm *kvm, enum kvm_bus bus_idx, gpa_t addr,
+			   int len, void *val, long cookie)
+{
 	struct kvm_io_bus *bus;
 	struct kvm_io_range range;
 
@@ -2905,18 +3005,19 @@ int kvm_io_bus_read(struct kvm *kvm, enum kvm_bus bus_idx, gpa_t addr,
 	};
 
 	bus = srcu_dereference(kvm->buses[bus_idx], &kvm->srcu);
-	idx = kvm_io_bus_get_first_dev(bus, addr, len);
-	if (idx < 0)
-		return -EOPNOTSUPP;
 
-	while (idx < bus->dev_count &&
-		kvm_io_bus_sort_cmp(&range, &bus->range[idx]) == 0) {
-		if (!kvm_iodevice_read(bus->range[idx].dev, addr, len, val))
-			return 0;
-		idx++;
-	}
+	/* First try the device referenced by cookie. */
+	if ((cookie >= 0) && (cookie < bus->dev_count) &&
+	    (kvm_io_bus_sort_cmp(&range, &bus->range[cookie]) == 0))
+		if (!kvm_iodevice_read(bus->range[cookie].dev, addr, len,
+				       val))
+			return cookie;
 
-	return -EOPNOTSUPP;
+	/*
+	 * cookie contained garbage; fall back to search and return the
+	 * correct cookie value.
+	 */
+	return __kvm_io_bus_read(bus, &range, val);
 }
 
 /* Caller must hold slots_lock. */
@@ -2926,7 +3027,8 @@ int kvm_io_bus_register_dev(struct kvm *kvm, enum kvm_bus bus_idx, gpa_t addr,
 	struct kvm_io_bus *new_bus, *bus;
 
 	bus = kvm->buses[bus_idx];
-	if (bus->dev_count > NR_IOBUS_DEVS - 1)
+	/* exclude ioeventfd which is limited by maximum fd */
+	if (bus->dev_count - bus->ioeventfd_count > NR_IOBUS_DEVS - 1)
 		return -ENOSPC;
 
 	new_bus = kzalloc(sizeof(*bus) + ((bus->dev_count + 1) *
@@ -3181,6 +3283,7 @@ int kvm_init(void *opaque, unsigned vcpu_size, unsigned vcpu_align,
 
 out_undebugfs:
 	unregister_syscore_ops(&kvm_syscore_ops);
+	misc_deregister(&kvm_dev);
 out_unreg:
 	kvm_async_pf_deinit();
 out_free:

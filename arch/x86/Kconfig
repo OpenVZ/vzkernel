@@ -16,6 +16,7 @@ config X86_64
 	def_bool y
 	depends on 64BIT
 	select X86_DEV_DMA_OPS
+	select ARCH_USE_CMPXCHG_LOCKREF
 
 ### Arch settings
 config X86
@@ -102,7 +103,6 @@ config X86
 	select HAVE_ARCH_SECCOMP_FILTER
 	select BUILDTIME_EXTABLE_SORT
 	select GENERIC_CMOS_UPDATE
-	select CLOCKSOURCE_WATCHDOG
 	select GENERIC_CLOCKEVENTS
 	select ARCH_CLOCKSOURCE_DATA if X86_64
 	select GENERIC_CLOCKEVENTS_BROADCAST if X86_64 || (X86_32 && X86_LOCAL_APIC)
@@ -121,6 +121,7 @@ config X86
 	select OLD_SIGACTION if X86_32
 	select COMPAT_OLD_SIGACTION if IA32_EMULATION
 	select RTC_LIB
+	select HAVE_CC_STACKPROTECTOR
 
 config INSTRUCTION_DECODER
 	def_bool y
@@ -621,6 +622,7 @@ config PARAVIRT_DEBUG
 config PARAVIRT_SPINLOCKS
 	bool "Paravirtualization layer for spinlocks"
 	depends on PARAVIRT && SMP
+	select UNINLINE_SPIN_UNLOCK
 	---help---
 	  Paravirtualized spinlocks allow a pvops backend to replace the
 	  spinlock implementation with something virtualization-friendly
@@ -644,6 +646,15 @@ config KVM_GUEST
 	  of relying on a PIT (or probably other) emulation by the
 	  underlying device model, the host provides the guest with
 	  timing infrastructure such as time of day, and system time
+
+config KVM_DEBUG_FS
+	bool "Enable debug information for KVM Guests in debugfs"
+	depends on KVM_GUEST && DEBUG_FS
+	default n
+	---help---
+	  This option enables collection of various statistics for KVM guest.
+	  Statistics are displayed in debugfs filesystem. Enabling this option
+	  may incur significant overhead.
 
 source "arch/x86/lguest/Kconfig"
 
@@ -806,7 +817,7 @@ config NR_CPUS
 	range 2 8 if SMP && X86_32 && !X86_BIGSMP
 	range 2 512 if SMP && !MAXSMP
 	default "1" if !SMP
-	default "4096" if MAXSMP
+	default "5120" if MAXSMP
 	default "32" if SMP && (X86_NUMAQ || X86_SUMMIT || X86_BIGSMP || X86_ES7000)
 	default "8" if SMP
 	---help---
@@ -1058,18 +1069,22 @@ config MICROCODE_INTEL_LIB
 	depends on MICROCODE_INTEL
 
 config MICROCODE_INTEL_EARLY
+	def_bool n
+
+config MICROCODE_AMD_EARLY
+	def_bool n
+
+config MICROCODE_EARLY
 	bool "Early load microcode"
-	depends on MICROCODE_INTEL && BLK_DEV_INITRD
+	depends on MICROCODE=y && BLK_DEV_INITRD
+	select MICROCODE_INTEL_EARLY if MICROCODE_INTEL
+	select MICROCODE_AMD_EARLY if MICROCODE_AMD
 	default y
 	help
 	  This option provides functionality to read additional microcode data
 	  at the beginning of initrd image. The data tells kernel to load
 	  microcode to CPU's as early as possible. No functional change if no
 	  microcode data is glued to the initrd, therefore it's safe to say Y.
-
-config MICROCODE_EARLY
-	def_bool y
-	depends on MICROCODE_INTEL_EARLY
 
 config X86_MSR
 	tristate "/dev/cpu/*/msr - Model-specific register support"
@@ -1220,6 +1235,17 @@ config DIRECT_GBPAGES
 	  Allow the kernel linear mapping to use 1GB pages on CPUs that
 	  support it. This can improve the kernel's performance a tiny bit by
 	  reducing TLB pressure. If in doubt, say "Y".
+
+config TRACK_DIRTY_PAGES
+	bool "Enable dirty page tracking"
+	default n
+	depends on !KMEMCHECK
+	---help---
+	  Turning this on enables tracking of re-dirtied and
+	  changed pages.  This is needed by the Live Kernel
+	  Self Migration project (lksm.sourceforge.net) to perform
+	  live copying of memory and system state to another system.
+	  Most users will say n here.
 
 # Common NUMA Features
 config NUMA
@@ -1566,6 +1592,19 @@ config EFI_STUB
 
 	  See Documentation/x86/efi-stub.txt for more information.
 
+config EFI_SECURE_BOOT_SECURELEVEL
+        def_bool n
+	depends on SECURITY_SECURELEVEL
+	depends on EFI
+	prompt "Automatically set securelevel when UEFI Secure Boot is enabled"
+	---help---
+	  UEFI Secure Boot provides a mechanism for ensuring that the
+	  firmware will only load signed bootloaders and kernels. Certain
+	  use cases may also require that the kernel restrict any userspace
+	  mechanism that could insert untrusted code into the kernel.
+	  Say Y here to automatically enable securelevel enforcement
+	  when a system boots with UEFI Secure Boot enabled.
+
 config SECCOMP
 	def_bool y
 	prompt "Enable seccomp to safely compute untrusted bytecode"
@@ -1581,22 +1620,6 @@ config SECCOMP
 	  defined by each seccomp mode.
 
 	  If unsure, say Y. Only embedded should say N here.
-
-config CC_STACKPROTECTOR
-	bool "Enable -fstack-protector buffer overflow detection"
-	---help---
-	  This option turns on the -fstack-protector GCC feature. This
-	  feature puts, at the beginning of functions, a canary value on
-	  the stack just before the return address, and validates
-	  the value just before actually returning.  Stack based buffer
-	  overflows (that need to overwrite this return address) now also
-	  overwrite the canary, which gets detected and the attack is then
-	  neutralized via a kernel panic.
-
-	  This feature requires gcc version 4.2 or above, or a distribution
-	  gcc with the feature backported. Older versions are automatically
-	  detected and for those versions, this configuration option is
-	  ignored. (and a warning is printed during bootup)
 
 source kernel/Kconfig.hz
 
@@ -1615,6 +1638,19 @@ config KEXEC
 	  initially work for you.  It may help to enable device hotplugging
 	  support.  As of this writing the exact hardware interface is
 	  strongly in flux, so no good recommendation can be made.
+
+config KEXEC_AUTO_RESERVE
+       bool "automatically reserve memory for kexec kernel"
+       depends on KEXEC
+       default y
+       ---help---
+	 Automatically reserve memory for a kexec kernel, so that you don't
+	 need to specify numbers for the "crashkernel=X@Y" boot option,
+	 instead you can use "crashkernel=auto". To make this work, you need
+	 to have more than 4G memory.
+
+	 On x86_32, 128M is reserved, on x86_64 1/32 of your memory is
+	 reserved, but it will not exceed 4G.
 
 config CRASH_DUMP
 	bool "kernel crash dumps"
@@ -1725,7 +1761,7 @@ config PHYSICAL_ALIGN
 
 config HOTPLUG_CPU
 	bool "Support for hot-pluggable CPUs"
-	depends on SMP && HOTPLUG
+	depends on SMP
 	---help---
 	  Say Y here to allow turning CPUs off and on. CPUs can be
 	  controlled through /sys/devices/system/cpu.
@@ -1846,6 +1882,10 @@ config ARCH_ENABLE_MEMORY_HOTREMOVE
 config USE_PERCPU_NUMA_NODE_ID
 	def_bool y
 	depends on NUMA
+
+config ARCH_ENABLE_SPLIT_PMD_PTLOCK
+	def_bool y
+	depends on X86_64 || X86_PAE
 
 menu "Power management and ACPI options"
 
@@ -1999,7 +2039,6 @@ menu "Bus options (PCI etc.)"
 config PCI
 	bool "PCI support"
 	default y
-	select ARCH_SUPPORTS_MSI if (X86_LOCAL_APIC && X86_IO_APIC)
 	---help---
 	  Find out whether you have a PCI motherboard. PCI is the name of a
 	  bus system, i.e. the way the CPU talks to the other stuff inside

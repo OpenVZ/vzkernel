@@ -112,14 +112,11 @@ static __u32 check_tcp_syn_cookie(__u32 cookie, const struct in6_addr *saddr,
 		& COOKIEMASK;
 }
 
-__u32 cookie_v6_init_sequence(struct sock *sk, const struct sk_buff *skb, __u16 *mssp)
+u32 __cookie_v6_init_sequence(const struct ipv6hdr *iph,
+			      const struct tcphdr *th, __u16 *mssp)
 {
-	const struct ipv6hdr *iph = ipv6_hdr(skb);
-	const struct tcphdr *th = tcp_hdr(skb);
 	int mssind;
 	const __u16 mss = *mssp;
-
-	tcp_synq_overflow(sk);
 
 	for (mssind = ARRAY_SIZE(msstab) - 1; mssind ; mssind--)
 		if (mss >= msstab[mssind])
@@ -127,17 +124,26 @@ __u32 cookie_v6_init_sequence(struct sock *sk, const struct sk_buff *skb, __u16 
 
 	*mssp = msstab[mssind];
 
-	NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_SYNCOOKIESSENT);
-
 	return secure_tcp_syn_cookie(&iph->saddr, &iph->daddr, th->source,
 				     th->dest, ntohl(th->seq),
 				     jiffies / (HZ * 60), mssind);
 }
+EXPORT_SYMBOL_GPL(__cookie_v6_init_sequence);
 
-static inline int cookie_check(const struct sk_buff *skb, __u32 cookie)
+__u32 cookie_v6_init_sequence(struct sock *sk, const struct sk_buff *skb, __u16 *mssp)
 {
 	const struct ipv6hdr *iph = ipv6_hdr(skb);
 	const struct tcphdr *th = tcp_hdr(skb);
+
+	tcp_synq_overflow(sk);
+	NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_SYNCOOKIESSENT);
+
+	return __cookie_v6_init_sequence(iph, th, mssp);
+}
+
+int __cookie_v6_check(const struct ipv6hdr *iph, const struct tcphdr *th,
+		      __u32 cookie)
+{
 	__u32 seq = ntohl(th->seq) - 1;
 	__u32 mssind = check_tcp_syn_cookie(cookie, &iph->saddr, &iph->daddr,
 					    th->source, th->dest, seq,
@@ -145,12 +151,12 @@ static inline int cookie_check(const struct sk_buff *skb, __u32 cookie)
 
 	return mssind < ARRAY_SIZE(msstab) ? msstab[mssind] : 0;
 }
+EXPORT_SYMBOL_GPL(__cookie_v6_check);
 
 struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_options_received tcp_opt;
 	struct inet_request_sock *ireq;
-	struct inet6_request_sock *ireq6;
 	struct tcp_request_sock *treq;
 	struct ipv6_pinfo *np = inet6_sk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -167,7 +173,7 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 		goto out;
 
 	if (tcp_synq_no_recent_overflow(sk) ||
-		(mss = cookie_check(skb, cookie)) == 0) {
+		(mss = __cookie_v6_check(ipv6_hdr(skb), th, cookie)) == 0) {
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_SYNCOOKIESFAILED);
 		goto out;
 	}
@@ -187,7 +193,6 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 		goto out;
 
 	ireq = inet_rsk(req);
-	ireq6 = inet6_rsk(req);
 	treq = tcp_rsk(req);
 	treq->listener = NULL;
 
@@ -195,22 +200,22 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 		goto out_free;
 
 	req->mss = mss;
-	ireq->rmt_port = th->source;
-	ireq->loc_port = th->dest;
-	ireq6->rmt_addr = ipv6_hdr(skb)->saddr;
-	ireq6->loc_addr = ipv6_hdr(skb)->daddr;
+	ireq->ir_rmt_port = th->source;
+	ireq->ir_num = ntohs(th->dest);
+	ireq->ir_v6_rmt_addr = ipv6_hdr(skb)->saddr;
+	ireq->ir_v6_loc_addr = ipv6_hdr(skb)->daddr;
 	if (ipv6_opt_accepted(sk, skb) ||
 	    np->rxopt.bits.rxinfo || np->rxopt.bits.rxoinfo ||
 	    np->rxopt.bits.rxhlim || np->rxopt.bits.rxohlim) {
 		atomic_inc(&skb->users);
-		ireq6->pktopts = skb;
+		ireq->pktopts = skb;
 	}
 
-	ireq6->iif = sk->sk_bound_dev_if;
+	ireq->ir_iif = sk->sk_bound_dev_if;
 	/* So that link locals have meaning */
 	if (!sk->sk_bound_dev_if &&
-	    ipv6_addr_type(&ireq6->rmt_addr) & IPV6_ADDR_LINKLOCAL)
-		ireq6->iif = inet6_iif(skb);
+	    ipv6_addr_type(&ireq->ir_v6_rmt_addr) & IPV6_ADDR_LINKLOCAL)
+		ireq->ir_iif = inet6_iif(skb);
 
 	req->expires = 0UL;
 	req->num_retrans = 0;
@@ -234,12 +239,12 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 		struct flowi6 fl6;
 		memset(&fl6, 0, sizeof(fl6));
 		fl6.flowi6_proto = IPPROTO_TCP;
-		fl6.daddr = ireq6->rmt_addr;
+		fl6.daddr = ireq->ir_v6_rmt_addr;
 		final_p = fl6_update_dst(&fl6, np->opt, &final);
-		fl6.saddr = ireq6->loc_addr;
+		fl6.saddr = ireq->ir_v6_loc_addr;
 		fl6.flowi6_oif = sk->sk_bound_dev_if;
 		fl6.flowi6_mark = sk->sk_mark;
-		fl6.fl6_dport = inet_rsk(req)->rmt_port;
+		fl6.fl6_dport = ireq->ir_rmt_port;
 		fl6.fl6_sport = inet_sk(sk)->inet_sport;
 		security_req_classify_flow(req, flowi6_to_flowi(&fl6));
 

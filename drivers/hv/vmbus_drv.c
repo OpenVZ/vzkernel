@@ -46,6 +46,12 @@ static struct tasklet_struct msg_dpc;
 static struct completion probe_event;
 static int irq;
 
+struct resource hyperv_mmio = {
+	.name  = "hyperv mmio",
+	.flags = IORESOURCE_MEM,
+};
+EXPORT_SYMBOL_GPL(hyperv_mmio);
+
 struct hv_device_info {
 	u32 chn_id;
 	u32 chn_state;
@@ -434,7 +440,7 @@ static void vmbus_on_msg_dpc(unsigned long data)
 		 * will not deliver any more messages since there is
 		 * no empty slot
 		 */
-		smp_mb();
+		mb();
 
 		if (msg->header.message_flags.msg_pending) {
 			/*
@@ -563,6 +569,9 @@ static int vmbus_bus_init(int irq)
 	 */
 	hv_register_vmbus_handler(irq, vmbus_isr);
 
+	ret = hv_synic_alloc();
+	if (ret)
+		goto err_alloc;
 	/*
 	 * Initialize the per-cpu interrupt state and
 	 * connect to the host.
@@ -570,13 +579,14 @@ static int vmbus_bus_init(int irq)
 	on_each_cpu(hv_synic_init, NULL, 1);
 	ret = vmbus_connect();
 	if (ret)
-		goto err_irq;
+		goto err_alloc;
 
 	vmbus_request_offers();
 
 	return 0;
 
-err_irq:
+err_alloc:
+	hv_synic_free();
 	free_irq(irq, hv_acpi_dev);
 
 err_unregister:
@@ -686,7 +696,7 @@ int vmbus_device_register(struct hv_device *child_device_obj)
 	if (ret)
 		pr_err("Unable to register child device\n");
 	else
-		pr_info("child device %s registered\n",
+		pr_debug("child device %s registered\n",
 			dev_name(&child_device_obj->device));
 
 	return ret;
@@ -698,30 +708,33 @@ int vmbus_device_register(struct hv_device *child_device_obj)
  */
 void vmbus_device_unregister(struct hv_device *device_obj)
 {
+	pr_debug("child device %s unregistered\n",
+		dev_name(&device_obj->device));
+
 	/*
 	 * Kick off the process of unregistering the device.
 	 * This will call vmbus_remove() and eventually vmbus_device_release()
 	 */
 	device_unregister(&device_obj->device);
-
-	pr_info("child device %s unregistered\n",
-		dev_name(&device_obj->device));
 }
 
 
 /*
- * VMBUS is an acpi enumerated device. Get the the IRQ information
- * from DSDT.
+ * VMBUS is an acpi enumerated device. Get the the information we
+ * need from DSDT.
  */
 
-static acpi_status vmbus_walk_resources(struct acpi_resource *res, void *irq)
+static acpi_status vmbus_walk_resources(struct acpi_resource *res, void *ctx)
 {
+	switch (res->type) {
+	case ACPI_RESOURCE_TYPE_IRQ:
+		irq = res->data.irq.interrupts[0];
+		break;
 
-	if (res->type == ACPI_RESOURCE_TYPE_IRQ) {
-		struct acpi_resource_irq *irqp;
-		irqp = &res->data.irq;
-
-		*((unsigned int *)irq) = irqp->interrupts[0];
+	case ACPI_RESOURCE_TYPE_ADDRESS64:
+		hyperv_mmio.start = res->data.address64.minimum;
+		hyperv_mmio.end = res->data.address64.maximum;
+		break;
 	}
 
 	return AE_OK;
@@ -730,18 +743,34 @@ static acpi_status vmbus_walk_resources(struct acpi_resource *res, void *irq)
 static int vmbus_acpi_add(struct acpi_device *device)
 {
 	acpi_status result;
+	int ret_val = -ENODEV;
 
 	hv_acpi_dev = device;
 
 	result = acpi_walk_resources(device->handle, METHOD_NAME__CRS,
-					vmbus_walk_resources, &irq);
+					vmbus_walk_resources, NULL);
 
-	if (ACPI_FAILURE(result)) {
-		complete(&probe_event);
-		return -ENODEV;
+	if (ACPI_FAILURE(result))
+		goto acpi_walk_err;
+	/*
+	 * The parent of the vmbus acpi device (Gen2 firmware) is the VMOD that
+	 * has the mmio ranges. Get that.
+	 */
+	if (device->parent) {
+		result = acpi_walk_resources(device->parent->handle,
+					METHOD_NAME__CRS,
+					vmbus_walk_resources, NULL);
+
+		if (ACPI_FAILURE(result))
+			goto acpi_walk_err;
+		if (hyperv_mmio.start && hyperv_mmio.end)
+			request_resource(&iomem_resource, &hyperv_mmio);
 	}
+	ret_val = 0;
+
+acpi_walk_err:
 	complete(&probe_event);
-	return 0;
+	return ret_val;
 }
 
 static const struct acpi_device_id vmbus_acpi_device_ids[] = {
@@ -812,7 +841,6 @@ static void __exit vmbus_exit(void)
 
 
 MODULE_LICENSE("GPL");
-MODULE_VERSION(HV_DRV_VERSION);
 
 subsys_initcall(hv_acpi_init);
 module_exit(vmbus_exit);

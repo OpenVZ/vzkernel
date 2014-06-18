@@ -434,6 +434,8 @@ static void scsi_run_queue(struct request_queue *q)
 	list_splice_init(&shost->starved_list, &starved_list);
 
 	while (!list_empty(&starved_list)) {
+		struct request_queue *slq;
+
 		/*
 		 * As long as shost is accepting commands and we have
 		 * starved queues, call blk_run_queue. scsi_request_fn
@@ -456,11 +458,25 @@ static void scsi_run_queue(struct request_queue *q)
 			continue;
 		}
 
-		spin_unlock(shost->host_lock);
-		spin_lock(sdev->request_queue->queue_lock);
-		__blk_run_queue(sdev->request_queue);
-		spin_unlock(sdev->request_queue->queue_lock);
-		spin_lock(shost->host_lock);
+		/*
+		 * Once we drop the host lock, a racing scsi_remove_device()
+		 * call may remove the sdev from the starved list and destroy
+		 * it and the queue.  Mitigate by taking a reference to the
+		 * queue and never touching the sdev again after we drop the
+		 * host lock.  Note: if __scsi_remove_device() invokes
+		 * blk_cleanup_queue() before the queue is run from this
+		 * function then blk_run_queue() will return immediately since
+		 * blk_cleanup_queue() marks the queue with QUEUE_FLAG_DYING.
+		 */
+		slq = sdev->request_queue;
+		if (!blk_get_queue(slq))
+			continue;
+		spin_unlock_irqrestore(shost->host_lock, flags);
+
+		blk_run_queue(slq);
+		blk_put_queue(slq);
+
+		spin_lock_irqsave(shost->host_lock, flags);
 	}
 	/* put any unprocessed entries back */
 	list_splice(&starved_list, &shost->starved_list);
@@ -477,6 +493,16 @@ void scsi_requeue_run_queue(struct work_struct *work)
 	sdev = container_of(work, struct scsi_device, requeue_work);
 	q = sdev->request_queue;
 	scsi_run_queue(q);
+}
+
+static void scsi_uninit_command(struct scsi_cmnd *cmd)
+{
+	if (cmd->request->cmd_type == REQ_TYPE_FS) {
+		struct scsi_driver *drv = scsi_cmd_to_driver(cmd);
+
+		if (drv->uninit_command)
+			drv->uninit_command(cmd);
+	}
 }
 
 /*
@@ -510,6 +536,8 @@ static void scsi_requeue_command(struct request_queue *q, struct scsi_cmnd *cmd)
 	 * releases its reference on the device.
 	 */
 	get_device(&sdev->sdev_gendev);
+
+	scsi_uninit_command(cmd);
 
 	spin_lock_irqsave(q->queue_lock, flags);
 	scsi_unprep_request(req);
@@ -700,6 +728,20 @@ void scsi_release_buffers(struct scsi_cmnd *cmd)
 }
 EXPORT_SYMBOL(scsi_release_buffers);
 
+/**
+ * __scsi_error_from_host_byte - translate SCSI error code into errno
+ * @cmd:	SCSI command (unused)
+ * @result:	scsi error code
+ *
+ * Translate SCSI error code into standard UNIX errno.
+ * Return values:
+ * -ENOLINK	temporary transport failure
+ * -EREMOTEIO	permanent target failure, do not retry
+ * -EBADE	permanent nexus failure, retry on other path
+ * -ENOSPC	No write space available
+ * -ENODATA	Medium error
+ * -EIO		unspecified I/O error
+ */
 static int __scsi_error_from_host_byte(struct scsi_cmnd *cmd, int result)
 {
 	int error = 0;
@@ -715,6 +757,14 @@ static int __scsi_error_from_host_byte(struct scsi_cmnd *cmd, int result)
 	case DID_NEXUS_FAILURE:
 		set_host_byte(cmd, DID_OK);
 		error = -EBADE;
+		break;
+	case DID_ALLOC_FAILURE:
+		set_host_byte(cmd, DID_OK);
+		error = -ENOSPC;
+		break;
+	case DID_MEDIUM_ERROR:
+		set_host_byte(cmd, DID_OK);
+		error = -ENODATA;
 		break;
 	default:
 		error = -EIO;
@@ -1125,15 +1175,7 @@ static struct scsi_cmnd *scsi_get_cmd_from_req(struct scsi_device *sdev,
 
 int scsi_setup_blk_pc_cmnd(struct scsi_device *sdev, struct request *req)
 {
-	struct scsi_cmnd *cmd;
-	int ret = scsi_prep_state_check(sdev, req);
-
-	if (ret != BLKPREP_OK)
-		return ret;
-
-	cmd = scsi_get_cmd_from_req(sdev, req);
-	if (unlikely(!cmd))
-		return BLKPREP_DEFER;
+	struct scsi_cmnd *cmd = req->special;
 
 	/*
 	 * BLOCK_PC requests may transfer data, in which case they must
@@ -1177,15 +1219,11 @@ EXPORT_SYMBOL(scsi_setup_blk_pc_cmnd);
  */
 int scsi_setup_fs_cmnd(struct scsi_device *sdev, struct request *req)
 {
-	struct scsi_cmnd *cmd;
-	int ret = scsi_prep_state_check(sdev, req);
-
-	if (ret != BLKPREP_OK)
-		return ret;
+	struct scsi_cmnd *cmd = req->special;
 
 	if (unlikely(sdev->scsi_dh_data && sdev->scsi_dh_data->scsi_dh
 			 && sdev->scsi_dh_data->scsi_dh->prep_fn)) {
-		ret = sdev->scsi_dh_data->scsi_dh->prep_fn(sdev, req);
+		int ret = sdev->scsi_dh_data->scsi_dh->prep_fn(sdev, req);
 		if (ret != BLKPREP_OK)
 			return ret;
 	}
@@ -1195,16 +1233,13 @@ int scsi_setup_fs_cmnd(struct scsi_device *sdev, struct request *req)
 	 */
 	BUG_ON(!req->nr_phys_segments);
 
-	cmd = scsi_get_cmd_from_req(sdev, req);
-	if (unlikely(!cmd))
-		return BLKPREP_DEFER;
-
 	memset(cmd->cmnd, 0, BLK_MAX_CDB);
 	return scsi_init_io(cmd, GFP_ATOMIC);
 }
 EXPORT_SYMBOL(scsi_setup_fs_cmnd);
 
-int scsi_prep_state_check(struct scsi_device *sdev, struct request *req)
+static int
+scsi_prep_state_check(struct scsi_device *sdev, struct request *req)
 {
 	int ret = BLKPREP_OK;
 
@@ -1256,9 +1291,9 @@ int scsi_prep_state_check(struct scsi_device *sdev, struct request *req)
 	}
 	return ret;
 }
-EXPORT_SYMBOL(scsi_prep_state_check);
 
-int scsi_prep_return(struct request_queue *q, struct request *req, int ret)
+static int
+scsi_prep_return(struct request_queue *q, struct request *req, int ret)
 {
 	struct scsi_device *sdev = q->queuedata;
 
@@ -1288,18 +1323,33 @@ int scsi_prep_return(struct request_queue *q, struct request *req, int ret)
 
 	return ret;
 }
-EXPORT_SYMBOL(scsi_prep_return);
 
-int scsi_prep_fn(struct request_queue *q, struct request *req)
+static int scsi_prep_fn(struct request_queue *q, struct request *req)
 {
 	struct scsi_device *sdev = q->queuedata;
-	int ret = BLKPREP_KILL;
+	struct scsi_cmnd *cmd;
+	int ret;
 
-	if (req->cmd_type == REQ_TYPE_BLOCK_PC)
+	ret = scsi_prep_state_check(sdev, req);
+	if (ret != BLKPREP_OK)
+		goto out;
+
+	cmd = scsi_get_cmd_from_req(sdev, req);
+	if (unlikely(!cmd)) {
+		ret = BLKPREP_DEFER;
+		goto out;
+	}
+
+	if (req->cmd_type == REQ_TYPE_FS)
+		ret = scsi_cmd_to_driver(cmd)->init_command(cmd);
+	else if (req->cmd_type == REQ_TYPE_BLOCK_PC)
 		ret = scsi_setup_blk_pc_cmnd(sdev, req);
+	else
+		ret = BLKPREP_KILL;
+
+out:
 	return scsi_prep_return(q, req, ret);
 }
-EXPORT_SYMBOL(scsi_prep_fn);
 
 /*
  * scsi_dev_queue_ready: if we can send requests to sdev, return 1 else
@@ -2214,7 +2264,21 @@ static void scsi_evt_emit(struct scsi_device *sdev, struct scsi_event *evt)
 	case SDEV_EVT_MEDIA_CHANGE:
 		envp[idx++] = "SDEV_MEDIA_CHANGE=1";
 		break;
-
+	case SDEV_EVT_INQUIRY_CHANGE_REPORTED:
+		envp[idx++] = "SDEV_UA=INQUIRY_DATA_HAS_CHANGED";
+		break;
+	case SDEV_EVT_CAPACITY_CHANGE_REPORTED:
+		envp[idx++] = "SDEV_UA=CAPACITY_DATA_HAS_CHANGED";
+		break;
+	case SDEV_EVT_SOFT_THRESHOLD_REACHED_REPORTED:
+	       envp[idx++] = "SDEV_UA=THIN_PROVISIONING_SOFT_THRESHOLD_REACHED";
+		break;
+	case SDEV_EVT_MODE_PARAMETER_CHANGE_REPORTED:
+		envp[idx++] = "SDEV_UA=MODE_PARAMETERS_CHANGED";
+		break;
+	case SDEV_EVT_LUN_CHANGE_REPORTED:
+		envp[idx++] = "SDEV_UA=REPORTED_LUNS_DATA_HAS_CHANGED";
+		break;
 	default:
 		/* do nothing */
 		break;
@@ -2235,9 +2299,14 @@ static void scsi_evt_emit(struct scsi_device *sdev, struct scsi_event *evt)
 void scsi_evt_thread(struct work_struct *work)
 {
 	struct scsi_device *sdev;
+	enum scsi_device_event evt_type;
 	LIST_HEAD(event_list);
 
 	sdev = container_of(work, struct scsi_device, event_work);
+
+	for (evt_type = SDEV_EVT_FIRST; evt_type <= SDEV_EVT_LAST; evt_type++)
+		if (test_and_clear_bit(evt_type, sdev->pending_events))
+			sdev_evt_send_simple(sdev, evt_type, GFP_KERNEL);
 
 	while (1) {
 		struct scsi_event *evt;
@@ -2308,6 +2377,11 @@ struct scsi_event *sdev_evt_alloc(enum scsi_device_event evt_type,
 	/* evt_type-specific initialization, if any */
 	switch (evt_type) {
 	case SDEV_EVT_MEDIA_CHANGE:
+	case SDEV_EVT_INQUIRY_CHANGE_REPORTED:
+	case SDEV_EVT_CAPACITY_CHANGE_REPORTED:
+	case SDEV_EVT_SOFT_THRESHOLD_REACHED_REPORTED:
+	case SDEV_EVT_MODE_PARAMETER_CHANGE_REPORTED:
+	case SDEV_EVT_LUN_CHANGE_REPORTED:
 	default:
 		/* do nothing */
 		break;

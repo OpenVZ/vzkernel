@@ -74,6 +74,11 @@ extern u16 __read_mostly tlb_lld_2m[NR_INFO];
 extern u16 __read_mostly tlb_lld_4m[NR_INFO];
 extern s8  __read_mostly tlb_flushall_shift;
 
+/* this struct is NEVER under kabi restrictions */
+struct rh_cpuinfo_x86 {
+	int dummy; /* this dummy entry can be removed */
+};
+
 /*
  *  CPU type and hardware bug flags. Kept separately for each CPU.
  *  Members of this structure are referenced in head.S, so think twice
@@ -153,6 +158,7 @@ extern __u32			cpu_caps_set[NCAPINTS];
 
 #ifdef CONFIG_SMP
 DECLARE_PER_CPU_SHARED_ALIGNED(struct cpuinfo_x86, cpu_info);
+DECLARE_PER_CPU_SHARED_ALIGNED(struct rh_cpuinfo_x86, rh_cpu_info);
 #define cpu_data(cpu)		per_cpu(cpu_info, cpu)
 #else
 #define cpu_info		boot_cpu_data
@@ -968,6 +974,21 @@ unsigned long calc_aperfmperf_ratio(struct aperfmperf *old,
 		ratio = div64_u64(aperf, mperf);
 
 	return ratio;
+}
+
+static inline uint32_t hypervisor_cpuid_base(const char *sig, uint32_t leaves)
+{
+	uint32_t base, eax, signature[3];
+
+	for (base = 0x40000000; base < 0x40010000; base += 0x100) {
+		cpuid(base, &eax, &signature[0], &signature[1], &signature[2]);
+
+		if (!memcmp(sig, signature, 12) &&
+		    (leaves == 0 || ((eax - base) >= leaves)))
+			return base;
+	}
+
+	return 0;
 }
 
 extern unsigned long arch_align_stack(unsigned long sp);

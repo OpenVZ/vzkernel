@@ -209,6 +209,7 @@ struct hda_gen_spec {
 	unsigned int master_mute:1;	/* master mute over all */
 	unsigned int keep_vref_in_automute:1; /* Don't clear VREF in automute */
 	unsigned int line_in_auto_switch:1; /* allow line-in auto switch */
+	unsigned int auto_mute_via_amp:1; /* auto-mute via amp instead of pinctl */
 
 	/* parser behavior flags; set before snd_hda_gen_parse_auto_config() */
 	unsigned int suppress_auto_mute:1; /* suppress input jack auto mute */
@@ -219,6 +220,7 @@ struct hda_gen_spec {
 	unsigned int hp_mic:1; /* Allow HP as a mic-in */
 	unsigned int suppress_hp_mic_detect:1; /* Don't detect HP/mic */
 	unsigned int no_primary_hp:1; /* Don't prefer HP pins to speaker pins */
+	unsigned int no_multi_io:1; /* Don't try multi I/O config */
 	unsigned int multi_cap_vol:1; /* allow multiple capture xxx volumes */
 	unsigned int inv_dmic_split:1; /* inverted dmic w/a for conexant */
 	unsigned int own_eapd_ctl:1; /* set EAPD by own function */
@@ -237,9 +239,18 @@ struct hda_gen_spec {
 	unsigned int have_aamix_ctl:1;
 	unsigned int hp_mic_jack_modes:1;
 
+	/* additional mute flags (only effective with auto_mute_via_amp=1) */
+	u64 mute_bits;
+
+	/* bitmask for skipping volume controls */
+	u64 out_vol_mask;
+
 	/* badness tables for output path evaluations */
 	const struct badness_table *main_out_badness;
 	const struct badness_table *extra_out_badness;
+
+	/* preferred pin/DAC pairs; an array of paired NIDs */
+	const hda_nid_t *preferred_dacs;
 
 	/* loopback mixing mode */
 	bool aamix_mode;

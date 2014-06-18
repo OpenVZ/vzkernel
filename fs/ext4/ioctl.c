@@ -77,8 +77,10 @@ static void swap_inode_data(struct inode *inode1, struct inode *inode2)
 	memswap(ei1->i_data, ei2->i_data, sizeof(ei1->i_data));
 	memswap(&ei1->i_flags, &ei2->i_flags, sizeof(ei1->i_flags));
 	memswap(&ei1->i_disksize, &ei2->i_disksize, sizeof(ei1->i_disksize));
-	memswap(&ei1->i_es_tree, &ei2->i_es_tree, sizeof(ei1->i_es_tree));
-	memswap(&ei1->i_es_lru_nr, &ei2->i_es_lru_nr, sizeof(ei1->i_es_lru_nr));
+	ext4_es_remove_extent(inode1, 0, EXT_MAX_BLOCKS);
+	ext4_es_remove_extent(inode2, 0, EXT_MAX_BLOCKS);
+	ext4_es_lru_del(inode1);
+	ext4_es_lru_del(inode2);
 
 	isize = i_size_read(inode1);
 	i_size_write(inode1, i_size_read(inode2));
@@ -129,7 +131,7 @@ static long swap_inode_boot_loader(struct super_block *sb,
 
 	/* Protect orig inodes against a truncate and make sure,
 	 * that only 1 swap_inode_boot_loader is running. */
-	ext4_inode_double_lock(inode, inode_bl);
+	lock_two_nondirectories(inode, inode_bl);
 
 	truncate_inode_pages(&inode->i_data, 0);
 	truncate_inode_pages(&inode_bl->i_data, 0);
@@ -204,7 +206,7 @@ static long swap_inode_boot_loader(struct super_block *sb,
 	ext4_inode_resume_unlocked_dio(inode);
 	ext4_inode_resume_unlocked_dio(inode_bl);
 
-	ext4_inode_double_unlock(inode, inode_bl);
+	unlock_two_nondirectories(inode, inode_bl);
 
 	iput(inode_bl);
 

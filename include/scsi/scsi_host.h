@@ -475,6 +475,14 @@ struct scsi_host_template {
 	 */
 	unsigned ordered_tag:1;
 
+	/* True if the controller does not support WRITE SAME */
+	unsigned no_write_same:1;
+
+	/*
+	 * True if asynchronous aborts are not supported
+	 */
+	unsigned no_async_abort:1;
+
 	/*
 	 * Countdown for host blocking with no commands outstanding.
 	 */
@@ -516,6 +524,22 @@ struct scsi_host_template {
 	 *   scsi_netlink.h
 	 */
 	u64 vendor_id;
+
+	/* FOR RH USE ONLY
+	 *
+	 * The following padding has been inserted before ABI freeze to
+	 * allow extending the structure while preserve ABI.
+	 */
+	void			(*rh_reserved1)(void);
+	void			(*rh_reserved2)(void);
+	void			(*rh_reserved3)(void);
+	void			(*rh_reserved4)(void);
+
+	unsigned int scsi_mq_reserved1;
+	unsigned int scsi_mq_reserved2;
+	void *scsi_mq_reserved3;
+	void *scsi_mq_reserved4;
+
 };
 
 /*
@@ -598,8 +622,11 @@ struct Scsi_Host {
 	unsigned int host_eh_scheduled;    /* EH scheduled without command */
     
 	unsigned int host_no;  /* Used for IOCTL_GET_IDLUN, /proc/scsi et al. */
-	int resetting; /* if set, it means that last_reset is a valid value */
+
+	/* next two fields are used to bound the time spent in error handling */
+	int eh_deadline;
 	unsigned long last_reset;
+
 
 	/*
 	 * These three parameters can be used to allow for wide scsi,
@@ -674,11 +701,19 @@ struct Scsi_Host {
 	/* Don't resume host in EH */
 	unsigned eh_noresume:1;
 
+	/* The controller does not support WRITE SAME */
+	unsigned no_write_same:1;
+
 	/*
 	 * Optional work queue to be utilized by the transport
 	 */
 	char work_q_name[20];
 	struct workqueue_struct *work_q;
+
+	/*
+	 * Task management function work queue
+	 */
+	struct workqueue_struct *tmf_work_q;
 
 	/*
 	 * Host has rejected a command because it was busy.
@@ -733,6 +768,25 @@ struct Scsi_Host {
 	 * Needed just in case we have virtual hosts.
 	 */
 	struct device *dma_dev;
+
+	/* FOR RH USE ONLY
+	 *
+	 * The following padding has been inserted before ABI freeze to
+	 * allow extending the structure while preserve ABI.
+	 */
+	void			(*rh_reserved1)(void);
+	void			(*rh_reserved2)(void);
+	void			(*rh_reserved3)(void);
+	void			(*rh_reserved4)(void);
+	void			(*rh_reserved5)(void);
+	void			(*rh_reserved6)(void);
+
+	unsigned int scsi_mq_reserved1;
+	unsigned int scsi_mq_reserved2;
+	void *scsi_mq_reserved3;
+	void *scsi_mq_reserved4;
+	atomic_t scsi_mq_reserved5;
+	atomic_t scsi_mq_reserved6;
 
 	/*
 	 * We should ensure that this is aligned, both for better performance

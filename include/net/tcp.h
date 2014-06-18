@@ -287,6 +287,7 @@ extern int sysctl_tcp_thin_dupack;
 extern int sysctl_tcp_early_retrans;
 extern int sysctl_tcp_limit_output_bytes;
 extern int sysctl_tcp_challenge_ack_limit;
+extern int sysctl_tcp_min_tso_segs;
 
 extern atomic_long_t tcp_memory_allocated;
 extern struct percpu_counter tcp_sockets_allocated;
@@ -482,9 +483,13 @@ void inet_sk_rx_dst_set(struct sock *sk, const struct sk_buff *skb);
 
 /* From syncookies.c */
 extern __u32 syncookie_secret[2][16-4+SHA_DIGEST_WORDS];
+extern int __cookie_v4_check(const struct iphdr *iph, const struct tcphdr *th,
+			     u32 cookie);
 extern struct sock *cookie_v4_check(struct sock *sk, struct sk_buff *skb, 
 				    struct ip_options *opt);
 #ifdef CONFIG_SYN_COOKIES
+extern u32 __cookie_v4_init_sequence(const struct iphdr *iph,
+				     const struct tcphdr *th, u16 *mssp);
 extern __u32 cookie_v4_init_sequence(struct sock *sk, struct sk_buff *skb, 
 				     __u16 *mss);
 #else
@@ -501,8 +506,12 @@ extern bool cookie_check_timestamp(struct tcp_options_received *opt,
 				struct net *net, bool *ecn_ok);
 
 /* From net/ipv6/syncookies.c */
+extern int __cookie_v6_check(const struct ipv6hdr *iph, const struct tcphdr *th,
+			     u32 cookie);
 extern struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb);
 #ifdef CONFIG_SYN_COOKIES
+extern u32 __cookie_v6_init_sequence(const struct ipv6hdr *iph,
+				     const struct tcphdr *th, u16 *mssp);
 extern __u32 cookie_v6_init_sequence(struct sock *sk, const struct sk_buff *skb,
 				     __u16 *mss);
 #else
@@ -1091,8 +1100,8 @@ static inline void tcp_openreq_init(struct request_sock *req,
 	ireq->wscale_ok = rx_opt->wscale_ok;
 	ireq->acked = 0;
 	ireq->ecn_ok = 0;
-	ireq->rmt_port = tcp_hdr(skb)->source;
-	ireq->loc_port = tcp_hdr(skb)->dest;
+	ireq->ir_rmt_port = tcp_hdr(skb)->source;
+	ireq->ir_num = ntohs(tcp_hdr(skb)->dest);
 }
 
 /* Compute time elapsed between SYNACK and the ACK completing 3WHS */
@@ -1510,7 +1519,6 @@ enum tcp_seq_states {
 	TCP_SEQ_STATE_LISTENING,
 	TCP_SEQ_STATE_OPENREQ,
 	TCP_SEQ_STATE_ESTABLISHED,
-	TCP_SEQ_STATE_TIME_WAIT,
 };
 
 int tcp_seq_open(struct inode *inode, struct file *file);
@@ -1540,15 +1548,14 @@ extern struct request_sock_ops tcp6_request_sock_ops;
 
 extern void tcp_v4_destroy_sock(struct sock *sk);
 
-extern int tcp_v4_gso_send_check(struct sk_buff *skb);
-extern struct sk_buff *tcp_tso_segment(struct sk_buff *skb,
-				       netdev_features_t features);
+struct sk_buff *tcp_gso_segment(struct sk_buff *skb,
+				netdev_features_t features);
 extern struct sk_buff **tcp_gro_receive(struct sk_buff **head,
 					struct sk_buff *skb);
-extern struct sk_buff **tcp4_gro_receive(struct sk_buff **head,
-					 struct sk_buff *skb);
 extern int tcp_gro_complete(struct sk_buff *skb);
-extern int tcp4_gro_complete(struct sk_buff *skb);
+
+extern void __tcp_v4_send_check(struct sk_buff *skb, __be32 saddr,
+				__be32 daddr);
 
 #ifdef CONFIG_PROC_FS
 extern int tcp4_proc_init(void);
@@ -1582,6 +1589,8 @@ struct tcp_request_sock_ops {
 						  const struct sk_buff *skb);
 #endif
 };
+
+extern int tcpv4_offload_init(void);
 
 extern void tcp_v4_init(void);
 extern void tcp_init(void);

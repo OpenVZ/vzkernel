@@ -155,7 +155,7 @@ static void blk_set_cmd_filter_defaults(struct blk_cmd_filter *filter)
 	__set_bit(GPCMD_READ_DVD_STRUCTURE, filter->read_ok);
 	__set_bit(GPCMD_READ_HEADER, filter->read_ok);
 	__set_bit(GPCMD_READ_TRACK_RZONE_INFO, filter->read_ok);
-	__set_bit(GPCMD_READ_SUBCHANNEL, filter->read_ok);
+	__set_bit(GPCMD_READ_SUBCHANNEL, filter->read_ok); /* UNMAP too! */
 	__set_bit(GPCMD_READ_TOC_PMA_ATIP, filter->read_ok);
 	__set_bit(GPCMD_REPORT_KEY, filter->read_ok);
 	__set_bit(GPCMD_SCAN, filter->read_ok);
@@ -169,10 +169,12 @@ static void blk_set_cmd_filter_defaults(struct blk_cmd_filter *filter)
 	/* Basic writing commands */
 	__set_bit(WRITE_6, filter->write_ok);
 	__set_bit(WRITE_10, filter->write_ok);
+	__set_bit(WRITE_SAME, filter->write_ok);
 	__set_bit(WRITE_VERIFY, filter->write_ok);
 	__set_bit(WRITE_12, filter->write_ok);
 	__set_bit(WRITE_VERIFY_12, filter->write_ok);
 	__set_bit(WRITE_16, filter->write_ok);
+	__set_bit(WRITE_SAME_16, filter->write_ok);
 	__set_bit(WRITE_LONG, filter->write_ok);
 	__set_bit(WRITE_LONG_2, filter->write_ok);
 	__set_bit(ERASE, filter->write_ok);
@@ -197,12 +199,13 @@ static void blk_set_cmd_filter_defaults(struct blk_cmd_filter *filter)
 	__set_bit(GPCMD_SET_READ_AHEAD, filter->write_ok);
 }
 
-int blk_verify_command(unsigned char *cmd, fmode_t has_write_perm)
+int blk_verify_command(struct request_queue *q,
+		       unsigned char *cmd, fmode_t has_write_perm)
 {
 	struct blk_cmd_filter *filter = &blk_default_cmd_filter;
 
 	/* root can do any command. */
-	if (capable(CAP_SYS_RAWIO))
+	if (capable(CAP_SYS_RAWIO) || blk_queue_unpriv_sgio(q))
 		return 0;
 
 	/* if there's no filter set, assume we're filtering everything out */
@@ -226,7 +229,7 @@ static int blk_fill_sghdr_rq(struct request_queue *q, struct request *rq,
 {
 	if (copy_from_user(rq->cmd, hdr->cmdp, hdr->cmd_len))
 		return -EFAULT;
-	if (blk_verify_command(rq->cmd, mode & FMODE_WRITE))
+	if (blk_verify_command(q, rq->cmd, mode & FMODE_WRITE))
 		return -EPERM;
 
 	/*
@@ -473,7 +476,7 @@ int sg_scsi_ioctl(struct request_queue *q, struct gendisk *disk, fmode_t mode,
 	if (in_len && copy_from_user(buffer, sic->data + cmdlen, in_len))
 		goto error;
 
-	err = blk_verify_command(rq->cmd, mode & FMODE_WRITE);
+	err = blk_verify_command(q, rq->cmd, mode & FMODE_WRITE);
 	if (err)
 		goto error;
 

@@ -18,21 +18,22 @@
  */
 #include "xfs.h"
 #include "xfs_fs.h"
-#include "xfs_types.h"
+#include "xfs_shared.h"
+#include "xfs_format.h"
+#include "xfs_log_format.h"
+#include "xfs_trans_resv.h"
 #include "xfs_bit.h"
-#include "xfs_log.h"
-#include "xfs_trans.h"
 #include "xfs_sb.h"
 #include "xfs_ag.h"
 #include "xfs_mount.h"
-#include "xfs_error.h"
+#include "xfs_da_format.h"
 #include "xfs_da_btree.h"
-#include "xfs_bmap_btree.h"
-#include "xfs_dinode.h"
 #include "xfs_inode.h"
 #include "xfs_alloc.h"
+#include "xfs_trans.h"
 #include "xfs_inode_item.h"
 #include "xfs_bmap.h"
+#include "xfs_bmap_util.h"
 #include "xfs_attr.h"
 #include "xfs_attr_leaf.h"
 #include "xfs_attr_remote.h"
@@ -40,6 +41,7 @@
 #include "xfs_trace.h"
 #include "xfs_cksum.h"
 #include "xfs_buf_item.h"
+#include "xfs_error.h"
 
 #define ATTR_RMTVALUE_MAPSIZE	1	/* # of map entries at once */
 
@@ -108,7 +110,7 @@ xfs_attr3_rmt_verify(
 	if (be32_to_cpu(rmt->rm_bytes) > fsbsize - sizeof(*rmt))
 		return false;
 	if (be32_to_cpu(rmt->rm_offset) +
-				be32_to_cpu(rmt->rm_bytes) >= XATTR_SIZE_MAX)
+				be32_to_cpu(rmt->rm_bytes) > XATTR_SIZE_MAX)
 		return false;
 	if (rmt->rm_owner == 0)
 		return false;
@@ -123,7 +125,6 @@ xfs_attr3_rmt_read_verify(
 	struct xfs_mount *mp = bp->b_target->bt_mount;
 	char		*ptr;
 	int		len;
-	bool		corrupt = false;
 	xfs_daddr_t	bno;
 
 	/* no verification of non-crc buffers */
@@ -138,11 +139,11 @@ xfs_attr3_rmt_read_verify(
 	while (len > 0) {
 		if (!xfs_verify_cksum(ptr, XFS_LBSIZE(mp),
 				      XFS_ATTR3_RMT_CRC_OFF)) {
-			corrupt = true;
+			xfs_buf_ioerror(bp, EFSBADCRC);
 			break;
 		}
 		if (!xfs_attr3_rmt_verify(mp, ptr, XFS_LBSIZE(mp), bno)) {
-			corrupt = true;
+			xfs_buf_ioerror(bp, EFSCORRUPTED);
 			break;
 		}
 		len -= XFS_LBSIZE(mp);
@@ -150,10 +151,9 @@ xfs_attr3_rmt_read_verify(
 		bno += mp->m_bsize;
 	}
 
-	if (corrupt) {
-		XFS_CORRUPTION_ERROR(__func__, XFS_ERRLEVEL_LOW, mp, bp->b_addr);
-		xfs_buf_ioerror(bp, EFSCORRUPTED);
-	} else
+	if (bp->b_error)
+		xfs_verifier_error(bp);
+	else
 		ASSERT(len == 0);
 }
 
@@ -178,9 +178,8 @@ xfs_attr3_rmt_write_verify(
 
 	while (len > 0) {
 		if (!xfs_attr3_rmt_verify(mp, ptr, XFS_LBSIZE(mp), bno)) {
-			XFS_CORRUPTION_ERROR(__func__,
-					    XFS_ERRLEVEL_LOW, mp, bp->b_addr);
 			xfs_buf_ioerror(bp, EFSCORRUPTED);
+			xfs_verifier_error(bp);
 			return;
 		}
 		if (bip) {
@@ -237,7 +236,7 @@ xfs_attr_rmtval_copyout(
 	xfs_ino_t	ino,
 	int		*offset,
 	int		*valuelen,
-	char		**dst)
+	__uint8_t	**dst)
 {
 	char		*src = bp->b_addr;
 	xfs_daddr_t	bno = bp->b_bn;
@@ -249,7 +248,7 @@ xfs_attr_rmtval_copyout(
 		int hdr_size = 0;
 		int byte_cnt = XFS_ATTR3_RMT_BUF_SPACE(mp, XFS_LBSIZE(mp));
 
-		byte_cnt = min_t(int, *valuelen, byte_cnt);
+		byte_cnt = min(*valuelen, byte_cnt);
 
 		if (xfs_sb_version_hascrc(&mp->m_sb)) {
 			if (!xfs_attr3_rmt_hdr_ok(mp, src, ino, *offset,
@@ -284,7 +283,7 @@ xfs_attr_rmtval_copyin(
 	xfs_ino_t	ino,
 	int		*offset,
 	int		*valuelen,
-	char		**src)
+	__uint8_t	**src)
 {
 	char		*dst = bp->b_addr;
 	xfs_daddr_t	bno = bp->b_bn;
@@ -337,7 +336,7 @@ xfs_attr_rmtval_get(
 	struct xfs_mount	*mp = args->dp->i_mount;
 	struct xfs_buf		*bp;
 	xfs_dablk_t		lblkno = args->rmtblkno;
-	char			*dst = args->value;
+	__uint8_t		*dst = args->value;
 	int			valuelen = args->valuelen;
 	int			nmap;
 	int			error;
@@ -401,7 +400,7 @@ xfs_attr_rmtval_set(
 	struct xfs_bmbt_irec	map;
 	xfs_dablk_t		lblkno;
 	xfs_fileoff_t		lfileoff = 0;
-	char			*src = args->value;
+	__uint8_t		*src = args->value;
 	int			blkcnt;
 	int			valuelen;
 	int			nmap;
@@ -543,11 +542,6 @@ xfs_attr_rmtval_remove(
 
 	/*
 	 * Roll through the "value", invalidating the attribute value's blocks.
-	 * Note that args->rmtblkcnt is the minimum number of data blocks we'll
-	 * see for a CRC enabled remote attribute. Each extent will have a
-	 * header, and so we may have more blocks than we realise here.  If we
-	 * fail to map the blocks correctly, we'll have problems with the buffer
-	 * lookups.
 	 */
 	lblkno = args->rmtblkno;
 	blkcnt = args->rmtblkcnt;
@@ -628,4 +622,3 @@ xfs_attr_rmtval_remove(
 	}
 	return(0);
 }
-

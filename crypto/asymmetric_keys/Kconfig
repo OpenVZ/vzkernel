@@ -12,6 +12,7 @@ if ASYMMETRIC_KEY_TYPE
 config ASYMMETRIC_PUBLIC_KEY_SUBTYPE
 	tristate "Asymmetric public-key crypto algorithm subtype"
 	select MPILIB
+	select PUBLIC_KEY_ALGO_RSA
 	help
 	  This option provides support for asymmetric public key type handling.
 	  If signature generation and/or verification are to be used,
@@ -20,7 +21,6 @@ config ASYMMETRIC_PUBLIC_KEY_SUBTYPE
 
 config PUBLIC_KEY_ALGO_RSA
 	tristate "RSA public-key algorithm"
-	depends on ASYMMETRIC_PUBLIC_KEY_SUBTYPE
 	select MPILIB_EXTRA
 	help
 	  This option enables support for the RSA algorithm (PKCS#1, RFC3447).
@@ -34,5 +34,13 @@ config X509_CERTIFICATE_PARSER
 	  This option procides support for parsing X.509 format blobs for key
 	  data and provides the ability to instantiate a crypto key from a
 	  public key packet found inside the certificate.
+
+config EFI_SIGNATURE_LIST_PARSER
+	bool "EFI signature list parser"
+	depends on EFI
+	select X509_CERTIFICATE_PARSER
+	help
+	  This option provides support for parsing EFI signature lists for
+	  X.509 certificates and turning them into keys.
 
 endif # ASYMMETRIC_KEY_TYPE

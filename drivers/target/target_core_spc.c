@@ -97,9 +97,12 @@ spc_emulate_inquiry_std(struct se_cmd *cmd, unsigned char *buf)
 
 	buf[7] = 0x2; /* CmdQue=1 */
 
-	snprintf(&buf[8], 8, "LIO-ORG");
-	snprintf(&buf[16], 16, "%s", dev->t10_wwn.model);
-	snprintf(&buf[32], 4, "%s", dev->t10_wwn.revision);
+	memcpy(&buf[8], "LIO-ORG ", 8);
+	memset(&buf[16], 0x20, 16);
+	memcpy(&buf[16], dev->t10_wwn.model,
+	       min_t(size_t, strlen(dev->t10_wwn.model), 16));
+	memcpy(&buf[32], dev->t10_wwn.revision,
+	       min_t(size_t, strlen(dev->t10_wwn.revision), 4));
 	buf[4] = 31; /* Set additional length to 31 */
 
 	return 0;
@@ -443,6 +446,7 @@ spc_emulate_evpd_b0(struct se_cmd *cmd, unsigned char *buf)
 	struct se_device *dev = cmd->se_dev;
 	u32 max_sectors;
 	int have_tp = 0;
+	int opt, min;
 
 	/*
 	 * Following spc3r22 section 6.5.3 Block Limits VPD page, when
@@ -461,7 +465,10 @@ spc_emulate_evpd_b0(struct se_cmd *cmd, unsigned char *buf)
 	/*
 	 * Set OPTIMAL TRANSFER LENGTH GRANULARITY
 	 */
-	put_unaligned_be16(1, &buf[6]);
+	if (dev->transport->get_io_min && (min = dev->transport->get_io_min(dev)))
+		put_unaligned_be16(min / dev->dev_attrib.block_size, &buf[6]);
+	else
+		put_unaligned_be16(1, &buf[6]);
 
 	/*
 	 * Set MAXIMUM TRANSFER LENGTH
@@ -473,7 +480,10 @@ spc_emulate_evpd_b0(struct se_cmd *cmd, unsigned char *buf)
 	/*
 	 * Set OPTIMAL TRANSFER LENGTH
 	 */
-	put_unaligned_be32(dev->dev_attrib.optimal_sectors, &buf[12]);
+	if (dev->transport->get_io_opt && (opt = dev->transport->get_io_opt(dev)))
+		put_unaligned_be32(opt / dev->dev_attrib.block_size, &buf[12]);
+	else
+		put_unaligned_be32(dev->dev_attrib.optimal_sectors, &buf[12]);
 
 	/*
 	 * Exit now if we don't support TP.

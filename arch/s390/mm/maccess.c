@@ -13,6 +13,7 @@
 #include <linux/errno.h>
 #include <linux/gfp.h>
 #include <linux/cpu.h>
+#include <linux/export.h>
 #include <asm/ctl_reg.h>
 
 /*
@@ -218,6 +219,7 @@ void *xlate_dev_mem_ptr(unsigned long addr)
 	put_online_cpus();
 	return bounce;
 }
+EXPORT_SYMBOL_GPL(xlate_dev_mem_ptr);
 
 /*
  * Free converted buffer for /dev/mem access (if necessary)
@@ -227,3 +229,4 @@ void unxlate_dev_mem_ptr(unsigned long addr, void *buf)
 	if ((void *) addr != buf)
 		free_page((unsigned long) buf);
 }
+EXPORT_SYMBOL_GPL(unxlate_dev_mem_ptr);

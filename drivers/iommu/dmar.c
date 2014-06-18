@@ -472,16 +472,17 @@ int __init dmar_table_init(void)
 	return 0;
 }
 
-static void warn_invalid_dmar(u64 addr, const char *message)
+static inline void warn_invalid_dmar(u64 addr, const char *message)
 {
-	WARN_TAINT_ONCE(
-		1, TAINT_FIRMWARE_WORKAROUND,
-		"Your BIOS is broken; DMAR reported at address %llx%s!\n"
-		"BIOS vendor: %s; Ver: %s; Product Version: %s\n",
-		addr, message,
-		dmi_get_system_info(DMI_BIOS_VENDOR),
-		dmi_get_system_info(DMI_BIOS_VERSION),
-		dmi_get_system_info(DMI_PRODUCT_VERSION));
+	printk_once(FW_WARN "%s at %d: "
+		    "Your BIOS is broken; DMAR reported at address %llx%s!\n"
+		    "BIOS vendor: %s; Ver: %s; Product Version: %s\n",
+		    __FILE__, __LINE__,
+		    addr, message,
+		    dmi_get_system_info(DMI_BIOS_VENDOR),
+		    dmi_get_system_info(DMI_BIOS_VERSION),
+		    dmi_get_system_info(DMI_PRODUCT_VERSION));
+	add_taint(TAINT_FIRMWARE_WORKAROUND, LOCKDEP_STILL_OK);
 }
 
 int __init check_zero_address(void)

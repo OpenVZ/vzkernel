@@ -1089,9 +1089,10 @@ nfs4_blk_get_deviceinfo(struct nfs_server *server, const struct nfs_fh *fh,
 	dev->pgbase = 0;
 	dev->pglen = PAGE_SIZE * max_pages;
 	dev->mincount = 0;
+	dev->maxcount = max_resp_sz - nfs41_maxgetdevinfo_overhead;
 
 	dprintk("%s: dev_id: %s\n", __func__, dev->dev_id.data);
-	rc = nfs4_proc_getdeviceinfo(server, dev);
+	rc = nfs4_proc_getdeviceinfo(server, dev, NULL);
 	dprintk("%s getdevice info returns %d\n", __func__, rc);
 	if (rc) {
 		rv = ERR_PTR(rc);
@@ -1219,7 +1220,7 @@ static u64 pnfs_num_cont_bytes(struct inode *inode, pgoff_t idx)
 	end = DIV_ROUND_UP(i_size_read(inode), PAGE_CACHE_SIZE);
 	if (end != NFS_I(inode)->npages) {
 		rcu_read_lock();
-		end = radix_tree_next_hole(&mapping->page_tree, idx + 1, ULONG_MAX);
+		end = page_cache_next_hole(mapping, idx + 1, ULONG_MAX);
 		rcu_read_unlock();
 	}
 

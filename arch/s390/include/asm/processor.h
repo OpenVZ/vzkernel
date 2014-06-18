@@ -43,6 +43,7 @@ extern void execve_tail(void);
 #ifndef CONFIG_64BIT
 
 #define TASK_SIZE		(1UL << 31)
+#define TASK_MAX_SIZE		(1UL << 31)
 #define TASK_UNMAPPED_BASE	(1UL << 30)
 
 #else /* CONFIG_64BIT */
@@ -51,6 +52,7 @@ extern void execve_tail(void);
 #define TASK_UNMAPPED_BASE	(test_thread_flag(TIF_31BIT) ? \
 					(1UL << 30) : (1UL << 41))
 #define TASK_SIZE		TASK_SIZE_OF(current)
+#define TASK_MAX_SIZE		(1UL << 53)
 
 #endif /* CONFIG_64BIT */
 
@@ -134,9 +136,7 @@ struct stack_frame {
 	regs->psw.mask	= psw_user_bits | PSW_MASK_BA;			\
 	regs->psw.addr	= new_psw | PSW_ADDR_AMODE;			\
 	regs->gprs[15]	= new_stackp;					\
-	__tlb_flush_mm(current->mm);					\
 	crst_table_downgrade(current->mm, 1UL << 31);			\
-	update_mm(current->mm, current);				\
 	execve_tail();							\
 } while (0)
 
@@ -169,6 +169,9 @@ unsigned long get_wchan(struct task_struct *p);
         (task_stack_page(tsk) + THREAD_SIZE) - 1)
 #define KSTK_EIP(tsk)	(task_pt_regs(tsk)->psw.addr)
 #define KSTK_ESP(tsk)	(task_pt_regs(tsk)->gprs[15])
+
+/* Has task runtime instrumentation enabled ? */
+#define is_ri_task(tsk) (!!(tsk)->thread.ri_cb)
 
 static inline unsigned short stap(void)
 {

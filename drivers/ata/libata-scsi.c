@@ -1159,6 +1159,10 @@ static int ata_scsi_dev_config(struct scsi_device *sdev,
 
 	blk_queue_flush_queueable(q, false);
 
+	/* Change IO scheduler to CFQ */
+	if (!(*chosen_elevator))
+		elevator_change(q, "cfq");
+
 	dev->sdev = sdev;
 	return 0;
 }
@@ -3614,6 +3618,7 @@ int ata_scsi_add_hosts(struct ata_host *host, struct scsi_host_template *sht)
 		shost->max_lun = 1;
 		shost->max_channel = 1;
 		shost->max_cmd_len = 16;
+		shost->no_write_same = 1;
 
 		/* Schedule policy is determined by ->qc_defer()
 		 * callback and it needs to see every deferred qc.

@@ -28,6 +28,7 @@
 #include <linux/skbuff.h>
 
 #include <net/inet_sock.h>
+#include <net/route.h>
 #include <net/snmp.h>
 #include <net/flow.h>
 
@@ -56,6 +57,9 @@ struct ipcm_cookie {
 	int			oif;
 	struct ip_options_rcu	*opt;
 	__u8			tx_flags;
+	__u8			ttl;
+	__s16			tos;
+	char			priority;
 };
 
 #define IPCB(skb) ((struct inet_skb_parm*)((skb)->cb))
@@ -139,6 +143,16 @@ static inline struct sk_buff *ip_finish_skb(struct sock *sk, struct flowi4 *fl4)
 	return __ip_make_skb(sk, fl4, &sk->sk_write_queue, &inet_sk(sk)->cork.base);
 }
 
+static inline __u8 get_rttos(struct ipcm_cookie* ipc, struct inet_sock *inet)
+{
+	return (ipc->tos != -1) ? RT_TOS(ipc->tos) : RT_TOS(inet->tos);
+}
+
+static inline __u8 get_rtconn_flags(struct ipcm_cookie* ipc, struct sock* sk)
+{
+	return (ipc->tos != -1) ? RT_CONN_FLAGS_TOS(sk, ipc->tos) : RT_CONN_FLAGS(sk);
+}
+
 /* datagram.c */
 extern int		ip4_datagram_connect(struct sock *sk, 
 					     struct sockaddr *uaddr, int addr_len);
@@ -194,7 +208,17 @@ static inline u64 snmp_fold_field64(void __percpu *mib[], int offt, size_t syncp
 }
 #endif
 extern int snmp_mib_init(void __percpu *ptr[2], size_t mibsize, size_t align);
-extern void snmp_mib_free(void __percpu *ptr[2]);
+
+static inline void snmp_mib_free(void __percpu *ptr[SNMP_ARRAY_SZ])
+{
+	int i;
+
+	BUG_ON(ptr == NULL);
+	for (i = 0; i < SNMP_ARRAY_SZ; i++) {
+		free_percpu(ptr[i]);
+		ptr[i] = NULL;
+	}
+}
 
 extern struct local_ports {
 	seqlock_t	lock;
@@ -353,7 +377,7 @@ static __inline__ void inet_reset_saddr(struct sock *sk)
 		struct ipv6_pinfo *np = inet6_sk(sk);
 
 		memset(&np->saddr, 0, sizeof(np->saddr));
-		memset(&np->rcv_saddr, 0, sizeof(np->rcv_saddr));
+		memset(&sk->sk_v6_rcv_saddr, 0, sizeof(sk->sk_v6_rcv_saddr));
 	}
 #endif
 }
@@ -450,7 +474,7 @@ extern int	compat_ip_getsockopt(struct sock *sk, int level,
 			int optname, char __user *optval, int __user *optlen);
 extern int	ip_ra_control(struct sock *sk, unsigned char on, void (*destructor)(struct sock *));
 
-extern int 	ip_recv_error(struct sock *sk, struct msghdr *msg, int len);
+extern int 	ip_recv_error(struct sock *sk, struct msghdr *msg, int len, int *addr_len);
 extern void	ip_icmp_error(struct sock *sk, struct sk_buff *skb, int err, 
 			      __be16 port, u32 info, u8 *payload);
 extern void	ip_local_error(struct sock *sk, int err, __be32 daddr, __be16 dport,

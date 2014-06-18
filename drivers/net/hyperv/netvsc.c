@@ -137,8 +137,7 @@ static int netvsc_destroy_recv_buf(struct netvsc_device *net_device)
 
 	if (net_device->recv_buf) {
 		/* Free up the receive buffer */
-		free_pages((unsigned long)net_device->recv_buf,
-			get_order(net_device->recv_buf_size));
+		vfree(net_device->recv_buf);
 		net_device->recv_buf = NULL;
 	}
 
@@ -164,9 +163,7 @@ static int netvsc_init_recv_buf(struct hv_device *device)
 		return -ENODEV;
 	ndev = net_device->ndev;
 
-	net_device->recv_buf =
-		(void *)__get_free_pages(GFP_KERNEL|__GFP_ZERO,
-				get_order(net_device->recv_buf_size));
+	net_device->recv_buf = vzalloc(net_device->recv_buf_size);
 	if (!net_device->recv_buf) {
 		netdev_err(ndev, "unable to allocate receive "
 			"buffer of size %d\n", net_device->recv_buf_size);
@@ -362,6 +359,11 @@ static int netvsc_connect_vsp(struct hv_device *device)
 		goto cleanup;
 
 	/* Post the big receive buffer to NetVSP */
+	if (net_device->nvsp_version <= NVSP_PROTOCOL_VERSION_2)
+		net_device->recv_buf_size = NETVSC_RECEIVE_BUFFER_SIZE_LEGACY;
+	else
+		net_device->recv_buf_size = NETVSC_RECEIVE_BUFFER_SIZE;
+
 	ret = netvsc_init_recv_buf(device);
 
 cleanup:
@@ -911,7 +913,6 @@ int netvsc_device_add(struct hv_device *device, void *additional_info)
 	ndev = net_device->ndev;
 
 	/* Initialize the NetVSC channel extension */
-	net_device->recv_buf_size = NETVSC_RECEIVE_BUFFER_SIZE;
 	spin_lock_init(&net_device->recv_pkt_list_lock);
 
 	INIT_LIST_HEAD(&net_device->recv_pkt_list);

@@ -85,11 +85,27 @@ static void
 nouveau_bios_shadow_pramin(struct nouveau_bios *bios)
 {
 	struct nouveau_device *device = nv_device(bios);
+	u64 addr = 0;
 	u32 bar0 = 0;
 	int i;
 
 	if (device->card_type >= NV_50) {
-		u64 addr = (u64)(nv_rd32(bios, 0x619f04) & 0xffffff00) << 8;
+		if (device->card_type >= NV_C0) {
+			if (nv_rd32(bios, 0x022500) & 0x00000001)
+				return;
+		}
+
+		addr = nv_rd32(bios, 0x619f04);
+		if (!(addr & 0x00000008)) {
+			nv_debug(bios, "... not enabled\n");
+			return;
+		}
+		if ( (addr & 0x00000003) != 1) {
+			nv_debug(bios, "... not in vram\n");
+			return;
+		}
+
+		addr = (u64)(addr >> 8) << 8;
 		if (!addr) {
 			addr  = (u64)nv_rd32(bios, 0x001700) << 16;
 			addr += 0xf0000;

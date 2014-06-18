@@ -54,7 +54,7 @@
 #include "hpsa.h"
 
 /* HPSA_DRIVER_VERSION must be 3 byte values (0-255) separated by '.' */
-#define HPSA_DRIVER_VERSION "2.0.2-1"
+#define HPSA_DRIVER_VERSION "3.4.2-RH5"
 #define DRIVER_NAME "HP HPSA Driver (v " HPSA_DRIVER_VERSION ")"
 #define HPSA "hpsa"
 
@@ -89,9 +89,8 @@ static const struct pci_device_id hpsa_pci_device_id[] = {
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSE,     0x103C, 0x3245},
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSE,     0x103C, 0x3247},
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSE,     0x103C, 0x3249},
-	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSE,     0x103C, 0x324a},
-	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSE,     0x103C, 0x324b},
-	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSE,     0x103C, 0x3233},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSE,     0x103C, 0x324A},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSE,     0x103C, 0x324B},
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSF,     0x103C, 0x3350},
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSF,     0x103C, 0x3351},
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSF,     0x103C, 0x3352},
@@ -99,6 +98,7 @@ static const struct pci_device_id hpsa_pci_device_id[] = {
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSF,     0x103C, 0x3354},
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSF,     0x103C, 0x3355},
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSF,     0x103C, 0x3356},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSF,     0x103C, 0x334D},
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSH,     0x103C, 0x1920},
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSH,     0x103C, 0x1921},
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSH,     0x103C, 0x1922},
@@ -107,7 +107,26 @@ static const struct pci_device_id hpsa_pci_device_id[] = {
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSH,     0x103C, 0x1925},
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSH,     0x103C, 0x1926},
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSH,     0x103C, 0x1928},
-	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSF,     0x103C, 0x334d},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSH,     0x103C, 0x1929},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSH,     0x103C, 0x192A},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21BD},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21BE},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21BF},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21C0},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21C1},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21C2},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21C3},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21C4},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21C5},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21C6},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21C7},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21C8},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21C9},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21CA},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21CB},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21CC},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21CD},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSI,     0x103C, 0x21CE},
 	{PCI_VENDOR_ID_HP,     PCI_ANY_ID,	PCI_ANY_ID, PCI_ANY_ID,
 		PCI_CLASS_STORAGE_RAID << 8, 0xffff << 8, 0},
 	{0,}
@@ -125,8 +144,8 @@ static struct board_type products[] = {
 	{0x3245103C, "Smart Array P410i", &SA5_access},
 	{0x3247103C, "Smart Array P411", &SA5_access},
 	{0x3249103C, "Smart Array P812", &SA5_access},
-	{0x324a103C, "Smart Array P712m", &SA5_access},
-	{0x324b103C, "Smart Array P711m", &SA5_access},
+	{0x324A103C, "Smart Array P712m", &SA5_access},
+	{0x324B103C, "Smart Array P711m", &SA5_access},
 	{0x3350103C, "Smart Array P222", &SA5_access},
 	{0x3351103C, "Smart Array P420", &SA5_access},
 	{0x3352103C, "Smart Array P421", &SA5_access},
@@ -134,23 +153,39 @@ static struct board_type products[] = {
 	{0x3354103C, "Smart Array P420i", &SA5_access},
 	{0x3355103C, "Smart Array P220i", &SA5_access},
 	{0x3356103C, "Smart Array P721m", &SA5_access},
-	{0x1920103C, "Smart Array", &SA5_access},
-	{0x1921103C, "Smart Array", &SA5_access},
-	{0x1922103C, "Smart Array", &SA5_access},
-	{0x1923103C, "Smart Array", &SA5_access},
-	{0x1924103C, "Smart Array", &SA5_access},
-	{0x1925103C, "Smart Array", &SA5_access},
-	{0x1926103C, "Smart Array", &SA5_access},
-	{0x1928103C, "Smart Array", &SA5_access},
-	{0x334d103C, "Smart Array P822se", &SA5_access},
+	{0x334D103C, "Smart Array", &SA5_access},
+	{0x1920103C, "Smart Array P430i", &SA5_access},
+	{0x1921103C, "Smart Array P830i", &SA5_access},
+	{0x1922103C, "Smart Array P430", &SA5_access},
+	{0x1923103C, "Smart Array P431", &SA5_access},
+	{0x1924103C, "Smart Array P830", &SA5_access},
+	{0x1925103C, "Smart Array P831", &SA5_access},
+	{0x1926103C, "Smart Array P731m", &SA5_access},
+	{0x1928103C, "Smart Array P230i", &SA5_access},
+	{0x1929103C, "Smart Array P530", &SA5_access},
+	{0x192A103C, "Smart Array P531", &SA5_access},
+	{0x21BD103C, "Smart Array", &SA5_access},
+	{0x21BE103C, "Smart Array", &SA5_access},
+	{0x21BF103C, "Smart Array", &SA5_access},
+	{0x21C0103C, "Smart Array", &SA5_access},
+	{0x21C1103C, "Smart Array", &SA5_access},
+	{0x21C2103C, "Smart Array", &SA5_access},
+	{0x21C3103C, "Smart Array", &SA5_access},
+	{0x21C4103C, "Smart Array", &SA5_access},
+	{0x21C5103C, "Smart Array", &SA5_access},
+	{0x21C6103C, "Smart Array", &SA5_access},
+	{0x21C7103C, "Smart Array", &SA5_access},
+	{0x21C8103C, "Smart Array", &SA5_access},
+	{0x21C9103C, "Smart Array", &SA5_access},
+	{0x21CA103C, "Smart Array", &SA5_access},
+	{0x21CB103C, "Smart Array", &SA5_access},
+	{0x21CC103C, "Smart Array", &SA5_access},
+	{0x21CD103C, "Smart Array", &SA5_access},
+	{0x21CE103C, "Smart Array", &SA5_access},
 	{0xFFFF103C, "Unknown Smart Array", &SA5_access},
 };
 
 static int number_of_controllers;
-
-static struct list_head hpsa_ctlr_list = LIST_HEAD_INIT(hpsa_ctlr_list);
-static spinlock_t lockup_detector_lock;
-static struct task_struct *hpsa_lockup_detector;
 
 static irqreturn_t do_hpsa_intr_intx(int irq, void *dev_id);
 static irqreturn_t do_hpsa_intr_msi(int irq, void *dev_id);
@@ -538,6 +573,7 @@ static struct scsi_host_template hpsa_driver_template = {
 	.sdev_attrs = hpsa_sdev_attrs,
 	.shost_attrs = hpsa_shost_attrs,
 	.max_sectors = 8192,
+	.no_write_same = 1,
 };
 
 
@@ -583,7 +619,7 @@ static void set_performant_mode(struct ctlr_info *h, struct CommandList *c)
 		c->busaddr |= 1 | (h->blockFetchTable[c->Header.SGList] << 1);
 		if (likely(h->msix_vector))
 			c->Header.ReplyQueue =
-				smp_processor_id() % h->nreply_queues;
+				raw_smp_processor_id() % h->nreply_queues;
 	}
 }
 
@@ -1054,7 +1090,7 @@ free_and_out:
 }
 
 /*
- * Lookup bus/target/lun and retrun corresponding struct hpsa_scsi_dev_t *
+ * Lookup bus/target/lun and return corresponding struct hpsa_scsi_dev_t *
  * Assume's h->devlock is held.
  */
 static struct hpsa_scsi_dev_t *lookup_hpsa_scsi_dev(struct ctlr_info *h,
@@ -1205,8 +1241,8 @@ static void complete_scsi_command(struct CommandList *cp)
 	scsi_set_resid(cmd, ei->ResidualCnt);
 
 	if (ei->CommandStatus == 0) {
-		cmd->scsi_done(cmd);
 		cmd_free(h, cp);
+		cmd->scsi_done(cmd);
 		return;
 	}
 
@@ -1224,10 +1260,8 @@ static void complete_scsi_command(struct CommandList *cp)
 		}
 
 		if (ei->ScsiStatus == SAM_STAT_CHECK_CONDITION) {
-			if (check_for_unit_attention(h, cp)) {
-				cmd->result = DID_SOFT_ERROR << 16;
+			if (check_for_unit_attention(h, cp))
 				break;
-			}
 			if (sense_key == ILLEGAL_REQUEST) {
 				/*
 				 * SCSI REPORT_LUNS is commonly unsupported on
@@ -1265,7 +1299,7 @@ static void complete_scsi_command(struct CommandList *cp)
 					"has check condition: aborted command: "
 					"ASC: 0x%x, ASCQ: 0x%x\n",
 					cp, asc, ascq);
-				cmd->result = DID_SOFT_ERROR << 16;
+				cmd->result |= DID_SOFT_ERROR << 16;
 				break;
 			}
 			/* Must be some other type of check condition */
@@ -1379,8 +1413,8 @@ static void complete_scsi_command(struct CommandList *cp)
 		dev_warn(&h->pdev->dev, "cp %p returned unknown status %x\n",
 				cp, ei->CommandStatus);
 	}
-	cmd->scsi_done(cmd);
 	cmd_free(h, cp);
+	cmd->scsi_done(cmd);
 }
 
 static void hpsa_pci_unmap(struct pci_dev *pdev,
@@ -2721,7 +2755,6 @@ static struct CommandList *cmd_alloc(struct ctlr_info *h)
 	} while (test_and_set_bit
 		 (i & (BITS_PER_LONG - 1),
 		  h->cmd_pool_bits + (i / BITS_PER_LONG)) != 0);
-	h->nr_allocs++;
 	spin_unlock_irqrestore(&h->lock, flags);
 
 	c = h->cmd_pool + i;
@@ -2793,7 +2826,6 @@ static void cmd_free(struct ctlr_info *h, struct CommandList *c)
 	spin_lock_irqsave(&h->lock, flags);
 	clear_bit(i & (BITS_PER_LONG - 1),
 		  h->cmd_pool_bits + (i / BITS_PER_LONG));
-	h->nr_frees++;
 	spin_unlock_irqrestore(&h->lock, flags);
 }
 
@@ -3959,16 +3991,6 @@ static int hpsa_kdump_hard_reset_controller(struct pci_dev *pdev)
 	   need a little pause here */
 	msleep(HPSA_POST_RESET_PAUSE_MSECS);
 
-	/* Wait for board to become not ready, then ready. */
-	dev_info(&pdev->dev, "Waiting for board to reset.\n");
-	rc = hpsa_wait_for_board_state(pdev, vaddr, BOARD_NOT_READY);
-	if (rc) {
-		dev_warn(&pdev->dev,
-			"failed waiting for board to reset."
-			" Will try soft reset.\n");
-		rc = -ENOTSUPP; /* Not expected, but try soft reset later */
-		goto unmap_cfgtable;
-	}
 	rc = hpsa_wait_for_board_state(pdev, vaddr, BOARD_READY);
 	if (rc) {
 		dev_warn(&pdev->dev,
@@ -4144,6 +4166,9 @@ static int hpsa_lookup_board_id(struct pci_dev *pdev, u32 *board_id)
 			"0x%08x, ignoring.\n", *board_id);
 			return -ENODEV;
 	}
+
+	mark_tech_preview("hpsa: this controller", THIS_MODULE);
+
 	return ARRAY_SIZE(products) - 1; /* generic unknown smart array */
 }
 
@@ -4286,16 +4311,17 @@ static inline bool hpsa_CISS_signature_present(struct ctlr_info *h)
 	return true;
 }
 
-/* Need to enable prefetch in the SCSI core for 6400 in x86 */
-static inline void hpsa_enable_scsi_prefetch(struct ctlr_info *h)
+static inline void hpsa_set_driver_support_bits(struct ctlr_info *h)
 {
-#ifdef CONFIG_X86
-	u32 prefetch;
+	u32 driver_support;
 
-	prefetch = readl(&(h->cfgtable->SCSI_Prefetch));
-	prefetch |= 0x100;
-	writel(prefetch, &(h->cfgtable->SCSI_Prefetch));
+#ifdef CONFIG_X86
+	/* Need to enable prefetch in the SCSI core for 6400 in x86 */
+	driver_support = readl(&(h->cfgtable->driver_support));
+	driver_support |= ENABLE_SCSI_PREFETCH;
 #endif
+	driver_support |= ENABLE_UNIT_ATTN;
+	writel(driver_support, &(h->cfgtable->driver_support));
 }
 
 /* Disable DMA prefetch for the P600.  Otherwise an ASIC bug may result
@@ -4405,7 +4431,7 @@ static int hpsa_pci_init(struct ctlr_info *h)
 		err = -ENODEV;
 		goto err_out_free_res;
 	}
-	hpsa_enable_scsi_prefetch(h);
+	hpsa_set_driver_support_bits(h);
 	hpsa_p600_dma_prefetch_quirk(h);
 	err = hpsa_enter_simple_mode(h);
 	if (err)
@@ -4616,16 +4642,6 @@ static void hpsa_undo_allocations_after_kdump_soft_reset(struct ctlr_info *h)
 	kfree(h);
 }
 
-static void remove_ctlr_from_lockup_detector_list(struct ctlr_info *h)
-{
-	assert_spin_locked(&lockup_detector_lock);
-	if (!hpsa_lockup_detector)
-		return;
-	if (h->lockup_detected)
-		return; /* already stopped the lockup detector */
-	list_del(&h->lockup_list);
-}
-
 /* Called when controller lockup detected. */
 static void fail_all_cmds_on_list(struct ctlr_info *h, struct list_head *list)
 {
@@ -4644,8 +4660,6 @@ static void controller_lockup_detected(struct ctlr_info *h)
 {
 	unsigned long flags;
 
-	assert_spin_locked(&lockup_detector_lock);
-	remove_ctlr_from_lockup_detector_list(h);
 	h->access.set_intr_mask(h, HPSA_INTR_OFF);
 	spin_lock_irqsave(&h->lock, flags);
 	h->lockup_detected = readl(h->vaddr + SA5_SCRATCHPAD_OFFSET);
@@ -4665,7 +4679,6 @@ static void detect_controller_lockup(struct ctlr_info *h)
 	u32 heartbeat;
 	unsigned long flags;
 
-	assert_spin_locked(&lockup_detector_lock);
 	now = get_jiffies_64();
 	/* If we've received an interrupt recently, we're ok. */
 	if (time_after64(h->last_intr_timestamp +
@@ -4695,68 +4708,22 @@ static void detect_controller_lockup(struct ctlr_info *h)
 	h->last_heartbeat_timestamp = now;
 }
 
-static int detect_controller_lockup_thread(void *notused)
-{
-	struct ctlr_info *h;
-	unsigned long flags;
-
-	while (1) {
-		struct list_head *this, *tmp;
-
-		schedule_timeout_interruptible(HEARTBEAT_SAMPLE_INTERVAL);
-		if (kthread_should_stop())
-			break;
-		spin_lock_irqsave(&lockup_detector_lock, flags);
-		list_for_each_safe(this, tmp, &hpsa_ctlr_list) {
-			h = list_entry(this, struct ctlr_info, lockup_list);
-			detect_controller_lockup(h);
-		}
-		spin_unlock_irqrestore(&lockup_detector_lock, flags);
-	}
-	return 0;
-}
-
-static void add_ctlr_to_lockup_detector_list(struct ctlr_info *h)
+static void hpsa_monitor_ctlr_worker(struct work_struct *work)
 {
 	unsigned long flags;
-
-	h->heartbeat_sample_interval = HEARTBEAT_SAMPLE_INTERVAL;
-	spin_lock_irqsave(&lockup_detector_lock, flags);
-	list_add_tail(&h->lockup_list, &hpsa_ctlr_list);
-	spin_unlock_irqrestore(&lockup_detector_lock, flags);
-}
-
-static void start_controller_lockup_detector(struct ctlr_info *h)
-{
-	/* Start the lockup detector thread if not already started */
-	if (!hpsa_lockup_detector) {
-		spin_lock_init(&lockup_detector_lock);
-		hpsa_lockup_detector =
-			kthread_run(detect_controller_lockup_thread,
-						NULL, HPSA);
-	}
-	if (!hpsa_lockup_detector) {
-		dev_warn(&h->pdev->dev,
-			"Could not start lockup detector thread\n");
+	struct ctlr_info *h = container_of(to_delayed_work(work),
+					struct ctlr_info, monitor_ctlr_work);
+	detect_controller_lockup(h);
+	if (h->lockup_detected)
+		return;
+	spin_lock_irqsave(&h->lock, flags);
+	if (h->remove_in_progress) {
+		spin_unlock_irqrestore(&h->lock, flags);
 		return;
 	}
-	add_ctlr_to_lockup_detector_list(h);
-}
-
-static void stop_controller_lockup_detector(struct ctlr_info *h)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&lockup_detector_lock, flags);
-	remove_ctlr_from_lockup_detector_list(h);
-	/* If the list of ctlr's to monitor is empty, stop the thread */
-	if (list_empty(&hpsa_ctlr_list)) {
-		spin_unlock_irqrestore(&lockup_detector_lock, flags);
-		kthread_stop(hpsa_lockup_detector);
-		spin_lock_irqsave(&lockup_detector_lock, flags);
-		hpsa_lockup_detector = NULL;
-	}
-	spin_unlock_irqrestore(&lockup_detector_lock, flags);
+	schedule_delayed_work(&h->monitor_ctlr_work,
+				h->heartbeat_sample_interval);
+	spin_unlock_irqrestore(&h->lock, flags);
 }
 
 static int hpsa_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
@@ -4903,8 +4870,13 @@ reinit_after_soft_reset:
 
 	hpsa_hba_inquiry(h);
 	hpsa_register_scsi(h);	/* hook ourselves into SCSI subsystem */
-	start_controller_lockup_detector(h);
-	return 1;
+
+	/* Monitor the controller for firmware lockups */
+	h->heartbeat_sample_interval = HEARTBEAT_SAMPLE_INTERVAL;
+	INIT_DELAYED_WORK(&h->monitor_ctlr_work, hpsa_monitor_ctlr_worker);
+	schedule_delayed_work(&h->monitor_ctlr_work,
+				h->heartbeat_sample_interval);
+	return 0;
 
 clean4:
 	hpsa_free_sg_chain_blocks(h);
@@ -4969,13 +4941,20 @@ static void hpsa_free_device_info(struct ctlr_info *h)
 static void hpsa_remove_one(struct pci_dev *pdev)
 {
 	struct ctlr_info *h;
+	unsigned long flags;
 
 	if (pci_get_drvdata(pdev) == NULL) {
 		dev_err(&pdev->dev, "unable to remove device\n");
 		return;
 	}
 	h = pci_get_drvdata(pdev);
-	stop_controller_lockup_detector(h);
+
+	/* Get rid of any controller monitoring work items */
+	spin_lock_irqsave(&h->lock, flags);
+	h->remove_in_progress = 1;
+	cancel_delayed_work(&h->monitor_ctlr_work);
+	spin_unlock_irqrestore(&h->lock, flags);
+
 	hpsa_unregister_scsi(h);	/* unhook from SCSI subsystem */
 	hpsa_shutdown(pdev);
 	iounmap(h->vaddr);

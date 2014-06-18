@@ -91,8 +91,7 @@ static struct dmi_system_id dsdt_dmi_table[] __initdata = {
 
 int acpi_bus_get_device(acpi_handle handle, struct acpi_device **device)
 {
-	acpi_status status = AE_OK;
-
+	acpi_status status;
 
 	if (!device)
 		return -EINVAL;
@@ -162,7 +161,7 @@ EXPORT_SYMBOL(acpi_bus_private_data_handler);
 
 int acpi_bus_get_private_data(acpi_handle handle, void **data)
 {
-	acpi_status status = AE_OK;
+	acpi_status status;
 
 	if (!*data)
 		return -EINVAL;
@@ -277,7 +276,7 @@ acpi_status acpi_run_osc(acpi_handle handle, struct acpi_osc_context *context)
 			acpi_print_osc_error(handle, context,
 				"_OSC invalid revision");
 		if (errors & OSC_CAPABILITIES_MASK_ERROR) {
-			if (((u32 *)context->cap.pointer)[OSC_QUERY_TYPE]
+			if (((u32 *)context->cap.pointer)[OSC_QUERY_DWORD]
 			    & OSC_QUERY_ENABLE)
 				goto out_success;
 			status = AE_SUPPORT;
@@ -317,30 +316,30 @@ static void acpi_bus_osc_support(void)
 	};
 	acpi_handle handle;
 
-	capbuf[OSC_QUERY_TYPE] = OSC_QUERY_ENABLE;
-	capbuf[OSC_SUPPORT_TYPE] = OSC_SB_PR3_SUPPORT; /* _PR3 is in use */
+	capbuf[OSC_QUERY_DWORD] = OSC_QUERY_ENABLE;
+	capbuf[OSC_SUPPORT_DWORD] = OSC_SB_PR3_SUPPORT; /* _PR3 is in use */
 #if defined(CONFIG_ACPI_PROCESSOR_AGGREGATOR) ||\
 			defined(CONFIG_ACPI_PROCESSOR_AGGREGATOR_MODULE)
-	capbuf[OSC_SUPPORT_TYPE] |= OSC_SB_PAD_SUPPORT;
+	capbuf[OSC_SUPPORT_DWORD] |= OSC_SB_PAD_SUPPORT;
 #endif
 
 #if defined(CONFIG_ACPI_PROCESSOR) || defined(CONFIG_ACPI_PROCESSOR_MODULE)
-	capbuf[OSC_SUPPORT_TYPE] |= OSC_SB_PPC_OST_SUPPORT;
+	capbuf[OSC_SUPPORT_DWORD] |= OSC_SB_PPC_OST_SUPPORT;
 #endif
 
 #ifdef ACPI_HOTPLUG_OST
-	capbuf[OSC_SUPPORT_TYPE] |= OSC_SB_HOTPLUG_OST_SUPPORT;
+	capbuf[OSC_SUPPORT_DWORD] |= OSC_SB_HOTPLUG_OST_SUPPORT;
 #endif
 
 	if (!ghes_disable)
-		capbuf[OSC_SUPPORT_TYPE] |= OSC_SB_APEI_SUPPORT;
+		capbuf[OSC_SUPPORT_DWORD] |= OSC_SB_APEI_SUPPORT;
 	if (ACPI_FAILURE(acpi_get_handle(NULL, "\\_SB", &handle)))
 		return;
 	if (ACPI_SUCCESS(acpi_run_osc(handle, &context))) {
 		u32 *capbuf_ret = context.ret.pointer;
-		if (context.ret.length > OSC_SUPPORT_TYPE)
+		if (context.ret.length > OSC_SUPPORT_DWORD)
 			osc_sb_apei_support_acked =
-				capbuf_ret[OSC_SUPPORT_TYPE] & OSC_SB_APEI_SUPPORT;
+				capbuf_ret[OSC_SUPPORT_DWORD] & OSC_SB_APEI_SUPPORT;
 		kfree(context.ret.pointer);
 	}
 	/* do we need to check other returned cap? Sounds no */
@@ -361,7 +360,7 @@ extern int event_is_open;
 int acpi_bus_generate_proc_event4(const char *device_class, const char *bus_id, u8 type, int data)
 {
 	struct acpi_bus_event *event;
-	unsigned long flags = 0;
+	unsigned long flags;
 
 	/* drop event on the floor if no one's listening */
 	if (!event_is_open)
@@ -400,7 +399,7 @@ EXPORT_SYMBOL(acpi_bus_generate_proc_event);
 
 int acpi_bus_receive_event(struct acpi_bus_event *event)
 {
-	unsigned long flags = 0;
+	unsigned long flags;
 	struct acpi_bus_event *entry = NULL;
 
 	DECLARE_WAITQUEUE(wait, current);
@@ -593,7 +592,7 @@ static void acpi_bus_notify(acpi_handle handle, u32 type, void *data)
 
 static int __init acpi_bus_init_irq(void)
 {
-	acpi_status status = AE_OK;
+	acpi_status status;
 	union acpi_object arg = { ACPI_TYPE_INTEGER };
 	struct acpi_object_list arg_list = { 1, &arg };
 	char *message = NULL;
@@ -640,7 +639,7 @@ u8 acpi_gbl_permanent_mmap;
 
 void __init acpi_early_init(void)
 {
-	acpi_status status = AE_OK;
+	acpi_status status;
 
 	if (acpi_disabled)
 		return;
@@ -714,8 +713,8 @@ void __init acpi_early_init(void)
 
 static int __init acpi_bus_init(void)
 {
-	int result = 0;
-	acpi_status status = AE_OK;
+	int result;
+	acpi_status status;
 	extern acpi_status acpi_os_initialize1(void);
 
 	acpi_os_initialize1();

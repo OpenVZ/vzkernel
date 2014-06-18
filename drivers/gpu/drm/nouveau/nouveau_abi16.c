@@ -129,6 +129,7 @@ nouveau_abi16_chan_fini(struct nouveau_abi16 *abi16,
 
 	if (chan->ntfy) {
 		nouveau_bo_vma_del(chan->ntfy, &chan->ntfy_vma);
+		nouveau_bo_unpin(chan->ntfy);
 		drm_gem_object_unreference_unlocked(chan->ntfy->gem);
 	}
 
@@ -444,6 +445,8 @@ nouveau_abi16_ioctl_notifierobj_alloc(ABI16_IOCTL_ARGS)
 				 sizeof(args), &object);
 	if (ret)
 		goto done;
+
+	info->offset = ntfy->node->offset;
 
 done:
 	if (ret)

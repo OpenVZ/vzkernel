@@ -734,18 +734,14 @@ int __cpuinit __cpu_up(unsigned int cpu, struct task_struct *tidle)
 	return 0;
 }
 
-static int __init setup_possible_cpus(char *s)
-{
-	int max, cpu;
+static unsigned int setup_possible_cpus __initdata;
 
-	if (kstrtoint(s, 0, &max) < 0)
-		return 0;
-	init_cpu_possible(cpumask_of(0));
-	for (cpu = 1; cpu < max && cpu < nr_cpu_ids; cpu++)
-		set_cpu_possible(cpu, true);
+static int __init _setup_possible_cpus(char *s)
+{
+	get_option(&s, &setup_possible_cpus);
 	return 0;
 }
-early_param("possible_cpus", setup_possible_cpus);
+early_param("possible_cpus", _setup_possible_cpus);
 
 #ifdef CONFIG_HOTPLUG_CPU
 
@@ -787,6 +783,17 @@ void __noreturn cpu_die(void)
 }
 
 #endif /* CONFIG_HOTPLUG_CPU */
+
+void __init smp_fill_possible_mask(void)
+{
+	unsigned int possible, cpu;
+
+	possible = setup_possible_cpus;
+	if (!possible)
+		possible = MACHINE_IS_VM ? 64 : nr_cpu_ids;
+	for (cpu = 0; cpu < possible && cpu < nr_cpu_ids; cpu++)
+		set_cpu_possible(cpu, true);
+}
 
 void __init smp_prepare_cpus(unsigned int max_cpus)
 {
@@ -933,7 +940,7 @@ static ssize_t show_idle_count(struct device *dev,
 		idle_count = ACCESS_ONCE(idle->idle_count);
 		if (ACCESS_ONCE(idle->clock_idle_enter))
 			idle_count++;
-	} while ((sequence & 1) || (idle->sequence != sequence));
+	} while ((sequence & 1) || (ACCESS_ONCE(idle->sequence) != sequence));
 	return sprintf(buf, "%llu\n", idle_count);
 }
 static DEVICE_ATTR(idle_count, 0444, show_idle_count, NULL);
@@ -951,7 +958,7 @@ static ssize_t show_idle_time(struct device *dev,
 		idle_time = ACCESS_ONCE(idle->idle_time);
 		idle_enter = ACCESS_ONCE(idle->clock_idle_enter);
 		idle_exit = ACCESS_ONCE(idle->clock_idle_exit);
-	} while ((sequence & 1) || (idle->sequence != sequence));
+	} while ((sequence & 1) || (ACCESS_ONCE(idle->sequence) != sequence));
 	idle_time += idle_enter ? ((idle_exit ? : now) - idle_enter) : 0;
 	return sprintf(buf, "%llu\n", idle_time >> 12);
 }

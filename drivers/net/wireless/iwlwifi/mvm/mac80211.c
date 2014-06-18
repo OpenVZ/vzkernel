@@ -78,32 +78,6 @@
 #include "fw-api-scan.h"
 #include "iwl-phy-db.h"
 
-static const struct ieee80211_iface_limit iwl_mvm_limits[] = {
-	{
-		.max = 1,
-		.types = BIT(NL80211_IFTYPE_STATION) |
-			BIT(NL80211_IFTYPE_AP),
-	},
-	{
-		.max = 1,
-		.types = BIT(NL80211_IFTYPE_P2P_CLIENT) |
-			BIT(NL80211_IFTYPE_P2P_GO),
-	},
-	{
-		.max = 1,
-		.types = BIT(NL80211_IFTYPE_P2P_DEVICE),
-	},
-};
-
-static const struct ieee80211_iface_combination iwl_mvm_iface_combinations[] = {
-	{
-		.num_different_channels = 1,
-		.max_interfaces = 3,
-		.limits = iwl_mvm_limits,
-		.n_limits = ARRAY_SIZE(iwl_mvm_limits),
-	},
-};
-
 #ifdef CONFIG_PM_SLEEP
 static const struct nl80211_wowlan_tcp_data_token_feature
 iwl_mvm_wowlan_tcp_token_feature = {
@@ -160,19 +134,11 @@ int iwl_mvm_mac_setup_register(struct iwl_mvm *mvm)
 	hw->vif_data_size = sizeof(struct iwl_mvm_vif);
 	hw->chanctx_data_size = sizeof(struct iwl_mvm_phy_ctxt);
 
-	hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) |
-		BIT(NL80211_IFTYPE_P2P_CLIENT) |
-		BIT(NL80211_IFTYPE_AP) |
-		BIT(NL80211_IFTYPE_P2P_GO) |
-		BIT(NL80211_IFTYPE_P2P_DEVICE);
+	hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);
 
 	hw->wiphy->flags |= WIPHY_FLAG_CUSTOM_REGULATORY |
 			    WIPHY_FLAG_DISABLE_BEACON_HINTS |
 			    WIPHY_FLAG_IBSS_RSN;
-
-	hw->wiphy->iface_combinations = iwl_mvm_iface_combinations;
-	hw->wiphy->n_iface_combinations =
-		ARRAY_SIZE(iwl_mvm_iface_combinations);
 
 	hw->wiphy->max_remain_on_channel_duration = 10000;
 	hw->max_listen_interval = IWL_CONN_MAX_LISTEN_INTERVAL;
@@ -243,7 +209,11 @@ int iwl_mvm_mac_setup_register(struct iwl_mvm *mvm)
 	if (ret)
 		return ret;
 
-	return ieee80211_register_hw(mvm->hw);
+	ret = ieee80211_register_hw(mvm->hw);
+	if (ret)
+		iwl_mvm_leds_exit(mvm);
+
+	return ret;
 }
 
 static void iwl_mvm_mac_tx(struct ieee80211_hw *hw,
@@ -987,6 +957,21 @@ static int iwl_mvm_mac_sta_state(struct ieee80211_hw *hw,
 	mutex_lock(&mvm->mutex);
 	if (old_state == IEEE80211_STA_NOTEXIST &&
 	    new_state == IEEE80211_STA_NONE) {
+		/*
+		 * Firmware bug - it'll crash if the beacon interval is less
+		 * than 16. We can't avoid connecting at all, so refuse the
+		 * station state change, this will cause mac80211 to abandon
+		 * attempts to connect to this AP, and eventually wpa_s will
+		 * blacklist the AP...
+		 */
+		if (vif->type == NL80211_IFTYPE_STATION &&
+		    vif->bss_conf.beacon_int < 16) {
+			IWL_ERR(mvm,
+				"AP %pM beacon interval is %d, refusing due to firmware bug!\n",
+				sta->addr, vif->bss_conf.beacon_int);
+			ret = -EINVAL;
+			goto out_unlock;
+		}
 		ret = iwl_mvm_add_sta(mvm, vif, sta);
 	} else if (old_state == IEEE80211_STA_NONE &&
 		   new_state == IEEE80211_STA_AUTH) {
@@ -1015,6 +1000,7 @@ static int iwl_mvm_mac_sta_state(struct ieee80211_hw *hw,
 	} else {
 		ret = -EIO;
 	}
+ out_unlock:
 	mutex_unlock(&mvm->mutex);
 
 	return ret;

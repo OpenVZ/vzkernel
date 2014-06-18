@@ -205,6 +205,23 @@ static const struct tnt tnts[] = {
 	{ TAINT_CRAP,			'C', ' ' },
 	{ TAINT_FIRMWARE_WORKAROUND,	'I', ' ' },
 	{ TAINT_OOT_MODULE,		'O', ' ' },
+	{ TAINT_14,			'?', '-' },
+	{ TAINT_15,			'?', '-' },
+	{ TAINT_16,			'?', '-' },
+	{ TAINT_17,			'?', '-' },
+	{ TAINT_18,			'?', '-' },
+	{ TAINT_19,			'?', '-' },
+	{ TAINT_20,			'?', '-' },
+	{ TAINT_21,			'?', '-' },
+	{ TAINT_22,			'?', '-' },
+	{ TAINT_23,			'?', '-' },
+	{ TAINT_24,			'?', '-' },
+	{ TAINT_25,			'?', '-' },
+	{ TAINT_26,			'?', '-' },
+	{ TAINT_27,			'?', '-' },
+	{ TAINT_HARDWARE_UNSUPPORTED,	'H', ' ' },
+	{ TAINT_TECH_PREVIEW,		'T', ' ' },
+
 };
 
 /**

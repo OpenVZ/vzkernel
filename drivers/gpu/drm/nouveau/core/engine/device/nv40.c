@@ -55,7 +55,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_I2C    ] = &nv04_i2c_oclass;
 		device->oclass[NVDEV_SUBDEV_CLOCK  ] = &nv40_clock_oclass;
 		device->oclass[NVDEV_SUBDEV_THERM  ] = &nv40_therm_oclass;
-		device->oclass[NVDEV_SUBDEV_DEVINIT] = &nv1a_devinit_oclass;
+		device->oclass[NVDEV_SUBDEV_DEVINIT] =  nv1a_devinit_oclass;
 		device->oclass[NVDEV_SUBDEV_MC     ] = &nv04_mc_oclass;
 		device->oclass[NVDEV_SUBDEV_BUS    ] = &nv31_bus_oclass;
 		device->oclass[NVDEV_SUBDEV_TIMER  ] = &nv04_timer_oclass;
@@ -64,7 +64,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_VM     ] = &nv04_vmmgr_oclass;
 		device->oclass[NVDEV_ENGINE_DMAOBJ ] = &nv04_dmaeng_oclass;
 		device->oclass[NVDEV_ENGINE_FIFO   ] = &nv40_fifo_oclass;
-		device->oclass[NVDEV_ENGINE_SW     ] = &nv10_software_oclass;
+		device->oclass[NVDEV_ENGINE_SW     ] =  nv10_software_oclass;
 		device->oclass[NVDEV_ENGINE_GR     ] = &nv40_graph_oclass;
 		device->oclass[NVDEV_ENGINE_MPEG   ] = &nv40_mpeg_oclass;
 		device->oclass[NVDEV_ENGINE_DISP   ] = &nv04_disp_oclass;
@@ -76,7 +76,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_I2C    ] = &nv04_i2c_oclass;
 		device->oclass[NVDEV_SUBDEV_CLOCK  ] = &nv40_clock_oclass;
 		device->oclass[NVDEV_SUBDEV_THERM  ] = &nv40_therm_oclass;
-		device->oclass[NVDEV_SUBDEV_DEVINIT] = &nv1a_devinit_oclass;
+		device->oclass[NVDEV_SUBDEV_DEVINIT] =  nv1a_devinit_oclass;
 		device->oclass[NVDEV_SUBDEV_MC     ] = &nv04_mc_oclass;
 		device->oclass[NVDEV_SUBDEV_BUS    ] = &nv31_bus_oclass;
 		device->oclass[NVDEV_SUBDEV_TIMER  ] = &nv04_timer_oclass;
@@ -85,7 +85,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_VM     ] = &nv41_vmmgr_oclass;
 		device->oclass[NVDEV_ENGINE_DMAOBJ ] = &nv04_dmaeng_oclass;
 		device->oclass[NVDEV_ENGINE_FIFO   ] = &nv40_fifo_oclass;
-		device->oclass[NVDEV_ENGINE_SW     ] = &nv10_software_oclass;
+		device->oclass[NVDEV_ENGINE_SW     ] =  nv10_software_oclass;
 		device->oclass[NVDEV_ENGINE_GR     ] = &nv40_graph_oclass;
 		device->oclass[NVDEV_ENGINE_MPEG   ] = &nv40_mpeg_oclass;
 		device->oclass[NVDEV_ENGINE_DISP   ] = &nv04_disp_oclass;
@@ -97,7 +97,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_I2C    ] = &nv04_i2c_oclass;
 		device->oclass[NVDEV_SUBDEV_CLOCK  ] = &nv40_clock_oclass;
 		device->oclass[NVDEV_SUBDEV_THERM  ] = &nv40_therm_oclass;
-		device->oclass[NVDEV_SUBDEV_DEVINIT] = &nv1a_devinit_oclass;
+		device->oclass[NVDEV_SUBDEV_DEVINIT] =  nv1a_devinit_oclass;
 		device->oclass[NVDEV_SUBDEV_MC     ] = &nv04_mc_oclass;
 		device->oclass[NVDEV_SUBDEV_BUS    ] = &nv31_bus_oclass;
 		device->oclass[NVDEV_SUBDEV_TIMER  ] = &nv04_timer_oclass;
@@ -106,7 +106,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_VM     ] = &nv41_vmmgr_oclass;
 		device->oclass[NVDEV_ENGINE_DMAOBJ ] = &nv04_dmaeng_oclass;
 		device->oclass[NVDEV_ENGINE_FIFO   ] = &nv40_fifo_oclass;
-		device->oclass[NVDEV_ENGINE_SW     ] = &nv10_software_oclass;
+		device->oclass[NVDEV_ENGINE_SW     ] =  nv10_software_oclass;
 		device->oclass[NVDEV_ENGINE_GR     ] = &nv40_graph_oclass;
 		device->oclass[NVDEV_ENGINE_MPEG   ] = &nv40_mpeg_oclass;
 		device->oclass[NVDEV_ENGINE_DISP   ] = &nv04_disp_oclass;
@@ -118,7 +118,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_I2C    ] = &nv04_i2c_oclass;
 		device->oclass[NVDEV_SUBDEV_CLOCK  ] = &nv40_clock_oclass;
 		device->oclass[NVDEV_SUBDEV_THERM  ] = &nv40_therm_oclass;
-		device->oclass[NVDEV_SUBDEV_DEVINIT] = &nv1a_devinit_oclass;
+		device->oclass[NVDEV_SUBDEV_DEVINIT] =  nv1a_devinit_oclass;
 		device->oclass[NVDEV_SUBDEV_MC     ] = &nv04_mc_oclass;
 		device->oclass[NVDEV_SUBDEV_BUS    ] = &nv31_bus_oclass;
 		device->oclass[NVDEV_SUBDEV_TIMER  ] = &nv04_timer_oclass;
@@ -127,7 +127,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_VM     ] = &nv41_vmmgr_oclass;
 		device->oclass[NVDEV_ENGINE_DMAOBJ ] = &nv04_dmaeng_oclass;
 		device->oclass[NVDEV_ENGINE_FIFO   ] = &nv40_fifo_oclass;
-		device->oclass[NVDEV_ENGINE_SW     ] = &nv10_software_oclass;
+		device->oclass[NVDEV_ENGINE_SW     ] =  nv10_software_oclass;
 		device->oclass[NVDEV_ENGINE_GR     ] = &nv40_graph_oclass;
 		device->oclass[NVDEV_ENGINE_MPEG   ] = &nv40_mpeg_oclass;
 		device->oclass[NVDEV_ENGINE_DISP   ] = &nv04_disp_oclass;
@@ -139,7 +139,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_I2C    ] = &nv04_i2c_oclass;
 		device->oclass[NVDEV_SUBDEV_CLOCK  ] = &nv40_clock_oclass;
 		device->oclass[NVDEV_SUBDEV_THERM  ] = &nv40_therm_oclass;
-		device->oclass[NVDEV_SUBDEV_DEVINIT] = &nv1a_devinit_oclass;
+		device->oclass[NVDEV_SUBDEV_DEVINIT] =  nv1a_devinit_oclass;
 		device->oclass[NVDEV_SUBDEV_MC     ] = &nv04_mc_oclass;
 		device->oclass[NVDEV_SUBDEV_BUS    ] = &nv31_bus_oclass;
 		device->oclass[NVDEV_SUBDEV_TIMER  ] = &nv04_timer_oclass;
@@ -148,7 +148,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_VM     ] = &nv04_vmmgr_oclass;
 		device->oclass[NVDEV_ENGINE_DMAOBJ ] = &nv04_dmaeng_oclass;
 		device->oclass[NVDEV_ENGINE_FIFO   ] = &nv40_fifo_oclass;
-		device->oclass[NVDEV_ENGINE_SW     ] = &nv10_software_oclass;
+		device->oclass[NVDEV_ENGINE_SW     ] =  nv10_software_oclass;
 		device->oclass[NVDEV_ENGINE_GR     ] = &nv40_graph_oclass;
 		device->oclass[NVDEV_ENGINE_MPEG   ] = &nv40_mpeg_oclass;
 		device->oclass[NVDEV_ENGINE_DISP   ] = &nv04_disp_oclass;
@@ -160,7 +160,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_I2C    ] = &nv04_i2c_oclass;
 		device->oclass[NVDEV_SUBDEV_CLOCK  ] = &nv40_clock_oclass;
 		device->oclass[NVDEV_SUBDEV_THERM  ] = &nv40_therm_oclass;
-		device->oclass[NVDEV_SUBDEV_DEVINIT] = &nv1a_devinit_oclass;
+		device->oclass[NVDEV_SUBDEV_DEVINIT] =  nv1a_devinit_oclass;
 		device->oclass[NVDEV_SUBDEV_MC     ] = &nv04_mc_oclass;
 		device->oclass[NVDEV_SUBDEV_BUS    ] = &nv31_bus_oclass;
 		device->oclass[NVDEV_SUBDEV_TIMER  ] = &nv04_timer_oclass;
@@ -169,7 +169,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_VM     ] = &nv41_vmmgr_oclass;
 		device->oclass[NVDEV_ENGINE_DMAOBJ ] = &nv04_dmaeng_oclass;
 		device->oclass[NVDEV_ENGINE_FIFO   ] = &nv40_fifo_oclass;
-		device->oclass[NVDEV_ENGINE_SW     ] = &nv10_software_oclass;
+		device->oclass[NVDEV_ENGINE_SW     ] =  nv10_software_oclass;
 		device->oclass[NVDEV_ENGINE_GR     ] = &nv40_graph_oclass;
 		device->oclass[NVDEV_ENGINE_MPEG   ] = &nv40_mpeg_oclass;
 		device->oclass[NVDEV_ENGINE_DISP   ] = &nv04_disp_oclass;
@@ -181,7 +181,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_I2C    ] = &nv04_i2c_oclass;
 		device->oclass[NVDEV_SUBDEV_CLOCK  ] = &nv40_clock_oclass;
 		device->oclass[NVDEV_SUBDEV_THERM  ] = &nv40_therm_oclass;
-		device->oclass[NVDEV_SUBDEV_DEVINIT] = &nv1a_devinit_oclass;
+		device->oclass[NVDEV_SUBDEV_DEVINIT] =  nv1a_devinit_oclass;
 		device->oclass[NVDEV_SUBDEV_MC     ] = &nv04_mc_oclass;
 		device->oclass[NVDEV_SUBDEV_BUS    ] = &nv31_bus_oclass;
 		device->oclass[NVDEV_SUBDEV_TIMER  ] = &nv04_timer_oclass;
@@ -190,7 +190,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_VM     ] = &nv41_vmmgr_oclass;
 		device->oclass[NVDEV_ENGINE_DMAOBJ ] = &nv04_dmaeng_oclass;
 		device->oclass[NVDEV_ENGINE_FIFO   ] = &nv40_fifo_oclass;
-		device->oclass[NVDEV_ENGINE_SW     ] = &nv10_software_oclass;
+		device->oclass[NVDEV_ENGINE_SW     ] =  nv10_software_oclass;
 		device->oclass[NVDEV_ENGINE_GR     ] = &nv40_graph_oclass;
 		device->oclass[NVDEV_ENGINE_MPEG   ] = &nv40_mpeg_oclass;
 		device->oclass[NVDEV_ENGINE_DISP   ] = &nv04_disp_oclass;
@@ -202,7 +202,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_I2C    ] = &nv04_i2c_oclass;
 		device->oclass[NVDEV_SUBDEV_CLOCK  ] = &nv40_clock_oclass;
 		device->oclass[NVDEV_SUBDEV_THERM  ] = &nv40_therm_oclass;
-		device->oclass[NVDEV_SUBDEV_DEVINIT] = &nv1a_devinit_oclass;
+		device->oclass[NVDEV_SUBDEV_DEVINIT] =  nv1a_devinit_oclass;
 		device->oclass[NVDEV_SUBDEV_MC     ] = &nv04_mc_oclass;
 		device->oclass[NVDEV_SUBDEV_BUS    ] = &nv31_bus_oclass;
 		device->oclass[NVDEV_SUBDEV_TIMER  ] = &nv04_timer_oclass;
@@ -211,7 +211,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_VM     ] = &nv41_vmmgr_oclass;
 		device->oclass[NVDEV_ENGINE_DMAOBJ ] = &nv04_dmaeng_oclass;
 		device->oclass[NVDEV_ENGINE_FIFO   ] = &nv40_fifo_oclass;
-		device->oclass[NVDEV_ENGINE_SW     ] = &nv10_software_oclass;
+		device->oclass[NVDEV_ENGINE_SW     ] =  nv10_software_oclass;
 		device->oclass[NVDEV_ENGINE_GR     ] = &nv40_graph_oclass;
 		device->oclass[NVDEV_ENGINE_MPEG   ] = &nv40_mpeg_oclass;
 		device->oclass[NVDEV_ENGINE_DISP   ] = &nv04_disp_oclass;
@@ -223,7 +223,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_I2C    ] = &nv04_i2c_oclass;
 		device->oclass[NVDEV_SUBDEV_CLOCK  ] = &nv40_clock_oclass;
 		device->oclass[NVDEV_SUBDEV_THERM  ] = &nv40_therm_oclass;
-		device->oclass[NVDEV_SUBDEV_DEVINIT] = &nv1a_devinit_oclass;
+		device->oclass[NVDEV_SUBDEV_DEVINIT] =  nv1a_devinit_oclass;
 		device->oclass[NVDEV_SUBDEV_MC     ] = &nv44_mc_oclass;
 		device->oclass[NVDEV_SUBDEV_BUS    ] = &nv31_bus_oclass;
 		device->oclass[NVDEV_SUBDEV_TIMER  ] = &nv04_timer_oclass;
@@ -232,7 +232,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_VM     ] = &nv44_vmmgr_oclass;
 		device->oclass[NVDEV_ENGINE_DMAOBJ ] = &nv04_dmaeng_oclass;
 		device->oclass[NVDEV_ENGINE_FIFO   ] = &nv40_fifo_oclass;
-		device->oclass[NVDEV_ENGINE_SW     ] = &nv10_software_oclass;
+		device->oclass[NVDEV_ENGINE_SW     ] =  nv10_software_oclass;
 		device->oclass[NVDEV_ENGINE_GR     ] = &nv40_graph_oclass;
 		device->oclass[NVDEV_ENGINE_MPEG   ] = &nv40_mpeg_oclass;
 		device->oclass[NVDEV_ENGINE_DISP   ] = &nv04_disp_oclass;
@@ -244,7 +244,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_I2C    ] = &nv04_i2c_oclass;
 		device->oclass[NVDEV_SUBDEV_CLOCK  ] = &nv40_clock_oclass;
 		device->oclass[NVDEV_SUBDEV_THERM  ] = &nv40_therm_oclass;
-		device->oclass[NVDEV_SUBDEV_DEVINIT] = &nv1a_devinit_oclass;
+		device->oclass[NVDEV_SUBDEV_DEVINIT] =  nv1a_devinit_oclass;
 		device->oclass[NVDEV_SUBDEV_MC     ] = &nv44_mc_oclass;
 		device->oclass[NVDEV_SUBDEV_BUS    ] = &nv31_bus_oclass;
 		device->oclass[NVDEV_SUBDEV_TIMER  ] = &nv04_timer_oclass;
@@ -253,7 +253,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_VM     ] = &nv44_vmmgr_oclass;
 		device->oclass[NVDEV_ENGINE_DMAOBJ ] = &nv04_dmaeng_oclass;
 		device->oclass[NVDEV_ENGINE_FIFO   ] = &nv40_fifo_oclass;
-		device->oclass[NVDEV_ENGINE_SW     ] = &nv10_software_oclass;
+		device->oclass[NVDEV_ENGINE_SW     ] =  nv10_software_oclass;
 		device->oclass[NVDEV_ENGINE_GR     ] = &nv40_graph_oclass;
 		device->oclass[NVDEV_ENGINE_MPEG   ] = &nv40_mpeg_oclass;
 		device->oclass[NVDEV_ENGINE_DISP   ] = &nv04_disp_oclass;
@@ -265,7 +265,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_I2C    ] = &nv04_i2c_oclass;
 		device->oclass[NVDEV_SUBDEV_CLOCK  ] = &nv40_clock_oclass;
 		device->oclass[NVDEV_SUBDEV_THERM  ] = &nv40_therm_oclass;
-		device->oclass[NVDEV_SUBDEV_DEVINIT] = &nv1a_devinit_oclass;
+		device->oclass[NVDEV_SUBDEV_DEVINIT] =  nv1a_devinit_oclass;
 		device->oclass[NVDEV_SUBDEV_MC     ] = &nv44_mc_oclass;
 		device->oclass[NVDEV_SUBDEV_BUS    ] = &nv31_bus_oclass;
 		device->oclass[NVDEV_SUBDEV_TIMER  ] = &nv04_timer_oclass;
@@ -274,7 +274,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_VM     ] = &nv44_vmmgr_oclass;
 		device->oclass[NVDEV_ENGINE_DMAOBJ ] = &nv04_dmaeng_oclass;
 		device->oclass[NVDEV_ENGINE_FIFO   ] = &nv40_fifo_oclass;
-		device->oclass[NVDEV_ENGINE_SW     ] = &nv10_software_oclass;
+		device->oclass[NVDEV_ENGINE_SW     ] =  nv10_software_oclass;
 		device->oclass[NVDEV_ENGINE_GR     ] = &nv40_graph_oclass;
 		device->oclass[NVDEV_ENGINE_MPEG   ] = &nv40_mpeg_oclass;
 		device->oclass[NVDEV_ENGINE_DISP   ] = &nv04_disp_oclass;
@@ -286,7 +286,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_I2C    ] = &nv04_i2c_oclass;
 		device->oclass[NVDEV_SUBDEV_CLOCK  ] = &nv40_clock_oclass;
 		device->oclass[NVDEV_SUBDEV_THERM  ] = &nv40_therm_oclass;
-		device->oclass[NVDEV_SUBDEV_DEVINIT] = &nv1a_devinit_oclass;
+		device->oclass[NVDEV_SUBDEV_DEVINIT] =  nv1a_devinit_oclass;
 		device->oclass[NVDEV_SUBDEV_MC     ] = &nv44_mc_oclass;
 		device->oclass[NVDEV_SUBDEV_BUS    ] = &nv31_bus_oclass;
 		device->oclass[NVDEV_SUBDEV_TIMER  ] = &nv04_timer_oclass;
@@ -295,7 +295,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_VM     ] = &nv44_vmmgr_oclass;
 		device->oclass[NVDEV_ENGINE_DMAOBJ ] = &nv04_dmaeng_oclass;
 		device->oclass[NVDEV_ENGINE_FIFO   ] = &nv40_fifo_oclass;
-		device->oclass[NVDEV_ENGINE_SW     ] = &nv10_software_oclass;
+		device->oclass[NVDEV_ENGINE_SW     ] =  nv10_software_oclass;
 		device->oclass[NVDEV_ENGINE_GR     ] = &nv40_graph_oclass;
 		device->oclass[NVDEV_ENGINE_MPEG   ] = &nv40_mpeg_oclass;
 		device->oclass[NVDEV_ENGINE_DISP   ] = &nv04_disp_oclass;
@@ -307,7 +307,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_I2C    ] = &nv4e_i2c_oclass;
 		device->oclass[NVDEV_SUBDEV_CLOCK  ] = &nv40_clock_oclass;
 		device->oclass[NVDEV_SUBDEV_THERM  ] = &nv40_therm_oclass;
-		device->oclass[NVDEV_SUBDEV_DEVINIT] = &nv1a_devinit_oclass;
+		device->oclass[NVDEV_SUBDEV_DEVINIT] =  nv1a_devinit_oclass;
 		device->oclass[NVDEV_SUBDEV_MC     ] = &nv44_mc_oclass;
 		device->oclass[NVDEV_SUBDEV_BUS    ] = &nv31_bus_oclass;
 		device->oclass[NVDEV_SUBDEV_TIMER  ] = &nv04_timer_oclass;
@@ -316,7 +316,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_VM     ] = &nv44_vmmgr_oclass;
 		device->oclass[NVDEV_ENGINE_DMAOBJ ] = &nv04_dmaeng_oclass;
 		device->oclass[NVDEV_ENGINE_FIFO   ] = &nv40_fifo_oclass;
-		device->oclass[NVDEV_ENGINE_SW     ] = &nv10_software_oclass;
+		device->oclass[NVDEV_ENGINE_SW     ] =  nv10_software_oclass;
 		device->oclass[NVDEV_ENGINE_GR     ] = &nv40_graph_oclass;
 		device->oclass[NVDEV_ENGINE_MPEG   ] = &nv40_mpeg_oclass;
 		device->oclass[NVDEV_ENGINE_DISP   ] = &nv04_disp_oclass;
@@ -328,7 +328,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_I2C    ] = &nv04_i2c_oclass;
 		device->oclass[NVDEV_SUBDEV_CLOCK  ] = &nv40_clock_oclass;
 		device->oclass[NVDEV_SUBDEV_THERM  ] = &nv40_therm_oclass;
-		device->oclass[NVDEV_SUBDEV_DEVINIT] = &nv1a_devinit_oclass;
+		device->oclass[NVDEV_SUBDEV_DEVINIT] =  nv1a_devinit_oclass;
 		device->oclass[NVDEV_SUBDEV_MC     ] = &nv44_mc_oclass;
 		device->oclass[NVDEV_SUBDEV_BUS    ] = &nv31_bus_oclass;
 		device->oclass[NVDEV_SUBDEV_TIMER  ] = &nv04_timer_oclass;
@@ -337,7 +337,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_VM     ] = &nv44_vmmgr_oclass;
 		device->oclass[NVDEV_ENGINE_DMAOBJ ] = &nv04_dmaeng_oclass;
 		device->oclass[NVDEV_ENGINE_FIFO   ] = &nv40_fifo_oclass;
-		device->oclass[NVDEV_ENGINE_SW     ] = &nv10_software_oclass;
+		device->oclass[NVDEV_ENGINE_SW     ] =  nv10_software_oclass;
 		device->oclass[NVDEV_ENGINE_GR     ] = &nv40_graph_oclass;
 		device->oclass[NVDEV_ENGINE_MPEG   ] = &nv40_mpeg_oclass;
 		device->oclass[NVDEV_ENGINE_DISP   ] = &nv04_disp_oclass;
@@ -349,7 +349,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_I2C    ] = &nv04_i2c_oclass;
 		device->oclass[NVDEV_SUBDEV_CLOCK  ] = &nv40_clock_oclass;
 		device->oclass[NVDEV_SUBDEV_THERM  ] = &nv40_therm_oclass;
-		device->oclass[NVDEV_SUBDEV_DEVINIT] = &nv1a_devinit_oclass;
+		device->oclass[NVDEV_SUBDEV_DEVINIT] =  nv1a_devinit_oclass;
 		device->oclass[NVDEV_SUBDEV_MC     ] = &nv44_mc_oclass;
 		device->oclass[NVDEV_SUBDEV_BUS    ] = &nv31_bus_oclass;
 		device->oclass[NVDEV_SUBDEV_TIMER  ] = &nv04_timer_oclass;
@@ -358,7 +358,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_VM     ] = &nv44_vmmgr_oclass;
 		device->oclass[NVDEV_ENGINE_DMAOBJ ] = &nv04_dmaeng_oclass;
 		device->oclass[NVDEV_ENGINE_FIFO   ] = &nv40_fifo_oclass;
-		device->oclass[NVDEV_ENGINE_SW     ] = &nv10_software_oclass;
+		device->oclass[NVDEV_ENGINE_SW     ] =  nv10_software_oclass;
 		device->oclass[NVDEV_ENGINE_GR     ] = &nv40_graph_oclass;
 		device->oclass[NVDEV_ENGINE_MPEG   ] = &nv40_mpeg_oclass;
 		device->oclass[NVDEV_ENGINE_DISP   ] = &nv04_disp_oclass;
@@ -370,7 +370,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_I2C    ] = &nv04_i2c_oclass;
 		device->oclass[NVDEV_SUBDEV_CLOCK  ] = &nv40_clock_oclass;
 		device->oclass[NVDEV_SUBDEV_THERM  ] = &nv40_therm_oclass;
-		device->oclass[NVDEV_SUBDEV_DEVINIT] = &nv1a_devinit_oclass;
+		device->oclass[NVDEV_SUBDEV_DEVINIT] =  nv1a_devinit_oclass;
 		device->oclass[NVDEV_SUBDEV_MC     ] = &nv44_mc_oclass;
 		device->oclass[NVDEV_SUBDEV_BUS    ] = &nv31_bus_oclass;
 		device->oclass[NVDEV_SUBDEV_TIMER  ] = &nv04_timer_oclass;
@@ -379,7 +379,7 @@ nv40_identify(struct nouveau_device *device)
 		device->oclass[NVDEV_SUBDEV_VM     ] = &nv44_vmmgr_oclass;
 		device->oclass[NVDEV_ENGINE_DMAOBJ ] = &nv04_dmaeng_oclass;
 		device->oclass[NVDEV_ENGINE_FIFO   ] = &nv40_fifo_oclass;
-		device->oclass[NVDEV_ENGINE_SW     ] = &nv10_software_oclass;
+		device->oclass[NVDEV_ENGINE_SW     ] =  nv10_software_oclass;
 		device->oclass[NVDEV_ENGINE_GR     ] = &nv40_graph_oclass;
 		device->oclass[NVDEV_ENGINE_MPEG   ] = &nv40_mpeg_oclass;
 		device->oclass[NVDEV_ENGINE_DISP   ] = &nv04_disp_oclass;

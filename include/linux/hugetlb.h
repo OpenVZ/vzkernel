@@ -67,7 +67,6 @@ int hugetlb_reserve_pages(struct inode *inode, long from, long to,
 						vm_flags_t vm_flags);
 void hugetlb_unreserve_pages(struct inode *inode, long offset, long freed);
 int dequeue_hwpoisoned_huge_page(struct page *page);
-void copy_huge_page(struct page *dst, struct page *src);
 
 extern unsigned long hugepages_treat_as_movable;
 extern const unsigned long hugetlb_zero, hugetlb_infinity;
@@ -130,10 +129,6 @@ static inline void hugetlb_show_meminfo(void)
 static inline int dequeue_hwpoisoned_huge_page(struct page *page)
 {
 	return 0;
-}
-
-static inline void copy_huge_page(struct page *dst, struct page *src)
-{
 }
 
 static inline unsigned long hugetlb_change_protection(struct vm_area_struct *vma,
@@ -358,6 +353,26 @@ static inline int hstate_index(struct hstate *h)
 	return h - hstates;
 }
 
+pgoff_t __basepage_index(struct page *page);
+
+/* Return page->index in PAGE_SIZE units */
+static inline pgoff_t basepage_index(struct page *page)
+{
+	if (!PageCompound(page))
+		return page->index;
+
+	return __basepage_index(page);
+}
+
+static inline spinlock_t *huge_pte_lockptr(struct hstate *h,
+					   struct mm_struct *mm, pte_t *pte)
+{
+	if (huge_page_size(h) == PMD_SIZE)
+		return pmd_lockptr(mm, (pmd_t *) pte);
+	VM_BUG_ON(huge_page_size(h) == PAGE_SIZE);
+	return &mm->page_table_lock;
+}
+
 #else	/* CONFIG_HUGETLB_PAGE */
 struct hstate {};
 #define alloc_huge_page_node(h, nid) NULL
@@ -366,6 +381,7 @@ struct hstate {};
 #define hstate_sizelog(s) NULL
 #define hstate_vma(v) NULL
 #define hstate_inode(i) NULL
+#define page_hstate(page) NULL
 #define huge_page_size(h) PAGE_SIZE
 #define huge_page_mask(h) PAGE_MASK
 #define vma_kernel_pagesize(v) PAGE_SIZE
@@ -378,6 +394,27 @@ static inline unsigned int pages_per_huge_page(struct hstate *h)
 }
 #define hstate_index_to_shift(index) 0
 #define hstate_index(h) 0
+
+static inline pgoff_t basepage_index(struct page *page)
+{
+	return page->index;
+}
+
+static inline spinlock_t *huge_pte_lockptr(struct hstate *h,
+					   struct mm_struct *mm, pte_t *pte)
+{
+	return &mm->page_table_lock;
+}
 #endif	/* CONFIG_HUGETLB_PAGE */
+
+static inline spinlock_t *huge_pte_lock(struct hstate *h,
+					struct mm_struct *mm, pte_t *pte)
+{
+	spinlock_t *ptl;
+
+	ptl = huge_pte_lockptr(h, mm, pte);
+	spin_lock(ptl);
+	return ptl;
+}
 
 #endif /* _LINUX_HUGETLB_H */

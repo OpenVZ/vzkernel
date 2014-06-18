@@ -117,14 +117,19 @@ static int sclp_init(void);
 int
 sclp_service_call(sclp_cmdw_t command, void *sccb)
 {
-	int cc;
+	int cc = 4; /* Initialize for program check handling */
 
 	asm volatile(
-		"	.insn	rre,0xb2200000,%1,%2\n"  /* servc %1,%2 */
-		"	ipm	%0\n"
-		"	srl	%0,28"
-		: "=&d" (cc) : "d" (command), "a" (__pa(sccb))
+		"0:	.insn	rre,0xb2200000,%1,%2\n"  /* servc %1,%2 */
+		"1:	ipm	%0\n"
+		"	srl	%0,28\n"
+		"2:\n"
+		EX_TABLE(0b, 2b)
+		EX_TABLE(1b, 2b)
+		: "+&d" (cc) : "d" (command), "a" (__pa(sccb))
 		: "cc", "memory");
+	if (cc == 4)
+		return -EINVAL;
 	if (cc == 3)
 		return -EIO;
 	if (cc == 2)
@@ -450,7 +455,7 @@ sclp_sync_wait(void)
 	timeout = 0;
 	if (timer_pending(&sclp_request_timer)) {
 		/* Get timeout TOD value */
-		timeout = get_tod_clock() +
+		timeout = get_tod_clock_fast() +
 			  sclp_tod_from_jiffies(sclp_request_timer.expires -
 						jiffies);
 	}
@@ -472,7 +477,7 @@ sclp_sync_wait(void)
 	while (sclp_running_state != sclp_running_state_idle) {
 		/* Check for expired request timer */
 		if (timer_pending(&sclp_request_timer) &&
-		    get_tod_clock() > timeout &&
+		    get_tod_clock_fast() > timeout &&
 		    del_timer(&sclp_request_timer))
 			sclp_request_timer.function(sclp_request_timer.data);
 		cpu_relax();

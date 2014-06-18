@@ -132,7 +132,6 @@ enum cmd_flags_table {
 	ICF_CONTIG_MEMORY			= 0x00000020,
 	ICF_ATTACHED_TO_RQUEUE			= 0x00000040,
 	ICF_OOO_CMDSN				= 0x00000080,
-	ICF_REJECT_FAIL_CONN			= 0x00000100,
 };
 
 /* struct iscsi_cmd->i_state */
@@ -366,6 +365,8 @@ struct iscsi_cmd {
 	u8			maxcmdsn_inc;
 	/* Immediate Unsolicited Dataout */
 	u8			unsolicited_data;
+	/* Reject reason code */
+	u8			reject_reason;
 	/* CID contained in logout PDU when opcode == ISCSI_INIT_LOGOUT_CMND */
 	u16			logout_cid;
 	/* Command flags */
@@ -446,7 +447,6 @@ struct iscsi_cmd {
 	struct list_head	datain_list;
 	/* R2T List */
 	struct list_head	cmd_r2t_list;
-	struct completion	reject_comp;
 	/* Timer for DataOUT */
 	struct timer_list	dataout_timer;
 	/* Iovecs for SCSI data payload RX/TX w/ kernel level sockets */
@@ -809,6 +809,7 @@ struct iscsi_portal_group {
 	struct mutex		tpg_access_lock;
 	struct mutex		np_login_lock;
 	struct iscsi_tpg_attrib	tpg_attrib;
+	struct iscsi_node_auth	tpg_demo_auth;
 	/* Pointer to default list of iSCSI parameters for TPG */
 	struct iscsi_param_list	*param_list;
 	struct iscsi_tiqn	*tpg_tiqn;

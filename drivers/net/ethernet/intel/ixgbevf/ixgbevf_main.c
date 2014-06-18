@@ -1545,8 +1545,6 @@ void ixgbevf_up(struct ixgbevf_adapter *adapter)
 {
 	struct ixgbe_hw *hw = &adapter->hw;
 
-	ixgbevf_negotiate_api(adapter);
-
 	ixgbevf_reset_queues(adapter);
 
 	ixgbevf_configure(adapter);
@@ -1733,10 +1731,12 @@ void ixgbevf_reset(struct ixgbevf_adapter *adapter)
 	struct ixgbe_hw *hw = &adapter->hw;
 	struct net_device *netdev = adapter->netdev;
 
-	if (hw->mac.ops.reset_hw(hw))
+	if (hw->mac.ops.reset_hw(hw)) {
 		hw_dbg(hw, "PF still resetting\n");
-	else
+	} else {
 		hw->mac.ops.init_hw(hw);
+		ixgbevf_negotiate_api(adapter);
+	}
 
 	if (is_valid_ether_addr(adapter->hw.mac.addr)) {
 		memcpy(netdev->dev_addr, adapter->hw.mac.addr,
@@ -2072,6 +2072,9 @@ static int ixgbevf_sw_init(struct ixgbevf_adapter *adapter)
 	hw->mac.max_tx_queues = 2;
 	hw->mac.max_rx_queues = 2;
 
+	/* lock to protect mailbox accesses */
+	spin_lock_init(&adapter->mbx_lock);
+
 	err = hw->mac.ops.reset_hw(hw);
 	if (err) {
 		dev_info(&pdev->dev,
@@ -2082,6 +2085,7 @@ static int ixgbevf_sw_init(struct ixgbevf_adapter *adapter)
 			pr_err("init_shared_code failed: %d\n", err);
 			goto out;
 		}
+		ixgbevf_negotiate_api(adapter);
 		err = hw->mac.ops.get_mac_addr(hw, hw->mac.addr);
 		if (err)
 			dev_info(&pdev->dev, "Error reading MAC address\n");
@@ -2096,9 +2100,6 @@ static int ixgbevf_sw_init(struct ixgbevf_adapter *adapter)
 		eth_hw_addr_random(netdev);
 		memcpy(hw->mac.addr, netdev->dev_addr, netdev->addr_len);
 	}
-
-	/* lock to protect mailbox accesses */
-	spin_lock_init(&adapter->mbx_lock);
 
 	/* Enable dynamic interrupt throttling rates */
 	adapter->rx_itr_setting = 1;
@@ -2619,8 +2620,6 @@ static int ixgbevf_open(struct net_device *netdev)
 			goto err_setup_reset;
 		}
 	}
-
-	ixgbevf_negotiate_api(adapter);
 
 	/* setup queue reg_idx and Rx queue count */
 	err = ixgbevf_setup_queues(adapter);
@@ -3216,6 +3215,8 @@ static int ixgbevf_resume(struct pci_dev *pdev)
 	}
 	pci_set_master(pdev);
 
+	ixgbevf_reset(adapter);
+
 	rtnl_lock();
 	err = ixgbevf_init_interrupt_scheme(adapter);
 	rtnl_unlock();
@@ -3223,8 +3224,6 @@ static int ixgbevf_resume(struct pci_dev *pdev)
 		dev_err(&pdev->dev, "Cannot initialize interrupts\n");
 		return err;
 	}
-
-	ixgbevf_reset(adapter);
 
 	if (netif_running(netdev)) {
 		err = ixgbevf_open(netdev);

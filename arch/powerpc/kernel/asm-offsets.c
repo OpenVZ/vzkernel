@@ -80,34 +80,33 @@ int main(void)
 	DEFINE(TASKTHREADPPR, offsetof(struct task_struct, thread.ppr));
 #else
 	DEFINE(THREAD_INFO, offsetof(struct task_struct, stack));
+	DEFINE(THREAD_INFO_GAP, _ALIGN_UP(sizeof(struct thread_info), 16));
+	DEFINE(KSP_LIMIT, offsetof(struct thread_struct, ksp_limit));
 #endif /* CONFIG_PPC64 */
 
 	DEFINE(KSP, offsetof(struct thread_struct, ksp));
-	DEFINE(KSP_LIMIT, offsetof(struct thread_struct, ksp_limit));
 	DEFINE(PT_REGS, offsetof(struct thread_struct, regs));
 #ifdef CONFIG_BOOKE
 	DEFINE(THREAD_NORMSAVES, offsetof(struct thread_struct, normsave[0]));
 #endif
 	DEFINE(THREAD_FPEXC_MODE, offsetof(struct thread_struct, fpexc_mode));
-	DEFINE(THREAD_FPR0, offsetof(struct thread_struct, fpr[0]));
-	DEFINE(THREAD_FPSCR, offsetof(struct thread_struct, fpscr));
+	DEFINE(THREAD_FPSTATE, offsetof(struct thread_struct, fp_state));
+	DEFINE(THREAD_FPSAVEAREA, offsetof(struct thread_struct, fp_save_area));
+	DEFINE(FPSTATE_FPSCR, offsetof(struct thread_fp_state, fpscr));
 #ifdef CONFIG_ALTIVEC
-	DEFINE(THREAD_VR0, offsetof(struct thread_struct, vr[0]));
+	DEFINE(THREAD_VRSTATE, offsetof(struct thread_struct, vr_state));
+	DEFINE(THREAD_VRSAVEAREA, offsetof(struct thread_struct, vr_save_area));
 	DEFINE(THREAD_VRSAVE, offsetof(struct thread_struct, vrsave));
-	DEFINE(THREAD_VSCR, offsetof(struct thread_struct, vscr));
 	DEFINE(THREAD_USED_VR, offsetof(struct thread_struct, used_vr));
+	DEFINE(VRSTATE_VSCR, offsetof(struct thread_vr_state, vscr));
 #endif /* CONFIG_ALTIVEC */
 #ifdef CONFIG_VSX
-	DEFINE(THREAD_VSR0, offsetof(struct thread_struct, fpr));
 	DEFINE(THREAD_USED_VSR, offsetof(struct thread_struct, used_vsr));
 #endif /* CONFIG_VSX */
 #ifdef CONFIG_PPC64
 	DEFINE(KSP_VSID, offsetof(struct thread_struct, ksp_vsid));
 #else /* CONFIG_PPC64 */
 	DEFINE(PGDIR, offsetof(struct thread_struct, pgdir));
-#if defined(CONFIG_4xx) || defined(CONFIG_BOOKE)
-	DEFINE(THREAD_DBCR0, offsetof(struct thread_struct, dbcr0));
-#endif
 #ifdef CONFIG_SPE
 	DEFINE(THREAD_EVR0, offsetof(struct thread_struct, evr[0]));
 	DEFINE(THREAD_ACC, offsetof(struct thread_struct, acc));
@@ -115,6 +114,9 @@ int main(void)
 	DEFINE(THREAD_USED_SPE, offsetof(struct thread_struct, used_spe));
 #endif /* CONFIG_SPE */
 #endif /* CONFIG_PPC64 */
+#if defined(CONFIG_4xx) || defined(CONFIG_BOOKE)
+	DEFINE(THREAD_DBCR0, offsetof(struct thread_struct, dbcr0));
+#endif
 #ifdef CONFIG_KVM_BOOK3S_32_HANDLER
 	DEFINE(THREAD_KVM_SVCPU, offsetof(struct thread_struct, kvm_shadow_vcpu));
 #endif
@@ -139,21 +141,16 @@ int main(void)
 	DEFINE(THREAD_TM_TFHAR, offsetof(struct thread_struct, tm_tfhar));
 	DEFINE(THREAD_TM_TEXASR, offsetof(struct thread_struct, tm_texasr));
 	DEFINE(THREAD_TM_TFIAR, offsetof(struct thread_struct, tm_tfiar));
+	DEFINE(THREAD_TM_TAR, offsetof(struct thread_struct, tm_tar));
+	DEFINE(THREAD_TM_PPR, offsetof(struct thread_struct, tm_ppr));
+	DEFINE(THREAD_TM_DSCR, offsetof(struct thread_struct, tm_dscr));
 	DEFINE(PT_CKPT_REGS, offsetof(struct thread_struct, ckpt_regs));
-	DEFINE(THREAD_TRANSACT_VR0, offsetof(struct thread_struct,
-					 transact_vr[0]));
-	DEFINE(THREAD_TRANSACT_VSCR, offsetof(struct thread_struct,
-					  transact_vscr));
+	DEFINE(THREAD_TRANSACT_VRSTATE, offsetof(struct thread_struct,
+						 transact_vr));
 	DEFINE(THREAD_TRANSACT_VRSAVE, offsetof(struct thread_struct,
 					    transact_vrsave));
-	DEFINE(THREAD_TRANSACT_FPR0, offsetof(struct thread_struct,
-					  transact_fpr[0]));
-	DEFINE(THREAD_TRANSACT_FPSCR, offsetof(struct thread_struct,
-					   transact_fpscr));
-#ifdef CONFIG_VSX
-	DEFINE(THREAD_TRANSACT_VSR0, offsetof(struct thread_struct,
-					  transact_fpr[0]));
-#endif
+	DEFINE(THREAD_TRANSACT_FPSTATE, offsetof(struct thread_struct,
+						 transact_fp));
 	/* Local pt_regs on stack for Transactional Memory funcs. */
 	DEFINE(TM_FRAME_SIZE, STACK_FRAME_OVERHEAD +
 	       sizeof(struct pt_regs) + 16);

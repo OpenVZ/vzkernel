@@ -265,6 +265,7 @@ sysc_sigpending:
 	tm	__TI_flags+3(%r12),_TIF_SYSCALL
 	jno	sysc_return
 	lm	%r2,%r7,__PT_R2(%r11)	# load svc arguments
+	l	%r10,__TI_sysc_table(%r12)	# 31 bit system call table
 	xr	%r8,%r8			# svc 0 returns -ENOSYS
 	clc	__PT_INT_CODE+2(2,%r11),BASED(.Lnr_syscalls+2)
 	jnl	sysc_nr_ok		# invalid svc number -> do svc 0
@@ -871,13 +872,13 @@ cleanup_idle:
 	stm	%r9,%r10,__LC_SYSTEM_TIMER
 	mvc	__LC_LAST_UPDATE_TIMER(8),__TIMER_IDLE_EXIT(%r2)
 	# prepare return psw
-	n	%r8,BASED(cleanup_idle_wait)	# clear wait state bit
+	n	%r8,BASED(cleanup_idle_wait)	# clear irq & wait state bits
 	l	%r9,24(%r11)			# return from psw_idle
 	br	%r14
 cleanup_idle_insn:
 	.long	psw_idle_lpsw + 0x80000000
 cleanup_idle_wait:
-	.long	0xfffdffff
+	.long	0xfcfdffff
 
 /*
  * Integer constants

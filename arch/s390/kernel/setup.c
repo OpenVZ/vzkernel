@@ -998,6 +998,7 @@ static void __init setup_hwcaps(void)
 		strcpy(elf_platform, "z196");
 		break;
 	case 0x2827:
+	case 0x2828:
 		strcpy(elf_platform, "zEC12");
 		break;
 	}
@@ -1064,6 +1065,7 @@ void __init setup_arch(char **cmdline_p)
 	setup_vmcoreinfo();
 	setup_lowcore();
 
+	smp_fill_possible_mask();
         cpu_init();
 	s390_init_cpu_topology();
 

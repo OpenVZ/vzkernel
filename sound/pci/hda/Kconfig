@@ -140,7 +140,6 @@ config SND_HDA_CODEC_VIA
 
 config SND_HDA_CODEC_HDMI
 	bool "Build HDMI/DisplayPort HD-audio codec support"
-	select SND_DYNAMIC_MINORS
 	default y
 	help
 	  Say Y here to include HDMI and DisplayPort HD-audio codec
@@ -151,6 +150,11 @@ config SND_HDA_CODEC_HDMI
 	  support code is also built as another module,
 	  snd-hda-codec-hdmi.
 	  This module is automatically loaded at probing.
+
+config SND_HDA_I915
+	bool
+	default y
+	depends on DRM_I915
 
 config SND_HDA_CODEC_CIRRUS
 	bool "Build Cirrus Logic codec support"
@@ -205,8 +209,9 @@ config SND_HDA_CODEC_CA0132
 
 config SND_HDA_CODEC_CA0132_DSP
 	bool "Support new DSP code for CA0132 codec"
-	depends on SND_HDA_CODEC_CA0132 && FW_LOADER
+	depends on SND_HDA_CODEC_CA0132
 	select SND_HDA_DSP_LOADER
+	select FW_LOADER
 	help
 	  Say Y here to enable the DSP for Creative CA0132 for extended
 	  features like equalizer or echo cancellation.

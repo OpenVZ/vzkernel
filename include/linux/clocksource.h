@@ -286,7 +286,12 @@ extern void clocksource_change_rating(struct clocksource *cs, int rating);
 extern void clocksource_suspend(void);
 extern void clocksource_resume(void);
 extern struct clocksource * __init __weak clocksource_default_clock(void);
+#ifdef CONFIG_CLOCKSOURCE_WATCHDOG
 extern void clocksource_mark_unstable(struct clocksource *cs);
+#else
+static inline void clocksource_mark_unstable(struct clocksource *cs) { }
+#endif
+
 
 extern void
 clocks_calc_mult_shift(u32 *mult, u32 *shift, u32 from, u32 to, u32 minsec);
