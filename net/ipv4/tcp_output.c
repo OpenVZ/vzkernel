@@ -1064,6 +1064,11 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	if (skb_unclone(skb, GFP_ATOMIC))
 		return -ENOMEM;
 
+	if (skb_cloned(skb)) {
+		ub_skb_uncharge(skb);
+		ub_tcpsndbuf_charge_forced(sk, skb);
+	}
+
 	/* Get a new skb... force flag on. */
 	buff = sk_stream_alloc_skb(sk, nsize, GFP_ATOMIC);
 	if (buff == NULL)
