@@ -2624,7 +2624,7 @@ static int ploop_open(struct block_device *bdev, fmode_t fmode)
 	return 0;
 }
 
-static int ploop_release(struct gendisk *disk, fmode_t fmode)
+static void ploop_release(struct gendisk *disk, fmode_t fmode)
 {
 	struct ploop_device *plo = disk->private_data;
 
@@ -2634,8 +2634,6 @@ static int ploop_release(struct gendisk *disk, fmode_t fmode)
 		plo->bdev = NULL;
 	}
 	mutex_unlock(&plo->ctl_mutex);
-
-	return 0;
 }
 
 static struct ploop_delta *
