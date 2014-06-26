@@ -14,7 +14,7 @@
 #include <bc/proc.h>
 #include "blk-cgroup.h"
 
-static u64 ioprio_weight[UB_IOPRIO_MAX] = {320, 365, 410, 460, 500, 550, 600, 640};
+//static u64 ioprio_weight[UB_IOPRIO_MAX] = {320, 365, 410, 460, 500, 550, 600, 640};
 
 void ub_init_ioprio(struct user_beancounter *ub)
 {
