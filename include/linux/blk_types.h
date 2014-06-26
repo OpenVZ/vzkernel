@@ -28,6 +28,14 @@ struct bio_vec {
 	unsigned int	bv_offset;
 };
 
+static inline ssize_t bvec_length(const struct bio_vec *bvec, unsigned long nr)
+{
+	ssize_t bytes = 0;
+	while (nr--)
+		bytes += (bvec++)->bv_len;
+	return bytes;
+}
+
 /*
  * main unit of I/O for the block layer and lower layers (ie drivers and
  * stacking drivers)

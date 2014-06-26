@@ -2793,7 +2793,8 @@ cifs_readdata_to_iov(struct cifs_readdata *rdata, const struct iovec *iov,
 		/* go while there's data to be copied and no errors */
 		if (copy && !rc) {
 			pdata = kmap(page);
-			rc = memcpy_toiovecend(ii.iov, pdata, ii.iov_offset,
+			rc = memcpy_toiovecend((struct iovec *)ii.data,
+					       pdata, ii.iov_offset,
 						(int)copy);
 			kunmap(page);
 			if (!rc) {
