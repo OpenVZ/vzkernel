@@ -281,7 +281,6 @@ struct seq_operations sysfs_perms_sops = {
 static int sysfs_perms_open(struct inode *inode, struct file *file)
 {
 	struct ve_struct *ve = cgroup_ve(file->f_dentry->d_parent->d_fsdata);
-	struct cftype *cftype = file->f_dentry->d_fsdata;
 	struct seq_file *m;
 	int ret;
 
