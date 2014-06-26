@@ -1700,6 +1700,7 @@ err_alloc_dev:
 
 static void __net_exit sit_exit_net(struct net *net)
 {
+	struct sit_net *sitn = net_generic(net, sit_net_id);
 	LIST_HEAD(list);
 
 	if (sitn == NULL) /* no VE_FEATURE_SIT */
