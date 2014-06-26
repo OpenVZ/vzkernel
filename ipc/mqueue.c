@@ -104,7 +104,7 @@ static inline struct mqueue_inode_info *MQUEUE_I(struct inode *inode)
  */
 static inline struct ipc_namespace *__get_ns_from_inode(struct inode *inode)
 {
-	return get_ipc_ns(inode->i_sb->s_fs_info);
+	return get_ipc_ns(inode->i_sb->s_ns);
 }
 
 static struct ipc_namespace *get_ns_from_inode(struct inode *inode)
@@ -406,7 +406,7 @@ static void mqueue_evict_inode(struct inode *inode)
 		user->mq_bytes -= mq_bytes;
 		/*
 		 * get_ns_from_inode() ensures that the
-		 * (ipc_ns = sb->s_fs_info) is either a valid ipc_ns
+		 * (ipc_ns = sb->s_ns) is either a valid ipc_ns
 		 * to which we now hold a reference, or it is NULL.
 		 * We can't put it here under mq_lock, though.
 		 */
@@ -1417,7 +1417,7 @@ int mq_init_ns(struct ipc_namespace *ns)
 
 void mq_clear_sbinfo(struct ipc_namespace *ns)
 {
-	ns->mq_mnt->mnt_sb->s_fs_info = NULL;
+	ns->mq_mnt->mnt_sb->s_ns = NULL;
 }
 
 void mq_put_mnt(struct ipc_namespace *ns)
