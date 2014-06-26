@@ -1657,7 +1657,7 @@ static int dio_truncate(struct ploop_io * io, struct file * file,
 	if (io->files.em_tree)
 		trim_extent_mappings(io->files.em_tree, newattrs.ia_size>>9);
 	io->files.inode->i_flags &= ~S_SWAPFILE;
-	err = notify_change(F_DENTRY(file), &newattrs);
+	err = notify_change(F_DENTRY(file), &newattrs, NULL);
 	io->files.inode->i_flags |= S_SWAPFILE;
 	mutex_unlock(&io->files.inode->i_mutex);
 
