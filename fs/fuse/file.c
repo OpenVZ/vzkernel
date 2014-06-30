@@ -660,7 +660,8 @@ static void fuse_aio_complete_req(struct fuse_conn *fc, struct fuse_req *req)
 	struct fuse_io_priv *io = req->io;
 	ssize_t pos = -1;
 
-	fuse_release_user_pages(req, !io->write);
+	if (!req->bvec)
+		fuse_release_user_pages(req, !io->write);
 
 	if (io->write) {
 		if (req->misc.write.in.size != req->misc.write.out.size)
@@ -3006,6 +3007,102 @@ int fuse_notify_poll_wakeup(struct fuse_conn *fc,
 	return 0;
 }
 
+static struct fuse_io_priv *fuse_io_priv_create(struct kiocb *iocb,
+		loff_t off, int rw, bool async)
+{
+	struct fuse_io_priv *io;
+
+	io = kmalloc(sizeof(struct fuse_io_priv), GFP_KERNEL);
+	if (!io)
+		return NULL;
+
+	spin_lock_init(&io->lock);
+	io->reqs = 1;
+	io->bytes = -1;
+	io->size = 0;
+	io->offset = off;
+	io->write = (rw == WRITE);
+	io->err = 0;
+	io->file = iocb->ki_filp;
+	io->async = async;
+	io->iocb = iocb;
+
+	return io;
+}
+
+static ssize_t fuse_direct_IO_bvec(int rw, struct kiocb *iocb,
+		struct bio_vec *bvec, loff_t offset, unsigned long bvec_len)
+{
+	struct fuse_io_priv *io;
+	struct fuse_req *req;
+	struct file *file = iocb->ki_filp;
+	struct fuse_file *ff = file->private_data;
+	struct fuse_conn *fc = ff->fc;
+	size_t nmax = (rw == WRITE ? fc->max_write : fc->max_read);
+	size_t filled, nres;
+	loff_t pos = iocb->ki_pos;
+	int i;
+
+	if (nmax > FUSE_MAX_PAGES_PER_REQ << PAGE_SHIFT)
+		nmax = FUSE_MAX_PAGES_PER_REQ << PAGE_SHIFT;
+
+	io = fuse_io_priv_create(iocb, pos, rw, true);
+	if (!io)
+		return -ENOMEM;
+
+	req = NULL;
+	filled = 0;
+	i = 0;
+
+	while (1) {
+		if (!req) {
+			req = fuse_get_req_for_background(fc, 0);
+			if (IS_ERR(req))
+				break;
+
+			if (rw == WRITE)
+				req->in.argbvec = 1;
+			else
+				req->out.argbvec = 1;
+
+			filled = 0;
+			req->bvec = bvec;
+		}
+
+		if (filled + bvec->bv_len <= nmax) {
+			filled += bvec->bv_len;
+			req->num_bvecs++;
+			bvec++;
+			i++;
+
+			if (i < bvec_len)
+				continue;
+		}
+
+		BUG_ON(!filled);
+
+		if (rw == WRITE)
+			nres = fuse_send_write(req, io, pos,
+					filled, NULL);
+		else
+			nres = fuse_send_read(req, io, pos,
+					filled, NULL);
+
+		BUG_ON(nres != filled);
+		fuse_put_request(fc, req);
+
+		if (i == bvec_len)
+			break;
+
+		pos += filled;
+		req = NULL;
+		filled = 0;
+	}
+
+	fuse_aio_complete(io, !IS_ERR(req) ? 0 : PTR_ERR(req), -1);
+	return -EIOCBQUEUED;
+}
+
 static void fuse_do_truncate(struct file *file)
 {
 	struct inode *inode = file->f_mapping->host;
@@ -3054,23 +3151,13 @@ fuse_direct_IO(int rw, struct kiocb *iocb, const struct iovec *iov,
 		count = min_t(loff_t, count, fuse_round_up(i_size - offset));
 	}
 
-	io = kmalloc(sizeof(struct fuse_io_priv), GFP_KERNEL);
-	if (!io)
-		return -ENOMEM;
-	spin_lock_init(&io->lock);
-	io->reqs = 1;
-	io->bytes = -1;
-	io->size = 0;
-	io->offset = offset;
-	io->write = (rw == WRITE);
-	io->err = 0;
-	io->file = file;
 	/*
 	 * By default, we want to optimize all I/Os with async request
 	 * submission to the client filesystem if supported.
 	 */
-	io->async = async_dio;
-	io->iocb = iocb;
+	io = fuse_io_priv_create(iocb, offset, rw, async_dio);
+	if (!io)
+		return -ENOMEM;
 
 	/*
 	 * We cannot asynchronously extend the size of a file. We have no method
@@ -3104,6 +3191,32 @@ fuse_direct_IO(int rw, struct kiocb *iocb, const struct iovec *iov,
 			fuse_do_truncate(file);
 	}
 
+	return ret;
+}
+
+static ssize_t fuse_direct_IO_page(int rw, struct kiocb *iocb,
+	struct page *page, loff_t offset)
+{
+	struct iovec iov;
+	mm_segment_t oldfs;
+	ssize_t ret;
+
+	iov.iov_base = kmap(page);
+	iov.iov_len = PAGE_SIZE;
+
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+
+	ret = fuse_direct_IO(rw, iocb, &iov, offset, 1);
+	if (ret != -EIOCBQUEUED && ret != PAGE_SIZE)
+		printk("fuse_direct_IO_page: io failed with err=%ld "
+		       "(rw=%s fh=0x%llx pos=%lld)\n",
+		       ret, rw == WRITE ? "WRITE" : "READ",
+		       ((struct fuse_file *)iocb->ki_filp->private_data)->fh,
+		       offset);
+
+	set_fs(oldfs);
+	kunmap(page);
 	return ret;
 }
 
@@ -3210,6 +3323,8 @@ static const struct file_operations fuse_file_operations = {
 	.compat_ioctl	= fuse_file_compat_ioctl,
 	.poll		= fuse_file_poll,
 	.fallocate	= fuse_file_fallocate,
+	.read_iter	= generic_file_read_iter,
+	.write_iter	= generic_file_write_iter,
 };
 
 static const struct file_operations fuse_direct_io_file_operations = {
@@ -3239,6 +3354,8 @@ static const struct address_space_operations fuse_file_aops  = {
 	.set_page_dirty	= __set_page_dirty_nobuffers,
 	.bmap		= fuse_bmap,
 	.direct_IO	= fuse_direct_IO,
+	.direct_IO_bvec	= fuse_direct_IO_bvec,
+	.direct_IO_page	= fuse_direct_IO_page,
 	.write_begin	= fuse_write_begin,
 	.write_end	= fuse_write_end,
 };
