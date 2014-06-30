@@ -147,6 +147,8 @@ static void page_cache_tree_delete(struct address_space *mapping,
 	for (tag = 0; tag < RADIX_TREE_MAX_TAGS; tag++) {
 		if (test_bit(offset, node->tags[tag]))
 			radix_tree_tag_clear(&mapping->page_tree, index, tag);
+		else
+			__radix_tree_prev_tag_clear(&mapping->page_tree, tag);
 	}
 
 	/* Delete page, swap shadow entry */
