@@ -729,6 +729,11 @@ out:
 }
 EXPORT_SYMBOL(radix_tree_tag_clear);
 
+void __radix_tree_prev_tag_clear(struct radix_tree_root *root, unsigned int tag)
+{
+	prev_tag_clear(root, tag);
+}
+
 /**
  * radix_tree_tag_get - get a tag on a radix tree node
  * @root:		radix tree root
