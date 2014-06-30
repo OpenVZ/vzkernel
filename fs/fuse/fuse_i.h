@@ -183,6 +183,8 @@ struct fuse_in {
 
 	/** True if the data for the last argument is in req->pages */
 	unsigned argpages:1;
+	/** True is the data for the last argument is in req->bvecs */
+	unsigned argbvec:1;
 
 	/** Number of arguments */
 	unsigned numargs;
@@ -213,6 +215,8 @@ struct fuse_out {
 
 	/** Last argument is a list of pages to copy data to */
 	unsigned argpages:1;
+	/** Last argument is a list of bvecs to copy data to */
+	unsigned argbvec:1;
 
 	/** Zero partially or not copied pages */
 	unsigned page_zeroing:1;
@@ -333,6 +337,7 @@ struct fuse_req {
 
 	/** page vector */
 	struct page **pages;
+	struct bio_vec *bvec;
 
 	/** page-descriptor vector */
 	struct fuse_page_desc *page_descs;
@@ -346,8 +351,11 @@ struct fuse_req {
 	/** inline page-descriptor vector */
 	struct fuse_page_desc inline_page_descs[FUSE_REQ_INLINE_PAGES];
 
-	/** number of pages in vector */
-	unsigned num_pages;
+	/** number of pages/bvecs in vector */
+	union {
+		unsigned num_pages;
+		unsigned num_bvecs;
+	};
 
 	/** File used in the request (or NULL) */
 	struct fuse_file *ff;
