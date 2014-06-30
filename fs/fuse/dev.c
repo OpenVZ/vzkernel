@@ -944,7 +944,7 @@ static int fuse_ref_page(struct fuse_copy_state *cs, struct page *page,
  * done atomically
  */
 static int fuse_copy_page(struct fuse_copy_state *cs, struct page **pagep,
-			  unsigned offset, unsigned count, int zeroing)
+			  unsigned offset, unsigned count, int zeroing, int moving)
 {
 	int err;
 	struct page *page = *pagep;
@@ -956,7 +956,7 @@ static int fuse_copy_page(struct fuse_copy_state *cs, struct page **pagep,
 		if (cs->write && cs->pipebufs && page) {
 			return fuse_ref_page(cs, page, offset, count);
 		} else if (!cs->len) {
-			if (cs->move_pages && page &&
+			if (cs->move_pages && page && moving &&
 			    offset == 0 && count == PAGE_SIZE) {
 				err = fuse_try_move_page(cs, pagep);
 				if (err <= 0)
@@ -993,12 +993,30 @@ static int fuse_copy_pages(struct fuse_copy_state *cs, unsigned nbytes,
 		unsigned count = min(nbytes, req->page_descs[i].length);
 
 		err = fuse_copy_page(cs, &req->pages[i], offset, count,
-				     zeroing);
+				     zeroing, 1);
 		if (err)
 			return err;
 
 		nbytes -= count;
 	}
+	return 0;
+}
+
+static int fuse_copy_bvec(struct fuse_copy_state *cs, unsigned nbytes,
+			   int zeroing)
+{
+	unsigned i;
+	struct fuse_req *req = cs->req;
+
+	for (i = 0; i < req->num_bvecs && (nbytes || zeroing); i++) {
+		struct bio_vec *bvec = &req->bvec[i];
+
+		int err = fuse_copy_page(cs, &bvec->bv_page,
+					 bvec->bv_offset, bvec->bv_len, zeroing, 0);
+		if (err)
+			return err;
+	}
+
 	return 0;
 }
 
@@ -1018,7 +1036,7 @@ static int fuse_copy_one(struct fuse_copy_state *cs, void *val, unsigned size)
 
 /* Copy request arguments to/from userspace buffer */
 static int fuse_copy_args(struct fuse_copy_state *cs, unsigned numargs,
-			  unsigned argpages, struct fuse_arg *args,
+			  unsigned argpages, unsigned argbvec, struct fuse_arg *args,
 			  int zeroing)
 {
 	int err = 0;
@@ -1028,6 +1046,8 @@ static int fuse_copy_args(struct fuse_copy_state *cs, unsigned numargs,
 		struct fuse_arg *arg = &args[i];
 		if (i == numargs - 1 && argpages)
 			err = fuse_copy_pages(cs, arg->size, zeroing);
+		else if (i == numargs - 1 && argbvec)
+			err = fuse_copy_bvec(cs, arg->size, zeroing);
 		else
 			err = fuse_copy_one(cs, arg->value, arg->size);
 	}
@@ -1272,7 +1292,7 @@ static ssize_t fuse_dev_do_read(struct fuse_dev *fud, struct file *file,
 	cs->req = req;
 	err = fuse_copy_one(cs, &in->h, sizeof(in->h));
 	if (!err)
-		err = fuse_copy_args(cs, in->numargs, in->argpages,
+		err = fuse_copy_args(cs, in->numargs, in->argpages, in->argbvec,
 				     (struct fuse_arg *) in->args, 0);
 	fuse_copy_finish(cs);
 	spin_lock(&fpq->lock);
@@ -1621,7 +1641,7 @@ static int fuse_notify_store(struct fuse_conn *fc, unsigned int size,
 			goto out_iput;
 
 		this_num = min_t(unsigned, num, PAGE_CACHE_SIZE - offset);
-		err = fuse_copy_page(cs, &page, offset, this_num, 0);
+		err = fuse_copy_page(cs, &page, offset, this_num, 0, 1);
 		if (!err && offset == 0 &&
 		    (this_num == PAGE_CACHE_SIZE || file_size == end))
 			SetPageUptodate(page);
@@ -1823,8 +1843,8 @@ static int copy_out_args(struct fuse_copy_state *cs, struct fuse_out *out,
 			return -EINVAL;
 		lastarg->size -= diffsize;
 	}
-	return fuse_copy_args(cs, out->numargs, out->argpages, out->args,
-			      out->page_zeroing);
+	return fuse_copy_args(cs, out->numargs, out->argpages, out->argbvec,
+			      out->args, out->page_zeroing);
 }
 
 /*
