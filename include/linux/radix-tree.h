@@ -288,6 +288,7 @@ void *radix_tree_tag_clear(struct radix_tree_root *root,
 			unsigned long index, unsigned int tag);
 int radix_tree_tag_get(struct radix_tree_root *root,
 			unsigned long index, unsigned int tag);
+void __radix_tree_root_tag_move_all_to_prev(struct radix_tree_root *root);
 void __radix_tree_prev_tag_clear(struct radix_tree_root *root,
 				 unsigned int tag);
 int radix_tree_prev_tag_get(struct radix_tree_root *root, unsigned int tag);
