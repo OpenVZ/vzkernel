@@ -810,8 +810,6 @@ static void neigh_periodic_work(struct work_struct *work)
 			if (atomic_read(&n->refcnt) == 1 &&
 			    (state == NUD_FAILED ||
 			     time_after(jiffies, n->used + NEIGH_VAR(n->parms, GC_STALETIME)))) {
-				struct net_device *dev = n->dev;
-
 				*np = n->next;
 				n->dead = 1;
 				write_unlock(&n->lock);
