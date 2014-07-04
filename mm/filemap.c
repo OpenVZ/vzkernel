@@ -136,7 +136,7 @@ static void page_cache_tree_delete(struct address_space *mapping,
 
 	if (!node) {
 		/* Clear direct pointer tags in root node */
-		mapping->page_tree.gfp_mask &= __GFP_BITS_MASK;
+		__radix_tree_root_tag_move_all_to_prev(&mapping->page_tree);
 		radix_tree_replace_slot(slot, shadow);
 		return;
 	}
