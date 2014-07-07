@@ -77,6 +77,7 @@ void KSTAT_LAT_UPDATE(struct kstat_lat_struct *p)
 	CALC_LOAD(p->avg[1], EXP_5, m)
 	CALC_LOAD(p->avg[2], EXP_15, m)
 }
+EXPORT_SYMBOL(KSTAT_LAT_UPDATE);
 
 void KSTAT_LAT_PCPU_UPDATE(struct kstat_lat_pcpu_struct *p)
 {
@@ -111,3 +112,4 @@ void KSTAT_LAT_PCPU_UPDATE(struct kstat_lat_pcpu_struct *p)
 	/* reset max_snap to calculate it correctly next time */
 	p->max_snap = 0;
 }
+EXPORT_SYMBOL(KSTAT_LAT_PCPU_UPDATE);
