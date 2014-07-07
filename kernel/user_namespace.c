@@ -62,9 +62,6 @@ int create_user_ns(struct cred *new)
 	kgid_t group = new->egid;
 	int ret;
 
-	/* Currently disabled in RHEL7 */
-	return -EINVAL;
-
 	/*
 	 * Verify that we can not violate the policy of which files
 	 * may be accessed that is specified by the root directory,
