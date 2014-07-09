@@ -506,6 +506,12 @@ struct mm_struct {
 	RH_KABI_RESERVE(8)
 };
 
+#define VD_VE_ENTER_TASK	0/* tasks entered to VE from host, no ptrace,
+				  * or coredump or licdata access allowed */
+#define VD_PTRACE_COREDUMP	1/* tasks with ptrace and coredump allowed */
+#define VD_LICDATA_ACCESS	2/* tasks accessed containers license data,
+				  * no ptrace and no coredump allowed */
+
 static inline void mm_init_cpumask(struct mm_struct *mm)
 {
 #ifdef CONFIG_CPUMASK_OFFSTACK
