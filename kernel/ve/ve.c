@@ -688,8 +688,6 @@ static void ve_offline(struct cgroup *cg)
 	struct ve_struct *ve = cgroup_ve(cg);
 	struct cgroup *cgrp;
 
-	idr_remove(&ve_idr, ve->veid);
-
 	while (!list_empty(&ve->ve_cgroup_head)) {
 		cgrp = list_entry(ve->ve_cgroup_head.prev,
 				struct cgroup, cgroup_ve_list);
@@ -703,6 +701,7 @@ static void ve_destroy(struct cgroup *cg)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 
+	idr_remove(&ve_idr, ve->veid);
 	kmapset_unlink(&ve->ve_sysfs_perms, &ve_sysfs_perms);
 
 	ve_log_destroy(ve);
