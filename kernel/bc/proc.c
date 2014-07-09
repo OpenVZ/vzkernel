@@ -606,7 +606,7 @@ static struct dentry *bc_lookup(struct user_beancounter *ub, struct inode *dir,
 
 	if (ino->i_state & I_NEW)
 		unlock_new_inode(ino);
-	dentry->d_op = &bc_dentry_ops;
+	d_set_d_op(dentry, &bc_dentry_ops);
 	dentry->d_fsdata = ub;
 	d_add(dentry, ino);
 	return NULL;
@@ -641,7 +641,7 @@ static struct dentry *bc_lookup_file(struct inode *dir,
 
 	if (ino->i_state & I_NEW)
 		unlock_new_inode(ino);
-	dentry->d_op = &bc_dentry_ops;
+	d_set_d_op(dentry, &bc_dentry_ops);
 	d_add(dentry, ino);
 	return NULL;
 }
