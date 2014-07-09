@@ -851,7 +851,7 @@ static int exec_mmap(struct linux_binprm *bprm)
 	}
 
 	mm = bprm->mm;
-	mm->vps_dumpable = 1;
+	mm->vps_dumpable = VD_PTRACE_COREDUMP;
 	task_lock(tsk);
 	active_mm = tsk->active_mm;
 	tsk->mm = mm;
