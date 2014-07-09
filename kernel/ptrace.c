@@ -258,7 +258,7 @@ ok:
 	smp_rmb();
 	if (task->mm) {
 		dumpable = get_dumpable(task->mm);
-		vps_dumpable = (task->mm->vps_dumpable == 1);
+		vps_dumpable = (task->mm->vps_dumpable == VD_PTRACE_COREDUMP);
 	}
 	rcu_read_lock();
 	if (dumpable != SUID_DUMP_USER &&
@@ -322,7 +322,7 @@ static int ptrace_attach(struct task_struct *task, long request,
 	task_lock(task);
 	retval = __ptrace_may_access(task, PTRACE_MODE_ATTACH);
 	if (!retval) {
-		if (!task->mm || task->mm->vps_dumpable == 2)
+		if (!task->mm || task->mm->vps_dumpable == VD_LICDATA_ACCESS)
 			retval = -EACCES;
 	}
 	task_unlock(task);
