@@ -131,10 +131,33 @@ static void ve_list_add(struct ve_struct *ve)
 static void ve_list_del(struct ve_struct *ve)
 {
 	mutex_lock(&ve_list_lock);
-	if (idr_replace(&ve_idr, NULL, ve->veid) != ve)
-		WARN_ON(1);
-	list_del(&ve->ve_list);
-	nr_ve--;
+	/* Check whether ve linked in list of ve's and unlink ve from list if so */
+	if (!list_empty(&ve->ve_list)) {
+		/* Hide ve from finding by veid */
+		if (idr_replace(&ve_idr, NULL, ve->veid) != ve)
+			WARN_ON(1);
+		list_del_init(&ve->ve_list);
+		nr_ve--;
+	}
+	mutex_unlock(&ve_list_lock);
+}
+
+static long veid_alloc(long req_veid)
+{
+	long veid;
+	mutex_lock(&ve_list_lock);
+	veid = idr_alloc(&ve_idr, NULL,
+		       req_veid ? req_veid : VE_ID_START,
+		       req_veid ? req_veid + 1 : 0,
+		       GFP_KERNEL);
+	mutex_unlock(&ve_list_lock);
+	return veid;
+}
+
+static void veid_free(long veid)
+{
+	mutex_lock(&ve_list_lock);
+	idr_remove(&ve_idr, veid);
 	mutex_unlock(&ve_list_lock);
 }
 
@@ -633,10 +656,7 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 	if (kstrtol(cg->dentry->d_name.name, 10, &id) ||
 	    id < 0 || id >= INT_MAX)
 		id = 0;
-	id = idr_alloc(&ve_idr, NULL,
-		       id ? id : VE_ID_START,
-		       id ? id + 1 : 0,
-		       GFP_KERNEL);
+	id = veid_alloc(id);
 	if (id < 0) {
 		err = id;
 		goto err_id;
@@ -667,6 +687,7 @@ do_init:
 	mutex_init(&ve->sync_mutex);
 	INIT_LIST_HEAD(&ve->devices);
 	INIT_LIST_HEAD(&ve->ve_cgroup_head);
+	INIT_LIST_HEAD(&ve->ve_list);
 	kmapset_init_key(&ve->ve_sysfs_perms);
 
 	return &ve->css;
@@ -678,7 +699,7 @@ err_lat:
 err_name:
 	kmem_cache_free(ve_cachep, ve);
 err_ve:
-	idr_remove(&ve_idr, id);
+	veid_free(id);
 err_id:
 	return ERR_PTR(err);
 }
@@ -687,6 +708,9 @@ static void ve_offline(struct cgroup *cg)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 	struct cgroup *cgrp;
+
+	ve_list_del(ve);
+	veid_free(ve->veid);
 
 	while (!list_empty(&ve->ve_cgroup_head)) {
 		cgrp = list_entry(ve->ve_cgroup_head.prev,
@@ -701,7 +725,6 @@ static void ve_destroy(struct cgroup *cg)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 
-	idr_remove(&ve_idr, ve->veid);
 	kmapset_unlink(&ve->ve_sysfs_perms, &ve_sysfs_perms);
 
 	ve_log_destroy(ve);
