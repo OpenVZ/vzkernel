@@ -288,6 +288,21 @@ static struct log_state {
 	.wait = __WAIT_QUEUE_HEAD_INITIALIZER(init_log_state.wait),
 };
 
+/* kdump relies on some log_* symbols, let's make it happy */
+#define DEFINE_STRUCT_MEMBER_ALIAS(name, inst, memb)			\
+static void ____ ## name ## _definition(void) __attribute__((used));	\
+static void ____ ## name ## _definition(void)				\
+{									\
+	asm (".globl " #name "\n\t.set " #name ", " #inst "+%a0"	\
+	     : : "g" (offsetof(typeof(inst), memb)));			\
+}									\
+extern typeof(inst.memb) name;
+DEFINE_STRUCT_MEMBER_ALIAS(log_buf, init_log_state, buf);
+DEFINE_STRUCT_MEMBER_ALIAS(log_buf_len, init_log_state, buf_len);
+DEFINE_STRUCT_MEMBER_ALIAS(log_first_idx, init_log_state, first_idx);
+DEFINE_STRUCT_MEMBER_ALIAS(log_next_idx, init_log_state, next_idx);
+#undef DEFINE_STRUCT_MEMBER_ALIAS
+
 static inline struct log_state *ve_log_state(void)
 {
 	struct log_state *log = &init_log_state;
@@ -788,10 +803,6 @@ const struct file_operations kmsg_fops = {
  */
 void log_buf_kexec_setup(void)
 {
-#define log_buf		init_log_state.buf
-#define log_buf_len	init_log_state.buf_len
-#define log_first_idx	init_log_state.first_idx
-#define log_next_idx	init_log_state.next_idx
 	VMCOREINFO_SYMBOL(log_buf);
 	VMCOREINFO_SYMBOL(log_buf_len);
 	VMCOREINFO_SYMBOL(log_first_idx);
@@ -805,10 +816,6 @@ void log_buf_kexec_setup(void)
 	VMCOREINFO_OFFSET(log, len);
 	VMCOREINFO_OFFSET(log, text_len);
 	VMCOREINFO_OFFSET(log, dict_len);
-#undef log_buf
-#undef log_buf_len
-#undef log_first_idx
-#undef log_next_idx
 }
 #endif
 
