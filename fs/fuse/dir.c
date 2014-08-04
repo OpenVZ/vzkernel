@@ -322,7 +322,7 @@ int fuse_lookup_name(struct super_block *sb, u64 nodeid, struct qstr *name,
 
 	*inode = fuse_iget(sb, outarg->nodeid, outarg->generation,
 			   &outarg->attr, entry_attr_timeout(outarg),
-			   attr_version);
+			   attr_version, 0);
 	err = -ENOMEM;
 	if (!*inode) {
 		fuse_queue_forget(fc, forget, outarg->nodeid, 1);
@@ -476,7 +476,7 @@ static int fuse_create_open(struct inode *dir, struct dentry *entry,
 	ff->nodeid = outentry.nodeid;
 	ff->open_flags = outopen.open_flags;
 	inode = fuse_iget(dir->i_sb, outentry.nodeid, outentry.generation,
-			  &outentry.attr, entry_attr_timeout(&outentry), 0);
+			  &outentry.attr, entry_attr_timeout(&outentry), 0, 1);
 	if (!inode) {
 		flags &= ~(O_CREAT | O_EXCL | O_TRUNC);
 		fuse_sync_release(ff, flags);
@@ -490,6 +490,10 @@ static int fuse_create_open(struct inode *dir, struct dentry *entry,
 	fuse_invalidate_attr(dir);
 	err = finish_open(file, entry, generic_file_open, opened);
 	if (err) {
+		if (fc->writeback_cache) {
+			struct fuse_inode *fi = get_fuse_inode(inode);
+			atomic_dec(&fi->num_openers);
+		}
 		fuse_sync_release(ff, flags);
 	} else {
 		file->private_data = fuse_file_get(ff);
@@ -591,7 +595,7 @@ static int create_new_entry(struct fuse_conn *fc, struct fuse_req *req,
 		goto out_put_forget_req;
 
 	inode = fuse_iget(dir->i_sb, outarg.nodeid, outarg.generation,
-			  &outarg.attr, entry_attr_timeout(&outarg), 0);
+			  &outarg.attr, entry_attr_timeout(&outarg), 0, 0);
 	if (!inode) {
 		fuse_queue_forget(fc, forget, outarg.nodeid, 1);
 		return -ENOMEM;
@@ -1348,7 +1352,7 @@ static int fuse_direntplus_link(struct file *file,
 		goto out;
 
 	inode = fuse_iget(dir->i_sb, o->nodeid, o->generation,
-			  &o->attr, entry_attr_timeout(o), attr_version);
+			  &o->attr, entry_attr_timeout(o), attr_version, 0);
 	if (!inode)
 		goto out;
 
