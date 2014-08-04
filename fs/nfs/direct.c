@@ -690,10 +690,8 @@ ssize_t nfs_file_direct_read(struct kiocb *iocb, const struct iovec *iov,
 
 	if (!result) {
 		result = nfs_direct_wait(dreq);
-		if (result > 0) {
+		if (result > 0)
 			iocb->ki_pos = pos + result;
-			task_io_account_read(result);
-		}
 	}
 
 	nfs_direct_req_release(dreq);
@@ -1102,6 +1100,8 @@ ssize_t nfs_file_direct_write(struct kiocb *iocb, const struct iovec *iov,
 	struct nfs_lock_context *l_ctx;
 	loff_t end;
 	size_t count;
+
+	virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_PREPARE, NULL);
 
 	count = iov_length(iov, nr_segs);
 	end = (pos + count - 1) >> PAGE_CACHE_SHIFT;
