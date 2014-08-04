@@ -3265,7 +3265,7 @@ fuse_direct_IO(int rw, struct kiocb *iocb, const struct iovec *iov,
 	ssize_t ret = 0;
 	struct file *file = iocb->ki_filp;
 	struct fuse_file *ff = file->private_data;
-	bool async_dio = ff->fc->async_dio;
+	bool async_dio = ff->fc->async_dio | ff->fc->writeback_cache;
 	loff_t pos = 0;
 	struct inode *inode;
 	loff_t i_size;
@@ -3282,9 +3282,16 @@ fuse_direct_IO(int rw, struct kiocb *iocb, const struct iovec *iov,
 
 	/* optimization for short read */
 	if (async_dio && rw != WRITE && offset + count > i_size) {
+		loff_t new_count;
+
 		if (offset >= i_size)
 			return 0;
-		count = min_t(loff_t, count, fuse_round_up(i_size - offset));
+
+		new_count = i_size - offset;
+		if (!ff->fc->writeback_cache)
+			new_count = fuse_round_up(new_count);
+
+		count = min_t(loff_t, count, new_count);
 	}
 
 	/*
