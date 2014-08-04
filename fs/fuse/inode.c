@@ -497,6 +497,7 @@ enum {
 	OPT_BLKSIZE,
 	OPT_WBCACHE,
 	OPT_ODIRECT,
+	OPT_UMOUNT_WAIT,
 	OPT_ERR
 };
 
@@ -511,6 +512,7 @@ static const match_table_t tokens = {
 	{OPT_BLKSIZE,			"blksize=%u"},
 	{OPT_WBCACHE,			"writeback_enable"},
 	{OPT_ODIRECT,			"direct_enable"},
+	{OPT_UMOUNT_WAIT,		"umount_wait"},
 	{OPT_ERR,			NULL}
 };
 
@@ -596,6 +598,12 @@ static int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev)
 			d->flags |= FUSE_ODIRECT;
 			break;
 
+		case OPT_UMOUNT_WAIT:
+			if (!ve_is_super(get_exec_env()) && !fuse_ve_odirect)
+				return -EPERM;
+			d->flags |= FUSE_UMOUNT_WAIT;
+			break;
+
 		default:
 			return 0;
 		}
@@ -621,6 +629,8 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 		seq_puts(m, ",allow_other");
 	if (fc->flags & FUSE_ODIRECT)
 		seq_puts(m, ",direct_enable");
+	if (fc->flags & FUSE_UMOUNT_WAIT)
+		seq_puts(m, ",umount_wait");
 	if (fc->max_read != ~0)
 		seq_printf(m, ",max_read=%u", fc->max_read);
 	if (sb->s_bdev && sb->s_blocksize != FUSE_DEFAULT_BLKSIZE)
@@ -1131,7 +1141,7 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 		goto err_put_root;
 	init_req->background = 1;
 
-	if (is_bdev) {
+	if (is_bdev || (fc->flags & FUSE_UMOUNT_WAIT)) {
 		fc->destroy_req = fuse_request_alloc(0);
 		if (!fc->destroy_req)
 			goto err_free_init_req;
