@@ -332,6 +332,14 @@ void fuse_release_common(struct file *file, bool isdir)
 	req->misc.release.path = file->f_path;
 
 	/*
+	 * No more in-flight asynchronous READ or WRITE requests if
+	 * fuse file release is synchronous
+	 */
+	if (ff->fc->close_wait) {
+		BUG_ON(atomic_read(&ff->count) != 1);
+	}
+
+	/*
 	 * Normally this will send the RELEASE request, however if
 	 * some asynchronous READ or WRITE requests are outstanding,
 	 * the sending will be delayed.
@@ -340,7 +348,8 @@ void fuse_release_common(struct file *file, bool isdir)
 	 * synchronous RELEASE is allowed (and desirable) in this case
 	 * because the server can be trusted not to screw up.
 	 */
-	fuse_file_put(ff, ff->fc->destroy_req != NULL, isdir);
+	fuse_file_put(ff, ff->fc->destroy_req != NULL ||
+			  ff->fc->close_wait, isdir);
 }
 
 static int fuse_open(struct inode *inode, struct file *file)
@@ -350,14 +359,42 @@ static int fuse_open(struct inode *inode, struct file *file)
 
 static int fuse_release(struct inode *inode, struct file *file)
 {
-	struct fuse_conn *fc = get_fuse_conn(inode);
-	struct fuse_inode *fi;
+	struct fuse_file *ff = file->private_data;
+	struct fuse_inode *fi = get_fuse_inode(inode);
 
 	/* see fuse_vma_close() for !writeback_cache case */
-	if (fc->writeback_cache) {
+	if (ff->fc->writeback_cache) {
 		write_inode_now(inode, 1);
-		fi = get_fuse_inode(inode);
-		wait_event(fi->page_waitq, list_empty_careful(&fi->writepages));
+
+		/* Must remove file from write list. Otherwise it is possible this
+		 * file will get more writeback from another files rerouted via write_files
+		 */
+		spin_lock(&fi->lock);
+		list_del_init(&ff->write_entry);
+		spin_unlock(&fi->lock);
+
+		/* This can livelock. Inode can be open via another file
+		 * and that file can generate continuous writeback.
+		 * I think i_mutex could be taken around this.
+		 *
+		 * For now we replace this with waiting on ff->count,
+		 * it is safe, because we essentially wait only for writeback (and readahead)
+		 * enqueued on this file and it is not going to get new one: it is closing.
+		 */
+		if (!ff->fc->close_wait)
+			wait_event(fi->page_waitq, list_empty_careful(&fi->writepages));
+		else
+			wait_event(fi->page_waitq, atomic_read(&ff->count) == 1);
+
+		/* Wait for threads just released ff to leave their critical sections.
+		 * Taking spinlock is the first thing fuse_release_common does, so that
+		 * this is unneseccary, but it is still good to emphasize right here,
+		 * that we need this.
+		 */
+		spin_unlock_wait(&fi->lock);
+	} else if (ff->fc->close_wait)
+		wait_event(fi->page_waitq, atomic_read(&ff->count) == 1);
+
 	}
 	fuse_release_common(file, false);
 
@@ -878,8 +915,18 @@ static void fuse_readpages_end(struct fuse_conn *fc, struct fuse_req *req)
 		unlock_page(page);
 		page_cache_release(page);
 	}
-	if (req->ff)
-		fuse_file_put(req->ff, false, false);
+
+	if (req->ff) {
+		struct fuse_conn *fc = req->ff->fc;
+		if (fc->close_wait) {
+			struct inode *inode = req->inode;
+			spin_lock(&fc->lock);
+			__fuse_file_put(req->ff);
+			wake_up(&get_fuse_inode(inode)->page_waitq);
+			spin_unlock(&fc->lock);
+		} else
+			fuse_file_put(req->ff, false, false);
+	}
 }
 
 static void fuse_send_readpages(struct fuse_req *req, struct file *file)
@@ -1605,8 +1652,8 @@ static void fuse_writepage_finish(struct fuse_conn *fc, struct fuse_req *req)
 	struct backing_dev_info *bdi = inode->i_mapping->backing_dev_info;
 	int i;
 
-	__fuse_file_put(req->ff);
 	list_del(&req->writepages_entry);
+	__fuse_file_put(req->ff);
 	for (i = 0; i < req->num_pages; i++) {
 		dec_bdi_stat(bdi, BDI_WRITEBACK);
 		dec_zone_page_state(req->pages[i], NR_WRITEBACK_TEMP);
@@ -2087,9 +2134,14 @@ static int fuse_writepages(struct address_space *mapping,
 		fuse_writepages_send(&data);
 		err = 0;
 	}
-	if (data.ff)
-		fuse_file_put(data.ff, false, false);
-
+	if (data.ff) {
+		if (data.ff->fc->close_wait) {
+			__fuse_file_put(data.ff);
+			wake_up(&get_fuse_inode(inode)->page_waitq);
+		} else {
+			fuse_file_put(data.ff, false, false);
+		}
+	}
 	kfree(data.orig_pages);
 out:
 	return err;
