@@ -776,6 +776,15 @@ static void fuse_aio_complete_req(struct fuse_conn *fc, struct fuse_req *req)
 				req->out.args[0].size;
 	}
 
+	if (req->out.h.error)
+		printk("fuse_aio_complete_req: request (rw=%s fh=0x%llx "
+		       "pos=%lld size=%d) completed with err=%d\n",
+		       !io->write ? "READ"                   : "WRITE",
+		       !io->write ? req->misc.read.in.fh     : req->misc.write.in.fh,
+		       !io->write ? req->misc.read.in.offset : req->misc.write.in.offset,
+		       !io->write ? req->misc.read.in.size   : req->misc.write.in.size,
+		       req->out.h.error);
+
 	fuse_aio_complete(io, req->out.h.error, pos);
 }
 
