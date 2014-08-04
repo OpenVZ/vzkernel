@@ -292,6 +292,9 @@ struct fuse_args {
 	struct fuse_in_arg in_args[3];
 	struct fuse_arg out_args[2];
 	void (*end)(struct fuse_mount *fm, struct fuse_args *args, int error);
+
+	/** Request contains pages from page-cache */
+	unsigned page_cache:1;
 };
 
 struct fuse_args_pages {
