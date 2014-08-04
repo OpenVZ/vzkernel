@@ -395,6 +395,7 @@ static int fuse_conn_show(struct seq_file *sf, void *v)
 {
 	struct fuse_conn *fc = sf->private;
 	seq_printf(sf, "Connected: %d\n", fc->connected);
+	seq_printf(sf, "Initialized: %d\n", fc->initialized);
 	seq_printf(sf, "Blocked: %d\n", fc->blocked);
 	seq_printf(sf, "WQ active: %d\n", waitqueue_active(&fc->waitq));
 	seq_printf(sf, "Blocked_wq active: %d\n", waitqueue_active(&fc->blocked_waitq));
