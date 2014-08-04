@@ -896,6 +896,12 @@ void fuse_request_send(struct fuse_conn *fc, struct fuse_req *req);
 ssize_t fuse_simple_request(struct fuse_conn *fc, struct fuse_args *args);
 
 /**
+ * Send a request (synchronous) if not FUSE_S_FAIL_IMMEDIATELY
+ */
+void fuse_request_check_and_send(struct fuse_conn *fc, struct fuse_req *req,
+				 struct fuse_file *ff);
+
+/**
  * Send a request in the background
  */
 void fuse_request_send_background(struct fuse_conn *fc, struct fuse_req *req);

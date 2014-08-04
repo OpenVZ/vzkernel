@@ -485,7 +485,8 @@ static void request_wait_answer(struct fuse_conn *fc, struct fuse_req *req)
 	wait_event(req->waitq, test_bit(FR_FINISHED, &req->flags));
 }
 
-static void __fuse_request_send(struct fuse_conn *fc, struct fuse_req *req)
+static void __fuse_request_send(struct fuse_conn *fc, struct fuse_req *req,
+				struct fuse_file *ff)
 {
 	struct fuse_iqueue *fiq = &fc->iq;
 
@@ -494,6 +495,9 @@ static void __fuse_request_send(struct fuse_conn *fc, struct fuse_req *req)
 	if (!fiq->connected) {
 		spin_unlock(&fiq->waitq.lock);
 		req->out.h.error = -ENOTCONN;
+	} else if (ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
+		spin_unlock(&fiq->waitq.lock);
+		req->out.h.error = -EIO;
 	} else {
 		req->in.h.unique = fuse_get_unique(fiq);
 		queue_request(fiq, req);
@@ -508,14 +512,20 @@ static void __fuse_request_send(struct fuse_conn *fc, struct fuse_req *req)
 	}
 }
 
-void fuse_request_send(struct fuse_conn *fc, struct fuse_req *req)
+void fuse_request_check_and_send(struct fuse_conn *fc, struct fuse_req *req,
+				 struct fuse_file *ff)
 {
 	__set_bit(FR_ISREPLY, &req->flags);
 	if (!test_bit(FR_WAITING, &req->flags)) {
 		__set_bit(FR_WAITING, &req->flags);
 		atomic_inc(&fc->num_waiting);
 	}
-	__fuse_request_send(fc, req);
+	__fuse_request_send(fc, req, ff);
+}
+
+void fuse_request_send(struct fuse_conn *fc, struct fuse_req *req)
+{
+	fuse_request_check_and_send(fc, req, NULL);
 }
 EXPORT_SYMBOL_GPL(fuse_request_send);
 
@@ -613,7 +623,14 @@ void fuse_request_send_background(struct fuse_conn *fc, struct fuse_req *req)
 {
 	BUG_ON(!req->end);
 	spin_lock(&fc->lock);
-	if (fc->connected) {
+	if (req->page_cache && req->ff &&
+			test_bit(FUSE_S_FAIL_IMMEDIATELY, &req->ff->ff_state)) {
+		BUG_ON(req->in.h.opcode != FUSE_READ);
+		spin_unlock(&fc->lock);
+		req->out.h.error = -EIO;
+		req->end(fc, req);
+		fuse_put_request(fc, req);
+	} else if (fc->connected) {
 		fuse_request_send_background_locked(fc, req);
 		spin_unlock(&fc->lock);
 	} else {
@@ -659,7 +676,7 @@ void fuse_force_forget(struct file *file, u64 nodeid)
 	req->in.args[0].size = sizeof(inarg);
 	req->in.args[0].value = &inarg;
 	__clear_bit(FR_ISREPLY, &req->flags);
-	__fuse_request_send(fc, req);
+	__fuse_request_send(fc, req, NULL);
 	/* ignore errors */
 	fuse_put_request(fc, req);
 }
