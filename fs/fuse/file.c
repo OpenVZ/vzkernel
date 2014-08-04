@@ -792,6 +792,13 @@ static void fuse_aio_complete(struct fuse_io_priv *io, int err, ssize_t pos)
 			}
 		}
 
+		if (res < 0)
+			printk("fuse_aio_complete(io=%p, err=%d, pos=%ld"
+			       "): io->err=%d io->bytes=%ld io->size=%ld "
+			       "is_sync=%d res=%ld ki_opcode=%d ki_pos=%llu\n",
+			       io, err, pos, io->err, io->bytes,
+			       io->size, is_sync_kiocb(io->iocb), res,
+			       io->iocb->ki_opcode, io->iocb->ki_pos);
 		aio_complete(io->iocb, res, 0);
 		kfree(io);
 	}
@@ -3447,6 +3454,14 @@ fuse_direct_IO(int rw, struct kiocb *iocb, const struct iovec *iov,
 		ret = __fuse_direct_read(io, iov, nr_segs, &pos, count);
 
 	if (io->async) {
+		if (ret != count) {
+			struct fuse_file *ff = file->private_data;
+			printk("fuse_direct_IO: failed to %s %ld bytes "
+			       "(offset=%llu ret=%ld i_size=%llu ino=%lu "
+			       "fh=%llu\n", rw == WRITE ? "write" : "read",
+			       count, offset, ret, i_size, inode->i_ino,
+			       ff->fh);
+		}
 		fuse_aio_complete(io, ret < 0 ? ret : 0, -1);
 
 		/* we have a non-extending, async request, so return */
