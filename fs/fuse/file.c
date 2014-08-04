@@ -1760,6 +1760,7 @@ static ssize_t fuse_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 static void fuse_writepage_free(struct fuse_writepage_args *wpa)
 {
 	struct fuse_args_pages *ap = &wpa->ia.ap;
+	struct fuse_conn *fc = wpa->ia.ff->fm->fc;
 	int i;
 
 	if (wpa->bucket)
@@ -1767,6 +1768,9 @@ static void fuse_writepage_free(struct fuse_writepage_args *wpa)
 
 	for (i = 0; i < ap->num_pages; i++)
 		__free_page(ap->pages[i]);
+
+	if (wpa->ia.ff && !fc->writeback_cache && !fc->close_wait)
+		fuse_file_put(wpa->ia.ff, false, false);
 
 	kfree(ap->pages);
 	kfree(wpa);
@@ -1781,7 +1785,7 @@ static void fuse_writepage_finish(struct fuse_mount *fm,
 	struct backing_dev_info *bdi = inode_to_bdi(inode);
 	int i;
 
-	if (wpa->ia.ff)
+	if (wpa->ia.ff && (fm->fc->writeback_cache || fm->fc->close_wait))
 		__fuse_file_put(wpa->ia.ff);
 
 	for (i = 0; i < ap->num_pages; i++) {
