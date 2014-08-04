@@ -284,7 +284,7 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 	if (err)
 		goto out;
 
-	if (fc->writeback_cache) {
+	if (fc->writeback_cache && !isdir) {
 		struct fuse_inode *fi = get_fuse_inode(inode);
 		u64 size;
 
@@ -1692,7 +1692,7 @@ static void fuse_writepage_free(struct fuse_conn *fc, struct fuse_req *req)
 		__free_page(req->pages[i]);
 
 	if (!fc->writeback_cache && !fc->close_wait)
-		fuse_file_put(req->ff, false);
+		fuse_file_put(req->ff, false, false);
 }
 
 static void fuse_writepage_finish(struct fuse_conn *fc, struct fuse_req *req)
