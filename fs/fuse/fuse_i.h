@@ -120,6 +120,9 @@ struct fuse_inode {
 
 	/** Lock to protect write related fields */
 	spinlock_t lock;
+
+	/** Mostly to detect very first open */
+	atomic_t num_openers;
 };
 
 /** FUSE inode state bits */
@@ -919,6 +922,8 @@ u64 fuse_lock_owner_id(struct fuse_conn *fc, fl_owner_t id);
 
 int fuse_update_attributes(struct inode *inode, struct kstat *stat,
 			   struct file *file, bool *refreshed);
+
+int fuse_getattr_size(struct inode *inode, struct file *file, u64 *size);
 
 void fuse_flush_writepages(struct inode *inode);
 

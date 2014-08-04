@@ -268,10 +268,33 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 		mutex_lock(&inode->i_mutex);
 
 	err = fuse_do_open(fc, get_node_id(inode), file, isdir);
+	if (err)
+		goto out;
 
-	if (!err)
-		fuse_finish_open(inode, file);
+	if (fc->writeback_cache) {
+		struct fuse_inode *fi = get_fuse_inode(inode);
+		u64 size;
 
+		atomic_inc(&fi->num_openers);
+
+		if (atomic_read(&fi->num_openers) == 1) {
+			err = fuse_getattr_size(inode, file, &size);
+			if (err) {
+				atomic_dec(&fi->num_openers);
+				if (lock_inode)
+					mutex_unlock(&inode->i_mutex);
+				fuse_release_common(file, false);
+				return err;
+			}
+
+			spin_lock(&fi->lock);
+			i_size_write(inode, size);
+			spin_unlock(&fi->lock);
+		}
+	}
+
+	fuse_finish_open(inode, file);
+out:
 	if (lock_inode)
 		mutex_unlock(&inode->i_mutex);
 
@@ -392,6 +415,9 @@ static int fuse_release(struct inode *inode, struct file *file)
 		 * that we need this.
 		 */
 		spin_unlock_wait(&fi->lock);
+
+		/* since now we can trust userspace attr.size */
+		atomic_dec(&fi->num_openers);
 	} else if (ff->fc->close_wait)
 		wait_event(fi->page_waitq, atomic_read(&ff->count) == 1);
 
