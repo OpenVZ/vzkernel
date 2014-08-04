@@ -327,6 +327,9 @@ struct fuse_req {
 	/** Request contains pages from page-cache */
 	unsigned page_cache:1;
 
+	/** Request was killed -- pages were released */
+	unsigned killed:1;
+
 	/** State of the request */
 	enum fuse_req_state state;
 
