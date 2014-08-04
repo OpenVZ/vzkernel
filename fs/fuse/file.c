@@ -18,6 +18,7 @@
 #include <linux/falloc.h>
 #include <linux/uio.h>
 #include <linux/fs.h>
+#include <linux/task_io_accounting_ops.h>
 
 static int fuse_send_open(struct fuse_mount *fm, u64 nodeid,
 			  unsigned int open_flags, int opcode,
@@ -1577,8 +1578,10 @@ ssize_t fuse_direct_io(struct fuse_io_priv *io, struct iov_iter *iter,
 				ia->write.in.write_flags |= FUSE_WRITE_KILL_SUIDGID;
 
 			nres = fuse_send_write(ia, pos, nbytes, owner);
+			task_io_account_write(nbytes);
 		} else {
 			nres = fuse_send_read(ia, pos, nbytes, owner);
+			task_io_account_read(nbytes);
 		}
 
 		if (!io->async || nres < 0) {
