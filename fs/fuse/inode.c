@@ -642,7 +642,8 @@ enum {
 	OPT_WBCACHE,
 	OPT_ODIRECT,
 	OPT_UMOUNT_WAIT,
-	OPT_ERR,
+	OPT_DISABLE_CLOSE_WAIT,
+	OPT_ERR
 };
 
 static const struct fs_parameter_spec fuse_fs_parameters[] = {
@@ -658,6 +659,7 @@ static const struct fs_parameter_spec fuse_fs_parameters[] = {
 	fsparam_flag	("writeback_enable",	OPT_WBCACHE),
 	fsparam_flag	("direct_enable",	OPT_ODIRECT),
 	fsparam_flag	("umount_wait",		OPT_UMOUNT_WAIT),
+	fsparam_flag	("disable_close_wait",	OPT_DISABLE_CLOSE_WAIT),
 	fsparam_string	("subtype",		OPT_SUBTYPE),
 	{}
 };
@@ -769,6 +771,11 @@ static int fuse_parse_param(struct fs_context *fsc, struct fs_parameter *param)
 		ctx->umount_wait = 1;
 		break;
 
+	case OPT_DISABLE_CLOSE_WAIT:
+		ctx->disable_close_wait = 1;
+		ctx->close_wait = 0;
+		break;
+
 	default:
 		return -EINVAL;
 	}
@@ -804,6 +811,8 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 			seq_puts(m, ",direct_enable");
 		if (fc->umount_wait)
 			seq_puts(m, ",umount_wait");
+		if (fc->disable_close_wait)
+			seq_puts(m, ",disable_close_wait");
 		if (fc->max_read != ~0)
 			seq_printf(m, ",max_read=%u", fc->max_read);
 		if (sb->s_bdev && sb->s_blocksize != FUSE_DEFAULT_BLKSIZE)
@@ -1604,6 +1613,7 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *ctx)
 	fc->direct_enable = ctx->direct_enable;
 	fc->umount_wait = ctx->umount_wait;
 	fc->close_wait = ctx->close_wait;
+	fc->disable_close_wait = ctx->disable_close_wait;
 	fc->writeback_cache = ctx->writeback_cache;
 	fc->destroy = ctx->destroy || ctx->umount_wait;
 	fc->no_control = ctx->no_control;
