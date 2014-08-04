@@ -394,6 +394,12 @@ static int fuse_release(struct inode *inode, struct file *file)
 			spin_lock(&ff->fc->lock);
 			list_del_init(&ff->write_entry);
 			spin_unlock(&ff->fc->lock);
+
+			/* A writeback from another fuse file might come after
+			 * filemap_write_and_wait() above
+			 */
+			if (!ff->fc->close_wait)
+				filemap_write_and_wait(file->f_mapping);
 		} else
 			BUG_ON(!list_empty(&ff->write_entry));
 
@@ -1938,6 +1944,8 @@ static int fuse_writepage(struct page *page, struct writeback_control *wbc)
 	return err;
 }
 
+void fuse_release_ff(struct inode *inode, struct fuse_file *ff);
+
 static int fuse_send_writepages(struct fuse_fill_data *data)
 {
 	int i, all_ok = 1;
@@ -1948,6 +1956,7 @@ static int fuse_send_writepages(struct fuse_fill_data *data)
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	loff_t off = -1;
 
+	/* we can acquire ff here because we do have locked pages here! */
 	if (!data->ff)
 		data->ff = fuse_write_file(fc, fi);
 
@@ -1956,6 +1965,20 @@ static int fuse_send_writepages(struct fuse_fill_data *data)
 		for (i = 0; i < req->num_pages; i++)
 			end_page_writeback(req->pages[i]);
 		return -EIO;
+	}
+
+	if (test_bit(FUSE_S_FAIL_IMMEDIATELY, &data->ff->ff_state)) {
+		for (i = 0; i < req->num_pages; i++) {
+			struct page *page = req->pages[i];
+			req->pages[i] = NULL;
+			SetPageError(page);
+			unlock_page(page);
+			end_page_writeback(page);
+		}
+		fuse_release_ff(inode, data->ff);
+		data->ff = NULL;
+		fuse_put_request(fc, req);
+		return 0;
 	}
 
 	req->inode = inode;
@@ -1998,6 +2021,9 @@ static int fuse_send_writepages(struct fuse_fill_data *data)
 		list_del(&req->writepages_entry);
 		wake_up(&fi->page_waitq);
 		spin_unlock(&fc->lock);
+
+		fuse_release_ff(inode, data->ff);
+		data->ff = NULL;
 		return -ENOMEM;
 	}
 
@@ -2016,6 +2042,8 @@ static int fuse_send_writepages(struct fuse_fill_data *data)
 	fuse_flush_writepages(data->inode);
 	spin_unlock(&fc->lock);
 
+	fuse_release_ff(inode, data->ff);
+	data->ff = NULL;
 	return 0;
 }
 
@@ -2152,7 +2180,7 @@ static int fuse_writepages(struct address_space *mapping,
 			fuse_put_request(fc, data.req);
 	}
 out_put:
-	fuse_release_ff(inode, data.ff);
+	BUG_ON(data.ff);
 out:
 	return err;
 }
