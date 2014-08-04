@@ -961,7 +961,7 @@ int fuse_reverse_inval_entry(struct super_block *sb, u64 parent_nodeid,
  * File-system tells the kernel to invalidate all fuse-files (and cache)
  * for the given node id.
  */
-int fuse_invalidate_files(struct super_block *sb, u64 nodeid);
+int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid);
 
 int fuse_do_open(struct fuse_conn *fc, u64 nodeid, struct file *file,
 		 bool isdir);
