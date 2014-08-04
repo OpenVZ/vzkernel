@@ -660,6 +660,9 @@ struct fuse_conn {
 	/** Does the direct access enable? */
 	unsigned direct_enable:1;
 
+	/** Does the unmount synchronous? */
+	unsigned umount_wait:1;
+
 	/** The number of requests waiting for completion */
 	atomic_t num_waiting;
 

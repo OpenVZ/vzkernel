@@ -74,6 +74,7 @@ struct fuse_mount_data {
 	unsigned allow_other:1;
 	unsigned writeback_cache:1;
 	unsigned direct_enable:1;
+	unsigned umount_wait:1;
 	unsigned max_read;
 	unsigned blksize;
 };
@@ -493,6 +494,7 @@ enum {
 	OPT_BLKSIZE,
 	OPT_WBCACHE,
 	OPT_ODIRECT,
+	OPT_UMOUNT_WAIT,
 	OPT_ERR,
 };
 
@@ -507,6 +509,7 @@ static const match_table_t tokens = {
 	{OPT_BLKSIZE,			"blksize=%u"},
 	{OPT_WBCACHE,			"writeback_enable"},
 	{OPT_ODIRECT,			"direct_enable"},
+	{OPT_UMOUNT_WAIT,		"umount_wait"},
 	{OPT_ERR,			NULL}
 };
 
@@ -605,6 +608,12 @@ static int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
 			d->direct_enable = 1;
 			break;
 
+		case OPT_UMOUNT_WAIT:
+			if (!ve_is_super(get_exec_env()) && !fuse_ve_odirect)
+				return -EPERM;
+			d->umount_wait = 1;
+			break;
+
 		default:
 			return 0;
 		}
@@ -630,6 +639,8 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 		seq_puts(m, ",allow_other");
 	if (fc->direct_enable)
 		seq_puts(m, ",direct_enable");
+	if (fc->umount_wait)
+		seq_puts(m, ",umount_wait");
 	if (fc->max_read != ~0)
 		seq_printf(m, ",max_read=%u", fc->max_read);
 	if (sb->s_bdev && sb->s_blocksize != FUSE_DEFAULT_BLKSIZE)
@@ -1200,6 +1211,7 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 	fc->group_id = d.group_id;
 	fc->max_read = max_t(unsigned, 4096, d.max_read);
 	fc->direct_enable = d.direct_enable;
+	fc->umount_wait = d.umount_wait;
 	fc->writeback_cache = d.writeback_cache;
 
 	/* Used by get_root_inode() */
@@ -1219,7 +1231,7 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 		goto err_put_root;
 	__set_bit(FR_BACKGROUND, &init_req->flags);
 
-	if (is_bdev) {
+	if (is_bdev || fc->umount_wait) {
 		fc->destroy_req = fuse_request_alloc(0);
 		if (!fc->destroy_req)
 			goto err_free_init_req;
