@@ -640,6 +640,9 @@ struct fuse_conn {
 	/** Allow other than the mounter user to access the filesystem ? */
 	unsigned allow_other:1;
 
+	/** Does the direct access enable? */
+	unsigned direct_enable:1;
+
 	/** The number of requests waiting for completion */
 	atomic_t num_waiting;
 
