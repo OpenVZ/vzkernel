@@ -602,6 +602,7 @@ enum {
 	OPT_MAX_READ,
 	OPT_BLKSIZE,
 	OPT_WBCACHE,
+	OPT_ODIRECT,
 	OPT_ERR,
 };
 
@@ -616,6 +617,7 @@ static const struct fs_parameter_spec fuse_fs_parameters[] = {
 	fsparam_u32	("max_read",		OPT_MAX_READ),
 	fsparam_u32	("blksize",		OPT_BLKSIZE),
 	fsparam_flag	("writeback_enable",	OPT_WBCACHE),
+	fsparam_flag	("direct_enable",	OPT_ODIRECT),
 	fsparam_string	("subtype",		OPT_SUBTYPE),
 	{}
 };
@@ -704,6 +706,10 @@ static int fuse_parse_param(struct fs_context *fsc, struct fs_parameter *param)
 		ctx->writeback_cache = 1;
 		break;
 
+	case OPT_ODIRECT:
+		ctx->direct_enable = 1;
+		break;
+
 	default:
 		return -EINVAL;
 	}
@@ -735,6 +741,8 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 			seq_puts(m, ",default_permissions");
 		if (fc->allow_other)
 			seq_puts(m, ",allow_other");
+		if (fc->direct_enable)
+			seq_puts(m, ",direct_enable");
 		if (fc->max_read != ~0)
 			seq_printf(m, ",max_read=%u", fc->max_read);
 		if (sb->s_bdev && sb->s_blocksize != FUSE_DEFAULT_BLKSIZE)
@@ -1531,6 +1539,7 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *ctx)
 	fc->group_id = ctx->group_id;
 	fc->legacy_opts_show = ctx->legacy_opts_show;
 	fc->max_read = max_t(unsigned int, 4096, ctx->max_read);
+	fc->direct_enable = ctx->direct_enable;
 	fc->writeback_cache = ctx->writeback_cache;
 	fc->destroy = ctx->destroy;
 	fc->no_control = ctx->no_control;
