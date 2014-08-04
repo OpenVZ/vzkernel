@@ -365,6 +365,29 @@ int fuse_reverse_inval_inode(struct super_block *sb, u64 nodeid,
 	return 0;
 }
 
+static void fuse_kill_requests(struct fuse_conn *fc, struct inode *inode,
+			       struct list_head *req_list)
+{
+	struct fuse_req *req;
+
+	list_for_each_entry(req, req_list, list)
+		if (req->inode == inode && req->page_cache && !req->killed) {
+			int i;
+
+			BUG_ON(req->in.h.opcode != FUSE_READ);
+			req->killed = 1;
+
+			for (i = 0; i < req->num_pages; i++) {
+				struct page *page = req->pages[i];
+				SetPageError(page);
+				unlock_page(page);
+				req->pages[i] = NULL;
+			}
+
+			req->num_pages = 0;
+		}
+}
+
 int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 {
 	struct super_block *sb = fc->sb;
@@ -383,8 +406,27 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 	}
 
 	err = filemap_write_and_wait(inode->i_mapping);
-	if (!err || err == -EIO) /* AS_EIO might trigger -EIO */
+	if (!err || err == -EIO) { /* AS_EIO might trigger -EIO */
+		struct fuse_dev *fud;
+		spin_lock(&fc->lock);
+		list_for_each_entry(fud, &fc->devices, entry) {
+			struct fuse_pqueue *fpq = &fud->pq;
+			int i;
+
+			spin_lock(&fpq->lock);
+			for (i = 0; i < FUSE_PQ_HASH_SIZE; i++)
+				fuse_kill_requests(fc, inode, &fpq->processing[i]);
+			fuse_kill_requests(fc, inode, &fpq->io);
+			spin_unlock(&fpq->lock);
+		}
+		fuse_kill_requests(fc, inode, &fc->iq.pending);
+		spin_lock(&fc->bg_lock);
+		fuse_kill_requests(fc, inode, &fc->bg_queue);
+		spin_unlock(&fc->bg_lock);
+		spin_unlock(&fc->lock);
+
 		err = invalidate_inode_pages2(inode->i_mapping);
+	}
 
 	if (!err)
 		fuse_invalidate_attr(inode);
