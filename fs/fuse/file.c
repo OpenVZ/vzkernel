@@ -237,6 +237,9 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 			  fc->atomic_o_trunc &&
 			  fc->writeback_cache;
 
+	if ((file->f_flags & O_DIRECT) && !(fc->flags & FUSE_ODIRECT))
+		return -EINVAL;
+
 	if (fuse_is_bad(inode))
 		return -EIO;
 
