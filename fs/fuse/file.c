@@ -829,6 +829,13 @@ static void fuse_aio_complete(struct fuse_io_priv *io, int err, ssize_t pos)
 			spin_lock(&fi->lock);
 			fi->attr_version = atomic64_inc_return(&fc->attr_version);
 			spin_unlock(&fi->lock);
+		} else {
+			printk("fuse_aio_complete(io=%p, err=%d, pos=%ld"
+			       "): io->err=%d io->bytes=%ld io->size=%ld "
+			       "is_sync=%d res=%ld ki_flags=%d ki_pos=%llu\n",
+			       io, err, pos, io->err, io->bytes,
+			       io->size, is_sync_kiocb(io->iocb), res,
+			       io->iocb->ki_flags, io->iocb->ki_pos);
 		}
 
 		io->iocb->ki_complete(io->iocb, res);
@@ -3171,6 +3178,14 @@ fuse_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 	if (io->async) {
 		bool blocking = io->blocking;
 
+		if (ret != count) {
+			struct fuse_file *ff = file->private_data;
+			printk("fuse_direct_IO: failed to %s %ld bytes "
+			       "(offset=%llu ret=%ld i_size=%llu ino=%lu "
+			       "fh=%llu\n", io->write ? "write" : "read",
+			       count, offset, ret, i_size, inode->i_ino,
+			       ff->fh);
+		}
 		fuse_aio_complete(io, ret < 0 ? ret : 0, -1);
 
 		/* we have a non-extending, async request, so return */
