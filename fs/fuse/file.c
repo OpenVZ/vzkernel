@@ -217,6 +217,9 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 	struct fuse_conn *fc = get_fuse_conn(inode);
 	int err;
 
+	if ((file->f_flags & O_DIRECT) && !(fc->flags & FUSE_ODIRECT))
+		return -EINVAL;
+
 	err = generic_file_open(inode, file);
 	if (err)
 		return err;
