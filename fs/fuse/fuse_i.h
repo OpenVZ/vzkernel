@@ -333,6 +333,9 @@ struct fuse_req {
 	/** Request contains pages from page-cache */
 	unsigned page_cache:1;
 
+	/** Request was killed -- pages were released */
+	unsigned killed:1;
+
 	/** The request input */
 	struct fuse_in in;
 
