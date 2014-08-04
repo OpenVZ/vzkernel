@@ -449,6 +449,33 @@ void fuse_unlock_inode(struct inode *inode, bool locked)
 		mutex_unlock(&get_fuse_inode(inode)->mutex);
 }
 
+int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
+{
+	struct inode *inode;
+	struct fuse_inode *fi;
+	struct fuse_file *ff;
+	int err;
+
+	inode = fuse_ilookup(fc, nodeid, NULL);
+	if (!inode)
+		return -ENOENT;
+
+	fi = get_fuse_inode(inode);
+	list_for_each_entry(ff, &fi->write_files, write_entry) {
+		set_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state);
+	}
+
+	err = filemap_write_and_wait(inode->i_mapping);
+	if (!err || err == -EIO) /* AS_EIO might trigger -EIO */
+		err = invalidate_inode_pages2(inode->i_mapping);
+
+	if (!err)
+		fuse_invalidate_attr(inode);
+
+	iput(inode);
+	return err;
+}
+
 static void fuse_umount_begin(struct super_block *sb)
 {
 	struct fuse_conn *fc = get_fuse_conn_super(sb);
