@@ -80,6 +80,7 @@ struct fuse_file *fuse_file_alloc(struct fuse_conn *fc)
 	}
 
 	INIT_LIST_HEAD(&ff->write_entry);
+	INIT_LIST_HEAD(&ff->rw_entry);
 	atomic_set(&ff->count, 0);
 	RB_CLEAR_NODE(&ff->polled_node);
 	init_waitqueue_head(&ff->poll_wait);
@@ -203,20 +204,34 @@ int fuse_do_open(struct fuse_conn *fc, u64 nodeid, struct file *file,
 }
 EXPORT_SYMBOL_GPL(fuse_do_open);
 
-static void fuse_link_write_file(struct file *file)
+static void fuse_link_file(struct file *file, bool write)
 {
 	struct inode *inode = file_inode(file);
 	struct fuse_conn *fc = get_fuse_conn(inode);
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	struct fuse_file *ff = file->private_data;
+
+	struct list_head *entry = write ? &ff->write_entry : &ff->rw_entry;
+	struct list_head *list  = write ? &fi->write_files : &fi->rw_files;
+
 	/*
 	 * file may be written through mmap, so chain it onto the
 	 * inodes's write_file list
 	 */
 	spin_lock(&fc->lock);
-	if (list_empty(&ff->write_entry))
-		list_add(&ff->write_entry, &fi->write_files);
+	if (list_empty(entry))
+		list_add(entry, list);
 	spin_unlock(&fc->lock);
+}
+
+static void fuse_link_write_file(struct file *file)
+{
+	fuse_link_file(file, true);
+}
+
+static void fuse_link_rw_file(struct file *file)
+{
+	fuse_link_file(file, false);
 }
 
 void fuse_finish_open(struct inode *inode, struct file *file)
@@ -243,6 +258,8 @@ void fuse_finish_open(struct inode *inode, struct file *file)
 	}
 	if ((file->f_mode & FMODE_WRITE) && fc->writeback_cache)
 		fuse_link_write_file(file);
+
+	fuse_link_rw_file(file);
 }
 
 int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
@@ -298,6 +315,7 @@ static void fuse_prepare_release(struct fuse_file *ff, int flags, int opcode)
 
 	spin_lock(&fc->lock);
 	list_del(&ff->write_entry);
+	list_del(&ff->rw_entry);
 	if (!RB_EMPTY_NODE(&ff->polled_node))
 		rb_erase(&ff->polled_node, &fc->polled_files);
 	spin_unlock(&fc->lock);
