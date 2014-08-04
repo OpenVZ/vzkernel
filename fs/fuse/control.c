@@ -398,6 +398,8 @@ static int fuse_conn_show(struct seq_file *sf, void *v)
 	seq_printf(sf, "Blocked: %d\n", fc->blocked);
 	seq_printf(sf, "WQ active: %d\n", waitqueue_active(&fc->waitq));
 	seq_printf(sf, "Blocked_wq active: %d\n", waitqueue_active(&fc->blocked_waitq));
+	seq_printf(sf, "num_background: %d\n", fc->num_background);
+	seq_printf(sf, "num_waiting: %d\n", atomic_read(&fc->num_waiting));
 	return 0;
 }
 
