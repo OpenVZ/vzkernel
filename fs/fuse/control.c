@@ -340,6 +340,57 @@ static const struct file_operations fuse_conn_io_req = {
 	.release = fuse_conn_release,
 };
 
+static int fuse_files_show(struct seq_file *f, void *v)
+{
+	struct fuse_file *ff;
+
+	ff = list_entry(v, struct fuse_file, fl);
+	seq_printf(f, "kh 0x%016Lx fh 0x%016Lx node 0x%016Lx flags 0x%08x name ",
+			ff->kh, ff->fh, ff->nodeid, ff->open_flags);
+	if (ff->ff_dentry)
+		seq_dentry(f, ff->ff_dentry, "");
+	else
+		seq_putc(f, '-');
+	seq_putc(f, '\n');
+
+	return 0;
+}
+
+static const struct seq_operations fuse_conn_files_seq_ops = {
+	.start = fuse_req_start,
+	.next = fuse_req_next,
+	.stop = fuse_req_stop,
+	.show = fuse_files_show,
+};
+
+static int fuse_conn_files_open(struct inode *inode, struct file *filp)
+{
+	struct fuse_conn *conn;
+	struct fuse_conn_priv *fcp;
+
+	conn = fuse_ctl_file_conn_get(filp);
+	if (!conn)
+		return -ESTALE;
+
+	fcp = __seq_open_private(filp, &fuse_conn_files_seq_ops,
+			sizeof(struct fuse_conn_priv));
+	if (fcp == NULL) {
+		fuse_conn_put(conn);
+		return -ENOMEM;
+	}
+
+	fcp->conn = conn;
+	fcp->req_list = &conn->conn_files;
+	return 0;
+}
+
+static const struct file_operations fuse_conn_files_ops = {
+	.open = fuse_conn_files_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = fuse_conn_release,
+};
+
 static struct dentry *fuse_ctl_add_dentry(struct dentry *parent,
 					  struct fuse_conn *fc,
 					  const char *name,
@@ -413,7 +464,10 @@ int fuse_ctl_add_conn(struct fuse_conn *fc)
 				&fuse_conn_processing_req) ||
 	    !fuse_ctl_add_dentry(parent, fc, "io_req",
 		    		S_IFREG | 0600, 1, NULL,
-				&fuse_conn_io_req)
+				&fuse_conn_io_req) ||
+	    !fuse_ctl_add_dentry(parent, fc, "open_files",
+		    		S_IFREG | 0600, 1, NULL,
+				&fuse_conn_files_ops)
 	    )
 		goto err;
 
