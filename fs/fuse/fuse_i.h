@@ -663,6 +663,9 @@ struct fuse_conn {
 	/** Does the unmount synchronous? */
 	unsigned umount_wait:1;
 
+	/** Does the disable synchronous close? */
+	unsigned disable_close_wait:1;
+
 	/** The number of requests waiting for completion */
 	atomic_t num_waiting;
 
