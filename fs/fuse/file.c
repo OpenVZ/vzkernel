@@ -1850,6 +1850,7 @@ static int fuse_writepages_fill(struct page *page,
 	struct fuse_req *req = data->req;
 	struct inode *inode = data->inode;
 	struct fuse_conn *fc = get_fuse_conn(inode);
+	int check_for_blocked = 0;
 
 	if (fuse_page_is_writeback(inode, page->index)) {
 		if (wbc->sync_mode != WB_SYNC_ALL) {
@@ -1866,6 +1867,12 @@ static int fuse_writepages_fill(struct page *page,
 	     req->pages[req->num_pages - 1]->index + 1 != page->index)) {
 		int err;
 
+		if (wbc->sync_mode == WB_SYNC_NONE && fc->blocked) {
+			redirty_page_for_writepage(wbc, page);
+			unlock_page(page);
+			return 0;
+		}
+
 		err = fuse_send_writepages(data);
 		if (err) {
 			unlock_page(page);
@@ -1878,6 +1885,8 @@ static int fuse_writepages_fill(struct page *page,
 			unlock_page(page);
 			return -ENOMEM;
 		}
+
+		check_for_blocked = 1;
 	}
 
 	req->pages[req->num_pages] = page;
@@ -1887,6 +1896,9 @@ static int fuse_writepages_fill(struct page *page,
 		BUG();
 
 	unlock_page(page);
+
+	if (wbc->sync_mode != WB_SYNC_NONE && check_for_blocked)
+		wait_event(fc->blocked_waitq, !fc->blocked);
 
 	return 0;
 }
@@ -1905,6 +1917,13 @@ static int fuse_writepages(struct address_space *mapping,
 	err = -EIO;
 	if (is_bad_inode(inode))
 		goto out;
+
+	if (wbc->sync_mode == WB_SYNC_NONE) {
+		if (fc->blocked)
+			return 0;
+	} else {
+		wait_event(fc->blocked_waitq, !fc->blocked);
+	}
 
 	data.ff = NULL;
 	data.inode = inode;
