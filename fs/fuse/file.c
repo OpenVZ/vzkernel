@@ -1697,8 +1697,8 @@ static void fuse_writepage_finish(struct fuse_conn *fc, struct fuse_req *req)
 	for (i = 0; i < req->num_pages; i++) {
 		dec_bdi_stat(bdi, BDI_WRITEBACK);
 		dec_zone_page_state(req->pages[i], NR_WRITEBACK_TEMP);
+		bdi_writeout_inc(bdi);
 	}
-	bdi_writeout_inc(bdi);
 	wake_up(&fi->page_waitq);
 }
 
