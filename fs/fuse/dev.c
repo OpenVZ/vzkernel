@@ -411,7 +411,7 @@ static void request_wait_answer(struct fuse_req *req)
 	wait_event(req->waitq, test_bit(FR_FINISHED, &req->flags));
 }
 
-static void __fuse_request_send(struct fuse_req *req)
+static void __fuse_request_send(struct fuse_req *req, struct fuse_file *ff)
 {
 	struct fuse_iqueue *fiq = &req->fm->fc->iq;
 
@@ -420,6 +420,9 @@ static void __fuse_request_send(struct fuse_req *req)
 	if (!fiq->connected) {
 		spin_unlock(&fiq->lock);
 		req->out.h.error = -ENOTCONN;
+	} else if (ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
+		spin_unlock(&fiq->lock);
+		req->out.h.error = -EIO;
 	} else {
 		req->in.h.unique = fuse_get_unique(fiq);
 		/* acquire extra reference, since request is still needed
@@ -486,7 +489,8 @@ static void fuse_args_to_req(struct fuse_req *req, struct fuse_args *args)
 		__set_bit(FR_ASYNC, &req->flags);
 }
 
-ssize_t fuse_simple_request(struct fuse_mount *fm, struct fuse_args *args)
+ssize_t fuse_simple_check_request(struct fuse_mount *fm, struct fuse_args *args,
+				  struct fuse_file *ff)
 {
 	struct fuse_conn *fc = fm->fc;
 	struct fuse_req *req;
@@ -514,7 +518,7 @@ ssize_t fuse_simple_request(struct fuse_mount *fm, struct fuse_args *args)
 
 	if (!args->noreply)
 		__set_bit(FR_ISREPLY, &req->flags);
-	__fuse_request_send(req);
+	__fuse_request_send(req, ff);
 	ret = req->out.h.error;
 	if (!ret && args->out_argvar) {
 		BUG_ON(args->out_numargs == 0);
@@ -525,11 +529,58 @@ ssize_t fuse_simple_request(struct fuse_mount *fm, struct fuse_args *args)
 	return ret;
 }
 
-static bool fuse_request_queue_background(struct fuse_req *req)
+ssize_t fuse_simple_request(struct fuse_mount *fm, struct fuse_args *args)
+{
+	return fuse_simple_check_request(fm, args, NULL);
+}
+
+bool fuse_has_req_ff(struct fuse_req *req)
+{
+	switch (req->in.h.opcode) {
+	case FUSE_WRITE:
+	case FUSE_READ:
+		return true;
+	default:
+		return false;
+	}
+}
+EXPORT_SYMBOL_GPL(fuse_has_req_ff);
+
+struct fuse_file* fuse_get_req_ff(struct fuse_req *req)
+{
+	switch (req->in.h.opcode) {
+	case FUSE_WRITE:
+	case FUSE_READ: {
+		struct fuse_io_args *ia = container_of(req->args, typeof(*ia), ap.args);
+		return ia->ff;
+	}
+	default:
+		return NULL;
+	}
+}
+EXPORT_SYMBOL_GPL(fuse_get_req_ff);
+
+bool fuse_set_req_ff(struct fuse_req *req, struct fuse_file *ff)
+{
+	switch (req->in.h.opcode) {
+	case FUSE_WRITE:
+	case FUSE_READ: {
+		struct fuse_io_args *ia = container_of(req->args, typeof(*ia), ap.args);
+		ia->ff = ff;
+		return true;
+	}
+	default:
+		return false;
+	}
+}
+EXPORT_SYMBOL_GPL(fuse_set_req_ff);
+
+static int fuse_request_queue_background(struct fuse_req *req)
 {
 	struct fuse_mount *fm = req->fm;
 	struct fuse_conn *fc = fm->fc;
-	bool queued = false;
+	struct fuse_file *ff = fuse_get_req_ff(req);
+	int ret = -ENOTCONN;
 
 	WARN_ON(!test_bit(FR_BACKGROUND, &req->flags));
 	if (!test_bit(FR_WAITING, &req->flags)) {
@@ -538,7 +589,11 @@ static bool fuse_request_queue_background(struct fuse_req *req)
 	}
 	__set_bit(FR_ISREPLY, &req->flags);
 	spin_lock(&fc->bg_lock);
-	if (likely(fc->connected)) {
+	if (req->args->page_cache && ff &&
+	    test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
+		BUG_ON(req->in.h.opcode != FUSE_READ);
+		ret = -EIO;
+	} else if (likely(fc->connected)) {
 		fc->num_background++;
 		if (fc->num_background == fc->max_background)
 			fc->blocked = 1;
@@ -548,17 +603,18 @@ static bool fuse_request_queue_background(struct fuse_req *req)
 		}
 		list_add_tail(&req->list, &fc->bg_queue);
 		flush_bg_queue(fc);
-		queued = true;
+		ret = 0;
 	}
 	spin_unlock(&fc->bg_lock);
 
-	return queued;
+	return ret;
 }
 
 int fuse_simple_background(struct fuse_mount *fm, struct fuse_args *args,
 			    gfp_t gfp_flags)
 {
 	struct fuse_req *req;
+	int ret;
 
 	if (args->force) {
 		WARN_ON(!args->nocreds);
@@ -575,9 +631,10 @@ int fuse_simple_background(struct fuse_mount *fm, struct fuse_args *args,
 
 	fuse_args_to_req(req, args);
 
-	if (!fuse_request_queue_background(req)) {
+	ret = fuse_request_queue_background(req);
+	if (ret) {
 		fuse_put_request(req);
-		return -ENOTCONN;
+		return ret;
 	}
 
 	return 0;
