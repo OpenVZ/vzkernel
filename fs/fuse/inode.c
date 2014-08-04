@@ -99,6 +99,7 @@ static struct inode *fuse_alloc_inode(struct super_block *sb)
 	fi->orig_ino = 0;
 	fi->state = 0;
 	INIT_LIST_HEAD(&fi->write_files);
+	INIT_LIST_HEAD(&fi->rw_files);
 	INIT_LIST_HEAD(&fi->queued_writes);
 	INIT_LIST_HEAD(&fi->writepages);
 	init_waitqueue_head(&fi->page_waitq);
@@ -122,6 +123,7 @@ static void fuse_destroy_inode(struct inode *inode)
 {
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	BUG_ON(!list_empty(&fi->write_files));
+	BUG_ON(!list_empty(&fi->rw_files));
 	BUG_ON(!list_empty(&fi->queued_writes));
 	kfree(fi->forget);
 	call_rcu(&inode->i_rcu, fuse_i_callback);
