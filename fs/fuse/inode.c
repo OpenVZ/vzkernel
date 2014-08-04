@@ -373,8 +373,9 @@ void fuse_unlock_inode(struct inode *inode, bool locked)
 		mutex_unlock(&get_fuse_inode(inode)->mutex);
 }
 
-int fuse_invalidate_files(struct super_block *sb, u64 nodeid)
+int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 {
+	struct super_block *sb = fc->sb;
 	struct inode *inode;
 	struct fuse_inode *fi;
 	struct fuse_file *ff;
