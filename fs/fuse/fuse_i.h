@@ -324,6 +324,9 @@ struct fuse_req {
 	/** Request is counted as "waiting" */
 	unsigned waiting:1;
 
+	/** Request contains pages from page-cache */
+	unsigned page_cache:1;
+
 	/** State of the request */
 	enum fuse_req_state state;
 
