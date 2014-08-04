@@ -296,6 +296,30 @@ out_inode_unlock:
 	if (is_wb_truncate || dax_truncate)
 		inode_unlock(inode);
 
+	if (!err && fc->writeback_cache) {
+		struct fuse_inode *fi = get_fuse_inode(inode);
+		u64 size;
+
+		inode_lock(inode);
+		atomic_inc(&fi->num_openers);
+
+		if (atomic_read(&fi->num_openers) == 1) {
+			err = fuse_getattr_size(inode, file, &size);
+			if (err) {
+				atomic_dec(&fi->num_openers);
+				inode_unlock(inode);
+				fuse_release_common(file, FUSE_RELEASE);
+				return err;
+			}
+
+			spin_lock(&fi->lock);
+			i_size_write(inode, size);
+			spin_unlock(&fi->lock);
+		}
+
+		inode_unlock(inode);
+	}
+
 	return err;
 }
 
@@ -411,6 +435,9 @@ static int fuse_release(struct inode *inode, struct file *file)
 		 * that we need this.
 		 */
 		while (spin_is_locked(&fc->lock)) cpu_relax();
+
+		/* since now we can trust userspace attr.size */
+		atomic_dec(&fi->num_openers);
 	} else if (fc->close_wait)
 		wait_event(fi->page_waitq, refcount_read(&ff->count) == 1);
 
