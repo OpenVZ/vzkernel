@@ -299,7 +299,7 @@ out_inode_unlock:
 	if (is_wb_truncate || dax_truncate)
 		inode_unlock(inode);
 
-	if (!err && fc->writeback_cache) {
+	if (!err && fc->writeback_cache && !isdir) {
 		struct fuse_inode *fi = get_fuse_inode(inode);
 		u64 size;
 
