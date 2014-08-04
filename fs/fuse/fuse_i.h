@@ -111,6 +111,9 @@ struct fuse_inode {
 
 	/** Lock for serializing lookup and readdir for back compatibility*/
 	struct mutex mutex;
+
+	/** Mostly to detect very first open */
+	atomic_t num_openers;
 };
 
 /** FUSE inode state bits */
@@ -930,6 +933,8 @@ u64 fuse_lock_owner_id(struct fuse_conn *fc, fl_owner_t id);
 void fuse_update_ctime(struct inode *inode);
 
 int fuse_update_attributes(struct inode *inode, struct file *file);
+
+int fuse_getattr_size(struct inode *inode, struct file *file, u64 *size);
 
 void fuse_flush_writepages(struct inode *inode);
 
