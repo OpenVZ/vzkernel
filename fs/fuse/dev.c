@@ -101,8 +101,6 @@ static void fuse_drop_waiting(struct fuse_conn *fc)
 	}
 }
 
-static void fuse_put_request(struct fuse_req *req);
-
 static struct fuse_req *fuse_get_req(struct fuse_mount *fm, bool for_background)
 {
 	struct fuse_conn *fc = fm->fc;
@@ -155,7 +153,7 @@ static struct fuse_req *fuse_get_req(struct fuse_mount *fm, bool for_background)
 	return ERR_PTR(err);
 }
 
-static void fuse_put_request(struct fuse_req *req)
+void fuse_put_request(struct fuse_req *req)
 {
 	struct fuse_conn *fc = req->fm->fc;
 
@@ -179,6 +177,7 @@ static void fuse_put_request(struct fuse_req *req)
 		fuse_request_free(req);
 	}
 }
+EXPORT_SYMBOL_GPL(fuse_put_request);
 
 unsigned int fuse_len_args(unsigned int numargs, struct fuse_arg *args)
 {

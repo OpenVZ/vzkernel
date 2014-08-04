@@ -437,6 +437,12 @@ static int fuse_release(struct inode *inode, struct file *file)
 			spin_lock(&fi->lock);
 			list_del_init(&ff->write_entry);
 			spin_unlock(&fi->lock);
+
+			/* A writeback from another fuse file might come after
+			 * filemap_write_and_wait() above
+			 */
+			if (!fc->close_wait)
+				filemap_write_and_wait(file->f_mapping);
 		} else
 			BUG_ON(!list_empty(&ff->write_entry));
 
@@ -2238,18 +2244,27 @@ static void fuse_writepages_send(struct fuse_fill_wb_data *data)
 {
 	struct fuse_writepage_args *wpa = data->wpa;
 	struct inode *inode = data->inode;
+	struct fuse_mount *fm = get_fuse_mount(inode);
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	int num_pages = wpa->ia.ap.num_pages;
+	struct fuse_args *args = &wpa->ia.ap.args;
 	int i;
 
 	wpa->ia.ff = fuse_file_get(data->ff);
 	spin_lock(&fi->lock);
-	list_add_tail(&wpa->queue_entry, &fi->queued_writes);
-	fuse_flush_writepages(inode);
+	if (test_bit(FUSE_S_FAIL_IMMEDIATELY, &data->ff->ff_state)) {
+		fi->writectr++;
+	} else {
+		list_add_tail(&wpa->queue_entry, &fi->queued_writes);
+		fuse_flush_writepages(inode);
+	}
 	spin_unlock(&fi->lock);
 
 	for (i = 0; i < num_pages; i++)
 		end_page_writeback(data->orig_pages[i]);
+
+	if (test_bit(FUSE_S_FAIL_IMMEDIATELY, &data->ff->ff_state) && args->end)
+		args->end(fm, args, -EIO);
 }
 
 /*
@@ -2342,6 +2357,8 @@ static bool fuse_writepage_need_send(struct fuse_conn *fc, struct page *page,
 	return false;
 }
 
+void fuse_release_ff(struct inode *inode, struct fuse_file *ff);
+
 static int fuse_writepages_fill(struct page *page,
 		struct writeback_control *wbc, void *_data)
 {
@@ -2355,15 +2372,12 @@ static int fuse_writepages_fill(struct page *page,
 	int err;
 	int check_for_blocked = 0;
 
-	if (!data->ff) {
-		err = -EIO;
-		data->ff = fuse_write_file_get(fc, fi);
-		if (!data->ff)
-			goto out_unlock;
-	}
+	BUG_ON(wpa && !data->ff);
 
 	if (wpa && fuse_writepage_need_send(fc, page, ap, data)) {
 		fuse_writepages_send(data);
+		fuse_release_ff(inode, data->ff);
+		data->ff = NULL;
 		data->wpa = NULL;
 	}
 
@@ -2386,6 +2400,13 @@ static int fuse_writepages_fill(struct page *page,
 	 * under writeback, so we can release the page lock.
 	 */
 	if (data->wpa == NULL) {
+		/* we can acquire ff here because we do have locked pages here! */
+		BUG_ON(data->ff);
+		err = -EIO;
+		data->ff = fuse_write_file_get(fc, fi);
+		if (!data->ff)
+			goto out_unlock;
+
 		err = -ENOMEM;
 		wpa = fuse_writepage_args_alloc();
 		if (!wpa) {
@@ -2431,6 +2452,9 @@ static int fuse_writepages_fill(struct page *page,
 		data->wpa = wpa;
 	} else {
 		end_page_writeback(page);
+		fuse_release_ff(inode, data->ff);
+		data->ff = NULL;
+		goto out_unlock;
 	}
 out_unlock:
 	unlock_page(page);
@@ -2517,8 +2541,11 @@ static int fuse_writepages(struct address_space *mapping,
 	if (data.wpa) {
 		WARN_ON(!data.wpa->ia.ap.num_pages);
 		fuse_writepages_send(&data);
+		fuse_release_ff(inode, data.ff);
+		data.ff = NULL;
+		err = 0;
 	}
-	fuse_release_ff(inode, data.ff);
+	BUG_ON(data.ff);
 
 	kfree(data.orig_pages);
 out:
