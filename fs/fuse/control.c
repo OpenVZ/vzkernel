@@ -10,6 +10,7 @@
 
 #include <linux/init.h>
 #include <linux/module.h>
+#include <linux/seq_file.h>
 
 #define FUSE_CTL_SUPER_MAGIC 0x65735543
 
@@ -214,6 +215,155 @@ static const struct file_operations fuse_conn_congestion_threshold_ops = {
 	.llseek = no_llseek,
 };
 
+struct fuse_conn_priv {
+	struct fuse_conn *conn;
+	struct list_head *req_list;
+};
+
+enum {
+	FUSE_PENDING_REQ = 1,
+	FUSE_PROCESSING_REQ,
+	FUSE_IO_REQ,
+};
+
+static void *fuse_req_start(struct seq_file *m, loff_t *p)
+{
+	struct fuse_conn_priv *fcp = m->private;
+
+	spin_lock(&fcp->conn->lock);
+	return seq_list_start(fcp->req_list, *p);
+}
+
+static void *fuse_req_next(struct seq_file *m, void *v, loff_t *p)
+{
+	struct fuse_conn_priv *fcp = m->private;
+	return seq_list_next(v, fcp->req_list, p);
+}
+
+static void fuse_req_stop(struct seq_file *m, void *v)
+{
+	struct fuse_conn_priv *fcp = m->private;
+	spin_unlock(&fcp->conn->lock);
+}
+
+static int fuse_req_show(struct seq_file *f, void *v)
+{
+	struct fuse_req *req;
+
+	req = list_entry((struct list_head *)v, struct fuse_req, list);
+	seq_printf(f, "flags: %c%c%c%c%c%c%c%c%c%c "
+			"in: op %-4d uniq 0x%016Lx node 0x%016Lx "
+			"out: err %-6d uniq 0x%016Lx\n",
+			test_bit(FR_ISREPLY, &req->flags) ? 'r' : '-',
+			test_bit(FR_FORCE, &req->flags) ? 'f' : '-',
+			test_bit(FR_ABORTED, &req->flags) ? 'a' : '-',
+			test_bit(FR_BACKGROUND, &req->flags) ? 'b' : '-',
+			test_bit(FR_INTERRUPTED, &req->flags) ? 'i' : '-',
+			test_bit(FR_LOCKED, &req->flags) ? 'l' : '-',
+			test_bit(FR_WAITING, &req->flags) ? 'w': '-',
+			test_bit(FR_PENDING, &req->flags) ? 'p': '-',
+			test_bit(FR_SENT, &req->flags) ? 's': '-',
+			test_bit(FR_FINISHED, &req->flags) ? 'f': '-',
+			req->in.h.opcode,
+			req->in.h.unique,
+			req->in.h.nodeid,
+			req->out.h.error,
+			req->out.h.unique);
+
+	return 0;
+}
+
+static const struct seq_operations fuse_conn_req_ops = {
+	.start = fuse_req_start,
+	.next = fuse_req_next,
+	.stop = fuse_req_stop,
+	.show = fuse_req_show,
+};
+
+static int fuse_conn_seq_open(struct file *filp, int list_id)
+{
+	struct fuse_conn *conn;
+	struct fuse_conn_priv *fcp;
+
+	conn = fuse_ctl_file_conn_get(filp);
+	if (!conn)
+		return -ESTALE;
+
+	fcp = __seq_open_private(filp, &fuse_conn_req_ops,
+			sizeof(struct fuse_conn_priv));
+	if (fcp == NULL) {
+		fuse_conn_put(conn);
+		return -ENOMEM;
+	}
+
+	fcp->conn = conn;
+	switch (list_id) {
+	case FUSE_PENDING_REQ:
+		fcp->req_list = &conn->iq.pending;
+		break;
+#if 0
+	case FUSE_PROCESSING_REQ:
+		fcp->req_list = &conn->pq.processing;
+		break;
+	case FUSE_IO_REQ:
+		fcp->req_list = &conn->pq.io;
+		break;
+#endif
+	default:
+		BUG();
+	}
+
+	return 0;
+}
+
+static int fuse_conn_release(struct inode *inode, struct file *filp)
+{
+	struct fuse_conn_priv *fcp = ((struct seq_file *)filp->private_data)->private;
+
+	if (fcp)
+		fuse_conn_put(fcp->conn);
+
+	return seq_release_private(inode, filp);
+}
+
+static int fuse_conn_pending_open(struct inode *inode, struct file *filp)
+{
+	return fuse_conn_seq_open(filp, FUSE_PENDING_REQ);
+}
+
+static const struct file_operations fuse_conn_pending_req = {
+	.open = fuse_conn_pending_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = fuse_conn_release,
+};
+
+#if 0
+static int fuse_conn_processing_open(struct inode *inode, struct file *filp)
+{
+	return fuse_conn_seq_open(filp, FUSE_PROCESSING_REQ);
+}
+
+static const struct file_operations fuse_conn_processing_req = {
+	.open = fuse_conn_processing_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = fuse_conn_release,
+};
+
+static int fuse_conn_io_open(struct inode *inode, struct file *filp)
+{
+	return fuse_conn_seq_open(filp, FUSE_IO_REQ);
+}
+
+static const struct file_operations fuse_conn_io_req = {
+	.open = fuse_conn_io_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = fuse_conn_release,
+};
+#endif
+
 static struct dentry *fuse_ctl_add_dentry(struct dentry *parent,
 					  struct fuse_conn *fc,
 					  const char *name,
@@ -282,7 +432,19 @@ int fuse_ctl_add_conn(struct fuse_conn *fc)
 				 1, NULL, &fuse_conn_max_background_ops) ||
 	    !fuse_ctl_add_dentry(parent, fc, "congestion_threshold",
 				 S_IFREG | 0600, 1, NULL,
-				 &fuse_conn_congestion_threshold_ops))
+				 &fuse_conn_congestion_threshold_ops) ||
+	    !fuse_ctl_add_dentry(parent, fc, "pending_req",
+		    		S_IFREG | 0600, 1, NULL,
+				&fuse_conn_pending_req) ||
+#if 0
+	    !fuse_ctl_add_dentry(parent, fc, "processing_req",
+		    		S_IFREG | 0600, 1, NULL,
+				&fuse_conn_processing_req) ||
+	    !fuse_ctl_add_dentry(parent, fc, "io_req",
+		    		S_IFREG | 0600, 1, NULL,
+				&fuse_conn_io_req)
+#endif
+	    )
 		goto err;
 
 	return 0;
