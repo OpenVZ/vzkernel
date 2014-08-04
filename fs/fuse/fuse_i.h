@@ -500,6 +500,7 @@ struct fuse_fs_context {
 	bool default_permissions:1;
 	bool allow_other:1;
 	bool writeback_cache:1;
+	bool direct_enable:1;
 	bool destroy:1;
 	bool no_control:1;
 	bool no_force_umount:1;
@@ -764,6 +765,9 @@ struct fuse_conn {
 
 	/* Propagate syncfs() to server */
 	unsigned int sync_fs:1;
+
+	/** Does the direct access enable? */
+	unsigned direct_enable:1;
 
 	/** The number of requests waiting for completion */
 	atomic_t num_waiting;
