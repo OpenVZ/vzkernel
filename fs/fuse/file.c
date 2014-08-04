@@ -836,6 +836,15 @@ static void fuse_aio_complete_req(struct fuse_mount *fm, struct fuse_args *args,
 			pos = ia->read.in.offset - io->offset + outsize;
 	}
 
+	if (err)
+		printk("fuse_aio_complete_req: request (rw=%s fh=0x%llx "
+		       "pos=%lld size=%d) completed with err=%d\n",
+		       !io->write ? "READ"                   : "WRITE",
+		       !io->write ? ia->read.in.fh     : ia->write.in.fh,
+		       !io->write ? ia->read.in.offset : ia->write.in.offset,
+		       !io->write ? ia->read.in.size   : ia->write.in.size,
+		       err);
+
 	fuse_aio_complete(io, err, pos);
 	fuse_io_free(ia);
 }
