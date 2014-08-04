@@ -526,6 +526,41 @@ int bdi_set_max_ratio(struct backing_dev_info *bdi, unsigned max_ratio)
 }
 EXPORT_SYMBOL(bdi_set_max_ratio);
 
+int bdi_set_min_dirty(struct backing_dev_info *bdi, unsigned min_dirty)
+{
+	int ret = 0;
+
+	spin_lock_bh(&bdi_lock);
+	if (min_dirty > bdi->max_dirty_pages) {
+		ret = -EINVAL;
+	} else {
+		bdi->min_dirty_pages = min_dirty;
+	}
+	spin_unlock_bh(&bdi_lock);
+
+	return ret;
+}
+EXPORT_SYMBOL(bdi_set_min_dirty);
+
+int bdi_set_max_dirty(struct backing_dev_info *bdi, unsigned max_dirty)
+{
+	int ret = 0;
+
+	if (max_dirty > num_physpages)
+		return -EINVAL;
+
+	spin_lock_bh(&bdi_lock);
+	if (bdi->min_dirty_pages > max_dirty) {
+		ret = -EINVAL;
+	} else {
+		bdi->max_dirty_pages = max_dirty;
+	}
+	spin_unlock_bh(&bdi_lock);
+
+	return ret;
+}
+EXPORT_SYMBOL(bdi_set_max_dirty);
+
 static unsigned long dirty_freerun_ceiling(unsigned long thresh,
 					   unsigned long bg_thresh)
 {
@@ -576,6 +611,12 @@ unsigned long bdi_dirty_limit(struct backing_dev_info *bdi, unsigned long dirty)
 	bdi_dirty += (dirty * bdi->min_ratio) / 100;
 	if (bdi_dirty > (dirty * bdi->max_ratio) / 100)
 		bdi_dirty = dirty * bdi->max_ratio / 100;
+
+	if (bdi->min_dirty_pages && bdi_dirty < bdi->min_dirty_pages)
+		bdi_dirty = min((unsigned long)bdi->min_dirty_pages, dirty);
+
+	if (bdi->max_dirty_pages && bdi_dirty > bdi->max_dirty_pages)
+		bdi_dirty = bdi->max_dirty_pages;
 
 	return bdi_dirty;
 }
@@ -1088,12 +1129,15 @@ static void bdi_update_dirty_ratelimit(struct backing_dev_info *bdi,
 	 * of backing device (see the implementation of bdi_dirty_limit()).
 	 */
 	if (unlikely(bdi->capabilities & BDI_CAP_STRICTLIMIT)) {
+		unsigned long bdi_bg_thresh;
+
+		bdi_bg_thresh = div_u64((u64)bdi_thresh * bg_thresh, thresh);
+
 		dirty = bdi_dirty;
 		if (bdi_dirty < 8)
 			setpoint = bdi_dirty + 1;
 		else
-			setpoint = (bdi_thresh +
-				    bdi_dirty_limit(bdi, bg_thresh)) / 2;
+			setpoint = (bdi_thresh + bdi_bg_thresh) / 2;
 	}
 
 	if (dirty < setpoint) {
