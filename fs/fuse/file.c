@@ -17,9 +17,18 @@
 #include <linux/swap.h>
 #include <linux/aio.h>
 #include <linux/falloc.h>
+#include <linux/task_io_accounting_ops.h>
 
 static const struct file_operations fuse_direct_io_file_operations;
 static void fuse_sync_writes(struct inode *inode);
+
+static void fuse_account_request(struct fuse_conn *fc, size_t count)
+{
+	struct user_beancounter *ub = get_exec_ub();
+
+	ub_percpu_inc(ub, fuse_requests);
+	ub_percpu_add(ub, fuse_bytes, count);
+}
 
 static int fuse_send_open(struct fuse_conn *fc, u64 nodeid, struct file *file,
 			  int opcode, struct fuse_open_out *outargp)
@@ -782,6 +791,7 @@ static size_t fuse_send_read(struct fuse_req *req, struct fuse_io_priv *io,
 	struct fuse_conn *fc = ff->fc;
 
 	fuse_read_fill(req, file, pos, count, FUSE_READ);
+	fuse_account_request(fc, count);
 	if (owner != NULL) {
 		struct fuse_read_in *inarg = &req->misc.read.in;
 
@@ -967,6 +977,7 @@ static void fuse_send_readpages(struct fuse_req *req, struct file *file)
 	req->out.page_zeroing = 1;
 	req->out.page_replace = 1;
 	fuse_read_fill(req, file, pos, count, FUSE_READ);
+	fuse_account_request(fc, count);
 	req->misc.read.attr_ver = fuse_get_attr_version(fc);
 	if (fc->async_read) {
 		req->ff = fuse_file_get(ff);
@@ -1119,6 +1130,7 @@ static size_t fuse_send_write(struct fuse_req *req, struct fuse_io_priv *io,
 	struct fuse_write_in *inarg = &req->misc.write.in;
 
 	fuse_write_fill(req, ff, pos, count);
+	fuse_account_request(fc, count);
 	inarg->flags = file->f_flags;
 	if (owner != NULL) {
 		inarg->write_flags |= FUSE_WRITE_LOCKOWNER;
@@ -1794,6 +1806,7 @@ static int fuse_writepage_locked(struct page *page,
 
 	req->ff = fuse_write_file(fc, fi);
 	fuse_write_fill(req, req->ff, page_offset(page), 0);
+	fuse_account_request(fc, PAGE_CACHE_SIZE);
 
 	copy_highpage(tmp_page, page);
 	req->misc.write.in.write_flags |= FUSE_WRITE_CACHE;
@@ -1899,6 +1912,7 @@ static int fuse_send_writepages(struct fuse_fill_data *data)
 
 	req->ff = fuse_file_get(data->ff);
 	fuse_write_fill(req, data->ff, off, 0);
+	fuse_account_request(fc, req->num_pages << PAGE_CACHE_SHIFT);
 
 	req->misc.write.in.write_flags |= FUSE_WRITE_CACHE;
 	req->in.argpages = 1;
