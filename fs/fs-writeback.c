@@ -895,6 +895,7 @@ long writeback_inodes_wb(struct bdi_writeback *wb, long nr_pages,
 static bool over_bground_thresh(struct backing_dev_info *bdi)
 {
 	unsigned long background_thresh, dirty_thresh;
+	unsigned long bdi_thresh, bdi_bg_thresh;
 
 	global_dirty_limits(&background_thresh, &dirty_thresh);
 
@@ -902,8 +903,11 @@ static bool over_bground_thresh(struct backing_dev_info *bdi)
 	    global_page_state(NR_UNSTABLE_NFS) > background_thresh)
 		return true;
 
-	if (bdi_stat(bdi, BDI_RECLAIMABLE) >
-				bdi_dirty_limit(bdi, background_thresh))
+	bdi_thresh = bdi_dirty_limit(bdi, dirty_thresh);
+	bdi_bg_thresh = div_u64((u64)bdi_thresh * background_thresh,
+				dirty_thresh);
+
+	if (bdi_stat(bdi, BDI_RECLAIMABLE) > bdi_bg_thresh)
 		return true;
 
 	return false;
