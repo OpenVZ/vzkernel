@@ -767,6 +767,9 @@ struct fuse_conn {
 	/** Does the disable synchronous close? */
 	unsigned disable_close_wait:1;
 
+	/** Handle wrong FUSE_NOTIFY_INVAL_FILES from old fused */
+	unsigned compat_inval_files:1;
+
 	/** The number of requests waiting for completion */
 	atomic_t num_waiting;
 
