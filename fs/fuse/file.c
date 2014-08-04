@@ -82,12 +82,24 @@ struct fuse_file *fuse_file_alloc(struct fuse_conn *fc)
 	init_waitqueue_head(&ff->poll_wait);
 
 	ff->kh = atomic64_inc_return(&fc->khctr);
+	spin_lock(&fc->lock);
+	ff->ff_dentry = NULL;
+	list_add_tail(&ff->fl, &fc->conn_files);
+	spin_unlock(&fc->lock);
 
 	return ff;
 }
 
+static void fuse_file_list_del(struct fuse_file *ff)
+{
+	spin_lock(&ff->fc->lock);
+	list_del_init(&ff->fl);
+	spin_unlock(&ff->fc->lock);
+}
+
 void fuse_file_free(struct fuse_file *ff)
 {
+	fuse_file_list_del(ff);
 	kfree(ff->release_args);
 	mutex_destroy(&ff->readdir.lock);
 	kfree(ff);
@@ -118,8 +130,10 @@ static void fuse_file_put(struct fuse_file *ff, bool sync, bool isdir)
 			fuse_release_end(ff->fc, args, 0);
 		} else if (sync) {
 			fuse_simple_request(ff->fc, args);
+			fuse_file_list_del(ff);
 			fuse_release_end(ff->fc, args, 0);
 		} else {
+			fuse_file_list_del(ff);
 			args->end = fuse_release_end;
 			if (fuse_simple_background(ff->fc, args,
 						   GFP_KERNEL | __GFP_NOFAIL))
@@ -191,6 +205,10 @@ void fuse_finish_open(struct inode *inode, struct file *file)
 {
 	struct fuse_file *ff = file->private_data;
 	struct fuse_conn *fc = get_fuse_conn(inode);
+
+	spin_lock(&fc->lock);
+	ff->ff_dentry = file->f_path.dentry;
+	spin_unlock(&fc->lock);
 
 	if (!(ff->open_flags & FOPEN_KEEP_CACHE))
 		invalidate_inode_pages2(inode->i_mapping);
