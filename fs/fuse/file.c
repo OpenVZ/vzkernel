@@ -1570,10 +1570,13 @@ ssize_t fuse_direct_io(struct fuse_io_priv *io, const struct iovec *iov,
 			break;
 		}
 
-		if (write)
+		if (write) {
 			nres = fuse_send_write(req, io, pos, nbytes, owner);
-		else
+			task_io_account_write(nbytes);
+		} else {
 			nres = fuse_send_read(req, io, pos, nbytes, owner);
+			task_io_account_read(nbytes);
+		}
 
 		if (!io->async)
 			fuse_release_user_pages(req, !write);
