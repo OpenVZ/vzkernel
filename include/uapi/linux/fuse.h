@@ -374,6 +374,7 @@ enum fuse_notify_code {
 	FUSE_NOTIFY_STORE = 4,
 	FUSE_NOTIFY_RETRIEVE = 5,
 	FUSE_NOTIFY_DELETE = 6,
+	FUSE_NOTIFY_INVAL_FILES = 77,
 	FUSE_NOTIFY_CODE_MAX,
 };
 
@@ -768,6 +769,10 @@ struct fuse_lseek_in {
 
 struct fuse_lseek_out {
 	uint64_t	offset;
+};
+
+struct fuse_notify_inval_files_out {
+	__u64	ino;
 };
 
 /* Device ioctls: */
