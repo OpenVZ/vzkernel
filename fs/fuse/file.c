@@ -261,7 +261,7 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 	if (err)
 		return err;
 
-	if (fc->writeback_cache) {
+	if (fc->writeback_cache && !isdir) {
 		struct fuse_inode *fi = get_fuse_inode(inode);
 		u64 size;
 
@@ -281,7 +281,7 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 			i_size_write(inode, size);
 			spin_unlock(&fc->lock);
 		}
-		
+
 		mutex_unlock(&inode->i_mutex);
 	}
 
