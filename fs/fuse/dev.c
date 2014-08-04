@@ -1774,6 +1774,32 @@ copy_finish:
 	return err;
 }
 
+static int fuse_notify_inval_files(struct fuse_conn *fc, unsigned int size,
+				   struct fuse_copy_state *cs)
+{
+	struct fuse_notify_inval_files_out outarg;
+	int err = -EINVAL;
+
+	if (size != sizeof(outarg))
+		goto err;
+
+	err = fuse_copy_one(cs, &outarg, sizeof(outarg));
+	if (err)
+		goto err;
+	fuse_copy_finish(cs);
+
+	down_read(&fc->killsb);
+
+	err = fuse_invalidate_files(fc, outarg.ino);
+
+	up_read(&fc->killsb);
+	return err;
+
+err:
+	fuse_copy_finish(cs);
+	return err;
+}
+
 static int fuse_notify(struct fuse_conn *fc, enum fuse_notify_code code,
 		       unsigned int size, struct fuse_copy_state *cs)
 {
@@ -1798,6 +1824,9 @@ static int fuse_notify(struct fuse_conn *fc, enum fuse_notify_code code,
 
 	case FUSE_NOTIFY_DELETE:
 		return fuse_notify_delete(fc, size, cs);
+
+	case FUSE_NOTIFY_INVAL_FILES:
+		return fuse_notify_inval_files(fc, size, cs);
 
 	default:
 		fuse_copy_finish(cs);
