@@ -86,6 +86,7 @@ static struct inode *fuse_alloc_inode(struct super_block *sb)
 	fi->attr_version = 0;
 	fi->orig_ino = 0;
 	fi->state = 0;
+	INIT_LIST_HEAD(&fi->rw_files);
 	mutex_init(&fi->mutex);
 	init_rwsem(&fi->i_mmap_sem);
 	spin_lock_init(&fi->lock);
@@ -138,6 +139,7 @@ static void fuse_evict_inode(struct inode *inode)
 		WARN_ON(!list_empty(&fi->write_files));
 		WARN_ON(!list_empty(&fi->queued_writes));
 	}
+	WARN_ON(!list_empty(&fi->rw_files));
 }
 
 static int fuse_reconfigure(struct fs_context *fsc)
