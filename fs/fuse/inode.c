@@ -451,6 +451,32 @@ void fuse_unlock_inode(struct inode *inode, bool locked)
 		mutex_unlock(&get_fuse_inode(inode)->mutex);
 }
 
+static void fuse_kill_requests(struct fuse_conn *fc, struct inode *inode,
+			       struct list_head *req_list)
+{
+	struct fuse_req *req;
+
+	list_for_each_entry(req, req_list, list)
+		if (req->args->inode == inode && req->args->page_cache &&
+		    !req->args->killed) {
+			struct fuse_io_args *ia = container_of(req->args, typeof(*ia),
+							       ap.args);
+			int i;
+
+			BUG_ON(req->in.h.opcode != FUSE_READ);
+			req->args->killed = 1;
+
+			for (i = 0; i < ia->ap.num_pages; i++) {
+				struct page *page = ia->ap.pages[i];
+				SetPageError(page);
+				unlock_page(page);
+				ia->ap.pages[i] = NULL;
+			}
+
+			ia->ap.num_pages = 0;
+		}
+}
+
 int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 {
 	struct inode *inode;
@@ -468,8 +494,24 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 	}
 
 	err = filemap_write_and_wait(inode->i_mapping);
-	if (!err || err == -EIO) /* AS_EIO might trigger -EIO */
+	if (!err || err == -EIO) { /* AS_EIO might trigger -EIO */
+		struct fuse_dev *fud;
+		spin_lock(&fc->lock);
+		list_for_each_entry(fud, &fc->devices, entry) {
+			struct fuse_pqueue *fpq = &fud->pq;
+			int i;
+			spin_lock(&fpq->lock);
+			for (i = 0; i < FUSE_PQ_HASH_SIZE; i++)
+				fuse_kill_requests(fc, inode, &fpq->processing[i]);
+			fuse_kill_requests(fc, inode, &fpq->io);
+			spin_unlock(&fpq->lock);
+		}
+		fuse_kill_requests(fc, inode, &fc->iq.pending);
+		fuse_kill_requests(fc, inode, &fc->bg_queue);
+		spin_unlock(&fc->lock);
+
 		err = invalidate_inode_pages2(inode->i_mapping);
+	}
 
 	if (!err)
 		fuse_invalidate_attr(inode);
