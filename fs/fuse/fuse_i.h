@@ -45,7 +45,7 @@
 #define FUSE_NAME_MAX 1024
 
 /** Number of dentries for each connection in the control filesystem */
-#define FUSE_CTL_NUM_DENTRIES 8
+#define FUSE_CTL_NUM_DENTRIES 9
 
 /** List of active connections */
 extern struct list_head fuse_conn_list;
@@ -213,6 +213,9 @@ struct fuse_file {
 
 	/** Wait queue head for poll */
 	wait_queue_head_t poll_wait;
+
+	struct list_head fl;
+	struct dentry *ff_dentry;
 
 	/** Has flock been performed on this file? */
 	bool flock:1;
@@ -759,6 +762,8 @@ struct fuse_conn {
 
 	/** List of device instances belonging to this connection */
 	struct list_head devices;
+
+	struct list_head conn_files;
 };
 
 static inline struct fuse_conn *get_fuse_conn_super(struct super_block *sb)
