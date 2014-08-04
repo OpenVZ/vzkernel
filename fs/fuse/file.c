@@ -2197,6 +2197,7 @@ static int fuse_writepages_fill(struct page *page,
 	struct fuse_conn *fc = get_fuse_conn(inode);
 	struct page *tmp_page;
 	int err;
+	int check_for_blocked = 0;
 
 	if (!data->ff) {
 		err = -EIO;
@@ -2247,6 +2248,8 @@ static int fuse_writepages_fill(struct page *page,
 		ap->args.end = fuse_writepage_end;
 		ap->num_pages = 0;
 		wpa->inode = inode;
+
+		check_for_blocked = 1;
 	}
 	set_page_writeback(page);
 
@@ -2276,6 +2279,9 @@ static int fuse_writepages_fill(struct page *page,
 out_unlock:
 	unlock_page(page);
 
+	if (wbc->sync_mode != WB_SYNC_NONE && check_for_blocked)
+		wait_event(fc->blocked_waitq, !fc->blocked);
+
 	return err;
 }
 
@@ -2290,6 +2296,8 @@ static int fuse_writepages(struct address_space *mapping,
 	err = -EIO;
 	if (fuse_is_bad(inode))
 		goto out;
+
+	wait_event(fc->blocked_waitq, !fc->blocked);
 
 	data.inode = inode;
 	data.wpa = NULL;
