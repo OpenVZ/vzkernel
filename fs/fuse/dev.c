@@ -1781,7 +1781,7 @@ static int fuse_notify_inval_files(struct fuse_conn *fc, unsigned int size,
 	if (!fc->sb)
 		goto err_unlock;
 
-	err = fuse_invalidate_files(fc->sb, outarg.ino);
+	err = fuse_invalidate_files(fc, outarg.ino);
 
 err_unlock:
 	up_read(&fc->killsb);
