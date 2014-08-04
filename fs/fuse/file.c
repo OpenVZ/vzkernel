@@ -1769,12 +1769,13 @@ static void fuse_writepage_end(struct fuse_conn *fc, struct fuse_req *req)
 static struct fuse_file *fuse_write_file(struct fuse_conn *fc,
 					 struct fuse_inode *fi)
 {
-	struct fuse_file *ff;
+	struct fuse_file *ff = NULL;
 
 	spin_lock(&fc->lock);
-	BUG_ON(list_empty(&fi->write_files));
-	ff = list_entry(fi->write_files.next, struct fuse_file, write_entry);
-	fuse_file_get(ff);
+	if (!list_empty(&fi->write_files)) {
+		ff = list_entry(fi->write_files.next, struct fuse_file, write_entry);
+		fuse_file_get(ff);
+	}
 	spin_unlock(&fc->lock);
 
 	return ff;
@@ -1810,6 +1811,8 @@ static int fuse_writepage_locked(struct page *page,
 		goto err_free;
 
 	req->ff = fuse_write_file(fc, fi);
+	if (!req->ff)
+		goto err_nofile;
 	fuse_write_fill(req, req->ff, page_offset(page), 0);
 	fuse_account_request(fc, PAGE_CACHE_SIZE);
 
@@ -1836,6 +1839,9 @@ static int fuse_writepage_locked(struct page *page,
 
 	return 0;
 
+err_nofile:
+	printk("FUSE: page dirtied on dead file\n");
+	__free_page(tmp_page);
 err_free:
 	fuse_request_free(req);
 err:
@@ -1867,6 +1873,7 @@ static int fuse_send_writepages(struct fuse_fill_data *data)
 		data->ff = fuse_write_file(fc, fi);
 
 	if (!data->ff) {
+		printk("FUSE: pages dirtied on dead file\n");
 		for (i = 0; i < req->num_pages; i++)
 			end_page_writeback(req->pages[i]);
 		return -EIO;
