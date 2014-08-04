@@ -1810,6 +1810,10 @@ err:
 static int fuse_notify(struct fuse_conn *fc, enum fuse_notify_code code,
 		       unsigned int size, struct fuse_copy_state *cs)
 {
+	/* ASSUMPTION: pstorage fused doesn't use FUSE_NOTIFY_STORE */
+	if (fc->compat_inval_files && code == 4)
+		code = FUSE_NOTIFY_INVAL_FILES;
+
 	switch (code) {
 	case FUSE_NOTIFY_POLL:
 		return fuse_notify_poll(fc, size, cs);
