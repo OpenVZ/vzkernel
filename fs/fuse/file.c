@@ -554,6 +554,21 @@ static int fuse_wait_on_page_writeback(struct inode *inode, pgoff_t index)
 }
 
 /*
+ * Can be woken up by FUSE_NOTIFY_INVAL_FILES
+ */
+static int fuse_wait_on_page_writeback_or_invalidate(struct inode *inode,
+						     struct file *file,
+						     pgoff_t index)
+{
+	struct fuse_inode *fi = get_fuse_inode(inode);
+	struct fuse_file *ff = file->private_data;
+
+	wait_event(fi->page_waitq, !fuse_page_is_writeback(inode, index) ||
+		   test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state));
+	return 0;
+}
+
+/*
  * Wait for all pending writepages on the inode to finish.
  *
  * This is currently done by blocking further writes with FUSE_NOWRITE
@@ -911,8 +926,10 @@ static int fuse_do_readpage(struct file *file, struct page *page,
 	 * Page writeback can extend beyond the lifetime of the
 	 * page-cache page, so make sure we read a properly synced
 	 * page.
+	 *
+	 * But we can't wait if FUSE_NOTIFY_INVAL_FILES is in progress.
 	 */
-	fuse_wait_on_page_writeback(inode, page->index);
+	fuse_wait_on_page_writeback_or_invalidate(inode, file, page->index);
 
 	req = fuse_get_req(fc, 1);
 	if (IS_ERR(req)) {
@@ -1051,9 +1068,11 @@ static int fuse_readpages_fill(void *_data, struct page *page)
 	struct fuse_fill_data *data = _data;
 	struct fuse_req *req = data->req;
 	struct inode *inode = data->inode;
+	struct file *file = data->file;
 	struct fuse_conn *fc = get_fuse_conn(inode);
 
-	fuse_wait_on_page_writeback(inode, page->index);
+	/* we can't wait if FUSE_NOTIFY_INVAL_FILES is in progress */
+	fuse_wait_on_page_writeback_or_invalidate(inode, file, page->index);
 
 	if (req->num_pages &&
 	    (req->num_pages == FUSE_MAX_PAGES_PER_REQ ||
