@@ -396,9 +396,11 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 		return -ENOENT;
 
 	fi = get_fuse_inode(inode);
-	list_for_each_entry(ff, &fi->write_files, write_entry) {
+	spin_lock(&fc->lock);
+	list_for_each_entry(ff, &fi->rw_files, rw_entry) {
 		set_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state);
 	}
+	spin_unlock(&fc->lock);
 
 	err = filemap_write_and_wait(inode->i_mapping);
 	if (!err || err == -EIO) { /* AS_EIO might trigger -EIO */
