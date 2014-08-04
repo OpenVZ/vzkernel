@@ -49,6 +49,9 @@
 /* Enable direct access */
 #define FUSE_ODIRECT             (1 << 2)
 
+/* Enable synchronous umount */
+#define FUSE_UMOUNT_WAIT	(1 << 3)
+
 /** Number of page pointers embedded in fuse_req */
 #define FUSE_REQ_INLINE_PAGES 1
 
