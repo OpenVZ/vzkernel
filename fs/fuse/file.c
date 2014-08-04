@@ -1560,6 +1560,9 @@ static void fuse_writepage_free(struct fuse_conn *fc, struct fuse_req *req)
 
 	for (i = 0; i < req->num_pages; i++)
 		__free_page(req->pages[i]);
+
+	if (req->ff && !fc->writeback_cache && !fc->close_wait)
+		fuse_file_put(req->ff, false);
 }
 
 static void fuse_writepage_finish(struct fuse_conn *fc, struct fuse_req *req)
@@ -1570,7 +1573,7 @@ static void fuse_writepage_finish(struct fuse_conn *fc, struct fuse_req *req)
 	int i;
 
 	list_del(&req->writepages_entry);
-	if (req->ff)
+	if (req->ff && (fc->writeback_cache || fc->close_wait))
 		__fuse_file_put(req->ff);
 	for (i = 0; i < req->num_pages; i++) {
 		dec_wb_stat(&bdi->wb, WB_WRITEBACK);
@@ -1877,7 +1880,7 @@ static bool fuse_writepage_in_flight(struct fuse_req *new_req,
 		struct backing_dev_info *bdi = inode_to_bdi(page->mapping->host);
 
 		copy_highpage(old_req->pages[0], page);
-		if (new_req->ff)
+		if (new_req->ff && (fc->writeback_cache || fc->close_wait))
 			__fuse_file_put(new_req->ff);
 		spin_unlock(&fc->lock);
 
