@@ -600,6 +600,9 @@ struct fuse_conn {
 	/** Does the filesystem support asynchronous direct-IO submission? */
 	unsigned async_dio:1;
 
+	/** Handle wrong FUSE_NOTIFY_INVAL_FILES from old fused */
+	unsigned compat_inval_files:1;
+
 	/** The number of requests waiting for completion */
 	atomic_t num_waiting;
 
