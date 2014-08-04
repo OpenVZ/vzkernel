@@ -138,6 +138,12 @@ static void fuse_file_put(struct fuse_file *ff, bool sync, bool isdir)
 	}
 }
 
+static void __fuse_file_put(struct fuse_file *ff)
+{
+	if (refcount_dec_and_test(&ff->count))
+		BUG();
+}
+
 struct fuse_file *fuse_file_open(struct fuse_mount *fm, u64 nodeid,
 				 unsigned int open_flags, bool isdir)
 {
@@ -365,10 +371,14 @@ static int fuse_open(struct inode *inode, struct file *file)
 static int fuse_release(struct inode *inode, struct file *file)
 {
 	struct fuse_conn *fc = get_fuse_conn(inode);
+	struct fuse_inode *fi;
 
 	/* see fuse_vma_close() for !writeback_cache case */
-	if (fc->writeback_cache)
+	if (fc->writeback_cache) {
 		write_inode_now(inode, 1);
+		fi = get_fuse_inode(inode);
+		wait_event(fi->page_waitq, RB_EMPTY_ROOT(&fi->writepages));
+	}
 
 	fuse_release_common(file, false);
 
@@ -1683,9 +1693,6 @@ static void fuse_writepage_free(struct fuse_writepage_args *wpa)
 	for (i = 0; i < ap->num_pages; i++)
 		__free_page(ap->pages[i]);
 
-	if (wpa->ia.ff)
-		fuse_file_put(wpa->ia.ff, false, false);
-
 	kfree(ap->pages);
 	kfree(wpa);
 }
@@ -1698,6 +1705,9 @@ static void fuse_writepage_finish(struct fuse_mount *fm,
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	struct backing_dev_info *bdi = inode_to_bdi(inode);
 	int i;
+
+	if (wpa->ia.ff)
+		__fuse_file_put(wpa->ia.ff);
 
 	for (i = 0; i < ap->num_pages; i++) {
 		dec_wb_stat(&bdi->wb, WB_WRITEBACK);
