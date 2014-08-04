@@ -1682,6 +1682,9 @@ static void fuse_writepage_free(struct fuse_conn *fc, struct fuse_req *req)
 
 	for (i = 0; i < req->num_pages; i++)
 		__free_page(req->pages[i]);
+
+	if (!fc->writeback_cache && !fc->close_wait)
+		fuse_file_put(req->ff, false);
 }
 
 static void fuse_writepage_finish(struct fuse_conn *fc, struct fuse_req *req)
@@ -1692,7 +1695,8 @@ static void fuse_writepage_finish(struct fuse_conn *fc, struct fuse_req *req)
 	int i;
 
 	list_del(&req->writepages_entry);
-	__fuse_file_put(req->ff);
+	if (fc->writeback_cache || fc->close_wait)
+		__fuse_file_put(req->ff);
 	for (i = 0; i < req->num_pages; i++) {
 		dec_bdi_stat(bdi, BDI_WRITEBACK);
 		dec_zone_page_state(req->pages[i], NR_WRITEBACK_TEMP);
