@@ -485,7 +485,8 @@ __acquires(fc->lock)
 	}
 }
 
-static void __fuse_request_send(struct fuse_conn *fc, struct fuse_req *req)
+static void __fuse_request_send(struct fuse_conn *fc, struct fuse_req *req,
+				struct fuse_file *ff)
 {
 	BUG_ON(req->background);
 	spin_lock(&fc->lock);
@@ -493,6 +494,8 @@ static void __fuse_request_send(struct fuse_conn *fc, struct fuse_req *req)
 		req->out.h.error = -ENOTCONN;
 	else if (fc->conn_error)
 		req->out.h.error = -ECONNREFUSED;
+	else if (ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state))
+		req->out.h.error = -EIO;
 	else {
 		req->in.h.unique = fuse_get_unique(fc);
 		queue_request(fc, req);
@@ -505,10 +508,16 @@ static void __fuse_request_send(struct fuse_conn *fc, struct fuse_req *req)
 	spin_unlock(&fc->lock);
 }
 
-void fuse_request_send(struct fuse_conn *fc, struct fuse_req *req)
+void fuse_request_check_and_send(struct fuse_conn *fc, struct fuse_req *req,
+				 struct fuse_file *ff)
 {
 	req->isreply = 1;
-	__fuse_request_send(fc, req);
+	__fuse_request_send(fc, req, ff);
+}
+
+void fuse_request_send(struct fuse_conn *fc, struct fuse_req *req)
+{
+	fuse_request_check_and_send(fc, req, NULL);
 }
 EXPORT_SYMBOL_GPL(fuse_request_send);
 
@@ -531,7 +540,13 @@ static void fuse_request_send_nowait_locked(struct fuse_conn *fc,
 static void fuse_request_send_nowait(struct fuse_conn *fc, struct fuse_req *req)
 {
 	spin_lock(&fc->lock);
-	if (fc->connected) {
+	if (req->page_cache && req->ff &&
+	    test_bit(FUSE_S_FAIL_IMMEDIATELY, &req->ff->ff_state)) {
+		BUG_ON(req->in.h.opcode != FUSE_READ);
+		req->out.h.error = -EIO;
+		req->background = 0;
+		request_end(fc, req);
+	} else if (fc->connected) {
 		fuse_request_send_nowait_locked(fc, req);
 		spin_unlock(&fc->lock);
 	} else {
@@ -592,7 +607,7 @@ void fuse_force_forget(struct file *file, u64 nodeid)
 	req->in.args[0].size = sizeof(inarg);
 	req->in.args[0].value = &inarg;
 	req->isreply = 0;
-	__fuse_request_send(fc, req);
+	__fuse_request_send(fc, req, NULL);
 	/* ignore errors */
 	fuse_put_request(fc, req);
 }
