@@ -2093,6 +2093,13 @@ static int fuse_prepare_write(struct fuse_conn *fc, struct file *file,
 		return 0;
 	}
 
+	/*
+	 * Page writeback can extend beyond the liftime of the
+	 * page-cache page, so make sure we read a properly synced
+	 * page.
+	 */
+	fuse_wait_on_page_writeback(page->mapping->host, page->index);
+
 	num_read = __fuse_readpage(file, page, page_len, &err, &req, NULL);
 	if (req)
 		fuse_put_request(fc, req);
