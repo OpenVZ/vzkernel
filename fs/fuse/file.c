@@ -317,12 +317,6 @@ out_inode_unlock:
 	if (is_wb_truncate || dax_truncate)
 		inode_unlock(inode);
 
-	if (!err && fc->kio.op && fc->kio.op->file_open &&
-	    fc->kio.op->file_open(file, inode)) {
-		fuse_release_common(file, false);
-		return -EINVAL;
-	}
-
 	if (!err && fc->writeback_cache && !isdir) {
 		struct fuse_inode *fi = get_fuse_inode(inode);
 		u64 size;
@@ -334,6 +328,10 @@ out_inode_unlock:
 			fi->i_size_unstable = 1;
 			spin_unlock(&fi->lock);
 			err = fuse_getattr_size(inode, file, &size);
+
+			if (!err && fc->kio.op && fc->kio.op->file_open)
+				err = fc->kio.op->file_open(file, inode);
+
 			spin_lock(&fi->lock);
 			fi->i_size_unstable = 0;
 			if (err)
