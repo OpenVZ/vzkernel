@@ -504,6 +504,7 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 		}
 		fuse_kill_requests(fc, inode, &fc->iq.pending);
 		fuse_kill_requests(fc, inode, &fc->bg_queue);
+		wake_up(&fi->page_waitq); /* readpage[s] can wait on fuse wb */
 		spin_unlock(&fc->lock);
 
 		err = invalidate_inode_pages2(inode->i_mapping);
