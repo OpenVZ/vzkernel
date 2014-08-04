@@ -253,10 +253,11 @@ void fuse_change_attributes(struct inode *inode, struct fuse_attr *attr,
 	}
 }
 
-static void fuse_init_inode(struct inode *inode, struct fuse_attr *attr)
+static void fuse_init_inode(struct inode *inode, struct fuse_attr *attr,
+			    int num_openers)
 {
 	struct fuse_inode *fi = get_fuse_inode(inode);
-	atomic_set(&fi->num_openers, 0);
+	atomic_set(&fi->num_openers, num_openers);
 
 	inode->i_mode = attr->mode & S_IFMT;
 	inode->i_size = attr->size;
@@ -296,7 +297,7 @@ static int fuse_inode_set(struct inode *inode, void *_nodeidp)
 
 struct inode *fuse_iget(struct super_block *sb, u64 nodeid,
 			int generation, struct fuse_attr *attr,
-			u64 attr_valid, u64 attr_version)
+			u64 attr_valid, u64 attr_version, int creat)
 {
 	struct inode *inode;
 	struct fuse_inode *fi;
@@ -313,7 +314,8 @@ struct inode *fuse_iget(struct super_block *sb, u64 nodeid,
 			inode->i_flags |= S_NOCMTIME;
 		inode->i_generation = generation;
 		inode->i_data.backing_dev_info = &fc->bdi;
-		fuse_init_inode(inode, attr);
+		fuse_init_inode(inode, attr,
+				fc->writeback_cache ? creat : 0);
 		unlock_new_inode(inode);
 	} else if ((inode->i_mode ^ attr->mode) & S_IFMT) {
 		/* Inode has changed type, any I/O on the old should fail */
@@ -661,7 +663,7 @@ static struct inode *fuse_get_root_inode(struct super_block *sb, unsigned mode)
 	attr.mode = mode;
 	attr.ino = FUSE_ROOT_ID;
 	attr.nlink = 1;
-	return fuse_iget(sb, 1, 0, &attr, 0, 0);
+	return fuse_iget(sb, 1, 0, &attr, 0, 0, 0);
 }
 
 struct fuse_inode_handle {
