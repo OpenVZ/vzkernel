@@ -4977,7 +4977,7 @@ void show_free_areas(unsigned int filter, nodemask_t *nodemask)
 
 	printk("active_anon:%lu inactive_anon:%lu isolated_anon:%lu\n"
 		" active_file:%lu inactive_file:%lu isolated_file:%lu\n"
-		" unevictable:%lu dirty:%lu writeback:%lu unstable:%lu\n"
+		" unevictable:%lu dirty:%lu writeback:%lu wbtmp:%lu unstable:%lu\n"
 		" slab_reclaimable:%lu slab_unreclaimable:%lu\n"
 		" mapped:%lu shmem:%lu pagetables:%lu bounce:%lu\n"
 		" free:%lu free_pcp:%lu free_cma:%lu\n",
@@ -4990,6 +4990,7 @@ void show_free_areas(unsigned int filter, nodemask_t *nodemask)
 		global_node_page_state(NR_UNEVICTABLE),
 		global_node_page_state(NR_FILE_DIRTY),
 		global_node_page_state(NR_WRITEBACK),
+		global_node_page_state(NR_WRITEBACK_TEMP),
 		global_node_page_state(NR_UNSTABLE_NFS),
 		global_node_page_state(NR_SLAB_RECLAIMABLE),
 		global_node_page_state(NR_SLAB_UNRECLAIMABLE),
