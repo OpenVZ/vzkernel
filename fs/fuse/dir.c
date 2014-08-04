@@ -419,6 +419,9 @@ static int fuse_create_open(struct inode *dir, struct dentry *entry,
 	/* Userspace expects S_IFREG in create mode */
 	BUG_ON((mode & S_IFMT) != S_IFREG);
 
+	if ((flags & O_DIRECT) && !(fc->flags & FUSE_ODIRECT))
+		return -EINVAL;
+
 	forget = fuse_alloc_forget();
 	err = -ENOMEM;
 	if (!forget)
