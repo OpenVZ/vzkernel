@@ -403,14 +403,17 @@ static int fuse_release(struct inode *inode, struct file *file)
 	struct fuse_conn *fc = ff->fm->fc;
 
 	if (fc->writeback_cache) {
-		write_inode_now(inode, 1);
+		if (file->f_mode & FMODE_WRITE) {
+			write_inode_now(inode, 1);
 
-		/* Must remove file from write list. Otherwise it is possible this
-		 * file will get more writeback from another files rerouted via write_files
-		 */
-		spin_lock(&fi->lock);
-		list_del_init(&ff->write_entry);
-		spin_unlock(&fi->lock);
+			/* Must remove file from write list. Otherwise it is possible this
+			 * file will get more writeback from another files rerouted via write_files
+			 */
+			spin_lock(&fi->lock);
+			list_del_init(&ff->write_entry);
+			spin_unlock(&fi->lock);
+		} else
+			BUG_ON(!list_empty(&ff->write_entry));
 
 		/* This can livelock. Inode can be open via another file
 		 * and that file can generate continuous writeback.
@@ -575,6 +578,9 @@ static int fuse_flush(struct file *file, fl_owner_t id)
 		return -EIO;
 
 	if (ff->open_flags & FOPEN_NOFLUSH && !fm->fc->writeback_cache)
+		return 0;
+
+	if (!(file->f_mode & FMODE_WRITE))
 		return 0;
 
 	err = write_inode_now(inode, 1);
