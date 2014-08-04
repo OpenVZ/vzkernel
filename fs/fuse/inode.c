@@ -522,6 +522,12 @@ static int fuse_parse_param(struct fs_context *fc, struct fs_parameter *param)
 			return invalfc(fc, "Multiple sources specified");
 		fc->source = param->string;
 		param->string = NULL;
+
+		/* Hack to distinguish pcs fuse service and to force
+		 * synchronous close for it.
+		 */
+		if (fc->source && strncmp(fc->source, "pstorage://", 11) == 0)
+			ctx->close_wait = 1;
 		break;
 
 	case OPT_SUBTYPE:
@@ -1269,6 +1275,7 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *ctx)
 	fc->legacy_opts_show = ctx->legacy_opts_show;
 	fc->max_read = max_t(unsigned, 4096, ctx->max_read);
 	fc->direct_enable = ctx->direct_enable;
+	fc->close_wait = ctx->close_wait;
 	fc->writeback_cache = ctx->writeback_cache;
 	fc->destroy = ctx->destroy;
 	fc->no_control = ctx->no_control;
