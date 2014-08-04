@@ -450,6 +450,7 @@ enum {
 	OPT_MAX_READ,
 	OPT_BLKSIZE,
 	OPT_WBCACHE,
+	OPT_ODIRECT,
 	OPT_ERR,
 };
 
@@ -463,6 +464,7 @@ static const match_table_t tokens = {
 	{OPT_MAX_READ,			"max_read=%u"},
 	{OPT_BLKSIZE,			"blksize=%u"},
 	{OPT_WBCACHE,			"writeback_enable"},
+	{OPT_ODIRECT,			"direct_enable"},
 	{OPT_ERR,			NULL}
 };
 
@@ -553,6 +555,10 @@ static int parse_fuse_opt(char *opt, struct fuse_fs_context *d, int is_bdev,
 			d->writeback_cache = 1;
 			break;
 
+		case OPT_ODIRECT:
+			d->direct_enable = 1;
+			break;
+
 		default:
 			return 0;
 		}
@@ -579,6 +585,8 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 		seq_puts(m, ",default_permissions");
 	if (fc->allow_other)
 		seq_puts(m, ",allow_other");
+	if (fc->direct_enable)
+		seq_puts(m, ",direct_enable");
 	if (fc->max_read != ~0)
 		seq_printf(m, ",max_read=%u", fc->max_read);
 	if (sb->s_bdev && sb->s_blocksize != FUSE_DEFAULT_BLKSIZE)
@@ -1191,6 +1199,7 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *d)
 	fc->user_id = d->user_id;
 	fc->group_id = d->group_id;
 	fc->max_read = max_t(unsigned, 4096, d->max_read);
+	fc->direct_enable = d->direct_enable;
 	fc->writeback_cache = d->writeback_cache;
 	fc->destroy = d->destroy;
 	fc->no_control = d->no_control;
