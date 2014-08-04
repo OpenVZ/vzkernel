@@ -97,6 +97,9 @@ struct backing_dev_info {
 	unsigned int min_ratio;
 	unsigned int max_ratio, max_prop_frac;
 
+	unsigned int min_dirty_pages;
+	unsigned int max_dirty_pages;
+
 	struct bdi_writeback wb;  /* default writeback info for this bdi */
 	spinlock_t wb_lock;	  /* protects work_list & wb.dwork scheduling */
 
@@ -221,6 +224,8 @@ static inline unsigned long bdi_stat_error(struct backing_dev_info *bdi)
 
 int bdi_set_min_ratio(struct backing_dev_info *bdi, unsigned int min_ratio);
 int bdi_set_max_ratio(struct backing_dev_info *bdi, unsigned int max_ratio);
+int bdi_set_min_dirty(struct backing_dev_info *bdi, unsigned int min_dirty);
+int bdi_set_max_dirty(struct backing_dev_info *bdi, unsigned int max_dirty);
 
 /*
  * Flags in backing_dev_info::capability
