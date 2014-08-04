@@ -17,6 +17,7 @@
 #include <linux/swap.h>
 #include <linux/falloc.h>
 #include <linux/uio.h>
+#include <linux/task_io_accounting_ops.h>
 
 static const struct file_operations fuse_direct_io_file_operations;
 
@@ -1463,10 +1464,13 @@ ssize_t fuse_direct_io(struct fuse_io_priv *io, struct iov_iter *iter,
 		if (err && !nbytes)
 			break;
 
-		if (write)
+		if (write) {
 			nres = fuse_send_write(req, io, pos, nbytes, owner);
-		else
+			task_io_account_write(nbytes);
+		} else {
 			nres = fuse_send_read(req, io, pos, nbytes, owner);
+			task_io_account_read(nbytes);
+		}
 
 		if (!io->async)
 			fuse_release_user_pages(req, io->should_dirty);
