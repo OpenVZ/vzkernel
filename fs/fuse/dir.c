@@ -514,14 +514,25 @@ static int fuse_create_open(struct inode *dir, struct dentry *entry,
 
 	file->private_data = ff;
 	fuse_finish_open(inode, file);
-	if (fc->kio.op && fc->kio.op->file_open &&
-	    fc->kio.op->file_open(fc, file, inode)) {
-		if (err) {
-			fput(file);
-			return  err;
+
+	if (fc->writeback_cache) {
+		struct fuse_inode *fi = get_fuse_inode(inode);
+		bool need_open;
+
+		inode_lock(inode);
+		spin_lock(&fi->lock);
+		need_open = (atomic_inc_return(&fi->num_openers) == 1);
+		spin_unlock(&fi->lock);
+
+		if (need_open && fc->kio.op && fc->kio.op->file_open) {
+			err = fc->kio.op->file_open(fc, file, inode);
+			if (err)
+				fput(file);
 		}
+		inode_unlock(inode);
 	}
-	return 0;
+
+	return err;
 
 out_free_ff:
 	fuse_file_free(ff);
