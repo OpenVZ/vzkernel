@@ -177,6 +177,14 @@ struct fuse_file {
 
 	/** Has flock been performed on this file? */
 	bool flock:1;
+
+	unsigned long ff_state;
+};
+
+/** FUSE file states (ff_state) */
+enum {
+	/** Any fops on given ff should fail immediately */
+	FUSE_S_FAIL_IMMEDIATELY,
 };
 
 /** One input argument of a request */
@@ -948,6 +956,12 @@ int fuse_reverse_inval_inode(struct super_block *sb, u64 nodeid,
  */
 int fuse_reverse_inval_entry(struct super_block *sb, u64 parent_nodeid,
 			     u64 child_nodeid, struct qstr *name);
+
+/**
+ * File-system tells the kernel to invalidate all fuse-files (and cache)
+ * for the given node id.
+ */
+int fuse_invalidate_files(struct super_block *sb, u64 nodeid);
 
 int fuse_do_open(struct fuse_conn *fc, u64 nodeid, struct file *file,
 		 bool isdir);
