@@ -128,7 +128,7 @@ static void fuse_req_init_context(struct fuse_req *req)
 {
 	req->in.h.uid = from_kuid_munged(&init_user_ns, current_fsuid());
 	req->in.h.gid = from_kgid_munged(&init_user_ns, current_fsgid());
-	req->in.h.pid = current->pid;
+	req->in.h.pid = task_pid_vnr(current);
 }
 
 static bool fuse_block_alloc(struct fuse_conn *fc, bool for_background)
