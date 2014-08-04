@@ -539,6 +539,7 @@ struct fuse_fs_context {
 	bool umount_wait:1;
 	bool close_wait:1;
 	bool disable_close_wait:1;
+	bool compat_inval_files:1;
 	bool destroy:1;
 	bool no_control:1;
 	bool no_force_umount:1;
@@ -828,6 +829,9 @@ struct fuse_conn {
 
 	/** Does the disable synchronous close? */
 	unsigned disable_close_wait:1;
+
+	/** Handle wrong FUSE_NOTIFY_INVAL_FILES from old fused */
+	unsigned compat_inval_files:1;
 
 	/** The number of requests waiting for completion */
 	atomic_t num_waiting;
