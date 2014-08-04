@@ -987,8 +987,12 @@ static int fuse_do_getattr(struct inode *inode, struct kstat *stat,
 					       attr_version);
 			if (get_size_form_attr)
 				stat->size = outarg.attr.size;
-			else if (stat)
+			else if (stat) {
+				struct fuse_inode *fi = get_fuse_inode(inode);
 				fuse_fillattr(inode, &outarg.attr, stat);
+				if (!atomic_read(&fi->num_openers))
+					stat->size = outarg.attr.size;
+			}
 		}
 	}
 	return err;
