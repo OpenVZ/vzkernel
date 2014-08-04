@@ -518,6 +518,7 @@ struct fuse_fs_context {
 	bool allow_other:1;
 	bool writeback_cache:1;
 	bool direct_enable:1;
+	bool umount_wait:1;
 	bool close_wait:1;
 	bool destroy:1;
 	bool no_control:1;
@@ -799,6 +800,9 @@ struct fuse_conn {
 
 	/** Does the direct access enable? */
 	unsigned direct_enable:1;
+
+	/** Does the unmount synchronous? */
+	unsigned umount_wait:1;
 
 	/** Wait for response from daemon on close */
 	unsigned close_wait:1;
