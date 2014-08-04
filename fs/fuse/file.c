@@ -68,6 +68,8 @@ struct fuse_file *fuse_file_alloc(struct fuse_conn *fc)
 	if (unlikely(!ff))
 		return NULL;
 
+	ff->ff_state = 0;
+
 	ff->fc = fc;
 	ff->release_args = kzalloc(sizeof(*ff->release_args),
 				   GFP_KERNEL_ACCOUNT);
@@ -2238,6 +2240,29 @@ out_unlock:
 	return err;
 }
 
+static int fuse_dummy_writepage(struct page *page,
+				struct writeback_control *wbc,
+				void *data)
+{
+	unlock_page(page);
+	return 0;
+}
+
+void fuse_release_ff(struct inode *inode, struct fuse_file *ff)
+{
+	if (ff) {
+		if (ff->fc->close_wait) {
+			struct fuse_inode *fi = get_fuse_inode(inode);
+			spin_lock(&fi->lock);
+			__fuse_file_put(ff);
+			wake_up(&get_fuse_inode(inode)->page_waitq);
+			spin_unlock(&fi->lock);
+		} else {
+			fuse_file_put(ff, false, false);
+		}
+	}
+}
+
 static int fuse_writepages(struct address_space *mapping,
 			   struct writeback_control *wbc)
 {
@@ -2250,11 +2275,35 @@ static int fuse_writepages(struct address_space *mapping,
 	if (is_bad_inode(inode))
 		goto out;
 
-	wait_event(fc->blocked_waitq, !fc->blocked);
+	/*
+	 * It's not safe to wait on !fc->blocked right here becase we can be
+	 * called from fuse_invalidate_files() and in this case single-threaded
+	 * fused is blocked until we return
+	 */
+
+ 	data.ff = __fuse_write_file_get(fc, get_fuse_inode(inode));
+
+	/* More than optimization: writeback pages to /dev/null; fused would
+	 * drop our FUSE_WRITE requests anyway, but it will be blocked while
+	 * sending NOTIFY_INVAL_FILES until we return!
+	 */
+	if (data.ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &data.ff->ff_state)) {
+		err = write_cache_pages(mapping, wbc, fuse_dummy_writepage,
+					mapping);
+		fuse_release_ff(inode, data.ff);
+		goto out;
+	}
+
+	if (data.ff) {
+		fuse_release_ff(inode, data.ff);
+		data.ff = NULL;
+	}
+
+	if (wbc->sync_mode != WB_SYNC_NONE)
+		wait_event(fc->blocked_waitq, !fc->blocked);
 
 	data.inode = inode;
 	data.wpa = NULL;
-	data.ff = NULL;
 
 	err = -ENOMEM;
 	data.orig_pages = kcalloc(fc->max_pages,
@@ -2270,18 +2319,18 @@ static int fuse_writepages(struct address_space *mapping,
 		fuse_writepages_send(&data);
 		err = 0;
 	}
-	if (data.ff) {
-		if (data.ff->fc->close_wait) {
-			__fuse_file_put(data.ff);
-			wake_up(&get_fuse_inode(inode)->page_waitq);
-		} else {
-			fuse_file_put(data.ff, false, false);
-		}
-	}
+	fuse_release_ff(inode, data.ff);
 
 	kfree(data.orig_pages);
 out:
 	return err;
+}
+
+static inline bool fuse_file_fail_immediately(struct file *file)
+{
+	struct fuse_file *ff = file->private_data;
+
+	return test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state);
 }
 
 /*
@@ -2303,6 +2352,11 @@ static int fuse_write_begin(struct file *file, struct address_space *mapping,
 	page = grab_cache_page_write_begin(mapping, index, flags);
 	if (!page)
 		goto error;
+
+	if (fuse_file_fail_immediately(file)) {
+		err = -EIO;
+		goto cleanup;
+	}
 
 	fuse_wait_on_page_writeback(mapping->host, page->index);
 
@@ -2412,6 +2466,9 @@ static vm_fault_t fuse_page_mkwrite(struct vm_fault *vmf)
 		unlock_page(page);
 		return VM_FAULT_NOPAGE;
 	}
+
+	if (fuse_file_fail_immediately(vmf->vma->vm_file))
+		return -EIO;
 
 	fuse_wait_on_page_writeback(inode, page->index);
 	return VM_FAULT_LOCKED;
