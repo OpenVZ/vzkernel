@@ -913,7 +913,7 @@ static ssize_t fuse_send_read(struct fuse_io_args *ia, loff_t pos, size_t count,
 	if (ia->io->async)
 		return fuse_async_req_send(fm, ia, count);
 
-	return fuse_simple_request(fm, &ia->ap.args);
+	return fuse_simple_check_request(fm, &ia->ap.args, ff);
 }
 
 static void fuse_read_update_size(struct inode *inode, loff_t size,
