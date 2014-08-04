@@ -140,6 +140,9 @@ struct fuse_inode {
 		} rdc;
 	};
 
+	/** List of all opened files.  Protected by fc->lock */
+	struct list_head rw_files;
+
 	/** Miscellaneous bits describing inode state */
 	unsigned long state;
 
@@ -207,6 +210,9 @@ struct fuse_file {
 
 	/** Entry on inode's write_files list */
 	struct list_head write_entry;
+
+	/** Entry on inode's rw_files list */
+	struct list_head rw_entry;
 
 	/* Readdir related */
 	struct {
