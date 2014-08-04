@@ -506,6 +506,7 @@ struct fuse_fs_context {
 	bool allow_other:1;
 	bool writeback_cache:1;
 	bool direct_enable:1;
+	bool close_wait:1;
 	bool destroy:1;
 	bool no_control:1;
 	bool no_force_umount:1;
@@ -776,6 +777,9 @@ struct fuse_conn {
 
 	/** Does the direct access enable? */
 	unsigned direct_enable:1;
+
+	/** Wait for response from daemon on close */
+	unsigned close_wait:1;
 
 	/** The number of requests waiting for completion */
 	atomic_t num_waiting;
