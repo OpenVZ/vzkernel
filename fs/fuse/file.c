@@ -1650,11 +1650,6 @@ static ssize_t __fuse_direct_write(struct fuse_io_priv *io,
 	if (!res)
 		res = fuse_direct_io(io, iov, nr_segs, count, ppos,
 				     FUSE_DIO_WRITE);
-		if (res > 0) {
-			struct fuse_inode *fi = get_fuse_inode(inode);
-			fuse_write_update_size(inode, *ppos);
-			clear_bit(FUSE_I_MTIME_UPDATED, &fi->state);
-		}
 
 	fuse_invalidate_attr(inode);
 
