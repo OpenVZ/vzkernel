@@ -52,6 +52,9 @@
 /* Enable synchronous umount */
 #define FUSE_UMOUNT_WAIT	(1 << 3)
 
+/* Disable synchronous close */
+#define FUSE_DISABLE_CLOSE_WAIT	(1 << 4)
+
 /** Number of page pointers embedded in fuse_req */
 #define FUSE_REQ_INLINE_PAGES 1
 
