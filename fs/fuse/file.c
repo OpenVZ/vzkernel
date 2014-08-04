@@ -691,6 +691,9 @@ void fuse_read_args_fill(struct fuse_io_args *ia, struct file *file, loff_t pos,
 	args->out_argvar = true;
 	args->out_numargs = 1;
 	args->out_args[0].size = count;
+
+	if (opcode == FUSE_READ)
+		args->inode = file->f_path.dentry->d_inode;
 }
 
 static void fuse_release_user_pages(struct fuse_args_pages *ap,
@@ -913,7 +916,8 @@ static void fuse_short_read(struct inode *inode, u64 attr_ver, size_t num_read,
 	}
 }
 
-static int fuse_do_readpage(struct file *file, struct page *page)
+static int fuse_do_readpage(struct file *file, struct page *page,
+		bool *killed_p)
 {
 	struct inode *inode = page->mapping->host;
 	struct fuse_conn *fc = get_fuse_conn(inode);
@@ -945,6 +949,10 @@ static int fuse_do_readpage(struct file *file, struct page *page)
 
 	fuse_read_args_fill(&ia, file, pos, desc.length, FUSE_READ);
 	res = fuse_simple_request(fc, &ia.ap.args);
+	if (killed_p)
+		*killed_p = ia.ap.args.killed;
+	if (ia.ap.args.killed)
+		res = -EIO;
 	if (res < 0)
 		return res;
 	/*
@@ -962,15 +970,17 @@ static int fuse_readpage(struct file *file, struct page *page)
 {
 	struct inode *inode = page->mapping->host;
 	int err;
+	bool killed = false;
 
 	err = -EIO;
 	if (is_bad_inode(inode))
 		goto out;
 
-	err = fuse_do_readpage(file, page);
+	err = fuse_do_readpage(file, page, &killed);
 	fuse_invalidate_atime(inode);
  out:
-	unlock_page(page);
+	if (!killed)
+		unlock_page(page);
 	return err;
 }
 
@@ -982,22 +992,16 @@ static void fuse_readpages_end(struct fuse_conn *fc, struct fuse_args *args,
 	struct fuse_args_pages *ap = &ia->ap;
 	size_t count = ia->read.in.size;
 	size_t num_read = args->out_args[0].size;
-	struct address_space *mapping = NULL;
+	struct inode *inode = args->inode;
 
-	for (i = 0; mapping == NULL && i < ap->num_pages; i++)
-		mapping = ap->pages[i]->mapping;
+	if (args->killed)
+		goto killed;
 
-	if (mapping) {
-		struct inode *inode = mapping->host;
-
-		/*
-		 * Short read means EOF. If file size is larger, truncate it
-		 */
-		if (!err && num_read < count)
-			fuse_short_read(inode, ia->read.attr_ver, num_read, ap);
-
-		fuse_invalidate_atime(inode);
-	}
+	/*
+	 * Short read means EOF. If file size is larger, truncate it
+	 */
+	if (!err && num_read < count)
+		fuse_short_read(inode, ia->read.attr_ver, num_read, ap);
 
 	for (i = 0; i < ap->num_pages; i++) {
 		struct page *page = ap->pages[i];
@@ -1009,9 +1013,11 @@ static void fuse_readpages_end(struct fuse_conn *fc, struct fuse_args *args,
 		unlock_page(page);
 		put_page(page);
 	}
+killed:
+	fuse_invalidate_atime(inode);
+
 	if (ia->ff) {
-		if (fc->close_wait && mapping) {
-			struct inode *inode = mapping->host;
+		if (fc->close_wait) {
 			struct fuse_inode *fi = get_fuse_inode(inode);
 			spin_lock(&fi->lock);
 			__fuse_file_put(ia->ff);
@@ -2413,7 +2419,7 @@ static int fuse_write_begin(struct file *file, struct address_space *mapping,
 			zero_user_segment(page, 0, off);
 		goto success;
 	}
-	err = fuse_do_readpage(file, page);
+	err = fuse_do_readpage(file, page, NULL);
 	if (err)
 		goto cleanup;
 success:
