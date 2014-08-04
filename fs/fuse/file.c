@@ -1803,6 +1803,7 @@ static int fuse_send_writepages(struct fuse_fill_data *data)
 
 	req->misc.write.in.write_flags |= FUSE_WRITE_CACHE;
 	req->in.argpages = 1;
+	req->background = 1;
 	fuse_page_descs_length_init(req, 0, req->num_pages);
 	req->end = fuse_writepage_end;
 
