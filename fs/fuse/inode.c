@@ -752,6 +752,7 @@ static int fuse_parse_param(struct fs_context *fsc, struct fs_parameter *param)
 		    (strncmp(fsc->source, "pstorage://", 11) == 0 ||
 		     strncmp(fsc->source, "vstorage://", 11) == 0)) {
 			ctx->close_wait = 1;
+			ctx->compat_inval_files = 1;
 		}
 		break;
 
@@ -1667,6 +1668,7 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *ctx)
 	fc->umount_wait = ctx->umount_wait;
 	fc->close_wait = ctx->close_wait;
 	fc->disable_close_wait = ctx->disable_close_wait;
+	fc->compat_inval_files = ctx->compat_inval_files;
 	fc->writeback_cache = ctx->writeback_cache;
 	fc->destroy = ctx->destroy || ctx->umount_wait;
 	fc->no_control = ctx->no_control;
