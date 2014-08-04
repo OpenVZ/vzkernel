@@ -848,7 +848,7 @@ static size_t fuse_send_read(struct fuse_req *req, struct fuse_io_priv *io,
 	if (io->async)
 		return fuse_async_req_send(fc, req, count, io);
 
-	fuse_request_send(fc, req);
+	fuse_request_check_and_send(fc, req, ff);
 	return req->out.args[0].size;
 }
 
