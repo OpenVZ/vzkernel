@@ -471,21 +471,31 @@ static int fuse_create_open(struct inode *dir, struct dentry *entry,
 	fuse_change_entry_timeout(entry, &outentry);
 	fuse_invalidate_attr(dir);
 	err = finish_open(file, entry, generic_file_open, opened);
+	fi = get_fuse_inode(inode);
 	if (err) {
-		fi = get_fuse_inode(inode);
 		fuse_sync_release(fi, ff, flags);
 		return err;
 	}
 	file->private_data = fuse_file_get(ff);
 	fuse_finish_open(inode, file);
-	if (fc->kio.op && fc->kio.op->file_open &&
-	    fc->kio.op->file_open(fc, file, inode)) {
-		if (err) {
-			fput(file);
-			return err;
+
+	if (fc->writeback_cache) {
+		bool need_open;
+
+		mutex_lock(&inode->i_mutex);
+		spin_lock(&fi->lock);
+		need_open = (atomic_inc_return(&fi->num_openers) == 1);
+		spin_unlock(&fi->lock);
+
+		if (need_open && fc->kio.op && fc->kio.op->file_open) {
+			err = fc->kio.op->file_open(fc, file, inode);
+			if (err)
+				fput(file);
 		}
+		mutex_unlock(&inode->i_mutex);
 	}
-	return 0;
+
+	return err;
 
 out_free_ff:
 	fuse_file_free(ff);
