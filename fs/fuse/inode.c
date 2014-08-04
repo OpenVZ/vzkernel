@@ -500,6 +500,7 @@ enum {
 	OPT_WBCACHE,
 	OPT_ODIRECT,
 	OPT_UMOUNT_WAIT,
+	OPT_DISABLE_CLOSE_WAIT,
 	OPT_ERR
 };
 
@@ -515,6 +516,7 @@ static const match_table_t tokens = {
 	{OPT_WBCACHE,			"writeback_enable"},
 	{OPT_ODIRECT,			"direct_enable"},
 	{OPT_UMOUNT_WAIT,		"umount_wait"},
+	{OPT_DISABLE_CLOSE_WAIT,	"disable_close_wait"},
 	{OPT_ERR,			NULL}
 };
 
@@ -606,6 +608,10 @@ static int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev)
 			d->flags |= FUSE_UMOUNT_WAIT;
 			break;
 
+		case OPT_DISABLE_CLOSE_WAIT:
+			d->flags |= FUSE_DISABLE_CLOSE_WAIT;
+			break;
+
 		default:
 			return 0;
 		}
@@ -633,6 +639,8 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 		seq_puts(m, ",direct_enable");
 	if (fc->flags & FUSE_UMOUNT_WAIT)
 		seq_puts(m, ",umount_wait");
+	if (fc->flags & FUSE_DISABLE_CLOSE_WAIT)
+		seq_puts(m, ",disable_close_wait");
 	if (fc->max_read != ~0)
 		seq_printf(m, ",max_read=%u", fc->max_read);
 	if (sb->s_bdev && sb->s_blocksize != FUSE_DEFAULT_BLKSIZE)
@@ -1204,7 +1212,8 @@ static struct dentry *fuse_mount(struct file_system_type *fs_type,
 	if (!IS_ERR(dentry) && dev_name && strncmp(dev_name, "pstorage://", 11) == 0) {
 		struct fuse_conn *fc = dentry->d_sb->s_fs_info;
 
-		fc->close_wait = 1;
+		if (!(fc->flags & FUSE_DISABLE_CLOSE_WAIT))
+			fc->close_wait = 1;
 	}
 	return dentry;
 }
