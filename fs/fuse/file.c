@@ -908,6 +908,7 @@ static int fuse_do_readpage(struct file *file, struct page *page)
 		.ap.num_pages = 1,
 		.ap.pages = &page,
 		.ap.descs = &desc,
+		.ap.args.page_cache = 1,
 	};
 	ssize_t res;
 	u64 attr_ver;
@@ -1014,6 +1015,7 @@ static void fuse_send_readpages(struct fuse_io_args *ia, struct file *file)
 	ap->args.out_pages = true;
 	ap->args.page_zeroing = true;
 	ap->args.page_replace = true;
+	ap->args.page_cache = 1;
 	fuse_read_args_fill(ia, file, pos, count, FUSE_READ);
 	ia->read.attr_ver = fuse_get_attr_version(fc);
 	if (fc->async_read) {
