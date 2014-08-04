@@ -1220,7 +1220,20 @@ static struct dentry *fuse_mount(struct file_system_type *fs_type,
 		       int flags, const char *dev_name,
 		       void *raw_data)
 {
-	return mount_nodev(fs_type, flags, raw_data, fuse_fill_super);
+	struct dentry *dentry;
+
+	dentry = mount_nodev(fs_type, flags, raw_data, fuse_fill_super);
+
+	/* Hack to distinguish pcs fuse service and to force synchronous close for it.
+	 * Seems, this is the only place where we have some variable (dev_name), which
+	 * is not confined by fuse API and already defined.
+	 */
+	if (!IS_ERR(dentry) && dev_name && strncmp(dev_name, "pstorage://", 11) == 0) {
+		struct fuse_conn *fc = dentry->d_sb->s_fs_info;
+
+		fc->close_wait = 1;
+	}
+	return dentry;
 }
 
 static void fuse_kill_sb_anon(struct super_block *sb)
