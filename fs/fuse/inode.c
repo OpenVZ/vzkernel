@@ -30,6 +30,8 @@ static struct kmem_cache *fuse_inode_cachep;
 struct list_head fuse_conn_list;
 DEFINE_MUTEX(fuse_mutex);
 
+static int fuse_ve_odirect;
+
 static int set_global_limit(const char *val, struct kernel_param *kp);
 
 unsigned max_user_bgreq;
@@ -547,10 +549,14 @@ static int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
 			break;
 
 		case OPT_WBCACHE:
+			if (!ve_is_super(get_exec_env()) && !fuse_ve_odirect)
+				return -EPERM;
 			d->writeback_cache = 1;
 			break;
 
 		case OPT_ODIRECT:
+			if (!ve_is_super(get_exec_env()) && !fuse_ve_odirect)
+				return -EPERM;
 			d->flags |= FUSE_ODIRECT;
 			break;
 
@@ -1368,6 +1374,24 @@ static void fuse_sysfs_cleanup(void)
 	kobject_put(fuse_kobj);
 }
 
+static ctl_table fuse_table[] = {
+	{
+		.procname	= "fuse-ve-odirect",
+		.data		= &fuse_ve_odirect,
+		.maxlen		= sizeof(fuse_ve_odirect),
+		.mode		= 0600,
+		.proc_handler	= &proc_dointvec,
+	},
+	{}
+};
+
+static struct ctl_path fuse_path[] = {
+	{ .procname = "fs", },
+	{},
+};
+
+static struct ctl_table_header * fuse_sysctl_header;
+
 static int __init fuse_init(void)
 {
 	int res;
@@ -1395,6 +1419,8 @@ static int __init fuse_init(void)
 	sanitize_global_limit(&max_user_bgreq);
 	sanitize_global_limit(&max_user_congthresh);
 
+	fuse_sysctl_header = register_sysctl_paths(fuse_path, fuse_table);
+
 	return 0;
 
  err_sysfs_cleanup:
@@ -1415,6 +1441,7 @@ static void __exit fuse_exit(void)
 	fuse_sysfs_cleanup();
 	fuse_fs_cleanup();
 	fuse_dev_cleanup();
+	unregister_sysctl_table(fuse_sysctl_header);
 }
 
 module_init(fuse_init);
