@@ -291,11 +291,6 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 	err = fuse_do_open(fc, get_node_id(inode), file, isdir);
 	if (err)
 		return err;
-	if (fc->kio.op && fc->kio.op->file_open &&
-	    fc->kio.op->file_open(fc, file, inode)) {
-		fuse_release_common(file, FUSE_RELEASE);
-		return -EINVAL;
-	}
 
 	if (fc->writeback_cache && !isdir) {
 		struct fuse_inode *fi = get_fuse_inode(inode);
@@ -308,6 +303,10 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 			fi->i_size_unstable = 1;
 			spin_unlock(&fc->lock);
 			err = fuse_getattr_size(inode, file, &size);
+
+			if (!err && fc->kio.op && fc->kio.op->file_open)
+				err = fc->kio.op->file_open(fc, file, inode);
+
 			spin_lock(&fc->lock);
 			fi->i_size_unstable = 0;
 			if (err)
