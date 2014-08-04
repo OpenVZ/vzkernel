@@ -1256,6 +1256,8 @@ static struct dentry *fuse_mount(struct file_system_type *fs_type,
 
 		if (!(fc->flags & FUSE_DISABLE_CLOSE_WAIT))
 			fc->close_wait = 1;
+
+		fc->compat_inval_files = 1;
 	}
 	return dentry;
 }
