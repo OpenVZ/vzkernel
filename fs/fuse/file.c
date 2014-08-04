@@ -1537,6 +1537,8 @@ ssize_t fuse_direct_io(struct fuse_io_priv *io, const struct iovec *iov,
 	struct fuse_req *req;
 	struct iov_iter ii;
 
+	virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_PREPARE, NULL);
+
 	iov_iter_init(&ii, iov, nr_segs, count, 0);
 
 	if (io->async)
@@ -3029,6 +3031,8 @@ static ssize_t fuse_direct_IO_bvec(int rw, struct kiocb *iocb,
 
 	if (nmax > FUSE_MAX_PAGES_PER_REQ << PAGE_SHIFT)
 		nmax = FUSE_MAX_PAGES_PER_REQ << PAGE_SHIFT;
+
+	virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_PREPARE, NULL);
 
 	io = fuse_io_priv_create(iocb, pos, rw, true);
 	if (!io)
