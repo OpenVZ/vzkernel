@@ -555,6 +555,7 @@ int seq_dentry(struct seq_file *m, struct dentry *dentry, const char *esc)
 
 	return res;
 }
+EXPORT_SYMBOL_GPL(seq_dentry);
 
 int seq_bitmap(struct seq_file *m, const unsigned long *bits,
 				   unsigned int nr_bits)
