@@ -363,6 +363,33 @@ int fuse_reverse_inval_inode(struct super_block *sb, u64 nodeid,
 	return 0;
 }
 
+int fuse_invalidate_files(struct super_block *sb, u64 nodeid)
+{
+	struct inode *inode;
+	struct fuse_inode *fi;
+	struct fuse_file *ff;
+	int err;
+
+	inode = ilookup5(sb, nodeid, fuse_inode_eq, &nodeid);
+	if (!inode)
+		return -ENOENT;
+
+	fi = get_fuse_inode(inode);
+	list_for_each_entry(ff, &fi->write_files, write_entry) {
+		set_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state);
+	}
+
+	err = filemap_write_and_wait(inode->i_mapping);
+	if (!err || err == -EIO) /* AS_EIO might trigger -EIO */
+		err = invalidate_inode_pages2(inode->i_mapping);
+
+	if (!err)
+		fuse_invalidate_attr(inode);
+
+	iput(inode);
+	return err;
+}
+
 static void fuse_umount_begin(struct super_block *sb)
 {
 	fuse_abort_conn(get_fuse_conn_super(sb));
