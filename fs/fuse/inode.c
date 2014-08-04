@@ -363,8 +363,9 @@ int fuse_reverse_inval_inode(struct super_block *sb, u64 nodeid,
 	return 0;
 }
 
-int fuse_invalidate_files(struct super_block *sb, u64 nodeid)
+int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 {
+	struct super_block *sb = fc->sb;
 	struct inode *inode;
 	struct fuse_inode *fi;
 	struct fuse_file *ff;
