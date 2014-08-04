@@ -484,6 +484,12 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 	struct fuse_file *ff;
 	int err;
 
+	if (!fc->async_read) {
+		printk(KERN_ERR "Turn async_read ON to use "
+				"FUSE_NOTIFY_INVAL_FILES!\n");
+		return -EOPNOTSUPP;
+	}
+
 	inode = fuse_ilookup(fc, nodeid, NULL);
 	if (!inode)
 		return -ENOENT;
