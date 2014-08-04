@@ -104,6 +104,9 @@ struct fuse_inode {
 	/** Files usable in writepage.  Protected by fc->lock */
 	struct list_head write_files;
 
+	/** List of all opened files.  Protected by fc->lock */
+	struct list_head rw_files;
+
 	/** Writepages pending on truncate or fsync */
 	struct list_head queued_writes;
 
@@ -161,6 +164,9 @@ struct fuse_file {
 
 	/** Entry on inode's write_files list */
 	struct list_head write_entry;
+
+	/** Entry on inode's rw_files list */
+	struct list_head rw_entry;
 
 	/** RB node to be linked on fuse_conn->polled_files */
 	struct rb_node polled_node;
