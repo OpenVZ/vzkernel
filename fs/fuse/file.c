@@ -18,6 +18,7 @@
 #include <linux/aio.h>
 #include <linux/falloc.h>
 #include <linux/task_io_accounting_ops.h>
+#include <linux/virtinfo.h>
 
 static const struct file_operations fuse_direct_io_file_operations;
 static void fuse_sync_writes(struct inode *inode);
@@ -28,6 +29,7 @@ static void fuse_account_request(struct fuse_conn *fc, size_t count)
 
 	ub_percpu_inc(ub, fuse_requests);
 	ub_percpu_add(ub, fuse_bytes, count);
+	virtinfo_notifier_call_irq(VITYPE_IO, VIRTINFO_IO_FUSE_REQ, NULL);
 }
 
 static int fuse_send_open(struct fuse_conn *fc, u64 nodeid, struct file *file,
