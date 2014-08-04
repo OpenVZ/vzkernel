@@ -2054,7 +2054,8 @@ static int fuse_writepage_locked(struct page *page)
 	struct page *tmp_page;
 	int error = -ENOMEM;
 
-	set_page_writeback(page);
+	if (test_set_page_writeback(page))
+		BUG();
 
 	wpa = fuse_writepage_args_alloc();
 	if (!wpa)
