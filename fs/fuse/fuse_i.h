@@ -1320,6 +1320,12 @@ int fuse_set_acl(struct user_namespace *mnt_userns, struct inode *inode,
 int fuse_readdir(struct file *file, struct dir_context *ctx);
 
 /**
+ * Decrement reference count of a request.  If count goes to zero free
+ * the request.
+ */
+void fuse_put_request(struct fuse_req *req);
+
+/**
  * Return the number of bytes in an arguments list
  */
 unsigned int fuse_len_args(unsigned int numargs, struct fuse_arg *args);
