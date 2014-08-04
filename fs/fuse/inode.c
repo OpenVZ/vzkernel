@@ -255,6 +255,9 @@ void fuse_change_attributes(struct inode *inode, struct fuse_attr *attr,
 
 static void fuse_init_inode(struct inode *inode, struct fuse_attr *attr)
 {
+	struct fuse_inode *fi = get_fuse_inode(inode);
+	atomic_set(&fi->num_openers, 0);
+
 	inode->i_mode = attr->mode & S_IFMT;
 	inode->i_size = attr->size;
 	inode->i_mtime.tv_sec  = attr->mtime;
