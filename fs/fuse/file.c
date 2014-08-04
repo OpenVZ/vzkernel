@@ -2509,7 +2509,11 @@ static int fuse_launder_folio(struct folio *folio)
  */
 static void fuse_vma_close(struct vm_area_struct *vma)
 {
-	filemap_write_and_wait(vma->vm_file->f_mapping);
+	struct file *file = vma->vm_file;
+	struct fuse_file *ff = file->private_data;
+
+	if (!ff->fm->fc->writeback_cache)
+		filemap_write_and_wait(file->f_mapping);
 }
 
 /*
