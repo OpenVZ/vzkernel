@@ -685,6 +685,9 @@ struct fuse_conn {
 	/** Filesystem is fully reponsible for page cache invalidation. */
 	unsigned explicit_inval_data:1;
 
+	/** Wait for response from daemon on close */
+	unsigned close_wait:1;
+
 	/** Does the filesystem support readdirplus? */
 	unsigned do_readdirplus:1;
 
