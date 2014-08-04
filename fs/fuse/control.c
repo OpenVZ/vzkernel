@@ -415,6 +415,46 @@ static const struct file_operations fuse_conn_files_ops = {
 	.release = fuse_conn_release,
 };
 
+static int fuse_conn_show(struct seq_file *sf, void *v)
+{
+	struct fuse_conn *fc = sf->private;
+	seq_printf(sf, "Connected: %d\n", fc->connected);
+	seq_printf(sf, "Blocked: %d\n", fc->blocked);
+	seq_printf(sf, "WQ active: %d\n", waitqueue_active(&fc->iq.waitq));
+	seq_printf(sf, "Blocked_wq active: %d\n", waitqueue_active(&fc->blocked_waitq));
+	return 0;
+}
+
+static int fuse_conn_info_open(struct inode *inode, struct file *filp)
+{
+	int ret;
+	struct fuse_conn *conn;
+
+	conn = fuse_ctl_file_conn_get(filp);
+	if (!conn)
+		return -ESTALE;
+
+	ret = single_open(filp, fuse_conn_show, conn);
+	if (ret)
+		fuse_conn_put(conn);
+
+	return ret;
+}
+
+static int fuse_conn_info_release(struct inode *inode, struct file *filp)
+{
+	struct fuse_conn *conn = ((struct seq_file *)filp->private_data)->private;
+	fuse_conn_put(conn);
+	return single_release(inode, filp);
+}
+
+static const struct file_operations fuse_conn_info_ops = {
+	.open = fuse_conn_info_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = fuse_conn_info_release,
+};
+
 static struct dentry *fuse_ctl_add_dentry(struct dentry *parent,
 					  struct fuse_conn *fc,
 					  const char *name,
@@ -497,7 +537,10 @@ int fuse_ctl_add_conn(struct fuse_conn *fc)
 #endif
 	    !fuse_ctl_add_dentry(parent, fc, "open_files",
 		    		S_IFREG | 0600, 1, NULL,
-				&fuse_conn_files_ops)
+				&fuse_conn_files_ops) ||
+	    !fuse_ctl_add_dentry(parent, fc, "conn_info",
+			    	S_IFREG | 0600, 1, NULL,
+				&fuse_conn_info_ops)
 	    )
 		goto err;
 
