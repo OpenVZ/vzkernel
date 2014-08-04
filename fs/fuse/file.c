@@ -857,6 +857,7 @@ static int fuse_do_readpage(struct file *file, struct page *page)
 	req->num_pages = 1;
 	req->pages[0] = page;
 	req->page_descs[0].length = count;
+	req->page_cache = 1;
 	init_sync_kiocb(&iocb, file);
 	io = (struct fuse_io_priv) FUSE_IO_PRIV_SYNC(&iocb);
 	num_read = fuse_send_read(req, &io, pos, count, NULL);
@@ -948,6 +949,7 @@ static void fuse_send_readpages(struct fuse_req *req, struct file *file)
 	req->out.argpages = 1;
 	req->out.page_zeroing = 1;
 	req->out.page_replace = 1;
+	req->page_cache = 1;
 	fuse_read_fill(req, file, pos, count, FUSE_READ);
 	req->misc.read.attr_ver = fuse_get_attr_version(fc);
 	if (fc->async_read) {
