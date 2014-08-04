@@ -187,7 +187,7 @@ static int fuse_dentry_revalidate(struct dentry *entry, unsigned int flags)
 	inode = ACCESS_ONCE(entry->d_inode);
 	if (inode && is_bad_inode(inode))
 		goto invalid;
-	else if (fuse_dentry_time(entry) < get_jiffies_64()) {
+	else if (1) {
 		int err;
 		struct fuse_entry_out outarg;
 		struct fuse_req *req;
@@ -245,13 +245,6 @@ static int fuse_dentry_revalidate(struct dentry *entry, unsigned int flags)
 				       entry_attr_timeout(&outarg),
 				       attr_version);
 		fuse_change_entry_timeout(entry, &outarg);
-	} else if (inode) {
-		fc = get_fuse_conn(inode);
-		if (fc->readdirplus_auto) {
-			parent = dget_parent(entry);
-			fuse_advise_use_readdirplus(parent->d_inode);
-			dput(parent);
-		}
 	}
 	ret = 1;
 out:
