@@ -330,6 +330,9 @@ struct fuse_req {
 	/* Request flags, updated with test/set/clear_bit() */
 	unsigned long flags;
 
+	/** Request contains pages from page-cache */
+	unsigned page_cache:1;
+
 	/** The request input */
 	struct fuse_in in;
 
