@@ -1145,7 +1145,7 @@ static void fuse_fillattr(struct inode *inode, struct fuse_attr *attr,
 }
 
 static int fuse_do_getattr(struct inode *inode, struct kstat *stat,
-			   struct file *file)
+			   struct file *file, int get_size_form_attr)
 {
 	int err;
 	struct fuse_getattr_in inarg;
@@ -1183,11 +1183,26 @@ static int fuse_do_getattr(struct inode *inode, struct kstat *stat,
 			fuse_change_attributes(inode, &outarg.attr,
 					       attr_timeout(&outarg),
 					       attr_version);
-			if (stat)
+			if (get_size_form_attr)
+				stat->size = outarg.attr.size;
+			else if (stat)
 				fuse_fillattr(inode, &outarg.attr, stat);
 		}
 	}
 	return err;
+}
+
+int fuse_getattr_size(struct inode *inode, struct file *file, u64 *size)
+{
+	struct kstat stat;
+	int err;
+
+	err = fuse_do_getattr(inode, &stat, file, 1);
+	if (err)
+		return err;
+
+	*size = stat.size;
+	return 0;
 }
 
 static int fuse_update_get_attr(struct inode *inode, struct file *file,
@@ -1209,7 +1224,7 @@ static int fuse_update_get_attr(struct inode *inode, struct file *file,
 
 	if (sync) {
 		forget_all_cached_acls(inode);
-		err = fuse_do_getattr(inode, stat, file);
+		err = fuse_do_getattr(inode, stat, file, 0);
 	} else if (stat) {
 		generic_fillattr(&init_user_ns, inode, stat);
 		stat->mode = fi->orig_i_mode;
@@ -1359,7 +1374,7 @@ static int fuse_perm_getattr(struct inode *inode, int mask)
 		return -ECHILD;
 
 	forget_all_cached_acls(inode);
-	return fuse_do_getattr(inode, NULL, NULL);
+	return fuse_do_getattr(inode, NULL, NULL, 0);
 }
 
 /*
@@ -1913,7 +1928,7 @@ static int fuse_setattr(struct user_namespace *mnt_userns, struct dentry *entry,
 			 * ia_mode calculation may have used stale i_mode.
 			 * Refresh and recalculate.
 			 */
-			ret = fuse_do_getattr(inode, NULL, file);
+			ret = fuse_do_getattr(inode, NULL, file, 0);
 			if (ret)
 				return ret;
 
