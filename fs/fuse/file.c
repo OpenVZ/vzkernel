@@ -232,6 +232,9 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 	if (fuse_is_bad(inode))
 		return -EIO;
 
+	if ((file->f_flags & O_DIRECT) && !fc->direct_enable)
+		return -EINVAL;
+
 	err = generic_file_open(inode, file);
 	if (err)
 		return err;
