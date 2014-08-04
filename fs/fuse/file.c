@@ -73,13 +73,23 @@ struct fuse_file *fuse_file_alloc(struct fuse_conn *fc)
 
 	spin_lock(&fc->lock);
 	ff->kh = ++fc->khctr;
+	ff->ff_dentry = NULL;
+	list_add_tail(&ff->fl, &fc->conn_files);
 	spin_unlock(&fc->lock);
 
 	return ff;
 }
 
+static void fuse_file_list_del(struct fuse_file *ff)
+{
+	spin_lock(&ff->fc->lock);
+	list_del_init(&ff->fl);
+	spin_unlock(&ff->fc->lock);
+}
+
 void fuse_file_free(struct fuse_file *ff)
 {
+	fuse_file_list_del(ff);
 	fuse_request_free(ff->reserved_req);
 	kfree(ff);
 }
@@ -131,9 +141,11 @@ static void fuse_file_put(struct fuse_file *ff, bool sync)
 		if (sync) {
 			req->background = 0;
 			fuse_request_send(ff->fc, req);
+			fuse_file_list_del(ff);
 			path_put(&req->misc.release.path);
 			fuse_put_request(ff->fc, req);
 		} else {
+			fuse_file_list_del(ff);
 			req->end = fuse_release_end;
 			req->background = 1;
 			fuse_request_send_background(ff->fc, req);
@@ -192,6 +204,8 @@ void fuse_finish_open(struct inode *inode, struct file *file)
 {
 	struct fuse_file *ff = file->private_data;
 	struct fuse_conn *fc = get_fuse_conn(inode);
+
+	ff->ff_dentry = file->f_dentry;
 
 	if (ff->open_flags & FOPEN_DIRECT_IO)
 		file->f_op = &fuse_direct_io_file_operations;
@@ -316,6 +330,7 @@ static int fuse_release(struct inode *inode, struct file *file)
 void fuse_sync_release(struct fuse_file *ff, int flags)
 {
 	WARN_ON(atomic_read(&ff->count) > 1);
+	fuse_file_list_del(ff);
 	fuse_prepare_release(ff, flags, FUSE_RELEASE);
 	ff->reserved_req->force = 1;
 	ff->reserved_req->background = 0;
