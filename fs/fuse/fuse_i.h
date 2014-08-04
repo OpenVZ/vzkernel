@@ -272,6 +272,8 @@ struct fuse_page_desc {
 	unsigned int offset;
 };
 
+struct fuse_req;
+
 struct fuse_args {
 	uint64_t nodeid;
 	uint32_t opcode;
@@ -292,9 +294,16 @@ struct fuse_args {
 	struct fuse_in_arg in_args[3];
 	struct fuse_arg out_args[2];
 	void (*end)(struct fuse_mount *fm, struct fuse_args *args, int error);
+	struct fuse_req *req;
 
 	/** Request contains pages from page-cache */
 	unsigned page_cache:1;
+
+	/** Request was killed -- pages were released */
+	unsigned killed:1;
+
+	/** Inode used in the request or NULL */
+	struct inode *inode;
 };
 
 struct fuse_args_pages {
