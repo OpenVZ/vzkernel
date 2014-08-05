@@ -8,6 +8,7 @@
 #include <linux/blkdev.h>
 #include <linux/bootmem.h>	/* for max_pfn/max_low_pfn */
 #include <linux/slab.h>
+#include <bc/beancounter.h>
 
 #include "blk.h"
 
@@ -117,6 +118,9 @@ static void ioc_release_fn(struct work_struct *work)
 
 	spin_unlock_irqrestore(&ioc->lock, flags);
 
+#ifdef CONFIG_BEANCOUNTERS
+	put_beancounter(ioc->ioc_ub);
+#endif
 	kmem_cache_free(iocontext_cachep, ioc);
 }
 
@@ -150,8 +154,12 @@ void put_io_context(struct io_context *ioc)
 		spin_unlock_irqrestore(&ioc->lock, flags);
 	}
 
-	if (free_ioc)
+	if (free_ioc) {
 		kmem_cache_free(iocontext_cachep, ioc);
+#ifdef CONFIG_BEANCOUNTERS
+		put_beancounter(ioc->ioc_ub);
+#endif
+	}
 }
 EXPORT_SYMBOL(put_io_context);
 
@@ -250,6 +258,9 @@ int create_task_io_context(struct task_struct *task, gfp_t gfp_flags, int node)
 	INIT_RADIX_TREE(&ioc->icq_tree, GFP_ATOMIC | __GFP_HIGH);
 	INIT_HLIST_HEAD(&ioc->icq_list);
 	INIT_WORK(&ioc->release_work, ioc_release_fn);
+#ifdef CONFIG_BEANCOUNTERS
+	ioc->ioc_ub = get_beancounter(get_exec_ub());
+#endif
 
 	/*
 	 * Try to install.  ioc shouldn't be installed if someone else
@@ -262,8 +273,12 @@ int create_task_io_context(struct task_struct *task, gfp_t gfp_flags, int node)
 	if (!task->io_context &&
 	    (task == current || !(task->flags & PF_EXITING)))
 		task->io_context = ioc;
-	else
+	else {
+#ifdef CONFIG_BEANCOUNTERS
+		put_beancounter(ioc->ioc_ub);
+#endif
 		kmem_cache_free(iocontext_cachep, ioc);
+	}
 
 	ret = task->io_context ? 0 : -EBUSY;
 
