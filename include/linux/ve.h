@@ -191,6 +191,8 @@ static inline struct ve_struct *cgroup_ve(struct cgroup *cgroup)
 }
 
 extern unsigned long long ve_relative_clock(struct timespec * ts);
+extern void monotonic_abs_to_ve(clockid_t which_clock, struct timespec *tp);
+extern void monotonic_ve_to_abs(clockid_t which_clock, struct timespec *tp);
 
 #ifdef CONFIG_VTTYS
 extern int vtty_open_master(int veid, int idx);
@@ -233,6 +235,11 @@ static inline struct user_namespace *ve_init_user_ns(void)
 
 #define kthread_create_on_node_ve(ve, threadfn, data, node, namefmt...)	\
 	kthread_create_on_node_ve(threadfn, data, node, namefmt...)
+
+static inline void monotonic_abs_to_ve(clockid_t which_clock,
+				struct timespec *tp) { }
+static inline void monotonic_ve_to_abs(clockid_t which_clock,
+				struct timepsec *tp) { }
 
 static inline struct cgroup *cgroup_get_ve_root(struct cgroup *cgrp)
 {
