@@ -51,6 +51,7 @@
 #include <linux/hashtable.h>
 #include <linux/compat.h>
 #include <linux/nospec.h>
+#include <linux/ve.h>
 
 #include "timekeeping.h"
 #include "posix-timers.h"
@@ -75,6 +76,46 @@ static DEFINE_SPINLOCK(hash_lock);
 static const struct k_clock * const posix_clocks[];
 static const struct k_clock *clockid_to_kclock(const clockid_t id);
 static const struct k_clock clock_realtime, clock_monotonic;
+
+#define clock_is_monotonic(which_clock) \
+	((which_clock) == CLOCK_MONOTONIC || \
+	 (which_clock) == CLOCK_MONOTONIC_RAW || \
+	 (which_clock) == CLOCK_MONOTONIC_COARSE)
+
+#ifdef CONFIG_VE
+static struct timespec64 zero_time;
+
+void monotonic_abs_to_ve(clockid_t which_clock, struct timespec64 *tp)
+{
+	struct timespec64 offset;
+
+	if (!clock_is_monotonic(which_clock))
+		return;
+
+	offset = ns_to_timespec64(get_exec_env()->start_time);
+	set_normalized_timespec64(tp,
+				  tp->tv_sec - offset.tv_sec,
+				  tp->tv_nsec - offset.tv_nsec);
+}
+
+void monotonic_ve_to_abs(clockid_t which_clock, struct timespec64 *tp)
+{
+	struct timespec64 offset;
+
+	if (!clock_is_monotonic(which_clock))
+		return;
+
+	offset = ns_to_timespec64(get_exec_env()->start_time);
+	set_normalized_timespec64(tp,
+				  tp->tv_sec + offset.tv_sec,
+				  tp->tv_nsec + offset.tv_nsec);
+
+	if (timespec64_compare(tp, &zero_time) <= 0) {
+		tp->tv_sec =  0;
+		tp->tv_nsec = 1;
+	}
+}
+#endif
 
 /*
  * we assume that the new SIGEV_THREAD_ID shares no bits with the other
@@ -925,6 +966,9 @@ retry:
 	if (!timr)
 		return -EINVAL;
 
+	if ((flags & TIMER_ABSTIME) &&
+	    (new_spec64->it_value.tv_sec || new_spec64->it_value.tv_nsec))
+		monotonic_ve_to_abs(timr->it_clock, &new_spec64->it_value);
 	kc = timr->kclock;
 	if (WARN_ON_ONCE(!kc || !kc->timer_set))
 		error = -EINVAL;
@@ -1107,6 +1151,7 @@ SYSCALL_DEFINE2(clock_gettime, const clockid_t, which_clock,
 
 	error = kc->clock_get(which_clock, &kernel_tp);
 
+	monotonic_abs_to_ve(which_clock, &kernel_tp);
 	if (!error && put_timespec64(&kernel_tp, tp))
 		error = -EFAULT;
 
@@ -1183,6 +1228,7 @@ COMPAT_SYSCALL_DEFINE2(clock_gettime, clockid_t, which_clock,
 
 	err = kc->clock_get(which_clock, &ts);
 
+	monotonic_abs_to_ve(which_clock, &ts);
 	if (!err && compat_put_timespec64(&ts, tp))
 		err = -EFAULT;
 
@@ -1268,8 +1314,10 @@ SYSCALL_DEFINE4(clock_nanosleep, const clockid_t, which_clock, int, flags,
 
 	if (!timespec64_valid(&t))
 		return -EINVAL;
-	if (flags & TIMER_ABSTIME)
+	if (flags & TIMER_ABSTIME) {
+		monotonic_ve_to_abs(which_clock, &t);
 		rmtp = NULL;
+	}
 	current->restart_block.nanosleep.type = rmtp ? TT_NATIVE : TT_NONE;
 	current->restart_block.nanosleep.rmtp = rmtp;
 
@@ -1295,8 +1343,10 @@ COMPAT_SYSCALL_DEFINE4(clock_nanosleep, clockid_t, which_clock, int, flags,
 
 	if (!timespec64_valid(&t))
 		return -EINVAL;
-	if (flags & TIMER_ABSTIME)
+	if (flags & TIMER_ABSTIME) {
+		monotonic_ve_to_abs(which_clock, &t);
 		rmtp = NULL;
+	}
 	current->restart_block.nanosleep.type = rmtp ? TT_COMPAT : TT_NONE;
 	current->restart_block.nanosleep.compat_rmtp = rmtp;
 
