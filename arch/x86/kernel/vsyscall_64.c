@@ -54,7 +54,7 @@
 #include "vsyscall_trace.h"
 
 DEFINE_VVAR(int, vgetcpu_mode);
-DEFINE_VVAR(struct vsyscall_gtod_data, vsyscall_gtod_data);
+DEFINE_VVAR(struct vsyscall_gtod_data, vsyscall_gtod_data) = { .gettime_monotonic_enabled = 0, };
 
 static enum { EMULATE, NATIVE, NONE } vsyscall_mode = EMULATE;
 
@@ -326,6 +326,24 @@ sigsegv:
 	force_sig(SIGSEGV, current);
 	return true;
 }
+#ifdef CONFIG_SYSCTL
+static ctl_table kernel_table2[] = {
+	{ .procname = "vsyscall64_gettime_monotonic",
+	  .data = &vsyscall_gtod_data.gettime_monotonic_enabled, .maxlen = sizeof(int),
+	  .mode = 0644,
+	  .proc_handler = proc_dointvec
+	},
+	{
+	},
+};
+static ctl_table kernel_root_table2[] = {
+	{ .procname = "kernel", .mode = 0555,
+	  .child = kernel_table2
+	},
+	{
+	}
+};
+#endif
 
 /*
  * Assume __initcall executes before all user space. Hopefully kmod
@@ -392,7 +410,9 @@ void __init map_vsyscall(void)
 static int __init vsyscall_init(void)
 {
 	BUG_ON(VSYSCALL_ADDR(0) != __fix_to_virt(VSYSCALL_FIRST_PAGE));
-
+#ifdef CONFIG_SYSCTL
+	register_sysctl_table(kernel_root_table2);
+#endif
 	on_each_cpu(cpu_vsyscall_init, NULL, 1);
 	/* notifier priority > KVM */
 	hotcpu_notifier(cpu_vsyscall_notifier, 30);
