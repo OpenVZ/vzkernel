@@ -127,6 +127,9 @@ static inline struct ve_struct *css_to_ve(struct cgroup_subsys_state *css)
 
 extern struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id);
 
+extern void monotonic_abs_to_ve(clockid_t which_clock, struct timespec64 *tp);
+extern void monotonic_ve_to_abs(clockid_t which_clock, struct timespec64 *tp);
+
 #define ve_feature_set(ve, f)			\
 	!!((ve)->features & VE_FEATURE_##f)
 
@@ -169,6 +172,11 @@ static inline struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
 
 static inline int vz_security_family_check(struct net *net, int family, int type) { return 0; }
 static inline int vz_security_protocol_check(struct net *net, int protocol) { return 0; }
+
+static inline void monotonic_abs_to_ve(clockid_t which_clock,
+				       struct timespec64 *tp) { }
+static inline void monotonic_ve_to_abs(clockid_t which_clock,
+				       struct timepsec64 *tp) { }
 
 #endif	/* CONFIG_VE */
 

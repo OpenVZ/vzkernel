@@ -26,6 +26,7 @@
 #include <linux/syscalls.h>
 #include <linux/compat.h>
 #include <linux/rcupdate.h>
+#include <linux/ve.h>
 
 struct timerfd_ctx {
 	union {
@@ -432,8 +433,8 @@ SYSCALL_DEFINE2(timerfd_create, int, clockid, int, flags)
 	return ufd;
 }
 
-static int do_timerfd_settime(int ufd, int flags, 
-		const struct itimerspec64 *new,
+static int do_timerfd_settime(int ufd, int flags,
+		struct itimerspec64 *new,
 		struct itimerspec64 *old)
 {
 	struct fd f;
@@ -497,6 +498,9 @@ static int do_timerfd_settime(int ufd, int flags,
 	/*
 	 * Re-program the timer to the new value ...
 	 */
+	if ((flags & TFD_TIMER_ABSTIME) &&
+	    (new->it_value.tv_sec || new->it_value.tv_nsec))
+		monotonic_ve_to_abs(ctx->clockid, &new->it_value);
 	ret = timerfd_setup(ctx, flags, new);
 
 	spin_unlock_irq(&ctx->wqh.lock);
