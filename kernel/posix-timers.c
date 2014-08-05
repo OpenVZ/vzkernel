@@ -49,6 +49,7 @@
 #include <linux/export.h>
 #include <linux/hashtable.h>
 #include <linux/nospec.h>
+#include <linux/ve.h>
 
 #include "time/timekeeping.h"
 
@@ -126,6 +127,33 @@ static DEFINE_SPINLOCK(hash_lock);
  */
 
 static struct k_clock posix_clocks[MAX_CLOCKS];
+
+#define clock_is_monotonic(which_clock) \
+	((which_clock) == CLOCK_MONOTONIC || \
+	 (which_clock) == CLOCK_MONOTONIC_RAW || \
+	 (which_clock) == CLOCK_MONOTONIC_COARSE)
+
+#ifdef CONFIG_VE
+void monotonic_abs_to_ve(clockid_t which_clock, struct timespec *tp)
+{
+	struct ve_struct *ve = get_exec_env();
+
+	if (clock_is_monotonic(which_clock))
+		set_normalized_timespec(tp,
+				tp->tv_sec - ve->start_timespec.tv_sec,
+				tp->tv_nsec - ve->start_timespec.tv_nsec);
+}
+
+void monotonic_ve_to_abs(clockid_t which_clock, struct timespec *tp)
+{
+	struct ve_struct *ve = get_exec_env();
+
+	if (clock_is_monotonic(which_clock))
+		set_normalized_timespec(tp,
+				tp->tv_sec + ve->start_timespec.tv_sec,
+				tp->tv_nsec + ve->start_timespec.tv_nsec);
+}
+#endif
 
 /*
  * These ones are defined below.
@@ -906,6 +934,9 @@ retry:
 	if (!timr)
 		return -EINVAL;
 
+	if ((flags & TIMER_ABSTIME) &&
+	    (new_spec.it_value.tv_sec || new_spec.it_value.tv_nsec))
+		monotonic_ve_to_abs(timr->it_clock, &new_spec.it_value);
 	kc = clockid_to_kclock(timr->it_clock);
 	if (WARN_ON_ONCE(!kc || !kc->timer_set))
 		error = -EINVAL;
@@ -1039,6 +1070,7 @@ SYSCALL_DEFINE2(clock_gettime, const clockid_t, which_clock,
 
 	error = kc->clock_get(which_clock, &kernel_tp);
 
+	monotonic_abs_to_ve(which_clock, &kernel_tp);
 	if (!error && copy_to_user(tp, &kernel_tp, sizeof (kernel_tp)))
 		error = -EFAULT;
 
@@ -1114,6 +1146,9 @@ SYSCALL_DEFINE4(clock_nanosleep, const clockid_t, which_clock, int, flags,
 
 	if (!timespec_valid(&t))
 		return -EINVAL;
+
+	if (flags & TIMER_ABSTIME)
+		monotonic_ve_to_abs(which_clock, &t);
 
 	return kc->nsleep(which_clock, flags, &t, rmtp);
 }
