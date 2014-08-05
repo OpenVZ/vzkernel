@@ -131,6 +131,9 @@ static inline void ve_set_task_start_time(struct ve_struct *ve,
 		t->real_start_time_ct = ve_get_uptime(ve);
 }
 
+extern void monotonic_abs_to_ve(clockid_t which_clock, struct timespec64 *tp);
+extern void monotonic_ve_to_abs(clockid_t which_clock, struct timespec64 *tp);
+
 #define ve_feature_set(ve, f)			\
 	!!((ve)->features & VE_FEATURE_##f)
 
@@ -173,6 +176,11 @@ static inline struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
 
 static inline int vz_security_family_check(struct net *net, int family, int type) { return 0; }
 static inline int vz_security_protocol_check(struct net *net, int protocol) { return 0; }
+
+static inline void monotonic_abs_to_ve(clockid_t which_clock,
+				       struct timespec64 *tp) { }
+static inline void monotonic_ve_to_abs(clockid_t which_clock,
+				       struct timepsec64 *tp) { }
 
 #endif	/* CONFIG_VE */
 
