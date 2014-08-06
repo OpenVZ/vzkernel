@@ -3040,6 +3040,8 @@ static int shmem_parse_options(char *options, struct shmem_sb_info *sbinfo,
 		}
 		if (!*this_char)
 			continue;
+		if (!strcmp(this_char, "relatime"))
+			continue;
 		if ((value = strchr(this_char,'=')) != NULL) {
 			*value++ = 0;
 		} else {
