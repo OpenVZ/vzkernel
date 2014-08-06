@@ -121,7 +121,7 @@ static unsigned long bad_file_get_unmapped_area(struct file *file,
 	return -EIO;
 }
 
-static int bad_file_check_flags(int flags)
+static int bad_file_set_flags(struct file *file, int flags)
 {
 	return -EIO;
 }
@@ -166,7 +166,7 @@ static const struct file_operations bad_file_ops =
 	.lock		= bad_file_lock,
 	.sendpage	= bad_file_sendpage,
 	.get_unmapped_area = bad_file_get_unmapped_area,
-	.check_flags	= bad_file_check_flags,
+	.set_flags	= bad_file_set_flags,
 	.flock		= bad_file_flock,
 	.splice_write	= bad_file_splice_write,
 	.splice_read	= bad_file_splice_read,
