@@ -214,6 +214,9 @@ enum {
 	/* see the comment above CGRP_ROOT_SANE_BEHAVIOR for details */
 	CGRP_SANE_BEHAVIOR,
 	CGRP_SELF_DESTRUCTION,
+
+	/* container virtualization */
+	CGRP_VE_TOP_CGROUP_VIRTUAL,
 };
 
 struct cgroup_name {

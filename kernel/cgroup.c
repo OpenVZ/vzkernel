@@ -1758,6 +1758,7 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 			mutex_lock(&cgroup_mutex);
 			top_cgrp->release_agent = opts.release_agent;
 			opts.release_agent = NULL;
+			set_bit(CGRP_VE_TOP_CGROUP_VIRTUAL, &top_cgrp->flags);
 			mutex_unlock(&cgroup_mutex);
 		}
 
@@ -1878,15 +1879,14 @@ int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
 			goto out;
 		memcpy(start, name, len);
 
-		/* hide fake top-cgroup in path */
-		if (cgrp == &cgrp->root->top_cgroup)
-			cgrp = &cgrp->root->top_cgroup;
-
 		if (--start < buf)
 			goto out;
 		*start = '/';
 
 		cgrp = cgrp->parent;
+		/* Hide fake root-cgroup in virtualized hierarchy */
+		if (test_bit(CGRP_VE_TOP_CGROUP_VIRTUAL, &cgrp->flags))
+			break;
 	} while (cgrp->parent);
 	ret = 0;
 	memmove(buf, start, buf + buflen - start);
