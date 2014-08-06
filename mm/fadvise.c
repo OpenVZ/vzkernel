@@ -7,6 +7,7 @@
  *		Initial version.
  */
 
+#include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/file.h>
 #include <linux/fs.h>
@@ -25,11 +26,10 @@
  * POSIX_FADV_WILLNEED could set PG_Referenced, and POSIX_FADV_NOREUSE could
  * deactivate the pages and clear PG_Referenced.
  */
-SYSCALL_DEFINE4(fadvise64_64, int, fd, loff_t, offset, loff_t, len, int, advice)
+int generic_fadvise(struct file *file, loff_t offset, loff_t len, int advice)
 {
-	struct fd f = fdget(fd);
 	struct inode *inode;
-	struct address_space *mapping;
+	struct address_space *mapping = file->f_mapping;
 	struct backing_dev_info *bdi;
 	loff_t endbyte;			/* inclusive */
 	pgoff_t start_index;
@@ -37,20 +37,7 @@ SYSCALL_DEFINE4(fadvise64_64, int, fd, loff_t, offset, loff_t, len, int, advice)
 	unsigned long nrpages;
 	int ret = 0;
 
-	if (!f.file)
-		return -EBADF;
-
-	inode = file_inode(f.file);
-	if (S_ISFIFO(inode->i_mode)) {
-		ret = -ESPIPE;
-		goto out;
-	}
-
-	mapping = f.file->f_mapping;
-	if (!mapping || len < 0) {
-		ret = -EINVAL;
-		goto out;
-	}
+	inode = file_inode(file);
 
 	if (IS_DAX(inode)) {
 		switch (advice) {
@@ -79,21 +66,21 @@ SYSCALL_DEFINE4(fadvise64_64, int, fd, loff_t, offset, loff_t, len, int, advice)
 
 	switch (advice) {
 	case POSIX_FADV_NORMAL:
-		f.file->f_ra.ra_pages = bdi->ra_pages;
-		spin_lock(&f.file->f_lock);
-		f.file->f_mode &= ~FMODE_RANDOM;
-		spin_unlock(&f.file->f_lock);
+		file->f_ra.ra_pages = bdi->ra_pages;
+		spin_lock(&file->f_lock);
+		file->f_mode &= ~FMODE_RANDOM;
+		spin_unlock(&file->f_lock);
 		break;
 	case POSIX_FADV_RANDOM:
-		spin_lock(&f.file->f_lock);
-		f.file->f_mode |= FMODE_RANDOM;
-		spin_unlock(&f.file->f_lock);
+		spin_lock(&file->f_lock);
+		file->f_mode |= FMODE_RANDOM;
+		spin_unlock(&file->f_lock);
 		break;
 	case POSIX_FADV_SEQUENTIAL:
-		f.file->f_ra.ra_pages = bdi->ra_pages * 2;
-		spin_lock(&f.file->f_lock);
-		f.file->f_mode &= ~FMODE_RANDOM;
-		spin_unlock(&f.file->f_lock);
+		file->f_ra.ra_pages = bdi->ra_pages * 2;
+		spin_lock(&file->f_lock);
+		file->f_mode &= ~FMODE_RANDOM;
+		spin_unlock(&file->f_lock);
 		break;
 	case POSIX_FADV_WILLNEED:
 		/* First and last PARTIAL page! */
@@ -109,7 +96,7 @@ SYSCALL_DEFINE4(fadvise64_64, int, fd, loff_t, offset, loff_t, len, int, advice)
 		 * Ignore return value because fadvise() shall return
 		 * success even if filesystem can't retrieve a hint,
 		 */
-		force_page_cache_readahead(mapping, f.file, start_index,
+		force_page_cache_readahead(mapping, file, start_index,
 					   nrpages);
 		break;
 	case POSIX_FADV_NOREUSE:
@@ -144,7 +131,34 @@ SYSCALL_DEFINE4(fadvise64_64, int, fd, loff_t, offset, loff_t, len, int, advice)
 		ret = -EINVAL;
 	}
 out:
-	fdput(f);
+	return ret;
+}
+EXPORT_SYMBOL(generic_fadvise);
+
+SYSCALL_DEFINE4(fadvise64_64, int, fd, loff_t, offset, loff_t, len, int, advice)
+{
+	struct file *file = fget(fd);
+	int (*fadvise)(struct file *,loff_t, loff_t, int) = generic_fadvise;
+	int ret = 0;
+
+	if (!file)
+		return -EBADF;
+
+	if (S_ISFIFO(file->f_path.dentry->d_inode->i_mode)) {
+		ret = -ESPIPE;
+		goto out;
+	}
+
+	if (!file->f_mapping || len < 0) {
+		ret = -EINVAL;
+		goto out;
+	}
+	if (file->f_op && file->f_op->fadvise)
+		fadvise = file->f_op->fadvise;
+
+	ret = fadvise(file, offset, len, advice);
+out:
+	fput(file);
 	return ret;
 }
 
