@@ -1018,6 +1018,11 @@ got:
 	if (err)
 		goto fail_drop;
 
+	if (check_bd_full(inode, 1)) {
+		err = -ENOSPC;
+		goto fail_free_drop;
+	}
+
 	err = ext4_init_acl(handle, inode, dir);
 	if (err)
 		goto fail_free_drop;
