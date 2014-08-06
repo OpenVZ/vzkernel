@@ -44,7 +44,7 @@ nfs4_file_open(struct inode *inode, struct file *filp)
 
 	dprintk("NFS: open file(%pd2)\n", dentry);
 
-	err = nfs_check_flags(openflags);
+	err = nfs_set_flags(filp, openflags);
 	if (err)
 		return err;
 
@@ -284,7 +284,7 @@ const struct file_operations_extend nfs4_file_operations = {
 		.flock		= nfs_flock,
 		.splice_read	= nfs_file_splice_read,
 		.splice_write	= nfs_file_splice_write,
-		.check_flags	= nfs_check_flags,
+		.set_flags	= nfs_set_flags,
 		.setlease	= nfs_setlease,
 #ifdef CONFIG_NFS_V4_2
 		.llseek		= nfs4_file_llseek,
