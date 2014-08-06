@@ -92,6 +92,7 @@
 #ifdef CONFIG_LOCKUP_DETECTOR
 #include <linux/nmi.h>
 #endif
+extern unsigned relatime_interval; /* fs/inode.c */
 
 
 #if defined(CONFIG_SYSCTL)
@@ -1602,6 +1603,13 @@ static struct ctl_table binfmt_misc_table[] = {
 #endif
 
 static struct ctl_table fs_table[] = {
+	{
+		.procname	= "relatime_interval",
+		.data		= &relatime_interval,
+		.maxlen		= sizeof(unsigned),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec,
+	},
 	{
 		.procname	= "inode-nr",
 		.data		= &inodes_stat,
