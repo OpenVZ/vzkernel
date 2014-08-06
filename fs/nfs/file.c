@@ -49,14 +49,14 @@ static const struct vm_operations_struct nfs_file_vm_ops;
 # define IS_SWAPFILE(inode)	(0)
 #endif
 
-int nfs_check_flags(int flags)
+int nfs_set_flags(struct file * filp, int flags)
 {
 	if ((flags & (O_APPEND | O_DIRECT)) == (O_APPEND | O_DIRECT))
 		return -EINVAL;
 
-	return 0;
+	return generic_set_file_flags(filp, flags);
 }
-EXPORT_SYMBOL_GPL(nfs_check_flags);
+EXPORT_SYMBOL_GPL(nfs_set_flags);
 
 /*
  * Open file
@@ -69,7 +69,7 @@ nfs_file_open(struct inode *inode, struct file *filp)
 	dprintk("NFS: open file(%pD2)\n", filp);
 
 	nfs_inc_stats(inode, NFSIOS_VFSOPEN);
-	res = nfs_check_flags(filp->f_flags);
+	res = nfs_set_flags(filp, filp->f_flags);
 	if (res)
 		return res;
 
@@ -934,7 +934,7 @@ const struct file_operations nfs_file_operations = {
 	.flock		= nfs_flock,
 	.splice_read	= nfs_file_splice_read,
 	.splice_write	= nfs_file_splice_write,
-	.check_flags	= nfs_check_flags,
+	.set_flags	= nfs_set_flags,
 	.setlease	= nfs_setlease,
 };
 EXPORT_SYMBOL_GPL(nfs_file_operations);
