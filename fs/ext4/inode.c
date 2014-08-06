@@ -2632,8 +2632,15 @@ static int ext4_nonda_switch(struct super_block *sb)
 	if (dirty_clusters && (free_clusters < 2 * dirty_clusters))
 		try_to_writeback_inodes_sb(sb, WB_REASON_FS_FREE_SPACE);
 
-	if (2 * free_clusters < 3 * dirty_clusters ||
-	    free_clusters < (dirty_clusters + EXT4_FREECLUSTERS_WATERMARK)) {
+	/*
+	 * NOTE: Delalloc make data=writeback mode safer, similar to ordered
+	 * mode, so stale blocks after power failure no longer an issue Do not
+	 * disable delalloc to guarantee data security on data=writeback mode.
+	 *								-dmon
+	 */
+	if (test_opt(sb, DATA_FLAGS) != EXT4_MOUNT_WRITEBACK_DATA &&
+	    (2 * free_clusters < 3 * dirty_clusters ||
+	     free_clusters < (dirty_clusters + EXT4_FREECLUSTERS_WATERMARK))) {
 		/*
 		 * free block count is less than 150% of dirty blocks
 		 * or free blocks is less than watermark
