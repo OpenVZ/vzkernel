@@ -3293,7 +3293,7 @@ static int ext4_rename(struct inode *old_dir, struct dentry *old_dentry,
 	 */
 	retval = -ENOENT;
 	if (!old.bh || le32_to_cpu(old.de->inode) != old.inode->i_ino)
-		goto end_rename;
+		goto out_release;
 
 	new.bh = ext4_find_entry(new.dir, &new.dentry->d_name,
 				 &new.de, &new.inlined);
@@ -3427,6 +3427,9 @@ static int ext4_rename(struct inode *old_dir, struct dentry *old_dentry,
 	retval = 0;
 
 end_rename:
+	if (handle)
+		ext4_journal_stop(handle);
+out_release:
 	brelse(old.dir_bh);
 	brelse(old.bh);
 	brelse(new.bh);
@@ -3436,8 +3439,6 @@ end_rename:
 		unlock_new_inode(whiteout);
 		iput(whiteout);
 	}
-	if (handle)
-		ext4_journal_stop(handle);
 	return retval;
 }
 
