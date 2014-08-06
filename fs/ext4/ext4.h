@@ -1335,6 +1335,7 @@ struct ext4_sb_info {
 	unsigned int s_mb_stats;
 	unsigned int s_mb_order2_reqs;
 	unsigned int s_mb_group_prealloc;
+	unsigned int s_bd_full_ratelimit;
 	unsigned int s_max_dir_size_kb;
 	/* where last allocation was done - for stream allocation */
 	unsigned long s_mb_last_group;
@@ -2921,6 +2922,49 @@ static inline void ext4_clear_io_unwritten_flag(ext4_io_end_t *io_end)
 }
 
 extern const struct iomap_ops ext4_iomap_ops;
+
+/*
+ * Ploop support
+ */
+DECLARE_PER_CPU(unsigned long, ext4_bd_full_ratelimits);
+
+static inline int check_bd_full(struct inode *inode, long long nblocks)
+{
+	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
+	int (*bd_full_fn) (struct backing_dev_info *, long long, int);
+	unsigned long ratelimit;
+	unsigned long *p;
+
+	bd_full_fn = inode->i_sb->s_bdi->bd_full_fn;
+	if (likely(!bd_full_fn))
+		return 0;
+
+	if (unlikely(inode->i_sb->s_bdi->bd_full))
+		ratelimit = 0;
+	else
+		ratelimit = sbi->s_bd_full_ratelimit;
+
+	preempt_disable();
+
+	p =  &__get_cpu_var(ext4_bd_full_ratelimits);
+	*p += nblocks;
+	if (unlikely(*p >= ratelimit)) {
+		*p = 0;
+		preempt_enable();
+		if (unlikely(bd_full_fn(inode->i_sb->s_bdi,
+					nblocks << inode->i_blkbits,
+					uid_eq(sbi->s_resuid,
+					       current_fsuid())))) {
+			inode->i_sb->s_bdi->bd_full = 1;
+			return 1;
+		}
+		inode->i_sb->s_bdi->bd_full = 0;
+		return 0;
+	}
+
+	preempt_enable();
+	return 0;
+}
 
 #endif	/* __KERNEL__ */
 
