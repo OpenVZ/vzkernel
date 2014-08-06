@@ -1758,6 +1758,13 @@ static struct ctl_table fs_table[] = {
 	},
 #endif
 	{
+		.procname	= "odirect_enable",
+		.data		= &odirect_enable,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
 		.procname	= "pipe-max-size",
 		.data		= &pipe_max_size,
 		.maxlen		= sizeof(int),
