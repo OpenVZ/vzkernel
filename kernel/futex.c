@@ -69,6 +69,7 @@
 #include <linux/memblock.h>
 #include <linux/fault-inject.h>
 #include <linux/refcount.h>
+#include <linux/ve.h>
 
 #include <asm/futex.h>
 
@@ -3793,6 +3794,7 @@ long do_futex(u32 __user *uaddr, int op, u32 val, ktime_t *timeout,
 {
 	int cmd = op & FUTEX_CMD_MASK;
 	unsigned int flags = 0;
+	ktime_t abs_time;
 
 	if (!(op & FUTEX_PRIVATE_FLAG))
 		flags |= FLAGS_SHARED;
@@ -3802,6 +3804,12 @@ long do_futex(u32 __user *uaddr, int op, u32 val, ktime_t *timeout,
 		if (cmd != FUTEX_WAIT && cmd != FUTEX_WAIT_BITSET && \
 		    cmd != FUTEX_WAIT_REQUEUE_PI)
 			return -ENOSYS;
+	} else if (timeout) {
+		if (cmd == FUTEX_WAIT_BITSET || cmd == FUTEX_WAIT_REQUEUE_PI) {
+			abs_time = ktime_add(*timeout, ns_to_ktime(
+					     get_exec_env()->start_time));
+			timeout = &abs_time;
+		}
 	}
 
 	switch (cmd) {
