@@ -130,6 +130,6 @@ const struct file_operations nfs4_file_operations = {
 	.flock		= nfs_flock,
 	.splice_read	= nfs_file_splice_read,
 	.splice_write	= nfs_file_splice_write,
-	.check_flags	= nfs_check_flags,
+	.set_flags	= nfs_set_flags,
 	.setlease	= nfs_setlease,
 };
