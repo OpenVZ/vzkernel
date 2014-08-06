@@ -30,6 +30,24 @@
 
 #define SETFL_MASK (O_APPEND | O_NONBLOCK | O_NDELAY | O_DIRECT | O_NOATIME)
 
+void generic_set_file_flags_unlocked(struct file *filp, unsigned int arg)
+{
+	filp->f_flags = (arg & SETFL_MASK) |
+		(filp->f_flags & ~SETFL_MASK);
+
+}
+EXPORT_SYMBOL(generic_set_file_flags_unlocked);
+
+int generic_set_file_flags(struct file *filp, unsigned int arg)
+{
+	spin_lock(&filp->f_lock);
+	generic_set_file_flags_unlocked(filp, arg);
+	spin_unlock(&filp->f_lock);
+	return 0;
+
+}
+EXPORT_SYMBOL(generic_set_file_flags);
+
 int may_use_odirect(void)
 {
 	int may;
@@ -79,10 +97,6 @@ static int setfl(int fd, struct file * filp, unsigned long arg)
 				return -EINVAL;
 	}
 
-	if (filp->f_op && filp->f_op->check_flags)
-		error = filp->f_op->check_flags(arg);
-	if (error)
-		return error;
 
 	/*
 	 * ->fasync() is responsible for setting the FASYNC bit.
@@ -95,10 +109,11 @@ static int setfl(int fd, struct file * filp, unsigned long arg)
 		if (error > 0)
 			error = 0;
 	}
-	spin_lock(&filp->f_lock);
-	filp->f_flags = (arg & SETFL_MASK) | (filp->f_flags & ~SETFL_MASK);
-	spin_unlock(&filp->f_lock);
 
+	if (filp->f_op && filp->f_op->set_flags)
+		error = filp->f_op->set_flags(filp, arg);
+	else
+		error = generic_set_file_flags(filp, arg);
  out:
 	return error;
 }
