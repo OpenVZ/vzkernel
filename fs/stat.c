@@ -14,6 +14,7 @@
 #include <linux/security.h>
 #include <linux/syscalls.h>
 #include <linux/pagemap.h>
+#include <linux/mount.h>
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -47,10 +48,14 @@ int vfs_getattr(struct path *path, struct kstat *stat)
 		return retval;
 
 	if (inode->i_op->getattr)
-		return inode->i_op->getattr(path->mnt, path->dentry, stat);
+		retval = inode->i_op->getattr(path->mnt, path->dentry, stat);
+	else
+		generic_fillattr(inode, stat);
 
-	generic_fillattr(inode, stat);
-	return 0;
+	if (!retval)
+		stat->dev = path->mnt->mnt_sb->s_dev;
+
+	return retval;
 }
 
 EXPORT_SYMBOL(vfs_getattr);
