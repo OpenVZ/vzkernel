@@ -619,6 +619,8 @@ static int shift_arg_pages(struct vm_area_struct *vma, unsigned long shift)
 	unsigned long new_start = old_start - shift;
 	unsigned long new_end = old_end - shift;
 	struct mmu_gather tlb;
+	unsigned long moved;
+	struct vm_area_struct *prev;
 
 	BUG_ON(new_start > new_end);
 
@@ -636,12 +638,11 @@ static int shift_arg_pages(struct vm_area_struct *vma, unsigned long shift)
 		return -ENOMEM;
 
 	/*
-	 * move the page tables downwards, on failure we rely on
-	 * process cleanup to remove whatever mess we made.
+	 * move the page tables downwards, on failure undo changes.
 	 */
-	if (length != move_page_tables(vma, old_start,
-				       vma, new_start, length, false))
-		return -ENOMEM;
+	moved = move_page_tables(vma, old_start, vma, new_start, length, false);
+	if (length != moved)
+		goto undo;
 
 	lru_add_drain();
 	tlb_gather_mmu(&tlb, mm, old_start, old_end);
@@ -669,6 +670,36 @@ static int shift_arg_pages(struct vm_area_struct *vma, unsigned long shift)
 	vma_adjust(vma, new_start, new_end, vma->vm_pgoff, NULL);
 
 	return 0;
+
+undo:
+	/*
+	 * move the page tables back.
+	 */
+	length = move_page_tables(vma, new_start, vma, old_start, moved, false);
+	if (WARN_ON(length != moved))
+		return -EFAULT;
+
+	/*
+	 * release unused page tables.
+	 */
+	find_vma_prev(mm, vma->vm_start, &prev);
+	tlb_gather_mmu(&tlb, mm, new_start, new_end);
+	if (new_end > old_start)
+		free_pgd_range(&tlb, new_start, old_start,
+				prev ? prev->vm_end : FIRST_USER_ADDRESS,
+				old_start);
+	else
+		free_pgd_range(&tlb, new_start, new_end,
+				prev ? prev->vm_end : FIRST_USER_ADDRESS,
+				old_start);
+	tlb_finish_mmu(&tlb, new_start, new_end);
+
+	/*
+	 * shrink the vma to the old range.
+	 */
+	vma_adjust(vma, old_start, old_end, vma->vm_pgoff, NULL);
+
+	return -ENOMEM;
 }
 
 /*
