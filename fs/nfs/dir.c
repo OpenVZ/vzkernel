@@ -1508,7 +1508,7 @@ int nfs_atomic_open(struct inode *dir, struct dentry *dentry,
 	dfprintk(VFS, "NFS: atomic_open(%s/%lu), %pd\n",
 			dir->i_sb->s_id, dir->i_ino, dentry);
 
-	err = nfs_check_flags(open_flags);
+	err = nfs_set_flags(file, open_flags);
 	if (err)
 		return err;
 
