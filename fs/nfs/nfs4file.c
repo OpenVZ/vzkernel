@@ -39,7 +39,7 @@ nfs4_file_open(struct inode *inode, struct file *filp)
 
 	dprintk("NFS: open file(%pd2)\n", dentry);
 
-	err = nfs_check_flags(openflags);
+	err = nfs_set_flags(filp, openflags);
 	if (err)
 		return err;
 
@@ -184,6 +184,6 @@ const struct file_operations nfs4_file_operations = {
 #ifdef CONFIG_NFS_V4_2
 	.fallocate	= nfs42_fallocate,
 #endif /* CONFIG_NFS_V4_2 */
-	.check_flags	= nfs_check_flags,
+	.set_flags	= nfs_set_flags,
 	.setlease	= nfs_setlease,
 };
