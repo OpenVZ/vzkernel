@@ -34,6 +34,8 @@ static int setfl(int fd, struct file * filp, unsigned long arg)
 	struct inode * inode = file_inode(filp);
 	int error = 0;
 
+	if (!capable(CAP_SYS_RAWIO) && !odirect_enable)
+		arg &= ~O_DIRECT;
 	/*
 	 * O_APPEND cannot be cleared if the file is marked as append-only
 	 * and the file is open for write.
