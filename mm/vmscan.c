@@ -458,6 +458,9 @@ static unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 	if (unlikely(test_tsk_thread_flag(current, TIF_MEMDIE)))
 		return 0;
 
+	if (unlikely(test_tsk_thread_flag(current, TIF_MEMDIE)))
+		return 0;
+
 	if (!down_read_trylock(&shrinker_rwsem)) {
 		/*
 		 * If we would return 0, our callers would understand that we
@@ -2778,6 +2781,9 @@ static void shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
 			continue;
 		last_pgdat = zone->zone_pgdat;
 		shrink_node(zone->zone_pgdat, sc);
+
+		if (unlikely(test_tsk_thread_flag(current, TIF_MEMDIE)))
+			break;
 	}
 
 	/*
