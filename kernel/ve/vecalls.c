@@ -527,10 +527,8 @@ err_dev_attach:
 err_ve_attach:
 err_devperms:
 	cgroup_kernel_close(dev_cgroup);
-	ve_cgroup_remove(devices_root, veid);
 err_dev_cgroup:
 	cgroup_kernel_close(ve_cgroup);
-	ve_cgroup_remove(ve0.css.cgroup, veid);
 err_ve_cgroup:
 	fairsched_drop_node(veid, 1);
 err_sched:
