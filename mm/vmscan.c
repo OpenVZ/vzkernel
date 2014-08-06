@@ -250,6 +250,9 @@ unsigned long shrink_slab(struct shrink_control *shrink,
 	if (nr_pages_scanned == 0)
 		nr_pages_scanned = SWAP_CLUSTER_MAX;
 
+	if (unlikely(test_tsk_thread_flag(current, TIF_MEMDIE)))
+		return 1;
+
 	if (!down_read_trylock(&shrinker_rwsem)) {
 		/* Assume we'll be able to shrink next time */
 		ret = 1;
@@ -319,6 +322,11 @@ unsigned long shrink_slab(struct shrink_control *shrink,
 		while (total_scan >= batch_size) {
 			int nr_before;
 
+			if (unlikely(test_tsk_thread_flag(current, TIF_MEMDIE))) {
+				trace_mm_shrink_slab_end(shrinker, -ENOMEM, 0, 0);
+				goto done;
+			}
+
 			nr_before = do_shrinker_shrink(shrinker, shrink, 0);
 			shrink_ret = do_shrinker_shrink(shrinker, shrink,
 							batch_size);
@@ -345,6 +353,7 @@ unsigned long shrink_slab(struct shrink_control *shrink,
 
 		trace_mm_shrink_slab_end(shrinker, shrink_ret, nr, new_nr);
 	}
+done:
 	up_read(&shrinker_rwsem);
 out:
 	cond_resched();
@@ -2385,6 +2394,9 @@ static bool shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
 		}
 
 		shrink_zone(zone, sc);
+
+		if (unlikely(test_tsk_thread_flag(current, TIF_MEMDIE)))
+			break;
 	}
 
 	return aborted_reclaim;
@@ -2495,6 +2507,9 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
 						WB_REASON_TRY_TO_FREE_PAGES);
 			sc->may_writepage = 1;
 		}
+
+		if (unlikely(test_tsk_thread_flag(current, TIF_MEMDIE)))
+			aborted_reclaim = 1;
 	} while (--sc->priority >= 0 && !aborted_reclaim);
 
 out:
