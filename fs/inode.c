@@ -1581,6 +1581,8 @@ sector_t bmap(struct inode *inode, sector_t block)
 }
 EXPORT_SYMBOL(bmap);
 
+unsigned __read_mostly relatime_interval = 24*60*60; /* one day */
+
 /*
  * Update times in overlayed inode from underlying real inode
  */
@@ -1636,10 +1638,10 @@ static int relatime_need_update(const struct path *path, struct inode *inode,
 		return 1;
 
 	/*
-	 * Is the previous atime value older than a day? If yes,
-	 * update atime:
+	 * Is the previous atime value older than a update interval?
+	 * If yes, update atime:
 	 */
-	if ((long)(now.tv_sec - inode->i_atime.tv_sec) >= 24*60*60)
+	if ((long)(now.tv_sec - inode->i_atime.tv_sec) >= relatime_interval)
 		return 1;
 	/*
 	 * Good, we can skip the atime update:
