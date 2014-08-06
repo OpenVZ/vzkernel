@@ -68,6 +68,8 @@ struct backing_dev_info {
 	unsigned int capabilities; /* Device capabilities */
 	congested_fn *congested_fn; /* Function pointer if device is md/dm */
 	void *congested_data;	/* Pointer to aux data for congested func */
+	int (*bd_full_fn) (struct backing_dev_info *, long long, int);
+	int bd_full; /* backing dev is full */
 
 	char *name;
 
