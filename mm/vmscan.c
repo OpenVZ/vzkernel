@@ -680,6 +680,9 @@ static unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 	if (!mem_cgroup_disabled() && !mem_cgroup_is_root(memcg))
 		return shrink_slab_memcg(gfp_mask, nid, memcg, priority);
 
+	if (unlikely(test_tsk_thread_flag(current, TIF_MEMDIE)))
+		return 0;
+
 	if (!down_read_trylock(&shrinker_rwsem))
 		goto out;
 
@@ -2993,6 +2996,9 @@ static void shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
 			continue;
 		last_pgdat = zone->zone_pgdat;
 		shrink_node(zone->zone_pgdat, sc);
+
+		if (unlikely(test_tsk_thread_flag(current, TIF_MEMDIE)))
+			break;
 	}
 
 	/*
