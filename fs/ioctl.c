@@ -589,8 +589,12 @@ int do_vfs_ioctl(struct file *filp, unsigned int fd, unsigned int cmd,
 		return ioctl_fiemap(filp, arg);
 
 	case FIGETBSZ:
-		return put_user(inode->i_sb->s_blocksize, argp);
-
+	{
+		struct super_block *sb = filp->f_path.dentry->d_inode->i_sb;
+		if (sb->s_blocksize == 1ul << sb->s_blocksize_bits)
+			return put_user(inode->i_sb->s_blocksize, argp);
+		/* fail through */
+	}
 	default:
 		if (S_ISREG(inode->i_mode))
 			error = file_ioctl(filp, cmd, arg);
