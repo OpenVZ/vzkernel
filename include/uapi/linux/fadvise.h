@@ -18,4 +18,7 @@
 #define POSIX_FADV_NOREUSE	5 /* Data will be accessed once.  */
 #endif
 
+#ifdef __KERNEL__
+extern int generic_fadvise(struct file* file, loff_t off, loff_t len, int adv);
+#endif
 #endif	/* FADVISE_H_INCLUDED */
