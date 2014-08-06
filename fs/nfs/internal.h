@@ -374,7 +374,7 @@ int nfs_lock(struct file *, int, struct file_lock *);
 int nfs_flock(struct file *, int, struct file_lock *);
 ssize_t nfs_file_splice_write(struct pipe_inode_info *, struct file *, loff_t *,
 			      size_t, unsigned int);
-int nfs_check_flags(int);
+int nfs_set_flags(struct file * filp, int flags);
 int nfs_setlease(struct file *, long, struct file_lock **, void **priv);
 
 /* inode.c */
