@@ -50,6 +50,8 @@
 
 #define MPAGE_DA_EXTENT_TAIL 0x01
 
+DEFINE_PER_CPU(unsigned long, ext4_bd_full_ratelimits) = 0;
+
 static __u32 ext4_inode_csum(struct inode *inode, struct ext4_inode *raw,
 			      struct ext4_inode_info *ei)
 {
@@ -1251,6 +1253,11 @@ static int ext4_da_reserve_space(struct inode *inode, ext4_lblk_t lblock)
 	 * in order to allocate nrblocks
 	 * worse case is one extent per block
 	 */
+	if (check_bd_full(inode, 1)) {
+		dquot_release_reservation_block(inode, EXT4_C2B(sbi, 1));
+		return -ENOSPC;
+	}
+
 	spin_lock(&ei->i_block_reservation_lock);
 	/*
 	 * ext4_calc_metadata_amount() has side effects, which we have
