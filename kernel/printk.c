@@ -3194,7 +3194,7 @@ static void busted_show_regs(struct pt_regs *regs, int in_nmi)
 	bust_spinlocks(1);
 	printk("----------- IPI show regs -----------\n");
 	show_regs(regs);
-	bust_spinlocks(0);
+	bust_spinlocks(-1);
 }
 
 void nmi_show_regs(struct pt_regs *regs, int in_nmi)
@@ -3214,7 +3214,7 @@ void nmi_show_regs(struct pt_regs *regs, int in_nmi)
 		for_each_cpu_mask(cpu, nmi_show_regs_cpus)
 			printk("%d ", cpu);
 		printk("\n");
-		bust_spinlocks(0);
+		bust_spinlocks(-1);
 	}
 
 doit:
