@@ -24,12 +24,14 @@
 #include <linux/blkdev.h>
 #include <asm/pgtable.h>
 
+static struct bio_set *swap_bio_set;
+
 static struct bio *get_swap_bio(gfp_t gfp_flags,
 				struct page *page, bio_end_io_t end_io)
 {
 	struct bio *bio;
 
-	bio = bio_alloc(gfp_flags, 1);
+	bio = bio_alloc_bioset(gfp_flags, 1, swap_bio_set);
 	if (bio) {
 		bio->bi_sector = map_swap_page(page, &bio->bi_bdev);
 		bio->bi_sector <<= PAGE_SHIFT - 9;
@@ -336,3 +338,12 @@ int swap_set_page_dirty(struct page *page)
 		return __set_page_dirty_no_writeback(page);
 	}
 }
+
+static int __init swap_init(void)
+{
+	swap_bio_set = bioset_create(SWAP_CLUSTER_MAX, 0);
+	if (!swap_bio_set)
+		panic("can't allocate swap_bio_set\n");
+	return 0;
+}
+late_initcall(swap_init);
