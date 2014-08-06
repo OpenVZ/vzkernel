@@ -871,6 +871,10 @@ inserted:
 						EXT4_C2B(EXT4_SB(sb), 1));
 				if (error)
 					goto cleanup;
+				if (check_bd_full(inode, 1)) {
+					error = -ENOSPC;
+					goto cleanup_dquot;
+				}
 				BUFFER_TRACE(new_bh, "get_write_access");
 				error = ext4_journal_get_write_access(handle,
 								      new_bh);
