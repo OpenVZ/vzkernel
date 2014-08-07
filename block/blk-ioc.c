@@ -155,10 +155,10 @@ void put_io_context(struct io_context *ioc)
 	}
 
 	if (free_ioc) {
-		kmem_cache_free(iocontext_cachep, ioc);
 #ifdef CONFIG_BEANCOUNTERS
 		put_beancounter(ioc->ioc_ub);
 #endif
+		kmem_cache_free(iocontext_cachep, ioc);
 	}
 }
 EXPORT_SYMBOL(put_io_context);
