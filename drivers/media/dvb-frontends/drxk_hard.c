@@ -2280,10 +2280,11 @@ static int SetAgcRf(struct drxk_state *state,
 		}
 
 		/* Set TOP, only if IF-AGC is in AUTO mode */
-		if (pIfAgcSettings->ctrlMode == DRXK_AGC_CTRL_AUTO)
+		if (pIfAgcSettings->ctrlMode == DRXK_AGC_CTRL_AUTO) {
 			status = write16(state, SCU_RAM_AGC_IF_IACCU_HI_TGT_MAX__A, pAgcCfg->top);
 			if (status < 0)
 				goto error;
+		}
 
 		/* Cut-Off current */
 		status = write16(state, SCU_RAM_AGC_RF_IACCU_HI_CO__A, pAgcCfg->cutOffCurrent);
