@@ -161,7 +161,7 @@ raw_complete_snapshot(struct ploop_delta * delta, struct ploop_snapdata * sd)
 
 	err = delta->io.ops->complete_snapshot(&delta->io, sd);
 	if (err)
-		return err;
+		goto out;
 
 	delta->flags |= PLOOP_FMT_RDONLY;
 	return 0;
