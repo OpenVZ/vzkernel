@@ -2960,6 +2960,11 @@ static int ploop_snapshot(struct ploop_device * plo, unsigned long arg,
 		sb = find_and_freeze_bdev(plo->disk, &bdev);
 		mutex_lock(&plo->ctl_mutex);
 		plo->maintenance_type = PLOOP_MNTN_OFF;
+		if (IS_ERR(sb)) {
+			err = PTR_ERR(sb);
+			fput(snapdata.file);
+			goto out_close2;
+		}
 	}
 
 	ploop_quiesce(plo);
