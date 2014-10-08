@@ -13,6 +13,12 @@
 #include <linux/netfilter/xt_dscp.h>
 #include <linux/types.h>
 
+#define IPTOS_NORMALSVC 0
+
+struct ipt_tos_target_info {
+	u_int8_t tos;
+};
+
 /* target info */
 struct xt_DSCP_info {
 	__u8 dscp;
