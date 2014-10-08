@@ -21,7 +21,6 @@
 #include <bc/beancounter.h>
 #include <bc/proc.h>
 #include <bc/dcache.h>
-#include <bc/kmem.h>
 
 /* Generic output formats */
 #if BITS_PER_LONG == 32
@@ -148,18 +147,21 @@ static struct bc_proc_entry bc_precharge_entry = {
 	.u.show = bc_precharge_show,
 };
 
+#if 0
 static void bc_count_slab_show_one(const char *name, int count, void *v)
 {
 	if (count != 0)
 		seq_printf((struct seq_file *)v, "%s: %u\n", name, count);
 }
+#endif
 
 static int bc_count_slab_show(struct seq_file *f, void *v)
 {
 	struct user_beancounter *ub;
 
 	ub = seq_beancounter(f);
-	slab_walk_ub(ub, bc_count_slab_show_one, f);
+	//FIXME
+	//slab_walk_ub(ub, bc_count_slab_show_one, f);
 	return 0;
 }
 
