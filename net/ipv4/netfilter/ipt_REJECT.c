@@ -74,13 +74,13 @@ static int reject_tg_check(const struct xt_tgchk_param *par)
 	const struct ipt_entry *e = par->entryinfo;
 
 	if (rejinfo->with == IPT_ICMP_ECHOREPLY) {
-		pr_info("ECHOREPLY no longer supported.\n");
+		ve_printk(VE_LOG, "ECHOREPLY no longer supported.\n");
 		return -EINVAL;
 	} else if (rejinfo->with == IPT_TCP_RESET) {
 		/* Must specify that it's a TCP packet */
 		if (e->ip.proto != IPPROTO_TCP ||
 		    (e->ip.invflags & XT_INV_PROTO)) {
-			pr_info("TCP_RESET invalid for non-tcp\n");
+			ve_printk(VE_LOG, "TCP_RESET invalid for non-tcp\n");
 			return -EINVAL;
 		}
 	}

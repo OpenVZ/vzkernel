@@ -247,6 +247,9 @@ do {								\
 	net_ratelimited_function(pr_info, fmt, ##__VA_ARGS__)
 #define net_dbg_ratelimited(fmt, ...)				\
 	net_ratelimited_function(pr_debug, fmt, ##__VA_ARGS__)
+#define net_velog_ratelimited(fmt, ...)				\
+	net_ratelimited_function(ve_printk, VE_LOG, fmt, ##__VA_ARGS__)
+
 
 #define net_random()		prandom_u32()
 #define net_srandom(seed)	prandom_seed((__force u32)(seed))
