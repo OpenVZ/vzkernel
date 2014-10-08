@@ -11,6 +11,7 @@ menu "User resources"
 config BEANCOUNTERS
 	bool "Enable user resource accounting"
 	default y
+	select CGROUPS
 	help 
           This patch provides accounting and allows to configure
           limits for user's consumption of exhaustible system resources.
