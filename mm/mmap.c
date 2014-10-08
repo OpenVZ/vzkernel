@@ -39,6 +39,9 @@
 #include <linux/memory.h>
 #include <linux/userfaultfd_k.h>
 
+#include <bc/beancounter.h>
+#include <bc/vmpages.h>
+
 #include <asm/uaccess.h>
 #include <asm/cacheflush.h>
 #include <asm/tlb.h>
@@ -135,6 +138,12 @@ int __vm_enough_memory(struct mm_struct *mm, long pages, int cap_sys_admin)
 	unsigned long free, allowed, reserve;
 
 	vm_acct_memory(pages);
+
+#ifdef CONFIG_BEANCOUNTERS
+	if (mm && mm->mm_ub->ub_parms[UB_PRIVVMPAGES].held <=
+			mm->mm_ub->ub_parms[UB_VMGUARPAGES].barrier)
+		return 0;
+#endif
 
 	/*
 	 * Sometimes we want to use more memory than we have
@@ -250,6 +259,9 @@ static struct vm_area_struct *remove_vma(struct vm_area_struct *vma)
 	struct vm_area_struct *next = vma->vm_next;
 
 	might_sleep();
+
+	ub_memory_uncharge(vma->vm_mm, vma->vm_end - vma->vm_start,
+			vma->vm_flags, vma->vm_file);
 	if (vma->vm_ops && vma->vm_ops->close)
 		vma->vm_ops->close(vma);
 	if (vma->vm_file)
@@ -259,7 +271,7 @@ static struct vm_area_struct *remove_vma(struct vm_area_struct *vma)
 	return next;
 }
 
-static unsigned long do_brk(unsigned long addr, unsigned long len);
+static unsigned long do_brk(unsigned long addr, unsigned long len, int soft);
 
 SYSCALL_DEFINE1(brk, unsigned long, brk)
 {
@@ -315,7 +327,7 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 		goto out;
 
 	/* Ok, looks good - let it rip. */
-	if (do_brk(oldbrk, newbrk-oldbrk) != oldbrk)
+	if (do_brk(oldbrk, newbrk-oldbrk, UB_HARD) != oldbrk)
 		goto out;
 
 set_brk:
@@ -1502,6 +1514,7 @@ unsigned long mmap_region(struct file *file, unsigned long addr,
 	struct rb_node **rb_link, *rb_parent;
 	unsigned long charged = 0;
 	struct inode *inode =  file ? file_inode(file) : NULL;
+	unsigned long ub_charged = 0;
 
 	/* Check against address space limit. */
 	if (!may_expand_vm(mm, len >> PAGE_SHIFT)) {
@@ -1538,6 +1551,10 @@ munmap_back:
 			return -ENOMEM;
 		vm_flags |= VM_ACCOUNT;
 	}
+
+	if (ub_memory_charge(mm, len, vm_flags, file, UB_HARD))
+		goto charge_error;
+	ub_charged = 1;
 
 	/*
 	 * Can we just expand an old mapping?
@@ -1581,6 +1598,18 @@ munmap_back:
 		error = file->f_op->mmap(file, vma);
 		if (error)
 			goto unmap_and_free_vma;
+		if (vm_flags != vma->vm_flags) {
+		/*
+		 * ->vm_flags has been changed in f_op->mmap method.
+		 * We have to recharge ub memory.
+		 */
+			ub_memory_uncharge(mm, len, vm_flags, file);
+			if (ub_memory_charge(mm, len, vma->vm_flags, file, UB_HARD)) {
+				ub_charged = 0;
+				error = -ENOMEM;
+				goto unmap_and_free_vma;
+			}
+		}
 
 		/* Can addr have changed??
 		 *
@@ -1661,6 +1690,9 @@ unmap_and_free_vma:
 free_vma:
 	free_vma(mm, vma);
 unacct_error:
+	if (ub_charged)
+		ub_memory_uncharge(mm, len, vm_flags, file);
+charge_error:
 	if (charged)
 		vm_unacct_memory(charged);
 	return error;
@@ -2116,6 +2148,10 @@ static int acct_stack_growth(struct vm_area_struct *vma, unsigned long size, uns
 	if (is_hugepage_only_range(vma->vm_mm, new_start, size))
 		return -EFAULT;
 
+	if (ub_memory_charge(mm, grow << PAGE_SHIFT, vma->vm_flags,
+				vma->vm_file, UB_SOFT))
+		goto fail_charge;
+
 	/*
 	 * Overcommit..  This must be the final test, as it will
 	 * update security statistics.
@@ -2130,6 +2166,8 @@ static int acct_stack_growth(struct vm_area_struct *vma, unsigned long size, uns
 	return 0;
 
 fail_sec:
+	ub_memory_uncharge(mm, grow << PAGE_SHIFT, vma->vm_flags, vma->vm_file);
+fail_charge:
 	return -ENOMEM;
 }
 
@@ -2641,7 +2679,7 @@ static inline void verify_mm_writelocked(struct mm_struct *mm)
  *  anonymous maps.  eventually we may be able to do some
  *  brk-specific accounting here.
  */
-static unsigned long do_brk(unsigned long addr, unsigned long len)
+static unsigned long do_brk(unsigned long addr, unsigned long len, int soft)
 {
 	struct mm_struct * mm = current->mm;
 	struct vm_area_struct * vma, * prev;
@@ -2696,8 +2734,11 @@ static unsigned long do_brk(unsigned long addr, unsigned long len)
 	if (mm->map_count > sysctl_max_map_count)
 		return -ENOMEM;
 
+	if (ub_memory_charge(mm, len, flags, NULL, soft))
+		goto fail_charge;
+
 	if (security_vm_enough_memory_mm(mm, len >> PAGE_SHIFT))
-		return -ENOMEM;
+		goto fail_sec;
 
 	/* Can we just expand an old private anonymous mapping? */
 	vma = vma_merge(mm, prev, addr, addr + len, flags,
@@ -2709,10 +2750,8 @@ static unsigned long do_brk(unsigned long addr, unsigned long len)
 	 * create a vma struct for an anonymous mapping
 	 */
 	vma = allocate_vma(mm, GFP_KERNEL | __GFP_ZERO);
-	if (!vma) {
-		vm_unacct_memory(len >> PAGE_SHIFT);
-		return -ENOMEM;
-	}
+	if (!vma)
+		goto fail_alloc;
 
 	INIT_LIST_HEAD(&vma->anon_vma_chain);
 	vma->vm_mm = mm;
@@ -2729,6 +2768,13 @@ out:
 		mm->locked_vm += (len >> PAGE_SHIFT);
 	vma->vm_flags |= VM_SOFTDIRTY;
 	return addr;
+
+fail_alloc:
+	vm_unacct_memory(len >> PAGE_SHIFT);
+fail_sec:
+	ub_memory_uncharge(mm, len, flags, NULL);
+fail_charge:
+	return -ENOMEM;
 }
 
 unsigned long vm_brk(unsigned long addr, unsigned long len)
@@ -2738,7 +2784,7 @@ unsigned long vm_brk(unsigned long addr, unsigned long len)
 	bool populate;
 
 	down_write(&mm->mmap_sem);
-	ret = do_brk(addr, len);
+	ret = do_brk(addr, len, UB_SOFT);
 	populate = ((mm->def_flags & VM_LOCKED) != 0);
 	up_write(&mm->mmap_sem);
 	if (populate)
