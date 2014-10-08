@@ -467,6 +467,7 @@ int bdi_init(struct backing_dev_info *bdi)
 	spin_lock_init(&bdi->wb_lock);
 	INIT_LIST_HEAD(&bdi->bdi_list);
 	INIT_LIST_HEAD(&bdi->work_list);
+	init_waitqueue_head(&bdi->cong_waitq);
 
 	bdi_wb_init(&bdi->wb, bdi);
 
