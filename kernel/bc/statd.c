@@ -49,7 +49,12 @@ static int ubstat_get_list(void __user *buf, long size)
 
 	rcu_read_lock();
 	for_each_beancounter(ub) {
-		*ptr++ = ub->ub_uid;
+		uid_t uid = ub_legacy_id(ub);
+
+		if (uid == -1)
+			continue;
+
+		*ptr++ = uid;
 		if (ptr != end)
 			continue;
 
@@ -341,7 +346,7 @@ long do_ubstat(int func, unsigned long arg1, unsigned long arg2,
 	}
 
 	ub = get_exec_ub();
-	if (ub != NULL && ub->ub_uid == arg1)
+	if (ub != NULL && ub_legacy_id(ub) == arg1 && (uid_t)arg1 != -1)
 		get_beancounter(ub);
 	else /* FIXME must be if (ve_is_super) */
 		ub = get_beancounter_byuid(arg1, 0);

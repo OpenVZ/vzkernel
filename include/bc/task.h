@@ -12,7 +12,7 @@
 #define __BC_TASK_H_
 
 struct user_beancounter;
-
+struct callback_head;
 
 #ifdef CONFIG_BEANCOUNTERS
 struct task_beancounter {
@@ -20,9 +20,10 @@ struct task_beancounter {
 	struct user_beancounter *saved_ub;
 	struct user_beancounter	*task_ub;
 	unsigned long oom_generation;
+	struct callback_head cgroup_attach_work;
 };
 
-extern int set_task_exec_ub(struct task_struct *, struct user_beancounter *);
+extern int ub_attach_task(struct user_beancounter *, struct task_struct *);
 
 #define get_task_ub(__task)	((__task)->task_bc.task_ub)
 
