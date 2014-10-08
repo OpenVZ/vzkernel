@@ -7,7 +7,6 @@
 #include <net/netfilter/nf_conntrack.h>
 
 extern unsigned int nf_ct_expect_hsize;
-extern unsigned int nf_ct_expect_max;
 
 struct nf_conntrack_expect {
 	/* Conntrack expectation list member */
