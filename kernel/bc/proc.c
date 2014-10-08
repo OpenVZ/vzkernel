@@ -47,8 +47,27 @@ static void ub_show_res(struct seq_file *f, struct user_beancounter *ub,
 		int r, int precharge, int show_uid)
 {
 	unsigned long held;
+	struct ubparm *p, v;
+	bool precharge_valid = false;
 
-	held = ub->ub_parms[r].held;
+	p = &v;
+	switch (r) {
+	case UB_PHYSPAGES:
+		ub_get_mem_cgroup_parms(ub, p, NULL, NULL);
+		break;
+	case UB_SWAPPAGES:
+		ub_get_mem_cgroup_parms(ub, NULL, p, NULL);
+		break;
+	case UB_KMEMSIZE:
+		ub_get_mem_cgroup_parms(ub, NULL, NULL, p);
+		break;
+	default:
+		p = &ub->ub_parms[r];
+		precharge_valid = true;
+		break;
+	}
+
+	held = p->held;
 	held = (held > precharge) ? (held - precharge) : 0;
 
 	seq_printf(f, res_fmt,
@@ -56,10 +75,10 @@ static void ub_show_res(struct seq_file *f, struct user_beancounter *ub,
 			show_uid && r == 0 ? ':' : ' ',
 		   	ub_rnames[r],
 			held,
-			ub->ub_parms[r].maxheld,
-			ub->ub_parms[r].barrier,
-			ub->ub_parms[r].limit,
-			ub->ub_parms[r].failcnt);
+			p->maxheld,
+			p->barrier,
+			p->limit,
+			p->failcnt);
 }
 
 static void __show_resources(struct seq_file *f, struct user_beancounter *ub,
