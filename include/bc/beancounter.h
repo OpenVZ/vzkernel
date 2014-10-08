@@ -100,6 +100,7 @@ struct ubparm {
 #include <linux/percpu_counter.h>
 #include <linux/oom.h>
 #include <linux/ratelimit.h>
+#include <linux/cgroup.h>
 #include <bc/debug.h>
 #include <bc/decl.h>
 #include <asm/atomic.h>
@@ -179,20 +180,15 @@ struct ub_percpu_struct {
 	int pincount;
 };
 
-struct user_beancounter
-{
-	unsigned long		ub_magic;
-	atomic_t		ub_refcount;
-	struct list_head	ub_list;
-	struct hlist_node	ub_hash;
+struct user_beancounter {
+	struct cgroup_subsys_state css;
 
-	union {
-		struct rcu_head rcu;
-		struct work_struct work;
-	};
+	unsigned long		ub_magic;
+	struct list_head	ub_list;
+
+	struct rcu_head		rcu;
 
 	spinlock_t		ub_lock;
-	uid_t			ub_uid;
 	const char		*ub_name;
 
 	unsigned long		ub_flags;
@@ -319,11 +315,15 @@ static inline unsigned long ub_resource_excess(struct user_beancounter *ub,
 
 #define mm_ub(mm)	(NULL)
 
+extern inline struct user_beancounter *get_beancounter_by_name
+		(const char *name, int create) { return NULL; }
 extern inline struct user_beancounter *get_beancounter_byuid
 		(uid_t uid, int create) { return NULL; }
 extern inline struct user_beancounter *get_beancounter
 		(struct user_beancounter *ub) { return NULL; }
 extern inline void put_beancounter(struct user_beancounter *ub) { }
+
+static inline uid_t ub_legacy_id(struct user_beancounter *ub) { return -1; }
 
 static inline void ub_init_late(void) { };
 static inline void ub_init_early(void) { };
@@ -405,21 +405,20 @@ extern const char *ub_rnames[];
  *	Put a beancounter reference
  */
 
-extern void release_beancounter(struct user_beancounter *ub);
-
 static inline void put_beancounter(struct user_beancounter *ub)
 {
 	if (unlikely(ub == NULL))
 		return;
 
-	if (atomic_dec_and_test(&ub->ub_refcount))
-		release_beancounter(ub);
+	css_put(&ub->css);
 }
 
 /*
  *	Create a new beancounter reference
  */
 extern struct user_beancounter *get_beancounter_byuid(uid_t uid, int create);
+extern struct user_beancounter *get_beancounter_by_name(const char *name,
+							int create);
 
 static inline 
 struct user_beancounter *get_beancounter(struct user_beancounter *ub)
@@ -427,15 +426,17 @@ struct user_beancounter *get_beancounter(struct user_beancounter *ub)
 	if (unlikely(ub == NULL))
 		return NULL;
 
-	atomic_inc(&ub->ub_refcount);
+	css_get(&ub->css);
 	return ub;
 }
 
 static inline 
 struct user_beancounter *get_beancounter_rcu(struct user_beancounter *ub)
 {
-	return atomic_inc_not_zero(&ub->ub_refcount) ? ub : NULL;
+	return css_tryget(&ub->css) ? ub : NULL;
 }
+
+extern uid_t ub_legacy_id(struct user_beancounter *ub);
 
 extern void ub_init_late(void);
 extern void ub_init_early(void);
