@@ -74,6 +74,101 @@ void ub_update_resources(struct user_beancounter *ub)
 }
 EXPORT_SYMBOL(ub_update_resources);
 
+int ub_memory_charge(struct mm_struct *mm, unsigned long size,
+		unsigned vm_flags, struct file *vm_file, int sv)
+{
+	struct user_beancounter *ub;
+
+	ub = mm->mm_ub;
+	if (ub == NULL)
+		return 0;
+
+	size >>= PAGE_SHIFT;
+	if (size > UB_MAXVALUE)
+		return -EINVAL;
+
+	BUG_ON(sv != UB_SOFT && sv != UB_HARD);
+
+	if (vm_flags & VM_LOCKED) {
+		if (charge_beancounter(ub, UB_LOCKEDPAGES, size, sv))
+			goto out_err;
+	}
+	if (VM_UB_PRIVATE(vm_flags, vm_file)) {
+               if (charge_beancounter_fast(ub, UB_PRIVVMPAGES, size, sv))
+			goto out_private;
+	}
+	return 0;
+
+out_private:
+	if (vm_flags & VM_LOCKED)
+		uncharge_beancounter(ub, UB_LOCKEDPAGES, size);
+out_err:
+	return -ENOMEM;
+}
+
+void ub_memory_uncharge(struct mm_struct *mm, unsigned long size,
+		unsigned vm_flags, struct file *vm_file)
+{
+	struct user_beancounter *ub;
+
+	ub = mm->mm_ub;
+	if (ub == NULL)
+		return;
+
+	size >>= PAGE_SHIFT;
+
+	if (vm_flags & VM_LOCKED)
+		uncharge_beancounter(ub, UB_LOCKEDPAGES, size);
+	if (VM_UB_PRIVATE(vm_flags, vm_file))
+		uncharge_beancounter_fast(ub, UB_PRIVVMPAGES, size);
+}
+
+int ub_locked_charge(struct mm_struct *mm, unsigned long size)
+{
+	struct user_beancounter *ub;
+
+	ub = mm->mm_ub;
+	if (ub == NULL)
+		return 0;
+
+	return charge_beancounter(ub, UB_LOCKEDPAGES,
+			size >> PAGE_SHIFT, UB_HARD);
+}
+
+void ub_locked_uncharge(struct mm_struct *mm, unsigned long size)
+{
+	struct user_beancounter *ub;
+
+	ub = mm->mm_ub;
+	if (ub == NULL)
+		return;
+
+	uncharge_beancounter(ub, UB_LOCKEDPAGES, size >> PAGE_SHIFT);
+}
+
+int ub_lockedshm_charge(struct shmem_inode_info *shi, unsigned long size)
+{
+	struct user_beancounter *ub;
+
+	ub = shi->shmi_ub;
+	if (ub == NULL)
+		return 0;
+
+	return charge_beancounter(ub, UB_LOCKEDPAGES,
+			size >> PAGE_SHIFT, UB_HARD);
+}
+
+void ub_lockedshm_uncharge(struct shmem_inode_info *shi, unsigned long size)
+{
+	struct user_beancounter *ub;
+
+	ub = shi->shmi_ub;
+	if (ub == NULL)
+		return;
+
+	uncharge_beancounter(ub, UB_LOCKEDPAGES, size >> PAGE_SHIFT);
+}
+
 static inline void do_ub_tmpfs_respages_sub(struct user_beancounter *ub,
 		unsigned long size)
 {
