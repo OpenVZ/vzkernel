@@ -18,7 +18,6 @@
 #include <linux/module.h>
 
 #include <bc/beancounter.h>
-#include <bc/kmem.h>
 #include <bc/proc.h>
 
 /*
@@ -86,8 +85,7 @@ int ub_flock_charge(struct file_lock *fl, int hard)
 	struct user_beancounter *ub;
 	int err;
 
-	/* No need to get_beancounter here since it's already got in slab */
-	ub = slab_ub(fl);
+	ub = fl->fl_ub;
 	if (ub == NULL)
 		return 0;
 
@@ -101,8 +99,7 @@ void ub_flock_uncharge(struct file_lock *fl)
 {
 	struct user_beancounter *ub;
 
-	/* Ub will be put in slab */
-	ub = slab_ub(fl);
+	ub = fl->fl_ub;
 	if (ub == NULL || !fl->fl_charged)
 		return;
 
@@ -144,16 +141,17 @@ void ub_siginfo_uncharge(struct sigqueue *sq)
 
 int ub_pty_charge(struct tty_struct *tty)
 {
-	struct user_beancounter *ub;
+	struct user_beancounter *ub = get_exec_ub();
 	int retval;
 
-	ub = slab_ub(tty);
 	retval = 0;
 	if (ub && tty->driver->subtype == PTY_TYPE_MASTER &&
 			!test_bit(TTY_CHARGED, &tty->flags)) {
 		retval = charge_beancounter(ub, UB_NUMPTY, 1, UB_HARD);
-		if (!retval)
+		if (!retval) {
 			set_bit(TTY_CHARGED, &tty->flags);
+			tty->ub = get_beancounter(ub);
+		}
 	}
 	return retval;
 }
@@ -162,10 +160,11 @@ void ub_pty_uncharge(struct tty_struct *tty)
 {
 	struct user_beancounter *ub;
 
-	ub = slab_ub(tty);
+	ub = tty->ub;
 	if (ub && tty->driver->subtype == PTY_TYPE_MASTER &&
 			test_bit(TTY_CHARGED, &tty->flags)) {
 		uncharge_beancounter(ub, UB_NUMPTY, 1);
 		clear_bit(TTY_CHARGED, &tty->flags);
+		put_beancounter(ub);
 	}
 }
