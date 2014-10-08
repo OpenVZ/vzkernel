@@ -383,6 +383,23 @@ submit_and_retry:
 	return 0;
 }
 
+
+static void bdi_congestion_wait(struct backing_dev_info *bdi)
+{
+	DEFINE_WAIT(_wait);
+
+	for (;;) {
+		prepare_to_wait(&bdi->cong_waitq, &_wait,
+				TASK_UNINTERRUPTIBLE);
+		if (!bdi_write_congested2(bdi))
+			break;
+
+		io_schedule();
+	}
+
+	finish_wait(&bdi->cong_waitq, &_wait);
+}
+
 int ext4_bio_write_page(struct ext4_io_submit *io,
 			struct page *page,
 			int len,
@@ -447,6 +464,10 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
 		}
 		set_buffer_async_write(bh);
 	} while ((bh = bh->b_this_page) != head);
+
+	if (!wbc->for_reclaim &&
+	    bdi_write_congested2(page->mapping->backing_dev_info))
+		bdi_congestion_wait(page->mapping->backing_dev_info);
 
 	/* Now submit buffers to write */
 	bh = head = page_buffers(page);
