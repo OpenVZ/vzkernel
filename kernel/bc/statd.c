@@ -330,6 +330,9 @@ long do_ubstat(int func, unsigned long arg1, unsigned long arg2,
 	int retval;
 	struct user_beancounter *ub;
 
+	/* FIXME? */
+	return -ENOSYS;
+
 	if (func == UBSTAT_UBPARMNUM)
 		return UB_RESOURCES;
 	if (func == UBSTAT_UBLIST)
@@ -478,6 +481,9 @@ static int ubstatd(void *unused)
 
 static int __init ubstatd_init(void)
 {
+	/* FIXME? */
+	return 0;
+
 	init_timer(&ubs_timer);
 	ubs_timer.expires = TIME_MAX_JIF;
 	ubs_min_interval = TIME_MAX_SEC;
