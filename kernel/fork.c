@@ -568,12 +568,12 @@ static inline struct mm_struct *allocate_mm(struct user_beancounter *ub)
 
 static inline void set_mm_ub(struct mm_struct *mm, struct user_beancounter *ub)
 {
-	mm->mm_ub = get_beancounter_longterm(ub);
+	mm->mm_ub = get_beancounter(ub);
 }
 
 static inline void put_mm_ub(struct mm_struct *mm)
 {
-	put_beancounter_longterm(mm->mm_ub);
+	put_beancounter(mm->mm_ub);
 	mm->mm_ub = NULL;
 }
 
