@@ -22,12 +22,17 @@
 SYSCALL_DEFINE0(getluid)
 {
 	struct user_beancounter *ub;
+	uid_t uid;
 
 	ub = get_exec_ub();
 	if (ub == NULL)
 		return -EINVAL;
 
-	return ub->ub_uid;
+	uid = ub_legacy_id(ub);
+	if (uid == -1)
+		return -EINVAL;
+
+	return uid;
 }
 
 /*
@@ -56,10 +61,10 @@ SYSCALL_DEFINE1(setluid, uid_t, uid)
 
 	ub_debug(UBD_ALLOC | UBD_LIMIT, "setluid, bean %p (count %d) "
 			"for %.20s pid %d\n",
-			ub, atomic_read(&ub->ub_refcount),
+			ub, css_refcnt(&ub->css),
 			current->comm, current->pid);
 
-	error = set_task_exec_ub(current, ub);
+	error = ub_attach_task(ub, current);
 
 	put_beancounter(ub);
 out:
