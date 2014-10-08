@@ -139,7 +139,6 @@
 #include "net-sysfs.h"
 
 #include <bc/beancounter.h>
-#include <bc/kmem.h>
 
 /* Instead of increasing this, you should create a hash table. */
 #define MAX_GRO_SKBS 8

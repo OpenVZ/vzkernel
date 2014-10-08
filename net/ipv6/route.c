@@ -70,8 +70,6 @@
 #include <linux/sysctl.h>
 #endif
 
-#include <bc/kmem.h>
-
 enum rt6_nud_state {
 	RT6_NUD_FAIL_HARD = -3,
 	RT6_NUD_FAIL_PROBE = -2,
@@ -3536,6 +3534,7 @@ static struct notifier_block ip6_route_dev_notifier = {
 	.priority = 0,
 };
 
+#if 0
 static void ip6_rt_dump_dst(void *o)
 {
 	struct rt6_info *r = (struct rt6_info *)o;
@@ -3549,11 +3548,13 @@ static void ip6_rt_dump_dst(void *o)
 			r->rt6i_flags, atomic_read(&r->rt6i_ref),
 			(int)r->rt6i_protocol);
 }
+#endif
 
 static void _ip6_rt_dump_dsts(void)
 {
 	printk("IPv6 dst cache:\n");
-	slab_obj_walk(ip6_dst_ops_template.kmem_cachep, ip6_rt_dump_dst);
+	//FIXME
+	//slab_obj_walk(ip6_dst_ops_template.kmem_cachep, ip6_rt_dump_dst);
 }
 
 int __init ip6_route_init(void)
