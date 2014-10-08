@@ -75,9 +75,6 @@ EXPORT_SYMBOL_GPL(nf_conntrack_lock);
 unsigned int nf_conntrack_htable_size __read_mostly;
 EXPORT_SYMBOL_GPL(nf_conntrack_htable_size);
 
-unsigned int nf_conntrack_max __read_mostly;
-EXPORT_SYMBOL_GPL(nf_conntrack_max);
-
 DEFINE_PER_CPU(struct nf_conn, nf_conntrack_untracked);
 EXPORT_PER_CPU_SYMBOL(nf_conntrack_untracked);
 
@@ -683,6 +680,7 @@ __nf_conntrack_alloc(struct net *net, u16 zone,
 		     const struct nf_conntrack_tuple *repl,
 		     gfp_t gfp, u32 hash)
 {
+	unsigned int ct_max = net->ct.max ? net->ct.max : init_net.ct.max;
 	struct nf_conn *ct;
 
 	if (unlikely(!nf_conntrack_hash_rnd)) {
@@ -694,8 +692,8 @@ __nf_conntrack_alloc(struct net *net, u16 zone,
 	/* We don't want any race condition at early drop stage */
 	atomic_inc(&net->ct.count);
 
-	if (nf_conntrack_max &&
-	    unlikely(atomic_read(&net->ct.count) > nf_conntrack_max)) {
+	if (ct_max &&
+	    unlikely(atomic_read(&net->ct.count) > ct_max)) {
 		if (!early_drop(net, hash_bucket(hash, net))) {
 			atomic_dec(&net->ct.count);
 			net_warn_ratelimited("nf_conntrack: table full, dropping packet\n");
@@ -1508,11 +1506,11 @@ int nf_conntrack_init_start(void)
 		 * entries. */
 		max_factor = 4;
 	}
-	nf_conntrack_max = max_factor * nf_conntrack_htable_size;
+	init_net.ct.max = max_factor * nf_conntrack_htable_size;
 
 	printk(KERN_INFO "nf_conntrack version %s (%u buckets, %d max)\n",
 	       NF_CONNTRACK_VERSION, nf_conntrack_htable_size,
-	       nf_conntrack_max);
+	       init_net.ct.max);
 
 	ret = nf_conntrack_expect_init();
 	if (ret < 0)
@@ -1608,6 +1606,7 @@ int nf_conntrack_init_net(struct net *net)
 	int ret;
 
 	atomic_set(&net->ct.count, 0);
+	net->ct.max = init_net.ct.max;
 	INIT_HLIST_NULLS_HEAD(&net->ct.unconfirmed, UNCONFIRMED_NULLS_VAL);
 	INIT_HLIST_NULLS_HEAD(&net->ct.dying, DYING_NULLS_VAL);
 	INIT_HLIST_NULLS_HEAD(&net->ct.tmpl, TEMPLATE_NULLS_VAL);
