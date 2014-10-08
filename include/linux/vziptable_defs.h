@@ -2,7 +2,7 @@
 #define _LINUX_VZIPTABLE_DEFS_H
 
 #include <linux/types.h>
-#include <linux/sched.h>
+#include <linux/ve.h>
 
 #include <uapi/linux/vziptable_defs.h>
 
