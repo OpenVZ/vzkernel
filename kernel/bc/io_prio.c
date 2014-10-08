@@ -40,6 +40,8 @@ int ub_set_ioprio(int id, int ioprio)
 	if (!ub)
 		goto out;
 
+	ret = 0;
+#if 0
 	if (ub->blkio_cgroup)
 //		ret = blkio_cgroup_set_weight(ub->blkio_cgroup,
 //				ioprio_weight[ioprio])
@@ -47,6 +49,7 @@ int ub_set_ioprio(int id, int ioprio)
 	else
 		ret = -ENOTSUPP;
 	put_beancounter(ub);
+#endif
 out:
 	return ret;
 }
