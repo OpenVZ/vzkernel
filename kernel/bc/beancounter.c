@@ -36,6 +36,8 @@
 #include <linux/cgroup.h>
 #include <linux/pid_namespace.h>
 #include <linux/ve.h>
+#include <linux/cgroup.h>
+#include <linux/task_work.h>
 
 #include <bc/beancounter.h>
 #include <bc/io_acct.h>
@@ -48,8 +50,6 @@ static struct user_beancounter default_beancounter;
 struct user_beancounter ub0 = {
 };
 EXPORT_SYMBOL(ub0);
-
-static struct workqueue_struct *ub_clean_wq;
 
 const char *ub_rnames[] = {
 	"kmemsize",	/* 0 */
@@ -98,7 +98,7 @@ int ub_resource_precharge[UB_RESOURCES] = {
 /* natural limits for percpu precharge bounds */
 static int resource_precharge_min = 0;
 static int resource_precharge_max = INT_MAX / NR_CPUS;
-static struct cgroup *mem_cgroup_root, *blkio_cgroup_root;
+static struct cgroup *mem_cgroup_root, *blkio_cgroup_root, *ub_cgroup_root;
 
 extern int mem_cgroup_apply_beancounter(struct cgroup *cg,
 					struct user_beancounter *ub);
@@ -145,7 +145,28 @@ static int ub_blkio_cgroup_attach_task(struct user_beancounter *ub,
 	return ret;
 }
  
-static int ub_cgroup_move(struct user_beancounter *ub, struct task_struct *tsk)
+static int ub_cgroup_attach_task(struct user_beancounter *ub,
+				 struct task_struct *tsk)
+{
+	struct cgroup *cg;
+	int ret;
+
+	if (ub != get_ub0()) {
+		cg = cgroup_kernel_open(ub_cgroup_root,
+					CGRP_CREAT|CGRP_WEAK, ub->ub_name);
+		if (IS_ERR(cg))
+			return PTR_ERR(cg);
+	} else
+		cg = ub_cgroup_root;
+
+	ret = cgroup_kernel_attach(cg, tsk);
+
+	if (ub != get_ub0())
+		cgroup_kernel_close(cg);
+	return ret;
+}
+
+int ub_attach_task(struct user_beancounter *ub, struct task_struct *tsk)
 {
 	int ret;
 	struct user_beancounter *old_ub = tsk->task_bc.exec_ub;
@@ -156,8 +177,14 @@ static int ub_cgroup_move(struct user_beancounter *ub, struct task_struct *tsk)
 	ret = ub_blkio_cgroup_attach_task(ub, tsk);
 	if (ret)
 		goto fail_blkio;
+	ret = ub_cgroup_attach_task(ub, tsk);
+	if (ret)
+		goto fail_ub;
 out:
 	return ret;
+fail_ub:
+	if (ub != old_ub)
+		ub_blkio_cgroup_attach_task(old_ub, tsk);
 fail_blkio:
 	if (ub != old_ub)
 		ub_mem_cgroup_attach_task(old_ub, tsk);
@@ -283,39 +310,19 @@ static void uncharge_beancounter_precharge(struct user_beancounter *ub)
 		ub->ub_parms[resource].held -= precharge[resource];
 }
 
-static void forbid_beancounter_precharge(struct user_beancounter *ub)
-{
-	int resource;
-
-	for ( resource = 0 ; resource < UB_RESOURCES ; resource++ )
-		/* DEBUG: to trigger BUG_ON in precharge/charge/uncharge */
-		ub->ub_parms[resource].max_precharge = -1;
-}
-
 static void init_beancounter_struct(struct user_beancounter *ub);
 static void init_beancounter_nolimits(struct user_beancounter *ub);
 
-#define UB_HASH_SIZE 256
-#define ub_hash_fun(x) ((((x) >> 8) ^ (x)) & (UB_HASH_SIZE - 1))
-static struct hlist_head ub_hash[UB_HASH_SIZE];
-static DEFINE_SPINLOCK(ub_hash_lock);
-LIST_HEAD(ub_list_head); /* protected by ub_hash_lock */
+static DEFINE_SPINLOCK(ub_list_lock);
+LIST_HEAD(ub_list_head); /* protected by ub_list_lock */
 EXPORT_SYMBOL(ub_list_head);
+int ub_count;
 
-int set_task_exec_ub(struct task_struct *tsk, struct user_beancounter *ub)
+static inline struct user_beancounter *cgroup_ub(struct cgroup *cg)
 {
-	int err;
-
-	err = ub_cgroup_move(ub, tsk);
-	if (err)
-		return err;
-
-	put_beancounter(tsk->task_bc.exec_ub);
-	tsk->task_bc.exec_ub = get_beancounter(ub);
-
-	return 0;
+	return container_of(cgroup_subsys_state(cg, ub_subsys_id),
+			    struct user_beancounter, css);
 }
-EXPORT_SYMBOL(set_task_exec_ub);
 
 /*
  *	Per user resource beancounting. Resources are tied to their luid.
@@ -329,7 +336,7 @@ EXPORT_SYMBOL(set_task_exec_ub);
  *	will mean the old entry is still around with resource tied to it.
  */
 
-static struct user_beancounter *alloc_ub(uid_t uid)
+static struct user_beancounter *alloc_ub(const char *name)
 {
 	struct user_beancounter *new_ub;
 	ub_debug(UBD_ALLOC, "Creating ub %p\n", new_ub);
@@ -343,9 +350,8 @@ static struct user_beancounter *alloc_ub(uid_t uid)
 	init_beancounter_struct(new_ub);
 
 	init_beancounter_precharges(new_ub);
-	new_ub->ub_uid = uid;
 
-	new_ub->ub_name = kasprintf(GFP_KERNEL, "%u", uid);
+	new_ub->ub_name = kstrdup(name, GFP_KERNEL);
 	if (!new_ub->ub_name)
 		goto fail_name;
 
@@ -367,8 +373,9 @@ fail_name:
 	return NULL;
 }
 
-static inline void __free_ub(struct user_beancounter *ub)
+static inline void free_ub(struct user_beancounter *ub)
 {
+	percpu_counter_destroy(&ub->ub_orphan_count);
 	free_percpu(ub->ub_percpu);
 	kfree(ub->ub_store);
 	kfree(ub->private_data2);
@@ -376,72 +383,40 @@ static inline void __free_ub(struct user_beancounter *ub)
 	kmem_cache_free(ub_cachep, ub);
 }
 
-static inline void free_ub(struct user_beancounter *ub)
+struct user_beancounter *get_beancounter_by_name(const char *name, int create)
 {
-	percpu_counter_destroy(&ub->ub_orphan_count);
-	__free_ub(ub);
-}
+	struct cgroup *cg;
+	struct user_beancounter *ub;
 
-int ub_count;
+	if (!strcmp(name, get_ub0()->ub_name))
+		return get_beancounter(get_ub0());
+
+	cg = cgroup_kernel_open(ub_cgroup_root,
+				create ? CGRP_CREAT|CGRP_WEAK : 0, name);
+	if (IS_ERR_OR_NULL(cg))
+		return NULL;
+
+	ub = get_beancounter(cgroup_ub(cg));
+	cgroup_kernel_close(cg);
+	return ub;
+}
 
 struct user_beancounter *get_beancounter_byuid(uid_t uid, int create)
 {
-	struct user_beancounter *new_ub, *ub;
-	unsigned long flags;
-	struct hlist_head *hash;
+	char name[32];
 
-	hash = &ub_hash[ub_hash_fun(uid)];
-
-	rcu_read_lock();
-	hlist_for_each_entry_rcu(ub, hash, ub_hash) {
-		if (ub->ub_uid != uid)
-			continue;
-
-		if (get_beancounter_rcu(ub)) {
-			rcu_read_unlock();
-			return ub;
-		}
-
-		spin_lock_irqsave(&ub_hash_lock, flags);
-		if (!hlist_unhashed(&ub->ub_hash)) {
-			get_beancounter(ub);
-			spin_unlock_irqrestore(&ub_hash_lock, flags);
-			rcu_read_unlock();
-			cancel_work_sync(&ub->work);
-			return ub;
-		}
-		spin_unlock_irqrestore(&ub_hash_lock, flags);
-	}
-	rcu_read_unlock();
-
-	if (!create)
-		return NULL;
-
-	new_ub = alloc_ub(uid);
-	if (new_ub == NULL)
-		return NULL;
-
-	spin_lock_irqsave(&ub_hash_lock, flags);
-
-	hlist_for_each_entry(ub, hash, ub_hash) {
-		if (ub->ub_uid != uid)
-			continue;
-
-		get_beancounter(ub);
-		spin_unlock_irqrestore(&ub_hash_lock, flags);
-		free_ub(new_ub);
-		cancel_work_sync(&ub->work);
-		return ub;
-	}
-
-	ub_count++;
-	list_add_rcu(&new_ub->ub_list, &ub_list_head);
-	hlist_add_head_rcu(&new_ub->ub_hash, hash);
-	spin_unlock_irqrestore(&ub_hash_lock, flags);
-
-	return new_ub;
+	snprintf(name, sizeof(name), "%u", uid);
+	return get_beancounter_by_name(name, create);
 }
-EXPORT_SYMBOL(get_beancounter_byuid);
+
+uid_t ub_legacy_id(struct user_beancounter *ub)
+{
+	uid_t id;
+
+	if (kstrtouint(ub->ub_name, 10, &id) != 0)
+		id = -1;
+	return id;
+}
 
 static int verify_res(struct user_beancounter *ub, const char *name,
 		unsigned long held)
@@ -473,8 +448,6 @@ static inline int bc_verify_held(struct user_beancounter *ub)
 			__ub_stat_get(ub, writeback_pages));
 	clean &= verify_res(ub, "tmpfs_respages", ub->ub_tmpfs_respages);
 
-	clean &= verify_res(ub, "refcount", atomic_read(&ub->ub_refcount));
-
 	clean &= verify_res(ub, "pincount", __ub_percpu_sum(ub, pincount));
 
 	clean &= verify_res(ub, "dcache", !list_empty(&ub->ub_dentry_lru));
@@ -489,75 +462,235 @@ static void bc_free_rcu(struct rcu_head *rcu)
 	struct user_beancounter *ub;
 
 	ub = container_of(rcu, struct user_beancounter, rcu);
-	__free_ub(ub);
+	free_ub(ub);
 }
 
-static void delayed_release_beancounter(struct work_struct *w)
+static struct cgroup_subsys_state *ub_cgroup_css_alloc(struct cgroup *cg)
 {
 	struct user_beancounter *ub;
-	unsigned long flags;
-	int refcount;
 
-	ub = container_of(w, struct user_beancounter, work);
+	if (!cg->parent)
+		return &ub0.css;
 
-	spin_lock_irqsave(&ub_hash_lock, flags);
+	/* forbid nested containers */
+	if (cgroup_ub(cg->parent) != &ub0)
+		return ERR_PTR(-EPERM);
 
-	refcount = atomic_read(&ub->ub_refcount);
-	if (refcount > 0)
-		/* raced with get_beancounter_byuid */
-		goto out;
+	ub = alloc_ub(cg->dentry->d_name.name);
+	if (!ub)
+		return ERR_PTR(-ENOMEM);
 
-	if (WARN_ON((ub == get_ub0()))) {
-		printk(KERN_ERR "UB: Trying to put ub0\n");
-		goto out;
-	}
+	spin_lock(&ub_list_lock);
+	list_add_rcu(&ub->ub_list, &ub_list_head);
+	ub_count++;
+	spin_unlock(&ub_list_lock);
 
-	if (hlist_unhashed(&ub->ub_hash)) {
-		printk(KERN_ERR "UB: Trying to put unhashed ub %s (%p)\n",
-				ub->ub_name, ub);
-		goto out;
-	}
+	return &ub->css;
+}
 
+static void ub_cgroup_css_free(struct cgroup *cg)
+{
+	struct user_beancounter *ub = cgroup_ub(cg);
+
+	spin_lock(&ub_list_lock);
 	ub_count--;
-	hlist_del_init_rcu(&ub->ub_hash);
 	list_del_rcu(&ub->ub_list);
-	spin_unlock_irqrestore(&ub_hash_lock, flags);
+	spin_unlock(&ub_list_lock);
 
-	if (WARN_ON(refcount < 0))
-		printk(KERN_ERR "UB: Bad refcount (%d) on put of %s (%p)\n",
-				refcount, ub->ub_name, ub);
-
-	//ub_dcache_unuse(ub);
-
-	if (!bc_verify_held(ub) || refcount) {
-		atomic_add(INT_MIN/2, &ub->ub_refcount);
+	if (!bc_verify_held(ub)) {
 		printk(KERN_ERR "UB: leaked beancounter %s (%p)\n",
 				ub->ub_name, ub);
 		add_taint(TAINT_CRAP, LOCKDEP_STILL_OK);
 		return;
 	}
 
-	forbid_beancounter_precharge(ub);
-	percpu_counter_destroy(&ub->ub_orphan_count);
-
 	call_rcu(&ub->rcu, bc_free_rcu);
-	return;
-
-out:
-	spin_unlock_irqrestore(&ub_hash_lock, flags);
 }
 
-void release_beancounter(struct user_beancounter *ub)
+static void ub_cgroup_attach_work_fn(struct callback_head *ch)
 {
-	unsigned long flags;
+	struct task_struct *tsk = current;
+	struct user_beancounter *ub;
 
-	spin_lock_irqsave(&ub_hash_lock, flags);
-	if (!atomic_read(&ub->ub_refcount))
-		queue_work(ub_clean_wq, &ub->work);
-	spin_unlock_irqrestore(&ub_hash_lock, flags);
+	rcu_read_lock();
+	do {
+		ub = cgroup_ub(task_cgroup(current, ub_subsys_id));
+	} while (!get_beancounter_rcu(ub));
+	put_beancounter(tsk->task_bc.exec_ub);
+	tsk->task_bc.exec_ub = ub;
+	rcu_read_unlock();
 }
 
-EXPORT_SYMBOL(release_beancounter);
+static void ub_cgroup_attach(struct cgroup *cg, struct cgroup_taskset *tset)
+{
+	struct task_struct *p;
+
+	/*
+	 * task_bc->exec_ub can only be modified by the owner task so we use
+	 * task work to get things done
+	 */
+	cgroup_taskset_for_each(p, cg, tset) {
+		/*
+		 * kthreads cannot be kicked to run a task work so we just
+		 * don't change ub for them
+		 */
+		if (p->flags & PF_KTHREAD)
+			return;
+
+		init_task_work(&p->task_bc.cgroup_attach_work,
+			       ub_cgroup_attach_work_fn);
+		task_work_cancel(p, ub_cgroup_attach_work_fn);
+		task_work_add(p, &p->task_bc.cgroup_attach_work, true);
+	}
+}
+
+enum {
+	UB_CGROUP_ATTR_HELD,
+	UB_CGROUP_ATTR_MAXHELD,
+	UB_CGROUP_ATTR_BARRIER,
+	UB_CGROUP_ATTR_LIMIT,
+	UB_CGROUP_ATTR_FAILCNT,
+	UB_CGROUP_NR_ATTRS,
+};
+
+#define UB_CGROUP_PRIVATE(res, attr)	(((res) << 16) | (attr))
+#define UB_CGROUP_RES(val)		(((val) >> 16) & 0xffff)
+#define UB_CGROUP_ATTR(val)		((val) & 0xffff)
+
+static ssize_t ub_cgroup_read(struct cgroup *cg, struct cftype *cft,
+			      struct file *file, char __user *buf,
+			      size_t nbytes, loff_t *ppos)
+{
+	struct user_beancounter *ub = cgroup_ub(cg);
+	struct ubparm *ubparm;
+	unsigned long val;
+	int res, attr;
+	int len;
+	char str[32];
+
+	res = UB_CGROUP_RES(cft->private);
+	attr = UB_CGROUP_ATTR(cft->private);
+
+	ubparm = &ub->ub_parms[res];
+
+	switch (attr) {
+	case UB_CGROUP_ATTR_HELD:
+		val = ubparm->held;
+		break;
+	case UB_CGROUP_ATTR_MAXHELD:
+		val = ubparm->maxheld;
+		break;
+	case UB_CGROUP_ATTR_BARRIER:
+		val = ubparm->barrier;
+		break;
+	case UB_CGROUP_ATTR_LIMIT:
+		val = ubparm->limit;
+		break;
+	case UB_CGROUP_ATTR_FAILCNT:
+		val = ubparm->failcnt;
+		break;
+	default:
+		BUG();
+	}
+
+	len = scnprintf(str, sizeof(str), "%lu\n", val);
+	return simple_read_from_buffer(buf, nbytes, ppos, str, len);
+}
+
+static int ub_cgroup_write_u64(struct cgroup *cg, struct cftype *cft, u64 val)
+{
+	struct user_beancounter *ub = cgroup_ub(cg);
+	struct ubparm *ubparm;
+	int res, attr;
+
+	if (val > UB_MAXVALUE)
+		return -EINVAL;
+
+	res = UB_CGROUP_RES(cft->private);
+	attr = UB_CGROUP_ATTR(cft->private);
+
+	ubparm = &ub->ub_parms[res];
+
+	spin_lock_irq(&ub->ub_lock);
+	switch (attr) {
+	case UB_CGROUP_ATTR_BARRIER:
+		ubparm->barrier = val;
+		break;
+	case UB_CGROUP_ATTR_LIMIT:
+		ubparm->limit = val;
+		break;
+	default:
+		BUG();
+	}
+	init_beancounter_precharge(ub, res);
+	spin_unlock_irq(&ub->ub_lock);
+	return 0;
+}
+
+static __init int ub_cgroup_init(void)
+{
+	static struct cftype cgroup_files[UB_RESOURCES * UB_CGROUP_NR_ATTRS + 1];
+	struct cftype *cft;
+	int i, j;
+
+	for (i = 0, j = 0; i < UB_RESOURCES; i++) {
+		if (!strcmp(ub_rnames[i], "dummy"))
+			continue;
+
+		if (i == UB_PHYSPAGES ||
+		    i == UB_SWAPPAGES ||
+		    i == UB_KMEMSIZE)
+			continue;
+
+		cft = &cgroup_files[j * UB_CGROUP_NR_ATTRS];
+		snprintf(cft->name, MAX_CFTYPE_NAME, "%s.held", ub_rnames[i]);
+		cft->flags = CFTYPE_NOT_ON_ROOT;
+		cft->private = UB_CGROUP_PRIVATE(i, UB_CGROUP_ATTR_HELD);
+		cft->read = ub_cgroup_read;
+
+		cft = &cgroup_files[j * UB_CGROUP_NR_ATTRS + 1];
+		snprintf(cft->name, MAX_CFTYPE_NAME, "%s.maxheld", ub_rnames[i]);
+		cft->flags = CFTYPE_NOT_ON_ROOT;
+		cft->private = UB_CGROUP_PRIVATE(i, UB_CGROUP_ATTR_MAXHELD);
+		cft->read = ub_cgroup_read;
+
+		cft = &cgroup_files[j * UB_CGROUP_NR_ATTRS + 2];
+		snprintf(cft->name, MAX_CFTYPE_NAME, "%s.barrier", ub_rnames[i]);
+		cft->flags = CFTYPE_NOT_ON_ROOT;
+		cft->private = UB_CGROUP_PRIVATE(i, UB_CGROUP_ATTR_BARRIER);
+		cft->read = ub_cgroup_read;
+		cft->write_u64 = ub_cgroup_write_u64;
+
+		cft = &cgroup_files[j * UB_CGROUP_NR_ATTRS + 3];
+		snprintf(cft->name, MAX_CFTYPE_NAME, "%s.limit", ub_rnames[i]);
+		cft->flags = CFTYPE_NOT_ON_ROOT;
+		cft->private = UB_CGROUP_PRIVATE(i, UB_CGROUP_ATTR_LIMIT);
+		cft->read = ub_cgroup_read;
+		cft->write_u64 = ub_cgroup_write_u64;
+
+		cft = &cgroup_files[j * UB_CGROUP_NR_ATTRS + 4];
+		snprintf(cft->name, MAX_CFTYPE_NAME, "%s.failcnt", ub_rnames[i]);
+		cft->flags = CFTYPE_NOT_ON_ROOT;
+		cft->private = UB_CGROUP_PRIVATE(i, UB_CGROUP_ATTR_FAILCNT);
+		cft->read = ub_cgroup_read;
+
+		j++;
+	}
+
+	WARN_ON(cgroup_add_cftypes(&ub_subsys, cgroup_files));
+
+	return 0;
+}
+module_init(ub_cgroup_init);
+
+struct cgroup_subsys ub_subsys = {
+	.name = "beancounter",
+	.subsys_id = ub_subsys_id,
+	.css_alloc = ub_cgroup_css_alloc,
+	.css_free = ub_cgroup_css_free,
+	.attach = ub_cgroup_attach,
+	.use_id = true,
+};
 
 /*
  *	Generic resource charging stuff
@@ -805,12 +938,10 @@ void ub_reclaim_rate_limit(struct user_beancounter *ub, int wait, unsigned count
 static void init_beancounter_struct(struct user_beancounter *ub)
 {
 	ub->ub_magic = UB_MAGIC;
-	atomic_set(&ub->ub_refcount, 1);
 	spin_lock_init(&ub->ub_lock);
 	INIT_LIST_HEAD(&ub->ub_tcp_sk_list);
 	INIT_LIST_HEAD(&ub->ub_other_sk_list);
 	INIT_LIST_HEAD(&ub->ub_dentry_lru);
-	INIT_WORK(&ub->work, delayed_release_beancounter);
 	INIT_LIST_HEAD(&ub->ub_dentry_top);
 	init_oom_control(&ub->oom_ctrl);
 	spin_lock_init(&ub->rl_lock);
@@ -879,7 +1010,6 @@ void __init ub_init_early(void)
 	struct user_beancounter *ub;
 
 	ub = get_ub0();
-	ub->ub_uid = 0;
 	ub->ub_name = "0";
 	init_beancounter_nolimits(ub);
 	init_beancounter_struct(ub);
@@ -892,7 +1022,6 @@ void __init ub_init_early(void)
 	__charge_beancounter_locked(ub, UB_NUMPROC, 1, UB_FORCE);
 	init_mm.mm_ub = get_beancounter(ub);
 
-	hlist_add_head(&ub->ub_hash, &ub_hash[ub->ub_uid]);
 	list_add(&ub->ub_list, &ub_list_head);
 	ub_count++;
 }
@@ -993,20 +1122,10 @@ void __init ub_init_late(void)
 	init_oom_control(&global_oom_ctrl);
 }
 
-static __init int ub_init_wq(void)
-{
-	ub_clean_wq = create_singlethread_workqueue("ubcleand");
-	if (ub_clean_wq == NULL)
-		panic("Can't create ubclean wq");
-	return 0;
-}
-
-late_initcall(ub_init_wq);
-
 int __init ub_init_cgroup(void)
 {
 	int err;
-	struct vfsmount *blkio_mnt, *mem_mnt;
+	struct vfsmount *blkio_mnt, *mem_mnt, *ub_mnt;
 	struct cgroup_sb_opts blkio_opts = {
 		.name		= vz_compat ? "beancounter" : NULL,
 		.subsys_mask    = (1ul << blkio_subsys_id),
@@ -1014,6 +1133,9 @@ int __init ub_init_cgroup(void)
 
 	struct cgroup_sb_opts mem_opts = {
 		.subsys_mask    = (1ul << mem_cgroup_subsys_id),
+	};
+	struct cgroup_sb_opts ub_opts = {
+		.subsys_mask	= (1ul << ub_subsys_id),
 	};
 
 	blkio_mnt = cgroup_kernel_mount(&blkio_opts);
@@ -1028,7 +1150,15 @@ int __init ub_init_cgroup(void)
 	}
 	mem_cgroup_root = cgroup_get_root(mem_mnt);
 
-	err = ub_cgroup_move(&ub0, init_pid_ns.child_reaper);
+	ub_mnt = cgroup_kernel_mount(&ub_opts);
+	if (IS_ERR(ub_mnt)) {
+		kern_unmount(blkio_mnt);
+		kern_unmount(mem_mnt);
+		return PTR_ERR(ub_mnt);
+	}
+	ub_cgroup_root = cgroup_get_root(ub_mnt);
+
+	err = ub_attach_task(&ub0, init_pid_ns.child_reaper);
 	if (err)
 		return err;
 
