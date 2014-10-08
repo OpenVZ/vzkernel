@@ -412,6 +412,9 @@ static int ipv4_net_init(struct net *net)
 {
 	int ret = 0;
 
+	if (!net_ipt_permitted(net, VE_IP_CONNTRACK))
+		return 0;
+
 	ret = nf_ct_l4proto_pernet_register(net, &nf_conntrack_l4proto_tcp4);
 	if (ret < 0) {
 		pr_err("nf_conntrack_tcp4: pernet registration failed\n");
@@ -432,6 +435,9 @@ static int ipv4_net_init(struct net *net)
 		pr_err("nf_conntrack_ipv4: pernet registration failed\n");
 		goto out_ipv4;
 	}
+
+	net_ipt_module_set(net, VE_IP_CONNTRACK);
+
 	return 0;
 out_ipv4:
 	nf_ct_l4proto_pernet_unregister(net, &nf_conntrack_l4proto_icmp);
@@ -449,6 +455,9 @@ static void ipv4_net_exit(struct net *net)
 	nf_ct_l4proto_pernet_unregister(net, &nf_conntrack_l4proto_icmp);
 	nf_ct_l4proto_pernet_unregister(net, &nf_conntrack_l4proto_udp4);
 	nf_ct_l4proto_pernet_unregister(net, &nf_conntrack_l4proto_tcp4);
+
+	if (net_is_ipt_module_set(net, VE_IP_CONNTRACK))
+		net_ipt_module_clear(net, VE_IP_CONNTRACK);
 }
 
 static struct pernet_operations ipv4_net_ops = {
