@@ -90,3 +90,9 @@ SUBSYS(ve)
 #endif
 
 /* */
+
+#if IS_SUBSYS_ENABLED(CONFIG_BEANCOUNTERS)
+SUBSYS(ub)
+#endif
+
+/* */
