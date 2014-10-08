@@ -62,8 +62,6 @@
 
 #include <asm/unistd.h>
 
-#include <bc/kmem.h>
-
 #include "util.h"
 
 struct ipc_proc_iface {
