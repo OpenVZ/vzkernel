@@ -46,7 +46,7 @@ int ub_set_ioprio(int id, int ioprio)
 		ret = 0;
 	else
 		ret = -ENOTSUPP;
-	put_beancounter_longterm(ub);
+	put_beancounter(ub);
 out:
 	return ret;
 }

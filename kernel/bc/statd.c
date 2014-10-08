@@ -342,7 +342,7 @@ long do_ubstat(int func, unsigned long arg1, unsigned long arg2,
 
 	ub = get_exec_ub();
 	if (ub != NULL && ub->ub_uid == arg1)
-		get_beancounter_longterm(ub);
+		get_beancounter(ub);
 	else /* FIXME must be if (ve_is_super) */
 		ub = get_beancounter_byuid(arg1, 0);
 
@@ -350,7 +350,7 @@ long do_ubstat(int func, unsigned long arg1, unsigned long arg2,
 		return -ESRCH;
 
 	retval = ubstat_get_stat(ub, func, buf, size);
-	put_beancounter_longterm(ub);
+	put_beancounter(ub);
 notify:
 	/* Handle request for notification */
 	if (retval >= 0) {
