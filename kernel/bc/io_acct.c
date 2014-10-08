@@ -67,7 +67,7 @@ void ub_io_account_clean(struct address_space *mapping)
 	    (!radix_tree_tagged(&mapping->page_tree, PAGECACHE_TAG_WRITEBACK) ||
 	     !mapping_cap_account_writeback(mapping))) {
 		mapping->dirtied_ub = NULL;
-		__put_beancounter(ub);
+		put_beancounter(ub);
 	}
 }
 
@@ -88,7 +88,7 @@ void ub_io_account_cancel(struct address_space *mapping)
 	    (!radix_tree_tagged(&mapping->page_tree, PAGECACHE_TAG_WRITEBACK) ||
 	     !mapping_cap_account_writeback(mapping))) {
 		mapping->dirtied_ub = NULL;
-		__put_beancounter(ub);
+		put_beancounter(ub);
 	}
 }
 
@@ -120,7 +120,7 @@ void ub_io_writeback_dec(struct address_space *mapping)
 	    (!radix_tree_tagged(&mapping->page_tree, PAGECACHE_TAG_DIRTY) ||
 	     !mapping_cap_account_dirty(mapping))) {
 		mapping->dirtied_ub = NULL;
-		__put_beancounter(ub);
+		put_beancounter(ub);
 	}
 }
 
