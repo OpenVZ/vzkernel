@@ -357,7 +357,7 @@ void __show_ub_mem(struct user_beancounter *ub)
 
 void show_ub_mem(struct user_beancounter *ub)
 {
-	printk(KERN_INFO "UB-%d-Mem-Info:\n", ub->ub_uid);
+	printk(KERN_INFO "UB-%s-Mem-Info:\n", ub->ub_name);
 	__show_ub_mem(ub);
 }
 
