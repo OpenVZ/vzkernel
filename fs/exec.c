@@ -57,6 +57,8 @@
 #include <linux/oom.h>
 #include <linux/compat.h>
 
+#include <bc/vmpages.h>
+
 #include <asm/uaccess.h>
 #include <asm/mmu_context.h>
 #include <asm/tlb.h>
@@ -252,9 +254,14 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 	struct vm_area_struct *vma = NULL;
 	struct mm_struct *mm = bprm->mm;
 
+	err = -ENOMEM;
+	if (ub_memory_charge(mm, PAGE_SIZE, VM_STACK_FLAGS | mm->def_flags,
+				NULL, UB_SOFT))
+		goto err_charge;
+
 	bprm->vma = vma = allocate_vma(mm, GFP_KERNEL | __GFP_ZERO);
 	if (!vma)
-		return -ENOMEM;
+		goto err_alloc;
 
 	down_write(&mm->mmap_sem);
 	vma->vm_mm = mm;
@@ -285,6 +292,9 @@ err:
 	up_write(&mm->mmap_sem);
 	bprm->vma = NULL;
 	free_vma(mm, vma);
+err_alloc:
+	ub_memory_uncharge(mm, PAGE_SIZE, VM_STACK_FLAGS | mm->def_flags, NULL);
+err_charge:
 	return err;
 }
 
