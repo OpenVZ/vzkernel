@@ -113,17 +113,30 @@ static int __net_init iptable_nat_net_init(struct net *net)
 {
 	struct ipt_replace *repl;
 
+	if (!net_ipt_permitted(net, VE_IP_IPTABLE_NAT))
+		return 0;
+
 	repl = ipt_alloc_initial_table(&nf_nat_ipv4_table);
 	if (repl == NULL)
 		return -ENOMEM;
 	net->ipv4.nat_table = ipt_register_table(net, &nf_nat_ipv4_table, repl);
 	kfree(repl);
+
+	if (!IS_ERR(net->ipv4.nat_table))
+		net_ipt_module_set(net, VE_IP_IPTABLE_NAT);
+
 	return PTR_RET(net->ipv4.nat_table);
 }
 
 static void __net_exit iptable_nat_net_exit(struct net *net)
 {
+	if (!net_is_ipt_module_set(net, VE_IP_IPTABLE_NAT))
+		return;
+
 	ipt_unregister_table(net, net->ipv4.nat_table);
+	net->ipv4.nat_table = NULL;
+
+	net_ipt_module_clear(net, VE_IP_IPTABLE_NAT);
 }
 
 static struct pernet_operations iptable_nat_net_ops = {
