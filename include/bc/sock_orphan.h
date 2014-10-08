@@ -50,18 +50,12 @@ static inline int ub_too_many_orphans(struct sock *sk, int count)
 		 atomic_long_read(&tcp_memory_allocated) > sysctl_tcp_mem[2]));
 }
 
-#include <bc/kmem.h>
-
 struct inet_timewait_sock;
 
 static inline void ub_timewait_mod(struct inet_timewait_sock *tw, int incdec)
 {
 #ifdef CONFIG_BEANCOUNTERS
-	struct user_beancounter *ub;
-
-	ub = slab_ub(tw);
-	if (ub != NULL)
-		ub->ub_tw_count += incdec;
+	tw->tw_ub->ub_tw_count += incdec;
 #endif
 }
 

@@ -64,7 +64,6 @@
 
 #include <bc/beancounter.h>
 #include <bc/io_acct.h>
-#include <bc/kmem.h>
 #include <bc/vmpages.h>
 
 #include <asm/io.h>

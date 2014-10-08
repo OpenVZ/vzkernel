@@ -28,8 +28,6 @@
 #include <linux/audit.h>
 #include <net/net_namespace.h>
 
-#include <bc/kmem.h>
-
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter_arp.h>
 #include <linux/netfilter_ipv4/ip_tables.h>

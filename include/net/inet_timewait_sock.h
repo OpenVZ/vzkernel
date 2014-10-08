@@ -141,6 +141,9 @@ struct inet_timewait_sock {
 	u32			tw_ttd;
 	struct inet_bind_bucket	*tw_tb;
 	struct hlist_node	tw_death_node;
+#ifdef CONFIG_BEANCOUNTERS
+	struct user_beancounter *tw_ub;
+#endif
 };
 #define tw_tclass tw_tos
 
