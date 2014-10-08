@@ -226,8 +226,8 @@ int set_task_exec_ub(struct task_struct *tsk, struct user_beancounter *ub)
 	if (err)
 		return err;
 
-	put_beancounter_longterm(tsk->task_bc.exec_ub);
-	tsk->task_bc.exec_ub = get_beancounter_longterm(ub);
+	put_beancounter(tsk->task_bc.exec_ub);
+	tsk->task_bc.exec_ub = get_beancounter(ub);
 
 	return 0;
 }
@@ -827,9 +827,9 @@ void __init ub_init_early(void)
 
 	memset(&current->task_bc, 0, sizeof(struct task_beancounter));
 	(void)set_exec_ub(ub);
-	current->task_bc.task_ub = get_beancounter_longterm(ub);
+	current->task_bc.task_ub = get_beancounter(ub);
 	__charge_beancounter_locked(ub, UB_NUMPROC, 1, UB_FORCE);
-	init_mm.mm_ub = get_beancounter_longterm(ub);
+	init_mm.mm_ub = get_beancounter(ub);
 
 	hlist_add_head(&ub->ub_hash, &ub_hash[ub->ub_uid]);
 	list_add(&ub->ub_list, &ub_list_head);
