@@ -22,8 +22,6 @@
 #include <linux/ve.h>
 #include <linux/kthread.h>
 
-#include <bc/kmem.h>
-
 struct pid_cache {
 	int nr_ids;
 	char name[16];

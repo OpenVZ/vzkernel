@@ -17,7 +17,6 @@
 #include <linux/module.h>
 #include <linux/ratelimit.h>
 #include <linux/slab.h>
-#include <bc/kmem.h>
 
 #include <asm/ldt.h>
 #include <asm/desc.h>
