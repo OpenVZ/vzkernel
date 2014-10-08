@@ -65,7 +65,7 @@ SYSCALL_DEFINE1(setluid, uid_t, uid)
 
 	error = set_task_exec_ub(current, ub);
 
-	put_beancounter_longterm(ub);
+	put_beancounter(ub);
 out:
 	return error;
 }
@@ -100,7 +100,7 @@ long do_setublimit(uid_t uid, unsigned long resource,
 
 	error = mem_cgroup_apply_beancounter(ub->mem_cgroup, ub);
 
-	put_beancounter_longterm(ub);
+	put_beancounter(ub);
 out:
 	return error;
 }
