@@ -38,8 +38,8 @@ void ub_task_get(struct user_beancounter *ub, struct task_struct *task)
 {
 	struct task_beancounter *new_bc = &task->task_bc;
 
-	new_bc->task_ub = get_beancounter_longterm(ub);
-	new_bc->exec_ub = get_beancounter_longterm(ub);
+	new_bc->task_ub = get_beancounter(ub);
+	new_bc->exec_ub = get_beancounter(ub);
 }
 
 void ub_task_put(struct task_struct *task)
@@ -48,8 +48,8 @@ void ub_task_put(struct task_struct *task)
 
 	task_bc = &task->task_bc;
 
-	put_beancounter_longterm(task_bc->exec_ub);
-	put_beancounter_longterm(task_bc->task_ub);
+	put_beancounter(task_bc->exec_ub);
+	put_beancounter(task_bc->task_ub);
 
 	task_bc->exec_ub = (struct user_beancounter *)0xdeadbcbc;
 	task_bc->task_ub = (struct user_beancounter *)0xdead100c;
