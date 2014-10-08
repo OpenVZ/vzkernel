@@ -213,7 +213,7 @@ UB_DECLARE_VOID_FUNC(ub_skb_set_charge(struct sk_buff *skb,
 			struct sock *sk, unsigned long size, int res))
 UB_DECLARE_FUNC(int, __ub_too_many_orphans(struct sock *sk, int count))
 
-#define CONFIG_BEANCOUNTERS
+#define CONFIG_BEANCOUNTERS 1
 #undef __BC_DECL_H_
 #undef UB_DECLARE_FUNC
 #undef UB_DECLARE_VOID_FUNC
