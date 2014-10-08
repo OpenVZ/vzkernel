@@ -240,13 +240,15 @@ static int bc_fill_meminfo(struct user_beancounter *ub,
 		unsigned long meminfo_val, struct meminfo *mi)
 {
 	int cpu, ret;
-	long dcache, kmem;
+	long dcache;
+	struct ubparm kmemsize;
 
 	ret = bc_fill_sysinfo(ub, meminfo_val, mi->si);
 	if (ret & NOTIFY_STOP_MASK)
 		goto out;
 
-	/* FIXME */
+	ub_get_mem_cgroup_parms(ub, NULL, NULL, &kmemsize);
+	ub_page_stat(ub, &node_online_map, mi->pages);
 
 	mi->cached = min(mi->si->totalram - mi->si->freeram,
 			mi->pages[LRU_INACTIVE_FILE] +
@@ -254,7 +256,6 @@ static int bc_fill_meminfo(struct user_beancounter *ub,
 	mi->locked = ub->ub_parms[UB_LOCKEDPAGES].held;
 	mi->shmem = ub->ub_parms[UB_SHMPAGES].held;
 	dcache = ub->ub_parms[UB_DCACHESIZE].held;
-	kmem = ub->ub_parms[UB_KMEMSIZE].held;
 
 	mi->dirty_pages = __ub_stat_get(ub, dirty_pages);
 	mi->writeback_pages = __ub_stat_get(ub, writeback_pages);
@@ -264,7 +265,6 @@ static int bc_fill_meminfo(struct user_beancounter *ub,
 		mi->dirty_pages	+= pcpu->dirty_pages;
 		mi->writeback_pages	+= pcpu->writeback_pages;
 		dcache		-= pcpu->precharge[UB_DCACHESIZE];
-		kmem		-= pcpu->precharge[UB_KMEMSIZE];
 	}
 
 	mi->dirty_pages = max_t(long, 0, mi->dirty_pages);
@@ -272,7 +272,7 @@ static int bc_fill_meminfo(struct user_beancounter *ub,
 
 	mi->slab_reclaimable = DIV_ROUND_UP(max(0L, dcache), PAGE_SIZE);
 	mi->slab_unreclaimable =
-		DIV_ROUND_UP(max(0L, kmem - dcache), PAGE_SIZE);
+		DIV_ROUND_UP(max(0L, (long)kmemsize.held - dcache), PAGE_SIZE);
 out:
 	return ret;
 }
