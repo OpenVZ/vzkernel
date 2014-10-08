@@ -466,7 +466,7 @@ static int bc_d_delete(const struct dentry *d)
 
 static void bc_d_release(struct dentry *d)
 {
-	put_beancounter_longterm((struct user_beancounter *)d->d_fsdata);
+	put_beancounter((struct user_beancounter *)d->d_fsdata);
 }
 
 static struct inode_operations bc_entry_iops;
@@ -614,7 +614,7 @@ static struct dentry *bc_lookup(struct user_beancounter *ub, struct inode *dir,
 	return NULL;
 
 out_put:
-	put_beancounter_longterm(ub);
+	put_beancounter(ub);
 	return ERR_PTR(-ENOENT);
 }
 
