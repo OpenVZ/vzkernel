@@ -69,8 +69,6 @@
 
 #include <trace/events/sched.h>
 
-#include <bc/kmem.h>
-
 int suid_dumpable = 0;
 
 static LIST_HEAD(formats);

@@ -281,6 +281,10 @@ struct tty_struct {
 	struct tty_port *port;
 
 	RH_KABI_EXTEND(struct ld_semaphore ldisc_sem)
+
+#ifdef CONFIG_BEANCOUNTERS
+	struct user_beancounter *ub;
+#endif
 };
 
 /* Each of a tty's open files has private_data pointing to tty_file_private */
