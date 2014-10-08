@@ -85,11 +85,11 @@ static unsigned long recharge_subtree(struct dentry *d, struct user_beancounter 
 	while (1) {
 		if (d->d_ub != cub) {
 			if (!(d->d_flags & DCACHE_BCTOP)) {
-				printk("%s %s %d %d %d %p %p %p %p\n", __func__,
+				printk("%s %s %s %s %s %p %p %p %p\n", __func__,
 						d->d_name.name,
-						d->d_ub->ub_uid,
-						ub->ub_uid,
-						cub->ub_uid,
+						d->d_ub->ub_name,
+						ub->ub_name,
+						cub->ub_name,
 						d, d->d_ub, ub, cub);
 				WARN_ON(1);
 			}
