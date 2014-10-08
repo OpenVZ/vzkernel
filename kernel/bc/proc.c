@@ -115,7 +115,7 @@ static int bc_debug_show(struct seq_file *f, void *v)
 
 	ub = seq_beancounter(f);
 	seq_printf(f, "uid: %s\n", ub->ub_name);
-	seq_printf(f, "ref: %d\n", atomic_read(&ub->ub_refcount));
+	seq_printf(f, "ref: %d\n", css_refcnt(&ub->css));
 	seq_printf(f, "flags: 0x%lx\n", ub->ub_flags);
 
 	seq_printf(f, "bc: %p\n", ub);
@@ -469,7 +469,7 @@ EXPORT_SYMBOL(bc_register_proc_root_entry);
 
 static inline unsigned long bc_make_ino(struct user_beancounter *ub)
 {
-	return 0xbc000000 | (ub->ub_uid + 1);
+	return 0xbc000000 | (css_id(&ub->css) + 1);
 }
 
 static inline unsigned long bc_make_file_ino(struct bc_proc_entry *de)
@@ -618,7 +618,7 @@ static struct dentry *bc_lookup(struct user_beancounter *ub, struct inode *dir,
 {
 	struct inode *ino;
 
-	ino = iget5_locked(dir->i_sb, ub->ub_uid, bc_looktest, bc_lookset, ub);
+	ino = iget5_locked(dir->i_sb, css_id(&ub->css), bc_looktest, bc_lookset, ub);
 	if (ino == NULL)
 		goto out_put;
 
@@ -801,8 +801,6 @@ static int bc_root_readdir(struct file *file, void *data, filldir_t filler)
 static struct dentry *bc_root_lookup(struct inode *dir, struct dentry *dentry,
 		unsigned int flags)
 {
-	int id;
-	char *end;
 	struct user_beancounter *ub;
 	struct dentry *de;
 
@@ -813,11 +811,7 @@ static struct dentry *bc_root_lookup(struct inode *dir, struct dentry *dentry,
 	if (de != ERR_PTR(-ESRCH))
 		return de;
 
-	id = simple_strtol(dentry->d_name.name, &end, 10);
-	if (*end != '\0')
-		return ERR_PTR(-ENOENT);
-
-	ub = get_beancounter_byuid(id, 0);
+	ub = get_beancounter_by_name(dentry->d_name.name, 0);
 	if (ub == NULL)
 		return ERR_PTR(-ENOENT);
 
