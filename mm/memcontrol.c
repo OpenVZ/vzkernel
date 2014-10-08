@@ -1296,12 +1296,11 @@ void mem_cgroup_iter_break(struct mem_cgroup *root,
 	     iter != NULL;				\
 	     iter = mem_cgroup_iter(NULL, iter, NULL))
 
-void mem_cgroup_get_nr_pages(struct mem_cgroup *root, int nid, unsigned long *pages)
+void mem_cgroup_get_nr_pages(struct cgroup *cg, int nid, unsigned long *pages)
 {
+	struct mem_cgroup *root = mem_cgroup_from_cont(cg);
 	struct mem_cgroup *iter;
 	int i;
-
-	memset(pages, 0, sizeof(unsigned long) * NR_LRU_LISTS);
 
 	for_each_mem_cgroup_tree(iter, root) {
 		for (i = 0; i < NR_LRU_LISTS; i++)
