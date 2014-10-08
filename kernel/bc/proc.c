@@ -212,8 +212,9 @@ static int bc_proc_nodeinfo_show(struct seq_file *f, void *v)
 
 	ub = seq_beancounter(f);
 	for_each_node_state(nid, N_HIGH_MEMORY) {
-		mem_cgroup_get_nr_pages(mem_cgroup_from_cont(ub->mem_cgroup),
-					nid, pages);
+		nodemask_t nodemask = nodemask_of_node(nid);
+
+		ub_page_stat(ub, &nodemask, pages);
 		seq_printf(f,
 			"Node %d Active:         %8lu kB\n"
 			"Node %d Inactive:       %8lu kB\n"

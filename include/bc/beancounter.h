@@ -397,6 +397,9 @@ extern void ub_get_mem_cgroup_parms(struct user_beancounter *ub,
 				    struct ubparm *physpages,
 				    struct ubparm *swappages,
 				    struct ubparm *kmemsize);
+extern void ub_page_stat(struct user_beancounter *ub,
+			 const nodemask_t *nodemask,
+			 unsigned long *pages);
 
 extern const char *ub_rnames[];
 /*
