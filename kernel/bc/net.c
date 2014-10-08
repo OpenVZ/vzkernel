@@ -508,8 +508,8 @@ void ub_sock_uncharge(struct sock *sk)
 	ub_sock_wcharge_dec(sk, reserv);
 	if (unlikely(skbc->ub_wcharged))
 		printk(KERN_WARNING
-		       "ub_sock_uncharge: wch=%lu for ub %p (%d).\n",
-		       skbc->ub_wcharged, ub, ub->ub_uid);
+		       "ub_sock_uncharge: wch=%lu for ub %p (%s).\n",
+		       skbc->ub_wcharged, ub, ub->ub_name);
 	skbc->poll_reserv = 0;
 	skbc->forw_space = 0;
 	spin_unlock_irqrestore(&ub->ub_lock, flags);

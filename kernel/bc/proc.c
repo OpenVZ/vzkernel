@@ -37,26 +37,24 @@ const char *bc_proc_lu_lu_fmt = "\t%-20s %21lu %21lu\n";
 
 #if BITS_PER_LONG == 32
 static const char *head_fmt = "%10s  %-12s %10s %10s %10s %10s %10s\n";
-static const char *res_fmt = "%10s  %-12s %10lu %10lu %10lu %10lu %10lu\n";
+static const char *res_fmt = "%10s%c %-12s %10lu %10lu %10lu %10lu %10lu\n";
 #else
 static const char *head_fmt = "%10s  %-12s %20s %20s %20s %20s %20s\n";
-static const char *res_fmt = "%10s  %-12s %20lu %20lu %20lu %20lu %20lu\n";
+static const char *res_fmt = "%10s%c %-12s %20lu %20lu %20lu %20lu %20lu\n";
 #endif
 
 static void ub_show_res(struct seq_file *f, struct user_beancounter *ub,
 		int r, int precharge, int show_uid)
 {
-	char ub_uid[64];
 	unsigned long held;
-
-	memset(ub_uid, 0, sizeof(ub_uid));
-	if (show_uid && r == 0)
-		snprintf(ub_uid, sizeof(ub_uid), "%u:", ub->ub_uid);
 
 	held = ub->ub_parms[r].held;
 	held = (held > precharge) ? (held - precharge) : 0;
 
-	seq_printf(f, res_fmt, ub_uid, ub_rnames[r],
+	seq_printf(f, res_fmt,
+			show_uid && r == 0 ? ub->ub_name : "",
+			show_uid && r == 0 ? ':' : ' ',
+		   	ub_rnames[r],
 			held,
 			ub->ub_parms[r].maxheld,
 			ub->ub_parms[r].barrier,
@@ -97,7 +95,7 @@ static int bc_debug_show(struct seq_file *f, void *v)
 	struct user_beancounter *ub;
 
 	ub = seq_beancounter(f);
-	seq_printf(f, "uid: %u\n", ub->ub_uid);
+	seq_printf(f, "uid: %s\n", ub->ub_name);
 	seq_printf(f, "ref: %d\n", atomic_read(&ub->ub_refcount));
 	seq_printf(f, "flags: 0x%lx\n", ub->ub_flags);
 
@@ -534,9 +532,7 @@ static int bc_readdir(struct file *file, filldir_t filler, void *data,
 	prev = NULL;
 	ub = list_entry(&ub_list_head, struct user_beancounter, ub_list);
 	while (1) {
-		int len;
 		unsigned long ino;
-		char buf[64];
 
 		ub = list_entry(rcu_dereference(ub->ub_list.next),
 				struct user_beancounter, ub_list);
@@ -554,10 +550,10 @@ static int bc_readdir(struct file *file, filldir_t filler, void *data,
 		rcu_read_unlock();
 		put_beancounter(prev);
 
-		len = snprintf(buf, sizeof(buf), "%u", ub->ub_uid);
 		ino = bc_make_ino(ub);
 
-		err = (*filler)(data, buf, len, pos, ino, DT_DIR);
+		err = (*filler)(data, ub->ub_name, strlen(ub->ub_name),
+				pos, ino, DT_DIR);
 		if (err < 0) {
 			err = 0;
 			put_beancounter(ub);

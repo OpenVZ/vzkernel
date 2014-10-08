@@ -193,6 +193,7 @@ struct user_beancounter
 
 	spinlock_t		ub_lock;
 	uid_t			ub_uid;
+	const char		*ub_name;
 
 	unsigned long		ub_flags;
 
