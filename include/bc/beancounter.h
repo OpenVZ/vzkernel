@@ -393,6 +393,11 @@ extern long ub_oomguarpages_left(struct user_beancounter *ub);
 extern void ub_update_resources_locked(struct user_beancounter *ub);
 extern void ub_update_resources(struct user_beancounter *ub);
 
+extern void ub_get_mem_cgroup_parms(struct user_beancounter *ub,
+				    struct ubparm *physpages,
+				    struct ubparm *swappages,
+				    struct ubparm *kmemsize);
+
 extern const char *ub_rnames[];
 /*
  *	Put a beancounter reference
