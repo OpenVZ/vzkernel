@@ -2097,12 +2097,24 @@ static struct xt_match ipt_builtin_mt[] __read_mostly = {
 
 static int __net_init ip_tables_net_init(struct net *net)
 {
-	return xt_proto_init(net, NFPROTO_IPV4);
+	int res;
+
+	if (!net_ipt_permitted(net, VE_IP_IPTABLES))
+		return 0;
+	res = xt_proto_init(net, NFPROTO_IPV4);
+	if (!res)
+		net_ipt_module_set(net, VE_IP_IPTABLES);
+	return res;
 }
 
 static void __net_exit ip_tables_net_exit(struct net *net)
 {
+	if (!net_is_ipt_module_set(net, VE_IP_IPTABLES))
+		return;
+
 	xt_proto_fini(net, NFPROTO_IPV4);
+
+	net_ipt_module_clear(net, VE_IP_IPTABLES);
 }
 
 static struct pernet_operations ip_tables_net_ops = {
