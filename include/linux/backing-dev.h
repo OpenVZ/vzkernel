@@ -68,6 +68,7 @@ struct backing_dev_info {
 	unsigned long state;	/* Always use atomic bitops on this */
 	unsigned int capabilities; /* Device capabilities */
 	congested_fn *congested_fn; /* Function pointer if device is md/dm */
+	congested_fn *congested_fn2; /* use per-bdi waitq */
 	void *congested_data;	/* Pointer to aux data for congested func */
 	int (*bd_full_fn) (struct backing_dev_info *, long long, int);
 	int bd_full; /* backing dev is full */
@@ -108,6 +109,8 @@ struct backing_dev_info {
 	struct device *dev;
 
 	struct timer_list laptop_mode_wb_timer;
+
+        wait_queue_head_t cong_waitq; /* to wait on congestion */
 
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debug_dir;
@@ -315,6 +318,30 @@ static inline int bdi_write_congested(struct backing_dev_info *bdi)
 static inline int bdi_rw_congested(struct backing_dev_info *bdi)
 {
 	return bdi_congested(bdi, (1 << BDI_sync_congested) |
+				  (1 << BDI_async_congested));
+}
+
+/* congestion helpers for block-devices supporting per-bdi waitq */
+static inline int bdi_congested2(struct backing_dev_info *bdi, int bdi_bits)
+{
+	if (bdi->congested_fn2)
+		return bdi->congested_fn2(bdi->congested_data, bdi_bits);
+	return 0;
+}
+
+static inline int bdi_read_congested2(struct backing_dev_info *bdi)
+{
+	return bdi_congested2(bdi, 1 << BDI_sync_congested);
+}
+
+static inline int bdi_write_congested2(struct backing_dev_info *bdi)
+{
+	return bdi_congested2(bdi, 1 << BDI_async_congested);
+}
+
+static inline int bdi_rw_congested2(struct backing_dev_info *bdi)
+{
+	return bdi_congested2(bdi, (1 << BDI_sync_congested) |
 				  (1 << BDI_async_congested));
 }
 
