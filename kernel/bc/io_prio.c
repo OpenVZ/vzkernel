@@ -60,16 +60,16 @@ static int bc_iostat(struct seq_file *f, struct user_beancounter *bc)
 	struct blkio_group *blkg;
 	struct hlist_node *n;
 
-	seq_printf(f, "%s %u %c %lu %lu %lu %u %u %lu %lu\n",
+	seq_printf(f, "%s %s %c %lu %lu %lu %u %u %lu %lu\n",
 			"flush" ,
-			(unsigned)bc->ub_uid, '.',
+			bc->ub_name, '.',
 			0ul, 0ul, 0ul, 0, 0,
 			ub_stat_get_exact(bc, wb_requests),
 			ub_stat_get_exact(bc, wb_sectors));
 
-	seq_printf(f, "%s %u %c %lu %lu %lu %u %u %lu %lu\n",
+	seq_printf(f, "%s %s %c %lu %lu %lu %u %u %lu %lu\n",
 			"fuse" ,
-			(unsigned)bc->ub_uid, '.',
+			bc->ub_name, '.',
 			0ul, 0ul, 0ul, 0, 0,
 			__ub_percpu_sum(bc, fuse_requests),
 			__ub_percpu_sum(bc, fuse_bytes) >> 9);
@@ -103,9 +103,9 @@ static int bc_iostat(struct seq_file *f, struct user_beancounter *bc)
 		sectors   = blkio_read_stat_cpu(blkg, BLKIO_STAT_CPU_SECTORS, 0);
 		spin_unlock_irq(&blkg->stats_lock);
 
-		seq_printf(f, "%s %u %c %lu %lu %lu %u %u %lu %lu\n",
+		seq_printf(f, "%s %s %c %lu %lu %lu %u %u %lu %lu\n",
 				blkg->dev_name ?: "none" ,
-				(unsigned)bc->ub_uid, '.',
+				bc->ub_name, '.',
 				queued, 0ul, 0ul,
 				wait_time, used_time,
 				serviced, sectors);
