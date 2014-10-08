@@ -67,7 +67,7 @@ static struct vfsmount *shm_mnt;
 #include <linux/seq_file.h>
 #include <linux/magic.h>
 
-#include <bc/kmem.h>
+#include <bc/beancounter.h>
 #include <bc/vmpages.h>
 
 #include <asm/uaccess.h>

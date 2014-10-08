@@ -100,6 +100,9 @@ void inet_twsk_free(struct inet_timewait_sock *tw)
 #ifdef SOCK_REFCNT_DEBUG
 	pr_debug("%s timewait_sock %p released\n", tw->tw_prot->name, tw);
 #endif
+#ifdef CONFIG_BEANCOUNTERS
+	put_beancounter(tw->tw_ub);
+#endif
 	release_net(twsk_net(tw));
 	kmem_cache_free(tw->tw_prot->twsk_prot->twsk_slab, tw);
 	module_put(owner);
@@ -208,6 +211,9 @@ struct inet_timewait_sock *inet_twsk_alloc(const struct sock *sk, const int stat
 		atomic_set(&tw->tw_refcnt, 0);
 		inet_twsk_dead_node_init(tw);
 		__module_get(tw->tw_prot->owner);
+#ifdef CONFIG_BEANCOUNTERS
+		tw->tw_ub = get_beancounter(get_exec_ub());
+#endif
 	}
 
 	return tw;

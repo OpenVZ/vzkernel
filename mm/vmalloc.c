@@ -32,7 +32,6 @@
 #include <asm/tlbflush.h>
 #include <asm/shmparam.h>
 
-#include <bc/kmem.h>
 #include <bc/debug.h>
 
 struct vfree_deferred {
