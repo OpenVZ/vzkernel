@@ -399,43 +399,19 @@ extern const char *ub_rnames[];
 
 extern void release_beancounter(struct user_beancounter *ub);
 
-static inline void put_beancounter_longterm(struct user_beancounter *ub)
-{
-	if (unlikely(ub == NULL))
-		return;
-
-	if (atomic_dec_and_test(&ub->ub_refcount))
-		release_beancounter(ub);
-}
-
-static inline void __put_beancounter(struct user_beancounter *ub)
-{
-	if (atomic_dec_and_test(&ub->ub_refcount))
-		release_beancounter(ub);
-}
-
 static inline void put_beancounter(struct user_beancounter *ub)
 {
 	if (unlikely(ub == NULL))
 		return;
 
-	__put_beancounter(ub);
+	if (atomic_dec_and_test(&ub->ub_refcount))
+		release_beancounter(ub);
 }
 
 /*
  *	Create a new beancounter reference
  */
 extern struct user_beancounter *get_beancounter_byuid(uid_t uid, int create);
-
-static inline
-struct user_beancounter *get_beancounter_longterm(struct user_beancounter *ub)
-{
-	if (unlikely(ub == NULL))
-		return NULL;
-
-	atomic_inc(&ub->ub_refcount);
-	return ub;
-}
 
 static inline 
 struct user_beancounter *get_beancounter(struct user_beancounter *ub)
