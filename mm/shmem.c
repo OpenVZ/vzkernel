@@ -72,7 +72,7 @@ static struct vfsmount *shm_mnt;
 #include <linux/userfaultfd_k.h>
 #include <linux/rmap.h>
 
-#include <bc/kmem.h>
+#include <bc/beancounter.h>
 #include <bc/vmpages.h>
 
 #include <asm/uaccess.h>
