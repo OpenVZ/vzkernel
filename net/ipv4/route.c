@@ -110,8 +110,6 @@
 #endif
 #include <net/secure_seq.h>
 
-#include <bc/kmem.h>
-
 #define RT_FL_TOS(oldflp4) \
 	((oldflp4)->flowi4_tos & (IPTOS_RT_MASK | RTO_ONLINK))
 
@@ -2734,6 +2732,7 @@ void __init ip_static_sysctl_init(void)
 }
 #endif
 
+#if 0
 static void ip_rt_dump_dst(void *o)
 {
 	struct rtable *rt = (struct rtable *)o;
@@ -2746,11 +2745,13 @@ static void ip_rt_dump_dst(void *o)
 	printk("\tgen %x flags %x type %d\n",
 			rt->rt_genid, rt->rt_flags, (int)rt->rt_type);
 }
+#endif
 
 void ip_rt_dump_dsts(void)
 {
 	printk("IPv4 dst cache:\n");
-	slab_obj_walk(ipv4_dst_ops.kmem_cachep, ip_rt_dump_dst);
+	//FIXME
+	//slab_obj_walk(ipv4_dst_ops.kmem_cachep, ip_rt_dump_dst);
 }
 
 void (*ip6_rt_dump_dsts)(void);

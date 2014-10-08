@@ -82,7 +82,6 @@
 #include <asm/tlbflush.h>
 
 #include <bc/misc.h>
-#include <bc/kmem.h>
 #include <bc/oom_kill.h>
 #include <bc/vmpages.h>
 

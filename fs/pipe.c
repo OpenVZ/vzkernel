@@ -26,8 +26,6 @@
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 
-#include <bc/kmem.h>
-
 #include "internal.h"
 
 /*

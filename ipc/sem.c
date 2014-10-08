@@ -140,8 +140,6 @@ struct sem_undo_list {
 };
 
 
-#include <bc/kmem.h>
-
 #define sem_ids(ns)	((ns)->ids[IPC_SEM_IDS])
 
 #define sem_checkid(sma, semid)	ipc_checkid(&sma->sem_perm, semid)
