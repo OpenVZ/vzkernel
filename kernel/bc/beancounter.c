@@ -168,6 +168,22 @@ void ub_get_mem_cgroup_parms(struct user_beancounter *ub,
 		*kmemsize = parms[2];
 }
 
+extern void mem_cgroup_get_nr_pages(struct cgroup *cg, int nid,
+				    unsigned long *pages);
+
+void ub_page_stat(struct user_beancounter *ub, const nodemask_t *nodemask,
+		  unsigned long *pages)
+{
+	int nid;
+	struct cgroup *cg;
+
+	cg = ub->mem_cgroup;
+
+	memset(pages, 0, sizeof(unsigned long) * NR_LRU_LISTS);
+	for_each_node_mask(nid, *nodemask)
+		mem_cgroup_get_nr_pages(cg, nid, pages);
+}
+
 void init_beancounter_precharge(struct user_beancounter *ub, int resource)
 {
 	/* limit maximum precharge with one half of current resource excess */
