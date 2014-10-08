@@ -120,6 +120,24 @@ static void freeze_timeout(unsigned long data)
 	spin_unlock_irq(&plo->lock);
 }
 
+static void ploop_congest(struct ploop_device *plo)
+{
+	if (!test_bit(PLOOP_S_CONGESTED, &plo->state) &&
+	    PLOOP_CONGESTED(plo) > plo->tune.congestion_high_watermark)
+		set_bit(PLOOP_S_CONGESTED, &plo->state);
+}
+
+static void ploop_uncongest(struct ploop_device *plo)
+{
+	if (PLOOP_CONGESTED(plo) <= plo->tune.congestion_low_watermark &&
+	    test_and_clear_bit(PLOOP_S_CONGESTED, &plo->state)) {
+		struct backing_dev_info *bdi = &plo->queue->backing_dev_info;
+
+		if (waitqueue_active(&bdi->cong_waitq))
+			wake_up_all(&bdi->cong_waitq);
+	}
+}
+
 static struct ploop_request *
 ploop_alloc_request(struct ploop_device * plo)
 {
@@ -149,6 +167,7 @@ ploop_alloc_request(struct ploop_device * plo)
 
 	preq = list_entry(plo->free_list.next, struct ploop_request, list);
 	list_del_init(&preq->list);
+	ploop_congest(plo);
 	return preq;
 }
 
@@ -195,6 +214,8 @@ void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list,
 	else if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state) &&
 		waitqueue_active(&plo->waitq) && plo->bio_head)
 		wake_up_interruptible(&plo->waitq);
+
+	ploop_uncongest(plo);
 
 	if (!keep_locked)
 		spin_unlock_irq(&plo->lock);
@@ -868,6 +889,7 @@ queue:
 		plo->bio_head = plo->bio_tail = bio;
 	}
 	plo->bio_qlen++;
+	ploop_congest(plo);
 
 	/* second chance to merge requests */
 	process_bio_queue(plo, &drop_list);
@@ -954,6 +976,16 @@ ploop_merge_bvec(struct request_queue *q, struct bvec_merge_data *bm_data,
 
 	/* If no mapping is available, merge up to cluster boundary */
 	return ret;
+}
+
+static int ploop_congested2(void *data, int bits)
+{
+	struct ploop_device * plo = data;
+
+	if (test_bit(PLOOP_S_CONGESTED, &plo->state))
+		return bits;
+
+	return 0;
 }
 
 static int ploop_congested(void *data, int bits)
@@ -1157,6 +1189,7 @@ static void ploop_complete_request(struct ploop_request * preq)
 	if (unlikely(test_bit(PLOOP_REQ_ZERO, &preq->state))) {
 		ploop_fb_put_zero_request(plo->fbd, preq);
 	} else {
+		ploop_uncongest(plo);
 		list_add(&preq->list, &plo->free_list);
 		if (waitqueue_active(&plo->req_waitq))
 			wake_up(&plo->req_waitq);
@@ -3399,6 +3432,7 @@ static int ploop_start(struct ploop_device * plo, struct block_device *bdev)
 	blk_queue_make_request(plo->queue, ploop_make_request);
 	plo->queue->queuedata = plo;
 	plo->queue->backing_dev_info.congested_fn = ploop_congested;
+	plo->queue->backing_dev_info.congested_fn2 = ploop_congested2;
 #if 0
 	plo->queue->backing_dev_info.bd_full_fn = ploop_bd_full;
 #endif
