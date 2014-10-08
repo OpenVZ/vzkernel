@@ -84,6 +84,7 @@
 #include <bc/misc.h>
 #include <bc/kmem.h>
 #include <bc/oom_kill.h>
+#include <bc/vmpages.h>
 
 #include <trace/events/sched.h>
 
@@ -432,6 +433,10 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
 			continue;
 		}
 		charge = 0;
+		if (ub_memory_charge(mm, mpnt->vm_end - mpnt->vm_start,
+					mpnt->vm_flags & ~VM_LOCKED,
+					mpnt->vm_file, UB_HARD))
+			goto fail_noch;
 		if (mpnt->vm_flags & VM_ACCOUNT) {
 			unsigned long len = vma_pages(mpnt);
 
@@ -521,6 +526,9 @@ fail_nomem_anon_vma_fork:
 fail_nomem_policy:
 	free_vma(mm, tmp);
 fail_nomem:
+	ub_memory_uncharge(mm, mpnt->vm_end - mpnt->vm_start,
+			mpnt->vm_flags & ~VM_LOCKED, mpnt->vm_file);
+fail_noch:
 	retval = -ENOMEM;
 	vm_unacct_memory(charge);
 	goto out;
