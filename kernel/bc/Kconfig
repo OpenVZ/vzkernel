@@ -70,14 +70,6 @@ config BC_DEBUG
 	help
 	  Enables to setup debug features for user resource accounting
 
-config BC_KEEP_UNUSED
-	bool "Keep unused beancounter alive"
-	default n
-	depends on BC_DEBUG
-	help
-	  If on, unused beancounters are kept on the hash and maxheld value
-	  can be looked through.
-
 config BC_DEBUG_ITEMS
 	bool "Account resources in items rather than in bytes"
 	default n
