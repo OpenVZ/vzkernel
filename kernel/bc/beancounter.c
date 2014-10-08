@@ -368,14 +368,6 @@ struct user_beancounter *get_beancounter_byuid(uid_t uid, int create)
 }
 EXPORT_SYMBOL(get_beancounter_byuid);
 
-#ifdef CONFIG_BC_KEEP_UNUSED
-
-void release_beancounter(struct user_beancounter *ub)
-{
-}
-
-#else
-
 static int verify_res(struct user_beancounter *ub, const char *name,
 		unsigned long held)
 {
@@ -492,8 +484,6 @@ void release_beancounter(struct user_beancounter *ub)
 		queue_work(ub_clean_wq, &ub->work);
 	spin_unlock_irqrestore(&ub_hash_lock, flags);
 }
-
-#endif /* CONFIG_BC_KEEP_UNUSED */
 
 EXPORT_SYMBOL(release_beancounter);
 
@@ -748,9 +738,7 @@ static void init_beancounter_struct(struct user_beancounter *ub)
 	INIT_LIST_HEAD(&ub->ub_tcp_sk_list);
 	INIT_LIST_HEAD(&ub->ub_other_sk_list);
 	INIT_LIST_HEAD(&ub->ub_dentry_lru);
-#ifndef CONFIG_BC_KEEP_UNUSED
 	INIT_WORK(&ub->work, delayed_release_beancounter);
-#endif
 	INIT_LIST_HEAD(&ub->ub_dentry_top);
 	init_oom_control(&ub->oom_ctrl);
 	spin_lock_init(&ub->rl_lock);
