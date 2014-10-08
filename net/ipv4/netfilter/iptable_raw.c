@@ -41,6 +41,12 @@ static struct nf_hook_ops *rawtable_ops __read_mostly;
 static int __net_init iptable_raw_net_init(struct net *net)
 {
 	struct ipt_replace *repl;
+	int ret;
+
+	if (!net_ipt_permitted(net, VE_IP_IPTABLES))
+		return 0;
+
+	BUG_ON(net->ipv4.iptable_raw);
 
 	repl = ipt_alloc_initial_table(&packet_raw);
 	if (repl == NULL)
@@ -48,12 +54,22 @@ static int __net_init iptable_raw_net_init(struct net *net)
 	net->ipv4.iptable_raw =
 		ipt_register_table(net, &packet_raw, repl);
 	kfree(repl);
-	return PTR_RET(net->ipv4.iptable_raw);
+
+	ret = PTR_RET(net->ipv4.iptable_raw);
+	if (ret)
+		net->ipv4.iptable_raw = NULL;
+
+	return ret;
 }
 
 static void __net_exit iptable_raw_net_exit(struct net *net)
 {
+	if (!net->ipv4.iptable_raw)
+		return;
+
 	ipt_unregister_table(net, net->ipv4.iptable_raw);
+
+	net->ipv4.iptable_raw = NULL;
 }
 
 static struct pernet_operations iptable_raw_net_ops = {
