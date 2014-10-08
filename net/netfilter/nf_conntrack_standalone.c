@@ -447,7 +447,7 @@ static struct ctl_table_header *nf_ct_netfilter_header;
 static struct ctl_table nf_ct_sysctl_table[] = {
 	{
 		.procname	= "nf_conntrack_max",
-		.data		= &nf_conntrack_max,
+		.data		= &init_net.ct.max,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
@@ -497,13 +497,15 @@ static struct ctl_table nf_ct_sysctl_table[] = {
 static struct ctl_table nf_ct_netfilter_table[] = {
 	{
 		.procname	= "nf_conntrack_max",
-		.data		= &nf_conntrack_max,
+		.data		= &init_net.ct.max,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
 	},
 	{ }
 };
+
+static int zero;
 
 static int nf_conntrack_standalone_init_sysctl(struct net *net)
 {
@@ -514,6 +516,7 @@ static int nf_conntrack_standalone_init_sysctl(struct net *net)
 	if (!table)
 		goto out_kmemdup;
 
+	table[0].data = &net->ct.max;
 	table[1].data = &net->ct.count;
 	table[2].data = &net->ct.htable_size;
 	table[3].data = &net->ct.sysctl_checksum;
@@ -523,6 +526,12 @@ static int nf_conntrack_standalone_init_sysctl(struct net *net)
 	/* Don't export sysctls to unprivileged users */
 	if (net->user_ns != &init_user_ns)
 		table[0].procname = NULL;
+
+	if (!net_eq(net, &init_net)) {
+		table[0].proc_handler = proc_dointvec_minmax;
+		table[0].extra1 = &zero;
+		table[0].extra2 = &init_net.ct.max;
+	}
 
 	net->ct.sysctl_header = register_net_sysctl(net, "net/netfilter", table);
 	if (!net->ct.sysctl_header)
