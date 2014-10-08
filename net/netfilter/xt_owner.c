@@ -18,6 +18,66 @@
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter/xt_owner.h>
 
+static bool
+owner_mt_v0(const struct sk_buff *skb, struct xt_action_param *par)
+{
+	const struct ipt_owner_info *info = par->matchinfo;
+	const struct file *filp;
+
+	if (skb->sk == NULL || skb->sk->sk_socket == NULL)
+		return false;
+
+	filp = skb->sk->sk_socket->file;
+	if (filp == NULL)
+		return false;
+
+	if (info->match & XT_OWNER_UID) {
+		kuid_t uid = make_kuid(&init_user_ns, info->uid);
+		if ((!uid_eq(filp->f_cred->fsuid, uid)) ^
+		    !!(info->invert & XT_OWNER_UID))
+			return false;
+	}
+
+	if (info->match & XT_OWNER_GID) {
+		kgid_t gid = make_kgid(&init_user_ns, info->gid);
+		if ((!gid_eq(filp->f_cred->fsgid, gid)) ^
+		    !!(info->invert & XT_OWNER_GID))
+			return false;
+	}
+
+	return true;
+}
+
+static bool
+owner_mt6_v0(const struct sk_buff *skb, struct xt_action_param *par)
+{
+	const struct ip6t_owner_info *info = par->matchinfo;
+	const struct file *filp;
+
+	if (skb->sk == NULL || skb->sk->sk_socket == NULL)
+		return false;
+
+	filp = skb->sk->sk_socket->file;
+	if (filp == NULL)
+		return false;
+
+	if (info->match & XT_OWNER_UID) {
+		kuid_t uid = make_kuid(&init_user_ns, info->uid);
+		if ((!uid_eq(filp->f_cred->fsuid, uid)) ^
+		    !!(info->invert & XT_OWNER_UID))
+			return false;
+	}
+
+	if (info->match & XT_OWNER_GID) {
+		kgid_t gid = make_kgid(&init_user_ns, info->gid);
+		if ((!gid_eq(filp->f_cred->fsgid, gid)) ^
+		    !!(info->invert & XT_OWNER_GID))
+			return false;
+	}
+
+	return true;
+}
+
 static int owner_check(const struct xt_mtchk_param *par)
 {
 	struct xt_owner_match_info *info = par->matchinfo;
@@ -72,26 +132,77 @@ owner_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	return true;
 }
 
-static struct xt_match owner_mt_reg __read_mostly = {
-	.name       = "owner",
-	.revision   = 1,
-	.family     = NFPROTO_UNSPEC,
-	.checkentry = owner_check,
-	.match      = owner_mt,
-	.matchsize  = sizeof(struct xt_owner_match_info),
-	.hooks      = (1 << NF_INET_LOCAL_OUT) |
-	              (1 << NF_INET_POST_ROUTING),
-	.me         = THIS_MODULE,
+static int owner_mt_check_v0(const struct xt_mtchk_param *par)
+{
+	const struct ipt_owner_info *info = par->matchinfo;
+
+	if (info->match & ~(XT_OWNER_UID | XT_OWNER_GID)) {
+		printk(KERN_WARNING KBUILD_MODNAME
+		       ": PID, SID and command matching is not "
+		       "supported anymore\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int owner_mt6_check_v0(const struct xt_mtchk_param *par)
+{
+	const struct ip6t_owner_info *info = par->matchinfo;
+
+	if (info->match & ~(XT_OWNER_UID | XT_OWNER_GID)) {
+		printk(KERN_WARNING KBUILD_MODNAME
+		       ": PID and SID matching is not supported anymore\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static struct xt_match owner_mt_reg[] __read_mostly = {
+	{
+		.name       = "owner",
+		.revision   = 0,
+		.family     = NFPROTO_IPV4,
+		.match      = owner_mt_v0,
+		.matchsize  = sizeof(struct ipt_owner_info),
+		.checkentry = owner_mt_check_v0,
+		.hooks      = (1 << NF_INET_LOCAL_OUT) |
+		              (1 << NF_INET_POST_ROUTING),
+		.me         = THIS_MODULE,
+	},
+	{
+		.name       = "owner",
+		.revision   = 0,
+		.family     = NFPROTO_IPV6,
+		.match      = owner_mt6_v0,
+		.matchsize  = sizeof(struct ip6t_owner_info),
+		.checkentry = owner_mt6_check_v0,
+		.hooks      = (1 << NF_INET_LOCAL_OUT) |
+		              (1 << NF_INET_POST_ROUTING),
+		.me         = THIS_MODULE,
+	},
+	{
+		.name       = "owner",
+		.revision   = 1,
+		.family     = NFPROTO_UNSPEC,
+		.checkentry = owner_check,
+		.match      = owner_mt,
+		.matchsize  = sizeof(struct xt_owner_match_info),
+		.hooks      = (1 << NF_INET_LOCAL_OUT) |
+		              (1 << NF_INET_POST_ROUTING),
+		.me         = THIS_MODULE,
+	},
 };
 
 static int __init owner_mt_init(void)
 {
-	return xt_register_match(&owner_mt_reg);
+	return xt_register_matches(owner_mt_reg, ARRAY_SIZE(owner_mt_reg));
 }
 
 static void __exit owner_mt_exit(void)
 {
-	xt_unregister_match(&owner_mt_reg);
+	xt_unregister_matches(owner_mt_reg, ARRAY_SIZE(owner_mt_reg));
 }
 
 module_init(owner_mt_init);
