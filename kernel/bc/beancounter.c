@@ -144,6 +144,30 @@ static int ub_cgroup_move(struct user_beancounter *ub, struct task_struct *tsk)
 	return ret;
 }
 
+extern void mem_cgroup_fill_ub_parms(struct cgroup *cg,
+		struct ubparm *p, struct ubparm *s, struct ubparm *k);
+
+void ub_get_mem_cgroup_parms(struct user_beancounter *ub,
+			     struct ubparm *physpages,
+			     struct ubparm *swappages,
+			     struct ubparm *kmemsize)
+{
+	struct cgroup *cg;
+	struct ubparm parms[3];
+
+	cg = ub->mem_cgroup;
+
+	memset(parms, 0, sizeof(parms));
+	mem_cgroup_fill_ub_parms(cg, &parms[0], &parms[1], &parms[2]);
+
+	if (physpages)
+		*physpages = parms[0];
+	if (swappages)
+		*swappages = parms[1];
+	if (kmemsize)
+		*kmemsize = parms[2];
+}
+
 void init_beancounter_precharge(struct user_beancounter *ub, int resource)
 {
 	/* limit maximum precharge with one half of current resource excess */
