@@ -32,8 +32,6 @@
 
 #include <asm/uaccess.h>
 
-#include <bc/kmem.h>
-
 /*
  * Estimate expected accuracy in ns from a timeval.
  *

@@ -32,7 +32,6 @@
 #include <linux/atomic.h>
 
 #include <bc/beancounter.h>
-#include <bc/kmem.h>
 #include <bc/misc.h>
 
 #include "internal.h"
