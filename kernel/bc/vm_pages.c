@@ -60,13 +60,9 @@ void ub_update_resources_locked(struct user_beancounter *ub)
 }
 EXPORT_SYMBOL(ub_update_resources_locked);
 
-void mem_cgroup_sync_beancounter(struct cgroup *cg, struct user_beancounter *ub);
-
 void ub_update_resources(struct user_beancounter *ub)
 {
 	unsigned long flags;
-
-	mem_cgroup_sync_beancounter(ub->mem_cgroup, ub);
 
 	spin_lock_irqsave(&ub->ub_lock, flags);
 	ub_update_resources_locked(ub);
@@ -190,6 +186,7 @@ static int bc_fill_sysinfo(struct user_beancounter *ub,
 {
 	unsigned long used, total;
 	unsigned long totalram, totalswap;
+	struct ubparm physpages, swappages;
 
 	/* No virtualization */
 	if (meminfo_val == VE_MEMINFO_SYSTEM)
@@ -200,8 +197,10 @@ static int bc_fill_sysinfo(struct user_beancounter *ub,
 
 	memset(si, 0, sizeof(*si));
 
-	total = ub->ub_parms[UB_PHYSPAGES].limit;
-	used = __get_beancounter_usage_percpu(ub, UB_PHYSPAGES);
+	ub_get_mem_cgroup_parms(ub, &physpages, &swappages, NULL);
+
+	total = physpages.limit;
+	used = physpages.held;
 
 	if (total == UB_MAXVALUE) {
 		if (meminfo_val == VE_MEMINFO_DEFAULT)
@@ -219,8 +218,8 @@ static int bc_fill_sysinfo(struct user_beancounter *ub,
 	si->totalram = total;
 	si->freeram = (total > used ? total - used : 0);
 
-	total = ub->ub_parms[UB_SWAPPAGES].limit;
-	used = __get_beancounter_usage_percpu(ub, UB_SWAPPAGES);
+	total = swappages.limit;
+	used = swappages.held;
 
 	if (total == UB_MAXVALUE) {
 		if (meminfo_val == VE_MEMINFO_DEFAULT)
@@ -366,23 +365,22 @@ static int bc_vmaux_show(struct seq_file *f, void *v)
 {
 	struct user_beancounter *ub;
 	struct ub_percpu_struct *ub_pcpu;
-	unsigned long swapin, swapout, vswapin, vswapout, phys_pages;
+	unsigned long swapin, swapout, vswapin, vswapout;
+	struct ubparm physpages;
 	int i;
 
 	ub = seq_beancounter(f);
 
+	ub_get_mem_cgroup_parms(ub, &physpages, NULL, NULL);
+
 	swapin = swapout = vswapin = vswapout = 0;
-	phys_pages = ub->ub_parms[UB_PHYSPAGES].held;
 	for_each_possible_cpu(i) {
 		ub_pcpu = ub_percpu(ub, i);
 		swapin += ub_pcpu->swapin;
 		swapout += ub_pcpu->swapout;
 		vswapin += ub_pcpu->vswapin;
 		vswapout += ub_pcpu->vswapout;
-		phys_pages -= ub_pcpu->precharge[UB_PHYSPAGES];
 	}
-
-	phys_pages = max_t(long, 0, phys_pages);
 
 	seq_printf(f, bc_proc_lu_fmt, "tmpfs_respages",
 			ub->ub_tmpfs_respages);
@@ -393,7 +391,7 @@ static int bc_vmaux_show(struct seq_file *f, void *v)
 	seq_printf(f, bc_proc_lu_fmt, "vswapin", vswapin);
 	seq_printf(f, bc_proc_lu_fmt, "vswapout", vswapout);
 
-	seq_printf(f, bc_proc_lu_fmt, "ram", phys_pages);
+	seq_printf(f, bc_proc_lu_fmt, "ram", physpages.held);
 
 	return 0;
 }
