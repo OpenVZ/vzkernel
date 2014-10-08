@@ -168,7 +168,7 @@ static void proc_set_tty(struct task_struct *tsk, struct tty_struct *tty);
 
 struct tty_struct *alloc_tty_struct(void)
 {
-	return kzalloc(sizeof(struct tty_struct), GFP_KERNEL_UBC);
+	return kzalloc(sizeof(struct tty_struct), GFP_KERNEL);
 }
 
 /**

@@ -184,7 +184,7 @@ static struct vlan_info *vlan_info_alloc(struct net_device *dev)
 {
 	struct vlan_info *vlan_info;
 
-	vlan_info = kzalloc(sizeof(struct vlan_info), GFP_KERNEL_UBC);
+	vlan_info = kzalloc(sizeof(struct vlan_info), GFP_KERNEL);
 	if (!vlan_info)
 		return NULL;
 

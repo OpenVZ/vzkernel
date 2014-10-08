@@ -1770,7 +1770,7 @@ EXPORT_SYMBOL(vmalloc);
 
 void *ub_vmalloc(unsigned long size)
 {
-	return __vmalloc(size, GFP_KERNEL_UBC | __GFP_HIGHMEM, PAGE_KERNEL);
+	return __vmalloc(size, GFP_KERNEL | __GFP_HIGHMEM, PAGE_KERNEL);
 }
 EXPORT_SYMBOL(ub_vmalloc);
 
@@ -1849,7 +1849,7 @@ EXPORT_SYMBOL(vmalloc_node);
 
 void *ub_vmalloc_node(unsigned long size, int node)
 {
-	return __vmalloc_node(size, 1, GFP_KERNEL_UBC | __GFP_HIGHMEM, PAGE_KERNEL,
+	return __vmalloc_node(size, 1, GFP_KERNEL | __GFP_HIGHMEM, PAGE_KERNEL,
 					node, __builtin_return_address(0));
 }
 EXPORT_SYMBOL(ub_vmalloc_node);

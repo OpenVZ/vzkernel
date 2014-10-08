@@ -684,7 +684,7 @@ struct xt_table_info *xt_alloc_table_info(unsigned int size)
 	if ((SMP_ALIGN(size) >> PAGE_SHIFT) + 2 > totalram_pages)
 		return NULL;
 
-	newinfo = kzalloc(XT_TABLE_INFO_SZ, GFP_KERNEL_UBC);
+	newinfo = kzalloc(XT_TABLE_INFO_SZ, GFP_KERNEL);
 	if (!newinfo)
 		return NULL;
 
@@ -693,7 +693,7 @@ struct xt_table_info *xt_alloc_table_info(unsigned int size)
 	for_each_possible_cpu(cpu) {
 		if (size <= PAGE_SIZE)
 			newinfo->entries[cpu] = kmalloc_node(size,
-							GFP_KERNEL_UBC,
+							GFP_KERNEL,
 							cpu_to_node(cpu));
 		else
 			newinfo->entries[cpu] = ub_vmalloc_node(size,

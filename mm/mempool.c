@@ -129,7 +129,6 @@ int mempool_resize(mempool_t *pool, int new_min_nr, gfp_t gfp_mask)
 	unsigned long flags;
 
 	BUG_ON(new_min_nr <= 0);
-	gfp_mask &= ~__GFP_UBC;
 
 	spin_lock_irqsave(&pool->lock, flags);
 	if (new_min_nr <= pool->min_nr) {
@@ -206,7 +205,6 @@ void * mempool_alloc(mempool_t *pool, gfp_t gfp_mask)
 	gfp_mask |= __GFP_NOMEMALLOC;	/* don't allocate emergency reserves */
 	gfp_mask |= __GFP_NORETRY;	/* don't loop in __alloc_pages */
 	gfp_mask |= __GFP_NOWARN;	/* failures are OK */
-	gfp_mask &= ~__GFP_UBC;
 
 	gfp_temp = gfp_mask & ~(__GFP_WAIT|__GFP_IO);
 

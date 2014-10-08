@@ -470,7 +470,7 @@ void *ipc_alloc(int size)
 	if(size > PAGE_SIZE)
 		out = ub_vmalloc(size);
 	else
-		out = kmalloc(size, GFP_KERNEL_UBC);
+		out = kmalloc(size, GFP_KERNEL);
 	return out;
 }
 

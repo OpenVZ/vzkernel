@@ -194,7 +194,7 @@ static void devinet_sysctl_unregister(struct in_device *idev)
 
 struct in_ifaddr *inet_alloc_ifa(void)
 {
-	return kzalloc(sizeof(struct in_ifaddr), GFP_KERNEL_UBC);
+	return kzalloc(sizeof(struct in_ifaddr), GFP_KERNEL);
 }
 EXPORT_SYMBOL(inet_alloc_ifa);
 
