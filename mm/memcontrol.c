@@ -5364,28 +5364,40 @@ static int mem_cgroup_move_charge_write(struct cgroup *cgrp,
 
 #include <bc/beancounter.h>
 
-void mem_cgroup_sync_beancounter(struct cgroup *cg, struct user_beancounter *ub)
+void mem_cgroup_fill_ub_parms(struct cgroup *cg,
+		struct ubparm *p, struct ubparm *s, struct ubparm *k)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cg);
-	struct ubparm *p, *s, *k;
+	unsigned long long lim;
 
-	p = ub->ub_parms + UB_PHYSPAGES;
 	p->held	= res_counter_read_u64(&memcg->res, RES_USAGE) >> PAGE_SHIFT;
 	p->maxheld = res_counter_read_u64(&memcg->res, RES_MAX_USAGE) >> PAGE_SHIFT;
 	p->failcnt = res_counter_read_u64(&memcg->res, RES_FAILCNT);
+	lim = res_counter_read_u64(&memcg->res, RES_LIMIT);
+	lim = lim == RESOURCE_MAX ? UB_MAXVALUE :
+		min_t(unsigned long long, lim >> PAGE_SHIFT, UB_MAXVALUE);
+	p->barrier = p->limit = lim;
 
-	k = ub->ub_parms + UB_KMEMSIZE;
 	k->held = res_counter_read_u64(&memcg->kmem, RES_USAGE);
 	k->maxheld = res_counter_read_u64(&memcg->kmem, RES_MAX_USAGE);
 	k->failcnt = res_counter_read_u64(&memcg->kmem, RES_FAILCNT);
+	lim = res_counter_read_u64(&memcg->kmem, RES_LIMIT);
+	lim = lim == RESOURCE_MAX ? UB_MAXVALUE :
+		min_t(unsigned long long, lim, UB_MAXVALUE);
+	k->barrier = k->limit = lim;
 
-	s = ub->ub_parms + UB_SWAPPAGES;
 	s->held	= res_counter_read_u64(&memcg->memsw, RES_USAGE) >> PAGE_SHIFT;
 	s->maxheld = res_counter_read_u64(&memcg->memsw, RES_MAX_USAGE) >> PAGE_SHIFT;
 	s->failcnt = res_counter_read_u64(&memcg->memsw, RES_FAILCNT);
+	lim = res_counter_read_u64(&memcg->memsw, RES_LIMIT);
+	lim = lim == RESOURCE_MAX ? UB_MAXVALUE :
+		min_t(unsigned long long, lim >> PAGE_SHIFT, UB_MAXVALUE);
 
 	s->held -= p->held;
 	s->maxheld -= p->maxheld;
+	if (lim != UB_MAXVALUE)
+		lim -= p->limit;
+	s->barrier = s->limit = lim;
 }
 
 int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
