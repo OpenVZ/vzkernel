@@ -427,6 +427,9 @@ static int ipv4_net_init(struct net *net)
 {
 	int ret = 0;
 
+	if (!net_ipt_permitted(net, VE_IP_CONNTRACK))
+		return 0;
+
 	ret = nf_ct_l4proto_pernet_register(net, builtin_l4proto4,
 					    ARRAY_SIZE(builtin_l4proto4));
 	if (ret < 0)
@@ -437,6 +440,9 @@ static int ipv4_net_init(struct net *net)
 		nf_ct_l4proto_pernet_unregister(net, builtin_l4proto4,
 						ARRAY_SIZE(builtin_l4proto4));
 	}
+
+	net_ipt_module_set(net, VE_IP_CONNTRACK);
+
 	return ret;
 }
 
@@ -445,6 +451,9 @@ static void ipv4_net_exit(struct net *net)
 	nf_ct_l3proto_pernet_unregister(net, &nf_conntrack_l3proto_ipv4);
 	nf_ct_l4proto_pernet_unregister(net, builtin_l4proto4,
 					ARRAY_SIZE(builtin_l4proto4));
+
+	if (net_is_ipt_module_set(net, VE_IP_CONNTRACK))
+		net_ipt_module_clear(net, VE_IP_CONNTRACK);
 }
 
 static struct pernet_operations ipv4_net_ops = {
