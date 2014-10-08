@@ -17,16 +17,16 @@ void ub_oom_start(struct oom_control *oom_ctrl)
 	current->task_bc.oom_generation = oom_ctrl->generation;
 }
 
-static inline int oom_ctrl_id(struct oom_control *ctrl)
+static inline const char *oom_ctrl_id(struct oom_control *ctrl)
 {
-	return (ctrl == &global_oom_ctrl ? -1 :
+	return (ctrl == &global_oom_ctrl ? "-1" :
 			container_of(ctrl, struct user_beancounter,
-				oom_ctrl)->ub_uid);
+				oom_ctrl)->ub_name);
 }
 
 static void __ub_release_oom_control(struct oom_control *oom_ctrl, char *why)
 {
-	printk("<<< %d oom generation %d ends (%s)\n",
+	printk("<<< %s oom generation %d ends (%s)\n",
 			oom_ctrl_id(oom_ctrl), oom_ctrl->generation, why);
 	oom_ctrl->kill_counter = 0;
 	oom_ctrl->generation++;
@@ -142,7 +142,7 @@ int ub_oom_lock(struct oom_control *oom_ctrl)
 
 out_do_oom:
 	ub_clear_oom();
-	printk(">>> %d oom generation %d starts\n",
+	printk(">>> %s oom generation %d starts\n",
 			oom_ctrl_id(oom_ctrl), oom_ctrl->generation);
 	return 0;
 }
@@ -200,8 +200,8 @@ struct user_beancounter *ub_oom_select_worst(void)
 
 	if (ub) {
 		set_bit(UB_OOM_NOPROC, &ub->ub_flags);
-		printk(KERN_INFO "OOM selected worst BC %d (overdraft %lu):\n",
-				ub->ub_uid, ub_maxover);
+		printk(KERN_INFO "OOM selected worst BC %s (overdraft %lu):\n",
+				ub->ub_name, ub_maxover);
 		__show_ub_mem(ub);
 	}
 	rcu_read_unlock();
