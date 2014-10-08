@@ -221,9 +221,6 @@ struct user_beancounter
 	unsigned		rl_step;	/* ns per page */
 	ktime_t			rl_wall;	/* wall time */
 
-	struct cgroup		*blkio_cgroup;
-	struct cgroup		*mem_cgroup;
-
 	void			*private_data2;
 
 	struct list_head	ub_dentry_lru;
@@ -392,6 +389,8 @@ extern void uncharge_warn(struct user_beancounter *ub, const char *resource,
 extern long ub_oomguarpages_left(struct user_beancounter *ub);
 extern void ub_update_resources_locked(struct user_beancounter *ub);
 extern void ub_update_resources(struct user_beancounter *ub);
+
+extern int ub_update_mem_cgroup_limits(struct user_beancounter *ub);
 
 extern void ub_get_mem_cgroup_parms(struct user_beancounter *ub,
 				    struct ubparm *physpages,
