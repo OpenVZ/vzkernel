@@ -42,7 +42,7 @@ static struct sbuff *sb_open(void)
 static void sb_close(struct sbuff *m)
 {
 	m->buf[m->count] = 0;
-	printk("%s\n", m->buf);
+	ve_printk(VE_LOG, "%s\n", m->buf);
 
 	if (likely(m != &emergency))
 		kfree(m);
