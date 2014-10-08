@@ -2559,7 +2559,7 @@ static int __init filelock_init(void)
 	int i;
 
 	filelock_cache = kmem_cache_create("file_lock_cache",
-			sizeof(struct file_lock), 0, SLAB_PANIC|SLAB_UBC, NULL);
+			sizeof(struct file_lock), 0, SLAB_PANIC, NULL);
 
 	lg_lock_init(&file_lock_lglock, "file_lock_lglock");
 
