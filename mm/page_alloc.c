@@ -63,7 +63,6 @@
 #include <linux/ve.h>
 
 #include <bc/oom_kill.h>
-#include <bc/kmem.h>
 
 #include <asm/sections.h>
 #include <asm/tlbflush.h>

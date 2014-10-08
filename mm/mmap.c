@@ -53,8 +53,6 @@
 #define arch_mmap_check(addr, len, flags)	(0)
 #endif
 
-#include <bc/kmem.h>
-
 #ifndef arch_rebalance_pgtables
 #define arch_rebalance_pgtables(addr, len)		(addr)
 #endif
