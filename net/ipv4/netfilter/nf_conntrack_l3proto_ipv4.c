@@ -372,7 +372,7 @@ static int ipv4_init_net(struct net *net)
 	if (!in->ctl_table)
 		return -ENOMEM;
 
-	in->ctl_table[0].data = &nf_conntrack_max;
+	in->ctl_table[0].data = &net->ct.max;
 	in->ctl_table[1].data = &net->ct.count;
 	in->ctl_table[2].data = &net->ct.htable_size;
 	in->ctl_table[3].data = &net->ct.sysctl_checksum;
