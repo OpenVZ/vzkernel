@@ -433,7 +433,12 @@ struct user_beancounter *get_beancounter(struct user_beancounter *ub)
 static inline 
 struct user_beancounter *get_beancounter_rcu(struct user_beancounter *ub)
 {
-	return css_tryget(&ub->css) ? ub : NULL;
+	return css_refcnt_inc_not_zero(&ub->css) ? ub : NULL;
+}
+
+static inline bool ub_dead(struct user_beancounter *ub)
+{
+	return !(ub->css.flags & CSS_ONLINE);
 }
 
 extern uid_t ub_legacy_id(struct user_beancounter *ub);
