@@ -102,18 +102,31 @@ static int __net_init iptable_mangle_net_init(struct net *net)
 {
 	struct ipt_replace *repl;
 
+	if (!net_ipt_permitted(net, VE_IP_MANGLE))
+		return 0;
+
 	repl = ipt_alloc_initial_table(&packet_mangler);
 	if (repl == NULL)
 		return -ENOMEM;
 	net->ipv4.iptable_mangle =
 		ipt_register_table(net, &packet_mangler, repl);
 	kfree(repl);
+
+	if (!IS_ERR(net->ipv4.iptable_mangle))
+		net_ipt_module_set(net, VE_IP_MANGLE);
+
 	return PTR_RET(net->ipv4.iptable_mangle);
 }
 
 static void __net_exit iptable_mangle_net_exit(struct net *net)
 {
+	if (!net_is_ipt_module_set(net, VE_IP_MANGLE))
+		return;
+
 	ipt_unregister_table(net, net->ipv4.iptable_mangle);
+	net->ipv4.iptable_mangle = NULL;
+
+	net_ipt_module_clear(net, VE_IP_MANGLE);
 }
 
 static struct pernet_operations iptable_mangle_net_ops = {
