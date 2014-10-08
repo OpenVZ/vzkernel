@@ -102,16 +102,16 @@ static struct cgroup *mem_cgroup_root, *blkio_cgroup_root;
 
 static int ub_cgroup_create(struct user_beancounter *ub)
 {
-	ub->mem_cgroup = ve_cgroup_open(mem_cgroup_root,
-				CGRP_CREAT|CGRP_EXCL|CGRP_WEAK, ub->ub_uid);
+	ub->mem_cgroup = cgroup_kernel_open(mem_cgroup_root,
+				CGRP_CREAT|CGRP_EXCL|CGRP_WEAK, ub->ub_name);
 	if (IS_ERR(ub->mem_cgroup))
 		return PTR_ERR(ub->mem_cgroup);
 
 	if (!ubc_ioprio)
 		return 0;
 
-	ub->blkio_cgroup = ve_cgroup_open(blkio_cgroup_root,
-				CGRP_CREAT|CGRP_WEAK, ub->ub_uid);
+	ub->blkio_cgroup = cgroup_kernel_open(blkio_cgroup_root,
+				CGRP_CREAT|CGRP_WEAK, ub->ub_name);
 	if (IS_ERR(ub->blkio_cgroup)) {
 		cgroup_kernel_close(ub->mem_cgroup);
 		return PTR_ERR(ub->blkio_cgroup);
@@ -261,6 +261,10 @@ static struct user_beancounter *alloc_ub(uid_t uid)
 	init_beancounter_precharges(new_ub);
 	new_ub->ub_uid = uid;
 
+	new_ub->ub_name = kasprintf(GFP_KERNEL, "%u", uid);
+	if (!new_ub->ub_name)
+		goto fail_name;
+
 	if (ub_cgroup_create(new_ub) < 0)
 		goto fail_cgroup;
 
@@ -284,6 +288,8 @@ fail_pcpu:
 	}
 	ub_cgroup_close(new_ub);
 fail_cgroup:
+	kfree(new_ub->ub_name);
+fail_name:
 	kmem_cache_free(ub_cachep, new_ub);
 	return NULL;
 }
@@ -293,6 +299,7 @@ static inline void __free_ub(struct user_beancounter *ub)
 	free_percpu(ub->ub_percpu);
 	kfree(ub->ub_store);
 	kfree(ub->private_data2);
+	kfree(ub->ub_name);
 	kmem_cache_free(ub_cachep, ub);
 }
 
@@ -374,8 +381,8 @@ static int verify_res(struct user_beancounter *ub, const char *name,
 	if (likely(held == 0))
 		return 1;
 
-	printk(KERN_WARNING "Ub %u helds %ld in %s on put\n",
-			ub->ub_uid, held, name);
+	printk(KERN_WARNING "Ub %s helds %ld in %s on put\n",
+			ub->ub_name, held, name);
 	return 0;
 }
 
@@ -438,8 +445,8 @@ static void delayed_release_beancounter(struct work_struct *w)
 	}
 
 	if (hlist_unhashed(&ub->ub_hash)) {
-		printk(KERN_ERR "UB: Trying to put unhashed ub %u (%p)\n",
-				ub->ub_uid, ub);
+		printk(KERN_ERR "UB: Trying to put unhashed ub %s (%p)\n",
+				ub->ub_name, ub);
 		goto out;
 	}
 
@@ -449,15 +456,15 @@ static void delayed_release_beancounter(struct work_struct *w)
 	spin_unlock_irqrestore(&ub_hash_lock, flags);
 
 	if (WARN_ON(refcount < 0))
-		printk(KERN_ERR "UB: Bad refcount (%d) on put of %u (%p)\n",
-				refcount, ub->ub_uid, ub);
+		printk(KERN_ERR "UB: Bad refcount (%d) on put of %s (%p)\n",
+				refcount, ub->ub_name, ub);
 
 	//ub_dcache_unuse(ub);
 
 	if (!bc_verify_held(ub) || refcount) {
 		atomic_add(INT_MIN/2, &ub->ub_refcount);
-		printk(KERN_ERR "UB: leaked beancounter %u (%p)\n",
-				ub->ub_uid, ub);
+		printk(KERN_ERR "UB: leaked beancounter %s (%p)\n",
+				ub->ub_name, ub);
 		add_taint(TAINT_CRAP, LOCKDEP_STILL_OK);
 		return;
 	}
@@ -520,8 +527,8 @@ int __charge_beancounter_locked(struct user_beancounter *ub,
 
 	if (!(strict & UB_TEST)) {
 		if (strict == UB_SOFT && __ratelimit(&ub->ub_ratelimit))
-			printk(KERN_INFO "Fatal resource shortage: %s, UB %d.\n",
-			       ub_rnames[resource], ub->ub_uid);
+			printk(KERN_INFO "Fatal resource shortage: %s, UB %s.\n",
+			       ub_rnames[resource], ub->ub_name);
 		ub->ub_parms[resource].failcnt++;
 	}
 	ub->ub_parms[resource].held -= val;
@@ -552,8 +559,8 @@ EXPORT_SYMBOL(charge_beancounter);
 void uncharge_warn(struct user_beancounter *ub, const char *resource,
 		unsigned long val, unsigned long held)
 {
-	printk(KERN_ERR "Uncharging too much %lu h %lu, res %s ub %u\n",
-			val, held, resource, ub->ub_uid);
+	printk(KERN_ERR "Uncharging too much %lu h %lu, res %s ub %s\n",
+			val, held, resource, ub->ub_name);
 	ub_debug_trace(1, 10, 10*HZ);
 }
 
@@ -808,6 +815,7 @@ void __init ub_init_early(void)
 
 	ub = get_ub0();
 	ub->ub_uid = 0;
+	ub->ub_name = "0";
 	init_beancounter_nolimits(ub);
 	init_beancounter_struct(ub);
 	init_beancounter_precharges_early(ub);
