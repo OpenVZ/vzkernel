@@ -2017,12 +2017,12 @@ bool tcp_check_oom(struct sock *sk, int shift)
 	out_of_socket_memory = tcp_out_of_memory(sk);
 
 	if (too_many_orphans) {
-		int ubid = 0;
+		const char *ubid = "0";
 #ifdef CONFIG_BEANCOUNTERS
-		ubid = sock_has_ubc(sk) ?
-			sock_bc(sk)->ub->ub_uid : 0;
+		if (sock_has_ubc(sk))
+			ubid = sock_bc(sk)->ub->ub_name;
 #endif
-		net_info_ratelimited("too many orphaned sockets (%d in CT%d)\n",
+		net_info_ratelimited("too many orphaned sockets (%d in CT%s)\n",
 				     orphans, ubid);
 	}
 	if (out_of_socket_memory)
