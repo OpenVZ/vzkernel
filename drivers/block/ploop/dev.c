@@ -702,6 +702,35 @@ static void process_bio_queue(struct ploop_device * plo, struct list_head *drop_
 	}
 }
 
+static void ploop_unplug(struct blk_plug_cb *cb, bool from_schedule)
+{
+	struct ploop_device *plo = cb->data;
+
+	clear_bit(PLOOP_S_SYNC, &plo->state);
+
+	/* And kick our "soft" queue too in case mitigation timer is in effect */
+	spin_lock_irq(&plo->lock);
+	if (plo->bio_head) {
+		BUG_ON (!plo->bio_tail);
+		/* another way would be: bio_tail->bi_rw |= BIO_RW_SYNCIO; */
+		plo->bio_sync = plo->bio_tail;
+	} else if (!list_empty(&plo->entry_queue)) {
+		struct ploop_request * preq = list_entry(plo->entry_queue.prev,
+							 struct ploop_request,
+							 list);
+		preq_set_sync_bit(preq);
+	}
+
+	if ((!list_empty(&plo->entry_queue) ||
+	     (plo->bio_head && !list_empty(&plo->free_list))) &&
+	    test_bit(PLOOP_S_WAIT_PROCESS, &plo->state) &&
+	    waitqueue_active(&plo->waitq))
+		wake_up_interruptible(&plo->waitq);
+	spin_unlock_irq(&plo->lock);
+
+	kfree(cb);
+}
+
 static void ploop_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct bio * nbio;
@@ -901,7 +930,8 @@ queue:
 	if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state)) {
 		/* Synchronous requests are not batched. */
 		if (plo->entry_qlen > plo->tune.batch_entry_qlen ||
-			(bio->bi_rw & (REQ_SYNC|REQ_FLUSH|REQ_FUA))) {
+			(bio->bi_rw & (REQ_SYNC|REQ_FLUSH|REQ_FUA)) ||
+			!current->plug) {
 			wake_up_interruptible(&plo->waitq);
 		} else if (!timer_pending(&plo->mitigation_timer)) {
 			mod_timer(&plo->mitigation_timer,
@@ -916,6 +946,8 @@ out:
 			bio_put(nbio);
 	}
 	spin_unlock_irq(&plo->lock);
+
+	blk_check_plugged(ploop_unplug, plo, sizeof(struct blk_plug_cb));
 
 	if (!list_empty(&drop_list))
 		ploop_preq_drop(plo, &drop_list, 0);
