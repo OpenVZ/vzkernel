@@ -3333,7 +3333,6 @@ static int ploop_truncate(struct ploop_device * plo, unsigned long arg)
 	return err;
 }
 
-#if 0
 #define FUSE_SUPER_MAGIC 0x65735546
 #define IS_PSTORAGE(sb) (sb->s_magic == FUSE_SUPER_MAGIC && \
 			 !strcmp(sb->s_subtype, "pstorage"))
@@ -3387,7 +3386,6 @@ static int ploop_bd_full(struct backing_dev_info *bdi, long long nr, int root)
 
 	return rc;
 }
-#endif
 
 static int ploop_start(struct ploop_device * plo, struct block_device *bdev)
 {
@@ -3433,9 +3431,7 @@ static int ploop_start(struct ploop_device * plo, struct block_device *bdev)
 	plo->queue->queuedata = plo;
 	plo->queue->backing_dev_info.congested_fn = ploop_congested;
 	plo->queue->backing_dev_info.congested_fn2 = ploop_congested2;
-#if 0
 	plo->queue->backing_dev_info.bd_full_fn = ploop_bd_full;
-#endif
 	plo->queue->backing_dev_info.congested_data = plo;
 
 	blk_queue_merge_bvec(plo->queue, ploop_merge_bvec);
