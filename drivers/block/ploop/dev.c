@@ -2398,7 +2398,7 @@ restart:
 	}
 }
 
-static void ploop_wait(struct ploop_device * plo, int once)
+static void ploop_wait(struct ploop_device * plo, int once, struct blk_plug *plug)
 {
 	DEFINE_WAIT(_wait);
 	for (;;) {
@@ -2436,13 +2436,9 @@ static void ploop_wait(struct ploop_device * plo, int once)
 			set_bit(PLOOP_S_EXITING, &plo->state);
 		once = 0;
 		spin_unlock_irq(&plo->lock);
-		if (test_and_clear_bit(PLOOP_S_SYNC, &plo->state) &&
-		    plo->active_reqs != plo->fastpath_reqs) {
-			struct ploop_delta * top_delta = ploop_top_delta(plo);
-			if (top_delta->io.ops->unplug)
-				top_delta->io.ops->unplug(&top_delta->io);
-		}
+		blk_finish_plug(plug);
 		schedule();
+		blk_start_plug(plug);
 		spin_lock_irq(&plo->lock);
 		clear_bit(PLOOP_S_WAIT_PROCESS, &plo->state);
 	}
@@ -2507,10 +2503,12 @@ static int ploop_thread(void * data)
 {
 	int once = 0;
 	struct ploop_device * plo = data;
+	struct blk_plug plug;
 	LIST_HEAD(drop_list);
 
 	set_user_nice(current, -20);
 
+	blk_start_plug(&plug);
 	spin_lock_irq(&plo->lock);
 	for (;;) {
 		/* Convert bios to preqs early (at least before processing
@@ -2600,10 +2598,11 @@ static int ploop_thread(void * data)
 			break;
 
 wait_more:
-		ploop_wait(plo, once);
+		ploop_wait(plo, once, &plug);
 		once = 0;
 	}
 	spin_unlock_irq(&plo->lock);
+	blk_finish_plug(&plug);
 
 	return 0;
 }
