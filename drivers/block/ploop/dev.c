@@ -3196,8 +3196,10 @@ static void ploop_update_fmt_version(struct ploop_device * plo)
 	struct ploop_delta * delta = ploop_top_delta(plo);
 
 	if (delta->level == 0 &&
-	    (delta->ops->capability & PLOOP_FMT_CAP_IDENTICAL))
+	    (delta->ops->capability & PLOOP_FMT_CAP_IDENTICAL)) {
+		set_bit(PLOOP_MAP_IDENTICAL, &plo->map.flags);
 		plo->fmt_version = PLOOP_FMT_UNDEFINED;
+	}
 }
 
 static int ploop_merge(struct ploop_device * plo)
