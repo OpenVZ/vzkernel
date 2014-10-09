@@ -3197,6 +3197,7 @@ static void ploop_update_fmt_version(struct ploop_device * plo)
 
 	if (delta->level == 0 &&
 	    (delta->ops->capability & PLOOP_FMT_CAP_IDENTICAL)) {
+		ploop_map_destroy(&plo->map);
 		set_bit(PLOOP_MAP_IDENTICAL, &plo->map.flags);
 		plo->fmt_version = PLOOP_FMT_UNDEFINED;
 	}
