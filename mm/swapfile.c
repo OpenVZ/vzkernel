@@ -1219,7 +1219,20 @@ int reuse_swap_page(struct page *page)
 	if (count <= 1 && PageSwapCache(page)) {
 		count += page_swapcount(page);
 		if (count == 1 && !PageWriteback(page)) {
-			delete_from_swap_cache(page);
+			swp_entry_t entry;
+			struct address_space *address_space;
+
+			entry.val = page_private(page);
+
+			address_space = swap_address_space(entry);
+			spin_lock_irq(&address_space->tree_lock);
+			__delete_from_swap_cache(page);
+			spin_unlock_irq(&address_space->tree_lock);
+
+			/* the page is still in use, do not uncharge */
+			swapcache_free(entry, NULL);
+			page_cache_release(page);
+
 			SetPageDirty(page);
 		}
 	}
