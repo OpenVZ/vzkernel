@@ -365,8 +365,7 @@ cached_submit(struct ploop_io *io, iblock_t iblk, struct ploop_request * preq,
 			if (prealloc > PLOOP_MAX_PREALLOC(plo))
 				prealloc = PLOOP_MAX_PREALLOC(plo);
 try_again:
-			err = io->files.file->f_op->fallocate(io->files.file,
-							       FALLOC_FL_KEEP_SIZE,
+			err = io->files.file->f_op->fallocate(io->files.file, 0,
 							       pos, prealloc);
 			if (err) {
 				if (err == -ENOSPC && prealloc != clu_siz) {
@@ -818,11 +817,35 @@ retry:
 	return err;
 }
 
+static int dio_truncate(struct ploop_io *, struct file *, __u32);
+
+static int dio_release_prealloced(struct ploop_io * io)
+{
+	int ret;
+
+	if (!io->prealloced_size)
+		return 0;
+
+	ret = dio_truncate(io, io->files.file, io->alloc_head);
+	if (ret)
+		printk("Can't release %llu prealloced bytes: "
+		       "truncate to %llu failed (%d)\n",
+		       io->prealloced_size,
+		       (loff_t)io->alloc_head << (io->plo->cluster_log + 9),
+		       ret);
+	else
+		io->prealloced_size = 0;
+
+	return ret;
+}
+
 static void dio_destroy(struct ploop_io * io)
 {
 	if (io->files.file) {
 		struct file * file;
 		struct ploop_delta * delta = container_of(io, struct ploop_delta, io);
+
+		(void)dio_release_prealloced(io);
 
 		if (io->files.em_tree) {
 			io->files.em_tree = NULL;
@@ -1558,6 +1581,11 @@ static int dio_prepare_snapshot(struct ploop_io * io, struct ploop_snapdata *sd)
 static int dio_complete_snapshot(struct ploop_io * io, struct ploop_snapdata *sd)
 {
 	struct file * file = io->files.file;
+	int ret;
+
+	ret = dio_release_prealloced(io);
+	if (ret)
+		return ret;
 
 	mutex_lock(&io->plo->sysfs_mutex);
 	io->files.file = sd->file;
