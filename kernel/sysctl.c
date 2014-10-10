@@ -1767,10 +1767,10 @@ static struct ctl_table fs_table[] = {
 #endif
 	{
 		.procname	= "odirect_enable",
-		.data		= &odirect_enable,
+		.data		= &ve0.odirect_enable,
 		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec,
+		.mode		= 0644 | S_ISVTX,
+		.proc_handler	= proc_dointvec_virtual,
 	},
 	{
 		.procname	= "pipe-max-size",

@@ -69,6 +69,7 @@ struct ve_struct ve0 = {
 	._iptables_modules	= VE_IP_NONE,	/* but nothing yet loaded */
 #endif
 	.features		= -1,
+	.fsync_enable		= FSYNC_FILTERED,
 	.meminfo_val		= VE_MEMINFO_SYSTEM,
 	._randomize_va_space	=
 #ifdef CONFIG_COMPAT_BRK
