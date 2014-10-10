@@ -92,10 +92,10 @@ static struct ctl_table vz_fs_table[] = {
 	},
 	{
 		.procname	= "fsync-enable",
-		.data		= &sysctl_fsync_enable,
+		.data		= &ve0.fsync_enable,
 		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= &proc_dointvec,
+		.mode		= 0644 | S_ISVTX,
+		.proc_handler	= &proc_dointvec_virtual,
 	},
 	{ 0 }
 };
