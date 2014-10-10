@@ -55,7 +55,6 @@ extern unsigned long get_max_files(void);
 extern int sysctl_nr_open;
 extern struct inodes_stat_t inodes_stat;
 extern int leases_enable, lease_break_time;
-extern int odirect_enable;
 extern int sysctl_protected_symlinks;
 extern int sysctl_protected_hardlinks;
 extern int sysctl_fsync_enable;
@@ -196,6 +195,8 @@ typedef void (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
 #define WRITE_FLUSH		(WRITE | REQ_SYNC | REQ_NOIDLE | REQ_FLUSH)
 #define WRITE_FUA		(WRITE | REQ_SYNC | REQ_NOIDLE | REQ_FUA)
 #define WRITE_FLUSH_FUA		(WRITE | REQ_SYNC | REQ_NOIDLE | REQ_FLUSH | REQ_FUA)
+
+extern int may_use_odirect(void);
 
 /*
  * Attribute flags.  These should be or-ed together to figure out what
