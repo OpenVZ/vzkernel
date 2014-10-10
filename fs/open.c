@@ -34,8 +34,6 @@
 
 #include "internal.h"
 
-int odirect_enable = 0;
-
 int do_truncate(struct dentry *dentry, loff_t length, unsigned int time_attrs,
 	struct file *filp)
 {
@@ -853,8 +851,10 @@ struct file *dentry_open(const struct path *path, int flags,
 	/* We must always pass in a valid mount pointer. */
 	BUG_ON(!path->mnt);
 
-	if (!capable(CAP_SYS_RAWIO) && !odirect_enable)
+	if (!may_use_odirect())
 		flags &= ~O_DIRECT;
+	if (ve_fsync_behavior() == FSYNC_NEVER)
+		flags &= ~O_SYNC;
 
 	f = get_empty_filp();
 	if (!IS_ERR(f)) {
