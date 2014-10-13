@@ -117,6 +117,7 @@ struct ve_struct {
 	int			odirect_enable;
 	int			fsync_enable;
 
+	u64			_uevent_seqnum;
 	struct nsproxy		*ve_ns;
 	struct cred		*init_cred;
 	struct net		*ve_netns;
@@ -137,6 +138,7 @@ extern struct proc_dir_entry *proc_vz_dir;
 extern struct cgroup_subsys ve_subsys;
 
 #ifdef CONFIG_VE
+#define ve_uevent_seqnum       (get_exec_env()->_uevent_seqnum)
 
 extern int vz_compat;
 
@@ -210,6 +212,8 @@ void ve_reap_external(struct pid_namespace *ns);
 int ve_start_container(struct ve_struct *ve);
 
 #else	/* CONFIG_VE */
+
+#define ve_uevent_seqnum uevent_seqnum
 
 #define vz_compat	(0)
 
