@@ -341,7 +341,7 @@ static void ub_show_header(struct seq_file *f)
 
 static void *ub_start(struct seq_file *f, loff_t *ppos)
 {
-	struct user_beancounter *ub;
+	struct user_beancounter *ub, *ret = NULL;
 	struct user_beancounter *exec_ub; 
 	unsigned long pos;
 
@@ -355,31 +355,46 @@ static void *ub_start(struct seq_file *f, loff_t *ppos)
 	for_each_beancounter(ub) {
 		if (!ub_accessible(exec_ub, ub))
 			continue;
-		if (pos-- == 0)
-			return ub;
+		if (!get_beancounter_rcu(ub))
+			continue;
+		if (pos-- == 0) {
+			ret = ub;
+			break;
+		}
+		put_beancounter(ub);
 	}
-	return NULL;
+	rcu_read_unlock();
+	return ret;
 }
 
 static void *ub_next(struct seq_file *f, void *v, loff_t *ppos)
 {
-	struct user_beancounter *ub;
+	struct user_beancounter *ub, *ret = NULL;
 	struct user_beancounter *exec_ub;
 
 	exec_ub = get_exec_ub();
 	ub = (struct user_beancounter *)v;
+	rcu_read_lock();
+	put_beancounter(ub);
 	list_for_each_entry_continue_rcu(ub, &ub_list_head, ub_list) {
 		if (!ub_accessible(exec_ub, ub))
 			continue;
+		if (!get_beancounter_rcu(ub))
+			continue;
 		(*ppos)++;
-		return ub;
+		ret = ub;
+		break;
 	}
-	return NULL;
+	rcu_read_unlock();
+	return ret;
 }
 
 static void ub_stop(struct seq_file *f, void *v)
 {
-	rcu_read_unlock();
+	struct user_beancounter *ub;
+
+	ub = (struct user_beancounter *)v;
+	put_beancounter(ub);
 }
 
 static struct seq_operations ub_seq_ops = {
