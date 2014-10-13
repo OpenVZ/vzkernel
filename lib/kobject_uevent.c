@@ -246,7 +246,7 @@ int kobject_uevent_env_one(struct kobject *kobj, enum kobject_action action,
 
 	mutex_lock(&uevent_sock_mutex);
 	/* we will send an event, so request a new sequence number */
-	retval = add_uevent_var(env, "SEQNUM=%llu", (unsigned long long)++uevent_seqnum);
+	retval = add_uevent_var(env, "SEQNUM=%llu", (unsigned long long)++ve_uevent_seqnum);
 	if (retval) {
 		mutex_unlock(&uevent_sock_mutex);
 		goto exit;
