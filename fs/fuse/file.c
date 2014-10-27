@@ -1975,7 +1975,6 @@ static int fuse_send_writepages(struct fuse_fill_data *data)
 			struct page *page = req->pages[i];
 			req->pages[i] = NULL;
 			SetPageError(page);
-			unlock_page(page);
 			end_page_writeback(page);
 		}
 		fuse_release_ff(inode, data->ff);
