@@ -992,6 +992,21 @@ static int fuse_readpage(struct file *file, struct page *page)
 	return err;
 }
 
+void fuse_release_ff(struct inode *inode, struct fuse_file *ff)
+{
+	if (ff) {
+		if (ff->fc->close_wait) {
+			struct fuse_inode *fi = get_fuse_inode(inode);
+			spin_lock(&fi->lock);
+			__fuse_file_put(ff);
+			wake_up(&fi->page_waitq);
+			spin_unlock(&fi->lock);
+		} else {
+			fuse_file_put(ff, false, false);
+		}
+	}
+}
+
 static void fuse_readpages_end(struct fuse_conn *fc, struct fuse_req *req)
 {
 	int i;
@@ -1024,18 +1039,8 @@ static void fuse_readpages_end(struct fuse_conn *fc, struct fuse_req *req)
 
 killed:
 	fuse_invalidate_atime(inode);
-
-	if (req->ff) {
-		struct fuse_conn *fc = req->ff->fc;
-		if (fc->close_wait) {
-			struct inode *inode = req->inode;
-			spin_lock(&fc->lock);
-			__fuse_file_put(req->ff);
-			wake_up(&get_fuse_inode(inode)->page_waitq);
-			spin_unlock(&fc->lock);
-		} else
-			fuse_file_put(req->ff, false, false);
-	}
+	if (req->ff)
+		fuse_release_ff(inode, req->ff);
 }
 
 static void fuse_send_readpages(struct fuse_req *req, struct file *file)
@@ -2259,21 +2264,6 @@ static int fuse_dummy_writepage(struct page *page,
 {
 	unlock_page(page);
 	return 0;
-}
-
-void fuse_release_ff(struct inode *inode, struct fuse_file *ff)
-{
-	if (ff) {
-		if (ff->fc->close_wait) {
-			struct fuse_inode *fi = get_fuse_inode(inode);
-			spin_lock(&fi->lock);
-			__fuse_file_put(ff);
-			wake_up(&fi->page_waitq);
-			spin_unlock(&fi->lock);
-		} else {
-			fuse_file_put(ff, false, false);
-		}
-	}
 }
 
 static int fuse_writepages(struct address_space *mapping,
