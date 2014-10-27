@@ -2113,6 +2113,31 @@ static bool fuse_writepage_in_flight(struct fuse_req *new_req,
 	return true;
 }
 
+/*
+ * Returns true if and only if fuse connection is blocked and there is
+ * no file invalidation in progress.
+ */
+static inline bool fuse_blocked_for_wb(struct inode *inode)
+{
+	struct fuse_conn *fc = get_fuse_conn(inode);
+	struct fuse_inode *fi = get_fuse_inode(inode);
+	bool blocked = true;
+
+	if (!fc->blocked)
+		return false;
+
+	spin_lock(&fi->lock);
+	if (!list_empty(&fi->write_files)) {
+		struct fuse_file *ff = list_entry(fi->write_files.next,
+						  struct fuse_file, write_entry);
+		if (test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state))
+			blocked = false;
+	}
+	spin_unlock(&fi->lock);
+
+	return blocked;
+}
+
 static int fuse_writepages_fill(struct page *page,
 		struct writeback_control *wbc, void *_data)
 {
@@ -2223,7 +2248,7 @@ out_unlock:
 	unlock_page(page);
 
 	if (wbc->sync_mode != WB_SYNC_NONE && check_for_blocked)
-		wait_event(fc->blocked_waitq, !fc->blocked);
+		wait_event(fc->blocked_waitq, !fuse_blocked_for_wb(inode));
 
 	return err;
 }
@@ -2264,21 +2289,28 @@ static int fuse_writepages(struct address_space *mapping,
 		goto out;
 
 	/*
-	 * It's not safe to wait on !fc->blocked right here becase we can be
-	 * called from fuse_invalidate_files() and in this case single-threaded
-	 * fused is blocked until we return
+	 * We use fuse_blocked_for_wb() instead of just fc->blocked to avoid
+	 * deadlock when we are called from fuse_invalidate_files() in case
+	 * of single-threaded fused.
 	 */
-
-	data.ff = fuse_write_file_get(fc, get_fuse_inode(inode));
+	if (wbc->sync_mode != WB_SYNC_NONE)
+		wait_event(fc->blocked_waitq, !fuse_blocked_for_wb(inode));
 
 	/* More than optimization: writeback pages to /dev/null; fused would
 	 * drop our FUSE_WRITE requests anyway, but it will be blocked while
 	 * sending NOTIFY_INVAL_FILES until we return!
+	 *
+	 * NB: We can't wait till fuse_send_writepages() because
+	 * fuse_writepages_fill() would possibly deadlock on
+	 * fuse_page_is_writeback().
 	 */
+	data.ff = fuse_write_file_get(fc, get_fuse_inode(inode));
+
 	if (data.ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &data.ff->ff_state)) {
 		err = write_cache_pages(mapping, wbc, fuse_dummy_writepage,
 					mapping);
 		fuse_release_ff(inode, data.ff);
+		data.ff = NULL;
 		goto out;
 	}
 
@@ -2286,9 +2318,6 @@ static int fuse_writepages(struct address_space *mapping,
 		fuse_release_ff(inode, data.ff);
 		data.ff = NULL;
 	}
-
-	if (wbc->sync_mode != WB_SYNC_NONE)
-		wait_event(fc->blocked_waitq, !fc->blocked);
 
 	data.inode = inode;
 	data.req = NULL;
