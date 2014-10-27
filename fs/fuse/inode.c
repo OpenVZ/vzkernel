@@ -413,6 +413,9 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 	}
 	spin_unlock(&fi->lock);
 
+	/* let them see FUSE_S_FAIL_IMMEDIATELY */
+	wake_up_all(&fc->blocked_waitq);
+
 	err = filemap_write_and_wait(inode->i_mapping);
 	if (!err || err == -EIO) { /* AS_EIO might trigger -EIO */
 		struct fuse_dev *fud;
