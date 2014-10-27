@@ -34,6 +34,7 @@
 #include <linux/compat.h>
 #include <linux/cn_proc.h>
 #include <linux/interrupt.h>
+#include <linux/ve.h>
 #define CREATE_TRACE_POINTS
 #include <trace/events/signal.h>
 
