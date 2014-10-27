@@ -840,7 +840,7 @@ void *ve_seq_start(struct seq_file *m, loff_t *pos)
 	if (!ve_is_super(curve)) {
 		if (*pos != 0)
 			return NULL;
-		return curve;
+		return &curve->ve_list;
 	}
 
 	return seq_list_start(&ve_list_head, *pos);
