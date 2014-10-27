@@ -1391,16 +1391,25 @@ config DIRECT_GBPAGES
 	  support it. This can improve the kernel's performance a tiny bit by
 	  reducing TLB pressure. If in doubt, say "Y".
 
-config TRACK_DIRTY_PAGES
-	bool "Enable dirty page tracking"
-	default n
-	depends on !KMEMCHECK
-	---help---
-	  Turning this on enables tracking of re-dirtied and
-	  changed pages.  This is needed by the Live Kernel
-	  Self Migration project (lksm.sourceforge.net) to perform
-	  live copying of memory and system state to another system.
-	  Most users will say n here.
+#
+# This tracker is breaking MEM_SOFT_DIRTY option because
+# it conflicts with the bits used there.
+#
+# So turn it off permanently because vanilla kernel already
+# has a tracker, no need to invent new one!
+#
+# 	-- cyrillos
+#
+#config TRACK_DIRTY_PAGES
+#	bool "Enable dirty page tracking"
+#	default n
+#	depends on !KMEMCHECK
+#	---help---
+#	  Turning this on enables tracking of re-dirtied and
+#	  changed pages.  This is needed by the Live Kernel
+#	  Self Migration project (lksm.sourceforge.net) to perform
+#	  live copying of memory and system state to another system.
+#	  Most users will say n here.
 
 config ARCH_HAS_MEM_ENCRYPT
 	def_bool y
