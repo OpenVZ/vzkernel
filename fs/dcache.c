@@ -38,6 +38,7 @@
 #include <linux/prefetch.h>
 #include <linux/ratelimit.h>
 #include <linux/vzstat.h>
+#include <linux/ve.h>
 #include "internal.h"
 #include "mount.h"
 
@@ -3096,7 +3097,8 @@ int d_root_check(struct path *path)
 		if (dentry == vfsmnt->mnt_root || IS_ROOT(dentry)) {
 			/* Global root? */
 			if (!mnt_has_parent(mnt)) {
-				error = -EACCES;
+				if (mnt->mnt_ns == ve0.ve_ns->mnt_ns)
+					error = -EACCES;
 				break;
 			}
 			dentry = mnt->mnt_mountpoint;
