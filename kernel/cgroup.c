@@ -1732,6 +1732,7 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 
 		if (!test_bit(CGRP_ROOT_VIRTUAL, &opts.flags)) {
 			root_cgrp->release_agent = opts.release_agent;
+			root_cgrp->cgroup_ve = get_exec_env();
 			opts.release_agent = NULL;
 		}
 
@@ -1781,6 +1782,7 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 				goto drop_new_super;
 
 			mutex_lock(&cgroup_mutex);
+			top_cgrp->cgroup_ve = ve;
 			top_cgrp->release_agent = opts.release_agent;
 			opts.release_agent = NULL;
 			set_bit(CGRP_VE_TOP_CGROUP_VIRTUAL, &top_cgrp->flags);
