@@ -298,6 +298,11 @@ static ssize_t sysfs_perms_read(struct cgroup *cgrp, struct cftype *cft,
 	return seq_read(file, buf, nbytes, ppos);
 }
 
+static int sysfs_perms_release(struct inode *inode, struct file *file)
+{
+	return seq_release(inode, file);
+}
+
 static struct cftype sysfs_ve_cftypes[] = {
 	{
 		.name = "default_sysfs_permissions",
@@ -305,6 +310,7 @@ static struct cftype sysfs_ve_cftypes[] = {
 		.open = sysfs_perms_open,
 		.read = sysfs_perms_read,
 		.write = sysfs_perms_write,
+		.release = sysfs_perms_release,
 		.mode = S_IRUGO | S_IWUSR,
 	},
 	{
@@ -313,6 +319,7 @@ static struct cftype sysfs_ve_cftypes[] = {
 		.open = sysfs_perms_open,
 		.read = sysfs_perms_read,
 		.write = sysfs_perms_write,
+		.release = sysfs_perms_release,
 		.mode = S_IRUGO | S_IWUSR,
 	},
 	{ },
