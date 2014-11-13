@@ -1295,8 +1295,20 @@ static int parse_cgroupfs_options(char *data, struct cgroup_sb_opts *opts)
 		set_bit(CGRP_ROOT_VIRTUAL, &opts->flags);
 
 	/* forbid non-virtualized hierarchies in containers */
-	if (!ve_is_super(get_exec_env()) && !test_bit(CGRP_ROOT_VIRTUAL, &opts->flags))
-		return opts->subsys_mask ? -ENOENT : -EPERM;
+	if (!ve_is_super(get_exec_env()) && !test_bit(CGRP_ROOT_VIRTUAL, &opts->flags)) {
+		WARN_ONCE(1, "Allow non-virtualized hierarchies for CRIU sake\n");
+		/*
+		 * FIXME
+		 *
+		 * We need to somehow limit this ability for CRIU only, because
+		 * we've to run restore procedure from inside of VE cgroup
+		 * (otherwise a number of get_exec_env() in network code
+		 * won't work as needed).
+		 *
+		 *   -- cyrillos
+		 */
+		/* return opts->subsys_mask ? -ENOENT : -EPERM; */
+	}
 
 	/*
 	 * Grab references on all the modules we'll need, so the subsystems
