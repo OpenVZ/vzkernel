@@ -64,11 +64,15 @@ static int sig_ve_ignored(int sig, struct siginfo *info, struct task_struct *t)
 	    (!is_si_special(info) && SI_FROMKERNEL(info)))
 		return 0;
 
-	ve = current->task_ve;
-	if (get_env_init(ve) != t)
+	ve = get_exec_env();
+	if (ve_is_super(ve))
 		return 0;
-	if (ve_is_super(get_exec_env()))
+	rcu_read_lock();
+	if (ve->ve_ns && get_env_init(ve) != t) {
+		rcu_read_unlock();
 		return 0;
+	}
+	rcu_read_unlock();
 	return !sig_user_defined(t, sig) || sig_kernel_only(sig);
 }
 
