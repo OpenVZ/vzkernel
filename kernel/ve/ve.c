@@ -61,7 +61,7 @@ static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, ve0_lat_stats);
 struct ve_struct ve0 = {
 	.ve_name		= "0",
 	.start_jiffies		= INITIAL_JIFFIES,
-	.ve_ns			= &init_nsproxy,
+	RCU_POINTER_INITIALIZER(ve_ns, &init_nsproxy),
 	.ve_netns		= &init_net,
 	.is_running		= 1,
 #ifdef CONFIG_VE_IPTABLES
@@ -430,13 +430,15 @@ static void ve_grab_context(struct ve_struct *ve)
 	struct task_struct *tsk = current;
 
 	ve->init_cred = (struct cred *)get_current_cred();
-	ve->ve_ns = get_nsproxy(tsk->nsproxy);
+	rcu_assign_pointer(ve->ve_ns, get_nsproxy(tsk->nsproxy));
 	ve->ve_netns =  get_net(ve->ve_ns->net_ns);
 	get_fs_root(tsk->fs, &ve->root_path);
+	synchronize_rcu();
 }
 
 static void ve_drop_context(struct ve_struct *ve)
 {
+	struct nsproxy *ve_ns = ve->ve_ns;
 	path_put(&ve->root_path);
 	ve->root_path.mnt = NULL;
 	ve->root_path.dentry = NULL;
@@ -444,8 +446,9 @@ static void ve_drop_context(struct ve_struct *ve)
 	put_net(ve->ve_netns);
 	ve->ve_netns = NULL;
 
-	put_nsproxy(ve->ve_ns);
-	ve->ve_ns = NULL;
+	rcu_assign_pointer(ve->ve_ns, NULL);
+	synchronize_rcu();
+	put_nsproxy(ve_ns);
 
 	put_cred(ve->init_cred);
 	ve->init_cred = NULL;
