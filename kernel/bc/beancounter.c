@@ -312,6 +312,7 @@ static void uncharge_beancounter_precharge(struct user_beancounter *ub)
 
 static void init_beancounter_struct(struct user_beancounter *ub);
 static void init_beancounter_nolimits(struct user_beancounter *ub);
+static void init_beancounter_syslimits(struct user_beancounter *ub);
 
 static DEFINE_SPINLOCK(ub_list_lock);
 LIST_HEAD(ub_list_head); /* protected by ub_list_lock */
@@ -391,10 +392,29 @@ struct user_beancounter *get_beancounter_by_name(const char *name, int create)
 	if (!strcmp(name, get_ub0()->ub_name))
 		return get_beancounter(get_ub0());
 
-	cg = cgroup_kernel_open(ub_cgroup_root,
-				create ? CGRP_CREAT|CGRP_WEAK : 0, name);
-	if (IS_ERR_OR_NULL(cg))
-		return NULL;
+	if (create) {
+		/*
+		 * We're might be asked to allocate new beancounter
+		 * from syscall. In this case we:
+		 *  - try to open existing UB
+		 *  - if not existed allocate new one and apply old
+		 *    veird limits in a sake of compatibility.
+		 */
+		cg = cgroup_kernel_open(ub_cgroup_root, 0, name);
+		if (IS_ERR(cg))
+			return NULL;
+		if (!cg) {
+			cg = cgroup_kernel_open(ub_cgroup_root, CGRP_CREAT|CGRP_WEAK, name);
+			if (IS_ERR_OR_NULL(cg))
+				return NULL;
+			pr_warn_once("Allocating UB with syslimits is deprecated!\n");
+			init_beancounter_syslimits(cgroup_ub(cg));
+		}
+	} else {
+		cg = cgroup_kernel_open(ub_cgroup_root, 0, name);
+		if (IS_ERR_OR_NULL(cg))
+			return NULL;
+	}
 
 	ub = get_beancounter(cgroup_ub(cg));
 	cgroup_kernel_close(cg);
@@ -480,6 +500,7 @@ static struct cgroup_subsys_state *ub_cgroup_css_alloc(struct cgroup *cg)
 	if (!ub)
 		return ERR_PTR(-ENOMEM);
 
+	init_beancounter_nolimits(ub);
 	spin_lock(&ub_list_lock);
 	list_add_rcu(&ub->ub_list, &ub_list_head);
 	ub_count++;
@@ -964,6 +985,9 @@ static void init_beancounter_nolimits(struct user_beancounter *ub)
 	/* FIXME: set unlimited rate? */
 	ub->ub_ratelimit.burst = 4;
 	ub->ub_ratelimit.interval = 300*HZ;
+
+	if (ub != get_ub0())
+		ub->rl_step = NSEC_PER_SEC / 25600; /* 100 Mb/s */
 }
 
 static void init_beancounter_syslimits(struct user_beancounter *ub)
