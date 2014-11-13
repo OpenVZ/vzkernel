@@ -223,8 +223,6 @@ int unshare_nsproxy_namespaces(unsigned long unshare_flags,
 	    (unshare_flags & (CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWNET)))
 		return -EPERM;
 
-	if (unshare_flags & CLONE_NEWNET)
-		return -EINVAL;
 	*new_nsp = create_new_namespaces(unshare_flags, current, user_ns,
 					 new_fs ? new_fs : current->fs);
 	if (IS_ERR(*new_nsp)) {
