@@ -1128,6 +1128,18 @@ static int cgroup_show_options(struct seq_file *seq, struct dentry *dentry)
 	return 0;
 }
 
+static int cgroup_show_path(struct seq_file *m, struct dentry *root)
+{
+	struct ve_struct *ve = get_exec_env();
+	struct cgroup *cgrp = __d_cgrp(root);
+
+	if (!ve_is_super(ve) && test_bit(CGRP_VE_TOP_CGROUP_VIRTUAL, &cgrp->flags))
+		seq_puts(m, "/");
+	else
+		seq_dentry(m, root, " \t\n\\");
+	return 0;
+}
+
 /*
  * Convert a hierarchy specifier into a bitmask of subsystems and flags. Call
  * with cgroup_mutex held to protect the subsys[] array. This function takes
@@ -1291,7 +1303,7 @@ static int parse_cgroupfs_options(char *data, struct cgroup_sb_opts *opts)
 		return -EINVAL;
 
 	/* virtualize 'systemd' hierarchy */
-	if (!opts->subsys_mask && opts->name && !strcmp(opts->name, "systemd"))
+	if (!ve_is_super(get_exec_env()) && !opts->subsys_mask && opts->name && !strcmp(opts->name, "systemd"))
 		set_bit(CGRP_ROOT_VIRTUAL, &opts->flags);
 
 	/* forbid non-virtualized hierarchies in containers */
@@ -1432,6 +1444,7 @@ static const struct super_operations cgroup_ops = {
 	.drop_inode = generic_delete_inode,
 	.show_options = cgroup_show_options,
 	.remount_fs = cgroup_remount,
+	.show_path = cgroup_show_path,
 };
 
 static void init_cgroup_housekeeping(struct cgroup *cgrp)
@@ -1869,6 +1882,7 @@ static struct kobject *cgroup_kobj;
  */
 int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
 {
+	struct ve_struct *ve = get_exec_env();
 	int ret = -ENAMETOOLONG;
 	char *start;
 
@@ -1886,6 +1900,16 @@ int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
 		const char *name = cgroup_name(cgrp);
 		int len;
 
+		/* Hide fake root-cgroup in virtualized hierarchy */
+		if (!ve_is_super(ve) && test_bit(CGRP_VE_TOP_CGROUP_VIRTUAL, &cgrp->flags)) {
+			if (*start != '/') {
+				if (--start < buf)
+					goto out;
+				*start = '/';
+			}
+			break;
+		}
+
 		len = strlen(name);
 		if ((start -= len) < buf)
 			goto out;
@@ -1896,9 +1920,6 @@ int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
 		*start = '/';
 
 		cgrp = cgrp->parent;
-		/* Hide fake root-cgroup in virtualized hierarchy */
-		if (test_bit(CGRP_VE_TOP_CGROUP_VIRTUAL, &cgrp->flags))
-			break;
 	} while (cgrp->parent);
 	ret = 0;
 	memmove(buf, start, buf + buflen - start);
