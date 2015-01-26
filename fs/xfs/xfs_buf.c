@@ -1758,6 +1758,7 @@ xfs_free_buftarg(
 	struct xfs_mount	*mp,
 	struct xfs_buftarg	*btp)
 {
+	list_lru_destroy(&btp->bt_lru);
 	unregister_shrinker(&btp->bt_shrinker);
 	ASSERT(percpu_counter_sum(&btp->bt_io_count) == 0);
 	percpu_counter_destroy(&btp->bt_io_count);
@@ -1823,8 +1824,11 @@ xfs_alloc_buftarg(
 	btp->bt_bdi = blk_get_backing_dev_info(bdev);
 
 	INIT_LIST_HEAD(&btp->bt_lru);
-	spin_lock_init(&btp->bt_lru_lock);
+
 	if (xfs_setsize_buftarg_early(btp, bdev))
+		goto error;
+
+	if (list_lru_init(&btp->bt_lru))
 		goto error;
 
 	if (percpu_counter_init(&btp->bt_io_count, 0, GFP_KERNEL))
