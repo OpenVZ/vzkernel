@@ -2161,7 +2161,7 @@ remove_lru_entry:
 	}
 	spin_unlock(&nfs_access_lru_lock);
 	nfs_access_free_list(&head);
-	return (atomic_long_read(&nfs_access_nr_entries) / 100) * sysctl_vfs_cache_pressure;
+	return vfs_pressure_ratio(atomic_long_read(&nfs_access_nr_entries));
 }
 
 int nfs_access_cache_shrinker(struct shrinker *shrink,
