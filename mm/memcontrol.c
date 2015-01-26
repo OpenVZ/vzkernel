@@ -3124,7 +3124,7 @@ static int mem_cgroup_slabinfo_read(struct cgroup *cont, struct cftype *cft,
 }
 #endif
 
-int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
+static int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 			     unsigned long nr_pages)
 {
 	struct page_counter *counter;
@@ -3170,7 +3170,7 @@ int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 	return ret;
 }
 
-void memcg_uncharge_kmem(struct mem_cgroup *memcg,
+static void memcg_uncharge_kmem(struct mem_cgroup *memcg,
 				unsigned long nr_pages)
 {
 	page_counter_uncharge(&memcg->memory, nr_pages);
@@ -3566,6 +3566,24 @@ static void memcg_create_cache_enqueue(struct mem_cgroup *memcg,
 	__memcg_create_cache_enqueue(memcg, cachep);
 	memcg_resume_kmem_account();
 }
+
+int __memcg_charge_slab(struct kmem_cache *cachep, gfp_t gfp, int order)
+{
+	int res;
+
+	res = memcg_charge_kmem(cachep->memcg_params->memcg, gfp,
+				1 << order);
+	if (!res)
+		atomic_add(1 << order, &cachep->memcg_params->nr_pages);
+	return res;
+}
+
+void __memcg_uncharge_slab(struct kmem_cache *cachep, int order)
+{
+	memcg_uncharge_kmem(cachep->memcg_params->memcg, 1 << order);
+	atomic_sub(1 << order, &cachep->memcg_params->nr_pages);
+}
+
 /*
  * Return the kmem_cache we're supposed to use for a slab allocation.
  * We try to use the current memcg's version of the cache.
