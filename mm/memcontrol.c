@@ -3361,8 +3361,10 @@ static void memcg_kmem_create_cache(struct mem_cgroup *memcg,
 	 * allocation (see memcg_kmem_get_cache()), several threads can try to
 	 * create the same cache, but only one of them may succeed.
 	 */
-	if (cache_from_memcg_idx(root_cache, id))
+	if (cache_from_memcg_idx(root_cache, id)) {
+		css_put(&memcg->css);
 		return;
+	}
 
 	cachep = kmem_cache_create_memcg(memcg, root_cache);
 	/*
@@ -3370,8 +3372,10 @@ static void memcg_kmem_create_cache(struct mem_cgroup *memcg,
 	 * that's not critical at all as we can always proceed with the root
 	 * cache.
 	 */
-	if (!cachep)
+	if (!cachep) {
+		css_put(&memcg->css);
 		return;
+	}
 
 	list_add(&cachep->memcg_params->list, &memcg->memcg_slab_caches);
 
@@ -3384,8 +3388,6 @@ static void memcg_kmem_create_cache(struct mem_cgroup *memcg,
 
 	BUG_ON(root_cache->memcg_params->memcg_caches[id]);
 	root_cache->memcg_params->memcg_caches[id] = cachep;
-
-	mem_cgroup_get(memcg);
 }
 
 static void memcg_kmem_destroy_cache(struct kmem_cache *cachep)
@@ -3409,7 +3411,7 @@ static void memcg_kmem_destroy_cache(struct kmem_cache *cachep)
 
 	kmem_cache_destroy(cachep);
 
-	mem_cgroup_put(memcg);
+	css_put(&memcg->css);
 }
 
 /*
@@ -3499,7 +3501,6 @@ static void memcg_create_cache_work_func(struct work_struct *w)
 	memcg_kmem_create_cache(memcg, cachep);
 	mutex_unlock(&memcg_slab_mutex);
 
-	css_put(&memcg->css);
 	kfree(cw);
 }
 
