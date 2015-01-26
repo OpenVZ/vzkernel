@@ -3195,7 +3195,7 @@ int memcg_update_cache_size(struct kmem_cache *s, int num_groups)
 {
 	struct memcg_cache_params *cur_params = s->memcg_params;
 
-	VM_BUG_ON(s->memcg_params && !s->memcg_params->is_root_cache);
+	VM_BUG_ON(!is_root_cache(s));
 	/*
 	 * Need to do this if we are increasing the size or there are
 	 * kmem_caches with null memcg_params otherwise we will dereference
