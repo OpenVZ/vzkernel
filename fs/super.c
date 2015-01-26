@@ -202,8 +202,12 @@ static struct super_block *alloc_super(struct file_system_type *type, int flags,
 	spin_lock_init(&s->s_inode_list_lock);
 	INIT_LIST_HEAD(&s->s_inodes_wb);
 	spin_lock_init(&s->s_inode_wblist_lock);
-	list_lru_init(&s->s_dentry_lru);
-	list_lru_init(&s->s_inode_lru);
+
+	if (list_lru_init(&s->s_dentry_lru))
+		goto fail;
+	if (list_lru_init(&s->s_inode_lru))
+		goto err_out_dentry_lru;
+
 	init_rwsem(&s->s_umount);
 	lockdep_set_class(&s->s_umount, &type->s_umount_key);
 	/*
@@ -240,6 +244,9 @@ static struct super_block *alloc_super(struct file_system_type *type, int flags,
 	s->s_shrink.batch = 1024;
 	s->s_shrink.flags = SHRINKER_NUMA_AWARE;
 	return s;
+
+err_out_dentry_lru:
+	list_lru_destroy(&s->s_dentry_lru);
 fail:
 	destroy_super(s);
 	return NULL;
