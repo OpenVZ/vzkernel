@@ -1431,7 +1431,6 @@ static struct page *new_slab(struct kmem_cache *s, gfp_t flags, int node)
 
 	order = compound_order(page);
 	inc_slabs_node(s, page_to_nid(page), page->objects);
-	memcg_bind_pages(s, order);
 	page->slab_cache = s;
 	__SetPageSlab(page);
 	if (page_is_pfmemalloc(page))
@@ -1482,7 +1481,6 @@ static void __free_slab(struct kmem_cache *s, struct page *page)
 	__ClearPageSlabPfmemalloc(page);
 	__ClearPageSlab(page);
 
-	memcg_release_pages(s, order);
 	page_mapcount_reset(page);
 	if (current->reclaim_state)
 		current->reclaim_state->reclaimed_slab += pages;
