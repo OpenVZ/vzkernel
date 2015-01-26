@@ -449,12 +449,13 @@ EXPORT_SYMBOL_GPL(rpcauth_destroy_credcache);
 /*
  * Remove stale credentials. Avoid sleeping inside the loop.
  */
-static int
+static long
 rpcauth_prune_expired(struct list_head *free, int nr_to_scan)
 {
 	spinlock_t *cache_lock;
 	struct rpc_cred *cred, *next;
 	unsigned long expired = jiffies - RPC_AUTH_EXPIRY_MORATORIUM;
+	long freed = 0;
 
 	list_for_each_entry_safe(cred, next, &cred_unused, cr_lru) {
 
@@ -466,10 +467,11 @@ rpcauth_prune_expired(struct list_head *free, int nr_to_scan)
 		 */
 		if (time_in_range(cred->cr_expire, expired, jiffies) &&
 		    test_bit(RPCAUTH_CRED_HASHED, &cred->cr_flags) != 0)
-			return 0;
+			break;
 
 		list_del_init(&cred->cr_lru);
 		number_cred_unused--;
+		freed++;
 		if (atomic_read(&cred->cr_count) != 0)
 			continue;
 
@@ -482,7 +484,7 @@ rpcauth_prune_expired(struct list_head *free, int nr_to_scan)
 		}
 		spin_unlock(cache_lock);
 	}
-	return (number_cred_unused / 100) * sysctl_vfs_cache_pressure;
+	return freed;
 }
 
 int rpcauth_cache_do_shrinker(int nr_to_scan)
@@ -501,18 +503,18 @@ int rpcauth_cache_do_shrinker(int nr_to_scan)
 /*
  * Run memory cache shrinker.
  */
-static int
-rpcauth_cache_shrinker(struct shrinker *shrink, struct shrink_control *sc)
+static unsigned long
+rpcauth_cache_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
+
 {
-	int nr_to_scan = sc->nr_to_scan;
-	gfp_t gfp_mask = sc->gfp_mask;
+	if ((sc->gfp_mask & GFP_KERNEL) != GFP_KERNEL)
+		return SHRINK_STOP;
 
-	if ((gfp_mask & GFP_KERNEL) != GFP_KERNEL)
-		return (nr_to_scan == 0) ? 0 : -1;
+	/* nothing left, don't come back */
 	if (list_empty(&cred_unused))
-		return 0;
+		return SHRINK_STOP;
 
-	return rpcauth_cache_do_shrinker(nr_to_scan);
+	return rpcauth_cache_do_shrinker(sc->nr_to_scan);
 }
 
 static void
@@ -528,6 +530,13 @@ rpcauth_cache_enforce_limit(void)
 	if (diff < nr_to_scan)
 		nr_to_scan = diff;
 	rpcauth_cache_do_shrinker(nr_to_scan);
+}
+
+static unsigned long
+rpcauth_cache_shrink_count(struct shrinker *shrink, struct shrink_control *sc)
+
+{
+	return (number_cred_unused / 100) * sysctl_vfs_cache_pressure;
 }
 
 /*
@@ -853,7 +862,8 @@ rpcauth_uptodatecred(struct rpc_task *task)
 }
 
 static struct shrinker rpc_cred_shrinker = {
-	.shrink = rpcauth_cache_shrinker,
+	.count_objects = rpcauth_cache_shrink_count,
+	.scan_objects = rpcauth_cache_shrink_scan,
 	.seeks = DEFAULT_SEEKS,
 };
 
