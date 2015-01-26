@@ -8,6 +8,7 @@
 #include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/list_lru.h>
+#include <linux/slab.h>
 
 bool list_lru_add(struct list_lru *lru, struct list_head *item)
 {
@@ -125,9 +126,14 @@ EXPORT_SYMBOL_GPL(list_lru_walk_node);
 int list_lru_init_key(struct list_lru *lru, struct lock_class_key *key)
 {
 	int i;
+	size_t size = sizeof(*lru->node) * nr_node_ids;
+
+	lru->node = kzalloc(size, GFP_KERNEL);
+	if (!lru->node)
+		return -ENOMEM;
 
 	nodes_clear(lru->active_nodes);
-	for (i = 0; i < MAX_NUMNODES; i++) {
+	for (i = 0; i < nr_node_ids; i++) {
 		spin_lock_init(&lru->node[i].lock);
 		if (key)
 			lockdep_set_class(&lru->node[i].lock, key);
@@ -137,3 +143,9 @@ int list_lru_init_key(struct list_lru *lru, struct lock_class_key *key)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(list_lru_init_key);
+
+void list_lru_destroy(struct list_lru *lru)
+{
+	kfree(lru->node);
+}
+EXPORT_SYMBOL_GPL(list_lru_destroy);
