@@ -187,6 +187,7 @@ static struct super_block *alloc_super(struct file_system_type *type, int flags,
 	INIT_LIST_HEAD(&s->s_inodes_wb);
 	spin_lock_init(&s->s_inode_wblist_lock);
 	INIT_LIST_HEAD(&s->s_dentry_lru);
+	spin_lock_init(&s->s_dentry_lru_lock);
 	INIT_LIST_HEAD(&s->s_inode_lru);
 	spin_lock_init(&s->s_inode_lru_lock);
 	init_rwsem(&s->s_umount);
