@@ -246,27 +246,6 @@ void unregister_shrinker(struct shrinker *shrinker)
 }
 EXPORT_SYMBOL(unregister_shrinker);
 
-static inline int do_shrinker_shrink(struct shrinker *shrinker,
-				     struct shrink_control *sc,
-				     unsigned long nr_to_scan)
-{
-	int objects;
-	sc->nr_to_scan = nr_to_scan;
-	objects = (*shrinker->shrink)(shrinker, sc);
-	/*
-	 * A shrinker can legitimately return -1 meaning that it cannot do
-	 * much work without a risk of deadlock.
-	 * However, in some extreme cases, specially when there is abusive
-	 * usage of vm.vfs_cache_pressure, a shrinker might return a negative
-	 * value indicating that its integer return value has overflown.
-	 * In such cases, we just go ahead and cap the return val to INT_MAX.
-	 */
-	if (objects < -1)
-		return INT_MAX;
-
-	return objects;
-}
-
 #define SHRINK_BATCH 128
 
 static unsigned long
@@ -283,10 +262,7 @@ shrink_slab_node(struct shrink_control *shrinkctl, struct shrinker *shrinker,
 	long batch_size = shrinker->batch ? shrinker->batch
 					  : SHRINK_BATCH;
 
-	if (shrinker->count_objects)
-		max_pass = shrinker->count_objects(shrinker, shrinkctl);
-	else
-		max_pass = do_shrinker_shrink(shrinker, shrinkctl, 0);
+	max_pass = shrinker->count_objects(shrinker, shrinkctl);
 	if (max_pass == 0)
 		return 0;
 
@@ -305,7 +281,7 @@ shrink_slab_node(struct shrink_control *shrinkctl, struct shrinker *shrinker,
 	if (total_scan < 0) {
 		printk(KERN_ERR
 		"shrink_slab: %pF negative objects to delete nr=%ld\n",
-		       shrinker->shrink, total_scan);
+		       shrinker->scan_objects, total_scan);
 		total_scan = max_pass;
 	}
 
@@ -337,29 +313,16 @@ shrink_slab_node(struct shrink_control *shrinkctl, struct shrinker *shrinker,
 				max_pass, delta, total_scan);
 
 	while (total_scan >= batch_size) {
+		unsigned long ret;
+
 		if (unlikely(test_tsk_thread_flag(current, TIF_MEMDIE)))
 			break;
 
-		if (shrinker->scan_objects) {
-			unsigned long ret;
-			shrinkctl->nr_to_scan = batch_size;
-			ret = shrinker->scan_objects(shrinker, shrinkctl);
-
-			if (ret == SHRINK_STOP)
-				break;
-			freed += ret;
-		} else {
-			int nr_before;
-			long ret;
-
-			nr_before = do_shrinker_shrink(shrinker, shrinkctl, 0);
-			ret = do_shrinker_shrink(shrinker, shrinkctl,
-							batch_size);
-			if (ret == -1)
-				break;
-			if (ret < nr_before)
-				freed += nr_before - ret;
-		}
+		shrinkctl->nr_to_scan = batch_size;
+		ret = shrinker->scan_objects(shrinker, shrinkctl);
+		if (ret == SHRINK_STOP)
+			break;
+		freed += ret;
 
 		count_vm_events(SLABS_SCANNED, batch_size);
 		total_scan -= batch_size;
