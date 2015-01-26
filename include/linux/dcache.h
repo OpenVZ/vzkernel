@@ -513,7 +513,6 @@ static inline bool d_really_is_positive(const struct dentry *dentry)
 
 extern int sysctl_vfs_cache_pressure;
 
-
 /**
  * d_inode - Get the actual inode of this dentry
  * @dentry: The dentry to query
@@ -570,4 +569,8 @@ static inline struct dentry *d_backing_dentry(struct dentry *upper)
 	return upper;
 }
 
+static inline unsigned long vfs_pressure_ratio(unsigned long val)
+{
+	return mult_frac(val, sysctl_vfs_cache_pressure, 100);
+}
 #endif	/* __LINUX_DCACHE_H */
