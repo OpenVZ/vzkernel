@@ -175,7 +175,7 @@ static int gfs2_shrink_qd_memory(struct shrinker *shrink,
 	gfs2_qd_dispose(&dispose);
 
 out:
-	return (list_lru_count(&gfs2_qd_lru) * sysctl_vfs_cache_pressure) / 100;
+	return vfs_pressure_ratio(list_lru_count(&gfs2_qd_lru));
 }
 
 struct shrinker gfs2_qd_shrinker = {
