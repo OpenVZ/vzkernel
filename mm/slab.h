@@ -169,7 +169,8 @@ static inline const char *cache_name(struct kmem_cache *s)
 	return s->name;
 }
 
-static inline struct kmem_cache *cache_from_memcg(struct kmem_cache *s, int idx)
+static inline struct kmem_cache *
+cache_from_memcg_idx(struct kmem_cache *s, int idx)
 {
 	if (!s->memcg_params)
 		return NULL;
@@ -213,7 +214,8 @@ static inline const char *cache_name(struct kmem_cache *s)
 	return s->name;
 }
 
-static inline struct kmem_cache *cache_from_memcg(struct kmem_cache *s, int idx)
+static inline struct kmem_cache *
+cache_from_memcg_idx(struct kmem_cache *s, int idx)
 {
 	return NULL;
 }
