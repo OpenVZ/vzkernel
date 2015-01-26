@@ -5322,7 +5322,9 @@ static int memcg_propagate_kmem(struct mem_cgroup *memcg)
 	static_key_slow_inc(&memcg_kmem_enabled_key);
 
 	mutex_lock(&memcg_limit_mutex);
+	memcg_stop_kmem_account();
 	ret = memcg_update_cache_sizes(memcg);
+	memcg_resume_kmem_account();
 	mutex_unlock(&memcg_limit_mutex);
 out:
 	return ret;
