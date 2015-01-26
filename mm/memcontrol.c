@@ -3230,31 +3230,6 @@ int memcg_update_cache_size(struct kmem_cache *s, int num_groups)
 	return 0;
 }
 
-char *memcg_create_cache_name(struct mem_cgroup *memcg,
-			      struct kmem_cache *root_cache)
-{
-	static char *buf = NULL;
-
-	/*
-	 * We need a mutex here to protect the shared buffer. Since this is
-	 * expected to be called only on cache creation, we can employ the
-	 * slab_mutex for that purpose.
-	 */
-	lockdep_assert_held(&slab_mutex);
-
-	if (!buf) {
-		buf = kmalloc(NAME_MAX + 1, GFP_KERNEL);
-		if (!buf)
-			return NULL;
-	}
-
-	rcu_read_lock();
-	strlcpy(buf, cgroup_name(memcg->css.cgroup), NAME_MAX + 1);
-	rcu_read_unlock();
-	return kasprintf(GFP_KERNEL, "%s(%d:%s)", root_cache->name,
-			 memcg_cache_id(memcg), buf);
-}
-
 int memcg_alloc_cache_params(struct mem_cgroup *memcg, struct kmem_cache *s,
 			     struct kmem_cache *root_cache)
 {
@@ -3295,6 +3270,7 @@ void memcg_free_cache_params(struct kmem_cache *s)
 static void memcg_kmem_create_cache(struct mem_cgroup *memcg,
 				    struct kmem_cache *root_cache)
 {
+	static char *memcg_name_buf;	/* protected by memcg_slab_mutex */
 	struct kmem_cache *cachep;
 	int id;
 
@@ -3310,7 +3286,16 @@ static void memcg_kmem_create_cache(struct mem_cgroup *memcg,
 	if (cache_from_memcg(root_cache, id))
 		return;
 
-	cachep = kmem_cache_create_memcg(memcg, root_cache);
+	if (!memcg_name_buf) {
+		memcg_name_buf = kmalloc(NAME_MAX + 1, GFP_KERNEL);
+		if (!memcg_name_buf)
+			return;
+	}
+
+	rcu_read_lock();
+	strlcpy(memcg_name_buf, cgroup_name(memcg->css.cgroup), NAME_MAX + 1);
+	rcu_read_unlock();
+	cachep = kmem_cache_create_memcg(memcg, root_cache, memcg_name_buf);
 	/*
 	 * If we could not create a memcg cache, do not complain, because
 	 * that's not critical at all as we can always proceed with the root
