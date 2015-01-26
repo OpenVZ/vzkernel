@@ -28,8 +28,7 @@ DEFINE_MUTEX(slab_mutex);
 struct kmem_cache *kmem_cache;
 
 #ifdef CONFIG_DEBUG_VM
-static int kmem_cache_sanity_check(struct mem_cgroup *memcg, const char *name,
-				   size_t size)
+static int kmem_cache_sanity_check(const char *name, size_t size)
 {
 	struct kmem_cache *s = NULL;
 
@@ -55,13 +54,7 @@ static int kmem_cache_sanity_check(struct mem_cgroup *memcg, const char *name,
 			continue;
 		}
 
-		/*
-		 * For simplicity, we won't check this in the list of memcg
-		 * caches. We have control over memcg naming, and if there
-		 * aren't duplicates in the global list, there won't be any
-		 * duplicates in the memcg lists as well.
-		 */
-		if (!memcg && !strcmp(s->name, name)) {
+		if (!strcmp(s->name, name)) {
 			pr_err("%s (%s): Cache name already exists.\n",
 			       __func__, name);
 			dump_stack();
@@ -74,8 +67,7 @@ static int kmem_cache_sanity_check(struct mem_cgroup *memcg, const char *name,
 	return 0;
 }
 #else
-static inline int kmem_cache_sanity_check(struct mem_cgroup *memcg,
-					  const char *name, size_t size)
+static inline int kmem_cache_sanity_check(const char *name, size_t size)
 {
 	return 0;
 }
@@ -178,6 +170,46 @@ unsigned long calculate_alignment(unsigned long flags,
 	return ALIGN(align, sizeof(void *));
 }
 
+static struct kmem_cache *
+do_kmem_cache_create(char *name, size_t object_size, size_t size, size_t align,
+		     unsigned long flags, void (*ctor)(void *),
+		     struct mem_cgroup *memcg, struct kmem_cache *root_cache)
+{
+	struct kmem_cache *s;
+	int err;
+
+	err = -ENOMEM;
+	s = kmem_cache_zalloc(kmem_cache, GFP_KERNEL);
+	if (!s)
+		goto out;
+
+	s->name = name;
+	s->object_size = object_size;
+	s->size = size;
+	s->align = align;
+	s->ctor = ctor;
+
+	err = memcg_alloc_cache_params(memcg, s, root_cache);
+	if (err)
+		goto out_free_cache;
+
+	err = __kmem_cache_create(s, flags);
+	if (err)
+		goto out_free_cache;
+
+	s->refcount = 1;
+	list_add(&s->list, &slab_caches);
+	memcg_register_cache(s);
+out:
+	if (err)
+		return ERR_PTR(err);
+	return s;
+
+out_free_cache:
+	memcg_free_cache_params(s);
+	kfree(s);
+	goto out;
+}
 
 /*
  * kmem_cache_create - Create a cache.
@@ -203,33 +235,20 @@ unsigned long calculate_alignment(unsigned long flags,
  * cacheline.  This can be beneficial if you're counting cycles as closely
  * as davem.
  */
-
 struct kmem_cache *
-kmem_cache_create_memcg(struct mem_cgroup *memcg, const char *name, size_t size,
-			size_t align, unsigned long flags, void (*ctor)(void *),
-			struct kmem_cache *parent_cache)
+kmem_cache_create(const char *name, size_t size, size_t align,
+		  unsigned long flags, void (*ctor)(void *))
 {
-	struct kmem_cache *s = NULL;
+	struct kmem_cache *s;
+	char *cache_name;
 	int err;
 
 	get_online_cpus();
 	mutex_lock(&slab_mutex);
 
-	err = kmem_cache_sanity_check(memcg, name, size);
+	err = kmem_cache_sanity_check(name, size);
 	if (err)
 		goto out_unlock;
-
-	if (memcg) {
-		/*
-		 * Since per-memcg caches are created asynchronously on first
-		 * allocation (see memcg_kmem_get_cache()), several threads can
-		 * try to create the same cache, but only one of them may
-		 * succeed. Therefore if we get here and see the cache has
-		 * already been created, we silently return NULL.
-		 */
-		if (cache_from_memcg(parent_cache, memcg_cache_id(memcg)))
-			goto out_locked;
-	}
 
 	/*
 	 * Some allocators will constraint the set of valid flags to a subset
@@ -239,43 +258,23 @@ kmem_cache_create_memcg(struct mem_cgroup *memcg, const char *name, size_t size,
 	 */
 	flags &= CACHE_CREATE_MASK;
 
-	if (!memcg) {
-		s = __kmem_cache_alias(name, size, align, flags, ctor);
-		if (s)
-			goto out_unlock;
-	}
+	s = __kmem_cache_alias(name, size, align, flags, ctor);
+	if (s)
+		goto out_unlock;
 
-	s = kmem_cache_zalloc(kmem_cache, GFP_KERNEL);
-	if (!s) {
+	cache_name = kstrdup(name, GFP_KERNEL);
+	if (!cache_name) {
 		err = -ENOMEM;
 		goto out_unlock;
 	}
 
-	s->object_size = s->size = size;
-	s->align = calculate_alignment(flags, align, size);
-	s->ctor = ctor;
-
-	err = memcg_alloc_cache_params(memcg, s, parent_cache);
-	if (err) {
-		goto out_free_cache;
+	s = do_kmem_cache_create(cache_name, size, size,
+				 calculate_alignment(flags, align, size),
+				 flags, ctor, NULL, NULL);
+	if (IS_ERR(s)) {
+		err = PTR_ERR(s);
+		kfree(cache_name);
 	}
-
-	if (memcg)
-		s->name = memcg_create_cache_name(memcg, parent_cache);
-	else
-		s->name = kstrdup(name, GFP_KERNEL);
-	if (!s->name) {
-		err = -ENOMEM;
-		goto out_free_cache;
-	}
-
-	err = __kmem_cache_create(s, flags);
-	if (err)
-		goto out_free_cache;
-
-	s->refcount = 1;
-	list_add(&s->list, &slab_caches);
-	memcg_register_cache(s);
 
 out_unlock:
 	mutex_unlock(&slab_mutex);
@@ -293,21 +292,55 @@ out_unlock:
 		return NULL;
 	}
 	return s;
-
-out_free_cache:
-	kfree(s->name);
-	memcg_free_cache_params(s);
-	kmem_cache_free(kmem_cache, s);
-	goto out_unlock;
-}
-
-struct kmem_cache *
-kmem_cache_create(const char *name, size_t size, size_t align,
-		  unsigned long flags, void (*ctor)(void *))
-{
-	return kmem_cache_create_memcg(NULL, name, size, align, flags, ctor, NULL);
 }
 EXPORT_SYMBOL(kmem_cache_create);
+
+#ifdef CONFIG_MEMCG_KMEM
+/*
+ * kmem_cache_create_memcg - Create a cache for a memory cgroup.
+ * @memcg: The memory cgroup the new cache is for.
+ * @root_cache: The parent of the new cache.
+ *
+ * This function attempts to create a kmem cache that will serve allocation
+ * requests going from @memcg to @root_cache. The new cache inherits properties
+ * from its parent.
+ */
+void kmem_cache_create_memcg(struct mem_cgroup *memcg, struct kmem_cache *root_cache)
+{
+	struct kmem_cache *s;
+	char *cache_name;
+
+	get_online_cpus();
+	mutex_lock(&slab_mutex);
+
+	/*
+	 * Since per-memcg caches are created asynchronously on first
+	 * allocation (see memcg_kmem_get_cache()), several threads can try to
+	 * create the same cache, but only one of them may succeed.
+	 */
+	if (cache_from_memcg(root_cache, memcg_cache_id(memcg)))
+		goto out_unlock;
+
+	cache_name = memcg_create_cache_name(memcg, root_cache);
+	if (!cache_name)
+		goto out_unlock;
+
+	s = do_kmem_cache_create(cache_name, root_cache->object_size,
+				 root_cache->size, root_cache->align,
+				 root_cache->flags, root_cache->ctor,
+				 memcg, root_cache);
+	if (IS_ERR(s)) {
+		kfree(cache_name);
+		goto out_unlock;
+	}
+
+	s->allocflags |= __GFP_KMEMCG;
+
+out_unlock:
+	mutex_unlock(&slab_mutex);
+	put_online_cpus();
+}
+#endif /* CONFIG_MEMCG_KMEM */
 
 void kmem_cache_destroy(struct kmem_cache *s)
 {
