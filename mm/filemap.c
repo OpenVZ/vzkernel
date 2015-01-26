@@ -148,7 +148,8 @@ static int page_cache_tree_insert(struct address_space *mapping,
 		 * mapping->tree_lock.
 		 */
 		if (!list_empty(&node->private_list))
-			workingset_forget_node(node);
+			list_lru_del(&workingset_shadow_nodes,
+				     &node->private_list);
 	}
 	return 0;
 }
@@ -208,7 +209,7 @@ static void page_cache_tree_delete(struct address_space *mapping,
 	if (!dax_mapping(mapping) && !workingset_node_pages(node) &&
 	    list_empty(&node->private_list)) {
 		node->private_data = mapping;
-		workingset_remember_node(node);
+		list_lru_add(&workingset_shadow_nodes, &node->private_list);
 	}
 }
 
