@@ -326,10 +326,7 @@ struct kmem_cache *kmem_cache_create_memcg(struct mem_cgroup *memcg,
 	if (IS_ERR(s)) {
 		kfree(cache_name);
 		s = NULL;
-		goto out_unlock;
 	}
-
-	s->allocflags |= __GFP_KMEMCG;
 
 out_unlock:
 	mutex_unlock(&slab_mutex);
