@@ -3031,7 +3031,7 @@ static int mem_cgroup_slabinfo_read(struct cgroup *cont, struct cftype *cft,
 }
 #endif
 
-static int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
+int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 			     unsigned long nr_pages)
 {
 	struct page_counter *counter;
@@ -3078,7 +3078,7 @@ static int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 	return ret;
 }
 
-static void memcg_uncharge_kmem(struct mem_cgroup *memcg,
+void memcg_uncharge_kmem(struct mem_cgroup *memcg,
 				unsigned long nr_pages)
 {
 	page_counter_uncharge(&memcg->memory, nr_pages);
