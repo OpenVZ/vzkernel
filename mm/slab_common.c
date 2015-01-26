@@ -210,13 +210,14 @@ kmem_cache_create_memcg(struct mem_cgroup *memcg, const char *name, size_t size,
 			struct kmem_cache *parent_cache)
 {
 	struct kmem_cache *s = NULL;
-	int err = 0;
+	int err;
 
 	get_online_cpus();
 	mutex_lock(&slab_mutex);
 
-	if (!kmem_cache_sanity_check(memcg, name, size) == 0)
-		goto out_locked;
+	err = kmem_cache_sanity_check(memcg, name, size);
+	if (err)
+		goto out_unlock;
 
 	if (memcg) {
 		/*
@@ -241,48 +242,43 @@ kmem_cache_create_memcg(struct mem_cgroup *memcg, const char *name, size_t size,
 	if (!memcg) {
 		s = __kmem_cache_alias(name, size, align, flags, ctor);
 		if (s)
-			goto out_locked;
+			goto out_unlock;
 	}
 
 	s = kmem_cache_zalloc(kmem_cache, GFP_KERNEL);
-	if (s) {
-		s->object_size = s->size = size;
-		s->align = calculate_alignment(flags, align, size);
-		s->ctor = ctor;
-
-		err = memcg_alloc_cache_params(memcg, s, parent_cache);
-		if (err) {
-			kmem_cache_free(kmem_cache, s);
-			goto out_locked;
-		}
-
-		s->name = kstrdup(name, GFP_KERNEL);
-		if (!s->name) {
-			memcg_free_cache_params(s);
-			kmem_cache_free(kmem_cache, s);
-			err = -ENOMEM;
-			goto out_locked;
-		}
-
-		err = __kmem_cache_create(s, flags);
-		if (!err) {
-			s->refcount = 1;
-			list_add(&s->list, &slab_caches);
-			memcg_register_cache(s);
-		} else {
-			memcg_free_cache_params(s);
-			kfree(s->name);
-			kmem_cache_free(kmem_cache, s);
-		}
-	} else
+	if (!s) {
 		err = -ENOMEM;
+		goto out_unlock;
+	}
 
-out_locked:
+	s->object_size = s->size = size;
+	s->align = calculate_alignment(flags, align, size);
+	s->ctor = ctor;
+
+	err = memcg_alloc_cache_params(memcg, s, parent_cache);
+	if (err) {
+		goto out_free_cache;
+	}
+
+	s->name = kstrdup(name, GFP_KERNEL);
+	if (!s->name) {
+		err = -ENOMEM;
+		goto out_free_cache;
+	}
+
+	err = __kmem_cache_create(s, flags);
+	if (err)
+		goto out_free_cache;
+
+	s->refcount = 1;
+	list_add(&s->list, &slab_caches);
+	memcg_register_cache(s);
+
+out_unlock:
 	mutex_unlock(&slab_mutex);
 	put_online_cpus();
 
 	if (err) {
-
 		if (flags & SLAB_PANIC)
 			panic("kmem_cache_create: Failed to create slab '%s'. Error %d\n",
 				name, err);
@@ -291,11 +287,15 @@ out_locked:
 				name, err);
 			dump_stack();
 		}
-
 		return NULL;
 	}
-
 	return s;
+
+out_free_cache:
+	kfree(s->name);
+	memcg_free_cache_params(s);
+	kmem_cache_free(kmem_cache, s);
+	goto out_unlock;
 }
 
 struct kmem_cache *
