@@ -148,6 +148,10 @@ static unsigned long super_cache_count(struct shrinker *shrink,
 static void destroy_super(struct super_block *s)
 {
 	int i;
+
+	list_lru_destroy(&s->s_dentry_lru);
+	list_lru_destroy(&s->s_inode_lru);
+
 	for (i = 0; i < SB_FREEZE_LEVELS; i++)
 		percpu_counter_destroy(&s->s_writers.counter[i]);
 	security_sb_free(s);
@@ -298,9 +302,6 @@ void deactivate_locked_super(struct super_block *s)
 		cleancache_invalidate_fs(s);
 		unregister_shrinker(&s->s_shrink);
 		fs->kill_sb(s);
-
-		list_lru_destroy(&s->s_dentry_lru);
-		list_lru_destroy(&s->s_inode_lru);
 
 		put_filesystem(fs);
 		put_super(s);
