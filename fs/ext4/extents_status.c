@@ -878,25 +878,18 @@ int ext4_es_zeroout(struct inode *inode, struct ext4_extent *ex)
 				     EXTENT_STATUS_WRITTEN);
 }
 
-static int ext4_es_shrink(struct shrinker *shrink, struct shrink_control *sc)
+static int ext4_es_shrink(struct ext4_sb_info *sbi, int nr_to_scan)
 {
-	struct ext4_sb_info *sbi = container_of(shrink,
-					struct ext4_sb_info, s_es_shrinker);
 	struct ext4_inode_info *ei;
 	struct list_head *cur, *tmp, scanned;
-	int nr_to_scan = sc->nr_to_scan;
-	int ret, nr_shrunk = 0;
-
-	ret = percpu_counter_read_positive(&sbi->s_extent_cache_cnt);
-	trace_ext4_es_shrink_enter(sbi->s_sb, nr_to_scan, ret);
-
-	if (!nr_to_scan)
-		return ret;
+	int nr_shrunk = 0;
 
 	INIT_LIST_HEAD(&scanned);
 
 	spin_lock(&sbi->s_es_lru_lock);
 	list_for_each_safe(cur, tmp, &sbi->s_es_lru) {
+		int shrunk;
+
 		list_move_tail(cur, &scanned);
 
 		ei = list_entry(cur, struct ext4_inode_info, i_es_lru);
@@ -909,20 +902,50 @@ static int ext4_es_shrink(struct shrinker *shrink, struct shrink_control *sc)
 		read_unlock(&ei->i_es_lock);
 
 		write_lock(&ei->i_es_lock);
-		ret = __es_try_to_reclaim_extents(ei, nr_to_scan);
+		shrunk = __es_try_to_reclaim_extents(ei, nr_to_scan);
 		write_unlock(&ei->i_es_lock);
 
-		nr_shrunk += ret;
-		nr_to_scan -= ret;
+		nr_shrunk += shrunk;
+		nr_to_scan -= shrunk;
 		if (nr_to_scan == 0)
 			break;
 	}
 	list_splice_tail(&scanned, &sbi->s_es_lru);
 	spin_unlock(&sbi->s_es_lru_lock);
 
+	return nr_shrunk;
+}
+
+static unsigned long ext4_es_count(struct shrinker *shrink,
+				   struct shrink_control *sc)
+{
+	unsigned long nr;
+	struct ext4_sb_info *sbi;
+
+	sbi = container_of(shrink, struct ext4_sb_info, s_es_shrinker);
+	nr = percpu_counter_read_positive(&sbi->s_extent_cache_cnt);
+	trace_ext4_es_shrink_enter(sbi->s_sb, sc->nr_to_scan, nr);
+	return nr;
+}
+
+static unsigned long ext4_es_scan(struct shrinker *shrink,
+				  struct shrink_control *sc)
+{
+	struct ext4_sb_info *sbi = container_of(shrink,
+					struct ext4_sb_info, s_es_shrinker);
+	int nr_to_scan = sc->nr_to_scan;
+	int ret, nr_shrunk;
+
 	ret = percpu_counter_read_positive(&sbi->s_extent_cache_cnt);
+	trace_ext4_es_shrink_enter(sbi->s_sb, nr_to_scan, ret);
+
+	if (!nr_to_scan)
+		return ret;
+
+	nr_shrunk = ext4_es_shrink(sbi, nr_to_scan);
+
 	trace_ext4_es_shrink_exit(sbi->s_sb, nr_shrunk, ret);
-	return ret;
+	return nr_shrunk;
 }
 
 void ext4_es_register_shrinker(struct super_block *sb)
@@ -932,7 +955,8 @@ void ext4_es_register_shrinker(struct super_block *sb)
 	sbi = EXT4_SB(sb);
 	INIT_LIST_HEAD(&sbi->s_es_lru);
 	spin_lock_init(&sbi->s_es_lru_lock);
-	sbi->s_es_shrinker.shrink = ext4_es_shrink;
+	sbi->s_es_shrinker.scan_objects = ext4_es_scan;
+	sbi->s_es_shrinker.count_objects = ext4_es_count;
 	sbi->s_es_shrinker.seeks = DEFAULT_SEEKS;
 	register_shrinker(&sbi->s_es_shrinker);
 }
