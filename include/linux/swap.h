@@ -310,9 +310,7 @@ struct vma_swap_readahead {
 void *workingset_eviction(struct address_space *mapping, struct page *page);
 bool workingset_refault(void *shadow);
 void workingset_activation(struct page *page);
-
-void workingset_remember_node(struct radix_tree_node *node);
-void workingset_forget_node(struct radix_tree_node *node);
+extern struct list_lru workingset_shadow_nodes;
 
 static inline unsigned int workingset_node_pages(struct radix_tree_node *node)
 {
