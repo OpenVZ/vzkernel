@@ -345,7 +345,7 @@ unsigned long shrink_slab(struct shrink_control *shrinkctl,
 		nr_pages_scanned = SWAP_CLUSTER_MAX;
 
 	if (unlikely(test_tsk_thread_flag(current, TIF_MEMDIE)))
-		return 1;
+		return 0;
 
 	if (!down_read_trylock(&shrinker_rwsem)) {
 		/*
