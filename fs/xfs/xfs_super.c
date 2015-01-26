@@ -1803,7 +1803,7 @@ xfs_fs_mount(
 	return mount_bdev(fs_type, flags, dev_name, data, xfs_fs_fill_super);
 }
 
-static int
+static long
 xfs_fs_nr_cached_objects(
 	struct super_block	*sb)
 {
@@ -1813,12 +1813,12 @@ xfs_fs_nr_cached_objects(
 	return xfs_reclaim_inodes_count(XFS_M(sb));
 }
 
-static void
+static long
 xfs_fs_free_cached_objects(
 	struct super_block	*sb,
-	int			nr_to_scan)
+	long			nr_to_scan)
 {
-	xfs_reclaim_inodes_nr(XFS_M(sb), nr_to_scan);
+	return xfs_reclaim_inodes_nr(XFS_M(sb), nr_to_scan);
 }
 
 /* RHEL7-specific super operations for the writeback list */
