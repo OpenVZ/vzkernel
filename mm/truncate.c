@@ -55,7 +55,8 @@ static void clear_shadow_entry(struct address_space *mapping, pgoff_t index,
 	 */
 	if (!workingset_node_shadows(node) &&
 	    !list_empty(&node->private_list))
-		workingset_forget_node(node);
+		list_lru_del(&workingset_shadow_nodes,
+			     &node->private_list);
 	__radix_tree_delete_node(&mapping->page_tree, node);
 
 unlock:
