@@ -3270,7 +3270,8 @@ void memcg_free_cache_params(struct kmem_cache *s)
 static void memcg_kmem_create_cache(struct mem_cgroup *memcg,
 				    struct kmem_cache *root_cache)
 {
-	static char *memcg_name_buf;	/* protected by memcg_slab_mutex */
+	static char memcg_name_buf[NAME_MAX + 1]; /* protected by
+						     memcg_slab_mutex */
 	struct kmem_cache *cachep;
 	int id;
 
@@ -3285,12 +3286,6 @@ static void memcg_kmem_create_cache(struct mem_cgroup *memcg,
 	 */
 	if (cache_from_memcg(root_cache, id))
 		return;
-
-	if (!memcg_name_buf) {
-		memcg_name_buf = kmalloc(NAME_MAX + 1, GFP_KERNEL);
-		if (!memcg_name_buf)
-			return;
-	}
 
 	rcu_read_lock();
 	strlcpy(memcg_name_buf, cgroup_name(memcg->css.cgroup), NAME_MAX + 1);
