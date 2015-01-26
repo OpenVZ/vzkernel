@@ -200,7 +200,6 @@ do_kmem_cache_create(char *name, size_t object_size, size_t size, size_t align,
 
 	s->refcount = 1;
 	list_add(&s->list, &slab_caches);
-	memcg_register_cache(s);
 out:
 	if (err)
 		return ERR_PTR(err);
@@ -306,21 +305,14 @@ EXPORT_SYMBOL(kmem_cache_create);
  * requests going from @memcg to @root_cache. The new cache inherits properties
  * from its parent.
  */
-void kmem_cache_create_memcg(struct mem_cgroup *memcg, struct kmem_cache *root_cache)
+struct kmem_cache *kmem_cache_create_memcg(struct mem_cgroup *memcg,
+					   struct kmem_cache *root_cache)
 {
-	struct kmem_cache *s;
+	struct kmem_cache *s = NULL;
 	char *cache_name;
 
 	get_online_cpus();
 	mutex_lock(&slab_mutex);
-
-	/*
-	 * Since per-memcg caches are created asynchronously on first
-	 * allocation (see memcg_kmem_get_cache()), several threads can try to
-	 * create the same cache, but only one of them may succeed.
-	 */
-	if (cache_from_memcg(root_cache, memcg_cache_id(memcg)))
-		goto out_unlock;
 
 	cache_name = memcg_create_cache_name(memcg, root_cache);
 	if (!cache_name)
@@ -330,12 +322,16 @@ void kmem_cache_create_memcg(struct mem_cgroup *memcg, struct kmem_cache *root_c
 				 root_cache->size, root_cache->align,
 				 root_cache->flags, root_cache->ctor,
 				 memcg, root_cache);
-	if (IS_ERR(s))
+	if (IS_ERR(s)) {
 		kfree(cache_name);
+		s = NULL;
+	}
 
 out_unlock:
 	mutex_unlock(&slab_mutex);
 	put_online_cpus();
+
+	return s;
 }
 #endif /* CONFIG_MEMCG_KMEM */
 
@@ -355,11 +351,8 @@ void kmem_cache_destroy(struct kmem_cache *s)
 		goto out_unlock;
 
 	list_del(&s->list);
-	memcg_unregister_cache(s);
-
 	if (__kmem_cache_shutdown(s) != 0) {
 		list_add(&s->list, &slab_caches);
-		memcg_register_cache(s);
 		printk(KERN_ERR "kmem_cache_destroy %s: "
 		       "Slab cache still has objects\n", s->name);
 		dump_stack();
