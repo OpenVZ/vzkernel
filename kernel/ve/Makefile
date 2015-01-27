@@ -19,3 +19,5 @@ obj-$(CONFIG_VZ_EVENT) += vzevent.o
 obj-m += vznetstat/vznetstat.o
 obj-m += vznetstat/ip_vznetstat.o
 obj-m += vznetstat/ip6_vznetstat.o
+
+obj-m += vzlist.o
