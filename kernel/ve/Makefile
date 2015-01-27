@@ -15,3 +15,7 @@ vzmon-objs = vecalls.o
 
 obj-$(CONFIG_VZ_DEV) += vzdev.o
 obj-$(CONFIG_VZ_EVENT) += vzevent.o
+
+obj-m += vznetstat/vznetstat.o
+obj-m += vznetstat/ip_vznetstat.o
+obj-m += vznetstat/ip6_vznetstat.o
