@@ -33,10 +33,7 @@
 #include <linux/ve_proto.h>
 #include <linux/venet.h>
 #include <linux/vzctl.h>
-/* TODO
 #include <linux/vznetstat.h>
-#include <linux/vzlicense.h>
-*/
 
 #include <linux/vzctl_redir.h>
 #include <linux/vzredir.h>
@@ -72,7 +69,7 @@
 
 static void veip_free(struct veip_struct *veip)
 {
-	/* TODO venet_acct_put_stat(veip->stat); */
+	venet_acct_put_stat(veip->stat);
 	kfree(veip);
 }
 
@@ -98,15 +95,12 @@ static struct veip_struct *vzredir_veip_findcreate(envid_t veid)
 	veip = veip_findcreate(veid);
 	if (veip == NULL)
 		return NULL;
-	veip->stat = NULL;
-	return veip;
-	/* TODO */
 
 	if (veip->stat)
 		return veip;
 
 	spin_unlock(&veip_lock);
-	/* TODO veip->stat = venet_acct_find_create_stat(veid); */
+	veip->stat = venet_acct_find_create_stat(veid);
 	spin_lock(&veip_lock);
 	if (veip->stat == NULL) {
 		veip_put(veip);
@@ -308,10 +302,8 @@ veip_lookup_redirect(struct ve_struct *ve_old, struct sk_buff *skb)
 		if (orig_veip != NULL) {
 			/* Redirect */
 			skb_set_redirect(skb);
-			/* TODO
 			venet_acct_classify_sub_outgoing(ve->stat, skb);
 			venet_acct_classify_add_outgoing(orig_veip->stat, skb);
-			*/
 		}
 out_pass:
 		ve = get_ve0();
@@ -320,7 +312,7 @@ out_pass:
 		if (orig_veip != NULL) {
 			/* Redirect */
 			skb_set_redirect(skb);
-			/* TODO venet_acct_classify_add_incoming(orig_veip->stat, skb); */
+			venet_acct_classify_add_incoming(orig_veip->stat, skb);
 		}
 	}
 	rcu_read_unlock();
@@ -388,7 +380,7 @@ static __exit void veip_cleanup_redirects(struct list_head *to_release)
 			list_del_rcu(&port->src_list);
 		}
 
-		/* TODO venet_acct_put_stat(veip->stat); */
+		venet_acct_put_stat(veip->stat);
 		veip->stat = NULL;
 		/* veip can't be released here, because it may belong to CT.
 		 * They will be relesed in venet_exit. */
@@ -972,7 +964,6 @@ static void __exit fini_vzredir_proc(void)
  * Initialization
  * ---------------------------------------------------------------------------
  */
-/* TODO
 static int venet_alloc_one_stat(unsigned id)
 {
 	struct venet_stat *stat;
@@ -1021,14 +1012,13 @@ err_clean_all:
 		venet_acct_put_stat(veip->stat);
 	return -ENOMEM;
 }
-*/
+
 int __init venetredir_init(void)
 {
 	spin_lock(&veip_lock);
-	/* TODO
+
 	if (venet_alloc_all_stats())
 		goto err;
-	*/
 
 	old_veip_pool_ops = veip_pool_ops;
 	veip_pool_ops = &vznet_pool_ops;
@@ -1037,11 +1027,9 @@ int __init venetredir_init(void)
 	vzioctl_register(&tr_ioctl_info);
 	init_vzredir_proc();
 	return 0;
-/* TODO
 err:
 	spin_unlock(&veip_lock);
 	return -ENOMEM;
-*/
 }
 
 void __exit venetredir_exit(void)
