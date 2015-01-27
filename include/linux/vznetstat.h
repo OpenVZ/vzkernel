@@ -55,6 +55,8 @@ void   venet_acct_put_stat(struct venet_stat *);
 
 struct venet_stat *venet_acct_find_create_stat(envid_t veid);
 struct venet_stat *venet_acct_find_stat(envid_t veid);
+int init_venet_acct_ip_stat(struct ve_struct *env, struct venet_stat *stat);
+void fini_venet_acct_ip_stat(struct ve_struct *env);
 
 struct ve_addr_struct;
 void venet_acct_classify_add_incoming(struct venet_stat *, struct sk_buff *skb);
