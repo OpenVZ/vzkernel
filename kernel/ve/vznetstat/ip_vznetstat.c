@@ -136,35 +136,31 @@ static struct nf_hook_ops venet_acct_out_ops = {
 	.priority	= NF_IP_PRI_LAST,
 };
 
-static int init_venet_acct_ip_stat(void *data)
+int init_venet_acct_ip_stat(struct ve_struct *env, struct venet_stat *stat)
 {
-	struct ve_struct *env;
-
-	env = (struct ve_struct *)data;
-
-	if (env->stat)
+	if (env->stat) {
+		WARN(1, "ve_struct->stat is not NULL, but should be.\n");
 		return -EEXIST;
+	}
 
-	env->stat = venet_acct_find_create_stat(env->veid);
-	if (env->stat == NULL)
-		return -ENOMEM;
+	env->stat = stat;
+	venet_acct_get_stat(stat);
 
 	__module_get(THIS_MODULE);
 
 	return 0;
 }
+EXPORT_SYMBOL(init_venet_acct_ip_stat);
 
-static void fini_venet_acct_ip_stat(void *data)
+void fini_venet_acct_ip_stat(struct ve_struct *env)
 {
-	struct ve_struct *env;
-
-	env = (struct ve_struct *)data;
 	if (env->stat) {
 		venet_acct_put_stat(env->stat);
 		env->stat = NULL;
 		module_put(THIS_MODULE);
 	}
 }
+EXPORT_SYMBOL(fini_venet_acct_ip_stat);
 
 static int venet_acct_register_ip_hooks(void)
 {
@@ -192,18 +188,6 @@ static void venet_acct_unregister_ip_hooks(void)
 	nf_unregister_hook(&venet_acct_out_ops);
 	nf_unregister_hook(&venet_acct_in_ops);
 }
-
-static struct ve_hook venet_acct_hook = {
-	.init		= init_venet_acct_ip_stat,
-	.priority	= HOOK_PRIO_NET_PRE,
-	.owner		= THIS_MODULE,
-};
-
-static struct ve_hook venet_acct_cleanup_hook = {
-	.fini		= fini_venet_acct_ip_stat,
-	.priority	= HOOK_PRIO_NET_PRE,
-	.owner		= THIS_MODULE,
-};
 
 /* For ip6_vznetstat dependency */
 void ip_vznetstat_touch(void)
@@ -233,8 +217,6 @@ int __init ip_venetstat_init(void)
 		return ret;
 	}
 
-	ve_hook_register(VE_SS_CHAIN, &venet_acct_hook);
-// TODO	ve_hook_register(VE_CLEANUP_CHAIN, &venet_acct_cleanup_hook);
 	return 0;
 }
 
@@ -245,8 +227,6 @@ void __exit ip_venetstat_exit(void)
 	venet_acct_unregister_ip_hooks();
 	venet_acct_put_stat(env->stat);
 	env->stat = NULL;
-	ve_hook_unregister(&venet_acct_cleanup_hook);
-	ve_hook_unregister(&venet_acct_hook);
 }
 
 #if defined(MODULE) && defined(VZ_AUDIT)
