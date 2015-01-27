@@ -73,22 +73,19 @@ out_oom:
 static int get_vepids(struct vzlist_vepidctl *s)
 {
 	int ret;
-	int tasks;
+	int tasks = 0;
 	unsigned long size;
 	envid_t *buf;
 	struct ve_struct *ve;
 	struct task_struct *tsk;
+	struct pid_namespace *ns;
+	int nr;
 
 	ret = -ESRCH;
 	ve = get_ve_by_id(s->veid);
 	if (!ve)
 		goto out_no_ve;
-
-	tasks = ve->pcounter;
-	if (!s->num || s->pid == NULL) {
-		ret = tasks;
-		goto out_unlocked;
-	}
+	ns = ve->ve_ns->pid_ns;
 
 	down(&vzlist_sem);
 again:
@@ -100,18 +97,27 @@ again:
 
 	tasks = 0;
 	read_lock(&tasklist_lock);
-	list_for_each_entry(tsk, &ve->vetask_lh, ve_task_info.vetask_list) {
-		if (size >= (tasks + 1)*(2*sizeof(pid_t))) {
-			buf[2*tasks] = tsk->pid;
-			buf[2*tasks + 1] = task_pid_nr_ns(tsk,
+	nr = next_pidmap(ns, 0);
+	while (nr > 0) {
+		rcu_read_lock();
+
+		tsk = pid_task(find_pid_ns(nr, ns), PIDTYPE_PID);
+		if (tsk) {
+			if (size >= (tasks + 1)*(2*sizeof(pid_t))) {
+				buf[2*tasks] = tsk->pid;
+				buf[2*tasks + 1] = task_pid_nr_ns(tsk,
 						task_active_pid_ns(tsk));
+			}
+			tasks++;
 		}
-		tasks++;
+
+		rcu_read_unlock();
+		nr = next_pidmap(ns, nr);
 	}
 	read_unlock(&tasklist_lock);
 
 	ret = tasks;
-	if (tasks > s->num)
+	if ((tasks > s->num) | (!tasks))
 		goto out;
 	if (size < tasks*(2*sizeof(pid_t))) {
 		vfree(buf);
@@ -124,7 +130,6 @@ out:
 	vfree(buf);
 out_oom:
 	up(&vzlist_sem);
-out_unlocked:
 	put_ve(ve);
 out_no_ve:
 	return ret;
