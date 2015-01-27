@@ -68,8 +68,6 @@ out_oom:
 	return ret;
 }
 
-#define task_active_pid_ns(__tsk)	(ns_of_pid(task_pid(__tsk)))
-
 static int get_vepids(struct vzlist_vepidctl *s)
 {
 	int ret;
@@ -105,8 +103,7 @@ again:
 		if (tsk) {
 			if (size >= (tasks + 1)*(2*sizeof(pid_t))) {
 				buf[2*tasks] = tsk->pid;
-				buf[2*tasks + 1] = task_pid_nr_ns(tsk,
-						task_active_pid_ns(tsk));
+				buf[2*tasks + 1] = task_pid_nr_ns(tsk, ns);
 			}
 			tasks++;
 		}
