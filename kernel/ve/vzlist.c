@@ -9,6 +9,7 @@
 #include <linux/skbuff.h>
 #include <linux/in.h>
 #include <linux/sched.h>
+#include <linux/mutex.h>
 #include <linux/ve.h>
 #include <linux/venet.h>
 #include <linux/vzctl.h>
@@ -18,9 +19,8 @@
 #include <linux/veip.h>
 #include <linux/uaccess.h>
 #include <linux/pid_namespace.h>
-#include <linux/vzlicense.h>
 
-static DECLARE_MUTEX(vzlist_sem);
+static DEFINE_SEMAPHORE(vzlist_sem);
 
 static int get_veids(struct vzlist_veidctl *s)
 {
