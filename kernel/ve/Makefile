@@ -23,3 +23,5 @@ obj-m += vzredir/ip6_vzredir.o
 obj-m += vznetstat/vznetstat.o
 obj-m += vznetstat/ip_vznetstat.o
 obj-m += vznetstat/ip6_vznetstat.o
+
+obj-m += vzlist.o
