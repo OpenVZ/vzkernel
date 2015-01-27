@@ -114,6 +114,7 @@ static int veip_create(struct ve_struct *ve)
 {
 	struct veip_struct *veip;
 	struct veip_redir_port *redir;
+	int err;
 
 	veip = vzredir_veip_findcreate(ve->veid);
 	if (veip == NULL)
@@ -122,6 +123,13 @@ static int veip_create(struct ve_struct *ve)
 	ve->veip = veip;
 	list_for_each_entry(redir, &veip->dst_lh, dst_list)
 		redir->target = ve;
+
+
+	err = init_venet_acct_ip_stat(ve, veip->stat);
+	if (err < 0) {
+		veip_free(veip);
+		return err;
+	}
 
 	return 0;
 }
@@ -1013,6 +1021,8 @@ err_clean_all:
 	return -ENOMEM;
 }
 
+void (*old_venet_free_stat)(struct ve_struct *) = NULL;
+
 int __init venetredir_init(void)
 {
 	spin_lock(&veip_lock);
@@ -1022,6 +1032,10 @@ int __init venetredir_init(void)
 
 	old_veip_pool_ops = veip_pool_ops;
 	veip_pool_ops = &vznet_pool_ops;
+
+	old_venet_free_stat = venet_free_stat;
+	venet_free_stat = fini_venet_acct_ip_stat;
+
 	spin_unlock(&veip_lock);
 
 	vzioctl_register(&tr_ioctl_info);
@@ -1040,6 +1054,7 @@ void __exit venetredir_exit(void)
 	vzioctl_unregister(&tr_ioctl_info);
 
 	spin_lock(&veip_lock);
+	venet_free_stat = old_venet_free_stat;
 	veip_pool_ops = old_veip_pool_ops;
 	ip_entry_cleanup();
 	veip_cleanup_redirects(&to_release);
