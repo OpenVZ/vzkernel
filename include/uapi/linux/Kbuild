@@ -446,6 +446,7 @@ header-y += vzctl_netstat.h
 header-y += vzctl_veth.h
 header-y += vzctl_venet.h
 header-y += vziptable_defs.h
+header-y += vzlist.h
 header-y += wait.h
 header-y += wanrouter.h
 header-y += watchdog.h
