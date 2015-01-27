@@ -6,6 +6,7 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/skbuff.h>
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv6.h>
@@ -14,11 +15,11 @@
 #include <linux/ve_proto.h>
 #include <linux/if.h>
 #include <linux/netdevice.h>
-#include <linux/vznetstat.h>
-#include <linux/vzredir.h>
 #include <net/ipv6.h>
 #include <net/addrconf.h>
 #include <net/ip6_route.h>
+
+#include <linux/vzredir.h>
 
 static int ipv6_get_laddr(struct net_device *dev, struct in6_addr *addr)
 {
@@ -30,13 +31,13 @@ static int ipv6_get_laddr(struct net_device *dev, struct in6_addr *addr)
 		struct inet6_ifaddr *ifp;
 
 		read_lock_bh(&idev->lock);
-		for (ifp = idev->addr_list; ifp; ifp = ifp->if_next) {
+		list_for_each_entry(ifp, &idev->addr_list, if_list) {
 			if (ifp->flags & IFA_F_TENTATIVE)
 				continue;
 			if (ifp->scope & (IFA_LINK | IFA_HOST))
 				continue;
 
-			ipv6_addr_copy(addr, &ifp->addr);
+			*addr = ifp->addr;
 			err = 0;
 			break;
 		}
@@ -46,7 +47,7 @@ static int ipv6_get_laddr(struct net_device *dev, struct in6_addr *addr)
 	return err;
 }
 
-static unsigned int venet_redir6_prerouting(unsigned int hook,
+static unsigned int venet_redir6_prerouting(const struct nf_hook_ops *hook,
 					    struct sk_buff *skb,
 					    const struct net_device *in,
 					    const struct net_device *out,
@@ -62,7 +63,7 @@ static unsigned int venet_redir6_prerouting(unsigned int hook,
 	if (likely(!skb_redirected(skb)))
 		goto out;
 
-	if (skb->owner_env == get_ve0())
+	if (skb->dev && skb->dev->nd_net->owner_ve == get_ve0())
 		goto out;
 
 	if (unlikely(!pskb_may_pull(skb, sizeof(*hdr))))

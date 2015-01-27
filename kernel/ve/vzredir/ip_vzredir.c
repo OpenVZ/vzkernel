@@ -6,7 +6,6 @@
  */
 
 #include <linux/sched.h>
-#include <linux/smp_lock.h>
 
 #include <linux/skbuff.h>
 #include <linux/proc_fs.h>
@@ -26,7 +25,7 @@
 #include <linux/venet.h>
 #include <linux/vzredir.h>
 
-static unsigned int venet_redir2_prerouting(unsigned int hook,
+static unsigned int venet_redir2_prerouting(const struct nf_hook_ops *hook,
 					    struct sk_buff *skb,
 					    const struct net_device *in,
 					    const struct net_device *out,
@@ -44,7 +43,7 @@ static unsigned int venet_redir2_prerouting(unsigned int hook,
 	if (likely(!skb_redirected(skb)))
 		goto out;
 
-	if (skb->owner_env == get_ve0())
+	if (skb->dev && skb->dev->nd_net->owner_ve == get_ve0())
 		goto out;
 
 	/*

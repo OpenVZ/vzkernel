@@ -26,16 +26,20 @@
 #include <linux/tcp.h>
 #include <linux/skbuff.h>
 #include <net/sock.h>
+#include <linux/list.h>
 
 #include <linux/sched.h>
 #include <linux/ve.h>
 #include <linux/ve_proto.h>
 #include <linux/venet.h>
 #include <linux/vzctl.h>
-#include <linux/vzctl_redir.h>
-#include <linux/vzredir.h>
+/* TODO
 #include <linux/vznetstat.h>
 #include <linux/vzlicense.h>
+*/
+
+#include <linux/vzctl_redir.h>
+#include <linux/vzredir.h>
 
 /*
  * 1. Each ve_struct keeps a reference to one veip_struct.
@@ -68,7 +72,7 @@
 
 static void veip_free(struct veip_struct *veip)
 {
-	venet_acct_put_stat(veip->stat);
+	/* TODO venet_acct_put_stat(veip->stat); */
 	kfree(veip);
 }
 
@@ -99,7 +103,7 @@ static struct veip_struct *vzredir_veip_findcreate(envid_t veid)
 		return veip;
 
 	spin_unlock(&veip_lock);
-	veip->stat = venet_acct_find_create_stat(veid);
+	/* TODO veip->stat = venet_acct_find_create_stat(veid); */
 	spin_lock(&veip_lock);
 	if (veip->stat == NULL) {
 		veip_put(veip);
@@ -233,7 +237,7 @@ static inline int skb_extract_v6(struct sk_buff *skb, struct ve_addr_struct *a,
 	if (len < 0)
 		goto out;
 
-	ptr = ipv6_skip_exthdr_fragoff(skb, ptr, &nexthdr, &frag_off);
+	ptr = ipv6_skip_exthdr(skb, ptr, &nexthdr, &frag_off);
 	if (ptr < 0)
 		goto out;
 
@@ -270,15 +274,15 @@ int skb_extract_addr_port(struct sk_buff *skb,
 }
 EXPORT_SYMBOL(skb_extract_addr_port);
 
-static struct ve_struct *veip_lookup_redirect(struct sk_buff *skb)
+static struct ve_struct *
+veip_lookup_redirect(struct ve_struct *ve_old, struct sk_buff *skb)
 {
-	struct ve_struct *ve, *ve_old;
+	struct ve_struct *ve;
 	struct ve_addr_struct addr;
 	__u16 port;
 	struct veip_struct *orig_veip = NULL;
 	int dir, err;
 
-	ve_old = skb->owner_env;
 	port = VENET_PORT_UNDEFINED;
 	dir = ve_is_super(ve_old);
 
@@ -296,13 +300,15 @@ static struct ve_struct *veip_lookup_redirect(struct sk_buff *skb)
 
 	if (!dir) {
 		/* from VE to host */
-		if (!ve_accessible_strict(ve, ve_old))
+		if (ve != ve_old)
 			goto out_source;
 		if (orig_veip != NULL) {
 			/* Redirect */
 			skb_set_redirect(skb);
+			/* TODO
 			venet_acct_classify_sub_outgoing(ve->stat, skb);
 			venet_acct_classify_add_outgoing(orig_veip->stat, skb);
+			*/
 		}
 out_pass:
 		ve = get_ve0();
@@ -311,7 +317,7 @@ out_pass:
 		if (orig_veip != NULL) {
 			/* Redirect */
 			skb_set_redirect(skb);
-			venet_acct_classify_add_incoming(orig_veip->stat, skb);
+			/* TODO venet_acct_classify_add_incoming(orig_veip->stat, skb); */
 		}
 	}
 	rcu_read_unlock();
@@ -328,7 +334,7 @@ out_source:
 		printk(KERN_WARNING "Dropped packet, source wrong "
 		       "veid=%u src-IP=%u.%u.%u.%u "
 		       "dst-IP=%u.%u.%u.%u\n",
-		       skb->owner_env->veid,
+		       ve->veid,
 		       NIPQUAD(ip_hdr(skb)->saddr),
 		       NIPQUAD(ip_hdr(skb)->daddr));
 	}
@@ -348,10 +354,10 @@ static __exit void ip_entry_cleanup(void)
 {
 	int i;
 	struct ip_entry_struct *entry;
-	struct hlist_node *node, *n;
+	struct hlist_node *node;
 
 	for (i = 0; i < VEIP_HASH_SZ; i++)
-		hlist_for_each_entry_safe(entry, node, n,
+		hlist_for_each_entry_safe(entry, node,
 				ip_entry_hash_table + i, ip_hash) {
 			entry->tgt_veip = NULL;
 			if (entry->active_env == NULL)
@@ -379,7 +385,7 @@ static __exit void veip_cleanup_redirects(struct list_head *to_release)
 			list_del_rcu(&port->src_list);
 		}
 
-		venet_acct_put_stat(veip->stat);
+		/* TODO venet_acct_put_stat(veip->stat); */
 		veip->stat = NULL;
 		/* veip can't be released here, because it may belong to CT.
 		 * They will be relesed in venet_exit. */
@@ -484,6 +490,7 @@ static int real_ve_redir_ip_map(envid_t veid, int op,
 			if (found == NULL)
 				goto out_unlock;
 			err = found->tgt_veip != NULL ?  found->tgt_veip->veid : 0;
+
 			spin_unlock(&veip_lock);
 			break;
 
@@ -933,13 +940,13 @@ static int __init init_vzredir_proc(void)
 {
 	struct proc_dir_entry *de;
 
-	de = proc_create("veinfo_redir", S_IFREG|S_IRUSR, glob_proc_vz_dir,
+	de = proc_create("veinfo_redir", S_IFREG|S_IRUSR|S_ISVTX, proc_vz_dir,
 			&proc_veinfo_redir_operations);
 	if (de == NULL)
 		printk(KERN_WARNING
 			"VZREDIR: can't make veinfo_redir proc entry\n");
 
-	de = proc_create("veredir", S_IFREG|S_IRUSR, glob_proc_vz_dir,
+	de = proc_create("veredir", S_IFREG|S_IRUSR|S_ISVTX, proc_vz_dir,
 			&proc_veredir_operations);
 	if (de == NULL)
 		printk(KERN_WARNING
@@ -949,8 +956,8 @@ static int __init init_vzredir_proc(void)
 
 static void __exit fini_vzredir_proc(void)
 {
-	remove_proc_entry("veinfo_redir", glob_proc_vz_dir);
-	remove_proc_entry("veredir", glob_proc_vz_dir);
+	remove_proc_entry("veinfo_redir", proc_vz_dir);
+	remove_proc_entry("veredir", proc_vz_dir);
 }
 #else
 #define init_vzredir_proc()	(0)
@@ -962,7 +969,7 @@ static void __exit fini_vzredir_proc(void)
  * Initialization
  * ---------------------------------------------------------------------------
  */
-
+/* TODO
 static int venet_alloc_one_stat(unsigned id)
 {
 	struct venet_stat *stat;
@@ -1011,12 +1018,14 @@ err_clean_all:
 		venet_acct_put_stat(veip->stat);
 	return -ENOMEM;
 }
-
+*/
 int __init venetredir_init(void)
 {
 	spin_lock(&veip_lock);
+	/* TODO
 	if (venet_alloc_all_stats())
 		goto err;
+	*/
 
 	old_veip_pool_ops = veip_pool_ops;
 	veip_pool_ops = &vznet_pool_ops;
@@ -1025,10 +1034,11 @@ int __init venetredir_init(void)
 	vzioctl_register(&tr_ioctl_info);
 	init_vzredir_proc();
 	return 0;
-
+/* TODO
 err:
 	spin_unlock(&veip_lock);
 	return -ENOMEM;
+*/
 }
 
 void __exit venetredir_exit(void)
