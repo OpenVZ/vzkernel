@@ -98,6 +98,9 @@ static struct veip_struct *vzredir_veip_findcreate(envid_t veid)
 	veip = veip_findcreate(veid);
 	if (veip == NULL)
 		return NULL;
+	veip->stat = NULL;
+	return veip;
+	/* TODO */
 
 	if (veip->stat)
 		return veip;
