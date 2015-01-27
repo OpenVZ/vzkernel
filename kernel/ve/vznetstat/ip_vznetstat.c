@@ -10,8 +10,6 @@
  */
 
 #include <linux/sched.h>
-#include <linux/smp_lock.h>
-
 #include <linux/skbuff.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
@@ -31,7 +29,7 @@
 
 #define VZNS_DEBUG 0
 
-static unsigned int venet_acct_in_hook(unsigned int hook,
+static unsigned int venet_acct_in_hook(const struct nf_hook_ops *hook,
 				       struct sk_buff *skb,
 				       const struct net_device *in,
 				       const struct net_device *out,
@@ -46,10 +44,10 @@ static unsigned int venet_acct_in_hook(unsigned int hook,
 		goto out;
 
 #if VZNS_DEBUG
-	printk("%s: in %s, out %s, nfcache %x, size %d, in->owner_env=%d\n",
+	printk("%s: in %s, out %s, size %d, in->owner_env=%d\n",
 		 __FUNCTION__, in ? in->name : NULL, out ? out->name : NULL,
-		 (skb)->nfcache, venet_acct_skb_size(skb),
-		 in ? in->owner_env->veid : -1);
+		 venet_acct_skb_size(skb),
+		 in ? in->nd_net->owner_ve->veid : -1);
 #endif
 
 	/*
@@ -62,7 +60,7 @@ static unsigned int venet_acct_in_hook(unsigned int hook,
 
 	/* If NFC_VE_REDIR set, redirected skb was accounted in venet.c */
 	if (!skb_redirected(skb))
-		venet_acct_classify_add_incoming(in->owner_env->stat, skb);
+		venet_acct_classify_add_incoming(in->nd_net->owner_ve->stat, skb);
 
 out:
 	return res;
@@ -74,7 +72,7 @@ out_hdr_error:
 	goto out;
 }
 
-static unsigned int venet_acct_out_hook(unsigned int hook,
+static unsigned int venet_acct_out_hook(const struct nf_hook_ops *hook,
 				        struct sk_buff *skb,
 				        const struct net_device *in,
 				        const struct net_device *out,
@@ -95,7 +93,7 @@ static unsigned int venet_acct_out_hook(unsigned int hook,
 #if VZNS_DEBUG
 	printk("%s: in %s, out %s, size %d, out->owner_env=%d\n",
 		 __FUNCTION__, in ? in->name : NULL, out ? out->name : NULL,
-		 venet_acct_skb_size(skb), out ? out->owner_env->veid : -1);
+		 venet_acct_skb_size(skb), out ? out->nd_net->owner_ve->veid : -1);
 #endif
 
 	/*
@@ -113,7 +111,7 @@ static unsigned int venet_acct_out_hook(unsigned int hook,
 	 * different from traffic amount between VE and kproxy.
 	 */
 	skb->protocol = __constant_htons(ETH_P_IP);
-	venet_acct_classify_add_outgoing(out->owner_env->stat, skb);
+	venet_acct_classify_add_outgoing(out->nd_net->owner_ve->stat, skb);
 
 out:
 	return res;
@@ -239,7 +237,7 @@ int __init ip_venetstat_init(void)
 	}
 
 	ve_hook_register(VE_SS_CHAIN, &venet_acct_hook);
-	ve_hook_register(VE_CLEANUP_CHAIN, &venet_acct_cleanup_hook);
+// TODO	ve_hook_register(VE_CLEANUP_CHAIN, &venet_acct_cleanup_hook);
 	return 0;
 }
 

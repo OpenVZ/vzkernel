@@ -10,6 +10,7 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/skbuff.h>
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv6.h>
@@ -22,7 +23,7 @@
 #include <linux/vzredir.h>
 
 static unsigned int
-venet_acct_in_hook_v6(unsigned int hook,
+venet_acct_in_hook_v6(const struct nf_hook_ops *hook,
 		      struct sk_buff *skb,
 		      const struct net_device *in,
 		      const struct net_device *out,
@@ -35,13 +36,13 @@ venet_acct_in_hook_v6(unsigned int hook,
 
 	/* redirected skb was accounted in venet.c */
 	if (!skb_redirected(skb))
-		venet_acct_classify_add_incoming(in->owner_env->stat, skb);
+		venet_acct_classify_add_incoming(in->nd_net->owner_ve->stat, skb);
 out:
 	return res;
 }
 
 static unsigned int
-venet_acct_out_hook_v6(unsigned int hook,
+venet_acct_out_hook_v6(const struct nf_hook_ops *hook,
 		    struct sk_buff *skb,
 		    const struct net_device *in,
 		    const struct net_device *out,
@@ -53,7 +54,7 @@ venet_acct_out_hook_v6(unsigned int hook,
 		goto out;
 
 	skb->protocol = __constant_htons(ETH_P_IPV6);
-	venet_acct_classify_add_outgoing(out->owner_env->stat, skb);
+	venet_acct_classify_add_outgoing(out->nd_net->owner_ve->stat, skb);
 out:
 	return res;
 }
