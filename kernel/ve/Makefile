@@ -15,3 +15,7 @@ vzmon-objs = vecalls.o
 
 obj-$(CONFIG_VZ_DEV) += vzdev.o
 obj-$(CONFIG_VZ_EVENT) += vzevent.o
+
+obj-m += vzredir/vzredir.o
+obj-m += vzredir/ip_vzredir.o
+obj-m += vzredir/ip6_vzredir.o
