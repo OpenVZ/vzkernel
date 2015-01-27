@@ -18,4 +18,6 @@ obj-$(CONFIG_VZ_EVENT) += vzevent.o
 
 obj-$(CONFIG_VE_NETDEV_ACCOUNTING) += vznetstat/vznetstat.o vznetstat/ip_vznetstat.o vznetstat/ip6_vznetstat.o
 
+obj-$(CONFIG_VZ_LIST) += vzlist.o
+
 obj-$(CONFIG_VE_IPTABLES) += ve.o
