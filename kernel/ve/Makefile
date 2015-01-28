@@ -1,11 +1,8 @@
 #
+# kernel/ve/Makefile
 #
-#  kernel/ve/Makefile
+# Copyright (c) 2000-2015 Parallels IP Holdings GmbH
 #
-#  Copyright (C) 2000-2005  SWsoft
-#  All rights reserved.
-#
-#  Licensing governed by "linux/COPYING.SWsoft" file.
 
 obj-$(CONFIG_VE) = ve.o veowner.o hooks.o
 obj-$(CONFIG_VZ_WDOG) += vzwdog.o
@@ -21,3 +18,7 @@ obj-$(CONFIG_VE_NETDEV_ACCOUNTING) += vznetstat/vznetstat.o vznetstat/ip_vznetst
 obj-$(CONFIG_VZ_LIST) += vzlist.o
 
 obj-$(CONFIG_VE_IPTABLES) += ve.o
+
+obj-m += dummy/ip6_vzprivnet.o
+obj-m += dummy/ip_vzprivnet.o
+obj-m += dummy/pio_nfs.o
