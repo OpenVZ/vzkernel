@@ -7,7 +7,7 @@
 #
 #  Licensing governed by "linux/COPYING.SWsoft" file.
 
-obj-$(CONFIG_VE) = ve.o veowner.o hooks.o vzstat.o ve-kobject.o
+obj-$(CONFIG_VE) = ve.o veowner.o hooks.o vzstat_core.o ve-kobject.o
 obj-$(CONFIG_VZ_WDOG) += vzwdog.o
 obj-$(CONFIG_VE_CALLS) += vzmon.o
 
@@ -21,3 +21,4 @@ obj-m += vznetstat/ip_vznetstat.o
 obj-m += vznetstat/ip6_vznetstat.o
 
 obj-m += vzlist.o
+obj-m += vzstat.o
