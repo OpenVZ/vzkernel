@@ -94,12 +94,6 @@ extern void change_pid(struct task_struct *task, enum pid_type,
 			struct pid *pid);
 extern void transfer_pid(struct task_struct *old, struct task_struct *new,
 			 enum pid_type);
-extern void reattach_pid(struct task_struct *, struct pid *);
-extern int alloc_pidmap(struct pid_namespace *pid_ns);
-extern int set_pidmap(struct pid_namespace *pid_ns, pid_t pid);
-extern void free_pidmap(struct upid *upid);
-
-extern spinlock_t pidmap_lock;
 
 struct pid_namespace;
 extern struct pid_namespace init_pid_ns;
@@ -123,12 +117,9 @@ extern struct pid *find_get_pid(int nr);
 extern struct pid *find_ge_pid(int nr, struct pid_namespace *);
 int next_pidmap(struct pid_namespace *pid_ns, unsigned int last);
 
-extern struct pid *alloc_pid(struct pid_namespace *ns, pid_t vpid);
+extern struct pid *alloc_pid(struct pid_namespace *ns);
 extern void free_pid(struct pid *pid);
 extern void disable_pid_allocation(struct pid_namespace *ns);
-extern int pid_ns_attach_init(struct pid_namespace *, struct task_struct *);
-extern int pid_ns_attach_task(struct pid_namespace *, struct task_struct *);
-pid_t pid_to_vpid(pid_t nr);
 
 /*
  * ns_of_pid() returns the pid namespace in which the specified pid was
