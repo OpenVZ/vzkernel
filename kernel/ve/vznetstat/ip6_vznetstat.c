@@ -76,11 +76,15 @@ static int init_venet_acct_ip6_stat(void *data)
 {
 	struct ve_struct *ve = (struct ve_struct *)data;
 
-	if (!ve->stat)
-		return -ENODEV;
+	if (!ve->stat) {
+		ve->stat = venet_acct_find_create_stat(ve->veid);
+		if (!ve->stat)
+			return -ENODEV;
+	} else {
+		venet_acct_get_stat(ve->stat);
+	}
 
 	__module_get(THIS_MODULE);
-	venet_acct_get_stat(ve->stat);
 	set_bit(VE_NET_ACCT_V6, &ve->stat->flags);
 
 	return 0;
