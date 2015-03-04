@@ -1268,12 +1268,11 @@ static int dio_alloc_sync(struct ploop_io * io, loff_t pos, loff_t len)
 
 	err = 0;
 
+	mutex_lock(&io->files.inode->i_mutex);
+
 	while (len > 0) {
 		struct page *page;
 		void *fsdata;
-
-		mutex_lock(&io->files.inode->i_mutex);
-
 		ret = pagecache_write_begin(io->files.file, io->files.mapping,
 					    pos, PAGE_CACHE_SIZE, 0,
 					    &page, &fsdata);
