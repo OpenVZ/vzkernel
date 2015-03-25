@@ -521,7 +521,7 @@ lookup_extent_mapping(struct extent_map_tree *tree, sector_t start, sector_t len
 	struct extent_map *em;
 	struct rb_node *rb_node;
 
-	read_lock(&tree->lock);
+	read_lock_irq(&tree->lock);
 	rb_node = tree_search(&tree->map, start);
 	if (!rb_node) {
 		em = NULL;
@@ -535,7 +535,7 @@ lookup_extent_mapping(struct extent_map_tree *tree, sector_t start, sector_t len
 	atomic_inc(&em->refs);
 
 out:
-	read_unlock(&tree->lock);
+	read_unlock_irq(&tree->lock);
 	return em;
 }
 
