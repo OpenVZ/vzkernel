@@ -495,7 +495,6 @@ void mem_cgroup_destroy_cache(struct kmem_cache *cachep);
 int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 		      unsigned long nr_pages);
 void memcg_uncharge_kmem(struct mem_cgroup *memcg, unsigned long nr_pages);
-int __memcg_cleanup_cache_params(struct kmem_cache *s);
 
 /**
  * memcg_kmem_newpage_charge: verify if a new kmem allocation is allowed.
