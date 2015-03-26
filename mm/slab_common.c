@@ -371,24 +371,27 @@ EXPORT_SYMBOL(kmem_cache_create);
  * memcg_create_kmem_cache - Create a cache for a memory cgroup.
  * @memcg: The memory cgroup the new cache is for.
  * @root_cache: The parent of the new cache.
- * @memcg_name: The name of the memory cgroup (used for naming the new cache).
  *
  * This function attempts to create a kmem cache that will serve allocation
  * requests going from @memcg to @root_cache. The new cache inherits properties
  * from its parent.
  */
 struct kmem_cache *memcg_create_kmem_cache(struct mem_cgroup *memcg,
-					   struct kmem_cache *root_cache,
-					   const char *memcg_name)
+					   struct kmem_cache *root_cache)
 {
+	static char memcg_name_buf[NAME_MAX + 1]; /* protected by slab_mutex */
 	struct kmem_cache *s = NULL;
 	char *cache_name;
 
 	get_online_cpus();
 	mutex_lock(&slab_mutex);
 
+	rcu_read_lock();
+	strlcpy(memcg_name_buf, cgroup_name(mem_cgroup_css(memcg)->cgroup),
+		NAME_MAX + 1);
+	rcu_read_unlock();
 	cache_name = kasprintf(GFP_KERNEL, "%s(%d:%s)", root_cache->name,
-			       memcg_cache_id(memcg), memcg_name);
+			       memcg_cache_id(memcg), memcg_name_buf);
 	if (!cache_name)
 		goto out_unlock;
 
