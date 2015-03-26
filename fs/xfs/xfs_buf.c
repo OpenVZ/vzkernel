@@ -1467,6 +1467,7 @@ xfs_buf_iomove(
 static enum lru_status
 xfs_buftarg_wait_rele(
 	struct list_head	*item,
+	struct list_lru_one	*lru,
 	spinlock_t		*lru_lock,
 	void			*arg)
 
@@ -1488,7 +1489,7 @@ xfs_buftarg_wait_rele(
 	 */
 	atomic_set(&bp->b_lru_ref, 0);
 	bp->b_state |= XFS_BSTATE_DISPOSE;
-	list_move(item, dispose);
+	list_lru_isolate_move(lru, item, dispose);
 	spin_unlock(&bp->b_lock);
 	return LRU_REMOVED;
 }
@@ -1525,6 +1526,7 @@ xfs_wait_buftarg(
 static enum lru_status
 xfs_buftarg_isolate(
 	struct list_head	*item,
+	struct list_lru_one	*lru,
 	spinlock_t		*lru_lock,
 	void			*arg)
 {
@@ -1548,7 +1550,7 @@ xfs_buftarg_isolate(
 	}
 
 	bp->b_state |= XFS_BSTATE_DISPOSE;
-	list_move(item, dispose);
+	list_lru_isolate_move(lru, item, dispose);
 	spin_unlock(&bp->b_lock);
 	return LRU_REMOVED;
 }
