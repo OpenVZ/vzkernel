@@ -3085,13 +3085,6 @@ static void __mem_cgroup_commit_charge(struct mem_cgroup *memcg,
  */
 static DEFINE_MUTEX(memcg_slab_mutex);
 
-static inline bool memcg_can_account_kmem(struct mem_cgroup *memcg)
-{
-	return !cgroup_memory_nokmem && !mem_cgroup_disabled() &&
-		!mem_cgroup_is_root(memcg) &&
-		memcg_kmem_is_active(memcg);
-}
-
 /*
  * This is a bit cumbersome, but it is rarely used and avoids a backpointer
  * in the memcg_cache_params struct.
@@ -3112,7 +3105,7 @@ static int mem_cgroup_slabinfo_read(struct cgroup *cont, struct cftype *cft,
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
 	struct memcg_cache_params *params;
 
-	if (!memcg_can_account_kmem(memcg))
+	if (!memcg_kmem_is_active(memcg))
 		return -EIO;
 
 	print_slabinfo_header(m);
@@ -3542,7 +3535,7 @@ struct kmem_cache *__memcg_kmem_get_cache(struct kmem_cache *cachep,
 	rcu_read_lock();
 	memcg = mem_cgroup_from_task(rcu_dereference(current->mm->owner));
 
-	if (!memcg_can_account_kmem(memcg))
+	if (!memcg_kmem_is_active(memcg))
 		goto out;
 
 	memcg_cachep = cache_from_memcg_idx(cachep, memcg_cache_id(memcg));
@@ -3635,7 +3628,7 @@ __memcg_kmem_newpage_charge(gfp_t gfp, struct mem_cgroup **_memcg, int order)
 	if (unlikely(!memcg))
 		return true;
 
-	if (!memcg_can_account_kmem(memcg)) {
+	if (!memcg_kmem_is_active(memcg)) {
 		css_put(&memcg->css);
 		return true;
 	}
