@@ -45,7 +45,7 @@
 #include <linux/venet.h>
 #include <linux/ve_proto.h>
 #include <linux/vzctl.h>
-#include <linux/vzctl_venet.h>
+#include <uapi/linux/vzctl_venet.h>
 #include <linux/ve.h>
 #include <linux/venet-netlink.h>
 
