@@ -68,7 +68,7 @@
 #include <linux/ve_proto.h>
 #include <linux/venet.h>
 #include <linux/vzctl.h>
-#include <linux/vzcalluser.h>
+#include <uapi/linux/vzcalluser.h>
 #include <linux/fairsched.h>
 #include <linux/device_cgroup.h>
 

@@ -97,7 +97,7 @@
 #include <net/udp.h>
 #include <net/xfrm.h>
 #include <net/inet_common.h>
-#include <linux/vzcalluser.h>
+#include <uapi/linux/vzcalluser.h>
 #include <linux/ve.h>
 
 #include <asm/byteorder.h>
