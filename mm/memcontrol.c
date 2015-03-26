@@ -3103,17 +3103,12 @@ static int mem_cgroup_slabinfo_read(struct cgroup *cont, struct cftype *cft,
 					struct seq_file *m)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
-	struct memcg_cache_params *params;
+	loff_t pos = 0;
+	void *p;
 
-	if (!memcg_kmem_is_active(memcg))
-		return -EIO;
-
-	print_slabinfo_header(m);
-
-	mutex_lock(&memcg_slab_mutex);
-	list_for_each_entry(params, &memcg->memcg_slab_caches, list)
-		cache_show(memcg_params_to_cache(params), m);
-	mutex_unlock(&memcg_slab_mutex);
+	for (p = slab_start(m, &pos); p; p = slab_next(m, p, &pos))
+		memcg_slab_show(memcg, m, p);
+	slab_stop(m, p);
 
 	return 0;
 }
