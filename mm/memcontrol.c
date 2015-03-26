@@ -368,15 +368,11 @@ static size_t memcg_size(void)
 /* internal only representation about the status of kmem accounting. */
 enum {
 	KMEM_ACCOUNTED_ACTIVE, /* accounted by this cgroup itself */
+	KMEM_ACCOUNTED_ACTIVATED, /* static key enabled */
 	KMEM_ACCOUNTED_DEAD, /* dead memcg with pending kmem charges */
 };
 
 #ifdef CONFIG_MEMCG_KMEM
-static inline void memcg_kmem_set_active(struct mem_cgroup *memcg)
-{
-	set_bit(KMEM_ACCOUNTED_ACTIVE, &memcg->kmem_account_flags);
-}
-
 bool memcg_kmem_is_active(struct mem_cgroup *memcg)
 {
 	return test_bit(KMEM_ACCOUNTED_ACTIVE, &memcg->kmem_account_flags);
@@ -389,8 +385,7 @@ static void memcg_kmem_mark_dead(struct mem_cgroup *memcg)
 	 * will call css_put() if it sees the memcg is dead.
 	 */
 	smp_wmb();
-	if (test_bit(KMEM_ACCOUNTED_ACTIVE, &memcg->kmem_account_flags))
-		set_bit(KMEM_ACCOUNTED_DEAD, &memcg->kmem_account_flags);
+	set_bit(KMEM_ACCOUNTED_DEAD, &memcg->kmem_account_flags);
 }
 
 static bool memcg_kmem_test_and_clear_dead(struct mem_cgroup *memcg)
@@ -639,7 +634,7 @@ static void memcg_free_cache_id(int id);
 
 static void disarm_kmem_keys(struct mem_cgroup *memcg)
 {
-	if (memcg_kmem_is_active(memcg)) {
+	if (test_bit(KMEM_ACCOUNTED_ACTIVATED, &memcg->kmem_account_flags)) {
 		static_key_slow_dec(&memcg_kmem_enabled_key);
 		memcg_free_cache_id(memcg->kmemcg_id);
 	}
@@ -3076,7 +3071,7 @@ void memcg_uncharge_kmem(struct mem_cgroup *memcg,
 		return;
 
 	/*
-	 * Releases a reference taken in kmem_cgroup_css_offline in case
+	 * Releases a reference taken in memcg_deactivate_kmem in case
 	 * this last uncharge is racing with the offlining code or it is
 	 * outliving the memcg existence.
 	 *
@@ -4963,7 +4958,8 @@ static int memcg_update_kmem_limit(struct cgroup *cont, unsigned long limit)
 		 * setting the active bit after the inc will guarantee no one
 		 * starts accounting before all call sites are patched
 		 */
-		memcg_kmem_set_active(memcg);
+		set_bit(KMEM_ACCOUNTED_ACTIVE, &memcg->kmem_account_flags);
+		set_bit(KMEM_ACCOUNTED_ACTIVATED, &memcg->kmem_account_flags);
 	} else
 		ret = page_counter_limit(&memcg->kmem, limit);
 out:
@@ -5788,10 +5784,20 @@ static void memcg_destroy_kmem(struct mem_cgroup *memcg)
 	mem_cgroup_sockets_destroy(memcg);
 }
 
-static void kmem_cgroup_css_offline(struct mem_cgroup *memcg)
+static void memcg_deactivate_kmem(struct mem_cgroup *memcg)
 {
 	if (!memcg_kmem_is_active(memcg))
 		return;
+
+	/*
+	 * Clear the 'active' flag before clearing memcg_caches arrays entries.
+	 * Since we take the slab_mutex in memcg_deactivate_kmem_caches(), it
+	 * guarantees no cache will be created for this cgroup after we are
+	 * done (see memcg_create_kmem_cache()).
+	 */
+	clear_bit(KMEM_ACCOUNTED_ACTIVE, &memcg->kmem_account_flags);
+
+	memcg_deactivate_kmem_caches(memcg);
 
 	/*
 	 * kmem charges can outlive the cgroup. In the case of slab
@@ -5837,7 +5843,7 @@ static void memcg_destroy_kmem(struct mem_cgroup *memcg)
 {
 }
 
-static void kmem_cgroup_css_offline(struct mem_cgroup *memcg)
+static void memcg_deactivate_kmem(struct mem_cgroup *memcg)
 {
 }
 #endif
@@ -6227,7 +6233,7 @@ static void mem_cgroup_css_offline(struct cgroup *cont)
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
 	struct cgroup *iter;
 
-	kmem_cgroup_css_offline(memcg);
+	memcg_deactivate_kmem(memcg);
 
 	mem_cgroup_invalidate_reclaim_iterators(memcg);
 
