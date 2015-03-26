@@ -393,6 +393,7 @@ void memcg_create_kmem_cache(struct mem_cgroup *memcg,
 			     struct kmem_cache *root_cache)
 {
 	static char memcg_name_buf[NAME_MAX + 1]; /* protected by slab_mutex */
+	struct cgroup_subsys_state *css = mem_cgroup_css(memcg);
 	struct memcg_cache_array *arr;
 	struct kmem_cache *s = NULL;
 	char *cache_name;
@@ -414,11 +415,10 @@ void memcg_create_kmem_cache(struct mem_cgroup *memcg,
 		goto out_unlock;
 
 	rcu_read_lock();
-	strlcpy(memcg_name_buf, cgroup_name(mem_cgroup_css(memcg)->cgroup),
-		NAME_MAX + 1);
+	strlcpy(memcg_name_buf, cgroup_name(css->cgroup), NAME_MAX + 1);
 	rcu_read_unlock();
 	cache_name = kasprintf(GFP_KERNEL, "%s(%d:%s)", root_cache->name,
-			       idx, memcg_name_buf);
+			       css_id(css), memcg_name_buf);
 	if (!cache_name)
 		goto out_unlock;
 
