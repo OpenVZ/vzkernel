@@ -15,7 +15,7 @@
 #include <linux/vzctl.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
-#include <linux/vzcalluser.h>
+#include <uapi/linux/vzcalluser.h>
 #include <asm/uaccess.h>
 #include <asm/pgalloc.h>
 #include <linux/device.h>
