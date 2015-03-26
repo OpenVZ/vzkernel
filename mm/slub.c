@@ -2607,6 +2607,7 @@ redo:
 		memset(object, 0, s->object_size);
 
 	slab_post_alloc_hook(s, gfpflags, 1, &object);
+	memcg_kmem_put_cache(s);
 
 	return object;
 }
@@ -3835,26 +3836,6 @@ int kmem_cache_shrink(struct kmem_cache *s)
 	return 0;
 }
 EXPORT_SYMBOL(kmem_cache_shrink);
-
-#ifdef CONFIG_MEMCG
-void __kmemcg_cache_deactivate(struct kmem_cache *s)
-{
-	/*
-	 * Disable empty slabs caching. Used to avoid pinning offline
-	 * memory cgroups by kmem pages that can be freed.
-	 */
-	s->cpu_partial = 0;
-	s->min_partial = 0;
-
-	/*
-	 * s->cpu_partial is checked locklessly (see put_cpu_partial), so
-	 * we have to make sure the change is visible.
-	 */
-	synchronize_sched();
-
-	kmem_cache_shrink(s);
-}
-#endif
 
 static int slab_mem_going_offline_callback(void *arg)
 {
