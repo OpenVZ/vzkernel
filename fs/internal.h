@@ -18,6 +18,7 @@ struct iomap_ops;
 struct linux_binprm;
 struct path;
 struct mount;
+struct shrink_control;
 
 /*
  * block_dev.c
@@ -116,8 +117,7 @@ extern int open_check_o_direct(struct file *f);
 /*
  * inode.c
  */
-extern long prune_icache_sb(struct super_block *sb, unsigned long nr_to_scan,
-			    int nid);
+extern long prune_icache_sb(struct super_block *sb, struct shrink_control *sc);
 extern void inode_add_lru(struct inode *inode);
 
 extern bool __atime_needs_update(const struct path *, struct inode *, bool);
@@ -144,8 +144,7 @@ extern int invalidate_inodes(struct super_block *, bool);
 extern struct dentry *__d_alloc(struct super_block *, const struct qstr *);
 extern int d_set_mounted(struct dentry *dentry);
 extern struct dentry *d_alloc_cursor(struct dentry *);
-extern long prune_dcache_sb(struct super_block *sb, unsigned long nr_to_scan,
-			    int nid);
+extern long prune_dcache_sb(struct super_block *sb, struct shrink_control *sc);
 
 /*
  * read_write.c
