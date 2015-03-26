@@ -5,23 +5,19 @@
  *
  */
 
-#ifndef __LINUX_VZLIST_H__
-#define __LINUX_VZLIST_H__
+#ifndef _UAPI_LINUX_VZLIST_H
+#define _UAPI_LINUX_VZLIST_H
 
 #include <linux/types.h>
 #include <linux/ioctl.h>
 
 #ifndef __KERNEL__
-#include <stdint.h>
+#define __user
 #endif
 
 #ifndef __ENVID_T_DEFINED__
-typedef unsigned envid_t;
 #define __ENVID_T_DEFINED__
-#endif
-
-#ifndef __user
-#define __user
+typedef unsigned int envid_t;
 #endif
 
 struct vzlist_veidctl {
@@ -41,10 +37,10 @@ struct vzlist_veipctl {
 	void __user	*ip;
 };
 
-#define VZLISTTYPE 'x'
+#define VZLISTTYPE		'x'
 #define VZCTL_GET_VEIDS		_IOR(VZLISTTYPE, 1, struct vzlist_veidctl)
 #define VZCTL_GET_VEPIDS	_IOR(VZLISTTYPE, 2, struct vzlist_vepidctl)
 #define VZCTL_GET_VEIPS		_IOR(VZLISTTYPE, 3, struct vzlist_veipctl)
 #define VZCTL_GET_VEIP6S	_IOR(VZLISTTYPE, 4, struct vzlist_veipctl)
 
-#endif /* __LINUX_VZLIST_H__ */
+#endif /* _UAPI_LINUX_VZLIST_H */
