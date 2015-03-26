@@ -340,6 +340,8 @@ struct mem_cgroup {
 #if defined(CONFIG_MEMCG_KMEM)
         /* Index in the kmem_cache->memcg_params.memcg_caches array */
 	int kmemcg_id;
+	/* List of memcgs sharing the same kmemcg_id */
+	struct list_head kmemcg_sharers;
 #endif
 
 	int last_scanned_node;
@@ -630,14 +632,10 @@ void memcg_put_cache_ids(void)
 struct static_key memcg_kmem_enabled_key;
 EXPORT_SYMBOL(memcg_kmem_enabled_key);
 
-static void memcg_free_cache_id(int id);
-
 static void disarm_kmem_keys(struct mem_cgroup *memcg)
 {
-	if (test_bit(KMEM_ACCOUNTED_ACTIVATED, &memcg->kmem_account_flags)) {
+	if (test_bit(KMEM_ACCOUNTED_ACTIVATED, &memcg->kmem_account_flags))
 		static_key_slow_dec(&memcg_kmem_enabled_key);
-		memcg_free_cache_id(memcg->kmemcg_id);
-	}
 	/*
 	 * This check can't live in kmem destruction function,
 	 * since the charges will outlive the cgroup
@@ -5770,7 +5768,6 @@ static int memcg_init_kmem(struct mem_cgroup *memcg, struct cgroup_subsys *ss)
 {
 	int ret;
 
-	memcg->kmemcg_id = -1;
 	ret = memcg_propagate_kmem(memcg);
 	if (ret)
 		return ret;
@@ -5786,6 +5783,9 @@ static void memcg_destroy_kmem(struct mem_cgroup *memcg)
 
 static void memcg_deactivate_kmem(struct mem_cgroup *memcg)
 {
+	struct mem_cgroup *parent, *sharer;
+	int kmemcg_id;
+
 	if (!memcg_kmem_is_active(memcg))
 		return;
 
@@ -5798,6 +5798,33 @@ static void memcg_deactivate_kmem(struct mem_cgroup *memcg)
 	clear_bit(KMEM_ACCOUNTED_ACTIVE, &memcg->kmem_account_flags);
 
 	memcg_deactivate_kmem_caches(memcg);
+
+	kmemcg_id = memcg->kmemcg_id;
+	BUG_ON(kmemcg_id < 0);
+
+	parent = parent_mem_cgroup(memcg);
+	if (!parent)
+		parent = root_mem_cgroup;
+
+	/*
+	 * Change kmemcg_id of this cgroup and all its descendants to the
+	 * parent's id, and then move all entries from this cgroup's list_lrus
+	 * to ones of the parent. After we have finished, all list_lrus
+	 * corresponding to this cgroup are guaranteed to remain empty. The
+	 * ordering is imposed by list_lru_node->lock taken by
+	 * memcg_drain_all_list_lrus().
+	 */
+	list_for_each_entry(sharer, &memcg->kmemcg_sharers, kmemcg_sharers) {
+		BUG_ON(sharer->kmemcg_id != kmemcg_id);
+		sharer->kmemcg_id = parent->kmemcg_id;
+	}
+	memcg->kmemcg_id = parent->kmemcg_id;
+	list_splice(&memcg->kmemcg_sharers, &parent->kmemcg_sharers);
+	list_add(&memcg->kmemcg_sharers, &parent->kmemcg_sharers);
+
+	memcg_drain_all_list_lrus(kmemcg_id, parent->kmemcg_id);
+
+	memcg_free_cache_id(kmemcg_id);
 
 	/*
 	 * kmem charges can outlive the cgroup. In the case of slab
@@ -6156,6 +6183,10 @@ mem_cgroup_css_alloc(struct cgroup *cont)
 	mutex_init(&memcg->thresholds_lock);
 	spin_lock_init(&memcg->move_lock);
 	vmpressure_init(&memcg->vmpressure);
+#ifdef CONFIG_MEMCG_KMEM
+	memcg->kmemcg_id = -1;
+	INIT_LIST_HEAD(&memcg->kmemcg_sharers);
+#endif
 
 	return &memcg->css;
 
