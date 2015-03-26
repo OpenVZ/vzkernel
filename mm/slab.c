@@ -3405,6 +3405,7 @@ slab_alloc_node(struct kmem_cache *cachep, gfp_t flags, int nodeid,
 	if (unlikely((flags & __GFP_ZERO) && ptr))
 		memset(ptr, 0, cachep->object_size);
 
+	memcg_kmem_put_cache(cachep);
 	return ptr;
 }
 
@@ -3472,6 +3473,7 @@ slab_alloc(struct kmem_cache *cachep, gfp_t flags, unsigned long caller)
 	if (unlikely((flags & __GFP_ZERO) && objp))
 		memset(objp, 0, cachep->object_size);
 
+	memcg_kmem_put_cache(cachep);
 	return objp;
 }
 
