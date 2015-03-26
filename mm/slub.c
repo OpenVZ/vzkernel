@@ -3752,11 +3752,12 @@ void kfree(const void *x)
 }
 EXPORT_SYMBOL(kfree);
 
+#define SHRINK_PROMOTE_MAX 32
+
 /*
- * kmem_cache_shrink removes empty slabs from the partial lists and sorts
- * the remaining slabs by the number of items in use. The slabs with the
- * most items in use come first. New allocations will then fill those up
- * and thus they can be removed from the partial lists.
+ * kmem_cache_shrink discards empty slabs and promotes the slabs filled
+ * up most to the head of the partial lists. New allocations will then
+ * fill those up and thus they can be removed from the partial lists.
  *
  * The slabs with the least items are placed last. This results in them
  * being allocated from last increasing the chance that the last objects
@@ -3769,50 +3770,57 @@ int kmem_cache_shrink(struct kmem_cache *s)
 	struct kmem_cache_node *n;
 	struct page *page;
 	struct page *t;
-	int objects = oo_objects(s->max);
-	struct list_head *slabs_by_inuse =
-		kmalloc(sizeof(struct list_head) * objects, GFP_KERNEL);
+	LIST_HEAD(discard);
+	struct list_head promote[SHRINK_PROMOTE_MAX];
 	unsigned long flags;
 
-	if (!slabs_by_inuse)
-		return -ENOMEM;
+	for (i = 0; i < SHRINK_PROMOTE_MAX; i++)
+		INIT_LIST_HEAD(promote + i);
 
 	flush_all(s);
 	for_each_node_state(node, N_NORMAL_MEMORY) {
 		n = get_node(s, node);
 
-		for (i = 0; i < objects; i++)
-			INIT_LIST_HEAD(slabs_by_inuse + i);
-
 		spin_lock_irqsave(&n->list_lock, flags);
 
 		/*
-		 * Build lists indexed by the items in use in each slab.
+		 * Build lists of slabs to discard or promote.
 		 *
 		 * Note that concurrent frees may occur while we hold the
 		 * list_lock. page->inuse here is the upper limit.
 		 */
 		list_for_each_entry_safe(page, t, &n->partial, lru) {
-			list_move(&page->lru, slabs_by_inuse + page->inuse);
-			if (!page->inuse)
+			int free = page->objects - page->inuse;
+
+			/* Do not reread page->inuse */
+			barrier();
+
+			/* We do not keep full slabs on the list */
+			BUG_ON(free <= 0);
+
+			if (free == page->objects) {
+				list_move(&page->lru, &discard);
 				n->nr_partial--;
+			} else if (free <= SHRINK_PROMOTE_MAX)
+				list_move(&page->lru, promote + free - 1);
 		}
 
 		/*
-		 * Rebuild the partial list with the slabs filled up most
-		 * first and the least used slabs at the end.
+		 * Promote the slabs filled up most to the head of the
+		 * partial list.
 		 */
-		for (i = objects - 1; i > 0; i--)
-			list_splice(slabs_by_inuse + i, n->partial.prev);
+		for (i = SHRINK_PROMOTE_MAX - 1; i >= 0; i--)
+			list_splice_init(promote + i, &n->partial);
 
 		spin_unlock_irqrestore(&n->list_lock, flags);
 
 		/* Release empty slabs */
-		list_for_each_entry_safe(page, t, slabs_by_inuse, lru)
+		list_for_each_entry_safe(page, t, &discard, lru)
 			discard_slab(s, page);
+
+		INIT_LIST_HEAD(&discard);
 	}
 
-	kfree(slabs_by_inuse);
 	return 0;
 }
 EXPORT_SYMBOL(kmem_cache_shrink);
@@ -5145,12 +5153,9 @@ static ssize_t shrink_show(struct kmem_cache *s, char *buf)
 static ssize_t shrink_store(struct kmem_cache *s,
 			const char *buf, size_t length)
 {
-	if (buf[0] == '1') {
-		int rc = kmem_cache_shrink(s);
-
-		if (rc)
-			return rc;
-	} else
+	if (buf[0] == '1')
+		kmem_cache_shrink(s);
+	else
 		return -EINVAL;
 	return length;
 }
