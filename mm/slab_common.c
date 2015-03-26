@@ -368,18 +368,8 @@ static int do_kmem_cache_shutdown(struct kmem_cache *s,
 		*need_rcu_barrier = true;
 
 #ifdef CONFIG_MEMCG_KMEM
-	if (!is_root_cache(s)) {
-		int idx;
-		struct memcg_cache_array *arr;
-
-		idx = memcg_cache_id(s->memcg_params.memcg);
-		arr = rcu_dereference_protected(s->memcg_params.root_cache->
-						memcg_params.memcg_caches,
-						lockdep_is_held(&slab_mutex));
-		BUG_ON(arr->entries[idx] != s);
-		arr->entries[idx] = NULL;
+	if (!is_root_cache(s))
 		list_del(&s->memcg_params.list);
-	}
 #endif
 	list_move(&s->list, release);
 	return 0;
@@ -424,6 +414,13 @@ void memcg_create_kmem_cache(struct mem_cgroup *memcg,
 
 	get_online_cpus();
 	mutex_lock(&slab_mutex);
+
+	/*
+	 * The memory cgroup could have been deactivated while the cache
+	 * creation work was pending.
+	 */
+	if (!memcg_kmem_is_active(memcg))
+		goto out_unlock;
 
 	idx = memcg_cache_id(memcg);
 	arr = rcu_dereference_protected(root_cache->memcg_params.memcg_caches,
@@ -472,6 +469,26 @@ void memcg_create_kmem_cache(struct mem_cgroup *memcg,
 out_unlock:
 	mutex_unlock(&slab_mutex);
 	put_online_cpus();
+}
+
+void memcg_deactivate_kmem_caches(struct mem_cgroup *memcg)
+{
+	int idx;
+	struct memcg_cache_array *arr;
+	struct kmem_cache *s;
+
+	idx = memcg_cache_id(memcg);
+
+	mutex_lock(&slab_mutex);
+	list_for_each_entry(s, &slab_caches, list) {
+		if (!is_root_cache(s))
+			continue;
+
+		arr = rcu_dereference_protected(s->memcg_params.memcg_caches,
+						lockdep_is_held(&slab_mutex));
+		arr->entries[idx] = NULL;
+	}
+	mutex_unlock(&slab_mutex);
 }
 
 void memcg_destroy_kmem_caches(struct mem_cgroup *memcg)
