@@ -724,14 +724,9 @@ void print_slabinfo_header(struct seq_file *m)
 	seq_putc(m, '\n');
 }
 
-static void *s_start(struct seq_file *m, loff_t *pos)
+void *slab_start(struct seq_file *m, loff_t *pos)
 {
-	loff_t n = *pos;
-
 	mutex_lock(&slab_mutex);
-	if (!n)
-		print_slabinfo_header(m);
-
 	return seq_list_start(&slab_caches, *pos);
 }
 
@@ -793,10 +788,12 @@ int cache_show(struct kmem_cache *s, struct seq_file *m)
 	return 0;
 }
 
-static int s_show(struct seq_file *m, void *p)
+static int slab_show(struct seq_file *m, void *p)
 {
 	struct kmem_cache *s = list_entry(p, struct kmem_cache, list);
 
+	if (p == slab_caches.next)
+		print_slabinfo_header(m);
 	if (!is_root_cache(s))
 		return 0;
 	return cache_show(s, m);
@@ -816,10 +813,10 @@ static int s_show(struct seq_file *m, void *p)
  * + further values on SMP and with statistics enabled
  */
 static const struct seq_operations slabinfo_op = {
-	.start = s_start,
+	.start = slab_start,
 	.next = slab_next,
 	.stop = slab_stop,
-	.show = s_show,
+	.show = slab_show,
 };
 
 static int slabinfo_open(struct inode *inode, struct file *file)
