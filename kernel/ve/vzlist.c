@@ -13,7 +13,7 @@
 #include <linux/ve.h>
 #include <linux/venet.h>
 #include <linux/vzctl.h>
-#include <linux/vzlist.h>
+#include <uapi/linux/vzlist.h>
 #include <linux/vmalloc.h>
 #include <linux/ve_proto.h>
 #include <linux/veip.h>
