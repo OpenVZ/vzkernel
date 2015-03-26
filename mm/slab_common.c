@@ -475,10 +475,11 @@ void memcg_deactivate_kmem_caches(struct mem_cgroup *memcg)
 {
 	int idx;
 	struct memcg_cache_array *arr;
-	struct kmem_cache *s;
+	struct kmem_cache *s, *c;
 
 	idx = memcg_cache_id(memcg);
 
+	get_online_cpus();
 	mutex_lock(&slab_mutex);
 	list_for_each_entry(s, &slab_caches, list) {
 		if (!is_root_cache(s))
@@ -486,9 +487,15 @@ void memcg_deactivate_kmem_caches(struct mem_cgroup *memcg)
 
 		arr = rcu_dereference_protected(s->memcg_params.memcg_caches,
 						lockdep_is_held(&slab_mutex));
+		c = arr->entries[idx];
+		if (!c)
+			continue;
+
+		__kmem_cache_shrink(c, true);
 		arr->entries[idx] = NULL;
 	}
 	mutex_unlock(&slab_mutex);
+	put_online_cpus();
 }
 
 void memcg_destroy_kmem_caches(struct mem_cgroup *memcg)
@@ -556,6 +563,26 @@ out_unlock:
 	do_kmem_cache_release(&release, need_rcu_barrier);
 }
 EXPORT_SYMBOL(kmem_cache_destroy);
+
+/**
+ * kmem_cache_shrink - Shrink a cache.
+ * @cachep: The cache to shrink.
+ *
+ * Releases as many slabs as possible for a cache.
+ * To help debugging, a zero exit status indicates all slabs were released.
+ */
+int kmem_cache_shrink(struct kmem_cache *cachep)
+{
+	int ret;
+
+	get_online_cpus();
+	mutex_lock(&slab_mutex);
+	ret = __kmem_cache_shrink(cachep, false);
+	mutex_unlock(&slab_mutex);
+	put_online_cpus();
+	return ret;
+}
+EXPORT_SYMBOL(kmem_cache_shrink);
 
 int slab_is_available(void)
 {
