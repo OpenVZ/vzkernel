@@ -44,12 +44,12 @@
 #include <linux/ethtool.h>
 #include <linux/veth.h>
 #include <linux/vzctl.h>
-#include <linux/vzctl_veth.h>
+#include <uapi/linux/vzctl_veth.h>
 #include <linux/ve.h>
 
 #include <linux/list.h>
 #include <linux/spinlock.h>
-#include <linux/vzcalluser.h>
+#include <uapi/linux/vzcalluser.h>
 
 static LIST_HEAD(veth_hwaddr_list);
 static DEFINE_RWLOCK(ve_hwaddr_lock);
