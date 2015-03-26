@@ -3027,7 +3027,7 @@ static int mem_cgroup_slabinfo_read(struct cgroup *cont, struct cftype *cft,
 }
 #endif
 
-static int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
+int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 			     unsigned long nr_pages)
 {
 	struct page_counter *counter;
@@ -3074,7 +3074,7 @@ static int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 	return ret;
 }
 
-static void memcg_uncharge_kmem(struct mem_cgroup *memcg,
+void memcg_uncharge_kmem(struct mem_cgroup *memcg,
 				unsigned long nr_pages)
 {
 	page_counter_uncharge(&memcg->memory, nr_pages);
@@ -3389,17 +3389,6 @@ static void memcg_schedule_register_cache(struct mem_cgroup *memcg,
 	memcg_stop_kmem_account();
 	__memcg_schedule_register_cache(memcg, cachep);
 	memcg_resume_kmem_account();
-}
-
-int __memcg_charge_slab(struct kmem_cache *cachep, gfp_t gfp, int order)
-{
-	return memcg_charge_kmem(cachep->memcg_params->memcg, gfp,
-				 PAGE_SIZE << order);
-}
-
-void __memcg_uncharge_slab(struct kmem_cache *cachep, int order)
-{
-	memcg_uncharge_kmem(cachep->memcg_params->memcg, PAGE_SIZE << order);
 }
 
 /*
