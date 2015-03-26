@@ -110,6 +110,7 @@ int __kmem_cache_alloc_bulk(struct kmem_cache *s, gfp_t flags, size_t nr,
 void slab_init_memcg_params(struct kmem_cache *s)
 {
 	s->memcg_params.is_root_cache = true;
+	INIT_LIST_HEAD(&s->memcg_params.list);
 	RCU_INIT_POINTER(s->memcg_params.memcg_caches, NULL);
 }
 
@@ -377,6 +378,7 @@ static int do_kmem_cache_shutdown(struct kmem_cache *s,
 						lockdep_is_held(&slab_mutex));
 		BUG_ON(arr->entries[idx] != s);
 		arr->entries[idx] = NULL;
+		list_del(&s->memcg_params.list);
 	}
 #endif
 	list_move(&s->list, release);
@@ -457,6 +459,8 @@ void memcg_create_kmem_cache(struct mem_cgroup *memcg,
 		goto out_unlock;
 	}
 
+	list_add(&s->memcg_params.list, &root_cache->memcg_params.list);
+
 	/*
 	 * Since readers won't lock (see cache_from_memcg_idx()), we need a
 	 * barrier here to ensure nobody will see the kmem_cache partially
@@ -503,13 +507,15 @@ void slab_kmem_cache_release(struct kmem_cache *s)
 
 void kmem_cache_destroy(struct kmem_cache *s)
 {
-	int i;
+	struct kmem_cache *c, *c2;
 	LIST_HEAD(release);
 	bool need_rcu_barrier = false;
 	bool busy = false;
 
 	if (unlikely(!s))
 		return;
+
+	BUG_ON(!is_root_cache(s));
 
 	get_online_cpus();
 	mutex_lock(&slab_mutex);
@@ -518,10 +524,8 @@ void kmem_cache_destroy(struct kmem_cache *s)
 	if (s->refcount)
 		goto out_unlock;
 
-	for_each_memcg_cache_index(i) {
-		struct kmem_cache *c = cache_from_memcg_idx(s, i);
-
-		if (c && do_kmem_cache_shutdown(c, &release, &need_rcu_barrier))
+	for_each_memcg_cache_safe(c, c2, s) {
+		if (do_kmem_cache_shutdown(c, &release, &need_rcu_barrier))
 			busy = true;
 	}
 
@@ -837,16 +841,11 @@ memcg_accumulate_slabinfo(struct kmem_cache *s, struct slabinfo *info)
 {
 	struct kmem_cache *c;
 	struct slabinfo sinfo;
-	int i;
 
 	if (!is_root_cache(s))
 		return;
 
-	for_each_memcg_cache_index(i) {
-		c = cache_from_memcg_idx(s, i);
-		if (!c)
-			continue;
-
+	for_each_memcg_cache(c, s) {
 		memset(&sinfo, 0, sizeof(sinfo));
 		get_slabinfo(c, &sinfo);
 
