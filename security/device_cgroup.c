@@ -13,7 +13,7 @@
 #include <linux/slab.h>
 #include <linux/rcupdate.h>
 #include <linux/mutex.h>
-#include <linux/vzcalluser.h>
+#include <uapi/linux/vzcalluser.h>
 #include <linux/major.h>
 #include <linux/module.h>
 
