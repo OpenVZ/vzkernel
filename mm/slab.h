@@ -184,7 +184,8 @@ static __always_inline int memcg_charge_slab(struct kmem_cache *s,
 		return 0;
 	if (is_root_cache(s))
 		return 0;
-	return __memcg_charge_slab(s, gfp, order);
+	return memcg_charge_kmem(s->memcg_params->memcg, gfp,
+				 PAGE_SIZE << order);
 }
 
 static __always_inline void memcg_uncharge_slab(struct kmem_cache *s, int order)
@@ -193,7 +194,7 @@ static __always_inline void memcg_uncharge_slab(struct kmem_cache *s, int order)
 		return;
 	if (is_root_cache(s))
 		return;
-	__memcg_uncharge_slab(s, order);
+	memcg_uncharge_kmem(s->memcg_params->memcg, PAGE_SIZE << order);
 }
 #else
 static inline bool is_root_cache(struct kmem_cache *s)
