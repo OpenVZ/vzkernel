@@ -13,7 +13,7 @@
 
 #include <linux/list.h>
 #include <linux/spinlock.h>
-#include <linux/vzcalluser.h>
+#include <uapi/linux/vzcalluser.h>
 #include <linux/veip.h>
 #include <linux/netdevice.h>
 

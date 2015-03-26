@@ -26,8 +26,8 @@
 #include <linux/venet.h>
 #include <linux/vznetstat.h>
 #include <linux/vzctl.h>
-#include <linux/vzctl_netstat.h>
-#include <linux/vzcalluser.h>
+#include <uapi/linux/vzctl_netstat.h>
+#include <uapi/linux/vzcalluser.h>
 
 
 /*

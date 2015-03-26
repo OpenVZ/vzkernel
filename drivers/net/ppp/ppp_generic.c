@@ -55,7 +55,7 @@
 #include <net/netns/generic.h>
 
 #include <linux/ve.h>
-#include <linux/vzcalluser.h>
+#include <uapi/linux/vzcalluser.h>
 
 #define PPP_VERSION	"2.4.2"
 
