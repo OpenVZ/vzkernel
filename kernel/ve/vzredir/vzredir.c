@@ -35,7 +35,7 @@
 #include <linux/vzctl.h>
 #include <linux/vznetstat.h>
 
-#include <linux/vzctl_redir.h>
+#include <uapi/linux/vzctl_redir.h>
 #include <linux/vzredir.h>
 
 /*

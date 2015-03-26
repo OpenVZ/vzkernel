@@ -41,7 +41,7 @@
 #include <linux/tty.h>
 #include <linux/console.h>
 
-#include <linux/vzcalluser.h>
+#include <uapi/linux/vzcalluser.h>
 #include <linux/venet.h>
 
 static struct kmem_cache *ve_cachep;
