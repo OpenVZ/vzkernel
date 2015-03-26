@@ -441,9 +441,13 @@ struct memcg_cache_array {
  *
  * @memcg: pointer to the memcg this cache belongs to
  * @root_cache: pointer to the global, root cache, this cache was derived from
+ *
+ * Both root and child caches of the same kind are linked into a list chained
+ * through @list.
  */
 struct memcg_cache_params {
 	bool is_root_cache;
+	struct list_head list;
 	union {
 #ifdef __GENKSYMS__
 		struct kmem_cache *memcg_caches[0];
