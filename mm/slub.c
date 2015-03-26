@@ -2595,6 +2595,7 @@ redo:
 		memset(object, 0, s->object_size);
 
 	slab_post_alloc_hook(s, gfpflags, 1, &object);
+	memcg_kmem_put_cache(s);
 
 	return object;
 }
