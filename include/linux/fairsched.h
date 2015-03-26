@@ -14,9 +14,7 @@
 #include <linux/cgroup.h>
 #include <linux/seq_file.h>
 
-#define FAIRSCHED_SET_RATE	0
-#define FAIRSCHED_DROP_RATE	1
-#define FAIRSCHED_GET_RATE	2
+#include <uapi/linux/fairsched.h>
 
 #ifdef __KERNEL__
 
