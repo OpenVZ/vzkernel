@@ -338,7 +338,7 @@ struct mem_cgroup {
 	struct tcp_memcontrol tcp_mem;
 #endif
 #if defined(CONFIG_MEMCG_KMEM)
-        /* Index in the kmem_cache->memcg_params->memcg_caches array */
+        /* Index in the kmem_cache->memcg_params.memcg_caches array */
 	int kmemcg_id;
 #endif
 
@@ -580,7 +580,7 @@ static void disarm_sock_keys(struct mem_cgroup *memcg)
 
 #ifdef CONFIG_MEMCG_KMEM
 /*
- * This will be the memcg's index in each cache's ->memcg_params->memcg_caches.
+ * This will be the memcg's index in each cache's ->memcg_params.memcg_caches.
  * There are two main reasons for not using the css_id for this:
  *  1) this works better in sparse environments, where we have a lot of memcgs,
  *     but only a few kmem-limited. Or also, if we have, for instance, 200
@@ -3281,8 +3281,7 @@ struct kmem_cache *__memcg_kmem_get_cache(struct kmem_cache *cachep,
 	struct mem_cgroup *memcg;
 	struct kmem_cache *memcg_cachep;
 
-	VM_BUG_ON(!cachep->memcg_params);
-	VM_BUG_ON(!cachep->memcg_params->is_root_cache);
+	VM_BUG_ON(!is_root_cache(cachep));
 
 	if (!current->mm || current->memcg_kmem_skip_account)
 		return cachep;
@@ -3320,7 +3319,7 @@ EXPORT_SYMBOL(__memcg_kmem_get_cache);
 void __memcg_kmem_put_cache(struct kmem_cache *cachep)
 {
 	if (!is_root_cache(cachep))
-		css_put(&cachep->memcg_params->memcg->css);
+		css_put(&cachep->memcg_params.memcg->css);
 }
 
 /*
@@ -3459,7 +3458,7 @@ struct mem_cgroup *__mem_cgroup_from_kmem(void *ptr)
 	if (PageSlab(page)) {
 		cachep = page->slab_cache;
 		if (!is_root_cache(cachep))
-			memcg = cachep->memcg_params->memcg;
+			memcg = cachep->memcg_params.memcg;
 	} else {
 		/* page allocated by alloc_kmem_pages */
 		pc = lookup_page_cgroup(page);
