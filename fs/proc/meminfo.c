@@ -76,6 +76,10 @@ static int meminfo_proc_show_mi(struct seq_file *m, struct meminfo *mi)
 	return 0;
 }
 
+#ifdef CONFIG_TCACHE
+extern unsigned long get_nr_tcache_pages(void);
+#endif
+
 int meminfo_proc_show_ub(struct seq_file *m, void *v,
 		struct user_beancounter *ub, unsigned long meminfo_val)
 {
