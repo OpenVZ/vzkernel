@@ -265,6 +265,8 @@ struct mem_cgroup {
 	 */
 	struct res_counter res;
 
+	unsigned long long low;
+
 	/* vmpressure notifications */
 	struct vmpressure vmpressure;
 
@@ -1485,6 +1487,45 @@ int mem_cgroup_inactive_anon_is_low(struct lruvec *lruvec)
 		inactive_ratio = 1;
 
 	return inactive * inactive_ratio < active;
+}
+
+/**
+ * mem_cgroup_low - check if memory consumption is below the normal range
+ * @root: the highest ancestor to consider
+ * @memcg: the memory cgroup to check
+ *
+ * Returns %true if memory consumption of @memcg, and that of all
+ * configurable ancestors up to @root, is below the normal range.
+ */
+bool mem_cgroup_low(struct mem_cgroup *root, struct mem_cgroup *memcg)
+{
+	if (mem_cgroup_disabled())
+		return false;
+
+	/*
+	 * The toplevel group doesn't have a configurable range, so
+	 * it's never low when looked at directly, and it is not
+	 * considered an ancestor when assessing the hierarchy.
+	 */
+
+	if (memcg == root_mem_cgroup)
+		return false;
+
+	if (res_counter_read_u64(&memcg->res, RES_USAGE) >= memcg->low)
+		return false;
+
+	while (memcg != root) {
+		memcg = parent_mem_cgroup(memcg);
+		if (!memcg)
+			break;
+
+		if (memcg == root_mem_cgroup)
+			break;
+
+		if (res_counter_read_u64(&memcg->res, RES_USAGE) >= memcg->low)
+			return false;
+	}
+	return true;
 }
 
 #define mem_cgroup_from_res_counter(counter, member)	\
@@ -4967,6 +5008,36 @@ static int mem_cgroup_write(struct cgroup *cont, struct cftype *cft,
 	return ret;
 }
 
+static ssize_t mem_cgroup_low_read(struct cgroup *cont, struct cftype *cft,
+				   struct file *file, char __user *buf,
+				   size_t nbytes, loff_t *ppos)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
+	char str[64];
+	int len;
+
+	len = scnprintf(str, sizeof(str), "%llu\n", memcg->low);
+	return simple_read_from_buffer(buf, nbytes, ppos, str, len);
+}
+
+static int mem_cgroup_low_write(struct cgroup *cont, struct cftype *cft,
+				const char *buffer)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
+	unsigned long long val;
+	int ret;
+
+	if (mem_cgroup_is_root(memcg))
+		return -EINVAL;
+
+	ret = res_counter_memparse_write_strategy(buffer, &val);
+	if (ret)
+		return ret;
+
+	memcg->low = val;
+	return 0;
+}
+
 static void memcg_get_hierarchical_limit(struct mem_cgroup *memcg,
 		unsigned long long *mem_limit, unsigned long long *memsw_limit)
 {
@@ -5794,6 +5865,11 @@ static struct cftype mem_cgroup_files[] = {
 		.private = MEMFILE_PRIVATE(_MEM, RES_SOFT_LIMIT),
 		.write_string = mem_cgroup_write,
 		.read = mem_cgroup_read,
+	},
+	{
+		.name = "low_limit_in_bytes",
+		.write_string = mem_cgroup_low_write,
+		.read = mem_cgroup_low_read,
 	},
 	{
 		.name = "failcnt",
