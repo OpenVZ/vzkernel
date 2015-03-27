@@ -954,28 +954,32 @@ static int __init tcache_lru_init(void)
 static int __init tcache_init(void)
 {
 	int err;
-	struct cleancache_ops *old_ops;
 
 	err = tcache_lru_init();
 	if (err)
-		return err;
+		goto out_fail;
 
 	err = register_shrinker(&tcache_shrinker);
-	if (err) {
-		kfree(tcache_lru_node);
-		return err;
-	}
+	if (err)
+		goto out_free_lru;
 
 #ifdef CONFIG_SMP
 	num_node_trees = roundup_pow_of_two(2 * num_possible_cpus());
 #endif
 
-	old_ops = cleancache_register_ops(&tcache_cleancache_ops);
-	pr_info("tcache loaded\n");
-	if (old_ops)
-		pr_warn("tcache: cleancache_ops %p overridden\n", old_ops);
+	err = cleancache_register_ops(&tcache_cleancache_ops);
+	if (err)
+		goto out_unregister_shrinker;
 
+	pr_info("tcache loaded\n");
 	return 0;
+
+out_unregister_shrinker:
+	unregister_shrinker(&tcache_shrinker);
+out_free_lru:
+	kfree(tcache_lru_node);
+out_fail:
+	return err;
 }
 module_init(tcache_init);
 
