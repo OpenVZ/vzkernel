@@ -81,6 +81,9 @@ struct scan_control {
 	/* Can pages be swapped as part of reclaim? */
 	int may_swap;
 
+	/* Can cgroups be reclaimed below their normal consumption range? */
+	int may_thrash;
+
 	int order;
 
 	/* Scan (total_size >> priority) pages at once */
@@ -2349,6 +2352,9 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 			unsigned long lru_pages, scanned;
 			struct lruvec *lruvec;
 
+			if (!sc->may_thrash && mem_cgroup_low(root, memcg))
+				continue;
+
 			lruvec = mem_cgroup_zone_lruvec(zone, memcg);
 			scanned = sc->nr_scanned;
 
@@ -2375,8 +2381,7 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 				mem_cgroup_iter_break(root, memcg);
 				break;
 			}
-			memcg = mem_cgroup_iter(root, memcg, &reclaim);
-		} while (memcg);
+		} while ((memcg = mem_cgroup_iter(root, memcg, &reclaim)));
 
 		/*
 		 * Shrink the slab caches in the same proportion that
@@ -2574,10 +2579,13 @@ static bool all_unreclaimable(struct zonelist *zonelist,
 static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
 					  struct scan_control *sc)
 {
+	int initial_priority = sc->priority;
 	unsigned long total_scanned = 0;
 	unsigned long writeback_threshold;
 	bool aborted_reclaim;
 
+retry:
+	{KSTAT_PERF_ENTER(ttfp);
 	delayacct_freepages_start();
 
 	if (global_reclaim(sc))
@@ -2620,6 +2628,7 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
 
 out:
 	delayacct_freepages_end();
+	KSTAT_PERF_LEAVE(ttfp);}
 
 	if (sc->nr_reclaimed)
 		return sc->nr_reclaimed;
@@ -2627,6 +2636,13 @@ out:
 	/* Aborted reclaim to try compaction? don't OOM, then */
 	if (aborted_reclaim)
 		return 1;
+
+	/* Untapped cgroup reserves?  Don't OOM, retry. */
+	if (!sc->may_thrash) {
+		sc->priority = initial_priority;
+		sc->may_thrash = 1;
+		goto retry;
+	}
 
 	/* top priority shrink_zones still had more to do? don't OOM, then */
 	if (global_reclaim(sc) && !all_unreclaimable(zonelist, sc))
