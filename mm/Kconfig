@@ -584,3 +584,13 @@ config MEM_SOFT_DIRTY
 	  it can be cleared by hands.
 
 	  See Documentation/vm/soft-dirty.txt for more details.
+
+config TCACHE
+	tristate "Transcendent file cache"
+	depends on CLEANCACHE
+	default n
+	help
+	  Transcendent file cache is a simple backend for cleancache, which
+	  stores reclaimed pages in memory without any modifications. It is
+	  only worth enabling if used along with memory cgroups in order to
+	  cache pages which were reclaimed on local pressure.
