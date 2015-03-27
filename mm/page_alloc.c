@@ -4719,6 +4719,10 @@ static inline void show_node(struct zone *zone)
 		printk("Node %d ", zone_to_nid(zone));
 }
 
+#ifdef CONFIG_TCACHE
+extern unsigned long get_nr_tcache_pages(void);
+#endif
+
 long si_mem_available(void)
 {
 	long available;
@@ -4763,6 +4767,9 @@ long si_mem_available(void)
 	 */
 	available += global_node_page_state(NR_INDIRECTLY_RECLAIMABLE_BYTES) >>
 		PAGE_SHIFT;
+#ifdef CONFIG_TCACHE
+	available += get_nr_tcache_pages();
+#endif
 
 	if (available < 0)
 		available = 0;
