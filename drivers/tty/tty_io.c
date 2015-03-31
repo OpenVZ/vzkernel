@@ -1942,7 +1942,7 @@ static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 	case MKDEV(TTYAUX_MAJOR, 1): {
 		struct tty_driver *console_driver = console_device(index);
 		if (!ve_is_super(get_exec_env())) {
-			WARN_ONCE(1, "Support of virtual console is not yet implemented in VE\n");
+			printk_once("Support of virtual console is not yet implemented in VE\n");
 			return ERR_PTR(-ENODEV);
 		}
 		if (console_driver) {
