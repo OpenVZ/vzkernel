@@ -574,9 +574,6 @@ static int __call_usermodehelper_exec(struct kthread_worker *worker,
 	DECLARE_COMPLETION_ONSTACK(done);
 	int retval = 0;
 
-	if (worker == &khelper_worker && !ve_is_super(get_exec_env()))
-		return -EPERM;
-
 	helper_lock();
 	if (!sub_info->path) {
 		retval = -EINVAL;
@@ -631,6 +628,9 @@ unlock:
 
 int call_usermodehelper_exec(struct subprocess_info *sub_info, int wait)
 {
+	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
+
 	return __call_usermodehelper_exec(&khelper_worker, sub_info, wait);
 }
 EXPORT_SYMBOL(call_usermodehelper_exec);
@@ -707,6 +707,9 @@ int call_usermodehelper_by(struct kthread_worker *worker,
 {
 	struct subprocess_info *info;
 	gfp_t gfp_mask = (wait == UMH_NO_WAIT) ? GFP_ATOMIC : GFP_KERNEL;
+
+	if (worker == &khelper_worker && !ve_is_super(get_exec_env()))
+		return -EPERM;
 
 	info = call_usermodehelper_setup(path, argv, envp, gfp_mask,
 					 init, cleanup, data);
