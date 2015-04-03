@@ -165,7 +165,7 @@ tcpmss_mangle_packet(struct sk_buff *skb,
 	return TCPOLEN_MSS;
 }
 
-static u_int32_t tcpmss_reverse_mtu(const struct sk_buff *skb,
+static u_int32_t tcpmss_reverse_mtu(struct net *net, const struct sk_buff *skb,
 				    unsigned int family)
 {
 	struct flowi fl;
@@ -186,7 +186,7 @@ static u_int32_t tcpmss_reverse_mtu(const struct sk_buff *skb,
 	rcu_read_lock();
 	ai = nf_get_afinfo(family);
 	if (ai != NULL)
-		ai->route(&init_net, (struct dst_entry **)&rt, &fl, false);
+		ai->route(net, (struct dst_entry **)&rt, &fl, false);
 	rcu_read_unlock();
 
 	if (rt != NULL) {
@@ -200,11 +200,12 @@ static unsigned int
 tcpmss_tg4(struct sk_buff *skb, const struct xt_action_param *par)
 {
 	struct iphdr *iph = ip_hdr(skb);
+	struct net *net = dev_net(par->in ? par->in : par->out);
 	__be16 newlen;
 	int ret;
 
 	ret = tcpmss_mangle_packet(skb, par,
-				   tcpmss_reverse_mtu(skb, PF_INET),
+				   tcpmss_reverse_mtu(net, skb, PF_INET),
 				   iph->ihl * 4,
 				   sizeof(*iph) + sizeof(struct tcphdr));
 	if (ret < 0)
@@ -223,6 +224,7 @@ static unsigned int
 tcpmss_tg6(struct sk_buff *skb, const struct xt_action_param *par)
 {
 	struct ipv6hdr *ipv6h = ipv6_hdr(skb);
+	struct net *net = dev_net(par->in ? par->in : par->out);
 	u8 nexthdr;
 	__be16 frag_off;
 	int tcphoff;
@@ -233,7 +235,7 @@ tcpmss_tg6(struct sk_buff *skb, const struct xt_action_param *par)
 	if (tcphoff < 0)
 		return NF_DROP;
 	ret = tcpmss_mangle_packet(skb, par,
-				   tcpmss_reverse_mtu(skb, PF_INET6),
+				   tcpmss_reverse_mtu(net, skb, PF_INET6),
 				   tcphoff,
 				   sizeof(*ipv6h) + sizeof(struct tcphdr));
 	if (ret < 0)
