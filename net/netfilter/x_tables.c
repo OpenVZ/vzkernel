@@ -182,6 +182,29 @@ xt_unregister_matches(struct xt_match *match, unsigned int n)
 }
 EXPORT_SYMBOL(xt_unregister_matches);
 
+/*
+ * Convert xt_name to module name and check for it's allowed.
+ *
+ * xt_name is a module name without prefix.
+ */
+static bool xt_name_allowed(u8 af, const char *xt_name)
+{
+	char module_name[MODULE_NAME_LEN] = {'\0'};
+	const char *prefix = xt_prefix[af];
+	int len = strlen(prefix) + strlen("t_");
+
+	if (len + strnlen(xt_name, MODULE_NAME_LEN) >= MODULE_NAME_LEN)
+		return false;
+
+	/* Fallback targets (ipt_standard_target etc) */
+	if (strcmp(xt_name, XT_STANDARD_TARGET) == 0 ||
+	    strcmp(xt_name, XT_ERROR_TARGET) == 0)
+		return true;
+
+	sprintf(module_name, "%st_%s", prefix, xt_name);
+
+	return module_payload_allowed(module_name);
+}
 
 /*
  * These are weird, but module loading must not be done with mutex
@@ -194,6 +217,9 @@ struct xt_match *xt_find_match(u8 af, const char *name, u8 revision)
 {
 	struct xt_match *m;
 	int err = -ENOENT;
+
+	if (!xt_name_allowed(af, name))
+		return ERR_PTR(err);
 
 	if (mutex_lock_interruptible(&xt[af].mutex) != 0)
 		return ERR_PTR(-EINTR);
@@ -239,6 +265,9 @@ struct xt_target *xt_find_target(u8 af, const char *name, u8 revision)
 {
 	struct xt_target *t;
 	int err = -ENOENT;
+
+	if (!xt_name_allowed(af, name))
+		return ERR_PTR(err);
 
 	if (mutex_lock_interruptible(&xt[af].mutex) != 0)
 		return ERR_PTR(-EINTR);
