@@ -40,6 +40,8 @@
 #include <linux/ptrace.h>
 #include <linux/async.h>
 #include <linux/ve.h>
+#include <linux/netfilter.h>
+#include <linux/sysctl.h>
 #include <asm/uaccess.h>
 
 #include <trace/events/module.h>
@@ -72,11 +74,14 @@ char modprobe_path[KMOD_PATH_LEN] = "/sbin/modprobe";
 
 static void free_modprobe_argv(struct subprocess_info *info)
 {
-	kfree(info->argv[3]); /* check call_modprobe() */
+	kfree(info->argv[4]); /* check call_modprobe() */
 	kfree(info->argv);
 }
 
-static int call_modprobe(char *module_name, int wait)
+static int __call_usermodehelper_exec(struct kthread_worker *worker,
+		struct subprocess_info *sub_info, int wait);
+
+static int call_modprobe(char *module_name, int wait, int blacklist)
 {
 	struct subprocess_info *info;
 	static char *envp[] = {
@@ -96,16 +101,24 @@ static int call_modprobe(char *module_name, int wait)
 
 	argv[0] = modprobe_path;
 	argv[1] = "-q";
-	argv[2] = "--";
-	argv[3] = module_name;	/* check free_modprobe_argv() */
-	argv[4] = NULL;
+	if (blacklist)
+		argv[2] = "-b";
+	else
+		argv[2] = "-q"; /* just repeat argv[1] */
+	argv[3] = "--";
+	argv[4] = module_name;	/* check free_modprobe_argv() */
+	argv[5] = NULL;
 
 	info = call_usermodehelper_setup(modprobe_path, argv, envp, GFP_KERNEL,
 					 NULL, free_modprobe_argv, NULL);
 	if (!info)
 		goto free_module_name;
 
-	return call_usermodehelper_exec(info, wait | UMH_KILLABLE);
+	/*
+	 * We enter to this function with the right permittions, so
+	 * it's possible to directly call __call_usermodehelper_exec()
+	 */
+	return __call_usermodehelper_exec(&khelper_worker, info, wait | UMH_KILLABLE);
 
 free_module_name:
 	kfree(module_name);
@@ -116,10 +129,10 @@ out:
 }
 
 /**
- * __request_module - try to load a kernel module
+ * ___request_module - try to load a kernel module
  * @wait: wait (or not) for the operation to complete
- * @fmt: printf style format string for the name of the module
- * @...: arguments as specified in the format string
+ * @blacklist: say usermodehelper to ignore blacklisted modules
+ * @module_name: name of requested module
  *
  * Load a module using the user mode module loader. The function returns
  * zero on success or a negative errno code on failure. Note that a
@@ -130,19 +143,13 @@ out:
  * If module auto-loading support is disabled then this function
  * becomes a no-operation.
  */
-int __request_module(bool wait, const char *fmt, ...)
+static int ___request_module(bool wait, bool blacklist, char *module_name)
 {
-	va_list args;
-	char module_name[MODULE_NAME_LEN];
 	unsigned int max_modprobes;
 	int ret;
 	static atomic_t kmod_concurrent = ATOMIC_INIT(0);
 #define MAX_KMOD_CONCURRENT 50	/* Completely arbitrary value - KAO */
 	static int kmod_loop_msg;
-
-	/* Don't allow request_module() inside VE. */
-	if (!ve_is_super(get_exec_env()))
-		return -EPERM;
 
 	/*
 	 * We don't allow synchronous module loading from async.  Module
@@ -151,12 +158,6 @@ int __request_module(bool wait, const char *fmt, ...)
 	 * loading to complete, leading to a deadlock.
 	 */
 	WARN_ON_ONCE(wait && current_is_async());
-
-	va_start(args, fmt);
-	ret = vsnprintf(module_name, MODULE_NAME_LEN, fmt, args);
-	va_end(args);
-	if (ret >= MODULE_NAME_LEN)
-		return -ENAMETOOLONG;
 
 	ret = security_kernel_module_request(module_name);
 	if (ret)
@@ -190,10 +191,160 @@ int __request_module(bool wait, const char *fmt, ...)
 
 	trace_module_request(module_name, wait, _RET_IP_);
 
-	ret = call_modprobe(module_name, wait ? UMH_WAIT_PROC : UMH_WAIT_EXEC);
+	ret = call_modprobe(module_name, wait ? UMH_WAIT_PROC : UMH_WAIT_EXEC, blacklist);
 
 	atomic_dec(&kmod_concurrent);
 	return ret;
+}
+
+#ifdef CONFIG_VE_IPTABLES
+
+/* ve0 allowed modules */
+static struct {
+	const char *name;
+	u64 perm;
+} ve0_am[] = {
+	{ "ip_tables",		VE_IP_IPTABLES	},
+	{ "ip6_tables",		VE_IP_IPTABLES6	},
+	{ "iptable_filter",	VE_IP_FILTER	},
+	{ "iptable_raw",	VE_IP_IPTABLES	},
+	{ "iptable_nat",	VE_IP_NAT	},
+	{ "iptable_mangle",	VE_IP_MANGLE	},
+	{ "ip6table_filter",	VE_IP_FILTER6	},
+	{ "ip6table_mangle",	VE_IP_MANGLE6	},
+
+	{ "xt_CONNMARK",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "xt_CONNSECMARK",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "xt_NOTRACK",		VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "xt_cluster",		VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "xt_connbytes",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "xt_connlimit",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "xt_connmark",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "xt_conntrack",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "xt_helper",		VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "xt_state",		VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "xt_socket",		VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_IPTABLES6			},
+
+	{ "ipt_CLUSTERIP",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ipt_CONNMARK",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ipt_CONNSECMARK",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ipt_NOTRACK",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ipt_cluster",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ipt_connbytes",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ipt_connlimit",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ipt_connmark",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ipt_conntrack",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ipt_helper",		VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ipt_state",		VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ipt_socket",		VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_IPTABLES6			},
+	{ "ipt_MASQUERADE",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "ipt_NETMAP",		VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "ipt_REDIRECT",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+
+	{ "ip6t_CONNMARK",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ip6t_CONNSECMARK",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ip6t_NOTRACK",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ip6t_cluster",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ip6t_connbytes",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ip6t_connlimit",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ip6t_connmark",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ip6t_conntrack",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ip6t_helper",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ip6t_state",		VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ip6t_socket",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_IPTABLES6			},
+	{ "nf-nat-ipv4",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "nf-nat",		VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "nf_conntrack-2",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "nf_conntrack_ipv4",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "ip_conntrack",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "nf_conntrack-10",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "nf_conntrack_ipv6",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+};
+
+/*
+ * module_payload_allowed - check if module functionality is allowed
+ * 			    to be used inside current virtual enviroment.
+ *
+ * Returns true if it is allowed or we're in ve0, false otherwise.
+ */
+bool module_payload_allowed(const char *module)
+{
+	u64 permitted = get_exec_env()->ipt_mask;
+	int i;
+
+	if (ve_is_super(get_exec_env()))
+		return true;
+
+	/* Look for full module name in ve0_am table */
+	for (i = 0; i < ARRAY_SIZE(ve0_am); i++) {
+		if (!strcmp(ve0_am[i].name, module))
+			return mask_ipt_allow(permitted, ve0_am[i].perm);
+	}
+
+	/* The rest of xt_* modules is allowed in both ipv4 and ipv6 modes */
+	if (!strncmp("xt_", module, 3))
+		return mask_ipt_allow(permitted, VE_IP_IPTABLES) ||
+		       mask_ipt_allow(permitted, VE_IP_IPTABLES6);
+
+	/* The rest of ipt_* modules */
+	if (!strncmp("ipt_", module, 4))
+		return mask_ipt_allow(permitted, VE_IP_IPTABLES);
+
+	/* The rest of ip6t_* modules */
+	if (!strncmp("ip6t_", module, 5))
+		return mask_ipt_allow(permitted, VE_IP_IPTABLES6);
+
+	/* The rest of arpt_* modules */
+	if (!strncmp("arpt_", module, 5))
+		return true;
+
+	/* The rest of ebt_* modules */
+	if (!strncmp("ebt_", module, 4))
+		return true;
+
+	return false;
+}
+#endif /* CONFIG_VE_IPTABLES */
+
+int __request_module(bool wait, const char *fmt, ...)
+{
+	char module_name[MODULE_NAME_LEN];
+	bool blacklist;
+	va_list args;
+	int ret;
+
+	va_start(args, fmt);
+	ret = vsnprintf(module_name, MODULE_NAME_LEN, fmt, args);
+	va_end(args);
+
+	if (ret >= MODULE_NAME_LEN)
+		return -ENAMETOOLONG;
+
+	/* Check that autoload is not prohobited using /proc interface */
+	if (!ve_is_super(get_exec_env()) &&
+	    !ve_allow_module_load)
+		return -EPERM;
+
+	/* Check that module functionality is permitted */
+	if (!module_payload_allowed(module_name))
+		return -EPERM;
+
+	/*
+	 * This function may be called from ve0, where standard behaviour
+	 * is not to use blacklist. So, we request blacklist reading only
+	 * if we're inside CT.
+	 */
+	blacklist = !ve_is_super(get_exec_env());
+
+	return ___request_module(wait, blacklist, module_name);
 }
 EXPORT_SYMBOL(__request_module);
 #endif /* CONFIG_MODULES */
