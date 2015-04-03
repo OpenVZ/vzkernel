@@ -6,6 +6,11 @@
 #include <linux/mutex.h>
 #include <net/sock.h>
 
+#ifdef CONFIG_VE_IPTABLES
+#include <linux/netfilter_ipv4/ip_tables.h>
+#include <linux/netfilter_ipv6/ip6_tables.h>
+#endif /* CONFIG_VE_IPTABLES */
+
 #include "nf_internals.h"
 
 /* Sockopts only registered and called from user context, so
@@ -87,6 +92,73 @@ out:
 	mutex_unlock(&nf_sockopt_mutex);
 	return ops;
 }
+#ifdef CONFIG_VE_IPTABLES
+static int sockopt_module_fits(u_int8_t pf, int val, int get,
+			       u_int8_t mod_pf,
+			       int set_optmin, int set_optmax,
+			       int get_optmin, int get_optmax)
+{
+	if (pf != mod_pf)
+		return 0;
+	if (get)
+		return val >= get_optmin && val < get_optmax;
+	else
+		return val >= set_optmin && val < set_optmax;
+}
+
+static int ve0_load_sockopt_module(struct net *net, u8 pf, int val, int get)
+{
+	const char *name;
+	int ret = -EPERM;
+
+	if (!capable(CAP_VE_NET_ADMIN))
+		goto out;
+
+	if (sockopt_module_fits(pf, val, get, PF_INET,
+				     IPT_BASE_CTL, IPT_SO_SET_MAX + 1,
+				     IPT_BASE_CTL, IPT_SO_GET_MAX + 1)) {
+		name = "ip_tables";
+	} else if (sockopt_module_fits(pf, val, get, PF_INET6,
+				     IP6T_BASE_CTL, IP6T_SO_SET_MAX + 1,
+				     IP6T_BASE_CTL, IP6T_SO_GET_MAX + 1)) {
+		name = "ip6_tables";
+	} else {
+		ret = -EINVAL;
+		goto out;
+	}
+	/*
+	 * Currently loaded modules are free of locks used during
+	 * their initialization. So, if you add one more module
+	 * here research it before. Maybe you will have to use
+	 * nowait module request in the function below.
+	 */
+	ret = request_module(name);
+out:
+	return ret;
+}
+
+static struct nf_sockopt_ops *nf_sockopt_find_ve(struct sock *sk, u_int8_t pf,
+		int val, int get)
+{
+	struct nf_sockopt_ops *ops = nf_sockopt_find(sk, pf, val, get);
+
+	if (!IS_ERR(ops) || ve_is_super(get_exec_env()))
+		return ops;
+
+	/*
+	 * Containers are not able to load appropriate modules
+	 * from userspace. We tricky help them here. For containers
+	 * this looks like module is already loaded or driver
+	 * is built in kernel.
+	 */
+	if (ve0_load_sockopt_module(sock_net(sk), pf, val, get) != 0)
+		return ops;
+
+	return nf_sockopt_find(sk, pf, val, get);
+}
+#else /* !CONFIG_VE_IPTABLES */
+#define nf_sockopt_find_ve(sk, pf, val, get)	nf_sockopt_find(sk, pf, val, get)
+#endif /* !CONFIG_VE_IPTABLES */
 
 /* Call get/setsockopt() */
 static int nf_sockopt(struct sock *sk, u_int8_t pf, int val,
@@ -95,7 +167,7 @@ static int nf_sockopt(struct sock *sk, u_int8_t pf, int val,
 	struct nf_sockopt_ops *ops;
 	int ret;
 
-	ops = nf_sockopt_find(sk, pf, val, get);
+	ops = nf_sockopt_find_ve(sk, pf, val, get);
 	if (IS_ERR(ops))
 		return PTR_ERR(ops);
 
@@ -129,7 +201,7 @@ static int compat_nf_sockopt(struct sock *sk, u_int8_t pf, int val,
 	struct nf_sockopt_ops *ops;
 	int ret;
 
-	ops = nf_sockopt_find(sk, pf, val, get);
+	ops = nf_sockopt_find_ve(sk, pf, val, get);
 	if (IS_ERR(ops))
 		return PTR_ERR(ops);
 
