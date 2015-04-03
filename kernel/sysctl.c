@@ -117,6 +117,9 @@ extern int sysctl_nr_trim_pages;
 extern int blk_iopoll_enabled;
 #endif
 
+int ve_allow_module_load = 1;
+EXPORT_SYMBOL(ve_allow_module_load);
+
 /* Constants used for minimum and  maximum */
 #ifdef CONFIG_LOCKUP_DETECTOR
 static int sixty = 60;
@@ -856,6 +859,15 @@ static struct ctl_table kern_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec,
+	},
+        {
+		.procname       = "ve_allow_module_load",
+		.data           = &ve_allow_module_load,
+		.maxlen         = sizeof(int),
+		.mode           = 0644,
+		.proc_handler   = &proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one,
 	},
 #endif
 	{
