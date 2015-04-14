@@ -568,7 +568,6 @@ struct sk_buff {
 
 #ifdef CONFIG_VE
 	unsigned int		accounted:1;
-	unsigned int		redirected:1;
 #endif
 	void			(*destructor)(struct sk_buff *skb);
 #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
