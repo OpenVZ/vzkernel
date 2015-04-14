@@ -750,7 +750,6 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 
 #ifdef CONFIG_VE
 	new->accounted = old->accounted;
-	new->redirected = old->redirected;
 #endif
 	skb_copy_brmark(new, old);
 	skb_copy_secmark(new, old);
@@ -792,7 +791,6 @@ static struct sk_buff *__skb_clone(struct sk_buff *n, struct sk_buff *skb)
 
 #ifdef CONFIG_VE
 	C(accounted);
-	C(redirected);
 #endif
 
 	atomic_inc(&(skb_shinfo(skb)->dataref));

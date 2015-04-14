@@ -457,7 +457,6 @@ struct sk_buff {
 
 #ifdef CONFIG_VE
 	unsigned int		accounted:1;
-	unsigned int		redirected:1;
 #endif
 #if defined(CONFIG_BRIDGE) || defined (CONFIG_BRIDGE_MODULE)
 	__u8			brmark;
