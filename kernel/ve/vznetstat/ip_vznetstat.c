@@ -25,7 +25,6 @@
 #include <linux/ve_proto.h>
 #include <linux/venet.h>
 #include <linux/vznetstat.h>
-#include <linux/vzredir.h>
 
 #define VZNS_DEBUG 0
 
@@ -58,9 +57,7 @@ static unsigned int venet_acct_in_hook(const struct nf_hook_ops *hook,
 	if (unlikely(!pskb_may_pull(skb, sizeof(struct iphdr))))
 		goto out_hdr_error;
 
-	/* If NFC_VE_REDIR set, redirected skb was accounted in venet.c */
-	if (!skb_redirected(skb))
-		venet_acct_classify_add_incoming(in->nd_net->owner_ve->stat, skb);
+	venet_acct_classify_add_incoming(in->nd_net->owner_ve->stat, skb);
 
 out:
 	return res;
