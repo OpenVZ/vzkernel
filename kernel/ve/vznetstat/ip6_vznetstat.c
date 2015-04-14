@@ -20,7 +20,6 @@
 #include <linux/if.h>
 #include <linux/netdevice.h>
 #include <linux/vznetstat.h>
-#include <linux/vzredir.h>
 
 static unsigned int
 venet_acct_in_hook_v6(const struct nf_hook_ops *hook,
@@ -34,9 +33,7 @@ venet_acct_in_hook_v6(const struct nf_hook_ops *hook,
 	if (in->flags & IFF_LOOPBACK)
 		goto out;
 
-	/* redirected skb was accounted in venet.c */
-	if (!skb_redirected(skb))
-		venet_acct_classify_add_incoming(in->nd_net->owner_ve->stat, skb);
+	venet_acct_classify_add_incoming(in->nd_net->owner_ve->stat, skb);
 out:
 	return res;
 }
