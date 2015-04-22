@@ -2225,11 +2225,13 @@ int ppp_register_net_channel(struct net *net, struct ppp_channel *chan)
 	struct channel *pch;
 	struct ppp_net *pn;
 
+	pn = ppp_pernet(net);
+	if (!pn)
+		return -EACCES;
+
 	pch = kzalloc(sizeof(struct channel), GFP_KERNEL);
 	if (!pch)
 		return -ENOMEM;
-
-	pn = ppp_pernet(net);
 
 	pch->ppp = NULL;
 	pch->chan = chan;
