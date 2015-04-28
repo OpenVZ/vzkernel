@@ -1086,6 +1086,11 @@ static __net_init int venet_init_net(struct net *net)
 	int err;
 
 	env = get_exec_env();
+	if (env->ve_netns && net != env->ve_netns) {
+		/* Don't create venet-s in sub net namespaces */
+		return 0;
+	}
+
 	if (env->veip)
 		return -EEXIST;
 
