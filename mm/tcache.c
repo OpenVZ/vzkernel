@@ -124,9 +124,15 @@ static struct tcache_lru *tcache_lru_node;
  * - tcache_lru->lock is independent
  */
 
-/* Enable/disable populating the cache */
+/* Enable/disable tcache backend (set at boot time) */
 static bool tcache_enabled __read_mostly;
+module_param_named(enabled, tcache_enabled, bool, 0444);
 
+/* Enable/disable populating the cache */
+static bool tcache_active __read_mostly;
+module_param_named(active, tcache_active, bool, 0644);
+
+/* Total number of pages cached */
 static DEFINE_PER_CPU(long, nr_tcache_pages);
 
 static inline u32 key_hash(const struct cleancache_filekey *key)
@@ -831,7 +837,7 @@ static void tcache_cleancache_put_page(int pool_id,
 	struct tcache_node *node;
 	struct page *cache_page;
 
-	if (!tcache_enabled)
+	if (!tcache_active)
 		return;
 
 	cache_page = tcache_alloc_page();
@@ -928,12 +934,7 @@ static int param_get_nr_pages(char *buffer, const struct kernel_param *kp)
 static struct kernel_param_ops param_ops_nr_pages = {
 	.get = param_get_nr_pages,
 };
-
-module_param_named(enabled, tcache_enabled, bool, 0644);
-MODULE_PARM_DESC(enabled, "Activate/deactivate tcache");
-
 module_param_cb(nr_pages, &param_ops_nr_pages, NULL, 0444);
-MODULE_PARM_DESC(nr_pages, "Number of pages cached");
 
 static int __init tcache_lru_init(void)
 {
@@ -954,6 +955,9 @@ static int __init tcache_lru_init(void)
 static int __init tcache_init(void)
 {
 	int err;
+
+	if (!tcache_enabled)
+		return 0;
 
 	err = tcache_lru_init();
 	if (err)
