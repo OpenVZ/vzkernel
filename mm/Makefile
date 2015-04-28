@@ -62,3 +62,4 @@ obj-$(CONFIG_CLEANCACHE) += cleancache.o
 obj-$(CONFIG_MEMORY_ISOLATION) += page_isolation.o
 obj-$(CONFIG_ZBUD)	+= zbud.o
 obj-$(CONFIG_TCACHE) += tcache.o
+obj-$(CONFIG_TSWAP) += tswap.o
