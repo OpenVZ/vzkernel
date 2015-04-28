@@ -71,3 +71,4 @@ obj-$(CONFIG_MEMORY_BALLOON) += balloon_compaction.o
 obj-$(CONFIG_PAGE_EXTENSION) += page_ext.o
 obj-$(CONFIG_HARDENED_USERCOPY) += usercopy.o
 obj-$(CONFIG_TCACHE) += tcache.o
+obj-$(CONFIG_TSWAP) += tswap.o
