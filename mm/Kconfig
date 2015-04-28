@@ -594,3 +594,13 @@ config TCACHE
 	  stores reclaimed pages in memory without any modifications. It is
 	  only worth enabling if used along with memory cgroups in order to
 	  cache pages which were reclaimed on local pressure.
+
+config TSWAP
+	bool "Transcendent swap cache"
+	depends on FRONTSWAP
+	default n
+	help
+	  Transcendent swap cache is a simple backend for frontswap, which
+	  stores reclaimed pages in memory without any modifications. It is
+	  only worth enabling if used along with memory cgroups in order to
+	  cache pages which were reclaimed on local pressure.
