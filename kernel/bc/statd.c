@@ -85,7 +85,6 @@ static int ubstat_get_list(void __user *buf, long size)
 	}
 	rcu_read_unlock();
 
-	put_beancounter(ubp);
 	size = min_t(long, (ptr - page) * sizeof(*ptr), size);
 	if (size > 0 && copy_to_user(buf, page, size)) {
 		retval = -EFAULT;
