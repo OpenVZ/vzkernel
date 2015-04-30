@@ -588,44 +588,6 @@ err_kthread:
 }
 EXPORT_SYMBOL_GPL(ve_start_container);
 
-static bool ve_reap_one(struct pid_namespace *pid_ns)
-{
-	struct task_struct *task;
-	int nr;
-	bool reaped = false;
-
-	read_lock(&tasklist_lock);
-	nr = next_pidmap(pid_ns, 1);
-	while (nr > 0) {
-		rcu_read_lock();
-
-		task = pid_task(find_vpid(nr), PIDTYPE_PID);
-		if (task && task != current &&
-		    task->exit_state != EXIT_DEAD &&
-		    !(task->flags & PF_KTHREAD)) {
-			printk(KERN_INFO "VE#%d: found task on stop: %s (pid:"
-				"%d, exit_state: %d)\n", task->task_ve->veid,
-					task->comm, task_pid_nr(task),
-					task->exit_state);
-			reaped = true;
-			if (reap_zombie(task))
-				read_lock(&tasklist_lock);
-		}
-
-		rcu_read_unlock();
-
-		nr = next_pidmap(pid_ns, nr);
-	}
-	read_unlock(&tasklist_lock);
-	return reaped;
-}
-
-void ve_reap_external(struct pid_namespace *pid_ns)
-{
-	while (ve_reap_one(pid_ns))
-		schedule();
-}
-
 void ve_stop_ns(struct pid_namespace *pid_ns)
 {
 	struct ve_struct *ve = current->task_ve;
