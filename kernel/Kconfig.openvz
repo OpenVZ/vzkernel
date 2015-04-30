@@ -66,6 +66,23 @@ config VE_IPTABLES
 	help
 	  This option controls whether to build VE netfiltering code.
 
+config VZ_LIST
+	tristate "VE listing/statistics user ioctl interface"
+	depends on VE
+	default m
+	help
+	  This options controls building of vzlist module.
+	  This module provides ioctl interfaces for fetching VE ids, ip addresses
+	  and pids of running processes.
+
+config VE_NETDEV_ACCOUNTING
+	tristate "VE networking accounting"
+	depends on VE_NETDEV
+	default m
+	help
+	  This option allows traffic accounting on Virtual Networking device and
+	  on real devices moved to a Virtual Environment
+
 config VZ_WDOG
 	tristate "VE watchdog module"
 	depends on VE_CALLS
