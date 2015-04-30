@@ -6027,7 +6027,10 @@ static int memcg_init_kmem(struct mem_cgroup *memcg, struct cgroup_subsys *ss)
 
 static void memcg_destroy_kmem(struct mem_cgroup *memcg)
 {
-	memcg_destroy_kmem_caches(memcg);
+	if (test_bit(KMEM_ACCOUNTED_ACTIVATED, &memcg->kmem_account_flags)) {
+		list_del(&memcg->kmemcg_sharers);
+		memcg_destroy_kmem_caches(memcg);
+	}
 	mem_cgroup_sockets_destroy(memcg);
 }
 
