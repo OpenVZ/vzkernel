@@ -2385,8 +2385,6 @@ extern int allow_signal(int);
 extern void exit_mm(struct task_struct *);
 extern int disallow_signal(int);
 
-extern int reap_zombie(struct task_struct *);
-
 extern int do_execve(struct filename *,
 		     const char __user * const __user *,
 		     const char __user * const __user *);
