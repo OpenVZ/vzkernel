@@ -1215,21 +1215,6 @@ static int wait_task_zombie(struct wait_opts *wo, struct task_struct *p)
 	return retval;
 }
 
-int reap_zombie(struct task_struct *p)
-{
-	struct wait_opts wo = {
-		.wo_flags = WEXITED,
-	};
-	int ret = 0;
-
-	if (p->exit_state == EXIT_ZOMBIE && !delay_group_leader(p)) {
-		p->exit_signal = -1;
-		ret = wait_task_zombie(&wo, p);
-	}
-
-	return ret;
-}
-
 static int *task_stopped_code(struct task_struct *p, bool ptrace)
 {
 	if (ptrace) {

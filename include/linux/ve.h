@@ -208,7 +208,6 @@ static inline int vtty_open_master(int veid, int idx) { return -ENODEV; }
 
 void ve_stop_ns(struct pid_namespace *ns);
 void ve_exit_ns(struct pid_namespace *ns);
-void ve_reap_external(struct pid_namespace *ns);
 int ve_start_container(struct ve_struct *ve);
 
 #else	/* CONFIG_VE */
@@ -226,7 +225,6 @@ static inline int vz_security_protocol_check(struct net *net, int protocol) { re
 
 static inline void ve_stop_ns(struct pid_namespace *ns) { }
 static inline void ve_exit_ns(struct pid_namespace *ns) { }
-static inline void ve_reap_external(struct pid_namespace *s) ( )
 
 #define kthread_create_on_node_ve(ve, threadfn, data, node, namefmt...)	\
 	kthread_create_on_node_ve(threadfn, data, node, namefmt...)

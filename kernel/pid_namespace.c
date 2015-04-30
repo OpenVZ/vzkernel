@@ -236,8 +236,6 @@ void zap_pid_ns_processes(struct pid_namespace *pid_ns)
 		rc = sys_wait4(-1, NULL, __WALL, NULL);
 	} while (rc != -ECHILD);
 
-	ve_reap_external(pid_ns);
-
 	/*
 	 * sys_wait4() above can't reap the TASK_DEAD children.
 	 * Make sure they all go away, see free_pid().
