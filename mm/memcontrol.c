@@ -48,7 +48,6 @@
 #include <linux/sort.h>
 #include <linux/fs.h>
 #include <linux/seq_file.h>
-#include <linux/vmalloc.h>
 #include <linux/vmpressure.h>
 #include <linux/mm_inline.h>
 #include <linux/page_cgroup.h>
@@ -376,12 +375,6 @@ struct mem_cgroup {
 	 */
 	struct mem_cgroup_lru_info info;
 };
-
-static size_t memcg_size(void)
-{
-	return sizeof(struct mem_cgroup) +
-		nr_node_ids * sizeof(struct mem_cgroup_per_node *);
-}
 
 /* internal only representation about the status of kmem accounting. */
 enum {
@@ -6198,14 +6191,12 @@ static void free_mem_cgroup_per_zone_info(struct mem_cgroup *memcg, int node)
 static struct mem_cgroup *mem_cgroup_alloc(void)
 {
 	struct mem_cgroup *memcg;
-	size_t size = memcg_size();
+	size_t size;
 
-	/* Can be very big if nr_node_ids is very big */
-	if (size < PAGE_SIZE)
-		memcg = kzalloc(size, GFP_KERNEL);
-	else
-		memcg = vzalloc(size);
+	size = sizeof(struct mem_cgroup);
+	size += nr_node_ids * sizeof(struct mem_cgroup_per_node *);
 
+	memcg = kzalloc(size, GFP_KERNEL);
 	if (!memcg)
 		return NULL;
 
@@ -6216,10 +6207,7 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	return memcg;
 
 out_free:
-	if (size < PAGE_SIZE)
-		kfree(memcg);
-	else
-		vfree(memcg);
+	kfree(memcg);
 	return NULL;
 }
 
@@ -6237,7 +6225,6 @@ out_free:
 static void __mem_cgroup_free(struct mem_cgroup *memcg)
 {
 	int node;
-	size_t size = memcg_size();
 
 	mem_cgroup_remove_from_trees(memcg);
 	free_css_id(&mem_cgroup_subsys, &memcg->css);
@@ -6259,10 +6246,7 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 	 * the cgroup_lock.
 	 */
 	disarm_static_keys(memcg);
-	if (size < PAGE_SIZE)
-		kfree(memcg);
-	else
-		vfree(memcg);
+	kfree(memcg);
 }
 
 /*
