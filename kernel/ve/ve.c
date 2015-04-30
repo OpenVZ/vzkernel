@@ -226,10 +226,11 @@ EXPORT_SYMBOL(__find_ve_by_id);
 struct ve_struct *get_ve_by_id(envid_t veid)
 {
 	struct ve_struct *ve;
-	mutex_lock(&ve_list_lock);
+	rcu_read_lock();
 	ve = __find_ve_by_id(veid);
-	get_ve(ve);
-	mutex_unlock(&ve_list_lock);
+	if (ve && !css_tryget(&ve->css))
+		ve = NULL;
+	rcu_read_unlock();
 	return ve;
 }
 EXPORT_SYMBOL(get_ve_by_id);
