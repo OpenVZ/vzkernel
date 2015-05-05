@@ -110,6 +110,8 @@ static int iolimit_virtinfo(struct vnotifier_block *nb,
 			break;
 		case VIRTINFO_IO_PREPARE:
 		case VIRTINFO_IO_JOURNAL:
+			if (current->flags & PF_FLUSHER)
+				break;
 			timeout = throttle_timeout(&iolimit->throttle, jiffies);
 			if (timeout) {
 				__set_current_state(TASK_UNINTERRUPTIBLE);
