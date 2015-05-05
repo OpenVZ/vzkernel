@@ -120,6 +120,35 @@ static unsigned long iolimit_timeout(struct iolimit *iolimit)
 			throttle_timeout(&iolimit->iops, now));
 }
 
+static void iolimit_balance_dirty(struct iolimit *iolimit,
+				  struct user_beancounter *ub,
+				  unsigned long write_chunk)
+{
+	struct throttle *th = &iolimit->throttle;
+	unsigned long flags, dirty, state;
+
+	if (!th->speed)
+		return;
+
+	/* can be non-atomic on i386, but ok. this just hint. */
+	state = th->state >> PAGE_SHIFT;
+	dirty = ub_stat_get(ub, dirty_pages) + write_chunk;
+	/* protect agains ub-stat percpu drift */
+	if (dirty + UB_STAT_BATCH * num_possible_cpus()	< state)
+		return;
+	/* get exact value of for smooth throttling */
+	dirty = ub_stat_get_exact(ub, dirty_pages) + write_chunk;
+	if (dirty < state)
+		return;
+
+	spin_lock_irqsave(&ub->ub_lock, flags);
+	/* precharge dirty pages */
+	throttle_charge(th, (long long)dirty << PAGE_SHIFT);
+	/* set dirty_exceeded for smooth throttling */
+	ub->dirty_exceeded = 1;
+	spin_unlock_irqrestore(&ub->ub_lock, flags);
+}
+
 static int iolimit_virtinfo(struct vnotifier_block *nb,
 		unsigned long cmd, void *arg, int old_ret)
 {
@@ -169,6 +198,9 @@ static int iolimit_virtinfo(struct vnotifier_block *nb,
 			timeout = iolimit_timeout(iolimit);
 			if (timeout)
 				return NOTIFY_FAIL;
+			break;
+		case VIRTINFO_IO_BALANCE_DIRTY:
+			iolimit_balance_dirty(iolimit, ub, (unsigned long)arg);
 			break;
 	}
 
