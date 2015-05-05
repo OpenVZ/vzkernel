@@ -247,3 +247,5 @@ static void __exit iolimit_exit(void)
 
 module_init(iolimit_init)
 module_exit(iolimit_exit)
+
+MODULE_LICENSE("GPL v2");
