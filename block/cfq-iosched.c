@@ -15,6 +15,8 @@
 #include <linux/ioprio.h>
 #include <linux/blktrace_api.h>
 #include <linux/nmi.h>
+#include <bc/io_acct.h>
+
 #include "blk.h"
 #include "blk-cgroup.h"
 
@@ -4000,6 +4002,7 @@ static void cfq_insert_request(struct request_queue *q, struct request *rq)
 	    &(RQ_CFQG(rq))->pd.blkg->blkcg->css)
 		ub_writeback_io(1, blk_rq_sectors(rq));
 #endif
+	virtinfo_notifier_call_irq(VITYPE_IO, VIRTINFO_IO_OP_ACCOUNT, q);
 	cfq_rq_enqueued(cfqd, cfqq, rq);
 }
 
