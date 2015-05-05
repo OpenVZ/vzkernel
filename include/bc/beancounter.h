@@ -125,6 +125,13 @@ enum ub_severity { UB_HARD, UB_SOFT, UB_FORCE };
 #define UB_TEST	0x100
 #define UB_SEV_FLAGS	UB_TEST
 
+extern struct cgroup_subsys ub_subsys;
+static inline struct user_beancounter *cgroup_ub(struct cgroup *cg)
+{
+	return container_of(cgroup_subsys_state(cg, ub_subsys_id),
+			    struct user_beancounter, css);
+}
+
 extern struct cgroup_subsys_state *
 __ub_get_css(struct user_beancounter *ub, int idx);
 
