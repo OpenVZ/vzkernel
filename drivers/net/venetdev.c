@@ -1122,6 +1122,8 @@ static __net_exit void venet_exit_net(struct list_head *net_exit_list)
 
 	list_for_each_entry(net, net_exit_list, exit_list) {
 		env = net->owner_ve;
+		if (env->ve_netns != net)
+			continue;
 
 		venet_ext_clean(env);
 		veip_stop(env);
@@ -1141,6 +1143,8 @@ static __net_exit void venet_exit_net(struct list_head *net_exit_list)
 
 	list_for_each_entry(net, net_exit_list, exit_list) {
 		env = net->owner_ve;
+		if (env->ve_netns != net)
+			continue;
 
 		dev = env->_venet_dev;
 		if (dev == NULL)
