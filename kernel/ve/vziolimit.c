@@ -35,9 +35,6 @@ static void throttle_setup(struct throttle *th, unsigned speed,
 	th->time = jiffies;
 	th->burst = burst;
 	th->latency = msecs_to_jiffies(latency);
-	/* feed throttler to avoid freezing */
-	if (th->state < burst)
-		th->state = burst;
 	wmb();
 	th->speed = speed;
 }
