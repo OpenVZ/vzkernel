@@ -319,12 +319,6 @@ LIST_HEAD(ub_list_head); /* protected by ub_list_lock */
 EXPORT_SYMBOL(ub_list_head);
 int ub_count;
 
-static inline struct user_beancounter *cgroup_ub(struct cgroup *cg)
-{
-	return container_of(cgroup_subsys_state(cg, ub_subsys_id),
-			    struct user_beancounter, css);
-}
-
 /*
  *	Per user resource beancounting. Resources are tied to their luid.
  *	The resource structure itself is tagged both to the process and
@@ -713,6 +707,7 @@ struct cgroup_subsys ub_subsys = {
 	.attach = ub_cgroup_attach,
 	.use_id = true,
 };
+EXPORT_SYMBOL(ub_subsys);
 
 /*
  *	Generic resource charging stuff
