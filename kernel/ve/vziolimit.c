@@ -109,7 +109,7 @@ static void iolimit_wait(struct iolimit *iolimit, unsigned long timeout)
 static int iolimit_virtinfo(struct vnotifier_block *nb,
 		unsigned long cmd, void *arg, int old_ret)
 {
-	struct user_beancounter *ub = top_beancounter(get_exec_ub());
+	struct user_beancounter *ub = get_exec_ub();
 	struct iolimit *iolimit = ub->private_data2;
 	unsigned long flags, timeout;
 
