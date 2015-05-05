@@ -23,5 +23,7 @@ struct iolimit_state {
 
 #define VZCTL_SET_IOLIMIT	_IOW(VZIOLIMITTYPE, 0, struct iolimit_state)
 #define VZCTL_GET_IOLIMIT	_IOR(VZIOLIMITTYPE, 1, struct iolimit_state)
+#define VZCTL_SET_IOPSLIMIT	_IOW(VZIOLIMITTYPE, 2, struct iolimit_state)
+#define VZCTL_GET_IOPSLIMIT	_IOR(VZIOLIMITTYPE, 3, struct iolimit_state)
 
 #endif /* _LINUX_VZIOLIMIT_H */
