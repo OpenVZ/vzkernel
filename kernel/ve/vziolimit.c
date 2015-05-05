@@ -173,6 +173,7 @@ static int iolimit_virtinfo(struct vnotifier_block *nb,
 			}
 			spin_unlock_irqrestore(&ub->ub_lock, flags);
 			break;
+		case VIRTINFO_IO_FUSE_REQ:
 		case VIRTINFO_IO_OP_ACCOUNT:
 			if (!iolimit->iops.speed)
 				break;
