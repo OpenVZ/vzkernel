@@ -18,6 +18,7 @@ struct throttle {
        unsigned speed;		/* maximum speed, units per second */
        unsigned burst;		/* maximum bust, units */
        unsigned latency;	/* maximum wait delay, jiffies */
+       unsigned remain;		/* units/HZ */
        unsigned long time;	/* wall time in jiffies */
        long long state;		/* current state in units */
 };
@@ -70,8 +71,8 @@ static void throttle_charge(struct throttle *th, long long charge)
 			time = now + th->latency;
 		th->time = time;
 		step *= th->speed;
-		if (do_div(step, HZ))
-			step++;
+		step += th->remain;
+		th->remain = do_div(step, HZ);
 		th->state += step;
 	}
 }
