@@ -425,6 +425,7 @@ struct user_beancounter *get_beancounter_byuid(uid_t uid, int create)
 	snprintf(name, sizeof(name), "%u", uid);
 	return get_beancounter_by_name(name, create);
 }
+EXPORT_SYMBOL(get_beancounter_byuid);
 
 uid_t ub_legacy_id(struct user_beancounter *ub)
 {
