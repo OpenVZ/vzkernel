@@ -13,6 +13,7 @@
 #include <linux/init.h>
 #include <linux/compiler.h>
 #include <linux/rbtree.h>
+#include <bc/io_acct.h>
 
 /*
  * See Documentation/block/deadline-iosched.txt
@@ -108,6 +109,8 @@ deadline_add_request(struct request_queue *q, struct request *rq)
 	 */
 	rq->fifo_time = jiffies + dd->fifo_expire[data_dir];
 	list_add_tail(&rq->queuelist, &dd->fifo_list[data_dir]);
+	ub_writeback_io(1, blk_rq_sectors(rq));
+	virtinfo_notifier_call_irq(VITYPE_IO, VIRTINFO_IO_OP_ACCOUNT, q);
 }
 
 /*
@@ -184,6 +187,12 @@ deadline_merged_requests(struct request_queue *q, struct request *req,
 	 * kill knowledge of next, this one is a goner
 	 */
 	deadline_remove_request(q, next);
+}
+
+static void deadline_bio_merged(struct request_queue *q, struct request *req,
+				struct bio *bio)
+{
+	ub_writeback_io(0, bio_sectors(bio));
 }
 
 /*
@@ -445,6 +454,7 @@ static struct elevator_type iosched_deadline = {
 		.elevator_merge_fn = 		deadline_merge,
 		.elevator_merged_fn =		deadline_merged_request,
 		.elevator_merge_req_fn =	deadline_merged_requests,
+		.elevator_bio_merged_fn =	deadline_bio_merged,
 		.elevator_dispatch_fn =		deadline_dispatch_requests,
 		.elevator_add_req_fn =		deadline_add_request,
 		.elevator_former_req_fn =	elv_rb_former_request,
