@@ -87,7 +87,24 @@ static unsigned long throttle_timeout(struct throttle *th, unsigned long now)
 
 struct iolimit {
 	struct throttle throttle;
+	wait_queue_head_t wq;
 };
+
+static void iolimit_wait(struct iolimit *iolimit, unsigned long timeout)
+{
+	DEFINE_WAIT(wait);
+
+	do {
+		prepare_to_wait(&iolimit->wq, &wait, TASK_KILLABLE);
+		timeout = schedule_timeout(timeout);
+		if (fatal_signal_pending(current))
+			break;
+		if (unlikely(timeout))
+			timeout = min(throttle_timeout(&iolimit->throttle,
+						jiffies), timeout);
+	} while (timeout);
+	finish_wait(&iolimit->wq, &wait);
+}
 
 static int iolimit_virtinfo(struct vnotifier_block *nb,
 		unsigned long cmd, void *arg, int old_ret)
@@ -113,10 +130,8 @@ static int iolimit_virtinfo(struct vnotifier_block *nb,
 			if (current->flags & PF_FLUSHER)
 				break;
 			timeout = throttle_timeout(&iolimit->throttle, jiffies);
-			if (timeout) {
-				__set_current_state(TASK_UNINTERRUPTIBLE);
-				schedule_timeout(timeout);
-			}
+			if (timeout && !fatal_signal_pending(current))
+				iolimit_wait(iolimit, timeout);
 			break;
 		case VIRTINFO_IO_READAHEAD:
 		case VIRTINFO_IO_CONGESTION:
@@ -159,6 +174,7 @@ static int iolimit_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				err = -ENOMEM;
 				if (!new_iolimit)
 					break;
+				init_waitqueue_head(&new_iolimit->wq);
 			}
 
 			spin_lock_irq(&ub->ub_lock);
@@ -176,6 +192,8 @@ static int iolimit_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				ub->private_data2 = iolimit;
 
 			spin_unlock_irq(&ub->ub_lock);
+
+			wake_up_all(&iolimit->wq);
 
 			err = 0;
 			break;
