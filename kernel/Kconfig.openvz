@@ -108,3 +108,11 @@ config VTTYS
 	default y
 
 endmenu
+
+
+config VZ_IOLIMIT
+	tristate "Container IO-limiting"
+	depends on VE && VE_CALLS && BC_IO_ACCOUNTING
+	default m
+	help
+	   This option provides io-limiting module.
