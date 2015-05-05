@@ -185,14 +185,14 @@ static int iolimit_virtinfo(struct vnotifier_block *nb,
 				 * to avoid choking future sync operations.
 				 */
 				if (iolimit->iops.state > 1 ||
-				    !(current->flags & PF_FLUSHER))
+				    !(current->flags & PF_SWAPWRITE))
 					iolimit->iops.state--;
 			}
 			spin_unlock_irqrestore(&ub->ub_lock, flags);
 			break;
 		case VIRTINFO_IO_PREPARE:
 		case VIRTINFO_IO_JOURNAL:
-			if (current->flags & PF_FLUSHER)
+			if (current->flags & PF_SWAPWRITE)
 				break;
 			timeout = iolimit_timeout(iolimit);
 			if (timeout && !fatal_signal_pending(current))
