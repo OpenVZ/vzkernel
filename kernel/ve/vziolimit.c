@@ -84,10 +84,46 @@ static unsigned long throttle_timeout(struct throttle *th, unsigned long now)
 	return min(time - now, (unsigned long)th->latency);
 }
 
+struct iolimit {
+	struct throttle throttle;
+};
 
 static int iolimit_virtinfo(struct vnotifier_block *nb,
 		unsigned long cmd, void *arg, int old_ret)
 {
+	struct user_beancounter *ub = top_beancounter(get_exec_ub());
+	struct iolimit *iolimit = ub->private_data2;
+	unsigned long flags, timeout;
+
+	if (!iolimit)
+		return old_ret;
+
+	if (!iolimit->throttle.speed)
+		return NOTIFY_OK;
+
+	switch (cmd) {
+		case VIRTINFO_IO_ACCOUNT:
+			spin_lock_irqsave(&ub->ub_lock, flags);
+			throttle_charge(&iolimit->throttle, *(size_t*)arg);
+			spin_unlock_irqrestore(&ub->ub_lock, flags);
+			break;
+		case VIRTINFO_IO_PREPARE:
+		case VIRTINFO_IO_JOURNAL:
+			timeout = throttle_timeout(&iolimit->throttle, jiffies);
+			if (timeout) {
+				__set_current_state(TASK_UNINTERRUPTIBLE);
+				schedule_timeout(timeout);
+			}
+			break;
+		case VIRTINFO_IO_READAHEAD:
+		case VIRTINFO_IO_CONGESTION:
+			timeout = throttle_timeout(&iolimit->throttle, jiffies);
+			if (timeout)
+				return NOTIFY_FAIL;
+			break;
+	}
+
+	return NOTIFY_OK;
 }
 
 static struct vnotifier_block iolimit_virtinfo_nb = {
