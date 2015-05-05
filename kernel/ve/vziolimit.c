@@ -11,6 +11,7 @@
 #include <linux/virtinfo.h>
 #include <linux/vzctl.h>
 #include <linux/vziolimit.h>
+#include <asm/uaccess.h>
 #include <bc/beancounter.h>
 
 struct throttle {
@@ -132,6 +133,73 @@ static struct vnotifier_block iolimit_virtinfo_nb = {
 
 static int iolimit_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
+	struct user_beancounter *ub;
+	struct iolimit *iolimit, *new_iolimit = NULL;
+	struct iolimit_state state;
+	int err;
+
+	if (cmd != VZCTL_SET_IOLIMIT && cmd != VZCTL_GET_IOLIMIT)
+		return -ENOTTY;
+
+	if (copy_from_user(&state, (void __user *)arg, sizeof(state)))
+		return -EFAULT;
+
+	ub = get_beancounter_byuid(state.id, 0);
+	if (!ub)
+		return -ENOENT;
+
+	iolimit = ub->private_data2;
+
+	switch (cmd) {
+		case VZCTL_SET_IOLIMIT:
+			if (!iolimit) {
+				new_iolimit = kmalloc(sizeof(struct iolimit), GFP_KERNEL);
+				err = -ENOMEM;
+				if (!new_iolimit)
+					break;
+			}
+
+			spin_lock_irq(&ub->ub_lock);
+
+			if (!iolimit && ub->private_data2) {
+				kfree(new_iolimit);
+				iolimit = ub->private_data2;
+			} else if (!iolimit)
+				iolimit = new_iolimit;
+
+			throttle_setup(&iolimit->throttle, state.speed,
+					state.burst, state.latency);
+
+			if (!ub->private_data2)
+				ub->private_data2 = iolimit;
+
+			spin_unlock_irq(&ub->ub_lock);
+
+			err = 0;
+			break;
+		case VZCTL_GET_IOLIMIT:
+			err = -ENXIO;
+			if (!iolimit)
+				break;
+
+			spin_lock_irq(&ub->ub_lock);
+			state.speed = iolimit->throttle.speed;
+			state.burst = iolimit->throttle.burst;
+			state.latency = jiffies_to_msecs(iolimit->throttle.latency);
+			spin_unlock_irq(&ub->ub_lock);
+
+			err = -EFAULT;
+			if (copy_to_user((void __user *)arg, &state, sizeof(state)))
+				break;
+
+			err = 0;
+			break;
+		default:
+			err = -ENOTTY;
+	}
+
+	put_beancounter(ub);
+	return err;
 }
 
 static struct vzioctlinfo iolimit_vzioctl = {
