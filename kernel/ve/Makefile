@@ -24,7 +24,6 @@ obj-m += dummy/pio_nfs.o
 obj-m += dummy/vzcompat.o
 obj-m += dummy/vzcon.o
 obj-m += dummy/vzdquota.o
-obj-m += dummy/vziolimit.o
 obj-m += dummy/vzlinkdev.o
 obj-m += dummy/vzsnap.o
 obj-m += dummy/vzcpt.o
