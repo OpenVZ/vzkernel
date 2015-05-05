@@ -1,8 +1,7 @@
 /*
  *  kernel/ve/vziolimit.c
  *
- *  Copyright (C) 2010, Parallels inc.
- *  All rights reserved.
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
  *
  */
 
