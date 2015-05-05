@@ -87,6 +87,7 @@ static unsigned long throttle_timeout(struct throttle *th, unsigned long now)
 
 struct iolimit {
 	struct throttle throttle;
+	struct throttle iops;
 	wait_queue_head_t wq;
 };
 
@@ -106,6 +107,14 @@ static void iolimit_wait(struct iolimit *iolimit, unsigned long timeout)
 	finish_wait(&iolimit->wq, &wait);
 }
 
+static unsigned long iolimit_timeout(struct iolimit *iolimit)
+{
+	unsigned long now = jiffies;
+
+	return max(throttle_timeout(&iolimit->throttle, now),
+			throttle_timeout(&iolimit->iops, now));
+}
+
 static int iolimit_virtinfo(struct vnotifier_block *nb,
 		unsigned long cmd, void *arg, int old_ret)
 {
@@ -116,26 +125,35 @@ static int iolimit_virtinfo(struct vnotifier_block *nb,
 	if (!iolimit)
 		return old_ret;
 
-	if (!iolimit->throttle.speed)
+	if (!iolimit->throttle.speed && !iolimit->iops.speed)
 		return NOTIFY_OK;
 
 	switch (cmd) {
 		case VIRTINFO_IO_ACCOUNT:
+			if (!iolimit->throttle.speed)
+				break;
 			spin_lock_irqsave(&ub->ub_lock, flags);
 			throttle_charge(&iolimit->throttle, *(size_t*)arg);
+			spin_unlock_irqrestore(&ub->ub_lock, flags);
+			break;
+		case VIRTINFO_IO_OP_ACCOUNT:
+			if (!iolimit->iops.speed)
+				break;
+			spin_lock_irqsave(&ub->ub_lock, flags);
+			throttle_charge(&iolimit->iops, 1);
 			spin_unlock_irqrestore(&ub->ub_lock, flags);
 			break;
 		case VIRTINFO_IO_PREPARE:
 		case VIRTINFO_IO_JOURNAL:
 			if (current->flags & PF_FLUSHER)
 				break;
-			timeout = throttle_timeout(&iolimit->throttle, jiffies);
+			timeout = iolimit_timeout(iolimit);
 			if (timeout && !fatal_signal_pending(current))
 				iolimit_wait(iolimit, timeout);
 			break;
 		case VIRTINFO_IO_READAHEAD:
 		case VIRTINFO_IO_CONGESTION:
-			timeout = throttle_timeout(&iolimit->throttle, jiffies);
+			timeout = iolimit_timeout(iolimit);
 			if (timeout)
 				return NOTIFY_FAIL;
 			break;
@@ -148,14 +166,49 @@ static struct vnotifier_block iolimit_virtinfo_nb = {
 	.notifier_call = iolimit_virtinfo,
 };
 
+
+static void throttle_state(struct user_beancounter *ub,
+		struct throttle *throttle, struct iolimit_state *state)
+{
+	spin_lock_irq(&ub->ub_lock);
+	state->speed = throttle->speed;
+	state->burst = throttle->burst;
+	state->latency = jiffies_to_msecs(throttle->latency);
+	spin_unlock_irq(&ub->ub_lock);
+}
+
+static struct iolimit *iolimit_get(struct user_beancounter *ub)
+{
+	struct iolimit *iolimit = ub->private_data2;
+
+	if (iolimit)
+		return iolimit;
+
+	iolimit = kzalloc(sizeof(struct iolimit), GFP_KERNEL);
+	if (!iolimit)
+		return NULL;
+	init_waitqueue_head(&iolimit->wq);
+
+	spin_lock_irq(&ub->ub_lock);
+	if (ub->private_data2) {
+		kfree(iolimit);
+		iolimit = ub->private_data2;
+	} else
+		ub->private_data2 = iolimit;
+	spin_unlock_irq(&ub->ub_lock);
+
+	return iolimit;
+}
+
 static int iolimit_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct user_beancounter *ub;
-	struct iolimit *iolimit, *new_iolimit = NULL;
+	struct iolimit *iolimit;
 	struct iolimit_state state;
 	int err;
 
-	if (cmd != VZCTL_SET_IOLIMIT && cmd != VZCTL_GET_IOLIMIT)
+	if (cmd != VZCTL_SET_IOLIMIT && cmd != VZCTL_GET_IOLIMIT &&
+	    cmd != VZCTL_SET_IOPSLIMIT && cmd != VZCTL_GET_IOPSLIMIT)
 		return -ENOTTY;
 
 	if (copy_from_user(&state, (void __user *)arg, sizeof(state)))
@@ -169,49 +222,47 @@ static int iolimit_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	switch (cmd) {
 		case VZCTL_SET_IOLIMIT:
-			if (!iolimit) {
-				new_iolimit = kmalloc(sizeof(struct iolimit), GFP_KERNEL);
-				err = -ENOMEM;
-				if (!new_iolimit)
-					break;
-				init_waitqueue_head(&new_iolimit->wq);
-			}
-
+			iolimit = iolimit_get(ub);
+			err = -ENOMEM;
+			if (!iolimit)
+				break;
 			spin_lock_irq(&ub->ub_lock);
-
-			if (!iolimit && ub->private_data2) {
-				kfree(new_iolimit);
-				iolimit = ub->private_data2;
-			} else if (!iolimit)
-				iolimit = new_iolimit;
-
 			throttle_setup(&iolimit->throttle, state.speed,
 					state.burst, state.latency);
-
-			if (!ub->private_data2)
-				ub->private_data2 = iolimit;
-
 			spin_unlock_irq(&ub->ub_lock);
-
 			wake_up_all(&iolimit->wq);
-
+			err = 0;
+			break;
+		case VZCTL_SET_IOPSLIMIT:
+			iolimit = iolimit_get(ub);
+			err = -ENOMEM;
+			if (!iolimit)
+				break;
+			spin_lock_irq(&ub->ub_lock);
+			throttle_setup(&iolimit->iops, state.speed,
+					state.burst, state.latency);
+			spin_unlock_irq(&ub->ub_lock);
+			wake_up_all(&iolimit->wq);
 			err = 0;
 			break;
 		case VZCTL_GET_IOLIMIT:
 			err = -ENXIO;
 			if (!iolimit)
 				break;
-
-			spin_lock_irq(&ub->ub_lock);
-			state.speed = iolimit->throttle.speed;
-			state.burst = iolimit->throttle.burst;
-			state.latency = jiffies_to_msecs(iolimit->throttle.latency);
-			spin_unlock_irq(&ub->ub_lock);
-
+			throttle_state(ub, &iolimit->throttle, &state);
 			err = -EFAULT;
 			if (copy_to_user((void __user *)arg, &state, sizeof(state)))
 				break;
-
+			err = 0;
+			break;
+		case VZCTL_GET_IOPSLIMIT:
+			err = -ENXIO;
+			if (!iolimit)
+				break;
+			throttle_state(ub, &iolimit->iops, &state);
+			err = -EFAULT;
+			if (copy_to_user((void __user *)arg, &state, sizeof(state)))
+				break;
 			err = 0;
 			break;
 		default:
