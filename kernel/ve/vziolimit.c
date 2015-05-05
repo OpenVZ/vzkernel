@@ -18,8 +18,8 @@ struct throttle {
        unsigned speed;		/* maximum speed, units per second */
        unsigned burst;		/* maximum bust, units */
        unsigned latency;	/* maximum wait delay, jiffies */
-       unsigned state;		/* current state */
        unsigned long time;	/* wall time in jiffies */
+       long long state;		/* current state in units */
 };
 
 /**
@@ -34,41 +34,46 @@ static void throttle_setup(struct throttle *th, unsigned speed,
 	th->time = jiffies;
 	th->burst = burst;
 	th->latency = msecs_to_jiffies(latency);
-	th->state = 0;
+	/* feed throttler to avoid freezing */
+	if (th->state < burst)
+		th->state = burst;
 	wmb();
 	th->speed = speed;
 }
 
 /* externally serialized */
-static void throttle_charge(struct throttle *th, unsigned charge)
+static void throttle_charge(struct throttle *th, long long charge)
 {
-	unsigned long now = jiffies;
-	u64 step;
-
-	if (!th->speed)
-		return;
+	unsigned long time, now = jiffies;
+	long long step, ceiling = charge + th->burst;
 
 	if (time_before(th->time, now)) {
 		step = (u64)th->speed * (now - th->time);
 		do_div(step, HZ);
-		th->state = min((unsigned)step + th->state, charge + th->burst);
+		step += th->state;
+		/* feed throttler as much as we can */
+		if (step <= ceiling)
+			th->state = step;
+		else if (th->state < ceiling)
+			th->state = ceiling;
 		th->time = now;
 	}
 
 	if (charge > th->state) {
 		charge -= th->state;
-		step = (u64)charge * HZ;
+		step = charge * HZ;
 		if (do_div(step, th->speed))
 			step++;
-		th->time += step;
+		time = th->time + step;
+		/* limit maximum latency */
+		if (time_after(time, now + th->latency))
+			time = now + th->latency;
+		th->time = time;
 		step *= th->speed;
-		do_div(step, HZ);
-		th->state = max_t(int, (int)step - charge, 0);
-	} else
-		th->state -= charge;
-
-	if (time_after(th->time, now + th->latency))
-		th->time = now + th->latency;
+		if (do_div(step, HZ))
+			step++;
+		th->state += step;
+	}
 }
 
 /* lockless */
@@ -133,14 +138,22 @@ static int iolimit_virtinfo(struct vnotifier_block *nb,
 			if (!iolimit->throttle.speed)
 				break;
 			spin_lock_irqsave(&ub->ub_lock, flags);
-			throttle_charge(&iolimit->throttle, *(size_t*)arg);
+			if (iolimit->throttle.speed) {
+				long long charge = *(size_t*)arg;
+
+				throttle_charge(&iolimit->throttle, charge);
+				iolimit->throttle.state -= charge;
+			}
 			spin_unlock_irqrestore(&ub->ub_lock, flags);
 			break;
 		case VIRTINFO_IO_OP_ACCOUNT:
 			if (!iolimit->iops.speed)
 				break;
 			spin_lock_irqsave(&ub->ub_lock, flags);
-			throttle_charge(&iolimit->iops, 1);
+			if (iolimit->iops.speed) {
+				throttle_charge(&iolimit->iops, 1);
+				iolimit->iops.state--;
+			}
 			spin_unlock_irqrestore(&ub->ub_lock, flags);
 			break;
 		case VIRTINFO_IO_PREPARE:
