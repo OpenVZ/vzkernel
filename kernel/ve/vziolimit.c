@@ -24,6 +24,16 @@ struct throttle {
        long long state;		/* current state in units */
 };
 
+enum {
+	UB_CGROUP_IOLIMIT_SPEED 	= 0,
+	UB_CGROUP_IOLIMIT_BURST 	= 1,
+	UB_CGROUP_IOLIMIT_LATENCY 	= 2,
+	UB_CGROUP_IOPSLIMIT_SPEED 	= 3,
+	UB_CGROUP_IOPSLIMIT_BURST 	= 4,
+	UB_CGROUP_IOPSLIMIT_LATENCY 	= 5,
+
+};
+
 /**
  * set throttler initial state, externally serialized
  * @speed	maximum speed (1/sec)
@@ -348,16 +358,156 @@ static struct vzioctlinfo iolimit_vzioctl = {
 	.owner		= THIS_MODULE,
 };
 
+static ssize_t iolimit_cgroup_read(struct cgroup *cg, struct cftype *cft,
+			      struct file *file, char __user *buf,
+			      size_t nbytes, loff_t *ppos)
+{
+	struct user_beancounter *ub = cgroup_ub(cg);
+	struct iolimit *iolimit = ub->iolimit;
+	unsigned long val = 0;
+	int len;
+	char str[32];
+
+	if (!iolimit)
+		goto out;
+
+	spin_lock_irq(&ub->ub_lock);
+	switch (cft->private) {
+	case UB_CGROUP_IOLIMIT_SPEED:
+		val = iolimit->throttle.speed;
+		break;
+	case UB_CGROUP_IOLIMIT_BURST:
+		val = iolimit->throttle.burst;
+		break;
+	case UB_CGROUP_IOLIMIT_LATENCY:
+		val = iolimit->throttle.latency;
+		break;
+
+	case UB_CGROUP_IOPSLIMIT_SPEED:
+		val = iolimit->iops.speed;
+		break;
+	case UB_CGROUP_IOPSLIMIT_BURST:
+		val = iolimit->iops.burst;
+		break;
+	case UB_CGROUP_IOPSLIMIT_LATENCY:
+		val = iolimit->iops.latency;
+		break;
+	default:
+		BUG();
+	}
+	spin_unlock_irq(&ub->ub_lock);
+out:
+	len = scnprintf(str, sizeof(str), "%lu\n", val);
+	return simple_read_from_buffer(buf, nbytes, ppos, str, len);
+}
+
+static int iolimit_cgroup_write_u64(struct cgroup *cg, struct cftype *cft, u64 val)
+{
+	struct user_beancounter *ub = cgroup_ub(cg);
+	struct iolimit *iolimit;
+
+	iolimit = iolimit_get(ub);
+	if (!iolimit)
+		return -ENOMEM;
+
+	spin_lock_irq(&ub->ub_lock);
+	iolimit->throttle.time = iolimit->iops.time = jiffies;
+
+	switch (cft->private) {
+	case UB_CGROUP_IOLIMIT_SPEED:
+		wmb();
+		iolimit->throttle.speed = val;
+		break;
+	case UB_CGROUP_IOPSLIMIT_SPEED:
+		wmb();
+		iolimit->iops.speed = val;
+		break;
+	case UB_CGROUP_IOLIMIT_BURST:
+		iolimit->throttle.burst = val;
+		break;
+	case UB_CGROUP_IOLIMIT_LATENCY:
+		iolimit->throttle.latency = val;
+		break;
+	case UB_CGROUP_IOPSLIMIT_BURST:
+		iolimit->iops.burst = val;
+		break;
+	case UB_CGROUP_IOPSLIMIT_LATENCY:
+		iolimit->iops.latency = val;
+		break;
+	default:
+		BUG();
+	}
+	wake_up_all(&iolimit->wq);
+	spin_unlock_irq(&ub->ub_lock);
+	return 0;
+}
+
+static struct cftype vziolimit_cftypes[] = {
+	{
+		.name = "iolimit.speed",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.private = UB_CGROUP_IOLIMIT_SPEED,
+		.read = iolimit_cgroup_read,
+		.write_u64 = iolimit_cgroup_write_u64,
+	},
+	{
+		.name = "iolimit.burst",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.private = UB_CGROUP_IOLIMIT_BURST,
+		.read = iolimit_cgroup_read,
+		.write_u64 = iolimit_cgroup_write_u64,
+	},
+	{
+		.name = "iolimit.latency",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.private = UB_CGROUP_IOLIMIT_LATENCY,
+		.read = iolimit_cgroup_read,
+		.write_u64 = iolimit_cgroup_write_u64,
+	},
+
+	{
+		.name = "iopslimit.speed",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.private = UB_CGROUP_IOPSLIMIT_SPEED,
+		.read = iolimit_cgroup_read,
+		.write_u64 = iolimit_cgroup_write_u64,
+	},
+	{
+		.name = "iopslimit.burst",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.private = UB_CGROUP_IOPSLIMIT_BURST,
+		.read = iolimit_cgroup_read,
+		.write_u64 = iolimit_cgroup_write_u64,
+	},
+	{
+		.name = "iopslimit.latency",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.private = UB_CGROUP_IOPSLIMIT_LATENCY,
+		.read = iolimit_cgroup_read,
+		.write_u64 = iolimit_cgroup_write_u64,
+	},
+	{ }
+};
+
 static int __init iolimit_init(void)
 {
+	int err;
 	virtinfo_notifier_register(VITYPE_IO, &iolimit_virtinfo_nb);
 	vzioctl_register(&iolimit_vzioctl);
-
+	err = cgroup_add_cftypes(&ub_subsys, vziolimit_cftypes);
+	if (err)
+		goto err_cgroup;
 	return 0;
+
+err_cgroup:
+	vzioctl_unregister(&iolimit_vzioctl);
+	virtinfo_notifier_unregister(VITYPE_IO, &iolimit_virtinfo_nb);
+	return err;
 }
 
 static void __exit iolimit_exit(void)
 {
+	cgroup_rm_cftypes(&ub_subsys, vziolimit_cftypes);
 	vzioctl_unregister(&iolimit_vzioctl);
 	virtinfo_notifier_unregister(VITYPE_IO, &iolimit_virtinfo_nb);
 }
