@@ -3943,7 +3943,7 @@ static void cfq_insert_request(struct request_queue *q, struct request *rq)
 	cfqg_stats_update_io_add(RQ_CFQG(rq), cfqd->serving_group,
 				 rq->cmd_flags);
 
-	virtinfo_notifier_call_irq(VITYPE_IO, VIRTINFO_IO_OP_ACCOUNT, NULL);
+	virtinfo_notifier_call_irq(VITYPE_IO, VIRTINFO_IO_OP_ACCOUNT, q);
 	cfq_rq_enqueued(cfqd, cfqq, rq);
 }
 
