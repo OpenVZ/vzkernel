@@ -181,7 +181,13 @@ static int iolimit_virtinfo(struct vnotifier_block *nb,
 			spin_lock_irqsave(&ub->ub_lock, flags);
 			if (iolimit->iops.speed) {
 				throttle_charge(&iolimit->iops, 1);
-				iolimit->iops.state--;
+				/*
+				 * Writeback doesn't use last iops from stash
+				 * to avoid choking future sync operations.
+				 */
+				if (iolimit->iops.state > 1 ||
+				    !(current->flags & PF_FLUSHER))
+					iolimit->iops.state--;
 			}
 			spin_unlock_irqrestore(&ub->ub_lock, flags);
 			break;
