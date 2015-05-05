@@ -110,7 +110,7 @@ deadline_add_request(struct request_queue *q, struct request *rq)
 	rq->fifo_time = jiffies + dd->fifo_expire[data_dir];
 	list_add_tail(&rq->queuelist, &dd->fifo_list[data_dir]);
 	ub_writeback_io(1, blk_rq_sectors(rq));
-	virtinfo_notifier_call_irq(VITYPE_IO, VIRTINFO_IO_OP_ACCOUNT, NULL);
+	virtinfo_notifier_call_irq(VITYPE_IO, VIRTINFO_IO_OP_ACCOUNT, q);
 }
 
 /*
