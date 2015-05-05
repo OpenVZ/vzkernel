@@ -11,6 +11,8 @@
 #include <linux/virtinfo.h>
 #include <linux/vzctl.h>
 #include <linux/vziolimit.h>
+#include <linux/blkdev.h>
+#include <linux/blktrace_api.h>
 #include <asm/uaccess.h>
 #include <bc/beancounter.h>
 
@@ -153,6 +155,7 @@ static int iolimit_virtinfo(struct vnotifier_block *nb,
 	struct user_beancounter *ub = get_exec_ub();
 	struct iolimit *iolimit = ub->private_data2;
 	unsigned long flags, timeout;
+	struct request_queue *q;
 
 	if (!iolimit)
 		return old_ret;
@@ -175,8 +178,16 @@ static int iolimit_virtinfo(struct vnotifier_block *nb,
 			break;
 		case VIRTINFO_IO_FUSE_REQ:
 		case VIRTINFO_IO_OP_ACCOUNT:
+
 			if (!iolimit->iops.speed)
 				break;
+
+			q = (struct request_queue *) arg;
+			if (q)
+				blk_add_trace_msg(q, "vziolimit iops ub:%s speed:%d remain:%d ",
+						  ub->ub_name,iolimit->iops.speed,
+						  iolimit->iops.remain);
+
 			spin_lock_irqsave(&ub->ub_lock, flags);
 			if (iolimit->iops.speed) {
 				throttle_charge(&iolimit->iops, 1);
@@ -192,9 +203,16 @@ static int iolimit_virtinfo(struct vnotifier_block *nb,
 			break;
 		case VIRTINFO_IO_PREPARE:
 		case VIRTINFO_IO_JOURNAL:
+
 			if (current->flags & PF_SWAPWRITE)
 				break;
+
 			timeout = iolimit_timeout(iolimit);
+			q = (struct request_queue *) arg;
+			if (q)
+				blk_add_trace_msg(q, "vziolimit sleep ub:%s speed:%ld ",
+						  ub->ub_name, timeout);
+
 			if (timeout && !fatal_signal_pending(current))
 				iolimit_wait(iolimit, timeout);
 			break;
