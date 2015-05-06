@@ -10,7 +10,7 @@ RHEL_RELEASE = 123.1.2
 VZVERSION = ovz.custom
 
 ifeq ($(VZVERSION), ovz.custom)
-  VZVERSION := $(shell if [ -d ".git" ]; then git describe | sed -r 's/^.*\.ovz\./ovz./'; fi)
+  VZVERSION := $(shell if [ -d ".git" ]; then git describe | sed -r 's/^.*\.vz7\./ovz./'; fi)
 endif
 
 # *DOCUMENTATION*
