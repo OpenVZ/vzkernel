@@ -1874,12 +1874,14 @@ void device_destroy_namespace(struct class *class, dev_t devt, void *ns)
 {
 	struct device *dev = NULL;
 
-	do {
+	for (;;) {
 		dev = class_find_device(class, dev, &devt, __match_devt);
+		if (!dev)
+			break;
 		if (!class->namespace ||
 		    (class->namespace(dev) == ns))
 			break;
-	} while (dev);
+	}
 
 	if (dev) {
 		put_device(dev);
