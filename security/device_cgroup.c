@@ -16,6 +16,7 @@
 #include <uapi/linux/vzcalluser.h>
 #include <linux/major.h>
 #include <linux/module.h>
+#include <linux/capability.h>
 
 #define ACC_MKNOD 1
 #define ACC_READ  2
@@ -80,7 +81,7 @@ static int devcgroup_can_attach(struct cgroup *new_cgrp,
 {
 	struct task_struct *task = cgroup_taskset_first(set);
 
-	if (current != task && !capable(CAP_SYS_ADMIN))
+	if (current != task && !capable(CAP_SYS_ADMIN) && !capable(CAP_VE_SYS_ADMIN))
 		return -EPERM;
 	return 0;
 }
@@ -662,7 +663,7 @@ static int devcgroup_update_access(struct dev_cgroup *devcgroup,
 	struct cgroup *p = devcgroup->css.cgroup;
 	struct dev_cgroup *parent = NULL;
 
-	if (!capable(CAP_SYS_ADMIN))
+	if (!capable(CAP_SYS_ADMIN) && !capable(CAP_VE_SYS_ADMIN))
 		return -EPERM;
 
 	if (p->parent)
@@ -984,21 +985,22 @@ int devcgroup_inode_mknod(int mode, dev_t dev)
 #ifdef CONFIG_VE
 
 static struct dev_exception_item default_whitelist_items[] = {
-	{ ~0,				~0, DEV_CHAR, ACC_HIDDEN | ACC_MKNOD },
-	{ ~0,				~0, DEV_BLOCK, ACC_HIDDEN | ACC_MKNOD },
-	{ UNIX98_PTY_MASTER_MAJOR,	~0, DEV_CHAR, ACC_HIDDEN | ACC_READ | ACC_WRITE },
-	{ UNIX98_PTY_SLAVE_MAJOR,	~0, DEV_CHAR, ACC_HIDDEN | ACC_READ | ACC_WRITE },
-	{ PTY_MASTER_MAJOR,		~0, DEV_CHAR, ACC_HIDDEN | ACC_READ | ACC_WRITE },
-	{ PTY_SLAVE_MAJOR,		~0, DEV_CHAR, ACC_HIDDEN | ACC_READ | ACC_WRITE },
-	{ MEM_MAJOR,	/* null */	3, DEV_CHAR, ACC_HIDDEN | ACC_READ | ACC_WRITE },
-	{ MEM_MAJOR,	/* zero */	5, DEV_CHAR, ACC_HIDDEN | ACC_READ | ACC_WRITE },
-	{ MEM_MAJOR,	/* full */	7, DEV_CHAR, ACC_HIDDEN | ACC_READ | ACC_WRITE },
-	{ TTYAUX_MAJOR,	/* tty */	0, DEV_CHAR, ACC_HIDDEN | ACC_READ | ACC_WRITE },
-	{ TTYAUX_MAJOR,	/* console */	1, DEV_CHAR, ACC_HIDDEN | ACC_READ | ACC_WRITE },
-	{ TTYAUX_MAJOR,	/* ptmx */	2, DEV_CHAR, ACC_HIDDEN | ACC_READ | ACC_WRITE },
-	{ MEM_MAJOR,	/* random */	8, DEV_CHAR, ACC_HIDDEN | ACC_READ },
-	{ MEM_MAJOR,	/* urandom */	9, DEV_CHAR, ACC_HIDDEN | ACC_READ | ACC_WRITE },
-	{ MEM_MAJOR,	/* kmsg */	11, DEV_CHAR, ACC_HIDDEN | ACC_WRITE },
+	{ ~0,				~0,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD },
+	{ ~0,				~0,	DEV_BLOCK,	ACC_HIDDEN | ACC_MKNOD },
+	{ UNIX98_PTY_MASTER_MAJOR,	~0,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE },
+	{ UNIX98_PTY_SLAVE_MAJOR,	~0,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE },
+	{ PTY_MASTER_MAJOR,		~0,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE },
+	{ PTY_SLAVE_MAJOR,		~0,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE },
+	{ MEM_MAJOR,			3,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* null */
+	{ MEM_MAJOR,			5,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* zero */
+	{ MEM_MAJOR,			7,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* full */
+	{ TTYAUX_MAJOR,			0,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* tty */
+	{ TTYAUX_MAJOR,			1,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* console */
+	{ TTYAUX_MAJOR,			2,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* ptmx */
+	{ MEM_MAJOR,			8,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* random */
+	{ MEM_MAJOR,			9,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* urandom */
+	{ MEM_MAJOR,			11,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_WRITE },            /* kmsg */
+	{ MISC_MAJOR,			200,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* tun */
 };
 
 static LIST_HEAD(default_whitelist);
@@ -1069,7 +1071,7 @@ int devcgroup_set_perms_ve(struct cgroup *cgroup,
 	else
 		return -EINVAL;
 
-	new.access = decode_ve_perms(mask);
+	new.access = decode_ve_perms(mask) | (mask ? ACC_MKNOD : 0);
 	new.major = new.minor = ~0;
 
 	switch (type & VE_USE_MASK) {
