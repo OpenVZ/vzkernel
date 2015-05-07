@@ -389,4 +389,17 @@
 #define __NR_userfaultfd	364
 #define __NR_copy_file_range	379
 
+#define __NR_fairsched_mknod	380
+#define __NR_fairsched_rmnod	381
+#define __NR_fairsched_chwt	382
+#define __NR_fairsched_mvpr	383
+#define __NR_fairsched_rate	384
+#define __NR_fairsched_vcpus	385
+#define __NR_fairsched_cpumask	386
+#define __NR_fairsched_nodemask	387
+#define __NR_getluid		388
+#define __NR_setluid		389
+#define __NR_setublimit		390
+#define __NR_ubstat		391
+
 #endif /* _UAPI_ASM_POWERPC_UNISTD_H_ */
