@@ -541,15 +541,16 @@ void ub_reclaim_rate_limit(struct user_beancounter *ub, int wait, unsigned count
 
 #define UB_IOPRIO_MIN 0
 #define UB_IOPRIO_MAX 8
-#ifdef CONFIG_BC_IO_PRIORITY
-extern int ub_set_ioprio(int id, int ioprio);
-#else
-static inline int ub_set_ioprio(int veid, int ioprio) { return -EINVAL; }
-#endif
 
 extern void ub_init_ioprio(struct user_beancounter *ub);
 extern void ub_fini_ioprio(struct user_beancounter *ub);
 
 #endif /* CONFIG_BEANCOUNTERS */
+
+#ifdef CONFIG_BC_IO_PRIORITY
+extern int ub_set_ioprio(int id, int ioprio);
+#else
+static inline int ub_set_ioprio(int veid, int ioprio) { return -EINVAL; }
+#endif
 
 #endif /* _LINUX_BEANCOUNTER_H */
