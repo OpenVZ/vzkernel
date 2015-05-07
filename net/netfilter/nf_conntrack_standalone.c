@@ -582,6 +582,7 @@ static int __init nf_conntrack_standalone_init(void)
 {
 	int ret;
 
+#ifdef CONFIG_VE_IPTABLES
 	if (ip_conntrack_disable_ve0) {
 		printk("Disabling conntracks and NAT for ve0\n");
 		get_ve0()->ipt_mask &= ~(VE_NF_CONNTRACK_MOD | VE_IP_IPTABLE_NAT_MOD);
@@ -589,6 +590,7 @@ static int __init nf_conntrack_standalone_init(void)
 		printk("Enabling conntracks and NAT for ve0\n");
 		get_ve0()->ipt_mask |= VE_NF_CONNTRACK_MOD | VE_IP_IPTABLE_NAT_MOD;
 	}
+#endif
 
 	ret = nf_conntrack_init_start();
 	if (ret < 0)
