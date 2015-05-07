@@ -282,7 +282,7 @@ mprotect_fixup(struct vm_area_struct *vma, struct vm_area_struct **pprev,
 	error = -ENOMEM;
 	if (!VM_UB_PRIVATE(oldflags, vma->vm_file) &&
 	    VM_UB_PRIVATE(newflags, vma->vm_file) &&
-	    charge_beancounter_fast(mm->mm_ub, UB_PRIVVMPAGES, nrpages, UB_SOFT))
+	    charge_beancounter_fast(mm_ub(mm), UB_PRIVVMPAGES, nrpages, UB_SOFT))
 		goto fail_ch;
 
 	/*
@@ -349,7 +349,7 @@ success:
 
 	if (VM_UB_PRIVATE(oldflags, vma->vm_file) &&
 	    !VM_UB_PRIVATE(newflags, vma->vm_file))
-		uncharge_beancounter_fast(mm->mm_ub, UB_PRIVVMPAGES, nrpages);
+		uncharge_beancounter_fast(mm_ub(mm), UB_PRIVVMPAGES, nrpages);
 
 	perf_event_mmap(vma);
 	return 0;
@@ -359,7 +359,7 @@ fail:
 fail_sec:
 	if (!VM_UB_PRIVATE(oldflags, vma->vm_file) &&
 	    VM_UB_PRIVATE(newflags, vma->vm_file))
-		uncharge_beancounter_fast(mm->mm_ub, UB_PRIVVMPAGES, nrpages);
+		uncharge_beancounter_fast(mm_ub(mm), UB_PRIVVMPAGES, nrpages);
 fail_ch:
 	return error;
 }
