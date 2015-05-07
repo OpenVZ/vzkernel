@@ -1060,6 +1060,8 @@ endif
 config	ARCH_RANDOM
 	def_bool n
 
+source "kernel/Kconfig.openvz"
+
 source "net/Kconfig"
 
 source "drivers/Kconfig"
@@ -1069,6 +1071,8 @@ source "fs/Kconfig"
 source "arch/powerpc/sysdev/qe_lib/Kconfig"
 
 source "lib/Kconfig"
+
+source "kernel/bc/Kconfig"
 
 source "arch/powerpc/Kconfig.debug"
 
