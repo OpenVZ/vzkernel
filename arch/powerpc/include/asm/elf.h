@@ -120,7 +120,6 @@ extern int ucache_bsize;
 /* vDSO has arch_setup_additional_pages */
 #define ARCH_HAS_SETUP_ADDITIONAL_PAGES
 struct linux_binprm;
-export struct page *vdso32_pages[1];
 extern int arch_setup_additional_pages(struct linux_binprm *bprm,
 				       int uses_interp);
 #define VDSO_AUX_ENT(a,b) NEW_AUX_ENT(a,b)
