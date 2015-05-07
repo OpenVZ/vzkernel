@@ -368,3 +368,21 @@ SYSCALL(ni_syscall) /* sys_memfd_create */
 SYSCALL(ni_syscall) /* sys_bpf */
 SYSCALL(ni_syscall) /* sys_execveat */
 PPC64ONLY(switch_endian)
+SYSCALL(ni_syscall) /* 365-370 reserved */
+SYSCALL(ni_syscall)
+SYSCALL(ni_syscall)
+SYSCALL(ni_syscall)
+SYSCALL(ni_syscall)
+SYSCALL(ni_syscall)
+SYSCALL(fairsched_mknod)
+SYSCALL(fairsched_rmnod)
+SYSCALL(fairsched_chwt)
+SYSCALL(fairsched_mvpr)
+SYSCALL(fairsched_rate)
+SYSCALL(fairsched_vcpus)
+SYSCALL(fairsched_cpumask)
+SYSCALL(fairsched_nodemask)
+SYSCALL(getluid)
+SYSCALL(setluid)
+SYSCALL(setublimit)
+SYSCALL(ubstat)
