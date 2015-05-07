@@ -256,19 +256,12 @@ bool cgroup_is_descendant(struct cgroup *cgrp, struct cgroup *ancestor)
 }
 EXPORT_SYMBOL_GPL(cgroup_is_descendant);
 
-static int cgroup_is_disposable(const struct cgroup *cgrp)
-{
-	return (cgrp->flags & ((1 << CGRP_NOTIFY_ON_RELEASE) |
-				(1 << CGRP_SELF_DESTRUCTION))) > 0;
-}
-
 static int cgroup_is_releasable(const struct cgroup *cgrp)
 {
 	const int bits =
 		(1 << CGRP_RELEASABLE) |
-		(1 << CGRP_NOTIFY_ON_RELEASE) |
-		(1 << CGRP_SELF_DESTRUCTION);
-	return (cgrp->flags & bits) > (1 << CGRP_RELEASABLE);
+		(1 << CGRP_NOTIFY_ON_RELEASE);
+	return (cgrp->flags & bits) == bits;
 }
 
 static int notify_on_release(const struct cgroup *cgrp)
@@ -422,7 +415,7 @@ static void __put_css_set(struct css_set *cg, int taskexit)
 		 */
 		rcu_read_lock();
 		if (atomic_dec_and_test(&cgrp->count) &&
-		    cgroup_is_disposable(cgrp)) {
+		    notify_on_release(cgrp)) {
 			if (taskexit)
 				set_bit(CGRP_RELEASABLE, &cgrp->flags);
 			check_for_release(cgrp);
@@ -854,7 +847,6 @@ static void cgroup_free_fn(struct work_struct *work)
 		ss->css_free(cgrp);
 
 	cgrp->root->number_of_cgroups--;
-	kfree(cgrp->release_agent);
 	mutex_unlock(&cgroup_mutex);
 
 	/*
@@ -1095,7 +1087,6 @@ static int rebind_subsystems(struct cgroupfs_root *root,
 static int cgroup_show_options(struct seq_file *seq, struct dentry *dentry)
 {
 	struct cgroupfs_root *root = dentry->d_sb->s_fs_info;
-	struct cgroup *top_cgrp;
 	struct cgroup_subsys *ss;
 
 	mutex_lock(&cgroup_root_mutex);
@@ -1108,32 +1099,14 @@ static int cgroup_show_options(struct seq_file *seq, struct dentry *dentry)
 	if (root->flags & CGRP_ROOT_XATTR)
 		seq_puts(seq, ",xattr");
 
-	/* bindmount to attribute file? */
-	if (!S_ISDIR(dentry->d_inode->i_mode))
-		dentry = dentry->d_parent;
-	top_cgrp = dentry->d_fsdata;
-	/* release_agent is stored on top cgroup */
-	top_cgrp = &top_cgrp->root->top_cgroup;
-	if (top_cgrp->release_agent)
-		seq_printf(seq, ",release_agent=%s", top_cgrp->release_agent);
+	if (strlen(root->release_agent_path))
+		seq_printf(seq, ",release_agent=%s", root->release_agent_path);
 
 	if (test_bit(CGRP_CPUSET_CLONE_CHILDREN, &root->top_cgroup.flags))
 		seq_puts(seq, ",clone_children");
 	if (strlen(root->name))
 		seq_printf(seq, ",name=%s", root->name);
 	mutex_unlock(&cgroup_root_mutex);
-	return 0;
-}
-
-static int cgroup_show_path(struct seq_file *m, struct dentry *root)
-{
-	struct ve_struct *ve = get_exec_env();
-	struct cgroup *cgrp = __d_cgrp(root);
-
-	if (!ve_is_super(ve) && test_bit(CGRP_VE_TOP_CGROUP_VIRTUAL, &cgrp->flags))
-		seq_puts(m, "/");
-	else
-		seq_dentry(m, root, " \t\n\\");
 	return 0;
 }
 
@@ -1299,26 +1272,6 @@ static int parse_cgroupfs_options(char *data, struct cgroup_sb_opts *opts)
 	if (!opts->subsys_mask && !opts->name)
 		return -EINVAL;
 
-	/* virtualize 'systemd' hierarchy */
-	if (!ve_is_super(get_exec_env()) && !opts->subsys_mask && opts->name && !strcmp(opts->name, "systemd"))
-		set_bit(CGRP_ROOT_VIRTUAL, &opts->flags);
-
-	/* forbid non-virtualized hierarchies in containers */
-	if (!ve_is_super(get_exec_env()) && !test_bit(CGRP_ROOT_VIRTUAL, &opts->flags)) {
-		WARN_ONCE(1, "Allow non-virtualized hierarchies for CRIU sake\n");
-		/*
-		 * FIXME
-		 *
-		 * We need to somehow limit this ability for CRIU only, because
-		 * we've to run restore procedure from inside of VE cgroup
-		 * (otherwise a number of get_exec_env() in network code
-		 * won't work as needed).
-		 *
-		 *   -- cyrillos
-		 */
-		/* return opts->subsys_mask ? -ENOENT : -EPERM; */
-	}
-
 	/*
 	 * Grab references on all the modules we'll need, so the subsystems
 	 * don't dance around before rebind_subsystems attaches them. This may
@@ -1422,11 +1375,8 @@ static int cgroup_remount(struct super_block *sb, int *flags, char *data)
 	/* re-populate subsystem files */
 	cgroup_populate_dir(cgrp, false, added_mask);
 
-	if (opts.release_agent) {
-		kfree(cgrp->release_agent);
-		cgrp->release_agent = opts.release_agent;
-		opts.release_agent = NULL;
-	}
+	if (opts.release_agent)
+		strcpy(root->release_agent_path, opts.release_agent);
  out_unlock:
 	kfree(opts.release_agent);
 	kfree(opts.name);
@@ -1441,7 +1391,6 @@ static const struct super_operations cgroup_ops = {
 	.drop_inode = generic_delete_inode,
 	.show_options = cgroup_show_options,
 	.remount_fs = cgroup_remount,
-	.show_path = cgroup_show_path,
 };
 
 static void init_cgroup_housekeeping(struct cgroup *cgrp)
@@ -1451,7 +1400,6 @@ static void init_cgroup_housekeeping(struct cgroup *cgrp)
 	INIT_LIST_HEAD(&cgrp->files);
 	INIT_LIST_HEAD(&cgrp->css_sets);
 	INIT_LIST_HEAD(&cgrp->allcg_node);
-	INIT_LIST_HEAD(&cgrp->cgroup_ve_list);
 	INIT_LIST_HEAD(&cgrp->release_list);
 	INIT_LIST_HEAD(&cgrp->pidlists);
 	INIT_WORK(&cgrp->free_work, cgroup_free_fn);
@@ -1540,6 +1488,8 @@ static struct cgroupfs_root *cgroup_root_from_opts(struct cgroup_sb_opts *opts)
 	root->subsys_mask = opts->subsys_mask;
 	root->flags = opts->flags;
 	ida_init(&root->cgroup_ida);
+	if (opts->release_agent)
+		strcpy(root->release_agent_path, opts->release_agent);
 	if (opts->name)
 		strcpy(root->name, opts->name);
 	if (opts->cpuset_clone_children)
@@ -1621,7 +1571,6 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 	struct super_block *sb;
 	struct cgroupfs_root *new_root;
 	struct inode *inode;
-	struct dentry *root_dentry;
 
 	/* First find the desired set of subsystems */
 	if (!(flags & MS_KERNMOUNT)) {
@@ -1635,6 +1584,17 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 	}
 	if (ret)
 		goto out_err;
+
+#ifdef CONFIG_VE
+	/*
+	 * Cgroups mounting from inside of VE is not allowed
+	 * until we get some iron prove that we are to.
+	 */
+	if (!ve_is_super(get_exec_env())) {
+		ret = -EACCES;
+		goto out_err;
+	}
+#endif
 
 	/*
 	 * Allocate a new cgroup root. We may not need it if we're
@@ -1727,12 +1687,6 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 		BUG_ON(!list_empty(&root_cgrp->children));
 		BUG_ON(root->number_of_cgroups != 1);
 
-		if (!test_bit(CGRP_ROOT_VIRTUAL, &opts.flags)) {
-			root_cgrp->release_agent = opts.release_agent;
-			root_cgrp->cgroup_ve = get_exec_env();
-			opts.release_agent = NULL;
-		}
-
 		cred = override_creds(&init_cred);
 		cgroup_populate_dir(root_cgrp, true, root->subsys_mask);
 		revert_creds(cred);
@@ -1760,40 +1714,9 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 		drop_parsed_module_refcounts(opts.subsys_mask);
 	}
 
-	if (!test_bit(CGRP_ROOT_VIRTUAL, &opts.flags)) {
-		root_dentry = dget(sb->s_root);
-	} else {
-		struct ve_struct *ve = get_exec_env();
-		struct cgroup *top_cgrp;
-
-		top_cgrp = cgroup_kernel_open(&root->top_cgroup, 0, ve->ve_name);
-		ret = PTR_ERR(top_cgrp);
-		if (IS_ERR(top_cgrp))
-			goto drop_new_super;
-
-		/* create fake root-cgroup in virtualized hierarchy */
-		if (top_cgrp == NULL) {
-			top_cgrp = cgroup_kernel_open(&root->top_cgroup, CGRP_CREAT, ve->ve_name);
-			ret = PTR_ERR(top_cgrp);
-			if (IS_ERR(top_cgrp))
-				goto drop_new_super;
-
-			mutex_lock(&cgroup_mutex);
-			top_cgrp->cgroup_ve = ve;
-			top_cgrp->release_agent = opts.release_agent;
-			opts.release_agent = NULL;
-			set_bit(CGRP_VE_TOP_CGROUP_VIRTUAL, &top_cgrp->flags);
-			mutex_unlock(&cgroup_mutex);
-		}
-
-		/* mount it as bindmount to fist-level fake root-cgroup */
-		root_dentry = dget(top_cgrp->dentry);
-		cgroup_kernel_close(top_cgrp);
-	}
-
 	kfree(opts.release_agent);
 	kfree(opts.name);
-	return root_dentry;
+	return dget(sb->s_root);
 
  unlock_drop:
 	mutex_unlock(&cgroup_root_mutex);
@@ -1881,7 +1804,6 @@ static struct kobject *cgroup_kobj;
  */
 int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
 {
-	struct ve_struct *ve = get_exec_env();
 	int ret = -ENAMETOOLONG;
 	char *start;
 
@@ -1898,16 +1820,6 @@ int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
 	do {
 		const char *name = cgroup_name(cgrp);
 		int len;
-
-		/* Hide fake root-cgroup in virtualized hierarchy */
-		if (!ve_is_super(ve) && test_bit(CGRP_VE_TOP_CGROUP_VIRTUAL, &cgrp->flags)) {
-			if (*start != '/') {
-				if (--start < buf)
-					goto out;
-				*start = '/';
-			}
-			break;
-		}
 
 		len = strlen(name);
 		if ((start -= len) < buf)
@@ -2319,23 +2231,16 @@ static int cgroup_procs_write(struct cgroup *cgrp, struct cftype *cft, u64 tgid)
 static int cgroup_release_agent_write(struct cgroup *cgrp, struct cftype *cft,
 				      const char *buffer)
 {
-	char *release_agent;
+	BUILD_BUG_ON(sizeof(cgrp->root->release_agent_path) < PATH_MAX);
 
 	if (strlen(buffer) >= PATH_MAX)
 		return -EINVAL;
 
-	release_agent = kstrdup(buffer, GFP_KERNEL);
-	if (!release_agent)
-		return -ENOMEM;
-
-	if (!cgroup_lock_live_group(cgrp)) {
-		kfree(release_agent);
+	if (!cgroup_lock_live_group(cgrp))
 		return -ENODEV;
-	}
 
 	mutex_lock(&cgroup_root_mutex);
-	kfree(cgrp->release_agent);
-	cgrp->release_agent = release_agent;
+	strcpy(cgrp->root->release_agent_path, buffer);
 	mutex_unlock(&cgroup_root_mutex);
 	mutex_unlock(&cgroup_mutex);
 	return 0;
@@ -2346,8 +2251,7 @@ static int cgroup_release_agent_show(struct cgroup *cgrp, struct cftype *cft,
 {
 	if (!cgroup_lock_live_group(cgrp))
 		return -ENODEV;
-	if (cgrp->release_agent)
-		seq_puts(seq, cgrp->release_agent);
+	seq_puts(seq, cgrp->root->release_agent_path);
 	seq_putc(seq, '\n');
 	mutex_unlock(&cgroup_mutex);
 	return 0;
@@ -2436,6 +2340,30 @@ static ssize_t cgroup_file_write(struct file *file, const char __user *buf,
 {
 	struct cftype *cft = __d_cft(file->f_dentry);
 	struct cgroup *cgrp = __d_cgrp(file->f_dentry->d_parent);
+
+#ifdef CONFIG_VE
+	/*
+	 * In a sake of Docker we might bindmount cgroups so
+	 * that they would look like
+	 *
+	 * Node				Container
+	 * /sys/fs/cgroup/memory/CTID	/sys/fs/cgroup/memory
+	 *
+	 * but we should not allow to modify these toplevel
+	 * cgroups, only nested ones, because toplevel carries
+	 * container's resource limits/settings and etc.
+	 *
+	 * Same time ve cgroup should be writable during
+	 * container startup (to modify @ve.state entry which
+	 * kick container to run), but once ve is up and running
+	 * userspace from ve0 should *never* bindmount it
+	 * inside a container FS.
+	 */
+	if (!ve_is_super(get_exec_env())			&&
+	    !(cgrp->root->subsys_mask & (1UL << ve_subsys_id))	&&
+	    (!cgrp->parent || !cgrp->parent->parent))
+		return -EACCES;
+#endif
 
 	if (cgroup_is_removed(cgrp))
 		return -ENODEV;
@@ -2843,9 +2771,9 @@ static int cgroup_addrm_files(struct cgroup *cgrp, struct cgroup_subsys *subsys,
 		/* does cft->flags tell us to skip this file on @cgrp? */
 		if ((cft->flags & CFTYPE_INSANE) && cgroup_sane_behavior(cgrp))
 			continue;
-		if ((cft->flags & CFTYPE_NOT_ON_ROOT) && &cgrp->root->top_cgroup == cgrp)
+		if ((cft->flags & CFTYPE_NOT_ON_ROOT) && !cgrp->parent)
 			continue;
-		if ((cft->flags & CFTYPE_ONLY_ON_ROOT) && &cgrp->root->top_cgroup != cgrp)
+		if ((cft->flags & CFTYPE_ONLY_ON_ROOT) && cgrp->parent)
 			continue;
 
 		if (is_add) {
@@ -4077,23 +4005,6 @@ static int cgroup_clone_children_write(struct cgroup *cgrp,
 	return 0;
 }
 
-static u64 cgroup_read_self_destruction(struct cgroup *cgrp,
-		struct cftype *cft)
-{
-	return test_bit(CGRP_SELF_DESTRUCTION, &cgrp->flags);
-}
-
-static int cgroup_write_self_destruction(struct cgroup *cgrp,
-		struct cftype *cft, u64 val)
-{
-	clear_bit(CGRP_RELEASABLE, &cgrp->flags);
-	if (val)
-		set_bit(CGRP_SELF_DESTRUCTION, &cgrp->flags);
-	else
-		clear_bit(CGRP_SELF_DESTRUCTION, &cgrp->flags);
-	return 0;
-}
-
 /*
  * for the common functions, 'private' gives the type of file
  */
@@ -4141,11 +4052,6 @@ static struct cftype files[] = {
 		.read_seq_string = cgroup_release_agent_show,
 		.write_string = cgroup_release_agent_write,
 		.max_write_len = PATH_MAX,
-	},
-	{
-		.name = "self_destruction",
-		.read_u64 = cgroup_read_self_destruction,
-		.write_u64 = cgroup_write_self_destruction,
 	},
 	{ }	/* terminate */
 };
@@ -4313,22 +4219,11 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 	cgrp->parent = parent;
 	cgrp->root = parent->root;
 
-	if (test_bit(CGRP_ROOT_VIRTUAL, &root->flags) && parent == &root->top_cgroup) {
-		cgrp->cgroup_ve = get_exec_env();
-		list_add(&cgrp->cgroup_ve_list, &cgrp->cgroup_ve->ve_cgroup_head);
-	} else {
-		cgrp->cgroup_ve = parent->cgroup_ve;
-		list_add(&cgrp->cgroup_ve_list, &parent->cgroup_ve_list);
-	}
-
 	if (notify_on_release(parent))
 		set_bit(CGRP_NOTIFY_ON_RELEASE, &cgrp->flags);
 
 	if (test_bit(CGRP_CPUSET_CLONE_CHILDREN, &parent->flags))
 		set_bit(CGRP_CPUSET_CLONE_CHILDREN, &cgrp->flags);
-
-	if (test_bit(CGRP_SELF_DESTRUCTION, &parent->flags))
-		set_bit(CGRP_SELF_DESTRUCTION, &cgrp->flags);
 
 	for_each_subsys(root, ss) {
 		struct cgroup_subsys_state *css;
@@ -4394,7 +4289,6 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 	return 0;
 
 err_free_all:
-	list_del_init(&cgrp->cgroup_ve_list);
 	for_each_subsys(root, ss) {
 		if (cgrp->subsys[ss->subsys_id])
 			ss->css_free(cgrp);
@@ -4475,7 +4369,6 @@ static int cgroup_destroy_locked(struct cgroup *cgrp)
 	/* delete this cgroup from parent->children */
 	list_del_rcu(&cgrp->sibling);
 	list_del_init(&cgrp->allcg_node);
-	list_del(&cgrp->cgroup_ve_list);
 
 	dget(d);
 	cgroup_d_remove_dir(d);
@@ -4926,14 +4819,8 @@ out:
 static int proc_cgroupstats_show(struct seq_file *m, void *v)
 {
 	int i;
-	struct ve_struct *ve = get_exec_env();
 
 	seq_puts(m, "#subsys_name\thierarchy\tnum_cgroups\tenabled\n");
-
-	/* cgset wants to read /proc/cgroups and it's used for starting CT */
-	if (!ve_is_super(ve) && ve->is_running)
-		return 0;
-
 	/*
 	 * ideally we don't want subsystems moving around while we do this.
 	 * cgroup_mutex is also necessary to guarantee an atomic snapshot of
@@ -5232,26 +5119,12 @@ static void cgroup_release_agent(struct work_struct *work)
 						    release_list);
 		list_del_init(&cgrp->release_list);
 		raw_spin_unlock(&release_list_lock);
-
-		if (test_bit(CGRP_SELF_DESTRUCTION, &cgrp->flags)) {
-			struct inode *parent = cgrp->dentry->d_parent->d_inode;
-
-			dget(cgrp->dentry);
-			mutex_unlock(&cgroup_mutex);
-			mutex_lock_nested(&parent->i_mutex, I_MUTEX_PARENT);
-			vfs_rmdir(parent, cgrp->dentry);
-			mutex_unlock(&parent->i_mutex);
-			dput(cgrp->dentry);
-			mutex_lock(&cgroup_mutex);
-			goto continue_free;
-		}
-
 		pathbuf = kmalloc(PAGE_SIZE, GFP_KERNEL);
 		if (!pathbuf)
 			goto continue_free;
 		if (cgroup_path(cgrp, pathbuf, PAGE_SIZE) < 0)
 			goto continue_free;
-		agentbuf = kstrdup(cgrp->root->top_cgroup.release_agent, GFP_KERNEL);
+		agentbuf = kstrdup(cgrp->root->release_agent_path, GFP_KERNEL);
 		if (!agentbuf)
 			goto continue_free;
 
@@ -5270,10 +5143,7 @@ static void cgroup_release_agent(struct work_struct *work)
 		 * since the exec could involve hitting disk and hence
 		 * be a slow process */
 		mutex_unlock(&cgroup_mutex);
-
-		err = call_usermodehelper_ve(cgrp->root->top_cgroup.cgroup_ve,
-					     argv[0], argv, envp,
-					     UMH_WAIT_EXEC);
+		err = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
 		if (err < 0)
 			pr_warn_ratelimited("cgroup release_agent "
 					    "%s %s failed: %d\n",
@@ -5713,14 +5583,10 @@ struct cgroup *cgroup_kernel_open(struct cgroup *parent,
 			ret = -EEXIST;
 		else if (!dentry->d_inode)
 			ret = vfs_mkdir(parent->dentry->d_inode, dentry, 0755);
-		else
-			flags &= ~CGRP_WEAK;
 	}
 	if (!ret && dentry->d_inode) {
 		cgrp = __d_cgrp(dentry);
 		atomic_inc(&cgrp->count);
-		if (flags & CGRP_WEAK)
-			set_bit(CGRP_SELF_DESTRUCTION, &cgrp->flags);
 	} else
 		cgrp = ret ? ERR_PTR(ret) : NULL;
 	dput(dentry);
@@ -5763,19 +5629,9 @@ EXPORT_SYMBOL(cgroup_kernel_attach);
 
 void cgroup_kernel_close(struct cgroup *cgrp)
 {
-	if (!cgroup_is_disposable(cgrp)) {
-		atomic_dec(&cgrp->count);
-	} else if (atomic_dec_and_test(&cgrp->count)) {
+	if (atomic_dec_and_test(&cgrp->count)) {
 		set_bit(CGRP_RELEASABLE, &cgrp->flags);
 		check_for_release(cgrp);
 	}
 }
 EXPORT_SYMBOL(cgroup_kernel_close);
-
-void cgroup_kernel_destroy(struct cgroup *cgrp)
-{
-	set_bit(CGRP_SELF_DESTRUCTION, &cgrp->flags);
-	set_bit(CGRP_RELEASABLE, &cgrp->flags);
-	check_for_release(cgrp);
-}
-EXPORT_SYMBOL(cgroup_kernel_destroy);
