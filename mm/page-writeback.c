@@ -36,6 +36,7 @@
 #include <linux/pagevec.h>
 #include <linux/timer.h>
 #include <linux/sched/rt.h>
+#include <linux/virtinfo.h>
 #include <trace/events/writeback.h>
 
 /*
