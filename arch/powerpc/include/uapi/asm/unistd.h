@@ -389,4 +389,9 @@
 #define __NR_userfaultfd	364
 #define __NR_copy_file_range	379
 
+#define __NR_getluid		388
+#define __NR_setluid		389
+#define __NR_setublimit		390
+#define __NR_ubstat		391
+
 #endif /* _UAPI_ASM_POWERPC_UNISTD_H_ */
