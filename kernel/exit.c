@@ -210,7 +210,7 @@ repeat:
 
 	write_unlock_irq(&tasklist_lock);
 	release_thread(p);
-	ub_task_uncharge(p->task_bc.task_ub);
+	ub_task_uncharge(get_task_ub(p));
 	call_rcu(&p->rcu, delayed_put_task_struct);
 
 	p = leader;
