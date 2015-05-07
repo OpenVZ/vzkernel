@@ -293,7 +293,7 @@ static struct log_state {
 static void ____ ## name ## _definition(void) __attribute__((used));	\
 static void ____ ## name ## _definition(void)				\
 {									\
-	asm (".globl " #name "\n\t.set " #name ", " #inst "+%a0"	\
+	asm (".globl " #name "\n\t.set " #name ", " #inst "+%c0"	\
 	     : : "g" (offsetof(typeof(inst), memb)));			\
 }									\
 extern typeof(inst.memb) name;
