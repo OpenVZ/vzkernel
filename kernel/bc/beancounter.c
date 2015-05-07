@@ -109,8 +109,7 @@ static int ub_mem_cgroup_attach_task(struct user_beancounter *ub,
 	struct cgroup *cg;
 	int ret;
 
-	cg = cgroup_kernel_open(mem_cgroup_root,
-				CGRP_CREAT|CGRP_WEAK, ub->ub_name);
+	cg = cgroup_kernel_open(mem_cgroup_root, CGRP_CREAT, ub->ub_name);
 	if (IS_ERR(cg))
 		return PTR_ERR(cg);
 
@@ -134,8 +133,7 @@ static int ub_blkio_cgroup_attach_task(struct user_beancounter *ub,
 	if (!ubc_ioprio)
 		return 0;
 
-	cg = cgroup_kernel_open(blkio_cgroup_root,
-				CGRP_CREAT|CGRP_WEAK, ub->ub_name);
+	cg = cgroup_kernel_open(blkio_cgroup_root, CGRP_CREAT, ub->ub_name);
 	if (IS_ERR(cg))
 		return PTR_ERR(cg);
 
@@ -152,8 +150,7 @@ static int ub_cgroup_attach_task(struct user_beancounter *ub,
 	int ret;
 
 	if (ub != get_ub0()) {
-		cg = cgroup_kernel_open(ub_cgroup_root,
-					CGRP_CREAT|CGRP_WEAK, ub->ub_name);
+		cg = cgroup_kernel_open(ub_cgroup_root, CGRP_CREAT, ub->ub_name);
 		if (IS_ERR(cg))
 			return PTR_ERR(cg);
 	} else
@@ -398,7 +395,7 @@ struct user_beancounter *get_beancounter_by_name(const char *name, int create)
 		if (IS_ERR(cg))
 			return NULL;
 		if (!cg) {
-			cg = cgroup_kernel_open(ub_cgroup_root, CGRP_CREAT|CGRP_WEAK, name);
+			cg = cgroup_kernel_open(ub_cgroup_root, CGRP_CREAT, name);
 			if (IS_ERR_OR_NULL(cg))
 				return NULL;
 			pr_warn_once("Allocating UB with syslimits is deprecated!\n");
