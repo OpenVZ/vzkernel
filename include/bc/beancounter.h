@@ -252,6 +252,8 @@ static inline unsigned long ub_resource_excess(struct user_beancounter *ub,
 
 #define mm_ub(mm)	(NULL)
 
+#define for_each_beancounter(__ubp)	while (0)
+
 extern inline struct user_beancounter *get_beancounter_by_name
 		(const char *name, int create) { return NULL; }
 extern inline struct user_beancounter *get_beancounter_byuid
