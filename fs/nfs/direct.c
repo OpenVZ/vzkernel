@@ -51,7 +51,7 @@
 #include <linux/nfs_fs.h>
 #include <linux/nfs_page.h>
 #include <linux/sunrpc/clnt.h>
-#include <linux/task_io_accounting_ops.h>
+#include <linux/virtinfo.h>
 
 #include <asm/uaccess.h>
 #include <linux/atomic.h>
