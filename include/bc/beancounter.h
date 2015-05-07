@@ -270,8 +270,10 @@ static inline void ub_init_early(void) { };
 static inline int charge_beancounter(struct user_beancounter *ub,
 			int resource, unsigned long val,
 			enum ub_severity strict) { return 0; }
+#define charge_beancounter_fast charge_beancounter
 static inline void uncharge_beancounter(struct user_beancounter *ub,
 			int resource, unsigned long val) { }
+#define uncharge_beancounter_fast uncharge_beancounter
 
 static inline void ub_reclaim_rate_limit(struct user_beancounter *ub,
 					 int wait, unsigned count) { }
