@@ -46,6 +46,7 @@
 
 #include <asm/mman.h>
 
+#include <linux/virtinfo.h>
 #include <bc/io_acct.h>
 
 /*
