@@ -18,7 +18,10 @@
 #include <bc/sock.h>
 #include <bc/beancounter.h>
 
+#ifdef CONFIG_BEANCOUNTERS
 #undef CONFIG_BEANCOUNTERS
+#define CONFIG_BEANCOUNTERS_WILL_BE_BACK
+#endif
 #undef __BC_DECL_H_
 #undef UB_DECLARE_FUNC
 #undef UB_DECLARE_VOID_FUNC
@@ -213,7 +216,10 @@ UB_DECLARE_VOID_FUNC(ub_skb_set_charge(struct sk_buff *skb,
 			struct sock *sk, unsigned long size, int res))
 UB_DECLARE_FUNC(int, __ub_too_many_orphans(struct sock *sk, int count))
 
+#ifdef CONFIG_BEANCOUNTERS_WILL_BE_BACK
 #define CONFIG_BEANCOUNTERS 1
+#undef CONFIG_BEANCOUNTERS_WILL_BE_BACK
+#endif
 #undef __BC_DECL_H_
 #undef UB_DECLARE_FUNC
 #undef UB_DECLARE_VOID_FUNC
