@@ -116,7 +116,7 @@ extern void KSTAT_LAT_UPDATE(struct kstat_lat_struct *p);
 extern void KSTAT_LAT_PCPU_UPDATE(struct kstat_lat_pcpu_struct *p);
 
 #else
-#define KSTAT_PERF_ENTER(ptr, real_time, cpu_time)
+#define KSTAT_PERF_ADD(ptr, real_time, cpu_time)
 #define KSTAT_PERF_ENTER(name)
 #define KSTAT_PERF_LEAVE(name)
 #define KSTAT_LAT_ADD(p, dur)
