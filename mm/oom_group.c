@@ -60,8 +60,10 @@ int get_task_oom_score_adj(struct task_struct *t)
 	uid_t task_uid;
 	int adj = 0;
 
+#ifdef CONFIG_BEANCOUNTERS
 	if (test_bit(UB_OOM_MANUAL_SCORE_ADJ, &get_task_ub(t)->ub_flags))
 		return t->signal->oom_score_adj;
+#endif
 
 	rcu_read_lock();
 	cred = __task_cred(t);
