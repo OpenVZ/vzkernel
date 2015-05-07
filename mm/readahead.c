@@ -20,6 +20,7 @@
 #include <linux/pagemap.h>
 #include <linux/syscalls.h>
 #include <linux/file.h>
+#include <linux/virtinfo.h>
 
 /*
  * Initialise a struct file's readahead state.  Assumes that the caller has
