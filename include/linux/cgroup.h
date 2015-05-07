@@ -52,7 +52,6 @@ struct cgroup_sb_opts {
 enum cgroup_open_flags {
 	CGRP_CREAT	= 0x0001,	/* create if not found */
 	CGRP_EXCL	= 0x0002,	/* fail if already exist */
-	CGRP_WEAK	= 0x0004,	/* arm cgroup self-destruction */
 };
 
 struct vfsmount *cgroup_kernel_mount(struct cgroup_sb_opts *opts);
@@ -62,7 +61,6 @@ struct cgroup *cgroup_kernel_open(struct cgroup *parent,
 int cgroup_kernel_remove(struct cgroup *parent, const char *name);
 int cgroup_kernel_attach(struct cgroup *cgrp, struct task_struct *tsk);
 void cgroup_kernel_close(struct cgroup *cgrp);
-void cgroup_kernel_destroy(struct cgroup *cgrp);
 
 /*
  * Define the enumeration of all cgroup subsystems.
@@ -216,10 +214,6 @@ enum {
 	CGRP_CPUSET_CLONE_CHILDREN,
 	/* see the comment above CGRP_ROOT_SANE_BEHAVIOR for details */
 	CGRP_SANE_BEHAVIOR,
-	CGRP_SELF_DESTRUCTION,
-
-	/* container virtualization */
-	CGRP_VE_TOP_CGROUP_VIRTUAL,
 };
 
 struct cgroup_name {
@@ -266,13 +260,6 @@ struct cgroup {
 	struct cgroup_subsys_state *subsys[CGROUP_SUBSYS_COUNT];
 
 	struct cgroupfs_root *root;
-
-	/* The path to use for release notifications. */
-	char *release_agent;
-
-	/* Owner VE for fake cgroup hierarchy */
-	struct ve_struct *cgroup_ve;
-	struct list_head cgroup_ve_list;
 
 	/*
 	 * List of cg_cgroup_links pointing at css_sets with
@@ -351,7 +338,6 @@ enum {
 
 	CGRP_ROOT_NOPREFIX	= (1 << 1), /* mounted subsystems have no named prefix */
 	CGRP_ROOT_XATTR		= (1 << 2), /* supports extended attributes */
-	CGRP_ROOT_VIRTUAL	= (1 << 3), /* VE-based root-cgroup virtualization */
 };
 
 /*
@@ -394,6 +380,9 @@ struct cgroupfs_root {
 
 	/* IDs for cgroups in this hierarchy */
 	struct ida cgroup_ida;
+
+	/* The path to use for release notifications. */
+	char release_agent_path[PATH_MAX];
 
 	/* The name for this hierarchy - may be empty */
 	char name[MAX_CGROUP_ROOT_NAMELEN];
