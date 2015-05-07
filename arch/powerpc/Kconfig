@@ -1015,6 +1015,8 @@ config PHYSICAL_START
 	default "0x00000000"
 endif
 
+source "kernel/Kconfig.openvz"
+
 source "net/Kconfig"
 
 source "drivers/Kconfig"
@@ -1024,6 +1026,8 @@ source "fs/Kconfig"
 source "arch/powerpc/sysdev/qe_lib/Kconfig"
 
 source "lib/Kconfig"
+
+source "kernel/bc/Kconfig"
 
 source "arch/powerpc/Kconfig.debug"
 
