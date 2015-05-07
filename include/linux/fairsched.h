@@ -53,8 +53,6 @@ int fairsched_new_node(int id, unsigned int vcpus);
 int fairsched_move_task(int id, struct task_struct *tsk);
 void fairsched_drop_node(int id, int leave);
 
-struct kernel_cpustat;
-void cpu_cgroup_get_stat(struct cgroup *cgrp, struct kernel_cpustat *kstat);
 int fairsched_get_cpu_stat(int id, struct kernel_cpustat *kstat);
 
 int cpu_cgroup_get_avenrun(struct cgroup *cgrp, unsigned long *avenrun);
@@ -75,6 +73,10 @@ static inline int fairsched_get_cpu_avenrun(int id, unsigned long *avenrun) { re
 static inline int fairsched_get_cpu_stat(int id, struct kernel_cpustat *kstat) { return -ENOSYS; }
 
 #endif /* CONFIG_VZ_FAIRSCHED */
+
+struct kernel_cpustat;
+void cpu_cgroup_get_stat(struct cgroup *cgrp, struct kernel_cpustat *kstat);
+
 #endif /* __KERNEL__ */
 
 #endif /* __LINUX_FAIRSCHED_H__ */
