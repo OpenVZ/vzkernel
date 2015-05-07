@@ -265,7 +265,7 @@ static int sysfs_alloc_ino(unsigned int *pino)
 	spin_unlock(&sysfs_ino_lock);
 
 	if (rc == -EAGAIN) {
-		if (ida_pre_get(&sysfs_ino_ida, GFP_KERNEL))
+		if (ida_pre_get(&sysfs_ino_ida, GFP_KERNEL | __GFP_NOACCOUNT))
 			goto retry;
 		rc = -ENOMEM;
 	}
