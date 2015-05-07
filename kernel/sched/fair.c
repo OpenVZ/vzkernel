@@ -7140,6 +7140,7 @@ more_balance:
 		double_rq_unlock(env.dst_rq, busiest);
 		local_irq_restore(flags);
 
+#ifdef CONFIG_CFS_CPULIMIT
 		if (!ld_moved && (env.flags & LBF_ALL_PINNED)) {
 			env.loop = 0;
 			local_irq_save(flags);
@@ -7148,6 +7149,7 @@ more_balance:
 			double_rq_unlock(env.dst_rq, busiest);
 			local_irq_restore(flags);
 		}
+#endif
 
 		/*
 		 * some other cpu did the load balance for us.
