@@ -118,6 +118,11 @@ static inline bool ub_should_skip_writeback(struct user_beancounter *ub,
 	return false;
 }
 
+static inline struct user_beancounter *get_io_ub(void)
+{
+	return NULL;
+}
+
 #endif /* UBC_IO_ACCT */
 
 #endif
