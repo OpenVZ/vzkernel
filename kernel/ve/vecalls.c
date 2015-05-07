@@ -441,14 +441,12 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 
 	legacy_veid_to_name(veid, ve_name);
 
-	ve_cgroup = ve_cgroup_open(ve0.css.cgroup,
-			CGRP_CREAT|CGRP_WEAK|CGRP_EXCL, veid);
+	ve_cgroup = ve_cgroup_open(ve0.css.cgroup, CGRP_CREAT|CGRP_EXCL, veid);
 	err = PTR_ERR(ve_cgroup);
 	if (IS_ERR(ve_cgroup))
 		goto err_ve_cgroup;
 
-	dev_cgroup = ve_cgroup_open(devices_root,
-		CGRP_CREAT|CGRP_WEAK, veid);
+	dev_cgroup = ve_cgroup_open(devices_root, CGRP_CREAT, veid);
 	err = PTR_ERR(dev_cgroup);
 	if (IS_ERR(dev_cgroup))
 		goto err_dev_cgroup;

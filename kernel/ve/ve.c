@@ -709,7 +709,6 @@ do_init:
 	init_rwsem(&ve->op_sem);
 	mutex_init(&ve->sync_mutex);
 	INIT_LIST_HEAD(&ve->devices);
-	INIT_LIST_HEAD(&ve->ve_cgroup_head);
 	INIT_LIST_HEAD(&ve->ve_list);
 	kmapset_init_key(&ve->ve_sysfs_perms);
 
@@ -730,18 +729,9 @@ err_id:
 static void ve_offline(struct cgroup *cg)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
-	struct cgroup *cgrp;
 
 	ve_list_del(ve);
 	veid_free(ve->veid);
-
-	while (!list_empty(&ve->ve_cgroup_head)) {
-		cgrp = list_entry(ve->ve_cgroup_head.prev,
-				struct cgroup, cgroup_ve_list);
-		cgrp->cgroup_ve = NULL;
-		list_del_init(&cgrp->cgroup_ve_list);
-		cgroup_kernel_destroy(cgrp);
-	}
 }
 
 static void ve_destroy(struct cgroup *cg)
