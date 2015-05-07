@@ -122,7 +122,7 @@ static unsigned long tmpfs_ram_pages(void)
 	if (unlikely(!current->mm))
 		goto out;
 
-	ub = current->mm->mm_ub;
+	ub = mm_ub(current->mm);
 	if (ub != get_ub0()) {
 		ub_rampages = ub->ub_parms[UB_PHYSPAGES].limit;
 		if (ub_rampages == UB_MAXVALUE)
@@ -3234,7 +3234,7 @@ int shmem_zero_setup(struct vm_area_struct *vma)
 	if (vma->vm_file)
 		fput(vma->vm_file);
 	else if (vma->vm_flags & VM_WRITE)
-		uncharge_beancounter_fast(vma->vm_mm->mm_ub, UB_PRIVVMPAGES,
+		uncharge_beancounter_fast(mm_ub(vma->vm_mm), UB_PRIVVMPAGES,
 					  size >> PAGE_SHIFT);
 	vma->vm_file = file;
 	vma->vm_ops = &shmem_vm_ops;
