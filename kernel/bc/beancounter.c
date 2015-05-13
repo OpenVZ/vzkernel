@@ -100,6 +100,20 @@ static int resource_precharge_min = 0;
 static int resource_precharge_max = INT_MAX / NR_CPUS;
 static struct cgroup *mem_cgroup_root, *blkio_cgroup_root, *ub_cgroup_root;
 
+static struct cgroup *ub_cgroup_open(struct cgroup *root,
+				     struct user_beancounter *ub)
+{
+	if (ub == get_ub0())
+		return root;
+	return cgroup_kernel_open(root, CGRP_CREAT, ub->ub_name);
+}
+
+static void ub_cgroup_close(struct cgroup *root, struct cgroup *cg)
+{
+	if (cg != root)
+		cgroup_kernel_close(cg);
+}
+
 extern int mem_cgroup_apply_beancounter(struct cgroup *cg,
 					struct user_beancounter *ub);
 
@@ -109,18 +123,16 @@ static int ub_mem_cgroup_attach_task(struct user_beancounter *ub,
 	struct cgroup *cg;
 	int ret;
 
-	cg = cgroup_kernel_open(mem_cgroup_root, CGRP_CREAT, ub->ub_name);
+	cg = ub_cgroup_open(mem_cgroup_root, ub);
 	if (IS_ERR(cg))
 		return PTR_ERR(cg);
-
 	if (ub != get_ub0())
 		ret = mem_cgroup_apply_beancounter(cg, ub);
 	else
 		ret = 0;
 	if (!ret)
 		ret = cgroup_kernel_attach(cg, tsk);
-
-	cgroup_kernel_close(cg);
+	ub_cgroup_close(mem_cgroup_root, cg);
 	return ret;
 }
 
@@ -132,14 +144,11 @@ static int ub_blkio_cgroup_attach_task(struct user_beancounter *ub,
 
 	if (!ubc_ioprio)
 		return 0;
-
-	cg = cgroup_kernel_open(blkio_cgroup_root, CGRP_CREAT, ub->ub_name);
+	cg = ub_cgroup_open(blkio_cgroup_root, ub);
 	if (IS_ERR(cg))
 		return PTR_ERR(cg);
-
 	ret = cgroup_kernel_attach(cg, tsk);
-
-	cgroup_kernel_close(cg);
+	ub_cgroup_close(blkio_cgroup_root, cg);
 	return ret;
 }
  
@@ -149,17 +158,11 @@ static int ub_cgroup_attach_task(struct user_beancounter *ub,
 	struct cgroup *cg;
 	int ret;
 
-	if (ub != get_ub0()) {
-		cg = cgroup_kernel_open(ub_cgroup_root, CGRP_CREAT, ub->ub_name);
-		if (IS_ERR(cg))
-			return PTR_ERR(cg);
-	} else
-		cg = ub_cgroup_root;
-
+	cg = ub_cgroup_open(ub_cgroup_root, ub);
+	if (IS_ERR(cg))
+		return PTR_ERR(cg);
 	ret = cgroup_kernel_attach(cg, tsk);
-
-	if (ub != get_ub0())
-		cgroup_kernel_close(cg);
+	ub_cgroup_close(ub_cgroup_root, cg);
 	return ret;
 }
 
@@ -196,11 +199,11 @@ int ub_update_mem_cgroup_limits(struct user_beancounter *ub)
 	if (ub == get_ub0())
 		return -EPERM;
 
-	cg = cgroup_kernel_open(mem_cgroup_root, 0, ub->ub_name);
-	if (IS_ERR_OR_NULL(cg))
-		return PTR_ERR(cg) ?: -ENOENT;
+	cg = ub_cgroup_open(mem_cgroup_root, ub);
+	if (IS_ERR(cg))
+		return PTR_ERR(cg);
 	ret = mem_cgroup_apply_beancounter(cg, ub);
-	cgroup_kernel_close(cg);
+	ub_cgroup_close(mem_cgroup_root, cg);
 	return ret;
 }
 
@@ -217,10 +220,10 @@ void ub_get_mem_cgroup_parms(struct user_beancounter *ub,
 
 	memset(parms, 0, sizeof(parms));
 
-	cg = cgroup_kernel_open(mem_cgroup_root, 0, ub->ub_name);
+	cg = ub_cgroup_open(mem_cgroup_root, ub);
 	if (!IS_ERR_OR_NULL(cg)) {
 		mem_cgroup_fill_ub_parms(cg, &parms[0], &parms[1], &parms[2]);
-		cgroup_kernel_close(cg);
+		ub_cgroup_close(mem_cgroup_root, cg);
 	}
 
 	if (physpages)
@@ -242,14 +245,14 @@ void ub_page_stat(struct user_beancounter *ub, const nodemask_t *nodemask,
 
 	memset(pages, 0, sizeof(unsigned long) * NR_LRU_LISTS);
 
-	cg = cgroup_kernel_open(mem_cgroup_root, 0, ub->ub_name);
-	if (IS_ERR_OR_NULL(cg))
+	cg = ub_cgroup_open(mem_cgroup_root, ub);
+	if (IS_ERR(cg))
 		return;
 
 	for_each_node_mask(nid, *nodemask)
 		mem_cgroup_get_nr_pages(cg, nid, pages);
 
-	cgroup_kernel_close(cg);
+	ub_cgroup_close(mem_cgroup_root, cg);
 }
 
 void init_beancounter_precharge(struct user_beancounter *ub, int resource)
@@ -1141,7 +1144,6 @@ void __init ub_init_late(void)
 
 int __init ub_init_cgroup(void)
 {
-	int err;
 	struct vfsmount *blkio_mnt, *mem_mnt, *ub_mnt;
 	struct cgroup_sb_opts blkio_opts = {
 		.name		= vz_compat ? "beancounter" : NULL,
@@ -1174,14 +1176,6 @@ int __init ub_init_cgroup(void)
 		return PTR_ERR(ub_mnt);
 	}
 	ub_cgroup_root = cgroup_get_root(ub_mnt);
-
-	err = ub_attach_task(&ub0, init_pid_ns.child_reaper);
-	if (err)
-		return err;
-
-	/* pin ub0's cgroups to prevent insidious systemd from deleting them */
-	cgroup_kernel_open(mem_cgroup_root, 0, ub0.ub_name);
-	cgroup_kernel_open(blkio_cgroup_root, 0, ub0.ub_name);
 
 	return 0;
 }
