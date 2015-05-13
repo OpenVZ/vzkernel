@@ -26,7 +26,6 @@ struct fairsched_node {
 };
 
 static struct fairsched_node root_node = {NULL, NULL};
-static struct fairsched_node host_node = {NULL, NULL};
 
 /* fairsched use node id = INT_MAX for ve0 tasks */
 #define FAIRSCHED_HOST_NODE 2147483647
@@ -91,7 +90,7 @@ static int fairsched_move(struct fairsched_node *node, struct task_struct *tsk)
 
 	ret = cgroup_kernel_attach(node->cpuset, tsk);
 	if (ret) {
-		err = cgroup_kernel_attach(host_node.cpu, tsk);
+		err = cgroup_kernel_attach(root_node.cpu, tsk);
 		if (err)
 			printk(KERN_ERR "Cleanup error, fairsched id=, err=%d\n", err);
 	}
@@ -379,7 +378,7 @@ void fairsched_drop_node(int id, int leave)
 	int err;
 
 	if (leave) {
-		err = fairsched_move(&host_node, current);
+		err = fairsched_move(&root_node, current);
 		if (err)
 			printk(KERN_ERR "Can't leave fairsched node %d "
 					"err=%d\n", id, err);
@@ -769,7 +768,6 @@ extern int sysctl_sched_rt_runtime;
 int __init fairsched_init(void)
 {
 	struct vfsmount *cpu_mnt, *cpuset_mnt;
-	int ret;
 	struct cgroup_sb_opts cpu_opts = {
 		.name		= vz_compat ? "fairsched" : NULL,
 		.subsys_mask	=
@@ -793,20 +791,6 @@ int __init fairsched_init(void)
 		return PTR_ERR(cpuset_mnt);
 	}
 	root_node.cpuset = cgroup_get_root(cpuset_mnt);
-
-	ret = fairsched_create(&host_node, 0);
-	if (ret)
-		return ret;
-
-	ret = sched_cgroup_set_rt_runtime(host_node.cpu,
-					  3 * sysctl_sched_rt_runtime / 4);
-	if (ret)
-		printk(KERN_WARNING
-		       "Can't set rt runtime for fairsched host: %d\n", ret);
-
-	ret = fairsched_move(&host_node, init_pid_ns.child_reaper);
-	if (ret)
-		return ret;
 
 #ifdef CONFIG_PROC_FS
 	proc_create("fairsched", S_ISVTX, NULL,	&proc_fairsched_operations);
