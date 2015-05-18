@@ -1032,6 +1032,54 @@ static int ve_mount_opts_write(struct cgroup *cg, struct cftype *cft,
 	return 0;
 }
 
+static int ve_os_release_read(struct cgroup *cg, struct cftype *cft,
+			      struct seq_file *m)
+{
+	struct ve_struct *ve = cgroup_ve(cg);
+	int ret = 0;
+
+	down_read(&ve->op_sem);
+
+	if (!ve->ve_ns) {
+		ret = -ENOENT;
+		goto up_opsem;
+	}
+
+	down_read(&uts_sem);
+	seq_puts(m, ve->ve_ns->uts_ns->name.release);
+	seq_putc(m, '\n');
+	up_read(&uts_sem);
+up_opsem:
+	up_read(&ve->op_sem);
+
+	return ret;
+}
+
+static int ve_os_release_write(struct cgroup *cg, struct cftype *cft,
+			       const char *buffer)
+{
+	struct ve_struct *ve = cgroup_ve(cg);
+	char *release;
+	int ret = 0;
+
+	down_read(&ve->op_sem);
+
+	if (!ve->ve_ns) {
+		ret = -ENOENT;
+		goto up_opsem;
+	}
+
+	down_write(&uts_sem);
+	release = ve->ve_ns->uts_ns->name.release;
+	strncpy(release, buffer, __NEW_UTS_LEN);
+	release[__NEW_UTS_LEN] = '\0';
+	up_write(&uts_sem);
+up_opsem:
+	up_read(&ve->op_sem);
+
+	return ret;
+}
+
 static struct cftype ve_cftypes[] = {
 	{
 		.name = "state",
@@ -1048,6 +1096,13 @@ static struct cftype ve_cftypes[] = {
 		.name = "mount_opts",
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.write_string = ve_mount_opts_write,
+	},
+	{
+		.name = "os_release",
+		.max_write_len = __NEW_UTS_LEN + 1,
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.read_seq_string = ve_os_release_read,
+		.write_string = ve_os_release_write,
 	},
 	{ }
 };
