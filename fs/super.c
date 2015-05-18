@@ -1073,11 +1073,26 @@ struct dentry *mount_bdev(struct file_system_type *fs_type,
 		down_write(&s->s_umount);
 	} else {
 		char b[BDEVNAME_SIZE];
+#ifdef CONFIG_VE
+		void *data_orig = data;
+		struct ve_struct *ve = get_exec_env();
 
+		if (!ve_is_super(ve)) {
+			error = ve_devmnt_process(ve, bdev->bd_dev, &data, 0);
+			if (error) {
+				deactivate_locked_super(s);
+				goto error;
+			}
+		}
+#endif
 		s->s_mode = mode;
 		strlcpy(s->s_id, bdevname(bdev, b), sizeof(s->s_id));
 		sb_set_blocksize(s, block_size(bdev));
 		error = fill_super(s, data, flags & MS_SILENT ? 1 : 0);
+#ifdef CONFIG_VE
+		if (data_orig != data)
+			free_page((unsigned long)data);
+#endif
 		if (error) {
 			deactivate_locked_super(s);
 			goto error;
