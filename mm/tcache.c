@@ -125,7 +125,7 @@ static struct tcache_lru *tcache_lru_node;
  */
 
 /* Enable/disable tcache backend (set at boot time) */
-static bool tcache_enabled __read_mostly;
+static bool tcache_enabled __read_mostly = true;
 module_param_named(enabled, tcache_enabled, bool, 0444);
 
 /* Enable/disable populating the cache */
