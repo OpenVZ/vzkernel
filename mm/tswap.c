@@ -27,7 +27,7 @@ struct tswap_lru {
 static struct tswap_lru *tswap_lru_node;
 
 /* Enable/disable tswap backend (set at boot time) */
-static bool tswap_enabled __read_mostly;
+static bool tswap_enabled __read_mostly = true;
 module_param_named(enabled, tswap_enabled, bool, 0444);
 
 /* Enable/disable populating the cache */
