@@ -891,7 +891,7 @@ static int devperms_seq_show(struct seq_file *m, void *v)
 	if (ve_is_super(ve))
 		seq_printf(m, "%10u b 016 *:*\n%10u c 006 *:*\n", 0, 0);
 	else
-		devcgroup_seq_show_ve(ve->css.cgroup, ve->veid, m);
+		devcgroup_seq_show_ve(devices_root, ve, m);
 
 	return 0;
 }

@@ -17,6 +17,7 @@
 #include <linux/major.h>
 #include <linux/module.h>
 #include <linux/capability.h>
+#include <linux/ve.h>
 
 #define ACC_MKNOD 1
 #define ACC_READ  2
@@ -1091,10 +1092,16 @@ int devcgroup_set_perms_ve(struct cgroup *cgroup,
 }
 EXPORT_SYMBOL(devcgroup_set_perms_ve);
 
-int devcgroup_seq_show_ve(struct cgroup *cgroup, unsigned veid, struct seq_file *m)
+int devcgroup_seq_show_ve(struct cgroup *devices_root, struct ve_struct *ve, struct seq_file *m)
 {
-	struct dev_cgroup *devcgroup = cgroup_to_devcgroup(cgroup);
 	struct dev_exception_item *wh;
+	struct dev_cgroup *devcgroup;
+	struct cgroup *cgroup;
+
+	cgroup = cgroup_kernel_open(devices_root, 0, ve_name(ve));
+	if (IS_ERR(cgroup))
+		return PTR_ERR(cgroup);
+	devcgroup = cgroup_to_devcgroup(cgroup);
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(wh, &devcgroup->exceptions, list) {
@@ -1112,12 +1119,13 @@ int devcgroup_seq_show_ve(struct cgroup *cgroup, unsigned veid, struct seq_file 
 			perm |= S_IXOTH;
 
 		seq_printf(m, "%10u %c %03o %s:%s\n",
-				veid,
+				ve->veid,
 				type_to_char(wh->type),
 				perm, maj, min);
 	}
 	rcu_read_unlock();
 
+	cgroup_kernel_close(cgroup);
 	return 0;
 }
 EXPORT_SYMBOL(devcgroup_seq_show_ve);
