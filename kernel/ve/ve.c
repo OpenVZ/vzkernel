@@ -688,6 +688,55 @@ static int ve_reatures_write(struct cgroup_subsys_state *css, struct cftype *cft
 	return 0;
 }
 
+static int ve_os_release_read(struct seq_file *sf, void *v)
+{
+	struct cgroup_subsys_state *css = seq_css(sf);
+	struct ve_struct *ve = css_to_ve(css);
+	int ret = 0;
+
+	down_read(&ve->op_sem);
+
+	if (!ve->ve_ns) {
+		ret = -ENOENT;
+		goto up_opsem;
+	}
+
+	down_read(&uts_sem);
+	seq_puts(sf, ve->ve_ns->uts_ns->name.release);
+	seq_putc(sf, '\n');
+	up_read(&uts_sem);
+up_opsem:
+	up_read(&ve->op_sem);
+
+	return ret;
+}
+
+static ssize_t ve_os_release_write(struct kernfs_open_file *of, char *buf,
+				   size_t nbytes, loff_t off)
+{
+	struct cgroup_subsys_state *css = of_css(of);
+	struct ve_struct *ve = css_to_ve(css);
+	char *release;
+	int ret = 0;
+
+	down_read(&ve->op_sem);
+
+	if (!ve->ve_ns) {
+		ret = -ENOENT;
+		goto up_opsem;
+	}
+
+	down_write(&uts_sem);
+	release = ve->ve_ns->uts_ns->name.release;
+	strncpy(release, buf, __NEW_UTS_LEN);
+	release[__NEW_UTS_LEN] = '\0';
+	up_write(&uts_sem);
+up_opsem:
+	up_read(&ve->op_sem);
+
+	return ret ? ret : nbytes;
+}
+
 static struct cftype ve_cftypes[] = {
 
 	{
@@ -713,6 +762,13 @@ static struct cftype ve_cftypes[] = {
 		.flags			= CFTYPE_NOT_ON_ROOT,
 		.read_u64		= ve_reatures_read,
 		.write_u64		= ve_reatures_write,
+	},
+	{
+		.name			= "os_release",
+		.max_write_len		= __NEW_UTS_LEN + 1,
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.seq_show		= ve_os_release_read,
+		.write			= ve_os_release_write,
 	},
 	{ }
 };
