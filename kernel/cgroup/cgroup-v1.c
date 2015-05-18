@@ -680,6 +680,8 @@ struct cftype cgroup1_base_files[] = {
 	{ }	/* terminate */
 };
 
+#define _cg_virtualized(x) ((ve_is_super(get_exec_env())) ? (x) : 1)
+
 /* Display information about each subsystem and each hierarchy */
 int proc_cgroupstats_show(struct seq_file *m, void *v)
 {
@@ -695,7 +697,7 @@ int proc_cgroupstats_show(struct seq_file *m, void *v)
 	for_each_subsys(ss, i)
 		seq_printf(m, "%s\t%d\t%d\t%d\n",
 			   ss->legacy_name, ss->root->hierarchy_id,
-			   atomic_read(&ss->root->nr_cgrps),
+			   _cg_virtualized(atomic_read(&ss->root->nr_cgrps)),
 			   cgroup_ssid_enabled(i));
 
 	return 0;
