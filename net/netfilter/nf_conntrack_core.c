@@ -52,6 +52,8 @@
 #include <net/netns/hash.h>
 #include <net/ip.h>
 
+#include <linux/ve.h>
+
 #include "nf_internals.h"
 
 __cacheline_aligned_in_smp spinlock_t nf_conntrack_locks[CONNTRACK_LOCKS];
@@ -1634,7 +1636,9 @@ __nf_conntrack_alloc(struct net *net,
 			if (!conntrack_gc_work.early_drop)
 				conntrack_gc_work.early_drop = true;
 			atomic_dec(&cnet->count);
-			net_warn_ratelimited("nf_conntrack: table full, dropping packet\n");
+			net_veboth_ratelimited(KERN_WARNING "VE%s: "
+						"nf_conntrack table full, dropping packet\n",
+						net->owner_ve->ve_name);
 			return ERR_PTR(-ENOMEM);
 		}
 	}
