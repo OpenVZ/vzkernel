@@ -775,24 +775,31 @@ static void ve_destroy(struct cgroup *cg)
 static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
-	struct task_struct *task = current;
-
-	if (cgroup_taskset_size(tset) != 1 ||
-	    cgroup_taskset_first(tset) != task ||
-	    !thread_group_leader(task) ||
-	    !thread_group_empty(task))
-		return -EINVAL;
+	struct task_struct *task;
 
 	if (ve->is_locked)
 		return -EBUSY;
 
 	/*
-	 * Forbid userspace tasks to enter during starting or stopping.
-	 * Permit attaching kernel threads and init task for this containers.
+	 * We either moving the whole group of threads,
+	 * either a single thread process.
 	 */
-	if (!ve->is_running && (ve->ve_ns || nr_threads_ve(ve)) &&
-			!(task->flags & PF_KTHREAD))
-		return -EPIPE;
+	if (cgroup_taskset_size(tset) == 1) {
+		task = cgroup_taskset_first(tset);
+		if (!thread_group_empty(task))
+			return -EINVAL;
+	}
+
+	/*
+	 * Forbid userspace tasks to enter during starting or stopping.
+	 * Permit attaching kernel threads for this containers.
+	 */
+	if (!ve->is_running && (ve->ve_ns || nr_threads_ve(ve))) {
+		cgroup_taskset_for_each(task, cg, tset) {
+			if (!(task->flags & PF_KTHREAD))
+				return -EPIPE;
+		}
+	}
 
 	return 0;
 }
@@ -800,20 +807,22 @@ static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 static void ve_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
-	struct task_struct *tsk = current;
+	struct task_struct *task;
 
-	/* this probihibts ptracing of task entered to VE from host system */
-	if (ve->is_running && tsk->mm)
-		tsk->mm->vps_dumpable = VD_VE_ENTER_TASK;
+	cgroup_taskset_for_each(task, cg, tset) {
+		/* this probihibts ptracing of task entered to VE from host system */
+		if (ve->is_running && task->mm)
+			task->mm->vps_dumpable = VD_VE_ENTER_TASK;
 
-	/* Drop OOM protection. */
-	tsk->signal->oom_score_adj = 0;
-	tsk->signal->oom_score_adj_min = 0;
+		/* Drop OOM protection. */
+		task->signal->oom_score_adj = 0;
+		task->signal->oom_score_adj_min = 0;
 
-	/* Leave parent exec domain */
-	tsk->parent_exec_id--;
+		/* Leave parent exec domain */
+		task->parent_exec_id--;
 
-	tsk->task_ve = ve;
+		task->task_ve = ve;
+	}
 }
 
 static int ve_state_read(struct cgroup *cg, struct cftype *cft,
