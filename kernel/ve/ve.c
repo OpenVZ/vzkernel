@@ -40,6 +40,7 @@
 #include <linux/task_work.h>
 #include <linux/tty.h>
 #include <linux/console.h>
+#include <linux/ctype.h>
 
 #include <uapi/linux/vzcalluser.h>
 #include <linux/venet.h>
@@ -710,6 +711,8 @@ do_init:
 	mutex_init(&ve->sync_mutex);
 	INIT_LIST_HEAD(&ve->devices);
 	INIT_LIST_HEAD(&ve->ve_list);
+	INIT_LIST_HEAD(&ve->devmnt_list);
+	mutex_init(&ve->devmnt_mutex);
 	kmapset_init_key(&ve->ve_sysfs_perms);
 
 	return &ve->css;
@@ -734,11 +737,33 @@ static void ve_offline(struct cgroup *cg)
 	veid_free(ve->veid);
 }
 
+static void ve_devmnt_free(struct ve_devmnt *devmnt)
+{
+	if (!devmnt)
+		return;
+
+	kfree(devmnt->allowed_options);
+	kfree(devmnt->hidden_options);
+	kfree(devmnt);
+}
+
+static void free_ve_devmnts(struct ve_struct *ve)
+{
+	while (!list_empty(&ve->devmnt_list)) {
+		struct ve_devmnt *devmnt;
+
+		devmnt = list_first_entry(&ve->devmnt_list, struct ve_devmnt, link);
+		list_del(&devmnt->link);
+		ve_devmnt_free(devmnt);
+	}
+}
+
 static void ve_destroy(struct cgroup *cg)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 
 	kmapset_unlink(&ve->ve_sysfs_perms, &ve_sysfs_perms);
+	free_ve_devmnts(ve);
 
 	ve_log_destroy(ve);
 	kfree(ve->binfmt_misc);
@@ -886,6 +911,127 @@ static int ve_legacy_veid_read(struct cgroup *cg, struct cftype *cft,
 	return seq_printf(m, "%u\n", cgroup_ve(cg)->veid);
 }
 
+/*
+ * 'data' for VE_CONFIGURE_MOUNT_OPTIONS is a zero-terminated string
+ * consisting of substrings separated by MNTOPT_DELIM.
+ */
+#define MNTOPT_DELIM ';'
+
+/*
+ * Each substring has the form of "<type> <comma-separated-list-of-options>"
+ * where types are:
+ */
+enum {
+	MNTOPT_DEVICE = 0,
+	MNTOPT_HIDDEN = 1,
+	MNTOPT_ALLOWED = 2,
+};
+
+/*
+ * 'ptr' points to the first character of buffer to parse
+ * 'endp' points to the last character of buffer to parse
+ */
+static int ve_parse_mount_options(const char *ptr, const char *endp,
+				  struct ve_devmnt *devmnt)
+{
+	while (*ptr) {
+		const char *delim = strchr(ptr, MNTOPT_DELIM) ? : endp;
+		char *space = strchr(ptr, ' ');
+		int type;
+		char *options, c, s;
+		int options_size = delim - space;
+		char **opts_pp = NULL; /* where to store 'options' */
+
+		if (delim == ptr || !space || options_size <= 1 ||
+		    !isdigit(*ptr) || space > delim)
+			return -EINVAL;
+
+		if (sscanf(ptr, "%d%c", &type, &c) != 2 || c != ' ')
+			return -EINVAL;
+
+		if (type == MNTOPT_DEVICE) {
+			unsigned major, minor;
+			if (devmnt->dev)
+				return -EINVAL; /* Already set */
+			if (sscanf(space + 1, "%u%c%u%c", &major, &c,
+							  &minor, &s) != 4 ||
+			    c != ':' || s != MNTOPT_DELIM)
+				return -EINVAL;
+			devmnt->dev = MKDEV(major, minor);
+			goto next;
+		}
+
+	        options = kmalloc(options_size, GFP_KERNEL);
+		if (!options)
+			return -ENOMEM;
+
+		strncpy(options, space + 1, options_size - 1);
+		options[options_size - 1] = 0;
+
+		switch (type) {
+		case MNTOPT_ALLOWED:
+			opts_pp = &devmnt->allowed_options;
+			break;
+		case MNTOPT_HIDDEN:
+			opts_pp = &devmnt->hidden_options;
+			break;
+		};
+
+		/* wrong type or already set */
+		if (!opts_pp || *opts_pp) {
+			kfree(options);
+			return -EINVAL;
+		}
+
+		*opts_pp = options;
+next:
+		if (!*delim)
+			break;
+
+		ptr = delim + 1;
+	}
+
+	if (!devmnt->dev)
+		return -EINVAL;
+	return 0;
+}
+
+static int ve_mount_opts_write(struct cgroup *cg, struct cftype *cft,
+			       const char *buffer)
+{
+	struct ve_struct *ve = cgroup_ve(cg);
+	struct ve_devmnt *devmnt, *old;
+	int size, err;
+
+	size = strlen(buffer);
+	if (size <= 1)
+		return -EINVAL;
+
+	devmnt = kzalloc(sizeof(*devmnt), GFP_KERNEL);
+	if (!devmnt)
+		return -ENOMEM;
+
+	err = ve_parse_mount_options(buffer, buffer + size, devmnt);
+	if (err) {
+		ve_devmnt_free(devmnt);
+		return err;
+	}
+
+	mutex_lock(&ve->devmnt_mutex);
+	list_for_each_entry(old, &ve->devmnt_list, link) {
+		/* Delete old devmnt */
+		if (old->dev == devmnt->dev) {
+			list_del(&old->link);
+			ve_devmnt_free(old);
+			break;
+		}
+	}
+	list_add(&devmnt->link, &ve->devmnt_list);
+	mutex_unlock(&ve->devmnt_mutex);
+
+	return 0;
+}
+
 static struct cftype ve_cftypes[] = {
 	{
 		.name = "state",
@@ -897,6 +1043,11 @@ static struct cftype ve_cftypes[] = {
 		.name = "legacy_veid",
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.read_seq_string = ve_legacy_veid_read,
+	},
+	{
+		.name = "mount_opts",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.write_string = ve_mount_opts_write,
 	},
 	{ }
 };
