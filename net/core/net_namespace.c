@@ -444,8 +444,10 @@ static void cleanup_net(struct work_struct *work)
 		ops_free_list(ops, &net_exit_list);
 
 	list_for_each_entry(net, &net_kill_list, cleanup_list) {
-		net->owner_ve->ve_netns = NULL;
-		put_ve(net->owner_ve);
+		struct ve_struct *ve = net->owner_ve;
+		if (ve->ve_netns == net)
+			ve->ve_netns = NULL;
+		put_ve(ve);
 	}
 
 	mutex_unlock(&net_mutex);
