@@ -355,7 +355,7 @@ static struct vmap_area *alloc_vmap_area(unsigned long size,
 	BUG_ON(!is_power_of_2(align));
 
 	va = kmalloc_node(sizeof(struct vmap_area),
-			gfp_mask & GFP_RECLAIM_MASK, node);
+			(gfp_mask & GFP_RECLAIM_MASK) | __GFP_NOACCOUNT, node);
 	if (unlikely(!va))
 		return ERR_PTR(-ENOMEM);
 
