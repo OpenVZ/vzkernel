@@ -25,6 +25,7 @@
 #include <linux/module.h>
 #include <linux/bootmem.h>
 #include <linux/task_work.h>
+#include <linux/ve.h>
 #include "pnode.h"
 #include "internal.h"
 
@@ -2387,6 +2388,148 @@ static int change_mount_flags(struct vfsmount *mnt, int ms_flags)
 	return error;
 }
 
+#ifdef CONFIG_VE
+/*
+ * Returns first occurrence of needle in haystack separated by sep,
+ * or NULL if not found
+ */
+static char *strstr_separated(char *haystack, char *needle, char sep)
+{
+	int needle_len = strlen(needle);
+
+	while (haystack) {
+		if (!strncmp(haystack, needle, needle_len) &&
+		    (haystack[needle_len] == 0 || /* end-of-line or */
+		     haystack[needle_len] == sep)) /* separator */
+			return haystack;
+
+		haystack = strchr(haystack, sep);
+		if (haystack)
+			haystack++;
+	}
+
+	return NULL;
+}
+
+static int ve_devmnt_check(char *options, char *allowed)
+{
+	char *p;
+	char *tmp_options;
+
+	if (!options || !*options)
+		return 0;
+
+	if (!allowed)
+		return -EPERM;
+
+	/* strsep() changes provided string: puts '\0' instead of separators */
+	tmp_options = kstrdup(options, GFP_KERNEL);
+	if (!tmp_options)
+		return -ENOMEM;
+
+	while ((p = strsep(&tmp_options, ",")) != NULL) {
+		if (!*p)
+			continue;
+
+		if (!strstr_separated(allowed, p, ',')) {
+			kfree(tmp_options);
+			return -EPERM;
+		}
+	}
+
+	kfree(tmp_options);
+	return 0;
+}
+
+static int ve_devmnt_insert(char *options, char *hidden)
+{
+	int options_len;
+	int hidden_len;
+
+	if (!hidden)
+		return 0;
+
+	if (!options)
+		return -EAGAIN;
+
+	options_len = strlen(options);
+	hidden_len = strlen(hidden);
+
+	if (hidden_len + options_len + 2 > PAGE_SIZE)
+		return -EPERM;
+
+	memmove(options + hidden_len + 1, options, options_len);
+	memcpy(options, hidden, hidden_len);
+
+	options[hidden_len] = ',';
+	options[hidden_len + options_len + 1] = 0;
+
+	return 0;
+}
+
+int ve_devmnt_process(struct ve_struct *ve, dev_t dev, void **data_pp, int remount)
+{
+	void *data = *data_pp;
+	struct ve_devmnt *devmnt;
+	int err;
+again:
+	err = 1;
+	mutex_lock(&ve->devmnt_mutex);
+	list_for_each_entry(devmnt, &ve->devmnt_list, link) {
+		if (devmnt->dev == dev) {
+			err = ve_devmnt_check(data, devmnt->allowed_options);
+
+			if (!err && !remount)
+				err = ve_devmnt_insert(data, devmnt->hidden_options);
+
+			break;
+		}
+	}
+	mutex_unlock(&ve->devmnt_mutex);
+
+	switch (err) {
+	case -EAGAIN:
+		if (!(data = (void *)__get_free_page(GFP_KERNEL)))
+			return -ENOMEM;
+		*(char *)data = 0; /* the string must be zero-terminated */
+		goto again;
+	case 1:
+		if (*data_pp) {
+			ve_printk(VE_LOG_BOTH, KERN_WARNING "VE%s: no allowed "
+				  "mount options found for device %u:%u\n",
+				  ve->ve_name, MAJOR(dev), MINOR(dev));
+			err = -EPERM;
+		} else
+			err = 0;
+		break;
+	case 0:
+		*data_pp = data;
+		break;
+	}
+
+	if (data && data != *data_pp)
+		free_page((unsigned long)data);
+
+	return err;
+}
+#endif
+
+static int do_check_and_remount_sb(struct super_block *sb, int flags, void *data)
+{
+#ifdef CONFIG_VE
+	struct ve_struct *ve = get_exec_env();
+
+	if (sb->s_bdev && data && !ve_is_super(ve)) {
+		int err;
+
+		err = ve_devmnt_process(ve, sb->s_bdev->bd_dev, &data, 1);
+		if (err)
+			return err;
+	}
+#endif
+	return do_remount_sb(sb, flags, data, 0);
+}
+
 /*
  * change filesystem flags. dir should be a physical root of filesystem.
  * If you've mounted a non-root directory somewhere and want to do remount
@@ -2442,7 +2585,7 @@ static int do_remount(struct path *path, int flags, int mnt_flags,
 	else if (!ns_capable(sb->s_user_ns, CAP_SYS_ADMIN))
 		err = -EPERM;
 	else
-		err = do_remount_sb(sb, flags, data, 0);
+		err = do_check_and_remount_sb(sb, flags, data);
 	if (!err) {
 		lock_mount_hash();
 		mnt_flags |= mnt->mnt.mnt_flags & ~MNT_USER_SETTABLE_MASK;
