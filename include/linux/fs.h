@@ -2318,6 +2318,8 @@ extern bool our_mnt(struct vfsmount *mnt);
 
 extern int current_umask(void);
 
+extern int ve_devmnt_process(struct ve_struct *, dev_t, void **, int);
+
 extern void ihold(struct inode * inode);
 extern void iput(struct inode *);
 
