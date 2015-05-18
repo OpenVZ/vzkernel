@@ -56,6 +56,8 @@
 #include <net/netfilter/nf_nat_helper.h>
 #include <net/netns/hash.h>
 
+#include <linux/ve.h>
+
 #include "nf_internals.h"
 
 #define NF_CONNTRACK_VERSION	"0.5.0"
@@ -1111,7 +1113,9 @@ __nf_conntrack_alloc(struct net *net,
 			if (!conntrack_gc_work.early_drop)
 				conntrack_gc_work.early_drop = true;
 			atomic_dec(&net->ct.count);
-			net_warn_ratelimited("nf_conntrack: table full, dropping packet\n");
+			net_veboth_ratelimited(KERN_WARNING "VE%s: "
+						"nf_conntrack table full, dropping packet\n",
+						net->owner_ve->ve_name);
 			return ERR_PTR(-ENOMEM);
 		}
 	}
