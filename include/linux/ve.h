@@ -123,10 +123,21 @@ struct ve_struct {
 	struct net		*ve_netns;
 	struct mutex		sync_mutex;
 
+	struct list_head	devmnt_list;
+	struct mutex		devmnt_mutex;
+
 	struct kmapset_key	ve_sysfs_perms;
 #if IS_ENABLED(CONFIG_DEVTMPFS)
 	struct path		devtmpfs_root;
 #endif
+};
+
+struct ve_devmnt {
+	struct list_head	link;
+
+	dev_t                   dev;
+	char			*allowed_options;
+	char			*hidden_options; /* balloon_ino, etc. */
 };
 
 #define VE_MEMINFO_DEFAULT      1       /* default behaviour */
