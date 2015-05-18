@@ -429,7 +429,9 @@ static inline int __nf_ct_expect_check(struct nf_conntrack_expect *expect)
 	}
 
 	if (net->ct.expect_count >= init_net.ct.expect_max) {
-		net_warn_ratelimited("nf_conntrack: expectation table full\n");
+		net_veboth_ratelimited(KERN_WARNING "VE%s "
+					"nf_conntrack: expectation table full\n",
+					net->owner_ve->ve_name);
 		ret = -EMFILE;
 	}
 out:
