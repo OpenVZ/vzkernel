@@ -90,7 +90,23 @@ dio_submit(struct ploop_io *io, struct ploop_request * preq,
 	trace_submit(preq);
 
 	preflush = !!(rw & REQ_FLUSH);
-	rw &= ~REQ_FLUSH;
+
+	if (test_and_clear_bit(PLOOP_REQ_FORCE_FLUSH, &preq->state))
+		preflush = 1;
+
+	if (test_and_clear_bit(PLOOP_REQ_FORCE_FUA, &preq->state))
+		postfua = 1;
+
+	if (!postfua && ploop_req_delay_fua_possible(rw, preq)) {
+
+		/* Mark req that delayed flush required */
+		set_bit(PLOOP_REQ_FORCE_FLUSH, &preq->state);
+	} else if (rw & REQ_FUA) {
+		postfua = 1;
+	}
+
+	rw &= ~(REQ_FLUSH | REQ_FUA);
+
 
 	/* In case of eng_state != COMPLETE, we'll do FUA in
 	 * ploop_index_update(). Otherwise, we should mark
