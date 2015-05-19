@@ -683,8 +683,11 @@ dio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 	}
 
 	err = cached_submit(io, iblk, preq, sbl, size);
-	if (err)
+	if (err) {
+		if (err == -ENOSPC)
+			io->alloc_head--;
 		ploop_fail_request(preq, err);
+	}
 	preq->eng_state = PLOOP_E_DATA_WBI;
 }
 
