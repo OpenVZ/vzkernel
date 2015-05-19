@@ -2594,7 +2594,7 @@ more_work:
 					retry = 1;
 					bh_unlock_sock(sk);
 					sock_put(sk);
-					break;
+					goto enable_bh;
 				}
 				/* sk might have disappeared from the hash before
 				 * we got the lock */
@@ -2607,6 +2607,7 @@ more_work:
 		}
 		spin_unlock(lock);
 	}
+enable_bh:
 	local_bh_enable();
 	if (retry) {
 		schedule_timeout_interruptible(HZ);
