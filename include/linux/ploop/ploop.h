@@ -51,6 +51,7 @@ enum {
 				   free blocks loaded */
 	PLOOP_S_LOCKED,	        /* ploop is locked by userspace
 				   (for minor mgmt only) */
+	PLOOP_S_ONCE,	        /* An event (e.g. printk once) happened */
 };
 
 struct ploop_snapdata
@@ -756,6 +757,9 @@ void ploop_queue_zero_request(struct ploop_device *plo, struct ploop_request *or
 int ploop_maintenance_wait(struct ploop_device * plo);
 
 extern int max_map_pages;
+
+extern void ploop_msg_once(struct ploop_device *plo, const char *, ...)
+	__attribute__ ((format (printf, 2, 3)));
 
 /* Define PLOOP_TRACE to get full trace of ploop state machine.
  */
