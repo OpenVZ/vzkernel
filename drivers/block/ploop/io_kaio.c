@@ -60,6 +60,7 @@ static void kaio_complete_io_state(struct ploop_request * preq)
 {
 	struct ploop_device * plo   = preq->plo;
 	unsigned long flags;
+	int post_fsync = 0;
 
 	if (preq->error || !(preq->req_rw & REQ_FUA) ||
 	    preq->eng_state == PLOOP_E_INDEX_READ ||
@@ -72,10 +73,26 @@ static void kaio_complete_io_state(struct ploop_request * preq)
 
 	preq->req_rw &= ~REQ_FUA;
 
-	spin_lock_irqsave(&plo->lock, flags);
-	kaio_queue_fsync_req(preq);
-	plo->st.bio_syncwait++;
-	spin_unlock_irqrestore(&plo->lock, flags);
+	/* Convert requested fua to fsync */
+	if (test_and_clear_bit(PLOOP_REQ_FORCE_FUA, &preq->state) ||
+	    test_and_clear_bit(PLOOP_REQ_KAIO_FSYNC, &preq->state))
+		post_fsync = 1;
+
+	if (!post_fsync &&
+	    !ploop_req_delay_fua_possible(preq->req_rw, preq) &&
+	    (preq->req_rw & REQ_FUA))
+		post_fsync = 1;
+
+	preq->req_rw &= ~REQ_FUA;
+
+	if (post_fsync) {
+		spin_lock_irqsave(&plo->lock, flags);
+		kaio_queue_fsync_req(preq);
+		plo->st.bio_syncwait++;
+		spin_unlock_irqrestore(&plo->lock, flags);
+	} else {
+		ploop_complete_io_state(preq);
+	}
 }
 
 static void kaio_complete_io_request(struct ploop_request * preq)
@@ -603,6 +620,11 @@ kaio_write_page(struct ploop_io * io, struct ploop_request * preq,
 		 struct page * page, sector_t sec, int fua)
 {
 	ploop_prepare_tracker(preq, sec);
+
+	/* No FUA in kaio, convert it to fsync */
+	if (fua)
+		set_bit(PLOOP_REQ_KAIO_FSYNC, &preq->state);
+
 	kaio_io_page(io, IOCB_CMD_WRITE_ITER, preq, page, sec);
 }
 
