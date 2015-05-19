@@ -247,6 +247,19 @@ ploop1_version(struct ploop_pvd_header *vh)
 	return -1;
 }
 
+static inline __u64
+ploop1_max_size(__u32 blocksize, int version)
+{
+	switch (version) {
+	case PLOOP_FMT_V1:
+		return (__u32)-1;
+	case PLOOP_FMT_V2:
+		return 0xffffffffUL * blocksize;
+	}
+
+	return 0;
+}
+
 #ifdef __KERNEL__
 static inline u64
 get_SizeInSectors_from_le(struct ploop_pvd_header *vh, int version)
