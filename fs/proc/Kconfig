@@ -65,5 +65,6 @@ config PROC_PAGE_MONITOR
  	help
 	  Various /proc files exist to monitor process memory utilization:
 	  /proc/pid/smaps, /proc/pid/clear_refs, /proc/pid/pagemap,
-	  /proc/kpagecount, and /proc/kpageflags. Disabling these
-          interfaces will reduce the size of the kernel by approximately 4kb.
+	  /proc/kpagecount, /proc/kpageflags, and /proc/kpagecgroup.
+	  Disabling these interfaces will reduce the size of the kernel
+	  by approximately 4kb.
