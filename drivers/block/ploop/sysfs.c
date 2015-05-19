@@ -373,6 +373,11 @@ static u32 show_event(struct ploop_device * plo)
 	return ret;
 }
 
+static u32 show_open_count(struct ploop_device * plo)
+{
+	return atomic_read(&plo->open_count);
+}
+
 static ssize_t print_cookie(struct ploop_device * plo, char * page)
 {
 	return sprintf(page, "%s\n", plo->cookie);
@@ -456,6 +461,7 @@ static struct attribute *state_attributes[] = {
 	_A(top),
 	_A(event),
 	_A3(cookie),
+	_A(open_count),
 	NULL
 };
 
