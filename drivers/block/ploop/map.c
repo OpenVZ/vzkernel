@@ -1056,10 +1056,14 @@ static void map_wb_complete_post_process(struct ploop_map *map,
 		       0, PAGE_SIZE);
 
 	/*
-	 * FUA of this data occures at format driver ->complete_grow() by
-	 * all image sync. After that header size increased to use this
-	 * cluster as BAT cluster.
+	 * Lately we think we does sync of nullified blocks at format
+	 * driver by image fsync before header update.
+	 * But we write this data directly into underlying device
+	 * bypassing EXT4 by usage of extent map tree
+	 * (see dio_submit()). So fsync of EXT4 image doesnt help us.
+	 * We need to force sync of nullified blocks.
 	 */
+	set_bit(PLOOP_REQ_FORCE_FUA, &preq->state);
 	top_delta->io.ops->submit(&top_delta->io, preq, preq->req_rw,
 				  &sbl, preq->iblock, 1<<plo->cluster_log);
 }
