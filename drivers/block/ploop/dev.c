@@ -2119,24 +2119,28 @@ delta_io:
 						      &sbl, iblk, 1<<plo->cluster_log);
 			}
 		} else {
-			if (!whole_block(plo, preq)) {
+			if (!whole_block(plo, preq) && map_index_fault(preq) == 0) {
+					__TRACE("f %p %u\n", preq, preq->req_cluster);
+					return;
+			}
+
+			if (plo->tune.check_zeros && check_zeros(&preq->bl)) {
 				if (map_index_fault(preq) == 0) {
 					__TRACE("f %p %u\n", preq, preq->req_cluster);
 					return;
 				}
-			} else {
-				plo->st.bio_alloc_whole++;
-			}
-
-			if (plo->tune.check_zeros && check_zeros(&preq->bl)) {
 				preq->eng_state = PLOOP_E_COMPLETE;
 				/* Not ploop_complete_request().
 				 * This can be TRANS request.
 				 */
 				ploop_complete_io_state(preq);
+				if(whole_block(plo, preq))
+					plo->st.bio_alloc_whole++;
 				plo->st.bio_wzero++;
 				return;
 			}
+			if(whole_block(plo, preq))
+				plo->st.bio_alloc_whole++;
 
 			spin_lock_irq(&plo->lock);
 			ploop_add_lockout(preq, 0);
