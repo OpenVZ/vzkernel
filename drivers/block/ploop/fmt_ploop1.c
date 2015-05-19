@@ -222,6 +222,11 @@ static void
 ploop1_allocate(struct ploop_delta * delta, struct ploop_request * preq,
 		struct bio_list * sbl, unsigned int size)
 {
+	if (delta->io.alloc_head >=
+			(delta->max_delta_size >> delta->cluster_log)) {
+		ploop_fail_request(preq, -E2BIG);
+		return;
+	}
 	delta->io.ops->submit_alloc(&delta->io, preq, sbl, size);
 }
 
