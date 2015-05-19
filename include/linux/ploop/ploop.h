@@ -453,6 +453,9 @@ enum
 	PLOOP_REQ_ZERO,
 	PLOOP_REQ_DISCARD,
 	PLOOP_REQ_RSYNC,
+	PLOOP_REQ_FORCE_FUA,	/*force fua of req write I/O by engine */
+	PLOOP_REQ_FORCE_FLUSH,	/*force flush by engine */
+	PLOOP_REQ_KAIO_FSYNC,	/*force image fsync by KAIO module */
 };
 
 enum
