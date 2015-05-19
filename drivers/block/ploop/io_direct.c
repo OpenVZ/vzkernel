@@ -733,13 +733,12 @@ static int dio_fsync_thread(void * data)
 		spin_unlock_irq(&plo->lock);
 
 		/* filemap_fdatawrite() has been made already */
+		filemap_fdatawait(io->files.mapping);
 
 		err = 0;
 		if (io->files.file->f_op->fsync)
 			err = io->files.file->f_op->FOP_FSYNC(io->files.file,
 							      0);
-
-		filemap_fdatawait(io->files.mapping);
 
 		/* Do we need to invalidate page cache? Not really,
 		 * because we use it only to create full new pages,
