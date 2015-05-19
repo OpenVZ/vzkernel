@@ -2877,6 +2877,28 @@ struct mem_cgroup *try_get_mem_cgroup_from_page(struct page *page)
 	return memcg;
 }
 
+/**
+ * page_cgroup_ino - return inode number of page's memcg
+ * @page: the page
+ *
+ * Look up the memory cgroup @page is charged to and return its inode number.
+ * It is safe to call this function without taking a reference to the page.
+ */
+unsigned long page_cgroup_ino(struct page *page)
+{
+	struct mem_cgroup *memcg;
+	struct page_cgroup *pc;
+	unsigned long ino = 0;
+
+	pc = lookup_page_cgroup(page);
+	lock_page_cgroup(pc);
+	memcg = pc->mem_cgroup;
+	if (PageCgroupUsed(pc) && memcg)
+		ino = memcg->css.cgroup->dentry->d_inode->i_ino;
+	unlock_page_cgroup(pc);
+	return ino;
+}
+
 static void __mem_cgroup_commit_charge(struct mem_cgroup *memcg,
 				       struct page *page,
 				       unsigned int nr_pages,
