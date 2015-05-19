@@ -101,12 +101,15 @@ int ploop_tracker_init(struct ploop_device * plo, unsigned long arg)
 	if (list_empty(&plo->map.delta_list))
 		return -ENOENT;
 
+	ploop_quiesce(plo);
+
 	e.start = 0;
 	e.end = (u64)ploop_top_delta(plo)->io.alloc_head << (plo->cluster_log + 9);
-	if (copy_to_user((void*)arg, &e, sizeof(struct ploop_track_extent)))
+	if (copy_to_user((void*)arg, &e, sizeof(struct ploop_track_extent))) {
+		ploop_relax(plo);
 		return -EFAULT;
+	}
 
-	ploop_quiesce(plo);
 	set_bit(PLOOP_S_TRACK, &plo->state);
 	plo->maintenance_type = PLOOP_MNTN_TRACK;
 	plo->track_end = 0;
