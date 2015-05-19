@@ -3144,6 +3144,12 @@ static int ploop_del_delta(struct ploop_device * plo, unsigned long arg)
 	if (plo->maintenance_type != PLOOP_MNTN_OFF)
 		return -EBUSY;
 
+	if (level == 0 && test_bit(PLOOP_S_RUNNING, &plo->state)) {
+		printk(KERN_INFO "Can't del base delta on running ploop%d\n",
+		       plo->index);
+		return -EBUSY;
+	}
+
 	delta = find_delta(plo, level);
 
 	if (delta == NULL)
@@ -3168,6 +3174,8 @@ static int ploop_del_delta(struct ploop_device * plo, unsigned long arg)
 	delta->ops->stop(delta);
 	delta->ops->destroy(delta);
 	kobject_put(&delta->kobj);
+	BUG_ON(test_bit(PLOOP_S_RUNNING, &plo->state) &&
+	       list_empty(&plo->map.delta_list));
 	return 0;
 }
 
@@ -3530,6 +3538,7 @@ static int ploop_start(struct ploop_device * plo, struct block_device *bdev)
 
 	wake_up_process(plo->thread);
 	set_bit(PLOOP_S_RUNNING, &plo->state);
+	BUG_ON(list_empty(&plo->map.delta_list));
 	return 0;
 
 out_err:
@@ -3562,8 +3571,11 @@ static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 	if (!test_bit(PLOOP_S_RUNNING, &plo->state))
 		return -EINVAL;
 
-	if (list_empty(&plo->map.delta_list))
+	if (list_empty(&plo->map.delta_list)) {
+		printk(KERN_INFO "stop ploop%d failed (no deltas)\n",
+		       plo->index);
 		return -ENOENT;
+	}
 
 	cnt = atomic_read(&plo->open_count);
 	if (cnt > 1) {
@@ -3712,6 +3724,7 @@ static int ploop_clear(struct ploop_device * plo, struct block_device * bdev)
 	plo->maintenance_type = PLOOP_MNTN_OFF;
 	plo->bd_size = 0;
 	plo->state = (1 << PLOOP_S_CHANGED);
+	BUG_ON(test_bit(PLOOP_S_RUNNING, &plo->state));
 	return 0;
 }
 
