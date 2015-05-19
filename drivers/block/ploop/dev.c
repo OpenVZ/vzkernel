@@ -3251,6 +3251,26 @@ static void ploop_update_fmt_version(struct ploop_device * plo)
 	}
 }
 
+static void ploop_merge_cleanup(struct ploop_device * plo,
+				struct ploop_map * map,
+				struct ploop_delta * delta, int err)
+{
+	ploop_quiesce(plo);
+	mutex_lock(&plo->sysfs_mutex);
+	list_del(&delta->list);
+
+	if (err)
+		list_add(&delta->list, &plo->map.delta_list);
+	else
+		ploop_update_fmt_version(plo);
+
+	plo->trans_map = NULL;
+	plo->maintenance_type = PLOOP_MNTN_OFF;
+	mutex_unlock(&plo->sysfs_mutex);
+	ploop_map_destroy(map);
+	ploop_relax(plo);
+}
+
 static int ploop_merge(struct ploop_device * plo)
 {
 	int err;
@@ -3339,32 +3359,19 @@ already:
 	if (test_bit(PLOOP_S_ABORT, &plo->state)) {
 		printk(KERN_WARNING "merge for ploop%d failed (state ABORT)\n",
 		       plo->index);
-		plo->trans_map = NULL;
-		plo->maintenance_type = PLOOP_MNTN_OFF;
 		err = -EIO;
-		goto out;
 	}
 
-	ploop_quiesce(plo);
-	mutex_lock(&plo->sysfs_mutex);
-	plo->trans_map = NULL;
-	plo->maintenance_type = PLOOP_MNTN_OFF;
-	list_del(&delta->list);
-	ploop_update_fmt_version(plo);
-	mutex_unlock(&plo->sysfs_mutex);
-	ploop_map_destroy(map);
-	ploop_relax(plo);
+	ploop_merge_cleanup(plo, map, delta, err);
 
-	kfree(map);
+	if (!err) {
+		kobject_del(&delta->kobj);
+		kobject_put(&plo->kobj);
 
-	kobject_del(&delta->kobj);
-	kobject_put(&plo->kobj);
-
-	delta->ops->stop(delta);
-	delta->ops->destroy(delta);
-	kobject_put(&delta->kobj);
-	return 0;
-
+		delta->ops->stop(delta);
+		delta->ops->destroy(delta);
+		kobject_put(&delta->kobj);
+	}
 out:
 	kfree(map);
 	return err;
