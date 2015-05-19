@@ -2741,6 +2741,7 @@ init_delta(struct ploop_device * plo, struct ploop_ctl * ctl, int level)
 	delta->plo = plo;
 	delta->ops = ops;
 	delta->flags = ctl->pctl_flags & PLOOP_FMT_FLAGS;
+	delta->max_delta_size = ULLONG_MAX;
 
 	KOBJECT_INIT(&delta->kobj, &ploop_delta_ktype);
 	return delta;
@@ -2750,6 +2751,22 @@ out_err:
 	return ERR_PTR(err);
 }
 
+
+static int ploop_set_max_delta_size(struct ploop_device *plo, unsigned long arg)
+{
+	struct ploop_delta * top_delta = ploop_top_delta(plo);
+	u64 max_delta_size;
+
+	if (copy_from_user(&max_delta_size, (void*)arg, sizeof(u64)))
+		return -EFAULT;
+
+	if (top_delta == NULL)
+		return -EINVAL;
+
+	top_delta->max_delta_size = max_delta_size;
+
+	return 0;
+}
 
 static int ploop_add_delta(struct ploop_device * plo, unsigned long arg)
 {
@@ -4375,6 +4392,9 @@ static int ploop_ioctl(struct block_device *bdev, fmode_t fmode, unsigned int cm
 		break;
 	case PLOOP_IOC_DISCARD_WAIT:
 		err = ploop_discard_wait_ioc(plo);
+		break;
+	case PLOOP_IOC_MAX_DELTA_SIZE:
+		err = ploop_set_max_delta_size(plo, arg);
 		break;
 	default:
 		err = -EINVAL;
