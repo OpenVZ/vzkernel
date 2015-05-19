@@ -1094,12 +1094,15 @@ enum {
 	VE_CF_STATE,
 	VE_CF_LEGACY_VEID,
 	VE_CF_FEATURES,
+	VE_CF_IPTABLES_MASK,
 };
 
 static u64 ve_read_u64(struct cgroup *cg, struct cftype *cft)
 {
 	if (cft->private == VE_CF_FEATURES)
 		return cgroup_ve(cg)->features;
+	else if (cft->private == VE_CF_IPTABLES_MASK)
+		return cgroup_ve(cg)->ipt_mask;
 	return 0;
 }
 
@@ -1110,6 +1113,26 @@ static int ve_write_u64(struct cgroup *cg, struct cftype *cft, u64 value)
 
 	if (cft->private == VE_CF_FEATURES)
 		cgroup_ve(cg)->features = value;
+	else if (cft->private == VE_CF_IPTABLES_MASK) {
+		value &= ~VE_IP_IPTABLES6;
+		value &= ~VE_IP_FILTER6;
+		value &= ~VE_IP_MANGLE6;
+		value &= ~VE_IP_IPTABLE_NAT_MOD;
+		value &= ~VE_NF_CONNTRACK_MOD;
+
+		if (mask_ipt_allow(value, VE_IP_IPTABLES))
+			value |= VE_IP_IPTABLES6;
+		if (mask_ipt_allow(value, VE_IP_FILTER))
+			value |= VE_IP_FILTER6;
+		if (mask_ipt_allow(value, VE_IP_MANGLE))
+			value |= VE_IP_MANGLE6;
+		if (mask_ipt_allow(value, VE_IP_NAT))
+			value |= VE_IP_IPTABLE_NAT;
+		if (mask_ipt_allow(value, VE_IP_CONNTRACK))
+			value |= VE_NF_CONNTRACK;
+
+		cgroup_ve(cg)->ipt_mask = value;
+	}
 
 	return 0;
 }
@@ -1146,6 +1169,13 @@ static struct cftype ve_cftypes[] = {
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.read_seq_string = ve_os_release_read,
 		.write_string = ve_os_release_write,
+	},
+	{
+		.name			= "iptables_mask",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_u64		= ve_read_u64,
+		.write_u64		= ve_write_u64,
+		.private		= VE_CF_IPTABLES_MASK,
 	},
 	{ }
 };
