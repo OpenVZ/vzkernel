@@ -678,7 +678,7 @@ again:
 
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
-	ret = inode->i_op->fiemap(inode, &fieinfo, start << 9, 1);
+	ret = inode->i_op->fiemap(inode, &fieinfo, start_off, 1);
 
 	/* chase for PSBM-26762: em->block_start == 0 */
 	if (!ret && fieinfo.fi_extents_mapped == 1 &&
@@ -706,8 +706,11 @@ again:
 	}
 
 	if (fieinfo.fi_extents_mapped != 1) {
-		ploop_msg_once(io->plo, "a hole in image file detected (%d)",
-			       fieinfo.fi_extents_mapped);
+		if (start_off < i_size_read(inode))
+			ploop_msg_once(io->plo, "a hole in image file detected"
+				       " (mapped=%d i_size=%llu off=%llu)",
+				       fieinfo.fi_extents_mapped,
+				       i_size_read(inode), start_off);
 		extent_put(em);
 		return ERR_PTR(-EINVAL);
 	}
