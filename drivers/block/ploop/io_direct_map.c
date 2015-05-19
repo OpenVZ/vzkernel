@@ -631,10 +631,11 @@ again:
 	return em;
 }
 
-static struct extent_map *__map_extent_bmap(struct extent_map_tree *tree,
+static struct extent_map *__map_extent_bmap(struct ploop_io *io,
 				       struct address_space *mapping,
 				       sector_t start, sector_t len, gfp_t gfp_mask)
 {
+	struct extent_map_tree *tree = io->files.em_tree;
 	struct inode *inode = mapping->host;
 	struct extent_map *em;
 	struct fiemap_extent_info fieinfo;
@@ -684,6 +685,8 @@ again:
 	}
 
 	if (fieinfo.fi_extents_mapped != 1) {
+		ploop_msg_once(io->plo, "a hole in image file detected (%d)",
+			       fieinfo.fi_extents_mapped);
 		extent_put(em);
 		return ERR_PTR(-EINVAL);
 	}
@@ -705,11 +708,13 @@ again:
 	return em;
 }
 
-static struct extent_map *__map_extent(struct extent_map_tree *tree,
+static struct extent_map *__map_extent(struct ploop_io *io,
 				       struct address_space *mapping,
 				       sector_t start, sector_t len, int create,
 				       gfp_t gfp_mask, get_block_t get_block)
 {
+	struct extent_map_tree *tree = io->files.em_tree;
+
 	if (tree->_get_extent)
 		return __map_extent_get_extent(tree, mapping, start, len, create,
 					       gfp_mask);
@@ -717,10 +722,10 @@ static struct extent_map *__map_extent(struct extent_map_tree *tree,
 		/* create flag not supported by bmap implementation */
 		return ERR_PTR(-EINVAL);
 
-	return __map_extent_bmap(tree, mapping, start,len, gfp_mask);
+	return __map_extent_bmap(io, mapping, start,len, gfp_mask);
 }
 
-struct extent_map *map_extent_get_block(struct extent_map_tree *tree,
+struct extent_map *map_extent_get_block(struct ploop_io *io,
 					struct address_space *mapping,
 					sector_t start, sector_t len, int create,
 					gfp_t gfp_mask, get_block_t get_block)
@@ -729,7 +734,7 @@ struct extent_map *map_extent_get_block(struct extent_map_tree *tree,
 	sector_t last;
 	sector_t map_ahead_len = 0;
 
-	em = __map_extent(tree, mapping, start, len, create,
+	em = __map_extent(io, mapping, start, len, create,
 			  gfp_mask, get_block);
 
 	/*
@@ -746,7 +751,7 @@ struct extent_map *map_extent_get_block(struct extent_map_tree *tree,
 	do {
 		last = em->end;
 		extent_put(em);
-		em = __map_extent(tree, mapping, last, len, create,
+		em = __map_extent(io, mapping, last, len, create,
 				  gfp_mask, get_block);
 		if (IS_ERR(em) || !em)
 			break;
@@ -759,17 +764,19 @@ struct extent_map *map_extent_get_block(struct extent_map_tree *tree,
 	    start + len > em->end) {
 		if (em && !IS_ERR(em))
 			extent_put(em);
-		em = __map_extent(tree, mapping, start, len, create,
+		em = __map_extent(io, mapping, start, len, create,
 				  gfp_mask, get_block);
 	}
 	return em;
 }
 
 
-struct extent_map *extent_lookup_create(struct extent_map_tree *tree,
+struct extent_map *extent_lookup_create(struct ploop_io *io,
 					sector_t start, sector_t len)
 {
-	return map_extent_get_block(tree, tree->mapping,
+	struct extent_map_tree *tree = io->files.em_tree;
+
+	return map_extent_get_block(io, tree->mapping,
 				    start, len, 0, mapping_gfp_mask(tree->mapping),
 				    NULL);
 }
