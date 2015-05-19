@@ -299,6 +299,9 @@ struct ploop_track_extent
 /* Filter extents with sizes less than arg */
 #define PLOOP_IOC_FBFILTER	_IOR(PLOOPCTLTYPE, 27, unsigned long)
 
+/* Set maximum size for the top delta . */
+#define PLOOP_IOC_MAX_DELTA_SIZE _IOW(PLOOPCTLTYPE, 28, __u64)
+
 /* Events exposed via /sys/block/ploopN/pstate/event */
 #define PLOOP_EVENT_ABORTED	1
 #define PLOOP_EVENT_STOPPED	2
