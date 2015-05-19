@@ -3548,6 +3548,20 @@ static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 	struct ploop_delta * delta;
 	int cnt;
 
+	if (bdev != bdev->bd_contains) {
+		if (printk_ratelimit())
+			printk(KERN_INFO "stop ploop%d failed (wrong bdev)\n",
+			       plo->index);
+		return -ENODEV;
+	}
+
+	if (bdev->bd_contains->bd_holders) {
+		if (printk_ratelimit())
+			printk(KERN_INFO "stop ploop%d failed (holders=%d)\n",
+			       plo->index, bdev->bd_contains->bd_holders);
+		return -EBUSY;
+	}
+
 	if (!test_bit(PLOOP_S_RUNNING, &plo->state))
 		return -EINVAL;
 
