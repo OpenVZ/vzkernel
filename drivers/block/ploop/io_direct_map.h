@@ -38,13 +38,13 @@ static inline sector_t extent_map_block_end(struct extent_map *em)
 	return em->block_start + (em->end - em->start);
 }
 
-struct extent_map *extent_lookup_create(struct extent_map_tree *tree,
+struct extent_map *extent_lookup_create(struct ploop_io *io,
 					sector_t start, sector_t len);
 struct extent_map *extent_lookup(struct extent_map_tree *tree,
 				 sector_t start);
 void extent_put(struct extent_map *em);
 
-struct extent_map *map_extent_get_block(struct extent_map_tree *tree,
+struct extent_map *map_extent_get_block(struct ploop_io *io,
 					struct address_space *mapping,
 					sector_t start, sector_t len, int create,
 					gfp_t gfp_mask, get_block_t get_block);
