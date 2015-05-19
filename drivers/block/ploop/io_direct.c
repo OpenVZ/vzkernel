@@ -31,7 +31,7 @@
 int max_extent_map_pages __read_mostly;
 int min_extent_map_entries __read_mostly;
 
-/* total sum of io->size for all io structs */
+/* total sum of m->size for all ploop_mapping structs */
 atomic_long_t ploop_io_images_size = ATOMIC_LONG_INIT(0);
 
 /* Direct IO from/to file.
@@ -434,8 +434,8 @@ try_again:
 	mutex_unlock(&io->files.inode->i_mutex);
 
 	new_size = i_size_read(io->files.inode);
-	atomic_long_add(new_size - io->size, &ploop_io_images_size);
-	io->size = new_size;
+	atomic_long_add(new_size - *io->size_ptr, &ploop_io_images_size);
+	*io->size_ptr = new_size;
 
 	if (!err)
 		err = filemap_fdatawrite(io->files.mapping);
@@ -1680,8 +1680,8 @@ static int dio_truncate(struct ploop_io * io, struct file * file,
 	mutex_unlock(&io->files.inode->i_mutex);
 
 	new_size = i_size_read(io->files.inode);
-	atomic_long_sub(io->size - new_size, &ploop_io_images_size);
-	io->size = new_size;
+	atomic_long_sub(*io->size_ptr - new_size, &ploop_io_images_size);
+	*io->size_ptr = new_size;
 
 	if (!err)
 		err = dio_fsync(file);
