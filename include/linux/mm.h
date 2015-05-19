@@ -2094,5 +2094,55 @@ void __init setup_nr_node_ids(void);
 static inline void setup_nr_node_ids(void) {}
 #endif
 
+#ifdef CONFIG_IDLE_PAGE_TRACKING
+static inline bool page_is_young(struct page *page)
+{
+	return PageYoung(page);
+}
+
+static inline void set_page_young(struct page *page)
+{
+	SetPageYoung(page);
+}
+
+static inline void clear_page_young(struct page *page)
+{
+	ClearPageYoung(page);
+}
+
+static inline bool page_is_idle(struct page *page)
+{
+	return PageIdle(page);
+}
+
+static inline void set_page_idle(struct page *page)
+{
+	SetPageIdle(page);
+}
+
+static inline void clear_page_idle(struct page *page)
+{
+	ClearPageIdle(page);
+}
+#else /* !CONFIG_IDLE_PAGE_TRACKING */
+static inline bool page_is_young(struct page *page)
+{
+	return false;
+}
+
+static inline void clear_page_young(struct page *page)
+{
+}
+
+static inline bool page_is_idle(struct page *page)
+{
+	return false;
+}
+
+static inline void clear_page_idle(struct page *page)
+{
+}
+#endif /* CONFIG_IDLE_PAGE_TRACKING */
+
 #endif /* __KERNEL__ */
 #endif /* _LINUX_MM_H */

@@ -5,7 +5,7 @@ pagemap is a new (as of 2.6.25) set of interfaces in the kernel that allow
 userspace programs to examine the page tables and related information by
 reading files in /proc.
 
-There are four components to pagemap:
+There are five components to pagemap:
 
  * /proc/pid/pagemap.  This file lets a userspace process find out which
    physical frame each virtual page is mapped to.  It contains one 64-bit
@@ -66,6 +66,16 @@ There are four components to pagemap:
  * /proc/kpagecgroup.  This file contains a 64-bit inode number of the
    memory cgroup each page is charged to, indexed by PFN. Only available when
    CONFIG_MEMCG is set.
+
+ * /proc/kpageidle.  This file implements a bitmap where each bit corresponds
+   to a page, indexed by PFN. When the bit is set, the corresponding page is
+   idle. A page is considered idle if it has not been accessed since it was
+   marked idle. To mark a page idle one should set the bit corresponding to the
+   page by writing to the file. A value written to the file is OR-ed with the
+   current bitmap value. Only user memory pages can be marked idle, for other
+   page types input is silently ignored. Writing to this file beyond max PFN
+   results in the ENXIO error. Only available when CONFIG_IDLE_PAGE_TRACKING is
+   set.
 
 Short descriptions to the page flags:
 
