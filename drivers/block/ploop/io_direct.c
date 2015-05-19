@@ -852,7 +852,7 @@ static void dio_destroy(struct ploop_io * io)
 		if (io->files.em_tree) {
 			io->files.em_tree = NULL;
 			mutex_lock(&io->files.inode->i_mutex);
-			ploop_dio_close(io->files.mapping, delta->flags & PLOOP_FMT_RDONLY);
+			ploop_dio_close(io, delta->flags & PLOOP_FMT_RDONLY);
 			(void)dio_invalidate_cache(io->files.mapping, io->files.bdev);
 			mutex_unlock(&io->files.inode->i_mutex);
 		}
@@ -910,7 +910,7 @@ static int dio_open(struct ploop_io * io)
 	dio_fsync(file);
 
 	mutex_lock(&io->files.inode->i_mutex);
-	em_tree = ploop_dio_open(io->files.file, (delta->flags & PLOOP_FMT_RDONLY));
+	em_tree = ploop_dio_open(io, (delta->flags & PLOOP_FMT_RDONLY));
 	err = PTR_ERR(em_tree);
 	if (IS_ERR(em_tree))
 		goto out;
@@ -920,7 +920,7 @@ static int dio_open(struct ploop_io * io)
 	err = dio_invalidate_cache(io->files.mapping, io->files.bdev);
 	if (err) {
 		io->files.em_tree = NULL;
-		ploop_dio_close(io->files.mapping, 0);
+		ploop_dio_close(io, 0);
 		goto out;
 	}
 
@@ -930,7 +930,7 @@ static int dio_open(struct ploop_io * io)
 						  delta->plo->index);
 		if (io->fsync_thread == NULL) {
 			io->files.em_tree = NULL;
-			ploop_dio_close(io->files.mapping, 0);
+			ploop_dio_close(io, 0);
 			goto out;
 		}
 		wake_up_process(io->fsync_thread);
@@ -938,8 +938,6 @@ static int dio_open(struct ploop_io * io)
 
 out:
 	mutex_unlock(&io->files.inode->i_mutex);
-	if (!err)
-		io->size = i_size_read(io->files.inode);
 	return err;
 }
 
@@ -1644,7 +1642,7 @@ static int dio_prepare_merge(struct ploop_io * io, struct ploop_snapdata *sd)
 		return err;
 	}
 
-	err = ploop_dio_upgrade(io->files.mapping);
+	err = ploop_dio_upgrade(io);
 	if (err) {
 		mutex_unlock(&io->files.inode->i_mutex);
 		fput(file);
