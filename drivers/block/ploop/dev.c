@@ -3533,8 +3533,18 @@ static int ploop_bd_full(struct backing_dev_info *bdi, long long nr, int root)
 
 		current->journal_info = NULL;
 		ret = sb->s_op->statfs(F_DENTRY(file), &buf);
-		if (ret || buf.f_bfree * buf.f_bsize < reserved + nr)
+		if (ret || buf.f_bfree * buf.f_bsize < reserved + nr) {
+			static unsigned long full_warn_time;
+
+			if (printk_timed_ratelimit(&full_warn_time, 60*60*HZ))
+				printk(KERN_WARNING
+				       "ploop%d: host disk is almost full "
+				       "(%llu < %llu); CT sees -ENOSPC !\n",
+				       plo->index, buf.f_bfree * buf.f_bsize,
+				       reserved + nr);
+
 			rc = 1;
+		}
 
 		fput(file);
 		current->journal_info = jctx;
