@@ -13,6 +13,8 @@
 #include <linux/ve.h>
 #include <asm/uaccess.h>
 
+#include <trace/events/block.h>
+
 #include <linux/ploop/ploop.h>
 #include "ploop_events.h"
 #include "freeblks.h"
@@ -518,7 +520,7 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 				bio->bi_bdev = plo->bdev;
 				clear_bit(BIO_BDEV_REUSED, &bio->bi_flags);
 			}
-			BIO_ENDIO(bio, err);
+			BIO_ENDIO(plo->queue, bio, err);
 			list_add(&preq->list, &plo->free_list);
 			plo->bio_qlen--;
 			plo->bio_discard_qlen--;
@@ -591,7 +593,7 @@ DEFINE_BIO_CB(ploop_fast_end_io)
 
 	plo = orig->bi_bdev->bd_disk->private_data;
 
-	BIO_ENDIO(orig, err);
+	BIO_ENDIO(plo->queue, orig, err);
 
 	/* End of fast bio wakes up main process only when this could
 	 * mean exit from ATTENTION state.
@@ -800,13 +802,13 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 		 * marked as FLUSH, otherwise just warn and complete. */
 		if (!(bio->bi_rw & REQ_FLUSH)) {
 			WARN_ON(1);
-			BIO_ENDIO(bio, 0);
+			BIO_ENDIO(q, bio, 0);
 			return;
 		}
 		/* useless to pass this bio further */
 		if (!plo->tune.pass_flushes) {
 			ploop_acc_ff_in(plo, bio->bi_rw);
-			BIO_ENDIO(bio, 0);
+			BIO_ENDIO(q, bio, 0);
 			return;
 		}
 	}
@@ -862,7 +864,7 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 		plo->bio_total--;
 		spin_unlock_irq(&plo->lock);
 
-		BIO_ENDIO(bio, -EIO);
+		BIO_ENDIO(q, bio, -EIO);
 		if (nbio)
 			bio_put(nbio);
 		return;
@@ -1208,7 +1210,7 @@ static void ploop_complete_request(struct ploop_request * preq)
 		struct bio * bio = preq->bl.head;
 		preq->bl.head = bio->bi_next;
 		bio->bi_next = NULL;
-		BIO_ENDIO(bio, preq->error);
+		BIO_ENDIO(plo->queue, bio, preq->error);
 		nr_completed++;
 	}
 	preq->bl.tail = NULL;
