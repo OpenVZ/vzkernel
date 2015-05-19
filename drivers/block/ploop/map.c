@@ -953,6 +953,11 @@ void ploop_index_update(struct ploop_request * preq)
 	__TRACE("wbi %p %u %p\n", preq, preq->req_cluster, m);
 	plo->st.map_single_writes++;
 	top_delta->ops->map_index(top_delta, m->mn_start, &sec);
+	/* Relocate requires consistent writes, mark such reqs appropriately */
+	if (test_bit(PLOOP_REQ_RELOC_A, &preq->state) ||
+	    test_bit(PLOOP_REQ_RELOC_S, &preq->state))
+		set_bit(PLOOP_REQ_FORCE_FUA, &preq->state);
+
 	top_delta->io.ops->write_page(&top_delta->io, preq, page, sec,
 				      !!(preq->req_rw & REQ_FUA));
 	put_page(page);
@@ -1050,6 +1055,11 @@ static void map_wb_complete_post_process(struct ploop_map *map,
 		memset(page_address(preq->aux_bio->bi_io_vec[i].bv_page),
 		       0, PAGE_SIZE);
 
+	/*
+	 * FUA of this data occures at format driver ->complete_grow() by
+	 * all image sync. After that header size increased to use this
+	 * cluster as BAT cluster.
+	 */
 	top_delta->io.ops->submit(&top_delta->io, preq, preq->req_rw,
 				  &sbl, preq->iblock, 1<<plo->cluster_log);
 }
@@ -1064,7 +1074,7 @@ static void map_wb_complete(struct map_node * m, int err)
 	int delayed = 0;
 	unsigned int idx;
 	sector_t sec;
-	int fua;
+	int fua, force_fua;
 
 	/* First, complete processing of written back indices,
 	 * finally instantiate indices in mapping cache.
@@ -1135,6 +1145,7 @@ static void map_wb_complete(struct map_node * m, int err)
 
 	main_preq = NULL;
 	fua = 0;
+	force_fua = 0;
 
 	list_for_each_safe(cursor, tmp, &m->io_queue) {
 		struct ploop_request * preq;
@@ -1155,6 +1166,10 @@ static void map_wb_complete(struct map_node * m, int err)
 
 			if (preq->req_rw & REQ_FUA)
 				fua = 1;
+
+			if (test_bit(PLOOP_REQ_RELOC_A, &preq->state) ||
+			    test_bit(PLOOP_REQ_RELOC_S, &preq->state))
+				force_fua = 1;
 
 			preq->eng_state = PLOOP_E_INDEX_WB;
 			get_page(page);
@@ -1180,6 +1195,10 @@ static void map_wb_complete(struct map_node * m, int err)
 	__TRACE("wbi2 %p %u %p\n", main_preq, main_preq->req_cluster, m);
 	plo->st.map_multi_writes++;
 	top_delta->ops->map_index(top_delta, m->mn_start, &sec);
+
+	if (force_fua)
+		set_bit(PLOOP_REQ_FORCE_FUA, &main_preq->state);
+
 	top_delta->io.ops->write_page(&top_delta->io, main_preq, page, sec, fua);
 	put_page(page);
 }
