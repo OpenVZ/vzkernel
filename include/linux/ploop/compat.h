@@ -18,7 +18,11 @@ static void func(struct bio *bio, int err) {
 
 #define END_BIO_CB(func)  }
 
-#define BIO_ENDIO(_bio, _err)	bio_endio(_bio, _err)
+#define BIO_ENDIO(_queue, _bio, _err)					\
+	do {								\
+		trace_block_bio_complete((_queue), (_bio), (_err));	\
+		bio_endio((_bio), (_err));				\
+	} while (0);
 
 #define F_DENTRY(file)	(file)->f_path.dentry
 #define F_MNT(file)	(file)->f_path.mnt
