@@ -323,6 +323,7 @@ struct ploop_tunable
 .congestion_low_watermark = DEFAULT_PLOOP_MAXRQ/2, \
 .pass_flushes = 1, \
 .pass_fuas = 1, \
+.check_zeros = 1, \
 .max_active_requests = DEFAULT_PLOOP_BATCH_ENTRY_QLEN / 2, }
 
 struct ploop_stats
