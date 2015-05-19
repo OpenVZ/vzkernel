@@ -1079,3 +1079,8 @@ int ploop_discard_add_bio(struct ploop_freeblks_desc *fbd, struct bio *bio)
 
 	return 0;
 }
+
+int ploop_discard_is_inprogress(struct ploop_freeblks_desc *fbd)
+{
+	return fbd && fbd->fbd_dbl.head != NULL;
+}
