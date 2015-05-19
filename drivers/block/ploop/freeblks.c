@@ -8,6 +8,8 @@
 #include <linux/buffer_head.h>
 #include <linux/kthread.h>
 
+#include <trace/events/block.h>
+
 #include <linux/ploop/ploop.h>
 #include "freeblks.h"
 
@@ -701,7 +703,7 @@ static void fbd_complete_bio(struct ploop_freeblks_desc *fbd, int err)
 		struct bio * bio = fbd->fbd_dbl.head;
 		fbd->fbd_dbl.head = bio->bi_next;
 		bio->bi_next = NULL;
-		BIO_ENDIO(bio, err);
+		BIO_ENDIO(fbd->plo->queue, bio, err);
 		nr_completed++;
 	}
 	fbd->fbd_dbl.tail = NULL;
