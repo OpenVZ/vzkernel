@@ -772,16 +772,13 @@ static int dio_fsync(struct file * file)
 	int err, ret;
 	struct address_space *mapping = file->f_mapping;
 
-	ret = filemap_fdatawrite(mapping);
+	ret = filemap_write_and_wait(mapping);
 	err = 0;
 	if (file->f_op && file->f_op->fsync) {
 		err = file->f_op->FOP_FSYNC(file, 0);
 		if (!ret)
 			ret = err;
 	}
-	err = filemap_fdatawait(mapping);
-	if (!ret)
-		ret = err;
 	return ret;
 }
 
