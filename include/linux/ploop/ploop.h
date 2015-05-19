@@ -285,6 +285,8 @@ struct ploop_delta
 	struct ploop_delta_ops	*ops;
 
 	struct kobject		kobj;
+
+	u64			max_delta_size; /* in sectors */
 };
 
 struct ploop_tunable
