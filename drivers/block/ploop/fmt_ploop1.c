@@ -458,6 +458,10 @@ ploop1_prepare_grow(struct ploop_delta * delta, u64 *new_size, int *reloc)
 	if (*new_size & ((1 << delta->cluster_log) - 1))
 		return -EINVAL;
 
+	if (*new_size > ploop1_max_size(1 << delta->plo->cluster_log,
+					delta->plo->fmt_version))
+		return -EFBIG;
+
 	vh = (struct ploop_pvd_header *)page_address(ph->dyn_page);
 	n_present  = le32_to_cpu(vh->m_FirstBlockOffset) >> log;
 	BUG_ON (!n_present);
