@@ -119,8 +119,8 @@ dio_submit(struct ploop_io *io, struct ploop_request * preq,
 		goto out_em_err;
 
 	if (write && em->block_start == BLOCK_UNINIT) {
-		sector_t end = (iblk + 1) << preq->plo->cluster_log;
-		sec = iblk << preq->plo->cluster_log;
+		sector_t end = (sector_t)(iblk + 1) << preq->plo->cluster_log;
+		sec = (sector_t)iblk << preq->plo->cluster_log;
 
 		if (em->start <= sec)
 			sec = em->end;
