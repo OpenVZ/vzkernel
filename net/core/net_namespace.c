@@ -314,6 +314,9 @@ out_undo:
 		ops_free_list(ops, &net_exit_list);
 
 	rcu_barrier();
+#ifdef CONFIG_VE
+	put_ve(net->owner_ve);
+#endif
 	goto out;
 }
 
