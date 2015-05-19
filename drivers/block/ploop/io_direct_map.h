@@ -50,10 +50,10 @@ struct extent_map *map_extent_get_block(struct extent_map_tree *tree,
 					gfp_t gfp_mask, get_block_t get_block);
 void trim_extent_mappings(struct extent_map_tree *tree, sector_t start);
 
-int ploop_dio_close(struct address_space * mapping, int rdonly);
-struct extent_map_tree * ploop_dio_open(struct file * file, int rdonly);
+int ploop_dio_close(struct ploop_io * io, int rdonly);
+struct extent_map_tree * ploop_dio_open(struct ploop_io * io, int rdonly);
 void ploop_dio_downgrade(struct address_space * mapping);
-int ploop_dio_upgrade(struct address_space * mapping);
+int ploop_dio_upgrade(struct ploop_io * io);
 
 int __init extent_map_init(void);
 void extent_map_exit(void);
