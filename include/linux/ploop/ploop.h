@@ -91,7 +91,7 @@ struct ploop_io
 {
 	struct ploop_device	*plo;
 
-	loff_t			size;
+	loff_t		       *size_ptr; /* NULL or points to ploop_mapping */
 	loff_t			prealloced_size;
 	struct ploop_request   *prealloc_preq;  /* preq who does prealloc */
 	loff_t			max_size;	/* Infinity */
