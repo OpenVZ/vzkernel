@@ -85,6 +85,7 @@ dio_submit(struct ploop_io *io, struct ploop_request * preq,
 	int preflush;
 	int postfua = 0;
 	int write = !!(rw & REQ_WRITE);
+	int bio_num;
 
 	trace_submit(preq);
 
@@ -215,6 +216,7 @@ flush_bio:
 	}
 	extent_put(em);
 
+	bio_num = 0;
 	while (bl.head) {
 		struct bio * b = bl.head;
 		unsigned long rw2 = rw;
@@ -230,10 +232,11 @@ flush_bio:
 			preflush = 0;
 		}
 		if (unlikely(postfua && !bl.head))
-			rw2 |= REQ_FUA;
+			rw2 |= (REQ_FUA | ((bio_num) ? REQ_FLUSH : 0));
 
 		ploop_acc_ff_out(preq->plo, rw2 | b->bi_rw);
 		submit_bio(rw2 & ~(bl.head ? REQ_SYNC : 0), b);
+		bio_num++;
 	}
 
 	ploop_complete_io_request(preq);
@@ -1337,9 +1340,12 @@ dio_io_page(struct ploop_io * io, unsigned long rw,
 	int err;
 	int off;
 	int postfua;
+	int bio_num;
+	int preflush;
 
+	preflush = !!(rw & REQ_FLUSH);
 	postfua = !!(rw & REQ_FUA);
-	rw &= ~REQ_FUA;
+	rw &= ~(REQ_FUA|REQ_FLUSH);
 
 	bio_list_init(&bl);
 	bio = NULL;
@@ -1392,13 +1398,19 @@ flush_bio:
 	if (em)
 		extent_put(em);
 
+	bio_num = 0;
 	while (bl.head) {
 		unsigned long rw2 = rw;
 		struct bio * b = bl.head;
 		bl.head = b->bi_next;
 
+		if (unlikely(preflush)) {
+			rw2 |= REQ_FLUSH;
+			preflush = 0;
+		}
+
 		if (unlikely(postfua && !bl.head))
-			rw2 |= REQ_FUA;
+			rw2 |= (REQ_FUA | ((bio_num) ? REQ_FLUSH : 0));
 
 		b->bi_next = NULL;
 		b->bi_end_io = dio_endio_async;
@@ -1406,6 +1418,7 @@ flush_bio:
 		atomic_inc(&preq->io_count);
 		ploop_acc_ff_out(preq->plo, rw2 | b->bi_rw);
 		submit_bio(rw2 | (bl.head ? 0 : REQ_SYNC), b);
+		bio_num++;
 	}
 
 	ploop_complete_io_request(preq);
