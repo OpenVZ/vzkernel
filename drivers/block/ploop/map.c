@@ -145,6 +145,10 @@ static void flush_lru_buffer(struct ploop_map * map)
 	map->lru_buffer_ptr = 0;
 }
 
+/*
+ * map_release() must be called under plo-lock, because
+ * The pair atomic_read & atomic_dec_and_test is not atomic.
+ */
 void map_release(struct map_node * m)
 {
 	struct ploop_map * map = m->parent;
@@ -1026,9 +1030,11 @@ static void map_wb_complete_post_process(struct ploop_map *map,
 	}
 
 	if (test_bit(PLOOP_REQ_RELOC_S, &preq->state)) {
+		spin_lock_irq(&plo->lock);
 		del_lockout(preq);
 		map_release(preq->map);
 		preq->map = NULL;
+		spin_unlock_irq(&plo->lock);
 
 		requeue_req(preq, PLOOP_E_RELOC_COMPLETE);
 		return;
