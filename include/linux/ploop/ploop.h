@@ -594,7 +594,7 @@ static inline int ploop_req_delay_fua_possible(unsigned long rw,
 	return delay_fua;
 }
 
-static inline void ploop_set_error(struct ploop_request * preq, int err)
+static inline void ploop_req_set_error(struct ploop_request * preq, int err)
 {
 	if (!preq->error) {
 		preq->error = err;
@@ -610,6 +610,40 @@ static inline void ploop_set_error(struct ploop_request * preq, int err)
 		}
 	}
 }
+
+#define PLOOP_TRACE_ERROR 1
+#define PLOOP_TRACE_ERROR_DUMP_STACK_ON 1
+
+#if PLOOP_TRACE_ERROR_DUMP_STACK_ON
+#define PLOOP_TRACE_ERROR_DUMP_STACK()	dump_stack();
+#else
+#define PLOOP_TRACE_ERROR_DUMP_STACK()
+#endif
+
+#if PLOOP_TRACE_ERROR
+#define PLOOP_REQ_TRACE_ERROR(preq, err)					\
+	do {									\
+		if ((err)) {							\
+			printk("%s() %d ploop%d set error %d\n",		\
+			__FUNCTION__, __LINE__, (preq)->plo->index, (int)(err));\
+			PLOOP_TRACE_ERROR_DUMP_STACK();				\
+		}								\
+	} while (0);
+#else
+#define PLOOP_REQ_TRACE_ERROR(preq, err)
+#endif
+
+#define PLOOP_REQ_SET_ERROR(preq, err)			\
+	do {						\
+		PLOOP_REQ_TRACE_ERROR(preq, err);	\
+		ploop_req_set_error(preq, err);		\
+	} while (0);
+
+#define PLOOP_FAIL_REQUEST(preq, err)			\
+	do {						\
+		PLOOP_REQ_TRACE_ERROR(preq, err);	\
+		ploop_fail_request(preq, err);		\
+	} while (0);
 
 static inline void ploop_prepare_io_request(struct ploop_request * preq)
 {
