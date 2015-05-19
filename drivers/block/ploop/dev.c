@@ -4234,7 +4234,7 @@ static int ploop_getdevice_ioc(unsigned long arg)
 	int err;
 	int index = 0;
 	struct rb_node *n;
-	struct ploop_getdevice_ctl ctl;
+	struct ploop_getdevice_ctl ctl = {};
 
 	mutex_lock(&ploop_devices_mutex);
 	for (n = rb_first(&ploop_devices_tree); n; n = rb_next(n), index++) {
