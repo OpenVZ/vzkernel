@@ -200,6 +200,9 @@ void mem_cgroup_split_huge_fixup(struct page *head);
 bool mem_cgroup_bad_page_check(struct page *page);
 void mem_cgroup_print_bad_page(struct page *page);
 #endif
+
+unsigned long page_cgroup_ino(struct page *page);
+
 #else /* CONFIG_MEMCG */
 struct mem_cgroup;
 
