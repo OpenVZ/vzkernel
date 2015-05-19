@@ -446,7 +446,8 @@ try_again:
 		preq->iblock = iblk;
 		list_add_tail(&preq->list, &io->fsync_queue);
 		plo->st.bio_syncwait++;
-		if (++io->fsync_qlen >= plo->tune.fsync_max &&
+		if ((test_bit(PLOOP_REQ_SYNC, &preq->state) ||
+		     ++io->fsync_qlen >= plo->tune.fsync_max) &&
 		    waitqueue_active(&io->fsync_waitq))
 			wake_up_interruptible(&io->fsync_waitq);
 		else if (!timer_pending(&io->fsync_timer))
