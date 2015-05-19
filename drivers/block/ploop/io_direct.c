@@ -1428,7 +1428,7 @@ static void
 dio_read_page(struct ploop_io * io, struct ploop_request * preq,
 	      struct page * page, sector_t sec)
 {
-	dio_io_page(io, READ, preq, page, sec);
+	dio_io_page(io, READ | REQ_SYNC, preq, page, sec);
 }
 
 static void
@@ -1440,7 +1440,8 @@ dio_write_page(struct ploop_io * io, struct ploop_request * preq,
 		return;
 	}
 
-	dio_io_page(io, WRITE | (fua ? REQ_FUA : 0), preq, page, sec);
+	dio_io_page(io, WRITE | (fua ? REQ_FUA : 0) | REQ_SYNC,
+		    preq, page, sec);
 }
 
 static int
