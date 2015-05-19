@@ -528,7 +528,7 @@ int map_index_fault(struct ploop_request * preq)
 
 err_out:
 	clear_bit(PLOOP_MAP_READ, &m->state);
-	ploop_fail_request(preq, err);
+	PLOOP_FAIL_REQUEST(preq, err);
 	return 0;
 }
 
@@ -922,7 +922,7 @@ void ploop_index_update(struct ploop_request * preq)
 	if (test_bit(PLOOP_REQ_ZERO, &preq->state) && !blk) {
 		printk("Either map_node is corrupted or bug in "
 		       "ploop-balloon (%u)\n", preq->req_cluster);
-		ploop_set_error(preq, -EIO);
+		PLOOP_REQ_SET_ERROR(preq, -EIO);
 		goto corrupted;
 	}
 
@@ -964,7 +964,7 @@ void ploop_index_update(struct ploop_request * preq)
 	return;
 
 enomem:
-	ploop_set_error(preq, -ENOMEM);
+	PLOOP_REQ_SET_ERROR(preq, -ENOMEM);
 corrupted:
 	set_bit(PLOOP_S_ABORT, &plo->state);
 out:
@@ -1117,7 +1117,7 @@ static void map_wb_complete(struct map_node * m, int err)
 					BUG_ON(MAP_LEVEL(m) != top_delta->level);
 				}
 			} else {
-				ploop_set_error(preq, err);
+				PLOOP_REQ_SET_ERROR(preq, err);
 			}
 			put_page(preq->sinfo.wi.tpage);
 			preq->sinfo.wi.tpage = NULL;
@@ -1125,7 +1125,7 @@ static void map_wb_complete(struct map_node * m, int err)
 			break;
 		case PLOOP_E_INDEX_DELAY:
 			if (err) {
-				ploop_set_error(preq, err);
+				PLOOP_REQ_SET_ERROR(preq, err);
 				preq->eng_state = PLOOP_E_COMPLETE;
 				spin_lock_irq(&plo->lock);
 				list_del(cursor);
@@ -1159,7 +1159,7 @@ static void map_wb_complete(struct map_node * m, int err)
 		switch (preq->eng_state) {
 		case PLOOP_E_INDEX_DELAY:
 			if (page == NULL) {
-				ploop_set_error(preq, -ENOMEM);
+				PLOOP_REQ_SET_ERROR(preq, -ENOMEM);
 				preq->eng_state = PLOOP_E_COMPLETE;
 				spin_lock_irq(&plo->lock);
 				list_del(cursor);
