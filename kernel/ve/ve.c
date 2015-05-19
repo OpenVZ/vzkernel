@@ -44,6 +44,7 @@
 
 #include <uapi/linux/vzcalluser.h>
 #include <linux/venet.h>
+#include <linux/vziptable_defs.h>
 
 static struct kmem_cache *ve_cachep;
 
@@ -1089,17 +1090,50 @@ up_opsem:
 	return ret;
 }
 
+enum {
+	VE_CF_STATE,
+	VE_CF_LEGACY_VEID,
+	VE_CF_FEATURES,
+};
+
+static u64 ve_read_u64(struct cgroup *cg, struct cftype *cft)
+{
+	if (cft->private == VE_CF_FEATURES)
+		return cgroup_ve(cg)->features;
+	return 0;
+}
+
+static int ve_write_u64(struct cgroup *cg, struct cftype *cft, u64 value)
+{
+	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
+
+	if (cft->private == VE_CF_FEATURES)
+		cgroup_ve(cg)->features = value;
+
+	return 0;
+}
+
 static struct cftype ve_cftypes[] = {
 	{
-		.name = "state",
-		.flags = CFTYPE_NOT_ON_ROOT,
-		.read_seq_string = ve_state_read,
-		.write_string = ve_state_write,
+		.name			= "state",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_seq_string	= ve_state_read,
+		.write_string		= ve_state_write,
+		.private		= VE_CF_STATE,
 	},
 	{
-		.name = "legacy_veid",
-		.flags = CFTYPE_NOT_ON_ROOT,
-		.read_seq_string = ve_legacy_veid_read,
+		.name			= "legacy_veid",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_seq_string	= ve_legacy_veid_read,
+		.private		= VE_CF_LEGACY_VEID,
+	},
+	{
+		.name			= "features",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_u64		= ve_read_u64,
+		.write_u64		= ve_write_u64,
+		.private		= VE_CF_FEATURES,
 	},
 	{
 		.name = "mount_opts",
