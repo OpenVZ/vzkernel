@@ -120,7 +120,7 @@ static void kaio_rw_aio_complete(u64 data, long res)
 		bio_list_for_each(b, &preq->bl)
 			printk(" bio=%p: bi_sector=%ld bi_size=%d\n",
 			       b, b->bi_sector, b->bi_size);
-		ploop_set_error(preq, res);
+		PLOOP_REQ_SET_ERROR(preq, res);
 	}
 
 	kaio_complete_io_request(preq);
@@ -280,7 +280,7 @@ static void kaio_sbl_submit(struct file *file, struct ploop_request *preq,
 
 		kreq = kaio_kreq_alloc(preq, &nr_segs);
 		if (!kreq) {
-			ploop_set_error(preq, -ENOMEM);
+			PLOOP_REQ_SET_ERROR(preq, -ENOMEM);
 			break;
 		}
 
@@ -289,7 +289,7 @@ static void kaio_sbl_submit(struct file *file, struct ploop_request *preq,
 		atomic_inc(&preq->io_count);
 		err = kaio_kernel_submit(file, kreq, nr_segs, copy, off, rw);
 		if (err) {
-			ploop_set_error(preq, err);
+			PLOOP_REQ_SET_ERROR(preq, err);
 			ploop_complete_io_request(preq);
 			kfree(kreq);
 			break;
@@ -405,7 +405,7 @@ static int kaio_fsync_thread(void * data)
 			err = kaio_truncate(io, io->files.file,
 					    preq->prealloc_size >> (plo->cluster_log + 9));
 			if (err)
-				ploop_set_error(preq, -EIO);
+				PLOOP_REQ_SET_ERROR(preq, -EIO);
 		} else {
 			struct file *file = io->files.file;
 			err = vfs_fsync(file, 1);
@@ -415,7 +415,7 @@ static int kaio_fsync_thread(void * data)
 				       "on ploop%d)\n",
 				       err, io->files.inode->i_ino,
 				       io2level(io), plo->index);
-				ploop_set_error(preq, -EIO);
+				PLOOP_REQ_SET_ERROR(preq, -EIO);
 			} else if (preq->req_rw & REQ_FLUSH) {
 				BUG_ON(!preq->req_size);
 				preq->req_rw &= ~REQ_FLUSH;
@@ -446,7 +446,7 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 	loff_t clu_siz = 1 << log;
 
 	if (delta->flags & PLOOP_FMT_RDONLY) {
-		ploop_fail_request(preq, -EBADF);
+		PLOOP_FAIL_REQUEST(preq, -EBADF);
 		return;
 	}
 
@@ -585,7 +585,7 @@ kaio_io_page(struct ploop_io * io, int op, struct ploop_request * preq,
 
 	iocb = aio_kernel_alloc(GFP_NOIO);
 	if (!iocb) {
-		ploop_set_error(preq, -ENOMEM);
+		PLOOP_REQ_SET_ERROR(preq, -ENOMEM);
 		goto out;
 	}
 
@@ -601,7 +601,7 @@ kaio_io_page(struct ploop_io * io, int op, struct ploop_request * preq,
 		       "err=%d (rw=%s; state=%ld/0x%lx; pos=%lld)\n",
 		       err, (op == IOCB_CMD_WRITE_ITER) ? "WRITE" : "READ",
 		       preq->eng_state, preq->state, pos);
-		ploop_set_error(preq, err);
+		PLOOP_REQ_SET_ERROR(preq, err);
 	}
 
 out:
