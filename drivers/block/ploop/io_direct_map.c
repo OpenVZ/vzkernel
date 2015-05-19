@@ -52,10 +52,11 @@ extern atomic_long_t ploop_io_images_size;
  */
 
 struct extent_map_tree *
-ploop_dio_open(struct file * file, int rdonly)
+ploop_dio_open(struct ploop_io * io, int rdonly)
 {
 	int err;
 	struct ploop_mapping *m, *pm;
+	struct file * file = io->files.file;
 	struct address_space * mapping = file->f_mapping;
 
 	pm = kzalloc(sizeof(struct ploop_mapping), GFP_KERNEL);
@@ -100,7 +101,8 @@ out_unlock:
 	pm->readers = rdonly ? 1 : -1;
 	list_add(&pm->list, &ploop_mappings);
 	mapping->host->i_flags |= S_SWAPFILE;
-	atomic_long_add(i_size_read(mapping->host), &ploop_io_images_size);
+	io->size = i_size_read(mapping->host);
+	atomic_long_add(io->size, &ploop_io_images_size);
 
 	pm->saved_gfp_mask = mapping_gfp_mask(mapping);
 	mapping_set_gfp_mask(mapping,
@@ -125,8 +127,9 @@ out_unlock:
 }
 
 int
-ploop_dio_close(struct address_space * mapping, int rdonly)
+ploop_dio_close(struct ploop_io * io, int rdonly)
 {
+	struct address_space * mapping = io->files.mapping;
 	struct ploop_mapping *m, *pm = NULL;
 
 	spin_lock(&ploop_mappings_lock);
@@ -140,8 +143,9 @@ ploop_dio_close(struct address_space * mapping, int rdonly)
 			}
 
 			if (m->readers == 0) {
-				atomic_long_sub(i_size_read(mapping->host),
+				atomic_long_sub(io->size,
 						&ploop_io_images_size);
+				io->size = 0;
 				mapping->host->i_flags &= ~S_SWAPFILE;
 				list_del(&m->list);
 				pm = m;
@@ -175,8 +179,9 @@ void ploop_dio_downgrade(struct address_space * mapping)
 	spin_unlock(&ploop_mappings_lock);
 }
 
-int ploop_dio_upgrade(struct address_space * mapping)
+int ploop_dio_upgrade(struct ploop_io * io)
 {
+	struct address_space * mapping = io->files.mapping;
 	struct ploop_mapping * m;
 	int err = -ESRCH;
 
@@ -185,6 +190,11 @@ int ploop_dio_upgrade(struct address_space * mapping)
 		if (m->mapping == mapping) {
 			err = -EBUSY;
 			if (m->readers == 1) {
+				loff_t new_size = i_size_read(io->files.inode);
+				atomic_long_add(new_size - io->size,
+						&ploop_io_images_size);
+				io->size = new_size;
+
 				m->readers = -1;
 				err = 0;
 			}
