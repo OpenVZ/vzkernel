@@ -326,6 +326,9 @@ static u32 show_aborted(struct ploop_device * plo)
 
 static int store_aborted(struct ploop_device * plo, u32 val)
 {
+	printk(KERN_INFO "ploop: Force %s aborted state for ploop%d\n",
+	       val ? "set" : "clear", plo->index);
+
 	if (val)
 		set_bit(PLOOP_S_ABORT, &plo->state);
 	else
