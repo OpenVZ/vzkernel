@@ -638,6 +638,7 @@ static struct extent_map *__map_extent_bmap(struct ploop_io *io,
 {
 	struct extent_map_tree *tree = io->files.em_tree;
 	struct inode *inode = mapping->host;
+	loff_t start_off = (loff_t)start << 9;
 	struct extent_map *em;
 	struct fiemap_extent_info fieinfo;
 	struct fiemap_extent fi_extent;
@@ -678,6 +679,25 @@ again:
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 	ret = inode->i_op->fiemap(inode, &fieinfo, start << 9, 1);
+
+	/* chase for PSBM-26762: em->block_start == 0 */
+	if (!ret && fieinfo.fi_extents_mapped == 1 &&
+	    !(fi_extent.fe_flags & FIEMAP_EXTENT_UNWRITTEN) &&
+	    (fi_extent.fe_physical >> 9) == 0) {
+		/* see how ext4_fill_fiemap_extents() implemented */
+		if (!(fi_extent.fe_flags & FIEMAP_EXTENT_DELALLOC)) {
+			printk("bad fiemap(%ld,%ld) on inode=%p &fieinfo=%p"
+			" i_size=%lld\n", start, len, inode, &fieinfo,
+			i_size_read(inode));
+			BUG();
+		}
+		/* complain about delalloc case -- ploop always fallocate
+		* before buffered write */
+		WARN(1, "ploop%d: delalloc extent [%lld,%lld] for [%lld,%ld];"
+			" i_size=%lld\n", io->plo->index, fi_extent.fe_logical,
+			fi_extent.fe_length, start_off, len << 9, i_size_read(inode));
+		ret = -ENOENT;
+	}
 	set_fs(old_fs);
 
 	if (ret) {
@@ -805,9 +825,10 @@ void trim_extent_mappings(struct extent_map_tree *tree, sector_t start)
 
 	while ((em = lookup_extent_mapping(tree, start, ((sector_t)(-1ULL)) - start))) {
 		remove_extent_mapping(tree, em);
+		WARN_ON(atomic_read(&em->refs) != 2);
 		/* once for us */
 		extent_put(em);
-		/* _XXX_ This cannot be correct in the case of concurrent lookups */
+		/* No concurrent lookups due to ploop_quiesce(). See WARN_ON above */
 		/* once for the tree */
 		extent_put(em);
 	}
