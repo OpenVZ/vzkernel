@@ -92,7 +92,20 @@ void ploop_format_put(struct ploop_delta_ops * ops)
 	module_put(ops->owner);
 }
 
+void ploop_msg_once(struct ploop_device *plo, const char *fmt, ...)
+{
+	va_list args;
 
+	if (test_and_set_bit(PLOOP_S_ONCE, &plo->state))
+		return;
+
+	va_start(args, fmt);
+	printk("ploop(%d): ", plo->index);
+	vprintk(fmt, args);
+	printk("\n");
+	va_end(args);
+}
+EXPORT_SYMBOL(ploop_msg_once);
 
 static void mitigation_timeout(unsigned long data)
 {
