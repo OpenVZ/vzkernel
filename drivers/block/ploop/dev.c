@@ -1267,7 +1267,7 @@ void ploop_fail_request(struct ploop_request * preq, int err)
 {
 	struct ploop_device * plo = preq->plo;
 
-	ploop_set_error(preq, err);
+	ploop_req_set_error(preq, err);
 
 	spin_lock_irq(&plo->lock);
 	if (err == -ENOSPC) {
@@ -1287,12 +1287,18 @@ void ploop_fail_immediate(struct ploop_request * preq, int err)
 {
 	struct ploop_device * plo = preq->plo;
 
-	ploop_set_error(preq, err);
+	ploop_req_set_error(preq, err);
 
 	set_bit(PLOOP_S_ABORT, &plo->state);
 	preq->eng_state = PLOOP_E_COMPLETE;
 	ploop_complete_request(preq);
 }
+
+#define PLOOP_REQ_FAIL_IMMEDIATE(preq, err)		\
+	do {						\
+		PLOOP_REQ_TRACE_ERROR(preq, err);	\
+		ploop_fail_immediate(preq, err);	\
+	} while (0);
 
 void ploop_complete_io_state(struct ploop_request * preq)
 {
@@ -1513,7 +1519,7 @@ ploop_reloc_sched_read(struct ploop_request *preq, iblock_t iblk)
 
 		if (!preq->aux_bio ||
 		    fill_bio(plo, preq->aux_bio, preq->req_cluster)) {
-			ploop_fail_immediate(preq, -ENOMEM);
+			PLOOP_REQ_FAIL_IMMEDIATE(preq, -ENOMEM);
 			return;
 		}
 	}
@@ -2000,7 +2006,7 @@ restart:
 
 		if (!preq->aux_bio ||
 		    fill_bio(plo, preq->aux_bio, preq->req_cluster)) {
-			ploop_fail_immediate(preq, -ENOMEM);
+			PLOOP_REQ_FAIL_IMMEDIATE(preq, -ENOMEM);
 			return;
 		}
 
@@ -2106,7 +2112,7 @@ delta_io:
 
 				if (!preq->aux_bio ||
 				    fill_bio(plo, preq->aux_bio, preq->req_cluster)) {
-					ploop_fail_immediate(preq, -ENOMEM);
+					PLOOP_REQ_FAIL_IMMEDIATE(preq, -ENOMEM);
 					return;
 				}
 				spin_lock_irq(&plo->lock);
@@ -2161,7 +2167,7 @@ delta_io:
 	return;
 
 error:
-	ploop_fail_immediate(preq, err);
+	PLOOP_REQ_FAIL_IMMEDIATE(preq, err);
 }
 
 static void ploop_req_state_process(struct ploop_request * preq)
@@ -2207,7 +2213,7 @@ restart:
 		if (preq->error ||
 		    ((preq->req_rw & REQ_WRITE) &&
 		     test_bit(PLOOP_S_ABORT, &plo->state))) {
-			ploop_fail_immediate(preq, preq->error ? : -EIO);
+			PLOOP_REQ_FAIL_IMMEDIATE(preq, preq->error ? : -EIO);
 			break;
 		}
 
@@ -2282,7 +2288,7 @@ restart:
 		 */
 		if (preq->error ||
 		    test_bit(PLOOP_S_ABORT, &plo->state)) {
-			ploop_fail_immediate(preq, preq->error ? : -EIO);
+			PLOOP_REQ_FAIL_IMMEDIATE(preq, preq->error ? : -EIO);
 			break;
 		}
 
@@ -2322,7 +2328,7 @@ restart:
 
 			if (!preq->aux_bio ||
 			    fill_bio(plo, preq->aux_bio, preq->req_cluster)) {
-				ploop_fail_immediate(preq, -ENOMEM);
+				PLOOP_REQ_FAIL_IMMEDIATE(preq, -ENOMEM);
 				break;
 			}
 
@@ -2361,7 +2367,7 @@ restart:
 
 		if (preq->error ||
 		    test_bit(PLOOP_S_ABORT, &plo->state)) {
-			ploop_fail_immediate(preq, preq->error ? : -EIO);
+			PLOOP_REQ_FAIL_IMMEDIATE(preq, preq->error ? : -EIO);
 			break;
 		}
 
@@ -2391,7 +2397,7 @@ restart:
 	{
 		if (preq->error ||
 		    test_bit(PLOOP_S_ABORT, &plo->state)) {
-			ploop_fail_immediate(preq, preq->error ? : -EIO);
+			PLOOP_REQ_FAIL_IMMEDIATE(preq, preq->error ? : -EIO);
 			break;
 		}
 
@@ -2420,7 +2426,7 @@ restart:
 		 */
 		if (preq->error ||
 		    test_bit(PLOOP_S_ABORT, &plo->state)) {
-			ploop_fail_immediate(preq, preq->error ? : -EIO);
+			PLOOP_REQ_FAIL_IMMEDIATE(preq, preq->error ? : -EIO);
 			break;
 		}
 
@@ -2458,7 +2464,7 @@ restart:
 		/* Data written. Index must be updated. */
 		if (preq->error ||
 		    test_bit(PLOOP_S_ABORT, &plo->state)) {
-			ploop_fail_immediate(preq, preq->error ? : -EIO);
+			PLOOP_REQ_FAIL_IMMEDIATE(preq, preq->error ? : -EIO);
 			break;
 		}
 
