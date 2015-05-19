@@ -31,6 +31,7 @@ struct ploop_mapping
 	struct address_space	* mapping;
 	int			readers;
 	unsigned long		saved_gfp_mask;
+	loff_t			size;
 
 	struct extent_map_tree	extent_root;
 };
@@ -81,6 +82,8 @@ out_unlock:
 			spin_unlock(&ploop_mappings_lock);
 			if (pm)
 				kfree(pm);
+			if (!err)
+				io->size_ptr = &m->size;
 			return err ? ERR_PTR(err) : &m->extent_root;
 		}
 	}
@@ -101,8 +104,9 @@ out_unlock:
 	pm->readers = rdonly ? 1 : -1;
 	list_add(&pm->list, &ploop_mappings);
 	mapping->host->i_flags |= S_SWAPFILE;
-	io->size = i_size_read(mapping->host);
-	atomic_long_add(io->size, &ploop_io_images_size);
+	io->size_ptr = &pm->size;
+	*io->size_ptr = i_size_read(mapping->host);
+	atomic_long_add(*io->size_ptr, &ploop_io_images_size);
 
 	pm->saved_gfp_mask = mapping_gfp_mask(mapping);
 	mapping_set_gfp_mask(mapping,
@@ -143,9 +147,9 @@ ploop_dio_close(struct ploop_io * io, int rdonly)
 			}
 
 			if (m->readers == 0) {
-				atomic_long_sub(io->size,
+				atomic_long_sub(*io->size_ptr,
 						&ploop_io_images_size);
-				io->size = 0;
+				*io->size_ptr = 0;
 				mapping->host->i_flags &= ~S_SWAPFILE;
 				list_del(&m->list);
 				pm = m;
@@ -191,9 +195,9 @@ int ploop_dio_upgrade(struct ploop_io * io)
 			err = -EBUSY;
 			if (m->readers == 1) {
 				loff_t new_size = i_size_read(io->files.inode);
-				atomic_long_add(new_size - io->size,
+				atomic_long_add(new_size - *io->size_ptr,
 						&ploop_io_images_size);
-				io->size = new_size;
+				*io->size_ptr = new_size;
 
 				m->readers = -1;
 				err = 0;
