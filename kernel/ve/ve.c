@@ -41,6 +41,7 @@
 #include <linux/ctype.h>
 
 #include <uapi/linux/vzcalluser.h>
+#include <linux/vziptable_defs.h>
 
 static struct kmem_cache *ve_cachep;
 
@@ -906,18 +907,57 @@ up_opsem:
 	return ret;
 }
 
+enum {
+	VE_CF_STATE,
+	VE_CF_FEATURES,
+};
+
+static u64 ve_read_u64(struct cgroup *cg, struct cftype *cft)
+{
+	if (cft->private == VE_CF_FEATURES)
+		return cgroup_ve(cg)->features;
+	return 0;
+}
+
+static int ve_write_u64(struct cgroup *cg, struct cftype *cft, u64 value)
+{
+	struct ve_struct *ve = cgroup_ve(cg);
+
+	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
+
+	down_write(&ve->op_sem);
+	if (ve->is_running || ve->ve_ns) {
+		up_write(&ve->op_sem);
+		return -EBUSY;
+	}
+
+	if (cft->private == VE_CF_FEATURES)
+		ve->features = value;
+	up_write(&ve->op_sem);
+	return 0;
+}
+
 static struct cftype ve_cftypes[] = {
 	{
 		.name			= "state",
 		.flags			= CFTYPE_NOT_ON_ROOT,
 		.read_seq_string	= ve_state_read,
 		.write_string		= ve_state_write,
+		.private		= VE_CF_STATE,
 	},
 	{
 		.name			= "veid",
 		.flags			= CFTYPE_NOT_ON_ROOT,
 		.read_u64		= ve_id_read,
 		.write_u64		= ve_id_write,
+	},
+	{
+		.name			= "features",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_u64		= ve_read_u64,
+		.write_u64		= ve_write_u64,
+		.private		= VE_CF_FEATURES,
 	},
 	{
 		.name			= "mount_opts",
