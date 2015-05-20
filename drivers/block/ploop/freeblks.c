@@ -696,24 +696,20 @@ int ploop_fb_get_free_block(struct ploop_freeblks_desc *fbd,
 
 static void fbd_complete_bio(struct ploop_freeblks_desc *fbd, int err)
 {
-	struct ploop_device *plo = fbd->plo;
 	unsigned int nr_completed = 0;
 
 	while (fbd->fbd_dbl.head) {
 		struct bio * bio = fbd->fbd_dbl.head;
 		fbd->fbd_dbl.head = bio->bi_next;
 		bio->bi_next = NULL;
-		BIO_ENDIO(plo->queue, bio, err);
+		BIO_ENDIO(fbd->plo->queue, bio, err);
 		nr_completed++;
 	}
 	fbd->fbd_dbl.tail = NULL;
 
-	spin_lock_irq(&plo->lock);
-	plo->bio_total -= nr_completed;
-	if (!bio_list_empty(&plo->bio_discard_list) &&
-	    waitqueue_active(&plo->waitq))
-		wake_up_interruptible(&plo->waitq);
-	spin_unlock_irq(&plo->lock);
+	spin_lock_irq(&fbd->plo->lock);
+	fbd->plo->bio_total -= nr_completed;
+	spin_unlock_irq(&fbd->plo->lock);
 }
 
 void ploop_fb_reinit(struct ploop_freeblks_desc *fbd, int err)
