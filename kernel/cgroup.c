@@ -1585,17 +1585,6 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 	if (ret)
 		goto out_err;
 
-#ifdef CONFIG_VE
-	/*
-	 * Cgroups mounting from inside of VE is not allowed
-	 * until we get some iron prove that we are to.
-	 */
-	if (!ve_is_super(get_exec_env())) {
-		ret = -EACCES;
-		goto out_err;
-	}
-#endif
-
 	/*
 	 * Allocate a new cgroup root. We may not need it if we're
 	 * reusing an existing hierarchy.
@@ -1625,6 +1614,19 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 		const struct cred *cred;
 		int i;
 		struct css_set *cg;
+
+#ifdef CONFIG_VE
+		/*
+		 * We don't allow to mount new roots from inside
+		 * of container (but have to allow mounting existing
+		 * cgroups, because the VE restore procedure is
+		 * implemented from inside of container environment).
+		 */
+		if (!ve_is_super(get_exec_env())) {
+			ret = -EACCES;
+			goto drop_new_super;
+		}
+#endif
 
 		BUG_ON(sb->s_root != NULL);
 
