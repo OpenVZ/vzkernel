@@ -119,9 +119,8 @@ static void mitigation_timeout(unsigned long data)
 	spin_lock_irq(&plo->lock);
 	if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state) &&
 	    (!list_empty(&plo->entry_queue) ||
-	     ((plo->bio_head && !bio_list_empty(&plo->bio_discard_list)) &&
-		!list_empty(&plo->free_list))) &&
-		waitqueue_active(&plo->waitq))
+	     (plo->bio_head && !list_empty(&plo->free_list))) &&
+	    waitqueue_active(&plo->waitq))
 		wake_up_interruptible(&plo->waitq);
 	spin_unlock_irq(&plo->lock);
 }
@@ -240,8 +239,7 @@ void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list,
 	if (waitqueue_active(&plo->req_waitq))
 		wake_up(&plo->req_waitq);
 	else if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state) &&
-		waitqueue_active(&plo->waitq) &&
-		(plo->bio_head || !bio_list_empty(&plo->bio_discard_list)))
+		waitqueue_active(&plo->waitq) && plo->bio_head)
 		wake_up_interruptible(&plo->waitq);
 
 	ploop_uncongest(plo);
@@ -523,7 +521,6 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 			BIO_ENDIO(plo->queue, bio, err);
 			list_add(&preq->list, &plo->free_list);
 			plo->bio_qlen--;
-			plo->bio_discard_qlen--;
 			plo->bio_total--;
 			return;
 		}
@@ -761,28 +758,6 @@ static void ploop_unplug(struct blk_plug_cb *cb, bool from_schedule)
 	kfree(cb);
 }
 
-static void
-process_discard_bio_queue(struct ploop_device *plo, struct list_head *drop_list)
-{
-	bool discard = test_bit(PLOOP_S_DISCARD, &plo->state);
-	while (!list_empty(&plo->free_list)) {
-		struct bio *tmp;
-
-		/* Only one discard bio can be handled concurrently */
-		if (discard && ploop_discard_is_inprogress(plo->fbd))
-			return;
-
-		tmp = bio_list_pop(&plo->bio_discard_list);
-		if (tmp == NULL)
-			break;
-
-		/* If PLOOP_S_DISCARD isn't set, ploop_bio_queue
-		 * will complete it with a proper error.
-		 */
-		ploop_bio_queue(plo, tmp, drop_list);
-	}
-}
-
 static void ploop_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct bio * nbio;
@@ -870,12 +845,6 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 		return;
 	}
 
-	if (bio->bi_rw & REQ_DISCARD) {
-		bio_list_add(&plo->bio_discard_list, bio);
-		plo->bio_discard_qlen++;
-		goto queued;
-	}
-
 	/* Write tracking in fast path does not work at the moment. */
 	if (unlikely(test_bit(PLOOP_S_TRACK, &plo->state) &&
 		     (bio->bi_rw & WRITE)))
@@ -895,6 +864,9 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 		goto queue;
 
 	if (unlikely(nbio == NULL))
+		goto queue;
+
+	if (bio->bi_rw & REQ_DISCARD)
 		goto queue;
 
 	/* Try to merge before checking for fastpath. Maybe, this
@@ -978,7 +950,6 @@ queue:
 	/* second chance to merge requests */
 	process_bio_queue(plo, &drop_list);
 
-queued:
 	/* If main thread is waiting for requests, wake it up.
 	 * But try to mitigate wakeups, delaying wakeup for some short
 	 * time.
@@ -1297,9 +1268,7 @@ static void ploop_complete_request(struct ploop_request * preq)
 		if (waitqueue_active(&plo->req_waitq))
 			wake_up(&plo->req_waitq);
 		else if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state) &&
-			 waitqueue_active(&plo->waitq) &&
-			 (plo->bio_head ||
-			  !bio_list_empty(&plo->bio_discard_list)))
+			 waitqueue_active(&plo->waitq) && plo->bio_head)
 			wake_up_interruptible(&plo->waitq);
 	}
 	plo->bio_total -= nr_completed;
@@ -2571,8 +2540,7 @@ static void ploop_wait(struct ploop_device * plo, int once, struct blk_plug *plu
 			    (!test_bit(PLOOP_S_ATTENTION, &plo->state) ||
 			     !plo->active_reqs))
 				break;
-		} else if (plo->bio_head ||
-				!bio_list_empty(&plo->bio_discard_list)) {
+		} else if (plo->bio_head) {
 			/* ready_queue and entry_queue are empty, but
 			 * bio list not. Obviously, we'd like to process
 			 * bio_list instead of sleeping */
@@ -2672,7 +2640,7 @@ static int ploop_thread(void * data)
 		BUG_ON (!list_empty(&drop_list));
 
 		process_bio_queue(plo, &drop_list);
-		process_discard_bio_queue(plo, &drop_list);
+
 		if (!list_empty(&drop_list)) {
 			spin_unlock_irq(&plo->lock);
 			ploop_preq_drop(plo, &drop_list, 1);
@@ -2748,8 +2716,7 @@ static int ploop_thread(void * data)
 		 * no requests are in process or in entry queue
 		 */
 		if (kthread_should_stop() && !plo->active_reqs &&
-		    list_empty(&plo->entry_queue) && !plo->bio_head &&
-		    bio_list_empty(&plo->bio_discard_list))
+		    list_empty(&plo->entry_queue) && !plo->bio_head)
 			break;
 
 wait_more:
@@ -4634,7 +4601,6 @@ static struct ploop_device *__ploop_dev_alloc(int index)
 	map_init(plo, &plo->map);
 	track_init(plo);
 	KOBJECT_INIT(&plo->kobj, &ploop_ktype);
-	bio_list_init(&plo->bio_discard_list);
 	atomic_inc(&plo_count);
 
 	dk->major		= ploop_major;
