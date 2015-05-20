@@ -12,7 +12,6 @@ int ploop_fb_add_reloc_extent(struct ploop_freeblks_desc *fbd, cluster_t clu, ib
 void ploop_fb_lost_range_init(struct ploop_freeblks_desc *fbd, iblock_t first_lost_iblk);
 void ploop_fb_relocation_start(struct ploop_freeblks_desc *fbd, __u32 n_scanned);
 int ploop_discard_add_bio(struct ploop_freeblks_desc *fbd, struct bio *bio);
-int ploop_discard_is_inprogress(struct ploop_freeblks_desc *fbd);
 
 /* avoid direct access to freeblks internals */
 int ploop_fb_get_n_relocated(struct ploop_freeblks_desc *fbd);
