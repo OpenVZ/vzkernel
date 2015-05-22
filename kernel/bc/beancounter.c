@@ -450,7 +450,6 @@ static inline int bc_verify_held(struct user_beancounter *ub)
 	ub_stat_mod(ub, dirty_pages, __ub_percpu_sum(ub, dirty_pages));
 	ub_stat_mod(ub, writeback_pages, __ub_percpu_sum(ub, writeback_pages));
 	uncharge_beancounter_precharge(ub);
-	ub_update_resources_locked(ub);
 
 	clean = 1;
 	for (i = 0; i < UB_RESOURCES; i++)
@@ -955,7 +954,6 @@ static void init_beancounter_struct(struct user_beancounter *ub)
 	spin_lock_init(&ub->ub_lock);
 	INIT_LIST_HEAD(&ub->ub_tcp_sk_list);
 	INIT_LIST_HEAD(&ub->ub_other_sk_list);
-	init_oom_control(&ub->oom_ctrl);
 	spin_lock_init(&ub->rl_lock);
 	ub->rl_wall.tv64 = LLONG_MIN;
 }
@@ -1133,8 +1131,6 @@ void __init ub_init_late(void)
 	init_beancounter_syslimits(&default_beancounter);
 #endif
 	init_beancounter_struct(&default_beancounter);
-
-	init_oom_control(&global_oom_ctrl);
 }
 
 int __init ub_init_cgroup(void)
