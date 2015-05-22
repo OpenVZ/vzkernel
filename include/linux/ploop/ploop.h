@@ -350,6 +350,8 @@ struct ploop_device
 	struct bio		*bio_head;
 	struct bio		*bio_tail;
 	struct bio		*bio_sync;
+	struct bio_list		bio_discard_list;
+	int			bio_discard_qlen;
 	int			bio_qlen;
 	int			bio_total;
 
