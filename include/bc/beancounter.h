@@ -149,12 +149,6 @@ struct user_beancounter {
 
 	void			*private_data2;
 
-	struct list_head	ub_dentry_lru;
-	struct list_head	ub_dentry_top;
-	int			ub_dentry_unused;
-	int			ub_dentry_batch;
-	unsigned long		ub_dentry_pruned;
-
 	/* resources statistic and settings */
 	struct ubparm		ub_parms[UB_RESOURCES];
 	/* resources statistic for last interval */
