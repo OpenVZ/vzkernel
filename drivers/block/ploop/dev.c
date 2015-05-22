@@ -539,7 +539,10 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 
 	__TRACE("A %p %u\n", preq, preq->req_cluster);
 
-	plo->bio_qlen--;
+	if (unlikely(bio->bi_rw & REQ_DISCARD))
+		plo->bio_discard_qlen--;
+	else
+		plo->bio_qlen--;
 	ploop_entry_add(plo, preq);
 
 	if (bio->bi_size && !(bio->bi_rw & REQ_DISCARD))
@@ -2546,7 +2549,8 @@ static void ploop_wait(struct ploop_device * plo, int once, struct blk_plug *plu
 			     !plo->active_reqs))
 				break;
 		} else if (plo->bio_head ||
-			   !bio_list_empty(&plo->bio_discard_list)) {
+			   (!bio_list_empty(&plo->bio_discard_list) &&
+			    !ploop_discard_is_inprogress(plo->fbd))) {
 			/* ready_queue and entry_queue are empty, but
 			 * bio list not. Obviously, we'd like to process
 			 * bio_list instead of sleeping */
