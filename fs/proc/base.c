@@ -611,15 +611,15 @@ static const struct file_operations proc_cpuset_operations = {
 
 static int proc_oom_score(struct task_struct *task, char *buffer)
 {
-	int points = 0;
+	unsigned long totalpages = totalram_pages + total_swap_pages;
+	unsigned long points = 0;
 
 	read_lock(&tasklist_lock);
-	if (pid_alive(task)) {
-		points = oom_badness(task, NULL, NULL, ub_oom_total_pages(get_exec_ub()));
-		points = clamp(points, 0, 1000);
-	}
+	if (pid_alive(task))
+		points = oom_badness(task, NULL, NULL, totalpages) *
+						1000 / totalpages;
 	read_unlock(&tasklist_lock);
-	return sprintf(buffer, "%d\n", points);
+	return sprintf(buffer, "%lu\n", points);
 }
 
 struct limit_names {
