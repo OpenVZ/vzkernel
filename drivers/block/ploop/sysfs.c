@@ -259,6 +259,11 @@ static u32 show_queued_bios(struct ploop_device * plo)
 	return plo->bio_qlen;
 }
 
+static u32 show_discard_bios(struct ploop_device * plo)
+{
+	return plo->bio_discard_qlen;
+}
+
 static u32 show_active_reqs(struct ploop_device * plo)
 {
 	return plo->active_reqs;
@@ -451,6 +456,7 @@ static struct attribute *state_attributes[] = {
 	_A(fmt_version),
 	_A(total_bios),
 	_A(queued_bios),
+	_A(discard_bios),
 	_A(active_reqs),
 	_A(entry_reqs),
 	_A(entry_read_sync_reqs),
