@@ -428,8 +428,6 @@ struct mm_struct {
 	unsigned long flags; /* Must use atomic bitops to access the bits */
 
 	unsigned int vps_dumpable:2;
-	unsigned int global_oom:1;
-	unsigned int ub_oom:1;
 
 #ifdef CONFIG_BEANCOUNTERS
 	struct user_beancounter *mm_ub;
