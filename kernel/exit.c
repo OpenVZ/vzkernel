@@ -56,7 +56,6 @@
 #include <linux/shm.h>
 
 #include <bc/misc.h>
-#include <bc/oom_kill.h>
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
