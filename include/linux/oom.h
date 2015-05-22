@@ -88,19 +88,6 @@ static inline void oom_killer_enable(void)
 
 extern struct task_struct *find_lock_task_mm(struct task_struct *p);
 
-struct oom_control {
-	int			generation;
-	int			kill_counter;
-	unsigned long		last_kill;
-	int			oom_rage;
-	spinlock_t		lock;
-	wait_queue_head_t	wq;
-};
-
-extern struct oom_control global_oom_ctrl;
-
-static inline void init_oom_control(struct oom_control *oom_ctrl) { }
-
 void oom_report_invocation(char *type, struct user_beancounter *ub,
 		gfp_t gfp_mask, int order);
 

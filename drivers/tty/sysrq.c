@@ -46,7 +46,6 @@
 #include <linux/jiffies.h>
 #include <linux/ve.h>
 
-#include <bc/oom_kill.h>
 #include <bc/vmpages.h>
 
 #include <asm/ptrace.h>
@@ -363,8 +362,6 @@ static struct sysrq_key_op sysrq_term_op = {
 
 static void moom_callback(struct work_struct *ignored)
 {
-	//ub_oom_start(&global_oom_ctrl);
-	//global_oom_ctrl.kill_counter = 0;
 	out_of_memory(node_zonelist(first_online_node, GFP_KERNEL), GFP_KERNEL,
 		      0, NULL, true);
 }

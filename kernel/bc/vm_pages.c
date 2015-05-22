@@ -23,52 +23,6 @@
 #include <bc/beancounter.h>
 #include <bc/vmpages.h>
 #include <bc/proc.h>
-#include <bc/oom_kill.h>
-
-void __ub_update_oomguarpages(struct user_beancounter *ub)
-{
-	ub->ub_parms[UB_OOMGUARPAGES].held =
-		ub->ub_parms[UB_PRIVVMPAGES].held +
-		ub->ub_parms[UB_LOCKEDPAGES].held +
-		ub->ub_parms[UB_PHYSPAGES].held +
-		ub->ub_parms[UB_SWAPPAGES].held;
-
-	ub_adjust_maxheld(ub, UB_OOMGUARPAGES);
-}
-
-long ub_oomguarpages_left(struct user_beancounter *ub)
-{
-	unsigned long flags;
-	long left;
-	int precharge[UB_RESOURCES];
-
-	spin_lock_irqsave(&ub->ub_lock, flags);
-	__ub_update_oomguarpages(ub);
-	left = ub->ub_parms[UB_OOMGUARPAGES].barrier -
-		ub->ub_parms[UB_OOMGUARPAGES].held;
-	spin_unlock_irqrestore(&ub->ub_lock, flags);
-
-	ub_precharge_snapshot(ub, precharge);
-	left += precharge[UB_OOMGUARPAGES];
-
-	return left;
-}
-
-void ub_update_resources_locked(struct user_beancounter *ub)
-{
-	__ub_update_oomguarpages(ub);
-}
-EXPORT_SYMBOL(ub_update_resources_locked);
-
-void ub_update_resources(struct user_beancounter *ub)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&ub->ub_lock, flags);
-	ub_update_resources_locked(ub);
-	spin_unlock_irqrestore(&ub->ub_lock, flags);
-}
-EXPORT_SYMBOL(ub_update_resources);
 
 int ub_memory_charge(struct mm_struct *mm, unsigned long size,
 		unsigned vm_flags, struct file *vm_file, int sv)
