@@ -42,7 +42,6 @@
 #include <bc/beancounter.h>
 #include <bc/io_acct.h>
 #include <bc/vmpages.h>
-#include <bc/dcache.h>
 #include <bc/proc.h>
 
 static struct kmem_cache *ub_cachep;
@@ -464,8 +463,6 @@ static inline int bc_verify_held(struct user_beancounter *ub)
 	clean &= verify_res(ub, "tmpfs_respages", ub->ub_tmpfs_respages);
 
 	clean &= verify_res(ub, "pincount", __ub_percpu_sum(ub, pincount));
-
-	clean &= verify_res(ub, "dcache", !list_empty(&ub->ub_dentry_lru));
 
 	ub_debug_trace(!clean, 5, 60*HZ);
 
@@ -958,8 +955,6 @@ static void init_beancounter_struct(struct user_beancounter *ub)
 	spin_lock_init(&ub->ub_lock);
 	INIT_LIST_HEAD(&ub->ub_tcp_sk_list);
 	INIT_LIST_HEAD(&ub->ub_other_sk_list);
-	INIT_LIST_HEAD(&ub->ub_dentry_lru);
-	INIT_LIST_HEAD(&ub->ub_dentry_top);
 	init_oom_control(&ub->oom_ctrl);
 	spin_lock_init(&ub->rl_lock);
 	ub->rl_wall.tv64 = LLONG_MIN;
