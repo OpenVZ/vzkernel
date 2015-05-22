@@ -82,7 +82,6 @@
 #include <asm/tlbflush.h>
 
 #include <bc/misc.h>
-#include <bc/oom_kill.h>
 #include <bc/vmpages.h>
 
 #include <trace/events/sched.h>
@@ -679,8 +678,6 @@ void mmput(struct mm_struct *mm)
 		}
 		if (mm->binfmt)
 			module_put(mm->binfmt->module);
-		if (mm->global_oom || mm->ub_oom)
-			ub_oom_mm_dead(mm);
 		put_mm_ub(mm);
 		mmdrop(mm);
 	}
@@ -876,8 +873,6 @@ struct mm_struct *dup_mm(struct task_struct *tsk)
 		goto fail_nomem;
 
 	memcpy(mm, oldmm, sizeof(*mm));
-	mm->global_oom = 0;
-	mm->ub_oom = 0;
 	mm_init_cpumask(mm);
 
 #if defined(CONFIG_TRANSPARENT_HUGEPAGE) && !USE_SPLIT_PMD_PTLOCKS
