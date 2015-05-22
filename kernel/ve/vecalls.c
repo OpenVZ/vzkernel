@@ -75,8 +75,6 @@
 #include <linux/virtinfo.h>
 #include <linux/major.h>
 
-#include <bc/dcache.h>
-
 static struct cgroup *devices_root;
 
 static int	do_env_enter(struct ve_struct *ve, unsigned int flags);
