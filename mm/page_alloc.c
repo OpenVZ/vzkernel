@@ -64,8 +64,6 @@
 #include <linux/kthread.h>
 #include <linux/ve.h>
 
-#include <bc/oom_kill.h>
-
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
 #include <asm/div64.h>
@@ -2708,8 +2706,6 @@ __perform_reclaim(gfp_t gfp_mask, unsigned int order, struct zonelist *zonelist,
 {
 	struct reclaim_state reclaim_state;
 	int progress;
-
-	//ub_oom_start(&global_oom_ctrl);
 
 	cond_resched();
 

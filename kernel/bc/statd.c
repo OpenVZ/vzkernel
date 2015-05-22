@@ -232,8 +232,6 @@ static int ubstat_get_stat(struct user_beancounter *ub, long cmd,
 	if (retval)
 		goto out;
 
-	ub_update_resources(ub);
-
 	spin_lock(&ubs_notify_lock);
 	switch (UBSTAT_CMD(cmd)) {
 		case UBSTAT_READ_ONE:
@@ -381,7 +379,6 @@ static void ubstat_save_onestat(struct user_beancounter *ub)
 
 	/* called with local irq disabled */
 	spin_lock(&ub->ub_lock);
-	ub_update_resources_locked(ub);
 	for (resource = 0; resource < UB_RESOURCES; resource++) {
 		memcpy(&ub->ub_store[resource], &ub->ub_parms[resource],
 			sizeof(struct ubparm));
