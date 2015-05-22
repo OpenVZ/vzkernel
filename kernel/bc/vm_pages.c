@@ -202,18 +202,8 @@ static int bc_fill_sysinfo(struct user_beancounter *ub,
 	total = physpages.limit;
 	used = physpages.held;
 
-	if (total == UB_MAXVALUE) {
-		if (meminfo_val == VE_MEMINFO_DEFAULT)
-			total = totalram;
-		else {
-			total = min(meminfo_val, totalram);
-			used = __get_beancounter_usage_percpu(ub, UB_PRIVVMPAGES);
-			if (glob_ve_meminfo) {
-				ub_update_resources(ub);
-				used = ub->ub_parms[UB_OOMGUARPAGES].held;
-			}
-		}
-	}
+	if (total == UB_MAXVALUE)
+		total = totalram;
 
 	si->totalram = total;
 	si->freeram = (total > used ? total - used : 0);
@@ -221,12 +211,8 @@ static int bc_fill_sysinfo(struct user_beancounter *ub,
 	total = swappages.limit;
 	used = swappages.held;
 
-	if (total == UB_MAXVALUE) {
-		if (meminfo_val == VE_MEMINFO_DEFAULT)
-			total = totalswap;
-		else
-			total = 0;
-	}
+	if (total == UB_MAXVALUE)
+		total = totalswap;
 
 	si->totalswap = total;
 	si->freeswap = (total > used ? total - used : 0);
