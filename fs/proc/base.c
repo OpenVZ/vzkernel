@@ -95,8 +95,6 @@
 #include "internal.h"
 #include "fd.h"
 
-#include <bc/oom_kill.h>
-
 /* NOTE:
  *	Implementing inode permission operations in /proc is almost
  *	certainly an error.  Permission checks need to happen during

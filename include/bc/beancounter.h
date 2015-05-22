@@ -19,7 +19,6 @@
 #include <linux/threads.h>
 #include <linux/percpu.h>
 #include <linux/percpu_counter.h>
-#include <linux/oom.h>
 #include <linux/ratelimit.h>
 #include <linux/cgroup.h>
 #include <bc/debug.h>
@@ -155,17 +154,14 @@ struct user_beancounter {
 	struct ubparm		*ub_store;
 
 	struct ub_percpu_struct	*ub_percpu;
-	struct oom_control	oom_ctrl;
 };
 
 enum ub_flags {
 	UB_DIRTY_EXCEEDED,
-	UB_OOM_NOPROC,
 	UB_OOM_MANUAL_SCORE_ADJ,
 };
 
 extern int ub_count;
-extern struct oom_control global_oom_ctrl;
 
 enum ub_severity { UB_HARD, UB_SOFT, UB_FORCE };
 
@@ -320,10 +316,6 @@ extern void __uncharge_beancounter_locked(struct user_beancounter *ub,
 
 extern void uncharge_warn(struct user_beancounter *ub, const char *resource,
 		unsigned long val, unsigned long held);
-
-extern long ub_oomguarpages_left(struct user_beancounter *ub);
-extern void ub_update_resources_locked(struct user_beancounter *ub);
-extern void ub_update_resources(struct user_beancounter *ub);
 
 extern int ub_update_mem_cgroup_limits(struct user_beancounter *ub);
 
