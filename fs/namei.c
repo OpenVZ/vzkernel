@@ -133,7 +133,6 @@ getname_flags(const char __user *filename, int flags, int *empty)
 	if (result)
 		return result;
 
-	/*ub_dentry_checkup();*/
 	result = __getname();
 	if (unlikely(!result))
 		return ERR_PTR(-ENOMEM);
