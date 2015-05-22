@@ -348,10 +348,9 @@ void __show_ub_mem(struct user_beancounter *ub)
 	__show_one_resource("DCSZ", ub->ub_parms + UB_DCACHESIZE);
 	__show_one_resource("OOMG", ub->ub_parms + UB_OOMGUARPAGES);
 
-	printk("Dirty %lu Wback %lu Dche %u Prnd %lu\n",
+	printk("Dirty %lu Wback %lu\n",
 			ub_stat_get(ub, dirty_pages),
-			ub_stat_get(ub, writeback_pages),
-			ub->ub_dentry_unused, ub->ub_dentry_pruned);
+			ub_stat_get(ub, writeback_pages));
 }
 
 void show_ub_mem(struct user_beancounter *ub)
