@@ -47,8 +47,6 @@ UB_DECLARE_FUNC(int, ub_lockedshm_charge(struct shmem_inode_info *shi,
 UB_DECLARE_VOID_FUNC(ub_lockedshm_uncharge(struct shmem_inode_info *shi,
 			unsigned long size))
 
-extern void __ub_update_oomguarpages(struct user_beancounter *ub);
-
 static inline int ub_swap_full(struct user_beancounter *ub)
 {
 	return (ub->ub_parms[UB_SWAPPAGES].held * 2 >

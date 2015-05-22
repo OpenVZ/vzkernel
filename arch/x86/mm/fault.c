@@ -20,8 +20,6 @@
 #include <asm/kmemcheck.h>		/* kmemcheck_*(), ...		*/
 #include <asm/fixmap.h>			/* VSYSCALL_START		*/
 
-#include <bc/oom_kill.h>
-
 #define CREATE_TRACE_POINTS
 #include <asm/trace/exceptions.h>
 
