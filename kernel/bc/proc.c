@@ -20,7 +20,6 @@
 
 #include <bc/beancounter.h>
 #include <bc/proc.h>
-#include <bc/dcache.h>
 
 /* Generic output formats */
 #if BITS_PER_LONG == 32
@@ -121,8 +120,6 @@ static int bc_debug_show(struct seq_file *f, void *v)
 	seq_printf(f, "bc: %p\n", ub);
 	seq_printf(f, "sizeof: %lu\n", sizeof(struct user_beancounter));
 	seq_printf(f, "pincount: %d\n", __ub_percpu_sum(ub, pincount));
-
-	seq_printf(f, "dcache_pruned: %lu\n", ub->ub_dentry_pruned);
 
 	seq_printf(f, "oom_score_adj: %s\n", (ub->ub_flags &
 				UB_OOM_MANUAL_SCORE_ADJ) ? "manual" : "auto");
