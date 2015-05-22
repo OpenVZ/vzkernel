@@ -12,6 +12,10 @@ config BEANCOUNTERS
 	bool "Enable user resource accounting"
 	default y
 	select CGROUPS
+	select MEMCG
+	select MEMCG_KMEM
+	select MEMCG_SWAP if SWAP
+	select MEMCG_SWAP_ENABLED if SWAP
 	help 
           This patch provides accounting and allows to configure
           limits for user's consumption of exhaustible system resources.
@@ -25,21 +29,6 @@ config BEANCOUNTERS
           because they cover only small fraction of resources and work on a 
           per-process basis.  Per-process accounting doesn't prevent malicious
           users from spawning a lot of resource-consuming processes.
-
-config BC_RSS_ACCOUNTING
-	bool "Account physical memory usage"
-	default y
-	depends on BEANCOUNTERS
-	select RESOURCE_COUNTERS
-	select MEMCG
-	select MEMCG_KMEM
-	select MEMCG_SWAP if SWAP
-	select MEMCG_SWAP_ENABLED if SWAP
-	select CGROUP_HUGETLB if HUGETLBFS
-	help
-          This allows to estimate per beancounter physical memory usage.
-          Implemented alghorithm accounts shared pages of memory as well,
-          dividing them by number of beancounter which use the page.
 
 config BC_IO_ACCOUNTING
 	bool "Account file I/O"
