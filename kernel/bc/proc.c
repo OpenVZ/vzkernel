@@ -198,12 +198,7 @@ static struct bc_proc_entry bc_meminfo_entry = {
 	.u.show = bc_proc_meminfo_show,
 };
 
-#ifdef CONFIG_BC_RSS_ACCOUNTING
-
-#include <linux/memcontrol.h>
-
 #define K(x) ((x) << (PAGE_SHIFT - 10))
-
 static int bc_proc_nodeinfo_show(struct seq_file *f, void *v)
 {
 	int nid;
@@ -241,7 +236,6 @@ static struct bc_proc_entry bc_nodeinfo_entry = {
 	.name = "nodeinfo",
 	.u.show = bc_proc_nodeinfo_show,
 };
-#endif
 
 #if 0
 
@@ -931,9 +925,7 @@ static int __init ub_init_proc(void)
 //	bc_register_proc_entry(&bc_dcacheinfo_entry);
 	bc_register_proc_root_entry(&bc_all_resources_entry);
 	bc_register_proc_entry(&bc_meminfo_entry);
-#ifdef CONFIG_BC_RSS_ACCOUNTING
 	bc_register_proc_entry(&bc_nodeinfo_entry);
-#endif
 
 	entry = proc_create("user_beancounters",
 			S_IRUSR|S_ISVTX, NULL, &ub_file_operations);
