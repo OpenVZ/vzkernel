@@ -105,8 +105,6 @@ struct ub_percpu_struct {
 
 	/* percpu resource precharge */
 	int	precharge[UB_RESOURCES];
-
-	int pincount;
 };
 
 struct user_beancounter {
