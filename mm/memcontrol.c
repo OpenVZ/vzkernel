@@ -281,6 +281,8 @@ struct mem_cgroup {
 
 	/* beancounter-related stats */
 	unsigned long long swap_max;
+	atomic_long_t mem_failcnt;
+	atomic_long_t swap_failcnt;
 
 	/*
 	 * Should the accounting and control be hierarchical, per subtree?
@@ -882,6 +884,18 @@ static void mem_cgroup_update_swap_max(struct mem_cgroup *memcg)
 	/* This is racy, but we don't have to be absolutely precise */
 	if (swap > (long long)memcg->swap_max)
 		memcg->swap_max = swap;
+}
+
+static void mem_cgroup_inc_failcnt(struct mem_cgroup *memcg,
+				   gfp_t gfp_mask, unsigned int nr_pages)
+{
+	if (gfp_mask & __GFP_NOWARN)
+		return;
+
+	atomic_long_inc(&memcg->mem_failcnt);
+	if (do_swap_account &&
+	    res_counter_margin(&memcg->memsw) < nr_pages * PAGE_SIZE)
+		atomic_long_inc(&memcg->swap_failcnt);
 }
 
 static unsigned long mem_cgroup_read_events(struct mem_cgroup *memcg,
@@ -2618,11 +2632,15 @@ static int mem_cgroup_do_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	if (nr_pages > min_pages)
 		return CHARGE_RETRY;
 
-	if (!(gfp_mask & __GFP_WAIT))
+	if (!(gfp_mask & __GFP_WAIT)) {
+		mem_cgroup_inc_failcnt(mem_over_limit, gfp_mask, nr_pages);
 		return CHARGE_WOULDBLOCK;
+	}
 
-	if (gfp_mask & __GFP_NORETRY)
+	if (gfp_mask & __GFP_NORETRY) {
+		mem_cgroup_inc_failcnt(mem_over_limit, gfp_mask, nr_pages);
 		return CHARGE_NOMEM;
+	}
 
 	ret = mem_cgroup_reclaim(mem_over_limit, gfp_mask, flags);
 	if (mem_cgroup_margin(mem_over_limit) >= nr_pages)
@@ -2649,6 +2667,9 @@ static int mem_cgroup_do_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	/* If we don't need to call oom-killer at el, return immediately */
 	if (!oom_check)
 		return CHARGE_NOMEM;
+
+	mem_cgroup_inc_failcnt(mem_over_limit, gfp_mask, nr_pages);
+
 	/* check OOM */
 	if (!mem_cgroup_handle_oom(mem_over_limit, gfp_mask, get_order(csize)))
 		return CHARGE_OOM_DIE;
@@ -5139,7 +5160,7 @@ void mem_cgroup_fill_ub_parms(struct cgroup *cg,
 
 	p->held	= res_counter_read_u64(&memcg->res, RES_USAGE) >> PAGE_SHIFT;
 	p->maxheld = res_counter_read_u64(&memcg->res, RES_MAX_USAGE) >> PAGE_SHIFT;
-	p->failcnt = res_counter_read_u64(&memcg->res, RES_FAILCNT);
+	p->failcnt = atomic_long_read(&memcg->mem_failcnt);
 	lim = res_counter_read_u64(&memcg->res, RES_LIMIT);
 	lim = lim == RESOURCE_MAX ? UB_MAXVALUE :
 		min_t(unsigned long long, lim >> PAGE_SHIFT, UB_MAXVALUE);
@@ -5156,7 +5177,7 @@ void mem_cgroup_fill_ub_parms(struct cgroup *cg,
 	s->held	= res_counter_read_u64(&memcg->memsw, RES_USAGE) >> PAGE_SHIFT;
 	s->held -= p->held;
 	s->maxheld = memcg->swap_max >> PAGE_SHIFT;
-	s->failcnt = res_counter_read_u64(&memcg->memsw, RES_FAILCNT);
+	s->failcnt = atomic_long_read(&memcg->swap_failcnt);
 	lim = res_counter_read_u64(&memcg->memsw, RES_LIMIT);
 	lim = lim == RESOURCE_MAX ? UB_MAXVALUE :
 		min_t(unsigned long long, lim >> PAGE_SHIFT, UB_MAXVALUE);
