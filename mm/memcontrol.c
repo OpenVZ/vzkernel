@@ -5166,11 +5166,15 @@ static int mem_cgroup_move_charge_write(struct cgroup *cgrp,
 
 #include <bc/beancounter.h>
 
-void mem_cgroup_fill_ub_parms(struct cgroup *cg,
-		struct ubparm *p, struct ubparm *s, struct ubparm *k)
+void mem_cgroup_sync_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cg);
-	unsigned long long lim;
+	unsigned long long lim, held, maxheld;
+	volatile struct ubparm *k, *p, *s;
+
+	k = &ub->ub_parms[UB_KMEMSIZE];
+	p = &ub->ub_parms[UB_PHYSPAGES];
+	s = &ub->ub_parms[UB_SWAPPAGES];
 
 	p->held	= res_counter_read_u64(&memcg->res, RES_USAGE) >> PAGE_SHIFT;
 	p->maxheld = res_counter_read_u64(&memcg->res, RES_MAX_USAGE) >> PAGE_SHIFT;
@@ -5188,9 +5192,9 @@ void mem_cgroup_fill_ub_parms(struct cgroup *cg,
 		min_t(unsigned long long, lim, UB_MAXVALUE);
 	k->barrier = k->limit = lim;
 
-	s->held	= res_counter_read_u64(&memcg->memsw, RES_USAGE) >> PAGE_SHIFT;
-	s->held -= p->held;
-	s->maxheld = memcg->swap_max >> PAGE_SHIFT;
+	held = (res_counter_read_u64(&memcg->memsw, RES_USAGE) -
+		res_counter_read_u64(&memcg->res, RES_USAGE)) >> PAGE_SHIFT;
+	maxheld = memcg->swap_max >> PAGE_SHIFT;
 	s->failcnt = atomic_long_read(&memcg->swap_failcnt);
 	lim = res_counter_read_u64(&memcg->memsw, RES_LIMIT);
 	lim = lim == RESOURCE_MAX ? UB_MAXVALUE :
@@ -5201,8 +5205,8 @@ void mem_cgroup_fill_ub_parms(struct cgroup *cg,
 
 	/* Due to global reclaim, memory.memsw.usage can be greater than
 	 * (memory.memsw.limit - memory.limit). */
-	s->held = min(s->held, s->limit);
-	s->maxheld = min(s->maxheld, s->limit);
+	s->held = min(held, lim);
+	s->maxheld = min(maxheld, lim);
 }
 
 int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
