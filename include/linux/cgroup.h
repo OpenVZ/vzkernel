@@ -167,7 +167,6 @@ static inline void css_put(struct cgroup_subsys_state *css)
 }
 
 extern int css_refcnt(struct cgroup_subsys_state *css);
-extern bool css_refcnt_inc_not_zero(struct cgroup_subsys_state *css);
 
 /* bits in struct cgroup flags field */
 enum {
