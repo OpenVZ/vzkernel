@@ -45,27 +45,10 @@ static const char *res_fmt = "%10s%c %-12s %20lu %20lu %20lu %20lu %20lu\n";
 static void ub_show_res(struct seq_file *f, struct user_beancounter *ub,
 		int r, int precharge, int show_uid)
 {
+	struct ubparm *p;
 	unsigned long held;
-	struct ubparm *p, v;
-	bool precharge_valid = false;
 
-	p = &v;
-	switch (r) {
-	case UB_PHYSPAGES:
-		ub_get_mem_cgroup_parms(ub, p, NULL, NULL);
-		break;
-	case UB_SWAPPAGES:
-		ub_get_mem_cgroup_parms(ub, NULL, p, NULL);
-		break;
-	case UB_KMEMSIZE:
-		ub_get_mem_cgroup_parms(ub, NULL, NULL, p);
-		break;
-	default:
-		p = &ub->ub_parms[r];
-		precharge_valid = true;
-		break;
-	}
-
+	p = &ub->ub_parms[r];
 	held = p->held;
 	held = (held > precharge) ? (held - precharge) : 0;
 
@@ -85,6 +68,7 @@ static void __show_resources(struct seq_file *f, struct user_beancounter *ub,
 {
 	int i, precharge[UB_RESOURCES];
 
+	ub_sync_memcg(ub);
 	ub_precharge_snapshot(ub, precharge);
 
 	for (i = 0; i < UB_RESOURCES_COMPAT; i++)
@@ -300,6 +284,7 @@ static int ub_show(struct seq_file *f, void *v)
 	int i, precharge[UB_RESOURCES];
 	struct user_beancounter *ub = v;
 
+	ub_sync_memcg(ub);
 	ub_precharge_snapshot(ub, precharge);
 
 	for (i = 0; i < UB_RESOURCES_COMPAT; i++)

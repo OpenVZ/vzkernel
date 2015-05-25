@@ -202,31 +202,18 @@ int ub_update_mem_cgroup_limits(struct user_beancounter *ub)
 	return ret;
 }
 
-extern void mem_cgroup_fill_ub_parms(struct cgroup *cg,
-		struct ubparm *p, struct ubparm *s, struct ubparm *k);
+extern void mem_cgroup_sync_beancounter(struct cgroup *cg,
+					struct user_beancounter *ub);
 
-void ub_get_mem_cgroup_parms(struct user_beancounter *ub,
-			     struct ubparm *physpages,
-			     struct ubparm *swappages,
-			     struct ubparm *kmemsize)
+void ub_sync_memcg(struct user_beancounter *ub)
 {
 	struct cgroup *cg;
-	struct ubparm parms[3];
-
-	memset(parms, 0, sizeof(parms));
 
 	cg = ub_cgroup_open(mem_cgroup_root, ub);
 	if (!IS_ERR_OR_NULL(cg)) {
-		mem_cgroup_fill_ub_parms(cg, &parms[0], &parms[1], &parms[2]);
+		mem_cgroup_sync_beancounter(cg, ub);
 		ub_cgroup_close(mem_cgroup_root, cg);
 	}
-
-	if (physpages)
-		*physpages = parms[0];
-	if (swappages)
-		*swappages = parms[1];
-	if (kmemsize)
-		*kmemsize = parms[2];
 }
 
 extern void mem_cgroup_get_nr_pages(struct cgroup *cg, int nid,
@@ -444,6 +431,11 @@ static inline int bc_verify_held(struct user_beancounter *ub)
 	ub_stat_mod(ub, dirty_pages, __ub_percpu_sum(ub, dirty_pages));
 	ub_stat_mod(ub, writeback_pages, __ub_percpu_sum(ub, writeback_pages));
 	uncharge_beancounter_precharge(ub);
+
+	/* accounted by memcg */
+	ub->ub_parms[UB_KMEMSIZE].held = 0;
+	ub->ub_parms[UB_PHYSPAGES].held = 0;
+	ub->ub_parms[UB_SWAPPAGES].held = 0;
 
 	clean = 1;
 	for (i = 0; i < UB_RESOURCES; i++)
