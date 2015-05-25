@@ -47,7 +47,4 @@ UB_DECLARE_FUNC(int, ub_lockedshm_charge(struct shmem_inode_info *shi,
 UB_DECLARE_VOID_FUNC(ub_lockedshm_uncharge(struct shmem_inode_info *shi,
 			unsigned long size))
 
-void __show_ub_mem(struct user_beancounter *ub);
-void show_ub_mem(struct user_beancounter *ub);
-
 #endif /* __UB_PAGES_H_ */
