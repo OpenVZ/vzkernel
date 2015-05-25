@@ -986,9 +986,7 @@ static void init_beancounter_syslimits(struct user_beancounter *ub)
 	int k;
 
 	mp = num_physpages;
-	ub->ub_parms[UB_KMEMSIZE].limit = 
-		mp > (192*1024*1024 >> PAGE_SHIFT) ?
-				32*1024*1024 : (mp << PAGE_SHIFT) / 6;
+	ub->ub_parms[UB_KMEMSIZE].limit = UB_MAXVALUE;
 	ub->ub_parms[UB_LOCKEDPAGES].limit = 8;
 	ub->ub_parms[UB_PRIVVMPAGES].limit = UB_MAXVALUE;
 	ub->ub_parms[UB_SHMPAGES].limit = 64;
