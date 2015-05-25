@@ -140,7 +140,6 @@ static int bc_fill_sysinfo(struct user_beancounter *ub,
 {
 	unsigned long used, total;
 	unsigned long totalram, totalswap;
-	struct ubparm physpages, swappages;
 
 	/* No virtualization */
 	if (meminfo_val == VE_MEMINFO_SYSTEM)
@@ -151,10 +150,10 @@ static int bc_fill_sysinfo(struct user_beancounter *ub,
 
 	memset(si, 0, sizeof(*si));
 
-	ub_get_mem_cgroup_parms(ub, &physpages, &swappages, NULL);
+	ub_sync_memcg(ub);
 
-	total = physpages.limit;
-	used = physpages.held;
+	total = ub->ub_parms[UB_PHYSPAGES].limit;
+	used = ub->ub_parms[UB_PHYSPAGES].held;
 
 	if (total == UB_MAXVALUE)
 		total = totalram;
@@ -162,8 +161,8 @@ static int bc_fill_sysinfo(struct user_beancounter *ub,
 	si->totalram = total;
 	si->freeram = (total > used ? total - used : 0);
 
-	total = swappages.limit;
-	used = swappages.held;
+	total = ub->ub_parms[UB_SWAPPAGES].limit;
+	used = ub->ub_parms[UB_SWAPPAGES].held;
 
 	if (total == UB_MAXVALUE)
 		total = totalswap;
@@ -181,13 +180,12 @@ static int bc_fill_meminfo(struct user_beancounter *ub,
 {
 	int cpu, ret;
 	long dcache;
-	struct ubparm kmemsize;
 
 	ret = bc_fill_sysinfo(ub, meminfo_val, mi->si);
 	if (ret & NOTIFY_STOP_MASK)
 		goto out;
 
-	ub_get_mem_cgroup_parms(ub, NULL, NULL, &kmemsize);
+	ub_sync_memcg(ub);
 	ub_page_stat(ub, &node_online_map, mi->pages);
 
 	mi->cached = min(mi->si->totalram - mi->si->freeram,
@@ -212,7 +210,8 @@ static int bc_fill_meminfo(struct user_beancounter *ub,
 
 	mi->slab_reclaimable = DIV_ROUND_UP(max(0L, dcache), PAGE_SIZE);
 	mi->slab_unreclaimable =
-		DIV_ROUND_UP(max(0L, (long)kmemsize.held - dcache), PAGE_SIZE);
+		DIV_ROUND_UP(max(0L, (long)ub->ub_parms[UB_KMEMSIZE].held -
+							dcache), PAGE_SIZE);
 out:
 	return ret;
 }
@@ -276,12 +275,11 @@ static int bc_vmaux_show(struct seq_file *f, void *v)
 	struct user_beancounter *ub;
 	struct ub_percpu_struct *ub_pcpu;
 	unsigned long swapin, swapout, vswapin, vswapout;
-	struct ubparm physpages;
 	int i;
 
 	ub = seq_beancounter(f);
 
-	ub_get_mem_cgroup_parms(ub, &physpages, NULL, NULL);
+	ub_sync_memcg(ub);
 
 	swapin = swapout = vswapin = vswapout = 0;
 	for_each_possible_cpu(i) {
@@ -301,7 +299,7 @@ static int bc_vmaux_show(struct seq_file *f, void *v)
 	seq_printf(f, bc_proc_lu_fmt, "vswapin", vswapin);
 	seq_printf(f, bc_proc_lu_fmt, "vswapout", vswapout);
 
-	seq_printf(f, bc_proc_lu_fmt, "ram", physpages.held);
+	seq_printf(f, bc_proc_lu_fmt, "ram", ub->ub_parms[UB_PHYSPAGES].held);
 
 	return 0;
 }
