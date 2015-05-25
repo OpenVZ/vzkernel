@@ -5208,7 +5208,7 @@ void mem_cgroup_fill_ub_parms(struct cgroup *cg,
 int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cg);
-	unsigned long long mem, memsw, kmem, mem_old, memsw_old;
+	unsigned long long mem, memsw, mem_old, memsw_old;
 	int ret = 0;
 
 	mem = ub->ub_parms[UB_PHYSPAGES].limit;
@@ -5227,15 +5227,13 @@ int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 	else
 		memsw = RESOURCE_MAX;
 
-	kmem = ub->ub_parms[UB_KMEMSIZE].limit;
-	if (kmem >= RESOURCE_MAX)
-		kmem = RESOURCE_MAX - 1; /* not 'unlimited' */
+	if (ub->ub_parms[UB_KMEMSIZE].limit != UB_MAXVALUE)
+		pr_warn_once("ub: kmemsize limit is deprecated\n");
 
-	if (res_counter_read_u64(&memcg->kmem, RES_LIMIT) != kmem) {
-		ret = memcg_update_kmem_limit(memcg, kmem);
-		if (ret)
-			goto out;
-	}
+	/* activate kmem accounting */
+	ret = memcg_update_kmem_limit(memcg, RESOURCE_MAX);
+	if (ret)
+		goto out;
 
 	/* try change mem+swap before changing mem limit */
 	if (res_counter_read_u64(&memcg->memsw, RES_LIMIT) != memsw)
