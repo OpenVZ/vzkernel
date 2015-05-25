@@ -80,8 +80,6 @@ const char *ub_rnames[] = {
 
 unsigned int ub_dcache_threshold __read_mostly = 4 * 1024; /* ~7Mb per container */
 
-static int ubc_ioprio = 1;
-
 /* default maximum perpcu resources precharge */
 int ub_resource_precharge[UB_RESOURCES] = {
 	[UB_PRIVVMPAGES]= 256,
@@ -129,8 +127,6 @@ static int ub_blkio_cgroup_attach_task(struct user_beancounter *ub,
 	struct cgroup *cg;
 	int ret;
 
-	if (!ubc_ioprio)
-		return 0;
 	cg = ub_cgroup_open(blkio_cgroup_root, ub);
 	if (IS_ERR(cg))
 		return PTR_ERR(cg);
@@ -1051,13 +1047,6 @@ static ctl_table ub_sysctl_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec,
 	},
-	{
-		.procname	= "ioprio",
-		.data		= &ubc_ioprio,
-		.maxlen		= sizeof(ubc_ioprio),
-		.mode		= 0644,
-		.proc_handler	= &proc_dointvec,
-	},
 #ifdef CONFIG_BC_IO_ACCOUNTING
 	{
 		.procname	= "dirty_ratio",
@@ -1140,10 +1129,3 @@ int __init ub_init_cgroup(void)
 	return 0;
 }
 late_initcall(ub_init_cgroup);
-
-static int __init parse_ubc_ioprio(char *arg)
-{
-	ubc_ioprio = simple_strtoul(arg, NULL, 0);
-	return 0;
-}
-__setup("ubc.ioprio=", parse_ubc_ioprio);
