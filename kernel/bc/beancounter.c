@@ -109,9 +109,6 @@ static void ub_cgroup_close(struct cgroup *root, struct cgroup *cg)
 		cgroup_kernel_close(cg);
 }
 
-extern int mem_cgroup_apply_beancounter(struct cgroup *cg,
-					struct user_beancounter *ub);
-
 static int ub_mem_cgroup_attach_task(struct user_beancounter *ub,
 				     struct task_struct *tsk)
 {
@@ -121,12 +118,7 @@ static int ub_mem_cgroup_attach_task(struct user_beancounter *ub,
 	cg = ub_cgroup_open(mem_cgroup_root, ub);
 	if (IS_ERR(cg))
 		return PTR_ERR(cg);
-	if (ub != get_ub0())
-		ret = mem_cgroup_apply_beancounter(cg, ub);
-	else
-		ret = 0;
-	if (!ret)
-		ret = cgroup_kernel_attach(cg, tsk);
+	ret = cgroup_kernel_attach(cg, tsk);
 	ub_cgroup_close(mem_cgroup_root, cg);
 	return ret;
 }
@@ -186,7 +178,12 @@ fail_blkio:
 	goto out;
 }
 
-int ub_update_mem_cgroup_limits(struct user_beancounter *ub)
+extern void mem_cgroup_sync_beancounter(struct cgroup *cg,
+					struct user_beancounter *ub);
+extern int mem_cgroup_apply_beancounter(struct cgroup *cg,
+					struct user_beancounter *ub);
+
+int ub_update_memcg(struct user_beancounter *ub)
 {
 	struct cgroup *cg;
 	int ret;
@@ -201,9 +198,6 @@ int ub_update_mem_cgroup_limits(struct user_beancounter *ub)
 	ub_cgroup_close(mem_cgroup_root, cg);
 	return ret;
 }
-
-extern void mem_cgroup_sync_beancounter(struct cgroup *cg,
-					struct user_beancounter *ub);
 
 void ub_sync_memcg(struct user_beancounter *ub)
 {
@@ -383,6 +377,8 @@ struct user_beancounter *get_beancounter_by_name(const char *name, int create)
 				return NULL;
 			pr_warn_once("Allocating UB with syslimits is deprecated!\n");
 			init_beancounter_syslimits(cgroup_ub(cg));
+			if (ub_update_memcg(cgroup_ub(cg)) != 0)
+				pr_warn("Failed to init UB %s limits\n", name);
 		}
 	} else {
 		cg = cgroup_kernel_open(ub_cgroup_root, 0, name);
