@@ -444,14 +444,6 @@ static inline int bc_verify_held(struct user_beancounter *ub)
 	return clean;
 }
 
-static void bc_free_rcu(struct rcu_head *rcu)
-{
-	struct user_beancounter *ub;
-
-	ub = container_of(rcu, struct user_beancounter, rcu);
-	free_ub(ub);
-}
-
 static struct cgroup_subsys_state *ub_cgroup_css_alloc(struct cgroup *cg)
 {
 	struct user_beancounter *ub;
@@ -467,16 +459,25 @@ static struct cgroup_subsys_state *ub_cgroup_css_alloc(struct cgroup *cg)
 	if (!ub)
 		return ERR_PTR(-ENOMEM);
 
+	return &ub->css;
+}
+
+static int ub_cgroup_css_online(struct cgroup *cg)
+{
+	struct user_beancounter *ub = cgroup_ub(cg);
+
+	if (!cg->parent)
+		return 0;
+
 	init_beancounter_nolimits(ub);
 	spin_lock(&ub_list_lock);
 	list_add_rcu(&ub->ub_list, &ub_list_head);
 	ub_count++;
 	spin_unlock(&ub_list_lock);
-
-	return &ub->css;
+	return 0;
 }
 
-static void ub_cgroup_css_free(struct cgroup *cg)
+static void ub_cgroup_css_offline(struct cgroup *cg)
 {
 	struct user_beancounter *ub = cgroup_ub(cg);
 
@@ -484,6 +485,11 @@ static void ub_cgroup_css_free(struct cgroup *cg)
 	ub_count--;
 	list_del_rcu(&ub->ub_list);
 	spin_unlock(&ub_list_lock);
+}
+
+static void ub_cgroup_css_free(struct cgroup *cg)
+{
+	struct user_beancounter *ub = cgroup_ub(cg);
 
 	if (!bc_verify_held(ub)) {
 		printk(KERN_ERR "UB: leaked beancounter %s (%p)\n",
@@ -491,8 +497,7 @@ static void ub_cgroup_css_free(struct cgroup *cg)
 		add_taint(TAINT_CRAP, LOCKDEP_STILL_OK);
 		return;
 	}
-
-	call_rcu(&ub->rcu, bc_free_rcu);
+	free_ub(ub);
 }
 
 static void ub_cgroup_attach_work_fn(struct callback_head *ch)
@@ -675,6 +680,8 @@ struct cgroup_subsys ub_subsys = {
 	.name = "beancounter",
 	.subsys_id = ub_subsys_id,
 	.css_alloc = ub_cgroup_css_alloc,
+	.css_online = ub_cgroup_css_online,
+	.css_offline = ub_cgroup_css_offline,
 	.css_free = ub_cgroup_css_free,
 	.attach = ub_cgroup_attach,
 	.use_id = true,

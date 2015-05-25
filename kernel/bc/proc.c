@@ -301,8 +301,6 @@ static int res_show(struct seq_file *f, void *v)
 static int ub_accessible(struct user_beancounter *exec,
 		struct user_beancounter *target)
 {
-	if (ub_dead(target))
-		return 0;
 	return (exec == get_ub0() || exec == target);
 }
 
@@ -496,7 +494,6 @@ static int bc_readdir(struct file *file, filldir_t filler, void *data,
 	loff_t pos, filled;
 	struct user_beancounter *ub, *prev;
 	struct bc_proc_entry *pde;
-	char *buf = NULL;
 
 	if (!(capable(CAP_DAC_OVERRIDE) && capable(CAP_DAC_READ_SEARCH)))
 		return -EPERM;
@@ -540,19 +537,10 @@ static int bc_readdir(struct file *file, filldir_t filler, void *data,
 	if (parent)
 		goto out;
 
-	buf = kmalloc(NAME_MAX + 1, GFP_KERNEL);
-	if (!buf) {
-		err = -ENOMEM;
-		goto out;
-	}
-
 	rcu_read_lock();
 	prev = NULL;
 	ub = list_entry(&ub_list_head, struct user_beancounter, ub_list);
 	while (1) {
-		unsigned long ino;
-		const char *name;
-
 		ub = list_entry(rcu_dereference(ub->ub_list.next),
 				struct user_beancounter, ub_list);
 		if (&ub->ub_list == &ub_list_head)
@@ -569,15 +557,8 @@ static int bc_readdir(struct file *file, filldir_t filler, void *data,
 		rcu_read_unlock();
 		put_beancounter(prev);
 
-		ino = bc_make_ino(ub);
-		name = ub->ub_name;
-		if (ub_dead(ub)) {
-			snprintf(buf, NAME_MAX + 1, "%s-%p", name, ub);
-			name = buf;
-		}
-
-		err = (*filler)(data, name, strlen(name),
-				pos, ino, DT_DIR);
+		err = (*filler)(data, ub->ub_name, strlen(ub->ub_name),
+				pos, bc_make_ino(ub), DT_DIR);
 		if (err < 0) {
 			err = 0;
 			put_beancounter(ub);
@@ -592,7 +573,6 @@ static int bc_readdir(struct file *file, filldir_t filler, void *data,
 	put_beancounter(prev);
 out:
 	file->f_pos = pos;
-	kfree(buf);
 	return err;
 }
 
@@ -803,32 +783,6 @@ static int bc_root_readdir(struct file *file, void *data, filldir_t filler)
 	return bc_readdir(file, filler, data, NULL);
 }
 
-static struct user_beancounter *lookup_beancounter(const char *name)
-{
-	char *p;
-	unsigned long ptr;
-	struct user_beancounter *ub, *ret = NULL;
-
-	p = strrchr(name, '-');
-	if (p && p != name && kstrtoul(p + 1, 16, &ptr) == 0) {
-		rcu_read_lock();
-		for_each_beancounter(ub) {
-			if ((unsigned long)ub != ptr || !ub_dead(ub) ||
-			    strncmp(name, ub->ub_name, max_t(size_t,
-					strlen(ub->ub_name), p - name)))
-				continue;
-			if (get_beancounter_rcu(ub)) {
-				ret = ub;
-				break;
-			}
-		}
-		rcu_read_unlock();
-	}
-	if (!ret)
-		ret = get_beancounter_by_name(name, 0);
-	return ret;
-}
-
 static struct dentry *bc_root_lookup(struct inode *dir, struct dentry *dentry,
 		unsigned int flags)
 {
@@ -842,7 +796,7 @@ static struct dentry *bc_root_lookup(struct inode *dir, struct dentry *dentry,
 	if (de != ERR_PTR(-ESRCH))
 		return de;
 
-	ub = lookup_beancounter(dentry->d_name.name);
+	ub = get_beancounter_by_name(dentry->d_name.name, 0);
 	if (IS_ERR_OR_NULL(ub))
 		return ub ? ERR_CAST(ub) : ERR_PTR(-ENOENT);
 
