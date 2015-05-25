@@ -5198,6 +5198,11 @@ void mem_cgroup_fill_ub_parms(struct cgroup *cg,
 	if (lim != UB_MAXVALUE)
 		lim -= p->limit;
 	s->barrier = s->limit = lim;
+
+	/* Due to global reclaim, memory.memsw.usage can be greater than
+	 * (memory.memsw.limit - memory.limit). */
+	s->held = min(s->held, s->limit);
+	s->maxheld = min(s->maxheld, s->limit);
 }
 
 int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
