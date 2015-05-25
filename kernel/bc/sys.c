@@ -93,6 +93,8 @@ long do_setublimit(uid_t uid, unsigned long resource,
 		goto out;
 	}
 
+	ub_sync_memcg(ub);
+
 	spin_lock_irqsave(&ub->ub_lock, flags);
 	ub->ub_parms[resource].barrier = new_limits[0];
 	ub->ub_parms[resource].limit = new_limits[1];
