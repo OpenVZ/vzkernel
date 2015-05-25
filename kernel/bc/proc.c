@@ -193,68 +193,6 @@ static struct bc_proc_entry bc_nodeinfo_entry = {
 	.u.show = bc_proc_nodeinfo_show,
 };
 
-#if 0
-
-static int bc_dcache_show(struct seq_file *f, void *v)
-{
-	struct user_beancounter *ub = seq_beancounter(f);
-	struct dentry *dentry, *prev = NULL;
-	struct mount *mnt;
-	struct path root;
-
-	seq_printf(f, "       usage device\tfstype\tmount\tdentry\n");
-
-	spin_lock(&dcache_lru_lock);
-	list_for_each_entry(dentry, &ub->ub_dentry_top, d_bclru) {
-		dget(dentry);
-		spin_unlock(&dcache_lru_lock);
-		dput(prev);
-		prev = dentry;
-
-		root.mnt = NULL;
-		root.dentry = NULL;
-		br_read_lock(&vfsmount_lock);
-		list_for_each_entry(mnt, &current->nsproxy->mnt_ns->list, mnt_list) {
-			if (mnt->mnt.mnt_sb == dentry->d_sb) {
-				root.mnt = &mnt->mnt;
-				root.dentry = mnt->mnt.mnt_root;
-				path_get(&root);
-				break;
-			}
-		}
-		br_read_unlock(&vfsmount_lock);
-
-		seq_printf(f, "%12lu %s\t%s\t",
-				//ub_dcache_get_size(dentry),
-				0ul,
-				dentry->d_sb->s_id,
-				dentry->d_sb->s_type->name);
-		if (root.mnt)
-			seq_path(f, &root, " \t\n\\");
-		else
-			seq_puts(f, "none");
-		seq_putc(f, '\t');
-		seq_dentry(f, dentry, " \t\n\\");
-		seq_putc(f, '\n');
-
-		path_put(&root);
-		spin_lock(&dcache_lru_lock);
-		if (dentry->d_ub != ub)
-			break;
-	}
-	spin_unlock(&dcache_lru_lock);
-	dput(prev);
-
-	return 0;
-}
-
-static struct bc_proc_entry bc_dcacheinfo_entry = {
-	.name = "dcacheinfo",
-	.u.show = bc_dcache_show,
-};
-
-#endif
-
 static int ub_show(struct seq_file *f, void *v)
 {
 	int i, precharge[UB_RESOURCES];
@@ -831,7 +769,6 @@ static int __init ub_init_proc(void)
 	bc_register_proc_entry(&bc_debug_entry);
 #endif
 	bc_register_proc_entry(&bc_precharge_entry);
-//	bc_register_proc_entry(&bc_dcacheinfo_entry);
 	bc_register_proc_root_entry(&bc_all_resources_entry);
 	bc_register_proc_entry(&bc_meminfo_entry);
 	bc_register_proc_entry(&bc_nodeinfo_entry);
