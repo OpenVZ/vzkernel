@@ -437,8 +437,6 @@ static inline int bc_verify_held(struct user_beancounter *ub)
 			__ub_stat_get(ub, writeback_pages));
 	clean &= verify_res(ub, "tmpfs_respages", ub->ub_tmpfs_respages);
 
-	clean &= verify_res(ub, "pincount", __ub_percpu_sum(ub, pincount));
-
 	ub_debug_trace(!clean, 5, 60*HZ);
 
 	return clean;
