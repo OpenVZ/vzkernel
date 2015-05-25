@@ -5043,24 +5043,6 @@ static void check_for_release(struct cgroup *cgrp)
 	}
 }
 
-bool css_refcnt_inc_not_zero(struct cgroup_subsys_state *css)
-{
-	if (css->flags & CSS_ROOT)
-		return true;
-
-	while (true) {
-		int t, v;
-
-		v = atomic_read(&css->refcnt);
-		if (!css_unbias_refcnt(v))
-			return false;
-		t = atomic_cmpxchg(&css->refcnt, v, v + 1);
-		if (likely(t == v))
-			return true;
-		cpu_relax();
-	}
-}
-
 /* Caller must verify that the css is not for root cgroup */
 bool __css_tryget(struct cgroup_subsys_state *css)
 {
