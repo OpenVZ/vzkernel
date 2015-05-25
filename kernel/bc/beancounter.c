@@ -84,14 +84,10 @@ static int ubc_ioprio = 1;
 
 /* default maximum perpcu resources precharge */
 int ub_resource_precharge[UB_RESOURCES] = {
-	[UB_KMEMSIZE]	= 32 * PAGE_SIZE,
-       [UB_PRIVVMPAGES]= 256,
+	[UB_PRIVVMPAGES]= 256,
 	[UB_NUMPROC]	= 4,
-	[UB_PHYSPAGES]	= 512,	/* up to 2Mb, 1 huge page */
 	[UB_NUMSIGINFO]	= 4,
-	[UB_DCACHESIZE] = 4 * PAGE_SIZE,
 	[UB_NUMFILE]	= 8,
-	[UB_SWAPPAGES]	= 256,
 };
 
 /* natural limits for percpu precharge bounds */
@@ -296,8 +292,6 @@ void ub_precharge_snapshot(struct user_beancounter *ub, int *precharge)
 		for ( resource = 0 ; resource < UB_RESOURCES ; resource++ )
 			precharge[resource] += pcpu->precharge[resource];
 	}
-	precharge[UB_PHYSPAGES] += precharge[UB_KMEMSIZE] >> PAGE_SHIFT;
-	precharge[UB_OOMGUARPAGES] = precharge[UB_SWAPPAGES];
 }
 
 static void uncharge_beancounter_precharge(struct user_beancounter *ub)
@@ -879,17 +873,6 @@ unsigned long __get_beancounter_usage_percpu(struct user_beancounter *ub,
 	held = ub->ub_parms[resource].held;
 	smp_rmb();
 	precharge = __ub_percpu_sum(ub, precharge[resource]);
-
-	switch (resource) {
-	case UB_PHYSPAGES:
-		/* kmemsize precharge already charged into physpages  */
-		precharge += __ub_percpu_sum(ub, precharge[UB_KMEMSIZE]) >> PAGE_SHIFT;
-		break;
-	case UB_OOMGUARPAGES:
-		/* oomguarpages contains swappages and its precharge too */
-		precharge = __ub_percpu_sum(ub, precharge[UB_SWAPPAGES]);
-		break;
-	}
 
 	return max(0l, held - precharge);
 }
