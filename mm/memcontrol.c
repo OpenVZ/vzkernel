@@ -278,6 +278,10 @@ struct mem_cgroup {
 	 * the counter to account for kernel memory usage.
 	 */
 	struct res_counter kmem;
+
+	/* beancounter-related stats */
+	unsigned long long swap_max;
+
 	/*
 	 * Should the accounting and control be hierarchical, per subtree?
 	 */
@@ -867,6 +871,18 @@ static void mem_cgroup_swap_statistics(struct mem_cgroup *memcg,
 {
 	int val = (charge) ? 1 : -1;
 	this_cpu_add(memcg->stat->count[MEM_CGROUP_STAT_SWAP], val);
+}
+
+static void mem_cgroup_update_swap_max(struct mem_cgroup *memcg)
+{
+	long long swap;
+
+	swap = res_counter_read_u64(&memcg->memsw, RES_USAGE) -
+		res_counter_read_u64(&memcg->res, RES_USAGE);
+
+	/* This is racy, but we don't have to be absolutely precise */
+	if (swap > (long long)memcg->swap_max)
+		memcg->swap_max = swap;
 }
 
 static unsigned long mem_cgroup_read_events(struct mem_cgroup *memcg,
@@ -3907,6 +3923,7 @@ __mem_cgroup_uncharge_common(struct page *page, enum charge_type ctype,
 	memcg_check_events(memcg, page);
 	if (do_swap_account && ctype == MEM_CGROUP_CHARGE_TYPE_SWAPOUT) {
 		mem_cgroup_swap_statistics(memcg, true);
+		mem_cgroup_update_swap_max(memcg);
 		css_get(&memcg->css);
 	}
 	/*
@@ -5152,14 +5169,12 @@ void mem_cgroup_fill_ub_parms(struct cgroup *cg,
 	k->barrier = k->limit = lim;
 
 	s->held	= res_counter_read_u64(&memcg->memsw, RES_USAGE) >> PAGE_SHIFT;
-	s->maxheld = res_counter_read_u64(&memcg->memsw, RES_MAX_USAGE) >> PAGE_SHIFT;
+	s->held -= p->held;
+	s->maxheld = memcg->swap_max >> PAGE_SHIFT;
 	s->failcnt = res_counter_read_u64(&memcg->memsw, RES_FAILCNT);
 	lim = res_counter_read_u64(&memcg->memsw, RES_LIMIT);
 	lim = lim == RESOURCE_MAX ? UB_MAXVALUE :
 		min_t(unsigned long long, lim >> PAGE_SHIFT, UB_MAXVALUE);
-
-	s->held -= p->held;
-	s->maxheld -= p->maxheld;
 	if (lim != UB_MAXVALUE)
 		lim -= p->limit;
 	s->barrier = s->limit = lim;
@@ -6576,6 +6591,10 @@ static void __mem_cgroup_clear_mc(void)
 		}
 		/* we've already done css_get(mc.to) */
 		mc.moved_swap = 0;
+	}
+	if (do_swap_account) {
+		mem_cgroup_update_swap_max(from);
+		mem_cgroup_update_swap_max(to);
 	}
 	memcg_oom_recover(from);
 	memcg_oom_recover(to);
