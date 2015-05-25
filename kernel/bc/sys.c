@@ -99,7 +99,7 @@ long do_setublimit(uid_t uid, unsigned long resource,
 	init_beancounter_precharge(ub, resource);
 	spin_unlock_irqrestore(&ub->ub_lock, flags);
 
-	error = ub_update_mem_cgroup_limits(ub);
+	error = ub_update_memcg(ub);
 
 	put_beancounter(ub);
 out:
