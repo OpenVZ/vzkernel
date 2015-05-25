@@ -317,8 +317,7 @@ extern void __uncharge_beancounter_locked(struct user_beancounter *ub,
 extern void uncharge_warn(struct user_beancounter *ub, const char *resource,
 		unsigned long val, unsigned long held);
 
-extern int ub_update_mem_cgroup_limits(struct user_beancounter *ub);
-
+extern int ub_update_memcg(struct user_beancounter *ub);
 extern void ub_sync_memcg(struct user_beancounter *ub);
 extern void ub_page_stat(struct user_beancounter *ub,
 			 const nodemask_t *nodemask,
