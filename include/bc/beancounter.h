@@ -115,8 +115,6 @@ struct user_beancounter {
 	unsigned long		ub_magic;
 	struct list_head	ub_list;
 
-	struct rcu_head		rcu;
-
 	spinlock_t		ub_lock;
 	const char		*ub_name;
 
@@ -356,12 +354,7 @@ struct user_beancounter *get_beancounter(struct user_beancounter *ub)
 static inline 
 struct user_beancounter *get_beancounter_rcu(struct user_beancounter *ub)
 {
-	return css_refcnt_inc_not_zero(&ub->css) ? ub : NULL;
-}
-
-static inline bool ub_dead(struct user_beancounter *ub)
-{
-	return !(ub->css.flags & CSS_ONLINE);
+	return css_tryget(&ub->css) ? ub : NULL;
 }
 
 extern uid_t ub_legacy_id(struct user_beancounter *ub);
