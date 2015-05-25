@@ -78,8 +78,6 @@ const char *ub_rnames[] = {
 	"swappages",
 };
 
-unsigned int ub_dcache_threshold __read_mostly = 4 * 1024; /* ~7Mb per container */
-
 /* default maximum perpcu resources precharge */
 int ub_resource_precharge[UB_RESOURCES] = {
 	[UB_PRIVVMPAGES]= 256,
@@ -1039,13 +1037,6 @@ static ctl_table ub_sysctl_table[] = {
 		.maxlen		= sizeof(ub_resource_precharge),
 		.mode		= 0644,
 		.proc_handler	= &proc_resource_precharge,
-	},
-	{
-		.procname	= "dcache_threshold",
-		.data		= &ub_dcache_threshold,
-		.maxlen		= sizeof(ub_dcache_threshold),
-		.mode		= 0644,
-		.proc_handler	= &proc_dointvec,
 	},
 #ifdef CONFIG_BC_IO_ACCOUNTING
 	{
