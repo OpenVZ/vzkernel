@@ -143,29 +143,6 @@ static struct bc_proc_entry bc_precharge_entry = {
 	.u.show = bc_precharge_show,
 };
 
-#if 0
-static void bc_count_slab_show_one(const char *name, int count, void *v)
-{
-	if (count != 0)
-		seq_printf((struct seq_file *)v, "%s: %u\n", name, count);
-}
-#endif
-
-static int bc_count_slab_show(struct seq_file *f, void *v)
-{
-	struct user_beancounter *ub;
-
-	ub = seq_beancounter(f);
-	//FIXME
-	//slab_walk_ub(ub, bc_count_slab_show_one, f);
-	return 0;
-}
-
-static struct bc_proc_entry bc_count_slab_entry = {
-	.name = "slabinfo",
-	.u.show = bc_count_slab_show
-};
-
 static int bc_proc_meminfo_show(struct seq_file *f, void *v)
 {
 	return meminfo_proc_show_ub(f, NULL,
@@ -854,7 +831,6 @@ static int __init ub_init_proc(void)
 	bc_register_proc_entry(&bc_debug_entry);
 #endif
 	bc_register_proc_entry(&bc_precharge_entry);
-	bc_register_proc_entry(&bc_count_slab_entry);
 //	bc_register_proc_entry(&bc_dcacheinfo_entry);
 	bc_register_proc_root_entry(&bc_all_resources_entry);
 	bc_register_proc_entry(&bc_meminfo_entry);
