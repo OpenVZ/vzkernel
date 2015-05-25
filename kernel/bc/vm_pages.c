@@ -270,35 +270,6 @@ static void __exit fini_vmguar_notifier(void)
 module_init(init_vmguar_notifier);
 module_exit(fini_vmguar_notifier);
 
-static void __show_one_resource(const char *name, struct ubparm *parm)
-{
-	if (parm->limit == UB_MAXVALUE)
-		printk("%s: %lu / inf [%lu] ", name,
-				parm->held, parm->failcnt);
-	else
-		printk("%s: %lu / %lu [%lu] ", name,
-				parm->held, parm->limit, parm->failcnt);
-}
-
-void __show_ub_mem(struct user_beancounter *ub)
-{
-	__show_one_resource("RAM", ub->ub_parms + UB_PHYSPAGES);
-	__show_one_resource("SWAP", ub->ub_parms + UB_SWAPPAGES);
-	__show_one_resource("KMEM", ub->ub_parms + UB_KMEMSIZE);
-	__show_one_resource("DCSZ", ub->ub_parms + UB_DCACHESIZE);
-	__show_one_resource("OOMG", ub->ub_parms + UB_OOMGUARPAGES);
-
-	printk("Dirty %lu Wback %lu\n",
-			ub_stat_get(ub, dirty_pages),
-			ub_stat_get(ub, writeback_pages));
-}
-
-void show_ub_mem(struct user_beancounter *ub)
-{
-	printk(KERN_INFO "UB-%s-Mem-Info:\n", ub->ub_name);
-	__show_ub_mem(ub);
-}
-
 #ifdef CONFIG_PROC_FS
 static int bc_vmaux_show(struct seq_file *f, void *v)
 {
