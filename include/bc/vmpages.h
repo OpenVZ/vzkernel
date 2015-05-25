@@ -47,12 +47,6 @@ UB_DECLARE_FUNC(int, ub_lockedshm_charge(struct shmem_inode_info *shi,
 UB_DECLARE_VOID_FUNC(ub_lockedshm_uncharge(struct shmem_inode_info *shi,
 			unsigned long size))
 
-static inline int ub_swap_full(struct user_beancounter *ub)
-{
-	return (ub->ub_parms[UB_SWAPPAGES].held * 2 >
-			ub->ub_parms[UB_SWAPPAGES].limit);
-}
-
 void __show_ub_mem(struct user_beancounter *ub);
 void show_ub_mem(struct user_beancounter *ub);
 
