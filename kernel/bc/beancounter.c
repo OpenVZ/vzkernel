@@ -883,28 +883,6 @@ out:
 }
 EXPORT_SYMBOL(precharge_beancounter);
 
-void ub_reclaim_rate_limit(struct user_beancounter *ub, int wait, unsigned count)
-{
-	ktime_t wall;
-	u64 step;
-
-	if (!ub->rl_step)
-		return;
-
-	spin_lock(&ub->rl_lock);
-	step = (u64)ub->rl_step * count;
-	wall = ktime_add_ns(ktime_get(), step);
-	if (wall.tv64 < ub->rl_wall.tv64)
-		wall = ktime_add_ns(ub->rl_wall, step);
-	ub->rl_wall = wall;
-	spin_unlock(&ub->rl_lock);
-
-	if (wait && get_exec_ub() == ub && !test_thread_flag(TIF_MEMDIE)) {
-		set_current_state(TASK_KILLABLE);
-		schedule_hrtimeout(&wall, HRTIMER_MODE_ABS);
-	}
-}
-
 /*
  *	Initialization
  *
@@ -924,8 +902,6 @@ static void init_beancounter_struct(struct user_beancounter *ub)
 	spin_lock_init(&ub->ub_lock);
 	INIT_LIST_HEAD(&ub->ub_tcp_sk_list);
 	INIT_LIST_HEAD(&ub->ub_other_sk_list);
-	spin_lock_init(&ub->rl_lock);
-	ub->rl_wall.tv64 = LLONG_MIN;
 }
 
 static void init_beancounter_nolimits(struct user_beancounter *ub)
@@ -944,9 +920,6 @@ static void init_beancounter_nolimits(struct user_beancounter *ub)
 	/* FIXME: set unlimited rate? */
 	ub->ub_ratelimit.burst = 4;
 	ub->ub_ratelimit.interval = 300*HZ;
-
-	if (ub != get_ub0())
-		ub->rl_step = NSEC_PER_SEC / 25600; /* 100 Mb/s */
 }
 
 static void init_beancounter_syslimits(struct user_beancounter *ub)
@@ -980,8 +953,6 @@ static void init_beancounter_syslimits(struct user_beancounter *ub)
 
 	ub->ub_ratelimit.burst = 4;
 	ub->ub_ratelimit.interval = 300*HZ;
-
-	ub->rl_step = NSEC_PER_SEC / 25600; /* 100 Mb/s */
 }
 
 static DEFINE_PER_CPU(struct ub_percpu_struct, ub0_percpu);
