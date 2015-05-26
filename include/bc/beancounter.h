@@ -137,11 +137,6 @@ struct user_beancounter {
 	atomic_long_t		wb_requests;
 	atomic_long_t		wb_sectors;
 
-	/* reclaim rate-limit */
-	spinlock_t		rl_lock;
-	unsigned		rl_step;	/* ns per page */
-	ktime_t			rl_wall;	/* wall time */
-
 	void			*private_data2;
 
 	/* resources statistic and settings */
@@ -260,9 +255,6 @@ static inline int charge_beancounter(struct user_beancounter *ub,
 static inline void uncharge_beancounter(struct user_beancounter *ub,
 			int resource, unsigned long val) { }
 #define uncharge_beancounter_fast uncharge_beancounter
-
-static inline void ub_reclaim_rate_limit(struct user_beancounter *ub,
-					 int wait, unsigned count) { }
 
 #else /* CONFIG_BEANCOUNTERS */
 
@@ -509,8 +501,6 @@ unsigned long __get_beancounter_usage_percpu(struct user_beancounter *ub,
 int precharge_beancounter(struct user_beancounter *ub,
 		int resource, unsigned long val);
 void ub_precharge_snapshot(struct user_beancounter *ub, int *precharge);
-
-void ub_reclaim_rate_limit(struct user_beancounter *ub, int wait, unsigned count);
 
 #define UB_IOPRIO_MIN 0
 #define UB_IOPRIO_MAX 8
