@@ -921,13 +921,6 @@ out_set_pte:
 	return 0;
 }
 
-#define pte_ptrs(a)	(PTRS_PER_PTE - ((a >> PAGE_SHIFT)&(PTRS_PER_PTE - 1)))
-#ifdef CONFIG_BEANCOUNTERS
-#define same_ub(mm1, mm2)      ((mm1)->mm_ub == (mm2)->mm_ub)
-#else
-#define same_ub(mm1, mm2)      1
-#endif
-
 int copy_pte_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 		   pmd_t *dst_pmd, pmd_t *src_pmd, struct vm_area_struct *vma,
 		   unsigned long addr, unsigned long end)
