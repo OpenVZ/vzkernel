@@ -723,7 +723,7 @@ struct xt_table_info *xt_alloc_table_info(unsigned int size)
 							GFP_KERNEL,
 							cpu_to_node(cpu));
 		else
-			newinfo->entries[cpu] = ub_vmalloc_node(size,
+			newinfo->entries[cpu] = vmalloc_node(size,
 							cpu_to_node(cpu));
 
 		if (newinfo->entries[cpu] == NULL) {
