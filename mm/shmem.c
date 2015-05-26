@@ -2949,7 +2949,6 @@ static const struct file_operations shmem_file_operations = {
 	.fallocate	= shmem_fallocate,
 #endif
 };
-EXPORT_SYMBOL(shmem_file_operations);
 
 static const struct inode_operations shmem_inode_operations = {
 	.setattr	= shmem_setattr,
