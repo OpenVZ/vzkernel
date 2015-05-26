@@ -2374,7 +2374,7 @@ err_exit:
 /*
  *	Manual configuration of address on an interface
  */
-int inet6_addr_add(struct net *net, int ifindex,
+static int inet6_addr_add(struct net *net, int ifindex,
 			  const struct in6_addr *pfx,
 			  const struct in6_addr *peer_pfx,
 			  unsigned int plen, __u32 ifa_flags,
@@ -2453,7 +2453,6 @@ int inet6_addr_add(struct net *net, int ifindex,
 
 	return PTR_ERR(ifp);
 }
-EXPORT_SYMBOL(inet6_addr_add);
 
 static int inet6_addr_del(struct net *net, int ifindex, const struct in6_addr *pfx,
 			  unsigned int plen)

@@ -1844,7 +1844,7 @@ handle_fault:
 	goto retry;
 }
 
-long futex_wait_restart(struct restart_block *restart);
+static long futex_wait_restart(struct restart_block *restart);
 
 /**
  * fixup_owner() - Post lock pi_state and corner case management
@@ -2111,7 +2111,7 @@ out:
 }
 
 
-long futex_wait_restart(struct restart_block *restart)
+static long futex_wait_restart(struct restart_block *restart)
 {
 	u32 __user *uaddr = restart->futex.uaddr;
 	ktime_t t, *tp = NULL;
@@ -2125,7 +2125,7 @@ long futex_wait_restart(struct restart_block *restart)
 	return (long)futex_wait(uaddr, restart->futex.flags,
 				restart->futex.val, tp, restart->futex.bitset);
 }
-EXPORT_SYMBOL(futex_wait_restart);
+
 
 /*
  * Userspace tried a 0 -> TID atomic transition of the futex value

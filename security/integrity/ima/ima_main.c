@@ -209,7 +209,6 @@ out:
 		return -EACCES;
 	return 0;
 }
-EXPORT_SYMBOL(ima_counts_get);
 
 /**
  * ima_file_mmap - based on policy, collect/store measurement.

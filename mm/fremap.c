@@ -262,4 +262,3 @@ out:
 
 	return err;
 }
-EXPORT_SYMBOL(sys_remap_file_pages);

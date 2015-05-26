@@ -1263,14 +1263,12 @@ struct request_sock_ops tcp_request_sock_ops __read_mostly = {
 	.send_reset	=	tcp_v4_send_reset,
 	.syn_ack_timeout = 	tcp_syn_ack_timeout,
 };
-EXPORT_SYMBOL(tcp_request_sock_ops);
 
 #ifdef CONFIG_TCP_MD5SIG
-const struct tcp_request_sock_ops tcp_request_sock_ipv4_ops = {
+static const struct tcp_request_sock_ops tcp_request_sock_ipv4_ops = {
 	.md5_lookup	=	tcp_v4_reqsk_md5_lookup,
 	.calc_md5_hash	=	tcp_v4_md5_hash_skb,
 };
-EXPORT_SYMBOL(tcp_request_sock_ipv4_ops);
 #endif
 
 static bool tcp_fastopen_check(struct sock *sk, struct sk_buff *skb,

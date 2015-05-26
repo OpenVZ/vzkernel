@@ -2540,7 +2540,6 @@ int split_vma(struct mm_struct *mm, struct vm_area_struct *vma,
 
 	return __split_vma(mm, vma, addr, new_below);
 }
-EXPORT_SYMBOL(split_vma);
 
 /* Munmap is split into 2 main parts -- this part which finds
  * what needs doing, and the areas themselves, which do the
@@ -2995,11 +2994,10 @@ static void special_mapping_close(struct vm_area_struct *vma)
 {
 }
 
-const struct vm_operations_struct special_mapping_vmops = {
+static const struct vm_operations_struct special_mapping_vmops = {
 	.close = special_mapping_close,
 	.fault = special_mapping_fault,
 };
-EXPORT_SYMBOL(special_mapping_vmops);
 
 /*
  * Called with mm->mmap_sem held for writing.

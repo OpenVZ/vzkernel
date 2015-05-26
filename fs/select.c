@@ -932,7 +932,7 @@ out_fds:
 	return err;
 }
 
-long do_restart_poll(struct restart_block *restart_block)
+static long do_restart_poll(struct restart_block *restart_block)
 {
 	struct pollfd __user *ufds = restart_block->poll.ufds;
 	int nfds = restart_block->poll.nfds;
@@ -953,7 +953,6 @@ long do_restart_poll(struct restart_block *restart_block)
 	}
 	return ret;
 }
-EXPORT_SYMBOL(do_restart_poll);
 
 SYSCALL_DEFINE3(poll, struct pollfd __user *, ufds, unsigned int, nfds,
 		int, timeout_msecs)

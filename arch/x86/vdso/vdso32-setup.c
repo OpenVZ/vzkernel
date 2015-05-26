@@ -193,8 +193,7 @@ static __init void relocate_vdso(Elf32_Ehdr *ehdr)
 	}
 }
 
-struct page *vdso32_pages[1];
-EXPORT_SYMBOL(vdso32_pages);
+static struct page *vdso32_pages[1];
 
 #ifdef CONFIG_X86_64
 

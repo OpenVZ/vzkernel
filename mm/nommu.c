@@ -1594,7 +1594,6 @@ int split_vma(struct mm_struct *mm, struct vm_area_struct *vma,
 	add_vma_to_mm(mm, new);
 	return 0;
 }
-EXPORT_SYMBOL(split_vma);
 
 /*
  * shrink a VMA by removing the specified chunk from either the beginning or

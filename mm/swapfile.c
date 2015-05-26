@@ -48,10 +48,8 @@ static sector_t map_swap_entry(swp_entry_t, struct block_device**);
 DEFINE_SPINLOCK(swap_lock);
 static unsigned int nr_swapfiles;
 atomic_long_t nr_swap_pages;
-EXPORT_SYMBOL(nr_swap_pages);
 /* protected with swap_lock. reading in vm_swap_full() doesn't need lock */
 long total_swap_pages;
-EXPORT_SYMBOL(total_swap_pages);
 static int least_priority;
 static atomic_t highest_priority_index = ATOMIC_INIT(-1);
 
@@ -1349,7 +1347,6 @@ int try_to_unuse(unsigned int type, bool frontswap,
 	mmput(start_mm);
 	return retval;
 }
-EXPORT_SYMBOL(free_swap_and_cache);
 
 /*
  * After a successful try_to_unuse, if no swap is now in use, we know
@@ -2371,7 +2368,6 @@ int swap_duplicate(swp_entry_t entry)
 		err = add_swap_count_continuation(entry, GFP_ATOMIC);
 	return err;
 }
-EXPORT_SYMBOL(swap_duplicate);
 
 /*
  * @entry: swap entry for which we allocate swap cache.
