@@ -391,21 +391,18 @@ void pgd_clear_bad(pgd_t *pgd)
 	pgd_ERROR(*pgd);
 	pgd_clear(pgd);
 }
-EXPORT_SYMBOL(pgd_clear_bad);
 
 void pud_clear_bad(pud_t *pud)
 {
 	pud_ERROR(*pud);
 	pud_clear(pud);
 }
-EXPORT_SYMBOL(pud_clear_bad);
 
 void pmd_clear_bad(pmd_t *pmd)
 {
 	pmd_ERROR(*pmd);
 	pmd_clear(pmd);
 }
-EXPORT_SYMBOL(pmd_clear_bad);
 
 /*
  * Note: this doesn't free the actual pages themselves. That
@@ -629,7 +626,6 @@ int __pte_alloc(struct mm_struct *mm, struct vm_area_struct *vma,
 		wait_split_huge_page(vma->anon_vma, pmd);
 	return 0;
 }
-EXPORT_SYMBOL(__pte_alloc);
 
 int __pte_alloc_kernel(pmd_t *pmd, unsigned long address)
 {
@@ -830,7 +826,6 @@ check_pfn:
 out:
 	return pfn_to_page(pfn);
 }
-EXPORT_SYMBOL(vm_normal_page);
 
 /*
  * copy one vm_area from one task to the other. Assumes the page tables
@@ -930,9 +925,7 @@ out_set_pte:
 #endif
 
 int copy_pte_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
-		   pmd_t *dst_pmd, pmd_t *src_pmd,
-		   struct vm_area_struct *dst_vma,
-		   struct vm_area_struct *vma,
+		   pmd_t *dst_pmd, pmd_t *src_pmd, struct vm_area_struct *vma,
 		   unsigned long addr, unsigned long end)
 {
 	pte_t *orig_src_pte, *orig_dst_pte;
@@ -995,9 +988,7 @@ again:
 }
 
 static inline int copy_pmd_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
-		pud_t *dst_pud, pud_t *src_pud,
-		struct vm_area_struct *dst_vma,
-		struct vm_area_struct *vma,
+		pud_t *dst_pud, pud_t *src_pud, struct vm_area_struct *vma,
 		unsigned long addr, unsigned long end)
 {
 	pmd_t *src_pmd, *dst_pmd;
@@ -1023,16 +1014,14 @@ static inline int copy_pmd_range(struct mm_struct *dst_mm, struct mm_struct *src
 		if (pmd_none_or_clear_bad(src_pmd))
 			continue;
 		if (copy_pte_range(dst_mm, src_mm, dst_pmd, src_pmd,
-						dst_vma, vma, addr, next))
+						vma, addr, next))
 			return -ENOMEM;
 	} while (dst_pmd++, src_pmd++, addr = next, addr != end);
 	return 0;
 }
 
 static inline int copy_pud_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
-		pgd_t *dst_pgd, pgd_t *src_pgd,
-		struct vm_area_struct *dst_vma,
-		struct vm_area_struct *vma,
+		pgd_t *dst_pgd, pgd_t *src_pgd, struct vm_area_struct *vma,
 		unsigned long addr, unsigned long end)
 {
 	pud_t *src_pud, *dst_pud;
@@ -1047,21 +1036,19 @@ static inline int copy_pud_range(struct mm_struct *dst_mm, struct mm_struct *src
 		if (pud_none_or_clear_bad(src_pud))
 			continue;
 		if (copy_pmd_range(dst_mm, src_mm, dst_pud, src_pud,
-						dst_vma, vma, addr, next))
+						vma, addr, next))
 			return -ENOMEM;
 	} while (dst_pud++, src_pud++, addr = next, addr != end);
 	return 0;
 }
 
-int __copy_page_range(struct vm_area_struct *dst_vma,
-		      struct vm_area_struct *vma,
-		      unsigned long addr, size_t size)
+int copy_page_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
+		struct vm_area_struct *vma)
 {
-	struct mm_struct *dst_mm = dst_vma->vm_mm;
-	struct mm_struct *src_mm = vma->vm_mm;
 	pgd_t *src_pgd, *dst_pgd;
 	unsigned long next;
-	unsigned long end = addr + size;
+	unsigned long addr = vma->vm_start;
+	unsigned long end = vma->vm_end;
 	unsigned long mmun_start;	/* For mmu_notifiers */
 	unsigned long mmun_end;		/* For mmu_notifiers */
 	bool is_cow;
@@ -1113,7 +1100,7 @@ int __copy_page_range(struct vm_area_struct *dst_vma,
 		if (pgd_none_or_clear_bad(src_pgd))
 			continue;
 		if (unlikely(copy_pud_range(dst_mm, src_mm, dst_pgd, src_pgd,
-					    dst_vma, vma, addr, next))) {
+					    vma, addr, next))) {
 			ret = -ENOMEM;
 			break;
 		}
@@ -1122,17 +1109,6 @@ int __copy_page_range(struct vm_area_struct *dst_vma,
 	if (is_cow)
 		mmu_notifier_invalidate_range_end(src_mm, mmun_start, mmun_end);
 	return ret;
-}
-EXPORT_SYMBOL_GPL(__copy_page_range);
-
-int copy_page_range(struct mm_struct *dst, struct mm_struct *src,
-		    struct vm_area_struct *dst_vma, struct vm_area_struct *vma)
-{
-	if (dst_vma->vm_mm != dst)
-		BUG();
-	if (vma->vm_mm != src)
-		BUG();
-	return __copy_page_range(dst_vma, vma, vma->vm_start, vma->vm_end-vma->vm_start);
 }
 
 static unsigned long zap_pte_range(struct mmu_gather *tlb,
@@ -3846,7 +3822,6 @@ int handle_mm_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 
 	return handle_pte_fault(mm, vma, address, pte, pmd, flags);
 }
-EXPORT_SYMBOL(handle_mm_fault);
 
 #ifndef __PAGETABLE_PUD_FOLDED
 /*
@@ -3871,7 +3846,6 @@ int __pud_alloc(struct mm_struct *mm, pgd_t *pgd, unsigned long address)
 	spin_unlock(&mm->page_table_lock);
 	return 0;
 }
-EXPORT_SYMBOL(__pud_alloc);
 #endif /* __PAGETABLE_PUD_FOLDED */
 
 #ifndef __PAGETABLE_PMD_FOLDED
@@ -3906,7 +3880,6 @@ int __pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address)
 	spin_unlock(&mm->page_table_lock);
 	return 0;
 }
-EXPORT_SYMBOL(__pmd_alloc);
 #endif /* __PAGETABLE_PMD_FOLDED */
 
 #if !defined(__HAVE_ARCH_GATE_AREA)
@@ -4175,7 +4148,6 @@ int access_process_vm(struct task_struct *tsk, unsigned long addr,
 
 	return ret;
 }
-EXPORT_SYMBOL_GPL(access_process_vm);
 
 /*
  * Print the name of a VMA.

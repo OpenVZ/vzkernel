@@ -50,8 +50,7 @@
  * SLAB caches for signal bits.
  */
 
-struct kmem_cache *sigqueue_cachep;
-EXPORT_SYMBOL(sigqueue_cachep);
+static struct kmem_cache *sigqueue_cachep;
 static inline int is_si_special(const struct siginfo *info);
 
 int print_fatal_signals __read_mostly;
@@ -153,7 +152,7 @@ static inline int has_pending_signals(sigset_t *signal, sigset_t *blocked)
 
 #define PENDING(p,b) has_pending_signals(&(p)->signal, (b))
 
-int recalc_sigpending_tsk(struct task_struct *t)
+static int recalc_sigpending_tsk(struct task_struct *t)
 {
 	if ((t->jobctl & JOBCTL_PENDING_MASK) ||
 	    PENDING(&t->pending, &t->blocked) ||
@@ -168,7 +167,6 @@ int recalc_sigpending_tsk(struct task_struct *t)
 	 */
 	return 0;
 }
-EXPORT_SYMBOL(recalc_sigpending_tsk);
 
 /*
  * After recalculating TIF_SIGPENDING, we need to make sure the task wakes up.
@@ -740,7 +738,6 @@ void signal_wake_up_state(struct task_struct *t, unsigned int state)
 	if (!wake_up_state(t, state | TASK_INTERRUPTIBLE))
 		kick_process(t);
 }
-EXPORT_SYMBOL(signal_wake_up);
 
 /*
  * Remove signals in mask from the pending set and queue.

@@ -469,7 +469,7 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
 		rb_parent = &tmp->vm_rb;
 
 		mm->map_count++;
-		retval = copy_page_range(mm, oldmm, tmp, mpnt);
+		retval = copy_page_range(mm, oldmm, mpnt);
 
 		if (tmp->vm_ops && tmp->vm_ops->open)
 			tmp->vm_ops->open(tmp);
@@ -518,7 +518,6 @@ static inline void mm_free_pgd(struct mm_struct *mm)
 #endif /* CONFIG_MMU */
 
 __cacheline_aligned_in_smp DEFINE_SPINLOCK(mmlist_lock);
-EXPORT_SYMBOL(mmlist_lock);
 
 #ifdef CONFIG_BEANCOUNTERS
 
@@ -621,7 +620,6 @@ static void check_mm(struct mm_struct *mm)
 	VM_BUG_ON(mm->pmd_huge_pte);
 #endif
 }
-EXPORT_SYMBOL(mm_alloc);
 
 /*
  * Allocate and initialize an mm_struct.
@@ -693,7 +691,6 @@ void set_mm_exe_file(struct mm_struct *mm, struct file *new_exe_file)
 		fput(mm->exe_file);
 	mm->exe_file = new_exe_file;
 }
-EXPORT_SYMBOL(set_mm_exe_file);
 
 struct file *get_mm_exe_file(struct mm_struct *mm)
 {

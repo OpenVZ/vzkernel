@@ -125,16 +125,13 @@ struct kioctx {
 };
 
 /*------ sysctl variables----*/
-DEFINE_SPINLOCK(aio_nr_lock);
-EXPORT_SYMBOL(aio_nr_lock);
+static DEFINE_SPINLOCK(aio_nr_lock);
 unsigned long aio_nr;		/* current system wide number of aio requests */
-EXPORT_SYMBOL(aio_nr);
 unsigned long aio_max_nr = 0x10000; /* system wide maximum number of aio requests */
 /*----end sysctl variables---*/
 
 static struct kmem_cache	*kiocb_cachep;
-struct kmem_cache	*kioctx_cachep;
-EXPORT_SYMBOL(kioctx_cachep);
+static struct kmem_cache	*kioctx_cachep;
 
 static struct vfsmount *aio_mnt;
 

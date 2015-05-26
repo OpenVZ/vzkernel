@@ -88,10 +88,6 @@ static inline void init_sync_kiocb(struct kiocb *kiocb, struct file *filp)
 		};
 }
 
-extern spinlock_t aio_nr_lock;
-extern unsigned long aio_nr;
-extern struct kmem_cache	*kioctx_cachep;
-
 /* prototypes */
 #ifdef CONFIG_AIO
 extern ssize_t wait_on_sync_kiocb(struct kiocb *iocb);

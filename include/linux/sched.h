@@ -2260,7 +2260,6 @@ static inline int dequeue_signal_lock(struct task_struct *tsk, sigset_t *mask, s
 	return ret;
 }
 
-extern struct kmem_cache *sigqueue_cachep;
 extern void block_all_signals(int (*notifier)(void *priv), void *priv,
 			      sigset_t *mask);
 extern void unblock_all_signals(void);
@@ -2382,7 +2381,6 @@ extern void flush_itimer_signals(void);
 extern void do_group_exit(int);
 
 extern int allow_signal(int);
-extern void exit_mm(struct task_struct *);
 extern int disallow_signal(int);
 
 extern int do_execve(struct filename *,

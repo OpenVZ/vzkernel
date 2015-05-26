@@ -1620,7 +1620,6 @@ out:
 	destroy_hrtimer_on_stack(&t.timer);
 	return ret;
 }
-EXPORT_SYMBOL(hrtimer_nanosleep_restart);
 
 long hrtimer_nanosleep(struct timespec *rqtp, struct timespec __user *rmtp,
 		       const enum hrtimer_mode mode, const clockid_t clockid)

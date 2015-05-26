@@ -62,8 +62,6 @@
 #include <asm/pgtable.h>
 #include <asm/mmu_context.h>
 
-void exit_mm(struct task_struct * tsk);
-
 static void __unhash_process(struct task_struct *p, bool group_dead)
 {
 	nr_threads--;
@@ -459,7 +457,7 @@ assign_new_owner:
  * Turn us into a lazy TLB process if we
  * aren't already..
  */
-void exit_mm(struct task_struct * tsk)
+static void exit_mm(struct task_struct * tsk)
 {
 	struct mm_struct *mm = tsk->mm;
 	struct core_state *core_state;
@@ -510,7 +508,6 @@ void exit_mm(struct task_struct * tsk)
 	mm_update_next_owner(mm);
 	mmput(mm);
 }
-EXPORT_SYMBOL(exit_mm);
 
 /*
  * When we die, we re-parent all our children, and try to:
@@ -1708,7 +1705,6 @@ SYSCALL_DEFINE4(wait4, pid_t, upid, int __user *, stat_addr,
 
 	return ret;
 }
-EXPORT_SYMBOL(sys_wait4);
 
 #ifdef __ARCH_WANT_SYS_WAITPID
 

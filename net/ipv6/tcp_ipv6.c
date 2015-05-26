@@ -80,7 +80,7 @@ static void	tcp_v6_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 
 static int	tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
 
-const struct inet_connection_sock_af_ops ipv6_mapped;
+static const struct inet_connection_sock_af_ops ipv6_mapped;
 static const struct inet_connection_sock_af_ops ipv6_specific;
 #ifdef CONFIG_TCP_MD5SIG
 static const struct tcp_sock_af_ops tcp_sock_ipv6_specific;
@@ -716,14 +716,12 @@ struct request_sock_ops tcp6_request_sock_ops __read_mostly = {
 	.send_reset	=	tcp_v6_send_reset,
 	.syn_ack_timeout = 	tcp_syn_ack_timeout,
 };
-EXPORT_SYMBOL(tcp6_request_sock_ops);
 
 #ifdef CONFIG_TCP_MD5SIG
-const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops = {
+static const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops = {
 	.md5_lookup	=	tcp_v6_reqsk_md5_lookup,
 	.calc_md5_hash	=	tcp_v6_md5_hash_skb,
 };
-EXPORT_SYMBOL(tcp_request_sock_ipv6_ops);
 #endif
 
 static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack, u32 win,
@@ -1647,7 +1645,7 @@ static const struct tcp_sock_af_ops tcp_sock_ipv6_specific = {
  *	TCP over IPv4 via INET6 API
  */
 
-const struct inet_connection_sock_af_ops ipv6_mapped = {
+static const struct inet_connection_sock_af_ops ipv6_mapped = {
 	.queue_xmit	   = ip_queue_xmit,
 	.send_check	   = tcp_v4_send_check,
 	.rebuild_header	   = inet_sk_rebuild_header,
@@ -1665,7 +1663,6 @@ const struct inet_connection_sock_af_ops ipv6_mapped = {
 	.compat_getsockopt = compat_ipv6_getsockopt,
 #endif
 };
-EXPORT_SYMBOL(ipv6_mapped);
 
 #ifdef CONFIG_TCP_MD5SIG
 static const struct tcp_sock_af_ops tcp_sock_ipv6_mapped_specific = {

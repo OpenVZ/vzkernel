@@ -1865,7 +1865,6 @@ SYSCALL_DEFINE2(flock, unsigned int, fd, unsigned int, cmd)
  out:
 	return error;
 }
-EXPORT_SYMBOL(sys_flock);
 
 /**
  * vfs_test_lock - test file byte range lock

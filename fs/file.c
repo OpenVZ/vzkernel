@@ -141,7 +141,7 @@ out:
  * Return <0 error code on error; 1 on successful completion.
  * The files->file_lock should be held on entry, and will be held on exit.
  */
-int expand_fdtable(struct files_struct *files, int nr)
+static int expand_fdtable(struct files_struct *files, int nr)
 	__releases(files->file_lock)
 	__acquires(files->file_lock)
 {
@@ -177,7 +177,6 @@ int expand_fdtable(struct files_struct *files, int nr)
 	}
 	return 1;
 }
-EXPORT_SYMBOL(expand_fdtable);
 
 /*
  * Expand files.
@@ -413,7 +412,6 @@ void put_files_struct(struct files_struct *files)
 		kmem_cache_free(files_cachep, files);
 	}
 }
-EXPORT_SYMBOL_GPL(put_files_struct);
 
 void reset_files_struct(struct files_struct *files)
 {
@@ -892,7 +890,6 @@ SYSCALL_DEFINE2(dup2, unsigned int, oldfd, unsigned int, newfd)
 	}
 	return sys_dup3(oldfd, newfd, 0);
 }
-EXPORT_SYMBOL(sys_dup2);
 
 SYSCALL_DEFINE1(dup, unsigned int, fildes)
 {

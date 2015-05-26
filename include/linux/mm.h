@@ -1108,9 +1108,7 @@ int walk_page_range(unsigned long addr, unsigned long end,
 void free_pgd_range(struct mmu_gather *tlb, unsigned long addr,
 		unsigned long end, unsigned long floor, unsigned long ceiling);
 int copy_page_range(struct mm_struct *dst, struct mm_struct *src,
-		struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma);
-int __copy_page_range(struct vm_area_struct *dst_vma, struct vm_area_struct *vma,
-		      unsigned long addr, size_t size);
+			struct vm_area_struct *vma);
 void unmap_mapping_range(struct address_space *mapping,
 		loff_t const holebegin, loff_t const holelen, int even_cows);
 int follow_pfn(struct vm_area_struct *vma, unsigned long address,
@@ -1925,7 +1923,6 @@ unsigned long change_prot_numa(struct vm_area_struct *vma,
 			unsigned long start, unsigned long end);
 #endif
 
-extern const struct vm_operations_struct special_mapping_vmops;
 struct vm_area_struct *find_extend_vma(struct mm_struct *, unsigned long addr);
 int remap_pfn_range(struct vm_area_struct *, unsigned long addr,
 			unsigned long pfn, unsigned long size, pgprot_t);

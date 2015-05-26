@@ -491,7 +491,6 @@ SYSCALL_DEFINE2(mlock, unsigned long, start, size_t, len)
 		error = __mm_populate(start, len, 0);
 	return error;
 }
-EXPORT_SYMBOL(sys_mlock);
 
 SYSCALL_DEFINE2(munlock, unsigned long, start, size_t, len)
 {
@@ -504,7 +503,6 @@ SYSCALL_DEFINE2(munlock, unsigned long, start, size_t, len)
 	up_write(&current->mm->mmap_sem);
 	return ret;
 }
-EXPORT_SYMBOL(sys_munlock);
 
 static int do_mlockall(int flags)
 {

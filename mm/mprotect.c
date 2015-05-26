@@ -462,4 +462,3 @@ out:
 	up_write(&current->mm->mmap_sem);
 	return error;
 }
-EXPORT_SYMBOL(sys_mprotect);

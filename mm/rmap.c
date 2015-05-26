@@ -205,7 +205,6 @@ int anon_vma_prepare(struct vm_area_struct *vma)
  out_enomem:
 	return -ENOMEM;
 }
-EXPORT_SYMBOL(anon_vma_prepare);
 
 /*
  * This is a useful helper function for locking the anon_vma root as
@@ -504,13 +503,11 @@ out:
 	rcu_read_unlock();
 	return anon_vma;
 }
-EXPORT_SYMBOL(page_lock_anon_vma_read);
 
 void page_unlock_anon_vma_read(struct anon_vma *anon_vma)
 {
 	anon_vma_unlock_read(anon_vma);
 }
-EXPORT_SYMBOL(page_unlock_anon_vma_read);
 
 /*
  * At what user virtual address is page expected in @vma?
@@ -536,7 +533,6 @@ vma_address(struct page *page, struct vm_area_struct *vma)
 
 	return address;
 }
-EXPORT_SYMBOL(vma_address);
 
 /*
  * At what user virtual address is page expected in vma?

@@ -1611,11 +1611,6 @@ struct tcp_request_sock_ops {
 #endif
 };
 
-#ifdef CONFIG_TCP_MD5SIG
-extern const struct tcp_request_sock_ops tcp_request_sock_ipv4_ops;
-extern const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops;
-#endif
-
 extern int tcpv4_offload_init(void);
 extern void tcp_v4_init(void);
 extern void tcp_init(void);

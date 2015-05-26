@@ -2573,7 +2573,6 @@ int vfs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 		fsnotify_create(dir, dentry);
 	return error;
 }
-EXPORT_SYMBOL(sys_mknod);
 
 static int may_open(struct path *path, int acc_mode, int flag)
 {
@@ -3535,7 +3534,6 @@ SYSCALL_DEFINE2(mkdir, const char __user *, pathname, umode_t, mode)
 {
 	return sys_mkdirat(AT_FDCWD, pathname, mode);
 }
-EXPORT_SYMBOL(sys_mkdir);
 
 /*
  * The dentry_unhash() helper will try to drop the dentry early: we
@@ -3659,7 +3657,6 @@ SYSCALL_DEFINE1(rmdir, const char __user *, pathname)
 {
 	return do_rmdir(AT_FDCWD, pathname);
 }
-EXPORT_SYMBOL(sys_rmdir);
 
 /**
  * vfs_unlink - unlink a filesystem object

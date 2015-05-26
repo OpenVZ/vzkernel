@@ -11,7 +11,6 @@ union ktime;
 long do_futex(u32 __user *uaddr, int op, u32 val, union ktime *timeout,
 	      u32 __user *uaddr2, u32 val2, u32 val3);
 
-extern long futex_wait_restart(struct restart_block *restart);
 extern int
 handle_futex_death(u32 __user *uaddr, struct task_struct *curr, int pi);
 

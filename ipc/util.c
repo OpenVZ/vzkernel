@@ -692,7 +692,6 @@ struct kern_ipc_perm *ipc_obtain_object_check(struct ipc_ids *ids, int id)
 out:
 	return out;
 }
-EXPORT_SYMBOL(ipc_lock);
 
 /**
  * ipcget - Common sys_*get() code
