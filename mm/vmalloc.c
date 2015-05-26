@@ -32,15 +32,13 @@
 #include <asm/tlbflush.h>
 #include <asm/shmparam.h>
 
-#include <bc/debug.h>
-
 struct vfree_deferred {
 	struct llist_head list;
 	struct work_struct wq;
 };
 static DEFINE_PER_CPU(struct vfree_deferred, vfree_deferred);
 
-static void __vunmap(const void *, int, int);
+static void __vunmap(const void *, int);
 
 static void free_work(struct work_struct *w)
 {
@@ -49,7 +47,7 @@ static void free_work(struct work_struct *w)
 	while (llnode) {
 		void *p = llnode;
 		llnode = llist_next(llnode);
-		__vunmap(p, 1, 0);
+		__vunmap(p, 1);
 	}
 }
 
@@ -1471,7 +1469,7 @@ struct vm_struct *remove_vm_area(const void *addr)
 	return NULL;
 }
 
-static void __vunmap(const void *addr, int deallocate_pages, int uncharge)
+static void __vunmap(const void *addr, int deallocate_pages)
 {
 	struct vm_struct *area;
 
@@ -1540,7 +1538,7 @@ void vfree(const void *addr)
 		llist_add((struct llist_node *)addr, &p->list);
 		schedule_work(&p->wq);
 	} else
-		__vunmap(addr, 1, 1);
+		__vunmap(addr, 1);
 }
 EXPORT_SYMBOL(vfree);
 
@@ -1558,7 +1556,7 @@ void vunmap(const void *addr)
 	BUG_ON(in_interrupt());
 	might_sleep();
 	if (addr)
-		__vunmap(addr, 0, 0);
+		__vunmap(addr, 0);
 }
 EXPORT_SYMBOL(vunmap);
 
@@ -1646,14 +1644,13 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 
 	if (map_vm_area(area, prot, &pages))
 		goto fail;
-
 	return area->addr;
 
 fail:
 	warn_alloc_failed(gfp_mask, order,
 			  "vmalloc: allocation failure, allocated %ld of %ld bytes\n",
 			  (area->nr_pages*PAGE_SIZE), area->size);
-	__vunmap(area->addr, 1, 0);
+	vfree(area->addr);
 	return NULL;
 }
 
@@ -1767,26 +1764,6 @@ void *vmalloc(unsigned long size)
 }
 EXPORT_SYMBOL(vmalloc);
 
-void *ub_vmalloc(unsigned long size)
-{
-	return __vmalloc(size, GFP_KERNEL | __GFP_HIGHMEM, PAGE_KERNEL);
-}
-EXPORT_SYMBOL(ub_vmalloc);
-
-void *vmalloc_best(unsigned long size)
-{
-	return vmalloc(size);
-}
-
-EXPORT_SYMBOL(vmalloc_best);
-
-void *ub_vmalloc_best(unsigned long size)
-{
-	return ub_vmalloc(size);
-}
-
-EXPORT_SYMBOL(ub_vmalloc_best);
-
 /**
  *	vzalloc - allocate virtually contiguous memory with zero fill
  *	@size:	allocation size
@@ -1845,13 +1822,6 @@ void *vmalloc_node(unsigned long size, int node)
 					node, __builtin_return_address(0));
 }
 EXPORT_SYMBOL(vmalloc_node);
-
-void *ub_vmalloc_node(unsigned long size, int node)
-{
-	return __vmalloc_node(size, 1, GFP_KERNEL | __GFP_HIGHMEM, PAGE_KERNEL,
-					node, __builtin_return_address(0));
-}
-EXPORT_SYMBOL(ub_vmalloc_node);
 
 /**
  * vzalloc_node - allocate memory on a specific node with zero fill

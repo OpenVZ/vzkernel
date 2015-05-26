@@ -1348,7 +1348,7 @@ do_add_counters(struct net *net, const void __user *user,
 	if (len != size + num_counters * sizeof(struct xt_counters))
 		return -EINVAL;
 
-	paddc = ub_vmalloc(len - size);
+	paddc = vmalloc(len - size);
 	if (!paddc)
 		return -ENOMEM;
 

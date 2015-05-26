@@ -38,7 +38,7 @@ static void *alloc_fdmem(size_t size)
 		if (data != NULL)
 			return data;
 	}
-	return ub_vmalloc(size);
+	return vmalloc(size);
 }
 
 static void free_fdmem(void *ptr)

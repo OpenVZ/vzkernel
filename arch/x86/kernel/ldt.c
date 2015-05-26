@@ -42,7 +42,7 @@ static int alloc_ldt(mm_context_t *pc, int mincount, int reload)
 	mincount = (mincount + (PAGE_SIZE / LDT_ENTRY_SIZE - 1)) &
 			(~(PAGE_SIZE / LDT_ENTRY_SIZE - 1));
 	if (mincount * LDT_ENTRY_SIZE > PAGE_SIZE)
-		newldt = ub_vmalloc(mincount * LDT_ENTRY_SIZE);
+		newldt = vmalloc(mincount * LDT_ENTRY_SIZE);
 	else
 		newldt = (void *)__get_free_page(GFP_KERNEL);
 
