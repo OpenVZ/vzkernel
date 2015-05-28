@@ -293,6 +293,7 @@ struct mem_cgroup {
 	unsigned long long swap_max;
 	atomic_long_t mem_failcnt;
 	atomic_long_t swap_failcnt;
+	atomic_long_t oom_kill_cnt;
 
 	unsigned long long oom_guarantee;
 
@@ -1734,6 +1735,39 @@ bool mem_cgroup_cleancache_disabled(struct page *page)
 	return ret;
 }
 #endif
+
+void mem_cgroup_note_oom_kill(struct mem_cgroup *root_memcg,
+			      struct task_struct *task)
+{
+	struct mem_cgroup *memcg, *memcg_to_put;
+	struct task_struct *p;
+
+	if (!root_memcg)
+		root_memcg = root_mem_cgroup;
+
+	p = find_lock_task_mm(task);
+	if (p) {
+		memcg = try_get_mem_cgroup_from_mm(p->mm);
+		task_unlock(p);
+	} else {
+		rcu_read_lock();
+		memcg = mem_cgroup_from_task(task);
+		css_get(&memcg->css);
+		rcu_read_unlock();
+	}
+	memcg_to_put = memcg;
+	if (!memcg || !mem_cgroup_same_or_subtree(root_memcg, memcg))
+		memcg = root_memcg;
+
+	for (; memcg; memcg = parent_mem_cgroup(memcg)) {
+		atomic_long_inc(&memcg->oom_kill_cnt);
+		if (memcg == root_memcg)
+			break;
+	}
+
+	if (memcg_to_put)
+		css_put(&memcg_to_put->css);
+}
 
 unsigned long mem_cgroup_total_pages(struct mem_cgroup *memcg, bool swap)
 {
