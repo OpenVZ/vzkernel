@@ -119,13 +119,6 @@ extern unsigned long nr_active_cpu(void);
 extern atomic_t nr_dead;
 extern unsigned long nr_zombie;
 
-#ifdef CONFIG_VE
-extern unsigned long nr_running_ve(void);
-#else
-#define nr_running_ve()				0
-#endif
-
-
 extern void calc_global_load(unsigned long ticks);
 extern void update_cpu_load_nohz(void);
 
