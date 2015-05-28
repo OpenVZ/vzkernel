@@ -715,14 +715,14 @@ static struct file_operations proc_fairsched_operations = {
 	.release	= fairsched_seq_release
 };
 
-int fairsched_show_stat(struct seq_file *p, int id)
+int fairsched_show_stat(const char *name, struct seq_file *p)
 {
 	struct cgroup *cgrp;
 	int err;
 
-	cgrp = ve_cgroup_open(root_node.cpu, 0, id);
-	if (IS_ERR(cgrp))
-		return PTR_ERR(cgrp);
+	cgrp = cgroup_kernel_open(root_node.cpu, 0, name);
+	if (IS_ERR_OR_NULL(cgrp))
+		return cgrp ? PTR_ERR(cgrp) : -ENOENT;
 
 	err = cpu_cgroup_proc_stat(cgrp, NULL, p);
 	cgroup_kernel_close(cgrp);
@@ -730,14 +730,14 @@ int fairsched_show_stat(struct seq_file *p, int id)
 	return err;
 }
 
-int fairsched_get_cpu_avenrun(int id, unsigned long *avenrun)
+int fairsched_get_cpu_avenrun(const char *name, unsigned long *avenrun)
 {
 	struct cgroup *cgrp;
 	int err;
 
-	cgrp = ve_cgroup_open(root_node.cpu, 0, fairsched_id(id));
-	if (IS_ERR(cgrp))
-		return PTR_ERR(cgrp);
+	cgrp = cgroup_kernel_open(root_node.cpu, 0, name);
+	if (IS_ERR_OR_NULL(cgrp))
+		return cgrp ? PTR_ERR(cgrp) : -ENOENT;
 
 	err = cpu_cgroup_get_avenrun(cgrp, avenrun);
 	cgroup_kernel_close(cgrp);
@@ -746,13 +746,13 @@ int fairsched_get_cpu_avenrun(int id, unsigned long *avenrun)
 }
 EXPORT_SYMBOL(fairsched_get_cpu_avenrun);
 
-int fairsched_get_cpu_stat(int id, struct kernel_cpustat *kstat)
+int fairsched_get_cpu_stat(const char *name, struct kernel_cpustat *kstat)
 {
 	struct cgroup *cgrp;
 
-	cgrp = ve_cgroup_open(root_node.cpu, 0, fairsched_id(id));
-	if (IS_ERR(cgrp))
-		return PTR_ERR(cgrp);
+	cgrp = cgroup_kernel_open(root_node.cpu, 0, name);
+	if (IS_ERR_OR_NULL(cgrp))
+		return cgrp ? PTR_ERR(cgrp) : -ENOENT;
 
 	cpu_cgroup_get_stat(cgrp, kstat);
 	cgroup_kernel_close(cgrp);
