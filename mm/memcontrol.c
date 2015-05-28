@@ -292,6 +292,8 @@ struct mem_cgroup {
 	atomic_long_t mem_failcnt;
 	atomic_long_t swap_failcnt;
 
+	unsigned long long oom_guarantee;
+
 	/*
 	 * Should the accounting and control be hierarchical, per subtree?
 	 */
@@ -1559,6 +1561,51 @@ bool mem_cgroup_low(struct mem_cgroup *root, struct mem_cgroup *memcg)
 	return true;
 }
 
+static bool __mem_cgroup_below_oom_guarantee(struct mem_cgroup *root,
+					     struct mem_cgroup *memcg)
+{
+	if (mem_cgroup_disabled())
+		return false;
+
+	if (memcg == root_mem_cgroup)
+		return false;
+
+	if (res_counter_read_u64(&memcg->memsw, RES_USAGE) >=
+					memcg->oom_guarantee)
+		return false;
+
+	while (memcg != root) {
+		memcg = parent_mem_cgroup(memcg);
+		if (!memcg)
+			break;
+
+		if (memcg == root_mem_cgroup)
+			break;
+
+		if (res_counter_read_u64(&memcg->memsw, RES_USAGE) >=
+						memcg->oom_guarantee)
+			return false;
+	}
+	return true;
+}
+
+bool mem_cgroup_below_oom_guarantee(struct task_struct *p)
+{
+	struct mem_cgroup *memcg = NULL;
+	bool ret = false;
+
+	p = find_lock_task_mm(p);
+	if (p) {
+		memcg = try_get_mem_cgroup_from_mm(p->mm);
+		task_unlock(p);
+	}
+	if (memcg) {
+		ret = __mem_cgroup_below_oom_guarantee(root_mem_cgroup, memcg);
+		css_put(&memcg->css);
+	}
+	return ret;
+}
+
 #define mem_cgroup_from_res_counter(counter, member)	\
 	container_of(counter, struct mem_cgroup, member)
 
@@ -1847,6 +1894,7 @@ static void mem_cgroup_out_of_memory(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	unsigned long totalpages;
 	unsigned int points = 0;
 	struct task_struct *chosen = NULL;
+	bool ignore_memcg_guarantee = false;
 
 	/*
 	 * If current has a pending SIGKILL or is exiting, then automatically
@@ -1860,15 +1908,20 @@ static void mem_cgroup_out_of_memory(struct mem_cgroup *memcg, gfp_t gfp_mask,
 
 	check_panic_on_oom(CONSTRAINT_MEMCG, gfp_mask, order, NULL);
 	totalpages = mem_cgroup_get_limit(memcg) >> PAGE_SHIFT ? : 1;
+retry:
 	for_each_mem_cgroup_tree(iter, memcg) {
 		struct cgroup *cgroup = iter->css.cgroup;
 		struct cgroup_iter it;
 		struct task_struct *task;
 
+		if (!ignore_memcg_guarantee &&
+		    __mem_cgroup_below_oom_guarantee(memcg, iter))
+			continue;
+
 		cgroup_iter_start(cgroup, &it);
 		while ((task = cgroup_iter_next(cgroup, &it))) {
 			switch (oom_scan_process_thread(task, totalpages, NULL,
-							false)) {
+							false, true)) {
 			case OOM_SCAN_SELECT:
 				if (chosen)
 					put_task_struct(chosen);
@@ -1899,8 +1952,13 @@ static void mem_cgroup_out_of_memory(struct mem_cgroup *memcg, gfp_t gfp_mask,
 		cgroup_iter_end(cgroup, &it);
 	}
 
-	if (!chosen)
+	if (!chosen) {
+		if (!ignore_memcg_guarantee) {
+			ignore_memcg_guarantee = true;
+			goto retry;
+		}
 		return;
+	}
 	points = chosen_points * 1000 / totalpages;
 	oom_kill_process(chosen, gfp_mask, order, points, totalpages, memcg,
 			 NULL, "Memory cgroup out of memory");
@@ -5105,6 +5163,36 @@ static int mem_cgroup_low_write(struct cgroup *cont, struct cftype *cft,
 	return 0;
 }
 
+static ssize_t mem_cgroup_oom_guarantee_read(struct cgroup *cont,
+		struct cftype *cft, struct file *file, char __user *buf,
+		size_t nbytes, loff_t *ppos)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
+	char str[64];
+	int len;
+
+	len = scnprintf(str, sizeof(str), "%llu\n", memcg->oom_guarantee);
+	return simple_read_from_buffer(buf, nbytes, ppos, str, len);
+}
+
+static int mem_cgroup_oom_guarantee_write(struct cgroup *cont,
+		struct cftype *cft, const char *buffer)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
+	unsigned long long val;
+	int ret;
+
+	if (mem_cgroup_is_root(memcg))
+		return -EINVAL;
+
+	ret = res_counter_memparse_write_strategy(buffer, &val);
+	if (ret)
+		return ret;
+
+	memcg->oom_guarantee = val;
+	return 0;
+}
+
 static void memcg_get_hierarchical_limit(struct mem_cgroup *memcg,
 		unsigned long long *mem_limit, unsigned long long *memsw_limit)
 {
@@ -5991,6 +6079,11 @@ static struct cftype mem_cgroup_files[] = {
 		.register_event = mem_cgroup_oom_register_event,
 		.unregister_event = mem_cgroup_oom_unregister_event,
 		.private = MEMFILE_PRIVATE(_OOM_TYPE, OOM_CONTROL),
+	},
+	{
+		.name = "oom_guarantee",
+		.write_string = mem_cgroup_oom_guarantee_write,
+		.read = mem_cgroup_oom_guarantee_read,
 	},
 	{
 		.name = "pressure_level",
