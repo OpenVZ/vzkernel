@@ -5207,9 +5207,10 @@ void mem_cgroup_sync_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cg);
 	unsigned long long lim, held, maxheld;
-	volatile struct ubparm *k, *p, *s;
+	volatile struct ubparm *k, *d, *p, *s;
 
 	k = &ub->ub_parms[UB_KMEMSIZE];
+	d = &ub->ub_parms[UB_DCACHESIZE];
 	p = &ub->ub_parms[UB_PHYSPAGES];
 	s = &ub->ub_parms[UB_SWAPPAGES];
 
@@ -5228,6 +5229,11 @@ void mem_cgroup_sync_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 	lim = lim == RESOURCE_MAX ? UB_MAXVALUE :
 		min_t(unsigned long long, lim, UB_MAXVALUE);
 	k->barrier = k->limit = lim;
+
+	d->held = res_counter_read_u64(&memcg->dcache, RES_USAGE);
+	d->maxheld = res_counter_read_u64(&memcg->dcache, RES_MAX_USAGE);
+	d->failcnt = 0;
+	d->barrier = d->limit = UB_MAXVALUE;
 
 	held = (res_counter_read_u64(&memcg->memsw, RES_USAGE) -
 		res_counter_read_u64(&memcg->res, RES_USAGE)) >> PAGE_SHIFT;
@@ -5270,6 +5276,8 @@ int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 
 	if (ub->ub_parms[UB_KMEMSIZE].limit != UB_MAXVALUE)
 		pr_warn_once("ub: kmemsize limit is deprecated\n");
+	if (ub->ub_parms[UB_DCACHESIZE].limit != UB_MAXVALUE)
+		pr_warn_once("ub: dcachesize limit is deprecated\n");
 
 	/* activate kmem accounting */
 	ret = memcg_update_kmem_limit(memcg, RESOURCE_MAX);
