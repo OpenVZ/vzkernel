@@ -291,6 +291,7 @@ struct mem_cgroup {
 	unsigned long long swap_max;
 	atomic_long_t mem_failcnt;
 	atomic_long_t swap_failcnt;
+	atomic_long_t oom_kill_cnt;
 
 	unsigned long long oom_guarantee;
 
@@ -1604,6 +1605,28 @@ bool mem_cgroup_below_oom_guarantee(struct task_struct *p)
 		css_put(&memcg->css);
 	}
 	return ret;
+}
+
+void mem_cgroup_note_oom_kill(struct mem_cgroup *root_memcg,
+			      struct mm_struct *mm)
+{
+	struct mem_cgroup *memcg, *memcg_to_put;
+
+	if (!root_memcg)
+		root_memcg = root_mem_cgroup;
+
+	memcg_to_put = memcg = try_get_mem_cgroup_from_mm(mm);
+	if (!memcg || !mem_cgroup_same_or_subtree(root_memcg, memcg))
+		memcg = root_memcg;
+
+	for (; memcg; memcg = parent_mem_cgroup(memcg)) {
+		atomic_long_inc(&memcg->oom_kill_cnt);
+		if (memcg == root_memcg)
+			break;
+	}
+
+	if (memcg_to_put)
+		css_put(&memcg_to_put->css);
 }
 
 #define mem_cgroup_from_res_counter(counter, member)	\
