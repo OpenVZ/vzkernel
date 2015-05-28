@@ -68,10 +68,4 @@ config BC_DEBUG_ITEMS
 	  When true some of the resources (e.g. kmemsize) are accounted
 	  in items instead of bytes.
 
-config BC_UNLIMITED
-	bool "Use unlimited ubc settings"
-	default n
-	depends on BC_DEBUG
-	help
-	  When ON all limits and barriers are set to max values.
 endmenu
