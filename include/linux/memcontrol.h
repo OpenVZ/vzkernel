@@ -292,6 +292,9 @@ struct mem_cgroup {
 	/* vmpressure notifications */
 	struct vmpressure vmpressure;
 
+	unsigned long overdraft;
+	unsigned long long oom_guarantee;
+
 	/*
 	 * Should the accounting and control be hierarchical, per subtree?
 	 */
@@ -670,6 +673,19 @@ static inline bool mem_cgroup_online(struct mem_cgroup *memcg)
  */
 bool mem_cgroup_cleancache_disabled(struct page *page);
 int mem_cgroup_select_victim_node(struct mem_cgroup *memcg);
+struct mem_cgroup *get_mem_cgroup_from_mm(struct mm_struct *mm);
+
+static inline unsigned long mm_overdraft(struct mm_struct *mm)
+{
+	struct mem_cgroup *memcg;
+	unsigned long overdraft;
+
+	memcg = get_mem_cgroup_from_mm(mm);
+	overdraft = memcg->overdraft;
+	css_put(&memcg->css);
+
+	return overdraft;
+}
 
 void mem_cgroup_update_lru_size(struct lruvec *lruvec, enum lru_list lru,
 		int zid, int nr_pages);
@@ -694,6 +710,7 @@ void mem_cgroup_print_oom_context(struct mem_cgroup *memcg,
 				struct task_struct *p);
 
 void mem_cgroup_print_oom_meminfo(struct mem_cgroup *memcg);
+unsigned long mem_cgroup_overdraft(struct mem_cgroup *memcg);
 
 static inline void mem_cgroup_enter_user_fault(void)
 {
@@ -1114,6 +1131,11 @@ static inline bool mem_cgroup_cleancache_disabled(struct page *page)
 	return false;
 }
 
+static inline unsigned long mm_overdraft(struct mm_struct *mm)
+{
+	return 0;
+}
+
 static inline
 unsigned long mem_cgroup_get_zone_lru_size(struct lruvec *lruvec,
 		enum lru_list lru, int zone_idx)
@@ -1134,6 +1156,11 @@ static inline unsigned long mem_cgroup_size(struct mem_cgroup *memcg)
 static inline void
 mem_cgroup_print_oom_context(struct mem_cgroup *memcg, struct task_struct *p)
 {
+}
+
+static inline unsigned long mem_cgroup_overdraft(struct mem_cgroup *memcg)
+{
+	return 0;
 }
 
 static inline void
