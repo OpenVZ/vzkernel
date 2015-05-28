@@ -5318,12 +5318,13 @@ void mem_cgroup_sync_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cg);
 	unsigned long long lim, held, maxheld;
-	volatile struct ubparm *k, *d, *p, *s;
+	volatile struct ubparm *k, *d, *p, *s, *o;
 
 	k = &ub->ub_parms[UB_KMEMSIZE];
 	d = &ub->ub_parms[UB_DCACHESIZE];
 	p = &ub->ub_parms[UB_PHYSPAGES];
 	s = &ub->ub_parms[UB_SWAPPAGES];
+	o = &ub->ub_parms[UB_OOMGUARPAGES];
 
 	p->held	= res_counter_read_u64(&memcg->res, RES_USAGE) >> PAGE_SHIFT;
 	p->maxheld = res_counter_read_u64(&memcg->res, RES_MAX_USAGE) >> PAGE_SHIFT;
@@ -5361,12 +5362,20 @@ void mem_cgroup_sync_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 	 * (memory.memsw.limit - memory.limit). */
 	s->held = min(held, lim);
 	s->maxheld = min(maxheld, lim);
+
+	o->held = res_counter_read_u64(&memcg->memsw, RES_USAGE) >> PAGE_SHIFT;
+	o->maxheld = res_counter_read_u64(&memcg->memsw, RES_MAX_USAGE) >> PAGE_SHIFT;
+	o->failcnt = atomic_long_read(&memcg->oom_kill_cnt);
+	lim = memcg->oom_guarantee;
+	lim = lim == RESOURCE_MAX ? UB_MAXVALUE :
+		min_t(unsigned long long, lim >> PAGE_SHIFT, UB_MAXVALUE);
+	o->barrier = o->limit = lim;
 }
 
 int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cg);
-	unsigned long long mem, memsw, mem_old, memsw_old;
+	unsigned long long mem, memsw, mem_old, memsw_old, oomguar;
 	int ret = 0;
 
 	mem = ub->ub_parms[UB_PHYSPAGES].limit;
@@ -5384,6 +5393,12 @@ int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 		memsw += mem;
 	else
 		memsw = RESOURCE_MAX;
+
+	oomguar = ub->ub_parms[UB_OOMGUARPAGES].barrier;
+	if (oomguar < RESOURCE_MAX >> PAGE_SHIFT)
+		oomguar <<= PAGE_SHIFT;
+	else
+		oomguar = RESOURCE_MAX;
 
 	if (ub->ub_parms[UB_KMEMSIZE].limit != UB_MAXVALUE)
 		pr_warn_once("ub: kmemsize limit is deprecated\n");
@@ -5426,6 +5441,8 @@ int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 		if (ret)
 			goto out;
 	}
+
+	memcg->oom_guarantee = oomguar;
 out:
 	return ret;
 }
