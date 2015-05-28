@@ -395,6 +395,7 @@ static inline int bc_verify_held(struct user_beancounter *ub)
 	ub->ub_parms[UB_DCACHESIZE].held = 0;
 	ub->ub_parms[UB_PHYSPAGES].held = 0;
 	ub->ub_parms[UB_SWAPPAGES].held = 0;
+	ub->ub_parms[UB_OOMGUARPAGES].held = 0;
 
 	clean = 1;
 	for (i = 0; i < UB_RESOURCES; i++)
