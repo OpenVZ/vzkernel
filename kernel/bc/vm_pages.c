@@ -202,7 +202,6 @@ static int bc_fill_meminfo(struct user_beancounter *ub,
 
 		mi->dirty_pages	+= pcpu->dirty_pages;
 		mi->writeback_pages	+= pcpu->writeback_pages;
-		dcache		-= pcpu->precharge[UB_DCACHESIZE];
 	}
 
 	mi->dirty_pages = max_t(long, 0, mi->dirty_pages);
