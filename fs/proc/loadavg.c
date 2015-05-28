@@ -6,6 +6,8 @@
 #include <linux/seq_file.h>
 #include <linux/seqlock.h>
 #include <linux/time.h>
+#include <linux/fairsched.h>
+#include <linux/ve.h>
 
 #define LOAD_INT(x) ((x) >> FSHIFT)
 #define LOAD_FRAC(x) LOAD_INT(((x) & (FIXED_1-1)) * 100)
@@ -13,25 +15,23 @@
 static int loadavg_proc_show(struct seq_file *m, void *v)
 {
 	unsigned long avnrun[3];
-	long running, threads;
 	struct ve_struct *ve;
 
 	ve = get_exec_env();
-	if (ve_is_super(ve)) {
-		get_avenrun(avnrun, FIXED_1/200, 0);
-		running = nr_running();
-		threads = nr_threads;
-	} else {
-		get_avenrun_ve(avnrun, FIXED_1/200, 0);
-		running = nr_running_ve();
-		threads = nr_threads_ve(ve);
+	if (!ve_is_super(ve)) {
+		int ret;
+		ret = fairsched_show_loadavg(ve_name(ve), m);
+		if (ret != -ENOSYS)
+			return ret;
 	}
 
-	seq_printf(m, "%lu.%02lu %lu.%02lu %lu.%02lu %ld/%ld %d\n",
+	get_avenrun(avnrun, FIXED_1/200, 0);
+
+	seq_printf(m, "%lu.%02lu %lu.%02lu %lu.%02lu %ld/%d %d\n",
 		LOAD_INT(avnrun[0]), LOAD_FRAC(avnrun[0]),
 		LOAD_INT(avnrun[1]), LOAD_FRAC(avnrun[1]),
 		LOAD_INT(avnrun[2]), LOAD_FRAC(avnrun[2]),
-		running, threads,
+		nr_running(), nr_threads,
 		task_active_pid_ns(current)->last_pid);
 	return 0;
 }
