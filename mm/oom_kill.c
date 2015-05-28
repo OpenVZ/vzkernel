@@ -543,6 +543,7 @@ void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 		K(get_mm_counter(victim->mm, MM_FILEPAGES)),
 		K(get_mm_counter(victim->mm, MM_SHMEMPAGES)));
 	task_unlock(victim);
+	mem_cgroup_note_oom_kill(memcg, victim);
 
 	/*
 	 * Kill all user processes sharing victim->mm in other thread groups, if
@@ -567,6 +568,7 @@ void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 			continue;
 
 		do_send_sig_info(SIGKILL, SEND_SIG_FORCED, p, true);
+		mem_cgroup_note_oom_kill(memcg, p);
 	}
 	rcu_read_unlock();
 
