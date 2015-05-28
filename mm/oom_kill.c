@@ -256,7 +256,7 @@ static enum oom_constraint constrained_alloc(struct zonelist *zonelist,
 
 enum oom_scan_t oom_scan_process_thread(struct task_struct *task,
 		unsigned long totalpages, const nodemask_t *nodemask,
-		bool force_kill)
+		bool force_kill, bool ignore_memcg_guarantee)
 {
 	if (task->exit_state)
 		return OOM_SCAN_CONTINUE;
@@ -286,6 +286,9 @@ enum oom_scan_t oom_scan_process_thread(struct task_struct *task,
 	if (task_will_free_mem(task) && !force_kill)
 		return OOM_SCAN_ABORT;
 
+	if (!ignore_memcg_guarantee && mem_cgroup_below_oom_guarantee(task))
+		return OOM_SCAN_CONTINUE;
+
 	return OOM_SCAN_OK;
 }
 
@@ -302,13 +305,15 @@ static struct task_struct *select_bad_process(unsigned int *ppoints,
 	struct task_struct *g, *p;
 	struct task_struct *chosen = NULL;
 	unsigned long chosen_points = 0;
+	bool ignore_memcg_guarantee = false;
 
 	rcu_read_lock();
+retry:
 	for_each_process_thread(g, p) {
 		unsigned int points;
 
 		switch (oom_scan_process_thread(p, totalpages, nodemask,
-						force_kill)) {
+					force_kill, ignore_memcg_guarantee)) {
 		case OOM_SCAN_SELECT:
 			chosen = p;
 			chosen_points = ULONG_MAX;
@@ -329,6 +334,10 @@ static struct task_struct *select_bad_process(unsigned int *ppoints,
 	}
 	if (chosen)
 		get_task_struct(chosen);
+	else if (!ignore_memcg_guarantee) {
+		ignore_memcg_guarantee = true;
+		goto retry;
+	}
 	rcu_read_unlock();
 
 	*ppoints = chosen_points * 1000 / totalpages;
