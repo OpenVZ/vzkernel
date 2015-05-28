@@ -424,6 +424,7 @@ static inline int bc_verify_held(struct user_beancounter *ub)
 
 	/* accounted by memcg */
 	ub->ub_parms[UB_KMEMSIZE].held = 0;
+	ub->ub_parms[UB_DCACHESIZE].held = 0;
 	ub->ub_parms[UB_PHYSPAGES].held = 0;
 	ub->ub_parms[UB_SWAPPAGES].held = 0;
 
@@ -943,7 +944,7 @@ static void init_beancounter_syslimits(struct user_beancounter *ub)
 	ub->ub_parms[UB_NUMFLOCK].limit = 1024;
 	ub->ub_parms[UB_NUMPTY].limit = 16;
 	ub->ub_parms[UB_NUMSIGINFO].limit = 1024;
-	ub->ub_parms[UB_DCACHESIZE].limit = 1024*1024;
+	ub->ub_parms[UB_DCACHESIZE].limit = UB_MAXVALUE;
 	ub->ub_parms[UB_NUMFILE].limit = 1024;
 	ub->ub_parms[UB_PHYSPAGES].limit = UB_MAXVALUE;
 	ub->ub_parms[UB_SWAPPAGES].limit = UB_MAXVALUE;
