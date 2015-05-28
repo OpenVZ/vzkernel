@@ -105,70 +105,42 @@ static void ub_cgroup_close(struct cgroup *root, struct cgroup *cg)
 		cgroup_kernel_close(cg);
 }
 
-static int ub_mem_cgroup_attach_task(struct user_beancounter *ub,
-				     struct task_struct *tsk)
+static int ub_cgroup_attach_task(struct cgroup *root,
+		struct user_beancounter *ub, struct task_struct *tsk)
 {
 	struct cgroup *cg;
 	int ret;
 
-	cg = ub_cgroup_open(mem_cgroup_root, ub);
+	cg = ub_cgroup_open(root, ub);
 	if (IS_ERR(cg))
 		return PTR_ERR(cg);
 	ret = cgroup_kernel_attach(cg, tsk);
-	ub_cgroup_close(mem_cgroup_root, cg);
-	return ret;
-}
-
-static int ub_blkio_cgroup_attach_task(struct user_beancounter *ub,
-				       struct task_struct *tsk)
-{
-	struct cgroup *cg;
-	int ret;
-
-	cg = ub_cgroup_open(blkio_cgroup_root, ub);
-	if (IS_ERR(cg))
-		return PTR_ERR(cg);
-	ret = cgroup_kernel_attach(cg, tsk);
-	ub_cgroup_close(blkio_cgroup_root, cg);
-	return ret;
-}
- 
-static int ub_cgroup_attach_task(struct user_beancounter *ub,
-				 struct task_struct *tsk)
-{
-	struct cgroup *cg;
-	int ret;
-
-	cg = ub_cgroup_open(ub_cgroup_root, ub);
-	if (IS_ERR(cg))
-		return PTR_ERR(cg);
-	ret = cgroup_kernel_attach(cg, tsk);
-	ub_cgroup_close(ub_cgroup_root, cg);
+	ub_cgroup_close(root, cg);
 	return ret;
 }
 
 int ub_attach_task(struct user_beancounter *ub, struct task_struct *tsk)
 {
-	int ret;
+	int ret = 0;
 	struct user_beancounter *old_ub = tsk->task_bc.exec_ub;
 
-	ret = ub_mem_cgroup_attach_task(ub, tsk);
+	if (ub == old_ub)
+		goto out;
+	ret = ub_cgroup_attach_task(mem_cgroup_root, ub, tsk);
 	if (ret)
 		goto out;
-	ret = ub_blkio_cgroup_attach_task(ub, tsk);
+	ret = ub_cgroup_attach_task(blkio_cgroup_root, ub, tsk);
 	if (ret)
 		goto fail_blkio;
-	ret = ub_cgroup_attach_task(ub, tsk);
+	ret = ub_cgroup_attach_task(ub_cgroup_root, ub, tsk);
 	if (ret)
 		goto fail_ub;
 out:
 	return ret;
 fail_ub:
-	if (ub != old_ub)
-		ub_blkio_cgroup_attach_task(old_ub, tsk);
+	ub_cgroup_attach_task(blkio_cgroup_root, old_ub, tsk);
 fail_blkio:
-	if (ub != old_ub)
-		ub_mem_cgroup_attach_task(old_ub, tsk);
+	ub_cgroup_attach_task(mem_cgroup_root, old_ub, tsk);
 	goto out;
 }
 
