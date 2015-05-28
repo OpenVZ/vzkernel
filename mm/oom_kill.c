@@ -194,10 +194,14 @@ static bool is_dump_unreclaim_slabs(void)
  * task consuming the most memory to avoid subsequent oom failures.
  */
 unsigned long oom_badness(struct task_struct *p, struct mem_cgroup *memcg,
-			  const nodemask_t *nodemask, unsigned long totalpages)
+			  const nodemask_t *nodemask, unsigned long totalpages,
+			  unsigned long *overdraft)
 {
 	long points;
 	long adj;
+
+	if (overdraft)
+		*overdraft = 0;
 
 	if (oom_unkillable_task(p, memcg, nodemask))
 		return 0;
@@ -205,6 +209,9 @@ unsigned long oom_badness(struct task_struct *p, struct mem_cgroup *memcg,
 	p = find_lock_task_mm(p);
 	if (!p)
 		return 0;
+
+	if (overdraft)
+		*overdraft = mm_overdraft(p->mm);
 
 	/*
 	 * Do not even consider tasks which are explicitly marked oom
@@ -308,6 +315,7 @@ static enum oom_constraint constrained_alloc(struct oom_control *oc)
 static int oom_evaluate_task(struct task_struct *task, void *arg)
 {
 	struct oom_control *oc = arg;
+	unsigned long overdraft;
 	unsigned long points;
 
 	if (oom_unkillable_task(task, NULL, oc->nodemask))
@@ -331,13 +339,17 @@ static int oom_evaluate_task(struct task_struct *task, void *arg)
 	 */
 	if (oom_task_origin(task)) {
 		points = ULONG_MAX;
+		oc->max_overdraft = ULONG_MAX;
 		goto select;
 	}
 
-	points = oom_badness(task, NULL, oc->nodemask, oc->totalpages);
-	if (!points || points < oc->chosen_points)
+	points = oom_badness(task, NULL, oc->nodemask, oc->totalpages,
+			     &overdraft);
+	if (!points)
 		goto next;
 
+	if (oom_worse(points, overdraft, &oc->chosen_points, &oc->max_overdraft))
+		goto select;
 select:
 	if (oc->chosen)
 		put_task_struct(oc->chosen);
