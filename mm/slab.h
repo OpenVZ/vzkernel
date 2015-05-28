@@ -217,6 +217,9 @@ static inline struct kmem_cache *memcg_root_cache(struct kmem_cache *s)
 	return s->memcg_params.root_cache;
 }
 
+extern int __memcg_charge_slab(struct kmem_cache *s, gfp_t gfp, unsigned size);
+extern void __memcg_uncharge_slab(struct kmem_cache *s, unsigned size);
+
 static __always_inline int memcg_charge_slab(struct kmem_cache *s,
 					     gfp_t gfp, int order)
 {
@@ -224,8 +227,7 @@ static __always_inline int memcg_charge_slab(struct kmem_cache *s,
 		return 0;
 	if (is_root_cache(s))
 		return 0;
-	return memcg_charge_kmem(s->memcg_params.memcg, gfp,
-				 PAGE_SIZE << order);
+	return __memcg_charge_slab(s, gfp, PAGE_SIZE << order);
 }
 
 static __always_inline void memcg_uncharge_slab(struct kmem_cache *s, int order)
@@ -234,7 +236,7 @@ static __always_inline void memcg_uncharge_slab(struct kmem_cache *s, int order)
 		return;
 	if (is_root_cache(s))
 		return;
-	memcg_uncharge_kmem(s->memcg_params.memcg, PAGE_SIZE << order);
+	__memcg_uncharge_slab(s, PAGE_SIZE << order);
 }
 
 extern void slab_init_memcg_params(struct kmem_cache *);
