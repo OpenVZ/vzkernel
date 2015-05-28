@@ -1108,11 +1108,19 @@ static u64 ve_read_u64(struct cgroup *cg, struct cftype *cft)
 
 static int ve_write_u64(struct cgroup *cg, struct cftype *cft, u64 value)
 {
+	struct ve_struct *ve = cgroup_ve(cg);
+
 	if (!ve_is_super(get_exec_env()))
 		return -EPERM;
 
+	down_write(&ve->op_sem);
+	if (ve->is_running || ve->ve_ns) {
+		up_write(&ve->op_sem);
+		return -EBUSY;
+	}
+
 	if (cft->private == VE_CF_FEATURES)
-		cgroup_ve(cg)->features = value;
+		ve->features = value;
 	else if (cft->private == VE_CF_IPTABLES_MASK) {
 		value &= ~VE_IP_IPTABLES6;
 		value &= ~VE_IP_FILTER6;
@@ -1131,9 +1139,10 @@ static int ve_write_u64(struct cgroup *cg, struct cftype *cft, u64 value)
 		if (mask_ipt_allow(value, VE_IP_CONNTRACK))
 			value |= VE_NF_CONNTRACK;
 
-		cgroup_ve(cg)->ipt_mask = value;
+		ve->ipt_mask = value;
 	}
 
+	up_write(&ve->op_sem);
 	return 0;
 }
 
