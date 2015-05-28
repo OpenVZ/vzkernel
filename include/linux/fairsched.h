@@ -63,12 +63,17 @@ int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
 				struct seq_file *p);
 int fairsched_show_stat(const char *name, struct seq_file *p);
 
+int cpu_cgroup_proc_loadavg(struct cgroup *cgrp, struct cftype *cft,
+			    struct seq_file *p);
+int fairsched_show_loadavg(const char *name, struct seq_file *p);
+
 #else /* CONFIG_VZ_FAIRSCHED */
 
 static inline int fairsched_new_node(int id, unsigned int vcpus) { return 0; }
 static inline int fairsched_move_task(int id, struct task_struct *tsk) { return 0; }
 static inline void fairsched_drop_node(int id, int leave) { }
 static inline int fairsched_show_stat(const char *name, struct seq_file *p) { return -ENOSYS; }
+static inline int fairsched_show_loadavg(const char *name, struct seq_file *p) { return -ENOSYS; }
 static inline int fairsched_get_cpu_avenrun(const char *name, unsigned long *avenrun) { return -ENOSYS; }
 static inline int fairsched_get_cpu_stat(const char *name, struct kernel_cpustat *kstat) { return -ENOSYS; }
 
