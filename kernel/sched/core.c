@@ -2451,26 +2451,6 @@ unsigned long nr_active_cpu(void)
 	return this->nr_active;
 }
 
-#ifdef CONFIG_VE
-unsigned long nr_running_ve(void)
-{
-	struct task_group *tg = task_group(current);
-	unsigned long nr_running = 0;
-	int i;
-
-	for_each_possible_cpu(i) {
-#ifdef CONFIG_FAIR_GROUP_SCHED
-		nr_running += tg->cfs_rq[i]->nr_running;
-#endif
-#ifdef CONFIG_RT_GROUP_SCHED
-		nr_running += tg->rt_rq[i]->rt_nr_running;
-#endif
-	}
-
-	return nr_running;
-}
-#endif
-
 /*
  * Global load-average calculations
  *
@@ -8908,6 +8888,36 @@ int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
 	return 0;
 }
 
+int cpu_cgroup_proc_loadavg(struct cgroup *cgrp, struct cftype *cft,
+			    struct seq_file *p)
+{
+	struct task_group *tg = cgroup_tg(cgrp);
+	unsigned long avnrun[3];
+	int nr_running = 0;
+	int i;
+
+	avnrun[0] = tg->avenrun[0] + FIXED_1/200;
+	avnrun[1] = tg->avenrun[1] + FIXED_1/200;
+	avnrun[2] = tg->avenrun[2] + FIXED_1/200;
+
+	for_each_possible_cpu(i) {
+#ifdef CONFIG_FAIR_GROUP_SCHED
+		nr_running += tg->cfs_rq[i]->nr_running;
+#endif
+#ifdef CONFIG_RT_GROUP_SCHED
+		nr_running += tg->rt_rq[i]->rt_nr_running;
+#endif
+	}
+
+	seq_printf(p, "%lu.%02lu %lu.%02lu %lu.%02lu %d/%d %d\n",
+		LOAD_INT(avnrun[0]), LOAD_FRAC(avnrun[0]),
+		LOAD_INT(avnrun[1]), LOAD_FRAC(avnrun[1]),
+		LOAD_INT(avnrun[2]), LOAD_FRAC(avnrun[2]),
+		nr_running, cgroup_task_count(cgrp),
+		task_active_pid_ns(current)->last_pid);
+	return 0;
+}
+
 void cpu_cgroup_get_stat(struct cgroup *cgrp, struct kernel_cpustat *kstat)
 {
 	int i, j;
@@ -9027,6 +9037,10 @@ static struct cftype cpu_files[] = {
 	{
 		.name = "proc.stat",
 		.read_seq_string = cpu_cgroup_proc_stat,
+	},
+	{
+		.name = "proc.loadavg",
+		.read_seq_string = cpu_cgroup_proc_loadavg,
 	},
 	{
 		.name = "delayacct.total",
