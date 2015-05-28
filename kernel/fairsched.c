@@ -730,6 +730,21 @@ int fairsched_show_stat(const char *name, struct seq_file *p)
 	return err;
 }
 
+int fairsched_show_loadavg(const char *name, struct seq_file *p)
+{
+	struct cgroup *cgrp;
+	int err;
+
+	cgrp = cgroup_kernel_open(root_node.cpu, 0, name);
+	if (IS_ERR_OR_NULL(cgrp))
+		return cgrp ? PTR_ERR(cgrp) : -ENOENT;
+
+	err = cpu_cgroup_proc_loadavg(cgrp, NULL, p);
+	cgroup_kernel_close(cgrp);
+
+	return err;
+}
+
 int fairsched_get_cpu_avenrun(const char *name, unsigned long *avenrun)
 {
 	struct cgroup *cgrp;
