@@ -98,7 +98,7 @@ static int show_stat(struct seq_file *p, void *v)
 	ve = get_exec_env();
 	if (!ve_is_super(ve)) {
 		int ret;
-		ret = fairsched_show_stat(p, ve->veid);
+		ret = fairsched_show_stat(ve_name(ve), p);
 		if (ret != -ENOSYS)
 			return ret;
 	}
