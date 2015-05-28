@@ -279,6 +279,14 @@ struct mem_cgroup {
 	 */
 	struct res_counter kmem;
 
+	/*
+	 * the counter to account for dcache usage.
+	 *
+	 * Never limited, only needed for showing stats. We could use a per cpu
+	 * counter if we did not have to report max usage.
+	 */
+	struct res_counter dcache;
+
 	/* beancounter-related stats */
 	unsigned long long swap_max;
 	atomic_long_t mem_failcnt;
@@ -3042,7 +3050,7 @@ static int mem_cgroup_slabinfo_read(struct cgroup *cont, struct cftype *cft,
 }
 #endif
 
-int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp, u64 size)
+static int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp, u64 size)
 {
 	struct res_counter *fail_res;
 	struct mem_cgroup *_memcg;
@@ -3090,7 +3098,7 @@ int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp, u64 size)
 	return ret;
 }
 
-void memcg_uncharge_kmem(struct mem_cgroup *memcg, u64 size)
+static void memcg_uncharge_kmem(struct mem_cgroup *memcg, u64 size)
 {
 	res_counter_uncharge(&memcg->res, size);
 	if (do_swap_account)
@@ -3110,6 +3118,35 @@ void memcg_uncharge_kmem(struct mem_cgroup *memcg, u64 size)
 	 */
 	if (memcg_kmem_test_and_clear_dead(memcg))
 		css_put(&memcg->css);
+}
+
+int __memcg_charge_slab(struct kmem_cache *s, gfp_t gfp, unsigned size)
+{
+	struct mem_cgroup *memcg;
+	struct res_counter *fail_res;
+	int ret;
+
+	VM_BUG_ON(is_root_cache(s));
+	memcg = s->memcg_params.memcg;
+
+	ret = memcg_charge_kmem(memcg, gfp, size);
+	if (ret)
+		return ret;
+	if (s->flags & SLAB_RECLAIM_ACCOUNT)
+		res_counter_charge_nofail(&memcg->dcache, size, &fail_res);
+	return 0;
+}
+
+void __memcg_uncharge_slab(struct kmem_cache *s, unsigned size)
+{
+	struct mem_cgroup *memcg;
+
+	VM_BUG_ON(is_root_cache(s));
+	memcg = s->memcg_params.memcg;
+
+	memcg_uncharge_kmem(memcg, size);
+	if (s->flags & SLAB_RECLAIM_ACCOUNT)
+		res_counter_uncharge(&memcg->dcache, size);
 }
 
 /*
@@ -6173,6 +6210,7 @@ mem_cgroup_css_alloc(struct cgroup *cont)
 		res_counter_init(&memcg->res, NULL);
 		res_counter_init(&memcg->memsw, NULL);
 		res_counter_init(&memcg->kmem, NULL);
+		res_counter_init(&memcg->dcache, NULL);
 	}
 
 	memcg->last_scanned_node = MAX_NUMNODES;
@@ -6214,6 +6252,7 @@ mem_cgroup_css_online(struct cgroup *cont)
 		res_counter_init(&memcg->res, &parent->res);
 		res_counter_init(&memcg->memsw, &parent->memsw);
 		res_counter_init(&memcg->kmem, &parent->kmem);
+		res_counter_init(&memcg->dcache, &parent->dcache);
 
 		/*
 		 * No need to take a reference to the parent because cgroup
@@ -6223,6 +6262,7 @@ mem_cgroup_css_online(struct cgroup *cont)
 		res_counter_init(&memcg->res, NULL);
 		res_counter_init(&memcg->memsw, NULL);
 		res_counter_init(&memcg->kmem, NULL);
+		res_counter_init(&memcg->dcache, NULL);
 		/*
 		 * Deeper hierachy with use_hierarchy == false doesn't make
 		 * much sense so let cgroup subsystem know about this
