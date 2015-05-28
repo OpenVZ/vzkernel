@@ -45,7 +45,7 @@
 #include <bc/proc.h>
 
 static struct kmem_cache *ub_cachep;
-static struct user_beancounter default_beancounter;
+
 struct user_beancounter ub0 = {
 };
 EXPORT_SYMBOL(ub0);
@@ -280,7 +280,6 @@ static void uncharge_beancounter_precharge(struct user_beancounter *ub)
 
 static void init_beancounter_struct(struct user_beancounter *ub);
 static void init_beancounter_nolimits(struct user_beancounter *ub);
-static void init_beancounter_syslimits(struct user_beancounter *ub);
 
 static DEFINE_SPINLOCK(ub_list_lock);
 LIST_HEAD(ub_list_head); /* protected by ub_list_lock */
@@ -304,12 +303,11 @@ static struct user_beancounter *alloc_ub(const char *name)
 	struct user_beancounter *new_ub;
 	ub_debug(UBD_ALLOC, "Creating ub %p\n", new_ub);
 
-	new_ub = (struct user_beancounter *)kmem_cache_alloc(ub_cachep, 
-			GFP_KERNEL);
+	new_ub = kmem_cache_zalloc(ub_cachep, GFP_KERNEL);
 	if (new_ub == NULL)
 		return NULL;
 
-	memcpy(new_ub, &default_beancounter, sizeof(*new_ub));
+	init_beancounter_nolimits(new_ub);
 	init_beancounter_struct(new_ub);
 
 	init_beancounter_precharges(new_ub);
@@ -369,8 +367,6 @@ struct user_beancounter *get_beancounter_by_name(const char *name, int create)
 			cg = cgroup_kernel_open(ub_cgroup_root, CGRP_CREAT, name);
 			if (IS_ERR_OR_NULL(cg))
 				return NULL;
-			pr_warn_once("Allocating UB with syslimits is deprecated!\n");
-			init_beancounter_syslimits(cgroup_ub(cg));
 			if (ub_update_memcg(cgroup_ub(cg)) != 0)
 				pr_warn("Failed to init UB %s limits\n", name);
 		}
@@ -911,47 +907,24 @@ static void init_beancounter_nolimits(struct user_beancounter *ub)
 
 	for (k = 0; k < UB_RESOURCES; k++) {
 		ub->ub_parms[k].limit = UB_MAXVALUE;
-		/* FIXME: whether this is right for physpages and guarantees? */
 		ub->ub_parms[k].barrier = UB_MAXVALUE;
 	}
 
-	ub->ub_parms[UB_VMGUARPAGES].limit = 0;
+	/*
+	 * Unlimited vmguarpages gives immunity against systemwide overcommit
+	 * policy. It makes sense in some cases but by default we must obey it.
+	 */
 	ub->ub_parms[UB_VMGUARPAGES].barrier = 0;
 
-	/* FIXME: set unlimited rate? */
-	ub->ub_ratelimit.burst = 4;
-	ub->ub_ratelimit.interval = 300*HZ;
-}
+	/*
+	 * Unlimited oomguarpages makes container or host mostly immune to
+	 * to the OOM-killer while other containers exists. Withal we cannot
+	 * set it to zero, otherwise single unconfigured container will be
+	 * first target for OOM-killer. 75% of ram looks like sane default.
+	 */
+	ub->ub_parms[UB_OOMGUARPAGES].barrier = totalram_pages * 3 / 4;
 
-static void init_beancounter_syslimits(struct user_beancounter *ub)
-{
-	unsigned long mp;
-	extern int max_threads;
-	int k;
-
-	mp = num_physpages;
-	ub->ub_parms[UB_KMEMSIZE].limit = UB_MAXVALUE;
-	ub->ub_parms[UB_LOCKEDPAGES].limit = 8;
-	ub->ub_parms[UB_PRIVVMPAGES].limit = UB_MAXVALUE;
-	ub->ub_parms[UB_SHMPAGES].limit = 64;
-	ub->ub_parms[UB_NUMPROC].limit = max_threads / 2;
-	ub->ub_parms[UB_NUMTCPSOCK].limit = 1024;
-	ub->ub_parms[UB_TCPSNDBUF].limit = 1024*4*1024; /* 4k per socket */
-	ub->ub_parms[UB_TCPRCVBUF].limit = 1024*6*1024; /* 6k per socket */
-	ub->ub_parms[UB_NUMOTHERSOCK].limit = 256;
-	ub->ub_parms[UB_DGRAMRCVBUF].limit = 256*4*1024; /* 4k per socket */
-	ub->ub_parms[UB_OTHERSOCKBUF].limit = 256*8*1024; /* 8k per socket */
-	ub->ub_parms[UB_NUMFLOCK].limit = 1024;
-	ub->ub_parms[UB_NUMPTY].limit = 16;
-	ub->ub_parms[UB_NUMSIGINFO].limit = 1024;
-	ub->ub_parms[UB_DCACHESIZE].limit = UB_MAXVALUE;
-	ub->ub_parms[UB_NUMFILE].limit = 1024;
-	ub->ub_parms[UB_PHYSPAGES].limit = UB_MAXVALUE;
-	ub->ub_parms[UB_SWAPPAGES].limit = UB_MAXVALUE;
-
-	for (k = 0; k < UB_RESOURCES; k++)
-		ub->ub_parms[k].barrier = ub->ub_parms[k].limit;
-
+	/* Ratelimit for messages in the kernel log */
 	ub->ub_ratelimit.burst = 4;
 	ub->ub_ratelimit.interval = 300*HZ;
 }
@@ -1049,14 +1022,6 @@ void __init ub_init_late(void)
 	ub_cachep = kmem_cache_create("user_beancounters",
 			sizeof(struct user_beancounter),
 			0, SLAB_HWCACHE_ALIGN | SLAB_PANIC, NULL);
-
-	memset(&default_beancounter, 0, sizeof(default_beancounter));
-#ifdef CONFIG_BC_UNLIMITED
-	init_beancounter_nolimits(&default_beancounter);
-#else
-	init_beancounter_syslimits(&default_beancounter);
-#endif
-	init_beancounter_struct(&default_beancounter);
 }
 
 int __init ub_init_cgroup(void)
