@@ -881,9 +881,13 @@ static int do_ve_ip_map(struct ve_struct *ve, int op, struct ve_addr_struct *add
 	switch (op)
 	{
 		case VE_IP_ADD:
-			err = -ESRCH;
-			if (ve->is_running)
-				err = veip_entry_add(ve, addr);
+			/*
+			 * FIXME We should check if VE
+			 * is either running or in restore
+			 * state instead of allowing adding
+			 * address arbitrary.
+			 */
+			err = veip_entry_add(ve, addr);
 			break;
 
 		case VE_IP_DEL:
@@ -1113,51 +1117,39 @@ err:
 	return err;
 }
 
-static __net_exit void venet_exit_net(struct list_head *net_exit_list)
-{
-	struct net *net;
-	struct ve_struct *env;
-	struct net_device *dev;
-	LIST_HEAD(netdev_kill_list);
+static struct pernet_operations venet_net_ops = {
+	.init = venet_init_net,
+};
 
-	list_for_each_entry(net, net_exit_list, exit_list) {
-		env = net->owner_ve;
-		if (env->ve_netns != net)
-			continue;
+/*
+ * VE context dropping is happening earlier than
+ * pernet_operations::exit method so we can't
+ * rely on it and do the cleanup earlier.
+ */
+static void venet_stop_notifier(void *data)
+{
+	struct ve_struct *env = data;
+
+	if (env->ve_netns) {
+		struct net_device *dev = env->_venet_dev;
 
 		venet_ext_clean(env);
 		veip_stop(env);
 
-		dev = env->_venet_dev;
-		if (dev == NULL)
-			continue;
-
-		rtnl_lock();
-		unregister_netdevice_queue(dev, &netdev_kill_list);
-		rtnl_unlock();
-	}
-
-	rtnl_lock();
-	unregister_netdevice_many(&netdev_kill_list);
-	rtnl_unlock();
-
-	list_for_each_entry(net, net_exit_list, exit_list) {
-		env = net->owner_ve;
-		if (env->ve_netns != net)
-			continue;
-
-		dev = env->_venet_dev;
-		if (dev == NULL)
-			continue;
-
-		env->_venet_dev = NULL;
-		free_netdev(dev);
+		if (dev) {
+			env->_venet_dev = NULL;
+			rtnl_lock();
+			unregister_netdevice(dev);
+			rtnl_unlock();
+			free_netdev(dev);
+		}
 	}
 }
 
-static struct pernet_operations venet_net_ops = {
-	.init = venet_init_net,
-	.exit_batch = venet_exit_net,
+static struct ve_hook venet_stop_hook = {
+	.fini		= venet_stop_notifier,
+	.priority	= HOOK_PRIO_FINISHING,
+	.owner		= THIS_MODULE,
 };
 
 static int venet_changelink(struct net_device *dev, struct nlattr *tb[],
@@ -1241,6 +1233,7 @@ __init int venet_init(void)
 
 	vzioctl_register(&venetcalls);
 	vzmon_register_veaddr_print_cb(veaddr_seq_print);
+	ve_hook_register(VE_SS_CHAIN, &venet_stop_hook);
 
 	return rtnl_link_register(&venet_link_ops);
 
