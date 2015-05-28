@@ -104,26 +104,22 @@ static int ve_get_cpu_stat(envid_t veid, struct vz_cpu_stat __user *buf)
 
 	if (!ve_is_super(get_exec_env()) && (veid != get_exec_env()->veid))
 		return -EPERM;
-	if (veid == 0)
+	ve = get_ve_by_id(veid);
+	if (!ve)
 		return -ESRCH;
 
+	retval = -ENOMEM;
 	vstat = kzalloc(sizeof(*vstat), GFP_KERNEL);
 	if (!vstat)
-		return -ENOMEM;
+		goto out_put_ve;
 
-	retval = fairsched_get_cpu_stat(veid, &kstat);
+	retval = fairsched_get_cpu_stat(ve->ve_name, &kstat);
 	if (retval)
 		goto out_free;
 
-	retval = fairsched_get_cpu_avenrun(veid, avenrun);
+	retval = fairsched_get_cpu_avenrun(ve->ve_name, avenrun);
 	if (retval)
 		goto out_free;
-
-	retval = -ESRCH;
-	mutex_lock(&ve_list_lock);
-	ve = __find_ve_by_id(veid);
-	if (ve == NULL)
-		goto out_unlock;
 
 	vstat->user_jif += (unsigned long)cputime64_to_clock_t(kstat.cpustat[CPUTIME_USER]);
 	vstat->nice_jif += (unsigned long)cputime64_to_clock_t(kstat.cpustat[CPUTIME_NICE]);
@@ -139,18 +135,15 @@ static int ve_get_cpu_stat(envid_t veid, struct vz_cpu_stat __user *buf)
 		vstat->avenrun[i].val_int = LOAD_INT(tmp);
 		vstat->avenrun[i].val_frac = LOAD_FRAC(tmp);
 	}
-	mutex_unlock(&ve_list_lock);
 
 	retval = 0;
 	if (copy_to_user(buf, vstat, sizeof(*vstat)))
 		retval = -EFAULT;
 out_free:
 	kfree(vstat);
+out_put_ve:
+	put_ve(ve);
 	return retval;
-
-out_unlock:
-	mutex_unlock(&ve_list_lock);
-	goto out_free;
 }
 
 static int real_setdevperms(envid_t veid, unsigned type,
@@ -800,7 +793,7 @@ static int vestat_seq_show(struct seq_file *m, void *v)
 	if (ve == get_ve0())
 		return 0;
 
-	ret = fairsched_get_cpu_stat(ve->veid, &kstat);
+	ret = fairsched_get_cpu_stat(ve->ve_name, &kstat);
 	if (ret)
 		return ret;
 
