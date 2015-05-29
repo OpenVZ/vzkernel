@@ -69,6 +69,43 @@ static const char *const xt_prefix[NFPROTO_NUMPROTO] = {
 	[NFPROTO_IPV6]   = "ip6",
 };
 
+#ifdef CONFIG_BEANCOUNTERS
+static void uncharge_xtables(struct xt_table_info *info, unsigned long size)
+{
+	uncharge_beancounter(info->ub, UB_NUMXTENT, size);
+}
+
+static int recharge_xtables(struct xt_table_info *new, struct xt_table_info *old)
+{
+	struct user_beancounter *ub, *old_ub;
+	long change;
+
+	ub = new->ub;
+	old_ub = old->number ? old->ub : ub;
+	change = (long)new->number - (long)old->number;
+	if (old_ub != ub) {
+		printk(KERN_WARNING "iptables resources are charged"
+				" from different UB (%s -> %s)\n",
+				old_ub->ub_name, ub->ub_name);
+		change = new->number;
+	}
+
+	if (change > 0) {
+		if (charge_beancounter(ub, UB_NUMXTENT, change, UB_SOFT))
+			return -ENOMEM;
+	} else if (change < 0)
+		uncharge_beancounter(ub, UB_NUMXTENT, -change);
+
+	if (old_ub != ub)
+		uncharge_beancounter(old_ub, UB_NUMXTENT, old->number);
+
+	return 0;
+}
+#else
+#define recharge_xtables(c, new, old)	(0)
+#define uncharge_xtables(info, s)	do { } while (0)
+#endif	/* CONFIG_BEANCOUNTERS */
+
 /* Allow this many total (re)entries. */
 static const unsigned int xt_jumpstack_multiplier = 2;
 
@@ -1020,6 +1057,8 @@ struct xt_table_info *xt_alloc_table_info(unsigned int size)
 	}
 	memset(info, 0, sizeof(*info));
 	info->size = size;
+	info->ub = get_beancounter(get_exec_ub());
+
 	return info;
 }
 EXPORT_SYMBOL(xt_alloc_table_info);
@@ -1035,6 +1074,8 @@ void xt_free_table_info(struct xt_table_info *info)
 	}
 
 	free_percpu(info->stackptr);
+
+	put_beancounter(info->ub);
 
 	kvfree(info);
 }
@@ -1138,6 +1179,12 @@ xt_replace_table(struct xt_table *table,
 			 num_counters, private->number);
 		local_bh_enable();
 		*error = -EAGAIN;
+		return NULL;
+	}
+
+	if (recharge_xtables(newinfo, private)) {
+		local_bh_enable();
+		*error = -ENOMEM;
 		return NULL;
 	}
 
@@ -1248,6 +1295,7 @@ void *xt_unregister_table(struct xt_table *table)
 	list_del(&table->list);
 	mutex_unlock(&xt[table->af].mutex);
 	kfree(table);
+	uncharge_xtables(private, private->number);
 
 	return private;
 }
