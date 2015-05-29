@@ -1386,10 +1386,24 @@ static int cgroup_remount(struct super_block *sb, int *flags, char *data)
 	return ret;
 }
 
+#ifdef CONFIG_VE
+int cgroup_show_path(struct seq_file *m, struct dentry *dentry)
+{
+	if (!ve_is_super(get_exec_env()))
+		seq_puts(m, "/");
+	else
+		seq_dentry(m, dentry, " \t\n\\");
+	return 0;
+}
+#endif
+
 static const struct super_operations cgroup_ops = {
 	.statfs = simple_statfs,
 	.drop_inode = generic_delete_inode,
 	.show_options = cgroup_show_options,
+#ifdef CONFIG_VE
+	.show_path = cgroup_show_path,
+#endif
 	.remount_fs = cgroup_remount,
 };
 
@@ -1806,6 +1820,21 @@ int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
 			return -ENAMETOOLONG;
 		return 0;
 	}
+
+#ifdef CONFIG_VE
+	/*
+	 * Containers cgroups are bind-mounted from node
+	 * so they are like '/' from inside, thus we have
+	 * to mangle cgroup path output.
+	 */
+	if (!ve_is_super(get_exec_env())) {
+		if (cgrp->parent && !cgrp->parent->parent) {
+			if (strlcpy(buf, "/", buflen) >= buflen)
+				return -ENAMETOOLONG;
+			return 0;
+		}
+	}
+#endif
 
 	start = buf + buflen - 1;
 	*start = '\0';
