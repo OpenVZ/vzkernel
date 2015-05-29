@@ -11,6 +11,7 @@
  */
 
 #include <linux/mm.h>
+#include <linux/memcontrol.h>
 #include <linux/mempool.h>
 #include <linux/proc_fs.h>
 #include <linux/virtinfo.h>
@@ -134,8 +135,8 @@ int ub_dirty_limits(unsigned long *pbackground,
 	if (!dirty_ratio)
 		return 0;
 
-	available_memory = ub->ub_parms[UB_PHYSPAGES].limit;
-	if (available_memory == UB_MAXVALUE || available_memory == 0)
+	available_memory = mem_cgroup_ram_pages();
+	if (available_memory == ULONG_MAX || available_memory == 0)
 		return 0;
 
 	*pdirty = (dirty_ratio * available_memory) / 100;
