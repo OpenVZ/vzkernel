@@ -1342,10 +1342,24 @@ static int cgroup_remount(struct super_block *sb, int *flags, char *data)
 	return ret;
 }
 
+#ifdef CONFIG_VE
+int cgroup_show_path(struct seq_file *m, struct dentry *dentry)
+{
+	if (!ve_is_super(get_exec_env()))
+		seq_puts(m, "/");
+	else
+		seq_dentry(m, dentry, " \t\n\\");
+	return 0;
+}
+#endif
+
 static const struct super_operations cgroup_ops = {
 	.statfs = simple_statfs,
 	.drop_inode = generic_delete_inode,
 	.show_options = cgroup_show_options,
+#ifdef CONFIG_VE
+	.show_path = cgroup_show_path,
+#endif
 	.remount_fs = cgroup_remount,
 };
 
@@ -1751,7 +1765,8 @@ static struct file_system_type cgroup_fs_type = {
  * inode's i_mutex, while on the other hand cgroup_path() can be called
  * with some irq-safe spinlocks held.
  */
-int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
+static int __cgroup_path(const struct cgroup *cgrp, char *buf, int buflen,
+			 bool virt)
 {
 	int ret = -ENAMETOOLONG;
 	char *start;
@@ -1770,6 +1785,22 @@ int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
 		const char *name = cgroup_name(cgrp);
 		int len;
 
+#ifdef CONFIG_VE
+		if (virt && test_bit(CGRP_VE_ROOT, &cgrp->flags)) {
+			/*
+			 * Containers cgroups are bind-mounted from node
+			 * so they are like '/' from inside, thus we have
+			 * to mangle cgroup path output.
+			 */
+			if (*start != '/') {
+				if (--start < buf)
+					goto out;
+				*start = '/';
+			}
+			break;
+		}
+#endif
+
 		len = strlen(name);
 		if ((start -= len) < buf)
 			goto out;
@@ -1786,6 +1817,11 @@ int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
 out:
 	rcu_read_unlock();
 	return ret;
+}
+
+int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
+{
+	return __cgroup_path(cgrp, buf, buflen, !get_exec_env());
 }
 EXPORT_SYMBOL_GPL(cgroup_path);
 
