@@ -211,6 +211,7 @@ static struct {
 	{ "iptable_nat",	VE_IP_NAT	},
 	{ "iptable_mangle",	VE_IP_MANGLE	},
 	{ "ip6table_filter",	VE_IP_FILTER6	},
+	{ "ip6table_nat",	VE_IP_NAT	},
 	{ "ip6table_mangle",	VE_IP_MANGLE6	},
 
 	{ "xt_CONNMARK",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
@@ -224,6 +225,8 @@ static struct {
 	{ "xt_helper",		VE_NF_CONNTRACK|VE_IP_CONNTRACK },
 	{ "xt_state",		VE_NF_CONNTRACK|VE_IP_CONNTRACK },
 	{ "xt_socket",		VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_IPTABLES6			},
+	{ "xt_connlabel",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
 				VE_IP_IPTABLES6			},
 
 	{ "ipt_CLUSTERIP",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
@@ -245,6 +248,9 @@ static struct {
 				VE_IP_NAT			},
 	{ "ipt_REDIRECT",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
 				VE_IP_NAT			},
+	{ "ipt_connlabel",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_IPTABLES6			},
+	{ "ipt_SYNPROXY",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
 
 	{ "ip6t_CONNMARK",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
 	{ "ip6t_CONNSECMARK",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
@@ -258,6 +264,13 @@ static struct {
 	{ "ip6t_state",		VE_NF_CONNTRACK|VE_IP_CONNTRACK },
 	{ "ip6t_socket",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
 				VE_IP_IPTABLES6			},
+	{ "ip6t_MASQUERADE",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT|VE_IP_IPTABLES6	},
+	{ "ip6t_connlabel",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_IPTABLES6			},
+	{ "ip6t_SYNPROXY",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_IPTABLES6			},
+
 	{ "nf-nat-ipv4",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
 				VE_IP_NAT			},
 	{ "nf-nat",		VE_NF_CONNTRACK|VE_IP_CONNTRACK|
