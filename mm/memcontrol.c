@@ -5164,9 +5164,6 @@ static int mem_cgroup_low_write(struct cgroup *cont, struct cftype *cft,
 	unsigned long long val;
 	int ret;
 
-	if (mem_cgroup_is_root(memcg))
-		return -EINVAL;
-
 	ret = res_counter_memparse_write_strategy(buffer, &val);
 	if (ret)
 		return ret;
@@ -5193,9 +5190,6 @@ static int mem_cgroup_oom_guarantee_write(struct cgroup *cont,
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
 	unsigned long long val;
 	int ret;
-
-	if (mem_cgroup_is_root(memcg))
-		return -EINVAL;
 
 	ret = res_counter_memparse_write_strategy(buffer, &val);
 	if (ret)
@@ -6053,6 +6047,7 @@ static struct cftype mem_cgroup_files[] = {
 	},
 	{
 		.name = "low",
+		.flags = CFTYPE_NOT_ON_ROOT,
 		.write_string = mem_cgroup_low_write,
 		.read = mem_cgroup_low_read,
 	},
@@ -6096,6 +6091,7 @@ static struct cftype mem_cgroup_files[] = {
 	},
 	{
 		.name = "oom_guarantee",
+		.flags = CFTYPE_NOT_ON_ROOT,
 		.write_string = mem_cgroup_oom_guarantee_write,
 		.read = mem_cgroup_oom_guarantee_read,
 	},
