@@ -260,6 +260,10 @@ struct xt_table_info {
 	unsigned int hook_entry[NF_INET_NUMHOOKS];
 	unsigned int underflow[NF_INET_NUMHOOKS];
 
+#ifdef CONFIG_BEANCOUNTERS
+	struct user_beancounter *ub;
+#endif
+
 	/*
 	 * Number of user chains. Since tables cannot have loops, at most
 	 * @stacksize jumps (number of user chains) can possibly be made.
