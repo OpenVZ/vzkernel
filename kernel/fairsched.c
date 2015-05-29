@@ -32,6 +32,16 @@ static struct fairsched_node root_node = {NULL, NULL};
 
 #define fairsched_id(id) (id == FAIRSCHED_HOST_NODE ? 0 : id)
 
+static int fairsched_id_parse(const char *s)
+{
+	unsigned long id;
+
+	if (kstrtoul(s, 10, &id))
+		return -1;
+
+	return id ?: FAIRSCHED_HOST_NODE;
+}
+
 static int fairsched_open(struct fairsched_node *node, int id)
 {
 	envid_t veid = fairsched_id(id);
@@ -467,7 +477,8 @@ static struct fairsched_dump *fairsched_do_dump(int compat)
 		if (d_unhashed(dentry) || !dentry->d_inode ||
 				!S_ISDIR(dentry->d_inode->i_mode))
 			continue;
-		if (legacy_name_to_veid(dentry->d_name.name, &id) < 0)
+		id = fairsched_id_parse(dentry->d_name.name);
+		if (id < 0)
 			continue;
 		if (!ve_is_super(ve) &&
 		    strcmp(ve_name(ve), dentry->d_name.name))
