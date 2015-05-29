@@ -243,16 +243,17 @@ SYSCALL_DEFINE2(fairsched_mvpr, pid_t, pid, unsigned int, id)
 	if (retval)
 		return retval;
 
-	write_lock_irq(&tasklist_lock);
-	tsk = find_task_by_vpid(pid);
+	rcu_read_lock();
+	tsk = current;
+	if (pid != task_pid_vnr(tsk))
+		tsk = find_task_by_vpid(pid);
 	if (tsk == NULL) {
-		write_unlock_irq(&tasklist_lock);
+		rcu_read_unlock();
 		retval = -ESRCH;
 		goto out;
 	}
 	get_task_struct(tsk);
-	write_unlock_irq(&tasklist_lock);
-
+	rcu_read_unlock();
 
 	retval = fairsched_move(&node, tsk);
 
