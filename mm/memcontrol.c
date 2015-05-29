@@ -268,7 +268,9 @@ struct mem_cgroup {
 
 	unsigned long soft_limit;
 
+	/* Normal memory consumption range */
 	unsigned long long low;
+	unsigned long long high;
 
 	/* vmpressure notifications */
 	struct vmpressure vmpressure;
@@ -2061,7 +2063,8 @@ static unsigned long mem_cgroup_reclaim(struct mem_cgroup *memcg,
 	for (loop = 0; loop < MEM_CGROUP_MAX_RECLAIM_LOOPS; loop++) {
 		if (loop)
 			drain_all_stock_async(memcg);
-		total += try_to_free_mem_cgroup_pages(memcg, gfp_mask, noswap);
+		total += try_to_free_mem_cgroup_pages(memcg, SWAP_CLUSTER_MAX,
+						      gfp_mask, noswap);
 		/*
 		 * Allow limit shrinkers, which are triggered directly
 		 * by userspace, to catch signals and stop reclaim
@@ -2801,10 +2804,10 @@ static int mem_cgroup_do_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
 
 	if (likely(!ret)) {
 		if (!do_swap_account)
-			return CHARGE_OK;
+			goto done;
 		ret = page_counter_try_charge(&memcg->memsw, nr_pages, &counter);
 		if (likely(!ret))
-			return CHARGE_OK;
+			goto done;
 
 		page_counter_uncharge(&memcg->memory, nr_pages);
 		mem_over_limit = mem_cgroup_from_counter(counter, memsw);
@@ -2857,6 +2860,18 @@ static int mem_cgroup_do_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	}
 
 	return CHARGE_NOMEM;
+
+done:
+	/*
+	 * If the hierarchy is above the normal consumption range,
+	 * make the charging task trim their excess contribution.
+	 */
+	do {
+		if (res_counter_read_u64(&memcg->res, RES_USAGE) <= memcg->high)
+			continue;
+		try_to_free_mem_cgroup_pages(memcg, nr_pages, gfp_mask, false);
+	} while ((memcg = parent_mem_cgroup(memcg)));
+	return CHARGE_OK;
 }
 
 /*
@@ -4872,8 +4887,8 @@ static int mem_cgroup_force_empty(struct mem_cgroup *memcg)
 		if (signal_pending(current))
 			return -EINTR;
 
-		progress = try_to_free_mem_cgroup_pages(memcg, GFP_KERNEL,
-						false);
+		progress = try_to_free_mem_cgroup_pages(memcg, SWAP_CLUSTER_MAX,
+							GFP_KERNEL, false);
 		if (!progress) {
 			nr_retries--;
 			/* maybe some writeback is necessary */
@@ -5232,6 +5247,33 @@ static int mem_cgroup_low_write(struct cgroup *cont, struct cftype *cft,
 		return ret;
 
 	memcg->low = val;
+	return 0;
+}
+
+static ssize_t mem_cgroup_high_read(struct cgroup *cont, struct cftype *cft,
+				    struct file *file, char __user *buf,
+				    size_t nbytes, loff_t *ppos)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
+	char str[64];
+	int len;
+
+	len = scnprintf(str, sizeof(str), "%llu\n", memcg->high);
+	return simple_read_from_buffer(buf, nbytes, ppos, str, len);
+}
+
+static int mem_cgroup_high_write(struct cgroup *cont, struct cftype *cft,
+				 const char *buffer)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
+	unsigned long long val;
+	int ret;
+
+	ret = res_counter_memparse_write_strategy(buffer, &val);
+	if (ret)
+		return ret;
+
+	memcg->high = val;
 	return 0;
 }
 
@@ -6152,6 +6194,12 @@ static struct cftype mem_cgroup_files[] = {
 		.read = mem_cgroup_low_read,
 	},
 	{
+		.name = "high",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.write_string = mem_cgroup_high_write,
+		.read = mem_cgroup_high_read,
+	},
+	{
 		.name = "failcnt",
 		.private = MEMFILE_PRIVATE(_MEM, RES_FAILCNT),
 		.trigger = mem_cgroup_reset,
@@ -6428,6 +6476,7 @@ mem_cgroup_css_alloc(struct cgroup *cont)
 		root_mem_cgroup = memcg;
 		page_counter_init(&memcg->memory, NULL);
 		memcg->soft_limit = PAGE_COUNTER_MAX;
+		memcg->high = RESOURCE_MAX;
 		page_counter_init(&memcg->memsw, NULL);
 		page_counter_init(&memcg->kmem, NULL);
 	}
@@ -6473,6 +6522,7 @@ mem_cgroup_css_online(struct cgroup *cont)
 	if (parent->use_hierarchy) {
 		page_counter_init(&memcg->memory, &parent->memory);
 		memcg->soft_limit = PAGE_COUNTER_MAX;
+		memcg->high = RESOURCE_MAX;
 		page_counter_init(&memcg->memsw, &parent->memsw);
 		page_counter_init(&memcg->kmem, &parent->kmem);
 
@@ -6483,6 +6533,7 @@ mem_cgroup_css_online(struct cgroup *cont)
 	} else {
 		page_counter_init(&memcg->memory, NULL);
 		memcg->soft_limit = PAGE_COUNTER_MAX;
+		memcg->high = RESOURCE_MAX;
 		page_counter_init(&memcg->memsw, NULL);
 		page_counter_init(&memcg->kmem, NULL);
 		/*
