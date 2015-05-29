@@ -447,6 +447,7 @@ static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
 		goto err_devperms;
 
 	ve = cgroup_ve(ve_cgroup);
+	ve->legacy = true;
 
 	init_ve_struct(ve, class_id, data, datalen);
 
@@ -638,7 +639,7 @@ static void vzmon_stop_notifier(void *data)
 {
 	struct ve_struct *ve = data;
 
-	if (ve->veid)
+	if (ve->legacy)
 		fairsched_drop_node(ve->veid, 0);
 }
 
