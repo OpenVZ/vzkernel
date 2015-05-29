@@ -267,7 +267,50 @@ static struct {
 	{ "ip_conntrack",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
 	{ "nf_conntrack-10",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
 	{ "nf_conntrack_ipv6",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+
+	{ "nft-set",		VE_IP_IPTABLES			},
+	{ "nft-afinfo-2",	VE_IP_IPTABLES			}, /* IPV4 */
+	{ "nft-afinfo-3",	VE_IP_IPTABLES			}, /* ARP  */
+	{ "nft-afinfo-10",	VE_IP_IPTABLES6			}, /* IPV6 */
+
+	{ "nft-chain-2-nat",	VE_IP_IPTABLES|VE_IP_NAT	},
+	{ "nft-chain-2-route",	VE_IP_IPTABLES			},
+
+	{ "nft-chain-10-nat",	VE_IP_IPTABLES6|VE_IP_NAT	},
+	{ "nft-chain-10-route",	VE_IP_IPTABLES6		},
+
+	{ "nft-expr-2-reject",	VE_IP_IPTABLES			},
+	{ "nft-expr-10-reject",	VE_IP_IPTABLES6			},
 };
+
+/*
+ *  Check if module named nft-expr-name is allowed.
+ *  We pass only tail name part to this function.
+ */
+static bool nft_expr_allowed(const char *name)
+{
+	u64 permitted = get_exec_env()->ipt_mask;
+
+	if (!name[0])
+		return false;
+
+	if (!strcmp(name, "ct"))
+		return mask_ipt_allow(permitted, VE_IP_CONNTRACK);
+
+	if (!strcmp(name, "nat"))
+		return mask_ipt_allow(permitted, VE_IP_NAT);
+
+	/*
+	 * We are interested in modules like nft-expr-xxx.
+	 * Expressions like nft-expr-xxx-yyy currently are
+	 * handled in ve0_am table. So expr does not cointain
+	 * minus
+	 */
+	if (!strchr(name, '-'))
+		return mask_ipt_allow(permitted, VE_IP_IPTABLES) |
+		       mask_ipt_allow(permitted, VE_IP_IPTABLES6);
+	return false;
+}
 
 /*
  * module_payload_allowed - check if module functionality is allowed
@@ -309,6 +352,10 @@ bool module_payload_allowed(const char *module)
 	/* The rest of ebt_* modules */
 	if (!strncmp("ebt_", module, 4))
 		return true;
+
+	/* The rest of nft- modules */
+	if (!strncmp("nft-expr-", module, 9))
+		return nft_expr_allowed(module + 9);
 
 	return false;
 }
