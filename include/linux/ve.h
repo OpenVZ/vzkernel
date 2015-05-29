@@ -40,6 +40,9 @@ struct ve_struct {
 	struct list_head	ve_list;
 
 	envid_t			veid;
+	bool			legacy;	/* created using the legacy API
+					   (vzctl ioctl - see do_env_create) */
+
 	unsigned int		class_id;
 	struct rw_semaphore	op_sem;
 	int			is_running;
