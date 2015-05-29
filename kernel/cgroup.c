@@ -1572,6 +1572,11 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 	struct cgroupfs_root *new_root;
 	struct inode *inode;
 
+#ifdef CONFIG_VE
+	if (!ve_is_super(get_exec_env()) && !(flags & MS_KERNMOUNT))
+		return ERR_PTR(-EACCES);
+#endif
+
 	/* First find the desired set of subsystems */
 	if (!(flags & MS_KERNMOUNT)) {
 		mutex_lock(&cgroup_mutex);
@@ -1614,19 +1619,6 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 		const struct cred *cred;
 		int i;
 		struct css_set *cg;
-
-#ifdef CONFIG_VE
-		/*
-		 * We don't allow to mount new roots from inside
-		 * of container (but have to allow mounting existing
-		 * cgroups, because the VE restore procedure is
-		 * implemented from inside of container environment).
-		 */
-		if (!ve_is_super(get_exec_env())) {
-			ret = -EACCES;
-			goto drop_new_super;
-		}
-#endif
 
 		BUG_ON(sb->s_root != NULL);
 
