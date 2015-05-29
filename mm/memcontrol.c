@@ -6070,7 +6070,7 @@ static struct cftype mem_cgroup_files[] = {
 		.read = mem_cgroup_read,
 	},
 	{
-		.name = "low_limit_in_bytes",
+		.name = "low",
 		.write_string = mem_cgroup_low_write,
 		.read = mem_cgroup_low_read,
 	},
