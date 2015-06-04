@@ -483,6 +483,7 @@ struct rq {
 	 * it on another CPU. Always updated under the runqueue lock:
 	 */
 	unsigned long nr_uninterruptible;
+	unsigned long nr_iothrottled;
 
 	unsigned long nr_sleeping;
 	unsigned long nr_stopped;
