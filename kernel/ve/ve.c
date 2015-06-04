@@ -171,20 +171,13 @@ const char *ve_name(struct ve_struct *ve)
 }
 EXPORT_SYMBOL(ve_name);
 
-void legacy_veid_to_name(envid_t veid, char *name)
-{
-	snprintf(name, VE_LEGACY_NAME_MAXLEN, "%u", veid);
-}
-EXPORT_SYMBOL(legacy_veid_to_name);
-
 /* Cgroup must be closed with cgroup_kernel_close */
 struct cgroup *ve_cgroup_open(struct cgroup *root, int flags, envid_t veid)
 {
-	char name[VE_LEGACY_NAME_MAXLEN];
+	char name[16];
 	struct cgroup *cgrp;
 
-	legacy_veid_to_name(veid, name);
-
+	snprintf(name, sizeof(name), "%u", veid);
 	cgrp = cgroup_kernel_open(root, flags, name);
 	return cgrp ? cgrp : ERR_PTR(-ENOENT);
 }
@@ -192,9 +185,9 @@ EXPORT_SYMBOL(ve_cgroup_open);
 
 int ve_cgroup_remove(struct cgroup *root, envid_t veid)
 {
-	char name[VE_LEGACY_NAME_MAXLEN];
+	char name[16];
 
-	legacy_veid_to_name(veid, name);
+	snprintf(name, sizeof(name), "%u", veid);
 	return cgroup_kernel_remove(root, name);
 }
 EXPORT_SYMBOL(ve_cgroup_remove);
