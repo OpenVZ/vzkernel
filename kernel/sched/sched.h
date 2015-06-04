@@ -126,9 +126,6 @@ struct cfs_bandwidth {
 	struct hrtimer period_timer, slack_timer;
 	struct list_head throttled_cfs_rq;
 
-#define CFS_IDLE_SCALE 100
-	u64 idle_scale_inv;
-
 	/* statistics */
 	int nr_periods, nr_throttled;
 	u64 throttled_time;
@@ -172,6 +169,11 @@ struct task_group {
 	struct taskstats __percpu *taskstats;
 	unsigned long avenrun[3];	/* loadavg data */
 	struct timespec start_time;
+
+	struct kernel_cpustat *cpustat_last;
+	struct kernel_cpustat *vcpustat;
+	ktime_t vcpustat_last_update;
+	spinlock_t vcpustat_lock;
 
 	struct cfs_bandwidth cfs_bandwidth;
 
@@ -1453,23 +1455,6 @@ static inline u64 default_cfs_period(void)
 {
 	return 100000000ULL;
 }
-
-static inline u64 SCALE_IDLE_TIME(u64 delta, struct sched_entity *se)
-{
-	struct cfs_bandwidth *cfs_b = &se->my_q->tg->cfs_bandwidth;
-	unsigned long idle_scale_inv = cfs_b->idle_scale_inv;
-
-	if (!idle_scale_inv)
-		delta = 0;
-	else if (idle_scale_inv != CFS_IDLE_SCALE)
-		delta = div64_u64(delta * CFS_IDLE_SCALE, idle_scale_inv);
-
-	return delta;
-}
-
-extern void update_cfs_bandwidth_idle_scale(struct cfs_bandwidth *cfs_b);
-#else
-#define SCALE_IDLE_TIME(delta, se) (delta)
 #endif
 
 extern void start_cfs_idle_time_accounting(int cpu);

@@ -7789,6 +7789,8 @@ static void free_sched_group(struct task_group *tg)
 	free_rt_sched_group(tg);
 	autogroup_free(tg);
 	free_percpu(tg->taskstats);
+	kfree(tg->cpustat_last);
+	kfree(tg->vcpustat);
 	kfree(tg);
 }
 
@@ -7810,6 +7812,19 @@ struct task_group *sched_create_group(struct task_group *parent)
 	tg->taskstats = alloc_percpu(struct taskstats);
 	if (!tg->taskstats)
 		goto err;
+
+	tg->cpustat_last = kcalloc(nr_cpu_ids, sizeof(struct kernel_cpustat),
+				   GFP_KERNEL);
+	if (!tg->cpustat_last)
+		goto err;
+
+	tg->vcpustat = kcalloc(nr_cpu_ids, sizeof(struct kernel_cpustat),
+			       GFP_KERNEL);
+	if (!tg->vcpustat)
+		goto err;
+
+	tg->vcpustat_last_update = ktime_set(0, 0);
+	spin_lock_init(&tg->vcpustat_lock);
 
 	/* start_timespec is saved CT0 uptime */
 	do_posix_clock_monotonic_gettime(&tg->start_time);
@@ -8427,7 +8442,6 @@ static int __tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota)
 	cfs_b->quota = quota;
 
 	__refill_cfs_bandwidth_runtime(cfs_b);
-	update_cfs_bandwidth_idle_scale(cfs_b);
 	/* restart the period timer (if active) to handle new period expiry */
 	if (runtime_enabled && cfs_b->timer_active) {
 		/* force a reprogram */
@@ -8755,19 +8769,6 @@ static u64 cpu_rt_period_read_uint(struct cgroup *cgrp, struct cftype *cft)
 }
 #endif /* CONFIG_RT_GROUP_SCHED */
 
-static u64 cpu_cgroup_usage_cpu(struct task_group *tg, int i)
-{
-#if defined(CONFIG_FAIR_GROUP_SCHED) && defined(CONFIG_SCHEDSTATS)
-	/* root_task_group has not sched entities */
-	if (tg == &root_task_group)
-		return cpu_rq(i)->rq_cpu_time;
-
-	return tg->se[i]->sum_exec_runtime;
-#else
-	return 0;
-#endif
-}
-
 static void cpu_cgroup_update_stat(struct cgroup *cgrp, int i)
 {
 #if defined(CONFIG_SCHEDSTATS) && defined(CONFIG_FAIR_GROUP_SCHED)
@@ -8775,7 +8776,7 @@ static void cpu_cgroup_update_stat(struct cgroup *cgrp, int i)
 	struct sched_entity *se = tg->se[i];
 	struct kernel_cpustat *kcpustat = cpuacct_cpustat(cgrp, i);
 	u64 now = cpu_clock(i);
-	u64 delta, idle, iowait;
+	u64 delta, idle, iowait, steal, used;
 
 	/* root_task_group has not sched entities */
 	if (tg == &root_task_group)
@@ -8783,7 +8784,8 @@ static void cpu_cgroup_update_stat(struct cgroup *cgrp, int i)
 
 	iowait = se->statistics.iowait_sum;
 	idle = se->statistics.sum_sleep_runtime;
-	kcpustat->cpustat[CPUTIME_STEAL] = se->statistics.wait_sum;
+	steal = se->statistics.wait_sum;
+	used = se->sum_exec_runtime;
 
 	if (idle > iowait)
 		idle -= iowait;
@@ -8793,35 +8795,210 @@ static void cpu_cgroup_update_stat(struct cgroup *cgrp, int i)
 	if (se->statistics.sleep_start) {
 		delta = now - se->statistics.sleep_start;
 		if ((s64)delta > 0)
-			idle += SCALE_IDLE_TIME(delta, se);
+			idle += delta;
 	} else if (se->statistics.block_start) {
 		delta = now - se->statistics.block_start;
 		if ((s64)delta > 0)
-			iowait += SCALE_IDLE_TIME(delta, se);
+			iowait += delta;
 	} else if (se->statistics.wait_start) {
 		delta = now - se->statistics.wait_start;
 		if ((s64)delta > 0)
-			kcpustat->cpustat[CPUTIME_STEAL] += delta;
+			steal += delta;
 	}
 
 	kcpustat->cpustat[CPUTIME_IDLE] =
-		max(kcpustat->cpustat[CPUTIME_IDLE], idle);
+			max(kcpustat->cpustat[CPUTIME_IDLE],
+			    nsecs_to_cputime(idle));
 	kcpustat->cpustat[CPUTIME_IOWAIT] =
-		max(kcpustat->cpustat[CPUTIME_IOWAIT], iowait);
-
-	kcpustat->cpustat[CPUTIME_USED] = cpu_cgroup_usage_cpu(tg, i);
+			max(kcpustat->cpustat[CPUTIME_IOWAIT],
+			    nsecs_to_cputime(iowait));
+	kcpustat->cpustat[CPUTIME_STEAL] = nsecs_to_cputime(steal);
+	kcpustat->cpustat[CPUTIME_USED] = nsecs_to_cputime(used);
 #endif
+}
+
+static void fixup_vcpustat_delta_usage(struct kernel_cpustat *cur,
+				       struct kernel_cpustat *rem, int ind,
+				       u64 cur_usage, u64 target_usage,
+				       u64 rem_usage)
+{
+	s64 scaled_val;
+	u32 scale_pct = 0;
+
+	/* distribute the delta among USER, NICE, and SYSTEM proportionally */
+	if (cur_usage < target_usage) {
+		if ((s64)rem_usage > 0) /* sanity check to avoid div/0 */
+			scale_pct = div64_u64(100 * rem->cpustat[ind],
+					      rem_usage);
+	} else {
+		if ((s64)cur_usage > 0) /* sanity check to avoid div/0 */
+			scale_pct = div64_u64(100 * cur->cpustat[ind],
+					      cur_usage);
+	}
+
+	scaled_val = div_s64(scale_pct * (target_usage - cur_usage), 100);
+
+	cur->cpustat[ind] += scaled_val;
+	if ((s64)cur->cpustat[ind] < 0)
+		cur->cpustat[ind] = 0;
+
+	rem->cpustat[ind] -= scaled_val;
+	if ((s64)rem->cpustat[ind] < 0)
+		rem->cpustat[ind] = 0;
+}
+
+static void calc_vcpustat_delta_idle(struct kernel_cpustat *cur,
+				     int ind, u64 cur_idle, u64 target_idle)
+{
+	/* distribute target_idle between IDLE and IOWAIT proportionally to
+	 * what we initially had on this vcpu */
+	if ((s64)cur_idle > 0) {
+		u32 scale_pct = div64_u64(100 * cur->cpustat[ind], cur_idle);
+		cur->cpustat[ind] = div_u64(scale_pct * target_idle, 100);
+	} else {
+		cur->cpustat[ind] = ind == CPUTIME_IDLE ? target_idle : 0;
+	}
+}
+
+static void fixup_vcpustat_delta(struct kernel_cpustat *cur,
+				 struct kernel_cpustat *rem,
+				 u64 max_usage)
+{
+	u64 cur_usage, target_usage, rem_usage;
+	u64 cur_idle, target_idle;
+
+	cur_usage = kernel_cpustat_total_usage(cur);
+	rem_usage = kernel_cpustat_total_usage(rem);
+
+	target_usage = min(cur_usage + rem_usage,
+			   max_usage);
+
+	if (cur_usage != target_usage) {
+		fixup_vcpustat_delta_usage(cur, rem, CPUTIME_USER,
+				cur_usage, target_usage, rem_usage);
+		fixup_vcpustat_delta_usage(cur, rem, CPUTIME_NICE,
+				cur_usage, target_usage, rem_usage);
+		fixup_vcpustat_delta_usage(cur, rem, CPUTIME_SYSTEM,
+				cur_usage, target_usage, rem_usage);
+	}
+
+	cur_idle = kernel_cpustat_total_idle(cur);
+	target_idle = max_usage - target_usage;
+
+	if (cur_idle != target_idle) {
+		calc_vcpustat_delta_idle(cur, CPUTIME_IDLE,
+					 cur_idle, target_idle);
+		calc_vcpustat_delta_idle(cur, CPUTIME_IOWAIT,
+					 cur_idle, target_idle);
+	}
+
+	cur->cpustat[CPUTIME_USED] = target_usage;
+
+	/* do not show steal time inside ve */
+	cur->cpustat[CPUTIME_STEAL] = 0;
+}
+
+static void cpu_cgroup_update_vcpustat(struct cgroup *cgrp)
+{
+	int i, j;
+	int nr_vcpus;
+	int vcpu_rate;
+	ktime_t now;
+	u64 abs_delta_ns, max_usage;
+	struct kernel_cpustat stat_delta, stat_rem;
+	struct task_group *tg = cgroup_tg(cgrp);
+	int first_pass = 1;
+
+	spin_lock(&tg->vcpustat_lock);
+
+	now = ktime_get();
+	nr_vcpus = tg->nr_cpus ?: num_online_cpus();
+	vcpu_rate = DIV_ROUND_UP(tg->cpu_rate, nr_vcpus);
+	if (!vcpu_rate || vcpu_rate > MAX_CPU_RATE)
+		vcpu_rate = MAX_CPU_RATE;
+
+	if (!ktime_to_ns(tg->vcpustat_last_update)) {
+		/* on the first read initialize vcpu i stat as a sum of stats
+		 * over pcpus j such that j % nr_vcpus == i */
+		for (i = 0; i < nr_vcpus; i++) {
+			for (j = i; j < nr_cpu_ids; j += nr_vcpus) {
+				if (!cpu_possible(j))
+					continue;
+				kernel_cpustat_add(tg->vcpustat + i,
+						   cpuacct_cpustat(cgrp, j),
+						   tg->vcpustat + i);
+			}
+		}
+		goto out_update_last;
+	}
+
+	abs_delta_ns = ktime_to_ns(ktime_sub(now, tg->vcpustat_last_update));
+	max_usage = nsecs_to_cputime(abs_delta_ns);
+	max_usage = div_u64(max_usage * vcpu_rate, MAX_CPU_RATE);
+	/* don't allow to update stats too often to avoid calculation errors */
+	if (max_usage < 10)
+		goto out_unlock;
+
+	/* temporarily copy per cpu usage delta to tg->cpustat_last */
+	for_each_possible_cpu(i)
+		kernel_cpustat_sub(cpuacct_cpustat(cgrp, i),
+				   tg->cpustat_last + i,
+				   tg->cpustat_last + i);
+
+	/* proceed to calculating per vcpu delta */
+	kernel_cpustat_zero(&stat_rem);
+
+again:
+	for (i = 0; i < nr_vcpus; i++) {
+		int exceeds_max;
+
+		kernel_cpustat_zero(&stat_delta);
+		for (j = i; j < nr_cpu_ids; j += nr_vcpus) {
+			if (!cpu_possible(j))
+				continue;
+			kernel_cpustat_add(&stat_delta,
+					   tg->cpustat_last + j, &stat_delta);
+		}
+
+		exceeds_max = kernel_cpustat_total_usage(&stat_delta) >=
+								max_usage;
+		/*
+		 * On the first pass calculate delta for vcpus with usage >
+		 * max_usage in order to accumulate excess in stat_rem.
+		 *
+		 * Once the remainder is accumulated, proceed to the rest of
+		 * vcpus so that it will be distributed among them.
+		*/
+		if (exceeds_max != first_pass)
+			continue;
+
+		fixup_vcpustat_delta(&stat_delta, &stat_rem, max_usage);
+		kernel_cpustat_add(tg->vcpustat + i, &stat_delta,
+				   tg->vcpustat + i);
+	}
+
+	if (first_pass) {
+		first_pass = 0;
+		goto again;
+	}
+out_update_last:
+	for_each_possible_cpu(i)
+		tg->cpustat_last[i] = *cpuacct_cpustat(cgrp, i);
+	tg->vcpustat_last_update = now;
+out_unlock:
+	spin_unlock(&tg->vcpustat_lock);
 }
 
 int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
 				struct seq_file *p)
 {
-	int i, j;
-	unsigned int nr_ve_vcpus = num_online_vcpus();
+	int i;
 	unsigned long jif;
 	u64 user, nice, system, idle, iowait, steal;
 	struct timespec boottime;
 	struct task_group *tg = cgroup_tg(cgrp);
+	bool virt = !ve_is_super(get_exec_env()) && tg != &root_task_group;
+	int nr_vcpus = tg->nr_cpus ?: num_online_cpus();
 	struct kernel_cpustat *kcpustat;
 	unsigned long tg_nr_running = 0;
 	unsigned long tg_nr_iowait = 0;
@@ -8831,19 +9008,8 @@ int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
 	getboottime(&boottime);
 	jif = boottime.tv_sec + tg->start_time.tv_sec;
 
-	user = nice = system = idle = iowait = steal = 0;
-
 	for_each_possible_cpu(i) {
-		kcpustat = cpuacct_cpustat(cgrp, i);
-
 		cpu_cgroup_update_stat(cgrp, i);
-
-		user += kcpustat->cpustat[CPUTIME_USER];
-		nice += kcpustat->cpustat[CPUTIME_NICE];
-		system += kcpustat->cpustat[CPUTIME_SYSTEM];
-		idle += kcpustat->cpustat[CPUTIME_IDLE];
-		iowait += kcpustat->cpustat[CPUTIME_IOWAIT];
-		steal += kcpustat->cpustat[CPUTIME_STEAL];
 
 		/* root task group has autogrouping, so this doesn't hold */
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -8857,37 +9023,52 @@ int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
 #endif
 	}
 
+	if (virt)
+		cpu_cgroup_update_vcpustat(cgrp);
+
+	user = nice = system = idle = iowait = steal = 0;
+
+	for (i = 0; i < (virt ? nr_vcpus : nr_cpu_ids); i++) {
+		if (!virt && !cpu_possible(i))
+			continue;
+		kcpustat = virt ? tg->vcpustat + i : cpuacct_cpustat(cgrp, i);
+		user += kcpustat->cpustat[CPUTIME_USER];
+		nice += kcpustat->cpustat[CPUTIME_NICE];
+		system += kcpustat->cpustat[CPUTIME_SYSTEM];
+		idle += kcpustat->cpustat[CPUTIME_IDLE];
+		iowait += kcpustat->cpustat[CPUTIME_IOWAIT];
+		steal += kcpustat->cpustat[CPUTIME_STEAL];
+	}
+
 	seq_printf(p, "cpu  %llu %llu %llu %llu %llu 0 0 %llu\n",
 		(unsigned long long)cputime64_to_clock_t(user),
 		(unsigned long long)cputime64_to_clock_t(nice),
 		(unsigned long long)cputime64_to_clock_t(system),
-		(unsigned long long)nsec_to_clock_t(idle),
-		(unsigned long long)nsec_to_clock_t(iowait),
-		(unsigned long long)nsec_to_clock_t(steal));
+		(unsigned long long)cputime64_to_clock_t(idle),
+		(unsigned long long)cputime64_to_clock_t(iowait),
+		virt ? 0ULL :
+		(unsigned long long)cputime64_to_clock_t(steal));
 
-	for (i = 0; i < nr_ve_vcpus; i++) {
-		user = nice = system = idle = iowait = steal = 0;
-		for_each_online_cpu(j) {
-			if (j % nr_ve_vcpus != i)
-				continue;
-			kcpustat = cpuacct_cpustat(cgrp, j);
-
-			user += kcpustat->cpustat[CPUTIME_USER];
-			nice += kcpustat->cpustat[CPUTIME_NICE];
-			system += kcpustat->cpustat[CPUTIME_SYSTEM];
-			idle += kcpustat->cpustat[CPUTIME_IDLE];
-			iowait += kcpustat->cpustat[CPUTIME_IOWAIT];
-			steal += kcpustat->cpustat[CPUTIME_STEAL];
-		}
+	for (i = 0; i < (virt ? nr_vcpus : nr_cpu_ids); i++) {
+		if (!virt && !cpu_online(i))
+			continue;
+		kcpustat = virt ? tg->vcpustat + i : cpuacct_cpustat(cgrp, i);
+		user = kcpustat->cpustat[CPUTIME_USER];
+		nice = kcpustat->cpustat[CPUTIME_NICE];
+		system = kcpustat->cpustat[CPUTIME_SYSTEM];
+		idle = kcpustat->cpustat[CPUTIME_IDLE];
+		iowait = kcpustat->cpustat[CPUTIME_IOWAIT];
+		steal = kcpustat->cpustat[CPUTIME_STEAL];
 		seq_printf(p,
 			"cpu%d %llu %llu %llu %llu %llu 0 0 %llu\n",
 			i,
 			(unsigned long long)cputime64_to_clock_t(user),
 			(unsigned long long)cputime64_to_clock_t(nice),
 			(unsigned long long)cputime64_to_clock_t(system),
-			(unsigned long long)nsec_to_clock_t(idle),
-			(unsigned long long)nsec_to_clock_t(iowait),
-			(unsigned long long)nsec_to_clock_t(steal));
+			(unsigned long long)cputime64_to_clock_t(idle),
+			(unsigned long long)cputime64_to_clock_t(iowait),
+			virt ? 0ULL :
+			(unsigned long long)cputime64_to_clock_t(steal));
 	}
 	seq_printf(p, "intr 0\nswap 0 0\n");
 
@@ -8938,18 +9119,18 @@ int cpu_cgroup_proc_loadavg(struct cgroup *cgrp, struct cftype *cft,
 
 void cpu_cgroup_get_stat(struct cgroup *cgrp, struct kernel_cpustat *kstat)
 {
-	int i, j;
+	struct task_group *tg = cgroup_tg(cgrp);
+	int nr_vcpus = tg->nr_cpus ?: num_online_cpus();
+	int i;
 
-	memset(kstat, 0, sizeof(struct kernel_cpustat));
-
-	for_each_possible_cpu(i) {
-		struct kernel_cpustat *st = cpuacct_cpustat(cgrp, i);
-
+	for_each_possible_cpu(i)
 		cpu_cgroup_update_stat(cgrp, i);
 
-		for (j = 0; j < NR_STATS; j++)
-			kstat->cpustat[j] += st->cpustat[j];
-	}
+	cpu_cgroup_update_vcpustat(cgrp);
+
+	kernel_cpustat_zero(kstat);
+	for (i = 0; i < nr_vcpus; i++)
+		kernel_cpustat_add(tg->vcpustat + i, kstat, kstat);
 }
 
 int cpu_cgroup_get_avenrun(struct cgroup *cgrp, unsigned long *avenrun)
