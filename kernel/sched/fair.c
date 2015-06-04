@@ -2967,8 +2967,7 @@ static void enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 		if (tsk) {
 			account_scheduler_latency(tsk, delta >> 10, 1);
 			trace_sched_stat_sleep(tsk, delta);
-		} else
-			delta = SCALE_IDLE_TIME(delta, se);
+		}
 
 		se->statistics->sum_sleep_runtime += delta;
 	}
@@ -3003,10 +3002,8 @@ static void enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 						delta >> 20);
 			}
 			account_scheduler_latency(tsk, delta >> 10, 0);
-		} else {
-			delta = SCALE_IDLE_TIME(delta, se);
-			se->statistics->sum_sleep_runtime += delta;
-		}
+		} else
+			se->statistics->iowait_sum += delta;
 
 		se->statistics->sum_sleep_runtime += delta;
 	}
@@ -3482,8 +3479,6 @@ void cfs_bandwidth_usage_dec(void) {}
 void __refill_cfs_bandwidth_runtime(struct cfs_bandwidth *cfs_b)
 {
 	u64 now;
-
-	update_cfs_bandwidth_idle_scale(cfs_b);
 
 	if (cfs_b->quota == RUNTIME_INF)
 		return;
@@ -4098,7 +4093,6 @@ void init_cfs_bandwidth(struct cfs_bandwidth *cfs_b)
 	cfs_b->runtime = 0;
 	cfs_b->quota = RUNTIME_INF;
 	cfs_b->period = ns_to_ktime(default_cfs_period());
-	cfs_b->idle_scale_inv = CFS_IDLE_SCALE;
 
 	INIT_LIST_HEAD(&cfs_b->throttled_cfs_rq);
 	hrtimer_init(&cfs_b->period_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
@@ -8440,7 +8434,6 @@ static void nr_iowait_dec_fair(struct task_struct *p)
 		se->statistics->block_start = 0;
 		se->statistics->sleep_start = rq->clock;
 
-		delta = SCALE_IDLE_TIME(delta, se);
 		se->statistics->iowait_sum += delta;
 		se->statistics->sum_sleep_runtime += delta;
 	}
@@ -8472,7 +8465,6 @@ static void nr_iowait_inc_fair(struct task_struct *p)
 		se->statistics->sleep_start = 0;
 		se->statistics->block_start = rq->clock;
 
-		delta = SCALE_IDLE_TIME(delta, se);
 		se->statistics->sum_sleep_runtime += delta;
 	}
 #endif
