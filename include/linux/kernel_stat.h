@@ -36,6 +36,42 @@ struct kernel_cpustat {
 	u64 cpustat[NR_STATS];
 };
 
+static inline u64 kernel_cpustat_total_usage(const struct kernel_cpustat *p)
+{
+	return p->cpustat[CPUTIME_USER] + p->cpustat[CPUTIME_NICE] +
+		p->cpustat[CPUTIME_SYSTEM];
+}
+
+static inline u64 kernel_cpustat_total_idle(const struct kernel_cpustat *p)
+{
+	return p->cpustat[CPUTIME_IDLE] + p->cpustat[CPUTIME_IOWAIT];
+}
+
+static inline void kernel_cpustat_zero(struct kernel_cpustat *p)
+{
+	memset(p, 0, sizeof(*p));
+}
+
+static inline void kernel_cpustat_add(const struct kernel_cpustat *lhs,
+				      const struct kernel_cpustat *rhs,
+				      struct kernel_cpustat *res)
+{
+	int i;
+
+	for (i = 0; i < NR_STATS; i++)
+		res->cpustat[i] = lhs->cpustat[i] + rhs->cpustat[i];
+}
+
+static inline void kernel_cpustat_sub(const struct kernel_cpustat *lhs,
+				      const struct kernel_cpustat *rhs,
+				      struct kernel_cpustat *res)
+{
+	int i;
+
+	for (i = 0; i < NR_STATS; i++)
+		res->cpustat[i] = lhs->cpustat[i] - rhs->cpustat[i];
+}
+
 struct kernel_stat {
 #ifndef CONFIG_GENERIC_HARDIRQS
        unsigned int irqs[NR_IRQS];
