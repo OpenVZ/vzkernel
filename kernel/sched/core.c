@@ -4733,6 +4733,12 @@ long sched_getaffinity(pid_t pid, struct cpumask *mask)
 	if (retval)
 		goto out_unlock;
 
+	if (!ve_is_super(get_exec_env())) {
+		cpumask_clear(mask);
+		bitmap_fill(cpumask_bits(mask), num_online_vcpus());
+		goto out_unlock;
+	}
+
 	raw_spin_lock_irqsave(&p->pi_lock, flags);
 	cpumask_and(mask, &p->cpus_allowed, cpu_active_mask);
 	raw_spin_unlock_irqrestore(&p->pi_lock, flags);
