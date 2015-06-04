@@ -31,7 +31,7 @@ static inline void get_veX_idle(struct timespec *idle, struct cgroup* cgrp)
 	struct kernel_cpustat kstat;
 
 	cpu_cgroup_get_stat(cgrp, &kstat);
-	*idle = ns_to_timespec(kstat.cpustat[CPUTIME_IDLE]);
+	cputime_to_timespec(kstat.cpustat[CPUTIME_IDLE], idle);
 }
 
 static int uptime_proc_show(struct seq_file *m, void *v)
