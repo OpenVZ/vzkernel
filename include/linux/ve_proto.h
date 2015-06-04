@@ -33,11 +33,7 @@ static inline bool ve_is_super(struct ve_struct *ve)
 #define get_exec_env()		(current->task_ve)
 #define get_env_init(ve)	(ve->ve_ns->pid_ns->child_reaper)
 
-
-#define VE_LEGACY_NAME_MAXLEN	16
-
 const char *ve_name(struct ve_struct *ve);
-void legacy_veid_to_name(envid_t veid, char *name);
 
 /* must be called under rcu_read_lock if task != current */
 const char *task_ve_name(struct task_struct *task);
