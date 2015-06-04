@@ -978,6 +978,8 @@ void activate_task(struct rq *rq, struct task_struct *p, int flags)
 {
 	if (task_contributes_to_load(p)) {
 		rq->nr_uninterruptible--;
+		if (task_iothrottled(p))
+			rq->nr_iothrottled--;
 		task_cfs_rq(p)->nr_unint--;
 	}
 
@@ -998,6 +1000,8 @@ void deactivate_task(struct rq *rq, struct task_struct *p, int flags)
 
 	if (task_contributes_to_load(p)) {
 		rq->nr_uninterruptible++;
+		if (task_iothrottled(p))
+			rq->nr_iothrottled++;
 		task_cfs_rq(p)->nr_unint++;
 	}
 
@@ -1670,6 +1674,8 @@ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags)
 #ifdef CONFIG_SMP
 	if (p->sched_contributes_to_load) {
 		rq->nr_uninterruptible--;
+		if (task_iothrottled(p))
+			rq->nr_iothrottled--;
 		task_cfs_rq(p)->nr_unint--;
 	}
 #endif
@@ -2762,6 +2768,7 @@ static long calc_load_fold_active(struct rq *this_rq)
 
 	nr_active = this_rq->nr_running;
 	nr_active += (long) this_rq->nr_uninterruptible;
+	nr_active -= (long) this_rq->nr_iothrottled;
 
 	if (nr_active != this_rq->calc_load_active) {
 		delta = nr_active - this_rq->calc_load_active;
