@@ -621,10 +621,7 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 
 	down_write(&ve->op_sem);
 	ve_hook_iterate_fini(VE_SS_CHAIN, ve);
-#ifdef CONFIG_INET
-	tcp_v4_kill_ve_sockets(ve);
-	synchronize_net();
-#endif
+
 	ve_list_del(ve);
 	ve_drop_context(ve);
 	up_write(&ve->op_sem);
