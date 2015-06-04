@@ -2867,8 +2867,7 @@ static void enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 		if (tsk) {
 			account_scheduler_latency(tsk, delta >> 10, 1);
 			trace_sched_stat_sleep(tsk, delta);
-		} else
-			delta = SCALE_IDLE_TIME(delta, se);
+		}
 
 		se->statistics.sum_sleep_runtime += delta;
 	}
@@ -2903,10 +2902,8 @@ static void enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 						delta >> 20);
 			}
 			account_scheduler_latency(tsk, delta >> 10, 0);
-		} else {
-			delta = SCALE_IDLE_TIME(delta, se);
+		} else
 			se->statistics.iowait_sum += delta;
-		}
 
 		se->statistics.sum_sleep_runtime += delta;
 	}
@@ -3347,55 +3344,6 @@ static inline u64 sched_cfs_bandwidth_slice(void)
 	return (u64)sysctl_sched_cfs_bandwidth_slice * NSEC_PER_USEC;
 }
 
-static void restart_tg_idle_time_accounting(struct task_group *tg)
-{
-#ifdef CONFIG_SCHEDSTATS
-	int cpu;
-
-	if (tg == &root_task_group)
-		return;
-
-	/*
-	 * XXX: We call enqueue_sleeper/dequeue_sleeper without rq lock for
-	 * the sake of performance, because in the worst case this can only
-	 * lead to an idle/iowait period lost in stats.
-	 */
-	for_each_online_cpu(cpu) {
-		struct sched_entity *se = tg->se[cpu];
-		struct cfs_rq *cfs_rq = tg->cfs_rq[cpu];
-
-		if (!cfs_rq->load.weight) {
-			enqueue_sleeper(cfs_rq_of(se), se);
-			dequeue_sleeper(cfs_rq_of(se), se);
-		}
-	}
-#endif
-}
-
-void update_cfs_bandwidth_idle_scale(struct cfs_bandwidth *cfs_b)
-{
-	u64 runtime = cfs_b->runtime;
-	u64 quota = cfs_b->quota;
-	u64 max_quota = ktime_to_ns(cfs_b->period) * num_online_cpus();
-	struct task_group *tg =
-		container_of(cfs_b, struct task_group, cfs_bandwidth);
-
-	restart_tg_idle_time_accounting(tg);
-
-	/*
-	 * idle_scale = quota_left / (period * nr_idle_cpus)
-	 * nr_idle_cpus = nr_cpus - nr_busy_cpus
-	 * nr_busy_cpus = (quota - quota_left) / period
-	 */
-	if (quota == RUNTIME_INF || quota >= max_quota)
-		cfs_b->idle_scale_inv = CFS_IDLE_SCALE;
-	else if (runtime)
-		cfs_b->idle_scale_inv = div64_u64(CFS_IDLE_SCALE *
-				(max_quota - quota + runtime), runtime);
-	else
-		cfs_b->idle_scale_inv = 0;
-}
-
 /*
  * Replenish runtime according to assigned quota and update expiration time.
  * We use sched_clock_cpu directly instead of rq->clock to avoid adding
@@ -3406,8 +3354,6 @@ void update_cfs_bandwidth_idle_scale(struct cfs_bandwidth *cfs_b)
 void __refill_cfs_bandwidth_runtime(struct cfs_bandwidth *cfs_b)
 {
 	u64 now;
-
-	update_cfs_bandwidth_idle_scale(cfs_b);
 
 	if (cfs_b->quota == RUNTIME_INF)
 		return;
@@ -3984,7 +3930,6 @@ void init_cfs_bandwidth(struct cfs_bandwidth *cfs_b)
 	cfs_b->runtime = 0;
 	cfs_b->quota = RUNTIME_INF;
 	cfs_b->period = ns_to_ktime(default_cfs_period());
-	cfs_b->idle_scale_inv = CFS_IDLE_SCALE;
 
 	INIT_LIST_HEAD(&cfs_b->throttled_cfs_rq);
 	hrtimer_init(&cfs_b->period_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
@@ -8117,7 +8062,6 @@ static void nr_iowait_dec_fair(struct task_struct *p)
 		se->statistics.block_start = 0;
 		se->statistics.sleep_start = rq->clock;
 
-		delta = SCALE_IDLE_TIME(delta, se);
 		se->statistics.iowait_sum += delta;
 		se->statistics.sum_sleep_runtime += delta;
 	}
@@ -8149,7 +8093,6 @@ static void nr_iowait_inc_fair(struct task_struct *p)
 		se->statistics.sleep_start = 0;
 		se->statistics.block_start = rq->clock;
 
-		delta = SCALE_IDLE_TIME(delta, se);
 		se->statistics.sum_sleep_runtime += delta;
 	}
 #endif
