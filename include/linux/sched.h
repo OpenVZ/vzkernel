@@ -3304,6 +3304,8 @@ static inline void set_task_cpu(struct task_struct *p, unsigned int cpu)
 
 #endif /* CONFIG_SMP */
 
+extern unsigned int tg_cpu_rate(struct task_group *tg);
+extern unsigned int tg_nr_cpus(struct task_group *tg);
 #ifdef CONFIG_CFS_CPULIMIT
 extern unsigned int task_nr_cpus(struct task_struct *p);
 extern unsigned int task_vcpu_id(struct task_struct *p);
