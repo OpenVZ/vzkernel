@@ -161,6 +161,8 @@ print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq);
 #define TASK_PARKED		512
 #define TASK_STATE_MAX		1024
 
+#define __TASK_IOTHROTTLED	1024
+
 #define TASK_STATE_TO_CHAR_STR "RSDTtZXxKWP"
 
 extern char ___assert_task_state[1 - 2*!!(
@@ -188,6 +190,7 @@ extern char ___assert_task_state[1 - 2*!!(
 #define task_contributes_to_load(task)	\
 				((task->state & TASK_UNINTERRUPTIBLE) != 0 && \
 				 (task->flags & PF_FROZEN) == 0)
+#define task_iothrottled(task)	((task->state & __TASK_IOTHROTTLED) != 0)
 
 #define __set_task_state(tsk, state_value)		\
 	do { (tsk)->state = (state_value); } while (0)
