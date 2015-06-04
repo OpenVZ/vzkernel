@@ -110,7 +110,8 @@ static void iolimit_wait(struct iolimit *iolimit, unsigned long timeout)
 	DEFINE_WAIT(wait);
 
 	do {
-		prepare_to_wait(&iolimit->wq, &wait, TASK_KILLABLE);
+		prepare_to_wait(&iolimit->wq, &wait,
+				TASK_KILLABLE | __TASK_IOTHROTTLED);
 		timeout = schedule_timeout(timeout);
 		if (fatal_signal_pending(current))
 			break;
