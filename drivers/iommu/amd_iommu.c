@@ -4144,7 +4144,7 @@ static int set_affinity(struct irq_data *data, const struct cpumask *mask,
 	return 0;
 }
 
-static int amd_iommu_free_irq(int irq)
+static int free_irq(int irq)
 {
 	struct irq_2_irte *irte_info;
 	struct irq_cfg *cfg;
@@ -4269,7 +4269,7 @@ struct irq_remap_ops amd_iommu_irq_ops = {
 	.enable_faulting	= amd_iommu_enable_faulting,
 	.setup_ioapic_entry	= setup_ioapic_entry,
 	.set_affinity		= set_affinity,
-	.free_irq		= amd_iommu_free_irq,
+	.free_irq		= free_irq,
 	.compose_msi_msg	= compose_msi_msg,
 	.msi_alloc_irq		= msi_alloc_irq,
 	.msi_setup_irq		= msi_setup_irq,
