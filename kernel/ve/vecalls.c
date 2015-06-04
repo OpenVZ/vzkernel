@@ -124,7 +124,7 @@ static int ve_get_cpu_stat(envid_t veid, struct vz_cpu_stat __user *buf)
 	vstat->user_jif += (unsigned long)cputime64_to_clock_t(kstat.cpustat[CPUTIME_USER]);
 	vstat->nice_jif += (unsigned long)cputime64_to_clock_t(kstat.cpustat[CPUTIME_NICE]);
 	vstat->system_jif += (unsigned long)cputime64_to_clock_t(kstat.cpustat[CPUTIME_SYSTEM]);
-	vstat->idle_clk += kstat.cpustat[CPUTIME_IDLE];
+	vstat->idle_clk += cputime_to_usecs(kstat.cpustat[CPUTIME_IDLE]) * NSEC_PER_USEC;
 
 	vstat->uptime_clk = ve_get_uptime(ve);
 
@@ -799,11 +799,12 @@ static int vestat_seq_show(struct seq_file *m, void *v)
 		return ret;
 
 	strv_time = 0;
-	user_ve = kstat.cpustat[CPUTIME_USER];
-	nice_ve = kstat.cpustat[CPUTIME_NICE];
-	system_ve = kstat.cpustat[CPUTIME_SYSTEM];
-	used = kstat.cpustat[CPUTIME_USED];
-	idle_time = kstat.cpustat[CPUTIME_IDLE];
+	user_ve = cputime_to_jiffies(kstat.cpustat[CPUTIME_USER]);
+	nice_ve = cputime_to_jiffies(kstat.cpustat[CPUTIME_NICE]);
+	system_ve = cputime_to_jiffies(kstat.cpustat[CPUTIME_SYSTEM]);
+	used = cputime_to_usecs(kstat.cpustat[CPUTIME_USED]) * NSEC_PER_USEC;
+	idle_time = cputime_to_usecs(kstat.cpustat[CPUTIME_IDLE]) *
+							NSEC_PER_USEC;
 
 	uptime_cycles = ve_get_uptime(ve);
 	uptime = get_jiffies_64() - ve->start_jiffies;
