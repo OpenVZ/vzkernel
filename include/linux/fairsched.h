@@ -18,6 +18,8 @@
 
 #ifdef __KERNEL__
 
+struct kernel_cpustat;
+
 #ifdef CONFIG_VZ_FAIRSCHED
 
 #define FSCHWEIGHT_MAX		((1 << 16) - 1)
@@ -79,7 +81,6 @@ static inline int fairsched_get_cpu_stat(const char *name, struct kernel_cpustat
 
 #endif /* CONFIG_VZ_FAIRSCHED */
 
-struct kernel_cpustat;
 void cpu_cgroup_get_stat(struct cgroup *cgrp, struct kernel_cpustat *kstat);
 
 #endif /* __KERNEL__ */
