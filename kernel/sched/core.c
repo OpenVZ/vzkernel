@@ -7488,7 +7488,6 @@ void __init sched_init(void)
 	}
 #endif /* CONFIG_CPUMASK_OFFSTACK */
 
-	root_task_group.cpustat = alloc_percpu(struct kernel_cpustat);
 	root_task_group.taskstats = alloc_percpu(struct taskstats);
 
 #ifdef CONFIG_SMP
@@ -7789,7 +7788,6 @@ static void free_sched_group(struct task_group *tg)
 	free_fair_sched_group(tg);
 	free_rt_sched_group(tg);
 	autogroup_free(tg);
-	free_percpu(tg->cpustat);
 	free_percpu(tg->taskstats);
 	kfree(tg);
 }
@@ -7807,10 +7805,6 @@ struct task_group *sched_create_group(struct task_group *parent)
 		goto err;
 
 	if (!alloc_rt_sched_group(tg, parent))
-		goto err;
-
-	tg->cpustat = alloc_percpu(struct kernel_cpustat);
-	if (!tg->cpustat)
 		goto err;
 
 	tg->taskstats = alloc_percpu(struct taskstats);
@@ -8774,11 +8768,12 @@ static u64 cpu_cgroup_usage_cpu(struct task_group *tg, int i)
 #endif
 }
 
-static void cpu_cgroup_update_stat(struct task_group *tg, int i)
+static void cpu_cgroup_update_stat(struct cgroup *cgrp, int i)
 {
 #if defined(CONFIG_SCHEDSTATS) && defined(CONFIG_FAIR_GROUP_SCHED)
+	struct task_group *tg = cgroup_tg(cgrp);
 	struct sched_entity *se = tg->se[i];
-	struct kernel_cpustat *kcpustat = per_cpu_ptr(tg->cpustat, i);
+	struct kernel_cpustat *kcpustat = cpuacct_cpustat(cgrp, i);
 	u64 now = cpu_clock(i);
 	u64 delta, idle, iowait;
 
@@ -8839,9 +8834,9 @@ int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
 	user = nice = system = idle = iowait = steal = 0;
 
 	for_each_possible_cpu(i) {
-		kcpustat = per_cpu_ptr(tg->cpustat, i);
+		kcpustat = cpuacct_cpustat(cgrp, i);
 
-		cpu_cgroup_update_stat(tg, i);
+		cpu_cgroup_update_stat(cgrp, i);
 
 		user += kcpustat->cpustat[CPUTIME_USER];
 		nice += kcpustat->cpustat[CPUTIME_NICE];
@@ -8875,7 +8870,7 @@ int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
 		for_each_online_cpu(j) {
 			if (j % nr_ve_vcpus != i)
 				continue;
-			kcpustat = per_cpu_ptr(tg->cpustat, j);
+			kcpustat = cpuacct_cpustat(cgrp, j);
 
 			user += kcpustat->cpustat[CPUTIME_USER];
 			nice += kcpustat->cpustat[CPUTIME_NICE];
@@ -8944,14 +8939,13 @@ int cpu_cgroup_proc_loadavg(struct cgroup *cgrp, struct cftype *cft,
 void cpu_cgroup_get_stat(struct cgroup *cgrp, struct kernel_cpustat *kstat)
 {
 	int i, j;
-	struct task_group *tg = cgroup_tg(cgrp);
 
 	memset(kstat, 0, sizeof(struct kernel_cpustat));
 
 	for_each_possible_cpu(i) {
-		struct kernel_cpustat *st = per_cpu_ptr(tg->cpustat, i);
+		struct kernel_cpustat *st = cpuacct_cpustat(cgrp, i);
 
-		cpu_cgroup_update_stat(tg, i);
+		cpu_cgroup_update_stat(cgrp, i);
 
 		for (j = 0; j < NR_STATS; j++)
 			kstat->cpustat[j] += st->cpustat[j];
