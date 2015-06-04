@@ -112,19 +112,6 @@ static int irqtime_account_si_update(void)
 
 #endif /* !CONFIG_IRQ_TIME_ACCOUNTING */
 
-static inline void update_stats_account_cpu_time(struct task_struct *p,
-						 int index, u64 tmp)
-{
-#if defined(CONFIG_SCHEDSTATS) && defined(CONFIG_FAIR_GROUP_SCHED)
-	struct sched_entity *se = &p->se;
-
-	do {
-		se->statistics.cpustat[index] += tmp;
-		se = se->parent;
-	} while (se);
-#endif
-}
-
 static inline void task_group_account_field(struct task_struct *p, int index,
 					    u64 tmp)
 {
@@ -135,8 +122,6 @@ static inline void task_group_account_field(struct task_struct *p, int index,
 	 *
 	 */
 	__get_cpu_var(kernel_cpustat).cpustat[index] += tmp;
-
-	update_stats_account_cpu_time(p, index, tmp);
 
 	cpuacct_account_field(p, index, tmp);
 }
