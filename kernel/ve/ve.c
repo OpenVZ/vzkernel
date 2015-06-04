@@ -219,17 +219,11 @@ const char *task_ve_name(struct task_struct *task)
 }
 EXPORT_SYMBOL(task_ve_name);
 
-struct ve_struct *__find_ve_by_id(envid_t veid)
-{
-	return idr_find(&ve_idr, veid);
-}
-EXPORT_SYMBOL(__find_ve_by_id);
-
 struct ve_struct *get_ve_by_id(envid_t veid)
 {
 	struct ve_struct *ve;
 	rcu_read_lock();
-	ve = __find_ve_by_id(veid);
+	ve = idr_find(&ve_idr, veid);
 	if (ve && !css_tryget(&ve->css))
 		ve = NULL;
 	rcu_read_unlock();
