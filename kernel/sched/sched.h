@@ -169,6 +169,7 @@ struct task_group {
 	struct autogroup *autogroup;
 #endif
 
+	struct kernel_cpustat __percpu *cpustat;
 	struct taskstats __percpu *taskstats;
 	unsigned long avenrun[3];	/* loadavg data */
 	struct timespec start_time;
