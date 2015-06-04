@@ -87,6 +87,9 @@ struct cpuset {
 	cpumask_var_t cpus_allowed;	/* CPUs allowed to tasks in cpuset */
 	nodemask_t mems_allowed;	/* Memory Nodes allowed to tasks */
 
+	cpumask_var_t ve_cpus_allowed;
+	nodemask_t ve_mems_allowed;
+
 	struct fmeter fmeter;		/* memory_pressure filter */
 
 	/*
@@ -875,6 +878,15 @@ static int __update_cpumask(struct cpuset *cs,
 	if (cs == &top_cpuset)
 		return -EACCES;
 
+	/*
+	 * If we are in CT use fake cpu mask
+	 * can set and read, but no effect
+	 */
+	if (!ve_is_super(get_exec_env())) {
+		cpumask_copy(cs->ve_cpus_allowed, cpus_allowed);
+		return 0;
+	}
+
 	if (!cpumask_subset(cpus_allowed, cpu_active_mask))
 		return -EINVAL;
 
@@ -1133,6 +1145,16 @@ static int __update_nodemask(struct cpuset *cs,
 	 */
 	if (cs == &top_cpuset) {
 		retval = -EACCES;
+		goto done;
+	}
+
+	/*
+	 * If we are in CT use fake node mask
+	 * can set and read, but no effect
+	 */
+	if (!ve_is_super(get_exec_env())) {
+		cs->ve_mems_allowed = *mems_allowed;
+		retval = 0;
 		goto done;
 	}
 
@@ -1572,6 +1594,9 @@ static int cpuset_write_u64(struct cgroup *cgrp, struct cftype *cft, u64 val)
 	cpuset_filetype_t type = cft->private;
 	int retval = 0;
 
+	if (!ve_is_super(get_exec_env()))
+		return -EACCES;
+
 	mutex_lock(&cpuset_mutex);
 	if (!is_cpuset_online(cs)) {
 		retval = -ENODEV;
@@ -1620,6 +1645,9 @@ static int cpuset_write_s64(struct cgroup *cgrp, struct cftype *cft, s64 val)
 	struct cpuset *cs = cgroup_cs(cgrp);
 	cpuset_filetype_t type = cft->private;
 	int retval = -ENODEV;
+
+	if (!ve_is_super(get_exec_env()))
+		return -EACCES;
 
 	mutex_lock(&cpuset_mutex);
 	if (!is_cpuset_online(cs))
@@ -1702,6 +1730,9 @@ static size_t cpuset_sprintf_cpulist(char *page, struct cpuset *cs)
 {
 	size_t count;
 
+	if (!ve_is_super(get_exec_env()))
+		return cpulist_scnprintf(page, PAGE_SIZE, cs->ve_cpus_allowed);
+
 	mutex_lock(&callback_mutex);
 	count = cpulist_scnprintf(page, PAGE_SIZE, cs->cpus_allowed);
 	mutex_unlock(&callback_mutex);
@@ -1712,6 +1743,9 @@ static size_t cpuset_sprintf_cpulist(char *page, struct cpuset *cs)
 static size_t cpuset_sprintf_memlist(char *page, struct cpuset *cs)
 {
 	size_t count;
+
+	if (!ve_is_super(get_exec_env()))
+		return nodelist_scnprintf(page, PAGE_SIZE, cs->ve_mems_allowed);
 
 	mutex_lock(&callback_mutex);
 	count = nodelist_scnprintf(page, PAGE_SIZE, cs->mems_allowed);
@@ -1760,6 +1794,10 @@ static u64 cpuset_read_u64(struct cgroup *cont, struct cftype *cft)
 {
 	struct cpuset *cs = cgroup_cs(cont);
 	cpuset_filetype_t type = cft->private;
+
+	if (!ve_is_super(get_exec_env()))
+		return 0;
+
 	switch (type) {
 	case FILE_CPU_EXCLUSIVE:
 		return is_cpu_exclusive(cs);
@@ -1791,6 +1829,10 @@ static s64 cpuset_read_s64(struct cgroup *cont, struct cftype *cft)
 {
 	struct cpuset *cs = cgroup_cs(cont);
 	cpuset_filetype_t type = cft->private;
+
+	if (!ve_is_super(get_exec_env()))
+		return 0;
+
 	switch (type) {
 	case FILE_SCHED_RELAX_DOMAIN_LEVEL:
 		return cs->relax_domain_level;
@@ -1918,10 +1960,17 @@ static struct cgroup_subsys_state *cpuset_css_alloc(struct cgroup *cont)
 		kfree(cs);
 		return ERR_PTR(-ENOMEM);
 	}
+	if (!alloc_cpumask_var(&cs->ve_cpus_allowed, GFP_KERNEL)) {
+		free_cpumask_var(cs->cpus_allowed);
+		kfree(cs);
+		return ERR_PTR(-ENOMEM);
+	}
 
 	set_bit(CS_SCHED_LOAD_BALANCE, &cs->flags);
 	cpumask_clear(cs->cpus_allowed);
 	nodes_clear(cs->mems_allowed);
+	cpumask_clear(cs->ve_cpus_allowed);
+	nodes_clear(cs->ve_mems_allowed);
 	fmeter_init(&cs->fmeter);
 	INIT_WORK(&cs->hotplug_work, cpuset_propagate_hotplug_workfn);
 	cs->relax_domain_level = -1;
@@ -2009,6 +2058,7 @@ static void cpuset_css_free(struct cgroup *cont)
 	struct cpuset *cs = cgroup_cs(cont);
 
 	free_cpumask_var(cs->cpus_allowed);
+	free_cpumask_var(cs->ve_cpus_allowed);
 	kfree(cs);
 }
 
@@ -2038,9 +2088,14 @@ int __init cpuset_init(void)
 
 	if (!alloc_cpumask_var(&top_cpuset.cpus_allowed, GFP_KERNEL))
 		BUG();
+	if (!alloc_cpumask_var(&top_cpuset.ve_cpus_allowed, GFP_KERNEL))
+		BUG();
 
 	cpumask_setall(top_cpuset.cpus_allowed);
 	nodes_setall(top_cpuset.mems_allowed);
+
+	cpumask_clear(top_cpuset.ve_cpus_allowed);
+	nodes_clear(top_cpuset.ve_mems_allowed);
 
 	fmeter_init(&top_cpuset.fmeter);
 	set_bit(CS_SCHED_LOAD_BALANCE, &top_cpuset.flags);
