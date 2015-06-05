@@ -521,6 +521,9 @@ void __memcg_kmem_put_cache(struct kmem_cache *cachep);
 
 struct mem_cgroup *__mem_cgroup_from_kmem(void *ptr);
 
+void memcg_charge_kmem_nofail(struct mem_cgroup *memcg, u64 size);
+void memcg_uncharge_kmem(struct mem_cgroup *memcg, u64 size);
+
 /**
  * memcg_kmem_newpage_charge: verify if a new kmem allocation is allowed.
  * @gfp: the gfp allocation flags.
