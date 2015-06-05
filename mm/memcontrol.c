@@ -59,6 +59,7 @@
 #include <net/sock.h>
 #include <net/ip.h>
 #include <net/tcp_memcontrol.h>
+#include <net/udp_memcontrol.h>
 #include "slab.h"
 
 #include <asm/uaccess.h>
@@ -371,6 +372,7 @@ struct mem_cgroup {
 	atomic_t	dead_count;
 #if defined(CONFIG_MEMCG_KMEM) && defined(CONFIG_INET)
 	struct tcp_memcontrol tcp_mem;
+	struct udp_memcontrol udp_mem;
 #endif
 #if defined(CONFIG_MEMCG_KMEM)
         /* Index in the kmem_cache->memcg_params.memcg_caches array */
@@ -592,11 +594,21 @@ struct cg_proto *tcp_proto_cgroup(struct mem_cgroup *memcg)
 }
 EXPORT_SYMBOL(tcp_proto_cgroup);
 
+struct cg_proto *udp_proto_cgroup(struct mem_cgroup *memcg)
+{
+	if (!memcg || mem_cgroup_is_root(memcg))
+		return NULL;
+
+	return &memcg->udp_mem.cg_proto;
+}
+EXPORT_SYMBOL(udp_proto_cgroup);
+
 static void disarm_sock_keys(struct mem_cgroup *memcg)
 {
-	if (!memcg_proto_activated(&memcg->tcp_mem.cg_proto))
-		return;
-	static_key_slow_dec(&memcg_socket_limit_enabled);
+	if (memcg_proto_activated(&memcg->tcp_mem.cg_proto))
+		static_key_slow_dec(&memcg_socket_limit_enabled);
+	if (memcg_proto_activated(&memcg->udp_mem.cg_proto))
+		static_key_slow_dec(&memcg_socket_limit_enabled);
 }
 #else
 static void disarm_sock_keys(struct mem_cgroup *memcg)
