@@ -112,6 +112,7 @@
 #include <trace/events/skb.h>
 #include <net/busy_poll.h>
 #include "udp_impl.h"
+#include <net/udp_memcontrol.h>
 
 struct udp_table udp_table __read_mostly;
 EXPORT_SYMBOL(udp_table);
@@ -1828,6 +1829,7 @@ void udp_destroy_sock(struct sock *sk)
 		if (encap_destroy)
 			encap_destroy(sk);
 	}
+	sock_release_memcg(sk);
 }
 
 /*
@@ -2046,6 +2048,16 @@ unsigned int udp_poll(struct file *file, struct socket *sock, poll_table *wait)
 }
 EXPORT_SYMBOL(udp_poll);
 
+int udp_init_sock(struct sock *sk)
+{
+	local_bh_disable();
+	sock_update_memcg(sk);
+	local_bh_enable();
+
+	return 0;
+}
+EXPORT_SYMBOL(udp_init_sock);
+
 struct proto udp_prot = {
 	.name		   = "UDP",
 	.owner		   = THIS_MODULE,
@@ -2053,6 +2065,7 @@ struct proto udp_prot = {
 	.connect	   = ip4_datagram_connect,
 	.disconnect	   = udp_disconnect,
 	.ioctl		   = udp_ioctl,
+	.init		   = udp_init_sock,
 	.destroy	   = udp_destroy_sock,
 	.setsockopt	   = udp_setsockopt,
 	.getsockopt	   = udp_getsockopt,
@@ -2077,6 +2090,11 @@ struct proto udp_prot = {
 	.compat_getsockopt = compat_udp_getsockopt,
 #endif
 	.clear_sk	   = sk_prot_clear_portaddr_nulls,
+#ifdef CONFIG_MEMCG_KMEM
+	.init_cgroup		= udp_init_cgroup,
+	.destroy_cgroup		= udp_destroy_cgroup,
+	.proto_cgroup		= udp_proto_cgroup,
+#endif
 };
 EXPORT_SYMBOL(udp_prot);
 
