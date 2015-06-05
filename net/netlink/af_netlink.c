@@ -1039,12 +1039,12 @@ static struct sk_buff *netlink_alloc_large_skb(unsigned int size,
 	void *data;
 
 	if (size <= NLMSG_GOODSIZE || broadcast)
-		return alloc_skb(size, GFP_KERNEL);
+		return alloc_skb(size, GFP_KERNEL_ACCOUNT);
 
 	size = SKB_DATA_ALIGN(size) +
 	       SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
 
-	data = vmalloc(size);
+	data = __vmalloc(size, GFP_KERNEL_ACCOUNT | __GFP_HIGHMEM, PAGE_KERNEL);
 	if (data == NULL)
 		return NULL;
 
