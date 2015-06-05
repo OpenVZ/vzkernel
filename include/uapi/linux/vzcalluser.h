@@ -14,7 +14,7 @@
 #include <linux/types.h>
 #include <linux/ioctl.h>
 
-#include <uapi/linux/vziptable_defs.h>
+#include <linux/vziptable_defs.h>
 
 #ifndef __ENVID_T_DEFINED__
 # define __ENVID_T_DEFINED__
