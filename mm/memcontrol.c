@@ -555,6 +555,20 @@ void sock_update_memcg(struct sock *sk)
 }
 EXPORT_SYMBOL(sock_update_memcg);
 
+struct mem_cgroup *try_get_mem_cgroup_from_current(void)
+{
+	struct mem_cgroup *cg;
+
+	rcu_read_lock();
+	cg = mem_cgroup_from_task(current);
+	if (mem_cgroup_is_root(cg) || !css_tryget(&cg->css))
+		cg = NULL;
+	rcu_read_unlock();
+
+	return cg;
+}
+EXPORT_SYMBOL(try_get_mem_cgroup_from_current);
+
 void sock_release_memcg(struct sock *sk)
 {
 	if (mem_cgroup_sockets_enabled && sk->sk_cgrp) {
