@@ -1124,7 +1124,7 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 		return -ENOMEM;
 
 	/* Get a new skb... force flag on. */
-	buff = sk_stream_alloc_skb(sk, nsize, GFP_ATOMIC);
+	buff = sk_stream_alloc_skb(sk, nsize, GFP_ATOMIC|__GFP_NOACCOUNT);
 	if (buff == NULL)
 		return -ENOMEM; /* We'll just try again later. */
 
@@ -1675,7 +1675,7 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	if (skb->len != skb->data_len)
 		return tcp_fragment(sk, skb, len, mss_now);
 
-	buff = sk_stream_alloc_skb(sk, 0, gfp);
+	buff = sk_stream_alloc_skb(sk, 0, gfp|__GFP_NOACCOUNT);
 	if (unlikely(buff == NULL))
 		return -ENOMEM;
 
@@ -1848,7 +1848,7 @@ static int tcp_mtu_probe(struct sock *sk)
 	}
 
 	/* We're allowed to probe.  Build it now. */
-	if ((nskb = sk_stream_alloc_skb(sk, probe_size, GFP_ATOMIC)) == NULL)
+	if ((nskb = sk_stream_alloc_skb(sk, probe_size, GFP_ATOMIC|__GFP_NOACCOUNT)) == NULL)
 		return -1;
 	sk->sk_wmem_queued += nskb->truesize;
 	sk_mem_charge(sk, nskb->truesize);
