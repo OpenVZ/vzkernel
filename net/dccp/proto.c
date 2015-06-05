@@ -1056,7 +1056,7 @@ adjudge_to_death:
 	bh_lock_sock(sk);
 	WARN_ON(sock_owned_by_user(sk));
 
-	percpu_counter_inc(sk->sk_prot->orphan_count);
+	orphan_count_inc(sk);
 
 	/* Have we already been destroyed by a softirq or backlog? */
 	if (state != DCCP_CLOSED && sk->sk_state == DCCP_CLOSED)
