@@ -1215,6 +1215,7 @@ static inline void memcg_memory_allocated_add(struct cg_proto *prot,
 	struct res_counter *fail;
 	int ret;
 
+	memcg_charge_kmem_nofail(prot->memcg, amt << PAGE_SHIFT);
 	ret = res_counter_charge_nofail(prot->memory_allocated,
 					amt << PAGE_SHIFT, &fail);
 	if (ret < 0)
@@ -1225,6 +1226,7 @@ static inline void memcg_memory_allocated_sub(struct cg_proto *prot,
 					      unsigned long amt)
 {
 	res_counter_uncharge(prot->memory_allocated, amt << PAGE_SHIFT);
+	memcg_uncharge_kmem(prot->memcg, amt << PAGE_SHIFT);
 }
 
 static inline u64 memcg_memory_allocated_read(struct cg_proto *prot)
