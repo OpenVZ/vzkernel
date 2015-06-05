@@ -34,9 +34,6 @@ struct proc_dir_entry {
 extern void proc_root_init(void);
 extern void proc_flush_task(struct task_struct *);
 
-extern int proc_dentry_of_dead_task(struct dentry *dentry);
-extern struct file_operations dummy_proc_pid_file_operations;
-
 extern struct proc_dir_entry *proc_symlink_mode(const char *name, umode_t mode,
 			struct proc_dir_entry *parent, const char *dest);
 static inline struct proc_dir_entry *proc_symlink(const char *name,
@@ -74,8 +71,6 @@ extern void remove_proc_entry(const char *, struct proc_dir_entry *);
 extern int remove_proc_subtree(const char *, struct proc_dir_entry *);
 
 #else /* CONFIG_PROC_FS */
-
-static inline int proc_dentry_of_dead_task(struct dentry *dentry) { return 0; }
 
 static inline void proc_flush_task(struct task_struct *task)
 {
