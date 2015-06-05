@@ -1653,6 +1653,17 @@ static struct ctl_table vm_table[] = {
 		.extra2		= (void *)&mmap_rnd_compat_bits_max,
 	},
 #endif
+#ifdef CONFIG_MEMCG
+	{
+		.procname	= "force_scan_thresh",
+		.data		= &sysctl_force_scan_thresh,
+		.maxlen		= sizeof(sysctl_force_scan_thresh),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one_hundred,
+	},
+#endif
 	{ }
 };
 
