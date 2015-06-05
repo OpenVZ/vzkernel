@@ -1559,6 +1559,17 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_doulongvec_minmax,
 	},
+#ifdef CONFIG_MEMCG
+	{
+		.procname	= "force_scan_thresh",
+		.data		= &sysctl_force_scan_thresh,
+		.maxlen		= sizeof(sysctl_force_scan_thresh),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one_hundred,
+	},
+#endif
 	{ }
 };
 
