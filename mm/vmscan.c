@@ -2267,6 +2267,12 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 {
 	struct reclaim_state *reclaim_state = current->reclaim_state;
 	unsigned long nr_reclaimed, nr_scanned;
+	gfp_t slab_gfp = sc->gfp_mask;
+
+	/* Disable fs-related IO for direct reclaim */
+	if (!sc->target_mem_cgroup &&
+	    (current->flags & (PF_MEMALLOC|PF_KSWAPD)) == PF_MEMALLOC)
+		slab_gfp &= ~__GFP_FS;
 
 	do {
 		struct mem_cgroup *root = sc->target_mem_cgroup;
@@ -2295,7 +2301,7 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 			zone_lru_pages += lru_pages;
 
 			if (memcg && is_classzone)
-				shrink_slab(sc->gfp_mask, zone_to_nid(zone),
+				shrink_slab(slab_gfp, zone_to_nid(zone),
 					    memcg, sc->nr_scanned - scanned,
 					    lru_pages);
 
@@ -2321,7 +2327,7 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 		 * the eligible LRU pages were scanned.
 		 */
 		if (global_reclaim(sc) && is_classzone)
-			shrink_slab(sc->gfp_mask, zone_to_nid(zone), NULL,
+			shrink_slab(slab_gfp, zone_to_nid(zone), NULL,
 				    sc->nr_scanned - nr_scanned,
 				    zone_lru_pages);
 
