@@ -244,9 +244,6 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 		goto out;
 	prefetchw(skb);
 
-	if (ub_skb_alloc_bc(skb, gfp_mask & ~__GFP_DMA))
-		goto nobc;
-
 	/* We do our best to align skb_shared_info on a separate cache
 	 * line. It usually works because kmalloc(X > SMP_CACHE_BYTES) gives
 	 * aligned memory blocks, unless SLUB/SLAB debug is enabled.
@@ -302,8 +299,6 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 out:
 	return skb;
 nodata:
-	ub_skb_free_bc(skb);
-nobc:
 	kmem_cache_free(cache, skb);
 	skb = NULL;
 	goto out;
@@ -336,11 +331,6 @@ struct sk_buff *build_skb(void *data, unsigned int frag_size)
 	skb = kmem_cache_alloc(skbuff_head_cache, GFP_ATOMIC);
 	if (!skb)
 		return NULL;
-
-	if (ub_skb_alloc_bc(skb, GFP_ATOMIC)) {
-		kmem_cache_free(skbuff_head_cache, skb);
-		return NULL;
-	}
 
 	size -= SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
 
@@ -552,7 +542,6 @@ static void kfree_skbmem(struct sk_buff *skb)
 	struct sk_buff *other;
 	atomic_t *fclone_ref;
 
-	ub_skb_free_bc(skb);
 	switch (skb->fclone) {
 	case SKB_FCLONE_UNAVAILABLE:
 		kmem_cache_free(skbuff_head_cache, skb);
@@ -585,7 +574,6 @@ static void skb_release_head_state(struct sk_buff *skb)
 #ifdef CONFIG_XFRM
 	secpath_put(skb->sp);
 #endif
-	ub_skb_uncharge(skb);
 	if (skb->destructor) {
 		WARN_ON(in_irq());
 		skb->destructor(skb);
@@ -916,10 +904,6 @@ struct sk_buff *skb_clone(struct sk_buff *skb, gfp_t gfp_mask)
 		n->fclone = SKB_FCLONE_UNAVAILABLE;
 	}
 
-	if (ub_skb_alloc_bc(n, gfp_mask)) {
-		kmem_cache_free(skbuff_head_cache, n);
-		return NULL;
-	}
 	return __skb_clone(n, skb);
 }
 EXPORT_SYMBOL(skb_clone);

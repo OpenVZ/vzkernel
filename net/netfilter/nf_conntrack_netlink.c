@@ -56,7 +56,6 @@
 
 #include <net/sock.h>
 #include <bc/beancounter.h>
-#include <bc/sock.h>
 
 MODULE_LICENSE("GPL");
 

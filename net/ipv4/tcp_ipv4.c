@@ -76,8 +76,6 @@
 #include <net/tcp_memcontrol.h>
 #include <net/busy_poll.h>
 
-#include <bc/tcp.h>
-
 #include <linux/inet.h>
 #include <linux/ipv6.h>
 #include <linux/stddef.h>

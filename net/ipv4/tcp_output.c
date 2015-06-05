@@ -42,9 +42,6 @@
 #include <linux/gfp.h>
 #include <linux/module.h>
 
-#include <bc/net.h>
-#include <bc/tcp.h>
-
 /* People can turn this off for buggy TCP's found in printers etc. */
 int sysctl_tcp_retrans_collapse __read_mostly = 1;
 
@@ -1064,19 +1061,10 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	if (skb_unclone(skb, GFP_ATOMIC))
 		return -ENOMEM;
 
-	if (skb_cloned(skb)) {
-		ub_skb_uncharge(skb);
-		ub_tcpsndbuf_charge_forced(sk, skb);
-	}
-
 	/* Get a new skb... force flag on. */
 	buff = sk_stream_alloc_skb(sk, nsize, GFP_ATOMIC);
 	if (buff == NULL)
 		return -ENOMEM; /* We'll just try again later. */
-	if (ub_tcpsndbuf_charge(sk, buff) < 0) {
-		kfree_skb(buff);
-		return -ENOMEM;
-	}
 
 	sk->sk_wmem_queued += buff->truesize;
 	sk_mem_charge(sk, buff->truesize);
@@ -1564,11 +1552,6 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	buff = sk_stream_alloc_skb(sk, 0, gfp);
 	if (unlikely(buff == NULL))
 		return -ENOMEM;
-
-	if (ub_tcpsndbuf_charge(sk, buff) < 0) {
-		kfree_skb(buff);
-		return -ENOMEM;
-	}
 
 	sk->sk_wmem_queued += buff->truesize;
 	sk_mem_charge(sk, buff->truesize);
@@ -2602,7 +2585,6 @@ void tcp_send_fin(struct sock *sk)
 				break;
 			yield();
 		}
-		ub_tcpsndbuf_charge_forced(sk, skb);
 
 		/* Reserve space for headers and prepare control bits. */
 		skb_reserve(skb, MAX_TCP_HEADER);
@@ -2662,10 +2644,6 @@ int tcp_send_synack(struct sock *sk)
 			struct sk_buff *nskb = skb_copy(skb, GFP_ATOMIC);
 			if (nskb == NULL)
 				return -ENOMEM;
-			if (ub_tcpsndbuf_charge(sk, nskb) < 0) {
-				kfree_skb(nskb);
-				return -ENOMEM;
-			}
 			tcp_unlink_write_queue(skb, sk);
 			skb_header_release(nskb);
 			__tcp_add_write_queue_head(sk, nskb);
@@ -2978,10 +2956,6 @@ int tcp_connect(struct sock *sk)
 	buff = alloc_skb_fclone(MAX_TCP_HEADER + 15, sk->sk_allocation);
 	if (unlikely(buff == NULL))
 		return -ENOBUFS;
-	if (ub_tcpsndbuf_charge(sk, buff) < 0) {
-		kfree_skb(buff);
-		return -ENOBUFS;
-	}
 
 	/* Reserve space for headers. */
 	skb_reserve(buff, MAX_TCP_HEADER);

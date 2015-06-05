@@ -116,9 +116,6 @@
 #include <linux/security.h>
 #include <linux/freezer.h>
 
-#include <bc/net.h>
-#include <bc/beancounter.h>
-
 struct hlist_head unix_socket_table[2 * UNIX_HASH_SIZE];
 EXPORT_SYMBOL_GPL(unix_socket_table);
 DEFINE_SPINLOCK(unix_table_lock);
@@ -638,8 +635,6 @@ static struct sock *unix_create1(struct net *net, struct socket *sock)
 	sk = sk_alloc(net, PF_UNIX, GFP_KERNEL, &unix_proto);
 	if (!sk)
 		goto out;
-	if (ub_other_sock_charge(sk))
-		goto out_sk_free;
 
 	sock_init_data(sock, sk);
 	lockdep_set_class(&sk->sk_receive_queue.lock,
@@ -666,10 +661,6 @@ out:
 		local_bh_enable();
 	}
 	return sk;
-out_sk_free:
-	sk_free(sk);
-	atomic_long_dec(&unix_nr_socks);
-	return NULL;
 }
 
 static int unix_create(struct net *net, struct socket *sock, int protocol,
@@ -1076,7 +1067,6 @@ static int unix_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 	int st;
 	int err;
 	long timeo;
-	unsigned long chargesize;
 
 	err = unix_mkname(sunaddr, addr_len, &hash);
 	if (err < 0)
@@ -1105,10 +1095,6 @@ static int unix_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 	skb = sock_wmalloc(newsk, 1, 0, GFP_KERNEL);
 	if (skb == NULL)
 		goto out;
-	chargesize = skb_charge_fullsize(skb);
-	if (ub_sock_getwres_other(newsk, chargesize) < 0)
-		goto out;	
-	ub_skb_set_charge(skb, newsk, chargesize, UB_OTHERSOCKBUF);
 
 restart:
 	/*  Find listening sock. */
@@ -1669,16 +1655,6 @@ static int unix_stream_sendmsg(struct kiocb *kiocb, struct socket *sock,
 
 		size = len-sent;
 
-		if (msg->msg_flags & MSG_DONTWAIT)
-			ub_sock_makewres_other(sk, skb_charge_size(size));
-		if (sock_bc(sk) != NULL && 
-				sock_bc(sk)->poll_reserv >= 
-					SOCK_MIN_UBCSPACE &&
-				skb_charge_size(size) >
-					sock_bc(sk)->poll_reserv)
-			size = skb_charge_datalen(sock_bc(sk)->poll_reserv);
-				
-
 		/* Keep two messages in the pipe so it schedules better */
 		if (size > ((sk->sk_sndbuf >> 1) - 64))
 			size = (sk->sk_sndbuf >> 1) - 64;
@@ -2186,7 +2162,6 @@ static unsigned int unix_poll(struct file *file, struct socket *sock, poll_table
 {
 	struct sock *sk = sock->sk;
 	unsigned int mask;
-	int no_ub_res;
 
 	sock_poll_wait(file, sk_sleep(sk), wait);
 	mask = 0;
@@ -2198,10 +2173,6 @@ static unsigned int unix_poll(struct file *file, struct socket *sock, poll_table
 		mask |= POLLHUP;
 	if (sk->sk_shutdown & RCV_SHUTDOWN)
 		mask |= POLLRDHUP | POLLIN | POLLRDNORM;
-
-	no_ub_res = ub_sock_makewres_other(sk, SOCK_MIN_UBCSPACE_CH);
-	if (no_ub_res)
-		ub_sock_sndqueueadd_other(sk, SOCK_MIN_UBCSPACE_CH);
 
 	/* readable? */
 	if (!skb_queue_empty(&sk->sk_receive_queue))
@@ -2216,7 +2187,7 @@ static unsigned int unix_poll(struct file *file, struct socket *sock, poll_table
 	 * we set writable also when the other side has shut down the
 	 * connection. This prevents stuck sockets.
 	 */
-	if (!no_ub_res && unix_writable(sk))
+	if (unix_writable(sk))
 		mask |= POLLOUT | POLLWRNORM | POLLWRBAND;
 
 	return mask;

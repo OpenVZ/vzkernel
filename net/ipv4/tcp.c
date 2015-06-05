@@ -277,10 +277,6 @@
 #include <net/ip.h>
 #include <net/sock.h>
 
-#include <bc/sock_orphan.h>
-#include <bc/net.h>
-#include <bc/tcp.h>
-
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 #include <net/busy_poll.h>
@@ -445,7 +441,6 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	unsigned int mask;
 	struct sock *sk = sock->sk;
 	const struct tcp_sock *tp = tcp_sk(sk);
-	int check_send_space;
 
 	sock_poll_wait(file, sk_sleep(sk), wait);
 	if (sk->sk_state == TCP_LISTEN)
@@ -457,21 +452,6 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	 */
 
 	mask = 0;
-
-	check_send_space = 1;
-#ifdef CONFIG_BEANCOUNTERS
-	if (!(sk->sk_shutdown & SEND_SHUTDOWN) && sock_has_ubc(sk)) {
-		unsigned long size;
-		size = MAX_TCP_HEADER + tp->mss_cache;
-		if (size > SOCK_MIN_UBCSPACE)
-			size = SOCK_MIN_UBCSPACE;
-		size = skb_charge_size(size);   
-		if (ub_sock_makewres_tcp(sk, size)) {
-			check_send_space = 0;
-			ub_sock_sndqueueadd_tcp(sk, size);
-		}
-	}
-#endif
 
 	/*
 	 * POLLHUP is certainly not done right. But poll() doesn't
@@ -521,7 +501,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 		if (tp->rcv_nxt - tp->copied_seq >= target)
 			mask |= POLLIN | POLLRDNORM;
 
-		if (check_send_space && !(sk->sk_shutdown & SEND_SHUTDOWN)) {
+		if (!(sk->sk_shutdown & SEND_SHUTDOWN)) {
 			if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk)) {
 				mask |= POLLOUT | POLLWRNORM;
 			} else {  /* send SIGIO later */
@@ -892,23 +872,15 @@ static ssize_t do_tcp_sendpages(struct sock *sk, struct page *page, int offset,
 		struct sk_buff *skb = tcp_write_queue_tail(sk);
 		int copy, i;
 		bool can_coalesce;
-		unsigned long chargesize = 0;
 
 		if (!tcp_send_head(sk) || (copy = size_goal - skb->len) <= 0) {
 new_segment:
-			chargesize = 0;
 			if (!sk_stream_memory_free(sk))
 				goto wait_for_sndbuf;
 
-			chargesize = skb_charge_size(MAX_TCP_HEADER +
-					tp->mss_cache);
-			if (ub_sock_getwres_tcp(sk, chargesize) < 0)
-				goto wait_for_ubspace;
 			skb = sk_stream_alloc_skb(sk, 0, sk->sk_allocation);
 			if (!skb)
 				goto wait_for_memory;
-			ub_skb_set_charge(skb, sk, chargesize, UB_TCPSNDBUF);
-			chargesize = 0;
 
 			skb_entail(sk, skb);
 			copy = size_goal;
@@ -965,14 +937,9 @@ new_segment:
 wait_for_sndbuf:
 		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 wait_for_memory:
-		ub_sock_retwres_tcp(sk, chargesize,
-				skb_charge_size(MAX_TCP_HEADER + tp->mss_cache));
-		chargesize = 0;
-wait_for_ubspace:
 		tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
 
-		err = __sk_stream_wait_memory(sk, &timeo, chargesize);
-		if (err != 0)
+		if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 			goto do_error;
 
 		mss_now = tcp_send_mss(sk, &size_goal, flags);
@@ -1007,8 +974,9 @@ int tcp_sendpage(struct sock *sk, struct page *page, int offset,
 }
 EXPORT_SYMBOL(tcp_sendpage);
 
-static inline int select_size(const struct sock *sk, bool sg, struct tcp_sock *tp)
+static inline int select_size(const struct sock *sk, bool sg)
 {
+	const struct tcp_sock *tp = tcp_sk(sk);
 	int tmp = tp->mss_cache;
 
 	if (sg) {
@@ -1128,7 +1096,6 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	while (--iovlen >= 0) {
 		size_t seglen = iov->iov_len;
 		unsigned char __user *from = iov->iov_base;
-		unsigned long chargesize = 0;
 
 		iov++;
 		if (unlikely(offset > 0)) {  /* Skip bytes copied in SYN */
@@ -1153,27 +1120,18 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			}
 
 			if (copy <= 0) {
-				unsigned long size;
 new_segment:
 				/* Allocate new segment. If the interface is SG,
 				 * allocate skb fitting to single page.
 				 */
-				chargesize = 0;
 				if (!sk_stream_memory_free(sk))
 					goto wait_for_sndbuf;
 
-				size = select_size(sk, sg, tp);
-				chargesize = skb_charge_size(MAX_TCP_HEADER +
-						size);
-				if (ub_sock_getwres_tcp(sk, chargesize) < 0)
-					goto wait_for_ubspace;
-				skb = sk_stream_alloc_skb(sk, size,
+				skb = sk_stream_alloc_skb(sk,
+							  select_size(sk, sg),
 							  sk->sk_allocation);
 				if (!skb)
 					goto wait_for_memory;
-				ub_skb_set_charge(skb, sk, chargesize,
-						UB_TCPSNDBUF);
-				chargesize = 0;
 
 				/*
 				 * All packets are restored as if they have
@@ -1269,15 +1227,10 @@ new_segment:
 wait_for_sndbuf:
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 wait_for_memory:
-			ub_sock_retwres_tcp(sk, chargesize,
-					skb_charge_size(MAX_TCP_HEADER+tp->mss_cache));
-			chargesize = 0;
-wait_for_ubspace:
 			if (copied && likely(!tp->repair))
 				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
 
-			err = __sk_stream_wait_memory(sk, &timeo, chargesize);
-			if (err != 0)
+			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 				goto do_error;
 
 			mss_now = tcp_send_mss(sk, &size_goal, flags);
@@ -2011,20 +1964,12 @@ EXPORT_SYMBOL(tcp_shutdown);
 bool tcp_check_oom(struct sock *sk, int shift)
 {
 	bool too_many_orphans, out_of_socket_memory;
-	int orphans = ub_get_orphan_count(sk);
 
-	too_many_orphans = ub_too_many_orphans(sk, orphans);
+	too_many_orphans = tcp_too_many_orphans(sk, shift);
 	out_of_socket_memory = tcp_out_of_memory(sk);
 
-	if (too_many_orphans) {
-		const char *ubid = "0";
-#ifdef CONFIG_BEANCOUNTERS
-		if (sock_has_ubc(sk))
-			ubid = sock_bc(sk)->ub->ub_name;
-#endif
-		net_info_ratelimited("too many orphaned sockets (%d in CT%s)\n",
-				     orphans, ubid);
-	}
+	if (too_many_orphans)
+		net_info_ratelimited("too many orphaned sockets\n");
 	if (out_of_socket_memory)
 		net_info_ratelimited("out of memory -- consider tuning tcp_mem\n");
 	return too_many_orphans || out_of_socket_memory;
@@ -2134,7 +2079,7 @@ adjudge_to_death:
 	bh_lock_sock(sk);
 	WARN_ON(sock_owned_by_user(sk));
 
-	ub_inc_orphan_count(sk);
+	percpu_counter_inc(sk->sk_prot->orphan_count);
 
 	/* Have we already been destroyed by a softirq or backlog? */
 	if (state != TCP_CLOSE && sk->sk_state == TCP_CLOSE)
@@ -3117,7 +3062,6 @@ void __init tcp_init(void)
 
 	percpu_counter_init(&tcp_sockets_allocated, 0);
 	percpu_counter_init(&tcp_orphan_count, 0);
-	percpu_counter_init(&get_ub0()->ub_orphan_count, 0);
 	tcp_hashinfo.bind_bucket_cachep =
 		kmem_cache_create("tcp_bind_bucket",
 				  sizeof(struct inet_bind_bucket), 0,

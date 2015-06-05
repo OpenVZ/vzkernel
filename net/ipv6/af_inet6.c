@@ -63,7 +63,6 @@
 #ifdef CONFIG_IPV6_MIP6
 #include <net/mip6.h>
 #endif
-#include <bc/net.h>
 
 #include <asm/uaccess.h>
 #include <linux/mroute6.h>
@@ -184,13 +183,6 @@ lookup_protocol:
 	if (sk == NULL)
 		goto out;
 
-	err = -ENOBUFS;
-	if (ub_sock_charge(sk, PF_INET6, sock->type))
-		goto out_sk_free;
-	/* if charge was successful, sock_init_data() MUST be called to
-	 * set sk->sk_type. otherwise sk will be uncharged to wrong resource
-	 */
-
 	sock_init_data(sock, sk);
 
 	err = 0;
@@ -265,9 +257,6 @@ out:
 out_rcu_unlock:
 	rcu_read_unlock();
 	goto out;
-out_sk_free:
-	sk_free(sk);
-	return err;
 }
 
 

@@ -453,8 +453,6 @@ typedef unsigned char *sk_buff_data_t;
  *	@users: User count - see {datagram,tcp}.c
  */
 
-#include <bc/sock.h>
-
 struct sk_buff {
 	/* These two members must be first. */
 	struct sk_buff		*next;
@@ -597,7 +595,6 @@ struct sk_buff {
 				*data;
 	unsigned int		truesize;
 	atomic_t		users;
-	struct skb_beancounter	skb_bc;
 };
 
 #ifdef __KERNEL__
@@ -605,7 +602,6 @@ struct sk_buff {
  *	Handling routines are only of interest to the kernel
  */
 #include <linux/slab.h>
-#include <bc/net.h>
 
 
 #define SKB_ALLOC_FCLONE	0x01
@@ -1935,7 +1931,7 @@ static inline void pskb_trim_unique(struct sk_buff *skb, unsigned int len)
  *	destructor function and make the @skb unowned. The buffer continues
  *	to exist but is no longer charged to its former owner.
  */
-static inline void __skb_orphan(struct sk_buff *skb)
+static inline void skb_orphan(struct sk_buff *skb)
 {
 	if (skb->destructor)
 		skb->destructor(skb);
@@ -1957,14 +1953,6 @@ static inline int skb_orphan_frags(struct sk_buff *skb, gfp_t gfp_mask)
 	if (likely(!(skb_shinfo(skb)->tx_flags & SKBTX_DEV_ZEROCOPY)))
 		return 0;
 	return skb_copy_ubufs(skb, gfp_mask);
-}
-
-static inline void skb_orphan(struct sk_buff *skb)
-{
-	if (skb->sk)
-		ub_skb_uncharge(skb);
-
-	__skb_orphan(skb);
 }
 
 /**

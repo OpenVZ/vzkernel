@@ -118,7 +118,6 @@
 #ifdef CONFIG_IP_MROUTE
 #include <linux/mroute.h>
 #endif
-#include <bc/net.h>
 
 
 /* The inetsw table contains everything that inet_create needs to
@@ -353,13 +352,6 @@ lookup_protocol:
 	if (sk == NULL)
 		goto out;
 
-	err = -ENOBUFS;
-	if (ub_sock_charge(sk, PF_INET, sock->type))
-		goto out_sk_free;
-	/* if charge was successful, sock_init_data() MUST be called to
-	 * set sk->sk_type. otherwise sk will be uncharged to wrong resource
-	 */
-
 	err = 0;
 	if (INET_PROTOSW_REUSE & answer_flags)
 		sk->sk_reuse = SK_CAN_REUSE;
@@ -419,9 +411,6 @@ out:
 out_rcu_unlock:
 	rcu_read_unlock();
 	goto out;
-out_sk_free:
-	sk_free(sk);
-	return err;
 }
 
 

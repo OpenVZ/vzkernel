@@ -54,7 +54,6 @@
 #include <net/netfilter/nf_nat_helper.h>
 
 #include <net/sock.h>
-#include <bc/sock.h>
 
 #define NF_CONNTRACK_VERSION	"0.5.0"
 

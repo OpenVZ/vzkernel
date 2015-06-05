@@ -64,8 +64,6 @@
 #include <net/tcp_memcontrol.h>
 #include <net/busy_poll.h>
 
-#include <bc/tcp.h>
-
 #include <asm/uaccess.h>
 
 #include <linux/proc_fs.h>
