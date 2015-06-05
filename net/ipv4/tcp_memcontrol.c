@@ -6,6 +6,8 @@
 #include <linux/memcontrol.h>
 #include <linux/module.h>
 
+#define RES_ORPHANS	1024
+
 static inline struct tcp_memcontrol *tcp_from_cgproto(struct cg_proto *cg_proto)
 {
 	return container_of(cg_proto, struct tcp_memcontrol, cg_proto);
@@ -17,6 +19,67 @@ static void memcg_tcp_enter_memory_pressure(struct sock *sk)
 		*sk->sk_cgrp->memory_pressure = 1;
 }
 EXPORT_SYMBOL(memcg_tcp_enter_memory_pressure);
+
+void cg_orphan_count_inc(struct sock *sk)
+{
+	struct cg_proto *cg;
+
+	for (cg = sk->sk_cgrp; cg; cg = parent_cg_proto(sk->sk_prot, cg)) {
+		struct tcp_memcontrol *tcp;
+
+		tcp = tcp_from_cgproto(cg);
+		percpu_counter_inc(&tcp->tcp_orphan_count);
+	}
+}
+EXPORT_SYMBOL(cg_orphan_count_inc);
+
+void cg_orphan_count_dec(struct sock *sk)
+{
+	struct cg_proto *cg;
+
+	for (cg = sk->sk_cgrp; cg; cg = parent_cg_proto(sk->sk_prot, cg)) {
+		struct tcp_memcontrol *tcp;
+
+		tcp = tcp_from_cgproto(cg);
+		percpu_counter_dec(&tcp->tcp_orphan_count);
+	}
+}
+
+bool cg_too_many_orphans(struct sock *sk, int shift)
+{
+	struct cg_proto *cg;
+
+	for (cg = sk->sk_cgrp; cg; cg = parent_cg_proto(sk->sk_prot, cg)) {
+		struct tcp_memcontrol *tcp;
+		struct percpu_counter *ocp;
+		int orphans;
+
+		tcp = tcp_from_cgproto(cg);
+		ocp = &tcp->tcp_orphan_count;
+		orphans = percpu_counter_read_positive(ocp);
+
+		if (orphans << shift > tcp->tcp_max_orphans) {
+			orphans = percpu_counter_sum_positive(ocp);
+			if (orphans << shift > tcp->tcp_max_orphans)
+				return true;
+		}
+	}
+
+	return false;
+}
+
+static u64 tcp_read_orphans(struct mem_cgroup *mem)
+{
+	struct tcp_memcontrol *tcp;
+	struct cg_proto *cg_proto;
+
+	cg_proto = tcp_prot.proto_cgroup(mem);
+	if (!cg_proto)
+		return 0;
+
+	tcp = tcp_from_cgproto(cg_proto);
+	return percpu_counter_sum_positive(&tcp->tcp_orphan_count);
+}
 
 int tcp_init_cgroup(struct mem_cgroup *memcg, struct cgroup_subsys *ss)
 {
@@ -40,6 +103,7 @@ int tcp_init_cgroup(struct mem_cgroup *memcg, struct cgroup_subsys *ss)
 	tcp->tcp_prot_mem[0] = net->ipv4.sysctl_tcp_mem[0];
 	tcp->tcp_prot_mem[1] = net->ipv4.sysctl_tcp_mem[1];
 	tcp->tcp_prot_mem[2] = net->ipv4.sysctl_tcp_mem[2];
+	tcp->tcp_max_orphans = sysctl_tcp_max_orphans >> 2;
 	tcp->tcp_memory_pressure = 0;
 
 	parent_cg = tcp_prot.proto_cgroup(parent);
@@ -48,6 +112,7 @@ int tcp_init_cgroup(struct mem_cgroup *memcg, struct cgroup_subsys *ss)
 
 	res_counter_init(&tcp->tcp_memory_allocated, res_parent);
 	percpu_counter_init(&tcp->tcp_sockets_allocated, 0, GFP_KERNEL);
+	percpu_counter_init(&tcp->tcp_orphan_count, 0, GFP_KERNEL);
 
 	cg_proto->enter_memory_pressure = memcg_tcp_enter_memory_pressure;
 	cg_proto->memory_pressure = &tcp->tcp_memory_pressure;
@@ -196,6 +261,9 @@ static u64 tcp_cgroup_read(struct cgroup *cont, struct cftype *cft)
 	case RES_MAX_USAGE:
 		val = tcp_read_stat(memcg, cft->private, 0);
 		break;
+	case RES_ORPHANS:
+		val = tcp_read_orphans(memcg);
+		break;
 	default:
 		BUG();
 	}
@@ -276,6 +344,11 @@ static struct cftype tcp_files[] = {
 		.private = RES_MAX_USAGE,
 		.trigger = tcp_cgroup_reset,
 		.read_u64 = tcp_cgroup_read,
+	},
+	{
+		.name = "kmem.tcp.orphans",
+		.private = RES_ORPHANS,
+		.read_u64 = tcp_cgroup_read, /* XXX add configuration knob */
 	},
 	{ }	/* terminate */
 };
