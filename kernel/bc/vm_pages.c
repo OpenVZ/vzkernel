@@ -188,9 +188,6 @@ static int bc_fill_meminfo(struct user_beancounter *ub,
 	ub_sync_memcg(ub);
 	ub_page_stat(ub, &node_online_map, mi->pages);
 
-	mi->cached = min(mi->si->totalram - mi->si->freeram,
-			mi->pages[LRU_INACTIVE_FILE] +
-			mi->pages[LRU_ACTIVE_FILE]);
 	mi->locked = ub->ub_parms[UB_LOCKEDPAGES].held;
 	mi->shmem = ub->ub_parms[UB_SHMPAGES].held;
 	dcache = ub->ub_parms[UB_DCACHESIZE].held;
@@ -211,6 +208,12 @@ static int bc_fill_meminfo(struct user_beancounter *ub,
 	mi->slab_unreclaimable =
 		DIV_ROUND_UP(max(0L, (long)ub->ub_parms[UB_KMEMSIZE].held -
 							dcache), PAGE_SIZE);
+
+	mi->cached = min(mi->si->totalram - mi->si->freeram -
+			mi->slab_reclaimable - mi->slab_unreclaimable,
+			mi->pages[LRU_INACTIVE_FILE] +
+			mi->pages[LRU_ACTIVE_FILE] +
+			ub->ub_parms[UB_SHMPAGES].held);
 out:
 	return ret;
 }
