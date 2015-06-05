@@ -470,6 +470,8 @@ int radix_tree_insert(struct radix_tree_root *root,
 	BUG_ON(radix_tree_is_indirect_ptr(item));
 
 	error = __radix_tree_create(root, index, &node, &slot);
+	if (error)
+		return error;
 	if (*slot != NULL)
 		return -EEXIST;
 	rcu_assign_pointer(*slot, item);
