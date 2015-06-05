@@ -538,6 +538,7 @@ void __memcg_kmem_put_cache(struct kmem_cache *cachep);
 
 struct mem_cgroup *__mem_cgroup_from_kmem(void *ptr);
 
+int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp, u64 size);
 void memcg_charge_kmem_nofail(struct mem_cgroup *memcg, u64 size);
 void memcg_uncharge_kmem(struct mem_cgroup *memcg, u64 size);
 
