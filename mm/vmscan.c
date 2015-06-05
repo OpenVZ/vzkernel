@@ -1909,6 +1909,51 @@ static int vmscan_swappiness(struct scan_control *sc)
 	return mem_cgroup_swappiness(sc->target_mem_cgroup);
 }
 
+#ifdef CONFIG_MEMCG
+int sysctl_force_scan_thresh = 100;
+
+static inline bool zone_force_scan(struct zone *zone)
+{
+	return zone->force_scan;
+}
+
+static void zone_update_force_scan(struct zone *zone)
+{
+	struct mem_cgroup *memcg;
+	int tiny, total;
+
+	tiny = total = 0;
+
+	memcg = mem_cgroup_iter(NULL, NULL, NULL);
+	do {
+		struct lruvec *lruvec = mem_cgroup_zone_lruvec(zone, memcg);
+		unsigned long size;
+
+		size = max(get_lru_size(lruvec, LRU_ACTIVE_FILE),
+			   get_lru_size(lruvec, LRU_INACTIVE_FILE));
+		if (get_nr_swap_pages() > 0)
+			size = max3(size,
+				    get_lru_size(lruvec, LRU_ACTIVE_ANON),
+				    get_lru_size(lruvec, LRU_INACTIVE_ANON));
+
+		if (size && size >> DEF_PRIORITY == 0)
+			tiny++;
+		total++;
+	} while ((memcg = mem_cgroup_iter(NULL, memcg, NULL)));
+
+	zone->force_scan = tiny * 100 > total * sysctl_force_scan_thresh;
+}
+#else
+static inline bool zone_force_scan(struct zone *zone)
+{
+	return false;
+}
+
+static inline void zone_update_force_scan(struct zone *zone)
+{
+}
+#endif
+
 enum scan_balance {
 	SCAN_EQUAL,
 	SCAN_FRACT,
@@ -1952,6 +1997,8 @@ static void get_scan_count(struct lruvec *lruvec, struct scan_control *sc,
 	if (current_is_kswapd() && zone->all_unreclaimable)
 		force_scan = true;
 	if (!global_reclaim(sc))
+		force_scan = true;
+	if (zone_force_scan(zone))
 		force_scan = true;
 
 	/* If we have no swap space, do not bother scanning anon pages. */
@@ -3153,6 +3200,8 @@ static unsigned long balance_pgdat(pg_data_t *pgdat, int order,
 
 			if (!populated_zone(zone))
 				continue;
+
+			zone_update_force_scan(zone);
 
 			if (zone->all_unreclaimable &&
 			    sc.priority != DEF_PRIORITY)
