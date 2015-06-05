@@ -49,7 +49,6 @@
 
 #include <asm/uaccess.h>
 
-#include <linux/module.h>
 #include <linux/errno.h>
 #include <linux/time.h>
 #include <linux/proc_fs.h>
@@ -3603,35 +3602,3 @@ static const struct file_operations proc_task_operations = {
 	.readdir	= proc_task_readdir,
 	.llseek		= default_llseek,
 };
-
-/* Check whether dentry belongs to a task that already died */
-int proc_dentry_of_dead_task(struct dentry *dentry)
-{
-	if (dentry->d_inode->i_fop == &dummy_proc_pid_file_operations)
-		return 1;
-
-	return (dentry->d_op == &pid_dentry_operations &&
-		 proc_pid(dentry->d_inode)->tasks[PIDTYPE_PID].first == NULL);
-}
-EXPORT_SYMBOL(proc_dentry_of_dead_task);
-
-/* Place it here to avoid use vzrst module count */
-static ssize_t dummy_proc_pid_read(struct file * file, char __user * buf,
-				 size_t count, loff_t *ppos)
-{
-	return -ESRCH;
-}
-
-static ssize_t dummy_proc_pid_write(struct file * file, const char * buf,
-				  size_t count, loff_t *ppos)
-{
-	return -ESRCH;
-}
-
-struct file_operations dummy_proc_pid_file_operations = {
-	.read		= dummy_proc_pid_read,
-	.write		= dummy_proc_pid_write,
-};
-
-EXPORT_SYMBOL(dummy_proc_pid_file_operations);
-
