@@ -23,6 +23,7 @@
 #include <net/route.h>
 #include <net/tcp_states.h>
 #include <net/xfrm.h>
+#include <net/tcp.h>
 
 #ifdef INET_CSK_DEBUG
 const char inet_csk_timer_bug_msg[] = "inet_csk BUG: unknown timer value\n";
@@ -733,7 +734,7 @@ void inet_csk_destroy_sock(struct sock *sk)
 
 	sk_refcnt_debug_release(sk);
 
-	percpu_counter_dec(sk->sk_prot->orphan_count);
+	orphan_count_dec(sk);
 	sock_put(sk);
 }
 EXPORT_SYMBOL(inet_csk_destroy_sock);
@@ -750,7 +751,7 @@ void inet_csk_prepare_forced_close(struct sock *sk)
 
 	/* The below has to be done to allow calling inet_csk_destroy_sock */
 	sock_set_flag(sk, SOCK_DEAD);
-	percpu_counter_inc(sk->sk_prot->orphan_count);
+	orphan_count_inc(sk);
 	inet_sk(sk)->inet_num = 0;
 }
 EXPORT_SYMBOL(inet_csk_prepare_forced_close);
@@ -796,7 +797,7 @@ static void inet_child_forget(struct sock *sk, struct request_sock *req,
 
 	sock_orphan(child);
 
-	percpu_counter_inc(sk->sk_prot->orphan_count);
+	orphan_count_inc(sk);
 
 	if (sk->sk_protocol == IPPROTO_TCP && tcp_rsk(req)->listener) {
 		BUG_ON(tcp_sk(child)->fastopen_rsk != req);
