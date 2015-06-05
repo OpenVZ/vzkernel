@@ -4652,7 +4652,7 @@ restart:
 		int copy = min_t(int, SKB_MAX_ORDER(0, 0), end - start);
 		struct sk_buff *nskb;
 
-		nskb = alloc_skb(copy, GFP_ATOMIC);
+		nskb = alloc_skb(copy, GFP_ATOMIC|__GFP_NOACCOUNT);
 		if (!nskb)
 			return;
 
