@@ -414,6 +414,11 @@ void tcp_init_sock(struct sock *sk)
 
 	sk->sk_write_space = sk_stream_write_space;
 	sock_set_flag(sk, SOCK_USE_WRITE_QUEUE);
+	/*
+	 * TCP memory is accounted via cg_proto and there's
+	 * no need in additional kmem charging via slub
+	 */
+	sk->sk_allocation |= __GFP_NOACCOUNT;
 
 	icsk->icsk_sync_mss = tcp_sync_mss;
 
