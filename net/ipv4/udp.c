@@ -115,6 +115,7 @@
 #include <net/busy_poll.h>
 #include "udp_impl.h"
 #include <net/sock_reuseport.h>
+#include <net/udp_memcontrol.h>
 
 struct udp_table udp_table __read_mostly;
 EXPORT_SYMBOL(udp_table);
@@ -1283,6 +1284,10 @@ EXPORT_SYMBOL_GPL(udp_destruct_sock);
 
 int udp_init_sock(struct sock *sk)
 {
+	local_bh_disable();
+	sock_update_memcg(sk);
+	local_bh_enable();
+
 	sk->sk_destruct = udp_destruct_sock;
 	return 0;
 }
@@ -2081,6 +2086,7 @@ void udp_destroy_sock(struct sock *sk)
 		if (encap_destroy)
 			encap_destroy(sk);
 	}
+	sock_release_memcg(sk);
 }
 
 /*
@@ -2330,6 +2336,11 @@ struct proto udp_prot = {
 	.compat_getsockopt = compat_udp_getsockopt,
 #endif
 	.clear_sk	   = sk_prot_clear_portaddr_nulls,
+#ifdef CONFIG_MEMCG_KMEM
+	.init_cgroup		= udp_init_cgroup,
+	.destroy_cgroup		= udp_destroy_cgroup,
+	.proto_cgroup		= udp_proto_cgroup,
+#endif
 };
 EXPORT_SYMBOL(udp_prot);
 
