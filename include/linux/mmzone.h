@@ -431,6 +431,10 @@ struct zone {
 	 */
 	unsigned int inactive_ratio;
 
+#ifdef CONFIG_MEMCG
+	bool force_scan;
+#endif
+
 
 	ZONE_PADDING(_pad2_)
 	/* Rarely used or read-mostly fields */
