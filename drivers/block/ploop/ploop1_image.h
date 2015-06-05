@@ -57,6 +57,12 @@ struct ploop_pvd_header
 /* Sign that the disk is in "using" state */
 #define SIGNATURE_DISK_IN_USE		0x746F6E59
 
+/* Disk was closed by software which conformed specification 2.0 */
+#define SIGNATURE_DISK_CLOSED_V20	0x0
+
+/* Disk disk was closed by software which conformed specification 2.1 */
+#define SIGNATURE_DISK_CLOSED_V21	0x312e3276
+
 /**
  * Compressed disk image flags
  */
@@ -354,6 +360,21 @@ generate_pvd_header(struct ploop_pvd_header *vh, __u64 bdsize, __u32 blocksize,
 	return SizeToFill;
 }
 
+static inline bool pvd_header_is_disk_in_use(struct ploop_pvd_header *vh)
+{
+	return (vh->m_DiskInUse == cpu_to_le32(SIGNATURE_DISK_IN_USE)) ?
+		true : false;
+}
+
+static inline void pvd_header_set_disk_in_use(struct ploop_pvd_header *vh)
+{
+	vh->m_DiskInUse = cpu_to_le32(SIGNATURE_DISK_IN_USE);
+}
+
+static inline void pvd_header_set_disk_closed(struct ploop_pvd_header *vh)
+{
+	vh->m_DiskInUse = cpu_to_le32(SIGNATURE_DISK_CLOSED_V20);
+}
 
 /* Translation of sector number to offset in image */
 
