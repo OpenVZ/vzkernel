@@ -46,6 +46,7 @@
 
 #include <linux/seq_file.h>
 #include <linux/memcontrol.h>
+#include <net/tcp_memcontrol.h>
 
 #define TW_WSCALE_MASK		0x0f
 #define TW_WSCALE_SPEC		0x10
@@ -321,10 +322,27 @@ static inline bool tcp_out_of_memory(struct sock *sk)
 
 void sk_forced_mem_schedule(struct sock *sk, int size);
 
+static inline void orphan_count_inc(struct sock *sk)
+{
+	if (mem_cgroup_sockets_enabled && sk->sk_cgrp)
+		cg_orphan_count_inc(sk);
+	percpu_counter_inc(sk->sk_prot->orphan_count);
+}
+
+static inline void orphan_count_dec(struct sock *sk)
+{
+	percpu_counter_dec(sk->sk_prot->orphan_count);
+	if (mem_cgroup_sockets_enabled && sk->sk_cgrp)
+		cg_orphan_count_dec(sk);
+}
+
 static inline bool tcp_too_many_orphans(struct sock *sk, int shift)
 {
 	struct percpu_counter *ocp = sk->sk_prot->orphan_count;
 	int orphans = percpu_counter_read_positive(ocp);
+
+	if (mem_cgroup_sockets_enabled && sk->sk_cgrp)
+		return cg_too_many_orphans(sk, shift);
 
 	if (orphans << shift > sysctl_tcp_max_orphans) {
 		orphans = percpu_counter_sum_positive(ocp);
