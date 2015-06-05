@@ -2494,6 +2494,66 @@ static int packet_sendmsg(struct kiocb *iocb, struct socket *sock,
 		return packet_snd(sock, msg, len);
 }
 
+#ifdef CONFIG_MEMCG_KMEM
+struct packet_sk_charge {
+	struct mem_cgroup	*memcg;
+	unsigned long		amt;
+};
+
+static struct cg_proto *packet_sk_charge(void)
+{
+	struct packet_sk_charge *psc;
+
+	if (!mem_cgroup_sockets_enabled)
+		return NULL;
+
+	psc = kmalloc(sizeof(*psc), GFP_KERNEL);
+	if (!psc)
+		return ERR_PTR(-ENOMEM);
+
+	psc->memcg = try_get_mem_cgroup_from_current();
+	if (psc->memcg) {
+		/*
+		 * Forcedly charge the maximum amount of data this socket
+		 * may have. It's typically not huge and packet sockets are
+		 * rare guests in containers, so we don't disturb the memory
+		 * consumption much.
+		 */
+		psc->amt = sysctl_rmem_max;
+		memcg_charge_kmem_nofail(psc->memcg, psc->amt);
+	} else {
+		kfree(psc);
+		psc = NULL;
+	}
+
+	/*
+	 * The sk->sk_cgrp is not used for packet sockets,
+	 * so we'll just put the smaller structure into it.
+	 */
+	return (struct cg_proto *)psc;
+}
+
+static void packet_sk_uncharge(struct cg_proto *cg)
+{
+	struct packet_sk_charge *psc = (struct packet_sk_charge *)cg;
+
+	if (psc) {
+		memcg_uncharge_kmem(psc->memcg, psc->amt);
+		css_put(mem_cgroup_css(psc->memcg));
+		kfree(psc);
+	}
+}
+#else
+static struct cg_proto *packet_sk_charge(void)
+{
+	return NULL;
+}
+
+static void packet_sk_uncharge(struct cg_proto *cg)
+{
+}
+#endif
+
 /*
  *	Close a PACKET socket. This is fairly simple. We immediately go
  *	to 'closed' state and remove our protocol entry in the device list.
@@ -2543,6 +2603,8 @@ static int packet_release(struct socket *sock)
 	}
 
 	fanout_release(sk);
+	packet_sk_uncharge(sk->sk_cgrp);
+	sk->sk_cgrp = NULL;
 
 	synchronize_net();
 	/*
@@ -2689,6 +2751,7 @@ static int packet_create(struct net *net, struct socket *sock, int protocol,
 {
 	struct sock *sk;
 	struct packet_sock *po;
+	struct cg_proto *cg;
 	__be16 proto = (__force __be16)protocol; /* weird, but documented */
 	int err;
 
@@ -2699,11 +2762,14 @@ static int packet_create(struct net *net, struct socket *sock, int protocol,
 		return -ESOCKTNOSUPPORT;
 
 	sock->state = SS_UNCONNECTED;
+	cg = packet_sk_charge();
+	if (IS_ERR(cg))
+		goto out;
 
 	err = -ENOBUFS;
 	sk = sk_alloc(net, PF_PACKET, GFP_KERNEL, &packet_proto);
 	if (sk == NULL)
-		goto out;
+		goto outu;
 
 	sock->ops = &packet_ops;
 	if (sock->type == SOCK_PACKET)
@@ -2750,9 +2816,13 @@ static int packet_create(struct net *net, struct socket *sock, int protocol,
 	sock_prot_inuse_add(net, &packet_proto, 1);
 	preempt_enable();
 
+	sk->sk_cgrp = cg;
+
 	return 0;
 out2:
 	sk_free(sk);
+outu:
+	packet_sk_uncharge(cg);
 out:
 	return err;
 }
