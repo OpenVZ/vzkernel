@@ -323,4 +323,5 @@ extern void udp_encap_enable(void);
 #if IS_ENABLED(CONFIG_IPV6)
 extern void udpv6_encap_enable(void);
 #endif
+extern int udp_init_sock(struct sock *sk);
 #endif	/* _UDP_H */
