@@ -4542,7 +4542,7 @@ restart:
 			return;
 		if (end - start < copy)
 			copy = end - start;
-		nskb = alloc_skb(copy + header, GFP_ATOMIC);
+		nskb = alloc_skb(copy + header, GFP_ATOMIC|__GFP_NOACCOUNT);
 		if (!nskb)
 			return;
 
