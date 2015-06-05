@@ -88,7 +88,7 @@ static int ploop1_stop(struct ploop_delta * delta)
 		vh->m_Flags = cpu_to_le32(vh->m_Flags);
 	}
 
-	vh->m_DiskInUse = 0;
+	pvd_header_set_disk_closed(vh);
 
 	err = delta->io.ops->sync_write(&delta->io, ph->dyn_page, 4096, 0, 0);
 	if (err)
@@ -147,7 +147,7 @@ ploop1_open(struct ploop_delta * delta)
 	ph->l1_off = le32_to_cpu(vh->m_FirstBlockOffset);
 
 	err = -EBUSY;
-	if (vh->m_DiskInUse)
+	if (pvd_header_is_disk_in_use(vh))
 		goto out_err;
 
 	err = -EINVAL;
@@ -167,7 +167,7 @@ ploop1_open(struct ploop_delta * delta)
 		goto out_err;
 
 	if (!(delta->flags & PLOOP_FMT_RDONLY)) {
-		vh->m_DiskInUse = cpu_to_le32(SIGNATURE_DISK_IN_USE);
+		pvd_header_set_disk_in_use(vh);
 		err = delta->io.ops->sync_write(&delta->io, ph->dyn_page, 4096, 0, 0);
 		if (err)
 			goto out_err;
@@ -276,7 +276,7 @@ ploop1_sync(struct ploop_delta * delta)
 		return err;
 
 	vh = (struct ploop_pvd_header *)page_address(ph->dyn_page);
-	vh->m_DiskInUse = cpu_to_le32(SIGNATURE_DISK_IN_USE);
+	pvd_header_set_disk_in_use(vh);
 
 	if (ph->alloc_head > (ph->l1_off >> delta->plo->cluster_log)) {
 		vh->m_Flags = le32_to_cpu(vh->m_Flags);
@@ -329,7 +329,7 @@ ploop1_complete_snapshot(struct ploop_delta * delta, struct ploop_snapdata * sd)
 		vh->m_Flags = cpu_to_le32(vh->m_Flags);
 	}
 
-	vh->m_DiskInUse = 0;
+	pvd_header_set_disk_closed(vh);
 
 	/*
 	 * NB: we don't call ploop_update_map_hdr() here because top
@@ -376,7 +376,7 @@ ploop1_prepare_merge(struct ploop_delta * delta, struct ploop_snapdata * sd)
 	if (err)
 		return err;
 
-	if (vh->m_DiskInUse)
+	if (pvd_header_is_disk_in_use(vh))
 		return -EBUSY;
 
 	ph->alloc_head = delta->io.ops->i_size_read(&delta->io) >>
@@ -413,7 +413,7 @@ ploop1_start_merge(struct ploop_delta * delta, struct ploop_snapdata * sd)
 		return err;
 
 	vh = (struct ploop_pvd_header *)page_address(ph->dyn_page);
-	vh->m_DiskInUse = cpu_to_le32(SIGNATURE_DISK_IN_USE);
+	pvd_header_set_disk_in_use(vh);
 
 	/* keep hdr in ph->dyn_page and in map_node in sync */
 	ploop_update_map_hdr(&delta->plo->map, (u8 *)vh, sizeof(*vh));
