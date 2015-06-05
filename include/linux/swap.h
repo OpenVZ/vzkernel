@@ -334,6 +334,10 @@ static inline int zone_reclaim(struct zone *z, gfp_t mask, unsigned int order)
 }
 #endif
 
+#ifdef CONFIG_MEMCG
+extern int sysctl_force_scan_thresh;
+#endif
+
 extern int page_evictable(struct page *page);
 extern void check_move_unevictable_pages(struct page **, int nr_pages);
 
