@@ -26,7 +26,6 @@
 #include <net/tcp.h>
 #include <net/inet_common.h>
 #include <net/xfrm.h>
-#include <bc/sock_orphan.h>
 
 int sysctl_tcp_syncookies __read_mostly = 1;
 EXPORT_SYMBOL(sysctl_tcp_syncookies);
@@ -52,7 +51,6 @@ struct inet_timewait_death_row tcp_death_row = {
 	.twcal_hand	= -1,
 	.twcal_timer	= TIMER_INITIALIZER(inet_twdr_twcal_tick, 0,
 					    (unsigned long)&tcp_death_row),
-	.ub_managed	= 1,
 };
 EXPORT_SYMBOL_GPL(tcp_death_row);
 
@@ -280,8 +278,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 	if (tcp_death_row.sysctl_tw_recycle && tp->rx_opt.ts_recent_stamp)
 		recycle_ok = tcp_remember_stamp(sk);
 
-	if (tcp_death_row.tw_count < tcp_death_row.sysctl_max_tw_buckets &&
-			ub_timewait_check(sk, &tcp_death_row))
+	if (tcp_death_row.tw_count < tcp_death_row.sysctl_max_tw_buckets)
 		tw = inet_twsk_alloc(sk, state);
 
 	if (tw != NULL) {

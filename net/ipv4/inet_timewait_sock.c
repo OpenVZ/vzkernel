@@ -66,8 +66,6 @@ int inet_twsk_bind_unhash(struct inet_timewait_sock *tw,
 	return 1;
 }
 
-#include <bc/sock_orphan.h>
-
 /* Must be called with locally disabled BHs. */
 static void __inet_twsk_kill(struct inet_timewait_sock *tw,
 			     struct inet_hashinfo *hashinfo)
@@ -99,9 +97,6 @@ void inet_twsk_free(struct inet_timewait_sock *tw)
 	twsk_destructor((struct sock *)tw);
 #ifdef SOCK_REFCNT_DEBUG
 	pr_debug("%s timewait_sock %p released\n", tw->tw_prot->name, tw);
-#endif
-#ifdef CONFIG_BEANCOUNTERS
-	put_beancounter(tw->tw_ub);
 #endif
 	release_net(twsk_net(tw));
 	kmem_cache_free(tw->tw_prot->twsk_prot->twsk_slab, tw);
@@ -176,11 +171,9 @@ EXPORT_SYMBOL_GPL(__inet_twsk_hashdance);
 
 struct inet_timewait_sock *inet_twsk_alloc(const struct sock *sk, const int state)
 {
-	struct inet_timewait_sock *tw;
-
-	tw = kmem_cache_alloc(sk->sk_prot_creator->twsk_prot->twsk_slab,
-			GFP_ATOMIC);
-
+	struct inet_timewait_sock *tw =
+		kmem_cache_alloc(sk->sk_prot_creator->twsk_prot->twsk_slab,
+				 GFP_ATOMIC);
 	if (tw != NULL) {
 		const struct inet_sock *inet = inet_sk(sk);
 
@@ -211,9 +204,6 @@ struct inet_timewait_sock *inet_twsk_alloc(const struct sock *sk, const int stat
 		atomic_set(&tw->tw_refcnt, 0);
 		inet_twsk_dead_node_init(tw);
 		__module_get(tw->tw_prot->owner);
-#ifdef CONFIG_BEANCOUNTERS
-		tw->tw_ub = get_beancounter(get_exec_ub());
-#endif
 	}
 
 	return tw;
@@ -239,7 +229,6 @@ static int inet_twdr_do_twkill_work(struct inet_timewait_death_row *twdr,
 rescan:
 	inet_twsk_for_each_inmate(tw, &twdr->cells[slot]) {
 		__inet_twsk_del_dead_node(tw);
-		ub_timewait_dec(tw, twdr);
 		spin_unlock(&twdr->death_lock);
 		__inet_twsk_kill(tw, twdr->hashinfo);
 #ifdef CONFIG_NET_NS
@@ -338,7 +327,6 @@ void inet_twsk_deschedule(struct inet_timewait_sock *tw,
 {
 	spin_lock(&twdr->death_lock);
 	if (inet_twsk_del_dead_node(tw)) {
-		ub_timewait_dec(tw, twdr);
 		inet_twsk_put(tw);
 		if (--twdr->tw_count == 0)
 			del_timer(&twdr->tw_timer);
@@ -384,10 +372,9 @@ void inet_twsk_schedule(struct inet_timewait_sock *tw,
 	spin_lock(&twdr->death_lock);
 
 	/* Unlink it, if it was scheduled */
-	if (inet_twsk_del_dead_node(tw)) {
-		ub_timewait_dec(tw, twdr);
+	if (inet_twsk_del_dead_node(tw))
 		twdr->tw_count--;
-	} else
+	else
 		atomic_inc(&tw->tw_refcnt);
 
 	if (slot >= INET_TWDR_RECYCLE_SLOTS) {
@@ -423,7 +410,6 @@ void inet_twsk_schedule(struct inet_timewait_sock *tw,
 
 	hlist_add_head(&tw->tw_death_node, list);
 
-	ub_timewait_inc(tw, twdr);
 	if (twdr->tw_count++ == 0)
 		mod_timer(&twdr->tw_timer, jiffies + twdr->period);
 	spin_unlock(&twdr->death_lock);
@@ -457,7 +443,6 @@ void inet_twdr_twcal_tick(unsigned long data)
 						       &twdr->twcal_row[slot]) {
 				__inet_twsk_del_dead_node(tw);
 				__inet_twsk_kill(tw, twdr->hashinfo);
-				ub_timewait_dec(tw, twdr);
 #ifdef CONFIG_NET_NS
 				NET_INC_STATS_BH(twsk_net(tw), LINUX_MIB_TIMEWAITKILLED);
 #endif

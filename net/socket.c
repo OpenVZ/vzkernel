@@ -587,9 +587,6 @@ const struct file_operations bad_sock_fops = {
 
 void sock_release(struct socket *sock)
 {
-	if (sock->sk)
-		ub_sock_sndqueuedel(sock->sk);
-
 	if (sock->ops) {
 		struct module *owner = sock->ops->owner;
 

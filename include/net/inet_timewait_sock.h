@@ -86,7 +86,6 @@ struct inet_timewait_death_row {
 	struct inet_hashinfo 	*hashinfo;
 	int			sysctl_tw_recycle;
 	int			sysctl_max_tw_buckets;
-	int			ub_managed;
 };
 
 void inet_twdr_hangman(unsigned long data);
@@ -141,9 +140,6 @@ struct inet_timewait_sock {
 	u32			tw_ttd;
 	struct inet_bind_bucket	*tw_tb;
 	struct hlist_node	tw_death_node;
-#ifdef CONFIG_BEANCOUNTERS
-	struct user_beancounter *tw_ub;
-#endif
 };
 #define tw_tclass tw_tos
 

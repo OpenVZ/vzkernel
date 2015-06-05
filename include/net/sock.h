@@ -438,15 +438,12 @@ struct sock {
 	void			(*rh_reserved6)(void);
 	void			(*rh_reserved7)(void);
 	void			(*rh_reserved8)(void);
-	struct sock_beancounter	sk_bc;
 };
 
 #define __sk_user_data(sk) ((*((void __rcu **)&(sk)->sk_user_data)))
 
 #define rcu_dereference_sk_user_data(sk)	rcu_dereference(__sk_user_data((sk)))
 #define rcu_assign_sk_user_data(sk, ptr)	rcu_assign_pointer(__sk_user_data((sk)), ptr)
-
-#include <bc/net.h>
 
 /*
  * SK_CAN_REUSE and SK_NO_REUSE on a socket mean that the socket is OK
@@ -898,8 +895,6 @@ static inline void sock_rps_reset_rxhash(struct sock *sk)
 	})
 
 extern int sk_stream_wait_connect(struct sock *sk, long *timeo_p);
-extern int __sk_stream_wait_memory(struct sock *sk, long *timeo_p,
-				unsigned long amount);
 extern int sk_stream_wait_memory(struct sock *sk, long *timeo_p);
 extern void sk_stream_wait_close(struct sock *sk, long timeo_p);
 extern int sk_stream_error(struct sock *sk, int flags, int err);
@@ -1427,12 +1422,9 @@ sk_rmem_schedule(struct sock *sk, struct sk_buff *skb, int size)
 	if (!sk_has_account(sk))
 		return true;
 
-	if (!(size <= sk->sk_forward_alloc ||
+	return size<= sk->sk_forward_alloc ||
 		__sk_mem_schedule(sk, size, SK_MEM_RECV) ||
-		skb_pfmemalloc(skb)))
-		return false;
-
-	return !ub_sockrcvbuf_charge(sk, skb);
+		skb_pfmemalloc(skb);
 }
 
 static inline void sk_mem_reclaim(struct sock *sk)
@@ -1575,11 +1567,6 @@ extern struct sk_buff		*sock_alloc_send_pskb(struct sock *sk,
 						      unsigned long data_len,
 						      int noblock,
 						      int *errcode);
-extern struct sk_buff 		*sock_alloc_send_skb2(struct sock *sk,
-						     unsigned long size,
-						     unsigned long size2,
-						     int noblock,
-						     int *errcode);
 extern void *sock_kmalloc(struct sock *sk, int size,
 			  gfp_t priority);
 extern void sock_kfree_s(struct sock *sk, void *mem, int size);
@@ -2043,8 +2030,7 @@ static inline void sock_poll_wait(struct file *filp,
 
 static inline void skb_set_owner_w(struct sk_buff *skb, struct sock *sk)
 {
-	WARN_ON(skb->destructor);
-	__skb_orphan(skb);
+	skb_orphan(skb);
 	skb->sk = sk;
 	skb->destructor = sock_wfree;
 	/*
@@ -2057,8 +2043,7 @@ static inline void skb_set_owner_w(struct sk_buff *skb, struct sock *sk)
 
 static inline void skb_set_owner_r(struct sk_buff *skb, struct sock *sk)
 {
-	WARN_ON(skb->destructor);
-	__skb_orphan(skb);
+	skb_orphan(skb);
 	skb->sk = sk;
 	skb->destructor = sock_rfree;
 	atomic_add(skb->truesize, &sk->sk_rmem_alloc);
