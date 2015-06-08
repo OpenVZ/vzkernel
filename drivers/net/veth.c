@@ -258,6 +258,14 @@ static int veth_get_iflink(const struct net_device *dev)
 	return iflink;
 }
 
+static int veth_mac_addr(struct net_device *dev, void *p)
+{
+	if (dev->features & NETIF_F_VENET &&
+	    dev->features & NETIF_F_FIXED_ADDR)
+		return -EPERM;
+	return eth_mac_addr(dev, p);
+}
+
 static int vzethdev_net_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 {
 	if (!capable(CAP_NET_ADMIN))
@@ -278,6 +286,13 @@ static int vzethdev_net_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd
 
 		return 0;
 	}
+	case SIOCSFIXEDADDR:
+		if (ifr->ifr_ifru.ifru_flags)
+			dev->features |= NETIF_F_FIXED_ADDR;
+		else
+			dev->features &= ~NETIF_F_FIXED_ADDR;
+		return 0;
+	}
 	return -ENOTTY;
 }
 
@@ -288,7 +303,7 @@ static const struct net_device_ops veth_netdev_ops = {
 	.ndo_start_xmit      = veth_xmit,
 	.ndo_change_mtu      = veth_change_mtu,
 	.ndo_get_stats64     = veth_get_stats64,
-	.ndo_set_mac_address = eth_mac_addr,
+	.ndo_set_mac_address = veth_mac_addr,
 	.ndo_get_iflink		= veth_get_iflink,
 	.ndo_do_ioctl        = vzethdev_net_ioctl,
 };

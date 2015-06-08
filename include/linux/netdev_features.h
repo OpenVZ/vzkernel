@@ -68,6 +68,7 @@ enum {
 	NETIF_F_GSO_TUNNEL_REMCSUM_BIT, /* ... TUNNEL with TSO & REMCSUM */
 	NETIF_F_VENET_BIT,		/* device is venet device */
 	NETIF_F_VIRTUAL_BIT,		/* can be registered inside VE */
+	NETIF_F_FIXED_ADDR_BIT,
 
 	/*
 	 * Add your fresh new feature above and remember to update
@@ -128,6 +129,7 @@ enum {
 #define NETIF_F_BUSY_POLL	__NETIF_F(BUSY_POLL)
 #define NETIF_F_VENET		__NETIF_F(VENET)
 #define NETIF_F_VIRTUAL		__NETIF_F(VIRTUAL)
+#define NETIF_F_FIXED_ADDR	__NETIF_F(FIXED_ADDR)
 
 /* Features valid for ethtool to change */
 /* = all defined minus driver/device-class-related */
