@@ -3631,7 +3631,8 @@ void skb_scrub_packet(struct sk_buff *skb)
 	skb->pkt_type = PACKET_HOST;
 	skb->skb_iif = 0;
 	skb_dst_drop(skb);
-	skb->mark = 0;
+	if (!(skb->dev->features & NETIF_F_VENET))
+		skb->mark = 0;
 	secpath_reset(skb);
 	nf_reset(skb);
 	nf_reset_trace(skb);
