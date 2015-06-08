@@ -276,6 +276,29 @@ out:
 	rcu_read_unlock();
 }
 
+static int vzethdev_net_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+{
+	if (!capable(CAP_NET_ADMIN))
+		return -EPERM;
+
+	switch (cmd) {
+	case SIOCSVENET:
+	{
+		struct veth_priv *priv = netdev_priv(dev);
+		struct net_device *rcv;
+
+		rcu_read_lock();
+		rcv = rcu_dereference(priv->peer);
+		if (rcv)
+			rcv->features |= NETIF_F_VENET;
+		dev->features |= NETIF_F_VENET;
+		rcu_read_unlock();
+
+		return 0;
+	}
+	return -ENOTTY;
+}
+
 static const struct net_device_ops veth_netdev_ops = {
 	.ndo_init            = veth_dev_init,
 	.ndo_open            = veth_open,
@@ -287,6 +310,7 @@ static const struct net_device_ops veth_netdev_ops = {
 	.ndo_get_iflink		= veth_get_iflink,
 	.ndo_size		= sizeof(struct net_device_ops),
 	.extended.ndo_set_rx_headroom	= veth_set_rx_headroom,
+	.ndo_do_ioctl        = vzethdev_net_ioctl,
 };
 
 #define VETH_FEATURES (NETIF_F_SG | NETIF_F_FRAGLIST | NETIF_F_HW_CSUM | \
