@@ -58,12 +58,11 @@ int get_task_oom_score_adj(struct task_struct *t)
 	unsigned long flags;
 	const struct cred *cred;
 	uid_t task_uid;
-	int adj = 0;
+	int adj = t->signal->oom_score_adj;
 
-#ifdef CONFIG_BEANCOUNTERS
-	if (test_bit(UB_OOM_MANUAL_SCORE_ADJ, &get_task_ub(t)->ub_flags))
-		return t->signal->oom_score_adj;
-#endif
+	/* Do not impose grouping rules if the score is adjusted by the user */
+	if (adj != 0)
+		return adj;
 
 	rcu_read_lock();
 	cred = __task_cred(t);

@@ -149,7 +149,6 @@ struct user_beancounter {
 
 enum ub_flags {
 	UB_DIRTY_EXCEEDED,
-	UB_OOM_MANUAL_SCORE_ADJ,
 };
 
 extern int ub_count;
