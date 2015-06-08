@@ -114,7 +114,7 @@ static unsigned long tmpfs_ram_pages(void)
 	if (ve_is_super(get_exec_env()))
 		return totalram_pages;
 
-	memcg_rampages = mem_cgroup_ram_pages();
+	memcg_rampages = mem_cgroup_total_pages(false);
 	return min(totalram_pages, memcg_rampages);
 }
 
