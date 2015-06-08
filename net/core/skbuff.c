@@ -3836,7 +3836,8 @@ void skb_scrub_packet(struct sk_buff *skb, bool xnet)
 		return;
 
 	skb_orphan(skb);
-	skb->mark = 0;
+	if (!(skb->dev->features & NETIF_F_VENET))
+		skb->mark = 0;
 }
 EXPORT_SYMBOL_GPL(skb_scrub_packet);
 
