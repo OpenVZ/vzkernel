@@ -19,6 +19,7 @@
 #include <net/xfrm.h>
 #include <linux/veth.h>
 #include <linux/module.h>
+#include "../../net/bridge/br_private.h"
 
 #define DRV_NAME	"veth"
 #define DRV_VERSION	"1.0"
@@ -105,6 +106,31 @@ static const struct ethtool_ops veth_ethtool_ops = {
 	.get_ethtool_stats	= veth_get_ethtool_stats,
 };
 
+static int vzethdev_filter(struct sk_buff *skb, struct net_device *dev, struct net_device *rcv)
+{
+	/* Filtering */
+	if (ve_is_super(dev_net(dev)->owner_ve) &&
+	    dev->features & NETIF_F_FIXED_ADDR) {
+		/* from VE0 to VEX */
+		if (ve_is_super(dev_net(rcv)->owner_ve))
+			return 1;
+		if (is_multicast_ether_addr(
+					((struct ethhdr *)skb->data)->h_dest))
+			return 1;
+		if (!br_port_get_rcu(rcv) &&
+			compare_ether_addr(((struct ethhdr *)skb->data)->h_dest, rcv->dev_addr))
+				return 0;
+	} else if (!ve_is_super(dev_net(dev)->owner_ve) &&
+		   dev->features & NETIF_F_FIXED_ADDR) {
+		/* from VEX to VE0 */
+		if (!br_port_get_rcu(dev) &&
+			compare_ether_addr(((struct ethhdr *)skb->data)->h_source, dev->dev_addr))
+				return 0;
+	}
+
+	return 1;
+}
+
 static netdev_tx_t veth_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct veth_priv *priv = netdev_priv(dev);
@@ -123,6 +149,10 @@ static netdev_tx_t veth_xmit(struct sk_buff *skb, struct net_device *dev)
 	if (skb->ip_summed == CHECKSUM_NONE &&
 	    rcv->features & NETIF_F_RXCSUM)
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
+
+
+	if (dev->features & NETIF_F_VENET && !vzethdev_filter(skb, dev, rcv))
+		goto drop;
 
 	if (likely(dev_forward_skb(rcv, skb) == NET_RX_SUCCESS)) {
 		struct pcpu_vstats *stats = this_cpu_ptr(dev->vstats);
