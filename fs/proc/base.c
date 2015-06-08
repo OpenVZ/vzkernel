@@ -1254,8 +1254,6 @@ static ssize_t oom_score_adj_write(struct file *file, const char __user *buf,
 		err = -EINVAL;
 		goto out;
 	}
-	if (!ve_is_super(get_exec_env()))
-		goto out;
 
 	task = get_proc_task(file_inode(file));
 	if (!task) {
