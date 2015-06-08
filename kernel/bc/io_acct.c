@@ -135,7 +135,7 @@ int ub_dirty_limits(unsigned long *pbackground,
 	if (!dirty_ratio)
 		return 0;
 
-	available_memory = mem_cgroup_ram_pages();
+	available_memory = mem_cgroup_total_pages(false);
 	if (available_memory == ULONG_MAX || available_memory == 0)
 		return 0;
 
