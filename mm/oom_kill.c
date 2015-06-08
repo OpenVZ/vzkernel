@@ -149,8 +149,13 @@ static bool oom_unkillable_task(struct task_struct *p,
 unsigned long oom_badness(struct task_struct *p, struct mem_cgroup *memcg,
 			  const nodemask_t *nodemask, unsigned long totalpages)
 {
+	bool global;
 	long points;
 	long adj;
+
+	global = !memcg;
+	if (memcg == OOM_BADNESS_DUMMY_MEMCG)
+		memcg = NULL;
 
 	if (oom_unkillable_task(p, memcg, nodemask))
 		return 0;
@@ -160,6 +165,11 @@ unsigned long oom_badness(struct task_struct *p, struct mem_cgroup *memcg,
 		return 0;
 
 	adj = (long)p->signal->oom_score_adj;
+#ifdef CONFIG_VE
+	/* Ignore oom_score_adj of containerized tasks on system-wide OOM */
+	if (global && p->task_ve != &ve0)
+		adj = 0;
+#endif
 	if (adj == OOM_SCORE_ADJ_MIN) {
 		task_unlock(p);
 		return 0;
