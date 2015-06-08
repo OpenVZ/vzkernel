@@ -164,7 +164,7 @@ unsigned long oom_badness(struct task_struct *p, struct mem_cgroup *memcg,
 	if (!p)
 		return 0;
 
-	adj = (long)p->signal->oom_score_adj;
+	adj = get_task_oom_score_adj(p);
 #ifdef CONFIG_VE
 	/* Ignore oom_score_adj of containerized tasks on system-wide OOM */
 	if (global && p->task_ve != &ve0)
