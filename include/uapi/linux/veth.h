@@ -18,4 +18,6 @@ enum {
 #define VETH_INFO_MAX	(__VETH_INFO_MAX - 1)
 };
 
+#define SIOCSVENET	(SIOCDEVPRIVATE + 0xf)
+
 #endif
