@@ -1664,8 +1664,11 @@ void mem_cgroup_note_oom_kill(struct mem_cgroup *root_memcg,
  * cgroup. If it is changed, this function must be reworked. E.g. we could
  * assign a memory cgroup to each ve or beancounter cgroup and get the memory
  * cgroup of a container from get_exec_env() or get_exec_ub().
+ *
+ * If @swap is true, this function returns the total number of memory + swap
+ * pages available.
  */
-unsigned long mem_cgroup_ram_pages(void)
+unsigned long mem_cgroup_total_pages(bool swap)
 {
 	struct mem_cgroup *memcg_to_put, *memcg, *parent;
 	unsigned long long limit = RESOURCE_MAX;
@@ -1678,7 +1681,8 @@ unsigned long mem_cgroup_ram_pages(void)
 	       parent != root_mem_cgroup)
 		memcg = parent;
 
-	limit = res_counter_read_u64(&memcg->res, RES_LIMIT);
+	limit = swap ? res_counter_read_u64(&memcg->memsw, RES_LIMIT) :
+			res_counter_read_u64(&memcg->res, RES_LIMIT);
 out:
 	if (memcg_to_put)
 		css_put(&memcg_to_put->css);
