@@ -19,5 +19,6 @@ enum {
 };
 
 #define SIOCSVENET	(SIOCDEVPRIVATE + 0xf)
+#define SIOCSFIXEDADDR	(SIOCDEVPRIVATE + 0xe)
 
 #endif
