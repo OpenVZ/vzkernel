@@ -1283,12 +1283,6 @@ static ssize_t oom_score_adj_write(struct file *file, const char __user *buf,
 		task->signal->oom_score_adj_min = (short)oom_score_adj;
 	trace_oom_score_adj_update(task);
 
-	/*
-	 * Container uses modern interface, seems like it know what to do.
-	 * So, we can disable automaic oom-score adjustments.
-	 */
-	set_bit(UB_OOM_MANUAL_SCORE_ADJ, &get_exec_ub()->ub_flags);
-
 err_sighand:
 	unlock_task_sighand(task, &flags);
 err_task_lock:
