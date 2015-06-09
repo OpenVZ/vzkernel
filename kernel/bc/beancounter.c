@@ -518,9 +518,9 @@ enum {
 #define UB_CGROUP_RES(val)		(((val) >> 16) & 0xffff)
 #define UB_CGROUP_ATTR(val)		((val) & 0xffff)
 
-static ssize_t ub_cgroup_read(struct cgroup *cg, struct cftype *cft,
-			      struct file *file, char __user *buf,
-			      size_t nbytes, loff_t *ppos)
+static ssize_t ub_cgroup_resource_read(struct cgroup *cg, struct cftype *cft,
+				       struct file *file, char __user *buf,
+				       size_t nbytes, loff_t *ppos)
 {
 	struct user_beancounter *ub = cgroup_ub(cg);
 	struct ubparm *ubparm;
@@ -558,7 +558,8 @@ static ssize_t ub_cgroup_read(struct cgroup *cg, struct cftype *cft,
 	return simple_read_from_buffer(buf, nbytes, ppos, str, len);
 }
 
-static int ub_cgroup_write_u64(struct cgroup *cg, struct cftype *cft, u64 val)
+static int ub_cgroup_resource_write(struct cgroup *cg, struct cftype *cft,
+				    u64 val)
 {
 	struct user_beancounter *ub = cgroup_ub(cg);
 	struct ubparm *ubparm;
@@ -607,33 +608,33 @@ static __init int ub_cgroup_init(void)
 		snprintf(cft->name, MAX_CFTYPE_NAME, "%s.held", ub_rnames[i]);
 		cft->flags = CFTYPE_NOT_ON_ROOT;
 		cft->private = UB_CGROUP_PRIVATE(i, UB_CGROUP_ATTR_HELD);
-		cft->read = ub_cgroup_read;
+		cft->read = ub_cgroup_resource_read;
 
 		cft = &cgroup_files[j * UB_CGROUP_NR_ATTRS + 1];
 		snprintf(cft->name, MAX_CFTYPE_NAME, "%s.maxheld", ub_rnames[i]);
 		cft->flags = CFTYPE_NOT_ON_ROOT;
 		cft->private = UB_CGROUP_PRIVATE(i, UB_CGROUP_ATTR_MAXHELD);
-		cft->read = ub_cgroup_read;
+		cft->read = ub_cgroup_resource_read;
 
 		cft = &cgroup_files[j * UB_CGROUP_NR_ATTRS + 2];
 		snprintf(cft->name, MAX_CFTYPE_NAME, "%s.barrier", ub_rnames[i]);
 		cft->flags = CFTYPE_NOT_ON_ROOT;
 		cft->private = UB_CGROUP_PRIVATE(i, UB_CGROUP_ATTR_BARRIER);
-		cft->read = ub_cgroup_read;
-		cft->write_u64 = ub_cgroup_write_u64;
+		cft->read = ub_cgroup_resource_read;
+		cft->write_u64 = ub_cgroup_resource_write;
 
 		cft = &cgroup_files[j * UB_CGROUP_NR_ATTRS + 3];
 		snprintf(cft->name, MAX_CFTYPE_NAME, "%s.limit", ub_rnames[i]);
 		cft->flags = CFTYPE_NOT_ON_ROOT;
 		cft->private = UB_CGROUP_PRIVATE(i, UB_CGROUP_ATTR_LIMIT);
-		cft->read = ub_cgroup_read;
-		cft->write_u64 = ub_cgroup_write_u64;
+		cft->read = ub_cgroup_resource_read;
+		cft->write_u64 = ub_cgroup_resource_write;
 
 		cft = &cgroup_files[j * UB_CGROUP_NR_ATTRS + 4];
 		snprintf(cft->name, MAX_CFTYPE_NAME, "%s.failcnt", ub_rnames[i]);
 		cft->flags = CFTYPE_NOT_ON_ROOT;
 		cft->private = UB_CGROUP_PRIVATE(i, UB_CGROUP_ATTR_FAILCNT);
-		cft->read = ub_cgroup_read;
+		cft->read = ub_cgroup_resource_read;
 
 		j++;
 	}
