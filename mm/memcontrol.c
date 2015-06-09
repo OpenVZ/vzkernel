@@ -5487,6 +5487,9 @@ int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 	unsigned long long mem, memsw, mem_old, memsw_old, oomguar;
 	int ret = 0;
 
+	if (mem_cgroup_is_root(memcg))
+		return -EPERM;
+
 	mem = ub->ub_parms[UB_PHYSPAGES].limit;
 	if (mem < RESOURCE_MAX >> PAGE_SHIFT)
 		mem <<= PAGE_SHIFT;
