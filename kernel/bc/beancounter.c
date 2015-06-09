@@ -216,6 +216,8 @@ extern int mem_cgroup_apply_beancounter(struct mem_cgroup *memcg,
 					struct user_beancounter *ub);
 extern void mem_cgroup_get_nr_pages(struct mem_cgroup *memcg, int nid,
 				    unsigned long *pages);
+extern unsigned long mem_cgroup_total_pages(struct mem_cgroup *memcg,
+					    bool swap);
 
 /*
  * Update memcg limits according to beancounter configuration.
@@ -257,6 +259,17 @@ void ub_page_stat(struct user_beancounter *ub, const nodemask_t *nodemask,
 		mem_cgroup_get_nr_pages(mem_cgroup_from_cont(css->cgroup),
 					nid, pages);
 	css_put(css);
+}
+
+unsigned long ub_total_pages(struct user_beancounter *ub, bool swap)
+{
+	struct cgroup_subsys_state *css;
+	unsigned long ret;
+
+	css = ub_get_mem_css(ub);
+	ret = mem_cgroup_total_pages(mem_cgroup_from_cont(css->cgroup), swap);
+	css_put(css);
+	return ret;
 }
 
 void init_beancounter_precharge(struct user_beancounter *ub, int resource)

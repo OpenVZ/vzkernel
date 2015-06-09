@@ -1656,36 +1656,12 @@ void mem_cgroup_note_oom_kill(struct mem_cgroup *root_memcg,
 		css_put(&memcg_to_put->css);
 }
 
-/*
- * XXX: This function returns the limit of the topmost memory cgroup the
- * current process belongs to (ULONG_MAX if unlimited). It is used to get the
- * number of memory pages available to a Virtuozzo container. Here we
- * implicitly assume that each container lives in its own top level memory
- * cgroup. If it is changed, this function must be reworked. E.g. we could
- * assign a memory cgroup to each ve or beancounter cgroup and get the memory
- * cgroup of a container from get_exec_env() or get_exec_ub().
- *
- * If @swap is true, this function returns the total number of memory + swap
- * pages available.
- */
-unsigned long mem_cgroup_total_pages(bool swap)
+unsigned long mem_cgroup_total_pages(struct mem_cgroup *memcg, bool swap)
 {
-	struct mem_cgroup *memcg_to_put, *memcg, *parent;
-	unsigned long long limit = RESOURCE_MAX;
-
-	memcg_to_put = memcg = try_get_mem_cgroup_from_mm(current->mm);
-	if (!memcg || memcg == root_mem_cgroup)
-		goto out;
-
-	while ((parent = parent_mem_cgroup(memcg)) &&
-	       parent != root_mem_cgroup)
-		memcg = parent;
+	unsigned long long limit;
 
 	limit = swap ? res_counter_read_u64(&memcg->memsw, RES_LIMIT) :
 			res_counter_read_u64(&memcg->res, RES_LIMIT);
-out:
-	if (memcg_to_put)
-		css_put(&memcg_to_put->css);
 	if (limit == RESOURCE_MAX)
 		return ULONG_MAX;
 	return min_t(unsigned long long, ULONG_MAX, limit >> PAGE_SHIFT);
