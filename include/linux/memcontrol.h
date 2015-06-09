@@ -128,7 +128,6 @@ extern void mem_cgroup_print_oom_info(struct mem_cgroup *memcg,
 					struct task_struct *p);
 extern void mem_cgroup_replace_page_cache(struct page *oldpage,
 					struct page *newpage);
-unsigned long mem_cgroup_total_pages(bool swap);
 
 static inline void mem_cgroup_oom_enable(void)
 {
@@ -435,11 +434,6 @@ void mem_cgroup_count_vm_event(struct mm_struct *mm, enum vm_event_item idx)
 static inline void mem_cgroup_replace_page_cache(struct page *oldpage,
 				struct page *newpage)
 {
-}
-
-static inline unsigned long mem_cgroup_total_pages(swap)
-{
-	return ULONG_MAX;
 }
 #endif /* CONFIG_MEMCG */
 
