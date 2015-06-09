@@ -89,58 +89,124 @@ int ub_resource_precharge[UB_RESOURCES] = {
 /* natural limits for percpu precharge bounds */
 static int resource_precharge_min = 0;
 static int resource_precharge_max = INT_MAX / NR_CPUS;
-static struct cgroup *mem_cgroup_root, *blkio_cgroup_root, *ub_cgroup_root;
 
-static struct cgroup *ub_cgroup_open(struct cgroup *root,
-				     struct user_beancounter *ub)
+static struct vfsmount *ub_cgroup_mnt;
+static struct vfsmount *ub_bound_cgroup_mnt[NR_UB_BOUND_CGROUPS];
+
+#define mem_cgroup_mnt		(ub_bound_cgroup_mnt[UB_MEM_CGROUP])
+#define blkio_cgroup_mnt	(ub_bound_cgroup_mnt[UB_BLKIO_CGROUP])
+
+static void __ub_set_css(struct user_beancounter *ub, int idx,
+			 struct cgroup_subsys_state *css)
 {
-	if (ub == get_ub0())
-		return root;
-	return cgroup_kernel_open(root, CGRP_CREAT, ub->ub_name);
+	struct cgroup_subsys_state *old_css;
+	unsigned long flags;
+
+	if (css)
+		css_get(css);
+
+	spin_lock_irqsave(&ub->ub_lock, flags);
+	old_css = ub->ub_bound_css[idx];
+	ACCESS_ONCE(ub->ub_bound_css[idx]) = css;
+	spin_unlock_irqrestore(&ub->ub_lock, flags);
+
+	if (old_css)
+		css_put(old_css);
 }
 
-static void ub_cgroup_close(struct cgroup *root, struct cgroup *cg)
+static struct cgroup_subsys_state *
+__ub_get_css(struct user_beancounter *ub, int idx)
 {
-	if (cg != root)
-		cgroup_kernel_close(cg);
+	struct cgroup_subsys_state *css, *root_css;
+	unsigned long flags;
+
+	rcu_read_lock();
+retry:
+	css = ACCESS_ONCE(ub->ub_bound_css[idx]);
+	if (likely(css && css_tryget(css))) {
+		rcu_read_unlock();
+		return css;
+	}
+
+	root_css = ub0.ub_bound_css[idx];
+
+	/* cgroup was removed, fall back to the root */
+	spin_lock_irqsave(&ub->ub_lock, flags);
+	if (unlikely(ub->ub_bound_css[idx] != css)) {
+		/* someone did it for us, retry */
+		spin_unlock_irqrestore(&ub->ub_lock, flags);
+		goto retry;
+	}
+	ACCESS_ONCE(ub->ub_bound_css[idx]) = root_css;
+	spin_unlock_irqrestore(&ub->ub_lock, flags);
+
+	rcu_read_unlock();
+
+	if (css)
+		css_put(css);
+
+	css_get(root_css);
+	return root_css;
 }
 
-static int ub_cgroup_attach_task(struct cgroup *root,
-		struct user_beancounter *ub, struct task_struct *tsk)
+static void ub_set_mem_css(struct user_beancounter *ub,
+				  struct cgroup_subsys_state *css)
 {
-	struct cgroup *cg;
-	int ret;
-
-	cg = ub_cgroup_open(root, ub);
-	if (IS_ERR(cg))
-		return PTR_ERR(cg);
-	ret = cgroup_kernel_attach(cg, tsk);
-	ub_cgroup_close(root, cg);
-	return ret;
+	__ub_set_css(ub, UB_MEM_CGROUP, css);
 }
 
+static inline struct cgroup_subsys_state *
+ub_get_mem_css(struct user_beancounter *ub)
+{
+	return __ub_get_css(ub, UB_MEM_CGROUP);
+}
+
+static void ub_set_blkio_css(struct user_beancounter *ub,
+			     struct cgroup_subsys_state *css)
+{
+	__ub_set_css(ub, UB_BLKIO_CGROUP, css);
+}
+
+static inline struct cgroup_subsys_state *
+ub_get_blkio_css(struct user_beancounter *ub)
+{
+	return __ub_get_css(ub, UB_BLKIO_CGROUP);
+}
+
+/*
+ * Used to attach a task to a beancounter in the legacy API.
+ */
 int ub_attach_task(struct user_beancounter *ub, struct task_struct *tsk)
 {
 	int ret = 0;
 	struct user_beancounter *old_ub = tsk->task_bc.exec_ub;
+	struct cgroup_subsys_state *css;
 
 	if (ub == old_ub)
 		goto out;
-	ret = ub_cgroup_attach_task(mem_cgroup_root, ub, tsk);
+	css = ub_get_mem_css(ub);
+	ret = cgroup_kernel_attach(css->cgroup, tsk);
+	css_put(css);
 	if (ret)
 		goto out;
-	ret = ub_cgroup_attach_task(blkio_cgroup_root, ub, tsk);
+	css = ub_get_blkio_css(ub);
+	ret = cgroup_kernel_attach(css->cgroup, tsk);
+	css_put(css);
 	if (ret)
 		goto fail_blkio;
-	ret = ub_cgroup_attach_task(ub_cgroup_root, ub, tsk);
+	ret = cgroup_kernel_attach(ub->css.cgroup, tsk);
 	if (ret)
 		goto fail_ub;
 out:
 	return ret;
 fail_ub:
-	ub_cgroup_attach_task(blkio_cgroup_root, old_ub, tsk);
+	css = ub_get_blkio_css(old_ub);
+	cgroup_kernel_attach(css->cgroup, tsk);
+	css_put(css);
 fail_blkio:
-	ub_cgroup_attach_task(mem_cgroup_root, old_ub, tsk);
+	css = ub_get_mem_css(old_ub);
+	cgroup_kernel_attach(css->cgroup, tsk);
+	css_put(css);
 	goto out;
 }
 
@@ -149,31 +215,30 @@ extern void mem_cgroup_sync_beancounter(struct cgroup *cg,
 extern int mem_cgroup_apply_beancounter(struct cgroup *cg,
 					struct user_beancounter *ub);
 
+/*
+ * Update memcg limits according to beancounter configuration.
+ */
 int ub_update_memcg(struct user_beancounter *ub)
 {
-	struct cgroup *cg;
+	struct cgroup_subsys_state *css;
 	int ret;
 
-	if (ub == get_ub0())
-		return -EPERM;
-
-	cg = ub_cgroup_open(mem_cgroup_root, ub);
-	if (IS_ERR(cg))
-		return PTR_ERR(cg);
-	ret = mem_cgroup_apply_beancounter(cg, ub);
-	ub_cgroup_close(mem_cgroup_root, cg);
+	css = ub_get_mem_css(ub);
+	ret = mem_cgroup_apply_beancounter(css->cgroup, ub);
+	css_put(css);
 	return ret;
 }
 
+/*
+ * Synchronize memcg stats with beancounter.
+ */
 void ub_sync_memcg(struct user_beancounter *ub)
 {
-	struct cgroup *cg;
+	struct cgroup_subsys_state *css;
 
-	cg = ub_cgroup_open(mem_cgroup_root, ub);
-	if (!IS_ERR_OR_NULL(cg)) {
-		mem_cgroup_sync_beancounter(cg, ub);
-		ub_cgroup_close(mem_cgroup_root, cg);
-	}
+	css = ub_get_mem_css(ub);
+	mem_cgroup_sync_beancounter(css->cgroup, ub);
+	css_put(css);
 }
 
 extern void mem_cgroup_get_nr_pages(struct cgroup *cg, int nid,
@@ -183,18 +248,14 @@ void ub_page_stat(struct user_beancounter *ub, const nodemask_t *nodemask,
 		  unsigned long *pages)
 {
 	int nid;
-	struct cgroup *cg;
+	struct cgroup_subsys_state *css;
 
 	memset(pages, 0, sizeof(unsigned long) * NR_LRU_LISTS);
 
-	cg = ub_cgroup_open(mem_cgroup_root, ub);
-	if (IS_ERR(cg))
-		return;
-
+	css = ub_get_mem_css(ub);
 	for_each_node_mask(nid, *nodemask)
-		mem_cgroup_get_nr_pages(cg, nid, pages);
-
-	ub_cgroup_close(mem_cgroup_root, cg);
+		mem_cgroup_get_nr_pages(css->cgroup, nid, pages);
+	css_put(css);
 }
 
 void init_beancounter_precharge(struct user_beancounter *ub, int resource)
@@ -316,40 +377,68 @@ static inline void free_ub(struct user_beancounter *ub)
 	kmem_cache_free(ub_cachep, ub);
 }
 
+/*
+ * Used to lookup or create a beancounter in the legacy API.
+ */
 struct user_beancounter *get_beancounter_by_name(const char *name, int create)
 {
-	struct cgroup *cg;
 	struct user_beancounter *ub;
+	struct cgroup *cg, *ub_cg;
+	int err = 0;
 
 	if (!strcmp(name, get_ub0()->ub_name))
 		return get_beancounter(get_ub0());
 
-	if (create) {
-		/*
-		 * We're might be asked to allocate new beancounter
-		 * from syscall. In this case we:
-		 *  - try to open existing UB
-		 *  - if not existed allocate new one and apply old
-		 *    veird limits in a sake of compatibility.
-		 */
-		cg = cgroup_kernel_open(ub_cgroup_root, 0, name);
-		if (IS_ERR(cg))
-			return NULL;
-		if (!cg) {
-			cg = cgroup_kernel_open(ub_cgroup_root, CGRP_CREAT, name);
-			if (IS_ERR_OR_NULL(cg))
-				return NULL;
-			if (ub_update_memcg(cgroup_ub(cg)) != 0)
-				pr_warn("Failed to init UB %s limits\n", name);
-		}
-	} else {
-		cg = cgroup_kernel_open(ub_cgroup_root, 0, name);
-		if (IS_ERR_OR_NULL(cg))
-			return NULL;
+	ub_cg = cgroup_kernel_open(cgroup_get_root(ub_cgroup_mnt), 0, name);
+	if (IS_ERR(ub_cg))
+		return NULL;
+	if (ub_cg) {
+		ub = cgroup_ub(ub_cg);
+		goto out;
 	}
+	if (!create)
+		return NULL;
 
-	ub = get_beancounter(cgroup_ub(cg));
+	/* The beancounter does not exist and we were asked to create it */
+
+	ub_cg = cgroup_kernel_open(cgroup_get_root(ub_cgroup_mnt),
+				   CGRP_CREAT, name);
+	if (IS_ERR(ub_cg))
+		return ERR_CAST(ub_cg);
+
+	ub = cgroup_ub(ub_cg);
+
+	cg = cgroup_kernel_open(cgroup_get_root(mem_cgroup_mnt),
+				CGRP_CREAT, name);
+	err = PTR_ERR(cg);
+	if (IS_ERR(cg))
+		goto out;
+
+	ub_set_mem_css(ub, cgroup_subsys_state(cg, mem_cgroup_subsys_id));
 	cgroup_kernel_close(cg);
+
+	cg = cgroup_kernel_open(cgroup_get_root(blkio_cgroup_mnt),
+				CGRP_CREAT, name);
+	err = PTR_ERR(cg);
+	if (IS_ERR(cg))
+		goto out;
+
+	ub_set_blkio_css(ub, cgroup_subsys_state(cg, blkio_subsys_id));
+	cgroup_kernel_close(cg);
+
+	err = ub_update_memcg(cgroup_ub(ub_cg));
+	if (err)
+		pr_warn("Failed to init UB %s limits: %d\n", name, err);
+
+out:
+	if (!err)
+		get_beancounter(ub);
+	else
+		ub = NULL;
+
+	/* Don't care about cgroup removal on error, because currently we never
+	 * cleanup beancounter cgroups in the legacy mode */
+	cgroup_kernel_close(ub_cg);
 	return ub;
 }
 
@@ -458,6 +547,10 @@ static void ub_cgroup_css_offline(struct cgroup *cg)
 static void ub_cgroup_css_free(struct cgroup *cg)
 {
 	struct user_beancounter *ub = cgroup_ub(cg);
+	int i;
+
+	for (i = 0; i < NR_UB_BOUND_CGROUPS; i++)
+		__ub_set_css(ub, i, NULL);
 
 	if (!bc_verify_held(ub)) {
 		printk(KERN_ERR "UB: leaked beancounter %s (%p)\n",
@@ -504,6 +597,79 @@ static void ub_cgroup_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 		task_work_add(p, &p->task_bc.cgroup_attach_work, true);
 	}
 }
+
+static ssize_t ub_cgroup_read(struct cgroup *cg, struct cftype *cft,
+			      struct file *file, char __user *buf,
+			      size_t nbytes, loff_t *ppos)
+{
+	struct user_beancounter *ub = cgroup_ub(cg);
+	struct cgroup_subsys_state *bound_css;
+	char *path;
+	int len;
+	ssize_t ret;
+
+	bound_css = __ub_get_css(ub, cft->private);
+
+	ret = -ENOMEM;
+	path = kmalloc(PATH_MAX + 1, GFP_KERNEL);
+	if (!path)
+		goto out;
+	ret = cgroup_path(bound_css->cgroup, path, PATH_MAX);
+	if (!ret) {
+		len = strlen(path);
+		path[len++] = '\n';
+		path[len] = '\0';
+		ret = simple_read_from_buffer(buf, nbytes, ppos, path, len);
+	}
+	kfree(path);
+out:
+	css_put(bound_css);
+	return ret;
+}
+
+static int ub_cgroup_write(struct cgroup *cg, struct cftype *cft,
+			   const char *buf)
+{
+	struct user_beancounter *ub = cgroup_ub(cg);
+	struct cgroup *bound_cg;
+
+	bound_cg = cgroup_kernel_lookup(ub_bound_cgroup_mnt[cft->private],
+					buf);
+	if (IS_ERR(bound_cg))
+		return PTR_ERR(bound_cg);
+
+	switch (cft->private) {
+	case UB_MEM_CGROUP:
+		ub_set_mem_css(ub, cgroup_subsys_state(bound_cg,
+					mem_cgroup_subsys_id));
+		break;
+	case UB_BLKIO_CGROUP:
+		ub_set_blkio_css(ub, cgroup_subsys_state(bound_cg,
+					blkio_subsys_id));
+		break;
+	}
+
+	cgroup_kernel_close(bound_cg);
+	return 0;
+}
+
+static struct cftype ub_cgroup_files[] = {
+	{
+		.name = "memory",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.private = UB_MEM_CGROUP,
+		.write_string = ub_cgroup_write,
+		.read = ub_cgroup_read,
+	},
+	{
+		.name = "blkio",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.private = UB_BLKIO_CGROUP,
+		.write_string = ub_cgroup_write,
+		.read = ub_cgroup_read,
+	},
+	{ },	/* terminate */
+};
 
 enum {
 	UB_CGROUP_ATTR_HELD,
@@ -653,6 +819,7 @@ struct cgroup_subsys ub_subsys = {
 	.css_offline = ub_cgroup_css_offline,
 	.css_free = ub_cgroup_css_free,
 	.attach = ub_cgroup_attach,
+	.base_cftypes = ub_cgroup_files,
 	.use_id = true,
 };
 EXPORT_SYMBOL(ub_subsys);
@@ -1000,12 +1167,10 @@ void __init ub_init_late(void)
 
 int __init ub_init_cgroup(void)
 {
-	struct vfsmount *blkio_mnt, *mem_mnt, *ub_mnt;
 	struct cgroup_sb_opts blkio_opts = {
 		.name		= vz_compat ? "beancounter" : NULL,
 		.subsys_mask    = (1ul << blkio_subsys_id),
 	};
-
 	struct cgroup_sb_opts mem_opts = {
 		.subsys_mask    = (1ul << mem_cgroup_subsys_id),
 	};
@@ -1013,25 +1178,25 @@ int __init ub_init_cgroup(void)
 		.subsys_mask	= (1ul << ub_subsys_id),
 	};
 
-	blkio_mnt = cgroup_kernel_mount(&blkio_opts);
-	if (IS_ERR(blkio_mnt))
-		return PTR_ERR(blkio_mnt);
-	blkio_cgroup_root = cgroup_get_root(blkio_mnt);
+	blkio_cgroup_mnt = cgroup_kernel_mount(&blkio_opts);
+	if (IS_ERR(blkio_cgroup_mnt))
+		panic("Failed to mount blkio cgroup: %ld\n",
+		      PTR_ERR(blkio_cgroup_mnt));
 
-	mem_mnt = cgroup_kernel_mount(&mem_opts);
-	if (IS_ERR(mem_mnt)) {
-		kern_unmount(blkio_mnt);
-		return PTR_ERR(mem_mnt);
-	}
-	mem_cgroup_root = cgroup_get_root(mem_mnt);
+	mem_cgroup_mnt = cgroup_kernel_mount(&mem_opts);
+	if (IS_ERR(mem_cgroup_mnt))
+		panic("Failed to mount memory cgroup: %ld\n",
+		      PTR_ERR(mem_cgroup_mnt));
 
-	ub_mnt = cgroup_kernel_mount(&ub_opts);
-	if (IS_ERR(ub_mnt)) {
-		kern_unmount(blkio_mnt);
-		kern_unmount(mem_mnt);
-		return PTR_ERR(ub_mnt);
-	}
-	ub_cgroup_root = cgroup_get_root(ub_mnt);
+	ub_cgroup_mnt = cgroup_kernel_mount(&ub_opts);
+	if (IS_ERR(ub_cgroup_mnt))
+		panic("Failed to mount beancounter cgroup: %ld\n",
+		      PTR_ERR(ub_cgroup_mnt));
+
+	ub_set_mem_css(&ub0, cgroup_subsys_state(
+		cgroup_get_root(mem_cgroup_mnt), mem_cgroup_subsys_id));
+	ub_set_blkio_css(&ub0, cgroup_subsys_state(
+		cgroup_get_root(blkio_cgroup_mnt), blkio_subsys_id));
 
 	return 0;
 }
