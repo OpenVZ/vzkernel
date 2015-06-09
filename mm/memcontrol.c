@@ -1318,13 +1318,13 @@ void mem_cgroup_iter_break(struct mem_cgroup *root,
 	     iter != NULL;				\
 	     iter = mem_cgroup_iter(NULL, iter, NULL))
 
-void mem_cgroup_get_nr_pages(struct cgroup *cg, int nid, unsigned long *pages)
+void mem_cgroup_get_nr_pages(struct mem_cgroup *memcg, int nid,
+			     unsigned long *pages)
 {
-	struct mem_cgroup *root = mem_cgroup_from_cont(cg);
 	struct mem_cgroup *iter;
 	int i;
 
-	for_each_mem_cgroup_tree(iter, root) {
+	for_each_mem_cgroup_tree(iter, memcg) {
 		for (i = 0; i < NR_LRU_LISTS; i++)
 			pages[i] += mem_cgroup_node_nr_lru_pages(iter, nid,
 								 BIT(i));
@@ -5423,9 +5423,9 @@ static int mem_cgroup_move_charge_write(struct cgroup *cgrp,
 
 #include <bc/beancounter.h>
 
-void mem_cgroup_sync_beancounter(struct cgroup *cg, struct user_beancounter *ub)
+void mem_cgroup_sync_beancounter(struct mem_cgroup *memcg,
+				 struct user_beancounter *ub)
 {
-	struct mem_cgroup *memcg = mem_cgroup_from_cont(cg);
 	unsigned long long lim, held, maxheld;
 	volatile struct ubparm *k, *d, *p, *s, *o;
 
@@ -5481,9 +5481,9 @@ void mem_cgroup_sync_beancounter(struct cgroup *cg, struct user_beancounter *ub)
 	o->barrier = o->limit = lim;
 }
 
-int mem_cgroup_apply_beancounter(struct cgroup *cg, struct user_beancounter *ub)
+int mem_cgroup_apply_beancounter(struct mem_cgroup *memcg,
+				 struct user_beancounter *ub)
 {
-	struct mem_cgroup *memcg = mem_cgroup_from_cont(cg);
 	unsigned long long mem, memsw, mem_old, memsw_old, oomguar;
 	int ret = 0;
 
