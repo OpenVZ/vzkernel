@@ -107,8 +107,16 @@ struct ub_percpu_struct {
 	int	precharge[UB_RESOURCES];
 };
 
+enum {
+	UB_MEM_CGROUP,
+	UB_BLKIO_CGROUP,
+	NR_UB_BOUND_CGROUPS,
+};
+
 struct user_beancounter {
 	struct cgroup_subsys_state css;
+
+	struct cgroup_subsys_state *ub_bound_css[NR_UB_BOUND_CGROUPS];
 
 	unsigned long		ub_magic;
 	struct list_head	ub_list;
