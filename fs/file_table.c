@@ -43,7 +43,7 @@ struct files_stat_struct files_stat = {
 DEFINE_STATIC_LGLOCK(files_lglock);
 
 /* SLAB cache for file structures */
-struct kmem_cache *filp_cachep __read_mostly;
+static struct kmem_cache *filp_cachep __read_mostly;
 
 static struct percpu_counter nr_files __cacheline_aligned_in_smp;
 
