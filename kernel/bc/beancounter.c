@@ -210,10 +210,12 @@ fail_blkio:
 	goto out;
 }
 
-extern void mem_cgroup_sync_beancounter(struct cgroup *cg,
+extern void mem_cgroup_sync_beancounter(struct mem_cgroup *memcg,
 					struct user_beancounter *ub);
-extern int mem_cgroup_apply_beancounter(struct cgroup *cg,
+extern int mem_cgroup_apply_beancounter(struct mem_cgroup *memcg,
 					struct user_beancounter *ub);
+extern void mem_cgroup_get_nr_pages(struct mem_cgroup *memcg, int nid,
+				    unsigned long *pages);
 
 /*
  * Update memcg limits according to beancounter configuration.
@@ -224,7 +226,8 @@ int ub_update_memcg(struct user_beancounter *ub)
 	int ret;
 
 	css = ub_get_mem_css(ub);
-	ret = mem_cgroup_apply_beancounter(css->cgroup, ub);
+	ret = mem_cgroup_apply_beancounter(mem_cgroup_from_cont(css->cgroup),
+					   ub);
 	css_put(css);
 	return ret;
 }
@@ -237,12 +240,9 @@ void ub_sync_memcg(struct user_beancounter *ub)
 	struct cgroup_subsys_state *css;
 
 	css = ub_get_mem_css(ub);
-	mem_cgroup_sync_beancounter(css->cgroup, ub);
+	mem_cgroup_sync_beancounter(mem_cgroup_from_cont(css->cgroup), ub);
 	css_put(css);
 }
-
-extern void mem_cgroup_get_nr_pages(struct cgroup *cg, int nid,
-				    unsigned long *pages);
 
 void ub_page_stat(struct user_beancounter *ub, const nodemask_t *nodemask,
 		  unsigned long *pages)
@@ -254,7 +254,8 @@ void ub_page_stat(struct user_beancounter *ub, const nodemask_t *nodemask,
 
 	css = ub_get_mem_css(ub);
 	for_each_node_mask(nid, *nodemask)
-		mem_cgroup_get_nr_pages(css->cgroup, nid, pages);
+		mem_cgroup_get_nr_pages(mem_cgroup_from_cont(css->cgroup),
+					nid, pages);
 	css_put(css);
 }
 
