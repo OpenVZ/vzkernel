@@ -5575,6 +5575,29 @@ struct cgroup *cgroup_get_root(struct vfsmount *mnt)
 }
 EXPORT_SYMBOL(cgroup_get_root);
 
+struct cgroup *cgroup_kernel_lookup(struct vfsmount *mnt,
+				    const char *pathname)
+{
+	int err;
+	struct path path;
+	struct dentry *dentry;
+	struct cgroup *cgrp;
+
+	err = vfs_path_lookup(mnt->mnt_root, mnt, pathname,
+			      LOOKUP_DIRECTORY, &path);
+	if (err)
+		return ERR_PTR(err);
+	dentry = path.dentry;
+	if (dentry->d_inode) {
+		cgrp = __d_cgrp(dentry);
+		atomic_inc(&cgrp->count);
+	} else
+		cgrp = ERR_PTR(-ENOENT);
+	path_put(&path);
+	return cgrp;
+}
+EXPORT_SYMBOL(cgroup_kernel_lookup);
+
 struct cgroup *cgroup_kernel_open(struct cgroup *parent,
 		enum cgroup_open_flags flags, const char *name)
 {
