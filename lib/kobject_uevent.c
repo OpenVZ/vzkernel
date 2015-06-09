@@ -27,6 +27,7 @@
 #include <net/sock.h>
 #include <net/net_namespace.h>
 
+#include <linux/ve.h>
 
 u64 uevent_seqnum;
 char uevent_helper[UEVENT_HELPER_PATH_LEN] = CONFIG_UEVENT_HELPER_PATH;
@@ -260,6 +261,9 @@ int kobject_uevent_env_one(struct kobject *kobj, enum kobject_action action,
 		size_t len;
 
 		if (!netlink_has_listeners(uevent_sock, 1))
+			continue;
+
+		if (sock_net(uevent_sock)->owner_ve != get_exec_env())
 			continue;
 
 		/* allocate message with the maximum possible size */
