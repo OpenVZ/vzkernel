@@ -109,13 +109,12 @@ enum sgp_type {
 #ifdef CONFIG_TMPFS
 static unsigned long tmpfs_ram_pages(void)
 {
-	unsigned long memcg_rampages;
+	struct user_beancounter *ub = get_exec_ub();
 
-	if (ve_is_super(get_exec_env()))
+	if (ub == get_ub0())
 		return totalram_pages;
 
-	memcg_rampages = mem_cgroup_total_pages(false);
-	return min(totalram_pages, memcg_rampages);
+	return min(totalram_pages, ub_total_pages(ub, false));
 }
 
 static unsigned long shmem_default_max_blocks(void)
