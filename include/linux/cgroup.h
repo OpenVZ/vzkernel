@@ -50,6 +50,8 @@ enum cgroup_open_flags {
 
 struct vfsmount *cgroup_kernel_mount(struct cgroup_sb_opts *opts);
 struct cgroup *cgroup_get_root(struct vfsmount *mnt);
+struct cgroup *cgroup_kernel_lookup(struct vfsmount *mnt,
+				    const char *pathname);
 struct cgroup *cgroup_kernel_open(struct cgroup *parent,
 		enum cgroup_open_flags flags, const char *name);
 int cgroup_kernel_remove(struct cgroup *parent, const char *name);
