@@ -135,7 +135,7 @@ static struct k_clock posix_clocks[MAX_CLOCKS];
 	 (which_clock) == CLOCK_MONOTONIC_COARSE)
 
 #ifdef CONFIG_VE
-static void monotonic_abs_to_ve(clockid_t which_clock, struct timespec *tp)
+void monotonic_abs_to_ve(clockid_t which_clock, struct timespec *tp)
 {
 	struct ve_struct *ve = get_exec_env();
 
@@ -145,7 +145,7 @@ static void monotonic_abs_to_ve(clockid_t which_clock, struct timespec *tp)
 				tp->tv_nsec - ve->start_timespec.tv_nsec);
 }
 
-static void monotonic_ve_to_abs(clockid_t which_clock, struct timespec *tp)
+void monotonic_ve_to_abs(clockid_t which_clock, struct timespec *tp)
 {
 	struct ve_struct *ve = get_exec_env();
 
@@ -154,11 +154,6 @@ static void monotonic_ve_to_abs(clockid_t which_clock, struct timespec *tp)
 				tp->tv_sec + ve->start_timespec.tv_sec,
 				tp->tv_nsec + ve->start_timespec.tv_nsec);
 }
-#else
-static inline void monotonic_abs_to_ve(clockid_t which_clock,
-				       struct timespec *tp) { }
-static inline void monotonic_ve_to_abs(clockid_t which_clock,
-				       struct timepsec *tp) { }
 #endif
 
 /*
