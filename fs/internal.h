@@ -47,8 +47,6 @@ extern void __init chrdev_init(void);
  */
 extern int __inode_permission(struct inode *, int);
 extern int user_path_mountpoint_at(int, const char __user *, unsigned int, struct path *);
-extern int vfs_path_lookup(struct dentry *, struct vfsmount *,
-			   const char *, unsigned int, struct path *);
 
 /*
  * namespace.c
