@@ -4317,7 +4317,6 @@ restart:
 	if (!peer->i_peer_file) {
 		file = dentry_open(path, O_RDONLY | O_LARGEFILE, cred);
 		if (IS_ERR(file)) {
-			path_put(path);
 			return PTR_ERR(file);
 		}
 
@@ -4334,8 +4333,6 @@ restart:
 		}
 		if (peer->i_peer_file) {
 			spin_unlock(&inode->i_lock);
-			*path = file->f_path;
-			path_get(path);
 			fput(file);
 			file = NULL;
 			goto restart;
@@ -4361,9 +4358,7 @@ restart:
 	if (file) {
 		file_accessed(file);
 		fput(file);
-	} else
-		path_put(path);
-
+	}
 	return 0;
 }
 EXPORT_SYMBOL(open_mapping_peer);
