@@ -77,6 +77,7 @@ int ext4_open_pfcache(struct inode *inode)
 	ret = open_mapping_peer(inode->i_mapping, &path, &init_cred);
 	if (!ret)
 		percpu_counter_inc(&EXT4_SB(inode->i_sb)->s_pfcache_peers);
+	path_put(&path);
 	return ret;
 }
 
@@ -193,7 +194,6 @@ int ext4_relink_pfcache(struct super_block *sb, char *new_root, bool new_sb)
 		}
 
 		if (path.mnt) {
-			path_get(&path);
 			if (!open_mapping_peer(inode->i_mapping,
 						&path, &init_cred))
 				nr_opened++;
