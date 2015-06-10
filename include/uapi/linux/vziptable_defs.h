@@ -63,7 +63,8 @@ enum ve_ipt_mods {
 #define VE_IP_IPTABLE_NAT	(VE_IP_IPTABLE_NAT_MOD | VE_IP_CONNTRACK)
 
 /* safe iptables mask to be used by default */
-#define VE_IP_DEFAULT		(VE_IP_IPTABLES | VE_IP_FILTER | VE_IP_MANGLE)
+#define VE_IP_DEFAULT		(VE_IP_IPTABLES | VE_IP_FILTER | VE_IP_MANGLE | \
+				 VE_IP_IPTABLES6 | VE_IP_FILTER6 | VE_IP_MANGLE6)
 
 #define VE_IP_NONE		(0ull)
 #define VE_IP_ALL		(~VE_IP_NONE)
