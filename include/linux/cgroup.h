@@ -168,8 +168,6 @@ static inline void css_put(struct cgroup_subsys_state *css)
 		__css_put(css);
 }
 
-extern int css_refcnt(struct cgroup_subsys_state *css);
-
 /* bits in struct cgroup flags field */
 enum {
 	/* Control Group is dead */
