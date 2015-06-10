@@ -58,14 +58,7 @@ SYSCALL_DEFINE1(setluid, uid_t, uid)
 	ub = get_beancounter_byuid(uid, 1);
 	if (ub == NULL)
 		goto out;
-
-	ub_debug(UBD_ALLOC | UBD_LIMIT, "setluid, bean %p (count %d) "
-			"for %.20s pid %d\n",
-			ub, css_refcnt(&ub->css),
-			current->comm, current->pid);
-
 	error = ub_attach_task(ub, current);
-
 	put_beancounter(ub);
 out:
 	return error;
@@ -88,10 +81,8 @@ long do_setublimit(uid_t uid, unsigned long resource,
 
 	error = -ENOENT;
 	ub = get_beancounter_byuid(uid, 0);
-	if (ub == NULL) {
-		ub_debug(UBD_LIMIT, "No login bc for uid %d\n", uid);
+	if (ub == NULL)
 		goto out;
-	}
 
 	ub_sync_memcg(ub);
 
