@@ -468,6 +468,7 @@ static void ipgre_tunnel_setup(struct net_device *dev)
 	dev->netdev_ops		= &ipgre_netdev_ops;
 	dev->type		= ARPHRD_IPGRE;
 	ip_tunnel_setup(dev, ipgre_net_id);
+	dev->features |= NETIF_F_VIRTUAL;
 }
 
 static void __gre_tunnel_init(struct net_device *dev)
@@ -654,6 +655,7 @@ static void ipgre_tap_setup(struct net_device *dev)
 	ether_setup(dev);
 	dev->netdev_ops		= &gre_tap_netdev_ops;
 	ip_tunnel_setup(dev, gre_tap_net_id);
+	dev->features |= NETIF_F_VIRTUAL;
 }
 
 static int ipgre_newlink(struct net *src_net, struct net_device *dev,
