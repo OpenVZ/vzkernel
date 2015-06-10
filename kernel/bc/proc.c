@@ -90,28 +90,6 @@ static struct bc_proc_entry bc_resources_entry = {
 	.u.show = bc_resources_show,
 };
 
-#ifdef CONFIG_BC_DEBUG
-static int bc_debug_show(struct seq_file *f, void *v)
-{
-	struct user_beancounter *ub;
-
-	ub = seq_beancounter(f);
-	seq_printf(f, "uid: %s\n", ub->ub_name);
-	seq_printf(f, "ref: %d\n", css_refcnt(&ub->css));
-	seq_printf(f, "flags: 0x%lx\n", ub->ub_flags);
-
-	seq_printf(f, "bc: %p\n", ub);
-	seq_printf(f, "sizeof: %lu\n", sizeof(struct user_beancounter));
-
-	return 0;
-}
-
-static struct bc_proc_entry bc_debug_entry = {
-	.name = "debug",
-	.u.show = bc_debug_show,
-};
-#endif
-
 static int bc_precharge_show(struct seq_file *f, void *v)
 {
 	struct user_beancounter *ub;
@@ -762,9 +740,6 @@ static int __init ub_init_proc(void)
 	bc_proc_root->proc_iops = &bc_root_iops;
 
 	bc_register_proc_entry(&bc_resources_entry);
-#ifdef CONFIG_BC_DEBUG
-	bc_register_proc_entry(&bc_debug_entry);
-#endif
 	bc_register_proc_entry(&bc_precharge_entry);
 	bc_register_proc_root_entry(&bc_all_resources_entry);
 	bc_register_proc_entry(&bc_meminfo_entry);
