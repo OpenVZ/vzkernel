@@ -102,7 +102,6 @@ struct ve_struct {
 #ifdef CONFIG_VE_IPTABLES
 /* core/netfilter.c virtualization */
 	__u64			ipt_mask;
-	__u64			_iptables_modules;
 #endif /* CONFIG_VE_IPTABLES */
 #endif
 
