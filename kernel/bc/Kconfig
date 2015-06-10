@@ -53,13 +53,6 @@ config BC_PROC
 	help
           Allows a system administrator to inspect resource accounts and limits.
 
-config BC_DEBUG
-	bool "User resources debug features"
-	default y
-	depends on BEANCOUNTERS
-	help
-	  Enables to setup debug features for user resource accounting
-
 config BC_DEBUG_ITEMS
 	bool "Account resources in items rather than in bytes"
 	default n
