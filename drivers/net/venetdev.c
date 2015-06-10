@@ -1072,6 +1072,7 @@ static int venet_dev_start(struct ve_struct *ve)
 	err = dev_alloc_name(dev_venet, dev_venet->name);
 	if (err<0)
 		goto err;
+	dev_venet->features |= NETIF_F_NETNS_LOCAL;
 	dev_venet->rtnl_link_ops = &venet_link_ops;
 	dev_venet->rtnl_link_state = RTNL_LINK_INITIALIZING;
 	if ((err = register_netdev(dev_venet)) != 0)
