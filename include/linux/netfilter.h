@@ -402,16 +402,16 @@ static inline void nf_ct_attach(struct sk_buff *new, struct sk_buff *skb) {}
 
 #define net_ipt_module_set(netns, ipt)					\
 	({								\
-		(netns)->owner_ve->_iptables_modules |= ipt##_MOD;	\
+		(netns)->_iptables_modules |= ipt##_MOD;	\
 	})
 
 #define net_ipt_module_clear(netns, ipt)				\
 	({								\
-		(netns)->owner_ve->_iptables_modules &= ~ipt##_MOD;	\
+		(netns)->_iptables_modules &= ~ipt##_MOD;	\
 	})
 
 #define net_is_ipt_module_set(netns, ipt)				\
-	((netns)->owner_ve->_iptables_modules & (ipt##_MOD))
+	((netns)->_iptables_modules & (ipt##_MOD))
 
 #else /* CONFIG_VE_IPTABLES */
 
