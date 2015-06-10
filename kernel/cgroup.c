@@ -223,7 +223,7 @@ static int css_unbias_refcnt(int refcnt)
 }
 
 /* the current nr of refs, always >= 0 whether @css is deactivated or not */
-int css_refcnt(struct cgroup_subsys_state *css)
+static int css_refcnt(struct cgroup_subsys_state *css)
 {
 	int v = atomic_read(&css->refcnt);
 
