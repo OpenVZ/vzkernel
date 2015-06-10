@@ -44,8 +44,6 @@
 #include <bc/vmpages.h>
 #include <bc/proc.h>
 
-static struct kmem_cache *ub_cachep;
-
 struct user_beancounter ub0 = {
 };
 EXPORT_SYMBOL(ub0);
@@ -349,7 +347,7 @@ static struct user_beancounter *alloc_ub(const char *name)
 {
 	struct user_beancounter *new_ub;
 
-	new_ub = kmem_cache_zalloc(ub_cachep, GFP_KERNEL);
+	new_ub = kzalloc(sizeof(*new_ub), GFP_KERNEL);
 	if (new_ub == NULL)
 		return NULL;
 
@@ -376,7 +374,7 @@ fail_free:
 fail_pcpu:
 	kfree(new_ub->ub_name);
 fail_name:
-	kmem_cache_free(ub_cachep, new_ub);
+	kfree(new_ub);
 	return NULL;
 }
 
@@ -387,7 +385,7 @@ static inline void free_ub(struct user_beancounter *ub)
 	kfree(ub->ub_store);
 	kfree(ub->private_data2);
 	kfree(ub->ub_name);
-	kmem_cache_free(ub_cachep, ub);
+	kfree(ub);
 }
 
 /*
@@ -1169,9 +1167,6 @@ static ctl_table ub_sysctl_root[] = {
 void __init ub_init_late(void)
 {
 	register_sysctl_table(ub_sysctl_root);
-	ub_cachep = kmem_cache_create("user_beancounters",
-			sizeof(struct user_beancounter),
-			0, SLAB_HWCACHE_ALIGN | SLAB_PANIC, NULL);
 }
 
 int __init ub_init_cgroup(void)
