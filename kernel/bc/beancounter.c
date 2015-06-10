@@ -776,9 +776,12 @@ static __init int ub_cgroup_init(void)
 		if (!strcmp(ub_rnames[i], "dummy"))
 			continue;
 
+		/* accounted by memcg */
 		if (i == UB_PHYSPAGES ||
 		    i == UB_SWAPPAGES ||
-		    i == UB_KMEMSIZE)
+		    i == UB_OOMGUARPAGES ||
+		    i == UB_KMEMSIZE ||
+		    i == UB_DCACHESIZE)
 			continue;
 
 		cft = &cgroup_files[j * UB_CGROUP_NR_ATTRS];
