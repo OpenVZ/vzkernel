@@ -307,11 +307,8 @@ static struct dentry *__create_file(const char *name, umode_t mode,
 {
 	struct dentry *dentry = NULL;
 	int error;
-	struct user_beancounter *ub;
 
 	pr_debug("debugfs: creating file '%s'\n",name);
-
-	ub = set_exec_ub(get_ub0());
 
 	error = simple_pin_fs(&debug_fs_type, &debugfs_mount,
 			      &debugfs_mount_count);
@@ -353,7 +350,6 @@ static struct dentry *__create_file(const char *name, umode_t mode,
 		simple_release_fs(&debugfs_mount, &debugfs_mount_count);
 	}
 exit:
-	set_exec_ub(ub);
 	return dentry;
 }
 
