@@ -9,7 +9,6 @@
 obj-y := sys.o beancounter.o misc.o \
 	 vm_pages.o statd.o
 
-# obj-$(CONFIG_NET) += net.o
 obj-$(CONFIG_BC_PROC)  += proc.o
 obj-$(CONFIG_BC_IO_ACCOUNTING) += io_acct.o
 
