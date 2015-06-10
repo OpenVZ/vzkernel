@@ -415,16 +415,16 @@ DECLARE_PER_CPU(bool, nf_skb_duplicated);
 
 #define net_ipt_module_set(netns, ipt)					\
 	({								\
-		(netns)->owner_ve->_iptables_modules |= ipt##_MOD;	\
+		(netns)->_iptables_modules |= ipt##_MOD;	\
 	})
 
 #define net_ipt_module_clear(netns, ipt)				\
 	({								\
-		(netns)->owner_ve->_iptables_modules &= ~ipt##_MOD;	\
+		(netns)->_iptables_modules &= ~ipt##_MOD;	\
 	})
 
 #define net_is_ipt_module_set(netns, ipt)				\
-	((netns)->owner_ve->_iptables_modules & (ipt##_MOD))
+	((netns)->_iptables_modules & (ipt##_MOD))
 
 #else /* CONFIG_VE_IPTABLES */
 
