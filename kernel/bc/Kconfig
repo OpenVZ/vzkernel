@@ -53,12 +53,4 @@ config BC_PROC
 	help
           Allows a system administrator to inspect resource accounts and limits.
 
-config BC_DEBUG_ITEMS
-	bool "Account resources in items rather than in bytes"
-	default n
-	depends on BC_DEBUG
-	help
-	  When true some of the resources (e.g. kmemsize) are accounted
-	  in items instead of bytes.
-
 endmenu
