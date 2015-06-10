@@ -76,6 +76,9 @@ struct net {
 
 #ifdef CONFIG_VE
 	struct ve_struct	*owner_ve;
+#ifdef CONFIG_VE_IPTABLES
+	__u64			_iptables_modules;
+#endif
 #endif
 
 	/* core fib_rules */
