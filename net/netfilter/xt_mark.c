@@ -176,7 +176,14 @@ static struct xt_target mark_tg_reg[] __read_mostly = {
 		.compat_from_user = mark_tg_compat_from_user_v0,
 		.compat_to_user	= mark_tg_compat_to_user_v0,
 #endif
-		.table		= "mangle",
+		/*
+		 * To support rhel5 containers which use iptables 1.3.5
+		 * series (which in turn exploit @revision = 1) we're
+		 * dropping off @table here so kernel won't complain
+		 * if one setting up MARK rule in a fashion of iptables 1.4.2
+		 * series (which exploit @revision = 2).
+		 */
+		/* .table		= "mangle", */
 		.me		= THIS_MODULE,
 	},
 	{
@@ -191,7 +198,14 @@ static struct xt_target mark_tg_reg[] __read_mostly = {
 		.compat_from_user = mark_tg_compat_from_user_v1,
 		.compat_to_user	= mark_tg_compat_to_user_v1,
 #endif
-		.table		= "mangle",
+		/*
+		 * To support rhel5 containers which use iptables 1.3.5
+		 * series (which in turn exploit @revision = 1) we're
+		 * dropping off @table here so kernel won't complain
+		 * if one setting up MARK rule in a fashion of iptables 1.4.2
+		 * series (which exploit @revision = 2).
+		 */
+		/* .table		= "mangle", */
 		.me		= THIS_MODULE,
 	},
 	{
