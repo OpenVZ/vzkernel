@@ -348,7 +348,6 @@ int ub_count;
 static struct user_beancounter *alloc_ub(const char *name)
 {
 	struct user_beancounter *new_ub;
-	ub_debug(UBD_ALLOC, "Creating ub %p\n", new_ub);
 
 	new_ub = kmem_cache_zalloc(ub_cachep, GFP_KERNEL);
 	if (new_ub == NULL)
@@ -509,8 +508,6 @@ static inline int bc_verify_held(struct user_beancounter *ub)
 	clean &= verify_res(ub, "writeback_pages",
 			__ub_stat_get(ub, writeback_pages));
 	clean &= verify_res(ub, "tmpfs_respages", ub->ub_tmpfs_respages);
-
-	ub_debug_trace(!clean, 5, 60*HZ);
 
 	return clean;
 }
@@ -845,8 +842,6 @@ EXPORT_SYMBOL(ub_subsys);
 int __charge_beancounter_locked(struct user_beancounter *ub,
 		int resource, unsigned long val, enum ub_severity strict)
 {
-	ub_debug_resource(resource, "Charging %lu for %d of %p with %lu\n",
-			val, resource, ub, ub->ub_parms[resource].held);
 	/*
 	 * ub_value <= UB_MAXVALUE, value <= UB_MAXVALUE, and only one addition
 	 * at the moment is possible so an overflow is impossible.  
@@ -905,14 +900,11 @@ void uncharge_warn(struct user_beancounter *ub, const char *resource,
 {
 	printk(KERN_ERR "Uncharging too much %lu h %lu, res %s ub %s\n",
 			val, held, resource, ub->ub_name);
-	ub_debug_trace(1, 10, 10*HZ);
 }
 
 void __uncharge_beancounter_locked(struct user_beancounter *ub,
 		int resource, unsigned long val)
 {
-	ub_debug_resource(resource, "Uncharging %lu for %d of %p with %lu\n",
-			val, resource, ub, ub->ub_parms[resource].held);
 	if (ub->ub_parms[resource].held < val) {
 		uncharge_warn(ub, ub_rnames[resource],
 				val, ub->ub_parms[resource].held);
