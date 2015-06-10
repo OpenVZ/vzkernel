@@ -71,7 +71,6 @@ struct ve_struct ve0 = {
 	.is_running		= 1,
 #ifdef CONFIG_VE_IPTABLES
 	.ipt_mask		= VE_IP_ALL,	/* everything is allowed */
-	._iptables_modules	= VE_IP_NONE,	/* but nothing yet loaded */
 #endif
 	.features		= -1,
 	.fsync_enable		= FSYNC_FILTERED,
