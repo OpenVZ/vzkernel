@@ -1753,6 +1753,11 @@ static int cfq_set_leaf_weight(struct cgroup *cgrp, struct cftype *cft, u64 val)
 }
 
 #ifdef CONFIG_BC_IO_PRIORITY
+unsigned int blkcg_get_weight(struct cgroup *cgrp)
+{
+	return cgroup_to_blkcg(cgrp)->cfq_weight;
+}
+
 int blkcg_set_weight(struct cgroup *cgrp, unsigned int weight)
 {
 	return cfq_set_weight(cgrp, NULL, weight);
@@ -1814,6 +1819,56 @@ static int cfqg_print_rwstat_recursive(struct cgroup *cgrp, struct cftype *cft,
 			  &blkcg_policy_cfq, cft->private, true);
 	return 0;
 }
+
+#ifdef CONFIG_BC_IO_PRIORITY
+static u64 cfqg_prfill_ub_iostat(struct seq_file *sf,
+				 struct blkg_policy_data *pd, int unused)
+{
+	struct user_beancounter *ub = sf->private;
+	struct blkg_rwstat queued, serviced, wait_time;
+	u64 sectors, time;
+	const char *dev_name;
+
+	if (pd->blkg->q->kobj.parent)
+		dev_name = kobject_name(pd->blkg->q->kobj.parent);
+	else
+		dev_name = "none";
+
+	queued = cfqg_rwstat_pd_recursive_sum(pd,
+			offsetof(struct cfq_group, stats.queued));
+	serviced = cfqg_rwstat_pd_recursive_sum(pd,
+			offsetof(struct cfq_group, stats.serviced));
+	wait_time = cfqg_rwstat_pd_recursive_sum(pd,
+			offsetof(struct cfq_group, stats.wait_time));
+	sectors = cfqg_stat_pd_recursive_sum(pd,
+			offsetof(struct cfq_group, stats.sectors));
+	time = cfqg_stat_pd_recursive_sum(pd,
+			offsetof(struct cfq_group, stats.time));
+
+	seq_printf(sf, "%s %s . %llu 0 0 %llu %llu %llu %llu %llu %llu\n",
+		   dev_name, ub->ub_name,
+		   (unsigned long long)(queued.cnt[BLKG_RWSTAT_READ] +
+					queued.cnt[BLKG_RWSTAT_WRITE]),
+		   (unsigned long long)div_u64(wait_time.cnt[BLKG_RWSTAT_READ] +
+					       wait_time.cnt[BLKG_RWSTAT_WRITE],
+					       NSEC_PER_MSEC),
+		   (unsigned long long)time,
+		   (unsigned long long)(serviced.cnt[BLKG_RWSTAT_READ] +
+					serviced.cnt[BLKG_RWSTAT_WRITE]),
+		   (unsigned long long)sectors,
+		   (unsigned long long)serviced.cnt[BLKG_RWSTAT_READ],
+		   (unsigned long long)serviced.cnt[BLKG_RWSTAT_WRITE]);
+	return 0;
+}
+
+void blkcg_show_ub_iostat(struct cgroup *cgrp, struct seq_file *sf)
+{
+	struct blkcg *blkcg = cgroup_to_blkcg(cgrp);
+
+	blkcg_print_blkgs(sf, blkcg, cfqg_prfill_ub_iostat,
+			  &blkcg_policy_cfq, 0, false);
+}
+#endif
 
 #ifdef CONFIG_DEBUG_BLK_CGROUP
 static u64 cfqg_prfill_avg_queue_size(struct seq_file *sf,
