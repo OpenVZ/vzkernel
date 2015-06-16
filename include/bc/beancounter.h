@@ -172,6 +172,21 @@ static inline struct user_beancounter *cgroup_ub(struct cgroup *cg)
 			    struct user_beancounter, css);
 }
 
+extern struct cgroup_subsys_state *
+__ub_get_css(struct user_beancounter *ub, int idx);
+
+static inline struct cgroup_subsys_state *
+ub_get_mem_css(struct user_beancounter *ub)
+{
+	return __ub_get_css(ub, UB_MEM_CGROUP);
+}
+
+static inline struct cgroup_subsys_state *
+ub_get_blkio_css(struct user_beancounter *ub)
+{
+	return __ub_get_css(ub, UB_BLKIO_CGROUP);
+}
+
 static inline int ub_barrier_hit(struct user_beancounter *ub, int resource)
 {
 	return ub->ub_parms[resource].held > ub->ub_parms[resource].barrier;
