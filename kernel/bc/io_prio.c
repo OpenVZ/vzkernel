@@ -14,11 +14,16 @@
 #include <bc/proc.h>
 #include "blk-cgroup.h"
 
-//static u64 ioprio_weight[UB_IOPRIO_MAX] = {320, 365, 410, 460, 500, 550, 600, 640};
+static unsigned int ioprio_weight[UB_IOPRIO_MAX] = {
+	320, 365, 410, 460, 500, 550, 600, 640,
+};
+
+extern int blkcg_set_weight(struct cgroup *cgrp, unsigned int weight);
 
 int ub_set_ioprio(int id, int ioprio)
 {
 	struct user_beancounter *ub;
+	struct cgroup_subsys_state *css;
 	int ret;
 
 	ret = -ERANGE;
@@ -30,15 +35,9 @@ int ub_set_ioprio(int id, int ioprio)
 	if (!ub)
 		goto out;
 
-	ret = 0;
-#if 0
-	if (ub->blkio_cgroup)
-//		ret = blkio_cgroup_set_weight(ub->blkio_cgroup,
-//				ioprio_weight[ioprio])
-		ret = 0;
-	else
-		ret = -ENOTSUPP;
-#endif
+	css = ub_get_blkio_css(ub);
+	ret = blkcg_set_weight(css->cgroup, ioprio_weight[ioprio]);
+	css_put(css);
 	put_beancounter(ub);
 out:
 	return ret;
