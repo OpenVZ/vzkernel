@@ -112,8 +112,7 @@ static void __ub_set_css(struct user_beancounter *ub, int idx,
 		css_put(old_css);
 }
 
-static struct cgroup_subsys_state *
-__ub_get_css(struct user_beancounter *ub, int idx)
+struct cgroup_subsys_state *__ub_get_css(struct user_beancounter *ub, int idx)
 {
 	struct cgroup_subsys_state *css, *root_css;
 	unsigned long flags;
@@ -153,22 +152,10 @@ static void ub_set_mem_css(struct user_beancounter *ub,
 	__ub_set_css(ub, UB_MEM_CGROUP, css);
 }
 
-static inline struct cgroup_subsys_state *
-ub_get_mem_css(struct user_beancounter *ub)
-{
-	return __ub_get_css(ub, UB_MEM_CGROUP);
-}
-
 static void ub_set_blkio_css(struct user_beancounter *ub,
 			     struct cgroup_subsys_state *css)
 {
 	__ub_set_css(ub, UB_BLKIO_CGROUP, css);
-}
-
-static inline struct cgroup_subsys_state *
-ub_get_blkio_css(struct user_beancounter *ub)
-{
-	return __ub_get_css(ub, UB_BLKIO_CGROUP);
 }
 
 /*
