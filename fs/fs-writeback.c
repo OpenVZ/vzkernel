@@ -499,16 +499,18 @@ __do_writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
 static int
 __writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
 {
-	struct user_beancounter *ub = inode->i_mapping->dirtied_ub;
+	struct user_beancounter *ub;
 	int ret;
 
-	if (likely(get_exec_ub() == ub || !ub))
-		return __do_writeback_single_inode(inode, wbc);
+	rcu_read_lock();
+	ub = rcu_dereference(inode->i_mapping->dirtied_ub);
+	if (!ub || !get_beancounter_rcu(ub))
+		ub = get_beancounter(get_ub0());
+	rcu_read_unlock();
 
-	ub = get_beancounter_rcu(ub) ? set_exec_ub(ub) : NULL;
+	ub = set_exec_ub(ub);
 	ret = __do_writeback_single_inode(inode, wbc);
-	if (ub)
-		put_beancounter(set_exec_ub(ub));
+	put_beancounter(set_exec_ub(ub));
 
 	return ret;
 }
