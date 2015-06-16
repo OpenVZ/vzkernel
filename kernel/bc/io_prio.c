@@ -16,16 +16,6 @@
 
 //static u64 ioprio_weight[UB_IOPRIO_MAX] = {320, 365, 410, 460, 500, 550, 600, 640};
 
-void ub_init_ioprio(struct user_beancounter *ub)
-{
-	//blkio_cgroup_set_ub(ub->blkio_cgroup, ub);
-}
-
-void ub_fini_ioprio(struct user_beancounter *ub)
-{
-	//blkio_cgroup_set_ub(ub->blkio_cgroup, &ub0);
-}
-
 int ub_set_ioprio(int id, int ioprio)
 {
 	struct user_beancounter *ub;
