@@ -108,6 +108,12 @@ SYSCALL_DEFINE3(ioprio_set, int, which, int, who, int, ioprio)
 			return -EINVAL;
 	}
 
+	if (which == IOPRIO_WHO_UBC) {
+		if (class != IOPRIO_CLASS_BE)
+			return -ERANGE;
+		return ub_set_ioprio(who, data);
+	}
+
 	ret = -ESRCH;
 	rcu_read_lock();
 	switch (which) {
@@ -152,14 +158,6 @@ SYSCALL_DEFINE3(ioprio_set, int, which, int, who, int, ioprio)
 free_uid:
 			if (who)
 				free_uid(user);
-			break;
-		case IOPRIO_WHO_UBC:
-			if (class != IOPRIO_CLASS_BE) {
-				ret = -ERANGE;
-				break;
-			}
-
-			ret = ub_set_ioprio(who, data);
 			break;
 		default:
 			ret = -EINVAL;
