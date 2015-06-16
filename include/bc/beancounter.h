@@ -512,9 +512,6 @@ void ub_precharge_snapshot(struct user_beancounter *ub, int *precharge);
 #define UB_IOPRIO_MIN 0
 #define UB_IOPRIO_MAX 8
 
-extern void ub_init_ioprio(struct user_beancounter *ub);
-extern void ub_fini_ioprio(struct user_beancounter *ub);
-
 #endif /* CONFIG_BEANCOUNTERS */
 
 #ifdef CONFIG_BC_IO_PRIORITY
