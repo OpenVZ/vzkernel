@@ -1750,6 +1750,13 @@ static int cfq_set_leaf_weight(struct cgroup *cgrp, struct cftype *cft, u64 val)
 	return __cfq_set_weight(cgrp, cft, val, true);
 }
 
+#ifdef CONFIG_BC_IO_PRIORITY
+int blkcg_set_weight(struct cgroup *cgrp, unsigned int weight)
+{
+	return cfq_set_weight(cgrp, NULL, weight);
+}
+#endif
+
 static int cfqg_print_stat(struct cgroup *cgrp, struct cftype *cft,
 			   struct seq_file *sf)
 {
