@@ -18,7 +18,9 @@ static unsigned int ioprio_weight[UB_IOPRIO_MAX] = {
 	320, 365, 410, 460, 500, 550, 600, 640,
 };
 
+extern unsigned int blkcg_get_weight(struct cgroup *cgrp);
 extern int blkcg_set_weight(struct cgroup *cgrp, unsigned int weight);
+extern void blkcg_show_ub_iostat(struct cgroup *cgrp, struct seq_file *sf);
 
 int ub_set_ioprio(int id, int ioprio)
 {
@@ -43,67 +45,25 @@ out:
 	return ret;
 }
 
-#if 0
+#ifdef CONFIG_PROC_FS
 
 static int bc_iostat(struct seq_file *f, struct user_beancounter *bc)
 {
-	struct blkio_group_stats *stats;
-	struct blkio_cgroup *blkcg;
-	struct blkio_group *blkg;
-	struct hlist_node *n;
+	struct cgroup_subsys_state *css;
 
-	seq_printf(f, "%s %s %c %lu %lu %lu %u %u %lu %lu\n",
-			"flush" ,
-			bc->ub_name, '.',
-			0ul, 0ul, 0ul, 0, 0,
+	seq_printf(f, "flush %s . 0 0 0 0 0 %ld %ld 0 0\n",
+			bc->ub_name,
 			ub_stat_get_exact(bc, wb_requests),
 			ub_stat_get_exact(bc, wb_sectors));
 
-	seq_printf(f, "%s %s %c %lu %lu %lu %u %u %lu %lu\n",
-			"fuse" ,
-			bc->ub_name, '.',
-			0ul, 0ul, 0ul, 0, 0,
+	seq_printf(f, "fuse %s . 0 0 0 0 0 %lu %lu 0 0\n",
+			bc->ub_name,
 			__ub_percpu_sum(bc, fuse_requests),
 			__ub_percpu_sum(bc, fuse_bytes) >> 9);
 
-	if (!bc->blkio_cgroup)
-		return 0;
-
-	blkcg = cgroup_to_blkio_cgroup(bc->blkio_cgroup);
-
-	rcu_read_lock();
-	hlist_for_each_entry_rcu(blkg, n, &blkcg->blkg_list, blkcg_node) {
-		unsigned long queued, serviced, sectors;
-		unsigned int used_time, wait_time;
-		uint64_t tmp;
-
-		if (!blkg->dev || blkg->plid != BLKIO_POLICY_PROP)
-			continue;
-
-		spin_lock_irq(&blkg->stats_lock);
-		stats = &blkg->stats;
-		queued    = stats->stat_arr[BLKIO_STAT_QUEUED][BLKIO_STAT_READ] +
-			    stats->stat_arr[BLKIO_STAT_QUEUED][BLKIO_STAT_WRITE];
-		serviced  = blkio_read_stat_cpu(blkg, BLKIO_STAT_CPU_SERVICED, BLKIO_STAT_READ);
-		serviced += blkio_read_stat_cpu(blkg, BLKIO_STAT_CPU_SERVICED, BLKIO_STAT_WRITE);
-		tmp	  = stats->stat_arr[BLKIO_STAT_WAIT_TIME][BLKIO_STAT_READ] +
-			    stats->stat_arr[BLKIO_STAT_WAIT_TIME][BLKIO_STAT_WRITE];
-		do_div(tmp, NSEC_PER_MSEC);
-		wait_time = tmp;
-
-		used_time = jiffies_to_msecs(stats->time);
-		sectors   = blkio_read_stat_cpu(blkg, BLKIO_STAT_CPU_SECTORS, 0);
-		spin_unlock_irq(&blkg->stats_lock);
-
-		seq_printf(f, "%s %s %c %lu %lu %lu %u %u %lu %lu\n",
-				blkg->dev_name ?: "none" ,
-				bc->ub_name, '.',
-				queued, 0ul, 0ul,
-				wait_time, used_time,
-				serviced, sectors);
-	}
-	rcu_read_unlock();
-
+	css = ub_get_blkio_css(bc);
+	blkcg_show_ub_iostat(css->cgroup, f);
+	css_put(css);
 	return 0;
 }
 
@@ -133,11 +93,8 @@ static void *bc_iostat_start(struct seq_file *f, loff_t *ppos)
 static void *bc_iostat_next(struct seq_file *f, void *v, loff_t *ppos)
 {
 	struct user_beancounter *ub = v;
-	struct list_head *entry;
 
-	entry = &ub->ub_list;
-	list_for_each_continue_rcu(entry, &ub_list_head) {
-		ub = list_entry(entry, struct user_beancounter, ub_list);
+	list_for_each_entry_continue_rcu(ub, &ub_list_head, ub_list) {
 		(*ppos)++;
 		return ub;
 	}
@@ -146,6 +103,7 @@ static void *bc_iostat_next(struct seq_file *f, void *v, loff_t *ppos)
 
 static int bc_iostat_show(struct seq_file *f, void *v)
 {
+	f->private = v;
 	return bc_iostat(f, v);
 }
 
@@ -184,18 +142,18 @@ static struct bc_proc_entry bc_root_iostat_entry = {
 static int bc_ioprio_show(struct seq_file *f, void *v)
 {
 	struct user_beancounter *bc;
-	struct blkio_cgroup *blkcg;
+	struct cgroup_subsys_state *css;
+	unsigned int weight;
 	int ioprio;
 
 	bc = seq_beancounter(f);
 
-	if (!bc->blkio_cgroup)
-		return 0;
-
-	blkcg = cgroup_to_blkio_cgroup(bc->blkio_cgroup);
+	css = ub_get_blkio_css(bc);
+	weight = blkcg_get_weight(css->cgroup);
+	css_put(css);
 
 	ioprio = UB_IOPRIO_MAX - 1;
-	while (ioprio && blkcg->weight < ioprio_weight[ioprio])
+	while (ioprio && weight < ioprio_weight[ioprio])
 		ioprio--;
 
 	seq_printf(f, "prio: %d\n", ioprio);
