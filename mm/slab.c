@@ -3343,7 +3343,6 @@ slab_alloc_node(struct kmem_cache *cachep, gfp_t flags, int nodeid,
 	flags &= gfp_allowed_mask;
 
 	lockdep_trace_alloc(flags);
-	WARN_ON((flags & __GFP_FS) && current->journal_info);
 
 	if (slab_should_failslab(cachep, flags))
 		return NULL;
@@ -3433,7 +3432,6 @@ slab_alloc(struct kmem_cache *cachep, gfp_t flags, unsigned long caller)
 	flags &= gfp_allowed_mask;
 
 	lockdep_trace_alloc(flags);
-	WARN_ON((flags & __GFP_FS) && current->journal_info);
 
 	if (slab_should_failslab(cachep, flags))
 		return NULL;
