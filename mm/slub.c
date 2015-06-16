@@ -936,7 +936,6 @@ static inline int slab_pre_alloc_hook(struct kmem_cache *s, gfp_t flags)
 	flags &= gfp_allowed_mask;
 	lockdep_trace_alloc(flags);
 	might_sleep_if(flags & __GFP_WAIT);
-	WARN_ON((flags & __GFP_FS) && current->journal_info);
 
 	return should_failslab(s->object_size, flags, s->flags);
 }
