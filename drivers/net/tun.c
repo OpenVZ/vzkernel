@@ -1554,7 +1554,6 @@ static void tun_setup(struct net_device *dev)
 
 	dev->ethtool_ops = &tun_ethtool_ops;
 	dev->destructor = tun_free_netdev;
-	dev->features |= NETIF_F_VIRTUAL;
 }
 
 /* Trivial set of netlink ops to allow deleting tun or tap
@@ -1794,7 +1793,7 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
 		dev->hw_features = NETIF_F_SG | NETIF_F_FRAGLIST |
 				   TUN_USER_FEATURES | NETIF_F_HW_VLAN_CTAG_TX |
 				   NETIF_F_HW_VLAN_STAG_TX;
-		dev->features = dev->hw_features;
+		dev->features = dev->hw_features | NETIF_F_VIRTUAL;
 		dev->vlan_features = dev->features &
 				     ~(NETIF_F_HW_VLAN_CTAG_TX |
 				       NETIF_F_HW_VLAN_STAG_TX);
