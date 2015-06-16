@@ -12,7 +12,6 @@
 #include <linux/cgroup.h>
 #include <bc/beancounter.h>
 #include <bc/proc.h>
-#include "blk-cgroup.h"
 
 static unsigned int ioprio_weight[UB_IOPRIO_MAX] = {
 	320, 365, 410, 460, 500, 550, 600, 640,
