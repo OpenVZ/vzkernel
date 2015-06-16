@@ -227,7 +227,11 @@ int ve_fsync_behavior(void)
 SYSCALL_DEFINE0(sync)
 {
 	struct ve_struct *ve = get_exec_env();
+	struct user_beancounter *ub;
 	int nowait = 0, wait = 1;
+
+	ub = get_exec_ub();
+	ub_percpu_inc(ub, sync);
 
 	if (!ve_is_super(ve)) {
 		int fsb;
@@ -255,6 +259,7 @@ SYSCALL_DEFINE0(sync)
 	if (unlikely(laptop_mode))
 		laptop_sync_completion();
 skip:
+	ub_percpu_inc(ub, sync_done);
 	return 0;
 }
 
@@ -355,9 +360,26 @@ skip:
  */
 int vfs_fsync_range(struct file *file, loff_t start, loff_t end, int datasync)
 {
+	struct user_beancounter *ub;
+	int ret;
+
 	if (!file->f_op || !file->f_op->fsync)
 		return -EINVAL;
-	return file->f_op->fsync(file, start, end, datasync);
+
+	ub = get_exec_ub();
+	if (datasync)
+		ub_percpu_inc(ub, fdsync);
+	else
+		ub_percpu_inc(ub, fsync);
+
+	ret = file->f_op->fsync(file, start, end, datasync);
+
+	if (datasync)
+		ub_percpu_inc(ub, fdsync_done);
+	else
+		ub_percpu_inc(ub, fsync_done);
+
+	return ret;
 }
 EXPORT_SYMBOL(vfs_fsync_range);
 
@@ -470,6 +492,7 @@ EXPORT_SYMBOL(generic_write_sync);
 SYSCALL_DEFINE4(sync_file_range, int, fd, loff_t, offset, loff_t, nbytes,
 				unsigned int, flags)
 {
+	struct user_beancounter *ub;
 	int ret;
 	struct fd f;
 	struct address_space *mapping;
@@ -531,22 +554,27 @@ SYSCALL_DEFINE4(sync_file_range, int, fd, loff_t, offset, loff_t, nbytes,
 		goto out_put;
 	}
 
+	ub = get_exec_ub();
+	ub_percpu_inc(ub, frsync);
+
 	ret = 0;
 	if (flags & SYNC_FILE_RANGE_WAIT_BEFORE) {
 		ret = filemap_fdatawait_range(mapping, offset, endbyte);
 		if (ret < 0)
-			goto out_put;
+			goto out_acct;
 	}
 
 	if (flags & SYNC_FILE_RANGE_WRITE) {
 		ret = filemap_fdatawrite_range(mapping, offset, endbyte);
 		if (ret < 0)
-			goto out_put;
+			goto out_acct;
 	}
 
 	if (flags & SYNC_FILE_RANGE_WAIT_AFTER)
 		ret = filemap_fdatawait_range(mapping, offset, endbyte);
 
+out_acct:
+	ub_percpu_inc(ub, frsync_done);
 out_put:
 	fdput(f);
 out:
