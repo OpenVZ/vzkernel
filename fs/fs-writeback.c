@@ -448,7 +448,7 @@ static void requeue_inode(struct inode *inode, struct bdi_writeback *wb,
  * setting I_SYNC flag and calling inode_sync_complete() to clear it.
  */
 static int
-__writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
+__do_writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
 {
 	struct address_space *mapping = inode->i_mapping;
 	long nr_to_write = wbc->nr_to_write;
@@ -493,6 +493,23 @@ __writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
 			ret = err;
 	}
 	trace_writeback_single_inode(inode, wbc, nr_to_write);
+	return ret;
+}
+
+static int
+__writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
+{
+	struct user_beancounter *ub = inode->i_mapping->dirtied_ub;
+	int ret;
+
+	if (likely(get_exec_ub() == ub || !ub))
+		return __do_writeback_single_inode(inode, wbc);
+
+	ub = get_beancounter_rcu(ub) ? set_exec_ub(ub) : NULL;
+	ret = __do_writeback_single_inode(inode, wbc);
+	if (ub)
+		put_beancounter(set_exec_ub(ub));
+
 	return ret;
 }
 
