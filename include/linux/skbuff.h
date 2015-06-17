@@ -566,9 +566,6 @@ struct sk_buff {
 	kmemcheck_bitfield_end(flags1);
 	__be16			protocol;
 
-#ifdef CONFIG_VE
-	unsigned int		accounted:1;
-#endif
 	void			(*destructor)(struct sk_buff *skb);
 #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
 	struct nf_conntrack	*nfct;
