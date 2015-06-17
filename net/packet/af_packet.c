@@ -2511,7 +2511,7 @@ static struct cg_proto *packet_sk_charge(void)
 	if (!psc)
 		return ERR_PTR(-ENOMEM);
 
-	psc->memcg = try_get_mem_cgroup_from_current();
+	psc->memcg = try_get_mem_cgroup_from_mm(current->mm);
 	if (psc->memcg && memcg_kmem_is_active(psc->memcg)) {
 		/*
 		 * Forcedly charge the maximum amount of data this socket
