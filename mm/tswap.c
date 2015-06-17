@@ -208,7 +208,9 @@ static int tswap_frontswap_store(unsigned type, pgoff_t offset,
 				 struct page *page)
 {
 	swp_entry_t entry = swp_entry(type, offset);
-	struct page *cache_page;
+	struct page *cache_page, *old_cache_page = NULL;
+	void **pslot;
+	int err = 0;
 
 	if (!tswap_active)
 		return -1;
@@ -221,12 +223,30 @@ static int tswap_frontswap_store(unsigned type, pgoff_t offset,
 	set_page_private(cache_page, entry.val);
 
 	spin_lock(&tswap_lock);
-	BUG_ON(radix_tree_insert(&tswap_page_tree, entry.val, cache_page));
-	tswap_nr_pages++;
+	pslot = radix_tree_lookup_slot(&tswap_page_tree, entry.val);
+	if (pslot) {
+		old_cache_page = radix_tree_deref_slot_protected(pslot,
+								 &tswap_lock);
+		radix_tree_replace_slot(pslot, cache_page);
+	} else {
+		err = radix_tree_insert(&tswap_page_tree,
+					entry.val, cache_page);
+		BUG_ON(err == -EEXIST);
+		if (!err)
+			tswap_nr_pages++;
+	}
 	spin_unlock(&tswap_lock);
 
-	tswap_lru_add(cache_page);
+	if (err) {
+		put_page(cache_page);
+		return -1;
+	}
 
+	tswap_lru_add(cache_page);
+	if (old_cache_page) {
+		tswap_lru_del(old_cache_page);
+		put_page(old_cache_page);
+	}
 	return 0;
 }
 
