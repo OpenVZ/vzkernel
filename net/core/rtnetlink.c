@@ -1165,6 +1165,18 @@ static const struct nla_policy ifla_port_policy[IFLA_PORT_MAX+1] = {
 	[IFLA_PORT_RESPONSE]	= { .type = NLA_U16, },
 };
 
+/*
+ * New iproute2 user-space tool send requests in struct ifinfomsg format,
+ * while old ones use struct rtgenmsg. So guess which one is passed depending
+ * on the payload size.
+ */
+static int compat_parse_size(const struct nlmsghdr *nlh)
+{
+	if (nlh->nlmsg_len < nlmsg_msg_size(sizeof(struct ifinfomsg)))
+		return sizeof(struct rtgenmsg);
+	return sizeof(struct ifinfomsg);
+}
+
 static int rtnl_dump_ifinfo(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct net *net = sock_net(skb->sk);
@@ -1182,7 +1194,7 @@ static int rtnl_dump_ifinfo(struct sk_buff *skb, struct netlink_callback *cb)
 	rcu_read_lock();
 	cb->seq = net->dev_base_seq;
 
-	if (nlmsg_parse(cb->nlh, sizeof(struct ifinfomsg), tb, IFLA_MAX,
+	if (nlmsg_parse(cb->nlh, compat_parse_size(cb->nlh), tb, IFLA_MAX,
 			ifla_policy) >= 0) {
 
 		if (tb[IFLA_EXT_MASK])
@@ -1995,7 +2007,7 @@ static u16 rtnl_calcit(struct sk_buff *skb, struct nlmsghdr *nlh)
 	u32 ext_filter_mask = 0;
 	u16 min_ifinfo_dump_size = 0;
 
-	if (nlmsg_parse(nlh, sizeof(struct ifinfomsg), tb, IFLA_MAX,
+	if (nlmsg_parse(nlh, compat_parse_size(nlh), tb, IFLA_MAX,
 			ifla_policy) >= 0) {
 		if (tb[IFLA_EXT_MASK])
 			ext_filter_mask = nla_get_u32(tb[IFLA_EXT_MASK]);
