@@ -226,8 +226,6 @@ struct net_bridge
 	struct list_head		port_list;
 	struct net_device		*dev;
 
-	struct net_device		*master_dev;
-	unsigned char			via_phys_dev;
 	struct br_cpu_netstats __percpu *stats;
 	spinlock_t			hash_lock;
 	struct hlist_head		hash[BR_HASH_SIZE];
@@ -350,8 +348,6 @@ extern void br_dev_setup(struct net_device *dev);
 extern void br_dev_delete(struct net_device *dev, struct list_head *list);
 extern netdev_tx_t br_dev_xmit(struct sk_buff *skb,
 			       struct net_device *dev);
-extern netdev_tx_t br_xmit(struct sk_buff *skb, struct net_bridge_port *port);
-
 #ifdef CONFIG_NET_POLL_CONTROLLER
 static inline struct netpoll_info *br_netpoll_info(struct net_bridge *br)
 {
@@ -429,14 +425,13 @@ extern int br_fdb_dump(struct sk_buff *skb,
 		       int idx);
 
 /* br_forward.c */
-extern int br_deliver(const struct net_bridge_port *to,
-		struct sk_buff *skb, int free);
+extern void br_deliver(const struct net_bridge_port *to,
+		struct sk_buff *skb);
 extern int br_dev_queue_push_xmit(struct sk_buff *skb);
 extern void br_forward(const struct net_bridge_port *to,
 		struct sk_buff *skb, struct sk_buff *skb0);
 extern int br_forward_finish(struct sk_buff *skb);
 extern void br_flood_deliver(struct net_bridge *br, struct sk_buff *skb);
-extern void br_xmit_deliver(struct net_bridge *br, struct net_bridge_port *port, struct sk_buff *skb);
 extern void br_flood_forward(struct net_bridge *br, struct sk_buff *skb,
 			     struct sk_buff *skb2);
 

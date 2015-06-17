@@ -1659,7 +1659,6 @@ int dev_forward_skb(struct net_device *dev, struct sk_buff *skb)
 	}
 	skb_scrub_packet(skb);
 	skb->protocol = eth_type_trans(skb, dev);
-	skb_init_brmark(skb);
 	return netif_rx(skb);
 }
 EXPORT_SYMBOL_GPL(dev_forward_skb);
@@ -2495,65 +2494,22 @@ static inline int skb_needs_linearize(struct sk_buff *skb,
 				!(features & NETIF_F_SG)));
 }
 
-#if defined(CONFIG_BRIDGE) || defined (CONFIG_BRIDGE_MODULE)
-#include "../bridge/br_private.h"
-int (*br_hard_xmit_hook)(struct sk_buff *skb, struct net_bridge_port *port);
-EXPORT_SYMBOL(br_hard_xmit_hook);
-static __inline__ int bridge_hard_start_xmit(struct sk_buff *skb,
-					     struct net_device *dev)
-{
-	struct net_bridge_port *port;
-
-	if (!br_hard_xmit_hook)
-		return 0;
-
-	if (((port = br_port_get_rcu(dev)) == NULL) ||
-			(skb->brmark == BR_ALREADY_SEEN))
-		return 0;
-
-	return br_hard_xmit_hook(skb, port);
-}
-#else
-#define bridge_hard_start_xmit(skb, dev)       (0)
-#endif
-
-static inline int dev_hard_xmit(struct sk_buff *skb, struct net_device *dev)
+int dev_hard_start_xmit(struct sk_buff *skb, struct net_device *dev,
+			struct netdev_queue *txq)
 {
 	const struct net_device_ops *ops = dev->netdev_ops;
 	int rc = NETDEV_TX_OK;
 	unsigned int skb_len;
 
-	/*
-	 * Bridge must handle packet with dst information set.
-	 * If there is no dst set in skb - it can cause oops in NAT.
-	 */
-	rc = bridge_hard_start_xmit(skb, dev);
-
-	/*
-	 * If device doesn't need skb->dst, release it right now while
-	 * its hot in this cpu cache
-	 */
-	if (dev->priv_flags & IFF_XMIT_DST_RELEASE)
-		skb_dst_drop(skb);
-
-	if (rc > 0) {
-		kfree_skb(skb);
-		return NETDEV_TX_OK;
-	}
-
-	skb_len = skb->len;
-	rc = ops->ndo_start_xmit(skb, dev);
-	trace_net_dev_xmit(skb, rc, dev, skb_len);
-	return rc;
-}
-
-int dev_hard_start_xmit(struct sk_buff *skb, struct net_device *dev,
-		struct netdev_queue *txq)
-{
-	int rc = NETDEV_TX_OK;
-
 	if (likely(!skb->next)) {
 		netdev_features_t features;
+
+		/*
+		 * If device doesn't need skb->dst, release it right now while
+		 * its hot in this cpu cache
+		 */
+		if (dev->priv_flags & IFF_XMIT_DST_RELEASE)
+			skb_dst_drop(skb);
 
 		features = netif_skb_features(skb);
 
@@ -2604,8 +2560,9 @@ int dev_hard_start_xmit(struct sk_buff *skb, struct net_device *dev,
 		if (!list_empty(&ptype_all))
 			dev_queue_xmit_nit(skb, dev);
 
-		rc = dev_hard_xmit(skb, dev);
-
+		skb_len = skb->len;
+		rc = ops->ndo_start_xmit(skb, dev);
+		trace_net_dev_xmit(skb, rc, dev, skb_len);
 		if (rc == NETDEV_TX_OK)
 			txq_trans_update(txq);
 		return rc;
@@ -2621,8 +2578,9 @@ gso:
 		if (!list_empty(&ptype_all))
 			dev_queue_xmit_nit(nskb, dev);
 
-		rc = dev_hard_xmit(nskb, dev);
-
+		skb_len = nskb->len;
+		rc = ops->ndo_start_xmit(nskb, dev);
+		trace_net_dev_xmit(nskb, rc, dev, skb_len);
 		if (unlikely(rc != NETDEV_TX_OK)) {
 			if (rc & ~NETDEV_TX_MASK)
 				goto out_kfree_gso_skb;
@@ -3488,17 +3446,13 @@ another_round:
 	if (pfmemalloc)
 		goto skip_taps;
 
-#if defined(CONFIG_BRIDGE) || defined (CONFIG_BRIDGE_MODULE)
-	if (skb->brmark != BR_ALREADY_SEEN) {
-		list_for_each_entry_rcu(ptype, &ptype_all, list) {
-			if (!ptype->dev || ptype->dev == skb->dev) {
-				if (pt_prev)
-					ret = deliver_skb(skb, pt_prev, orig_dev);
-				pt_prev = ptype;
-			}
+	list_for_each_entry_rcu(ptype, &ptype_all, list) {
+		if (!ptype->dev || ptype->dev == skb->dev) {
+			if (pt_prev)
+				ret = deliver_skb(skb, pt_prev, orig_dev);
+			pt_prev = ptype;
 		}
 	}
-#endif
 
 skip_taps:
 #ifdef CONFIG_NET_CLS_ACT

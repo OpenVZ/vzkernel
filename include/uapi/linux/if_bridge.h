@@ -42,7 +42,6 @@
 #define BRCTL_SET_PORT_PRIORITY 16
 #define BRCTL_SET_PATH_COST 17
 #define BRCTL_GET_FDB_ENTRIES 18
-#define BRCTL_SET_VIA_ORIG_DEV 19
 
 #define BR_STATE_DISABLED 0
 #define BR_STATE_LISTENING 1
@@ -70,7 +69,6 @@ struct __bridge_info {
 	__u32 tcn_timer_value;
 	__u32 topology_change_timer_value;
 	__u32 gc_timer_value;
-	__u8 via_phys_dev;
 };
 
 struct __port_info {

@@ -61,7 +61,6 @@ static int __init br_init(void)
 		goto err_out4;
 
 	brioctl_set(br_ioctl_deviceless_stub);
-	br_hard_xmit_hook = br_xmit;
 
 #if IS_ENABLED(CONFIG_ATM_LANE)
 	br_fdb_test_addr_hook = br_fdb_test_addr;
@@ -98,7 +97,6 @@ static void __exit br_deinit(void)
 	br_fdb_test_addr_hook = NULL;
 #endif
 
-	br_hard_xmit_hook = NULL;
 	br_fdb_fini();
 }
 

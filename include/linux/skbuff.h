@@ -456,9 +456,6 @@ struct sk_buff {
 #ifdef CONFIG_VE
 	unsigned int		accounted:1;
 #endif
-#if defined(CONFIG_BRIDGE) || defined (CONFIG_BRIDGE_MODULE)
-	__u8			brmark;
-#endif
 	void			(*destructor)(struct sk_buff *skb);
 #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
 	struct nf_conntrack	*nfct;
@@ -2740,26 +2737,6 @@ static inline void skb_copy_secmark(struct sk_buff *to, const struct sk_buff *fr
 
 static inline void skb_init_secmark(struct sk_buff *skb)
 { }
-#endif
-
-#if defined(CONFIG_BRIDGE) || defined (CONFIG_BRIDGE_MODULE)
-static inline void skb_copy_brmark(struct sk_buff *to, const struct sk_buff *from)
-{
-	to->brmark = from->brmark;
-}
-
-static inline void skb_init_brmark(struct sk_buff *skb)
-{
-	skb->brmark = 0;
-}
-#else
-static inline void skb_copy_brmark(struct sk_buff *to, const struct sk_buff *from)
-{
-}
-
-static inline void skb_init_brmark(struct sk_buff *skb)
-{
-}
 #endif
 
 static inline void skb_set_queue_mapping(struct sk_buff *skb, u16 queue_mapping)

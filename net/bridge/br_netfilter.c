@@ -182,17 +182,9 @@ static inline struct rtable *bridge_parent_rtable(const struct net_device *dev)
 static inline struct net_device *bridge_parent(const struct net_device *dev)
 {
 	struct net_bridge_port *port;
-	struct net_bridge *br;
 
 	port = br_port_get_rcu(dev);
-	if (!port)
-		return NULL;
-
-	br = port->br;
-	if (br->via_phys_dev && br->master_dev)
-		return br->master_dev;
-	else
-		return br->dev;
+	return port ? port->br->dev : NULL;
 }
 
 static inline struct nf_bridge_info *nf_bridge_alloc(struct sk_buff *skb)

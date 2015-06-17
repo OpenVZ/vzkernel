@@ -739,7 +739,6 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 #ifdef CONFIG_VE
 	new->accounted = old->accounted;
 #endif
-	skb_copy_brmark(new, old);
 	skb_copy_secmark(new, old);
 
 #ifdef CONFIG_NET_RX_BUSY_POLL
@@ -765,9 +764,6 @@ static struct sk_buff *__skb_clone(struct sk_buff *n, struct sk_buff *skb)
 	n->hdr_len = skb->nohdr ? skb_headroom(skb) : skb->hdr_len;
 	n->cloned = 1;
 	n->nohdr = 0;
-#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
-	C(brmark);
-#endif
 	n->destructor = NULL;
 	C(tail);
 	C(end);

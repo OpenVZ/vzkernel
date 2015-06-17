@@ -183,28 +183,6 @@ static ssize_t store_group_fwd_mask(struct device *d,
 static DEVICE_ATTR(group_fwd_mask, S_IRUGO | S_IWUSR, show_group_fwd_mask,
 		   store_group_fwd_mask);
 
-static ssize_t show_via_phys_dev_state(struct device *cd,
-				struct device_attribute *attr, char *buf)
-{
-	struct net_bridge *br = to_bridge(cd);
-	return sprintf(buf, "%d\n", br->via_phys_dev);
-}
-
-static int set_via_phys_dev_state(struct net_bridge *br, unsigned long val)
-{
-	br->via_phys_dev = val ? 1 : 0;
-	return 0;
-}
-
-static ssize_t store_via_phys_dev_state(struct device *cd,
-		struct device_attribute *attr, const char *buf, size_t len)
-{
-	return store_bridge_parm(cd, buf, len, set_via_phys_dev_state);
-}
-
-static DEVICE_ATTR(via_phys_dev, S_IRUGO | S_IWUSR, show_via_phys_dev_state,
-			 store_via_phys_dev_state);
-
 static ssize_t show_priority(struct device *d, struct device_attribute *attr,
 			     char *buf)
 {
@@ -738,7 +716,6 @@ static struct attribute *bridge_attrs[] = {
 	&dev_attr_max_age.attr,
 	&dev_attr_ageing_time.attr,
 	&dev_attr_stp_state.attr,
-	&dev_attr_via_phys_dev.attr,
 	&dev_attr_group_fwd_mask.attr,
 	&dev_attr_priority.attr,
 	&dev_attr_bridge_id.attr,

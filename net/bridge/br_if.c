@@ -12,7 +12,6 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/nsproxy.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/netpoll.h>
@@ -168,11 +167,6 @@ void br_dev_delete(struct net_device *dev, struct list_head *head)
 {
 	struct net_bridge *br = netdev_priv(dev);
 	struct net_bridge_port *p, *n;
-
-	if (br->master_dev) {
-		dev_put(br->master_dev);
-		br->master_dev = NULL;
-	}
 
 	list_for_each_entry_safe(p, n, &br->port_list, list) {
 		del_nbp(p);
@@ -397,10 +391,6 @@ int br_add_if(struct net_bridge *br, struct net_device *dev)
 	if (netif_running(dev) && netif_oper_up(dev) &&
 	    (br->dev->flags & IFF_UP))
 		br_stp_enable_port(p);
-	if (!(dev->features & NETIF_F_VIRTUAL) && !br->master_dev) {
-		dev_hold(dev);
-		br->master_dev = dev;
-	}
 	spin_unlock_bh(&br->lock);
 
 	br_ifinfo_notify(RTM_NEWLINK, p);
@@ -452,16 +442,6 @@ int br_del_if(struct net_bridge *br, struct net_device *dev)
 
 	spin_lock_bh(&br->lock);
 	changed_addr = br_stp_recalculate_bridge_id(br);
-	if (br->master_dev == dev) {
-		br->master_dev = NULL;
-		dev_put(dev);
-		list_for_each_entry(p, &br->port_list, list)
-			if (!(p->dev->features & NETIF_F_VIRTUAL)) {
-				dev_hold(p->dev);
-				br->master_dev = p->dev;
-				break;
-			}
-	}
 	spin_unlock_bh(&br->lock);
 
 	if (changed_addr)
