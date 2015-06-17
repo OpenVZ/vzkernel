@@ -1587,8 +1587,17 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 	struct inode *inode;
 
 #ifdef CONFIG_VE
-	if (!ve_is_super(get_exec_env()) && !(flags & MS_KERNMOUNT))
-		return ERR_PTR(-EACCES);
+	if (!ve_is_super(get_exec_env()) && !(flags & MS_KERNMOUNT)) {
+		/*
+		 * We should allow mounting cgroups from inside of
+		 * VE only when VE inside a special "restoring" state.
+		 * At moment we don't have yet this state implemented
+		 * but to not block the container from the restore
+		 * lets allow this temporarily.
+		 */
+		/* return ERR_PTR(-EACCES); */
+		pr_warn_once("FIXME: Mounting cgroups from inside of VE, restore?");
+	}
 #endif
 
 	/* First find the desired set of subsystems */
