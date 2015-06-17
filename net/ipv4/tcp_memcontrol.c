@@ -136,6 +136,7 @@ void tcp_destroy_cgroup(struct mem_cgroup *memcg)
 
 	tcp = tcp_from_cgproto(cg_proto);
 	percpu_counter_destroy(&tcp->tcp_sockets_allocated);
+	percpu_counter_destroy(&tcp->tcp_orphan_count);
 }
 EXPORT_SYMBOL(tcp_destroy_cgroup);
 
