@@ -539,18 +539,25 @@ static void ub_cgroup_css_free(struct cgroup *cg)
 	free_ub(ub);
 }
 
-static void ub_cgroup_attach_work_fn(struct callback_head *ch)
+static void __ub_cgroup_attach(struct task_struct *tsk)
 {
-	struct task_struct *tsk = current;
 	struct user_beancounter *ub;
 
 	rcu_read_lock();
 	do {
 		ub = cgroup_ub(task_cgroup(current, ub_subsys_id));
+		if (tsk->task_bc.exec_ub == ub)
+			goto out;
 	} while (!get_beancounter_rcu(ub));
 	put_beancounter(tsk->task_bc.exec_ub);
 	tsk->task_bc.exec_ub = ub;
+out:
 	rcu_read_unlock();
+}
+
+static void ub_cgroup_attach_work_fn(struct callback_head *ch)
+{
+	__ub_cgroup_attach(current);
 }
 
 static void ub_cgroup_attach(struct cgroup *cg, struct cgroup_taskset *tset)
@@ -574,6 +581,20 @@ static void ub_cgroup_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 		task_work_cancel(p, ub_cgroup_attach_work_fn);
 		task_work_add(p, &p->task_bc.cgroup_attach_work, true);
 	}
+}
+
+static void ub_cgroup_fork(struct task_struct *tsk, void *private)
+{
+	/*
+	 * If a forking task is moved between cgroups, the child will have
+	 * exec_ub set to the source cgroup while being attached to the
+	 * destination cgroup, because the parent's exec_ub will only change
+	 * when it returns to userspace (see ub_cgroup_attach). To avoid this
+	 * discrepancy, here we synchronize the child's exec_ub with its
+	 * cgroup. It is safe, because the task is not allowed to run yet and
+	 * therefore cannot get/set its exec_ub.
+	 */
+	__ub_cgroup_attach(tsk);
 }
 
 static ssize_t ub_cgroup_read(struct cgroup *cg, struct cftype *cft,
@@ -808,6 +829,7 @@ struct cgroup_subsys ub_subsys = {
 	.css_offline = ub_cgroup_css_offline,
 	.css_free = ub_cgroup_css_free,
 	.attach = ub_cgroup_attach,
+	.fork = ub_cgroup_fork,
 	.base_cftypes = ub_cgroup_files,
 	.use_id = true,
 };
