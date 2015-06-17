@@ -1087,10 +1087,9 @@ err:
 
 static __net_init int venet_init_net(struct net *net)
 {
-	struct ve_struct *env;
+	struct ve_struct *env = net->owner_ve;
 	int err;
 
-	env = get_exec_env();
 	if (env->ve_netns && net != env->ve_netns) {
 		/* Don't create venet-s in sub net namespaces */
 		return 0;
