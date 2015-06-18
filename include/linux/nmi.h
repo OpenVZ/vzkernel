@@ -91,6 +91,5 @@ static inline void lockup_detector_resume(void)
 {
 }
 #endif
-extern void nmi_show_regs(struct pt_regs *regs, int in_nmi);
-extern int do_nmi_show_regs(struct pt_regs *regs, int cpu);
+
 #endif
