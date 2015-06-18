@@ -55,26 +55,6 @@ static void prepare_proc(void)
 int ve_xattr_policy = VE_XATTR_POLICY_ACCEPT;
 static int ve_area_access_check;
 
-#ifdef CONFIG_INET
-static struct ctl_table vz_ipv4_route_table[] = {
-	{
-		.procname	= "src_check",
-		.data		= &ip_rt_src_check,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec,
-	},
-	{ 0 }
-};
-
-static struct ctl_path net_ipv4_route_path[] = {
-	{ .procname = "net", },
-	{ .procname = "ipv4", },
-	{ .procname = "route", },
-	{ }
-};
-#endif
-
 static struct ctl_table vz_fs_table[] = {
 	{
 		.procname	= "ve-area-access-check",
@@ -107,9 +87,6 @@ static struct ctl_path fs_path[] = {
 
 static void prepare_sysctl(void)
 {
-#ifdef CONFIG_INET
-	register_sysctl_paths(net_ipv4_route_path, vz_ipv4_route_table);
-#endif
 	register_sysctl_paths(fs_path, vz_fs_table);
 }
 
