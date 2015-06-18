@@ -1123,11 +1123,14 @@ int dev_change_name(struct net_device *dev, const char *newname)
 	}
 
 rollback:
-	ret = device_rename(&dev->dev, dev->name);
-	if (ret) {
-		memcpy(dev->name, oldname, IFNAMSIZ);
-		write_seqcount_end(&devnet_rename_seq);
-		return ret;
+	if (!dev_net(dev)->owner_ve->ve_netns ||
+	    dev_net(dev)->owner_ve->ve_netns == dev->nd_net) {
+		ret = device_rename(&dev->dev, dev->name);
+		if (ret) {
+			memcpy(dev->name, oldname, IFNAMSIZ);
+			write_seqcount_end(&devnet_rename_seq);
+			return ret;
+		}
 	}
 
 	write_seqcount_end(&devnet_rename_seq);
