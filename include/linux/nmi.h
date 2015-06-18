@@ -75,6 +75,5 @@ struct ctl_table;
 extern int proc_dowatchdog(struct ctl_table *, int ,
 			   void __user *, size_t *, loff_t *);
 #endif
-extern void nmi_show_regs(struct pt_regs *regs, int in_nmi);
-extern int do_nmi_show_regs(struct pt_regs *regs, int cpu);
+
 #endif
