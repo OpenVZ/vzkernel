@@ -4,7 +4,7 @@
 # Copyright (c) 2000-2015 Parallels IP Holdings GmbH
 #
 
-obj-$(CONFIG_VE) = ve.o veowner.o hooks.o vzstat_core.o ve-kobject.o
+obj-$(CONFIG_VE) = ve.o veowner.o hooks.o vzstat_core.o ve-kobject.o console.o
 obj-$(CONFIG_VZ_WDOG) += vzwdog.o
 obj-$(CONFIG_VE_CALLS) += vzmon.o
 
