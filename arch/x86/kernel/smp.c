@@ -333,11 +333,6 @@ void smp_trace_call_function_single_interrupt(struct pt_regs *regs)
 	exiting_irq();
 }
 
-void send_nmi_ipi_allbutself(void)
-{
-	apic->send_IPI_allbutself(NMI_VECTOR);
-}
-
 static int __init nonmi_ipi_setup(char *str)
 {
 	smp_no_nmi_ipi = true;
