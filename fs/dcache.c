@@ -2977,7 +2977,7 @@ static int prepend_path(const struct path *path,
 	struct dentry *dentry;
 	struct vfsmount *vfsmnt;
 	struct mount *mnt;
-	int error = 0;
+	int error;
 	unsigned seq, m_seq = 0;
 	char *bptr;
 	int blen;
