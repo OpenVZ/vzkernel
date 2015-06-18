@@ -18,12 +18,11 @@
 
 void __attribute__((weak)) bust_spinlocks(int yes)
 {
-	if (yes > 0) {
+	if (yes) {
 		++oops_in_progress;
 	} else {
 #ifdef CONFIG_VT
-		if (!yes)
-			unblank_screen();
+		unblank_screen();
 #endif
 		console_unblank();
 		if (--oops_in_progress == 0)
