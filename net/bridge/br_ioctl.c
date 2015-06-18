@@ -89,7 +89,8 @@ static int add_del_if(struct net_bridge *br, int ifindex, int isadd)
 	struct net_device *dev;
 	int ret;
 
-	if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+	if (!ns_capable(net->user_ns, CAP_NET_ADMIN) &&
+	    !ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
 		return -EPERM;
 
 	dev = __dev_get_by_index(net, ifindex);
@@ -179,25 +180,29 @@ static int old_dev_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 	}
 
 	case BRCTL_SET_BRIDGE_FORWARD_DELAY:
-		if (!ns_capable(dev_net(dev)->user_ns, CAP_NET_ADMIN))
+		if (!ns_capable(dev_net(dev)->user_ns, CAP_NET_ADMIN) &&
+		    !ns_capable(dev_net(dev)->user_ns, CAP_VE_NET_ADMIN))
 			return -EPERM;
 
 		return br_set_forward_delay(br, args[1]);
 
 	case BRCTL_SET_BRIDGE_HELLO_TIME:
-		if (!ns_capable(dev_net(dev)->user_ns, CAP_NET_ADMIN))
+		if (!ns_capable(dev_net(dev)->user_ns, CAP_NET_ADMIN) &&
+		    !ns_capable(dev_net(dev)->user_ns, CAP_VE_NET_ADMIN))
 			return -EPERM;
 
 		return br_set_hello_time(br, args[1]);
 
 	case BRCTL_SET_BRIDGE_MAX_AGE:
-		if (!ns_capable(dev_net(dev)->user_ns, CAP_NET_ADMIN))
+		if (!ns_capable(dev_net(dev)->user_ns, CAP_NET_ADMIN) &&
+		    !ns_capable(dev_net(dev)->user_ns, CAP_VE_NET_ADMIN))
 			return -EPERM;
 
 		return br_set_max_age(br, args[1]);
 
 	case BRCTL_SET_AGEING_TIME:
-		if (!ns_capable(dev_net(dev)->user_ns, CAP_NET_ADMIN))
+		if (!ns_capable(dev_net(dev)->user_ns, CAP_NET_ADMIN) &&
+		    !ns_capable(dev_net(dev)->user_ns, CAP_VE_NET_ADMIN))
 			return -EPERM;
 
 		br->ageing_time = clock_t_to_jiffies(args[1]);
@@ -237,14 +242,16 @@ static int old_dev_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 	}
 
 	case BRCTL_SET_BRIDGE_STP_STATE:
-		if (!ns_capable(dev_net(dev)->user_ns, CAP_NET_ADMIN))
+		if (!ns_capable(dev_net(dev)->user_ns, CAP_NET_ADMIN) &&
+		    !ns_capable(dev_net(dev)->user_ns, CAP_VE_NET_ADMIN))
 			return -EPERM;
 
 		br_stp_set_enabled(br, args[1]);
 		return 0;
 
 	case BRCTL_SET_BRIDGE_PRIORITY:
-		if (!ns_capable(dev_net(dev)->user_ns, CAP_NET_ADMIN))
+		if (!ns_capable(dev_net(dev)->user_ns, CAP_NET_ADMIN) &&
+		    !ns_capable(dev_net(dev)->user_ns, CAP_VE_NET_ADMIN))
 			return -EPERM;
 
 		spin_lock_bh(&br->lock);
@@ -257,7 +264,8 @@ static int old_dev_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 		struct net_bridge_port *p;
 		int ret;
 
-		if (!ns_capable(dev_net(dev)->user_ns, CAP_NET_ADMIN))
+		if (!ns_capable(dev_net(dev)->user_ns, CAP_NET_ADMIN) &&
+		    !ns_capable(dev_net(dev)->user_ns, CAP_VE_NET_ADMIN))
 			return -EPERM;
 
 		spin_lock_bh(&br->lock);
@@ -274,7 +282,8 @@ static int old_dev_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 		struct net_bridge_port *p;
 		int ret;
 
-		if (!ns_capable(dev_net(dev)->user_ns, CAP_NET_ADMIN))
+		if (!ns_capable(dev_net(dev)->user_ns, CAP_NET_ADMIN) &&
+		    !ns_capable(dev_net(dev)->user_ns, CAP_VE_NET_ADMIN))
 			return -EPERM;
 
 		spin_lock_bh(&br->lock);
@@ -331,7 +340,8 @@ static int old_deviceless(struct net *net, void __user *uarg)
 	{
 		char buf[IFNAMSIZ];
 
-		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+		if (!ns_capable(net->user_ns, CAP_NET_ADMIN) &&
+		    !ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
 			return -EPERM;
 
 		if (copy_from_user(buf, (void __user *)args[1], IFNAMSIZ))
@@ -364,7 +374,8 @@ int br_ioctl_deviceless_stub(struct net *net, unsigned int cmd, void __user *uar
 	{
 		char buf[IFNAMSIZ];
 
-		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+		if (!ns_capable(net->user_ns, CAP_NET_ADMIN) &&
+		    !ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
 			return -EPERM;
 
 		if (copy_from_user(buf, uarg, IFNAMSIZ))
