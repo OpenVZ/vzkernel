@@ -119,6 +119,10 @@ config DEBUG_NX_TEST
 	  and the software setup of this feature.
 	  If in doubt, say "N"
 
+config 16KSTACKS
+	bool "Use 16Kb for kernel stacks instead of 8Kb"
+	depends on X86_64
+
 config DOUBLEFAULT
 	default y
 	bool "Enable doublefault exception handler" if EXPERT
