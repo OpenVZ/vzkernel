@@ -619,6 +619,7 @@ enum {
 #define EXT4_IOC_PRECACHE_EXTENTS	_IO('f', 18)
 #define EXT4_IOC_OPEN_BALLOON		_IO('f', 42)
 #define EXT4_IOC_MFSYNC			_IO('f', 43)
+#define EXT4_IOC_SET_RSV_BLOCKS		_IOW('f', 44, __u64)
 
 #if defined(__KERNEL__) && defined(CONFIG_COMPAT)
 /*
