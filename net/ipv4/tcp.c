@@ -1143,7 +1143,7 @@ new_segment:
 				 * already been sent.
 				 */
 				if (tp->repair)
-					TCP_SKB_CB(skb)->when = tcp_time_stamp;
+					TCP_SKB_CB(skb)->when = tcp_time_stamp(sk);
 
 				/*
 				 * Check whether we can use HW checksum.
@@ -2552,7 +2552,7 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 		if (!tp->repair)
 			err = -EPERM;
 		else
-			tp->tsoffset = val - tcp_time_stamp;
+			tp->tsoffset = val - tcp_time_stamp(sk);
 		break;
 	default:
 		err = -ENOPROTOOPT;
@@ -2592,7 +2592,7 @@ void tcp_get_info(const struct sock *sk, struct tcp_info *info)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_connection_sock *icsk = inet_csk(sk);
-	u32 now = tcp_time_stamp;
+	u32 now = tcp_time_stamp(sk);
 
 	memset(info, 0, sizeof(*info));
 
@@ -2768,7 +2768,7 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		val = jiffies_to_msecs(icsk->icsk_user_timeout);
 		break;
 	case TCP_TIMESTAMP:
-		val = tcp_time_stamp + tp->tsoffset;
+		val = tcp_time_stamp(sk) + tp->tsoffset;
 		break;
 	default:
 		return -ENOPROTOOPT;

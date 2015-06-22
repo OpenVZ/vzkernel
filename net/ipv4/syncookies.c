@@ -64,10 +64,10 @@ static u32 cookie_hash(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport,
  * Since subsequent timestamps use the normal tcp_time_stamp value, we
  * must make sure that the resulting initial timestamp is <= tcp_time_stamp.
  */
-__u32 cookie_init_timestamp(struct request_sock *req)
+__u32 cookie_init_timestamp(struct sock *sk, struct request_sock *req)
 {
 	struct inet_request_sock *ireq;
-	u32 ts, ts_now = tcp_time_stamp;
+	u32 ts, ts_now = tcp_time_stamp(sk);
 	u32 options = 0;
 
 	ireq = inet_rsk(req);

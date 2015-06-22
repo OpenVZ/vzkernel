@@ -59,7 +59,7 @@ static int tcp_out_of_resources(struct sock *sk, bool do_reset)
 
 	/* If peer does not open window for long time, or did not transmit
 	 * anything for long time, penalize it. */
-	if ((s32)(tcp_time_stamp - tp->lsndtime) > 2*TCP_RTO_MAX || !do_reset)
+	if ((s32)(tcp_time_stamp(sk) - tp->lsndtime) > 2*TCP_RTO_MAX || !do_reset)
 		shift++;
 
 	/* If some dubious ICMP arrived, penalize even more. */
@@ -69,7 +69,7 @@ static int tcp_out_of_resources(struct sock *sk, bool do_reset)
 	if (tcp_check_oom(sk, shift)) {
 		/* Catch exceptional cases, when connection requires reset.
 		 *      1. Last segment was sent recently. */
-		if ((s32)(tcp_time_stamp - tp->lsndtime) <= TCP_TIMEWAIT_LEN ||
+		if ((s32)(tcp_time_stamp(sk) - tp->lsndtime) <= TCP_TIMEWAIT_LEN ||
 		    /*  2. Window is closed. */
 		    (!tp->snd_wnd && !tp->packets_out))
 			do_reset = true;
@@ -149,7 +149,7 @@ static bool retransmits_timed_out(struct sock *sk,
 			timeout = ((2 << linear_backoff_thresh) - 1) * rto_base +
 				(boundary - linear_backoff_thresh) * TCP_RTO_MAX;
 	}
-	return (tcp_time_stamp - start_ts) >= timeout;
+	return (tcp_time_stamp(sk) - start_ts) >= timeout;
 }
 
 /* A write timeout has occurred. Process the after effects. */
@@ -281,9 +281,9 @@ static void tcp_probe_timer(struct sock *sk)
 	 */
 	start_ts = TCP_SKB_CB(tcp_send_head(sk))->when;
 	if (!start_ts)
-		TCP_SKB_CB(tcp_send_head(sk))->when = tcp_time_stamp;
+		TCP_SKB_CB(tcp_send_head(sk))->when = tcp_time_stamp(sk);
 	else if (icsk->icsk_user_timeout &&
-		 (s32)(tcp_time_stamp - start_ts) > icsk->icsk_user_timeout)
+		 (s32)(tcp_time_stamp(sk) - start_ts) > icsk->icsk_user_timeout)
 		goto abort;
 
 	max_probes = sysctl_tcp_retries2;
@@ -381,7 +381,7 @@ void tcp_retransmit_timer(struct sock *sk)
 				       tp->snd_una, tp->snd_nxt);
 		}
 #endif
-		if (tcp_time_stamp - tp->rcv_tstamp > TCP_RTO_MAX) {
+		if (tcp_time_stamp(sk) - tp->rcv_tstamp > TCP_RTO_MAX) {
 			tcp_write_err(sk);
 			goto out;
 		}

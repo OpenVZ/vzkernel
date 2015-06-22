@@ -442,7 +442,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 		BUG_ON(!skb);
 
 		remaining = icsk->icsk_rto - min(icsk->icsk_rto,
-				tcp_time_stamp - TCP_SKB_CB(skb)->when);
+				tcp_time_stamp(sk) - TCP_SKB_CB(skb)->when);
 
 		if (remaining) {
 			inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
@@ -786,7 +786,7 @@ static void tcp_v4_timewait_ack(struct sock *sk, struct sk_buff *skb)
 	tcp_v4_send_ack(skb, tcptw->tw_snd_nxt, tcptw->tw_rcv_nxt,
 			tcptw->tw_rcv_wnd >>
 				(tw->tw_rcv_wscale & TW_WSCALE_MASK),
-			tcp_time_stamp + tcptw->tw_ts_offset,
+			tcp_time_stamp(sk) + tcptw->tw_ts_offset,
 			tcptw->tw_ts_recent,
 			tw->tw_bound_dev_if,
 			tcp_twsk_md5_key(tcptw),
@@ -806,7 +806,7 @@ static void tcp_v4_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 	tcp_v4_send_ack(skb, (sk->sk_state == TCP_LISTEN) ?
 			tcp_rsk(req)->snt_isn + 1 : tcp_sk(sk)->snd_nxt,
 			tcp_rsk(req)->rcv_nxt, req->rcv_wnd,
-			tcp_time_stamp,
+			tcp_time_stamp(sk),
 			req->ts_recent,
 			0,
 			tcp_md5_do_lookup(sk, (union tcp_md5_addr *)&ip_hdr(skb)->daddr,
@@ -845,7 +845,7 @@ static int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
 					    ireq->opt);
 		err = net_xmit_eval(err);
 		if (!tcp_rsk(req)->snt_synack && !err)
-			tcp_rsk(req)->snt_synack = tcp_time_stamp;
+			tcp_rsk(req)->snt_synack = tcp_time_stamp(sk);
 	}
 
 	return err;
@@ -1376,7 +1376,7 @@ static int tcp_v4_conn_req_fastopen(struct sock *sk,
 				    ireq->ir_rmt_addr, ireq->opt);
 	err = net_xmit_eval(err);
 	if (!err)
-		tcp_rsk(req)->snt_synack = tcp_time_stamp;
+		tcp_rsk(req)->snt_synack = tcp_time_stamp(sk);
 	/* XXX (TFO) - is it ok to ignore error and continue? */
 
 	spin_lock(&queue->fastopenq->lock);
@@ -1597,7 +1597,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 		if (err || want_cookie)
 			goto drop_and_free;
 
-		tcp_rsk(req)->snt_synack = tcp_time_stamp;
+		tcp_rsk(req)->snt_synack = tcp_time_stamp(sk);
 		tcp_rsk(req)->listener = NULL;
 		/* Add the request_sock to the SYN table */
 		inet_csk_reqsk_queue_hash_add(sk, req, TCP_TIMEOUT_INIT);

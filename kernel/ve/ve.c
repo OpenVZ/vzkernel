@@ -66,6 +66,7 @@ static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, ve0_lat_stats);
 struct ve_struct ve0 = {
 	.ve_name		= "0",
 	.start_jiffies		= INITIAL_JIFFIES,
+	.jiffies_fixup		= 0,
 	RCU_POINTER_INITIALIZER(ve_ns, &init_nsproxy),
 	.ve_netns		= &init_net,
 	.is_running		= 1,

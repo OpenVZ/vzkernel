@@ -103,7 +103,7 @@ static void measure_achieved_throughput(struct sock *sk, u32 pkts_acked, s32 rtt
 	const struct inet_connection_sock *icsk = inet_csk(sk);
 	const struct tcp_sock *tp = tcp_sk(sk);
 	struct htcp *ca = inet_csk_ca(sk);
-	u32 now = tcp_time_stamp;
+	u32 now = tcp_time_stamp(sk);
 
 	if (icsk->icsk_ca_state == TCP_CA_Open)
 		ca->pkts_acked = pkts_acked;

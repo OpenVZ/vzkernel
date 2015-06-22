@@ -63,7 +63,8 @@ unsigned int synproxy_options_size(const struct synproxy_options *opts);
 void synproxy_build_options(struct tcphdr *th,
 			    const struct synproxy_options *opts);
 
-void synproxy_init_timestamp_cookie(const struct xt_synproxy_info *info,
+void synproxy_init_timestamp_cookie(struct sock *sk,
+				    const struct xt_synproxy_info *info,
 				    struct synproxy_options *opts);
 void synproxy_check_timestamp_cookie(struct synproxy_options *opts);
 

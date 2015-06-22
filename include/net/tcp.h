@@ -546,7 +546,7 @@ static inline __u32 cookie_v4_init_sequence(struct sock *sk,
 }
 #endif
 
-extern __u32 cookie_init_timestamp(struct request_sock *req);
+extern __u32 cookie_init_timestamp(struct sock *sk, struct request_sock *req);
 extern bool cookie_check_timestamp(struct tcp_options_received *opt,
 				struct net *net, bool *ecn_ok);
 
@@ -725,7 +725,12 @@ void tcp_send_window_probe(struct sock *sk);
  * to use only the low 32-bits of jiffies and hide the ugly
  * casts with the following macro.
  */
-#define tcp_time_stamp		((__u32)(jiffies))
+static inline u32 tcp_time_stamp(const struct sock *sk)
+{
+	struct ve_struct *ve = sock_net(sk)->owner_ve;
+
+	return (__u32)(jiffies) + ve->jiffies_fixup;
+}
 
 #define tcp_flag_byte(th) (((u_int8_t *)th)[13])
 
@@ -1149,7 +1154,7 @@ static inline void tcp_synack_rtt_meas(struct sock *sk,
 {
 	if (tcp_rsk(req)->snt_synack)
 		tcp_valid_rtt_meas(sk,
-		    tcp_time_stamp - tcp_rsk(req)->snt_synack);
+		    tcp_time_stamp(sk) - tcp_rsk(req)->snt_synack);
 }
 
 extern void tcp_enter_memory_pressure(struct sock *sk);
@@ -1171,10 +1176,11 @@ static inline int keepalive_probes(const struct tcp_sock *tp)
 
 static inline u32 keepalive_time_elapsed(const struct tcp_sock *tp)
 {
+	const struct sock *sk = (struct sock *)tp;
 	const struct inet_connection_sock *icsk = &tp->inet_conn;
 
-	return min_t(u32, tcp_time_stamp - icsk->icsk_ack.lrcvtime,
-			  tcp_time_stamp - tp->rcv_tstamp);
+	return min_t(u32, tcp_time_stamp(sk) - icsk->icsk_ack.lrcvtime,
+			  tcp_time_stamp(sk) - tp->rcv_tstamp);
 }
 
 static inline int tcp_fin_time(const struct sock *sk)
