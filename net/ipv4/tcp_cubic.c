@@ -204,7 +204,7 @@ static u32 cubic_root(u64 a)
 /*
  * Compute congestion window to use.
  */
-static inline void bictcp_update(struct bictcp *ca, u32 cwnd)
+static inline void bictcp_update(struct sock *sk, struct bictcp *ca, u32 cwnd)
 {
 	u32 delta, bic_target, max_cnt;
 	u64 offs, t;
@@ -212,14 +212,14 @@ static inline void bictcp_update(struct bictcp *ca, u32 cwnd)
 	ca->ack_cnt++;	/* count the number of ACKs */
 
 	if (ca->last_cwnd == cwnd &&
-	    (s32)(tcp_time_stamp - ca->last_time) <= HZ / 32)
+	    (s32)(tcp_time_stamp(sk) - ca->last_time) <= HZ / 32)
 		return;
 
 	ca->last_cwnd = cwnd;
-	ca->last_time = tcp_time_stamp;
+	ca->last_time = tcp_time_stamp(sk);
 
 	if (ca->epoch_start == 0) {
-		ca->epoch_start = tcp_time_stamp;	/* record the beginning of an epoch */
+		ca->epoch_start = tcp_time_stamp(sk);	/* record the beginning of an epoch */
 		ca->ack_cnt = 1;			/* start counting */
 		ca->tcp_cwnd = cwnd;			/* syn with cubic */
 
@@ -250,7 +250,7 @@ static inline void bictcp_update(struct bictcp *ca, u32 cwnd)
 	 * if the cwnd < 1 million packets !!!
 	 */
 
-	t = (s32)(tcp_time_stamp - ca->epoch_start);
+	t = (s32)(tcp_time_stamp(sk) - ca->epoch_start);
 	t += msecs_to_jiffies(ca->delay_min >> 3);
 	/* change the unit from HZ to bictcp_HZ */
 	t <<= BICTCP_HZ;
@@ -317,7 +317,7 @@ static void bictcp_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 			bictcp_hystart_reset(sk);
 		tcp_slow_start(tp);
 	} else {
-		bictcp_update(ca, tp->snd_cwnd);
+		bictcp_update(sk, ca, tp->snd_cwnd);
 		tcp_cong_avoid_ai(tp, ca->cnt);
 	}
 
@@ -416,7 +416,7 @@ static void bictcp_acked(struct sock *sk, u32 cnt, s32 rtt_us)
 		return;
 
 	/* Discard delay samples right after fast recovery */
-	if (ca->epoch_start && (s32)(tcp_time_stamp - ca->epoch_start) < HZ)
+	if (ca->epoch_start && (s32)(tcp_time_stamp(sk) - ca->epoch_start) < HZ)
 		return;
 
 	delay = (rtt_us << 3) / USEC_PER_MSEC;

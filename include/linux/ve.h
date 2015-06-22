@@ -94,6 +94,7 @@ struct ve_struct {
 	struct timespec		start_timespec;		/* monotonic time */
 	struct timespec		real_start_timespec;	/* boot based time */
 	u64			start_jiffies;	/* Deprecated */
+	u32			jiffies_fixup;
 
 	struct kstat_lat_pcpu_struct	sched_lat_ve;
 

@@ -295,7 +295,7 @@ synproxy_tg6(struct sk_buff *skb, const struct xt_action_param *par)
 
 		opts.options &= info->options;
 		if (opts.options & XT_SYNPROXY_OPT_TIMESTAMP)
-			synproxy_init_timestamp_cookie(info, &opts);
+			synproxy_init_timestamp_cookie(skb->sk, info, &opts);
 		else
 			opts.options &= ~(XT_SYNPROXY_OPT_WSCALE |
 					  XT_SYNPROXY_OPT_SACK_PERM |

@@ -83,17 +83,17 @@ static void bictcp_init(struct sock *sk)
 /*
  * Compute congestion window to use.
  */
-static inline void bictcp_update(struct bictcp *ca, u32 cwnd)
+static inline void bictcp_update(struct sock *sk, struct bictcp *ca, u32 cwnd)
 {
 	if (ca->last_cwnd == cwnd &&
-	    (s32)(tcp_time_stamp - ca->last_time) <= HZ / 32)
+	    (s32)(tcp_time_stamp(sk) - ca->last_time) <= HZ / 32)
 		return;
 
 	ca->last_cwnd = cwnd;
-	ca->last_time = tcp_time_stamp;
+	ca->last_time = tcp_time_stamp(sk);
 
 	if (ca->epoch_start == 0) /* record the beginning of an epoch */
-		ca->epoch_start = tcp_time_stamp;
+		ca->epoch_start = tcp_time_stamp(sk);
 
 	/* start off normal */
 	if (cwnd <= low_window) {
@@ -151,7 +151,7 @@ static void bictcp_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 	if (tp->snd_cwnd <= tp->snd_ssthresh)
 		tcp_slow_start(tp);
 	else {
-		bictcp_update(ca, tp->snd_cwnd);
+		bictcp_update(sk, ca, tp->snd_cwnd);
 		tcp_cong_avoid_ai(tp, ca->cnt);
 	}
 
