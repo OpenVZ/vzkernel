@@ -474,7 +474,8 @@ static int check_syslog_permissions(int type, bool from_file)
 		 * For historical reasons, accept CAP_SYS_ADMIN too, with
 		 * a warning.
 		 */
-		if (nsown_capable(CAP_SYS_ADMIN)) {
+		if (nsown_capable(CAP_SYS_ADMIN) ||
+		    nsown_capable(CAP_VE_ADMIN)) {
 			pr_warn_once("%s (%d): Attempt to access syslog with "
 				     "CAP_SYS_ADMIN but no CAP_SYSLOG "
 				     "(deprecated).\n",
