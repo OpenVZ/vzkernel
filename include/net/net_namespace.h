@@ -85,7 +85,6 @@ struct net {
 	struct list_head	rules_ops;
 
 	struct sock		*_audit_sock;		/* audit socket */
-	struct sock		*uevent_sock;		/* kobject uevent socket */
 
 	struct net_device       *loopback_dev;          /* The loopback */
 	struct netns_core	core;
