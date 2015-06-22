@@ -96,7 +96,6 @@ int vz_compat;
 EXPORT_SYMBOL(vz_compat);
 
 static DEFINE_IDR(ve_idr);
-#define VE_ID_START	(INT_MAX/2)
 
 static int __init vz_compat_setup(char *arg)
 {
@@ -130,7 +129,7 @@ static void ve_list_add(struct ve_struct *ve)
 	mutex_unlock(&ve_list_lock);
 }
 
-static void ve_list_del(struct ve_struct *ve)
+static void ve_list_del(struct ve_struct *ve, bool free_id)
 {
 	mutex_lock(&ve_list_lock);
 	/* Check whether ve linked in list of ve's and unlink ve from list if so */
@@ -141,25 +140,8 @@ static void ve_list_del(struct ve_struct *ve)
 		list_del_init(&ve->ve_list);
 		nr_ve--;
 	}
-	mutex_unlock(&ve_list_lock);
-}
-
-static long veid_alloc(long req_veid)
-{
-	long veid;
-	mutex_lock(&ve_list_lock);
-	veid = idr_alloc(&ve_idr, NULL,
-		       req_veid ? req_veid : VE_ID_START,
-		       req_veid ? req_veid + 1 : 0,
-		       GFP_KERNEL);
-	mutex_unlock(&ve_list_lock);
-	return veid;
-}
-
-static void veid_free(long veid)
-{
-	mutex_lock(&ve_list_lock);
-	idr_remove(&ve_idr, veid);
+	if (free_id && ve->veid)
+		idr_remove(&ve_idr, ve->veid);
 	mutex_unlock(&ve_list_lock);
 }
 
@@ -488,6 +470,9 @@ int ve_start_container(struct ve_struct *ve)
 	struct task_struct *tsk = current;
 	int err;
 
+	if (!ve->veid)
+		return -ENOENT;
+
 	if (ve->is_running || ve->ve_ns)
 		return -EBUSY;
 
@@ -558,7 +543,7 @@ err_dev:
 err_umh:
 	ve_stop_kthread(ve);
 err_kthread:
-	ve_list_del(ve);
+	ve_list_del(ve, false);
 	ve_drop_context(ve);
 	return err;
 }
@@ -621,7 +606,7 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 	down_write(&ve->op_sem);
 	ve_hook_iterate_fini(VE_SS_CHAIN, ve);
 
-	ve_list_del(ve);
+	ve_list_del(ve, false);
 	ve_drop_context(ve);
 	up_write(&ve->op_sem);
 
@@ -633,7 +618,6 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 {
 	struct ve_struct *ve = &ve0;
-	long id;
 	int err;
 
 	if (!cg->parent)
@@ -643,26 +627,11 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 	if (cgroup_ve(cg->parent) != ve)
 		return ERR_PTR(-ENOTDIR);
 
-	/*
-	 * If the cgroup has a numeric name, allocate ID to match it. This is
-	 * required for compatibility with the old interface where VEs do not
-	 * have names and are identified only by VE ID.
-	 */
-	if (kstrtol(cg->dentry->d_name.name, 10, &id) ||
-	    id < 0 || id >= INT_MAX)
-		id = 0;
-	id = veid_alloc(id);
-	if (id < 0) {
-		err = id;
-		goto err_id;
-	}
-
 	err = -ENOMEM;
 	ve = kmem_cache_zalloc(ve_cachep, GFP_KERNEL);
 	if (!ve)
 		goto err_ve;
 
-	ve->veid = id;
 	ve->ve_name = kstrdup(cg->dentry->d_name.name, GFP_KERNEL);
 	if (!ve->ve_name)
 		goto err_name;
@@ -695,8 +664,6 @@ err_lat:
 err_name:
 	kmem_cache_free(ve_cachep, ve);
 err_ve:
-	veid_free(id);
-err_id:
 	return ERR_PTR(err);
 }
 
@@ -704,8 +671,7 @@ static void ve_offline(struct cgroup *cg)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 
-	ve_list_del(ve);
-	veid_free(ve->veid);
+	ve_list_del(ve, true);
 }
 
 static void ve_devmnt_free(struct ve_devmnt *devmnt)
@@ -885,10 +851,42 @@ out_unlock:
 	return ret;
 }
 
-static int ve_legacy_veid_read(struct cgroup *cg, struct cftype *cft,
-		struct seq_file *m)
+static u64 ve_id_read(struct cgroup *cg, struct cftype *cft)
 {
-	return seq_printf(m, "%u\n", cgroup_ve(cg)->veid);
+	return cgroup_ve(cg)->veid;
+}
+
+static int ve_id_write(struct cgroup *cg, struct cftype *cft, u64 value)
+{
+	struct ve_struct *ve = cgroup_ve(cg);
+	int veid;
+	int err = 0;
+
+	if (value <= 0 || value > INT_MAX)
+		return -EINVAL;
+
+	down_write(&ve->op_sem);
+	if (ve->veid) {
+		if (ve->veid != value)
+			err = -EBUSY;
+		goto out;
+	}
+
+	mutex_lock(&ve_list_lock);
+	/* we forbid to start a container without veid (see ve_start_container)
+	 * so the ve cannot be on the list */
+	BUG_ON(!list_empty(&ve->ve_list));
+	veid = idr_alloc(&ve_idr, NULL, value, value + 1, GFP_KERNEL);
+	if (veid < 0) {
+		err = veid;
+		if (err == -ENOSPC)
+			err = -EEXIST;
+	} else
+		ve->veid = veid;
+	mutex_unlock(&ve_list_lock);
+out:
+	up_write(&ve->op_sem);
+	return err;
 }
 
 /*
@@ -1062,7 +1060,6 @@ up_opsem:
 
 enum {
 	VE_CF_STATE,
-	VE_CF_LEGACY_VEID,
 	VE_CF_FEATURES,
 	VE_CF_IPTABLES_MASK,
 };
@@ -1125,10 +1122,10 @@ static struct cftype ve_cftypes[] = {
 		.private		= VE_CF_STATE,
 	},
 	{
-		.name			= "legacy_veid",
+		.name			= "veid",
 		.flags			= CFTYPE_NOT_ON_ROOT,
-		.read_seq_string	= ve_legacy_veid_read,
-		.private		= VE_CF_LEGACY_VEID,
+		.read_u64		= ve_id_read,
+		.write_u64		= ve_id_write,
 	},
 	{
 		.name			= "features",
