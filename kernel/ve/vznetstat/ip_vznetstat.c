@@ -43,10 +43,10 @@ static unsigned int venet_acct_in_hook(const struct nf_hook_ops *hook,
 		goto out;
 
 #if VZNS_DEBUG
-	printk("%s: in %s, out %s, size %d, in->owner_env=%d\n",
+	printk("%s: in %s, out %s, size %d, in->owner_env=%s\n",
 		 __FUNCTION__, in ? in->name : NULL, out ? out->name : NULL,
 		 venet_acct_skb_size(skb),
-		 in ? in->nd_net->owner_ve->veid : -1);
+		 in ? in->nd_net->owner_ve->ve_name : -1);
 #endif
 
 	/*
@@ -88,9 +88,9 @@ static unsigned int venet_acct_out_hook(const struct nf_hook_ops *hook,
 		goto out_hdr_error;
 
 #if VZNS_DEBUG
-	printk("%s: in %s, out %s, size %d, out->owner_env=%d\n",
+	printk("%s: in %s, out %s, size %d, out->owner_env=%s\n",
 		 __FUNCTION__, in ? in->name : NULL, out ? out->name : NULL,
-		 venet_acct_skb_size(skb), out ? out->nd_net->owner_ve->veid : -1);
+		 venet_acct_skb_size(skb), out ? out->nd_net->owner_ve->ve_name : -1);
 #endif
 
 	/*
