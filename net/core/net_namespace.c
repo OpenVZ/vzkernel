@@ -165,8 +165,6 @@ static __net_init int setup_net(struct net *net, struct user_namespace *user_ns)
 
 #ifdef CONFIG_VE
 	net->owner_ve = get_ve(get_exec_env());
-	if (net->owner_ve->ve_netns)
-		get_net(net->owner_ve->ve_netns);
 #endif
 
 	atomic_set(&net->count, 1);
@@ -235,7 +233,6 @@ out_free:
 
 static void net_free(struct net *net)
 {
-	struct net *ve_netns = net->owner_ve->ve_netns;
 #ifdef NETNS_REFCNT_DEBUG
 	if (unlikely(atomic_read(&net->use_count) != 0)) {
 		pr_emerg("network namespace not free! Usage: %d\n",
@@ -245,9 +242,6 @@ static void net_free(struct net *net)
 #endif
 	kfree(net->gen);
 	kmem_cache_free(net_cachep, net);
-
-	if (ve_netns)
-		put_net(ve_netns);
 }
 
 void net_drop_ns(void *p)
