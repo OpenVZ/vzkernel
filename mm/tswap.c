@@ -329,6 +329,8 @@ static int __init tswap_init(void)
 	if (err)
 		goto out_free_lru;
 
+	frontswap_tmem_exclusive_gets(true);
+
 	old_ops = frontswap_register_ops(&tswap_frontswap_ops);
 	pr_info("tswap loaded\n");
 	if (old_ops)
