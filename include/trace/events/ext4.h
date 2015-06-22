@@ -886,6 +886,60 @@ TRACE_EVENT(ext4_sync_file_exit,
 		  __entry->ret)
 );
 
+TRACE_EVENT(ext4_sync_files_iterate,
+	TP_PROTO(struct dentry *dentry, tid_t tid, int datasync),
+
+	TP_ARGS(dentry, tid, datasync),
+
+	TP_STRUCT__entry(
+		__field(	dev_t,	dev			)
+		__field(	ino_t,	ino			)
+		__field(	ino_t,	parent			)
+		__field(	int,	datasync		)
+		__field(	unsigned int,	tid		)
+	),
+
+	TP_fast_assign(
+		__entry->dev		= dentry->d_inode->i_sb->s_dev;
+		__entry->ino		= dentry->d_inode->i_ino;
+		__entry->datasync	= datasync;
+		__entry->parent		= dentry->d_parent->d_inode->i_ino;
+		__entry->tid		= tid;
+	),
+
+	TP_printk("dev %d,%d ino %ld parent %ld datasync %d tid %u",
+		  MAJOR(__entry->dev), MINOR(__entry->dev), (unsigned long) __entry->ino,
+		  (unsigned long) __entry->parent, __entry->datasync,
+		  __entry->tid)
+);
+
+TRACE_EVENT(ext4_sync_files_exit,
+	TP_PROTO(struct dentry *dentry, tid_t tid, int barrier),
+
+	TP_ARGS(dentry, tid, barrier),
+
+	TP_STRUCT__entry(
+		__field(	dev_t,	dev			)
+		__field(	ino_t,	ino			)
+		__field(	ino_t,	parent			)
+		__field(	int,	barrier			)
+		__field(	unsigned int,	tid		)
+	),
+
+	TP_fast_assign(
+		__entry->dev		= dentry->d_inode->i_sb->s_dev;
+		__entry->ino		= dentry->d_inode->i_ino;
+		__entry->parent		= dentry->d_parent->d_inode->i_ino;
+		__entry->tid		= tid;
+		__entry->barrier	= barrier;
+	),
+
+	TP_printk("dev %d,%d ino %ld parent %ld explicit_barrier %d tid %u",
+		  MAJOR(__entry->dev), MINOR(__entry->dev), (unsigned long) __entry->ino,
+		  (unsigned long) __entry->parent, __entry->barrier,
+		  __entry->tid)
+);
+
 TRACE_EVENT(ext4_sync_fs,
 	TP_PROTO(struct super_block *sb, int wait),
 
