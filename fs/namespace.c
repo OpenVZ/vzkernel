@@ -1934,9 +1934,9 @@ again:
 		goto again;
 	case 1:
 		if (*data_pp) {
-			ve_printk(VE_LOG_BOTH, KERN_WARNING "VE%u: no allowed "
+			ve_printk(VE_LOG_BOTH, KERN_WARNING "VE%s: no allowed "
 				  "mount options found for device %u:%u\n",
-				  ve->veid, MAJOR(dev), MINOR(dev));
+				  ve->ve_name, MAJOR(dev), MINOR(dev));
 			err = -EPERM;
 		} else
 			err = 0;
