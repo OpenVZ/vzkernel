@@ -86,16 +86,17 @@ static int tswap_insert_page(swp_entry_t entry, struct page *page)
 	return err;
 }
 
-static struct page *tswap_delete_page(swp_entry_t entry)
+static struct page *tswap_delete_page(swp_entry_t entry, struct page *expected)
 {
 	struct page *page;
 
 	spin_lock(&tswap_lock);
-	page = radix_tree_delete(&tswap_page_tree, entry.val);
+	page = radix_tree_delete_item(&tswap_page_tree, entry.val, expected);
 	if (page)
 		tswap_nr_pages--;
 	spin_unlock(&tswap_lock);
 	if (page) {
+		BUG_ON(expected && page != expected);
 		BUG_ON(page_private(page) != entry.val);
 		tswap_lru_del(page);
 	}
@@ -118,6 +119,8 @@ static int tswap_writeback_page(struct page *page)
 		.sync_mode = WB_SYNC_NONE,
 	};
 
+	BUG_ON(!PageLocked(page));
+
 	entry.val = page_private(page);
 	swapper_space = swap_address_space(entry);
 retry:
@@ -125,11 +128,38 @@ retry:
 	found_page = find_get_page(swapper_space, entry.val);
 	if (found_page) {
 		/*
-		 * There is already a swap cache page at the given offset.
-		 * Hence, if the current page has not been loaded yet, it will
-		 * be in a moment (see read_swap_cache_async), so there is no
-		 * need to put it back to the lru list.
+		 * There is already a swap cache page at the given offset. If
+		 * the page is uptodate, we can safely free the frontswap page,
+		 * marking the swapcache page dirty. Otherwise, the frontswap
+		 * page is about to be loaded and cannot be released.
 		 */
+		err = -EBUSY;
+		if (!trylock_page(found_page)) {
+			put_page(found_page);
+			goto out;
+		}
+		/* recheck that the page is still in the swap cache */
+		if (!PageSwapCache(found_page) ||
+		    page_private(found_page) != entry.val) {
+			unlock_page(found_page);
+			put_page(found_page);
+			goto retry;
+		}
+		if (PageUptodate(found_page)) {
+			/*
+			 * Since we are holding the swap cache page lock, no
+			 * frontswap callbacks are allowed now. However, the
+			 * frontswap page could have been invalidated before we
+			 * took the lock, in which case we have nothing to do.
+			 */
+			err = -ENOENT;
+			if (tswap_delete_page(entry, page)) {
+				SetPageDirty(found_page);
+				put_page(page);
+				err = 0;
+			}
+		}
+		unlock_page(found_page);
 		put_page(found_page);
 		goto out;
 	}
@@ -155,28 +185,19 @@ retry:
 		 * prepared swap cache */
 		goto out_free_swapcache;
 
-	__set_page_locked(page);
 	SetPageSwapBacked(page);
 	err = __add_to_swap_cache(page, entry);
 	if (err) {
 		ClearPageSwapBacked(page);
-		__clear_page_locked(page);
 		/* __add_to_swap_cache clears page->private on failure */
 		set_page_private(page, entry.val);
-		/* putting the page back to the lru list before freeing swap
-		 * cache blocks others reclaiming threads from interfering */
-		tswap_lru_add(page);
 		/* __add_to_swap_cache does not return -EEXIST, so we can
 		 * safely clear SWAP_HAS_CACHE flag */
 		goto out_free_swapcache;
 	}
 
 	/* the page is now in the swap cache, remove it from tswap */
-	spin_lock(&tswap_lock);
-	BUG_ON(!radix_tree_delete_item(&tswap_page_tree, entry.val, page));
-	tswap_nr_pages--;
-	spin_unlock(&tswap_lock);
-
+	BUG_ON(!tswap_delete_page(entry, page));
 	put_page(page);
 
 	lru_cache_add_anon(page);
@@ -185,14 +206,14 @@ retry:
 	/* move it to the tail of the inactive list after end_writeback */
 	SetPageReclaim(page);
 
-	/* start writeback */
+	/* start writeback; unlocks the page */
 	__swap_writepage(page, &wbc, end_swap_bio_write);
-
-	goto out;
+	return 0;
 
 out_free_swapcache:
 	swapcache_free(entry, NULL);
 out:
+	unlock_page(page);
 	return err;
 }
 
@@ -203,19 +224,25 @@ static unsigned long tswap_shrink_scan(struct shrinker *shrink,
 	unsigned long nr_reclaimed = 0;
 
 	spin_lock(&lru->lock);
-	while (lru->nr_items > 0 && sc->nr_to_scan > 0) {
+	while (sc->nr_to_scan-- > 0) {
 		struct page *page;
+
+		if (!lru->nr_items)
+			break;
 		
 		page = list_first_entry(&lru->list, struct page, lru);
+		/* lock the page to avoid interference with
+		 * other reclaiming threads */
+		if (!trylock_page(page)) {
+			list_move_tail(&page->lru, &lru->list);
+			cond_resched_lock(&lru->lock);
+			continue;
+		}
 		get_page(page);
-
-		list_del_init(&page->lru);
-		lru->nr_items--;
 		spin_unlock(&lru->lock);
 
 		if (tswap_writeback_page(page) == 0)
 			nr_reclaimed++;
-		sc->nr_to_scan--;
 
 		put_page(page);
 
@@ -280,7 +307,7 @@ static int tswap_frontswap_load(unsigned type, pgoff_t offset,
 {
 	struct page *cache_page;
 
-	cache_page = tswap_delete_page(swp_entry(type, offset));
+	cache_page = tswap_delete_page(swp_entry(type, offset), NULL);
 	if (!cache_page)
 		return -1;
 
@@ -293,7 +320,7 @@ static void tswap_frontswap_invalidate_page(unsigned type, pgoff_t offset)
 {
 	struct page *cache_page;
 
-	cache_page = tswap_delete_page(swp_entry(type, offset));
+	cache_page = tswap_delete_page(swp_entry(type, offset), NULL);
 	if (cache_page)
 		put_page(cache_page);
 }
