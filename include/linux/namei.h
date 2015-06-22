@@ -51,7 +51,6 @@ enum {LAST_NORM, LAST_ROOT, LAST_DOT, LAST_DOTDOT, LAST_BIND};
 #define LOOKUP_CREATE		0x0200
 #define LOOKUP_EXCL		0x0400
 #define LOOKUP_RENAME_TARGET	0x0800
-#define LOOKUP_STRICT		0x2000	/* no symlinks or other filesystems */
 
 #define LOOKUP_JUMPED		0x1000
 #define LOOKUP_ROOT		0x2000
