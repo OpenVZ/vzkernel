@@ -547,6 +547,11 @@ struct compat_ext4_new_group_input {
 };
 #endif
 
+struct ext4_ioc_mfsync_info {
+	__u32 size;
+	__u32 fd[0];
+};
+
 /* The struct ext4_new_group_input in kernel space, with free_blocks_count */
 struct ext4_new_group_data {
 	__u32 group;
@@ -658,6 +663,7 @@ enum {
 
 #define EXT4_IOC_FSGETXATTR		FS_IOC_FSGETXATTR
 #define EXT4_IOC_FSSETXATTR		FS_IOC_FSSETXATTR
+#define EXT4_IOC_MFSYNC			_IO('f', 43)
 
 #define EXT4_IOC_SHUTDOWN _IOR ('X', 125, __u32)
 
@@ -667,7 +673,6 @@ enum {
 #define EXT4_GOING_FLAGS_DEFAULT		0x0	/* going down */
 #define EXT4_GOING_FLAGS_LOGFLUSH		0x1	/* flush log but not data */
 #define EXT4_GOING_FLAGS_NOLOGFLUSH		0x2	/* don't flush log nor data */
-
 
 #if defined(__KERNEL__) && defined(CONFIG_COMPAT)
 /*
@@ -2437,6 +2442,7 @@ extern int ext4_check_all_de(struct inode *dir, struct buffer_head *bh,
 
 /* fsync.c */
 extern int ext4_sync_file(struct file *, loff_t, loff_t, int);
+extern int ext4_sync_files(struct file **, unsigned int *, unsigned int);
 
 /* hash.c */
 extern int ext4fs_dirhash(const char *name, int len, struct
