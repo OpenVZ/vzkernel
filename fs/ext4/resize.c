@@ -314,6 +314,7 @@ next_group:
 
 		if (start_blk + itb > last_blk)
 			goto next_group;
+
 		group_data[it_index].inode_table = start_blk;
 		group = ext4_get_group_number(sb, start_blk);
 		next_group_start = ext4_group_first_block_no(sb, group + 1);
