@@ -29,7 +29,7 @@
 static struct kmem_cache *nsproxy_cachep;
 
 struct nsproxy init_nsproxy = {
-	.count	= INIT_NSPROXY_COUNT,
+	.count	= ATOMIC_INIT(1),
 	.uts_ns	= &init_uts_ns,
 #if defined(CONFIG_POSIX_MQUEUE) || defined(CONFIG_SYSVIPC)
 	.ipc_ns	= &init_ipc_ns,
