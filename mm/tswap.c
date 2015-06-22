@@ -19,7 +19,6 @@ static RADIX_TREE(tswap_page_tree, GFP_ATOMIC | __GFP_NOWARN);
 static DEFINE_SPINLOCK(tswap_lock);
 
 struct tswap_lru {
-	spinlock_t lock;
 	struct list_head list;
 	unsigned long nr_items;
 } ____cacheline_aligned_in_smp;
@@ -42,22 +41,16 @@ static void tswap_lru_add(struct page *page)
 {
 	struct tswap_lru *lru = &tswap_lru_node[page_to_nid(page)];
 
-	spin_lock(&lru->lock);
 	list_add_tail(&page->lru, &lru->list);
 	lru->nr_items++;
-	spin_unlock(&lru->lock);
 }
 
 static void tswap_lru_del(struct page *page)
 {
 	struct tswap_lru *lru = &tswap_lru_node[page_to_nid(page)];
 
-	spin_lock(&lru->lock);
-	if (!list_empty(&page->lru)) {
-		list_del_init(&page->lru);
-		lru->nr_items--;
-	}
-	spin_unlock(&lru->lock);
+	list_del(&page->lru);
+	lru->nr_items--;
 }
 
 static struct page *tswap_lookup_page(swp_entry_t entry)
@@ -78,11 +71,11 @@ static int tswap_insert_page(swp_entry_t entry, struct page *page)
 	set_page_private(page, entry.val);
 	spin_lock(&tswap_lock);
 	err = radix_tree_insert(&tswap_page_tree, entry.val, page);
-	if (!err)
-		tswap_nr_pages++;
-	spin_unlock(&tswap_lock);
-	if (!err)
+	if (!err) {
 		tswap_lru_add(page);
+		tswap_nr_pages++;
+	}
+	spin_unlock(&tswap_lock);
 	return err;
 }
 
@@ -92,13 +85,14 @@ static struct page *tswap_delete_page(swp_entry_t entry, struct page *expected)
 
 	spin_lock(&tswap_lock);
 	page = radix_tree_delete_item(&tswap_page_tree, entry.val, expected);
-	if (page)
+	if (page) {
+		tswap_lru_del(page);
 		tswap_nr_pages--;
+	}
 	spin_unlock(&tswap_lock);
 	if (page) {
 		BUG_ON(expected && page != expected);
 		BUG_ON(page_private(page) != entry.val);
-		tswap_lru_del(page);
 	}
 	return page;
 }
@@ -223,7 +217,7 @@ static unsigned long tswap_shrink_scan(struct shrinker *shrink,
 	struct tswap_lru *lru = &tswap_lru_node[sc->nid];
 	unsigned long nr_reclaimed = 0;
 
-	spin_lock(&lru->lock);
+	spin_lock(&tswap_lock);
 	while (sc->nr_to_scan-- > 0) {
 		struct page *page;
 
@@ -235,11 +229,11 @@ static unsigned long tswap_shrink_scan(struct shrinker *shrink,
 		 * other reclaiming threads */
 		if (!trylock_page(page)) {
 			list_move_tail(&page->lru, &lru->list);
-			cond_resched_lock(&lru->lock);
+			cond_resched_lock(&tswap_lock);
 			continue;
 		}
 		get_page(page);
-		spin_unlock(&lru->lock);
+		spin_unlock(&tswap_lock);
 
 		if (tswap_writeback_page(page) == 0)
 			nr_reclaimed++;
@@ -247,9 +241,9 @@ static unsigned long tswap_shrink_scan(struct shrinker *shrink,
 		put_page(page);
 
 		cond_resched();
-		spin_lock(&lru->lock);
+		spin_lock(&tswap_lock);
 	}
-	spin_unlock(&lru->lock);
+	spin_unlock(&tswap_lock);
 
 	return nr_reclaimed;
 }
@@ -351,10 +345,8 @@ static int __init tswap_lru_init(void)
 	if (!tswap_lru_node)
 		return -ENOMEM;
 
-	for (i = 0; i < nr_node_ids; i++) {
-		spin_lock_init(&tswap_lru_node[i].lock);
+	for (i = 0; i < nr_node_ids; i++)
 		INIT_LIST_HEAD(&tswap_lru_node[i].list);
-	}
 	return 0;
 }
 
