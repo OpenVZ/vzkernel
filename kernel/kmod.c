@@ -888,8 +888,8 @@ int call_usermodehelper_fns_ve(struct ve_struct *ve,
 	}
 
 	if (wait > UMH_WAIT_EXEC) {
-		printk(KERN_ERR "VE#%d: Sleeping call for containers UMH is "
-				"not supported\n", ve->veid);
+		printk(KERN_ERR "VE#%s: Sleeping call for containers UMH is "
+				"not supported\n", ve->ve_name);
 		err = -EINVAL;
 		goto out_put;
 	}
