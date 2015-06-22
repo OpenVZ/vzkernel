@@ -732,7 +732,62 @@ resizefs_out:
 
 		return ext4_dump_pfcache(inode->i_sb,
 				(struct pfcache_dump_request __user *) arg);
+	case EXT4_IOC_MFSYNC:
+	{
+		struct ext4_ioc_mfsync_info mfsync;
+		struct file **filpp;
+		unsigned int *flags;
+		__u32 __user *usr_fd;
+		int i, err;
 
+		if (!ve_is_super(get_exec_env()))
+			return -ENOTSUPP;
+		if (copy_from_user(&mfsync, (struct ext4_ioc_mfsync_info *)arg,
+				   sizeof(mfsync)))
+			return -EFAULT;
+
+		if (mfsync.size == 0)
+			return 0;
+		if (mfsync.size > NR_FILE)
+			return -ENFILE;
+
+		usr_fd = (__u32 __user *) (arg + sizeof(__u32));
+
+		filpp = kzalloc(mfsync.size * sizeof(*filpp), GFP_KERNEL);
+		if (!filpp)
+			return -ENOMEM;
+		flags = kzalloc(mfsync.size * sizeof(*flags), GFP_KERNEL);
+		if (!flags) {
+			kfree(filpp);
+			return -ENOMEM;
+		}
+		for (i = 0; i < mfsync.size; i++) {
+			int fd;
+			int ret;
+
+			err = -EFAULT;
+			ret = get_user(fd, usr_fd + i);
+			if (ret)
+				goto mfsync_fput;
+
+			/* negative fd means fdata_sync */
+			flags[i] = (fd & (1<< 31)) != 0;
+			fd &= ~(1<< 31);
+
+			err = -EBADF;
+			filpp[i] = fget(fd);
+			if (!filpp[i])
+				goto mfsync_fput;
+		}
+		err = ext4_sync_files(filpp, flags, mfsync.size);
+mfsync_fput:
+		for (i = 0; i < mfsync.size; i++)
+			if (filpp[i])
+				fput(filpp[i]);
+		kfree(filpp);
+		kfree(flags);
+		return err;
+	}
 	default:
 		return -ENOTTY;
 	}
