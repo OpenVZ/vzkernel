@@ -5526,7 +5526,7 @@ static struct file_system_type ext4_fs_type = {
 	.name		= "ext4",
 	.mount		= ext4_mount,
 	.kill_sb	= ext4_kill_sb,
-	.fs_flags	= FS_REQUIRES_DEV | FS_VIRTUALIZED,
+	.fs_flags	= FS_REQUIRES_DEV | FS_VIRTUALIZED | FS_HAS_MMAP_PREP,
 };
 MODULE_ALIAS_FS("ext4");
 

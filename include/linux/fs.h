@@ -1957,6 +1957,13 @@ struct file_system_type {
 #define FS_VIRTUALIZED		64	/* Can mount this fstype inside ve */
 #define FS_MANGLE_PROC		128	/* hide some /proc/mounts info inside VE */
 #define FS_RENAME_DOES_D_MOVE	32768	/* FS will handle d_move() during rename() internally. */
+/*
+ * f_op->mmap must be called with vma=NULL before taking mmap_sem;
+ * workaround for wrong i_mutex vs mmap_sem lock ordering in pfcache
+ * (PSBM-23133) - vdavydov@
+ */
+#define FS_HAS_MMAP_PREP	(1<<18)
+
 	struct dentry *(*mount) (struct file_system_type *, int,
 		       const char *, void *);
 	void (*kill_sb) (struct super_block *);
