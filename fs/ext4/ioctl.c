@@ -655,6 +655,66 @@ resizefs_out:
 		ext4_resize_end(sb);
 		return err;
 	}
+	case EXT4_IOC_SET_RSV_BLOCKS: {
+		ext4_fsblk_t n_blocks_count;
+		struct super_block *sb = inode->i_sb;
+		handle_t *handle;
+		int err = 0, err2 = 0;
+
+		if (copy_from_user(&n_blocks_count, (__u64 __user *)arg,
+				   sizeof(__u64))) {
+			return -EFAULT;
+		}
+
+		if (n_blocks_count > MAX_32_NUM &&
+		    !EXT4_HAS_INCOMPAT_FEATURE(sb,
+					       EXT4_FEATURE_INCOMPAT_64BIT)) {
+			ext4_msg(sb, KERN_ERR,
+				 "File system only supports 32-bit block numbers");
+			return -EOPNOTSUPP;
+		}
+
+		if (n_blocks_count > ext4_blocks_count(EXT4_SB(sb)->s_es))
+			return -EINVAL;
+
+		err = ext4_resize_begin(sb);
+		if (err)
+			return err;
+
+		err = mnt_want_write(filp->f_path.mnt);
+		if (err)
+			goto resize_out;
+
+		handle = ext4_journal_start_sb(sb, EXT4_HT_MISC, 1);
+		if (IS_ERR(handle)) {
+			err = PTR_ERR(handle);
+			goto mnt_out;
+		}
+		err = ext4_journal_get_write_access(handle, EXT4_SB(sb)->s_sbh);
+		if (err) {
+			goto journal_out;
+		}
+		ext4_r_blocks_count_set(EXT4_SB(sb)->s_es, n_blocks_count);
+		ext4_handle_dirty_metadata(handle, NULL, EXT4_SB(sb)->s_sbh);
+journal_out:
+		err2 = ext4_journal_stop(handle);
+		if (err == 0)
+			err = err2;
+
+		if (!err && EXT4_SB(sb)->s_journal) {
+			jbd2_journal_lock_updates(EXT4_SB(sb)->s_journal);
+			err2 = jbd2_journal_flush(EXT4_SB(sb)->s_journal);
+			jbd2_journal_unlock_updates(EXT4_SB(sb)->s_journal);
+		}
+		if (err == 0)
+			err = err2;
+mnt_out:
+		mnt_drop_write(filp->f_path.mnt);
+resize_out:
+		ext4_resize_end(sb);
+		return err;
+	}
+
 
 	case FITRIM:
 	{
