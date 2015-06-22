@@ -212,11 +212,18 @@ static int ext4_file_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct inode *inode = file->f_inode;
 
-	if ((vma->vm_flags & VM_SHARED) &&
-	    ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM)) {
-		mutex_lock(&inode->i_mutex);
-		ext4_truncate_data_csum(inode, -1);
-		mutex_unlock(&inode->i_mutex);
+	/*
+	 * f_op->mmap must be called with vma=NULL before taking mmap_sem;
+	 * workaround for wrong i_mutex vs mmap_sem lock ordering in pfcache
+	 * (PSBM-23133) - vdavydov@
+	 */
+	if (!vma) {
+		if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM)) {
+			mutex_lock(&inode->i_mutex);
+			ext4_truncate_data_csum(inode, -1);
+			mutex_unlock(&inode->i_mutex);
+		}
+		return 0;
 	}
 
 	file_accessed(file);
