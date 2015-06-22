@@ -2679,7 +2679,8 @@ static int rtnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 	sz_idx = type>>2;
 	kind = type&3;
 
-	if (kind != 2 && !ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
+	if (kind != 2 && !ns_capable(net->user_ns, CAP_NET_ADMIN) &&
+			 !ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
 		return -EPERM;
 
 	if (kind == 2 && nlh->nlmsg_flags&NLM_F_DUMP) {

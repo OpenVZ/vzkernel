@@ -367,9 +367,14 @@ static void nfnetlink_rcv(struct sk_buff *skb)
 	    skb->len < nlh->nlmsg_len)
 		return;
 
-	if (!ns_capable(net->user_ns, CAP_VE_NET_ADMIN) ||
-	    (net->owner_ve != get_ve0() &&
-		NFNL_SUBSYS_ID(nlh->nlmsg_type) == NFNL_SUBSYS_IPSET)) {
+	if (!ns_capable(net->user_ns, CAP_NET_ADMIN) &&
+	    !ns_capable(net->user_ns, CAP_VE_NET_ADMIN)) {
+		netlink_ack(skb, nlh, -EPERM);
+		return;
+	}
+
+	if (net->owner_ve != get_ve0() &&
+		NFNL_SUBSYS_ID(nlh->nlmsg_type) == NFNL_SUBSYS_IPSET) {
 		netlink_ack(skb, nlh, -EPERM);
 		return;
 	}
