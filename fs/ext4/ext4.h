@@ -2677,6 +2677,11 @@ extern int ext4_find_delalloc_range(struct inode *inode,
 extern int ext4_find_delalloc_cluster(struct inode *inode, ext4_lblk_t lblk);
 extern int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 			__u64 start, __u64 len);
+extern ext4_lblk_t ext4_ext_next_allocated_block(struct ext4_ext_path *path);
+extern int ext4_swap_extents(handle_t *handle, struct inode *inode1,
+			     struct inode *inode2, ext4_lblk_t lblk1,
+			     ext4_lblk_t lblk2,  ext4_lblk_t count,
+			     int mark_unwritten,int *err);
 
 
 /* move_extent.c */
@@ -2687,7 +2692,6 @@ extern void ext4_double_up_write_data_sem(struct inode *orig_inode,
 extern int ext4_move_extents(struct file *o_filp, struct file *d_filp,
 			     __u64 start_orig, __u64 start_donor,
 			     __u64 len, __u64 *moved_len);
-
 /* page-io.c */
 extern int __init ext4_init_pageio(void);
 extern void ext4_add_complete_io(ext4_io_end_t *io_end);
