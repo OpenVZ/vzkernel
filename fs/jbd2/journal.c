@@ -716,10 +716,9 @@ int jbd2_log_wait_commit(journal_t *journal, tid_t tid)
 				!tid_gt(tid, journal->j_commit_sequence));
 		read_lock(&journal->j_state_lock);
 	}
-	read_unlock(&journal->j_state_lock);
-
 	if (unlikely(is_journal_aborted(journal)))
 		err = -EIO;
+	read_unlock(&journal->j_state_lock);
 	return err;
 }
 
