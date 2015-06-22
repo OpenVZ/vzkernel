@@ -3616,6 +3616,10 @@ static ssize_t show_cons_active(struct device *dev,
 static DEVICE_ATTR(active, S_IRUGO, show_cons_active, NULL);
 
 #ifdef CONFIG_VE
+
+extern int vz_con_ve_init(struct ve_struct *ve);
+extern void vz_con_ve_fini(struct ve_struct *ve);
+
 void console_sysfs_notify(void)
 {
 	struct ve_struct *ve = get_exec_env();
@@ -3632,6 +3636,7 @@ void ve_tty_console_fini(struct ve_struct *ve)
 	device_remove_file(consdev, &dev_attr_active);
 	device_destroy_namespace(tty_class, MKDEV(TTYAUX_MAJOR, 1), ve);
 	device_destroy_namespace(tty_class, MKDEV(TTYAUX_MAJOR, 0), ve);
+	vz_con_ve_fini(ve);
 }
 
 int ve_tty_console_init(struct ve_struct *ve)
@@ -3653,9 +3658,15 @@ int ve_tty_console_init(struct ve_struct *ve)
 	if (err)
 		goto err_consfile;
 
+	err = vz_con_ve_init(ve);
+	if (err)
+		goto err_vzcon;
+
 	ve->consdev = dev;
 	return 0;
 
+err_vzcon:
+	device_remove_file(dev, &dev_attr_active);
 err_consfile:
 	device_destroy_namespace(tty_class, MKDEV(TTYAUX_MAJOR, 1), ve);
 err_consdev:
