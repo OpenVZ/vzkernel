@@ -67,7 +67,7 @@ int ext4_open_pfcache(struct inode *inode)
 	 * Here we disable lockdep to avoid false-positive reports.
 	 */
 	lockdep_off();
-	ret = vfs_path_lookup(root.dentry, root.mnt, name, LOOKUP_STRICT, &path);
+	ret = vfs_path_lookup(root.dentry, root.mnt, name, 0, &path);
 	lockdep_on();
 	revert_creds(cur_cred);
 	path_put(&root);
@@ -175,7 +175,7 @@ int ext4_relink_pfcache(struct super_block *sb, char *new_root, bool new_sb)
 			pfcache_path(inode, name);
 			cur_cred = override_creds(&init_cred);
 			err = vfs_path_lookup(root.dentry, root.mnt,
-					name, LOOKUP_STRICT, &path);
+					name, 0, &path);
 			revert_creds(cur_cred);
 			if (err) {
 				path.mnt = NULL;
