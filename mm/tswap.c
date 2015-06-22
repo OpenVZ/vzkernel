@@ -60,6 +60,32 @@ static void tswap_lru_del(struct page *page)
 	spin_unlock(&lru->lock);
 }
 
+static struct page *tswap_lookup_page(swp_entry_t entry)
+{
+	struct page *page;
+
+	spin_lock(&tswap_lock);
+	page = radix_tree_lookup(&tswap_page_tree, entry.val);
+	spin_unlock(&tswap_lock);
+	BUG_ON(page && page_private(page) != entry.val);
+	return page;
+}
+
+static int tswap_insert_page(swp_entry_t entry, struct page *page)
+{
+	int err;
+
+	set_page_private(page, entry.val);
+	spin_lock(&tswap_lock);
+	err = radix_tree_insert(&tswap_page_tree, entry.val, page);
+	if (!err)
+		tswap_nr_pages++;
+	spin_unlock(&tswap_lock);
+	if (!err)
+		tswap_lru_add(page);
+	return err;
+}
+
 static unsigned long tswap_shrink_count(struct shrinker *shrink,
 					struct shrink_control *sc)
 {
@@ -107,12 +133,8 @@ retry:
 	 * because we hold its swap cache reference.
 	 */
 
-	spin_lock(&tswap_lock);
-	if (radix_tree_lookup(&tswap_page_tree, entry.val) != page)
-		err = -ENOENT;
-	spin_unlock(&tswap_lock);
-
-	if (err)
+	err = -ENOENT;
+	if (tswap_lookup_page(entry) != page)
 		/* the page could have been removed from tswap before we
 		 * prepared swap cache */
 		goto out_free_swapcache;
@@ -208,45 +230,32 @@ static int tswap_frontswap_store(unsigned type, pgoff_t offset,
 				 struct page *page)
 {
 	swp_entry_t entry = swp_entry(type, offset);
-	struct page *cache_page, *old_cache_page = NULL;
-	void **pslot;
+	struct page *cache_page;
 	int err = 0;
 
 	if (!tswap_active)
 		return -1;
 
+	cache_page = tswap_lookup_page(entry);
+	if (cache_page)
+		goto copy;
+
 	cache_page = alloc_page(__GFP_HIGHMEM | __GFP_NORETRY | __GFP_NOWARN);
 	if (!cache_page)
 		return -1;
 
-	copy_highpage(cache_page, page);
-	set_page_private(cache_page, entry.val);
-
-	spin_lock(&tswap_lock);
-	pslot = radix_tree_lookup_slot(&tswap_page_tree, entry.val);
-	if (pslot) {
-		old_cache_page = radix_tree_deref_slot_protected(pslot,
-								 &tswap_lock);
-		radix_tree_replace_slot(pslot, cache_page);
-	} else {
-		err = radix_tree_insert(&tswap_page_tree,
-					entry.val, cache_page);
-		BUG_ON(err == -EEXIST);
-		if (!err)
-			tswap_nr_pages++;
-	}
-	spin_unlock(&tswap_lock);
-
+	err = tswap_insert_page(entry, cache_page);
 	if (err) {
+		/*
+		 * Frontswap stores proceed under the page lock, so this can
+		 * only fail with ENOMEM.
+		 */
+		BUG_ON(err == -EEXIST);
 		put_page(cache_page);
 		return -1;
 	}
-
-	tswap_lru_add(cache_page);
-	if (old_cache_page) {
-		tswap_lru_del(old_cache_page);
-		put_page(old_cache_page);
-	}
+copy:
+	copy_highpage(cache_page, page);
 	return 0;
 }
 
