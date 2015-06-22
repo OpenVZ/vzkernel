@@ -2080,6 +2080,13 @@ struct file_system_type {
 #define FS_HAS_RM_XQUOTA	256	/* KABI: fs has the rm_xquota quota op */
 #define FS_HAS_INVALIDATE_RANGE	512	/* FS has new ->invalidatepage with length arg */
 #define FS_RENAME_DOES_D_MOVE	32768	/* FS will handle d_move() during rename() internally. */
+/*
+ * f_op->mmap must be called with vma=NULL before taking mmap_sem;
+ * workaround for wrong i_mutex vs mmap_sem lock ordering in pfcache
+ * (PSBM-23133) - vdavydov@
+ */
+#define FS_HAS_MMAP_PREP	(1<<18)
+
 	struct dentry *(*mount) (struct file_system_type *, int,
 		       const char *, void *);
 	void (*kill_sb) (struct super_block *);
