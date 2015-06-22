@@ -11,7 +11,6 @@
 #include <linux/swap.h>
 #include <linux/swapops.h>
 #include <linux/pagemap.h>
-#include <linux/writeback.h>
 #include <linux/shrinker.h>
 #include <linux/frontswap.h>
 
@@ -103,15 +102,12 @@ static unsigned long tswap_shrink_count(struct shrinker *shrink,
 	return tswap_lru_node[sc->nid].nr_items;
 }
 
-static int tswap_writeback_page(struct page *page)
+static int tswap_evict_page(struct page *page)
 {
 	struct address_space *swapper_space;
 	struct page *found_page;
 	swp_entry_t entry;
 	int err;
-	struct writeback_control wbc = {
-		.sync_mode = WB_SYNC_NONE,
-	};
 
 	BUG_ON(!PageLocked(page));
 
@@ -196,18 +192,12 @@ retry:
 
 	lru_cache_add_anon(page);
 	SetPageUptodate(page);
-
-	/* move it to the tail of the inactive list after end_writeback */
-	SetPageReclaim(page);
-
-	/* start writeback; unlocks the page */
-	__swap_writepage(page, &wbc, end_swap_bio_write);
+	SetPageDirty(page);
 	return 0;
 
 out_free_swapcache:
 	swapcache_free(entry, NULL);
 out:
-	unlock_page(page);
 	return err;
 }
 
@@ -235,9 +225,10 @@ static unsigned long tswap_shrink_scan(struct shrinker *shrink,
 		get_page(page);
 		spin_unlock(&tswap_lock);
 
-		if (tswap_writeback_page(page) == 0)
+		if (tswap_evict_page(page) == 0)
 			nr_reclaimed++;
 
+		unlock_page(page);
 		put_page(page);
 
 		cond_resched();
@@ -277,7 +268,8 @@ static int tswap_frontswap_store(unsigned type, pgoff_t offset,
 	if (cache_page)
 		goto copy;
 
-	cache_page = alloc_page(__GFP_HIGHMEM | __GFP_NORETRY | __GFP_NOWARN);
+	cache_page = alloc_page(__GFP_HIGHMEM | __GFP_NORETRY |
+				__GFP_NOMEMALLOC | __GFP_NOWARN);
 	if (!cache_page)
 		return -1;
 
