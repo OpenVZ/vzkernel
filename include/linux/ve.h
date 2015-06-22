@@ -63,8 +63,8 @@ struct ve_struct {
 	struct binfmt_misc	*binfmt_misc;
 #endif
 
-#define	MAX_NR_VTTY		12
-	struct tty_struct	*vtty[MAX_NR_VTTY];
+	struct tty_struct	*vz_tty_conm;
+	struct tty_struct	*vz_tty_cons;
 
 	struct list_head	devices;
 
