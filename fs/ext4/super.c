@@ -5029,8 +5029,12 @@ int ext4_force_commit(struct super_block *sb)
 {
 	journal_t *journal;
 
-	if (sb->s_flags & MS_RDONLY)
+	if (sb->s_flags & MS_RDONLY) {
+		smp_rmb();
+		if (EXT4_SB(sb)->s_mount_flags & EXT4_MF_FS_ABORTED)
+			return -EROFS;
 		return 0;
+	}
 
 	journal = EXT4_SB(sb)->s_journal;
 	return ext4_journal_force_commit(journal);
