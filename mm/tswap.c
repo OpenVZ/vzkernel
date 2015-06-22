@@ -86,6 +86,22 @@ static int tswap_insert_page(swp_entry_t entry, struct page *page)
 	return err;
 }
 
+static struct page *tswap_delete_page(swp_entry_t entry)
+{
+	struct page *page;
+
+	spin_lock(&tswap_lock);
+	page = radix_tree_delete(&tswap_page_tree, entry.val);
+	if (page)
+		tswap_nr_pages--;
+	spin_unlock(&tswap_lock);
+	if (page) {
+		BUG_ON(page_private(page) != entry.val);
+		tswap_lru_del(page);
+	}
+	return page;
+}
+
 static unsigned long tswap_shrink_count(struct shrinker *shrink,
 					struct shrink_control *sc)
 {
@@ -262,31 +278,24 @@ copy:
 static int tswap_frontswap_load(unsigned type, pgoff_t offset,
 				struct page *page)
 {
-	swp_entry_t entry = swp_entry(type, offset);
 	struct page *cache_page;
 
-	spin_lock(&tswap_lock);
-	cache_page = radix_tree_delete(&tswap_page_tree, entry.val);
-	if (cache_page)
-		tswap_nr_pages--;
-	spin_unlock(&tswap_lock);
-
+	cache_page = tswap_delete_page(swp_entry(type, offset));
 	if (!cache_page)
 		return -1;
 
-	BUG_ON(page_private(cache_page) != entry.val);
-	tswap_lru_del(cache_page);
-
-	if (page)
-		copy_highpage(page, cache_page);
+	copy_highpage(page, cache_page);
 	put_page(cache_page);
-
 	return 0;
 }
 
 static void tswap_frontswap_invalidate_page(unsigned type, pgoff_t offset)
 {
-	(void)tswap_frontswap_load(type, offset, NULL);
+	struct page *cache_page;
+
+	cache_page = tswap_delete_page(swp_entry(type, offset));
+	if (cache_page)
+		put_page(cache_page);
 }
 
 static void tswap_frontswap_invalidate_area(unsigned type)
