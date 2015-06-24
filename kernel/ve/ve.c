@@ -714,6 +714,9 @@ static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 	struct ve_struct *ve = cgroup_ve(cg);
 	struct task_struct *task;
 
+	if (!ve->veid)
+		return -ENOENT;
+
 	if (ve->is_locked)
 		return -EBUSY;
 
