@@ -3175,6 +3175,7 @@ int schedule_on_each_cpu(work_func_t func)
 	free_percpu(works);
 	return 0;
 }
+EXPORT_SYMBOL_GPL(schedule_on_each_cpu);
 
 /**
  * flush_scheduled_work - ensure that any scheduled work has run to completion.
