@@ -4663,6 +4663,130 @@ retry:
 	ext4_std_error(inode->i_sb, err);
 }
 
+static int ext4_convert_and_extend_locked(struct inode *inode, loff_t offset,
+					  loff_t len)
+{
+	struct ext4_ext_path *path = NULL;
+	loff_t new_size = offset + len;
+	ext4_lblk_t iblock = offset >> inode->i_blkbits;
+	ext4_lblk_t new_iblock = new_size >> inode->i_blkbits;
+	unsigned int max_blocks = new_iblock - iblock;
+	handle_t *handle;
+	unsigned int credits;
+	int err = 0;
+	int ret = 0;
+
+	if ((loff_t)iblock << inode->i_blkbits != offset ||
+	    (loff_t)new_iblock << inode->i_blkbits != new_size)
+		return -EINVAL;
+
+	while (max_blocks > 0) {
+		struct ext4_extent *ex;
+		ext4_lblk_t ee_block;
+		ext4_fsblk_t ee_start;
+		unsigned short ee_len;
+		int depth;
+
+		/*
+		 * credits to insert 1 extents into extent tree
+		 */
+		credits = ext4_chunk_trans_blocks(inode, max_blocks);
+		handle = ext4_journal_start(inode, EXT4_HT_MAP_BLOCKS, credits);
+		if (IS_ERR(handle))
+		       return PTR_ERR(handle);
+
+		down_write((&EXT4_I(inode)->i_data_sem));
+
+		/* find extent for this block */
+		path = ext4_ext_find_extent(inode, iblock, NULL, 0);
+		if (IS_ERR(path)) {
+			err = PTR_ERR(path);
+			goto done;
+		}
+
+		depth = ext_depth(inode);
+		ex = path[depth].p_ext;
+		BUG_ON(ex == NULL && depth != 0);
+
+		if (ex == NULL) {
+			err = -ENOENT;
+			goto done;
+		}
+
+		ee_block = le32_to_cpu(ex->ee_block);
+		ee_start = ext4_ext_pblock(ex);
+		ee_len = ext4_ext_get_actual_len(ex);
+		if (!in_range(iblock, ee_block, ee_len)) {
+			err = -ERANGE;
+			goto done;
+		}
+
+		if (ext4_ext_is_unwritten(ex)) {
+			struct ext4_map_blocks map = {0};
+
+			map.m_lblk = iblock;
+			map.m_len = max_blocks;
+			err = ext4_convert_unwritten_extents_endio(handle, inode,
+								   &map,
+								   path);
+			if (err < 0)
+				goto done;
+
+			ext4_update_inode_fsync_trans(handle, inode, 1);
+			err = check_eofblocks_fl(handle, inode, iblock, path,
+						 max_blocks);
+			if (err)
+				goto done;
+		}
+
+
+		up_write((&EXT4_I(inode)->i_data_sem));
+
+		iblock += ee_len;
+		max_blocks -= (ee_len < max_blocks) ? ee_len : max_blocks;
+
+		if (!max_blocks && new_size > i_size_read(inode)) {
+			i_size_write(inode, new_size);
+			ext4_update_i_disksize(inode, new_size);
+		}
+
+		ret = ext4_mark_inode_dirty(handle, inode);
+done:
+		if (err)
+			up_write((&EXT4_I(inode)->i_data_sem));
+		else
+			err = ret;
+
+		if (path) {
+			ext4_ext_drop_refs(path);
+			kfree(path);
+		}
+
+		ret = ext4_journal_stop(handle);
+		if (!err && ret)
+			err = ret;
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
+static int ext4_convert_and_extend(struct inode *inode, loff_t offset,
+				   loff_t len)
+{
+	int err;
+
+	if (!capable(CAP_SYS_ADMIN))
+		return -EACCES;
+
+	mutex_lock(&inode->i_mutex);
+	err = ext4_convert_and_extend_locked(inode, offset, len);
+	mutex_unlock(&inode->i_mutex);
+
+	return err;
+}
+
 static int ext4_alloc_file_blocks(struct file *file, ext4_lblk_t offset,
 				  ext4_lblk_t len, loff_t new_size,
 				  int flags, int mode)
@@ -4919,11 +5043,15 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 
 	/* Return error if mode is not supported */
 	if (mode & ~(FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE |
-		     FALLOC_FL_COLLAPSE_RANGE | FALLOC_FL_ZERO_RANGE))
+		     FALLOC_FL_COLLAPSE_RANGE | FALLOC_FL_ZERO_RANGE |
+		     FALLOC_FL_CONVERT_AND_EXTEND))
 		return -EOPNOTSUPP;
 
 	if (mode & FALLOC_FL_PUNCH_HOLE)
 		return ext4_punch_hole(inode, offset, len);
+
+	if (mode & FALLOC_FL_CONVERT_AND_EXTEND)
+		return ext4_convert_and_extend(inode, offset, len);
 
 	ret = ext4_convert_inline_data(inode);
 	if (ret)
