@@ -1048,7 +1048,7 @@ struct dentry *mount_bdev(struct file_system_type *fs_type,
 	if (!(flags & MS_RDONLY))
 		mode |= FMODE_WRITE;
 
-	bdev = blkdev_get_by_path(dev_name, mode, fs_type);
+	bdev = blkdev_get_by_path(dev_name, mode | FMODE_MOUNT, fs_type);
 	if (IS_ERR(bdev))
 		return ERR_CAST(bdev);
 
