@@ -179,19 +179,6 @@ static struct super_block *alloc_super(struct file_system_type *type, int flags)
 			s = NULL;
 			goto out;
 		}
-#ifdef CONFIG_SMP
-		s->s_files = alloc_percpu(struct list_head);
-		if (!s->s_files)
-			goto err_out;
-		else {
-			int i;
-
-			for_each_possible_cpu(i)
-				INIT_LIST_HEAD(per_cpu_ptr(s->s_files, i));
-		}
-#else
-		INIT_LIST_HEAD(&s->s_files);
-#endif
 		if (init_sb_writers(s, type))
 			goto err_out;
 		s->s_flags = flags;
@@ -249,10 +236,6 @@ err_out_dentry_lru:
 	list_lru_destroy(&s->s_dentry_lru);
 err_out:
 	security_sb_free(s);
-#ifdef CONFIG_SMP
-	if (s->s_files)
-		free_percpu(s->s_files);
-#endif
 	destroy_sb_writers(s);
 	kfree(s);
 	s = NULL;
@@ -269,9 +252,6 @@ static inline void destroy_super(struct super_block *s)
 {
 	list_lru_destroy(&s->s_dentry_lru);
 	list_lru_destroy(&s->s_inode_lru);
-#ifdef CONFIG_SMP
-	free_percpu(s->s_files);
-#endif
 	destroy_sb_writers(s);
 	security_sb_free(s);
 	WARN_ON(!list_empty(&s->s_mounts));
@@ -762,7 +742,8 @@ int do_remount_sb(struct super_block *sb, int flags, void *data, int force)
 	   make sure there are no rw files opened */
 	if (remount_ro) {
 		if (force) {
-			mark_files_ro(sb);
+			sb->s_readonly_remount = 1;
+			smp_wmb();
 		} else {
 			retval = sb_prepare_remount_readonly(sb);
 			if (retval)
