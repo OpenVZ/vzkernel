@@ -346,6 +346,22 @@ static struct page **uts_prep_vdso_pages_locked(int map)
 		new_version = KERNEL_VERSION(n1, n2, n3);
 		if (new_version == LINUX_VERSION_CODE)
 			goto out;
+#ifdef CONFIG_X86_32
+		else {
+			/*
+			 * Native x86-32 mode requires vDSO runtime
+			 * relocations applied which is not supported
+			 * in the old vanilla kernels, moreover even
+			 * being ported we would break compatibility
+			 * with rhel5 vdso which has addresses hardcoded.
+			 * Thus simply warn about this problem and
+			 * continue execution without virtualization.
+			 * After all i686 is pretty outdated nowadays.
+			 */
+			pr_warn_once("x86-32 vDSO virtualization is not supported.");
+			goto out;
+		}
+#endif
 	} else {
 		/*
 		 * If admin is passed malformed string here
@@ -392,14 +408,6 @@ static struct page **uts_prep_vdso_pages_locked(int map)
 
 	pr_debug("vDSO version transition %d -> %d for VE %d\n",
 		 LINUX_VERSION_CODE, new_version, ve->veid);
-
-#ifdef CONFIG_X86_32
-	__set_fixmap(FIX_VDSO, page_to_pfn(new_pages[0]) << PAGE_SHIFT,
-		     map ? PAGE_READONLY_EXEC : PAGE_NONE);
-
-	/* flush stray tlbs */
-	flush_tlb_all();
-#endif
 
 out_unlock:
 	mutex_unlock(&vdso32_mutex);
