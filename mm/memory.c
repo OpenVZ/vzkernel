@@ -3608,10 +3608,10 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	else
 		VM_BUG_ON_PAGE(!PageLocked(vmf.page), vmf.page);
 
-	preempt_disable();
+	local_irq_disable();
 	KSTAT_LAT_PCPU_ADD(&kstat_glob.page_in, smp_processor_id(),
 			get_cycles() - start);
-	preempt_enable();
+	local_irq_enable();
 
 	/*
 	 * Should we do an early C-O-W break?
