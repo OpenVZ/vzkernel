@@ -1174,6 +1174,8 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 		perm |= MAY_READ;
 	if (mode & FMODE_WRITE)
 		perm |= MAY_WRITE;
+	if (mode & FMODE_MOUNT)
+		perm |= MAY_MOUNT;
 	/*
 	 * hooks: /n/, see "layering violations".
 	 */
