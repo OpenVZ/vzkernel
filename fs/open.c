@@ -245,7 +245,8 @@ int vfs_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 		return -EINVAL;
 
 	/* Return error if mode is not supported */
-	if (mode & ~FALLOC_FL_SUPPORTED_MASK)
+	if (mode & ~(FALLOC_FL_SUPPORTED_MASK |
+		     FALLOC_FL_CONVERT_UNWRITTEN))
 		return -EOPNOTSUPP;
 
 	/* Punch hole and zero range are mutually exclusive */
@@ -266,6 +267,11 @@ int vfs_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 	/* Insert range should only be used exclusively. */
 	if ((mode & FALLOC_FL_INSERT_RANGE) &&
 	    (mode & ~FALLOC_FL_INSERT_RANGE))
+		return -EINVAL;
+
+	/* Convert-and-extend should only be used exclusively. */
+	if ((mode & FALLOC_FL_CONVERT_UNWRITTEN) &&
+	    (mode & ~FALLOC_FL_CONVERT_UNWRITTEN))
 		return -EINVAL;
 
 	if (!(file->f_mode & FMODE_WRITE))
