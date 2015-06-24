@@ -84,6 +84,7 @@ typedef void (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
 #define MAY_NOT_BLOCK		0x00000080
 /* for devgroup-vs-openvz only */
 #define MAY_QUOTACTL		0x00010000	/* deprecated */
+#define MAY_MOUNT		0x00020000
 
 /*
  * flags in file.f_mode.  Note that FMODE_READ and FMODE_WRITE must correspond
@@ -135,6 +136,9 @@ typedef void (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
 #define FMODE_ATOMIC_POS	((__force fmode_t)0x8000)
 /* Write access to underlying fs */
 #define FMODE_WRITER		((__force fmode_t)0x10000)
+
+/* File is a block device opened by mount(2)  */
+#define FMODE_MOUNT		((__force fmode_t)0x10000)
 
 /* File was opened by fanotify and shouldn't generate fanotify events */
 #define FMODE_NONOTIFY		((__force fmode_t)0x1000000)
