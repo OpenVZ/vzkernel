@@ -692,6 +692,7 @@ static struct genl_family family __ro_after_init = {
 	.ops		= taskstats_ops,
 	.n_ops		= ARRAY_SIZE(taskstats_ops),
 	.pre_doit	= taskstats_pre_doit,
+	.netnsok	= true,
 };
 
 /* Needed early in initialization */
