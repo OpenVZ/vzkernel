@@ -36,6 +36,9 @@ struct recovery_info
 	int		nr_replays;
 	int		nr_revokes;
 	int		nr_revoke_hits;
+
+	unsigned int		last_log_block;
+	struct buffer_head	*last_commit_bh;
 };
 
 enum passtype {PASS_SCAN, PASS_REVOKE, PASS_REPLAY};
@@ -233,6 +236,71 @@ do {									\
 		var -= ((journal)->j_last - (journal)->j_first);	\
 } while (0)
 
+/*
+ * The 'Raid amnesia' effect protection: https://jira.sw.ru/browse/PSBM-15484
+ *
+ * Some blockdevices can return different data on read requests from same block
+ * after power failure (for example mirrored raid is out of sync, and resync is
+ * in progress) In that case following sutuation is possible:
+ *
+ * Power failure happen after transaction commit log was issued for
+ * transaction 'D', next boot first dist will have commit block, but
+ * second one will not.
+ * mirror1: journal={Ac-Bc-Cc-Dc }
+ * mirror2: journal={Ac-Bc-Cc-D  }
+ * Now let's let assumes that we read from mirror1 and found that 'D' has
+ * valid commit block, so journal_replay will replay that transaction, but
+ * second power failure may happen before journal_reset() so next
+ * journal_replay() may read from mirror2 and found that 'C' is last valid
+ * transaction. This result in corruption because we already replayed
+ * trandaction 'D'.
+ * In order to avoid such ambiguity we should pefrorm 'stabilize write'.
+ * 1) Read and rewrite latest commit id block
+ * 2) Invalidate next block in
+ * order to guarantee that journal head becomes stable.
+ * Yes i know that 'stabilize write' approach is ugly but this is the only
+ * way to run filesystem on blkdevices with 'raid amnesia' effect
+ */
+static int stabilize_journal_head(journal_t *journal, struct recovery_info *info)
+{
+	struct buffer_head *bh[2] = {NULL, NULL};
+	int err, err2, i;
+
+	if (!info->last_commit_bh)
+		return 0;
+
+	bh[0] = info->last_commit_bh;
+	info->last_commit_bh = NULL;
+
+	err = jread(&bh[1], journal, info->last_log_block);
+	if (err)
+		goto out;
+
+	for (i = 0; i < 2; i++) {
+		lock_buffer(bh[i]);
+		/* Explicitly invalidate block beyond last commit block */
+		if (i == 1)
+			memset(bh[i]->b_data, 0, journal->j_blocksize);
+
+		BUFFER_TRACE(bh[i], "marking dirty");
+		set_buffer_uptodate(bh[i]);
+		mark_buffer_dirty(bh[i]);
+		BUFFER_TRACE(bh[i], "marking uptodate");
+		unlock_buffer(bh[i]);
+	}
+	err = sync_blockdev(journal->j_dev);
+	/* Make sure data is on permanent storage */
+	if (journal->j_flags & JBD2_BARRIER) {
+		err2 = blkdev_issue_flush(journal->j_dev, GFP_KERNEL, NULL);
+		if (!err)
+			err = err2;
+	}
+out:
+	brelse(bh[0]);
+	brelse(bh[1]);
+	return err;
+}
+
 /**
  * jbd2_journal_recover - recovers a on-disk journal
  * @journal: the journal to recover
@@ -269,6 +337,8 @@ int jbd2_journal_recover(journal_t *journal)
 	}
 
 	err = do_one_pass(journal, &info, PASS_SCAN);
+	if (!err)
+		err = stabilize_journal_head(journal, &info);
 	if (!err)
 		err = do_one_pass(journal, &info, PASS_REVOKE);
 	if (!err)
@@ -319,6 +389,7 @@ int jbd2_journal_skip_recovery(journal_t *journal)
 	memset (&info, 0, sizeof(info));
 
 	err = do_one_pass(journal, &info, PASS_SCAN);
+	brelse(info.last_commit_bh);
 
 	if (err) {
 		printk(KERN_ERR "JBD2: error %d scanning journal\n", err);
@@ -422,6 +493,7 @@ static int do_one_pass(journal_t *journal,
 {
 	unsigned int		first_commit_ID, next_commit_ID;
 	unsigned long		next_log_block;
+	unsigned long		last_commit_block;
 	int			err, success = 0;
 	journal_superblock_t *	sb;
 	journal_header_t *	tmp;
@@ -442,6 +514,7 @@ static int do_one_pass(journal_t *journal,
 	sb = journal->j_superblock;
 	next_commit_ID = be32_to_cpu(sb->s_sequence);
 	next_log_block = be32_to_cpu(sb->s_start);
+	last_commit_block = 0;
 
 	first_commit_ID = next_commit_ID;
 	if (pass == PASS_SCAN)
@@ -758,7 +831,9 @@ static int do_one_pass(journal_t *journal,
 					break;
 				}
 			}
-			brelse(bh);
+			brelse(info->last_commit_bh);
+			info->last_commit_bh = bh;
+			info->last_log_block = next_log_block;
 			next_commit_ID++;
 			continue;
 
