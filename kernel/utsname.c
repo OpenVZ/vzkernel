@@ -35,7 +35,12 @@ static struct uts_namespace *create_uts_ns(void)
 	uts_ns = kmalloc(sizeof(struct uts_namespace), GFP_KERNEL);
 	if (uts_ns) {
 #ifdef CONFIG_X86
+#ifdef CONFIG_X86_64
 		memset(&uts_ns->vdso, 0, sizeof(uts_ns->vdso));
+#endif
+#if defined(CONFIG_X86_32) || defined(CONFIG_IA32_EMULATION)
+		memset(&uts_ns->vdso32, 0, sizeof(uts_ns->vdso32));
+#endif
 #endif
 		kref_init(&uts_ns->kref);
 	}
@@ -116,6 +121,7 @@ void free_uts_ns(struct kref *kref)
 	put_user_ns(ns->user_ns);
 	proc_free_inum(ns->proc_inum);
 #ifdef CONFIG_X86
+#ifdef CONFIG_X86_64
 	if (ns->vdso.pages) {
 		int i;
 		vunmap(ns->vdso.addr);
@@ -123,6 +129,15 @@ void free_uts_ns(struct kref *kref)
 			put_page(ns->vdso.pages[i]);
 		kfree(ns->vdso.pages);
 	}
+#endif
+#if defined(CONFIG_X86_32) || defined(CONFIG_IA32_EMULATION)
+	if (ns->vdso32.pages) {
+		int i;
+		for (i = 0; i < ns->vdso32.nr_pages; i++)
+			put_page(ns->vdso32.pages[i]);
+		kfree(ns->vdso32.pages);
+	}
+#endif
 #endif
 	kfree(ns);
 }
