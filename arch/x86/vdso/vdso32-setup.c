@@ -26,6 +26,10 @@
 #include <asm/vdso.h>
 #include <asm/proto.h>
 
+#include <linux/utsname.h>
+#include <linux/version.h>
+#include <linux/ve.h>
+
 enum {
 	VDSO_DISABLED = 0,
 	VDSO_ENABLED = 1,
@@ -303,6 +307,85 @@ int __init sysenter_setup(void)
 	return 0;
 }
 
+static struct page **uts_prep_vdso_pages_locked(int map)
+{
+	struct uts_namespace *uts_ns = current->nsproxy->uts_ns;
+	struct mm_struct *mm = current->mm;
+	struct ve_struct *ve = get_exec_env();
+	struct page **pages = vdso32_pages;
+	int n1, n2, n3, new_version;
+	void *addr;
+
+	/*
+	 * Simply reuse vDSO pages if we can.
+	 */
+	if (uts_ns == &init_uts_ns)
+		return vdso32_pages;
+	else if (uts_ns->vdso32.pages)
+		return uts_ns->vdso32.pages;
+
+	up_write(&mm->mmap_sem);
+
+	if (sscanf(uts_ns->name.release, "%d.%d.%d", &n1, &n2, &n3) == 3) {
+		/*
+		 * If there were no changes on version simply reuse
+		 * preallocated one.
+		 */
+		new_version = KERNEL_VERSION(n1, n2, n3);
+		if (new_version == LINUX_VERSION_CODE)
+			goto out;
+	} else {
+		/*
+		 * If admin is passed malformed string here
+		 * lets warn him once but continue working
+		 * not using vDSO virtualization at all. It's
+		 * better than walk out with error.
+		 */
+		pr_warn_once("Wrong release uts name format detected."
+			     " Ignoring vDSO virtualization.\n");
+		goto out;
+	}
+
+	uts_ns->vdso32.nr_pages		= 1;
+	uts_ns->vdso32.size		= PAGE_SIZE;
+	uts_ns->vdso32.version_off	= (unsigned long)VDSO32_SYMBOL(0, linux_version_code);
+	uts_ns->vdso32.pages		= kmalloc(sizeof(struct page *), GFP_KERNEL);
+	if (!uts_ns->vdso32.pages) {
+		pr_err("Can't allocate vDSO pages array for VE %d\n", ve->veid);
+		pages = ERR_PTR(-ENOMEM);
+		goto out;
+	}
+
+	uts_ns->vdso32.pages[0] = alloc_page(GFP_KERNEL);
+	if (!uts_ns->vdso32.pages[0]) {
+		pr_err("Can't allocate page for VE %d\n", ve->veid);
+		kfree(uts_ns->vdso32.pages);
+		uts_ns->vdso32.pages = NULL;
+		pages = ERR_PTR(-ENOMEM);
+		goto out;
+	}
+
+	copy_page(page_address(uts_ns->vdso32.pages[0]), page_address(vdso32_pages[0]));
+	pages = uts_ns->vdso32.pages;
+
+	addr = page_address(uts_ns->vdso32.pages[0]);
+	*((int *)(addr + uts_ns->vdso32.version_off)) = new_version;
+	pr_debug("vDSO version transition %d -> %d for VE %d\n",
+		 LINUX_VERSION_CODE, new_version, ve->veid);
+
+#ifdef CONFIG_X86_32
+	__set_fixmap(FIX_VDSO, page_to_pfn(uts_ns->vdso32.pages[0]) << PAGE_SHIFT,
+		     map ? PAGE_READONLY_EXEC : PAGE_NONE);
+
+	/* flush stray tlbs */
+	flush_tlb_all();
+#endif
+
+out:
+	down_write(&mm->mmap_sem);
+	return pages;
+}
+
 /* Setup a VMA at program startup for the vsyscall page */
 int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 {
@@ -340,13 +423,19 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 	current->mm->context.vdso = (void *)addr;
 
 	if (compat_uses_vma || !compat) {
+		struct page **pages = uts_prep_vdso_pages_locked(compat);
+		if (IS_ERR(pages)) {
+			ret = PTR_ERR(pages);
+			goto up_fail;
+		}
+
 		/*
 		 * MAYWRITE to allow gdb to COW and set breakpoints
 		 */
 		ret = install_special_mapping(mm, addr, PAGE_SIZE,
 					      VM_READ|VM_EXEC|
 					      VM_MAYREAD|VM_MAYWRITE|VM_MAYEXEC,
-					      vdso32_pages);
+					      pages);
 
 		if (ret)
 			goto up_fail;
