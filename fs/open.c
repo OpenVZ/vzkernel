@@ -246,7 +246,8 @@ int vfs_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 
 	/* Return error if mode is not supported */
 	if (mode & ~(FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE |
-		     FALLOC_FL_COLLAPSE_RANGE | FALLOC_FL_ZERO_RANGE))
+		     FALLOC_FL_COLLAPSE_RANGE | FALLOC_FL_ZERO_RANGE |
+		     FALLOC_FL_CONVERT_UNWRITTEN))
 		return -EOPNOTSUPP;
 
 	/* Punch hole and zero range are mutually exclusive */
@@ -262,6 +263,11 @@ int vfs_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 	/* Collapse range should only be used exclusively. */
 	if ((mode & FALLOC_FL_COLLAPSE_RANGE) &&
 	    (mode & ~FALLOC_FL_COLLAPSE_RANGE))
+		return -EINVAL;
+
+	/* Convert-and-extend should only be used exclusively. */
+	if ((mode & FALLOC_FL_CONVERT_UNWRITTEN) &&
+	    (mode & ~FALLOC_FL_CONVERT_UNWRITTEN))
 		return -EINVAL;
 
 	if (!(file->f_mode & FMODE_WRITE))
