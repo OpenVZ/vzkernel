@@ -21,15 +21,9 @@ config ASYMMETRIC_PUBLIC_KEY_SUBTYPE
 
 config PUBLIC_KEY_ALGO_RSA
 	tristate "RSA public-key algorithm"
-	help
-	  This option enables support for the RSA algorithm (PKCS#1, RFC3447).
-
-config PUBLIC_KEY_ALGO_DSA
-	tristate "DSA public-key algorithm"
-	depends on ASYMMETRIC_PUBLIC_KEY_SUBTYPE
 	select MPILIB_EXTRA
 	help
-	  This option enables support for the DSA algorithm.
+	  This option enables support for the RSA algorithm (PKCS#1, RFC3447).
 
 config X509_CERTIFICATE_PARSER
 	tristate "X.509 certificate parser"
