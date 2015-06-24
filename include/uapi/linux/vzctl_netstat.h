@@ -93,6 +93,9 @@ struct vzctl_tc_set_base {
 
 #define VZCTL_TC_CLASS_NUM_V6		_IO(VZTCCTLTYPE, 16)
 
+#define VZCTL_TC_CLEAR_STAT		_IO(VZTCCTLTYPE, 17)
+#define VZCTL_TC_CLEAR_ALL_STAT		_IO(VZTCCTLTYPE, 18)
+
 #ifdef __KERNEL__
 #ifdef CONFIG_COMPAT
 #include <linux/compat.h>
