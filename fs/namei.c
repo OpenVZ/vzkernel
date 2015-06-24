@@ -2576,7 +2576,8 @@ static int may_delete(struct inode *dir, struct dentry *victim, bool isdir)
 		return -EPERM;
 
 	if (check_sticky(dir, inode) || IS_APPEND(inode) ||
-	    IS_IMMUTABLE(inode) || IS_SWAPFILE(inode))
+	    IS_IMMUTABLE(inode) ||
+	    (IS_SWAPFILE(inode) && inode->i_nlink == 1))
 		return -EPERM;
 	if (isdir) {
 		if (!d_is_dir(victim))
