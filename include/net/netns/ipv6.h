@@ -17,7 +17,6 @@ struct netns_sysctl_ipv6 {
 	struct ctl_table_header *icmp_hdr;
 	struct ctl_table_header *frags_hdr;
 	struct ctl_table_header *xfrm6_hdr;
-	struct ctl_table_header *nf_frags_hdr;
 #endif
 	int bindv6only;
 	int flush_delay;
@@ -37,7 +36,6 @@ struct netns_ipv6 {
 	struct ipv6_devconf	*devconf_dflt;
 	struct inet_peer_base	*peers;
 	struct netns_frags	frags;
-	struct netns_frags	ct_frags;
 #ifdef CONFIG_NETFILTER
 	struct xt_table		*ip6table_filter;
 	struct xt_table		*ip6table_mangle;
