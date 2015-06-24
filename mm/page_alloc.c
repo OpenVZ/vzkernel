@@ -3405,6 +3405,7 @@ static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
 		struct page *page, u64 time)
 {
 #ifdef CONFIG_VE
+	unsigned long flags;
 	int ind, cpu;
 
 	time = jiffies_to_usecs(jiffies - time) * 1000;
@@ -3421,11 +3422,12 @@ static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
 		else
 			ind = KSTAT_ALLOCSTAT_HIGH;
 
-	cpu = get_cpu();
+	local_irq_save(flags);
+	cpu = smp_processor_id();
 	KSTAT_LAT_PCPU_ADD(&kstat_glob.alloc_lat[ind], cpu, time);
 	if (!page)
 		kstat_glob.alloc_fails[cpu][ind]++;
-	put_cpu();
+	local_irq_restore(flags);
 #endif
 }
 
