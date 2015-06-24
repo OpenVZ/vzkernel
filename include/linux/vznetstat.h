@@ -38,8 +38,8 @@ struct venet_stat {
 	unsigned long flags;
 	atomic_t users;
 
-	struct acct_stat *ipv4_stat;
-	struct acct_stat *ipv6_stat;
+	struct acct_stat __percpu *ipv4_stat;
+	struct acct_stat __percpu *ipv6_stat;
 };
 
 static inline int venet_acct_skb_size(struct sk_buff *skb)
