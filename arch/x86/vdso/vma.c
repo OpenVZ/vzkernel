@@ -209,11 +209,14 @@ up_fail:
 	return ret;
 }
 
+static DEFINE_MUTEX(vdso_mutex);
+
 static int uts_arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 {
 	struct uts_namespace *uts_ns = current->nsproxy->uts_ns;
 	struct ve_struct *ve = get_exec_env();
 	int i, n1, n2, n3, new_version;
+	struct page **new_pages, **p;
 
 	/*
 	 * For node or in case we've not changed UTS simply
@@ -224,7 +227,15 @@ static int uts_arch_setup_additional_pages(struct linux_binprm *bprm, int uses_i
 	 */
 	if (uts_ns == &init_uts_ns)
 		goto map_init_uts;
-	else if (uts_ns->vdso.pages)
+	/*
+	 * Dirty lockless hack. Strictly speaking
+	 * we need to return @p here if it's non-nil,
+	 * but since there only one trasition possible
+	 * { =0 ; !=0 } we simply return @uts_ns->vdso.pages
+	 */
+	p = ACCESS_ONCE(uts_ns->vdso.pages);
+	smp_read_barrier_depends();
+	if (p)
 		goto map_uts;
 
 	if (sscanf(uts_ns->name.release, "%d.%d.%d", &n1, &n2, &n3) == 3) {
@@ -247,13 +258,19 @@ static int uts_arch_setup_additional_pages(struct linux_binprm *bprm, int uses_i
 		goto map_init_uts;
 	}
 
+	mutex_lock(&vdso_mutex);
+	if (uts_ns->vdso.pages) {
+		mutex_unlock(&vdso_mutex);
+		goto map_uts;
+	}
+
 	uts_ns->vdso.nr_pages	= init_uts_ns.vdso.nr_pages;
 	uts_ns->vdso.size	= init_uts_ns.vdso.size;
 	uts_ns->vdso.version_off= init_uts_ns.vdso.version_off;
-	uts_ns->vdso.pages	= kmalloc(sizeof(struct page *) * init_uts_ns.vdso.nr_pages, GFP_KERNEL);
-	if (!uts_ns->vdso.pages) {
+	new_pages		= kmalloc(sizeof(struct page *) * init_uts_ns.vdso.nr_pages, GFP_KERNEL);
+	if (!new_pages) {
 		pr_err("Can't allocate vDSO pages array for VE %d\n", ve->veid);
-		return -ENOMEM;
+		goto out_unlock;
 	}
 
 	for (i = 0; i < uts_ns->vdso.nr_pages; i++) {
@@ -261,26 +278,28 @@ static int uts_arch_setup_additional_pages(struct linux_binprm *bprm, int uses_i
 		if (!p) {
 			pr_err("Can't allocate page for VE %d\n", ve->veid);
 			for (; i > 0; i--)
-				put_page(uts_ns->vdso.pages[i - 1]);
-			kfree(uts_ns->vdso.pages);
-			uts_ns->vdso.pages = NULL;
-			return -ENOMEM;
+				put_page(new_pages[i - 1]);
+			kfree(new_pages);
+			goto out_unlock;
 		}
-		uts_ns->vdso.pages[i] = p;
+		new_pages[i] = p;
 		copy_page(page_address(p), page_address(init_uts_ns.vdso.pages[i]));
 	}
 
-	uts_ns->vdso.addr = vmap(uts_ns->vdso.pages, uts_ns->vdso.nr_pages, 0, PAGE_KERNEL);
+	uts_ns->vdso.addr = vmap(new_pages, uts_ns->vdso.nr_pages, 0, PAGE_KERNEL);
 	if (!uts_ns->vdso.addr) {
 		pr_err("Can't map vDSO pages for VE %d\n", ve->veid);
 		for (i = 0; i < uts_ns->vdso.nr_pages; i++)
-			put_page(uts_ns->vdso.pages[i]);
-		kfree(uts_ns->vdso.pages);
-		uts_ns->vdso.pages = NULL;
-		return -ENOMEM;
+			put_page(new_pages[i]);
+		kfree(new_pages);
+		goto out_unlock;
 	}
 
 	*((int *)(uts_ns->vdso.addr + uts_ns->vdso.version_off)) = new_version;
+	smp_wmb();
+	uts_ns->vdso.pages = new_pages;
+	mutex_unlock(&vdso_mutex);
+
 	pr_debug("vDSO version transition %d -> %d for VE %d\n",
 		 LINUX_VERSION_CODE, new_version, ve->veid);
 
@@ -288,6 +307,9 @@ map_uts:
 	return setup_additional_pages(bprm, uses_interp, uts_ns->vdso.pages, uts_ns->vdso.size);
 map_init_uts:
 	return setup_additional_pages(bprm, uses_interp, init_uts_ns.vdso.pages, init_uts_ns.vdso.size);
+out_unlock:
+	mutex_unlock(&vdso_mutex);
+	return -ENOMEM;
 }
 
 int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
