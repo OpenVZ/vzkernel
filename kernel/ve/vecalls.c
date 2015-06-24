@@ -195,7 +195,7 @@ static inline int init_ve_namespaces(void)
 
 	err = copy_namespaces(CLONE_NEWUTS | CLONE_NEWIPC |
 			      CLONE_NEWPID | CLONE_NEWNET,
-			      current, 1);
+			      current);
 	if (err < 0)
 		return err;
 
