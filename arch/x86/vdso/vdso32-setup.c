@@ -307,6 +307,8 @@ int __init sysenter_setup(void)
 	return 0;
 }
 
+static DEFINE_MUTEX(vdso32_mutex);
+
 static struct page **uts_prep_vdso_pages_locked(int map)
 {
 	struct uts_namespace *uts_ns = current->nsproxy->uts_ns;
@@ -314,6 +316,7 @@ static struct page **uts_prep_vdso_pages_locked(int map)
 	struct ve_struct *ve = get_exec_env();
 	struct page **pages = vdso32_pages;
 	int n1, n2, n3, new_version;
+	struct page **new_pages, **p;
 	void *addr;
 
 	/*
@@ -321,7 +324,16 @@ static struct page **uts_prep_vdso_pages_locked(int map)
 	 */
 	if (uts_ns == &init_uts_ns)
 		return vdso32_pages;
-	else if (uts_ns->vdso32.pages)
+
+	/*
+	 * Dirty lockless hack. Strictly speaking
+	 * we need to return @p here if it's non-nil,
+	 * but since there only one trasition possible
+	 * { =0 ; !=0 } we simply return @uts_ns->vdso32.pages
+	 */
+	p = ACCESS_ONCE(uts_ns->vdso32.pages);
+	smp_read_barrier_depends();
+	if (p)
 		return uts_ns->vdso32.pages;
 
 	up_write(&mm->mmap_sem);
@@ -346,41 +358,51 @@ static struct page **uts_prep_vdso_pages_locked(int map)
 		goto out;
 	}
 
+	mutex_lock(&vdso32_mutex);
+	if (uts_ns->vdso32.pages) {
+		pages = uts_ns->vdso32.pages;
+		goto out_unlock;
+	}
+
 	uts_ns->vdso32.nr_pages		= 1;
 	uts_ns->vdso32.size		= PAGE_SIZE;
 	uts_ns->vdso32.version_off	= (unsigned long)VDSO32_SYMBOL(0, linux_version_code);
-	uts_ns->vdso32.pages		= kmalloc(sizeof(struct page *), GFP_KERNEL);
-	if (!uts_ns->vdso32.pages) {
+	new_pages			= kmalloc(sizeof(struct page *), GFP_KERNEL);
+	if (!new_pages) {
 		pr_err("Can't allocate vDSO pages array for VE %d\n", ve->veid);
 		pages = ERR_PTR(-ENOMEM);
-		goto out;
+		goto out_unlock;
 	}
 
-	uts_ns->vdso32.pages[0] = alloc_page(GFP_KERNEL);
-	if (!uts_ns->vdso32.pages[0]) {
+	new_pages[0] = alloc_page(GFP_KERNEL);
+	if (!new_pages[0]) {
 		pr_err("Can't allocate page for VE %d\n", ve->veid);
-		kfree(uts_ns->vdso32.pages);
-		uts_ns->vdso32.pages = NULL;
+		kfree(new_pages);
 		pages = ERR_PTR(-ENOMEM);
-		goto out;
+		goto out_unlock;
 	}
 
-	copy_page(page_address(uts_ns->vdso32.pages[0]), page_address(vdso32_pages[0]));
-	pages = uts_ns->vdso32.pages;
+	copy_page(page_address(new_pages[0]), page_address(vdso32_pages[0]));
 
-	addr = page_address(uts_ns->vdso32.pages[0]);
+	addr = page_address(new_pages[0]);
 	*((int *)(addr + uts_ns->vdso32.version_off)) = new_version;
+	smp_wmb();
+
+	pages = uts_ns->vdso32.pages = new_pages;
+
 	pr_debug("vDSO version transition %d -> %d for VE %d\n",
 		 LINUX_VERSION_CODE, new_version, ve->veid);
 
 #ifdef CONFIG_X86_32
-	__set_fixmap(FIX_VDSO, page_to_pfn(uts_ns->vdso32.pages[0]) << PAGE_SHIFT,
+	__set_fixmap(FIX_VDSO, page_to_pfn(new_pages[0]) << PAGE_SHIFT,
 		     map ? PAGE_READONLY_EXEC : PAGE_NONE);
 
 	/* flush stray tlbs */
 	flush_tlb_all();
 #endif
 
+out_unlock:
+	mutex_unlock(&vdso32_mutex);
 out:
 	down_write(&mm->mmap_sem);
 	return pages;
