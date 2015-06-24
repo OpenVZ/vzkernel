@@ -985,6 +985,9 @@ static int ve_ip_access_write(struct cgroup *cgrp, struct cftype *cft,
 	struct ve_addr_struct addr;
 	int ret;
 
+	if (!ve->veid)
+		return -ENOENT;
+
 	memset(&addr, 0, sizeof(addr));
 	if (strncmp(cft->name, "ip6", 3)) {
 		if ((ret = in4_to_veaddr(buffer, &addr)) != 0)
@@ -997,14 +1000,17 @@ static int ve_ip_access_write(struct cgroup *cgrp, struct cftype *cft,
 	return do_ve_ip_map(ve, cft->private, &addr);
 }
 
-int ve_ip_access_seq_read(struct cgroup *cgrp, struct cftype *cft,
-			  struct seq_file *m)
+static int ve_ip_access_seq_read(struct cgroup *cgrp, struct cftype *cft,
+				 struct seq_file *m)
 {
 	struct ve_struct *ve = cgroup_ve(cgrp);
 	struct ip_entry_struct *s;
 	char buf[40];
 	int family = strncmp(cft->name, "ip6", 3) ? AF_INET : AF_INET6;
 	int i;
+
+	if (!ve->veid)
+		return -ENOENT;
 
 	rcu_read_lock();
 	for (i = 0; i < VEIP_HASH_SZ; i++) {
