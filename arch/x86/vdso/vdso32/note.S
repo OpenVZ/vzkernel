@@ -9,7 +9,9 @@
 /* Ideally this would use UTS_NAME, but using a quoted string here
    doesn't work. Remember to change this when changing the
    kernel's name. */
+	.globl linux_version_code
 ELFNOTE_START(Linux, 0, "a")
+linux_version_code:
 	.long LINUX_VERSION_CODE
 ELFNOTE_END
 
