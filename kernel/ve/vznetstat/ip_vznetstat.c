@@ -146,8 +146,6 @@ int init_venet_acct_ip_stat(struct ve_struct *env, struct venet_stat *stat)
 	env->stat = stat;
 	venet_acct_get_stat(stat);
 
-	__module_get(THIS_MODULE);
-
 	return 0;
 }
 EXPORT_SYMBOL(init_venet_acct_ip_stat);
@@ -157,7 +155,6 @@ void fini_venet_acct_ip_stat(struct ve_struct *env)
 	if (env->stat) {
 		venet_acct_put_stat(env->stat);
 		env->stat = NULL;
-		module_put(THIS_MODULE);
 	}
 }
 EXPORT_SYMBOL(fini_venet_acct_ip_stat);
@@ -203,30 +200,46 @@ EXPORT_SYMBOL(ip_vznetstat_touch);
 
 int __init ip_venetstat_init(void)
 {
-	struct ve_struct *env = get_ve0();
-	int ret;
+	struct ve_struct *ve;
+	int ret = -ENOMEM;
 
-	env->stat = venet_acct_find_create_stat(env->veid);
-	if (env->stat == NULL)
-		return -ENOMEM;
+	mutex_lock(&ve_list_lock);
+	for_each_ve(ve) {
+		BUG_ON(ve->stat);
+		ve->stat = venet_acct_find_create_stat(ve->veid);
+		if (!ve->stat)
+			goto err_locked;
+	}
+	mutex_unlock(&ve_list_lock);
 
 	ret = venet_acct_register_ip_hooks();
-	if (ret < 0) {
-		venet_acct_put_stat(env->stat);
-		env->stat = NULL;
-		return ret;
-	}
+	if (ret < 0)
+		goto err;
 
 	return 0;
+err:
+	mutex_lock(&ve_list_lock);
+err_locked:
+	for_each_ve(ve) {
+		venet_acct_put_stat(ve->stat);
+		ve->stat = NULL;
+	}
+	mutex_unlock(&ve_list_lock);
+	return ret;
 }
 
 void __exit ip_venetstat_exit(void)
 {
-	struct ve_struct *env = get_ve0();
+	struct ve_struct *ve;
 
 	venet_acct_unregister_ip_hooks();
-	venet_acct_put_stat(env->stat);
-	env->stat = NULL;
+
+	mutex_lock(&ve_list_lock);
+	for_each_ve(ve) {
+		venet_acct_put_stat(ve->stat);
+		ve->stat = NULL;
+	}
+	mutex_unlock(&ve_list_lock);
 }
 
 #if defined(MODULE) && defined(VZ_AUDIT)
