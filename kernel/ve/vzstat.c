@@ -432,7 +432,7 @@ static void mem_free_areas_show(struct seq_file *m, void *v)
 	struct zonestat zones[MAX_NR_ZONES];
 	struct zonestat *zdst;
 	struct zone *zsrc;
-	int type, mtype, order;
+	int type, order;
 
 	memset(zones, 0, sizeof(zones));
 
@@ -454,19 +454,8 @@ static void mem_free_areas_show(struct seq_file *m, void *v)
 					type, zsrc->name, zdst->name);
 
 			spin_lock_irqsave(&zsrc->lock, flags);
-			for_each_migratetype_order(order, mtype) {
-				struct list_head *head, *curr;
-				head = &(zsrc->free_area + order)->free_list[mtype];
-				curr = head;
-
-				for (;;) {
-					if (!curr)
-						break;
-					if ((curr = curr->next) == head)
-						break;
-					zdst->nr_free[order]++;
-				}
-			}
+			for (order = 0; order < MAX_ORDER; order++)
+				zdst->nr_free[order] += zsrc->free_area[order].nr_free;
 			spin_unlock_irqrestore(&zsrc->lock, flags);
 
 			zdst->nr_active     += zone_page_state(zsrc, NR_ACTIVE_ANON) +
