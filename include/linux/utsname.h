@@ -37,6 +37,9 @@ struct uts_namespace {
 #ifdef CONFIG_X86
 	struct uts_vdso vdso;
 #endif
+#if defined(CONFIG_X86_32) || defined(CONFIG_IA32_EMULATION)
+	struct uts_vdso vdso32;
+#endif
 };
 extern struct uts_namespace init_uts_ns;
 extern struct new_utsname virt_utsname;
