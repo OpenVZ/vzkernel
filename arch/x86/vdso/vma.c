@@ -16,6 +16,10 @@
 #include <asm/vdso.h>
 #include <asm/page.h>
 
+#include <linux/utsname.h>
+#include <linux/version.h>
+#include <linux/ve.h>
+
 unsigned int __read_mostly vdso_enabled = 1;
 
 extern char vdso_start[], vdso_end[];
@@ -111,6 +115,12 @@ static int __init init_vdso(void)
 		vdsox32_pages[i] = virt_to_page(vdsox32_start + i*PAGE_SIZE);
 #endif
 
+	init_uts_ns.vdso.addr		= vdso_start;
+	init_uts_ns.vdso.pages		= vdso_pages;
+	init_uts_ns.vdso.nr_pages	= npages;
+	init_uts_ns.vdso.size		= vdso_size;
+	init_uts_ns.vdso.version_off	= (unsigned long)VDSO64_SYMBOL(0, linux_version_code);
+
 	return 0;
 }
 subsys_initcall(init_vdso);
@@ -199,10 +209,90 @@ up_fail:
 	return ret;
 }
 
+static int uts_arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+{
+	struct uts_namespace *uts_ns = current->nsproxy->uts_ns;
+	struct ve_struct *ve = get_exec_env();
+	int i, n1, n2, n3, new_version;
+
+	/*
+	 * For node or in case we've not changed UTS simply
+	 * map preallocated original vDSO.
+	 *
+	 * In turn if we already allocated one for this UTS
+	 * simply reuse it. It improves speed significantly.
+	 */
+	if (uts_ns == &init_uts_ns)
+		goto map_init_uts;
+	else if (uts_ns->vdso.pages)
+		goto map_uts;
+
+	if (sscanf(uts_ns->name.release, "%d.%d.%d", &n1, &n2, &n3) == 3) {
+		/*
+		 * If there were no changes on version simply reuse
+		 * preallocated one.
+		 */
+		new_version = KERNEL_VERSION(n1, n2, n3);
+		if (new_version == LINUX_VERSION_CODE)
+			goto map_init_uts;
+	} else {
+		/*
+		 * If admin is passed malformed string here
+		 * lets warn him once but continue working
+		 * not using vDSO virtualization at all. It's
+		 * better than walk out with error.
+		 */
+		pr_warn_once("Wrong release uts name format detected."
+			     " Ignoring vDSO virtualization.\n");
+		goto map_init_uts;
+	}
+
+	uts_ns->vdso.nr_pages	= init_uts_ns.vdso.nr_pages;
+	uts_ns->vdso.size	= init_uts_ns.vdso.size;
+	uts_ns->vdso.version_off= init_uts_ns.vdso.version_off;
+	uts_ns->vdso.pages	= kmalloc(sizeof(struct page *) * init_uts_ns.vdso.nr_pages, GFP_KERNEL);
+	if (!uts_ns->vdso.pages) {
+		pr_err("Can't allocate vDSO pages array for VE %d\n", ve->veid);
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < uts_ns->vdso.nr_pages; i++) {
+		struct page *p = alloc_page(GFP_KERNEL);
+		if (!p) {
+			pr_err("Can't allocate page for VE %d\n", ve->veid);
+			for (; i > 0; i--)
+				put_page(uts_ns->vdso.pages[i - 1]);
+			kfree(uts_ns->vdso.pages);
+			uts_ns->vdso.pages = NULL;
+			return -ENOMEM;
+		}
+		uts_ns->vdso.pages[i] = p;
+		copy_page(page_address(p), page_address(init_uts_ns.vdso.pages[i]));
+	}
+
+	uts_ns->vdso.addr = vmap(uts_ns->vdso.pages, uts_ns->vdso.nr_pages, 0, PAGE_KERNEL);
+	if (!uts_ns->vdso.addr) {
+		pr_err("Can't map vDSO pages for VE %d\n", ve->veid);
+		for (i = 0; i < uts_ns->vdso.nr_pages; i++)
+			put_page(uts_ns->vdso.pages[i]);
+		kfree(uts_ns->vdso.pages);
+		uts_ns->vdso.pages = NULL;
+		return -ENOMEM;
+	}
+
+	*((int *)(uts_ns->vdso.addr + uts_ns->vdso.version_off)) = new_version;
+	pr_debug("vDSO version transition %d -> %d for VE %d\n",
+		 LINUX_VERSION_CODE, new_version, ve->veid);
+
+map_uts:
+	return setup_additional_pages(bprm, uses_interp, uts_ns->vdso.pages, uts_ns->vdso.size);
+map_init_uts:
+	return setup_additional_pages(bprm, uses_interp, init_uts_ns.vdso.pages, init_uts_ns.vdso.size);
+}
+
 int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 {
-	return setup_additional_pages(bprm, uses_interp, vdso_pages,
-				      vdso_size);
+	return uts_arch_setup_additional_pages(bprm, uses_interp);
 }
 
 #ifdef CONFIG_X86_X32_ABI
