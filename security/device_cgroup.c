@@ -24,7 +24,8 @@
 #define ACC_WRITE 4
 #define ACC_QUOTA 8
 #define ACC_HIDDEN 16
-#define ACC_MASK (ACC_MKNOD | ACC_READ | ACC_WRITE | ACC_QUOTA)
+#define ACC_MOUNT 64
+#define ACC_MASK (ACC_MKNOD | ACC_READ | ACC_WRITE | ACC_QUOTA | ACC_MOUNT)
 
 #define DEV_BLOCK 1
 #define DEV_CHAR  2
@@ -354,6 +355,9 @@ static bool match_exception(struct list_head *exceptions, short type,
 	struct dev_exception_item *ex;
 
 	list_for_each_entry_rcu(ex, exceptions, list) {
+		short mismatched_bits;
+		bool allowed_mount;
+
 		if ((type & DEV_BLOCK) && !(ex->type & DEV_BLOCK))
 			continue;
 		if ((type & DEV_CHAR) && !(ex->type & DEV_CHAR))
@@ -363,7 +367,12 @@ static bool match_exception(struct list_head *exceptions, short type,
 		if (ex->minor != ~0 && ex->minor != minor)
 			continue;
 		/* provided access cannot have more than the exception rule */
-		if (access & (~ex->access))
+		mismatched_bits = access & (~ex->access) & ~ACC_MOUNT;
+		allowed_mount = !(mismatched_bits & ~ACC_WRITE) &&
+				(ex->access & ACC_MOUNT) &&
+				(access & ACC_MOUNT);
+
+		if (mismatched_bits && !allowed_mount)
 			continue;
 		return true;
 	}
@@ -908,6 +917,8 @@ int __devcgroup_inode_permission(struct inode *inode, int mask)
 		access |= ACC_READ;
 	if (mask & MAY_QUOTACTL)
 		access |= ACC_QUOTA;
+	if (mask & MAY_MOUNT)
+		access |= ACC_MOUNT;
 
 	return __devcgroup_check_permission(type, imajor(inode), iminor(inode),
 			access);
@@ -1041,6 +1052,8 @@ static unsigned decode_ve_perms(unsigned perm)
 		mask |= ACC_WRITE;
 	if (perm & S_IXGRP)
 		mask |= ACC_QUOTA;
+	if (perm & S_IXUSR)
+		mask |= ACC_MOUNT;
 
 	return mask;
 }
@@ -1055,6 +1068,8 @@ static unsigned encode_ve_perms(unsigned mask)
 		perm |= S_IWOTH;
 	if (mask & ACC_QUOTA)
 		perm |= S_IXGRP;
+	if (mask & ACC_MOUNT)
+		perm |= S_IXUSR;
 
 	return perm;
 }
