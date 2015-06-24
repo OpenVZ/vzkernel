@@ -706,6 +706,11 @@ static int do_dentry_open(struct file *f,
 	struct inode *inode;
 	int error;
 
+	if (!may_use_odirect())
+		f->f_flags &= ~O_DIRECT;
+	if (ve_fsync_behavior() == FSYNC_NEVER)
+		f->f_flags &= ~O_SYNC;
+
 	f->f_mode = OPEN_FMODE(f->f_flags) | FMODE_LSEEK |
 				FMODE_PREAD | FMODE_PWRITE;
 
@@ -850,11 +855,6 @@ struct file *dentry_open(const struct path *path, int flags,
 
 	/* We must always pass in a valid mount pointer. */
 	BUG_ON(!path->mnt);
-
-	if (!may_use_odirect())
-		flags &= ~O_DIRECT;
-	if (ve_fsync_behavior() == FSYNC_NEVER)
-		flags &= ~O_SYNC;
 
 	f = get_empty_filp();
 	if (!IS_ERR(f)) {
