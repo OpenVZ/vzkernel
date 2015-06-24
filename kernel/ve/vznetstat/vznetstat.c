@@ -220,11 +220,9 @@ struct venet_stat *venet_acct_find_create_stat(envid_t veid)
 	}
 	read_unlock(&tc_lock);
 
-	ptr = kmalloc(sizeof(struct venet_stat), GFP_KERNEL);
+	ptr = kzalloc(sizeof(struct venet_stat), GFP_KERNEL);
 	if (ptr == NULL)
 		goto out;
-
-	memset(ptr, 0, sizeof(*ptr));
 	ptr->veid = veid;
 
 	ptr->ipv4_stat = alloc_percpu(struct acct_stat);
