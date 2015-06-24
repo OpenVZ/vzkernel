@@ -245,7 +245,7 @@ int kmapset_set_value(struct kmapset_map *map,
 		struct kmapset_key *key, unsigned long value)
 {
 	struct kmapset_set *set = map->set;
-	struct kmapset_link *new_link, *old_link;
+	struct kmapset_link *new_link, *old_link, *last_link = NULL;
 
 	new_link = kmalloc(sizeof(struct kmapset_link), GFP_KERNEL);
 	if (!new_link)
@@ -260,6 +260,7 @@ int kmapset_set_value(struct kmapset_map *map,
 		hlist_add_head_rcu(&new_link->map_link, &map->links);
 	} else {
 		hlist_for_each_entry(old_link, &map->links, map_link) {
+			last_link = old_link;
 			if (old_link->key < key)
 				continue;
 			if (old_link->key == key) {
@@ -271,7 +272,7 @@ int kmapset_set_value(struct kmapset_map *map,
 					     &old_link->map_link);
 			goto add;
 		}
-		hlist_add_after_rcu(&old_link->map_link, &new_link->map_link);
+		hlist_add_after_rcu(&last_link->map_link, &new_link->map_link);
 	}
 add:
 	hlist_add_head(&new_link->key_link, &new_link->key->links);
