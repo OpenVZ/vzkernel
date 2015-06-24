@@ -41,14 +41,6 @@ struct nsproxy init_nsproxy = {
 #endif
 };
 
-void get_task_namespaces(struct task_struct *tsk)
-{
-	struct nsproxy *ns = tsk->nsproxy;
-	if (ns) {
-		get_nsproxy(ns);
-	}
-}
-
 static inline struct nsproxy *create_nsproxy(void)
 {
 	struct nsproxy *nsproxy;
@@ -128,8 +120,7 @@ out_ns:
  * called from clone.  This now handles copy for nsproxy and all
  * namespaces therein.
  */
-int copy_namespaces(unsigned long flags, struct task_struct *tsk,
-		int force_admin)
+int copy_namespaces(unsigned long flags, struct task_struct *tsk)
 {
 	struct nsproxy *old_ns = tsk->nsproxy;
 	struct user_namespace *user_ns = task_cred_xxx(tsk, user_ns);
@@ -145,18 +136,10 @@ int copy_namespaces(unsigned long flags, struct task_struct *tsk,
 				CLONE_NEWPID | CLONE_NEWNET)))
 		return 0;
 
-	if (!force_admin) {
-		if (!ns_capable(user_ns, CAP_SYS_ADMIN) &&
-		    !ns_capable(user_ns, CAP_VE_SYS_ADMIN)) {
-			err = -EPERM;
-			goto out;
-		}
-
-		if (!ns_capable(user_ns, CAP_SYS_ADMIN) &&
-		    (flags & (CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWNET))) {
-			err = -EPERM;
-			goto out;
-		}
+	if (!ns_capable(user_ns, CAP_SYS_ADMIN) &&
+	    !ns_capable(user_ns, CAP_VE_SYS_ADMIN)) {
+		err = -EPERM;
+		goto out;
 	}
 
 	/*
@@ -217,10 +200,6 @@ int unshare_nsproxy_namespaces(unsigned long unshare_flags,
 	user_ns = new_cred ? new_cred->user_ns : current_user_ns();
 	if (!ns_capable(user_ns, CAP_SYS_ADMIN) &&
 		!ns_capable(user_ns, CAP_VE_SYS_ADMIN))
-		return -EPERM;
-
-	if (!ns_capable(user_ns, CAP_SYS_ADMIN) &&
-	    (unshare_flags & (CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWNET)))
 		return -EPERM;
 
 	*new_nsp = create_new_namespaces(unshare_flags, current, user_ns,
