@@ -19,11 +19,24 @@ enum uts_proc {
 struct user_namespace;
 extern struct user_namespace init_user_ns;
 
+#ifdef CONFIG_X86
+struct uts_vdso {
+	void			*addr;
+	struct page		**pages;
+	unsigned int		nr_pages;
+	unsigned int		size;
+	unsigned long		version_off;
+};
+#endif
+
 struct uts_namespace {
 	struct kref kref;
 	struct new_utsname name;
 	struct user_namespace *user_ns;
 	unsigned int proc_inum;
+#ifdef CONFIG_X86
+	struct uts_vdso vdso;
+#endif
 };
 extern struct uts_namespace init_uts_ns;
 extern struct new_utsname virt_utsname;
