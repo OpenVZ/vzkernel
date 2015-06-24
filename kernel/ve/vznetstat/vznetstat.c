@@ -398,6 +398,106 @@ static void venet_acct_destroy_all_stat(void)
 	write_unlock_irq(&tc_lock);
 }
 
+static DEFINE_MUTEX(req_mutex);
+static struct venet_stat *req_stat;
+
+static void zero_venet_stat(struct venet_stat *stat, unsigned cpu)
+{
+	struct acct_stat *acct;
+
+	acct = per_cpu_ptr(stat->ipv4_stat, cpu);
+	memset(acct, 0, sizeof(*acct));
+	acct = per_cpu_ptr(stat->ipv6_stat, cpu);
+	memset(acct, 0, sizeof(*acct));
+}
+
+static void clear_one_percpu_statistics(struct work_struct *dummy)
+{
+	unsigned cpu, this_cpu = get_cpu();
+
+	zero_venet_stat(req_stat, this_cpu);
+
+	if (cpumask_first(cpu_online_mask) != this_cpu)
+		goto out;
+
+	/* First cpu clears statistics on all offline cpus */
+	for_each_possible_cpu(cpu)
+		if (!cpu_online(cpu))
+			zero_venet_stat(req_stat, cpu);
+out:
+	put_cpu();
+}
+
+/* Clear VE's statistics */
+static int venet_acct_clear_stat(envid_t veid)
+{
+	int ret = -EINTR;
+
+	if (mutex_lock_interruptible(&req_mutex))
+		goto out;
+
+	req_stat = venet_acct_find_stat(veid);
+	if (!req_stat) {
+		ret = -ESRCH;
+		goto unlock;
+	}
+
+	ret = schedule_on_each_cpu(clear_one_percpu_statistics);
+
+	venet_acct_put_stat(req_stat);
+unlock:
+	mutex_unlock(&req_mutex);
+out:
+	return ret;
+}
+
+static void clear_all_percpu_statistics(struct work_struct *dummy)
+{
+	unsigned cpu, this_cpu = smp_processor_id();
+	struct venet_stat *stat = NULL;
+	int other = 0, hash = 0;
+
+	/*
+	 * Some cpus may be offline, and schedule_on_each_cpu()
+	 * does not create a work on them.
+	 * Work on the first online CPU clears their statistics.
+	 * Hotplug is disabled by schedule_on_each_cpu().
+	 */
+	if (cpumask_first(cpu_online_mask) == this_cpu)
+		other = 1;
+
+	read_lock(&tc_lock);
+
+	while ((stat = next_stat(&hash, stat)) != NULL) {
+		zero_venet_stat(stat, this_cpu);
+
+		if (!other)
+			continue;
+
+		/* Clear statistics on not active cpus */
+		for_each_possible_cpu(cpu)
+			if (!cpu_online(cpu))
+				zero_venet_stat(stat, cpu);
+	}
+
+	read_unlock(&tc_lock);
+}
+
+/* Clear all present statistics */
+static int venet_acct_clear_all_stat(void)
+{
+	int ret = -EINTR;
+
+	if (mutex_lock_interruptible(&req_mutex))
+		goto out;
+
+	ret = schedule_on_each_cpu(clear_all_percpu_statistics);
+
+	mutex_unlock(&req_mutex);
+out:
+	return ret;
+}
+
 static int venet_acct_get_stat_list(envid_t *__list, int length)
 {
 	int hash;
@@ -748,6 +848,13 @@ static int venet_acct_ioctl(struct file *file, unsigned int cmd,
 			err = 0;
 			venet_acct_destroy_all_stat();
 			break;
+		case VZCTL_TC_CLEAR_STAT:
+			err = venet_acct_clear_stat(arg);
+			break;
+		case VZCTL_TC_CLEAR_ALL_STAT:
+			err = venet_acct_clear_all_stat();
+			break;
+
 		case VZCTL_TC_GET_BASE:
 			err = venet_acct_get_base(arg);
 			break;
