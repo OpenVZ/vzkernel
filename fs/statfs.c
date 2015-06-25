@@ -61,7 +61,7 @@ static int statfs_by_sb(struct super_block *sb, struct dentry *dentry, struct ks
 	return retval;
 }
 
-int statfs_by_dentry(struct dentry *dentry, struct kstatfs *buf)
+static int statfs_by_dentry(struct dentry *dentry, struct kstatfs *buf)
 {
 	int retval;
 
@@ -70,7 +70,6 @@ int statfs_by_dentry(struct dentry *dentry, struct kstatfs *buf)
 		retval = statfs_by_sb(dentry->d_sb, dentry, buf);
 	return retval;
 }
-EXPORT_SYMBOL(statfs_by_dentry);
 
 int vfs_statfs(struct path *path, struct kstatfs *buf)
 {

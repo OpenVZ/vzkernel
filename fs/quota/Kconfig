@@ -73,18 +73,6 @@ config QFMT_V2
 	  also supports 64-bit inode and block quota limits. If you need this
 	  functionality say Y here.
 
-config VZ_QUOTA
-	tristate "Virtuozzo Disk Quota support"
-	select QUOTA
-	select QUOTA_COMPAT
-	select VZ_DEV
-	default m
-	help
-	  Virtuozzo Disk Quota imposes disk quota on directories with their
-	  files and subdirectories in total.  Such disk quota is used to
-	  account and limit disk usage by Virtuozzo VPS, but also may be used
-	  separately.
-
 config QUOTACTL
 	bool
 	default n

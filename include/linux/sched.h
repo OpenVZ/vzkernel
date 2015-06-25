@@ -1502,10 +1502,6 @@ struct task_struct {
 #ifdef CONFIG_BEANCOUNTERS
 	struct task_beancounter task_bc;
 #endif
-#if defined(CONFIG_VZ_QUOTA) || defined(CONFIG_VZ_QUOTA_MODULE)
-	unsigned long	magic;
-	struct inode	*ino;
-#endif
 #ifdef CONFIG_VE
 	struct ve_struct *task_ve;
 #endif

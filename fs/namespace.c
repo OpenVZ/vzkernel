@@ -2432,11 +2432,6 @@ long do_mount(const char *dev_name, const char *dir_name,
 	if (retval)
 		return retval;
 
-	if (data_page && type_page && !strcmp(type_page, "simfs")) {
-		flags |= MS_BIND;
-		dev_name = data_page;
-	}
-
 	retval = security_sb_mount(dev_name, &path,
 				   type_page, flags, data_page);
 	if (!retval && !may_mount())

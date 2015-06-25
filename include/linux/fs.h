@@ -1973,7 +1973,6 @@ struct file_system_type {
 #define FS_USERNS_MOUNT		8	/* Can be mounted by userns root */
 #define FS_USERNS_DEV_MOUNT	16 /* A userns mount does not imply MNT_NODEV */
 #define FS_VIRTUALIZED		64	/* Can mount this fstype inside ve */
-#define FS_MANGLE_PROC		128	/* hide some /proc/mounts info inside VE */
 #define FS_RENAME_DOES_D_MOVE	32768	/* FS will handle d_move() during rename() internally. */
 /*
  * f_op->mmap must be called with vma=NULL before taking mmap_sem;
@@ -2050,7 +2049,6 @@ extern void drop_collected_mounts(struct vfsmount *);
 extern int iterate_mounts(int (*)(struct vfsmount *, void *), void *,
 			  struct vfsmount *);
 extern int vfs_statfs(struct path *, struct kstatfs *);
-extern int statfs_by_dentry(struct dentry *, struct kstatfs *);
 extern int user_statfs(const char __user *, struct kstatfs *);
 extern int fd_statfs(int, struct kstatfs *);
 extern int vfs_ustat(dev_t, struct kstatfs *);

@@ -68,10 +68,6 @@ source "fs/quota/Kconfig"
 source "fs/autofs4/Kconfig"
 source "fs/fuse/Kconfig"
 
-config SIM_FS
-	tristate "simfs stub modules"
-	default m
-
 config GENERIC_ACL
 	bool
 	select FS_POSIX_ACL
