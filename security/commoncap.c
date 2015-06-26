@@ -262,7 +262,7 @@ int cap_capset(struct cred *new,
 			if (cap_inh_is_capped())
 				ve_inheritable = cap_intersect(ve_inheritable,
 				                               cap_combine(old->cap_inheritable,
-				                                           old->cap_permitted))
+				                                           old->cap_permitted));
 			ve_inheritable = cap_intersect(ve_inheritable,
 			                               cap_combine(old->cap_inheritable,
 			                                           old->cap_bset));
