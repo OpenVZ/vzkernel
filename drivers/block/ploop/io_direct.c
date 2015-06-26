@@ -251,7 +251,7 @@ flush_bio:
 			rw2 |= (REQ_FUA | ((bio_num) ? REQ_FLUSH : 0));
 
 		ploop_acc_ff_out(preq->plo, rw2 | b->bi_rw);
-		submit_bio(rw2 & ~(bl.head ? REQ_SYNC : 0), b);
+		submit_bio(rw2, b);
 		bio_num++;
 	}
 
@@ -618,7 +618,7 @@ flush_bio:
 			preflush = 0;
 		}
 		ploop_acc_ff_out(preq->plo, rw | b->bi_rw);
-		submit_bio(rw & ~(bl.head ? REQ_SYNC : 0), b);
+		submit_bio(rw, b);
 	}
 
 	ploop_complete_io_request(preq);
@@ -1072,7 +1072,7 @@ flush_bio:
 		b->bi_end_io = dio_endio_sync;
 		b->bi_private = &comp;
 		atomic_inc(&comp.count);
-		submit_bio(rw & ~(bl.head ? REQ_SYNC : 0), b);
+		submit_bio(rw, b);
 	}
 
 	if (atomic_dec_and_test(&comp.count))
@@ -1196,7 +1196,7 @@ flush_bio:
 		b->bi_end_io = dio_endio_sync;
 		b->bi_private = &comp;
 		atomic_inc(&comp.count);
-		submit_bio(rw & ~(bl.head ? REQ_SYNC : 0), b);
+		submit_bio(rw, b);
 	}
 
 	if (atomic_dec_and_test(&comp.count))
@@ -1437,7 +1437,7 @@ flush_bio:
 		b->bi_private = preq;
 		atomic_inc(&preq->io_count);
 		ploop_acc_ff_out(preq->plo, rw2 | b->bi_rw);
-		submit_bio(rw2 | (bl.head ? 0 : REQ_SYNC), b);
+		submit_bio(rw2, b);
 		bio_num++;
 	}
 
