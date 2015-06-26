@@ -127,14 +127,11 @@ static const struct tty_operations vz_tty_fops = {
 static struct tty_struct *vz_vt_lookup(struct tty_driver *driver,
 				       struct inode *inode, int idx)
 {
-	struct ve_struct *ve = driver->ve;
 	return driver->ttys[idx];
 }
 
 static int vz_vt_install(struct tty_driver *driver, struct tty_struct *tty)
 {
-	struct ve_struct *ve = driver->ve;
-
 	tty->port = kzalloc(sizeof(*tty->port), GFP_KERNEL);
 	if (!tty->port)
 		return -ENOMEM;
