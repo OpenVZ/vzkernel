@@ -1953,6 +1953,15 @@ static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 {
 	struct tty_driver *driver;
 
+#ifdef CONFIG_VE
+	extern struct tty_driver *vz_vt_device(struct ve_struct *ve, dev_t dev, int *index);
+	if (!ve_is_super(get_exec_env()) &&
+	    (MAJOR(device) == TTY_MAJOR && MINOR(device) < VZ_VT_MAX_DEVS)) {
+		driver = tty_driver_kref_get(vz_vt_device(get_exec_env(), device, index));
+		*noctty = 1;
+		return driver;
+	}
+#endif
 	switch (device) {
 #ifdef CONFIG_VT
 	case MKDEV(TTY_MAJOR, 0): {
