@@ -63,6 +63,10 @@ struct ve_struct {
 	struct binfmt_misc	*binfmt_misc;
 #endif
 
+#define VZ_VT_MAX_DEVS		12
+	struct tty_driver	*vz_vt_driver;
+	struct tty_struct	*vz_tty_vt[VZ_VT_MAX_DEVS];
+
 	struct tty_struct	*vz_tty_conm;
 	struct tty_struct	*vz_tty_cons;
 
