@@ -362,9 +362,17 @@ int vfs_fsync_range(struct file *file, loff_t start, loff_t end, int datasync)
 {
 	struct user_beancounter *ub;
 	int ret;
+	struct inode *inode = file->f_mapping->host;
 
 	if (!file->f_op || !file->f_op->fsync)
 		return -EINVAL;
+
+	if (!datasync && (inode->i_state & I_DIRTY_TIME)) {
+		spin_lock(&inode->i_lock);
+		inode->i_state &= ~I_DIRTY_TIME;
+		spin_unlock(&inode->i_lock);
+		mark_inode_dirty_sync(inode);
+	}
 
 	ub = get_exec_ub();
 	if (datasync)
