@@ -978,7 +978,7 @@ queued:
 	if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state)) {
 		/* Synchronous requests are not batched. */
 		if (plo->entry_qlen > plo->tune.batch_entry_qlen ||
-			(bio->bi_rw & (REQ_SYNC|REQ_FLUSH|REQ_FUA)) ||
+			(bio->bi_rw & (REQ_FLUSH|REQ_FUA)) ||
 			(!bio_list_empty(&plo->bio_discard_list) &&
 			 !list_empty(&plo->free_list)) ||
 			!current->plug) {
@@ -1942,6 +1942,10 @@ ploop_entry_request(struct ploop_request * preq)
 		ploop_complete_request(preq);
 		return;
 	}
+
+	if (unlikely(test_bit(PLOOP_REQ_SYNC, &preq->state) &&
+		     !(preq->req_rw & REQ_SYNC)))
+		preq->req_rw |= REQ_SYNC;
 
 restart:
 	if (test_bit(PLOOP_REQ_DISCARD, &preq->state)) {
