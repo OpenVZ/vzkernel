@@ -17,6 +17,8 @@
 static struct tty_driver *vz_conm_driver;
 static struct tty_driver *vz_cons_driver;
 
+extern struct class *tty_class;
+
 static char *vzcon_devnode(struct device *dev, umode_t *mode)
 {
 	if (mode)
@@ -122,6 +124,112 @@ static const struct tty_operations vz_tty_fops = {
 	.unthrottle	= vz_tty_unthrottle,
 };
 
+static struct tty_struct *vz_vt_lookup(struct tty_driver *driver,
+				       struct inode *inode, int idx)
+{
+	struct ve_struct *ve = driver->ve;
+	return driver->ttys[idx];
+}
+
+static int vz_vt_install(struct tty_driver *driver, struct tty_struct *tty)
+{
+	struct ve_struct *ve = driver->ve;
+
+	tty->port = kzalloc(sizeof(*tty->port), GFP_KERNEL);
+	if (!tty->port)
+		return -ENOMEM;
+	tty_standard_install(driver, tty);
+	tty_port_init(tty->port);
+	return 0;
+}
+
+static void vz_vt_cleanup(struct tty_struct *tty)
+{
+	kfree(tty->port);
+	tty->port = NULL;
+}
+
+const static struct tty_operations vt_tty_fops = {
+	.lookup		= vz_vt_lookup,
+	.install	= vz_vt_install,
+	.open		= vz_tty_open,
+	.cleanup	= vz_vt_cleanup,
+	.write		= vz_tty_write,
+	.write_room	= vz_tty_write_room,
+	.unthrottle	= vz_tty_unthrottle,
+};
+
+static int __vz_vt_ve_init(struct ve_struct *ve)
+{
+#define TTY_DRIVER_ALLOC_FLAGS			\
+	(TTY_DRIVER_REAL_RAW		|	\
+	 TTY_DRIVER_RESET_TERMIOS	|	\
+	 TTY_DRIVER_DYNAMIC_DEV		|	\
+	 TTY_DRIVER_CONTAINERIZED)
+
+	struct tty_driver *driver;
+	int ret = 0;
+	int i;
+
+	driver = tty_alloc_driver(VZ_VT_MAX_DEVS, TTY_DRIVER_ALLOC_FLAGS);
+	if (IS_ERR(driver)) {
+		ret = PTR_ERR(driver);
+		pr_err("Can't allocate VT master driver\n");
+		return ret;
+	}
+
+	driver->driver_name	= "vt_master";
+	driver->name		= "tty";
+	driver->name_base	= 1;
+	driver->major		= 0;
+	driver->minor_start	= 1;
+	driver->type		= TTY_DRIVER_TYPE_CONSOLE;
+	driver->init_termios	= tty_std_termios;
+	driver->ve		= ve;
+	tty_set_operations(driver, &vt_tty_fops);
+
+	ret = tty_register_driver(driver);
+	if (ret) {
+		pr_err("Can't register vt master driver\n");
+		put_tty_driver(driver);
+		return ret;
+	}
+
+	for (i = 0; i < VZ_VT_MAX_DEVS; i++) {
+		dev_t dev = MKDEV(TTY_MAJOR, i);
+		struct device *d;
+
+		d = device_create(tty_class, NULL, dev, ve, "tty%i", i);
+		if (IS_ERR(d)) {
+			for (i--; i >= 0; i--)
+				device_destroy_namespace(tty_class, dev, ve);
+			tty_unregister_driver(driver);
+			put_tty_driver(driver);
+			return PTR_ERR(d);
+		}
+	}
+	ve->vz_vt_driver = driver;
+
+	return 0;
+#undef TTY_DRIVER_ALLOC_FLAGS
+}
+
+static void __vz_vt_ve_fini(struct ve_struct *ve)
+{
+	int i;
+
+	if (!ve->vz_vt_driver)
+		return;
+
+	for (i = 0; i < VZ_VT_MAX_DEVS; i++) {
+		dev_t dev = MKDEV(TTY_MAJOR, i);
+		device_destroy_namespace(tty_class, dev, ve);
+	}
+
+	tty_unregister_driver(ve->vz_vt_driver);
+	put_tty_driver(ve->vz_vt_driver);
+}
+
 static int __vz_con_ve_init(struct ve_struct *ve)
 {
 	struct device *d;
@@ -135,9 +243,14 @@ static int __vz_con_ve_init(struct ve_struct *ve)
 
 int vz_con_ve_init(struct ve_struct *ve)
 {
-	if (ve != get_ve0())
-		return __vz_con_ve_init(ve);
-	return 0;
+	int ret = 0;
+
+	if (ve != get_ve0()) {
+		ret = __vz_con_ve_init(ve);
+		if (!ret)
+			ret = __vz_vt_ve_init(ve);
+	}
+	return ret;
 }
 EXPORT_SYMBOL_GPL(vz_con_ve_init);
 
@@ -145,6 +258,7 @@ static void __vz_con_ve_fini(struct ve_struct *ve)
 {
 	dev_t dev = MKDEV(vz_cons_driver->major, vz_cons_driver->minor_start);
 	device_destroy_namespace(vz_con_class, dev, ve);
+	__vz_vt_ve_fini(ve);
 }
 
 void vz_con_ve_fini(struct ve_struct *ve)
@@ -260,3 +374,12 @@ struct tty_driver *vz_console_device(int *index)
 	return vz_conm_driver;
 }
 EXPORT_SYMBOL_GPL(vz_console_device);
+
+struct tty_driver *vz_vt_device(struct ve_struct *ve, dev_t dev, int *index)
+{
+	BUG_ON(MINOR(dev) > VZ_VT_MAX_DEVS);
+
+	*index = MINOR(dev) ? MINOR(dev) - 1 : 0;
+	return ve->vz_vt_driver;
+}
+EXPORT_SYMBOL_GPL(vz_vt_device);
