@@ -51,7 +51,6 @@
 #include <linux/kthread.h>
 #include <linux/kernel.h>
 #include <linux/syscalls.h>
-#include <linux/ve.h>
 
 #include <linux/audit.h>
 
@@ -121,7 +120,8 @@ u32		audit_sig_sid = 0;
 */
 static atomic_t    audit_lost = ATOMIC_INIT(0);
 
-#define audit_sock	(get_exec_env()->ve_netns->_audit_sock)
+/* The netlink socket. */
+static struct sock *audit_sock;
 
 /* Hash for inode-based rules */
 struct list_head audit_inode_hash[AUDIT_INODE_BUCKETS];
@@ -759,9 +759,6 @@ static int audit_receive_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 	char			*ctx = NULL;
 	u32			len;
 
-	if (!ve_is_super(sock_net(skb->sk)->owner_ve))
-		return -ECONNREFUSED;
-
 	err = audit_netlink_ok(skb, msg_type);
 	if (err)
 		return err;
@@ -1026,50 +1023,24 @@ static void audit_receive(struct sk_buff  *skb)
 	mutex_unlock(&audit_cmd_mutex);
 }
 
-static int __net_init audit_net_init(struct net *net)
-{
-	struct sock *sk;
-	struct netlink_kernel_cfg cfg = {
-		.input = audit_receive,
-	};
-
-	sk = netlink_kernel_create(net, NETLINK_AUDIT, &cfg);
-	if (!sk) {
-		audit_panic("cannot initialize netlink socket");
-		return -ENODEV;
-	}
-
-	sk->sk_sndtimeo = MAX_SCHEDULE_TIMEOUT;
-	net->_audit_sock = sk;
-
-	return 0;
-}
-
-static void __net_exit audit_net_exit(struct net *net)
-{
-	netlink_kernel_release(net->_audit_sock);
-	net->_audit_sock = NULL;
-}
-
-static struct pernet_operations audit_net_ops = {
-	.init = audit_net_init,
-	.exit = audit_net_exit,
-};
-
 /* Initialize audit support at boot time. */
 static int __init audit_init(void)
 {
-	int i, res;
+	int i;
+	struct netlink_kernel_cfg cfg = {
+		.input	= audit_receive,
+	};
 
 	if (audit_initialized == AUDIT_DISABLED)
 		return 0;
 
 	printk(KERN_INFO "audit: initializing netlink socket (%s)\n",
 	       audit_default ? "enabled" : "disabled");
-
-	res = register_pernet_subsys(&audit_net_ops);
-	if (res < 0)
-		return res;
+	audit_sock = netlink_kernel_create(&init_net, NETLINK_AUDIT, &cfg);
+	if (!audit_sock)
+		audit_panic("cannot initialize netlink socket");
+	else
+		audit_sock->sk_sndtimeo = MAX_SCHEDULE_TIMEOUT;
 
 	skb_queue_head_init(&audit_skb_queue);
 	skb_queue_head_init(&audit_skb_hold_queue);
