@@ -1781,7 +1781,7 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 
 			while (order) {
 				if (npages >= 1 << order) {
-					page = alloc_kmem_pages(sk->sk_allocation |
+					page = alloc_pages(sk->sk_allocation |
 							   __GFP_COMP | __GFP_NOWARN,
 							   order);
 					if (page)
@@ -1789,7 +1789,7 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 				}
 				order--;
 			}
-			page = alloc_kmem_pages(sk->sk_allocation, 0);
+			page = alloc_page(sk->sk_allocation);
 			if (!page)
 				goto failure;
 fill_page:
