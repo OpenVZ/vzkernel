@@ -585,9 +585,10 @@ EXPORT_SYMBOL(udp_proto_cgroup);
 
 static void disarm_sock_keys(struct mem_cgroup *memcg)
 {
-	if (!memcg_proto_activated(&memcg->tcp_mem.cg_proto))
-		return;
-	static_key_slow_dec(&memcg_socket_limit_enabled);
+	if (memcg_proto_activated(&memcg->tcp_mem.cg_proto))
+		static_key_slow_dec(&memcg_socket_limit_enabled);
+	if (memcg_proto_activated(&memcg->udp_mem.cg_proto))
+		static_key_slow_dec(&memcg_socket_limit_enabled);
 }
 #else
 static void disarm_sock_keys(struct mem_cgroup *memcg)
