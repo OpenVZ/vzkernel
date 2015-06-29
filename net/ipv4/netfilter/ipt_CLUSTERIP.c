@@ -384,8 +384,7 @@ static int clusterip_tg_check(const struct xt_tgchk_param *par)
 				return -EINVAL;
 			}
 
-			dev = dev_get_by_name(get_exec_env()->ve_netns,
-					      e->ip.iniface);
+			dev = dev_get_by_name(&init_net, e->ip.iniface);
 			if (!dev) {
 				pr_info("no such interface %s\n",
 					e->ip.iniface);
