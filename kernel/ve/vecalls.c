@@ -160,13 +160,14 @@ static int real_setdevperms(envid_t veid, unsigned type,
 		return -ESRCH;
 
 	down_read(&ve->op_sem);
-	err = -ESRCH;
 
-	cgroup = ve_cgroup_open(devices_root, 0, ve->veid);
-	err = PTR_ERR(cgroup);
-	if (IS_ERR(cgroup))
+	cgroup = cgroup_kernel_open(devices_root, 0, ve_name(ve));
+	if (IS_ERR_OR_NULL(cgroup)) {
+		err = PTR_ERR(cgroup) ? : -ESRCH;
 		goto out;
+	}
 
+	err = -EAGAIN;
 	if (ve->is_running)
 		err = devcgroup_set_perms_ve(cgroup, type, dev, mask);
 
