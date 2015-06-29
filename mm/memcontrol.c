@@ -3226,7 +3226,7 @@ void memcg_charge_kmem_nofail(struct mem_cgroup *memcg, u64 size)
 	res_counter_charge_nofail(&memcg->kmem, size, &fail_res);
 	res_counter_charge_nofail(&memcg->res, size, &fail_res);
 	if (do_swap_account)
-		res_counter_uncharge(&memcg->memsw, size);
+		res_counter_charge_nofail(&memcg->memsw, size, &fail_res);
 }
 
 void memcg_uncharge_kmem(struct mem_cgroup *memcg, u64 size)
