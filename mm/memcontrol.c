@@ -1649,7 +1649,7 @@ unsigned long mem_cgroup_total_pages(struct mem_cgroup *memcg, bool swap)
 
 	limit = swap ? res_counter_read_u64(&memcg->memsw, RES_LIMIT) :
 			res_counter_read_u64(&memcg->res, RES_LIMIT);
-	if (limit == RESOURCE_MAX)
+	if (limit >= RESOURCE_MAX)
 		return ULONG_MAX;
 	return min_t(unsigned long long, ULONG_MAX, limit >> PAGE_SHIFT);
 }
@@ -5402,7 +5402,7 @@ void mem_cgroup_sync_beancounter(struct mem_cgroup *memcg,
 	p->maxheld = res_counter_read_u64(&memcg->res, RES_MAX_USAGE) >> PAGE_SHIFT;
 	p->failcnt = atomic_long_read(&memcg->mem_failcnt);
 	lim = res_counter_read_u64(&memcg->res, RES_LIMIT);
-	lim = lim == RESOURCE_MAX ? UB_MAXVALUE :
+	lim = lim >= RESOURCE_MAX ? UB_MAXVALUE :
 		min_t(unsigned long long, lim >> PAGE_SHIFT, UB_MAXVALUE);
 	p->barrier = p->limit = lim;
 
@@ -5410,7 +5410,7 @@ void mem_cgroup_sync_beancounter(struct mem_cgroup *memcg,
 	k->maxheld = res_counter_read_u64(&memcg->kmem, RES_MAX_USAGE);
 	k->failcnt = res_counter_read_u64(&memcg->kmem, RES_FAILCNT);
 	lim = res_counter_read_u64(&memcg->kmem, RES_LIMIT);
-	lim = lim == RESOURCE_MAX ? UB_MAXVALUE :
+	lim = lim >= RESOURCE_MAX ? UB_MAXVALUE :
 		min_t(unsigned long long, lim, UB_MAXVALUE);
 	k->barrier = k->limit = lim;
 
@@ -5424,7 +5424,7 @@ void mem_cgroup_sync_beancounter(struct mem_cgroup *memcg,
 	maxheld = memcg->swap_max >> PAGE_SHIFT;
 	s->failcnt = atomic_long_read(&memcg->swap_failcnt);
 	lim = res_counter_read_u64(&memcg->memsw, RES_LIMIT);
-	lim = lim == RESOURCE_MAX ? UB_MAXVALUE :
+	lim = lim >= RESOURCE_MAX ? UB_MAXVALUE :
 		min_t(unsigned long long, lim >> PAGE_SHIFT, UB_MAXVALUE);
 	if (lim != UB_MAXVALUE)
 		lim -= p->limit;
@@ -5439,7 +5439,7 @@ void mem_cgroup_sync_beancounter(struct mem_cgroup *memcg,
 	o->maxheld = res_counter_read_u64(&memcg->memsw, RES_MAX_USAGE) >> PAGE_SHIFT;
 	o->failcnt = atomic_long_read(&memcg->oom_kill_cnt);
 	lim = memcg->oom_guarantee;
-	lim = lim == RESOURCE_MAX ? UB_MAXVALUE :
+	lim = lim >= RESOURCE_MAX ? UB_MAXVALUE :
 		min_t(unsigned long long, lim >> PAGE_SHIFT, UB_MAXVALUE);
 	o->barrier = o->limit = lim;
 }
@@ -5500,7 +5500,7 @@ int mem_cgroup_apply_beancounter(struct mem_cgroup *memcg,
 
 	if (mem != mem_old) {
 		/* first, reset memsw limit since it cannot be < mem limit */
-		if (memsw_old != RESOURCE_MAX) {
+		if (memsw_old < RESOURCE_MAX) {
 			memsw_old = RESOURCE_MAX;
 			ret = mem_cgroup_resize_memsw_limit(memcg, memsw_old);
 			if (ret)
