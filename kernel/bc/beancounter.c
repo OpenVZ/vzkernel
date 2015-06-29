@@ -483,6 +483,12 @@ static inline int bc_verify_held(struct user_beancounter *ub)
 	ub->ub_parms[UB_PHYSPAGES].held = 0;
 	ub->ub_parms[UB_SWAPPAGES].held = 0;
 	ub->ub_parms[UB_OOMGUARPAGES].held = 0;
+	ub->ub_parms[UB_NUMTCPSOCK].held = 0;
+	ub->ub_parms[UB_TCPSNDBUF].held = 0;
+	ub->ub_parms[UB_TCPRCVBUF].held = 0;
+	ub->ub_parms[UB_OTHERSOCKBUF].held = 0;
+	ub->ub_parms[UB_DGRAMRCVBUF].held = 0;
+	ub->ub_parms[UB_NUMOTHERSOCK].held = 0;
 
 	clean = 1;
 	for (i = 0; i < UB_RESOURCES; i++)
@@ -783,12 +789,20 @@ static __init int ub_cgroup_init(void)
 			continue;
 
 		/* accounted by memcg */
-		if (i == UB_PHYSPAGES ||
-		    i == UB_SWAPPAGES ||
-		    i == UB_OOMGUARPAGES ||
-		    i == UB_KMEMSIZE ||
-		    i == UB_DCACHESIZE)
+		switch (i) {
+		case UB_KMEMSIZE:
+		case UB_DCACHESIZE:
+		case UB_PHYSPAGES:
+		case UB_SWAPPAGES:
+		case UB_OOMGUARPAGES:
+		case UB_NUMTCPSOCK:
+		case UB_TCPSNDBUF:
+		case UB_TCPRCVBUF:
+		case UB_OTHERSOCKBUF:
+		case UB_DGRAMRCVBUF:
+		case UB_NUMOTHERSOCK:
 			continue;
+		}
 
 		cft = &cgroup_files[j * UB_CGROUP_NR_ATTRS];
 		snprintf(cft->name, MAX_CFTYPE_NAME, "%s.held", ub_rnames[i]);
