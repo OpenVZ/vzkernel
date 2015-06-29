@@ -2503,28 +2503,38 @@ struct packet_sk_charge {
 static struct cg_proto *packet_sk_charge(void)
 {
 	struct packet_sk_charge *psc;
-
-	if (!mem_cgroup_sockets_enabled)
-		return NULL;
+	int err = -ENOMEM;
 
 	psc = kmalloc(sizeof(*psc), GFP_KERNEL);
 	if (!psc)
-		return ERR_PTR(-ENOMEM);
+		goto out;
 
+	err = 0;
 	psc->memcg = try_get_mem_cgroup_from_mm(current->mm);
-	if (psc->memcg && memcg_kmem_is_active(psc->memcg)) {
-		/*
-		 * Forcedly charge the maximum amount of data this socket
-		 * may have. It's typically not huge and packet sockets are
-		 * rare guests in containers, so we don't disturb the memory
-		 * consumption much.
-		 */
-		psc->amt = sysctl_rmem_max;
-		memcg_charge_kmem_nofail(psc->memcg, psc->amt);
-	} else {
-		kfree(psc);
-		psc = NULL;
-	}
+	if (!psc->memcg)
+		goto out_free_psc;
+	if (!memcg_kmem_is_active(psc->memcg))
+		goto out_put_cg;
+
+	/*
+	 * Forcedly charge the maximum amount of data this socket may have.
+	 * It's typically not huge and packet sockets are rare guests in
+	 * containers, so we don't disturb the memory consumption much.
+	 */
+	psc->amt = ACCESS_ONCE(sysctl_rmem_max);
+
+	err = memcg_charge_kmem(psc->memcg, GFP_KERNEL, psc->amt);
+	if (!err)
+		goto out;
+
+out_put_cg:
+	css_put(mem_cgroup_css(psc->memcg));
+out_free_psc:
+	kfree(psc);
+	psc = NULL;
+out:
+	if (err)
+		return ERR_PTR(err);
 
 	/*
 	 * The sk->sk_cgrp is not used for packet sockets,
