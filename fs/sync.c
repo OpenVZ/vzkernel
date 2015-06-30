@@ -24,8 +24,6 @@
 #define VALID_FLAGS (SYNC_FILE_RANGE_WAIT_BEFORE|SYNC_FILE_RANGE_WRITE| \
 			SYNC_FILE_RANGE_WAIT_AFTER)
 
-int sysctl_fsync_enable = 2;
-
 /*
  * Do the filesystem syncing work. For simple filesystems
  * writeback_inodes_sb(sb) just dirties buffers with inodes so we have to
@@ -324,8 +322,6 @@ SYSCALL_DEFINE1(syncfs, int, fd)
 		if (is_child_reaper(task_pid(current)))
 			goto fdput;
 
-		if (!sysctl_fsync_enable)
-			goto fdput;
 		fsb = __ve_fsync_behavior(ve);
 		if (fsb == FSYNC_NEVER)
 			goto fdput;
@@ -410,8 +406,6 @@ static int do_fsync(unsigned int fd, int datasync)
 	struct fd f;
 	int ret = -EBADF;
 
-	if (!ve_is_super(get_exec_env()) && !sysctl_fsync_enable)
-		return 0;
 	if (ve_fsync_behavior() == FSYNC_NEVER)
 		return 0;
 
@@ -506,9 +500,6 @@ SYSCALL_DEFINE4(sync_file_range, int, fd, loff_t, offset, loff_t, nbytes,
 	struct address_space *mapping;
 	loff_t endbyte;			/* inclusive */
 	umode_t i_mode;
-
-	if (!ve_is_super(get_exec_env()) && !sysctl_fsync_enable)
- 		return 0;
 
 	ret = -EINVAL;
 	if (flags & ~VALID_FLAGS)
