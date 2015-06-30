@@ -48,7 +48,7 @@ SYSCALL_DEFINE3(msync, unsigned long, start, size_t, len, int, flags)
 	if (end < start)
 		goto out;
 	error = 0;
-	if (!ve_is_super(get_exec_env()) && !sysctl_fsync_enable)
+	if (ve_fsync_behavior() == FSYNC_NEVER)
 		goto out;
 	if (end == start)
 		goto out;
