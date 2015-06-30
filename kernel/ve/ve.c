@@ -56,8 +56,6 @@ struct module no_module = { .state = MODULE_STATE_GOING };
 EXPORT_SYMBOL(no_module);
 #endif
 
-int ve_allow_kthreads = 1;
-
 struct kmapset_set ve_sysfs_perms;
 
 static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, ve0_lat_stats);
