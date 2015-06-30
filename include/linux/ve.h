@@ -166,8 +166,6 @@ extern const void *ve_namespace(struct device *dev);
 
 extern struct kmapset_set ve_sysfs_perms;
 
-extern int ve_allow_kthreads;
-
 extern int vz_security_family_check(struct net *net, int family);
 extern int vz_security_protocol_check(struct net *net, int protocol);
 
