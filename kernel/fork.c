@@ -1713,15 +1713,6 @@ long do_fork(unsigned long clone_flags,
  */
 pid_t kernel_thread(int (*fn)(void *), void *arg, unsigned long flags)
 {
-#ifdef CONFIG_VE
-	/* Don't allow kernel_thread() inside VE */
-	if (!ve_allow_kthreads && !ve_is_super(get_exec_env())) {
-		printk("kernel_thread call inside container\n");
-		dump_stack();
-		return -EPERM;
-	}
-#endif
-
 	return do_fork(flags|CLONE_VM|CLONE_UNTRACED, (unsigned long)fn,
 		(unsigned long)arg, NULL, NULL);
 }
