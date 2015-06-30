@@ -633,6 +633,8 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 	if (!ve->ve_name)
 		goto err_name;
 
+	ve->fsync_enable = 2;
+
 	ve->sched_lat_ve.cur = alloc_percpu(struct kstat_lat_pcpu_snap_struct);
 	if (!ve->sched_lat_ve.cur)
 		goto err_lat;
