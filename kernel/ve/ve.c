@@ -612,6 +612,34 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 	put_ve(ve); /* from ve_start_container() */
 }
 
+#ifdef CONFIG_VE_IPTABLES
+
+__u64 ve_setup_iptables_mask(__u64 init_mask)
+{
+	/* Remove when userspace will start supplying IPv6-related bits. */
+	init_mask &= ~VE_IP_IPTABLES6;
+	init_mask &= ~VE_IP_FILTER6;
+	init_mask &= ~VE_IP_MANGLE6;
+	init_mask &= ~VE_IP_IPTABLE_NAT_MOD;
+	init_mask &= ~VE_NF_CONNTRACK_MOD;
+
+	if (mask_ipt_allow(init_mask, VE_IP_IPTABLES))
+		init_mask |= VE_IP_IPTABLES6;
+	if (mask_ipt_allow(init_mask, VE_IP_FILTER))
+		init_mask |= VE_IP_FILTER6;
+	if (mask_ipt_allow(init_mask, VE_IP_MANGLE))
+		init_mask |= VE_IP_MANGLE6;
+	if (mask_ipt_allow(init_mask, VE_IP_NAT))
+		init_mask |= VE_IP_IPTABLE_NAT;
+	if (mask_ipt_allow(init_mask, VE_IP_CONNTRACK))
+		init_mask |= VE_NF_CONNTRACK;
+
+	return init_mask;
+}
+EXPORT_SYMBOL(ve_setup_iptables_mask);
+
+#endif
+
 static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 {
 	struct ve_struct *ve = &ve0;
@@ -634,6 +662,10 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 		goto err_name;
 
 	ve->fsync_enable = 2;
+
+#ifdef CONFIG_VE_IPTABLES
+	ve->ipt_mask = ve_setup_iptables_mask(VE_IP_DEFAULT);
+#endif
 
 	ve->sched_lat_ve.cur = alloc_percpu(struct kstat_lat_pcpu_snap_struct);
 	if (!ve->sched_lat_ve.cur)
@@ -1070,8 +1102,10 @@ static u64 ve_read_u64(struct cgroup *cg, struct cftype *cft)
 {
 	if (cft->private == VE_CF_FEATURES)
 		return cgroup_ve(cg)->features;
+#ifdef CONFIG_VE_IPTABLES
 	else if (cft->private == VE_CF_IPTABLES_MASK)
 		return cgroup_ve(cg)->ipt_mask;
+#endif
 	return 0;
 }
 
@@ -1090,27 +1124,10 @@ static int ve_write_u64(struct cgroup *cg, struct cftype *cft, u64 value)
 
 	if (cft->private == VE_CF_FEATURES)
 		ve->features = value;
-	else if (cft->private == VE_CF_IPTABLES_MASK) {
-		value &= ~VE_IP_IPTABLES6;
-		value &= ~VE_IP_FILTER6;
-		value &= ~VE_IP_MANGLE6;
-		value &= ~VE_IP_IPTABLE_NAT_MOD;
-		value &= ~VE_NF_CONNTRACK_MOD;
-
-		if (mask_ipt_allow(value, VE_IP_IPTABLES))
-			value |= VE_IP_IPTABLES6;
-		if (mask_ipt_allow(value, VE_IP_FILTER))
-			value |= VE_IP_FILTER6;
-		if (mask_ipt_allow(value, VE_IP_MANGLE))
-			value |= VE_IP_MANGLE6;
-		if (mask_ipt_allow(value, VE_IP_NAT))
-			value |= VE_IP_IPTABLE_NAT;
-		if (mask_ipt_allow(value, VE_IP_CONNTRACK))
-			value |= VE_NF_CONNTRACK;
-
-		ve->ipt_mask = value;
-	}
-
+#ifdef CONFIG_VE_IPTABLES
+	else if (cft->private == VE_CF_IPTABLES_MASK)
+		ve->ipt_mask = ve_setup_iptables_mask(value);
+#endif
 	up_write(&ve->op_sem);
 	return 0;
 }

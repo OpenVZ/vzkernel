@@ -153,6 +153,10 @@ extern int nr_ve;
 extern struct proc_dir_entry *proc_vz_dir;
 extern struct cgroup_subsys ve_subsys;
 
+#ifdef CONFIG_VE_IPTABLES
+extern __u64 ve_setup_iptables_mask(__u64 init_mask);
+#endif
+
 #ifdef CONFIG_VE
 #define ve_uevent_seqnum       (get_exec_env()->_uevent_seqnum)
 
