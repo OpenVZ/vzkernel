@@ -661,6 +661,11 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 	if (!ve->ve_name)
 		goto err_name;
 
+	ve->_randomize_va_space = ve0._randomize_va_space;
+
+	ve->features = VE_FEATURES_DEF;
+
+	ve->odirect_enable = 2;
 	ve->fsync_enable = 2;
 
 #ifdef CONFIG_VE_IPTABLES
