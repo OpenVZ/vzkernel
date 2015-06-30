@@ -847,13 +847,6 @@ static struct ctl_table kern_table[] = {
 #endif
 #ifdef CONFIG_VE
 	{
-		.procname	= "ve_meminfo",
-		.data		= &glob_ve_meminfo,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= &proc_dointvec,
-	},
-	{
 		.procname	= "ve_allow_kthreads",
 		.data		= &ve_allow_kthreads,
 		.maxlen		= sizeof(int),
