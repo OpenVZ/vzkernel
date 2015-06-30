@@ -20,6 +20,8 @@ obj-$(CONFIG_VE_CALLS) += vzstat.o
 
 obj-$(CONFIG_VZ_IOLIMIT) += vziolimit.o
 
+obj-$(CONFIG_VE_IPTABLES) += ve.o
+
 obj-m += dummy/ip6_vzprivnet.o
 obj-m += dummy/ip_vzprivnet.o
 obj-m += dummy/pio_nfs.o
