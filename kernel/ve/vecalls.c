@@ -224,33 +224,6 @@ static __u64 get_ve_features(env_create_param_t *data, int datalen)
 		(VE_FEATURES_DEF & ~known_features);
 }
 
-#ifdef CONFIG_VE_IPTABLES
-
-static __u64 setup_iptables_mask(__u64 init_mask)
-{
-	/* Remove when userspace will start supplying IPv6-related bits. */
-	init_mask &= ~VE_IP_IPTABLES6;
-	init_mask &= ~VE_IP_FILTER6;
-	init_mask &= ~VE_IP_MANGLE6;
-	init_mask &= ~VE_IP_IPTABLE_NAT_MOD;
-	init_mask &= ~VE_NF_CONNTRACK_MOD;
-
-	if (mask_ipt_allow(init_mask, VE_IP_IPTABLES))
-		init_mask |= VE_IP_IPTABLES6;
-	if (mask_ipt_allow(init_mask, VE_IP_FILTER))
-		init_mask |= VE_IP_FILTER6;
-	if (mask_ipt_allow(init_mask, VE_IP_MANGLE))
-		init_mask |= VE_IP_MANGLE6;
-	if (mask_ipt_allow(init_mask, VE_IP_NAT))
-		init_mask |= VE_IP_IPTABLE_NAT;
-	if (mask_ipt_allow(init_mask, VE_IP_CONNTRACK))
-		init_mask |= VE_NF_CONNTRACK;
-
-	return init_mask;
-}
-
-#endif
-
 static int init_ve_struct(struct ve_struct *ve,
 		u32 class_id, env_create_param_t *data, int datalen)
 {
@@ -265,7 +238,7 @@ static int init_ve_struct(struct ve_struct *ve,
 	/* Set up ipt_mask as it will be used during
 	 * net namespace initialization
 	 */
-	ve->ipt_mask = setup_iptables_mask(data ? data->iptables_mask
+	ve->ipt_mask = ve_setup_iptables_mask(data ? data->iptables_mask
 						: VE_IP_DEFAULT);
 #endif
 
