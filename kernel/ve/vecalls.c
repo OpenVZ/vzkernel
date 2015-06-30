@@ -206,33 +206,10 @@ static inline int init_ve_namespaces(void)
 	return 0;
 }
 
-static __u64 get_ve_features(env_create_param_t *data, int datalen)
-{
-	__u64 known_features;
-
-	if (datalen < sizeof(struct env_create_param3))
-		/* this version of vzctl is aware of VE_FEATURES_OLD only */
-		known_features = VE_FEATURES_OLD;
-	else
-		known_features = data->known_features;
-
-	/*
-	 * known features are set as required
-	 * yet unknown features are set as in VE_FEATURES_DEF
-	 */
-	return (data->feature_mask & known_features) |
-		(VE_FEATURES_DEF & ~known_features);
-}
-
 static int init_ve_struct(struct ve_struct *ve,
 		u32 class_id, env_create_param_t *data, int datalen)
 {
 	ve->class_id = class_id;
-	ve->features = get_ve_features(data, datalen);
-
-	ve->_randomize_va_space = ve0._randomize_va_space;
-
-	ve->odirect_enable = 2;
 
 #ifdef CONFIG_VE_IPTABLES
 	/* Set up ipt_mask as it will be used during
