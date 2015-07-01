@@ -576,6 +576,13 @@ static void fuse_iqueue_init(struct fuse_iqueue *fiq)
 	fiq->connected = 1;
 }
 
+static void fuse_pqueue_init(struct fuse_pqueue *fpq)
+{
+	memset(fpq, 0, sizeof(struct fuse_pqueue));
+	INIT_LIST_HEAD(&fpq->processing);
+	INIT_LIST_HEAD(&fpq->io);
+}
+
 void fuse_conn_init(struct fuse_conn *fc, struct user_namespace *user_ns)
 {
 	memset(fc, 0, sizeof(*fc));
@@ -585,8 +592,7 @@ void fuse_conn_init(struct fuse_conn *fc, struct user_namespace *user_ns)
 	init_waitqueue_head(&fc->blocked_waitq);
 	init_waitqueue_head(&fc->reserved_req_waitq);
 	fuse_iqueue_init(&fc->iq);
-	INIT_LIST_HEAD(&fc->processing);
-	INIT_LIST_HEAD(&fc->io);
+	fuse_pqueue_init(&fc->pq);
 	INIT_LIST_HEAD(&fc->bg_queue);
 	INIT_LIST_HEAD(&fc->entry);
 	atomic_set(&fc->num_waiting, 0);
