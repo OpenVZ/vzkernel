@@ -132,17 +132,17 @@ static void fuse_file_put(struct fuse_file *ff, bool sync, bool isdir)
 			 * Drop the release request when client does not
 			 * implement 'open'
 			 */
-			req->background = 0;
+			__clear_bit(FR_BACKGROUND, &req->flags);
 			path_put(&req->misc.release.path);
 			fuse_put_request(ff->fc, req);
 		} else if (sync) {
-			req->background = 0;
+			__clear_bit(FR_BACKGROUND, &req->flags);
 			fuse_request_send(ff->fc, req);
 			path_put(&req->misc.release.path);
 			fuse_put_request(ff->fc, req);
 		} else {
 			req->end = fuse_release_end;
-			req->background = 1;
+			__set_bit(FR_BACKGROUND, &req->flags);
 			fuse_request_send_background(ff->fc, req);
 		}
 		kfree(ff);
@@ -337,8 +337,8 @@ void fuse_sync_release(struct fuse_file *ff, int flags)
 {
 	WARN_ON(atomic_read(&ff->count) > 1);
 	fuse_prepare_release(ff, flags, FUSE_RELEASE);
-	ff->reserved_req->force = 1;
-	ff->reserved_req->background = 0;
+	__set_bit(FR_FORCE, &ff->reserved_req->flags);
+	__clear_bit(FR_BACKGROUND, &ff->reserved_req->flags);
 	fuse_request_send(ff->fc, ff->reserved_req);
 	fuse_put_request(ff->fc, ff->reserved_req);
 	kfree(ff);
@@ -480,7 +480,7 @@ static int fuse_flush(struct file *file, fl_owner_t id)
 	req->in.numargs = 1;
 	req->in.args[0].size = sizeof(inarg);
 	req->in.args[0].value = &inarg;
-	req->force = 1;
+	__set_bit(FR_FORCE, &req->flags);
 	fuse_request_send(fc, req);
 	err = req->out.h.error;
 	fuse_put_request(fc, req);
@@ -1763,7 +1763,8 @@ static int fuse_writepage_locked(struct page *page)
 	if (!req)
 		goto err;
 
-	req->background = 1; /* writeback always goes to bg_queue */
+	/* writeback always goes to bg_queue */
+	__set_bit(FR_BACKGROUND, &req->flags);
 	tmp_page = alloc_page(GFP_NOFS | __GFP_HIGHMEM);
 	if (!tmp_page)
 		goto err_free;
@@ -1984,7 +1985,7 @@ static int fuse_writepages_fill(struct page *page,
 		req->misc.write.in.write_flags |= FUSE_WRITE_CACHE;
 		req->misc.write.next = NULL;
 		req->in.argpages = 1;
-		req->background = 1;
+		__set_bit(FR_BACKGROUND, &req->flags);
 		req->num_pages = 0;
 		req->end = fuse_writepage_end;
 		req->inode = inode;
