@@ -151,8 +151,10 @@ static netdev_tx_t veth_xmit(struct sk_buff *skb, struct net_device *dev)
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
 
 
-	if (dev->features & NETIF_F_VENET && !vzethdev_filter(skb, dev, rcv))
+	if (dev->features & NETIF_F_VENET && !vzethdev_filter(skb, dev, rcv)) {
+		kfree_skb(skb);
 		goto drop;
+	}
 
 	if (likely(dev_forward_skb(rcv, skb) == NET_RX_SUCCESS)) {
 		struct pcpu_vstats *stats = this_cpu_ptr(dev->vstats);
