@@ -1892,7 +1892,7 @@ static bool fuse_writepage_in_flight(struct fuse_req *new_req,
 		curr_index = tmp->misc.write.in.offset >> PAGE_CACHE_SHIFT;
 		if (curr_index == page->index) {
 			WARN_ON(tmp->num_pages != 1);
-			WARN_ON(old_req->state != FUSE_REQ_PENDING));
+			WARN_ON(!test_bit(FR_PENDING, &old_req->flags));
 
 			copy_highpage(tmp->pages[0], page);
 			break;
