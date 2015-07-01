@@ -413,6 +413,9 @@ struct fuse_dev {
 	/** Fuse connection for this device */
 	struct fuse_conn *fc;
 
+	/** Processing queue */
+	struct fuse_pqueue pq;
+
 	/** list entry on fc->devices */
 	struct list_head entry;
 };
@@ -430,6 +433,9 @@ struct fuse_conn {
 
 	/** Refcount */
 	atomic_t count;
+
+	/** Number of fuse_dev's */
+	atomic_t dev_count;
 
 	struct rcu_head rcu;
 
@@ -453,9 +459,6 @@ struct fuse_conn {
 
 	/** Input queue */
 	struct fuse_iqueue iq;
-
-	/** Processing queue */
-	struct fuse_pqueue pq;
 
 	/** The next unique kernel file handle */
 	u64 khctr;
