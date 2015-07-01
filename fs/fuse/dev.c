@@ -27,13 +27,13 @@ MODULE_ALIAS("devname:fuse");
 
 static struct kmem_cache *fuse_req_cachep;
 
-static struct fuse_conn *fuse_get_conn(struct file *file)
+static struct fuse_dev *fuse_get_dev(struct file *file)
 {
 	/*
 	 * Lockless access is OK, because file->private data is set
 	 * once during mount and is valid until the file is released.
 	 */
-	return file->private_data;
+	return ACCESS_ONCE(file->private_data);
 }
 
 static void fuse_request_init(struct fuse_req *req, struct page **pages,
@@ -1297,13 +1297,14 @@ static ssize_t fuse_dev_read(struct kiocb *iocb, const struct iovec *iov,
 {
 	struct fuse_copy_state cs;
 	struct file *file = iocb->ki_filp;
-	struct fuse_conn *fc = fuse_get_conn(file);
-	if (!fc)
+	struct fuse_dev *fud = fuse_get_dev(file);
+
+	if (!fud)
 		return -EPERM;
 
 	fuse_copy_init(&cs, 1, iov, nr_segs);
 
-	return fuse_dev_do_read(fc, file, &cs, iov_length(iov, nr_segs));
+	return fuse_dev_do_read(fud->fc, file, &cs, iov_length(iov, nr_segs));
 }
 
 static ssize_t fuse_dev_splice_read(struct file *in, loff_t *ppos,
@@ -1315,8 +1316,9 @@ static ssize_t fuse_dev_splice_read(struct file *in, loff_t *ppos,
 	int do_wakeup = 0;
 	struct pipe_buffer *bufs;
 	struct fuse_copy_state cs;
-	struct fuse_conn *fc = fuse_get_conn(in);
-	if (!fc)
+	struct fuse_dev *fud = fuse_get_dev(in);
+
+	if (!fud)
 		return -EPERM;
 
 	bufs = kmalloc(pipe->buffers * sizeof(struct pipe_buffer), GFP_KERNEL);
@@ -1326,7 +1328,7 @@ static ssize_t fuse_dev_splice_read(struct file *in, loff_t *ppos,
 	fuse_copy_init(&cs, 1, NULL, 0);
 	cs.pipebufs = bufs;
 	cs.pipe = pipe;
-	ret = fuse_dev_do_read(fc, in, &cs, len);
+	ret = fuse_dev_do_read(fud->fc, in, &cs, len);
 	if (ret < 0)
 		goto out;
 
@@ -1903,13 +1905,14 @@ static ssize_t fuse_dev_write(struct kiocb *iocb, const struct iovec *iov,
 			      unsigned long nr_segs, loff_t pos)
 {
 	struct fuse_copy_state cs;
-	struct fuse_conn *fc = fuse_get_conn(iocb->ki_filp);
-	if (!fc)
+	struct fuse_dev *fud = fuse_get_dev(iocb->ki_filp);
+
+	if (!fud)
 		return -EPERM;
 
 	fuse_copy_init(&cs, 0, iov, nr_segs);
 
-	return fuse_dev_do_write(fc, &cs, iov_length(iov, nr_segs));
+	return fuse_dev_do_write(fud->fc, &cs, iov_length(iov, nr_segs));
 }
 
 static ssize_t fuse_dev_splice_write(struct pipe_inode_info *pipe,
@@ -1920,12 +1923,12 @@ static ssize_t fuse_dev_splice_write(struct pipe_inode_info *pipe,
 	unsigned idx;
 	struct pipe_buffer *bufs;
 	struct fuse_copy_state cs;
-	struct fuse_conn *fc;
+	struct fuse_dev *fud;
 	size_t rem;
 	ssize_t ret;
 
-	fc = fuse_get_conn(out);
-	if (!fc)
+	fud = fuse_get_dev(out);
+	if (!fud)
 		return -EPERM;
 
 	pipe_lock(pipe);
@@ -1981,7 +1984,7 @@ static ssize_t fuse_dev_splice_write(struct pipe_inode_info *pipe,
 	if (flags & SPLICE_F_MOVE)
 		cs.move_pages = 1;
 
-	ret = fuse_dev_do_write(fc, &cs, len);
+	ret = fuse_dev_do_write(fud->fc, &cs, len);
 
 	pipe_lock(pipe);
 	for (idx = 0; idx < nbuf; idx++) {
@@ -1998,11 +2001,12 @@ static unsigned fuse_dev_poll(struct file *file, poll_table *wait)
 {
 	unsigned mask = POLLOUT | POLLWRNORM;
 	struct fuse_iqueue *fiq;
-	struct fuse_conn *fc = fuse_get_conn(file);
-	if (!fc)
+	struct fuse_dev *fud = fuse_get_dev(file);
+
+	if (!fud)
 		return POLLERR;
 
-	fiq = &fc->iq;
+	fiq = &fud->fc->iq;
 	poll_wait(file, &fiq->waitq, wait);
 
 	spin_lock(&fiq->waitq.lock);
@@ -2124,12 +2128,15 @@ EXPORT_SYMBOL_GPL(fuse_abort_conn);
 
 int fuse_dev_release(struct inode *inode, struct file *file)
 {
-	struct fuse_conn *fc = fuse_get_conn(file);
-	if (fc) {
+	struct fuse_dev *fud = fuse_get_dev(file);
+
+	if (fud) {
+		struct fuse_conn *fc = fud->fc;
+
 		WARN_ON(!list_empty(&fc->pq.io));
 		WARN_ON(fc->iq.fasync != NULL);
 		fuse_abort_conn(fc);
-		fuse_conn_put(fc);
+		fuse_dev_free(fud);
 	}
 
 	return 0;
@@ -2138,20 +2145,27 @@ EXPORT_SYMBOL_GPL(fuse_dev_release);
 
 static int fuse_dev_fasync(int fd, struct file *file, int on)
 {
-	struct fuse_conn *fc = fuse_get_conn(file);
-	if (!fc)
+	struct fuse_dev *fud = fuse_get_dev(file);
+
+	if (!fud)
 		return -EPERM;
 
 	/* No locking - fasync_helper does its own locking */
-	return fasync_helper(fd, file, on, &fc->iq.fasync);
+	return fasync_helper(fd, file, on, &fud->fc->iq.fasync);
 }
 
 static int fuse_device_clone(struct fuse_conn *fc, struct file *new)
 {
+	struct fuse_dev *fud;
+
 	if (new->private_data)
 		return -EINVAL;
 
-	new->private_data = fuse_conn_get(fc);
+	fud = fuse_dev_alloc(fc);
+	if (!fud)
+		return -ENOMEM;
+
+	new->private_data = fud;
 
 	return 0;
 }
@@ -2170,11 +2184,11 @@ static long fuse_dev_ioctl(struct file *file, unsigned int cmd,
 
 			err = -EINVAL;
 			if (old) {
-				struct fuse_conn *fc = fuse_get_conn(old);
+				struct fuse_dev *fud = fuse_get_dev(old);
 
-				if (fc) {
+				if (fud) {
 					mutex_lock(&fuse_mutex);
-					err = fuse_device_clone(fc, file);
+					err = fuse_device_clone(fud->fc, file);
 					mutex_unlock(&fuse_mutex);
 				}
 				fput(old);
