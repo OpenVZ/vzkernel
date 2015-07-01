@@ -540,14 +540,20 @@ void fuse_request_send(struct fuse_conn *fc, struct fuse_req *req)
 }
 EXPORT_SYMBOL_GPL(fuse_request_send);
 
-static void fuse_request_send_nowait_locked(struct fuse_conn *fc,
-					    struct fuse_req *req)
+/*
+ * Called under fc->lock
+ *
+ * fc->connected must have been checked previously
+ */
+void fuse_request_send_background_locked(struct fuse_conn *fc,
+					 struct fuse_req *req)
 {
 	BUG_ON(!req->background);
 	if (!req->waiting) {
 		req->waiting = 1;
 		atomic_inc(&fc->num_waiting);
 	}
+	req->isreply = 1;
 	fc->num_background++;
 	if (fc->num_background == fc->max_background)
 		fc->blocked = 1;
@@ -560,12 +566,12 @@ static void fuse_request_send_nowait_locked(struct fuse_conn *fc,
 	flush_bg_queue(fc);
 }
 
-static void fuse_request_send_nowait(struct fuse_conn *fc, struct fuse_req *req)
+void fuse_request_send_background(struct fuse_conn *fc, struct fuse_req *req)
 {
 	BUG_ON(!req->end);
 	spin_lock(&fc->lock);
 	if (fc->connected) {
-		fuse_request_send_nowait_locked(fc, req);
+		fuse_request_send_background_locked(fc, req);
 		spin_unlock(&fc->lock);
 	} else {
 		spin_unlock(&fc->lock);
@@ -573,12 +579,6 @@ static void fuse_request_send_nowait(struct fuse_conn *fc, struct fuse_req *req)
 		req->end(fc, req);
 		fuse_put_request(fc, req);
 	}
-}
-
-void fuse_request_send_background(struct fuse_conn *fc, struct fuse_req *req)
-{
-	req->isreply = 1;
-	fuse_request_send_nowait(fc, req);
 }
 EXPORT_SYMBOL_GPL(fuse_request_send_background);
 
@@ -597,18 +597,6 @@ static int fuse_request_send_notify_reply(struct fuse_conn *fc,
 	spin_unlock(&fc->lock);
 
 	return err;
-}
-
-/*
- * Called under fc->lock
- *
- * fc->connected must have been checked previously
- */
-void fuse_request_send_background_locked(struct fuse_conn *fc,
-					 struct fuse_req *req)
-{
-	req->isreply = 1;
-	fuse_request_send_nowait_locked(fc, req);
 }
 
 void fuse_force_forget(struct file *file, u64 nodeid)
