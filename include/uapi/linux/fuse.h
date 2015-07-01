@@ -770,4 +770,7 @@ struct fuse_lseek_out {
 	uint64_t	offset;
 };
 
+/* Device ioctls: */
+#define FUSE_DEV_IOC_CLONE	_IOR(229, 0, uint32_t)
+
 #endif /* _LINUX_FUSE_H */
