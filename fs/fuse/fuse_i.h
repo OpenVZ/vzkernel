@@ -407,6 +407,17 @@ struct fuse_pqueue {
 };
 
 /**
+ * Fuse device instance
+ */
+struct fuse_dev {
+	/** Fuse connection for this device */
+	struct fuse_conn *fc;
+
+	/** list entry on fc->devices */
+	struct list_head entry;
+};
+
+/**
  * A Fuse connection.
  *
  * This structure is created, when the filesystem is mounted, and is
@@ -627,6 +638,9 @@ struct fuse_conn {
 
 	/** The user namespace for this mount */
 	struct user_namespace *user_ns;
+
+	/** List of device instances belonging to this connection */
+	struct list_head devices;
 };
 
 static inline struct fuse_conn *get_fuse_conn_super(struct super_block *sb)
@@ -842,6 +856,9 @@ void fuse_conn_init(struct fuse_conn *fc, struct user_namespace *user_ns);
  * Release reference to fuse_conn
  */
 void fuse_conn_put(struct fuse_conn *fc);
+
+struct fuse_dev *fuse_dev_alloc(struct fuse_conn *fc);
+void fuse_dev_free(struct fuse_dev *fud);
 
 /**
  * Add connection to control filesystem
