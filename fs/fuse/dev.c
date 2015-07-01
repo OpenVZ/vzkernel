@@ -1190,12 +1190,13 @@ __releases(fiq->waitq.lock)
  * request_end().  Otherwise add it to the processing list, and set
  * the 'sent' flag.
  */
-static ssize_t fuse_dev_do_read(struct fuse_conn *fc, struct file *file,
+static ssize_t fuse_dev_do_read(struct fuse_dev *fud, struct file *file,
 				struct fuse_copy_state *cs, size_t nbytes)
 {
 	ssize_t err;
+	struct fuse_conn *fc = fud->fc;
 	struct fuse_iqueue *fiq = &fc->iq;
-	struct fuse_pqueue *fpq = &fc->pq;
+	struct fuse_pqueue *fpq = &fud->pq;
 	struct fuse_req *req;
 	struct fuse_in *in;
 	unsigned reqsize;
@@ -1304,7 +1305,7 @@ static ssize_t fuse_dev_read(struct kiocb *iocb, const struct iovec *iov,
 
 	fuse_copy_init(&cs, 1, iov, nr_segs);
 
-	return fuse_dev_do_read(fud->fc, file, &cs, iov_length(iov, nr_segs));
+	return fuse_dev_do_read(fud, file, &cs, iov_length(iov, nr_segs));
 }
 
 static ssize_t fuse_dev_splice_read(struct file *in, loff_t *ppos,
@@ -1328,7 +1329,7 @@ static ssize_t fuse_dev_splice_read(struct file *in, loff_t *ppos,
 	fuse_copy_init(&cs, 1, NULL, 0);
 	cs.pipebufs = bufs;
 	cs.pipe = pipe;
-	ret = fuse_dev_do_read(fud->fc, in, &cs, len);
+	ret = fuse_dev_do_read(fud, in, &cs, len);
 	if (ret < 0)
 		goto out;
 
@@ -1810,11 +1811,12 @@ static int copy_out_args(struct fuse_copy_state *cs, struct fuse_out *out,
  * it from the list and copy the rest of the buffer to the request.
  * The request is finished by calling request_end()
  */
-static ssize_t fuse_dev_do_write(struct fuse_conn *fc,
+static ssize_t fuse_dev_do_write(struct fuse_dev *fud,
 				 struct fuse_copy_state *cs, size_t nbytes)
 {
 	int err;
-	struct fuse_pqueue *fpq = &fc->pq;
+	struct fuse_conn *fc = fud->fc;
+	struct fuse_pqueue *fpq = &fud->pq;
 	struct fuse_req *req;
 	struct fuse_out_header oh;
 
@@ -1912,7 +1914,7 @@ static ssize_t fuse_dev_write(struct kiocb *iocb, const struct iovec *iov,
 
 	fuse_copy_init(&cs, 0, iov, nr_segs);
 
-	return fuse_dev_do_write(fud->fc, &cs, iov_length(iov, nr_segs));
+	return fuse_dev_do_write(fud, &cs, iov_length(iov, nr_segs));
 }
 
 static ssize_t fuse_dev_splice_write(struct pipe_inode_info *pipe,
@@ -1984,7 +1986,7 @@ static ssize_t fuse_dev_splice_write(struct pipe_inode_info *pipe,
 	if (flags & SPLICE_F_MOVE)
 		cs.move_pages = 1;
 
-	ret = fuse_dev_do_write(fud->fc, &cs, len);
+	ret = fuse_dev_do_write(fud, &cs, len);
 
 	pipe_lock(pipe);
 	for (idx = 0; idx < nbuf; idx++) {
@@ -2073,10 +2075,10 @@ static void end_polls(struct fuse_conn *fc)
 void fuse_abort_conn(struct fuse_conn *fc)
 {
 	struct fuse_iqueue *fiq = &fc->iq;
-	struct fuse_pqueue *fpq = &fc->pq;
 
 	spin_lock(&fc->lock);
 	if (fc->connected) {
+		struct fuse_dev *fud;
 		struct fuse_req *req, *next;
 		LIST_HEAD(to_end1);
 		LIST_HEAD(to_end2);
@@ -2084,20 +2086,24 @@ void fuse_abort_conn(struct fuse_conn *fc)
 		fc->connected = 0;
 		fc->blocked = 0;
 		fuse_set_initialized(fc);
-		spin_lock(&fpq->lock);
-		fpq->connected = 0;
-		list_for_each_entry_safe(req, next, &fpq->io, list) {
-			req->out.h.error = -ECONNABORTED;
-			spin_lock(&req->waitq.lock);
-			set_bit(FR_ABORTED, &req->flags);
-			if (!test_bit(FR_LOCKED, &req->flags)) {
-				set_bit(FR_PRIVATE, &req->flags);
-				list_move(&req->list, &to_end1);
+		list_for_each_entry(fud, &fc->devices, entry) {
+			struct fuse_pqueue *fpq = &fud->pq;
+
+			spin_lock(&fpq->lock);
+			fpq->connected = 0;
+			list_for_each_entry_safe(req, next, &fpq->io, list) {
+				req->out.h.error = -ECONNABORTED;
+				spin_lock(&req->waitq.lock);
+				set_bit(FR_ABORTED, &req->flags);
+				if (!test_bit(FR_LOCKED, &req->flags)) {
+					set_bit(FR_PRIVATE, &req->flags);
+					list_move(&req->list, &to_end1);
+				}
+				spin_unlock(&req->waitq.lock);
 			}
-			spin_unlock(&req->waitq.lock);
+			list_splice_init(&fpq->processing, &to_end2);
+			spin_unlock(&fpq->lock);
 		}
-		list_splice_init(&fpq->processing, &to_end2);
-		spin_unlock(&fpq->lock);
 		fc->max_background = UINT_MAX;
 		flush_bg_queue(fc);
 
@@ -2132,13 +2138,17 @@ int fuse_dev_release(struct inode *inode, struct file *file)
 
 	if (fud) {
 		struct fuse_conn *fc = fud->fc;
+		struct fuse_pqueue *fpq = &fud->pq;
 
-		WARN_ON(!list_empty(&fc->pq.io));
-		WARN_ON(fc->iq.fasync != NULL);
-		fuse_abort_conn(fc);
+		WARN_ON(!list_empty(&fpq->io));
+		end_requests(fc, &fpq->processing);
+		/* Are we the last open device? */
+		if (atomic_dec_and_test(&fc->dev_count)) {
+			WARN_ON(fc->iq.fasync != NULL);
+			fuse_abort_conn(fc);
+		}
 		fuse_dev_free(fud);
 	}
-
 	return 0;
 }
 EXPORT_SYMBOL_GPL(fuse_dev_release);
@@ -2166,6 +2176,7 @@ static int fuse_device_clone(struct fuse_conn *fc, struct file *new)
 		return -ENOMEM;
 
 	new->private_data = fud;
+	atomic_inc(&fc->dev_count);
 
 	return 0;
 }
