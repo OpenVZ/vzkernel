@@ -1262,7 +1262,7 @@ static ssize_t fuse_dev_do_read(struct fuse_conn *fc, struct file *file,
 	fuse_copy_finish(cs);
 	spin_lock(&fc->lock);
 	clear_bit(FR_LOCKED, &req->flags);
-	if (!fc->connected) {
+	if (!fpq->connected) {
 		request_end(fc, req);
 		return -ENODEV;
 	}
@@ -1839,7 +1839,7 @@ static ssize_t fuse_dev_do_write(struct fuse_conn *fc,
 
 	spin_lock(&fc->lock);
 	err = -ENOENT;
-	if (!fc->connected)
+	if (!fpq->connected)
 		goto err_unlock;
 
 	req = request_find(fpq, oh.unique);
@@ -1876,7 +1876,7 @@ static ssize_t fuse_dev_do_write(struct fuse_conn *fc,
 
 	spin_lock(&fc->lock);
 	clear_bit(FR_LOCKED, &req->flags);
-	if (!fc->connected)
+	if (!fpq->connected)
 		err = -ENOENT;
 	else if (err)
 		req->out.h.error = -EIO;
@@ -2074,6 +2074,7 @@ void fuse_abort_conn(struct fuse_conn *fc)
 		fc->connected = 0;
 		fc->blocked = 0;
 		fuse_set_initialized(fc);
+		fpq->connected = 0;
 		list_for_each_entry_safe(req, next, &fpq->io, list) {
 			req->out.h.error = -ECONNABORTED;
 			spin_lock(&req->waitq.lock);
