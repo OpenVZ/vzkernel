@@ -229,11 +229,9 @@ struct fuse_page_desc {
 
 /** The request state */
 enum fuse_req_state {
-	FUSE_REQ_INIT = 0,
-	FUSE_REQ_PENDING,
-	FUSE_REQ_READING,
+	FUSE_REQ_PENDING = 0,
+	FUSE_REQ_IO,
 	FUSE_REQ_SENT,
-	FUSE_REQ_WRITING,
 	FUSE_REQ_FINISHED
 };
 
