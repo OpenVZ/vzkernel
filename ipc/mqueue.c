@@ -335,7 +335,8 @@ static struct dentry *mqueue_mount(struct file_system_type *fs_type,
 		/* Don't allow mounting unless the caller has CAP_SYS_ADMIN
 		 * over the ipc namespace.
 		 */
-		if (!ns_capable(ns->user_ns, CAP_SYS_ADMIN))
+		if (!ns_capable(ns->user_ns, CAP_SYS_ADMIN) &&
+		    !ns_capable(ns->user_ns, CAP_VE_SYS_ADMIN))
 			return ERR_PTR(-EPERM);
 
 		data = ns;
