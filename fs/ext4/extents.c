@@ -708,9 +708,12 @@ static void ext4_ext_show_move(struct inode *inode, struct ext4_ext_path *path,
 
 void ext4_ext_drop_refs(struct ext4_ext_path *path)
 {
-	int depth = path->p_depth;
+	int depth;
 	int i;
 
+	if (!path)
+		return;
+	depth = path->p_depth;
 	for (i = 0; i <= depth; i++, path++)
 		if (path->p_bh) {
 			brelse(path->p_bh);
