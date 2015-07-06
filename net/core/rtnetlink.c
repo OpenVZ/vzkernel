@@ -1354,7 +1354,8 @@ static int do_setlink(struct net_device *dev, struct ifinfomsg *ifm,
 			err = PTR_ERR(net);
 			goto errout;
 		}
-		if (!ns_capable(net->user_ns, CAP_NET_ADMIN)) {
+		if (!ns_capable(net->user_ns, CAP_NET_ADMIN) &&
+		    !ns_capable(net->user_ns, CAP_VE_NET_ADMIN)) {
 			err = -EPERM;
 			goto errout;
 		}
