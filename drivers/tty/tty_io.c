@@ -3258,13 +3258,14 @@ EXPORT_SYMBOL_GPL(tty_register_device_attr);
 void tty_unregister_device(struct tty_driver *driver, unsigned index)
 {
 #ifdef CONFIG_VE
-	device_destroy_namespace(tty_class,
-		MKDEV(driver->major, driver->minor_start) + index,
-		driver->ve);
-#else
-	device_destroy(tty_class,
-		MKDEV(driver->major, driver->minor_start) + index);
+	if (driver->flags & TTY_DRIVER_CONTAINERIZED) {
+		device_destroy_namespace(tty_class,
+			MKDEV(driver->major, driver->minor_start) + index,
+			driver->ve);
+	} else
 #endif
+		device_destroy(tty_class,
+			MKDEV(driver->major, driver->minor_start) + index);
 	if (!(driver->flags & TTY_DRIVER_DYNAMIC_ALLOC))
 		tty_cdev_del(driver, &driver->cdevs[index]);
 }
