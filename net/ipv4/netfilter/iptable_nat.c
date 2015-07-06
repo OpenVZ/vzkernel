@@ -134,6 +134,7 @@ static void __net_exit iptable_nat_net_exit(struct net *net)
 		return;
 
 	ipt_unregister_table(net, net->ipv4.nat_table);
+	net->ipv4.nat_table = NULL;
 
 	net_ipt_module_clear(net, VE_IP_IPTABLE_NAT);
 }

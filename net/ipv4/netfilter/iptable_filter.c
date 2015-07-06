@@ -85,6 +85,7 @@ static void __net_exit iptable_filter_net_exit(struct net *net)
 		return;
 
 	ipt_unregister_table(net, net->ipv4.iptable_filter);
+	net->ipv4.iptable_filter = NULL;
 
 	net_ipt_module_clear(net, VE_IP_FILTER);
 }
