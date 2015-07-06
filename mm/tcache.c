@@ -418,7 +418,6 @@ retry:
 
 	if (node) {
 		BUG_ON(node->pool != pool);
-		BUG_ON(node->invalidated);
 		if (node != new_node)
 			kfree(new_node);
 		return node;
@@ -866,6 +865,10 @@ static int tcache_cleancache_get_page(int pool_id,
 	node = tcache_get_node_and_pool(pool_id, &key, false);
 	if (node) {
 		cache_page = tcache_detach_page(node, index);
+		if (unlikely(cache_page && node->invalidated)) {
+			put_page(cache_page);
+			cache_page = NULL;
+		}
 		tcache_put_node_and_pool(node);
 	}
 
