@@ -483,8 +483,7 @@ int __sysfs_add_one(struct sysfs_addrm_cxt *acxt, struct sysfs_dirent *sd)
 	sd->s_hash = sysfs_name_hash(sd->s_ns, sd->s_name);
 	sd->s_parent = sysfs_get(acxt->parent_sd);
 
-	/* Copy permissions from parent */
-	sd->s_ve_perms = kmapset_get(sd->s_parent->s_ve_perms);
+	sd->s_ve_perms = kmapset_commit(kmapset_new(&ve_sysfs_perms));
 
 	ret = sysfs_link_sibling(sd);
 	if (ret)
