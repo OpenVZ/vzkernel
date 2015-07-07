@@ -111,6 +111,14 @@ cifs_prime_dcache(struct dentry *parent, struct qstr *name,
 			return;
 	}
 
+	/*
+	 * If we know that the inode will need to be revalidated immediately,
+	 * then don't create a new dentry for it. We'll end up doing an on
+	 * the wire call either way and this spares us an invalidation.
+	 */
+	if (fattr->cf_flags & CIFS_FATTR_NEED_REVAL)
+		return;
+
 	dentry = d_alloc(parent, name);
 	if (!dentry)
 		return;
@@ -139,6 +147,17 @@ cifs_fill_common_info(struct cifs_fattr *fattr, struct cifs_sb_info *cifs_sb)
 		fattr->cf_mode = S_IFREG | cifs_sb->mnt_file_mode;
 		fattr->cf_dtype = DT_REG;
 	}
+
+	/*
+	 * We need to revalidate it further to make a decision about whether it
+	 * is a symbolic link, DFS referral or a reparse point with a direct
+	 * access like junctions, deduplicated files, NFS symlinks.
+	 */
+	if (fattr->cf_cifsattrs & ATTR_REPARSE)
+		fattr->cf_flags |= CIFS_FATTR_NEED_REVAL;
+
+	/* non-unix readdir doesn't provide nlink */
+	fattr->cf_flags |= CIFS_FATTR_UNKNOWN_NLINK;
 
 	if (fattr->cf_cifsattrs & ATTR_READONLY)
 		fattr->cf_mode &= ~S_IWUGO;
@@ -729,7 +748,7 @@ static int cifs_filldir(char *find_entry, struct file *file, filldir_t filldir,
 	}
 
 	if ((cifs_sb->mnt_cifs_flags & CIFS_MOUNT_MF_SYMLINKS) &&
-	    CIFSCouldBeMFSymlink(&fattr))
+	    couldbe_mf_symlink(&fattr))
 		/*
 		 * trying to get the type and mode can be slow,
 		 * so just call those regular files for now, and mark

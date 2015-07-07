@@ -147,6 +147,8 @@
 #define MSR_PP1_ENERGY_STATUS		0x00000641
 #define MSR_PP1_POLICY			0x00000642
 
+#define MSR_CORE_C1_RES			0x00000660
+
 #define MSR_AMD64_MC0_MASK		0xc0010044
 
 #define MSR_IA32_MCx_CTL(x)		(MSR_IA32_MC0_CTL + 4*(x))
@@ -169,6 +171,9 @@
 #define MSR_KNC_PERFCTR1               0x00000021
 #define MSR_KNC_EVNTSEL0               0x00000028
 #define MSR_KNC_EVNTSEL1               0x00000029
+
+/* Alternative perfctr range with full access. */
+#define MSR_IA32_PMC0			0x000004c1
 
 /* AMD64 MSRs. Not complete. See the architecture manual for a more
    complete list. */
@@ -289,6 +294,7 @@
 #define MSR_SMI_COUNT			0x00000034
 #define MSR_IA32_FEATURE_CONTROL        0x0000003a
 #define MSR_IA32_TSC_ADJUST             0x0000003b
+#define MSR_IA32_BNDCFGS		0x00000d90
 
 #define FEATURE_CONTROL_LOCKED				(1<<0)
 #define FEATURE_CONTROL_VMXON_ENABLED_INSIDE_SMX	(1<<1)
@@ -522,6 +528,7 @@
 #define MSR_IA32_VMX_TRUE_PROCBASED_CTLS 0x0000048e
 #define MSR_IA32_VMX_TRUE_EXIT_CTLS      0x0000048f
 #define MSR_IA32_VMX_TRUE_ENTRY_CTLS     0x00000490
+#define MSR_IA32_VMX_VMFUNC             0x00000491
 
 /* VMX_BASIC bits and bitmasks */
 #define VMX_BASIC_VMCS_SIZE_SHIFT	32
@@ -533,6 +540,7 @@
 
 /* MSR_IA32_VMX_MISC bits */
 #define MSR_IA32_VMX_MISC_VMWRITE_SHADOW_RO_FIELDS (1ULL << 29)
+#define MSR_IA32_VMX_MISC_PREEMPTION_TIMER_SCALE   0x1F
 /* AMD-V MSRs */
 
 #define MSR_VM_CR                       0xc0010114

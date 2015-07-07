@@ -2,7 +2,8 @@
 # Makefile for USB Host Controller Drivers
 #
 
-ccflags-$(CONFIG_USB_DEBUG) := -DDEBUG
+# tell define_trace.h where to find the xhci trace header
+CFLAGS_xhci-trace.o := -I$(src)
 
 isp1760-y := isp1760-hcd.o isp1760-if.o
 
@@ -13,6 +14,7 @@ fhci-$(CONFIG_FHCI_DEBUG) += fhci-dbg.o
 
 xhci-hcd-y := xhci.o xhci-mem.o
 xhci-hcd-y += xhci-ring.o xhci-hub.o xhci-dbg.o
+xhci-hcd-y += xhci-trace.o
 xhci-hcd-$(CONFIG_PCI)	+= xhci-pci.o
 
 ifneq ($(CONFIG_USB_XHCI_PLATFORM), )
@@ -37,7 +39,11 @@ obj-$(CONFIG_USB_EHCI_MSM)	+= ehci-msm.o
 obj-$(CONFIG_USB_OXU210HP_HCD)	+= oxu210hp-hcd.o
 obj-$(CONFIG_USB_ISP116X_HCD)	+= isp116x-hcd.o
 obj-$(CONFIG_USB_ISP1362_HCD)	+= isp1362-hcd.o
+
 obj-$(CONFIG_USB_OHCI_HCD)	+= ohci-hcd.o
+obj-$(CONFIG_USB_OHCI_HCD_PCI)	+= ohci-pci.o
+obj-$(CONFIG_USB_OHCI_HCD_PLATFORM)	+= ohci-platform.o
+
 obj-$(CONFIG_USB_UHCI_HCD)	+= uhci-hcd.o
 obj-$(CONFIG_USB_FHCI_HCD)	+= fhci.o
 obj-$(CONFIG_USB_XHCI_HCD)	+= xhci-hcd.o

@@ -20,6 +20,7 @@
   the file called "COPYING".
 
   Contact Information:
+  Linux NICS <linux.nics@intel.com>
   e1000-devel Mailing List <e1000-devel@lists.sourceforge.net>
   Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
 
@@ -45,6 +46,7 @@
 
 /* Receive UP2TC mapping */
 #define IXGBE_RTRUP2TC_UP_SHIFT 3
+#define IXGBE_RTRUP2TC_UP_MASK	7
 /* Transmit UP2TC mapping */
 #define IXGBE_RTTUP2TC_UP_SHIFT 3
 

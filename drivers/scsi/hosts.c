@@ -169,6 +169,7 @@ void scsi_remove_host(struct Scsi_Host *shost)
 	spin_unlock_irqrestore(shost->host_lock, flags);
 
 	scsi_autopm_get_host(shost);
+	flush_workqueue(shost->tmf_work_q);
 	scsi_forget_host(shost);
 	mutex_unlock(&shost->scan_mutex);
 	scsi_proc_host_rm(shost);
@@ -203,12 +204,12 @@ int scsi_add_host_with_dma(struct Scsi_Host *shost, struct device *dev,
 	struct scsi_host_template *sht = shost->hostt;
 	int error = -EINVAL;
 
-	printk(KERN_INFO "scsi%d : %s\n", shost->host_no,
+	shost_printk(KERN_INFO, shost, "%s\n",
 			sht->info ? sht->info(shost) : sht->name);
 
 	if (!shost->can_queue) {
-		printk(KERN_ERR "%s: can_queue = 0 no longer supported\n",
-				sht->name);
+		shost_printk(KERN_ERR, shost,
+			     "can_queue = 0 no longer supported\n");
 		goto fail;
 	}
 
@@ -294,6 +295,8 @@ static void scsi_host_dev_release(struct device *dev)
 
 	scsi_proc_hostdir_rm(shost->hostt);
 
+	if (shost->tmf_work_q)
+		destroy_workqueue(shost->tmf_work_q);
 	if (shost->ehandler)
 		kthread_stop(shost->ehandler);
 	if (shost->work_q)
@@ -315,6 +318,12 @@ static void scsi_host_dev_release(struct device *dev)
 		put_device(parent);
 	kfree(shost);
 }
+
+static int shost_eh_deadline = -1;
+
+module_param_named(eh_deadline, shost_eh_deadline, int, S_IRUGO|S_IWUSR);
+MODULE_PARM_DESC(eh_deadline,
+		 "SCSI EH timeout in seconds (should be between 0 and 2^31-1)");
 
 static struct device_type scsi_host_type = {
 	.name =		"scsi_host",
@@ -354,7 +363,6 @@ struct Scsi_Host *scsi_host_alloc(struct scsi_host_template *sht, int privsize)
 	INIT_LIST_HEAD(&shost->eh_cmd_q);
 	INIT_LIST_HEAD(&shost->starved_list);
 	init_waitqueue_head(&shost->host_wait);
-
 	mutex_init(&shost->scan_mutex);
 
 	/*
@@ -388,6 +396,17 @@ struct Scsi_Host *scsi_host_alloc(struct scsi_host_template *sht, int privsize)
 	shost->unchecked_isa_dma = sht->unchecked_isa_dma;
 	shost->use_clustering = sht->use_clustering;
 	shost->ordered_tag = sht->ordered_tag;
+	shost->no_write_same = sht->no_write_same;
+
+	if (shost_eh_deadline == -1 || !sht->eh_host_reset_handler)
+		shost->eh_deadline = -1;
+	else if ((ulong) shost_eh_deadline * HZ > INT_MAX) {
+		shost_printk(KERN_WARNING, shost,
+			     "eh_deadline %u too large, setting to %u\n",
+			     shost_eh_deadline, INT_MAX / HZ);
+		shost->eh_deadline = INT_MAX;
+	} else
+		shost->eh_deadline = shost_eh_deadline * HZ;
 
 	if (sht->supported_mode == MODE_UNKNOWN)
 		/* means we didn't set it ... default to INITIATOR */
@@ -431,14 +450,25 @@ struct Scsi_Host *scsi_host_alloc(struct scsi_host_template *sht, int privsize)
 	shost->ehandler = kthread_run(scsi_error_handler, shost,
 			"scsi_eh_%d", shost->host_no);
 	if (IS_ERR(shost->ehandler)) {
-		printk(KERN_WARNING "scsi%d: error handler thread failed to spawn, error = %ld\n",
-			shost->host_no, PTR_ERR(shost->ehandler));
+		shost_printk(KERN_WARNING, shost,
+			"error handler thread failed to spawn, error = %ld\n",
+			PTR_ERR(shost->ehandler));
 		goto fail_kfree;
 	}
 
+	shost->tmf_work_q = alloc_workqueue("scsi_tmf_%d",
+					    WQ_UNBOUND | WQ_MEM_RECLAIM,
+					   1, shost->host_no);
+	if (!shost->tmf_work_q) {
+		printk(KERN_WARNING "scsi%d: failed to create tmf workq\n",
+		       shost->host_no);
+		goto fail_kthread;
+	}
 	scsi_proc_hostdir_add(shost->hostt);
 	return shost;
 
+ fail_kthread:
+	kthread_stop(shost->ehandler);
  fail_kfree:
 	kfree(shost);
 	return NULL;
@@ -555,7 +585,7 @@ EXPORT_SYMBOL(scsi_is_host_device);
 int scsi_queue_work(struct Scsi_Host *shost, struct work_struct *work)
 {
 	if (unlikely(!shost->work_q)) {
-		printk(KERN_ERR
+		shost_printk(KERN_ERR, shost,
 			"ERROR: Scsi host '%s' attempted to queue scsi-work, "
 			"when no workqueue created.\n", shost->hostt->name);
 		dump_stack();
@@ -574,7 +604,7 @@ EXPORT_SYMBOL_GPL(scsi_queue_work);
 void scsi_flush_work(struct Scsi_Host *shost)
 {
 	if (!shost->work_q) {
-		printk(KERN_ERR
+		shost_printk(KERN_ERR, shost,
 			"ERROR: Scsi host '%s' attempted to flush scsi-work, "
 			"when no workqueue created.\n", shost->hostt->name);
 		dump_stack();

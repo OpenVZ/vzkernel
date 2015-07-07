@@ -5,7 +5,7 @@
  *
  * GPL LICENSE SUMMARY
  *
- * Copyright(c) 2012 - 2013 Intel Corporation. All rights reserved.
+ * Copyright(c) 2012 - 2014 Intel Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -30,7 +30,7 @@
  *
  * BSD LICENSE
  *
- * Copyright(c) 2012 - 2013 Intel Corporation. All rights reserved.
+ * Copyright(c) 2012 - 2014 Intel Corporation. All rights reserved.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -73,7 +73,6 @@
 #include "iwl-prph.h"
 
 /* A TimeUnit is 1024 microsecond */
-#define TU_TO_JIFFIES(_tu)	(usecs_to_jiffies((_tu) * 1024))
 #define MSEC_TO_TU(_msec)	(_msec*1000/1024)
 
 /*
@@ -127,6 +126,7 @@ static void iwl_mvm_roc_finished(struct iwl_mvm *mvm)
 	 * in iwl_mvm_te_handle_notif).
 	 */
 	clear_bit(IWL_MVM_STATUS_ROC_RUNNING, &mvm->status);
+	iwl_mvm_unref(mvm, IWL_MVM_REF_ROC);
 
 	/*
 	 * Of course, our status bit is just as racy as mac80211, so in
@@ -136,6 +136,20 @@ static void iwl_mvm_roc_finished(struct iwl_mvm *mvm)
 	 * any *new* TX will be rejected.
 	 */
 	schedule_work(&mvm->roc_done_wk);
+}
+
+static bool iwl_mvm_te_check_disconnect(struct iwl_mvm *mvm,
+					struct ieee80211_vif *vif,
+					const char *errmsg)
+{
+	if (vif->type != NL80211_IFTYPE_STATION)
+		return false;
+	if (vif->bss_conf.assoc && vif->bss_conf.dtim_period)
+		return false;
+	if (errmsg)
+		IWL_ERR(mvm, "%s\n", errmsg);
+	ieee80211_connection_loss(vif);
+	return true;
 }
 
 /*
@@ -163,10 +177,18 @@ static void iwl_mvm_te_handle_notif(struct iwl_mvm *mvm,
 	 * P2P Device discoveribility, while there are other higher priority
 	 * events in the system).
 	 */
-	WARN_ONCE(!le32_to_cpu(notif->status),
-		  "Failed to schedule time event\n");
+	if (!le32_to_cpu(notif->status)) {
+		bool start = le32_to_cpu(notif->action) &
+				TE_V2_NOTIF_HOST_EVENT_START;
+		IWL_WARN(mvm, "Time Event %s notification failure\n",
+			 start ? "start" : "end");
+		if (iwl_mvm_te_check_disconnect(mvm, te_data->vif, NULL)) {
+			iwl_mvm_te_clear_data(mvm, te_data);
+			return;
+		}
+	}
 
-	if (le32_to_cpu(notif->action) & TE_NOTIF_HOST_EVENT_END) {
+	if (le32_to_cpu(notif->action) & TE_V2_NOTIF_HOST_EVENT_END) {
 		IWL_DEBUG_TE(mvm,
 			     "TE ended - current time %lu, estimated end %lu\n",
 			     jiffies, te_data->end_jiffies);
@@ -180,22 +202,16 @@ static void iwl_mvm_te_handle_notif(struct iwl_mvm *mvm,
 		 * By now, we should have finished association
 		 * and know the dtim period.
 		 */
-		if (te_data->vif->type == NL80211_IFTYPE_STATION &&
-		    (!te_data->vif->bss_conf.assoc ||
-		     !te_data->vif->bss_conf.dtim_period)) {
-			IWL_ERR(mvm,
-				"No assocation and the time event is over already...\n");
-			ieee80211_connection_loss(te_data->vif);
-		}
-
+		iwl_mvm_te_check_disconnect(mvm, te_data->vif,
+			"No association and the time event is over already...");
 		iwl_mvm_te_clear_data(mvm, te_data);
-	} else if (le32_to_cpu(notif->action) & TE_NOTIF_HOST_EVENT_START) {
+	} else if (le32_to_cpu(notif->action) & TE_V2_NOTIF_HOST_EVENT_START) {
 		te_data->running = true;
-		te_data->end_jiffies = jiffies +
-			TU_TO_JIFFIES(te_data->duration);
+		te_data->end_jiffies = TU_TO_EXP_TIME(te_data->duration);
 
 		if (te_data->vif->type == NL80211_IFTYPE_P2P_DEVICE) {
 			set_bit(IWL_MVM_STATUS_ROC_RUNNING, &mvm->status);
+			iwl_mvm_ref(mvm, IWL_MVM_REF_ROC);
 			ieee80211_ready_on_channel(mvm->hw);
 		}
 	} else {
@@ -235,12 +251,12 @@ static bool iwl_mvm_time_event_response(struct iwl_notif_wait_data *notif_wait,
 		container_of(notif_wait, struct iwl_mvm, notif_wait);
 	struct iwl_mvm_time_event_data *te_data = data;
 	struct iwl_time_event_resp *resp;
-	int resp_len = le32_to_cpu(pkt->len_n_flags) & FH_RSCSR_FRAME_SIZE_MSK;
+	int resp_len = iwl_rx_packet_payload_len(pkt);
 
 	if (WARN_ON(pkt->hdr.cmd != TIME_EVENT_CMD))
 		return true;
 
-	if (WARN_ON_ONCE(resp_len != sizeof(pkt->hdr) + sizeof(*resp))) {
+	if (WARN_ON_ONCE(resp_len != sizeof(*resp))) {
 		IWL_ERR(mvm, "Invalid TIME_EVENT_CMD response\n");
 		return true;
 	}
@@ -296,8 +312,8 @@ static int iwl_mvm_time_event_send_add(struct iwl_mvm *mvm,
 				   ARRAY_SIZE(time_event_response),
 				   iwl_mvm_time_event_response, te_data);
 
-	ret = iwl_mvm_send_cmd_pdu(mvm, TIME_EVENT_CMD, CMD_SYNC,
-				   sizeof(*te_cmd), te_cmd);
+	ret = iwl_mvm_send_cmd_pdu(mvm, TIME_EVENT_CMD, 0,
+					    sizeof(*te_cmd), te_cmd);
 	if (ret) {
 		IWL_ERR(mvm, "Couldn't send TIME_EVENT_CMD: %d\n", ret);
 		iwl_remove_notification(&mvm->notif_wait, &wait_time_event);
@@ -320,7 +336,8 @@ static int iwl_mvm_time_event_send_add(struct iwl_mvm *mvm,
 
 void iwl_mvm_protect_session(struct iwl_mvm *mvm,
 			     struct ieee80211_vif *vif,
-			     u32 duration, u32 min_duration)
+			     u32 duration, u32 min_duration,
+			     u32 max_delay)
 {
 	struct iwl_mvm_vif *mvmvif = iwl_mvm_vif_from_mac80211(vif);
 	struct iwl_mvm_time_event_data *te_data = &mvmvif->time_event_data;
@@ -329,8 +346,7 @@ void iwl_mvm_protect_session(struct iwl_mvm *mvm,
 	lockdep_assert_held(&mvm->mutex);
 
 	if (te_data->running &&
-	    time_after(te_data->end_jiffies,
-		       jiffies + TU_TO_JIFFIES(min_duration))) {
+	    time_after(te_data->end_jiffies, TU_TO_EXP_TIME(min_duration))) {
 		IWL_DEBUG_TE(mvm, "We have enough time in the current TE: %u\n",
 			     jiffies_to_msecs(te_data->end_jiffies - jiffies));
 		return;
@@ -359,17 +375,15 @@ void iwl_mvm_protect_session(struct iwl_mvm *mvm,
 	time_cmd.apply_time =
 		cpu_to_le32(iwl_read_prph(mvm->trans, DEVICE_SYSTEM_TIME_REG));
 
-	time_cmd.dep_policy = TE_INDEPENDENT;
-	time_cmd.is_present = cpu_to_le32(1);
-	time_cmd.max_frags = cpu_to_le32(TE_FRAG_NONE);
-	time_cmd.max_delay = cpu_to_le32(500);
+	time_cmd.max_frags = TE_V2_FRAG_NONE;
+	time_cmd.max_delay = cpu_to_le32(max_delay);
 	/* TODO: why do we need to interval = bi if it is not periodic? */
 	time_cmd.interval = cpu_to_le32(1);
-	time_cmd.interval_reciprocal = cpu_to_le32(iwl_mvm_reciprocal(1));
 	time_cmd.duration = cpu_to_le32(duration);
-	time_cmd.repeat = cpu_to_le32(1);
-	time_cmd.notify = cpu_to_le32(TE_NOTIF_HOST_EVENT_START |
-				      TE_NOTIF_HOST_EVENT_END);
+	time_cmd.repeat = 1;
+	time_cmd.policy = cpu_to_le16(TE_V2_NOTIF_HOST_EVENT_START |
+				      TE_V2_NOTIF_HOST_EVENT_END |
+				      T2_V2_START_IMMEDIATELY);
 
 	iwl_mvm_time_event_send_add(mvm, vif, te_data, &time_cmd);
 }
@@ -420,7 +434,7 @@ void iwl_mvm_remove_time_event(struct iwl_mvm *mvm,
 		cpu_to_le32(FW_CMD_ID_AND_COLOR(mvmvif->id, mvmvif->color));
 
 	IWL_DEBUG_TE(mvm, "Removing TE 0x%x\n", le32_to_cpu(time_cmd.id));
-	ret = iwl_mvm_send_cmd_pdu(mvm, TIME_EVENT_CMD, CMD_SYNC,
+	ret = iwl_mvm_send_cmd_pdu(mvm, TIME_EVENT_CMD, 0,
 				   sizeof(time_cmd), &time_cmd);
 	if (WARN_ON(ret))
 		return;
@@ -472,8 +486,6 @@ int iwl_mvm_start_p2p_roc(struct iwl_mvm *mvm, struct ieee80211_vif *vif,
 	}
 
 	time_cmd.apply_time = cpu_to_le32(0);
-	time_cmd.dep_policy = cpu_to_le32(TE_INDEPENDENT);
-	time_cmd.is_present = cpu_to_le32(1);
 	time_cmd.interval = cpu_to_le32(1);
 
 	/*
@@ -482,12 +494,13 @@ int iwl_mvm_start_p2p_roc(struct iwl_mvm *mvm, struct ieee80211_vif *vif,
 	 * scheduled. To improve the chances of it being scheduled, allow them
 	 * to be fragmented, and in addition allow them to be delayed.
 	 */
-	time_cmd.max_frags = cpu_to_le32(MSEC_TO_TU(duration)/20);
+	time_cmd.max_frags = min(MSEC_TO_TU(duration)/50, TE_V2_FRAG_ENDLESS);
 	time_cmd.max_delay = cpu_to_le32(MSEC_TO_TU(duration/2));
 	time_cmd.duration = cpu_to_le32(MSEC_TO_TU(duration));
-	time_cmd.repeat = cpu_to_le32(1);
-	time_cmd.notify = cpu_to_le32(TE_NOTIF_HOST_EVENT_START |
-				      TE_NOTIF_HOST_EVENT_END);
+	time_cmd.repeat = 1;
+	time_cmd.policy = cpu_to_le16(TE_V2_NOTIF_HOST_EVENT_START |
+				      TE_V2_NOTIF_HOST_EVENT_END |
+				      T2_V2_START_IMMEDIATELY);
 
 	return iwl_mvm_time_event_send_add(mvm, vif, te_data, &time_cmd);
 }

@@ -8,6 +8,7 @@
 #include <linux/bootmem.h>
 #include <linux/random.h>
 #include <asm/dmi.h>
+#include <asm/unaligned.h>
 
 /*
  * DMI stands for "Desktop Management Interface".  It is part
@@ -24,6 +25,13 @@ static int dmi_initialized;
 
 /* DMI system identification string used during boot */
 static char dmi_ids_string[128] __initdata;
+
+static struct dmi_memdev_info {
+	const char *device;
+	const char *bank;
+	u16 handle;
+} *dmi_memdev;
+static int dmi_memdev_nr;
 
 static const char * __init dmi_string_nosave(const struct dmi_header *dm, u8 s)
 {
@@ -331,6 +339,42 @@ static void __init dmi_save_extended_devices(const struct dmi_header *dm)
 	dmi_save_one_device(*d & 0x7f, dmi_string_nosave(dm, *(d - 1)));
 }
 
+static void __init count_mem_devices(const struct dmi_header *dm, void *v)
+{
+	if (dm->type != DMI_ENTRY_MEM_DEVICE)
+		return;
+	dmi_memdev_nr++;
+}
+
+static void __init save_mem_devices(const struct dmi_header *dm, void *v)
+{
+	const char *d = (const char *)dm;
+	static int nr;
+
+	if (dm->type != DMI_ENTRY_MEM_DEVICE)
+		return;
+	if (nr >= dmi_memdev_nr) {
+		pr_warn(FW_BUG "Too many DIMM entries in SMBIOS table\n");
+		return;
+	}
+	dmi_memdev[nr].handle = get_unaligned(&dm->handle);
+	dmi_memdev[nr].device = dmi_string(dm, d[0x10]);
+	dmi_memdev[nr].bank = dmi_string(dm, d[0x11]);
+	nr++;
+}
+
+void __init dmi_memdev_walk(void)
+{
+	if (!dmi_available)
+		return;
+
+	if (dmi_walk_early(count_mem_devices) == 0 && dmi_memdev_nr) {
+		dmi_memdev = dmi_alloc(sizeof(*dmi_memdev) * dmi_memdev_nr);
+		if (dmi_memdev)
+			dmi_walk_early(save_mem_devices);
+	}
+}
+
 /*
  *	Process a DMI table entry. Right now all we care about are the BIOS
  *	and machine entries. For 2.5 we should pull the smbus controller info
@@ -551,9 +595,15 @@ static bool dmi_matches(const struct dmi_system_id *dmi)
 		int s = dmi->matches[i].slot;
 		if (s == DMI_NONE)
 			break;
-		if (dmi_ident[s]
-		    && strstr(dmi_ident[s], dmi->matches[i].substr))
-			continue;
+		if (dmi_ident[s]) {
+			if (!dmi->matches[i].exact_match &&
+			    strstr(dmi_ident[s], dmi->matches[i].substr))
+				continue;
+			else if (dmi->matches[i].exact_match &&
+				 !strcmp(dmi_ident[s], dmi->matches[i].substr))
+				continue;
+		}
+
 		/* No match */
 		return false;
 	}
@@ -810,3 +860,20 @@ bool dmi_match(enum dmi_field f, const char *str)
 	return !strcmp(info, str);
 }
 EXPORT_SYMBOL_GPL(dmi_match);
+
+void dmi_memdev_name(u16 handle, const char **bank, const char **device)
+{
+	int n;
+
+	if (dmi_memdev == NULL)
+		return;
+
+	for (n = 0; n < dmi_memdev_nr; n++) {
+		if (handle == dmi_memdev[n].handle) {
+			*bank = dmi_memdev[n].bank;
+			*device = dmi_memdev[n].device;
+			break;
+		}
+	}
+}
+EXPORT_SYMBOL_GPL(dmi_memdev_name);

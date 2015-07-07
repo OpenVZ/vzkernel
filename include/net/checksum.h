@@ -57,12 +57,14 @@ static __inline__ __wsum csum_and_copy_to_user
 }
 #endif
 
+#ifndef HAVE_ARCH_CSUM_ADD
 static inline __wsum csum_add(__wsum csum, __wsum addend)
 {
 	u32 res = (__force u32)csum;
 	res += (__force u32)addend;
 	return (__force __wsum)(res + (res < (__force u32)addend));
 }
+#endif
 
 static inline __wsum csum_sub(__wsum csum, __wsum addend)
 {
@@ -79,6 +81,12 @@ csum_block_add(__wsum csum, __wsum csum2, int offset)
 }
 
 static inline __wsum
+csum_block_add_ext(__wsum csum, __wsum csum2, int offset, int len)
+{
+	return csum_block_add(csum, csum2, offset);
+}
+
+static inline __wsum
 csum_block_sub(__wsum csum, __wsum csum2, int offset)
 {
 	u32 sum = (__force u32)csum2;
@@ -90,6 +98,11 @@ csum_block_sub(__wsum csum, __wsum csum2, int offset)
 static inline __wsum csum_unfold(__sum16 n)
 {
 	return (__force __wsum)n;
+}
+
+static inline __wsum csum_partial_ext(const void *buff, int len, __wsum sum)
+{
+	return csum_partial(buff, len, sum);
 }
 
 #define CSUM_MANGLED_0 ((__force __sum16)0xffff)

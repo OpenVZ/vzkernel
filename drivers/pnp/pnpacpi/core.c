@@ -84,8 +84,7 @@ static int pnpacpi_set_resources(struct pnp_dev *dev)
 {
 	struct acpi_device *acpi_dev;
 	acpi_handle handle;
-	struct acpi_buffer buffer;
-	int ret;
+	int ret = 0;
 
 	pnp_dbg(&dev->dev, "set resources\n");
 
@@ -98,19 +97,26 @@ static int pnpacpi_set_resources(struct pnp_dev *dev)
 	if (WARN_ON_ONCE(acpi_dev != dev->data))
 		dev->data = acpi_dev;
 
-	ret = pnpacpi_build_resource_template(dev, &buffer);
-	if (ret)
-		return ret;
-	ret = pnpacpi_encode_resources(dev, &buffer);
-	if (ret) {
+	if (acpi_has_method(handle, METHOD_NAME__SRS)) {
+		struct acpi_buffer buffer;
+
+		ret = pnpacpi_build_resource_template(dev, &buffer);
+		if (ret)
+			return ret;
+
+		ret = pnpacpi_encode_resources(dev, &buffer);
+		if (!ret) {
+			acpi_status status;
+
+			status = acpi_set_current_resources(handle, &buffer);
+			if (ACPI_FAILURE(status))
+				ret = -EIO;
+		}
 		kfree(buffer.pointer);
-		return ret;
 	}
-	if (ACPI_FAILURE(acpi_set_current_resources(handle, &buffer)))
-		ret = -EINVAL;
-	else if (acpi_bus_power_manageable(handle))
+	if (!ret && acpi_bus_power_manageable(handle))
 		ret = acpi_bus_set_power(handle, ACPI_STATE_D0);
-	kfree(buffer.pointer);
+
 	return ret;
 }
 
@@ -118,7 +124,7 @@ static int pnpacpi_disable_resources(struct pnp_dev *dev)
 {
 	struct acpi_device *acpi_dev;
 	acpi_handle handle;
-	int ret;
+	acpi_status status;
 
 	dev_dbg(&dev->dev, "disable resources\n");
 
@@ -129,13 +135,15 @@ static int pnpacpi_disable_resources(struct pnp_dev *dev)
 	}
 
 	/* acpi_unregister_gsi(pnp_irq(dev, 0)); */
-	ret = 0;
 	if (acpi_bus_power_manageable(handle))
-		acpi_bus_set_power(handle, ACPI_STATE_D3);
-		/* continue even if acpi_bus_set_power() fails */
-	if (ACPI_FAILURE(acpi_evaluate_object(handle, "_DIS", NULL, NULL)))
-		ret = -ENODEV;
-	return ret;
+		acpi_bus_set_power(handle, ACPI_STATE_D3_COLD);
+
+	/* continue even if acpi_bus_set_power() fails */
+	status = acpi_evaluate_object(handle, "_DIS", NULL, NULL);
+	if (ACPI_FAILURE(status) && status != AE_NOT_FOUND)
+		return -ENODEV;
+
+	return 0;
 }
 
 #ifdef CONFIG_ACPI_SLEEP
@@ -174,10 +182,10 @@ static int pnpacpi_suspend(struct pnp_dev *dev, pm_message_t state)
 
 	if (acpi_bus_power_manageable(handle)) {
 		int power_state = acpi_pm_device_sleep_state(&dev->dev, NULL,
-							     ACPI_STATE_D3);
+							ACPI_STATE_D3_COLD);
 		if (power_state < 0)
 			power_state = (state.event == PM_EVENT_ON) ?
-					ACPI_STATE_D0 : ACPI_STATE_D3;
+					ACPI_STATE_D0 : ACPI_STATE_D3_COLD;
 
 		/*
 		 * acpi_bus_set_power() often fails (keyboard port can't be
@@ -330,24 +338,18 @@ static int __init acpi_pnp_match(struct device *dev, void *_pnp)
 	struct pnp_dev *pnp = _pnp;
 
 	/* true means it matched */
-	return !acpi->physical_node_count
-	    && compare_pnp_id(pnp->id, acpi_device_hid(acpi));
+	return pnp->data == acpi;
 }
 
-static int __init acpi_pnp_find_device(struct device *dev, acpi_handle * handle)
+static struct acpi_device * __init acpi_pnp_find_companion(struct device *dev)
 {
-	struct device *adev;
-	struct acpi_device *acpi;
+	dev = bus_find_device(&acpi_bus_type, NULL, to_pnp_dev(dev),
+			      acpi_pnp_match);
+	if (!dev)
+		return NULL;
 
-	adev = bus_find_device(&acpi_bus_type, NULL,
-			       to_pnp_dev(dev), acpi_pnp_match);
-	if (!adev)
-		return -ENODEV;
-
-	acpi = to_acpi_device(adev);
-	*handle = acpi->handle;
-	put_device(adev);
-	return 0;
+	put_device(dev);
+	return to_acpi_device(dev);
 }
 
 /* complete initialization of a PNPACPI device includes having
@@ -361,7 +363,7 @@ static bool acpi_pnp_bus_match(struct device *dev)
 static struct acpi_bus_type __initdata acpi_pnp_bus = {
 	.name	     = "PNP",
 	.match	     = acpi_pnp_bus_match,
-	.find_device = acpi_pnp_find_device,
+	.find_companion = acpi_pnp_find_companion,
 };
 
 int pnpacpi_disabled __initdata;

@@ -30,6 +30,9 @@
 #include <asm/cputhreads.h>
 #include <asm/xics.h>
 #include <asm/opal.h>
+#include <asm/runlatch.h>
+#include <asm/code-patching.h>
+#include <asm/dbell.h>
 
 #include "powernv.h"
 
@@ -40,33 +43,22 @@
 #define DBG(fmt...)
 #endif
 
-static void __cpuinit pnv_smp_setup_cpu(int cpu)
+static void pnv_smp_setup_cpu(int cpu)
 {
 	if (cpu != boot_cpuid)
 		xics_setup_cpu();
-}
 
-static int pnv_smp_cpu_bootable(unsigned int nr)
-{
-	/* Special case - we inhibit secondary thread startup
-	 * during boot if the user requests it.
-	 */
-	if (system_state < SYSTEM_RUNNING && cpu_has_feature(CPU_FTR_SMT)) {
-		if (!smt_enabled_at_boot && cpu_thread_in_core(nr) != 0)
-			return 0;
-		if (smt_enabled_at_boot
-		    && cpu_thread_in_core(nr) >= smt_enabled_at_boot)
-			return 0;
-	}
-
-	return 1;
+#ifdef CONFIG_PPC_DOORBELL
+	if (cpu_has_feature(CPU_FTR_DBELL))
+		doorbell_setup_this_cpu();
+#endif
 }
 
 int pnv_smp_kick_cpu(int nr)
 {
 	unsigned int pcpu = get_hard_smp_processor_id(nr);
-	unsigned long start_here = __pa(*((unsigned long *)
-					  generic_secondary_smp_init));
+	unsigned long start_here =
+			__pa(ppc_function_entry(generic_secondary_smp_init));
 	long rc;
 
 	BUG_ON(nr < 0 || nr >= NR_CPUS);
@@ -172,16 +164,20 @@ static void pnv_smp_cpu_kill_self(void)
 	 */
 	mtspr(SPRN_LPCR, mfspr(SPRN_LPCR) & ~(u64)LPCR_PECE1);
 	while (!generic_check_cpu_restart(cpu)) {
-		power7_nap();
-		if (!generic_check_cpu_restart(cpu)) {
+		ppc64_runlatch_off();
+		power7_nap(1);
+		ppc64_runlatch_on();
+
+		/* Reenable IRQs briefly to clear the IPI that woke us */
+		local_irq_enable();
+		local_irq_disable();
+		mb();
+
+		if (cpu_core_split_required())
+			continue;
+
+		if (!generic_check_cpu_restart(cpu))
 			DBG("CPU%d Unexpected exit while offline !\n", cpu);
-			/* We may be getting an IPI, so we re-enable
-			 * interrupts to process it, it will be ignored
-			 * since we aren't online (hopefully)
-			 */
-			local_irq_enable();
-			local_irq_disable();
-		}
 	}
 	mtspr(SPRN_LPCR, mfspr(SPRN_LPCR) | LPCR_PECE1);
 	DBG("CPU%d coming online...\n", cpu);
@@ -195,7 +191,7 @@ static struct smp_ops_t pnv_smp_ops = {
 	.probe		= xics_smp_probe,
 	.kick_cpu	= pnv_smp_kick_cpu,
 	.setup_cpu	= pnv_smp_setup_cpu,
-	.cpu_bootable	= pnv_smp_cpu_bootable,
+	.cpu_bootable	= smp_generic_cpu_bootable,
 #ifdef CONFIG_HOTPLUG_CPU
 	.cpu_disable	= pnv_smp_cpu_disable,
 	.cpu_die	= generic_cpu_die,

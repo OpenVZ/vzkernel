@@ -112,8 +112,6 @@ extern struct rt6_info *addrconf_dst_alloc(struct inet6_dev *idev,
 					   const struct in6_addr *addr,
 					   bool anycast);
 
-extern int			ip6_dst_hoplimit(struct dst_entry *dst);
-
 /*
  *	support functions for ND
  *
@@ -135,6 +133,8 @@ extern void ip6_update_pmtu(struct sk_buff *skb, struct net *net, __be32 mtu,
 extern void ip6_sk_update_pmtu(struct sk_buff *skb, struct sock *sk,
 			       __be32 mtu);
 extern void ip6_redirect(struct sk_buff *skb, struct net *net, int oif, u32 mark);
+extern void ip6_redirect_no_header(struct sk_buff *skb, struct net *net, int oif,
+				   u32 mark);
 extern void ip6_sk_redirect(struct sk_buff *skb, struct sock *sk);
 
 struct netlink_callback;
@@ -149,6 +149,7 @@ extern int rt6_dump_route(struct rt6_info *rt, void *p_arg);
 extern void rt6_ifdown(struct net *net, struct net_device *dev);
 extern void rt6_mtu_change(struct net_device *dev, unsigned int mtu);
 extern void rt6_remove_prefsrc(struct inet6_ifaddr *ifp);
+extern void rt6_clean_tohost(struct net *net, struct in6_addr *gateway);
 
 
 /*
@@ -190,15 +191,25 @@ static inline int ip6_skb_dst_mtu(struct sk_buff *skb)
 {
 	struct ipv6_pinfo *np = skb->sk ? inet6_sk(skb->sk) : NULL;
 
-	return (np && np->pmtudisc == IPV6_PMTUDISC_PROBE) ?
+	return (np && np->pmtudisc >= IPV6_PMTUDISC_PROBE) ?
 	       skb_dst(skb)->dev->mtu : dst_mtu(skb_dst(skb));
 }
 
-static inline struct in6_addr *rt6_nexthop(struct rt6_info *rt, struct in6_addr *dest)
+static inline bool ip6_sk_accept_pmtu(const struct sock *sk)
 {
-	if (rt->rt6i_flags & RTF_GATEWAY)
-		return &rt->rt6i_gateway;
-	return dest;
+	return inet6_sk(sk)->pmtudisc != IPV6_PMTUDISC_INTERFACE &&
+	       inet6_sk(sk)->pmtudisc != IPV6_PMTUDISC_OMIT;
+}
+
+static inline bool ip6_sk_local_df(const struct sock *sk)
+{
+	return inet6_sk(sk)->pmtudisc < IPV6_PMTUDISC_DO ||
+	       inet6_sk(sk)->pmtudisc == IPV6_PMTUDISC_OMIT;
+}
+
+static inline struct in6_addr *rt6_nexthop(struct rt6_info *rt)
+{
+	return &rt->rt6i_gateway;
 }
 
 #endif

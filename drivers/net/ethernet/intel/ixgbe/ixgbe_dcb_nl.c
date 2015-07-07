@@ -183,6 +183,7 @@ static void ixgbe_dcbnl_get_perm_hw_addr(struct net_device *netdev,
 	switch (adapter->hw.mac.type) {
 	case ixgbe_mac_82599EB:
 	case ixgbe_mac_X540:
+	case ixgbe_mac_X550:
 		for (j = 0; j < netdev->addr_len; j++, i++)
 			perm_addr[i] = adapter->hw.mac.san_addr[j];
 		break;
@@ -554,6 +555,9 @@ static int ixgbe_dcbnl_ieee_setets(struct net_device *dev,
 		for (i = 0; i < IEEE_8021QAZ_MAX_TCS; i++)
 			adapter->ixgbe_ieee_ets->prio_tc[i] =
 				IEEE_8021QAZ_MAX_TCS;
+		/* if possible update UP2TC mappings from HW */
+		ixgbe_dcb_read_rtrup2tc(&adapter->hw,
+					adapter->ixgbe_ieee_ets->prio_tc);
 	}
 
 	for (i = 0; i < IEEE_8021QAZ_MAX_TCS; i++) {

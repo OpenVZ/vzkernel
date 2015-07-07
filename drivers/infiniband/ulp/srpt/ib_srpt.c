@@ -198,6 +198,7 @@ static void srpt_event_handler(struct ib_event_handler *handler,
 	case IB_EVENT_PKEY_CHANGE:
 	case IB_EVENT_SM_CHANGE:
 	case IB_EVENT_CLIENT_REREGISTER:
+	case IB_EVENT_GID_CHANGE:
 		/* Refresh port data asynchronously. */
 		if (event->element.port_num <= sdev->device->phys_port_cnt) {
 			sport = &sdev->port[event->element.port_num - 1];
@@ -206,7 +207,7 @@ static void srpt_event_handler(struct ib_event_handler *handler,
 		}
 		break;
 	default:
-		printk(KERN_ERR "received unrecognized IB event %d\n",
+		pr_err("received unrecognized IB event %d\n",
 		       event->event);
 		break;
 	}
@@ -217,7 +218,7 @@ static void srpt_event_handler(struct ib_event_handler *handler,
  */
 static void srpt_srq_event(struct ib_event *event, void *ctx)
 {
-	printk(KERN_INFO "SRQ event %d\n", event->event);
+	pr_info("SRQ event %d\n", event->event);
 }
 
 /**
@@ -241,8 +242,7 @@ static void srpt_qp_event(struct ib_event *event, struct srpt_rdma_ch *ch)
 				 ch->sess_name, srpt_get_ch_state(ch));
 		break;
 	default:
-		printk(KERN_ERR "received unrecognized IB QP event %d\n",
-		       event->event);
+		pr_err("received unrecognized IB QP event %d\n", event->event);
 		break;
 	}
 }
@@ -563,7 +563,7 @@ static int srpt_refresh_port(struct srpt_port *sport)
 							 &reg_req, 0,
 							 srpt_mad_send_handler,
 							 srpt_mad_recv_handler,
-							 sport);
+							 sport, 0);
 		if (IS_ERR(sport->mad_agent)) {
 			ret = PTR_ERR(sport->mad_agent);
 			sport->mad_agent = NULL;
@@ -601,7 +601,7 @@ static void srpt_unregister_mad_agent(struct srpt_device *sdev)
 		sport = &sdev->port[i - 1];
 		WARN_ON(sport->port != i);
 		if (ib_modify_port(sdev->device, i, 0, &port_modify) < 0)
-			printk(KERN_ERR "disabling MAD processing failed.\n");
+			pr_err("disabling MAD processing failed.\n");
 		if (sport->mad_agent) {
 			ib_unregister_mad_agent(sport->mad_agent);
 			sport->mad_agent = NULL;
@@ -809,7 +809,7 @@ static int srpt_post_send(struct srpt_rdma_ch *ch,
 
 	ret = -ENOMEM;
 	if (unlikely(atomic_dec_return(&ch->sq_wr_avail) < 0)) {
-		printk(KERN_WARNING "IB send queue full (needed 1)\n");
+		pr_warn("IB send queue full (needed 1)\n");
 		goto out;
 	}
 
@@ -911,7 +911,7 @@ static int srpt_get_desc_tbl(struct srpt_send_ioctx *ioctx,
 
 		if (ioctx->n_rbuf >
 		    (srp_cmd->data_out_desc_cnt + srp_cmd->data_in_desc_cnt)) {
-			printk(KERN_ERR "received unsupported SRP_CMD request"
+			pr_err("received unsupported SRP_CMD request"
 			       " type (%u out + %u in != %u / %zu)\n",
 			       srp_cmd->data_out_desc_cnt,
 			       srp_cmd->data_in_desc_cnt,
@@ -1078,6 +1078,7 @@ static void srpt_unmap_sg_to_ib_sge(struct srpt_rdma_ch *ch,
 static int srpt_map_sg_to_ib_sge(struct srpt_rdma_ch *ch,
 				 struct srpt_send_ioctx *ioctx)
 {
+	struct ib_device *dev = ch->sport->sdev->device;
 	struct se_cmd *cmd;
 	struct scatterlist *sg, *sg_orig;
 	int sg_cnt;
@@ -1124,7 +1125,7 @@ static int srpt_map_sg_to_ib_sge(struct srpt_rdma_ch *ch,
 
 	db = ioctx->rbufs;
 	tsize = cmd->data_length;
-	dma_len = sg_dma_len(&sg[0]);
+	dma_len = ib_sg_dma_len(dev, &sg[0]);
 	riu = ioctx->rdma_ius;
 
 	/*
@@ -1155,7 +1156,8 @@ static int srpt_map_sg_to_ib_sge(struct srpt_rdma_ch *ch,
 					++j;
 					if (j < count) {
 						sg = sg_next(sg);
-						dma_len = sg_dma_len(sg);
+						dma_len = ib_sg_dma_len(
+								dev, sg);
 					}
 				}
 			} else {
@@ -1192,8 +1194,8 @@ static int srpt_map_sg_to_ib_sge(struct srpt_rdma_ch *ch,
 	tsize = cmd->data_length;
 	riu = ioctx->rdma_ius;
 	sg = sg_orig;
-	dma_len = sg_dma_len(&sg[0]);
-	dma_addr = sg_dma_address(&sg[0]);
+	dma_len = ib_sg_dma_len(dev, &sg[0]);
+	dma_addr = ib_sg_dma_address(dev, &sg[0]);
 
 	/* this second loop is really mapped sg_addres to rdma_iu->ib_sge */
 	for (i = 0, j = 0;
@@ -1216,8 +1218,10 @@ static int srpt_map_sg_to_ib_sge(struct srpt_rdma_ch *ch,
 					++j;
 					if (j < count) {
 						sg = sg_next(sg);
-						dma_len = sg_dma_len(sg);
-						dma_addr = sg_dma_address(sg);
+						dma_len = ib_sg_dma_len(
+								dev, sg);
+						dma_addr = ib_sg_dma_address(
+								dev, sg);
 					}
 				}
 			} else {
@@ -1433,7 +1437,7 @@ static void srpt_handle_send_comp(struct srpt_rdma_ch *ch,
 		srpt_unmap_sg_to_ib_sge(ch, ioctx);
 		transport_generic_free_cmd(&ioctx->cmd, 0);
 	} else {
-		printk(KERN_ERR "IB completion has been received too late for"
+		pr_err("IB completion has been received too late for"
 		       " wr_id = %u.\n", ioctx->ioctx.index);
 	}
 }
@@ -1458,7 +1462,7 @@ static void srpt_handle_rdma_comp(struct srpt_rdma_ch *ch,
 						SRPT_STATE_DATA_IN))
 			target_execute_cmd(&ioctx->cmd);
 		else
-			printk(KERN_ERR "%s[%d]: wrong state = %d\n", __func__,
+			pr_err("%s[%d]: wrong state = %d\n", __func__,
 			       __LINE__, srpt_get_cmd_state(ioctx));
 	} else if (opcode == SRPT_RDMA_ABORT) {
 		ioctx->rdma_aborted = true;
@@ -1483,7 +1487,7 @@ static void srpt_handle_rdma_err_comp(struct srpt_rdma_ch *ch,
 	switch (opcode) {
 	case SRPT_RDMA_READ_LAST:
 		if (ioctx->n_rdma <= 0) {
-			printk(KERN_ERR "Received invalid RDMA read"
+			pr_err("Received invalid RDMA read"
 			       " error completion with idx %d\n",
 			       ioctx->ioctx.index);
 			break;
@@ -1492,7 +1496,7 @@ static void srpt_handle_rdma_err_comp(struct srpt_rdma_ch *ch,
 		if (state == SRPT_STATE_NEED_DATA)
 			srpt_abort_cmd(ioctx);
 		else
-			printk(KERN_ERR "%s[%d]: wrong state = %d\n",
+			pr_err("%s[%d]: wrong state = %d\n",
 			       __func__, __LINE__, state);
 		break;
 	case SRPT_RDMA_WRITE_LAST:
@@ -1501,8 +1505,7 @@ static void srpt_handle_rdma_err_comp(struct srpt_rdma_ch *ch,
 		spin_unlock_irqrestore(&ioctx->cmd.t_state_lock, flags);
 		break;
 	default:
-		printk(KERN_ERR "%s[%d]: opcode = %u\n", __func__,
-		       __LINE__, opcode);
+		pr_err("%s[%d]: opcode = %u\n", __func__, __LINE__, opcode);
 		break;
 	}
 }
@@ -1554,8 +1557,8 @@ static int srpt_build_cmd_rsp(struct srpt_rdma_ch *ch,
 		BUILD_BUG_ON(MIN_MAX_RSP_SIZE <= sizeof(*srp_rsp));
 		max_sense_len = ch->max_ti_iu_len - sizeof(*srp_rsp);
 		if (sense_data_len > max_sense_len) {
-			printk(KERN_WARNING "truncated sense data from %d to %d"
-			       " bytes\n", sense_data_len, max_sense_len);
+			pr_warn("truncated sense data from %d to %d"
+				" bytes\n", sense_data_len, max_sense_len);
 			sense_data_len = max_sense_len;
 		}
 
@@ -1588,7 +1591,7 @@ static int srpt_build_tskmgmt_rsp(struct srpt_rdma_ch *ch,
 	int resp_data_len;
 	int resp_len;
 
-	resp_data_len = (rsp_code == SRP_TSK_MGMT_SUCCESS) ? 0 : 4;
+	resp_data_len = 4;
 	resp_len = sizeof(*srp_rsp) + resp_data_len;
 
 	srp_rsp = ioctx->ioctx.buf;
@@ -1600,11 +1603,9 @@ static int srpt_build_tskmgmt_rsp(struct srpt_rdma_ch *ch,
 				    + atomic_xchg(&ch->req_lim_delta, 0));
 	srp_rsp->tag = tag;
 
-	if (rsp_code != SRP_TSK_MGMT_SUCCESS) {
-		srp_rsp->flags |= SRP_RSP_FLAG_RSPVALID;
-		srp_rsp->resp_data_len = cpu_to_be32(resp_data_len);
-		srp_rsp->data[3] = rsp_code;
-	}
+	srp_rsp->flags |= SRP_RSP_FLAG_RSPVALID;
+	srp_rsp->resp_data_len = cpu_to_be32(resp_data_len);
+	srp_rsp->data[3] = rsp_code;
 
 	return resp_len;
 }
@@ -1635,8 +1636,8 @@ static uint64_t srpt_unpack_lun(const uint8_t *lun, int len)
 	int addressing_method;
 
 	if (unlikely(len < 2)) {
-		printk(KERN_ERR "Illegal LUN length %d, expected 2 bytes or "
-		       "more", len);
+		pr_err("Illegal LUN length %d, expected 2 bytes or more\n",
+		       len);
 		goto out;
 	}
 
@@ -1670,7 +1671,7 @@ static uint64_t srpt_unpack_lun(const uint8_t *lun, int len)
 
 	case SCSI_LUN_ADDR_METHOD_EXTENDED_LUN:
 	default:
-		printk(KERN_ERR "Unimplemented LUN addressing method %u",
+		pr_err("Unimplemented LUN addressing method %u\n",
 		       addressing_method);
 		break;
 	}
@@ -1679,8 +1680,7 @@ out:
 	return res;
 
 out_err:
-	printk(KERN_ERR "Support for multi-level LUNs has not yet been"
-	       " implemented");
+	pr_err("Support for multi-level LUNs has not yet been implemented\n");
 	goto out;
 }
 
@@ -1730,7 +1730,7 @@ static int srpt_handle_cmd(struct srpt_rdma_ch *ch,
 	}
 
 	if (srpt_get_desc_tbl(send_ioctx, srp_cmd, &dir, &data_len)) {
-		printk(KERN_ERR "0x%llx: parsing SRP descriptor table failed.\n",
+		pr_err("0x%llx: parsing SRP descriptor table failed.\n",
 		       srp_cmd->tag);
 		ret = TCM_INVALID_CDB_FIELD;
 		goto send_sense;
@@ -1919,7 +1919,7 @@ static void srpt_handle_new_iu(struct srpt_rdma_ch *ch,
 		srpt_handle_tsk_mgmt(ch, recv_ioctx, send_ioctx);
 		break;
 	case SRP_I_LOGOUT:
-		printk(KERN_ERR "Not yet implemented: SRP_I_LOGOUT\n");
+		pr_err("Not yet implemented: SRP_I_LOGOUT\n");
 		break;
 	case SRP_CRED_RSP:
 		pr_debug("received SRP_CRED_RSP\n");
@@ -1928,10 +1928,10 @@ static void srpt_handle_new_iu(struct srpt_rdma_ch *ch,
 		pr_debug("received SRP_AER_RSP\n");
 		break;
 	case SRP_RSP:
-		printk(KERN_ERR "Received SRP_RSP\n");
+		pr_err("Received SRP_RSP\n");
 		break;
 	default:
-		printk(KERN_ERR "received IU with unknown opcode 0x%x\n",
+		pr_err("received IU with unknown opcode 0x%x\n",
 		       srp_cmd->opcode);
 		break;
 	}
@@ -1955,12 +1955,12 @@ static void srpt_process_rcv_completion(struct ib_cq *cq,
 
 		req_lim = atomic_dec_return(&ch->req_lim);
 		if (unlikely(req_lim < 0))
-			printk(KERN_ERR "req_lim = %d < 0\n", req_lim);
+			pr_err("req_lim = %d < 0\n", req_lim);
 		ioctx = sdev->ioctx_ring[index];
 		srpt_handle_new_iu(ch, ioctx, NULL);
 	} else {
-		printk(KERN_INFO "receiving failed for idx %u with status %d\n",
-		       index, wc->status);
+		pr_info("receiving failed for idx %u with status %d\n",
+			index, wc->status);
 	}
 }
 
@@ -2000,12 +2000,12 @@ static void srpt_process_send_completion(struct ib_cq *cq,
 		}
 	} else {
 		if (opcode == SRPT_SEND) {
-			printk(KERN_INFO "sending response for idx %u failed"
-			       " with status %d\n", index, wc->status);
+			pr_info("sending response for idx %u failed"
+				" with status %d\n", index, wc->status);
 			srpt_handle_send_err_comp(ch, wc->wr_id);
 		} else if (opcode != SRPT_RDMA_MID) {
-			printk(KERN_INFO "RDMA t %d for idx %u failed with"
-				" status %d", opcode, index, wc->status);
+			pr_info("RDMA t %d for idx %u failed with"
+				" status %d\n", opcode, index, wc->status);
 			srpt_handle_rdma_err_comp(ch, send_ioctx, opcode);
 		}
 	}
@@ -2069,15 +2069,15 @@ static int srpt_compl_thread(void *arg)
 
 	ch = arg;
 	BUG_ON(!ch);
-	printk(KERN_INFO "Session %s: kernel thread %s (PID %d) started\n",
-	       ch->sess_name, ch->thread->comm, current->pid);
+	pr_info("Session %s: kernel thread %s (PID %d) started\n",
+		ch->sess_name, ch->thread->comm, current->pid);
 	while (!kthread_should_stop()) {
 		wait_event_interruptible(ch->wait_queue,
 			(srpt_process_completion(ch->cq, ch),
 			 kthread_should_stop()));
 	}
-	printk(KERN_INFO "Session %s: kernel thread %s (PID %d) stopped\n",
-	       ch->sess_name, ch->thread->comm, current->pid);
+	pr_info("Session %s: kernel thread %s (PID %d) stopped\n",
+		ch->sess_name, ch->thread->comm, current->pid);
 	return 0;
 }
 
@@ -2103,7 +2103,7 @@ static int srpt_create_ch_ib(struct srpt_rdma_ch *ch)
 			      ch->rq_size + srp_sq_size, 0);
 	if (IS_ERR(ch->cq)) {
 		ret = PTR_ERR(ch->cq);
-		printk(KERN_ERR "failed to create CQ cqe= %d ret= %d\n",
+		pr_err("failed to create CQ cqe= %d ret= %d\n",
 		       ch->rq_size + srp_sq_size, ret);
 		goto out;
 	}
@@ -2122,7 +2122,7 @@ static int srpt_create_ch_ib(struct srpt_rdma_ch *ch)
 	ch->qp = ib_create_qp(sdev->pd, qp_init);
 	if (IS_ERR(ch->qp)) {
 		ret = PTR_ERR(ch->qp);
-		printk(KERN_ERR "failed to create_qp ret= %d\n", ret);
+		pr_err("failed to create_qp ret= %d\n", ret);
 		goto err_destroy_cq;
 	}
 
@@ -2142,7 +2142,7 @@ static int srpt_create_ch_ib(struct srpt_rdma_ch *ch)
 
 	ch->thread = kthread_run(srpt_compl_thread, ch, "ib_srpt_compl");
 	if (IS_ERR(ch->thread)) {
-		printk(KERN_ERR "failed to create kernel thread %ld\n",
+		pr_err("failed to create kernel thread %ld\n",
 		       PTR_ERR(ch->thread));
 		ch->thread = NULL;
 		goto err_destroy_qp;
@@ -2203,7 +2203,7 @@ static void __srpt_close_ch(struct srpt_rdma_ch *ch)
 		/* fall through */
 	case CH_LIVE:
 		if (ib_send_cm_dreq(ch->cm_id, NULL, 0) < 0)
-			printk(KERN_ERR "sending CM DREQ failed.\n");
+			pr_err("sending CM DREQ failed.\n");
 		break;
 	case CH_DISCONNECTING:
 		break;
@@ -2290,7 +2290,7 @@ static void srpt_drain_channel(struct ib_cm_id *cm_id)
 
 		ret = srpt_ch_qp_err(ch);
 		if (ret < 0)
-			printk(KERN_ERR "Setting queue pair in error state"
+			pr_err("Setting queue pair in error state"
 			       " failed: %d\n", ret);
 	}
 }
@@ -2358,6 +2358,8 @@ static void srpt_release_channel_work(struct work_struct *w)
 	transport_deregister_session(se_sess);
 	ch->sess = NULL;
 
+	ib_destroy_cm_id(ch->cm_id);
+
 	srpt_destroy_ch_ib(ch);
 
 	srpt_free_ioctx_ring((struct srpt_ioctx **)ch->ioctx_ring,
@@ -2367,8 +2369,6 @@ static void srpt_release_channel_work(struct work_struct *w)
 	spin_lock_irq(&sdev->spinlock);
 	list_del(&ch->list);
 	spin_unlock_irq(&sdev->spinlock);
-
-	ib_destroy_cm_id(ch->cm_id);
 
 	if (ch->release_done)
 		complete(ch->release_done);
@@ -2434,17 +2434,17 @@ static int srpt_cm_req_recv(struct ib_cm_id *cm_id,
 
 	it_iu_len = be32_to_cpu(req->req_it_iu_len);
 
-	printk(KERN_INFO "Received SRP_LOGIN_REQ with i_port_id 0x%llx:0x%llx,"
-	       " t_port_id 0x%llx:0x%llx and it_iu_len %d on port %d"
-	       " (guid=0x%llx:0x%llx)\n",
-	       be64_to_cpu(*(__be64 *)&req->initiator_port_id[0]),
-	       be64_to_cpu(*(__be64 *)&req->initiator_port_id[8]),
-	       be64_to_cpu(*(__be64 *)&req->target_port_id[0]),
-	       be64_to_cpu(*(__be64 *)&req->target_port_id[8]),
-	       it_iu_len,
-	       param->port,
-	       be64_to_cpu(*(__be64 *)&sdev->port[param->port - 1].gid.raw[0]),
-	       be64_to_cpu(*(__be64 *)&sdev->port[param->port - 1].gid.raw[8]));
+	pr_info("Received SRP_LOGIN_REQ with i_port_id 0x%llx:0x%llx,"
+		" t_port_id 0x%llx:0x%llx and it_iu_len %d on port %d"
+		" (guid=0x%llx:0x%llx)\n",
+		be64_to_cpu(*(__be64 *)&req->initiator_port_id[0]),
+		be64_to_cpu(*(__be64 *)&req->initiator_port_id[8]),
+		be64_to_cpu(*(__be64 *)&req->target_port_id[0]),
+		be64_to_cpu(*(__be64 *)&req->target_port_id[8]),
+		it_iu_len,
+		param->port,
+		be64_to_cpu(*(__be64 *)&sdev->port[param->port - 1].gid.raw[0]),
+		be64_to_cpu(*(__be64 *)&sdev->port[param->port - 1].gid.raw[8]));
 
 	rsp = kzalloc(sizeof *rsp, GFP_KERNEL);
 	rej = kzalloc(sizeof *rej, GFP_KERNEL);
@@ -2459,7 +2459,7 @@ static int srpt_cm_req_recv(struct ib_cm_id *cm_id,
 		rej->reason = __constant_cpu_to_be32(
 				SRP_LOGIN_REJ_REQ_IT_IU_LENGTH_TOO_LARGE);
 		ret = -EINVAL;
-		printk(KERN_ERR "rejected SRP_LOGIN_REQ because its"
+		pr_err("rejected SRP_LOGIN_REQ because its"
 		       " length (%d bytes) is out of range (%d .. %d)\n",
 		       it_iu_len, 64, srp_max_req_size);
 		goto reject;
@@ -2469,7 +2469,7 @@ static int srpt_cm_req_recv(struct ib_cm_id *cm_id,
 		rej->reason = __constant_cpu_to_be32(
 			     SRP_LOGIN_REJ_INSUFFICIENT_RESOURCES);
 		ret = -EINVAL;
-		printk(KERN_ERR "rejected SRP_LOGIN_REQ because the target port"
+		pr_err("rejected SRP_LOGIN_REQ because the target port"
 		       " has not yet been enabled\n");
 		goto reject;
 	}
@@ -2515,7 +2515,7 @@ static int srpt_cm_req_recv(struct ib_cm_id *cm_id,
 		rej->reason = __constant_cpu_to_be32(
 				SRP_LOGIN_REJ_UNABLE_ASSOCIATE_CHANNEL);
 		ret = -ENOMEM;
-		printk(KERN_ERR "rejected SRP_LOGIN_REQ because it"
+		pr_err("rejected SRP_LOGIN_REQ because it"
 		       " has an invalid target port identifier.\n");
 		goto reject;
 	}
@@ -2524,7 +2524,7 @@ static int srpt_cm_req_recv(struct ib_cm_id *cm_id,
 	if (!ch) {
 		rej->reason = __constant_cpu_to_be32(
 					SRP_LOGIN_REJ_INSUFFICIENT_RESOURCES);
-		printk(KERN_ERR "rejected SRP_LOGIN_REQ because no memory.\n");
+		pr_err("rejected SRP_LOGIN_REQ because no memory.\n");
 		ret = -ENOMEM;
 		goto reject;
 	}
@@ -2561,7 +2561,7 @@ static int srpt_cm_req_recv(struct ib_cm_id *cm_id,
 	if (ret) {
 		rej->reason = __constant_cpu_to_be32(
 				SRP_LOGIN_REJ_INSUFFICIENT_RESOURCES);
-		printk(KERN_ERR "rejected SRP_LOGIN_REQ because creating"
+		pr_err("rejected SRP_LOGIN_REQ because creating"
 		       " a new RDMA channel failed.\n");
 		goto free_ring;
 	}
@@ -2570,7 +2570,7 @@ static int srpt_cm_req_recv(struct ib_cm_id *cm_id,
 	if (ret) {
 		rej->reason = __constant_cpu_to_be32(
 				SRP_LOGIN_REJ_INSUFFICIENT_RESOURCES);
-		printk(KERN_ERR "rejected SRP_LOGIN_REQ because enabling"
+		pr_err("rejected SRP_LOGIN_REQ because enabling"
 		       " RTR failed (error code = %d)\n", ret);
 		goto destroy_ib;
 	}
@@ -2585,8 +2585,8 @@ static int srpt_cm_req_recv(struct ib_cm_id *cm_id,
 
 	nacl = srpt_lookup_acl(sport, ch->i_port_id);
 	if (!nacl) {
-		printk(KERN_INFO "Rejected login because no ACL has been"
-		       " configured yet for initiator %s.\n", ch->sess_name);
+		pr_info("Rejected login because no ACL has been"
+			" configured yet for initiator %s.\n", ch->sess_name);
 		rej->reason = __constant_cpu_to_be32(
 				SRP_LOGIN_REJ_CHANNEL_LIMIT_REACHED);
 		goto destroy_ib;
@@ -2630,7 +2630,7 @@ static int srpt_cm_req_recv(struct ib_cm_id *cm_id,
 
 	ret = ib_send_cm_rep(cm_id, rep_param);
 	if (ret) {
-		printk(KERN_ERR "sending SRP_LOGIN_REQ response failed"
+		pr_err("sending SRP_LOGIN_REQ response failed"
 		       " (error code = %d)\n", ret);
 		goto release_channel;
 	}
@@ -2678,7 +2678,7 @@ out:
 
 static void srpt_cm_rej_recv(struct ib_cm_id *cm_id)
 {
-	printk(KERN_INFO "Received IB REJ for cm_id %p.\n", cm_id);
+	pr_info("Received IB REJ for cm_id %p.\n", cm_id);
 	srpt_drain_channel(cm_id);
 }
 
@@ -2713,13 +2713,13 @@ static void srpt_cm_rtu_recv(struct ib_cm_id *cm_id)
 
 static void srpt_cm_timewait_exit(struct ib_cm_id *cm_id)
 {
-	printk(KERN_INFO "Received IB TimeWait exit for cm_id %p.\n", cm_id);
+	pr_info("Received IB TimeWait exit for cm_id %p.\n", cm_id);
 	srpt_drain_channel(cm_id);
 }
 
 static void srpt_cm_rep_error(struct ib_cm_id *cm_id)
 {
-	printk(KERN_INFO "Received IB REP error for cm_id %p.\n", cm_id);
+	pr_info("Received IB REP error for cm_id %p.\n", cm_id);
 	srpt_drain_channel(cm_id);
 }
 
@@ -2754,9 +2754,9 @@ static void srpt_cm_dreq_recv(struct ib_cm_id *cm_id)
 
 	if (send_drep) {
 		if (ib_send_cm_drep(ch->cm_id, NULL, 0) < 0)
-			printk(KERN_ERR "Sending IB DREP failed.\n");
-		printk(KERN_INFO "Received DREQ and sent DREP for session %s.\n",
-		       ch->sess_name);
+			pr_err("Sending IB DREP failed.\n");
+		pr_info("Received DREQ and sent DREP for session %s.\n",
+			ch->sess_name);
 	}
 }
 
@@ -2765,8 +2765,7 @@ static void srpt_cm_dreq_recv(struct ib_cm_id *cm_id)
  */
 static void srpt_cm_drep_recv(struct ib_cm_id *cm_id)
 {
-	printk(KERN_INFO "Received InfiniBand DREP message for cm_id %p.\n",
-	       cm_id);
+	pr_info("Received InfiniBand DREP message for cm_id %p.\n", cm_id);
 	srpt_drain_channel(cm_id);
 }
 
@@ -2810,14 +2809,13 @@ static int srpt_cm_handler(struct ib_cm_id *cm_id, struct ib_cm_event *event)
 		srpt_cm_rep_error(cm_id);
 		break;
 	case IB_CM_DREQ_ERROR:
-		printk(KERN_INFO "Received IB DREQ ERROR event.\n");
+		pr_info("Received IB DREQ ERROR event.\n");
 		break;
 	case IB_CM_MRA_RECEIVED:
-		printk(KERN_INFO "Received IB MRA event\n");
+		pr_info("Received IB MRA event\n");
 		break;
 	default:
-		printk(KERN_ERR "received unrecognized IB CM event %d\n",
-		       event->event);
+		pr_err("received unrecognized IB CM event %d\n", event->event);
 		break;
 	}
 
@@ -2847,8 +2845,8 @@ static int srpt_perform_rdmas(struct srpt_rdma_ch *ch,
 		ret = -ENOMEM;
 		sq_wr_avail = atomic_sub_return(n_rdma, &ch->sq_wr_avail);
 		if (sq_wr_avail < 0) {
-			printk(KERN_WARNING "IB send queue full (needed %d)\n",
-			       n_rdma);
+			pr_warn("IB send queue full (needed %d)\n",
+				n_rdma);
 			goto out;
 		}
 	}
@@ -2888,7 +2886,7 @@ static int srpt_perform_rdmas(struct srpt_rdma_ch *ch,
 	}
 
 	if (ret)
-		printk(KERN_ERR "%s[%d]: ib_post_send() returned %d for %d/%d",
+		pr_err("%s[%d]: ib_post_send() returned %d for %d/%d\n",
 				 __func__, __LINE__, ret, i, n_rdma);
 	if (ret && i > 0) {
 		wr.num_sge = 0;
@@ -2896,12 +2894,12 @@ static int srpt_perform_rdmas(struct srpt_rdma_ch *ch,
 		wr.send_flags = IB_SEND_SIGNALED;
 		while (ch->state == CH_LIVE &&
 			ib_post_send(ch->qp, &wr, &bad_wr) != 0) {
-			printk(KERN_INFO "Trying to abort failed RDMA transfer [%d]",
+			pr_info("Trying to abort failed RDMA transfer [%d]\n",
 				ioctx->ioctx.index);
 			msleep(1000);
 		}
 		while (ch->state != CH_RELEASING && !ioctx->rdma_aborted) {
-			printk(KERN_INFO "Waiting until RDMA abort finished [%d]",
+			pr_info("Waiting until RDMA abort finished [%d]\n",
 				ioctx->ioctx.index);
 			msleep(1000);
 		}
@@ -2922,17 +2920,17 @@ static int srpt_xfer_data(struct srpt_rdma_ch *ch,
 
 	ret = srpt_map_sg_to_ib_sge(ch, ioctx);
 	if (ret) {
-		printk(KERN_ERR "%s[%d] ret=%d\n", __func__, __LINE__, ret);
+		pr_err("%s[%d] ret=%d\n", __func__, __LINE__, ret);
 		goto out;
 	}
 
 	ret = srpt_perform_rdmas(ch, ioctx);
 	if (ret) {
 		if (ret == -EAGAIN || ret == -ENOMEM)
-			printk(KERN_INFO "%s[%d] queue full -- ret=%d\n",
-				   __func__, __LINE__, ret);
+			pr_info("%s[%d] queue full -- ret=%d\n",
+				__func__, __LINE__, ret);
 		else
-			printk(KERN_ERR "%s[%d] fatal error -- ret=%d\n",
+			pr_err("%s[%d] fatal error -- ret=%d\n",
 			       __func__, __LINE__, ret);
 		goto out_unmap;
 	}
@@ -3059,7 +3057,7 @@ static int srpt_queue_response(struct se_cmd *cmd)
 	    !ioctx->queue_status_only) {
 		ret = srpt_xfer_data(ch, ioctx);
 		if (ret) {
-			printk(KERN_ERR "xfer_data failed for tag %llu\n",
+			pr_err("xfer_data failed for tag %llu\n",
 			       ioctx->tag);
 			goto out;
 		}
@@ -3076,7 +3074,7 @@ static int srpt_queue_response(struct se_cmd *cmd)
 	}
 	ret = srpt_post_send(ch, ioctx, resp_len);
 	if (ret) {
-		printk(KERN_ERR "sending cmd response failed for tag %llu\n",
+		pr_err("sending cmd response failed for tag %llu\n",
 		       ioctx->tag);
 		srpt_unmap_sg_to_ib_sge(ch, ioctx);
 		srpt_set_cmd_state(ioctx, SRPT_STATE_DONE);
@@ -3138,7 +3136,7 @@ static int srpt_release_sdev(struct srpt_device *sdev)
 	res = wait_event_interruptible(sdev->ch_releaseQ,
 				       srpt_ch_list_empty(sdev));
 	if (res)
-		printk(KERN_ERR "%s: interrupted.\n", __func__);
+		pr_err("%s: interrupted.\n", __func__);
 
 	return 0;
 }
@@ -3277,7 +3275,7 @@ static void srpt_add_one(struct ib_device *device)
 		spin_lock_init(&sport->port_acl_lock);
 
 		if (srpt_refresh_port(sport)) {
-			printk(KERN_ERR "MAD registration failed for %s-%d.\n",
+			pr_err("MAD registration failed for %s-%d.\n",
 			       srpt_sdev_name(sdev), i);
 			goto err_ring;
 		}
@@ -3314,7 +3312,7 @@ free_dev:
 	kfree(sdev);
 err:
 	sdev = NULL;
-	printk(KERN_INFO "%s(%s) failed.\n", __func__, device->name);
+	pr_info("%s(%s) failed.\n", __func__, device->name);
 	goto out;
 }
 
@@ -3328,8 +3326,7 @@ static void srpt_remove_one(struct ib_device *device)
 
 	sdev = ib_get_client_data(device, &srpt_client);
 	if (!sdev) {
-		printk(KERN_INFO "%s(%s): nothing to do.\n", __func__,
-		       device->name);
+		pr_info("%s(%s): nothing to do.\n", __func__, device->name);
 		return;
 	}
 
@@ -3448,7 +3445,7 @@ static struct se_node_acl *srpt_alloc_fabric_acl(struct se_portal_group *se_tpg)
 
 	nacl = kzalloc(sizeof(struct srpt_node_acl), GFP_KERNEL);
 	if (!nacl) {
-		printk(KERN_ERR "Unable to allocate struct srpt_node_acl\n");
+		pr_err("Unable to allocate struct srpt_node_acl\n");
 		return NULL;
 	}
 
@@ -3599,7 +3596,7 @@ static struct se_node_acl *srpt_make_nodeacl(struct se_portal_group *tpg,
 	u8 i_port_id[16];
 
 	if (srpt_parse_i_port_id(i_port_id, name) < 0) {
-		printk(KERN_ERR "invalid initiator port ID %s\n", name);
+		pr_err("invalid initiator port ID %s\n", name);
 		ret = -EINVAL;
 		goto err;
 	}
@@ -3800,12 +3797,12 @@ static ssize_t srpt_tpg_store_enable(
 
 	ret = strict_strtoul(page, 0, &tmp);
 	if (ret < 0) {
-		printk(KERN_ERR "Unable to extract srpt_tpg_store_enable\n");
+		pr_err("Unable to extract srpt_tpg_store_enable\n");
 		return -EINVAL;
 	}
 
 	if ((tmp != 0) && (tmp != 1)) {
-		printk(KERN_ERR "Illegal value for srpt_tpg_store_enable: %lu\n", tmp);
+		pr_err("Illegal value for srpt_tpg_store_enable: %lu\n", tmp);
 		return -EINVAL;
 	}
 	if (tmp == 1)
@@ -3963,7 +3960,7 @@ static int __init srpt_init_module(void)
 
 	ret = -EINVAL;
 	if (srp_max_req_size < MIN_MAX_REQ_SIZE) {
-		printk(KERN_ERR "invalid value %d for kernel module parameter"
+		pr_err("invalid value %d for kernel module parameter"
 		       " srp_max_req_size -- must be at least %d.\n",
 		       srp_max_req_size, MIN_MAX_REQ_SIZE);
 		goto out;
@@ -3971,7 +3968,7 @@ static int __init srpt_init_module(void)
 
 	if (srpt_srq_size < MIN_SRPT_SRQ_SIZE
 	    || srpt_srq_size > MAX_SRPT_SRQ_SIZE) {
-		printk(KERN_ERR "invalid value %d for kernel module parameter"
+		pr_err("invalid value %d for kernel module parameter"
 		       " srpt_srq_size -- must be in the range [%d..%d].\n",
 		       srpt_srq_size, MIN_SRPT_SRQ_SIZE, MAX_SRPT_SRQ_SIZE);
 		goto out;
@@ -3979,7 +3976,7 @@ static int __init srpt_init_module(void)
 
 	srpt_target = target_fabric_configfs_init(THIS_MODULE, "srpt");
 	if (IS_ERR(srpt_target)) {
-		printk(KERN_ERR "couldn't register\n");
+		pr_err("couldn't register\n");
 		ret = PTR_ERR(srpt_target);
 		goto out;
 	}
@@ -4001,13 +3998,13 @@ static int __init srpt_init_module(void)
 
 	ret = target_fabric_configfs_register(srpt_target);
 	if (ret < 0) {
-		printk(KERN_ERR "couldn't register\n");
+		pr_err("couldn't register\n");
 		goto out_free_target;
 	}
 
 	ret = ib_register_client(&srpt_client);
 	if (ret) {
-		printk(KERN_ERR "couldn't register IB client\n");
+		pr_err("couldn't register IB client\n");
 		goto out_unregister_target;
 	}
 

@@ -262,7 +262,11 @@ static ssize_t dio_complete(struct dio *dio, loff_t offset, ssize_t ret, bool is
 		dio->end_io(dio->iocb, offset, transferred,
 			    dio->private, ret, is_async);
 	} else {
-		inode_dio_done(dio->inode);
+		if (dio->flags & DIO_IGNORE_TRUNCATE)
+			__inode_dio_done(dio->inode);
+		else
+			inode_dio_done(dio->inode);
+
 		if (is_async)
 			aio_complete(dio->iocb, ret, 0);
 	}
@@ -1129,9 +1133,12 @@ do_blockdev_direct_IO(int rw, struct kiocb *iocb, struct inode *inode,
 	}
 
 	/*
-	 * Will be decremented at I/O completion time.
+	 * Will be decremented at I/O completion time. For a block device
+	 * we don't need to protect against truncate, so don't increment
+	 * the inode direct IO count.
 	 */
-	atomic_inc(&inode->i_dio_count);
+	if (!(dio->flags & DIO_IGNORE_TRUNCATE))
+		atomic_inc(&inode->i_dio_count);
 
 	/*
 	 * For file extending writes updating i_size before data

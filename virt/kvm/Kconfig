@@ -6,6 +6,9 @@ config HAVE_KVM
 config HAVE_KVM_IRQCHIP
        bool
 
+config HAVE_KVM_IRQFD
+       bool
+
 config HAVE_KVM_IRQ_ROUTING
        bool
 
@@ -26,4 +29,7 @@ config HAVE_KVM_MSI
        bool
 
 config HAVE_KVM_CPU_RELAX_INTERCEPT
+       bool
+
+config KVM_VFIO
        bool

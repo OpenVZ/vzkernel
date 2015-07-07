@@ -5,7 +5,7 @@
  *
  * GPL LICENSE SUMMARY
  *
- * Copyright(c) 2012 - 2013 Intel Corporation. All rights reserved.
+ * Copyright(c) 2012 - 2014 Intel Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -30,7 +30,7 @@
  *
  * BSD LICENSE
  *
- * Copyright(c) 2012 - 2013 Intel Corporation. All rights reserved.
+ * Copyright(c) 2012 - 2014 Intel Corporation. All rights reserved.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -76,6 +76,8 @@
  * @TX_CMD_FLG_VHT_NDPA: mark frame is NDPA for VHT beamformer sequence
  * @TX_CMD_FLG_HT_NDPA: mark frame is NDPA for HT beamformer sequence
  * @TX_CMD_FLG_CSI_FDBK2HOST: mark to send feedback to host (only if good CRC)
+ * @TX_CMD_FLG_BT_PRIO_POS: the position of the BT priority (bit 11 is ignored
+ *	on old firmwares).
  * @TX_CMD_FLG_BT_DIS: disable BT priority for this frame
  * @TX_CMD_FLG_SEQ_CTL: set if FW should override the sequence control.
  *	Should be set for mgmt, non-QOS data, mcast, bcast and in scan command
@@ -91,7 +93,6 @@
  * @TX_CMD_FLG_RESP_TO_DRV: zero this if the response should go only to FW
  * @TX_CMD_FLG_CCMP_AGG: this frame uses CCMP for aggregation acceleration
  * @TX_CMD_FLG_TKIP_MIC_DONE: FW already performed TKIP MIC calculation
- * @TX_CMD_FLG_CTS_ONLY: send CTS only, no data after that
  * @TX_CMD_FLG_DUR: disable duration overwriting used in PS-Poll Assoc-id
  * @TX_CMD_FLG_FW_DROP: FW should mark frame to be dropped
  * @TX_CMD_FLG_EXEC_PAPD: execute PAPD
@@ -108,6 +109,7 @@ enum iwl_tx_flags {
 	TX_CMD_FLG_VHT_NDPA		= BIT(8),
 	TX_CMD_FLG_HT_NDPA		= BIT(9),
 	TX_CMD_FLG_CSI_FDBK2HOST	= BIT(10),
+	TX_CMD_FLG_BT_PRIO_POS		= 11,
 	TX_CMD_FLG_BT_DIS		= BIT(12),
 	TX_CMD_FLG_SEQ_CTL		= BIT(13),
 	TX_CMD_FLG_MORE_FRAG		= BIT(14),
@@ -120,7 +122,6 @@ enum iwl_tx_flags {
 	TX_CMD_FLG_RESP_TO_DRV		= BIT(21),
 	TX_CMD_FLG_CCMP_AGG		= BIT(22),
 	TX_CMD_FLG_TKIP_MIC_DONE	= BIT(23),
-	TX_CMD_FLG_CTS_ONLY		= BIT(24),
 	TX_CMD_FLG_DUR			= BIT(25),
 	TX_CMD_FLG_FW_DROP		= BIT(26),
 	TX_CMD_FLG_EXEC_PAPD		= BIT(27),
@@ -134,6 +135,8 @@ enum iwl_tx_flags {
 #define TX_CMD_SEC_WEP			0x01
 #define TX_CMD_SEC_CCM			0x02
 #define TX_CMD_SEC_TKIP			0x03
+#define TX_CMD_SEC_EXT			0x04
+#define TX_CMD_SEC_MSK			0x07
 #define TX_CMD_SEC_WEP_KEY_IDX_POS	6
 #define TX_CMD_SEC_WEP_KEY_IDX_MSK	0xc0
 #define TX_CMD_SEC_KEY128		0x08
@@ -227,10 +230,11 @@ struct iwl_tx_cmd {
 	__le16 len;
 	__le16 next_frame_len;
 	__le32 tx_flags;
-	/* DRAM_SCRATCH_API_U_VER_1 */
-	u8 try_cnt;
-	u8 btkill_cnt;
-	__le16 reserved;
+	struct {
+		u8 try_cnt;
+		u8 btkill_cnt;
+		__le16 reserved;
+	} scratch; /* DRAM_SCRATCH_API_U_VER_1 */
 	__le32 rate_n_flags;
 	u8 sta_id;
 	u8 sec_ctl;
@@ -478,7 +482,8 @@ struct iwl_mvm_tx_resp {
 	u8 pa_integ_res_b[3];
 	u8 pa_integ_res_c[3];
 	__le16 measurement_req_id;
-	__le16 reserved;
+	u8 reduced_tpc;
+	u8 reserved;
 
 	__le32 tfd_info;
 	__le16 seq_ctl;

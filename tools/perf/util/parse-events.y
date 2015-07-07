@@ -9,7 +9,7 @@
 
 #include <linux/compiler.h>
 #include <linux/list.h>
-#include "types.h"
+#include <linux/types.h>
 #include "util.h"
 #include "parse-events.h"
 #include "parse-events-bison.h"
@@ -20,6 +20,13 @@ extern int parse_events_lex (YYSTYPE* lvalp, void* scanner);
 do { \
 	if (val) \
 		YYABORT; \
+} while (0)
+
+#define ALLOC_LIST(list) \
+do { \
+	list = malloc(sizeof(*list)); \
+	ABORT_ON(!list);              \
+	INIT_LIST_HEAD(list);         \
 } while (0)
 
 static inc_group_count(struct list_head *list,
@@ -196,9 +203,10 @@ event_pmu:
 PE_NAME '/' event_config '/'
 {
 	struct parse_events_evlist *data = _data;
-	struct list_head *list = NULL;
+	struct list_head *list;
 
-	ABORT_ON(parse_events_add_pmu(&list, &data->idx, $1, $3));
+	ALLOC_LIST(list);
+	ABORT_ON(parse_events_add_pmu(list, &data->idx, $1, $3));
 	parse_events__free_terms($3);
 	$$ = list;
 }
@@ -212,11 +220,12 @@ event_legacy_symbol:
 value_sym '/' event_config '/'
 {
 	struct parse_events_evlist *data = _data;
-	struct list_head *list = NULL;
+	struct list_head *list;
 	int type = $1 >> 16;
 	int config = $1 & 255;
 
-	ABORT_ON(parse_events_add_numeric(&list, &data->idx,
+	ALLOC_LIST(list);
+	ABORT_ON(parse_events_add_numeric(list, &data->idx,
 					  type, config, $3));
 	parse_events__free_terms($3);
 	$$ = list;
@@ -225,11 +234,12 @@ value_sym '/' event_config '/'
 value_sym sep_slash_dc
 {
 	struct parse_events_evlist *data = _data;
-	struct list_head *list = NULL;
+	struct list_head *list;
 	int type = $1 >> 16;
 	int config = $1 & 255;
 
-	ABORT_ON(parse_events_add_numeric(&list, &data->idx,
+	ALLOC_LIST(list);
+	ABORT_ON(parse_events_add_numeric(list, &data->idx,
 					  type, config, NULL));
 	$$ = list;
 }
@@ -238,27 +248,30 @@ event_legacy_cache:
 PE_NAME_CACHE_TYPE '-' PE_NAME_CACHE_OP_RESULT '-' PE_NAME_CACHE_OP_RESULT
 {
 	struct parse_events_evlist *data = _data;
-	struct list_head *list = NULL;
+	struct list_head *list;
 
-	ABORT_ON(parse_events_add_cache(&list, &data->idx, $1, $3, $5));
+	ALLOC_LIST(list);
+	ABORT_ON(parse_events_add_cache(list, &data->idx, $1, $3, $5));
 	$$ = list;
 }
 |
 PE_NAME_CACHE_TYPE '-' PE_NAME_CACHE_OP_RESULT
 {
 	struct parse_events_evlist *data = _data;
-	struct list_head *list = NULL;
+	struct list_head *list;
 
-	ABORT_ON(parse_events_add_cache(&list, &data->idx, $1, $3, NULL));
+	ALLOC_LIST(list);
+	ABORT_ON(parse_events_add_cache(list, &data->idx, $1, $3, NULL));
 	$$ = list;
 }
 |
 PE_NAME_CACHE_TYPE
 {
 	struct parse_events_evlist *data = _data;
-	struct list_head *list = NULL;
+	struct list_head *list;
 
-	ABORT_ON(parse_events_add_cache(&list, &data->idx, $1, NULL, NULL));
+	ALLOC_LIST(list);
+	ABORT_ON(parse_events_add_cache(list, &data->idx, $1, NULL, NULL));
 	$$ = list;
 }
 
@@ -266,9 +279,10 @@ event_legacy_mem:
 PE_PREFIX_MEM PE_VALUE ':' PE_MODIFIER_BP sep_dc
 {
 	struct parse_events_evlist *data = _data;
-	struct list_head *list = NULL;
+	struct list_head *list;
 
-	ABORT_ON(parse_events_add_breakpoint(&list, &data->idx,
+	ALLOC_LIST(list);
+	ABORT_ON(parse_events_add_breakpoint(list, &data->idx,
 					     (void *) $2, $4));
 	$$ = list;
 }
@@ -276,20 +290,34 @@ PE_PREFIX_MEM PE_VALUE ':' PE_MODIFIER_BP sep_dc
 PE_PREFIX_MEM PE_VALUE sep_dc
 {
 	struct parse_events_evlist *data = _data;
-	struct list_head *list = NULL;
+	struct list_head *list;
 
-	ABORT_ON(parse_events_add_breakpoint(&list, &data->idx,
+	ALLOC_LIST(list);
+	ABORT_ON(parse_events_add_breakpoint(list, &data->idx,
 					     (void *) $2, NULL));
 	$$ = list;
 }
 
 event_legacy_tracepoint:
+PE_NAME '-' PE_NAME ':' PE_NAME
+{
+	struct parse_events_evlist *data = _data;
+	struct list_head *list;
+	char sys_name[128];
+	snprintf(&sys_name, 128, "%s-%s", $1, $3);
+
+	ALLOC_LIST(list);
+	ABORT_ON(parse_events_add_tracepoint(list, &data->idx, &sys_name, $5));
+	$$ = list;
+}
+|
 PE_NAME ':' PE_NAME
 {
 	struct parse_events_evlist *data = _data;
-	struct list_head *list = NULL;
+	struct list_head *list;
 
-	ABORT_ON(parse_events_add_tracepoint(&list, &data->idx, $1, $3));
+	ALLOC_LIST(list);
+	ABORT_ON(parse_events_add_tracepoint(list, &data->idx, $1, $3));
 	$$ = list;
 }
 
@@ -297,9 +325,10 @@ event_legacy_numeric:
 PE_VALUE ':' PE_VALUE
 {
 	struct parse_events_evlist *data = _data;
-	struct list_head *list = NULL;
+	struct list_head *list;
 
-	ABORT_ON(parse_events_add_numeric(&list, &data->idx, (u32)$1, $3, NULL));
+	ALLOC_LIST(list);
+	ABORT_ON(parse_events_add_numeric(list, &data->idx, (u32)$1, $3, NULL));
 	$$ = list;
 }
 
@@ -307,9 +336,10 @@ event_legacy_raw:
 PE_RAW
 {
 	struct parse_events_evlist *data = _data;
-	struct list_head *list = NULL;
+	struct list_head *list;
 
-	ABORT_ON(parse_events_add_numeric(&list, &data->idx,
+	ALLOC_LIST(list);
+	ABORT_ON(parse_events_add_numeric(list, &data->idx,
 					  PERF_TYPE_RAW, $1, NULL));
 	$$ = list;
 }

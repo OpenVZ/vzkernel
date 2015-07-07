@@ -11,6 +11,7 @@
 struct kvm_timer {
 	struct hrtimer timer;
 	s64 period; 				/* unit: ns */
+	u32 timer_mode;
 	u32 timer_mode_mask;
 	u64 tscdeadline;
 	atomic_t pending;			/* accumulated triggered timers */
@@ -22,6 +23,7 @@ struct kvm_lapic {
 	struct kvm_timer lapic_timer;
 	u32 divide_count;
 	struct kvm_vcpu *vcpu;
+	bool sw_enabled;
 	bool irr_pending;
 	/* Number of bits set in ISR. */
 	s16 isr_count;
@@ -34,7 +36,7 @@ struct kvm_lapic {
 	 */
 	void *regs;
 	gpa_t vapic_addr;
-	struct page *vapic_page;
+	struct gfn_to_hva_cache vapic_cache;
 	unsigned long pending_events;
 	unsigned int sipi_vector;
 };
@@ -65,7 +67,7 @@ bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
 		struct kvm_lapic_irq *irq, int *r, unsigned long *dest_map);
 
 u64 kvm_get_apic_base(struct kvm_vcpu *vcpu);
-void kvm_set_apic_base(struct kvm_vcpu *vcpu, u64 data);
+int kvm_set_apic_base(struct kvm_vcpu *vcpu, struct msr_data *msr_info);
 void kvm_apic_post_state_restore(struct kvm_vcpu *vcpu,
 		struct kvm_lapic_state *s);
 int kvm_lapic_find_highest_irr(struct kvm_vcpu *vcpu);
@@ -76,7 +78,7 @@ void kvm_set_lapic_tscdeadline_msr(struct kvm_vcpu *vcpu, u64 data);
 void kvm_apic_write_nodecode(struct kvm_vcpu *vcpu, u32 offset);
 void kvm_apic_set_eoi_accelerated(struct kvm_vcpu *vcpu, int vector);
 
-void kvm_lapic_set_vapic_addr(struct kvm_vcpu *vcpu, gpa_t vapic_addr);
+int kvm_lapic_set_vapic_addr(struct kvm_vcpu *vcpu, gpa_t vapic_addr);
 void kvm_lapic_sync_from_vapic(struct kvm_vcpu *vcpu);
 void kvm_lapic_sync_to_vapic(struct kvm_vcpu *vcpu);
 

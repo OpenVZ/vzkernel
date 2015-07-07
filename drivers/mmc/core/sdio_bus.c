@@ -211,7 +211,7 @@ static const struct dev_pm_ops sdio_bus_pm_ops = {
 	SET_RUNTIME_PM_OPS(
 		pm_generic_runtime_suspend,
 		pm_generic_runtime_resume,
-		pm_generic_runtime_idle
+		NULL
 	)
 };
 
@@ -305,8 +305,7 @@ static void sdio_acpi_set_handle(struct sdio_func *func)
 	struct mmc_host *host = func->card->host;
 	u64 addr = (host->slotno << 16) | func->num;
 
-	ACPI_HANDLE_SET(&func->dev,
-			acpi_get_child(ACPI_HANDLE(host->parent), addr));
+	acpi_preset_companion(&func->dev, ACPI_COMPANION(host->parent), addr);
 }
 #else
 static inline void sdio_acpi_set_handle(struct sdio_func *func) {}

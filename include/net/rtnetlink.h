@@ -3,6 +3,7 @@
 
 #include <linux/rtnetlink.h>
 #include <net/netlink.h>
+#include <linux/rh_kabi.h>
 
 typedef int (*rtnl_doit_func)(struct sk_buff *, struct nlmsghdr *);
 typedef int (*rtnl_dumpit_func)(struct sk_buff *, struct netlink_callback *);
@@ -81,6 +82,30 @@ struct rtnl_link_ops {
 					       const struct net_device *dev);
 	unsigned int		(*get_num_tx_queues)(void);
 	unsigned int		(*get_num_rx_queues)(void);
+
+	/* RHEL SPECIFIC
+	 *
+	 * The following padding has been inserted before ABI freeze to
+	 * allow extending the structure while preserve ABI. Feel free
+	 * to replace reserved slots with required structure field
+	 * additions of your backport.
+	 */
+	RH_KABI_RESERVE_P(1)
+	RH_KABI_RESERVE_P(2)
+	RH_KABI_RESERVE_P(3)
+	RH_KABI_RESERVE_P(4)
+	RH_KABI_RESERVE_P(5)
+	RH_KABI_RESERVE_P(6)
+	RH_KABI_RESERVE_P(7)
+	RH_KABI_RESERVE_P(8)
+	RH_KABI_RESERVE_P(9)
+	RH_KABI_RESERVE_P(10)
+	RH_KABI_RESERVE_P(11)
+	RH_KABI_RESERVE_P(12)
+	RH_KABI_RESERVE_P(13)
+	RH_KABI_RESERVE_P(14)
+	RH_KABI_RESERVE_P(15)
+	RH_KABI_RESERVE_P(16)
 };
 
 extern int	__rtnl_link_register(struct rtnl_link_ops *ops);
@@ -129,7 +154,8 @@ extern struct net_device *rtnl_create_link(struct net *net,
 	char *ifname, const struct rtnl_link_ops *ops, struct nlattr *tb[]);
 extern int rtnl_configure_link(struct net_device *dev,
 			       const struct ifinfomsg *ifm);
-extern const struct nla_policy ifla_policy[IFLA_MAX+1];
+
+int rtnl_nla_parse_ifla(struct nlattr **tb, const struct nlattr *head, int len);
 
 #define MODULE_ALIAS_RTNL_LINK(kind) MODULE_ALIAS("rtnl-link-" kind)
 

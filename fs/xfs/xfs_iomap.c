@@ -17,33 +17,28 @@
  */
 #include "xfs.h"
 #include "xfs_fs.h"
-#include "xfs_log.h"
-#include "xfs_trans.h"
+#include "xfs_shared.h"
+#include "xfs_format.h"
+#include "xfs_log_format.h"
+#include "xfs_trans_resv.h"
 #include "xfs_sb.h"
 #include "xfs_ag.h"
-#include "xfs_alloc.h"
-#include "xfs_quota.h"
 #include "xfs_mount.h"
-#include "xfs_bmap_btree.h"
-#include "xfs_alloc_btree.h"
-#include "xfs_ialloc_btree.h"
-#include "xfs_dinode.h"
 #include "xfs_inode.h"
-#include "xfs_inode_item.h"
 #include "xfs_btree.h"
+#include "xfs_bmap_btree.h"
 #include "xfs_bmap.h"
-#include "xfs_rtalloc.h"
+#include "xfs_bmap_util.h"
 #include "xfs_error.h"
-#include "xfs_itable.h"
-#include "xfs_attr.h"
-#include "xfs_buf_item.h"
+#include "xfs_trans.h"
 #include "xfs_trans_space.h"
-#include "xfs_utils.h"
 #include "xfs_iomap.h"
 #include "xfs_trace.h"
 #include "xfs_icache.h"
+#include "xfs_quota.h"
 #include "xfs_dquot_item.h"
 #include "xfs_dquot.h"
+#include "xfs_dinode.h"
 
 
 #define XFS_WRITEIO_ALIGN(mp,off)	(((off) >> mp->m_writeio_log) \
@@ -109,7 +104,7 @@ xfs_alert_fsblock_zero(
 	xfs_alert_tag(ip->i_mount, XFS_PTAG_FSBLOCK_ZERO,
 			"Access to block zero in inode %llu "
 			"start_block: %llx start_off: %llx "
-			"blkcnt: %llx extent-state: %x\n",
+			"blkcnt: %llx extent-state: %x",
 		(unsigned long long)ip->i_ino,
 		(unsigned long long)imap->br_startblock,
 		(unsigned long long)imap->br_startoff,
@@ -187,10 +182,8 @@ xfs_iomap_write_direct(
 	 * Allocate and setup the transaction
 	 */
 	tp = xfs_trans_alloc(mp, XFS_TRANS_DIOSTRAT);
-	error = xfs_trans_reserve(tp, resblks,
-			XFS_WRITE_LOG_RES(mp), resrtextents,
-			XFS_TRANS_PERM_LOG_RES,
-			XFS_WRITE_LOG_COUNT);
+	error = xfs_trans_reserve(tp, &M_RES(mp)->tr_write,
+				  resblks, resrtextents);
 	/*
 	 * Check for running out of space, note: need lock to return
 	 */
@@ -284,6 +277,15 @@ xfs_iomap_eof_want_preallocate(
 		return 0;
 
 	/*
+	 * If the file is smaller than the minimum prealloc and we are using
+	 * dynamic preallocation, don't do any preallocation at all as it is
+	 * likely this is the only write to the file that is going to be done.
+	 */
+	if (!(mp->m_flags & XFS_MOUNT_DFLT_IOSIZE) &&
+	    XFS_ISIZE(ip) < XFS_FSB_TO_B(mp, mp->m_writeio_blocks))
+		return 0;
+
+	/*
 	 * If there are any real blocks past eof, then don't
 	 * do any speculative allocation.
 	 */
@@ -345,6 +347,10 @@ xfs_iomap_eof_prealloc_initial_size(
 	if (mp->m_flags & XFS_MOUNT_DFLT_IOSIZE)
 		return 0;
 
+	/* If the file is small, then use the minimum prealloc */
+	if (XFS_ISIZE(ip) < XFS_FSB_TO_B(mp, mp->m_dalign))
+		return 0;
+
 	/*
 	 * As we write multiple pages, the offset will always align to the
 	 * start of a page and hence point to a hole at EOF. i.e. if the size is
@@ -395,7 +401,8 @@ xfs_quota_calc_throttle(
 	struct xfs_inode *ip,
 	int type,
 	xfs_fsblock_t *qblocks,
-	int *qshift)
+	int *qshift,
+	int64_t	*qfreesp)
 {
 	int64_t freesp;
 	int shift = 0;
@@ -404,6 +411,7 @@ xfs_quota_calc_throttle(
 	/* over hi wmark, squash the prealloc completely */
 	if (dq->q_res_bcount >= dq->q_prealloc_hi_wmark) {
 		*qblocks = 0;
+		*qfreesp = 0;
 		return;
 	}
 
@@ -415,6 +423,9 @@ xfs_quota_calc_throttle(
 		if (freesp < dq->q_low_space[XFS_QLOWSP_1_PCNT])
 			shift += 2;
 	}
+
+	if (freesp < *qfreesp)
+		*qfreesp = freesp;
 
 	/* only overwrite the throttle values if we are more aggressive */
 	if ((freesp >> shift) < (*qblocks >> *qshift)) {
@@ -474,15 +485,18 @@ xfs_iomap_prealloc_size(
 	}
 
 	/*
-	 * Check each quota to cap the prealloc size and provide a shift
-	 * value to throttle with.
+	 * Check each quota to cap the prealloc size, provide a shift value to
+	 * throttle with and adjust amount of available space.
 	 */
 	if (xfs_quota_need_throttle(ip, XFS_DQ_USER, alloc_blocks))
-		xfs_quota_calc_throttle(ip, XFS_DQ_USER, &qblocks, &qshift);
+		xfs_quota_calc_throttle(ip, XFS_DQ_USER, &qblocks, &qshift,
+					&freesp);
 	if (xfs_quota_need_throttle(ip, XFS_DQ_GROUP, alloc_blocks))
-		xfs_quota_calc_throttle(ip, XFS_DQ_GROUP, &qblocks, &qshift);
+		xfs_quota_calc_throttle(ip, XFS_DQ_GROUP, &qblocks, &qshift,
+					&freesp);
 	if (xfs_quota_need_throttle(ip, XFS_DQ_PROJ, alloc_blocks))
-		xfs_quota_calc_throttle(ip, XFS_DQ_PROJ, &qblocks, &qshift);
+		xfs_quota_calc_throttle(ip, XFS_DQ_PROJ, &qblocks, &qshift,
+					&freesp);
 
 	/*
 	 * The final prealloc size is set to the minimum of free space available
@@ -643,7 +657,6 @@ int
 xfs_iomap_write_allocate(
 	xfs_inode_t	*ip,
 	xfs_off_t	offset,
-	size_t		count,
 	xfs_bmbt_irec_t *imap)
 {
 	xfs_mount_t	*mp = ip->i_mount;
@@ -685,10 +698,8 @@ xfs_iomap_write_allocate(
 			tp = xfs_trans_alloc(mp, XFS_TRANS_STRAT_WRITE);
 			tp->t_flags |= XFS_TRANS_RESERVE;
 			nres = XFS_EXTENTADD_SPACE_RES(mp, XFS_DATA_FORK);
-			error = xfs_trans_reserve(tp, nres,
-					XFS_WRITE_LOG_RES(mp),
-					0, XFS_TRANS_PERM_LOG_RES,
-					XFS_WRITE_LOG_COUNT);
+			error = xfs_trans_reserve(tp, &M_RES(mp)->tr_write,
+						  nres, 0);
 			if (error) {
 				xfs_trans_cancel(tp, 0);
 				return XFS_ERROR(error);
@@ -750,8 +761,7 @@ xfs_iomap_write_allocate(
 			 * pointer that the caller gave to us.
 			 */
 			error = xfs_bmapi_write(tp, ip, map_start_fsb,
-						count_fsb,
-						XFS_BMAPI_STACK_SWITCH,
+						count_fsb, 0,
 						&first_block, 1,
 						imap, &nimaps, &free_list);
 			if (error)
@@ -851,10 +861,8 @@ xfs_iomap_write_unwritten(
 		sb_start_intwrite(mp->m_super);
 		tp = _xfs_trans_alloc(mp, XFS_TRANS_STRAT_WRITE, KM_NOFS);
 		tp->t_flags |= XFS_TRANS_RESERVE | XFS_TRANS_FREEZE_PROT;
-		error = xfs_trans_reserve(tp, resblks,
-				XFS_WRITE_LOG_RES(mp), 0,
-				XFS_TRANS_PERM_LOG_RES,
-				XFS_WRITE_LOG_COUNT);
+		error = xfs_trans_reserve(tp, &M_RES(mp)->tr_write,
+					  resblks, 0);
 		if (error) {
 			xfs_trans_cancel(tp, 0);
 			return XFS_ERROR(error);

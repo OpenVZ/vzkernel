@@ -39,6 +39,9 @@ typedef struct xfs_timestamp {
  * There is a very similar struct icdinode in xfs_inode which matches the
  * layout of the first 96 bytes of this structure, but is kept in native
  * format instead of big endian.
+ *
+ * Note: di_flushiter is only used by v1/2 inodes - it's effectively a zeroed
+ * padding field for v3 inodes.
  */
 typedef struct xfs_dinode {
 	__be16		di_magic;	/* inode magic # = XFS_DINODE_MAGIC */
@@ -86,6 +89,8 @@ typedef struct xfs_dinode {
 	/* structure must be padded to 64 bit alignment */
 } xfs_dinode_t;
 
+#define XFS_DINODE_CRC_OFF	offsetof(struct xfs_dinode, di_crc)
+
 #define DI_MAX_FLUSH 0xffff
 
 /*
@@ -131,9 +136,6 @@ typedef enum xfs_dinode_fmt {
  */
 #define XFS_LITINO(mp, version) \
 	((int)(((mp)->m_sb.sb_inodesize) - xfs_dinode_size(version)))
-
-#define XFS_BROOT_SIZE_ADJ(ip) \
-	(XFS_BMBT_BLOCK_LEN((ip)->i_mount) - sizeof(xfs_bmdr_block_t))
 
 /*
  * Inode data & attribute fork sizes, per inode.

@@ -14,6 +14,7 @@
 
 #include <linux/compat.h>
 #include <uapi/linux/ethtool.h>
+#include <linux/rh_kabi.h>
 
 #ifdef CONFIG_COMPAT
 
@@ -154,13 +155,24 @@ static inline u32 ethtool_rxfh_indir_default(u32 index, u32 n_rx_rings)
  * @reset: Reset (part of) the device, as specified by a bitmask of
  *	flags from &enum ethtool_reset_flags.  Returns a negative
  *	error code or zero.
+ * @get_rxfh_key_size: Get the size of the RX flow hash key.
+ *	Returns zero if not supported for this specific device.
  * @get_rxfh_indir_size: Get the size of the RX flow hash indirection table.
  *	Returns zero if not supported for this specific device.
  * @get_rxfh_indir: Get the contents of the RX flow hash indirection table.
  *	Will not be called if @get_rxfh_indir_size returns zero.
+ * @get_rxfh: Get the contents of the RX flow hash indirection table and hash
+ *	key.
+ *	Will only be called if one or both of @get_rxfh_indir_size and
+ *	@get_rxfh_key_size are implemented and return non-zero.
  *	Returns a negative error code or zero.
  * @set_rxfh_indir: Set the contents of the RX flow hash indirection table.
  *	Will not be called if @get_rxfh_indir_size returns zero.
+ * @set_rxfh: Set the contents of the RX flow hash indirection table and/or
+ *	hash key.  In case only the indirection table or hash key is to be
+ *	changed, the other argument will be %NULL.
+ *	Will only be called if one or both of @get_rxfh_indir_size and
+ *	@get_rxfh_key_size are implemented and return non-zero.
  *	Returns a negative error code or zero.
  * @get_channels: Get number of channels.
  * @set_channels: Set number of channels.  Returns a negative error code or
@@ -246,6 +258,28 @@ struct ethtool_ops {
 	int	(*get_eee)(struct net_device *, struct ethtool_eee *);
 	int	(*set_eee)(struct net_device *, struct ethtool_eee *);
 
-
+	/* RHEL SPECIFIC
+	 *
+	 * The following padding has been inserted before ABI freeze to
+	 * allow extending the structure while preserve ABI. Feel free
+	 * to replace reserved slots with required structure field
+	 * additions of your backport.
+	 */
+	RH_KABI_USE_P(1, u32	(*get_rxfh_key_size)(struct net_device *))
+	RH_KABI_USE_P(2, int	(*get_rxfh)(struct net_device *, u32 *indir, u8 *key))
+	RH_KABI_USE_P(3, int	(*set_rxfh)(struct net_device *, const u32 *indir, const u8 *key))
+	RH_KABI_RESERVE_P(4)
+	RH_KABI_RESERVE_P(5)
+	RH_KABI_RESERVE_P(6)
+	RH_KABI_RESERVE_P(7)
+	RH_KABI_RESERVE_P(8)
+	RH_KABI_RESERVE_P(9)
+	RH_KABI_RESERVE_P(10)
+	RH_KABI_RESERVE_P(11)
+	RH_KABI_RESERVE_P(12)
+	RH_KABI_RESERVE_P(13)
+	RH_KABI_RESERVE_P(14)
+	RH_KABI_RESERVE_P(15)
+	RH_KABI_RESERVE_P(16)
 };
 #endif /* _LINUX_ETHTOOL_H */

@@ -58,7 +58,7 @@ static inline void ap_schedule_poll_timer(void);
 static int __ap_poll_device(struct ap_device *ap_dev, unsigned long *flags);
 static int ap_device_remove(struct device *dev);
 static int ap_device_probe(struct device *dev);
-static void ap_interrupt_handler(void *unused1, void *unused2);
+static void ap_interrupt_handler(struct airq_struct *airq);
 static void ap_reset(struct ap_device *ap_dev);
 static void ap_config_timeout(unsigned long ptr);
 static int ap_select_domain(void);
@@ -71,6 +71,7 @@ MODULE_AUTHOR("IBM Corporation");
 MODULE_DESCRIPTION("Adjunct Processor Bus driver, " \
 		   "Copyright IBM Corp. 2006, 2012");
 MODULE_LICENSE("GPL");
+MODULE_ALIAS("z90crypt");
 
 /*
  * Module parameter
@@ -83,6 +84,11 @@ EXPORT_SYMBOL(ap_domain_index);
 static int ap_thread_flag = 0;
 module_param_named(poll_thread, ap_thread_flag, int, 0000);
 MODULE_PARM_DESC(poll_thread, "Turn on/off poll thread, default is 0 (off).");
+
+int ap_hwrng_seed = 1;
+EXPORT_SYMBOL(ap_hwrng_seed);
+module_param_named(hwrng_seed, ap_hwrng_seed, int, S_IRUSR|S_IRGRP);
+MODULE_PARM_DESC(hwrng_seed, "Turn on/off hwrng auto seed, default is 1 (on).");
 
 static struct device *ap_root_device = NULL;
 static struct ap_config_info *ap_configuration;
@@ -106,7 +112,6 @@ static DECLARE_WAIT_QUEUE_HEAD(ap_poll_wait);
 static struct task_struct *ap_poll_kthread = NULL;
 static DEFINE_MUTEX(ap_poll_thread_mutex);
 static DEFINE_SPINLOCK(ap_poll_timer_lock);
-static void *ap_interrupt_indicator;
 static struct hrtimer ap_poll_timer;
 /* In LPAR poll with 4kHz frequency. Poll every 250000 nanoseconds.
  * If z/VM change to 1500000 nanoseconds to adjust to z/VM polling.*/
@@ -120,13 +125,21 @@ static int ap_suspend_flag;
 static int user_set_domain = 0;
 static struct bus_type ap_bus_type;
 
+/* Adapter interrupt definitions */
+static int ap_airq_flag;
+
+static struct airq_struct ap_airq = {
+	.handler = ap_interrupt_handler,
+	.isc = AP_ISC,
+};
+
 /**
  * ap_using_interrupts() - Returns non-zero if interrupt support is
  * available.
  */
 static inline int ap_using_interrupts(void)
 {
-	return ap_interrupt_indicator != NULL;
+	return ap_airq_flag;
 }
 
 /**
@@ -583,12 +596,18 @@ static int ap_init_queue(ap_qid_t qid)
 		if (rc != -ENODEV && rc != -EBUSY)
 			break;
 		if (i < AP_MAX_RESET - 1) {
-			udelay(5);
+			/* Time we are waiting until we give up (0.7sec * 90).
+			 * Since the actual request (in progress) will not
+			 * interrupted immediately for the reset command,
+			 * we have to be patient. In worst case we have to
+			 * wait 60sec + reset time (some msec).
+			 */
+			schedule_timeout(AP_RESET_TIMEOUT);
 			status = ap_test_queue(qid, &dummy, &dummy);
 		}
 	}
 	if (rc == 0 && ap_using_interrupts()) {
-		rc = ap_queue_enable_interruption(qid, ap_interrupt_indicator);
+		rc = ap_queue_enable_interruption(qid, ap_airq.lsi_ptr);
 		/* If interruption mode is supported by the machine,
 		* but an AP can not be enabled for interruption then
 		* the AP will be discarded.    */
@@ -650,6 +669,17 @@ static ssize_t ap_hwtype_show(struct device *dev,
 }
 
 static DEVICE_ATTR(hwtype, 0444, ap_hwtype_show, NULL);
+
+static ssize_t ap_raw_hwtype_show(struct device *dev,
+			      struct device_attribute *attr, char *buf)
+{
+	struct ap_device *ap_dev = to_ap_dev(dev);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", ap_dev->raw_hwtype);
+}
+
+static DEVICE_ATTR(raw_hwtype, 0444, ap_raw_hwtype_show, NULL);
+
 static ssize_t ap_depth_show(struct device *dev, struct device_attribute *attr,
 			     char *buf)
 {
@@ -720,6 +750,7 @@ static DEVICE_ATTR(ap_functions, 0444, ap_functions_show, NULL);
 
 static struct attribute *ap_dev_attrs[] = {
 	&dev_attr_hwtype.attr,
+	&dev_attr_raw_hwtype.attr,
 	&dev_attr_depth.attr,
 	&dev_attr_request_count.attr,
 	&dev_attr_requestq_count.attr,
@@ -821,13 +852,22 @@ static int ap_bus_suspend(struct device *dev, pm_message_t state)
 
 static int ap_bus_resume(struct device *dev)
 {
-	int rc = 0;
 	struct ap_device *ap_dev = to_ap_dev(dev);
+	int rc;
 
 	if (ap_suspend_flag) {
 		ap_suspend_flag = 0;
-		if (!ap_interrupts_available())
-			ap_interrupt_indicator = NULL;
+		if (ap_interrupts_available()) {
+			if (!ap_using_interrupts()) {
+				rc = register_adapter_interrupt(&ap_airq);
+				ap_airq_flag = (rc == 0);
+			}
+		} else {
+			if (ap_using_interrupts()) {
+				unregister_adapter_interrupt(&ap_airq);
+				ap_airq_flag = 0;
+			}
+		}
 		ap_query_configuration();
 		if (!user_set_domain) {
 			ap_domain_index = -1;
@@ -848,7 +888,10 @@ static int ap_bus_resume(struct device *dev)
 			tasklet_schedule(&ap_tasklet);
 		if (ap_thread_flag)
 			rc = ap_poll_thread_start();
-	}
+		else
+			rc = 0;
+	} else
+		rc = 0;
 	if (AP_QID_QUEUE(ap_dev->qid) != ap_domain_index) {
 		spin_lock_bh(&ap_dev->lock);
 		ap_dev->qid = AP_MKQID(AP_QID_DEVICE(ap_dev->qid),
@@ -875,10 +918,15 @@ static int ap_device_probe(struct device *dev)
 	int rc;
 
 	ap_dev->drv = ap_drv;
+
+	spin_lock_bh(&ap_device_list_lock);
+	list_add(&ap_dev->list, &ap_device_list);
+	spin_unlock_bh(&ap_device_list_lock);
+
 	rc = ap_drv->probe ? ap_drv->probe(ap_dev) : -ENODEV;
-	if (!rc) {
+	if (rc) {
 		spin_lock_bh(&ap_device_list_lock);
-		list_add(&ap_dev->list, &ap_device_list);
+		list_del_init(&ap_dev->list);
 		spin_unlock_bh(&ap_device_list_lock);
 	}
 	return rc;
@@ -972,6 +1020,28 @@ static ssize_t ap_domain_show(struct bus_type *bus, char *buf)
 
 static BUS_ATTR(ap_domain, 0444, ap_domain_show, NULL);
 
+static ssize_t ap_control_domain_mask_show(struct bus_type *bus, char *buf)
+{
+	if (ap_configuration != NULL) { /* QCI not supported */
+		if (test_facility(76)) { /* format 1 - 256 bit domain field */
+			return snprintf(buf, PAGE_SIZE,
+				"0x%08x%08x%08x%08x%08x%08x%08x%08x\n",
+			ap_configuration->adm[0], ap_configuration->adm[1],
+			ap_configuration->adm[2], ap_configuration->adm[3],
+			ap_configuration->adm[4], ap_configuration->adm[5],
+			ap_configuration->adm[6], ap_configuration->adm[7]);
+		} else { /* format 0 - 16 bit domain field */
+			return snprintf(buf, PAGE_SIZE, "%08x%08x\n",
+			ap_configuration->adm[0], ap_configuration->adm[1]);
+		  }
+	} else {
+		return snprintf(buf, PAGE_SIZE, "not supported\n");
+	  }
+}
+
+static BUS_ATTR(ap_control_domain_mask, 0444,
+		ap_control_domain_mask_show, NULL);
+
 static ssize_t ap_config_time_show(struct bus_type *bus, char *buf)
 {
 	return snprintf(buf, PAGE_SIZE, "%d\n", ap_config_time);
@@ -1057,6 +1127,7 @@ static BUS_ATTR(poll_timeout, 0644, poll_timeout_show, poll_timeout_store);
 
 static struct bus_attribute *const ap_bus_attrs[] = {
 	&bus_attr_ap_domain,
+	&bus_attr_ap_control_domain_mask,
 	&bus_attr_config_time,
 	&bus_attr_poll_thread,
 	&bus_attr_ap_interrupts,
@@ -1096,9 +1167,13 @@ static inline int ap_test_config_card_id(unsigned int id)
  */
 static inline int ap_test_config_domain(unsigned int domain)
 {
-	if (!ap_configuration)
-		return 1;
-	return ap_test_config(ap_configuration->aqm, domain);
+	if (!ap_configuration)	  /* QCI not supported */
+		if (domain < 16)
+			return 1; /* then domains 0...15 are configured */
+		else
+			return 0;
+	else
+		return ap_test_config(ap_configuration->aqm, domain);
 }
 
 /**
@@ -1133,6 +1208,10 @@ static int ap_select_domain(void)
 	int queue_depth, device_type, count, max_count, best_domain;
 	ap_qid_t qid;
 	int rc, i, j;
+
+	/* IF APXA isn't installed, only 16 domains could be defined */
+	if (!ap_configuration->ap_extended && (ap_domain_index > 15))
+		return -EINVAL;
 
 	/*
 	 * We want to use a single domain. Either the one specified with
@@ -1266,7 +1345,7 @@ out:
 	return rc;
 }
 
-static void ap_interrupt_handler(void *unused1, void *unused2)
+static void ap_interrupt_handler(struct airq_struct *airq)
 {
 	inc_irq_stat(IRQIO_APB);
 	tasklet_schedule(&ap_tasklet);
@@ -1359,9 +1438,13 @@ static void ap_scan_bus(struct work_struct *unused)
 				continue;
 			}
 			break;
+		case 11:
+			ap_dev->device_type = 10;
+			break;
 		default:
 			ap_dev->device_type = device_type;
 		}
+		ap_dev->raw_hwtype = device_type;
 
 		rc = ap_query_functions(qid, &device_functions);
 		if (!rc)
@@ -1722,7 +1805,7 @@ static void ap_poll_all(unsigned long dummy)
 	 * important that no requests on any AP get lost.
 	 */
 	if (ap_using_interrupts())
-		xchg((u8 *)ap_interrupt_indicator, 0);
+		xchg(ap_airq.lsi_ptr, 0);
 	do {
 		flags = 0;
 		spin_lock(&ap_device_list_lock);
@@ -1846,9 +1929,15 @@ static void ap_reset_all(void)
 {
 	int i, j;
 
-	for (i = 0; i < AP_DOMAINS; i++)
-		for (j = 0; j < AP_DEVICES; j++)
+	for (i = 0; i < AP_DOMAINS; i++) {
+		if (!ap_test_config_domain(i))
+			continue;
+		for (j = 0; j < AP_DEVICES; j++) {
+			if (!ap_test_config_card_id(j))
+				continue;
 			ap_reset_queue(AP_MKQID(j, i));
+		}
+	}
 }
 
 static struct reset_call ap_reset_call = {
@@ -1881,13 +1970,8 @@ int __init ap_module_init(void)
 		return -ENODEV;
 	}
 	if (ap_interrupts_available()) {
-		isc_register(AP_ISC);
-		ap_interrupt_indicator = s390_register_adapter_interrupt(
-			&ap_interrupt_handler, NULL, AP_ISC);
-		if (IS_ERR(ap_interrupt_indicator)) {
-			ap_interrupt_indicator = NULL;
-			isc_unregister(AP_ISC);
-		}
+		rc = register_adapter_interrupt(&ap_airq);
+		ap_airq_flag = (rc == 0);
 	}
 
 	register_reset_call(&ap_reset_call);
@@ -1955,10 +2039,8 @@ out_bus:
 	bus_unregister(&ap_bus_type);
 out:
 	unregister_reset_call(&ap_reset_call);
-	if (ap_using_interrupts()) {
-		s390_unregister_adapter_interrupt(ap_interrupt_indicator, AP_ISC);
-		isc_unregister(AP_ISC);
-	}
+	if (ap_using_interrupts())
+		unregister_adapter_interrupt(&ap_airq);
 	return rc;
 }
 
@@ -1994,10 +2076,8 @@ void ap_module_exit(void)
 		bus_remove_file(&ap_bus_type, ap_bus_attrs[i]);
 	bus_unregister(&ap_bus_type);
 	unregister_reset_call(&ap_reset_call);
-	if (ap_using_interrupts()) {
-		s390_unregister_adapter_interrupt(ap_interrupt_indicator, AP_ISC);
-		isc_unregister(AP_ISC);
-	}
+	if (ap_using_interrupts())
+		unregister_adapter_interrupt(&ap_airq);
 }
 
 module_init(ap_module_init);

@@ -26,6 +26,7 @@
 
 #include <net/dst.h>
 #include <net/xfrm.h>
+#include <net/rtnetlink.h>
 
 #include "datapath.h"
 #include "vport-internal_dev.h"
@@ -67,7 +68,7 @@ static struct rtnl_link_stats64 *internal_dev_get_stats(struct net_device *netde
 static int internal_dev_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
 	rcu_read_lock();
-	ovs_vport_receive(internal_dev_priv(netdev)->vport, skb);
+	ovs_vport_receive(internal_dev_priv(netdev)->vport, skb, NULL);
 	rcu_read_unlock();
 	return 0;
 }
@@ -121,6 +122,10 @@ static const struct net_device_ops internal_dev_netdev_ops = {
 	.ndo_get_stats64 = internal_dev_get_stats,
 };
 
+static struct rtnl_link_ops internal_dev_link_ops __read_mostly = {
+	.kind = "openvswitch",
+};
+
 static void do_setup(struct net_device *netdev)
 {
 	ether_setup(netdev);
@@ -130,15 +135,19 @@ static void do_setup(struct net_device *netdev)
 	netdev->priv_flags &= ~IFF_TX_SKB_SHARING;
 	netdev->priv_flags |= IFF_LIVE_ADDR_CHANGE;
 	netdev->destructor = internal_dev_destructor;
-	SET_ETHTOOL_OPS(netdev, &internal_dev_ethtool_ops);
+	netdev->ethtool_ops = &internal_dev_ethtool_ops;
+	netdev->rtnl_link_ops = &internal_dev_link_ops;
 	netdev->tx_queue_len = 0;
 
 	netdev->features = NETIF_F_LLTX | NETIF_F_SG | NETIF_F_FRAGLIST |
-			   NETIF_F_HIGHDMA | NETIF_F_HW_CSUM | NETIF_F_TSO;
+			   NETIF_F_HIGHDMA | NETIF_F_HW_CSUM |
+			   NETIF_F_GSO_SOFTWARE | NETIF_F_GSO_ENCAP_ALL;
 
 	netdev->vlan_features = netdev->features;
+	netdev->hw_enc_features = netdev->features;
 	netdev->features |= NETIF_F_HW_VLAN_CTAG_TX;
 	netdev->hw_features = netdev->features & ~NETIF_F_LLTX;
+
 	eth_hw_addr_random(netdev);
 }
 
@@ -221,6 +230,7 @@ static int internal_dev_recv(struct vport *vport, struct sk_buff *skb)
 	skb->dev = netdev;
 	skb->pkt_type = PACKET_HOST;
 	skb->protocol = eth_type_trans(skb, netdev);
+	skb_postpull_rcsum(skb, eth_hdr(skb), ETH_HLEN);
 
 	netif_rx(skb);
 
@@ -246,4 +256,14 @@ struct vport *ovs_internal_dev_get_vport(struct net_device *netdev)
 		return NULL;
 
 	return internal_dev_priv(netdev)->vport;
+}
+
+int ovs_internal_dev_rtnl_link_register(void)
+{
+	return rtnl_link_register(&internal_dev_link_ops);
+}
+
+void ovs_internal_dev_rtnl_link_unregister(void)
+{
+	rtnl_link_unregister(&internal_dev_link_ops);
 }

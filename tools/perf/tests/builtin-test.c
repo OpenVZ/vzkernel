@@ -3,6 +3,8 @@
  *
  * Builtin regression testing command: ever growing number of sanity tests
  */
+#include <unistd.h>
+#include <string.h>
 #include "builtin.h"
 #include "intlist.h"
 #include "tests.h"
@@ -50,8 +52,16 @@ static struct test {
 		.func = test__pmu,
 	},
 	{
-		.desc = "Test dso data interface",
+		.desc = "Test dso data read",
 		.func = test__dso_data,
+	},
+	{
+		.desc = "Test dso data cache",
+		.func = test__dso_data_cache,
+	},
+	{
+		.desc = "Test dso data reopen",
+		.func = test__dso_data_reopen,
 	},
 	{
 		.desc = "roundtrip evsel->name check",
@@ -70,7 +80,7 @@ static struct test {
 		.func = test__attr,
 	},
 	{
-		.desc = "Test matching and linking mutliple hists",
+		.desc = "Test matching and linking multiple hists",
 		.func = test__hists_link,
 	},
 	{
@@ -92,6 +102,56 @@ static struct test {
 	{
 		.desc = "Test software clock events have valid period values",
 		.func = test__sw_clock_freq,
+	},
+#if defined(__x86_64__) || defined(__i386__)
+	{
+		.desc = "Test converting perf time to TSC",
+		.func = test__perf_time_to_tsc,
+	},
+#endif
+	{
+		.desc = "Test object code reading",
+		.func = test__code_reading,
+	},
+	{
+		.desc = "Test sample parsing",
+		.func = test__sample_parsing,
+	},
+	{
+		.desc = "Test using a dummy software event to keep tracking",
+		.func = test__keep_tracking,
+	},
+	{
+		.desc = "Test parsing with no sample_id_all bit set",
+		.func = test__parse_no_sample_id_all,
+	},
+#if defined(__x86_64__) || defined(__i386__) || defined(__arm__)
+#ifdef HAVE_DWARF_UNWIND_SUPPORT
+	{
+		.desc = "Test dwarf unwind",
+		.func = test__dwarf_unwind,
+	},
+#endif
+#endif
+	{
+		.desc = "Test filtering hist entries",
+		.func = test__hists_filter,
+	},
+	{
+		.desc = "Test mmap thread lookup",
+		.func = test__mmap_thread_lookup,
+	},
+	{
+		.desc = "Test thread mg sharing",
+		.func = test__thread_mg_share,
+	},
+	{
+		.desc = "Test output sorting of hist entries",
+		.func = test__hists_output,
+	},
+	{
+		.desc = "Test cumulation of child hist entries",
+		.func = test__hists_cumulate,
 	},
 	{
 		.func = NULL,
@@ -122,6 +182,34 @@ static bool perf_test__matches(int curr, int argc, const char *argv[])
 	return false;
 }
 
+static int run_test(struct test *test)
+{
+	int status, err = -1, child = fork();
+
+	if (child < 0) {
+		pr_err("failed to fork test: %s\n", strerror(errno));
+		return -1;
+	}
+
+	if (!child) {
+		pr_debug("test child forked, pid %d\n", getpid());
+		err = test->func();
+		exit(err);
+	}
+
+	wait(&status);
+
+	if (WIFEXITED(status)) {
+		err = WEXITSTATUS(status);
+		pr_debug("test child finished with %d\n", err);
+	} else if (WIFSIGNALED(status)) {
+		err = -1;
+		pr_debug("test child interrupted\n");
+	}
+
+	return err;
+}
+
 static int __cmd_test(int argc, const char *argv[], struct intlist *skiplist)
 {
 	int i = 0;
@@ -150,7 +238,7 @@ static int __cmd_test(int argc, const char *argv[], struct intlist *skiplist)
 		}
 
 		pr_debug("\n--- start ---\n");
-		err = tests[curr].func();
+		err = run_test(&tests[curr]);
 		pr_debug("---- end ----\n%s:", tests[curr].desc);
 
 		switch (err) {

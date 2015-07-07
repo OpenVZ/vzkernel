@@ -15,6 +15,7 @@ help:
 	@echo '  net        - misc networking tools'
 	@echo '  vm         - misc vm tools'
 	@echo '  x86_energy_perf_policy - Intel energy policy tool'
+	@echo '  tmon       - thermal monitoring and tuning tool'
 	@echo ''
 	@echo 'You can do:'
 	@echo ' $$ make -C tools/ <tool>_install'
@@ -38,10 +39,10 @@ cpupower: FORCE
 cgroup firewire guest usb virtio vm net: FORCE
 	$(call descend,$@)
 
-liblk: FORCE
-	$(call descend,lib/lk)
+libapikfs: FORCE
+	$(call descend,lib/api)
 
-perf: liblk FORCE
+perf: libapikfs FORCE
 	$(call descend,$@)
 
 selftests: FORCE
@@ -49,6 +50,9 @@ selftests: FORCE
 
 turbostat x86_energy_perf_policy: FORCE
 	$(call descend,power/x86/$@)
+
+tmon: FORCE
+	$(call descend,thermal/$@)
 
 cpupower_install:
 	$(call descend,power/$(@:_install=),install)
@@ -62,9 +66,13 @@ selftests_install:
 turbostat_install x86_energy_perf_policy_install:
 	$(call descend,power/x86/$(@:_install=),install)
 
+tmon_install:
+	$(call descend,thermal/$(@:_install=),install)
+
 install: cgroup_install cpupower_install firewire_install lguest_install \
 		perf_install selftests_install turbostat_install usb_install \
-		virtio_install vm_install net_install x86_energy_perf_policy_install
+		virtio_install vm_install net_install x86_energy_perf_policy_install \
+	tmon
 
 cpupower_clean:
 	$(call descend,power/cpupower,clean)
@@ -72,10 +80,10 @@ cpupower_clean:
 cgroup_clean firewire_clean lguest_clean usb_clean virtio_clean vm_clean net_clean:
 	$(call descend,$(@:_clean=),clean)
 
-liblk_clean:
-	$(call descend,lib/lk,clean)
+libapikfs_clean:
+	$(call descend,lib/api,clean)
 
-perf_clean: liblk_clean
+perf_clean: libapikfs_clean
 	$(call descend,$(@:_clean=),clean)
 
 selftests_clean:
@@ -84,8 +92,11 @@ selftests_clean:
 turbostat_clean x86_energy_perf_policy_clean:
 	$(call descend,power/x86/$(@:_clean=),clean)
 
+tmon_clean:
+	$(call descend,thermal/tmon,clean)
+
 clean: cgroup_clean cpupower_clean firewire_clean lguest_clean perf_clean \
 		selftests_clean turbostat_clean usb_clean virtio_clean \
-		vm_clean net_clean x86_energy_perf_policy_clean
+		vm_clean net_clean x86_energy_perf_policy_clean tmon_clean
 
 .PHONY: FORCE

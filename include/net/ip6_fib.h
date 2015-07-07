@@ -119,6 +119,10 @@ struct rt6_info {
 	struct inet6_dev		*rt6i_idev;
 	unsigned long			_rt6i_peer;
 
+	/* RHEL specific:
+	 * this field is not used any more since commit
+	 * "ipv6: remove rt6i_genid"
+	 */
 	u32				rt6i_genid;
 
 	/* more non-fragment space at head required */
@@ -165,6 +169,7 @@ static inline struct inet6_dev *ip6_dst_idev(struct dst_entry *dst)
 static inline void rt6_clean_expires(struct rt6_info *rt)
 {
 	rt->rt6i_flags &= ~RTF_EXPIRES;
+	rt->dst.expires = 0;
 }
 
 static inline void rt6_set_expires(struct rt6_info *rt, unsigned long expires)
@@ -281,13 +286,9 @@ struct fib6_node		*fib6_locate(struct fib6_node *root,
 					     const struct in6_addr *daddr, int dst_len,
 					     const struct in6_addr *saddr, int src_len);
 
-extern void			fib6_clean_all_ro(struct net *net,
-					       int (*func)(struct rt6_info *, void *arg),
-					       int prune, void *arg);
-
 extern void			fib6_clean_all(struct net *net,
 					       int (*func)(struct rt6_info *, void *arg),
-					       int prune, void *arg);
+					       void *arg);
 
 extern int			fib6_add(struct fib6_node *root,
 					 struct rt6_info *rt,
@@ -305,6 +306,9 @@ extern void			fib6_run_gc(unsigned long expires,
 extern void			fib6_gc_cleanup(void);
 
 extern int			fib6_init(void);
+
+extern int			ipv6_route_open(struct inode *inode,
+						struct file *file);
 
 #ifdef CONFIG_IPV6_MULTIPLE_TABLES
 extern int			fib6_rules_init(void);

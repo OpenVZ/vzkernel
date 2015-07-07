@@ -5,7 +5,7 @@
  *
  * GPL LICENSE SUMMARY
  *
- * Copyright(c) 2012 - 2013 Intel Corporation. All rights reserved.
+ * Copyright(c) 2012 - 2014 Intel Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -30,7 +30,7 @@
  *
  * BSD LICENSE
  *
- * Copyright(c) 2012 - 2013 Intel Corporation. All rights reserved.
+ * Copyright(c) 2012 - 2014 Intel Corporation. All rights reserved.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -60,7 +60,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
 #include "iwl-trans.h"
-
 #include "mvm.h"
 #include "fw-api.h"
 
@@ -77,6 +76,15 @@ int iwl_mvm_rx_rx_phy_cmd(struct iwl_mvm *mvm, struct iwl_rx_cmd_buffer *rxb,
 
 	memcpy(&mvm->last_phy_info, pkt->data, sizeof(mvm->last_phy_info));
 	mvm->ampdu_ref++;
+
+#ifdef CONFIG_IWLWIFI_DEBUGFS
+	if (mvm->last_phy_info.phy_flags & cpu_to_le16(RX_RES_PHY_FLAGS_AGG)) {
+		spin_lock(&mvm->drv_stats_lock);
+		mvm->drv_rx_stats.ampdu_count++;
+		spin_unlock(&mvm->drv_stats_lock);
+	}
+#endif
+
 	return 0;
 }
 
@@ -121,52 +129,46 @@ static void iwl_mvm_pass_packet_to_mac80211(struct iwl_mvm *mvm,
 
 	memcpy(IEEE80211_SKB_RXCB(skb), stats, sizeof(*stats));
 
-	ieee80211_rx_ni(mvm->hw, skb);
+	ieee80211_rx(mvm->hw, skb);
 }
 
 /*
- * iwl_mvm_calc_rssi - calculate the rssi in dBm
- * @phy_info: the phy information for the coming packet
+ * iwl_mvm_get_signal_strength - use new rx PHY INFO API
+ * values are reported by the fw as positive values - need to negate
+ * to obtain their dBM.  Account for missing antennas by replacing 0
+ * values by -256dBm: practically 0 power and a non-feasible 8 bit value.
  */
-static int iwl_mvm_calc_rssi(struct iwl_mvm *mvm,
-			     struct iwl_rx_phy_info *phy_info)
+static void iwl_mvm_get_signal_strength(struct iwl_mvm *mvm,
+					struct iwl_rx_phy_info *phy_info,
+					struct ieee80211_rx_status *rx_status)
 {
-	int rssi_a, rssi_b, rssi_a_dbm, rssi_b_dbm, max_rssi_dbm;
-	int rssi_all_band_a, rssi_all_band_b;
-	u32 agc_a, agc_b, max_agc;
+	int energy_a, energy_b, energy_c, max_energy;
 	u32 val;
 
-	/* Find max rssi among 2 possible receivers.
-	 * These values are measured by the Digital Signal Processor (DSP).
-	 * They should stay fairly constant even as the signal strength varies,
-	 * if the radio's Automatic Gain Control (AGC) is working right.
-	 * AGC value (see below) will provide the "interesting" info.
-	 */
-	val = le32_to_cpu(phy_info->non_cfg_phy[IWL_RX_INFO_AGC_IDX]);
-	agc_a = (val & IWL_OFDM_AGC_A_MSK) >> IWL_OFDM_AGC_A_POS;
-	agc_b = (val & IWL_OFDM_AGC_B_MSK) >> IWL_OFDM_AGC_B_POS;
-	max_agc = max_t(u32, agc_a, agc_b);
+	val =
+	    le32_to_cpu(phy_info->non_cfg_phy[IWL_RX_INFO_ENERGY_ANT_ABC_IDX]);
+	energy_a = (val & IWL_RX_INFO_ENERGY_ANT_A_MSK) >>
+						IWL_RX_INFO_ENERGY_ANT_A_POS;
+	energy_a = energy_a ? -energy_a : -256;
+	energy_b = (val & IWL_RX_INFO_ENERGY_ANT_B_MSK) >>
+						IWL_RX_INFO_ENERGY_ANT_B_POS;
+	energy_b = energy_b ? -energy_b : -256;
+	energy_c = (val & IWL_RX_INFO_ENERGY_ANT_C_MSK) >>
+						IWL_RX_INFO_ENERGY_ANT_C_POS;
+	energy_c = energy_c ? -energy_c : -256;
+	max_energy = max(energy_a, energy_b);
+	max_energy = max(max_energy, energy_c);
 
-	val = le32_to_cpu(phy_info->non_cfg_phy[IWL_RX_INFO_RSSI_AB_IDX]);
-	rssi_a = (val & IWL_OFDM_RSSI_INBAND_A_MSK) >> IWL_OFDM_RSSI_A_POS;
-	rssi_b = (val & IWL_OFDM_RSSI_INBAND_B_MSK) >> IWL_OFDM_RSSI_B_POS;
-	rssi_all_band_a = (val & IWL_OFDM_RSSI_ALLBAND_A_MSK) >>
-				IWL_OFDM_RSSI_ALLBAND_A_POS;
-	rssi_all_band_b = (val & IWL_OFDM_RSSI_ALLBAND_B_MSK) >>
-				IWL_OFDM_RSSI_ALLBAND_B_POS;
+	IWL_DEBUG_STATS(mvm, "energy In A %d B %d C %d , and max %d\n",
+			energy_a, energy_b, energy_c, max_energy);
 
-	/*
-	 * dBm = rssi dB - agc dB - constant.
-	 * Higher AGC (higher radio gain) means lower signal.
-	 */
-	rssi_a_dbm = rssi_a - IWL_RSSI_OFFSET - agc_a;
-	rssi_b_dbm = rssi_b - IWL_RSSI_OFFSET - agc_b;
-	max_rssi_dbm = max_t(int, rssi_a_dbm, rssi_b_dbm);
-
-	IWL_DEBUG_STATS(mvm, "Rssi In A %d B %d Max %d AGCA %d AGCB %d\n",
-			rssi_a_dbm, rssi_b_dbm, max_rssi_dbm, agc_a, agc_b);
-
-	return max_rssi_dbm;
+	rx_status->signal = max_energy;
+	rx_status->chains = (le16_to_cpu(phy_info->phy_flags) &
+				RX_RES_PHY_FLAGS_ANTENNA)
+					>> RX_RES_PHY_FLAGS_ANTENNA_POS;
+	rx_status->chain_signal[0] = energy_a;
+	rx_status->chain_signal[1] = energy_b;
+	rx_status->chain_signal[2] = energy_c;
 }
 
 /*
@@ -213,6 +215,12 @@ static u32 iwl_mvm_set_mac80211_rx_flag(struct iwl_mvm *mvm,
 		if (!(rx_pkt_status & RX_MPDU_RES_STATUS_ICV_OK))
 			return -1;
 
+		stats->flag |= RX_FLAG_DECRYPTED;
+		return 0;
+
+	case RX_MPDU_RES_STATUS_SEC_EXT_ENC:
+		if (!(rx_pkt_status & RX_MPDU_RES_STATUS_MIC_OK))
+			return -1;
 		stats->flag |= RX_FLAG_DECRYPTED;
 		return 0;
 
@@ -265,10 +273,14 @@ int iwl_mvm_rx_rx_mpdu(struct iwl_mvm *mvm, struct iwl_rx_cmd_buffer *rxb,
 		return 0;
 	}
 
+	/*
+	 * Keep packets with CRC errors (and with overrun) for monitor mode
+	 * (otherwise the firmware discards them) but mark them as bad.
+	 */
 	if (!(rx_pkt_status & RX_MPDU_RES_STATUS_CRC_OK) ||
 	    !(rx_pkt_status & RX_MPDU_RES_STATUS_OVERRUN_OK)) {
 		IWL_DEBUG_RX(mvm, "Bad CRC or FIFO: 0x%08X.\n", rx_pkt_status);
-		return 0;
+		rx_status.flag |= RX_FLAG_FAILED_FCS_CRC;
 	}
 
 	/* This will be used in several places later */
@@ -289,28 +301,10 @@ int iwl_mvm_rx_rx_mpdu(struct iwl_mvm *mvm, struct iwl_rx_cmd_buffer *rxb,
 	 */
 	/*rx_status.flag |= RX_FLAG_MACTIME_MPDU;*/
 
-	/* Find max signal strength (dBm) among 3 antenna/receiver chains */
-	rx_status.signal = iwl_mvm_calc_rssi(mvm, phy_info);
+	iwl_mvm_get_signal_strength(mvm, phy_info, &rx_status);
 
 	IWL_DEBUG_STATS_LIMIT(mvm, "Rssi %d, TSF %llu\n", rx_status.signal,
 			      (unsigned long long)rx_status.mactime);
-
-	/*
-	 * "antenna number"
-	 *
-	 * It seems that the antenna field in the phy flags value
-	 * is actually a bit field. This is undefined by radiotap,
-	 * it wants an actual antenna number but I always get "7"
-	 * for most legacy frames I receive indicating that the
-	 * same frame was received on all three RX chains.
-	 *
-	 * I think this field should be removed in favor of a
-	 * new 802.11n radiotap field "RX chains" that is defined
-	 * as a bitmask.
-	 */
-	rx_status.antenna = (le16_to_cpu(phy_info->phy_flags) &
-				RX_RES_PHY_FLAGS_ANTENNA)
-				>> RX_RES_PHY_FLAGS_ANTENNA_POS;
 
 	/* set the preamble flag if appropriate */
 	if (phy_info->phy_flags & cpu_to_le16(RX_RES_PHY_FLAGS_SHORT_PREAMBLE))
@@ -334,32 +328,161 @@ int iwl_mvm_rx_rx_mpdu(struct iwl_mvm *mvm, struct iwl_rx_cmd_buffer *rxb,
 		rx_status.flag |= RX_FLAG_40MHZ;
 		break;
 	case RATE_MCS_CHAN_WIDTH_80:
-		rx_status.flag |= RX_FLAG_80MHZ;
+		rx_status.vht_flag |= RX_VHT_FLAG_80MHZ;
 		break;
 	case RATE_MCS_CHAN_WIDTH_160:
-		rx_status.flag |= RX_FLAG_160MHZ;
+		rx_status.vht_flag |= RX_VHT_FLAG_160MHZ;
 		break;
 	}
 	if (rate_n_flags & RATE_MCS_SGI_MSK)
 		rx_status.flag |= RX_FLAG_SHORT_GI;
 	if (rate_n_flags & RATE_HT_MCS_GF_MSK)
 		rx_status.flag |= RX_FLAG_HT_GF;
+	if (rate_n_flags & RATE_MCS_LDPC_MSK)
+		rx_status.flag |= RX_FLAG_LDPC;
 	if (rate_n_flags & RATE_MCS_HT_MSK) {
+		u8 stbc = (rate_n_flags & RATE_MCS_HT_STBC_MSK) >>
+				RATE_MCS_STBC_POS;
 		rx_status.flag |= RX_FLAG_HT;
 		rx_status.rate_idx = rate_n_flags & RATE_HT_MCS_INDEX_MSK;
+		rx_status.flag |= stbc << RX_FLAG_STBC_SHIFT;
 	} else if (rate_n_flags & RATE_MCS_VHT_MSK) {
+		u8 stbc = (rate_n_flags & RATE_MCS_VHT_STBC_MSK) >>
+				RATE_MCS_STBC_POS;
 		rx_status.vht_nss =
 			((rate_n_flags & RATE_VHT_MCS_NSS_MSK) >>
 						RATE_VHT_MCS_NSS_POS) + 1;
 		rx_status.rate_idx = rate_n_flags & RATE_VHT_MCS_RATE_CODE_MSK;
 		rx_status.flag |= RX_FLAG_VHT;
+		rx_status.flag |= stbc << RX_FLAG_STBC_SHIFT;
+		if (rate_n_flags & RATE_MCS_BF_MSK)
+			rx_status.vht_flag |= RX_VHT_FLAG_BF;
 	} else {
 		rx_status.rate_idx =
 			iwl_mvm_legacy_rate_to_mac80211_idx(rate_n_flags,
 							    rx_status.band);
 	}
 
+#ifdef CONFIG_IWLWIFI_DEBUGFS
+	iwl_mvm_update_frame_stats(mvm, &mvm->drv_rx_stats, rate_n_flags,
+				   rx_status.flag & RX_FLAG_AMPDU_DETAILS);
+#endif
 	iwl_mvm_pass_packet_to_mac80211(mvm, hdr, len, ampdu_status,
 					rxb, &rx_status);
+	return 0;
+}
+
+static void iwl_mvm_update_rx_statistics(struct iwl_mvm *mvm,
+					 struct iwl_notif_statistics *stats)
+{
+	/*
+	 * NOTE FW aggregates the statistics - BUT the statistics are cleared
+	 * when the driver issues REPLY_STATISTICS_CMD 0x9c with CLEAR_STATS
+	 * bit set.
+	 */
+	lockdep_assert_held(&mvm->mutex);
+	memcpy(&mvm->rx_stats, &stats->rx, sizeof(struct mvm_statistics_rx));
+}
+
+struct iwl_mvm_stat_data {
+	struct iwl_notif_statistics *stats;
+	struct iwl_mvm *mvm;
+};
+
+static void iwl_mvm_stat_iterator(void *_data, u8 *mac,
+				  struct ieee80211_vif *vif)
+{
+	struct iwl_mvm_stat_data *data = _data;
+	struct iwl_notif_statistics *stats = data->stats;
+	struct iwl_mvm *mvm = data->mvm;
+	int sig = -stats->general.beacon_filter_average_energy;
+	int last_event;
+	int thold = vif->bss_conf.cqm_rssi_thold;
+	int hyst = vif->bss_conf.cqm_rssi_hyst;
+	u16 id = le32_to_cpu(stats->rx.general.mac_id);
+	struct iwl_mvm_vif *mvmvif = iwl_mvm_vif_from_mac80211(vif);
+
+	if (mvmvif->id != id)
+		return;
+
+	if (vif->type != NL80211_IFTYPE_STATION)
+		return;
+
+	mvmvif->bf_data.ave_beacon_signal = sig;
+
+	/* BT Coex */
+	if (mvmvif->bf_data.bt_coex_min_thold !=
+	    mvmvif->bf_data.bt_coex_max_thold) {
+		last_event = mvmvif->bf_data.last_bt_coex_event;
+		if (sig > mvmvif->bf_data.bt_coex_max_thold &&
+		    (last_event <= mvmvif->bf_data.bt_coex_min_thold ||
+		     last_event == 0)) {
+			mvmvif->bf_data.last_bt_coex_event = sig;
+			IWL_DEBUG_RX(mvm, "cqm_iterator bt coex high %d\n",
+				     sig);
+			iwl_mvm_bt_rssi_event(mvm, vif, RSSI_EVENT_HIGH);
+		} else if (sig < mvmvif->bf_data.bt_coex_min_thold &&
+			   (last_event >= mvmvif->bf_data.bt_coex_max_thold ||
+			    last_event == 0)) {
+			mvmvif->bf_data.last_bt_coex_event = sig;
+			IWL_DEBUG_RX(mvm, "cqm_iterator bt coex low %d\n",
+				     sig);
+			iwl_mvm_bt_rssi_event(mvm, vif, RSSI_EVENT_LOW);
+		}
+	}
+
+	if (!(vif->driver_flags & IEEE80211_VIF_SUPPORTS_CQM_RSSI))
+		return;
+
+	/* CQM Notification */
+	last_event = mvmvif->bf_data.last_cqm_event;
+	if (thold && sig < thold && (last_event == 0 ||
+				     sig < last_event - hyst)) {
+		mvmvif->bf_data.last_cqm_event = sig;
+		IWL_DEBUG_RX(mvm, "cqm_iterator cqm low %d\n",
+			     sig);
+		ieee80211_cqm_rssi_notify(
+			vif,
+			NL80211_CQM_RSSI_THRESHOLD_EVENT_LOW,
+			GFP_KERNEL);
+	} else if (sig > thold &&
+		   (last_event == 0 || sig > last_event + hyst)) {
+		mvmvif->bf_data.last_cqm_event = sig;
+		IWL_DEBUG_RX(mvm, "cqm_iterator cqm high %d\n",
+			     sig);
+		ieee80211_cqm_rssi_notify(
+			vif,
+			NL80211_CQM_RSSI_THRESHOLD_EVENT_HIGH,
+			GFP_KERNEL);
+	}
+}
+
+/*
+ * iwl_mvm_rx_statistics - STATISTICS_NOTIFICATION handler
+ *
+ * TODO: This handler is implemented partially.
+ */
+int iwl_mvm_rx_statistics(struct iwl_mvm *mvm,
+			  struct iwl_rx_cmd_buffer *rxb,
+			  struct iwl_device_cmd *cmd)
+{
+	struct iwl_rx_packet *pkt = rxb_addr(rxb);
+	struct iwl_notif_statistics *stats = (void *)&pkt->data;
+	struct mvm_statistics_general_common *common = &stats->general.common;
+	struct iwl_mvm_stat_data data = {
+		.stats = stats,
+		.mvm = mvm,
+	};
+
+	if (mvm->temperature != le32_to_cpu(common->temperature)) {
+		mvm->temperature = le32_to_cpu(common->temperature);
+		iwl_mvm_tt_handler(mvm);
+	}
+	iwl_mvm_update_rx_statistics(mvm, stats);
+
+	ieee80211_iterate_active_interfaces(mvm->hw,
+					    IEEE80211_IFACE_ITER_NORMAL,
+					    iwl_mvm_stat_iterator,
+					    &data);
 	return 0;
 }

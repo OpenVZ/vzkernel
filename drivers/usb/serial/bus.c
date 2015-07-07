@@ -38,15 +38,14 @@ static int usb_serial_device_match(struct device *dev,
 	return 0;
 }
 
-static ssize_t show_port_number(struct device *dev,
+static ssize_t port_number_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	struct usb_serial_port *port = to_usb_serial_port(dev);
 
-	return sprintf(buf, "%d\n", port->number - port->serial->minor);
+	return sprintf(buf, "%d\n", port->port_number);
 }
-
-static DEVICE_ATTR(port_number, S_IRUGO, show_port_number, NULL);
+static DEVICE_ATTR_RO(port_number);
 
 static int usb_serial_device_probe(struct device *dev)
 {
@@ -80,7 +79,7 @@ static int usb_serial_device_probe(struct device *dev)
 		goto exit_with_autopm;
 	}
 
-	minor = port->number;
+	minor = port->minor;
 	tty_register_device(usb_serial_tty_driver, minor, dev);
 	dev_info(&port->serial->dev->dev,
 		 "%s converter now attached to ttyUSB%d\n",
@@ -98,15 +97,21 @@ static int usb_serial_device_remove(struct device *dev)
 	struct usb_serial_port *port;
 	int retval = 0;
 	int minor;
+	int autopm_err;
 
 	port = to_usb_serial_port(dev);
 	if (!port)
 		return -ENODEV;
 
-	/* make sure suspend/resume doesn't race against port_remove */
-	usb_autopm_get_interface(port->serial->interface);
+	/*
+	 * Make sure suspend/resume doesn't race against port_remove.
+	 *
+	 * Note that no further runtime PM callbacks will be made if
+	 * autopm_get fails.
+	 */
+	autopm_err = usb_autopm_get_interface(port->serial->interface);
 
-	minor = port->number;
+	minor = port->minor;
 	tty_unregister_device(usb_serial_tty_driver, minor);
 
 	device_remove_file(&port->dev, &dev_attr_port_number);
@@ -118,7 +123,9 @@ static int usb_serial_device_remove(struct device *dev)
 	dev_info(dev, "%s converter now disconnected from ttyUSB%d\n",
 		 driver->description, minor);
 
-	usb_autopm_put_interface(port->serial->interface);
+	if (!autopm_err)
+		usb_autopm_put_interface(port->serial->interface);
+
 	return retval;
 }
 
@@ -126,10 +133,12 @@ static ssize_t store_new_id(struct device_driver *driver,
 			    const char *buf, size_t count)
 {
 	struct usb_serial_driver *usb_drv = to_usb_serial_driver(driver);
-	ssize_t retval = usb_store_new_id(&usb_drv->dynids, driver, buf, count);
+	ssize_t retval = usb_store_new_id(&usb_drv->dynids, usb_drv->id_table,
+					 driver, buf, count);
 
 	if (retval >= 0 && usb_drv->usb_driver != NULL)
 		retval = usb_store_new_id(&usb_drv->usb_driver->dynids,
+					  usb_drv->usb_driver->id_table,
 					  &usb_drv->usb_driver->drvwrap.driver,
 					  buf, count);
 	return retval;

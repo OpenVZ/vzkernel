@@ -22,7 +22,10 @@
 #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
 #include <net/netns/conntrack.h>
 #endif
+#include <net/netns/nftables.h>
 #include <net/netns/xfrm.h>
+
+#include <linux/rh_kabi.h>
 
 struct user_namespace;
 struct proc_dir_entry;
@@ -100,6 +103,9 @@ struct net {
 #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
 	struct netns_ct		ct;
 #endif
+#if defined(CONFIG_NF_TABLES) || defined(CONFIG_NF_TABLES_MODULE)
+	struct netns_nftables	nft;
+#endif
 #if IS_ENABLED(CONFIG_NF_DEFRAG_IPV6)
 	struct netns_nf_frag	nf_frag;
 #endif
@@ -118,6 +124,11 @@ struct net {
 	struct netns_ipvs	*ipvs;
 	struct sock		*diag_nlsk;
 	atomic_t		rt_genid;
+
+	RH_KABI_EXTEND(unsigned int	dev_unreg_count)
+	RH_KABI_EXTEND(atomic_t		fnhe_genid)
+	RH_KABI_EXTEND(int		sysctl_ip_no_pmtu_disc)
+	RH_KABI_EXTEND(int		sysctl_ip_fwd_use_pmtu)
 };
 
 /*
@@ -330,14 +341,38 @@ static inline void unregister_net_sysctl_table(struct ctl_table_header *header)
 }
 #endif
 
-static inline int rt_genid(struct net *net)
+static inline int rt_genid_ipv4(struct net *net)
 {
 	return atomic_read(&net->rt_genid);
 }
 
-static inline void rt_genid_bump(struct net *net)
+static inline void rt_genid_bump_ipv4(struct net *net)
 {
 	atomic_inc(&net->rt_genid);
+}
+
+extern void (*__fib6_flush_trees)(struct net *net);
+static inline void rt_genid_bump_ipv6(struct net *net)
+{
+	if (__fib6_flush_trees)
+		__fib6_flush_trees(net);
+}
+
+/* For callers who don't really care about whether it's IPv4 or IPv6 */
+static inline void rt_genid_bump_all(struct net *net)
+{
+	rt_genid_bump_ipv4(net);
+	rt_genid_bump_ipv6(net);
+}
+
+static inline int fnhe_genid(struct net *net)
+{
+	return atomic_read(&net->fnhe_genid);
+}
+
+static inline void fnhe_genid_bump(struct net *net)
+{
+	atomic_inc(&net->fnhe_genid);
 }
 
 #endif /* __NET_NET_NAMESPACE_H */

@@ -34,6 +34,11 @@ struct se_subsystem_api {
 	sense_reason_t (*parse_cdb)(struct se_cmd *cmd);
 	u32 (*get_device_type)(struct se_device *);
 	sector_t (*get_blocks)(struct se_device *);
+	sector_t (*get_alignment_offset_lbas)(struct se_device *);
+	/* lbppbe = logical blocks per physical block exponent. see SBC-3 */
+	unsigned int (*get_lbppbe)(struct se_device *);
+	unsigned int (*get_io_min)(struct se_device *);
+	unsigned int (*get_io_opt)(struct se_device *);
 	unsigned char *(*get_sense_buffer)(struct se_cmd *);
 	bool (*get_write_cache)(struct se_device *);
 };
@@ -50,6 +55,7 @@ int	transport_subsystem_register(struct se_subsystem_api *);
 void	transport_subsystem_release(struct se_subsystem_api *);
 
 void	target_complete_cmd(struct se_cmd *, u8);
+void	target_complete_cmd_with_length(struct se_cmd *, u8, int);
 
 sense_reason_t	spc_parse_cdb(struct se_cmd *cmd, unsigned int *size);
 sense_reason_t	spc_emulate_report_luns(struct se_cmd *cmd);

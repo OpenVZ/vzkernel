@@ -72,11 +72,11 @@
 #define  PIDX_MASK   0x00003fffU
 #define  PIDX_SHIFT  0
 #define  PIDX(x)     ((x) << PIDX_SHIFT)
-#define  S_PIDX_T5   0
-#define  M_PIDX_T5   0x1fffU
-#define  PIDX_T5(x)  (((x) >> S_PIDX_T5) & M_PIDX_T5)
+#define  PIDX_SHIFT_T5   0
+#define  PIDX_T5(x)  ((x) << PIDX_SHIFT_T5)
 
 
+#define SGE_TIMERREGS	6
 #define SGE_PF_GTS 0x4
 #define  INGRESSQID_MASK   0xffff0000U
 #define  INGRESSQID_SHIFT  16
@@ -95,6 +95,7 @@
 #define X_INGPADBOUNDARY_SHIFT 5
 
 #define SGE_CONTROL 0x1008
+#define SGE_CONTROL2_A		0x1124
 #define  DCASYSTYPE             0x00080000U
 #define  RXPKTCPLMODE_MASK      0x00040000U
 #define  RXPKTCPLMODE_SHIFT     18
@@ -106,6 +107,7 @@
 #define  PKTSHIFT_SHIFT         10
 #define  PKTSHIFT(x)            ((x) << PKTSHIFT_SHIFT)
 #define  PKTSHIFT_GET(x)	(((x) & PKTSHIFT_MASK) >> PKTSHIFT_SHIFT)
+#define  INGPCIEBOUNDARY_32B_X	0
 #define  INGPCIEBOUNDARY_MASK   0x00000380U
 #define  INGPCIEBOUNDARY_SHIFT  7
 #define  INGPCIEBOUNDARY(x)     ((x) << INGPCIEBOUNDARY_SHIFT)
@@ -114,6 +116,14 @@
 #define  INGPADBOUNDARY(x)      ((x) << INGPADBOUNDARY_SHIFT)
 #define  INGPADBOUNDARY_GET(x)	(((x) & INGPADBOUNDARY_MASK) \
 				 >> INGPADBOUNDARY_SHIFT)
+#define  INGPACKBOUNDARY_16B_X	0
+#define  INGPACKBOUNDARY_SHIFT_X 5
+
+#define  INGPACKBOUNDARY_S	16
+#define  INGPACKBOUNDARY_M	0x7U
+#define  INGPACKBOUNDARY_V(x)	((x) << INGPACKBOUNDARY_S)
+#define  INGPACKBOUNDARY_G(x)	(((x) >> INGPACKBOUNDARY_S) \
+				 & INGPACKBOUNDARY_M)
 #define  EGRPCIEBOUNDARY_MASK   0x0000000eU
 #define  EGRPCIEBOUNDARY_SHIFT  1
 #define  EGRPCIEBOUNDARY(x)     ((x) << EGRPCIEBOUNDARY_SHIFT)
@@ -157,7 +167,26 @@
 #define  QUEUESPERPAGEPF0_MASK   0x0000000fU
 #define  QUEUESPERPAGEPF0_GET(x) ((x) & QUEUESPERPAGEPF0_MASK)
 
+#define QUEUESPERPAGEPF0    0
 #define QUEUESPERPAGEPF1    4
+
+/* T5 and later support a new BAR2-based doorbell mechanism for Egress Queues.
+ * The User Doorbells are each 128 bytes in length with a Simple Doorbell at
+ * offsets 8x and a Write Combining single 64-byte Egress Queue Unit
+ * (X_IDXSIZE_UNIT) Gather Buffer interface at offset 64.  For Ingress Queues,
+ * we have a Going To Sleep register at offsets 8x+4.
+ *
+ * As noted above, we have many instances of the Simple Doorbell and Going To
+ * Sleep registers at offsets 8x and 8x+4, respectively.  We want to use a
+ * non-64-byte aligned offset for the Simple Doorbell in order to attempt to
+ * avoid buffering of the writes to the Simple Doorbell and we want to use a
+ * non-contiguous offset for the Going To Sleep writes in order to avoid
+ * possible combining between them.
+ */
+#define SGE_UDB_SIZE            128
+#define SGE_UDB_KDOORBELL       8
+#define SGE_UDB_GTS             20
+#define SGE_UDB_WCDOORBELL      64
 
 #define SGE_INT_CAUSE1 0x1024
 #define SGE_INT_CAUSE2 0x1030
@@ -230,6 +259,12 @@
 #define  EGRTHRESHOLD(x)     ((x) << EGRTHRESHOLDshift)
 #define  EGRTHRESHOLD_GET(x) (((x) & EGRTHRESHOLD_MASK) >> EGRTHRESHOLDshift)
 
+#define EGRTHRESHOLDPACKING_MASK	0x3fU
+#define EGRTHRESHOLDPACKING_SHIFT	14
+#define EGRTHRESHOLDPACKING(x)		((x) << EGRTHRESHOLDPACKING_SHIFT)
+#define EGRTHRESHOLDPACKING_GET(x)	(((x) >> EGRTHRESHOLDPACKING_SHIFT) & \
+					  EGRTHRESHOLDPACKING_MASK)
+
 #define SGE_DBFIFO_STATUS 0x10a4
 #define  HP_INT_THRESH_SHIFT 28
 #define  HP_INT_THRESH_MASK  0xfU
@@ -244,6 +279,12 @@
 #define S_NOCOALESCE    26
 #define V_NOCOALESCE(x) ((x) << S_NOCOALESCE)
 #define F_NOCOALESCE    V_NOCOALESCE(1U)
+
+#define SGE_TIMESTAMP_LO 0x1098
+#define SGE_TIMESTAMP_HI 0x109c
+#define S_TSVAL    0
+#define M_TSVAL    0xfffffffU
+#define GET_TSVAL(x) (((x) >> S_TSVAL) & M_TSVAL)
 
 #define SGE_TIMER_VALUE_0_AND_1 0x10b8
 #define  TIMERVALUE0_MASK   0xffff0000U
@@ -278,6 +319,9 @@
 #define SGE_DEBUG_INDEX 0x10cc
 #define SGE_DEBUG_DATA_HIGH 0x10d0
 #define SGE_DEBUG_DATA_LOW 0x10d4
+#define SGE_DEBUG_DATA_LOW_INDEX_2	0x12c8
+#define SGE_DEBUG_DATA_LOW_INDEX_3	0x12cc
+#define SGE_DEBUG_DATA_HIGH_INDEX_10	0x12a8
 #define SGE_INGRESS_QUEUES_PER_PAGE_PF 0x10f4
 
 #define S_HP_INT_THRESH    28
@@ -378,6 +422,8 @@
 #define  MSTGRPPERR      0x00000001U
 
 #define PCIE_NONFAT_ERR 0x3010
+#define PCIE_CFG_SPACE_REQ 0x3060
+#define PCIE_CFG_SPACE_DATA 0x3064
 #define PCIE_MEM_ACCESS_BASE_WIN 0x3068
 #define S_PCIEOFST       10
 #define M_PCIEOFST       0x3fffffU
@@ -389,7 +435,11 @@
 #define  WINDOW_MASK     0x000000ffU
 #define  WINDOW_SHIFT    0
 #define  WINDOW(x)       ((x) << WINDOW_SHIFT)
+#define  GET_WINDOW(x)	 (((x) >> WINDOW_SHIFT) & WINDOW_MASK)
 #define PCIE_MEM_ACCESS_OFFSET 0x306c
+#define ENABLE	(1U << 30)
+#define FUNCTION(x) ((x) << 12)
+#define F_LOCALCFG    (1U << 28)
 
 #define S_PFNUM    0
 #define V_PFNUM(x) ((x) << S_PFNUM)
@@ -427,11 +477,13 @@
 #define  TDUE 0x00010000U
 
 #define MC_INT_CAUSE 0x7518
+#define MC_P_INT_CAUSE 0x41318
 #define  ECC_UE_INT_CAUSE 0x00000004U
 #define  ECC_CE_INT_CAUSE 0x00000002U
 #define  PERR_INT_CAUSE   0x00000001U
 
 #define MC_ECC_STATUS 0x751c
+#define MC_P_ECC_STATUS 0x4131c
 #define  ECC_CECNT_MASK   0xffff0000U
 #define  ECC_CECNT_SHIFT  16
 #define  ECC_CECNT(x)     ((x) << ECC_CECNT_SHIFT)
@@ -488,6 +540,7 @@
 #define  MEM_WRAP_CLIENT_NUM_GET(x) (((x) & MEM_WRAP_CLIENT_NUM_MASK) >> MEM_WRAP_CLIENT_NUM_SHIFT)
 #define MA_PCIE_FW 0x30b8
 #define MA_PARITY_ERROR_STATUS 0x77f4
+#define MA_PARITY_ERROR_STATUS2 0x7804
 
 #define MA_EXT_MEMORY1_BAR 0x7808
 #define EDC_0_BASE_ADDR 0x7900
@@ -936,6 +989,7 @@
 #define  TRCMULTIFILTER     0x00000001U
 
 #define MPS_TRC_RSS_CONTROL 0x9808
+#define MPS_T5_TRC_RSS_CONTROL 0xa00c
 #define  RSSCONTROL_MASK    0x00ff0000U
 #define  RSSCONTROL_SHIFT   16
 #define  RSSCONTROL(x)      ((x) << RSSCONTROL_SHIFT)
@@ -1080,6 +1134,7 @@
 #define  I2CM       0x00000002U
 #define  CIM        0x00000001U
 
+#define MC1 0x31
 #define PL_INT_ENABLE 0x19410
 #define PL_INT_MAP0 0x19414
 #define PL_RST 0x19428
@@ -1091,6 +1146,11 @@
 #define  PERRVFID  0x00000001U
 
 #define PL_REV 0x1943c
+
+#define S_REV    0
+#define M_REV    0xfU
+#define V_REV(x) ((x) << S_REV)
+#define G_REV(x) (((x) >> S_REV) & M_REV)
 
 #define LE_DB_CONFIG 0x19c04
 #define  HASHEN 0x00100000U
@@ -1166,9 +1226,49 @@
 
 #define A_TP_TX_SCHED_PCMD 0x25
 
+#define S_VNIC    11
+#define V_VNIC(x) ((x) << S_VNIC)
+#define F_VNIC    V_VNIC(1U)
+
+#define S_FRAGMENTATION    9
+#define V_FRAGMENTATION(x) ((x) << S_FRAGMENTATION)
+#define F_FRAGMENTATION    V_FRAGMENTATION(1U)
+
+#define S_MPSHITTYPE    8
+#define V_MPSHITTYPE(x) ((x) << S_MPSHITTYPE)
+#define F_MPSHITTYPE    V_MPSHITTYPE(1U)
+
+#define S_MACMATCH    7
+#define V_MACMATCH(x) ((x) << S_MACMATCH)
+#define F_MACMATCH    V_MACMATCH(1U)
+
+#define S_ETHERTYPE    6
+#define V_ETHERTYPE(x) ((x) << S_ETHERTYPE)
+#define F_ETHERTYPE    V_ETHERTYPE(1U)
+
+#define S_PROTOCOL    5
+#define V_PROTOCOL(x) ((x) << S_PROTOCOL)
+#define F_PROTOCOL    V_PROTOCOL(1U)
+
+#define S_TOS    4
+#define V_TOS(x) ((x) << S_TOS)
+#define F_TOS    V_TOS(1U)
+
+#define S_VLAN    3
+#define V_VLAN(x) ((x) << S_VLAN)
+#define F_VLAN    V_VLAN(1U)
+
+#define S_VNIC_ID    2
+#define V_VNIC_ID(x) ((x) << S_VNIC_ID)
+#define F_VNIC_ID    V_VNIC_ID(1U)
+
 #define S_PORT    1
 #define V_PORT(x) ((x) << S_PORT)
 #define F_PORT    V_PORT(1U)
+
+#define S_FCOE    0
+#define V_FCOE(x) ((x) << S_FCOE)
+#define F_FCOE    V_FCOE(1U)
 
 #define NUM_MPS_CLS_SRAM_L_INSTANCES 336
 #define NUM_MPS_T5_CLS_SRAM_L_INSTANCES 512
@@ -1198,5 +1298,47 @@
 #define EDC_T51_BASE_ADDR 0x50800
 #define EDC_STRIDE_T5 (EDC_T51_BASE_ADDR - EDC_T50_BASE_ADDR)
 #define EDC_REG_T5(reg, idx) (reg + EDC_STRIDE_T5 * idx)
+
+#define A_PL_VF_REV 0x4
+#define A_PL_VF_WHOAMI 0x0
+#define A_PL_VF_REVISION 0x8
+
+#define S_CHIPID    4
+#define M_CHIPID    0xfU
+#define V_CHIPID(x) ((x) << S_CHIPID)
+#define G_CHIPID(x) (((x) >> S_CHIPID) & M_CHIPID)
+
+/* TP_VLAN_PRI_MAP controls which subset of fields will be present in the
+ * Compressed Filter Tuple for LE filters.  Each bit set in TP_VLAN_PRI_MAP
+ * selects for a particular field being present.  These fields, when present
+ * in the Compressed Filter Tuple, have the following widths in bits.
+ */
+#define W_FT_FCOE                       1
+#define W_FT_PORT                       3
+#define W_FT_VNIC_ID                    17
+#define W_FT_VLAN                       17
+#define W_FT_TOS                        8
+#define W_FT_PROTOCOL                   8
+#define W_FT_ETHERTYPE                  16
+#define W_FT_MACMATCH                   9
+#define W_FT_MPSHITTYPE                 3
+#define W_FT_FRAGMENTATION              1
+
+/* Some of the Compressed Filter Tuple fields have internal structure.  These
+ * bit shifts/masks describe those structures.  All shifts are relative to the
+ * base position of the fields within the Compressed Filter Tuple
+ */
+#define S_FT_VLAN_VLD                   16
+#define V_FT_VLAN_VLD(x)                ((x) << S_FT_VLAN_VLD)
+#define F_FT_VLAN_VLD                   V_FT_VLAN_VLD(1U)
+
+#define S_FT_VNID_ID_VF                 0
+#define V_FT_VNID_ID_VF(x)              ((x) << S_FT_VNID_ID_VF)
+
+#define S_FT_VNID_ID_PF                 7
+#define V_FT_VNID_ID_PF(x)              ((x) << S_FT_VNID_ID_PF)
+
+#define S_FT_VNID_ID_VLD                16
+#define V_FT_VNID_ID_VLD(x)             ((x) << S_FT_VNID_ID_VLD)
 
 #endif /* __T4_REGS_H */

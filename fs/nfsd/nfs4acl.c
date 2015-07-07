@@ -36,7 +36,7 @@
 
 #include <linux/slab.h>
 #include <linux/nfs_fs.h>
-#include <linux/export.h>
+#include "nfsd.h"
 #include "acl.h"
 
 
@@ -149,9 +149,10 @@ nfs4_acl_posix_to_nfsv4(struct posix_acl *pacl, struct posix_acl *dpacl,
 	}
 
 	/* Allocate for worst case: one (deny, allow) pair each: */
-	acl = nfs4_acl_new(size);
+	acl = kmalloc(nfs4_acl_bytes(size), GFP_KERNEL);
 	if (acl == NULL)
 		return ERR_PTR(-ENOMEM);
+	acl->naces = 0;
 
 	if (pacl)
 		_posix_to_nfsv4_one(pacl, acl, flags & ~NFS4_ACL_TYPE_DEFAULT);
@@ -525,7 +526,10 @@ posix_state_to_acl(struct posix_acl_state *state, unsigned int flags)
 	 * up setting a 3-element effective posix ACL with all
 	 * permissions zero.
 	 */
-	nace = 4 + state->users->n + state->groups->n;
+	if (!state->users->n && !state->groups->n)
+		nace = 3;
+	else /* Note we also include a MASK ACE in this case: */
+		nace = 4 + state->users->n + state->groups->n;
 	pacl = posix_acl_alloc(nace, GFP_KERNEL);
 	if (!pacl)
 		return ERR_PTR(-ENOMEM);
@@ -569,9 +573,11 @@ posix_state_to_acl(struct posix_acl_state *state, unsigned int flags)
 		add_to_mask(state, &state->groups->aces[i].perms);
 	}
 
-	pace++;
-	pace->e_tag = ACL_MASK;
-	low_mode_from_nfs4(state->mask.allow, &pace->e_perm, flags);
+	if (state->users->n || state->groups->n) {
+		pace++;
+		pace->e_tag = ACL_MASK;
+		low_mode_from_nfs4(state->mask.allow, &pace->e_perm, flags);
+	}
 
 	pace++;
 	pace->e_tag = ACL_OTHER;
@@ -801,16 +807,13 @@ ace2type(struct nfs4_ace *ace)
 EXPORT_SYMBOL(nfs4_acl_posix_to_nfsv4);
 EXPORT_SYMBOL(nfs4_acl_nfsv4_to_posix);
 
-struct nfs4_acl *
-nfs4_acl_new(int n)
+/*
+ * return the size of the struct nfs4_acl required to represent an acl
+ * with @entries entries.
+ */
+int nfs4_acl_bytes(int entries)
 {
-	struct nfs4_acl *acl;
-
-	acl = kmalloc(sizeof(*acl) + n*sizeof(struct nfs4_ace), GFP_KERNEL);
-	if (acl == NULL)
-		return NULL;
-	acl->naces = 0;
-	return acl;
+	return sizeof(struct nfs4_acl) + entries * sizeof(struct nfs4_ace);
 }
 
 static struct {
@@ -848,21 +851,24 @@ nfs4_acl_get_whotype(char *p, u32 len)
 	return NFS4_ACL_WHO_NAMED;
 }
 
-int
-nfs4_acl_write_who(int who, char *p)
+__be32 nfs4_acl_write_who(struct xdr_stream *xdr, int who)
 {
+	__be32 *p;
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(s2t_map); i++) {
-		if (s2t_map[i].type == who) {
-			memcpy(p, s2t_map[i].string, s2t_map[i].stringlen);
-			return s2t_map[i].stringlen;
-		}
+		if (s2t_map[i].type != who)
+			continue;
+		p = xdr_reserve_space(xdr, s2t_map[i].stringlen + 4);
+		if (!p)
+			return nfserr_resource;
+		p = xdr_encode_opaque(p, s2t_map[i].string,
+					s2t_map[i].stringlen);
+		return 0;
 	}
-	BUG();
-	return -1;
+	WARN_ON_ONCE(1);
+	return nfserr_serverfault;
 }
 
-EXPORT_SYMBOL(nfs4_acl_new);
 EXPORT_SYMBOL(nfs4_acl_get_whotype);
 EXPORT_SYMBOL(nfs4_acl_write_who);

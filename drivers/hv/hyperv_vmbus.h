@@ -510,6 +510,11 @@ struct hv_context {
 	 * basis.
 	 */
 	struct tasklet_struct *event_dpc[NR_CPUS];
+	/*
+	 * To optimize the mapping of relid to channel, maintain
+	 * per-cpu list of the channels based on their CPU affinity.
+	 */
+	struct list_head percpu_list[NR_CPUS];
 };
 
 extern struct hv_context hv_context;
@@ -526,6 +531,10 @@ extern int hv_post_message(union hv_connection_id connection_id,
 			 void *payload, size_t payload_size);
 
 extern u16 hv_signal_event(void *con_id);
+
+extern int hv_synic_alloc(void);
+
+extern void hv_synic_free(void);
 
 extern void hv_synic_init(void *irqarg);
 
@@ -657,6 +666,10 @@ int vmbus_post_msg(void *buffer, size_t buflen);
 int vmbus_set_event(struct vmbus_channel *channel);
 
 void vmbus_on_event(unsigned long data);
+
+int hv_fcopy_init(struct hv_util_service *);
+void hv_fcopy_deinit(void);
+void hv_fcopy_onchannelcallback(void *);
 
 
 #endif /* _HYPERV_VMBUS_H */

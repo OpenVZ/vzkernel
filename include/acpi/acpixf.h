@@ -46,7 +46,7 @@
 
 /* Current ACPICA subsystem version in YYYYMMDD format */
 
-#define ACPI_CA_VERSION                 0x20130328
+#define ACPI_CA_VERSION                 0x20130517
 
 #include <acpi/acconfig.h>
 #include <acpi/actypes.h>
@@ -80,6 +80,7 @@ extern bool acpi_gbl_enable_aml_debug_object;
 extern u8 acpi_gbl_copy_dsdt_locally;
 extern u8 acpi_gbl_truncate_io_addresses;
 extern u8 acpi_gbl_disable_auto_repair;
+extern u8 acpi_gbl_disable_ssdt_table_load;
 
 /*
  * Hardware-reduced prototypes. All interfaces that use these macros will
@@ -229,6 +230,10 @@ acpi_status
 acpi_attach_data(acpi_handle object, acpi_object_handler handler, void *data);
 
 acpi_status acpi_detach_data(acpi_handle object, acpi_object_handler handler);
+
+acpi_status
+acpi_get_data_full(acpi_handle object, acpi_object_handler handler, void **data,
+		   void (*callback)(void *));
 
 acpi_status
 acpi_get_data(acpi_handle object, acpi_object_handler handler, void **data);

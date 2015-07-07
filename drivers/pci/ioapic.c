@@ -117,13 +117,6 @@ static int __init ioapic_init(void)
 {
 	return pci_register_driver(&ioapic_driver);
 }
-
-static void __exit ioapic_exit(void)
-{
-	pci_unregister_driver(&ioapic_driver);
-}
-
 module_init(ioapic_init);
-module_exit(ioapic_exit);
 
 MODULE_LICENSE("GPL");

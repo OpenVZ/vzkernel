@@ -40,7 +40,7 @@ again:
 		struct iphdr _iph;
 ip:
 		iph = skb_header_pointer(skb, nhoff, sizeof(_iph), &_iph);
-		if (!iph)
+		if (!iph || iph->ihl < 5)
 			return false;
 
 		if (ip_is_fragment(iph))
@@ -144,13 +144,14 @@ ipv6:
 		break;
 	}
 
+	flow->n_proto = proto;
 	flow->ip_proto = ip_proto;
 	poff = proto_ports_offset(ip_proto);
 	if (poff >= 0) {
 		__be32 *ports, _ports;
 
-		nhoff += poff;
-		ports = skb_header_pointer(skb, nhoff, sizeof(_ports), &_ports);
+		ports = skb_header_pointer(skb, nhoff + poff,
+					   sizeof(_ports), &_ports);
 		if (ports)
 			flow->ports = *ports;
 	}
@@ -164,12 +165,12 @@ EXPORT_SYMBOL(skb_flow_dissect);
 static u32 hashrnd __read_mostly;
 
 /*
- * __skb_get_rxhash: calculate a flow hash based on src/dst addresses
+ * __skb_get_hash: calculate a flow hash based on src/dst addresses
  * and src/dst port numbers.  Sets rxhash in skb to non-zero hash value
  * on success, zero indicates no valid hash.  Also, sets l4_rxhash in skb
  * if hash is a canonical 4-tuple hash over transport ports.
  */
-void __skb_get_rxhash(struct sk_buff *skb)
+void __skb_get_hash(struct sk_buff *skb)
 {
 	struct flow_keys keys;
 	u32 hash;
@@ -196,7 +197,7 @@ void __skb_get_rxhash(struct sk_buff *skb)
 
 	skb->rxhash = hash;
 }
-EXPORT_SYMBOL(__skb_get_rxhash);
+EXPORT_SYMBOL(__skb_get_hash);
 
 /*
  * Returns a Tx hash based on the given packet descriptor a Tx queues' number
@@ -345,14 +346,9 @@ u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 		if (new_index < 0)
 			new_index = skb_tx_hash(dev, skb);
 
-		if (queue_index != new_index && sk) {
-			struct dst_entry *dst =
-				    rcu_dereference_check(sk->sk_dst_cache, 1);
-
-			if (dst && skb_dst(skb) == dst)
-				sk_tx_queue_set(sk, queue_index);
-
-		}
+		if (queue_index != new_index && sk &&
+		    rcu_access_pointer(sk->sk_dst_cache))
+			sk_tx_queue_set(sk, new_index);
 
 		queue_index = new_index;
 	}

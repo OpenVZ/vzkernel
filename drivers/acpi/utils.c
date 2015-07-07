@@ -419,7 +419,7 @@ out:
 EXPORT_SYMBOL(acpi_get_physical_device_location);
 
 /**
- * acpi_evaluate_hotplug_ost: Evaluate _OST for hotplug operations
+ * acpi_evaluate_ost: Evaluate _OST for hotplug operations
  * @handle: ACPI device handle
  * @source_event: source event code
  * @status_code: status code
@@ -430,17 +430,15 @@ EXPORT_SYMBOL(acpi_get_physical_device_location);
  * When the platform does not support _OST, this function has no effect.
  */
 acpi_status
-acpi_evaluate_hotplug_ost(acpi_handle handle, u32 source_event,
-		u32 status_code, struct acpi_buffer *status_buf)
+acpi_evaluate_ost(acpi_handle handle, u32 source_event, u32 status_code,
+		  struct acpi_buffer *status_buf)
 {
-#ifdef ACPI_HOTPLUG_OST
 	union acpi_object params[3] = {
 		{.type = ACPI_TYPE_INTEGER,},
 		{.type = ACPI_TYPE_INTEGER,},
 		{.type = ACPI_TYPE_BUFFER,}
 	};
 	struct acpi_object_list arg_list = {3, params};
-	acpi_status status;
 
 	params[0].integer.value = source_event;
 	params[1].integer.value = status_code;
@@ -452,13 +450,9 @@ acpi_evaluate_hotplug_ost(acpi_handle handle, u32 source_event,
 		params[2].buffer.length = 0;
 	}
 
-	status = acpi_evaluate_object(handle, "_OST", &arg_list, NULL);
-	return status;
-#else
-	return AE_OK;
-#endif
+	return acpi_evaluate_object(handle, "_OST", &arg_list, NULL);
 }
-EXPORT_SYMBOL(acpi_evaluate_hotplug_ost);
+EXPORT_SYMBOL(acpi_evaluate_ost);
 
 /**
  * acpi_handle_printk: Print message with ACPI prefix and object path
@@ -495,3 +489,73 @@ acpi_handle_printk(const char *level, acpi_handle handle, const char *fmt, ...)
 	kfree(buffer.pointer);
 }
 EXPORT_SYMBOL(acpi_handle_printk);
+
+/**
+ * acpi_has_method: Check whether @handle has a method named @name
+ * @handle: ACPI device handle
+ * @name: name of object or method
+ *
+ * Check whether @handle has a method named @name.
+ */
+bool acpi_has_method(acpi_handle handle, char *name)
+{
+	acpi_handle tmp;
+
+	return ACPI_SUCCESS(acpi_get_handle(handle, name, &tmp));
+}
+EXPORT_SYMBOL(acpi_has_method);
+
+acpi_status acpi_execute_simple_method(acpi_handle handle, char *method,
+				       u64 arg)
+{
+	union acpi_object obj = { .type = ACPI_TYPE_INTEGER };
+	struct acpi_object_list arg_list = { .count = 1, .pointer = &obj, };
+
+	obj.integer.value = arg;
+
+	return acpi_evaluate_object(handle, method, &arg_list, NULL);
+}
+EXPORT_SYMBOL(acpi_execute_simple_method);
+
+/**
+ * acpi_evaluate_ej0: Evaluate _EJ0 method for hotplug operations
+ * @handle: ACPI device handle
+ *
+ * Evaluate device's _EJ0 method for hotplug operations.
+ */
+acpi_status acpi_evaluate_ej0(acpi_handle handle)
+{
+	acpi_status status;
+
+	status = acpi_execute_simple_method(handle, "_EJ0", 1);
+	if (status == AE_NOT_FOUND)
+		acpi_handle_warn(handle, "No _EJ0 support for device\n");
+	else if (ACPI_FAILURE(status))
+		acpi_handle_warn(handle, "Eject failed (0x%x)\n", status);
+
+	return status;
+}
+
+/**
+ * acpi_evaluate_lck: Evaluate _LCK method to lock/unlock device
+ * @handle: ACPI device handle
+ * @lock: lock device if non-zero, otherwise unlock device
+ *
+ * Evaluate device's _LCK method if present to lock/unlock device
+ */
+acpi_status acpi_evaluate_lck(acpi_handle handle, int lock)
+{
+	acpi_status status;
+
+	status = acpi_execute_simple_method(handle, "_LCK", !!lock);
+	if (ACPI_FAILURE(status) && status != AE_NOT_FOUND) {
+		if (lock)
+			acpi_handle_warn(handle,
+				"Locking device failed (0x%x)\n", status);
+		else
+			acpi_handle_warn(handle,
+				"Unlocking device failed (0x%x)\n", status);
+	}
+
+	return status;
+}

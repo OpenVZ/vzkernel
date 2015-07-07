@@ -25,6 +25,7 @@
 
 #include "tick-internal.h"
 #include "ntp_internal.h"
+#include "timekeeping_internal.h"
 
 static struct timekeeper timekeeper;
 static DEFINE_RAW_SPINLOCK(timekeeper_lock);
@@ -134,6 +135,7 @@ static void tk_setup_internals(struct timekeeper *tk, struct clocksource *clock)
 
 	tk->ntp_error = 0;
 	tk->ntp_error_shift = NTP_SCALE_SHIFT - clock->shift;
+	tk->ntp_tick = ntpinterval << tk->ntp_error_shift;
 
 	/*
 	 * The timekeeper keeps its own mult values for the currently
@@ -141,6 +143,7 @@ static void tk_setup_internals(struct timekeeper *tk, struct clocksource *clock)
 	 * to counteract clock drifting.
 	 */
 	tk->mult = clock->mult;
+	tk->ntp_err_mult = 0;
 }
 
 /* Timekeeper helper functions. */
@@ -160,7 +163,7 @@ static inline u32 get_arch_timeoffset(void) { return 0; }
 
 static inline s64 timekeeping_get_ns(struct timekeeper *tk)
 {
-	cycle_t cycle_now, cycle_delta;
+	cycle_t cycle_now, delta;
 	struct clocksource *clock;
 	s64 nsec;
 
@@ -169,9 +172,9 @@ static inline s64 timekeeping_get_ns(struct timekeeper *tk)
 	cycle_now = clock->read(clock);
 
 	/* calculate the delta since the last update_wall_time: */
-	cycle_delta = (cycle_now - clock->cycle_last) & clock->mask;
+	delta = clocksource_delta(cycle_now, clock->cycle_last, clock->mask);
 
-	nsec = cycle_delta * tk->mult + tk->xtime_nsec;
+	nsec = delta * tk->mult + tk->xtime_nsec;
 	nsec >>= tk->shift;
 
 	/* If arch requires, add in get_arch_timeoffset() */
@@ -180,7 +183,7 @@ static inline s64 timekeeping_get_ns(struct timekeeper *tk)
 
 static inline s64 timekeeping_get_ns_raw(struct timekeeper *tk)
 {
-	cycle_t cycle_now, cycle_delta;
+	cycle_t cycle_now, delta;
 	struct clocksource *clock;
 	s64 nsec;
 
@@ -189,10 +192,10 @@ static inline s64 timekeeping_get_ns_raw(struct timekeeper *tk)
 	cycle_now = clock->read(clock);
 
 	/* calculate the delta since the last update_wall_time: */
-	cycle_delta = (cycle_now - clock->cycle_last) & clock->mask;
+	delta = clocksource_delta(cycle_now, clock->cycle_last, clock->mask);
 
 	/* convert delta to nanoseconds. */
-	nsec = clocksource_cyc2ns(cycle_delta, clock->mult, clock->shift);
+	nsec = clocksource_cyc2ns(delta, clock->mult, clock->shift);
 
 	/* If arch requires, add in get_arch_timeoffset() */
 	return nsec + get_arch_timeoffset();
@@ -263,23 +266,23 @@ static void timekeeping_update(struct timekeeper *tk, bool clearntp, bool mirror
  */
 static void timekeeping_forward_now(struct timekeeper *tk)
 {
-	cycle_t cycle_now, cycle_delta;
+	cycle_t cycle_now, delta;
 	struct clocksource *clock;
 	s64 nsec;
 
 	clock = tk->clock;
 	cycle_now = clock->read(clock);
-	cycle_delta = (cycle_now - clock->cycle_last) & clock->mask;
+	delta = clocksource_delta(cycle_now, clock->cycle_last, clock->mask);
 	tk->cycle_last = clock->cycle_last = cycle_now;
 
-	tk->xtime_nsec += cycle_delta * tk->mult;
+	tk->xtime_nsec += delta * tk->mult;
 
 	/* If arch requires, add in get_arch_timeoffset() */
 	tk->xtime_nsec += (u64)get_arch_timeoffset() << tk->shift;
 
 	tk_normalize_xtime(tk);
 
-	nsec = clocksource_cyc2ns(cycle_delta, clock->mult, clock->shift);
+	nsec = clocksource_cyc2ns(delta, clock->mult, clock->shift);
 	timespec_add_ns(&tk->raw_time, nsec);
 }
 
@@ -925,7 +928,8 @@ static void timekeeping_resume(void)
 		u32 shift = clock->shift;
 		s64 nsec = 0;
 
-		cycle_delta = (cycle_now - clock->cycle_last) & clock->mask;
+		cycle_delta = clocksource_delta(cycle_now, clock->cycle_last,
+						clock->mask);
 
 		/*
 		 * "cycle_delta * mutl" may cause 64 bits overflow, if the
@@ -1028,135 +1032,34 @@ static int __init timekeeping_init_ops(void)
 	register_syscore_ops(&timekeeping_syscore_ops);
 	return 0;
 }
-
 device_initcall(timekeeping_init_ops);
 
 /*
- * If the error is already larger, we look ahead even further
- * to compensate for late or lost adjustments.
+ * Apply a multiplier adjustment to the timekeeper
  */
-static __always_inline int timekeeping_bigadjust(struct timekeeper *tk,
-						 s64 error, s64 *interval,
-						 s64 *offset)
+static __always_inline void timekeeping_apply_adjustment(struct timekeeper *tk,
+							 s64 offset,
+							 bool negative,
+							 int adj_scale)
 {
-	s64 tick_error, i;
-	u32 look_ahead, adj;
-	s32 error2, mult;
+	s64 interval = tk->cycle_interval;
+	s32 mult_adj = 1;
 
-	/*
-	 * Use the current error value to determine how much to look ahead.
-	 * The larger the error the slower we adjust for it to avoid problems
-	 * with losing too many ticks, otherwise we would overadjust and
-	 * produce an even larger error.  The smaller the adjustment the
-	 * faster we try to adjust for it, as lost ticks can do less harm
-	 * here.  This is tuned so that an error of about 1 msec is adjusted
-	 * within about 1 sec (or 2^20 nsec in 2^SHIFT_HZ ticks).
-	 */
-	error2 = tk->ntp_error >> (NTP_SCALE_SHIFT + 22 - 2 * SHIFT_HZ);
-	error2 = abs(error2);
-	for (look_ahead = 0; error2 > 0; look_ahead++)
-		error2 >>= 2;
-
-	/*
-	 * Now calculate the error in (1 << look_ahead) ticks, but first
-	 * remove the single look ahead already included in the error.
-	 */
-	tick_error = ntp_tick_length() >> (tk->ntp_error_shift + 1);
-	tick_error -= tk->xtime_interval >> 1;
-	error = ((error - tick_error) >> look_ahead) + tick_error;
-
-	/* Finally calculate the adjustment shift value.  */
-	i = *interval;
-	mult = 1;
-	if (error < 0) {
-		error = -error;
-		*interval = -*interval;
-		*offset = -*offset;
-		mult = -1;
+	if (negative) {
+		mult_adj = -mult_adj;
+		interval = -interval;
+		offset  = -offset;
 	}
-	for (adj = 0; error > i; adj++)
-		error >>= 1;
+	mult_adj <<= adj_scale;
+	interval <<= adj_scale;
+	offset <<= adj_scale;
 
-	*interval <<= adj;
-	*offset <<= adj;
-	return mult << adj;
-}
-
-/*
- * Adjust the multiplier to reduce the error value,
- * this is optimized for the most common adjustments of -1,0,1,
- * for other values we can do a bit more work.
- */
-static void timekeeping_adjust(struct timekeeper *tk, s64 offset)
-{
-	s64 error, interval = tk->cycle_interval;
-	int adj;
-
-	/*
-	 * The point of this is to check if the error is greater than half
-	 * an interval.
-	 *
-	 * First we shift it down from NTP_SHIFT to clocksource->shifted nsecs.
-	 *
-	 * Note we subtract one in the shift, so that error is really error*2.
-	 * This "saves" dividing(shifting) interval twice, but keeps the
-	 * (error > interval) comparison as still measuring if error is
-	 * larger than half an interval.
-	 *
-	 * Note: It does not "save" on aggravation when reading the code.
-	 */
-	error = tk->ntp_error >> (tk->ntp_error_shift - 1);
-	if (error > interval) {
-		/*
-		 * We now divide error by 4(via shift), which checks if
-		 * the error is greater than twice the interval.
-		 * If it is greater, we need a bigadjust, if its smaller,
-		 * we can adjust by 1.
-		 */
-		error >>= 2;
-		/*
-		 * XXX - In update_wall_time, we round up to the next
-		 * nanosecond, and store the amount rounded up into
-		 * the error. This causes the likely below to be unlikely.
-		 *
-		 * The proper fix is to avoid rounding up by using
-		 * the high precision tk->xtime_nsec instead of
-		 * xtime.tv_nsec everywhere. Fixing this will take some
-		 * time.
-		 */
-		if (likely(error <= interval))
-			adj = 1;
-		else
-			adj = timekeeping_bigadjust(tk, error, &interval, &offset);
-	} else {
-		if (error < -interval) {
-			/* See comment above, this is just switched for the negative */
-			error >>= 2;
-			if (likely(error >= -interval)) {
-				adj = -1;
-				interval = -interval;
-				offset = -offset;
-			} else {
-				adj = timekeeping_bigadjust(tk, error, &interval, &offset);
-			}
-		} else {
-			goto out_adjust;
-		}
-	}
-
-	if (unlikely(tk->clock->maxadj &&
-		(tk->mult + adj > tk->clock->mult + tk->clock->maxadj))) {
-		printk_once(KERN_WARNING
-			"Adjusting %s more than 11%% (%ld vs %ld)\n",
-			tk->clock->name, (long)tk->mult + adj,
-			(long)tk->clock->mult + tk->clock->maxadj);
-	}
 	/*
 	 * So the following can be confusing.
 	 *
-	 * To keep things simple, lets assume adj == 1 for now.
+	 * To keep things simple, lets assume mult_adj == 1 for now.
 	 *
-	 * When adj != 1, remember that the interval and offset values
+	 * When mult_adj != 1, remember that the interval and offset values
 	 * have been appropriately scaled so the math is the same.
 	 *
 	 * The basic idea here is that we're increasing the multiplier
@@ -1200,12 +1103,78 @@ static void timekeeping_adjust(struct timekeeper *tk, s64 offset)
 	 *
 	 * XXX - TODO: Doc ntp_error calculation.
 	 */
-	tk->mult += adj;
+	tk->mult += mult_adj;
 	tk->xtime_interval += interval;
 	tk->xtime_nsec -= offset;
 	tk->ntp_error -= (interval - offset) << tk->ntp_error_shift;
+}
 
-out_adjust:
+/*
+ * Calculate the multiplier adjustment needed to match the frequency
+ * specified by NTP
+ */
+static __always_inline void timekeeping_freqadjust(struct timekeeper *tk,
+							s64 offset)
+{
+	s64 interval = tk->cycle_interval;
+	s64 xinterval = tk->xtime_interval;
+	s64 tick_error;
+	bool negative;
+	u32 adj;
+
+	/* Remove any current error adj from freq calculation */
+	if (tk->ntp_err_mult)
+		xinterval -= tk->cycle_interval;
+
+	tk->ntp_tick = ntp_tick_length();
+
+	/* Calculate current error per tick */
+	tick_error = ntp_tick_length() >> tk->ntp_error_shift;
+	tick_error -= (xinterval + tk->xtime_remainder);
+
+	/* Don't worry about correcting it if its small */
+	if (likely((tick_error >= 0) && (tick_error <= interval)))
+		return;
+
+	/* preserve the direction of correction */
+	negative = (tick_error < 0);
+
+	/* Sort out the magnitude of the correction */
+	tick_error = abs(tick_error);
+	for (adj = 0; tick_error > interval; adj++)
+		tick_error >>= 1;
+
+	/* scale the corrections */
+	timekeeping_apply_adjustment(tk, offset, negative, adj);
+}
+
+/*
+ * Adjust the timekeeper's multiplier to the correct frequency
+ * and also to reduce the accumulated error value.
+ */
+static void timekeeping_adjust(struct timekeeper *tk, s64 offset)
+{
+	/* Correct for the current frequency error */
+	timekeeping_freqadjust(tk, offset);
+
+	/* Next make a small adjustment to fix any cumulative error */
+	if (!tk->ntp_err_mult && (tk->ntp_error > 0)) {
+		tk->ntp_err_mult = 1;
+		timekeeping_apply_adjustment(tk, offset, 0, 0);
+	} else if (tk->ntp_err_mult && (tk->ntp_error <= 0)) {
+		/* Undo any existing error adjustment */
+		timekeeping_apply_adjustment(tk, offset, 1, 0);
+		tk->ntp_err_mult = 0;
+	}
+
+	if (unlikely(tk->clock->maxadj &&
+		(tk->mult > tk->clock->mult + tk->clock->maxadj))) {
+		printk_once(KERN_WARNING
+			"Adjusting %s more than 11%% (%ld vs %ld)\n",
+			tk->clock->name, (long)tk->mult,
+			(long)tk->clock->mult + tk->clock->maxadj);
+	}
+
 	/*
 	 * It may be possible that when we entered this function, xtime_nsec
 	 * was very small.  Further, if we're slightly speeding the clocksource
@@ -1225,7 +1194,6 @@ out_adjust:
 		tk->xtime_nsec = 0;
 		tk->ntp_error += neg << tk->ntp_error_shift;
 	}
-
 }
 
 /**
@@ -1302,7 +1270,7 @@ static cycle_t logarithmic_accumulation(struct timekeeper *tk, cycle_t offset,
 	tk->raw_time.tv_nsec = raw_nsecs;
 
 	/* Accumulate error between NTP and clock interval */
-	tk->ntp_error += ntp_tick_length() << shift;
+	tk->ntp_error += tk->ntp_tick << shift;
 	tk->ntp_error -= (tk->xtime_interval + tk->xtime_remainder) <<
 						(tk->ntp_error_shift + shift);
 
@@ -1328,7 +1296,7 @@ static inline void old_vsyscall_fixup(struct timekeeper *tk)
 	tk->xtime_nsec -= remainder;
 	tk->xtime_nsec += 1ULL << tk->shift;
 	tk->ntp_error += remainder << tk->ntp_error_shift;
-
+	tk->ntp_error -= (1ULL << tk->shift) << tk->ntp_error_shift;
 }
 #else
 #define old_vsyscall_fixup(tk)
@@ -1360,7 +1328,8 @@ static void update_wall_time(void)
 #ifdef CONFIG_ARCH_USES_GETTIMEOFFSET
 	offset = real_tk->cycle_interval;
 #else
-	offset = (clock->read(clock) - clock->cycle_last) & clock->mask;
+	offset = clocksource_delta(clock->read(clock), clock->cycle_last,
+				   clock->mask);
 #endif
 
 	/* Check if there's really nothing to do */
@@ -1681,6 +1650,8 @@ int do_adjtimex(struct timex *txc)
 	}
 	write_seqcount_end(&timekeeper_seq);
 	raw_spin_unlock_irqrestore(&timekeeper_lock, flags);
+
+	ntp_notify_cmos_timer();
 
 	return ret;
 }

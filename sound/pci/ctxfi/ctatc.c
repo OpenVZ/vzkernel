@@ -185,7 +185,7 @@ static unsigned int convert_format(snd_pcm_format_t snd_format)
 	case SNDRV_PCM_FORMAT_FLOAT_LE:
 		return SRC_SF_F32;
 	default:
-		printk(KERN_ERR "ctxfi: not recognized snd format is %d \n",
+		pr_err("ctxfi: not recognized snd format is %d\n",
 			snd_format);
 		return SRC_SF_S16;
 	}
@@ -434,6 +434,11 @@ atc_pcm_playback_position(struct ct_atc *atc, struct ct_atc_pcm *apcm)
 	if (!src)
 		return 0;
 	position = src->ops->get_ca(src);
+
+	if (position < apcm->vm_block->addr) {
+		snd_printdd("ctxfi: bad ca - ca=0x%08x, vba=0x%08x, vbs=0x%08x\n", position, apcm->vm_block->addr, apcm->vm_block->size);
+		position = apcm->vm_block->addr;
+	}
 
 	size = apcm->vm_block->size;
 	max_cisz = src->multi * src->rsc.msr;
@@ -1277,8 +1282,7 @@ static int atc_identify_card(struct ct_atc *atc, unsigned int ssid)
 	p = snd_pci_quirk_lookup_id(vendor_id, device_id, list);
 	if (p) {
 		if (p->value < 0) {
-			printk(KERN_ERR "ctxfi: "
-			       "Device %04x:%04x is black-listed\n",
+			pr_err("ctxfi: Device %04x:%04x is black-listed\n",
 			       vendor_id, device_id);
 			return -ENOENT;
 		}
@@ -1310,8 +1314,7 @@ int ct_atc_create_alsa_devs(struct ct_atc *atc)
 		err = alsa_dev_funcs[i].create(atc, i,
 				alsa_dev_funcs[i].public_name);
 		if (err) {
-			printk(KERN_ERR "ctxfi: "
-			       "Creating alsa device %d failed!\n", i);
+			pr_err("ctxfi: Creating alsa device %d failed!\n", i);
 			return err;
 		}
 	}
@@ -1327,7 +1330,7 @@ static int atc_create_hw_devs(struct ct_atc *atc)
 
 	err = create_hw_obj(atc->pci, atc->chip_type, atc->model, &hw);
 	if (err) {
-		printk(KERN_ERR "Failed to create hw obj!!!\n");
+		pr_err("Failed to create hw obj!!!\n");
 		return err;
 	}
 	atc->hw = hw;
@@ -1346,8 +1349,7 @@ static int atc_create_hw_devs(struct ct_atc *atc)
 
 		err = rsc_mgr_funcs[i].create(atc->hw, &atc->rsc_mgrs[i]);
 		if (err) {
-			printk(KERN_ERR "ctxfi: "
-			       "Failed to create rsc_mgr %d!!!\n", i);
+			pr_err("ctxfi: Failed to create rsc_mgr %d!!!\n", i);
 			return err;
 		}
 	}
@@ -1394,8 +1396,8 @@ static int atc_get_resources(struct ct_atc *atc)
 		err = daio_mgr->get_daio(daio_mgr, &da_desc,
 					(struct daio **)&atc->daios[i]);
 		if (err) {
-			printk(KERN_ERR "ctxfi: Failed to get DAIO "
-					"resource %d!!!\n", i);
+			pr_err("ctxfi: Failed to get DAIO resource %d!!!\n",
+				i);
 			return err;
 		}
 		atc->n_daio++;
@@ -1598,8 +1600,7 @@ static int atc_resume(struct ct_atc *atc)
 	/* Do hardware resume. */
 	err = atc_hw_resume(atc);
 	if (err < 0) {
-		printk(KERN_ERR "ctxfi: pci_enable_device failed, "
-		       "disabling device\n");
+		pr_err("ctxfi: pci_enable_device failed, disabling device\n");
 		snd_card_disconnect(atc->card);
 		return err;
 	}
@@ -1696,7 +1697,7 @@ int ct_atc_create(struct snd_card *card, struct pci_dev *pci,
 	/* Find card model */
 	err = atc_identify_card(atc, ssid);
 	if (err < 0) {
-		printk(KERN_ERR "ctatc: Card not recognised\n");
+		pr_err("ctatc: Card not recognised\n");
 		goto error1;
 	}
 
@@ -1712,7 +1713,7 @@ int ct_atc_create(struct snd_card *card, struct pci_dev *pci,
 
 	err = ct_mixer_create(atc, (struct ct_mixer **)&atc->mixer);
 	if (err) {
-		printk(KERN_ERR "ctxfi: Failed to create mixer obj!!!\n");
+		pr_err("ctxfi: Failed to create mixer obj!!!\n");
 		goto error1;
 	}
 
@@ -1734,13 +1735,11 @@ int ct_atc_create(struct snd_card *card, struct pci_dev *pci,
 	if (err < 0)
 		goto error1;
 
-	snd_card_set_dev(card, &pci->dev);
-
 	*ratc = atc;
 	return 0;
 
 error1:
 	ct_atc_destroy(atc);
-	printk(KERN_ERR "ctxfi: Something wrong!!!\n");
+	pr_err("ctxfi: Something wrong!!!\n");
 	return err;
 }

@@ -52,7 +52,7 @@ MODULE_PARM_DESC(enable, "Enable SiS7019 Audio Accelerator.");
 module_param(codecs, int, 0444);
 MODULE_PARM_DESC(codecs, "Set bit to indicate that codec number is expected to be present (default 1)");
 
-static DEFINE_PCI_DEVICE_TABLE(snd_sis7019_ids) = {
+static const struct pci_device_id snd_sis7019_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_SI, 0x7019) },
 	{ 0, }
 };
@@ -1404,8 +1404,6 @@ static int sis_chip_create(struct snd_card *card,
 	if (rc)
 		goto error_out_cleanup;
 
-	snd_card_set_dev(card, &pci->dev);
-
 	return 0;
 
 error_out_cleanup:
@@ -1440,7 +1438,8 @@ static int snd_sis7019_probe(struct pci_dev *pci,
 	if (!codecs)
 		codecs = SIS_PRIMARY_CODEC_PRESENT;
 
-	rc = snd_card_create(index, id, THIS_MODULE, sizeof(*sis), &card);
+	rc = snd_card_new(&pci->dev, index, id, THIS_MODULE,
+			  sizeof(*sis), &card);
 	if (rc < 0)
 		goto error_out;
 
@@ -1482,7 +1481,6 @@ error_out:
 static void snd_sis7019_remove(struct pci_dev *pci)
 {
 	snd_card_free(pci_get_drvdata(pci));
-	pci_set_drvdata(pci, NULL);
 }
 
 static struct pci_driver sis7019_driver = {

@@ -23,6 +23,7 @@
 #include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/hrtimer.h>
+#include <linux/kmemleak.h>
 
 #ifdef DEBUG
 /* For development, we want to crash whenever the ring is screwed. */
@@ -81,7 +82,7 @@ struct vring_virtqueue
 	u16 last_used_idx;
 
 	/* How to notify other side. FIXME: commonalize hcalls! */
-	void (*notify)(struct virtqueue *vq);
+	bool (*notify)(struct virtqueue *vq);
 
 #ifdef DEBUG
 	/* They're supposed to lock for us. */
@@ -173,6 +174,8 @@ static inline int vring_add_indirect(struct vring_virtqueue *vq,
 	head = vq->free_head;
 	vq->vring.desc[head].flags = VRING_DESC_F_INDIRECT;
 	vq->vring.desc[head].addr = virt_to_phys(desc);
+	/* kmemleak gives a false positive, as it's hidden by virt_to_phys */
+	kmemleak_ignore(desc);
 	vq->vring.desc[head].len = i * sizeof(struct vring_desc);
 
 	/* Update free pointer */
@@ -200,6 +203,11 @@ static inline int virtqueue_add(struct virtqueue *_vq,
 	START_USE(vq);
 
 	BUG_ON(data == NULL);
+
+	if (unlikely(vq->broken)) {
+		END_USE(vq);
+		return -EIO;
+	}
 
 #ifdef DEBUG
 	{
@@ -338,7 +346,7 @@ EXPORT_SYMBOL_GPL(virtqueue_add_buf);
  * Caller must ensure we don't call this with other virtqueue operations
  * at the same time (except where noted).
  *
- * Returns zero or a negative error (ie. ENOSPC, ENOMEM).
+ * Returns zero or a negative error (ie. ENOSPC, ENOMEM, EIO).
  */
 int virtqueue_add_sgs(struct virtqueue *_vq,
 		      struct scatterlist *sgs[],
@@ -376,7 +384,7 @@ EXPORT_SYMBOL_GPL(virtqueue_add_sgs);
  * Caller must ensure we don't call this with other virtqueue operations
  * at the same time (except where noted).
  *
- * Returns zero or a negative error (ie. ENOSPC, ENOMEM).
+ * Returns zero or a negative error (ie. ENOSPC, ENOMEM, EIO).
  */
 int virtqueue_add_outbuf(struct virtqueue *vq,
 			 struct scatterlist sg[], unsigned int num,
@@ -398,7 +406,7 @@ EXPORT_SYMBOL_GPL(virtqueue_add_outbuf);
  * Caller must ensure we don't call this with other virtqueue operations
  * at the same time (except where noted).
  *
- * Returns zero or a negative error (ie. ENOSPC, ENOMEM).
+ * Returns zero or a negative error (ie. ENOSPC, ENOMEM, EIO).
  */
 int virtqueue_add_inbuf(struct virtqueue *vq,
 			struct scatterlist sg[], unsigned int num,
@@ -459,13 +467,22 @@ EXPORT_SYMBOL_GPL(virtqueue_kick_prepare);
  * @vq: the struct virtqueue
  *
  * This does not need to be serialized.
+ *
+ * Returns false if host notify failed or queue is broken, otherwise true.
  */
-void virtqueue_notify(struct virtqueue *_vq)
+bool virtqueue_notify(struct virtqueue *_vq)
 {
 	struct vring_virtqueue *vq = to_vvq(_vq);
 
+	if (unlikely(vq->broken))
+		return false;
+
 	/* Prod other side to tell it about changes. */
-	vq->notify(_vq);
+	if (!vq->notify(_vq)) {
+		vq->broken = true;
+		return false;
+	}
+	return true;
 }
 EXPORT_SYMBOL_GPL(virtqueue_notify);
 
@@ -478,11 +495,14 @@ EXPORT_SYMBOL_GPL(virtqueue_notify);
  *
  * Caller must ensure we don't call this with other virtqueue
  * operations at the same time (except where noted).
+ *
+ * Returns false if kick failed, otherwise true.
  */
-void virtqueue_kick(struct virtqueue *vq)
+bool virtqueue_kick(struct virtqueue *vq)
 {
 	if (virtqueue_kick_prepare(vq))
-		virtqueue_notify(vq);
+		return virtqueue_notify(vq);
+	return true;
 }
 EXPORT_SYMBOL_GPL(virtqueue_kick);
 
@@ -607,6 +627,55 @@ void virtqueue_disable_cb(struct virtqueue *_vq)
 EXPORT_SYMBOL_GPL(virtqueue_disable_cb);
 
 /**
+ * virtqueue_enable_cb_prepare - restart callbacks after disable_cb
+ * @vq: the struct virtqueue we're talking about.
+ *
+ * This re-enables callbacks; it returns current queue state
+ * in an opaque unsigned value. This value should be later tested by
+ * virtqueue_poll, to detect a possible race between the driver checking for
+ * more work, and enabling callbacks.
+ *
+ * Caller must ensure we don't call this with other virtqueue
+ * operations at the same time (except where noted).
+ */
+unsigned virtqueue_enable_cb_prepare(struct virtqueue *_vq)
+{
+	struct vring_virtqueue *vq = to_vvq(_vq);
+	u16 last_used_idx;
+
+	START_USE(vq);
+
+	/* We optimistically turn back on interrupts, then check if there was
+	 * more to do. */
+	/* Depending on the VIRTIO_RING_F_EVENT_IDX feature, we need to
+	 * either clear the flags bit or point the event index at the next
+	 * entry. Always do both to keep code simple. */
+	vq->vring.avail->flags &= ~VRING_AVAIL_F_NO_INTERRUPT;
+	vring_used_event(&vq->vring) = last_used_idx = vq->last_used_idx;
+	END_USE(vq);
+	return last_used_idx;
+}
+EXPORT_SYMBOL_GPL(virtqueue_enable_cb_prepare);
+
+/**
+ * virtqueue_poll - query pending used buffers
+ * @vq: the struct virtqueue we're talking about.
+ * @last_used_idx: virtqueue state (from call to virtqueue_enable_cb_prepare).
+ *
+ * Returns "true" if there are pending used buffers in the queue.
+ *
+ * This does not need to be serialized.
+ */
+bool virtqueue_poll(struct virtqueue *_vq, unsigned last_used_idx)
+{
+	struct vring_virtqueue *vq = to_vvq(_vq);
+
+	virtio_mb(vq->weak_barriers);
+	return (u16)last_used_idx != vq->vring.used->idx;
+}
+EXPORT_SYMBOL_GPL(virtqueue_poll);
+
+/**
  * virtqueue_enable_cb - restart callbacks after disable_cb.
  * @vq: the struct virtqueue we're talking about.
  *
@@ -619,25 +688,8 @@ EXPORT_SYMBOL_GPL(virtqueue_disable_cb);
  */
 bool virtqueue_enable_cb(struct virtqueue *_vq)
 {
-	struct vring_virtqueue *vq = to_vvq(_vq);
-
-	START_USE(vq);
-
-	/* We optimistically turn back on interrupts, then check if there was
-	 * more to do. */
-	/* Depending on the VIRTIO_RING_F_EVENT_IDX feature, we need to
-	 * either clear the flags bit or point the event index at the next
-	 * entry. Always do both to keep code simple. */
-	vq->vring.avail->flags &= ~VRING_AVAIL_F_NO_INTERRUPT;
-	vring_used_event(&vq->vring) = vq->last_used_idx;
-	virtio_mb(vq->weak_barriers);
-	if (unlikely(more_used(vq))) {
-		END_USE(vq);
-		return false;
-	}
-
-	END_USE(vq);
-	return true;
+	unsigned last_used_idx = virtqueue_enable_cb_prepare(_vq);
+	return !virtqueue_poll(_vq, last_used_idx);
 }
 EXPORT_SYMBOL_GPL(virtqueue_enable_cb);
 
@@ -741,7 +793,7 @@ struct virtqueue *vring_new_virtqueue(unsigned int index,
 				      struct virtio_device *vdev,
 				      bool weak_barriers,
 				      void *pages,
-				      void (*notify)(struct virtqueue *),
+				      bool (*notify)(struct virtqueue *),
 				      void (*callback)(struct virtqueue *),
 				      const char *name)
 {
@@ -835,5 +887,28 @@ unsigned int virtqueue_get_vring_size(struct virtqueue *_vq)
 	return vq->vring.num;
 }
 EXPORT_SYMBOL_GPL(virtqueue_get_vring_size);
+
+bool virtqueue_is_broken(struct virtqueue *_vq)
+{
+	struct vring_virtqueue *vq = to_vvq(_vq);
+
+	return vq->broken;
+}
+EXPORT_SYMBOL_GPL(virtqueue_is_broken);
+
+/*
+ * This should prevent the device from being used, allowing drivers to
+ * recover.  You may need to grab appropriate locks to flush.
+ */
+void virtio_break_device(struct virtio_device *dev)
+{
+	struct virtqueue *_vq;
+
+	list_for_each_entry(_vq, &dev->vqs, list) {
+		struct vring_virtqueue *vq = to_vvq(_vq);
+		vq->broken = true;
+	}
+}
+EXPORT_SYMBOL_GPL(virtio_break_device);
 
 MODULE_LICENSE("GPL");

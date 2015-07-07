@@ -223,16 +223,16 @@ int rpaphp_get_drc_props(struct device_node *dn, int *drc_index,
 	type_tmp = (char *) &types[1];
 
 	/* Iterate through parent properties, looking for my-drc-index */
-	for (i = 0; i < indexes[0]; i++) {
+	for (i = 0; i < be32_to_cpu(indexes[0]); i++) {
 		if ((unsigned int) indexes[i + 1] == *my_index) {
 			if (drc_name)
-                		*drc_name = name_tmp;
+				*drc_name = name_tmp;
 			if (drc_type)
 				*drc_type = type_tmp;
 			if (drc_index)
-				*drc_index = *my_index;
+				*drc_index = be32_to_cpu(*my_index);
 			if (drc_power_domain)
-				*drc_power_domain = domains[i+1];
+				*drc_power_domain = be32_to_cpu(domains[i+1]);
 			return 0;
 		}
 		name_tmp += (strlen(name_tmp) + 1);
@@ -289,7 +289,7 @@ static int is_php_dn(struct device_node *dn, const int **indexes,
  * rpaphp_add_slot -- declare a hotplug slot to the hotplug subsystem.
  * @dn: device node of slot
  *
- * This subroutine will register a hotplugable slot with the
+ * This subroutine will register a hotpluggable slot with the
  * PCI hotplug infrastructure. This routine is typically called
  * during boot time, if the hotplug slots are present at boot time,
  * or is called later, by the dlpar add code, if the slot is
@@ -321,16 +321,19 @@ int rpaphp_add_slot(struct device_node *dn)
 	/* register PCI devices */
 	name = (char *) &names[1];
 	type = (char *) &types[1];
-	for (i = 0; i < indexes[0]; i++) {
+	for (i = 0; i < be32_to_cpu(indexes[0]); i++) {
+		int index;
 
-		slot = alloc_slot_struct(dn, indexes[i + 1], name, power_domains[i + 1]);
+		index = be32_to_cpu(indexes[i + 1]);
+		slot = alloc_slot_struct(dn, index, name,
+					 be32_to_cpu(power_domains[i + 1]));
 		if (!slot)
 			return -ENOMEM;
 
 		slot->type = simple_strtoul(type, NULL, 10);
-				
+
 		dbg("Found drc-index:0x%x drc-name:%s drc-type:%s\n",
-				indexes[i + 1], name, type);
+				index, name, type);
 
 		retval = rpaphp_enable_slot(slot);
 		if (!retval)
@@ -356,7 +359,7 @@ static void __exit cleanup_slots(void)
 	/*
 	 * Unregister all of our slots with the pci_hotplug subsystem,
 	 * and free up all memory that we had allocated.
-	 * memory will be freed in release_slot callback. 
+	 * memory will be freed in release_slot callback.
 	 */
 
 	list_for_each_safe(tmp, n, &rpaphp_slot_head) {
@@ -398,7 +401,9 @@ static int enable_slot(struct hotplug_slot *hotplug_slot)
 		return retval;
 
 	if (state == PRESENT) {
+		pci_lock_rescan_remove();
 		pcibios_add_pci_devices(slot->bus);
+		pci_unlock_rescan_remove();
 		slot->state = CONFIGURED;
 	} else if (state == EMPTY) {
 		slot->state = EMPTY;
@@ -418,7 +423,9 @@ static int disable_slot(struct hotplug_slot *hotplug_slot)
 	if (slot->state == NOT_CONFIGURED)
 		return -EINVAL;
 
+	pci_lock_rescan_remove();
 	pcibios_remove_pci_devices(slot->bus);
+	pci_unlock_rescan_remove();
 	vm_unmap_aliases();
 
 	slot->state = NOT_CONFIGURED;

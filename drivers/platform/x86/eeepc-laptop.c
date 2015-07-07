@@ -598,6 +598,7 @@ static void eeepc_rfkill_hotplug(struct eeepc_laptop *eeepc, acpi_handle handle)
 		rfkill_set_sw_state(eeepc->wlan_rfkill, blocked);
 
 	mutex_lock(&eeepc->hotplug_lock);
+	pci_lock_rescan_remove();
 
 	if (eeepc->hotplug_slot) {
 		port = acpi_get_pci_dev(handle);
@@ -655,6 +656,7 @@ out_put_dev:
 	}
 
 out_unlock:
+	pci_unlock_rescan_remove();
 	mutex_unlock(&eeepc->hotplug_lock);
 }
 

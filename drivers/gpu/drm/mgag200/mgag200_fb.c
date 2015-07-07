@@ -27,7 +27,7 @@ static void mga_dirty_update(struct mga_fbdev *mfbdev,
 	struct mgag200_bo *bo;
 	int src_offset, dst_offset;
 	int bpp = (mfbdev->mfb.base.bits_per_pixel + 7)/8;
-	int ret;
+	int ret = -EBUSY;
 	bool unmap = false;
 	bool store_for_later = false;
 	int x2, y2;
@@ -41,7 +41,8 @@ static void mga_dirty_update(struct mga_fbdev *mfbdev,
 	 * then the BO is being moved and we should
 	 * store up the damage until later.
 	 */
-	ret = mgag200_bo_reserve(bo, true);
+	if (drm_can_sleep())
+		ret = mgag200_bo_reserve(bo, true);
 	if (ret) {
 		if (ret != -EBUSY)
 			return;
@@ -300,7 +301,7 @@ int mgag200_fbdev_init(struct mga_device *mdev)
 	/* disable all the possible outputs/crtcs before entering KMS mode */
 	drm_helper_disable_unused_functions(mdev->dev);
 
-	drm_fb_helper_initial_config(&mfbdev->helper, 32);
+	drm_fb_helper_initial_config(&mfbdev->helper, mdev->preferred_bpp);
 
 	return 0;
 }

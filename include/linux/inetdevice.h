@@ -163,8 +163,8 @@ struct in_ifaddr {
 	__be32			ifa_mask;
 	__be32			ifa_broadcast;
 	unsigned char		ifa_scope;
-	unsigned char		ifa_flags;
 	unsigned char		ifa_prefixlen;
+	__u32			ifa_flags;
 	char			ifa_label[IFNAMSIZ];
 
 	/* In seconds, relative to tstamp. Expiry is at tstamp + HZ * lft. */
@@ -243,6 +243,13 @@ static inline struct in_device *in_dev_get(const struct net_device *dev)
 static inline struct in_device *__in_dev_get_rtnl(const struct net_device *dev)
 {
 	return rtnl_dereference(dev->ip_ptr);
+}
+
+static inline struct neigh_parms *__in_dev_arp_parms_get_rcu(const struct net_device *dev)
+{
+	struct in_device *in_dev = __in_dev_get_rcu(dev);
+
+	return in_dev ? in_dev->arp_parms : NULL;
 }
 
 extern void in_dev_finish_destroy(struct in_device *idev);

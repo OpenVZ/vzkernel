@@ -284,6 +284,12 @@ static int dasd_state_basic_to_known(struct dasd_device *device)
 {
 	int rc;
 
+	if (device->discipline->basic_to_known) {
+		rc = device->discipline->basic_to_known(device);
+		if (rc)
+			return rc;
+	}
+
 	if (device->block) {
 		dasd_profile_exit(&device->block->profile);
 		if (device->block->debugfs_dentry)
@@ -377,11 +383,6 @@ static int dasd_state_ready_to_basic(struct dasd_device *device)
 {
 	int rc;
 
-	if (device->discipline->ready_to_basic) {
-		rc = device->discipline->ready_to_basic(device);
-		if (rc)
-			return rc;
-	}
 	device->state = DASD_STATE_BASIC;
 	if (device->block) {
 		struct dasd_block *block = device->block;
@@ -1669,8 +1670,11 @@ void dasd_int_handler(struct ccw_device *cdev, unsigned long intparm,
 	if (cqr->status == DASD_CQR_CLEAR_PENDING &&
 	    scsw_fctl(&irb->scsw) & SCSW_FCTL_CLEAR_FUNC) {
 		cqr->status = DASD_CQR_CLEARED;
+		if (cqr->callback_data == DASD_SLEEPON_START_TAG)
+			cqr->callback_data = DASD_SLEEPON_END_TAG;
 		dasd_device_clear_timer(device);
 		wake_up(&dasd_flush_wq);
+		wake_up(&generic_waitq);
 		dasd_schedule_device_bh(device);
 		return;
 	}
@@ -2293,12 +2297,26 @@ retry:
 
 	rc = 0;
 	list_for_each_entry_safe(cqr, n, ccw_queue, blocklist) {
-		if (__dasd_sleep_on_erp(cqr))
-			rc = 1;
+		/*
+		 * for alias devices simplify error recovery and
+		 * return to upper layer
+		 */
+		if (cqr->startdev != cqr->basedev &&
+		    (cqr->status == DASD_CQR_TERMINATED ||
+		     cqr->status == DASD_CQR_NEED_ERP))
+			return -EAGAIN;
+		else {
+			/* normal recovery for basedev IO */
+			if (__dasd_sleep_on_erp(cqr)) {
+				if (!cqr->status == DASD_CQR_TERMINATED &&
+				    !cqr->status == DASD_CQR_NEED_ERP)
+					break;
+				rc = 1;
+			}
+		}
 	}
 	if (rc)
 		goto retry;
-
 
 	return 0;
 }
@@ -2395,6 +2413,12 @@ int dasd_sleep_on_immediatly(struct dasd_ccw_req *cqr)
 		rc = cqr->intrc;
 	else
 		rc = -EIO;
+
+	/* kick tasklets */
+	dasd_schedule_device_bh(device);
+	if (device->block)
+		dasd_schedule_block_bh(device->block);
+
 	return rc;
 }
 
@@ -2420,6 +2444,8 @@ int dasd_cancel_req(struct dasd_ccw_req *cqr)
 	case DASD_CQR_QUEUED:
 		/* request was not started - just set to cleared */
 		cqr->status = DASD_CQR_CLEARED;
+		if (cqr->callback_data == DASD_SLEEPON_START_TAG)
+			cqr->callback_data = DASD_SLEEPON_END_TAG;
 		break;
 	case DASD_CQR_IN_IO:
 		/* request in IO - terminate IO and release again */
@@ -2879,12 +2905,12 @@ static int dasd_alloc_queue(struct dasd_block *block)
 
 	elevator_exit(block->request_queue->elevator);
 	block->request_queue->elevator = NULL;
+	mutex_lock(&block->request_queue->sysfs_lock);
 	rc = elevator_init(block->request_queue, "deadline");
-	if (rc) {
+	if (rc)
 		blk_cleanup_queue(block->request_queue);
-		return rc;
-	}
-	return 0;
+	mutex_unlock(&block->request_queue->sysfs_lock);
+	return rc;
 }
 
 /*
@@ -3392,6 +3418,10 @@ int dasd_generic_path_operational(struct dasd_device *device)
 	dasd_schedule_device_bh(device);
 	if (device->block)
 		dasd_schedule_block_bh(device->block);
+
+	if (!device->stopped)
+		wake_up(&generic_waitq);
+
 	return 1;
 }
 EXPORT_SYMBOL_GPL(dasd_generic_path_operational);

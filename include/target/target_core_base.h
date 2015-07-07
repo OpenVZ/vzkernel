@@ -614,6 +614,7 @@ struct se_dev_attrib {
 	u32		unmap_granularity;
 	u32		unmap_granularity_alignment;
 	u32		max_write_same_len;
+	u32		max_bytes_per_io;
 	struct se_device *da_dev;
 	struct config_group da_group;
 };
@@ -802,11 +803,12 @@ struct se_portal_group {
 	struct target_core_fabric_ops *se_tpg_tfo;
 	struct se_wwn		*se_tpg_wwn;
 	struct config_group	tpg_group;
-	struct config_group	*tpg_default_groups[6];
+	struct config_group	*tpg_default_groups[7];
 	struct config_group	tpg_lun_group;
 	struct config_group	tpg_np_group;
 	struct config_group	tpg_acl_group;
 	struct config_group	tpg_attrib_group;
+	struct config_group	tpg_auth_group;
 	struct config_group	tpg_param_group;
 };
 

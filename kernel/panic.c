@@ -31,8 +31,9 @@ static unsigned long tainted_mask;
 static int pause_on_oops;
 static int pause_on_oops_flag;
 static DEFINE_SPINLOCK(pause_on_oops_lock);
+int panic_on_warn __read_mostly;
 
-int panic_timeout;
+int panic_timeout = CONFIG_PANIC_TIMEOUT;
 EXPORT_SYMBOL_GPL(panic_timeout);
 
 ATOMIC_NOTIFIER_HEAD(panic_notifier_list);
@@ -205,6 +206,23 @@ static const struct tnt tnts[] = {
 	{ TAINT_CRAP,			'C', ' ' },
 	{ TAINT_FIRMWARE_WORKAROUND,	'I', ' ' },
 	{ TAINT_OOT_MODULE,		'O', ' ' },
+	{ TAINT_14,			'?', '-' },
+	{ TAINT_15,			'?', '-' },
+	{ TAINT_16,			'?', '-' },
+	{ TAINT_17,			'?', '-' },
+	{ TAINT_18,			'?', '-' },
+	{ TAINT_19,			'?', '-' },
+	{ TAINT_20,			'?', '-' },
+	{ TAINT_21,			'?', '-' },
+	{ TAINT_22,			'?', '-' },
+	{ TAINT_23,			'?', '-' },
+	{ TAINT_24,			'?', '-' },
+	{ TAINT_25,			'?', '-' },
+	{ TAINT_26,			'?', '-' },
+	{ TAINT_27,			'?', '-' },
+	{ TAINT_HARDWARE_UNSUPPORTED,	'H', ' ' },
+	{ TAINT_TECH_PREVIEW,		'T', ' ' },
+
 };
 
 /**
@@ -405,6 +423,17 @@ static void warn_slowpath_common(const char *file, int line, void *caller,
 	if (args)
 		vprintk(args->fmt, args->args);
 
+	if (panic_on_warn) {
+		/*
+		 * This thread may hit another WARN() in the panic path.
+		 * Resetting this prevents additional WARN() from panicking the
+		 * system on this thread.  Other threads are blocked by the
+		 * panic_mutex in panic().
+		 */
+		panic_on_warn = 0;
+		panic("panic_on_warn set ...\n");
+	}
+
 	print_modules();
 	dump_stack();
 	print_oops_end_marker();
@@ -462,6 +491,7 @@ EXPORT_SYMBOL(__stack_chk_fail);
 
 core_param(panic, panic_timeout, int, 0644);
 core_param(pause_on_oops, pause_on_oops, int, 0644);
+core_param(panic_on_warn, panic_on_warn, int, 0644);
 
 static int __init oops_setup(char *s)
 {

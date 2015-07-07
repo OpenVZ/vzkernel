@@ -56,7 +56,7 @@ static acpi_status acpi_i2c_add_device(acpi_handle handle, u32 level,
 		return AE_OK;
 
 	memset(&info, 0, sizeof(info));
-	info.acpi_node.handle = handle;
+	info.acpi_node.companion = adev;
 	info.irq = -1;
 
 	INIT_LIST_HEAD(&resource_list);

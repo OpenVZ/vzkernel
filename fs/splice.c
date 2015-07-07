@@ -1098,6 +1098,7 @@ static long do_splice_from(struct pipe_inode_info *pipe, struct file *out,
 {
 	ssize_t (*splice_write)(struct pipe_inode_info *, struct file *,
 				loff_t *, size_t, unsigned int);
+	struct inode *inode = out->f_mapping->host;
 	int ret;
 
 	if (unlikely(!(out->f_mode & FMODE_WRITE)))
@@ -1108,6 +1109,10 @@ static long do_splice_from(struct pipe_inode_info *pipe, struct file *out,
 
 	ret = rw_verify_area(WRITE, out, ppos, len);
 	if (unlikely(ret < 0))
+		return ret;
+
+	ret = generic_write_checks(out, ppos, &len, S_ISBLK(inode->i_mode));
+	if (ret)
 		return ret;
 
 	if (out->f_op && out->f_op->splice_write)
@@ -1313,6 +1318,7 @@ long do_splice_direct(struct file *in, loff_t *ppos, struct file *out,
 
 	return ret;
 }
+EXPORT_SYMBOL(do_splice_direct);
 
 static int splice_pipe_to_pipe(struct pipe_inode_info *ipipe,
 			       struct pipe_inode_info *opipe,

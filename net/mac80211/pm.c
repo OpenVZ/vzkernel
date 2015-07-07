@@ -37,9 +37,8 @@ int __ieee80211_suspend(struct ieee80211_hw *hw, struct cfg80211_wowlan *wowlan)
 					IEEE80211_MAX_QUEUE_MAP,
 					IEEE80211_QUEUE_STOP_REASON_SUSPEND);
 
-	/* flush out all packets and station cleanup call_rcu()s */
+	/* flush out all packets */
 	synchronize_net();
-	rcu_barrier();
 
 	ieee80211_flush_queues(local, NULL);
 
@@ -99,10 +98,21 @@ int __ieee80211_suspend(struct ieee80211_hw *hw, struct cfg80211_wowlan *wowlan)
 	}
 	mutex_unlock(&local->sta_mtx);
 
-	/* remove all interfaces */
+	/* remove all interfaces that were created in the driver */
 	list_for_each_entry(sdata, &local->interfaces, list) {
 		if (!ieee80211_sdata_running(sdata))
 			continue;
+		switch (sdata->vif.type) {
+		case NL80211_IFTYPE_AP_VLAN:
+		case NL80211_IFTYPE_MONITOR:
+			continue;
+		case NL80211_IFTYPE_STATION:
+			ieee80211_mgd_quiesce(sdata);
+			break;
+		default:
+			break;
+		}
+
 		drv_remove_interface(local, sdata);
 	}
 

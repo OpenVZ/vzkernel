@@ -115,6 +115,8 @@ struct fuse_inode {
 enum {
 	/** Advise readdirplus  */
 	FUSE_I_ADVISE_RDPLUS,
+	/** An operation changing file size is in progress  */
+	FUSE_I_SIZE_UNSTABLE,
 };
 
 struct fuse_conn;
@@ -531,6 +533,9 @@ struct fuse_conn {
 
 	/** Is fallocate not implemented by fs? */
 	unsigned no_fallocate:1;
+
+	/** Is rename with flags implemented by fs? */
+	unsigned no_rename2:1;
 
 	/** Use enhanced/automatic page cache invalidation. */
 	unsigned auto_inval_data:1;

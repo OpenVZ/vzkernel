@@ -136,7 +136,12 @@ static int __xfrm6_output(struct sk_buff *skb)
 {
 	struct dst_entry *dst = skb_dst(skb);
 	struct xfrm_state *x = dst->xfrm;
-	int mtu = ip6_skb_dst_mtu(skb);
+	int mtu;
+
+	if (skb->protocol == htons(ETH_P_IPV6))
+		mtu = ip6_skb_dst_mtu(skb);
+	else
+		mtu = dst_mtu(skb_dst(skb));
 
 	if (skb->len > mtu && xfrm6_local_dontfrag(skb)) {
 		xfrm6_local_rxpmtu(skb, mtu);
@@ -154,7 +159,7 @@ static int __xfrm6_output(struct sk_buff *skb)
 	return x->outer_mode->afinfo->output_finish(skb);
 }
 
-int xfrm6_output(struct sk_buff *skb)
+int xfrm6_output(struct sock *sk, struct sk_buff *skb)
 {
 	return NF_HOOK(NFPROTO_IPV6, NF_INET_POST_ROUTING, skb, NULL,
 		       skb_dst(skb)->dev, __xfrm6_output);

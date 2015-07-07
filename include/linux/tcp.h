@@ -24,6 +24,7 @@
 #include <net/inet_connection_sock.h>
 #include <net/inet_timewait_sock.h>
 #include <uapi/linux/tcp.h>
+#include <linux/rh_kabi.h>
 
 static inline struct tcphdr *tcp_hdr(const struct sk_buff *skb)
 {
@@ -170,12 +171,11 @@ struct tcp_sock {
 		struct iovec		*iov;
 		int			memory;
 		int			len;
-#ifdef CONFIG_NET_DMA
-		/* members for async copy */
-		struct dma_chan		*dma_chan;
-		int			wakeup;
-		struct dma_pinned_list	*pinned_list;
-		dma_cookie_t		dma_cookie;
+#ifdef CONFIG_NET_DMA_RH_KABI
+		RH_KABI_DEPRECATE(struct dma_chan *,		dma_chan)
+		RH_KABI_DEPRECATE(int,				wakeup)
+		RH_KABI_DEPRECATE(struct dma_pinned_list *,	pinned_list)
+		RH_KABI_DEPRECATE(dma_cookie_t,			dma_cookie)
 #endif
 	} ucopy;
 

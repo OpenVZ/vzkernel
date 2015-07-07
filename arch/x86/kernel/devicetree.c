@@ -26,16 +26,6 @@ char __initdata cmd_line[COMMAND_LINE_SIZE];
 
 int __initdata of_ioapic;
 
-unsigned long pci_address_to_pio(phys_addr_t address)
-{
-	/*
-	 * The ioport address can be directly used by inX / outX
-	 */
-	BUG_ON(address >= (1 << 16));
-	return (unsigned long)address;
-}
-EXPORT_SYMBOL_GPL(pci_address_to_pio);
-
 void __init early_init_dt_scan_chosen_arch(unsigned long node)
 {
 	BUG();
@@ -133,7 +123,7 @@ static void x86_of_pci_irq_disable(struct pci_dev *dev)
 {
 }
 
-void __cpuinit x86_of_pci_init(void)
+void x86_of_pci_init(void)
 {
 	pcibios_enable_irq = x86_of_pci_irq_enable;
 	pcibios_disable_irq = x86_of_pci_irq_disable;

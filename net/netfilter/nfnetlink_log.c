@@ -419,6 +419,7 @@ __build_packet_message(struct nfnl_log_net *log,
 	nfmsg->version = NFNETLINK_V0;
 	nfmsg->res_id = htons(inst->group_num);
 
+	memset(&pmsg, 0, sizeof(pmsg));
 	pmsg.hw_protocol	= skb->protocol;
 	pmsg.hook		= hooknum;
 
@@ -498,7 +499,10 @@ __build_packet_message(struct nfnl_log_net *log,
 	if (indev && skb->dev &&
 	    skb->mac_header != skb->network_header) {
 		struct nfulnl_msg_packet_hw phw;
-		int len = dev_parse_header(skb, phw.hw_addr);
+		int len;
+
+		memset(&phw, 0, sizeof(phw));
+		len = dev_parse_header(skb, phw.hw_addr);
 		if (len > 0) {
 			phw.hw_addrlen = htons(len);
 			if (nla_put(inst->skb, NFULA_HWADDR, sizeof(phw), &phw))
@@ -771,6 +775,7 @@ nfulnl_recv_unsupp(struct sock *ctnl, struct sk_buff *skb,
 
 static struct nf_logger nfulnl_logger __read_mostly = {
 	.name	= "nfnetlink_log",
+	.type	= NF_LOG_TYPE_ULOG,
 	.logfn	= &nfulnl_log_packet,
 	.me	= THIS_MODULE,
 };
@@ -1107,6 +1112,9 @@ MODULE_DESCRIPTION("netfilter userspace logging");
 MODULE_AUTHOR("Harald Welte <laforge@netfilter.org>");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS_NFNL_SUBSYS(NFNL_SUBSYS_ULOG);
+MODULE_ALIAS_NF_LOGGER(AF_INET, 1);
+MODULE_ALIAS_NF_LOGGER(AF_INET6, 1);
+MODULE_ALIAS_NF_LOGGER(AF_BRIDGE, 1);
 
 module_init(nfnetlink_log_init);
 module_exit(nfnetlink_log_fini);
