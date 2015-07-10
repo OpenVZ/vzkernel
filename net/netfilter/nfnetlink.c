@@ -368,6 +368,7 @@ done:
 static void nfnetlink_rcv(struct sk_buff *skb)
 {
 	struct nlmsghdr *nlh = nlmsg_hdr(skb);
+	struct net *net = sock_net(skb->sk);
 	int msglen;
 
 	if (nlh->nlmsg_len < NLMSG_HDRLEN ||
@@ -376,6 +377,12 @@ static void nfnetlink_rcv(struct sk_buff *skb)
 
 	if (!netlink_net_capable(skb, CAP_NET_ADMIN) &&
 	    !netlink_net_capable(skb, CAP_VE_NET_ADMIN)) {
+		netlink_ack(skb, nlh, -EPERM);
+		return;
+	}
+
+	if (net->owner_ve != get_ve0() &&
+		NFNL_SUBSYS_ID(nlh->nlmsg_type) == NFNL_SUBSYS_IPSET) {
 		netlink_ack(skb, nlh, -EPERM);
 		return;
 	}
