@@ -423,8 +423,9 @@ static ssize_t ceph_sync_read(struct kiocb *iocb, struct iov_iter *i,
 
 	if (file->f_flags & O_DIRECT) {
 		while (iov_iter_count(i)) {
-			void __user *data = i->iov[0].iov_base + i->iov_offset;
-			size_t len = i->iov[0].iov_len - i->iov_offset;
+			struct iovec *iov = (struct iovec *)i->data;
+			void __user *data = iov->iov_base + i->iov_offset;
+			size_t len = iov->iov_len - i->iov_offset;
 
 			num_pages = calc_pages_for((unsigned long)data, len);
 			pages = ceph_get_direct_page_vector(data,
@@ -456,10 +457,10 @@ static ssize_t ceph_sync_read(struct kiocb *iocb, struct iov_iter *i,
 			size_t left = len = ret;
 
 			while (left) {
-				void __user *data = i->iov[0].iov_base
+				struct iovec *iov = (struct iovec *)i->data;
+				void __user *data = iov->iov_base
 							+ i->iov_offset;
-				l = min(i->iov[0].iov_len - i->iov_offset,
-					left);
+				l = min(iov->iov_len - i->iov_offset, left);
 
 				ret = ceph_copy_page_vector_to_user(&pages[k],
 								    data, off,
@@ -572,8 +573,9 @@ ceph_sync_direct_write(struct kiocb *iocb, const struct iovec *iov,
 	iov_iter_init(&i, iov, nr_segs, count, 0);
 
 	while (iov_iter_count(&i) > 0) {
-		void __user *data = i.iov->iov_base + i.iov_offset;
-		u64 len = i.iov->iov_len - i.iov_offset;
+		struct iovec *iov = (struct iovec *)i.data;
+		void __user *data = iov->iov_base + i.iov_offset;
+		u64 len = iov->iov_len - i.iov_offset;
 
 		page_align = (unsigned long)data & ~PAGE_MASK;
 
