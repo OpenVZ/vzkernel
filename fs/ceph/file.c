@@ -421,6 +421,8 @@ static ssize_t ceph_sync_read(struct kiocb *iocb, struct iov_iter *i,
 	if (ret < 0)
 		return ret;
 
+	BUG_ON(!iov_iter_has_iovec(i));
+
 	if (file->f_flags & O_DIRECT) {
 		while (iov_iter_count(i)) {
 			struct iovec *iov = (struct iovec *)i->data;
