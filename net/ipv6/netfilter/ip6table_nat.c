@@ -115,6 +115,10 @@ static int __net_init ip6table_nat_net_init(struct net *net)
 {
 	struct ip6t_replace *repl;
 
+	if (!net_ipt_permitted(net, VE_IP_IPTABLE_NAT) ||
+	    !net_ipt_permitted(net, VE_IP_IPTABLES6))
+		return 0;
+
 	repl = ip6t_alloc_initial_table(&nf_nat_ipv6_table);
 	if (repl == NULL)
 		return -ENOMEM;
@@ -125,7 +129,11 @@ static int __net_init ip6table_nat_net_init(struct net *net)
 
 static void __net_exit ip6table_nat_net_exit(struct net *net)
 {
+	if (!net->ipv6.ip6table_nat)
+		return;
+
 	ip6t_unregister_table(net, net->ipv6.ip6table_nat);
+	net->ipv6.ip6table_nat = NULL;
 }
 
 static struct pernet_operations ip6table_nat_net_ops = {
