@@ -854,9 +854,6 @@ static int show_partition(struct seq_file *seqf, void *v)
 	struct hd_struct *part;
 	char buf[BDEVNAME_SIZE];
 
-	if (!ve_is_super(get_exec_env()))
-		return 0;
-
 	/* Don't show non-partitionable removeable devices or empty devices */
 	if (!get_capacity(sgp) || (!disk_max_parts(sgp) &&
 				   (sgp->flags & GENHD_FL_REMOVABLE)))
@@ -866,11 +863,15 @@ static int show_partition(struct seq_file *seqf, void *v)
 
 	/* show the full disk and all non-0 size partitions of it */
 	disk_part_iter_init(&piter, sgp, DISK_PITER_INCL_PART0);
-	while ((part = disk_part_iter_next(&piter)))
-		seq_printf(seqf, "%4d  %7d %10llu %s\n",
-			   MAJOR(part_devt(part)), MINOR(part_devt(part)),
+	while ((part = disk_part_iter_next(&piter))) {
+		unsigned int major = MAJOR(part_devt(part));
+		unsigned int minor = MINOR(part_devt(part));
+
+		if (devcgroup_device_visible(S_IFBLK, major, minor, 1))
+			seq_printf(seqf, "%4d  %7d %10llu %s\n", major, minor,
 			   (unsigned long long)part_nr_sects_read(part) >> 1,
 			   disk_name(sgp, part->partno, buf));
+	}
 	disk_part_iter_exit(&piter);
 
 	return 0;
