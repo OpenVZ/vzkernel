@@ -1027,7 +1027,20 @@ out:
 	return nr_shrunk;
 }
 
-static int ext4_es_shrink(struct shrinker *shrink, struct shrink_control *sc)
+static unsigned long ext4_es_count(struct shrinker *shrink,
+				   struct shrink_control *sc)
+{
+	unsigned long nr;
+	struct ext4_sb_info *sbi;
+
+	sbi = container_of(shrink, struct ext4_sb_info, s_es_shrinker);
+	nr = percpu_counter_read_positive(&sbi->s_extent_cache_cnt);
+	trace_ext4_es_shrink_enter(sbi->s_sb, sc->nr_to_scan, nr);
+	return nr;
+}
+
+static unsigned long ext4_es_scan(struct shrinker *shrink,
+				  struct shrink_control *sc)
 {
 	struct ext4_sb_info *sbi = container_of(shrink,
 					struct ext4_sb_info, s_es_shrinker);
@@ -1042,9 +1055,8 @@ static int ext4_es_shrink(struct shrinker *shrink, struct shrink_control *sc)
 
 	nr_shrunk = __es_shrink(sbi, nr_to_scan, NULL);
 
-	ret = percpu_counter_read_positive(&sbi->s_extent_cache_cnt);
 	trace_ext4_es_shrink_exit(sbi->s_sb, nr_shrunk, ret);
-	return ret;
+	return nr_shrunk;
 }
 
 void ext4_es_register_shrinker(struct ext4_sb_info *sbi)
@@ -1054,7 +1066,8 @@ void ext4_es_register_shrinker(struct ext4_sb_info *sbi)
 	INIT_LIST_HEAD(&sbi->s_es_list);
 	sbi->s_es_nr_inode = 0;
 	spin_lock_init(&sbi->s_es_lock);
-	sbi->s_es_shrinker.shrink = ext4_es_shrink;
+	sbi->s_es_shrinker.scan_objects = ext4_es_scan;
+	sbi->s_es_shrinker.count_objects = ext4_es_count;
 	sbi->s_es_shrinker.seeks = DEFAULT_SEEKS;
 	register_shrinker(&sbi->s_es_shrinker);
 }
