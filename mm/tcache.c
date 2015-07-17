@@ -780,7 +780,7 @@ static struct page *tcache_alloc_page(void)
 {
 	struct page *page;
 
-	page = alloc_page(TCACHE_GFP_MASK);
+	page = alloc_page(TCACHE_GFP_MASK | __GFP_HIGHMEM);
 	if (!page)
 		page = tcache_try_to_reclaim_page();
 
