@@ -834,25 +834,23 @@ static void tcache_cleancache_put_page(int pool_id,
 				       pgoff_t index, struct page *page)
 {
 	struct tcache_node *node;
-	struct page *cache_page;
-
-	if (!tcache_active)
-		return;
-
-	cache_page = tcache_alloc_page();
-	if (!cache_page)
-		return;
-
-	copy_highpage(cache_page, page);
+	struct page *cache_page = NULL;
 
 	node = tcache_get_node_and_pool(pool_id, &key, true);
 	if (node) {
-		/* cleancache does not care about failures */
-		(void)tcache_attach_page(node, index, cache_page);
+		if (tcache_active)
+			cache_page = tcache_alloc_page();
+		if (cache_page) {
+			copy_highpage(cache_page, page);
+			/* cleancache does not care about failures */
+			(void)tcache_attach_page(node, index, cache_page);
+		} else
+			cache_page = tcache_detach_page(node, index);
 		tcache_put_node_and_pool(node);
 	}
 
-	put_page(cache_page);
+	if (cache_page)
+		put_page(cache_page);
 }
 
 static int tcache_cleancache_get_page(int pool_id,
