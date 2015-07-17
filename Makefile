@@ -6,7 +6,7 @@ NAME = Unicycling Gorilla
 RHEL_MAJOR = 7
 RHEL_MINOR = 0
 RHEL_RELEASE = 123.1.2
-# VZVERSION = ovz.5.25
+# VZVERSION = ovz.5.26
 VZVERSION = ovz.custom
 
 ifeq ($(VZVERSION), ovz.custom)
