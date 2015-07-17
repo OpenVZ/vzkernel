@@ -371,6 +371,10 @@ out:
  *
  * XXX: (dchinner) Deadlock warning!
  *
+ * ttm_page_pool_free() does memory allocation using GFP_KERNEL.  that means
+ * this can deadlock when called a sc->gfp_mask that is not equal to
+ * GFP_KERNEL.
+ *
  * This code is crying out for a shrinker per pool....
  */
 static unsigned long
