@@ -838,7 +838,7 @@ static void tcache_cleancache_put_page(int pool_id,
 
 	node = tcache_get_node_and_pool(pool_id, &key, true);
 	if (node) {
-		if (tcache_active)
+		if (tcache_active && !(current->flags & PF_MEMALLOC))
 			cache_page = tcache_alloc_page();
 		if (cache_page) {
 			copy_highpage(cache_page, page);
