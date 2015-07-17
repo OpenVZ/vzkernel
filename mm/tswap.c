@@ -14,6 +14,8 @@
 #include <linux/shrinker.h>
 #include <linux/frontswap.h>
 
+#define TSWAP_GFP_MASK		(GFP_NOIO | __GFP_NORETRY | __GFP_NOWARN)
+
 static RADIX_TREE(tswap_page_tree, GFP_ATOMIC | __GFP_NOWARN);
 static DEFINE_SPINLOCK(tswap_lock);
 
@@ -67,6 +69,10 @@ static int tswap_insert_page(swp_entry_t entry, struct page *page)
 {
 	int err;
 
+	err = radix_tree_preload(TSWAP_GFP_MASK);
+	if (err)
+		return err;
+
 	set_page_private(page, entry.val);
 	spin_lock(&tswap_lock);
 	err = radix_tree_insert(&tswap_page_tree, entry.val, page);
@@ -75,6 +81,8 @@ static int tswap_insert_page(swp_entry_t entry, struct page *page)
 		tswap_nr_pages++;
 	}
 	spin_unlock(&tswap_lock);
+
+	radix_tree_preload_end();
 	return err;
 }
 
@@ -268,8 +276,10 @@ static int tswap_frontswap_store(unsigned type, pgoff_t offset,
 	if (cache_page)
 		goto copy;
 
-	cache_page = alloc_page(__GFP_HIGHMEM | __GFP_NORETRY |
-				__GFP_NOMEMALLOC | __GFP_NOWARN);
+	if (current->flags & PF_MEMALLOC)
+		return -1;
+
+	cache_page = alloc_page(TSWAP_GFP_MASK | __GFP_HIGHMEM);
 	if (!cache_page)
 		return -1;
 
