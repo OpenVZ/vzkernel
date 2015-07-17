@@ -1801,7 +1801,7 @@ out_power_well:
 	drm_vblank_cleanup(dev);
 out_gem_unload:
 	WARN_ON(unregister_oom_notifier(&dev_priv->mm.oom_notifier));
-	if (dev_priv->mm.inactive_shrinker.shrink)
+	if (dev_priv->mm.inactive_shrinker.scan_objects)
 		unregister_shrinker(&dev_priv->mm.inactive_shrinker);
 
 	if (dev->pdev->msi_enabled)
@@ -1854,7 +1854,7 @@ int i915_driver_unload(struct drm_device *dev)
 	i915_teardown_sysfs(dev);
 
 	WARN_ON(unregister_oom_notifier(&dev_priv->mm.oom_notifier));
-	if (dev_priv->mm.inactive_shrinker.shrink)
+	if (dev_priv->mm.inactive_shrinker.scan_objects)
 		unregister_shrinker(&dev_priv->mm.inactive_shrinker);
 
 	io_mapping_free(dev_priv->gtt.mappable);

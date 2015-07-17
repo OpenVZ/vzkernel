@@ -383,22 +383,19 @@ out:
 	return nr_free;
 }
 
-/* Get good estimation how many pages are free in pools */
-static int ttm_pool_get_num_unused_pages(void)
-{
-	unsigned i;
-	int total = 0;
-	for (i = 0; i < NUM_POOLS; ++i)
-		total += _manager->pools[i].npages;
-
-	return total;
-}
-
 /**
  * Callback for mm to request pool to reduce number of page held.
+ *
+ * XXX: (dchinner) Deadlock warning!
+ *
+ * ttm_page_pool_free() does memory allocation using GFP_KERNEL.  that means
+ * this can deadlock when called a sc->gfp_mask that is not equal to
+ * GFP_KERNEL.
+ *
+ * This code is crying out for a shrinker per pool....
  */
-static int ttm_pool_mm_shrink(struct shrinker *shrink,
-			      struct shrink_control *sc)
+static unsigned long
+ttm_pool_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 {
 	static DEFINE_MUTEX(lock);
 	static unsigned start_pool;
@@ -406,6 +403,7 @@ static int ttm_pool_mm_shrink(struct shrinker *shrink,
 	unsigned pool_offset;
 	struct ttm_page_pool *pool;
 	int shrink_pages = sc->nr_to_scan;
+	unsigned long freed = 0;
 
 	if (!mutex_trylock(&lock))
 		return 0;
@@ -417,15 +415,29 @@ static int ttm_pool_mm_shrink(struct shrinker *shrink,
 			break;
 		pool = &_manager->pools[(i + pool_offset)%NUM_POOLS];
 		shrink_pages = ttm_page_pool_free(pool, nr_free, true);
+		freed += nr_free - shrink_pages;
 	}
 	mutex_unlock(&lock);
-	/* return estimated number of unused pages in pool */
-	return ttm_pool_get_num_unused_pages();
+	return freed;
+}
+
+
+static unsigned long
+ttm_pool_shrink_count(struct shrinker *shrink, struct shrink_control *sc)
+{
+	unsigned i;
+	unsigned long count = 0;
+
+	for (i = 0; i < NUM_POOLS; ++i)
+		count += _manager->pools[i].npages;
+
+	return count;
 }
 
 static void ttm_pool_mm_shrink_init(struct ttm_pool_manager *manager)
 {
-	manager->mm_shrink.shrink = &ttm_pool_mm_shrink;
+	manager->mm_shrink.count_objects = ttm_pool_shrink_count;
+	manager->mm_shrink.scan_objects = ttm_pool_shrink_scan;
 	manager->mm_shrink.seeks = 1;
 	register_shrinker(&manager->mm_shrink);
 }

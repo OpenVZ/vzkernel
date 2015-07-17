@@ -53,8 +53,10 @@ static void i915_gem_object_update_fence(struct drm_i915_gem_object *obj,
 					 struct drm_i915_fence_reg *fence,
 					 bool enable);
 
-static int i915_gem_inactive_shrink(struct shrinker *shrinker,
-				    struct shrink_control *sc);
+static unsigned long i915_gem_inactive_count(struct shrinker *shrinker,
+					     struct shrink_control *sc);
+static unsigned long i915_gem_inactive_scan(struct shrinker *shrinker,
+					    struct shrink_control *sc);
 static int i915_gem_shrinker_oom(struct notifier_block *nb,
 				 unsigned long event,
 				 void *ptr);
@@ -4927,7 +4929,8 @@ i915_gem_load(struct drm_device *dev)
 
 	dev_priv->mm.interruptible = true;
 
-	dev_priv->mm.inactive_shrinker.shrink = i915_gem_inactive_shrink;
+	dev_priv->mm.inactive_shrinker.scan_objects = i915_gem_inactive_scan;
+	dev_priv->mm.inactive_shrinker.count_objects = i915_gem_inactive_count;
 	dev_priv->mm.inactive_shrinker.seeks = DEFAULT_SEEKS;
 	register_shrinker(&dev_priv->mm.inactive_shrinker);
 
@@ -5023,8 +5026,8 @@ static bool i915_gem_shrinker_lock(struct drm_device *dev, bool *unlock)
 	return true;
 }
 
-static int
-i915_gem_inactive_shrink(struct shrinker *shrinker, struct shrink_control *sc)
+static unsigned long
+i915_gem_inactive_count(struct shrinker *shrinker, struct shrink_control *sc)
 {
 	struct drm_i915_private *dev_priv =
 		container_of(shrinker,
@@ -5032,38 +5035,28 @@ i915_gem_inactive_shrink(struct shrinker *shrinker, struct shrink_control *sc)
 			     mm.inactive_shrinker);
 	struct drm_device *dev = dev_priv->dev;
 	struct drm_i915_gem_object *obj;
-	int nr_to_scan = sc->nr_to_scan;
 	bool unlock = true;
-	int cnt;
+	unsigned long count;
 
 	if (!i915_gem_shrinker_lock(dev, &unlock))
 		return 0;
 
-	if (nr_to_scan) {
-		nr_to_scan -= i915_gem_purge(dev_priv, nr_to_scan);
-		if (nr_to_scan > 0)
-			nr_to_scan -= __i915_gem_shrink(dev_priv, nr_to_scan,
-							false);
-		if (nr_to_scan > 0)
-			i915_gem_shrink_all(dev_priv);
-	}
-
-	cnt = 0;
+	count = 0;
 	list_for_each_entry(obj, &dev_priv->mm.unbound_list, global_list)
 		if (obj->pages_pin_count == 0)
-			cnt += obj->base.size >> PAGE_SHIFT;
+			count += obj->base.size >> PAGE_SHIFT;
 
 	list_for_each_entry(obj, &dev_priv->mm.bound_list, global_list) {
 		if (obj->active)
 			continue;
 
 		if (!i915_gem_obj_is_pinned(obj) && obj->pages_pin_count == 0)
-			cnt += obj->base.size >> PAGE_SHIFT;
+			count += obj->base.size >> PAGE_SHIFT;
 	}
 
 	if (unlock)
 		mutex_unlock(&dev->struct_mutex);
-	return cnt;
+	return count;
 }
 
 /* All the new VM stuff */
@@ -5126,6 +5119,33 @@ unsigned long i915_gem_obj_size(struct drm_i915_gem_object *o,
 			return vma->node.size;
 
 	return 0;
+}
+
+static unsigned long
+i915_gem_inactive_scan(struct shrinker *shrinker, struct shrink_control *sc)
+{
+	struct drm_i915_private *dev_priv =
+		container_of(shrinker,
+			     struct drm_i915_private,
+			     mm.inactive_shrinker);
+	struct drm_device *dev = dev_priv->dev;
+	int nr_to_scan = sc->nr_to_scan;
+	unsigned long freed;
+	bool unlock = true;
+
+	if (!i915_gem_shrinker_lock(dev, &unlock))
+		return 0;
+
+	freed = i915_gem_purge(dev_priv, nr_to_scan);
+	if (freed < nr_to_scan)
+		freed += __i915_gem_shrink(dev_priv, nr_to_scan,
+							false);
+	if (freed < nr_to_scan)
+		freed += i915_gem_shrink_all(dev_priv);
+
+	if (unlock)
+		mutex_unlock(&dev->struct_mutex);
+	return freed;
 }
 
 static int

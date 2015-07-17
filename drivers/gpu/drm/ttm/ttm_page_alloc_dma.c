@@ -926,19 +926,6 @@ int ttm_dma_populate(struct ttm_dma_tt *ttm_dma, struct device *dev)
 }
 EXPORT_SYMBOL_GPL(ttm_dma_populate);
 
-/* Get good estimation how many pages are free in pools */
-static int ttm_dma_pool_get_num_unused_pages(void)
-{
-	struct device_pools *p;
-	unsigned total = 0;
-
-	mutex_lock(&_manager->lock);
-	list_for_each_entry(p, &_manager->pools, pools)
-		total += p->pool->npages_free;
-	mutex_unlock(&_manager->lock);
-	return total;
-}
-
 /* Put all pages in pages list to correct pool to wait for reuse */
 void ttm_dma_unpopulate(struct ttm_dma_tt *ttm_dma, struct device *dev)
 {
@@ -1010,18 +997,29 @@ EXPORT_SYMBOL_GPL(ttm_dma_unpopulate);
 
 /**
  * Callback for mm to request pool to reduce number of page held.
+ *
+ * XXX: (dchinner) Deadlock warning!
+ *
+ * ttm_dma_page_pool_free() does GFP_KERNEL memory allocation, and so attention
+ * needs to be paid to sc->gfp_mask to determine if this can be done or not.
+ * GFP_KERNEL memory allocation in a GFP_ATOMIC reclaim context woul dbe really
+ * bad.
+ *
+ * I'm getting sadder as I hear more pathetical whimpers about needing per-pool
+ * shrinkers
  */
-static int ttm_dma_pool_mm_shrink(struct shrinker *shrink,
-				  struct shrink_control *sc)
+static unsigned long
+ttm_dma_pool_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 {
 	static unsigned start_pool;
 	unsigned idx = 0;
 	unsigned pool_offset;
 	unsigned shrink_pages = sc->nr_to_scan;
 	struct device_pools *p;
+	unsigned long freed = 0;
 
 	if (list_empty(&_manager->pools))
-		return 0;
+		return SHRINK_STOP;
 
 	if (!mutex_trylock(&_manager->lock))
 		return 0;
@@ -1040,19 +1038,34 @@ static int ttm_dma_pool_mm_shrink(struct shrinker *shrink,
 			continue;
 		nr_free = shrink_pages;
 		shrink_pages = ttm_dma_page_pool_free(p->pool, nr_free, true);
+		freed += nr_free - shrink_pages;
+
 		pr_debug("%s: (%s:%d) Asked to shrink %d, have %d more to go\n",
 			 p->pool->dev_name, p->pool->name, current->pid,
 			 nr_free, shrink_pages);
 	}
 out:
 	mutex_unlock(&_manager->lock);
-	/* return estimated number of unused pages in pool */
-	return ttm_dma_pool_get_num_unused_pages();
+	return freed;
+}
+
+static unsigned long
+ttm_dma_pool_shrink_count(struct shrinker *shrink, struct shrink_control *sc)
+{
+	struct device_pools *p;
+	unsigned long count = 0;
+
+	mutex_lock(&_manager->lock);
+	list_for_each_entry(p, &_manager->pools, pools)
+		count += p->pool->npages_free;
+	mutex_unlock(&_manager->lock);
+	return count;
 }
 
 static void ttm_dma_pool_mm_shrink_init(struct ttm_pool_manager *manager)
 {
-	manager->mm_shrink.shrink = &ttm_dma_pool_mm_shrink;
+	manager->mm_shrink.count_objects = ttm_dma_pool_shrink_count;
+	manager->mm_shrink.scan_objects = &ttm_dma_pool_shrink_scan;
 	manager->mm_shrink.seeks = 1;
 	register_shrinker(&manager->mm_shrink);
 }
