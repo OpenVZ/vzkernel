@@ -64,11 +64,14 @@ static unsigned int		longest_chain_cachesize;
 
 static int	nfsd_cache_append(struct svc_rqst *rqstp, struct kvec *vec);
 static void	cache_cleaner_func(struct work_struct *unused);
-static int 	nfsd_reply_cache_shrink(struct shrinker *shrink,
-					struct shrink_control *sc);
+static unsigned long nfsd_reply_cache_count(struct shrinker *shrink,
+					    struct shrink_control *sc);
+static unsigned long nfsd_reply_cache_scan(struct shrinker *shrink,
+					   struct shrink_control *sc);
 
 static struct shrinker nfsd_reply_cache_shrinker = {
-	.shrink	= nfsd_reply_cache_shrink,
+	.scan_objects = nfsd_reply_cache_scan,
+	.count_objects = nfsd_reply_cache_count,
 	.seeks	= 1,
 };
 
@@ -243,6 +246,7 @@ prune_bucket(struct nfsd_drc_bucket *b)
 		    time_before(jiffies, rp->c_timestamp + RC_EXPIRE))
 			break;
 		nfsd_reply_cache_free_locked(rp);
+		freed++;
 	}
 	return freed;
 }
@@ -285,12 +289,17 @@ cache_cleaner_func(struct work_struct *unused)
 	prune_cache_entries();
 }
 
-static int
-nfsd_reply_cache_shrink(struct shrinker *shrink, struct shrink_control *sc)
+static unsigned long
+nfsd_reply_cache_count(struct shrinker *shrink, struct shrink_control *sc)
 {
 	return atomic_read(&num_drc_entries);
 }
 
+static unsigned long
+nfsd_reply_cache_scan(struct shrinker *shrink, struct shrink_control *sc)
+{
+	return prune_cache_entries();
+}
 /*
  * Walk an xdr_buf and get a CRC for at most the first RC_CSUMLEN bytes
  */
