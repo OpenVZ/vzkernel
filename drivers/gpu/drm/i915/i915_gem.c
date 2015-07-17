@@ -5039,7 +5039,7 @@ i915_gem_inactive_count(struct shrinker *shrinker, struct shrink_control *sc)
 	unsigned long count;
 
 	if (!i915_gem_shrinker_lock(dev, &unlock))
-		return 0;
+		return SHRINK_STOP;
 
 	count = 0;
 	list_for_each_entry(obj, &dev_priv->mm.unbound_list, global_list)
