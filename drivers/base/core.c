@@ -1870,19 +1870,29 @@ void device_destroy(struct class *class, dev_t devt)
 }
 EXPORT_SYMBOL_GPL(device_destroy);
 
+struct __match_devt_ns_arg {
+	dev_t	devt;
+	void	*ns;
+};
+
+static int __match_devt_ns(struct device *dev, const void *data)
+{
+	const struct __match_devt_ns_arg *arg = data;
+
+	return dev->devt == arg->devt &&
+		(!dev->class->namespace ||
+		 dev->class->namespace(dev) == arg->ns);
+}
+
 void device_destroy_namespace(struct class *class, dev_t devt, void *ns)
 {
-	struct device *dev = NULL;
+	struct __match_devt_ns_arg arg = {
+		.devt	= devt,
+		.ns	= ns,
+	};
+	struct device *dev;
 
-	for (;;) {
-		dev = class_find_device(class, dev, &devt, __match_devt);
-		if (!dev)
-			break;
-		if (!class->namespace ||
-		    (class->namespace(dev) == ns))
-			break;
-	}
-
+	dev = class_find_device(class, NULL, &arg, __match_devt_ns);
 	if (dev) {
 		put_device(dev);
 		device_unregister(dev);
