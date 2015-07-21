@@ -136,148 +136,27 @@ static struct nf_hook_ops venet_acct_out_ops = {
 	.priority	= NF_IP_PRI_LAST,
 };
 
-int init_venet_acct_ip_stat(struct ve_struct *env, struct venet_stat *stat)
-{
-	if (env->stat) {
-		WARN(1, "ve_struct->stat is not NULL, but should be.\n");
-		return -EEXIST;
-	}
-
-	env->stat = stat;
-	venet_acct_get_stat(stat);
-
-	return 0;
-}
-EXPORT_SYMBOL(init_venet_acct_ip_stat);
-
-void fini_venet_acct_ip_stat(struct ve_struct *env)
-{
-	if (env->stat) {
-		venet_acct_put_stat(env->stat);
-		env->stat = NULL;
-	}
-}
-EXPORT_SYMBOL(fini_venet_acct_ip_stat);
-
-static int venet_acct_register_ip_hooks(void)
+int __init ip_venetstat_init(void)
 {
 	int ret;
 
-	 /* Register hooks */
 	ret = nf_register_hook(&venet_acct_in_ops);
 	if (ret < 0)
-		goto out_free_stat;
+		return ret;
 
 	ret = nf_register_hook(&venet_acct_out_ops);
-	if (ret < 0)
-		goto out_err_out_hook;
-
-	return 0;
-
-out_err_out_hook:
-	nf_unregister_hook(&venet_acct_in_ops);
-out_free_stat:
-	return ret;
-}
-
-static void venet_acct_unregister_ip_hooks(void)
-{
-	nf_unregister_hook(&venet_acct_out_ops);
-	nf_unregister_hook(&venet_acct_in_ops);
-}
-
-/* For ip6_vznetstat dependency */
-void ip_vznetstat_touch(void)
-{
-}
-EXPORT_SYMBOL(ip_vznetstat_touch);
-
-static int init_venet_acct_ip_stat_hook(void *data)
-{
-	struct ve_struct *ve = (struct ve_struct *)data;
-	struct venet_stat *stat;
-
-	if (!ve->stat) {
-		stat = venet_acct_find_create_stat(ve->veid);
-		if (!stat)
-			return -ENOMEM;
-		init_venet_acct_ip_stat(ve, stat);
-	} else
-		venet_acct_get_stat(ve->stat);
-
-	__module_get(THIS_MODULE);
-	return 0;
-}
-
-static void fini_venet_acct_ip_stat_hook(void *data)
-{
-	struct ve_struct *ve = (struct ve_struct *)data;
-
-	/* module was load after VE ? */
-	if (!ve->stat)
-		return;
-
-	venet_acct_put_stat(ve->stat);
-	module_put(THIS_MODULE);
-}
-
-static struct ve_hook venet_acct_ip_stat_hook = {
-	.init		= init_venet_acct_ip_stat_hook,
-	.fini		= fini_venet_acct_ip_stat_hook,
-	.priority	= HOOK_PRIO_NET_ACCT,
-	.owner		= THIS_MODULE,
-};
-
-/*
- * ---------------------------------------------------------------------------
- * Initialization
- * ---------------------------------------------------------------------------
- */
-
-int __init ip_venetstat_init(void)
-{
-	struct ve_struct *ve;
-	int ret = -ENOMEM;
-
-	mutex_lock(&ve_list_lock);
-	for_each_ve(ve) {
-		BUG_ON(ve->stat);
-		ve->stat = venet_acct_find_create_stat(ve->veid);
-		if (!ve->stat)
-			goto err_locked;
+	if (ret < 0) {
+		nf_unregister_hook(&venet_acct_in_ops);
+		return ret;
 	}
-	mutex_unlock(&ve_list_lock);
 
-	ret = venet_acct_register_ip_hooks();
-	if (ret < 0)
-		goto err;
-
-	ve_hook_register(VE_SS_CHAIN, &venet_acct_ip_stat_hook);
 	return 0;
-err:
-	mutex_lock(&ve_list_lock);
-err_locked:
-	for_each_ve(ve) {
-		venet_acct_put_stat(ve->stat);
-		ve->stat = NULL;
-	}
-	mutex_unlock(&ve_list_lock);
-	return ret;
 }
 
 void __exit ip_venetstat_exit(void)
 {
-	struct ve_struct *ve;
-
-	venet_acct_unregister_ip_hooks();
-	ve_hook_unregister(&venet_acct_ip_stat_hook);
-
-	mutex_lock(&ve_list_lock);
-	for_each_ve(ve) {
-		venet_acct_put_stat(ve->stat);
-		ve->stat = NULL;
-	}
-	mutex_unlock(&ve_list_lock);
+	nf_unregister_hook(&venet_acct_out_ops);
+	nf_unregister_hook(&venet_acct_in_ops);
 }
 
 #if defined(MODULE) && defined(VZ_AUDIT)

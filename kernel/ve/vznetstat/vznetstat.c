@@ -29,7 +29,6 @@
 #include <uapi/linux/vzctl_netstat.h>
 #include <uapi/linux/vzcalluser.h>
 
-
 /*
  * ---------------------------------------------------------------------------
  * Traffic classes storage
@@ -1079,21 +1078,51 @@ static struct file_operations proc_venetstat_v6_operations = {
         .release	= seq_release,
 };
 
-/*
- * ---------------------------------------------------------------------------
- * Initialization
- * ---------------------------------------------------------------------------
- */
+static int __net_init net_init_acct(struct net *net)
+{
+	struct ve_struct *ve = net->owner_ve;
+
+	if (!ve->stat) {
+		ve->stat = venet_acct_find_create_stat(ve->veid);
+		if (!ve->stat)
+			return -ENOMEM;
+	} else
+		venet_acct_get_stat(ve->stat);
+
+	return 0;
+}
+
+static void __net_exit net_exit_acct(struct net *net)
+{
+	struct ve_struct *ve = net->owner_ve;
+
+	if (ve->stat) {
+		venet_acct_put_stat(ve->stat);
+		if (atomic_read(&ve->stat->users) == 0) {
+			venet_acct_destroy_stat(ve->veid);
+			ve->stat = NULL;
+		}
+	}
+}
+
+static struct pernet_operations __net_initdata net_acct_ops = {
+	.init	= net_init_acct,
+	.exit	= net_exit_acct,
+};
 
 int __init venetstat_init(void)
 {
-	int i;
+	int i, ret;
 #if CONFIG_PROC_FS
 	struct proc_dir_entry *de;
 #endif
 
 	for (i = 0; i < STAT_HASH_LEN; i++)
 		INIT_LIST_HEAD(stat_hash_list + i);
+
+	ret = register_pernet_subsys(&net_acct_ops);
+	if (ret)
+		return ret;
 
 #if CONFIG_PROC_FS
 	de = proc_create("venetstat", S_IFREG|S_IRUSR, proc_vz_dir,
@@ -1113,6 +1142,7 @@ int __init venetstat_init(void)
 
 void __exit venetstat_exit(void)
 {
+	unregister_pernet_subsys(&net_acct_ops);
 	vzioctl_unregister(&tc_ioctl_info);
 	venet_acct_destroy_all_stat();
 
