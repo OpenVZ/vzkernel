@@ -29,8 +29,6 @@ struct acct_stat {
 	struct acct_counter cnt[TC_CLASS_MAX][ACCT_MAX];
 };
 
-#define VE_NET_ACCT_V6  1
-
 struct venet_stat {
 	struct list_head list;
 	envid_t  veid;
@@ -66,10 +64,7 @@ void venet_acct_classify_add_incoming_plain(struct venet_stat *stat,
 		struct ve_addr_struct *src_addr, int data_size);
 void venet_acct_classify_add_outgoing_plain(struct venet_stat *stat,
 		struct ve_addr_struct *dst_addr, int data_size);
-void ip_vznetstat_touch(void);
 
-int init_venet_acct_ip_stat(struct ve_struct *env, struct venet_stat *stat);
-void fini_venet_acct_ip_stat(struct ve_struct *env);
 #else /* !CONFIG_VE_NETDEV_ACCOUNTING */
 static inline void venet_acct_get_stat(struct venet_stat *stat) { }
 static inline void venet_acct_put_stat(struct venet_stat *stat) { }
@@ -85,16 +80,6 @@ static inline void venet_acct_classify_add_incoming_plain(struct venet_stat *sta
 		struct ve_addr_struct *src_addr, int data_size) {}
 static inline void venet_acct_classify_add_outgoing_plain(struct venet_stat *stat,
 		struct ve_addr_struct *dst_addr, int data_size) {}
-static inline void ip_vznetstat_touch(void) {}
-
-static inline int init_venet_acct_ip_stat(struct ve_struct *env, struct venet_stat *stat)
-{
-	return 0;
-}
-static void fini_venet_acct_ip_stat(struct ve_struct *env)
-{
-}
-
 #endif /* CONFIG_VE_NETDEV_ACCOUNTING */
 
 #endif
