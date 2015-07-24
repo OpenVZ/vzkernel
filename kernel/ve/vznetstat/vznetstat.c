@@ -1096,7 +1096,13 @@ static void __net_exit net_exit_acct(struct net *net)
 {
 	struct ve_struct *ve = net->owner_ve;
 
-	venet_acct_put_stat(ve->stat);
+	if (ve->stat) {
+		venet_acct_put_stat(ve->stat);
+		if (atomic_read(&ve->stat->users) == 0) {
+			venet_acct_destroy_stat(ve->veid);
+			ve->stat = NULL;
+		}
+	}
 }
 
 static struct pernet_operations __net_initdata net_acct_ops = {
@@ -1136,16 +1142,9 @@ int __init venetstat_init(void)
 
 void __exit venetstat_exit(void)
 {
-	struct ve_struct *ve;
-
 	unregister_pernet_subsys(&net_acct_ops);
 	vzioctl_unregister(&tc_ioctl_info);
 	venet_acct_destroy_all_stat();
-
-	mutex_lock(&ve_list_lock);
-	for_each_ve(ve)
-		ve->stat = NULL;
-	mutex_unlock(&ve_list_lock);
 
 #if CONFIG_PROC_FS
 	remove_proc_entry("venetstat_v6", proc_vz_dir);
