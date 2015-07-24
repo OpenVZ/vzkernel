@@ -1098,10 +1098,8 @@ static void __net_exit net_exit_acct(struct net *net)
 
 	if (ve->stat) {
 		venet_acct_put_stat(ve->stat);
-		if (atomic_read(&ve->stat->users) == 0) {
-			venet_acct_destroy_stat(ve->veid);
+		if (atomic_read(&ve->stat->users) == 0)
 			ve->stat = NULL;
-		}
 	}
 }
 
