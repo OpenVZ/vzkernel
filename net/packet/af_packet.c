@@ -2763,8 +2763,10 @@ static int packet_create(struct net *net, struct socket *sock, int protocol,
 
 	sock->state = SS_UNCONNECTED;
 	cg = packet_sk_charge();
-	if (IS_ERR(cg))
+	if (IS_ERR(cg)) {
+		err = PTR_ERR(cg);
 		goto out;
+	}
 
 	err = -ENOBUFS;
 	sk = sk_alloc(net, PF_PACKET, GFP_KERNEL, &packet_proto);
