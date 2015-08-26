@@ -1109,6 +1109,8 @@ static int htb_dump_class(struct Qdisc *sch, unsigned long arg,
 	opt.buffer = PSCHED_NS2TICKS(cl->buffer);
 	psched_ratecfg_getrate(&opt.ceil, &cl->ceil);
 	opt.cbuffer = PSCHED_NS2TICKS(cl->cbuffer);
+	opt.rate.mpu = cl->rate.mpu;
+	opt.ceil.mpu = cl->ceil.mpu;
 	opt.quantum = cl->quantum;
 	opt.prio = cl->prio;
 	opt.level = cl->level;
@@ -1493,6 +1495,8 @@ static int htb_change_class(struct Qdisc *sch, u32 classid,
 
 	psched_ratecfg_precompute(&cl->rate, &hopt->rate);
 	psched_ratecfg_precompute(&cl->ceil, &hopt->ceil);
+	cl->rate.mpu = hopt->rate.mpu;
+	cl->ceil.mpu = hopt->ceil.mpu;
 
 	cl->buffer = PSCHED_TICKS2NS(hopt->buffer);
 	cl->cbuffer = PSCHED_TICKS2NS(hopt->cbuffer);
