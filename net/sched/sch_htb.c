@@ -1116,6 +1116,8 @@ static int htb_dump_class(struct Qdisc *sch, unsigned long arg,
 	opt.buffer = PSCHED_NS2TICKS(cl->buffer);
 	psched_ratecfg_getrate(&opt.ceil, &cl->ceil);
 	opt.cbuffer = PSCHED_NS2TICKS(cl->cbuffer);
+	opt.rate.mpu = cl->rate.mpu;
+	opt.ceil.mpu = cl->ceil.mpu;
 	opt.quantum = cl->quantum;
 	opt.prio = cl->prio;
 	opt.level = cl->level;
@@ -1478,6 +1480,8 @@ static int htb_change_class(struct Qdisc *sch, u32 classid,
 
 	psched_ratecfg_precompute(&cl->rate, &hopt->rate, rate64);
 	psched_ratecfg_precompute(&cl->ceil, &hopt->ceil, ceil64);
+	cl->rate.mpu = hopt->rate.mpu;
+	cl->ceil.mpu = hopt->ceil.mpu;
 
 	/* it used to be a nasty bug here, we have to check that node
 	 * is really leaf before changing cl->un.leaf !
