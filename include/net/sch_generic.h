@@ -936,11 +936,15 @@ struct psched_ratecfg {
 	u16	overhead;
 	u8	linklayer;
 	u8	shift;
+	u32	mpu;
 };
 
 static inline u64 psched_l2t_ns(const struct psched_ratecfg *r,
 				unsigned int len)
 {
+	if (len < r->mpu)
+		len = r->mpu;
+
 	len += r->overhead;
 
 	if (unlikely(r->linklayer == TC_LINKLAYER_ATM))
