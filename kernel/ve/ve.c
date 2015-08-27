@@ -654,6 +654,88 @@ static int ve_id_write(struct cgroup *cg, struct cftype *cft, u64 value)
 	return err;
 }
 
+static void *ve_mount_opts_start(struct seq_file *m, loff_t *ppos)
+{
+	struct ve_struct *ve = m->private;
+	struct ve_devmnt *devmnt;
+	loff_t pos = *ppos;
+
+	mutex_lock(&ve->devmnt_mutex);
+	list_for_each_entry(devmnt, &ve->devmnt_list, link) {
+		if (!pos--)
+			return devmnt;
+	}
+	return NULL;
+}
+
+static void *ve_mount_opts_next(struct seq_file *m, void *v, loff_t *ppos)
+{
+	struct ve_struct *ve = m->private;
+	struct ve_devmnt *devmnt = v;
+
+	(*ppos)++;
+	if (list_is_last(&devmnt->link, &ve->devmnt_list))
+		return NULL;
+	return list_entry(devmnt->link.next, struct ve_devmnt, link);
+}
+
+static void ve_mount_opts_stop(struct seq_file *m, void *v)
+{
+	struct ve_struct *ve = m->private;
+
+	mutex_unlock(&ve->devmnt_mutex);
+}
+
+static int ve_mount_opts_show(struct seq_file *m, void *v)
+{
+	struct ve_devmnt *devmnt = v;
+	dev_t dev = devmnt->dev;
+
+	seq_printf(m, "0 %u:%u;", MAJOR(dev), MINOR(dev));
+	if (devmnt->hidden_options)
+		seq_printf(m, "1 %s;", devmnt->hidden_options);
+	if (devmnt->allowed_options)
+		seq_printf(m, "2 %s;", devmnt->allowed_options);
+	seq_putc(m, '\n');
+	return 0;
+}
+
+struct seq_operations ve_mount_opts_sops = {
+	.start = ve_mount_opts_start,
+	.stop = ve_mount_opts_stop,
+	.next = ve_mount_opts_next,
+	.show = ve_mount_opts_show,
+};
+
+static int ve_mount_opts_open(struct inode *inode, struct file *file)
+{
+	struct ve_struct *ve = cgroup_ve(file->f_dentry->d_parent->d_fsdata);
+	struct seq_file *m;
+	int ret;
+
+	if (ve_is_super(ve))
+		return -ENODEV;
+
+	ret = seq_open(file, &ve_mount_opts_sops);
+	if (!ret) {
+		m = file->private_data;
+		m->private = ve;
+	}
+	return ret;
+}
+
+static ssize_t ve_mount_opts_read(struct cgroup *cgrp, struct cftype *cft,
+				  struct file *file, char __user *buf,
+				  size_t nbytes, loff_t *ppos)
+{
+	return seq_read(file, buf, nbytes, ppos);
+}
+
+static int ve_mount_opts_release(struct inode *inode, struct file *file)
+{
+	return seq_release(inode, file);
+}
+
 /*
  * 'data' for VE_CONFIGURE_MOUNT_OPTIONS is a zero-terminated string
  * consisting of substrings separated by MNTOPT_DELIM.
@@ -793,6 +875,9 @@ static struct cftype ve_cftypes[] = {
 		.name			= "mount_opts",
 		.max_write_len		= MNTOPT_MAXLEN,
 		.flags			= CFTYPE_NOT_ON_ROOT,
+		.open			= ve_mount_opts_open,
+		.read			= ve_mount_opts_read,
+		.release		= ve_mount_opts_release,
 		.write_string		= ve_mount_opts_write,
 	},
 	{ }
