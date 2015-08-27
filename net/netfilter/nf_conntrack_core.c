@@ -1659,6 +1659,9 @@ resolve_normal_ct(struct nf_conn *tmpl,
 	struct nf_conn *ct;
 	u32 hash;
 
+	if (!net_ipt_permitted(state->net, VE_NF_CONNTRACK))
+		return 0;
+
 	if (!nf_ct_get_tuple(skb, skb_network_offset(skb),
 			     dataoff, state->pf, protonum, state->net,
 			     &tuple)) {
