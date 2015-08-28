@@ -531,6 +531,10 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 	 * At this point all userspace tasks in container are dead.
 	 */
 
+	if (ve->dev_sb) {
+		deactivate_super(ve->dev_sb);
+		ve->dev_sb = NULL;
+	}
 	if (ve->devpts_sb) {
 		deactivate_super(ve->devpts_sb);
 		ve->devpts_sb = NULL;
