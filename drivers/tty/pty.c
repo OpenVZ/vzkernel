@@ -818,6 +818,32 @@ err_file:
 	return retval;
 }
 
+static int ve_unix98_pty_init(void *data)
+{
+	struct ve_struct *ve = data;
+	struct device *dev;
+
+	dev = device_create(tty_class, NULL, MKDEV(TTYAUX_MAJOR, 2), ve, "ptmx");
+	if (IS_ERR(dev)) {
+		pr_warn("Failed to create ptmx device for ve %s: %ld\n",
+			ve->ve_name, PTR_ERR(dev));
+		return PTR_ERR(dev);
+	}
+	return 0;
+}
+
+static void ve_unix98_pty_fini(void *data)
+{
+	device_destroy_namespace(tty_class, MKDEV(TTYAUX_MAJOR, 2), data);
+}
+
+static struct ve_hook ve_unix98_pty_hook = {
+	.init		= ve_unix98_pty_init,
+	.fini		= ve_unix98_pty_fini,
+	.priority	= HOOK_PRIO_DEFAULT,
+	.owner		= THIS_MODULE,
+};
+
 static struct file_operations ptmx_fops;
 
 static void __init unix98_pty_init(void)
@@ -882,6 +908,7 @@ static void __init unix98_pty_init(void)
 	    register_chrdev_region(MKDEV(TTYAUX_MAJOR, 2), 1, "/dev/ptmx") < 0)
 		panic("Couldn't register /dev/ptmx driver");
 	device_create(tty_class, NULL, MKDEV(TTYAUX_MAJOR, 2), NULL, "ptmx");
+	ve_hook_register(VE_SS_CHAIN, &ve_unix98_pty_hook);
 }
 
 #else
