@@ -414,7 +414,7 @@ static int test_devpts_sb(struct super_block *s, void *p)
 static int set_devpts_sb(struct super_block *s, void *p)
 {
 	int error = set_anon_super(s, p);
-	if (!error) {
+	if (!error && !get_exec_env()->devpts_sb) {
 		atomic_inc(&s->s_active);
 		get_exec_env()->devpts_sb = s;
 	}
@@ -467,7 +467,7 @@ static struct dentry *devpts_mount(struct file_system_type *fs_type,
 		return ERR_PTR(-EINVAL);
 
 	if (opts.newinstance)
-		s = sget(fs_type, NULL, set_anon_super, flags, NULL);
+		s = sget(fs_type, NULL, set_devpts_sb, flags, NULL);
 	else
 		s = sget(fs_type, test_devpts_sb, set_devpts_sb, flags, NULL);
 
