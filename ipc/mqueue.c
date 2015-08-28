@@ -341,7 +341,7 @@ static struct dentry *mqueue_mount(struct file_system_type *fs_type,
 
 		data = ns;
 	}
-	return mount_ns(fs_type, flags, NULL, data, mqueue_fill_super);
+	return mount_ns(fs_type, flags, data, mqueue_fill_super);
 }
 
 static void init_once(void *foo)

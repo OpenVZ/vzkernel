@@ -59,9 +59,9 @@ static struct dentry *dev_mount(struct file_system_type *fs_type, int flags,
 		      const char *dev_name, void *data)
 {
 #ifdef CONFIG_TMPFS
-	return mount_ns(fs_type, flags, data, get_exec_env(), shmem_fill_super);
+	return mount_ns(fs_type, flags, data, shmem_fill_super);
 #else
-	return mount_ns(fs_type, flags, data, get_exec_env(), ramfs_fill_super);
+	return mount_ns(fs_type, flags, data, ramfs_fill_super);
 #endif
 }
 

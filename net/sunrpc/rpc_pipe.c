@@ -1457,7 +1457,7 @@ static struct dentry *
 rpc_mount(struct file_system_type *fs_type,
 		int flags, const char *dev_name, void *data)
 {
-	return mount_ns(fs_type, flags, NULL, current->nsproxy->net_ns, rpc_fill_super);
+	return mount_ns(fs_type, flags, current->nsproxy->net_ns, rpc_fill_super);
 }
 
 static void rpc_kill_sb(struct super_block *sb)
