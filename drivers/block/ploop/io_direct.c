@@ -1483,7 +1483,6 @@ dio_fastmap(struct ploop_io * io, struct bio * orig_bio,
 	struct request_queue * q;
 	struct extent_map * em;
 	int i;
-	struct bvec_merge_data bm_data;
 
 	if (orig_bio->bi_size == 0) {
 		bio->bi_vcnt   = 0;
@@ -1531,19 +1530,19 @@ dio_fastmap(struct ploop_io * io, struct bio * orig_bio,
 	bio->bi_size = 0;
 	bio->bi_vcnt = 0;
 
-	bm_data.bi_bdev = bio->bi_bdev;
-	bm_data.bi_sector = bio->bi_sector;
-	bm_data.bi_size = 0;
-	bm_data.bi_rw = bio->bi_rw;
-
 	for (i = 0; i < orig_bio->bi_vcnt; i++) {
 		struct bio_vec * bv = &bio->bi_io_vec[i];
+		struct bvec_merge_data bm_data = {
+			.bi_bdev = bio->bi_bdev,
+			.bi_sector = bio->bi_sector,
+			.bi_size = bio->bi_size,
+			.bi_rw = bio->bi_rw,
+		};
 		if (q->merge_bvec_fn(q, &bm_data, bv) < bv->bv_len) {
 			io->plo->st.fast_neg_backing++;
 			return 1;
 		}
 		bio->bi_size += bv->bv_len;
-		bm_data.bi_size = bio->bi_size;
 		bio->bi_vcnt++;
 	}
 	return 0;
