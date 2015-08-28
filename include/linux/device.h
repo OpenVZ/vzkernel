@@ -1028,14 +1028,10 @@ extern void put_device(struct device *dev);
 extern int devtmpfs_create_node(struct device *dev);
 extern int devtmpfs_delete_node(struct device *dev);
 extern int devtmpfs_mount(const char *mntdir);
-extern int ve_init_devtmpfs(void *data);
-extern void ve_fini_devtmpfs(void *data);
 #else
 static inline int devtmpfs_create_node(struct device *dev) { return 0; }
 static inline int devtmpfs_delete_node(struct device *dev) { return 0; }
 static inline int devtmpfs_mount(const char *mountpoint) { return 0; }
-static inline int ve_init_devtmpfs(void *data) { return 0; }
-static inline void ve_fini_devtmpfs(void *data) { }
 #endif
 
 /* drivers/base/power/shutdown.c */

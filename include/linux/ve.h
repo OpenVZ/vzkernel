@@ -133,9 +133,6 @@ struct ve_struct {
 	struct mutex		devmnt_mutex;
 
 	struct kmapset_key	ve_sysfs_perms;
-#if IS_ENABLED(CONFIG_DEVTMPFS)
-	struct path		devtmpfs_root;
-#endif
 };
 
 struct ve_devmnt {
