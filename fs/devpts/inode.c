@@ -402,6 +402,20 @@ fail:
 }
 
 #ifdef CONFIG_DEVPTS_MULTIPLE_INSTANCES
+static int test_devpts_sb(struct super_block *s, void *p)
+{
+	return get_exec_env()->devpts_sb == s;
+}
+
+static int set_devpts_sb(struct super_block *s, void *p)
+{
+	int error = set_anon_super(s, p);
+	if (!error) {
+		atomic_inc(&s->s_active);
+		get_exec_env()->devpts_sb = s;
+	}
+	return error;
+}
 
 /*
  * devpts_mount()
@@ -436,7 +450,6 @@ static struct dentry *devpts_mount(struct file_system_type *fs_type,
 	int error;
 	struct pts_mount_opts opts;
 	struct super_block *s;
-	struct dentry *root;
 
 	error = parse_mount_options(data, PARSE_MOUNT, &opts);
 	if (error)
@@ -450,29 +463,29 @@ static struct dentry *devpts_mount(struct file_system_type *fs_type,
 		return ERR_PTR(-EINVAL);
 
 	if (opts.newinstance)
-		root = mount_nodev(fs_type, flags, data, devpts_fill_super);
+		s = sget(fs_type, NULL, set_anon_super, flags, NULL);
 	else
-		root = mount_ns(fs_type, flags, data, get_exec_env(), devpts_fill_super);
+		s = sget(fs_type, test_devpts_sb, set_devpts_sb, flags, NULL);
 
-	if (IS_ERR(root))
-		return ERR_CAST(root);
+	if (IS_ERR(s))
+		return ERR_CAST(s);
 
-	s = root->d_sb;
+	if (!s->s_root) {
+		error = devpts_fill_super(s, data, flags & MS_SILENT ? 1 : 0);
+		if (error)
+			goto out_undo_sget;
+		s->s_flags |= MS_ACTIVE;
+	}
+
 	memcpy(&(DEVPTS_SB(s))->mount_opts, &opts, sizeof(opts));
 
 	error = mknod_ptmx(s);
 	if (error)
 		goto out_undo_sget;
 
-	if (!opts.newinstance) {
-		atomic_inc(&s->s_active);
-		get_exec_env()->devpts_sb = s;
-	}
-
-	return root;
+	return dget(s->s_root);
 
 out_undo_sget:
-	dput(root);
 	deactivate_locked_super(s);
 	return ERR_PTR(error);
 }
