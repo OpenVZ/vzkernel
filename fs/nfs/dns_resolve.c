@@ -415,7 +415,7 @@ static int rpc_pipefs_event(struct notifier_block *nb, unsigned long event,
 			   void *ptr)
 {
 	struct super_block *sb = ptr;
-	struct net *net = sb->s_ns;
+	struct net *net = sb->s_fs_info;
 	struct nfs_net *nn = net_generic(net, nfs_net_id);
 	struct cache_detail *cd = nn->nfs_dns_resolve;
 	int ret = 0;
