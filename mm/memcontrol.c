@@ -2773,10 +2773,10 @@ static int mem_cgroup_do_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
 
 	if (likely(!ret)) {
 		if (!do_swap_account)
-			goto done;
+			return CHARGE_OK;
 		ret = res_counter_charge(&memcg->memsw, csize, &fail_res);
 		if (likely(!ret))
-			goto done;
+			return CHARGE_OK;
 
 		res_counter_uncharge(&memcg->res, csize);
 		mem_over_limit = mem_cgroup_from_res_counter(fail_res, memsw);
@@ -2828,21 +2828,6 @@ static int mem_cgroup_do_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	}
 
 	return CHARGE_NOMEM;
-
-done:
-	if (!(gfp_mask & __GFP_WAIT))
-		goto out;
-	/*
-	 * If the hierarchy is above the normal consumption range,
-	 * make the charging task trim their excess contribution.
-	 */
-	do {
-		if (res_counter_read_u64(&memcg->res, RES_USAGE) <= memcg->high)
-			continue;
-		try_to_free_mem_cgroup_pages(memcg, nr_pages, gfp_mask, false);
-	} while ((memcg = parent_mem_cgroup(memcg)));
-out:
-	return CHARGE_OK;
 }
 
 /*
@@ -2874,7 +2859,7 @@ static int __mem_cgroup_try_charge(struct mm_struct *mm,
 {
 	unsigned int batch = max(CHARGE_BATCH, nr_pages);
 	int nr_oom_retries = MEM_CGROUP_RECLAIM_RETRIES;
-	struct mem_cgroup *memcg = NULL;
+	struct mem_cgroup *memcg = NULL, *iter;
 	int ret;
 
 	/*
@@ -2984,6 +2969,20 @@ again:
 
 	if (batch > nr_pages)
 		refill_stock(memcg, batch - nr_pages);
+
+	/*
+	 * If the hierarchy is above the normal consumption range,
+	 * make the charging task trim their excess contribution.
+	 */
+	iter = memcg;
+	do {
+		if (!(gfp_mask & __GFP_WAIT))
+			break;
+		if (res_counter_read_u64(&iter->res, RES_USAGE) <= iter->high)
+			continue;
+		try_to_free_mem_cgroup_pages(iter, nr_pages, gfp_mask, false);
+	} while ((iter = parent_mem_cgroup(iter)));
+
 	css_put(&memcg->css);
 done:
 	*ptr = memcg;
