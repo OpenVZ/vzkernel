@@ -23,6 +23,7 @@
 #include <linux/ramfs.h>
 #include <linux/slab.h>
 #include <linux/kthread.h>
+#include <linux/ve.h>
 #include "base.h"
 
 static struct task_struct *thread;
@@ -53,9 +54,61 @@ static int __init mount_param(char *str)
 }
 __setup("devtmpfs.mount=", mount_param);
 
+#ifdef CONFIG_VE
+static int ve_test_dev_sb(struct super_block *s, void *p)
+{
+	return get_exec_env()->dev_sb == s;
+}
+
+static int ve_set_dev_sb(struct super_block *s, void *p)
+{
+	struct ve_struct *ve = get_exec_env();
+	int error;
+
+	error = set_anon_super(s, p);
+	if (!error) {
+		BUG_ON(ve->dev_sb);
+		ve->dev_sb = s;
+		atomic_inc(&s->s_active);
+	}
+	return error;
+}
+
+static struct dentry *ve_dev_mount(struct file_system_type *fs_type, int flags,
+		      const char *dev_name, void *data)
+{
+	int (*fill_super)(struct super_block *, void *, int);
+	struct super_block *s;
+	int error;
+
+#ifdef CONFIG_TMPFS
+	fill_super = shmem_fill_super;
+#else
+	fill_super = ramfs_fill_super;
+#endif
+	s = sget(fs_type, ve_test_dev_sb, ve_set_dev_sb, flags, NULL);
+	if (IS_ERR(s))
+		return ERR_CAST(s);
+
+	if (!s->s_root) {
+		error = fill_super(s, data, flags & MS_SILENT ? 1 : 0);
+		if (error) {
+			deactivate_locked_super(s);
+			return ERR_PTR(error);
+		}
+		s->s_flags |= MS_ACTIVE;
+	}
+	return dget(s->s_root);
+}
+#endif /* CONFIG_VE */
+
 static struct dentry *dev_mount(struct file_system_type *fs_type, int flags,
 		      const char *dev_name, void *data)
 {
+#ifdef CONFIG_VE
+	if (!ve_is_super(get_exec_env()))
+		return ve_dev_mount(fs_type, flags, dev_name, data);
+#endif
 #ifdef CONFIG_TMPFS
 	return mount_single(fs_type, flags, data, shmem_fill_super);
 #else
@@ -79,12 +132,24 @@ static inline int is_blockdev(struct device *dev)
 static inline int is_blockdev(struct device *dev) { return 0; }
 #endif
 
+#ifdef CONFIG_VE
+static inline int is_ve_dev(struct device *dev)
+{
+	return dev->class && dev->class->namespace == ve_namespace &&
+		ve_namespace(dev) != get_ve0();
+}
+#else
+static inline int is_ve_dev(struct device *dev) { return 0; }
+#endif
+
 int devtmpfs_create_node(struct device *dev)
 {
 	const char *tmp = NULL;
 	struct req req;
 
 	if (!thread)
+		return 0;
+	if (is_ve_dev(dev))
 		return 0;
 
 	req.mode = 0;
@@ -124,6 +189,8 @@ int devtmpfs_delete_node(struct device *dev)
 	struct req req;
 
 	if (!thread)
+		return 0;
+	if (is_ve_dev(dev))
 		return 0;
 
 	req.name = device_get_devnode(dev, NULL, NULL, NULL, &tmp);
