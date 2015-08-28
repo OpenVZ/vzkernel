@@ -241,7 +241,7 @@ static int rpc_pipefs_event(struct notifier_block *nb, unsigned long event,
 	struct rpc_clnt *clnt;
 	int error = 0;
 
-	while ((clnt = rpc_get_client_for_event(sb->s_ns, event))) {
+	while ((clnt = rpc_get_client_for_event(sb->s_fs_info, event))) {
 		error = __rpc_pipefs_event(clnt, event, sb);
 		if (error)
 			break;

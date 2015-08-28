@@ -698,7 +698,7 @@ cld_pipe_downcall(struct file *filp, const char __user *src, size_t mlen)
 	struct cld_upcall *tmp, *cup;
 	struct cld_msg __user *cmsg = (struct cld_msg __user *)src;
 	uint32_t xid;
-	struct nfsd_net *nn = net_generic(filp->f_dentry->d_sb->s_ns,
+	struct nfsd_net *nn = net_generic(filp->f_dentry->d_sb->s_fs_info,
 						nfsd_net_id);
 	struct cld_net *cn = nn->cld_net;
 
@@ -1491,7 +1491,7 @@ static int
 rpc_pipefs_event(struct notifier_block *nb, unsigned long event, void *ptr)
 {
 	struct super_block *sb = ptr;
-	struct net *net = sb->s_ns;
+	struct net *net = sb->s_fs_info;
 	struct nfsd_net *nn = net_generic(net, nfsd_net_id);
 	struct cld_net *cn = nn->cld_net;
 	struct dentry *dentry;
