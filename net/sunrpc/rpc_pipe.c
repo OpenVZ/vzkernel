@@ -1395,7 +1395,7 @@ rpc_fill_super(struct super_block *sb, void *data, int silent)
 {
 	struct inode *inode;
 	struct dentry *root, *gssd_dentry;
-	struct net *net = sb->s_ns;
+	struct net *net = data;
 	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
 	int err;
 
