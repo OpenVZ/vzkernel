@@ -703,10 +703,8 @@ static inline void proc_tty_unregister_driver(struct tty_driver *d) {}
 
 #ifdef CONFIG_VE
 struct ve_struct;
-extern void ve_legacy_pty_fini(struct ve_struct *ve);
-extern int ve_legacy_pty_init(struct ve_struct *ve);
-extern void ve_unix98_pty_fini(struct ve_struct *ve);
-extern int ve_unix98_pty_init(struct ve_struct *ve);
+void ve_legacy_pty_fini(struct ve_struct *ve);
+int ve_legacy_pty_init(struct ve_struct *ve);
 #endif
 
 #endif
