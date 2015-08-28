@@ -1098,7 +1098,7 @@ static void __net_exit net_exit_acct(struct net *net)
 
 	if (ve->stat) {
 		venet_acct_put_stat(ve->stat);
-		if (atomic_read(&ve->stat->users) == 0)
+		if (ve->ve_netns == net)
 			ve->stat = NULL;
 	}
 }
