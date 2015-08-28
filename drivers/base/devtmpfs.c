@@ -451,10 +451,9 @@ out:
 int ve_init_devtmpfs(void *data)
 {
 	struct ve_struct *ve = data;
-	char opts[] = "mode=0755";
 	struct vfsmount *mnt;
 
-	mnt = kern_mount_data(&dev_fs_type, opts);
+	mnt = kern_mount_data(&dev_fs_type, ve);
 	if (IS_ERR(mnt))
 		return PTR_ERR(mnt);
 	ve->devtmpfs_root.mnt = mnt;
