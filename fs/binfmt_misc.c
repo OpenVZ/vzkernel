@@ -65,6 +65,8 @@ struct binfmt_misc {
 	int entry_count;
 };
 
+#define BINFMT_MISC(sb)		(((struct ve_struct *)(sb)->s_ns)->binfmt_misc)
+
 /* 
  * Check if we support the binfmt
  * if we do, return the node, else NULL
@@ -541,7 +543,7 @@ static ssize_t bm_entry_write(struct file *file, const char __user *buffer,
 	Node *e = file_inode(file)->i_private;
 	int res = parse_command(buffer, count);
 	struct super_block *sb = file->f_path.dentry->d_sb;
-	struct binfmt_misc *bm_data = sb->s_fs_info;
+	struct binfmt_misc *bm_data = BINFMT_MISC(sb);
 
 	switch (res) {
 		case 1: clear_bit(Enabled, &e->flags);
@@ -576,7 +578,7 @@ static ssize_t bm_register_write(struct file *file, const char __user *buffer,
 	struct inode *inode;
 	struct dentry *root, *dentry;
 	struct super_block *sb = file->f_path.dentry->d_sb;
-	struct binfmt_misc *bm_data = sb->s_fs_info;
+	struct binfmt_misc *bm_data = BINFMT_MISC(sb);
 	int err = 0;
 
 	e = create_entry(buffer, count);
@@ -641,7 +643,7 @@ static const struct file_operations bm_register_operations = {
 static ssize_t
 bm_status_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 {
-	struct binfmt_misc *bm_data = file->f_dentry->d_sb->s_fs_info;
+	struct binfmt_misc *bm_data = BINFMT_MISC(file->f_dentry->d_sb);
 	char *s = bm_data->enabled ? "enabled\n" : "disabled\n";
 
 	return simple_read_from_buffer(buf, nbytes, ppos, s, strlen(s));
@@ -650,7 +652,7 @@ bm_status_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 static ssize_t bm_status_write(struct file * file, const char __user * buffer,
 		size_t count, loff_t *ppos)
 {
-	struct binfmt_misc *bm_data = file->f_dentry->d_sb->s_fs_info;
+	struct binfmt_misc *bm_data = BINFMT_MISC(file->f_dentry->d_sb);
 	int res = parse_command(buffer, count);
 	struct dentry *root;
 
@@ -681,7 +683,7 @@ static const struct file_operations bm_status_operations = {
 
 static void bm_put_super(struct super_block *sb)
 {
-	struct binfmt_misc *bm_data = sb->s_fs_info;
+	struct binfmt_misc *bm_data = BINFMT_MISC(sb);
 	struct ve_struct *ve = sb->s_ns;
 
 	bm_data->enabled = 0;
@@ -723,7 +725,6 @@ static int bm_fill_super(struct super_block * sb, void * data, int silent)
 	}
 
 	sb->s_op = &s_ops;
-	sb->s_fs_info = bm_data;
 
 	bm_data->enabled = 1;
 	get_ve(ve);
