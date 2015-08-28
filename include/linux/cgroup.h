@@ -20,6 +20,7 @@
 #include <linux/workqueue.h>
 #include <linux/xattr.h>
 #include <linux/fs.h>
+#include <linux/percpu-refcount.h>
 
 #ifdef CONFIG_CGROUP_PIDS
 void cgroup_pids_release(struct task_struct *task);
@@ -125,13 +126,8 @@ struct cgroup_subsys_state {
 	 */
 	struct cgroup *cgroup;
 
-	/*
-	 * State maintained by the cgroup system to allow subsystems
-	 * to be "busy". Should be accessed via css_get(),
-	 * css_tryget() and css_put().
-	 */
-
-	atomic_t refcnt;
+	/* reference count - access via css_[try]get() and css_put() */
+	struct percpu_ref refcnt;
 
 	unsigned long flags;
 	/* ID for this css, if possible */
@@ -147,12 +143,6 @@ enum {
 	CSS_ONLINE	= (1 << 1), /* between ->css_online() and ->css_offline() */
 };
 
-/* Caller must verify that the css is not for root cgroup */
-static inline void __css_get(struct cgroup_subsys_state *css, int count)
-{
-	atomic_add(count, &css->refcnt);
-}
-
 /*
  * Call css_get() to hold a reference on the css; it can be used
  * for a reference obtained via:
@@ -164,7 +154,7 @@ static inline void css_get(struct cgroup_subsys_state *css)
 {
 	/* We don't need to reference count the root state */
 	if (!(css->flags & CSS_ROOT))
-		__css_get(css, 1);
+		percpu_ref_get(&css->refcnt);
 }
 
 /*
@@ -173,12 +163,11 @@ static inline void css_get(struct cgroup_subsys_state *css)
  * the css has been destroyed.
  */
 
-extern bool __css_tryget(struct cgroup_subsys_state *css);
 static inline bool css_tryget(struct cgroup_subsys_state *css)
 {
 	if (css->flags & CSS_ROOT)
 		return true;
-	return __css_tryget(css);
+	return percpu_ref_tryget(&css->refcnt);
 }
 
 /*
@@ -186,11 +175,10 @@ static inline bool css_tryget(struct cgroup_subsys_state *css)
  * css_get() or css_tryget()
  */
 
-extern void __css_put(struct cgroup_subsys_state *css);
 static inline void css_put(struct cgroup_subsys_state *css)
 {
 	if (!(css->flags & CSS_ROOT))
-		__css_put(css);
+		percpu_ref_put(&css->refcnt);
 }
 
 extern bool css_refcnt_inc_not_zero(struct cgroup_subsys_state *css);
@@ -284,9 +272,10 @@ struct cgroup {
 	struct list_head pidlists;
 	struct mutex pidlist_mutex;
 
-	/* For RCU-protected deletion */
+	/* For css percpu_ref killing and RCU-protected deletion */
 	struct rcu_head rcu_head;
 	struct work_struct destroy_work;
+	atomic_t css_kill_cnt;
 
 	/* List of events which userspace want to receive */
 	struct list_head event_list;
