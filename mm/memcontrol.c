@@ -904,12 +904,14 @@ static void mem_cgroup_update_swap_max(struct mem_cgroup *memcg)
 {
 	long long swap;
 
-	swap = res_counter_read_u64(&memcg->memsw, RES_USAGE) -
-		res_counter_read_u64(&memcg->res, RES_USAGE);
+	for (; memcg; memcg = parent_mem_cgroup(memcg)) {
+		swap = res_counter_read_u64(&memcg->memsw, RES_USAGE) -
+			res_counter_read_u64(&memcg->res, RES_USAGE);
 
-	/* This is racy, but we don't have to be absolutely precise */
-	if (swap > (long long)memcg->swap_max)
-		memcg->swap_max = swap;
+		/* This is racy, but we don't have to be absolutely precise */
+		if (swap > (long long)memcg->swap_max)
+			memcg->swap_max = swap;
+	}
 }
 
 static void mem_cgroup_inc_failcnt(struct mem_cgroup *memcg,
