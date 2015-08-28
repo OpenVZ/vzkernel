@@ -441,10 +441,6 @@ int ve_start_container(struct ve_struct *ve)
 	if (err)
 		goto err_umh;
 
-	err = ve_init_devtmpfs(ve);
-	if (err)
-		goto err_dev;
-
 	err = ve_hook_iterate_init(VE_SS_CHAIN, ve);
 	if (err < 0)
 		goto err_iterate;
@@ -458,8 +454,6 @@ int ve_start_container(struct ve_struct *ve)
 	return 0;
 
 err_iterate:
-	ve_fini_devtmpfs(ve);
-err_dev:
 	ve_stop_umh(ve);
 err_umh:
 	ve_stop_kthread(ve);
@@ -488,8 +482,6 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	 * ve_mutex works as barrier for ve_can_attach().
 	 */
 	ve->is_running = 0;
-
-	ve_fini_devtmpfs(ve);
 
 	ve_stop_umh(ve);
 	/*
