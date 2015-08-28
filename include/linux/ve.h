@@ -78,12 +78,6 @@ struct ve_struct {
 	struct tty_driver	*pty_driver, *pty_slave_driver;
 #endif
 
-#ifdef CONFIG_UNIX98_PTYS
-	struct tty_driver	*ptm_driver, *pts_driver;
-	struct device		*ptmx;
-	struct mutex		devpts_mutex;
-#endif
-
 #ifdef CONFIG_TTY
 	struct device		*consdev;
 #endif
