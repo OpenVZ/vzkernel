@@ -19,7 +19,6 @@
 
 struct sock;
 struct kobject;
-struct path;
 
 /*
  * Namespace types which are used to tag kobjects and sysfs entries.
@@ -45,7 +44,6 @@ struct kobj_ns_type_operations {
 	const void *(*netlink_ns)(struct sock *sk);
 	const void *(*initial_ns)(void);
 	void (*drop_ns)(void *);
-	const struct path *(*devtmpfs)(const struct kobject *);
 };
 
 int kobj_ns_type_register(const struct kobj_ns_type_operations *ops);
