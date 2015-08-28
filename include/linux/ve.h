@@ -60,6 +60,7 @@ struct ve_struct {
 /* VE's root */
 	struct path		root_path;
 
+	struct super_block	*dev_sb;
 	struct super_block	*devpts_sb;
 
 #if IS_ENABLED(CONFIG_BINFMT_MISC)
