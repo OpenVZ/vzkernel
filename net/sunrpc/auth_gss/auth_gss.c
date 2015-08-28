@@ -760,7 +760,7 @@ out:
 
 static int gss_pipe_open(struct inode *inode, int new_version)
 {
-	struct net *net = inode->i_sb->s_ns;
+	struct net *net = inode->i_sb->s_fs_info;
 	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
 	int ret = 0;
 
@@ -795,7 +795,7 @@ static int gss_pipe_open_v1(struct inode *inode)
 static void
 gss_pipe_release(struct inode *inode)
 {
-	struct net *net = inode->i_sb->s_ns;
+	struct net *net = inode->i_sb->s_fs_info;
 	struct rpc_pipe *pipe = RPC_I(inode)->pipe;
 	struct gss_upcall_msg *gss_msg;
 
