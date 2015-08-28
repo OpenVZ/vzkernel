@@ -1428,7 +1428,7 @@ rpc_fill_super(struct super_block *sb, void *data, int silent)
 					   sb);
 	if (err)
 		goto err_depopulate;
-	sb->s_ns = get_net(net);
+	sb->s_fs_info = get_net(net);
 	mutex_unlock(&sn->pipefs_sb_lock);
 	return 0;
 
@@ -1462,7 +1462,7 @@ rpc_mount(struct file_system_type *fs_type,
 
 static void rpc_kill_sb(struct super_block *sb)
 {
-	struct net *net = sb->s_ns;
+	struct net *net = sb->s_fs_info;
 	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
 
 	mutex_lock(&sn->pipefs_sb_lock);
