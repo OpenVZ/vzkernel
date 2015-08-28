@@ -23,9 +23,14 @@
 #include <linux/devpts_fs.h>
 #include <linux/slab.h>
 #include <linux/mutex.h>
-#include <linux/ve.h>
 
 #include <bc/misc.h>
+
+#ifdef CONFIG_UNIX98_PTYS
+static struct tty_driver *ptm_driver;
+static struct tty_driver *pts_driver;
+static DEFINE_MUTEX(devpts_mutex);
+#endif
 
 static void pty_close(struct tty_struct *tty, struct file *filp)
 {
@@ -53,11 +58,11 @@ static void pty_close(struct tty_struct *tty, struct file *filp)
 	if (tty->driver->subtype == PTY_TYPE_MASTER) {
 		set_bit(TTY_OTHER_CLOSED, &tty->flags);
 #ifdef CONFIG_UNIX98_PTYS
-		if (tty->driver == tty->driver->ve->ptm_driver) {
-			mutex_lock(&tty->driver->ve->devpts_mutex);
+		if (tty->driver == ptm_driver) {
+			mutex_lock(&devpts_mutex);
 			if (tty->link->driver_data)
 				devpts_pty_kill(tty->link->driver_data);
-			mutex_unlock(&tty->driver->ve->devpts_mutex);
+			mutex_unlock(&devpts_mutex);
 		}
 #endif
 		tty_unlock(tty);
@@ -669,9 +674,9 @@ static struct tty_struct *pts_unix98_lookup(struct tty_driver *driver,
 {
 	struct tty_struct *tty;
 
-	mutex_lock(&driver->ve->devpts_mutex);
+	mutex_lock(&devpts_mutex);
 	tty = devpts_get_priv(pts_inode);
-	mutex_unlock(&driver->ve->devpts_mutex);
+	mutex_unlock(&devpts_mutex);
 	/* Master must be open before slave */
 	if (!tty)
 		return ERR_PTR(-EIO);
@@ -748,7 +753,6 @@ static int ptmx_open(struct inode *inode, struct file *filp)
 	struct inode *slave_inode;
 	int retval;
 	int index;
-	struct ve_struct *ve = (inode->i_sb->s_ns) ? : get_exec_env();
 
 	nonseekable_open(inode, filp);
 
@@ -760,18 +764,18 @@ static int ptmx_open(struct inode *inode, struct file *filp)
 		return retval;
 
 	/* find a device that is not in use. */
-	mutex_lock(&ve->devpts_mutex);
+	mutex_lock(&devpts_mutex);
 	index = devpts_new_index(inode);
 	if (index < 0) {
 		retval = index;
-		mutex_unlock(&ve->devpts_mutex);
+		mutex_unlock(&devpts_mutex);
 		goto err_file;
 	}
 
-	mutex_unlock(&ve->devpts_mutex);
+	mutex_unlock(&devpts_mutex);
 
 	mutex_lock(&tty_mutex);
-	tty = tty_init_dev(ve->ptm_driver, index);
+	tty = tty_init_dev(ptm_driver, index);
 
 	if (IS_ERR(tty)) {
 		retval = PTR_ERR(tty);
@@ -796,7 +800,7 @@ static int ptmx_open(struct inode *inode, struct file *filp)
 	}
 	tty->link->driver_data = slave_inode;
 
-	retval = ve->ptm_driver->ops->open(tty, filp);
+	retval = ptm_driver->ops->open(tty, filp);
 	if (retval)
 		goto err_release;
 
@@ -816,21 +820,15 @@ err_file:
 
 static struct file_operations ptmx_fops;
 
-static void __unix98_unregister_ptmx(struct ve_struct *ve)
+static void __unix98_unregister_ptmx(void)
 {
-	if (!ve_is_super(ve))
-		return;
-
 	unregister_chrdev_region(MKDEV(TTYAUX_MAJOR, 2), 1);
 	cdev_del(&ptmx_cdev);
 }
 
-static int __unix98_register_ptmx(struct ve_struct *ve)
-{
+static int __unix98_register_ptmx(void)
+ {
 	int err;
-
-	if (!ve_is_super(ve))
-		return 0;
 
 	cdev_init(&ptmx_cdev, &ptmx_fops);
 	err = cdev_add(&ptmx_cdev, MKDEV(TTYAUX_MAJOR, 2), 1);
@@ -850,21 +848,18 @@ err_ptmx_register:
 	return err;
 }
 
-static int __unix98_pty_init(struct ve_struct *ve,
-			     struct tty_driver **ptm_driver_p,
-			     struct tty_driver **pts_driver_p)
+static int __unix98_pty_init(struct tty_driver **ptm_driver_p,
+					struct tty_driver **pts_driver_p)
 {
 	struct tty_driver *ptm_driver, *pts_driver;
 	int err;
-
-	mutex_init(&ve->devpts_mutex);
+	struct device *dev;
 
 	ptm_driver = tty_alloc_driver(NR_UNIX98_PTY_MAX,
 			TTY_DRIVER_RESET_TERMIOS |
 			TTY_DRIVER_REAL_RAW |
 			TTY_DRIVER_DYNAMIC_DEV |
 			TTY_DRIVER_DEVPTS_MEM |
-			TTY_DRIVER_CONTAINERIZED |
 			TTY_DRIVER_DYNAMIC_ALLOC);
 	if (IS_ERR(ptm_driver)) {
 		printk(KERN_ERR "Couldn't allocate Unix98 ptm driver");
@@ -875,7 +870,6 @@ static int __unix98_pty_init(struct ve_struct *ve,
 			TTY_DRIVER_REAL_RAW |
 			TTY_DRIVER_DYNAMIC_DEV |
 			TTY_DRIVER_DEVPTS_MEM |
-			TTY_DRIVER_CONTAINERIZED |
 			TTY_DRIVER_DYNAMIC_ALLOC);
 	if (IS_ERR(pts_driver)) {
 		printk(KERN_ERR "Couldn't allocate Unix98 pts driver");
@@ -896,7 +890,6 @@ static int __unix98_pty_init(struct ve_struct *ve,
 	ptm_driver->init_termios.c_ispeed = 38400;
 	ptm_driver->init_termios.c_ospeed = 38400;
 	ptm_driver->other = pts_driver;
-	ptm_driver->ve = ve;
 	tty_set_operations(ptm_driver, &ptm_unix98_ops);
 
 	pts_driver->driver_name = "pty_slave";
@@ -910,7 +903,6 @@ static int __unix98_pty_init(struct ve_struct *ve,
 	pts_driver->init_termios.c_ispeed = 38400;
 	pts_driver->init_termios.c_ospeed = 38400;
 	pts_driver->other = ptm_driver;
-	pts_driver->ve = ve;
 	tty_set_operations(pts_driver, &pty_unix98_ops);
 
 	err = tty_register_driver(ptm_driver);
@@ -928,13 +920,13 @@ static int __unix98_pty_init(struct ve_struct *ve,
 	tty_default_fops(&ptmx_fops);
 	ptmx_fops.open = ptmx_open;
 
-	err = __unix98_register_ptmx(ve);
+	err = __unix98_register_ptmx();
 	if (err)
 		goto err_ptmx_register;
 
-	ve->ptmx = device_create(tty_class, NULL, MKDEV(TTYAUX_MAJOR, 2), ve, "ptmx");
-	if (IS_ERR(ve->ptmx)) {
-		err = PTR_ERR(ve->ptmx);
+	dev = device_create(tty_class, NULL, MKDEV(TTYAUX_MAJOR, 2), NULL, "ptmx");
+	if (IS_ERR(dev)) {
+		err = PTR_ERR(dev);
 		goto err_ptmx_create;
 	}
 
@@ -944,7 +936,7 @@ static int __unix98_pty_init(struct ve_struct *ve,
 	return 0;
 
 err_ptmx_create:
-	__unix98_unregister_ptmx(ve);
+	__unix98_unregister_ptmx();
 err_ptmx_register:
 	tty_unregister_driver(pts_driver);
 err_pts_register:
@@ -956,32 +948,12 @@ err_pts_alloc:
 	return err;
 }
 
-void ve_unix98_pty_fini(struct ve_struct *ve)
-{
-	struct tty_driver *ptm_driver = ve->ptm_driver;
-	struct tty_driver *pts_driver = ve->pts_driver;
-
-	ve->ptm_driver = NULL;
-	ve->pts_driver = NULL;
-
-	device_unregister(ve->ptmx);
-	__unix98_unregister_ptmx(ve);
-	tty_unregister_driver(pts_driver);
-	tty_unregister_driver(ptm_driver);
-	put_tty_driver(pts_driver);
-	put_tty_driver(ptm_driver);
-}
-
-int ve_unix98_pty_init(struct ve_struct *ve)
-{
-	return __unix98_pty_init(ve, &ve->ptm_driver, &ve->pts_driver);
-}
-
 static void __init unix98_pty_init(void)
 {
-	if (__unix98_pty_init(get_ve0(), &get_ve0()->ptm_driver, &get_ve0()->pts_driver))
-		panic("Failed to init unix98 ptys");
+       if (__unix98_pty_init(&ptm_driver, &pts_driver))
+               panic("Failed to init legacy ptys");
 }
+
 #else
 static inline void unix98_pty_init(void) { }
 #endif
