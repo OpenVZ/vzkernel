@@ -43,21 +43,12 @@ const void *ve_namespace(struct device *dev)
 	return (!dev->groups && dev_get_drvdata(dev)) ? dev_get_drvdata(dev) : get_ve0();
 }
 
-static const struct path *ve_devtmpfs(const struct kobject *kobj)
-{
-	struct device *dev = container_of(kobj, struct device, kobj);
-	const struct ve_struct *ve = dev->class->namespace(dev);
-
-	return &ve->devtmpfs_root;
-}
-
 struct kobj_ns_type_operations ve_ns_type_operations = {
 	.type = KOBJ_NS_TYPE_VE,
 	.grab_current_ns = ve_grab_current_ns,
 	.netlink_ns = ve_netlink_ns,
 	.initial_ns = ve_initial_ns,
 	.drop_ns = ve_drop_ns,
-	.devtmpfs = ve_devtmpfs,
 };
 
 static bool sysfs_perms_shown(struct ve_struct *ve, struct sysfs_dirent *sd)
