@@ -1478,8 +1478,6 @@ struct super_block {
 	unsigned int		s_max_links;
 	fmode_t			s_mode;
 
-	void			*s_ns;		/* Pointer to namespace */
-
 	/* Granularity of c/m/atime in ns.
 	   Cannot be worse than a second */
 	u32		   s_time_gran;
