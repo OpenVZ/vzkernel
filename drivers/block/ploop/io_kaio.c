@@ -460,14 +460,7 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 		return;
 	}
 
-	/* trick: preq->prealloc_size is actually new pos of eof */
-	if (unlikely(preq->prealloc_size)) {
-		BUG_ON(preq != io->prealloc_preq);
-		io->prealloc_preq = NULL;
-
-		io->prealloced_size = preq->prealloc_size - ((loff_t)iblk << log);
-		preq->prealloc_size = 0; /* only for sanity */
-	}
+	BUG_ON(preq->prealloc_size);
 
 	if (unlikely(io->prealloced_size < clu_siz)) {
 		if (!io->prealloc_preq) {
