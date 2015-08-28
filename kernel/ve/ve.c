@@ -448,10 +448,6 @@ int ve_start_container(struct ve_struct *ve)
 	if (err)
 		goto err_legacy_pty;
 
-	err = ve_unix98_pty_init(ve);
-	if (err)
-		goto err_unix98_pty;
-
 	err = ve_tty_console_init(ve);
 	if (err)
 		goto err_tty_console;
@@ -471,8 +467,6 @@ int ve_start_container(struct ve_struct *ve)
 err_iterate:
 	ve_tty_console_fini(ve);
 err_tty_console:
-	ve_unix98_pty_fini(ve);
-err_unix98_pty:
 	ve_legacy_pty_fini(ve);
 err_legacy_pty:
 	ve_stop_umh(ve);
@@ -505,7 +499,6 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	ve->is_running = 0;
 
 	ve_tty_console_fini(ve);
-	ve_unix98_pty_fini(ve);
 	ve_legacy_pty_fini(ve);
 
 	ve_stop_umh(ve);
