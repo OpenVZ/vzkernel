@@ -366,46 +366,13 @@ int devtmpfs_mount(const char *mntdir)
 
 static DECLARE_COMPLETION(setup_done);
 
-static struct path set_dev_pwd(struct device *dev)
-{
-	const struct kobj_ns_type_operations *ops;
-	struct path pwd = current->fs->pwd;
-
-	ops = kobj_ns_ops(&dev->kobj);
-	path_get(&pwd);
-
-	if (ops && ops->devtmpfs) {
-		const struct path *devtmpfs_root;
-
-		devtmpfs_root = ops->devtmpfs(&dev->kobj);
-		BUG_ON(!devtmpfs_root);
-		set_fs_pwd(current->fs, devtmpfs_root);
-	}
-	return pwd;
-}
-
-static void drop_dev_pwd(struct path *pwd)
-{
-	set_fs_pwd(current->fs, pwd);
-	path_put(pwd);
-}
-
 static int handle(const char *name, umode_t mode, kuid_t uid, kgid_t gid,
 		  struct device *dev)
 {
-	struct path pwd;
-	int err;
-
-	pwd = set_dev_pwd(dev);
-
 	if (mode)
-		err = handle_create(name, mode, uid, gid, dev);
+		return handle_create(name, mode, uid, gid, dev);
 	else
-		err = handle_remove(name, dev);
-
-	/* Restore kthread pwd */
-	drop_dev_pwd(&pwd);
-	return err;
+		return handle_remove(name, dev);
 }
 
 static int devtmpfsd(void *p)
