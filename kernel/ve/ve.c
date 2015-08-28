@@ -412,55 +412,6 @@ static void ve_drop_context(struct ve_struct *ve)
 	ve->init_cred = NULL;
 }
 
-static const struct {
-	unsigned int	minor;
-	char		*name;
-} ve_mem_class_devices[] = {
-	{3, "null"},
-	{5, "zero"},
-	{7, "full"},
-	{8, "random"},
-	{9, "urandom"},
-};
-
-extern struct class *mem_class;
-
-static int ve_init_mem_class(struct ve_struct *ve)
-{
-	struct device *dev;
-	dev_t devt;
-	size_t i;
-
-	for (i = 0; i < ARRAY_SIZE(ve_mem_class_devices); i++) {
-		devt = MKDEV(MEM_MAJOR, ve_mem_class_devices[i].minor);
-		dev = device_create(mem_class, NULL, devt,
-				    ve, ve_mem_class_devices[i].name);
-		if (IS_ERR(dev)) {
-			pr_err("Can't create %s (%d)\n",
-			       ve_mem_class_devices[i].name,
-			       (int)PTR_ERR(dev));
-			for (; i > 0; i--) {
-				devt = MKDEV(MEM_MAJOR, ve_mem_class_devices[i - 1].minor);
-				device_destroy_namespace(mem_class, devt, ve);
-			}
-			return PTR_ERR(dev);
-		}
-	}
-
-	return 0;
-}
-
-static void ve_mem_class_fini(struct ve_struct *ve)
-{
-	dev_t devt;
-	size_t i;
-
-	for (i = 0; i < ARRAY_SIZE(ve_mem_class_devices); i++) {
-		devt = MKDEV(MEM_MAJOR, ve_mem_class_devices[i].minor);
-		device_destroy_namespace(mem_class, devt, ve);
-	}
-}
-
 /* under ve->op_sem write-lock */
 int ve_start_container(struct ve_struct *ve)
 {
@@ -509,10 +460,6 @@ int ve_start_container(struct ve_struct *ve)
 	if (err)
 		goto err_tty_console;
 
-	err = ve_init_mem_class(ve);
-	if (err)
-		goto err_mem_class;
-
 	err = ve_hook_iterate_init(VE_SS_CHAIN, ve);
 	if (err < 0)
 		goto err_iterate;
@@ -526,8 +473,6 @@ int ve_start_container(struct ve_struct *ve)
 	return 0;
 
 err_iterate:
-	ve_mem_class_fini(ve);
-err_mem_class:
 	ve_tty_console_fini(ve);
 err_tty_console:
 	ve_unix98_pty_fini(ve);
@@ -568,7 +513,6 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	ve_tty_console_fini(ve);
 	ve_unix98_pty_fini(ve);
 	ve_legacy_pty_fini(ve);
-	ve_mem_class_fini(ve);
 
 	ve_fini_devtmpfs(ve);
 
