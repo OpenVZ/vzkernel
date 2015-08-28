@@ -30,7 +30,6 @@
 #include <linux/io.h>
 #include <linux/aio.h>
 #include <linux/security.h>
-#include <linux/ve.h>
 
 #include <asm/uaccess.h>
 
@@ -924,20 +923,7 @@ static char *mem_devnode(struct device *dev, umode_t *mode)
 	return NULL;
 }
 
-#ifdef CONFIG_VE
-static struct class mem_class_base = {
-	.name		= "mem",
-	.devnode	= mem_devnode,
-	.ns_type	= &ve_ns_type_operations,
-	.namespace	= ve_namespace,
-	.owner		= THIS_MODULE,
-};
-
-struct class *mem_class = &mem_class_base;
-EXPORT_SYMBOL(mem_class);
-#else
 static struct class *mem_class;
-#endif
 
 static int __init chr_dev_init(void)
 {
@@ -951,17 +937,11 @@ static int __init chr_dev_init(void)
 	if (register_chrdev(MEM_MAJOR, "mem", &memory_fops))
 		printk("unable to get major %d for memory devs\n", MEM_MAJOR);
 
-#ifdef CONFIG_VE
-	err = class_register(&mem_class_base);
-	if (err)
-		return err;
-#else
 	mem_class = class_create(THIS_MODULE, "mem");
 	if (IS_ERR(mem_class))
 		return PTR_ERR(mem_class);
 
 	mem_class->devnode = mem_devnode;
-#endif
 	for (minor = 1; minor < ARRAY_SIZE(devlist); minor++) {
 		if (!devlist[minor].name)
 			continue;
