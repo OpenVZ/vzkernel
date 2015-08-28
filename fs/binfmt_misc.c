@@ -757,16 +757,42 @@ static struct file_system_type bm_fs_type = {
 };
 MODULE_ALIAS_FS("binfmt_misc");
 
+static void ve_binfmt_fini(void *data)
+{
+	struct ve_struct *ve = data;
+	struct binfmt_misc *bm_data = ve->binfmt_misc;
+
+	if (!bm_data)
+		return;
+
+	/*
+	 * XXX: Note we don't take any locks here. This is safe as long as
+	 * nobody uses binfmt_misc outside the owner ve.
+	 */
+	while (!list_empty(&bm_data->entries))
+		kill_node(bm_data, list_first_entry(
+			&bm_data->entries, Node, list));
+}
+
+static struct ve_hook ve_binfmt_hook = {
+	.fini		= ve_binfmt_fini,
+	.priority	= HOOK_PRIO_DEFAULT,
+	.owner		= THIS_MODULE,
+};
+
 static int __init init_misc_binfmt(void)
 {
 	int err = register_filesystem(&bm_fs_type);
-	if (!err)
+	if (!err) {
 		insert_binfmt(&misc_format);
+		ve_hook_register(VE_SS_CHAIN, &ve_binfmt_hook);
+	}
 	return err;
 }
 
 static void __exit exit_misc_binfmt(void)
 {
+	ve_hook_unregister(&ve_binfmt_hook);
 	unregister_binfmt(&misc_format);
 	unregister_filesystem(&bm_fs_type);
 }
