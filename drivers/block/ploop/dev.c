@@ -2275,6 +2275,19 @@ static void ploop_req_state_process(struct ploop_request * preq)
 			ploop_tracker_notify(plo, sec);
 	}
 
+	/* trick: preq->prealloc_size is actually new pos of eof */
+	if (unlikely(preq->prealloc_size && !preq->error)) {
+		struct ploop_io *io = &ploop_top_delta(plo)->io;
+		int log = preq->plo->cluster_log + 9;
+
+		BUG_ON(preq != io->prealloc_preq);
+		io->prealloc_preq = NULL;
+
+		io->prealloced_size = preq->prealloc_size -
+				      ((loff_t)io->alloc_head << log);
+		preq->prealloc_size = 0; /* only for sanity */
+	}
+
 restart:
 	__TRACE("ST %p %u %lu\n", preq, preq->req_cluster, preq->eng_state);
 	switch (preq->eng_state) {
