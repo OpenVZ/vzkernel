@@ -65,7 +65,7 @@ struct binfmt_misc {
 	int entry_count;
 };
 
-#define BINFMT_MISC(sb)		(((struct ve_struct *)(sb)->s_ns)->binfmt_misc)
+#define BINFMT_MISC(sb)		(((struct ve_struct *)(sb)->s_fs_info)->binfmt_misc)
 
 /* 
  * Check if we support the binfmt
@@ -684,7 +684,7 @@ static const struct file_operations bm_status_operations = {
 static void bm_put_super(struct super_block *sb)
 {
 	struct binfmt_misc *bm_data = BINFMT_MISC(sb);
-	struct ve_struct *ve = sb->s_ns;
+	struct ve_struct *ve = sb->s_fs_info;
 
 	bm_data->enabled = 0;
 	put_ve(ve);
@@ -703,7 +703,7 @@ static int bm_fill_super(struct super_block * sb, void * data, int silent)
 		[3] = {"register", &bm_register_operations, S_IWUSR},
 		/* last one */ {""}
 	};
-	struct ve_struct *ve = sb->s_ns;
+	struct ve_struct *ve = data;
 	struct binfmt_misc *bm_data = ve->binfmt_misc;
 	int err;
 
