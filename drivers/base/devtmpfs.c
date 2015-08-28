@@ -23,8 +23,6 @@
 #include <linux/ramfs.h>
 #include <linux/slab.h>
 #include <linux/kthread.h>
-#include <linux/fs_struct.h>
-#include <linux/ve.h>
 #include "base.h"
 
 static struct task_struct *thread;
@@ -59,9 +57,9 @@ static struct dentry *dev_mount(struct file_system_type *fs_type, int flags,
 		      const char *dev_name, void *data)
 {
 #ifdef CONFIG_TMPFS
-	return mount_ns(fs_type, flags, data, shmem_fill_super);
+	return mount_single(fs_type, flags, data, shmem_fill_super);
 #else
-	return mount_ns(fs_type, flags, data, ramfs_fill_super);
+	return mount_single(fs_type, flags, data, ramfs_fill_super);
 #endif
 }
 
@@ -387,7 +385,6 @@ static int devtmpfsd(void *p)
 		goto out;
 	sys_chdir("/.."); /* will traverse into overmounted root */
 	sys_chroot(".");
-	get_fs_root(current->fs, &get_exec_env()->devtmpfs_root);
 	complete(&setup_done);
 	while (1) {
 		spin_lock(&req_lock);
@@ -408,31 +405,10 @@ static int devtmpfsd(void *p)
 		spin_unlock(&req_lock);
 		schedule();
 	}
-	path_put(&get_exec_env()->devtmpfs_root);
 	return 0;
 out:
 	complete(&setup_done);
 	return *err;
-}
-
-int ve_init_devtmpfs(void *data)
-{
-	struct ve_struct *ve = data;
-	struct vfsmount *mnt;
-
-	mnt = kern_mount_data(&dev_fs_type, ve);
-	if (IS_ERR(mnt))
-		return PTR_ERR(mnt);
-	ve->devtmpfs_root.mnt = mnt;
-	ve->devtmpfs_root.dentry = mnt->mnt_root;
-	return 0;
-}
-
-void ve_fini_devtmpfs(void *data)
-{
-	struct ve_struct *ve = data;
-
-	kern_unmount(ve->devtmpfs_root.mnt);
 }
 
 /*
