@@ -820,62 +820,25 @@ err_file:
 
 static struct file_operations ptmx_fops;
 
-static void __unix98_unregister_ptmx(void)
+static void __init unix98_pty_init(void)
 {
-	unregister_chrdev_region(MKDEV(TTYAUX_MAJOR, 2), 1);
-	cdev_del(&ptmx_cdev);
-}
-
-static int __unix98_register_ptmx(void)
- {
-	int err;
-
-	cdev_init(&ptmx_cdev, &ptmx_fops);
-	err = cdev_add(&ptmx_cdev, MKDEV(TTYAUX_MAJOR, 2), 1);
-	if (err) {
-		printk(KERN_ERR "Couldn't add /dev/ptmx device");
-		return err;
-	}
-	err = register_chrdev_region(MKDEV(TTYAUX_MAJOR, 2), 1, "/dev/ptmx");
-	if (err < 0) {
-		printk(KERN_ERR "Couldn't register /dev/ptmx driver");
-		goto err_ptmx_register;
-	}
-	return 0;
-
-err_ptmx_register:
-	cdev_del(&ptmx_cdev);
-	return err;
-}
-
-static int __unix98_pty_init(struct tty_driver **ptm_driver_p,
-					struct tty_driver **pts_driver_p)
-{
-	struct tty_driver *ptm_driver, *pts_driver;
-	int err;
-	struct device *dev;
-
 	ptm_driver = tty_alloc_driver(NR_UNIX98_PTY_MAX,
 			TTY_DRIVER_RESET_TERMIOS |
 			TTY_DRIVER_REAL_RAW |
 			TTY_DRIVER_DYNAMIC_DEV |
 			TTY_DRIVER_DEVPTS_MEM |
 			TTY_DRIVER_DYNAMIC_ALLOC);
-	if (IS_ERR(ptm_driver)) {
-		printk(KERN_ERR "Couldn't allocate Unix98 ptm driver");
-		return PTR_ERR(ptm_driver);
-	}
+	if (IS_ERR(ptm_driver))
+		panic("Couldn't allocate Unix98 ptm driver");
 	pts_driver = tty_alloc_driver(NR_UNIX98_PTY_MAX,
 			TTY_DRIVER_RESET_TERMIOS |
 			TTY_DRIVER_REAL_RAW |
 			TTY_DRIVER_DYNAMIC_DEV |
 			TTY_DRIVER_DEVPTS_MEM |
 			TTY_DRIVER_DYNAMIC_ALLOC);
-	if (IS_ERR(pts_driver)) {
-		printk(KERN_ERR "Couldn't allocate Unix98 pts driver");
-		err = PTR_ERR(pts_driver);
-		goto err_pts_alloc;
-	}
+	if (IS_ERR(pts_driver))
+		panic("Couldn't allocate Unix98 pts driver");
+
 	ptm_driver->driver_name = "pty_master";
 	ptm_driver->name = "ptm";
 	ptm_driver->major = UNIX98_PTY_MASTER_MAJOR;
@@ -905,53 +868,20 @@ static int __unix98_pty_init(struct tty_driver **ptm_driver_p,
 	pts_driver->other = ptm_driver;
 	tty_set_operations(pts_driver, &pty_unix98_ops);
 
-	err = tty_register_driver(ptm_driver);
-	if (err) {
-		printk(KERN_ERR "Couldn't register Unix98 ptm driver");
-		goto err_ptm_register;
-	}
-	err = tty_register_driver(pts_driver);
-	if (err) {
-		printk(KERN_ERR "Couldn't register Unix98 pts driver");
-		goto err_pts_register;
-	}
+	if (tty_register_driver(ptm_driver))
+		panic("Couldn't register Unix98 ptm driver");
+	if (tty_register_driver(pts_driver))
+		panic("Couldn't register Unix98 pts driver");
 
 	/* Now create the /dev/ptmx special device */
 	tty_default_fops(&ptmx_fops);
 	ptmx_fops.open = ptmx_open;
 
-	err = __unix98_register_ptmx();
-	if (err)
-		goto err_ptmx_register;
-
-	dev = device_create(tty_class, NULL, MKDEV(TTYAUX_MAJOR, 2), NULL, "ptmx");
-	if (IS_ERR(dev)) {
-		err = PTR_ERR(dev);
-		goto err_ptmx_create;
-	}
-
-	*ptm_driver_p = ptm_driver;
-	*pts_driver_p = pts_driver;
-
-	return 0;
-
-err_ptmx_create:
-	__unix98_unregister_ptmx();
-err_ptmx_register:
-	tty_unregister_driver(pts_driver);
-err_pts_register:
-	tty_unregister_driver(ptm_driver);
-err_ptm_register:
-	put_tty_driver(pts_driver);
-err_pts_alloc:
-	put_tty_driver(ptm_driver);
-	return err;
-}
-
-static void __init unix98_pty_init(void)
-{
-       if (__unix98_pty_init(&ptm_driver, &pts_driver))
-               panic("Failed to init legacy ptys");
+	cdev_init(&ptmx_cdev, &ptmx_fops);
+	if (cdev_add(&ptmx_cdev, MKDEV(TTYAUX_MAJOR, 2), 1) ||
+	    register_chrdev_region(MKDEV(TTYAUX_MAJOR, 2), 1, "/dev/ptmx") < 0)
+		panic("Couldn't register /dev/ptmx driver");
+	device_create(tty_class, NULL, MKDEV(TTYAUX_MAJOR, 2), NULL, "ptmx");
 }
 
 #else
