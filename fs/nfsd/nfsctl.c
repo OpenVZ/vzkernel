@@ -1159,7 +1159,7 @@ static int nfsd_fill_super(struct super_block * sb, void * data, int silent)
 #endif
 		/* last one */ {""}
 	};
-	struct net *net = sb->s_ns;
+	struct net *net = data;
 	int ret;
 
 	ret = simple_fill_super(sb, 0x6e667364, nfsd_files);
