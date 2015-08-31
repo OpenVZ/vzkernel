@@ -60,6 +60,8 @@ extern int proc_do_large_bitmap(struct ctl_table *, int,
 
 extern int proc_dointvec_virtual(struct ctl_table *table, int write,
 		void __user *buffer, size_t *lenp, loff_t *ppos);
+extern int proc_doulongvec_minmax_virtual(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos);
 extern int proc_dointvec_immutable(struct ctl_table *table, int write,
 		void __user *buffer, size_t *lenp, loff_t *ppos);
 extern int proc_dostring_immutable(struct ctl_table *table, int write,
