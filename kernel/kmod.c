@@ -91,7 +91,7 @@ static int call_modprobe(char *module_name, int wait, int blacklist)
 		NULL
 	};
 
-	char **argv = kmalloc(sizeof(char *[5]), GFP_KERNEL);
+	char **argv = kmalloc(sizeof(char *[6]), GFP_KERNEL);
 	if (!argv)
 		goto out;
 
