@@ -238,6 +238,8 @@ void ext4_evict_inode(struct inode *inode)
 	 * protection against it
 	 */
 	sb_start_intwrite(inode->i_sb);
+	if (inode->i_blocks && ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+		ext4_truncate_data_csum(inode, inode->i_size);
 	handle = ext4_journal_start(inode, EXT4_HT_TRUNCATE,
 				    ext4_blocks_for_truncate(inode)+3);
 	if (IS_ERR(handle)) {
@@ -933,6 +935,10 @@ retry_grab:
 	unlock_page(page);
 
 retry_journal:
+	/* Check csum window position before journal_start */
+	if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+		ext4_check_pos_data_csum(inode, pos);
+
 	handle = ext4_journal_start(inode, EXT4_HT_WRITE_PAGE, needed_blocks);
 	if (IS_ERR(handle)) {
 		page_cache_release(page);
@@ -2574,6 +2580,10 @@ retry_grab:
 	 * of file which has an already mapped buffer.
 	 */
 retry_journal:
+	/* Check csum window position before journal_start */
+	if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+		ext4_check_pos_data_csum(inode, pos);
+
 	handle = ext4_journal_start(inode, EXT4_HT_WRITE_PAGE,
 				ext4_da_write_credits(inode, pos, len));
 	if (IS_ERR(handle)) {
@@ -4621,6 +4631,9 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
 				if (error)
 					goto err_out;
 			}
+			if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+				ext4_truncate_data_csum(inode, attr->ia_size);
+
 			handle = ext4_journal_start(inode, EXT4_HT_INODE, 3);
 			if (IS_ERR(handle)) {
 				error = PTR_ERR(handle);
