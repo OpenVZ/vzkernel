@@ -47,7 +47,7 @@ static struct tty_struct *vz_tty_lookup(struct tty_driver *driver,
 	if (idx != VZ_CON_INDEX || driver == vz_cons_driver)
 		return ERR_PTR(-EIO);
 
-	return ve->vz_tty_conm;
+	return ve->vz_tty_vt[idx];
 }
 
 static int vz_tty_install(struct tty_driver *driver, struct tty_struct *tty)
@@ -62,7 +62,7 @@ static int vz_tty_install(struct tty_driver *driver, struct tty_struct *tty)
 	tty_port_init(tty->port);
 	tty->termios = driver->init_termios;
 
-	ve->vz_tty_conm = tty;
+	ve->vz_tty_vt[tty->index] = tty;
 
 	tty_driver_kref_get(driver);
 	tty->count++;
@@ -74,7 +74,7 @@ static void vz_tty_remove(struct tty_driver *driver, struct tty_struct *tty)
 	struct ve_struct *ve = get_exec_env();
 
 	BUG_ON(driver != vz_conm_driver);
-	ve->vz_tty_conm = NULL;
+	ve->vz_tty_vt[tty->index] = NULL;
 }
 
 static int vz_tty_open(struct tty_struct *tty, struct file *filp)
