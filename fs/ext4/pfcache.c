@@ -446,6 +446,8 @@ static int ext4_save_data_csum(struct inode *inode, u8 *csum)
 {
 	int ret;
 
+	WARN_ON(journal_current_handle());
+
 	if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM) &&
 	    EXT4_I(inode)->i_data_csum_end < 0 &&
 	    memcmp(EXT4_I(inode)->i_data_csum, csum, EXT4_DATA_CSUM_SIZE))
@@ -493,30 +495,30 @@ void ext4_save_dir_csum(struct inode *inode)
 			EXT4_DIR_CSUM_VALUE_LEN, 0);
 }
 
-int ext4_truncate_data_csum(struct inode *inode, loff_t pos)
+void ext4_truncate_data_csum(struct inode *inode, loff_t pos)
 {
-	int ret = 0;
 
 	if (!S_ISREG(inode->i_mode))
-		return 0;
+		return;
 
 	if (EXT4_I(inode)->i_data_csum_end < 0) {
+		WARN_ON(journal_current_handle());
 		ext4_xattr_set(inode, EXT4_XATTR_INDEX_TRUSTED,
 				EXT4_DATA_CSUM_NAME, NULL, 0, 0);
 		ext4_close_pfcache(inode);
 	}
+	spin_lock(&inode->i_lock);
+	ext4_clear_data_csum(inode);
+	if (!pos && test_opt2(inode->i_sb, PFCACHE_CSUM))
+		ext4_init_data_csum(inode);
+	spin_unlock(&inode->i_lock);
+}
 
-	if (EXT4_I(inode)->i_data_csum_end < 0 ||
-	    EXT4_I(inode)->i_data_csum_end > pos) {
-		spin_lock(&inode->i_lock);
-		ext4_clear_data_csum(inode);
-		if (!pos && test_opt2(inode->i_sb, PFCACHE_CSUM))
-			ext4_init_data_csum(inode);
-		else
-			ret = -1;
-		spin_unlock(&inode->i_lock);
-	}
-	return ret;
+void ext4_check_pos_data_csum(struct inode *inode, loff_t pos)
+{
+	if ((pos & ~(loff_t)(SHA_MESSAGE_BYTES-1)) !=
+	    EXT4_I(inode)->i_data_csum_end)
+		ext4_truncate_data_csum(inode, pos);
 }
 
 static void sha_batch_transform(__u32 *digest, const char *data, unsigned rounds)
@@ -535,14 +537,14 @@ void ext4_update_data_csum(struct inode *inode, loff_t pos,
 	__u32 *digest = (__u32 *)EXT4_I(inode)->i_data_csum;
 	u8 *kaddr, *data;
 
+	if (!len)
+		return;
+
 	len += pos & (SHA_MESSAGE_BYTES-1);
 	len &= ~(SHA_MESSAGE_BYTES-1);
 	pos &= ~(loff_t)(SHA_MESSAGE_BYTES-1);
 
-	if ((pos != EXT4_I(inode)->i_data_csum_end &&
-	     ext4_truncate_data_csum(inode, pos)) || !len)
-		return;
-
+	BUG_ON(pos != EXT4_I(inode)->i_data_csum_end);
 	EXT4_I(inode)->i_data_csum_end += len;
 
 	kaddr = kmap_atomic(page);
@@ -566,6 +568,9 @@ static int ext4_finish_data_csum(struct inode *inode, u8 *csum)
 	end = EXT4_I(inode)->i_data_csum_end;
 	if (end < 0)
 		return 0;
+
+	if (!inode->i_size)
+		return -ENODATA;
 
 	tail = inode->i_size - end;
 	if (tail >= SHA_MESSAGE_BYTES)
