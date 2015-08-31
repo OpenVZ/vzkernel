@@ -2745,6 +2745,17 @@ int proc_dointvec_virtual(struct ctl_table *table, int write,
 	return -EINVAL;
 }
 
+int proc_doulongvec_minmax_virtual(struct ctl_table *table, int write,
+				void __user *buffer, size_t *lenp,
+				loff_t *ppos)
+{
+	struct ctl_table tmp = *table;
+
+	if (virtual_ptr(&tmp.data, &ve0, sizeof(ve0), get_exec_env()))
+		return proc_doulongvec_minmax(&tmp, write, buffer, lenp, ppos);
+	return -EINVAL;
+}
+
 static inline bool sysctl_in_container(void)
 {
 	return !ve_is_super(get_exec_env());
