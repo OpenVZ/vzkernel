@@ -128,6 +128,12 @@ struct ve_struct {
 	struct mutex		devmnt_mutex;
 
 	struct kmapset_key	ve_sysfs_perms;
+
+#ifdef CONFIG_AIO
+	spinlock_t		aio_nr_lock;
+	unsigned long		aio_nr;
+	unsigned long		aio_max_nr;
+#endif
 };
 
 struct ve_devmnt {
