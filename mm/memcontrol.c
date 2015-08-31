@@ -2754,11 +2754,6 @@ static int mem_cgroup_do_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
 		return CHARGE_WOULDBLOCK;
 	}
 
-	if (gfp_mask & __GFP_NORETRY) {
-		mem_cgroup_inc_failcnt(mem_over_limit, gfp_mask, nr_pages);
-		return CHARGE_NOMEM;
-	}
-
 	ret = mem_cgroup_reclaim(mem_over_limit, gfp_mask, flags);
 	if (mem_cgroup_margin(mem_over_limit) >= nr_pages)
 		return CHARGE_RETRY;
@@ -2786,6 +2781,9 @@ static int mem_cgroup_do_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
 		return CHARGE_NOMEM;
 
 	mem_cgroup_inc_failcnt(mem_over_limit, gfp_mask, nr_pages);
+
+	if (gfp_mask & __GFP_NORETRY)
+		return CHARGE_NOMEM;
 
 	/* check OOM */
 	if (!mem_cgroup_handle_oom(mem_over_limit, gfp_mask, get_order(csize)))
