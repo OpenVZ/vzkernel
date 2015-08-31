@@ -12,6 +12,8 @@ static inline void ext4_truncate_failed_write(struct inode *inode)
 {
 	down_write(&EXT4_I(inode)->i_mmap_sem);
 	truncate_inode_pages(inode->i_mapping, inode->i_size);
+	if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+		ext4_truncate_data_csum(inode, inode->i_size);
 	ext4_truncate(inode);
 	up_write(&EXT4_I(inode)->i_mmap_sem);
 }
@@ -41,5 +43,6 @@ static inline unsigned long ext4_blocks_for_truncate(struct inode *inode)
 		needed = EXT4_MAX_TRANS_DATA;
 
 	return EXT4_DATA_TRANS_BLOCKS(inode->i_sb) + needed;
+
 }
 
