@@ -82,4 +82,9 @@ config LOGO_M32R_CLUT224
 	depends on M32R
 	default y
 
+config LOGO_ODIN_CLUT224
+	bool "224-color Odin logo"
+	depends on LOGO
+	default y
+
 endif # LOGO
