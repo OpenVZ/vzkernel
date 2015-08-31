@@ -2832,11 +2832,12 @@ extern long ext4_dump_pfcache(struct super_block *sb,
 					struct pfcache_dump_request __user *dump);
 extern int ext4_load_data_csum(struct inode *inode);
 extern void ext4_start_data_csum(struct inode *inode);
+extern void ext4_check_pos_data_csum(struct inode *inode, loff_t pos);
 extern void ext4_update_data_csum(struct inode *inode, loff_t pos,
 				  unsigned len, struct page* page);
 extern void ext4_commit_data_csum(struct inode *inode);
 extern void ext4_clear_data_csum(struct inode *inode);
-extern int ext4_truncate_data_csum(struct inode *inode, loff_t end);
+extern void ext4_truncate_data_csum(struct inode *inode, loff_t end);
 extern void ext4_load_dir_csum(struct inode *inode);
 extern void ext4_save_dir_csum(struct inode *inode);
 static inline int ext4_want_data_csum(struct inode *dir)
