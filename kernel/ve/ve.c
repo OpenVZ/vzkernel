@@ -17,6 +17,7 @@
 #include <linux/ve.h>
 #include <linux/init.h>
 
+#include <linux/aio.h>
 #include <linux/errno.h>
 #include <linux/unistd.h>
 #include <linux/slab.h>
@@ -623,6 +624,12 @@ do_init:
 	INIT_LIST_HEAD(&ve->devmnt_list);
 	mutex_init(&ve->devmnt_mutex);
 	kmapset_init_key(&ve->ve_sysfs_perms);
+
+#ifdef CONFIG_AIO
+	spin_lock_init(&ve->aio_nr_lock);
+	ve->aio_nr = 0;
+	ve->aio_max_nr = AIO_MAX_NR_DEFAULT;
+#endif
 
 	return &ve->css;
 

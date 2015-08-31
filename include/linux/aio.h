@@ -14,6 +14,8 @@ struct kiocb;
 
 #define KIOCB_KEY		0
 
+#define AIO_MAX_NR_DEFAULT	0x10000
+
 /*
  * We use ki_cancel == KIOCB_CANCELLED to indicate that a kiocb has been either
  * cancelled or completed (this makes a certain amount of sense because
@@ -123,9 +125,5 @@ static inline struct kiocb *list_kiocb(struct list_head *h)
 {
 	return list_entry(h, struct kiocb, ki_list);
 }
-
-/* for sysctl: */
-extern unsigned long aio_nr;
-extern unsigned long aio_max_nr;
 
 #endif /* __LINUX__AIO_H */
