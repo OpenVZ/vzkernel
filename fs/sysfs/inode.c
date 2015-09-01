@@ -345,13 +345,17 @@ int sysfs_hash_and_remove(struct sysfs_dirent *dir_sd, const void *ns, const cha
 static int sysfs_sd_permission(struct sysfs_dirent *sd, int mask)
 {
 	struct ve_struct *ve = get_exec_env();
+	struct sysfs_dirent *tmp_sd = sd;
 	int perm;
 
 	if (ve_is_super(ve))
 		return 0;
 
-	if (sd->s_ns || (sd->s_parent && sd->s_parent->s_ns))
-		return 0;
+	while (tmp_sd) {
+		if (tmp_sd->s_ns)
+			return 0;
+		tmp_sd = tmp_sd->s_parent;
+	}
 
 	if (sysfs_type(sd) == SYSFS_KOBJ_LINK)
 		sd = sd->s_symlink.target_sd;
