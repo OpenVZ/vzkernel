@@ -105,6 +105,9 @@ static struct dentry *ve_dev_mount(struct file_system_type *fs_type, int flags,
 static struct dentry *dev_mount(struct file_system_type *fs_type, int flags,
 		      const char *dev_name, void *data)
 {
+	if (get_exec_env()->init_cred->user_ns != current_user_ns())
+		return ERR_PTR(-EPERM);
+
 #ifdef CONFIG_VE
 	if (!ve_is_super(get_exec_env()))
 		return ve_dev_mount(fs_type, flags, dev_name, data);
@@ -120,7 +123,7 @@ static struct file_system_type dev_fs_type = {
 	.name = "devtmpfs",
 	.mount = dev_mount,
 	.kill_sb = kill_litter_super,
-	.fs_flags = FS_VIRTUALIZED,
+	.fs_flags = FS_VIRTUALIZED | FS_USERNS_MOUNT | FS_USERNS_DEV_MOUNT,
 };
 
 #ifdef CONFIG_BLOCK
