@@ -1821,9 +1821,14 @@ out:
 
 int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
 {
-	return __cgroup_path(cgrp, buf, buflen, !get_exec_env());
+	return __cgroup_path(cgrp, buf, buflen, false);
 }
 EXPORT_SYMBOL_GPL(cgroup_path);
+
+int cgroup_path_ve(const struct cgroup *cgrp, char *buf, int buflen)
+{
+	return __cgroup_path(cgrp, buf, buflen, !ve_is_super(get_exec_env()));
+}
 
 /*
  * Control Group taskset
@@ -4848,7 +4853,7 @@ int proc_cgroup_show(struct seq_file *m, void *v)
 				   root->name);
 		seq_putc(m, ':');
 		cgrp = task_cgroup_from_root(tsk, root);
-		retval = cgroup_path(cgrp, buf, PAGE_SIZE);
+		retval = cgroup_path_ve(cgrp, buf, PAGE_SIZE);
 		if (retval < 0)
 			goto out_unlock;
 		seq_puts(m, buf);
