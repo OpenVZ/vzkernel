@@ -792,8 +792,8 @@ static int __init inotify_user_setup(void)
 	inotify_inode_mark_cachep = KMEM_CACHE(inotify_inode_mark, SLAB_PANIC);
 
 	inotify_max_queued_events = 16384;
-	inotify_max_user_instances = 128;
-	inotify_max_user_watches = 8192;
+	inotify_max_user_instances = INT_MAX;
+	inotify_max_user_watches = INT_MAX;
 
 	return 0;
 }
