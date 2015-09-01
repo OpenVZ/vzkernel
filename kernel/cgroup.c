@@ -1808,27 +1808,13 @@ int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
 {
 	int ret = -ENAMETOOLONG;
 	char *start;
+	struct ve_struct *ve = get_exec_env();
 
 	if (!cgrp->parent) {
 		if (strlcpy(buf, "/", buflen) >= buflen)
 			return -ENAMETOOLONG;
 		return 0;
 	}
-
-#ifdef CONFIG_VE
-	/*
-	 * Containers cgroups are bind-mounted from node
-	 * so they are like '/' from inside, thus we have
-	 * to mangle cgroup path output.
-	 */
-	if (!ve_is_super(get_exec_env())) {
-		if (cgrp->parent && !cgrp->parent->parent) {
-			if (strlcpy(buf, "/", buflen) >= buflen)
-				return -ENAMETOOLONG;
-			return 0;
-		}
-	}
-#endif
 
 	start = buf + buflen - 1;
 	*start = '\0';
@@ -1837,6 +1823,25 @@ int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
 	do {
 		const char *name = cgroup_name(cgrp);
 		int len;
+
+#ifdef CONFIG_VE
+		if (!ve_is_super(ve) && cgrp->parent && !cgrp->parent->parent) {
+			/*
+			 * Containers cgroups are bind-mounted from node
+			 * so they are like '/' from inside, thus we have
+			 * to mangle cgroup path output. Effectively it is
+			 * enough to remove two topmost cgroups from path.
+			 * e.g. in ct 101: /101/test.slice/test.scope ->
+			 * /test.slice/test.scope
+			 */
+			if (*start != '/') {
+				if (--start < buf)
+					goto out;
+				*start = '/';
+			}
+			break;
+		}
+#endif
 
 		len = strlen(name);
 		if ((start -= len) < buf)
