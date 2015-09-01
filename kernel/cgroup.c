@@ -1804,11 +1804,10 @@ static struct kobject *cgroup_kobj;
  * inode's i_mutex, while on the other hand cgroup_path() can be called
  * with some irq-safe spinlocks held.
  */
-int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
+int __cgroup_path(const struct cgroup *cgrp, char *buf, int buflen, bool virt)
 {
 	int ret = -ENAMETOOLONG;
 	char *start;
-	struct ve_struct *ve = get_exec_env();
 
 	if (!cgrp->parent) {
 		if (strlcpy(buf, "/", buflen) >= buflen)
@@ -1825,7 +1824,7 @@ int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
 		int len;
 
 #ifdef CONFIG_VE
-		if (!ve_is_super(ve) && cgrp->parent && !cgrp->parent->parent) {
+		if (virt && cgrp->parent && !cgrp->parent->parent) {
 			/*
 			 * Containers cgroups are bind-mounted from node
 			 * so they are like '/' from inside, thus we have
@@ -1860,7 +1859,17 @@ out:
 	rcu_read_unlock();
 	return ret;
 }
+
+int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
+{
+	return __cgroup_path(cgrp, buf, buflen, false);
+}
 EXPORT_SYMBOL_GPL(cgroup_path);
+
+int cgroup_path_ve(const struct cgroup *cgrp, char *buf, int buflen)
+{
+	return __cgroup_path(cgrp, buf, buflen, !ve_is_super(get_exec_env()));
+}
 
 /*
  * Control Group taskset
@@ -4928,7 +4937,7 @@ int proc_cgroup_show(struct seq_file *m, void *v)
 				   root->name);
 		seq_putc(m, ':');
 		cgrp = task_cgroup_from_root(tsk, root);
-		retval = cgroup_path(cgrp, buf, PAGE_SIZE);
+		retval = cgroup_path_ve(cgrp, buf, PAGE_SIZE);
 		if (retval < 0)
 			goto out_unlock;
 		seq_puts(m, buf);
