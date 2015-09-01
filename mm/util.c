@@ -358,6 +358,7 @@ unsigned long vm_mmap_pgoff(struct file *file, unsigned long addr,
 	if (!ret) {
 		/* Ugly fix for PSBM-23133 vdavydov@ */
 		if (file && file->f_op && (flag & MAP_TYPE) == MAP_SHARED &&
+		    S_ISREG(file_inode(file)->i_mode) &&
 		    (file_inode(file)->i_sb->s_type->fs_flags & FS_HAS_MMAP_PREP))
 			file->f_op->mmap(file, NULL);
 		down_write(&mm->mmap_sem);
