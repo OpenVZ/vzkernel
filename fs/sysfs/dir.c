@@ -77,14 +77,18 @@ static int sysfs_sd_compare(const struct sysfs_dirent *left,
 static bool sysfs_sd_visible(struct sysfs_dirent *sd, struct super_block *sb)
 {
 	struct ve_struct *ve = sysfs_info(sb)->ve;
+	struct sysfs_dirent *tmp_sd = sd;
 
 	/* Host sees anything */
 	if (ve_is_super(ve))
 		return true;
 
-	/* Entries with namespace tag always visible */
-	if (sd->s_ns || (sd->s_parent && sd->s_parent->s_ns))
-		return true;
+	/* Entries with namespace tag and their sub-entries always visible */
+	while (tmp_sd) {
+		if (tmp_sd->s_ns)
+			return true;
+		tmp_sd = tmp_sd->s_parent;
+	}
 
 	/* Symlinks are visible if target sd is visible */
 	if (sysfs_type(sd) == SYSFS_KOBJ_LINK)
