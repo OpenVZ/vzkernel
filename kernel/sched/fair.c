@@ -5083,17 +5083,15 @@ static inline void trigger_cpulimit_balance(struct task_struct *p)
 	int this_cpu, cpu, target_cpu = -1;
 	struct sched_domain *sd;
 
-	if (!p->se.on_rq)
-		return;
-
 	this_rq = rq_of(cfs_rq_of(&p->se));
 	this_cpu = cpu_of(this_rq);
+
+	if (!p->se.on_rq || this_rq->active_balance)
+		return;
 
 	cfs_rq = top_cfs_rq_of(&p->se);
 	if (check_cpulimit_spread(cfs_rq, this_cpu) >= 0)
 		return;
-
-	raw_spin_unlock(&this_rq->lock);
 
 	rcu_read_lock();
 	for_each_domain(this_cpu, sd) {
@@ -5111,17 +5109,14 @@ static inline void trigger_cpulimit_balance(struct task_struct *p)
 unlock:
 	rcu_read_unlock();
 
-	raw_spin_lock(&this_rq->lock);
 	if (target_cpu >= 0) {
-		if (!this_rq->active_balance) {
-			this_rq->active_balance = 1;
-			this_rq->push_cpu = target_cpu;
-			raw_spin_unlock(&this_rq->lock);
-			stop_one_cpu_nowait(this_cpu,
-					    cpulimit_balance_cpu_stop, this_rq,
-					    &this_rq->active_balance_work);
-			raw_spin_lock(&this_rq->lock);
-		}
+		this_rq->active_balance = 1;
+		this_rq->push_cpu = target_cpu;
+		raw_spin_unlock(&this_rq->lock);
+		stop_one_cpu_nowait(this_rq->cpu,
+				    cpulimit_balance_cpu_stop, this_rq,
+				    &this_rq->active_balance_work);
+		raw_spin_lock(&this_rq->lock);
 	}
 }
 #else
@@ -5142,8 +5137,6 @@ static void put_prev_task_fair(struct rq *rq, struct task_struct *prev)
 		cfs_rq = cfs_rq_of(se);
 		put_prev_entity(cfs_rq, se);
 	}
-
-	trigger_cpulimit_balance(prev);
 }
 
 /*
@@ -5802,7 +5795,8 @@ static int cpulimit_balance_cpu_stop(void *data)
 
 	raw_spin_lock_irq(&rq->lock);
 
-	if (unlikely(cpu != smp_processor_id() || !rq->active_balance))
+	if (unlikely(cpu != smp_processor_id() || !rq->active_balance ||
+		     !cpu_online(target_cpu)))
 		goto out_unlock;
 
 	if (unlikely(!rq->nr_running))
@@ -7284,6 +7278,11 @@ out_unlock:
 	return 0;
 }
 
+static void pre_schedule_fair(struct rq *rq, struct task_struct *prev)
+{
+	trigger_cpulimit_balance(prev);
+}
+
 #ifdef CONFIG_NO_HZ_COMMON
 /*
  * idle load balancing details
@@ -8186,6 +8185,7 @@ const struct sched_class fair_sched_class = {
 	.rq_offline		= rq_offline_fair,
 
 	.task_waking		= task_waking_fair,
+	.pre_schedule		= pre_schedule_fair,
 #endif
 
 	.set_curr_task          = set_curr_task_fair,
