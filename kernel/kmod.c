@@ -294,6 +294,8 @@ static struct {
 
 	{ "nft-expr-2-reject",	VE_IP_IPTABLES			},
 	{ "nft-expr-10-reject",	VE_IP_IPTABLES6			},
+	{ "nf-logger-2-0",	VE_IP_IPTABLES			},
+	{ "nf-logger-10-0",	VE_IP_IPTABLES6			},
 };
 
 /*
