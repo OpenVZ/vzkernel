@@ -2587,20 +2587,18 @@ static inline void post_schedule(struct rq *rq)
 asmlinkage void schedule_tail(struct task_struct *prev)
 	__releases(rq->lock)
 {
-	struct rq *rq = this_rq();
+	struct rq *rq;
 
+#ifndef __ARCH_WANT_UNLOCKED_CTXSW
+	/* finish_task_switch() drops rq->lock and enables preemtion */
+	preempt_disable();
+#endif
+	rq = this_rq();
 	finish_task_switch(rq, prev);
 
-	/*
-	 * FIXME: do we need to worry about rq being invalidated by the
-	 * task_switch?
-	 */
 	post_schedule(rq);
-
-#ifdef __ARCH_WANT_UNLOCKED_CTXSW
-	/* In this case, finish_task_switch does not reenable preemption */
 	preempt_enable();
-#endif
+
 	if (current->set_child_tid)
 		put_user(task_pid_vnr(current), current->set_child_tid);
 }
