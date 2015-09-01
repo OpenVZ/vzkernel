@@ -2938,7 +2938,7 @@ int proc_cpuset_show(struct seq_file *m, void *unused_v)
 
 	rcu_read_lock();
 	css = task_subsys_state(tsk, cpuset_subsys_id);
-	retval = cgroup_path(css->cgroup, buf, PAGE_SIZE);
+	retval = cgroup_path_ve(css->cgroup, buf, PAGE_SIZE);
 	rcu_read_unlock();
 	if (retval < 0)
 		goto out_put_task;
