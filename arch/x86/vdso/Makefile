@@ -184,6 +184,7 @@ quiet_cmd_vdso = VDSO    $@
 
 VDSO_LDFLAGS = -fPIC -shared $(call cc-ldoption, -Wl$(comma)--hash-style=sysv)
 GCOV_PROFILE := n
+KASAN_SANITIZE := n
 
 #
 # Install the unstripped copy of vdso*.so listed in $(vdso-install-y).
