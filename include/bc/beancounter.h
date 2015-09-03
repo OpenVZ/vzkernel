@@ -49,24 +49,9 @@
  */
 
 struct task_beancounter;
-struct sock_beancounter;
 
 struct page_private {
 	unsigned long		ubp_tmpfs_respages;
-};
-
-struct sock_private {
-	unsigned long		ubp_rmem_thres;
-	unsigned long		ubp_wmem_pressure;
-	unsigned long		ubp_maxadvmss;
-	unsigned long		ubp_rmem_pressure;
-	int			ubp_tw_count;
-#define UB_RMEM_EXPAND          0
-#define UB_RMEM_KEEP            1
-#define UB_RMEM_SHRINK          2
-	struct list_head	ubp_other_socks;
-	struct list_head	ubp_tcp_socks;
-	struct percpu_counter	ubp_orphan_count;
 };
 
 struct ub_percpu_struct {
@@ -129,15 +114,6 @@ struct user_beancounter {
 
 	struct page_private	ppriv;
 #define ub_tmpfs_respages	ppriv.ubp_tmpfs_respages
-	struct sock_private	spriv;
-#define ub_rmem_thres		spriv.ubp_rmem_thres
-#define ub_maxadvmss		spriv.ubp_maxadvmss
-#define ub_rmem_pressure	spriv.ubp_rmem_pressure
-#define ub_wmem_pressure	spriv.ubp_wmem_pressure
-#define ub_tcp_sk_list		spriv.ubp_tcp_socks
-#define ub_other_sk_list	spriv.ubp_other_socks
-#define ub_orphan_count		spriv.ubp_orphan_count
-#define ub_tw_count		spriv.ubp_tw_count
 
 	atomic_long_t		dirty_pages;
 	atomic_long_t		writeback_pages;
