@@ -35,6 +35,7 @@ obj-y += kstrtox.o
 obj-$(CONFIG_TEST_KSTRTOX) += test-kstrtox.o
 obj-$(CONFIG_TEST_RHASHTABLE) += test_rhashtable.o
 obj-$(CONFIG_TEST_PARMAN) += test_parman.o
+obj-$(CONFIG_TEST_KASAN) += test_kasan.o
 
 obj-y += kmapset.o
 
