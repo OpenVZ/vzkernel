@@ -843,9 +843,6 @@ static bool over_bground_thresh(struct backing_dev_info *bdi)
 {
 	unsigned long background_thresh, dirty_thresh;
 
-	if (!bdi_cap_account_writeback(bdi) && bdi->dirty_exceeded)
-		return true;
-
 	global_dirty_limits(&background_thresh, &dirty_thresh);
 
 	if (global_page_state(NR_FILE_DIRTY) +
