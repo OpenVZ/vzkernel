@@ -56,8 +56,6 @@ extern void ub_io_account_cancel(struct address_space *mapping);
 extern void ub_io_writeback_inc(struct address_space *mapping);
 extern void ub_io_writeback_dec(struct address_space *mapping);
 
-#define ub_dirty_pages(ub)	ub_stat_get(ub, dirty_pages)
-
 extern int ub_dirty_limits(unsigned long *pbackground,
 			   long *pdirty, struct user_beancounter *ub);
 
@@ -99,11 +97,6 @@ static inline void ub_io_writeback_inc(struct address_space *mapping)
 
 static inline void ub_io_writeback_dec(struct address_space *mapping)
 {
-}
-
-static inline unsigned long ub_dirty_pages(struct user_beancounter *ub)
-{
-	return 0;
 }
 
 static inline int ub_dirty_limits(unsigned long *pbackground,
