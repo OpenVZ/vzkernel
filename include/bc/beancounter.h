@@ -50,10 +50,6 @@
 
 struct task_beancounter;
 
-struct page_private {
-	unsigned long		ubp_tmpfs_respages;
-};
-
 struct ub_percpu_struct {
 	int dirty_pages;
 	int writeback_pages;
@@ -105,9 +101,6 @@ struct user_beancounter {
 	unsigned long		ub_flags;
 
 	struct ratelimit_state	ub_ratelimit;
-
-	struct page_private	ppriv;
-#define ub_tmpfs_respages	ppriv.ubp_tmpfs_respages
 
 	atomic_long_t		dirty_pages;
 	atomic_long_t		writeback_pages;
