@@ -40,7 +40,6 @@
 struct wb_writeback_work {
 	long nr_pages;
 	struct super_block *sb;
-	struct user_beancounter *ub;
 	unsigned long *older_than_this;
 	enum writeback_sync_modes sync_mode;
 	unsigned int tagged_writepages:1;
@@ -130,8 +129,8 @@ out_unlock:
 }
 
 static void
-__bdi_start_writeback(struct backing_dev_info *bdi,
-		      long nr_pages, bool range_cyclic, enum wb_reason reason)
+__bdi_start_writeback(struct backing_dev_info *bdi, long nr_pages,
+		      bool range_cyclic, enum wb_reason reason)
 {
 	struct wb_writeback_work *work;
 
@@ -150,7 +149,6 @@ __bdi_start_writeback(struct backing_dev_info *bdi,
 	work->nr_pages	= nr_pages;
 	work->range_cyclic = range_cyclic;
 	work->reason	= reason;
-	work->ub	= NULL;
 
 	bdi_queue_work(bdi, work);
 }
@@ -673,7 +671,6 @@ static long writeback_sb_inodes(struct super_block *sb,
 		.range_cyclic		= work->range_cyclic,
 		.range_start		= 0,
 		.range_end		= LLONG_MAX,
-		.wb_ub			= work->ub,
 	};
 	unsigned long start_time = jiffies;
 	long write_chunk;
@@ -707,14 +704,6 @@ static long writeback_sb_inodes(struct super_block *sb,
 		 * kind writeout is handled by the freer.
 		 */
 		spin_lock(&inode->i_lock);
-		if (wbc.wb_ub && !wb->bdi->dirty_exceeded &&
-		    (inode->i_mapping->dirtied_ub != wbc.wb_ub) &&
-		    (inode->i_state & I_DIRTY) == I_DIRTY_PAGES &&
-		    ub_should_skip_writeback(wbc.wb_ub, inode)) {
-			requeue_io(inode, wb);
-			continue;
-		}
-
 		if (inode->i_state & (I_NEW | I_FREEING | I_WILL_FREE)) {
 			spin_unlock(&inode->i_lock);
 			redirty_tail(inode, wb);
@@ -913,12 +902,9 @@ static long wb_writeback(struct bdi_writeback *wb,
 
 		/*
 		 * For background writeout, stop when we are below the
-		 * background dirty threshold. For filtered background
-		 * writeback we write all inodes dirtied before us,
-		 * because we cannot dereference this ub pointer.
+		 * background dirty threshold
 		 */
-		if (work->for_background && !work->ub &&
-		    !over_bground_thresh(wb->bdi))
+		if (work->for_background && !over_bground_thresh(wb->bdi))
 			break;
 
 		/*
@@ -1371,7 +1357,7 @@ out_unlock_inode:
 }
 EXPORT_SYMBOL(__mark_inode_dirty);
 
-static void wait_sb_inodes(struct super_block *sb, struct user_beancounter *ub)
+static void wait_sb_inodes(struct super_block *sb)
 {
 	struct inode *inode, *old_inode = NULL;
 
@@ -1396,11 +1382,6 @@ static void wait_sb_inodes(struct super_block *sb, struct user_beancounter *ub)
 		spin_lock(&inode->i_lock);
 		if ((inode->i_state & (I_FREEING|I_WILL_FREE|I_NEW)) ||
 		    (mapping->nrpages == 0)) {
-			spin_unlock(&inode->i_lock);
-			continue;
-		}
-		if (ub && (mapping->dirtied_ub != ub) &&
-		    (inode->i_state & I_DIRTY) == I_DIRTY_PAGES) {
 			spin_unlock(&inode->i_lock);
 			continue;
 		}
@@ -1522,12 +1503,11 @@ EXPORT_SYMBOL(try_to_writeback_inodes_sb);
  * This function writes and waits on any dirty inode belonging to this
  * super_block.
  */
-void sync_inodes_sb_ub(struct super_block *sb, struct user_beancounter *ub)
+void sync_inodes_sb(struct super_block *sb)
 {
 	DECLARE_COMPLETION_ONSTACK(done);
 	struct wb_writeback_work work = {
 		.sb		= sb,
-		.ub		= ub,
 		.sync_mode	= WB_SYNC_ALL,
 		.nr_pages	= LONG_MAX,
 		.range_cyclic	= 0,
@@ -1544,12 +1524,7 @@ void sync_inodes_sb_ub(struct super_block *sb, struct user_beancounter *ub)
 	bdi_queue_work(sb->s_bdi, &work);
 	wait_for_completion(&done);
 
-	wait_sb_inodes(sb, ub);
-}
-
-void sync_inodes_sb(struct super_block *sb)
-{
-	sync_inodes_sb_ub(sb, NULL);
+	wait_sb_inodes(sb);
 }
 EXPORT_SYMBOL(sync_inodes_sb);
 
