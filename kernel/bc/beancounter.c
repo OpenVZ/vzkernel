@@ -347,9 +347,6 @@ static struct user_beancounter *alloc_ub(const char *name)
 	if (!new_ub->ub_name)
 		goto fail_name;
 
-	if (percpu_counter_init(&new_ub->ub_orphan_count, 0))
-		goto fail_pcpu;
-
 	new_ub->ub_percpu = alloc_percpu(struct ub_percpu_struct);
 	if (new_ub->ub_percpu == NULL)
 		goto fail_free;
@@ -357,8 +354,6 @@ static struct user_beancounter *alloc_ub(const char *name)
 	return new_ub;
 
 fail_free:
-	percpu_counter_destroy(&new_ub->ub_orphan_count);
-fail_pcpu:
 	kfree(new_ub->ub_name);
 fail_name:
 	kfree(new_ub);
@@ -367,7 +362,6 @@ fail_name:
 
 static inline void free_ub(struct user_beancounter *ub)
 {
-	percpu_counter_destroy(&ub->ub_orphan_count);
 	free_percpu(ub->ub_percpu);
 	kfree(ub->ub_store);
 	kfree(ub->private_data2);
@@ -1068,8 +1062,6 @@ static void init_beancounter_struct(struct user_beancounter *ub)
 {
 	ub->ub_magic = UB_MAGIC;
 	spin_lock_init(&ub->ub_lock);
-	INIT_LIST_HEAD(&ub->ub_tcp_sk_list);
-	INIT_LIST_HEAD(&ub->ub_other_sk_list);
 }
 
 static void init_beancounter_nolimits(struct user_beancounter *ub)
