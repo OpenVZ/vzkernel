@@ -17,7 +17,7 @@
 #include <bc/beancounter.h>
 #include <linux/virtinfo.h>
 
-extern int ub_dirty_radio;
+extern int ub_dirty_ratio;
 extern int ub_dirty_background_ratio;
 
 /*

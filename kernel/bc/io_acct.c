@@ -28,7 +28,7 @@
 /*
  * starts writeback at this dirty memory percentage from physpages limit
  */
-int ub_dirty_radio = 50;
+int ub_dirty_ratio = 50;
 int ub_dirty_background_ratio = 30;
 
 /* under write lock mapping->tree_lock */
@@ -131,7 +131,7 @@ int ub_dirty_limits(unsigned long *pbackground,
 	int dirty_ratio;
 	unsigned long available_memory;
 
-	dirty_ratio = ub_dirty_radio;
+	dirty_ratio = ub_dirty_ratio;
 	if (!dirty_ratio)
 		return 0;
 
