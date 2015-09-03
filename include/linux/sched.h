@@ -1740,6 +1740,9 @@ struct task_struct {
 	unsigned long timer_slack_ns;
 	unsigned long default_timer_slack_ns;
 
+#ifdef CONFIG_KASAN
+	unsigned int kasan_depth;
+#endif
 #if defined(CONFIG_FUNCTION_GRAPH_TRACER) && !defined(CONFIG_S390)
 	/* Index of current stored address in ret_stack */
 	int curr_ret_stack;
