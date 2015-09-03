@@ -1590,10 +1590,6 @@ pause:
 	virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_BALANCE_DIRTY,
 			       (void*)pages_dirtied);
 
-	/*
-	 * Even if this is filtered writeback for other ub it will write
-	 * inodes for this ub, because ub->dirty_exceeded is set.
-	 */
 	if (writeback_in_progress(bdi))
 		return;
 
