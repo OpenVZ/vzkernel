@@ -4,6 +4,9 @@
 # Since __builtin_frame_address does work as used, disable the warning.
 CFLAGS_usercopy.o += $(call cc-disable-warning, frame-address)
 
+KASAN_SANITIZE_slab_common.o := n
+KASAN_SANITIZE_slub.o := n
+
 mmu-y			:= nommu.o
 mmu-$(CONFIG_MMU)	:= fremap.o gup.o highmem.o madvise.o memory.o mincore.o \
 			   mlock.o mmap.o mprotect.o mremap.o msync.o rmap.o \
