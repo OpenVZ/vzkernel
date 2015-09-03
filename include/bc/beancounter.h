@@ -107,7 +107,7 @@ struct user_beancounter {
 	atomic_long_t		wb_requests;
 	atomic_long_t		wb_sectors;
 
-	void			*private_data2;
+	void			*iolimit;
 
 	/* resources statistic and settings */
 	struct ubparm		ub_parms[UB_RESOURCES];
