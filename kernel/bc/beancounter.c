@@ -1153,8 +1153,8 @@ static ctl_table ub_sysctl_table[] = {
 #ifdef CONFIG_BC_IO_ACCOUNTING
 	{
 		.procname	= "dirty_ratio",
-		.data		= &ub_dirty_radio,
-		.maxlen		= sizeof ub_dirty_radio,
+		.data		= &ub_dirty_ratio,
+		.maxlen		= sizeof ub_dirty_ratio,
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec,
 	},
