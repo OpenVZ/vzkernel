@@ -1404,6 +1404,7 @@ void udpv6_destroy_sock(struct sock *sk)
 	}
 
 	inet6_destroy_sock(sk);
+	sock_release_memcg(sk);
 }
 
 /*
