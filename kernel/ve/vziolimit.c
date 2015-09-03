@@ -163,7 +163,7 @@ static int iolimit_virtinfo(struct vnotifier_block *nb,
 		unsigned long cmd, void *arg, int old_ret)
 {
 	struct user_beancounter *ub = get_exec_ub();
-	struct iolimit *iolimit = ub->private_data2;
+	struct iolimit *iolimit = ub->iolimit;
 	unsigned long flags, timeout;
 	struct request_queue *q;
 
@@ -257,7 +257,7 @@ static void throttle_state(struct user_beancounter *ub,
 
 static struct iolimit *iolimit_get(struct user_beancounter *ub)
 {
-	struct iolimit *iolimit = ub->private_data2;
+	struct iolimit *iolimit = ub->iolimit;
 
 	if (iolimit)
 		return iolimit;
@@ -268,11 +268,11 @@ static struct iolimit *iolimit_get(struct user_beancounter *ub)
 	init_waitqueue_head(&iolimit->wq);
 
 	spin_lock_irq(&ub->ub_lock);
-	if (ub->private_data2) {
+	if (ub->iolimit) {
 		kfree(iolimit);
-		iolimit = ub->private_data2;
+		iolimit = ub->iolimit;
 	} else
-		ub->private_data2 = iolimit;
+		ub->iolimit = iolimit;
 	spin_unlock_irq(&ub->ub_lock);
 
 	return iolimit;
@@ -296,7 +296,7 @@ static int iolimit_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	if (!ub)
 		return -ENOENT;
 
-	iolimit = ub->private_data2;
+	iolimit = ub->iolimit;
 
 	switch (cmd) {
 		case VZCTL_SET_IOLIMIT:
@@ -365,7 +365,7 @@ static ssize_t iolimit_cgroup_read(struct cgroup *cg, struct cftype *cft,
 			      size_t nbytes, loff_t *ppos)
 {
 	struct user_beancounter *ub = cgroup_ub(cg);
-	struct iolimit *iolimit = ub->private_data2;
+	struct iolimit *iolimit = ub->iolimit;
 	unsigned long val = 0;
 	int len;
 	char str[32];
