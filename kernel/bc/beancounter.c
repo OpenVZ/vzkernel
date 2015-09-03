@@ -492,7 +492,6 @@ static inline int bc_verify_held(struct user_beancounter *ub)
 			__ub_stat_get(ub, dirty_pages));
 	clean &= verify_res(ub, "writeback_pages",
 			__ub_stat_get(ub, writeback_pages));
-	clean &= verify_res(ub, "tmpfs_respages", ub->ub_tmpfs_respages);
 
 	return clean;
 }
