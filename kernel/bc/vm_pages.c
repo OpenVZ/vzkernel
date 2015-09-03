@@ -220,18 +220,7 @@ out:
 
 static int bc_fill_vmstat(struct user_beancounter *ub, unsigned long *stat)
 {
-	int cpu;
-
-	for_each_possible_cpu(cpu) {
-		struct ub_percpu_struct *pcpu = ub_percpu(ub, cpu);
-
-		stat[NR_VM_ZONE_STAT_ITEMS + PSWPIN]	+= pcpu->swapin;
-		stat[NR_VM_ZONE_STAT_ITEMS + PSWPOUT]	+= pcpu->swapout;
-
-		stat[NR_VM_ZONE_STAT_ITEMS + PSWPIN]	+= pcpu->vswapin;
-		stat[NR_VM_ZONE_STAT_ITEMS + PSWPOUT]	+= pcpu->vswapout;
-	}
-
+	/* FIXME: show swapin/swapout? */
 	return NOTIFY_OK;
 }
 
@@ -275,31 +264,13 @@ module_exit(fini_vmguar_notifier);
 static int bc_vmaux_show(struct seq_file *f, void *v)
 {
 	struct user_beancounter *ub;
-	struct ub_percpu_struct *ub_pcpu;
-	unsigned long swapin, swapout, vswapin, vswapout;
-	int i;
 
 	ub = seq_beancounter(f);
 
 	ub_sync_memcg(ub);
 
-	swapin = swapout = vswapin = vswapout = 0;
-	for_each_possible_cpu(i) {
-		ub_pcpu = ub_percpu(ub, i);
-		swapin += ub_pcpu->swapin;
-		swapout += ub_pcpu->swapout;
-		vswapin += ub_pcpu->vswapin;
-		vswapout += ub_pcpu->vswapout;
-	}
-
 	seq_printf(f, bc_proc_lu_fmt, "tmpfs_respages",
 			ub->ub_tmpfs_respages);
-
-	seq_printf(f, bc_proc_lu_fmt, "swapin", swapin);
-	seq_printf(f, bc_proc_lu_fmt, "swapout", swapout);
-
-	seq_printf(f, bc_proc_lu_fmt, "vswapin", vswapin);
-	seq_printf(f, bc_proc_lu_fmt, "vswapout", vswapout);
 
 	seq_printf(f, bc_proc_lu_fmt, "ram", ub->ub_parms[UB_PHYSPAGES].held);
 
