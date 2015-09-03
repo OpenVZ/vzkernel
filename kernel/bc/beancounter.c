@@ -364,8 +364,8 @@ static inline void free_ub(struct user_beancounter *ub)
 {
 	free_percpu(ub->ub_percpu);
 	kfree(ub->ub_store);
-	kfree(ub->private_data2);
 	kfree(ub->ub_name);
+	kfree(ub->iolimit);
 	kfree(ub);
 }
 
