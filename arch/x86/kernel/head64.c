@@ -28,6 +28,7 @@
 #include <asm/bios_ebda.h>
 #include <asm/bootparam_utils.h>
 #include <asm/microcode.h>
+#include <asm/kasan.h>
 
 /*
  * Manage page tables very early on.
@@ -158,7 +159,7 @@ static void __init reset_early_page_tables(void)
 	memset(early_level4_pgt, 0, sizeof(pgd_t)*(PTRS_PER_PGD-1));
 	next_early_pgt = 0;
 
-	__load_cr3(__sme_pa(early_level4_pgt));
+	__load_cr3(__sme_pa_nodebug(early_level4_pgt));
 }
 
 /* Create a new PMD entry */
@@ -291,6 +292,8 @@ void __init x86_64_start_kernel(char * real_mode_data)
 	/* Kill off the identity-map trampoline */
 	reset_early_page_tables();
 
+	kasan_map_early_shadow(early_level4_pgt);
+
 	/* clear bss before set_intr_gate with early_idt_handler */
 	clear_bss();
 
@@ -319,6 +322,8 @@ void __init x86_64_start_kernel(char * real_mode_data)
 
 	/* set init_level4_pgt kernel high mapping*/
 	init_level4_pgt[511] = early_level4_pgt[511];
+
+	kasan_map_early_shadow(init_level4_pgt);
 
 	x86_64_start_reservations(real_mode_data);
 }
