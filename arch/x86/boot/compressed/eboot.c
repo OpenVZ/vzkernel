@@ -7,6 +7,7 @@
  *
  * ----------------------------------------------------------------------- */
 
+#include <linux/types.h>
 #include <linux/efi.h>
 #include <linux/pci.h>
 #include <asm/efi.h>
@@ -14,8 +15,7 @@
 #include <asm/desc.h>
 #include <asm/bootparam_utils.h>
 
-#undef memcpy			/* Use memcpy from misc.c */
-
+#include "../string.h"
 #include "eboot.h"
 
 static efi_system_table_t *sys_table;
