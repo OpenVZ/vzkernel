@@ -119,22 +119,6 @@ void ub_lockedshm_uncharge(struct shmem_inode_info *shi, unsigned long size)
 	uncharge_beancounter(ub, UB_LOCKEDPAGES, size >> PAGE_SHIFT);
 }
 
-static inline void do_ub_tmpfs_respages_sub(struct user_beancounter *ub,
-		unsigned long size)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&ub->ub_lock, flags);
-	/* catch possible overflow */
-	if (ub->ub_tmpfs_respages < size) {
-		uncharge_warn(ub, "tmpfs_respages",
-				size, ub->ub_tmpfs_respages);
-		size = ub->ub_tmpfs_respages;
-	}
-	ub->ub_tmpfs_respages -= size;
-	spin_unlock_irqrestore(&ub->ub_lock, flags);
-}
-
 static int bc_fill_sysinfo(struct user_beancounter *ub,
 		unsigned long meminfo_val, struct sysinfo *si)
 {
@@ -268,9 +252,6 @@ static int bc_vmaux_show(struct seq_file *f, void *v)
 	ub = seq_beancounter(f);
 
 	ub_sync_memcg(ub);
-
-	seq_printf(f, bc_proc_lu_fmt, "tmpfs_respages",
-			ub->ub_tmpfs_respages);
 
 	seq_printf(f, bc_proc_lu_fmt, "ram", ub->ub_parms[UB_PHYSPAGES].held);
 
