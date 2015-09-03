@@ -7,14 +7,15 @@
  *
  * ----------------------------------------------------------------------- */
 
+#include "misc.h"
+#include <linux/types.h>
+#include "../string.h"
 #include <linux/efi.h>
 #include <linux/pci.h>
 #include <asm/efi.h>
 #include <asm/setup.h>
 #include <asm/desc.h>
 #include <asm/bootparam_utils.h>
-
-#undef memcpy			/* Use memcpy from misc.c */
 
 #include "eboot.h"
 
