@@ -8,6 +8,7 @@
  */
 #undef CONFIG_PARAVIRT
 #undef CONFIG_KAISER
+#undef CONFIG_KASAN
 #ifdef CONFIG_X86_32
 #define _ASM_X86_DESC_H 1
 #endif
