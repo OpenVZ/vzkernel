@@ -717,7 +717,7 @@ preallocate_bio(struct bio * orig_bio, struct ploop_device * plo)
 	}
 
 	if (nbio == NULL)
-		nbio = bio_alloc(GFP_NOFS, max(orig_bio->bi_max_vecs, block_vecs(plo)));
+		nbio = bio_alloc(GFP_NOIO, max(orig_bio->bi_max_vecs, block_vecs(plo)));
 	return nbio;
 }
 
@@ -852,7 +852,7 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 
 	if (!current->io_context) {
 		struct io_context *ioc;
-		ioc = get_task_io_context(current, GFP_NOFS, NUMA_NO_NODE);
+		ioc = get_task_io_context(current, GFP_NOIO, NUMA_NO_NODE);
 		if (ioc)
 			put_io_context(ioc);
 	}
