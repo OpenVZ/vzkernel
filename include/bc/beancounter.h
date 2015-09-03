@@ -63,12 +63,6 @@ struct ub_percpu_struct {
 	unsigned long fuse_requests;
 	unsigned long fuse_bytes;
 
-	unsigned long swapin;
-	unsigned long swapout;
-
-	unsigned long vswapin;
-	unsigned long vswapout;
-
 #ifdef CONFIG_BC_IO_ACCOUNTING
 	unsigned long async_write_complete;
 	unsigned long async_write_canceled;
