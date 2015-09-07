@@ -376,12 +376,6 @@ struct zone {
 	 * free areas of different sizes
 	 */
 	spinlock_t		lock;
-	/*
-	 * RHEL7 note: all_unreclaimable is not used anymore
-	 * but we're keeping the member in place to not mess up
-	 * with struct zone layout and KABI expectations.
-	 */
-	int			all_unreclaimable; /* All pages pinned */
 #if defined CONFIG_COMPACTION || defined CONFIG_CMA
 	/* Set to true when the PG_migrate_skip bits should be cleared */
 	bool			compact_blockskip_flush;
