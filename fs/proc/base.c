@@ -610,17 +610,14 @@ static int proc_oom_score(struct task_struct *task, char *buffer)
 {
 	unsigned long totalpages = totalram_pages + total_swap_pages;
 	unsigned long points = 0;
-	struct mem_cgroup *memcg = NULL;
 	struct user_beancounter *ub = get_exec_ub();
 
-	if (ub != get_ub0()) {
+	if (ub != get_ub0())
 		totalpages = min(totalpages, ub_total_pages(ub, true));
-		memcg = OOM_BADNESS_DUMMY_MEMCG;
-	}
 
 	read_lock(&tasklist_lock);
 	if (pid_alive(task))
-		points = oom_badness(task, memcg, NULL, totalpages) *
+		points = oom_badness(task, NULL, NULL, totalpages) *
 						1000 / totalpages;
 	read_unlock(&tasklist_lock);
 	return sprintf(buffer, "%lu\n", points);
