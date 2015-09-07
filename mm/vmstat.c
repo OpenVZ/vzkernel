@@ -23,6 +23,8 @@
 #include <linux/writeback.h>
 #include <linux/compaction.h>
 
+#include "internal.h"
+
 #ifdef CONFIG_VM_EVENT_COUNTERS
 DEFINE_PER_CPU(struct vm_event_state, vm_event_states) = {{0}};
 EXPORT_PER_CPU_SYMBOL(vm_event_states);
@@ -1118,7 +1120,7 @@ static void zoneinfo_show_print(struct seq_file *m, pg_data_t *pgdat,
 		   "\n  start_pfn:         %lu"
 		   "\n  inactive_ratio:    %u"
 		   "\n  force_scan:        %d",
-		   zone->all_unreclaimable,
+		   !zone_reclaimable(zone),
 		   zone->zone_start_pfn,
 		   zone->inactive_ratio,
 		   zone->force_scan);
