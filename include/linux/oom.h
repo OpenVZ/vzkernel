@@ -88,9 +88,6 @@ static inline void oom_killer_enable(void)
 
 extern struct task_struct *find_lock_task_mm(struct task_struct *p);
 
-void oom_report_invocation(char *type, struct user_beancounter *ub,
-		gfp_t gfp_mask, int order);
-
 /* sysctls */
 extern int sysctl_oom_dump_tasks;
 extern int sysctl_oom_kill_allocating_task;
