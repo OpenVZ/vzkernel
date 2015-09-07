@@ -60,6 +60,7 @@ static void __page_cache_release(struct page *page)
 		VM_BUG_ON_PAGE(!PageLRU(page), page);
 		__ClearPageLRU(page);
 		del_page_from_lru_list(page, lruvec, page_off_lru(page));
+		lruvec->pages_scanned = 0;
 		spin_unlock_irqrestore(&zone->lru_lock, flags);
 	}
 }
