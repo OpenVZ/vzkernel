@@ -320,6 +320,9 @@ struct tty_file_private {
 #define TTY_HUPPING 		21	/* ->hangup() in progress */
 #define TTY_LDISC_HALTED	22	/* Line discipline is halted */
 #define TTY_CHARGED		23	/* Charged as ub resource */
+#ifdef CONFIG_VE
+#define TTY_PINNED_BY_OTHER	24	/* TTY is pinned by other link end, defer closing */
+#endif
 
 #define TTY_WRITE_FLUSH(tty) tty_write_flush((tty))
 
