@@ -96,7 +96,7 @@ static inline pmd_t *pmd_alloc_one(struct mm_struct *mm, unsigned long addr)
 	if (!page)
 		return NULL;
 	if (!pgtable_pmd_page_ctor(page)) {
-		__free_pages(page, 0);
+		__free_page(page);
 		return NULL;
 	}
 	return (pmd_t *)page_address(page);
@@ -136,7 +136,8 @@ static inline void pgd_populate(struct mm_struct *mm, pgd_t *pgd, pud_t *pud)
 
 static inline pud_t *pud_alloc_one(struct mm_struct *mm, unsigned long addr)
 {
-	return (pud_t *)get_zeroed_page(GFP_KERNEL|__GFP_REPEAT);
+	return (pud_t *)__get_free_page(GFP_KERNEL|__GFP_REPEAT|
+					__GFP_ZERO);
 }
 
 static inline void pud_free(struct mm_struct *mm, pud_t *pud)
