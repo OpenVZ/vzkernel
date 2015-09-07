@@ -838,10 +838,509 @@ static void __init unix98_pty_init(void)
 static inline void unix98_pty_init(void) { }
 #endif
 
+#if defined(CONFIG_VE)
+
+/*
+ * VTTY architecture overview.
+ *
+ * With VTTY we make /dev/console and /dev/tty[X] virtualized
+ * per container (note the real names may vary because the
+ * kernel itself uses major:minor numbers to distinguish
+ * devices and doesn't care how they are named inside /dev.
+ * /dev/console stands for TTYAUX_MAJOR:1 while /dev/tty[X]
+ * stands for TTY_MAJOR:[0:12]. That said from inside of
+ * VTTY /dev/console is the same as /dev/tty0.
+ *
+ * For every container here is a tty map represented by
+ * vtty_map_t. It carries @veid of VE and associated slave
+ * tty peers.
+ *
+ * map
+ *  veid -> CTID
+ *    vttys -> [ 0 ]
+ *               `- @slave -> link -> @master
+ *             [ 1 ]
+ *               `- @slave -> link -> @master
+ */
+
+#include <linux/ve.h>
+#include <linux/file.h>
+#include <linux/anon_inodes.h>
+
+static struct tty_driver *vttym_driver;
+static struct tty_driver *vttys_driver;
+static DEFINE_IDR(vtty_idr);
+
+static struct file_operations vtty_fops;
+
+#define MAX_NR_VTTY_CONSOLES	(12)
+#define vtty_match_index(idx)	((idx) >= 0 && (idx) < MAX_NR_VTTY_CONSOLES)
+
+typedef struct {
+	envid_t			veid;
+	struct tty_struct	*vttys[MAX_NR_VTTY_CONSOLES];
+} vtty_map_t;
+
+static vtty_map_t *vtty_map_lookup(envid_t veid)
+{
+	lockdep_assert_held(&tty_mutex);
+	return idr_find(&vtty_idr, veid);
+}
+
+static void vtty_map_set(vtty_map_t *map, struct tty_struct *tty)
+{
+	lockdep_assert_held(&tty_mutex);
+	WARN_ON(map->vttys[tty->index]);
+
+	tty->driver_data = tty->link->driver_data = map;
+	map->vttys[tty->index] = tty;
+}
+
+static void vtty_map_clear(struct tty_struct *tty)
+{
+	vtty_map_t *map = tty->driver_data;
+
+	lockdep_assert_held(&tty_mutex);
+	if (map) {
+		struct tty_struct *p = map->vttys[tty->index];
+
+		WARN_ON(p != (tty->driver == vttys_driver ? tty : tty->link));
+		map->vttys[tty->index] = NULL;
+		tty->driver_data = tty->link->driver_data = NULL;
+	}
+}
+
+static void vtty_map_free(vtty_map_t *map)
+{
+	int i;
+
+	lockdep_assert_held(&tty_mutex);
+
+	for (i = 0; i < MAX_NR_VTTY_CONSOLES; i++) {
+		struct tty_struct *tty = map->vttys[i];
+		if (!tty)
+			continue;
+		tty->driver_data = tty->link->driver_data = NULL;
+	}
+
+	idr_remove(&vtty_idr, map->veid);
+	kfree(map);
+}
+
+static vtty_map_t *vtty_map_alloc(envid_t veid)
+{
+	vtty_map_t *map = kzalloc(sizeof(*map), GFP_KERNEL);
+
+	lockdep_assert_held(&tty_mutex);
+	if (map) {
+		map->veid = veid;
+		veid = idr_alloc(&vtty_idr, map, veid, veid + 1, GFP_KERNEL);
+		if (veid < 0) {
+			kfree(map);
+			return ERR_PTR(veid);
+		}
+	} else
+		map = ERR_PTR(-ENOMEM);
+	return map;
+}
+
+/*
+ * vttys are never supposed to be opened from inside
+ * of VE0 except special ioctl call, so treat zero as
+ * "unused" sign.
+ */
+static envid_t vtty_context_veid;
+
+static void vtty_set_context(envid_t veid)
+{
+	lockdep_assert_held(&tty_mutex);
+	WARN_ON(!veid);
+	vtty_context_veid = veid;
+}
+
+static void vtty_drop_context(void)
+{
+	lockdep_assert_held(&tty_mutex);
+	vtty_context_veid = 0;
+}
+
+static envid_t vtty_get_context(void)
+{
+	lockdep_assert_held(&tty_mutex);
+	return vtty_context_veid ?: get_exec_env()->veid;
+}
+
+static struct tty_struct *vtty_lookup(struct tty_driver *driver,
+				      struct inode *inode, int idx)
+{
+	vtty_map_t *map = vtty_map_lookup(vtty_get_context());
+	struct tty_struct *tty;
+
+	if (!vtty_match_index(idx))
+		return ERR_PTR(-EIO);
+
+	/*
+	 * Nothing ever been opened yet, allocate a new
+	 * tty map together with both peers from the scratch
+	 * in install procedure.
+	 */
+	if (!map)
+		return NULL;
+
+	tty = map->vttys[idx];
+	if (tty) {
+		if (driver == vttym_driver)
+			tty = tty->link;
+		WARN_ON(!tty);
+	}
+	return tty;
+}
+
+static void vtty_standard_install(struct tty_driver *driver,
+				  struct tty_struct *tty)
+{
+	WARN_ON(tty_init_termios(tty));
+
+	tty_driver_kref_get(driver);
+	tty_port_init(tty->port);
+	tty->port->itty = tty;
+}
+
+static struct tty_struct *vtty_install_peer(struct tty_driver *driver,
+					    struct tty_port *port, int index)
+{
+	struct tty_struct *tty;
+
+	tty = alloc_tty_struct(driver, index);
+	if (!tty)
+		return ERR_PTR(-ENOMEM);
+	tty->port = port;
+	vtty_standard_install(driver, tty);
+	return tty;
+}
+
+static int vtty_install(struct tty_driver *driver, struct tty_struct *tty)
+{
+	envid_t veid = vtty_get_context();
+	struct tty_port *peer_port;
+	struct tty_struct *peer;
+	vtty_map_t *map;
+	int ret;
+
+	WARN_ON_ONCE(driver != vttys_driver);
+
+	map = vtty_map_lookup(veid);
+	if (!map) {
+		map = vtty_map_alloc(veid);
+		if (IS_ERR(map))
+			return PTR_ERR(map);
+	}
+
+	tty->port = kzalloc(sizeof(*tty->port), GFP_KERNEL);
+	peer_port = kzalloc(sizeof(*peer_port), GFP_KERNEL);
+	if (!tty->port || !peer_port) {
+		ret = -ENOMEM;
+		goto err_free;
+	}
+
+	peer = vtty_install_peer(vttym_driver, peer_port, tty->index);
+	if (IS_ERR(peer)) {
+		ret = PTR_ERR(peer);
+		goto err_free;
+	}
+
+	vtty_standard_install(vttys_driver, tty);
+	tty->count++;
+
+	tty->link = peer;
+	peer->link = tty;
+
+	/*
+	 * Defer master closing if a slave peer
+	 * will be alive at this moment.
+	 */
+	set_bit(TTY_PINNED_BY_OTHER, &peer->flags);
+
+	vtty_map_set(map, tty);
+	return 0;
+
+err_free:
+	kfree(tty->port);
+	kfree(peer_port);
+	return ret;
+}
+
+static int vtty_open(struct tty_struct *tty, struct file *filp)
+{
+	set_bit(TTY_THROTTLED, &tty->flags);
+	return 0;
+}
+
+static void vtty_close(struct tty_struct *tty, struct file *filp)
+{
+	if (tty->count <= (tty->driver == vttys_driver) ? 2 : 1) {
+		wake_up_interruptible(&tty->read_wait);
+		wake_up_interruptible(&tty->write_wait);
+
+		wake_up_interruptible(&tty->link->read_wait);
+		wake_up_interruptible(&tty->link->write_wait);
+	}
+}
+
+static void vtty_shutdown(struct tty_struct *tty)
+{
+	vtty_map_clear(tty);
+}
+
+static int vtty_write(struct tty_struct *tty,
+		      const unsigned char *buf, int count)
+{
+	struct tty_struct *peer = tty->link;
+
+	if (tty->stopped)
+		return 0;
+
+	if (count > 0) {
+		count = tty_insert_flip_string(peer->port, buf, count);
+		if (count) {
+			tty_flip_buffer_push(peer->port);
+			tty_wakeup(tty);
+		} else {
+			/*
+			 * Flush the slave reader if noone
+			 * is actually hooked on. Otherwise
+			 * wait until reader fetch all data.
+			 */
+			if (peer->count <
+			    (tty->driver == vttym_driver) ? 2 : 1)
+				tty_perform_flush(peer, TCIFLUSH);
+		}
+	}
+
+	return count;
+}
+
+static int vtty_write_room(struct tty_struct *tty)
+{
+	struct tty_struct *peer = tty->link;
+
+	if (tty->stopped)
+		return 0;
+
+	if (peer->count <
+	    (tty->driver == vttym_driver) ? 2 : 1)
+		return 2048;
+
+	return pty_space(peer);
+}
+
+static void vtty_remove(struct tty_driver *driver, struct tty_struct *tty)
+{
+}
+
+static const struct tty_operations vtty_ops = {
+	.lookup		= vtty_lookup,
+	.install	= vtty_install,
+	.open		= vtty_open,
+	.close		= vtty_close,
+	.shutdown	= vtty_shutdown,
+	.cleanup	= pty_cleanup,
+	.write		= vtty_write,
+	.write_room	= vtty_write_room,
+	.set_termios	= pty_set_termios,
+	.unthrottle	= pty_unthrottle,
+	.remove		= vtty_remove,
+};
+
+struct tty_driver *vtty_console_driver(int *index)
+{
+	*index = 0;
+	return vttys_driver;
+}
+
+struct tty_driver *vtty_driver(dev_t dev, int *index)
+{
+	if (MAJOR(dev) == TTY_MAJOR &&
+	    MINOR(dev) < MAX_NR_VTTY_CONSOLES) {
+		*index = MINOR(dev);
+		return vttys_driver;
+	}
+	return NULL;
+}
+
+static void ve_vtty_fini(void *data)
+{
+	struct ve_struct *ve = data;
+	vtty_map_t *map;
+
+	mutex_lock(&tty_mutex);
+	map = vtty_map_lookup(ve->veid);
+	if (map)
+		vtty_map_free(map);
+	mutex_unlock(&tty_mutex);
+}
+
+static struct ve_hook vtty_hook = {
+	.fini           = ve_vtty_fini,
+	.priority       = HOOK_PRIO_DEFAULT,
+	.owner          = THIS_MODULE,
+};
+
+static int __init vtty_init(void)
+{
+#define VTTY_DRIVER_ALLOC_FLAGS			\
+	(TTY_DRIVER_REAL_RAW		|	\
+	 TTY_DRIVER_RESET_TERMIOS	|	\
+	 TTY_DRIVER_DYNAMIC_DEV		|	\
+	 TTY_DRIVER_INSTALLED		|	\
+	 TTY_DRIVER_DEVPTS_MEM)
+
+	vttym_driver = tty_alloc_driver(MAX_NR_VTTY_CONSOLES,
+					VTTY_DRIVER_ALLOC_FLAGS);
+	if (IS_ERR(vttym_driver))
+		panic(pr_fmt("Can't allocate master vtty driver\n"));
+
+	vttys_driver = tty_alloc_driver(MAX_NR_VTTY_CONSOLES,
+					VTTY_DRIVER_ALLOC_FLAGS);
+	if (IS_ERR(vttys_driver))
+		panic(pr_fmt("Can't allocate slave vtty driver\n"));
+
+	vttym_driver->driver_name		= "vtty_master";
+	vttym_driver->name			= "vttym";
+	vttym_driver->name_base			= 0;
+	vttym_driver->major			= 0;
+	vttym_driver->minor_start		= 0;
+	vttym_driver->type			= TTY_DRIVER_TYPE_PTY;
+	vttym_driver->subtype			= PTY_TYPE_MASTER;
+	vttym_driver->init_termios		= tty_std_termios;
+	vttym_driver->init_termios.c_iflag	= 0;
+	vttym_driver->init_termios.c_oflag	= 0;
+
+	/* 38400 boud rate, 8 bit char size, enable receiver */
+	vttym_driver->init_termios.c_cflag	= B38400 | CS8 | CREAD;
+	vttym_driver->init_termios.c_lflag	= 0;
+	vttym_driver->init_termios.c_ispeed	= 38400;
+	vttym_driver->init_termios.c_ospeed	= 38400;
+	tty_set_operations(vttym_driver, &vtty_ops);
+
+	vttys_driver->driver_name		= "vtty_slave";
+	vttys_driver->name			= "vttys";
+	vttys_driver->name_base			= 0;
+	vttys_driver->major			= 0;
+	vttys_driver->minor_start		= 0;
+	vttys_driver->type			= TTY_DRIVER_TYPE_PTY;
+	vttys_driver->subtype			= PTY_TYPE_SLAVE;
+	vttys_driver->init_termios		= tty_std_termios;
+	vttys_driver->init_termios.c_iflag	= 0;
+	vttys_driver->init_termios.c_oflag	= 0;
+	vttys_driver->init_termios.c_cflag	= B38400 | CS8 | CREAD;
+	vttys_driver->init_termios.c_lflag	= 0;
+	vttys_driver->init_termios.c_ispeed	= 38400;
+	vttys_driver->init_termios.c_ospeed	= 38400;
+	tty_set_operations(vttys_driver, &vtty_ops);
+
+	if (tty_register_driver(vttym_driver))
+		panic(pr_fmt("Can't register master vtty driver\n"));
+
+	if (tty_register_driver(vttys_driver))
+		panic(pr_fmt("Can't register slave vtty driver\n"));
+
+	ve_hook_register(VE_SS_CHAIN, &vtty_hook);
+	tty_default_fops(&vtty_fops);
+	return 0;
+}
+
+int vtty_open_master(envid_t veid, int idx)
+{
+	struct tty_struct *tty;
+	struct file *file;
+	char devname[64];
+	int fd, ret;
+
+	if (!vtty_match_index(idx))
+		return -EIO;
+
+	fd = get_unused_fd_flags(0);
+	if (fd < 0)
+		return fd;
+
+	snprintf(devname, sizeof(devname), "v%utty%d", veid, idx);
+	file = anon_inode_getfile(devname, &vtty_fops, NULL, O_RDWR);
+	if (IS_ERR(file)) {
+		ret = PTR_ERR(file);
+		goto err_put_unused_fd;
+	}
+	nonseekable_open(NULL, file);
+
+	ret = tty_alloc_file(file);
+	if (ret)
+		goto err_fput;
+
+	/*
+	 * Opening comes from ve0 context so
+	 * setup VE's context until master fetched.
+	 * This is done under @tty_mutex so noone
+	 * else would access it while we're holding
+	 * the lock.
+	 */
+	mutex_lock(&tty_mutex);
+	vtty_set_context(veid);
+
+	tty = vtty_lookup(vttym_driver, NULL, idx);
+	if (!tty) {
+		tty = tty_init_dev(vttys_driver, idx);
+		if (IS_ERR(tty))
+			goto err_install;
+		tty->count--;
+		tty_unlock(tty);
+		tty_set_lock_subclass(tty);
+		tty = tty->link;
+	}
+
+	/* One master at a time */
+	if (tty->count >= 1) {
+		ret = -EBUSY;
+		goto err_install;
+	}
+
+	vtty_drop_context();
+
+	/*
+	 * We're the master peer so increment
+	 * slave counter as well.
+	 */
+	tty_add_file(tty, file);
+	tty->count++;
+	tty->link->count++;
+	fd_install(fd, file);
+	vtty_open(tty, file);
+
+	mutex_unlock(&tty_mutex);
+	ret = fd;
+out:
+	return ret;
+
+err_install:
+	vtty_drop_context();
+	mutex_unlock(&tty_mutex);
+	tty_free_file(file);
+err_fput:
+	file->f_op = NULL;
+	fput(file);
+err_put_unused_fd:
+	put_unused_fd(fd);
+	goto out;
+}
+EXPORT_SYMBOL(vtty_open_master);
+#else
+static void vtty_init(void) { };
+#endif /* CONFIG_VE */
+
 static int __init pty_init(void)
 {
 	legacy_pty_init();
 	unix98_pty_init();
+	vtty_init();
 	return 0;
 }
 module_init(pty_init);
