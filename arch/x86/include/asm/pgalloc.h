@@ -48,7 +48,7 @@ static inline void pte_free_kernel(struct mm_struct *mm, pte_t *pte)
 static inline void pte_free(struct mm_struct *mm, struct page *pte)
 {
 	pgtable_page_dtor(pte);
-	__free_page(pte);
+	__free_kmem_pages(pte, 0);
 }
 
 extern void ___pte_free_tlb(struct mmu_gather *tlb, struct page *pte);
@@ -81,11 +81,11 @@ static inline void pmd_populate(struct mm_struct *mm, pmd_t *pmd,
 static inline pmd_t *pmd_alloc_one(struct mm_struct *mm, unsigned long addr)
 {
 	struct page *page;
-	page = alloc_pages(GFP_KERNEL | __GFP_REPEAT | __GFP_ZERO, 0);
+	page = alloc_kmem_pages(GFP_KERNEL | __GFP_REPEAT | __GFP_ZERO, 0);
 	if (!page)
 		return NULL;
 	if (!pgtable_pmd_page_ctor(page)) {
-		__free_pages(page, 0);
+		__free_kmem_pages(page, 0);
 		return NULL;
 	}
 	return (pmd_t *)page_address(page);
@@ -95,7 +95,7 @@ static inline void pmd_free(struct mm_struct *mm, pmd_t *pmd)
 {
 	BUG_ON((unsigned long)pmd & (PAGE_SIZE-1));
 	pgtable_pmd_page_dtor(virt_to_page(pmd));
-	free_page((unsigned long)pmd);
+	free_kmem_pages((unsigned long)pmd, 0);
 }
 
 extern void ___pmd_free_tlb(struct mmu_gather *tlb, pmd_t *pmd);
@@ -125,13 +125,14 @@ static inline void pgd_populate(struct mm_struct *mm, pgd_t *pgd, pud_t *pud)
 
 static inline pud_t *pud_alloc_one(struct mm_struct *mm, unsigned long addr)
 {
-	return (pud_t *)get_zeroed_page(GFP_KERNEL|__GFP_REPEAT);
+	return (pud_t *)__get_free_kmem_pages(GFP_KERNEL|__GFP_REPEAT|
+					      __GFP_ZERO, 0);
 }
 
 static inline void pud_free(struct mm_struct *mm, pud_t *pud)
 {
 	BUG_ON((unsigned long)pud & (PAGE_SIZE-1));
-	free_page((unsigned long)pud);
+	free_kmem_pages((unsigned long)pud, 0);
 }
 
 extern void ___pud_free_tlb(struct mmu_gather *tlb, pud_t *pud);
