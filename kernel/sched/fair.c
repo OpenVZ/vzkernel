@@ -965,6 +965,9 @@ static inline void update_entity_boost(struct sched_entity *se)
 	else {
 		struct task_struct *p = task_of(se);
 
+		if (unlikely(p != current))
+			return;
+
 		if (!(preempt_count() & PREEMPT_ACTIVE)) {
 			se->boosted = sched_feat(BOOST_WAKEUPS) &&
 					p->woken_while_running;
