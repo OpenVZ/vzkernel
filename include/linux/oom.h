@@ -52,16 +52,6 @@ static inline bool oom_task_origin(const struct task_struct *p)
 /* linux/mm/oom_group.c */
 extern int get_task_oom_score_adj(struct task_struct *t);
 
-/*
- * oom_score_adj must be 0 for containerized tasks on system-wide OOM, so
- * oom_badness will always return 0 if memcg == NULL. However, we need to show
- * real oom_badness when /proc/PID/oom_score is read from inside a container.
- * Since procuring the memcg corresponding to a container is rather tricky, we
- * pass OOM_BADNESS_DUMMY_MEMCG instead, which will make oom_badness act as if
- * it was called on local OOM, but without dereferencing the memcg ptr.
- */
-#define OOM_BADNESS_DUMMY_MEMCG		((struct mem_cgroup *)1UL)
-
 extern unsigned long oom_badness(struct task_struct *p, struct mem_cgroup *memcg,
 			  const nodemask_t *nodemask, unsigned long totalpages);
 extern void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
