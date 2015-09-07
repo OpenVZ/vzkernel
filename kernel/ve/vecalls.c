@@ -998,6 +998,9 @@ static int ve_configure(envid_t veid, unsigned int key,
 	case VE_CONFIGURE_OS_RELEASE:
 		err = init_ve_osrelease(ve, data);
 		break;
+	case VE_CONFIGURE_OPEN_TTY:
+		err = vtty_open_master(ve->veid, val);
+		break;
 	}
 
 	put_ve(ve);
