@@ -156,7 +156,7 @@ void destroy_context_ldt(struct mm_struct *mm)
 		if (mm->context.size * LDT_ENTRY_SIZE > PAGE_SIZE)
 			vfree(mm->context.ldt);
 		else
-			put_page(virt_to_page(mm->context.ldt));
+			__free_page(virt_to_page(mm->context.ldt));
 		mm->context.size = 0;
 	}
 }
