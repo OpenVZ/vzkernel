@@ -230,11 +230,8 @@ static void anon_pipe_buf_release(struct pipe_inode_info *pipe,
 	 * temporary page, let's keep track of it as a one-deep
 	 * allocation cache. (Otherwise just release our reference to it)
 	 */
-	if (page_count(page) == 1) {
-		if (!pipe->tmp_page)
-			pipe->tmp_page = page;
-		else
-			__free_kmem_pages(page, 0);
+	if (page_count(page) == 1 && !pipe->tmp_page) {
+		pipe->tmp_page = page;
 	} else
 		page_cache_release(page);
 }
@@ -610,7 +607,7 @@ redo1:
 			size_t remaining;
 
 			if (!page) {
-				page = alloc_kmem_pages(GFP_HIGHUSER | __GFP_ACCOUNT, 0);
+				page = alloc_pages(GFP_HIGHUSER | __GFP_ACCOUNT, 0);
 				if (unlikely(!page)) {
 					ret = ret ? : -ENOMEM;
 					break;
@@ -894,7 +891,7 @@ void free_pipe_info(struct pipe_inode_info *pipe)
 			buf->ops->release(pipe, buf);
 	}
 	if (pipe->tmp_page)
-		__free_kmem_pages(pipe->tmp_page, 0);
+		__free_page(pipe->tmp_page);
 	kfree(pipe->bufs);
 	kfree(pipe);
 }
