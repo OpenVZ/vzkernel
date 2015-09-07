@@ -3631,7 +3631,6 @@ struct mem_cgroup *__mem_cgroup_from_kmem(void *ptr)
 		if (!is_root_cache(cachep))
 			memcg = cachep->memcg_params.memcg;
 	} else {
-		/* page allocated by alloc_kmem_pages */
 		pc = lookup_page_cgroup(page);
 		if (PageCgroupUsed(pc))
 			memcg = pc->mem_cgroup;
