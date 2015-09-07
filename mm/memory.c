@@ -460,9 +460,6 @@ static inline void free_pmd_range(struct mmu_gather *tlb, pud_t *pud,
 	pmd = pmd_offset(pud, start);
 	pud_clear(pud);
 	pmd_free_tlb(tlb, pmd, start);
-#ifndef __PAGETABLE_PMD_FOLDED
-	tlb->mm->nr_ptds--;
-#endif
 }
 
 static inline void free_pud_range(struct mmu_gather *tlb, pgd_t *pgd,
@@ -496,9 +493,6 @@ static inline void free_pud_range(struct mmu_gather *tlb, pgd_t *pgd,
 	pud = pud_offset(pgd, start);
 	pgd_clear(pgd);
 	pud_free_tlb(tlb, pud, start);
-#ifndef __PAGETABLE_PUD_FOLDED
-	tlb->mm->nr_ptds--;
-#endif
 }
 
 /*
@@ -3432,10 +3426,8 @@ int __pud_alloc(struct mm_struct *mm, pgd_t *pgd, unsigned long address)
 	spin_lock(&mm->page_table_lock);
 	if (pgd_present(*pgd))		/* Another has populated it */
 		pud_free(mm, new);
-	else {
+	else
 		pgd_populate(mm, pgd, new);
-		mm->nr_ptds++;
-	}
 	spin_unlock(&mm->page_table_lock);
 	return 0;
 }
@@ -3458,17 +3450,13 @@ int __pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address)
 #ifndef __ARCH_HAS_4LEVEL_HACK
 	if (pud_present(*pud))		/* Another has populated it */
 		pmd_free(mm, new);
-	else {
+	else
 		pud_populate(mm, pud, new);
-		mm->nr_ptds++;
-	}
 #else
 	if (pgd_present(*pud))		/* Another has populated it */
 		pmd_free(mm, new);
-	else {
+	else
 		pgd_populate(mm, pud, new);
-		mm->nr_ptds++;
-	}
 #endif /* __ARCH_HAS_4LEVEL_HACK */
 	spin_unlock(&mm->page_table_lock);
 	return 0;
