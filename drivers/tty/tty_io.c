@@ -1755,6 +1755,11 @@ int tty_release(struct inode *inode, struct file *filp)
 			(o_tty->count <= (pty_master ? 1 : 0));
 		do_sleep = 0;
 
+#ifdef CONFIG_VE
+		if (!o_tty_closing &&
+		    test_bit(TTY_PINNED_BY_OTHER, &tty->flags))
+			tty_closing = 0;
+#endif
 		if (tty_closing) {
 			if (waitqueue_active(&tty->read_wait)) {
 				wake_up_poll(&tty->read_wait, POLLIN);
@@ -1930,14 +1935,17 @@ static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 	struct tty_driver *driver;
 
 #ifdef CONFIG_VE
-	extern struct tty_driver *vz_vt_device(struct ve_struct *ve, dev_t dev, int *index);
-	if (!ve_is_super(get_exec_env()) &&
-	    (MAJOR(device) == TTY_MAJOR && MINOR(device) < VZ_VT_MAX_DEVS)) {
-		driver = tty_driver_kref_get(vz_vt_device(get_exec_env(), device, index));
-		*noctty = 1;
-		return driver;
+	struct ve_struct *ve = get_exec_env();
+
+	if (!ve_is_super(ve)) {
+		driver = vtty_driver(device, index);
+		if (driver) {
+			*noctty = 1;
+			return tty_driver_kref_get(driver);
+		}
 	}
 #endif
+
 	switch (device) {
 #ifdef CONFIG_VT
 	case MKDEV(TTY_MAJOR, 0): {
@@ -1951,10 +1959,8 @@ static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 	case MKDEV(TTYAUX_MAJOR, 1): {
 		struct tty_driver *console_driver = console_device(index);
 #ifdef CONFIG_VE
-		if (!ve_is_super(get_exec_env())) {
-			extern struct tty_driver *vz_console_device(int *index);
-			console_driver = vz_console_device(index);
-		}
+		if (!ve_is_super(ve))
+			console_driver = vtty_console_driver(index);
 #endif
 		if (console_driver) {
 			driver = tty_driver_kref_get(console_driver);
@@ -3628,9 +3634,6 @@ static DEVICE_ATTR(active, S_IRUGO, show_cons_active, NULL);
 
 #ifdef CONFIG_VE
 
-extern int vz_con_ve_init(struct ve_struct *ve);
-extern void vz_con_ve_fini(struct ve_struct *ve);
-
 void console_sysfs_notify(void)
 {
 	struct ve_struct *ve = get_exec_env();
@@ -3647,7 +3650,6 @@ void ve_tty_console_fini(struct ve_struct *ve)
 	device_remove_file(consdev, &dev_attr_active);
 	device_destroy_namespace(tty_class, MKDEV(TTYAUX_MAJOR, 1), ve);
 	device_destroy_namespace(tty_class, MKDEV(TTYAUX_MAJOR, 0), ve);
-	vz_con_ve_fini(ve);
 }
 
 int ve_tty_console_init(struct ve_struct *ve)
@@ -3669,15 +3671,9 @@ int ve_tty_console_init(struct ve_struct *ve)
 	if (err)
 		goto err_consfile;
 
-	err = vz_con_ve_init(ve);
-	if (err)
-		goto err_vzcon;
-
 	ve->consdev = dev;
 	return 0;
 
-err_vzcon:
-	device_remove_file(dev, &dev_attr_active);
 err_consfile:
 	device_destroy_namespace(tty_class, MKDEV(TTYAUX_MAJOR, 1), ve);
 err_consdev:
