@@ -692,6 +692,7 @@ static void prune_dqcache(int count)
 	struct list_head *head;
 	struct dquot *dquot;
 
+	spin_lock(&dq_list_lock);
 	head = free_dquots.prev;
 	while (head != &free_dquots && count) {
 		dquot = list_entry(head, struct dquot, dq_free);
@@ -702,6 +703,7 @@ static void prune_dqcache(int count)
 		count--;
 		head = free_dquots.prev;
 	}
+	spin_unlock(&dq_list_lock);
 }
 
 /*
