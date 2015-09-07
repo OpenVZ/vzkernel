@@ -247,7 +247,6 @@ static void pgd_mop_up_pmds(struct mm_struct *mm, pgd_t *pgdp)
 
 			paravirt_release_pmd(pgd_val(pgd) >> PAGE_SHIFT);
 			pmd_free(mm, pmd);
-			mm->nr_ptds--;
 		}
 	}
 }
@@ -272,7 +271,6 @@ static void pgd_prepopulate_pmd(struct mm_struct *mm, pgd_t *pgd, pmd_t *pmds[])
 			       sizeof(pmd_t) * PTRS_PER_PMD);
 
 		pud_populate(mm, pud, pmd);
-		mm->nr_ptds++;
 	}
 }
 
@@ -306,8 +304,6 @@ pgd_t *pgd_alloc(struct mm_struct *mm)
 
 	spin_unlock(&pgd_lock);
 
-	mm->nr_ptds++;
-
 	return pgd;
 
 out_free_pmds:
@@ -324,7 +320,6 @@ void pgd_free(struct mm_struct *mm, pgd_t *pgd)
 	pgd_dtor(pgd);
 	paravirt_pgd_free(mm, pgd);
 	free_page((unsigned long)pgd);
-	mm->nr_ptds--;
 }
 
 /*
