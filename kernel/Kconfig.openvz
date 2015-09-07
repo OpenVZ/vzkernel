@@ -94,11 +94,6 @@ config VZ_EVENT
  	  networking code does. By now just the notifications of
  	  the VE essensial status changes are being sent.
 
-config VTTYS
-	bool "Virtual tty device"
-	depends on VE && VZ_DEV
-	default y
-
 endmenu
 
 
