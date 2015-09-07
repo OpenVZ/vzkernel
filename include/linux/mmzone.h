@@ -211,6 +211,7 @@ struct zone_reclaim_stat {
 struct lruvec {
 	struct list_head lists[NR_LRU_LISTS];
 	struct zone_reclaim_stat reclaim_stat;
+	unsigned long pages_scanned;
 #ifdef CONFIG_MEMCG
 	struct zone *zone;
 #endif
