@@ -67,13 +67,6 @@ struct ve_struct {
 	struct binfmt_misc	*binfmt_misc;
 #endif
 
-#define VZ_VT_MAX_DEVS		12
-	struct tty_driver	*vz_vt_driver;
-	struct tty_struct	*vz_tty_vt[VZ_VT_MAX_DEVS];
-
-	struct tty_struct	*vz_tty_conm;
-	struct tty_struct	*vz_tty_cons;
-
 #ifdef CONFIG_LEGACY_PTYS
 	struct tty_driver	*pty_driver, *pty_slave_driver;
 #endif
@@ -216,16 +209,15 @@ extern unsigned long long ve_relative_clock(struct timespec * ts);
 extern void monotonic_abs_to_ve(clockid_t which_clock, struct timespec *tp);
 extern void monotonic_ve_to_abs(clockid_t which_clock, struct timespec *tp);
 
-#ifdef CONFIG_VTTYS
-extern int vtty_open_master(int veid, int idx);
-extern struct tty_driver *vtty_driver;
-#else
-static inline int vtty_open_master(int veid, int idx) { return -ENODEV; }
-#endif
-
 void ve_stop_ns(struct pid_namespace *ns);
 void ve_exit_ns(struct pid_namespace *ns);
 int ve_start_container(struct ve_struct *ve);
+
+#ifdef CONFIG_TTY
+extern struct tty_driver *vtty_driver(dev_t dev, int *index);
+extern struct tty_driver *vtty_console_driver(int *index);
+extern int vtty_open_master(envid_t veid, int idx);
+#endif /* CONFIG_TTY */
 
 #else	/* CONFIG_VE */
 
