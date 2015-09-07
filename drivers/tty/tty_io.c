@@ -1793,6 +1793,11 @@ int tty_release(struct inode *inode, struct file *filp)
 	while (1) {
 		do_sleep = 0;
 
+#ifdef CONFIG_VE
+		if (!o_tty_closing &&
+		    test_bit(TTY_PINNED_BY_OTHER, &tty->flags))
+			tty_closing = 0;
+#endif
 		if (tty->count <= 1) {
 			if (waitqueue_active(&tty->read_wait)) {
 				wake_up_poll(&tty->read_wait, POLLIN);
@@ -1954,14 +1959,17 @@ static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 	struct tty_driver *driver;
 
 #ifdef CONFIG_VE
-	extern struct tty_driver *vz_vt_device(struct ve_struct *ve, dev_t dev, int *index);
-	if (!ve_is_super(get_exec_env()) &&
-	    (MAJOR(device) == TTY_MAJOR && MINOR(device) < VZ_VT_MAX_DEVS)) {
-		driver = tty_driver_kref_get(vz_vt_device(get_exec_env(), device, index));
-		*noctty = 1;
-		return driver;
+	struct ve_struct *ve = get_exec_env();
+
+	if (!ve_is_super(ve)) {
+		driver = vtty_driver(device, index);
+		if (driver) {
+			*noctty = 1;
+			return tty_driver_kref_get(driver);
+		}
 	}
 #endif
+
 	switch (device) {
 #ifdef CONFIG_VT
 	case MKDEV(TTY_MAJOR, 0): {
@@ -1975,10 +1983,8 @@ static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 	case MKDEV(TTYAUX_MAJOR, 1): {
 		struct tty_driver *console_driver = console_device(index);
 #ifdef CONFIG_VE
-		if (!ve_is_super(get_exec_env())) {
-			extern struct tty_driver *vz_console_device(int *index);
-			console_driver = vz_console_device(index);
-		}
+		if (!ve_is_super(ve))
+			console_driver = vtty_console_driver(index);
 #endif
 		if (console_driver) {
 			driver = tty_driver_kref_get(console_driver);
