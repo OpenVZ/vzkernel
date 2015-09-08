@@ -476,6 +476,8 @@ static inline void *restore_red_left(struct kmem_cache *s, void *p)
  */
 #ifdef CONFIG_SLUB_DEBUG_ON
 static int slub_debug = DEBUG_DEFAULT_FLAGS;
+#elif defined (CONFIG_KASAN)
+static int slub_debug = SLAB_STORE_USER;
 #else
 static int slub_debug;
 #endif
