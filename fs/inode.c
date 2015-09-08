@@ -2240,7 +2240,7 @@ int vfs_ioc_setflags_prepare(struct inode *inode, unsigned int oldflags,
 	 * This test looks nicer. Thanks to Pauline Middelink
 	 */
 	if ((flags ^ oldflags) & (FS_APPEND_FL | FS_IMMUTABLE_FL) &&
-	    !capable(CAP_LINUX_IMMUTABLE))
+	    !ve_capable(CAP_LINUX_IMMUTABLE))
 		return -EPERM;
 
 	return 0;
