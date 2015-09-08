@@ -294,8 +294,7 @@ static int dev_ifsioc(struct net *net, struct ifreq *ifr, unsigned int cmd)
 		return dev_mc_del_global(dev, ifr->ifr_hwaddr.sa_data);
 
 	case SIOCSIFTXQLEN:
-		if (!ns_capable(net->user_ns, CAP_NET_ADMIN) &&
-				!ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
+		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
 			return -EPERM;
 		if (ifr->ifr_qlen < 0)
 			return -EINVAL;
@@ -502,8 +501,7 @@ int dev_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 	case SIOCSIFMTU:
 	case SIOCSIFHWADDR:
 	case SIOCSIFFLAGS:
-		if (!ns_capable(net->user_ns, CAP_NET_ADMIN) &&
-				!ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
+		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
 			return -EPERM;
 		dev_load(net, ifr.ifr_name);
 		rtnl_lock();
