@@ -771,7 +771,7 @@ struct kern_ipc_perm *ipcctl_pre_down_nolock(struct ipc_namespace *ns,
 
 	euid = current_euid();
 	if (uid_eq(euid, ipcp->cuid) || uid_eq(euid, ipcp->uid)  ||
-	    ns_capable(ns->user_ns, CAP_VE_SYS_ADMIN))
+	    ns_capable(ns->user_ns, CAP_SYS_ADMIN))
 		return ipcp; /* successful lookup */
 err:
 	return ERR_PTR(err);
