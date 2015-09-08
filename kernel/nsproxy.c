@@ -136,8 +136,7 @@ int copy_namespaces(unsigned long flags, struct task_struct *tsk)
 				CLONE_NEWPID | CLONE_NEWNET)))
 		return 0;
 
-	if (!ns_capable(user_ns, CAP_SYS_ADMIN) &&
-	    !ns_capable(user_ns, CAP_VE_SYS_ADMIN)) {
+	if (!ns_capable(user_ns, CAP_SYS_ADMIN)) {
 		err = -EPERM;
 		goto out;
 	}
