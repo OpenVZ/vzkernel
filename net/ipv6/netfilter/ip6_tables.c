@@ -1861,8 +1861,7 @@ compat_do_ip6t_set_ctl(struct sock *sk, int cmd, void __user *user,
 	struct user_namespace *user_ns = sock_net(sk)->user_ns;
 	int ret;
 
-	if (!ns_capable(user_ns, CAP_NET_ADMIN) &&
-	    !ns_capable(user_ns, CAP_VE_NET_ADMIN))
+	if (!ns_capable(user_ns, CAP_NET_ADMIN))
 		return -EPERM;
 
 	switch (cmd) {
@@ -1972,8 +1971,7 @@ compat_do_ip6t_get_ctl(struct sock *sk, int cmd, void __user *user, int *len)
 	struct user_namespace *user_ns = sock_net(sk)->user_ns;
 	int ret;
 
-	if (!ns_capable(user_ns, CAP_NET_ADMIN) &&
-	    !ns_capable(user_ns, CAP_VE_NET_ADMIN))
+	if (!ns_capable(user_ns, CAP_NET_ADMIN))
 		return -EPERM;
 
 	switch (cmd) {
@@ -1996,8 +1994,7 @@ do_ip6t_set_ctl(struct sock *sk, int cmd, void __user *user, unsigned int len)
 	struct user_namespace *user_ns = sock_net(sk)->user_ns;
 	int ret;
 
-	if (!ns_capable(user_ns, CAP_NET_ADMIN) &&
-	    !ns_capable(user_ns, CAP_VE_NET_ADMIN))
+	if (!ns_capable(user_ns, CAP_NET_ADMIN))
 		return -EPERM;
 
 	switch (cmd) {
@@ -2023,8 +2020,7 @@ do_ip6t_get_ctl(struct sock *sk, int cmd, void __user *user, int *len)
 	struct user_namespace *user_ns = sock_net(sk)->user_ns;
 	int ret;
 
-	if (!ns_capable(user_ns, CAP_NET_ADMIN) &&
-	    !ns_capable(user_ns, CAP_VE_NET_ADMIN))
+	if (!ns_capable(user_ns, CAP_NET_ADMIN))
 		return -EPERM;
 
 	switch (cmd) {
