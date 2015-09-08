@@ -16,7 +16,7 @@
 static bool
 ext4_xattr_trusted_list(struct dentry *dentry)
 {
-	return capable(CAP_SYS_ADMIN);
+	return ve_capable(CAP_SYS_ADMIN);
 }
 
 static int

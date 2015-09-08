@@ -4278,7 +4278,7 @@ int do_linkat(int olddfd, const char __user *oldname, int newdfd,
 	 * handlink using the passed filedescriptor.
 	 */
 	if (flags & AT_EMPTY_PATH) {
-		if (!capable(CAP_DAC_READ_SEARCH))
+		if (!ve_capable(CAP_DAC_READ_SEARCH))
 			return -ENOENT;
 		how = LOOKUP_EMPTY;
 	}
