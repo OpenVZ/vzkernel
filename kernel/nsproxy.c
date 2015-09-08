@@ -198,8 +198,7 @@ int unshare_nsproxy_namespaces(unsigned long unshare_flags,
 		return 0;
 
 	user_ns = new_cred ? new_cred->user_ns : current_user_ns();
-	if (!ns_capable(user_ns, CAP_SYS_ADMIN) &&
-		!ns_capable(user_ns, CAP_VE_SYS_ADMIN))
+	if (!ns_capable(user_ns, CAP_SYS_ADMIN))
 		return -EPERM;
 
 	*new_nsp = create_new_namespaces(unshare_flags, current, user_ns,
