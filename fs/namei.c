@@ -3691,7 +3691,7 @@ int vfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode, dev_t dev)
 	if (error)
 		return error;
 
-	if ((S_ISCHR(mode) || S_ISBLK(mode)) && !capable(CAP_MKNOD))
+	if ((S_ISCHR(mode) || S_ISBLK(mode)) && !ve_capable(CAP_MKNOD))
 		return -EPERM;
 
 	if (!dir->i_op->mknod)
@@ -4253,7 +4253,7 @@ SYSCALL_DEFINE5(linkat, int, olddfd, const char __user *, oldname,
 	 * handlink using the passed filedescriptor.
 	 */
 	if (flags & AT_EMPTY_PATH) {
-		if (!capable(CAP_DAC_READ_SEARCH))
+		if (!ve_capable(CAP_DAC_READ_SEARCH))
 			return -ENOENT;
 		how = LOOKUP_EMPTY;
 	}
