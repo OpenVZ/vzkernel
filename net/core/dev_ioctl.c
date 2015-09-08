@@ -502,13 +502,9 @@ int dev_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 	 *	- do not return a value
 	 */
 	case SIOCSIFMAP:
-	case SIOCSIFSLAVE:
 	case SIOCSIFMTU:
 	case SIOCSIFHWADDR:
 	case SIOCSIFFLAGS:
-	case SIOCSIFMETRIC:
-	case SIOCBRADDIF:
-	case SIOCBRDELIF:
 		if (!ns_capable(net->user_ns, CAP_NET_ADMIN) &&
 				!ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
 			return -EPERM;
@@ -518,6 +514,8 @@ int dev_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 		rtnl_unlock();
 		return ret;
 
+	case SIOCSIFMETRIC:
+	case SIOCSIFSLAVE:
 	case SIOCADDMULTI:
 	case SIOCDELMULTI:
 	case SIOCSIFHWBROADCAST:
@@ -526,6 +524,8 @@ int dev_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 	case SIOCBONDRELEASE:
 	case SIOCBONDSETHWADDR:
 	case SIOCBONDCHANGEACTIVE:
+	case SIOCBRADDIF:
+	case SIOCBRDELIF:
 	case SIOCSHWTSTAMP:
 		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
 			return -EPERM;
