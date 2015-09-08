@@ -476,11 +476,8 @@ int dev_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 	 */
 	case SIOCGMIIPHY:
 	case SIOCGMIIREG:
-		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
-			return -EPERM;
 	case SIOCSIFNAME:
-		if (!ns_capable(net->user_ns, CAP_NET_ADMIN) &&
-		    !ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
+		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
 			return -EPERM;
 		dev_load(net, ifr.ifr_name);
 		rtnl_lock();
