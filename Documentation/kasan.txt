@@ -27,8 +27,7 @@ latter is 1.1 - 2 times faster. Inline instrumentation requires GCC 5.0 or
 latter.
 
 Currently KASAN works only with the SLUB memory allocator.
-For better bug detection and nicer report, enable CONFIG_STACKTRACE and put
-at least 'slub_debug=U' in the boot cmdline.
+For better bug detection and nicer report and enable CONFIG_STACKTRACE.
 
 To disable instrumentation for specific files or directories, add a line
 similar to the following to the respective kernel Makefile:
