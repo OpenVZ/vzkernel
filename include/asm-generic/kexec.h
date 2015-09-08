@@ -4,7 +4,11 @@
 #ifdef CONFIG_KEXEC_AUTO_RESERVE
 
 #ifndef KEXEC_AUTO_RESERVED_SIZE
+#ifndef CONFIG_KASAN
 #define KEXEC_AUTO_RESERVED_SIZE ((1ULL<<27) + (1ULL<<25)) /* 160M */
+#else
+#define KEXEC_AUTO_RESERVED_SIZE ((1ULL<<28) + (1ULL<<26)) /* 320M */
+#endif
 #endif
 #ifndef KEXEC_AUTO_THRESHOLD
 #define KEXEC_AUTO_THRESHOLD (1ULL<<31) /* 2G */
