@@ -121,8 +121,7 @@ static struct dentry *proc_mount(struct file_system_type *fs_type,
 		options = data;
 
 		if (!current_user_ns()->may_mount_proc ||
-		    (!ns_capable(ns->user_ns, CAP_SYS_ADMIN) &&
-		     !ns_capable(ns->user_ns, CAP_VE_SYS_ADMIN)))
+		    !ns_capable(ns->user_ns, CAP_SYS_ADMIN))
 			return ERR_PTR(-EPERM);
 	}
 
