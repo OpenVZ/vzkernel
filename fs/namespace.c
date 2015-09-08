@@ -1306,9 +1306,7 @@ static int do_umount(struct mount *mnt, int flags)
  */
 static inline bool may_mount(void)
 {
-	return ns_capable(current->nsproxy->mnt_ns->user_ns, CAP_SYS_ADMIN) ||
-	                  nsown_capable(CAP_SYS_ADMIN) ||
-	                  nsown_capable(CAP_VE_SYS_ADMIN);
+	return ns_capable(current->nsproxy->mnt_ns->user_ns, CAP_SYS_ADMIN);
 }
 
 /*
