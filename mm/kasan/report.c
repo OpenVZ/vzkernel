@@ -216,14 +216,28 @@ static void kasan_report_error(struct kasan_access_info *info)
 	spin_unlock_irqrestore(&report_lock, flags);
 }
 
+static bool print_till_death;
+static int __init kasan_setup(char *arg)
+{
+	print_till_death = true;
+	return 0;
+}
+__setup("kasan_print_till_death", kasan_setup);
+
 void kasan_report(unsigned long addr, size_t size,
 		bool is_write, unsigned long ip)
 {
 	struct kasan_access_info info;
+	static bool reported = false;
 
 	if (likely(!kasan_enabled()))
 		return;
 
+	if (likely(!print_till_death)) {
+		if (reported)
+			return;
+		reported = true;
+	}
 	info.access_addr = (void *)addr;
 	info.access_size = size;
 	info.is_write = is_write;
