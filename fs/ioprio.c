@@ -75,7 +75,7 @@ SYSCALL_DEFINE3(ioprio_set, int, which, int, who, int, ioprio)
 
 		switch (class) {
 			case IOPRIO_CLASS_RT:
-				if (!capable(CAP_VE_ADMIN))
+				if (!ve_capable(CAP_SYS_ADMIN))
 					return -EPERM;
 				class = IOPRIO_CLASS_BE;
 				data = 0;
