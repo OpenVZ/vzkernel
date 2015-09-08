@@ -1666,8 +1666,7 @@ int dev_ethtool(struct net *net, struct ifreq *ifr)
 		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
 			return -EPERM;
 	default:
-		if (!ns_capable(net->user_ns, CAP_NET_ADMIN) &&
-			!ns_capable(net->user_ns, CAP_VE_NET_ADMIN))
+		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
 			return -EPERM;
 	}
 
