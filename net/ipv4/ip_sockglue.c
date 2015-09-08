@@ -1032,8 +1032,7 @@ mc_msf_out:
 	case IP_IPSEC_POLICY:
 	case IP_XFRM_POLICY:
 		err = -EPERM;
-		if (!ns_capable(sock_net(sk)->user_ns, CAP_NET_ADMIN) &&
-			!ns_capable(sock_net(sk)->user_ns, CAP_VE_NET_ADMIN))
+		if (!ns_capable(sock_net(sk)->user_ns, CAP_NET_ADMIN))
 			break;
 		err = xfrm_user_policy(sk, optname, optval, optlen);
 		break;
