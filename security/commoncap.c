@@ -248,53 +248,30 @@ int cap_capset(struct cred *new,
 	       const kernel_cap_t *inheritable,
 	       const kernel_cap_t *permitted)
 {
-	kernel_cap_t ve_effective = *effective;
-	kernel_cap_t ve_inheritable = *inheritable;
-	kernel_cap_t ve_permitted = *permitted;
-
-	if (!ve_is_super(get_exec_env())) {
-		if (cap_raised(old->cap_effective, CAP_SETPCAP)) {
-			/*
-			 * Ignore all not allowed caps in CT
-			 */
-			printk_once("Drop not allowed caps in CT. Docker? - "
-				    "Will fix when switch to user namespaces.\n");
-			if (cap_inh_is_capped())
-				ve_inheritable = cap_intersect(ve_inheritable,
-				                               cap_combine(old->cap_inheritable,
-				                                           old->cap_permitted));
-			ve_inheritable = cap_intersect(ve_inheritable,
-			                               cap_combine(old->cap_inheritable,
-			                                           old->cap_bset));
-			ve_permitted = cap_intersect(ve_permitted, old->cap_permitted);
-			ve_effective = cap_intersect(ve_effective, ve_permitted);
-		}
-	}
-
 	if (cap_inh_is_capped() &&
-	    !cap_issubset(ve_inheritable,
+	    !cap_issubset(*inheritable,
 			  cap_combine(old->cap_inheritable,
 				      old->cap_permitted)))
 		/* incapable of using this inheritable set */
 		return -EPERM;
 
-	if (!cap_issubset(ve_inheritable,
+	if (!cap_issubset(*inheritable,
 			  cap_combine(old->cap_inheritable,
 				      old->cap_bset)))
 		/* no new pI capabilities outside bounding set */
 		return -EPERM;
 
 	/* verify restrictions on target's new Permitted set */
-	if (!cap_issubset(ve_permitted, old->cap_permitted))
+	if (!cap_issubset(*permitted, old->cap_permitted))
 		return -EPERM;
 
 	/* verify the _new_Effective_ is a subset of the _new_Permitted_ */
-	if (!cap_issubset(ve_effective, ve_permitted))
+	if (!cap_issubset(*effective, *permitted))
 		return -EPERM;
 
-	new->cap_effective   = ve_effective;
-	new->cap_inheritable = ve_inheritable;
-	new->cap_permitted   = ve_permitted;
+	new->cap_effective   = *effective;
+	new->cap_inheritable = *inheritable;
+	new->cap_permitted   = *permitted;
 	return 0;
 }
 
