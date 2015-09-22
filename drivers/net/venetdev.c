@@ -749,6 +749,52 @@ static void venet_setup(struct net_device *dev)
 	SET_ETHTOOL_OPS(dev, &venet_ethtool_ops);
 }
 
+static void venet_dellink(struct net_device *dev, struct list_head *head)
+{
+	struct ve_struct *env = dev->nd_net->owner_ve;
+
+	venet_ext_clean(env);
+	veip_stop(env);
+
+	env->_venet_dev = NULL;
+	unregister_netdevice_queue(dev, head);
+}
+
+static int venet_newlink(struct net *src_net, struct net_device *dev,
+		  struct nlattr *tb[], struct nlattr *data[])
+{
+	struct ve_struct *env = src_net->owner_ve;
+	int err;
+
+	if (env->ve_netns && src_net != env->ve_netns)
+		/* Don't create venet-s in sub net namespaces */
+		return -ENOSYS;
+
+	if (env->veip)
+		return -EEXIST;
+
+	env->ve_netns = src_net;
+
+	err = veip_start(env);
+	if (err)
+		goto err;
+
+	dev->features |= NETIF_F_NETNS_LOCAL;
+
+	err = register_netdevice(dev);
+	if (err)
+		goto err_stop;
+
+	env->_venet_dev = dev;
+	return 0;
+
+err_stop:
+	veip_stop(env);
+err:
+	env->ve_netns = NULL;
+	return err;
+}
+
 #ifdef CONFIG_PROC_FS
 static void veaddr_seq_print(struct seq_file *m, struct ve_struct *ve)
 {
@@ -1207,6 +1253,8 @@ static const struct nla_policy venet_policy[VENET_INFO_MAX + 1] = {
 static struct rtnl_link_ops venet_link_ops = {
 	.kind		= "venet",
 	.priv_size	= sizeof(struct veip_struct),
+	.newlink	= venet_newlink,
+	.dellink	= venet_dellink,
 	.setup		= venet_setup,
 	.changelink	= venet_changelink,
 	.policy		= venet_policy,
