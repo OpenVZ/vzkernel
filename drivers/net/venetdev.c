@@ -1230,8 +1230,10 @@ __init int venet_init(void)
 
 	de = proc_create("veip", S_IFREG | S_IRUSR, proc_vz_dir,
 			&proc_veip_operations);
-	if (!de)
+	if (!de) {
+		err = -EINVAL;
 		goto err_proc;
+	}
 
 	err = cgroup_add_cftypes(&ve_subsys, venet_cftypes);
 	if (err)
