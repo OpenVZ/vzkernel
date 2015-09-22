@@ -1112,67 +1112,6 @@ static struct cftype venet_cftypes[] = {
 	{ }
 };
 
-static int venet_dev_start(struct ve_struct *ve)
-{
-	struct net_device *dev_venet;
-	int err;
-
-	dev_venet = alloc_netdev(0, "venet%d", venet_setup);
-	if (!dev_venet)
-		return -ENOMEM;
-	dev_net_set(dev_venet, ve->ve_netns);
-	err = dev_alloc_name(dev_venet, dev_venet->name);
-	if (err<0)
-		goto err;
-	dev_venet->features |= NETIF_F_NETNS_LOCAL;
-	dev_venet->rtnl_link_ops = &venet_link_ops;
-	dev_venet->rtnl_link_state = RTNL_LINK_INITIALIZING;
-	if ((err = register_netdev(dev_venet)) != 0)
-		goto err;
-	ve->_venet_dev = dev_venet;
-	return 0;
-err:
-	free_netdev(dev_venet);
-	printk(KERN_ERR "VENET initialization error err=%d\n", err);
-	return err;
-}
-
-static __net_init int venet_init_net(struct net *net)
-{
-	struct ve_struct *env = net->owner_ve;
-	int err;
-
-	if (env->ve_netns && net != env->ve_netns) {
-		/* Don't create venet-s in sub net namespaces */
-		return 0;
-	}
-
-	if (env->veip)
-		return -EEXIST;
-
-	env->ve_netns = net;
-
-	err = veip_start(env);
-	if (err != 0)
-		goto err;
-
-	err = venet_dev_start(env);
-	if (err)
-		goto err_free;
-
-	return 0;
-
-err_free:
-	veip_stop(env);
-err:
-	env->ve_netns = NULL;
-	return err;
-}
-
-static struct pernet_operations venet_net_ops = {
-	.init = venet_init_net,
-};
-
 /*
  * VE context dropping is happening earlier than
  * pernet_operations::exit method so we can't
@@ -1272,20 +1211,14 @@ __init int venet_init(void)
 	for (i = 0; i < VEIP_HASH_SZ; i++)
 		INIT_HLIST_HEAD(ip_entry_hash_table + i);
 
-	err = register_pernet_device(&venet_net_ops);
-	if (err)
-		goto err_netdev;
-
 	de = proc_create("veip", S_IFREG | S_IRUSR, proc_vz_dir,
 			&proc_veip_operations);
-	if (!de) {
-		err = -EINVAL;
-		goto err_proc;
-	}
+	if (!de)
+		return -EINVAL;
 
 	err = cgroup_add_cftypes(&ve_subsys, venet_cftypes);
 	if (err)
-		goto err_cgroup;
+		goto err_proc;
 
 	vzioctl_register(&venetcalls);
 	vzmon_register_veaddr_print_cb(veaddr_seq_print);
@@ -1293,11 +1226,8 @@ __init int venet_init(void)
 
 	return rtnl_link_register(&venet_link_ops);
 
-err_cgroup:
-	remove_proc_entry("veip", proc_vz_dir);
 err_proc:
-	unregister_pernet_device(&venet_net_ops);
-err_netdev:
+	remove_proc_entry("veip", proc_vz_dir);
 	return err;
 }
 
@@ -1306,7 +1236,6 @@ __exit void venet_exit(void)
 	cgroup_rm_cftypes(&ve_subsys, venet_cftypes);
 	vzmon_unregister_veaddr_print_cb(veaddr_seq_print);
 	vzioctl_unregister(&venetcalls);
-	unregister_pernet_device(&venet_net_ops);
 	remove_proc_entry("veip", proc_vz_dir);
 	veip_cleanup();
 
