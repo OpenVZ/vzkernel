@@ -213,6 +213,12 @@ new_conn:
 		}
 	}
 
+	if (trans == NULL) {
+		kmem_cache_free(rds_conn_slab, conn);
+		conn = ERR_PTR(-ENODEV);
+		goto out;
+	}
+
 	conn->c_trans = trans;
 
 	init_waitqueue_head(&conn->c_hs_waitq);
