@@ -117,29 +117,31 @@ void put_ve(struct ve_struct *ve)
 }
 EXPORT_SYMBOL(put_ve);
 
-static void ve_list_add(struct ve_struct *ve)
+static int ve_list_add(struct ve_struct *ve)
 {
+	int err;
+
 	mutex_lock(&ve_list_lock);
-	if (idr_replace(&ve_idr, ve, ve->veid) != NULL)
-		WARN_ON(1);
+	err = idr_alloc(&ve_idr, ve, ve->veid, ve->veid + 1, GFP_KERNEL);
+	if (err < 0) {
+		if (err == -ENOSPC)
+			err = -EEXIST;
+		goto out;
+	}
 	list_add(&ve->ve_list, &ve_list_head);
 	nr_ve++;
+	err = 0;
+out:
 	mutex_unlock(&ve_list_lock);
+	return err;
 }
 
-static void ve_list_del(struct ve_struct *ve, bool free_id)
+static void ve_list_del(struct ve_struct *ve)
 {
 	mutex_lock(&ve_list_lock);
-	/* Check whether ve linked in list of ve's and unlink ve from list if so */
-	if (!list_empty(&ve->ve_list)) {
-		/* Hide ve from finding by veid */
-		if (idr_replace(&ve_idr, NULL, ve->veid) != ve)
-			WARN_ON(1);
-		list_del_init(&ve->ve_list);
-		nr_ve--;
-	}
-	if (free_id && ve->veid)
-		idr_remove(&ve_idr, ve->veid);
+	idr_remove(&ve_idr, ve->veid);
+	list_del_init(&ve->ve_list);
+	nr_ve--;
 	mutex_unlock(&ve_list_lock);
 }
 
@@ -435,7 +437,10 @@ int ve_start_container(struct ve_struct *ve)
 	ve->start_jiffies = get_jiffies_64();
 
 	ve_grab_context(ve);
-	ve_list_add(ve);
+
+	err = ve_list_add(ve);
+	if (err)
+		goto err_list;
 
 	err = ve_start_kthread(ve);
 	if (err)
@@ -474,7 +479,8 @@ err_legacy_pty:
 err_umh:
 	ve_stop_kthread(ve);
 err_kthread:
-	ve_list_del(ve, false);
+	ve_list_del(ve);
+err_list:
 	ve_drop_context(ve);
 	return err;
 }
@@ -537,7 +543,7 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 	down_write(&ve->op_sem);
 	ve_hook_iterate_fini(VE_SS_CHAIN, ve);
 
-	ve_list_del(ve, false);
+	ve_list_del(ve);
 	ve_drop_context(ve);
 	up_write(&ve->op_sem);
 
@@ -641,13 +647,6 @@ err_name:
 	kmem_cache_free(ve_cachep, ve);
 err_ve:
 	return ERR_PTR(err);
-}
-
-static void ve_offline(struct cgroup *cg)
-{
-	struct ve_struct *ve = cgroup_ve(cg);
-
-	ve_list_del(ve, true);
 }
 
 static void ve_devmnt_free(struct ve_devmnt *devmnt)
@@ -838,32 +837,17 @@ static u64 ve_id_read(struct cgroup *cg, struct cftype *cft)
 static int ve_id_write(struct cgroup *cg, struct cftype *cft, u64 value)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
-	int veid;
 	int err = 0;
 
 	if (value <= 0 || value > INT_MAX)
 		return -EINVAL;
 
 	down_write(&ve->op_sem);
-	if (ve->veid) {
+	if (ve->is_running || ve->ve_ns) {
 		if (ve->veid != value)
 			err = -EBUSY;
-		goto out;
-	}
-
-	mutex_lock(&ve_list_lock);
-	/* we forbid to start a container without veid (see ve_start_container)
-	 * so the ve cannot be on the list */
-	BUG_ON(!list_empty(&ve->ve_list));
-	veid = idr_alloc(&ve_idr, NULL, value, value + 1, GFP_KERNEL);
-	if (veid < 0) {
-		err = veid;
-		if (err == -ENOSPC)
-			err = -EEXIST;
 	} else
-		ve->veid = veid;
-	mutex_unlock(&ve_list_lock);
-out:
+		ve->veid = value;
 	up_write(&ve->op_sem);
 	return err;
 }
@@ -1206,7 +1190,6 @@ struct cgroup_subsys ve_subsys = {
 	.name		= "ve",
 	.subsys_id	= ve_subsys_id,
 	.css_alloc	= ve_create,
-	.css_offline	= ve_offline,
 	.css_free	= ve_destroy,
 	.can_attach	= ve_can_attach,
 	.attach		= ve_attach,
