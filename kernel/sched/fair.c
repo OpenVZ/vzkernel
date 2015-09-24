@@ -267,10 +267,9 @@ static inline struct cfs_rq *group_cfs_rq(struct sched_entity *grp)
 
 static inline bool is_top_cfs_rq(struct cfs_rq *cfs_rq)
 {
-	struct sched_entity *se;
+	struct task_group *tg = cfs_rq->tg;
 
-	se = cfs_rq->tg->se[cpu_of(rq_of(cfs_rq))];
-	return se && !se->parent;
+	return tg->parent == &root_task_group;
 }
 
 static inline struct cfs_rq *top_cfs_rq_of(struct sched_entity *se)
