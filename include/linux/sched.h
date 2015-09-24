@@ -1172,6 +1172,7 @@ struct sched_entity {
 	struct cfs_rq		*cfs_rq;
 	/* rq "owned" by this entity/group: */
 	struct cfs_rq		*my_q;
+	int			depth;
 #endif
 
 /*
