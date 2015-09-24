@@ -6165,6 +6165,9 @@ static int mem_cgroup_oom_control_write(struct cgroup *cgrp,
 	if (!cgrp->parent || !((val == 0) || (val == 1)))
 		return -EINVAL;
 
+	if (!ve_is_super(get_exec_env()) && val != 0)
+		return -EACCES;
+
 	memcg->oom_kill_disable = val;
 	if (!val)
 		memcg_oom_recover(memcg);
