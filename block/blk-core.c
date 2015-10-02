@@ -2195,6 +2195,7 @@ generic_make_request_checks(struct bio *bio)
 		 */
 		set_bit(BIO_TRACE_COMPLETION, &bio->bi_flags);
 	}
+	blk_cbt_bio_queue(q, bio);
 	return true;
 
 end_io:
