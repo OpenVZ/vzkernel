@@ -139,7 +139,7 @@ static int blkpg_ioctl(struct block_device *bdev, struct blkpg_ioctl_arg __user 
 			}
 			disk_part_iter_exit(&piter);
 			part_nr_sects_write(part, (sector_t)length);
-			i_size_write(bdevp->bd_inode, p.length);
+			bd_write_size(bdevp, p.length);
 			mutex_unlock(&bdevp->bd_mutex);
 			mutex_unlock(&bdev->bd_mutex);
 			bdput(bdevp);
@@ -463,6 +463,13 @@ int blkdev_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 	case BLKTRACESETUP:
 	case BLKTRACETEARDOWN:
 		ret = blk_trace_ioctl(bdev, cmd, (char __user *) arg);
+		break;
+	case BLKCBTSTART:
+	case BLKCBTSTOP:
+	case BLKCBTGET:
+	case BLKCBTSET:
+	case BLKCBTCLR:
+		ret = blk_cbt_ioctl(bdev, cmd, (char __user *)arg);
 		break;
 	default:
 		ret = __blkdev_driver_ioctl(bdev, mode, cmd, arg);
