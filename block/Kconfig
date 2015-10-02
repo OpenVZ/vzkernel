@@ -105,6 +105,14 @@ source "block/partitions/Kconfig"
 
 endmenu
 
+config BLK_DEV_CBT
+	bool "Block layer changed block tracking support"
+	---help---
+	Block layer changed block tracking support, It can be used to optimize
+	device backup,copy.
+
+	If unsure, say N.
+
 endif # BLOCK
 
 config BLOCK_COMPAT
