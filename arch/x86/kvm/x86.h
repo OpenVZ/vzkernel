@@ -145,6 +145,15 @@ static inline void kvm_register_writel(struct kvm_vcpu *vcpu,
 	return kvm_register_write(vcpu, reg, val);
 }
 
+static inline u64 get_kernel_ns(void)
+{
+	struct timespec ts;
+
+	ktime_get_ts(&ts);
+	monotonic_to_bootbased(&ts);
+	return timespec_to_ns(&ts);
+}
+
 void kvm_before_handle_nmi(struct kvm_vcpu *vcpu);
 void kvm_after_handle_nmi(struct kvm_vcpu *vcpu);
 int kvm_inject_realmode_interrupt(struct kvm_vcpu *vcpu, int irq, int inc_eip);
