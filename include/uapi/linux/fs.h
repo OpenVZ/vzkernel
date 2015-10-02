@@ -153,6 +153,40 @@ struct inodes_stat_t {
 #define BLKROTATIONAL _IO(0x12,126)
 #define BLKZEROOUT _IO(0x12,127)
 
+/* Hole from 127..199 */
+struct blk_user_cbt_extent {
+	__u64 ce_physical; /* physical offset in bytes for the start
+			    * of the extent from the beginning of the disk */
+	__u64 ce_length;   /* length in bytes for this extent */
+	__u64 ce_reserved64[1];
+};
+
+struct blk_user_cbt_info {
+	__u8  ci_uuid[16];      /* Bitmap UUID */
+	__u64 ci_start;		/* start phisical range of mapping which
+				   userspace wants (in) */
+	__u64 ci_length;	/* phisical length of mapping which
+				 * userspace wants (in) */
+	__u32 ci_blksize;	/* cbt logical block size */
+	__u32 ci_flags;		/* CI_FLAG_* flags for request (in/out) */
+	__u32 ci_mapped_extents;/* number of extents that were mapped (out) */
+	__u32 ci_extent_count;  /* size of fm_extents array (in) */
+	__u32 ci_reserved;
+	struct blk_user_cbt_extent ci_extents[0]; /* array of mapped extents (out) */
+};
+
+enum CI_FLAGS
+{
+	CI_FLAG_ONCE = 1, /* BLKCBTGET will clear bits */
+	CI_FLAG_NEW_UUID = 2 /* BLKCBTSET update uuid */
+};
+
+#define BLKCBTSTART _IOR(0x12,200, struct blk_user_cbt_info)
+#define BLKCBTSTOP _IO(0x12,201)
+#define BLKCBTGET _IOWR(0x12,202,struct blk_user_cbt_info)
+#define BLKCBTSET _IOR(0x12,203,struct blk_user_cbt_info)
+#define BLKCBTCLR _IOR(0x12,204,struct blk_user_cbt_info)
+
 #define BMAP_IOCTL 1		/* obsolete - kept for compatibility */
 #define FIBMAP	   _IO(0x00,1)	/* bmap access */
 #define FIGETBSZ   _IO(0x00,2)	/* get the block size used for bmap */
