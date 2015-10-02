@@ -14,7 +14,8 @@ kvm-$(CONFIG_KVM_DEVICE_ASSIGNMENT)	+= $(KVM)/assigned-dev.o $(KVM)/iommu.o
 kvm-$(CONFIG_KVM_ASYNC_PF)	+= $(KVM)/async_pf.o
 
 kvm-y			+= x86.o mmu.o emulate.o i8259.o irq.o lapic.o \
-			   i8254.o cpuid.o pmu.o
+			   i8254.o cpuid.o pmu.o hyperv.o
+
 kvm-intel-y		+= vmx.o
 kvm-amd-y		+= svm.o
 
