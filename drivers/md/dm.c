@@ -1914,7 +1914,7 @@ static void __set_size(struct mapped_device *md, sector_t size)
 
 	set_capacity(md->disk, size);
 
-	i_size_write(md->bdev->bd_inode, (loff_t)size << SECTOR_SHIFT);
+	bd_write_size(md->bdev, (loff_t)size << SECTOR_SHIFT);
 }
 
 /*

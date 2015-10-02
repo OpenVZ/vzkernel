@@ -2092,6 +2092,7 @@ generic_make_request_checks(struct bio *bio)
 		return false;	/* throttled, will be resubmitted later */
 
 	trace_block_bio_queue(q, bio);
+	blk_cbt_bio_queue(q, bio);
 	return true;
 
 end_io:
