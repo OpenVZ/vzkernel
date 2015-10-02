@@ -551,6 +551,7 @@ static void blk_release_queue(struct kobject *kobj)
 	kfree(q->flush_rq);
 
 	blk_trace_shutdown(q);
+	blk_cbt_release(q);
 
 	bdi_destroy(&q->backing_dev_info);
 
