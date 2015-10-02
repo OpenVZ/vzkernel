@@ -48,13 +48,14 @@ static bool kvm_hv_msr_partition_wide(u32 msr)
 static int set_msr_hyperv_pw(struct kvm_vcpu *vcpu, u32 msr, u64 data)
 {
 	struct kvm *kvm = vcpu->kvm;
+	struct kvm_hv *hv = &kvm->arch.hyperv;
 
 	switch (msr) {
 	case HV_X64_MSR_GUEST_OS_ID:
-		kvm->arch.hv_guest_os_id = data;
+		hv->hv_guest_os_id = data;
 		/* setting guest os id to zero disables hypercall page */
-		if (!kvm->arch.hv_guest_os_id)
-			kvm->arch.hv_hypercall &= ~HV_X64_MSR_HYPERCALL_ENABLE;
+		if (!hv->hv_guest_os_id)
+			hv->hv_hypercall &= ~HV_X64_MSR_HYPERCALL_ENABLE;
 		break;
 	case HV_X64_MSR_HYPERCALL: {
 		u64 gfn;
@@ -62,10 +63,10 @@ static int set_msr_hyperv_pw(struct kvm_vcpu *vcpu, u32 msr, u64 data)
 		u8 instructions[4];
 
 		/* if guest os id is not set hypercall should remain disabled */
-		if (!kvm->arch.hv_guest_os_id)
+		if (!hv->hv_guest_os_id)
 			break;
 		if (!(data & HV_X64_MSR_HYPERCALL_ENABLE)) {
-			kvm->arch.hv_hypercall = data;
+			hv->hv_hypercall = data;
 			break;
 		}
 		gfn = data >> HV_X64_MSR_HYPERCALL_PAGE_ADDRESS_SHIFT;
@@ -76,7 +77,7 @@ static int set_msr_hyperv_pw(struct kvm_vcpu *vcpu, u32 msr, u64 data)
 		((unsigned char *)instructions)[3] = 0xc3; /* ret */
 		if (__copy_to_user((void __user *)addr, instructions, 4))
 			return 1;
-		kvm->arch.hv_hypercall = data;
+		hv->hv_hypercall = data;
 		mark_page_dirty(kvm, gfn);
 		break;
 	}
@@ -84,7 +85,7 @@ static int set_msr_hyperv_pw(struct kvm_vcpu *vcpu, u32 msr, u64 data)
 		u64 gfn;
 		HV_REFERENCE_TSC_PAGE tsc_ref;
 		memset(&tsc_ref, 0, sizeof(tsc_ref));
-		kvm->arch.hv_tsc_page = data;
+		hv->hv_tsc_page = data;
 		if (!(data & HV_X64_MSR_TSC_REFERENCE_ENABLE))
 			break;
 		gfn = data >> HV_X64_MSR_TSC_REFERENCE_ADDRESS_SHIFT;
@@ -104,13 +105,15 @@ static int set_msr_hyperv_pw(struct kvm_vcpu *vcpu, u32 msr, u64 data)
 
 static int set_msr_hyperv(struct kvm_vcpu *vcpu, u32 msr, u64 data)
 {
+	struct kvm_vcpu_hv *hv = &vcpu->arch.hyperv;
+
 	switch (msr) {
 	case HV_X64_MSR_APIC_ASSIST_PAGE: {
 		u64 gfn;
 		unsigned long addr;
 
 		if (!(data & HV_X64_MSR_APIC_ASSIST_PAGE_ENABLE)) {
-			vcpu->arch.hv_vapic = data;
+			hv->hv_vapic = data;
 			if (kvm_lapic_enable_pv_eoi(vcpu, 0))
 				return 1;
 			break;
@@ -121,7 +124,7 @@ static int set_msr_hyperv(struct kvm_vcpu *vcpu, u32 msr, u64 data)
 			return 1;
 		if (__clear_user((void __user *)addr, PAGE_SIZE))
 			return 1;
-		vcpu->arch.hv_vapic = data;
+		hv->hv_vapic = data;
 		mark_page_dirty(vcpu->kvm, gfn);
 		if (kvm_lapic_enable_pv_eoi(vcpu, gfn_to_gpa(gfn) | KVM_MSR_ENABLED))
 			return 1;
@@ -146,13 +149,14 @@ static int get_msr_hyperv_pw(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
 {
 	u64 data = 0;
 	struct kvm *kvm = vcpu->kvm;
+	struct kvm_hv *hv = &kvm->arch.hyperv;
 
 	switch (msr) {
 	case HV_X64_MSR_GUEST_OS_ID:
-		data = kvm->arch.hv_guest_os_id;
+		data = hv->hv_guest_os_id;
 		break;
 	case HV_X64_MSR_HYPERCALL:
-		data = kvm->arch.hv_hypercall;
+		data = hv->hv_hypercall;
 		break;
 	case HV_X64_MSR_TIME_REF_COUNT: {
 		data =
@@ -160,7 +164,7 @@ static int get_msr_hyperv_pw(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
 		break;
 	}
 	case HV_X64_MSR_REFERENCE_TSC:
-		data = kvm->arch.hv_tsc_page;
+		data = hv->hv_tsc_page;
 		break;
 	default:
 		vcpu_unimpl(vcpu, "Hyper-V unhandled rdmsr: 0x%x\n", msr);
@@ -174,6 +178,7 @@ static int get_msr_hyperv_pw(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
 static int get_msr_hyperv(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
 {
 	u64 data = 0;
+	struct kvm_vcpu_hv *hv = &vcpu->arch.hyperv;
 
 	switch (msr) {
 	case HV_X64_MSR_VP_INDEX: {
@@ -194,7 +199,7 @@ static int get_msr_hyperv(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
 	case HV_X64_MSR_TPR:
 		return kvm_hv_vapic_msr_read(vcpu, APIC_TASKPRI, pdata);
 	case HV_X64_MSR_APIC_ASSIST_PAGE:
-		data = vcpu->arch.hv_vapic;
+		data = hv->hv_vapic;
 		break;
 	default:
 		vcpu_unimpl(vcpu, "Hyper-V unhandled rdmsr: 0x%x\n", msr);
@@ -230,7 +235,7 @@ int kvm_hv_get_msr_common(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
 
 bool kvm_hv_hypercall_enabled(struct kvm *kvm)
 {
-	return kvm->arch.hv_hypercall & HV_X64_MSR_HYPERCALL_ENABLE;
+	return kvm->arch.hyperv.hv_hypercall & HV_X64_MSR_HYPERCALL_ENABLE;
 }
 
 int kvm_hv_hypercall(struct kvm_vcpu *vcpu)
