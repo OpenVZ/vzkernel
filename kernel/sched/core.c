@@ -10322,6 +10322,9 @@ int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
 		steal += kcpustat->cpustat[CPUTIME_STEAL];
 	}
 
+	if (!ve_is_super(get_exec_env()))
+		steal = 0;
+
 	seq_printf(p, "cpu  %llu %llu %llu %llu %llu 0 0 %llu\n",
 		(unsigned long long)cputime64_to_clock_t(user),
 		(unsigned long long)cputime64_to_clock_t(nice),
@@ -10341,6 +10344,8 @@ int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
 		idle = kcpustat->cpustat[CPUTIME_IDLE];
 		iowait = kcpustat->cpustat[CPUTIME_IOWAIT];
 		steal = kcpustat->cpustat[CPUTIME_STEAL];
+		if (!ve_is_super(get_exec_env()))
+			steal = 0;
 		seq_printf(p,
 			"cpu%d %llu %llu %llu %llu %llu 0 0 %llu\n",
 			i,
