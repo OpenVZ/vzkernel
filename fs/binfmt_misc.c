@@ -735,6 +735,8 @@ static int bm_fill_super(struct super_block * sb, void * data, int silent)
 static struct dentry *bm_mount(struct file_system_type *fs_type,
 	int flags, const char *dev_name, void *data)
 {
+	if (!current_user_ns_initial())
+		return ERR_PTR(-EPERM);
 	return mount_ns(fs_type, flags, get_exec_env(), bm_fill_super);
 }
 
@@ -748,7 +750,7 @@ static struct file_system_type bm_fs_type = {
 	.name		= "binfmt_misc",
 	.mount		= bm_mount,
 	.kill_sb	= kill_litter_super,
-	.fs_flags	= FS_VIRTUALIZED,
+	.fs_flags	= FS_VIRTUALIZED | FS_USERNS_MOUNT,
 };
 MODULE_ALIAS_FS("binfmt_misc");
 
