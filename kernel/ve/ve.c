@@ -237,6 +237,21 @@ int vz_security_protocol_check(struct net *net, int protocol)
 }
 EXPORT_SYMBOL_GPL(vz_security_protocol_check);
 
+/* Check if current user_ns is initial for current ve */
+bool current_user_ns_initial(void)
+{
+	struct ve_struct *ve = get_exec_env();
+	bool ret = false;
+
+	rcu_read_lock();
+	if (ve->ve_ns && ve->init_cred->user_ns == current_user_ns())
+		ret = true;
+	rcu_read_unlock();
+
+	return ret;
+}
+EXPORT_SYMBOL(current_user_ns_initial);
+
 int nr_threads_ve(struct ve_struct *ve)
 {
 	return cgroup_task_count(ve->css.cgroup);
@@ -407,6 +422,7 @@ static void ve_drop_context(struct ve_struct *ve)
 	put_net(ve->ve_netns);
 	ve->ve_netns = NULL;
 
+	/* Allows to dereference init_cred if ve_ns is set */
 	rcu_assign_pointer(ve->ve_ns, NULL);
 	synchronize_rcu();
 	put_nsproxy(ve_ns);
