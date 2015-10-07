@@ -105,7 +105,7 @@ static struct dentry *ve_dev_mount(struct file_system_type *fs_type, int flags,
 static struct dentry *dev_mount(struct file_system_type *fs_type, int flags,
 		      const char *dev_name, void *data)
 {
-	if (get_exec_env()->init_cred->user_ns != current_user_ns())
+	if (!current_user_ns_initial())
 		return ERR_PTR(-EPERM);
 
 #ifdef CONFIG_VE
