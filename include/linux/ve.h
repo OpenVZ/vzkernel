@@ -213,6 +213,8 @@ void ve_stop_ns(struct pid_namespace *ns);
 void ve_exit_ns(struct pid_namespace *ns);
 int ve_start_container(struct ve_struct *ve);
 
+extern bool current_user_ns_initial(void);
+
 #ifdef CONFIG_TTY
 extern struct tty_driver *vtty_driver(dev_t dev, int *index);
 extern struct tty_driver *vtty_console_driver(int *index);
@@ -235,6 +237,10 @@ static inline int vz_security_protocol_check(struct net *net, int protocol) { re
 static inline void ve_stop_ns(struct pid_namespace *ns) { }
 static inline void ve_exit_ns(struct pid_namespace *ns) { }
 
+static inline bool current_user_ns_initial(void)
+{
+	return current_user_ns() == init_cred.user_ns;
+}
 #define kthread_create_on_node_ve(ve, threadfn, data, node, namefmt...)	\
 	kthread_create_on_node_ve(threadfn, data, node, namefmt...)
 
