@@ -39,6 +39,7 @@
 #include <linux/log2.h>
 #include <linux/crc16.h>
 #include <linux/cleancache.h>
+#include <linux/ve.h>
 #include <asm/uaccess.h>
 
 #include <linux/kthread.h>
@@ -5662,6 +5663,8 @@ out:
 static struct dentry *ext4_mount(struct file_system_type *fs_type, int flags,
 		       const char *dev_name, void *data)
 {
+	if (!current_user_ns_initial())
+		return ERR_PTR(-EPERM);
 	return mount_bdev(fs_type, flags, dev_name, data, ext4_fill_super);
 }
 
@@ -5747,7 +5750,8 @@ static struct file_system_type ext4_fs_type = {
 	.mount		= ext4_mount,
 	.kill_sb	= ext4_kill_sb,
 	.fs_flags	= FS_REQUIRES_DEV | FS_HAS_INVALIDATE_RANGE |
-			  FS_VIRTUALIZED | FS_HAS_MMAP_PREP,
+			  FS_VIRTUALIZED | FS_HAS_MMAP_PREP | FS_USERNS_MOUNT |
+			  FS_USERNS_DEV_MOUNT,
 };
 MODULE_ALIAS_FS("ext4");
 
