@@ -40,6 +40,7 @@
 #include <linux/crc16.h>
 #include <linux/dax.h>
 #include <linux/cleancache.h>
+#include <linux/ve.h>
 #include <linux/uaccess.h>
 #include <linux/iversion.h>
 
@@ -6246,6 +6247,8 @@ static int ext4_get_next_id(struct super_block *sb, struct kqid *qid)
 static struct dentry *ext4_mount(struct file_system_type *fs_type, int flags,
 		       const char *dev_name, void *data)
 {
+	if (!current_user_ns_initial())
+		return ERR_PTR(-EPERM);
 	return mount_bdev(fs_type, flags, dev_name, data, ext4_fill_super);
 }
 
@@ -6321,7 +6324,8 @@ static struct file_system_type ext4_fs_type = {
 	.name		= "ext4",
 	.mount		= ext4_mount,
 	.kill_sb	= ext4_kill_sb,
-	.fs_flags	= FS_REQUIRES_DEV | FS_VIRTUALIZED,
+	.fs_flags	= FS_REQUIRES_DEV | FS_VIRTUALIZED |
+			  FS_USERNS_MOUNT,
 };
 MODULE_ALIAS_FS("ext4");
 
