@@ -224,6 +224,22 @@ int ubstat_alloc_store(struct user_beancounter *ub)
 }
 EXPORT_SYMBOL(ubstat_alloc_store);
 
+static bool ubstat_need_memcg_sync(long cmd)
+{
+	if (UBSTAT_CMD(cmd) != UBSTAT_READ_ONE)
+		return true;
+
+	switch (UBSTAT_PARMID(cmd)) {
+		case UB_KMEMSIZE:
+		case UB_DCACHESIZE:
+		case UB_PHYSPAGES:
+		case UB_SWAPPAGES:
+		case UB_OOMGUARPAGES:
+			return true;
+	}
+	return false;
+}
+
 static int ubstat_check_cmd(long cmd)
 {
 	switch (UBSTAT_CMD(cmd)) {
@@ -254,6 +270,9 @@ static int ubstat_get_stat(struct user_beancounter *ub, long cmd,
 	retval = ubstat_alloc_store(ub);
 	if (retval)
 		goto out;
+
+	if (ubstat_need_memcg_sync(cmd))
+		ub_sync_memcg(ub);
 
 	spin_lock(&ubs_notify_lock);
 	switch (UBSTAT_CMD(cmd)) {
