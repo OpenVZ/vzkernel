@@ -31,6 +31,12 @@ static long ubs_min_interval;
 static ubstattime_t ubs_start_time, ubs_end_time;
 static struct timer_list ubs_timer;
 
+struct ub_stat_notify {
+	struct list_head	list;
+	struct task_struct	*task;
+	int			signum;
+};
+
 static int ubstat_get_list(void __user *buf, long size)
 {
 	int retval;
