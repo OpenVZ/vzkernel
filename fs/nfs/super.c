@@ -297,7 +297,7 @@ struct file_system_type nfs_fs_type = {
 	.mount		= nfs_fs_mount,
 	.kill_sb	= nfs_kill_super,
 	.fs_flags	= FS_RENAME_DOES_D_MOVE|FS_BINARY_MOUNTDATA|
-			  FS_VIRTUALIZED,
+			  FS_VIRTUALIZED|FS_USERNS_MOUNT,
 };
 MODULE_ALIAS_FS("nfs");
 EXPORT_SYMBOL_GPL(nfs_fs_type);
@@ -338,7 +338,7 @@ struct file_system_type nfs4_fs_type = {
 	.mount		= nfs_fs_mount,
 	.kill_sb	= nfs_kill_super,
 	.fs_flags	= FS_RENAME_DOES_D_MOVE|FS_BINARY_MOUNTDATA|
-			  FS_VIRTUALIZED,
+			  FS_VIRTUALIZED|FS_USERNS_MOUNT,
 };
 MODULE_ALIAS_FS("nfs4");
 MODULE_ALIAS("nfs4");
@@ -2628,6 +2628,8 @@ struct dentry *nfs_fs_mount(struct file_system_type *fs_type,
 
 	if (!(get_exec_env()->features & VE_FEATURE_NFS))
 		return ERR_PTR(-ENODEV);
+	if (!current_user_ns_initial())
+		return ERR_PTR(-EPERM);
 
 	mount_info.parsed = nfs_alloc_parsed_mount_data();
 	mount_info.mntfh = nfs_alloc_fhandle();
