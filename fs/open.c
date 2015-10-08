@@ -1111,7 +1111,7 @@ EXPORT_SYMBOL(sys_close);
  */
 SYSCALL_DEFINE0(vhangup)
 {
-	if (capable(CAP_SYS_TTY_CONFIG)) {
+	if (ve_capable(CAP_SYS_TTY_CONFIG)) {
 		tty_vhangup_self();
 		return 0;
 	}
