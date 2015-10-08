@@ -438,18 +438,16 @@ static inline void do_notifies(void)
 	ubstat_save_statistics();
 	/* send signals */
 	read_lock(&tasklist_lock);
-	while (!list_empty(&ubs_notify_list)) {
-		notify = list_entry(ubs_notify_list.next,
-				struct ub_stat_notify, list);
+	list_for_each_entry_safe(notify, tmp, &ubs_notify_list, list) {
 		task_send_sig(notify);
-		list_del(&notify->list);
-		list_add(&notify->list, &notif_free_list);
+		list_move(&notify->list, &notif_free_list);
 	}
 	read_unlock(&tasklist_lock);
 	spin_unlock(&ubs_notify_lock);
 
 	list_for_each_entry_safe(notify, tmp, &notif_free_list, list) {
 		put_task_struct(notify->task);
+		list_del(&notify->list);
 		kfree(notify);
 	}
 }
