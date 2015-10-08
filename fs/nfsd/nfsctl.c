@@ -1172,6 +1172,8 @@ static int nfsd_fill_super(struct super_block * sb, void * data, int silent)
 static struct dentry *nfsd_mount(struct file_system_type *fs_type,
 	int flags, const char *dev_name, void *data)
 {
+	if (!current_user_ns_initial())
+		return ERR_PTR(-EPERM);
 	return mount_ns(fs_type, flags, current->nsproxy->net_ns, nfsd_fill_super);
 }
 
@@ -1188,7 +1190,7 @@ static struct file_system_type nfsd_fs_type = {
 	.name		= "nfsd",
 	.mount		= nfsd_mount,
 	.kill_sb	= nfsd_umount,
-	.fs_flags	= FS_VIRTUALIZED,
+	.fs_flags	= FS_VIRTUALIZED|FS_USERNS_MOUNT,
 };
 MODULE_ALIAS_FS("nfsd");
 
