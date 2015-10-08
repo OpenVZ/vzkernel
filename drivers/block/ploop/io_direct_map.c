@@ -773,6 +773,11 @@ struct extent_map *map_extent_get_block(struct ploop_io *io,
 	 * something bigger.
 	 */
 	do {
+		/* avoid race with userspace merge */
+		if (em->end >=
+		    ((sector_t)io->alloc_head << io->plo->cluster_log))
+			break;
+
 		last = em->end;
 		extent_put(em);
 		em = __map_extent(io, mapping, last, len, create,
