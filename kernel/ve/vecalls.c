@@ -128,7 +128,7 @@ static int ve_get_cpu_stat(envid_t veid, struct vz_cpu_stat __user *buf)
 
 	vstat->uptime_clk = ve_get_uptime(ve);
 
-	vstat->uptime_jif = (unsigned long)cputime64_to_clock_t(
+	vstat->uptime_jif = (unsigned long)jiffies_64_to_clock_t(
 				get_jiffies_64() - ve->start_jiffies);
 	for (i = 0; i < 3; i++) {
 		tmp = avenrun[i] + (FIXED_1/200);
