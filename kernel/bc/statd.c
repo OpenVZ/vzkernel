@@ -269,7 +269,7 @@ static int ubstat_handle_notifrq(ubnotifrq_t *req)
 	struct list_head *entry;
 	struct task_struct *tsk_to_free;
 
-	new_notify = kmalloc(sizeof(new_notify), GFP_KERNEL);
+	new_notify = kmalloc(sizeof(*new_notify), GFP_KERNEL);
 	if (new_notify == NULL)
 		return -ENOMEM;
 
