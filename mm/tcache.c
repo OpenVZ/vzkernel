@@ -835,10 +835,15 @@ static void tcache_cleancache_put_page(int pool_id,
 {
 	struct tcache_node *node;
 	struct page *cache_page = NULL;
+	bool may_put = ACCESS_ONCE(tcache_active);
 
-	node = tcache_get_node_and_pool(pool_id, &key, true);
+	/* It makes no sense to populate tcache when we are short on memory */
+	if (current->flags & PF_MEMALLOC)
+		may_put = false;
+
+	node = tcache_get_node_and_pool(pool_id, &key, may_put);
 	if (node) {
-		if (tcache_active && !(current->flags & PF_MEMALLOC))
+		if (may_put)
 			cache_page = tcache_alloc_page();
 		if (cache_page) {
 			copy_highpage(cache_page, page);
