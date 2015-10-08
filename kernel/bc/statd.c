@@ -23,7 +23,7 @@
 #include <asm/param.h>
 
 #include <bc/beancounter.h>
-#include <bc/statd.h>
+#include <uapi/linux/bc/statd.h>
 
 static DEFINE_SPINLOCK(ubs_notify_lock);
 static LIST_HEAD(ubs_notify_list);
