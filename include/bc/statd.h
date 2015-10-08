@@ -60,11 +60,4 @@ typedef struct {
 	ubstatparmf_t	param[0];
 } ubstatfull_t;
 
-#ifdef __KERNEL__
-struct ub_stat_notify {
-	struct list_head	list;
-	struct task_struct	*task;
-	int			signum;
-};
-#endif
 #endif
