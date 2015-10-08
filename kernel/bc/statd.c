@@ -224,11 +224,28 @@ int ubstat_alloc_store(struct user_beancounter *ub)
 }
 EXPORT_SYMBOL(ubstat_alloc_store);
 
+static int ubstat_check_cmd(long cmd)
+{
+	switch (UBSTAT_CMD(cmd)) {
+		case UBSTAT_READ_ONE:
+			if (UBSTAT_PARMID(cmd) >= UB_RESOURCES)
+				break;
+		case UBSTAT_READ_ALL:
+		case UBSTAT_READ_FULL:
+			return 0;
+	}
+	return -EINVAL;
+}
+
 static int ubstat_get_stat(struct user_beancounter *ub, long cmd,
 		void __user *buf, long size)
 {
 	void *kbuf;
 	int retval;
+
+	retval = ubstat_check_cmd(cmd);
+	if (retval)
+		return retval;
 
 	kbuf = (void *)__get_free_page(GFP_KERNEL);
 	if (kbuf == NULL)
@@ -241,9 +258,6 @@ static int ubstat_get_stat(struct user_beancounter *ub, long cmd,
 	spin_lock(&ubs_notify_lock);
 	switch (UBSTAT_CMD(cmd)) {
 		case UBSTAT_READ_ONE:
-			retval = -EINVAL;
-			if (UBSTAT_PARMID(cmd) >= UB_RESOURCES)
-				break;
 			retval = ubstat_do_read_one(ub,
 					UBSTAT_PARMID(cmd), kbuf);
 			break;
@@ -255,6 +269,8 @@ static int ubstat_get_stat(struct user_beancounter *ub, long cmd,
 			break;
 		default:
 			retval = -EINVAL;
+			__WARN_printf("%s: we shouldn't get there\ncmd: %ld\n",
+					__func__, UBSTAT_CMD(cmd));
 	}
 	spin_unlock(&ubs_notify_lock);
 
