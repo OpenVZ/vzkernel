@@ -232,6 +232,7 @@ void exit_io_context(struct task_struct *task)
 	atomic_dec(&ioc->nr_tasks);
 	put_io_context_active(ioc);
 }
+EXPORT_SYMBOL(exit_io_context);
 
 static void __ioc_clear_queue(struct list_head *icq_list)
 {
