@@ -2755,6 +2755,9 @@ wait_more:
 	spin_unlock_irq(&plo->lock);
 	blk_finish_plug(&plug);
 
+	if (current->io_context)
+		exit_io_context(current);
+
 	return 0;
 }
 
