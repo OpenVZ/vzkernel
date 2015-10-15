@@ -1965,7 +1965,7 @@ static void mem_cgroup_out_of_memory(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	 * quickly exit and free its memory.
 	 */
 	if (fatal_signal_pending(current) || current->flags & PF_EXITING) {
-		mark_tsk_oom_victim(current);
+		mark_oom_victim(current);
 		return;
 	}
 
