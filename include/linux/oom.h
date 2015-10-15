@@ -52,6 +52,10 @@ static inline bool oom_task_origin(const struct task_struct *p)
 /* linux/mm/oom_group.c */
 extern int get_task_oom_score_adj(struct task_struct *t);
 
+extern void mark_tsk_oom_victim(struct task_struct *tsk);
+
+extern void unmark_oom_victim(void);
+
 extern unsigned long oom_badness(struct task_struct *p, struct mem_cgroup *memcg,
 			  const nodemask_t *nodemask, unsigned long totalpages);
 extern void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
