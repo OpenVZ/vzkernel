@@ -905,9 +905,12 @@ static int ve_mount_opts_show(struct seq_file *m, void *v)
 	struct ve_devmnt *devmnt = v;
 	dev_t dev = devmnt->dev;
 
-	seq_printf(m, "0 %u:%u;1 %s;2 %s;\n", MAJOR(dev), MINOR(dev),
-					      devmnt->hidden_options,
-					      devmnt->allowed_options);
+	seq_printf(m, "0 %u:%u;", MAJOR(dev), MINOR(dev));
+	if (devmnt->hidden_options)
+		seq_printf(m, "1 %s;", devmnt->hidden_options);
+	if (devmnt->allowed_options)
+		seq_printf(m, "2 %s;", devmnt->allowed_options);
+	seq_putc(m, '\n');
 	return 0;
 }
 
