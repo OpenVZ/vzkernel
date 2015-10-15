@@ -296,6 +296,7 @@ struct mem_cgroup {
 	atomic_long_t swap_failcnt;
 	atomic_long_t oom_kill_cnt;
 
+	struct oom_context oom_ctx;
 	unsigned long long oom_guarantee;
 
 	/*
@@ -1655,6 +1656,13 @@ void mem_cgroup_note_oom_kill(struct mem_cgroup *root_memcg,
 		css_put(&memcg_to_put->css);
 }
 
+struct oom_context *mem_cgroup_oom_context(struct mem_cgroup *memcg)
+{
+	if (!memcg)
+		memcg = root_mem_cgroup;
+	return &memcg->oom_ctx;
+}
+
 unsigned long mem_cgroup_total_pages(struct mem_cgroup *memcg, bool swap)
 {
 	unsigned long long limit;
@@ -2255,57 +2263,6 @@ static int mem_cgroup_soft_reclaim(struct mem_cgroup *root_memcg,
 	return total;
 }
 
-/*
- * Check OOM-Killer is already running under our hierarchy.
- * If someone is running, return false.
- * Has to be called with memcg_oom_lock
- */
-static bool mem_cgroup_oom_lock(struct mem_cgroup *memcg)
-{
-	struct mem_cgroup *iter, *failed = NULL;
-
-	for_each_mem_cgroup_tree(iter, memcg) {
-		if (iter->oom_lock) {
-			/*
-			 * this subtree of our hierarchy is already locked
-			 * so we cannot give a lock.
-			 */
-			failed = iter;
-			mem_cgroup_iter_break(memcg, iter);
-			break;
-		} else
-			iter->oom_lock = true;
-	}
-
-	if (!failed)
-		return true;
-
-	/*
-	 * OK, we failed to lock the whole subtree so we have to clean up
-	 * what we set up to the failing subtree
-	 */
-	for_each_mem_cgroup_tree(iter, memcg) {
-		if (iter == failed) {
-			mem_cgroup_iter_break(memcg, iter);
-			break;
-		}
-		iter->oom_lock = false;
-	}
-	return false;
-}
-
-/*
- * Has to be called with memcg_oom_lock
- */
-static int mem_cgroup_oom_unlock(struct mem_cgroup *memcg)
-{
-	struct mem_cgroup *iter;
-
-	for_each_mem_cgroup_tree(iter, memcg)
-		iter->oom_lock = false;
-	return 0;
-}
-
 static void mem_cgroup_mark_under_oom(struct mem_cgroup *memcg)
 {
 	struct mem_cgroup *iter;
@@ -2327,7 +2284,6 @@ static void mem_cgroup_unmark_under_oom(struct mem_cgroup *memcg)
 		atomic_add_unless(&iter->under_oom, -1, 0);
 }
 
-static DEFINE_SPINLOCK(memcg_oom_lock);
 static DECLARE_WAIT_QUEUE_HEAD(memcg_oom_waitq);
 
 struct oom_wait_info {
@@ -2367,57 +2323,42 @@ static void memcg_oom_recover(struct mem_cgroup *memcg)
 		memcg_wakeup_oom(memcg);
 }
 
-/*
- * try to call OOM killer. returns false if we should exit memory-reclaim loop.
- */
-static bool mem_cgroup_handle_oom(struct mem_cgroup *memcg, gfp_t mask,
-				  int order)
+static void memcg_wait_oom_recover(struct mem_cgroup *memcg)
 {
 	struct oom_wait_info owait;
-	bool locked, need_to_kill;
 
 	owait.memcg = memcg;
 	owait.wait.flags = 0;
 	owait.wait.func = memcg_oom_wake_function;
 	owait.wait.private = current;
 	INIT_LIST_HEAD(&owait.wait.task_list);
-	need_to_kill = true;
-	mem_cgroup_mark_under_oom(memcg);
 
-	/* At first, try to OOM lock hierarchy under memcg.*/
-	spin_lock(&memcg_oom_lock);
-	locked = mem_cgroup_oom_lock(memcg);
-	/*
-	 * Even if signal_pending(), we can't quit charge() loop without
-	 * accounting. So, UNINTERRUPTIBLE is appropriate. But SIGKILL
-	 * under OOM is always welcomed, use TASK_KILLABLE here.
-	 */
 	prepare_to_wait(&memcg_oom_waitq, &owait.wait, TASK_KILLABLE);
-	if (!locked || memcg->oom_kill_disable)
-		need_to_kill = false;
-	if (locked)
-		mem_cgroup_oom_notify(memcg);
-	spin_unlock(&memcg_oom_lock);
+	schedule();
+	finish_wait(&memcg_oom_waitq, &owait.wait);
 
-	if (need_to_kill) {
-		finish_wait(&memcg_oom_waitq, &owait.wait);
-		mem_cgroup_out_of_memory(memcg, mask, order);
-	} else {
-		schedule();
-		finish_wait(&memcg_oom_waitq, &owait.wait);
-	}
-	spin_lock(&memcg_oom_lock);
-	if (locked)
-		mem_cgroup_oom_unlock(memcg);
 	memcg_wakeup_oom(memcg);
-	spin_unlock(&memcg_oom_lock);
+}
 
+/*
+ * try to call OOM killer. returns false if we should exit memory-reclaim loop.
+ */
+static bool mem_cgroup_handle_oom(struct mem_cgroup *memcg, gfp_t mask,
+				  int order)
+{
+	mem_cgroup_mark_under_oom(memcg);
+	if (oom_trylock(memcg)) {
+		mem_cgroup_oom_notify(memcg);
+		if (memcg->oom_kill_disable)
+			memcg_wait_oom_recover(memcg);
+		else
+			mem_cgroup_out_of_memory(memcg, mask, order);
+		oom_unlock(memcg);
+	}
 	mem_cgroup_unmark_under_oom(memcg);
 
 	if (test_thread_flag(TIF_MEMDIE) || fatal_signal_pending(current))
 		return false;
-	/* Give chance to dying process */
-	schedule_timeout_uninterruptible(1);
 	return true;
 }
 
@@ -6457,6 +6398,7 @@ mem_cgroup_css_alloc(struct cgroup *cont)
 	mutex_init(&memcg->thresholds_lock);
 	spin_lock_init(&memcg->move_lock);
 	vmpressure_init(&memcg->vmpressure);
+	init_oom_context(&memcg->oom_ctx);
 #ifdef CONFIG_MEMCG_KMEM
 	memcg->kmemcg_id = -1;
 	INIT_LIST_HEAD(&memcg->kmemcg_sharers);
@@ -6543,6 +6485,15 @@ static void mem_cgroup_css_offline(struct cgroup *cont)
 
 	mem_cgroup_invalidate_reclaim_iterators(memcg);
 	mem_cgroup_reparent_charges(memcg);
+
+	/*
+	 * A cgroup can be destroyed while somebody is waiting for its
+	 * oom context, in which case the context will never be unlocked
+	 * from oom_unlock, because the latter only iterates over live
+	 * cgroups. So we need to release the context now, when one can
+	 * no longer iterate over it.
+	 */
+	release_oom_context(&memcg->oom_ctx);
 }
 
 static void mem_cgroup_css_free(struct cgroup *cont)
