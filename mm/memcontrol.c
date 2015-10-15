@@ -5778,12 +5778,18 @@ static int compare_thresholds(const void *a, const void *b)
 	return 0;
 }
 
+static DEFINE_SPINLOCK(memcg_oom_notify_lock);
+
 static int mem_cgroup_oom_notify_cb(struct mem_cgroup *memcg)
 {
 	struct mem_cgroup_eventfd_list *ev;
 
+	spin_lock(&memcg_oom_notify_lock);
+
 	list_for_each_entry(ev, &memcg->oom_notify, list)
 		eventfd_signal(ev->eventfd, 1);
+
+	spin_unlock(&memcg_oom_notify_lock);
 	return 0;
 }
 
@@ -5969,7 +5975,7 @@ static int mem_cgroup_oom_register_event(struct cgroup *cgrp,
 	if (!event)
 		return -ENOMEM;
 
-	spin_lock(&memcg_oom_lock);
+	spin_lock(&memcg_oom_notify_lock);
 
 	event->eventfd = eventfd;
 	list_add(&event->list, &memcg->oom_notify);
@@ -5977,7 +5983,7 @@ static int mem_cgroup_oom_register_event(struct cgroup *cgrp,
 	/* already in OOM ? */
 	if (atomic_read(&memcg->under_oom))
 		eventfd_signal(eventfd, 1);
-	spin_unlock(&memcg_oom_lock);
+	spin_unlock(&memcg_oom_notify_lock);
 
 	return 0;
 }
@@ -5991,7 +5997,7 @@ static void mem_cgroup_oom_unregister_event(struct cgroup *cgrp,
 
 	BUG_ON(type != _OOM_TYPE);
 
-	spin_lock(&memcg_oom_lock);
+	spin_lock(&memcg_oom_notify_lock);
 
 	list_for_each_entry_safe(ev, tmp, &memcg->oom_notify, list) {
 		if (ev->eventfd == eventfd) {
@@ -6000,7 +6006,7 @@ static void mem_cgroup_oom_unregister_event(struct cgroup *cgrp,
 		}
 	}
 
-	spin_unlock(&memcg_oom_lock);
+	spin_unlock(&memcg_oom_notify_lock);
 }
 
 static int mem_cgroup_oom_control_read(struct cgroup *cgrp,
