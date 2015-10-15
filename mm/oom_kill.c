@@ -420,10 +420,10 @@ void note_oom_kill(void)
 }
 
 /**
- * mark_tsk_oom_victim - marks the given taks as OOM victim.
+ * mark_oom_victim - mark the given task as OOM victim
  * @tsk: task to mark
  */
-void mark_tsk_oom_victim(struct task_struct *tsk)
+void mark_oom_victim(struct task_struct *tsk)
 {
 	set_tsk_thread_flag(tsk, TIF_MEMDIE);
 
@@ -437,9 +437,9 @@ void mark_tsk_oom_victim(struct task_struct *tsk)
 }
 
 /**
- * unmark_oom_victim - unmarks the current task as OOM victim.
+ * exit_oom_victim - note the exit of an OOM victim
  */
-void unmark_oom_victim(void)
+void exit_oom_victim(void)
 {
 	clear_thread_flag(TIF_MEMDIE);
 }
@@ -486,7 +486,7 @@ void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 	 */
 	task_lock(p);
 	if (task_will_free_mem(p)) {
-		mark_tsk_oom_victim(p);
+		mark_oom_victim(p);
 		task_unlock(p);
 		put_task_struct(p);
 		return;
@@ -556,7 +556,7 @@ void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 	 * space under its control.
 	 */
 	do_send_sig_info(SIGKILL, SEND_SIG_FORCED, victim, true);
-	mark_tsk_oom_victim(victim);
+	mark_oom_victim(victim);
 	rcu_read_lock();
 	pr_err("Killed process %d (%s) in VE \"%s\", UID %d, total-vm:%lukB, anon-rss:%lukB, file-rss:%lukB, shmem-rss:%lukB\n",
 		task_pid_nr(victim), victim->comm, task_ve_name(victim),
@@ -725,7 +725,7 @@ void out_of_memory(struct zonelist *zonelist, gfp_t gfp_mask,
 	 */
 	if (current->mm &&
 	    (fatal_signal_pending(current) || task_will_free_mem(current))) {
-		mark_tsk_oom_victim(current);
+		mark_oom_victim(current);
 		return;
 	}
 
