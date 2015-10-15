@@ -72,6 +72,10 @@
 
 #include <asm/uaccess.h>
 
+#ifdef CONFIG_VE_TUNTAP_ACCOUNTING
+#include <linux/vznetstat.h>
+#endif /* CONFIG_VE_TUNTAP_ACCOUNTING */
+
 /* Uncomment to enable debugging */
 /* #define TUN_DEBUG 1 */
 
@@ -202,6 +206,9 @@ struct tun_struct {
 	struct list_head disabled;
 	void *security;
 	u32 flow_count;
+#ifdef CONFIG_VE_TUNTAP_ACCOUNTING
+	struct venet_stat *vestat;
+#endif /* CONFIG_VE_TUNTAP_ACCOUNTING */
 };
 
 #ifdef CONFIG_TUN_VNET_CROSS_LE
@@ -1317,6 +1324,12 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 	tun->dev->stats.rx_packets++;
 	tun->dev->stats.rx_bytes += len;
 
+#ifdef CONFIG_VE_TUNTAP_ACCOUNTING
+	if (tun->vestat) {
+		venet_acct_classify_add_outgoing(tun->vestat, skb);
+	}
+#endif /* CONFIG_VE_TUNTAP_ACCOUNTING */
+
 	tun_flow_update(tun, rxhash, tfile);
 	return total_len;
 }
@@ -1458,6 +1471,12 @@ done:
 	tun->dev->stats.tx_packets++;
 	tun->dev->stats.tx_bytes += len;
 
+#ifdef CONFIG_VE_TUNTAP_ACCOUNTING
+	if (tun->vestat) {
+		venet_acct_classify_add_incoming(tun->vestat, skb);
+	}
+#endif /* CONFIG_VE_TUNTAP_ACCOUNTING */
+
 	return total;
 }
 
@@ -1542,6 +1561,14 @@ static void tun_free_netdev(struct net_device *dev)
 	BUG_ON(!(list_empty(&tun->disabled)));
 	tun_flow_uninit(tun);
 	security_tun_dev_free_security(tun->security);
+
+#ifdef CONFIG_VE_TUNTAP_ACCOUNTING
+	if (tun->vestat) {
+		venet_acct_put_stat(tun->vestat);
+		tun->vestat = NULL;
+	}
+#endif /* CONFIG_VE_TUNTAP_ACCOUNTING */
+
 	free_netdev(dev);
 }
 
@@ -1964,11 +1991,43 @@ unlock:
 	return ret;
 }
 
+#ifdef CONFIG_VE_TUNTAP_ACCOUNTING
+/* setacctid_ioctl should be called under rtnl_lock */
+static long setacctid_ioctl(struct file *file, void __user *argp)
+{
+	struct tun_file *tfile = file->private_data;
+	struct tun_acctid info;
+	struct net_device *dev;
+	struct tun_struct *tun;
+
+	if (copy_from_user(&info, argp, sizeof(info)))
+		return -EFAULT;
+
+	dev = __dev_get_by_name(tfile->net, info.ifname);
+	if (dev == NULL)
+		return -ENOENT;
+
+	/* This check may be dropped to allow tun devices */
+	if (dev->netdev_ops != &tap_netdev_ops)
+		return -EINVAL;
+
+	tun = netdev_priv(dev);
+	if (tun->vestat) {
+		venet_acct_put_stat(tun->vestat);
+	}
+	tun->vestat = venet_acct_find_create_stat(info.acctid);
+	if (tun->vestat == NULL)
+		return -ENOMEM;
+
+	return 0;
+}
+#endif /* CONFIG_VE_TUNTAP_ACCOUNTING */
+
 static long __tun_chr_ioctl(struct file *file, unsigned int cmd,
 			    unsigned long arg, int ifreq_len)
 {
 	struct tun_file *tfile = file->private_data;
-	struct tun_struct *tun;
+	struct tun_struct *tun = NULL;
 	void __user* argp = (void __user*)arg;
 	struct ifreq ifr;
 	kuid_t owner;
@@ -1997,6 +2056,13 @@ static long __tun_chr_ioctl(struct file *file, unsigned int cmd,
 
 	ret = 0;
 	rtnl_lock();
+
+#ifdef CONFIG_VE_TUNTAP_ACCOUNTING
+	if (cmd == TUNSETACCTID) {
+		ret = setacctid_ioctl(file, argp);
+		goto unlock;
+	}
+#endif /* CONFIG_VE_TUNTAP_ACCOUNTING */
 
 	tun = __tun_get(tfile);
 	if (cmd == TUNSETIFF && !tun) {
