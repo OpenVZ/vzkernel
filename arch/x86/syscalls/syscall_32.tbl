@@ -357,6 +357,7 @@
 348	i386	process_vm_writev	sys_process_vm_writev		compat_sys_process_vm_writev
 349	i386	kcmp			sys_kcmp
 350	i386	finit_module		sys_finit_module
+356	i386	memfd_create		sys_memfd_create
 
 500	i386	fairsched_mknod		sys_fairsched_mknod
 501	i386	fairsched_rmnod		sys_fairsched_rmnod
