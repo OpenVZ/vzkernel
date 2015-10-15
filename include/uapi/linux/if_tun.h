@@ -59,6 +59,9 @@
 #define TUNSETIFINDEX	_IOW('T', 218, unsigned int)
 #define TUNGETFILTER _IOR('T', 219, struct sock_fprog)
 
+/* CONFIG_VE_TUNTAP_ACCOUNTING should be set */
+#define TUNSETACCTID _IOW('T', 300, struct tun_acctid)
+
 /* TUNSETIFF ifr flags */
 #define IFF_TUN		0x0001
 #define IFF_TAP		0x0002
@@ -101,6 +104,12 @@ struct tun_filter {
 	__u16  flags; /* TUN_FLT_ flags see above */
 	__u16  count; /* Number of addresses */
 	__u8   addr[0][ETH_ALEN];
+};
+
+/* used as TUNSETACCTID ioctl parameter */
+struct tun_acctid {
+	char ifname[IFNAMSIZ];
+	__u32 acctid;
 };
 
 #endif /* _UAPI__IF_TUN_H */
