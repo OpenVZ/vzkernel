@@ -3,6 +3,7 @@ TARGETS += cpu-hotplug
 TARGETS += efivarfs
 TARGETS += kcmp
 TARGETS += livepatch
+TARGETS += memfd
 TARGETS += memory-hotplug
 TARGETS += mqueue
 TARGETS += net
