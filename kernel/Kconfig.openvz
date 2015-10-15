@@ -103,3 +103,10 @@ config VZ_IOLIMIT
 	default m
 	help
 	   This option provides io-limiting module.
+
+config VE_TUNTAP_ACCOUNTING
+	bool "Accounting for tun/tap devices"
+	depends on VE_NETDEV_ACCOUNTING
+	default y
+	help
+	   This option enables accounting for tun/tap devices.
