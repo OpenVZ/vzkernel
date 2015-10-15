@@ -2528,7 +2528,7 @@ static struct cg_proto *packet_sk_charge(void)
 		goto out;
 
 out_put_cg:
-	css_put(mem_cgroup_css(psc->memcg));
+	mem_cgroup_put(psc->memcg);
 out_free_psc:
 	kfree(psc);
 	psc = NULL;
@@ -2549,7 +2549,7 @@ static void packet_sk_uncharge(struct cg_proto *cg)
 
 	if (psc) {
 		memcg_uncharge_kmem(psc->memcg, psc->amt);
-		css_put(mem_cgroup_css(psc->memcg));
+		mem_cgroup_put(psc->memcg);
 		kfree(psc);
 	}
 }
