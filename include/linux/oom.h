@@ -52,9 +52,7 @@ static inline bool oom_task_origin(const struct task_struct *p)
 /* linux/mm/oom_group.c */
 extern int get_task_oom_score_adj(struct task_struct *t);
 
-extern void mark_tsk_oom_victim(struct task_struct *tsk);
-
-extern void unmark_oom_victim(void);
+extern void mark_oom_victim(struct task_struct *tsk);
 
 extern unsigned long oom_badness(struct task_struct *p, struct mem_cgroup *memcg,
 			  const nodemask_t *nodemask, unsigned long totalpages);
@@ -75,6 +73,9 @@ extern enum oom_scan_t oom_scan_process_thread(struct task_struct *task,
 
 extern void out_of_memory(struct zonelist *zonelist, gfp_t gfp_mask,
 		int order, nodemask_t *mask, bool force_kill);
+
+extern void exit_oom_victim(void);
+
 extern int register_oom_notifier(struct notifier_block *nb);
 extern int unregister_oom_notifier(struct notifier_block *nb);
 
