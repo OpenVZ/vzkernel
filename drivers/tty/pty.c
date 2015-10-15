@@ -1163,8 +1163,11 @@ struct tty_driver *vtty_console_driver(int *index)
 struct tty_driver *vtty_driver(dev_t dev, int *index)
 {
 	if (MAJOR(dev) == TTY_MAJOR &&
-	    MINOR(dev) < MAX_NR_VTTY_CONSOLES) {
-		*index = MINOR(dev);
+	    MINOR(dev) <= MAX_NR_VTTY_CONSOLES) {
+		if (MINOR(dev))
+			*index = MINOR(dev) - 1;
+		else
+			*index = 0;
 		return vttys_driver;
 	}
 	return NULL;
