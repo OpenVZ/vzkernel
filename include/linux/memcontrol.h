@@ -158,6 +158,16 @@ static inline bool mem_cgroup_disabled(void)
 	return false;
 }
 
+static inline void mem_cgroup_get(struct mem_cgroup *memcg)
+{
+	css_get(mem_cgroup_css(memcg));
+}
+
+static inline void mem_cgroup_put(struct mem_cgroup *memcg)
+{
+	css_put(mem_cgroup_css(memcg));
+}
+
 void __mem_cgroup_begin_update_page_stat(struct page *page, bool *locked,
 					 unsigned long *flags);
 
@@ -335,6 +345,14 @@ static inline void mem_cgroup_iter_break(struct mem_cgroup *root,
 static inline bool mem_cgroup_disabled(void)
 {
 	return true;
+}
+
+static inline void mem_cgroup_get(struct mem_cgroup *memcg)
+{
+}
+
+static inline void mem_cgroup_put(struct mem_cgroup *memcg)
+{
 }
 
 static inline int
