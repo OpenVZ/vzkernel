@@ -106,7 +106,7 @@ config VZ_IOLIMIT
 
 config VE_TUNTAP_ACCOUNTING
 	bool "Accounting for tun/tap devices"
-	depends on VE_NETDEV_ACCOUNTING
+	depends on VE_NETDEV_ACCOUNTING && TUN
 	default y
 	help
 	   This option enables accounting for tun/tap devices.
