@@ -385,7 +385,19 @@ struct mem_cgroup {
 	struct wb_domain cgwb_domain;
 	RH_KABI_BROKEN_INSERT(struct memcg_cgwb_frn cgwb_frn[MEMCG_CGWB_FRN_CNT])
 #endif
-
+#ifdef CONFIG_CLEANCACHE
+	/*
+	 * cleancache_disabled_toggle: toggled by writing to
+	 * memory.disable_cleancache
+	 *
+	 * cleancache_disabled: set iff cleancache_disabled_toggle is
+	 * set in this cgroup or any of its ascendants; controls whether
+	 * cleancache callback is called when a page is evicted from
+	 * this cgroup
+	 */
+	bool cleancache_disabled_toggle;
+	bool cleancache_disabled;
+#endif
 	/* List of events which userspace want to receive */
 	struct list_head event_list;
 	spinlock_t event_list_lock;
@@ -656,6 +668,7 @@ static inline bool mem_cgroup_online(struct mem_cgroup *memcg)
 /*
  * For memory reclaim.
  */
+bool mem_cgroup_cleancache_disabled(struct page *page);
 int mem_cgroup_select_victim_node(struct mem_cgroup *memcg);
 
 void mem_cgroup_update_lru_size(struct lruvec *lruvec, enum lru_list lru,
@@ -1094,6 +1107,11 @@ static inline struct mem_cgroup *lruvec_memcg(struct lruvec *lruvec)
 static inline bool mem_cgroup_online(struct mem_cgroup *memcg)
 {
 	return true;
+}
+
+static inline bool mem_cgroup_cleancache_disabled(struct page *page)
+{
+	return false;
 }
 
 static inline
