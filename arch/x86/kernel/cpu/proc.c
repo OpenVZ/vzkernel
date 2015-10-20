@@ -66,7 +66,7 @@ static void init_cpu_flags(void *dummy)
 	unsigned int tmp1, tmp2;
 	int i;
 
-	bitmap_zero((unsigned long *)flags, NCAPINTS);
+	bitmap_zero((unsigned long *)flags, 32*NCAPINTS);
 	for (i = 0; i < 32*NCAPINTS; i++)
 		if (cpu_has(c, i))
 			set_bit(i, (unsigned long *)flags);
