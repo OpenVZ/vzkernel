@@ -1068,4 +1068,7 @@ bool xen_set_default_idle(void);
 
 void stop_this_cpu(void *dummy);
 
+extern void (*set_cpuid_faulting_cb)(bool enable);
+extern void set_cpuid_faulting(bool enable);
+
 #endif /* _ASM_X86_PROCESSOR_H */
