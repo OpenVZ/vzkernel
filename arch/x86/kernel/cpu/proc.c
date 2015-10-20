@@ -157,20 +157,24 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	return 0;
 }
 
-static void *c_start(struct seq_file *m, loff_t *pos)
+static void *__c_start(struct seq_file *m, loff_t *pos)
 {
-	smp_call_function(init_cpu_flags, NULL, 1);
-
 	*pos = cpumask_next(*pos - 1, cpu_online_mask);
 	if (__cpus_weight(cpu_online_mask, *pos) < num_online_vcpus())
 		return &cpu_data(*pos);
 	return NULL;
 }
 
+static void *c_start(struct seq_file *m, loff_t *pos)
+{
+	on_each_cpu(init_cpu_flags, NULL, 1);
+	return __c_start(m, pos);
+}
+
 static void *c_next(struct seq_file *m, void *v, loff_t *pos)
 {
 	(*pos)++;
-	return c_start(m, pos);
+	return __c_start(m, pos);
 }
 
 static void c_stop(struct seq_file *m, void *v)
