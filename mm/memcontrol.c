@@ -1438,6 +1438,29 @@ void mem_cgroup_update_lru_size(struct lruvec *lruvec, enum lru_list lru,
 		*lru_size += nr_pages;
 }
 
+#ifdef CONFIG_CLEANCACHE
+bool mem_cgroup_cleancache_disabled(struct page *page)
+{
+	struct mem_cgroup *memcg;
+
+	if (mem_cgroup_disabled())
+		return false;
+
+	/*
+	 * On all paths to mem_cgroup_cleancache_disabled(), the page in
+	 * question is locked. Calls go from __delete_from_page_cache() or
+	 * from delete_from_page_cache_batch(), in both cases page lock is
+	 * mandatory.
+	 *
+	 * Per comment in the documentation of page_memcg(), holding page lock
+	 * guarantees stability of the value returned from page_memcg().
+	 * Thus using page_memcg() is safe, rcu is not needed.
+	 */
+	memcg = page_memcg(page);
+	return memcg && memcg->cleancache_disabled;
+}
+#endif
+
 /**
  * mem_cgroup_margin - calculate chargeable space of a memory cgroup
  * @memcg: the memory cgroup
@@ -4497,6 +4520,30 @@ static void memsw_cgroup_usage_unregister_event(struct mem_cgroup *memcg,
 	return __mem_cgroup_usage_unregister_event(memcg, eventfd, _MEMSWAP);
 }
 
+#ifdef CONFIG_CLEANCACHE
+static u64 mem_cgroup_disable_cleancache_read(struct cgroup_subsys_state *css,
+					      struct cftype *cft)
+{
+	return mem_cgroup_from_css(css)->cleancache_disabled_toggle;
+}
+
+static int mem_cgroup_disable_cleancache_write(struct cgroup_subsys_state *css,
+					       struct cftype *cft, u64 val)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+	struct mem_cgroup *iter, *parent;
+
+	memcg->cleancache_disabled_toggle = !!val;
+	for_each_mem_cgroup_tree(iter, memcg) {
+		parent = parent_mem_cgroup(iter);
+		iter->cleancache_disabled = iter->cleancache_disabled_toggle;
+		if (parent)
+			iter->cleancache_disabled |= parent->cleancache_disabled;
+	}
+	return 0;
+}
+#endif
+
 static int mem_cgroup_oom_register_event(struct mem_cgroup *memcg,
 	struct eventfd_ctx *eventfd, const char *args)
 {
@@ -5102,6 +5149,14 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.seq_show = memcg_numa_stat_show,
 	},
 #endif
+#ifdef CONFIG_CLEANCACHE
+	{
+		.name = "disable_cleancache",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.read_u64 = mem_cgroup_disable_cleancache_read,
+		.write_u64 = mem_cgroup_disable_cleancache_write,
+	},
+#endif
 	{
 		.name = "kmem.limit_in_bytes",
 		.private = MEMFILE_PRIVATE(_KMEM, RES_LIMIT),
@@ -5440,7 +5495,9 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 	if (parent) {
 		memcg->swappiness = mem_cgroup_swappiness(parent);
 		memcg->oom_kill_disable = parent->oom_kill_disable;
-
+#ifdef CONFIG_CLEANCACHE
+		memcg->cleancache_disabled = parent->cleancache_disabled;
+#endif
 		page_counter_init(&memcg->memory, &parent->memory);
 		page_counter_init(&memcg->swap, &parent->swap);
 		page_counter_init(&memcg->kmem, &parent->kmem);
