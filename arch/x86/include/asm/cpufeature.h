@@ -170,6 +170,7 @@ extern void clear_cpu_cap(struct cpuinfo_x86 *c, unsigned int bit);
 #define cpu_has_eager_fpu	boot_cpu_has(X86_FEATURE_EAGER_FPU)
 #define cpu_has_topoext		boot_cpu_has(X86_FEATURE_TOPOEXT)
 #define cpu_has_bpext		boot_cpu_has(X86_FEATURE_BPEXT)
+#define cpu_has_cpuid_faulting	boot_cpu_has(X86_FEATURE_CPUID_FAULTING)
 
 #if __GNUC__ >= 4
 /*
