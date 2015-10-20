@@ -81,6 +81,11 @@ static void init_cpu_flags(void *dummy)
 		flags->val[0] &= edx;
 	}
 
+	if (c->cpuid_level >= 0x00000007) {
+		__do_cpuid_fault(0x00000007, 0, &eax, &ebx, &ecx, &edx);
+		flags->val[9] &= ebx;
+	}
+
 	if ((c->extended_cpuid_level & 0xffff0000) == 0x80000000 &&
 	    c->extended_cpuid_level >= 0x80000001) {
 		__do_cpuid_fault(0x80000001, 0, &eax, &ebx, &ecx, &edx);
