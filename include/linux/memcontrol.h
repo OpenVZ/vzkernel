@@ -117,6 +117,7 @@ void mem_cgroup_iter_break(struct mem_cgroup *, struct mem_cgroup *);
  */
 int mem_cgroup_inactive_anon_is_low(struct lruvec *lruvec);
 bool mem_cgroup_low(struct mem_cgroup *root, struct mem_cgroup *memcg);
+bool mem_cgroup_cleancache_disabled(struct page *page);
 int mem_cgroup_select_victim_node(struct mem_cgroup *memcg);
 unsigned long mem_cgroup_get_lru_size(struct lruvec *lruvec, enum lru_list);
 void mem_cgroup_update_lru_size(struct lruvec *, enum lru_list, int);
@@ -342,6 +343,11 @@ mem_cgroup_inactive_anon_is_low(struct lruvec *lruvec)
 
 static inline bool mem_cgroup_low(struct mem_cgroup *root,
 				  struct mem_cgroup *memcg)
+{
+	return false;
+}
+
+static inline bool mem_cgroup_cleancache_disabled(struct page *page)
 {
 	return false;
 }
