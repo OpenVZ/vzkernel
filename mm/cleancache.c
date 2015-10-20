@@ -15,6 +15,7 @@
 #include <linux/fs.h>
 #include <linux/exportfs.h>
 #include <linux/mm.h>
+#include <linux/memcontrol.h>
 #include <linux/debugfs.h>
 #include <linux/cleancache.h>
 
@@ -227,8 +228,13 @@ void __cleancache_put_page(struct page *page)
 	pool_id = page->mapping->host->i_sb->cleancache_poolid;
 	if (pool_id >= 0 &&
 		cleancache_get_key(page->mapping->host, &key) >= 0) {
-		cleancache_ops->put_page(pool_id, key, page->index, page);
-		cleancache_puts++;
+		if (!mem_cgroup_cleancache_disabled(page)) {
+			cleancache_ops->put_page(pool_id, key,
+						 page->index, page);
+			cleancache_puts++;
+		} else
+			cleancache_ops->invalidate_page(pool_id, key,
+							page->index);
 	}
 }
 EXPORT_SYMBOL(__cleancache_put_page);
