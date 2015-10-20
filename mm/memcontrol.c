@@ -301,6 +301,20 @@ struct mem_cgroup {
 	/* set when res.limit == memsw.limit */
 	bool		memsw_is_minimum;
 
+#ifdef CONFIG_CLEANCACHE
+	/*
+	 * cleancache_disabled_toggle: toggled by writing to
+	 * memory.disable_cleancache
+	 *
+	 * cleancache_disabled: set iff cleancache_disabled_toggle is
+	 * set in this cgroup or any of its ascendants; controls whether
+	 * cleancache callback is called when a page is evicted from
+	 * this cgroup
+	 */
+	bool cleancache_disabled_toggle;
+	bool cleancache_disabled;
+#endif
+
 	/* protect arrays of thresholds */
 	struct mutex thresholds_lock;
 
@@ -1569,6 +1583,27 @@ bool mem_cgroup_low(struct mem_cgroup *root, struct mem_cgroup *memcg)
 	}
 	return true;
 }
+
+#ifdef CONFIG_CLEANCACHE
+bool mem_cgroup_cleancache_disabled(struct page *page)
+{
+	struct page_cgroup *pc;
+	bool ret = false;
+
+	if (mem_cgroup_disabled())
+		return false;
+
+	pc = lookup_page_cgroup(page);
+	if (!PageCgroupUsed(pc))
+		return false;
+
+	lock_page_cgroup(pc);
+	if (likely(PageCgroupUsed(pc)))
+		ret = pc->mem_cgroup->cleancache_disabled;
+	unlock_page_cgroup(pc);
+	return ret;
+}
+#endif
 
 unsigned long mem_cgroup_total_pages(struct mem_cgroup *memcg, bool swap)
 {
@@ -5115,6 +5150,32 @@ static int mem_cgroup_low_write(struct cgroup *cont, struct cftype *cft,
 	return 0;
 }
 
+#ifdef CONFIG_CLEANCACHE
+static u64 mem_cgroup_disable_cleancache_read(struct cgroup *cgrp,
+					      struct cftype *cft)
+{
+	return mem_cgroup_from_cont(cgrp)->cleancache_disabled_toggle;
+}
+
+static int mem_cgroup_disable_cleancache_write(struct cgroup *cgrp,
+					       struct cftype *cft, u64 val)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_cont(cgrp);
+	struct mem_cgroup *iter, *parent;
+
+	mutex_lock(&memcg_create_mutex);
+	memcg->cleancache_disabled_toggle = !!val;
+	for_each_mem_cgroup_tree(iter, memcg) {
+		parent = parent_mem_cgroup(iter);
+		iter->cleancache_disabled = iter->cleancache_disabled_toggle;
+		if (parent)
+			iter->cleancache_disabled |= parent->cleancache_disabled;
+	}
+	mutex_unlock(&memcg_create_mutex);
+	return 0;
+}
+#endif
+
 static int mem_cgroup_reset(struct cgroup *cont, unsigned int event)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
@@ -6024,6 +6085,14 @@ static struct cftype mem_cgroup_files[] = {
 		.read_seq_string = memcg_numa_stat_show,
 	},
 #endif
+#ifdef CONFIG_CLEANCACHE
+	{
+		.name = "disable_cleancache",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.read_u64 = mem_cgroup_disable_cleancache_read,
+		.write_u64 = mem_cgroup_disable_cleancache_write,
+	},
+#endif
 #ifdef CONFIG_MEMCG_KMEM
 	{
 		.name = "kmem.limit_in_bytes",
@@ -6285,6 +6354,9 @@ mem_cgroup_css_online(struct cgroup *cont)
 	memcg->use_hierarchy = parent->use_hierarchy;
 	memcg->oom_kill_disable = parent->oom_kill_disable;
 	memcg->swappiness = mem_cgroup_swappiness(parent);
+#ifdef CONFIG_CLEANCACHE
+	memcg->cleancache_disabled = parent->cleancache_disabled;
+#endif
 
 	if (parent->use_hierarchy) {
 		page_counter_init(&memcg->memory, &parent->memory);
