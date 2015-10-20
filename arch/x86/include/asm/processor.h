@@ -1104,4 +1104,7 @@ enum l1tf_mitigations {
 
 extern enum l1tf_mitigations l1tf_mitigation;
 
+extern void (*set_cpuid_faulting_cb)(bool enable);
+extern void set_cpuid_faulting(bool enable);
+
 #endif /* _ASM_X86_PROCESSOR_H */
