@@ -39,7 +39,7 @@ static int check_quotactl_permission(struct super_block *sb, int type, int cmd,
 			break;
 		/*FALLTHROUGH*/
 	default:
-		if (!capable(CAP_SYS_ADMIN))
+		if (!ve_capable(CAP_SYS_ADMIN))
 			return -EPERM;
 	}
 
