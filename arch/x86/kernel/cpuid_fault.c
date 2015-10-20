@@ -5,6 +5,8 @@
 #include <linux/module.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <linux/notifier.h>
+#include <linux/reboot.h>
 #include <linux/ve.h>
 #include <asm/uaccess.h>
 
@@ -26,7 +28,7 @@ struct cpuid_override_table {
 	struct cpuid_override_entry entries[MAX_CPUID_OVERRIDE_ENTRIES];
 };
 
-static struct cpuid_override_table __rcu *cpuid_override;
+static struct cpuid_override_table __rcu *cpuid_override __read_mostly;
 static DEFINE_SPINLOCK(cpuid_override_lock);
 
 #define cpuid_override_active		(!!rcu_access_pointer(cpuid_override))
@@ -264,12 +266,37 @@ static struct file_operations proc_cpuid_override_ops = {
 	.write   = cpuid_override_write,
 };
 
+static void disable_cpuid_faulting_fn(void *unused)
+{
+	set_cpuid_faulting(false);
+}
+
+static int cpuid_faulting_reboot_notify(struct notifier_block *nb,
+					unsigned long code, void *unused)
+{
+	if (code == SYS_RESTART) {
+		/*
+		 * Disable cpuid faulting before loading a new kernel by kexec
+		 * in case the new kernel does not support this feature.
+		 */
+		cpuid_override_update(NULL);
+		on_each_cpu(disable_cpuid_faulting_fn, NULL, 1);
+	}
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block cpuid_faulting_reboot_nb = {
+	.notifier_call = cpuid_faulting_reboot_notify,
+};
+
 static int __init cpuid_fault_init(void)
 {
 	struct proc_dir_entry *proc;
 
 	if (!cpu_has_cpuid_faulting)
 		return 0;
+
+	register_reboot_notifier(&cpuid_faulting_reboot_nb);
 
 	proc = proc_create("cpuid_override", 0644, proc_vz_dir,
 			   &proc_cpuid_override_ops);
