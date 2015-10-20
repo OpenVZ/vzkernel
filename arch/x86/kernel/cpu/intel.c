@@ -352,20 +352,29 @@ static void detect_vmx_virtcap(struct cpuinfo_x86 *c)
 	}
 }
 
+static void intel_set_cpuid_faulting(bool enable)
+{
+	unsigned int l1, l2;
+
+	rdmsr(MSR_MISC_FEATURES_ENABLES, l1, l2);
+	l1 &= ~1;
+	if (enable)
+		l1 |= 1;
+	wrmsr(MSR_MISC_FEATURES_ENABLES, l1, l2);
+}
+
 static void intel_cpuid_faulting_init(struct cpuinfo_x86 *c)
 {
 	unsigned int l1, l2;
 
-	/* check if cpuid faulting is supported */
 	if (rdmsr_safe(MSR_PLATFORM_INFO, &l1, &l2) != 0 ||
 	    !(l1 & (1 << 31)))
 		return;
 
-	/* enable cpuid faulting */
-	rdmsr(MSR_MISC_FEATURES_ENABLES, l1, l2);
-	wrmsr(MSR_MISC_FEATURES_ENABLES, l1 | 1, l2);
-
 	set_cpu_cap(c, X86_FEATURE_CPUID_FAULTING);
+	set_cpuid_faulting_cb = intel_set_cpuid_faulting;
+
+	intel_set_cpuid_faulting(false);
 }
 
 static void init_intel(struct cpuinfo_x86 *c)
