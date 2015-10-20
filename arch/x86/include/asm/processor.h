@@ -1123,4 +1123,7 @@ enum taa_mitigations {
 	TAA_MITIGATION_TSX_DISABLED,
 };
 
+extern void (*set_cpuid_faulting_cb)(bool enable);
+extern void set_cpuid_faulting(bool enable);
+
 #endif /* _ASM_X86_PROCESSOR_H */
