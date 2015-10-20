@@ -29,6 +29,29 @@ struct cpuid_override_table {
 static struct cpuid_override_table __rcu *cpuid_override;
 static DEFINE_SPINLOCK(cpuid_override_lock);
 
+#define cpuid_override_active		(!!rcu_access_pointer(cpuid_override))
+
+void (*set_cpuid_faulting_cb)(bool enable);
+static DEFINE_PER_CPU(bool, cpuid_faulting_enabled);
+
+void set_cpuid_faulting(bool enable)
+{
+	bool *enabled;
+
+	if (!cpu_has_cpuid_faulting)
+		return;
+	if (!cpuid_override_active)
+		enable = false;
+
+	enabled = &get_cpu_var(cpuid_faulting_enabled);
+	if (*enabled != enable) {
+		set_cpuid_faulting_cb(enable);
+		*enabled = enable;
+	}
+	put_cpu_var(cpuid_faulting_enabled);
+}
+EXPORT_SYMBOL(set_cpuid_faulting);
+
 static void cpuid_override_update(struct cpuid_override_table *new_table)
 {
 	struct cpuid_override_table *old_table;
