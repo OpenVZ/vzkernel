@@ -474,7 +474,7 @@ static void intel_cpuid_faulting_init(struct cpuinfo_x86 *c)
 	set_cpu_cap(c, X86_FEATURE_CPUID_FAULTING);
 	set_cpuid_faulting_cb = intel_set_cpuid_faulting;
 
-	intel_set_cpuid_faulting(true);
+	intel_set_cpuid_faulting(false);
 }
 
 static void init_intel(struct cpuinfo_x86 *c)
