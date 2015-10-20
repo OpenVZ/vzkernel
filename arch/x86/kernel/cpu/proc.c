@@ -52,6 +52,10 @@ static void show_cpuinfo_misc(struct seq_file *m, struct cpuinfo_x86 *c)
 }
 #endif
 
+extern void __do_cpuid_fault(unsigned int op, unsigned int count,
+			     unsigned int *eax, unsigned int *ebx,
+			     unsigned int *ecx, unsigned int *edx);
+
 struct cpu_flags {
 	u32 val[NCAPINTS];
 };
@@ -71,8 +75,10 @@ static void init_cpu_flags(void *dummy)
 		if (cpu_has(c, i))
 			set_bit(i, (unsigned long *)flags);
 
-	cpuid(0x00000001, &tmp1, &tmp2, &flags->val[4], &flags->val[0]);
-	cpuid(0x80000001, &tmp1, &tmp2, &flags->val[6], &flags->val[1]);
+	__do_cpuid_fault(0x00000001, 0, &tmp1, &tmp2,
+			 &flags->val[4], &flags->val[0]);
+	__do_cpuid_fault(0x80000001, 0, &tmp1, &tmp2,
+			 &flags->val[6], &flags->val[1]);
 }
 
 static int show_cpuinfo(struct seq_file *m, void *v)
