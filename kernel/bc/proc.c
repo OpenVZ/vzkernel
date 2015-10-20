@@ -272,7 +272,7 @@ static struct seq_operations ub_seq_ops = {
 
 static int ub_open(struct inode *inode, struct file *filp)
 {
-	if (!(capable(CAP_DAC_OVERRIDE) && capable(CAP_DAC_READ_SEARCH)))
+	if (!(ve_capable(CAP_DAC_OVERRIDE) && ve_capable(CAP_DAC_READ_SEARCH)))
 		return -EACCES;
 
 	return seq_open(filp, &ub_seq_ops);
