@@ -74,9 +74,9 @@ out:
 	return ret;
 }
 
-static void __do_cpuid_fault(unsigned int op, unsigned int count,
-			     unsigned int *eax, unsigned int *ebx,
-			     unsigned int *ecx, unsigned int *edx)
+void __do_cpuid_fault(unsigned int op, unsigned int count,
+		      unsigned int *eax, unsigned int *ebx,
+		      unsigned int *ecx, unsigned int *edx)
 {
 	/* check if op is overridden */
 	if (cpuid_override_match(op, count, eax, ebx, ecx, edx))
