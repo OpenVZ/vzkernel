@@ -735,6 +735,11 @@ static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 	return 0;
 }
 
+static void ve_update_cpuid_faulting(void *dummy)
+{
+	set_cpuid_faulting(!ve_is_super(get_exec_env()));
+}
+
 static void ve_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
@@ -754,6 +759,9 @@ static void ve_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 
 		task->task_ve = ve;
 	}
+
+	/* Adjust cpuid faulting */
+	on_each_cpu(ve_update_cpuid_faulting, NULL, 1);
 }
 
 static int ve_state_read(struct cgroup *cg, struct cftype *cft,
