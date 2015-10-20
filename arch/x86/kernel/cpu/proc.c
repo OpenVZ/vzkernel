@@ -67,7 +67,7 @@ static void init_cpu_flags(void *dummy)
 	int cpu = smp_processor_id();
 	struct cpu_flags *flags = &per_cpu(cpu_flags, cpu);
 	struct cpuinfo_x86 *c = &cpu_data(cpu);
-	unsigned int tmp1, tmp2;
+	unsigned int tmp1, tmp2, tmp3;
 	int i;
 
 	bitmap_zero((unsigned long *)flags, 32*NCAPINTS);
@@ -83,6 +83,10 @@ static void init_cpu_flags(void *dummy)
 	    c->extended_cpuid_level >= 0x80000001)
 		__do_cpuid_fault(0x80000001, 0, &tmp1, &tmp2,
 				 &flags->val[6], &flags->val[1]);
+
+	if (c->cpuid_level >= 0x0000000d)
+		__do_cpuid_fault(0x0000000d, 1, &flags->val[10],
+				 &tmp1, &tmp2, &tmp3);
 }
 
 static int show_cpuinfo(struct seq_file *m, void *v)
