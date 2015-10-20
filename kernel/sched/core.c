@@ -6450,6 +6450,9 @@ void idle_task_exit(void)
 	if (mm != &init_mm)
 		switch_mm(mm, &init_mm, current);
 	mmdrop(mm);
+
+	/* disable cpuid faulting when a cpu goes offline */
+	set_cpuid_faulting(false);
 }
 
 /*
