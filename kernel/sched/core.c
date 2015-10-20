@@ -2645,6 +2645,10 @@ static void finish_task_switch(struct rq *rq, struct task_struct *prev)
 	}
 
 	tick_nohz_task_switch(current);
+
+	/* kernel threads don't care about cpuid faulting */
+	if (current->mm)
+		set_cpuid_faulting(!ve_is_super(get_exec_env()));
 }
 
 #ifdef CONFIG_SMP
