@@ -67,26 +67,31 @@ static void init_cpu_flags(void *dummy)
 	int cpu = smp_processor_id();
 	struct cpu_flags *flags = &per_cpu(cpu_flags, cpu);
 	struct cpuinfo_x86 *c = &cpu_data(cpu);
-	unsigned int tmp1, tmp2, tmp3;
-	int i;
+	unsigned int eax, ebx, ecx, edx;
 
-	bitmap_zero((unsigned long *)flags, 32*NCAPINTS);
-	for (i = 0; i < 32*NCAPINTS; i++)
-		if (cpu_has(c, i))
-			set_bit(i, (unsigned long *)flags);
+	memcpy(flags->val, c->x86_capability, NCAPINTS * sizeof(u32));
 
-	if (c->cpuid_level >= 0x00000001)
-		__do_cpuid_fault(0x00000001, 0, &tmp1, &tmp2,
-				 &flags->val[4], &flags->val[0]);
+	/*
+	 * Clear feature bits masked using cpuid masking/faulting.
+	 */
+
+	if (c->cpuid_level >= 0x00000001) {
+		__do_cpuid_fault(0x00000001, 0, &eax, &ebx, &ecx, &edx);
+		flags->val[4] &= ecx;
+		flags->val[0] &= edx;
+	}
 
 	if ((c->extended_cpuid_level & 0xffff0000) == 0x80000000 &&
-	    c->extended_cpuid_level >= 0x80000001)
-		__do_cpuid_fault(0x80000001, 0, &tmp1, &tmp2,
-				 &flags->val[6], &flags->val[1]);
+	    c->extended_cpuid_level >= 0x80000001) {
+		__do_cpuid_fault(0x80000001, 0, &eax, &ebx, &ecx, &edx);
+		flags->val[6] &= ecx;
+		flags->val[1] &= edx;
+	}
 
-	if (c->cpuid_level >= 0x0000000d)
-		__do_cpuid_fault(0x0000000d, 1, &flags->val[10],
-				 &tmp1, &tmp2, &tmp3);
+	if (c->cpuid_level >= 0x0000000d) {
+		__do_cpuid_fault(0x0000000d, 1, &eax, &ebx, &ecx, &edx);
+		flags->val[10] &= eax;
+	}
 }
 
 static int show_cpuinfo(struct seq_file *m, void *v)
