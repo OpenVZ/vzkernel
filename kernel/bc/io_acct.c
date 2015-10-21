@@ -45,6 +45,7 @@ void ub_io_account_dirty(struct address_space *mapping)
 
 	ub_stat_inc(ub, dirty_pages);
 }
+EXPORT_SYMBOL_GPL(ub_io_account_dirty);
 
 void ub_io_account_clean(struct address_space *mapping)
 {
