@@ -36,6 +36,7 @@
 #include <linux/mpage.h>
 #include <linux/pagevec.h>
 #include <linux/writeback.h>
+#include <bc/io_acct.h>
 
 /*
  * structure owned by writepages passed to individual writepage calls
@@ -1846,6 +1847,11 @@ xfs_vm_set_page_dirty(
 			account_page_dirtied(page, mapping);
 			radix_tree_tag_set(&mapping->page_tree,
 					page_index(page), PAGECACHE_TAG_DIRTY);
+			if (mapping_cap_account_dirty(mapping) &&
+					!radix_tree_prev_tag_get(
+						&mapping->page_tree,
+						PAGECACHE_TAG_DIRTY))
+				ub_io_account_dirty(mapping);
 		}
 		spin_unlock_irqrestore(&mapping->tree_lock, flags);
 		__mark_inode_dirty(mapping->host, I_DIRTY_PAGES);
