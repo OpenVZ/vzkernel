@@ -328,6 +328,21 @@ static int vzethdev_net_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd
 	return -ENOTTY;
 }
 
+#ifdef CONFIG_NET_POLL_CONTROLLER
+static void veth_poll_controller(struct net_device *dev)
+{
+	/* veth only receives frames when its peer sends one
+	 * Since it's a synchronous operation, we are guaranteed
+	 * never to have pending data when we poll for it so
+	 * there is nothing to do here.
+	 *
+	 * We need this though so netpoll recognizes us as an interface that
+	 * supports polling, which enables bridge devices in virt setups to
+	 * still use netconsole
+	 */
+}
+#endif	/* CONFIG_NET_POLL_CONTROLLER */
+
 static const struct net_device_ops veth_netdev_ops = {
 	.ndo_init            = veth_dev_init,
 	.ndo_open            = veth_open,
@@ -338,6 +353,9 @@ static const struct net_device_ops veth_netdev_ops = {
 	.ndo_set_mac_address = veth_mac_addr,
 	.ndo_get_iflink		= veth_get_iflink,
 	.ndo_do_ioctl        = vzethdev_net_ioctl,
+#ifdef CONFIG_NET_POLL_CONTROLLER
+	.ndo_poll_controller	= veth_poll_controller,
+#endif
 };
 
 #define VETH_FEATURES (NETIF_F_SG | NETIF_F_FRAGLIST | NETIF_F_ALL_TSO |    \
