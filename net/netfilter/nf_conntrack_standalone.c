@@ -444,8 +444,6 @@ static void nf_conntrack_standalone_fini_proc(struct net *net)
 static int log_invalid_proto_min = 0;
 static int log_invalid_proto_max = 255;
 
-static struct ctl_table_header *nf_ct_netfilter_header;
-
 static struct ctl_table nf_ct_sysctl_table[] = {
 	{
 		.procname	= "nf_conntrack_max",
@@ -509,6 +507,42 @@ static struct ctl_table nf_ct_netfilter_table[] = {
 
 static int zero;
 
+static int nf_conntrack_netfilter_init_sysctl(struct net *net)
+{
+	struct ctl_table *table;
+
+	table = kmemdup(nf_ct_netfilter_table, sizeof(nf_ct_netfilter_table),
+			GFP_KERNEL);
+	if (!table)
+		goto out_kmemdup;
+
+	table[0].data = &net->ct.max;
+
+	/* Don't export sysctls to unprivileged users */
+	if (ve_net_hide_sysctl(net))
+		table[0].procname = NULL;
+
+	net->ct.netfilter_header = register_net_sysctl(net, "net", table);
+	if (!net->ct.netfilter_header)
+		goto out_unregister_netfilter;
+
+	return 0;
+
+out_unregister_netfilter:
+	kfree(table);
+out_kmemdup:
+	return -ENOMEM;
+}
+
+static void nf_conntrack_netfilter_fini_sysctl(struct net *net)
+{
+	struct ctl_table *table;
+
+	table = net->ct.netfilter_header->ctl_table_arg;
+	unregister_net_sysctl_table(net->ct.netfilter_header);
+	kfree(table);
+}
+
 static int nf_conntrack_standalone_init_sysctl(struct net *net)
 {
 	struct ctl_table *table;
@@ -556,6 +590,15 @@ static void nf_conntrack_standalone_fini_sysctl(struct net *net)
 	kfree(table);
 }
 #else
+static int nf_conntrack_netfilter_init_sysctl(struct net *net)
+{
+	return 0;
+}
+
+static void nf_conntrack_netfilter_fini_sysctl(struct net *net)
+{
+}
+
 static int nf_conntrack_standalone_init_sysctl(struct net *net)
 {
 	return 0;
@@ -584,8 +627,14 @@ static int nf_conntrack_pernet_init(struct net *net)
 	if (ret < 0)
 		goto out_sysctl;
 
+	ret = nf_conntrack_netfilter_init_sysctl(net);
+	if (ret < 0)
+		goto out_netfilter_sysctl;
+
 	return 0;
 
+out_netfilter_sysctl:
+	nf_conntrack_standalone_fini_sysctl(net);
 out_sysctl:
 	nf_conntrack_standalone_fini_proc(net);
 out_proc:
@@ -599,6 +648,7 @@ static void nf_conntrack_pernet_exit(struct list_head *net_exit_list)
 	struct net *net;
 
 	list_for_each_entry(net, net_exit_list, exit_list) {
+		nf_conntrack_netfilter_fini_sysctl(net);
 		nf_conntrack_standalone_fini_sysctl(net);
 		nf_conntrack_standalone_fini_proc(net);
 	}
@@ -628,16 +678,6 @@ static int __init nf_conntrack_standalone_init(void)
 	if (ret < 0)
 		goto out_start;
 
-#ifdef CONFIG_SYSCTL
-	nf_ct_netfilter_header =
-		register_net_sysctl(&init_net, "net", nf_ct_netfilter_table);
-	if (!nf_ct_netfilter_header) {
-		pr_err("nf_conntrack: can't register to sysctl.\n");
-		ret = -ENOMEM;
-		goto out_sysctl;
-	}
-#endif
-
 	ret = register_pernet_subsys(&nf_conntrack_net_ops);
 	if (ret < 0)
 		goto out_pernet;
@@ -646,10 +686,6 @@ static int __init nf_conntrack_standalone_init(void)
 	return 0;
 
 out_pernet:
-#ifdef CONFIG_SYSCTL
-	unregister_net_sysctl_table(nf_ct_netfilter_header);
-out_sysctl:
-#endif
 	nf_conntrack_cleanup_end();
 out_start:
 	return ret;
@@ -659,9 +695,6 @@ static void __exit nf_conntrack_standalone_fini(void)
 {
 	nf_conntrack_cleanup_start();
 	unregister_pernet_subsys(&nf_conntrack_net_ops);
-#ifdef CONFIG_SYSCTL
-	unregister_net_sysctl_table(nf_ct_netfilter_header);
-#endif
 	nf_conntrack_cleanup_end();
 }
 
