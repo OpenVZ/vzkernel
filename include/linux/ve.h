@@ -106,6 +106,8 @@ struct user_namespace *ve_init_user_ns(void);
 extern int vz_security_family_check(struct net *net, int family);
 extern int vz_security_protocol_check(struct net *net, int protocol);
 
+int ve_net_hide_sysctl(struct net *net);
+
 #else	/* CONFIG_VE */
 #define get_ve(ve)	(NULL)
 #define put_ve(ve)	do { } while (0)
