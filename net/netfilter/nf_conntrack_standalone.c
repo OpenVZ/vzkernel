@@ -526,7 +526,7 @@ static int nf_conntrack_standalone_init_sysctl(struct net *net)
 	table[5].data = &net->ct.expect_max;
 
 	/* Don't export sysctls to unprivileged users */
-	if (net->user_ns != &init_user_ns)
+	if (ve_net_hide_sysctl(net))
 		table[0].procname = NULL;
 
 	if (!net_eq(net, &init_net)) {
