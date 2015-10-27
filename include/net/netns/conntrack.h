@@ -78,6 +78,7 @@ struct netns_ct {
 	unsigned int		expect_count;
 	unsigned int		expect_max;
 #ifdef CONFIG_SYSCTL
+	struct ctl_table_header	*netfilter_header;
 	struct ctl_table_header	*sysctl_header;
 	struct ctl_table_header	*acct_sysctl_header;
 	struct ctl_table_header	*tstamp_sysctl_header;
