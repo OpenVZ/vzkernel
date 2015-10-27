@@ -207,6 +207,22 @@ struct user_namespace *ve_init_user_ns(void)
 }
 EXPORT_SYMBOL(ve_init_user_ns);
 
+int ve_net_hide_sysctl(struct net *net)
+{
+	/*
+	 * This can happen only on VE creation, when process created VE cgroup,
+	 * and clones a child with new network namespace.
+	 */
+	if (net->owner_ve->init_cred == NULL)
+		return 0;
+
+	/*
+	 * Expose sysctl only for container's init user namespace
+	 */
+	return net->user_ns != net->owner_ve->init_cred->user_ns;
+}
+EXPORT_SYMBOL(ve_net_hide_sysctl);
+
 int nr_threads_ve(struct ve_struct *ve)
 {
 	return cgroup_task_count(ve->css.cgroup);
