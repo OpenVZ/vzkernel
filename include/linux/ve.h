@@ -211,6 +211,8 @@ void ve_exit_ns(struct pid_namespace *ns);
 extern bool current_user_ns_initial(void);
 struct user_namespace *ve_init_user_ns(void);
 
+int ve_net_hide_sysctl(struct net *net);
+
 #else	/* CONFIG_VE */
 
 #define ve_uevent_seqnum uevent_seqnum
