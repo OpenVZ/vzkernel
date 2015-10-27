@@ -39,6 +39,8 @@ void nf_conntrack_cleanup_start(void);
 void nf_conntrack_init_end(void);
 void nf_conntrack_cleanup_end(void);
 
+int nf_conntrack_hide_sysctl(struct net *net);
+
 bool nf_ct_get_tuple(const struct sk_buff *skb, unsigned int nhoff,
 		     unsigned int dataoff, u_int16_t l3num, u_int8_t protonum,
 		     struct nf_conntrack_tuple *tuple,
