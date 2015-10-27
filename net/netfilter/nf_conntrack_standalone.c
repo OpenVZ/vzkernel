@@ -475,7 +475,7 @@ static struct ctl_table nf_ct_netfilter_table[] = {
 
 static int zero;
 
-static int nf_conntrack_hide_sysctl(struct net *net)
+int nf_conntrack_hide_sysctl(struct net *net)
 {
 	/*
 	 * This can happen only on VE creation, when process created VE cgroup,
@@ -573,6 +573,11 @@ static void nf_conntrack_standalone_fini_sysctl(struct net *net)
 	kfree(table);
 }
 #else
+int nf_conntrack_hide_sysctl(struct net *net)
+{
+	return 0;
+}
+
 static int nf_conntrack_netfilter_init_sysctl(struct net *net)
 {
 	return 0;
