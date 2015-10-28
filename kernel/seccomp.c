@@ -381,6 +381,10 @@ int __secure_computing(int this_syscall)
 	int *syscall;
 	u32 ret;
 
+	if (config_enabled(CONFIG_CHECKPOINT_RESTORE) &&
+	    unlikely(current->ptrace & PT_SUSPEND_SECCOMP))
+		return 0;
+
 	switch (mode) {
 	case SECCOMP_MODE_STRICT:
 		syscall = mode1_syscalls;
