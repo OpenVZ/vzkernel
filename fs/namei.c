@@ -860,7 +860,7 @@ static int may_linkat(struct path *link)
 	 * otherwise, it must be a safe source.
 	 */
 	if (uid_eq(cred->fsuid, inode->i_uid) || safe_hardlink_source(inode) ||
-	    capable(CAP_FOWNER))
+	    ve_capable(CAP_FOWNER))
 		return 0;
 
 	audit_log_link_denied("linkat", link);
@@ -4139,7 +4139,7 @@ SYSCALL_DEFINE5(linkat, int, olddfd, const char __user *, oldname,
 	 * handlink using the passed filedescriptor.
 	 */
 	if (flags & AT_EMPTY_PATH) {
-		if (!capable(CAP_DAC_READ_SEARCH))
+		if (!ve_capable(CAP_DAC_READ_SEARCH))
 			return -ENOENT;
 		how = LOOKUP_EMPTY;
 	}
