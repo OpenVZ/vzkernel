@@ -639,6 +639,10 @@ void secure_computing_strict(int this_syscall)
 {
 	int mode = current->seccomp.mode;
 
+	if (config_enabled(CONFIG_CHECKPOINT_RESTORE) &&
+	    unlikely(current->ptrace & PT_SUSPEND_SECCOMP))
+		return 0;
+
 	if (mode == 0)
 		return;
 	else if (mode == SECCOMP_MODE_STRICT)
