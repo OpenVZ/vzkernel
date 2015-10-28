@@ -581,6 +581,9 @@ int __secure_computing(int this_syscall)
 	int *syscall;
 	u32 ret;
 
+	if (config_enabled(CONFIG_CHECKPOINT_RESTORE) &&
+	    unlikely(current->ptrace & PT_SUSPEND_SECCOMP))
+		return 0;
 	/*
 	 * Make sure that any changes to mode from another thread have
 	 * been seen after TIF_SECCOMP was seen.
