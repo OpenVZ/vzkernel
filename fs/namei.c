@@ -4589,7 +4589,7 @@ static int do_renameat2(int olddfd, const char __user *oldname, int newdfd,
 	    (flags & RENAME_EXCHANGE))
 		return -EINVAL;
 
-	if ((flags & RENAME_WHITEOUT) && !capable(CAP_MKNOD))
+	if ((flags & RENAME_WHITEOUT) && !ve_capable(CAP_MKNOD))
 		return -EPERM;
 
 	if (flags & RENAME_EXCHANGE)
