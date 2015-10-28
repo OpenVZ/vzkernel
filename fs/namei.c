@@ -4450,7 +4450,7 @@ SYSCALL_DEFINE5(renameat2, int, olddfd, const char __user *, oldname,
 	    (flags & RENAME_EXCHANGE))
 		return -EINVAL;
 
-	if ((flags & RENAME_WHITEOUT) && !capable(CAP_MKNOD))
+	if ((flags & RENAME_WHITEOUT) && !ve_capable(CAP_MKNOD))
 		return -EPERM;
 
 retry:
