@@ -703,7 +703,6 @@ static void ve_destroy(struct cgroup *cg)
 static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
-	struct task_struct *task;
 
 	if (!ve->veid)
 		return -ENOENT;
@@ -712,25 +711,29 @@ static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 		return -EBUSY;
 
 	/*
-	 * We either moving the whole group of threads,
-	 * either a single thread process.
+	 * We allow only one single-threaded process to attach
+	 * into a container, which usually stands for "init"
+	 * process. The rest of processes should be forked
+	 * from the "init".
 	 */
 	if (cgroup_taskset_size(tset) == 1) {
-		task = cgroup_taskset_first(tset);
-		if (!thread_group_empty(task))
-			return -EINVAL;
-	}
+		struct task_struct *task = cgroup_taskset_first(tset);
 
-	/*
-	 * Forbid userspace tasks to enter during starting or stopping.
-	 * Permit attaching kernel threads for this containers.
-	 */
-	if (!ve->is_running && (ve->ve_ns || nr_threads_ve(ve))) {
-		cgroup_taskset_for_each(task, cg, tset) {
+		if (!thread_group_leader(task) ||
+		    !thread_group_empty(task))
+			return -EINVAL;
+
+		/*
+		 * XXX Still permit attaching kernel threads
+		 * for this container. Wonder if we really need it,
+		 * looks like some legacy code chunk.
+		 */
+		if (!ve->is_running && (ve->ve_ns || nr_threads_ve(ve))) {
 			if (!(task->flags & PF_KTHREAD))
 				return -EPIPE;
 		}
-	}
+	} else
+		return -EINVAL;
 
 	return 0;
 }
