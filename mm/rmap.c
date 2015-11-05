@@ -723,15 +723,6 @@ int page_referenced_one(struct page *page, struct vm_area_struct *vma,
 		pte_unmap_unlock(pte, ptl);
 	}
 
-	if (referenced && page_is_idle(page))
-		clear_page_idle(page);
-
-	if (page_is_young(page)) {
-		clear_page_young(page);
-		if (!referenced)
-			referenced++;
-	}
-
 	(*mapcount)--;
 
 	if (referenced)
