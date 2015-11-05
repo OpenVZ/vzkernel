@@ -67,3 +67,4 @@ obj-$(CONFIG_MEMORY_ISOLATION) += page_isolation.o
 obj-$(CONFIG_ZBUD)	+= zbud.o
 obj-$(CONFIG_TCACHE) += tcache.o
 obj-$(CONFIG_TSWAP) += tswap.o
+obj-$(CONFIG_IDLE_PAGE_TRACKING) += page_idle.o
