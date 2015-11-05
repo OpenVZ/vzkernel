@@ -101,6 +101,8 @@ bool mm_match_cgroup(const struct mm_struct *mm, const struct mem_cgroup *memcg)
 
 extern struct cgroup_subsys_state *mem_cgroup_css(struct mem_cgroup *memcg);
 
+unsigned long page_cgroup_ino(struct page *page);
+
 extern void
 mem_cgroup_prepare_migration(struct page *page, struct page *newpage,
 			     struct mem_cgroup **memcgp);
