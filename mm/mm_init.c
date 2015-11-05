@@ -155,5 +155,4 @@ static int __init mm_sysfs_init(void)
 
 	return 0;
 }
-
-__initcall(mm_sysfs_init);
+postcore_initcall(mm_sysfs_init);
