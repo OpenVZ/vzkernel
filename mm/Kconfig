@@ -604,3 +604,14 @@ config TSWAP
 	  stores reclaimed pages in memory without any modifications. It is
 	  only worth enabling if used along with memory cgroups in order to
 	  cache pages which were reclaimed on local pressure.
+
+config IDLE_PAGE_TRACKING
+	bool "Enable idle page tracking"
+	depends on SYSFS && MMU && 64BIT
+	help
+	  This feature allows to estimate the amount of user pages that have
+	  not been touched during a given period of time. This information can
+	  be useful to tune memory cgroup limits and/or for job placement
+	  within a compute cluster.
+
+	  See Documentation/vm/idle_page_tracking.txt for more details.
