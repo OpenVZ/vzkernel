@@ -76,3 +76,4 @@ obj-$(CONFIG_PAGE_EXTENSION) += page_ext.o
 obj-$(CONFIG_HARDENED_USERCOPY) += usercopy.o
 obj-$(CONFIG_TCACHE) += tcache.o
 obj-$(CONFIG_TSWAP) += tswap.o
+obj-$(CONFIG_IDLE_PAGE_TRACKING) += page_idle.o
