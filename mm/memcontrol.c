@@ -703,6 +703,34 @@ struct cgroup_subsys_state *mem_cgroup_css(struct mem_cgroup *memcg)
 	return &memcg->css;
 }
 
+/**
+ * page_cgroup_ino - return inode number of the memcg a page is charged to
+ * @page: the page
+ *
+ * Look up the memory cgroup @page is charged to and return its inode number or
+ * 0 if @page is not charged to any cgroup. It is safe to call this function
+ * without holding a reference to @page.
+ *
+ * Note, this function is inherently racy, because there is nothing to prevent
+ * the cgroup inode from getting torn down and potentially reallocated a moment
+ * after page_cgroup_ino() returns, so it only should be used by callers that
+ * do not care (such as procfs interfaces).
+ */
+ino_t page_cgroup_ino(struct page *page)
+{
+	struct page_cgroup *pc;
+	unsigned long ino = 0;
+
+	pc = lookup_page_cgroup(page);
+	if (!PageCgroupUsed(pc))
+		return 0;
+	lock_page_cgroup(pc);
+	if (likely(PageCgroupUsed(pc)))
+		ino = pc->mem_cgroup->css.cgroup->dentry->d_inode->i_ino;
+	unlock_page_cgroup(pc);
+	return ino;
+}
+
 static struct mem_cgroup_per_zone *
 page_cgroup_zoneinfo(struct mem_cgroup *memcg, struct page *page)
 {
