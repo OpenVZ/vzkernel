@@ -12,6 +12,7 @@
 #include <linux/swap.h>
 #include <linux/swapops.h>
 #include <linux/mmu_notifier.h>
+#include <linux/page_idle.h>
 
 #include <asm/elf.h>
 #include <asm/uaccess.h>
@@ -480,7 +481,7 @@ static void smaps_pte_entry(pte_t ptent, unsigned long addr,
 
 	mss->resident += ptent_size;
 	/* Accumulate the size in pages that have been accessed. */
-	if (pte_young(ptent) || PageReferenced(page))
+	if (pte_young(ptent) || page_is_young(page) || PageReferenced(page))
 		mss->referenced += ptent_size;
 	mapcount = page_mapcount(page);
 	if (mapcount >= 2) {
@@ -778,6 +779,7 @@ static int clear_refs_pte_range(pmd_t *pmd, unsigned long addr,
 
 		/* Clear accessed and referenced bits. */
 		ptep_test_and_clear_young(vma, addr, pte);
+		test_and_clear_page_young(page);
 		ClearPageReferenced(page);
 	}
 	pte_unmap_unlock(pte - 1, ptl);
