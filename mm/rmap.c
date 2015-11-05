@@ -57,6 +57,7 @@
 #include <linux/migrate.h>
 #include <linux/hugetlb.h>
 #include <linux/backing-dev.h>
+#include <linux/page_idle.h>
 
 #include <asm/tlbflush.h>
 
@@ -882,6 +883,11 @@ int page_referenced_one(struct page *page, struct vm_area_struct *vma,
 		}
 		pte_unmap_unlock(pte, ptl);
 	}
+
+	if (referenced)
+		clear_page_idle(page);
+	if (test_and_clear_page_young(page))
+		referenced++;
 
 	(*mapcount)--;
 
