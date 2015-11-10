@@ -41,7 +41,7 @@
 
 int sysctl_panic_on_oom;
 int sysctl_oom_kill_allocating_task;
-int sysctl_oom_dump_tasks = 1;
+int sysctl_oom_dump_tasks;
 int sysctl_oom_relaxation = HZ;
 
 static DEFINE_SPINLOCK(oom_context_lock);
