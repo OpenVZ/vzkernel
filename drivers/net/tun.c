@@ -1386,6 +1386,12 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 	skb_reset_network_header(skb);
 	skb_probe_transport_header(skb, 0);
 
+#ifdef CONFIG_VE_TUNTAP_ACCOUNTING
+	if (tun->vestat) {
+		venet_acct_classify_add_outgoing(tun->vestat, skb);
+	}
+#endif /* CONFIG_VE_TUNTAP_ACCOUNTING */
+
 	rxhash = skb_get_hash(skb);
 	netif_rx_ni(skb);
 
@@ -1395,12 +1401,6 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 	stats->rx_bytes += len;
 	u64_stats_update_end(&stats->syncp);
 	put_cpu_ptr(stats);
-
-#ifdef CONFIG_VE_TUNTAP_ACCOUNTING
-	if (tun->vestat) {
-		venet_acct_classify_add_outgoing(tun->vestat, skb);
-	}
-#endif /* CONFIG_VE_TUNTAP_ACCOUNTING */
 
 	tun_flow_update(tun, rxhash, tfile);
 	return total_len;
