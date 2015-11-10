@@ -5841,7 +5841,13 @@ void show_state_filter(unsigned long state_filter)
 
 	touch_all_softlockup_watchdogs();
 
-#ifdef CONFIG_SCHED_DEBUG
+#if 0
+	/*
+	 * This results in soft lockups, because it writes too much data to
+	 * console. At the same time information it shows is only useful for
+	 * sched debugging and can be obtained via /proc/sched_debug anyway.
+	 * So disable it.
+	 */
 	sysrq_sched_debug_show();
 #endif
 	rcu_read_unlock();
