@@ -256,7 +256,7 @@ SYSCALL_DEFINE1(acct, const char __user *, name)
 {
 	int error = 0;
 
-	if (!capable(CAP_SYS_PACCT))
+	if (!ve_capable(CAP_SYS_PACCT))
 		return -EPERM;
 
 	if (name) {
