@@ -14,6 +14,7 @@
 
 struct nsproxy;
 struct veip_struct;
+struct user_namespace;
 
 struct ve_struct {
 	struct cgroup_subsys_state	css;
@@ -90,6 +91,7 @@ static inline void ve_net_unlock(struct ve_struct *ve)
 	!!((ve)->features & VE_FEATURE_##f)
 
 extern bool current_user_ns_initial(void);
+struct user_namespace *ve_init_user_ns(void);
 
 #else	/* CONFIG_VE */
 #define get_ve(ve)	(NULL)
@@ -104,6 +106,12 @@ static inline bool current_user_ns_initial(void)
 {
 	return current_user_ns() == init_cred.user_ns;
 }
+
+static inline struct user_namespace *ve_init_user_ns(void)
+{
+	return &init_user_ns;
+}
+
 #endif	/* CONFIG_VE */
 
 #endif /* _LINUX_VE_H */
