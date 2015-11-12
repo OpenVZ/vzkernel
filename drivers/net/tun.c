@@ -1993,17 +1993,12 @@ unlock:
 
 #ifdef CONFIG_VE_TUNTAP_ACCOUNTING
 /* setacctid_ioctl should be called under rtnl_lock */
-static long setacctid_ioctl(struct file *file, void __user *argp)
+static int tun_set_acctid(struct net *net, struct ifreq *ifr)
 {
-	struct tun_file *tfile = file->private_data;
-	struct tun_acctid info;
 	struct net_device *dev;
 	struct tun_struct *tun;
 
-	if (copy_from_user(&info, argp, sizeof(info)))
-		return -EFAULT;
-
-	dev = __dev_get_by_name(tfile->net, info.ifname);
+	dev = __dev_get_by_name(net, ifr->ifr_name);
 	if (dev == NULL)
 		return -ENOENT;
 
@@ -2015,7 +2010,7 @@ static long setacctid_ioctl(struct file *file, void __user *argp)
 	if (tun->vestat) {
 		venet_acct_put_stat(tun->vestat);
 	}
-	tun->vestat = venet_acct_find_create_stat(info.acctid);
+	tun->vestat = venet_acct_find_create_stat(ifr->ifr_acctid);
 	if (tun->vestat == NULL)
 		return -ENOMEM;
 
@@ -2038,7 +2033,8 @@ static long __tun_chr_ioctl(struct file *file, unsigned int cmd,
 	int le;
 	int ret;
 
-	if (cmd == TUNSETIFF || cmd == TUNSETQUEUE || _IOC_TYPE(cmd) == 0x89) {
+	if (cmd == TUNSETIFF || cmd == TUNSETQUEUE || cmd == TUNSETACCTID ||
+			_IOC_TYPE(cmd) == 0x89) {
 		if (copy_from_user(&ifr, argp, ifreq_len))
 			return -EFAULT;
 	} else {
@@ -2059,7 +2055,7 @@ static long __tun_chr_ioctl(struct file *file, unsigned int cmd,
 
 #ifdef CONFIG_VE_TUNTAP_ACCOUNTING
 	if (cmd == TUNSETACCTID) {
-		ret = setacctid_ioctl(file, argp);
+		ret = tun_set_acctid(tfile->net, &ifr);
 		goto unlock;
 	}
 #endif /* CONFIG_VE_TUNTAP_ACCOUNTING */
