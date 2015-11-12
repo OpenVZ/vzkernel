@@ -36,6 +36,7 @@
 #ifndef __GENKSYMS__
 #include <linux/user_namespace.h>
 #endif
+#include <linux/ve.h>
 #include "internal.h"
 
 static int thaw_super_locked(struct super_block *sb);
@@ -175,7 +176,7 @@ static struct super_block *alloc_super(struct file_system_type *type, int flags,
 	init_waitqueue_head(&s->s_writers.wait_unfrozen);
 	s->s_flags = flags;
 	s->s_bdi = &default_backing_dev_info;
-	if (s->s_user_ns != &init_user_ns)
+	if (s->s_user_ns != ve_init_user_ns())
 		s->s_iflags |= SB_I_NODEV;
 	INIT_HLIST_NODE(&s->s_instances);
 	INIT_HLIST_BL_HEAD(&s->s_anon);
