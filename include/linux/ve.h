@@ -16,6 +16,7 @@
 
 struct nsproxy;
 struct veip_struct;
+struct user_namespace;
 
 struct ve_struct {
 	struct cgroup_subsys_state	css;
@@ -77,6 +78,7 @@ extern struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int sub
 	!!((ve)->features & VE_FEATURE_##f)
 
 extern bool current_user_ns_initial(void);
+struct user_namespace *ve_init_user_ns(void);
 
 extern struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp);
 
@@ -92,6 +94,11 @@ static inline void ve_exit_ns(struct pid_namespace *ns) { }
 static inline bool current_user_ns_initial(void)
 {
 	return current_user_ns() == init_cred.user_ns;
+}
+
+static inline struct user_namespace *ve_init_user_ns(void)
+{
+	return &init_user_ns;
 }
 
 static inline struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
