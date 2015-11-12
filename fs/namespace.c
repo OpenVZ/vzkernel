@@ -3667,7 +3667,7 @@ static bool mount_too_revealing(struct vfsmount *mnt, int *new_mnt_flags)
 	struct mnt_namespace *ns = current->nsproxy->mnt_ns;
 	unsigned long s_iflags;
 
-	if (ns->user_ns == &init_user_ns)
+	if (ns->user_ns == ve_init_user_ns())
 		return false;
 
 	/* Can this filesystem be too revealing? */
