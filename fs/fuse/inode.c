@@ -21,6 +21,7 @@
 #include <linux/sched.h>
 #include <linux/exportfs.h>
 #include <linux/pid_namespace.h>
+#include <linux/ve.h>
 
 MODULE_AUTHOR("Miklos Szeredi <miklos@szeredi.hu>");
 MODULE_DESCRIPTION("Filesystem in Userspace");
@@ -1150,7 +1151,7 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 		goto err;
 
 	if ((file->f_op != &fuse_dev_operations) ||
-	    (file->f_cred->user_ns != &init_user_ns))
+	    (file->f_cred->user_ns != ve_init_user_ns()))
 		goto err_fput;
 
 	fc = kmalloc(sizeof(*fc), GFP_KERNEL);
