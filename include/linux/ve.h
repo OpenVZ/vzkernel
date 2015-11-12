@@ -31,6 +31,8 @@ struct file_system_type;
 struct veip_struct;
 struct ve_monitor;
 struct nsproxy;
+struct user_namespace;
+extern struct user_namespace init_user_ns;
 
 struct ve_struct {
 	struct cgroup_subsys_state	css;
@@ -214,6 +216,7 @@ void ve_exit_ns(struct pid_namespace *ns);
 int ve_start_container(struct ve_struct *ve);
 
 extern bool current_user_ns_initial(void);
+struct user_namespace *ve_init_user_ns(void);
 
 #ifdef CONFIG_TTY
 extern struct tty_driver *vtty_driver(dev_t dev, int *index);
@@ -241,6 +244,12 @@ static inline bool current_user_ns_initial(void)
 {
 	return current_user_ns() == init_cred.user_ns;
 }
+
+static inline struct user_namespace *ve_init_user_ns(void)
+{
+	return &init_user_ns;
+}
+
 #define kthread_create_on_node_ve(ve, threadfn, data, node, namefmt...)	\
 	kthread_create_on_node_ve(threadfn, data, node, namefmt...)
 
