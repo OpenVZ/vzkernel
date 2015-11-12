@@ -21,6 +21,7 @@
 #include <linux/sched.h>
 #include <linux/exportfs.h>
 #include <linux/pid_namespace.h>
+#include <linux/ve.h>
 
 MODULE_AUTHOR("Miklos Szeredi <miklos@szeredi.hu>");
 MODULE_DESCRIPTION("Filesystem in Userspace");
