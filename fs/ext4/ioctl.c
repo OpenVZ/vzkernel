@@ -233,9 +233,10 @@ static int ext4_open_balloon(struct super_block *sb, struct vfsmount *mnt)
 			&ext4_file_operations);
 	if (mode & FMODE_WRITE)
 		mnt_drop_write(path.mnt);
-	err = -ENOMEM;
-	if (filp == NULL)
+	if (IS_ERR(filp)) {
+		err = PTR_ERR(filp);
 		goto err_filp;
+	}
 
 	filp->f_flags |= O_LARGEFILE;
 	fd_install(fd, filp);
