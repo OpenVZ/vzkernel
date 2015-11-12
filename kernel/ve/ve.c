@@ -252,6 +252,15 @@ bool current_user_ns_initial(void)
 }
 EXPORT_SYMBOL(current_user_ns_initial);
 
+struct user_namespace *ve_init_user_ns(void)
+{
+	struct cred *init_cred;
+
+	init_cred = get_exec_env()->init_cred;
+	return init_cred ? init_cred->user_ns : &init_user_ns;
+}
+EXPORT_SYMBOL(ve_init_user_ns);
+
 int nr_threads_ve(struct ve_struct *ve)
 {
 	return cgroup_task_count(ve->css.cgroup);
