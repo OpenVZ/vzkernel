@@ -194,6 +194,7 @@ struct ifreq {
 		char	ifru_newname[IFNAMSIZ];
 		void __user *	ifru_data;
 		struct	if_settings ifru_settings;
+		unsigned int ifru_acctid;
 	} ifr_ifru;
 };
 
@@ -214,6 +215,7 @@ struct ifreq {
 #define ifr_qlen	ifr_ifru.ifru_ivalue	/* Queue length 	*/
 #define ifr_newname	ifr_ifru.ifru_newname	/* New name		*/
 #define ifr_settings	ifr_ifru.ifru_settings	/* Device/proto settings*/
+#define ifr_acctid	ifr_ifru.ifru_acctid	/* New ve accounting identifier */
 
 /*
  * Structure used in SIOCGIFCONF request.
