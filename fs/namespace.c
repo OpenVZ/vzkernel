@@ -2167,7 +2167,6 @@ static int do_new_mount(struct path *path, const char *fstype, int flags,
 	struct file_system_type *type;
 	struct user_namespace *user_ns = current->nsproxy->mnt_ns->user_ns;
 	struct vfsmount *mnt;
-	struct user_namespace *root_user_ns;
 	int err;
 
 	if (!fstype)
@@ -2177,12 +2176,7 @@ static int do_new_mount(struct path *path, const char *fstype, int flags,
 	if (!type)
 		return -ENODEV;
 
-	if (get_exec_env()->init_cred)
-		root_user_ns = get_exec_env()->init_cred->user_ns;
-	else
-		root_user_ns = &init_user_ns;
-
-	if (user_ns != root_user_ns) {
+	if (user_ns != ve_init_user_ns()) {
 		if (!(type->fs_flags & FS_USERNS_MOUNT)) {
 			put_filesystem(type);
 			return -EPERM;
