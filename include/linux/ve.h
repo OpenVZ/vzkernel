@@ -29,6 +29,8 @@ struct tty_driver;
 struct file_system_type;
 struct veip_struct;
 struct nsproxy;
+struct user_namespace;
+extern struct user_namespace init_user_ns;
 
 struct ve_struct {
 	struct cgroup_subsys_state	css;
@@ -134,6 +136,7 @@ void ve_stop_ns(struct pid_namespace *ns);
 void ve_exit_ns(struct pid_namespace *ns);
 
 extern bool current_user_ns_initial(void);
+struct user_namespace *ve_init_user_ns(void);
 
 #else	/* CONFIG_VE */
 #define ve_utsname	system_utsname
@@ -147,6 +150,12 @@ static inline bool current_user_ns_initial(void)
 {
 	return current_user_ns() == init_cred.user_ns;
 }
+
+static inline struct user_namespace *ve_init_user_ns(void)
+{
+	return &init_user_ns;
+}
+
 #endif	/* CONFIG_VE */
 
 #endif /* _LINUX_VE_H */
