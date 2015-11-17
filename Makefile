@@ -12,7 +12,17 @@ RHEL_DRM_SUBLEVEL = 0
 VZVERSION = ovz.custom
 
 ifeq ($(VZVERSION), ovz.custom)
-  VZVERSION := $(shell if [ -d ".git" ]; then git describe | sed -r 's/^.*\.vz7\./ovz./'; fi)
+  GIT_DIR := .git
+  ifneq ("$(wildcard $(GIT_DIR) )", "")
+    VZVERSION := $(shell git describe --abbrev=0 2>/dev/null | \
+		   sed -r 's/^.*\.vz7\.//')
+  else
+    VZVERSION := custom
+  endif
+
+  ifeq ($(EXTRAVERSION),)
+    EXTRAVERSION := -$(RHEL_RELEASE).ovz.$(VZVERSION)
+  endif
 endif
 
 # *DOCUMENTATION*
