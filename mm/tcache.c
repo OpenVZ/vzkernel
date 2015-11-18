@@ -17,6 +17,7 @@
 #include <linux/completion.h>
 #include <linux/shrinker.h>
 #include <linux/vmstat.h>
+#include <linux/swap.h>
 #include <linux/cleancache.h>
 
 /* cleancache_put_page is called from atomic context */
@@ -808,6 +809,8 @@ static unsigned long tcache_shrink_scan(struct shrinker *shrink,
 		}
 		sc->nr_to_scan--;
 	}
+	if (current->reclaim_state)
+		current->reclaim_state->reclaimed_slab += nr_reclaimed;
 	return nr_reclaimed;
 }
 
