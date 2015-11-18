@@ -25,6 +25,7 @@
 #include <net/compat.h>
 #include <net/sock.h>
 #include <asm/uaccess.h>
+#include <linux/fence-watchdog.h>
 
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter_arp/arp_tables.h>
@@ -111,6 +112,14 @@ static inline int arp_packet_match(const struct arphdr *arphdr,
 	long ret;
 
 #define FWINV(bool, invflg) ((bool) ^ !!(arpinfo->invflags & (invflg)))
+
+#ifdef CONFIG_FENCE_WATCHDOG
+	if (FWINV((arpinfo->flags & ARPT_WDOGTMO) && !fence_wdog_tmo_match(),
+		  ARPT_INV_WDOGTMO)) {
+		dprintf("Watchdog timeout mismatch.\n");
+		return 0;
+	}
+#endif
 
 	if (FWINV((arphdr->ar_op & arpinfo->arpop_mask) != arpinfo->arpop,
 		  ARPT_INV_ARPOP)) {
