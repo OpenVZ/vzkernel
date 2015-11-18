@@ -25,9 +25,10 @@ enum {
 	FENCE_WDOG_CRASH = 0,
 	FENCE_WDOG_REBOOT = 1,
 	FENCE_WDOG_POWEROFF = 2,
+	FENCE_WDOG_NETFILTER = 3,
 };
 
-const char *action_names[] = {"crash", "reboot", "halt", NULL};
+const char *action_names[] = {"crash", "reboot", "halt", "netfilter", NULL};
 
 
 DEFINE_VVAR(volatile unsigned long, fence_wdog_jiffies64) = MAX_U64;
@@ -73,7 +74,8 @@ void fence_wdog_do_fence(void)
 
 inline int fence_wdog_check_timer(void)
 {
-	if (unlikely(get_jiffies_64() > fence_wdog_jiffies64)) {
+	if (unlikely(get_jiffies_64() > fence_wdog_jiffies64 &&
+			fence_wdog_action != FENCE_WDOG_NETFILTER)) {
 		if (atomic_inc_not_zero(&not_fenced))
 			fence_wdog_do_fence();
 		return 1;
