@@ -71,9 +71,9 @@ struct arpt_arp {
 };
 
 /* Values for "flag" field in struct arpt_ip (general arp structure).
- * No flags defined yet.
  */
-#define ARPT_F_MASK		0x00	/* All possible flag bits mask. */
+#define ARPT_WDOGTMO		0x80
+#define ARPT_F_MASK		0x80	/* All possible flag bits mask. */
 
 /* Values for "inv" field in struct arpt_arp. */
 #define ARPT_INV_VIA_IN		0x0001	/* Invert the sense of IN IFACE. */
@@ -86,7 +86,8 @@ struct arpt_arp {
 #define ARPT_INV_ARPHRD		0x0080	/* Invert the sense of ARP HRD. */
 #define ARPT_INV_ARPPRO		0x0100	/* Invert the sense of ARP PRO. */
 #define ARPT_INV_ARPHLN		0x0200	/* Invert the sense of ARP HLN. */
-#define ARPT_INV_MASK		0x03FF	/* All possible flag bits mask. */
+#define ARPT_INV_WDOGTMO	0x8000	/* Invert the sense if ARPT_WDOGTMO flag */
+#define ARPT_INV_MASK		0x83FF	/* All possible flag bits mask. */
 
 /* This structure defines each of the firewall rules.  Consists of 3
    parts which are 1) general ARP header stuff 2) match specific
