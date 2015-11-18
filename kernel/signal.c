@@ -55,27 +55,6 @@ static inline int is_si_special(const struct siginfo *info);
 
 int print_fatal_signals __read_mostly;
 
-static int sig_ve_ignored(int sig, struct siginfo *info, struct task_struct *t)
-{
-	struct ve_struct *ve;
-
-	/* always allow signals from the kernel */
-	if (info == SEND_SIG_FORCED ||
-	    (!is_si_special(info) && SI_FROMKERNEL(info)))
-		return 0;
-
-	ve = get_exec_env();
-	if (ve_is_super(ve))
-		return 0;
-	rcu_read_lock();
-	if (ve->ve_ns && get_env_init(ve) != t) {
-		rcu_read_unlock();
-		return 0;
-	}
-	rcu_read_unlock();
-	return !sig_user_defined(t, sig) || sig_kernel_only(sig);
-}
-
 static void __user *sig_handler(struct task_struct *t, int sig)
 {
 	return t->sighand->action[sig - 1].sa.sa_handler;
@@ -1361,8 +1340,7 @@ int group_send_sig_info(int sig, struct siginfo *info, struct task_struct *p)
 	rcu_read_unlock();
 
 	if (!ret && sig)
-		ret = sig_ve_ignored(sig, info, p) ? 0 :
-			do_send_sig_info(sig, info, p, true);
+		ret = do_send_sig_info(sig, info, p, true);
 
 	return ret;
 }
@@ -2976,8 +2954,7 @@ do_send_specific(pid_t tgid, pid_t pid, int sig, struct siginfo *info)
 		 * probe.  No signal is actually delivered.
 		 */
 		if (!error && sig) {
-			if (!sig_ve_ignored(sig, info, p))
-				error = do_send_sig_info(sig, info, p, false);
+			error = do_send_sig_info(sig, info, p, false);
 			/*
 			 * If lock_task_sighand() failed we pretend the task
 			 * dies after receiving the signal. The window is tiny,
