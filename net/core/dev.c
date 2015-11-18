@@ -135,6 +135,7 @@
 #include <linux/hashtable.h>
 #include <linux/vmalloc.h>
 #include <linux/hrtimer.h>
+#include <linux/fence-watchdog.h>
 
 #include "net-sysfs.h"
 
@@ -4828,6 +4829,10 @@ static void net_rx_action(struct softirq_action *h)
 	local_irq_disable();
 	list_splice_init(&sd->poll_list, &list);
 	local_irq_enable();
+
+#ifdef CONFIG_FENCE_WATCHDOG
+	fence_wdog_check_timer();
+#endif
 
 	for (;;) {
 		struct napi_struct *n;
