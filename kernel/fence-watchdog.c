@@ -37,6 +37,11 @@ void fence_wdog_do_fence(void)
 {
 	char *killer = NULL;
 
+	bust_spinlocks(1);
+	printk(KERN_EMERG"fence-watchdog: %s\n",
+			action_names[fence_wdog_action]);
+	bust_spinlocks(0);
+
 	switch (fence_wdog_action) {
 	case FENCE_WDOG_CRASH:
 		panic_on_oops = 1;
@@ -52,7 +57,6 @@ void fence_wdog_do_fence(void)
 		lockdep_off();
 		local_irq_enable();
 		sysdev_shutdown();
-		printk(KERN_EMERG "System halted.\n");
 		kmsg_dump(KMSG_DUMP_HALT);
 		machine_halt();
 		break;
