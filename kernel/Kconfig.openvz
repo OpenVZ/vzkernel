@@ -94,6 +94,11 @@ config VZ_EVENT
  	  networking code does. By now just the notifications of
  	  the VE essensial status changes are being sent.
 
+
+config FENCE_WATCHDOG
+	bool "Fencing watchdog for HA cluster support"
+	depends on X86_64
+	default n
 endmenu
 
 

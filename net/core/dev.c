@@ -133,6 +133,7 @@
 #include <linux/hashtable.h>
 #include <linux/vmalloc.h>
 #include <linux/hrtimer.h>
+#include <linux/fence-watchdog.h>
 
 #include "net-sysfs.h"
 
@@ -4476,6 +4477,9 @@ static void net_rx_action(struct softirq_action *h)
 out:
 	net_rps_action_and_irq_enable(sd);
 
+#ifdef CONFIG_FENCE_WATCHDOG
+	fence_wdog_check_timer();
+#endif
 	return;
 
 softnet_break:
