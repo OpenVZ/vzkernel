@@ -84,6 +84,12 @@ inline int fence_wdog_check_timer(void)
 	return 0;
 }
 
+bool fence_wdog_tmo_match(void)
+{
+	return get_jiffies_64() > fence_wdog_jiffies64;
+}
+EXPORT_SYMBOL(fence_wdog_tmo_match);
+
 static ssize_t fence_wdog_timer_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
