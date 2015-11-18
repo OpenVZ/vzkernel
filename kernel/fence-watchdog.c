@@ -27,7 +27,7 @@ enum {
 	FENCE_WDOG_POWEROFF = 2,
 };
 
-const char *action_names[] = {"crash", "reboot", "poweroff", NULL};
+const char *action_names[] = {"crash", "reboot", "halt", NULL};
 
 
 DEFINE_VVAR(volatile unsigned long, fence_wdog_jiffies64) = MAX_U64;
