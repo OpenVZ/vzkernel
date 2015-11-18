@@ -2501,6 +2501,13 @@ int dev_hard_start_xmit(struct sk_buff *skb, struct net_device *dev,
 	int rc = NETDEV_TX_OK;
 	unsigned int skb_len;
 
+#ifdef CONFIG_FENCE_WATCHDOG
+	if (unlikely(fence_wdog_check_timer())) {
+		kfree_skb(skb);
+		return NETDEV_TX_OK;
+	}
+#endif
+
 	if (likely(!skb->next)) {
 		netdev_features_t features;
 
@@ -4282,6 +4289,10 @@ static void net_rx_action(struct softirq_action *h)
 
 	local_irq_disable();
 
+#ifdef CONFIG_FENCE_WATCHDOG
+	fence_wdog_check_timer();
+#endif
+
 	while (!list_empty(&sd->poll_list)) {
 		struct napi_struct *n;
 		int work, weight;
@@ -4352,9 +4363,6 @@ static void net_rx_action(struct softirq_action *h)
 out:
 	net_rps_action_and_irq_enable(sd);
 
-#ifdef CONFIG_FENCE_WATCHDOG
-	fence_wdog_check_timer();
-#endif
 	return;
 
 softnet_break:
