@@ -32,15 +32,27 @@ const char *action_names[] = {"crash", "reboot", "halt", NULL};
 
 DEFINE_VVAR(volatile unsigned long, fence_wdog_jiffies64) = MAX_U64;
 static int fence_wdog_action = FENCE_WDOG_CRASH;
+static atomic_t not_fenced = ATOMIC_INIT(-1);
+
+static void do_halt(struct work_struct *dummy)
+{
+	printk(KERN_EMERG"fence-watchdog: %s\n",
+	       action_names[fence_wdog_action]);
+	kernel_halt();
+}
+
+static DECLARE_WORK(halt_work, do_halt);
 
 void fence_wdog_do_fence(void)
 {
 	char *killer = NULL;
 
-	bust_spinlocks(1);
-	printk(KERN_EMERG"fence-watchdog: %s\n",
+	if (fence_wdog_action != FENCE_WDOG_POWEROFF) {
+		bust_spinlocks(1);
+		printk(KERN_EMERG"fence-watchdog: %s\n",
 			action_names[fence_wdog_action]);
-	bust_spinlocks(0);
+		bust_spinlocks(0);
+	}
 
 	switch (fence_wdog_action) {
 	case FENCE_WDOG_CRASH:
@@ -54,19 +66,20 @@ void fence_wdog_do_fence(void)
 		emergency_restart();
 		break;
 	case FENCE_WDOG_POWEROFF:
-		lockdep_off();
-		local_irq_enable();
-		sysdev_shutdown();
-		kmsg_dump(KMSG_DUMP_HALT);
-		machine_halt();
+		schedule_work(&halt_work);
 		break;
 	}
 }
 
-inline void fence_wdog_check_timer(void)
+inline int fence_wdog_check_timer(void)
 {
-	if (get_jiffies_64() > fence_wdog_jiffies64)
-		fence_wdog_do_fence();
+	if (unlikely(get_jiffies_64() > fence_wdog_jiffies64)) {
+		if (atomic_inc_not_zero(&not_fenced))
+			fence_wdog_do_fence();
+		return 1;
+	}
+
+	return 0;
 }
 
 static ssize_t fence_wdog_timer_show(struct kobject *kobj,
