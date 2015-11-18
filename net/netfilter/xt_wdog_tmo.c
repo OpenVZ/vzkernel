@@ -49,3 +49,5 @@ module_exit(wdog_tmo_mt_exit);
 MODULE_AUTHOR("Dmitry Guryanov <dguryanov@parallels.com>");
 MODULE_DESCRIPTION("Xtables: fence watchdog timeout matching");
 MODULE_LICENSE("GPL");
+MODULE_ALIAS("ipt_wdog_tmo");
+MODULE_ALIAS("ip6t_wdog_tmo");
