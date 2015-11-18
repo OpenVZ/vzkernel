@@ -63,4 +63,9 @@ config VE_IPTABLES
 	help
 	  This option controls whether to build VE netfiltering code.
 
+config FENCE_WATCHDOG
+	bool "Fencing watchdog for HA cluster support"
+	depends on X86_64
+	default n
+
 endmenu
