@@ -1410,6 +1410,12 @@ config NETFILTER_XT_MATCH_U32
 
 	  Details and examples are in the kernel module source.
 
+config NETFILTER_XT_MATCH_WDOG_TMO
+	tristate '"wdog_tmo" watchdog timer match'
+	depends on NETFILTER_ADVANCED && NETFILTER_NETLINK && FENCE_WATCHDOG
+	help
+	  This option selects the watchdog timer match module.
+
 endif # NETFILTER_XTABLES
 
 endmenu
