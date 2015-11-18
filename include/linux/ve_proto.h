@@ -31,7 +31,6 @@ static inline bool ve_is_super(struct ve_struct *ve)
 }
 
 #define get_exec_env()		(current->task_ve)
-#define get_env_init(ve)	(ve->ve_ns->pid_ns->child_reaper)
 
 const char *ve_name(struct ve_struct *ve);
 
@@ -121,8 +120,6 @@ static inline struct ve_struct *get_exec_env(void)
 {
 	return NULL;
 }
-
-#define get_env_init(ve)	(ve->ve_ns->pid_ns->child_reaper)
 
 static inline bool ve_is_super(struct ve_struct *ve)
 {
