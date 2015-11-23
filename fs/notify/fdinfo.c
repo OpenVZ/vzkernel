@@ -79,7 +79,8 @@ static int inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
 	struct inotify_inode_mark *inode_mark;
 	struct inode *inode;
 
-	if (!(mark->flags & (FSNOTIFY_MARK_FLAG_ALIVE | FSNOTIFY_MARK_FLAG_INODE)))
+	if (!(mark->flags & FSNOTIFY_MARK_FLAG_ALIVE) ||
+	    !(mark->flags & FSNOTIFY_MARK_FLAG_INODE))
 		return 0;
 
 	inode_mark = container_of(mark, struct inotify_inode_mark, fsn_mark);
