@@ -5204,6 +5204,18 @@ static int memcg_update_kmem_limit(struct mem_cgroup *memcg,
 	return ret;
 }
 
+static bool do_kmem_account = true;
+
+static int __init enable_kmem_account(char *s)
+{
+	if (!strcmp(s, "1"))
+		do_kmem_account = true;
+	else if (!strcmp(s, "0"))
+		do_kmem_account = false;
+	return 1;
+}
+__setup("kmemaccount=", enable_kmem_account);
+
 static int memcg_propagate_kmem(struct mem_cgroup *memcg)
 {
 	int ret = 0;
@@ -5217,7 +5229,7 @@ static int memcg_propagate_kmem(struct mem_cgroup *memcg)
 	 * If the parent cgroup is not kmem-active now, it cannot be activated
 	 * after this point, because it has at least one child already.
 	 */
-	if (memcg_kmem_is_active(parent))
+	if (do_kmem_account || memcg_kmem_is_active(parent))
 		ret = __memcg_activate_kmem(memcg, RESOURCE_MAX);
 	mutex_unlock(&activate_kmem_mutex);
 	return ret;
