@@ -396,7 +396,7 @@ static struct vm_area_struct *vma_to_resize(unsigned long addr,
 		locked = mm->locked_vm << PAGE_SHIFT;
 		lock_limit = rlimit(RLIMIT_MEMLOCK);
 		locked += new_len - old_len;
-		if (locked > lock_limit && !capable(CAP_IPC_LOCK))
+		if (locked > lock_limit && !ve_capable(CAP_IPC_LOCK))
 			goto Eagain;
 	}
 
