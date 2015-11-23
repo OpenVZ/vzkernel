@@ -430,15 +430,27 @@ static void connlimit_mt_destroy(const struct xt_mtdtor_param *par)
 	kfree(info->data);
 }
 
-static struct xt_match connlimit_mt_reg __read_mostly = {
-	.name       = "connlimit",
-	.revision   = 1,
-	.family     = NFPROTO_UNSPEC,
-	.checkentry = connlimit_mt_check,
-	.match      = connlimit_mt,
-	.matchsize  = sizeof(struct xt_connlimit_info),
-	.destroy    = connlimit_mt_destroy,
-	.me         = THIS_MODULE,
+static struct xt_match connlimit_mt_reg[] __read_mostly = {
+	{
+		.name		= "connlimit",
+		.revision	= 0,
+		.family		= NFPROTO_UNSPEC,
+		.checkentry	= connlimit_mt_check,
+		.match		= connlimit_mt,
+		.matchsize	= sizeof(struct xt_connlimit_info),
+		.destroy	= connlimit_mt_destroy,
+		.me		= THIS_MODULE,
+	},
+	{
+		.name		= "connlimit",
+		.revision	= 1,
+		.family		= NFPROTO_UNSPEC,
+		.checkentry	= connlimit_mt_check,
+		.match		= connlimit_mt,
+		.matchsize	= sizeof(struct xt_connlimit_info),
+		.destroy	= connlimit_mt_destroy,
+		.me		= THIS_MODULE,
+	},
 };
 
 static int __init connlimit_mt_init(void)
@@ -464,7 +476,8 @@ static int __init connlimit_mt_init(void)
 		kmem_cache_destroy(connlimit_conn_cachep);
 		return -ENOMEM;
 	}
-	ret = xt_register_match(&connlimit_mt_reg);
+	ret = xt_register_matches(connlimit_mt_reg,
+	      ARRAY_SIZE(connlimit_mt_reg));
 	if (ret != 0) {
 		kmem_cache_destroy(connlimit_conn_cachep);
 		kmem_cache_destroy(connlimit_rb_cachep);
@@ -474,7 +487,7 @@ static int __init connlimit_mt_init(void)
 
 static void __exit connlimit_mt_exit(void)
 {
-	xt_unregister_match(&connlimit_mt_reg);
+	xt_unregister_matches(connlimit_mt_reg, ARRAY_SIZE(connlimit_mt_reg));
 	kmem_cache_destroy(connlimit_conn_cachep);
 	kmem_cache_destroy(connlimit_rb_cachep);
 }
