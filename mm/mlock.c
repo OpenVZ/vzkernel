@@ -25,7 +25,7 @@
 
 int can_do_mlock(void)
 {
-	if (capable(CAP_IPC_LOCK))
+	if (ve_capable(CAP_IPC_LOCK))
 		return 1;
 	if (rlimit(RLIMIT_MEMLOCK) != 0)
 		return 1;
@@ -485,7 +485,7 @@ SYSCALL_DEFINE2(mlock, unsigned long, start, size_t, len)
 	lock_limit >>= PAGE_SHIFT;
 
 	/* check against resource limits */
-	if ((locked <= lock_limit) || capable(CAP_IPC_LOCK))
+	if ((locked <= lock_limit) || ve_capable(CAP_IPC_LOCK))
 		error = do_mlock(start, len, 1);
 	up_write(&current->mm->mmap_sem);
 	if (!error)
@@ -552,7 +552,7 @@ SYSCALL_DEFINE1(mlockall, int, flags)
 
 	ret = -ENOMEM;
 	if (!(flags & MCL_CURRENT) || (current->mm->total_vm <= lock_limit) ||
-	    capable(CAP_IPC_LOCK))
+	    ve_capable(CAP_IPC_LOCK))
 		ret = do_mlockall(flags);
 	up_write(&current->mm->mmap_sem);
 	if (!ret && (flags & MCL_CURRENT))
@@ -589,7 +589,7 @@ int user_shm_lock(size_t size, struct user_struct *user)
 	lock_limit >>= PAGE_SHIFT;
 	spin_lock(&shmlock_user_lock);
 	if (!allowed &&
-	    locked + user->locked_shm > lock_limit && !capable(CAP_IPC_LOCK))
+	    locked + user->locked_shm > lock_limit && !ve_capable(CAP_IPC_LOCK))
 		goto out;
 	get_uid(user);
 	user->locked_shm += locked;
