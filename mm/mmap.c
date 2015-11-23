@@ -1293,7 +1293,7 @@ unsigned long do_mmap_pgoff(struct file *file, unsigned long addr,
 		locked += mm->locked_vm;
 		lock_limit = rlimit(RLIMIT_MEMLOCK);
 		lock_limit >>= PAGE_SHIFT;
-		if (locked > lock_limit && !capable(CAP_IPC_LOCK))
+		if (locked > lock_limit && !ve_capable(CAP_IPC_LOCK))
 			return -EAGAIN;
 	}
 
@@ -2149,7 +2149,7 @@ static int acct_stack_growth(struct vm_area_struct *vma, unsigned long size, uns
 		locked = mm->locked_vm + grow;
 		limit = ACCESS_ONCE(rlim[RLIMIT_MEMLOCK].rlim_cur);
 		limit >>= PAGE_SHIFT;
-		if (locked > limit && !capable(CAP_IPC_LOCK))
+		if (locked > limit && !ve_capable(CAP_IPC_LOCK))
 			return -ENOMEM;
 	}
 
@@ -2718,7 +2718,7 @@ static unsigned long do_brk(unsigned long addr, unsigned long len, int soft)
 		locked += mm->locked_vm;
 		lock_limit = rlimit(RLIMIT_MEMLOCK);
 		lock_limit >>= PAGE_SHIFT;
-		if (locked > lock_limit && !capable(CAP_IPC_LOCK))
+		if (locked > lock_limit && !ve_capable(CAP_IPC_LOCK))
 			return -EAGAIN;
 	}
 
