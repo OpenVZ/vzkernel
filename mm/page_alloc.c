@@ -155,6 +155,24 @@ static inline void set_pcppage_migratetype(struct page *page, int migratetype)
 	page->index = migratetype;
 }
 
+static int zero_data_pages_enabled;
+struct static_key __initdata zero_free_pages = STATIC_KEY_INIT_FALSE;
+
+static int __init enable_zero_free_pages(char *__unused)
+{
+	zero_data_pages_enabled = 1;
+	return 1;
+}
+__setup("zero-free-pages", enable_zero_free_pages);
+
+static int __init setup_zero_free_pages(void)
+{
+	if (zero_data_pages_enabled)
+		static_key_slow_inc(&zero_free_pages);
+	return 0;
+}
+early_initcall(setup_zero_free_pages);
+
 #ifdef CONFIG_PM_SLEEP
 /*
  * The following functions are used by the suspend/hibernate code to temporarily
@@ -1035,6 +1053,9 @@ static __always_inline bool free_pages_prepare(struct page *page,
 				continue;
 			}
 			(page + i)->flags &= ~PAGE_FLAGS_CHECK_AT_PREP;
+
+			if (static_key_false(&zero_free_pages))
+				clear_highpage(page + i);
 		}
 	}
 	if (PageMappingFlags(page))
@@ -1045,6 +1066,9 @@ static __always_inline bool free_pages_prepare(struct page *page,
 		bad += free_pages_check(page);
 	if (bad)
 		return false;
+
+	if (static_key_false(&zero_free_pages))
+		clear_highpage(page);
 
 	page_cpupid_reset_last(page);
 	page->flags &= ~PAGE_FLAGS_CHECK_AT_PREP;
