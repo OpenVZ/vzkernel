@@ -128,6 +128,24 @@ unsigned long dirty_balance_reserve __read_mostly;
 int percpu_pagelist_fraction;
 gfp_t gfp_allowed_mask __read_mostly = GFP_BOOT_MASK;
 
+static int zero_data_pages_enabled;
+struct static_key __initdata zero_free_pages = STATIC_KEY_INIT_FALSE;
+
+static int __init enable_zero_free_pages(char *__unused)
+{
+	zero_data_pages_enabled = 1;
+	return 1;
+}
+__setup("zero-free-pages", enable_zero_free_pages);
+
+static int __init setup_zero_free_pages(void)
+{
+	if (zero_data_pages_enabled)
+		static_key_slow_inc(&zero_free_pages);
+	return 0;
+}
+early_initcall(setup_zero_free_pages);
+
 #ifdef CONFIG_PM_SLEEP
 /*
  * The following functions are used by the suspend/hibernate code to temporarily
@@ -977,8 +995,11 @@ static bool free_pages_prepare(struct page *page, unsigned int order)
 	if (PageAnon(page))
 		page->mapping = NULL;
 	memcg_kmem_uncharge_pages(page, order);
-	for (i = 0; i < (1 << order); i++)
+	for (i = 0; i < (1 << order); i++) {
 		bad += free_pages_check(page + i);
+		if (static_key_false(&zero_free_pages))
+			clear_highpage(page + i);
+	}
 	if (bad)
 		return false;
 
