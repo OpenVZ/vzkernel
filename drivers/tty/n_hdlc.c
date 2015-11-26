@@ -158,7 +158,6 @@ struct n_hdlc {
  */
 static void n_hdlc_buf_return(struct n_hdlc_buf_list *buf_list,
 						struct n_hdlc_buf *buf);
-static void n_hdlc_buf_list_init(struct n_hdlc_buf_list *list);
 static void n_hdlc_buf_put(struct n_hdlc_buf_list *list,
 			   struct n_hdlc_buf *buf);
 static struct n_hdlc_buf *n_hdlc_buf_get(struct n_hdlc_buf_list *list);
@@ -844,10 +843,10 @@ static struct n_hdlc *n_hdlc_alloc(void)
 
 	memset(n_hdlc, 0, sizeof(*n_hdlc));
 
-	n_hdlc_buf_list_init(&n_hdlc->rx_free_buf_list);
-	n_hdlc_buf_list_init(&n_hdlc->tx_free_buf_list);
-	n_hdlc_buf_list_init(&n_hdlc->rx_buf_list);
-	n_hdlc_buf_list_init(&n_hdlc->tx_buf_list);
+	spin_lock_init(&n_hdlc->rx_free_buf_list.spinlock);
+	spin_lock_init(&n_hdlc->tx_free_buf_list.spinlock);
+	spin_lock_init(&n_hdlc->rx_buf_list.spinlock);
+	spin_lock_init(&n_hdlc->tx_buf_list.spinlock);
 	
 	/* allocate free rx buffer list */
 	for(i=0;i<DEFAULT_RX_BUF_COUNT;i++) {
@@ -874,17 +873,6 @@ static struct n_hdlc *n_hdlc_alloc(void)
 	return n_hdlc;
 	
 }	/* end of n_hdlc_alloc() */
-
-/**
- * n_hdlc_buf_list_init - initialize specified HDLC buffer list
- * @list - pointer to buffer list
- */
-static void n_hdlc_buf_list_init(struct n_hdlc_buf_list *list)
-{
-	memset(list, 0, sizeof(*list));
-	spin_lock_init(&list->spinlock);
-	INIT_LIST_HEAD(&list->list);
-}	/* end of n_hdlc_buf_list_init() */
 
 /**
  * n_hdlc_buf_return - put the HDLC buffer after the head of the specified list
