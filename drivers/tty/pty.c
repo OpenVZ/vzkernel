@@ -950,7 +950,6 @@ static DEFINE_IDR(vtty_idr);
 
 static struct file_operations vtty_fops;
 
-#define MAX_NR_VTTY_CONSOLES	(12)
 #define vtty_match_index(idx)	((idx) >= 0 && (idx) < MAX_NR_VTTY_CONSOLES)
 
 typedef struct {
