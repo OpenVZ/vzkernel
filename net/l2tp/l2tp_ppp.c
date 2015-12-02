@@ -1751,9 +1751,6 @@ static __net_init int pppol2tp_init_net(struct net *net)
 	struct proc_dir_entry *pde;
 	int err = 0;
 
-	if (!(net->owner_ve->features & VE_FEATURE_PPP))
-		return net_assign_generic(net, pppol2tp_net_id, NULL);
-
 	pde = proc_create("pppol2tp", S_IRUGO, net->proc_net,
 			  &pppol2tp_proc_fops);
 	if (!pde) {
@@ -1767,12 +1764,6 @@ out:
 
 static __net_exit void pppol2tp_exit_net(struct net *net)
 {
-	struct pppoe_net *pn;
-
-	pn = net_generic(net, pppol2tp_net_id);
-	if (!pn) /* no VE_FEATURE_PPP */
-		return;
-
 	remove_proc_entry("pppol2tp", net->proc_net);
 }
 
