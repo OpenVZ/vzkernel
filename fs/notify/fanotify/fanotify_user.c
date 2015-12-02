@@ -720,7 +720,7 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 	pr_debug("%s: flags=%d event_f_flags=%d\n",
 		__func__, flags, event_f_flags);
 
-	if (!capable(CAP_SYS_ADMIN))
+	if (!ve_capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
 #ifdef CONFIG_AUDITSYSCALL
@@ -795,7 +795,7 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 
 	if (flags & FAN_UNLIMITED_QUEUE) {
 		fd = -EPERM;
-		if (!capable(CAP_SYS_ADMIN))
+		if (!ve_capable(CAP_SYS_ADMIN))
 			goto out_destroy_group;
 		group->max_events = UINT_MAX;
 	} else {
@@ -804,7 +804,7 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 
 	if (flags & FAN_UNLIMITED_MARKS) {
 		fd = -EPERM;
-		if (!capable(CAP_SYS_ADMIN))
+		if (!ve_capable(CAP_SYS_ADMIN))
 			goto out_destroy_group;
 		group->fanotify_data.max_marks = UINT_MAX;
 	} else {
