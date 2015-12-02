@@ -219,6 +219,7 @@ extern bool current_user_ns_initial(void);
 struct user_namespace *ve_init_user_ns(void);
 
 #ifdef CONFIG_TTY
+#define MAX_NR_VTTY_CONSOLES	(12)
 extern struct tty_driver *vtty_driver(dev_t dev, int *index);
 extern struct tty_driver *vtty_console_driver(int *index);
 extern int vtty_open_master(envid_t veid, int idx);

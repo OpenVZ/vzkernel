@@ -3653,17 +3653,25 @@ void console_sysfs_notify(void)
 void ve_tty_console_fini(struct ve_struct *ve)
 {
 	struct device *consdev = ve->consdev;
+	int i;
 
 	ve->consdev = NULL;
 	device_remove_file(consdev, &dev_attr_active);
 	device_destroy_namespace(tty_class, MKDEV(TTYAUX_MAJOR, 1), ve);
 	device_destroy_namespace(tty_class, MKDEV(TTYAUX_MAJOR, 0), ve);
+
+	if (!ve_is_super(ve)) {
+		for (i = 0; i <= MAX_NR_VTTY_CONSOLES; i++) {
+			device_destroy_namespace(tty_class,
+						 MKDEV(TTY_MAJOR, i), ve);
+		}
+	}
 }
 
 int ve_tty_console_init(struct ve_struct *ve)
 {
-	struct device *dev;
-	int err;
+	struct device *dev, *d;
+	int err, i;
 
 	dev = device_create(tty_class, NULL, MKDEV(TTYAUX_MAJOR, 0), ve, "tty");
 	if (IS_ERR(dev))
@@ -3678,6 +3686,23 @@ int ve_tty_console_init(struct ve_struct *ve)
 	err = device_create_file(dev, &dev_attr_active);
 	if (err)
 		goto err_consfile;
+
+	if (!ve_is_super(ve)) {
+		for (i = 0; i <= MAX_NR_VTTY_CONSOLES; i++) {
+			d = device_create(tty_class, NULL, MKDEV(TTY_MAJOR, i),
+					  ve, "tty%d", i);
+			if (IS_ERR(d)) {
+				err = PTR_ERR(dev);
+
+				while (i-- > 0)
+					device_destroy_namespace(tty_class,
+								 MKDEV(TTY_MAJOR, i),
+								 ve);
+				device_remove_file(dev, &dev_attr_active);
+				goto err_consfile;
+			}
+		}
+	}
 
 	ve->consdev = dev;
 	return 0;
