@@ -250,7 +250,7 @@ static unsigned long tswap_shrink_scan(struct shrinker *shrink,
 static struct shrinker tswap_shrinker = {
 	.count_objects = tswap_shrink_count,
 	.scan_objects = tswap_shrink_scan,
-	.seeks = DEFAULT_SEEKS,
+	.seeks = 1,
 	.flags = SHRINKER_NUMA_AWARE,
 };
 
