@@ -1668,8 +1668,10 @@ out:
 		if (!((vm_flags & VM_SPECIAL) || is_vm_hugetlb_page(vma) ||
 					vma == get_gate_vma(current->mm)))
 			mm->locked_vm += (len >> PAGE_SHIFT);
-		else
+		else {
 			vma->vm_flags &= ~VM_LOCKED;
+			ub_locked_uncharge(mm, len);
+		}
 	}
 
 	if (file)
