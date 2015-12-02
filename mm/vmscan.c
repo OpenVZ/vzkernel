@@ -262,7 +262,7 @@ static unsigned long do_shrink_slab(struct shrink_control *shrinkctl,
 	nr = atomic_long_xchg(&shrinker->nr_deferred[nid], 0);
 
 	total_scan = nr;
-	delta = (4 * nr_scanned) / shrinker->seeks;
+	delta = nr_scanned / shrinker->seeks;
 	delta *= max_pass;
 	do_div(delta, nr_eligible + 1);
 	total_scan += delta;
