@@ -5086,6 +5086,12 @@ int ext4_convert_unwritten_extents(handle_t *handle, struct inode *inode,
 	max_blocks = ((EXT4_BLOCK_ALIGN(len + offset, blkbits) >> blkbits) -
 		      map.m_lblk);
 	/*
+	 * Protect us against freezing - AIO-DIO case. Caller didn't have to
+	 * have any protection against it
+	 */
+	sb_start_intwrite(inode->i_sb);
+
+	/*
 	 * This is somewhat ugly but the idea is clear: When transaction is
 	 * reserved, everything goes into it. Otherwise we rather start several
 	 * smaller transactions for conversion of each extent separately.
@@ -5093,8 +5099,10 @@ int ext4_convert_unwritten_extents(handle_t *handle, struct inode *inode,
 	if (handle) {
 		handle = ext4_journal_start_reserved(handle,
 						     EXT4_HT_EXT_CONVERT);
-		if (IS_ERR(handle))
+		if (IS_ERR(handle)) {
+			sb_end_intwrite(inode->i_sb);
 			return PTR_ERR(handle);
+		}
 		credits = 0;
 	} else {
 		/*
@@ -5129,6 +5137,7 @@ int ext4_convert_unwritten_extents(handle_t *handle, struct inode *inode,
 	}
 	if (!credits)
 		ret2 = ext4_journal_stop(handle);
+	sb_end_intwrite(inode->i_sb);
 	return ret > 0 ? ret2 : ret;
 }
 
