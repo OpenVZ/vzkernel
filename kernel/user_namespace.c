@@ -49,8 +49,10 @@ static void set_cred_user_ns(struct cred *cred, struct user_namespace *user_ns)
 	cred->user_ns = user_ns;
 }
 
-/* While user namespaces remain in tech preview disable them */
-static bool enable_user_ns_creation;
+/* While user namespaces remain in tech preview in RHEL7 - they are disabled by
+ * default. Virtuozzo Containers are run in user namespaces, so enable them by
+ * default. */
+static bool enable_user_ns_creation = true;
 module_param_named(enable, enable_user_ns_creation, bool, 0444);
 MODULE_PARM_DESC(enable, "Enable creation of new user namespaces");
 
