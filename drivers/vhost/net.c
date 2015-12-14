@@ -864,7 +864,7 @@ static int vhost_net_open(struct inode *inode, struct file *f)
 	}
 	r = vhost_dev_init(dev, vqs, VHOST_NET_VQ_MAX);
 	if (r < 0) {
-		kfree(n);
+		vhost_net_free(n);
 		kfree(vqs);
 		return r;
 	}
