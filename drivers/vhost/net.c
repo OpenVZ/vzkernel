@@ -981,7 +981,7 @@ static int vhost_net_open(struct inode *inode, struct file *f)
 			   UIO_MAXIOV + VHOST_RX_BATCH,
 			   VHOST_NET_PKT_WEIGHT, VHOST_NET_WEIGHT);
 	if (r < 0) {
-		kfree(n);
+		vhost_net_free(n);
 		kfree(vqs);
 		return r;
 	}
