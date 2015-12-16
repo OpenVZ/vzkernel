@@ -121,6 +121,25 @@ struct ipv6_txoptions *ipv6_update_options(struct sock *sk,
 	return opt;
 }
 
+static bool setsockopt_needs_rtnl(int optname)
+{
+	switch (optname) {
+	case IPV6_ADD_MEMBERSHIP:
+	case IPV6_DROP_MEMBERSHIP:
+	case IPV6_JOIN_ANYCAST:
+	case IPV6_LEAVE_ANYCAST:
+	case MCAST_JOIN_GROUP:
+	case MCAST_LEAVE_GROUP:
+	case MCAST_JOIN_SOURCE_GROUP:
+	case MCAST_LEAVE_SOURCE_GROUP:
+	case MCAST_BLOCK_SOURCE:
+	case MCAST_UNBLOCK_SOURCE:
+	case MCAST_MSFILTER:
+		return true;
+	}
+	return false;
+}
+
 static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
 		    char __user *optval, unsigned int optlen)
 {
@@ -128,6 +147,7 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
 	struct net *net = sock_net(sk);
 	int val, valbool;
 	int retv = -ENOPROTOOPT;
+	bool needs_rtnl = setsockopt_needs_rtnl(optname);
 
 	if (optval == NULL)
 		val=0;
@@ -144,6 +164,8 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
 	if (ip6_mroute_opt(optname))
 		return ip6_mroute_setsockopt(sk, optname, optval, optlen);
 
+	if (needs_rtnl)
+		rtnl_lock();
 	lock_sock(sk);
 
 	switch (optname) {
@@ -174,7 +196,7 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
 			}
 
 			if (ipv6_only_sock(sk) ||
-			    !ipv6_addr_v4mapped(&np->daddr)) {
+			    !ipv6_addr_v4mapped(&sk->sk_v6_daddr)) {
 				retv = -EADDRNOTAVAIL;
 				break;
 			}
@@ -628,10 +650,10 @@ done:
 		psin6 = (struct sockaddr_in6 *)&greq.gr_group;
 		if (optname == MCAST_JOIN_GROUP)
 			retv = ipv6_sock_mc_join(sk, greq.gr_interface,
-				&psin6->sin6_addr);
+						 &psin6->sin6_addr);
 		else
 			retv = ipv6_sock_mc_drop(sk, greq.gr_interface,
-				&psin6->sin6_addr);
+						 &psin6->sin6_addr);
 		break;
 	}
 	case MCAST_JOIN_SOURCE_GROUP:
@@ -664,7 +686,7 @@ done:
 
 			psin6 = (struct sockaddr_in6 *)&greqs.gsr_group;
 			retv = ipv6_sock_mc_join(sk, greqs.gsr_interface,
-				&psin6->sin6_addr);
+						 &psin6->sin6_addr);
 			/* prior join w/ different source is ok */
 			if (retv && retv != -EADDRINUSE)
 				break;
@@ -722,7 +744,7 @@ done:
 	case IPV6_MTU_DISCOVER:
 		if (optlen < sizeof(int))
 			goto e_inval;
-		if (val < IP_PMTUDISC_DONT || val > IP_PMTUDISC_PROBE)
+		if (val < IPV6_PMTUDISC_DONT || val > IPV6_PMTUDISC_OMIT)
 			goto e_inval;
 		np->pmtudisc = val;
 		retv = 0;
@@ -837,11 +859,15 @@ pref_skip_coa:
 	}
 
 	release_sock(sk);
+	if (needs_rtnl)
+		rtnl_unlock();
 
 	return retv;
 
 e_inval:
 	release_sock(sk);
+	if (needs_rtnl)
+		rtnl_unlock();
 	return -EINVAL;
 }
 
@@ -1011,7 +1037,7 @@ static int do_ipv6_getsockopt(struct sock *sk, int level, int optname,
 				struct in6_pktinfo src_info;
 				src_info.ipi6_ifindex = np->mcast_oif ? np->mcast_oif :
 					np->sticky_pktinfo.ipi6_ifindex;
-				src_info.ipi6_addr = np->mcast_oif ? np->daddr : np->sticky_pktinfo.ipi6_addr;
+				src_info.ipi6_addr = np->mcast_oif ? sk->sk_v6_daddr : np->sticky_pktinfo.ipi6_addr;
 				put_cmsg(&msg, SOL_IPV6, IPV6_PKTINFO, sizeof(src_info), &src_info);
 			}
 			if (np->rxopt.bits.rxhlim) {
@@ -1026,7 +1052,8 @@ static int do_ipv6_getsockopt(struct sock *sk, int level, int optname,
 				struct in6_pktinfo src_info;
 				src_info.ipi6_ifindex = np->mcast_oif ? np->mcast_oif :
 					np->sticky_pktinfo.ipi6_ifindex;
-				src_info.ipi6_addr = np->mcast_oif ? np->daddr : np->sticky_pktinfo.ipi6_addr;
+				src_info.ipi6_addr = np->mcast_oif ? sk->sk_v6_daddr :
+								     np->sticky_pktinfo.ipi6_addr;
 				put_cmsg(&msg, SOL_IPV6, IPV6_2292PKTINFO, sizeof(src_info), &src_info);
 			}
 			if (np->rxopt.bits.rxohlim) {

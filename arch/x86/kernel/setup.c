@@ -50,6 +50,7 @@
 #include <linux/init_ohci1394_dma.h>
 #include <linux/kvm_para.h>
 #include <linux/dma-contiguous.h>
+#include <linux/security.h>
 
 #include <linux/errno.h>
 #include <linux/kernel.h>
@@ -69,6 +70,7 @@
 #include <linux/crash_dump.h>
 #include <linux/tboot.h>
 #include <linux/jiffies.h>
+#include <linux/cpumask.h>
 
 #include <video/edid.h>
 
@@ -170,7 +172,7 @@ static struct resource bss_resource = {
 
 #ifdef CONFIG_X86_32
 /* cpu data as detected by the assembly code in head.S */
-struct cpuinfo_x86 new_cpu_data __cpuinitdata = {
+struct cpuinfo_x86 new_cpu_data = {
 	.wp_works_ok = -1,
 };
 /* common cpu data for all cpus */
@@ -178,6 +180,12 @@ struct cpuinfo_x86 boot_cpu_data __read_mostly = {
 	.wp_works_ok = -1,
 };
 EXPORT_SYMBOL(boot_cpu_data);
+/* KABI immune per_cpu data */
+struct rh_cpuinfo_x86 rh_boot_cpu_data __read_mostly = {
+	.x86_cache_max_rmid = -1,
+	.x86_cache_occ_scale = -1,
+};
+EXPORT_SYMBOL(rh_boot_cpu_data);
 
 unsigned int def_to_bigsmp;
 
@@ -202,6 +210,12 @@ struct cpuinfo_x86 boot_cpu_data __read_mostly = {
 	.x86_phys_bits = MAX_PHYSMEM_BITS,
 };
 EXPORT_SYMBOL(boot_cpu_data);
+/* KABI immune per_cpu data */
+struct rh_cpuinfo_x86 rh_boot_cpu_data __read_mostly = {
+	.x86_cache_max_rmid = -1,
+	.x86_cache_occ_scale = -1,
+};
+EXPORT_SYMBOL(rh_boot_cpu_data);
 #endif
 
 
@@ -426,34 +440,34 @@ static void __init reserve_initrd(void)
 static void __init parse_setup_data(void)
 {
 	struct setup_data *data;
-	u64 pa_data;
+	u64 pa_data, pa_next;
 
 	pa_data = boot_params.hdr.setup_data;
 	while (pa_data) {
-		u32 data_len, map_len;
+		u32 data_len, map_len, data_type;
 
 		map_len = max(PAGE_SIZE - (pa_data & ~PAGE_MASK),
 			      (u64)sizeof(struct setup_data));
 		data = early_memremap(pa_data, map_len);
 		data_len = data->len + sizeof(struct setup_data);
-		if (data_len > map_len) {
-			early_iounmap(data, map_len);
-			data = early_memremap(pa_data, data_len);
-			map_len = data_len;
-		}
+		data_type = data->type;
+		pa_next = data->next;
+		early_iounmap(data, map_len);
 
-		switch (data->type) {
+		switch (data_type) {
 		case SETUP_E820_EXT:
-			parse_e820_ext(data);
+			parse_e820_ext(pa_data, data_len);
 			break;
 		case SETUP_DTB:
 			add_dtb(pa_data);
 			break;
+		case SETUP_EFI:
+			parse_efi_setup(pa_data, data_len);
+			break;
 		default:
 			break;
 		}
-		pa_data = data->next;
-		early_iounmap(data, map_len);
+		pa_data = pa_next;
 	}
 }
 
@@ -531,12 +545,14 @@ static void __init reserve_crashkernel_low(void)
 	if (ret != 0) {
 		/*
 		 * two parts from lib/swiotlb.c:
-		 *	swiotlb size: user specified with swiotlb= or default.
-		 *	swiotlb overflow buffer: now is hardcoded to 32k.
-		 *		We round it to 8M for other buffers that
-		 *		may need to stay low too.
+		 * -swiotlb size: user-specified with swiotlb= or default.
+		 *
+		 * -swiotlb overflow buffer: now hardcoded to 32k. We round it
+		 * to 8M for other buffers that may need to stay low too. Also
+		 * make sure we allocate enough extra low memory so that we
+		 * don't run out of DMA buffers for 32-bit devices.
 		 */
-		low_size = swiotlb_size_or_default() + (8UL<<20);
+		low_size = max(swiotlb_size_or_default() + (8UL<<20), 256UL<<20);
 		auto_set = true;
 	} else {
 		/* passed with crashkernel=0,low ? */
@@ -596,7 +612,22 @@ static void __init reserve_crashkernel(void)
 					high ? CRASH_KERNEL_ADDR_HIGH_MAX :
 					       CRASH_KERNEL_ADDR_LOW_MAX,
 					crash_size, alignment);
-
+#ifdef CONFIG_X86_64
+		/*
+		 * crashkernel=X reserve below 896M fails? Try below 4G
+		 */
+		if (!high && !crash_base)
+			crash_base = memblock_find_in_range(alignment,
+						(1ULL << 32),
+						crash_size, alignment);
+		/*
+		 * crashkernel=X reserve below 4G fails? Try MAXMEM
+		 */
+		if (!high && !crash_base)
+			crash_base = memblock_find_in_range(alignment,
+						CRASH_KERNEL_ADDR_HIGH_MAX,
+						crash_size, alignment);
+#endif
 		if (!crash_base) {
 			pr_info("crashkernel reservation failed - No suitable area found.\n");
 			return;
@@ -826,6 +857,62 @@ static void __init trim_low_memory_range(void)
 	memblock_reserve(0, ALIGN(reserve_low, PAGE_SIZE));
 }
 	
+static void rh_check_supported(void)
+{
+	/* RHEL7 supports single cpu on guests only */
+	if (((boot_cpu_data.x86_max_cores * smp_num_siblings) == 1) &&
+	    !x86_hyper && !cpu_has_hypervisor && !is_kdump_kernel()) {
+		pr_crit("Detected single cpu native boot.\n");
+		pr_crit("Important:  In Red Hat Enterprise Linux 7, single threaded, single CPU 64-bit physical systems are unsupported by Red Hat. Please contact your Red Hat support representative for a list of certified and supported systems.");
+	}
+
+	/* The RHEL7 kernel does not support this hardware.  The kernel will
+	 * attempt to boot, but no support is given for this hardware */
+
+	/* RHEL only supports Intel and AMD processors */
+	if ((boot_cpu_data.x86_vendor != X86_VENDOR_INTEL) &&
+	    (boot_cpu_data.x86_vendor != X86_VENDOR_AMD)) {
+		pr_crit("Detected processor %s %s\n",
+			boot_cpu_data.x86_vendor_id,
+			boot_cpu_data.x86_model_id);
+		mark_hardware_unsupported("Processor");
+	}
+
+	/* Intel CPU family 6, model greater than 60 */
+	if ((boot_cpu_data.x86_vendor == X86_VENDOR_INTEL) &&
+	    ((boot_cpu_data.x86 == 6))) {
+		switch (boot_cpu_data.x86_model) {
+		case 94: /* Skylake-S */
+		case 86: /* Broadwell-DE SoC */
+		case 79: /* Broadwell-EP */
+		case 78: /* Skylake-Y */
+		case 77: /* Atom Avoton */
+		case 71: /* Broadwell-H */
+		case 70: /* Crystal Well */
+		case 69: /* Haswell ULT */
+			break;
+		default:
+			if (boot_cpu_data.x86_model > 63) {
+				printk(KERN_CRIT
+				       "Detected CPU family %d model %d\n",
+				       boot_cpu_data.x86,
+				       boot_cpu_data.x86_model);
+				mark_hardware_unsupported("Intel CPU model");
+			}
+			break;
+		}
+	}
+
+	/*
+	 * Due to the complexity of x86 lapic & ioapic enumeration, and PCI IRQ
+	 * routing, ACPI is required for x86.  acpi=off is a valid debug kernel
+	 * parameter, so just print out a loud warning in case something
+	 * goes wrong (which is most of the time).
+	 */
+	if (acpi_disabled && !x86_hyper && !cpu_has_hypervisor)
+		pr_crit("ACPI has been disabled or is not available on this hardware.  This may result in a single cpu boot, incorrect PCI IRQ routing, or boot failure.\n");
+}
+
 /*
  * Determine if we were loaded by an EFI loader.  If so, then we have also been
  * passed the efi memmap, systab, etc., so we should use these data structures
@@ -927,8 +1014,6 @@ void __init setup_arch(char **cmdline_p)
 	iomem_resource.end = (1ULL << boot_cpu_data.x86_phys_bits) - 1;
 	setup_memory_map();
 	parse_setup_data();
-	/* update the e820_saved too */
-	e820_reserve_setup_data();
 
 	copy_edd();
 
@@ -990,12 +1075,15 @@ void __init setup_arch(char **cmdline_p)
 		early_dump_pci_devices();
 #endif
 
+	/* update the e820_saved too */
+	e820_reserve_setup_data();
 	finish_e820_parsing();
 
 	if (efi_enabled(EFI_BOOT))
 		efi_init();
 
 	dmi_scan_machine();
+	dmi_memdev_walk();
 	dmi_set_dump_stack_arch_desc();
 
 	/*
@@ -1125,11 +1213,17 @@ void __init setup_arch(char **cmdline_p)
 	acpi_initrd_override((void *)initrd_start, initrd_end - initrd_start);
 #endif
 
-	reserve_crashkernel();
-
 	vsmp_init();
 
 	io_delay_init();
+
+#ifdef CONFIG_EFI_SECURE_BOOT_SECURELEVEL
+	if (boot_params.secure_boot) {
+		set_bit(EFI_SECURE_BOOT, &x86_efi_facility);
+		set_securelevel(1);
+		pr_info("Secure boot enabled\n");
+	}
+#endif
 
 	/*
 	 * Parse the ACPI tables for possible boot-time SMP configuration.
@@ -1139,6 +1233,13 @@ void __init setup_arch(char **cmdline_p)
 	early_acpi_boot_init();
 
 	initmem_init();
+
+	/*
+	 * Reserve memory for crash kernel after SRAT is parsed so that it
+	 * won't consume hotpluggable memory.
+	 */
+	reserve_crashkernel();
+
 	memblock_find_dma_reserve();
 
 #ifdef CONFIG_KVM_GUEST
@@ -1220,15 +1321,11 @@ void __init setup_arch(char **cmdline_p)
 	register_refined_jiffies(CLOCK_TICK_RATE);
 
 #ifdef CONFIG_EFI
-	/* Once setup is done above, unmap the EFI memory map on
-	 * mismatched firmware/kernel archtectures since there is no
-	 * support for runtime services.
-	 */
-	if (efi_enabled(EFI_BOOT) && !efi_is_native()) {
-		pr_info("efi: Setup done, disabling due to 32/64-bit mismatch\n");
-		efi_unmap_memmap();
-	}
+	if (efi_enabled(EFI_BOOT))
+		efi_apply_memmap_quirks();
 #endif
+
+	rh_check_supported();
 }
 
 #ifdef CONFIG_X86_32

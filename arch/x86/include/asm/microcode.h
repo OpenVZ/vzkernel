@@ -10,6 +10,7 @@ struct cpu_signature {
 struct device;
 
 enum ucode_state { UCODE_ERROR, UCODE_OK, UCODE_NFOUND };
+extern bool dis_ucode_ldr;
 
 struct microcode_ops {
 	enum ucode_state (*request_microcode_user) (int cpu,
@@ -60,11 +61,11 @@ static inline void __exit exit_amd_microcode(void) {}
 #ifdef CONFIG_MICROCODE_EARLY
 #define MAX_UCODE_COUNT 128
 extern void __init load_ucode_bsp(void);
-extern void __cpuinit load_ucode_ap(void);
+extern void load_ucode_ap(void);
 extern int __init save_microcode_in_initrd(void);
 #else
 static inline void __init load_ucode_bsp(void) {}
-static inline void __cpuinit load_ucode_ap(void) {}
+static inline void load_ucode_ap(void) {}
 static inline int __init save_microcode_in_initrd(void)
 {
 	return 0;

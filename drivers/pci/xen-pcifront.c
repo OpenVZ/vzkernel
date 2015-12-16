@@ -20,6 +20,7 @@
 #include <linux/workqueue.h>
 #include <linux/bitops.h>
 #include <linux/time.h>
+#include <xen/platform_pci.h>
 
 #include <asm/xen/swiotlb-xen.h>
 #define INVALID_GRANT_REF (0)
@@ -678,10 +679,9 @@ static int pcifront_connect_and_init_dma(struct pcifront_device *pdev)
 	if (!pcifront_dev) {
 		dev_info(&pdev->xdev->dev, "Installing PCI frontend\n");
 		pcifront_dev = pdev;
-	} else {
-		dev_err(&pdev->xdev->dev, "PCI frontend already installed!\n");
+	} else
 		err = -EEXIST;
-	}
+
 	spin_unlock(&pcifront_dev_lock);
 
 	if (!err && !swiotlb_nr_tbl()) {
@@ -848,7 +848,7 @@ static int pcifront_try_connect(struct pcifront_device *pdev)
 		goto out;
 
 	err = pcifront_connect_and_init_dma(pdev);
-	if (err) {
+	if (err && err != -EEXIST) {
 		xenbus_dev_fatal(pdev->xdev, err,
 				 "Error setting up PCI Frontend");
 		goto out;
@@ -1137,6 +1137,9 @@ static DEFINE_XENBUS_DRIVER(xenpci, "pcifront",
 static int __init pcifront_init(void)
 {
 	if (!xen_pv_domain() || xen_initial_domain())
+		return -ENODEV;
+
+	if (!xen_has_pv_devices())
 		return -ENODEV;
 
 	pci_frontend_registrar(1 /* enable */);

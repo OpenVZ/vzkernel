@@ -264,6 +264,7 @@ void free_pid(struct pid *pid)
 		struct pid_namespace *ns = upid->ns;
 		hlist_del_rcu(&upid->pid_chain);
 		switch(--ns->nr_hashed) {
+		case 2:
 		case 1:
 			/* When all that is left in the pid namespace
 			 * is the reaper wake up the reaper.  The reaper
@@ -373,14 +374,10 @@ EXPORT_SYMBOL_GPL(find_vpid);
 /*
  * attach_pid() must be called with the tasklist_lock write-held.
  */
-void attach_pid(struct task_struct *task, enum pid_type type,
-		struct pid *pid)
+void attach_pid(struct task_struct *task, enum pid_type type)
 {
-	struct pid_link *link;
-
-	link = &task->pids[type];
-	link->pid = pid;
-	hlist_add_head_rcu(&link->node, &pid->tasks[type]);
+	struct pid_link *link = &task->pids[type];
+	hlist_add_head_rcu(&link->node, &link->pid->tasks[type]);
 }
 
 static void __change_pid(struct task_struct *task, enum pid_type type,
@@ -412,7 +409,7 @@ void change_pid(struct task_struct *task, enum pid_type type,
 		struct pid *pid)
 {
 	__change_pid(task, type, pid);
-	attach_pid(task, type, pid);
+	attach_pid(task, type);
 }
 
 /* transfer_pid is an optimization of attach_pid(new), detach_pid(old) */

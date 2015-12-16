@@ -349,12 +349,25 @@ struct ethtool_pauseparam {
 };
 
 #define ETH_GSTRING_LEN		32
+
+/**
+ * enum ethtool_stringset - string set ID
+ * @ETH_SS_TEST: Self-test result names, for use with %ETHTOOL_TEST
+ * @ETH_SS_STATS: Statistic names, for use with %ETHTOOL_GSTATS
+ * @ETH_SS_PRIV_FLAGS: Driver private flag names, for use with
+ *	%ETHTOOL_GPFLAGS and %ETHTOOL_SPFLAGS
+ * @ETH_SS_NTUPLE_FILTERS: Previously used with %ETHTOOL_GRXNTUPLE;
+ *	now deprecated
+ * @ETH_SS_FEATURES: Device feature names
+ * @ETH_SS_RSS_HASH_FUNCS: RSS hush function names
+ */
 enum ethtool_stringset {
 	ETH_SS_TEST		= 0,
 	ETH_SS_STATS,
 	ETH_SS_PRIV_FLAGS,
 	ETH_SS_NTUPLE_FILTERS,	/* Do not use, GRXNTUPLE is now deprecated */
 	ETH_SS_FEATURES,
+	ETH_SS_RSS_HASH_FUNCS,
 };
 
 /* for passing string sets for data tagging */
@@ -548,6 +561,31 @@ struct ethtool_rx_flow_spec {
 	__u32		location;
 };
 
+/* How rings are layed out when accessing virtual functions or
+ * offloaded queues is device specific. To allow users to do flow
+ * steering and specify these queues the ring cookie is partitioned
+ * into a 32bit queue index with an 8 bit virtual function id.
+ * This also leaves the 3bytes for further specifiers. It is possible
+ * future devices may support more than 256 virtual functions if
+ * devices start supporting PCIe w/ARI. However at the moment I
+ * do not know of any devices that support this so I do not reserve
+ * space for this at this time. If a future patch consumes the next
+ * byte it should be aware of this possiblity.
+ */
+#define ETHTOOL_RX_FLOW_SPEC_RING	0x00000000FFFFFFFFLL
+#define ETHTOOL_RX_FLOW_SPEC_RING_VF	0x000000FF00000000LL
+#define ETHTOOL_RX_FLOW_SPEC_RING_VF_OFF 32
+static inline __u64 ethtool_get_flow_spec_ring(__u64 ring_cookie)
+{
+	return ETHTOOL_RX_FLOW_SPEC_RING & ring_cookie;
+};
+
+static inline __u64 ethtool_get_flow_spec_ring_vf(__u64 ring_cookie)
+{
+	return (ETHTOOL_RX_FLOW_SPEC_RING_VF & ring_cookie) >>
+				ETHTOOL_RX_FLOW_SPEC_RING_VF_OFF;
+};
+
 /**
  * struct ethtool_rxnfc - command to get or set RX flow classification rules
  * @cmd: Specific command number - %ETHTOOL_GRXFH, %ETHTOOL_SRXFH,
@@ -628,6 +666,42 @@ struct ethtool_rxfh_indir {
 	__u32	size;
 	__u32	ring_index[0];
 };
+
+/**
+ * struct ethtool_rxfh - command to get/set RX flow hash indir or/and hash key.
+ * @cmd: Specific command number - %ETHTOOL_GRSSH or %ETHTOOL_SRSSH
+ * @rss_context: RSS context identifier.
+ * @indir_size: On entry, the array size of the user buffer for the
+ *	indirection table, which may be zero, or (for %ETHTOOL_SRSSH),
+ *	%ETH_RXFH_INDIR_NO_CHANGE.  On return from %ETHTOOL_GRSSH,
+ *	the array size of the hardware indirection table.
+ * @key_size: On entry, the array size of the user buffer for the hash key,
+ *	which may be zero.  On return from %ETHTOOL_GRSSH, the size of the
+ *	hardware hash key.
+ * @hfunc: Defines the current RSS hash function used by HW (or to be set to).
+ *	Valid values are one of the %ETH_RSS_HASH_*.
+ * @rsvd:	Reserved for future extensions.
+ * @rss_config: RX ring/queue index for each hash value i.e., indirection table
+ *	of @indir_size __u32 elements, followed by hash key of @key_size
+ *	bytes.
+ *
+ * For %ETHTOOL_GRSSH, a @indir_size and key_size of zero means that only the
+ * size should be returned.  For %ETHTOOL_SRSSH, an @indir_size of
+ * %ETH_RXFH_INDIR_NO_CHANGE means that indir table setting is not requested
+ * and a @indir_size of zero means the indir table should be reset to default
+ * values. An hfunc of zero means that hash function setting is not requested.
+ */
+struct ethtool_rxfh {
+	__u32   cmd;
+	__u32	rss_context;
+	__u32   indir_size;
+	__u32   key_size;
+	__u8	hfunc;
+	__u8	rsvd8[3];
+	__u32	rsvd32;
+	__u32   rss_config[0];
+};
+#define ETH_RXFH_INDIR_NO_CHANGE	0xffffffff
 
 /**
  * struct ethtool_rx_ntuple_flow_spec - specification for RX flow filter
@@ -901,6 +975,9 @@ enum ethtool_sfeatures_retval_bits {
 #define ETHTOOL_GEEE		0x00000044 /* Get EEE settings */
 #define ETHTOOL_SEEE		0x00000045 /* Set EEE settings */
 
+#define ETHTOOL_GRSSH		0x00000046 /* Get RX flow hash configuration */
+#define ETHTOOL_SRSSH		0x00000047 /* Set RX flow hash configuration */
+
 /* compatibility with older code */
 #define SPARC_ETH_GSET		ETHTOOL_GSET
 #define SPARC_ETH_SSET		ETHTOOL_SSET
@@ -933,6 +1010,10 @@ enum ethtool_sfeatures_retval_bits {
 #define SUPPORTED_40000baseCR4_Full	(1 << 24)
 #define SUPPORTED_40000baseSR4_Full	(1 << 25)
 #define SUPPORTED_40000baseLR4_Full	(1 << 26)
+#define SUPPORTED_56000baseKR4_Full	(1 << 27)
+#define SUPPORTED_56000baseCR4_Full	(1 << 28)
+#define SUPPORTED_56000baseSR4_Full	(1 << 29)
+#define SUPPORTED_56000baseLR4_Full	(1 << 30)
 
 /* Indicates what features are advertised by the interface. */
 #define ADVERTISED_10baseT_Half		(1 << 0)
@@ -962,6 +1043,10 @@ enum ethtool_sfeatures_retval_bits {
 #define ADVERTISED_40000baseCR4_Full	(1 << 24)
 #define ADVERTISED_40000baseSR4_Full	(1 << 25)
 #define ADVERTISED_40000baseLR4_Full	(1 << 26)
+#define ADVERTISED_56000baseKR4_Full	(1 << 27)
+#define ADVERTISED_56000baseCR4_Full	(1 << 28)
+#define ADVERTISED_56000baseSR4_Full	(1 << 29)
+#define ADVERTISED_56000baseLR4_Full	(1 << 30)
 
 /* The following are all involved in forcing a particular link
  * mode for the device for setting things.  When getting the
@@ -969,12 +1054,16 @@ enum ethtool_sfeatures_retval_bits {
  * it was forced up into this mode or autonegotiated.
  */
 
-/* The forced speed, 10Mb, 100Mb, gigabit, 2.5Gb, 10GbE. */
+/* The forced speed, 10Mb, 100Mb, gigabit, [2.5|10|20|40|56]GbE. */
 #define SPEED_10		10
 #define SPEED_100		100
 #define SPEED_1000		1000
 #define SPEED_2500		2500
 #define SPEED_10000		10000
+#define SPEED_20000		20000
+#define SPEED_40000		40000
+#define SPEED_56000		56000
+
 #define SPEED_UNKNOWN		-1
 
 /* Duplex, half or full. */
@@ -1066,6 +1155,10 @@ enum ethtool_sfeatures_retval_bits {
 #define ETH_MODULE_SFF_8079_LEN		256
 #define ETH_MODULE_SFF_8472		0x2
 #define ETH_MODULE_SFF_8472_LEN		512
+#define ETH_MODULE_SFF_8636		0x3
+#define ETH_MODULE_SFF_8636_LEN		256
+#define ETH_MODULE_SFF_8436		0x4
+#define ETH_MODULE_SFF_8436_LEN		256
 
 /* Reset flags */
 /* The reset() operation must clear the flags for the components which

@@ -36,13 +36,13 @@ struct machdep_calls {
 #ifdef CONFIG_PPC64
 	void            (*hpte_invalidate)(unsigned long slot,
 					   unsigned long vpn,
-					   int psize, int ssize,
-					   int local);
+					   int bpsize, int apsize,
+					   int ssize, int local);
 	long		(*hpte_updatepp)(unsigned long slot, 
 					 unsigned long newpp, 
 					 unsigned long vpn,
-					 int psize, int ssize,
-					 int local);
+					 int bpsize, int apsize,
+					 int ssize, unsigned long flags);
 	void            (*hpte_updateboltedpp)(unsigned long newpp, 
 					       unsigned long ea,
 					       int psize, int ssize);
@@ -57,23 +57,13 @@ struct machdep_calls {
 	void            (*hpte_removebolted)(unsigned long ea,
 					     int psize, int ssize);
 	void		(*flush_hash_range)(unsigned long number, int local);
-
+	void		(*hugepage_invalidate)(unsigned long vsid,
+					       unsigned long addr,
+					       unsigned char *hpte_slot_array,
+					       int psize, int ssize);
 	/* special for kexec, to be called in real mode, linear mapping is
 	 * destroyed as well */
 	void		(*hpte_clear_all)(void);
-
-	int		(*tce_build)(struct iommu_table *tbl,
-				     long index,
-				     long npages,
-				     unsigned long uaddr,
-				     enum dma_data_direction direction,
-				     struct dma_attrs *attrs);
-	void		(*tce_free)(struct iommu_table *tbl,
-				    long index,
-				    long npages);
-	unsigned long	(*tce_get)(struct iommu_table *tbl,
-				    long index);
-	void		(*tce_flush)(struct iommu_table *tbl);
 
 	void __iomem *	(*ioremap)(phys_addr_t addr, unsigned long size,
 				   unsigned long flags, void *caller);
@@ -82,6 +72,9 @@ struct machdep_calls {
 #ifdef CONFIG_PM
 	void		(*iommu_save)(void);
 	void		(*iommu_restore)(void);
+#endif
+#ifdef CONFIG_MEMORY_HOTPLUG_SPARSE
+	unsigned long	(*memory_block_size)(void);
 #endif
 #endif /* CONFIG_PPC64 */
 
@@ -98,6 +91,8 @@ struct machdep_calls {
 	/* Optional, may be NULL. */
 	void		(*show_cpuinfo)(struct seq_file *m);
 	void		(*show_percpuinfo)(struct seq_file *m, int i);
+	/* Returns the current operating frequency of "cpu" in Hz */
+	unsigned long  	(*get_proc_freq)(unsigned int cpu);
 
 	void		(*init_IRQ)(void);
 
@@ -154,6 +149,13 @@ struct machdep_calls {
 	/* Exception handlers */
 	int		(*system_reset_exception)(struct pt_regs *regs);
 	int 		(*machine_check_exception)(struct pt_regs *regs);
+	int		(*handle_hmi_exception)(struct pt_regs *regs);
+
+	/* Early exception handlers called in realmode */
+	int		(*hmi_exception_early)(struct pt_regs *regs);
+
+	/* Called during machine check exception to retrive fixup address. */
+	bool		(*mce_check_early_recovery)(struct pt_regs *regs);
 
 	/* Motherboard/chipset features. This is a kind of general purpose
 	 * hook used to control some machine specific features (like reset
@@ -223,6 +225,13 @@ struct machdep_calls {
 	/* Called during PCI resource reassignment */
 	resource_size_t (*pcibios_window_alignment)(struct pci_bus *, unsigned long type);
 
+	/* Reset the secondary bus of bridge */
+	void  (*pcibios_reset_secondary_bus)(struct pci_dev *dev);
+
+#ifdef CONFIG_PCI_IOV
+	void (*pcibios_fixup_sriov)(struct pci_dev *pdev);
+#endif /* CONFIG_PCI_IOV */
+
 	/* Called to shutdown machine specific hardware not already controlled
 	 * by other drivers.
 	 */
@@ -259,6 +268,14 @@ struct machdep_calls {
 #ifdef CONFIG_ARCH_CPU_PROBE_RELEASE
 	ssize_t (*cpu_probe)(const char *, size_t);
 	ssize_t (*cpu_release)(const char *, size_t);
+#endif
+
+#ifdef CONFIG_ARCH_RANDOM
+	int (*get_random_long)(unsigned long *v);
+#endif
+
+#ifdef CONFIG_MEMORY_HOTREMOVE
+	int (*remove_memory)(u64, u64);
 #endif
 };
 
@@ -332,6 +349,7 @@ static inline void log_error(char *buf, unsigned int err_type, int fatal)
 	} \
 	__define_initcall(__machine_initcall_##mach##_##fn, id);
 
+#define machine_early_initcall(mach, fn)	__define_machine_initcall(mach, fn, early)
 #define machine_core_initcall(mach, fn)		__define_machine_initcall(mach, fn, 1)
 #define machine_core_initcall_sync(mach, fn)	__define_machine_initcall(mach, fn, 1s)
 #define machine_postcore_initcall(mach, fn)	__define_machine_initcall(mach, fn, 2)

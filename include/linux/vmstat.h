@@ -142,9 +142,6 @@ static inline unsigned long zone_page_state_snapshot(struct zone *zone,
 	return x;
 }
 
-extern unsigned long global_reclaimable_pages(void);
-extern unsigned long zone_reclaimable_pages(struct zone *zone);
-
 #ifdef CONFIG_NUMA
 /*
  * Determine the per node value of a stat item. This function
@@ -182,8 +179,6 @@ extern void zone_statistics(struct zone *, struct zone *, gfp_t gfp);
 #define add_zone_page_state(__z, __i, __d) mod_zone_page_state(__z, __i, __d)
 #define sub_zone_page_state(__z, __i, __d) mod_zone_page_state(__z, __i, -(__d))
 
-extern void inc_zone_state(struct zone *, enum zone_stat_item);
-
 #ifdef CONFIG_SMP
 void __mod_zone_page_state(struct zone *, enum zone_stat_item item, int);
 void __inc_zone_page_state(struct page *, enum zone_stat_item);
@@ -198,7 +193,7 @@ extern void __inc_zone_state(struct zone *, enum zone_stat_item);
 extern void dec_zone_state(struct zone *, enum zone_stat_item);
 extern void __dec_zone_state(struct zone *, enum zone_stat_item);
 
-void refresh_cpu_vm_stats(int);
+void cpu_vm_stats_fold(int cpu);
 void refresh_zone_stat_thresholds(void);
 
 void drain_zonestat(struct zone *zone, struct per_cpu_pageset *);
@@ -208,6 +203,18 @@ int calculate_normal_threshold(struct zone *zone);
 void set_pgdat_percpu_threshold(pg_data_t *pgdat,
 				int (*calculate_pressure)(struct zone *));
 #else /* CONFIG_SMP */
+
+static inline void __inc_zone_state(struct zone *zone, enum zone_stat_item item)
+{
+	atomic_long_inc(&zone->vm_stat[item]);
+	atomic_long_inc(&vm_stat[item]);
+}
+
+static inline void __dec_zone_state(struct zone *zone, enum zone_stat_item item)
+{
+	atomic_long_dec(&zone->vm_stat[item]);
+	atomic_long_dec(&vm_stat[item]);
+}
 
 /*
  * We do not maintain differentials in a single processor configuration.
@@ -219,22 +226,10 @@ static inline void __mod_zone_page_state(struct zone *zone,
 	zone_page_state_add(delta, zone, item);
 }
 
-static inline void __inc_zone_state(struct zone *zone, enum zone_stat_item item)
-{
-	atomic_long_inc(&zone->vm_stat[item]);
-	atomic_long_inc(&vm_stat[item]);
-}
-
 static inline void __inc_zone_page_state(struct page *page,
 			enum zone_stat_item item)
 {
 	__inc_zone_state(page_zone(page), item);
-}
-
-static inline void __dec_zone_state(struct zone *zone, enum zone_stat_item item)
-{
-	atomic_long_dec(&zone->vm_stat[item]);
-	atomic_long_dec(&vm_stat[item]);
 }
 
 static inline void __dec_zone_page_state(struct page *page,
@@ -247,6 +242,9 @@ static inline void __dec_zone_page_state(struct page *page,
  * We only use atomic operations to update counters. So there is no need to
  * disable interrupts.
  */
+#define inc_zone_state __inc_zone_state
+#define dec_zone_state __dec_zone_state
+
 #define inc_zone_page_state __inc_zone_page_state
 #define dec_zone_page_state __dec_zone_page_state
 #define mod_zone_page_state __mod_zone_page_state
@@ -255,6 +253,7 @@ static inline void __dec_zone_page_state(struct page *page,
 
 static inline void refresh_cpu_vm_stats(int cpu) { }
 static inline void refresh_zone_stat_thresholds(void) { }
+static inline void cpu_vm_stats_fold(int cpu) { }
 
 static inline void drain_zonestat(struct zone *zone,
 			struct per_cpu_pageset *pset) { }

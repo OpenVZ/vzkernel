@@ -166,6 +166,14 @@ struct in6_flowlabel_req {
 #define IPV6_PMTUDISC_WANT		1
 #define IPV6_PMTUDISC_DO		2
 #define IPV6_PMTUDISC_PROBE		3
+/* same as IPV6_PMTUDISC_PROBE, provided for symetry with IPv4
+ * also see comments on IP_PMTUDISC_INTERFACE
+ */
+#define IPV6_PMTUDISC_INTERFACE		4
+/* weaker version of IPV6_PMTUDISC_INTERFACE, which allows packets to
+ * get fragmented if they exceed the interface mtu
+ */
+#define IPV6_PMTUDISC_OMIT		5
 
 /* Flowlabel */
 #define IPV6_FLOWLABEL_MGR	32

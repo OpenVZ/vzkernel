@@ -132,14 +132,21 @@ static void iobmap_free(struct iommu_table *tbl, long index,
 	}
 }
 
+static struct iommu_table_ops iommu_table_iobmap_ops = {
+	.set = iobmap_build,
+	.clear  = iobmap_free
+};
 
 static void iommu_table_iobmap_setup(void)
 {
 	pr_debug(" -> %s\n", __func__);
 	iommu_table_iobmap.it_busno = 0;
 	iommu_table_iobmap.it_offset = 0;
+	iommu_table_iobmap.it_page_shift = IOBMAP_PAGE_SHIFT;
+
 	/* it_size is in number of entries */
-	iommu_table_iobmap.it_size = 0x80000000 >> IOBMAP_PAGE_SHIFT;
+	iommu_table_iobmap.it_size =
+		0x80000000 >> iommu_table_iobmap.it_page_shift;
 
 	/* Initialize the common IOMMU code */
 	iommu_table_iobmap.it_base = (unsigned long)iob_l2_base;
@@ -148,6 +155,7 @@ static void iommu_table_iobmap_setup(void)
 	 * Should probably be 8 (64 bytes)
 	 */
 	iommu_table_iobmap.it_blocksize = 4;
+	iommu_table_iobmap.it_ops = &iommu_table_iobmap_ops;
 	iommu_init_table(&iommu_table_iobmap, 0);
 	pr_debug(" <- %s\n", __func__);
 }
@@ -247,8 +255,6 @@ void __init iommu_init_early_pasemi(void)
 
 	ppc_md.pci_dma_dev_setup = pci_dma_dev_setup_pasemi;
 	ppc_md.pci_dma_bus_setup = pci_dma_bus_setup_pasemi;
-	ppc_md.tce_build = iobmap_build;
-	ppc_md.tce_free  = iobmap_free;
 	set_pci_dma_ops(&dma_iommu_ops);
 }
 

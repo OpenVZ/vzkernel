@@ -20,6 +20,7 @@
 #include <asm/chpid.h>
 #include <asm/chsc.h>
 #include <asm/crw.h>
+#include <asm/isc.h>
 
 #include "css.h"
 #include "cio.h"
@@ -144,6 +145,65 @@ out:
 	return ret;
 }
 
+/**
+ * chsc_ssqd() - store subchannel QDIO data (SSQD)
+ * @schid: id of the subchannel on which SSQD is performed
+ * @ssqd: request and response block for SSQD
+ *
+ * Returns 0 on success.
+ */
+int chsc_ssqd(struct subchannel_id schid, struct chsc_ssqd_area *ssqd)
+{
+	memset(ssqd, 0, sizeof(*ssqd));
+	ssqd->request.length = 0x0010;
+	ssqd->request.code = 0x0024;
+	ssqd->first_sch = schid.sch_no;
+	ssqd->last_sch = schid.sch_no;
+	ssqd->ssid = schid.ssid;
+
+	if (chsc(ssqd))
+		return -EIO;
+
+	return chsc_error_from_response(ssqd->response.code);
+}
+EXPORT_SYMBOL_GPL(chsc_ssqd);
+
+/**
+ * chsc_sadc() - set adapter device controls (SADC)
+ * @schid: id of the subchannel on which SADC is performed
+ * @scssc: request and response block for SADC
+ * @summary_indicator_addr: summary indicator address
+ * @subchannel_indicator_addr: subchannel indicator address
+ *
+ * Returns 0 on success.
+ */
+int chsc_sadc(struct subchannel_id schid, struct chsc_scssc_area *scssc,
+	      u64 summary_indicator_addr, u64 subchannel_indicator_addr)
+{
+	memset(scssc, 0, sizeof(*scssc));
+	scssc->request.length = 0x0fe0;
+	scssc->request.code = 0x0021;
+	scssc->operation_code = 0;
+
+	scssc->summary_indicator_addr = summary_indicator_addr;
+	scssc->subchannel_indicator_addr = subchannel_indicator_addr;
+
+	scssc->ks = PAGE_DEFAULT_KEY >> 4;
+	scssc->kc = PAGE_DEFAULT_KEY >> 4;
+	scssc->isc = QDIO_AIRQ_ISC;
+	scssc->schid = schid;
+
+	/* enable the time delay disablement facility */
+	if (css_general_characteristics.aif_tdd)
+		scssc->word_with_d_bit = 0x10000000;
+
+	if (chsc(scssc))
+		return -EIO;
+
+	return chsc_error_from_response(scssc->response.code);
+}
+EXPORT_SYMBOL_GPL(chsc_sadc);
+
 static int s390_subchannel_remove_chpid(struct subchannel *sch, void *data)
 {
 	spin_lock_irq(sch->lock);
@@ -177,26 +237,6 @@ void chsc_chp_offline(struct chp_id chpid)
 	for_each_subchannel_staged(s390_subchannel_remove_chpid, NULL, &link);
 }
 
-static int s390_process_res_acc_new_sch(struct subchannel_id schid, void *data)
-{
-	struct schib schib;
-	/*
-	 * We don't know the device yet, but since a path
-	 * may be available now to the device we'll have
-	 * to do recognition again.
-	 * Since we don't have any idea about which chpid
-	 * that beast may be on we'll have to do a stsch
-	 * on all devices, grr...
-	 */
-	if (stsch_err(schid, &schib))
-		/* We're through */
-		return -ENXIO;
-
-	/* Put it on the slow path. */
-	css_schedule_eval(schid);
-	return 0;
-}
-
 static int __s390_process_res_acc(struct subchannel *sch, void *data)
 {
 	spin_lock_irq(sch->lock);
@@ -227,8 +267,8 @@ static void s390_process_res_acc(struct chp_link *link)
 	 * The more information we have (info), the less scanning
 	 * will we have to do.
 	 */
-	for_each_subchannel_staged(__s390_process_res_acc,
-				   s390_process_res_acc_new_sch, link);
+	for_each_subchannel_staged(__s390_process_res_acc, NULL, link);
+	css_schedule_reprobe();
 }
 
 static int
@@ -569,6 +609,7 @@ void chsc_chp_online(struct chp_id chpid)
 		css_wait_for_slow_path();
 		for_each_subchannel_staged(__s390_process_res_acc, NULL,
 					   &link);
+		css_schedule_reprobe();
 	}
 }
 
@@ -603,19 +644,6 @@ static int s390_subchannel_vary_chpid_on(struct subchannel *sch, void *data)
 	return 0;
 }
 
-static int
-__s390_vary_chpid_on(struct subchannel_id schid, void *data)
-{
-	struct schib schib;
-
-	if (stsch_err(schid, &schib))
-		/* We're through */
-		return -ENXIO;
-	/* Put it on the slow path. */
-	css_schedule_eval(schid);
-	return 0;
-}
-
 /**
  * chsc_chp_vary - propagate channel-path vary operation to subchannels
  * @chpid: channl-path ID
@@ -634,7 +662,8 @@ int chsc_chp_vary(struct chp_id chpid, int on)
 		/* Try to update the channel path description. */
 		chp_update_desc(chp);
 		for_each_subchannel_staged(s390_subchannel_vary_chpid_on,
-					   __s390_vary_chpid_on, &chpid);
+					   NULL, &chpid);
+		css_schedule_reprobe();
 	} else
 		for_each_subchannel_staged(s390_subchannel_vary_chpid_off,
 					   NULL, &chpid);

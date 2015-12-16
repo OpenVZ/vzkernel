@@ -4,18 +4,9 @@
 # include <linux/cache.h>
 # include <linux/seqlock.h>
 # include <linux/math64.h>
-#include <uapi/linux/time.h>
+# include <linux/time64.h>
 
 extern struct timezone sys_tz;
-
-/* Parameters used to convert the timespec values: */
-#define MSEC_PER_SEC	1000L
-#define USEC_PER_MSEC	1000L
-#define NSEC_PER_USEC	1000L
-#define NSEC_PER_MSEC	1000000L
-#define USEC_PER_SEC	1000000L
-#define NSEC_PER_SEC	1000000000L
-#define FSEC_PER_SEC	1000000000000000LL
 
 #define TIME_T_MAX	(time_t)((1UL << ((sizeof(time_t) << 3) - 1)) - 1)
 
@@ -84,13 +75,6 @@ static inline struct timespec timespec_sub(struct timespec lhs,
 	return ts_delta;
 }
 
-#define KTIME_MAX			((s64)~((u64)1 << 63))
-#if (BITS_PER_LONG == 64)
-# define KTIME_SEC_MAX			(KTIME_MAX / NSEC_PER_SEC)
-#else
-# define KTIME_SEC_MAX			LONG_MAX
-#endif
-
 /*
  * Returns true if the timespec is norm, false if denorm:
  */
@@ -133,8 +117,6 @@ unsigned long get_seconds(void);
 struct timespec current_kernel_time(void);
 struct timespec __current_kernel_time(void); /* does not take xtime_lock */
 struct timespec get_monotonic_coarse(void);
-void get_xtime_and_monotonic_and_sleep_offset(struct timespec *xtim,
-				struct timespec *wtom, struct timespec *sleep);
 void timekeeping_inject_sleeptime(struct timespec *delta);
 
 #define CURRENT_TIME		(current_kernel_time())
@@ -164,8 +146,40 @@ extern int do_setitimer(int which, struct itimerval *value,
 			struct itimerval *ovalue);
 extern unsigned int alarm_setitimer(unsigned int seconds);
 extern int do_getitimer(int which, struct itimerval *value);
-extern int __getnstimeofday(struct timespec *tv);
-extern void getnstimeofday(struct timespec *tv);
+
+extern int __getnstimeofday64(struct timespec64 *tv);
+extern void getnstimeofday64(struct timespec64 *tv);
+
+#if BITS_PER_LONG == 64
+static inline int __getnstimeofday(struct timespec *ts)
+{
+	return __getnstimeofday64(ts);
+}
+
+static inline void getnstimeofday(struct timespec *ts)
+{
+	getnstimeofday64(ts);
+}
+
+#else
+static inline int __getnstimeofday(struct timespec *ts)
+{
+	struct timespec64 ts64;
+	int ret = __getnstimeofday64(&ts64);
+
+	*ts = timespec64_to_timespec(ts64);
+	return ret;
+}
+
+static inline void getnstimeofday(struct timespec *ts)
+{
+	struct timespec64 ts64;
+
+	getnstimeofday64(&ts64);
+	*ts = timespec64_to_timespec(ts64);
+}
+#endif
+
 extern void getrawmonotonic(struct timespec *ts);
 extern void getnstime_raw_and_real(struct timespec *ts_raw,
 		struct timespec *ts_real);

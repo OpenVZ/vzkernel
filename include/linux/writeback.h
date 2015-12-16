@@ -8,6 +8,8 @@
 #include <linux/workqueue.h>
 #include <linux/fs.h>
 
+#include <linux/rh_kabi.h>
+
 DECLARE_PER_CPU(int, dirty_throttle_leaks);
 
 /*
@@ -78,6 +80,11 @@ struct writeback_control {
 	unsigned tagged_writepages:1;	/* tag-and-write to avoid livelock */
 	unsigned for_reclaim:1;		/* Invoked from the page allocator */
 	unsigned range_cyclic:1;	/* range_start is cyclic */
+	unsigned for_sync:1;		/* sync(2) WB_SYNC_ALL writeback */
+
+	/* reserved for Red Hat */
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
 };
 
 /*
@@ -92,9 +99,6 @@ int try_to_writeback_inodes_sb(struct super_block *, enum wb_reason reason);
 int try_to_writeback_inodes_sb_nr(struct super_block *, unsigned long nr,
 				  enum wb_reason reason);
 void sync_inodes_sb(struct super_block *);
-long writeback_inodes_wb(struct bdi_writeback *wb, long nr_pages,
-				enum wb_reason reason);
-long wb_do_writeback(struct bdi_writeback *wb, int force_wait);
 void wakeup_flusher_threads(long nr_pages, enum wb_reason reason);
 void inode_wait_for_writeback(struct inode *inode);
 

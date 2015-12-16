@@ -426,6 +426,19 @@ static inline sctp_assoc_t sctp_assoc2id(const struct sctp_association *asoc)
 	return asoc ? asoc->assoc_id : 0;
 }
 
+static inline enum sctp_sstat_state
+sctp_assoc_to_state(const struct sctp_association *asoc)
+{
+	/* SCTP's uapi always had SCTP_EMPTY(=0) as a dummy state, but we
+	 * got rid of it in kernel space. Therefore SCTP_CLOSED et al
+	 * start at =1 in user space, but actually as =0 in kernel space.
+	 * Now that we can not break user space and SCTP_EMPTY is exposed
+	 * there, we need to fix it up with an ugly offset not to break
+	 * applications. :(
+	 */
+	return asoc->state + 1;
+}
+
 /* Look up the association by its id.  */
 struct sctp_association *sctp_id2assoc(struct sock *sk, sctp_assoc_t id);
 
@@ -540,6 +553,11 @@ static inline void sctp_assoc_pending_pmtu(struct sock *sk, struct sctp_associat
 	asoc->pmtu_pending = 0;
 }
 
+static inline bool sctp_chunk_pending(const struct sctp_chunk *chunk)
+{
+	return !list_empty(&chunk->list);
+}
+
 /* Walk through a list of TLV parameters.  Don't trust the
  * individual parameter lengths and instead depend on
  * the chunk length to indicate when to stop.  Make sure
@@ -577,24 +595,6 @@ for (pos = chunk->subh.fwdtsn_hdr->skip;\
 
 /* Make a new instance of type.  */
 #define t_new(type, flags)	kzalloc(sizeof(type), flags)
-
-/* Compare two timevals.  */
-#define tv_lt(s, t) \
-   (s.tv_sec < t.tv_sec || (s.tv_sec == t.tv_sec && s.tv_usec < t.tv_usec))
-
-/* Add tv1 to tv2. */
-#define TIMEVAL_ADD(tv1, tv2) \
-({ \
-        suseconds_t usecs = (tv2).tv_usec + (tv1).tv_usec; \
-        time_t secs = (tv2).tv_sec + (tv1).tv_sec; \
-\
-        if (usecs >= 1000000) { \
-                usecs -= 1000000; \
-                secs++; \
-        } \
-        (tv2).tv_sec = secs; \
-        (tv2).tv_usec = usecs; \
-})
 
 /* External references. */
 

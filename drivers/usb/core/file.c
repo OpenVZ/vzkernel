@@ -8,7 +8,7 @@
  * (C) Copyright Deti Fliegl 1999 (new USB architecture)
  * (C) Copyright Randy Dunlap 2000
  * (C) Copyright David Brownell 2000-2001 (kernel hotplug, usb_device_id,
- 	more docs, etc)
+ *	more docs, etc)
  * (C) Copyright Yggdrasil Computing, Inc. 2000
  *     (usb_device_id matching changes by Adam J. Richter)
  * (C) Copyright Greg Kroah-Hartman 2002-2003
@@ -27,7 +27,7 @@
 static const struct file_operations *usb_minors[MAX_USB_MINORS];
 static DECLARE_RWSEM(minor_rwsem);
 
-static int usb_open(struct inode * inode, struct file * file)
+static int usb_open(struct inode *inode, struct file *file)
 {
 	int minor = iminor(inode);
 	const struct file_operations *c;
@@ -44,7 +44,7 @@ static int usb_open(struct inode * inode, struct file * file)
 	file->f_op = new_fops;
 	/* Curiouser and curiouser... NULL ->open() as "no device" ? */
 	if (file->f_op->open)
-		err = file->f_op->open(inode,file);
+		err = file->f_op->open(inode, file);
 	if (err) {
 		fops_put(file->f_op);
 		file->f_op = fops_get(old_fops);
@@ -94,7 +94,7 @@ static int init_usb_class(void)
 	kref_init(&usb_class->kref);
 	usb_class->class = class_create(THIS_MODULE, "usbmisc");
 	if (IS_ERR(usb_class->class)) {
-		result = IS_ERR(usb_class->class);
+		result = PTR_ERR(usb_class->class);
 		printk(KERN_ERR "class_create failed for usb devices\n");
 		kfree(usb_class);
 		usb_class = NULL;
@@ -153,7 +153,7 @@ void usb_major_cleanup(void)
  * usb_deregister_dev() must be called when the driver is done with
  * the minor numbers given out by this function.
  *
- * Returns -EINVAL if something bad happens with trying to register a
+ * Return: -EINVAL if something bad happens with trying to register a
  * device, and 0 on success.
  */
 int usb_register_dev(struct usb_interface *intf,
@@ -166,7 +166,7 @@ int usb_register_dev(struct usb_interface *intf,
 	char *temp;
 
 #ifdef CONFIG_USB_DYNAMIC_MINORS
-	/* 
+	/*
 	 * We don't care what the device tries to start at, we want to start
 	 * at zero to pack the devices into the smallest available space with
 	 * no holes in the minor range.

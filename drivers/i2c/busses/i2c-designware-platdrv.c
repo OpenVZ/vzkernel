@@ -34,7 +34,6 @@
 #include <linux/sched.h>
 #include <linux/err.h>
 #include <linux/interrupt.h>
-#include <linux/of_i2c.h>
 #include <linux/platform_device.h>
 #include <linux/pm.h>
 #include <linux/pm_runtime.h>
@@ -167,8 +166,6 @@ static int dw_i2c_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failure adding adapter\n");
 		return r;
 	}
-	of_i2c_register_devices(adap);
-	acpi_i2c_register_devices(adap);
 
 	pm_runtime_set_autosuspend_delay(&pdev->dev, 1000);
 	pm_runtime_use_autosuspend(&pdev->dev);

@@ -97,6 +97,9 @@ MODULE_LICENSE("GPL");
 
 static struct microcode_ops	*microcode_ops;
 
+bool dis_ucode_ldr;
+module_param(dis_ucode_ldr, bool, 0);
+
 /*
  * Synchronization.
  *
@@ -468,7 +471,7 @@ static struct syscore_ops mc_syscore_ops = {
 	.resume			= mc_bp_resume,
 };
 
-static __cpuinit int
+static int
 mc_cpu_callback(struct notifier_block *nb, unsigned long action, void *hcpu)
 {
 	unsigned int cpu = (unsigned long)hcpu;
@@ -545,6 +548,9 @@ static int __init microcode_init(void)
 {
 	struct cpuinfo_x86 *c = &cpu_data(0);
 	int error;
+
+	if (dis_ucode_ldr)
+		return 0;
 
 	if (c->x86_vendor == X86_VENDOR_INTEL)
 		microcode_ops = init_intel_microcode();

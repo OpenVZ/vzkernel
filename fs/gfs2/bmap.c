@@ -359,7 +359,7 @@ static inline void release_metapath(struct metapath *mp)
  * Returns: The length of the extent (minimum of one block)
  */
 
-static inline unsigned int gfs2_extent_length(void *start, unsigned int len, __be64 *ptr, unsigned limit, int *eob)
+static inline unsigned int gfs2_extent_length(void *start, unsigned int len, __be64 *ptr, size_t limit, int *eob)
 {
 	const __be64 *end = (start + len);
 	const __be64 *first = ptr;
@@ -449,7 +449,7 @@ static int gfs2_bmap_alloc(struct inode *inode, const sector_t lblock,
 			   struct buffer_head *bh_map, struct metapath *mp,
 			   const unsigned int sheight,
 			   const unsigned int height,
-			   const unsigned int maxlen)
+			   const size_t maxlen)
 {
 	struct gfs2_inode *ip = GFS2_I(inode);
 	struct gfs2_sbd *sdp = GFS2_SB(inode);
@@ -483,7 +483,8 @@ static int gfs2_bmap_alloc(struct inode *inode, const sector_t lblock,
 	} else {
 		/* Need to allocate indirect blocks */
 		ptrs_per_blk = height > 1 ? sdp->sd_inptrs : sdp->sd_diptrs;
-		dblks = min(maxlen, ptrs_per_blk - mp->mp_list[end_of_metadata]);
+		dblks = min(maxlen, (size_t)(ptrs_per_blk -
+					     mp->mp_list[end_of_metadata]));
 		if (height == ip->i_height) {
 			/* Writing into existing tree, extend tree down */
 			iblks = height - sheight;
@@ -605,7 +606,7 @@ int gfs2_block_map(struct inode *inode, sector_t lblock,
 	struct gfs2_inode *ip = GFS2_I(inode);
 	struct gfs2_sbd *sdp = GFS2_SB(inode);
 	unsigned int bsize = sdp->sd_sb.sb_bsize;
-	const unsigned int maxlen = bh_map->b_size >> inode->i_blkbits;
+	const size_t maxlen = bh_map->b_size >> inode->i_blkbits;
 	const u64 *arr = sdp->sd_heightsize;
 	__be64 *ptr;
 	u64 size;
@@ -1016,7 +1017,7 @@ static int gfs2_journaled_truncate(struct inode *inode, u64 oldsize, u64 newsize
 		chunk = oldsize - newsize;
 		if (chunk > max_chunk)
 			chunk = max_chunk;
-		truncate_pagecache(inode, oldsize, oldsize - chunk);
+		truncate_pagecache(inode, oldsize - chunk);
 		oldsize -= chunk;
 		gfs2_trans_end(sdp);
 		error = gfs2_trans_begin(sdp, RES_DINODE, GFS2_JTRUNC_REVOKES);
@@ -1067,7 +1068,7 @@ static int trunc_start(struct inode *inode, u64 oldsize, u64 newsize)
 	if (journaled)
 		error = gfs2_journaled_truncate(inode, oldsize, newsize);
 	else
-		truncate_pagecache(inode, oldsize, newsize);
+		truncate_pagecache(inode, newsize);
 
 	if (error) {
 		brelse(dibh);
@@ -1216,23 +1217,26 @@ static int do_grow(struct inode *inode, u64 size)
 {
 	struct gfs2_inode *ip = GFS2_I(inode);
 	struct gfs2_sbd *sdp = GFS2_SB(inode);
+	struct gfs2_alloc_parms ap = { .target = 1, };
 	struct buffer_head *dibh;
 	int error;
 	int unstuff = 0;
 
 	if (gfs2_is_stuffed(ip) &&
 	    (size > (sdp->sd_sb.sb_bsize - sizeof(struct gfs2_dinode)))) {
-		error = gfs2_quota_lock_check(ip);
+		error = gfs2_quota_lock_check(ip, &ap);
 		if (error)
 			return error;
 
-		error = gfs2_inplace_reserve(ip, 1, 0);
+		error = gfs2_inplace_reserve(ip, &ap);
 		if (error)
 			goto do_grow_qunlock;
 		unstuff = 1;
 	}
 
-	error = gfs2_trans_begin(sdp, RES_DINODE + RES_STATFS + RES_RG_BIT, 0);
+	error = gfs2_trans_begin(sdp, RES_DINODE + RES_STATFS + RES_RG_BIT +
+				 (sdp->sd_args.ar_quota == GFS2_QUOTA_OFF ?
+				  0 : RES_QUOTA), 0);
 	if (error)
 		goto do_grow_release;
 
