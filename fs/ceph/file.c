@@ -1120,8 +1120,9 @@ static ssize_t inline_to_iov(struct kiocb *iocb, struct iov_iter *i,
 			zero_user_segment(inline_page, inline_len, end);
 
 		while (left) {
-			void __user *udata = i->iov->iov_base + i->iov_offset;
-			size_t n = min(i->iov->iov_len - i->iov_offset, left);
+			struct iovec *iov = iov_iter_iovec(i);
+			void __user *udata = iov->iov_base + i->iov_offset;
+			size_t n = min(iov->iov_len - i->iov_offset, left);
 
 			if (__copy_to_user(udata, kdata, n)) {
 				ret = -EFAULT;
@@ -1138,8 +1139,9 @@ static ssize_t inline_to_iov(struct kiocb *iocb, struct iov_iter *i,
 		size_t left = min_t(loff_t, iocb->ki_pos + len, i_size) - pos;
 
 		while (left) {
-			void __user *udata = i->iov->iov_base + i->iov_offset;
-			size_t n = min(i->iov->iov_len - i->iov_offset, left);
+			struct iovec *iov = iov_iter_iovec(i);
+			void __user *udata = iov->iov_base + i->iov_offset;
+			size_t n = min(iov->iov_len - i->iov_offset, left);
 
 			if (__clear_user(udata, n)) {
 				ret = -EFAULT;
