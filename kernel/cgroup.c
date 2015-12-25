@@ -4058,6 +4058,7 @@ static void css_dput_fn(struct work_struct *work)
 	struct cgroup_subsys_state *css =
 		container_of(work, struct cgroup_subsys_state, dput_work);
 
+	percpu_ref_exit(&css->refcnt);
 	cgroup_dput(css->cgroup);
 }
 
@@ -4195,7 +4196,7 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 			goto err_free_all;
 		}
 
-		err = percpu_ref_init(&css->refcnt, css_release);
+		err = percpu_ref_init(&css->refcnt, css_release, 0, GFP_KERNEL);
 		if (err)
 			goto err_free_all;
 
@@ -4260,7 +4261,7 @@ err_free_all:
 		struct cgroup_subsys_state *css = cgrp->subsys[ss->subsys_id];
 
 		if (css) {
-			percpu_ref_cancel_init(&css->refcnt);
+			percpu_ref_exit(&css->refcnt);
 			ss->css_free(cgrp);
 		}
 	}
