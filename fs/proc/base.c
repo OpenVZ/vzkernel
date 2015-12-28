@@ -165,13 +165,9 @@ static int get_task_root(struct task_struct *task, struct path *root)
 	task_lock(task);
 	if (task->fs) {
 		get_fs_root(task->fs, root);
-		task_unlock(task);
-
-		result = d_root_check(root);
-		if (result)
-			path_put(root);
-	} else
-		task_unlock(task);
+		result = 0;
+	}
+	task_unlock(task);
 	return result;
 }
 
@@ -184,13 +180,9 @@ static int proc_cwd_link(struct dentry *dentry, struct path *path)
 		task_lock(task);
 		if (task->fs) {
 			get_fs_pwd(task->fs, path);
-			task_unlock(task);
-
-			result = d_root_check(path);
-			if (result)
-				path_put(path);
-		} else
-			task_unlock(task);
+			result = 0;
+		}
+		task_unlock(task);
 		put_task_struct(task);
 	}
 	return result;
@@ -1653,15 +1645,10 @@ static int proc_exe_link(struct dentry *dentry, struct path *exe_path)
 	exe_file = get_mm_exe_file(mm);
 	mmput(mm);
 	if (exe_file) {
-		int result;
-
-		result = d_root_check(&exe_file->f_path);
-		if (result == 0) {
-			*exe_path = exe_file->f_path;
-			path_get(&exe_file->f_path);
-		}
+		*exe_path = exe_file->f_path;
+		path_get(&exe_file->f_path);
 		fput(exe_file);
-		return result;
+		return 0;
 	} else
 		return -ENOENT;
 }
