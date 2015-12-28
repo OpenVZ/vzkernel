@@ -199,7 +199,12 @@ static void drop_mountpoint(struct fs_pin *p)
 
 static struct mount *alloc_vfsmnt(const char *name)
 {
-	struct mount *mnt = kmem_cache_zalloc(mnt_cache, GFP_KERNEL);
+	struct mount *mnt;
+
+	if (!ve_mount_allowed())
+		return NULL;
+
+	mnt = kmem_cache_zalloc(mnt_cache, GFP_KERNEL);
 	if (mnt) {
 		int err;
 
@@ -238,6 +243,7 @@ static struct mount *alloc_vfsmnt(const char *name)
 #endif
 		init_fs_pin(&mnt->mnt_umount, drop_mountpoint);
 	}
+	ve_mount_nr_inc();
 	return mnt;
 
 #ifdef CONFIG_SMP
@@ -578,6 +584,7 @@ int sb_prepare_remount_readonly(struct super_block *sb)
 
 static void free_vfsmnt(struct mount *mnt)
 {
+	ve_mount_nr_dec();
 	kfree(mnt->mnt_devname);
 #ifdef CONFIG_SMP
 	free_percpu(mnt->mnt_pcp);
