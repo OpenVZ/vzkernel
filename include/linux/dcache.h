@@ -333,7 +333,6 @@ extern char *d_absolute_path(const struct path *, char *, int);
 extern char *d_path(const struct path *, char *, int);
 extern char *dentry_path_raw(struct dentry *, char *, int);
 extern char *dentry_path(struct dentry *, char *, int);
-extern int d_root_check(struct path *path);
 
 /* Allocation counts.. */
 
