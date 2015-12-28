@@ -39,7 +39,7 @@ bool freezing_slow_path(struct task_struct *p)
 	if (test_thread_flag(TIF_MEMDIE))
 		return false;
 
-	if (p->jobctl & JOBCTL_TRAPPING_BIT)
+	if (p->jobctl & JOBCTL_TRAPPING)
 		return false;
 
 	if (pm_nosig_freezing || cgroup_freezing(p))
