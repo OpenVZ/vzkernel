@@ -1183,6 +1183,33 @@ struct tty_driver *vtty_driver(dev_t dev, int *index)
 	return NULL;
 }
 
+void vtty_release(struct tty_struct *tty, struct tty_struct *o_tty,
+		  int *tty_closing, int *o_tty_closing)
+{
+	int pty_master;
+	lockdep_assert_held(&tty_mutex);
+
+	if (tty->driver != vttym_driver &&
+	    tty->driver != vttys_driver)
+		return;
+
+	pty_master = (tty->driver == vttym_driver);
+
+	/*
+	 * Do not close master while slave is active.
+	 */
+	if (!*o_tty_closing && pty_master)
+		*tty_closing = 0;
+
+	/*
+	 * Do not close master if we've closing
+	 * not the last slave even if there is no
+	 * readers on the master.
+	 */
+	if (*o_tty_closing && !*tty_closing && !pty_master)
+		*o_tty_closing = 0;
+}
+
 static void ve_vtty_fini(void *data)
 {
 	struct ve_struct *ve = data;
