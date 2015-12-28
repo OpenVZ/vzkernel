@@ -37,7 +37,6 @@
 #include <asm/proto.h>
 #include <asm/hw_breakpoint.h>
 #include <asm/traps.h>
-#include <asm/unistd.h>
 
 #include "tls.h"
 
@@ -502,27 +501,6 @@ static unsigned long getreg(struct task_struct *task, unsigned long offset)
 		if (seg != GS_TLS_SEL)
 			return 0;
 		return get_desc_base(&task->thread.tls_array[GS_TLS]);
-	}
-#endif
-#ifdef CONFIG_VE
-	case offsetof(struct user_regs_struct, ax): {
-		struct pt_regs *regs;
-		unsigned long ret;
-
-		regs = task_pt_regs(task);
-		ret = *pt_regs_access(regs, offset);
-
-		if ((regs->orig_ax == __NR_vfork) ||
-		    (regs->orig_ax == __NR_clone) ||
-		    (regs->orig_ax == __NR_fork)) {
-			rcu_read_lock();
-			/* get tracee pid in tracer's pid-namespace */
-			if (task->nsproxy->pid_ns != current->nsproxy->pid_ns)
-				ret = pid_vnr(find_pid_ns(ret,
-						task->nsproxy->pid_ns));
-			rcu_read_unlock();
-		}
-		return ret;
 	}
 #endif
 	}
