@@ -121,8 +121,9 @@ static struct tcache_lru *tcache_lru_node;
 /*
  * Locking rules:
  *
- * - tcache_node_tree->lock nests inside tcache_node->tree_lock
- * - tcache_lru->lock is independent
+ *  tcache_node->tree_lock
+ *       tcache_node_tree->lock
+ *       tcache_lru->lock
  */
 
 /* Enable/disable tcache backend (set at boot time) */
@@ -662,6 +663,7 @@ tcache_invalidate_node_pages(struct tcache_node *node)
 	struct radix_tree_iter iter;
 	struct page *page;
 	void **slot;
+	pgoff_t index = 0;
 
 	spin_lock_irq(&node->tree_lock);
 
@@ -674,19 +676,25 @@ tcache_invalidate_node_pages(struct tcache_node *node)
 	 * Now truncate all pages. Be careful, because pages can still be
 	 * deleted from this node by the shrinker or by concurrent lookups.
 	 */
-	radix_tree_for_each_slot(slot, &node->page_tree, &iter, 0) {
+restart:
+	radix_tree_for_each_slot(slot, &node->page_tree, &iter, index) {
 		page = radix_tree_deref_slot_protected(slot, &node->tree_lock);
 		BUG_ON(!__tcache_page_tree_delete(node, page->index, page));
-		spin_unlock(&node->tree_lock);
-
 		tcache_lru_del(page);
 		put_page(page);
 
-		local_irq_enable();
-		cond_resched();
-		local_irq_disable();
-
-		spin_lock(&node->tree_lock);
+		if (need_resched()) {
+			spin_unlock_irq(&node->tree_lock);
+			cond_resched();
+			spin_lock_irq(&node->tree_lock);
+			/*
+			 * Restart iteration over the radix tree, because the
+			 * current node could have been freed when we dropped
+			 * the lock.
+			 */
+			index = iter.index + 1;
+			goto restart;
+		}
 	}
 
 	BUG_ON(node->nr_pages != 0);
