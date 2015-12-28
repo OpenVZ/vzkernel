@@ -1755,11 +1755,8 @@ int tty_release(struct inode *inode, struct file *filp)
 			(o_tty->count <= (pty_master ? 1 : 0));
 		do_sleep = 0;
 
-#ifdef CONFIG_VE
-		if (!o_tty_closing &&
-		    test_bit(TTY_PINNED_BY_OTHER, &tty->flags))
-			tty_closing = 0;
-#endif
+		vtty_release(tty, o_tty, &tty_closing, &o_tty_closing);
+
 		if (tty_closing) {
 			if (waitqueue_active(&tty->read_wait)) {
 				wake_up_poll(&tty->read_wait, POLLIN);
