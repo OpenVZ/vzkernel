@@ -81,6 +81,7 @@ struct ve_struct ve0 = {
 #endif
 	.sched_lat_ve.cur	= &ve0_lat_stats,
 	.init_cred		= &init_cred,
+	.mnt_nr			= 0,
 };
 EXPORT_SYMBOL(ve0);
 
@@ -661,6 +662,7 @@ do_init:
 	ve->aio_nr = 0;
 	ve->aio_max_nr = AIO_MAX_NR_DEFAULT;
 #endif
+	ve->mnt_nr = 0;
 
 	return &ve->css;
 

@@ -129,6 +129,10 @@ struct ve_struct {
 	unsigned long		aio_nr;
 	unsigned long		aio_max_nr;
 #endif
+	/* Number of mounts. May become unbalanced if VE0 mounts something
+	 * and the VE unmounts it. This is acceptable.
+	 */
+	int			mnt_nr;
 };
 
 struct ve_devmnt {
@@ -145,6 +149,8 @@ struct ve_devmnt {
 extern int nr_ve;
 extern struct proc_dir_entry *proc_vz_dir;
 extern struct cgroup_subsys ve_subsys;
+
+extern unsigned int sysctl_ve_mount_nr;
 
 #ifdef CONFIG_VE_IPTABLES
 extern __u64 ve_setup_iptables_mask(__u64 init_mask);
@@ -225,6 +231,23 @@ extern struct tty_driver *vtty_console_driver(int *index);
 extern int vtty_open_master(envid_t veid, int idx);
 #endif /* CONFIG_TTY */
 
+static inline int ve_mount_allowed(void)
+{
+	struct ve_struct *ve = get_exec_env();
+
+	return ve_is_super(ve) || ve->mnt_nr < sysctl_ve_mount_nr;
+}
+
+static inline void ve_mount_nr_inc(void)
+{
+	get_exec_env()->mnt_nr++;
+}
+
+static inline void ve_mount_nr_dec(void)
+{
+	get_exec_env()->mnt_nr--;
+}
+
 #else	/* CONFIG_VE */
 
 #define ve_uevent_seqnum uevent_seqnum
@@ -262,6 +285,10 @@ static inline void monotonic_abs_to_ve(clockid_t which_clock,
 				struct timespec *tp) { }
 static inline void monotonic_ve_to_abs(clockid_t which_clock,
 				struct timepsec *tp) { }
+
+static inline int ve_mount_allowed(void) { return 1; }
+static inline void ve_mount_nr_inc(void) { }
+static inline void ve_mount_nr_dec(void) { }
 #endif	/* CONFIG_VE */
 
 #endif /* _LINUX_VE_H */
