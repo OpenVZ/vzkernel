@@ -70,13 +70,9 @@ int create_user_ns(struct cred *new)
 	kuid_t owner = new->euid;
 	kgid_t group = new->egid;
 	int ret;
-	static int __read_mostly called_mark_tech_preview = 0;
 
 	if (!enable_user_ns_creation)
 		return -EINVAL;
-
-	if (!called_mark_tech_preview && !xchg(&called_mark_tech_preview, 1))
-		mark_tech_preview("user namespace", NULL);
 
 	if (parent_ns->level > 32)
 		return -EUSERS;
