@@ -2652,10 +2652,6 @@ struct mnt_namespace *copy_mnt_ns(unsigned long flags, struct mnt_namespace *ns,
 	if (!(flags & CLONE_NEWNS))
 		return ns;
 
-	/* Unprivileged creation currently disabled in RHEL7  */
-	if (!capable(CAP_SYS_ADMIN))
-		return ERR_PTR(-EPERM);
-
 	new_ns = dup_mnt_ns(ns, user_ns, new_fs);
 
 	put_mnt_ns(ns);
