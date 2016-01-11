@@ -141,7 +141,7 @@ dio_submit(struct ploop_io *io, struct ploop_request * preq,
 
 		if (em->start <= sec)
 			sec = em->end;
-		extent_put(em);
+		ploop_extent_put(em);
 
 		while (sec < end) {
 			em = extent_lookup_create(io, sec, end - sec);
@@ -151,7 +151,7 @@ dio_submit(struct ploop_io *io, struct ploop_request * preq,
 				goto write_unint_fail;
 
 			sec = em->end;
-			extent_put(em);
+			ploop_extent_put(em);
 		}
 
 		goto write_unint;
@@ -187,7 +187,7 @@ dio_submit(struct ploop_io *io, struct ploop_request * preq,
 		}
 
 		if (sec >= em->end) {
-			extent_put(em);
+			ploop_extent_put(em);
 			em = extent_lookup_create(io, sec, size);
 			if (IS_ERR(em))
 				goto out_em_err;
@@ -230,7 +230,7 @@ flush_bio:
 		size -= copy >> 9;
 		sec += copy >> 9;
 	}
-	extent_put(em);
+	ploop_extent_put(em);
 
 	bio_num = 0;
 	while (bl.head) {
@@ -272,7 +272,7 @@ write_unint:
 	goto out;
 
 write_unint_fail:
-	extent_put(em);
+	ploop_extent_put(em);
 	err = -EIO;
 	ploop_msg_once(io->plo, "A part of cluster is in uninitialized extent.");
 	goto out;
@@ -566,7 +566,7 @@ dio_submit_pad(struct ploop_io *io, struct ploop_request * preq,
 		}
 
 		if (sec >= em->end) {
-			extent_put(em);
+			ploop_extent_put(em);
 			em = extent_lookup_create(io, sec, end_sec - sec);
 			if (IS_ERR(em))
 				goto out_em_err;
@@ -600,7 +600,7 @@ flush_bio:
 		BUG_ON(plen == 0);
 		sec += plen;
 	}
-	extent_put(em);
+	ploop_extent_put(em);
 
 	while (bl.head) {
 		unsigned long rw;
@@ -1029,7 +1029,7 @@ dio_sync_io(struct ploop_io * io, int rw, struct page * page,
 
 		if (!em || sec >= em->end) {
 			if (em)
-				extent_put(em);
+				ploop_extent_put(em);
 			em = extent_lookup_create(io, sec, len>>9);
 			if (IS_ERR(em))
 				goto out_em_err;
@@ -1062,7 +1062,7 @@ flush_bio:
 	}
 
 	if (em)
-		extent_put(em);
+		ploop_extent_put(em);
 
 	while (bl.head) {
 		struct bio * b = bl.head;
@@ -1150,7 +1150,7 @@ dio_sync_iovec(struct ploop_io * io, int rw, struct page ** pvec,
 
 		if (!em || sec >= em->end) {
 			if (em)
-				extent_put(em);
+				ploop_extent_put(em);
 			em = extent_lookup_create(io, sec, len>>9);
 			if (IS_ERR(em))
 				goto out_em_err;
@@ -1186,7 +1186,7 @@ flush_bio:
 	}
 
 	if (em)
-		extent_put(em);
+		ploop_extent_put(em);
 
 	while (bl.head) {
 		struct bio * b = bl.head;
@@ -1383,7 +1383,7 @@ dio_io_page(struct ploop_io * io, unsigned long rw,
 
 		if (!em || sec >= em->end) {
 			if (em)
-				extent_put(em);
+				ploop_extent_put(em);
 			em = extent_lookup_create(io, sec, len>>9);
 			if (IS_ERR(em))
 				goto out_em_err;
@@ -1416,7 +1416,7 @@ flush_bio:
 	}
 
 	if (em)
-		extent_put(em);
+		ploop_extent_put(em);
 
 	bio_num = 0;
 	while (bl.head) {
@@ -1508,7 +1508,7 @@ dio_fastmap(struct ploop_io * io, struct bio * orig_bio,
 
 	if (isec + (orig_bio->bi_size>>9) > em->end) {
 		io->plo->st.fast_neg_shortem++;
-		extent_put(em);
+		ploop_extent_put(em);
 		return 1;
 	}
 
@@ -1518,7 +1518,7 @@ dio_fastmap(struct ploop_io * io, struct bio * orig_bio,
 	       orig_bio->bi_vcnt * sizeof(struct bio_vec));
 
 	bio->bi_sector = dio_isec_to_phys(em, isec);
-	extent_put(em);
+	ploop_extent_put(em);
 
 	bio->bi_bdev = io->files.bdev;
 	bio->bi_rw = orig_bio->bi_rw;
@@ -1566,7 +1566,7 @@ dio_disable_merge(struct ploop_io * io, sector_t isector, unsigned int len)
 	if (em) {
 		if (isector + len > em->end)
 			ret = 1;
-		extent_put(em);
+		ploop_extent_put(em);
 	}
 	return ret;
 }
@@ -1898,11 +1898,11 @@ static int __init pio_direct_mod_init(void)
 	if (min_extent_map_entries == 0)
 		min_extent_map_entries = 64;
 
-	err = extent_map_init();
+	err = ploop_extent_map_init();
 	if (!err) {
 		err = ploop_register_io(&ploop_io_ops_direct);
 		if (err)
-			extent_map_exit();
+			ploop_extent_map_exit();
 	}
 
 	return err;
@@ -1911,7 +1911,7 @@ static int __init pio_direct_mod_init(void)
 static void __exit pio_direct_mod_exit(void)
 {
 	ploop_unregister_io(&ploop_io_ops_direct);
-	extent_map_exit();
+	ploop_extent_map_exit();
 	BUG_ON(atomic_long_read(&ploop_io_images_size));
 }
 
