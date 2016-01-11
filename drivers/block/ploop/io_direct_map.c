@@ -220,7 +220,7 @@ int ploop_dio_upgrade(struct ploop_io * io)
 
 static struct kmem_cache *extent_map_cache;
 
-int __init extent_map_init(void)
+int __init ploop_extent_map_init(void)
 {
 	extent_map_cache = kmem_cache_create("ploop_itree",
 						sizeof(struct extent_map), 0,
@@ -234,7 +234,7 @@ int __init extent_map_init(void)
 	return 0;
 }
 
-void extent_map_exit(void)
+void ploop_extent_map_exit(void)
 {
 	if (extent_map_cache)
 		kmem_cache_destroy(extent_map_cache);
@@ -248,7 +248,7 @@ static void extent_map_tree_init(struct extent_map_tree *tree)
 	rwlock_init(&tree->lock);
 }
 
-struct extent_map *alloc_extent_map(gfp_t mask)
+struct extent_map *ploop_alloc_extent_map(gfp_t mask)
 {
 	struct extent_map *em;
 
@@ -261,7 +261,7 @@ struct extent_map *alloc_extent_map(gfp_t mask)
 	return em;
 }
 
-void extent_put(struct extent_map *em)
+void ploop_extent_put(struct extent_map *em)
 {
 	if (!em)
 		return;
@@ -435,7 +435,7 @@ static int add_extent_mapping(struct extent_map_tree *tree,
 			rb_erase(rb, &tree->map);
 			list_del_init(&tmp->lru_link);
 			tree->map_size--;
-			extent_put(tmp);
+			ploop_extent_put(tmp);
 		} else {
 			list_add_tail(&em->lru_link, &tree->lru_list);
 			tree->map_size++;
@@ -456,7 +456,7 @@ static int add_extent_mapping(struct extent_map_tree *tree,
 				list_del_init(&victim_em->lru_link);
 				tree->map_size--;
 				rb_erase(&victim_em->rb_node, &tree->map);
-				extent_put(victim_em);
+				ploop_extent_put(victim_em);
 			}
 		}
 	} while (rb);
@@ -474,7 +474,7 @@ static int add_extent_mapping(struct extent_map_tree *tree,
 				rb_erase(&merge->rb_node, &tree->map);
 				list_del_init(&merge->lru_link);
 				tree->map_size--;
-				extent_put(merge);
+				ploop_extent_put(merge);
 			}
 		}
 	}
@@ -488,7 +488,7 @@ static int add_extent_mapping(struct extent_map_tree *tree,
 			rb_erase(&merge->rb_node, &tree->map);
 			list_del_init(&merge->lru_link);
 			tree->map_size--;
-			extent_put(merge);
+			ploop_extent_put(merge);
 		}
 	}
 
@@ -600,11 +600,11 @@ again:
 		} else if (!create) {
 			return em;
 		}
-		extent_put(em);
+		ploop_extent_put(em);
 	}
 	BUG_ON(gfp_mask & GFP_ATOMIC);
 
-	em = alloc_extent_map(gfp_mask);
+	em = ploop_alloc_extent_map(gfp_mask);
 	if (!em)
 		return ERR_PTR(-ENOMEM);
 
@@ -619,7 +619,7 @@ again:
 	 */
 	ret = tree->_get_extent(inode, start, len, &nstart, &result, create);
 	if (ret < 0) {
-		extent_put(em);
+		ploop_extent_put(em);
 		return ERR_PTR(ret);
 	}
 
@@ -629,7 +629,7 @@ again:
 
 	ret = add_extent_mapping(tree, em);
 	if (ret == -EEXIST) {
-		extent_put(em);
+		ploop_extent_put(em);
 		goto again;
 	}
 	return em;
@@ -661,7 +661,7 @@ again:
 		} else {
 			return em;
 		}
-		extent_put(em);
+		ploop_extent_put(em);
 	}
 
 	BUG_ON(gfp_mask & GFP_ATOMIC);
@@ -669,7 +669,7 @@ again:
 	if (!inode->i_op->fiemap)
 		return ERR_PTR(-EINVAL);
 
-	em = alloc_extent_map(gfp_mask);
+	em = ploop_alloc_extent_map(gfp_mask);
 	if (!em)
 		return ERR_PTR(-ENOMEM);
 
@@ -704,7 +704,7 @@ again:
 	set_fs(old_fs);
 
 	if (ret) {
-		extent_put(em);
+		ploop_extent_put(em);
 		return ERR_PTR(ret);
 	}
 
@@ -714,7 +714,7 @@ again:
 				       " (mapped=%d i_size=%llu off=%llu)",
 				       fieinfo.fi_extents_mapped,
 				       i_size_read(inode), start_off);
-		extent_put(em);
+		ploop_extent_put(em);
 		return ERR_PTR(-EINVAL);
 	}
 
@@ -728,7 +728,7 @@ again:
 
 		ret = add_extent_mapping(tree, em);
 		if (ret == -EEXIST) {
-			extent_put(em);
+			ploop_extent_put(em);
 			goto again;
 		}
 	}
@@ -782,7 +782,7 @@ struct extent_map *map_extent_get_block(struct ploop_io *io,
 			break;
 
 		last = em->end;
-		extent_put(em);
+		ploop_extent_put(em);
 		em = __map_extent(io, mapping, last, len, create,
 				  gfp_mask, get_block);
 		if (IS_ERR(em) || !em)
@@ -795,7 +795,7 @@ struct extent_map *map_extent_get_block(struct ploop_io *io,
 	if (!em || IS_ERR(em) || em->start > start ||
 	    start + len > em->end) {
 		if (em && !IS_ERR(em))
-			extent_put(em);
+			ploop_extent_put(em);
 		em = __map_extent(io, mapping, start, len, create,
 				  gfp_mask, get_block);
 	}
@@ -824,7 +824,7 @@ static int drop_extent_map(struct extent_map_tree *tree)
 		rb_erase(node, &tree->map);
 		list_del_init(&em->lru_link);
 		tree->map_size--;
-		extent_put(em);
+		ploop_extent_put(em);
 	}
 	write_unlock_irq(&tree->lock);
 	return 0;
@@ -838,10 +838,10 @@ void trim_extent_mappings(struct extent_map_tree *tree, sector_t start)
 		remove_extent_mapping(tree, em);
 		WARN_ON(atomic_read(&em->refs) != 2);
 		/* once for us */
-		extent_put(em);
+		ploop_extent_put(em);
 		/* No concurrent lookups due to ploop_quiesce(). See WARN_ON above */
 		/* once for the tree */
-		extent_put(em);
+		ploop_extent_put(em);
 	}
 }
 
