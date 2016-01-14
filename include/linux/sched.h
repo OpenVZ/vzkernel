@@ -1443,6 +1443,7 @@ struct task_struct {
 	unsigned sched_interruptible_sleep:1;
 
 	unsigned woken_while_running:1;
+	unsigned may_throttle:1;
 
 	pid_t pid;
 	pid_t tgid;
@@ -2955,6 +2956,13 @@ extern int _cond_resched(void);
 #define cond_resched() ({			\
 	__might_sleep(__FILE__, __LINE__, 0);	\
 	_cond_resched();			\
+})
+
+extern int _cond_resched_may_throttle(void);
+
+#define cond_resched_may_throttle() ({		\
+	__might_sleep(__FILE__, __LINE__, 0);	\
+	_cond_resched_may_throttle();		\
 })
 
 extern int __cond_resched_lock(spinlock_t *lock);
