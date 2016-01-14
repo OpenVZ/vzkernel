@@ -1033,7 +1033,8 @@ static inline void update_entity_boost(struct sched_entity *se)
 					p->woken_while_running;
 			p->woken_while_running = 0;
 		} else
-			se->boosted = sched_feat(BOOST_PREEMPT);
+			se->boosted = sched_feat(BOOST_PREEMPT) &&
+				      !p->may_throttle;
 	}
 }
 
