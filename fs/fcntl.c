@@ -70,7 +70,7 @@ static int setfl(int fd, struct file * filp, unsigned long arg)
 	struct inode * inode = file_inode(filp);
 	int error = 0;
 
-	if (!S_ISFIFO(filp->f_mode) && !may_use_odirect(filp))
+	if (!may_use_odirect())
 		arg &= ~O_DIRECT;
 	if (ve_fsync_behavior() == FSYNC_NEVER)
 		arg &= ~O_SYNC;
