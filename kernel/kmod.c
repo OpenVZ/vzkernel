@@ -199,11 +199,11 @@ static int ___request_module(bool wait, bool blacklist, char *module_name)
 
 #ifdef CONFIG_VE_IPTABLES
 
-/* ve0 allowed modules */
+/* ve0 allowed iptables modules */
 static struct {
 	const char *name;
 	u64 perm;
-} ve0_am[] = {
+} ve0_ipt_am[] = {
 	{ "ip_tables",		VE_IP_IPTABLES	},
 	{ "ip6_tables",		VE_IP_IPTABLES6	},
 	{ "iptable_filter",	VE_IP_FILTER	},
@@ -318,7 +318,7 @@ static bool nft_expr_allowed(const char *name)
 	/*
 	 * We are interested in modules like nft-expr-xxx.
 	 * Expressions like nft-expr-xxx-yyy currently are
-	 * handled in ve0_am table. So expr does not cointain
+	 * handled in ve0_ipt_am table. So expr does not contain
 	 * minus
 	 */
 	if (!strchr(name, '-'))
@@ -328,23 +328,23 @@ static bool nft_expr_allowed(const char *name)
 }
 
 /*
- * module_payload_allowed - check if module functionality is allowed
- * 			    to be used inside current virtual enviroment.
+ * module_payload_iptable_allowed - check if iptables functionality is allowed
+ *			    to be used inside current virtual environment.
  *
- * Returns true if it is allowed or we're in ve0, false otherwise.
+ * Returns:
+ *   0 if iptable module is disallowed to load
+ *   1 if it is allowed or we're in ve0
+ *   -1 if module isn't iptables module
  */
-bool module_payload_allowed(const char *module)
+static inline int module_payload_iptable_allowed(const char *module)
 {
 	u64 permitted = get_exec_env()->ipt_mask;
 	int i;
 
-	if (ve_is_super(get_exec_env()))
-		return true;
-
-	/* Look for full module name in ve0_am table */
-	for (i = 0; i < ARRAY_SIZE(ve0_am); i++) {
-		if (!strcmp(ve0_am[i].name, module))
-			return mask_ipt_allow(permitted, ve0_am[i].perm);
+	/* Look for full module name in ve0_ipt_am table */
+	for (i = 0; i < ARRAY_SIZE(ve0_ipt_am); i++) {
+		if (!strcmp(ve0_ipt_am[i].name, module))
+			return mask_ipt_allow(permitted, ve0_ipt_am[i].perm);
 	}
 
 	/* The rest of xt_* modules is allowed in both ipv4 and ipv6 modes */
@@ -362,19 +362,51 @@ bool module_payload_allowed(const char *module)
 
 	/* The rest of arpt_* modules */
 	if (!strncmp("arpt_", module, 5))
-		return true;
+		return 1;
 
 	/* The rest of ebt_* modules */
 	if (!strncmp("ebt_", module, 4))
-		return true;
+		return 1;
 
 	/* The rest of nft- modules */
 	if (!strncmp("nft-expr-", module, 9))
 		return nft_expr_allowed(module + 9);
 
+	return -1;
+}
+
+/* ve0 allowed modules */
+static const char * const ve0_allowed_mod[] = {
+	"fs-binfmt_misc",
+};
+
+/*
+ * module_payload_allowed - check if module functionality is allowed
+ *			    to be used inside current virtual environment.
+ *
+ * Returns true if it is allowed or we're in ve0, false otherwise.
+ */
+bool module_payload_allowed(const char *module)
+{
+	int i;
+	int ret;
+
+	if (ve_is_super(get_exec_env()))
+		return true;
+
+	ret = module_payload_iptable_allowed(module);
+	if (ret >= 0)
+		return !!ret;
+
+	for (i = 0; i < ARRAY_SIZE(ve0_allowed_mod); i++) {
+		if (!strcmp(ve0_allowed_mod[i], module))
+			return true;
+	}
+
 	return false;
 }
-#endif /* CONFIG_VE_IPTABLES */
+
+#endif
 
 int __request_module(bool wait, const char *fmt, ...)
 {
