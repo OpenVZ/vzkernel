@@ -4821,22 +4821,37 @@ static inline int should_resched(void)
 	return need_resched() && !(preempt_count() & PREEMPT_ACTIVE);
 }
 
-static void __cond_resched(void)
+static void __cond_resched(bool may_throttle)
 {
 	add_preempt_count(PREEMPT_ACTIVE);
+	if (may_throttle)
+		current->may_throttle = 1;
 	__schedule();
+	if (may_throttle)
+		current->may_throttle = 0;
 	sub_preempt_count(PREEMPT_ACTIVE);
 }
 
 int __sched _cond_resched(void)
 {
 	if (should_resched()) {
-		__cond_resched();
+		__cond_resched(false);
 		return 1;
 	}
 	return 0;
 }
 EXPORT_SYMBOL(_cond_resched);
+
+int __sched _cond_resched_may_throttle(void)
+{
+	if (should_resched()) {
+		__cond_resched(true);
+		return 1;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(_cond_resched_may_throttle);
+
 
 /*
  * __cond_resched_lock() - if a reschedule is pending, drop the given lock,
@@ -4856,7 +4871,7 @@ int __cond_resched_lock(spinlock_t *lock)
 	if (spin_needbreak(lock) || resched) {
 		spin_unlock(lock);
 		if (resched)
-			__cond_resched();
+			__cond_resched(false);
 		else
 			cpu_relax();
 		ret = 1;
@@ -4872,7 +4887,7 @@ int __sched __cond_resched_softirq(void)
 
 	if (should_resched()) {
 		local_bh_enable();
-		__cond_resched();
+		__cond_resched(false);
 		local_bh_disable();
 		return 1;
 	}
