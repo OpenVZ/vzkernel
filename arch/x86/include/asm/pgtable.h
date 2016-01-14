@@ -90,7 +90,7 @@ extern struct mm_struct *pgd_page_get_mm(struct page *page);
  */
 static inline int pte_dirty(pte_t pte)
 {
-	return pte_flags(pte) & (_PAGE_DIRTY | _PAGE_SOFT_DIRTY);
+	return pte_flags(pte) & _PAGE_DIRTY;
 }
 
 static inline int pte_young(pte_t pte)
