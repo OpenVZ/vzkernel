@@ -1479,7 +1479,10 @@ static int cgroup_test_super(struct super_block *sb, void *data)
 {
 	struct cgroup_sb_opts *opts = data;
 	struct cgroupfs_root *root = sb->s_fs_info;
-
+#ifdef CONFIG_VE
+	if (get_exec_env() != root->ve)
+		return 0;
+#endif
 	/* If we asked for a name then it must match */
 	if (opts->name && strcmp(opts->name, root->name))
 		return 0;
@@ -1666,12 +1669,18 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 		mutex_lock(&inode->i_mutex);
 		mutex_lock(&cgroup_mutex);
 		mutex_lock(&cgroup_root_mutex);
-
+#ifdef CONFIG_VE
+		root->ve = get_exec_env();
+#endif
 		/* Check for name clashes with existing mounts */
 		ret = -EBUSY;
 		if (strlen(root->name))
 			for_each_active_root(existing_root)
-				if (!strcmp(existing_root->name, root->name))
+				if (!strcmp(existing_root->name, root->name)
+#ifdef CONFIG_VE
+				    && (root->ve == existing_root->ve)
+#endif
+				    )
 					goto unlock_drop;
 
 		/*
