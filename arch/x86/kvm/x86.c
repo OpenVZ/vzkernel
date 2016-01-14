@@ -6897,7 +6897,7 @@ static int vcpu_run(struct kvm_vcpu *vcpu)
 		}
 		if (need_resched()) {
 			srcu_read_unlock(&kvm->srcu, vcpu->srcu_idx);
-			cond_resched();
+			cond_resched_may_throttle();
 			vcpu->srcu_idx = srcu_read_lock(&kvm->srcu);
 		}
 	}
