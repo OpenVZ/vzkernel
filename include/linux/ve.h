@@ -49,6 +49,7 @@ struct ve_struct {
 	struct rw_semaphore	op_sem;
 	int			is_running;
 	int			is_locked;
+	int			is_pseudosuper;
 	atomic_t		suspend;
 	/* see vzcalluser.h for VE_FEATURE_XXX definitions */
 	__u64			features;
