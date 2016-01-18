@@ -1681,6 +1681,7 @@ static int ttwu_remote(struct task_struct *p, int wake_flags)
 	rq = __task_rq_lock(p);
 	if (p->on_rq) {
 		ttwu_do_wakeup(rq, p, wake_flags);
+		p->woken_while_running = 1;
 		ret = 1;
 	}
 	__task_rq_unlock(rq);
@@ -1814,10 +1815,8 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	success = 1; /* we're going to change ->state */
 	cpu = task_cpu(p);
 
-	if (p->on_rq && ttwu_remote(p, wake_flags)) {
-		p->woken_while_running = 1;
+	if (p->on_rq && ttwu_remote(p, wake_flags))
 		goto stat;
-	}
 
 #ifdef CONFIG_SMP
 	/*
