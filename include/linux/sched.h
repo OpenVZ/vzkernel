@@ -1463,20 +1463,21 @@ struct task_struct {
 	/* Used for emulating ABI behavior of previous Linux versions */
 	unsigned int personality;
 
+	/* scheduler bits, serialized by rq lock: */
+	unsigned sched_reset_on_fork:1;
+	/* Two below are really protected by pi_lock, but they are modified in
+         * the place where nobody else can modify other fields using rq->lock */
+	unsigned sched_contributes_to_load:1;
+	RH_KABI_FILL_HOLE(unsigned sched_remote_wakeup:1)
+	unsigned sched_interruptible_sleep:1;
+	unsigned :0; /* force alignment to the next boundary */
+
+	/* unserialized, strictly 'current' */
 	unsigned did_exec:1;
 	unsigned in_execve:1;	/* Tell the LSMs that the process is doing an
 				 * execve */
 	unsigned in_iowait:1;
-	unsigned did_ve_enter:1;
-
-	/* task may not gain privileges */
-	unsigned no_new_privs:1;
-
-	/* Revert to default priority/policy when forking */
-	unsigned sched_reset_on_fork:1;
-	unsigned sched_contributes_to_load:1;
-	RH_KABI_FILL_HOLE(unsigned sched_remote_wakeup:1)
-	unsigned sched_interruptible_sleep:1;
+	unsigned no_new_privs:1; /* task may not gain privileges */
 
 	pid_t pid;
 	pid_t tgid;
