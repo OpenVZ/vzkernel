@@ -301,9 +301,7 @@ enum {
 	CGRP_ROOT_NOPREFIX	= (1 << 1), /* mounted subsystems have no named prefix */
 	CGRP_ROOT_XATTR		= (1 << 2), /* supports extended attributes */
 };
-#ifdef CONFIG_VE
-struct ve_struct;
-#endif
+
 /*
  * A cgroupfs_root represents the root of a cgroup hierarchy, and may be
  * associated with a superblock to form an active hierarchy.  This is
@@ -350,9 +348,6 @@ struct cgroupfs_root {
 
 	/* The name for this hierarchy - may be empty */
 	char name[MAX_CGROUP_ROOT_NAMELEN];
-#ifdef CONFIG_VE
-	struct ve_struct *ve;
-#endif
 };
 
 /*
