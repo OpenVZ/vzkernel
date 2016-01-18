@@ -68,6 +68,7 @@ struct ve_struct ve0 = {
 	RCU_POINTER_INITIALIZER(ve_ns, &init_nsproxy),
 	.ve_netns		= &init_net,
 	.is_running		= 1,
+	.is_pseudosuper		= 1,
 #ifdef CONFIG_VE_IPTABLES
 	.ipt_mask		= VE_IP_ALL,	/* everything is allowed */
 #endif
@@ -531,6 +532,12 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	 * ve_mutex works as barrier for ve_can_attach().
 	 */
 	ve->is_running = 0;
+
+	/*
+	 * Neither it can be in pseudosuper state
+	 * anymore, setup it again if needed.
+	 */
+	ve->is_pseudosuper = 0;
 
 	ve_tty_console_fini(ve);
 	ve_legacy_pty_fini(ve);
@@ -1146,6 +1153,7 @@ enum {
 	VE_CF_STATE,
 	VE_CF_FEATURES,
 	VE_CF_IPTABLES_MASK,
+	VE_CF_PSEUDOSUPER,
 };
 
 static u64 ve_read_u64(struct cgroup *cg, struct cftype *cft)
@@ -1156,6 +1164,37 @@ static u64 ve_read_u64(struct cgroup *cg, struct cftype *cft)
 	else if (cft->private == VE_CF_IPTABLES_MASK)
 		return cgroup_ve(cg)->ipt_mask;
 #endif
+	else if (cft->private == VE_CF_PSEUDOSUPER)
+		return cgroup_ve(cg)->is_pseudosuper;
+	return 0;
+}
+
+/*
+ * Move VE into pseudosuper state where some of privilegued
+ * operations such as mounting cgroups from inside of VE context
+ * is allowed in a sake of container restore for example.
+ *
+ * While dropping pseudosuper privilegues is allowed from
+ * any context to set this value up one have to be a real
+ * node's owner.
+ */
+static int ve_write_pseudosuper(struct cgroup *cg,
+				struct cftype *cft,
+				u64 value)
+{
+	struct ve_struct *ve = cgroup_ve(cg);
+
+	if (!ve_is_super(get_exec_env()) && value)
+		return -EPERM;
+
+	down_write(&ve->op_sem);
+	if (value && (ve->is_running || ve->ve_ns)) {
+		up_write(&ve->op_sem);
+		return -EBUSY;
+	}
+	ve->is_pseudosuper = value;
+	up_write(&ve->op_sem);
+
 	return 0;
 }
 
@@ -1224,6 +1263,13 @@ static struct cftype ve_cftypes[] = {
 		.read_u64		= ve_read_u64,
 		.write_u64		= ve_write_u64,
 		.private		= VE_CF_IPTABLES_MASK,
+	},
+	{
+		.name			= "pseudosuper",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_u64		= ve_read_u64,
+		.write_u64		= ve_write_pseudosuper,
+		.private		= VE_CF_PSEUDOSUPER,
 	},
 	{ }
 };
