@@ -238,7 +238,7 @@ static inline int ve_mount_allowed(void)
 {
 	struct ve_struct *ve = get_exec_env();
 
-	return ve_is_super(ve) || ve->mnt_nr < sysctl_ve_mount_nr;
+	return ve_is_super(ve) || ve->mnt_nr < (int)sysctl_ve_mount_nr;
 }
 
 static inline void ve_mount_nr_inc(void)
