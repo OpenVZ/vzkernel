@@ -575,6 +575,13 @@ struct sk_buff {
 	struct nf_bridge_info	*nf_bridge;
 #endif
 
+	/* fields enclosed in headers_start/headers_end are copied
+	 * using a single memcpy() in __copy_skb_header()
+	 */
+	/* private: */
+	RH_KABI_EXTEND(__u32	headers_start[0])
+	/* public: */
+
 	int			skb_iif;
 
 	RH_KABI_REPLACE(__u32	rxhash,
@@ -651,12 +658,17 @@ struct sk_buff {
 	/* 12 bit hole */
 	RH_KABI_EXTEND(kmemcheck_bitfield_end(flags3))
 
+	/* private: */
+	RH_KABI_EXTEND(__u32	headers_end[0])
+	/* public: */
+
 	/* RHEL SPECIFIC
 	 *
 	 * The following padding has been inserted before ABI freeze to
 	 * allow extending the structure while preserve ABI. Feel free
 	 * to replace reserved slots with required structure field
-	 * additions of your backport.
+	 * additions of your backport, eventually moving the replaced slot
+	 * before headers_end, if it need to be copied by __copy_skb_header()
 	 */
 	u32			rh_reserved1;
 	u32			rh_reserved2;
