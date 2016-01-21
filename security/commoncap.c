@@ -624,7 +624,7 @@ int cap_inode_setxattr(struct dentry *dentry, const char *name,
 		       const void *value, size_t size, int flags)
 {
 	if (!strcmp(name, XATTR_NAME_CAPS)) {
-		if (!capable(CAP_SETFCAP))
+		if (!ve_capable(CAP_SETFCAP))
 			return -EPERM;
 		return 0;
 	}
@@ -650,7 +650,7 @@ int cap_inode_setxattr(struct dentry *dentry, const char *name,
 int cap_inode_removexattr(struct dentry *dentry, const char *name)
 {
 	if (!strcmp(name, XATTR_NAME_CAPS)) {
-		if (!capable(CAP_SETFCAP))
+		if (!ve_capable(CAP_SETFCAP))
 			return -EPERM;
 		return 0;
 	}
