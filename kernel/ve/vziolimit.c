@@ -154,8 +154,6 @@ static void iolimit_balance_dirty(struct iolimit *iolimit,
 	spin_lock_irqsave(&ub->ub_lock, flags);
 	/* precharge dirty pages */
 	throttle_charge(th, (long long)dirty << PAGE_SHIFT);
-	/* set dirty_exceeded for smooth throttling */
-	set_bit(UB_DIRTY_EXCEEDED, &ub->ub_flags);
 	spin_unlock_irqrestore(&ub->ub_lock, flags);
 }
 
