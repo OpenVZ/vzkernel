@@ -58,7 +58,7 @@ extern void ub_io_writeback_dec(struct address_space *mapping);
 
 extern int ub_dirty_limits(unsigned long *pbackground,
 			   long *pdirty, struct user_beancounter *ub);
-
+extern bool ub_over_bground_thresh(void);
 extern bool ub_should_skip_writeback(struct user_beancounter *ub,
 				     struct inode *inode);
 
@@ -114,6 +114,11 @@ static inline bool ub_should_skip_writeback(struct user_beancounter *ub,
 static inline struct user_beancounter *get_io_ub(void)
 {
 	return NULL;
+}
+
+static inline bool ub_over_bground_thresh(void)
+{
+	return false;
 }
 
 #endif /* UBC_IO_ACCT */
