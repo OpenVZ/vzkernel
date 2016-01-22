@@ -178,20 +178,6 @@ static unsigned long get_lru_size(struct lruvec *lruvec, enum lru_list lru)
 	return zone_page_state(lruvec_zone(lruvec), NR_LRU_BASE + lru);
 }
 
-static bool lruvec_reclaimable(struct lruvec *lruvec, bool may_swap)
-{
-	unsigned long reclaimable;
-
-	reclaimable = get_lru_size(lruvec, LRU_ACTIVE_FILE) +
-		      get_lru_size(lruvec, LRU_INACTIVE_FILE);
-
-	if (may_swap && get_nr_swap_pages() > 0)
-		reclaimable += get_lru_size(lruvec, LRU_ACTIVE_ANON) +
-			       get_lru_size(lruvec, LRU_INACTIVE_ANON);
-
-	return lruvec->pages_scanned < reclaimable * 6;
-}
-
 /*
  * Add a shrinker callback to be called from the vm.
  */
@@ -1543,7 +1529,6 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 	__mod_zone_page_state(zone, NR_LRU_BASE + lru, -nr_taken);
 	__mod_zone_page_state(zone, NR_ISOLATED_ANON + file, nr_taken);
 
-	lruvec->pages_scanned += nr_scanned;
 	if (global_reclaim(sc)) {
 		zone->pages_scanned += nr_scanned;
 		if (current_is_kswapd())
@@ -1562,9 +1547,6 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 				false);
 
 	spin_lock_irq(&zone->lru_lock);
-
-	if (nr_reclaimed)
-		lruvec->pages_scanned = 0;
 
 	reclaim_stat->recent_scanned[file] += nr_taken;
 
@@ -1739,7 +1721,6 @@ static void shrink_active_list(unsigned long nr_to_scan,
 
 	nr_taken = isolate_lru_pages(nr_to_scan, lruvec, &l_hold,
 				     &nr_scanned, sc, isolate_mode, lru);
-	lruvec->pages_scanned += nr_scanned;
 	if (global_reclaim(sc))
 		zone->pages_scanned += nr_scanned;
 
@@ -2376,10 +2357,6 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 				continue;
 
 			lruvec = mem_cgroup_zone_lruvec(zone, memcg);
-			if (!global_reclaim(sc) &&
-			    !lruvec_reclaimable(lruvec, sc->may_swap))
-				continue;
-
 			scanned = sc->nr_scanned;
 
 			shrink_lruvec(lruvec, sc, &lru_pages);
