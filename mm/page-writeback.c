@@ -1356,6 +1356,100 @@ static inline void bdi_dirty_limits(struct backing_dev_info *bdi,
 	}
 }
 
+static void balance_dirty_pages_ub(struct address_space *mapping,
+				unsigned long write_chunk)
+{
+	long ub_dirty, ub_writeback;
+	long ub_thresh, ub_background_thresh;
+	unsigned long pages_written = 0;
+	unsigned long pause = 1;
+	struct user_beancounter *ub = get_io_ub();
+
+	struct backing_dev_info *bdi = mapping->backing_dev_info;
+
+	for (;;) {
+		unsigned long nr_to_write = write_chunk - pages_written;
+
+		ub_dirty = ub_stat_get(ub, dirty_pages);
+		ub_writeback = ub_stat_get(ub, writeback_pages);
+
+		if (!ub_dirty_limits(&ub_background_thresh, &ub_thresh, ub))
+			break;
+
+		/*
+		 * Check thresholds and start background writeback
+		 * before throttling.
+		 */
+		if (ub_dirty + ub_writeback <= ub_thresh)
+			break;
+		if (!writeback_in_progress(bdi))
+			bdi_start_background_writeback(bdi);
+
+		/*
+		 * Throttle it only when the background writeback cannot
+		 * catch-up. This avoids (excessively) small writeouts
+		 * when the bdi limits are ramping up.
+		 */
+		if (ub_dirty + ub_writeback <
+			(ub_background_thresh + ub_thresh) / 2)
+			break;
+
+		if (ub_dirty > ub_thresh) {
+			pages_written += writeback_inodes_wb(&bdi->wb,
+						nr_to_write,
+						WB_REASON_BACKGROUND, ub);
+			ub_dirty = ub_stat_get(ub, dirty_pages);
+			ub_writeback = ub_stat_get(ub, writeback_pages);
+		}
+
+		/* fixup ub-stat per-cpu drift to avoid false-positive */
+		if (ub_dirty + ub_writeback > ub_thresh &&
+		    ub_dirty + ub_writeback - ub_thresh <
+				    UB_STAT_BATCH * num_possible_cpus()) {
+			ub_dirty = ub_stat_get_exact(ub, dirty_pages);
+			ub_writeback = ub_stat_get_exact(ub, writeback_pages);
+		}
+
+		if (ub_dirty + ub_writeback <= ub_thresh)
+			break;
+
+		if (pages_written >= write_chunk)
+			break;		/* We've done our duty */
+
+		__set_current_state(TASK_KILLABLE);
+		io_schedule_timeout(pause);
+
+		/*
+		 * Increase the delay for each loop, up to our previous
+		 * default of taking a 100ms nap.
+		 */
+		pause <<= 1;
+		if (pause > HZ / 10)
+			pause = HZ / 10;
+
+		if (fatal_signal_pending(current))
+			break;
+	}
+
+	virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_BALANCE_DIRTY,
+			       (void*)write_chunk);
+
+	/*
+	 * Even if this is filtered writeback for other ub it will write
+	 * inodes for this ub, because we check ub limits of inode (via
+	 * __ub_over_bground_thresh(ub)) during writeback.
+	 */
+	if (writeback_in_progress(bdi))
+		return;
+
+	/*
+	 * We start background writeout at the lower ub_background_thresh,
+	 * to keep the amount of dirty memory low.
+	 */
+	if (ub_dirty > ub_background_thresh)
+		bdi_start_background_writeback(bdi);
+}
+
 /*
  * balance_dirty_pages() must be called by processes which are generating dirty
  * data.  It looks at the number of dirty pages in the machine and will force
@@ -1654,8 +1748,10 @@ void balance_dirty_pages_ratelimited(struct address_space *mapping)
 	}
 	preempt_enable();
 
-	if (unlikely(current->nr_dirtied >= ratelimit))
+	if (unlikely(current->nr_dirtied >= ratelimit)) {
+		balance_dirty_pages_ub(mapping, current->nr_dirtied);
 		balance_dirty_pages(mapping, current->nr_dirtied);
+	}
 }
 EXPORT_SYMBOL(balance_dirty_pages_ratelimited);
 
