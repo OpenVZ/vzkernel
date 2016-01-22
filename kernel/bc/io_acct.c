@@ -126,11 +126,47 @@ void ub_io_writeback_dec(struct address_space *mapping)
 	}
 }
 
+static bool __ub_over_bground_thresh(struct user_beancounter *ub)
+{
+	unsigned long background_thresh, dirty_thresh;
+	unsigned long ub_dirty, ub_writeback;
+
+	ub_dirty_limits(&background_thresh, &dirty_thresh, ub);
+
+	ub_dirty = ub_stat_get(ub, dirty_pages);
+	ub_writeback = ub_stat_get(ub, writeback_pages);
+
+	if (ub_dirty + ub_writeback >= background_thresh)
+		return true;
+
+	return false;
+}
+
+bool ub_over_bground_thresh(void)
+{
+	struct user_beancounter *ub;
+	bool ret = false;
+
+	rcu_read_lock();
+	for_each_beancounter(ub) {
+		if (ub == get_ub0())
+			continue;
+		if (__ub_over_bground_thresh(ub)) {
+			ret = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+	return ret;
+}
+
 int ub_dirty_limits(unsigned long *pbackground,
 		    long *pdirty, struct user_beancounter *ub)
 {
 	int dirty_ratio;
 	unsigned long available_memory;
+
+	*pdirty = *pbackground = LONG_MAX;
 
 	dirty_ratio = ub_dirty_ratio;
 	if (!dirty_ratio)
@@ -157,8 +193,10 @@ bool ub_should_skip_writeback(struct user_beancounter *ub, struct inode *inode)
 
 	rcu_read_lock();
 	dirtied_ub = rcu_dereference(inode->i_mapping->dirtied_ub);
-	ret = !dirtied_ub || (dirtied_ub != ub &&
-			!test_bit(UB_DIRTY_EXCEEDED, &dirtied_ub->ub_flags));
+	if (ub)
+		ret = (ub != dirtied_ub);
+	else
+		ret = (dirtied_ub && !__ub_over_bground_thresh(dirtied_ub));
 	rcu_read_unlock();
 
 	return ret;
