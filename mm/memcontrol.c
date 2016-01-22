@@ -3269,8 +3269,8 @@ int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp, u64 size)
 	may_oom = (gfp & __GFP_FS) && !(gfp & __GFP_NORETRY);
 
 	_memcg = memcg;
-	ret = __mem_cgroup_try_charge(NULL, gfp, size >> PAGE_SHIFT,
-				      &_memcg, may_oom);
+	ret = __mem_cgroup_try_charge(NULL, gfp | __GFP_NOFAIL,
+				      size >> PAGE_SHIFT, &_memcg, may_oom);
 
 	if (ret == -EINTR)  {
 		/*
