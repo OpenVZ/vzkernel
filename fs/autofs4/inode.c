@@ -81,6 +81,10 @@ static int autofs4_show_options(struct seq_file *m, struct dentry *root)
 		return 0;
 
 	seq_printf(m, ",fd=%d", sbi->pipefd);
+	if (sbi->pipe)
+		seq_printf(m, ",pipe_ino=%ld", sbi->pipe->f_inode->i_ino);
+	else
+		seq_printf(m, ",pipe_ino=-1");
 	if (!uid_eq(root_inode->i_uid, GLOBAL_ROOT_UID))
 		seq_printf(m, ",uid=%u",
 			from_kuid_munged(&init_user_ns, root_inode->i_uid));
