@@ -42,6 +42,7 @@ struct wb_writeback_work {
 	struct super_block *sb;
 	unsigned long *older_than_this;
 	enum writeback_sync_modes sync_mode;
+	unsigned int filter_ub:1;
 	unsigned int tagged_writepages:1;
 	unsigned int for_kupdate:1;
 	unsigned int range_cyclic:1;
@@ -51,6 +52,7 @@ struct wb_writeback_work {
 
 	struct list_head list;		/* pending work list */
 	struct completion *done;	/* set if the caller waits */
+	struct user_beancounter *ub;
 };
 
 /*
@@ -724,6 +726,13 @@ static long writeback_sb_inodes(struct super_block *sb,
 			trace_writeback_sb_inodes_requeue(inode);
 			continue;
 		}
+		if ((work->ub || work->filter_ub) &&
+		     ub_should_skip_writeback(work->ub, inode)) {
+			spin_unlock(&inode->i_lock);
+			requeue_io(inode, wb);
+			continue;
+		}
+
 		spin_unlock(&wb->list_lock);
 
 		/*
@@ -809,14 +818,15 @@ static long __writeback_inodes_wb(struct bdi_writeback *wb,
 	return wrote;
 }
 
-static long writeback_inodes_wb(struct bdi_writeback *wb, long nr_pages,
-				enum wb_reason reason)
+long writeback_inodes_wb(struct bdi_writeback *wb, long nr_pages,
+			enum wb_reason reason, struct user_beancounter *ub)
 {
 	struct wb_writeback_work work = {
 		.nr_pages	= nr_pages,
 		.sync_mode	= WB_SYNC_NONE,
 		.range_cyclic	= 1,
 		.reason		= reason,
+		.ub		= ub,
 	};
 
 	spin_lock(&wb->list_lock);
@@ -904,8 +914,14 @@ static long wb_writeback(struct bdi_writeback *wb,
 		 * For background writeout, stop when we are below the
 		 * background dirty threshold
 		 */
-		if (work->for_background && !over_bground_thresh(wb->bdi))
-			break;
+		if (work->for_background) {
+			if (over_bground_thresh(wb->bdi))
+				work->filter_ub = 0;
+			else if (ub_over_bground_thresh())
+				work->filter_ub = 1;
+			else
+				break;
+		}
 
 		/*
 		 * Kupdate and background works are special and we want to
@@ -996,7 +1012,8 @@ static unsigned long get_nr_dirty_pages(void)
 
 static long wb_check_background_flush(struct bdi_writeback *wb)
 {
-	if (over_bground_thresh(wb->bdi)) {
+	if (over_bground_thresh(wb->bdi) ||
+		ub_over_bground_thresh()) {
 
 		struct wb_writeback_work work = {
 			.nr_pages	= LONG_MAX,
@@ -1115,7 +1132,7 @@ void bdi_writeback_workfn(struct work_struct *work)
 		 * enough for efficient IO.
 		 */
 		pages_written = writeback_inodes_wb(&bdi->wb, 1024,
-						    WB_REASON_FORKER_THREAD);
+						WB_REASON_FORKER_THREAD, NULL);
 		trace_writeback_pages_written(pages_written);
 	}
 
