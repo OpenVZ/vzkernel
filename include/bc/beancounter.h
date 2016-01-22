@@ -98,8 +98,6 @@ struct user_beancounter {
 	spinlock_t		ub_lock;
 	const char		*ub_name;
 
-	unsigned long		ub_flags;
-
 	struct ratelimit_state	ub_ratelimit;
 
 	atomic_long_t		dirty_pages;
@@ -115,10 +113,6 @@ struct user_beancounter {
 	struct ubparm		*ub_store;
 
 	struct ub_percpu_struct	*ub_percpu;
-};
-
-enum ub_flags {
-	UB_DIRTY_EXCEEDED,
 };
 
 extern int ub_count;
