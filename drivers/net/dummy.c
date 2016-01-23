@@ -165,6 +165,7 @@ static void dummy_setup(struct net_device *dev)
 	dev->features	|= NETIF_F_ALL_TSO;
 	dev->features	|= NETIF_F_HW_CSUM | NETIF_F_HIGHDMA | NETIF_F_LLTX;
 	dev->features	|= NETIF_F_GSO_ENCAP_ALL;
+	dev->features	|= NETIF_F_VIRTUAL;
 	dev->hw_features |= dev->features;
 	dev->hw_enc_features |= dev->features;
 	eth_hw_addr_random(dev);
