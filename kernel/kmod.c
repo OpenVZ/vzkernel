@@ -375,12 +375,6 @@ static inline int module_payload_iptable_allowed(const char *module)
 	return -1;
 }
 
-#else  /* CONFIG_VE_IPTABLES */
-
-#define module_payload_iptable_allowed(module) -1
-
-#endif /* CONFIG_VE_IPTABLES */
-
 /* ve0 allowed modules */
 static const char * const ve0_allowed_mod[] = {
 	"binfmt_misc"
@@ -411,6 +405,8 @@ bool module_payload_allowed(const char *module)
 
 	return false;
 }
+
+#endif
 
 int __request_module(bool wait, const char *fmt, ...)
 {
