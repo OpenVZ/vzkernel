@@ -167,8 +167,12 @@ static struct mount *alloc_vfsmnt(const char *name)
 {
 	struct mount *mnt;
 
-	if (!ve_mount_allowed())
+	if (!ve_mount_allowed()) {
+		pr_warn_ratelimited(
+			"CT#%s reached the limit on mounts.\n",
+			ve_name(get_exec_env()));
 		return NULL;
+	}
 
 	mnt = kmem_cache_zalloc(mnt_cache, GFP_KERNEL);
 	if (mnt) {
