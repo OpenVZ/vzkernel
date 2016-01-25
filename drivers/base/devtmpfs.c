@@ -135,24 +135,12 @@ static inline int is_blockdev(struct device *dev)
 static inline int is_blockdev(struct device *dev) { return 0; }
 #endif
 
-#ifdef CONFIG_VE
-static inline int is_ve_dev(struct device *dev)
-{
-	return dev->class && dev->class->namespace == ve_namespace &&
-		ve_namespace(dev) != get_ve0();
-}
-#else
-static inline int is_ve_dev(struct device *dev) { return 0; }
-#endif
-
 int devtmpfs_create_node(struct device *dev)
 {
 	const char *tmp = NULL;
 	struct req req;
 
 	if (!thread)
-		return 0;
-	if (is_ve_dev(dev))
 		return 0;
 
 	req.mode = 0;
@@ -192,8 +180,6 @@ int devtmpfs_delete_node(struct device *dev)
 	struct req req;
 
 	if (!thread)
-		return 0;
-	if (is_ve_dev(dev))
 		return 0;
 
 	req.name = device_get_devnode(dev, NULL, NULL, NULL, &tmp);
