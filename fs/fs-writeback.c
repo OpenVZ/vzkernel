@@ -720,7 +720,7 @@ static long writeback_sb_inodes(struct super_block *sb,
 		if ((work->ub || work->filter_ub) &&
 		     ub_should_skip_writeback(work->ub, inode)) {
 			spin_unlock(&inode->i_lock);
-			requeue_io(inode, wb);
+			redirty_tail(inode, wb);
 			continue;
 		}
 
