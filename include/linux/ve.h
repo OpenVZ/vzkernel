@@ -70,14 +70,6 @@ struct ve_struct {
 	struct binfmt_misc	*binfmt_misc;
 #endif
 
-#ifdef CONFIG_LEGACY_PTYS
-	struct tty_driver	*pty_driver, *pty_slave_driver;
-#endif
-
-#ifdef CONFIG_TTY
-	struct device		*consdev;
-#endif
-
 	struct list_head	devices;
 
 #if defined(CONFIG_VE_NETDEV) || defined (CONFIG_VE_NETDEV_MODULE)
@@ -165,8 +157,6 @@ extern int vz_compat;
 extern struct kobj_ns_type_operations ve_ns_type_operations;
 extern struct kobject * kobject_create_and_add_ve(const char *name,
 						struct kobject *parent);
-
-extern const void *ve_namespace(struct device *dev);
 
 extern struct kmapset_set ve_sysfs_perms;
 
@@ -281,8 +271,6 @@ static inline struct user_namespace *ve_init_user_ns(void)
 	kthread_create_on_node_ve(threadfn, data, node, namefmt...)
 
 #define kobject_create_and_add_ve		kobject_create_and_add
-
-static const void *ve_namespace(struct device *dev) { return NULL; }
 
 static inline void monotonic_abs_to_ve(clockid_t which_clock,
 				struct timespec *tp) { }
