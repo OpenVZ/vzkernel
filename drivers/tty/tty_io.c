@@ -3100,39 +3100,7 @@ int tty_put_char(struct tty_struct *tty, unsigned char ch)
 }
 EXPORT_SYMBOL_GPL(tty_put_char);
 
-static char *tty_devnode(struct device *dev, umode_t *mode);
-
-static struct class tty_class_base = {
-	.name = "tty",
-	.devnode = tty_devnode,
-	.ns_type = &ve_ns_type_operations,
-	.namespace = ve_namespace,
-	.owner = THIS_MODULE,
-};
-
-struct class *tty_class = &tty_class_base;
-EXPORT_SYMBOL(tty_class);
-
-#ifdef CONFIG_VE
-static inline bool tty_handle_register(struct tty_driver *driver)
-{
-	if (!ve_is_super(driver->ve) &&
-	    (driver->flags & TTY_DRIVER_CONTAINERIZED))
-		return false;
-	return true;
-}
-#else
-static inline bool tty_handle_register(struct tty_driver *driver)
-{
-	return true;
-}
-#endif
-
-static void tty_cdev_del(struct tty_driver *driver, struct cdev *p)
-{
-	if (tty_handle_register(driver))
-		cdev_del(p);
-}
+struct class *tty_class;
 
 static int tty_cdev_add(struct tty_driver *driver, dev_t dev,
 		unsigned int index, unsigned int count)
@@ -3140,8 +3108,6 @@ static int tty_cdev_add(struct tty_driver *driver, dev_t dev,
 	/* init here, since reused cdevs cause crashes */
 	cdev_init(&driver->cdevs[index], &tty_fops);
 	driver->cdevs[index].owner = driver->owner;
-	if (!tty_handle_register(driver))
-		return 0;
 	return cdev_add(&driver->cdevs[index], dev, count);
 }
 
@@ -3238,8 +3204,7 @@ struct device *tty_register_device_attr(struct tty_driver *driver,
 	dev->release = tty_device_create_release;
 	dev_set_name(dev, "%s", name);
 	dev->groups = attr_grp;
-	WARN_ON(drvdata && driver->ve);
-	dev_set_drvdata(dev, (drvdata) ? drvdata : driver->ve);
+	dev_set_drvdata(dev, drvdata);
 
 	retval = device_register(dev);
 	if (retval)
@@ -3250,7 +3215,7 @@ struct device *tty_register_device_attr(struct tty_driver *driver,
 error:
 	put_device(dev);
 	if (cdev)
-		tty_cdev_del(driver, &driver->cdevs[index]);
+		cdev_del(&driver->cdevs[index]);
 	return ERR_PTR(retval);
 }
 EXPORT_SYMBOL_GPL(tty_register_device_attr);
@@ -3268,17 +3233,10 @@ EXPORT_SYMBOL_GPL(tty_register_device_attr);
 
 void tty_unregister_device(struct tty_driver *driver, unsigned index)
 {
-#ifdef CONFIG_VE
-	if (driver->flags & TTY_DRIVER_CONTAINERIZED) {
-		device_destroy_namespace(tty_class,
-			MKDEV(driver->major, driver->minor_start) + index,
-			driver->ve);
-	} else
-#endif
-		device_destroy(tty_class,
+	device_destroy(tty_class,
 			MKDEV(driver->major, driver->minor_start) + index);
 	if (!(driver->flags & TTY_DRIVER_DYNAMIC_ALLOC))
-		tty_cdev_del(driver, &driver->cdevs[index]);
+		cdev_del(&driver->cdevs[index]);
 }
 EXPORT_SYMBOL(tty_unregister_device);
 
@@ -3361,19 +3319,17 @@ static void destruct_tty_driver(struct kref *kref)
 		 * drivers are removed from the kernel.
 		 */
 		for (i = 0; i < driver->num; i++) {
-			if (!(driver->flags & TTY_DRIVER_DEVPTS_MEM)) {
-				tp = driver->termios[i];
-				if (tp) {
-					driver->termios[i] = NULL;
-					kfree(tp);
-				}
+			tp = driver->termios[i];
+			if (tp) {
+				driver->termios[i] = NULL;
+				kfree(tp);
 			}
 			if (!(driver->flags & TTY_DRIVER_DYNAMIC_DEV))
 				tty_unregister_device(driver, i);
 		}
 		proc_tty_unregister_driver(driver);
 		if (driver->flags & TTY_DRIVER_DYNAMIC_ALLOC)
-			tty_cdev_del(driver, &driver->cdevs[0]);
+			cdev_del(&driver->cdevs[0]);
 	}
 	kfree(driver->cdevs);
 	kfree(driver->ports);
@@ -3411,9 +3367,6 @@ int tty_register_driver(struct tty_driver *driver)
 	dev_t dev;
 	struct device *d;
 
-	if (!tty_handle_register(driver))
-		goto tty_skip_register;
-
 	if (!driver->major) {
 		error = alloc_chrdev_region(&dev, driver->minor_start,
 						driver->num, driver->name);
@@ -3427,8 +3380,6 @@ int tty_register_driver(struct tty_driver *driver)
 	}
 	if (error < 0)
 		goto err;
-
-tty_skip_register:
 
 	if (driver->flags & TTY_DRIVER_DYNAMIC_ALLOC) {
 		error = tty_cdev_add(driver, dev, 0, driver->num);
@@ -3462,8 +3413,7 @@ err_unreg_devs:
 	mutex_unlock(&tty_mutex);
 
 err_unreg_char:
-	if (tty_handle_register(driver))
-		unregister_chrdev_region(dev, driver->num);
+	unregister_chrdev_region(dev, driver->num);
 err:
 	return error;
 }
@@ -3479,9 +3429,8 @@ int tty_unregister_driver(struct tty_driver *driver)
 	if (driver->refcount)
 		return -EBUSY;
 #endif
-	if (tty_handle_register(driver))
-		unregister_chrdev_region(MKDEV(driver->major, driver->minor_start),
-					driver->num);
+	unregister_chrdev_region(MKDEV(driver->major, driver->minor_start),
+				driver->num);
 	mutex_lock(&tty_mutex);
 	list_del(&driver->tty_drivers);
 	mutex_unlock(&tty_mutex);
@@ -3590,7 +3539,11 @@ static char *tty_devnode(struct device *dev, umode_t *mode)
 
 static int __init tty_class_init(void)
 {
-	return class_register(&tty_class_base);
+	tty_class = class_create(THIS_MODULE, "tty");
+	if (IS_ERR(tty_class))
+		return PTR_ERR(tty_class);
+	tty_class->devnode = tty_devnode;
+	return 0;
 }
 
 postcore_initcall(tty_class_init);
@@ -3637,86 +3590,6 @@ static ssize_t show_cons_active(struct device *dev,
 }
 static DEVICE_ATTR(active, S_IRUGO, show_cons_active, NULL);
 
-#ifdef CONFIG_VE
-
-void console_sysfs_notify(void)
-{
-	struct ve_struct *ve = get_exec_env();
-
-	if (ve->consdev)
-		sysfs_notify(&ve->consdev->kobj, NULL, "active");
-}
-
-void ve_tty_console_fini(struct ve_struct *ve)
-{
-	struct device *consdev = ve->consdev;
-	int i;
-
-	ve->consdev = NULL;
-	device_remove_file(consdev, &dev_attr_active);
-	device_destroy_namespace(tty_class, MKDEV(TTYAUX_MAJOR, 1), ve);
-	device_destroy_namespace(tty_class, MKDEV(TTYAUX_MAJOR, 0), ve);
-
-	if (!ve_is_super(ve)) {
-		for (i = 0; i <= MAX_NR_VTTY_CONSOLES; i++) {
-			device_destroy_namespace(tty_class,
-						 MKDEV(TTY_MAJOR, i), ve);
-		}
-	}
-}
-
-int ve_tty_console_init(struct ve_struct *ve)
-{
-	struct device *dev, *d;
-	int err, i;
-
-	dev = device_create(tty_class, NULL, MKDEV(TTYAUX_MAJOR, 0), ve, "tty");
-	if (IS_ERR(dev))
-		return PTR_ERR(dev);
-	dev = device_create(tty_class, NULL, MKDEV(TTYAUX_MAJOR, 1), ve,
-			      "console");
-	if (IS_ERR(dev)) {
-		err = PTR_ERR(dev);
-		goto err_consdev;
-	}
-
-	err = device_create_file(dev, &dev_attr_active);
-	if (err)
-		goto err_consfile;
-
-	if (!ve_is_super(ve)) {
-		for (i = 0; i <= MAX_NR_VTTY_CONSOLES; i++) {
-			d = device_create(tty_class, NULL, MKDEV(TTY_MAJOR, i),
-					  ve, "tty%d", i);
-			if (IS_ERR(d)) {
-				err = PTR_ERR(dev);
-
-				while (i-- > 0)
-					device_destroy_namespace(tty_class,
-								 MKDEV(TTY_MAJOR, i),
-								 ve);
-				device_remove_file(dev, &dev_attr_active);
-				goto err_consfile;
-			}
-		}
-	}
-
-	ve->consdev = dev;
-	return 0;
-
-err_consfile:
-	device_destroy_namespace(tty_class, MKDEV(TTYAUX_MAJOR, 1), ve);
-err_consdev:
-	device_destroy_namespace(tty_class, MKDEV(TTYAUX_MAJOR, 0), ve);
-	return err;
-}
-
-static void tty_init_devices(void)
-{
-	if (ve_tty_console_init(get_ve0()))
-	       WARN_ON(get_ve0()->consdev);
-}
-#else
 static struct device *consdev;
 
 void console_sysfs_notify(void)
@@ -3724,18 +3597,6 @@ void console_sysfs_notify(void)
 	if (consdev)
 		sysfs_notify(&consdev->kobj, NULL, "active");
 }
-
-static void tty_init_devices(void)
-{
-	device_create(tty_class, NULL, MKDEV(TTYAUX_MAJOR, 0), NULL, "tty");
-	consdev = device_create(tty_class, NULL, MKDEV(TTYAUX_MAJOR, 1), NULL,
-			      "console");
-	if (IS_ERR(consdev))
-		consdev = NULL;
-	else
-		WARN_ON(device_create_file(consdev, &dev_attr_active) < 0);
-}
-#endif
 
 /*
  * Ok, now we can initialize the rest of the tty devices and can count
@@ -3747,12 +3608,19 @@ int __init tty_init(void)
 	if (cdev_add(&tty_cdev, MKDEV(TTYAUX_MAJOR, 0), 1) ||
 	    register_chrdev_region(MKDEV(TTYAUX_MAJOR, 0), 1, "/dev/tty") < 0)
 		panic("Couldn't register /dev/tty driver\n");
+	device_create(tty_class, NULL, MKDEV(TTYAUX_MAJOR, 0), NULL, "tty");
 
 	cdev_init(&console_cdev, &console_fops);
 	if (cdev_add(&console_cdev, MKDEV(TTYAUX_MAJOR, 1), 1) ||
 	    register_chrdev_region(MKDEV(TTYAUX_MAJOR, 1), 1, "/dev/console") < 0)
 		panic("Couldn't register /dev/console driver\n");
-	tty_init_devices();
+	consdev = device_create(tty_class, NULL, MKDEV(TTYAUX_MAJOR, 1), NULL,
+			      "console");
+	if (IS_ERR(consdev))
+		consdev = NULL;
+	else
+		WARN_ON(device_create_file(consdev, &dev_attr_active) < 0);
+
 #ifdef CONFIG_VT
 	vty_init(&console_fops);
 #endif
