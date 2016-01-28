@@ -615,7 +615,7 @@ static int proc_oom_score(struct task_struct *task, char *buffer)
 
 	tasklist_read_lock();
 	if (pid_alive(task))
-		points = oom_badness(task, NULL, NULL, totalpages) *
+		points = oom_badness(task, NULL, NULL, totalpages, NULL) *
 						1000 / totalpages;
 	read_unlock(&tasklist_lock);
 	return sprintf(buffer, "%lu\n", points);
