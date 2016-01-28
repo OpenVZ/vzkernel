@@ -170,6 +170,20 @@ static bool oom_unkillable_task(struct task_struct *p,
 	return false;
 }
 
+static unsigned long mm_overdraft(struct mm_struct *mm)
+{
+	struct mem_cgroup *memcg;
+	struct oom_context *ctx;
+	unsigned long overdraft;
+
+	memcg = try_get_mem_cgroup_from_mm(mm);
+	ctx = mem_cgroup_oom_context(memcg);
+	overdraft = ctx->overdraft;
+	mem_cgroup_put(memcg);
+
+	return overdraft;
+}
+
 /**
  * oom_badness - heuristic function to determine which candidate task to kill
  * @p: task struct of which task we should calculate
@@ -180,10 +194,14 @@ static bool oom_unkillable_task(struct task_struct *p,
  * task consuming the most memory to avoid subsequent oom failures.
  */
 unsigned long oom_badness(struct task_struct *p, struct mem_cgroup *memcg,
-			  const nodemask_t *nodemask, unsigned long totalpages)
+			  const nodemask_t *nodemask, unsigned long totalpages,
+			  unsigned long *overdraft)
 {
 	long points;
 	long adj;
+
+	if (overdraft)
+		*overdraft = 0;
 
 	if (oom_unkillable_task(p, memcg, nodemask))
 		return 0;
@@ -191,6 +209,9 @@ unsigned long oom_badness(struct task_struct *p, struct mem_cgroup *memcg,
 	p = find_lock_task_mm(p);
 	if (!p)
 		return 0;
+
+	if (overdraft)
+		*overdraft = mm_overdraft(p->mm);
 
 	adj = get_task_oom_score_adj(p);
 	if (adj == OOM_SCORE_ADJ_MIN) {
@@ -289,7 +310,7 @@ static enum oom_constraint constrained_alloc(struct zonelist *zonelist,
 
 enum oom_scan_t oom_scan_process_thread(struct task_struct *task,
 		unsigned long totalpages, const nodemask_t *nodemask,
-		bool force_kill, bool ignore_memcg_guarantee)
+		bool force_kill)
 {
 	if (oom_unkillable_task(task, NULL, nodemask))
 		return OOM_SCAN_CONTINUE;
@@ -318,9 +339,6 @@ enum oom_scan_t oom_scan_process_thread(struct task_struct *task,
 	if (task_will_free_mem(task) && !force_kill)
 		return OOM_SCAN_SELECT;
 
-	if (!ignore_memcg_guarantee && mem_cgroup_below_oom_guarantee(task))
-		return OOM_SCAN_CONTINUE;
-
 	return OOM_SCAN_OK;
 }
 
@@ -337,36 +355,33 @@ static struct task_struct *select_bad_process(unsigned int *ppoints,
 	struct task_struct *g, *p;
 	struct task_struct *chosen = NULL;
 	unsigned long chosen_points = 0;
-	bool ignore_memcg_guarantee = false;
+	unsigned long max_overdraft = 0;
 
 	rcu_read_lock();
-retry:
 	for_each_process_thread(g, p) {
 		unsigned int points;
+		unsigned long overdraft;
 
 		switch (oom_scan_process_thread(p, totalpages, nodemask,
-					force_kill, ignore_memcg_guarantee)) {
+						force_kill)) {
 		case OOM_SCAN_SELECT:
 			chosen = p;
 			chosen_points = ULONG_MAX;
+			max_overdraft = ULONG_MAX;
 			/* fall through */
 		case OOM_SCAN_CONTINUE:
 			continue;
 		case OOM_SCAN_OK:
 			break;
 		};
-		points = oom_badness(p, NULL, nodemask, totalpages);
-		if (points > chosen_points) {
+		points = oom_badness(p, NULL, nodemask, totalpages,
+				     &overdraft);
+		if (oom_worse(points, overdraft, &chosen_points,
+			      &max_overdraft))
 			chosen = p;
-			chosen_points = points;
-		}
 	}
 	if (chosen)
 		get_task_struct(chosen);
-	else if (!ignore_memcg_guarantee) {
-		ignore_memcg_guarantee = true;
-		goto retry;
-	}
 	rcu_read_unlock();
 
 	*ppoints = chosen_points * 1000 / totalpages;
@@ -537,7 +552,7 @@ static void __wait_oom_context(struct oom_context *ctx)
 bool oom_trylock(struct mem_cgroup *memcg)
 {
 	unsigned long now = jiffies;
-	struct mem_cgroup *iter;
+	struct mem_cgroup *iter, *parent;
 	struct oom_context *ctx;
 
 	spin_lock(&oom_context_lock);
@@ -590,6 +605,15 @@ bool oom_trylock(struct mem_cgroup *memcg)
 		BUG_ON(ctx->victim);
 		ctx->owner = current;
 		ctx->oom_start = now;
+		/*
+		 * Update overdraft of each cgroup under us. This
+		 * information will be used in oom_badness.
+		 */
+		ctx->overdraft = mem_cgroup_overdraft(iter);
+		parent = parent_mem_cgroup(iter);
+		if (parent && iter != memcg)
+			ctx->overdraft = max(ctx->overdraft,
+				mem_cgroup_oom_context(parent)->overdraft);
 	} while ((iter = mem_cgroup_iter(memcg, iter, NULL)));
 
 	spin_unlock(&oom_context_lock);
@@ -757,7 +781,7 @@ void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 			 * oom_badness() returns 0 if the thread is unkillable
 			 */
 			child_points = oom_badness(child, memcg, nodemask,
-								totalpages);
+						   totalpages, NULL);
 			if (child_points > victim_points) {
 				put_task_struct(victim);
 				victim = child;
