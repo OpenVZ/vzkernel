@@ -358,9 +358,6 @@ retry:
 			/* fall through */
 		case OOM_SCAN_CONTINUE:
 			continue;
-		case OOM_SCAN_ABORT:
-			rcu_read_unlock();
-			return ERR_PTR(-1UL);
 		case OOM_SCAN_OK:
 			break;
 		};
@@ -891,11 +888,9 @@ void out_of_memory(struct zonelist *zonelist, gfp_t gfp_mask,
 	if (!p) {
 		dump_header(NULL, gfp_mask, order, NULL, mpol_mask);
 		panic("Out of memory and no killable processes...\n");
-	}
-	if (PTR_ERR(p) != -1UL) {
+	} else
 		oom_kill_process(p, gfp_mask, order, points, totalpages, NULL,
 				 nodemask, "Out of memory");
-	}
 }
 
 /*
