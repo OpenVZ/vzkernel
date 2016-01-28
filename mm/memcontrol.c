@@ -1636,51 +1636,6 @@ bool mem_cgroup_low(struct mem_cgroup *root, struct mem_cgroup *memcg)
 	return true;
 }
 
-static bool __mem_cgroup_below_oom_guarantee(struct mem_cgroup *root,
-					     struct mem_cgroup *memcg)
-{
-	if (mem_cgroup_disabled())
-		return false;
-
-	if (memcg == root_mem_cgroup)
-		return false;
-
-	if (res_counter_read_u64(&memcg->memsw, RES_USAGE) >=
-					memcg->oom_guarantee)
-		return false;
-
-	while (memcg != root) {
-		memcg = parent_mem_cgroup(memcg);
-		if (!memcg)
-			break;
-
-		if (memcg == root_mem_cgroup)
-			break;
-
-		if (res_counter_read_u64(&memcg->memsw, RES_USAGE) >=
-						memcg->oom_guarantee)
-			return false;
-	}
-	return true;
-}
-
-bool mem_cgroup_below_oom_guarantee(struct task_struct *p)
-{
-	struct mem_cgroup *memcg = NULL;
-	bool ret = false;
-
-	p = find_lock_task_mm(p);
-	if (p) {
-		memcg = try_get_mem_cgroup_from_mm(p->mm);
-		task_unlock(p);
-	}
-	if (memcg) {
-		ret = __mem_cgroup_below_oom_guarantee(root_mem_cgroup, memcg);
-		css_put(&memcg->css);
-	}
-	return ret;
-}
-
 #ifdef CONFIG_CLEANCACHE
 bool mem_cgroup_cleancache_disabled(struct page *page)
 {
@@ -1740,6 +1695,22 @@ struct oom_context *mem_cgroup_oom_context(struct mem_cgroup *memcg)
 	if (!memcg)
 		memcg = root_mem_cgroup;
 	return &memcg->oom_ctx;
+}
+
+unsigned long mem_cgroup_overdraft(struct mem_cgroup *memcg)
+{
+	unsigned long long guarantee, limit, usage;
+	unsigned long score;
+
+	guarantee = ACCESS_ONCE(memcg->oom_guarantee);
+	limit = res_counter_read_u64(&memcg->memsw, RES_LIMIT);
+	usage = res_counter_read_u64(&memcg->memsw, RES_USAGE);
+
+	if (limit >= RESOURCE_MAX || guarantee >= limit || usage <= guarantee)
+		return 0;
+
+	score = div64_u64(1000 * (usage - guarantee), limit - guarantee);
+	return score > 0 ? score : 1;
 }
 
 unsigned long mem_cgroup_total_pages(struct mem_cgroup *memcg, bool swap)
@@ -2036,11 +2007,12 @@ static void mem_cgroup_out_of_memory(struct mem_cgroup *memcg, gfp_t gfp_mask,
 				     int order)
 {
 	struct mem_cgroup *iter;
+	unsigned long max_overdraft = 0;
 	unsigned long chosen_points = 0;
 	unsigned long totalpages;
+	unsigned long overdraft;
 	unsigned int points = 0;
 	struct task_struct *chosen = NULL;
-	bool ignore_memcg_guarantee = false;
 
 	/*
 	 * If current has a pending SIGKILL or is exiting, then automatically
@@ -2054,25 +2026,21 @@ static void mem_cgroup_out_of_memory(struct mem_cgroup *memcg, gfp_t gfp_mask,
 
 	check_panic_on_oom(CONSTRAINT_MEMCG, gfp_mask, order, NULL);
 	totalpages = mem_cgroup_get_limit(memcg) ? : 1;
-retry:
 	for_each_mem_cgroup_tree(iter, memcg) {
 		struct cgroup *cgroup = iter->css.cgroup;
 		struct cgroup_iter it;
 		struct task_struct *task;
 
-		if (!ignore_memcg_guarantee &&
-		    __mem_cgroup_below_oom_guarantee(memcg, iter))
-			continue;
-
 		cgroup_iter_start(cgroup, &it);
 		while ((task = cgroup_iter_next(cgroup, &it))) {
 			switch (oom_scan_process_thread(task, totalpages, NULL,
-							false, true)) {
+							false)) {
 			case OOM_SCAN_SELECT:
 				if (chosen)
 					put_task_struct(chosen);
 				chosen = task;
 				chosen_points = ULONG_MAX;
+				max_overdraft = ULONG_MAX;
 				get_task_struct(chosen);
 				/* fall through */
 			case OOM_SCAN_CONTINUE:
@@ -2080,25 +2048,21 @@ retry:
 			case OOM_SCAN_OK:
 				break;
 			};
-			points = oom_badness(task, memcg, NULL, totalpages);
-			if (points > chosen_points) {
+			points = oom_badness(task, memcg, NULL, totalpages,
+					     &overdraft);
+			if (oom_worse(points, overdraft, &chosen_points,
+				      &max_overdraft)) {
 				if (chosen)
 					put_task_struct(chosen);
 				chosen = task;
-				chosen_points = points;
 				get_task_struct(chosen);
 			}
 		}
 		cgroup_iter_end(cgroup, &it);
 	}
 
-	if (!chosen) {
-		if (!ignore_memcg_guarantee) {
-			ignore_memcg_guarantee = true;
-			goto retry;
-		}
+	if (!chosen)
 		return;
-	}
 	points = chosen_points * 1000 / totalpages;
 	oom_kill_process(chosen, gfp_mask, order, points, totalpages, memcg,
 			 NULL, "Memory cgroup out of memory");
