@@ -2087,7 +2087,7 @@ static void mem_cgroup_out_of_memory(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	unsigned long chosen_points = 0;
 	unsigned long totalpages;
 	unsigned long overdraft;
-	unsigned int points = 0;
+	unsigned long points = 0;
 	struct task_struct *chosen = NULL;
 
 	/*
@@ -2139,8 +2139,8 @@ static void mem_cgroup_out_of_memory(struct mem_cgroup *memcg, gfp_t gfp_mask,
 
 	if (!chosen)
 		return;
-	points = chosen_points * 1000 / totalpages;
-	oom_kill_process(chosen, gfp_mask, order, points, totalpages, memcg,
+	oom_kill_process(chosen, gfp_mask, order, chosen_points, max_overdraft,
+			 totalpages, memcg,
 			 NULL, "Memory cgroup out of memory");
 }
 
