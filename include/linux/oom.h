@@ -84,7 +84,8 @@ static inline bool oom_worse(unsigned long points, unsigned long overdraft,
 }
 
 extern void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
-			     unsigned int points, unsigned long totalpages,
+			     unsigned long points, unsigned long overdraft,
+			     unsigned long totalpages,
 			     struct mem_cgroup *memcg, nodemask_t *nodemask,
 			     const char *message);
 
