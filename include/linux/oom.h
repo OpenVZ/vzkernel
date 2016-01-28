@@ -34,6 +34,8 @@ enum oom_scan_t {
 struct oom_context {
 	struct task_struct *owner;
 	struct task_struct *victim;
+	bool marked;
+	unsigned long oom_start;
 	wait_queue_head_t waitq;
 };
 
