@@ -42,13 +42,18 @@
 int sysctl_panic_on_oom;
 int sysctl_oom_kill_allocating_task;
 int sysctl_oom_dump_tasks;
+int sysctl_oom_relaxation = HZ;
 
 static DEFINE_SPINLOCK(oom_context_lock);
 
 #define OOM_TIMEOUT	(5 * HZ)
 
+#define OOM_BASE_RAGE	-10
+#define OOM_MAX_RAGE	20
+
 #ifndef CONFIG_MEMCG
 struct oom_context oom_ctx = {
+	.rage		= OOM_BASE_RAGE,
 	.waitq		= __WAIT_QUEUE_HEAD_INITIALIZER(oom_ctx.waitq),
 };
 #endif
@@ -59,6 +64,8 @@ void init_oom_context(struct oom_context *ctx)
 	ctx->victim = NULL;
 	ctx->marked = false;
 	ctx->oom_start = 0;
+	ctx->oom_end = 0;
+	ctx->rage = OOM_BASE_RAGE;
 	init_waitqueue_head(&ctx->waitq);
 }
 
@@ -67,6 +74,7 @@ static void __release_oom_context(struct oom_context *ctx)
 	ctx->owner = NULL;
 	ctx->victim = NULL;
 	ctx->marked = false;
+	ctx->oom_end = jiffies;
 	wake_up_all(&ctx->waitq);
 }
 
@@ -690,6 +698,102 @@ void oom_unlock(struct mem_cgroup *memcg)
 	mem_cgroup_put(victim_memcg);
 }
 
+/*
+ * Kill more processes if oom happens too often in this context.
+ */
+static void oom_berserker(unsigned long points, unsigned long overdraft,
+			  unsigned long totalpages, struct mem_cgroup *memcg,
+			  nodemask_t *nodemask)
+{
+	static DEFINE_RATELIMIT_STATE(berserker_rs,
+				      DEFAULT_RATELIMIT_INTERVAL,
+				      DEFAULT_RATELIMIT_BURST);
+	struct oom_context *ctx;
+	struct task_struct *p;
+	int rage;
+	int killed = 0;
+
+	spin_lock(&oom_context_lock);
+	ctx = mem_cgroup_oom_context(memcg);
+	if (ctx->owner != current) {
+		/* Lost ownership on timeout */
+		spin_unlock(&oom_context_lock);
+		return;
+	}
+	/*
+	 * Increase rage if oom happened recently in this context, reset
+	 * rage otherwise.
+	 *
+	 * previous oom                            this oom (unfinished)
+	 * ++++++++++++----------------------------++++++++
+	 *            ^                            ^
+	 *         oom_end  <<oom_relaxation>>  oom_start
+	 */
+	if (time_after(ctx->oom_start, ctx->oom_end + sysctl_oom_relaxation))
+		ctx->rage = OOM_BASE_RAGE;
+	else if (ctx->rage < OOM_MAX_RAGE)
+		ctx->rage++;
+	rage = ctx->rage;
+	spin_unlock(&oom_context_lock);
+
+	if (rage < 0)
+		return;
+
+	/*
+	 * So, we are in rage. Kill (1 << rage) youngest tasks that are
+	 * as bad as the victim.
+	 */
+	qread_lock(&tasklist_lock);
+	list_for_each_entry_reverse(p, &init_task.tasks, tasks) {
+		unsigned long tsk_points;
+		unsigned long tsk_overdraft;
+
+		if (!p->mm || test_tsk_thread_flag(p, TIF_MEMDIE) ||
+		    fatal_signal_pending(p) || p->flags & PF_EXITING ||
+		    oom_unkillable_task(p, memcg, nodemask))
+			continue;
+
+		tsk_points = oom_badness(p, memcg, nodemask, totalpages,
+					 &tsk_overdraft);
+		if (tsk_overdraft < overdraft)
+			continue;
+
+		/*
+		 * oom_badness never returns a negative value, even if
+		 * oom_score_adj would make badness so, instead it
+		 * returns 1. So we do not kill task with badness 1 if
+		 * the victim has badness > 1 so as not to risk killing
+		 * protected tasks.
+		 */
+		if (tsk_points <= 1 && points > 1)
+			continue;
+
+		/*
+		 * Consider tasks as equally bad if they have equal
+		 * normalized scores.
+		 */
+		if (tsk_points * 1000 / totalpages <
+		    points * 1000 / totalpages)
+			continue;
+
+		if (__ratelimit(&berserker_rs)) {
+			task_lock(p);
+			pr_err("Rage kill process %d (%s)\n",
+			       task_pid_nr(p), p->comm);
+			task_unlock(p);
+		}
+
+		do_send_sig_info(SIGKILL, SEND_SIG_FORCED, p, true);
+		mem_cgroup_note_oom_kill(memcg, p);
+
+		if (++killed >= 1 << rage)
+			break;
+	}
+	qread_unlock(&tasklist_lock);
+
+	pr_err("OOM killer in rage %d: %d tasks killed\n", rage, killed);
+}
+
 #define K(x) ((x) << (PAGE_SHIFT-10))
 /*
  * Must be called while holding a reference to p, which will be released upon
@@ -809,6 +913,8 @@ void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 	do_send_sig_info(SIGKILL, SEND_SIG_FORCED, victim, true);
 	mem_cgroup_note_oom_kill(memcg, victim);
 	put_task_struct(victim);
+
+	oom_berserker(points, overdraft, totalpages, memcg, nodemask);
 }
 #undef K
 
