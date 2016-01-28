@@ -348,7 +348,8 @@ enum oom_scan_t oom_scan_process_thread(struct task_struct *task,
  *
  * (not docbooked, we don't want this one cluttering up the manual)
  */
-static struct task_struct *select_bad_process(unsigned int *ppoints,
+static struct task_struct *select_bad_process(unsigned long *ppoints,
+		unsigned long *poverdraft,
 		unsigned long totalpages, const nodemask_t *nodemask,
 		bool force_kill)
 {
@@ -384,7 +385,8 @@ static struct task_struct *select_bad_process(unsigned int *ppoints,
 		get_task_struct(chosen);
 	rcu_read_unlock();
 
-	*ppoints = chosen_points * 1000 / totalpages;
+	*ppoints = chosen_points;
+	*poverdraft = max_overdraft;
 	return chosen;
 }
 
@@ -724,7 +726,8 @@ static bool process_shares_mm(struct task_struct *p, struct mm_struct *mm)
  * returning.
  */
 void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
-		      unsigned int points, unsigned long totalpages,
+		      unsigned long points, unsigned long overdraft,
+		      unsigned long totalpages,
 		      struct mem_cgroup *memcg, nodemask_t *nodemask,
 		      const char *message)
 {
@@ -753,8 +756,8 @@ void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 		dump_header(p, gfp_mask, order, memcg, nodemask);
 
 	task_lock(p);
-	pr_err("%s: Kill process %d (%s) score %d or sacrifice child\n",
-		message, task_pid_nr(p), p->comm, points);
+	pr_err("%s: Kill process %d (%s) score %lu or sacrifice child\n",
+		message, task_pid_nr(p), p->comm, points * 1000 / totalpages);
 	task_unlock(p);
 
 	/*
@@ -912,7 +915,8 @@ void out_of_memory(struct zonelist *zonelist, gfp_t gfp_mask,
 	struct task_struct *p;
 	unsigned long totalpages;
 	unsigned long freed = 0;
-	unsigned int uninitialized_var(points);
+	unsigned long uninitialized_var(points);
+	unsigned long uninitialized_var(overdraft);
 	enum oom_constraint constraint = CONSTRAINT_NONE;
 
 	blocking_notifier_call_chain(&oom_notify_list, 0, &freed);
@@ -947,19 +951,21 @@ void out_of_memory(struct zonelist *zonelist, gfp_t gfp_mask,
 	    !oom_unkillable_task(current, NULL, nodemask) &&
 	    current->signal->oom_score_adj != OOM_SCORE_ADJ_MIN) {
 		get_task_struct(current);
-		oom_kill_process(current, gfp_mask, order, 0, totalpages, NULL,
-				 nodemask,
+		oom_kill_process(current, gfp_mask, order, 0, 0, totalpages,
+				 NULL, nodemask,
 				 "Out of memory (oom_kill_allocating_task)");
 		return;
 	}
 
-	p = select_bad_process(&points, totalpages, mpol_mask, force_kill);
+	p = select_bad_process(&points, &overdraft, totalpages, mpol_mask,
+			       force_kill);
 	/* Found nothing?!?! Either we hang forever, or we panic. */
 	if (!p) {
 		dump_header(NULL, gfp_mask, order, NULL, mpol_mask);
 		panic("Out of memory and no killable processes...\n");
 	} else
-		oom_kill_process(p, gfp_mask, order, points, totalpages, NULL,
+		oom_kill_process(p, gfp_mask, order, points, overdraft,
+				 totalpages, NULL,
 				 nodemask, "Out of memory");
 }
 
