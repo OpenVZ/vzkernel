@@ -35,6 +35,7 @@ struct oom_context {
 	struct task_struct *victim;
 	bool marked;
 	unsigned long oom_start;
+	unsigned long overdraft;
 	wait_queue_head_t waitq;
 };
 
@@ -61,7 +62,7 @@ static inline bool oom_task_origin(const struct task_struct *p)
 
 extern unsigned long oom_badness(struct task_struct *p,
 		struct mem_cgroup *memcg, const nodemask_t *nodemask,
-		unsigned long totalpages);
+		unsigned long totalpages, unsigned long *overdraft);
 
 extern int oom_kills_count(void);
 extern void note_oom_kill(void);
@@ -69,6 +70,21 @@ extern void note_oom_kill(void);
 extern int get_task_oom_score_adj(struct task_struct *t);
 
 extern void mark_oom_victim(struct task_struct *tsk);
+
+static inline bool oom_worse(unsigned long points, unsigned long overdraft,
+		unsigned long *chosen_points, unsigned long *max_overdraft)
+{
+	if (overdraft > *max_overdraft) {
+		*max_overdraft = overdraft;
+		*chosen_points = points;
+		return true;
+	}
+	if (overdraft == *max_overdraft && points > *chosen_points) {
+		*chosen_points = points;
+		return true;
+	}
+	return false;
+}
 
 extern void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 			     unsigned int points, unsigned long totalpages,
@@ -83,7 +99,7 @@ extern void check_panic_on_oom(enum oom_constraint constraint, gfp_t gfp_mask,
 
 extern enum oom_scan_t oom_scan_process_thread(struct task_struct *task,
 		unsigned long totalpages, const nodemask_t *nodemask,
-		bool force_kill, bool ignore_memcg_guarantee);
+		bool force_kill);
 
 extern void out_of_memory(struct zonelist *zonelist, gfp_t gfp_mask,
 		int order, nodemask_t *mask, bool force_kill);
