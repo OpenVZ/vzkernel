@@ -127,7 +127,7 @@ int mem_cgroup_select_victim_node(struct mem_cgroup *memcg);
 unsigned long mem_cgroup_get_lru_size(struct lruvec *lruvec, enum lru_list);
 void mem_cgroup_update_lru_size(struct lruvec *, enum lru_list, int);
 extern struct oom_context *mem_cgroup_oom_context(struct mem_cgroup *memcg);
-extern bool mem_cgroup_below_oom_guarantee(struct task_struct *p);
+extern unsigned long mem_cgroup_overdraft(struct mem_cgroup *memcg);
 extern void mem_cgroup_note_oom_kill(struct mem_cgroup *memcg,
 				     struct task_struct *task);
 extern void mem_cgroup_print_oom_info(struct mem_cgroup *memcg,
@@ -386,9 +386,9 @@ mem_cgroup_oom_context(struct mem_cgroup *memcg)
 	return &oom_ctx;
 }
 
-static inline bool mem_cgroup_below_oom_guarantee(struct task_struct *p)
+static inline unsigned long mem_cgroup_overdraft(struct mem_cgroup *memcg)
 {
-	return false;
+	return 0;
 }
 
 static inline void
