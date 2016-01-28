@@ -31,6 +31,15 @@ enum oom_scan_t {
 	OOM_SCAN_SELECT,	/* always select this thread first */
 };
 
+struct oom_context {
+	struct task_struct *owner;
+	struct task_struct *victim;
+	wait_queue_head_t waitq;
+};
+
+extern void init_oom_context(struct oom_context *ctx);
+extern void release_oom_context(struct oom_context *ctx);
+
 /* Thread is the potential origin of an oom condition; kill first on oom */
 #define OOM_FLAG_ORIGIN		((__force oom_flags_t)0x1)
 
@@ -62,8 +71,8 @@ extern void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 			     struct mem_cgroup *memcg, nodemask_t *nodemask,
 			     const char *message);
 
-extern int try_set_zonelist_oom(struct zonelist *zonelist, gfp_t gfp_flags);
-extern void clear_zonelist_oom(struct zonelist *zonelist, gfp_t gfp_flags);
+extern bool oom_trylock(struct mem_cgroup *memcg);
+extern void oom_unlock(struct mem_cgroup *memcg);
 
 extern void check_panic_on_oom(enum oom_constraint constraint, gfp_t gfp_mask,
 			       int order, const nodemask_t *nodemask);
