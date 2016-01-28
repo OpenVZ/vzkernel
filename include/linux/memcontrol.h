@@ -30,6 +30,7 @@ struct page_cgroup;
 struct page;
 struct mm_struct;
 struct kmem_cache;
+struct oom_context;
 
 /* Stats that can be updated by kernel. */
 enum mem_cgroup_page_stat_item {
@@ -125,6 +126,7 @@ bool mem_cgroup_cleancache_disabled(struct page *page);
 int mem_cgroup_select_victim_node(struct mem_cgroup *memcg);
 unsigned long mem_cgroup_get_lru_size(struct lruvec *lruvec, enum lru_list);
 void mem_cgroup_update_lru_size(struct lruvec *, enum lru_list, int);
+extern struct oom_context *mem_cgroup_oom_context(struct mem_cgroup *memcg);
 extern bool mem_cgroup_below_oom_guarantee(struct task_struct *p);
 extern void mem_cgroup_note_oom_kill(struct mem_cgroup *memcg,
 				     struct task_struct *task);
@@ -375,6 +377,13 @@ static inline void
 mem_cgroup_update_lru_size(struct lruvec *lruvec, enum lru_list lru,
 			      int increment)
 {
+}
+
+static inline struct oom_context *
+mem_cgroup_oom_context(struct mem_cgroup *memcg)
+{
+	extern struct oom_context oom_ctx;
+	return &oom_ctx;
 }
 
 static inline bool mem_cgroup_below_oom_guarantee(struct task_struct *p)
