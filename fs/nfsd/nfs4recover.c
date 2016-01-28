@@ -1417,17 +1417,19 @@ nfsd4_client_tracking_init(struct net *net)
 	if (!status)
 		return status;
 
-	/*
-	 * See if the recoverydir exists and is a directory. If it is,
-	 * then use the legacy ops.
-	 */
-	nn->client_tracking_ops = &nfsd4_legacy_tracking_ops;
-	status = kern_path(nfs4_recoverydir(), LOOKUP_FOLLOW, &path);
-	if (!status) {
-		status = S_ISDIR(path.dentry->d_inode->i_mode);
-		path_put(&path);
-		if (status)
-			goto do_init;
+	if (net_eq(net, &init_net)) {
+		/*
+		 * See if the recoverydir exists and is a directory. If it is,
+		 * then use the legacy ops.
+		 */
+		nn->client_tracking_ops = &nfsd4_legacy_tracking_ops;
+		status = kern_path(nfs4_recoverydir(), LOOKUP_FOLLOW, &path);
+		if (!status) {
+			status = S_ISDIR(path.dentry->d_inode->i_mode);
+			path_put(&path);
+			if (status)
+				goto do_init;
+		}
 	}
 
 	/* Finally, try to use nfsdcld */
