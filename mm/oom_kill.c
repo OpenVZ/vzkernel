@@ -45,6 +45,8 @@ int sysctl_oom_dump_tasks;
 
 static DEFINE_SPINLOCK(oom_context_lock);
 
+#define OOM_TIMEOUT	(5 * HZ)
+
 #ifndef CONFIG_MEMCG
 struct oom_context oom_ctx = {
 	.waitq		= __WAIT_QUEUE_HEAD_INITIALIZER(oom_ctx.waitq),
@@ -55,6 +57,8 @@ void init_oom_context(struct oom_context *ctx)
 {
 	ctx->owner = NULL;
 	ctx->victim = NULL;
+	ctx->marked = false;
+	ctx->oom_start = 0;
 	init_waitqueue_head(&ctx->waitq);
 }
 
@@ -62,6 +66,7 @@ static void __release_oom_context(struct oom_context *ctx)
 {
 	ctx->owner = NULL;
 	ctx->victim = NULL;
+	ctx->marked = false;
 	wake_up_all(&ctx->waitq);
 }
 
@@ -291,11 +296,14 @@ enum oom_scan_t oom_scan_process_thread(struct task_struct *task,
 
 	/*
 	 * This task already has access to memory reserves and is being killed.
-	 * Don't allow any other task to have access to the reserves.
+	 * Try to select another one.
+	 *
+	 * This can only happen if oom_trylock timeout-ed, which most probably
+	 * means that the victim had dead-locked.
 	 */
 	if (test_tsk_thread_flag(task, TIF_MEMDIE)) {
 		if (!force_kill)
-			return OOM_SCAN_ABORT;
+			return OOM_SCAN_CONTINUE;
 	}
 	if (!task->mm)
 		return OOM_SCAN_CONTINUE;
@@ -474,8 +482,10 @@ void mark_oom_victim(struct task_struct *tsk)
 	memcg = try_get_mem_cgroup_from_mm(tsk->mm);
 	ctx = mem_cgroup_oom_context(memcg);
 	spin_lock(&oom_context_lock);
-	if (!ctx->victim)
+	if (!ctx->victim) {
 		ctx->victim = tsk;
+		ctx->marked = true;
+	}
 	spin_unlock(&oom_context_lock);
 	mem_cgroup_put(memcg);
 }
@@ -510,21 +520,26 @@ void exit_oom_victim(void)
 
 static void __wait_oom_context(struct oom_context *ctx)
 {
+	unsigned long now = jiffies;
+	unsigned long timeout;
 	DEFINE_WAIT(wait);
 
-	if (ctx->victim == current) {
+	if (ctx->victim == current ||
+	    time_after_eq(now, ctx->oom_start + OOM_TIMEOUT)) {
 		spin_unlock(&oom_context_lock);
 		return;
 	}
 
 	prepare_to_wait(&ctx->waitq, &wait, TASK_KILLABLE);
+	timeout = ctx->oom_start + OOM_TIMEOUT - now;
 	spin_unlock(&oom_context_lock);
-	schedule();
+	schedule_timeout(timeout);
 	finish_wait(&ctx->waitq, &wait);
 }
 
 bool oom_trylock(struct mem_cgroup *memcg)
 {
+	unsigned long now = jiffies;
 	struct mem_cgroup *iter;
 	struct oom_context *ctx;
 
@@ -539,10 +554,32 @@ bool oom_trylock(struct mem_cgroup *memcg)
 	iter = mem_cgroup_iter(memcg, NULL, NULL);
 	do {
 		ctx = mem_cgroup_oom_context(iter);
-		if (ctx->owner || ctx->victim) {
+		if ((ctx->owner || ctx->victim) &&
+		    time_before(now, ctx->oom_start + OOM_TIMEOUT)) {
 			__wait_oom_context(ctx);
 			mem_cgroup_iter_break(memcg, iter);
 			return false;
+		} else if (ctx->owner || ctx->victim) {
+			/*
+			 * Timeout. Release the context and dump stack
+			 * trace of the stuck process.
+			 *
+			 * To avoid dumping stack trace of the same task
+			 * more than once, we mark the context that
+			 * contained the victim when it was killed (see
+			 * mark_oom_victim).
+			 */
+			struct task_struct *p = ctx->victim;
+
+			if (p && ctx->marked) {
+				task_lock(p);
+				pr_err("OOM kill timeout: %d (%s)\n",
+				       task_pid_nr(p), p->comm);
+				task_unlock(p);
+				show_stack(p, NULL);
+			}
+
+			__release_oom_context(ctx);
 		}
 	} while ((iter = mem_cgroup_iter(memcg, iter, NULL)));
 
@@ -555,6 +592,7 @@ bool oom_trylock(struct mem_cgroup *memcg)
 		BUG_ON(ctx->owner);
 		BUG_ON(ctx->victim);
 		ctx->owner = current;
+		ctx->oom_start = now;
 	} while ((iter = mem_cgroup_iter(memcg, iter, NULL)));
 
 	spin_unlock(&oom_context_lock);
@@ -576,7 +614,11 @@ void oom_unlock(struct mem_cgroup *memcg)
 	iter = mem_cgroup_iter(memcg, NULL, NULL);
 	do {
 		ctx = mem_cgroup_oom_context(iter);
-		BUG_ON(ctx->owner != current);
+		if (ctx->owner != current) {
+			/* Lost ownership on timeout */
+			mem_cgroup_iter_break(memcg, iter);
+			break;
+		}
 		if (ctx->victim) {
 			victim = ctx->victim;
 			/*
@@ -609,7 +651,9 @@ void oom_unlock(struct mem_cgroup *memcg)
 	iter = mem_cgroup_iter(memcg, NULL, NULL);
 	do {
 		ctx = mem_cgroup_oom_context(iter);
-		BUG_ON(ctx->owner != current);
+		if (ctx->owner != current)
+			/* Lost ownership on timeout */
+			continue;
 		if (!ctx->victim)
 			/*
 			 * Victim already exited or nobody was killed in
