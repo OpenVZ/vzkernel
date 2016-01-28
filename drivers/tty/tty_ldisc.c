@@ -679,16 +679,13 @@ void tty_ldisc_hangup(struct tty_struct *tty)
 	wake_up_interruptible_poll(&tty->write_wait, POLLOUT);
 	wake_up_interruptible_poll(&tty->read_wait, POLLIN);
 
-	tty_unlock(tty);
-
 	/*
 	 * Shutdown the current line discipline, and reset it to
 	 * N_TTY if need be.
 	 *
 	 * Avoid racing set_ldisc or tty_ldisc_release
 	 */
-	tty_ldisc_lock_pair(tty, tty->link);
-	tty_lock(tty);
+	tty_ldisc_lock(tty, MAX_SCHEDULE_TIMEOUT);
 
 	if (tty->ldisc) {
 
@@ -710,7 +707,7 @@ void tty_ldisc_hangup(struct tty_struct *tty)
 			WARN_ON(tty_ldisc_open(tty, tty->ldisc));
 		}
 	}
-	tty_ldisc_enable_pair(tty, tty->link);
+	tty_ldisc_unlock(tty);
 	if (reset)
 		tty_reset_termios(tty);
 
@@ -780,13 +777,11 @@ void tty_ldisc_release(struct tty_struct *tty, struct tty_struct *o_tty)
 	tty_ldisc_debug(tty, "closing ldisc: %p\n", tty->ldisc);
 
 	tty_ldisc_lock_pair(tty, o_tty);
-	tty_lock_pair(tty, o_tty);
 
 	tty_ldisc_kill(tty);
 	if (o_tty)
 		tty_ldisc_kill(o_tty);
 
-	tty_unlock_pair(tty, o_tty);
 	tty_ldisc_unlock_pair(tty, o_tty);
 
 	/* And the memory resources remaining (buffers, termios) will be
