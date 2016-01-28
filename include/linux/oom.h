@@ -35,7 +35,9 @@ struct oom_context {
 	struct task_struct *victim;
 	bool marked;
 	unsigned long oom_start;
+	unsigned long oom_end;
 	unsigned long overdraft;
+	int rage;
 	wait_queue_head_t waitq;
 };
 
@@ -125,4 +127,5 @@ extern struct task_struct *find_lock_task_mm(struct task_struct *p);
 extern int sysctl_oom_dump_tasks;
 extern int sysctl_oom_kill_allocating_task;
 extern int sysctl_panic_on_oom;
+extern int sysctl_oom_relaxation;
 #endif /* _INCLUDE_LINUX_OOM_H */
