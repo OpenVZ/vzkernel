@@ -2077,12 +2077,6 @@ retry:
 				/* fall through */
 			case OOM_SCAN_CONTINUE:
 				continue;
-			case OOM_SCAN_ABORT:
-				cgroup_iter_end(cgroup, &it);
-				mem_cgroup_iter_break(memcg, iter);
-				if (chosen)
-					put_task_struct(chosen);
-				return;
 			case OOM_SCAN_OK:
 				break;
 			};
