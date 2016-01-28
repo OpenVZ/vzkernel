@@ -42,7 +42,35 @@
 int sysctl_panic_on_oom;
 int sysctl_oom_kill_allocating_task;
 int sysctl_oom_dump_tasks;
-static DEFINE_SPINLOCK(zone_scan_lock);
+
+static DEFINE_SPINLOCK(oom_context_lock);
+
+#ifndef CONFIG_MEMCG
+struct oom_context oom_ctx = {
+	.waitq		= __WAIT_QUEUE_HEAD_INITIALIZER(oom_ctx.waitq),
+};
+#endif
+
+void init_oom_context(struct oom_context *ctx)
+{
+	ctx->owner = NULL;
+	ctx->victim = NULL;
+	init_waitqueue_head(&ctx->waitq);
+}
+
+static void __release_oom_context(struct oom_context *ctx)
+{
+	ctx->owner = NULL;
+	ctx->victim = NULL;
+	wake_up_all(&ctx->waitq);
+}
+
+void release_oom_context(struct oom_context *ctx)
+{
+	spin_lock(&oom_context_lock);
+	__release_oom_context(ctx);
+	spin_unlock(&oom_context_lock);
+}
 
 #ifdef CONFIG_NUMA
 /**
@@ -280,7 +308,7 @@ enum oom_scan_t oom_scan_process_thread(struct task_struct *task,
 		return OOM_SCAN_SELECT;
 
 	if (task_will_free_mem(task) && !force_kill)
-		return OOM_SCAN_ABORT;
+		return OOM_SCAN_SELECT;
 
 	if (!ignore_memcg_guarantee && mem_cgroup_below_oom_guarantee(task))
 		return OOM_SCAN_CONTINUE;
@@ -425,6 +453,9 @@ void note_oom_kill(void)
  */
 void mark_oom_victim(struct task_struct *tsk)
 {
+	struct mem_cgroup *memcg;
+	struct oom_context *ctx;
+
 	set_tsk_thread_flag(tsk, TIF_MEMDIE);
 
 	/*
@@ -434,6 +465,19 @@ void mark_oom_victim(struct task_struct *tsk)
 	 * that TIF_MEMDIE tasks should be ignored.
 	 */
 	__thaw_task(tsk);
+
+	/*
+	 * Record the pointer to the victim in the oom context of the
+	 * owner memcg so that others can wait for it to exit. It will
+	 * be cleared in exit_oom_victim.
+	 */
+	memcg = try_get_mem_cgroup_from_mm(tsk->mm);
+	ctx = mem_cgroup_oom_context(memcg);
+	spin_lock(&oom_context_lock);
+	if (!ctx->victim)
+		ctx->victim = tsk;
+	spin_unlock(&oom_context_lock);
+	mem_cgroup_put(memcg);
 }
 
 /**
@@ -441,7 +485,154 @@ void mark_oom_victim(struct task_struct *tsk)
  */
 void exit_oom_victim(void)
 {
+	struct mem_cgroup *iter;
+	struct oom_context *ctx;
+
 	clear_thread_flag(TIF_MEMDIE);
+
+	/*
+	 * Wake up every process waiting for this oom victim to exit.
+	 */
+	spin_lock(&oom_context_lock);
+	iter = mem_cgroup_iter(NULL, NULL, NULL);
+	do {
+		ctx = mem_cgroup_oom_context(iter);
+		if (ctx->victim != current)
+			continue;
+		if (!ctx->owner)
+			__release_oom_context(ctx);
+		else
+			/* To be released by owner (see oom_unlock) */
+			ctx->victim = NULL;
+	} while ((iter = mem_cgroup_iter(NULL, iter, NULL)));
+	spin_unlock(&oom_context_lock);
+}
+
+static void __wait_oom_context(struct oom_context *ctx)
+{
+	DEFINE_WAIT(wait);
+
+	if (ctx->victim == current) {
+		spin_unlock(&oom_context_lock);
+		return;
+	}
+
+	prepare_to_wait(&ctx->waitq, &wait, TASK_KILLABLE);
+	spin_unlock(&oom_context_lock);
+	schedule();
+	finish_wait(&ctx->waitq, &wait);
+}
+
+bool oom_trylock(struct mem_cgroup *memcg)
+{
+	struct mem_cgroup *iter;
+	struct oom_context *ctx;
+
+	spin_lock(&oom_context_lock);
+
+	/*
+	 * Check if oom context of memcg or any of its descendants is
+	 * active, i.e. if there is a process selecting a victim or a
+	 * victim dying. If there is, wait for it to finish, otherwise
+	 * proceed to oom.
+	 */
+	iter = mem_cgroup_iter(memcg, NULL, NULL);
+	do {
+		ctx = mem_cgroup_oom_context(iter);
+		if (ctx->owner || ctx->victim) {
+			__wait_oom_context(ctx);
+			mem_cgroup_iter_break(memcg, iter);
+			return false;
+		}
+	} while ((iter = mem_cgroup_iter(memcg, iter, NULL)));
+
+	/*
+	 * Acquire oom context of memcg and all its descendants.
+	 */
+	iter = mem_cgroup_iter(memcg, NULL, NULL);
+	do {
+		ctx = mem_cgroup_oom_context(iter);
+		BUG_ON(ctx->owner);
+		BUG_ON(ctx->victim);
+		ctx->owner = current;
+	} while ((iter = mem_cgroup_iter(memcg, iter, NULL)));
+
+	spin_unlock(&oom_context_lock);
+
+	return true;
+}
+
+void oom_unlock(struct mem_cgroup *memcg)
+{
+	struct task_struct *victim = NULL;
+	struct mem_cgroup *iter, *victim_memcg = NULL;
+	struct oom_context *ctx;
+
+	spin_lock(&oom_context_lock);
+
+	/*
+	 * Find oom victim if any.
+	 */
+	iter = mem_cgroup_iter(memcg, NULL, NULL);
+	do {
+		ctx = mem_cgroup_oom_context(iter);
+		BUG_ON(ctx->owner != current);
+		if (ctx->victim) {
+			victim = ctx->victim;
+			/*
+			 * Remember the victim memcg so that we can wait
+			 * on it for the victim to exit below.
+			 */
+			victim_memcg = iter;
+			mem_cgroup_get(iter);
+
+			mem_cgroup_iter_break(memcg, iter);
+			break;
+		}
+	} while ((iter = mem_cgroup_iter(memcg, iter, NULL)));
+
+	/*
+	 * Propagate victim up to the context that initiated oom.
+	 */
+	for (iter = victim_memcg; iter; iter = parent_mem_cgroup(iter)) {
+		ctx = mem_cgroup_oom_context(iter);
+		BUG_ON(ctx->owner != current);
+		if (!ctx->victim)
+			ctx->victim = victim;
+		if (iter == memcg)
+			break;
+	}
+
+	/*
+	 * Release oom context of memcg and all its descendants.
+	 */
+	iter = mem_cgroup_iter(memcg, NULL, NULL);
+	do {
+		ctx = mem_cgroup_oom_context(iter);
+		BUG_ON(ctx->owner != current);
+		if (!ctx->victim)
+			/*
+			 * Victim already exited or nobody was killed in
+			 * this cgroup? It's our responsibility to wake
+			 * up blocked processes then.
+			 */
+			__release_oom_context(ctx);
+		else
+			/* To be released by victim (see exit_oom_victim) */
+			ctx->owner = NULL;
+	} while ((iter = mem_cgroup_iter(memcg, iter, NULL)));
+
+	if (!victim) {
+		spin_unlock(&oom_context_lock);
+		return;
+	}
+
+	/*
+	 * Wait for the victim to exit.
+	 */
+	ctx = mem_cgroup_oom_context(victim_memcg);
+	__wait_oom_context(ctx);
+	mem_cgroup_put(victim_memcg);
 }
 
 /*
@@ -636,56 +827,6 @@ int unregister_oom_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL_GPL(unregister_oom_notifier);
 
-/*
- * Try to acquire the OOM killer lock for the zones in zonelist.  Returns zero
- * if a parallel OOM killing is already taking place that includes a zone in
- * the zonelist.  Otherwise, locks all zones in the zonelist and returns 1.
- */
-int try_set_zonelist_oom(struct zonelist *zonelist, gfp_t gfp_mask)
-{
-	struct zoneref *z;
-	struct zone *zone;
-	int ret = 1;
-
-	spin_lock(&zone_scan_lock);
-	for_each_zone_zonelist(zone, z, zonelist, gfp_zone(gfp_mask)) {
-		if (zone_is_oom_locked(zone)) {
-			ret = 0;
-			goto out;
-		}
-	}
-
-	for_each_zone_zonelist(zone, z, zonelist, gfp_zone(gfp_mask)) {
-		/*
-		 * Lock each zone in the zonelist under zone_scan_lock so a
-		 * parallel invocation of try_set_zonelist_oom() doesn't succeed
-		 * when it shouldn't.
-		 */
-		zone_set_flag(zone, ZONE_OOM_LOCKED);
-	}
-
-out:
-	spin_unlock(&zone_scan_lock);
-	return ret;
-}
-
-/*
- * Clears the ZONE_OOM_LOCKED flag for all zones in the zonelist so that failed
- * allocation attempts with zonelists containing them may now recall the OOM
- * killer, if necessary.
- */
-void clear_zonelist_oom(struct zonelist *zonelist, gfp_t gfp_mask)
-{
-	struct zoneref *z;
-	struct zone *zone;
-
-	spin_lock(&zone_scan_lock);
-	for_each_zone_zonelist(zone, z, zonelist, gfp_zone(gfp_mask)) {
-		zone_clear_flag(zone, ZONE_OOM_LOCKED);
-	}
-	spin_unlock(&zone_scan_lock);
-}
-
 /**
  * out_of_memory - kill the "best" process when we run out of memory
  * @zonelist: zonelist pointer
@@ -708,7 +849,6 @@ void out_of_memory(struct zonelist *zonelist, gfp_t gfp_mask,
 	unsigned long freed = 0;
 	unsigned int uninitialized_var(points);
 	enum oom_constraint constraint = CONSTRAINT_NONE;
-	int killed = 0;
 
 	blocking_notifier_call_chain(&oom_notify_list, 0, &freed);
 	if (freed > 0)
@@ -745,7 +885,7 @@ void out_of_memory(struct zonelist *zonelist, gfp_t gfp_mask,
 		oom_kill_process(current, gfp_mask, order, 0, totalpages, NULL,
 				 nodemask,
 				 "Out of memory (oom_kill_allocating_task)");
-		goto out;
+		return;
 	}
 
 	p = select_bad_process(&points, totalpages, mpol_mask, force_kill);
@@ -757,15 +897,7 @@ void out_of_memory(struct zonelist *zonelist, gfp_t gfp_mask,
 	if (PTR_ERR(p) != -1UL) {
 		oom_kill_process(p, gfp_mask, order, points, totalpages, NULL,
 				 nodemask, "Out of memory");
-		killed = 1;
 	}
-out:
-	/*
-	 * Give the killed threads a good chance of exiting before trying to
-	 * allocate memory again.
-	 */
-	if (killed)
-		schedule_timeout_killable(1);
 }
 
 /*
@@ -775,14 +907,11 @@ out:
  */
 void pagefault_out_of_memory(void)
 {
-	struct zonelist *zonelist;
-
 	if (mem_cgroup_oom_synchronize(true))
 		return;
 
-	zonelist = node_zonelist(first_memory_node, GFP_KERNEL);
-	if (try_set_zonelist_oom(zonelist, GFP_KERNEL)) {
+	if (oom_trylock(NULL)) {
 		out_of_memory(NULL, 0, 0, NULL, false);
-		clear_zonelist_oom(zonelist, GFP_KERNEL);
+		oom_unlock(NULL);
 	}
 }
