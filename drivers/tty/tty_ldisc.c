@@ -524,9 +524,11 @@ int tty_set_ldisc(struct tty_struct *tty, int ldisc)
 	if (IS_ERR(new_ldisc))
 		return PTR_ERR(new_ldisc);
 
+	tty_lock(tty);
 	retval = tty_ldisc_lock_pair_timeout(tty, o_tty, 5 * HZ);
 	if (retval) {
 		tty_ldisc_put(new_ldisc);
+		tty_unlock(tty);
 		return retval;
 	}
 
@@ -537,6 +539,7 @@ int tty_set_ldisc(struct tty_struct *tty, int ldisc)
 	if (tty->ldisc->ops->num == ldisc) {
 		tty_ldisc_enable_pair(tty, o_tty);
 		tty_ldisc_put(new_ldisc);
+		tty_unlock(tty);
 		return 0;
 	}
 
@@ -544,7 +547,6 @@ int tty_set_ldisc(struct tty_struct *tty, int ldisc)
 	tty->receive_room = 0;
 
 	o_ldisc = tty->ldisc;
-	tty_lock(tty);
 
 	/* FIXME: for testing only */
 	WARN_ON(test_bit(TTY_HUPPED, &tty->flags));
