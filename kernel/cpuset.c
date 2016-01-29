@@ -268,14 +268,6 @@ static DEFINE_MUTEX(cpuset_mutex);
 static DEFINE_MUTEX(callback_mutex);
 
 /*
- * Protected by cpuset_mutex.  cpus_attach is used only by cpuset_attach()
- * but we can't allocate it dynamically there.  Define it global and
- * allocate from cpuset_init().
- */
-static cpumask_var_t cpus_attach;
-
-
-/*
  * CPU / memory hotplug is handled asynchronously.
  */
 static struct workqueue_struct *cpuset_propagate_hotplug_wq;
@@ -490,6 +482,16 @@ static int validate_change(const struct cpuset *cur, const struct cpuset *trial)
 		    nodes_intersects(trial->mems_allowed, c->mems_allowed))
 			goto out;
 	}
+
+	/*
+	 * Cpusets with tasks - existing or newly being attached - can't
+	 * have empty cpus_allowed or mems_allowed.
+	 */
+	ret = -ENOSPC;
+	if ((cgroup_task_count(cur->css.cgroup) || cur->attach_in_progress) &&
+	    (cpumask_empty(trial->cpus_allowed) ||
+	     nodes_empty(trial->mems_allowed)))
+		goto out;
 
 	/*
 	 * We can't shrink if we won't have enough room for SCHED_DEADLINE
@@ -831,7 +833,8 @@ void rebuild_sched_domains(void)
 static int cpuset_test_cpumask(struct task_struct *tsk,
 			       struct cgroup_scanner *scan)
 {
-	return !cpumask_equal(&tsk->cpus_allowed, cpus_attach);
+	return !cpumask_equal(&tsk->cpus_allowed,
+			(cgroup_cs(scan->cg))->cpus_allowed);
 }
 
 /**
@@ -848,7 +851,7 @@ static int cpuset_test_cpumask(struct task_struct *tsk,
 static void cpuset_change_cpumask(struct task_struct *tsk,
 				  struct cgroup_scanner *scan)
 {
-	set_cpus_allowed_ptr(tsk, cpus_attach);
+	set_cpus_allowed_ptr(tsk, ((cgroup_cs(scan->cg))->cpus_allowed));
 }
 
 /**
@@ -868,7 +871,6 @@ static void update_tasks_cpumask(struct cpuset *cs, struct ptr_heap *heap)
 {
 	struct cgroup_scanner scan;
 
-	guarantee_online_cpus(cs, cpus_attach);
 	scan.cg = cs->css.cgroup;
 	scan.test_task = cpuset_test_cpumask;
 	scan.process_task = cpuset_change_cpumask;
@@ -954,8 +956,10 @@ static int update_cpumask(struct cpuset *cs, const char *buf)
 		return -ENOMEM;
 
 	/*
+	 * An empty cpus_allowed is ok only if the cpuset has no tasks.
 	 * Since cpulist_parse() fails on an empty mask, we special case
-	 * that parsing.
+	 * that parsing.  The validate_change() call ensures that cpusets
+	 * with tasks have cpus.
 	 */
 	if (!*buf)
 		cpumask_clear(cpus_allowed);
@@ -1074,9 +1078,9 @@ static void cpuset_change_nodemask(struct task_struct *p,
 
 	migrate = is_memory_migrate(cs);
 
-	mpol_rebind_mm(mm, &newmems);
+	mpol_rebind_mm(mm, &cs->mems_allowed);
 	if (migrate)
-		cpuset_migrate_mm(mm, oldmem, &newmems);
+		cpuset_migrate_mm(mm, oldmem, &cs->mems_allowed);
 	mmput(mm);
 }
 
@@ -1177,7 +1181,7 @@ static int __update_nodemask(struct cpuset *cs,
 
 	trialcs->mems_allowed = *mems_allowed;
 
-	guarantee_online_mems(cs, oldmem);
+	*oldmem = cs->mems_allowed;
 	if (nodes_equal(*oldmem, trialcs->mems_allowed)) {
 		retval = 0;		/* Too easy - nothing to do */
 		goto done;
@@ -1213,8 +1217,10 @@ static int update_nodemask(struct cpuset *cs, const char *buf)
 		return -ENOMEM;
 
 	/*
+	 * An empty mems_allowed is ok iff there are no tasks in the cpuset.
 	 * Since nodelist_parse() fails on an empty mask, we special case
-	 * that parsing.
+	 * that parsing.  The validate_change() call ensures that cpusets
+	 * with tasks have memory.
 	 */
 	if (!*buf)
 		nodes_clear(*mems_allowed);
@@ -1459,6 +1465,10 @@ static int cpuset_can_attach(struct cgroup *cgrp, struct cgroup_taskset *tset)
 
 	mutex_lock(&cpuset_mutex);
 
+	ret = -ENOSPC;
+	if (cpumask_empty(cs->cpus_allowed) || nodes_empty(cs->mems_allowed))
+		goto out_unlock;
+
 	cgroup_taskset_for_each(task, cgrp, tset) {
 		ret = task_can_attach(task, cs->cpus_allowed);
 		if (ret)
@@ -1486,6 +1496,13 @@ static void cpuset_cancel_attach(struct cgroup *cgrp,
 	cgroup_cs(cgrp)->attach_in_progress--;
 	mutex_unlock(&cpuset_mutex);
 }
+
+/*
+ * Protected by cpuset_mutex.  cpus_attach is used only by cpuset_attach()
+ * but we can't allocate it dynamically there.  Define it global and
+ * allocate from cpuset_init().
+ */
+static cpumask_var_t cpus_attach;
 
 static void cpuset_attach(struct cgroup *cgrp, struct cgroup_taskset *tset)
 {
@@ -2115,18 +2132,48 @@ int __init cpuset_init(void)
 	return 0;
 }
 
+/*
+ * If CPU and/or memory hotplug handlers, below, unplug any CPUs
+ * or memory nodes, we need to walk over the cpuset hierarchy,
+ * removing that CPU or node from all cpusets.  If this removes the
+ * last CPU or node from a cpuset, then move the tasks in the empty
+ * cpuset to its next-highest non-empty parent.
+ */
+static void remove_tasks_in_empty_cpuset(struct cpuset *cs)
+{
+	struct cpuset *parent;
+
+	/*
+	 * Find its next-highest non-empty parent, (top cpuset
+	 * has online cpus, so can't be empty).
+	 */
+	parent = parent_cs(cs);
+	while (cpumask_empty(parent->cpus_allowed) ||
+			nodes_empty(parent->mems_allowed))
+		parent = parent_cs(parent);
+
+	if (cgroup_transfer_tasks(parent->css.cgroup, cs->css.cgroup)) {
+		rcu_read_lock();
+		printk(KERN_ERR "cpuset: failed to transfer tasks out of empty cpuset %s\n",
+		       cgroup_name(cs->css.cgroup));
+		rcu_read_unlock();
+	}
+}
+
 /**
  * cpuset_propagate_hotplug_workfn - propagate CPU/memory hotplug to a cpuset
  * @cs: cpuset in interest
  *
  * Compare @cs's cpu and mem masks against top_cpuset and if some have gone
- * offline, update @cs accordingly.
+ * offline, update @cs accordingly.  If @cs ends up with no CPU or memory,
+ * all its tasks are moved to the nearest ancestor with both resources.
  */
 static void cpuset_propagate_hotplug_workfn(struct work_struct *work)
 {
 	static cpumask_t off_cpus;
 	static nodemask_t off_mems, tmp_mems;
 	struct cpuset *cs = container_of(work, struct cpuset, hotplug_work);
+	bool is_empty;
 
 	mutex_lock(&cpuset_mutex);
 
@@ -2150,7 +2197,18 @@ static void cpuset_propagate_hotplug_workfn(struct work_struct *work)
 		update_tasks_nodemask(cs, &tmp_mems, NULL);
 	}
 
+	is_empty = cpumask_empty(cs->cpus_allowed) ||
+		nodes_empty(cs->mems_allowed);
+
 	mutex_unlock(&cpuset_mutex);
+
+	/*
+	 * If @cs became empty, move tasks to the nearest ancestor with
+	 * execution resources.  This is full cgroup operation which will
+	 * also call back into cpuset.  Should be done outside any lock.
+	 */
+	if (is_empty)
+		remove_tasks_in_empty_cpuset(cs);
 
 	/* the following may free @cs, should be the last operation */
 	css_put(&cs->css);
