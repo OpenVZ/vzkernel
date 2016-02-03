@@ -490,6 +490,10 @@ do_init:
 	INIT_LIST_HEAD(&ve->devmnt_list);
 	mutex_init(&ve->devmnt_mutex);
 
+#ifdef CONFIG_COREDUMP
+	strcpy(ve->core_pattern, "core");
+#endif
+
 	return &ve->css;
 
 err_log:
