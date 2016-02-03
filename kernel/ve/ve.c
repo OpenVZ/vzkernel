@@ -601,6 +601,11 @@ do_init:
 	init_rwsem(&ve->op_sem);
 	INIT_LIST_HEAD(&ve->ve_list);
 	kmapset_init_key(&ve->sysfs_perms_key);
+
+#ifdef CONFIG_COREDUMP
+	strcpy(ve->core_pattern, "core");
+#endif
+
 	return &ve->css;
 
 err_log:

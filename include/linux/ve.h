@@ -16,6 +16,7 @@
 #include <linux/vzstat.h>
 #include <linux/kmapset.h>
 #include <linux/kthread.h>
+#include <linux/binfmts.h>
 
 struct nsproxy;
 struct veip_struct;
@@ -78,6 +79,9 @@ struct ve_struct {
 	struct task_struct	*umh_task;
 
 	unsigned long		meminfo_val;
+#ifdef CONFIG_COREDUMP
+	char			core_pattern[CORENAME_MAX_SIZE];
+#endif
 };
 
 #define VE_MEMINFO_DEFAULT	1	/* default behaviour */
