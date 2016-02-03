@@ -32,6 +32,7 @@
 #include <linux/pipe_fs_i.h>
 #include <linux/oom.h>
 #include <linux/compat.h>
+#include <linux/ve.h>
 
 #include <asm/uaccess.h>
 #include <asm/mmu_context.h>
@@ -45,7 +46,6 @@
 #include <trace/events/sched.h>
 
 int core_uses_pid;
-char core_pattern[CORENAME_MAX_SIZE] = "core";
 unsigned int core_pipe_limit;
 
 struct core_name {
@@ -152,7 +152,7 @@ put_exe_file:
 static int format_corename(struct core_name *cn, struct coredump_params *cprm)
 {
 	const struct cred *cred = current_cred();
-	const char *pat_ptr = core_pattern;
+	const char *pat_ptr = get_exec_env()->core_pattern;
 	int ispipe = (*pat_ptr == '|');
 	int pid_in_pattern = 0;
 	int err = 0;
@@ -560,7 +560,6 @@ void do_coredump(siginfo_t *siginfo)
 	if (ispipe) {
 		int dump_count;
 		char **helper_argv;
-		struct subprocess_info *sub_info;
 
 		if (ispipe < 0) {
 			printk(KERN_WARNING "format_corename failed\n");
@@ -608,12 +607,9 @@ void do_coredump(siginfo_t *siginfo)
 		}
 
 		retval = -ENOMEM;
-		sub_info = call_usermodehelper_setup(helper_argv[0],
-						helper_argv, NULL, GFP_KERNEL,
-						umh_pipe_setup, NULL, &cprm);
-		if (sub_info)
-			retval = call_usermodehelper_exec(sub_info,
-							  UMH_WAIT_EXEC);
+		retval = call_usermodehelper_fns_ve(get_exec_env(), helper_argv[0],
+		                                    helper_argv, NULL, UMH_WAIT_EXEC,
+						    umh_pipe_setup, NULL, &cprm);
 
 		argv_free(helper_argv);
 		if (retval) {
