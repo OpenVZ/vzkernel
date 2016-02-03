@@ -24,6 +24,7 @@
 #include <linux/ve_proto.h>
 #include <net/inet_frag.h>
 #include <linux/cgroup.h>
+#include <linux/binfmts.h>
 
 struct tty_driver;
 struct file_system_type;
@@ -100,6 +101,9 @@ struct ve_struct {
 	struct mutex		devmnt_mutex;
 	atomic_t		netif_avail_nr;
 	int			netif_max_nr;
+#ifdef CONFIG_COREDUMP
+	char 			core_pattern[CORENAME_MAX_SIZE];
+#endif
 };
 
 struct ve_devmnt {
