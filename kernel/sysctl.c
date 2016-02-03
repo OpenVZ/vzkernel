@@ -103,7 +103,6 @@ extern int max_threads;
 extern int suid_dumpable;
 #ifdef CONFIG_COREDUMP
 extern int core_uses_pid;
-extern char core_pattern[];
 extern unsigned int core_pipe_limit;
 #endif
 extern int pid_max;
@@ -312,6 +311,10 @@ static int max_sched_tunable_scaling = SCHED_TUNABLESCALING_END-1;
 #ifdef CONFIG_COMPACTION
 static int min_extfrag_threshold;
 static int max_extfrag_threshold = 1000;
+#endif
+
+#ifdef CONFIG_COREDUMP
+sysctl_virtual(proc_dostring_coredump);
 #endif
 
 static struct ctl_table kern_table[] = {
@@ -534,10 +537,10 @@ static struct ctl_table kern_table[] = {
 	},
 	{
 		.procname	= "core_pattern",
-		.data		= core_pattern,
+		.data		= ve0.core_pattern,
 		.maxlen		= CORENAME_MAX_SIZE,
-		.mode		= 0644,
-		.proc_handler	= proc_dostring_coredump,
+		.mode		= 0644 | S_ISVTX,
+		.proc_handler	= proc_dostring_coredump_virtual,
 	},
 	{
 		.procname	= "core_pipe_limit",
@@ -2644,9 +2647,10 @@ int proc_dopipe_max_size(struct ctl_table *table, int write,
 
 static void validate_coredump_safety(void)
 {
+	struct ve_struct *ve = get_exec_env();
 #ifdef CONFIG_COREDUMP
 	if (suid_dumpable == SUID_DUMP_ROOT &&
-	    core_pattern[0] != '/' && core_pattern[0] != '|') {
+	    ve->core_pattern[0] != '/' && ve->core_pattern[0] != '|') {
 		printk(KERN_WARNING "Unsafe core_pattern used with "\
 			"suid_dumpable=2. Pipe handler or fully qualified "\
 			"core dump path required.\n");
