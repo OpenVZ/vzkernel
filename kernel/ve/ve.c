@@ -653,6 +653,10 @@ do_init:
 #endif
 	ve->mnt_nr = 0;
 
+#ifdef CONFIG_COREDUMP
+	strcpy(ve->core_pattern, "core");
+#endif
+
 	return &ve->css;
 
 err_log:
