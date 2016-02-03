@@ -40,6 +40,7 @@
 #include <linux/fs.h>
 #include <linux/path.h>
 #include <linux/timekeeping.h>
+#include <linux/ve.h>
 
 #include <linux/uaccess.h>
 #include <asm/mmu_context.h>
@@ -53,7 +54,6 @@
 
 int core_uses_pid;
 unsigned int core_pipe_limit;
-char core_pattern[CORENAME_MAX_SIZE] = "core";
 static int core_name_size = CORENAME_MAX_SIZE;
 
 struct core_name {
@@ -190,7 +190,7 @@ put_exe_file:
 static int format_corename(struct core_name *cn, struct coredump_params *cprm)
 {
 	const struct cred *cred = current_cred();
-	const char *pat_ptr = core_pattern;
+	const char *pat_ptr = get_exec_env()->core_pattern;
 	int ispipe = (*pat_ptr == '|');
 	int pid_in_pattern = 0;
 	int err = 0;
@@ -652,8 +652,9 @@ void do_coredump(const kernel_siginfo_t *siginfo)
 						helper_argv, NULL, GFP_KERNEL,
 						umh_pipe_setup, NULL, &cprm);
 		if (sub_info)
-			retval = call_usermodehelper_exec(sub_info,
-							  UMH_WAIT_EXEC);
+			retval = call_usermodehelper_exec_ve(get_exec_env(),
+							     sub_info,
+							     UMH_WAIT_EXEC);
 
 		argv_free(helper_argv);
 		if (retval) {
