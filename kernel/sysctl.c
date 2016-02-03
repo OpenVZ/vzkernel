@@ -174,6 +174,17 @@ extern int unaligned_dump_stack;
 extern int no_unaligned_warning;
 #endif
 
+static bool virtual_ptr(void **ptr, void *base, size_t size, void *cur);
+#define sysctl_virtual(sysctl)							\
+int sysctl ## _virtual(struct ctl_table *table, int write,			\
+		        void __user *buffer, size_t *lenp, loff_t *ppos)	\
+{										\
+	struct ctl_table tmp = *table;						\
+	if (virtual_ptr(&tmp.data, &ve0, sizeof(ve0), get_exec_env()))		\
+		return sysctl(&tmp, write, buffer, lenp, ppos);			\
+	return -EINVAL;								\
+}
+
 #ifdef CONFIG_PROC_SYSCTL
 static int proc_do_cad_pid(struct ctl_table *table, int write,
 		  void __user *buffer, size_t *lenp, loff_t *ppos);
@@ -2810,26 +2821,8 @@ static bool virtual_ptr(void **ptr, void *base, size_t size, void *cur)
 	return false;
 }
 
-int proc_dointvec_virtual(struct ctl_table *table, int write,
-		void __user *buffer, size_t *lenp, loff_t *ppos)
-{
-	struct ctl_table tmp = *table;
-
-	if (virtual_ptr(&tmp.data, &ve0, sizeof(ve0), get_exec_env()))
-		return proc_dointvec(&tmp, write, buffer, lenp, ppos);
-	return -EINVAL;
-}
-
-int proc_doulongvec_minmax_virtual(struct ctl_table *table, int write,
-				void __user *buffer, size_t *lenp,
-				loff_t *ppos)
-{
-	struct ctl_table tmp = *table;
-
-	if (virtual_ptr(&tmp.data, &ve0, sizeof(ve0), get_exec_env()))
-		return proc_doulongvec_minmax(&tmp, write, buffer, lenp, ppos);
-	return -EINVAL;
-}
+sysctl_virtual(proc_dointvec);
+sysctl_virtual(proc_doulongvec_minmax);
 
 static inline bool sysctl_in_container(void)
 {
