@@ -25,6 +25,7 @@
 #include <net/inet_frag.h>
 #include <linux/cgroup.h>
 #include <linux/kmapset.h>
+#include <linux/binfmts.h>
 
 struct tty_driver;
 struct file_system_type;
@@ -126,6 +127,9 @@ struct ve_struct {
 	 * and the VE unmounts it. This is acceptable.
 	 */
 	int			mnt_nr;
+#ifdef CONFIG_COREDUMP
+	char 			core_pattern[CORENAME_MAX_SIZE];
+#endif
 };
 
 struct ve_devmnt {
