@@ -7,6 +7,7 @@
 #include <linux/fs.h>
 #include <linux/slab.h>
 #include <linux/export.h>
+#include <linux/mount.h>
 #include <linux/namei.h>
 #include <linux/writeback.h>
 #include <linux/syscalls.h>
@@ -17,6 +18,7 @@
 #include <linux/backing-dev.h>
 #include <linux/ve.h>
 #include "internal.h"
+#include "mount.h"
 
 #include <bc/beancounter.h>
 #include <bc/io_acct.h>
@@ -35,9 +37,9 @@ static int __sync_filesystem(struct super_block *sb,
 			     struct user_beancounter *ub, int wait)
 {
 	if (wait)
-		sync_inodes_sb(sb);
+		sync_inodes_sb_ub(sb, ub);
 	else
-		writeback_inodes_sb(sb, WB_REASON_SYNC);
+		writeback_inodes_sb_ub(sb, ub, WB_REASON_SYNC);
 
 	if (sb->s_op->sync_fs)
 		sb->s_op->sync_fs(sb, wait);
@@ -104,8 +106,6 @@ static void fdatawait_one_bdev(struct block_device *bdev, void *arg)
 	filemap_fdatawait_keep_errors(bdev->bd_inode->i_mapping);
 }
 
-#if 0
-
 struct sync_sb {
 	struct list_head list;
 	struct super_block *sb;
@@ -134,8 +134,8 @@ static int sync_filesystem_collected(struct list_head *sync_list, struct super_b
 
 static int sync_collect_filesystems(struct ve_struct *ve, struct list_head *sync_list)
 {
-	struct vfsmount *root = ve->root_path.mnt;
-	struct vfsmount *mnt;
+	struct mount *root = real_mount(ve->root_path.mnt);
+	struct mount *mnt;
 	struct sync_sb *ss;
 	int ret = 0;
 
@@ -143,7 +143,7 @@ static int sync_collect_filesystems(struct ve_struct *ve, struct list_head *sync
 
 	down_read(&namespace_sem);
 	for (mnt = root; mnt; mnt = next_mnt(mnt, root)) {
-		if (sync_filesystem_collected(sync_list, mnt->mnt_sb))
+		if (sync_filesystem_collected(sync_list, mnt->mnt.mnt_sb))
 			continue;
 
 		ss = kmalloc(sizeof(*ss), GFP_KERNEL);
@@ -151,7 +151,7 @@ static int sync_collect_filesystems(struct ve_struct *ve, struct list_head *sync
 			ret = -ENOMEM;
 			break;
 		}
-		ss->sb = mnt->mnt_sb;
+		ss->sb = mnt->mnt.mnt_sb;
 		/*
 		 * We hold mount point and thus can be sure, that superblock is
 		 * alive. And it means, that we can safely increase it's usage
@@ -194,8 +194,6 @@ static void sync_filesystems_ve(struct ve_struct *ve, struct user_beancounter *u
 	mutex_unlock(&ve->sync_mutex);
 }
 
-#endif
-
 static int __ve_fsync_behavior(struct ve_struct *ve)
 {
 	if (ve->fsync_enable == 2)
@@ -230,7 +228,7 @@ int ve_fsync_behavior(void)
 SYSCALL_DEFINE0(sync)
 {
 	struct ve_struct *ve = get_exec_env();
-	struct user_beancounter *ub;
+	struct user_beancounter *ub, *sync_ub = NULL;
 	int nowait = 0, wait = 1;
 
 	ub = get_exec_ub();
@@ -251,6 +249,16 @@ SYSCALL_DEFINE0(sync)
 		fsb = __ve_fsync_behavior(ve);
 		if (fsb == FSYNC_NEVER)
 			goto skip;
+
+		if (fsb == FSYNC_FILTERED)
+			sync_ub = get_io_ub();
+
+		if (sync_ub && (sync_ub != get_ub0())) {
+			wakeup_flusher_threads_ub(0, sync_ub, WB_REASON_SYNC);
+			sync_filesystems_ve(get_exec_env(), sync_ub, nowait);
+			sync_filesystems_ve(get_exec_env(), sync_ub, wait);
+			goto skip;
+		}
 	}
 
 	wakeup_flusher_threads(0, WB_REASON_SYNC);
