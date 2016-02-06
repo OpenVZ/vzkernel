@@ -70,6 +70,9 @@ static inline int is_mounted(struct vfsmount *mnt)
 	return !IS_ERR_OR_NULL(real_mount(mnt));
 }
 
+extern struct rw_semaphore namespace_sem;
+extern struct mount *next_mnt(struct mount *p, struct mount *root);
+
 extern struct mount *__lookup_mnt(struct vfsmount *, struct dentry *, int);
 
 static inline void get_mnt_ns(struct mnt_namespace *ns)
