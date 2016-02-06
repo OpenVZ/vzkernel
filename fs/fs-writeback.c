@@ -122,7 +122,8 @@ out_unlock:
 
 static void
 __bdi_start_writeback(struct backing_dev_info *bdi, long nr_pages,
-		      bool range_cyclic, enum wb_reason reason)
+			struct user_beancounter *ub, bool range_cyclic,
+			enum wb_reason reason)
 {
 	struct wb_writeback_work *work;
 
@@ -141,6 +142,7 @@ __bdi_start_writeback(struct backing_dev_info *bdi, long nr_pages,
 	work->nr_pages	= nr_pages;
 	work->range_cyclic = range_cyclic;
 	work->reason	= reason;
+	work->ub	= ub;
 
 	bdi_queue_work(bdi, work);
 }
@@ -160,7 +162,7 @@ __bdi_start_writeback(struct backing_dev_info *bdi, long nr_pages,
 void bdi_start_writeback(struct backing_dev_info *bdi, long nr_pages,
 			enum wb_reason reason)
 {
-	__bdi_start_writeback(bdi, nr_pages, true, reason);
+	__bdi_start_writeback(bdi, nr_pages, NULL, true, reason);
 }
 
 /**
@@ -1140,7 +1142,8 @@ void bdi_writeback_workfn(struct work_struct *work)
  * Start writeback of `nr_pages' pages.  If `nr_pages' is zero, write back
  * the whole world.
  */
-void wakeup_flusher_threads(long nr_pages, enum wb_reason reason)
+void wakeup_flusher_threads_ub(long nr_pages, struct user_beancounter *ub,
+			enum wb_reason reason)
 {
 	struct backing_dev_info *bdi;
 
@@ -1151,9 +1154,14 @@ void wakeup_flusher_threads(long nr_pages, enum wb_reason reason)
 	list_for_each_entry_rcu(bdi, &bdi_list, bdi_list) {
 		if (!bdi_has_dirty_io(bdi))
 			continue;
-		__bdi_start_writeback(bdi, nr_pages, false, reason);
+		__bdi_start_writeback(bdi, nr_pages, ub, false, reason);
 	}
 	rcu_read_unlock();
+}
+
+void wakeup_flusher_threads(long nr_pages, enum wb_reason reason)
+{
+	wakeup_flusher_threads_ub(nr_pages, NULL, reason);
 }
 
 /*
@@ -1366,7 +1374,7 @@ out_unlock_inode:
 }
 EXPORT_SYMBOL(__mark_inode_dirty);
 
-static void wait_sb_inodes(struct super_block *sb)
+static void wait_sb_inodes(struct super_block *sb, struct user_beancounter *ub)
 {
 	struct inode *inode, *old_inode = NULL;
 
@@ -1394,6 +1402,11 @@ static void wait_sb_inodes(struct super_block *sb)
 			spin_unlock(&inode->i_lock);
 			continue;
 		}
+		if (ub && (mapping->dirtied_ub != ub)) {
+			spin_unlock(&inode->i_lock);
+			continue;
+		}
+
 		__iget(inode);
 		spin_unlock(&inode->i_lock);
 		spin_unlock(&inode_sb_list_lock);
@@ -1434,7 +1447,8 @@ static void wait_sb_inodes(struct super_block *sb)
  * on how many (if any) will be written, and this function does not wait
  * for IO completion of submitted IO.
  */
-void writeback_inodes_sb_nr(struct super_block *sb,
+static void writeback_inodes_sb_ub_nr(struct super_block *sb,
+			    struct user_beancounter *ub,
 			    unsigned long nr,
 			    enum wb_reason reason)
 {
@@ -1446,6 +1460,7 @@ void writeback_inodes_sb_nr(struct super_block *sb,
 		.done			= &done,
 		.nr_pages		= nr,
 		.reason			= reason,
+		.ub			= ub,
 	};
 
 	if (sb->s_bdi == &noop_backing_dev_info)
@@ -1454,7 +1469,21 @@ void writeback_inodes_sb_nr(struct super_block *sb,
 	bdi_queue_work(sb->s_bdi, &work);
 	wait_for_completion(&done);
 }
+
+void writeback_inodes_sb_nr(struct super_block *sb,
+			    unsigned long nr,
+			    enum wb_reason reason)
+{
+
+	writeback_inodes_sb_ub_nr(sb, NULL, nr, reason);
+}
 EXPORT_SYMBOL(writeback_inodes_sb_nr);
+
+void writeback_inodes_sb_ub(struct super_block *sb, struct user_beancounter *ub,
+			enum wb_reason reason)
+{
+	return writeback_inodes_sb_ub_nr(sb, ub, get_nr_dirty_pages(), reason);
+}
 
 /**
  * writeback_inodes_sb	-	writeback dirty inodes from given super_block
@@ -1517,7 +1546,7 @@ EXPORT_SYMBOL(try_to_writeback_inodes_sb);
  * This function writes and waits on any dirty inode belonging to this
  * super_block.
  */
-void sync_inodes_sb(struct super_block *sb)
+void sync_inodes_sb_ub(struct super_block *sb, struct user_beancounter *ub)
 {
 	DECLARE_COMPLETION_ONSTACK(done);
 	struct wb_writeback_work work = {
@@ -1528,6 +1557,7 @@ void sync_inodes_sb(struct super_block *sb)
 		.done		= &done,
 		.reason		= WB_REASON_SYNC,
 		.for_sync	= 1,
+		.ub		= ub,
 	};
 
 	/* Nothing to do? */
@@ -1538,7 +1568,12 @@ void sync_inodes_sb(struct super_block *sb)
 	bdi_queue_work(sb->s_bdi, &work);
 	wait_for_completion(&done);
 
-	wait_sb_inodes(sb);
+	wait_sb_inodes(sb, ub);
+}
+
+void sync_inodes_sb(struct super_block *sb)
+{
+	sync_inodes_sb_ub(sb, NULL);
 }
 EXPORT_SYMBOL(sync_inodes_sb);
 
