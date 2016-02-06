@@ -702,6 +702,13 @@ static long writeback_sb_inodes(struct super_block *sb,
 			redirty_tail(inode, wb);
 			continue;
 		}
+		if ((work->ub || work->filter_ub) &&
+		     ub_should_skip_writeback(work->ub, inode)) {
+			spin_unlock(&inode->i_lock);
+			redirty_tail(inode, wb);
+			continue;
+		}
+
 		if ((inode->i_state & I_SYNC) && wbc.sync_mode != WB_SYNC_ALL) {
 			/*
 			 * If this inode is locked for writeback and we are not
@@ -715,12 +722,6 @@ static long writeback_sb_inodes(struct super_block *sb,
 			spin_unlock(&inode->i_lock);
 			requeue_io(inode, wb);
 			trace_writeback_sb_inodes_requeue(inode);
-			continue;
-		}
-		if ((work->ub || work->filter_ub) &&
-		     ub_should_skip_writeback(work->ub, inode)) {
-			spin_unlock(&inode->i_lock);
-			redirty_tail(inode, wb);
 			continue;
 		}
 
