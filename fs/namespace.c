@@ -40,7 +40,7 @@ static int mnt_group_start = 1;
 static struct list_head mount_hashtable[HASH_SIZE];
 static struct list_head mountpoint_hashtable[HASH_SIZE];
 static struct kmem_cache *mnt_cache __read_mostly;
-static struct rw_semaphore namespace_sem;
+struct rw_semaphore namespace_sem;
 
 /* /sys/fs */
 struct kobject *fs_kobj;
@@ -756,7 +756,7 @@ static void commit_tree(struct mount *mnt)
 	touch_mnt_namespace(n);
 }
 
-static struct mount *next_mnt(struct mount *p, struct mount *root)
+struct mount *next_mnt(struct mount *p, struct mount *root)
 {
 	struct list_head *next = p->mnt_mounts.next;
 	if (next == &p->mnt_mounts) {
