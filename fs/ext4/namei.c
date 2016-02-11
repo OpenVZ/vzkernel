@@ -34,6 +34,7 @@
 #include <linux/quotaops.h>
 #include <linux/buffer_head.h>
 #include <linux/bio.h>
+#include <linux/virtinfo.h>
 #include "ext4.h"
 #include "ext4_jbd2.h"
 
@@ -95,6 +96,8 @@ static struct buffer_head *__ext4_read_dirblock(struct inode *inode,
 	struct buffer_head *bh;
 	struct ext4_dir_entry *dirent;
 	int err = 0, is_dx_block = 0;
+
+	virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_PREPARE, NULL);
 
 	bh = ext4_bread(NULL, inode, block, 0, &err);
 	if (!bh) {
