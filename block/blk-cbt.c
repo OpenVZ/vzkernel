@@ -93,10 +93,9 @@ static int __blk_cbt_set(struct cbt_info  *cbt, blkcnt_t block,
 	while(count) {
 		unsigned long idx = block >> (PAGE_SHIFT + 3);
 		unsigned long off = block & (BITS_PER_PAGE -1);
-		unsigned long len = count & (BITS_PER_PAGE -1);
+		unsigned long len = min_t(unsigned long, BITS_PER_PAGE - off,
+					  count);
 
-		if (off + len > BITS_PER_PAGE)
-			len = BITS_PER_PAGE - off;
 		page = rcu_dereference(cbt->map[idx]);
 		if (page) {
 			spin_lock_page(page);
@@ -107,7 +106,7 @@ static int __blk_cbt_set(struct cbt_info  *cbt, blkcnt_t block,
 			continue;
 		} else {
 			if (!set) {
-				len = count & (BITS_PER_PAGE -1);
+				/* Nothing to do */
 				count -= len;
 				block += len;
 				continue;
