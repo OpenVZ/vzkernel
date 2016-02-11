@@ -939,6 +939,68 @@ up_opsem:
 	return ret ? ret : nbytes;
 }
 
+enum {
+	VE_CF_CLOCK_MONOTONIC,
+	VE_CF_CLOCK_BOOTBASED,
+};
+
+static int ve_ts_read(struct seq_file *sf, void *v)
+{
+	struct ve_struct *ve = css_to_ve(seq_css(sf));
+	struct timespec ts;
+	u64 now, delta;
+
+	switch (seq_cft(sf)->private) {
+		case VE_CF_CLOCK_MONOTONIC:
+			now = ktime_get_ns();
+			delta = ve->start_time;
+			break;
+		case VE_CF_CLOCK_BOOTBASED:
+			now = ktime_get_boot_ns();
+			delta = ve->real_start_time;
+			break;
+		default:
+			now = delta = 0;
+			WARN_ON_ONCE(1);
+			break;
+	}
+
+	ts = ns_to_timespec(now - delta);
+	seq_printf(sf, "%ld %ld", ts.tv_sec, ts.tv_nsec);
+	return 0;
+}
+
+static ssize_t ve_ts_write(struct kernfs_open_file *of, char *buf,
+			   size_t nbytes, loff_t off)
+{
+	struct ve_struct *ve = css_to_ve(of_css(of));
+	struct timespec delta;
+	u64 delta_ns, now, *target;
+
+	if (sscanf(buf, "%ld %ld", &delta.tv_sec, &delta.tv_nsec) != 2)
+		return -EINVAL;
+	if (!timespec_valid_strict(&delta))
+		return -EINVAL;
+	delta_ns = timespec_to_ns(&delta);
+
+	switch (of_cft(of)->private) {
+		case VE_CF_CLOCK_MONOTONIC:
+			now = ktime_get_ns();
+			target = &ve->start_time;
+			break;
+		case VE_CF_CLOCK_BOOTBASED:
+			now = ktime_get_boot_ns();
+			target = &ve->real_start_time;
+			break;
+		default:
+			WARN_ON_ONCE(1);
+			return -EINVAL;
+	}
+
+	*target = now - delta_ns;
+	return nbytes;
+}
+
 static u64 ve_netns_max_nr_read(struct cgroup_subsys_state *css, struct cftype *cft)
 {
 	return css_to_ve(css)->netns_max_nr;
@@ -1000,6 +1062,20 @@ static struct cftype ve_cftypes[] = {
 		.flags			= CFTYPE_NOT_ON_ROOT,
 		.seq_show		= ve_os_release_read,
 		.write			= ve_os_release_write,
+	},
+	{
+		.name			= "clock_monotonic",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.seq_show		= ve_ts_read,
+		.write			= ve_ts_write,
+		.private		= VE_CF_CLOCK_MONOTONIC,
+	},
+	{
+		.name			= "clock_bootbased",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.seq_show		= ve_ts_read,
+		.write			= ve_ts_write,
+		.private		= VE_CF_CLOCK_BOOTBASED,
 	},
 	{
 		.name			= "netns_max_nr",
