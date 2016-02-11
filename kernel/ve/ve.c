@@ -390,6 +390,8 @@ static void ve_drop_context(struct ve_struct *ve)
 
 }
 
+static const struct timespec zero_time = { };
+
 extern void cgroup_mark_ve_root(struct ve_struct *ve);
 
 /* under ve->op_sem write-lock */
@@ -407,8 +409,16 @@ static int ve_start_container(struct ve_struct *ve)
 	if (tsk->task_ve != ve || !is_child_reaper(task_pid(tsk)))
 		return -ECHILD;
 
-	ve->start_timespec = tsk->start_time;
-	ve->real_start_timespec = tsk->real_start_time;
+	/*
+	 * Setup uptime for new containers only, if restored
+	 * the velue won't be zero here already but setup from
+	 * cgroup write while resuming the container.
+	 */
+	if (timespec_equal(&ve->start_timespec, &zero_time)) {
+		ve->start_timespec = tsk->start_time;
+		ve->real_start_timespec = tsk->real_start_time;
+	}
+
 	/* The value is wrong, but it is never compared to process
 	 * start times */
 	ve->start_jiffies = get_jiffies_64();
@@ -1113,10 +1123,59 @@ enum {
 	VE_CF_FEATURES,
 	VE_CF_IPTABLES_MASK,
 	VE_CF_PSEUDOSUPER,
+	VE_CF_CLOCK_MONOTONIC,
+	VE_CF_CLOCK_BOOTBASED,
 	VE_CF_AIO_MAX_NR,
 	VE_CF_NETIF_MAX_NR,
 	VE_CF_NETIF_NR,
 };
+
+static int ve_ts_read(struct cgroup *cg, struct cftype *cft, struct seq_file *m)
+{
+	struct ve_struct *ve = cgroup_ve(cg);
+	struct timespec ts, *delta;
+
+	do_posix_clock_monotonic_gettime(&ts);
+	if (cft->private == VE_CF_CLOCK_MONOTONIC) {
+		delta = &ve->start_timespec;
+	} else if (cft->private == VE_CF_CLOCK_BOOTBASED) {
+		delta = &ve->real_start_timespec;
+		monotonic_to_bootbased(&ts);
+	} else {
+		delta = &ts;
+		memset(&ts, 0, sizeof(ts));
+		WARN_ON_ONCE(1);
+	}
+
+	set_normalized_timespec(&ts, ts.tv_sec - delta->tv_sec,
+				ts.tv_nsec - delta->tv_nsec);
+	seq_printf(m, "%ld %ld", ts.tv_sec, ts.tv_nsec);
+	return 0;
+}
+
+static int ve_ts_write(struct cgroup *cg, struct cftype *cft, const char *buffer)
+{
+	struct ve_struct *ve = cgroup_ve(cg);
+	struct timespec ts, delta, *target;
+
+	if (sscanf(buffer, "%ld %ld", &delta.tv_sec, &delta.tv_nsec) != 2)
+		return -EINVAL;
+
+	do_posix_clock_monotonic_gettime(&ts);
+	if (cft->private == VE_CF_CLOCK_MONOTONIC) {
+		target = &ve->start_timespec;
+	} else if (cft->private == VE_CF_CLOCK_BOOTBASED) {
+		target = &ve->real_start_timespec;
+		monotonic_to_bootbased(&ts);
+	} else {
+		WARN_ON_ONCE(1);
+		return -EINVAL;
+	}
+
+	set_normalized_timespec(target, ts.tv_sec - delta.tv_sec,
+				ts.tv_nsec - delta.tv_nsec);
+	return 0;
+}
 
 static u64 ve_read_u64(struct cgroup *cg, struct cftype *cft)
 {
@@ -1251,6 +1310,20 @@ static struct cftype ve_cftypes[] = {
 		.read_u64		= ve_read_u64,
 		.write_u64		= ve_write_pseudosuper,
 		.private		= VE_CF_PSEUDOSUPER,
+	},
+	{
+		.name			= "clock_monotonic",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_seq_string	= ve_ts_read,
+		.write_string		= ve_ts_write,
+		.private		= VE_CF_CLOCK_MONOTONIC,
+	},
+	{
+		.name			= "clock_bootbased",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_seq_string	= ve_ts_read,
+		.write_string		= ve_ts_write,
+		.private		= VE_CF_CLOCK_BOOTBASED,
 	},
 	{
 		.name			= "aio_max_nr",
