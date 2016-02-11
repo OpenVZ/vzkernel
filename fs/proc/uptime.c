@@ -38,7 +38,7 @@ FIXME:	to be reworked anyway in
 
 static int uptime_proc_show(struct seq_file *m, void *v)
 {
-	struct timespec uptime;
+	struct timespec uptime, offset;
 	struct timespec64 idle;
 
 	if (ve_is_super(get_exec_env()))
@@ -58,9 +58,10 @@ FIXME:  to be reworked anyway in
 	get_monotonic_boottime(&uptime);
 #ifdef CONFIG_VE
 	if (!ve_is_super(get_exec_env())) {
+		offset = ns_to_timespec(get_exec_env()->real_start_time);
 		set_normalized_timespec(&uptime,
-			uptime.tv_sec - get_exec_env()->start_timespec.tv_sec,
-			uptime.tv_nsec - get_exec_env()->start_timespec.tv_nsec);
+					 uptime.tv_sec - offset.tv_sec,
+					 uptime.tv_nsec - offset.tv_nsec);
 	}
 #endif
 	seq_printf(m, "%lu.%02lu %lu.%02lu\n",
