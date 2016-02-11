@@ -17,9 +17,7 @@ struct callback_head;
 #ifdef CONFIG_BEANCOUNTERS
 struct task_beancounter {
 	struct user_beancounter	*exec_ub;
-	struct user_beancounter *saved_ub;
 	struct user_beancounter	*task_ub;
-	unsigned long oom_generation;
 	struct callback_head cgroup_attach_work;
 };
 
@@ -29,14 +27,6 @@ extern int ub_attach_task(struct user_beancounter *, struct task_struct *);
 
 extern struct user_beancounter ub0;
 #define get_ub0()	(&ub0)
-
-#define ub_save_context(t)	do {				\
-		t->task_bc.saved_ub = t->task_bc.exec_ub;	\
-		t->task_bc.exec_ub = get_ub0();			\
-	} while (0)
-#define ub_restore_context(t)	do {				\
-		t->task_bc.exec_ub = t->task_bc.saved_ub;	\
-	} while (0)
 
 #define get_exec_ub()		(current->task_bc.exec_ub)
 #define set_exec_ub(__newub)		\
@@ -56,8 +46,6 @@ extern struct user_beancounter ub0;
 #define get_exec_ub()		(NULL)
 #define get_task_ub(task)	(NULL)
 #define set_exec_ub(__ub)	(NULL)
-#define ub_save_context(t)	do { } while (0)
-#define ub_restore_context(t)	do { } while (0)
 
 #endif /* CONFIG_BEANCOUNTERS */
 #endif /* __task.h_ */
