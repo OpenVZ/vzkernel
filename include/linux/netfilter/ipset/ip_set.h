@@ -251,7 +251,6 @@ ip_set_init_counter(struct ip_set_counter *counter,
 extern ip_set_id_t ip_set_get_byname(const char *name, struct ip_set **set);
 extern void ip_set_put_byindex(ip_set_id_t index);
 extern const char *ip_set_name_byindex(ip_set_id_t index);
-extern ip_set_id_t ip_set_nfnl_get(const char *name);
 extern ip_set_id_t ip_set_nfnl_get_byindex(ip_set_id_t index);
 extern void ip_set_nfnl_put(ip_set_id_t index);
 
@@ -338,7 +337,7 @@ static inline int nla_put_ipaddr4(struct sk_buff *skb, int type, __be32 ipaddr)
 
 	if (!__nested)
 		return -EMSGSIZE;
-	ret = nla_put_net32(skb, IPSET_ATTR_IPADDR_IPV4, ipaddr);
+	ret = nla_put_in_addr(skb, IPSET_ATTR_IPADDR_IPV4, ipaddr);
 	if (!ret)
 		ipset_nest_end(skb, __nested);
 	return ret;
@@ -352,8 +351,7 @@ static inline int nla_put_ipaddr6(struct sk_buff *skb, int type,
 
 	if (!__nested)
 		return -EMSGSIZE;
-	ret = nla_put(skb, IPSET_ATTR_IPADDR_IPV6,
-		      sizeof(struct in6_addr), ipaddrptr);
+	ret = nla_put_in6_addr(skb, IPSET_ATTR_IPADDR_IPV6, ipaddrptr);
 	if (!ret)
 		ipset_nest_end(skb, __nested);
 	return ret;

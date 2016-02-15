@@ -89,7 +89,7 @@ static void icmpv6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 	if (type == ICMPV6_PKT_TOOBIG)
 		ip6_update_pmtu(skb, net, info, 0, 0);
 	else if (type == NDISC_REDIRECT)
-		ip6_redirect(skb, net, 0, 0);
+		ip6_redirect(skb, net, skb->dev->ifindex, 0);
 }
 
 static int icmpv6_rcv(struct sk_buff *skb);
@@ -391,7 +391,7 @@ static void icmp6_send(struct sk_buff *skb, u8 type, u8 code, __u32 info)
 	int err = 0;
 
 	if ((u8 *)hdr < skb->head ||
-	    (skb->network_header + sizeof(*hdr)) > skb->tail)
+	    (skb_network_header(skb) + sizeof(*hdr)) > skb_tail_pointer(skb))
 		return;
 
 	/*
@@ -508,7 +508,7 @@ static void icmp6_send(struct sk_buff *skb, u8 type, u8 code, __u32 info)
 			      np->tclass, NULL, &fl6, (struct rt6_info *)dst,
 			      MSG_DONTWAIT, np->dontfrag);
 	if (err) {
-		ICMP6_INC_STATS_BH(net, idev, ICMP6_MIB_OUTERRORS);
+		ICMP6_INC_STATS(net, idev, ICMP6_MIB_OUTERRORS);
 		ip6_flush_pending_frames(sk);
 	} else {
 		err = icmpv6_push_pending_frames(sk, &fl6, &tmp_hdr,
@@ -686,21 +686,11 @@ static int icmpv6_rcv(struct sk_buff *skb)
 	saddr = &ipv6_hdr(skb)->saddr;
 	daddr = &ipv6_hdr(skb)->daddr;
 
-	/* Perform checksum. */
-	switch (skb->ip_summed) {
-	case CHECKSUM_COMPLETE:
-		if (!csum_ipv6_magic(saddr, daddr, skb->len, IPPROTO_ICMPV6,
-				     skb->csum))
-			break;
-		/* fall through */
-	case CHECKSUM_NONE:
-		skb->csum = ~csum_unfold(csum_ipv6_magic(saddr, daddr, skb->len,
-					     IPPROTO_ICMPV6, 0));
-		if (__skb_checksum_complete(skb)) {
-			LIMIT_NETDEBUG(KERN_DEBUG "ICMPv6 checksum failed [%pI6 > %pI6]\n",
-				       saddr, daddr);
-			goto csum_error;
-		}
+	if (skb_checksum_validate(skb, IPPROTO_ICMPV6, ip6_compute_pseudo)) {
+		LIMIT_NETDEBUG(KERN_DEBUG
+			       "ICMPv6 checksum failed [%pI6c > %pI6c]\n",
+			       saddr, daddr);
+		goto csum_error;
 	}
 
 	if (!pskb_pull(skb, sizeof(*hdr)))
@@ -931,6 +921,14 @@ static const struct icmp6_err {
 		.err	= ECONNREFUSED,
 		.fatal	= 1,
 	},
+	{	/* POLICY_FAIL */
+		.err	= EACCES,
+		.fatal	= 1,
+	},
+	{	/* REJECT_ROUTE	*/
+		.err	= EACCES,
+		.fatal	= 1,
+	},
 };
 
 int icmpv6_err_convert(u8 type, u8 code, int *err)
@@ -942,7 +940,7 @@ int icmpv6_err_convert(u8 type, u8 code, int *err)
 	switch (type) {
 	case ICMPV6_DEST_UNREACH:
 		fatal = 1;
-		if (code <= ICMPV6_PORT_UNREACH) {
+		if (code < ARRAY_SIZE(tab_unreach)) {
 			*err  = tab_unreach[code].err;
 			fatal = tab_unreach[code].fatal;
 		}
@@ -967,7 +965,7 @@ int icmpv6_err_convert(u8 type, u8 code, int *err)
 EXPORT_SYMBOL(icmpv6_err_convert);
 
 #ifdef CONFIG_SYSCTL
-ctl_table ipv6_icmp_table_template[] = {
+struct ctl_table ipv6_icmp_table_template[] = {
 	{
 		.procname	= "ratelimit",
 		.data		= &init_net.ipv6.sysctl.icmpv6_time,

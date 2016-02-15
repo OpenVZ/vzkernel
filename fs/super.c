@@ -36,6 +36,7 @@
 #include <linux/lockdep.h>
 #include "internal.h"
 
+const unsigned super_block_wrapper_version = 0;
 
 LIST_HEAD(super_blocks);
 DEFINE_SPINLOCK(sb_lock);
@@ -66,9 +67,6 @@ static int prune_super(struct shrinker *shrink, struct shrink_control *sc)
 	 * to recurse into the FS that called us in clear_inode() and friends..
 	 */
 	if (sc->nr_to_scan && !(sc->gfp_mask & __GFP_FS))
-		return -1;
-
-	if (!grab_super_passive(sb))
 		return -1;
 
 	if (sb->s_op && sb->s_op->nr_cached_objects)
@@ -105,37 +103,25 @@ static int prune_super(struct shrinker *shrink, struct shrink_control *sc)
 	}
 
 	total_objects = (total_objects / 100) * sysctl_vfs_cache_pressure;
-	drop_super(sb);
 	return total_objects;
 }
 
-static int init_sb_writers(struct super_block *s, struct file_system_type *type)
-{
-	int err;
-	int i;
-
-	for (i = 0; i < SB_FREEZE_LEVELS; i++) {
-		err = percpu_counter_init(&s->s_writers.counter[i], 0);
-		if (err < 0)
-			goto err_out;
-		lockdep_init_map(&s->s_writers.lock_map[i], sb_writers_name[i],
-				 &type->s_writers_key[i], 0);
-	}
-	init_waitqueue_head(&s->s_writers.wait);
-	init_waitqueue_head(&s->s_writers.wait_unfrozen);
-	return 0;
-err_out:
-	while (--i >= 0)
-		percpu_counter_destroy(&s->s_writers.counter[i]);
-	return err;
-}
-
-static void destroy_sb_writers(struct super_block *s)
+/**
+ *	destroy_super	-	frees a superblock
+ *	@s: superblock to free
+ *
+ *	Frees a superblock.
+ */
+static void destroy_super(struct super_block *s)
 {
 	int i;
-
 	for (i = 0; i < SB_FREEZE_LEVELS; i++)
 		percpu_counter_destroy(&s->s_writers.counter[i]);
+	security_sb_free(s);
+	WARN_ON(!list_empty(&s->s_mounts));
+	kfree(s->s_subtype);
+	kfree(s->s_options);
+	kfree(s);
 }
 
 /**
@@ -148,108 +134,70 @@ static void destroy_sb_writers(struct super_block *s)
  */
 static struct super_block *alloc_super(struct file_system_type *type, int flags)
 {
-	struct super_block *s = kzalloc(sizeof(struct super_block),  GFP_USER);
+	struct super_block *s = kzalloc(sizeof(struct super_block_wrapper),  GFP_USER);
 	static const struct super_operations default_op;
+	int i;
 
-	if (s) {
-		if (security_sb_alloc(s)) {
-			/*
-			 * We cannot call security_sb_free() without
-			 * security_sb_alloc() succeeding. So bail out manually
-			 */
-			kfree(s);
-			s = NULL;
-			goto out;
-		}
-#ifdef CONFIG_SMP
-		s->s_files = alloc_percpu(struct list_head);
-		if (!s->s_files)
-			goto err_out;
-		else {
-			int i;
+	if (!s)
+		return NULL;
 
-			for_each_possible_cpu(i)
-				INIT_LIST_HEAD(per_cpu_ptr(s->s_files, i));
-		}
-#else
-		INIT_LIST_HEAD(&s->s_files);
-#endif
-		if (init_sb_writers(s, type))
-			goto err_out;
-		s->s_flags = flags;
-		s->s_bdi = &default_backing_dev_info;
-		INIT_HLIST_NODE(&s->s_instances);
-		INIT_HLIST_BL_HEAD(&s->s_anon);
-		INIT_LIST_HEAD(&s->s_inodes);
-		INIT_LIST_HEAD(&s->s_dentry_lru);
-		INIT_LIST_HEAD(&s->s_inode_lru);
-		spin_lock_init(&s->s_inode_lru_lock);
-		INIT_LIST_HEAD(&s->s_mounts);
-		init_rwsem(&s->s_umount);
-		lockdep_set_class(&s->s_umount, &type->s_umount_key);
-		/*
-		 * sget() can have s_umount recursion.
-		 *
-		 * When it cannot find a suitable sb, it allocates a new
-		 * one (this one), and tries again to find a suitable old
-		 * one.
-		 *
-		 * In case that succeeds, it will acquire the s_umount
-		 * lock of the old one. Since these are clearly distrinct
-		 * locks, and this object isn't exposed yet, there's no
-		 * risk of deadlocks.
-		 *
-		 * Annotate this by putting this lock in a different
-		 * subclass.
-		 */
-		down_write_nested(&s->s_umount, SINGLE_DEPTH_NESTING);
-		s->s_count = 1;
-		atomic_set(&s->s_active, 1);
-		mutex_init(&s->s_vfs_rename_mutex);
-		lockdep_set_class(&s->s_vfs_rename_mutex, &type->s_vfs_rename_key);
-		mutex_init(&s->s_dquot.dqio_mutex);
-		mutex_init(&s->s_dquot.dqonoff_mutex);
-		init_rwsem(&s->s_dquot.dqptr_sem);
-		s->s_maxbytes = MAX_NON_LFS;
-		s->s_op = &default_op;
-		s->s_time_gran = 1000000000;
-		s->cleancache_poolid = -1;
-
-		s->s_shrink.seeks = DEFAULT_SEEKS;
-		s->s_shrink.shrink = prune_super;
-		s->s_shrink.batch = 1024;
+	if (security_sb_alloc(s))
+		goto fail;
+	for (i = 0; i < SB_FREEZE_LEVELS; i++) {
+		if (percpu_counter_init(&s->s_writers.counter[i], 0,
+					GFP_KERNEL) < 0)
+			goto fail;
+		lockdep_init_map(&s->s_writers.lock_map[i], sb_writers_name[i],
+				 &type->s_writers_key[i], 0);
 	}
-out:
-	return s;
-err_out:
-	security_sb_free(s);
-#ifdef CONFIG_SMP
-	if (s->s_files)
-		free_percpu(s->s_files);
-#endif
-	destroy_sb_writers(s);
-	kfree(s);
-	s = NULL;
-	goto out;
-}
+	init_waitqueue_head(&s->s_writers.wait);
+	init_waitqueue_head(&s->s_writers.wait_unfrozen);
+	s->s_flags = flags;
+	s->s_bdi = &default_backing_dev_info;
+	INIT_HLIST_NODE(&s->s_instances);
+	INIT_HLIST_BL_HEAD(&s->s_anon);
+	INIT_LIST_HEAD(&s->s_inodes);
+	INIT_LIST_HEAD(&s->s_dentry_lru);
+	INIT_LIST_HEAD(&s->s_inode_lru);
+	spin_lock_init(&s->s_inode_lru_lock);
+	INIT_LIST_HEAD(&s->s_mounts);
+	init_rwsem(&s->s_umount);
+	lockdep_set_class(&s->s_umount, &type->s_umount_key);
+	/*
+	 * sget() can have s_umount recursion.
+	 *
+	 * When it cannot find a suitable sb, it allocates a new
+	 * one (this one), and tries again to find a suitable old
+	 * one.
+	 *
+	 * In case that succeeds, it will acquire the s_umount
+	 * lock of the old one. Since these are clearly distrinct
+	 * locks, and this object isn't exposed yet, there's no
+	 * risk of deadlocks.
+	 *
+	 * Annotate this by putting this lock in a different
+	 * subclass.
+	 */
+	down_write_nested(&s->s_umount, SINGLE_DEPTH_NESTING);
+	s->s_count = 1;
+	atomic_set(&s->s_active, 1);
+	mutex_init(&s->s_vfs_rename_mutex);
+	lockdep_set_class(&s->s_vfs_rename_mutex, &type->s_vfs_rename_key);
+	mutex_init(&s->s_dquot.dqio_mutex);
+	mutex_init(&s->s_dquot.dqonoff_mutex);
+	init_rwsem(&s->s_dquot.dqptr_sem);
+	s->s_maxbytes = MAX_NON_LFS;
+	s->s_op = &default_op;
+	s->s_time_gran = 1000000000;
+	s->cleancache_poolid = -1;
 
-/**
- *	destroy_super	-	frees a superblock
- *	@s: superblock to free
- *
- *	Frees a superblock.
- */
-static inline void destroy_super(struct super_block *s)
-{
-#ifdef CONFIG_SMP
-	free_percpu(s->s_files);
-#endif
-	destroy_sb_writers(s);
-	security_sb_free(s);
-	WARN_ON(!list_empty(&s->s_mounts));
-	kfree(s->s_subtype);
-	kfree(s->s_options);
-	kfree(s);
+	s->s_shrink.seeks = DEFAULT_SEEKS;
+	s->s_shrink.shrink = prune_super;
+	s->s_shrink.batch = 1024;
+	return s;
+fail:
+	destroy_super(s);
+	return NULL;
 }
 
 /* Superblock refcounting  */
@@ -296,10 +244,9 @@ void deactivate_locked_super(struct super_block *s)
 	struct file_system_type *fs = s->s_type;
 	if (atomic_dec_and_test(&s->s_active)) {
 		cleancache_invalidate_fs(s);
+		unregister_shrinker(&s->s_shrink);
 		fs->kill_sb(s);
 
-		/* caches are now gone, we can safely kill the shrinker now */
-		unregister_shrinker(&s->s_shrink);
 		put_filesystem(fs);
 		put_super(s);
 	} else {
@@ -336,19 +283,19 @@ EXPORT_SYMBOL(deactivate_super);
  *	and want to turn it into a full-blown active reference.  grab_super()
  *	is called with sb_lock held and drops it.  Returns 1 in case of
  *	success, 0 if we had failed (superblock contents was already dead or
- *	dying when grab_super() had been called).
+ *	dying when grab_super() had been called).  Note that this is only
+ *	called for superblocks not in rundown mode (== ones still on ->fs_supers
+ *	of their type), so increment of ->s_count is OK here.
  */
 static int grab_super(struct super_block *s) __releases(sb_lock)
 {
-	if (atomic_inc_not_zero(&s->s_active)) {
-		spin_unlock(&sb_lock);
-		return 1;
-	}
-	/* it's going away */
 	s->s_count++;
 	spin_unlock(&sb_lock);
-	/* wait for it to die */
 	down_write(&s->s_umount);
+	if ((s->s_flags & MS_BORN) && atomic_inc_not_zero(&s->s_active)) {
+		put_super(s);
+		return 1;
+	}
 	up_write(&s->s_umount);
 	put_super(s);
 	return 0;
@@ -462,11 +409,6 @@ retry:
 				up_write(&s->s_umount);
 				destroy_super(s);
 				s = NULL;
-			}
-			down_write(&old->s_umount);
-			if (unlikely(!(old->s_flags & MS_BORN))) {
-				deactivate_locked_super(old);
-				goto retry;
 			}
 			return old;
 		}
@@ -660,10 +602,10 @@ restart:
 		if (hlist_unhashed(&sb->s_instances))
 			continue;
 		if (sb->s_bdev == bdev) {
-			if (grab_super(sb)) /* drops sb_lock */
-				return sb;
-			else
+			if (!grab_super(sb))
 				goto restart;
+			up_write(&sb->s_umount);
+			return sb;
 		}
 	}
 	spin_unlock(&sb_lock);
@@ -730,7 +672,8 @@ int do_remount_sb(struct super_block *sb, int flags, void *data, int force)
 	   make sure there are no rw files opened */
 	if (remount_ro) {
 		if (force) {
-			mark_files_ro(sb);
+			sb->s_readonly_remount = 1;
+			smp_wmb();
 		} else {
 			retval = sb_prepare_remount_readonly(sb);
 			if (retval)

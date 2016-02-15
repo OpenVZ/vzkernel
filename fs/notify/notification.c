@@ -166,6 +166,19 @@ alloc_holder:
 	mutex_lock(&group->notification_mutex);
 
 	if (group->q_len >= group->max_events) {
+		struct fsnotify_event_holder *last_holder;
+
+		last_holder = list_entry(list->prev, struct fsnotify_event_holder, event_list);
+
+		/* overflow event already last?  Don't add another */
+		if (last_holder->event == q_overflow_event) {
+			if (holder != &q_overflow_event->holder)
+				fsnotify_destroy_event_holder(holder);
+			fsnotify_get_event(q_overflow_event);
+			mutex_unlock(&group->notification_mutex);
+			return q_overflow_event;
+		}
+
 		event = q_overflow_event;
 
 		/*

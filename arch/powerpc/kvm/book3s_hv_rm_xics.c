@@ -23,17 +23,10 @@
 
 #define DEBUG_PASSUP
 
-static inline void rm_writeb(unsigned long paddr, u8 val)
-{
-	__asm__ __volatile__("sync; stbcix %0,0,%1"
-		: : "r" (val), "r" (paddr) : "memory");
-}
-
 static void icp_rm_set_vcpu_irq(struct kvm_vcpu *vcpu,
 				struct kvm_vcpu *this_vcpu)
 {
 	struct kvmppc_icp *this_icp = this_vcpu->arch.icp;
-	unsigned long xics_phys;
 	int cpu;
 
 	/* Mark the target VCPU as having an interrupt pending */
@@ -47,18 +40,15 @@ static void icp_rm_set_vcpu_irq(struct kvm_vcpu *vcpu,
 	}
 
 	/* Check if the core is loaded, if not, too hard */
-	cpu = vcpu->cpu;
+	cpu = vcpu->arch.thread_cpu;
 	if (cpu < 0 || cpu >= nr_cpu_ids) {
 		this_icp->rm_action |= XICS_RM_KICK_VCPU;
 		this_icp->rm_kick_target = vcpu;
 		return;
 	}
-	/* In SMT cpu will always point to thread 0, we adjust it */
-	cpu += vcpu->arch.ptid;
 
-	/* Not too hard, then poke the target */
-	xics_phys = paca[cpu].kvm_hstate.xics_phys;
-	rm_writeb(xics_phys + XICS_MFRR, IPI_PRIORITY);
+	smp_mb();
+	kvmhv_rm_send_ipi(cpu);
 }
 
 static void icp_rm_clr_vcpu_irq(struct kvm_vcpu *vcpu)
@@ -183,8 +173,10 @@ static void icp_rm_down_cppr(struct kvmppc_xics *xics, struct kvmppc_icp *icp,
 	 * state update in HW (ie bus transactions) so we can handle them
 	 * separately here as well.
 	 */
-	if (resend)
+	if (resend) {
 		icp->rm_action |= XICS_RM_CHECK_RESEND;
+		icp->rm_resend_icp = icp;
+	}
 }
 
 
@@ -254,10 +246,25 @@ int kvmppc_rm_h_ipi(struct kvm_vcpu *vcpu, unsigned long server,
 	 * nothing needs to be done as there can be no XISR to
 	 * reject.
 	 *
-	 * If the CPPR is less favored, then we might be replacing
-	 * an interrupt, and thus need to possibly reject it as in
-	 *
 	 * ICP state: Check_IPI
+	 *
+	 * If the CPPR is less favored, then we might be replacing
+	 * an interrupt, and thus need to possibly reject it.
+	 *
+	 * ICP State: IPI
+	 *
+	 * Besides rejecting any pending interrupts, we also
+	 * update XISR and pending_pri to mark IPI as pending.
+	 *
+	 * PAPR does not describe this state, but if the MFRR is being
+	 * made less favored than its earlier value, there might be
+	 * a previously-rejected interrupt needing to be resent.
+	 * Ideally, we would want to resend only if
+	 *	prio(pending_interrupt) < mfrr &&
+	 *	prio(pending_interrupt) < cppr
+	 * where pending interrupt is the one that was rejected. But
+	 * we don't have that state, so we simply trigger a resend
+	 * whenever the MFRR is made less favored.
 	 */
 	do {
 		old_state = new_state = ACCESS_ONCE(icp->state);
@@ -270,13 +277,14 @@ int kvmppc_rm_h_ipi(struct kvm_vcpu *vcpu, unsigned long server,
 		resend = false;
 		if (mfrr < new_state.cppr) {
 			/* Reject a pending interrupt if not an IPI */
-			if (mfrr <= new_state.pending_pri)
+			if (mfrr <= new_state.pending_pri) {
 				reject = new_state.xisr;
-			new_state.pending_pri = mfrr;
-			new_state.xisr = XICS_IPI;
+				new_state.pending_pri = mfrr;
+				new_state.xisr = XICS_IPI;
+			}
 		}
 
-		if (mfrr > old_state.mfrr && mfrr > new_state.cppr) {
+		if (mfrr > old_state.mfrr) {
 			resend = new_state.need_resend;
 			new_state.need_resend = 0;
 		}
@@ -289,8 +297,10 @@ int kvmppc_rm_h_ipi(struct kvm_vcpu *vcpu, unsigned long server,
 	}
 
 	/* Pass resends to virtual mode */
-	if (resend)
+	if (resend) {
 		this_icp->rm_action |= XICS_RM_CHECK_RESEND;
+		this_icp->rm_resend_icp = icp;
+	}
 
 	return check_too_hard(xics, this_icp);
 }
@@ -400,6 +410,11 @@ int kvmppc_rm_h_eoi(struct kvm_vcpu *vcpu, unsigned long xirr)
 	if (state->asserted) {
 		icp->rm_action |= XICS_RM_REJECT;
 		icp->rm_reject = irq;
+	}
+
+	if (!hlist_empty(&vcpu->kvm->irq_ack_notifier_list)) {
+		icp->rm_action |= XICS_RM_NOTIFY_EOI;
+		icp->rm_eoied_irq = irq;
 	}
  bail:
 	return check_too_hard(xics, icp);

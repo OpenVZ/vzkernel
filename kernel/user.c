@@ -53,6 +53,11 @@ struct user_namespace init_user_ns = {
 	.proc_inum = PROC_USER_INIT_INO,
 	.may_mount_sysfs = true,
 	.may_mount_proc = true,
+	.flags = USERNS_INIT_FLAGS,
+#ifdef CONFIG_PERSISTENT_KEYRINGS
+	.persistent_keyring_register_sem =
+	__RWSEM_INITIALIZER(init_user_ns.persistent_keyring_register_sem),
+#endif
 };
 EXPORT_SYMBOL_GPL(init_user_ns);
 

@@ -112,10 +112,10 @@ static struct rtnl_link_stats64 *loopback_get_stats64(struct net_device *dev,
 
 		lb_stats = per_cpu_ptr(dev->lstats, i);
 		do {
-			start = u64_stats_fetch_begin_bh(&lb_stats->syncp);
+			start = u64_stats_fetch_begin_irq(&lb_stats->syncp);
 			tbytes = lb_stats->bytes;
 			tpackets = lb_stats->packets;
-		} while (u64_stats_fetch_retry_bh(&lb_stats->syncp, start));
+		} while (u64_stats_fetch_retry_irq(&lb_stats->syncp, start));
 		bytes   += tbytes;
 		packets += tpackets;
 	}
@@ -168,7 +168,7 @@ static void loopback_setup(struct net_device *dev)
 	dev->tx_queue_len	= 0;
 	dev->type		= ARPHRD_LOOPBACK;	/* 0x0001*/
 	dev->flags		= IFF_LOOPBACK;
-	dev->priv_flags	       &= ~IFF_XMIT_DST_RELEASE;
+	netif_keep_dst(dev);
 	dev->hw_features	= NETIF_F_ALL_TSO | NETIF_F_UFO;
 	dev->features 		= NETIF_F_SG | NETIF_F_FRAGLIST
 		| NETIF_F_ALL_TSO

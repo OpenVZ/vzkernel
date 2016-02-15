@@ -530,7 +530,7 @@ do {								\
 /*
  *      PCI ID lookup table
  */
-static DEFINE_PCI_DEVICE_TABLE(fst_pci_dev_id) = {
+static const struct pci_device_id fst_pci_dev_id[] = {
 	{PCI_VENDOR_ID_FARSITE, PCI_DEVICE_ID_FARSITE_T2P, PCI_ANY_ID, 
 	 PCI_ANY_ID, 0, 0, FST_TYPE_T2P},
 
@@ -1972,6 +1972,7 @@ fst_get_iface(struct fst_card_info *card, struct fst_port_info *port,
 	}
 
 	i = port->index;
+	memset(&sync, 0, sizeof(sync));
 	sync.clock_rate = FST_RDL(card, portConfig[i].lineSpeed);
 	/* Lucky card and linux use same encoding here */
 	sync.clock_type = FST_RDB(card, portConfig[i].internalClock) ==

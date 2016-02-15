@@ -178,7 +178,7 @@ __setup("noexec32=", nonx32_setup);
  * When memory was added/removed make sure all the processes MM have
  * suitable PGD entries in the local PGD level page.
  */
-void sync_global_pgds(unsigned long start, unsigned long end)
+void sync_global_pgds(unsigned long start, unsigned long end, int removed)
 {
 	unsigned long address;
 
@@ -186,7 +186,12 @@ void sync_global_pgds(unsigned long start, unsigned long end)
 		const pgd_t *pgd_ref = pgd_offset_k(address);
 		struct page *page;
 
-		if (pgd_none(*pgd_ref))
+		/*
+		 * When it is called after memory hot remove, pgd_none()
+		 * returns true. In this case (removed == 1), we must clear
+		 * the PGD entries in the local PGD level page.
+		 */
+		if (pgd_none(*pgd_ref) && !removed)
 			continue;
 
 		spin_lock(&pgd_lock);
@@ -199,11 +204,17 @@ void sync_global_pgds(unsigned long start, unsigned long end)
 			pgt_lock = &pgd_page_get_mm(page)->page_table_lock;
 			spin_lock(pgt_lock);
 
-			if (pgd_none(*pgd))
-				set_pgd(pgd, *pgd_ref);
-			else
+			if (!pgd_none(*pgd_ref) && !pgd_none(*pgd))
 				BUG_ON(pgd_page_vaddr(*pgd)
 				       != pgd_page_vaddr(*pgd_ref));
+
+			if (removed) {
+				if (pgd_none(*pgd_ref) && !pgd_none(*pgd))
+					pgd_clear(pgd);
+			} else {
+				if (pgd_none(*pgd))
+					set_pgd(pgd, *pgd_ref);
+			}
 
 			spin_unlock(pgt_lock);
 		}
@@ -633,7 +644,7 @@ kernel_physical_mapping_init(unsigned long start,
 	}
 
 	if (pgd_changed)
-		sync_global_pgds(addr, end - 1);
+		sync_global_pgds(addr, end - 1, 0);
 
 	__flush_tlb_all();
 
@@ -643,7 +654,7 @@ kernel_physical_mapping_init(unsigned long start,
 #ifndef CONFIG_NUMA
 void __init initmem_init(void)
 {
-	memblock_set_node(0, (phys_addr_t)ULLONG_MAX, 0);
+	memblock_set_node(0, (phys_addr_t)ULLONG_MAX, &memblock.memory, 0);
 }
 #endif
 
@@ -712,36 +723,22 @@ EXPORT_SYMBOL_GPL(arch_add_memory);
 
 static void __meminit free_pagetable(struct page *page, int order)
 {
-	struct zone *zone;
-	bool bootmem = false;
 	unsigned long magic;
 	unsigned int nr_pages = 1 << order;
 
 	/* bootmem page has reserved flag */
 	if (PageReserved(page)) {
 		__ClearPageReserved(page);
-		bootmem = true;
 
 		magic = (unsigned long)page->lru.next;
 		if (magic == SECTION_INFO || magic == MIX_SECTION_INFO) {
 			while (nr_pages--)
 				put_page_bootmem(page++);
 		} else
-			__free_pages_bootmem(page, order);
+			while (nr_pages--)
+				free_reserved_page(page++);
 	} else
 		free_pages((unsigned long)page_address(page), order);
-
-	/*
-	 * SECTION_INFO pages and MIX_SECTION_INFO pages
-	 * are all allocated by bootmem.
-	 */
-	if (bootmem) {
-		zone = page_zone(page);
-		zone_span_writelock(zone);
-		zone->present_pages += nr_pages;
-		zone_span_writeunlock(zone);
-		totalram_pages += nr_pages;
-	}
 }
 
 static void __meminit free_pte_table(pte_t *pte_start, pmd_t *pmd)
@@ -989,25 +986,26 @@ static void __meminit
 remove_pagetable(unsigned long start, unsigned long end, bool direct)
 {
 	unsigned long next;
+	unsigned long addr;
 	pgd_t *pgd;
 	pud_t *pud;
 	bool pgd_changed = false;
 
-	for (; start < end; start = next) {
-		next = pgd_addr_end(start, end);
+	for (addr = start; addr < end; addr = next) {
+		next = pgd_addr_end(addr, end);
 
-		pgd = pgd_offset_k(start);
+		pgd = pgd_offset_k(addr);
 		if (!pgd_present(*pgd))
 			continue;
 
 		pud = (pud_t *)pgd_page_vaddr(*pgd);
-		remove_pud_table(pud, start, next, direct);
+		remove_pud_table(pud, addr, next, direct);
 		if (free_pud_table(pud, pgd))
 			pgd_changed = true;
 	}
 
 	if (pgd_changed)
-		sync_global_pgds(start, end - 1);
+		sync_global_pgds(start, end - 1, 1);
 
 	flush_tlb_all();
 }
@@ -1348,7 +1346,7 @@ int __meminit vmemmap_populate(unsigned long start, unsigned long end, int node)
 	else
 		err = vmemmap_populate_basepages(start, end, node);
 	if (!err)
-		sync_global_pgds(start, end - 1);
+		sync_global_pgds(start, end - 1, 0);
 	return err;
 }
 

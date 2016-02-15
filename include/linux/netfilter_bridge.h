@@ -25,7 +25,7 @@ enum nf_br_hook_priorities {
 #define BRNF_PPPoE			0x20
 
 /* Only used in br_forward.c */
-extern int nf_bridge_copy_header(struct sk_buff *skb);
+int nf_bridge_copy_header(struct sk_buff *skb);
 static inline int nf_bridge_maybe_copy_header(struct sk_buff *skb)
 {
 	if (skb->nf_bridge &&
@@ -53,7 +53,7 @@ static inline unsigned int nf_bridge_mtu_reduction(const struct sk_buff *skb)
 	return 0;
 }
 
-extern int br_handle_frame_finish(struct sk_buff *skb);
+int br_handle_frame_finish(struct sock *sk, struct sk_buff *skb);
 /* Only used in br_device.c */
 static inline int br_nf_pre_routing_finish_bridge_slow(struct sk_buff *skb)
 {
@@ -64,7 +64,7 @@ static inline int br_nf_pre_routing_finish_bridge_slow(struct sk_buff *skb)
 	skb_copy_to_linear_data_offset(skb, -(ETH_HLEN-ETH_ALEN),
 				       skb->nf_bridge->data, ETH_HLEN-ETH_ALEN);
 	skb->dev = nf_bridge->physindev;
-	return br_handle_frame_finish(skb);
+	return br_handle_frame_finish(NULL, skb);
 }
 
 /* This is called by the IP fragmenting code and it ensures there is

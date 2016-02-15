@@ -74,6 +74,9 @@
 #include <linux/ptrace.h>
 #include <linux/blkdev.h>
 #include <linux/elevator.h>
+#include <linux/random.h>
+#include <linux/context_tracking.h>
+#include <linux/list.h>
 
 #include <asm/io.h>
 #include <asm/bugs.h>
@@ -464,7 +467,7 @@ static void __init mm_init(void)
 	mem_init();
 	kmem_cache_init();
 	percpu_init_late();
-	pgtable_cache_init();
+	pgtable_init();
 	vmalloc_init();
 }
 
@@ -542,9 +545,9 @@ asmlinkage void __init start_kernel(void)
 	if (WARN(!irqs_disabled(), "Interrupts were enabled *very* early, fixing it\n"))
 		local_irq_disable();
 	idr_init_cache();
-	perf_event_init();
 	rcu_init();
 	tick_nohz_init();
+	context_tracking_init();
 	radix_tree_init();
 	/* init some links before init_ISA_irqs() */
 	early_irq_init();
@@ -555,6 +558,7 @@ asmlinkage void __init start_kernel(void)
 	softirq_init();
 	timekeeping_init();
 	time_init();
+	perf_event_init();
 	profile_init();
 	call_function_init();
 	WARN(!irqs_disabled(), "Interrupts were enabled early\n");
@@ -657,6 +661,70 @@ core_param(initcall_debug, initcall_debug, bool, 0644);
 
 static char msgbuf[64];
 
+#ifdef CONFIG_KALLSYMS
+struct blacklist_entry {
+	struct list_head next;
+	char *buf;
+};
+
+static __initdata_or_module LIST_HEAD(blacklisted_initcalls);
+
+static int __init initcall_blacklist(char *str)
+{
+	char *str_entry;
+	struct blacklist_entry *entry;
+
+	/* str argument is a comma-separated list of functions */
+	do {
+		str_entry = strsep(&str, ",");
+		if (str_entry) {
+			pr_debug("blacklisting initcall %s\n", str_entry);
+			entry = alloc_bootmem(sizeof(*entry));
+			entry->buf = alloc_bootmem(strlen(str_entry) + 1);
+			strcpy(entry->buf, str_entry);
+			list_add(&entry->next, &blacklisted_initcalls);
+		}
+	} while (str_entry);
+
+	return 0;
+}
+
+static bool __init_or_module initcall_blacklisted(initcall_t fn)
+{
+	struct list_head *tmp;
+	struct blacklist_entry *entry;
+	char *fn_name;
+
+	fn_name = kasprintf(GFP_KERNEL, "%pf", fn);
+	if (!fn_name)
+		return false;
+
+	list_for_each(tmp, &blacklisted_initcalls) {
+		entry = list_entry(tmp, struct blacklist_entry, next);
+		if (!strcmp(fn_name, entry->buf)) {
+			pr_debug("initcall %s blacklisted\n", fn_name);
+			kfree(fn_name);
+			return true;
+		}
+	}
+
+	kfree(fn_name);
+	return false;
+}
+#else
+static int __init initcall_blacklist(char *str)
+{
+	pr_warn("initcall_blacklist requires CONFIG_KALLSYMS\n");
+	return 0;
+}
+
+static bool __init_or_module initcall_blacklisted(initcall_t fn)
+{
+	return false;
+}
+#endif
+__setup("initcall_blacklist=", initcall_blacklist);
+
 static int __init_or_module do_one_initcall_debug(initcall_t fn)
 {
 	ktime_t calltime, delta, rettime;
@@ -679,6 +747,9 @@ int __init_or_module do_one_initcall(initcall_t fn)
 {
 	int count = preempt_count();
 	int ret;
+
+	if (initcall_blacklisted(fn))
+		return -EPERM;
 
 	if (initcall_debug)
 		ret = do_one_initcall_debug(fn);
@@ -777,6 +848,7 @@ static void __init do_basic_setup(void)
 	do_ctors();
 	usermodehelper_enable();
 	do_initcalls();
+	random_int_secret_init();
 }
 
 static void __init do_pre_smp_initcalls(void)
@@ -801,7 +873,7 @@ void __init load_default_modules(void)
 static int run_init_process(const char *init_filename)
 {
 	argv_init[0] = init_filename;
-	return do_execve(init_filename,
+	return do_execve(getname_kernel(init_filename),
 		(const char __user *const __user *)argv_init,
 		(const char __user *const __user *)envp_init);
 }

@@ -611,7 +611,7 @@ SYSCALL_DEFINE2(setregid, gid_t, rgid, gid_t, egid)
 	if (rgid != (gid_t) -1) {
 		if (gid_eq(old->gid, krgid) ||
 		    gid_eq(old->egid, krgid) ||
-		    nsown_capable(CAP_SETGID))
+		    ns_capable(old->user_ns, CAP_SETGID))
 			new->gid = krgid;
 		else
 			goto error;
@@ -620,7 +620,7 @@ SYSCALL_DEFINE2(setregid, gid_t, rgid, gid_t, egid)
 		if (gid_eq(old->gid, kegid) ||
 		    gid_eq(old->egid, kegid) ||
 		    gid_eq(old->sgid, kegid) ||
-		    nsown_capable(CAP_SETGID))
+		    ns_capable(old->user_ns, CAP_SETGID))
 			new->egid = kegid;
 		else
 			goto error;
@@ -661,7 +661,7 @@ SYSCALL_DEFINE1(setgid, gid_t, gid)
 	old = current_cred();
 
 	retval = -EPERM;
-	if (nsown_capable(CAP_SETGID))
+	if (ns_capable(old->user_ns, CAP_SETGID))
 		new->gid = new->egid = new->sgid = new->fsgid = kgid;
 	else if (gid_eq(kgid, old->gid) || gid_eq(kgid, old->sgid))
 		new->egid = new->fsgid = kgid;
@@ -745,7 +745,7 @@ SYSCALL_DEFINE2(setreuid, uid_t, ruid, uid_t, euid)
 		new->uid = kruid;
 		if (!uid_eq(old->uid, kruid) &&
 		    !uid_eq(old->euid, kruid) &&
-		    !nsown_capable(CAP_SETUID))
+		    !ns_capable(old->user_ns, CAP_SETUID))
 			goto error;
 	}
 
@@ -754,7 +754,7 @@ SYSCALL_DEFINE2(setreuid, uid_t, ruid, uid_t, euid)
 		if (!uid_eq(old->uid, keuid) &&
 		    !uid_eq(old->euid, keuid) &&
 		    !uid_eq(old->suid, keuid) &&
-		    !nsown_capable(CAP_SETUID))
+		    !ns_capable(old->user_ns, CAP_SETUID))
 			goto error;
 	}
 
@@ -808,7 +808,7 @@ SYSCALL_DEFINE1(setuid, uid_t, uid)
 	old = current_cred();
 
 	retval = -EPERM;
-	if (nsown_capable(CAP_SETUID)) {
+	if (ns_capable(old->user_ns, CAP_SETUID)) {
 		new->suid = new->uid = kuid;
 		if (!uid_eq(kuid, old->uid)) {
 			retval = set_user(new);
@@ -865,7 +865,7 @@ SYSCALL_DEFINE3(setresuid, uid_t, ruid, uid_t, euid, uid_t, suid)
 	old = current_cred();
 
 	retval = -EPERM;
-	if (!nsown_capable(CAP_SETUID)) {
+	if (!ns_capable(old->user_ns, CAP_SETUID)) {
 		if (ruid != (uid_t) -1        && !uid_eq(kruid, old->uid) &&
 		    !uid_eq(kruid, old->euid) && !uid_eq(kruid, old->suid))
 			goto error;
@@ -947,7 +947,7 @@ SYSCALL_DEFINE3(setresgid, gid_t, rgid, gid_t, egid, gid_t, sgid)
 	old = current_cred();
 
 	retval = -EPERM;
-	if (!nsown_capable(CAP_SETGID)) {
+	if (!ns_capable(old->user_ns, CAP_SETGID)) {
 		if (rgid != (gid_t) -1        && !gid_eq(krgid, old->gid) &&
 		    !gid_eq(krgid, old->egid) && !gid_eq(krgid, old->sgid))
 			goto error;
@@ -1018,7 +1018,7 @@ SYSCALL_DEFINE1(setfsuid, uid_t, uid)
 
 	if (uid_eq(kuid, old->uid)  || uid_eq(kuid, old->euid)  ||
 	    uid_eq(kuid, old->suid) || uid_eq(kuid, old->fsuid) ||
-	    nsown_capable(CAP_SETUID)) {
+	    ns_capable(old->user_ns, CAP_SETUID)) {
 		if (!uid_eq(kuid, old->fsuid)) {
 			new->fsuid = kuid;
 			if (security_task_fix_setuid(new, old, LSM_SETID_FS) == 0)
@@ -1057,7 +1057,7 @@ SYSCALL_DEFINE1(setfsgid, gid_t, gid)
 
 	if (gid_eq(kgid, old->gid)  || gid_eq(kgid, old->egid)  ||
 	    gid_eq(kgid, old->sgid) || gid_eq(kgid, old->fsgid) ||
-	    nsown_capable(CAP_SETGID)) {
+	    ns_capable(old->user_ns, CAP_SETGID)) {
 		if (!gid_eq(kgid, old->fsgid)) {
 			new->fsgid = kgid;
 			goto change_okay;
@@ -1137,11 +1137,9 @@ void do_sys_times(struct tms *tms)
 {
 	cputime_t tgutime, tgstime, cutime, cstime;
 
-	spin_lock_irq(&current->sighand->siglock);
 	thread_group_cputime_adjusted(current, &tgutime, &tgstime);
 	cutime = current->signal->cutime;
 	cstime = current->signal->cstime;
-	spin_unlock_irq(&current->sighand->siglock);
 	tms->tms_utime = cputime_to_clock_t(tgutime);
 	tms->tms_stime = cputime_to_clock_t(tgstime);
 	tms->tms_cutime = cputime_to_clock_t(cutime);
@@ -1894,11 +1892,13 @@ SYSCALL_DEFINE1(umask, int, mask)
 	return mask;
 }
 
-static int prctl_set_mm_exe_file(struct mm_struct *mm, unsigned int fd)
+static int prctl_set_mm_exe_file_locked(struct mm_struct *mm, unsigned int fd)
 {
 	struct fd exe;
 	struct inode *inode;
 	int err;
+
+	VM_BUG_ON(!rwsem_is_locked(&mm->mmap_sem));
 
 	exe = fdget(fd);
 	if (!exe.file)
@@ -1920,8 +1920,6 @@ static int prctl_set_mm_exe_file(struct mm_struct *mm, unsigned int fd)
 	if (err)
 		goto exit;
 
-	down_write(&mm->mmap_sem);
-
 	/*
 	 * Forbid mm->exe_file change if old file still mapped.
 	 */
@@ -1933,7 +1931,7 @@ static int prctl_set_mm_exe_file(struct mm_struct *mm, unsigned int fd)
 			if (vma->vm_file &&
 			    path_equal(&vma->vm_file->f_path,
 				       &mm->exe_file->f_path))
-				goto exit_unlock;
+				goto exit;
 	}
 
 	/*
@@ -1944,17 +1942,195 @@ static int prctl_set_mm_exe_file(struct mm_struct *mm, unsigned int fd)
 	 */
 	err = -EPERM;
 	if (test_and_set_bit(MMF_EXE_FILE_CHANGED, &mm->flags))
-		goto exit_unlock;
+		goto exit;
 
 	err = 0;
 	set_mm_exe_file(mm, exe.file);	/* this grabs a reference to exe.file */
-exit_unlock:
-	up_write(&mm->mmap_sem);
-
 exit:
 	fdput(exe);
 	return err;
 }
+
+#ifdef CONFIG_CHECKPOINT_RESTORE
+/*
+ * WARNING: we don't require any capability here so be very careful
+ * in what is allowed for modification from userspace.
+ */
+static int validate_prctl_map(struct prctl_mm_map *prctl_map)
+{
+	unsigned long mmap_max_addr = TASK_SIZE;
+	struct mm_struct *mm = current->mm;
+	int error = -EINVAL, i;
+
+	static const unsigned char offsets[] = {
+		offsetof(struct prctl_mm_map, start_code),
+		offsetof(struct prctl_mm_map, end_code),
+		offsetof(struct prctl_mm_map, start_data),
+		offsetof(struct prctl_mm_map, end_data),
+		offsetof(struct prctl_mm_map, start_brk),
+		offsetof(struct prctl_mm_map, brk),
+		offsetof(struct prctl_mm_map, start_stack),
+		offsetof(struct prctl_mm_map, arg_start),
+		offsetof(struct prctl_mm_map, arg_end),
+		offsetof(struct prctl_mm_map, env_start),
+		offsetof(struct prctl_mm_map, env_end),
+	};
+
+	/*
+	 * Make sure the members are not somewhere outside
+	 * of allowed address space.
+	 */
+	for (i = 0; i < ARRAY_SIZE(offsets); i++) {
+		u64 val = *(u64 *)((char *)prctl_map + offsets[i]);
+
+		if ((unsigned long)val >= mmap_max_addr ||
+		    (unsigned long)val < mmap_min_addr)
+			goto out;
+	}
+
+	/*
+	 * Make sure the pairs are ordered.
+	 */
+#define __prctl_check_order(__m1, __op, __m2)				\
+	((unsigned long)prctl_map->__m1 __op				\
+	 (unsigned long)prctl_map->__m2) ? 0 : -EINVAL
+	error  = __prctl_check_order(start_code, <, end_code);
+	error |= __prctl_check_order(start_data, <, end_data);
+	error |= __prctl_check_order(start_brk, <=, brk);
+	error |= __prctl_check_order(arg_start, <=, arg_end);
+	error |= __prctl_check_order(env_start, <=, env_end);
+	if (error)
+		goto out;
+#undef __prctl_check_order
+
+	error = -EINVAL;
+
+	/*
+	 * @brk should be after @end_data in traditional maps.
+	 */
+	if (prctl_map->start_brk <= prctl_map->end_data ||
+	    prctl_map->brk <= prctl_map->end_data)
+		goto out;
+
+	/*
+	 * Neither we should allow to override limits if they set.
+	 */
+	if (check_data_rlimit(rlimit(RLIMIT_DATA), prctl_map->brk,
+			      prctl_map->start_brk, prctl_map->end_data,
+			      prctl_map->start_data))
+			goto out;
+
+	/*
+	 * Someone is trying to cheat the auxv vector.
+	 */
+	if (prctl_map->auxv_size) {
+		if (!prctl_map->auxv || prctl_map->auxv_size > sizeof(mm->saved_auxv))
+			goto out;
+	}
+
+	/*
+	 * Finally, make sure the caller has the rights to
+	 * change /proc/pid/exe link: only local root should
+	 * be allowed to.
+	 */
+	if (prctl_map->exe_fd != (u32)-1) {
+		struct user_namespace *ns = current_user_ns();
+		const struct cred *cred = current_cred();
+
+		if (!uid_eq(cred->uid, make_kuid(ns, 0)) ||
+		    !gid_eq(cred->gid, make_kgid(ns, 0)))
+			goto out;
+	}
+
+	error = 0;
+out:
+	return error;
+}
+
+static int prctl_set_mm_map(int opt, const void __user *addr, unsigned long data_size)
+{
+	struct prctl_mm_map prctl_map = { .exe_fd = (u32)-1, };
+	unsigned long user_auxv[AT_VECTOR_SIZE];
+	struct mm_struct *mm = current->mm;
+	int error;
+
+	BUILD_BUG_ON(sizeof(user_auxv) != sizeof(mm->saved_auxv));
+	BUILD_BUG_ON(sizeof(struct prctl_mm_map) > 256);
+
+	if (opt == PR_SET_MM_MAP_SIZE)
+		return put_user((unsigned int)sizeof(prctl_map),
+				(unsigned int __user *)addr);
+
+	if (data_size != sizeof(prctl_map))
+		return -EINVAL;
+
+	if (copy_from_user(&prctl_map, addr, sizeof(prctl_map)))
+		return -EFAULT;
+
+	error = validate_prctl_map(&prctl_map);
+	if (error)
+		return error;
+
+	if (prctl_map.auxv_size) {
+		memset(user_auxv, 0, sizeof(user_auxv));
+		if (copy_from_user(user_auxv,
+				   (const void __user *)prctl_map.auxv,
+				   prctl_map.auxv_size))
+			return -EFAULT;
+
+		/* Last entry must be AT_NULL as specification requires */
+		user_auxv[AT_VECTOR_SIZE - 2] = AT_NULL;
+		user_auxv[AT_VECTOR_SIZE - 1] = AT_NULL;
+	}
+
+	down_write(&mm->mmap_sem);
+	if (prctl_map.exe_fd != (u32)-1)
+		error = prctl_set_mm_exe_file_locked(mm, prctl_map.exe_fd);
+	downgrade_write(&mm->mmap_sem);
+	if (error)
+		goto out;
+
+	/*
+	 * We don't validate if these members are pointing to
+	 * real present VMAs because application may have correspond
+	 * VMAs already unmapped and kernel uses these members for statistics
+	 * output in procfs mostly, except
+	 *
+	 *  - @start_brk/@brk which are used in do_brk but kernel lookups
+	 *    for VMAs when updating these memvers so anything wrong written
+	 *    here cause kernel to swear at userspace program but won't lead
+	 *    to any problem in kernel itself
+	 */
+
+	mm->start_code	= prctl_map.start_code;
+	mm->end_code	= prctl_map.end_code;
+	mm->start_data	= prctl_map.start_data;
+	mm->end_data	= prctl_map.end_data;
+	mm->start_brk	= prctl_map.start_brk;
+	mm->brk		= prctl_map.brk;
+	mm->start_stack	= prctl_map.start_stack;
+	mm->arg_start	= prctl_map.arg_start;
+	mm->arg_end	= prctl_map.arg_end;
+	mm->env_start	= prctl_map.env_start;
+	mm->env_end	= prctl_map.env_end;
+
+	/*
+	 * Note this update of @saved_auxv is lockless thus
+	 * if someone reads this member in procfs while we're
+	 * updating -- it may get partly updated results. It's
+	 * known and acceptable trade off: we leave it as is to
+	 * not introduce additional locks here making the kernel
+	 * more complex.
+	 */
+	if (prctl_map.auxv_size)
+		memcpy(mm->saved_auxv, user_auxv, sizeof(user_auxv));
+
+	error = 0;
+out:
+	up_read(&mm->mmap_sem);
+	return error;
+}
+#endif /* CONFIG_CHECKPOINT_RESTORE */
 
 static int prctl_set_mm(int opt, unsigned long addr,
 			unsigned long arg4, unsigned long arg5)
@@ -1964,14 +2140,25 @@ static int prctl_set_mm(int opt, unsigned long addr,
 	struct vm_area_struct *vma;
 	int error;
 
-	if (arg5 || (arg4 && opt != PR_SET_MM_AUXV))
+	if (arg5 || (arg4 && (opt != PR_SET_MM_AUXV &&
+			      opt != PR_SET_MM_MAP &&
+			      opt != PR_SET_MM_MAP_SIZE)))
 		return -EINVAL;
+
+#ifdef CONFIG_CHECKPOINT_RESTORE
+	if (opt == PR_SET_MM_MAP || opt == PR_SET_MM_MAP_SIZE)
+		return prctl_set_mm_map(opt, (const void __user *)addr, arg4);
+#endif
 
 	if (!capable(CAP_SYS_RESOURCE))
 		return -EPERM;
 
-	if (opt == PR_SET_MM_EXE_FILE)
-		return prctl_set_mm_exe_file(mm, (unsigned int)addr);
+	if (opt == PR_SET_MM_EXE_FILE) {
+		down_write(&mm->mmap_sem);
+		error = prctl_set_mm_exe_file_locked(mm, (unsigned int)addr);
+		up_write(&mm->mmap_sem);
+		return error;
+	}
 
 	if (addr >= TASK_SIZE || addr < mmap_min_addr)
 		return -EINVAL;
@@ -2262,6 +2449,21 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 		if (arg2 || arg3 || arg4 || arg5)
 			return -EINVAL;
 		return current->no_new_privs ? 1 : 0;
+	case PR_GET_THP_DISABLE:
+		if (arg2 || arg3 || arg4 || arg5)
+			return -EINVAL;
+		error = !!(me->mm->def_flags & VM_NOHUGEPAGE);
+		break;
+	case PR_SET_THP_DISABLE:
+		if (arg3 || arg4 || arg5)
+			return -EINVAL;
+		down_write(&me->mm->mmap_sem);
+		if (arg2)
+			me->mm->def_flags |= VM_NOHUGEPAGE;
+		else
+			me->mm->def_flags &= ~VM_NOHUGEPAGE;
+		up_write(&me->mm->mmap_sem);
+		break;
 	default:
 		error = -EINVAL;
 		break;
@@ -2282,8 +2484,9 @@ SYSCALL_DEFINE3(getcpu, unsigned __user *, cpup, unsigned __user *, nodep,
 }
 
 char poweroff_cmd[POWEROFF_CMD_PATH_LEN] = "/sbin/poweroff";
+static const char reboot_cmd[] = "/sbin/reboot";
 
-static int __orderly_poweroff(bool force)
+static int run_cmd(const char *cmd)
 {
 	char **argv;
 	static char *envp[] = {
@@ -2292,20 +2495,41 @@ static int __orderly_poweroff(bool force)
 		NULL
 	};
 	int ret;
-
-	argv = argv_split(GFP_KERNEL, poweroff_cmd, NULL);
+	argv = argv_split(GFP_KERNEL, cmd, NULL);
 	if (argv) {
 		ret = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
 		argv_free(argv);
 	} else {
-		printk(KERN_WARNING "%s failed to allocate memory for \"%s\"\n",
-					 __func__, poweroff_cmd);
 		ret = -ENOMEM;
 	}
 
+	return ret;
+}
+
+static int __orderly_reboot(void)
+{
+	int ret;
+
+	ret = run_cmd(reboot_cmd);
+
+	if (ret) {
+		pr_warn("Failed to start orderly reboot: forcing the issue\n");
+		emergency_sync();
+		kernel_restart(NULL);
+	}
+
+	return ret;
+}
+
+static int __orderly_poweroff(bool force)
+{
+	int ret;
+
+	ret = run_cmd(poweroff_cmd);
+
 	if (ret && force) {
-		printk(KERN_WARNING "Failed to start orderly shutdown: "
-					"forcing the issue\n");
+		pr_warn("Failed to start orderly shutdown: forcing the issue\n");
+
 		/*
 		 * I guess this should try to kick off some daemon to sync and
 		 * poweroff asap.  Or not even bother syncing if we're doing an
@@ -2334,14 +2558,32 @@ static DECLARE_WORK(poweroff_work, poweroff_work_func);
  * This may be called from any context to trigger a system shutdown.
  * If the orderly shutdown fails, it will force an immediate shutdown.
  */
-int orderly_poweroff(bool force)
+void orderly_poweroff(bool force)
 {
 	if (force) /* do not override the pending "true" */
 		poweroff_force = true;
 	schedule_work(&poweroff_work);
-	return 0;
 }
 EXPORT_SYMBOL_GPL(orderly_poweroff);
+
+static void reboot_work_func(struct work_struct *work)
+{
+	__orderly_reboot();
+}
+
+static DECLARE_WORK(reboot_work, reboot_work_func);
+
+/**
+ * orderly_reboot - Trigger an orderly system reboot
+ *
+ * This may be called from any context to trigger a system reboot.
+ * If the orderly reboot fails, it will force an immediate reboot.
+ */
+void orderly_reboot(void)
+{
+	schedule_work(&reboot_work);
+}
+EXPORT_SYMBOL_GPL(orderly_reboot);
 
 /**
  * do_sysinfo - fill in sysinfo struct

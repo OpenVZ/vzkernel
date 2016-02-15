@@ -82,7 +82,7 @@ static int hid_start_in(struct hid_device *hid)
 	struct usbhid_device *usbhid = hid->driver_data;
 
 	spin_lock_irqsave(&usbhid->lock, flags);
-	if (hid->open > 0 &&
+	if ((hid->open > 0 || hid->quirks & HID_QUIRK_ALWAYS_POLL) &&
 			!test_bit(HID_DISCONNECTED, &usbhid->iofl) &&
 			!test_bit(HID_SUSPENDED, &usbhid->iofl) &&
 			!test_and_set_bit(HID_IN_RUNNING, &usbhid->iofl)) {
@@ -116,40 +116,24 @@ static void hid_reset(struct work_struct *work)
 	struct usbhid_device *usbhid =
 		container_of(work, struct usbhid_device, reset_work);
 	struct hid_device *hid = usbhid->hid;
-	int rc = 0;
+	int rc;
 
 	if (test_bit(HID_CLEAR_HALT, &usbhid->iofl)) {
 		dev_dbg(&usbhid->intf->dev, "clear halt\n");
 		rc = usb_clear_halt(hid_to_usb_dev(hid), usbhid->urbin->pipe);
 		clear_bit(HID_CLEAR_HALT, &usbhid->iofl);
-		hid_start_in(hid);
-	}
-
-	else if (test_bit(HID_RESET_PENDING, &usbhid->iofl)) {
-		dev_dbg(&usbhid->intf->dev, "resetting device\n");
-		rc = usb_lock_device_for_reset(hid_to_usb_dev(hid), usbhid->intf);
 		if (rc == 0) {
-			rc = usb_reset_device(hid_to_usb_dev(hid));
-			usb_unlock_device(hid_to_usb_dev(hid));
+			hid_start_in(hid);
+		} else {
+			dev_dbg(&usbhid->intf->dev,
+					"clear-halt failed: %d\n", rc);
+			set_bit(HID_RESET_PENDING, &usbhid->iofl);
 		}
-		clear_bit(HID_RESET_PENDING, &usbhid->iofl);
 	}
 
-	switch (rc) {
-	case 0:
-		if (!test_bit(HID_IN_RUNNING, &usbhid->iofl))
-			hid_io_error(hid);
-		break;
-	default:
-		hid_err(hid, "can't reset device, %s-%s/input%d, status %d\n",
-			hid_to_usb_dev(hid)->bus->bus_name,
-			hid_to_usb_dev(hid)->devpath,
-			usbhid->ifnum, rc);
-		/* FALLTHROUGH */
-	case -EHOSTUNREACH:
-	case -ENODEV:
-	case -EINTR:
-		break;
+	if (test_bit(HID_RESET_PENDING, &usbhid->iofl)) {
+		dev_dbg(&usbhid->intf->dev, "resetting device\n");
+		usb_queue_reset_device(usbhid->intf);
 	}
 }
 
@@ -180,7 +164,7 @@ static void hid_io_error(struct hid_device *hid)
 	if (time_after(jiffies, usbhid->stop_retry)) {
 
 		/* Retries failed, so do a port reset unless we lack bandwidth*/
-		if (test_bit(HID_NO_BANDWIDTH, &usbhid->iofl)
+		if (!test_bit(HID_NO_BANDWIDTH, &usbhid->iofl)
 		     && !test_and_set_bit(HID_RESET_PENDING, &usbhid->iofl)) {
 
 			schedule_work(&usbhid->reset_work);
@@ -292,18 +276,22 @@ static void hid_irq_in(struct urb *urb)
 	case 0:			/* success */
 		usbhid_mark_busy(usbhid);
 		usbhid->retry_delay = 0;
-		hid_input_report(urb->context, HID_INPUT_REPORT,
-				 urb->transfer_buffer,
-				 urb->actual_length, 1);
-		/*
-		 * autosuspend refused while keys are pressed
-		 * because most keyboards don't wake up when
-		 * a key is released
-		 */
-		if (hid_check_keys_pressed(hid))
-			set_bit(HID_KEYS_PRESSED, &usbhid->iofl);
-		else
-			clear_bit(HID_KEYS_PRESSED, &usbhid->iofl);
+		if ((hid->quirks & HID_QUIRK_ALWAYS_POLL) && !hid->open)
+			break;
+		if (!test_bit(HID_RESUME_RUNNING, &usbhid->iofl)) {
+			hid_input_report(urb->context, HID_INPUT_REPORT,
+					 urb->transfer_buffer,
+					 urb->actual_length, 1);
+			/*
+			 * autosuspend refused while keys are pressed
+			 * because most keyboards don't wake up when
+			 * a key is released
+			 */
+			if (hid_check_keys_pressed(hid))
+				set_bit(HID_KEYS_PRESSED, &usbhid->iofl);
+			else
+				clear_bit(HID_KEYS_PRESSED, &usbhid->iofl);
+		}
 		break;
 	case -EPIPE:		/* stall */
 		usbhid_mark_busy(usbhid);
@@ -535,7 +523,6 @@ static void __usbhid_submit_report(struct hid_device *hid, struct hid_report *re
 {
 	int head;
 	struct usbhid_device *usbhid = hid->driver_data;
-	int len = ((report->size - 1) >> 3) + 1 + (report->id > 0);
 
 	if ((hid->quirks & HID_QUIRK_NOGET) && dir == USB_DIR_IN)
 		return;
@@ -546,7 +533,7 @@ static void __usbhid_submit_report(struct hid_device *hid, struct hid_report *re
 			return;
 		}
 
-		usbhid->out[usbhid->outhead].raw_report = kmalloc(len, GFP_ATOMIC);
+		usbhid->out[usbhid->outhead].raw_report = hid_alloc_report_buf(report, GFP_ATOMIC);
 		if (!usbhid->out[usbhid->outhead].raw_report) {
 			hid_warn(hid, "output queueing failed\n");
 			return;
@@ -595,7 +582,7 @@ static void __usbhid_submit_report(struct hid_device *hid, struct hid_report *re
 	}
 
 	if (dir == USB_DIR_OUT) {
-		usbhid->ctrl[usbhid->ctrlhead].raw_report = kmalloc(len, GFP_ATOMIC);
+		usbhid->ctrl[usbhid->ctrlhead].raw_report = hid_alloc_report_buf(report, GFP_ATOMIC);
 		if (!usbhid->ctrl[usbhid->ctrlhead].raw_report) {
 			hid_warn(hid, "control queueing failed\n");
 			return;
@@ -758,6 +745,7 @@ int usbhid_open(struct hid_device *hid)
 			goto done;
 		}
 		usbhid->intf->needs_remote_wakeup = 1;
+		set_bit(HID_RESUME_RUNNING, &usbhid->iofl);
 		res = hid_start_in(hid);
 		if (res) {
 			if (res != -ENOSPC) {
@@ -771,6 +759,15 @@ int usbhid_open(struct hid_device *hid)
 			}
 		}
 		usb_autopm_put_interface(usbhid->intf);
+
+		/*
+		 * In case events are generated while nobody was listening,
+		 * some are released when the device is re-opened.
+		 * Wait 50 msec for the queue to empty before allowing events
+		 * to go through hid.
+		 */
+		msleep(50);
+		clear_bit(HID_RESUME_RUNNING, &usbhid->iofl);
 	}
 done:
 	mutex_unlock(&hid_open_mut);
@@ -791,8 +788,10 @@ void usbhid_close(struct hid_device *hid)
 	if (!--hid->open) {
 		spin_unlock_irq(&usbhid->lock);
 		hid_cancel_delayed_stuff(usbhid);
-		usb_kill_urb(usbhid->urbin);
-		usbhid->intf->needs_remote_wakeup = 0;
+		if (!(hid->quirks & HID_QUIRK_ALWAYS_POLL)) {
+			usb_kill_urb(usbhid->urbin);
+			usbhid->intf->needs_remote_wakeup = 0;
+		}
 	} else {
 		spin_unlock_irq(&usbhid->lock);
 	}
@@ -1172,6 +1171,19 @@ static int usbhid_start(struct hid_device *hid)
 
 	set_bit(HID_STARTED, &usbhid->iofl);
 
+	if (hid->quirks & HID_QUIRK_ALWAYS_POLL) {
+		ret = usb_autopm_get_interface(usbhid->intf);
+		if (ret)
+			goto fail;
+		usbhid->intf->needs_remote_wakeup = 1;
+		ret = hid_start_in(hid);
+		if (ret) {
+			dev_err(&hid->dev,
+				"failed to start in urb: %d\n", ret);
+		}
+		usb_autopm_put_interface(usbhid->intf);
+	}
+
 	/* Some keyboards don't work until their LEDs have been set.
 	 * Since BIOSes do set the LEDs, it must be safe for any device
 	 * that supports the keyboard boot protocol.
@@ -1203,6 +1215,9 @@ static void usbhid_stop(struct hid_device *hid)
 
 	if (WARN_ON(!usbhid))
 		return;
+
+	if (hid->quirks & HID_QUIRK_ALWAYS_POLL)
+		usbhid->intf->needs_remote_wakeup = 0;
 
 	clear_bit(HID_STARTED, &usbhid->iofl);
 	spin_lock_irq(&usbhid->lock);	/* Sync with error and led handlers */

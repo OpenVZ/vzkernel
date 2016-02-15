@@ -375,7 +375,8 @@ extern void remove_percpu_irq(unsigned int irq, struct irqaction *act);
 
 extern void irq_cpu_online(void);
 extern void irq_cpu_offline(void);
-extern int __irq_set_affinity_locked(struct irq_data *data,  const struct cpumask *cpumask);
+extern int irq_set_affinity_locked(struct irq_data *data,
+				   const struct cpumask *cpumask, bool force);
 
 #ifdef CONFIG_GENERIC_HARDIRQS
 
@@ -508,12 +509,8 @@ static inline void irq_set_percpu_devid_flags(unsigned int irq)
 }
 
 /* Handle dynamic irq creation and destruction */
-extern unsigned int create_irq_nr(unsigned int irq_want, int node);
-extern unsigned int __create_irqs(unsigned int from, unsigned int count,
-				  int node);
 extern int create_irq(void);
 extern void destroy_irq(unsigned int irq);
-extern void destroy_irqs(unsigned int irq, unsigned int count);
 
 /*
  * Dynamic irq helper functions. Obsolete. Use irq_alloc_desc* and
@@ -579,6 +576,8 @@ static inline struct msi_desc *irq_data_get_msi(struct irq_data *d)
 	return d->msi_desc;
 }
 
+unsigned int arch_dynirq_lower_bound(unsigned int from);
+
 int __irq_alloc_descs(int irq, unsigned int from, unsigned int cnt, int node,
 		struct module *owner);
 
@@ -610,6 +609,21 @@ static inline int irq_reserve_irq(unsigned int irq)
 {
 	return irq_reserve_irqs(irq, 1);
 }
+
+#ifdef CONFIG_GENERIC_IRQ_LEGACY_ALLOC_HWIRQ
+unsigned int irq_alloc_hwirqs(int cnt, int node);
+static inline unsigned int irq_alloc_hwirq(int node)
+{
+	return irq_alloc_hwirqs(1, node);
+}
+void irq_free_hwirqs(unsigned int from, int cnt);
+static inline void irq_free_hwirq(unsigned int irq)
+{
+	return irq_free_hwirqs(irq, 1);
+}
+int arch_setup_hwirq(unsigned int irq, int node);
+void arch_teardown_hwirq(unsigned int irq);
+#endif
 
 #ifndef irq_reg_writel
 # define irq_reg_writel(val, addr)	writel(val, addr)

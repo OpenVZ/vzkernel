@@ -25,6 +25,7 @@ enum mapping_flags {
 	AS_MM_ALL_LOCKS	= __GFP_BITS_SHIFT + 2,	/* under mm_take_all_locks() */
 	AS_UNEVICTABLE	= __GFP_BITS_SHIFT + 3,	/* e.g., ramdisk, SHM_LOCK */
 	AS_BALLOON_MAP  = __GFP_BITS_SHIFT + 4, /* balloon page special map */
+	AS_EXITING	= __GFP_BITS_SHIFT + 5, /* final truncate in progress */
 };
 
 static inline void mapping_set_error(struct address_space *mapping, int error)
@@ -69,6 +70,16 @@ static inline int mapping_balloon(struct address_space *mapping)
 	return mapping && test_bit(AS_BALLOON_MAP, &mapping->flags);
 }
 
+static inline void mapping_set_exiting(struct address_space *mapping)
+{
+	set_bit(AS_EXITING, &mapping->flags);
+}
+
+static inline int mapping_exiting(struct address_space *mapping)
+{
+	return test_bit(AS_EXITING, &mapping->flags);
+}
+
 static inline gfp_t mapping_gfp_mask(struct address_space * mapping)
 {
 	return (__force gfp_t)mapping->flags & __GFP_BITS_MASK;
@@ -99,7 +110,7 @@ static inline void mapping_set_gfp_mask(struct address_space *m, gfp_t mask)
 
 #define page_cache_get(page)		get_page(page)
 #define page_cache_release(page)	put_page(page)
-void release_pages(struct page **pages, int nr, int cold);
+void release_pages(struct page **pages, int nr, bool cold);
 
 /*
  * speculatively take a reference to a page.
@@ -162,7 +173,7 @@ static inline int page_cache_get_speculative(struct page *page)
 	 * disabling preempt, and hence no need for the "speculative get" that
 	 * SMP requires.
 	 */
-	VM_BUG_ON(page_count(page) == 0);
+	VM_BUG_ON_PAGE(page_count(page) == 0, page);
 	atomic_inc(&page->_count);
 
 #else
@@ -175,7 +186,7 @@ static inline int page_cache_get_speculative(struct page *page)
 		return 0;
 	}
 #endif
-	VM_BUG_ON(PageTail(page));
+	VM_BUG_ON_PAGE(PageTail(page), page);
 
 	return 1;
 }
@@ -191,14 +202,14 @@ static inline int page_cache_add_speculative(struct page *page, int count)
 # ifdef CONFIG_PREEMPT_COUNT
 	VM_BUG_ON(!in_atomic());
 # endif
-	VM_BUG_ON(page_count(page) == 0);
+	VM_BUG_ON_PAGE(page_count(page) == 0, page);
 	atomic_add(count, &page->_count);
 
 #else
 	if (unlikely(!atomic_add_unless(&page->_count, count, 0)))
 		return 0;
 #endif
-	VM_BUG_ON(PageCompound(page) && page != compound_head(page));
+	VM_BUG_ON_PAGE(PageCompound(page) && page != compound_head(page), page);
 
 	return 1;
 }
@@ -210,7 +221,7 @@ static inline int page_freeze_refs(struct page *page, int count)
 
 static inline void page_unfreeze_refs(struct page *page, int count)
 {
-	VM_BUG_ON(page_count(page) != 0);
+	VM_BUG_ON_PAGE(page_count(page) != 0, page);
 	VM_BUG_ON(count == 0);
 
 	atomic_set(&page->_count, count);
@@ -243,12 +254,20 @@ static inline struct page *page_cache_alloc_readahead(struct address_space *x)
 
 typedef int filler_t(void *, struct page *);
 
-extern struct page * find_get_page(struct address_space *mapping,
-				pgoff_t index);
-extern struct page * find_lock_page(struct address_space *mapping,
-				pgoff_t index);
-extern struct page * find_or_create_page(struct address_space *mapping,
-				pgoff_t index, gfp_t gfp_mask);
+pgoff_t page_cache_next_hole(struct address_space *mapping,
+			     pgoff_t index, unsigned long max_scan);
+pgoff_t page_cache_prev_hole(struct address_space *mapping,
+			     pgoff_t index, unsigned long max_scan);
+
+struct page *__find_get_page(struct address_space *mapping, pgoff_t offset);
+struct page *find_get_page(struct address_space *mapping, pgoff_t offset);
+struct page *__find_lock_page(struct address_space *mapping, pgoff_t offset);
+struct page *find_lock_page(struct address_space *mapping, pgoff_t offset);
+struct page *find_or_create_page(struct address_space *mapping, pgoff_t index,
+				 gfp_t gfp_mask);
+unsigned __find_get_pages(struct address_space *mapping, pgoff_t start,
+			  unsigned int nr_pages, struct page **pages,
+			  pgoff_t *indices);
 unsigned find_get_pages(struct address_space *mapping, pgoff_t start,
 			unsigned int nr_pages, struct page **pages);
 unsigned find_get_pages_contig(struct address_space *mapping, pgoff_t start,
@@ -539,7 +558,7 @@ int add_to_page_cache_locked(struct page *page, struct address_space *mapping,
 int add_to_page_cache_lru(struct page *page, struct address_space *mapping,
 				pgoff_t index, gfp_t gfp_mask);
 extern void delete_from_page_cache(struct page *page);
-extern void __delete_from_page_cache(struct page *page);
+extern void __delete_from_page_cache(struct page *page, void *shadow);
 int replace_page_cache_page(struct page *old, struct page *new, gfp_t gfp_mask);
 
 /*

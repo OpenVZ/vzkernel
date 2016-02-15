@@ -113,14 +113,13 @@ void pci_acpi_crs_quirks(void);
                                   Dock Station
   -------------------------------------------------------------------------- */
 struct acpi_dock_ops {
+	acpi_notify_handler fixup;
 	acpi_notify_handler handler;
 	acpi_notify_handler uevent;
 };
 
-#if defined(CONFIG_ACPI_DOCK) || defined(CONFIG_ACPI_DOCK_MODULE)
-extern int is_dock_device(acpi_handle handle);
-extern int register_dock_notifier(struct notifier_block *nb);
-extern void unregister_dock_notifier(struct notifier_block *nb);
+#ifdef CONFIG_ACPI_DOCK
+extern int is_dock_device(struct acpi_device *adev);
 extern int register_hotplug_dock_device(acpi_handle handle,
 					const struct acpi_dock_ops *ops,
 					void *context,
@@ -128,16 +127,9 @@ extern int register_hotplug_dock_device(acpi_handle handle,
 					void (*release)(void *));
 extern void unregister_hotplug_dock_device(acpi_handle handle);
 #else
-static inline int is_dock_device(acpi_handle handle)
+static inline int is_dock_device(struct acpi_device *adev)
 {
 	return 0;
-}
-static inline int register_dock_notifier(struct notifier_block *nb)
-{
-	return -ENODEV;
-}
-static inline void unregister_dock_notifier(struct notifier_block *nb)
-{
 }
 static inline int register_hotplug_dock_device(acpi_handle handle,
 					       const struct acpi_dock_ops *ops,
@@ -150,6 +142,6 @@ static inline int register_hotplug_dock_device(acpi_handle handle,
 static inline void unregister_hotplug_dock_device(acpi_handle handle)
 {
 }
-#endif
+#endif /* CONFIG_ACPI_DOCK */
 
 #endif /*__ACPI_DRIVERS_H__*/

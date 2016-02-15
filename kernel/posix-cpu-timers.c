@@ -346,13 +346,11 @@ static int posix_cpu_clock_get(const clockid_t which_clock, struct timespec *tp)
 								 p, &rtn);
 				}
 			} else {
-				read_lock(&tasklist_lock);
 				if (thread_group_leader(p) && p->sighand) {
 					error =
 					    cpu_clock_sample_group(which_clock,
 							           p, &rtn);
 				}
-				read_unlock(&tasklist_lock);
 			}
 		}
 		rcu_read_unlock();
@@ -647,7 +645,7 @@ static int cpu_timer_sample_group(const clockid_t which_clock,
 		cpu->cpu = cputime.utime;
 		break;
 	case CPUCLOCK_SCHED:
-		cpu->sched = cputime.sum_exec_runtime + task_delta_exec(p);
+		cpu->sched = cputime.sum_exec_runtime;
 		break;
 	}
 	return 0;
@@ -667,7 +665,8 @@ static DECLARE_WORK(nohz_kick_work, nohz_kick_work_fn);
  */
 static void posix_cpu_timer_kick_nohz(void)
 {
-	schedule_work(&nohz_kick_work);
+	if (static_key_false(&context_tracking_enabled))
+		schedule_work(&nohz_kick_work);
 }
 
 bool posix_cpu_timers_can_stop_tick(struct task_struct *tsk)

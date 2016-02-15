@@ -58,25 +58,14 @@ static int pm8001_find_tag(struct sas_task *task, u32 *tag)
 }
 
 /**
-  * pm8001_tag_clear - clear the tags bitmap
+  * pm8001_tag_free - free the no more needed tag
   * @pm8001_ha: our hba struct
   * @tag: the found tag associated with the task
   */
-static void pm8001_tag_clear(struct pm8001_hba_info *pm8001_ha, u32 tag)
+void pm8001_tag_free(struct pm8001_hba_info *pm8001_ha, u32 tag)
 {
 	void *bitmap = pm8001_ha->tags;
 	clear_bit(tag, bitmap);
-}
-
-void pm8001_tag_free(struct pm8001_hba_info *pm8001_ha, u32 tag)
-{
-	pm8001_tag_clear(pm8001_ha, tag);
-}
-
-static void pm8001_tag_set(struct pm8001_hba_info *pm8001_ha, u32 tag)
-{
-	void *bitmap = pm8001_ha->tags;
-	set_bit(tag, bitmap);
 }
 
 /**
@@ -86,14 +75,18 @@ static void pm8001_tag_set(struct pm8001_hba_info *pm8001_ha, u32 tag)
   */
 inline int pm8001_tag_alloc(struct pm8001_hba_info *pm8001_ha, u32 *tag_out)
 {
-	unsigned int index, tag;
+	unsigned int tag;
 	void *bitmap = pm8001_ha->tags;
+	unsigned long flags;
 
-	index = find_first_zero_bit(bitmap, pm8001_ha->tags_num);
-	tag = index;
-	if (tag >= pm8001_ha->tags_num)
+	spin_lock_irqsave(&pm8001_ha->bitmap_lock, flags);
+	tag = find_first_zero_bit(bitmap, pm8001_ha->tags_num);
+	if (tag >= pm8001_ha->tags_num) {
+		spin_unlock_irqrestore(&pm8001_ha->bitmap_lock, flags);
 		return -SAS_QUEUE_FULL;
-	pm8001_tag_set(pm8001_ha, tag);
+	}
+	set_bit(tag, bitmap);
+	spin_unlock_irqrestore(&pm8001_ha->bitmap_lock, flags);
 	*tag_out = tag;
 	return 0;
 }
@@ -102,7 +95,7 @@ void pm8001_tag_init(struct pm8001_hba_info *pm8001_ha)
 {
 	int i;
 	for (i = 0; i < pm8001_ha->tags_num; ++i)
-		pm8001_tag_clear(pm8001_ha, i);
+		pm8001_tag_free(pm8001_ha, i);
 }
 
  /**
@@ -434,6 +427,7 @@ static int pm8001_task_exec(struct sas_task *task, const int num,
 		ccb->n_elem = n_elem;
 		ccb->ccb_tag = tag;
 		ccb->task = t;
+		ccb->device = pm8001_dev;
 		switch (t->task_proto) {
 		case SAS_PROTOCOL_SMP:
 			rc = pm8001_task_prep_smp(pm8001_ha, ccb);
@@ -447,7 +441,6 @@ static int pm8001_task_exec(struct sas_task *task, const int num,
 			break;
 		case SAS_PROTOCOL_SATA:
 		case SAS_PROTOCOL_STP:
-		case SAS_PROTOCOL_SATA | SAS_PROTOCOL_STP:
 			rc = pm8001_task_prep_ata(pm8001_ha, ccb);
 			break;
 		default:
@@ -501,11 +494,6 @@ int pm8001_queue_command(struct sas_task *task, const int num,
 	return pm8001_task_exec(task, num, gfp_flags, 0, NULL);
 }
 
-void pm8001_ccb_free(struct pm8001_hba_info *pm8001_ha, u32 ccb_idx)
-{
-	pm8001_tag_clear(pm8001_ha, ccb_idx);
-}
-
 /**
   * pm8001_ccb_task_free - free the sg for ssp and smp command, free the ccb.
   * @pm8001_ha: our hba card information
@@ -542,7 +530,7 @@ void pm8001_ccb_task_free(struct pm8001_hba_info *pm8001_ha,
 	ccb->task = NULL;
 	ccb->ccb_tag = 0xFFFFFFFF;
 	ccb->open_retry = 0;
-	pm8001_ccb_free(pm8001_ha, ccb_idx);
+	pm8001_tag_free(pm8001_ha, ccb_idx);
 }
 
  /**
@@ -704,6 +692,8 @@ static int pm8001_exec_internal_tmf_task(struct domain_device *dev,
 	int res, retry;
 	struct sas_task *task = NULL;
 	struct pm8001_hba_info *pm8001_ha = pm8001_find_ha_by_dev(dev);
+	struct pm8001_device *pm8001_dev = dev->lldd_dev;
+	DECLARE_COMPLETION_ONSTACK(completion_setstate);
 
 	for (retry = 0; retry < 3; retry++) {
 		task = sas_alloc_slow_task(GFP_KERNEL);
@@ -729,6 +719,12 @@ static int pm8001_exec_internal_tmf_task(struct domain_device *dev,
 			goto ex_err;
 		}
 		wait_for_completion(&task->slow_task->completion);
+		if (pm8001_ha->chip_id != chip_8001) {
+			pm8001_dev->setds_completion = &completion_setstate;
+				PM8001_CHIP_DISP->set_dev_state_req(pm8001_ha,
+					pm8001_dev, 0x01);
+			wait_for_completion(&completion_setstate);
+		}
 		res = -TMF_RESP_FUNC_FAILED;
 		/* Even TMF timed out, return direct. */
 		if ((task->task_state_flags & SAS_TASK_STATE_ABORTED)) {
@@ -858,13 +854,11 @@ ex_err:
 static void pm8001_dev_gone_notify(struct domain_device *dev)
 {
 	unsigned long flags = 0;
-	u32 tag;
 	struct pm8001_hba_info *pm8001_ha;
 	struct pm8001_device *pm8001_dev = dev->lldd_dev;
 
 	pm8001_ha = pm8001_find_ha_by_dev(dev);
 	spin_lock_irqsave(&pm8001_ha->lock, flags);
-	pm8001_tag_alloc(pm8001_ha, &tag);
 	if (pm8001_dev) {
 		u32 device_id = pm8001_dev->device_id;
 
@@ -1091,15 +1085,17 @@ int pm8001_lu_reset(struct domain_device *dev, u8 *lun)
 	struct pm8001_tmf_task tmf_task;
 	struct pm8001_device *pm8001_dev = dev->lldd_dev;
 	struct pm8001_hba_info *pm8001_ha = pm8001_find_ha_by_dev(dev);
+	DECLARE_COMPLETION_ONSTACK(completion_setstate);
 	if (dev_is_sata(dev)) {
 		struct sas_phy *phy = sas_get_local_phy(dev);
 		rc = pm8001_exec_internal_task_abort(pm8001_ha, pm8001_dev ,
 			dev, 1, 0);
 		rc = sas_phy_reset(phy, 1);
 		sas_put_local_phy(phy);
+		pm8001_dev->setds_completion = &completion_setstate;
 		rc = PM8001_CHIP_DISP->set_dev_state_req(pm8001_ha,
 			pm8001_dev, 0x01);
-		msleep(2000);
+		wait_for_completion(&completion_setstate);
 	} else {
 		tmf_task.tmf = TMF_LU_RESET;
 		rc = pm8001_issue_ssp_tmf(dev, lun, &tmf_task);

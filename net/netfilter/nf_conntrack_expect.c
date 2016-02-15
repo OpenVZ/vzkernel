@@ -66,9 +66,9 @@ static void nf_ct_expectation_timed_out(unsigned long ul_expect)
 {
 	struct nf_conntrack_expect *exp = (void *)ul_expect;
 
-	spin_lock_bh(&nf_conntrack_lock);
+	spin_lock_bh(&nf_conntrack_expect_lock);
 	nf_ct_unlink_expect(exp);
-	spin_unlock_bh(&nf_conntrack_lock);
+	spin_unlock_bh(&nf_conntrack_expect_lock);
 	nf_ct_expect_put(exp);
 }
 
@@ -155,6 +155,18 @@ nf_ct_find_expectation(struct net *net, u16 zone,
 	if (!nf_ct_is_confirmed(exp->master))
 		return NULL;
 
+	/* Avoid race with other CPUs, that for exp->master ct, is
+	 * about to invoke ->destroy(), or nf_ct_delete() via timeout
+	 * or early_drop().
+	 *
+	 * The atomic_inc_not_zero() check tells:  If that fails, we
+	 * know that the ct is being destroyed.  If it succeeds, we
+	 * can be sure the ct cannot disappear underneath.
+	 */
+	if (unlikely(nf_ct_is_dying(exp->master) ||
+		     !atomic_inc_not_zero(&exp->master->ct_general.use)))
+		return NULL;
+
 	if (exp->flags & NF_CT_EXPECT_PERMANENT) {
 		atomic_inc(&exp->use);
 		return exp;
@@ -162,6 +174,8 @@ nf_ct_find_expectation(struct net *net, u16 zone,
 		nf_ct_unlink_expect(exp);
 		return exp;
 	}
+	/* Undo exp->master refcnt increase, if del_timer() failed */
+	nf_ct_put(exp->master);
 
 	return NULL;
 }
@@ -177,12 +191,14 @@ void nf_ct_remove_expectations(struct nf_conn *ct)
 	if (!help)
 		return;
 
+	spin_lock_bh(&nf_conntrack_expect_lock);
 	hlist_for_each_entry_safe(exp, next, &help->expectations, lnode) {
 		if (del_timer(&exp->timeout)) {
 			nf_ct_unlink_expect(exp);
 			nf_ct_expect_put(exp);
 		}
 	}
+	spin_unlock_bh(&nf_conntrack_expect_lock);
 }
 EXPORT_SYMBOL_GPL(nf_ct_remove_expectations);
 
@@ -202,7 +218,8 @@ static inline int expect_clash(const struct nf_conntrack_expect *a,
 			a->mask.src.u3.all[count] & b->mask.src.u3.all[count];
 	}
 
-	return nf_ct_tuple_mask_cmp(&a->tuple, &b->tuple, &intersect_mask);
+	return nf_ct_tuple_mask_cmp(&a->tuple, &b->tuple, &intersect_mask) &&
+	       nf_ct_zone(a->master) == nf_ct_zone(b->master);
 }
 
 static inline int expect_matches(const struct nf_conntrack_expect *a,
@@ -217,12 +234,12 @@ static inline int expect_matches(const struct nf_conntrack_expect *a,
 /* Generally a bad idea to call this: could have matched already. */
 void nf_ct_unexpect_related(struct nf_conntrack_expect *exp)
 {
-	spin_lock_bh(&nf_conntrack_lock);
+	spin_lock_bh(&nf_conntrack_expect_lock);
 	if (del_timer(&exp->timeout)) {
 		nf_ct_unlink_expect(exp);
 		nf_ct_expect_put(exp);
 	}
-	spin_unlock_bh(&nf_conntrack_lock);
+	spin_unlock_bh(&nf_conntrack_expect_lock);
 }
 EXPORT_SYMBOL_GPL(nf_ct_unexpect_related);
 
@@ -293,6 +310,11 @@ void nf_ct_expect_init(struct nf_conntrack_expect *exp, unsigned int class,
 		       sizeof(exp->tuple.dst.u3) - len);
 
 	exp->tuple.dst.u.all = *dst;
+
+#ifdef CONFIG_NF_NAT_NEEDED
+	memset(&exp->saved_addr, 0, sizeof(exp->saved_addr));
+	memset(&exp->saved_proto, 0, sizeof(exp->saved_proto));
+#endif
 }
 EXPORT_SYMBOL_GPL(nf_ct_expect_init);
 
@@ -330,7 +352,7 @@ static int nf_ct_expect_insert(struct nf_conntrack_expect *exp)
 	setup_timer(&exp->timeout, nf_ct_expectation_timed_out,
 		    (unsigned long)exp);
 	helper = rcu_dereference_protected(master_help->helper,
-					   lockdep_is_held(&nf_conntrack_lock));
+					   lockdep_is_held(&nf_conntrack_expect_lock));
 	if (helper) {
 		exp->timeout.expires = jiffies +
 			helper->expect_policy[exp->class].timeout * HZ;
@@ -390,7 +412,7 @@ static inline int __nf_ct_expect_check(struct nf_conntrack_expect *expect)
 	}
 	/* Will be over limit? */
 	helper = rcu_dereference_protected(master_help->helper,
-					   lockdep_is_held(&nf_conntrack_lock));
+					   lockdep_is_held(&nf_conntrack_expect_lock));
 	if (helper) {
 		p = &helper->expect_policy[expect->class];
 		if (p->max_expected &&
@@ -412,12 +434,12 @@ out:
 	return ret;
 }
 
-int nf_ct_expect_related_report(struct nf_conntrack_expect *expect, 
+int nf_ct_expect_related_report(struct nf_conntrack_expect *expect,
 				u32 portid, int report)
 {
 	int ret;
 
-	spin_lock_bh(&nf_conntrack_lock);
+	spin_lock_bh(&nf_conntrack_expect_lock);
 	ret = __nf_ct_expect_check(expect);
 	if (ret <= 0)
 		goto out;
@@ -425,11 +447,11 @@ int nf_ct_expect_related_report(struct nf_conntrack_expect *expect,
 	ret = nf_ct_expect_insert(expect);
 	if (ret < 0)
 		goto out;
-	spin_unlock_bh(&nf_conntrack_lock);
+	spin_unlock_bh(&nf_conntrack_expect_lock);
 	nf_ct_expect_event_report(IPEXP_NEW, expect, portid, report);
 	return ret;
 out:
-	spin_unlock_bh(&nf_conntrack_lock);
+	spin_unlock_bh(&nf_conntrack_expect_lock);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(nf_ct_expect_related_report);

@@ -1,6 +1,8 @@
 #ifndef _SCSI_DISK_H
 #define _SCSI_DISK_H
 
+#include <linux/rh_kabi.h>
+
 /*
  * More than enough for everybody ;)  The huge number of majors
  * is a leftover from 16bit dev_t days, we don't really need that
@@ -13,7 +15,11 @@
  */
 #define SD_TIMEOUT		(30 * HZ)
 #define SD_MOD_TIMEOUT		(75 * HZ)
-#define SD_FLUSH_TIMEOUT	(60 * HZ)
+/*
+ * Flush timeout is a multiplier over the standard device timeout which is
+ * user modifiable via sysfs but initially set to SD_TIMEOUT
+ */
+#define SD_FLUSH_TIMEOUT_MULTIPLIER	2
 #define SD_WRITE_SAME_TIMEOUT	(120 * HZ)
 
 /*
@@ -84,7 +90,18 @@ struct scsi_disk {
 	unsigned	lbpws : 1;
 	unsigned	lbpws10 : 1;
 	unsigned	lbpvpd : 1;
+	unsigned	ws10 : 1;
 	unsigned	ws16 : 1;
+
+	/* FOR RH USE ONLY
+	 *
+	 * The following padding has been inserted before ABI freeze to
+	 * allow extending the structure while preserving ABI.
+	 */
+	u32		xcopy_reserved;
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
 };
 #define to_scsi_disk(obj) container_of(obj,struct scsi_disk,dev)
 
@@ -95,9 +112,15 @@ static inline struct scsi_disk *scsi_disk(struct gendisk *disk)
 
 #define sd_printk(prefix, sdsk, fmt, a...)				\
         (sdsk)->disk ?							\
-	sdev_printk(prefix, (sdsk)->device, "[%s] " fmt,		\
-		    (sdsk)->disk->disk_name, ##a) :			\
-	sdev_printk(prefix, (sdsk)->device, fmt, ##a)
+	      sdev_prefix_printk(prefix, (sdsk)->device,		\
+				 (sdsk)->disk->disk_name, fmt, ##a) :	\
+	      sdev_printk(prefix, (sdsk)->device, fmt, ##a)
+
+#define sd_first_printk(prefix, sdsk, fmt, a...)			\
+	do {								\
+		if ((sdkp)->first_scan)					\
+			sd_printk(prefix, sdsk, fmt, ##a);		\
+	} while (0)
 
 static inline int scsi_medium_access_command(struct scsi_cmnd *scmd)
 {

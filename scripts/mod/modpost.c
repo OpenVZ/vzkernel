@@ -20,6 +20,7 @@
 #include "modpost.h"
 #include "../../include/generated/autoconf.h"
 #include "../../include/linux/license.h"
+#include "../../include/generated/uapi/linux/version.h"
 #include "../../include/linux/export.h"
 
 /* Are we using CONFIG_MODVERSIONS? */
@@ -573,12 +574,16 @@ static int ignore_undef_symbol(struct elf_info *info, const char *symname)
 		if (strncmp(symname, "_restgpr_", sizeof("_restgpr_") - 1) == 0 ||
 		    strncmp(symname, "_savegpr_", sizeof("_savegpr_") - 1) == 0 ||
 		    strncmp(symname, "_rest32gpr_", sizeof("_rest32gpr_") - 1) == 0 ||
-		    strncmp(symname, "_save32gpr_", sizeof("_save32gpr_") - 1) == 0)
+		    strncmp(symname, "_save32gpr_", sizeof("_save32gpr_") - 1) == 0 ||
+		    strncmp(symname, "_restvr_", sizeof("_restvr_") - 1) == 0 ||
+		    strncmp(symname, "_savevr_", sizeof("_savevr_") - 1) == 0)
 			return 1;
 	if (info->hdr->e_machine == EM_PPC64)
 		/* Special register function linked on all modules during final link of .ko */
 		if (strncmp(symname, "_restgpr0_", sizeof("_restgpr0_") - 1) == 0 ||
-		    strncmp(symname, "_savegpr0_", sizeof("_savegpr0_") - 1) == 0)
+		    strncmp(symname, "_savegpr0_", sizeof("_savegpr0_") - 1) == 0 ||
+		    strncmp(symname, "_restvr_", sizeof("_restvr_") - 1) == 0 ||
+		    strncmp(symname, "_savevr_", sizeof("_savevr_") - 1) == 0)
 			return 1;
 	/* Do not ignore this symbol */
 	return 0;
@@ -599,17 +604,16 @@ static void handle_modversions(struct module *mod, struct elf_info *info,
 	else
 		export = export_from_sec(info, get_secindex(info, sym));
 
+	/* CRC'd symbol */
+	if (strncmp(symname, CRC_PFX, strlen(CRC_PFX)) == 0) {
+		crc = (unsigned int) sym->st_value;
+		sym_update_crc(symname + strlen(CRC_PFX), mod, crc,
+				export);
+	}
+
 	switch (sym->st_shndx) {
 	case SHN_COMMON:
 		warn("\"%s\" [%s] is COMMON symbol\n", symname, mod->name);
-		break;
-	case SHN_ABS:
-		/* CRC'd symbol */
-		if (strncmp(symname, CRC_PFX, strlen(CRC_PFX)) == 0) {
-			crc = (unsigned int) sym->st_value;
-			sym_update_crc(symname + strlen(CRC_PFX), mod, crc,
-					export);
-		}
 		break;
 	case SHN_UNDEF:
 		/* undefined symbol */
@@ -1908,6 +1912,14 @@ static void add_intree_flag(struct buffer *b, int is_intree)
 static void add_staging_flag(struct buffer *b, const char *name)
 {
 	static const char *staging_dir = "drivers/staging";
+	static const char *unisys_dir = "drivers/staging/unisys";
+	static const char *hfi1_dir = "drivers/staging/hfi1";
+
+	if (strncmp(unisys_dir, name, strlen(unisys_dir)) == 0)
+		return;
+
+	if (strncmp(hfi1_dir, name, strlen(hfi1_dir)) == 0)
+		return;
 
 	if (strncmp(staging_dir, name, strlen(staging_dir)) == 0)
 		buf_printf(b, "\nMODULE_INFO(staging, \"Y\");\n");
@@ -2008,6 +2020,12 @@ static void add_srcversion(struct buffer *b, struct module *mod)
 		buf_printf(b, "MODULE_INFO(srcversion, \"%s\");\n",
 			   mod->srcversion);
 	}
+}
+
+static void add_rhelversion(struct buffer *b, struct module *mod)
+{
+	buf_printf(b, "MODULE_INFO(rhelversion, \"%d.%d\");\n", RHEL_MAJOR,
+		   RHEL_MINOR);
 }
 
 static void write_if_changed(struct buffer *b, const char *fname)
@@ -2235,6 +2253,7 @@ int main(int argc, char **argv)
 		add_depends(&buf, mod, modules);
 		add_moddevtable(&buf, mod);
 		add_srcversion(&buf, mod);
+		add_rhelversion(&buf, mod);
 
 		sprintf(fname, "%s.mod.c", mod->name);
 		write_if_changed(&buf, fname);

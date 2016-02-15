@@ -3174,7 +3174,7 @@ static void happy_meal_pci_remove(struct pci_dev *pdev)
 	dev_set_drvdata(&pdev->dev, NULL);
 }
 
-static DEFINE_PCI_DEVICE_TABLE(happymeal_pci_ids) = {
+static const struct pci_device_id happymeal_pci_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_SUN, PCI_DEVICE_ID_SUN_HAPPYMEAL) },
 	{ }			/* Terminating entry */
 };

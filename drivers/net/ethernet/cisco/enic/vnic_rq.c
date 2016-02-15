@@ -30,11 +30,8 @@
 static int vnic_rq_alloc_bufs(struct vnic_rq *rq)
 {
 	struct vnic_rq_buf *buf;
-	struct vnic_dev *vdev;
 	unsigned int i, j, count = rq->ring.desc_count;
 	unsigned int blks = VNIC_RQ_BUF_BLKS_NEEDED(count);
-
-	vdev = rq->vdev;
 
 	for (i = 0; i < blks; i++) {
 		rq->bufs[i] = kzalloc(VNIC_RQ_BUF_BLK_SZ(count), GFP_ATOMIC);
@@ -141,7 +138,7 @@ void vnic_rq_init(struct vnic_rq *rq, unsigned int cq_index,
 	unsigned int error_interrupt_enable,
 	unsigned int error_interrupt_offset)
 {
-	u32 fetch_index;
+	u32 fetch_index = 0;
 
 	/* Use current fetch_index as the ring starting point */
 	fetch_index = ioread32(&rq->ctrl->fetch_index);
@@ -191,16 +188,15 @@ void vnic_rq_clean(struct vnic_rq *rq,
 	struct vnic_rq_buf *buf;
 	u32 fetch_index;
 	unsigned int count = rq->ring.desc_count;
+	int i;
 
 	buf = rq->to_clean;
 
-	while (vnic_rq_desc_used(rq) > 0) {
-
+	for (i = 0; i < rq->ring.desc_count; i++) {
 		(*buf_clean)(rq, buf);
-
-		buf = rq->to_clean = buf->next;
-		rq->ring.desc_avail++;
+		buf = buf->next;
 	}
+	rq->ring.desc_avail = rq->ring.desc_count - 1;
 
 	/* Use current fetch_index as the ring starting point */
 	fetch_index = ioread32(&rq->ctrl->fetch_index);

@@ -29,6 +29,19 @@
 #define ULLONG_MAX	(~0ULL)
 #define SIZE_MAX	(~(size_t)0)
 
+#define U8_MAX		((u8)~0U)
+#define S8_MAX		((s8)(U8_MAX>>1))
+#define S8_MIN		((s8)(-S8_MAX - 1))
+#define U16_MAX		((u16)~0U)
+#define S16_MAX		((s16)(U16_MAX>>1))
+#define S16_MIN		((s16)(-S16_MAX - 1))
+#define U32_MAX		((u32)~0U)
+#define S32_MAX		((s32)(U32_MAX>>1))
+#define S32_MIN		((s32)(-S32_MAX - 1))
+#define U64_MAX		((u64)~0ULL)
+#define S64_MAX		((s64)(U64_MAX>>1))
+#define S64_MIN		((s64)(-S64_MAX - 1))
+
 #define STACK_MAGIC	0xdeadbeef
 
 #define REPEAT_BYTE(x)	((~0ul / 0xff) * (x))
@@ -88,6 +101,18 @@
 	 ((typeof(divisor))-1) > 0 || (__x) > 0) ?	\
 		(((__x) + ((__d) / 2)) / (__d)) :	\
 		(((__x) - ((__d) / 2)) / (__d));	\
+}							\
+)
+/*
+ * Same as above but for u64 dividends. divisor must be a 32-bit
+ * number.
+ */
+#define DIV_ROUND_CLOSEST_ULL(x, divisor)(		\
+{							\
+	typeof(divisor) __d = divisor;			\
+	unsigned long long _tmp = (x) + (__d) / 2;	\
+	do_div(_tmp, __d);				\
+	_tmp;						\
 }							\
 )
 
@@ -193,13 +218,29 @@ extern int _cond_resched(void);
 		(__x < 0) ? -__x : __x;		\
 	})
 
-#ifdef CONFIG_PROVE_LOCKING
+/**
+ * reciprocal_scale - "scale" a value into range [0, ep_ro)
+ * @val: value
+ * @ep_ro: right open interval endpoint
+ *
+ * Perform a "reciprocal multiplication" in order to "scale" a value into
+ * range [0, ep_ro), where the upper interval endpoint is right-open.
+ * This is useful, e.g. for accessing a index of an array containing
+ * ep_ro elements, for example. Think of it as sort of modulus, only that
+ * the result isn't that of modulo. ;) Note that if initial input is a
+ * small value, then result will return 0.
+ *
+ * Return: a result based on val in interval [0, ep_ro).
+ */
+static inline u32 reciprocal_scale(u32 val, u32 ep_ro)
+{
+	return (u32)(((u64) val * ep_ro) >> 32);
+}
+
+#if defined(CONFIG_PROVE_LOCKING) || defined(CONFIG_DEBUG_ATOMIC_SLEEP)
 void might_fault(void);
 #else
-static inline void might_fault(void)
-{
-	might_sleep();
-}
+static inline void might_fault(void) { }
 #endif
 
 extern struct atomic_notifier_head panic_notifier_list;
@@ -395,7 +436,17 @@ extern int panic_timeout;
 extern int panic_on_oops;
 extern int panic_on_unrecovered_nmi;
 extern int panic_on_io_nmi;
+extern int panic_on_warn;
 extern int sysctl_panic_on_stackoverflow;
+/*
+ * Only to be used by arch init code. If the user over-wrote the default
+ * CONFIG_PANIC_TIMEOUT, honor it.
+ */
+static inline void set_arch_panic_timeout(int timeout, int arch_default_timeout)
+{
+	if (panic_timeout == arch_default_timeout)
+		panic_timeout = timeout;
+}
 extern const char *print_tainted(void);
 enum lockdep_ok {
 	LOCKDEP_STILL_OK,
@@ -430,6 +481,29 @@ extern enum system_states {
 #define TAINT_CRAP			10
 #define TAINT_FIRMWARE_WORKAROUND	11
 #define TAINT_OOT_MODULE		12
+#define TAINT_UNSIGNED_MODULE		13
+#define TAINT_SOFTLOCKUP		14
+#define TAINT_LIVEPATCH			15
+#define TAINT_16			16
+#define TAINT_17			17
+#define TAINT_18			18
+#define TAINT_19			19
+#define TAINT_20			20
+#define TAINT_21			21
+#define TAINT_22			22
+#define TAINT_23			23
+#define TAINT_24			24
+#define TAINT_25			25
+#define TAINT_26			26
+#define TAINT_27			27
+/* Reserving bits for vendor specific uses */
+#define TAINT_HARDWARE_UNSUPPORTED	28
+#define TAINT_TECH_PREVIEW		29
+/* Bits 30 - 31 are reserved for Red Hat use only */
+#define TAINT_RESERVED30		30
+#define TAINT_RESERVED31		31
+
+
 
 extern const char hex_asc[];
 #define hex_asc_lo(x)	hex_asc[((x) & 0x0f)]
@@ -491,7 +565,6 @@ void tracing_snapshot_alloc(void);
 
 extern void tracing_start(void);
 extern void tracing_stop(void);
-extern void ftrace_off_permanent(void);
 
 static inline __printf(1, 2)
 void ____trace_printk_check_format(const char *fmt, ...)
@@ -630,7 +703,6 @@ extern void ftrace_dump(enum ftrace_dump_mode oops_dump_mode);
 #else
 static inline void tracing_start(void) { }
 static inline void tracing_stop(void) { }
-static inline void ftrace_off_permanent(void) { }
 static inline void trace_dump_stack(void) { }
 
 static inline void tracing_on(void) { }
@@ -792,4 +864,13 @@ static inline void ftrace_dump(enum ftrace_dump_mode oops_dump_mode) { }
 # define REBUILD_DUE_TO_FTRACE_MCOUNT_RECORD
 #endif
 
+struct module;
+
+void mark_hardware_unsupported(const char *msg);
+void mark_tech_preview(const char *msg, struct module *mod);
+
+#else
+#ifndef pr_fmt
+#define pr_fmt(fmt) fmt
+#endif
 #endif

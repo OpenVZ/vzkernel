@@ -738,6 +738,17 @@ struct qeth_rx {
 	int qdio_err;
 };
 
+struct carrier_info {
+	__u8  card_type;
+	__u16 port_mode;
+	__u32 port_speed;
+};
+
+struct qeth_switch_info {
+	__u32 capabilities;
+	__u32 settings;
+};
+
 #define QETH_NAPI_WEIGHT 128
 
 struct qeth_card {
@@ -914,6 +925,10 @@ struct qeth_cmd_buffer *qeth_wait_for_buffer(struct qeth_channel *);
 int qeth_mdio_read(struct net_device *, int, int);
 int qeth_snmp_command(struct qeth_card *, char __user *);
 int qeth_query_oat_command(struct qeth_card *, char __user *);
+int qeth_query_switch_attributes(struct qeth_card *card,
+				  struct qeth_switch_info *sw_info);
+int qeth_query_card_info(struct qeth_card *card,
+	struct carrier_info *carrier_info);
 int qeth_send_control_data(struct qeth_card *, int, struct qeth_cmd_buffer *,
 	int (*reply_cb)(struct qeth_card *, struct qeth_reply*, unsigned long),
 	void *reply_param);

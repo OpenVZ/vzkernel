@@ -43,7 +43,7 @@ struct alarm {
 
 void alarm_init(struct alarm *alarm, enum alarmtimer_type type,
 		enum alarmtimer_restart (*function)(struct alarm *, ktime_t));
-int alarm_start(struct alarm *alarm, ktime_t start);
+void alarm_start(struct alarm *alarm, ktime_t start);
 int alarm_try_to_cancel(struct alarm *alarm);
 int alarm_cancel(struct alarm *alarm);
 

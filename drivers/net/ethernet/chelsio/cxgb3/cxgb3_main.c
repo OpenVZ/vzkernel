@@ -85,7 +85,7 @@ enum {
 #define CH_DEVICE(devid, idx) \
 	{ PCI_VENDOR_ID_CHELSIO, devid, PCI_ANY_ID, PCI_ANY_ID, 0, 0, idx }
 
-static DEFINE_PCI_DEVICE_TABLE(cxgb3_pci_tbl) = {
+static const struct pci_device_id cxgb3_pci_tbl[] = {
 	CH_DEVICE(0x20, 0),	/* PE9000 */
 	CH_DEVICE(0x21, 1),	/* T302E */
 	CH_DEVICE(0x22, 2),	/* T310E */
@@ -3037,7 +3037,9 @@ static void t3_io_resume(struct pci_dev *pdev)
 	CH_ALERT(adapter, "adapter recovering, PEX ERR 0x%x\n",
 		 t3_read_reg(adapter, A_PCIE_PEX_ERR));
 
+	rtnl_lock();
 	t3_resume_ports(adapter);
+	rtnl_unlock();
 }
 
 static const struct pci_error_handlers t3_err_handler = {
@@ -3372,7 +3374,6 @@ out_release_regions:
 	pci_release_regions(pdev);
 out_disable_device:
 	pci_disable_device(pdev);
-	pci_set_drvdata(pdev, NULL);
 out:
 	return err;
 }
@@ -3413,7 +3414,6 @@ static void remove_one(struct pci_dev *pdev)
 		kfree(adapter);
 		pci_release_regions(pdev);
 		pci_disable_device(pdev);
-		pci_set_drvdata(pdev, NULL);
 	}
 }
 

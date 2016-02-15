@@ -24,11 +24,9 @@
 #include <linux/skbuff.h>
 #include <uapi/linux/mqueue.h>
 
-/* 0 = no checking
-   1 = put_count checking
-   2 = verbose put_count checking
-*/
+#ifdef __GENKSYMS__
 #define AUDIT_DEBUG 0
+#endif
 
 /* AUDIT_NAMES is the number of slots we reserve in the audit_context
  * for saving names from getname().  If we get more names we will allocate
@@ -74,9 +72,8 @@ struct audit_cap_data {
 	};
 };
 
-/* When fs/namei.c:getname() is called, we store the pointer in name and
- * we don't let putname() free it (instead we free all of the saved
- * pointers at syscall exit time).
+/* When fs/namei.c:getname() is called, we store the pointer in name and bump
+ * the refcnt in the associated filename struct.
  *
  * Further, in fs/namei.c:path_lookup() we store the inode and device.
  */
@@ -85,7 +82,9 @@ struct audit_names {
 
 	struct filename		*name;
 	int			name_len;	/* number of chars to log */
+#ifdef __GENKSYMS__
 	bool			name_put;	/* call __putname()? */
+#endif
 
 	unsigned long		ino;
 	dev_t			dev;
@@ -97,12 +96,20 @@ struct audit_names {
 	struct audit_cap_data	fcap;
 	unsigned int		fcap_ver;
 	unsigned char		type;		/* record type */
+	bool			hidden;		/* don't log this record */
 	/*
 	 * This was an allocated audit_names and not from the array of
 	 * names allocated in the task audit context.  Thus this name
 	 * should be freed on syscall exit.
 	 */
 	bool			should_free;
+
+#ifdef __GENKSYMS__
+#if AUDIT_DEBUG
+	int			put_count;
+	int			ino_count;
+#endif
+#endif
 };
 
 /* The per-task audit context. */
@@ -196,13 +203,11 @@ struct audit_context {
 			int			fd;
 			int			flags;
 		} mmap;
+		struct {
+			int			argc;
+		} execve;
 	};
 	int fds[2];
-
-#if AUDIT_DEBUG
-	int		    put_count;
-	int		    ino_count;
-#endif
 };
 
 extern int audit_ever_enabled;

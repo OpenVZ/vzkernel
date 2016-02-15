@@ -62,6 +62,10 @@ int __fib_lookup(struct net *net, struct flowi4 *flp, struct fib_result *res)
 	else
 		res->tclassid = 0;
 #endif
+
+	if (err == -ESRCH)
+		err = -ENETUNREACH;
+
 	return err;
 }
 EXPORT_SYMBOL_GPL(__fib_lookup);
@@ -77,27 +81,25 @@ static int fib4_rule_action(struct fib_rule *rule, struct flowi *flp,
 		break;
 
 	case FR_ACT_UNREACHABLE:
-		err = -ENETUNREACH;
-		goto errout;
+		return -ENETUNREACH;
 
 	case FR_ACT_PROHIBIT:
-		err = -EACCES;
-		goto errout;
+		return -EACCES;
 
 	case FR_ACT_BLACKHOLE:
 	default:
-		err = -EINVAL;
-		goto errout;
+		return -EINVAL;
 	}
 
-	tbl = fib_get_table(rule->fr_net, rule->table);
-	if (!tbl)
-		goto errout;
+	rcu_read_lock();
 
-	err = fib_table_lookup(tbl, &flp->u.ip4, (struct fib_result *) arg->result, arg->flags);
-	if (err > 0)
-		err = -EAGAIN;
-errout:
+	tbl = fib_get_table(rule->fr_net, rule->table);
+	if (tbl)
+		err = fib_table_lookup(tbl, &flp->u.ip4,
+				       (struct fib_result *)arg->result,
+				       arg->flags);
+
+	rcu_read_unlock();
 	return err;
 }
 
@@ -160,10 +162,10 @@ static int fib4_rule_configure(struct fib_rule *rule, struct sk_buff *skb,
 	}
 
 	if (frh->src_len)
-		rule4->src = nla_get_be32(tb[FRA_SRC]);
+		rule4->src = nla_get_in_addr(tb[FRA_SRC]);
 
 	if (frh->dst_len)
-		rule4->dst = nla_get_be32(tb[FRA_DST]);
+		rule4->dst = nla_get_in_addr(tb[FRA_DST]);
 
 #ifdef CONFIG_IP_ROUTE_CLASSID
 	if (tb[FRA_FLOW]) {
@@ -216,10 +218,10 @@ static int fib4_rule_compare(struct fib_rule *rule, struct fib_rule_hdr *frh,
 		return 0;
 #endif
 
-	if (frh->src_len && (rule4->src != nla_get_be32(tb[FRA_SRC])))
+	if (frh->src_len && (rule4->src != nla_get_in_addr(tb[FRA_SRC])))
 		return 0;
 
-	if (frh->dst_len && (rule4->dst != nla_get_be32(tb[FRA_DST])))
+	if (frh->dst_len && (rule4->dst != nla_get_in_addr(tb[FRA_DST])))
 		return 0;
 
 	return 1;
@@ -235,9 +237,9 @@ static int fib4_rule_fill(struct fib_rule *rule, struct sk_buff *skb,
 	frh->tos = rule4->tos;
 
 	if ((rule4->dst_len &&
-	     nla_put_be32(skb, FRA_DST, rule4->dst)) ||
+	     nla_put_in_addr(skb, FRA_DST, rule4->dst)) ||
 	    (rule4->src_len &&
-	     nla_put_be32(skb, FRA_SRC, rule4->src)))
+	     nla_put_in_addr(skb, FRA_SRC, rule4->src)))
 		goto nla_put_failure;
 #ifdef CONFIG_IP_ROUTE_CLASSID
 	if (rule4->tclassid &&

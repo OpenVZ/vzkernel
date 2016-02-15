@@ -1,6 +1,14 @@
 #ifndef __LINUX_NODEMASK_H
 #define __LINUX_NODEMASK_H
 
+/**
+ * nodemask_pr_args - printf args to output a nodemask
+ * @maskp: nodemask to be printed
+ *
+ * Can be used to provide arguments for '%*pb[l]' when printing a nodemask.
+ */
+#define nodemask_pr_args(maskp)		MAX_NUMNODES, (maskp)->bits
+
 /*
  * Nodemasks provide a bitmap suitable for representing the
  * set of Node's in a system, one bit position per Node number.

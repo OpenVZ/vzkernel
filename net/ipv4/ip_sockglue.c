@@ -189,7 +189,7 @@ EXPORT_SYMBOL(ip_cmsg_recv);
 
 int ip_cmsg_send(struct net *net, struct msghdr *msg, struct ipcm_cookie *ipc)
 {
-	int err;
+	int err, val;
 	struct cmsghdr *cmsg;
 
 	for (cmsg = CMSG_FIRSTHDR(msg); cmsg; cmsg = CMSG_NXTHDR(msg, cmsg)) {
@@ -215,6 +215,24 @@ int ip_cmsg_send(struct net *net, struct msghdr *msg, struct ipcm_cookie *ipc)
 			ipc->addr = info->ipi_spec_dst.s_addr;
 			break;
 		}
+		case IP_TTL:
+			if (cmsg->cmsg_len != CMSG_LEN(sizeof(int)))
+				return -EINVAL;
+			val = *(int *)CMSG_DATA(cmsg);
+			if (val < 1 || val > 255)
+				return -EINVAL;
+			ipc->ttl = val;
+			break;
+		case IP_TOS:
+			if (cmsg->cmsg_len != CMSG_LEN(sizeof(int)))
+				return -EINVAL;
+			val = *(int *)CMSG_DATA(cmsg);
+			if (val < 0 || val > 255)
+				return -EINVAL;
+			ipc->tos = val;
+			ipc->priority = rt_tos2priority(ipc->tos);
+			break;
+
 		default:
 			return -EINVAL;
 		}
@@ -368,7 +386,7 @@ void ip_local_error(struct sock *sk, int err, __be32 daddr, __be16 port, u32 inf
 /*
  *	Handle MSG_ERRQUEUE
  */
-int ip_recv_error(struct sock *sk, struct msghdr *msg, int len)
+int ip_recv_error(struct sock *sk, struct msghdr *msg, int len, int *addr_len)
 {
 	struct sock_exterr_skb *serr;
 	struct sk_buff *skb, *skb2;
@@ -405,6 +423,7 @@ int ip_recv_error(struct sock *sk, struct msghdr *msg, int len)
 						   serr->addr_offset);
 		sin->sin_port = serr->port;
 		memset(&sin->sin_zero, 0, sizeof(sin->sin_zero));
+		*addr_len = sizeof(*sin);
 	}
 
 	memcpy(&errhdr.ee, &serr->ee, sizeof(struct sock_extended_err));
@@ -450,12 +469,34 @@ out:
  *	Socket option code for IP. This is the end of the line after any
  *	TCP,UDP etc options on an IP socket.
  */
+static bool setsockopt_needs_rtnl(int optname)
+{
+	switch (optname) {
+	case IP_ADD_MEMBERSHIP:
+	case IP_ADD_SOURCE_MEMBERSHIP:
+	case IP_BLOCK_SOURCE:
+	case IP_DROP_MEMBERSHIP:
+	case IP_DROP_SOURCE_MEMBERSHIP:
+	case IP_MSFILTER:
+	case IP_UNBLOCK_SOURCE:
+	case MCAST_BLOCK_SOURCE:
+	case MCAST_MSFILTER:
+	case MCAST_JOIN_GROUP:
+	case MCAST_JOIN_SOURCE_GROUP:
+	case MCAST_LEAVE_GROUP:
+	case MCAST_LEAVE_SOURCE_GROUP:
+	case MCAST_UNBLOCK_SOURCE:
+		return true;
+	}
+	return false;
+}
 
 static int do_ip_setsockopt(struct sock *sk, int level,
 			    int optname, char __user *optval, unsigned int optlen)
 {
 	struct inet_sock *inet = inet_sk(sk);
 	int val = 0, err;
+	bool needs_rtnl = setsockopt_needs_rtnl(optname);
 
 	switch (optname) {
 	case IP_PKTINFO:
@@ -497,6 +538,8 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 		return ip_mroute_setsockopt(sk, optname, optval, optlen);
 
 	err = 0;
+	if (needs_rtnl)
+		rtnl_lock();
 	lock_sock(sk);
 
 	switch (optname) {
@@ -609,7 +652,7 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 		inet->nodefrag = val ? 1 : 0;
 		break;
 	case IP_MTU_DISCOVER:
-		if (val < IP_PMTUDISC_DONT || val > IP_PMTUDISC_PROBE)
+		if (val < IP_PMTUDISC_DONT || val > IP_PMTUDISC_OMIT)
 			goto e_inval;
 		inet->pmtudisc = val;
 		break;
@@ -1018,10 +1061,14 @@ mc_msf_out:
 		break;
 	}
 	release_sock(sk);
+	if (needs_rtnl)
+		rtnl_unlock();
 	return err;
 
 e_inval:
 	release_sock(sk);
+	if (needs_rtnl)
+		rtnl_unlock();
 	return -EINVAL;
 }
 

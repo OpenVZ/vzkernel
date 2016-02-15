@@ -1412,3 +1412,15 @@ ENTRY(sys_finit_module_wrapper)
 	llgtr	%r3,%r3			# const char __user *
 	lgfr	%r4,%r4			# int
 	jg	sys_finit_module
+
+ENTRY(sys_s390_pci_mmio_write_wrapper)
+	llgfr   %r2,%r2                 # unsigned long
+	llgtr   %r3,%r3                 # void __user *
+	llgfr   %r4,%r4                 # size_t
+	jg      sys_s390_pci_mmio_write
+
+ENTRY(sys_s390_pci_mmio_read_wrapper)
+	llgfr   %r2,%r2                 # unsigned long
+	llgtr   %r3,%r3                 # void __user *
+	llgfr   %r4,%r4                 # size_t
+	jg      sys_s390_pci_mmio_read

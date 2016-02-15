@@ -312,7 +312,9 @@ static void *pidns_get(struct task_struct *task)
 	struct pid_namespace *ns;
 
 	rcu_read_lock();
-	ns = get_pid_ns(task_active_pid_ns(task));
+	ns = task_active_pid_ns(task);
+	if (ns)
+		get_pid_ns(ns);
 	rcu_read_unlock();
 
 	return ns;
@@ -329,7 +331,7 @@ static int pidns_install(struct nsproxy *nsproxy, void *ns)
 	struct pid_namespace *ancestor, *new = ns;
 
 	if (!ns_capable(new->user_ns, CAP_SYS_ADMIN) ||
-	    !nsown_capable(CAP_SYS_ADMIN))
+	    !ns_capable(current_user_ns(), CAP_SYS_ADMIN))
 		return -EPERM;
 
 	/*

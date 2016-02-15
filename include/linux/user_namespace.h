@@ -5,6 +5,7 @@
 #include <linux/nsproxy.h>
 #include <linux/sched.h>
 #include <linux/err.h>
+#include <linux/rh_kabi.h>
 
 #define UID_GID_MAP_MAX_EXTENTS 5
 
@@ -17,6 +18,10 @@ struct uid_gid_map {	/* 64 bytes -- 1 cache line */
 	} extent[UID_GID_MAP_MAX_EXTENTS];
 };
 
+#define USERNS_SETGROUPS_ALLOWED 1UL
+
+#define USERNS_INIT_FLAGS USERNS_SETGROUPS_ALLOWED
+
 struct user_namespace {
 	struct uid_gid_map	uid_map;
 	struct uid_gid_map	gid_map;
@@ -28,6 +33,14 @@ struct user_namespace {
 	unsigned int		proc_inum;
 	bool			may_mount_sysfs;
 	bool			may_mount_proc;
+
+	/* Register of per-UID persistent keyrings for this namespace */
+#ifdef CONFIG_PERSISTENT_KEYRINGS
+	struct key		*persistent_keyring_register;
+	struct rw_semaphore	persistent_keyring_register_sem;
+#endif
+	RH_KABI_EXTEND(int level)
+	RH_KABI_EXTEND(unsigned long flags)
 };
 
 extern struct user_namespace init_user_ns;
@@ -58,6 +71,9 @@ extern struct seq_operations proc_projid_seq_operations;
 extern ssize_t proc_uid_map_write(struct file *, const char __user *, size_t, loff_t *);
 extern ssize_t proc_gid_map_write(struct file *, const char __user *, size_t, loff_t *);
 extern ssize_t proc_projid_map_write(struct file *, const char __user *, size_t, loff_t *);
+extern ssize_t proc_setgroups_write(struct file *, const char __user *, size_t, loff_t *);
+extern int proc_setgroups_show(struct seq_file *m, void *v);
+extern bool userns_may_setgroups(const struct user_namespace *ns);
 #else
 
 static inline struct user_namespace *get_user_ns(struct user_namespace *ns)
@@ -82,6 +98,10 @@ static inline void put_user_ns(struct user_namespace *ns)
 {
 }
 
+static inline bool userns_may_setgroups(const struct user_namespace *ns)
+{
+	return true;
+}
 #endif
 
 void update_mnt_policy(struct user_namespace *userns);

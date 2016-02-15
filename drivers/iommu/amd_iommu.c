@@ -46,7 +46,6 @@
 #include "amd_iommu_proto.h"
 #include "amd_iommu_types.h"
 #include "irq_remapping.h"
-#include "pci.h"
 
 #define CMD_SET_TYPE(cmd, t) ((cmd)->data[1] |= ((t) << 28))
 
@@ -132,9 +131,6 @@ static void free_dev_data(struct iommu_dev_data *dev_data)
 	spin_lock_irqsave(&dev_data_list_lock, flags);
 	list_del(&dev_data->dev_data_list);
 	spin_unlock_irqrestore(&dev_data_list_lock, flags);
-
-	if (dev_data->group)
-		iommu_group_put(dev_data->group);
 
 	kfree(dev_data);
 }
@@ -248,8 +244,8 @@ static bool check_device(struct device *dev)
 	if (!dev || !dev->dma_mask)
 		return false;
 
-	/* No device or no PCI device */
-	if (dev->bus != &pci_bus_type)
+	/* No PCI device */
+	if (!dev_is_pci(dev))
 		return false;
 
 	devid = get_device_id(dev);
@@ -264,154 +260,75 @@ static bool check_device(struct device *dev)
 	return true;
 }
 
-static struct pci_bus *find_hosted_bus(struct pci_bus *bus)
+static void init_iommu_group(struct device *dev)
 {
-	while (!bus->self) {
-		if (!pci_is_root_bus(bus))
-			bus = bus->parent;
-		else
-			return ERR_PTR(-ENODEV);
-	}
-
-	return bus;
-}
-
-#define REQ_ACS_FLAGS	(PCI_ACS_SV | PCI_ACS_RR | PCI_ACS_CR | PCI_ACS_UF)
-
-static struct pci_dev *get_isolation_root(struct pci_dev *pdev)
-{
-	struct pci_dev *dma_pdev = pdev;
-
-	/* Account for quirked devices */
-	swap_pci_ref(&dma_pdev, pci_get_dma_source(dma_pdev));
-
-	/*
-	 * If it's a multifunction device that does not support our
-	 * required ACS flags, add to the same group as function 0.
-	 */
-	if (dma_pdev->multifunction &&
-	    !pci_acs_enabled(dma_pdev, REQ_ACS_FLAGS))
-		swap_pci_ref(&dma_pdev,
-			     pci_get_slot(dma_pdev->bus,
-					  PCI_DEVFN(PCI_SLOT(dma_pdev->devfn),
-					  0)));
-
-	/*
-	 * Devices on the root bus go through the iommu.  If that's not us,
-	 * find the next upstream device and test ACS up to the root bus.
-	 * Finding the next device may require skipping virtual buses.
-	 */
-	while (!pci_is_root_bus(dma_pdev->bus)) {
-		struct pci_bus *bus = find_hosted_bus(dma_pdev->bus);
-		if (IS_ERR(bus))
-			break;
-
-		if (pci_acs_path_enabled(bus->self, NULL, REQ_ACS_FLAGS))
-			break;
-
-		swap_pci_ref(&dma_pdev, pci_dev_get(bus->self));
-	}
-
-	return dma_pdev;
-}
-
-static int use_pdev_iommu_group(struct pci_dev *pdev, struct device *dev)
-{
-	struct iommu_group *group = iommu_group_get(&pdev->dev);
-	int ret;
-
-	if (!group) {
-		group = iommu_group_alloc();
-		if (IS_ERR(group))
-			return PTR_ERR(group);
-
-		WARN_ON(&pdev->dev != dev);
-	}
-
-	ret = iommu_group_add_device(group, dev);
-	iommu_group_put(group);
-	return ret;
-}
-
-static int use_dev_data_iommu_group(struct iommu_dev_data *dev_data,
-				    struct device *dev)
-{
-	if (!dev_data->group) {
-		struct iommu_group *group = iommu_group_alloc();
-		if (IS_ERR(group))
-			return PTR_ERR(group);
-
-		dev_data->group = group;
-	}
-
-	return iommu_group_add_device(dev_data->group, dev);
-}
-
-static int init_iommu_group(struct device *dev)
-{
-	struct iommu_dev_data *dev_data;
 	struct iommu_group *group;
-	struct pci_dev *dma_pdev;
-	int ret;
 
-	group = iommu_group_get(dev);
-	if (group) {
+	group = iommu_group_get_for_dev(dev);
+	if (!IS_ERR(group))
 		iommu_group_put(group);
-		return 0;
-	}
+}
 
-	dev_data = find_dev_data(get_device_id(dev));
-	if (!dev_data)
-		return -ENOMEM;
+static int __last_alias(struct pci_dev *pdev, u16 alias, void *data)
+{
+	*(u16 *)data = alias;
+	return 0;
+}
 
-	if (dev_data->alias_data) {
-		u16 alias;
-		struct pci_bus *bus;
+static u16 get_alias(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+	u16 devid, ivrs_alias, pci_alias;
 
-		if (dev_data->alias_data->group)
-			goto use_group;
+	devid = get_device_id(dev);
+	ivrs_alias = amd_iommu_alias_table[devid];
+	pci_for_each_dma_alias(pdev, __last_alias, &pci_alias);
 
-		/*
-		 * If the alias device exists, it's effectively just a first
-		 * level quirk for finding the DMA source.
-		 */
-		alias = amd_iommu_alias_table[dev_data->devid];
-		dma_pdev = pci_get_bus_and_slot(alias >> 8, alias & 0xff);
-		if (dma_pdev) {
-			dma_pdev = get_isolation_root(dma_pdev);
-			goto use_pdev;
+	if (ivrs_alias == pci_alias)
+		return ivrs_alias;
+
+	/*
+	 * DMA alias showdown
+	 *
+	 * The IVRS is fairly reliable in telling us about aliases, but it
+	 * can't know about every screwy device.  If we don't have an IVRS
+	 * reported alias, use the PCI reported alias.  In that case we may
+	 * still need to initialize the rlookup and dev_table entries if the
+	 * alias is to a non-existent device.
+	 */
+	if (ivrs_alias == devid) {
+		if (!amd_iommu_rlookup_table[pci_alias]) {
+			amd_iommu_rlookup_table[pci_alias] =
+				amd_iommu_rlookup_table[devid];
+			memcpy(amd_iommu_dev_table[pci_alias].data,
+			       amd_iommu_dev_table[devid].data,
+			       sizeof(amd_iommu_dev_table[pci_alias].data));
 		}
 
-		/*
-		 * If the alias is virtual, try to find a parent device
-		 * and test whether the IOMMU group is actualy rooted above
-		 * the alias.  Be careful to also test the parent device if
-		 * we think the alias is the root of the group.
-		 */
-		bus = pci_find_bus(0, alias >> 8);
-		if (!bus)
-			goto use_group;
-
-		bus = find_hosted_bus(bus);
-		if (IS_ERR(bus) || !bus->self)
-			goto use_group;
-
-		dma_pdev = get_isolation_root(pci_dev_get(bus->self));
-		if (dma_pdev != bus->self || (dma_pdev->multifunction &&
-		    !pci_acs_enabled(dma_pdev, REQ_ACS_FLAGS)))
-			goto use_pdev;
-
-		pci_dev_put(dma_pdev);
-		goto use_group;
+		return pci_alias;
 	}
 
-	dma_pdev = get_isolation_root(pci_dev_get(to_pci_dev(dev)));
-use_pdev:
-	ret = use_pdev_iommu_group(dma_pdev, dev);
-	pci_dev_put(dma_pdev);
-	return ret;
-use_group:
-	return use_dev_data_iommu_group(dev_data->alias_data, dev);
+	pr_info("AMD-Vi: Using IVRS reported alias %02x:%02x.%d "
+		"for device %s[%04x:%04x], kernel reported alias "
+		"%02x:%02x.%d\n", PCI_BUS_NUM(ivrs_alias), PCI_SLOT(ivrs_alias),
+		PCI_FUNC(ivrs_alias), dev_name(dev), pdev->vendor, pdev->device,
+		PCI_BUS_NUM(pci_alias), PCI_SLOT(pci_alias),
+		PCI_FUNC(pci_alias));
+
+	/*
+	 * If we don't have a PCI DMA alias and the IVRS alias is on the same
+	 * bus, then the IVRS table may know about a quirk that we don't.
+	 */
+	if (pci_alias == devid &&
+	    PCI_BUS_NUM(ivrs_alias) == pdev->bus->number) {
+		pdev->dev_flags |= PCI_DEV_FLAGS_DMA_ALIAS_DEVFN;
+		pdev->pci_dev_rh->dma_alias_devfn = ivrs_alias & 0xff;
+		pr_info("AMD-Vi: Added PCI DMA alias %02x.%d for %s\n",
+			PCI_SLOT(ivrs_alias), PCI_FUNC(ivrs_alias),
+			dev_name(dev));
+	}
+
+	return ivrs_alias;
 }
 
 static int iommu_init_device(struct device *dev)
@@ -419,7 +336,6 @@ static int iommu_init_device(struct device *dev)
 	struct pci_dev *pdev = to_pci_dev(dev);
 	struct iommu_dev_data *dev_data;
 	u16 alias;
-	int ret;
 
 	if (dev->archdata.iommu)
 		return 0;
@@ -428,7 +344,8 @@ static int iommu_init_device(struct device *dev)
 	if (!dev_data)
 		return -ENOMEM;
 
-	alias = amd_iommu_alias_table[dev_data->devid];
+	alias = get_alias(dev);
+
 	if (alias != dev_data->devid) {
 		struct iommu_dev_data *alias_data;
 
@@ -442,10 +359,6 @@ static int iommu_init_device(struct device *dev)
 		dev_data->alias_data = alias_data;
 	}
 
-	ret = init_iommu_group(dev);
-	if (ret)
-		return ret;
-
 	if (pci_iommuv2_capable(pdev)) {
 		struct amd_iommu *iommu;
 
@@ -454,6 +367,9 @@ static int iommu_init_device(struct device *dev)
 	}
 
 	dev->archdata.iommu = dev_data;
+
+	iommu_device_link(amd_iommu_rlookup_table[dev_data->devid]->iommu_dev,
+			  dev);
 
 	return 0;
 }
@@ -474,12 +390,22 @@ static void iommu_ignore_device(struct device *dev)
 
 static void iommu_uninit_device(struct device *dev)
 {
+	struct iommu_dev_data *dev_data = search_dev_data(get_device_id(dev));
+
+	if (!dev_data)
+		return;
+
+	iommu_device_unlink(amd_iommu_rlookup_table[dev_data->devid]->iommu_dev,
+			    dev);
+
 	iommu_group_remove_device(dev);
 
+	/* Unlink from alias, it may change if another device is re-plugged */
+	dev_data->alias_data = NULL;
+
 	/*
-	 * Nothing to do here - we keep dev_data around for unplugged devices
-	 * and reuse it when the device is re-plugged - not doing so would
-	 * introduce a ton of races.
+	 * We keep dev_data around for unplugged devices and reuse it when the
+	 * device is re-plugged - not doing so would introduce a ton of races.
 	 */
 }
 
@@ -516,6 +442,15 @@ int __init amd_iommu_init_devices(void)
 			iommu_ignore_device(&pdev->dev);
 		else if (ret)
 			goto out_free;
+	}
+
+	/*
+	 * Initialize IOMMU groups only after iommu_init_device() has
+	 * had a chance to populate any IVRS defined aliases.
+	 */
+	for_each_pci_dev(pdev) {
+		if (check_device(&pdev->dev))
+			init_iommu_group(&pdev->dev);
 	}
 
 	return 0;
@@ -948,7 +883,7 @@ static void build_inv_iommu_pasid(struct iommu_cmd *cmd, u16 domid, int pasid,
 
 	address &= ~(0xfffULL);
 
-	cmd->data[0]  = pasid & PASID_MASK;
+	cmd->data[0]  = pasid;
 	cmd->data[1]  = domid;
 	cmd->data[2]  = lower_32_bits(address);
 	cmd->data[3]  = upper_32_bits(address);
@@ -967,10 +902,10 @@ static void build_inv_iotlb_pasid(struct iommu_cmd *cmd, u16 devid, int pasid,
 	address &= ~(0xfffULL);
 
 	cmd->data[0]  = devid;
-	cmd->data[0] |= (pasid & 0xff) << 16;
+	cmd->data[0] |= ((pasid >> 8) & 0xff) << 16;
 	cmd->data[0] |= (qdep  & 0xff) << 24;
 	cmd->data[1]  = devid;
-	cmd->data[1] |= ((pasid >> 8) & 0xfff) << 16;
+	cmd->data[1] |= (pasid & 0xff) << 16;
 	cmd->data[2]  = lower_32_bits(address);
 	cmd->data[2] |= CMD_INV_IOMMU_PAGES_GN_MASK;
 	cmd->data[3]  = upper_32_bits(address);
@@ -986,7 +921,7 @@ static void build_complete_ppr(struct iommu_cmd *cmd, u16 devid, int pasid,
 
 	cmd->data[0]  = devid;
 	if (gn) {
-		cmd->data[1]  = pasid & PASID_MASK;
+		cmd->data[1]  = pasid;
 		cmd->data[2]  = CMD_INV_IOMMU_PAGES_GN_MASK;
 	}
 	cmd->data[3]  = tag & 0x1ff;
@@ -1484,6 +1419,10 @@ static unsigned long iommu_unmap_page(struct protection_domain *dom,
 
 			/* Large PTE found which maps this address */
 			unmap_size = PTE_PAGE_SIZE(*pte);
+
+			/* Only unmap from the first pte in the page */
+			if ((unmap_size - 1) & bus_addr)
+				break;
 			count      = PAGE_SIZE_PTE_COUNT(unmap_size);
 			for (i = 0; i < count; i++)
 				pte[i] = 0ULL;
@@ -1493,7 +1432,7 @@ static unsigned long iommu_unmap_page(struct protection_domain *dom,
 		unmapped += unmap_size;
 	}
 
-	BUG_ON(!is_power_of_2(unmapped));
+	BUG_ON(unmapped && !is_power_of_2(unmapped));
 
 	return unmapped;
 }
@@ -1893,34 +1832,59 @@ static void domain_id_free(int id)
 	write_unlock_irqrestore(&amd_iommu_devtable_lock, flags);
 }
 
+#define DEFINE_FREE_PT_FN(LVL, FN)				\
+static void free_pt_##LVL (unsigned long __pt)			\
+{								\
+	unsigned long p;					\
+	u64 *pt;						\
+	int i;							\
+								\
+	pt = (u64 *)__pt;					\
+								\
+	for (i = 0; i < 512; ++i) {				\
+		if (!IOMMU_PTE_PRESENT(pt[i]))			\
+			continue;				\
+								\
+		p = (unsigned long)IOMMU_PTE_PAGE(pt[i]);	\
+		FN(p);						\
+	}							\
+	free_page((unsigned long)pt);				\
+}
+
+DEFINE_FREE_PT_FN(l2, free_page)
+DEFINE_FREE_PT_FN(l3, free_pt_l2)
+DEFINE_FREE_PT_FN(l4, free_pt_l3)
+DEFINE_FREE_PT_FN(l5, free_pt_l4)
+DEFINE_FREE_PT_FN(l6, free_pt_l5)
+
 static void free_pagetable(struct protection_domain *domain)
 {
-	int i, j;
-	u64 *p1, *p2, *p3;
+	unsigned long root = (unsigned long)domain->pt_root;
 
-	p1 = domain->pt_root;
-
-	if (!p1)
-		return;
-
-	for (i = 0; i < 512; ++i) {
-		if (!IOMMU_PTE_PRESENT(p1[i]))
-			continue;
-
-		p2 = IOMMU_PTE_PAGE(p1[i]);
-		for (j = 0; j < 512; ++j) {
-			if (!IOMMU_PTE_PRESENT(p2[j]))
-				continue;
-			p3 = IOMMU_PTE_PAGE(p2[j]);
-			free_page((unsigned long)p3);
-		}
-
-		free_page((unsigned long)p2);
+	switch (domain->mode) {
+	case PAGE_MODE_NONE:
+		break;
+	case PAGE_MODE_1_LEVEL:
+		free_page(root);
+		break;
+	case PAGE_MODE_2_LEVEL:
+		free_pt_l2(root);
+		break;
+	case PAGE_MODE_3_LEVEL:
+		free_pt_l3(root);
+		break;
+	case PAGE_MODE_4_LEVEL:
+		free_pt_l4(root);
+		break;
+	case PAGE_MODE_5_LEVEL:
+		free_pt_l5(root);
+		break;
+	case PAGE_MODE_6_LEVEL:
+		free_pt_l6(root);
+		break;
+	default:
+		BUG();
 	}
-
-	free_page((unsigned long)p1);
-
-	domain->pt_root = NULL;
 }
 
 static void free_gcr3_tbl_level1(u64 *tbl)
@@ -2449,6 +2413,7 @@ static int device_change_notifier(struct notifier_block *nb,
 	case BUS_NOTIFY_ADD_DEVICE:
 
 		iommu_init_device(dev);
+		init_iommu_group(dev);
 
 		/*
 		 * dev_data is still NULL and
@@ -3183,14 +3148,16 @@ free_domains:
 
 static void cleanup_domain(struct protection_domain *domain)
 {
-	struct iommu_dev_data *dev_data, *next;
+	struct iommu_dev_data *entry;
 	unsigned long flags;
 
 	write_lock_irqsave(&amd_iommu_devtable_lock, flags);
 
-	list_for_each_entry_safe(dev_data, next, &domain->dev_list, list) {
-		__detach_device(dev_data);
-		atomic_set(&dev_data->bind, 0);
+	while (!list_empty(&domain->dev_list)) {
+		entry = list_first_entry(&domain->dev_list,
+					 struct iommu_dev_data, list);
+		__detach_device(entry);
+		atomic_set(&entry->bind, 0);
 	}
 
 	write_unlock_irqrestore(&amd_iommu_devtable_lock, flags);
@@ -3455,8 +3422,6 @@ int __init amd_iommu_init_passthrough(void)
 {
 	struct iommu_dev_data *dev_data;
 	struct pci_dev *dev = NULL;
-	struct amd_iommu *iommu;
-	u16 devid;
 	int ret;
 
 	ret = alloc_passthrough_domain();
@@ -3469,12 +3434,6 @@ int __init amd_iommu_init_passthrough(void)
 
 		dev_data = get_dev_data(&dev->dev);
 		dev_data->passthrough = true;
-
-		devid = get_device_id(&dev->dev);
-
-		iommu = amd_iommu_rlookup_table[devid];
-		if (!iommu)
-			continue;
 
 		attach_device(&dev->dev, pt_domain);
 	}
@@ -3955,7 +3914,7 @@ static struct irq_remap_table *get_irq_table(u16 devid, bool ioapic)
 	iommu_flush_dte(iommu, devid);
 	if (devid != alias) {
 		irq_lookup_table[alias] = table;
-		set_dte_irq_entry(devid, table);
+		set_dte_irq_entry(alias, table);
 		iommu_flush_dte(iommu, alias);
 	}
 

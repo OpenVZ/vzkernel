@@ -107,7 +107,6 @@ static void fl_free(struct ip6_flowlabel *fl)
 	if (fl) {
 		if (fl->share == IPV6_FL_S_PROCESS)
 			put_pid(fl->owner.pid);
-		release_net(fl->fl_net);
 		kfree(fl->opt);
 		kfree_rcu(fl, rcu);
 	}
@@ -179,7 +178,7 @@ static void __net_exit ip6_fl_purge(struct net *net)
 {
 	int i;
 
-	spin_lock(&ip6_fl_lock);
+	spin_lock_bh(&ip6_fl_lock);
 	for (i = 0; i <= FL_HASH_MASK; i++) {
 		struct ip6_flowlabel *fl;
 		struct ip6_flowlabel __rcu **flp;
@@ -197,7 +196,7 @@ static void __net_exit ip6_fl_purge(struct net *net)
 			flp = &fl->next;
 		}
 	}
-	spin_unlock(&ip6_fl_lock);
+	spin_unlock_bh(&ip6_fl_lock);
 }
 
 static struct ip6_flowlabel *fl_intern(struct net *net,
@@ -407,7 +406,7 @@ fl_create(struct net *net, struct sock *sk, struct in6_flowlabel_req *freq,
 		}
 	}
 
-	fl->fl_net = hold_net(net);
+	fl->fl_net = net;
 	fl->expires = jiffies;
 	err = fl6_renew(fl, freq->flr_linger, freq->flr_expires);
 	if (err)
@@ -453,8 +452,10 @@ static int mem_check(struct sock *sk)
 	if (room > FL_MAX_SIZE - FL_MAX_PER_SOCK)
 		return 0;
 
+	rcu_read_lock_bh();
 	for_each_sk_fl_rcu(np, sfl)
 		count++;
+	rcu_read_unlock_bh();
 
 	if (room <= 0 ||
 	    ((count >= FL_MAX_PER_SOCK ||

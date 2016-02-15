@@ -43,6 +43,7 @@ pgd_t swapper_pg_dir[PTRS_PER_PGD] __attribute__((__aligned__(PAGE_SIZE)));
 
 unsigned long empty_zero_page, zero_page_mask;
 EXPORT_SYMBOL(empty_zero_page);
+EXPORT_SYMBOL(zero_page_mask);
 
 static void __init setup_zero_pages(void)
 {
@@ -69,13 +70,17 @@ static void __init setup_zero_pages(void)
 		order = 2;
 		break;
 	case 0x2827:	/* zEC12 */
-	default:
+	case 0x2828:	/* zEC12 */
 		order = 5;
+		break;
+	case 0x2964:	/* z13 */
+	default:
+		order = 7;
 		break;
 	}
 	/* Limit number of empty zero pages for small memory sizes */
-	if (order > 2 && totalram_pages <= 16384)
-		order = 2;
+	while (order > 2 && (totalram_pages >> 10) < (1UL << order))
+		order--;
 
 	empty_zero_page = __get_free_pages(GFP_KERNEL | __GFP_ZERO, order);
 	if (!empty_zero_page)

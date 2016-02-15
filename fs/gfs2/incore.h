@@ -21,6 +21,7 @@
 #include <linux/rbtree.h>
 #include <linux/ktime.h>
 #include <linux/percpu.h>
+#include <linux/lockref.h>
 
 #define DIO_WAIT	0x00000010
 #define DIO_METADATA	0x00000020
@@ -91,9 +92,11 @@ struct gfs2_rgrpd {
 	struct gfs2_rgrp_lvb *rd_rgl;
 	u32 rd_last_alloc;
 	u32 rd_flags;
+	u32 rd_extfail_pt;		/* extent failure point */
 #define GFS2_RDF_CHECK		0x10000000 /* check for unlinked inodes */
 #define GFS2_RDF_UPTODATE	0x20000000 /* rg is up to date */
 #define GFS2_RDF_ERROR		0x40000000 /* error in rg */
+#define GFS2_RDF_PREFERRED	0x80000000 /* This rgrp is preferred */
 #define GFS2_RDF_MASK		0xf0000000 /* mask for internal flags */
 	spinlock_t rd_rsspin;           /* protects reservation related vars */
 	struct rb_root rd_rstree;       /* multi-block reservation tree */
@@ -215,6 +218,7 @@ struct gfs2_glock_operations {
 	const unsigned long go_flags;
 #define GLOF_ASPACE 1
 #define GLOF_LVB    2
+#define GLOF_LRU    4
 };
 
 enum {
@@ -278,6 +282,22 @@ struct gfs2_blkreserv {
 	unsigned int rs_qa_qd_num;
 };
 
+/*
+ * Allocation parameters
+ * @target: The number of blocks we'd ideally like to allocate
+ * @aflags: The flags (e.g. Orlov flag)
+ *
+ * The intent is to gradually expand this structure over time in
+ * order to give more information, e.g. alignment, min extent size
+ * to the allocation code.
+ */
+struct gfs2_alloc_parms {
+	u64 target;
+	u32 min_target;
+	u32 aflags;
+	u64 allowed;
+};
+
 enum {
 	GLF_LOCK			= 1,
 	GLF_DEMOTE			= 3,
@@ -300,9 +320,9 @@ struct gfs2_glock {
 	struct gfs2_sbd *gl_sbd;
 	unsigned long gl_flags;		/* GLF_... */
 	struct lm_lockname gl_name;
-	atomic_t gl_ref;
 
-	spinlock_t gl_spin;
+	struct lockref gl_lockref;
+#define gl_spin gl_lockref.lock
 
 	/* State fields protected by gl_spin */
 	unsigned int gl_state:2,	/* Current state */
@@ -340,6 +360,7 @@ enum {
 	GIF_ALLOC_FAILED	= 2,
 	GIF_SW_PAGED		= 3,
 	GIF_ORDERED		= 4,
+	GIF_FREE_VFS_INODE      = 5,
 };
 
 struct gfs2_inode {
@@ -394,15 +415,18 @@ enum {
 	QDF_CHANGE		= 1,
 	QDF_LOCKED		= 2,
 	QDF_REFRESH		= 3,
+	QDF_QMSG_QUIET          = 4,
 };
 
 struct gfs2_quota_data {
+	struct hlist_bl_node qd_hlist;
 	struct list_head qd_list;
-	struct list_head qd_reclaim;
-
-	atomic_t qd_count;
-
 	struct kqid qd_id;
+	struct gfs2_sbd *qd_sbd;
+	struct lockref qd_lockref;
+	struct list_head qd_lru;
+	unsigned qd_hash;
+
 	unsigned long qd_flags;		/* QDF_... */
 
 	s64 qd_change;
@@ -420,6 +444,7 @@ struct gfs2_quota_data {
 
 	u64 qd_sync_gen;
 	unsigned long qd_last_warn;
+	struct rcu_head qd_rcu;
 };
 
 struct gfs2_trans {
@@ -466,6 +491,15 @@ struct gfs2_jdesc {
 	unsigned int jd_jid;
 	unsigned int jd_blocks;
 	int jd_recover_error;
+	/* Replay stuff */
+
+	unsigned int jd_found_blocks;
+	unsigned int jd_found_revokes;
+	unsigned int jd_replayed_blocks;
+
+	struct list_head jd_revoke_list;
+	unsigned int jd_replay_tail;
+
 };
 
 struct gfs2_statfs_change_host {
@@ -516,7 +550,6 @@ struct gfs2_tune {
 
 	unsigned int gt_logd_secs;
 
-	unsigned int gt_quota_simul_sync; /* Max quotavals to sync at once */
 	unsigned int gt_quota_warn_period; /* Secs between quota warn msgs */
 	unsigned int gt_quota_scale_num; /* Numerator */
 	unsigned int gt_quota_scale_den; /* Denominator */
@@ -684,6 +717,8 @@ struct gfs2_sbd {
 	struct gfs2_holder sd_sc_gh;
 	struct gfs2_holder sd_qc_gh;
 
+	struct completion sd_journal_ready;
+
 	/* Daemon stuff */
 
 	struct task_struct *sd_logd_process;
@@ -694,13 +729,14 @@ struct gfs2_sbd {
 	struct list_head sd_quota_list;
 	atomic_t sd_quota_count;
 	struct mutex sd_quota_mutex;
+	struct mutex sd_quota_sync_mutex;
 	wait_queue_head_t sd_quota_wait;
 	struct list_head sd_trunc_list;
 	spinlock_t sd_trunc_lock;
 
 	unsigned int sd_quota_slots;
-	unsigned int sd_quota_chunks;
-	unsigned char **sd_quota_bitmap;
+	unsigned long *sd_quota_bitmap;
+	spinlock_t sd_bitmap_lock;
 
 	u64 sd_quota_sync_gen;
 
@@ -749,15 +785,6 @@ struct gfs2_sbd {
 	spinlock_t sd_ail_lock;
 	struct list_head sd_ail1_list;
 	struct list_head sd_ail2_list;
-
-	/* Replay stuff */
-
-	struct list_head sd_revoke_list;
-	unsigned int sd_replay_tail;
-
-	unsigned int sd_found_blocks;
-	unsigned int sd_found_revokes;
-	unsigned int sd_replayed_blocks;
 
 	/* For quiescing the filesystem */
 	struct gfs2_holder sd_freeze_gh;

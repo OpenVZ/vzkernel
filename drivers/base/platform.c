@@ -435,7 +435,7 @@ struct platform_device *platform_device_register_full(
 		goto err_alloc;
 
 	pdev->dev.parent = pdevinfo->parent;
-	ACPI_HANDLE_SET(&pdev->dev, pdevinfo->acpi_node.handle);
+	ACPI_COMPANION_SET(&pdev->dev, pdevinfo->acpi_node.companion);
 
 	if (pdevinfo->dma_mask) {
 		/*
@@ -466,7 +466,7 @@ struct platform_device *platform_device_register_full(
 	ret = platform_device_add(pdev);
 	if (ret) {
 err:
-		ACPI_HANDLE_SET(&pdev->dev, NULL);
+		ACPI_COMPANION_SET(&pdev->dev, NULL);
 		kfree(pdev->dev.dma_mask);
 
 err_alloc:
@@ -888,7 +888,6 @@ int platform_pm_restore(struct device *dev)
 static const struct dev_pm_ops platform_dev_pm_ops = {
 	.runtime_suspend = pm_generic_runtime_suspend,
 	.runtime_resume = pm_generic_runtime_resume,
-	.runtime_idle = pm_generic_runtime_idle,
 	USE_PLATFORM_PM_SLEEP_OPS
 };
 

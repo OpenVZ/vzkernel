@@ -46,7 +46,7 @@ static const char e1000_copyright[] = "Copyright (c) 1999-2006 Intel Corporation
  * Macro expands to...
  *   {PCI_DEVICE(PCI_VENDOR_ID_INTEL, device_id)}
  */
-static DEFINE_PCI_DEVICE_TABLE(e1000_pci_tbl) = {
+static const struct pci_device_id e1000_pci_tbl[] = {
 	INTEL_E1000_ETHERNET_DEVICE(0x1000),
 	INTEL_E1000_ETHERNET_DEVICE(0x1001),
 	INTEL_E1000_ETHERNET_DEVICE(0x1004),
@@ -144,6 +144,11 @@ static bool e1000_clean_rx_irq(struct e1000_adapter *adapter,
 static bool e1000_clean_jumbo_rx_irq(struct e1000_adapter *adapter,
 				     struct e1000_rx_ring *rx_ring,
 				     int *work_done, int work_to_do);
+static void e1000_alloc_dummy_rx_buffers(struct e1000_adapter *adapter,
+					 struct e1000_rx_ring *rx_ring,
+					 int cleaned_count)
+{
+}
 static void e1000_alloc_rx_buffers(struct e1000_adapter *adapter,
 				   struct e1000_rx_ring *rx_ring,
 				   int cleaned_count);
@@ -494,13 +499,20 @@ static void e1000_down_and_stop(struct e1000_adapter *adapter)
 {
 	set_bit(__E1000_DOWN, &adapter->flags);
 
+	cancel_delayed_work_sync(&adapter->watchdog_task);
+
+	/*
+	 * Since the watchdog task can reschedule other tasks, we should cancel
+	 * it first, otherwise we can run into the situation when a work is
+	 * still running after the adapter has been turned down.
+	 */
+
+	cancel_delayed_work_sync(&adapter->phy_info_task);
+	cancel_delayed_work_sync(&adapter->fifo_stall_task);
+
 	/* Only kill reset task if adapter is not resetting */
 	if (!test_bit(__E1000_RESETTING, &adapter->flags))
 		cancel_work_sync(&adapter->reset_task);
-
-	cancel_delayed_work_sync(&adapter->watchdog_task);
-	cancel_delayed_work_sync(&adapter->phy_info_task);
-	cancel_delayed_work_sync(&adapter->fifo_stall_task);
 }
 
 void e1000_down(struct e1000_adapter *adapter)
@@ -509,6 +521,7 @@ void e1000_down(struct e1000_adapter *adapter)
 	struct net_device *netdev = adapter->netdev;
 	u32 rctl, tctl;
 
+	netif_carrier_off(netdev);
 
 	/* disable receives in the hardware */
 	rctl = er32(RCTL);
@@ -537,28 +550,14 @@ void e1000_down(struct e1000_adapter *adapter)
 
 	adapter->link_speed = 0;
 	adapter->link_duplex = 0;
-	netif_carrier_off(netdev);
 
 	e1000_reset(adapter);
 	e1000_clean_all_tx_rings(adapter);
 	e1000_clean_all_rx_rings(adapter);
 }
 
-static void e1000_reinit_safe(struct e1000_adapter *adapter)
-{
-	while (test_and_set_bit(__E1000_RESETTING, &adapter->flags))
-		msleep(1);
-	mutex_lock(&adapter->mutex);
-	e1000_down(adapter);
-	e1000_up(adapter);
-	mutex_unlock(&adapter->mutex);
-	clear_bit(__E1000_RESETTING, &adapter->flags);
-}
-
 void e1000_reinit_locked(struct e1000_adapter *adapter)
 {
-	/* if rtnl_lock is not held the call path is bogus */
-	ASSERT_RTNL();
 	WARN_ON(in_interrupt());
 	while (test_and_set_bit(__E1000_RESETTING, &adapter->flags))
 		msleep(1);
@@ -1321,7 +1320,6 @@ static int e1000_sw_init(struct e1000_adapter *adapter)
 	e1000_irq_disable(adapter);
 
 	spin_lock_init(&adapter->stats_lock);
-	mutex_init(&adapter->mutex);
 
 	set_bit(__E1000_DOWN, &adapter->flags);
 
@@ -1445,6 +1443,10 @@ static int e1000_close(struct net_device *netdev)
 {
 	struct e1000_adapter *adapter = netdev_priv(netdev);
 	struct e1000_hw *hw = &adapter->hw;
+	int count = E1000_CHECK_RESET_COUNT;
+
+	while (test_bit(__E1000_RESETTING, &adapter->flags) && count--)
+		usleep_range(10000, 20000);
 
 	WARN_ON(test_bit(__E1000_RESETTING, &adapter->flags));
 	e1000_down(adapter);
@@ -2330,11 +2332,8 @@ static void e1000_update_phy_info_task(struct work_struct *work)
 	struct e1000_adapter *adapter = container_of(work,
 						     struct e1000_adapter,
 						     phy_info_task.work);
-	if (test_bit(__E1000_DOWN, &adapter->flags))
-		return;
-	mutex_lock(&adapter->mutex);
+
 	e1000_phy_get_info(&adapter->hw, &adapter->phy_info);
-	mutex_unlock(&adapter->mutex);
 }
 
 /**
@@ -2350,9 +2349,6 @@ static void e1000_82547_tx_fifo_stall_task(struct work_struct *work)
 	struct net_device *netdev = adapter->netdev;
 	u32 tctl;
 
-	if (test_bit(__E1000_DOWN, &adapter->flags))
-		return;
-	mutex_lock(&adapter->mutex);
 	if (atomic_read(&adapter->tx_fifo_stall)) {
 		if ((er32(TDT) == er32(TDH)) &&
 		   (er32(TDFT) == er32(TDFH)) &&
@@ -2373,7 +2369,6 @@ static void e1000_82547_tx_fifo_stall_task(struct work_struct *work)
 			schedule_delayed_work(&adapter->fifo_stall_task, 1);
 		}
 	}
-	mutex_unlock(&adapter->mutex);
 }
 
 bool e1000_has_link(struct e1000_adapter *adapter)
@@ -2427,10 +2422,6 @@ static void e1000_watchdog(struct work_struct *work)
 	struct e1000_tx_ring *txdr = adapter->tx_ring;
 	u32 link, tctl;
 
-	if (test_bit(__E1000_DOWN, &adapter->flags))
-		return;
-
-	mutex_lock(&adapter->mutex);
 	link = e1000_has_link(adapter);
 	if ((netif_carrier_ok(netdev)) && link)
 		goto link_up;
@@ -2521,7 +2512,7 @@ link_up:
 			adapter->tx_timeout_count++;
 			schedule_work(&adapter->reset_task);
 			/* exit immediately since reset is imminent */
-			goto unlock;
+			return;
 		}
 	}
 
@@ -2549,9 +2540,6 @@ link_up:
 	/* Reschedule the task */
 	if (!test_bit(__E1000_DOWN, &adapter->flags))
 		schedule_delayed_work(&adapter->watchdog_task, 2 * HZ);
-
-unlock:
-	mutex_unlock(&adapter->mutex);
 }
 
 enum latency_range {
@@ -2696,7 +2684,8 @@ set_itr_now:
 #define E1000_TX_FLAGS_VLAN_SHIFT	16
 
 static int e1000_tso(struct e1000_adapter *adapter,
-		     struct e1000_tx_ring *tx_ring, struct sk_buff *skb)
+		     struct e1000_tx_ring *tx_ring, struct sk_buff *skb,
+		     __be16 protocol)
 {
 	struct e1000_context_desc *context_desc;
 	struct e1000_buffer *buffer_info;
@@ -2715,7 +2704,7 @@ static int e1000_tso(struct e1000_adapter *adapter,
 
 		hdr_len = skb_transport_offset(skb) + tcp_hdrlen(skb);
 		mss = skb_shinfo(skb)->gso_size;
-		if (skb->protocol == htons(ETH_P_IP)) {
+		if (protocol == htons(ETH_P_IP)) {
 			struct iphdr *iph = ip_hdr(skb);
 			iph->tot_len = 0;
 			iph->check = 0;
@@ -2725,7 +2714,7 @@ static int e1000_tso(struct e1000_adapter *adapter,
 								 0);
 			cmd_length = E1000_TXD_CMD_IP;
 			ipcse = skb_transport_offset(skb) - 1;
-		} else if (skb->protocol == htons(ETH_P_IPV6)) {
+		} else if (skb_is_gso_v6(skb)) {
 			ipv6_hdr(skb)->payload_len = 0;
 			tcp_hdr(skb)->check =
 				~csum_ipv6_magic(&ipv6_hdr(skb)->saddr,
@@ -2768,7 +2757,8 @@ static int e1000_tso(struct e1000_adapter *adapter,
 }
 
 static bool e1000_tx_csum(struct e1000_adapter *adapter,
-			  struct e1000_tx_ring *tx_ring, struct sk_buff *skb)
+			  struct e1000_tx_ring *tx_ring, struct sk_buff *skb,
+			  __be16 protocol)
 {
 	struct e1000_context_desc *context_desc;
 	struct e1000_buffer *buffer_info;
@@ -2779,7 +2769,7 @@ static bool e1000_tx_csum(struct e1000_adapter *adapter,
 	if (skb->ip_summed != CHECKSUM_PARTIAL)
 		return false;
 
-	switch (skb->protocol) {
+	switch (protocol) {
 	case cpu_to_be16(ETH_P_IP):
 		if (ip_hdr(skb)->protocol == IPPROTO_TCP)
 			cmd_len |= E1000_TXD_CMD_TCP;
@@ -2974,7 +2964,6 @@ static void e1000_tx_queue(struct e1000_adapter *adapter,
 			   struct e1000_tx_ring *tx_ring, int tx_flags,
 			   int count)
 {
-	struct e1000_hw *hw = &adapter->hw;
 	struct e1000_tx_desc *tx_desc = NULL;
 	struct e1000_buffer *buffer_info;
 	u32 txd_upper = 0, txd_lower = E1000_TXD_CMD_IFCS;
@@ -3028,11 +3017,6 @@ static void e1000_tx_queue(struct e1000_adapter *adapter,
 	wmb();
 
 	tx_ring->next_to_use = i;
-	writel(i, hw->hw_addr + tx_ring->tdt);
-	/* we need this if more than one processor can write to our tail
-	 * at a time, it synchronizes IO on IA64/Altix systems
-	 */
-	mmiowb();
 }
 
 /* 82547 workaround to avoid controller hang in half-duplex environment.
@@ -3120,6 +3104,7 @@ static netdev_tx_t e1000_xmit_frame(struct sk_buff *skb,
 	int count = 0;
 	int tso;
 	unsigned int f;
+	__be16 protocol = vlan_get_protocol(skb);
 
 	/* This goes back to the question of how to logically map a Tx queue
 	 * to a flow.  Right now, performance is impacted slightly negatively
@@ -3231,14 +3216,14 @@ static netdev_tx_t e1000_xmit_frame(struct sk_buff *skb,
 		return NETDEV_TX_BUSY;
 	}
 
-	if (vlan_tx_tag_present(skb)) {
+	if (skb_vlan_tag_present(skb)) {
 		tx_flags |= E1000_TX_FLAGS_VLAN;
-		tx_flags |= (vlan_tx_tag_get(skb) << E1000_TX_FLAGS_VLAN_SHIFT);
+		tx_flags |= (skb_vlan_tag_get(skb) << E1000_TX_FLAGS_VLAN_SHIFT);
 	}
 
 	first = tx_ring->next_to_use;
 
-	tso = e1000_tso(adapter, tx_ring, skb);
+	tso = e1000_tso(adapter, tx_ring, skb, protocol);
 	if (tso < 0) {
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
@@ -3248,10 +3233,10 @@ static netdev_tx_t e1000_xmit_frame(struct sk_buff *skb,
 		if (likely(hw->mac_type != e1000_82544))
 			tx_ring->last_tx_tso = true;
 		tx_flags |= E1000_TX_FLAGS_TSO;
-	} else if (likely(e1000_tx_csum(adapter, tx_ring, skb)))
+	} else if (likely(e1000_tx_csum(adapter, tx_ring, skb, protocol)))
 		tx_flags |= E1000_TX_FLAGS_CSUM;
 
-	if (likely(skb->protocol == htons(ETH_P_IP)))
+	if (protocol == htons(ETH_P_IP))
 		tx_flags |= E1000_TX_FLAGS_IPV4;
 
 	if (unlikely(skb->no_fcs))
@@ -3268,6 +3253,15 @@ static netdev_tx_t e1000_xmit_frame(struct sk_buff *skb,
 		/* Make sure there is space in the ring for the next send. */
 		e1000_maybe_stop_tx(netdev, tx_ring, MAX_SKB_FRAGS + 2);
 
+		if (!skb->xmit_more ||
+		    netif_xmit_stopped(netdev_get_tx_queue(netdev, 0))) {
+			writel(tx_ring->next_to_use, hw->hw_addr + tx_ring->tdt);
+			/* we need this if more than one processor can write to
+			 * our tail at a time, it synchronizes IO on IA64/Altix
+			 * systems
+			 */
+			mmiowb();
+		}
 	} else {
 		dev_kfree_skb_any(skb);
 		tx_ring->buffer_info[first].time_stamp = 0;
@@ -3500,10 +3494,8 @@ static void e1000_reset_task(struct work_struct *work)
 	struct e1000_adapter *adapter =
 		container_of(work, struct e1000_adapter, reset_task);
 
-	if (test_bit(__E1000_DOWN, &adapter->flags))
-		return;
 	e_err(drv, "Reset adapter\n");
-	e1000_reinit_safe(adapter);
+	e1000_reinit_locked(adapter);
 }
 
 /**
@@ -3555,8 +3547,11 @@ static int e1000_change_mtu(struct net_device *netdev, int new_mtu)
 		msleep(1);
 	/* e1000_down has a dependency on max_frame_size */
 	hw->max_frame_size = max_frame;
-	if (netif_running(netdev))
+	if (netif_running(netdev)) {
+		/* prevent buffers from being reallocated */
+		adapter->alloc_rx_buf = e1000_alloc_dummy_rx_buffers;
 		e1000_down(adapter);
+	}
 
 	/* NOTE: netdev_alloc_skb reserves 16 bytes, and typically NET_IP_ALIGN
 	 * means we reserve 2 more, this pushes us to allocate from the next
@@ -3851,7 +3846,7 @@ static bool e1000_clean_tx_irq(struct e1000_adapter *adapter,
 	while ((eop_desc->upper.data & cpu_to_le32(E1000_TXD_STAT_DD)) &&
 	       (count < tx_ring->count)) {
 		bool cleaned = false;
-		rmb();	/* read buffer_info after eop_desc */
+		dma_rmb();	/* read buffer_info after eop_desc */
 		for ( ; !cleaned; count++) {
 			tx_desc = E1000_TX_DESC(*tx_ring, i);
 			buffer_info = &tx_ring->buffer_info[i];
@@ -4045,7 +4040,7 @@ static bool e1000_clean_jumbo_rx_irq(struct e1000_adapter *adapter,
 		if (*work_done >= work_to_do)
 			break;
 		(*work_done)++;
-		rmb(); /* read descriptor and rx_buffer_info after status DD */
+		dma_rmb(); /* read descriptor and rx_buffer_info after status DD */
 
 		status = rx_desc->status;
 		skb = buffer_info->skb;
@@ -4258,7 +4253,7 @@ static bool e1000_clean_rx_irq(struct e1000_adapter *adapter,
 		if (*work_done >= work_to_do)
 			break;
 		(*work_done)++;
-		rmb(); /* read descriptor and rx_buffer_info after status DD */
+		dma_rmb(); /* read descriptor and rx_buffer_info after status DD */
 
 		status = rx_desc->status;
 		skb = buffer_info->skb;
@@ -4969,6 +4964,11 @@ static int __e1000_shutdown(struct pci_dev *pdev, bool *enable_wake)
 	netif_device_detach(netdev);
 
 	if (netif_running(netdev)) {
+		int count = E1000_CHECK_RESET_COUNT;
+
+		while (test_bit(__E1000_RESETTING, &adapter->flags) && count--)
+			usleep_range(10000, 20000);
+
 		WARN_ON(test_bit(__E1000_RESETTING, &adapter->flags));
 		e1000_down(adapter);
 	}

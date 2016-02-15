@@ -1,6 +1,7 @@
 #ifndef __LINUX_GFP_H
 #define __LINUX_GFP_H
 
+#include <linux/mmdebug.h>
 #include <linux/mmzone.h>
 #include <linux/stddef.h>
 #include <linux/linkage.h>
@@ -122,6 +123,10 @@ struct vm_area_struct;
 			 __GFP_NOMEMALLOC | __GFP_NORETRY | __GFP_NOWARN | \
 			 __GFP_NO_KSWAPD)
 
+/*
+ * GFP_THISNODE does not perform any reclaim, you most likely want to
+ * use __GFP_THISNODE to allocate from a given node without fallback!
+ */
 #ifdef CONFIG_NUMA
 #define GFP_THISNODE	(__GFP_THISNODE | __GFP_NOWARN | __GFP_NORETRY)
 #else
@@ -364,8 +369,8 @@ void *alloc_pages_exact_nid(int nid, size_t size, gfp_t gfp_mask);
 
 extern void __free_pages(struct page *page, unsigned int order);
 extern void free_pages(unsigned long addr, unsigned int order);
-extern void free_hot_cold_page(struct page *page, int cold);
-extern void free_hot_cold_page_list(struct list_head *list, int cold);
+extern void free_hot_cold_page(struct page *page, bool cold);
+extern void free_hot_cold_page_list(struct list_head *list, bool cold);
 
 extern void __free_memcg_kmem_pages(struct page *page, unsigned int order);
 extern void free_memcg_kmem_pages(unsigned long addr, unsigned int order);

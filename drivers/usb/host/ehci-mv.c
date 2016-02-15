@@ -96,7 +96,7 @@ static const struct hc_driver mv_ehci_hc_driver = {
 	 * generic hardware linkage
 	 */
 	.irq = ehci_irq,
-	.flags = HCD_MEMORY | HCD_USB2,
+	.flags = HCD_MEMORY | HCD_USB2 | HCD_BH,
 
 	/*
 	 * basic lifecycle operations
@@ -178,7 +178,7 @@ static int mv_ehci_probe(struct platform_device *pdev)
 
 	ehci_mv->phy_regs = devm_ioremap(&pdev->dev, r->start,
 					 resource_size(r));
-	if (ehci_mv->phy_regs == 0) {
+	if (!ehci_mv->phy_regs) {
 		dev_err(&pdev->dev, "failed to map phy I/O memory\n");
 		retval = -EFAULT;
 		goto err_clear_drvdata;

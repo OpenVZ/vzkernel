@@ -29,8 +29,10 @@
 #define CEPH_OPT_NOSHARE          (1<<1) /* don't share client with other sbs */
 #define CEPH_OPT_MYIP             (1<<2) /* specified my ip */
 #define CEPH_OPT_NOCRC            (1<<3) /* no data crc on writes */
+#define CEPH_OPT_NOMSGAUTH	  (1<<4) /* not require cephx message signature */
+#define CEPH_OPT_TCP_NODELAY	  (1<<5) /* TCP_NODELAY on TCP sockets */
 
-#define CEPH_OPT_DEFAULT   (0)
+#define CEPH_OPT_DEFAULT   (CEPH_OPT_TCP_NODELAY)
 
 #define ceph_set_opt(client, opt) \
 	(client)->options->flags |= CEPH_OPT_##opt;
@@ -122,8 +124,8 @@ struct ceph_client {
 
 	int (*extra_mon_dispatch)(struct ceph_client *, struct ceph_msg *);
 
-	u32 supported_features;
-	u32 required_features;
+	u64 supported_features;
+	u64 required_features;
 
 	struct ceph_messenger msgr;   /* messenger instance */
 	struct ceph_mon_client monc;
@@ -133,6 +135,7 @@ struct ceph_client {
 	struct dentry *debugfs_dir;
 	struct dentry *debugfs_monmap;
 	struct dentry *debugfs_osdmap;
+	struct dentry *debugfs_options;
 #endif
 };
 
@@ -173,27 +176,30 @@ static inline int calc_pages_for(u64 off, u64 len)
 		(off >> PAGE_CACHE_SHIFT);
 }
 
-/* ceph_common.c */
-extern bool libceph_compatible(void *data);
-
-extern const char *ceph_msg_type_name(int type);
-extern int ceph_check_fsid(struct ceph_client *client, struct ceph_fsid *fsid);
 extern struct kmem_cache *ceph_inode_cachep;
 extern struct kmem_cache *ceph_cap_cachep;
 extern struct kmem_cache *ceph_dentry_cachep;
 extern struct kmem_cache *ceph_file_cachep;
 
+/* ceph_common.c */
+extern bool libceph_compatible(void *data);
+
+extern const char *ceph_msg_type_name(int type);
+extern int ceph_check_fsid(struct ceph_client *client, struct ceph_fsid *fsid);
+extern void *ceph_kvmalloc(size_t size, gfp_t flags);
+
 extern struct ceph_options *ceph_parse_options(char *options,
 			      const char *dev_name, const char *dev_name_end,
 			      int (*parse_extra_token)(char *c, void *private),
 			      void *private);
+int ceph_print_client_options(struct seq_file *m, struct ceph_client *client);
 extern void ceph_destroy_options(struct ceph_options *opt);
 extern int ceph_compare_options(struct ceph_options *new_opt,
 				struct ceph_client *client);
 extern struct ceph_client *ceph_create_client(struct ceph_options *opt,
 					      void *private,
-					      unsigned supported_features,
-					      unsigned required_features);
+					      u64 supported_features,
+					      u64 required_features);
 extern u64 ceph_client_id(struct ceph_client *client);
 extern void ceph_destroy_client(struct ceph_client *client);
 extern int __ceph_open_session(struct ceph_client *client,
@@ -208,7 +214,6 @@ extern struct page **ceph_get_direct_page_vector(const void __user *data,
 						 bool write_page);
 extern void ceph_put_page_vector(struct page **pages, int num_pages,
 				 bool dirty);
-extern void ceph_release_page_vector(struct page **pages, int num_pages);
 extern struct page **ceph_alloc_page_vector(int num_pages, gfp_t flags);
 extern int ceph_copy_user_to_page_vector(struct page **pages,
 					 const void __user *data,
