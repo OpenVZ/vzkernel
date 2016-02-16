@@ -167,6 +167,17 @@ static inline bool kvm_lowest_prio_delivery(struct kvm_lapic_irq *irq)
 			irq->msi_redir_hint);
 }
 
+static inline u32 kvm_apic_id(struct kvm_lapic *apic)
+{
+	/* To avoid a race between apic_base and following APIC_ID update when
+	 * switching to x2apic_mode, the x2apic mode returns initial x2apic id.
+	 */
+	if (apic_x2apic_mode(apic))
+		return apic->vcpu->vcpu_id;
+
+	return kvm_apic_get_reg(apic, APIC_ID) >> 24;
+}
+
 bool kvm_apic_pending_eoi(struct kvm_vcpu *vcpu, int vector);
 
 void wait_lapic_expire(struct kvm_vcpu *vcpu);
