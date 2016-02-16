@@ -19,6 +19,7 @@
 #include "irq.h"
 #include "mmu.h"
 #include "cpuid.h"
+#include "lapic.h"
 
 #include <linux/kvm_host.h>
 #include <linux/module.h>
@@ -866,7 +867,6 @@ static void vmx_get_segment(struct kvm_vcpu *vcpu,
 			    struct kvm_segment *var, int seg);
 static bool guest_state_valid(struct kvm_vcpu *vcpu);
 static u32 vmx_segment_access_rights(struct kvm_segment *var);
-static void vmx_sync_pir_to_irr_dummy(struct kvm_vcpu *vcpu);
 static void copy_vmcs12_to_shadow(struct vcpu_vmx *vmx);
 static void copy_shadow_to_vmcs12(struct vcpu_vmx *vmx);
 static int alloc_identity_pagetable(struct kvm *kvm);
@@ -4468,11 +4468,6 @@ static void vmx_disable_intercept_msr_write_x2apic(u32 msr)
 			msr, MSR_TYPE_W);
 }
 
-static int vmx_cpu_uses_apicv(struct kvm_vcpu *vcpu)
-{
-	return enable_apicv && lapic_in_kernel(vcpu);
-}
-
 static int vmx_complete_nested_posted_interrupt(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -4557,6 +4552,7 @@ static int vmx_deliver_nested_posted_interrupt(struct kvm_vcpu *vcpu,
 	}
 	return -1;
 }
+
 /*
  * Send interrupt to vcpu via posted interrupt way.
  * 1. If target vcpu is running(non-root mode), send posted interrupt
@@ -4590,11 +4586,6 @@ static void vmx_sync_pir_to_irr(struct kvm_vcpu *vcpu)
 		return;
 
 	kvm_apic_update_irr(vcpu, vmx->pi_desc.pir);
-}
-
-static void vmx_sync_pir_to_irr_dummy(struct kvm_vcpu *vcpu)
-{
-	return;
 }
 
 /*
@@ -4666,9 +4657,21 @@ static u32 vmx_pin_based_exec_ctrl(struct vcpu_vmx *vmx)
 {
 	u32 pin_based_exec_ctrl = vmcs_config.pin_based_exec_ctrl;
 
-	if (!vmx_cpu_uses_apicv(&vmx->vcpu))
+	if (!kvm_vcpu_apicv_active(&vmx->vcpu))
 		pin_based_exec_ctrl &= ~PIN_BASED_POSTED_INTR;
 	return pin_based_exec_ctrl;
+}
+
+static bool vmx_get_enable_apicv(void)
+{
+	return enable_apicv;
+}
+
+static void vmx_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+
+	vmcs_write32(PIN_BASED_VM_EXEC_CONTROL, vmx_pin_based_exec_ctrl(vmx));
 }
 
 static u32 vmx_exec_control(struct vcpu_vmx *vmx)
@@ -4709,7 +4712,7 @@ static u32 vmx_secondary_exec_control(struct vcpu_vmx *vmx)
 		exec_control &= ~SECONDARY_EXEC_UNRESTRICTED_GUEST;
 	if (!ple_gap)
 		exec_control &= ~SECONDARY_EXEC_PAUSE_LOOP_EXITING;
-	if (!vmx_cpu_uses_apicv(&vmx->vcpu))
+	if (!kvm_vcpu_apicv_active(&vmx->vcpu))
 		exec_control &= ~(SECONDARY_EXEC_APIC_REGISTER_VIRT |
 				  SECONDARY_EXEC_VIRTUAL_INTR_DELIVERY);
 	exec_control &= ~SECONDARY_EXEC_VIRTUALIZE_X2APIC_MODE;
@@ -4772,7 +4775,7 @@ static int vmx_vcpu_setup(struct vcpu_vmx *vmx)
 		vmcs_write32(SECONDARY_VM_EXEC_CONTROL,
 				vmx_secondary_exec_control(vmx));
 
-	if (vmx_cpu_uses_apicv(&vmx->vcpu)) {
+	if (kvm_vcpu_apicv_active(&vmx->vcpu)) {
 		vmcs_write64(EOI_EXIT_BITMAP0, 0);
 		vmcs_write64(EOI_EXIT_BITMAP1, 0);
 		vmcs_write64(EOI_EXIT_BITMAP2, 0);
@@ -4921,7 +4924,7 @@ static void vmx_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
 
 	kvm_make_request(KVM_REQ_APIC_PAGE_RELOAD, vcpu);
 
-	if (vmx_cpu_uses_apicv(vcpu))
+	if (kvm_vcpu_apicv_active(vcpu))
 		memset(&vmx->pi_desc, 0, sizeof(struct pi_desc));
 
 	if (vmx->vpid != 0)
@@ -6181,15 +6184,6 @@ static __init int hardware_setup(void)
 		kvm_has_tsc_control = true;
 		kvm_max_tsc_scaling_ratio = KVM_VMX_TSC_MULTIPLIER_MAX;
 		kvm_tsc_scaling_ratio_frac_bits = 48;
-	}
-
-	if (enable_apicv)
-		kvm_x86_ops->update_cr8_intercept = NULL;
-	else {
-		kvm_x86_ops->hwapic_irr_update = NULL;
-		kvm_x86_ops->hwapic_isr_update = NULL;
-		kvm_x86_ops->deliver_posted_interrupt = NULL;
-		kvm_x86_ops->sync_pir_to_irr = vmx_sync_pir_to_irr_dummy;
 	}
 
 	vmx_disable_intercept_for_msr(MSR_FS_BASE, false);
@@ -8138,7 +8132,7 @@ static void vmx_set_virtual_x2apic_mode(struct kvm_vcpu *vcpu, bool set)
 	 * apicv
 	 */
 	if (!cpu_has_vmx_virtualize_x2apic_mode() ||
-				!vmx_cpu_uses_apicv(vcpu))
+				!kvm_vcpu_apicv_active(vcpu))
 		return;
 
 	if (!cpu_need_tpr_shadow(vcpu))
@@ -8246,7 +8240,7 @@ static void vmx_hwapic_irr_update(struct kvm_vcpu *vcpu, int max_irr)
 static void vmx_load_eoi_exitmap(struct kvm_vcpu *vcpu)
 {
 	u64 *eoi_exit_bitmap = vcpu->arch.eoi_exit_bitmap;
-	if (!vmx_cpu_uses_apicv(vcpu))
+	if (!kvm_vcpu_apicv_active(vcpu))
 		return;
 
 	vmcs_write64(EOI_EXIT_BITMAP0, eoi_exit_bitmap[0]);
@@ -10795,7 +10789,8 @@ static struct kvm_x86_ops vmx_x86_ops = {
 	.update_cr8_intercept = update_cr8_intercept,
 	.set_virtual_x2apic_mode = vmx_set_virtual_x2apic_mode,
 	.set_apic_access_page_addr = vmx_set_apic_access_page_addr,
-	.cpu_uses_apicv = vmx_cpu_uses_apicv,
+	.get_enable_apicv = vmx_get_enable_apicv,
+	.refresh_apicv_exec_ctrl = vmx_refresh_apicv_exec_ctrl,
 	.load_eoi_exitmap = vmx_load_eoi_exitmap,
 	.hwapic_irr_update = vmx_hwapic_irr_update,
 	.hwapic_isr_update = vmx_hwapic_isr_update,
