@@ -103,7 +103,7 @@ static int kvm_hv_msr_set_crash_data(struct kvm_vcpu *vcpu,
 	return 0;
 }
 
-static int set_msr_hyperv_pw(struct kvm_vcpu *vcpu, u32 msr, u64 data,
+static int kvm_hv_set_msr_pw(struct kvm_vcpu *vcpu, u32 msr, u64 data,
 			     bool host)
 {
 	struct kvm *kvm = vcpu->kvm;
@@ -171,7 +171,7 @@ static int set_msr_hyperv_pw(struct kvm_vcpu *vcpu, u32 msr, u64 data,
 	return 0;
 }
 
-static int set_msr_hyperv(struct kvm_vcpu *vcpu, u32 msr, u64 data)
+static int kvm_hv_set_msr(struct kvm_vcpu *vcpu, u32 msr, u64 data)
 {
 	struct kvm_vcpu_hv *hv = &vcpu->arch.hyperv;
 
@@ -214,7 +214,7 @@ static int set_msr_hyperv(struct kvm_vcpu *vcpu, u32 msr, u64 data)
 	return 0;
 }
 
-static int get_msr_hyperv_pw(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
+static int kvm_hv_get_msr_pw(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
 {
 	u64 data = 0;
 	struct kvm *kvm = vcpu->kvm;
@@ -250,7 +250,7 @@ static int get_msr_hyperv_pw(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
 	return 0;
 }
 
-static int get_msr_hyperv(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
+static int kvm_hv_get_msr(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
 {
 	u64 data = 0;
 	struct kvm_vcpu_hv *hv = &vcpu->arch.hyperv;
@@ -291,11 +291,11 @@ int kvm_hv_set_msr_common(struct kvm_vcpu *vcpu, u32 msr, u64 data, bool host)
 		int r;
 
 		mutex_lock(&vcpu->kvm->lock);
-		r = set_msr_hyperv_pw(vcpu, msr, data, host);
+		r = kvm_hv_set_msr_pw(vcpu, msr, data, host);
 		mutex_unlock(&vcpu->kvm->lock);
 		return r;
 	} else
-		return set_msr_hyperv(vcpu, msr, data);
+		return kvm_hv_set_msr(vcpu, msr, data);
 }
 
 int kvm_hv_get_msr_common(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
@@ -304,11 +304,11 @@ int kvm_hv_get_msr_common(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
 		int r;
 
 		mutex_lock(&vcpu->kvm->lock);
-		r = get_msr_hyperv_pw(vcpu, msr, pdata);
+		r = kvm_hv_get_msr_pw(vcpu, msr, pdata);
 		mutex_unlock(&vcpu->kvm->lock);
 		return r;
 	} else
-		return get_msr_hyperv(vcpu, msr, pdata);
+		return kvm_hv_get_msr(vcpu, msr, pdata);
 }
 
 bool kvm_hv_hypercall_enabled(struct kvm *kvm)
