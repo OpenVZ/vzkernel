@@ -375,6 +375,7 @@ enum {
 /* Hyper-V per vcpu emulation context */
 struct kvm_vcpu_hv {
 	u64 hv_vapic;
+	s64 runtime_offset;
 };
 
 struct kvm_mtrr_range {
