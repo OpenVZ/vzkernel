@@ -235,6 +235,18 @@
 #define HV_X64_MSR_CRASH_PARAMS		\
 		(1 + (HV_X64_MSR_CRASH_P4 - HV_X64_MSR_CRASH_P0))
 
+/*
+ * Synthetic Timer MSRs. Four timers per vcpu.
+ */
+#define HV_X64_MSR_STIMER0_CONFIG              0x400000B0
+#define HV_X64_MSR_STIMER0_COUNT               0x400000B1
+#define HV_X64_MSR_STIMER1_CONFIG              0x400000B2
+#define HV_X64_MSR_STIMER1_COUNT               0x400000B3
+#define HV_X64_MSR_STIMER2_CONFIG              0x400000B4
+#define HV_X64_MSR_STIMER2_COUNT               0x400000B5
+#define HV_X64_MSR_STIMER3_CONFIG              0x400000B6
+#define HV_X64_MSR_STIMER3_COUNT               0x400000B7
+
 #define HV_X64_MSR_HYPERCALL_ENABLE		0x00000001
 #define HV_X64_MSR_HYPERCALL_PAGE_ADDRESS_SHIFT	12
 #define HV_X64_MSR_HYPERCALL_PAGE_ADDRESS_MASK	\
@@ -385,5 +397,11 @@ struct hv_timer_message_payload {
 	__u64 expiration_time;	/* When the timer expired */
 	__u64 delivery_time;	/* When the message was delivered */
 };
+
+#define HV_STIMER_ENABLE		(1ULL << 0)
+#define HV_STIMER_PERIODIC		(1ULL << 1)
+#define HV_STIMER_LAZY			(1ULL << 2)
+#define HV_STIMER_AUTOENABLE		(1ULL << 3)
+#define HV_STIMER_SINT(config)		(__u8)(((config) >> 16) & 0x0F)
 
 #endif
