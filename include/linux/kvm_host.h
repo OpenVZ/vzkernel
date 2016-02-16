@@ -1084,6 +1084,8 @@ static inline void kvm_irq_routing_update(struct kvm *kvm)
 {
 }
 #endif
+void kvm_arch_irq_routing_update(struct kvm *kvm);
+void kvm_arch_post_irq_routing_update(struct kvm *kvm);
 
 static inline int kvm_ioeventfd(struct kvm *kvm, struct kvm_ioeventfd *args)
 {
