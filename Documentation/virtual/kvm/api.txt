@@ -1406,6 +1406,7 @@ struct kvm_irq_routing_entry {
 	union {
 		struct kvm_irq_routing_irqchip irqchip;
 		struct kvm_irq_routing_msi msi;
+		struct kvm_irq_routing_hv_sint hv_sint;
 		__u32 pad[8];
 	} u;
 };
@@ -1413,6 +1414,7 @@ struct kvm_irq_routing_entry {
 /* gsi routing entry types */
 #define KVM_IRQ_ROUTING_IRQCHIP 1
 #define KVM_IRQ_ROUTING_MSI 2
+#define KVM_IRQ_ROUTING_HV_SINT 4
 
 No flags are specified so far, the corresponding field must be set to zero.
 
@@ -1428,6 +1430,10 @@ struct kvm_irq_routing_msi {
 	__u32 pad;
 };
 
+struct kvm_irq_routing_hv_sint {
+	__u32 vcpu;
+	__u32 sint;
+};
 
 4.53 KVM_ASSIGN_SET_MSIX_NR
 
@@ -3097,3 +3103,16 @@ userspace from doing that.
 If the hcall number specified is not one that has an in-kernel
 implementation, the KVM_ENABLE_CAP ioctl will fail with an EINVAL
 error.
+
+8.2 KVM_CAP_HYPERV_SYNIC
+
+Architectures: x86
+This capability, if KVM_CHECK_EXTENSION indicates that it is
+available, means that that the kernel has an implementation of the
+Hyper-V Synthetic interrupt controller(SynIC). Hyper-V SynIC is
+used to support Windows Hyper-V based guest paravirt drivers(VMBus).
+
+In order to use SynIC, it has to be activated by setting this
+capability via KVM_ENABLE_CAP ioctl on the vcpu fd. Note that this
+will disable the use of APIC hardware virtualization even if supported
+by the CPU, as it's incompatible with SynIC auto-EOI behavior.
