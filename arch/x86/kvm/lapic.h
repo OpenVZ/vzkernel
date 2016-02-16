@@ -145,9 +145,9 @@ static inline int apic_x2apic_mode(struct kvm_lapic *apic)
 	return apic->vcpu->arch.apic_base & X2APIC_ENABLE;
 }
 
-static inline bool kvm_apic_vid_enabled(struct kvm *kvm)
+static inline bool kvm_vcpu_apicv_active(struct kvm_vcpu *vcpu)
 {
-	return kvm_x86_ops->vm_has_apicv(kvm);
+	return vcpu->arch.apic && vcpu->arch.apicv_active;
 }
 
 static inline u16 apic_cluster_id(struct kvm_apic_map *map, u32 ldr)
