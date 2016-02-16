@@ -33,6 +33,7 @@
 static bool kvm_hv_msr_partition_wide(u32 msr)
 {
 	bool r = false;
+
 	switch (msr) {
 	case HV_X64_MSR_GUEST_OS_ID:
 	case HV_X64_MSR_HYPERCALL:
@@ -142,13 +143,16 @@ static int set_msr_hyperv_pw(struct kvm_vcpu *vcpu, u32 msr, u64 data,
 	case HV_X64_MSR_REFERENCE_TSC: {
 		u64 gfn;
 		HV_REFERENCE_TSC_PAGE tsc_ref;
+
 		memset(&tsc_ref, 0, sizeof(tsc_ref));
 		hv->hv_tsc_page = data;
 		if (!(data & HV_X64_MSR_TSC_REFERENCE_ENABLE))
 			break;
 		gfn = data >> HV_X64_MSR_TSC_REFERENCE_ADDRESS_SHIFT;
-		if (kvm_write_guest(kvm, gfn << HV_X64_MSR_TSC_REFERENCE_ADDRESS_SHIFT,
-			&tsc_ref, sizeof(tsc_ref)))
+		if (kvm_write_guest(
+				kvm,
+				gfn << HV_X64_MSR_TSC_REFERENCE_ADDRESS_SHIFT,
+				&tsc_ref, sizeof(tsc_ref)))
 			return 1;
 		mark_page_dirty(kvm, gfn);
 		break;
@@ -190,7 +194,8 @@ static int set_msr_hyperv(struct kvm_vcpu *vcpu, u32 msr, u64 data)
 			return 1;
 		hv->hv_vapic = data;
 		mark_page_dirty(vcpu->kvm, gfn);
-		if (kvm_lapic_enable_pv_eoi(vcpu, gfn_to_gpa(gfn) | KVM_MSR_ENABLED))
+		if (kvm_lapic_enable_pv_eoi(vcpu,
+					    gfn_to_gpa(gfn) | KVM_MSR_ENABLED))
 			return 1;
 		break;
 	}
@@ -254,6 +259,7 @@ static int get_msr_hyperv(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
 	case HV_X64_MSR_VP_INDEX: {
 		int r;
 		struct kvm_vcpu *v;
+
 		kvm_for_each_vcpu(r, v, vcpu->kvm) {
 			if (v == vcpu) {
 				data = r;
@@ -283,6 +289,7 @@ int kvm_hv_set_msr_common(struct kvm_vcpu *vcpu, u32 msr, u64 data, bool host)
 {
 	if (kvm_hv_msr_partition_wide(msr)) {
 		int r;
+
 		mutex_lock(&vcpu->kvm->lock);
 		r = set_msr_hyperv_pw(vcpu, msr, data, host);
 		mutex_unlock(&vcpu->kvm->lock);
@@ -295,6 +302,7 @@ int kvm_hv_get_msr_common(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
 {
 	if (kvm_hv_msr_partition_wide(msr)) {
 		int r;
+
 		mutex_lock(&vcpu->kvm->lock);
 		r = get_msr_hyperv_pw(vcpu, msr, pdata);
 		mutex_unlock(&vcpu->kvm->lock);
