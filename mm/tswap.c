@@ -31,7 +31,7 @@ static bool tswap_enabled __read_mostly = true;
 module_param_named(enabled, tswap_enabled, bool, 0444);
 
 /* Enable/disable populating the cache */
-static bool tswap_active __read_mostly;
+static bool tswap_active __read_mostly = true;
 module_param_named(active, tswap_active, bool, 0644);
 
 /* Total number of pages cached */
