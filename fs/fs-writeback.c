@@ -705,6 +705,7 @@ static long writeback_sb_inodes(struct super_block *sb,
 			continue;
 		}
 		if ((work->ub || work->filter_ub) &&
+		    ((inode->i_state & I_DIRTY) == I_DIRTY_PAGES) &&
 		     ub_should_skip_writeback(work->ub, inode)) {
 			spin_unlock(&inode->i_lock);
 			redirty_tail(inode, wb);
@@ -1402,7 +1403,8 @@ static void wait_sb_inodes(struct super_block *sb, struct user_beancounter *ub)
 			spin_unlock(&inode->i_lock);
 			continue;
 		}
-		if (ub && (mapping->dirtied_ub != ub)) {
+		if (ub && (mapping->dirtied_ub != ub) &&
+		    ((inode->i_state & I_DIRTY) == I_DIRTY_PAGES)) {
 			spin_unlock(&inode->i_lock);
 			continue;
 		}
