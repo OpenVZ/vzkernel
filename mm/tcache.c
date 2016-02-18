@@ -131,7 +131,7 @@ static bool tcache_enabled __read_mostly = true;
 module_param_named(enabled, tcache_enabled, bool, 0444);
 
 /* Enable/disable populating the cache */
-static bool tcache_active __read_mostly;
+static bool tcache_active __read_mostly = true;
 module_param_named(active, tcache_active, bool, 0644);
 
 /* Total number of pages cached */
