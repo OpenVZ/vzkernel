@@ -246,8 +246,7 @@ static void update_handled_vectors(struct kvm_ioapic *ioapic)
 	smp_wmb();
 }
 
-void kvm_ioapic_scan_entry(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap,
-			u32 *tmr)
+void kvm_ioapic_scan_entry(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap)
 {
 	struct kvm_ioapic *ioapic = vcpu->kvm->arch.vioapic;
 	union kvm_ioapic_redirect_entry *e;
@@ -265,9 +264,6 @@ void kvm_ioapic_scan_entry(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap,
 			     kvm_apic_pending_eoi(vcpu, e->fields.vector))) {
 				__set_bit(e->fields.vector,
 					(unsigned long *)eoi_exit_bitmap);
-				if (e->fields.trig_mode == IOAPIC_LEVEL_TRIG)
-					__set_bit(e->fields.vector,
-						(unsigned long *)tmr);
 			}
 		}
 	}
