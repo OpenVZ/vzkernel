@@ -928,6 +928,13 @@ static int __apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 				apic_clear_vector(vector, apic->regs + APIC_TMR);
 		}
 
+		if (apic_test_vector(vector, apic->regs + APIC_TMR) != !!trig_mode) {
+			if (trig_mode)
+				apic_set_vector(vector, apic->regs + APIC_TMR);
+			else
+				apic_clear_vector(vector, apic->regs + APIC_TMR);
+		}
+
 		if (vcpu->arch.apicv_active)
 			kvm_x86_ops->deliver_posted_interrupt(vcpu, vector);
 		else {
