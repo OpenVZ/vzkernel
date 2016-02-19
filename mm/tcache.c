@@ -1224,7 +1224,7 @@ static struct cleancache_ops tcache_cleancache_ops = {
 	.invalidate_fs		= tcache_cleancache_invalidate_fs,
 };
 
-static int param_get_nr_pages(char *buffer, const struct kernel_param *kp)
+unsigned long get_nr_tcache_pages(void)
 {
 	int cpu;
 	long val = 0;
@@ -1233,7 +1233,12 @@ static int param_get_nr_pages(char *buffer, const struct kernel_param *kp)
 		val += per_cpu(nr_tcache_pages, cpu);
 	if (val < 0)
 		val = 0;
-	return sprintf(buffer, "%lu", val);
+	return val;
+}
+
+static int param_get_nr_pages(char *buffer, const struct kernel_param *kp)
+{
+	return sprintf(buffer, "%lu", get_nr_tcache_pages());
 }
 
 static struct kernel_param_ops param_ops_nr_pages = {
