@@ -537,14 +537,27 @@ tcache_invalidate_node_tree(struct tcache_node_tree *tree)
 
 static inline struct tcache_node *tcache_page_node(struct page *page)
 {
-	return (struct tcache_node *)page->private;
+	return (struct tcache_node *)page->mapping;
 }
 
 static inline void tcache_init_page(struct page *page,
 				    struct tcache_node *node, pgoff_t index)
 {
-	page->private = (unsigned long)node;
+	page->mapping = (struct address_space *)node;
 	page->index = index;
+}
+
+static inline void tcache_hold_page(struct page *page)
+{
+	get_page(page);
+}
+
+static inline void tcache_put_page(struct page *page)
+{
+	if (put_page_testzero(page)) {
+		page->mapping = NULL;	/* to make free_pages_check happy */
+		free_hot_cold_page(page, false);
+	}
 }
 
 static int tcache_page_tree_replace(struct tcache_node *node, pgoff_t index,
@@ -630,9 +643,9 @@ tcache_attach_page(struct tcache_node *node, pgoff_t index, struct page *page)
 
 	if (old_page) {
 		tcache_lru_del(old_page);
-		put_page(old_page);
+		tcache_put_page(old_page);
 	}
-	get_page(page);
+	tcache_hold_page(page);
 	tcache_lru_add(page);
 out:
 	local_irq_restore(flags);
@@ -681,7 +694,7 @@ restart:
 		page = radix_tree_deref_slot_protected(slot, &node->tree_lock);
 		BUG_ON(!__tcache_page_tree_delete(node, page->index, page));
 		tcache_lru_del(page);
-		put_page(page);
+		tcache_put_page(page);
 
 		if (need_resched()) {
 			spin_unlock_irq(&node->tree_lock);
@@ -739,7 +752,7 @@ static struct page *tcache_lru_isolate(struct tcache_lru *lru,
 	}
 
 	tcache_hold_node(node);
-	get_page(page);
+	tcache_hold_page(page);
 
 	*pnode = node;
 out:
@@ -763,13 +776,13 @@ __tcache_try_to_reclaim_page(struct tcache_lru *lru)
 			 * corresponding reference. Note, we still hold the
 			 * page reference taken in tcache_lru_isolate.
 			 */
-			put_page(page);
+			tcache_put_page(page);
 		} else {
 			/*
 			 * The page was deleted by a concurrent thread - drop
 			 * the reference taken in tcache_lru_isolate and abort.
 			 */
-			put_page(page);
+			tcache_put_page(page);
 			page = NULL;
 		}
 		tcache_put_node_and_pool(node);
@@ -812,7 +825,7 @@ static unsigned long tcache_shrink_scan(struct shrinker *shrink,
 	while (lru->nr_items > 0 && sc->nr_to_scan > 0) {
 		page = __tcache_try_to_reclaim_page(lru);
 		if (page) {
-			put_page(page);
+			tcache_put_page(page);
 			nr_reclaimed++;
 		}
 		sc->nr_to_scan--;
@@ -866,7 +879,7 @@ static void tcache_cleancache_put_page(int pool_id,
 	}
 
 	if (cache_page)
-		put_page(cache_page);
+		tcache_put_page(cache_page);
 }
 
 static int tcache_cleancache_get_page(int pool_id,
@@ -880,7 +893,7 @@ static int tcache_cleancache_get_page(int pool_id,
 	if (node) {
 		cache_page = tcache_detach_page(node, index);
 		if (unlikely(cache_page && node->invalidated)) {
-			put_page(cache_page);
+			tcache_put_page(cache_page);
 			cache_page = NULL;
 		}
 		tcache_put_node_and_pool(node);
@@ -888,7 +901,7 @@ static int tcache_cleancache_get_page(int pool_id,
 
 	if (cache_page) {
 		copy_highpage(page, cache_page);
-		put_page(cache_page);
+		tcache_put_page(cache_page);
 		return 0;
 	}
 	return -1;
@@ -904,7 +917,7 @@ static void tcache_cleancache_invalidate_page(int pool_id,
 	if (node) {
 		page = tcache_detach_page(node, index);
 		if (page)
-			put_page(page);
+			tcache_put_page(page);
 		tcache_put_node_and_pool(node);
 	}
 }
