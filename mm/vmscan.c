@@ -2421,10 +2421,29 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 		 * Shrink the slab caches in the same proportion that
 		 * the eligible LRU pages were scanned.
 		 */
-		if (global_reclaim(sc) && is_classzone)
+		if (global_reclaim(sc) && is_classzone) {
+			unsigned long scanned, eligible;
+
+			scanned = sc->nr_scanned - nr_scanned;
+			eligible = zone_lru_pages;
+
+			/*
+			 * If most processes reside in memory cgroups protected
+			 * with memory.low there won't be a lot of user pages
+			 * in the root lruvec so that the lru scanned/eligible
+			 * ratio ratio can get high even on the default scan
+			 * priority. In order not to subject memcg unaware slab
+			 * caches to disproportionately high pressure, we forge
+			 * the ratio in this case.
+			 */
+			if (eligible >> sc->priority == 0) {
+				scanned = 1000;
+				eligible = 1000 << sc->priority;
+			}
+
 			shrink_slab(slab_gfp, zone_to_nid(zone), NULL,
-				    sc->nr_scanned - nr_scanned,
-				    zone_lru_pages);
+				    scanned, eligible);
+		}
 
 		if (reclaim_state) {
 			sc->nr_reclaimed += reclaim_state->reclaimed_slab;
