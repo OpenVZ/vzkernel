@@ -16,14 +16,14 @@ struct kiocb;
 
 #define AIO_MAX_NR_DEFAULT	0x10000
 
-#define VE_AIO_IOC_SET_TAIL	1
-#define VE_AIO_IOC_WAIT_ACTIVE	2
-
 struct ve_ioc_arg
 {
 	aio_context_t	ctx_id;
 	unsigned	val;
 };
+
+#define VE_AIO_IOC_SET_TAIL	_IOW('a',  0, struct ve_ioc_arg)
+#define VE_AIO_IOC_WAIT_ACTIVE	_IOW('a',  1, struct ve_ioc_arg)
 
 /*
  * We use ki_cancel == KIOCB_CANCELLED to indicate that a kiocb has been either
