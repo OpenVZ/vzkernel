@@ -3633,6 +3633,10 @@ long si_mem_available(void)
 	available += global_page_state(NR_SLAB_RECLAIMABLE) -
 		     min(global_page_state(NR_SLAB_RECLAIMABLE) / 2, wmark_low);
 
+#ifdef CONFIG_TCACHE
+	available += get_nr_tcache_pages();
+#endif
+
 	if (available < 0)
 		available = 0;
 	return available;
