@@ -29,6 +29,38 @@ struct tcache_node_tree {
 };
 
 /*
+ * Per NUMA node data of a tcache_pool. Protected by tcache_nodeinfo->lock.
+ */
+struct tcache_pool_nodeinfo {
+	struct tcache_pool		*pool;
+
+	/* node in tcache_nodeinfo->reclaim_tree */
+	struct rb_node			reclaim_node;
+
+	/* LRU list of pages, linked through page->lru */
+	struct list_head		lru;
+
+	/* number of pages on the LRU list */
+	unsigned long			nr_pages;
+
+	/* recent number of successful gets and puts from the pool;
+	 * used in calculating reclaim prio */
+	unsigned long			recent_gets;
+	unsigned long			recent_puts;
+
+	/* reuse_ratio is basically recent_gets / recent_puts;
+	 * it shows the efficiency of the pool */
+	unsigned long			reuse_ratio;
+
+	/* timestamp of the eldest page on the LRU list */
+	unsigned long			timestamp;
+
+	/* increased on every LRU add/del, reset once it gets big enough;
+	 * used for rate limiting rebalancing of reclaim_tree */
+	unsigned long			events;
+} ____cacheline_aligned_in_smp;
+
+/*
  * Tcache pools correspond to super blocks. A pool is created on FS mount
  * (cleancache_init_fs) and destroyed on unmount (cleancache_invalidate_fs).
  */
@@ -54,6 +86,9 @@ struct tcache_pool {
 	/* used to synchronize destruction */
 	struct completion		completion;
 	struct rcu_head			rcu;
+
+	/* Per NUMA node data. This must be the last element of the struct. */
+	struct tcache_pool_nodeinfo	nodeinfo[0];
 };
 
 /*
@@ -106,24 +141,27 @@ static int num_node_trees __read_mostly = 1;
 static DEFINE_IDR(tcache_pool_idr);
 static DEFINE_SPINLOCK(tcache_pool_lock);
 
-struct tcache_lru {
+struct tcache_nodeinfo {
 	spinlock_t lock;
-	struct list_head list;
-	unsigned long nr_items;
+
+	/* tree of pools, sorted by reclaim prio */
+	struct rb_root reclaim_tree;
+
+	/* total number of pages on all LRU lists corresponding to this node */
+	unsigned long nr_pages;
 } ____cacheline_aligned_in_smp;
 
 /*
- * Per NUMA node LRU lists of pages. Linked through page->lru. Used to reclaim
- * memory from the cache on global reclaim - see tcache_shrinker.
+ * Global per NUMA node data.
  */
-static struct tcache_lru *tcache_lru_node;
+static struct tcache_nodeinfo *tcache_nodeinfo;
 
 /*
  * Locking rules:
  *
  *  tcache_node->tree_lock
  *       tcache_node_tree->lock
- *       tcache_lru->lock
+ *       tcache_nodeinfo->lock
  */
 
 /* Enable/disable tcache backend (set at boot time) */
@@ -133,6 +171,13 @@ module_param_named(enabled, tcache_enabled, bool, 0444);
 /* Enable/disable populating the cache */
 static bool tcache_active __read_mostly = true;
 module_param_named(active, tcache_active, bool, 0644);
+
+/*
+ * How long a tcache page is considered active, i.e. likely to be reused.
+ * A pool that contains only active pages will be given a boost over other
+ * pools while selecting a reclaim target.
+ */
+static unsigned long tcache_active_interval __read_mostly = 60 * HZ;
 
 /* Total number of pages cached */
 static DEFINE_PER_CPU(long, nr_tcache_pages);
@@ -149,44 +194,124 @@ node_tree_from_key(struct tcache_pool *pool,
 	return &pool->node_tree[key_hash(key) & (num_node_trees - 1)];
 }
 
+static void __tcache_insert_reclaim_node(struct tcache_nodeinfo *ni,
+					 struct tcache_pool_nodeinfo *pni);
+
+static inline void __tcache_check_events(struct tcache_nodeinfo *ni,
+					 struct tcache_pool_nodeinfo *pni)
+{
+	/*
+	 * We don't want to rebalance reclaim_tree on each get/put, because it
+	 * would be way too costly. Instead we count get/put events per each
+	 * pool and update a pool's reclaim prio only once the counter gets big
+	 * enough. This should yield satisfactory reclaim fairness while still
+	 * keeping the cost of get/put low.
+	 */
+	pni->events++;
+	if (likely(pni->events < 1024))
+		return;
+
+	pni->events = 0;
+
+	/*
+	 * The pool is empty, so there's no point in adding it to the
+	 * reclaim_tree. Neither do we need to remove it from the tree -
+	 * it will be done by the shrinker once it tries to scan it.
+	 */
+	if (unlikely(list_empty(&pni->lru)))
+		return;
+
+	/*
+	 * This can only happen if the node was removed from the tree on pool
+	 * destruction (see tcache_remove_from_reclaim_trees()). Nothing to do
+	 * then.
+	 */
+	if (unlikely(RB_EMPTY_NODE(&pni->reclaim_node)))
+		return;
+
+	rb_erase(&pni->reclaim_node, &ni->reclaim_tree);
+	__tcache_insert_reclaim_node(ni, pni);
+}
+
 /*
  * Add a page to the LRU list. This effectively makes the page visible to the
  * shrinker, so it must only be called after the page was properly initialized
  * and added to the corresponding page tree.
  */
-static void tcache_lru_add(struct page *page)
+static void tcache_lru_add(struct tcache_pool *pool, struct page *page)
 {
-	struct tcache_lru *lru = &tcache_lru_node[page_to_nid(page)];
+	int nid = page_to_nid(page);
+	struct tcache_nodeinfo *ni = &tcache_nodeinfo[nid];
+	struct tcache_pool_nodeinfo *pni = &pool->nodeinfo[nid];
 
-	spin_lock(&lru->lock);
-	list_add_tail(&page->lru, &lru->list);
-	lru->nr_items++;
-	spin_unlock(&lru->lock);
+	spin_lock(&ni->lock);
+
+	ni->nr_pages++;
+	pni->nr_pages++;
+	list_add_tail(&page->lru, &pni->lru);
+
+	pni->recent_puts++;
+	if (unlikely(pni->recent_puts > pni->nr_pages / 2)) {
+		pni->recent_gets /= 2;
+		pni->recent_puts /= 2;
+	}
+
+	__tcache_check_events(ni, pni);
+
+	if (unlikely(RB_EMPTY_NODE(&pni->reclaim_node)))
+		__tcache_insert_reclaim_node(ni, pni);
+
+	spin_unlock(&ni->lock);
+}
+
+static void __tcache_lru_del(struct tcache_nodeinfo *ni,
+			     struct tcache_pool_nodeinfo *pni,
+			     struct page *page)
+{
+	ni->nr_pages--;
+	pni->nr_pages--;
+	list_del_init(&page->lru);
 }
 
 /*
  * Remove a page from the LRU list. This function is safe to call on the same
  * page from concurrent threads - the page will be removed only once.
  */
-static void tcache_lru_del(struct page *page)
+static void tcache_lru_del(struct tcache_pool *pool, struct page *page,
+			   bool reused)
 {
-	struct tcache_lru *lru = &tcache_lru_node[page_to_nid(page)];
+	int nid = page_to_nid(page);
+	struct tcache_nodeinfo *ni = &tcache_nodeinfo[nid];
+	struct tcache_pool_nodeinfo *pni = &pool->nodeinfo[nid];
 
-	spin_lock(&lru->lock);
-	if (!list_empty(&page->lru)) {
-		list_del_init(&page->lru);
-		lru->nr_items--;
-	}
-	spin_unlock(&lru->lock);
+	spin_lock(&ni->lock);
+
+	/* Raced with reclaimer? */
+	if (unlikely(list_empty(&page->lru)))
+		goto out;
+
+	__tcache_lru_del(ni, pni, page);
+
+	if (reused)
+		pni->recent_gets++;
+
+	__tcache_check_events(ni, pni);
+out:
+	spin_unlock(&ni->lock);
 }
 
 static int tcache_create_pool(void)
 {
+	size_t size;
 	struct tcache_pool *pool;
+	struct tcache_pool_nodeinfo *pni;
 	int id;
 	int i;
 
-	pool = kzalloc(sizeof(*pool), GFP_KERNEL);
+	size = sizeof(struct tcache_pool);
+	size += nr_node_ids * sizeof(struct tcache_pool_nodeinfo);
+
+	pool = kzalloc(size, GFP_KERNEL);
 	if (!pool)
 		goto fail;
 
@@ -201,6 +326,13 @@ static int tcache_create_pool(void)
 	for (i = 0; i < num_node_trees; i++) {
 		pool->node_tree[i].root = RB_ROOT;
 		spin_lock_init(&pool->node_tree[i].lock);
+	}
+
+	for (i = 0; i < nr_node_ids; i++) {
+		pni = &pool->nodeinfo[i];
+		pni->pool = pool;
+		RB_CLEAR_NODE(&pni->reclaim_node);
+		INIT_LIST_HEAD(&pni->lru);
 	}
 
 	idr_preload(GFP_KERNEL);
@@ -231,6 +363,11 @@ fail:
 static bool tcache_grab_pool(struct tcache_pool *pool)
 {
 	return kref_get_unless_zero(&pool->kref);
+}
+
+static void tcache_hold_pool(struct tcache_pool *pool)
+{
+	kref_get(&pool->kref);
 }
 
 /*
@@ -272,6 +409,7 @@ static inline void tcache_put_pool(struct tcache_pool *pool)
 	kref_put(&pool->kref, tcache_pool_release_fn);
 }
 
+static void tcache_remove_from_reclaim_trees(struct tcache_pool *pool);
 static void tcache_invalidate_node_tree(struct tcache_node_tree *tree);
 
 static void tcache_destroy_pool(int id)
@@ -299,6 +437,8 @@ static void tcache_destroy_pool(int id)
 	 * be added to the pool, we are guaranteed to make progress.
 	 */
 	wait_for_completion(&pool->completion);
+
+	tcache_remove_from_reclaim_trees(pool);
 
 	for (i = 0; i < num_node_trees; i++)
 		tcache_invalidate_node_tree(&pool->node_tree[i]);
@@ -534,16 +674,21 @@ tcache_invalidate_node_tree(struct tcache_node_tree *tree)
 	}
 }
 
-
 static inline struct tcache_node *tcache_page_node(struct page *page)
 {
 	return (struct tcache_node *)page->mapping;
+}
+
+static inline unsigned long tcache_page_timestamp(struct page *page)
+{
+	return page->private;
 }
 
 static inline void tcache_init_page(struct page *page,
 				    struct tcache_node *node, pgoff_t index)
 {
 	page->mapping = (struct address_space *)node;
+	page->private = jiffies;
 	page->index = index;
 }
 
@@ -642,11 +787,11 @@ tcache_attach_page(struct tcache_node *node, pgoff_t index, struct page *page)
 		goto out;
 
 	if (old_page) {
-		tcache_lru_del(old_page);
+		tcache_lru_del(node->pool, old_page, false);
 		tcache_put_page(old_page);
 	}
 	tcache_hold_page(page);
-	tcache_lru_add(page);
+	tcache_lru_add(node->pool, page);
 out:
 	local_irq_restore(flags);
 	return err;
@@ -656,7 +801,8 @@ out:
  * Detach and return the page at a given offset of a node. The caller must put
  * the page when it is done with it.
  */
-static struct page *tcache_detach_page(struct tcache_node *node, pgoff_t index)
+static struct page *tcache_detach_page(struct tcache_node *node, pgoff_t index,
+				       bool reused)
 {
 	unsigned long flags;
 	struct page *page;
@@ -664,7 +810,7 @@ static struct page *tcache_detach_page(struct tcache_node *node, pgoff_t index)
 	local_irq_save(flags);
 	page = tcache_page_tree_delete(node, index, NULL);
 	if (page)
-		tcache_lru_del(page);
+		tcache_lru_del(node->pool, page, reused);
 	local_irq_restore(flags);
 
 	return page;
@@ -693,7 +839,7 @@ restart:
 	radix_tree_for_each_slot(slot, &node->page_tree, &iter, index) {
 		page = radix_tree_deref_slot_protected(slot, &node->tree_lock);
 		BUG_ON(!__tcache_page_tree_delete(node, page->index, page));
-		tcache_lru_del(page);
+		tcache_lru_del(node->pool, page, false);
 		tcache_put_page(page);
 
 		if (need_resched()) {
@@ -715,96 +861,218 @@ restart:
 	spin_unlock_irq(&node->tree_lock);
 }
 
-static struct page *tcache_lru_isolate(struct tcache_lru *lru,
-				       struct tcache_node **pnode)
+static noinline_for_stack void
+tcache_remove_from_reclaim_trees(struct tcache_pool *pool)
 {
-	struct page *page = NULL;
-	struct tcache_node *node;
+	int i;
+	struct tcache_nodeinfo *ni;
+	struct tcache_pool_nodeinfo *pni;
 
-	*pnode = NULL;
+	for (i = 0; i < nr_node_ids; i++) {
+		ni = &tcache_nodeinfo[i];
+		pni = &pool->nodeinfo[i];
 
-	spin_lock(&lru->lock);
-	if (list_empty(&lru->list))
-		goto out;
+		spin_lock_irq(&ni->lock);
+		if (!RB_EMPTY_NODE(&pni->reclaim_node)) {
+			rb_erase(&pni->reclaim_node, &ni->reclaim_tree);
+			/*
+			 * Clear the node for __tcache_check_events() not to
+			 * reinsert the pool back into the tree.
+			 */
+			RB_CLEAR_NODE(&pni->reclaim_node);
+		}
+		spin_unlock_irq(&ni->lock);
+	}
+}
 
-	page = list_first_entry(&lru->list, struct page, lru);
-
-	list_del_init(&page->lru);
-	lru->nr_items--;
-
-	node = tcache_page_node(page);
+static inline bool tcache_reclaim_node_before(struct tcache_pool_nodeinfo *a,
+					      struct tcache_pool_nodeinfo *b,
+					      unsigned long now)
+{
+	bool a_active = now - a->timestamp < tcache_active_interval;
+	bool b_active = now - b->timestamp < tcache_active_interval;
 
 	/*
-	 * A node can be destroyed only if all its pages have been removed both
-	 * from the tree and the LRU list, and a pool can be freed only after
-	 * all its nodes have been destroyed. Since we are holding the LRU lock
-	 * here and hence preventing the page from being removed from the LRU
-	 * list, it is therefore safe to access the node and the pool which the
-	 * page is attached to.
+	 * Always favor active pools over inactive. If the two pools are both
+	 * active or both inactive, the order in the reclaim_tree is determined
+	 * by the reuse ratio.
 	 */
-	if (!tcache_grab_pool(node->pool)) {
-		/*
-		 * Do not bother adding the page back to the LRU list if the
-		 * pool is under destruction - it will be freed anyway soon.
-		 */
-		page = NULL;
-		goto out;
+	if (a_active && !b_active)
+		return false;
+	if (!a_active && b_active)
+		return true;
+	return a->reuse_ratio < b->reuse_ratio;
+}
+
+static noinline_for_stack void
+__tcache_insert_reclaim_node(struct tcache_nodeinfo *ni,
+			     struct tcache_pool_nodeinfo *pni)
+{
+	struct rb_node **link = &ni->reclaim_tree.rb_node;
+	struct rb_node *parent = NULL;
+	struct tcache_pool_nodeinfo *pni2;
+	unsigned long now = jiffies;
+
+	BUG_ON(list_empty(&pni->lru));
+
+	pni->reuse_ratio = pni->recent_gets * 100 / (pni->recent_puts + 1);
+	pni->timestamp = tcache_page_timestamp(list_first_entry(&pni->lru,
+							struct page, lru));
+
+	while (*link) {
+		parent = *link;
+		pni2 = rb_entry(parent, struct tcache_pool_nodeinfo,
+				reclaim_node);
+		if (tcache_reclaim_node_before(pni, pni2, now))
+			link = &parent->rb_left;
+		else
+			link = &parent->rb_right;
 	}
 
-	tcache_hold_node(node);
-	tcache_hold_page(page);
+	rb_link_node(&pni->reclaim_node, parent, link);
+	rb_insert_color(&pni->reclaim_node, &ni->reclaim_tree);
+}
 
-	*pnode = node;
+static noinline_for_stack int
+__tcache_lru_isolate(struct tcache_nodeinfo *ni,
+		     struct tcache_pool_nodeinfo *pni,
+		     struct page **pages, int nr_to_isolate)
+{
+	struct tcache_node *node;
+	struct page *page;
+	int nr_isolated = 0;
+
+	while (nr_to_isolate > 0 && !list_empty(&pni->lru)) {
+		page = list_first_entry(&pni->lru, struct page, lru);
+		__tcache_lru_del(ni, pni, page);
+
+		tcache_hold_page(page);
+		/*
+		 * A node can be destroyed only if all its pages have been
+		 * removed both from the tree and the LRU list. Since we are
+		 * holding the LRU lock here and hence preventing the page
+		 * from being removed from the LRU list, it is therefore safe
+		 * to access the node which the page is attached to.
+		 */
+		node = tcache_page_node(page);
+		tcache_hold_node(node);
+		tcache_hold_pool(node->pool);
+
+		pages[nr_isolated++] = page;
+		nr_to_isolate--;
+	}
+	return nr_isolated;
+}
+
+static noinline_for_stack int
+tcache_lru_isolate(int nid, struct page **pages, int nr_to_isolate)
+{
+	struct tcache_nodeinfo *ni = &tcache_nodeinfo[nid];
+	struct tcache_pool_nodeinfo *pni;
+	int nr, nr_isolated = 0;
+	struct rb_node *rbn;
+
+	spin_lock_irq(&ni->lock);
+again:
+	rbn = rb_first(&ni->reclaim_tree);
+	if (!rbn)
+		goto out;
+
+	rb_erase(rbn, &ni->reclaim_tree);
+	RB_CLEAR_NODE(rbn);
+
+	pni = rb_entry(rbn, struct tcache_pool_nodeinfo, reclaim_node);
+	if (!tcache_grab_pool(pni->pool))
+		goto again;
+
+	nr = __tcache_lru_isolate(ni, pni, pages + nr_isolated, nr_to_isolate);
+	nr_isolated += nr;
+	nr_to_isolate -= nr;
+
+	if (!list_empty(&pni->lru))
+		__tcache_insert_reclaim_node(ni, pni);
+
+	tcache_put_pool(pni->pool);
+
+	if (nr_to_isolate > 0)
+		goto again;
 out:
-	spin_unlock(&lru->lock);
-	return page;
+	spin_unlock_irq(&ni->lock);
+	return nr_isolated;
+}
+
+static bool __tcache_reclaim_page(struct page *page)
+{
+	struct tcache_node *node;
+	bool ret;
+
+	node = tcache_page_node(page);
+	if (tcache_page_tree_delete(node, page->index, page)) {
+		/*
+		 * We deleted the page from the tree - drop the
+		 * corresponding reference.
+		 */
+		tcache_put_page(page);
+		ret = true;
+	} else
+		/* The page was deleted by a concurrent thread - abort. */
+		ret = false;
+
+	/* Drop the reference taken in __tcache_lru_isolate. */
+	tcache_put_node_and_pool(node);
+	return ret;
+}
+
+static int tcache_reclaim_pages(struct page **pages, int nr)
+{
+	int i;
+	int nr_reclaimed = 0;
+
+	local_irq_disable();
+	for (i = 0; i < nr; i++) {
+		nr_reclaimed += !!__tcache_reclaim_page(pages[i]);
+		/* Drop the reference taken in __tcache_lru_isolate. */
+		tcache_put_page(pages[i]);
+		pages[i] = NULL;
+	}
+	local_irq_enable();
+	return nr_reclaimed;
 }
 
 static noinline_for_stack struct page *
-__tcache_try_to_reclaim_page(struct tcache_lru *lru)
+tcache_try_to_reclaim_page(struct tcache_pool *pool, int nid)
 {
+	struct tcache_nodeinfo *ni = &tcache_nodeinfo[nid];
+	struct tcache_pool_nodeinfo *pni = &pool->nodeinfo[nid];
 	struct page *page = NULL;
-	struct tcache_node *node;
 	unsigned long flags;
+	int ret;
 
 	local_irq_save(flags);
-	page = tcache_lru_isolate(lru, &node);
-	if (page) {
-		if (tcache_page_tree_delete(node, page->index, page)) {
-			/*
-			 * We deleted the page from the tree - drop the
-			 * corresponding reference. Note, we still hold the
-			 * page reference taken in tcache_lru_isolate.
-			 */
-			tcache_put_page(page);
-		} else {
-			/*
-			 * The page was deleted by a concurrent thread - drop
-			 * the reference taken in tcache_lru_isolate and abort.
-			 */
-			tcache_put_page(page);
-			page = NULL;
-		}
-		tcache_put_node_and_pool(node);
+
+	spin_lock(&ni->lock);
+	ret = __tcache_lru_isolate(ni, pni, &page, 1);
+	spin_unlock(&ni->lock);
+
+	if (!ret)
+		goto out;
+
+	if (!__tcache_reclaim_page(page)) {
+		tcache_put_page(page);
+		page = NULL;
 	}
+out:
 	local_irq_restore(flags);
 	return page;
 }
 
-static struct page *tcache_try_to_reclaim_page(void)
-{
-	struct tcache_lru *lru = &tcache_lru_node[numa_node_id()];
-
-	return __tcache_try_to_reclaim_page(lru);
-}
-
-static struct page *tcache_alloc_page(void)
+static struct page *tcache_alloc_page(struct tcache_pool *pool)
 {
 	struct page *page;
 
 	page = alloc_page(TCACHE_GFP_MASK | __GFP_HIGHMEM);
 	if (!page)
-		page = tcache_try_to_reclaim_page();
+		page = tcache_try_to_reclaim_page(pool, numa_node_id());
 
 	return page;
 }
@@ -812,26 +1080,32 @@ static struct page *tcache_alloc_page(void)
 static unsigned long tcache_shrink_count(struct shrinker *shrink,
 					 struct shrink_control *sc)
 {
-	return tcache_lru_node[sc->nid].nr_items;
+	return tcache_nodeinfo[sc->nid].nr_pages;
 }
+
+#define TCACHE_SCAN_BATCH 128UL
+static DEFINE_PER_CPU(struct page * [TCACHE_SCAN_BATCH], tcache_page_vec);
 
 static unsigned long tcache_shrink_scan(struct shrinker *shrink,
 					struct shrink_control *sc)
 {
-	struct tcache_lru *lru = &tcache_lru_node[sc->nid];
-	struct page *page;
-	unsigned long nr_reclaimed = 0;
+	struct page **pages = get_cpu_var(tcache_page_vec);
+	int nr_isolated, nr_reclaimed;
 
-	while (lru->nr_items > 0 && sc->nr_to_scan > 0) {
-		page = __tcache_try_to_reclaim_page(lru);
-		if (page) {
-			tcache_put_page(page);
-			nr_reclaimed++;
-		}
-		sc->nr_to_scan--;
+	BUG_ON(sc->nr_to_scan > TCACHE_SCAN_BATCH);
+
+	nr_isolated = tcache_lru_isolate(sc->nid, pages, sc->nr_to_scan);
+	if (!nr_isolated) {
+		put_cpu_var(tcache_page_vec);
+		return SHRINK_STOP;
 	}
+
+	nr_reclaimed = tcache_reclaim_pages(pages, nr_isolated);
+	put_cpu_var(tcache_page_vec);
+
 	if (current->reclaim_state)
 		current->reclaim_state->reclaimed_slab += nr_reclaimed;
+
 	return nr_reclaimed;
 }
 
@@ -839,6 +1113,7 @@ struct shrinker tcache_shrinker = {
 	.count_objects		= tcache_shrink_count,
 	.scan_objects		= tcache_shrink_scan,
 	.seeks			= 1,
+	.batch			= TCACHE_SCAN_BATCH,
 	.flags			= SHRINKER_NUMA_AWARE,
 };
 
@@ -868,13 +1143,13 @@ static void tcache_cleancache_put_page(int pool_id,
 	node = tcache_get_node_and_pool(pool_id, &key, may_put);
 	if (node) {
 		if (may_put)
-			cache_page = tcache_alloc_page();
+			cache_page = tcache_alloc_page(node->pool);
 		if (cache_page) {
 			copy_highpage(cache_page, page);
 			/* cleancache does not care about failures */
 			(void)tcache_attach_page(node, index, cache_page);
 		} else
-			cache_page = tcache_detach_page(node, index);
+			cache_page = tcache_detach_page(node, index, false);
 		tcache_put_node_and_pool(node);
 	}
 
@@ -891,7 +1166,7 @@ static int tcache_cleancache_get_page(int pool_id,
 
 	node = tcache_get_node_and_pool(pool_id, &key, false);
 	if (node) {
-		cache_page = tcache_detach_page(node, index);
+		cache_page = tcache_detach_page(node, index, true);
 		if (unlikely(cache_page && node->invalidated)) {
 			tcache_put_page(cache_page);
 			cache_page = NULL;
@@ -915,7 +1190,7 @@ static void tcache_cleancache_invalidate_page(int pool_id,
 
 	node = tcache_get_node_and_pool(pool_id, &key, false);
 	if (node) {
-		page = tcache_detach_page(node, index);
+		page = tcache_detach_page(node, index, false);
 		if (page)
 			tcache_put_page(page);
 		tcache_put_node_and_pool(node);
@@ -966,18 +1241,49 @@ static struct kernel_param_ops param_ops_nr_pages = {
 };
 module_param_cb(nr_pages, &param_ops_nr_pages, NULL, 0444);
 
-static int __init tcache_lru_init(void)
+static int param_set_active_interval(const char *val,
+				     const struct kernel_param *kp)
+{
+	int ret;
+	unsigned int msecs;
+
+	ret = kstrtouint(val, 10, &msecs);
+	if (ret)
+		return ret;
+
+	tcache_active_interval = msecs_to_jiffies(msecs);
+	return 0;
+}
+
+static int param_get_active_interval(char *buffer,
+				     const struct kernel_param *kp)
+{
+	unsigned int msecs;
+
+	msecs = jiffies_to_msecs(tcache_active_interval);
+	return sprintf(buffer, "%u", msecs);
+}
+
+static struct kernel_param_ops param_ops_active_interval = {
+	.set = param_set_active_interval,
+	.get = param_get_active_interval,
+};
+module_param_cb(active_interval_msecs, &param_ops_active_interval, NULL, 0644);
+
+static int __init tcache_nodeinfo_init(void)
 {
 	int i;
+	struct tcache_nodeinfo *ni;
 
-	tcache_lru_node = kcalloc(nr_node_ids, sizeof(*tcache_lru_node),
+	tcache_nodeinfo = kcalloc(nr_node_ids, sizeof(*tcache_nodeinfo),
 				  GFP_KERNEL);
-	if (!tcache_lru_node)
+	if (!tcache_nodeinfo)
 		return -ENOMEM;
 
 	for (i = 0; i < nr_node_ids; i++) {
-		spin_lock_init(&tcache_lru_node[i].lock);
-		INIT_LIST_HEAD(&tcache_lru_node[i].list);
+		ni = &tcache_nodeinfo[i];
+		spin_lock_init(&ni->lock);
+		ni->reclaim_tree = RB_ROOT;
 	}
 	return 0;
 }
@@ -989,7 +1295,7 @@ static int __init tcache_init(void)
 	if (!tcache_enabled)
 		return 0;
 
-	err = tcache_lru_init();
+	err = tcache_nodeinfo_init();
 	if (err)
 		goto out_fail;
 
@@ -1011,7 +1317,7 @@ static int __init tcache_init(void)
 out_unregister_shrinker:
 	unregister_shrinker(&tcache_shrinker);
 out_free_lru:
-	kfree(tcache_lru_node);
+	kfree(tcache_nodeinfo);
 out_fail:
 	return err;
 }
