@@ -1860,7 +1860,7 @@ static int ve_aio_set_tail(struct kioctx *ctx, unsigned tail)
 	mutex_lock(&ctx->ring_lock);
 	spin_lock_irq(&ctx->completion_lock);
 
-	ret = -EINVAL;
+	ret = -E2BIG;
 	if (tail >= ctx->nr_events)
 		goto out;
 
@@ -1901,14 +1901,14 @@ int ve_aio_ioctl(struct task_struct *task, unsigned int cmd, unsigned long arg)
 	int ret;
 
 	if (task != current)
-		return -EINVAL;
+		return -EBADF;
 
 	if (copy_from_user(&karg, (void *)arg, sizeof(karg)))
 		return -EFAULT;
 
 	ioctx = lookup_ioctx(karg.ctx_id);
 	if (!ioctx)
-		return -EINVAL;
+		return -ESRCH;
 
 	switch (cmd) {
 		case VE_AIO_IOC_SET_TAIL:
