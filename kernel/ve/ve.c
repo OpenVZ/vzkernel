@@ -700,6 +700,28 @@ static void free_ve_devmnts(struct ve_struct *ve)
 	}
 }
 
+static bool ve_task_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
+{
+	struct task_struct *task = cgroup_taskset_first(tset);
+
+	if (cgroup_taskset_size(tset) > 1) {
+		pr_err_ratelimited("ve_cgroup#%s: attach of a thread group is not supported\n",
+				cg->name->name);
+		return false;
+	}
+	if (!thread_group_leader(task)) {
+		pr_err_ratelimited("ve_cgroup#%s: only thread group leader is allowed to attach\n",
+				cg->name->name);
+		return false;
+	}
+	if (!thread_group_empty(task)) {
+		pr_err_ratelimited("ve_cgroup#%s: only single-threaded process is allowed to attach\n",
+				cg->name->name);
+		return false;
+	}
+	return true;
+}
+
 static void ve_destroy(struct cgroup *cg)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
@@ -723,31 +745,18 @@ static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 	if (!ve->veid)
 		return -ENOENT;
 
-	/*
-	 * We allow only one single-threaded process to attach
-	 * into a container, which usually stands for "init"
-	 * process. The rest of processes should be forked
-	 * from the "init".
-	 */
-	if (cgroup_taskset_size(tset) == 1) {
-		struct task_struct *task = cgroup_taskset_first(tset);
-
-		if (!thread_group_leader(task) ||
-		    !thread_group_empty(task))
-			return -EINVAL;
-
-		/*
-		 * XXX Still permit attaching kernel threads
-		 * for this container. Wonder if we really need it,
-		 * looks like some legacy code chunk.
-		 */
-		if (!ve->is_running && (ve->ve_ns || nr_threads_ve(ve))) {
-			if (!(task->flags & PF_KTHREAD))
-				return -EPIPE;
-		}
-	} else
+	if (!ve_task_can_attach(cg, tset))
 		return -EINVAL;
 
+	/*
+	 * XXX Still permit attaching kernel threads
+	 * for this container. Wonder if we really need it,
+	 * looks like some legacy code chunk.
+	 */
+	if (!ve->is_running && (ve->ve_ns || nr_threads_ve(ve))) {
+		if (!(cgroup_taskset_first(tset)->flags & PF_KTHREAD))
+			return -EPIPE;
+	}
 	return 0;
 }
 
