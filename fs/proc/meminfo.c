@@ -75,6 +75,10 @@ static int meminfo_proc_show_mi(struct seq_file *m, struct meminfo *mi)
 	return 0;
 }
 
+#ifdef CONFIG_TCACHE
+extern unsigned long get_nr_tcache_pages(void);
+#endif
+
 int meminfo_proc_show_ub(struct seq_file *m, void *v,
 		struct user_beancounter *ub, unsigned long meminfo_val)
 {
@@ -147,6 +151,10 @@ int meminfo_proc_show_ub(struct seq_file *m, void *v,
 	 */
 	available += global_page_state(NR_SLAB_RECLAIMABLE) -
 		     min(global_page_state(NR_SLAB_RECLAIMABLE) / 2, wmark_low);
+
+#ifdef CONFIG_TCACHE
+	available += get_nr_tcache_pages();
+#endif
 
 	if (available < 0)
 		available = 0;
