@@ -723,9 +723,6 @@ static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 	if (!ve->veid)
 		return -ENOENT;
 
-	if (ve->is_locked)
-		return -EBUSY;
-
 	/*
 	 * We allow only one single-threaded process to attach
 	 * into a container, which usually stands for "init"
