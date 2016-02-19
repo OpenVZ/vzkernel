@@ -235,7 +235,6 @@ static void kvm_ioapic_inject_all(struct kvm_ioapic *ioapic, unsigned long irr)
 	kvm_rtc_eoi_tracking_restore_all(ioapic);
 }
 
-
 void kvm_ioapic_scan_entry(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap)
 {
 	struct kvm_ioapic *ioapic = vcpu->kvm->arch.vioapic;
