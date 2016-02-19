@@ -722,6 +722,43 @@ static bool ve_task_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 	return true;
 }
 
+static int ve_is_attachable(struct cgroup *cg, struct cgroup_taskset *tset)
+{
+	struct task_struct *task = cgroup_taskset_first(tset);
+	struct ve_struct *ve = cgroup_ve(cg);
+
+	if (ve->is_running)
+		return 0;
+
+	if (!ve->veid) {
+		pr_err_ratelimited("ve_cgroup#%s: container's veid is not set\n",
+				cg->name->name);
+		return -EINVAL;
+	}
+
+	if (task->flags & PF_KTHREAD) {
+		/* Paranoia check: allow to attach kthread only, if cgroup is
+		 * not empty.
+		 * This check is required for kthreadd, which is created on CT
+		 * start.
+		 */
+		if (nr_threads_ve(ve))
+			return 0;
+		pr_err_ratelimited("ve_cgroup#%s: can't attach kthread - empty group\n",
+				cg->name->name);
+	} else {
+		/* In case of generic task only one is allowed to enter to
+		 * non-running container: init.
+		 */
+		if (nr_threads_ve(ve) == 0)
+			return 0;
+		pr_err_ratelimited("ve_cgroup#%s: can't attach more than 1 task to "
+				"non-running container\n",
+				cg->name->name);
+	}
+	return -EINVAL;
+}
+
 static void ve_destroy(struct cgroup *cg)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
@@ -740,24 +777,10 @@ static void ve_destroy(struct cgroup *cg)
 
 static int ve_can_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 {
-	struct ve_struct *ve = cgroup_ve(cg);
-
-	if (!ve->veid)
-		return -ENOENT;
-
 	if (!ve_task_can_attach(cg, tset))
 		return -EINVAL;
 
-	/*
-	 * XXX Still permit attaching kernel threads
-	 * for this container. Wonder if we really need it,
-	 * looks like some legacy code chunk.
-	 */
-	if (!ve->is_running && (ve->ve_ns || nr_threads_ve(ve))) {
-		if (!(cgroup_taskset_first(tset)->flags & PF_KTHREAD))
-			return -EPIPE;
-	}
-	return 0;
+	return ve_is_attachable(cg, tset);
 }
 
 static void ve_update_cpuid_faulting(void *dummy)
