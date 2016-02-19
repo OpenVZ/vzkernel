@@ -6270,22 +6270,18 @@ static void vcpu_scan_ioapic(struct kvm_vcpu *vcpu)
 	u64 ioapic_eoi_exit_bitmap[4];
 	u64 eoi_exit_bitmap[4];
 
-	u32 tmr[8];
-
 	if (!kvm_apic_hw_enabled(vcpu->arch.apic))
 		return;
 
 	memset(eoi_exit_bitmap, 0, 32);
-	memset(tmr, 0, 32);
 
 	if (vcpu->arch.apicv_active)
 		kvm_x86_ops->sync_pir_to_irr(vcpu);
 
-	kvm_ioapic_scan_entry(vcpu, ioapic_eoi_exit_bitmap, tmr);
+	kvm_ioapic_scan_entry(vcpu, ioapic_eoi_exit_bitmap);
 	bitmap_or((ulong *)eoi_exit_bitmap, (ulong *)ioapic_eoi_exit_bitmap,
 		  vcpu_to_synic(vcpu)->vec_bitmap, 256);
 	kvm_x86_ops->load_eoi_exitmap(vcpu, eoi_exit_bitmap);
-	kvm_apic_update_tmr(vcpu, tmr);
 }
 
 void kvm_vcpu_reload_apic_access_page(struct kvm_vcpu *vcpu)
