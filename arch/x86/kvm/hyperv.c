@@ -1077,7 +1077,7 @@ int kvm_hv_hypercall(struct kvm_vcpu *vcpu)
 	 */
 	if (kvm_x86_ops->get_cpl(vcpu) != 0 || !is_protmode(vcpu)) {
 		kvm_queue_exception(vcpu, UD_VECTOR);
-		return 0;
+		return 1;
 	}
 
 	kvm_x86_ops->get_cs_db_l_bits(vcpu, &cs_db, &cs_l);
