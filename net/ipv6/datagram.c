@@ -107,16 +107,16 @@ ipv4_connected:
 		if (err)
 			goto out;
 
-		ipv6_addr_set_v4mapped(inet->inet_daddr, &np->daddr);
+		ipv6_addr_set_v4mapped(inet->inet_daddr, &sk->sk_v6_daddr);
 
 		if (ipv6_addr_any(&np->saddr) ||
 		    ipv6_mapped_addr_any(&np->saddr))
 			ipv6_addr_set_v4mapped(inet->inet_saddr, &np->saddr);
 
-		if (ipv6_addr_any(&np->rcv_saddr) ||
-		    ipv6_mapped_addr_any(&np->rcv_saddr)) {
+		if (ipv6_addr_any(&sk->sk_v6_rcv_saddr) ||
+		    ipv6_mapped_addr_any(&sk->sk_v6_rcv_saddr)) {
 			ipv6_addr_set_v4mapped(inet->inet_rcv_saddr,
-					       &np->rcv_saddr);
+					       &sk->sk_v6_rcv_saddr);
 			if (sk->sk_prot->rehash)
 				sk->sk_prot->rehash(sk);
 		}
@@ -145,7 +145,7 @@ ipv4_connected:
 		}
 	}
 
-	np->daddr = *daddr;
+	sk->sk_v6_daddr = *daddr;
 	np->flow_label = fl6.flowlabel;
 
 	inet->inet_dport = usin->sin6_port;
@@ -156,7 +156,7 @@ ipv4_connected:
 	 */
 
 	fl6.flowi6_proto = sk->sk_protocol;
-	fl6.daddr = np->daddr;
+	fl6.daddr = sk->sk_v6_daddr;
 	fl6.saddr = np->saddr;
 	fl6.flowi6_oif = sk->sk_bound_dev_if;
 	fl6.flowi6_mark = sk->sk_mark;
@@ -171,7 +171,7 @@ ipv4_connected:
 	opt = flowlabel ? flowlabel->opt : np->opt;
 	final_p = fl6_update_dst(&fl6, opt, &final);
 
-	dst = ip6_dst_lookup_flow(sk, &fl6, final_p, true);
+	dst = ip6_dst_lookup_flow(sk, &fl6, final_p);
 	err = 0;
 	if (IS_ERR(dst)) {
 		err = PTR_ERR(dst);
@@ -183,16 +183,16 @@ ipv4_connected:
 	if (ipv6_addr_any(&np->saddr))
 		np->saddr = fl6.saddr;
 
-	if (ipv6_addr_any(&np->rcv_saddr)) {
-		np->rcv_saddr = fl6.saddr;
+	if (ipv6_addr_any(&sk->sk_v6_rcv_saddr)) {
+		sk->sk_v6_rcv_saddr = fl6.saddr;
 		inet->inet_rcv_saddr = LOOPBACK4_IPV6;
 		if (sk->sk_prot->rehash)
 			sk->sk_prot->rehash(sk);
 	}
 
 	ip6_dst_store(sk, dst,
-		      ipv6_addr_equal(&fl6.daddr, &np->daddr) ?
-		      &np->daddr : NULL,
+		      ipv6_addr_equal(&fl6.daddr, &sk->sk_v6_daddr) ?
+		      &sk->sk_v6_daddr : NULL,
 #ifdef CONFIG_IPV6_SUBTREES
 		      ipv6_addr_equal(&fl6.saddr, &np->saddr) ?
 		      &np->saddr :
@@ -200,6 +200,7 @@ ipv4_connected:
 		      NULL);
 
 	sk->sk_state = TCP_ESTABLISHED;
+	ip6_set_txhash(sk);
 out:
 	fl6_sock_release(flowlabel);
 	return err;
@@ -318,7 +319,7 @@ void ipv6_local_rxpmtu(struct sock *sk, struct flowi6 *fl6, u32 mtu)
 /*
  *	Handle MSG_ERRQUEUE
  */
-int ipv6_recv_error(struct sock *sk, struct msghdr *msg, int len)
+int ipv6_recv_error(struct sock *sk, struct msghdr *msg, int len, int *addr_len)
 {
 	struct ipv6_pinfo *np = inet6_sk(sk);
 	struct sock_exterr_skb *serr;
@@ -369,6 +370,7 @@ int ipv6_recv_error(struct sock *sk, struct msghdr *msg, int len)
 					       &sin->sin6_addr);
 			sin->sin6_scope_id = 0;
 		}
+		*addr_len = sizeof(*sin);
 	}
 
 	memcpy(&errhdr.ee, &serr->ee, sizeof(struct sock_extended_err));
@@ -377,6 +379,7 @@ int ipv6_recv_error(struct sock *sk, struct msghdr *msg, int len)
 	if (serr->ee.ee_origin != SO_EE_ORIGIN_LOCAL) {
 		sin->sin6_family = AF_INET6;
 		sin->sin6_flowinfo = 0;
+		sin->sin6_port = 0;
 		if (skb->protocol == htons(ETH_P_IPV6)) {
 			sin->sin6_addr = ipv6_hdr(skb)->saddr;
 			if (np->rxopt.all)
@@ -423,7 +426,8 @@ EXPORT_SYMBOL_GPL(ipv6_recv_error);
 /*
  *	Handle IPV6_RECVPATHMTU
  */
-int ipv6_recv_rxpmtu(struct sock *sk, struct msghdr *msg, int len)
+int ipv6_recv_rxpmtu(struct sock *sk, struct msghdr *msg, int len,
+		     int *addr_len)
 {
 	struct ipv6_pinfo *np = inet6_sk(sk);
 	struct sk_buff *skb;
@@ -457,6 +461,7 @@ int ipv6_recv_rxpmtu(struct sock *sk, struct msghdr *msg, int len)
 		sin->sin6_port = 0;
 		sin->sin6_scope_id = mtu_info.ip6m_addr.sin6_scope_id;
 		sin->sin6_addr = mtu_info.ip6m_addr.sin6_addr;
+		*addr_len = sizeof(*sin);
 	}
 
 	put_cmsg(msg, SOL_IPV6, IPV6_PATHMTU, sizeof(mtu_info), &mtu_info);
@@ -879,3 +884,29 @@ exit_f:
 	return err;
 }
 EXPORT_SYMBOL_GPL(ip6_datagram_send_ctl);
+
+void ip6_dgram_sock_seq_show(struct seq_file *seq, struct sock *sp,
+			     __u16 srcp, __u16 destp, int bucket)
+{
+	const struct in6_addr *dest, *src;
+
+	dest  = &sp->sk_v6_daddr;
+	src   = &sp->sk_v6_rcv_saddr;
+	seq_printf(seq,
+		   "%5d: %08X%08X%08X%08X:%04X %08X%08X%08X%08X:%04X "
+		   "%02X %08X:%08X %02X:%08lX %08X %5u %8d %lu %d %pK %d\n",
+		   bucket,
+		   src->s6_addr32[0], src->s6_addr32[1],
+		   src->s6_addr32[2], src->s6_addr32[3], srcp,
+		   dest->s6_addr32[0], dest->s6_addr32[1],
+		   dest->s6_addr32[2], dest->s6_addr32[3], destp,
+		   sp->sk_state,
+		   sk_wmem_alloc_get(sp),
+		   sk_rmem_alloc_get(sp),
+		   0, 0L, 0,
+		   from_kuid_munged(seq_user_ns(seq), sock_i_uid(sp)),
+		   0,
+		   sock_i_ino(sp),
+		   atomic_read(&sp->sk_refcnt), sp,
+		   atomic_read(&sp->sk_drops));
+}

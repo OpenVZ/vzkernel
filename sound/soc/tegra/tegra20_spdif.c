@@ -213,7 +213,7 @@ static bool tegra20_spdif_wr_rd_reg(struct device *dev, unsigned int reg)
 		return true;
 	default:
 		return false;
-	};
+	}
 }
 
 static bool tegra20_spdif_volatile_reg(struct device *dev, unsigned int reg)
@@ -234,7 +234,7 @@ static bool tegra20_spdif_volatile_reg(struct device *dev, unsigned int reg)
 		return true;
 	default:
 		return false;
-	};
+	}
 }
 
 static bool tegra20_spdif_precious_reg(struct device *dev, unsigned int reg)
@@ -247,7 +247,7 @@ static bool tegra20_spdif_precious_reg(struct device *dev, unsigned int reg)
 		return true;
 	default:
 		return false;
-	};
+	}
 }
 
 static const struct regmap_config tegra20_spdif_regmap_config = {
@@ -323,8 +323,8 @@ static int tegra20_spdif_platform_probe(struct platform_device *pdev)
 	}
 
 	spdif->playback_dma_data.addr = mem->start + TEGRA20_SPDIF_DATA_OUT;
-	spdif->capture_dma_data.addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
-	spdif->capture_dma_data.maxburst = 4;
+	spdif->playback_dma_data.addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
+	spdif->playback_dma_data.maxburst = 4;
 	spdif->playback_dma_data.slave_id = dmareq->start;
 
 	pm_runtime_enable(&pdev->dev);

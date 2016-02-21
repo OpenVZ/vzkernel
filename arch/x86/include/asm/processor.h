@@ -27,9 +27,10 @@ struct mm_struct;
 #include <linux/cache.h>
 #include <linux/threads.h>
 #include <linux/math64.h>
-#include <linux/init.h>
 #include <linux/err.h>
 #include <linux/irqflags.h>
+
+#include <linux/rh_kabi.h>
 
 /*
  * We handle most unaligned accesses in hardware.  On the other hand
@@ -73,6 +74,13 @@ extern u16 __read_mostly tlb_lld_4k[NR_INFO];
 extern u16 __read_mostly tlb_lld_2m[NR_INFO];
 extern u16 __read_mostly tlb_lld_4m[NR_INFO];
 extern s8  __read_mostly tlb_flushall_shift;
+
+/* this struct is NEVER under kabi restrictions */
+struct rh_cpuinfo_x86 {
+	/* Cache QoS architectural values: */
+	int			x86_cache_max_rmid;
+	int			x86_cache_occ_scale;
+};
 
 /*
  *  CPU type and hardware bug flags. Kept separately for each CPU.
@@ -145,6 +153,7 @@ struct cpuinfo_x86 {
  * capabilities of CPUs
  */
 extern struct cpuinfo_x86	boot_cpu_data;
+extern struct rh_cpuinfo_x86	rh_boot_cpu_data;
 extern struct cpuinfo_x86	new_cpu_data;
 
 extern struct tss_struct	doublefault_tss;
@@ -153,7 +162,9 @@ extern __u32			cpu_caps_set[NCAPINTS];
 
 #ifdef CONFIG_SMP
 DECLARE_PER_CPU_SHARED_ALIGNED(struct cpuinfo_x86, cpu_info);
+DECLARE_PER_CPU_SHARED_ALIGNED(struct rh_cpuinfo_x86, rh_cpu_info);
 #define cpu_data(cpu)		per_cpu(cpu_info, cpu)
+#define rh_cpu_data(cpu)	per_cpu(rh_cpu_info, cpu)
 #else
 #define cpu_info		boot_cpu_data
 #define cpu_data(cpu)		boot_cpu_data
@@ -369,6 +380,26 @@ struct ymmh_struct {
 	u32 ymmh_space[64];
 };
 
+struct lwp_struct {
+	u64 lwpcb_addr;
+	u32 flags;
+	u32 buf_head_offset;
+	u64 buf_base;
+	u32 buf_size;
+	u32 filters;
+	u64 saved_event_record[4];
+	u32 event_counter[16];
+};
+
+struct bndregs_struct {
+	u64 bndregs[8];
+} __packed;
+
+struct bndcsr_struct {
+	u64 cfg_reg_u;
+	u64 status_reg;
+} __packed;
+
 struct xsave_hdr_struct {
 	u64 xstate_bv;
 	u64 reserved1[2];
@@ -379,6 +410,9 @@ struct xsave_struct {
 	struct i387_fxsave_struct i387;
 	struct xsave_hdr_struct xsave_hdr;
 	struct ymmh_struct ymmh;
+	RH_KABI_EXTEND(struct lwp_struct lwp)
+	RH_KABI_EXTEND(struct bndregs_struct bndregs)
+	RH_KABI_EXTEND(struct bndcsr_struct bndcsr)
 	/* new processor state extensions will go here */
 } __attribute__ ((packed, aligned (64)));
 
@@ -690,29 +724,6 @@ static inline void sync_core(void)
 #endif
 }
 
-static inline void __monitor(const void *eax, unsigned long ecx,
-			     unsigned long edx)
-{
-	/* "monitor %eax, %ecx, %edx;" */
-	asm volatile(".byte 0x0f, 0x01, 0xc8;"
-		     :: "a" (eax), "c" (ecx), "d"(edx));
-}
-
-static inline void __mwait(unsigned long eax, unsigned long ecx)
-{
-	/* "mwait %eax, %ecx;" */
-	asm volatile(".byte 0x0f, 0x01, 0xc9;"
-		     :: "a" (eax), "c" (ecx));
-}
-
-static inline void __sti_mwait(unsigned long eax, unsigned long ecx)
-{
-	trace_hardirqs_on();
-	/* "mwait %eax, %ecx;" */
-	asm volatile("sti; .byte 0x0f, 0x01, 0xc9;"
-		     :: "a" (eax), "c" (ecx));
-}
-
 extern void select_idle_routine(const struct cpuinfo_x86 *c);
 extern void init_amd_e400_c1e_mask(void);
 
@@ -941,33 +952,19 @@ extern int set_tsc_mode(unsigned int val);
 
 extern u16 amd_get_nb_id(int cpu);
 
-struct aperfmperf {
-	u64 aperf, mperf;
-};
-
-static inline void get_aperfmperf(struct aperfmperf *am)
+static inline uint32_t hypervisor_cpuid_base(const char *sig, uint32_t leaves)
 {
-	WARN_ON_ONCE(!boot_cpu_has(X86_FEATURE_APERFMPERF));
+	uint32_t base, eax, signature[3];
 
-	rdmsrl(MSR_IA32_APERF, am->aperf);
-	rdmsrl(MSR_IA32_MPERF, am->mperf);
-}
+	for (base = 0x40000000; base < 0x40010000; base += 0x100) {
+		cpuid(base, &eax, &signature[0], &signature[1], &signature[2]);
 
-#define APERFMPERF_SHIFT 10
+		if (!memcmp(sig, signature, 12) &&
+		    (leaves == 0 || ((eax - base) >= leaves)))
+			return base;
+	}
 
-static inline
-unsigned long calc_aperfmperf_ratio(struct aperfmperf *old,
-				    struct aperfmperf *new)
-{
-	u64 aperf = new->aperf - old->aperf;
-	u64 mperf = new->mperf - old->mperf;
-	unsigned long ratio = aperf;
-
-	mperf >>= APERFMPERF_SHIFT;
-	if (mperf)
-		ratio = div64_u64(aperf, mperf);
-
-	return ratio;
+	return 0;
 }
 
 extern unsigned long arch_align_stack(unsigned long sp);

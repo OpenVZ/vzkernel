@@ -60,7 +60,6 @@
 #include <linux/jump_label.h>
 #include <linux/pfn.h>
 #include <linux/bsearch.h>
-#include <linux/fips.h>
 #include <uapi/linux/module.h>
 #include "module-internal.h"
 
@@ -106,6 +105,40 @@ static LIST_HEAD(modules);
 #ifdef CONFIG_KGDB_KDB
 struct list_head *kdb_modules = &modules; /* kdb needs the list of modules */
 #endif /* CONFIG_KGDB_KDB */
+
+/* extended module structure for RHEL */
+struct module_ext {
+	struct list_head next;
+	struct module *module; /* "parent" struct */
+	char *rhelversion;
+};
+DEFINE_MUTEX(module_ext_mutex);
+LIST_HEAD(modules_ext);
+
+/* needs to take module_ext_mutex */
+struct module_ext *find_module_ext(struct module *mod)
+{
+	struct module_ext *mod_ext;
+
+	list_for_each_entry(mod_ext, &modules_ext, next)
+		if (mod == mod_ext->module)
+			return mod_ext;
+	BUG_ON(1); /* this can't happen */
+}
+
+bool check_module_rhelversion(struct module *mod, char *version)
+{
+	struct module_ext *mod_ext;
+	bool ret;
+
+	ret = false;
+	mutex_lock(&module_ext_mutex);
+	mod_ext = find_module_ext(mod);
+	if (!strncmp(mod_ext->rhelversion, version, strlen(version)))
+		ret = true;
+	mutex_unlock(&module_ext_mutex);
+	return ret;
+}
 
 #ifdef CONFIG_MODULE_SIG
 #ifdef CONFIG_MODULE_SIG_FORCE
@@ -615,8 +648,57 @@ static struct module_attribute modinfo_##field = {                    \
 	.free = free_modinfo_##field,                                 \
 };
 
+#define MODEXTINFO_ATTR(field)	\
+static void setup_modinfo_##field(struct module *mod, const char *s)  \
+{                                                                     \
+	struct module_ext *mod_ext;                                   \
+	mutex_lock(&module_ext_mutex);                                \
+	mod_ext = find_module_ext(mod);                               \
+	mod_ext->field = kstrdup(s, GFP_KERNEL);                      \
+	mutex_unlock(&module_ext_mutex);                              \
+}                                                                     \
+static ssize_t show_modinfo_##field(struct module_attribute *mattr,   \
+			struct module_kobject *mk, char *buffer)      \
+{                                                                     \
+	ssize_t ret;                                                  \
+	struct module_ext *mod_ext;                                   \
+	mutex_lock(&module_ext_mutex);                                \
+	mod_ext = find_module_ext(mk->mod);                           \
+	ret = sprintf(buffer, "%s\n", mod_ext->field);                \
+	mutex_unlock(&module_ext_mutex);                              \
+	return ret;                                                   \
+}                                                                     \
+static int modinfo_##field##_exists(struct module *mod)               \
+{                                                                     \
+	int ret;                                                      \
+	struct module_ext *mod_ext;                                   \
+	mutex_lock(&module_ext_mutex);                                \
+	mod_ext = find_module_ext(mod);                               \
+	ret = (mod_ext->field != NULL);                               \
+	mutex_unlock(&module_ext_mutex);                              \
+	return ret;                                                   \
+}                                                                     \
+static void free_modinfo_##field(struct module *mod)                  \
+{                                                                     \
+	struct module_ext *mod_ext;                                   \
+	mutex_lock(&module_ext_mutex);                                \
+	mod_ext = find_module_ext(mod);                               \
+	kfree(mod_ext->field);                                        \
+	mod_ext->field = NULL;                                        \
+	mutex_unlock(&module_ext_mutex);                              \
+}                                                                     \
+static struct module_attribute modinfo_##field = {                    \
+	.attr = { .name = __stringify(field), .mode = 0444 },         \
+	.show = show_modinfo_##field,                                 \
+	.setup = setup_modinfo_##field,                               \
+	.test = modinfo_##field##_exists,                             \
+	.free = free_modinfo_##field,                                 \
+};
+
+
 MODINFO_ATTR(version);
 MODINFO_ATTR(srcversion);
+MODEXTINFO_ATTR(rhelversion);
 
 static char last_unloaded_module[MODULE_NAME_LEN+1];
 
@@ -1040,6 +1122,8 @@ static size_t module_flags_taint(struct module *mod, char *buf)
 		buf[l++] = 'F';
 	if (mod->taints & (1 << TAINT_CRAP))
 		buf[l++] = 'C';
+	if (mod->taints & (1 << TAINT_UNSIGNED_MODULE))
+		buf[l++] = 'E';
 	/*
 	 * TAINT_FORCED_RMMOD: could be added.
 	 * TAINT_UNSAFE_SMP, TAINT_MACHINE_CHECK, TAINT_BAD_PAGE don't
@@ -1121,6 +1205,7 @@ static struct module_attribute *modinfo_attrs[] = {
 	&module_uevent,
 	&modinfo_version,
 	&modinfo_srcversion,
+	&modinfo_rhelversion,
 	&modinfo_initstate,
 	&modinfo_coresize,
 	&modinfo_initsize,
@@ -1860,13 +1945,17 @@ void __weak module_arch_cleanup(struct module *mod)
 /* Free a module, remove from lists, etc. */
 static void free_module(struct module *mod)
 {
+	struct module_ext *mod_ext;
+
 	trace_module_free(mod);
 
 	mod_sysfs_teardown(mod);
 
 	/* We leave it in list to prevent duplicate loads, but make sure
 	 * that noone uses it while it's being deconstructed. */
+	mutex_lock(&module_mutex);
 	mod->state = MODULE_STATE_UNFORMED;
+	mutex_unlock(&module_mutex);
 
 	/* Remove dynamic debug info */
 	ddebug_remove_module(mod->name);
@@ -1885,13 +1974,18 @@ static void free_module(struct module *mod)
 	stop_machine(__unlink_module, mod, NULL);
 	mutex_unlock(&module_mutex);
 
+	mutex_lock(&module_ext_mutex);
+	mod_ext = find_module_ext(mod);
+	list_del(&mod_ext->next);
+	mutex_unlock(&module_ext_mutex);
+
 	/* This may be NULL, but that's OK */
 	unset_module_init_ro_nx(mod);
 	module_free(mod, mod->module_init);
 	kfree(mod->args);
 	percpu_modfree(mod);
 
-	/* Free lock-classes: */
+	/* Free lock-classes; relies on the preceding sync_rcu(). */
 	lockdep_free_key_range(mod->module_core, mod->core_size);
 
 	/* Finally, free the core (containing the module structure) */
@@ -2468,10 +2562,7 @@ static int module_sig_check(struct load_info *info)
 	}
 
 	/* Not having a signature is only an error if we're strict. */
-	if (err < 0 && fips_enabled)
-		panic("Module verification failed with error %d in FIPS mode\n",
-		      err);
-	if (err == -ENOKEY && !sig_enforce)
+	if ((err == -ENOKEY && !sig_enforce) && (get_securelevel() <= 0))
 		err = 0;
 
 	return err;
@@ -2723,7 +2814,7 @@ static int check_modinfo(struct module *mod, struct load_info *info, int flags)
 	return 0;
 }
 
-static void find_module_sections(struct module *mod, struct load_info *info)
+static int find_module_sections(struct module *mod, struct load_info *info)
 {
 	mod->kp = section_objs(info, "__param",
 			       sizeof(*mod->kp), &mod->num_kp);
@@ -2753,6 +2844,18 @@ static void find_module_sections(struct module *mod, struct load_info *info)
 #ifdef CONFIG_CONSTRUCTORS
 	mod->ctors = section_objs(info, ".ctors",
 				  sizeof(*mod->ctors), &mod->num_ctors);
+	if (!mod->ctors)
+		mod->ctors = section_objs(info, ".init_array",
+				sizeof(*mod->ctors), &mod->num_ctors);
+	else if (find_sec(info, ".init_array")) {
+		/*
+		 * This shouldn't happen with same compiler and binutils
+		 * building all parts of the module.
+		 */
+		printk(KERN_WARNING "%s: has both .ctors and .init_array.\n",
+		       mod->name);
+		return -EINVAL;
+	}
 #endif
 
 #ifdef CONFIG_TRACEPOINTS
@@ -2791,6 +2894,8 @@ static void find_module_sections(struct module *mod, struct load_info *info)
 
 	info->debug = section_objs(info, "__verbose",
 				   sizeof(*info->debug), &info->num_debug);
+
+	return 0;
 }
 
 static int move_module(struct module *mod, struct load_info *info)
@@ -2927,7 +3032,6 @@ static struct module *layout_and_allocate(struct load_info *info, int flags)
 {
 	/* Module within temporary copy. */
 	struct module *mod;
-	Elf_Shdr *pcpusec;
 	int err;
 
 	mod = setup_load_info(info, flags);
@@ -2942,17 +3046,10 @@ static struct module *layout_and_allocate(struct load_info *info, int flags)
 	err = module_frob_arch_sections(info->hdr, info->sechdrs,
 					info->secstrings, mod);
 	if (err < 0)
-		goto out;
+		return ERR_PTR(err);
 
-	pcpusec = &info->sechdrs[info->index.pcpu];
-	if (pcpusec->sh_size) {
-		/* We have a special allocation for this section. */
-		err = percpu_modalloc(mod,
-				      pcpusec->sh_size, pcpusec->sh_addralign);
-		if (err)
-			goto out;
-		pcpusec->sh_flags &= ~(unsigned long)SHF_ALLOC;
-	}
+	/* We will do a special allocation for per-cpu sections later. */
+	info->sechdrs[info->index.pcpu].sh_flags &= ~(unsigned long)SHF_ALLOC;
 
 	/* Determine total sizes, and put offsets in sh_entsize.  For now
 	   this is done generically; there doesn't appear to be any
@@ -2963,17 +3060,22 @@ static struct module *layout_and_allocate(struct load_info *info, int flags)
 	/* Allocate and move to the final place */
 	err = move_module(mod, info);
 	if (err)
-		goto free_percpu;
+		return ERR_PTR(err);
 
 	/* Module has been copied to its final place now: return it. */
 	mod = (void *)info->sechdrs[info->index.mod].sh_addr;
 	kmemleak_load_module(mod, info);
 	return mod;
+}
 
-free_percpu:
-	percpu_modfree(mod);
-out:
-	return ERR_PTR(err);
+static int alloc_module_percpu(struct module *mod, struct load_info *info)
+{
+	Elf_Shdr *pcpusec = &info->sechdrs[info->index.pcpu];
+	if (!pcpusec->sh_size)
+		return 0;
+
+	/* We have a special allocation for this section. */
+	return percpu_modalloc(mod, pcpusec->sh_size, pcpusec->sh_addralign);
 }
 
 /* mod is no longer valid after this! */
@@ -3043,21 +3145,6 @@ static int do_init_module(struct module *mod)
 	 * PF_USED_ASYNC.  async_schedule*() will set it.
 	 */
 	current->flags &= ~PF_USED_ASYNC;
-
-	blocking_notifier_call_chain(&module_notify_list,
-			MODULE_STATE_COMING, mod);
-
-	/* Set RO and NX regions for core */
-	set_section_ro_nx(mod->module_core,
-				mod->core_text_size,
-				mod->core_ro_size,
-				mod->core_size);
-
-	/* Set RO and NX regions for init */
-	set_section_ro_nx(mod->module_init,
-				mod->init_text_size,
-				mod->init_ro_size,
-				mod->init_size);
 
 	do_mod_ctors(mod);
 	/* Start the module */
@@ -3189,9 +3276,26 @@ static int complete_formation(struct module *mod, struct load_info *info)
 	/* This relies on module_mutex for list integrity. */
 	module_bug_finalize(info->hdr, info->sechdrs, mod);
 
+	/* Set RO and NX regions for core */
+	set_section_ro_nx(mod->module_core,
+				mod->core_text_size,
+				mod->core_ro_size,
+				mod->core_size);
+
+	/* Set RO and NX regions for init */
+	set_section_ro_nx(mod->module_init,
+				mod->init_text_size,
+				mod->init_ro_size,
+				mod->init_size);
+
 	/* Mark state as coming so strong_try_module_get() ignores us,
 	 * but kallsyms etc. can see us. */
 	mod->state = MODULE_STATE_COMING;
+	mutex_unlock(&module_mutex);
+
+	blocking_notifier_call_chain(&module_notify_list,
+				     MODULE_STATE_COMING, mod);
+	return 0;
 
 out:
 	mutex_unlock(&module_mutex);
@@ -3204,6 +3308,7 @@ static int load_module(struct load_info *info, const char __user *uargs,
 		       int flags)
 {
 	struct module *mod;
+	struct module_ext *mod_ext;
 	long err;
 
 	err = module_sig_check(info);
@@ -3233,9 +3338,14 @@ static int load_module(struct load_info *info, const char __user *uargs,
 			    "%s: module verification failed: signature and/or"
 			    " required key missing - tainting kernel\n",
 			    mod->name);
-		add_taint_module(mod, TAINT_FORCED_MODULE, LOCKDEP_STILL_OK);
+		add_taint_module(mod, TAINT_UNSIGNED_MODULE, LOCKDEP_STILL_OK);
 	}
 #endif
+
+	/* To avoid stressing percpu allocator, do this once we're unique. */
+	err = alloc_module_percpu(mod, info);
+	if (err)
+		goto unlink_mod;
 
 	/* Now module is in final location, initialize linked lists, etc. */
 	err = module_unload_init(mod);
@@ -3244,14 +3354,34 @@ static int load_module(struct load_info *info, const char __user *uargs,
 
 	/* Now we've got everything in the final locations, we can
 	 * find optional sections. */
-	find_module_sections(mod, info);
-
-	err = check_module_license_and_versions(mod);
+	err = find_module_sections(mod, info);
 	if (err)
 		goto free_unload;
 
+	mutex_lock(&module_ext_mutex);
+	mod_ext = kzalloc(sizeof(*mod_ext), GFP_KERNEL);
+	if (!mod_ext) {
+		mutex_unlock(&module_ext_mutex);
+		goto free_unload;
+	}
+	mod_ext->module = mod;
+	INIT_LIST_HEAD(&mod_ext->next);
+	list_add(&mod_ext->next, &modules_ext);
+	mutex_unlock(&module_ext_mutex);
+
+	err = check_module_license_and_versions(mod);
+	if (err)
+		goto free_mod_ext;
+
 	/* Set up MODINFO_ATTR fields */
 	setup_modinfo(mod, info);
+
+	/*
+	 * If the rhelversion field doesn't exist then the module was built
+	 * on RHEL7.0
+	 */
+	if (!mod_ext->rhelversion)
+		mod_ext->rhelversion = kstrdup("7.0", GFP_KERNEL);
 
 	/* Fix up syms, so that st_value is a pointer to location. */
 	err = simplify_symbols(mod, info);
@@ -3276,6 +3406,9 @@ static int load_module(struct load_info *info, const char __user *uargs,
 	}
 
 	dynamic_debug_setup(info->debug, info->num_debug);
+
+	/* Ftrace init must be called in the MODULE_STATE_UNFORMED state */
+	ftrace_module_init(mod);
 
 	/* Finally it's fully formed, ready to start executing. */
 	err = complete_formation(mod, info);
@@ -3306,6 +3439,14 @@ static int load_module(struct load_info *info, const char __user *uargs,
 	mutex_lock(&module_mutex);
 	module_bug_cleanup(mod);
 	mutex_unlock(&module_mutex);
+
+	blocking_notifier_call_chain(&module_notify_list,
+				     MODULE_STATE_GOING, mod);
+
+	/* we can't deallocate the module until we clear memory protection */
+	unset_module_init_ro_nx(mod);
+	unset_module_core_ro_nx(mod);
+
  ddebug_cleanup:
 	dynamic_debug_remove(info->debug);
 	synchronize_sched();
@@ -3314,6 +3455,10 @@ static int load_module(struct load_info *info, const char __user *uargs,
 	module_arch_cleanup(mod);
  free_modinfo:
 	free_modinfo(mod);
+ free_mod_ext:
+	mutex_lock(&module_ext_mutex);
+	list_del(&mod_ext->next);
+	mutex_unlock(&module_ext_mutex);
  free_unload:
 	module_unload_free(mod);
  unlink_mod:
@@ -3323,6 +3468,9 @@ static int load_module(struct load_info *info, const char __user *uargs,
 	wake_up_all(&module_wq);
 	mutex_unlock(&module_mutex);
  free_module:
+	/* Free lock-classes; relies on the preceding sync_rcu() */
+	lockdep_free_key_range(mod->module_core, mod->core_size);
+
 	module_deallocate(mod, info);
  free_copy:
 	free_copy(info);

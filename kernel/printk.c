@@ -258,6 +258,18 @@ static u32 log_buf_len = __LOG_BUF_LEN;
 /* cpu currently holding logbuf_lock */
 static volatile unsigned int logbuf_cpu = UINT_MAX;
 
+/* Return log buffer address */
+char *log_buf_addr_get(void)
+{
+	return log_buf;
+}
+
+/* Return log buffer size */
+u32 log_buf_len_get(void)
+{
+	return log_buf_len;
+}
+
 /* human readable text of the record */
 static char *log_text(const struct log *msg)
 {
@@ -1369,9 +1381,9 @@ static int console_trylock_for_printk(unsigned int cpu)
 		}
 	}
 	logbuf_cpu = UINT_MAX;
+	raw_spin_unlock(&logbuf_lock);
 	if (wake)
 		up(&console_sem);
-	raw_spin_unlock(&logbuf_lock);
 	return retval;
 }
 
@@ -1921,7 +1933,7 @@ void resume_console(void)
  * called when a new CPU comes online (or fails to come up), and ensures
  * that any such output gets printed.
  */
-static int __cpuinit console_cpu_notify(struct notifier_block *self,
+static int console_cpu_notify(struct notifier_block *self,
 	unsigned long action, void *hcpu)
 {
 	switch (action) {
@@ -2241,6 +2253,13 @@ void register_console(struct console *newcon)
 	int i;
 	unsigned long flags;
 	struct console *bcon = NULL;
+
+	if (console_drivers)
+		for_each_console(bcon)
+			if (WARN(bcon == newcon,
+					"console '%s%d' already registered\n",
+					bcon->name, bcon->index))
+				return;
 
 	/*
 	 * before we register a new CON_BOOT console, make sure we don't

@@ -607,7 +607,7 @@ static int shift_arg_pages(struct vm_area_struct *vma, unsigned long shift)
 		return -ENOMEM;
 
 	lru_add_drain();
-	tlb_gather_mmu(&tlb, mm, 0);
+	tlb_gather_mmu(&tlb, mm, old_start, old_end);
 	if (new_end > old_start) {
 		/*
 		 * when the old and new regions overlap clear from new_end.
@@ -624,7 +624,7 @@ static int shift_arg_pages(struct vm_area_struct *vma, unsigned long shift)
 		free_pgd_range(&tlb, old_start, old_end, new_end,
 			vma->vm_next ? vma->vm_next->vm_start : USER_PGTABLES_CEILING);
 	}
-	tlb_finish_mmu(&tlb, new_end, old_end);
+	tlb_finish_mmu(&tlb, old_start, old_end);
 
 	/*
 	 * Shrink the vma to just the new range.  Always succeeds.
@@ -748,18 +748,17 @@ EXPORT_SYMBOL(setup_arg_pages);
 
 #endif /* CONFIG_MMU */
 
-struct file *open_exec(const char *name)
+static struct file *do_open_exec(struct filename *name)
 {
 	struct file *file;
 	int err;
-	struct filename tmp = { .name = name };
 	static const struct open_flags open_exec_flags = {
 		.open_flag = O_LARGEFILE | O_RDONLY | __FMODE_EXEC,
 		.acc_mode = MAY_EXEC | MAY_OPEN,
 		.intent = LOOKUP_OPEN
 	};
 
-	file = do_filp_open(AT_FDCWD, &tmp, &open_exec_flags, LOOKUP_FOLLOW);
+	file = do_filp_open(AT_FDCWD, name, &open_exec_flags, LOOKUP_FOLLOW);
 	if (IS_ERR(file))
 		goto out;
 
@@ -782,6 +781,18 @@ out:
 exit:
 	fput(file);
 	return ERR_PTR(err);
+}
+
+struct file *open_exec(const char *name)
+{
+	struct filename *filename = getname_kernel(name);
+	struct file *f = ERR_CAST(filename);
+
+	if (!IS_ERR(filename)) {
+		f = do_open_exec(filename);
+		putname(filename);
+	}
+	return f;
 }
 EXPORT_SYMBOL(open_exec);
 
@@ -945,9 +956,8 @@ static int de_thread(struct task_struct *tsk)
 		 * Note: The old leader also uses this pid until release_task
 		 *       is called.  Odd but simple and correct.
 		 */
-		detach_pid(tsk, PIDTYPE_PID);
 		tsk->pid = leader->pid;
-		attach_pid(tsk, PIDTYPE_PID,  task_pid(leader));
+		change_pid(tsk, PIDTYPE_PID, task_pid(leader));
 		transfer_pid(leader, tsk, PIDTYPE_PGID);
 		transfer_pid(leader, tsk, PIDTYPE_SID);
 
@@ -1036,13 +1046,13 @@ EXPORT_SYMBOL_GPL(get_task_comm);
  * so that a new one can be started
  */
 
-void set_task_comm(struct task_struct *tsk, char *buf)
+void __set_task_comm(struct task_struct *tsk, char *buf, bool exec)
 {
 	task_lock(tsk);
 	trace_task_rename(tsk, buf);
 	strlcpy(tsk->comm, buf, sizeof(tsk->comm));
 	task_unlock(tsk);
-	perf_event_comm(tsk);
+	perf_event_comm(tsk, exec);
 }
 
 static void filename_to_taskname(char *tcomm, const char *fn, unsigned int len)
@@ -1117,7 +1127,8 @@ void setup_new_exec(struct linux_binprm * bprm)
 	else
 		set_dumpable(current->mm, suid_dumpable);
 
-	set_task_comm(current, bprm->tcomm);
+	perf_event_exec();
+	__set_task_comm(current, bprm->tcomm, true);
 
 	/* Set the new mm task size. We have to do that late because it may
 	 * depend on TIF_32BIT which is only updated in flush_thread() on
@@ -1164,7 +1175,7 @@ int prepare_bprm_creds(struct linux_binprm *bprm)
 	return -ENOMEM;
 }
 
-void free_bprm(struct linux_binprm *bprm)
+static void free_bprm(struct linux_binprm *bprm)
 {
 	free_arg_pages(bprm);
 	if (bprm->cred) {
@@ -1216,6 +1227,53 @@ void install_exec_creds(struct linux_binprm *bprm)
 	mutex_unlock(&current->signal->cred_guard_mutex);
 }
 EXPORT_SYMBOL(install_exec_creds);
+
+static void bprm_fill_uid(struct linux_binprm *bprm)
+{
+	struct inode *inode;
+	unsigned int mode;
+	kuid_t uid;
+	kgid_t gid;
+
+	/* clear any previous set[ug]id data from a previous binary */
+	bprm->cred->euid = current_euid();
+	bprm->cred->egid = current_egid();
+
+	if (bprm->file->f_path.mnt->mnt_flags & MNT_NOSUID)
+		return;
+
+	if (current->no_new_privs)
+		return;
+
+	inode = file_inode(bprm->file);
+	mode = READ_ONCE(inode->i_mode);
+	if (!(mode & (S_ISUID|S_ISGID)))
+		return;
+
+	/* Be careful if suid/sgid is set */
+	mutex_lock(&inode->i_mutex);
+
+	/* reload atomically mode/uid/gid now that lock held */
+	mode = inode->i_mode;
+	uid = inode->i_uid;
+	gid = inode->i_gid;
+	mutex_unlock(&inode->i_mutex);
+
+	/* We ignore suid/sgid if there are no mappings for them in the ns */
+	if (!kuid_has_mapping(bprm->cred->user_ns, uid) ||
+		 !kgid_has_mapping(bprm->cred->user_ns, gid))
+		return;
+
+	if (mode & S_ISUID) {
+		bprm->per_clear |= PER_CLEAR_ON_SETID;
+		bprm->cred->euid = uid;
+	}
+
+	if ((mode & (S_ISGID | S_IXGRP)) == (S_ISGID | S_IXGRP)) {
+		bprm->per_clear |= PER_CLEAR_ON_SETID;
+		bprm->cred->egid = gid;
+	}
+}
 
 /*
  * determine how safe it is to execute the proposed program
@@ -1281,31 +1339,7 @@ int prepare_binprm(struct linux_binprm *bprm)
 	if (bprm->file->f_op == NULL)
 		return -EACCES;
 
-	/* clear any previous set[ug]id data from a previous binary */
-	bprm->cred->euid = current_euid();
-	bprm->cred->egid = current_egid();
-
-	if (!(bprm->file->f_path.mnt->mnt_flags & MNT_NOSUID) &&
-	    !current->no_new_privs &&
-	    kuid_has_mapping(bprm->cred->user_ns, inode->i_uid) &&
-	    kgid_has_mapping(bprm->cred->user_ns, inode->i_gid)) {
-		/* Set-uid? */
-		if (mode & S_ISUID) {
-			bprm->per_clear |= PER_CLEAR_ON_SETID;
-			bprm->cred->euid = inode->i_uid;
-		}
-
-		/* Set-gid? */
-		/*
-		 * If setgid is set but no group execute bit then this
-		 * is a candidate for mandatory locking, not a setgid
-		 * executable.
-		 */
-		if ((mode & (S_ISGID | S_IXGRP)) == (S_ISGID | S_IXGRP)) {
-			bprm->per_clear |= PER_CLEAR_ON_SETID;
-			bprm->cred->egid = inode->i_gid;
-		}
-	}
+	bprm_fill_uid(bprm);
 
 	/* fill in binprm security blob */
 	retval = security_bprm_set_creds(bprm);
@@ -1381,10 +1415,6 @@ int search_binary_handler(struct linux_binprm *bprm)
 	if (retval)
 		return retval;
 
-	retval = audit_bprm(bprm);
-	if (retval)
-		return retval;
-
 	/* Need to fetch pid before load_binary changes it */
 	old_pid = current->pid;
 	rcu_read_lock();
@@ -1405,6 +1435,7 @@ int search_binary_handler(struct linux_binprm *bprm)
 			retval = fn(bprm);
 			bprm->recursion_depth = depth;
 			if (retval >= 0) {
+				audit_bprm(bprm);
 				if (depth == 0) {
 					trace_sched_process_exec(current, old_pid, bprm);
 					ptrace_event(PTRACE_EVENT_EXEC, old_vpid);
@@ -1454,7 +1485,7 @@ EXPORT_SYMBOL(search_binary_handler);
 /*
  * sys_execve() executes a new program.
  */
-static int do_execve_common(const char *filename,
+static int do_execve_common(struct filename *filename,
 				struct user_arg_ptr argv,
 				struct user_arg_ptr envp)
 {
@@ -1464,6 +1495,9 @@ static int do_execve_common(const char *filename,
 	bool clear_in_exec;
 	int retval;
 	const struct cred *cred = current_cred();
+
+	if (IS_ERR(filename))
+		return PTR_ERR(filename);
 
 	/*
 	 * We move the actual failure in case of RLIMIT_NPROC excess from
@@ -1500,7 +1534,7 @@ static int do_execve_common(const char *filename,
 	clear_in_exec = retval;
 	current->in_execve = 1;
 
-	file = open_exec(filename);
+	file = do_open_exec(filename);
 	retval = PTR_ERR(file);
 	if (IS_ERR(file))
 		goto out_unmark;
@@ -1508,8 +1542,7 @@ static int do_execve_common(const char *filename,
 	sched_exec();
 
 	bprm->file = file;
-	bprm->filename = filename;
-	bprm->interp = filename;
+	bprm->filename = bprm->interp = filename->name;
 
 	retval = bprm_mm_init(bprm);
 	if (retval)
@@ -1548,7 +1581,9 @@ static int do_execve_common(const char *filename,
 	current->fs->in_exec = 0;
 	current->in_execve = 0;
 	acct_update_integrals(current);
+	task_numa_free(current);
 	free_bprm(bprm);
+	putname(filename);
 	if (displaced)
 		put_files_struct(displaced);
 	return retval;
@@ -1577,10 +1612,11 @@ out_files:
 	if (displaced)
 		reset_files_struct(displaced);
 out_ret:
+	putname(filename);
 	return retval;
 }
 
-int do_execve(const char *filename,
+int do_execve(struct filename *filename,
 	const char __user *const __user *__argv,
 	const char __user *const __user *__envp)
 {
@@ -1590,7 +1626,7 @@ int do_execve(const char *filename,
 }
 
 #ifdef CONFIG_COMPAT
-static int compat_do_execve(const char *filename,
+static int compat_do_execve(struct filename *filename,
 	const compat_uptr_t __user *__argv,
 	const compat_uptr_t __user *__envp)
 {
@@ -1669,6 +1705,12 @@ int __get_dumpable(unsigned long mm_flags)
 	return (ret > SUID_DUMP_USER) ? SUID_DUMP_ROOT : ret;
 }
 
+/*
+ * This returns the actual value of the suid_dumpable flag. For things
+ * that are using this for checking for privilege transitions, it must
+ * test against SUID_DUMP_USER rather than treating it as a boolean
+ * value.
+ */
 int get_dumpable(struct mm_struct *mm)
 {
 	return __get_dumpable(mm->flags);
@@ -1679,25 +1721,13 @@ SYSCALL_DEFINE3(execve,
 		const char __user *const __user *, argv,
 		const char __user *const __user *, envp)
 {
-	struct filename *path = getname(filename);
-	int error = PTR_ERR(path);
-	if (!IS_ERR(path)) {
-		error = do_execve(path->name, argv, envp);
-		putname(path);
-	}
-	return error;
+	return do_execve(getname(filename), argv, envp);
 }
 #ifdef CONFIG_COMPAT
 asmlinkage long compat_sys_execve(const char __user * filename,
 	const compat_uptr_t __user * argv,
 	const compat_uptr_t __user * envp)
 {
-	struct filename *path = getname(filename);
-	int error = PTR_ERR(path);
-	if (!IS_ERR(path)) {
-		error = compat_do_execve(path->name, argv, envp);
-		putname(path);
-	}
-	return error;
+	return compat_do_execve(getname(filename), argv, envp);
 }
 #endif

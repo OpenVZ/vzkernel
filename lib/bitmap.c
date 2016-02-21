@@ -381,6 +381,13 @@ int bitmap_scnprintf(char *buf, unsigned int buflen,
 	int chunksz;
 	u32 chunkmask;
 
+	if (buflen == 0)
+		return 0;
+	buf[0] = 0;
+
+	if (!maskp)
+		return 1;
+
 	chunksz = nmaskbits & (CHUNKSZ - 1);
 	if (chunksz == 0)
 		chunksz = CHUNKSZ;
@@ -558,6 +565,9 @@ int bitmap_scnlistprintf(char *buf, unsigned int buflen,
 	if (buflen == 0)
 		return 0;
 	buf[0] = 0;
+
+	if (!maskp)
+		return 1;
 
 	rbot = cur = find_first_bit(maskp, nmaskbits);
 	while (cur < nmaskbits) {

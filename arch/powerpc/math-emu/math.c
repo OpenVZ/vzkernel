@@ -7,6 +7,7 @@
 
 #include <asm/uaccess.h>
 #include <asm/reg.h>
+#include <asm/switch_to.h>
 
 #include <asm/sfp-machine.h>
 #include <math-emu/double.h>
@@ -458,6 +459,13 @@ do_mathemu(struct pt_regs *regs)
 	default:
 		goto illegal;
 	}
+
+	/*
+	 * If we support a HW FPU, we need to ensure the FP state
+	 * is flushed into the thread_struct before attempting
+	 * emulation
+	 */
+	flush_fp_to_thread(current);
 
 	eflag = func(op0, op1, op2, op3);
 

@@ -2,6 +2,7 @@
  * Copyright 2003-2005	Devicescape Software, Inc.
  * Copyright (c) 2006	Jiri Benc <jbenc@suse.cz>
  * Copyright 2007	Johannes Berg <johannes@sipsolutions.net>
+ * Copyright 2013-2014  Intel Mobile Communications GmbH
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -66,17 +67,19 @@ static ssize_t sta_flags_read(struct file *file, char __user *userbuf,
 	test_sta_flag(sta, WLAN_STA_##flg) ? #flg "\n" : ""
 
 	int res = scnprintf(buf, sizeof(buf),
-			    "%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",
+			    "%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",
 			    TEST(AUTH), TEST(ASSOC), TEST(PS_STA),
 			    TEST(PS_DRIVER), TEST(AUTHORIZED),
 			    TEST(SHORT_PREAMBLE),
-			    TEST(WME), TEST(WDS), TEST(CLEAR_PS_FILT),
+			    sta->sta.wme ? "WME\n" : "",
+			    TEST(WDS), TEST(CLEAR_PS_FILT),
 			    TEST(MFP), TEST(BLOCK_BA), TEST(PSPOLL),
 			    TEST(UAPSD), TEST(SP), TEST(TDLS_PEER),
-			    TEST(TDLS_PEER_AUTH), TEST(4ADDR_EVENT),
-			    TEST(INSERTED), TEST(RATE_CONTROL),
-			    TEST(TOFFSET_KNOWN), TEST(MPSP_OWNER),
-			    TEST(MPSP_RECIPIENT));
+			    TEST(TDLS_PEER_AUTH), TEST(TDLS_INITIATOR),
+			    TEST(TDLS_CHAN_SWITCH), TEST(TDLS_OFF_CHANNEL),
+			    TEST(4ADDR_EVENT), TEST(INSERTED),
+			    TEST(RATE_CONTROL), TEST(TOFFSET_KNOWN),
+			    TEST(MPSP_OWNER), TEST(MPSP_RECIPIENT));
 #undef TEST
 	return simple_read_from_buffer(userbuf, count, ppos, buf, res);
 }
@@ -117,7 +120,7 @@ static ssize_t sta_connected_time_read(struct file *file, char __user *userbuf,
 	long connected_time_secs;
 	char buf[100];
 	int res;
-	do_posix_clock_monotonic_gettime(&uptime);
+	ktime_get_ts(&uptime);
 	connected_time_secs = uptime.tv_sec - sta->last_connected;
 	time_to_tm(connected_time_secs, 0, &result);
 	result.tm_year -= 70;
@@ -160,7 +163,7 @@ static ssize_t sta_agg_status_read(struct file *file, char __user *userbuf,
 	p += scnprintf(p, sizeof(buf) + buf - p, "next dialog_token: %#02x\n",
 			sta->ampdu_mlme.dialog_token_allocator + 1);
 	p += scnprintf(p, sizeof(buf) + buf - p,
-		       "TID\t\tRX active\tDTKN\tSSN\t\tTX\tDTKN\tpending\n");
+		       "TID\t\tRX\tDTKN\tSSN\t\tTX\tDTKN\tpending\n");
 
 	for (i = 0; i < IEEE80211_NUM_TIDS; i++) {
 		tid_rx = rcu_dereference(sta->ampdu_mlme.tid_rx[i]);
@@ -188,7 +191,7 @@ static ssize_t sta_agg_status_read(struct file *file, char __user *userbuf,
 static ssize_t sta_agg_status_write(struct file *file, const char __user *userbuf,
 				    size_t count, loff_t *ppos)
 {
-	char _buf[12], *buf = _buf;
+	char _buf[12] = {}, *buf = _buf;
 	struct sta_info *sta = file->private_data;
 	bool start, tx;
 	unsigned long tid;
@@ -453,7 +456,15 @@ void ieee80211_sta_debugfs_add(struct sta_info *sta)
 	DEBUGFS_ADD_COUNTER(tx_filtered, tx_filtered_count);
 	DEBUGFS_ADD_COUNTER(tx_retry_failed, tx_retry_failed);
 	DEBUGFS_ADD_COUNTER(tx_retry_count, tx_retry_count);
-	DEBUGFS_ADD_COUNTER(wep_weak_iv_count, wep_weak_iv_count);
+
+	if (sizeof(sta->driver_buffered_tids) == sizeof(u32))
+		debugfs_create_x32("driver_buffered_tids", 0400,
+				   sta->debugfs.dir,
+				   (u32 *)&sta->driver_buffered_tids);
+	else
+		debugfs_create_x64("driver_buffered_tids", 0400,
+				   sta->debugfs.dir,
+				   (u64 *)&sta->driver_buffered_tids);
 
 	drv_sta_add_debugfs(local, sdata, &sta->sta, sta->debugfs.dir);
 }

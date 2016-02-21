@@ -15,6 +15,9 @@
 *.a
 *.s
 *.ko
+*.ko.unsigned
+*.ko.digest
+*.ko.digest.sig
 *.so
 *.so.dbg
 *.mod.c

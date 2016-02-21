@@ -139,6 +139,8 @@
 #include <net/tcp.h>
 #endif
 
+#include <net/busy_poll.h>
+
 static DEFINE_MUTEX(proto_list_mutex);
 static LIST_HEAD(proto_list);
 
@@ -613,6 +615,25 @@ static inline void sock_valbool_flag(struct sock *sk, int bit, int valbool)
 		sock_reset_flag(sk, bit);
 }
 
+bool sk_mc_loop(struct sock *sk)
+{
+	if (dev_recursion_level())
+		return false;
+	if (!sk)
+		return true;
+	switch (sk->sk_family) {
+	case AF_INET:
+		return inet_sk(sk)->mc_loop;
+#if IS_ENABLED(CONFIG_IPV6)
+	case AF_INET6:
+		return inet6_sk(sk)->mc_loop;
+#endif
+	}
+	WARN_ON(1);
+	return true;
+}
+EXPORT_SYMBOL(sk_mc_loop);
+
 /*
  *	This is meant for all protocols to use and covers goings on
  *	at the socket level. Everything here is generic.
@@ -738,7 +759,7 @@ set_rcvbuf:
 		break;
 
 	case SO_NO_CHECK:
-		sk->sk_no_check = valbool;
+		sk->sk_no_check_tx = valbool;
 		break;
 
 	case SO_PRIORITY:
@@ -885,7 +906,7 @@ set_rcvbuf:
 
 	case SO_PEEK_OFF:
 		if (sock->ops->set_peek_off)
-			sock->ops->set_peek_off(sk, val);
+			ret = sock->ops->set_peek_off(sk, val);
 		else
 			ret = -EOPNOTSUPP;
 		break;
@@ -896,6 +917,26 @@ set_rcvbuf:
 
 	case SO_SELECT_ERR_QUEUE:
 		sock_valbool_flag(sk, SOCK_SELECT_ERR_QUEUE, valbool);
+		break;
+
+#ifdef CONFIG_NET_RX_BUSY_POLL
+	case SO_BUSY_POLL:
+		/* allow unprivileged users to decrease the value */
+		if ((val > sk->sk_ll_usec) && !capable(CAP_NET_ADMIN))
+			ret = -EPERM;
+		else {
+			if (val < 0)
+				ret = -EINVAL;
+			else
+				sk->sk_ll_usec = val;
+		}
+		break;
+#endif
+
+	case SO_MAX_PACING_RATE:
+		sk->sk_max_pacing_rate = val;
+		sk->sk_pacing_rate = min(sk->sk_pacing_rate,
+					 sk->sk_max_pacing_rate);
 		break;
 
 	default:
@@ -999,7 +1040,7 @@ int sock_getsockopt(struct socket *sock, int level, int optname,
 		break;
 
 	case SO_NO_CHECK:
-		v.val = sk->sk_no_check;
+		v.val = sk->sk_no_check_tx;
 		break;
 
 	case SO_PRIORITY:
@@ -1151,8 +1192,22 @@ int sock_getsockopt(struct socket *sock, int level, int optname,
 		v.val = sock_flag(sk, SOCK_FILTER_LOCKED);
 		break;
 
+	case SO_BPF_EXTENSIONS:
+		v.val = bpf_tell_extensions();
+		break;
+
 	case SO_SELECT_ERR_QUEUE:
 		v.val = sock_flag(sk, SOCK_SELECT_ERR_QUEUE);
+		break;
+
+#ifdef CONFIG_NET_RX_BUSY_POLL
+	case SO_BUSY_POLL:
+		v.val = sk->sk_ll_usec;
+		break;
+#endif
+
+	case SO_MAX_PACING_RATE:
+		v.val = sk->sk_max_pacing_rate;
 		break;
 
 	default:
@@ -1389,7 +1444,6 @@ void sk_release_kernel(struct sock *sk)
 
 	sock_hold(sk);
 	sock_release(sk->sk_socket);
-	release_net(sock_net(sk));
 	sock_net_set(sk, get_net(&init_net));
 	sock_put(sk);
 }
@@ -1434,9 +1488,6 @@ struct sock *sk_clone_lock(const struct sock *sk, const gfp_t priority)
 		atomic_set(&newsk->sk_omem_alloc, 0);
 		skb_queue_head_init(&newsk->sk_receive_queue);
 		skb_queue_head_init(&newsk->sk_write_queue);
-#ifdef CONFIG_NET_DMA
-		skb_queue_head_init(&newsk->sk_async_wait_queue);
-#endif
 
 		spin_lock_init(&newsk->sk_dst_lock);
 		rwlock_init(&newsk->sk_callback_lock);
@@ -1566,6 +1617,12 @@ void sock_rfree(struct sk_buff *skb)
 	sk_mem_uncharge(sk, len);
 }
 EXPORT_SYMBOL(sock_rfree);
+
+void sock_efree(struct sk_buff *skb)
+{
+	sock_put(skb->sk);
+}
+EXPORT_SYMBOL(sock_efree);
 
 void sock_edemux(struct sk_buff *skb)
 {
@@ -1700,24 +1757,23 @@ static long sock_wait_for_wmem(struct sock *sk, long timeo)
 
 struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 				     unsigned long data_len, int noblock,
-				     int *errcode)
+				     int *errcode, int max_page_order)
 {
-	struct sk_buff *skb;
+	struct sk_buff *skb = NULL;
+	unsigned long chunk;
 	gfp_t gfp_mask;
 	long timeo;
 	int err;
 	int npages = (data_len + (PAGE_SIZE - 1)) >> PAGE_SHIFT;
+	struct page *page;
+	int i;
 
 	err = -EMSGSIZE;
 	if (npages > MAX_SKB_FRAGS)
 		goto failure;
 
-	gfp_mask = sk->sk_allocation;
-	if (gfp_mask & __GFP_WAIT)
-		gfp_mask |= __GFP_REPEAT;
-
 	timeo = sock_sndtimeo(sk, noblock);
-	while (1) {
+	while (!skb) {
 		err = sock_error(sk);
 		if (err != 0)
 			goto failure;
@@ -1726,50 +1782,52 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 		if (sk->sk_shutdown & SEND_SHUTDOWN)
 			goto failure;
 
-		if (atomic_read(&sk->sk_wmem_alloc) < sk->sk_sndbuf) {
-			skb = alloc_skb(header_len, gfp_mask);
-			if (skb) {
-				int i;
-
-				/* No pages, we're done... */
-				if (!data_len)
-					break;
-
-				skb->truesize += data_len;
-				skb_shinfo(skb)->nr_frags = npages;
-				for (i = 0; i < npages; i++) {
-					struct page *page;
-
-					page = alloc_pages(sk->sk_allocation, 0);
-					if (!page) {
-						err = -ENOBUFS;
-						skb_shinfo(skb)->nr_frags = i;
-						kfree_skb(skb);
-						goto failure;
-					}
-
-					__skb_fill_page_desc(skb, i,
-							page, 0,
-							(data_len >= PAGE_SIZE ?
-							 PAGE_SIZE :
-							 data_len));
-					data_len -= PAGE_SIZE;
-				}
-
-				/* Full success... */
-				break;
-			}
-			err = -ENOBUFS;
-			goto failure;
+		if (atomic_read(&sk->sk_wmem_alloc) >= sk->sk_sndbuf) {
+			set_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
+			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+			err = -EAGAIN;
+			if (!timeo)
+				goto failure;
+			if (signal_pending(current))
+				goto interrupted;
+			timeo = sock_wait_for_wmem(sk, timeo);
+			continue;
 		}
-		set_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
-		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
-		err = -EAGAIN;
-		if (!timeo)
+
+		err = -ENOBUFS;
+		gfp_mask = sk->sk_allocation;
+		if (gfp_mask & __GFP_WAIT)
+			gfp_mask |= __GFP_REPEAT;
+
+		skb = alloc_skb(header_len, gfp_mask);
+		if (!skb)
 			goto failure;
-		if (signal_pending(current))
-			goto interrupted;
-		timeo = sock_wait_for_wmem(sk, timeo);
+
+		skb->truesize += data_len;
+
+		for (i = 0; npages > 0; i++) {
+			int order = max_page_order;
+
+			while (order) {
+				if (npages >= 1 << order) {
+					page = alloc_pages(sk->sk_allocation |
+							   __GFP_COMP | __GFP_NOWARN,
+							   order);
+					if (page)
+						goto fill_page;
+				}
+				order--;
+			}
+			page = alloc_page(sk->sk_allocation);
+			if (!page)
+				goto failure;
+fill_page:
+			chunk = min_t(unsigned long, data_len,
+				      PAGE_SIZE << order);
+			skb_fill_page_desc(skb, i, page, 0, chunk);
+			data_len -= chunk;
+			npages -= 1 << order;
+		}
 	}
 
 	skb_set_owner_w(skb, sk);
@@ -1778,6 +1836,7 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 interrupted:
 	err = sock_intr_errno(timeo);
 failure:
+	kfree_skb(skb);
 	*errcode = err;
 	return NULL;
 }
@@ -1786,7 +1845,7 @@ EXPORT_SYMBOL(sock_alloc_send_pskb);
 struct sk_buff *sock_alloc_send_skb(struct sock *sk, unsigned long size,
 				    int noblock, int *errcode)
 {
-	return sock_alloc_send_pskb(sk, size, 0, noblock, errcode);
+	return sock_alloc_send_pskb(sk, size, 0, noblock, errcode, 0);
 }
 EXPORT_SYMBOL(sock_alloc_send_skb);
 
@@ -1890,20 +1949,21 @@ static void __release_sock(struct sock *sk)
  * sk_wait_data - wait for data to arrive at sk_receive_queue
  * @sk:    sock to wait on
  * @timeo: for how long
+ * @skb:   last skb seen on sk_receive_queue
  *
  * Now socket state including sk->sk_err is changed only under lock,
  * hence we may omit checks after joining wait queue.
  * We check receive queue before schedule() only as optimization;
  * it is very likely that release_sock() added new data.
  */
-int sk_wait_data(struct sock *sk, long *timeo)
+int sk_wait_data(struct sock *sk, long *timeo, const struct sk_buff *skb)
 {
 	int rc;
 	DEFINE_WAIT(wait);
 
 	prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
 	set_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
-	rc = sk_wait_event(sk, timeo, !skb_queue_empty(&sk->sk_receive_queue));
+	rc = sk_wait_event(sk, timeo, skb_peek_tail(&sk->sk_receive_queue) != skb);
 	clear_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
 	finish_wait(sk_sleep(sk), &wait);
 	return rc;
@@ -2223,9 +2283,6 @@ void sock_init_data(struct socket *sock, struct sock *sk)
 	skb_queue_head_init(&sk->sk_receive_queue);
 	skb_queue_head_init(&sk->sk_write_queue);
 	skb_queue_head_init(&sk->sk_error_queue);
-#ifdef CONFIG_NET_DMA
-	skb_queue_head_init(&sk->sk_async_wait_queue);
-#endif
 
 	sk->sk_send_head	=	NULL;
 
@@ -2271,6 +2328,13 @@ void sock_init_data(struct socket *sock, struct sock *sk)
 
 	sk->sk_stamp = ktime_set(-1L, 0);
 
+#ifdef CONFIG_NET_RX_BUSY_POLL
+	sk->sk_napi_id		=	0;
+	sk->sk_ll_usec		=	sysctl_net_busy_read;
+#endif
+
+	sk->sk_max_pacing_rate = ~0U;
+	sk->sk_pacing_rate = ~0U;
 	/*
 	 * Before updating sk_refcnt, we must commit prior changes to memory
 	 * (Documentation/RCU/rculist_nulls.txt for details)
@@ -2308,10 +2372,13 @@ void release_sock(struct sock *sk)
 	if (sk->sk_backlog.tail)
 		__release_sock(sk);
 
+	/* Warning : release_cb() might need to release sk ownership,
+	 * ie call sock_release_ownership(sk) before us.
+	 */
 	if (sk->sk_prot->release_cb)
 		sk->sk_prot->release_cb(sk);
 
-	sk->sk_lock.owned = 0;
+	sock_release_ownership(sk);
 	if (waitqueue_active(&sk->sk_lock.wq))
 		wake_up(&sk->sk_lock.wq);
 	spin_unlock_bh(&sk->sk_lock.slock);

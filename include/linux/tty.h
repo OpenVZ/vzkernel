@@ -134,6 +134,7 @@ struct tty_bufhead {
 #define C_CLOCAL(tty)	_C_FLAG((tty), CLOCAL)
 #define C_CIBAUD(tty)	_C_FLAG((tty), CIBAUD)
 #define C_CRTSCTS(tty)	_C_FLAG((tty), CRTSCTS)
+#define C_CMSPAR(tty)	_C_FLAG((tty), CMSPAR)
 
 #define L_ISIG(tty)	_L_FLAG((tty), ISIG)
 #define L_ICANON(tty)	_L_FLAG((tty), ICANON)
@@ -238,7 +239,7 @@ struct tty_struct {
 	int index;
 
 	/* Protects ldisc changes: Lock tty not pty */
-	struct mutex ldisc_mutex;
+	struct mutex ldisc_mutex;		/* unused */
 	struct tty_ldisc *ldisc;
 
 	struct mutex atomic_write_lock;
@@ -272,12 +273,14 @@ struct tty_struct {
 #define N_TTY_BUF_SIZE 4096
 
 	unsigned char closing:1;
-	unsigned short minimum_to_wake;
+	unsigned short minimum_to_wake;		/* unused */
 	unsigned char *write_buf;
 	int write_cnt;
 	/* If the tty has a pending do_SAK, queue it here - akpm */
 	struct work_struct SAK_work;
 	struct tty_port *port;
+
+	RH_KABI_EXTEND(struct ld_semaphore ldisc_sem)
 };
 
 /* Each of a tty's open files has private_data pointing to tty_file_private */
@@ -306,11 +309,7 @@ struct tty_file_private {
 #define TTY_DO_WRITE_WAKEUP 	5	/* Call write_wakeup after queuing new */
 #define TTY_PUSH 		6	/* n_tty private */
 #define TTY_CLOSING 		7	/* ->close() in progress */
-#define TTY_LDISC 		9	/* Line discipline attached */
-#define TTY_LDISC_CHANGING 	10	/* Line discipline changing */
 #define TTY_LDISC_OPEN	 	11	/* Line discipline is open */
-#define TTY_HW_COOK_OUT 	14	/* Hardware can do output cooking */
-#define TTY_HW_COOK_IN 		15	/* Hardware can do input cooking */
 #define TTY_PTY_LOCK 		16	/* pty private */
 #define TTY_NO_WRITE_SPLIT 	17	/* Preserve write boundaries to driver */
 #define TTY_HUPPED 		18	/* Post driver->hangup() */

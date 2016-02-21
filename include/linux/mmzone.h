@@ -19,6 +19,8 @@
 #include <linux/atomic.h>
 #include <asm/page.h>
 
+#include <linux/rh_kabi.h>
+
 /* Free memory management - zoned buddy allocator.  */
 #ifndef CONFIG_FORCE_MAX_ZONEORDER
 #define MAX_ORDER 11
@@ -105,6 +107,7 @@ struct zone_padding {
 enum zone_stat_item {
 	/* First 128 byte cacheline (assuming 64 bit words) */
 	NR_FREE_PAGES,
+	NR_ALLOC_BATCH,
 	NR_LRU_BASE,
 	NR_INACTIVE_ANON = NR_LRU_BASE, /* must match order of LRU_[IN]ACTIVE */
 	NR_ACTIVE_ANON,		/*  "     "     "   "       "         */
@@ -141,6 +144,9 @@ enum zone_stat_item {
 	NUMA_LOCAL,		/* allocation from local node */
 	NUMA_OTHER,		/* allocation from other node */
 #endif
+	WORKINGSET_REFAULT,
+	WORKINGSET_ACTIVATE,
+	WORKINGSET_NODERECLAIM,
 	NR_ANON_TRANSPARENT_HUGEPAGES,
 	NR_FREE_CMA_PAGES,
 	NR_VM_ZONE_STAT_ITEMS };
@@ -392,6 +398,9 @@ struct zone {
 	spinlock_t		lru_lock;
 	struct lruvec		lruvec;
 
+	/* Evictions & activations on the inactive file list */
+	atomic_long_t		inactive_age;
+
 	unsigned long		pages_scanned;	   /* since last reclaim */
 	unsigned long		flags;		   /* zone flags, see below */
 
@@ -474,19 +483,42 @@ struct zone {
 	 * frequently read in proximity to zone->lock.  It's good to
 	 * give them a chance of being in the same cacheline.
 	 *
-	 * Write access to present_pages and managed_pages at runtime should
-	 * be protected by lock_memory_hotplug()/unlock_memory_hotplug().
-	 * Any reader who can't tolerant drift of present_pages and
-	 * managed_pages should hold memory hotplug lock to get a stable value.
+	 * Write access to present_pages at runtime should be protected by
+	 * lock_memory_hotplug()/unlock_memory_hotplug().  Any reader who can't
+	 * tolerant drift of present_pages should hold memory hotplug lock to
+	 * get a stable value.
+	 *
+	 * Read access to managed_pages should be safe because it's unsigned
+	 * long. Write access to zone->managed_pages and totalram_pages are
+	 * protected by managed_page_count_lock at runtime. Idealy only
+	 * adjust_managed_page_count() should be used instead of directly
+	 * touching zone->managed_pages and totalram_pages.
 	 */
 	unsigned long		spanned_pages;
 	unsigned long		present_pages;
 	unsigned long		managed_pages;
 
 	/*
+	 * Number of MIGRATE_RESEVE page block. To maintain for just
+	 * optimization. Protected by zone->lock.
+	 */
+	int			nr_migrate_reserve_block;
+
+	/*
 	 * rarely used fields:
 	 */
 	const char		*name;
+
+	/* reserved for Red Hat */
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+	RH_KABI_RESERVE(5)
+	RH_KABI_RESERVE(6)
+	RH_KABI_RESERVE(7)
+	RH_KABI_RESERVE(8)
+
 } ____cacheline_internodealigned_in_smp;
 
 typedef enum {
@@ -494,6 +526,13 @@ typedef enum {
 	ZONE_OOM_LOCKED,		/* zone is in OOM killer zonelist */
 	ZONE_CONGESTED,			/* zone has many dirty pages backed by
 					 * a congested BDI
+					 */
+	ZONE_TAIL_LRU_DIRTY,		/* reclaim scanning has recently found
+					 * many dirty file pages at the tail
+					 * of the LRU.
+					 */
+	ZONE_WRITEBACK,			/* reclaim scanning has recently found
+					 * many pages under writeback
 					 */
 } zone_flags_t;
 
@@ -515,6 +554,16 @@ static inline void zone_clear_flag(struct zone *zone, zone_flags_t flag)
 static inline int zone_is_reclaim_congested(const struct zone *zone)
 {
 	return test_bit(ZONE_CONGESTED, &zone->flags);
+}
+
+static inline int zone_is_reclaim_dirty(const struct zone *zone)
+{
+	return test_bit(ZONE_TAIL_LRU_DIRTY, &zone->flags);
+}
+
+static inline int zone_is_reclaim_writeback(const struct zone *zone)
+{
+	return test_bit(ZONE_WRITEBACK, &zone->flags);
 }
 
 static inline int zone_is_reclaim_locked(const struct zone *zone)
@@ -561,10 +610,10 @@ static inline bool zone_is_empty(struct zone *zone)
 
 /*
  * The NUMA zonelists are doubled because we need zonelists that restrict the
- * allocations to a single node for GFP_THISNODE.
+ * allocations to a single node for __GFP_THISNODE.
  *
  * [0]	: Zonelist with fallback
- * [1]	: No fallback (GFP_THISNODE)
+ * [1]	: No fallback (__GFP_THISNODE)
  */
 #define MAX_ZONELISTS 2
 
@@ -732,10 +781,7 @@ typedef struct pglist_data {
 	int kswapd_max_order;
 	enum zone_type classzone_idx;
 #ifdef CONFIG_NUMA_BALANCING
-	/*
-	 * Lock serializing the per destination node AutoNUMA memory
-	 * migration rate limiting data.
-	 */
+	/* Lock serializing the migrate rate limiting window */
 	spinlock_t numabalancing_migrate_lock;
 
 	/* Rate limiting time interval */
@@ -744,6 +790,13 @@ typedef struct pglist_data {
 	/* Number of pages migrated during the rate limiting time interval */
 	unsigned long numabalancing_migrate_nr_pages;
 #endif
+
+	/* reserved for Red Hat */
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+
 } pg_data_t;
 
 #define node_present_pages(nid)	(NODE_DATA(nid)->node_present_pages)

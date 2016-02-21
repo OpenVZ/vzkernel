@@ -15,6 +15,7 @@
 #include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/of.h>
+#include <linux/of_address.h>
 #include <linux/kexec.h>
 #include <linux/highmem.h>
 #include <linux/cpu.h>
@@ -26,6 +27,7 @@
 #include <asm/cacheflush.h>
 #include <asm/dbell.h>
 #include <asm/fsl_guts.h>
+#include <asm/code-patching.h>
 
 #include <sysdev/fsl_soc.h>
 #include <sysdev/mpic.h>
@@ -99,7 +101,7 @@ static void mpc85xx_take_timebase(void)
 }
 
 #ifdef CONFIG_HOTPLUG_CPU
-static void __cpuinit smp_85xx_mach_cpu_die(void)
+static void smp_85xx_mach_cpu_die(void)
 {
 	unsigned int cpu = smp_processor_id();
 	u32 tmp;
@@ -141,7 +143,7 @@ static inline u32 read_spin_table_addr_l(void *spin_table)
 	return in_be32(&((struct epapr_spin_table *)spin_table)->addr_l);
 }
 
-static int __cpuinit smp_85xx_kick_cpu(int nr)
+static int smp_85xx_kick_cpu(int nr)
 {
 	unsigned long flags;
 	const u64 *cpu_rel_addr;
@@ -241,7 +243,7 @@ out:
 	flush_spin_table(spin_table);
 	out_be32(&spin_table->pir, hw_cpu);
 	out_be64((u64 *)(&spin_table->addr_h),
-	  __pa((u64)*((unsigned long long *)generic_secondary_smp_init)));
+		__pa(ppc_function_entry(generic_secondary_smp_init)));
 	flush_spin_table(spin_table);
 #endif
 
@@ -255,6 +257,7 @@ out:
 
 struct smp_ops_t smp_85xx_ops = {
 	.kick_cpu = smp_85xx_kick_cpu,
+	.cpu_bootable = smp_generic_cpu_bootable,
 #ifdef CONFIG_HOTPLUG_CPU
 	.cpu_disable	= generic_cpu_disable,
 	.cpu_die	= generic_cpu_die,
@@ -362,7 +365,7 @@ static void mpc85xx_smp_machine_kexec(struct kimage *image)
 }
 #endif /* CONFIG_KEXEC */
 
-static void __cpuinit smp_85xx_setup_cpu(int cpu_nr)
+static void smp_85xx_setup_cpu(int cpu_nr)
 {
 	if (smp_85xx_ops.probe == smp_mpic_probe)
 		mpic_setup_this_cpu();

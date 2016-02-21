@@ -153,7 +153,7 @@ SCTP_STATIC void sctp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 	struct sctp_association *asoc;
 	struct sctp_transport *transport;
 	struct ipv6_pinfo *np;
-	sk_buff_data_t saveip, savesctp;
+	__be16 saveip, savesctp;
 	int err;
 	struct net *net = dev_net(skb->dev);
 
@@ -179,7 +179,8 @@ SCTP_STATIC void sctp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 
 	switch (type) {
 	case ICMPV6_PKT_TOOBIG:
-		sctp_icmp_frag_needed(sk, asoc, transport, ntohl(info));
+		if (ip6_sk_accept_pmtu(sk))
+			sctp_icmp_frag_needed(sk, asoc, transport, ntohl(info));
 		goto out_unlock;
 	case ICMPV6_PARAMPROB:
 		if (ICMPV6_UNK_NEXTHDR == code) {
@@ -189,7 +190,7 @@ SCTP_STATIC void sctp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 		break;
 	case NDISC_REDIRECT:
 		sctp_icmp_redirect(sk, transport, skb);
-		break;
+		goto out_unlock;
 	default:
 		break;
 	}
@@ -210,45 +211,24 @@ out:
 		in6_dev_put(idev);
 }
 
-/* Based on tcp_v6_xmit() in tcp_ipv6.c. */
 static int sctp_v6_xmit(struct sk_buff *skb, struct sctp_transport *transport)
 {
 	struct sock *sk = skb->sk;
 	struct ipv6_pinfo *np = inet6_sk(sk);
-	struct flowi6 fl6;
-
-	memset(&fl6, 0, sizeof(fl6));
-
-	fl6.flowi6_proto = sk->sk_protocol;
-
-	/* Fill in the dest address from the route entry passed with the skb
-	 * and the source address from the transport.
-	 */
-	fl6.daddr = transport->ipaddr.v6.sin6_addr;
-	fl6.saddr = transport->saddr.v6.sin6_addr;
-
-	fl6.flowlabel = np->flow_label;
-	IP6_ECN_flow_xmit(sk, fl6.flowlabel);
-	if (ipv6_addr_type(&fl6.saddr) & IPV6_ADDR_LINKLOCAL)
-		fl6.flowi6_oif = transport->saddr.v6.sin6_scope_id;
-	else
-		fl6.flowi6_oif = sk->sk_bound_dev_if;
-
-	if (np->opt && np->opt->srcrt) {
-		struct rt0_hdr *rt0 = (struct rt0_hdr *) np->opt->srcrt;
-		fl6.daddr = *rt0->addr;
-	}
+	struct flowi6 *fl6 = &transport->fl.u.ip6;
 
 	SCTP_DEBUG_PRINTK("%s: skb:%p, len:%d, src:%pI6 dst:%pI6\n",
 			  __func__, skb, skb->len,
-			  &fl6.saddr, &fl6.daddr);
+			  &fl6->saddr, &fl6->daddr);
+
+	IP6_ECN_flow_xmit(sk, fl6->flowlabel);
+
+	if (!(transport->param_flags & SPP_PMTUD_ENABLE))
+		skb->ignore_df = 1;
 
 	SCTP_INC_STATS(sock_net(sk), SCTP_MIB_OUTSCTPPACKS);
 
-	if (!(transport->param_flags & SPP_PMTUD_ENABLE))
-		skb->local_df = 1;
-
-	return ip6_xmit(sk, skb, &fl6, np->opt, np->tclass);
+	return ip6_xmit(sk, skb, fl6, np->opt, np->tclass);
 }
 
 /* Returns the dst cache entry for the given source and destination ip
@@ -261,10 +241,12 @@ static void sctp_v6_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
 	struct dst_entry *dst = NULL;
 	struct flowi6 *fl6 = &fl->u.ip6;
 	struct sctp_bind_addr *bp;
+	struct ipv6_pinfo *np = inet6_sk(sk);
 	struct sctp_sockaddr_entry *laddr;
 	union sctp_addr *baddr = NULL;
 	union sctp_addr *daddr = &t->ipaddr;
 	union sctp_addr dst_saddr;
+	struct in6_addr *final_p, final;
 	__u8 matchlen = 0;
 	__u8 bmatchlen;
 	sctp_scope_t scope;
@@ -287,7 +269,8 @@ static void sctp_v6_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
 		SCTP_DEBUG_PRINTK("SRC=%pI6 - ", &fl6->saddr);
 	}
 
-	dst = ip6_dst_lookup_flow(sk, fl6, NULL, false);
+	final_p = fl6_update_dst(fl6, np->opt, &final);
+	dst = ip6_dst_lookup_flow(sk, fl6, final_p);
 	if (!asoc || saddr)
 		goto out;
 
@@ -339,10 +322,12 @@ static void sctp_v6_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
 		}
 	}
 	rcu_read_unlock();
+
 	if (baddr) {
 		fl6->saddr = baddr->v6.sin6_addr;
 		fl6->fl6_sport = baddr->v6.sin6_port;
-		dst = ip6_dst_lookup_flow(sk, fl6, NULL, false);
+		final_p = fl6_update_dst(fl6, np->opt, &final);
+		dst = ip6_dst_lookup_flow(sk, fl6, final_p);
 	}
 
 out:
@@ -445,20 +430,20 @@ static void sctp_v6_from_sk(union sctp_addr *addr, struct sock *sk)
 {
 	addr->v6.sin6_family = AF_INET6;
 	addr->v6.sin6_port = 0;
-	addr->v6.sin6_addr = inet6_sk(sk)->rcv_saddr;
+	addr->v6.sin6_addr = sk->sk_v6_rcv_saddr;
 }
 
 /* Initialize sk->sk_rcv_saddr from sctp_addr. */
 static void sctp_v6_to_sk_saddr(union sctp_addr *addr, struct sock *sk)
 {
 	if (addr->sa.sa_family == AF_INET && sctp_sk(sk)->v4mapped) {
-		inet6_sk(sk)->rcv_saddr.s6_addr32[0] = 0;
-		inet6_sk(sk)->rcv_saddr.s6_addr32[1] = 0;
-		inet6_sk(sk)->rcv_saddr.s6_addr32[2] = htonl(0x0000ffff);
-		inet6_sk(sk)->rcv_saddr.s6_addr32[3] =
+		sk->sk_v6_rcv_saddr.s6_addr32[0] = 0;
+		sk->sk_v6_rcv_saddr.s6_addr32[1] = 0;
+		sk->sk_v6_rcv_saddr.s6_addr32[2] = htonl(0x0000ffff);
+		sk->sk_v6_rcv_saddr.s6_addr32[3] =
 			addr->v4.sin_addr.s_addr;
 	} else {
-		inet6_sk(sk)->rcv_saddr = addr->v6.sin6_addr;
+		sk->sk_v6_rcv_saddr = addr->v6.sin6_addr;
 	}
 }
 
@@ -466,12 +451,12 @@ static void sctp_v6_to_sk_saddr(union sctp_addr *addr, struct sock *sk)
 static void sctp_v6_to_sk_daddr(union sctp_addr *addr, struct sock *sk)
 {
 	if (addr->sa.sa_family == AF_INET && sctp_sk(sk)->v4mapped) {
-		inet6_sk(sk)->daddr.s6_addr32[0] = 0;
-		inet6_sk(sk)->daddr.s6_addr32[1] = 0;
-		inet6_sk(sk)->daddr.s6_addr32[2] = htonl(0x0000ffff);
-		inet6_sk(sk)->daddr.s6_addr32[3] = addr->v4.sin_addr.s_addr;
+		sk->sk_v6_daddr.s6_addr32[0] = 0;
+		sk->sk_v6_daddr.s6_addr32[1] = 0;
+		sk->sk_v6_daddr.s6_addr32[2] = htonl(0x0000ffff);
+		sk->sk_v6_daddr.s6_addr32[3] = addr->v4.sin_addr.s_addr;
 	} else {
-		inet6_sk(sk)->daddr = addr->v6.sin6_addr;
+		sk->sk_v6_daddr = addr->v6.sin6_addr;
 	}
 }
 
@@ -678,6 +663,8 @@ static struct sock *sctp_v6_create_accept_sk(struct sock *sk,
 	 * and getpeername().
 	 */
 	sctp_v6_to_sk_daddr(&asoc->peer.primary_addr, newsk);
+
+	newsk->sk_v6_rcv_saddr = sk->sk_v6_rcv_saddr;
 
 	sk_refcnt_debug_inc(newsk);
 
@@ -958,7 +945,6 @@ static struct inet_protosw sctpv6_seqpacket_protosw = {
 	.protocol      = IPPROTO_SCTP,
 	.prot 	       = &sctpv6_prot,
 	.ops           = &inet6_seqpacket_ops,
-	.no_check      = 0,
 	.flags         = SCTP_PROTOSW_FLAG
 };
 static struct inet_protosw sctpv6_stream_protosw = {
@@ -966,7 +952,6 @@ static struct inet_protosw sctpv6_stream_protosw = {
 	.protocol      = IPPROTO_SCTP,
 	.prot 	       = &sctpv6_prot,
 	.ops           = &inet6_seqpacket_ops,
-	.no_check      = 0,
 	.flags         = SCTP_PROTOSW_FLAG,
 };
 

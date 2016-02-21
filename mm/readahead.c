@@ -179,7 +179,7 @@ __do_page_cache_readahead(struct address_space *mapping, struct file *filp,
 		rcu_read_lock();
 		page = radix_tree_lookup(&mapping->page_tree, page_offset);
 		rcu_read_unlock();
-		if (page)
+		if (page && !radix_tree_exceptional_entry(page))
 			continue;
 
 		page = page_cache_alloc_readahead(mapping);
@@ -216,7 +216,7 @@ int force_page_cache_readahead(struct address_space *mapping, struct file *filp,
 	if (unlikely(!mapping->a_ops->readpage && !mapping->a_ops->readpages))
 		return -EINVAL;
 
-	nr_to_read = max_sane_readahead(nr_to_read);
+	nr_to_read = min(nr_to_read, inode_to_bdi(mapping->host)->ra_pages);
 	while (nr_to_read) {
 		int err;
 
@@ -235,16 +235,6 @@ int force_page_cache_readahead(struct address_space *mapping, struct file *filp,
 		nr_to_read -= this_chunk;
 	}
 	return ret;
-}
-
-/*
- * Given a desired number of PAGE_CACHE_SIZE readahead pages, return a
- * sensible upper limit.
- */
-unsigned long max_sane_readahead(unsigned long nr)
-{
-	return min(nr, (node_page_state(numa_node_id(), NR_INACTIVE_FILE)
-		+ node_page_state(numa_node_id(), NR_FREE_PAGES)) / 2);
 }
 
 /*
@@ -351,7 +341,7 @@ static pgoff_t count_history_pages(struct address_space *mapping,
 	pgoff_t head;
 
 	rcu_read_lock();
-	head = radix_tree_prev_hole(&mapping->page_tree, offset - 1, max);
+	head = page_cache_prev_hole(mapping, offset - 1, max);
 	rcu_read_unlock();
 
 	return offset - 1 - head;
@@ -400,7 +390,8 @@ ondemand_readahead(struct address_space *mapping,
 		   bool hit_readahead_marker, pgoff_t offset,
 		   unsigned long req_size)
 {
-	unsigned long max = max_sane_readahead(ra->ra_pages);
+	unsigned long max = ra->ra_pages;
+	pgoff_t prev_offset;
 
 	/*
 	 * start of file
@@ -430,7 +421,7 @@ ondemand_readahead(struct address_space *mapping,
 		pgoff_t start;
 
 		rcu_read_lock();
-		start = radix_tree_next_hole(&mapping->page_tree, offset+1,max);
+		start = page_cache_next_hole(mapping, offset + 1, max);
 		rcu_read_unlock();
 
 		if (!start || start - offset > max)
@@ -452,8 +443,11 @@ ondemand_readahead(struct address_space *mapping,
 
 	/*
 	 * sequential cache miss
+	 * trivial case: (offset - prev_offset) == 1
+	 * unaligned reads: (offset - prev_offset) == 0
 	 */
-	if (offset - (ra->prev_pos >> PAGE_CACHE_SHIFT) <= 1UL)
+	prev_offset = (unsigned long long)ra->prev_pos >> PAGE_CACHE_SHIFT;
+	if (offset - prev_offset <= 1UL)
 		goto initial_readahead;
 
 	/*

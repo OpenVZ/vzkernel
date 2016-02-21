@@ -18,7 +18,7 @@
 #include <linux/types.h>
 #include <linux/bitops.h>
 #include <linux/errno.h>
-#include <linux/kref.h>
+#include <linux/kobject.h>
 #include <linux/mod_devicetable.h>
 #include <linux/spinlock.h>
 #include <linux/topology.h>
@@ -26,6 +26,8 @@
 
 #include <asm/byteorder.h>
 #include <asm/errno.h>
+
+#include <linux/rh_kabi.h>
 
 typedef u32 phandle;
 typedef u32 ihandle;
@@ -37,6 +39,7 @@ struct property {
 	struct property *next;
 	unsigned long _flags;
 	unsigned int unique_id;
+	RH_KABI_EXTEND(struct bin_attribute attr)
 };
 
 #if defined(CONFIG_SPARC)
@@ -57,7 +60,7 @@ struct device_node {
 	struct	device_node *next;	/* next device of same type */
 	struct	device_node *allnext;	/* next in list of all nodes */
 	struct	proc_dir_entry *pde;	/* this node's proc directory */
-	struct	kref kref;
+	struct kref kref;
 	unsigned long _flags;
 	void	*data;
 #if defined(CONFIG_SPARC)
@@ -65,6 +68,7 @@ struct device_node {
 	unsigned int unique_id;
 	struct of_irq_controller *irq_trans;
 #endif
+	RH_KABI_EXTEND(struct	kobject kobj)
 };
 
 #define MAX_PHANDLE_ARGS 8
@@ -73,6 +77,27 @@ struct of_phandle_args {
 	int args_count;
 	uint32_t args[MAX_PHANDLE_ARGS];
 };
+
+extern int of_node_add(struct device_node *node);
+
+/* initialize a node */
+extern struct kobj_type of_node_ktype;
+static inline void of_node_init(struct device_node *node)
+{
+	kobject_init(&node->kobj, &of_node_ktype);
+}
+
+/* true when node is initialized */
+static inline int of_node_is_initialized(struct device_node *node)
+{
+	return node && node->kobj.state_initialized;
+}
+
+/* true when node is attached (i.e. present on sysfs) */
+static inline int of_node_is_attached(struct device_node *node)
+{
+	return node && node->kobj.state_in_sysfs;
+}
 
 #ifdef CONFIG_OF_DYNAMIC
 extern struct device_node *of_node_get(struct device_node *node);
@@ -114,6 +139,7 @@ static inline void of_node_set_flag(struct device_node *n, unsigned long flag)
 	set_bit(flag, &n->_flags);
 }
 
+extern struct device_node *__of_find_all_nodes(struct device_node *prev);
 extern struct device_node *of_find_all_nodes(struct device_node *prev);
 
 /*
@@ -165,6 +191,9 @@ static inline const char *of_node_full_name(const struct device_node *np)
 	return np ? np->full_name : "<no-node>";
 }
 
+#define for_each_of_allnodes_from(from, dn) \
+	for (dn = __of_find_all_nodes(from); dn; dn = __of_find_all_nodes(dn))
+#define for_each_of_allnodes(dn) for_each_of_allnodes_from(NULL, dn)
 extern struct device_node *of_find_node_by_name(struct device_node *from,
 	const char *name);
 #define for_each_node_by_name(dn, name) \
@@ -513,13 +542,13 @@ static inline int of_machine_is_compatible(const char *compat)
 	while (0)
 #endif /* CONFIG_OF */
 
-#ifndef of_node_to_nid
-static inline int of_node_to_nid(struct device_node *np)
+#if defined(CONFIG_OF) && defined(CONFIG_NUMA)
+extern int of_node_to_nid(struct device_node *np);
+#else
+static inline int of_node_to_nid(struct device_node *device)
 {
-	return numa_node_id();
+	return NUMA_NO_NODE;
 }
-
-#define of_node_to_nid of_node_to_nid
 #endif
 
 /**

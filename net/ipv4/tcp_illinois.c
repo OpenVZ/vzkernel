@@ -256,7 +256,7 @@ static void tcp_illinois_state(struct sock *sk, u8 new_state)
 /*
  * Increase window in response to successful acknowledgment.
  */
-static void tcp_illinois_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
+static void tcp_illinois_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct illinois *ca = inet_csk_ca(sk);
@@ -265,12 +265,12 @@ static void tcp_illinois_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		update_params(sk);
 
 	/* RFC2861 only increase cwnd if fully utilized */
-	if (!tcp_is_cwnd_limited(sk, in_flight))
+	if (!tcp_is_cwnd_limited(sk))
 		return;
 
 	/* In slow start */
 	if (tp->snd_cwnd <= tp->snd_ssthresh)
-		tcp_slow_start(tp);
+		tcp_slow_start(tp, acked);
 
 	else {
 		u32 delta;
@@ -285,7 +285,7 @@ static void tcp_illinois_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		delta = (tp->snd_cwnd_cnt * ca->alpha) >> ALPHA_SHIFT;
 		if (delta >= tp->snd_cwnd) {
 			tp->snd_cwnd = min(tp->snd_cwnd + delta / tp->snd_cwnd,
-					   (u32) tp->snd_cwnd_clamp);
+					   (u32)tp->snd_cwnd_clamp);
 			tp->snd_cwnd_cnt = 0;
 		}
 	}
@@ -300,10 +300,8 @@ static u32 tcp_illinois_ssthresh(struct sock *sk)
 	return max(tp->snd_cwnd - ((tp->snd_cwnd * ca->beta) >> BETA_SHIFT), 2U);
 }
 
-
 /* Extract info for Tcp socket info provided via netlink. */
-static void tcp_illinois_info(struct sock *sk, u32 ext,
-			      struct sk_buff *skb)
+static int tcp_illinois_info(struct sock *sk, u32 ext, struct sk_buff *skb)
 {
 	const struct illinois *ca = inet_csk_ca(sk);
 
@@ -320,15 +318,14 @@ static void tcp_illinois_info(struct sock *sk, u32 ext,
 			do_div(t, info.tcpv_rttcnt);
 			info.tcpv_rtt = t;
 		}
-		nla_put(skb, INET_DIAG_VEGASINFO, sizeof(info), &info);
+		return nla_put(skb, INET_DIAG_VEGASINFO, sizeof(info), &info);
 	}
+	return 0;
 }
 
 static struct tcp_congestion_ops tcp_illinois __read_mostly = {
-	.flags		= TCP_CONG_RTT_STAMP,
 	.init		= tcp_illinois_init,
 	.ssthresh	= tcp_illinois_ssthresh,
-	.min_cwnd	= tcp_reno_min_cwnd,
 	.cong_avoid	= tcp_illinois_cong_avoid,
 	.set_state	= tcp_illinois_state,
 	.get_info	= tcp_illinois_info,

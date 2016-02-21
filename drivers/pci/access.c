@@ -148,7 +148,7 @@ static noinline void pci_wait_cfg(struct pci_dev *dev)
 int pci_user_read_config_##size						\
 	(struct pci_dev *dev, int pos, type *val)			\
 {									\
-	int ret = 0;							\
+	int ret = PCIBIOS_SUCCESSFUL;					\
 	u32 data = -1;							\
 	if (PCI_##size##_BAD)						\
 		return -EINVAL;						\
@@ -159,9 +159,7 @@ int pci_user_read_config_##size						\
 					pos, sizeof(type), &data);	\
 	raw_spin_unlock_irq(&pci_lock);				\
 	*val = (type)data;						\
-	if (ret > 0)							\
-		ret = -EINVAL;						\
-	return ret;							\
+	return pcibios_err_to_errno(ret);				\
 }									\
 EXPORT_SYMBOL_GPL(pci_user_read_config_##size);
 
@@ -170,7 +168,7 @@ EXPORT_SYMBOL_GPL(pci_user_read_config_##size);
 int pci_user_write_config_##size					\
 	(struct pci_dev *dev, int pos, type val)			\
 {									\
-	int ret = -EIO;							\
+	int ret = PCIBIOS_SUCCESSFUL;					\
 	if (PCI_##size##_BAD)						\
 		return -EINVAL;						\
 	raw_spin_lock_irq(&pci_lock);				\
@@ -179,9 +177,7 @@ int pci_user_write_config_##size					\
 	ret = dev->bus->ops->write(dev->bus, dev->devfn,		\
 					pos, sizeof(type), val);	\
 	raw_spin_unlock_irq(&pci_lock);				\
-	if (ret > 0)							\
-		ret = -EINVAL;						\
-	return ret;							\
+	return pcibios_err_to_errno(ret);				\
 }									\
 EXPORT_SYMBOL_GPL(pci_user_write_config_##size);
 
@@ -235,10 +231,7 @@ static int pci_vpd_pci22_wait(struct pci_dev *dev)
 		}
 
 		if (time_after(jiffies, timeout)) {
-			dev_printk(KERN_DEBUG, &dev->dev,
-				   "vpd r/w failed.  This is likely a firmware "
-				   "bug on this device.  Contact the card "
-				   "vendor for a firmware update.");
+			dev_printk(KERN_DEBUG, &dev->dev, "vpd r/w failed.  This is likely a firmware bug on this device.  Contact the card vendor for a firmware update\n");
 			return -ETIMEDOUT;
 		}
 		if (fatal_signal_pending(current))
@@ -381,30 +374,6 @@ int pci_vpd_pci22_init(struct pci_dev *dev)
 }
 
 /**
- * pci_vpd_truncate - Set available Vital Product Data size
- * @dev:	pci device struct
- * @size:	available memory in bytes
- *
- * Adjust size of available VPD area.
- */
-int pci_vpd_truncate(struct pci_dev *dev, size_t size)
-{
-	if (!dev->vpd)
-		return -EINVAL;
-
-	/* limited by the access method */
-	if (size > dev->vpd->len)
-		return -EINVAL;
-
-	dev->vpd->len = size;
-	if (dev->vpd->attr)
-		dev->vpd->attr->size = size;
-
-	return 0;
-}
-EXPORT_SYMBOL(pci_vpd_truncate);
-
-/**
  * pci_cfg_access_lock - Lock PCI config reads/writes
  * @dev:	pci device struct
  *
@@ -470,42 +439,77 @@ void pci_cfg_access_unlock(struct pci_dev *dev)
 }
 EXPORT_SYMBOL_GPL(pci_cfg_access_unlock);
 
+/**
+ * pci_pcie_type - get the PCIe device/port type
+ * @dev: PCI device
+ */
+int pci_pcie_type(const struct pci_dev *dev)
+{
+	return (pcie_caps_reg(dev) & PCI_EXP_FLAGS_TYPE) >> 4;
+}
+EXPORT_SYMBOL_GPL(pci_pcie_type);
+
+/**
+ * pci_pcie_cap - get the saved PCIe capability offset
+ * @dev: PCI device
+ *
+ * PCIe capability offset is calculated at PCI device initialization
+ * time and saved in the data structure. This function returns saved
+ * PCIe capability offset. Using this instead of pci_find_capability()
+ * reduces unnecessary search in the PCI configuration space. If you
+ * need to calculate PCIe capability offset from raw device for some
+ * reasons, please use pci_find_capability() instead.
+ */
+int pci_pcie_cap(struct pci_dev *dev)
+{
+	return dev->pcie_cap;
+}
+EXPORT_SYMBOL_GPL(pci_pcie_cap);
+
+/**
+ * pci_is_pcie - check if the PCI device is PCI Express capable
+ * @dev: PCI device
+ *
+ * Returns: true if the PCI device is PCI Express capable, false otherwise.
+ */
+bool pci_is_pcie(struct pci_dev *dev)
+{
+	return pci_pcie_cap(dev);
+}
+EXPORT_SYMBOL_GPL(pci_is_pcie);
+
 static inline int pcie_cap_version(const struct pci_dev *dev)
 {
 	return pcie_caps_reg(dev) & PCI_EXP_FLAGS_VERS;
-}
-
-static inline bool pcie_cap_has_devctl(const struct pci_dev *dev)
-{
-	return true;
 }
 
 static inline bool pcie_cap_has_lnkctl(const struct pci_dev *dev)
 {
 	int type = pci_pcie_type(dev);
 
-	return pcie_cap_version(dev) > 1 ||
+	return type == PCI_EXP_TYPE_ENDPOINT ||
+	       type == PCI_EXP_TYPE_LEG_END ||
 	       type == PCI_EXP_TYPE_ROOT_PORT ||
-	       type == PCI_EXP_TYPE_ENDPOINT ||
-	       type == PCI_EXP_TYPE_LEG_END;
+	       type == PCI_EXP_TYPE_UPSTREAM ||
+	       type == PCI_EXP_TYPE_DOWNSTREAM ||
+	       type == PCI_EXP_TYPE_PCI_BRIDGE ||
+	       type == PCI_EXP_TYPE_PCIE_BRIDGE;
 }
 
 static inline bool pcie_cap_has_sltctl(const struct pci_dev *dev)
 {
 	int type = pci_pcie_type(dev);
 
-	return pcie_cap_version(dev) > 1 ||
-	       type == PCI_EXP_TYPE_ROOT_PORT ||
-	       (type == PCI_EXP_TYPE_DOWNSTREAM &&
-		pcie_caps_reg(dev) & PCI_EXP_FLAGS_SLOT);
+	return (type == PCI_EXP_TYPE_ROOT_PORT ||
+		type == PCI_EXP_TYPE_DOWNSTREAM) &&
+	       pcie_caps_reg(dev) & PCI_EXP_FLAGS_SLOT;
 }
 
 static inline bool pcie_cap_has_rtctl(const struct pci_dev *dev)
 {
 	int type = pci_pcie_type(dev);
 
-	return pcie_cap_version(dev) > 1 ||
-	       type == PCI_EXP_TYPE_ROOT_PORT ||
+	return type == PCI_EXP_TYPE_ROOT_PORT ||
 	       type == PCI_EXP_TYPE_RC_EC;
 }
 
@@ -520,7 +524,7 @@ static bool pcie_capability_reg_implemented(struct pci_dev *dev, int pos)
 	case PCI_EXP_DEVCAP:
 	case PCI_EXP_DEVCTL:
 	case PCI_EXP_DEVSTA:
-		return pcie_cap_has_devctl(dev);
+		return true;
 	case PCI_EXP_LNKCAP:
 	case PCI_EXP_LNKCTL:
 	case PCI_EXP_LNKSTA:
@@ -637,6 +641,18 @@ int pcie_capability_write_dword(struct pci_dev *dev, int pos, u32 val)
 	return pci_write_config_dword(dev, pci_pcie_cap(dev) + pos, val);
 }
 EXPORT_SYMBOL(pcie_capability_write_dword);
+
+int pcie_capability_set_word(struct pci_dev *dev, int pos, u16 set)
+{
+	return pcie_capability_clear_and_set_word(dev, pos, 0, set);
+}
+EXPORT_SYMBOL(pcie_capability_set_word);
+
+int pcie_capability_clear_word(struct pci_dev *dev, int pos, u16 clear)
+{
+	return pcie_capability_clear_and_set_word(dev, pos, clear, 0);
+}
+EXPORT_SYMBOL(pcie_capability_clear_word);
 
 int pcie_capability_clear_and_set_word(struct pci_dev *dev, int pos,
 				       u16 clear, u16 set)

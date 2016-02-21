@@ -320,6 +320,10 @@
 311	64	process_vm_writev	sys_process_vm_writev
 312	common	kcmp			sys_kcmp
 313	common	finit_module		sys_finit_module
+316	common	renameat2		sys_renameat2
+319	common	memfd_create		sys_memfd_create
+320	common	kexec_file_load		sys_kexec_file_load
+323	common	userfaultfd		sys_userfaultfd
 
 #
 # x32-specific system call numbers start at 512 to avoid cache impact

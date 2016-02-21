@@ -11,8 +11,6 @@
 #include <linux/irqnr.h>
 #include <linux/hardirq.h>
 #include <linux/irqflags.h>
-#include <linux/smp.h>
-#include <linux/percpu.h>
 #include <linux/hrtimer.h>
 #include <linux/kref.h>
 #include <linux/workqueue.h>
@@ -239,7 +237,40 @@ static inline int check_wakeup_irqs(void) { return 0; }
 
 extern cpumask_var_t irq_default_affinity;
 
-extern int irq_set_affinity(unsigned int irq, const struct cpumask *cpumask);
+/* Internal implementation. Use the helpers below */
+extern int __irq_set_affinity(unsigned int irq, const struct cpumask *cpumask,
+			      bool force);
+
+/**
+ * irq_set_affinity - Set the irq affinity of a given irq
+ * @irq:	Interrupt to set affinity
+ * @mask:	cpumask
+ *
+ * Fails if cpumask does not contain an online CPU
+ */
+static inline int
+irq_set_affinity(unsigned int irq, const struct cpumask *cpumask)
+{
+	return __irq_set_affinity(irq, cpumask, false);
+}
+
+/**
+ * irq_force_affinity - Force the irq affinity of a given irq
+ * @irq:	Interrupt to set affinity
+ * @mask:	cpumask
+ *
+ * Same as irq_set_affinity, but without checking the mask against
+ * online cpus.
+ *
+ * Solely for low level cpu hotplug code, where we need to make per
+ * cpu interrupts affine before the cpu becomes online.
+ */
+static inline int
+irq_force_affinity(unsigned int irq, const struct cpumask *cpumask)
+{
+	return __irq_set_affinity(irq, cpumask, true);
+}
+
 extern int irq_can_set_affinity(unsigned int irq);
 extern int irq_select_affinity(unsigned int irq);
 
@@ -419,7 +450,8 @@ enum
 	BLOCK_IOPOLL_SOFTIRQ,
 	TASKLET_SOFTIRQ,
 	SCHED_SOFTIRQ,
-	HRTIMER_SOFTIRQ,
+	HRTIMER_SOFTIRQ, /* Unused, but kept as tools rely on the
+			    numbering. Sigh! */
 	RCU_SOFTIRQ,    /* Preferable RCU should always be the last softirq */
 
 	NR_SOFTIRQS
@@ -450,32 +482,12 @@ extern void __raise_softirq_irqoff(unsigned int nr);
 extern void raise_softirq_irqoff(unsigned int nr);
 extern void raise_softirq(unsigned int nr);
 
-/* This is the worklist that queues up per-cpu softirq work.
- *
- * send_remote_sendirq() adds work to these lists, and
- * the softirq handler itself dequeues from them.  The queues
- * are protected by disabling local cpu interrupts and they must
- * only be accessed by the local cpu that they are for.
- */
-DECLARE_PER_CPU(struct list_head [NR_SOFTIRQS], softirq_work_list);
-
 DECLARE_PER_CPU(struct task_struct *, ksoftirqd);
 
 static inline struct task_struct *this_cpu_ksoftirqd(void)
 {
 	return this_cpu_read(ksoftirqd);
 }
-
-/* Try to send a softirq to a remote cpu.  If this cannot be done, the
- * work will be queued to the local cpu.
- */
-extern void send_remote_softirq(struct call_single_data *cp, int cpu, int softirq);
-
-/* Like send_remote_softirq(), but the caller must disable local cpu interrupts
- * and compute the current cpu, passed in as 'this_cpu'.
- */
-extern void __send_remote_softirq(struct call_single_data *cp, int cpu,
-				  int this_cpu, int softirq);
 
 /* Tasklets --- multithreaded analogue of BHs.
 
@@ -614,10 +626,10 @@ tasklet_hrtimer_init(struct tasklet_hrtimer *ttimer,
 		     clockid_t which_clock, enum hrtimer_mode mode);
 
 static inline
-int tasklet_hrtimer_start(struct tasklet_hrtimer *ttimer, ktime_t time,
-			  const enum hrtimer_mode mode)
+void tasklet_hrtimer_start(struct tasklet_hrtimer *ttimer, ktime_t time,
+			   const enum hrtimer_mode mode)
 {
-	return hrtimer_start(&ttimer->timer, time, mode);
+	hrtimer_start(&ttimer->timer, time, mode);
 }
 
 static inline

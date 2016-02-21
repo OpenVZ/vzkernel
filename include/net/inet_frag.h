@@ -64,6 +64,10 @@ struct inet_frags {
 	rwlock_t		lock ____cacheline_aligned_in_smp;
 	int			secret_interval;
 	struct timer_list	secret_timer;
+
+	/* The first call to hashfn is responsible to initialize
+	 * rnd. This is best done with net_get_random_once.
+	 */
 	u32			rnd;
 	int			qsize;
 
@@ -124,7 +128,7 @@ static inline void add_frag_mem_limit(struct inet_frag_queue *q, int i)
 
 static inline void init_frag_mem_limit(struct netns_frags *nf)
 {
-	percpu_counter_init(&nf->mem, 0);
+	percpu_counter_init(&nf->mem, 0, GFP_KERNEL);
 }
 
 static inline int sum_frag_mem_limit(struct netns_frags *nf)

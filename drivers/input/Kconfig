@@ -6,7 +6,7 @@ menu "Input device support"
 	depends on !UML
 
 config INPUT
-	tristate "Generic input layer (needed for keyboard, mouse, ...)" if EXPERT
+	tristate "Generic input layer (needed for keyboard, mouse, ...)"
 	default y
 	help
 	  Say Y here if you have any input device (mouse, keyboard, tablet,
@@ -80,7 +80,7 @@ config INPUT_MATRIXKMAP
 comment "Userland interfaces"
 
 config INPUT_MOUSEDEV
-	tristate "Mouse interface" if EXPERT
+	tristate "Mouse interface"
 	default y
 	help
 	  Say Y here if you want your mouse to be accessible as char devices

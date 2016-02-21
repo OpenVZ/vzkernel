@@ -3,6 +3,7 @@
 
 #include <linux/rtnetlink.h>
 #include <net/netlink.h>
+#include <linux/rh_kabi.h>
 
 typedef int (*rtnl_doit_func)(struct sk_buff *, struct nlmsghdr *);
 typedef int (*rtnl_dumpit_func)(struct sk_buff *, struct netlink_callback *);
@@ -48,6 +49,7 @@ static inline int rtnl_msg_family(const struct nlmsghdr *nlh)
  *			    to create when creating a new device.
  *	@get_num_rx_queues: Function to determine number of receive queues
  *			    to create when creating a new device.
+ *	@get_link_net: Function to get the i/o netns of the device
  */
 struct rtnl_link_ops {
 	struct list_head	list;
@@ -81,6 +83,35 @@ struct rtnl_link_ops {
 					       const struct net_device *dev);
 	unsigned int		(*get_num_tx_queues)(void);
 	unsigned int		(*get_num_rx_queues)(void);
+
+	/* RHEL SPECIFIC
+	 *
+	 * The following padding has been inserted before ABI freeze to
+	 * allow extending the structure while preserve ABI. Feel free
+	 * to replace reserved slots with required structure field
+	 * additions of your backport.
+	 */
+	RH_KABI_USE_P(1, struct net	*(*get_link_net)(const struct net_device *dev))
+	RH_KABI_USE_P(2, int	slave_maxtype)
+	RH_KABI_USE_P(3, const struct nla_policy *slave_policy)
+	RH_KABI_USE_P(4, int	(*slave_validate)(struct nlattr *tb[], struct nlattr *data[]))
+	RH_KABI_USE_P(5, int	(*slave_changelink)(struct net_device *dev,
+						    struct net_device *slave_dev,
+						    struct nlattr *tb[], struct nlattr *data[]))
+	RH_KABI_USE_P(6, size_t	(*get_slave_size)(const struct net_device *dev,
+						  const struct net_device *slave_dev))
+	RH_KABI_USE_P(7, int	(*fill_slave_info)(struct sk_buff *skb,
+						   const struct net_device *dev,
+						   const struct net_device *slave_dev))
+	RH_KABI_RESERVE_P(8)
+	RH_KABI_RESERVE_P(9)
+	RH_KABI_RESERVE_P(10)
+	RH_KABI_RESERVE_P(11)
+	RH_KABI_RESERVE_P(12)
+	RH_KABI_RESERVE_P(13)
+	RH_KABI_RESERVE_P(14)
+	RH_KABI_RESERVE_P(15)
+	RH_KABI_RESERVE_P(16)
 };
 
 extern int	__rtnl_link_register(struct rtnl_link_ops *ops);
@@ -129,7 +160,8 @@ extern struct net_device *rtnl_create_link(struct net *net,
 	char *ifname, const struct rtnl_link_ops *ops, struct nlattr *tb[]);
 extern int rtnl_configure_link(struct net_device *dev,
 			       const struct ifinfomsg *ifm);
-extern const struct nla_policy ifla_policy[IFLA_MAX+1];
+
+int rtnl_nla_parse_ifla(struct nlattr **tb, const struct nlattr *head, int len);
 
 #define MODULE_ALIAS_RTNL_LINK(kind) MODULE_ALIAS("rtnl-link-" kind)
 

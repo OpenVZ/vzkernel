@@ -28,30 +28,32 @@
 #include <asm/unaligned.h>
 
 #ifdef __KERNEL__
-extern __be16		eth_type_trans(struct sk_buff *skb, struct net_device *dev);
+u32 eth_get_headlen(void *data, unsigned int max_len);
+__be16 eth_type_trans(struct sk_buff *skb, struct net_device *dev);
 extern const struct header_ops eth_header_ops;
 
-extern int eth_header(struct sk_buff *skb, struct net_device *dev,
-		      unsigned short type,
-		      const void *daddr, const void *saddr, unsigned len);
-extern int eth_rebuild_header(struct sk_buff *skb);
-extern int eth_header_parse(const struct sk_buff *skb, unsigned char *haddr);
-extern int eth_header_cache(const struct neighbour *neigh, struct hh_cache *hh, __be16 type);
-extern void eth_header_cache_update(struct hh_cache *hh,
-				    const struct net_device *dev,
-				    const unsigned char *haddr);
-extern int eth_prepare_mac_addr_change(struct net_device *dev, void *p);
-extern void eth_commit_mac_addr_change(struct net_device *dev, void *p);
-extern int eth_mac_addr(struct net_device *dev, void *p);
-extern int eth_change_mtu(struct net_device *dev, int new_mtu);
-extern int eth_validate_addr(struct net_device *dev);
+int eth_header(struct sk_buff *skb, struct net_device *dev, unsigned short type,
+	       const void *daddr, const void *saddr, unsigned len);
+int eth_rebuild_header(struct sk_buff *skb);
+int eth_header_parse(const struct sk_buff *skb, unsigned char *haddr);
+int eth_header_cache(const struct neighbour *neigh, struct hh_cache *hh,
+		     __be16 type);
+void eth_header_cache_update(struct hh_cache *hh, const struct net_device *dev,
+			     const unsigned char *haddr);
+int eth_prepare_mac_addr_change(struct net_device *dev, void *p);
+void eth_commit_mac_addr_change(struct net_device *dev, void *p);
+int eth_mac_addr(struct net_device *dev, void *p);
+int eth_change_mtu(struct net_device *dev, int new_mtu);
+int eth_validate_addr(struct net_device *dev);
 
-
-
-extern struct net_device *alloc_etherdev_mqs(int sizeof_priv, unsigned int txqs,
+struct net_device *alloc_etherdev_mqs(int sizeof_priv, unsigned int txqs,
 					    unsigned int rxqs);
 #define alloc_etherdev(sizeof_priv) alloc_etherdev_mq(sizeof_priv, 1)
 #define alloc_etherdev_mq(sizeof_priv, count) alloc_etherdev_mqs(sizeof_priv, count, count)
+
+struct sk_buff **eth_gro_receive(struct sk_buff **head,
+				 struct sk_buff *skb);
+int eth_gro_complete(struct sk_buff *skb, int nhoff);
 
 /* Reserved Ethernet Addresses per IEEE 802.1Q */
 static const u8 eth_reserved_addr_base[ETH_ALEN] __aligned(2) =
@@ -199,6 +201,28 @@ static inline void eth_hw_addr_random(struct net_device *dev)
 }
 
 /**
+ * ether_addr_copy - Copy an Ethernet address
+ * @dst: Pointer to a six-byte array Ethernet address destination
+ * @src: Pointer to a six-byte array Ethernet address source
+ *
+ * Please note: dst & src must both be aligned to u16.
+ */
+static inline void ether_addr_copy(u8 *dst, const u8 *src)
+{
+#if defined(CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS)
+	*(u32 *)dst = *(const u32 *)src;
+	*(u16 *)(dst + 4) = *(const u16 *)(src + 4);
+#else
+	u16 *a = (u16 *)dst;
+	const u16 *b = (const u16 *)src;
+
+	a[0] = b[0];
+	a[1] = b[1];
+	a[2] = b[2];
+#endif
+}
+
+/**
  * compare_ether_addr - Compare two Ethernet addresses
  * @addr1: Pointer to a six-byte array containing the Ethernet address
  * @addr2: Pointer other six-byte array containing the Ethernet address
@@ -269,6 +293,24 @@ static inline bool ether_addr_equal_64bits(const u8 addr1[6+2],
 }
 
 /**
+ * ether_addr_equal_unaligned - Compare two not u16 aligned Ethernet addresses
+ * @addr1: Pointer to a six-byte array containing the Ethernet address
+ * @addr2: Pointer other six-byte array containing the Ethernet address
+ *
+ * Compare two Ethernet addresses, returns true if equal
+ *
+ * Please note: Use only when any Ethernet address may not be u16 aligned.
+ */
+static inline bool ether_addr_equal_unaligned(const u8 *addr1, const u8 *addr2)
+{
+#if defined(CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS)
+	return ether_addr_equal(addr1, addr2);
+#else
+	return memcmp(addr1, addr2, ETH_ALEN) == 0;
+#endif
+}
+
+/**
  * is_etherdev_addr - Tell if given Ethernet address belongs to the device.
  * @dev: Pointer to a device structure
  * @addr: Pointer to a six-byte array containing the Ethernet address
@@ -331,6 +373,18 @@ static inline unsigned long compare_ether_header(const void *a, const void *b)
 	return (*(u16 *)a ^ *(u16 *)b) | (a32[0] ^ b32[0]) |
 	       (a32[1] ^ b32[1]) | (a32[2] ^ b32[2]);
 #endif
+}
+
+/**
+ * eth_skb_pad - Pad buffer to mininum number of octets for Ethernet frame
+ * @skb: Buffer to pad
+ *
+ * An Ethernet frame should have a minimum size of 60 bytes.  This function
+ * takes short frames and pads them with zeros up to the 60 byte limit.
+ */
+static inline int eth_skb_pad(struct sk_buff *skb)
+{
+	return skb_put_padto(skb, ETH_ZLEN);
 }
 
 #endif	/* _LINUX_ETHERDEVICE_H */

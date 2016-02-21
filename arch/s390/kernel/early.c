@@ -206,6 +206,7 @@ static noinline __init void clear_bss_section(void)
  */
 static noinline __init void init_kernel_storage_key(void)
 {
+#if PAGE_DEFAULT_KEY
 	unsigned long end_pfn, init_pfn;
 
 	end_pfn = PFN_UP(__pa(&_end));
@@ -213,6 +214,7 @@ static noinline __init void init_kernel_storage_key(void)
 	for (init_pfn = 0 ; init_pfn < end_pfn; init_pfn++)
 		page_set_storage_key(init_pfn << PAGE_SHIFT,
 				     PAGE_DEFAULT_KEY, 0);
+#endif
 }
 
 static __initdata char sysinfo_page[PAGE_SIZE] __aligned(PAGE_SIZE);
@@ -378,14 +380,14 @@ static __init void detect_machine_facilities(void)
 		S390_lowcore.machine_flags |= MACHINE_FLAG_EDAT2;
 	if (test_facility(3))
 		S390_lowcore.machine_flags |= MACHINE_FLAG_IDTE;
-	if (test_facility(27))
-		S390_lowcore.machine_flags |= MACHINE_FLAG_MVCOS;
 	if (test_facility(40))
 		S390_lowcore.machine_flags |= MACHINE_FLAG_LPP;
 	if (test_facility(50) && test_facility(73))
 		S390_lowcore.machine_flags |= MACHINE_FLAG_TE;
 	if (test_facility(66))
 		S390_lowcore.machine_flags |= MACHINE_FLAG_RRBM;
+	if (test_facility(129))
+		S390_lowcore.machine_flags |= MACHINE_FLAG_VX;
 #endif
 }
 
@@ -481,7 +483,7 @@ void __init startup_init(void)
 	detect_diag44();
 	detect_machine_facilities();
 	setup_topology();
-	sclp_facilities_detect();
+	sclp_early_detect();
 #ifdef CONFIG_DYNAMIC_FTRACE
 	S390_lowcore.ftrace_func = (unsigned long)ftrace_caller;
 #endif

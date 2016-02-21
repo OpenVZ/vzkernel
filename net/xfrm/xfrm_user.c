@@ -876,7 +876,10 @@ static int dump_one_state(struct xfrm_state *x, int count, void *ptr)
 static int xfrm_dump_sa_done(struct netlink_callback *cb)
 {
 	struct xfrm_state_walk *walk = (struct xfrm_state_walk *) &cb->args[1];
-	xfrm_state_walk_done(walk);
+	struct sock *sk = cb->skb->sk;
+	struct net *net = sock_net(sk);
+
+	xfrm_state_walk_done(walk, net);
 	return 0;
 }
 
@@ -1546,8 +1549,9 @@ static int dump_one_policy(struct xfrm_policy *xp, int dir, int count, void *ptr
 static int xfrm_dump_policy_done(struct netlink_callback *cb)
 {
 	struct xfrm_policy_walk *walk = (struct xfrm_policy_walk *) &cb->args[1];
+	struct net *net = sock_net(cb->skb->sk);
 
-	xfrm_policy_walk_done(walk);
+	xfrm_policy_walk_done(walk, net);
 	return 0;
 }
 
@@ -2128,6 +2132,7 @@ static int xfrm_do_migrate(struct sk_buff *skb, struct nlmsghdr *nlh,
 	u8 type;
 	int err;
 	int n = 0;
+	struct net *net = sock_net(skb->sk);
 
 	if (attrs[XFRMA_MIGRATE] == NULL)
 		return -EINVAL;
@@ -2145,7 +2150,7 @@ static int xfrm_do_migrate(struct sk_buff *skb, struct nlmsghdr *nlh,
 	if (!n)
 		return 0;
 
-	xfrm_migrate(&pi->sel, pi->dir, type, m, n, kmp);
+	xfrm_migrate(&pi->sel, pi->dir, type, m, n, kmp, net);
 
 	return 0;
 }
@@ -2362,7 +2367,7 @@ static int xfrm_user_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 	link = &xfrm_dispatch[type];
 
 	/* All operations require privileges, even GET */
-	if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+	if (!netlink_net_capable(skb, CAP_NET_ADMIN))
 		return -EPERM;
 
 	if ((type == (XFRM_MSG_GETSA - XFRM_MSG_BASE) ||
@@ -2393,9 +2398,11 @@ static int xfrm_user_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 
 static void xfrm_netlink_rcv(struct sk_buff *skb)
 {
-	mutex_lock(&xfrm_cfg_mutex);
+	struct net *net = sock_net(skb->sk);
+
+	mutex_lock(&net->xfrm_cfg_mutex);
 	netlink_rcv_skb(skb, &xfrm_user_rcv_msg);
-	mutex_unlock(&xfrm_cfg_mutex);
+	mutex_unlock(&net->xfrm_cfg_mutex);
 }
 
 static inline size_t xfrm_expire_msgsize(void)

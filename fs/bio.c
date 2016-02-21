@@ -73,7 +73,7 @@ static unsigned int bio_slab_nr, bio_slab_max;
 
 static struct kmem_cache *bio_find_or_create_slab(unsigned int extra_size)
 {
-	unsigned int sz = sizeof(struct bio) + extra_size;
+	unsigned int sz = sizeof(struct bio) + sizeof(struct bio_aux) + extra_size;
 	struct kmem_cache *slab = NULL;
 	struct bio_slab *bslab, *new_bio_slabs;
 	unsigned int new_bio_slab_max;
@@ -114,11 +114,11 @@ static struct kmem_cache *bio_find_or_create_slab(unsigned int extra_size)
 	bslab = &bio_slabs[entry];
 
 	snprintf(bslab->name, sizeof(bslab->name), "bio-%d", entry);
-	slab = kmem_cache_create(bslab->name, sz, 0, SLAB_HWCACHE_ALIGN, NULL);
+	slab = kmem_cache_create(bslab->name, sz, ARCH_KMALLOC_MINALIGN,
+				 SLAB_HWCACHE_ALIGN, NULL);
 	if (!slab)
 		goto out_unlock;
 
-	printk(KERN_INFO "bio: create slab <%s> at %d\n", bslab->name, entry);
 	bslab->slab = slab;
 	bslab->slab_ref = 1;
 	bslab->slab_size = sz;
@@ -277,6 +277,16 @@ void bio_init(struct bio *bio)
 }
 EXPORT_SYMBOL(bio_init);
 
+static void bio_init_aux(struct bio *bio, struct bio_aux *bio_aux)
+{
+	if (WARN_ON_ONCE(!bio_aux))
+		return;
+
+	memset(bio_aux, 0, sizeof(*bio_aux));
+	bio->bio_aux = bio_aux;
+	atomic_set(&bio->bio_aux->__bi_remaining, 1);
+}
+
 /**
  * bio_reset - reinitialize a bio
  * @bio:	bio to reset
@@ -294,9 +304,51 @@ void bio_reset(struct bio *bio)
 	__bio_free(bio);
 
 	memset(bio, 0, BIO_RESET_BYTES);
-	bio->bi_flags = flags|(1 << BIO_UPTODATE);
+	bio->bi_flags = flags | (1 << BIO_UPTODATE);
+
+	if (bio->bio_aux)
+		atomic_set(&bio->bio_aux->__bi_remaining, 1);
 }
 EXPORT_SYMBOL(bio_reset);
+
+static void bio_chain_endio(struct bio *bio, int error)
+{
+	bio_endio(bio->bi_private, error);
+	bio_put(bio);
+}
+
+/*
+ * Increment chain count for the bio. Make sure the CHAIN flag update
+ * is visible before the raised count.
+ */
+static inline void bio_inc_remaining(struct bio *bio)
+{
+	if (WARN_ON_ONCE(!bio->bio_aux))
+		return;
+
+	bio->bio_aux->bi_flags |= (1 << BIO_AUX_CHAIN);
+	smp_mb__before_atomic();
+	atomic_inc(&bio->bio_aux->__bi_remaining);
+}
+
+/**
+ * bio_chain - chain bio completions
+ *
+ * The caller won't have a bi_end_io called when @bio completes - instead,
+ * @parent's bi_end_io won't be called until both @parent and @bio have
+ * completed; the chained bio will also be freed when it completes.
+ *
+ * The caller must not set bi_private or bi_end_io in @bio.
+ */
+void bio_chain(struct bio *bio, struct bio *parent)
+{
+	BUG_ON(bio->bi_private || bio->bi_end_io);
+
+	bio->bi_private = parent;
+	bio->bi_end_io	= bio_chain_endio;
+	bio_inc_remaining(parent);
+}
+EXPORT_SYMBOL(bio_chain);
 
 static void bio_alloc_rescue(struct work_struct *work)
 {
@@ -389,13 +441,14 @@ struct bio *bio_alloc_bioset(gfp_t gfp_mask, int nr_iovecs, struct bio_set *bs)
 	unsigned long idx = BIO_POOL_NONE;
 	struct bio_vec *bvl = NULL;
 	struct bio *bio;
+	struct bio_aux *bio_aux;
 	void *p;
 
 	if (!bs) {
 		if (nr_iovecs > UIO_MAXIOV)
 			return NULL;
 
-		p = kmalloc(sizeof(struct bio) +
+		p = kmalloc(sizeof(struct bio) + sizeof(struct bio_aux) +
 			    nr_iovecs * sizeof(struct bio_vec),
 			    gfp_mask);
 		front_pad = 0;
@@ -441,6 +494,9 @@ struct bio *bio_alloc_bioset(gfp_t gfp_mask, int nr_iovecs, struct bio_set *bs)
 
 	bio = p + front_pad;
 	bio_init(bio);
+	bio_aux = p + front_pad +
+		sizeof(struct bio) + (inline_vecs * sizeof(struct bio_vec));
+	bio_init_aux(bio, bio_aux);
 
 	if (nr_iovecs > inline_vecs) {
 		bvl = bvec_alloc(gfp_mask, nr_iovecs, &idx, bs->bvec_pool);
@@ -601,7 +657,7 @@ EXPORT_SYMBOL(bio_get_nr_vecs);
 
 static int __bio_add_page(struct request_queue *q, struct bio *bio, struct page
 			  *page, unsigned int len, unsigned int offset,
-			  unsigned short max_sectors)
+			  unsigned int max_sectors)
 {
 	int retried_segments = 0;
 	struct bio_vec *bvec;
@@ -648,24 +704,18 @@ static int __bio_add_page(struct request_queue *q, struct bio *bio, struct page
 
 			goto done;
 		}
+
+		/*
+		 * If the queue doesn't support SG gaps and adding this
+		 * offset would create a gap, disallow it.
+		 */
+		if (q->queue_flags & (1 << QUEUE_FLAG_SG_GAPS) &&
+		    bvec_gap_to_prev(prev, offset))
+			return 0;
 	}
 
 	if (bio->bi_vcnt >= bio->bi_max_vecs)
 		return 0;
-
-	/*
-	 * we might lose a segment or two here, but rather that than
-	 * make this too complex.
-	 */
-
-	while (bio->bi_phys_segments >= queue_max_segments(q)) {
-
-		if (retried_segments)
-			return 0;
-
-		retried_segments = 1;
-		blk_recount_segments(q, bio);
-	}
 
 	/*
 	 * setup the new entry, we might clear it again later if we
@@ -675,6 +725,22 @@ static int __bio_add_page(struct request_queue *q, struct bio *bio, struct page
 	bvec->bv_page = page;
 	bvec->bv_len = len;
 	bvec->bv_offset = offset;
+	bio->bi_vcnt++;
+	bio->bi_phys_segments++;
+
+	/*
+	 * Perform a recount if the number of segments is greater
+	 * than queue_max_segments(q).
+	 */
+
+	while (bio->bi_phys_segments > queue_max_segments(q)) {
+
+		if (retried_segments)
+			goto failed;
+
+		retried_segments = 1;
+		blk_recount_segments(q, bio);
+	}
 
 	/*
 	 * if queue has other restrictions (eg varying max sector size
@@ -693,23 +759,25 @@ static int __bio_add_page(struct request_queue *q, struct bio *bio, struct page
 		 * merge_bvec_fn() returns number of bytes it can accept
 		 * at this offset
 		 */
-		if (q->merge_bvec_fn(q, &bvm, bvec) < bvec->bv_len) {
-			bvec->bv_page = NULL;
-			bvec->bv_len = 0;
-			bvec->bv_offset = 0;
-			return 0;
-		}
+		if (q->merge_bvec_fn(q, &bvm, bvec) < bvec->bv_len)
+			goto failed;
 	}
 
 	/* If we may be able to merge these biovecs, force a recount */
-	if (bio->bi_vcnt && (BIOVEC_PHYS_MERGEABLE(bvec-1, bvec)))
+	if (bio->bi_vcnt > 1 && (BIOVEC_PHYS_MERGEABLE(bvec-1, bvec)))
 		bio->bi_flags &= ~(1 << BIO_SEG_VALID);
 
-	bio->bi_vcnt++;
-	bio->bi_phys_segments++;
  done:
 	bio->bi_size += len;
 	return len;
+
+ failed:
+	bvec->bv_page = NULL;
+	bvec->bv_len = 0;
+	bvec->bv_offset = 0;
+	bio->bi_vcnt--;
+	blk_recount_segments(q, bio);
+	return 0;
 }
 
 /**
@@ -751,7 +819,13 @@ int bio_add_page(struct bio *bio, struct page *page, unsigned int len,
 		 unsigned int offset)
 {
 	struct request_queue *q = bdev_get_queue(bio->bi_bdev);
-	return __bio_add_page(q, bio, page, len, offset, queue_max_sectors(q));
+	unsigned int max_sectors;
+
+	max_sectors = blk_max_size_offset(q, bio->bi_sector);
+	if ((max_sectors < (len >> 9)) && !bio->bi_size)
+		max_sectors = len >> 9;
+
+	return __bio_add_page(q, bio, page, len, offset, max_sectors);
 }
 EXPORT_SYMBOL(bio_add_page);
 
@@ -917,8 +991,8 @@ void bio_copy_data(struct bio *dst, struct bio *src)
 		src_p = kmap_atomic(src_bv->bv_page);
 		dst_p = kmap_atomic(dst_bv->bv_page);
 
-		memcpy(dst_p + dst_bv->bv_offset,
-		       src_p + src_bv->bv_offset,
+		memcpy(dst_p + dst_offset,
+		       src_p + src_offset,
 		       bytes);
 
 		kunmap_atomic(dst_p);
@@ -1045,12 +1119,22 @@ static int __bio_copy_iov(struct bio *bio, struct bio_vec *iovecs,
 int bio_uncopy_user(struct bio *bio)
 {
 	struct bio_map_data *bmd = bio->bi_private;
-	int ret = 0;
+	struct bio_vec *bvec;
+	int ret = 0, i;
 
-	if (!bio_flagged(bio, BIO_NULL_MAPPED))
-		ret = __bio_copy_iov(bio, bmd->iovecs, bmd->sgvecs,
-				     bmd->nr_sgvecs, bio_data_dir(bio) == READ,
-				     0, bmd->is_our_pages);
+	if (!bio_flagged(bio, BIO_NULL_MAPPED)) {
+		/*
+		 * if we're in a workqueue, the request is orphaned, so
+		 * don't copy into a random user address space, just free.
+		 */
+		if (current->mm)
+			ret = __bio_copy_iov(bio, bmd->iovecs, bmd->sgvecs,
+					     bmd->nr_sgvecs, bio_data_dir(bio) == READ,
+					     0, bmd->is_our_pages);
+		else if (bmd->is_our_pages)
+			bio_for_each_segment_all(bvec, bio, i)
+				__free_page(bvec->bv_page);
+	}
 	bio_free_map_data(bmd);
 	bio_put(bio);
 	return ret;
@@ -1685,6 +1769,25 @@ void bio_flush_dcache_pages(struct bio *bi)
 EXPORT_SYMBOL(bio_flush_dcache_pages);
 #endif
 
+static inline bool bio_remaining_done(struct bio *bio)
+{
+	/*
+	 * If we're not chaining, then ->__bi_remaining is always 1 and
+	 * we always end io on the first invocation.
+	 */
+	if (!bio_aux_flagged(bio, BIO_AUX_CHAIN))
+		return true;
+
+	BUG_ON(atomic_read(&bio->bio_aux->__bi_remaining) <= 0);
+
+	if (atomic_dec_and_test(&bio->bio_aux->__bi_remaining)) {
+		clear_bit(BIO_AUX_CHAIN, &bio->bio_aux->bi_flags);
+		return true;
+	}
+
+	return false;
+}
+
 /**
  * bio_endio - end I/O on a bio
  * @bio:	bio
@@ -1701,13 +1804,33 @@ EXPORT_SYMBOL(bio_flush_dcache_pages);
  **/
 void bio_endio(struct bio *bio, int error)
 {
-	if (error)
-		clear_bit(BIO_UPTODATE, &bio->bi_flags);
-	else if (!test_bit(BIO_UPTODATE, &bio->bi_flags))
-		error = -EIO;
+	while (bio) {
+		if (error)
+			clear_bit(BIO_UPTODATE, &bio->bi_flags);
+		else if (!test_bit(BIO_UPTODATE, &bio->bi_flags))
+			error = -EIO;
 
-	if (bio->bi_end_io)
-		bio->bi_end_io(bio, error);
+		if (unlikely(!bio_remaining_done(bio)))
+			break;
+
+		/*
+		 * Need to have a real endio function for chained bios,
+		 * otherwise various corner cases will break (like stacking
+		 * block devices that save/restore bi_end_io) - however, we want
+		 * to avoid unbounded recursion and blowing the stack. Tail call
+		 * optimization would handle this, but compiling with frame
+		 * pointers also disables gcc's sibling call optimization.
+		 */
+		if (bio->bi_end_io == bio_chain_endio) {
+			struct bio *parent = bio->bi_private;
+			bio_put(bio);
+			bio = parent;
+		} else {
+			if (bio->bi_end_io)
+				bio->bi_end_io(bio, error);
+			bio = NULL;
+		}
+	}
 }
 EXPORT_SYMBOL(bio_endio);
 
@@ -1793,6 +1916,52 @@ struct bio_pair *bio_split(struct bio *bi, int first_sectors)
 	return bp;
 }
 EXPORT_SYMBOL(bio_split);
+
+/**
+ * bio_trim - trim a bio
+ * @bio:	bio to trim
+ * @offset:	number of sectors to trim from the front of @bio
+ * @size:	size we want to trim @bio to, in sectors
+ */
+void bio_trim(struct bio *bio, int offset, int size)
+{
+	/* 'bio' is a cloned bio which we need to trim to match
+	 * the given offset and size.
+	 * This requires adjusting bi_sector, bi_size, and bi_io_vec
+	 */
+	int i;
+	struct bio_vec *bvec;
+	int sofar = 0;
+
+	size <<= 9;
+	if (offset == 0 && size == bio->bi_size)
+		return;
+
+	clear_bit(BIO_SEG_VALID, &bio->bi_flags);
+
+	bio_advance(bio, offset << 9);
+
+	bio->bi_size = size;
+
+	/* avoid any complications with bi_idx being non-zero*/
+	if (bio->bi_idx) {
+		memmove(bio->bi_io_vec, bio->bi_io_vec+bio->bi_idx,
+			(bio->bi_vcnt - bio->bi_idx) * sizeof(struct bio_vec));
+		bio->bi_vcnt -= bio->bi_idx;
+		bio->bi_idx = 0;
+	}
+	/* Make sure vcnt and last bv are not too big */
+	bio_for_each_segment(bvec, bio, i) {
+		if (sofar + bvec->bv_len > size)
+			bvec->bv_len = size - sofar;
+		if (bvec->bv_len == 0) {
+			bio->bi_vcnt = i;
+			break;
+		}
+		sofar += bvec->bv_len;
+	}
+}
+EXPORT_SYMBOL_GPL(bio_trim);
 
 /**
  *      bio_sector_offset - Find hardware sector offset in bio
