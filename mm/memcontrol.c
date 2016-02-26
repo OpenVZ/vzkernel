@@ -1686,6 +1686,24 @@ bool mem_cgroup_low(struct mem_cgroup *root, struct mem_cgroup *memcg)
 	if (res_counter_read_u64(&memcg->res, RES_USAGE) >= memcg->low)
 		return false;
 
+	/*
+	 * XXX: It's OK to set memory.low for a cgroup to infinity. This might
+	 * be useful if no tasks are supposed to run inside the cgroup itself,
+	 * but only in its sub-cgroups (e.g. /machine.slice). In this case
+	 * protection against memory pressure originating on upper levels will
+	 * be guarded solely by memory.low configuration in sub-cgroups.
+	 *
+	 * However, in the current implementation, in contrast to mainstream,
+	 * charges can appear in a cgroup even if there's no tasks in it - they
+	 * can be reparented from a dead sub-cgroup. If the cgroup has
+	 * memory.low set to inf, such reparented charges will not get
+	 * reclaimed normally on memory pressure, resulting in performance
+	 * degradation in other cgroups. To avoid that, let's ignore memory.low
+	 * for cgroups w/o tasks.
+	 */
+	if (cgroup_task_count(memcg->css.cgroup) == 0)
+		return false;
+
 	while (memcg != root) {
 		memcg = parent_mem_cgroup(memcg);
 		if (!memcg)
