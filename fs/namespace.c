@@ -756,7 +756,7 @@ static void commit_tree(struct mount *mnt)
 	touch_mnt_namespace(n);
 }
 
-struct mount *next_mnt(struct mount *p, struct mount *root)
+static struct mount *next_mnt(struct mount *p, struct mount *root)
 {
 	struct list_head *next = p->mnt_mounts.next;
 	if (next == &p->mnt_mounts) {

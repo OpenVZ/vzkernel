@@ -71,7 +71,6 @@ static inline int is_mounted(struct vfsmount *mnt)
 }
 
 extern struct rw_semaphore namespace_sem;
-extern struct mount *next_mnt(struct mount *p, struct mount *root);
 
 extern struct mount *__lookup_mnt(struct vfsmount *, struct dentry *, int);
 
