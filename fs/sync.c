@@ -173,8 +173,6 @@ static void sync_filesystems_ve(struct ve_struct *ve, struct user_beancounter *u
 	LIST_HEAD(sync_list);
 	struct sync_sb *ss;
 
-	mutex_lock(&ve->sync_mutex);		/* Could be down_interruptible */
-
 	/*
 	 * We don't need to care about allocating failure here. At least we
 	 * don't need to skip sync on such error.
@@ -191,8 +189,6 @@ static void sync_filesystems_ve(struct ve_struct *ve, struct user_beancounter *u
 	}
 
 	sync_release_filesystems(&sync_list);
-
-	mutex_unlock(&ve->sync_mutex);
 }
 
 #endif
