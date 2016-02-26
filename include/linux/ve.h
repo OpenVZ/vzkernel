@@ -111,7 +111,6 @@ struct ve_struct {
 	struct nsproxy __rcu	*ve_ns;
 	struct cred		*init_cred;
 	struct net		*ve_netns;
-	struct mutex		sync_mutex;
 
 	struct list_head	devmnt_list;
 	struct mutex		devmnt_mutex;
