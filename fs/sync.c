@@ -134,15 +134,15 @@ static int sync_filesystem_collected(struct list_head *sync_list, struct super_b
 
 static int sync_collect_filesystems(struct ve_struct *ve, struct list_head *sync_list)
 {
-	struct mount *root = real_mount(ve->root_path.mnt);
 	struct mount *mnt;
+	struct mnt_namespace *mnt_ns = ve->ve_ns->mnt_ns;
 	struct sync_sb *ss;
 	int ret = 0;
 
 	BUG_ON(!list_empty(sync_list));
 
 	down_read(&namespace_sem);
-	for (mnt = root; mnt; mnt = next_mnt(mnt, root)) {
+	list_for_each_entry(mnt, &mnt_ns->list, mnt_list) {
 		if (sync_filesystem_collected(sync_list, mnt->mnt.mnt_sb))
 			continue;
 
