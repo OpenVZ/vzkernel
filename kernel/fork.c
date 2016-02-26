@@ -1400,10 +1400,9 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 
 	/*
 	 * If the new process will be in a different pid or user namespace
-	 * do not allow it to share a thread group or signal handlers or
-	 * parent with the forking task.
+	 * do not allow it to share a thread group with the forking task.
 	 */
-	if (clone_flags & CLONE_SIGHAND) {
+	if (clone_flags & CLONE_THREAD) {
 		if ((clone_flags & (CLONE_NEWUSER | CLONE_NEWPID)) ||
 		    (task_active_pid_ns(current) !=
 				current->nsproxy->pid_ns))
@@ -2085,7 +2084,8 @@ SYSCALL_DEFINE1(unshare, unsigned long, unshare_flags)
 	int err;
 
 	/*
-	 * If unsharing a user namespace must also unshare the thread.
+	 * If unsharing a user namespace must also unshare the thread group
+	 * and unshare the filesystem root and working directories.
 	 */
 	if (unshare_flags & CLONE_NEWUSER)
 		unshare_flags |= CLONE_THREAD | CLONE_FS;
