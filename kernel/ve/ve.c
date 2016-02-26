@@ -491,7 +491,6 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 
 do_init:
 	init_rwsem(&ve->op_sem);
-	mutex_init(&ve->sync_mutex);
 	INIT_LIST_HEAD(&ve->devices);
 	INIT_LIST_HEAD(&ve->ve_list);
 	INIT_LIST_HEAD(&ve->devmnt_list);
