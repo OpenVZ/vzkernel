@@ -1,6 +1,7 @@
 #ifndef _LINUX_KASAN_H
 #define _LINUX_KASAN_H
 
+#include <linux/sched.h>
 #include <linux/types.h>
 
 struct kmem_cache;
@@ -13,7 +14,6 @@ struct vm_struct;
 #define KASAN_SHADOW_OFFSET _AC(CONFIG_KASAN_SHADOW_OFFSET, UL)
 
 #include <asm/kasan.h>
-#include <linux/sched.h>
 
 static inline void *kasan_mem_to_shadow(const void *addr)
 {
@@ -34,6 +34,8 @@ static inline void kasan_disable_current(void)
 }
 
 void kasan_unpoison_shadow(const void *address, size_t size);
+
+void kasan_unpoison_task_stack(struct task_struct *task);
 
 void kasan_alloc_pages(struct page *page, unsigned int order);
 void kasan_free_pages(struct page *page, unsigned int order);
@@ -73,6 +75,8 @@ size_t kasan_metadata_size(struct kmem_cache *cache);
 #else /* CONFIG_KASAN */
 
 static inline void kasan_unpoison_shadow(const void *address, size_t size) {}
+
+static inline void kasan_unpoison_task_stack(struct task_struct *task) {}
 
 static inline void kasan_enable_current(void) {}
 static inline void kasan_disable_current(void) {}
