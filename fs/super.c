@@ -171,6 +171,8 @@ static struct super_block *alloc_super(struct file_system_type *type, int flags)
 	if (!s)
 		return NULL;
 
+	INIT_LIST_HEAD(&s->s_mounts);
+
 	if (security_sb_alloc(s))
 		goto fail;
 	for (i = 0; i < SB_FREEZE_LEVELS; i++) {
@@ -193,7 +195,6 @@ static struct super_block *alloc_super(struct file_system_type *type, int flags)
 	if (list_lru_init_memcg(&s->s_inode_lru))
 		goto err_out_dentry_lru;
 
-	INIT_LIST_HEAD(&s->s_mounts);
 	init_rwsem(&s->s_umount);
 	lockdep_set_class(&s->s_umount, &type->s_umount_key);
 	/*
