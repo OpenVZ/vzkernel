@@ -161,6 +161,7 @@ static struct super_block *alloc_super(struct file_system_type *type, int flags,
 	if (!s)
 		return NULL;
 
+	INIT_LIST_HEAD(&s->s_mounts);
 	s->s_user_ns = get_user_ns(user_ns);
 
 	if (security_sb_alloc(s))
@@ -188,7 +189,6 @@ static struct super_block *alloc_super(struct file_system_type *type, int flags,
 	INIT_LIST_HEAD(&s->s_dentry_lru);
 	INIT_LIST_HEAD(&s->s_inode_lru);
 	spin_lock_init(&s->s_inode_lru_lock);
-	INIT_LIST_HEAD(&s->s_mounts);
 	init_rwsem(&s->s_umount);
 	lockdep_set_class(&s->s_umount, &type->s_umount_key);
 	/*
