@@ -69,7 +69,7 @@ struct bio_list_walk
 
 static int cached_submit(struct ploop_io *io, iblock_t iblk,
 	      struct ploop_request * preq,
-	      struct bio_list * sbl, unsigned int size);
+	      struct bio_list * sbl, unsigned int size, bool use_prealloc);
 
 static void
 dio_submit(struct ploop_io *io, struct ploop_request * preq,
@@ -268,7 +268,7 @@ write_unint:
 	ploop_add_lockout(preq, 0);
 	spin_unlock_irq(&preq->plo->lock);
 
-	err = cached_submit(io, iblk, preq, sbl, size);
+	err = cached_submit(io, iblk, preq, sbl, size, false);
 	goto out;
 
 write_unint_fail:
@@ -362,7 +362,7 @@ static inline void bzero_page(struct page *page)
 
 static int
 cached_submit(struct ploop_io *io, iblock_t iblk, struct ploop_request * preq,
-	      struct bio_list * sbl, unsigned int size)
+	      struct bio_list * sbl, unsigned int size, bool use_prealloc)
 {
 	struct ploop_device * plo = preq->plo;
 	int err = 0;
@@ -370,13 +370,15 @@ cached_submit(struct ploop_io *io, iblock_t iblk, struct ploop_request * preq,
 	loff_t clu_siz = 1 << (plo->cluster_log + 9);
 	struct bio_iter biter;
 	loff_t new_size;
+	loff_t used_pos;
 
 	trace_cached_submit(preq);
 
 	pos = (loff_t)iblk << (plo->cluster_log + 9);
 	end_pos = pos + clu_siz;
+	used_pos = (io->alloc_head - 1) << (io->plo->cluster_log + 9);
 
-	if (end_pos > i_size_read(io->files.inode) &&
+	if (use_prealloc && end_pos > used_pos &&
 	    io->files.file->f_op->fallocate &&
 	    io->files.flags & EXT4_EXTENTS_FL) {
 		if (unlikely(io->prealloced_size < clu_siz)) {
@@ -699,7 +701,7 @@ dio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 		return;
 	}
 
-	err = cached_submit(io, iblk, preq, sbl, size);
+	err = cached_submit(io, iblk, preq, sbl, size, true);
 	if (err) {
 		if (err == -ENOSPC)
 			io->alloc_head--;
