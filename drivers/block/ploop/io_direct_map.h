@@ -3,8 +3,6 @@
 
 #include <linux/rbtree.h>
 
-#define BLOCK_UNINIT ~((sector_t) 0)
-
 struct extent_map_tree
 {
 	struct rb_root map;
@@ -28,6 +26,8 @@ struct extent_map
 	sector_t	block_start;
 
 	atomic_t refs;
+
+	bool uninit;
 };
 
 extern int max_extent_map_pages;
