@@ -526,6 +526,7 @@ void memcg_destroy_kmem_caches(struct mem_cgroup *memcg)
 
 void slab_kmem_cache_release(struct kmem_cache *s)
 {
+	__kmem_cache_release(s);
 	destroy_memcg_params(s);
 	kfree(s->name);
 	kmem_cache_free(kmem_cache, s);
