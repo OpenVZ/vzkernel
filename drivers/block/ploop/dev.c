@@ -779,7 +779,8 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct bio * nbio;
 	struct ploop_device * plo = q->queuedata;
-	unsigned long rw;
+	unsigned long rw = bio_data_dir(bio);
+	int cpu;
 	LIST_HEAD(drop_list);
 
 	trace_make_request(bio);
@@ -788,6 +789,11 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 
 	BUG_ON(bio->bi_idx);
 	BUG_ON(bio->bi_size & 511);
+
+	cpu = part_stat_lock();
+	part_stat_inc(cpu, &plo->disk->part0, ios[rw]);
+	part_stat_add(cpu, &plo->disk->part0, sectors[rw], bio_sectors(bio));
+	part_stat_unlock();
 
 	if (unlikely(bio->bi_size == 0)) {
 		/* Is it possible? This makes sense if the request is
