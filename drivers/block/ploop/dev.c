@@ -2265,7 +2265,14 @@ static void ploop_req_state_process(struct ploop_request * preq)
 		preq->prealloc_size = 0; /* only for sanity */
 	}
 
+	if (test_bit(PLOOP_REQ_POST_SUBMIT, &preq->state)) {
+		preq->eng_io->ops->post_submit(preq->eng_io, preq);
+		clear_bit(PLOOP_REQ_POST_SUBMIT, &preq->state);
+		preq->eng_io = NULL;
+	}
+
 restart:
+	BUG_ON(test_bit(PLOOP_REQ_POST_SUBMIT, &preq->state));
 	__TRACE("ST %p %u %lu\n", preq, preq->req_cluster, preq->eng_state);
 	switch (preq->eng_state) {
 	case PLOOP_E_ENTRY:
