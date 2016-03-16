@@ -141,6 +141,7 @@ struct ploop_io_ops
 			  struct bio_list *sbl, iblock_t iblk, unsigned int size);
 	void	(*submit_alloc)(struct ploop_io *, struct ploop_request *,
 				struct bio_list *sbl, unsigned int size);
+	void	(*post_submit)(struct ploop_io *, struct ploop_request *);
 
 	int	(*disable_merge)(struct ploop_io * io, sector_t isector, unsigned int len);
 	int	(*fastmap)(struct ploop_io * io, struct bio *orig_bio,
@@ -458,6 +459,7 @@ enum
 	PLOOP_REQ_FORCE_FUA,	/*force fua of req write I/O by engine */
 	PLOOP_REQ_FORCE_FLUSH,	/*force flush by engine */
 	PLOOP_REQ_KAIO_FSYNC,	/*force image fsync by KAIO module */
+	PLOOP_REQ_POST_SUBMIT, /* preq needs post_submit processing */
 };
 
 enum
@@ -560,6 +562,10 @@ struct ploop_request
 
 	/* # bytes in tail of image file to prealloc on behalf of this preq */
 	loff_t			prealloc_size;
+
+	/* if the engine starts operation on particular io, let's finish
+	 * the operation on the same io (see io.ops->post_submit) */
+	struct ploop_io	       *eng_io;
 };
 
 static inline struct ploop_delta * ploop_top_delta(struct ploop_device * plo)
