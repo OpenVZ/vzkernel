@@ -359,6 +359,10 @@ static inline void bzero_page(struct page *page)
 	kunmap_atomic(kaddr);
 }
 
+static void
+dio_submit_pad(struct ploop_io *io, struct ploop_request * preq,
+	       struct bio_list * sbl, unsigned int size,
+	       struct extent_map *em);
 
 static int
 cached_submit(struct ploop_io *io, iblock_t iblk, struct ploop_request * preq,
@@ -371,6 +375,8 @@ cached_submit(struct ploop_io *io, iblock_t iblk, struct ploop_request * preq,
 	struct bio_iter biter;
 	loff_t new_size;
 	loff_t used_pos;
+	bool may_fallocate = io->files.file->f_op->fallocate &&
+		io->files.flags & EXT4_EXTENTS_FL;
 
 	trace_cached_submit(preq);
 
@@ -379,9 +385,7 @@ cached_submit(struct ploop_io *io, iblock_t iblk, struct ploop_request * preq,
 	used_pos = (io->alloc_head - 1) << (io->plo->cluster_log + 9);
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,24)
-	if (use_prealloc && end_pos > used_pos &&
-	    io->files.file->f_op->fallocate &&
-	    io->files.flags & EXT4_EXTENTS_FL) {
+	if (use_prealloc && end_pos > used_pos && may_fallocate) {
 		if (unlikely(io->prealloced_size < clu_siz)) {
 			loff_t prealloc = end_pos;
 			if (prealloc > PLOOP_MAX_PREALLOC(plo))
@@ -404,6 +408,21 @@ try_again:
 		io->prealloced_size -= clu_siz;
 	}
 #endif
+
+	if (may_fallocate) {
+		sector_t sec = (sector_t)iblk << preq->plo->cluster_log;
+		sector_t len = 1 << preq->plo->cluster_log;
+		struct extent_map * em = extent_lookup_create(io, sec, len);
+
+		if (unlikely(IS_ERR(em)))
+			return PTR_ERR(em);
+
+		preq->iblock = iblk;
+		preq->eng_io = io;
+		set_bit(PLOOP_REQ_POST_SUBMIT, &preq->state);
+		dio_submit_pad(io, preq, sbl, size, em);
+		return 0;
+	}
 
 	bio_iter_init(&biter, sbl);
 	mutex_lock(&io->files.inode->i_mutex);
@@ -478,6 +497,22 @@ try_again:
 		spin_unlock_irq(&plo->lock);
 	}
 	return err;
+}
+
+static void
+dio_post_submit(struct ploop_io *io, struct ploop_request * preq)
+{
+	sector_t sec = (sector_t)preq->iblock << preq->plo->cluster_log;
+	loff_t clu_siz = 1 << (preq->plo->cluster_log + 9);
+	int err;
+
+	err = io->files.file->f_op->fallocate(io->files.file,
+					      FALLOC_FL_CONVERT_UNWRITTEN,
+					      (loff_t)sec << 9, clu_siz);
+	if (err) {
+		PLOOP_REQ_SET_ERROR(preq, err);
+		set_bit(PLOOP_S_ABORT, &preq->plo->state);
+	}
 }
 
 /* Submit the whole cluster. If preq contains only partial data
@@ -1854,6 +1889,7 @@ static struct ploop_io_ops ploop_io_ops_direct =
 	.alloc		=	dio_alloc_sync,
 	.submit		=	dio_submit,
 	.submit_alloc	=	dio_submit_alloc,
+	.post_submit	=	dio_post_submit,
 	.disable_merge	=	dio_disable_merge,
 	.fastmap	=	dio_fastmap,
 	.read_page	=	dio_read_page,
