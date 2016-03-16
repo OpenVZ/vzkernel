@@ -254,6 +254,7 @@ struct extent_map *ploop_alloc_extent_map(gfp_t mask)
 		atomic_set(&em->refs, 1);
 		INIT_LIST_HEAD(&em->lru_link);
 		atomic_inc(&ploop_extent_maps_count);
+		em->uninit = false;
 	}
 	return em;
 }
@@ -717,12 +718,11 @@ again:
 
 	em->start = fi_extent.fe_logical >> 9;
 	em->end = (fi_extent.fe_logical + fi_extent.fe_length) >> 9;
+	em->block_start = fi_extent.fe_physical >> 9;
 
 	if (fi_extent.fe_flags & FIEMAP_EXTENT_UNWRITTEN) {
-		em->block_start = BLOCK_UNINIT;
+		em->uninit = true;
 	} else {
-		em->block_start = fi_extent.fe_physical >> 9;
-
 		ret = add_extent_mapping(tree, em);
 		if (ret == -EEXIST) {
 			ploop_extent_put(em);
