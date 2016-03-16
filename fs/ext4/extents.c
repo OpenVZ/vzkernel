@@ -4670,8 +4670,8 @@ retry:
 	ext4_std_error(inode->i_sb, err);
 }
 
-static int ext4_convert_and_extend(struct inode *inode, loff_t offset,
-				   loff_t len)
+static int ext4_convert_unwritten(struct inode *inode, loff_t offset,
+				  loff_t len)
 {
 	int err;
 
@@ -4941,7 +4941,7 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 	/* Return error if mode is not supported */
 	if (mode & ~(FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE |
 		     FALLOC_FL_COLLAPSE_RANGE | FALLOC_FL_ZERO_RANGE |
-		     FALLOC_FL_CONVERT_AND_EXTEND))
+		     FALLOC_FL_CONVERT_UNWRITTEN))
 		return -EOPNOTSUPP;
 
 	/* If data is about to change we must drop csum */
@@ -4952,8 +4952,8 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 	if (mode & FALLOC_FL_PUNCH_HOLE)
 		return ext4_punch_hole(inode, offset, len);
 
-	if (mode & FALLOC_FL_CONVERT_AND_EXTEND)
-		return ext4_convert_and_extend(inode, offset, len);
+	if (mode & FALLOC_FL_CONVERT_UNWRITTEN)
+		return ext4_convert_unwritten(inode, offset, len);
 
 	ret = ext4_convert_inline_data(inode);
 	if (ret)
