@@ -2390,7 +2390,7 @@ __kmem_cache_create (struct kmem_cache *cachep, unsigned long flags)
 
 	err = setup_cpu_cache(cachep, gfp);
 	if (err) {
-		__kmem_cache_shutdown(cachep);
+		__kmem_cache_release(cachep);
 		return err;
 	}
 
@@ -2544,12 +2544,13 @@ int __kmem_cache_shrink(struct kmem_cache *cachep, bool deactivate)
 
 int __kmem_cache_shutdown(struct kmem_cache *cachep)
 {
+	return __kmem_cache_shrink(cachep, false);
+}
+
+void __kmem_cache_release(struct kmem_cache *cachep)
+{
 	int i;
 	struct kmem_cache_node *n;
-	int rc = __kmem_cache_shrink(cachep, false);
-
-	if (rc)
-		return rc;
 
 	for_each_online_cpu(i)
 	    kfree(cachep->array[i]);
@@ -2563,7 +2564,6 @@ int __kmem_cache_shutdown(struct kmem_cache *cachep)
 			kfree(n);
 		}
 	}
-	return 0;
 }
 
 /*
