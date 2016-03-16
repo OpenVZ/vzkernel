@@ -135,7 +135,7 @@ dio_submit(struct ploop_io *io, struct ploop_request * preq,
 	if (IS_ERR(em))
 		goto out_em_err;
 
-	if (write && em->block_start == BLOCK_UNINIT) {
+	if (write && em->uninit) {
 		sector_t end = (sector_t)(iblk + 1) << preq->plo->cluster_log;
 		sec = (sector_t)iblk << preq->plo->cluster_log;
 
@@ -147,7 +147,7 @@ dio_submit(struct ploop_io *io, struct ploop_request * preq,
 			em = extent_lookup_create(io, sec, end - sec);
 			if (IS_ERR(em))
 				goto out_em_err;
-			if (em->block_start != BLOCK_UNINIT)
+			if (!em->uninit)
 				goto write_unint_fail;
 
 			sec = em->end;
@@ -191,13 +191,13 @@ dio_submit(struct ploop_io *io, struct ploop_request * preq,
 			em = extent_lookup_create(io, sec, size);
 			if (IS_ERR(em))
 				goto out_em_err;
-			if (write && em->block_start == BLOCK_UNINIT)
+			if (write && em->uninit)
 				goto write_unint_fail;
 		}
 
 		nsec = dio_isec_to_phys(em, sec);
 
-		if (em->block_start != BLOCK_UNINIT &&
+		if (!em->uninit &&
 		     (bio == NULL ||
 		     bio->bi_sector + (bio->bi_size>>9) != nsec)) {
 
@@ -214,7 +214,7 @@ flush_bio:
 		if (copy > ((em->end - sec) << 9))
 			copy = (em->end - sec) << 9;
 
-		if (em->block_start == BLOCK_UNINIT) {
+		if (em->uninit) {
 			void *kaddr = kmap_atomic(bv->bv_page);
 			memset(kaddr + bv->bv_offset + bw.bv_off, 0, copy);
 			kunmap_atomic(kaddr);
