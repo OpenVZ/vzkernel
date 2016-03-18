@@ -40,6 +40,7 @@
 
 #include "scsi_priv.h"
 #include "scsi_logging.h"
+#include "scsi_dbg.h"
 
 
 static atomic_t scsi_host_next_hn = ATOMIC_INIT(0);	/* host_no for next new host */
@@ -362,6 +363,7 @@ static void scsi_host_dev_release(struct device *dev)
 
 	if (parent)
 		put_device(parent);
+	kfree(SHOST_TO_SDBG(shost));
 	kfree(shost);
 }
 
@@ -392,6 +394,7 @@ static struct device_type scsi_host_type = {
 struct Scsi_Host *scsi_host_alloc(struct scsi_host_template *sht, int privsize)
 {
 	struct Scsi_Host *shost;
+	struct scsi_host_dbg *sdbg;
 	gfp_t gfp_mask = GFP_KERNEL;
 
 	if (sht->unchecked_isa_dma && privsize)
@@ -400,6 +403,15 @@ struct Scsi_Host *scsi_host_alloc(struct scsi_host_template *sht, int privsize)
 	shost = kzalloc(sizeof(struct Scsi_Host) + privsize, gfp_mask);
 	if (!shost)
 		return NULL;
+
+	sdbg = kzalloc(sizeof(struct scsi_host_dbg), gfp_mask);
+	if (!sdbg) {
+		kfree(shost);
+		return NULL;
+	}
+
+	SHOST_TO_SDBG(shost) = sdbg;
+	spin_lock_init(&sdbg->sdbg_lock);
 
 	shost->host_lock = &shost->default_lock;
 	spin_lock_init(shost->host_lock);
@@ -519,6 +531,7 @@ struct Scsi_Host *scsi_host_alloc(struct scsi_host_template *sht, int privsize)
  fail_kthread:
 	kthread_stop(shost->ehandler);
  fail_kfree:
+	kfree(SHOST_TO_SDBG(shost));
 	kfree(shost);
 	return NULL;
 }
