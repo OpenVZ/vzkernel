@@ -384,6 +384,8 @@ cached_submit(struct ploop_io *io, iblock_t iblk, struct ploop_request * preq,
 	end_pos = pos + clu_siz;
 	used_pos = (io->alloc_head - 1) << (io->plo->cluster_log + 9);
 
+	file_start_write(io->files.file);
+
 	if (use_prealloc && end_pos > used_pos && may_fallocate) {
 		if (unlikely(io->prealloced_size < clu_siz)) {
 			loff_t prealloc = end_pos;
@@ -397,7 +399,7 @@ try_again:
 					prealloc = clu_siz;
 					goto try_again;
 				} else {
-					return err;
+					goto end_write;
 				}
 			}
 
@@ -412,14 +414,17 @@ try_again:
 		sector_t len = 1 << preq->plo->cluster_log;
 		struct extent_map * em = extent_lookup_create(io, sec, len);
 
-		if (unlikely(IS_ERR(em)))
-			return PTR_ERR(em);
+		if (unlikely(IS_ERR(em))) {
+			err = PTR_ERR(em);
+			goto end_write;
+		}
 
 		preq->iblock = iblk;
 		preq->eng_io = io;
 		set_bit(PLOOP_REQ_POST_SUBMIT, &preq->state);
 		dio_submit_pad(io, preq, sbl, size, em);
-		return 0;
+		err = 0;
+		goto end_write;
 	}
 
 	bio_iter_init(&biter, sbl);
@@ -494,6 +499,8 @@ try_again:
 			mod_timer(&io->fsync_timer, jiffies + plo->tune.fsync_delay);
 		spin_unlock_irq(&plo->lock);
 	}
+end_write:
+	file_end_write(io->files.file);
 	return err;
 }
 
@@ -504,9 +511,11 @@ dio_post_submit(struct ploop_io *io, struct ploop_request * preq)
 	loff_t clu_siz = 1 << (preq->plo->cluster_log + 9);
 	int err;
 
+	file_start_write(io->files.file);
 	err = io->files.file->f_op->fallocate(io->files.file,
 					      FALLOC_FL_CONVERT_UNWRITTEN,
 					      (loff_t)sec << 9, clu_siz);
+	file_end_write(io->files.file);
 	if (err) {
 		PLOOP_REQ_SET_ERROR(preq, err);
 		set_bit(PLOOP_S_ABORT, &preq->plo->state);
