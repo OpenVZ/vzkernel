@@ -68,6 +68,7 @@
 
 #include "scsi_priv.h"
 #include "scsi_logging.h"
+#include "scsi_dbg.h"
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/scsi.h>
@@ -684,6 +685,7 @@ void scsi_finish_command(struct scsi_cmnd *cmd)
 	struct scsi_driver *drv;
 	unsigned int good_bytes;
 
+	scsi_debug_log_cmnd(SCSI_FINISH_COMMAND_CALLS_UNBUSY, cmd);
 	scsi_device_unbusy(sdev);
 
 	/*
