@@ -41,6 +41,7 @@
 #include "../scsi_sas_internal.h"
 #include "../scsi_transport_api.h"
 #include "../scsi_priv.h"
+#include "../scsi_dbg.h"
 
 #include <linux/err.h>
 #include <linux/blkdev.h>
@@ -234,6 +235,7 @@ static void sas_eh_finish_cmd(struct scsi_cmnd *cmd)
 	 * handler done list, this also takes it off the
 	 * error handler pending list.
 	 */
+	scsi_debug_log_cmnd(SAS_EH_FINISH_CMD_CALLS_EH_FINISH, cmd);
 	scsi_eh_finish_cmd(cmd, &sas_ha->eh_done_q);
 }
 
@@ -465,6 +467,7 @@ static int sas_queue_reset(struct domain_device *dev, int reset_type, int lun, i
 			set_bit(SAS_DEV_EH_PENDING, &dev->state);
 			set_bit(reset_type, &dev->state);
 			int_to_scsilun(lun, &dev->ssp_dev.reset_lun);
+			scsi_debug_log_shost(SAS_QUEUE_RESET_CALLS_SCHEDULE_EH, ha->core.shost);
 			scsi_schedule_eh(ha->core.shost);
 		}
 		spin_unlock_irq(&ha->lock);
@@ -789,6 +792,7 @@ out:
 	/* check if any new eh work was scheduled during the last run */
 	spin_lock_irq(&ha->lock);
 	if (ha->eh_active == 0) {
+		scsi_debug_log_shost(SAS_SCSI_RECOVER_HOST_ZERO_EH_SCHEDULED, shost);
 		shost->host_eh_scheduled = 0;
 		retry = false;
 	}
