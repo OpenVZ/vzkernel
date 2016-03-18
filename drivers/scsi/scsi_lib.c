@@ -37,6 +37,7 @@
 
 #include "scsi_priv.h"
 #include "scsi_logging.h"
+#include "scsi_dbg.h"
 
 
 struct kmem_cache *scsi_sdb_cache;
@@ -127,8 +128,10 @@ static void __scsi_queue_insert(struct scsi_cmnd *cmd, int reason, int unbusy)
 	 * Decrement the counters, since these commands are no longer
 	 * active on the host/device.
 	 */
-	if (unbusy)
+	if (unbusy) {
+		scsi_debug_log_cmnd(SCSI_QUEUE_INSERT_CALLS_UNBUSY, cmd);
 		scsi_device_unbusy(device);
+	}
 
 	/*
 	 * Requeue this command.  It will go before all other commands
@@ -306,8 +309,10 @@ static void scsi_dec_host_busy(struct Scsi_Host *shost)
 	mb();
 	if (unlikely(scsi_host_in_recovery(shost))) {
 		spin_lock_irqsave(shost->host_lock, flags);
-		if (shost->host_failed || shost->host_eh_scheduled)
+		if (shost->host_failed || shost->host_eh_scheduled) {
+			scsi_debug_log_shost(SCSI_DEVICE_UNBUSY_CALLS_EH_WAKEUP, shost);
 			scsi_eh_wakeup(shost);
+		}
 		spin_unlock_irqrestore(shost->host_lock, flags);
 	}
 }
@@ -1492,6 +1497,8 @@ static inline int scsi_host_queue_ready(struct request_queue *q,
 	if (scsi_host_in_recovery(shost))
 		return 0;
 
+	scsi_debug_log_sdev(SCSI_HOST_QUEUE_READY_INC_HOST_BUSY, sdev);
+
 	busy = atomic_inc_return(&shost->host_busy) - 1;
 	if (atomic_read(&shost->host_blocked) > 0) {
 		if (busy)
@@ -1529,6 +1536,7 @@ starved:
 		list_add_tail(&sdev->starved_entry, &shost->starved_list);
 	spin_unlock_irq(shost->host_lock);
 out_dec:
+	scsi_debug_log_sdev(SCSI_HOST_QUEUE_READY_DEC_HOST_BUSY, sdev);
 	scsi_dec_host_busy(shost);
 	return 0;
 }
@@ -1588,6 +1596,7 @@ static void scsi_kill_request(struct request *req, struct request_queue *q)
 	cmd->result = DID_NO_CONNECT << 16;
 	atomic_inc(&cmd->device->iorequest_cnt);
 
+	scsi_debug_log_cmnd(SCSI_KILL_REQUEST_INC_HOST_BUSY, cmd);
 	/*
 	 * SCSI request completion path will do scsi_device_unbusy(),
 	 * bump busy counts.  To bump the counters, we need to dance
@@ -1959,6 +1968,7 @@ static int scsi_queue_rq(struct blk_mq_hw_ctx *hctx,
 	return BLK_MQ_RQ_QUEUE_OK;
 
 out_dec_host_busy:
+	scsi_debug_log_sdev(SCSI_QUEUE_RQ_DEC_HOST_BUSY, sdev);
 	scsi_dec_host_busy(shost);
 out_dec_target_busy:
 	if (scsi_target(sdev)->can_queue > 0)
