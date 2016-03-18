@@ -38,6 +38,7 @@
 #include <scsi/scsi_ioctl.h>
 
 #include "scsi_priv.h"
+#include "scsi_dbg.h"
 #include "scsi_logging.h"
 #include "scsi_transport_api.h"
 
@@ -61,6 +62,7 @@ void scsi_eh_wakeup(struct Scsi_Host *shost)
 {
 	if (atomic_read(&shost->host_busy) == shost->host_failed) {
 		trace_scsi_eh_wakeup(shost);
+		scsi_debug_log_shost(SCSI_EH_WAKEUP_EHANDLER, shost);
 		wake_up_process(shost->ehandler);
 		SCSI_LOG_ERROR_RECOVERY(5, shost_printk(KERN_INFO, shost,
 			"Waking error handler thread\n"));
@@ -82,6 +84,7 @@ void scsi_schedule_eh(struct Scsi_Host *shost)
 	if (scsi_host_set_state(shost, SHOST_RECOVERY) == 0 ||
 	    scsi_host_set_state(shost, SHOST_CANCEL_RECOVERY) == 0) {
 		shost->host_eh_scheduled++;
+		scsi_debug_log_shost(SCSI_SCHEDULE_EH_CALLS_EH_WAKEUP, shost);
 		scsi_eh_wakeup(shost);
 	}
 
@@ -247,6 +250,7 @@ int scsi_eh_scmd_add(struct scsi_cmnd *scmd, int eh_flag)
 		eh_flag &= ~SCSI_EH_CANCEL_CMD;
 	scmd->eh_eflags |= eh_flag;
 	list_add_tail(&scmd->eh_entry, &shost->eh_cmd_q);
+	scsi_debug_log_cmnd(SCSI_EH_SCMD_ADD_INC_HOST_FAILED, scmd);
 	shost->host_failed++;
 	scsi_eh_wakeup(shost);
  out_unlock:
@@ -1215,6 +1219,7 @@ int scsi_eh_get_sense(struct list_head *work_q,
 		else if (rtn != NEEDS_RETRY)
 			continue;
 
+		scsi_debug_log_cmnd(SCSI_EH_GET_SENSE_CALLS_EH_FINISH, scmd);
 		scsi_eh_finish_cmd(scmd, done_q);
 	}
 
@@ -1299,8 +1304,10 @@ static int scsi_eh_test_devices(struct list_head *cmd_list,
 			if (scmd->device == sdev) {
 				if (finish_cmds &&
 				    (try_stu ||
-				     scsi_eh_action(scmd, SUCCESS) == SUCCESS))
+				     scsi_eh_action(scmd, SUCCESS) == SUCCESS)) {
+					scsi_debug_log_cmnd(SCSI_EH_TEST_DEVICES_CALLS_EH_FINISH, scmd);
 					scsi_eh_finish_cmd(scmd, done_q);
+				}
 				else
 					list_move_tail(&scmd->eh_entry, work_q);
 			}
@@ -1354,9 +1361,10 @@ static int scsi_eh_abort_cmds(struct list_head *work_q,
 			return list_empty(work_q);
 		}
 		scmd->eh_eflags &= ~SCSI_EH_CANCEL_CMD;
-		if (rtn == FAST_IO_FAIL)
+		if (rtn == FAST_IO_FAIL) {
+			scsi_debug_log_cmnd(SCSI_EH_ABORT_CMDS_CALLS_EH_FINISH, scmd);
 			scsi_eh_finish_cmd(scmd, done_q);
-		else
+		} else
 			list_move_tail(&scmd->eh_entry, &check_list);
 	}
 
@@ -1434,8 +1442,10 @@ static int scsi_eh_stu(struct Scsi_Host *shost,
 				list_for_each_entry_safe(scmd, next,
 							  work_q, eh_entry) {
 					if (scmd->device == sdev &&
-					    scsi_eh_action(scmd, SUCCESS) == SUCCESS)
+					    scsi_eh_action(scmd, SUCCESS) == SUCCESS) {
+						scsi_debug_log_cmnd(SCSI_EH_STU_CALLS_EH_FINISH, scmd);
 						scsi_eh_finish_cmd(scmd, done_q);
+					}
 				}
 			}
 		} else {
@@ -1499,9 +1509,11 @@ static int scsi_eh_bus_device_reset(struct Scsi_Host *shost,
 				list_for_each_entry_safe(scmd, next,
 							 work_q, eh_entry) {
 					if (scmd->device == sdev &&
-					    scsi_eh_action(scmd, rtn) != FAILED)
+					    scsi_eh_action(scmd, rtn) != FAILED) {
+						scsi_debug_log_cmnd(SCSI_EH_BUS_DEVICE_RESET_CALLS_EH_FINISH, scmd);
 						scsi_eh_finish_cmd(scmd,
 								   done_q);
+					}
 				}
 			}
 		} else {
@@ -1568,9 +1580,10 @@ static int scsi_eh_target_reset(struct Scsi_Host *shost,
 
 			if (rtn == SUCCESS)
 				list_move_tail(&scmd->eh_entry, &check_list);
-			else if (rtn == FAST_IO_FAIL)
+			else if (rtn == FAST_IO_FAIL) {
+				scsi_debug_log_cmnd(SCSI_EH_TARGET_RESET_CALLS_EH_FINISH, scmd);
 				scsi_eh_finish_cmd(scmd, done_q);
-			else
+			} else
 				/* push back on work queue for further processing */
 				list_move(&scmd->eh_entry, work_q);
 		}
@@ -1633,10 +1646,11 @@ static int scsi_eh_bus_reset(struct Scsi_Host *shost,
 		if (rtn == SUCCESS || rtn == FAST_IO_FAIL) {
 			list_for_each_entry_safe(scmd, next, work_q, eh_entry) {
 				if (channel == scmd_channel(scmd)) {
-					if (rtn == FAST_IO_FAIL)
+					if (rtn == FAST_IO_FAIL) {
+						scsi_debug_log_cmnd(SCSI_EH_BUS_RESET_CALLS_EH_FINISH, scmd);
 						scsi_eh_finish_cmd(scmd,
 								   done_q);
-					else
+					} else
 						list_move_tail(&scmd->eh_entry,
 							       &check_list);
 				}
@@ -1679,6 +1693,7 @@ static int scsi_eh_host_reset(struct Scsi_Host *shost,
 			list_splice_init(work_q, &check_list);
 		} else if (rtn == FAST_IO_FAIL) {
 			list_for_each_entry_safe(scmd, next, work_q, eh_entry) {
+				scsi_debug_log_cmnd(SCSI_EH_HOST_RESET_CALLS_EH_FINISH, scmd);
 					scsi_eh_finish_cmd(scmd, done_q);
 			}
 		} else {
@@ -1710,6 +1725,7 @@ static void scsi_eh_offline_sdevs(struct list_head *work_q,
 			 * FIXME: Handle lost cmds.
 			 */
 		}
+		scsi_debug_log_cmnd(SCSI_EH_OFFLINE_SDEVS_CALLS_EH_FINISH, scmd);
 		scsi_eh_finish_cmd(scmd, done_q);
 	}
 	return;
@@ -2198,7 +2214,9 @@ int scsi_error_handler(void *data)
 				shost_printk(KERN_INFO, shost,
 					     "scsi_eh_%d: sleeping\n",
 					     shost->host_no));
+			scsi_debug_log_shost(SCSI_ERROR_HANDLER_SLEEP, shost);
 			schedule();
+			scsi_debug_log_shost(SCSI_ERROR_HANDLER_WAKEUP, shost);
 			continue;
 		}
 
@@ -2223,6 +2241,7 @@ int scsi_error_handler(void *data)
 			continue;
 		}
 
+		scsi_debug_log_shost(SCSI_ERROR_HANDLER_CALLS_HANDLER, shost);
 		if (shost->transportt->eh_strategy_handler)
 			shost->transportt->eh_strategy_handler(shost);
 		else
