@@ -1699,18 +1699,14 @@ struct oom_context *mem_cgroup_oom_context(struct mem_cgroup *memcg)
 
 unsigned long mem_cgroup_overdraft(struct mem_cgroup *memcg)
 {
-	unsigned long long guarantee, limit, usage;
-	unsigned long score;
+	unsigned long long guarantee, usage;
 
-	guarantee = ACCESS_ONCE(memcg->oom_guarantee);
-	limit = res_counter_read_u64(&memcg->memsw, RES_LIMIT);
-	usage = res_counter_read_u64(&memcg->memsw, RES_USAGE);
-
-	if (limit >= RESOURCE_MAX || guarantee >= limit || usage <= guarantee)
+	if (mem_cgroup_is_root(memcg))
 		return 0;
 
-	score = div64_u64(1000 * (usage - guarantee), limit - guarantee);
-	return score > 0 ? score : 1;
+	guarantee = ACCESS_ONCE(memcg->oom_guarantee);
+	usage = res_counter_read_u64(&memcg->memsw, RES_USAGE);
+	return div64_u64(1000 * usage, guarantee + 1);
 }
 
 unsigned long mem_cgroup_total_pages(struct mem_cgroup *memcg, bool swap)
