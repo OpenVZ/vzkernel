@@ -43,6 +43,7 @@
 #include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_dbg.h>
 #include "../scsi/scsi_transport_api.h"
+#include "../scsi/scsi_dbg.h"
 
 #include <linux/libata.h>
 
@@ -686,6 +687,7 @@ void ata_scsi_cmd_error_handler(struct Scsi_Host *host, struct ata_port *ap,
 				 * Successfully complete it.
 				 */
 				scmd->retries = scmd->allowed;
+				scsi_debug_log_cmnd(ATA_SCSI_CMD_ERROR_HANDLER_CALLS_EH_FINISH, scmd);
 				scsi_eh_finish_cmd(scmd, &ap->eh_done_q);
 			}
 		}
@@ -1002,6 +1004,7 @@ void ata_std_sched_eh(struct ata_port *ap)
 		return;
 
 	ata_eh_set_pending(ap, 1);
+	scsi_debug_log_shost(ATA_STD_SCHED_EH_CALLS_SCHEDULE_EH, ap->scsi_host);
 	scsi_schedule_eh(ap->scsi_host);
 
 	DPRINTK("port EH scheduled\n");
@@ -1024,6 +1027,7 @@ void ata_std_end_eh(struct ata_port *ap)
 {
 	struct Scsi_Host *host = ap->scsi_host;
 
+	scsi_debug_log_shost(ATA_STD_END_EH_ZERO_EH_SCHEDULED, host);
 	host->host_eh_scheduled = 0;
 }
 EXPORT_SYMBOL(ata_std_end_eh);
@@ -1299,6 +1303,7 @@ static void __ata_eh_qc_complete(struct ata_queued_cmd *qc)
 	WARN_ON(ata_tag_valid(qc->tag));
 	spin_unlock_irqrestore(ap->lock, flags);
 
+	scsi_debug_log_cmnd(ATA_EH_QC_COMPLETE_CALLS_EH_FINISH, scmd);
 	scsi_eh_finish_cmd(scmd, &ap->eh_done_q);
 }
 
