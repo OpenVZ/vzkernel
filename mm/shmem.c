@@ -2388,11 +2388,13 @@ static long shmem_fallocate(struct file *file, int mode, loff_t offset,
 		struct page *page;
 
 		/*
-		 * Good, the fallocate(2) manpage permits EINTR: we may have
-		 * been interrupted because we are using up too much memory.
+		 * Although fallocate(2) manpage permits EINTR, the more
+		 * places use ERESTARTSYS the better. If we have been
+		 * interrupted because we are using up too much memory,
+		 * oom-killer used fatal signal and we will die anyway.
 		 */
 		if (signal_pending(current))
-			error = -EINTR;
+			error = -ERESTARTSYS;
 		else if (shmem_falloc.nr_unswapped > shmem_falloc.nr_falloced)
 			error = -ENOMEM;
 		else
