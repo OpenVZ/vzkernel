@@ -191,7 +191,7 @@ static struct vzprivnet_range *legacy_next(struct vzprivnet_range *p)
 
 static struct vzprivnet vzpriv_internet = {
 	.nmask = 0,
-	.weak = VZPRIVNET_WEAK
+	.weak = VZPRIVNET_INET
 };
 
 static struct vzprivnet *vzpriv_search(u32 ip)
@@ -229,7 +229,7 @@ static noinline unsigned int vzprivnet_classify(struct sk_buff *skb, int type)
 		else
 			res = VZPRIV_MARK_DROP;
 	} else {
-		if (p1->weak && p2->weak)
+		if (p1->weak + p2->weak >= 3)
 			res = VZPRIV_MARK_ACCEPT;
 		else
 			res = VZPRIV_MARK_DROP;
