@@ -245,16 +245,17 @@ static unsigned int vzprivnet_hook(const struct nf_hook_ops *ops,
 	struct dst_entry *dst;
 	unsigned int pmark = VZPRIV_MARK_UNKNOWN;
 
-	if ((*pskb)->nf_bridge != NULL) {
-		if (!vzpn_handle_bridged)
-			return NF_ACCEPT;
-		else
-			return vzprivnet_classify(skb, 1);
-	}
-
 	dst = skb_dst(skb);
-	if (dst != NULL)
+	if (dst != NULL) {
+		if (dst->input != ip_forward) { /* bridge */
+			if (!vzpn_handle_bridged)
+				return NF_ACCEPT;
+			else
+				return vzprivnet_classify(skb, 1);
+		}
+
 		pmark = dst_pmark_get(dst);
+	}
 
 	if (unlikely(pmark == VZPRIV_MARK_UNKNOWN)) {
 		pmark = vzprivnet_classify(skb, 0);
