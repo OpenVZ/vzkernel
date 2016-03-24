@@ -301,19 +301,34 @@ static int sparse6_del(unsigned netid, u32 *ip, int weak)
 	return err;
 }
 
+static inline int is_ipv6_neighbour_solicit(const struct in6_addr *addr)
+{
+	/* see addrconf_addr_solict_mult */
+	return (addr->s6_addr32[0] == __constant_htonl(0xFF020000) &&
+		addr->s6_addr32[1] == 0 &&
+		addr->s6_addr32[2] == __constant_htonl(1) &&
+		(addr->s6_addr32[3] & __constant_htonl(0xFF000000)) == __constant_htonl(0xFF000000));
+}
+
 static unsigned int vzprivnet6_hook(struct sk_buff *skb, int can_be_bridge)
 {
 	int verdict = NF_DROP;
 	struct vzprivnet *dst, *src;
 	struct ipv6hdr *hdr;
 
-	if (can_be_bridge && !vzpn_handle_bridged &&
-			skb_dst(skb) != NULL && skb_dst(skb)->output != ip6_output)
-		return NF_ACCEPT;
+	hdr = ipv6_hdr(skb);
+
+	if (can_be_bridge) {
+		if (!vzpn_handle_bridged &&
+				skb_dst(skb) != NULL &&
+				skb_dst(skb)->output != ip6_output)
+			return NF_ACCEPT;
+		if (is_ipv6_neighbour_solicit(&hdr->daddr))
+			return NF_ACCEPT;
+	}
 
 	read_lock(&vzpriv6lock);
 
-	hdr = ipv6_hdr(skb);
 	src = vzprivnet6_lookup_net(hdr->saddr.in6_u.u6_addr32);
 	dst = vzprivnet6_lookup_net(hdr->daddr.in6_u.u6_addr32);
 
