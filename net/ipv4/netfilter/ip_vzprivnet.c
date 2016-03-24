@@ -28,6 +28,7 @@
 #include <linux/log2.h>
 #include <linux/ctype.h>
 #include <linux/inet.h>
+#include <net/route.h>
 #include <asm/page.h>
 
 #define VZPRIV_PROCNAME "ip_vzprivnet"
@@ -423,6 +424,8 @@ static ssize_t vzpriv_write(struct file * file, const char __user *buf,
 	if (err)
 		goto err;
 
+	rt_cache_flush(&init_net);
+
 	s = page;
 	s[count] = 0;
 
@@ -741,6 +744,8 @@ static ssize_t sparse_write(struct file * file, const char __user *buf,
 	err = copy_from_user(page, buf, count);
 	if (err)
 		goto err;
+
+	rt_cache_flush(&init_net);
 
 	s = page;
 	s[count] = 0;
