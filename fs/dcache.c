@@ -304,22 +304,38 @@ static void __d_free(struct rcu_head *head)
 	kmem_cache_free(dentry_cache, dentry); 
 }
 
-/*
- * no locks, please.
- */
-static void d_free(struct dentry *dentry)
+static void dentry_free(struct dentry *dentry)
 {
 	struct rcu_head *p = (struct rcu_head *)&dentry->d_alias;
-	BUG_ON((int)dentry->d_lockref.count > 0);
-	this_cpu_dec(nr_dentry);
-	if (dentry->d_op && dentry->d_op->d_release)
-		dentry->d_op->d_release(dentry);
 
 	/* if dentry was never visible to RCU, immediate free is OK */
 	if (!(dentry->d_flags & DCACHE_RCUACCESS))
 		__d_free(p);
 	else
 		call_rcu(p, __d_free);
+}
+
+/*
+ * no locks, please.
+ */
+static void d_free(struct dentry *dentry)
+{
+	bool can_free = true;
+
+	BUG_ON((int)dentry->d_lockref.count > 0);
+	this_cpu_dec(nr_dentry);
+	if (dentry->d_op && dentry->d_op->d_release)
+		dentry->d_op->d_release(dentry);
+
+	spin_lock(&dentry->d_lock);
+	if (dentry->d_flags & DCACHE_SHRINK_LIST) {
+		dentry->d_flags |= DCACHE_MAY_FREE;
+		can_free = false;
+	}
+	spin_unlock(&dentry->d_lock);
+
+	if (likely(can_free))
+		dentry_free(dentry);
 }
 
 /**
@@ -620,7 +636,10 @@ static void __dentry_kill(struct dentry *dentry)
 	if ((dentry->d_flags & DCACHE_OP_PRUNE) && !d_unhashed(dentry))
 		dentry->d_op->d_prune(dentry);
 
-	dentry_lru_del(dentry);
+	if (dentry->d_flags & DCACHE_LRU_LIST) {
+		if (!(dentry->d_flags & DCACHE_SHRINK_LIST))
+			d_lru_del(dentry);
+	}
 	/* if it was on the hash then remove it */
 	__d_drop(dentry);
 	dentry_unlist(dentry, parent);
@@ -645,6 +664,14 @@ static inline struct dentry *dentry_kill(struct dentry *dentry)
 {
 	struct inode *inode = dentry->d_inode;
 	struct dentry *parent = NULL;
+
+	if (unlikely(dentry->d_flags & DCACHE_DENTRY_KILLED)) {
+		bool can_free = dentry->d_flags & DCACHE_MAY_FREE;
+		spin_unlock(&dentry->d_lock);
+		if (likely(can_free))
+			dentry_free(dentry);
+		return NULL;
+	}
 
 	if (inode && unlikely(!spin_trylock(&inode->i_lock)))
 		goto failed;
@@ -955,7 +982,7 @@ static void shrink_dentry_list(struct list_head *list)
 		 * We found an inuse dentry which was not removed from
 		 * the LRU because of laziness during lookup. Do not free it.
 		 */
-		if (dentry->d_lockref.count) {
+		if ((int)dentry->d_lockref.count > 0) {
 			spin_unlock(&dentry->d_lock);
 			if (parent)
 				spin_unlock(&parent->d_lock);
