@@ -1114,3 +1114,5 @@ static void __exit ip6_vzprivnet_exit(void)
 
 module_init(ip6_vzprivnet_init)
 module_exit(ip6_vzprivnet_exit)
+
+MODULE_LICENSE("GPL");
