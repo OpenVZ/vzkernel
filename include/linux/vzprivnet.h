@@ -16,5 +16,6 @@ void vzprivnet_unreg_show(vzprivnet_show_fn);
 
 #define VZPRIVNET_STRONG       0
 #define VZPRIVNET_WEAK         1
+#define VZPRIVNET_INET         2
 
 #endif
