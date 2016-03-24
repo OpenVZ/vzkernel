@@ -40,10 +40,15 @@ struct vzprivnet6_node
 	__u16			fn_flags;
 };
 
+struct vzprivnet internet = {
+	.weak = VZPRIVNET_INET,
+};
+
 #define RTN_RTINFO		1
 
 static struct vzprivnet_entry sparse6_null_entry = {
 	.preflen = 128,
+	.pn = &internet,
 };
 
 static struct vzprivnet6_node sparse6_root_node = {
@@ -53,6 +58,7 @@ static struct vzprivnet6_node sparse6_root_node = {
 
 static struct vzprivnet_entry legacy6_null_entry = {
 	.preflen = 128,
+	.pn = &internet,
 };
 
 static struct vzprivnet6_node legacy6_root_node = {
@@ -116,10 +122,6 @@ static struct vzprivnet6_node * radix_tree_search(struct vzprivnet6_node *root,
 
 	return NULL;
 }
-
-struct vzprivnet internet = {
-	.weak = VZPRIVNET_INET,
-};
 
 static struct vzprivnet_entry *vzprivnet6_lookup(struct vzprivnet6_node *root,
 						u32 *ip)
