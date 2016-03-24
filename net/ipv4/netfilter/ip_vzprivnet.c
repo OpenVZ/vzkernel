@@ -859,6 +859,86 @@ static struct file_operations proc_stat_ops = {
 	.release = seq_release,
 };
 
+static char sample_ip[16];
+
+static ssize_t classify_write(struct file * file, const char __user *buf,
+			    size_t count, loff_t *ppos)
+{
+	int len;
+	char *tmp;
+
+	len = count;
+	if (len >= sizeof(sample_ip))
+		len = sizeof(sample_ip) - 1;
+
+	if (copy_from_user(sample_ip, buf, len))
+		return -EFAULT;
+
+	sample_ip[len] = '\0';
+	tmp = strchr(sample_ip, '\n');
+	if (tmp)
+		*tmp = '\0';
+
+	return count;
+}
+
+static int classify_seq_show(struct seq_file *s, void *v)
+{
+	u32 ip;
+	struct vzprivnet_range *pnr;
+
+	seq_printf(s, "%s: ", sample_ip);
+
+	if (!in4_pton(sample_ip, sizeof(sample_ip), (u8 *)&ip, -1, NULL)) {
+		seq_puts(s, "invalid IP\n");
+		return 0;
+	}
+
+	read_lock(&vzprivlock);
+	pnr = tree_search(&entries_root, ip);
+	if (pnr != NULL) {
+		struct vzprivnet_sparse *pns;
+
+		pns = container_of(pnr->pn, struct vzprivnet_sparse, pn);
+		seq_printf(s, "net %u, ", pns->netid);
+		seq_printf(s, "rule %pI4", &pnr->netip);
+		if (~pnr->rmask != 0)
+			seq_printf(s, "/%u", to_prefix(pnr->rmask));
+		seq_putc(s, '\n');
+
+		goto out;
+	}
+
+	pnr = legacy_search(ip);
+	if (pnr != NULL) {
+		seq_printf(s, "legacy %pI4/%u/%u\n",
+				&pnr->netip,
+				to_prefix(pnr->rmask),
+				to_prefix(pnr->pn->nmask));
+
+		goto out;
+	}
+
+	seq_printf(s, "internet\n");
+out:
+	read_unlock(&vzprivlock);
+	return 0;
+}
+
+static int classify_seq_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, &classify_seq_show, NULL);
+}
+
+static struct file_operations proc_classify_ops = {
+	.owner   = THIS_MODULE,
+	.open    = classify_seq_open,
+	.read    = seq_read,
+	.llseek  = seq_lseek,
+	.release = seq_release,
+	.write	 = classify_write,
+};
+
 static struct proc_dir_entry *vzpriv_proc_dir;
 
 static int __init iptable_vzprivnet_init(void)
@@ -885,6 +965,11 @@ static int __init iptable_vzprivnet_init(void)
 	if (proc == NULL)
 		goto err_stat;
 
+	proc = proc_create("classify", 0644,
+			vzpriv_proc_dir, &proc_classify_ops);
+	if (proc == NULL)
+		goto err_classify;
+
 	proc = proc_symlink(VZPRIV_PROCNAME, init_net.proc_net, "/proc/vz/privnet/legacy");
 	if (proc == NULL)
 		goto err_link;
@@ -898,6 +983,8 @@ static int __init iptable_vzprivnet_init(void)
 err_reg:
 	remove_proc_entry(VZPRIV_PROCNAME, init_net.proc_net);
 err_link:
+	remove_proc_entry("classify", vzpriv_proc_dir);
+err_classify:
 	remove_proc_entry("stat", vzpriv_proc_dir);
 err_stat:
 	remove_proc_entry("sparse", vzpriv_proc_dir);
@@ -913,6 +1000,7 @@ static void __exit iptable_vzprivnet_exit(void)
 {
 	nf_unregister_hook(&vzprivnet_ops);
 	remove_proc_entry(VZPRIV_PROCNAME, init_net.proc_net);
+	remove_proc_entry("classify", vzpriv_proc_dir);
 	remove_proc_entry("stat", vzpriv_proc_dir);
 	remove_proc_entry("sparse", vzpriv_proc_dir);
 	remove_proc_entry("legacy", vzpriv_proc_dir);
