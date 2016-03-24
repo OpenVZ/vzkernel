@@ -253,10 +253,12 @@ static unsigned int vzprivnet_hook(struct sk_buff *skb, int can_be_bridge)
 	dst = skb_dst(skb);
 	if (dst != NULL) {
 		if (can_be_bridge && dst->output != ip_output) { /* bridge */
-			if (!vzpn_handle_bridged)
+			if (vzpn_handle_bridged) {
+				pmark = vzprivnet_classify(skb, 1);
+				return pmark == VZPRIV_MARK_ACCEPT ?
+					NF_ACCEPT : NF_DROP;
+			} else
 				return NF_ACCEPT;
-			else
-				return vzprivnet_classify(skb, 1);
 		}
 
 		pmark = dst_pmark_get(dst);
