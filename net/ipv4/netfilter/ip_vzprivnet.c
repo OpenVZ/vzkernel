@@ -70,9 +70,9 @@ static DEFINE_RWLOCK(vzprivlock);
 
 static struct rb_root rbroot = RB_ROOT;
 /* ip: big-endian IP address */
-static struct vzprivnet_range *tree_search(u32 ip)
+static struct vzprivnet_range *tree_search(struct rb_root *root, u32 ip)
 {
-	struct rb_node *node = rbroot.rb_node;
+	struct rb_node *node = root->rb_node;
 
 	ip = ntohl(ip);
 	while (node) {
@@ -93,9 +93,14 @@ static struct vzprivnet_range *tree_search(u32 ip)
 	return NULL;
 }
 
-static int tree_insert(struct vzprivnet_range *data)
+static struct vzprivnet_range *legacy_search(u32 ip)
 {
-	struct rb_node **link = &(rbroot.rb_node), *parent = NULL;
+	return tree_search(&rbroot, ip);
+}
+
+static int tree_insert(struct rb_root *root, struct vzprivnet_range *data)
+{
+	struct rb_node **link = &(root->rb_node), *parent = NULL;
 	u32 ip = ntohl(data->netip);
 
 	while (*link) {
@@ -117,17 +122,22 @@ static int tree_insert(struct vzprivnet_range *data)
 
 	/* Add link node and rebalance tree. */
 	rb_link_node(&data->node, parent, link);
-	rb_insert_color(&data->node, &rbroot);
+	rb_insert_color(&data->node, root);
 
 	return 0;
 }
 
-static void tree_delete(struct vzprivnet_range *p)
+static int legacy_insert(struct vzprivnet_range *data)
+{
+	return tree_insert(&rbroot, data);
+}
+
+static void legacy_delete(struct vzprivnet_range *p)
 {
 	rb_erase(&p->node, &rbroot);
 }
 
-static struct vzprivnet_range *tree_first(void)
+static struct vzprivnet_range *legacy_first(void)
 {
 	struct rb_node *node;
 
@@ -138,7 +148,7 @@ static struct vzprivnet_range *tree_first(void)
 	return rb_entry(node, struct vzprivnet_range, node);
 }
 
-static struct vzprivnet_range *tree_next(struct vzprivnet_range *p)
+static struct vzprivnet_range *legacy_next(struct vzprivnet_range *p)
 {
 	struct rb_node *node;
 
@@ -162,7 +172,7 @@ static struct vzprivnet *vzpriv_search(u32 ip)
 {
 	struct vzprivnet_range *pnr;
 
-	pnr = tree_search(ip);
+	pnr = legacy_search(ip);
 	if (pnr != NULL)
 		return pnr->pn;
 	else
@@ -268,7 +278,7 @@ static int vzprivnet_add(u32 net, u32 m1, u32 m2, int weak)
 	pn->weak = weak;
 
 	write_lock_bh(&vzprivlock);
-	err = tree_insert(p);
+	err = legacy_insert(p);
 	write_unlock_bh(&vzprivlock);
 	if (err) {
 		kfree(pn);
@@ -283,13 +293,13 @@ static int vzprivnet_del(u32 net)
 	struct vzprivnet_range *p;
 
 	write_lock_bh(&vzprivlock);
-	p = tree_search(net);
+	p = legacy_search(net);
 	if (p == NULL) {
 		write_unlock_bh(&vzprivlock);
 		return -ENOENT;
 	}
 
-	tree_delete(p);
+	legacy_delete(p);
 	write_unlock_bh(&vzprivlock);
 	kfree(p->pn);
 	kfree(p);
@@ -302,10 +312,10 @@ static void vzprivnet_cleanup(void)
 
 	write_lock_bh(&vzprivlock);
 	while (1) {
-		p = tree_first();
+		p = legacy_first();
 		if (!p)
 			break;
-		tree_delete(p);
+		legacy_delete(p);
 		kfree(p->pn);
 		kfree(p);
 	}
@@ -420,21 +430,21 @@ static void *vzprivnet_seq_start(struct seq_file *seq, loff_t *pos)
 	if (n > 0) {
 		struct vzprivnet_range *p;
 
-		p = tree_first();
+		p = legacy_first();
 		while (n-- && p)
-			p = tree_next(p);
+			p = legacy_next(p);
 
 		return p;
 	}
 
-	return tree_first();
+	return legacy_first();
 }
 
 static void *vzprivnet_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
 	(*pos)++;
 
-	return tree_next(v);
+	return legacy_next(v);
 }
 
 static void vzprivnet_seq_stop(struct seq_file *s, void *v)
