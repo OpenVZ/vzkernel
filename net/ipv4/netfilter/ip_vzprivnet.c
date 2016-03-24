@@ -240,11 +240,12 @@ static struct nf_hook_ops vzprivnet_ops = {
 
 static inline u32 to_netmask(int prefix)
 {
-	return ((~0 << (32 - prefix)));
+	return htonl((~0 << (32 - prefix)));
 }
 
 static inline unsigned int to_prefix(u32 netmask)
 {
+	netmask = ntohl(netmask);
 	return 32 - ilog2(~netmask + 1);
 }
 
@@ -363,8 +364,8 @@ static int parse_param(const char *param, int *add, u32 *net,
 		if (err < 6 || m1 == 0 || m1 > 32 || m2 == 0 || m2 > 32)
 			return -EINVAL;
 
-		*netmask1 = htonl(to_netmask(m1));
-		*netmask2 = htonl(to_netmask(m2));
+		*netmask1 = to_netmask(m1);
+		*netmask2 = to_netmask(m2);
 		*net &= *netmask1;
 	} else
 		*netmask1 = *netmask2 = 0;
@@ -457,7 +458,7 @@ static int vzprivnet_seq_show(struct seq_file *s, void *v)
 	struct vzprivnet_range *p = v;
 
 	seq_printf(s, "%pI4/%u/%u", &p->netip,
-		   to_prefix(ntohl(p->rmask)), to_prefix(ntohl(p->pn->nmask)));
+		   to_prefix(p->rmask), to_prefix(p->pn->nmask));
 	if (p->pn->weak)
 		seq_printf(s, "*\n");
 	else
