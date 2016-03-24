@@ -14,4 +14,7 @@ void vzprivnet_unreg_show(vzprivnet_show_fn);
 
 #define is_eol(ch)	((ch) == '\0' || (ch) == '\n')
 
+#define VZPRIVNET_STRONG       0
+#define VZPRIVNET_WEAK         1
+
 #endif
