@@ -521,7 +521,7 @@ static struct file_operations proc_vzprivnet_ops = {
 	.write   = vzpriv_write,
 };
 
-static int sparse_add(unsigned int netid, u32 ip, u32 mask)
+static int sparse_add(unsigned int netid, u32 ip, u32 mask, int weak)
 {
 	int err;
 	struct vzprivnet_sparse *pns, *epns = NULL;
@@ -565,6 +565,8 @@ found_net:
 		list_add_tail(&pne->list, &pns->entries);
 		tree_insert(&entries_root, &pne->range);
 		pne = NULL;
+	} else if (weak) {
+		pns->pn.weak = 1;
 	} else if (pns == epns) {
 		err = -EEXIST;
 		goto out_unlock;
@@ -609,13 +611,16 @@ static void sparse_free_one(struct vzprivnet_sparse *pns)
 	kfree(pns);
 }
 
-static int sparse_del_net(unsigned int netid)
+static int sparse_del_net(unsigned int netid, int weak)
 {
 	struct vzprivnet_sparse *pns;
 
 	list_for_each_entry(pns, &vzpriv_sparse, list)
 		if (pns->netid == netid) {
-			sparse_free_one(pns);
+			if (weak)
+				pns->pn.weak = 0;
+			else
+				sparse_free_one(pns);
 			return 0;
 		}
 
@@ -637,7 +642,7 @@ static int sparse_del_ip(u32 ip)
 	return 0;
 }
 
-static int sparse_del(unsigned int netid, u32 ip)
+static int sparse_del(unsigned int netid, u32 ip, int weak)
 {
 	int err;
 
@@ -645,7 +650,7 @@ static int sparse_del(unsigned int netid, u32 ip)
 	if (ip != 0)
 		err = sparse_del_ip(ip);
 	else
-		err = sparse_del_net(netid);
+		err = sparse_del_net(netid, weak);
 	write_unlock_bh(&vzprivlock);
 
 	return err;
@@ -655,15 +660,17 @@ static int sparse_del(unsigned int netid, u32 ip)
  * +ID			to add a network
  * +ID:a.b.c.d		to add an IP to network
  * +ID:a.b.c.d/m	to add a subnet to network
+ * +ID:*		to make a network weak
  * -ID			to remove the whole network
  * -a.b.c.d		to remove an IP or bounding subnet (from its network)
+ * -ID:*		to make a network "strong" ;)
  *
  *  No weak networks here!
  */
 
 #define is_eol(ch)	((ch) == '\0' || (ch) == '\n')
 
-static int parse_sparse_add(const char *str, unsigned int *netid, u32 *ip, u32 *mask)
+static int parse_sparse_add(const char *str, unsigned int *netid, u32 *ip, u32 *mask, int *weak)
 {
 	unsigned int m;
 	char *end;
@@ -678,6 +685,14 @@ static int parse_sparse_add(const char *str, unsigned int *netid, u32 *ip, u32 *
 		return -EINVAL;
 
 	str = end + 1;
+	if (*str == '*') {
+		if (!is_eol(*(str + 1)))
+			return -EINVAL;
+
+		*weak = 1;
+		return 0;
+	}
+
 	if (!in4_pton(str, -1, (u8 *)ip, -1, (const char **)&end))
 		return -EINVAL;
 
@@ -698,30 +713,35 @@ static int parse_sparse_add(const char *str, unsigned int *netid, u32 *ip, u32 *
 	return 0;
 }
 
-static int parse_sparse_remove(const char *str, unsigned int *netid, u32 *ip)
+static int parse_sparse_remove(const char *str, unsigned int *netid, u32 *ip, int *weak)
 {
 	char *end;
 
 	if (strchr(str, '.')) {
 		if (!in4_pton(str, -1, (u8 *)ip, -1, (const char **)&end))
 			return -EINVAL;
-	} else
+	} else {
 		*netid = simple_strtol(str, &end, 10);
+		if (end[0] == ':' && end[1] == '*') {
+			end += 2;
+			*weak = 1;
+		}
+	}
 
 	return (is_eol(*end) ? 0 : -EINVAL);
 }
 
 static int parse_sparse(const char *param, int *add,
-		unsigned int *netid, u32 *ip, u32 *mask)
+		unsigned int *netid, u32 *ip, u32 *mask, int *weak)
 {
 	if (param[0] == '+') {
 		*add = 1;
-		return parse_sparse_add(param + 1, netid, ip, mask);
+		return parse_sparse_add(param + 1, netid, ip, mask, weak);
 	}
 
 	if (param[0] == '-') {
 		*add = 0;
-		return parse_sparse_remove(param + 1, netid, ip);
+		return parse_sparse_remove(param + 1, netid, ip, weak);
 	}
 
 	return -EINVAL;
@@ -752,18 +772,18 @@ static ssize_t sparse_write(struct file * file, const char __user *buf,
 
 	err = -EINVAL;
 	while (*s) {
-		int add;
+		int add, weak = 0;
 		unsigned int netid = 0;
 		u32 ip = 0, mask = 0;
 
-		err = parse_sparse(s, &add, &netid, &ip, &mask);
+		err = parse_sparse(s, &add, &netid, &ip, &mask, &weak);
 		if (err)
 			goto out;
 
 		if (add)
-			err = sparse_add(netid, ip, mask);
+			err = sparse_add(netid, ip, mask, weak);
 		else
-			err = sparse_del(netid, ip);
+			err = sparse_del(netid, ip, weak);
 
 		if (err)
 			goto out;
@@ -803,6 +823,9 @@ static int sparse_seq_show(struct seq_file *s, void *v)
 
 	pns = list_entry(lh, struct vzprivnet_sparse, list);
 	seq_printf(s, "%u: ", pns->netid);
+
+	if (pns->pn.weak)
+		seq_puts(s, "* ");
 
 	list_for_each_entry(pne, &pns->entries, list) {
 		seq_printf(s, "%pI4", &pne->range.netip);
