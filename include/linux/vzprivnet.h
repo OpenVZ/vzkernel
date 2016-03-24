@@ -1,0 +1,14 @@
+#ifndef __IP_VZPRIVNET_H__
+#define __IP_VZPRIVNET_H__
+
+struct proc_dir_entry;
+extern struct proc_dir_entry *vzpriv_proc_dir;
+
+struct seq_file;
+typedef void (*vzprivnet_show_fn)(struct seq_file *);
+void vzprivnet_reg_show(vzprivnet_show_fn);
+void vzprivnet_unreg_show(vzprivnet_show_fn);
+
+#define is_eol(ch)	((ch) == '\0' || (ch) == '\n')
+
+#endif
