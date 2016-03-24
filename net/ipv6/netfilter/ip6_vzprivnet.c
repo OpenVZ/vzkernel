@@ -813,14 +813,14 @@ static int classify6_seq_show(struct seq_file *s, void *v)
 
 	read_lock(&vzpriv6lock);
 	pne = vzprivnet6_lookup(&sparse6_root_node, ip);
-	if (pne->pn != NULL) {
+	if (pne != NULL) {
 		seq_printf(s, "net %u, ", pne->pn->netid);
 		seq_printf(s, "rule %pI6/%u\n", pne->ip, pne->preflen);
 		goto out;
 	}
 
 	pne = vzprivnet6_lookup(&legacy6_root_node, ip);
-	if (pne->pn != NULL) {
+	if (pne != NULL) {
 		seq_printf(s, "legacy %pI6/%u/%u\n",
 				pne->ip, pne->preflen, pne->pn->subnet_preflen);
 
