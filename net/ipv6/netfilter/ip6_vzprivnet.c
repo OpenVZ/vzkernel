@@ -153,7 +153,7 @@ static inline int noip(u32 *ip)
 static int sparse6_add(unsigned netid, u32 *ip, unsigned preflen, int weak)
 {
 	int err;
-	struct vzprivnet *pn, *epn = NULL;
+	struct vzprivnet *pn = NULL, *epn = NULL;
 	struct vzprivnet_entry *pne = NULL, *tmp;
 	struct vzprivnet_hash *hash;
 
@@ -307,11 +307,13 @@ static unsigned int vzprivnet6_hook(const struct nf_hook_ops *ops,
 {
 	int verdict = NF_DROP;
 	struct vzprivnet *dst, *src;
+	struct ipv6hdr *hdr;
 
 	read_lock(&vzpriv6lock);
 
-	src = vzprivnet6_lookup_net((*pskb)->nh.ipv6h->saddr.in6_u.u6_addr32);
-	dst = vzprivnet6_lookup_net((*pskb)->nh.ipv6h->daddr.in6_u.u6_addr32);
+	hdr = ipv6_hdr(skb);
+	src = vzprivnet6_lookup_net(hdr->saddr.in6_u.u6_addr32);
+	dst = vzprivnet6_lookup_net(hdr->daddr.in6_u.u6_addr32);
 
 	if (src == dst)
 		verdict = NF_ACCEPT;
@@ -327,7 +329,7 @@ static struct nf_hook_ops vzprivnet6_ops = {
 	.hook = vzprivnet6_hook,
 	.owner = THIS_MODULE,
 	.pf = PF_INET6,
-	.hooknum = NF_IP6_FORWARD,
+	.hooknum = NF_INET_FORWARD,
 	.priority = NF_IP6_PRI_FIRST
 };
 
@@ -358,7 +360,7 @@ static int parse_sparse6_add(const char *str, unsigned int *netid, u32 *ip, unsi
 		return 0;
 	}
 
-	if (!in6_pton(str, ip, &end))
+	if (!in6_pton(str, -1, (u8 *)ip, -1, (const char **)&end))
 		return -EINVAL;
 
 	if (*end != '/')
@@ -377,7 +379,7 @@ static int parse_sparse6_remove(const char *str, unsigned int *netid, u32 *ip, i
 	char *end;
 
 	if (strchr(str, ':') && !strchr(str, '*')) {
-		if (!in6_pton(str, ip, &end)) {
+		if (!in6_pton(str, -1, (u8 *)ip, -1, (const char **)&end)) {
 			printk("Bad ip in %s\n", str);
 			return -EINVAL;
 		}
@@ -504,17 +506,14 @@ static int sparse6_seq_show(struct seq_file *s, void *v)
 {
 	struct vzprivnet *pn;
 	struct vzprivnet_entry *pne;
-	char ip6_addr[sizeof("xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:255.255.255.255")];
 
 	pn = list_entry(v, struct vzprivnet, list);
 	seq_printf(s, "%u: ", pn->netid);
 	if (pn->weak)
 		seq_puts(s, "* ");
 
-	list_for_each_entry(pne, &pn->entries, list) {
-		ip6_string(ip6_addr, (const char *)pne->ip),
-		seq_printf(s, "%s/%u ", ip6_addr, pne->preflen);
-	}
+	list_for_each_entry(pne, &pn->entries, list)
+		seq_printf(s, "%pI6/%u ", pne->ip, pne->preflen);
 
 	seq_putc(s, '\n');
 
@@ -569,11 +568,10 @@ static int classify6_seq_show(struct seq_file *s, void *v)
 {
 	u32 ip[4];
 	struct vzprivnet_entry *pne;
-	char ip6_addr[sizeof("xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:255.255.255.255")];
 
 	seq_printf(s, "%s: ", sample_ipv6);
 
-	if (!in6_pton(sample_ipv6, ip, NULL)) {
+	if (!in6_pton(sample_ipv6, sizeof(sample_ipv6), (u8 *)ip, -1, NULL)) {
 		seq_puts(s, "invalid IP\n");
 		return 0;
 	}
@@ -586,8 +584,7 @@ static int classify6_seq_show(struct seq_file *s, void *v)
 	}
 
 	seq_printf(s, "net %u, ", pne->pn->netid);
-	ip6_string(ip6_addr, (const char *)pne->ip);
-	seq_printf(s, "rule %s/%u\n", ip6_addr, pne->preflen);
+	seq_printf(s, "rule %pI6/%u\n", pne->ip, pne->preflen);
 out:
 	read_unlock(&vzpriv6lock);
 	return 0;
