@@ -552,6 +552,7 @@ static int sparse_add(unsigned int netid, u32 ip, u32 mask, int weak)
 
 found_net:
 	if (ip != 0) {
+		err = -EEXIST;
 		ip &= mask;
 		list_for_each_entry(tmp, &pns->entries, list) {
 			if ((ip & tmp->range.rmask) == tmp->range.netip)
