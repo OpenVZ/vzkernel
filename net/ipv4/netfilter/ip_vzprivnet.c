@@ -540,6 +540,7 @@ static int sparse_add(unsigned int netid, u32 ip, u32 mask, int weak)
 	write_lock_bh(&vzprivlock);
 	list_for_each_entry(epns, &vzpriv_sparse, list)
 		if (epns->netid == netid) {
+			kfree(pns);
 			pns = epns;
 			goto found_net;
 		}
