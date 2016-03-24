@@ -2413,10 +2413,10 @@ static ssize_t cgroup_file_write(struct file *file, const char __user *buf,
 	 * userspace from ve0 should *never* bindmount it
 	 * inside a container FS.
 	 */
-	if (!ve_is_super(get_exec_env())) {
-		if (!cgrp->parent || !cgrp->parent->parent)
-			pr_warn_once("FIXME: Write into toplevel cgroup, restore?");
-	}
+	if (!ve_is_super(get_exec_env())
+	    && (!cgrp->parent || !cgrp->parent->parent)
+	    && !get_exec_env()->is_pseudosuper)
+		return -EPERM;
 #endif
 
 	if (cgroup_is_removed(cgrp))
