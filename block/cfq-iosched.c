@@ -14,6 +14,7 @@
 #include <linux/rbtree.h>
 #include <linux/ioprio.h>
 #include <linux/blktrace_api.h>
+#include <linux/nmi.h>
 #include <bc/io_acct.h>
 
 #include "blk.h"
@@ -3237,6 +3238,7 @@ static int cfq_forced_dispatch(struct cfq_data *cfqd)
 	while ((cfqq = cfq_get_next_queue_forced(cfqd)) != NULL) {
 		__cfq_set_active_queue(cfqd, cfqq);
 		dispatched += __cfq_forced_dispatch_cfqq(cfqq);
+		touch_nmi_watchdog();
 	}
 
 	BUG_ON(cfqd->busy_queues);
