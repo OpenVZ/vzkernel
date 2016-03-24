@@ -4,7 +4,6 @@
 #include <linux/list.h>
 #include <linux/seq_file.h>
 #include <linux/module.h>
-#include <linux/jhash.h>
 #include <linux/random.h>
 #include <linux/inet.h>
 #include <net/ipv6.h>
@@ -25,28 +24,7 @@ struct vzprivnet_entry {
 	unsigned preflen;
 	struct vzprivnet *pn;
 	struct list_head list;
-	struct hlist_node hash;
 };
-
-struct vzprivnet_hash {
-	unsigned preflen;
-	struct hlist_head *hash;
-};
-
-#define MAX_PREFLEN	128
-
-static struct vzprivnet_hash hashes[MAX_PREFLEN];
-static unsigned hash_rnd;
-
-#define HASH_MASK	((PAGE_SIZE / sizeof(struct hlist_head)) - 1)
-
-static noinline unsigned hash_ip_and_prefix(u32 *ip, unsigned preflen)
-{
-	u32 key[4];
-
-	ipv6_addr_prefix((struct in6_addr *)key, (struct in6_addr *)ip, preflen);
-	return jhash2(key, 4, hash_rnd) & HASH_MASK;
-}
 
 static inline int ip6_match(u32 *net, unsigned plen, u32 *ip)
 {
@@ -58,64 +36,8 @@ static inline int ip6_intersect(u32 *ip1, unsigned len1, u32 *ip2, unsigned len2
 	return ip6_match(ip1, len1, ip2) || ip6_match(ip2, len2, ip1);
 }
 
-static struct vzprivnet_hash *vzprivnet6_get_hash(unsigned preflen)
-{
-	int i;
-	struct hlist_head *hash = NULL;
-
-	if (preflen == MAX_PREFLEN)
-		return NULL;
-
-again:
-	write_lock_bh(&vzpriv6lock);
-	for (i = 0; hashes[i].hash != NULL; i++)
-		if (hashes[i].preflen == preflen) {
-			write_unlock_bh(&vzpriv6lock);
-			if (hash != NULL)
-				free_page((unsigned long)hash);
-			return hashes + i;
-		}
-
-	if (i == MAX_PREFLEN) {
-		write_unlock_bh(&vzpriv6lock);
-		if (hash != NULL)
-			free_page((unsigned long)hash);
-
-		WARN_ON_ONCE(1);
-		return NULL;
-	}
-
-	if (hash != NULL) {
-		hashes[i].preflen = preflen;
-		hashes[i].hash = hash;
-		write_unlock_bh(&vzpriv6lock);
-		return hashes + i;
-	}
-
-	write_unlock_bh(&vzpriv6lock);
-
-	hash = (struct hlist_head *)get_zeroed_page(GFP_KERNEL);
-	if (hash == NULL)
-		return NULL;
-
-	goto again;
-}
-
 static struct vzprivnet_entry *vzprivnet6_lookup(u32 *ip)
 {
-	int i;
-
-	for (i = 0; hashes[i].hash != NULL; i++) {
-		struct vzprivnet_entry *pne;
-		unsigned chain;
-
-		chain = hash_ip_and_prefix(ip, hashes[i].preflen);
-		hlist_for_each_entry(pne, &hashes[i].hash[chain], hash)
-			/* hashes[i].preflen == pne->preflen here */
-			if (ip6_match(pne->ip, pne->preflen, ip))
-				return pne;
-	}
-
 	return NULL;
 }
 
@@ -134,19 +56,6 @@ static inline struct vzprivnet *vzprivnet6_lookup_net(u32 *ip)
 		return &internet;
 }
 
-static void vzprivnet6_hash_entry(struct vzprivnet_entry *e, struct vzprivnet_hash *h)
-{
-	unsigned chain;
-
-	chain = hash_ip_and_prefix(e->ip, e->preflen);
-	hlist_add_head(&e->hash, &h->hash[chain]);
-}
-
-static void vzprivnet6_unhash_entry(struct vzprivnet_entry *e)
-{
-	hlist_del(&e->hash);
-}
-
 static inline int noip(u32 *ip)
 {
 	return (ip[0] | ip[1] | ip[2] | ip[3]) == 0;
@@ -157,13 +66,8 @@ static int sparse6_add(unsigned netid, u32 *ip, unsigned preflen, int weak)
 	int err;
 	struct vzprivnet *pn = NULL, *epn = NULL;
 	struct vzprivnet_entry *pne = NULL, *tmp;
-	struct vzprivnet_hash *hash;
 
 	err = -ENOMEM;
-	hash = vzprivnet6_get_hash(preflen);
-	if (hash == NULL)
-		goto out;
-
 	pn = kzalloc(sizeof(*pn), GFP_KERNEL);
 	if (pn == NULL)
 		goto out;
@@ -195,7 +99,6 @@ found_net:
 		pne->preflen = preflen;
 		pne->pn = pn;
 		list_add_tail(&pne->list, &pn->entries);
-		vzprivnet6_hash_entry(pne, hash);
 		pne = NULL;
 	} else if (weak == VZPRIVNET_WEAK) {
 		pn->weak =  VZPRIVNET_WEAK;
@@ -224,7 +127,6 @@ out:
 static void sparse6_free_entry(struct vzprivnet_entry *pne)
 {
 	list_del(&pne->list);
-	vzprivnet6_unhash_entry(pne);
 	kfree(pne);
 }
 
@@ -675,23 +577,10 @@ static struct file_operations proc_classify6_ops = {
 	.write	 = classify6_write,
 };
 
-static void vzprivnet6_show_stat(struct seq_file *f)
-{
-	int i;
-
-	for (i = 0; i < MAX_PREFLEN; i++)
-		if (hashes[i].hash == NULL)
-			break;
-
-	seq_printf(f, "Hashes6: %d\n", i);
-}
-
 static int __init ip6_vzprivnet_init(void)
 {
 	int err = -ENOMEM;
 	struct proc_dir_entry *proc;
-
-	get_random_bytes(&hash_rnd, 4);
 
 	proc = proc_create("sparse6", 0644,
 			vzpriv_proc_dir, &proc_sparse6_ops);
@@ -707,7 +596,6 @@ static int __init ip6_vzprivnet_init(void)
 	if (err)
 		goto err_reg;
 
-	vzprivnet_reg_show(vzprivnet6_show_stat);
 	return 0;
 
 err_reg:
@@ -720,7 +608,6 @@ err_sparse6:
 
 static void __exit ip6_vzprivnet_exit(void)
 {
-	vzprivnet_unreg_show(vzprivnet6_show_stat);
 	nf_unregister_hooks(vzprivnet6_ops, 3);
 	remove_proc_entry("classify6", vzpriv_proc_dir);
 	remove_proc_entry("sparse6", vzpriv_proc_dir);
