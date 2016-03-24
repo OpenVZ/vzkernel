@@ -234,6 +234,7 @@ struct dentry_operations_wrapper {
 #define DCACHE_OP_REAL			0x08000000
 
 #define DCACHE_DENTRY_CURSOR		0x20000000
+#define DCACHE_MAY_FREE			0x00800000
 
 extern seqlock_t rename_lock;
 
