@@ -207,6 +207,7 @@ extern struct tty_driver *vtty_console_driver(int *index);
 extern int vtty_open_master(envid_t veid, int idx);
 extern void vtty_release(struct tty_struct *tty, struct tty_struct *o_tty,
 			 int *tty_closing, int *o_tty_closing);
+extern bool vtty_is_master(struct tty_struct *tty);
 #endif /* CONFIG_TTY */
 
 extern struct cgroup *cgroup_get_ve_root(struct cgroup *cgrp);
