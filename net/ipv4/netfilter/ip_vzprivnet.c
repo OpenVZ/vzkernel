@@ -39,6 +39,8 @@ enum {
 	VZPRIV_MARK_MAX
 };
 
+static DEFINE_PER_CPU(unsigned long, lookup_stat);
+
 static inline unsigned int dst_pmark_get(struct dst_entry *dst)
 {
 	return dst->privnet_mark;
@@ -203,6 +205,8 @@ static noinline unsigned int vzprivnet_classify(struct sk_buff *skb)
 	int res;
 	u32 saddr, daddr;
 	struct vzprivnet *p1, *p2;
+
+	per_cpu(lookup_stat, smp_processor_id())++;
 
 	saddr = ip_hdr(skb)->saddr;
 	daddr = ip_hdr(skb)->daddr;
@@ -828,6 +832,33 @@ static struct file_operations proc_sparse_ops = {
 	.write   = sparse_write,
 };
 
+static int stat_seq_show(struct seq_file *s, void *v)
+{
+	unsigned long sum;
+	int cpu;
+
+	sum = 0;
+	for_each_possible_cpu(cpu)
+		sum += per_cpu(lookup_stat, cpu);
+
+	seq_printf(s, "Lookups: %lu\n", sum);
+
+	return 0;
+}
+
+static int stat_seq_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, &stat_seq_show, NULL);
+}
+
+static struct file_operations proc_stat_ops = {
+	.owner   = THIS_MODULE,
+	.open    = stat_seq_open,
+	.read    = seq_read,
+	.llseek  = seq_lseek,
+	.release = seq_release,
+};
+
 static struct proc_dir_entry *vzpriv_proc_dir;
 
 static int __init iptable_vzprivnet_init(void)
@@ -849,6 +880,11 @@ static int __init iptable_vzprivnet_init(void)
 	if (proc == NULL)
 		goto err_net;
 
+	proc = proc_create("stat", 0644,
+			vzpriv_proc_dir, &proc_stat_ops);
+	if (proc == NULL)
+		goto err_stat;
+
 	proc = proc_symlink(VZPRIV_PROCNAME, init_net.proc_net, "/proc/vz/privnet/legacy");
 	if (proc == NULL)
 		goto err_link;
@@ -862,6 +898,8 @@ static int __init iptable_vzprivnet_init(void)
 err_reg:
 	remove_proc_entry(VZPRIV_PROCNAME, init_net.proc_net);
 err_link:
+	remove_proc_entry("stat", vzpriv_proc_dir);
+err_stat:
 	remove_proc_entry("sparse", vzpriv_proc_dir);
 err_net:
 	remove_proc_entry("legacy", vzpriv_proc_dir);
@@ -875,6 +913,7 @@ static void __exit iptable_vzprivnet_exit(void)
 {
 	nf_unregister_hook(&vzprivnet_ops);
 	remove_proc_entry(VZPRIV_PROCNAME, init_net.proc_net);
+	remove_proc_entry("stat", vzpriv_proc_dir);
 	remove_proc_entry("sparse", vzpriv_proc_dir);
 	remove_proc_entry("legacy", vzpriv_proc_dir);
 	remove_proc_entry("privnet", proc_vz_dir);
