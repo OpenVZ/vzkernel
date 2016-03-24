@@ -467,22 +467,6 @@ static void dentry_lru_add(struct dentry *dentry)
 }
 
 /*
- * Remove a dentry with references from the LRU.
- *
- * If we are on the shrink list, then we can get to try_prune_one_dentry() and
- * lose our last reference through the parent walk. In this case, we need to
- * remove ourselves from the shrink list, not the LRU.
- */
-static void dentry_lru_del(struct dentry *dentry)
-{
-	if (dentry->d_flags & DCACHE_LRU_LIST) {
-		if (dentry->d_flags & DCACHE_SHRINK_LIST)
-			return d_shrink_del(dentry);
-		d_lru_del(dentry);
-	}
-}
-
-/*
  * Unhash a dentry without inserting an RCU walk barrier or checking that
  * dentry->d_lock is locked.  The caller must take care of that, if
  * appropriate.
@@ -1108,7 +1092,9 @@ static void shrink_dcache_for_umount_subtree(struct dentry *dentry)
 			    !d_unhashed(dentry))
 				dentry->d_op->d_prune(dentry);
 
-			dentry_lru_del(dentry);
+			WARN_ON_ONCE(dentry->d_flags & DCACHE_SHRINK_LIST);
+			if (dentry->d_flags & DCACHE_LRU_LIST)
+				d_lru_del(dentry);
 			__d_shrink(dentry);
 
 			if (dentry->d_lockref.count != 0) {
