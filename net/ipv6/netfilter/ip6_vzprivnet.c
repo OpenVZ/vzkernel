@@ -120,7 +120,7 @@ static struct vzprivnet_entry *vzprivnet6_lookup(u32 *ip)
 }
 
 struct vzprivnet internet = {
-	.weak = 1,
+	.weak = VZPRIVNET_WEAK,
 };
 
 static inline struct vzprivnet *vzprivnet6_lookup_net(u32 *ip)
@@ -197,8 +197,8 @@ found_net:
 		list_add_tail(&pne->list, &pn->entries);
 		vzprivnet6_hash_entry(pne, hash);
 		pne = NULL;
-	} else if (weak) {
-		pn->weak = 1;
+	} else if (weak == VZPRIVNET_WEAK) {
+		pn->weak =  VZPRIVNET_WEAK;
 	} else if (pn == epn) {
 		err = -EEXIST;
 		goto out_unlock;
@@ -264,8 +264,8 @@ static int sparse6_del_net(unsigned netid, int weak)
 		if (pn->netid != netid)
 			continue;
 
-		if (weak)
-			pn->weak = 0;
+		if (weak == VZPRIVNET_WEAK)
+			pn->weak = VZPRIVNET_STRONG;
 		else
 			sparse6_del_one(pn);
 
@@ -427,7 +427,7 @@ static int parse_sparse6_add(const char *str, unsigned int *netid, u32 *ip, unsi
 		if (!is_eol(*(str + 1)))
 			return -EINVAL;
 
-		*weak = 1;
+		*weak = VZPRIVNET_WEAK;
 		return 0;
 	}
 
@@ -461,7 +461,7 @@ static int parse_sparse6_remove(const char *str, unsigned int *netid, u32 *ip, i
 		*netid = simple_strtol(str, &end, 10);
 		if (end[0] == ':' && end[1] == '*') {
 			end += 2;
-			*weak = 1;
+			*weak = VZPRIVNET_WEAK;
 		}
 	}
 
@@ -518,7 +518,7 @@ static ssize_t sparse6_write(struct file * file, const char __user *buf,
 
 	err = -EINVAL;
 	while (*s) {
-		int add, weak = 0;
+		int add, weak = VZPRIVNET_STRONG;
 		unsigned int netid = 0, preflen = 0;
 		u32 ip[4] = { 0, 0, 0, 0 };
 
@@ -580,7 +580,7 @@ static int sparse6_seq_show(struct seq_file *s, void *v)
 
 	pn = list_entry(v, struct vzprivnet, list);
 	seq_printf(s, "%u: ", pn->netid);
-	if (pn->weak)
+	if (pn->weak == VZPRIVNET_WEAK)
 		seq_puts(s, "* ");
 
 	list_for_each_entry(pne, &pn->entries, list)
