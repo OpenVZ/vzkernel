@@ -31,6 +31,7 @@
 #include <net/route.h>
 #include <asm/page.h>
 
+#include <linux/vzprivnet.h>
 #define VZPRIV_PROCNAME "ip_vzprivnet"
 
 enum {
@@ -670,8 +671,6 @@ static int sparse_del(unsigned int netid, u32 ip, int weak)
  *  No weak networks here!
  */
 
-#define is_eol(ch)	((ch) == '\0' || (ch) == '\n')
-
 static int parse_sparse_add(const char *str, unsigned int *netid, u32 *ip, u32 *mask, int *weak)
 {
 	unsigned int m;
@@ -862,6 +861,37 @@ static struct file_operations proc_sparse_ops = {
 	.write   = sparse_write,
 };
 
+static void (*show_more)(struct seq_file *s);
+static DEFINE_MUTEX(show_lock);
+
+static void vzprivnet_reg_swap(vzprivnet_show_fn old, vzprivnet_show_fn new)
+{
+	mutex_lock(&show_lock);
+	if (show_more == old)
+		show_more = new;
+	mutex_unlock(&show_lock);
+}
+
+static void vzprivnet_show_more(struct seq_file *f)
+{
+	mutex_lock(&show_lock);
+	if (show_more != NULL)
+		show_more(f);
+	mutex_unlock(&show_lock);
+}
+
+void vzprivnet_reg_show(vzprivnet_show_fn fn)
+{
+	vzprivnet_reg_swap(NULL, fn);
+}
+EXPORT_SYMBOL(vzprivnet_reg_show);
+
+void vzprivnet_unreg_show(vzprivnet_show_fn fn)
+{
+	vzprivnet_reg_swap(fn, NULL);
+}
+EXPORT_SYMBOL(vzprivnet_unreg_show);
+
 static int stat_seq_show(struct seq_file *s, void *v)
 {
 	unsigned long sum;
@@ -872,6 +902,7 @@ static int stat_seq_show(struct seq_file *s, void *v)
 		sum += per_cpu(lookup_stat, cpu);
 
 	seq_printf(s, "Lookups: %lu\n", sum);
+	vzprivnet_show_more(s);
 
 	return 0;
 }
@@ -969,7 +1000,8 @@ static struct file_operations proc_classify_ops = {
 	.write	 = classify_write,
 };
 
-static struct proc_dir_entry *vzpriv_proc_dir;
+struct proc_dir_entry *vzpriv_proc_dir;
+EXPORT_SYMBOL(vzpriv_proc_dir);
 
 static int __init iptable_vzprivnet_init(void)
 {
