@@ -478,6 +478,9 @@ static unsigned int vzprivnet6_hook(struct sk_buff *skb, int can_be_bridge)
 	struct vzprivnet *dst, *src;
 	struct ipv6hdr *hdr;
 
+	if (!ve_is_super(skb->dev->nd_net->owner_ve))
+		return NF_ACCEPT;
+
 	hdr = ipv6_hdr(skb);
 
 	if (can_be_bridge) {
