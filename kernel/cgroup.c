@@ -2331,6 +2331,31 @@ static ssize_t cgroup_file_write(struct file *file, const char __user *buf,
 	struct cftype *cft = __d_cft(file->f_dentry);
 	struct cgroup *cgrp = __d_cgrp(file->f_dentry->d_parent);
 
+#ifdef CONFIG_VE
+	/*
+	 * In a sake of Docker we might bindmount cgroups so
+	 * that they would look like
+	 *
+	 * Node				Container
+	 * /sys/fs/cgroup/memory/CTID	/sys/fs/cgroup/memory
+	 *
+	 * but we should not allow to modify these toplevel
+	 * cgroups, only nested ones, because toplevel carries
+	 * container's resource limits/settings and etc.
+	 *
+	 * Same time ve cgroup should be writable during
+	 * container startup (to modify @ve.state entry which
+	 * kick container to run), but once ve is up and running
+	 * userspace from ve0 should *never* bindmount it
+	 * inside a container FS.
+	 */
+	if (!ve_is_super(get_exec_env())
+	    && test_bit(CGRP_VE_ROOT, &cgrp->flags)
+	    && !get_exec_env()->is_pseudosuper
+	    && !(cft->flags & CFTYPE_VE_WRITABLE))
+		return -EPERM;
+#endif
+
 	if (cgroup_is_removed(cgrp))
 		return -ENODEV;
 	if (cft->write)
@@ -3978,6 +4003,7 @@ static int cgroup_clone_children_write(struct cgroup *cgrp,
 static struct cftype files[] = {
 	{
 		.name = "tasks",
+		.flags = CFTYPE_VE_WRITABLE,
 		.open = cgroup_tasks_open,
 		.write_u64 = cgroup_tasks_write,
 		.release = cgroup_pidlist_release,
@@ -3985,6 +4011,7 @@ static struct cftype files[] = {
 	},
 	{
 		.name = CGROUP_FILE_GENERIC_PREFIX "procs",
+		.flags = CFTYPE_VE_WRITABLE,
 		.open = cgroup_procs_open,
 		.write_u64 = cgroup_procs_write,
 		.release = cgroup_pidlist_release,
