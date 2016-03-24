@@ -120,7 +120,7 @@ static struct vzprivnet_entry *vzprivnet6_lookup(u32 *ip)
 }
 
 struct vzprivnet internet = {
-	.weak = VZPRIVNET_WEAK,
+	.weak = VZPRIVNET_INET,
 };
 
 static inline struct vzprivnet *vzprivnet6_lookup_net(u32 *ip)
@@ -334,7 +334,7 @@ static unsigned int vzprivnet6_hook(struct sk_buff *skb, int can_be_bridge)
 
 	if (src == dst)
 		verdict = NF_ACCEPT;
-	else if (src->weak && dst->weak)
+	else if (src->weak + dst->weak >= 3)
 		verdict = NF_ACCEPT;
 
 	read_unlock(&vzpriv6lock);
