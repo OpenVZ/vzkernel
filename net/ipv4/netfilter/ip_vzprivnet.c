@@ -234,20 +234,20 @@ static noinline unsigned int vzprivnet_classify(struct sk_buff *skb, int type)
 	return res;
 }
 
-static int vzpn_handle_bridged = 0;
+int vzpn_handle_bridged = 0;
+EXPORT_SYMBOL(vzpn_handle_bridged);
 
-static unsigned int vzprivnet_hook(const struct nf_hook_ops *ops,
-				  struct sk_buff *skb,
-				  const struct net_device *in,
-				  const struct net_device *out,
-				  const struct nf_hook_state *state)
+int vzpn_filter_host = 0;
+EXPORT_SYMBOL(vzpn_filter_host);
+
+static unsigned int vzprivnet_hook(struct sk_buff *skb, int can_be_bridge)
 {
 	struct dst_entry *dst;
 	unsigned int pmark = VZPRIV_MARK_UNKNOWN;
 
 	dst = skb_dst(skb);
 	if (dst != NULL) {
-		if (dst->input != ip_forward) { /* bridge */
+		if (can_be_bridge && dst->output != ip_output) { /* bridge */
 			if (!vzpn_handle_bridged)
 				return NF_ACCEPT;
 			else
@@ -266,12 +266,64 @@ static unsigned int vzprivnet_hook(const struct nf_hook_ops *ops,
 	return pmark == VZPRIV_MARK_ACCEPT ? NF_ACCEPT : NF_DROP;
 }
 
-static struct nf_hook_ops vzprivnet_ops = {
-	.hook = vzprivnet_hook,
-	.owner = THIS_MODULE,
-	.pf = PF_INET,
-	.hooknum = NF_INET_FORWARD,
-	.priority = NF_IP_PRI_FIRST
+static unsigned int vzprivnet_fwd_hook(const struct nf_hook_ops *ops,
+		struct sk_buff *skb, const struct net_device *in,
+		const struct net_device *out, const struct nf_hook_state *state)
+{
+	return vzprivnet_hook(skb, 1);
+}
+
+static unsigned int vzprivnet_host_hook(struct sk_buff *skb,
+		const struct net_device *dev, int can_be_bridge)
+{
+	if (!vzpn_filter_host)
+		return NF_ACCEPT;
+
+	/*
+	 * Only packets coming from venet or going to one matter
+	 */
+	if (!(dev->features & NETIF_F_VENET))
+		return NF_ACCEPT;
+
+	return vzprivnet_hook(skb, can_be_bridge);
+}
+
+static unsigned int vzprivnet_in_hook(const struct nf_hook_ops *ops,
+		struct sk_buff *skb, const struct net_device *in,
+		const struct net_device *out, const struct nf_hook_state *state)
+{
+	return vzprivnet_host_hook(skb, in, 0); /* bridge doesn't call it */
+}
+
+static unsigned int vzprivnet_out_hook(const struct nf_hook_ops *ops,
+		struct sk_buff *skb, const struct net_device *in,
+		const struct net_device *out, const struct nf_hook_state *state)
+{
+	return vzprivnet_host_hook(skb, out, 1);
+}
+
+static struct nf_hook_ops vzprivnet_ops[] = {
+	{
+		.hook = vzprivnet_fwd_hook,
+		.owner = THIS_MODULE,
+		.pf = PF_INET,
+		.hooknum = NF_INET_FORWARD,
+		.priority = NF_IP_PRI_FIRST
+	},
+	{
+		.hook = vzprivnet_in_hook,
+		.owner = THIS_MODULE,
+		.pf = PF_INET,
+		.hooknum = NF_INET_LOCAL_IN,
+		.priority = NF_IP_PRI_FIRST
+	},
+	{
+		.hook = vzprivnet_out_hook,
+		.owner = THIS_MODULE,
+		.pf = PF_INET,
+		.hooknum = NF_INET_LOCAL_OUT,
+		.priority = NF_IP_PRI_FIRST
+	},
 };
 
 static inline u32 to_netmask(int prefix)
@@ -1030,6 +1082,13 @@ static struct ctl_table vzprivnet_table[] = {
 		.mode = 0600,
 		.proc_handler = proc_dointvec,
 	},
+	{
+		.procname = "vzpriv_filter_host",
+		.data = &vzpn_filter_host,
+		.maxlen = sizeof(vzpn_filter_host),
+		.mode = 0600,
+		.proc_handler = proc_dointvec,
+	},
 	{ },
 };
 
@@ -1073,7 +1132,7 @@ static int __init iptable_vzprivnet_init(void)
 	if (ctl == NULL)
 		goto err_ctl;
 
-	err = nf_register_hook(&vzprivnet_ops);
+	err = nf_register_hooks(vzprivnet_ops, 3);
 	if (err)
 		goto err_reg;
 
@@ -1099,7 +1158,7 @@ err_mkdir:
 
 static void __exit iptable_vzprivnet_exit(void)
 {
-	nf_unregister_hook(&vzprivnet_ops);
+	nf_unregister_hooks(vzprivnet_ops, 3);
 	unregister_sysctl_table(ctl);
 	remove_proc_entry(VZPRIV_PROCNAME, init_net.proc_net);
 	remove_proc_entry("classify", vzpriv_proc_dir);
