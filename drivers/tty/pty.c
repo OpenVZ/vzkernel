@@ -876,6 +876,11 @@ static struct file_operations vtty_fops;
 #define MAX_NR_VTTY_CONSOLES	(12)
 #define vtty_match_index(idx)	((idx) >= 0 && (idx) < MAX_NR_VTTY_CONSOLES)
 
+bool vtty_is_master(struct tty_struct *tty)
+{
+	return tty->driver == vttym_driver;
+}
+
 typedef struct {
 	envid_t			veid;
 	struct tty_struct	*vttys[MAX_NR_VTTY_CONSOLES];
@@ -1056,12 +1061,6 @@ static int vtty_install(struct tty_driver *driver, struct tty_struct *tty)
 
 	tty->link = peer;
 	peer->link = tty;
-
-	/*
-	 * Defer master closing if a slave peer
-	 * will be alive at this moment.
-	 */
-	set_bit(TTY_PINNED_BY_OTHER, &peer->flags);
 
 	vtty_map_set(map, tty);
 	return 0;
