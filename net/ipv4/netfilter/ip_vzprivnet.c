@@ -476,26 +476,48 @@ static struct file_operations proc_vzprivnet_ops = {
 	.write   = vzpriv_write,
 };
 
+static struct proc_dir_entry *vzpriv_proc_dir;
+
 static int __init iptable_vzprivnet_init(void)
 {
-	int err;
+	int err = -ENOMEM;
 	struct proc_dir_entry *proc;
 
-	proc = proc_net_fops_create(&init_net, VZPRIV_PROCNAME, 0640, &proc_vzprivnet_ops);
-	if (!proc)
-		return -ENOMEM;
+	vzpriv_proc_dir = proc_mkdir("privnet", proc_vz_dir);
+	if (vzpriv_proc_dir == NULL)
+		goto err_mkdir;
+
+	proc = proc_create("legacy", 0644,
+			vzpriv_proc_dir, &proc_vzprivnet_ops);
+	if (proc == NULL)
+		goto err_legacy;
+
+	proc = proc_symlink(VZPRIV_PROCNAME, init_net.proc_net, "/proc/vz/privnet/legacy");
+	if (proc == NULL)
+		goto err_link;
 
 	err = nf_register_hook(&vzprivnet_ops);
 	if (err)
-		proc_net_remove(&init_net, VZPRIV_PROCNAME);
+		goto err_reg;
 
+	return 0;
+
+err_reg:
+	remove_proc_entry(VZPRIV_PROCNAME, init_net.proc_net);
+err_link:
+	remove_proc_entry("legacy", vzpriv_proc_dir);
+err_legacy:
+	remove_proc_entry("privnet", proc_vz_dir);
+err_mkdir:
 	return err;
 }
 
 static void __exit iptable_vzprivnet_exit(void)
 {
 	nf_unregister_hook(&vzprivnet_ops);
-	proc_net_remove(&init_net, VZPRIV_PROCNAME);
+	remove_proc_entry(VZPRIV_PROCNAME, init_net.proc_net);
+	remove_proc_entry("legacy", vzpriv_proc_dir);
+	remove_proc_entry("privnet", proc_vz_dir);
 	vzprivnet_cleanup();
 }
 
