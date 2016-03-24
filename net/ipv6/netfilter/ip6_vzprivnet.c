@@ -38,12 +38,14 @@ struct vzprivnet_hash {
 static struct vzprivnet_hash hashes[MAX_PREFLEN];
 static unsigned hash_rnd;
 
+#define HASH_MASK	((PAGE_SIZE / sizeof(struct hlist_head)) - 1)
+
 static noinline unsigned hash_ip_and_prefix(u32 *ip, unsigned preflen)
 {
 	u32 key[4];
 
 	ipv6_addr_prefix((struct in6_addr *)key, (struct in6_addr *)ip, preflen);
-	return jhash2(key, 4, hash_rnd);
+	return jhash2(key, 4, hash_rnd) & HASH_MASK;
 }
 
 static inline int ip6_match(u32 *net, unsigned plen, u32 *ip)
