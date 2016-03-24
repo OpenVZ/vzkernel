@@ -13,6 +13,7 @@ static DEFINE_RWLOCK(vzpriv6lock);
 struct vzprivnet {
 	unsigned int netid;
 	int weak;
+	unsigned int subnet_preflen;
 	struct list_head list;
 	struct list_head entries;
 };
@@ -49,6 +50,17 @@ static struct vzprivnet6_node sparse6_root_node = {
 	.entry		= &sparse6_null_entry,
 	.fn_flags	= RTN_RTINFO,
 };
+
+static struct vzprivnet_entry legacy6_null_entry = {
+	.preflen = 128,
+};
+
+static struct vzprivnet6_node legacy6_root_node = {
+	.entry		= &legacy6_null_entry,
+	.fn_flags	= RTN_RTINFO,
+};
+
+static LIST_HEAD(legacy6_vzprivnets);
 
 static inline int ip6_match(u32 *net, unsigned plen, u32 *ip)
 {
@@ -123,6 +135,9 @@ static inline struct vzprivnet *vzprivnet6_lookup_net(u32 *ip)
 	struct vzprivnet_entry *pne;
 
 	pne = vzprivnet6_lookup(&sparse6_root_node, ip);
+	if (pne == NULL)
+		pne = vzprivnet6_lookup(&legacy6_root_node, ip);
+
 	if (pne != NULL)
 		return pne->pn;
 	else
@@ -215,6 +230,7 @@ insert_intermediate_node:
 	in->fn_bit = bit;
 
 	in->parent = pn;
+	in->entry = fn->entry;
 
 	/* update parent pointer */
 	if (dir)
@@ -392,6 +408,11 @@ static void vzprivnet6_cleanup(void)
 				struct vzprivnet, list);
 		vzprivnet6_del_one(pn);
 	}
+	while (!list_empty(&legacy6_vzprivnets)) {
+		pn = list_first_entry(&legacy6_vzprivnets,
+				struct vzprivnet, list);
+		vzprivnet6_del_one(pn);
+	}
 	write_unlock_bh(&vzpriv6lock);
 }
 
@@ -471,9 +492,11 @@ static unsigned int vzprivnet6_hook(struct sk_buff *skb, int can_be_bridge)
 	src = vzprivnet6_lookup_net(hdr->saddr.in6_u.u6_addr32);
 	dst = vzprivnet6_lookup_net(hdr->daddr.in6_u.u6_addr32);
 
-	if (src == dst)
-		verdict = NF_ACCEPT;
-	else if (src->weak + dst->weak >= 3)
+	if (src == dst) {
+		if (ipv6_prefix_equal(&hdr->saddr, &hdr->daddr,
+				      src->subnet_preflen))
+			verdict = NF_ACCEPT;
+	} else if (src->weak + dst->weak >= 3)
 		verdict = NF_ACCEPT;
 
 	read_unlock(&vzpriv6lock);
@@ -788,13 +811,19 @@ static int classify6_seq_show(struct seq_file *s, void *v)
 
 	read_lock(&vzpriv6lock);
 	pne = vzprivnet6_lookup(&sparse6_root_node, ip);
-	if (pne == NULL) {
-		seq_printf(s, "internet\n");
+	if (pne->pn != NULL) {
+		seq_printf(s, "net %u, ", pne->pn->netid);
+		seq_printf(s, "rule %pI6/%u\n", pne->ip, pne->preflen);
 		goto out;
 	}
 
-	seq_printf(s, "net %u, ", pne->pn->netid);
-	seq_printf(s, "rule %pI6/%u\n", pne->ip, pne->preflen);
+	pne = vzprivnet6_lookup(&legacy6_root_node, ip);
+	if (pne->pn != NULL) {
+		seq_printf(s, "legacy %pI6/%u/%u\n",
+				pne->ip, pne->preflen, pne->pn->subnet_preflen);
+
+	} else
+		seq_printf(s, "internet\n");
 out:
 	read_unlock(&vzpriv6lock);
 	return 0;
@@ -814,6 +843,228 @@ static struct file_operations proc_classify6_ops = {
 	.write	 = classify6_write,
 };
 
+static int legacy6_del(u32 *ip)
+{
+	struct vzprivnet_entry *pne;
+
+	write_lock_bh(&vzpriv6lock);
+	pne = vzprivnet6_lookup(&legacy6_root_node, ip);
+	if (pne == NULL) {
+		write_unlock_bh(&vzpriv6lock);
+		return -ENOENT;
+	}
+	vzprivnet6_del_one(pne->pn);
+	write_unlock_bh(&vzpriv6lock);
+
+	return 0;
+}
+
+static struct vzprivnet6_node * legacy6_add_subnet(void *addr, unsigned plen)
+{
+	return radix_tree_add(addr, plen, &legacy6_root_node);
+}
+
+static int legacy6_add(u32 *ip, u32 preflen, u32 subnet_preflen)
+{
+	int err;
+	struct vzprivnet *pn = NULL;
+	struct vzprivnet_entry *pne = NULL;
+	struct vzprivnet6_node *n;
+
+	err = -ENOMEM;
+	pn = kzalloc(sizeof(*pn), GFP_KERNEL);
+	if (pn == NULL)
+		goto out;
+
+	pn->subnet_preflen = subnet_preflen;
+	INIT_LIST_HEAD(&pn->entries);
+
+	pne = kzalloc(sizeof(*pne), GFP_KERNEL);
+	if (pne == NULL)
+		goto out;
+
+	write_lock_bh(&vzpriv6lock);
+	n = legacy6_add_subnet(ip, preflen);
+	if (IS_ERR(n)) {
+		err = PTR_ERR(n);
+		write_unlock_bh(&vzpriv6lock);
+		goto out;
+	}
+
+	n->entry = pne;
+	n->fn_flags |= RTN_RTINFO;
+
+	memcpy(pne->ip, ip, sizeof(struct in6_addr));
+	pne->preflen = preflen;
+	pne->pn = pn;
+	list_add_tail(&pne->list, &pn->entries);
+	pne->n = n;
+
+	list_add_tail(&pn->list, &legacy6_vzprivnets);
+	write_unlock_bh(&vzpriv6lock);
+
+	return 0;
+out:
+	kfree(pn);
+	kfree(pne);
+
+	return err;
+}
+
+static int parse_legacy6(char *param, int *add, u32 *ip,
+				unsigned *preflen, unsigned *subnet_preflen)
+{
+	char *str, *end;
+
+	if (param[0] == '+')
+		*add = 1;
+	else if (param[0] == '-')
+		*add = 0;
+	else
+		return -EINVAL;
+
+	str = param + 1;
+
+	if (!in6_pton(str, -1, (u8 *)ip, -1, (const char **)&end))
+		return -EINVAL;
+
+	if (*end != '/')
+		return -EINVAL;
+
+	str = end + 1;
+	*preflen = simple_strtol(str, &end, 10);
+
+	if (*end != '/')
+		return -EINVAL;
+
+	str = end + 1;
+	*subnet_preflen = simple_strtol(str, &end, 10);
+	if (!is_eol(*end))
+		return -EINVAL;
+
+	if ((*preflen == 0) || (*preflen > 128) ||
+		(*subnet_preflen == 0) || (*subnet_preflen > 128))
+		return -EINVAL;
+
+	if (*subnet_preflen < *preflen)
+		return -EINVAL;
+
+	return 0;
+}
+
+static ssize_t legacy6_write(struct file * file, const char __user *buf,
+			    size_t count, loff_t *ppos)
+{
+	char *s, *page;
+	int err;
+	int offset;
+
+	page = (unsigned char *)__get_free_page(GFP_KERNEL);
+	if (!page)
+		return -ENOMEM;
+
+	if (count > (PAGE_SIZE - 1))
+		count = (PAGE_SIZE - 1);
+
+	err = copy_from_user(page, buf, count);
+	if (err)
+		goto err;
+
+	s = page;
+	s[count] = 0;
+
+	err = -EINVAL;
+	while (*s) {
+		int add;
+		unsigned int preflen = 0, subnet_preflen = 0;
+		u32 ip[4] = { 0, 0, 0, 0 };
+
+		err = parse_legacy6(s, &add, ip, &preflen, &subnet_preflen);
+		if (err)
+			goto out;
+
+		if (add)
+			err = legacy6_add(ip, preflen, subnet_preflen);
+		else
+			err = legacy6_del(ip);
+
+		if (err)
+			goto out;
+
+		s = nextline(s);
+	}
+out:
+	offset = s - page;
+	if (offset > 0)
+		err = offset;
+err:
+	free_page((unsigned long)page);
+	return err;
+}
+
+static void *legacy6_seq_start(struct seq_file *seq, loff_t *ppos)
+{
+	struct list_head *lh;
+	loff_t pos = *ppos;
+
+	read_lock(&vzpriv6lock);
+	list_for_each(lh, &legacy6_vzprivnets)
+		if (pos-- == 0)
+			return lh;
+
+	return NULL;
+}
+
+static void *legacy6_seq_next(struct seq_file *seq, void *v, loff_t *ppos)
+{
+	struct list_head *lh;
+
+	lh = ((struct list_head *)v)->next;
+	++*ppos;
+	return lh == &legacy6_vzprivnets ? NULL : lh;
+}
+
+static void legacy6_seq_stop(struct seq_file *s, void *v)
+{
+	read_unlock(&vzpriv6lock);
+}
+
+static int legacy6_seq_show(struct seq_file *s, void *v)
+{
+	struct vzprivnet *pn;
+	struct vzprivnet_entry *pne;
+
+	pn = list_entry(v, struct vzprivnet, list);
+	list_for_each_entry(pne, &pn->entries, list)
+		seq_printf(s, "%pI6/%u/%u", pne->ip, pne->preflen,
+							pne->pn->subnet_preflen);
+
+	seq_putc(s, '\n');
+
+	return 0;
+}
+
+static struct seq_operations legacy6_seq_ops = {
+	.start = legacy6_seq_start,
+	.next  = legacy6_seq_next,
+	.stop  = legacy6_seq_stop,
+	.show  = legacy6_seq_show,
+};
+
+static int legacy6_seq_open(struct inode *inode, struct file *file)
+{
+	return seq_open(file, &legacy6_seq_ops);
+}
+
+static struct file_operations proc_legacy6_ops = {
+	.owner   = THIS_MODULE,
+	.open    = legacy6_seq_open,
+	.read    = seq_read,
+	.llseek  = seq_lseek,
+	.release = seq_release,
+	.write   = legacy6_write,
+};
+
 static int __init ip6_vzprivnet_init(void)
 {
 	int err = -ENOMEM;
@@ -829,6 +1080,11 @@ static int __init ip6_vzprivnet_init(void)
 	if (proc == NULL)
 		goto err_classify6;
 
+	proc = proc_create("legacy6", 0644,
+			vzpriv_proc_dir, &proc_legacy6_ops);
+	if (proc == NULL)
+		goto err_legacy6;
+
 	err = nf_register_hooks(vzprivnet6_ops, 3);
 	if (err)
 		goto err_reg;
@@ -836,6 +1092,8 @@ static int __init ip6_vzprivnet_init(void)
 	return 0;
 
 err_reg:
+	remove_proc_entry("legacy6", vzpriv_proc_dir);
+err_legacy6:
 	remove_proc_entry("classify6", vzpriv_proc_dir);
 err_classify6:
 	remove_proc_entry("sparse6", vzpriv_proc_dir);
@@ -846,6 +1104,7 @@ err_sparse6:
 static void __exit ip6_vzprivnet_exit(void)
 {
 	nf_unregister_hooks(vzprivnet6_ops, 3);
+	remove_proc_entry("legacy6", vzpriv_proc_dir);
 	remove_proc_entry("classify6", vzpriv_proc_dir);
 	remove_proc_entry("sparse6", vzpriv_proc_dir);
 	vzprivnet6_cleanup();
