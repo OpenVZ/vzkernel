@@ -250,6 +250,9 @@ static unsigned int vzprivnet_hook(struct sk_buff *skb, int can_be_bridge)
 	struct dst_entry *dst;
 	unsigned int pmark = VZPRIV_MARK_UNKNOWN;
 
+	if (!ve_is_super(skb->dev->nd_net->owner_ve))
+		return NF_ACCEPT;
+
 	dst = skb_dst(skb);
 	if (dst != NULL) {
 		if (can_be_bridge && dst->output != ip_output) { /* bridge */
