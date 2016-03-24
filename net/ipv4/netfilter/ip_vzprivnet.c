@@ -31,6 +31,23 @@
 
 #define VZPRIV_PROCNAME "ip_vzprivnet"
 
+enum {
+	VZPRIV_MARK_UNKNOWN,
+	VZPRIV_MARK_ACCEPT,
+	VZPRIV_MARK_DROP,
+	VZPRIV_MARK_MAX
+};
+
+static inline unsigned int dst_pmark_get(struct dst_entry *dst)
+{
+	return dst->privnet_mark;
+}
+
+static inline void dst_pmark_set(struct dst_entry *dst, unsigned int mark)
+{
+	dst->privnet_mark = mark;
+}
+
 struct vzprivnet {
 	u32 nmask;
 	int weak;
@@ -152,13 +169,9 @@ static struct vzprivnet *vzpriv_search(u32 ip)
 		return &vzpriv_internet;
 }
 
-static unsigned int vzprivnet_hook(const struct nf_hook_ops *ops,
-				  struct sk_buff *skb,
-				  const struct net_device *in,
-				  const struct net_device *out,
-				  const struct nf_hook_state *state)
+static noinline unsigned int vzprivnet_classify(struct sk_buff *skb)
 {
-	int res = NF_ACCEPT;
+	int res;
 	u32 saddr, daddr;
 	struct vzprivnet *p1, *p2;
 
@@ -171,18 +184,40 @@ static unsigned int vzprivnet_hook(const struct nf_hook_ops *ops,
 
 	if (p1 == p2) {
 		if ((saddr & p1->nmask) == (daddr & p1->nmask))
-			res = NF_ACCEPT;
+			res = VZPRIV_MARK_ACCEPT;
 		else
-			res = NF_DROP;
+			res = VZPRIV_MARK_DROP;
 	} else {
 		if (p1->weak && p2->weak)
-			res = NF_ACCEPT;
+			res = VZPRIV_MARK_ACCEPT;
 		else
-			res = NF_DROP;
+			res = VZPRIV_MARK_DROP;
 	}
 
 	read_unlock(&vzprivlock);
 	return res;
+}
+
+static unsigned int vzprivnet_hook(const struct nf_hook_ops *ops,
+				  struct sk_buff *skb,
+				  const struct net_device *in,
+				  const struct net_device *out,
+				  const struct nf_hook_state *state)
+{
+	struct dst_entry *dst;
+	unsigned int pmark = VZPRIV_MARK_UNKNOWN;
+
+	dst = skb_dst(skb);
+	if (dst != NULL)
+		pmark = dst_pmark_get(dst);
+
+	if (unlikely(pmark == VZPRIV_MARK_UNKNOWN)) {
+		pmark = vzprivnet_classify(skb);
+		if (dst != NULL)
+			dst_pmark_set(dst, pmark);
+	}
+
+	return pmark == VZPRIV_MARK_ACCEPT ? NF_ACCEPT : NF_DROP;
 }
 
 static struct nf_hook_ops vzprivnet_ops = {
