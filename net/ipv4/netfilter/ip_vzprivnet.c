@@ -67,7 +67,7 @@ static struct vzprivnet *tree_search(u32 ip)
 		start = ntohl(p->netip);
 		end = start | ~ntohl(p->netmask1);
 
-		if (ip < end) {
+		if (ip <= end) {
 			if (start <= ip)
 				return p;
 
