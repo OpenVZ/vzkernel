@@ -27,6 +27,7 @@
 #include <linux/proc_fs.h>
 #include <linux/log2.h>
 #include <linux/ctype.h>
+#include <linux/sysctl.h>
 #include <linux/inet.h>
 #include <net/route.h>
 #include <asm/page.h>
@@ -41,7 +42,7 @@ enum {
 	VZPRIV_MARK_MAX
 };
 
-static DEFINE_PER_CPU(unsigned long, lookup_stat);
+static DEFINE_PER_CPU(unsigned long, lookup_stat[2]);
 
 static inline unsigned int dst_pmark_get(struct dst_entry *dst)
 {
@@ -202,13 +203,13 @@ static struct vzprivnet *vzpriv_search(u32 ip)
 		return &vzpriv_internet;
 }
 
-static noinline unsigned int vzprivnet_classify(struct sk_buff *skb)
+static noinline unsigned int vzprivnet_classify(struct sk_buff *skb, int type)
 {
 	int res;
 	u32 saddr, daddr;
 	struct vzprivnet *p1, *p2;
 
-	per_cpu(lookup_stat, smp_processor_id())++;
+	per_cpu(lookup_stat[type], smp_processor_id())++;
 
 	saddr = ip_hdr(skb)->saddr;
 	daddr = ip_hdr(skb)->daddr;
@@ -233,6 +234,8 @@ static noinline unsigned int vzprivnet_classify(struct sk_buff *skb)
 	return res;
 }
 
+static int vzpn_handle_bridged = 0;
+
 static unsigned int vzprivnet_hook(const struct nf_hook_ops *ops,
 				  struct sk_buff *skb,
 				  const struct net_device *in,
@@ -242,12 +245,19 @@ static unsigned int vzprivnet_hook(const struct nf_hook_ops *ops,
 	struct dst_entry *dst;
 	unsigned int pmark = VZPRIV_MARK_UNKNOWN;
 
+	if ((*pskb)->nf_bridge != NULL) {
+		if (!vzpn_handle_bridged)
+			return NF_ACCEPT;
+		else
+			return vzprivnet_classify(skb, 1);
+	}
+
 	dst = skb_dst(skb);
 	if (dst != NULL)
 		pmark = dst_pmark_get(dst);
 
 	if (unlikely(pmark == VZPRIV_MARK_UNKNOWN)) {
-		pmark = vzprivnet_classify(skb);
+		pmark = vzprivnet_classify(skb, 0);
 		if (dst != NULL)
 			dst_pmark_set(dst, pmark);
 	}
@@ -894,14 +904,17 @@ EXPORT_SYMBOL(vzprivnet_unreg_show);
 
 static int stat_seq_show(struct seq_file *s, void *v)
 {
-	unsigned long sum;
+	unsigned long sum[2];
 	int cpu;
 
-	sum = 0;
-	for_each_possible_cpu(cpu)
-		sum += per_cpu(lookup_stat, cpu);
+	sum[0] = sum[1] = 0;
+	for_each_possible_cpu(cpu) {
+		sum[0] += per_cpu(lookup_stat[0], cpu);
+		sum[1] += per_cpu(lookup_stat[1], cpu);
+	}
 
-	seq_printf(s, "Lookups: %lu\n", sum);
+	seq_printf(s, "Lookups: %lu\n", sum[0]);
+	seq_printf(s, "Br-lookups: %lu\n", sum[1]);
 	vzprivnet_show_more(s);
 
 	return 0;
@@ -1003,6 +1016,24 @@ static struct file_operations proc_classify_ops = {
 struct proc_dir_entry *vzpriv_proc_dir;
 EXPORT_SYMBOL(vzpriv_proc_dir);
 
+static struct ctl_table vzprivnet_table[] = {
+	{
+		.procname = "net",
+		.child = vzprivnet_table + 2,
+	},
+	{ },
+	{
+		.procname = "vzpriv_handle_bridge",
+		.data = &vzpn_handle_bridged,
+		.maxlen = sizeof(vzpn_handle_bridged),
+		.mode = 0600,
+		.proc_handler = proc_dointvec,
+	},
+	{ },
+};
+
+static struct ctl_table_header *ctl;
+
 static int __init iptable_vzprivnet_init(void)
 {
 	int err = -ENOMEM;
@@ -1036,6 +1067,11 @@ static int __init iptable_vzprivnet_init(void)
 	if (proc == NULL)
 		goto err_link;
 
+	err = -ENOMEM;
+	ctl = register_sysctl_table(vzprivnet_table);
+	if (ctl == NULL)
+		goto err_ctl;
+
 	err = nf_register_hook(&vzprivnet_ops);
 	if (err)
 		goto err_reg;
@@ -1043,6 +1079,8 @@ static int __init iptable_vzprivnet_init(void)
 	return 0;
 
 err_reg:
+	unregister_sysctl_table(ctl);
+err_ctl:
 	remove_proc_entry(VZPRIV_PROCNAME, init_net.proc_net);
 err_link:
 	remove_proc_entry("classify", vzpriv_proc_dir);
@@ -1061,6 +1099,7 @@ err_mkdir:
 static void __exit iptable_vzprivnet_exit(void)
 {
 	nf_unregister_hook(&vzprivnet_ops);
+	unregister_sysctl_table(ctl);
 	remove_proc_entry(VZPRIV_PROCNAME, init_net.proc_net);
 	remove_proc_entry("classify", vzpriv_proc_dir);
 	remove_proc_entry("stat", vzpriv_proc_dir);
