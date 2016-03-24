@@ -231,6 +231,8 @@ struct dentry_operations_wrapper {
 #define DCACHE_FILE_TYPE		0x04000000 /* Other file type */
 #define DCACHE_OP_SELECT_INODE		0x08000000 /* Unioned entry: dcache op selects inode */
 
+#define DCACHE_MAY_FREE			0x00800000
+
 extern seqlock_t rename_lock;
 
 static inline int dname_external(struct dentry *dentry)
