@@ -122,7 +122,12 @@ static struct vzprivnet_range *legacy_search(u32 ip)
 static int tree_insert(struct rb_root *root, struct vzprivnet_range *data)
 {
 	struct rb_node **link = &(root->rb_node), *parent = NULL;
-	u32 ip = ntohl(data->netip);
+	u32 ip;
+	u32 end_ip;
+
+	ip = ntohl(data->netip);
+	end_ip = ip | ~ntohl(data->rmask);
+
 
 	while (*link) {
 		struct vzprivnet_range *p = rb_entry(*link, struct vzprivnet_range, node);
@@ -131,7 +136,7 @@ static int tree_insert(struct rb_root *root, struct vzprivnet_range *data)
 		start = ntohl(p->netip);
 		end = start | ~ntohl(p->rmask);
 
-		if (start <= ip && ip <= end)
+		if (!(ip > end || start > end_ip))
 			return -EEXIST;
 
 		parent = *link;
@@ -589,7 +594,7 @@ static int sparse_add(unsigned int netid, u32 ip, u32 mask, int weak)
 {
 	int err;
 	struct vzprivnet_sparse *pns, *epns = NULL;
-	struct vzprivnet_entry *pne = NULL, *tmp;
+	struct vzprivnet_entry *pne = NULL;
 
 	err = -ENOMEM;
 
@@ -616,20 +621,14 @@ static int sparse_add(unsigned int netid, u32 ip, u32 mask, int weak)
 
 found_net:
 	if (ip != 0) {
-		err = -EEXIST;
-		ip &= mask;
-		list_for_each_entry(tmp, &pns->entries, list) {
-			if ((ip & tmp->range.rmask) == tmp->range.netip)
-				goto out_unlock;
-			if ((tmp->range.netip & mask) == ip)
-				goto out_unlock;
-		}
-
 		pne->range.netip = ip & mask;
 		pne->range.rmask = mask;
 		pne->range.pn = &pns->pn;
+		err = tree_insert(&entries_root, &pne->range);
+		if (err)
+			goto out_unlock;
+
 		list_add_tail(&pne->list, &pns->entries);
-		tree_insert(&entries_root, &pne->range);
 		pne = NULL;
 	} else if (weak) {
 		pns->pn.weak = 1;
