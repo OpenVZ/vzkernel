@@ -2413,7 +2413,8 @@ static ssize_t cgroup_file_write(struct file *file, const char __user *buf,
 	 */
 	if (!ve_is_super(get_exec_env())
 	    && (!cgrp->parent || !cgrp->parent->parent)
-	    && !get_exec_env()->is_pseudosuper)
+	    && !get_exec_env()->is_pseudosuper
+	    && !(cft->flags & CFTYPE_VE_WRITABLE))
 		return -EPERM;
 #endif
 
@@ -4065,6 +4066,7 @@ static int cgroup_clone_children_write(struct cgroup *cgrp,
 static struct cftype files[] = {
 	{
 		.name = "tasks",
+		.flags = CFTYPE_VE_WRITABLE,
 		.open = cgroup_tasks_open,
 		.write_u64 = cgroup_tasks_write,
 		.release = cgroup_pidlist_release,
@@ -4072,6 +4074,7 @@ static struct cftype files[] = {
 	},
 	{
 		.name = CGROUP_FILE_GENERIC_PREFIX "procs",
+		.flags = CFTYPE_VE_WRITABLE,
 		.open = cgroup_procs_open,
 		.write_u64 = cgroup_procs_write,
 		.release = cgroup_pidlist_release,
