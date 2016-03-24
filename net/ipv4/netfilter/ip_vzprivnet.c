@@ -27,6 +27,7 @@
 #include <linux/proc_fs.h>
 #include <linux/log2.h>
 #include <linux/ctype.h>
+#include <linux/inet.h>
 #include <asm/page.h>
 
 #define VZPRIV_PROCNAME "ip_vzprivnet"
@@ -53,6 +54,14 @@ struct vzprivnet {
 	int weak;
 };
 
+struct vzprivnet_sparse {
+	struct vzprivnet pn;
+
+	unsigned int netid;
+	struct list_head list;
+	struct list_head entries;
+};
+
 struct vzprivnet_range {
 	struct vzprivnet *pn;
 
@@ -62,7 +71,14 @@ struct vzprivnet_range {
 	struct rb_node node;
 };
 
+struct vzprivnet_entry {
+	struct vzprivnet_range range;
+	struct list_head list;
+};
+
 static DEFINE_RWLOCK(vzprivlock);
+static LIST_HEAD(vzpriv_sparse);
+static struct rb_root entries_root = RB_ROOT;
 
 /*
  * Tree helpers
@@ -172,7 +188,10 @@ static struct vzprivnet *vzpriv_search(u32 ip)
 {
 	struct vzprivnet_range *pnr;
 
-	pnr = legacy_search(ip);
+	pnr = tree_search(&entries_root, ip);
+	if (pnr == NULL)
+		pnr = legacy_search(ip);
+
 	if (pnr != NULL)
 		return pnr->pn;
 	else
@@ -307,9 +326,11 @@ static int vzprivnet_del(u32 net)
 	return 0;
 }
 
+static void sparse_free_one(struct vzprivnet_sparse *pns);
 static void vzprivnet_cleanup(void)
 {
 	struct vzprivnet_range *p;
+	struct vzprivnet_sparse *pns;
 
 	write_lock_bh(&vzprivlock);
 	while (1) {
@@ -319,6 +340,12 @@ static void vzprivnet_cleanup(void)
 		legacy_delete(p);
 		kfree(p->pn);
 		kfree(p);
+	}
+
+	while (!list_empty(&vzpriv_sparse)) {
+		pns = list_first_entry(&vzpriv_sparse,
+				struct vzprivnet_sparse, list);
+		sparse_free_one(pns);
 	}
 	write_unlock_bh(&vzprivlock);
 }
@@ -487,6 +514,320 @@ static struct file_operations proc_vzprivnet_ops = {
 	.write   = vzpriv_write,
 };
 
+static int sparse_add(unsigned int netid, u32 ip, u32 mask)
+{
+	int err;
+	struct vzprivnet_sparse *pns, *epns = NULL;
+	struct vzprivnet_entry *pne = NULL, *tmp;
+
+	err = -ENOMEM;
+
+	pns = kmalloc(sizeof(struct vzprivnet_sparse), GFP_KERNEL);
+	if (pns == NULL)
+		goto out;
+
+	pne = kmalloc(sizeof(struct vzprivnet_entry), GFP_KERNEL);
+	if (pne == NULL)
+		goto out;
+
+	write_lock_bh(&vzprivlock);
+	list_for_each_entry(epns, &vzpriv_sparse, list)
+		if (epns->netid == netid) {
+			pns = epns;
+			goto found_net;
+		}
+
+	pns->netid = netid;
+	pns->pn.nmask = 0;
+	pns->pn.weak = 0;
+	INIT_LIST_HEAD(&pns->entries);
+
+found_net:
+	if (ip != 0) {
+		ip &= mask;
+		list_for_each_entry(tmp, &pns->entries, list) {
+			if ((ip & tmp->range.rmask) == tmp->range.netip)
+				goto out_unlock;
+			if ((tmp->range.netip & mask) == ip)
+				goto out_unlock;
+		}
+
+		pne->range.netip = ip & mask;
+		pne->range.rmask = mask;
+		pne->range.pn = &pns->pn;
+		list_add_tail(&pne->list, &pns->entries);
+		tree_insert(&entries_root, &pne->range);
+		pne = NULL;
+	} else if (pns == epns) {
+		err = -EEXIST;
+		goto out_unlock;
+	}
+
+	if (pns != epns) {
+		list_add_tail(&pns->list, &vzpriv_sparse);
+		pns = NULL;
+	}
+
+	err = 0;
+
+out_unlock:
+	write_unlock_bh(&vzprivlock);
+out:
+	if (pns != epns)
+		kfree(pns);
+	kfree(pne);
+
+	return err;
+}
+
+static void sparse_free_entry(struct vzprivnet_entry *pne)
+{
+	list_del(&pne->list);
+	rb_erase(&pne->range.node, &entries_root);
+	kfree(pne);
+}
+
+static void sparse_free_one(struct vzprivnet_sparse *pns)
+{
+	struct vzprivnet_entry *pne;
+
+	list_del(&pns->list);
+
+	while (!list_empty(&pns->entries)) {
+		pne = list_first_entry(&pns->entries,
+				struct vzprivnet_entry, list);
+		sparse_free_entry(pne);
+	}
+
+	kfree(pns);
+}
+
+static int sparse_del_net(unsigned int netid)
+{
+	struct vzprivnet_sparse *pns;
+
+	list_for_each_entry(pns, &vzpriv_sparse, list)
+		if (pns->netid == netid) {
+			sparse_free_one(pns);
+			return 0;
+		}
+
+	return -ENOENT;
+}
+
+static int sparse_del_ip(u32 ip)
+{
+	struct vzprivnet_range *rng;
+	struct vzprivnet_entry *pne;
+
+	rng = tree_search(&entries_root, ip);
+	if (rng == NULL)
+		return -ENOENT;
+
+	pne = container_of(rng, struct vzprivnet_entry, range);
+	sparse_free_entry(pne);
+
+	return 0;
+}
+
+static int sparse_del(unsigned int netid, u32 ip)
+{
+	int err;
+
+	write_lock_bh(&vzprivlock);
+	if (ip != 0)
+		err = sparse_del_ip(ip);
+	else
+		err = sparse_del_net(netid);
+	write_unlock_bh(&vzprivlock);
+
+	return err;
+}
+
+/*
+ * +ID			to add a network
+ * +ID:a.b.c.d		to add an IP to network
+ * +ID:a.b.c.d/m	to add a subnet to network
+ * -ID			to remove the whole network
+ * -a.b.c.d		to remove an IP or bounding subnet (from its network)
+ *
+ *  No weak networks here!
+ */
+
+#define is_eol(ch)	((ch) == '\0' || (ch) == '\n')
+
+static int parse_sparse_add(const char *str, unsigned int *netid, u32 *ip, u32 *mask)
+{
+	unsigned int m;
+	char *end;
+
+	*netid = simple_strtol(str, &end, 10);
+	if (is_eol(*end)) {
+		*ip = 0;
+		return 0;
+	}
+
+	if (*end != ':')
+		return -EINVAL;
+
+	str = end + 1;
+	if (!in4_pton(str, -1, (u8 *)ip, -1, (const char **)&end))
+		return -EINVAL;
+
+	if (is_eol(*end)) {
+		*mask = -1; /* match only one IP */
+		return 0;
+	}
+
+	if (*end != '/')
+		return -EINVAL;
+
+	str = end + 1;
+	m = simple_strtol(str, &end, 10);
+	if (!is_eol(*end))
+		return -EINVAL;
+
+	*mask = to_netmask(m);
+	return 0;
+}
+
+static int parse_sparse_remove(const char *str, unsigned int *netid, u32 *ip)
+{
+	char *end;
+
+	if (strchr(str, '.')) {
+		if (!in4_pton(str, -1, (u8 *)ip, -1, (const char **)&end))
+			return -EINVAL;
+	} else
+		*netid = simple_strtol(str, &end, 10);
+
+	return (is_eol(*end) ? 0 : -EINVAL);
+}
+
+static int parse_sparse(const char *param, int *add,
+		unsigned int *netid, u32 *ip, u32 *mask)
+{
+	if (param[0] == '+') {
+		*add = 1;
+		return parse_sparse_add(param + 1, netid, ip, mask);
+	}
+
+	if (param[0] == '-') {
+		*add = 0;
+		return parse_sparse_remove(param + 1, netid, ip);
+	}
+
+	return -EINVAL;
+}
+
+static ssize_t sparse_write(struct file * file, const char __user *buf,
+			    size_t count, loff_t *ppos)
+{
+	char *s, *page;
+	int err;
+	int offset;
+
+	page = (unsigned char *)__get_free_page(GFP_KERNEL);
+	if (!page)
+		return -ENOMEM;
+
+	if (count > (PAGE_SIZE - 1))
+		count = (PAGE_SIZE - 1);
+
+	err = copy_from_user(page, buf, count);
+	if (err)
+		goto err;
+
+	s = page;
+	s[count] = 0;
+
+	err = -EINVAL;
+	while (*s) {
+		int add;
+		unsigned int netid = 0;
+		u32 ip = 0, mask = 0;
+
+		err = parse_sparse(s, &add, &netid, &ip, &mask);
+		if (err)
+			goto out;
+
+		if (add)
+			err = sparse_add(netid, ip, mask);
+		else
+			err = sparse_del(netid, ip);
+
+		if (err)
+			goto out;
+
+		s = nextline(s);
+	}
+out:
+	offset = s - page;
+	if (offset > 0)
+		err = offset;
+err:
+	free_page((unsigned long)page);
+	return err;
+}
+
+static void *sparse_seq_start(struct seq_file *seq, loff_t *pos)
+{
+	read_lock_bh(&vzprivlock);
+	return seq_list_start(&vzpriv_sparse, *pos);
+}
+
+static void *sparse_seq_next(struct seq_file *seq, void *v, loff_t *pos)
+{
+	return seq_list_next(v, &vzpriv_sparse, pos);
+}
+
+static void sparse_seq_stop(struct seq_file *s, void *v)
+{
+	read_unlock_bh(&vzprivlock);
+}
+
+static int sparse_seq_show(struct seq_file *s, void *v)
+{
+	struct list_head *lh = v;
+	struct vzprivnet_sparse *pns;
+	struct vzprivnet_entry *pne;
+
+	pns = list_entry(lh, struct vzprivnet_sparse, list);
+	seq_printf(s, "%u: ", pns->netid);
+
+	list_for_each_entry(pne, &pns->entries, list) {
+		seq_printf(s, "%pI4", &pne->range.netip);
+		if (~pne->range.rmask != 0) /* subnet */
+			seq_printf(s, "/%u", to_prefix(pne->range.rmask));
+		seq_putc(s, ' ');
+	}
+
+	seq_putc(s, '\n');
+
+	return 0;
+}
+
+static struct seq_operations sparse_seq_ops = {
+	.start = sparse_seq_start,
+	.next  = sparse_seq_next,
+	.stop  = sparse_seq_stop,
+	.show  = sparse_seq_show,
+};
+
+static int sparse_seq_open(struct inode *inode, struct file *file)
+{
+	return seq_open(file, &sparse_seq_ops);
+}
+
+static struct file_operations proc_sparse_ops = {
+	.owner   = THIS_MODULE,
+	.open    = sparse_seq_open,
+	.read    = seq_read,
+	.llseek  = seq_lseek,
+	.release = seq_release,
+	.write   = sparse_write,
+};
+
 static struct proc_dir_entry *vzpriv_proc_dir;
 
 static int __init iptable_vzprivnet_init(void)
@@ -503,6 +844,11 @@ static int __init iptable_vzprivnet_init(void)
 	if (proc == NULL)
 		goto err_legacy;
 
+	proc = proc_create("sparse", 0644,
+			vzpriv_proc_dir, &proc_sparse_ops);
+	if (proc == NULL)
+		goto err_net;
+
 	proc = proc_symlink(VZPRIV_PROCNAME, init_net.proc_net, "/proc/vz/privnet/legacy");
 	if (proc == NULL)
 		goto err_link;
@@ -516,6 +862,8 @@ static int __init iptable_vzprivnet_init(void)
 err_reg:
 	remove_proc_entry(VZPRIV_PROCNAME, init_net.proc_net);
 err_link:
+	remove_proc_entry("sparse", vzpriv_proc_dir);
+err_net:
 	remove_proc_entry("legacy", vzpriv_proc_dir);
 err_legacy:
 	remove_proc_entry("privnet", proc_vz_dir);
@@ -527,6 +875,7 @@ static void __exit iptable_vzprivnet_exit(void)
 {
 	nf_unregister_hook(&vzprivnet_ops);
 	remove_proc_entry(VZPRIV_PROCNAME, init_net.proc_net);
+	remove_proc_entry("sparse", vzpriv_proc_dir);
 	remove_proc_entry("legacy", vzpriv_proc_dir);
 	remove_proc_entry("privnet", proc_vz_dir);
 	vzprivnet_cleanup();
