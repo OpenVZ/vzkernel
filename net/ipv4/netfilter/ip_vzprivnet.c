@@ -32,11 +32,16 @@
 #define VZPRIV_PROCNAME "ip_vzprivnet"
 
 struct vzprivnet {
+	u32 nmask;
+	int weak;
+};
+
+struct vzprivnet_range {
+	struct vzprivnet *pn;
+
 	/* In big-endian */
 	u32 netip;
-	u32 netmask1;
-	u32 netmask2;
-	int weak;
+	u32 rmask;
 	struct rb_node node;
 };
 
@@ -47,25 +52,18 @@ static DEFINE_RWLOCK(vzprivlock);
  */
 
 static struct rb_root rbroot = RB_ROOT;
-static struct vzprivnet vzpriv_internet = {
-	.netip = 0,
-	.netmask1 = 0,
-	.netmask2 = 0,
-	.weak = 1
-};
-
 /* ip: big-endian IP address */
-static struct vzprivnet *tree_search(u32 ip)
+static struct vzprivnet_range *tree_search(u32 ip)
 {
 	struct rb_node *node = rbroot.rb_node;
 
 	ip = ntohl(ip);
 	while (node) {
-		struct vzprivnet *p = rb_entry(node, struct vzprivnet, node);
+		struct vzprivnet_range *p = rb_entry(node, struct vzprivnet_range, node);
 		u32 start, end;
 
 		start = ntohl(p->netip);
-		end = start | ~ntohl(p->netmask1);
+		end = start | ~ntohl(p->rmask);
 
 		if (ip <= end) {
 			if (start <= ip)
@@ -75,20 +73,20 @@ static struct vzprivnet *tree_search(u32 ip)
 		} else
 			node = node->rb_right;
 	}
-	return &vzpriv_internet;
+	return NULL;
 }
 
-static int tree_insert(struct vzprivnet *data)
+static int tree_insert(struct vzprivnet_range *data)
 {
 	struct rb_node **link = &(rbroot.rb_node), *parent = NULL;
 	u32 ip = ntohl(data->netip);
 
 	while (*link) {
-		struct vzprivnet *p = rb_entry(*link, struct vzprivnet, node);
+		struct vzprivnet_range *p = rb_entry(*link, struct vzprivnet_range, node);
 		u32 start, end;
 
 		start = ntohl(p->netip);
-		end = start | ~ntohl(p->netmask1);
+		end = start | ~ntohl(p->rmask);
 
 		if (start <= ip && ip <= end)
 			return -EEXIST;
@@ -107,12 +105,12 @@ static int tree_insert(struct vzprivnet *data)
 	return 0;
 }
 
-static void tree_delete(struct vzprivnet *p)
+static void tree_delete(struct vzprivnet_range *p)
 {
 	rb_erase(&p->node, &rbroot);
 }
 
-static struct vzprivnet *tree_first(void)
+static struct vzprivnet_range *tree_first(void)
 {
 	struct rb_node *node;
 
@@ -120,10 +118,10 @@ static struct vzprivnet *tree_first(void)
 	if (!node)
 		return NULL;
 
-	return rb_entry(node, struct vzprivnet, node);
+	return rb_entry(node, struct vzprivnet_range, node);
 }
 
-static struct vzprivnet *tree_next(struct vzprivnet *p)
+static struct vzprivnet_range *tree_next(struct vzprivnet_range *p)
 {
 	struct rb_node *node;
 
@@ -131,12 +129,29 @@ static struct vzprivnet *tree_next(struct vzprivnet *p)
 	if (!node)
 		return NULL;
 
-	return rb_entry(node, struct vzprivnet, node);
+	return rb_entry(node, struct vzprivnet_range, node);
 }
 
 /*
  * Generic code
  */
+
+static struct vzprivnet vzpriv_internet = {
+	.nmask = 0,
+	.weak = 1
+};
+
+static struct vzprivnet *vzpriv_search(u32 ip)
+{
+	struct vzprivnet_range *pnr;
+
+	pnr = tree_search(ip);
+	if (pnr != NULL)
+		return pnr->pn;
+	else
+		return &vzpriv_internet;
+}
+
 static unsigned int vzprivnet_hook(const struct nf_hook_ops *ops,
 				  struct sk_buff *skb,
 				  const struct net_device *in,
@@ -151,11 +166,11 @@ static unsigned int vzprivnet_hook(const struct nf_hook_ops *ops,
 	daddr = ip_hdr(skb)->daddr;
 
 	read_lock(&vzprivlock);
-	p1 = tree_search(saddr);
-	p2 = tree_search(daddr);
+	p1 = vzpriv_search(saddr);
+	p2 = vzpriv_search(daddr);
 
 	if (p1 == p2) {
-		if ((saddr & p1->netmask2) == (daddr & p1->netmask2))
+		if ((saddr & p1->nmask) == (daddr & p1->nmask))
 			res = NF_ACCEPT;
 		else
 			res = NF_DROP;
@@ -197,47 +212,58 @@ static char *nextline(char *s)
 
 static int vzprivnet_add(u32 net, u32 m1, u32 m2, int weak)
 {
-	struct vzprivnet *p;
+	struct vzprivnet_range *p;
+	struct vzprivnet *pn;
 	int err;
 
-	p = kmalloc(sizeof(struct vzprivnet), GFP_KERNEL);
+	p = kmalloc(sizeof(struct vzprivnet_range), GFP_KERNEL);
 	if (!p)
 		return -ENOMEM;
 
+	pn = kmalloc(sizeof(struct vzprivnet), GFP_KERNEL);
+	if (!pn) {
+		kfree(p);
+		return -ENOMEM;
+	}
+
+	p->pn = pn;
 	p->netip = net;
-	p->netmask1 = m1;
-	p->netmask2 = m2;
-	p->weak = weak;
+	p->rmask = m1;
+	pn->nmask = m2;
+	pn->weak = weak;
 
 	write_lock_bh(&vzprivlock);
 	err = tree_insert(p);
 	write_unlock_bh(&vzprivlock);
-	if (err)
+	if (err) {
+		kfree(pn);
 		kfree(p);
+	}
 
 	return err;
 }
 
 static int vzprivnet_del(u32 net)
 {
-	struct vzprivnet *p;
+	struct vzprivnet_range *p;
 
 	write_lock_bh(&vzprivlock);
 	p = tree_search(net);
-	if (p == &vzpriv_internet) {
+	if (p == NULL) {
 		write_unlock_bh(&vzprivlock);
 		return -ENOENT;
 	}
 
 	tree_delete(p);
 	write_unlock_bh(&vzprivlock);
+	kfree(p->pn);
 	kfree(p);
 	return 0;
 }
 
 static void vzprivnet_cleanup(void)
 {
-	struct vzprivnet *p;
+	struct vzprivnet_range *p;
 
 	write_lock_bh(&vzprivlock);
 	while (1) {
@@ -245,6 +271,7 @@ static void vzprivnet_cleanup(void)
 		if (!p)
 			break;
 		tree_delete(p);
+		kfree(p->pn);
 		kfree(p);
 	}
 	write_unlock_bh(&vzprivlock);
@@ -356,7 +383,7 @@ static void *vzprivnet_seq_start(struct seq_file *seq, loff_t *pos)
 
 	read_lock_bh(&vzprivlock);
 	if (n > 0) {
-		struct vzprivnet *p;
+		struct vzprivnet_range *p;
 
 		p = tree_first();
 		while (n-- && p)
@@ -382,11 +409,11 @@ static void vzprivnet_seq_stop(struct seq_file *s, void *v)
 
 static int vzprivnet_seq_show(struct seq_file *s, void *v)
 {
-	struct vzprivnet *p = v;
+	struct vzprivnet_range *p = v;
 
 	seq_printf(s, "%pI4/%u/%u", &p->netip,
-		   to_prefix(ntohl(p->netmask1)), to_prefix(ntohl(p->netmask2)));
-	if (p->weak)
+		   to_prefix(ntohl(p->rmask)), to_prefix(ntohl(p->pn->nmask)));
+	if (p->pn->weak)
 		seq_printf(s, "*\n");
 	else
 		seq_printf(s, "\n");
