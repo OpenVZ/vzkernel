@@ -17,13 +17,37 @@ struct vzprivnet {
 	struct list_head entries;
 };
 
-static LIST_HEAD(vzprivnets);
+static LIST_HEAD(sparse6_vzprivnets);
 
 struct vzprivnet_entry {
 	__u32 ip[4];
 	unsigned preflen;
 	struct vzprivnet *pn;
+	struct vzprivnet6_node *n;
 	struct list_head list;
+};
+
+struct vzprivnet6_node
+{
+	struct vzprivnet6_node	*parent;
+	struct vzprivnet6_node	*left;
+	struct vzprivnet6_node	*right;
+
+	struct vzprivnet_entry	*entry;
+
+	__u16			fn_bit;		/* bit key */
+	__u16			fn_flags;
+};
+
+#define RTN_RTINFO		1
+
+static struct vzprivnet_entry sparse6_null_entry = {
+	.preflen = 128,
+};
+
+static struct vzprivnet6_node sparse6_root_node = {
+	.entry		= &sparse6_null_entry,
+	.fn_flags	= RTN_RTINFO,
 };
 
 static inline int ip6_match(u32 *net, unsigned plen, u32 *ip)
@@ -36,8 +60,48 @@ static inline int ip6_intersect(u32 *ip1, unsigned len1, u32 *ip2, unsigned len2
 	return ip6_match(ip1, len1, ip2) || ip6_match(ip2, len2, ip1);
 }
 
-static struct vzprivnet_entry *vzprivnet6_lookup(u32 *ip)
+static __inline__ int addr_bit_set(void *ip, int fn_bit)
 {
+	__u32 *addr = ip;
+
+	return htonl(1 << ((~fn_bit)&0x1F)) & addr[fn_bit>>5];
+}
+
+static __inline__ void vzprivnet6_node_free(struct vzprivnet6_node * fn)
+{
+	kfree(fn);
+}
+
+static __inline__ struct vzprivnet6_node * vzprivnet6_node_alloc(void)
+{
+	return kzalloc(sizeof(struct vzprivnet6_node), GFP_ATOMIC);
+}
+
+static struct vzprivnet6_node * radix_tree_search(struct vzprivnet6_node *root,
+					struct in6_addr *addr)
+{
+	struct vzprivnet6_node *fn;
+	int dir;
+
+	fn = root;
+
+	for (;;) {
+		struct vzprivnet6_node *next;
+
+		dir = addr_bit_set(addr, fn->fn_bit);
+
+		next = dir ? fn->right : fn->left;
+		if (next) {
+			fn = next;
+			continue;
+		}
+
+		break;
+	}
+
+	if (ip6_match(fn->entry->ip, fn->entry->preflen, (u32 *)addr))
+		return fn;
+
 	return NULL;
 }
 
@@ -45,11 +109,20 @@ struct vzprivnet internet = {
 	.weak = VZPRIVNET_INET,
 };
 
+static struct vzprivnet_entry *vzprivnet6_lookup(struct vzprivnet6_node *root,
+						u32 *ip)
+{
+	struct vzprivnet6_node *n;
+
+	n = radix_tree_search(root, (struct in6_addr *)ip);
+	return (n) ? n->entry : NULL;
+}
+
 static inline struct vzprivnet *vzprivnet6_lookup_net(u32 *ip)
 {
 	struct vzprivnet_entry *pne;
 
-	pne = vzprivnet6_lookup(ip);
+	pne = vzprivnet6_lookup(&sparse6_root_node, ip);
 	if (pne != NULL)
 		return pne->pn;
 	else
@@ -61,11 +134,120 @@ static inline int noip(u32 *ip)
 	return (ip[0] | ip[1] | ip[2] | ip[3]) == 0;
 }
 
+static struct vzprivnet6_node * radix_tree_add(void *addr, unsigned plen,
+						struct vzprivnet6_node *root)
+{
+	struct vzprivnet6_node *fn, *in, *ln;
+	struct vzprivnet6_node *pn = NULL;
+	struct vzprivnet_entry *pne = NULL;
+	int	bit;
+	int	dir = 0;
+
+	/* insert node in tree */
+
+	fn = root;
+
+	do {
+		pne = fn->entry;
+		if (ip6_intersect(pne->ip, pne->preflen, (u32 *)addr, plen))
+			return ERR_PTR(-EEXIST);
+
+		/*
+		 *	Prefix match
+		 */
+		if (plen < fn->fn_bit ||
+		    !ipv6_prefix_equal((struct in6_addr *)pne->ip, addr, fn->fn_bit))
+			goto insert_intermediate_node;
+
+		dir = addr_bit_set(addr, fn->fn_bit);
+		pn = fn;
+		fn = dir ? fn->right : fn->left;
+	} while (fn);
+
+	/*
+	 *	We walked to the bottom of tree.
+	 *	Create new leaf node without children.
+	 */
+
+	ln = vzprivnet6_node_alloc();
+	if (ln == NULL)
+		return ERR_PTR(-ENOMEM);
+
+	ln->fn_bit = plen;
+	ln->parent = pn;
+
+	if (dir)
+		pn->right = ln;
+	else
+		pn->left  = ln;
+
+	return ln;
+
+insert_intermediate_node:
+
+	pn = fn->parent;
+
+	bit = ipv6_addr_diff(addr, (struct in6_addr *)pne->ip);
+
+	BUG_ON(plen <= bit);
+
+	/*
+	 *		(intermediate)[in]
+	 *	          /	   \
+	 *	(new leaf node)[ln] (old node)[fn]
+	 */
+	in = vzprivnet6_node_alloc();
+	ln = vzprivnet6_node_alloc();
+
+	if (in == NULL || ln == NULL) {
+		if (in)
+			vzprivnet6_node_free(in);
+		if (ln)
+			vzprivnet6_node_free(ln);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	/*
+	 * new intermediate node.
+	 * RTN_RTINFO will be off
+	 */
+
+	in->fn_bit = bit;
+
+	in->parent = pn;
+
+	/* update parent pointer */
+	if (dir)
+		pn->right = in;
+	else
+		pn->left  = in;
+
+	ln->fn_bit = plen;
+
+	ln->parent = in;
+	fn->parent = in;
+
+	if (addr_bit_set(addr, bit)) {
+		in->right = ln;
+		in->left  = fn;
+	} else {
+		in->left  = ln;
+		in->right = fn;
+	}
+
+	return ln;
+}
+
+static struct vzprivnet6_node * sparse6_add_subnet(void *addr, unsigned plen)
+{
+	return radix_tree_add(addr, plen, &sparse6_root_node);
+}
+
 static int sparse6_add(unsigned netid, u32 *ip, unsigned preflen, int weak)
 {
 	int err;
 	struct vzprivnet *pn = NULL, *epn = NULL;
-	struct vzprivnet_entry *pne = NULL, *tmp;
+	struct vzprivnet_entry *pne = NULL;
 
 	err = -ENOMEM;
 	pn = kzalloc(sizeof(*pn), GFP_KERNEL);
@@ -77,7 +259,7 @@ static int sparse6_add(unsigned netid, u32 *ip, unsigned preflen, int weak)
 		goto out;
 
 	write_lock_bh(&vzpriv6lock);
-	list_for_each_entry(epn, &vzprivnets, list)
+	list_for_each_entry(epn, &sparse6_vzprivnets, list)
 		if (epn->netid == netid) {
 			kfree(pn);
 			pn = epn;
@@ -90,15 +272,22 @@ static int sparse6_add(unsigned netid, u32 *ip, unsigned preflen, int weak)
 
 found_net:
 	if (!noip(ip)) {
-		err = -EEXIST;
-		list_for_each_entry(tmp, &pn->entries, list)
-			if (ip6_intersect(ip, preflen, tmp->ip, tmp->preflen))
-				goto out_unlock;
+		struct vzprivnet6_node *n;
+
+		n = sparse6_add_subnet(ip, preflen);
+		if (IS_ERR(n)) {
+			err = PTR_ERR(n);
+			goto out_unlock;
+		}
+
+		n->entry = pne;
+		n->fn_flags |= RTN_RTINFO;
 
 		memcpy(pne->ip, ip, sizeof(pne->ip));
 		pne->preflen = preflen;
 		pne->pn = pn;
 		list_add_tail(&pne->list, &pn->entries);
+		pne->n = n;
 		pne = NULL;
 	} else if (weak == VZPRIVNET_WEAK) {
 		pn->weak =  VZPRIVNET_WEAK;
@@ -108,7 +297,7 @@ found_net:
 	}
 
 	if (pn != epn) {
-		list_add_tail(&pn->list, &vzprivnets);
+		list_add_tail(&pn->list, &sparse6_vzprivnets);
 		pn = NULL;
 	}
 
@@ -124,13 +313,61 @@ out:
 	return err;
 }
 
+static void radix_tree_del(struct vzprivnet6_node *fn)
+{
+	int children;
+	struct vzprivnet6_node *child, *pn;
+
+	BUG_ON(fn->parent == NULL);
+
+	for (;;) {
+		children = 0;
+		child = NULL;
+
+		if (fn->right) {
+			child = fn->right;
+			children |= 1;
+		}
+		if (fn->left) {
+			child = fn->left;
+			children |= 2;
+		}
+
+		if (children == 3)
+			return;
+
+		pn = fn->parent;
+		if (pn->right == fn)
+			pn->right = child;
+		else if (pn->left == fn)
+			pn->left = child;
+
+		if (child)
+			child->parent = pn;
+
+		vzprivnet6_node_free(fn);
+		if (pn->fn_flags & RTN_RTINFO)
+			return;
+
+		fn = pn;
+	}
+}
+
+
+static void vzprivnet6_del_entry(struct vzprivnet_entry *pne)
+{
+	radix_tree_del(pne->n);
+}
+
+
 static void sparse6_free_entry(struct vzprivnet_entry *pne)
 {
 	list_del(&pne->list);
+	vzprivnet6_del_entry(pne);
 	kfree(pne);
 }
 
-static void sparse6_del_one(struct vzprivnet *pn)
+static void vzprivnet6_del_one(struct vzprivnet *pn)
 {
 	struct vzprivnet_entry *pne;
 
@@ -150,10 +387,10 @@ static void vzprivnet6_cleanup(void)
 	struct vzprivnet *pn;
 
 	write_lock_bh(&vzpriv6lock);
-	while (!list_empty(&vzprivnets)) {
-		pn = list_first_entry(&vzprivnets,
+	while (!list_empty(&sparse6_vzprivnets)) {
+		pn = list_first_entry(&sparse6_vzprivnets,
 				struct vzprivnet, list);
-		sparse6_del_one(pn);
+		vzprivnet6_del_one(pn);
 	}
 	write_unlock_bh(&vzpriv6lock);
 }
@@ -162,14 +399,14 @@ static int sparse6_del_net(unsigned netid, int weak)
 {
 	struct vzprivnet *pn;
 
-	list_for_each_entry(pn, &vzprivnets, list) {
+	list_for_each_entry(pn, &sparse6_vzprivnets, list) {
 		if (pn->netid != netid)
 			continue;
 
 		if (weak == VZPRIVNET_WEAK)
 			pn->weak = VZPRIVNET_STRONG;
 		else
-			sparse6_del_one(pn);
+			vzprivnet6_del_one(pn);
 
 		return 0;
 	}
@@ -181,7 +418,7 @@ static int sparse6_del_ip(u32 *ip)
 {
 	struct vzprivnet_entry *pne;
 
-	pne = vzprivnet6_lookup(ip);
+	pne = vzprivnet6_lookup(&sparse6_root_node, ip);
 	if (pne == NULL)
 		return -ENOENT;
 
@@ -454,7 +691,7 @@ static void *sparse6_seq_start(struct seq_file *seq, loff_t *ppos)
 	loff_t pos = *ppos;
 
 	read_lock(&vzpriv6lock);
-	list_for_each(lh, &vzprivnets)
+	list_for_each(lh, &sparse6_vzprivnets)
 		if (pos-- == 0)
 			return lh;
 
@@ -467,7 +704,7 @@ static void *sparse6_seq_next(struct seq_file *seq, void *v, loff_t *ppos)
 
 	lh = ((struct list_head *)v)->next;
 	++*ppos;
-	return lh == &vzprivnets ? NULL : lh;
+	return lh == &sparse6_vzprivnets ? NULL : lh;
 }
 
 static void sparse6_seq_stop(struct seq_file *s, void *v)
@@ -550,7 +787,7 @@ static int classify6_seq_show(struct seq_file *s, void *v)
 	}
 
 	read_lock(&vzpriv6lock);
-	pne = vzprivnet6_lookup(ip);
+	pne = vzprivnet6_lookup(&sparse6_root_node, ip);
 	if (pne == NULL) {
 		seq_printf(s, "internet\n");
 		goto out;
