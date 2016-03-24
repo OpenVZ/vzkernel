@@ -1,6 +1,9 @@
 #ifndef __IP_VZPRIVNET_H__
 #define __IP_VZPRIVNET_H__
 
+extern int vzpn_handle_bridged;
+extern int vzpn_filter_host;
+
 struct proc_dir_entry;
 extern struct proc_dir_entry *vzpriv_proc_dir;
 

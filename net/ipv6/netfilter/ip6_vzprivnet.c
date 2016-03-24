@@ -301,15 +301,15 @@ static int sparse6_del(unsigned netid, u32 *ip, int weak)
 	return err;
 }
 
-static unsigned int vzprivnet6_hook(const struct nf_hook_ops *ops,
-				  struct sk_buff *skb,
-				  const struct net_device *in,
-				  const struct net_device *out,
-				  const struct nf_hook_state *state)
+static unsigned int vzprivnet6_hook(struct sk_buff *skb, int can_be_bridge)
 {
 	int verdict = NF_DROP;
 	struct vzprivnet *dst, *src;
 	struct ipv6hdr *hdr;
+
+	if (can_be_bridge && !vzpn_handle_bridged &&
+			skb_dst(skb) != NULL && skb_dst(skb)->output != ip6_output)
+		return NF_ACCEPT;
 
 	read_lock(&vzpriv6lock);
 
@@ -327,12 +327,66 @@ static unsigned int vzprivnet6_hook(const struct nf_hook_ops *ops,
 	return verdict;
 }
 
-static struct nf_hook_ops vzprivnet6_ops = {
-	.hook = vzprivnet6_hook,
-	.owner = THIS_MODULE,
-	.pf = PF_INET6,
-	.hooknum = NF_INET_FORWARD,
-	.priority = NF_IP6_PRI_FIRST
+static unsigned int vzprivnet6_fwd_hook(const struct nf_hook_ops *ops,
+				  struct sk_buff *skb,
+				  const struct net_device *in,
+				  const struct net_device *out,
+				  const struct nf_hook_state *state)
+{
+	return vzprivnet6_hook(skb, 1);
+}
+
+static unsigned int vzprivnet6_host_hook(struct sk_buff *skb,
+		const struct net_device *dev, int can_be_bridge)
+{
+	if (!vzpn_filter_host)
+		return NF_ACCEPT;
+	if (!(dev->features & NETIF_F_VENET))
+		return NF_ACCEPT;
+
+	return vzprivnet6_hook(skb, can_be_bridge);
+}
+
+static unsigned int vzprivnet6_in_hook(const struct nf_hook_ops *ops,
+				  struct sk_buff *skb,
+				  const struct net_device *in,
+				  const struct net_device *out,
+				  const struct nf_hook_state *state)
+{
+	return vzprivnet6_host_hook(skb, in, 0);
+}
+
+static unsigned int vzprivnet6_out_hook(const struct nf_hook_ops *ops,
+				  struct sk_buff *skb,
+				  const struct net_device *in,
+				  const struct net_device *out,
+				  const struct nf_hook_state *state)
+{
+	return vzprivnet6_host_hook(skb, out, 1);
+}
+
+static struct nf_hook_ops vzprivnet6_ops[] = {
+	{
+		.hook = vzprivnet6_fwd_hook,
+		.owner = THIS_MODULE,
+		.pf = PF_INET6,
+		.hooknum = NF_INET_FORWARD,
+		.priority = NF_IP6_PRI_FIRST
+	},
+	{
+		.hook = vzprivnet6_in_hook,
+		.owner = THIS_MODULE,
+		.pf = PF_INET6,
+		.hooknum = NF_INET_LOCAL_IN,
+		.priority = NF_IP6_PRI_FIRST
+	},
+	{
+		.hook = vzprivnet6_out_hook,
+		.owner = THIS_MODULE,
+		.pf = PF_INET6,
+		.hooknum = NF_INET_LOCAL_OUT,
+		.priority = NF_IP6_PRI_FIRST
+	},
 };
 
 static char *nextline(char *s)
@@ -634,7 +688,7 @@ static int __init ip6_vzprivnet_init(void)
 	if (proc == NULL)
 		goto err_classify6;
 
-	err = nf_register_hook(&vzprivnet6_ops);
+	err = nf_register_hooks(vzprivnet6_ops, 3);
 	if (err)
 		goto err_reg;
 
@@ -652,7 +706,7 @@ err_sparse6:
 static void __exit ip6_vzprivnet_exit(void)
 {
 	vzprivnet_unreg_show(vzprivnet6_show_stat);
-	nf_unregister_hook(&vzprivnet6_ops);
+	nf_unregister_hooks(vzprivnet6_ops, 3);
 	remove_proc_entry("classify6", vzpriv_proc_dir);
 	remove_proc_entry("sparse6", vzpriv_proc_dir);
 	vzprivnet6_cleanup();
