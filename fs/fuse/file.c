@@ -162,10 +162,17 @@ static void fuse_file_put(struct fuse_file *ff, bool sync, bool isdir)
 		} else if (sync) {
 			__clear_bit(FR_BACKGROUND, &req->flags);
 			fuse_request_send(ff->fc, req);
+			if (req->out.h.error == -EINTR) {
+				__set_bit(FR_PENDING, &req->flags);
+				INIT_LIST_HEAD(&req->list);
+				req->out.h.error = 0;
+				goto async_fallback;
+			}
 			fuse_file_list_del(ff);
 			path_put(&req->misc.release.path);
 			fuse_put_request(ff->fc, req);
 		} else {
+async_fallback:
 			fuse_file_list_del(ff);
 			req->end = fuse_release_end;
 			__set_bit(FR_BACKGROUND, &req->flags);
