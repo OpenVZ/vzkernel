@@ -155,10 +155,16 @@ static void fuse_file_put(struct fuse_file *ff, bool sync)
 		if (sync) {
 			req->background = 0;
 			fuse_request_send(ff->fc, req);
+			if (req->out.h.error == -EINTR) {
+				req->state = FUSE_REQ_INIT;
+				req->out.h.error = 0;
+				goto async_fallback;
+			}
 			fuse_file_list_del(ff);
 			path_put(&req->misc.release.path);
 			fuse_put_request(ff->fc, req);
 		} else {
+async_fallback:
 			fuse_file_list_del(ff);
 			req->end = fuse_release_end;
 			req->background = 1;
