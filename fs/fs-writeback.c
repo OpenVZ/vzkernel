@@ -902,7 +902,7 @@ static bool over_bground_thresh(struct backing_dev_info *bdi)
 
 	bdi_thresh = bdi_dirty_limit(bdi, dirty_thresh);
 	bdi_bg_thresh = div_u64((u64)bdi_thresh * background_thresh,
-				dirty_thresh);
+				dirty_thresh + 1);
 
 	if (bdi_stat(bdi, BDI_RECLAIMABLE) > bdi_bg_thresh)
 		return true;
