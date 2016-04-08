@@ -376,6 +376,7 @@ cached_submit(struct ploop_io *io, iblock_t iblk, struct ploop_request * preq,
 	loff_t new_size;
 	loff_t used_pos;
 	bool may_fallocate = io->files.file->f_op->fallocate &&
+		io->files.file->f_op->fsync &&
 		io->files.flags & EXT4_EXTENTS_FL;
 
 	trace_cached_submit(preq);
@@ -402,6 +403,11 @@ try_again:
 					goto end_write;
 				}
 			}
+
+			/* flush new i_size to disk */
+			err = io->files.file->f_op->FOP_FSYNC(io->files.file, 0);
+			if (err)
+				goto end_write;
 
 			io->prealloced_size = prealloc;
 		}
