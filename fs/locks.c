@@ -908,16 +908,6 @@ static int flock_lock_inode(struct inode *inode, struct file_lock *request)
 		goto out;
 	}
 
-	/*
-	 * If a higher-priority process was blocked on the old file lock,
-	 * give it the opportunity to lock the file.
-	 */
-	if (found) {
-		spin_unlock(&inode->i_lock);
-		cond_resched();
-		spin_lock(&inode->i_lock);
-	}
-
 find_conflict:
 	for_each_lock(inode, before) {
 		struct file_lock *fl = *before;
