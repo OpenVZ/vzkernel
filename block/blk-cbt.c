@@ -96,7 +96,7 @@ static int __blk_cbt_set(struct cbt_info  *cbt, blkcnt_t block,
 		unsigned long len = min_t(unsigned long, BITS_PER_PAGE - off,
 					  count);
 
-		page = rcu_dereference(cbt->map[idx]);
+		page = cbt->map[idx];
 		if (page) {
 			spin_lock_page(page);
 			set_bits(page_address(page), off, len, set);
@@ -394,7 +394,7 @@ static void cbt_find_next_extent(struct cbt_info *cbt, blkcnt_t block, struct cb
 	idx = block >> (PAGE_SHIFT + 3);
 	while (block < cbt->block_max) {
 		off = block & (BITS_PER_PAGE -1);
-		page = rcu_dereference(cbt->map[idx]);
+		page = cbt->map[idx];
 		if (!page) {
 			if (found)
 				break;
