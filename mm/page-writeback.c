@@ -794,7 +794,8 @@ static unsigned long bdi_position_ratio(struct backing_dev_info *bdi,
 		if (bdi_dirty >= bdi_thresh)
 			return 0;
 
-		bdi_bg_thresh = div_u64((u64)bdi_thresh * bg_thresh, thresh);
+		bdi_bg_thresh = div_u64((u64)bdi_thresh * bg_thresh,
+					thresh + 1);
 		bdi_setpoint = dirty_freerun_ceiling(bdi_thresh,
 						     bdi_bg_thresh);
 
