@@ -278,6 +278,64 @@ err_cbt:
 	return ERR_PTR(-ENOMEM);
 }
 
+int blk_cbt_map_copy_once(struct request_queue *q, struct page ***map_ptr,
+			  blkcnt_t *block_max, blkcnt_t *block_bits)
+{
+	struct cbt_info *cbt;
+	struct page **map;
+	long npages, i;
+
+	mutex_lock(&cbt_mutex);
+	cbt = q->cbt;
+
+	BUG_ON(!cbt);
+	BUG_ON(!cbt->map);
+	BUG_ON(!cbt->block_max);
+
+	cbt_flush_cache(cbt);
+
+	npages = NR_PAGES(cbt->block_max);
+	map = vmalloc(npages * sizeof(void*));
+	if (!map)
+		goto fail;
+
+	memset(map, 0, npages * sizeof(void*));
+
+	for (i = 0; i < npages; i++) {
+		struct page *page = cbt->map[i];
+
+		BUG_ON(page == CBT_PAGE_MISSED);
+
+		if (page) {
+			map[i] = alloc_page(GFP_KERNEL|__GFP_ZERO);
+			if (!map[i])
+				goto fail_pages;
+
+			spin_lock_page(page);
+			memcpy(page_address(map[i]), page_address(page),
+			       PAGE_SIZE);
+			memset(page_address(page), 0, PAGE_SIZE);
+			unlock_page(page);
+		}
+	}
+	mutex_unlock(&cbt_mutex);
+
+	*map_ptr = map;
+	*block_max = cbt->block_max;
+	*block_bits = cbt->block_bits;
+	return 0;
+
+fail_pages:
+	while (--i >= 0) {
+		if (map[i])
+			__free_page(map[i]);
+	}
+fail:
+	vfree(map);
+	mutex_unlock(&cbt_mutex);
+	return -ENOMEM;
+}
+EXPORT_SYMBOL(blk_cbt_map_copy_once);
 
 void blk_cbt_update_size(struct block_device *bdev)
 {
