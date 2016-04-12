@@ -1180,7 +1180,8 @@ enum {
 	VE_CF_IPTABLES_MASK,
 	VE_CF_PSEUDOSUPER,
 	VE_CF_CLOCK_MONOTONIC,
-	VE_CF_CLOCK_BOOTBASED
+	VE_CF_CLOCK_BOOTBASED,
+	VE_CF_AIO_MAX_NR,
 };
 
 static int ve_ts_read(struct cgroup *cg, struct cftype *cft, struct seq_file *m)
@@ -1240,6 +1241,8 @@ static u64 ve_read_u64(struct cgroup *cg, struct cftype *cft)
 #endif
 	else if (cft->private == VE_CF_PSEUDOSUPER)
 		return cgroup_ve(cg)->is_pseudosuper;
+	else if (cft->private == VE_CF_AIO_MAX_NR)
+		return cgroup_ve(cg)->aio_max_nr;
 	return 0;
 }
 
@@ -1276,7 +1279,8 @@ static int ve_write_u64(struct cgroup *cg, struct cftype *cft, u64 value)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 
-	if (!ve_is_super(get_exec_env()))
+	if (!ve_is_super(get_exec_env()) &&
+	    !ve->is_pseudosuper)
 		return -EPERM;
 
 	down_write(&ve->op_sem);
@@ -1291,6 +1295,8 @@ static int ve_write_u64(struct cgroup *cg, struct cftype *cft, u64 value)
 	else if (cft->private == VE_CF_IPTABLES_MASK)
 		ve->ipt_mask = ve_setup_iptables_mask(value);
 #endif
+	else if (cft->private == VE_CF_AIO_MAX_NR)
+		ve->aio_max_nr = value;
 	up_write(&ve->op_sem);
 	return 0;
 }
@@ -1358,6 +1364,13 @@ static struct cftype ve_cftypes[] = {
 		.read_seq_string	= ve_ts_read,
 		.write_string		= ve_ts_write,
 		.private		= VE_CF_CLOCK_BOOTBASED,
+	},
+	{
+		.name			= "aio_max_nr",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_u64		= ve_read_u64,
+		.write_u64		= ve_write_u64,
+		.private		= VE_CF_AIO_MAX_NR,
 	},
 	{ }
 };
