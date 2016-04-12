@@ -1012,6 +1012,7 @@ enum {
 	VE_CF_FEATURES,
 	VE_CF_IPTABLES_MASK,
 	VE_CF_PSEUDOSUPER,
+	VE_CF_AIO_MAX_NR,
 	VE_CF_NETIF_MAX_NR,
 	VE_CF_NETIF_NR,
 };
@@ -1026,6 +1027,8 @@ static u64 ve_read_u64(struct cgroup *cg, struct cftype *cft)
 #endif
 	else if (cft->private == VE_CF_PSEUDOSUPER)
 		return cgroup_ve(cg)->is_pseudosuper;
+	else if (cft->private == VE_CF_AIO_MAX_NR)
+		return cgroup_ve(cg)->aio_max_nr;
 	else if (cft->private == VE_CF_NETIF_MAX_NR)
 		return cgroup_ve(cg)->netif_max_nr;
 	else if (cft->private == VE_CF_NETIF_NR)
@@ -1069,7 +1072,8 @@ static int ve_write_u64(struct cgroup *cg, struct cftype *cft, u64 value)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 
-	if (!ve_is_super(get_exec_env()))
+	if (!ve_is_super(get_exec_env()) &&
+	    !ve->is_pseudosuper)
 		return -EPERM;
 
 	down_write(&ve->op_sem);
@@ -1084,7 +1088,9 @@ static int ve_write_u64(struct cgroup *cg, struct cftype *cft, u64 value)
 	else if (cft->private == VE_CF_IPTABLES_MASK)
 		ve->ipt_mask = ve_setup_iptables_mask(value);
 #endif
-	} else if (cft->private == VE_CF_NETIF_MAX_NR) {
+	else if (cft->private == VE_CF_AIO_MAX_NR)
+		ve->aio_max_nr = value;
+	else if (cft->private == VE_CF_NETIF_MAX_NR) {
 		int delta = value - ve->netif_max_nr;
 
 		ve->netif_max_nr = value;
@@ -1144,6 +1150,13 @@ static struct cftype ve_cftypes[] = {
 		.read_u64		= ve_read_u64,
 		.write_u64		= ve_write_pseudosuper,
 		.private		= VE_CF_PSEUDOSUPER,
+	},
+	{
+		.name			= "aio_max_nr",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_u64		= ve_read_u64,
+		.write_u64		= ve_write_u64,
+		.private		= VE_CF_AIO_MAX_NR,
 	},
 	{
 		.name			= "netif_max_nr",
