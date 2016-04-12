@@ -28,7 +28,7 @@ static int em_ipset_change(struct net *net, void *data, int data_len,
 	if (data_len != sizeof(*set))
 		return -EINVAL;
 
-	index = ip_set_nfnl_get_byindex(set->index);
+	index = ip_set_nfnl_get_byindex(net, set->index);
 	if (index == IPSET_INVALID_ID)
 		return -ENOENT;
 
@@ -37,7 +37,7 @@ static int em_ipset_change(struct net *net, void *data, int data_len,
 	if (em->data)
 		return 0;
 
-	ip_set_nfnl_put(index);
+	ip_set_nfnl_put(net, index);
 	return -ENOMEM;
 }
 
@@ -45,7 +45,7 @@ static void em_ipset_destroy(struct tcf_ematch *em)
 {
 	const struct xt_set_info *set = (const void *) em->data;
 	if (set) {
-		ip_set_nfnl_put(set->index);
+		ip_set_nfnl_put(em->net, set->index);
 		kfree((void *) em->data);
 	}
 }
