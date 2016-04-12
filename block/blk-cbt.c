@@ -16,6 +16,10 @@
 #define NR_PAGES(bits) (((bits) + PAGE_SIZE*8 - 1) / (PAGE_SIZE*8))
 #define BITS_PER_PAGE		(1UL << (PAGE_SHIFT + 3))
 
+#define CBT_PAGE_MISSED (struct page *)(0x1)
+#define CBT_PAGE(cbt, idx) (cbt->map[idx] == CBT_PAGE_MISSED ? \
+			    NULL : cbt->map[idx])
+
 static __cacheline_aligned_in_smp DEFINE_MUTEX(cbt_mutex);
 
 struct cbt_extent{
@@ -152,7 +156,7 @@ static int __blk_cbt_set(struct cbt_info  *cbt, blkcnt_t block,
 					  count);
 		int ret;
 
-		page = cbt->map[idx];
+		page = CBT_PAGE(cbt, idx);
 		if (page) {
 			spin_lock_page(page);
 			set_bits(page_address(page), off, len, set);
@@ -300,8 +304,8 @@ void blk_cbt_update_size(struct block_device *bdev)
 	set_bit(CBT_DEAD, &cbt->flags);
 	for (idx = 0; idx < to_cpy; idx++){
 		new->map[idx] = cbt->map[idx];
-		if (new->map[idx])
-			get_page(new->map[idx]);
+		if (CBT_PAGE(new, idx))
+			get_page(CBT_PAGE(new, idx));
 	}
 	rcu_assign_pointer(q->cbt, new);
 	in_use = cbt->count;
@@ -351,8 +355,8 @@ static void cbt_release_callback(struct rcu_head *head)
 	cbt = container_of(head, struct cbt_info, rcu);
 	nr_pages = NR_PAGES(cbt->block_max);
 	for (i = 0; i < nr_pages; i++)
-		if (cbt->map[i])
-			__free_page(cbt->map[i]);
+		if (CBT_PAGE(cbt, i))
+			__free_page(CBT_PAGE(cbt, i));
 
 	vfree(cbt->map);
 	free_percpu(cbt->cache);
@@ -420,7 +424,7 @@ static void cbt_find_next_extent(struct cbt_info *cbt, blkcnt_t block, struct cb
 	idx = block >> (PAGE_SHIFT + 3);
 	while (block < cbt->block_max) {
 		off = block & (BITS_PER_PAGE -1);
-		page = cbt->map[idx];
+		page = CBT_PAGE(cbt, idx);
 		if (!page) {
 			if (found)
 				break;
