@@ -136,7 +136,9 @@ static int cbt_page_alloc(struct cbt_info  **cbt_pp, unsigned long idx,
 }
 
 static int __blk_cbt_set(struct cbt_info  *cbt, blkcnt_t block,
-			  blkcnt_t count, bool in_rcu, bool set)
+			 blkcnt_t count, bool in_rcu, bool set,
+			 unsigned long *pages_missed,
+			 unsigned long *idx_first)
 {
 	struct page *page;
 
@@ -164,7 +166,15 @@ static int __blk_cbt_set(struct cbt_info  *cbt, blkcnt_t block,
 			count -= len;
 			block += len;
 			continue;
-		} else {
+		} else if (pages_missed) {
+			(*pages_missed)++;
+			if (!*idx_first)
+				*idx_first = idx;
+			cbt->map[idx] = CBT_PAGE_MISSED;
+			count -= len;
+			block += len;
+			continue;
+		}  else {
 			if (!set) {
 				/* Nothing to do */
 				count -= len;
@@ -181,7 +191,7 @@ static int __blk_cbt_set(struct cbt_info  *cbt, blkcnt_t block,
 		else if (ret)
 			return ret;
 	}
-	return 0;
+	return (pages_missed && *pages_missed) ? -EAGAIN : 0;
 }
 
 static void blk_cbt_add(struct request_queue *q, blkcnt_t start, blkcnt_t len)
@@ -203,7 +213,7 @@ static void blk_cbt_add(struct request_queue *q, blkcnt_t start, blkcnt_t len)
 	start >>= cbt->block_bits;
 	len = end - start;
 	if (unlikely(test_bit(CBT_NOCACHE, &cbt->flags))) {
-		__blk_cbt_set(cbt, start, len, 1, 1);
+		__blk_cbt_set(cbt, start, len, 1, 1, NULL, NULL);
 		goto out_rcu;
 	}
 	ex = this_cpu_ptr(cbt->cache);
@@ -216,7 +226,7 @@ static void blk_cbt_add(struct request_queue *q, blkcnt_t start, blkcnt_t len)
 	ex->len = len;
 
 	if (likely(old.len))
-		__blk_cbt_set(cbt, old.start, old.len, 1, 1);
+		__blk_cbt_set(cbt, old.start, old.len, 1, 1, NULL, NULL);
 out_rcu:
 	rcu_read_unlock();
 }
@@ -401,7 +411,7 @@ static inline void __cbt_flush_cpu_cache(void *ptr)
 	struct cbt_extent *ex = this_cpu_ptr(cbt->cache);
 
 	if (ex->len) {
-		__blk_cbt_set(cbt, ex->start, ex->len, 0, 1);
+		__blk_cbt_set(cbt, ex->start, ex->len, 0, 1, NULL, NULL);
 		ex->start += ex->len;
 		ex->len = 0;
 	}
@@ -522,7 +532,7 @@ static int cbt_ioc_get(struct block_device *bdev, struct blk_user_cbt_info __use
 			break;
 		}
 		if (ci.ci_flags & CI_FLAG_ONCE)
-			__blk_cbt_set(cbt, ex.start, ex.len, 0, 0);
+			__blk_cbt_set(cbt, ex.start, ex.len, 0, 0, NULL, NULL);
 		cur_u_ex++;
 		ci.ci_mapped_extents++;
 		block = ex.start + ex.len;
@@ -592,7 +602,7 @@ static int cbt_ioc_set(struct block_device *bdev, struct blk_user_cbt_info __use
 			ret = -EINVAL;
 			break;
 		}
-		ret = __blk_cbt_set(cbt, ex.start, ex.len, 0, set);
+		ret = __blk_cbt_set(cbt, ex.start, ex.len, 0, set, NULL, NULL);
 		if (ret)
 			break;
 		cur_u_ex++;
