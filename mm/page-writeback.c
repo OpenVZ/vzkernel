@@ -1129,12 +1129,15 @@ static void bdi_update_dirty_ratelimit(struct backing_dev_info *bdi,
 	 * of backing device (see the implementation of bdi_dirty_limit()).
 	 */
 	if (unlikely(bdi->capabilities & BDI_CAP_STRICTLIMIT)) {
+		unsigned long bdi_bg_thresh;
+
+		bdi_bg_thresh = div_u64((u64)bdi_thresh * bg_thresh, thresh);
+
 		dirty = bdi_dirty;
 		if (bdi_dirty < 8)
 			setpoint = bdi_dirty + 1;
 		else
-			setpoint = (bdi_thresh +
-				    bdi_dirty_limit(bdi, bg_thresh)) / 2;
+			setpoint = (bdi_thresh + bdi_bg_thresh) / 2;
 	}
 
 	if (dirty < setpoint) {
