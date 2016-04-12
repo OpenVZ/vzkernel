@@ -76,6 +76,61 @@ static void set_bits(void *bm, int cur, int len, bool is_set)
 	}
 }
 
+/*
+ * Return values:
+ * 0 if OK,
+ * -EAGAIN if cbt was updated,
+ * -EBADF if cbt is dead,
+ * -ENOMEM if alloc_page failed.
+ */
+static int cbt_page_alloc(struct cbt_info  **cbt_pp, unsigned long idx,
+			  int in_rcu)
+{
+	struct cbt_info	 *cbt = *cbt_pp;
+	struct page *page;
+
+	/* Page not allocated yet. Synchronization required */
+	spin_lock_irq(&cbt->lock);
+	if (likely(!test_bit(CBT_DEAD, &cbt->flags))) {
+		cbt->count++;
+	} else {
+		struct cbt_info *new = rcu_dereference(cbt->queue->cbt);
+
+		spin_unlock_irq(&cbt->lock);
+		/* was cbt updated ? */
+		if (new != cbt) {
+			*cbt_pp = new;
+			return -EAGAIN;
+		} else {
+			return -EBADF;
+		}
+	}
+	spin_unlock_irq(&cbt->lock);
+	if (in_rcu)
+		rcu_read_unlock();
+	page = alloc_page(GFP_NOIO|__GFP_ZERO);
+	if (in_rcu)
+		rcu_read_lock();
+	spin_lock_irq(&cbt->lock);
+	if (unlikely(!cbt->count-- && test_bit(CBT_DEAD, &cbt->flags))) {
+		spin_unlock_irq(&cbt->lock);
+		call_rcu(&cbt->rcu, &cbt_release_callback);
+		if (page)
+			__free_page(page);
+		return -EBADF;
+	}
+	if (unlikely(!page)) {
+		set_bit(CBT_ERROR, &cbt->flags);
+		spin_unlock_irq(&cbt->lock);
+		return -ENOMEM;
+	}
+	cbt->map[idx] = page;
+	page = NULL;
+	spin_unlock_irq(&cbt->lock);
+
+	return 0;
+}
+
 static int __blk_cbt_set(struct cbt_info  *cbt, blkcnt_t block,
 			  blkcnt_t count, bool in_rcu, bool set)
 {
@@ -95,6 +150,7 @@ static int __blk_cbt_set(struct cbt_info  *cbt, blkcnt_t block,
 		unsigned long off = block & (BITS_PER_PAGE -1);
 		unsigned long len = min_t(unsigned long, BITS_PER_PAGE - off,
 					  count);
+		int ret;
 
 		page = cbt->map[idx];
 		if (page) {
@@ -112,44 +168,14 @@ static int __blk_cbt_set(struct cbt_info  *cbt, blkcnt_t block,
 				continue;
 			}
 		}
-		/* Page not allocated yet. Synchronization required */
-		spin_lock_irq(&cbt->lock);
-		if (likely(!test_bit(CBT_DEAD, &cbt->flags))) {
-			cbt->count++;
-		} else {
-			struct cbt_info *new = rcu_dereference(cbt->queue->cbt);
 
-			spin_unlock_irq(&cbt->lock);
-			/* was cbt updated ? */
-			if (new != cbt) {
-				cbt = new;
-				continue;
-			} else {
-				break;
-			}
-		}
-		spin_unlock_irq(&cbt->lock);
-		if (in_rcu)
-			rcu_read_unlock();
-		page = alloc_page(GFP_NOIO|__GFP_ZERO);
-		if (in_rcu)
-			rcu_read_lock();
-		spin_lock_irq(&cbt->lock);
-		if (unlikely(!cbt->count-- && test_bit(CBT_DEAD, &cbt->flags))) {
-			spin_unlock_irq(&cbt->lock);
-			call_rcu(&cbt->rcu, &cbt_release_callback);
-			if (page)
-				__free_page(page);
+		ret = cbt_page_alloc(&cbt, idx, in_rcu);
+		if (ret == -EAGAIN) /* new cbt */
+			continue;
+		else if (ret == -EBADF) /* dead cbt */
 			break;
-		}
-		if (unlikely(!page)) {
-			set_bit(CBT_ERROR, &cbt->flags);
-			spin_unlock_irq(&cbt->lock);
-			return -ENOMEM;
-		}
-		cbt->map[idx] = page;
-		page = NULL;
-		spin_unlock_irq(&cbt->lock);
+		else if (ret)
+			return ret;
 	}
 	return 0;
 }
