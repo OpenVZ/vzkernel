@@ -1840,6 +1840,8 @@ extern void blk_cbt_update_size(struct block_device *bdev);
 extern void blk_cbt_release(struct request_queue *q);
 extern void blk_cbt_bio_queue(struct request_queue *q, struct bio *bio);
 extern int blk_cbt_ioctl(struct block_device *bdev, unsigned cmd, char __user *arg);
+extern int blk_cbt_map_copy_once(struct request_queue *q, struct page ***map_ptr,
+				 blkcnt_t *block_max, blkcnt_t *block_bits);
 #else /* CONFIG_BLK_DEV_CBT */
 static inline void blk_cbt_update_size(struct block_device *bdev)
 {
