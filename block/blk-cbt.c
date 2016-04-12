@@ -405,21 +405,61 @@ static int cbt_ioc_stop(struct block_device *bdev)
 	return 0;
 }
 
+struct flush_ctx {
+	struct cbt_info *cbt;
+	unsigned long pages_missed;
+	unsigned long idx_first;
+};
+
 static inline void __cbt_flush_cpu_cache(void *ptr)
 {
-	struct cbt_info *cbt = (struct cbt_info *) ptr;
+	struct flush_ctx *ctx = (struct flush_ctx *)ptr;
+	struct cbt_info *cbt = ctx->cbt;
 	struct cbt_extent *ex = this_cpu_ptr(cbt->cache);
 
 	if (ex->len) {
-		__blk_cbt_set(cbt, ex->start, ex->len, 0, 1, NULL, NULL);
-		ex->start += ex->len;
-		ex->len = 0;
+		int ret = __blk_cbt_set(cbt, ex->start, ex->len, 0, 1,
+					&ctx->pages_missed,
+					&ctx->idx_first);
+		if (!ret) {
+			ex->start += ex->len;
+			ex->len = 0;
+		}
 	}
 }
 
 static void cbt_flush_cache(struct cbt_info *cbt)
 {
-	on_each_cpu(__cbt_flush_cpu_cache, cbt, 1);
+	for (;;) {
+		struct flush_ctx ctx;
+		unsigned long i;
+try_again:
+		ctx.cbt = cbt;
+		ctx.pages_missed = 0;
+		ctx.idx_first = 0;
+
+		on_each_cpu(__cbt_flush_cpu_cache, &ctx, 1);
+
+		if (likely(!ctx.pages_missed))
+			return;
+
+		for (i = ctx.idx_first; i < NR_PAGES(cbt->block_max); i++) {
+			int ret;
+
+			if (cbt->map[i] != CBT_PAGE_MISSED)
+				continue;
+
+			ret = cbt_page_alloc(&cbt, i, 0);
+			if (ret == -EAGAIN) /* new cbt */
+				goto try_again;
+			else if (ret) /* dead cbt or alloc_page failed */
+				return;
+
+			/* cbt_page_alloc succeeded ... */
+			if (!--ctx.pages_missed)
+				break;
+		}
+	}
 }
 
 static void cbt_find_next_extent(struct cbt_info *cbt, blkcnt_t block, struct cbt_extent *ex)
