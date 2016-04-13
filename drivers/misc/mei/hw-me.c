@@ -255,6 +255,7 @@ static int mei_me_hw_ready_wait(struct mei_device *dev)
 		return err;
 	}
 
+	mei_me_hw_reset_release(dev);
 	dev->recvd_hw_ready = false;
 	return 0;
 }
@@ -496,9 +497,7 @@ irqreturn_t mei_me_irq_thread_handler(int irq, void *dev_id)
 	/*  check if we need to start the dev */
 	if (!mei_host_is_ready(dev)) {
 		if (mei_hw_is_ready(dev)) {
-			mei_me_hw_reset_release(dev);
 			dev_dbg(&dev->pdev->dev, "we need to start the dev.\n");
-
 			dev->recvd_hw_ready = true;
 			wake_up_interruptible(&dev->wait_hw_ready);
 		} else {
