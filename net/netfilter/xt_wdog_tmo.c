@@ -21,7 +21,9 @@ wdog_tmo_mt(const struct sk_buff *skb, struct xt_action_param *par)
 int wdog_tmo_mt_check(const struct xt_mtchk_param *par)
 {
 
-	return ve_is_super(get_exec_env());
+	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
+	return 0;
 }
 
 static struct xt_match wdog_tmo_mt_reg __read_mostly = {
