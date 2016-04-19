@@ -128,6 +128,7 @@ struct kvm_vcpu_stat {
 	u32 exit_validity;
 	u32 exit_instruction;
 	u32 halt_successful_poll;
+	u32 halt_attempted_poll;
 	u32 instruction_lctl;
 	u32 instruction_lctlg;
 	u32 exit_program_interruption;
