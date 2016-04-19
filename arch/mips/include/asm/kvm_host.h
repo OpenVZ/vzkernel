@@ -26,6 +26,7 @@
 #define KVM_PRIVATE_MEM_SLOTS 	0
 
 #define KVM_COALESCED_MMIO_PAGE_OFFSET 1
+#define KVM_HALT_POLL_NS_DEFAULT 500000
 
 /* Don't support huge pages */
 #define KVM_HPAGE_GFN_SHIFT(x)	0
