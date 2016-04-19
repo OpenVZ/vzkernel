@@ -25,6 +25,8 @@
 #define KVM_MAX_VCPUS 64
 #define KVM_USER_MEM_SLOTS 32
 
+#define KVM_HALT_POLL_NS_DEFAULT 0
+
 struct sca_entry {
 	atomic_t scn;
 	__u32	reserved;
