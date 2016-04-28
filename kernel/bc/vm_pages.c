@@ -243,6 +243,9 @@ static int bc_vmaux_show(struct seq_file *f, void *v)
 
 	ub_sync_memcg(ub);
 
+	seq_printf(f, bc_proc_lu_fmt, "swapin", ub->swapin);
+	seq_printf(f, bc_proc_lu_fmt, "swapout", ub->swapout);
+
 	seq_printf(f, bc_proc_lu_fmt, "ram", ub->ub_parms[UB_PHYSPAGES].held);
 
 	return 0;
