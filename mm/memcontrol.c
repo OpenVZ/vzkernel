@@ -5451,6 +5451,7 @@ static int mem_cgroup_move_charge_write(struct cgroup *cgrp,
 void mem_cgroup_sync_beancounter(struct mem_cgroup *memcg,
 				 struct user_beancounter *ub)
 {
+	struct mem_cgroup *mi;
 	unsigned long long lim, held, maxheld;
 	volatile struct ubparm *k, *d, *p, *s, *o;
 
@@ -5504,6 +5505,13 @@ void mem_cgroup_sync_beancounter(struct mem_cgroup *memcg,
 	lim = lim >= RESOURCE_MAX ? UB_MAXVALUE :
 		min_t(unsigned long long, lim >> PAGE_SHIFT, UB_MAXVALUE);
 	o->barrier = o->limit = lim;
+
+	ub->swapin = 0;
+	ub->swapout = 0;
+	for_each_mem_cgroup_tree(mi, memcg) {
+		ub->swapin += mem_cgroup_read_events(mi, MEM_CGROUP_EVENTS_PSWPIN);
+		ub->swapout += mem_cgroup_read_events(mi, MEM_CGROUP_EVENTS_PSWPOUT);
+	}
 }
 
 int mem_cgroup_apply_beancounter(struct mem_cgroup *memcg,
