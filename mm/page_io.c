@@ -369,8 +369,10 @@ int swap_readpage(struct page *page, bool do_poll)
 		struct address_space *mapping = swap_file->f_mapping;
 
 		ret = mapping->a_ops->readpage(swap_file, page);
-		if (!ret)
+		if (!ret) {
+			count_memcg_page_event(page, PSWPIN);
 			count_vm_event(PSWPIN);
+		}
 		return ret;
 	}
 
@@ -381,6 +383,7 @@ int swap_readpage(struct page *page, bool do_poll)
 			unlock_page(page);
 		}
 
+		count_memcg_page_event(page, PSWPIN);
 		count_vm_event(PSWPIN);
 		return 0;
 	}
