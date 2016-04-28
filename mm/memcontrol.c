@@ -115,6 +115,8 @@ static const char * const mem_cgroup_stat_names[] = {
 enum mem_cgroup_events_index {
 	MEM_CGROUP_EVENTS_PGPGIN,	/* # of pages paged in */
 	MEM_CGROUP_EVENTS_PGPGOUT,	/* # of pages paged out */
+	MEM_CGROUP_EVENTS_PSWPIN,	/* # of pages swapped in */
+	MEM_CGROUP_EVENTS_PSWPOUT,	/* # of pages swapped out */
 	MEM_CGROUP_EVENTS_PGFAULT,	/* # of page-faults */
 	MEM_CGROUP_EVENTS_PGMAJFAULT,	/* # of major page-faults */
 	MEM_CGROUP_EVENTS_NSTATS,
@@ -123,6 +125,8 @@ enum mem_cgroup_events_index {
 static const char * const mem_cgroup_events_names[] = {
 	"pgpgin",
 	"pgpgout",
+	"pswpin",
+	"pswpout",
 	"pgfault",
 	"pgmajfault",
 };
@@ -4091,6 +4095,8 @@ __mem_cgroup_commit_charge_swapin(struct page *page, struct mem_cgroup *memcg,
 		swp_entry_t ent = {.val = page_private(page)};
 		mem_cgroup_uncharge_swap(ent);
 	}
+
+	this_cpu_inc(memcg->stat->events[MEM_CGROUP_EVENTS_PSWPIN]);
 }
 
 void mem_cgroup_commit_charge_swapin(struct page *page,
@@ -4378,6 +4384,9 @@ mem_cgroup_uncharge_swapcache(struct page *page, swp_entry_t ent, bool swapout)
 	 */
 	if (do_swap_account && swapout && memcg)
 		swap_cgroup_record(ent, mem_cgroup_id(memcg));
+
+	if (swapout && memcg)
+		this_cpu_inc(memcg->stat->events[MEM_CGROUP_EVENTS_PSWPOUT]);
 }
 #endif
 
