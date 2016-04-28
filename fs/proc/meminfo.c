@@ -29,6 +29,12 @@ static void show_val_kb(struct seq_file *m, const char *s, unsigned long num)
 	seq_write(m, " kB\n", 4);
 }
 
+#ifdef CONFIG_TCACHE
+extern unsigned long get_nr_tcache_pages(void);
+#else
+static inline unsigned long get_nr_tcache_pages(void) { return 0; }
+#endif
+
 static int meminfo_proc_show(struct seq_file *m, void *v)
 {
 	struct sysinfo i;
@@ -148,6 +154,9 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	show_val_kb(m, "FilePmdMapped:  ",
 		    global_node_page_state(NR_FILE_PMDMAPPED));
 #endif
+
+	if (IS_ENABLED(CONFIG_TCACHE))
+		show_val_kb(m, "Tcache:         ", get_nr_tcache_pages());
 
 #ifdef CONFIG_CMA
 	show_val_kb(m, "CmaTotal:       ", totalcma_pages);
