@@ -3767,6 +3767,8 @@ static const unsigned int memcg1_events[] = {
 	PGPGOUT,
 	PGFAULT,
 	PGMAJFAULT,
+	PSWPIN,
+	PSWPOUT,
 };
 
 static int memcg_stat_show(struct seq_file *m, void *v)
@@ -6866,6 +6868,7 @@ void mem_cgroup_swapout(struct page *page, swp_entry_t entry)
 				   nr_entries);
 	VM_BUG_ON_PAGE(oldid, page);
 	mod_memcg_state(swap_memcg, MEMCG_SWAP, nr_entries);
+	__count_memcg_events(swap_memcg, PSWPOUT, nr_entries);
 
 	page->mem_cgroup = NULL;
 
