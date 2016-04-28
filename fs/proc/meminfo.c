@@ -78,6 +78,9 @@ static int meminfo_proc_show_mi(struct seq_file *m, struct meminfo *mi)
 #ifdef CONFIG_TCACHE
 extern unsigned long get_nr_tcache_pages(void);
 #endif
+#ifdef CONFIG_TSWAP
+extern unsigned long get_nr_tswap_pages(void);
+#endif
 
 int meminfo_proc_show_ub(struct seq_file *m, void *v,
 		struct user_beancounter *ub, unsigned long meminfo_val)
@@ -179,6 +182,12 @@ int meminfo_proc_show_ub(struct seq_file *m, void *v,
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 		"AnonHugePages:  %8lu kB\n"
 #endif
+#ifdef CONFIG_TCACHE
+		"Tcache:         %8lu kB\n"
+#endif
+#ifdef CONFIG_TSWAP
+		"Tswap:          %8lu kB\n"
+#endif
 		,
 		K(i.totalram),
 		K(i.freeram),
@@ -239,6 +248,12 @@ int meminfo_proc_show_ub(struct seq_file *m, void *v,
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 		,K(global_page_state(NR_ANON_TRANSPARENT_HUGEPAGES) *
 		   HPAGE_PMD_NR)
+#endif
+#ifdef CONFIG_TCACHE
+		,K(get_nr_tcache_pages())
+#endif
+#ifdef CONFIG_TSWAP
+		,K(get_nr_tswap_pages())
 #endif
 		);
 
