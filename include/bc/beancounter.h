@@ -105,6 +105,9 @@ struct user_beancounter {
 	atomic_long_t		wb_requests;
 	atomic_long_t		wb_sectors;
 
+	unsigned long		swapin;
+	unsigned long		swapout;
+
 	void			*iolimit;
 
 	/* resources statistic and settings */
