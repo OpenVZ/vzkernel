@@ -185,6 +185,9 @@ int meminfo_proc_show_ub(struct seq_file *m, void *v,
 		"CmaTotal:       %8lu kB\n"
 		"CmaFree:        %8lu kB\n"
 #endif
+#ifdef CONFIG_TCACHE
+		"Tcache:         %8lu kB\n"
+#endif
 		,
 		K(i.totalram),
 		K(i.freeram),
@@ -250,6 +253,9 @@ int meminfo_proc_show_ub(struct seq_file *m, void *v,
 #ifdef CONFIG_CMA
 		, K(totalcma_pages)
 		, K(global_page_state(NR_FREE_CMA_PAGES))
+#endif
+#ifdef CONFIG_TCACHE
+		,K(get_nr_tcache_pages())
 #endif
 		);
 
