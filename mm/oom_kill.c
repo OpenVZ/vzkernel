@@ -757,11 +757,11 @@ static void oom_berserker(unsigned long points, unsigned long overdraft,
 			continue;
 
 		/*
-		 * Consider tasks as equally bad if they have equal
-		 * normalized scores.
+		 * Consider tasks as equally bad if they occupy equal
+		 * percentage of available memory.
 		 */
-		if (tsk_points * 1000 / totalpages <
-		    points * 1000 / totalpages)
+		if (tsk_points * 100 / totalpages <
+		    points * 100 / totalpages)
 			continue;
 
 		if (__ratelimit(&berserker_rs)) {
@@ -809,8 +809,7 @@ void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 	if (p->mm && p->flags & PF_EXITING) {
 		mark_oom_victim(p);
 		task_unlock(p);
-		put_task_struct(p);
-		return;
+		goto out;
 	}
 	task_unlock(p);
 
@@ -855,8 +854,7 @@ void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 
 	p = find_lock_task_mm(victim);
 	if (!p) {
-		put_task_struct(victim);
-		return;
+		goto out;
 	} else if (victim != p) {
 		get_task_struct(p);
 		put_task_struct(victim);
@@ -903,8 +901,8 @@ void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 
 	do_send_sig_info(SIGKILL, SEND_SIG_FORCED, victim, true);
 	mem_cgroup_note_oom_kill(memcg, victim);
+out:
 	put_task_struct(victim);
-
 	oom_berserker(points, overdraft, totalpages, memcg, nodemask);
 }
 #undef K
