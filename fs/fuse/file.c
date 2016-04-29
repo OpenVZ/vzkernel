@@ -2109,12 +2109,6 @@ static int fuse_writepages_fill(struct page *page,
 	     req->pages[req->num_pages - 1]->index + 1 != page->index)) {
 		int err;
 
-		if (wbc->sync_mode == WB_SYNC_NONE && fc->blocked) {
-			redirty_page_for_writepage(wbc, page);
-			unlock_page(page);
-			return 0;
-		}
-
 		err = fuse_send_writepages(data);
 		if (err) {
 			unlock_page(page);
@@ -2167,11 +2161,6 @@ static int fuse_writepages(struct address_space *mapping,
 	err = -EIO;
 	if (is_bad_inode(inode))
 		goto out;
-
-	if (wbc->sync_mode == WB_SYNC_NONE) {
-		if (fc->blocked)
-			return 0;
-	}
 
 	/*
 	 * We use fuse_blocked_for_wb() instead of just fc->blocked to avoid
