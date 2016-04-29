@@ -32,6 +32,8 @@ struct mm_struct;
 struct kmem_cache;
 struct oom_context;
 
+extern struct oom_context global_oom_ctx;
+
 /* Stats that can be updated by kernel. */
 enum mem_cgroup_page_stat_item {
 	MEMCG_NR_FILE_MAPPED, /* # of pages charged as file rss */
@@ -382,8 +384,7 @@ mem_cgroup_update_lru_size(struct lruvec *lruvec, enum lru_list lru,
 static inline struct oom_context *
 mem_cgroup_oom_context(struct mem_cgroup *memcg)
 {
-	extern struct oom_context oom_ctx;
-	return &oom_ctx;
+	return &global_oom_ctx;
 }
 
 static inline unsigned long mem_cgroup_overdraft(struct mem_cgroup *memcg)
