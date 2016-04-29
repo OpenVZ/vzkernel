@@ -1679,7 +1679,7 @@ int generic_setlease(struct file *filp, long arg, struct file_lock **flp,
 	struct inode *inode = locks_inode(filp);
 	int error;
 
-	if ((!uid_eq(current_fsuid(), inode->i_uid)) && !capable(CAP_LEASE))
+	if ((!uid_eq(current_fsuid(), inode->i_uid)) && !ve_capable(CAP_LEASE))
 		return -EACCES;
 	if (!S_ISREG(inode->i_mode))
 		return -EINVAL;
