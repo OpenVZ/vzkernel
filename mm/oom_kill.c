@@ -344,9 +344,6 @@ enum oom_scan_t oom_scan_process_thread(struct task_struct *task,
 	if (oom_task_origin(task))
 		return OOM_SCAN_SELECT;
 
-	if (task_will_free_mem(task) && !force_kill)
-		return OOM_SCAN_SELECT;
-
 	return OOM_SCAN_OK;
 }
 
