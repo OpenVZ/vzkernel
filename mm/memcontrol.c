@@ -2158,7 +2158,8 @@ static unsigned long mem_cgroup_reclaim(struct mem_cgroup *memcg,
 			drain_all_stock_async(memcg);
 		total += try_to_free_mem_cgroup_pages(memcg, SWAP_CLUSTER_MAX,
 						      gfp_mask, noswap);
-		if (fatal_signal_pending(current))
+		if (test_thread_flag(TIF_MEMDIE) ||
+		    fatal_signal_pending(current))
 			return 1;
 		/*
 		 * Allow limit shrinkers, which are triggered directly
@@ -2986,7 +2987,8 @@ again:
 		bool invoke_oom = oom && !nr_oom_retries;
 
 		/* If killed, bypass charge */
-		if (fatal_signal_pending(current)) {
+		if (test_thread_flag(TIF_MEMDIE) ||
+		    fatal_signal_pending(current)) {
 			css_put(&memcg->css);
 			goto bypass;
 		}
