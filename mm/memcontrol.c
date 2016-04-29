@@ -2105,8 +2105,7 @@ static void mem_cgroup_out_of_memory(struct mem_cgroup *memcg, gfp_t gfp_mask,
 
 		cgroup_iter_start(cgroup, &it);
 		while ((task = cgroup_iter_next(cgroup, &it))) {
-			switch (oom_scan_process_thread(task, totalpages, NULL,
-							false)) {
+			switch (oom_scan_process_thread(task, NULL)) {
 			case OOM_SCAN_SELECT:
 				if (chosen)
 					put_task_struct(chosen);
