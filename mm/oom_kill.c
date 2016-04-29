@@ -884,6 +884,9 @@ void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 
 			if (process_shares_mm(child, p->mm))
 				continue;
+			if (!child->mm ||
+			    test_tsk_thread_flag(child, TIF_MEMDIE))
+				continue;
 			/*
 			 * oom_badness() returns 0 if the thread is unkillable
 			 */
