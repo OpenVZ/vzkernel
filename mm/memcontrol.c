@@ -1692,6 +1692,8 @@ void mem_cgroup_note_oom_kill(struct mem_cgroup *root_memcg,
 
 struct oom_context *mem_cgroup_oom_context(struct mem_cgroup *memcg)
 {
+	if (mem_cgroup_disabled())
+		return &global_oom_ctx;
 	if (!memcg)
 		memcg = root_mem_cgroup;
 	return &memcg->oom_ctx;
@@ -1701,7 +1703,7 @@ unsigned long mem_cgroup_overdraft(struct mem_cgroup *memcg)
 {
 	unsigned long long guarantee, usage;
 
-	if (mem_cgroup_is_root(memcg))
+	if (mem_cgroup_disabled() || mem_cgroup_is_root(memcg))
 		return 0;
 
 	guarantee = ACCESS_ONCE(memcg->oom_guarantee);
