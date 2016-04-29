@@ -278,8 +278,9 @@ err_cbt:
 	return ERR_PTR(-ENOMEM);
 }
 
-int blk_cbt_map_copy_once(struct request_queue *q, struct page ***map_ptr,
-			  blkcnt_t *block_max, blkcnt_t *block_bits)
+int blk_cbt_map_copy_once(struct request_queue *q, __u8 *uuid,
+			  struct page ***map_ptr, blkcnt_t *block_max,
+			  blkcnt_t *block_bits)
 {
 	struct cbt_info *cbt;
 	struct page **map;
@@ -292,6 +293,11 @@ int blk_cbt_map_copy_once(struct request_queue *q, struct page ***map_ptr,
 	BUG_ON(!cbt);
 	BUG_ON(!cbt->map);
 	BUG_ON(!cbt->block_max);
+
+	if (!uuid || memcmp(uuid, cbt->uuid, sizeof(cbt->uuid))) {
+		mutex_unlock(&cbt_mutex);
+		return -EINVAL;
+	}
 
 	cbt_flush_cache(cbt);
 
