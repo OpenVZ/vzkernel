@@ -317,8 +317,7 @@ static enum oom_constraint constrained_alloc(struct zonelist *zonelist,
 #endif
 
 enum oom_scan_t oom_scan_process_thread(struct task_struct *task,
-		unsigned long totalpages, const nodemask_t *nodemask,
-		bool force_kill)
+					const nodemask_t *nodemask)
 {
 	if (oom_unkillable_task(task, NULL, nodemask))
 		return OOM_SCAN_CONTINUE;
@@ -330,10 +329,9 @@ enum oom_scan_t oom_scan_process_thread(struct task_struct *task,
 	 * This can only happen if oom_trylock timeout-ed, which most probably
 	 * means that the victim had dead-locked.
 	 */
-	if (test_tsk_thread_flag(task, TIF_MEMDIE)) {
-		if (!force_kill)
-			return OOM_SCAN_CONTINUE;
-	}
+	if (test_tsk_thread_flag(task, TIF_MEMDIE))
+		return OOM_SCAN_CONTINUE;
+
 	if (!task->mm)
 		return OOM_SCAN_CONTINUE;
 
@@ -355,8 +353,7 @@ enum oom_scan_t oom_scan_process_thread(struct task_struct *task,
  */
 static struct task_struct *select_bad_process(unsigned long *ppoints,
 		unsigned long *poverdraft,
-		unsigned long totalpages, const nodemask_t *nodemask,
-		bool force_kill)
+		unsigned long totalpages, const nodemask_t *nodemask)
 {
 	struct task_struct *g, *p;
 	struct task_struct *chosen = NULL;
@@ -368,8 +365,7 @@ static struct task_struct *select_bad_process(unsigned long *ppoints,
 		unsigned int points;
 		unsigned long overdraft;
 
-		switch (oom_scan_process_thread(p, totalpages, nodemask,
-						force_kill)) {
+		switch (oom_scan_process_thread(p, nodemask)) {
 		case OOM_SCAN_SELECT:
 			chosen = p;
 			chosen_points = ULONG_MAX;
@@ -1007,7 +1003,6 @@ EXPORT_SYMBOL_GPL(unregister_oom_notifier);
  * @gfp_mask: memory allocation flags
  * @order: amount of memory being requested as a power of 2
  * @nodemask: nodemask passed to page allocator
- * @force_kill: true if a task must be killed, even if others are exiting
  *
  * If we run out of memory, we have the choice between either
  * killing a random task (bad), letting the system crash (worse)
@@ -1015,7 +1010,7 @@ EXPORT_SYMBOL_GPL(unregister_oom_notifier);
  * don't have to be perfect here, we just have to be good.
  */
 void out_of_memory(struct zonelist *zonelist, gfp_t gfp_mask,
-		int order, nodemask_t *nodemask, bool force_kill)
+		   int order, nodemask_t *nodemask)
 {
 	const nodemask_t *mpol_mask;
 	struct task_struct *p;
@@ -1063,8 +1058,7 @@ void out_of_memory(struct zonelist *zonelist, gfp_t gfp_mask,
 		return;
 	}
 
-	p = select_bad_process(&points, &overdraft, totalpages, mpol_mask,
-			       force_kill);
+	p = select_bad_process(&points, &overdraft, totalpages, mpol_mask);
 	/* Found nothing?!?! Either we hang forever, or we panic. */
 	if (!p) {
 		dump_header(NULL, gfp_mask, order, NULL, mpol_mask);
@@ -1086,7 +1080,7 @@ void pagefault_out_of_memory(void)
 		return;
 
 	if (oom_trylock(NULL)) {
-		out_of_memory(NULL, 0, 0, NULL, false);
+		out_of_memory(NULL, 0, 0, NULL);
 		oom_unlock(NULL);
 	}
 }
