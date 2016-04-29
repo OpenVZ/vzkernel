@@ -51,12 +51,10 @@ static DEFINE_SPINLOCK(oom_context_lock);
 #define OOM_BASE_RAGE	-10
 #define OOM_MAX_RAGE	20
 
-#ifndef CONFIG_MEMCG
-struct oom_context oom_ctx = {
+struct oom_context global_oom_ctx = {
 	.rage		= OOM_BASE_RAGE,
-	.waitq		= __WAIT_QUEUE_HEAD_INITIALIZER(oom_ctx.waitq),
+	.waitq		= __WAIT_QUEUE_HEAD_INITIALIZER(global_oom_ctx.waitq),
 };
-#endif
 
 void init_oom_context(struct oom_context *ctx)
 {
@@ -187,7 +185,8 @@ static unsigned long mm_overdraft(struct mm_struct *mm)
 	memcg = try_get_mem_cgroup_from_mm(mm);
 	ctx = mem_cgroup_oom_context(memcg);
 	overdraft = ctx->overdraft;
-	mem_cgroup_put(memcg);
+	if (memcg)
+		mem_cgroup_put(memcg);
 
 	return overdraft;
 }
@@ -502,7 +501,8 @@ void mark_oom_victim(struct task_struct *tsk)
 		ctx->marked = true;
 	}
 	spin_unlock(&oom_context_lock);
-	mem_cgroup_put(memcg);
+	if (memcg)
+		mem_cgroup_put(memcg);
 }
 
 /**
@@ -613,7 +613,7 @@ bool oom_trylock(struct mem_cgroup *memcg)
 		 * information will be used in oom_badness.
 		 */
 		ctx->overdraft = mem_cgroup_overdraft(iter);
-		parent = parent_mem_cgroup(iter);
+		parent = iter ? parent_mem_cgroup(iter) : NULL;
 		if (parent && iter != memcg)
 			ctx->overdraft = max(ctx->overdraft,
 				mem_cgroup_oom_context(parent)->overdraft);
@@ -650,7 +650,8 @@ void oom_unlock(struct mem_cgroup *memcg)
 			 * on it for the victim to exit below.
 			 */
 			victim_memcg = iter;
-			mem_cgroup_get(iter);
+			if (iter)
+				mem_cgroup_get(iter);
 
 			mem_cgroup_iter_break(memcg, iter);
 			break;
@@ -700,7 +701,8 @@ void oom_unlock(struct mem_cgroup *memcg)
 	 */
 	ctx = mem_cgroup_oom_context(victim_memcg);
 	__wait_oom_context(ctx);
-	mem_cgroup_put(victim_memcg);
+	if (victim_memcg)
+		mem_cgroup_put(victim_memcg);
 }
 
 /*
