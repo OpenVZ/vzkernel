@@ -53,6 +53,7 @@ enum {
 	PLOOP_S_LOCKED,	        /* ploop is locked by userspace
 				   (for minor mgmt only) */
 	PLOOP_S_ONCE,	        /* An event (e.g. printk once) happened */
+	PLOOP_S_PUSH_BACKUP,	/* Push_backup is in progress */
 };
 
 struct ploop_snapdata
@@ -337,6 +338,7 @@ struct ploop_stats
 };
 
 struct ploop_freeblks_desc;
+struct ploop_pushbackup_desc;
 
 struct ploop_device
 {
@@ -438,6 +440,7 @@ struct ploop_device
 	char                    cookie[PLOOP_COOKIE_SIZE];
 
 	struct ploop_freeblks_desc *fbd;
+	struct ploop_pushbackup_desc *pbd;
 
 	unsigned long		locking_state; /* plo locked by userspace */
 };
