@@ -73,6 +73,8 @@ static inline void vmalloc_init(void)
 
 extern void *vmalloc(unsigned long size);
 extern void *vzalloc(unsigned long size);
+extern void *vmalloc_account(unsigned long size);
+extern void *vzalloc_account(unsigned long size);
 extern void *vmalloc_user(unsigned long size);
 extern void *vmalloc_node(unsigned long size, int node);
 extern void *vzalloc_node(unsigned long size, int node);
