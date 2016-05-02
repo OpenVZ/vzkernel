@@ -750,9 +750,9 @@ struct xt_table_info *xt_alloc_table_info(unsigned int size)
 		return NULL;
 
 	if (sz <= (PAGE_SIZE << PAGE_ALLOC_COSTLY_ORDER))
-		info = kmalloc(sz, GFP_KERNEL | __GFP_NOWARN | __GFP_NORETRY);
+		info = kmalloc(sz, GFP_KERNEL_ACCOUNT | __GFP_NOWARN | __GFP_NORETRY);
 	if (!info) {
-		info = vmalloc(sz);
+		info = vmalloc_account(sz);
 		if (!info)
 			return NULL;
 	}

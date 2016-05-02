@@ -167,7 +167,7 @@ static void proc_set_tty(struct task_struct *tsk, struct tty_struct *tty);
 
 struct tty_struct *alloc_tty_struct(void)
 {
-	return kzalloc(sizeof(struct tty_struct), GFP_KERNEL);
+	return kzalloc(sizeof(struct tty_struct), GFP_KERNEL_ACCOUNT);
 }
 
 /**
@@ -1512,7 +1512,7 @@ void tty_free_termios(struct tty_struct *tty)
 	/* Stash the termios data */
 	tp = tty->driver->termios[idx];
 	if (tp == NULL) {
-		tp = kmalloc(sizeof(struct ktermios), GFP_KERNEL);
+		tp = kmalloc(sizeof(struct ktermios), GFP_KERNEL_ACCOUNT);
 		if (tp == NULL) {
 			pr_warn("tty: no memory to save termios state.\n");
 			return;
