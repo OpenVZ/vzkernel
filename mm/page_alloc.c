@@ -3264,6 +3264,7 @@ unsigned long __get_free_kmem_pages(gfp_t gfp_mask, unsigned int order)
 		return 0;
 	return (unsigned long) page_address(page);
 }
+EXPORT_SYMBOL(__get_free_kmem_pages);
 
 unsigned long get_zeroed_page(gfp_t gfp_mask)
 {
@@ -3463,6 +3464,7 @@ void __free_kmem_pages(struct page *page, unsigned int order)
 	memcg_kmem_uncharge_pages(page, order);
 	__free_pages(page, order);
 }
+EXPORT_SYMBOL(__free_kmem_pages);
 
 void free_kmem_pages(unsigned long addr, unsigned int order)
 {
@@ -3471,6 +3473,7 @@ void free_kmem_pages(unsigned long addr, unsigned int order)
 		__free_kmem_pages(virt_to_page((void *)addr), order);
 	}
 }
+EXPORT_SYMBOL(free_kmem_pages);
 
 static void *make_alloc_exact(unsigned long addr, unsigned order, size_t size)
 {
