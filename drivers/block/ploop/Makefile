@@ -5,7 +5,7 @@ CFLAGS_io_direct.o = -I$(src)
 CFLAGS_ploop_events.o = -I$(src)
 
 obj-$(CONFIG_BLK_DEV_PLOOP)	+= ploop.o
-ploop-objs := dev.o map.o io.o sysfs.o tracker.o freeblks.o ploop_events.o discard.o
+ploop-objs := dev.o map.o io.o sysfs.o tracker.o freeblks.o ploop_events.o discard.o push_backup.o
 
 obj-$(CONFIG_BLK_DEV_PLOOP)	+= pfmt_ploop1.o
 pfmt_ploop1-objs := fmt_ploop1.o
