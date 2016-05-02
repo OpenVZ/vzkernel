@@ -1018,11 +1018,9 @@ static struct tty_struct *vtty_install_peer(struct tty_driver *driver,
 {
 	struct tty_struct *tty;
 
-	tty = alloc_tty_struct();
+	tty = alloc_tty_struct(driver, index);
 	if (!tty)
 		return ERR_PTR(-ENOMEM);
-	initialize_tty_struct(tty, driver, index);
-
 	tty->port = port;
 	vtty_standard_install(driver, tty);
 	return tty;
@@ -1323,9 +1321,12 @@ int vtty_open_master(envid_t veid, int idx)
 	vtty_set_context(veid);
 
 	tty = vtty_lookup(vttym_driver, NULL, idx);
-	if (!tty ||
-	    (test_bit(TTY_CLOSING, &tty->flags) ||
-	     test_bit(TTY_CLOSING, &tty->link->flags))) {
+	if (!tty) {
+		/*
+		 * FIXME: Previously we've been testing
+		 * for TTY_CLOSING bit which is not longer
+		 * here. Review and handle.
+		 */
 		/*
 		 * The previous connection is about to
 		 * be closed so drop it from the map and
