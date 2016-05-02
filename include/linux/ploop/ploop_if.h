@@ -186,6 +186,18 @@ struct ploop_getdevice_ctl
 	__u32	__mbz1;
 } __attribute__ ((aligned (8)));
 
+struct ploop_push_backup_init_ctl
+{
+	__u8    cbt_uuid[16];
+	__u64	cbt_mask_addr; /* page-aligned space for CBT mask */
+} __attribute__ ((aligned (8)));
+
+struct ploop_push_backup_stop_ctl
+{
+	__u8    cbt_uuid[16];
+	__u32	status; /* for sanity: non-zero if pending or active queue is not empty */
+} __attribute__ ((aligned (8)));
+
 /* maintenance types */
 enum {
 	PLOOP_MNTN_OFF = 0,  /* no maintenance is in progress */
@@ -202,6 +214,7 @@ enum {
 	PLOOP_MNTN_MERGE,    /* merge is in progress */
 	PLOOP_MNTN_GROW,     /* grow is in progress */
 	PLOOP_MNTN_RELOC,    /* relocation is in progress */
+	PLOOP_MNTN_PUSH_BACKUP, /* push backup is in progress */
 };
 
 /*
@@ -301,6 +314,12 @@ struct ploop_track_extent
 
 /* Set maximum size for the top delta . */
 #define PLOOP_IOC_MAX_DELTA_SIZE _IOW(PLOOPCTLTYPE, 28, __u64)
+
+/* Start push backup */
+#define PLOOP_IOC_PUSH_BACKUP_INIT _IOR(PLOOPCTLTYPE, 29, struct ploop_push_backup_init_ctl)
+
+/* Stop push backup */
+#define PLOOP_IOC_PUSH_BACKUP_STOP _IOR(PLOOPCTLTYPE, 31, struct ploop_push_backup_stop_ctl)
 
 /* Events exposed via /sys/block/ploopN/pstate/event */
 #define PLOOP_EVENT_ABORTED	1
