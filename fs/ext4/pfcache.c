@@ -15,6 +15,7 @@
 #include <linux/namei.h>
 #include <linux/exportfs.h>
 #include <linux/init_task.h>	/* for init_cred */
+#include <linux/memcontrol.h>
 #include "ext4.h"
 #include "xattr.h"
 #include "../internal.h"
@@ -62,6 +63,14 @@ int ext4_open_pfcache(struct inode *inode)
 
 	pfcache_path(inode, name);
 
+	/*
+	 * Lookups over shared area shouldn't be accounted to any particular
+	 * memory cgroup, otherwise a cgroup can be pinned for indefinitely
+	 * long after destruction, because a file or directory located in this
+	 * area is likely to be in use by another containers or host.
+	 */
+	memcg_stop_kmem_account();
+
 	cur_cred = override_creds(&init_cred);
 	/*
 	 * Files in cache area must not have csum attributes or
@@ -75,12 +84,14 @@ int ext4_open_pfcache(struct inode *inode)
 	revert_creds(cur_cred);
 	path_put(&root);
 	if (ret)
-		return ret;
+		goto out;
 
 	ret = open_mapping_peer(inode->i_mapping, &path, &init_cred);
 	if (!ret)
 		percpu_counter_inc(&EXT4_SB(inode->i_sb)->s_pfcache_peers);
 	path_put(&path);
+out:
+	memcg_resume_kmem_account();
 	return ret;
 }
 
