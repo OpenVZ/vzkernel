@@ -185,7 +185,7 @@ static inline void *fixup_red_left(struct kmem_cache *s, void *p)
 		SLAB_FAILSLAB)
 
 #define SLUB_MERGE_SAME (SLAB_CONSISTENCY_CHECKS | SLAB_RECLAIM_ACCOUNT | \
-		SLAB_CACHE_DMA | SLAB_NOTRACK)
+		SLAB_CACHE_DMA | SLAB_NOTRACK | SLAB_ACCOUNT)
 
 #define OO_SHIFT	16
 #define OO_MASK		((1 << OO_SHIFT) - 1)
@@ -5604,6 +5604,8 @@ static char *create_unique_id(struct kmem_cache *s)
 		*p++ = 'F';
 	if (!(s->flags & SLAB_NOTRACK))
 		*p++ = 't';
+	if (s->flags & SLAB_ACCOUNT)
+		*p++ = 'A';
 	if (p != name + 1)
 		*p++ = '-';
 	p += sprintf(p, "%07d", s->size);
