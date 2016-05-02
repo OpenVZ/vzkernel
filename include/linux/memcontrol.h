@@ -470,6 +470,16 @@ extern int memcg_nr_cache_ids;
 extern void memcg_get_cache_ids(void);
 extern void memcg_put_cache_ids(void);
 
+static inline void memcg_stop_kmem_account(void)
+{
+	current->memcg_kmem_skip_account++;
+}
+
+static inline void memcg_resume_kmem_account(void)
+{
+	current->memcg_kmem_skip_account--;
+}
+
 /*
  * Helper macro to loop through all memcg-specific caches. Callers must still
  * check if the cache is valid (it is either valid or NULL).
@@ -633,6 +643,14 @@ static inline void memcg_get_cache_ids(void)
 }
 
 static inline void memcg_put_cache_ids(void)
+{
+}
+
+static inline void memcg_stop_kmem_account(void)
+{
+}
+
+static inline void memcg_resume_kmem_account(void)
 {
 }
 
