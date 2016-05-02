@@ -3509,6 +3509,12 @@ struct kmem_cache *__memcg_kmem_get_cache(struct kmem_cache *cachep,
 
 	VM_BUG_ON(!is_root_cache(cachep));
 
+	if (cachep->flags & SLAB_ACCOUNT)
+		gfp |= __GFP_ACCOUNT;
+
+	if (!(gfp & __GFP_ACCOUNT))
+		return cachep;
+
 	if (!current->mm || current->memcg_kmem_skip_account)
 		return cachep;
 
