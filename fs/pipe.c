@@ -590,7 +590,7 @@ redo1:
 			size_t remaining;
 
 			if (!page) {
-				page = alloc_kmem_pages(GFP_HIGHUSER, 0);
+				page = alloc_kmem_pages(GFP_HIGHUSER | __GFP_ACCOUNT, 0);
 				if (unlikely(!page)) {
 					ret = ret ? : -ENOMEM;
 					break;
