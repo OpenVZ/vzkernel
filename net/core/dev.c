@@ -5484,9 +5484,9 @@ static int netif_alloc_netdev_queues(struct net_device *dev)
 	if (count < 1 || count > 0xffff)
 		return -EINVAL;
 
-	tx = kzalloc(sz, GFP_KERNEL | __GFP_NOWARN | __GFP_REPEAT);
+	tx = kzalloc(sz, GFP_KERNEL_ACCOUNT | __GFP_NOWARN | __GFP_REPEAT);
 	if (!tx) {
-		tx = vzalloc(sz);
+		tx = vzalloc_account(sz);
 		if (!tx)
 			return -ENOMEM;
 	}
@@ -6087,9 +6087,9 @@ struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
 	/* ensure 32-byte alignment of whole construct */
 	alloc_size += NETDEV_ALIGN - 1;
 
-	p = kzalloc(alloc_size, GFP_KERNEL | __GFP_NOWARN | __GFP_REPEAT);
+	p = kzalloc(alloc_size, GFP_KERNEL_ACCOUNT | __GFP_NOWARN | __GFP_REPEAT);
 	if (!p)
-		p = vzalloc(alloc_size);
+		p = vzalloc_account(alloc_size);
 	if (!p) {
 		pr_err("alloc_netdev: Unable to allocate device\n");
 		return NULL;
@@ -6486,7 +6486,7 @@ static struct hlist_head *netdev_create_hash(void)
 	int i;
 	struct hlist_head *hash;
 
-	hash = kmalloc(sizeof(*hash) * NETDEV_HASHENTRIES, GFP_KERNEL);
+	hash = kmalloc(sizeof(*hash) * NETDEV_HASHENTRIES, GFP_KERNEL_ACCOUNT);
 	if (hash != NULL)
 		for (i = 0; i < NETDEV_HASHENTRIES; i++)
 			INIT_HLIST_HEAD(&hash[i]);
