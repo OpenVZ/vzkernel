@@ -155,6 +155,20 @@ static int tty_fasync(int fd, struct file *filp, int on);
 static void release_tty(struct tty_struct *tty, int idx);
 
 /**
+ *	alloc_tty_struct	-	allocate a tty object
+ *
+ *	Return a new empty tty structure. The data fields have not
+ *	been initialized in any way but has been zeroed
+ *
+ *	Locking: none
+ */
+
+struct tty_struct *alloc_tty_struct(void)
+{
+	return kzalloc(sizeof(struct tty_struct), GFP_KERNEL_ACCOUNT);
+}
+
+/**
  *	free_tty_struct		-	free a disused tty
  *	@tty: tty struct to free
  *
@@ -1555,7 +1569,7 @@ void tty_free_termios(struct tty_struct *tty)
 	/* Stash the termios data */
 	tp = tty->driver->termios[idx];
 	if (tp == NULL) {
-		tp = kmalloc(sizeof(struct ktermios), GFP_KERNEL);
+		tp = kmalloc(sizeof(struct ktermios), GFP_KERNEL_ACCOUNT);
 		if (tp == NULL) {
 			pr_warn("tty: no memory to save termios state.\n");
 			return;

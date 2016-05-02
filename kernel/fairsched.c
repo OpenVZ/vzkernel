@@ -467,7 +467,7 @@ static struct fairsched_dump *fairsched_do_dump(int compat)
 
 	nr_nodes = ve_is_super(get_exec_env()) ? nr_nodes + 16 : 1;
 
-	dump = vmalloc(sizeof(*dump) + nr_nodes * sizeof(dump->nodes[0]));
+	dump = vmalloc_account(sizeof(*dump) + nr_nodes * sizeof(dump->nodes[0]));
 	if (dump == NULL)
 		goto out;
 
