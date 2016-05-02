@@ -608,8 +608,6 @@ memcg_kmem_get_cache(struct kmem_cache *cachep, gfp_t gfp)
 {
 	if (!memcg_kmem_enabled())
 		return cachep;
-	if (!(gfp & __GFP_ACCOUNT))
-		return cachep;
 	if (gfp & __GFP_NOFAIL)
 		return cachep;
 	if (in_interrupt() || (!current->mm) || (current->flags & PF_KTHREAD))
