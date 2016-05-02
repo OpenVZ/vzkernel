@@ -308,11 +308,11 @@ static void ctnl_untimeout(struct net *net, struct ctnl_timeout *timeout)
 	int i;
 
 	local_bh_disable();
-	for (i = 0; i < net->ct.htable_size; i++) {
+	for (i = 0; i < nf_conntrack_htable_size; i++) {
 		spin_lock(&nf_conntrack_locks[i % CONNTRACK_LOCKS]);
-		if (i < net->ct.htable_size) {
+		if (i < nf_conntrack_htable_size) {
 			gmb();
-			hlist_nulls_for_each_entry(h, nn, &net->ct.hash[i], hnnode)
+			hlist_nulls_for_each_entry(h, nn, &nf_conntrack_hash[i], hnnode)
 				untimeout(h, timeout);
 		}
 		spin_unlock(&nf_conntrack_locks[i % CONNTRACK_LOCKS]);
