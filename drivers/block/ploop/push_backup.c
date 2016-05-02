@@ -256,6 +256,89 @@ int ploop_pb_copy_cbt_to_user(struct ploop_pushbackup_desc *pbd, char *user_addr
 	return 0;
 }
 
+static void ploop_pb_add_req_to_tree(struct ploop_request *preq,
+				     struct rb_root *tree)
+{
+	struct rb_node ** p = &tree->rb_node;
+	struct rb_node *parent = NULL;
+	struct ploop_request * pr;
+
+	while (*p) {
+		parent = *p;
+		pr = rb_entry(parent, struct ploop_request, reloc_link);
+		BUG_ON (preq->req_cluster == pr->req_cluster);
+
+		if (preq->req_cluster < pr->req_cluster)
+			p = &(*p)->rb_left;
+		else
+			p = &(*p)->rb_right;
+	}
+
+	rb_link_node(&preq->reloc_link, parent, p);
+	rb_insert_color(&preq->reloc_link, tree);
+}
+
+static void ploop_pb_add_req_to_reported(struct ploop_pushbackup_desc *pbd,
+					 struct ploop_request *preq)
+{
+	ploop_pb_add_req_to_tree(preq, &pbd->reported_tree);
+}
+
+static struct ploop_request *ploop_pb_get_req_from_tree(struct rb_root *tree,
+							cluster_t clu)
+{
+	struct rb_node *n = tree->rb_node;
+	struct ploop_request *p;
+
+	while (n) {
+		p = rb_entry(n, struct ploop_request, reloc_link);
+
+		if (clu < p->req_cluster)
+			n = n->rb_left;
+		else if (clu > p->req_cluster)
+			n = n->rb_right;
+		else {
+			rb_erase(&p->reloc_link, tree);
+			return p;
+		}
+	}
+	return NULL;
+}
+
+static struct ploop_request *
+ploop_pb_get_first_req_from_tree(struct rb_root *tree)
+{
+	static struct ploop_request *p;
+	struct rb_node *n = rb_first(tree);
+
+	if (!n)
+		return NULL;
+
+	p = rb_entry(n, struct ploop_request, reloc_link);
+	rb_erase(&p->reloc_link, tree);
+	return p;
+}
+
+static struct ploop_request *
+ploop_pb_get_first_req_from_pending(struct ploop_pushbackup_desc *pbd)
+{
+	return ploop_pb_get_first_req_from_tree(&pbd->pending_tree);
+}
+
+static struct ploop_request *
+ploop_pb_get_req_from_pending(struct ploop_pushbackup_desc *pbd,
+			      cluster_t clu)
+{
+	return ploop_pb_get_req_from_tree(&pbd->pending_tree, clu);
+}
+
+static struct ploop_request *
+ploop_pb_get_req_from_reported(struct ploop_pushbackup_desc *pbd,
+			       cluster_t clu)
+{
+	return ploop_pb_get_req_from_tree(&pbd->reported_tree, clu);
+}
+
 unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd)
 {
 	if (pbd == NULL)
@@ -268,4 +351,123 @@ unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd)
 	spin_unlock(&pbd->ppb_lock);
 
 	return 0;
+}
+
+int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
+			 cluster_t *clu_p, cluster_t *len_p, unsigned n_done)
+{
+	bool blocking  = !n_done;
+	struct ploop_request *preq;
+	int err = 0;
+
+	spin_lock(&pbd->ppb_lock);
+
+	/* OPTIMIZE ME LATER: rb_first() once, then rb_next() */
+	preq = ploop_pb_get_first_req_from_pending(pbd);
+	if (!preq) {
+		struct ploop_device *plo = pbd->plo;
+
+		if (!blocking) {
+			err = -ENOENT;
+			goto get_pending_unlock;
+		}
+
+                /* blocking case */
+		if (unlikely(pbd->ppb_waiting)) {
+			/* Other task is already waiting for event */
+			err = -EBUSY;
+			goto get_pending_unlock;
+		}
+		pbd->ppb_waiting = true;
+		spin_unlock(&pbd->ppb_lock);
+
+		mutex_unlock(&plo->ctl_mutex);
+		err = wait_for_completion_interruptible(&pbd->ppb_comp);
+		mutex_lock(&plo->ctl_mutex);
+
+		if (plo->pbd != pbd)
+			return -EINTR;
+
+		spin_lock(&pbd->ppb_lock);
+		pbd->ppb_waiting = false;
+		init_completion(&pbd->ppb_comp);
+
+		preq = ploop_pb_get_first_req_from_pending(pbd);
+		if (!preq) {
+			if (!test_bit(PLOOP_S_PUSH_BACKUP, &plo->state))
+				err = -EINTR;
+			else if (signal_pending(current))
+				err = -ERESTARTSYS;
+			else err = -ENOENT;
+
+			goto get_pending_unlock;
+		}
+	}
+
+	ploop_pb_add_req_to_reported(pbd, preq);
+
+	*clu_p = preq->req_cluster;
+	*len_p = 1;
+
+get_pending_unlock:
+	spin_unlock(&pbd->ppb_lock);
+	return err;
+}
+
+void ploop_pb_put_reported(struct ploop_pushbackup_desc *pbd,
+			   cluster_t clu, cluster_t len)
+{
+	struct ploop_request *preq;
+	int n_found = 0;
+
+	/* OPTIMIZE ME LATER: find leftmost item for [clu, clu+len),
+	 * then rb_next() while req_cluster < clu+len.
+	 * Do this firstly for reported, then for pending */
+	BUG_ON(len != 1);
+
+	spin_lock(&pbd->ppb_lock);
+
+	preq = ploop_pb_get_req_from_reported(pbd, clu);
+	if (!preq)
+		preq = ploop_pb_get_req_from_pending(pbd, clu);
+	else
+		n_found++;
+
+	/*
+	 * If preq not found above, it's unsolicited report. Then it's
+	 * enough to have corresponding bit set in reported_map because if
+	 * any WRITE-request comes afterwards, ploop_pb_preq_add_pending()
+	 * fails and ploop_thread will clear corresponding bit in ppb_map
+	 * -- see "push_backup special processing" in ploop_entry_request()
+	 * for details.
+	 */
+
+	/*
+	 * "If .. else if .." below will be fully reworked when switching
+	 * from pbd->ppb_offset to pbd->reported_map. All we need here is
+	 * actaully simply to set bits corresponding to [clu, clu+len) in
+	 * pbd->reported_map.
+	 */
+	if (pbd->ppb_offset >= clu) { /* lucky strike */
+		if (clu + len > pbd->ppb_offset) {
+			pbd->ppb_offset = clu + len;
+		}
+	} else if (n_found != len) { /* a hole, bad luck */
+		printk("ploop: push_backup ERR: off=%u ext=[%u, %u) found %d\n",
+		       pbd->ppb_offset, clu, clu + len, n_found);
+	}
+
+	spin_unlock(&pbd->ppb_lock);
+
+	if (preq) {
+		struct ploop_device *plo = preq->plo;
+		BUG_ON(preq->req_cluster != clu);
+		BUG_ON(plo != pbd->plo);
+
+		spin_lock_irq(&plo->lock);
+		list_add_tail(&preq->list, &plo->ready_queue);
+		if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
+			wake_up_interruptible(&plo->waitq);
+		spin_unlock_irq(&plo->lock);
+	}
 }
