@@ -192,6 +192,26 @@ struct ploop_push_backup_init_ctl
 	__u64	cbt_mask_addr; /* page-aligned space for CBT mask */
 } __attribute__ ((aligned (8)));
 
+struct ploop_push_backup_ctl_extent
+{
+	__u32 clu;
+	__u32 len;
+} __attribute__ ((aligned (8)));
+
+/* ploop_push_backup_io_ctl.direction */
+enum {
+	PLOOP_READ = 0, /* wait for requests */
+	PLOOP_WRITE,    /* ACK requests */
+};
+
+struct ploop_push_backup_io_ctl
+{
+	__u8    cbt_uuid[16];
+	__u32	direction;
+	__u32	n_extents;
+	struct ploop_push_backup_ctl_extent extents[0];
+} __attribute__ ((aligned (8)));
+
 struct ploop_push_backup_stop_ctl
 {
 	__u8    cbt_uuid[16];
@@ -317,6 +337,9 @@ struct ploop_track_extent
 
 /* Start push backup */
 #define PLOOP_IOC_PUSH_BACKUP_INIT _IOR(PLOOPCTLTYPE, 29, struct ploop_push_backup_init_ctl)
+
+/* Wait for push backup out-of-order requests; or ACK them */
+#define PLOOP_IOC_PUSH_BACKUP_IO _IOR(PLOOPCTLTYPE, 30, struct ploop_push_backup_io_ctl)
 
 /* Stop push backup */
 #define PLOOP_IOC_PUSH_BACKUP_STOP _IOR(PLOOPCTLTYPE, 31, struct ploop_push_backup_stop_ctl)
