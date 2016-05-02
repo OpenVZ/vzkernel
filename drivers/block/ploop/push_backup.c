@@ -358,6 +358,12 @@ ploop_pb_get_first_req_from_pending(struct ploop_pushbackup_desc *pbd)
 }
 
 static struct ploop_request *
+ploop_pb_get_first_req_from_reported(struct ploop_pushbackup_desc *pbd)
+{
+	return ploop_pb_get_first_req_from_tree(&pbd->reported_tree);
+}
+
+static struct ploop_request *
 ploop_pb_get_req_from_pending(struct ploop_pushbackup_desc *pbd,
 			      cluster_t clu)
 {
@@ -400,16 +406,44 @@ int ploop_pb_preq_add_pending(struct ploop_pushbackup_desc *pbd,
 
 unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd)
 {
+	unsigned long ret = 0;
+	LIST_HEAD(drop_list);
+
 	if (pbd == NULL)
 		return 0;
 
 	spin_lock(&pbd->ppb_lock);
 
+	while (!RB_EMPTY_ROOT(&pbd->pending_tree)) {
+		struct ploop_request *preq =
+			ploop_pb_get_first_req_from_pending(pbd);
+		list_add(&preq->list, &drop_list);
+		ret++;
+	}
+
+	while (!RB_EMPTY_ROOT(&pbd->reported_tree)) {
+		struct ploop_request *preq =
+			ploop_pb_get_first_req_from_reported(pbd);
+		list_add(&preq->list, &drop_list);
+		ret++;
+	}
+
 	if (pbd->ppb_waiting)
 		complete(&pbd->ppb_comp);
 	spin_unlock(&pbd->ppb_lock);
 
-	return 0;
+	if (!list_empty(&drop_list)) {
+		struct ploop_device *plo = pbd->plo;
+
+		BUG_ON(!plo);
+		spin_lock_irq(&plo->lock);
+		list_splice_init(&drop_list, plo->ready_queue.prev);
+		if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
+			wake_up_interruptible(&plo->waitq);
+		spin_unlock_irq(&plo->lock);
+	}
+
+	return ret;
 }
 
 int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
