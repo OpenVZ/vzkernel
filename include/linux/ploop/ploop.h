@@ -463,6 +463,7 @@ enum
 	PLOOP_REQ_FORCE_FLUSH,	/*force flush by engine */
 	PLOOP_REQ_KAIO_FSYNC,	/*force image fsync by KAIO module */
 	PLOOP_REQ_POST_SUBMIT, /* preq needs post_submit processing */
+	PLOOP_REQ_PUSH_BACKUP, /* preq was ACKed by userspace push_backup */
 };
 
 enum
