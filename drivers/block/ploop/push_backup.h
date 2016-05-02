@@ -11,3 +11,9 @@ int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
 			 cluster_t *clu_p, cluster_t *len_p, unsigned n_done);
 void ploop_pb_put_reported(struct ploop_pushbackup_desc *pbd,
 			   cluster_t clu, cluster_t len);
+
+void ploop_pb_clear_bit(struct ploop_pushbackup_desc *pbd, cluster_t clu);
+bool ploop_pb_check_bit(struct ploop_pushbackup_desc *pbd, cluster_t clu);
+
+int ploop_pb_preq_add_pending(struct ploop_pushbackup_desc *pbd,
+			       struct ploop_request *preq);
