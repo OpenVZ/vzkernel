@@ -4486,6 +4486,108 @@ pb_init_done:
 	return rc;
 }
 
+static int ploop_push_backup_io_read(struct ploop_device *plo, unsigned long arg,
+				     struct ploop_push_backup_io_ctl *ctl)
+{
+	struct ploop_push_backup_ctl_extent *e;
+	unsigned n_extents = 0;
+	int rc = 0;
+
+	e = kmalloc(sizeof(*e) * ctl->n_extents, GFP_KERNEL);
+	if (!e)
+		return -ENOMEM;
+
+	while (n_extents < ctl->n_extents) {
+		cluster_t clu, len;
+		rc = ploop_pb_get_pending(plo->pbd, &clu, &len, n_extents);
+		if (rc)
+			goto io_read_done;
+
+		e[n_extents].clu = clu;
+		e[n_extents].len = len;
+		n_extents++;
+	}
+
+	rc = -EFAULT;
+	ctl->n_extents = n_extents;
+	if (copy_to_user((void*)arg, ctl, sizeof(*ctl)))
+		goto io_read_done;
+	if (n_extents &&
+	    copy_to_user((void*)(arg + sizeof(*ctl)), e,
+			 n_extents * sizeof(*e)))
+			goto io_read_done;
+	rc = 0;
+
+io_read_done:
+	kfree(e);
+	return rc;
+}
+
+static int ploop_push_backup_io_write(struct ploop_device *plo, unsigned long arg,
+				      struct ploop_push_backup_io_ctl *ctl)
+{
+	struct ploop_push_backup_ctl_extent *e;
+	unsigned i;
+	int rc = 0;
+
+	e = kmalloc(sizeof(*e) * ctl->n_extents, GFP_KERNEL);
+	if (!e)
+		return -ENOMEM;
+
+	rc = -EFAULT;
+	if (copy_from_user(e, (void*)(arg + sizeof(*ctl)),
+			   ctl->n_extents * sizeof(*e)))
+		goto io_write_done;
+
+	rc = 0;
+	for (i = 0; i < ctl->n_extents; i++) {
+		cluster_t j;
+		for (j = e[i].clu; j < e[i].clu + e[i].len; j++)
+			ploop_pb_put_reported(plo->pbd, j, 1);
+                /* OPTIMIZE ME LATER: like this:
+		 * ploop_pb_put_reported(plo->pbd, e[i].clu, e[i].len); */
+	}
+
+io_write_done:
+	kfree(e);
+	return rc;
+}
+
+static int ploop_push_backup_io(struct ploop_device *plo, unsigned long arg)
+{
+	struct ploop_push_backup_io_ctl ctl;
+	struct ploop_pushbackup_desc *pbd = plo->pbd;
+
+	if (list_empty(&plo->map.delta_list))
+		return -ENOENT;
+
+	if (plo->maintenance_type != PLOOP_MNTN_PUSH_BACKUP)
+		return -EINVAL;
+
+	BUG_ON (!pbd);
+
+	if (copy_from_user(&ctl, (void*)arg, sizeof(ctl)))
+		return -EFAULT;
+
+	if (!ctl.n_extents)
+		return -EINVAL;
+
+	if (ploop_pb_check_uuid(pbd, ctl.cbt_uuid)) {
+		printk("ploop(%d): PUSH_BACKUP_IO uuid mismatch\n",
+		       plo->index);
+		return -EINVAL;
+	}
+
+	switch(ctl.direction) {
+	case PLOOP_READ:
+		return ploop_push_backup_io_read(plo, arg, &ctl);
+	case PLOOP_WRITE:
+		return ploop_push_backup_io_write(plo, arg, &ctl);
+	}
+
+	return -EINVAL;
+}
+
 static int ploop_push_backup_stop(struct ploop_device *plo, unsigned long arg)
 {
 	struct ploop_pushbackup_desc *pbd = plo->pbd;
@@ -4623,6 +4725,9 @@ static int ploop_ioctl(struct block_device *bdev, fmode_t fmode, unsigned int cm
 		break;
 	case PLOOP_IOC_PUSH_BACKUP_INIT:
 		err = ploop_push_backup_init(plo, arg);
+		break;
+	case PLOOP_IOC_PUSH_BACKUP_IO:
+		err = ploop_push_backup_io(plo, arg);
 		break;
 	case PLOOP_IOC_PUSH_BACKUP_STOP:
 		err = ploop_push_backup_stop(plo, arg);
