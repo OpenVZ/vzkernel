@@ -87,6 +87,8 @@ print_tuple(struct seq_file *s, const struct nf_conntrack_tuple *tuple,
 #else
 # define CONNTRACK_LOCKS 1024
 #endif
+
+extern struct hlist_nulls_head *nf_conntrack_hash;
 extern spinlock_t nf_conntrack_locks[CONNTRACK_LOCKS];
 
 extern spinlock_t nf_conntrack_expect_lock;
