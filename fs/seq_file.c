@@ -38,9 +38,9 @@ static void *seq_buf_alloc(unsigned long size)
 {
 	void *buf;
 
-	buf = kmalloc(size, GFP_KERNEL | __GFP_NOWARN);
+	buf = kmalloc(size, GFP_KERNEL_ACCOUNT | __GFP_NOWARN);
 	if (!buf && size > PAGE_SIZE)
-		buf = vmalloc(size);
+		buf = vmalloc_account(size);
 	return buf;
 }
 
@@ -71,7 +71,7 @@ int seq_open(struct file *file, const struct seq_operations *op)
 	struct seq_file *p = file->private_data;
 
 	if (!p) {
-		p = kmalloc(sizeof(*p), GFP_KERNEL);
+		p = kmalloc(sizeof(*p), GFP_KERNEL_ACCOUNT);
 		if (!p)
 			return -ENOMEM;
 		file->private_data = p;
@@ -607,7 +607,7 @@ static void single_stop(struct seq_file *p, void *v)
 int single_open(struct file *file, int (*show)(struct seq_file *, void *),
 		void *data)
 {
-	struct seq_operations *op = kmalloc(sizeof(*op), GFP_KERNEL);
+	struct seq_operations *op = kmalloc(sizeof(*op), GFP_KERNEL_ACCOUNT);
 	int res = -ENOMEM;
 
 	if (op) {
@@ -669,7 +669,7 @@ void *__seq_open_private(struct file *f, const struct seq_operations *ops,
 	void *private;
 	struct seq_file *seq;
 
-	private = kzalloc(psize, GFP_KERNEL);
+	private = kzalloc(psize, GFP_KERNEL_ACCOUNT);
 	if (private == NULL)
 		goto out;
 

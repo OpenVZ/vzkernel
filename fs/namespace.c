@@ -183,7 +183,7 @@ static struct mount *alloc_vfsmnt(const char *name)
 			goto out_free_cache;
 
 		if (name) {
-			mnt->mnt_devname = kstrdup(name, GFP_KERNEL);
+			mnt->mnt_devname = kstrdup(name, GFP_KERNEL_ACCOUNT);
 			if (!mnt->mnt_devname)
 				goto out_free_id;
 		}
@@ -2927,7 +2927,7 @@ void __init mnt_init(void)
 	init_rwsem(&namespace_sem);
 
 	mnt_cache = kmem_cache_create("mnt_cache", sizeof(struct mount),
-			0, SLAB_HWCACHE_ALIGN | SLAB_PANIC, NULL);
+			0, SLAB_HWCACHE_ALIGN | SLAB_PANIC | SLAB_ACCOUNT, NULL);
 
 	printk(KERN_INFO "Mount-cache hash table entries: %lu\n", HASH_SIZE);
 
