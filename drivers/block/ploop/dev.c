@@ -19,6 +19,7 @@
 #include "ploop_events.h"
 #include "freeblks.h"
 #include "discard.h"
+#include "push_backup.h"
 
 /* Structures and terms:
  *
@@ -3723,6 +3724,9 @@ static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 		return -EBUSY;
 	}
 
+	clear_bit(PLOOP_S_PUSH_BACKUP, &plo->state);
+	ploop_pb_stop(plo->pbd);
+
 	for (p = plo->disk->minors - 1; p > 0; p--)
 		invalidate_partition(plo->disk, p);
 	invalidate_partition(plo->disk, 0);
@@ -3849,6 +3853,7 @@ static int ploop_clear(struct ploop_device * plo, struct block_device * bdev)
 	}
 
 	ploop_fb_fini(plo->fbd, 0);
+	ploop_pb_fini(plo->pbd);
 
 	plo->maintenance_type = PLOOP_MNTN_OFF;
 	plo->bd_size = 0;
@@ -4434,6 +4439,84 @@ static int ploop_getdevice_ioc(unsigned long arg)
 	return err;
 }
 
+static int ploop_push_backup_init(struct ploop_device *plo, unsigned long arg)
+{
+	struct ploop_push_backup_init_ctl ctl;
+	struct ploop_pushbackup_desc *pbd = NULL;
+	int rc = 0;
+
+	if (list_empty(&plo->map.delta_list))
+		return -ENOENT;
+
+	if (plo->maintenance_type != PLOOP_MNTN_OFF)
+		return -EINVAL;
+
+	BUG_ON(plo->pbd);
+
+	if (copy_from_user(&ctl, (void*)arg, sizeof(ctl)))
+		return -EFAULT;
+
+	pbd = ploop_pb_alloc(plo);
+	if (!pbd) {
+		rc = -ENOMEM;
+		goto pb_init_done;
+	}
+
+	ploop_quiesce(plo);
+
+	rc = ploop_pb_init(pbd, ctl.cbt_uuid, !ctl.cbt_mask_addr);
+	if (rc) {
+		ploop_relax(plo);
+		goto pb_init_done;
+	}
+
+	plo->pbd = pbd;
+
+	atomic_set(&plo->maintenance_cnt, 0);
+	plo->maintenance_type = PLOOP_MNTN_PUSH_BACKUP;
+	set_bit(PLOOP_S_PUSH_BACKUP, &plo->state);
+
+	ploop_relax(plo);
+
+	if (ctl.cbt_mask_addr)
+		rc = ploop_pb_copy_cbt_to_user(pbd, (char *)ctl.cbt_mask_addr);
+pb_init_done:
+	if (rc)
+		ploop_pb_fini(pbd);
+	return rc;
+}
+
+static int ploop_push_backup_stop(struct ploop_device *plo, unsigned long arg)
+{
+	struct ploop_pushbackup_desc *pbd = plo->pbd;
+	struct ploop_push_backup_stop_ctl ctl;
+
+	if (plo->maintenance_type != PLOOP_MNTN_PUSH_BACKUP)
+		return -EINVAL;
+
+	if (copy_from_user(&ctl, (void*)arg, sizeof(ctl)))
+		return -EFAULT;
+
+	if (pbd && ploop_pb_check_uuid(pbd, ctl.cbt_uuid)) {
+		printk("ploop(%d): PUSH_BACKUP_STOP uuid mismatch\n",
+		       plo->index);
+		return -EINVAL;
+	}
+
+	if (!test_and_clear_bit(PLOOP_S_PUSH_BACKUP, &plo->state))
+		return -EINVAL;
+
+	BUG_ON (!pbd);
+	ctl.status = ploop_pb_stop(pbd);
+
+	ploop_quiesce(plo);
+	ploop_pb_fini(plo->pbd);
+	plo->maintenance_type = PLOOP_MNTN_OFF;
+	ploop_relax(plo);
+
+	return 0;
+}
+
 static int ploop_ioctl(struct block_device *bdev, fmode_t fmode, unsigned int cmd,
 		       unsigned long arg)
 {
@@ -4537,6 +4620,12 @@ static int ploop_ioctl(struct block_device *bdev, fmode_t fmode, unsigned int cm
 		break;
 	case PLOOP_IOC_MAX_DELTA_SIZE:
 		err = ploop_set_max_delta_size(plo, arg);
+		break;
+	case PLOOP_IOC_PUSH_BACKUP_INIT:
+		err = ploop_push_backup_init(plo, arg);
+		break;
+	case PLOOP_IOC_PUSH_BACKUP_STOP:
+		err = ploop_push_backup_stop(plo, arg);
 		break;
 	default:
 		err = -EINVAL;
