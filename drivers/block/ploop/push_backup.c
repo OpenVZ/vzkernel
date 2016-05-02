@@ -146,6 +146,32 @@ static void set_bit_in_map(struct page **map, u64 map_max, u64 blk)
 	do_bit_in_map(map, map_max, blk, SET_BIT);
 }
 
+static void clear_bit_in_map(struct page **map, u64 map_max, u64 blk)
+{
+	do_bit_in_map(map, map_max, blk, CLEAR_BIT);
+}
+
+static bool check_bit_in_map(struct page **map, u64 map_max, u64 blk)
+{
+	return do_bit_in_map(map, map_max, blk, CHECK_BIT);
+}
+
+/* intentionally lockless */
+void ploop_pb_clear_bit(struct ploop_pushbackup_desc *pbd, cluster_t clu)
+{
+	BUG_ON(!pbd);
+	clear_bit_in_map(pbd->ppb_map, pbd->ppb_block_max, clu);
+}
+
+/* intentionally lockless */
+bool ploop_pb_check_bit(struct ploop_pushbackup_desc *pbd, cluster_t clu)
+{
+	if (!pbd)
+		return false;
+
+	return check_bit_in_map(pbd->ppb_map, pbd->ppb_block_max, clu);
+}
+
 static int convert_map_to_map(struct ploop_pushbackup_desc *pbd)
 {
 	struct page **from_map = pbd->cbt_map;
@@ -278,6 +304,12 @@ static void ploop_pb_add_req_to_tree(struct ploop_request *preq,
 	rb_insert_color(&preq->reloc_link, tree);
 }
 
+static void ploop_pb_add_req_to_pending(struct ploop_pushbackup_desc *pbd,
+					struct ploop_request *preq)
+{
+	ploop_pb_add_req_to_tree(preq, &pbd->pending_tree);
+}
+
 static void ploop_pb_add_req_to_reported(struct ploop_pushbackup_desc *pbd,
 					 struct ploop_request *preq)
 {
@@ -337,6 +369,33 @@ ploop_pb_get_req_from_reported(struct ploop_pushbackup_desc *pbd,
 			       cluster_t clu)
 {
 	return ploop_pb_get_req_from_tree(&pbd->reported_tree, clu);
+}
+
+int ploop_pb_preq_add_pending(struct ploop_pushbackup_desc *pbd,
+			       struct ploop_request *preq)
+{
+	BUG_ON(!pbd);
+
+	spin_lock(&pbd->ppb_lock);
+
+	if (!test_bit(PLOOP_S_PUSH_BACKUP, &pbd->plo->state)) {
+		spin_unlock(&pbd->ppb_lock);
+		return -EINTR;
+	}
+
+	/* if (preq matches pbd->reported_map) return -EALREADY; */
+	if (preq->req_cluster < pbd->ppb_offset) {
+		spin_unlock(&pbd->ppb_lock);
+		return -EALREADY;
+	}
+
+	ploop_pb_add_req_to_pending(pbd, preq);
+
+	if (pbd->ppb_waiting)
+		complete(&pbd->ppb_comp);
+
+	spin_unlock(&pbd->ppb_lock);
+	return 0;
 }
 
 unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd)
@@ -432,6 +491,9 @@ void ploop_pb_put_reported(struct ploop_pushbackup_desc *pbd,
 		preq = ploop_pb_get_req_from_pending(pbd, clu);
 	else
 		n_found++;
+
+	if (preq)
+		__set_bit(PLOOP_REQ_PUSH_BACKUP, &preq->state);
 
 	/*
 	 * If preq not found above, it's unsolicited report. Then it's
