@@ -1992,6 +1992,38 @@ restart:
 		return;
 	}
 
+	/* push_backup special processing */
+	if (!test_bit(PLOOP_REQ_LOCKOUT, &preq->state) &&
+	    (preq->req_rw & REQ_WRITE) && preq->req_size &&
+	    ploop_pb_check_bit(plo->pbd, preq->req_cluster)) {
+		if (ploop_pb_preq_add_pending(plo->pbd, preq)) {
+			/* already reported by userspace push_backup */
+			ploop_pb_clear_bit(plo->pbd, preq->req_cluster);
+		} else {
+			spin_lock_irq(&plo->lock);
+			ploop_add_lockout(preq, 0);
+			spin_unlock_irq(&plo->lock);
+			/*
+			 * preq IN: preq is in ppb_pending tree waiting for
+			 * out-of-band push_backup processing by userspace ...
+			 */
+			return;
+		}
+	} else if (test_bit(PLOOP_REQ_LOCKOUT, &preq->state) &&
+		   test_and_clear_bit(PLOOP_REQ_PUSH_BACKUP, &preq->state)) {
+		/*
+		 * preq OUT: out-of-band push_backup processing by
+		 * userspace done; preq was re-scheduled
+		 */
+		ploop_pb_clear_bit(plo->pbd, preq->req_cluster);
+
+		spin_lock_irq(&plo->lock);
+		del_lockout(preq);
+		if (!list_empty(&preq->delay_list))
+			list_splice_init(&preq->delay_list, plo->ready_queue.prev);
+		spin_unlock_irq(&plo->lock);
+	}
+
 	if (plo->trans_map) {
 		err = ploop_find_trans_map(plo->trans_map, preq);
 		if (err) {
