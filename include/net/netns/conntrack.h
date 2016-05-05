@@ -132,7 +132,6 @@ struct netns_ct {
 
 	RH_KABI_DEPRECATE(seqcount_t, generation)
 	struct kmem_cache	*nf_conntrack_cachep;
-	struct hlist_head	*expect_hash;
 
 	/* next three hlist heads are unused in RHEL,
 	 * only kept for ABI compatibility. */
