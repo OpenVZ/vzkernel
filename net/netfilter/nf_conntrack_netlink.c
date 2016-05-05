@@ -2596,7 +2596,7 @@ ctnetlink_exp_dump_table(struct sk_buff *skb, struct netlink_callback *cb)
 	last = (struct nf_conntrack_expect *)cb->args[1];
 	for (; cb->args[0] < nf_ct_expect_hsize; cb->args[0]++) {
 restart:
-		hlist_for_each_entry(exp, &net->ct.expect_hash[cb->args[0]],
+		hlist_for_each_entry(exp, &nf_ct_expect_hash[cb->args[0]],
 				     hnode) {
 			if (l3proto && exp->tuple.src.l3num != l3proto)
 				continue;
@@ -2858,7 +2858,7 @@ ctnetlink_del_expect(struct sock *ctnl, struct sk_buff *skb,
 		spin_lock_bh(&nf_conntrack_expect_lock);
 		for (i = 0; i < nf_ct_expect_hsize; i++) {
 			hlist_for_each_entry_safe(exp, next,
-						  &net->ct.expect_hash[i],
+						  &nf_ct_expect_hash[i],
 						  hnode) {
 
 				if (!net_eq(nf_ct_exp_net(exp), net))
@@ -2880,7 +2880,7 @@ ctnetlink_del_expect(struct sock *ctnl, struct sk_buff *skb,
 		spin_lock_bh(&nf_conntrack_expect_lock);
 		for (i = 0; i < nf_ct_expect_hsize; i++) {
 			hlist_for_each_entry_safe(exp, next,
-						  &net->ct.expect_hash[i],
+						  &nf_ct_expect_hash[i],
 						  hnode) {
 
 				if (!net_eq(nf_ct_exp_net(exp), net))
