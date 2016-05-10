@@ -1137,6 +1137,11 @@ static int check_lockout(struct ploop_request *preq)
 		else if (preq->req_cluster > p->req_cluster)
 			n = n->rb_right;
 		else {
+			/* do not block backup tool READs from /dev/ploop */
+			if (!(preq->req_rw & REQ_WRITE) &&
+			    test_bit(PLOOP_REQ_ALLOW_READS, &p->state))
+				return 0;
+
 			list_add_tail(&preq->list, &p->delay_list);
 			plo->st.bio_lockouts++;
 			trace_preq_lockout(preq, p);
@@ -2030,6 +2035,7 @@ restart:
 			ploop_pb_clear_bit(plo->pbd, preq->req_cluster);
 		} else {
 			spin_lock_irq(&plo->lock);
+			__set_bit(PLOOP_REQ_ALLOW_READS, &preq->state);
 			ploop_add_lockout(preq, 0);
 			spin_unlock_irq(&plo->lock);
 			/*
@@ -2048,6 +2054,7 @@ restart:
 
 		spin_lock_irq(&plo->lock);
 		del_lockout(preq);
+		__clear_bit(PLOOP_REQ_ALLOW_READS, &preq->state);
 		if (!list_empty(&preq->delay_list))
 			list_splice_init(&preq->delay_list, plo->ready_queue.prev);
 		spin_unlock_irq(&plo->lock);
