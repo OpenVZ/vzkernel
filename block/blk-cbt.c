@@ -252,7 +252,7 @@ static struct cbt_info* do_cbt_alloc(struct request_queue *q, __u8 *uuid,
 		return ERR_PTR(-ENOMEM);
 
 	cbt->block_bits = ilog2(blocksize);
-	cbt->block_max  = (size + blocksize) >> cbt->block_bits;
+	cbt->block_max  = (size + blocksize - 1) >> cbt->block_bits;
 	spin_lock_init(&cbt->lock);
 	memcpy(cbt->uuid, uuid, sizeof(cbt->uuid));
 	cbt->cache = alloc_percpu(struct cbt_extent);
