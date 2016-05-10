@@ -175,7 +175,7 @@ bool ploop_pb_check_bit(struct ploop_pushbackup_desc *pbd, cluster_t clu)
 static int convert_map_to_map(struct ploop_pushbackup_desc *pbd)
 {
 	struct page **from_map = pbd->cbt_map;
-	blkcnt_t from_max = pbd->cbt_block_max - 1;
+	blkcnt_t from_max = pbd->cbt_block_max;
 	blkcnt_t from_bits = pbd->cbt_block_bits;
 
 	struct page **to_map = pbd->ppb_map;
