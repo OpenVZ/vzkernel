@@ -466,6 +466,11 @@ int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
 		}
 
                 /* blocking case */
+		if (unlikely(pbd->ppb_waiting)) {
+			/* Other task is already waiting for event */
+			err = -EBUSY;
+			goto get_pending_unlock;
+		}
 		pbd->ppb_waiting = true;
 		spin_unlock(&pbd->ppb_lock);
 
