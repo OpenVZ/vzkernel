@@ -377,7 +377,16 @@ static inline int module_payload_iptable_allowed(const char *module)
 
 /* ve0 allowed modules */
 static const char * const ve0_allowed_mod[] = {
-	"binfmt_misc"
+	"binfmt_misc",
+	"netlink_diag",
+	"inet_diag",
+	"tcp_diag",
+	"udp_diag",
+	"unix_diag",
+	"af_packet_diag",
+	"nfnetlink",
+	"nf_conntrack",
+	"nf_conntrack_netlink",
 };
 
 /*
