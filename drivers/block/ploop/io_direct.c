@@ -521,6 +521,8 @@ dio_post_submit(struct ploop_io *io, struct ploop_request * preq)
 	err = io->files.file->f_op->fallocate(io->files.file,
 					      FALLOC_FL_CONVERT_UNWRITTEN,
 					      (loff_t)sec << 9, clu_siz);
+	if (!err)
+		err = io->files.file->f_op->FOP_FSYNC(io->files.file, 0);
 	file_end_write(io->files.file);
 	if (err) {
 		PLOOP_REQ_SET_ERROR(preq, err);
