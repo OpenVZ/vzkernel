@@ -1849,33 +1849,6 @@ SYSCALL_DEFINE5(io_getevents, aio_context_t, ctx_id,
 }
 
 #ifdef CONFIG_VE
-static int ve_aio_set_tail(struct kioctx *ctx, unsigned tail)
-{
-	struct aio_ring *ring;
-	int ret;
-
-	if (!get_exec_env()->is_pseudosuper)
-		return -EACCES;
-
-	mutex_lock(&ctx->ring_lock);
-	spin_lock_irq(&ctx->completion_lock);
-
-	ret = -E2BIG;
-	if (tail >= ctx->nr_events)
-		goto out;
-
-	ctx->tail = tail;
-
-	ring = kmap_atomic(ctx->ring_pages[0]);
-	ring->tail = tail;
-	kunmap_atomic(ring);
-	ret = 0;
-out:
-	spin_unlock_irq(&ctx->completion_lock);
-	mutex_unlock(&ctx->ring_lock);
-	return ret;
-}
-
 static bool has_reqs_active(struct kioctx *ctx)
 {
 	unsigned long flags;
@@ -1911,9 +1884,6 @@ int ve_aio_ioctl(struct task_struct *task, unsigned int cmd, unsigned long arg)
 		return -ESRCH;
 
 	switch (cmd) {
-		case VE_AIO_IOC_SET_TAIL:
-			ret = ve_aio_set_tail(ioctx, karg.val);
-			break;
 		case VE_AIO_IOC_WAIT_ACTIVE:
 			ret = ve_aio_wait_inflight_reqs(ioctx);
 			break;
