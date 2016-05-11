@@ -1862,36 +1862,57 @@ static bool has_reqs_active(struct kioctx *ctx)
 	return !!nr;
 }
 
-static int ve_aio_wait_inflight_reqs(struct kioctx *ioctx)
+static int ve_aio_wait_inflight_reqs(struct task_struct *p)
 {
-	return wait_event_interruptible(ioctx->wait, !has_reqs_active(ioctx));
+	struct mm_struct *mm;
+	struct kioctx *ctx;
+	int ret;
+
+	if (p->flags & PF_KTHREAD)
+		return -EINVAL;
+
+	task_lock(p);
+	mm = p->mm;
+	if (mm)
+		atomic_inc(&mm->mm_count);
+	task_unlock(p);
+	if (!mm)
+		return -ESRCH;
+
+again:
+	spin_lock_irq(&mm->ioctx_lock);
+	hlist_for_each_entry_rcu(ctx, &mm->ioctx_list, list) {
+		if (!has_reqs_active(ctx))
+			continue;
+
+		atomic_inc(&ctx->users);
+		spin_unlock_irq(&mm->ioctx_lock);
+
+		ret = wait_event_interruptible(ctx->wait, !has_reqs_active(ctx));
+		put_ioctx(ctx);
+
+		if (ret)
+			goto mmdrop;
+		goto again;
+	}
+	spin_unlock_irq(&mm->ioctx_lock);
+	ret = 0;
+mmdrop:
+	mmdrop(mm);
+	return ret;
 }
 
 int ve_aio_ioctl(struct task_struct *task, unsigned int cmd, unsigned long arg)
 {
-	struct ve_ioc_arg karg;
-	struct kioctx *ioctx;
 	int ret;
-
-	if (task != current)
-		return -EBADF;
-
-	if (copy_from_user(&karg, (void *)arg, sizeof(karg)))
-		return -EFAULT;
-
-	ioctx = lookup_ioctx(karg.ctx_id);
-	if (!ioctx)
-		return -ESRCH;
 
 	switch (cmd) {
 		case VE_AIO_IOC_WAIT_ACTIVE:
-			ret = ve_aio_wait_inflight_reqs(ioctx);
+			ret = ve_aio_wait_inflight_reqs(task);
 			break;
 		default:
 			ret = -EINVAL;
 	}
-
-	put_ioctx(ioctx);
 
 	return ret;
 }
