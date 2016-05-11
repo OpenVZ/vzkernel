@@ -22,7 +22,6 @@ struct ve_ioc_arg
 	unsigned	val;
 };
 
-#define VE_AIO_IOC_SET_TAIL	_IOW('a',  0, struct ve_ioc_arg)
 #define VE_AIO_IOC_WAIT_ACTIVE	_IOW('a',  1, struct ve_ioc_arg)
 
 /*
