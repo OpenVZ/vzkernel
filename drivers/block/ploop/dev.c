@@ -4532,7 +4532,9 @@ static int ploop_push_backup_io_read(struct ploop_device *plo, unsigned long arg
 	while (n_extents < ctl->n_extents) {
 		cluster_t clu, len;
 		rc = ploop_pb_get_pending(plo->pbd, &clu, &len, n_extents);
-		if (rc)
+		if (rc == -ENOENT && n_extents)
+			break;
+		else if (rc)
 			goto io_read_done;
 
 		e[n_extents].clu = clu;
