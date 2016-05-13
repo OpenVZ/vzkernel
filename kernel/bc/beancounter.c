@@ -231,21 +231,6 @@ void ub_sync_memcg(struct user_beancounter *ub)
 	css_put(css);
 }
 
-void ub_page_stat(struct user_beancounter *ub, const nodemask_t *nodemask,
-		  unsigned long *pages)
-{
-	int nid;
-	struct cgroup_subsys_state *css;
-
-	memset(pages, 0, sizeof(unsigned long) * NR_LRU_LISTS);
-
-	css = ub_get_mem_css(ub);
-	for_each_node_mask(nid, *nodemask)
-		mem_cgroup_get_nr_pages(mem_cgroup_from_cont(css->cgroup),
-					nid, pages);
-	css_put(css);
-}
-
 unsigned long ub_total_pages(struct user_beancounter *ub, bool swap)
 {
 	struct cgroup_subsys_state *css;
