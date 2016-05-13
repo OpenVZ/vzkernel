@@ -17,6 +17,7 @@
 #include <linux/mnt_namespace.h>
 #include <linux/lglock.h>
 #include <linux/ve.h>
+#include <linux/memcontrol.h>
 
 #include <bc/beancounter.h>
 #include <bc/proc.h>
@@ -129,18 +130,21 @@ static struct bc_proc_entry bc_meminfo_entry = {
 	.u.show = bc_proc_meminfo_show,
 };
 
+extern void mem_cgroup_get_nr_pages(struct mem_cgroup *memcg, int nid,
+				    unsigned long *pages);
+
 #define K(x) ((x) << (PAGE_SHIFT - 10))
 static int bc_proc_nodeinfo_show(struct seq_file *f, void *v)
 {
 	int nid;
-	struct user_beancounter *ub;
+	struct cgroup_subsys_state *css;
 	unsigned long pages[NR_LRU_LISTS];
 
-	ub = seq_beancounter(f);
+	css = ub_get_mem_css(seq_beancounter(f));
 	for_each_node_state(nid, N_HIGH_MEMORY) {
-		nodemask_t nodemask = nodemask_of_node(nid);
-
-		ub_page_stat(ub, &nodemask, pages);
+		memset(pages, 0, sizeof(pages));
+		mem_cgroup_get_nr_pages(mem_cgroup_from_cont(css->cgroup),
+					nid, pages);
 		seq_printf(f,
 			"Node %d Active:         %8lu kB\n"
 			"Node %d Inactive:       %8lu kB\n"
@@ -159,6 +163,7 @@ static int bc_proc_nodeinfo_show(struct seq_file *f, void *v)
 			nid, K(pages[LRU_INACTIVE_FILE]),
 			nid, K(pages[LRU_UNEVICTABLE]));
 	}
+	css_put(css);
 	return 0;
 }
 #undef K
