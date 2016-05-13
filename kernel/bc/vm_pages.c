@@ -24,6 +24,8 @@
 #include <bc/vmpages.h>
 #include <bc/proc.h>
 
+int ub_overcommit_memory;
+
 int ub_memory_charge(struct mm_struct *mm, unsigned long size,
 		unsigned vm_flags, struct file *vm_file, int sv)
 {
@@ -117,6 +119,32 @@ void ub_lockedshm_uncharge(struct shmem_inode_info *shi, unsigned long size)
 		return;
 
 	uncharge_beancounter(ub, UB_LOCKEDPAGES, size >> PAGE_SHIFT);
+}
+
+extern int mem_cgroup_enough_memory(struct mem_cgroup *memcg, long pages);
+
+int ub_enough_memory(struct mm_struct *mm, long pages)
+{
+	struct user_beancounter *ub;
+	struct cgroup_subsys_state *css;
+	int ret;
+
+	if (!mm)
+		return 0;
+
+	ub = mm->mm_ub;
+
+	if (ub->ub_parms[UB_PRIVVMPAGES].held >
+	    ub->ub_parms[UB_PRIVVMPAGES].barrier)
+		return -ENOMEM;
+
+	if (ub_overcommit_memory)
+		return 0;
+
+	css = ub_get_mem_css(ub);
+	ret = mem_cgroup_enough_memory(mem_cgroup_from_cont(css->cgroup), pages);
+	css_put(css);
+	return ret;
 }
 
 static int bc_fill_sysinfo(struct user_beancounter *ub,
