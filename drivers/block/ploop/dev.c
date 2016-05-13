@@ -4502,7 +4502,9 @@ static int ploop_push_backup_init(struct ploop_device *plo, unsigned long arg)
 		goto pb_init_done;
 	}
 
+	mutex_lock(&plo->sysfs_mutex);
 	plo->pbd = pbd;
+	mutex_unlock(&plo->sysfs_mutex);
 
 	atomic_set(&plo->maintenance_cnt, 0);
 	plo->maintenance_type = PLOOP_MNTN_PUSH_BACKUP;
