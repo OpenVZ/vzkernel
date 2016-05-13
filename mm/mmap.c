@@ -135,13 +135,10 @@ int __vm_enough_memory(struct mm_struct *mm, long pages, int cap_sys_admin)
 {
 	unsigned long free, allowed, reserve;
 
-	vm_acct_memory(pages);
+	if (mm && ub_enough_memory(mm, pages) != 0)
+		return -ENOMEM;
 
-#ifdef CONFIG_BEANCOUNTERS
-	if (mm && mm->mm_ub->ub_parms[UB_PRIVVMPAGES].held <=
-			mm->mm_ub->ub_parms[UB_VMGUARPAGES].barrier)
-		return 0;
-#endif
+	vm_acct_memory(pages);
 
 	/*
 	 * Sometimes we want to use more memory than we have
