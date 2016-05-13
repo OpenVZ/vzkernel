@@ -100,6 +100,7 @@ enum mem_cgroup_stat_index {
 	MEM_CGROUP_STAT_RSS,		/* # of pages charged as anon rss */
 	MEM_CGROUP_STAT_RSS_HUGE,	/* # of pages charged as anon huge */
 	MEM_CGROUP_STAT_FILE_MAPPED,	/* # of pages charged as file rss */
+	MEM_CGROUP_STAT_SHMEM,		/* # of charged shmem pages */
 	MEM_CGROUP_STAT_SWAP,		/* # of pages, swapped out */
 	MEM_CGROUP_STAT_NSTATS,
 };
@@ -109,6 +110,7 @@ static const char * const mem_cgroup_stat_names[] = {
 	"rss",
 	"rss_huge",
 	"mapped_file",
+	"shmem",
 	"swap",
 };
 
@@ -1041,9 +1043,13 @@ static void mem_cgroup_charge_statistics(struct mem_cgroup *memcg,
 	if (anon)
 		__this_cpu_add(memcg->stat->count[MEM_CGROUP_STAT_RSS],
 				nr_pages);
-	else
+	else {
 		__this_cpu_add(memcg->stat->count[MEM_CGROUP_STAT_CACHE],
 				nr_pages);
+		if (PageSwapBacked(page))
+			__this_cpu_add(memcg->stat->count[MEM_CGROUP_STAT_SHMEM],
+				       nr_pages);
+	}
 
 	if (PageTransHuge(page))
 		__this_cpu_add(memcg->stat->count[MEM_CGROUP_STAT_RSS_HUGE],
