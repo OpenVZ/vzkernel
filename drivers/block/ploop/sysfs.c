@@ -9,6 +9,7 @@
 #include <asm/uaccess.h>
 
 #include <linux/ploop/ploop.h>
+#include "push_backup.h"
 
 struct delta_sysfs_entry {
 	struct attribute attr;
@@ -391,6 +392,22 @@ static ssize_t print_cookie(struct ploop_device * plo, char * page)
 	return sprintf(page, "%s\n", plo->cookie);
 }
 
+static ssize_t print_push_backup_uuid(struct ploop_device * plo, char * page)
+{
+	__u8 uuid[16];
+	int err;
+
+	mutex_lock(&plo->sysfs_mutex);
+	err = ploop_pb_get_uuid(plo->pbd, uuid);
+	mutex_unlock(&plo->sysfs_mutex);
+
+	page[0] = '\0';
+	if (err)
+		return 0;
+
+	return snprintf(page, PAGE_SIZE, "%pUB\n", uuid);
+}
+
 #define _TUNE_U32(_name)				\
 static u32 show_##_name(struct ploop_device * plo)	\
 {							\
@@ -470,6 +487,7 @@ static struct attribute *state_attributes[] = {
 	_A(top),
 	_A(event),
 	_A3(cookie),
+	_A3(push_backup_uuid),
 	_A(open_count),
 	NULL
 };
