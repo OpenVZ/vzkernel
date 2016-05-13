@@ -43,6 +43,15 @@ int ploop_pb_check_uuid(struct ploop_pushbackup_desc *pbd, __u8 *uuid)
 	return 0;
 }
 
+int ploop_pb_get_uuid(struct ploop_pushbackup_desc *pbd, __u8 *uuid)
+{
+	if (!pbd)
+		return -1;
+
+	memcpy(uuid, pbd->cbt_uuid, sizeof(pbd->cbt_uuid));
+	return 0;
+}
+
 struct ploop_pushbackup_desc *ploop_pb_alloc(struct ploop_device *plo)
 {
 	struct ploop_pushbackup_desc *pbd;
@@ -253,8 +262,12 @@ void ploop_pb_fini(struct ploop_pushbackup_desc *pbd)
 	if (!RB_EMPTY_ROOT(&pbd->reported_tree))
 		printk("ploop_pb_fini: reported_tree is not empty!\n");
 
-	if (pbd->plo)
-		pbd->plo->pbd = NULL;
+	if (pbd->plo) {
+		struct ploop_device *plo = pbd->plo;
+		mutex_lock(&plo->sysfs_mutex);
+		plo->pbd = NULL;
+		mutex_unlock(&plo->sysfs_mutex);
+	}
 
 	ploop_pb_free_cbt_map(pbd);
 
