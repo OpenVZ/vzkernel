@@ -126,6 +126,10 @@ static int mc13783_write(struct snd_soc_codec *codec,
 
 	ret = mc13xxx_reg_write(priv->mc13xxx, reg, value);
 
+	/* include errata fix for spi audio problems */
+	if (reg == MC13783_AUDIO_CODEC || reg == MC13783_AUDIO_DAC)
+		ret = mc13xxx_reg_write(priv->mc13xxx, reg, value);
+
 	mc13xxx_unlock(priv->mc13xxx);
 
 	return ret;
@@ -379,7 +383,7 @@ static int mc13783_set_tdm_slot_dac(struct snd_soc_dai *dai,
 		break;
 	default:
 		return -EINVAL;
-	};
+	}
 
 	snd_soc_update_bits(codec, MC13783_SSI_NETWORK, mask, val);
 

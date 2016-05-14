@@ -104,10 +104,17 @@ int apply_relocate_add(Elf64_Shdr *sechdrs,
 	Elf64_Sym *sym;
 	void *loc;
 	u64 val;
+	bool rhel70 = check_module_rhelversion(me, "7.0");
+	bool warned = false;
 
 	DEBUGP("Applying relocate section %u to %u\n",
 	       relsec, sechdrs[relsec].sh_info);
+
 	for (i = 0; i < sechdrs[relsec].sh_size / sizeof(*rel); i++) {
+		Elf64_Sym kstack_sym;
+		bool apply_kstack_fixup = false;
+		const char *symname;
+
 		/* This is where to make the change */
 		loc = (void *)sechdrs[sechdrs[relsec].sh_info].sh_addr
 			+ rel[i].r_offset;
@@ -116,10 +123,36 @@ int apply_relocate_add(Elf64_Shdr *sechdrs,
 		   undefined symbols have been resolved.  */
 		sym = (Elf64_Sym *)sechdrs[symindex].sh_addr
 			+ ELF64_R_SYM(rel[i].r_info);
+		symname = strtab + sym->st_name;
 
-		DEBUGP("type %d st_value %Lx r_addend %Lx loc %Lx\n",
-		       (int)ELF64_R_TYPE(rel[i].r_info),
+		DEBUGP("symname %s type %d st_value %Lx r_addend %Lx loc %Lx\n",
+		       symname, (int)ELF64_R_TYPE(rel[i].r_info),
 		       sym->st_value, rel[i].r_addend, (u64)loc);
+
+		if (rhel70 && !strcmp(symname, "kernel_stack")) {
+			if (!warned)
+				printk(KERN_INFO "%s: applying kernel_stack fix up\n",
+					me->name);
+			apply_kstack_fixup = true;
+			warned = true;
+		}
+
+		/* kernel_stack is referenced to access current_thread_info in
+		 * a variety of places... if we're loading a module which
+		 * expects an 8K stack, fix up the symbol reference to look
+		 * at a second copy. Nobody should be using this symbol for
+		 * any other purpose.
+		 */
+		if (apply_kstack_fixup) {
+			const struct kernel_symbol *ksym2;
+			ksym2 = find_symbol("__kernel_stack_70__",
+					    NULL, NULL, true, true);
+			if (!IS_ERR(ksym2)) {
+				kstack_sym.st_value = ksym2->value;
+				sym = &kstack_sym;
+			} else
+				return PTR_ERR(ksym2) ?: -ENOEXEC;
+		}
 
 		val = sym->st_value + rel[i].r_addend;
 

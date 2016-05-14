@@ -154,6 +154,7 @@ static struct audit_chunk *alloc_chunk(int count)
 		chunk->owners[i].index = i;
 	}
 	fsnotify_init_mark(&chunk->mark, audit_tree_destroy_watch);
+	chunk->mark.mask = FS_IN_IGNORED;
 	return chunk;
 }
 
@@ -457,7 +458,7 @@ static void audit_log_remove_rule(struct audit_krule *rule)
 	if (unlikely(!ab))
 		return;
 	audit_log_format(ab, "op=");
-	audit_log_string(ab, "remove rule");
+	audit_log_string(ab, "remove_rule");
 	audit_log_format(ab, " dir=");
 	audit_log_untrustedstring(ab, rule->tree->pathname);
 	audit_log_key(ab, rule->filterkey);

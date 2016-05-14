@@ -232,7 +232,7 @@ static struct irq_chip lnw_irqchip = {
 	.irq_set_type	= lnw_irq_type,
 };
 
-static DEFINE_PCI_DEVICE_TABLE(lnw_gpio_ids) = {   /* pin number */
+static const struct pci_device_id lnw_gpio_ids[] = {   /* pin number */
 	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, 0x080f), .driver_data = 64 },
 	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, 0x081f), .driver_data = 96 },
 	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, 0x081a), .driver_data = 96 },
@@ -305,11 +305,7 @@ static const struct irq_domain_ops lnw_gpio_irq_ops = {
 
 static int lnw_gpio_runtime_idle(struct device *dev)
 {
-	int err = pm_schedule_suspend(dev, 500);
-
-	if (!err)
-		return 0;
-
+	pm_schedule_suspend(dev, 500);
 	return -EBUSY;
 }
 

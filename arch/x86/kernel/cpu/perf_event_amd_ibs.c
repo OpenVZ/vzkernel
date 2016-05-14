@@ -564,6 +564,21 @@ static int perf_ibs_handle_irq(struct perf_ibs *perf_ibs, struct pt_regs *iregs)
 				       perf_ibs->offset_max,
 				       offset + 1);
 	} while (offset < offset_max);
+	if (event->attr.sample_type & PERF_SAMPLE_RAW) {
+		/*
+		 * Read IbsBrTarget and IbsOpData4 separately
+		 * depending on their availability.
+		 * Can't add to offset_max as they are staggered
+		 */
+		if (ibs_caps & IBS_CAPS_BRNTRGT) {
+			rdmsrl(MSR_AMD64_IBSBRTARGET, *buf++);
+			size++;
+		}
+		if (ibs_caps & IBS_CAPS_OPDATA4) {
+			rdmsrl(MSR_AMD64_IBSOPDATA4, *buf++);
+			size++;
+		}
+	}
 	ibs_data.size = sizeof(u64) * size;
 
 	regs = *iregs;
@@ -779,7 +794,7 @@ static int setup_ibs_ctl(int ibs_eilvt_off)
  * the IBS interrupt vector is handled by perf_ibs_cpu_notifier that
  * is using the new offset.
  */
-static int force_ibs_eilvt_setup(void)
+static void force_ibs_eilvt_setup(void)
 {
 	int offset;
 	int ret;
@@ -794,26 +809,24 @@ static int force_ibs_eilvt_setup(void)
 
 	if (offset == APIC_EILVT_NR_MAX) {
 		printk(KERN_DEBUG "No EILVT entry available\n");
-		return -EBUSY;
+		return;
 	}
 
 	ret = setup_ibs_ctl(offset);
 	if (ret)
 		goto out;
 
-	if (!ibs_eilvt_valid()) {
-		ret = -EFAULT;
+	if (!ibs_eilvt_valid())
 		goto out;
-	}
 
 	pr_info("IBS: LVT offset %d assigned\n", offset);
 
-	return 0;
+	return;
 out:
 	preempt_disable();
 	put_eilvt(offset);
 	preempt_enable();
-	return ret;
+	return;
 }
 
 static inline int get_ibs_lvt_offset(void)
@@ -851,7 +864,7 @@ static void clear_APIC_ibs(void *dummy)
 		setup_APIC_eilvt(offset, 0, APIC_EILVT_MSG_FIX, 1);
 }
 
-static int __cpuinit
+static int
 perf_ibs_cpu_notifier(struct notifier_block *self, unsigned long action, void *hcpu)
 {
 	switch (action & ~CPU_TASKS_FROZEN) {
@@ -889,13 +902,13 @@ static __init int amd_ibs_init(void)
 	if (!ibs_eilvt_valid())
 		goto out;
 
-	get_online_cpus();
+	cpu_notifier_register_begin();
 	ibs_caps = caps;
 	/* make ibs_caps visible to other cpus: */
 	smp_mb();
-	perf_cpu_notifier(perf_ibs_cpu_notifier);
 	smp_call_function(setup_APIC_ibs, NULL, 1);
-	put_online_cpus();
+	__perf_cpu_notifier(perf_ibs_cpu_notifier);
+	cpu_notifier_register_done();
 
 	ret = perf_event_ibs_init();
 out:

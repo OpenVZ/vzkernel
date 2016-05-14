@@ -60,4 +60,7 @@
 static inline void crash_setup_regs(struct pt_regs *newregs,
 					struct pt_regs *oldregs) { }
 
+#define KEXEC_AUTO_RESERVED_SIZE ((1ULL<<27) + (1ULL<<25)) /* 160M */
+#define KEXEC_AUTO_THRESHOLD (1ULL<<32) /* 4G */
+
 #endif /*_S390_KEXEC_H */

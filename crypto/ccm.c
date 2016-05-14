@@ -271,7 +271,8 @@ static int crypto_ccm_auth(struct aead_request *req, struct scatterlist *plain,
 	}
 
 	/* compute plaintext into mac */
-	get_data_to_compute(cipher, pctx, plain, cryptlen);
+	if (cryptlen)
+		get_data_to_compute(cipher, pctx, plain, cryptlen);
 
 out:
 	return err;
@@ -878,5 +879,6 @@ module_exit(crypto_ccm_module_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Counter with CBC MAC");
-MODULE_ALIAS("ccm_base");
-MODULE_ALIAS("rfc4309");
+MODULE_ALIAS_CRYPTO("ccm_base");
+MODULE_ALIAS_CRYPTO("rfc4309");
+MODULE_ALIAS_CRYPTO("ccm");

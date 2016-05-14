@@ -1119,34 +1119,30 @@ static int netlbl_unlabel_staticlist_gen(u32 cmd,
 		struct in_addr addr_struct;
 
 		addr_struct.s_addr = addr4->list.addr;
-		ret_val = nla_put(cb_arg->skb,
-				  NLBL_UNLABEL_A_IPV4ADDR,
-				  sizeof(struct in_addr),
-				  &addr_struct);
+		ret_val = nla_put_in_addr(cb_arg->skb,
+					  NLBL_UNLABEL_A_IPV4ADDR,
+					  addr_struct.s_addr);
 		if (ret_val != 0)
 			goto list_cb_failure;
 
 		addr_struct.s_addr = addr4->list.mask;
-		ret_val = nla_put(cb_arg->skb,
-				  NLBL_UNLABEL_A_IPV4MASK,
-				  sizeof(struct in_addr),
-				  &addr_struct);
+		ret_val = nla_put_in_addr(cb_arg->skb,
+					  NLBL_UNLABEL_A_IPV4MASK,
+					  addr_struct.s_addr);
 		if (ret_val != 0)
 			goto list_cb_failure;
 
 		secid = addr4->secid;
 	} else {
-		ret_val = nla_put(cb_arg->skb,
-				  NLBL_UNLABEL_A_IPV6ADDR,
-				  sizeof(struct in6_addr),
-				  &addr6->list.addr);
+		ret_val = nla_put_in6_addr(cb_arg->skb,
+					   NLBL_UNLABEL_A_IPV6ADDR,
+					   &addr6->list.addr);
 		if (ret_val != 0)
 			goto list_cb_failure;
 
-		ret_val = nla_put(cb_arg->skb,
-				  NLBL_UNLABEL_A_IPV6MASK,
-				  sizeof(struct in6_addr),
-				  &addr6->list.mask);
+		ret_val = nla_put_in6_addr(cb_arg->skb,
+					   NLBL_UNLABEL_A_IPV6MASK,
+					   &addr6->list.mask);
 		if (ret_val != 0)
 			goto list_cb_failure;
 
@@ -1324,7 +1320,7 @@ unlabel_staticlistdef_return:
  * NetLabel Generic NETLINK Command Definitions
  */
 
-static struct genl_ops netlbl_unlabel_genl_ops[] = {
+static const struct genl_ops netlbl_unlabel_genl_ops[] = {
 	{
 	.cmd = NLBL_UNLABEL_C_STATICADD,
 	.flags = GENL_ADMIN_PERM,
@@ -1398,7 +1394,7 @@ static struct genl_ops netlbl_unlabel_genl_ops[] = {
 int __init netlbl_unlabel_genl_init(void)
 {
 	return genl_register_family_with_ops(&netlbl_unlabel_gnl_family,
-		netlbl_unlabel_genl_ops, ARRAY_SIZE(netlbl_unlabel_genl_ops));
+					     netlbl_unlabel_genl_ops);
 }
 
 /*
@@ -1542,7 +1538,7 @@ int __init netlbl_unlabel_defconf(void)
 	entry = kzalloc(sizeof(*entry), GFP_KERNEL);
 	if (entry == NULL)
 		return -ENOMEM;
-	entry->type = NETLBL_NLTYPE_UNLABELED;
+	entry->def.type = NETLBL_NLTYPE_UNLABELED;
 	ret_val = netlbl_domhsh_add_default(entry, &audit_info);
 	if (ret_val != 0)
 		return ret_val;

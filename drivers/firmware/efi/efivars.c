@@ -383,12 +383,16 @@ static ssize_t efivar_delete(struct file *filp, struct kobject *kobj,
 	else if (__efivar_entry_delete(entry))
 		err = -EIO;
 
-	efivar_entry_iter_end();
-
-	if (err)
+	if (err) {
+		efivar_entry_iter_end();
 		return err;
+	}
 
-	efivar_unregister(entry);
+	if (!entry->scanning) {
+		efivar_entry_iter_end();
+		efivar_unregister(entry);
+	} else
+		efivar_entry_iter_end();
 
 	/* It's dead Jim.... */
 	return count;
@@ -582,6 +586,9 @@ int efivars_sysfs_init(void)
 {
 	struct kobject *parent_kobj = efivars_kobject();
 	int error = 0;
+
+	if (!efi_enabled(EFI_RUNTIME_SERVICES))
+		return -ENODEV;
 
 	/* No efivars has been registered yet */
 	if (!parent_kobj)

@@ -13,6 +13,7 @@
 #include <asm/processor.h>
 #include <linux/bitops.h>
 #include <linux/threads.h>
+#include <asm/mm_track.h>
 
 extern pud_t level3_kernel_pgt[512];
 extern pud_t level3_ident_pgt[512];
@@ -46,11 +47,13 @@ void set_pte_vaddr_pud(pud_t *pud_page, unsigned long vaddr, pte_t new_pte);
 static inline void native_pte_clear(struct mm_struct *mm, unsigned long addr,
 				    pte_t *ptep)
 {
+	mm_track_pte(ptep);
 	*ptep = native_make_pte(0);
 }
 
 static inline void native_set_pte(pte_t *ptep, pte_t pte)
 {
+	mm_track_pte(ptep);
 	*ptep = pte;
 }
 
@@ -61,6 +64,7 @@ static inline void native_set_pte_atomic(pte_t *ptep, pte_t pte)
 
 static inline void native_set_pmd(pmd_t *pmdp, pmd_t pmd)
 {
+	mm_track_pmd(pmdp);
 	*pmdp = pmd;
 }
 
@@ -71,6 +75,7 @@ static inline void native_pmd_clear(pmd_t *pmd)
 
 static inline pte_t native_ptep_get_and_clear(pte_t *xp)
 {
+	mm_track_pte(xp);
 #ifdef CONFIG_SMP
 	return native_make_pte(xchg(&xp->pte, 0));
 #else
@@ -84,6 +89,7 @@ static inline pte_t native_ptep_get_and_clear(pte_t *xp)
 
 static inline pmd_t native_pmdp_get_and_clear(pmd_t *xp)
 {
+	mm_track_pmd(xp);
 #ifdef CONFIG_SMP
 	return native_make_pmd(xchg(&xp->pmd, 0));
 #else
@@ -97,6 +103,7 @@ static inline pmd_t native_pmdp_get_and_clear(pmd_t *xp)
 
 static inline void native_set_pud(pud_t *pudp, pud_t pud)
 {
+	mm_track_pud(pudp);
 	*pudp = pud;
 }
 
@@ -107,6 +114,7 @@ static inline void native_pud_clear(pud_t *pud)
 
 static inline void native_set_pgd(pgd_t *pgdp, pgd_t pgd)
 {
+	mm_track_pgd(pgdp);
 	*pgdp = pgd;
 }
 
@@ -115,7 +123,8 @@ static inline void native_pgd_clear(pgd_t *pgd)
 	native_set_pgd(pgd, native_make_pgd(0));
 }
 
-extern void sync_global_pgds(unsigned long start, unsigned long end);
+extern void sync_global_pgds(unsigned long start, unsigned long end,
+			     int removed);
 
 /*
  * Conversion functions: convert a page and protection to a page entry,

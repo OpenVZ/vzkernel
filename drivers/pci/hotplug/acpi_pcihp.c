@@ -338,7 +338,7 @@ int acpi_get_hp_hw_control_from_firmware(struct pci_dev *pdev, u32 flags)
 	acpi_handle chandle, handle;
 	struct acpi_buffer string = { ACPI_ALLOCATE_BUFFER, NULL };
 
-	flags &= OSC_SHPC_NATIVE_HP_CONTROL;
+	flags &= OSC_PCI_SHPC_NATIVE_HP_CONTROL;
 	if (!flags) {
 		err("Invalid flags %u specified!\n", flags);
 		return -EINVAL;
@@ -367,7 +367,7 @@ int acpi_get_hp_hw_control_from_firmware(struct pci_dev *pdev, u32 flags)
 		string = (struct acpi_buffer){ ACPI_ALLOCATE_BUFFER, NULL };
 	}
 
-	handle = DEVICE_ACPI_HANDLE(&pdev->dev);
+	handle = ACPI_HANDLE(&pdev->dev);
 	if (!handle) {
 		/*
 		 * This hotplug controller was not listed in the ACPI name

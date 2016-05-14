@@ -34,6 +34,9 @@ struct timekeeper {
 	/* Clock shifted nano seconds */
 	u64			xtime_nsec;
 
+	/* Monotonic base time */
+	ktime_t                 base_mono;
+
 	/* Difference between accumulated time and NTP time in ntp
 	 * shifted nano seconds. */
 	s64			ntp_error;
@@ -55,25 +58,37 @@ struct timekeeper {
 	 * - wall_to_monotonic is no longer the boot time, getboottime must be
 	 * used instead.
 	 */
-	struct timespec		wall_to_monotonic;
+	struct timespec64	wall_to_monotonic;
 	/* Offset clock monotonic -> clock realtime */
 	ktime_t			offs_real;
 	/* time spent in suspend */
-	struct timespec		total_sleep_time;
+	struct timespec64	total_sleep_time;
 	/* Offset clock monotonic -> clock boottime */
 	ktime_t			offs_boot;
 	/* The raw monotonic time for the CLOCK_MONOTONIC_RAW posix clock. */
-	struct timespec		raw_time;
+	struct timespec64	raw_time;
 	/* The current UTC to TAI offset in seconds */
 	s32			tai_offset;
 	/* Offset clock monotonic -> clock tai */
 	ktime_t			offs_tai;
 
+	/* The ntp_tick_length() value currently being used.
+	 * This cached copy ensures we consistently apply the tick
+	 * length for an entire tick, as ntp_tick_length may change
+	 * mid-tick, and we don't want to apply that new value to
+	 * the tick in progress.
+	 */
+	u64			ntp_tick;
+	u32			ntp_err_mult;
+	/* The sequence number of clock was set events */
+	unsigned int		clock_was_set_seq;
+	/* CLOCK_MONOTONIC time value of a pending leap-second */
+	ktime_t			next_leap_ktime;
 };
 
-static inline struct timespec tk_xtime(struct timekeeper *tk)
+static inline struct timespec64 tk_xtime(struct timekeeper *tk)
 {
-	struct timespec ts;
+	struct timespec64 ts;
 
 	ts.tv_sec = tk->xtime_sec;
 	ts.tv_nsec = (long)(tk->xtime_nsec >> tk->shift);

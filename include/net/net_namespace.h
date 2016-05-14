@@ -8,6 +8,7 @@
 #include <linux/workqueue.h>
 #include <linux/list.h>
 #include <linux/sysctl.h>
+#include <linux/idr.h>
 
 #include <net/netns/core.h>
 #include <net/netns/mib.h>
@@ -22,7 +23,10 @@
 #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
 #include <net/netns/conntrack.h>
 #endif
+#include <net/netns/nftables.h>
 #include <net/netns/xfrm.h>
+
+#include <linux/rh_kabi.h>
 
 struct user_namespace;
 struct proc_dir_entry;
@@ -44,11 +48,6 @@ struct net {
 	atomic_t		count;		/* To decided when the network
 						 *  namespace should be shut down.
 						 */
-#ifdef NETNS_REFCNT_DEBUG
-	atomic_t		use_count;	/* To track references we
-						 * destroy on demand
-						 */
-#endif
 	spinlock_t		rules_mod_lock;
 
 	struct list_head	list;		/* list of network namespaces */
@@ -100,6 +99,9 @@ struct net {
 #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
 	struct netns_ct		ct;
 #endif
+#if defined(CONFIG_NF_TABLES) || defined(CONFIG_NF_TABLES_MODULE)
+	struct netns_nftables	nft;
+#endif
 #if IS_ENABLED(CONFIG_NF_DEFRAG_IPV6)
 	struct netns_nf_frag	nf_frag;
 #endif
@@ -118,6 +120,31 @@ struct net {
 	struct netns_ipvs	*ipvs;
 	struct sock		*diag_nlsk;
 	atomic_t		rt_genid;
+
+	RH_KABI_EXTEND(unsigned int	dev_unreg_count)
+	RH_KABI_EXTEND(atomic_t		fnhe_genid)
+	RH_KABI_EXTEND(int		sysctl_ip_no_pmtu_disc)
+	RH_KABI_EXTEND(int		sysctl_ip_fwd_use_pmtu)
+	/* upstream has this as part of netns_ipv4 */
+	RH_KABI_EXTEND(struct local_ports ipv4_sysctl_local_ports)
+	RH_KABI_EXTEND(struct idr	netns_ids)
+	RH_KABI_EXTEND(spinlock_t	nsid_lock)
+	/* upstream has this as part of netns_ipv4 */
+	RH_KABI_EXTEND(struct sock  * __percpu *ipv4_tcp_sk)
+#ifdef CONFIG_XFRM
+	/* upstream has this as part of netns_xfrm */
+	RH_KABI_EXTEND(spinlock_t xfrm_state_lock)
+	RH_KABI_EXTEND(rwlock_t xfrm_policy_lock)
+	RH_KABI_EXTEND(struct mutex xfrm_cfg_mutex)
+	/* flow cache part */
+	RH_KABI_EXTEND(struct flow_cache flow_cache_global)
+	RH_KABI_EXTEND(atomic_t flow_cache_genid)
+	RH_KABI_EXTEND(struct list_head flow_cache_gc_list)
+	RH_KABI_EXTEND(spinlock_t flow_cache_gc_lock)
+	RH_KABI_EXTEND(struct work_struct flow_cache_gc_work)
+	RH_KABI_EXTEND(struct work_struct flow_cache_flush_work)
+	RH_KABI_EXTEND(struct mutex flow_flush_sem)
+#endif
 };
 
 /*
@@ -216,48 +243,23 @@ int net_eq(const struct net *net1, const struct net *net2)
 #endif
 
 
-#ifdef NETNS_REFCNT_DEBUG
-static inline struct net *hold_net(struct net *net)
-{
-	if (net)
-		atomic_inc(&net->use_count);
-	return net;
-}
+#define possible_net_t	struct net *
 
-static inline void release_net(struct net *net)
+static inline void write_pnet(possible_net_t *pnet, struct net *net)
 {
-	if (net)
-		atomic_dec(&net->use_count);
-}
-#else
-static inline struct net *hold_net(struct net *net)
-{
-	return net;
-}
-
-static inline void release_net(struct net *net)
-{
-}
-#endif
-
 #ifdef CONFIG_NET_NS
-
-static inline void write_pnet(struct net **pnet, struct net *net)
-{
 	*pnet = net;
-}
-
-static inline struct net *read_pnet(struct net * const *pnet)
-{
-	return *pnet;
-}
-
-#else
-
-#define write_pnet(pnet, net)	do { (void)(net);} while (0)
-#define read_pnet(pnet)		(&init_net)
-
 #endif
+}
+
+static inline struct net *read_pnet(possible_net_t const *pnet)
+{
+#ifdef CONFIG_NET_NS
+	return *pnet;
+#else
+	return &init_net;
+#endif
+}
 
 #define for_each_net(VAR)				\
 	list_for_each_entry(VAR, &net_namespace_list, list)
@@ -276,6 +278,11 @@ static inline struct net *read_pnet(struct net * const *pnet)
 #define __net_initdata	__initdata
 #define __net_initconst	__initconst
 #endif
+
+int peernet2id_alloc(struct net *net, struct net *peer);
+int peernet2id(struct net *net, struct net *peer);
+bool peernet_has_id(struct net *net, struct net *peer);
+struct net *get_net_ns_by_id(struct net *net, int id);
 
 struct pernet_operations {
 	struct list_head list;
@@ -330,14 +337,38 @@ static inline void unregister_net_sysctl_table(struct ctl_table_header *header)
 }
 #endif
 
-static inline int rt_genid(struct net *net)
+static inline int rt_genid_ipv4(struct net *net)
 {
 	return atomic_read(&net->rt_genid);
 }
 
-static inline void rt_genid_bump(struct net *net)
+static inline void rt_genid_bump_ipv4(struct net *net)
 {
 	atomic_inc(&net->rt_genid);
+}
+
+extern void (*__fib6_flush_trees)(struct net *net);
+static inline void rt_genid_bump_ipv6(struct net *net)
+{
+	if (__fib6_flush_trees)
+		__fib6_flush_trees(net);
+}
+
+/* For callers who don't really care about whether it's IPv4 or IPv6 */
+static inline void rt_genid_bump_all(struct net *net)
+{
+	rt_genid_bump_ipv4(net);
+	rt_genid_bump_ipv6(net);
+}
+
+static inline int fnhe_genid(struct net *net)
+{
+	return atomic_read(&net->fnhe_genid);
+}
+
+static inline void fnhe_genid_bump(struct net *net)
+{
+	atomic_inc(&net->fnhe_genid);
 }
 
 #endif /* __NET_NET_NAMESPACE_H */

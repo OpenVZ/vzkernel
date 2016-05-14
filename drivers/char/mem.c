@@ -29,6 +29,7 @@
 #include <linux/export.h>
 #include <linux/io.h>
 #include <linux/aio.h>
+#include <linux/security.h>
 
 #include <asm/uaccess.h>
 
@@ -158,6 +159,9 @@ static ssize_t write_mem(struct file *file, const char __user *buf,
 	ssize_t written, sz;
 	unsigned long copied;
 	void *ptr;
+
+	if (get_securelevel() > 0)
+		return -EPERM;
 
 	if (!valid_phys_addr_range(p, count))
 		return -EFAULT;
@@ -531,6 +535,9 @@ static ssize_t write_kmem(struct file *file, const char __user *buf,
 	char *kbuf; /* k-addr because vwrite() takes vmlist_lock rwlock */
 	int err = 0;
 
+	if (get_securelevel() > 0)
+		return -EPERM;
+
 	if (p < (unsigned long) high_memory) {
 		unsigned long to_write = min_t(unsigned long, count,
 					       (unsigned long)high_memory - p);
@@ -580,6 +587,9 @@ static ssize_t read_port(struct file *file, char __user *buf,
 	unsigned long i = *ppos;
 	char __user *tmp = buf;
 
+	if (get_securelevel() > 0)
+		return -EPERM;
+
 	if (!access_ok(VERIFY_WRITE, buf, count))
 		return -EFAULT;
 	while (count-- > 0 && i < 65536) {
@@ -597,6 +607,9 @@ static ssize_t write_port(struct file *file, const char __user *buf,
 {
 	unsigned long i = *ppos;
 	const char __user *tmp = buf;
+
+	if (get_securelevel() > 0)
+		return -EPERM;
 
 	if (!access_ok(VERIFY_READ, buf, count))
 		return -EFAULT;

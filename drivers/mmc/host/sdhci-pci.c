@@ -27,70 +27,8 @@
 #include <linux/mmc/sdhci-pci-data.h>
 
 #include "sdhci.h"
-
-/*
- * PCI device IDs
- */
-#define PCI_DEVICE_ID_INTEL_PCH_SDIO0	0x8809
-#define PCI_DEVICE_ID_INTEL_PCH_SDIO1	0x880a
-#define PCI_DEVICE_ID_INTEL_BYT_EMMC	0x0f14
-#define PCI_DEVICE_ID_INTEL_BYT_SDIO	0x0f15
-#define PCI_DEVICE_ID_INTEL_BYT_SD	0x0f16
-
-/*
- * PCI registers
- */
-
-#define PCI_SDHCI_IFPIO			0x00
-#define PCI_SDHCI_IFDMA			0x01
-#define PCI_SDHCI_IFVENDOR		0x02
-
-#define PCI_SLOT_INFO			0x40	/* 8 bits */
-#define  PCI_SLOT_INFO_SLOTS(x)		((x >> 4) & 7)
-#define  PCI_SLOT_INFO_FIRST_BAR_MASK	0x07
-
-#define MAX_SLOTS			8
-
-struct sdhci_pci_chip;
-struct sdhci_pci_slot;
-
-struct sdhci_pci_fixes {
-	unsigned int		quirks;
-	unsigned int		quirks2;
-	bool			allow_runtime_pm;
-
-	int			(*probe) (struct sdhci_pci_chip *);
-
-	int			(*probe_slot) (struct sdhci_pci_slot *);
-	void			(*remove_slot) (struct sdhci_pci_slot *, int);
-
-	int			(*suspend) (struct sdhci_pci_chip *);
-	int			(*resume) (struct sdhci_pci_chip *);
-};
-
-struct sdhci_pci_slot {
-	struct sdhci_pci_chip	*chip;
-	struct sdhci_host	*host;
-	struct sdhci_pci_data	*data;
-
-	int			pci_bar;
-	int			rst_n_gpio;
-	int			cd_gpio;
-	int			cd_irq;
-};
-
-struct sdhci_pci_chip {
-	struct pci_dev		*pdev;
-
-	unsigned int		quirks;
-	unsigned int		quirks2;
-	bool			allow_runtime_pm;
-	const struct sdhci_pci_fixes *fixes;
-
-	int			num_slots;	/* Slots on controller */
-	struct sdhci_pci_slot	*slots[MAX_SLOTS]; /* Pointers to host slots */
-};
-
+#include "sdhci-pci.h"
+#include "sdhci-pci-o2micro.h"
 
 /*****************************************************************************\
  *                                                                           *
@@ -343,65 +281,6 @@ static const struct sdhci_pci_fixes sdhci_intel_byt_sd = {
 #define O2_SD_ADMA2		0xE7
 #define O2_SD_INF_MOD		0xF1
 
-static int o2_probe(struct sdhci_pci_chip *chip)
-{
-	int ret;
-	u8 scratch;
-
-	switch (chip->pdev->device) {
-	case PCI_DEVICE_ID_O2_8220:
-	case PCI_DEVICE_ID_O2_8221:
-	case PCI_DEVICE_ID_O2_8320:
-	case PCI_DEVICE_ID_O2_8321:
-		/* This extra setup is required due to broken ADMA. */
-		ret = pci_read_config_byte(chip->pdev, O2_SD_LOCK_WP, &scratch);
-		if (ret)
-			return ret;
-		scratch &= 0x7f;
-		pci_write_config_byte(chip->pdev, O2_SD_LOCK_WP, scratch);
-
-		/* Set Multi 3 to VCC3V# */
-		pci_write_config_byte(chip->pdev, O2_SD_MULTI_VCC3V, 0x08);
-
-		/* Disable CLK_REQ# support after media DET */
-		ret = pci_read_config_byte(chip->pdev, O2_SD_CLKREQ, &scratch);
-		if (ret)
-			return ret;
-		scratch |= 0x20;
-		pci_write_config_byte(chip->pdev, O2_SD_CLKREQ, scratch);
-
-		/* Choose capabilities, enable SDMA.  We have to write 0x01
-		 * to the capabilities register first to unlock it.
-		 */
-		ret = pci_read_config_byte(chip->pdev, O2_SD_CAPS, &scratch);
-		if (ret)
-			return ret;
-		scratch |= 0x01;
-		pci_write_config_byte(chip->pdev, O2_SD_CAPS, scratch);
-		pci_write_config_byte(chip->pdev, O2_SD_CAPS, 0x73);
-
-		/* Disable ADMA1/2 */
-		pci_write_config_byte(chip->pdev, O2_SD_ADMA1, 0x39);
-		pci_write_config_byte(chip->pdev, O2_SD_ADMA2, 0x08);
-
-		/* Disable the infinite transfer mode */
-		ret = pci_read_config_byte(chip->pdev, O2_SD_INF_MOD, &scratch);
-		if (ret)
-			return ret;
-		scratch |= 0x08;
-		pci_write_config_byte(chip->pdev, O2_SD_INF_MOD, scratch);
-
-		/* Lock WP */
-		ret = pci_read_config_byte(chip->pdev, O2_SD_LOCK_WP, &scratch);
-		if (ret)
-			return ret;
-		scratch |= 0x80;
-		pci_write_config_byte(chip->pdev, O2_SD_LOCK_WP, scratch);
-	}
-
-	return 0;
-}
-
 static int jmicron_pmos(struct sdhci_pci_chip *chip, int on)
 {
 	u8 scratch;
@@ -592,7 +471,10 @@ static int jmicron_resume(struct sdhci_pci_chip *chip)
 }
 
 static const struct sdhci_pci_fixes sdhci_o2 = {
-	.probe		= o2_probe,
+	.probe = sdhci_pci_o2_probe,
+	.quirks = SDHCI_QUIRK_NO_ENDATTR_IN_NOPDESC,
+	.probe_slot = sdhci_pci_o2_probe_slot,
+	.resume = sdhci_pci_o2_resume,
 };
 
 static const struct sdhci_pci_fixes sdhci_jmicron = {
@@ -944,6 +826,46 @@ static const struct pci_device_id pci_ids[] = {
 	{
 		.vendor		= PCI_VENDOR_ID_O2,
 		.device		= PCI_DEVICE_ID_O2_8321,
+		.subvendor	= PCI_ANY_ID,
+		.subdevice	= PCI_ANY_ID,
+		.driver_data	= (kernel_ulong_t)&sdhci_o2,
+	},
+
+	{
+		.vendor		= PCI_VENDOR_ID_O2,
+		.device		= PCI_DEVICE_ID_O2_FUJIN2,
+		.subvendor	= PCI_ANY_ID,
+		.subdevice	= PCI_ANY_ID,
+		.driver_data	= (kernel_ulong_t)&sdhci_o2,
+	},
+
+	{
+		.vendor		= PCI_VENDOR_ID_O2,
+		.device		= PCI_DEVICE_ID_O2_SDS0,
+		.subvendor	= PCI_ANY_ID,
+		.subdevice	= PCI_ANY_ID,
+		.driver_data	= (kernel_ulong_t)&sdhci_o2,
+	},
+
+	{
+		.vendor		= PCI_VENDOR_ID_O2,
+		.device		= PCI_DEVICE_ID_O2_SDS1,
+		.subvendor	= PCI_ANY_ID,
+		.subdevice	= PCI_ANY_ID,
+		.driver_data	= (kernel_ulong_t)&sdhci_o2,
+	},
+
+	{
+		.vendor		= PCI_VENDOR_ID_O2,
+		.device		= PCI_DEVICE_ID_O2_SEABIRD0,
+		.subvendor	= PCI_ANY_ID,
+		.subdevice	= PCI_ANY_ID,
+		.driver_data	= (kernel_ulong_t)&sdhci_o2,
+	},
+
+	{
+		.vendor		= PCI_VENDOR_ID_O2,
+		.device		= PCI_DEVICE_ID_O2_SEABIRD1,
 		.subvendor	= PCI_ANY_ID,
 		.subdevice	= PCI_ANY_ID,
 		.driver_data	= (kernel_ulong_t)&sdhci_o2,

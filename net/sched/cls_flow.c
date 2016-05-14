@@ -220,7 +220,7 @@ static u32 flow_get_vlan_tag(const struct sk_buff *skb)
 
 static u32 flow_get_rxhash(struct sk_buff *skb)
 {
-	return skb_get_rxhash(skb);
+	return skb_get_hash(skb);
 }
 
 static u32 flow_key_get(struct sk_buff *skb, int key, struct flow_keys *flow)
@@ -466,6 +466,8 @@ static int flow_change(struct net *net, struct sk_buff *in_skb,
 	tcf_em_tree_change(tp, &f->ematches, &t);
 
 	tcf_tree_lock(tp);
+
+	netif_keep_dst(qdisc_dev(tp->q));
 
 	if (tb[TCA_FLOW_KEYS]) {
 		f->keymask = keymask;

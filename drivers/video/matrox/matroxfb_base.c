@@ -1545,8 +1545,8 @@ static struct board {
 
 #ifndef MODULE
 static struct fb_videomode defaultmode = {
-	/* 640x480 @ 60Hz, 31.5 kHz */
-	NULL, 60, 640, 480, 39721, 40, 24, 32, 11, 96, 2,
+	/* 1024x768 @ 60Hz */
+	NULL, 60, 1024, 768, 15384, 160, 24, 29, 3, 136, 6,
 	0, FB_VMODE_NONINTERLACED
 };
 #endif /* !MODULE */
@@ -2492,7 +2492,7 @@ MODULE_PARM_DESC(inverse, "Inverse (0 or 1) (default=0)");
 module_param(dev, int, 0);
 MODULE_PARM_DESC(dev, "Multihead support, attach to device ID (0..N) (default=all working)");
 module_param(vesa, int, 0);
-MODULE_PARM_DESC(vesa, "Startup videomode (0x000-0x1FF) (default=0x101)");
+MODULE_PARM_DESC(vesa, "Startup videomode (0x000-0x1FF) (default=0x105)");
 module_param(xres, int, 0);
 MODULE_PARM_DESC(xres, "Horizontal resolution (px), overrides xres from vesa (default=vesa)");
 module_param(yres, int, 0);

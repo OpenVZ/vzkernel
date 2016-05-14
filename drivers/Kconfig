@@ -68,6 +68,8 @@ source "drivers/w1/Kconfig"
 
 source "drivers/power/Kconfig"
 
+source "drivers/powercap/Kconfig"
+
 source "drivers/hwmon/Kconfig"
 
 source "drivers/thermal/Kconfig"
@@ -165,5 +167,7 @@ source "drivers/irqchip/Kconfig"
 source "drivers/ipack/Kconfig"
 
 source "drivers/reset/Kconfig"
+
+source "drivers/ras/Kconfig"
 
 endmenu

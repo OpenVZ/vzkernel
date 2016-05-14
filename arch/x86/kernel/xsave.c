@@ -268,8 +268,6 @@ int save_xstate_sig(void __user *buf, void __user *buf_fx, int size)
 	if (use_fxsr() && save_xstate_epilog(buf_fx, ia32_fxstate))
 		return -1;
 
-	drop_init_fpu(tsk);	/* trigger finit */
-
 	return 0;
 }
 
@@ -400,8 +398,11 @@ int __restore_xstate_sig(void __user *buf, void __user *buf_fx, int size)
 			set_used_math();
 		}
 
-		if (use_eager_fpu())
+		if (use_eager_fpu()) {
+			preempt_disable();
 			math_state_restore();
+			preempt_enable();
+		}
 
 		return err;
 	} else {
@@ -455,28 +456,28 @@ static inline void xstate_enable(void)
 }
 
 /*
- * Record the offsets and sizes of different state managed by the xsave
- * memory layout.
+ * Record the offsets and sizes of various xstates contained
+ * in the XSAVE state memory layout.
+ *
+ * ( Note that certain features might be non-present, for them
+ *   we'll have 0 offset and 0 size. )
  */
 static void __init setup_xstate_features(void)
 {
-	int eax, ebx, ecx, edx, leaf = 0x2;
+	u32 eax, ebx, ecx, edx, leaf;
 
 	xstate_features = fls64(pcntxt_mask);
 	xstate_offsets = alloc_bootmem(xstate_features * sizeof(int));
 	xstate_sizes = alloc_bootmem(xstate_features * sizeof(int));
 
-	do {
+	for (leaf = 2; leaf < xstate_features; leaf++) {
 		cpuid_count(XSTATE_CPUID, leaf, &eax, &ebx, &ecx, &edx);
-
-		if (eax == 0)
-			break;
 
 		xstate_offsets[leaf] = ebx;
 		xstate_sizes[leaf] = eax;
 
-		leaf++;
-	} while (1);
+		printk(KERN_INFO "x86/fpu: xstate_offset[%d]: %04x, xstate_sizes[%d]: %04x\n", leaf, ebx, leaf, eax);
+	}
 }
 
 /*
@@ -563,6 +564,16 @@ static void __init xstate_enable_boot_cpu(void)
 	if (cpu_has_xsaveopt && eagerfpu != DISABLE)
 		eagerfpu = ENABLE;
 
+	if (pcntxt_mask & XSTATE_EAGER) {
+		if (eagerfpu == DISABLE) {
+			pr_err("eagerfpu not present, disabling some xstate features: 0x%llx\n",
+					pcntxt_mask & XSTATE_EAGER);
+			pcntxt_mask &= ~XSTATE_EAGER;
+		} else {
+			eagerfpu = ENABLE;
+		}
+	}
+
 	pr_info("enabled xstate_bv 0x%llx, cntxt size 0x%x\n",
 		pcntxt_mask, xstate_size);
 }
@@ -574,7 +585,7 @@ static void __init xstate_enable_boot_cpu(void)
  * This is somewhat obfuscated due to the lack of powerful enough
  * overrides for the section checks.
  */
-void __cpuinit xsave_init(void)
+void xsave_init(void)
 {
 	static __refdata void (*next_func)(void) = xstate_enable_boot_cpu;
 	void (*this_func)(void);
@@ -595,7 +606,7 @@ static inline void __init eager_fpu_init_bp(void)
 		setup_init_fpu_buf();
 }
 
-void __cpuinit eager_fpu_init(void)
+void eager_fpu_init(void)
 {
 	static __refdata void (*boot_func)(void) = eager_fpu_init_bp;
 

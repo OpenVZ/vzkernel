@@ -492,6 +492,7 @@ reinsert:
 		if (f->handle < f1->handle)
 			break;
 
+	netif_keep_dst(qdisc_dev(tp->q));
 	f->next = f1;
 	tcf_tree_lock(tp);
 	*fp = f;
