@@ -1358,8 +1358,10 @@ static void balance_dirty_pages_ub(struct address_space *mapping,
 	unsigned long pages_written = 0;
 	unsigned long pause = 1;
 	struct user_beancounter *ub = get_io_ub();
-
 	struct backing_dev_info *bdi = mapping->backing_dev_info;
+
+	if (ub == get_ub0())
+		return;
 
 	for (;;) {
 		unsigned long nr_to_write = write_chunk - pages_written;
