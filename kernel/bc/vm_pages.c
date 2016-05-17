@@ -138,7 +138,7 @@ int ub_enough_memory(struct mm_struct *mm, long pages)
 	    ub->ub_parms[UB_PRIVVMPAGES].barrier)
 		return -ENOMEM;
 
-	if (ub_overcommit_memory)
+	if (ub == get_ub0() || ub_overcommit_memory)
 		return 0;
 
 	css = ub_get_mem_css(ub);
