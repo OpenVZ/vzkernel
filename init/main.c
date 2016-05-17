@@ -623,7 +623,6 @@ asmlinkage void __init start_kernel(void)
 	cred_init();
 	fork_init(totalram_pages);
 	proc_caches_init();
-	ub_init_late();
 	buffer_init();
 	key_init();
 	security_init();
@@ -636,6 +635,7 @@ asmlinkage void __init start_kernel(void)
 	proc_root_init();
 #endif
 	cgroup_init();
+	ub_init_late();
 	cpuset_init();
 	taskstats_init_early();
 	delayacct_init();
