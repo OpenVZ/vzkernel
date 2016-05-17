@@ -1172,6 +1172,9 @@ static ctl_table ub_sysctl_root[] = {
 
 void __init ub_init_late(void)
 {
+	ub_set_mem_css(&ub0, task_subsys_state_check(&init_task,  mem_cgroup_subsys_id, true));
+	ub_set_blkio_css(&ub0, task_subsys_state_check(&init_task, blkio_subsys_id, true));
+
 	register_sysctl_table(ub_sysctl_root);
 }
 
@@ -1202,11 +1205,6 @@ int __init ub_init_cgroup(void)
 	if (IS_ERR(ub_cgroup_mnt))
 		panic("Failed to mount beancounter cgroup: %ld\n",
 		      PTR_ERR(ub_cgroup_mnt));
-
-	ub_set_mem_css(&ub0, cgroup_subsys_state(
-		cgroup_get_root(mem_cgroup_mnt), mem_cgroup_subsys_id));
-	ub_set_blkio_css(&ub0, cgroup_subsys_state(
-		cgroup_get_root(blkio_cgroup_mnt), blkio_subsys_id));
 
 	return 0;
 }
