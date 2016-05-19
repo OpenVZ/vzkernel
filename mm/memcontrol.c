@@ -99,6 +99,8 @@ enum mem_cgroup_stat_index {
 	MEM_CGROUP_STAT_RSS_HUGE,	/* # of pages charged as anon huge */
 	MEM_CGROUP_STAT_FILE_MAPPED,	/* # of pages charged as file rss */
 	MEM_CGROUP_STAT_SHMEM,		/* # of charged shmem pages */
+	MEM_CGROUP_STAT_SLAB_RECLAIMABLE, /* # of reclaimable slab pages */
+	MEM_CGROUP_STAT_SLAB_UNRECLAIMABLE, /* # of unreclaimable slab pages */
 	MEM_CGROUP_STAT_SWAP,		/* # of pages, swapped out */
 	MEM_CGROUP_STAT_NSTATS,
 };
@@ -109,6 +111,8 @@ static const char * const mem_cgroup_stat_names[] = {
 	"rss_huge",
 	"mapped_file",
 	"shmem",
+	"slab_reclaimable",
+	"slab_unreclaimable",
 	"swap",
 };
 
@@ -3201,7 +3205,9 @@ void memcg_uncharge_kmem(struct mem_cgroup *memcg,
 
 int __memcg_charge_slab(struct kmem_cache *s, gfp_t gfp, unsigned int nr_pages)
 {
+	int nr_pages = size >> PAGE_SHIFT;
 	struct mem_cgroup *memcg;
+	int idx;
 	int ret;
 
 	VM_BUG_ON(is_root_cache(s));
@@ -3210,21 +3216,33 @@ int __memcg_charge_slab(struct kmem_cache *s, gfp_t gfp, unsigned int nr_pages)
 	ret = memcg_charge_kmem(memcg, gfp, nr_pages);
 	if (ret)
 		return ret;
-	if (s->flags & SLAB_RECLAIM_ACCOUNT)
+	if (s->flags & SLAB_RECLAIM_ACCOUNT) {
 		page_counter_charge(&memcg->dcache, nr_pages);
+		idx = MEM_CGROUP_STAT_SLAB_RECLAIMABLE;
+	} else
+		idx = MEM_CGROUP_STAT_SLAB_UNRECLAIMABLE;
+
+	this_cpu_add(memcg->stat->count[idx], nr_pages);
 	return 0;
 }
 
 void __memcg_uncharge_slab(struct kmem_cache *s, unsigned int nr_pages)
 {
+	int nr_pages = size >> PAGE_SHIFT;
 	struct mem_cgroup *memcg;
+	int idx;
 
 	VM_BUG_ON(is_root_cache(s));
 	memcg = s->memcg_params.memcg;
 
 	memcg_uncharge_kmem(memcg, nr_pages);
-	if (s->flags & SLAB_RECLAIM_ACCOUNT)
+	if (s->flags & SLAB_RECLAIM_ACCOUNT) {
 		page_counter_uncharge(&memcg->dcache, nr_pages);
+		idx = MEM_CGROUP_STAT_SLAB_RECLAIMABLE;
+	} else
+		idx = MEM_CGROUP_STAT_SLAB_UNRECLAIMABLE;
+
+	this_cpu_sub(memcg->stat->count[idx], nr_pages);
 }
 
 /*
