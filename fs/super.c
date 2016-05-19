@@ -34,6 +34,7 @@
 #include <linux/cleancache.h>
 #include <linux/fsnotify.h>
 #include <linux/lockdep.h>
+#include <linux/memcontrol.h>
 #include "internal.h"
 
 const unsigned super_block_wrapper_version = 0;
@@ -46,6 +47,24 @@ static char *sb_writers_name[SB_FREEZE_LEVELS] = {
 	"sb_pagefaults",
 	"sb_internal",
 };
+
+static bool dcache_is_low(struct mem_cgroup *memcg)
+{
+	unsigned long anon, file, dcache;
+
+	if (sysctl_vfs_cache_min_ratio <= 0)
+		return false;
+
+	if (memcg)
+		return mem_cgroup_dcache_is_low(memcg);
+
+	anon = global_page_state(NR_ANON_PAGES);
+	file = global_page_state(NR_FILE_PAGES);
+	dcache = global_page_state(NR_SLAB_RECLAIMABLE);
+
+	return dcache / sysctl_vfs_cache_min_ratio <
+			(anon + file + dcache) / 100;
+}
 
 /*
  * One thing we have to be careful of with a per-sb shrinker is that we don't
@@ -111,6 +130,9 @@ static unsigned long super_cache_count(struct shrinker *shrink,
 {
 	struct super_block *sb;
 	long	total_objects = 0;
+
+	if (!sc->for_drop_caches && dcache_is_low(sc->memcg))
+		return 0;
 
 	sb = container_of(shrink, struct super_block, s_shrink);
 
