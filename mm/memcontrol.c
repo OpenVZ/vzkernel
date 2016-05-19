@@ -1640,6 +1640,18 @@ int mem_cgroup_inactive_anon_is_low(struct lruvec *lruvec)
 	return inactive * inactive_ratio < active;
 }
 
+bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg, int vfs_cache_min_ratio)
+{
+	unsigned long anon, file, dcache;
+
+	anon = mem_cgroup_read_stat(memcg, MEM_CGROUP_STAT_RSS);
+	file = mem_cgroup_read_stat(memcg, MEM_CGROUP_STAT_CACHE);
+	dcache = mem_cgroup_read_stat(memcg, MEM_CGROUP_STAT_SLAB_RECLAIMABLE);
+
+	return dcache / vfs_cache_min_ratio <
+			(anon + file + dcache) / 100;
+}
+
 /**
  * mem_cgroup_low - check if memory consumption is below the normal range
  * @root: the highest ancestor to consider
