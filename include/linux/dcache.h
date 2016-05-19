@@ -522,6 +522,7 @@ static inline bool d_really_is_positive(const struct dentry *dentry)
 }
 
 extern int sysctl_vfs_cache_pressure;
+extern int sysctl_vfs_cache_min_ratio;
 
 /**
  * d_inode - Get the actual inode of this dentry
