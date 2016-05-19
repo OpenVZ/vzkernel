@@ -1559,6 +1559,15 @@ static struct ctl_table vm_table[] = {
 		.proc_handler	= proc_dointvec,
 		.extra1		= SYSCTL_ZERO,
 	},
+	{
+		.procname	= "vfs_cache_min_ratio",
+		.data		= &sysctl_vfs_cache_min_ratio,
+		.maxlen		= sizeof(sysctl_vfs_cache_min_ratio),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &one_hundred,
+	},
 #ifdef HAVE_ARCH_PICK_MMAP_LAYOUT
 	{
 		.procname	= "legacy_va_layout",

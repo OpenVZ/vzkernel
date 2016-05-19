@@ -1364,6 +1364,18 @@ unsigned long mem_cgroup_overdraft(struct mem_cgroup *memcg)
 	return usage > guarantee ? (usage - guarantee) : 0;
 }
 
+bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg, int vfs_cache_min_ratio)
+{
+	unsigned long anon, file, dcache;
+
+	anon = memcg_page_state(memcg, MEMCG_RSS);
+	file = memcg_page_state(memcg, MEMCG_CACHE);
+	dcache = memcg_page_state(memcg, NR_SLAB_RECLAIMABLE);
+
+	return dcache / vfs_cache_min_ratio <
+			(anon + file + dcache) / 100;
+}
+
 /**
  * mem_cgroup_margin - calculate chargeable space of a memory cgroup
  * @memcg: the memory cgroup
