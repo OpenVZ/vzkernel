@@ -39,6 +39,7 @@
 #include <linux/prefetch.h>
 #include <linux/ratelimit.h>
 #include <linux/list_lru.h>
+#include <linux/ve.h>
 #include "internal.h"
 #include "mount.h"
 
@@ -83,6 +84,8 @@
  */
 int sysctl_vfs_cache_pressure __read_mostly = 100;
 EXPORT_SYMBOL_GPL(sysctl_vfs_cache_pressure);
+
+int sysctl_vfs_cache_min_ratio __read_mostly = 2;
 
 __cacheline_aligned_in_smp DEFINE_SEQLOCK(rename_lock);
 
