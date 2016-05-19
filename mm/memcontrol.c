@@ -103,6 +103,8 @@ enum mem_cgroup_stat_index {
 	MEM_CGROUP_STAT_RSS_HUGE,	/* # of pages charged as anon huge */
 	MEM_CGROUP_STAT_FILE_MAPPED,	/* # of pages charged as file rss */
 	MEM_CGROUP_STAT_SHMEM,		/* # of charged shmem pages */
+	MEM_CGROUP_STAT_SLAB_RECLAIMABLE, /* # of reclaimable slab pages */
+	MEM_CGROUP_STAT_SLAB_UNRECLAIMABLE, /* # of unreclaimable slab pages */
 	MEM_CGROUP_STAT_SWAP,		/* # of pages, swapped out */
 	MEM_CGROUP_STAT_NSTATS,
 };
@@ -113,6 +115,8 @@ static const char * const mem_cgroup_stat_names[] = {
 	"rss_huge",
 	"mapped_file",
 	"shmem",
+	"slab_reclaimable",
+	"slab_unreclaimable",
 	"swap",
 };
 
@@ -299,7 +303,6 @@ struct mem_cgroup {
 	 */
 	struct page_counter kmem;
 	struct page_counter memsw;
-
 	/*
 	 * the counter to account for dcache usage.
 	 *
@@ -3175,6 +3178,7 @@ void memcg_uncharge_kmem(struct mem_cgroup *memcg,
 int __memcg_charge_slab(struct kmem_cache *s, gfp_t gfp, unsigned int nr_pages)
 {
 	struct mem_cgroup *memcg;
+	int idx;
 	int ret;
 
 	VM_BUG_ON(is_root_cache(s));
@@ -3183,21 +3187,32 @@ int __memcg_charge_slab(struct kmem_cache *s, gfp_t gfp, unsigned int nr_pages)
 	ret = memcg_charge_kmem(memcg, gfp, nr_pages);
 	if (ret)
 		return ret;
-	if (s->flags & SLAB_RECLAIM_ACCOUNT)
+	if (s->flags & SLAB_RECLAIM_ACCOUNT) {
 		page_counter_charge(&memcg->dcache, nr_pages);
+		idx = MEM_CGROUP_STAT_SLAB_RECLAIMABLE;
+	} else
+		idx = MEM_CGROUP_STAT_SLAB_UNRECLAIMABLE;
+
+	this_cpu_add(memcg->stat->count[idx], nr_pages);
 	return 0;
 }
 
 void __memcg_uncharge_slab(struct kmem_cache *s, unsigned int nr_pages)
 {
 	struct mem_cgroup *memcg;
+	int idx;
 
 	VM_BUG_ON(is_root_cache(s));
 	memcg = s->memcg_params.memcg;
 
 	memcg_uncharge_kmem(memcg, nr_pages);
-	if (s->flags & SLAB_RECLAIM_ACCOUNT)
+	if (s->flags & SLAB_RECLAIM_ACCOUNT) {
 		page_counter_uncharge(&memcg->dcache, nr_pages);
+		idx = MEM_CGROUP_STAT_SLAB_RECLAIMABLE;
+	} else
+		idx = MEM_CGROUP_STAT_SLAB_UNRECLAIMABLE;
+
+	this_cpu_sub(memcg->stat->count[idx], nr_pages);
 }
 
 /*
@@ -4283,12 +4298,12 @@ void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
 	for_each_online_node(nid)
 		mem_cgroup_get_nr_pages(memcg, nid, mi->pages);
 
-	mi->slab_reclaimable = mem_cgroup_recursive_stat(memcg,
+	mi->slab_reclaimable = tree_stat(memcg,
 					MEM_CGROUP_STAT_SLAB_RECLAIMABLE);
 	mi->slab_unreclaimable = mem_cgroup_recursive_stat(memcg,
 					MEM_CGROUP_STAT_SLAB_UNRECLAIMABLE);
-	mi->cached = mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_CACHE);
-	mi->shmem = mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_SHMEM);
+	mi->cached = tree_stat(memcg, MEM_CGROUP_STAT_CACHE);
+	mi->shmem = tree_stat(memcg, MEM_CGROUP_STAT_SHMEM);
 }
 
 int mem_cgroup_enough_memory(struct mem_cgroup *memcg, long pages)
@@ -4302,7 +4317,7 @@ int mem_cgroup_enough_memory(struct mem_cgroup *memcg, long pages)
 	free += page_counter_read(&memcg->dcache);
 
 	/* assume file cache is reclaimable */
-	free += mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_CACHE);
+	free += tree_stat(memcg, MEM_CGROUP_STAT_CACHE);
 
 	/* but do not count shmem pages as they can't be purged,
 	 * only swapped out */
