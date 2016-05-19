@@ -121,6 +121,7 @@ void mem_cgroup_iter_break(struct mem_cgroup *, struct mem_cgroup *);
  * For memory reclaim.
  */
 int mem_cgroup_inactive_anon_is_low(struct lruvec *lruvec);
+bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg);
 bool mem_cgroup_low(struct mem_cgroup *root, struct mem_cgroup *memcg);
 bool mem_cgroup_cleancache_disabled(struct page *page);
 int mem_cgroup_select_victim_node(struct mem_cgroup *memcg);
@@ -366,6 +367,11 @@ static inline int
 mem_cgroup_inactive_anon_is_low(struct lruvec *lruvec)
 {
 	return 1;
+}
+
+static inline bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg)
+{
+	return false;
 }
 
 static inline bool mem_cgroup_low(struct mem_cgroup *root,
