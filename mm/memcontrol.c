@@ -4946,17 +4946,15 @@ static unsigned long tree_stat(struct mem_cgroup *memcg,
 void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
 {
 	int nid;
-	unsigned long slab;
 
 	memset(&mi->pages, 0, sizeof(mi->pages));
 	for_each_online_node(nid)
 		mem_cgroup_get_nr_pages(memcg, nid, mi->pages);
 
-	slab = res_counter_read_u64(&memcg->kmem, RES_USAGE) >> PAGE_SHIFT;
-	mi->slab_reclaimable = res_counter_read_u64(&memcg->dcache, RES_USAGE)
-								>> PAGE_SHIFT;
-	mi->slab_unreclaimable = max_t(long, slab - mi->slab_reclaimable, 0);
-
+	mi->slab_reclaimable = mem_cgroup_recursive_stat(memcg,
+					MEM_CGROUP_STAT_SLAB_RECLAIMABLE);
+	mi->slab_unreclaimable = mem_cgroup_recursive_stat(memcg,
+					MEM_CGROUP_STAT_SLAB_UNRECLAIMABLE);
 	mi->cached = mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_CACHE);
 	mi->shmem = mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_SHMEM);
 }
