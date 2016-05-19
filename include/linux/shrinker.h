@@ -23,6 +23,8 @@ struct shrink_control {
 
 	/* current memcg being shrunk (for memcg aware shrinkers) */
 	struct mem_cgroup *memcg;
+
+	bool for_drop_caches;
 };
 
 #define SHRINK_STOP (~0UL)
