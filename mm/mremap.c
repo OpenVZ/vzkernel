@@ -74,6 +74,22 @@ static pmd_t *alloc_new_pmd(struct mm_struct *mm, struct vm_area_struct *vma,
 	return pmd;
 }
 
+static void take_rmap_locks(struct vm_area_struct *vma)
+{
+	if (vma->vm_file)
+		mutex_lock(&vma->vm_file->f_mapping->i_mmap_mutex);
+	if (vma->anon_vma)
+		anon_vma_lock_write(vma->anon_vma);
+}
+
+static void drop_rmap_locks(struct vm_area_struct *vma)
+{
+	if (vma->anon_vma)
+		anon_vma_unlock_write(vma->anon_vma);
+	if (vma->vm_file)
+		mutex_unlock(&vma->vm_file->f_mapping->i_mmap_mutex);
+}
+
 static pte_t move_soft_dirty_pte(pte_t pte)
 {
 	/*
@@ -94,8 +110,6 @@ static void move_ptes(struct vm_area_struct *vma, pmd_t *old_pmd,
 		struct vm_area_struct *new_vma, pmd_t *new_pmd,
 		unsigned long new_addr, bool need_rmap_locks)
 {
-	struct address_space *mapping = NULL;
-	struct anon_vma *anon_vma = NULL;
 	struct mm_struct *mm = vma->vm_mm;
 	pte_t *old_pte, *new_pte, pte;
 	spinlock_t *old_ptl, *new_ptl;
@@ -120,16 +134,8 @@ static void move_ptes(struct vm_area_struct *vma, pmd_t *old_pmd,
 	 *   serialize access to individual ptes, but only rmap traversal
 	 *   order guarantees that we won't miss both the old and new ptes).
 	 */
-	if (need_rmap_locks) {
-		if (vma->vm_file) {
-			mapping = vma->vm_file->f_mapping;
-			mutex_lock(&mapping->i_mmap_mutex);
-		}
-		if (vma->anon_vma) {
-			anon_vma = vma->anon_vma;
-			anon_vma_lock_write(anon_vma);
-		}
-	}
+	if (need_rmap_locks)
+		take_rmap_locks(vma);
 
 	/*
 	 * We don't have to worry about the ordering of src and dst
@@ -173,10 +179,8 @@ static void move_ptes(struct vm_area_struct *vma, pmd_t *old_pmd,
 		spin_unlock(new_ptl);
 	pte_unmap(new_pte - 1);
 	pte_unmap_unlock(old_pte - 1, old_ptl);
-	if (anon_vma)
-		anon_vma_unlock_write(anon_vma);
-	if (mapping)
-		mutex_unlock(&mapping->i_mmap_mutex);
+	if (need_rmap_locks)
+		drop_rmap_locks(vma);
 }
 
 unsigned long move_page_tables(struct vm_area_struct *vma,
@@ -215,12 +219,12 @@ unsigned long move_page_tables(struct vm_area_struct *vma,
 				VM_BUG_ON(vma->vm_file || !vma->anon_vma);
 				/* See comment in move_ptes() */
 				if (need_rmap_locks)
-					anon_vma_lock_write(vma->anon_vma);
+					take_rmap_locks(vma);
 				moved = move_huge_pmd(vma, new_vma, old_addr,
 						    new_addr, old_end,
 						    old_pmd, new_pmd);
 				if (need_rmap_locks)
-					anon_vma_unlock_write(vma->anon_vma);
+					drop_rmap_locks(vma);
 
 				if (moved)
 					continue;
