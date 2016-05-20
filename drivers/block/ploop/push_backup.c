@@ -351,13 +351,23 @@ static struct ploop_request *ploop_pb_get_req_from_tree(struct rb_root *tree,
 }
 
 static struct ploop_request *
-ploop_pb_get_first_req_from_tree(struct rb_root *tree)
+ploop_pb_get_first_req_from_tree(struct rb_root *tree,
+				 struct ploop_request **npreq)
 {
 	static struct ploop_request *p;
 	struct rb_node *n = rb_first(tree);
 
 	if (!n)
 		return NULL;
+
+	if (npreq) {
+		struct rb_node *next = rb_next(n);
+		if (next)
+			*npreq = rb_entry(next, struct ploop_request,
+					  reloc_link);
+		else
+			*npreq = NULL;
+	}
 
 	p = rb_entry(n, struct ploop_request, reloc_link);
 	rb_erase(&p->reloc_link, tree);
@@ -367,13 +377,20 @@ ploop_pb_get_first_req_from_tree(struct rb_root *tree)
 static struct ploop_request *
 ploop_pb_get_first_req_from_pending(struct ploop_pushbackup_desc *pbd)
 {
-	return ploop_pb_get_first_req_from_tree(&pbd->pending_tree);
+	return ploop_pb_get_first_req_from_tree(&pbd->pending_tree, NULL);
+}
+
+static struct ploop_request *
+ploop_pb_get_first_reqs_from_pending(struct ploop_pushbackup_desc *pbd,
+				     struct ploop_request **npreq)
+{
+	return ploop_pb_get_first_req_from_tree(&pbd->pending_tree, npreq);
 }
 
 static struct ploop_request *
 ploop_pb_get_first_req_from_reported(struct ploop_pushbackup_desc *pbd)
 {
-	return ploop_pb_get_first_req_from_tree(&pbd->reported_tree);
+	return ploop_pb_get_first_req_from_tree(&pbd->reported_tree, NULL);
 }
 
 static struct ploop_request *
@@ -463,13 +480,12 @@ int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
 			 cluster_t *clu_p, cluster_t *len_p, unsigned n_done)
 {
 	bool blocking  = !n_done;
-	struct ploop_request *preq;
+	struct ploop_request *preq, *npreq;
 	int err = 0;
 
 	spin_lock(&pbd->ppb_lock);
 
-	/* OPTIMIZE ME LATER: rb_first() once, then rb_next() */
-	preq = ploop_pb_get_first_req_from_pending(pbd);
+	preq = ploop_pb_get_first_reqs_from_pending(pbd, &npreq);
 	if (!preq) {
 		struct ploop_device *plo = pbd->plo;
 
@@ -498,7 +514,7 @@ int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
 		pbd->ppb_waiting = false;
 		init_completion(&pbd->ppb_comp);
 
-		preq = ploop_pb_get_first_req_from_pending(pbd);
+		preq = ploop_pb_get_first_reqs_from_pending(pbd, &npreq);
 		if (!preq) {
 			if (!test_bit(PLOOP_S_PUSH_BACKUP, &plo->state))
 				err = -EINTR;
@@ -514,6 +530,22 @@ int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
 
 	*clu_p = preq->req_cluster;
 	*len_p = 1;
+
+	while (npreq && npreq->req_cluster == *clu_p + *len_p) {
+		struct rb_node *next = rb_next(&npreq->reloc_link);
+
+		preq = npreq;
+		if (next)
+			npreq = rb_entry(next, struct ploop_request,
+					 reloc_link);
+		else
+			npreq = NULL;
+
+		rb_erase(&preq->reloc_link, &pbd->pending_tree);
+		ploop_pb_add_req_to_reported(pbd, preq);
+
+		(*len_p)++;
+	}
 
 get_pending_unlock:
 	spin_unlock(&pbd->ppb_lock);
