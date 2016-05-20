@@ -373,8 +373,13 @@ struct sock {
 	atomic_t		sk_omem_alloc;
 	int			sk_sndbuf;
 	struct sk_buff_head	sk_write_queue;
+
+	/*
+	 * Because of non atomicity rules, all
+	 * changes are protected by socket lock.
+	 */
 	kmemcheck_bitfield_begin(flags);
-	unsigned int		sk_shutdown  : 2,
+	unsigned int		sk_padding  : 2,
 #ifdef __GENKSYMS__
 				sk_no_check : 2,
 #else
@@ -386,6 +391,7 @@ struct sock {
 #define SK_PROTOCOL_MAX U8_MAX
 				sk_type      : 16;
 	kmemcheck_bitfield_end(flags);
+
 	int			sk_wmem_queued;
 	gfp_t			sk_allocation;
 	u32			sk_pacing_rate; /* bytes per second */
@@ -394,6 +400,7 @@ struct sock {
 	int			sk_gso_type;
 	unsigned int		sk_gso_max_size;
 	u16			sk_gso_max_segs;
+	u8			sk_shutdown;
 	int			sk_rcvlowat;
 	unsigned long	        sk_lingertime;
 	struct sk_buff_head	sk_error_queue;
