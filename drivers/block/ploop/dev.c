@@ -4117,7 +4117,7 @@ static int ploop_freeblks_ioc(struct ploop_device *plo, unsigned long arg)
 {
 	struct ploop_delta *delta;
 	struct ploop_freeblks_ctl ctl;
-	struct ploop_freeblks_ctl_extent *extents;
+	struct ploop_freeblks_ctl_extent __user *extents;
 	struct ploop_freeblks_desc *fbd;
 	int i;
 	int rc = 0;
@@ -4134,34 +4134,35 @@ static int ploop_freeblks_ioc(struct ploop_device *plo, unsigned long arg)
 	if (copy_from_user(&ctl, (void*)arg, sizeof(ctl)))
 		return -EFAULT;
 
-	extents = kzalloc(sizeof(*extents) * ctl.n_extents, GFP_KERNEL);
-	if (!extents)
-		return -ENOMEM;
-
 	delta = ploop_top_delta(plo);
 	if (delta->level != ctl.level) {
 		rc = -EINVAL;
-		goto free_extents;
-	}
-
-	if (copy_from_user(extents, (u8*)arg + sizeof(ctl),
-			   sizeof(*extents) * ctl.n_extents)) {
-		rc = -EINVAL;
-		goto free_extents;
+		goto exit;
 	}
 
 	fbd = ploop_fb_init(plo);
 	if (!fbd) {
 		rc = -ENOMEM;
-		goto free_extents;
+		goto exit;
 	}
 
+	extents = (void __user *)(arg + sizeof(ctl));
+
 	for (i = 0; i < ctl.n_extents; i++) {
-		rc = ploop_fb_add_free_extent(fbd, extents[i].clu,
-					      extents[i].iblk, extents[i].len);
+		struct ploop_freeblks_ctl_extent extent;
+
+		if (copy_from_user(&extent, &extents[i],
+					sizeof(extent))) {
+			rc = -EFAULT;
+			ploop_fb_fini(fbd, rc);
+			goto exit;
+		}
+
+		rc = ploop_fb_add_free_extent(fbd, extent.clu,
+					extent.iblk, extent.len);
 		if (rc) {
 			ploop_fb_fini(fbd, rc);
-			goto free_extents;
+			goto exit;
 		}
 	}
 
@@ -4182,8 +4183,7 @@ static int ploop_freeblks_ioc(struct ploop_device *plo, unsigned long arg)
 	}
 
 	ploop_relax(plo);
-free_extents:
-	kfree(extents);
+exit:
 	return rc;
 }
 
@@ -4274,13 +4274,8 @@ static void ploop_relocblks_process(struct ploop_device *plo)
 	spin_unlock_irq(&plo->lock);
 }
 
-static int release_fbd(struct ploop_device *plo,
-		       struct ploop_relocblks_ctl_extent *e,
-		       int err)
+static int release_fbd(struct ploop_device *plo, int err)
 {
-	if (e)
-		kfree(e);
-
 	clear_bit(PLOOP_S_DISCARD, &plo->state);
 
 	ploop_quiesce(plo);
@@ -4328,7 +4323,6 @@ static int ploop_relocblks_ioc(struct ploop_device *plo, unsigned long arg)
 {
 	struct ploop_delta *delta = ploop_top_delta(plo);
 	struct ploop_relocblks_ctl ctl;
-	struct ploop_relocblks_ctl_extent *extents = NULL;
 	struct ploop_freeblks_desc *fbd = plo->fbd;
 	int i;
 	int err = 0;
@@ -4356,26 +4350,23 @@ static int ploop_relocblks_ioc(struct ploop_device *plo, unsigned long arg)
 		goto already;
 
 	if (ctl.n_extents) {
-		extents = kzalloc(sizeof(*extents) * ctl.n_extents,
-				GFP_KERNEL);
-		if (!extents)
-			return release_fbd(plo, extents, -ENOMEM);
+		struct ploop_relocblks_ctl_extent __user *extents;
 
-		if (copy_from_user(extents, (u8*)arg + sizeof(ctl),
-					sizeof(*extents) * ctl.n_extents))
-			return release_fbd(plo, extents, -EINVAL);
+		extents = (void __user *)(arg + sizeof(ctl));
 
 		for (i = 0; i < ctl.n_extents; i++) {
-			err = ploop_fb_add_reloc_extent(fbd, extents[i].clu,
-					extents[i].iblk,
-					extents[i].len,
-					extents[i].free);
-			if (err)
-				return release_fbd(plo, extents, err);
-		}
+			struct ploop_relocblks_ctl_extent extent;
 
-		kfree(extents);
-		extents = NULL;
+			if (copy_from_user(&extent, &extents[i],
+						sizeof(extent)))
+				return release_fbd(plo, -EFAULT);
+
+			/* this extent is also present in freemap */
+			err = ploop_fb_add_reloc_extent(fbd, extent.clu,
+					extent.iblk, extent.len, extent.free);
+			if (err)
+				return release_fbd(plo, err);
+		}
 	}
 
 	ploop_quiesce(plo);
@@ -4422,7 +4413,7 @@ already:
 	}
 
 	if (ploop_fb_get_n_relocated(fbd) != ploop_fb_get_n_relocating(fbd))
-		return release_fbd(plo, extents, -EIO);
+		return release_fbd(plo, -EIO);
 
 	/* time to truncate */
 	ploop_quiesce(plo);
