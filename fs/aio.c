@@ -608,6 +608,9 @@ static struct kioctx *ioctx_alloc(unsigned nr_events)
 	struct ve_struct *ve = get_exec_env();
 	int err = -ENOMEM;
 
+	/* Kernel since e1bdd5f27a5b do this, and criu is tuned on that */
+	nr_events *= 2;
+
 	/* Prevent overflows */
 	if ((nr_events > (0x10000000U / sizeof(struct io_event))) ||
 	    (nr_events > (0x10000000U / sizeof(struct kiocb)))) {
