@@ -4576,13 +4576,8 @@ static int ploop_push_backup_io_write(struct ploop_device *plo, unsigned long ar
 		goto io_write_done;
 
 	rc = 0;
-	for (i = 0; i < ctl->n_extents; i++) {
-		cluster_t j;
-		for (j = e[i].clu; j < e[i].clu + e[i].len; j++)
-			ploop_pb_put_reported(plo->pbd, j, 1);
-                /* OPTIMIZE ME LATER: like this:
-		 * ploop_pb_put_reported(plo->pbd, e[i].clu, e[i].len); */
-	}
+	for (i = 0; i < ctl->n_extents; i++)
+		ploop_pb_put_reported(plo->pbd, e[i].clu, e[i].len);
 
 io_write_done:
 	kfree(e);
