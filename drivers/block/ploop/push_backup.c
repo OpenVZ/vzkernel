@@ -329,11 +329,23 @@ static void ploop_pb_add_req_to_reported(struct ploop_pushbackup_desc *pbd,
 	ploop_pb_add_req_to_tree(preq, &pbd->reported_tree);
 }
 
+static inline bool preq_match(struct ploop_request *preq, cluster_t clu,
+			      cluster_t len)
+{
+	return preq &&
+		clu <= preq->req_cluster &&
+		preq->req_cluster < clu + len;
+}
+
+/* returns leftmost preq which req_cluster >= clu */
 static struct ploop_request *ploop_pb_get_req_from_tree(struct rb_root *tree,
-							cluster_t clu)
+						cluster_t clu, cluster_t len,
+						struct ploop_request **npreq)
 {
 	struct rb_node *n = tree->rb_node;
-	struct ploop_request *p;
+	struct ploop_request *p = NULL;
+
+	*npreq = NULL;
 
 	while (n) {
 		p = rb_entry(n, struct ploop_request, reloc_link);
@@ -342,11 +354,31 @@ static struct ploop_request *ploop_pb_get_req_from_tree(struct rb_root *tree,
 			n = n->rb_left;
 		else if (clu > p->req_cluster)
 			n = n->rb_right;
-		else {
+		else { /* perfect match */
+			n = rb_next(n);
+			if (n)
+				*npreq = rb_entry(n, struct ploop_request,
+						  reloc_link);
 			rb_erase(&p->reloc_link, tree);
 			return p;
 		}
 	}
+	/* here p is not perfect, but it's closest */
+
+	if (p && p->req_cluster < clu) {
+		n = rb_next(&p->reloc_link);
+		if (n)
+			p = rb_entry(n, struct ploop_request, reloc_link);
+	}
+
+	if (preq_match(p, clu, len)) {
+		n = rb_next(&p->reloc_link);
+		if (n)
+			*npreq = rb_entry(n, struct ploop_request, reloc_link);
+		rb_erase(&p->reloc_link, tree);
+		return p;
+	}
+
 	return NULL;
 }
 
@@ -391,20 +423,6 @@ static struct ploop_request *
 ploop_pb_get_first_req_from_reported(struct ploop_pushbackup_desc *pbd)
 {
 	return ploop_pb_get_first_req_from_tree(&pbd->reported_tree, NULL);
-}
-
-static struct ploop_request *
-ploop_pb_get_req_from_pending(struct ploop_pushbackup_desc *pbd,
-			      cluster_t clu)
-{
-	return ploop_pb_get_req_from_tree(&pbd->pending_tree, clu);
-}
-
-static struct ploop_request *
-ploop_pb_get_req_from_reported(struct ploop_pushbackup_desc *pbd,
-			       cluster_t clu)
-{
-	return ploop_pb_get_req_from_tree(&pbd->reported_tree, clu);
 }
 
 int ploop_pb_preq_add_pending(struct ploop_pushbackup_desc *pbd,
@@ -552,27 +570,46 @@ get_pending_unlock:
 	return err;
 }
 
+static void ploop_pb_process_extent(struct rb_root *tree, cluster_t clu,
+				    cluster_t len, struct list_head *ready_list,
+				    int *n_found)
+{
+	struct ploop_request *preq, *npreq;
+
+	preq = ploop_pb_get_req_from_tree(tree, clu, len, &npreq);
+
+	while (preq) {
+		struct rb_node *n;
+
+		__set_bit(PLOOP_REQ_PUSH_BACKUP, &preq->state);
+		list_add(&preq->list, ready_list);
+
+		if (n_found)
+			(*n_found)++;
+
+		if (!preq_match(npreq, clu, len))
+			break;
+
+		preq = npreq;
+		n = rb_next(&preq->reloc_link);
+		if (n)
+			npreq = rb_entry(n, struct ploop_request, reloc_link);
+		else
+			npreq = NULL;
+		rb_erase(&preq->reloc_link, tree);
+	}
+}
+
 void ploop_pb_put_reported(struct ploop_pushbackup_desc *pbd,
 			   cluster_t clu, cluster_t len)
 {
-	struct ploop_request *preq;
 	int n_found = 0;
-
-	/* OPTIMIZE ME LATER: find leftmost item for [clu, clu+len),
-	 * then rb_next() while req_cluster < clu+len.
-	 * Do this firstly for reported, then for pending */
-	BUG_ON(len != 1);
+	LIST_HEAD(ready_list);
 
 	spin_lock(&pbd->ppb_lock);
 
-	preq = ploop_pb_get_req_from_reported(pbd, clu);
-	if (!preq)
-		preq = ploop_pb_get_req_from_pending(pbd, clu);
-	else
-		n_found++;
-
-	if (preq)
-		__set_bit(PLOOP_REQ_PUSH_BACKUP, &preq->state);
+	ploop_pb_process_extent(&pbd->reported_tree, clu, len, &ready_list, &n_found);
+	ploop_pb_process_extent(&pbd->pending_tree, clu, len, &ready_list, NULL);
 
 	/*
 	 * If preq not found above, it's unsolicited report. Then it's
@@ -600,13 +637,11 @@ void ploop_pb_put_reported(struct ploop_pushbackup_desc *pbd,
 
 	spin_unlock(&pbd->ppb_lock);
 
-	if (preq) {
-		struct ploop_device *plo = preq->plo;
-		BUG_ON(preq->req_cluster != clu);
-		BUG_ON(plo != pbd->plo);
+	if (!list_empty(&ready_list)) {
+		struct ploop_device *plo = pbd->plo;
 
 		spin_lock_irq(&plo->lock);
-		list_add_tail(&preq->list, &plo->ready_queue);
+		list_splice(&ready_list, plo->ready_queue.prev);
 		if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
 			wake_up_interruptible(&plo->waitq);
 		spin_unlock_irq(&plo->lock);
