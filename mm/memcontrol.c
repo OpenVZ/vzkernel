@@ -3359,19 +3359,6 @@ static void memcg_free_cache_id(int id)
  * memcg_kmem_skip_account. So we enclose anything that might allocate memory
  * inside the following two functions.
  */
-void memcg_stop_kmem_account(void)
-{
-	VM_BUG_ON(!current->mm);
-	current->memcg_kmem_skip_account++;
-}
-EXPORT_SYMBOL(memcg_stop_kmem_account);
-
-void memcg_resume_kmem_account(void)
-{
-	VM_BUG_ON(!current->mm);
-	current->memcg_kmem_skip_account--;
-}
-EXPORT_SYMBOL(memcg_resume_kmem_account);
 
 static DEFINE_MUTEX(memcg_limit_mutex);
 
