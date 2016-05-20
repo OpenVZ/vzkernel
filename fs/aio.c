@@ -636,12 +636,12 @@ static struct kioctx *ioctx_alloc(unsigned nr_events)
 
 	/* limit the number of system wide aios */
 	spin_lock(&ve->aio_nr_lock);
-	if (ve->aio_nr + nr_events > ve->aio_max_nr ||
-	    ve->aio_nr + nr_events < ve->aio_nr) {
+	if (ve->aio_nr + ctx->nr_events > ve->aio_max_nr ||
+	    ve->aio_nr + ctx->nr_events < ve->aio_nr) {
 		spin_unlock(&ve->aio_nr_lock);
 		goto out_cleanup;
 	}
-	ve->aio_nr += ctx->max_reqs;
+	ve->aio_nr += ctx->nr_events;
 	spin_unlock(&ve->aio_nr_lock);
 
 	/* now link into global list. */
