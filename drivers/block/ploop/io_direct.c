@@ -842,21 +842,6 @@ static int dio_fsync_thread(void * data)
 	return 0;
 }
 
-static int dio_fsync(struct file * file)
-{
-	int err, ret;
-	struct address_space *mapping = file->f_mapping;
-
-	ret = filemap_write_and_wait(mapping);
-	err = 0;
-	if (file->f_op && file->f_op->fsync) {
-		err = file->f_op->fsync(file, 0, LLONG_MAX, 0);
-		if (!ret)
-			ret = err;
-	}
-	return ret;
-}
-
 /* Invalidate page cache. It is called with inode mutex taken
  * and mapping mapping must be synced. If some dirty pages remained,
  * it will fail.
@@ -947,20 +932,17 @@ static void dio_destroy(struct ploop_io * io)
 static int dio_sync(struct ploop_io * io)
 {
 	struct file * file = io->files.file;
+	int err = 0;
 
 	if (file)
-		dio_fsync(file);
-	return 0;
+		err = file->f_op->fsync(file, 0, LLONG_MAX, 0);
+
+	return err;
 }
 
 static int dio_stop(struct ploop_io * io)
 {
-	struct file * file = io->files.file;
-
-	if (file) {
-		dio_fsync(file);
-	}
-	return 0;
+	return io->ops->sync(io);
 }
 
 static int dio_open(struct ploop_io * io)
@@ -977,7 +959,9 @@ static int dio_open(struct ploop_io * io)
 	io->files.inode = io->files.mapping->host;
 	io->files.bdev = io->files.inode->i_sb->s_bdev;
 
-	dio_fsync(file);
+	err = io->ops->sync(io);
+	if (err)
+		return err;
 
 	mutex_lock(&io->files.inode->i_mutex);
 	em_tree = ploop_dio_open(io, (delta->flags & PLOOP_FMT_RDONLY));
@@ -1642,7 +1626,11 @@ static int dio_prepare_snapshot(struct ploop_io * io, struct ploop_snapdata *sd)
 		return -EINVAL;
 	}
 
-	dio_fsync(file);
+	err = io->ops->sync(io);
+	if (err) {
+		fput(file);
+		return err;
+	}
 
 	mutex_lock(&io->files.inode->i_mutex);
 	err = dio_invalidate_cache(io->files.mapping, io->files.bdev);
@@ -1709,7 +1697,11 @@ static int dio_prepare_merge(struct ploop_io * io, struct ploop_snapdata *sd)
 		return -EINVAL;
 	}
 
-	dio_fsync(file);
+	err = io->ops->sync(io);
+	if (err) {
+		fput(file);
+		return err;
+	}
 
 	mutex_lock(&io->files.inode->i_mutex);
 
@@ -1768,8 +1760,12 @@ static int dio_truncate(struct ploop_io * io, struct file * file,
 	atomic_long_sub(*io->size_ptr - new_size, &ploop_io_images_size);
 	*io->size_ptr = new_size;
 
-	if (!err)
-		err = dio_fsync(file);
+	if (!err) {
+		if (io->files.file == file)
+			err = io->ops->sync(io);
+		else
+			err = file->f_op->fsync(file, 0, LLONG_MAX, 0);
+	}
 
 	return err;
 }
