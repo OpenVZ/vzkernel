@@ -1339,7 +1339,9 @@ static struct dentry *fuse_mount(struct file_system_type *fs_type,
 	 * Seems, this is the only place where we have some variable (dev_name), which
 	 * is not confined by fuse API and already defined.
 	 */
-	if (!IS_ERR(dentry) && dev_name && strncmp(dev_name, "pstorage://", 11) == 0) {
+	if (!IS_ERR(dentry) && dev_name &&
+			(strncmp(dev_name, "pstorage://", 11) == 0 ||
+				strncmp(dev_name, "vstorage://", 11) == 0) ) {
 		struct fuse_conn *fc = dentry->d_sb->s_fs_info;
 
 		if (!(fc->flags & FUSE_DISABLE_CLOSE_WAIT))
