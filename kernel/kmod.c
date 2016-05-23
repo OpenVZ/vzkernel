@@ -392,6 +392,8 @@ static const char * const ve0_allowed_mod[] = {
 
 	/* nfnetlink  */
 	"net-pf-16-proto-12",		/* PF_NETLINK, NETLINK_NETFILTER */
+	"nfnetlink-subsys-1",		/* NFNL_SUBSYS_CTNETLINK */
+	"nfnetlink-subsys-2",		/* NFNL_SUBSYS_CTNETLINK_EXP */
 
 	/* unix_diag */
 	"net-pf-16-proto-4-type-1",	/* PF_NETLINK, NETLINK_SOCK_DIAG, AF_LOCAL */
