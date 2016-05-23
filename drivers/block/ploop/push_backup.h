@@ -18,3 +18,5 @@ bool ploop_pb_check_bit(struct ploop_pushbackup_desc *pbd, cluster_t clu);
 
 int ploop_pb_preq_add_pending(struct ploop_pushbackup_desc *pbd,
 			       struct ploop_request *preq);
+
+int ploop_pb_destroy(struct ploop_device *plo, __u32 *status);
