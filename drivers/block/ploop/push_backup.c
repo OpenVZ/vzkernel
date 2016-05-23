@@ -26,7 +26,6 @@ struct ploop_pushbackup_desc {
 	struct page **ppb_map; /* Ploop Push Backup mask */
 	struct page **reported_map; /* what userspace reported as backed up */
 	cluster_t ppb_block_max; /* first invalid index in ppb_map */
-	cluster_t ppb_offset; /* [0, ppb_offset) is ACKed by userspace */
 
 	spinlock_t	      ppb_lock;
 	struct completion     ppb_comp;
@@ -192,6 +191,38 @@ static void clear_bit_in_map(struct page **map, u64 map_max, u64 blk)
 static bool check_bit_in_map(struct page **map, u64 map_max, u64 blk)
 {
 	return do_bit_in_map(map, map_max, blk, CHECK_BIT);
+}
+
+static void set_bits_in_map(struct page **map, u64 map_max, u64 blk, u64 cnt)
+{
+	if (blk + cnt > map_max) {
+		printk("set_bits_in_map: extent [%llu, %llu) is out of range"
+		       " [0, %llu)\n", blk, blk + cnt, map_max);
+		return;
+	}
+
+	while (cnt) {
+		unsigned long idx = blk >> (PAGE_SHIFT + 3);
+		unsigned long off = blk & (BITS_PER_PAGE -1);
+		unsigned long len;
+		void *addr = page_address(map[idx]);
+
+		len = min_t(unsigned long, BITS_PER_PAGE - off, cnt);
+		cnt -= len;
+		blk += len;
+
+		while (len) {
+			if ((off & 31) == 0 && len >= 32) {
+				*(u32 *)(addr + (off >> 3)) = -1;
+				off += 32;
+				len -= 32;
+			} else {
+				__set_bit(off, addr);
+				off += 1;
+				len -= 1;
+			}
+		}
+	}
 }
 
 /* intentionally lockless */
@@ -450,8 +481,8 @@ int ploop_pb_preq_add_pending(struct ploop_pushbackup_desc *pbd,
 		return -EINTR;
 	}
 
-	/* if (preq matches pbd->reported_map) return -EALREADY; */
-	if (preq->req_cluster < pbd->ppb_offset) {
+	if (check_bit_in_map(pbd->reported_map, pbd->ppb_block_max,
+			     preq->req_cluster)) {
 		spin_unlock(&pbd->ppb_lock);
 		return -EALREADY;
 	}
@@ -632,21 +663,7 @@ void ploop_pb_put_reported(struct ploop_pushbackup_desc *pbd,
 	 * -- see "push_backup special processing" in ploop_entry_request()
 	 * for details.
 	 */
-
-	/*
-	 * "If .. else if .." below will be fully reworked when switching
-	 * from pbd->ppb_offset to pbd->reported_map. All we need here is
-	 * actaully simply to set bits corresponding to [clu, clu+len) in
-	 * pbd->reported_map.
-	 */
-	if (pbd->ppb_offset >= clu) { /* lucky strike */
-		if (clu + len > pbd->ppb_offset) {
-			pbd->ppb_offset = clu + len;
-		}
-	} else if (n_found != len) { /* a hole, bad luck */
-		printk("ploop: push_backup ERR: off=%u ext=[%u, %u) found %d\n",
-		       pbd->ppb_offset, clu, clu + len, n_found);
-	}
+	set_bits_in_map(pbd->reported_map, pbd->ppb_block_max, clu, len);
 
 	spin_unlock(&pbd->ppb_lock);
 
