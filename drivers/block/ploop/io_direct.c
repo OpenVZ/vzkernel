@@ -376,7 +376,6 @@ cached_submit(struct ploop_io *io, iblock_t iblk, struct ploop_request * preq,
 	loff_t new_size;
 	loff_t used_pos;
 	bool may_fallocate = io->files.file->f_op->fallocate &&
-		io->files.file->f_op->fsync &&
 		io->files.flags & EXT4_EXTENTS_FL;
 
 	trace_cached_submit(preq);
@@ -813,10 +812,8 @@ static int dio_fsync_thread(void * data)
 		/* filemap_fdatawrite() has been made already */
 		filemap_fdatawait(io->files.mapping);
 
-		err = 0;
-		if (io->files.file->f_op->fsync)
-			err = io->files.file->f_op->fsync(io->files.file, 0,
-							  LLONG_MAX, 0);
+		err = io->files.file->f_op->fsync(io->files.file, 0,
+						  LLONG_MAX, 0);
 
 		/* Do we need to invalidate page cache? Not really,
 		 * because we use it only to create full new pages,
@@ -1382,12 +1379,11 @@ static int dio_alloc_sync(struct ploop_io * io, loff_t pos, loff_t len)
 	if (err)
 		goto fail;
 
-	if (io->files.file->f_op && io->files.file->f_op->fsync) {
-		err = io->files.file->f_op->fsync(io->files.file, 0,
-						  LLONG_MAX, 0);
-		if (err)
-			goto fail;
-	}
+	err = io->files.file->f_op->fsync(io->files.file, 0,
+					  LLONG_MAX, 0);
+	if (err)
+		goto fail;
+
 	err = filemap_fdatawait(io->files.mapping);
 
 fail:
@@ -1867,6 +1863,11 @@ static int dio_autodetect(struct ploop_io * io)
 
 	if (!file->f_op->unlocked_ioctl) {
 		printk("Cannot run on EXT4(%s): no unlocked_ioctl\n", s_id);
+		return -1;
+	}
+
+	if (!file->f_op->fsync) {
+		printk("Cannot run on EXT4(%s): no fsync\n", s_id);
 		return -1;
 	}
 
