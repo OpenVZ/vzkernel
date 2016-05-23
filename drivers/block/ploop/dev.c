@@ -4627,18 +4627,7 @@ static int ploop_push_backup_stop(struct ploop_device *plo, unsigned long arg)
 		return -EINVAL;
 	}
 
-	if (!test_and_clear_bit(PLOOP_S_PUSH_BACKUP, &plo->state))
-		return -EINVAL;
-
-	BUG_ON (!pbd);
-	ctl.status = ploop_pb_stop(pbd);
-
-	ploop_quiesce(plo);
-	ploop_pb_fini(plo->pbd);
-	plo->maintenance_type = PLOOP_MNTN_OFF;
-	ploop_relax(plo);
-
-	return 0;
+	return ploop_pb_destroy(plo, &ctl.status);
 }
 
 static int ploop_ioctl(struct block_device *bdev, fmode_t fmode, unsigned int cmd,
