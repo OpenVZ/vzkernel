@@ -24,6 +24,7 @@ struct ploop_pushbackup_desc {
 	__u8 	 cbt_uuid[16];
 
 	struct page **ppb_map; /* Ploop Push Backup mask */
+	struct page **reported_map; /* what userspace reported as backed up */
 	cluster_t ppb_block_max; /* first invalid index in ppb_map */
 	cluster_t ppb_offset; /* [0, ppb_offset) is ACKed by userspace */
 
@@ -52,10 +53,45 @@ int ploop_pb_get_uuid(struct ploop_pushbackup_desc *pbd, __u8 *uuid)
 	return 0;
 }
 
+static struct page **ploop_pb_map_alloc(unsigned long block_max)
+{
+	unsigned long npages = NR_PAGES(block_max);
+	struct page **map = vmalloc(npages * sizeof(void *));
+	unsigned long i;
+
+	if (!map)
+		return NULL;
+
+	memset(map, 0, npages * sizeof(void *));
+
+	for (i = 0; i < npages; i++) {
+		map[i] = alloc_page(GFP_KERNEL|__GFP_ZERO);
+		if (!map[i]) {
+			while (--i >= 0)
+				__free_page(map[i]);
+			vfree(map);
+			return NULL;
+		}
+	}
+
+	return map;
+}
+
+static void ploop_pb_map_free(struct page **map, unsigned long block_max)
+{
+	if (map) {
+		unsigned long i;
+		for (i = 0; i < NR_PAGES(block_max); i++)
+			if (map[i])
+				__free_page(map[i]);
+
+		vfree(map);
+	}
+}
+
 struct ploop_pushbackup_desc *ploop_pb_alloc(struct ploop_device *plo)
 {
 	struct ploop_pushbackup_desc *pbd;
-	int i, npages;
 
 	pbd = kmalloc(sizeof(struct ploop_pushbackup_desc), GFP_KERNEL|__GFP_ZERO);
 	if (pbd == NULL)
@@ -63,25 +99,18 @@ struct ploop_pushbackup_desc *ploop_pb_alloc(struct ploop_device *plo)
 
 	pbd->ppb_block_max = (plo->bd_size + (1 << plo->cluster_log) - 1)
 		>> plo->cluster_log;
-	npages = NR_PAGES(pbd->ppb_block_max);
 
-	pbd->ppb_map = vmalloc(npages * sizeof(void *));
+	pbd->ppb_map = ploop_pb_map_alloc(pbd->ppb_block_max);
 	if (!pbd->ppb_map) {
 		kfree(pbd);
 		return NULL;
 	}
 
-	memset(pbd->ppb_map, 0, npages * sizeof(void *));
-
-	for (i = 0; i < npages; i++) {
-		pbd->ppb_map[i] = alloc_page(GFP_KERNEL|__GFP_ZERO);
-		if (!pbd->ppb_map[i]) {
-			while (--i >= 0)
-				__free_page(pbd->ppb_map[i]);
-			vfree(pbd->ppb_map);
-			kfree(pbd);
-			return NULL;
-		}
+	pbd->reported_map = ploop_pb_map_alloc(pbd->ppb_block_max);
+	if (!pbd->reported_map) {
+		ploop_pb_map_free(pbd->ppb_map, pbd->ppb_block_max);
+		kfree(pbd);
+		return NULL;
 	}
 
 	spin_lock_init(&pbd->ppb_lock);
@@ -237,23 +266,8 @@ int ploop_pb_init(struct ploop_pushbackup_desc *pbd, __u8 *uuid, bool full)
 	return convert_map_to_map(pbd);
 }
 
-static void ploop_pb_free_cbt_map(struct ploop_pushbackup_desc *pbd)
-{
-	if (pbd->cbt_map) {
-		unsigned long i;
-		for (i = 0; i < NR_PAGES(pbd->cbt_block_max); i++)
-			if (pbd->cbt_map[i])
-				__free_page(pbd->cbt_map[i]);
-
-		vfree(pbd->cbt_map);
-		pbd->cbt_map = NULL;
-	}
-}
-
 void ploop_pb_fini(struct ploop_pushbackup_desc *pbd)
 {
-	int i;
-
 	if (pbd == NULL)
 		return;
 
@@ -269,12 +283,10 @@ void ploop_pb_fini(struct ploop_pushbackup_desc *pbd)
 		mutex_unlock(&plo->sysfs_mutex);
 	}
 
-	ploop_pb_free_cbt_map(pbd);
+	ploop_pb_map_free(pbd->cbt_map, pbd->cbt_block_max);
+	ploop_pb_map_free(pbd->ppb_map, pbd->ppb_block_max);
+	ploop_pb_map_free(pbd->reported_map, pbd->ppb_block_max);
 
-	for (i = 0; i < NR_PAGES(pbd->ppb_block_max); i++)
-		__free_page(pbd->ppb_map[i]);
-
-	vfree(pbd->ppb_map);
 	kfree(pbd);
 }
 
@@ -291,7 +303,8 @@ int ploop_pb_copy_cbt_to_user(struct ploop_pushbackup_desc *pbd, char *user_addr
 		user_addr += PAGE_SIZE;
 	}
 
-	ploop_pb_free_cbt_map(pbd);
+	ploop_pb_map_free(pbd->cbt_map, pbd->cbt_block_max);
+	pbd->cbt_map = NULL;
 	return 0;
 }
 
