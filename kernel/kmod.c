@@ -377,7 +377,7 @@ static inline int module_payload_iptable_allowed(const char *module)
 
 /* ve0 allowed modules */
 static const char * const ve0_allowed_mod[] = {
-	"binfmt_misc",
+	"fs-binfmt_misc",
 
 	/* inet_diag, inet6_diag  */
 	"net-pf-16-proto-4-type-2",	/* PF_NETLINK, NETLINK_SOCK_DIAG, AF_INET */
