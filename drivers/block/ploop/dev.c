@@ -2833,6 +2833,7 @@ static void ploop_release(struct gendisk *disk, fmode_t fmode)
 
 	mutex_lock(&plo->ctl_mutex);
 	if (atomic_dec_and_test(&plo->open_count)) {
+		ploop_pb_destroy(plo, NULL);
 		ploop_tracker_stop(plo, 1);
 		plo->bdev = NULL;
 	}
