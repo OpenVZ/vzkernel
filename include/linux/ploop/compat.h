@@ -58,10 +58,4 @@ static void func(struct bio *bio, int err) {
 
 #endif
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,32)
-#define FOP_FSYNC(file, datasync) fsync(file, 0, LLONG_MAX, datasync)
-#else
-#define FOP_FSYNC(file, datasync) fsync(file, F_DENTRY(file), datasync)
-#endif
-
 #endif
