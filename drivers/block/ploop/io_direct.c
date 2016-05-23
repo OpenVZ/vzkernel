@@ -405,8 +405,7 @@ try_again:
 			}
 
 			/* flush new i_size to disk */
-			err = io->files.file->f_op->fsync(io->files.file, 0,
-							  LLONG_MAX, 0);
+			err = io->ops->sync(io);
 			if (err)
 				goto end_write;
 
@@ -524,8 +523,8 @@ dio_post_submit(struct ploop_io *io, struct ploop_request * preq)
 					      FALLOC_FL_CONVERT_UNWRITTEN,
 					      (loff_t)sec << 9, clu_siz);
 	if (!err)
-		err = io->files.file->f_op->fsync(io->files.file, 0,
-						  LLONG_MAX, 0);
+		err = io->ops->sync(io);
+
 	file_end_write(io->files.file);
 	if (err) {
 		PLOOP_REQ_SET_ERROR(preq, err);
@@ -814,8 +813,7 @@ static int dio_fsync_thread(void * data)
 		/* filemap_fdatawrite() has been made already */
 		filemap_fdatawait(io->files.mapping);
 
-		err = io->files.file->f_op->fsync(io->files.file, 0,
-						  LLONG_MAX, 0);
+		err = io->ops->sync(io);
 
 		/* Do we need to invalidate page cache? Not really,
 		 * because we use it only to create full new pages,
@@ -1367,8 +1365,7 @@ static int dio_alloc_sync(struct ploop_io * io, loff_t pos, loff_t len)
 	if (err)
 		goto fail;
 
-	err = io->files.file->f_op->fsync(io->files.file, 0,
-					  LLONG_MAX, 0);
+	err = io->ops->sync(io);
 	if (err)
 		goto fail;
 
