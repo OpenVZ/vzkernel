@@ -435,7 +435,10 @@ struct super_block *sget_userns(struct file_system_type *type,
 
 	if (!(flags & (MS_KERNMOUNT|MS_SUBMOUNT)) &&
 	    !(type->fs_flags & FS_USERNS_MOUNT) &&
-	    !capable(CAP_SYS_ADMIN))
+	    !capable(CAP_SYS_ADMIN) &&
+	    /* FS_VE_MOUNT allows mount in container init userns */
+	    !((type->fs_flags & FS_VE_MOUNT) &&
+	       ve_capable(CAP_SYS_ADMIN)))
 		return ERR_PTR(-EPERM);
 retry:
 	spin_lock(&sb_lock);
