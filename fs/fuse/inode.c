@@ -617,10 +617,10 @@ static int fuse_parse_param(struct fs_context *fc, struct fs_parameter *param)
 		/* Hack to distinguish pcs fuse service and to force
 		 * synchronous close for it.
 		 */
-		if (fc->source && strncmp(fc->source, "pstorage://", 11) == 0) {
-			if (!ctx->disable_close_wait)
-				ctx->close_wait = 1;
-
+		if (fc->source &&
+		    (strncmp(fc->source, "pstorage://", 11) == 0 ||
+		     strncmp(fc->source, "vstorage://", 11) == 0)) {
+			ctx->close_wait = 1;
 			ctx->compat_inval_files = 1;
 		}
 		break;
@@ -696,6 +696,7 @@ static int fuse_parse_param(struct fs_context *fc, struct fs_parameter *param)
 
 	case OPT_DISABLE_CLOSE_WAIT:
 		ctx->disable_close_wait = 1;
+		ctx->close_wait = 0;
 		break;
 
 	default:
