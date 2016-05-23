@@ -647,3 +647,25 @@ void ploop_pb_put_reported(struct ploop_pushbackup_desc *pbd,
 		spin_unlock_irq(&plo->lock);
 	}
 }
+
+int ploop_pb_destroy(struct ploop_device *plo, __u32 *status)
+{
+	struct ploop_pushbackup_desc *pbd = plo->pbd;
+	unsigned long ret;
+
+	if (!test_and_clear_bit(PLOOP_S_PUSH_BACKUP, &plo->state))
+		return -EINVAL;
+
+	BUG_ON (!pbd);
+	ret = ploop_pb_stop(pbd);
+
+	if (status)
+		*status = ret;
+
+	ploop_quiesce(plo);
+	ploop_pb_fini(plo->pbd);
+	plo->maintenance_type = PLOOP_MNTN_OFF;
+	ploop_relax(plo);
+
+	return 0;
+}
