@@ -4995,6 +4995,13 @@ static int __init cgroup_wq_init(void)
 }
 core_initcall(cgroup_wq_init);
 
+static int ve_hide_cgroups(struct cgroupfs_root *root)
+{
+	/* Hide cpuset cgroup in CT for docker */
+	return !ve_is_super(get_exec_env())
+	       && (root->subsys_mask & (1UL << cpuset_subsys_id));
+}
+
 /*
  * proc_cgroup_show()
  *  - Print task's cgroup paths into seq_file, one line for each hierarchy
@@ -5036,6 +5043,8 @@ int proc_cgroup_show(struct seq_file *m, void *v)
 		struct cgroup *cgrp;
 		int count = 0;
 
+		if (ve_hide_cgroups(root))
+			continue;
 		seq_printf(m, "%d:", root->hierarchy_id);
 		for_each_subsys(root, ss)
 			seq_printf(m, "%s%s", count++ ? "," : "", ss->name);
@@ -5079,6 +5088,8 @@ static int proc_cgroupstats_show(struct seq_file *m, void *v)
 		int num;
 
 		if (ss == NULL)
+			continue;
+		if (ve_hide_cgroups(ss->root))
 			continue;
 		num = _cg_virtualized(ss->root->number_of_cgroups);
 		seq_printf(m, "%s\t%d\t%d\t%d\n",
