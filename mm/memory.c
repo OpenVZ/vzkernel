@@ -4049,7 +4049,7 @@ struct page *pick_peer_page(struct address_space *mapping, pgoff_t index,
 	page = find_get_page(peer, index);
 	if (!page) {
 		page_cache_sync_readahead(peer, ra, file, index, ra_size);
-		page = find_get_page(mapping, index);
+		page = find_get_page(peer, index);
 		if (!page)
 			goto out;
 	}
