@@ -429,40 +429,6 @@ static void dentry_lru_add(struct dentry *dentry)
 		d_lru_add(dentry);
 }
 
-/**
- * d_kill - kill dentry and return parent
- * @dentry: dentry to kill
- * @parent: parent dentry
- *
- * The dentry must already be unhashed and removed from the LRU.
- *
- * If this is the root of the dentry tree, return NULL.
- *
- * dentry->d_lock and parent->d_lock must be held by caller, and are dropped by
- * d_kill.
- */
-static struct dentry *d_kill(struct dentry *dentry, struct dentry *parent)
-	__releases(dentry->d_lock)
-	__releases(parent->d_lock)
-	__releases(dentry->d_inode->i_lock)
-{
-	__list_del_entry(&dentry->d_u.d_child);
-	/*
-	 * Inform d_walk() that we are no longer attached to the
-	 * dentry tree
-	 */
-	dentry->d_flags |= DCACHE_DENTRY_KILLED;
-	if (parent)
-		spin_unlock(&parent->d_lock);
-	dentry_iput(dentry);
-	/*
-	 * dentry_iput drops the locks, at which point nobody (except
-	 * transient RCU lookups) can reach this dentry.
-	 */
-	d_free(dentry);
-	return parent;
-}
-
 /*
  * Unhash a dentry without inserting an RCU walk barrier or checking that
  * dentry->d_lock is locked.  The caller must take care of that, if
@@ -574,7 +540,21 @@ relock:
 	}
 	/* if it was on the hash then remove it */
 	__d_drop(dentry);
-	return d_kill(dentry, parent);
+	__list_del_entry(&dentry->d_u.d_child);
+	/*
+	 * Inform d_walk() that we are no longer attached to the
+	 * dentry tree
+	 */
+	dentry->d_flags |= DCACHE_DENTRY_KILLED;
+	if (parent)
+		spin_unlock(&parent->d_lock);
+	dentry_iput(dentry);
+	/*
+	 * dentry_iput drops the locks, at which point nobody (except
+	 * transient RCU lookups) can reach this dentry.
+	 */
+	d_free(dentry);
+	return parent;
 }
 
 /* 
