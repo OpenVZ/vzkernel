@@ -512,16 +512,31 @@ end_write:
 static void
 dio_post_submit(struct ploop_io *io, struct ploop_request * preq)
 {
+	struct ploop_device *plo = preq->plo;
 	sector_t sec = (sector_t)preq->iblock << preq->plo->cluster_log;
 	loff_t clu_siz = 1 << (preq->plo->cluster_log + 9);
 	int err;
 
 	file_start_write(io->files.file);
+
+	/* Here io->io_count is even ... */
+	spin_lock_irq(&plo->lock);
+	io->io_count++;
+	set_bit(PLOOP_IO_FSYNC_DELAYED, &io->io_state);
+	spin_unlock_irq(&plo->lock);
+
 	err = io->files.file->f_op->fallocate(io->files.file,
 					      FALLOC_FL_CONVERT_UNWRITTEN,
 					      (loff_t)sec << 9, clu_siz);
-	if (!err)
+
+	/* highly unlikely case: FUA coming to a block not provisioned yet */
+	if (!err && (preq->req_rw & REQ_FUA))
 		err = io->ops->sync(io);
+
+	spin_lock_irq(&plo->lock);
+	io->io_count++;
+	spin_unlock_irq(&plo->lock);
+	/* and here io->io_count is even (+2) again. */
 
 	file_end_write(io->files.file);
 	if (err) {
@@ -780,6 +795,7 @@ static int dio_fsync_thread(void * data)
 {
 	struct ploop_io * io = data;
 	struct ploop_device * plo = io->plo;
+	u64 io_count;
 
 	set_user_nice(current, -20);
 
@@ -806,6 +822,7 @@ static int dio_fsync_thread(void * data)
 
 		INIT_LIST_HEAD(&list);
 		list_splice_init(&io->fsync_queue, &list);
+		io_count = io->io_count;
 		spin_unlock_irq(&plo->lock);
 
 		/* filemap_fdatawrite() has been made already */
@@ -822,12 +839,17 @@ static int dio_fsync_thread(void * data)
 
 		spin_lock_irq(&plo->lock);
 
+		if (io_count == io->io_count && !(io_count & 1))
+			clear_bit(PLOOP_IO_FSYNC_DELAYED, &io->io_state);
+
 		while (!list_empty(&list)) {
 			struct ploop_request * preq;
 			preq = list_entry(list.next, struct ploop_request, list);
 			list_del(&preq->list);
 			if (err)
 				PLOOP_REQ_SET_ERROR(preq, err);
+
+			__set_bit(PLOOP_REQ_FSYNC_DONE, &preq->state);
 			list_add_tail(&preq->list, &plo->ready_queue);
 			io->fsync_qlen--;
 		}
@@ -1517,6 +1539,10 @@ dio_fastmap(struct ploop_io * io, struct bio * orig_bio,
 	struct request_queue * q;
 	struct extent_map * em;
 	int i;
+
+	if (unlikely((orig_bio->bi_rw & (REQ_FLUSH | REQ_FUA)) &&
+		     test_bit(PLOOP_IO_FSYNC_DELAYED, &io->io_state)))
+		return 1;
 
 	if (orig_bio->bi_size == 0) {
 		bio->bi_vcnt   = 0;
