@@ -86,6 +86,9 @@ struct ploop_file
  * This struct describes how we do real IO on particular backing file.
  */
 
+enum {
+	PLOOP_IO_FSYNC_DELAYED,  /* Must f_op->fsync before FLUSH|FUA */
+};
 
 struct ploop_io
 {
@@ -107,6 +110,8 @@ struct ploop_io
 	struct timer_list	fsync_timer;
 
 	struct ploop_io_ops	*ops;
+	unsigned long		io_state;
+	u64                     io_count;
 };
 
 struct ploop_io_ops
@@ -464,7 +469,14 @@ enum
 	PLOOP_REQ_KAIO_FSYNC,	/*force image fsync by KAIO module */
 	PLOOP_REQ_POST_SUBMIT, /* preq needs post_submit processing */
 	PLOOP_REQ_PUSH_BACKUP, /* preq was ACKed by userspace push_backup */
+	PLOOP_REQ_FSYNC_DONE,  /* fsync_thread() performed f_op->fsync() */
 };
+
+#define PLOOP_REQ_MERGE_FL (1 << PLOOP_REQ_MERGE)
+#define PLOOP_REQ_RELOC_A_FL (1 << PLOOP_REQ_RELOC_A)
+#define PLOOP_REQ_RELOC_S_FL (1 << PLOOP_REQ_RELOC_S)
+#define PLOOP_REQ_DISCARD_FL (1 << PLOOP_REQ_DISCARD)
+#define PLOOP_REQ_ZERO_FL (1 << PLOOP_REQ_ZERO)
 
 enum
 {
