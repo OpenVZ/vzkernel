@@ -289,7 +289,11 @@ int blk_cbt_map_copy_once(struct request_queue *q, __u8 *uuid,
 	mutex_lock(&cbt_mutex);
 	cbt = q->cbt;
 
-	BUG_ON(!cbt);
+	if (!cbt) {
+		mutex_unlock(&cbt_mutex);
+		return -ENOENT;
+	}
+
 	BUG_ON(!cbt->map);
 	BUG_ON(!cbt->block_max);
 
