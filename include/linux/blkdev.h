@@ -1843,6 +1843,9 @@ extern int blk_cbt_ioctl(struct block_device *bdev, unsigned cmd, char __user *a
 extern int blk_cbt_map_copy_once(struct request_queue *q, __u8 *uuid,
 				 struct page ***map_ptr, blkcnt_t *block_max,
 				 blkcnt_t *block_bits);
+extern int blk_cbt_map_merge(struct request_queue *q, __u8 *uuid,
+			     struct page **map, blkcnt_t block_max,
+			     blkcnt_t block_bits);
 #else /* CONFIG_BLK_DEV_CBT */
 static inline void blk_cbt_update_size(struct block_device *bdev)
 {
