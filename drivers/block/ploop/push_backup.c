@@ -88,6 +88,29 @@ static void ploop_pb_map_free(struct page **map, unsigned long block_max)
 	}
 }
 
+int ploop_pb_cbt_map_release(struct ploop_pushbackup_desc *pbd, bool do_merge)
+{
+	int ret = 0;
+
+	if (pbd->cbt_map == NULL)
+		return 0;
+
+	if (do_merge) {
+		ret = blk_cbt_map_merge(pbd->plo->queue,
+					pbd->cbt_uuid,
+					pbd->cbt_map,
+					pbd->cbt_block_max,
+					pbd->cbt_block_bits);
+		if (ret)
+			printk("ploop(%d): blk_cbt_map_merge() failed with "
+			       "%d\n", pbd->plo->index, ret);
+	}
+
+	ploop_pb_map_free(pbd->cbt_map, pbd->cbt_block_max);
+	pbd->cbt_map = NULL;
+	return ret;
+}
+
 struct ploop_pushbackup_desc *ploop_pb_alloc(struct ploop_device *plo)
 {
 	struct ploop_pushbackup_desc *pbd;
@@ -314,7 +337,7 @@ void ploop_pb_fini(struct ploop_pushbackup_desc *pbd)
 		mutex_unlock(&plo->sysfs_mutex);
 	}
 
-	ploop_pb_map_free(pbd->cbt_map, pbd->cbt_block_max);
+	ploop_pb_cbt_map_release(pbd, true);
 	ploop_pb_map_free(pbd->ppb_map, pbd->ppb_block_max);
 	ploop_pb_map_free(pbd->reported_map, pbd->ppb_block_max);
 
@@ -334,8 +357,6 @@ int ploop_pb_copy_cbt_to_user(struct ploop_pushbackup_desc *pbd, char *user_addr
 		user_addr += PAGE_SIZE;
 	}
 
-	ploop_pb_map_free(pbd->cbt_map, pbd->cbt_block_max);
-	pbd->cbt_map = NULL;
 	return 0;
 }
 
@@ -496,13 +517,16 @@ int ploop_pb_preq_add_pending(struct ploop_pushbackup_desc *pbd,
 	return 0;
 }
 
-unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd)
+unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd, bool do_merge)
 {
 	unsigned long ret = 0;
+	int merge_status = 0;
 	LIST_HEAD(drop_list);
 
 	if (pbd == NULL)
 		return 0;
+
+	merge_status = ploop_pb_cbt_map_release(pbd, do_merge);
 
 	spin_lock(&pbd->ppb_lock);
 
@@ -535,7 +559,7 @@ unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd)
 		spin_unlock_irq(&plo->lock);
 	}
 
-	return ret;
+	return merge_status ? : ret;
 }
 
 int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
@@ -682,12 +706,14 @@ int ploop_pb_destroy(struct ploop_device *plo, __u32 *status)
 {
 	struct ploop_pushbackup_desc *pbd = plo->pbd;
 	unsigned long ret;
+	bool do_merge;
 
 	if (!test_and_clear_bit(PLOOP_S_PUSH_BACKUP, &plo->state))
 		return -EINVAL;
 
 	BUG_ON (!pbd);
-	ret = ploop_pb_stop(pbd);
+	do_merge = status ? *status : true;
+	ret = ploop_pb_stop(pbd, do_merge);
 
 	if (status)
 		*status = ret;
