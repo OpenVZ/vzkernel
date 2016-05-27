@@ -932,30 +932,13 @@ static void shrink_dentry_list(struct list_head *list)
 {
 	struct dentry *dentry, *parent;
 
-	for (;;) {
+	while (!list_empty(list)) {
 		struct inode *inode;
 
 		cond_resched();
-		rcu_read_lock();
 
-		dentry = list_entry_rcu(list->prev, struct dentry, d_lru);
-		if (&dentry->d_lru == list) {
-			rcu_read_unlock();
-			break; /* empty */
-		}
-
-		/*
-		 * Get the dentry lock, and re-verify that the dentry is
-		 * this on the shrinking list. If it is, we know that
-		 * DCACHE_SHRINK_LIST and DCACHE_LRU_LIST are set.
-		 */
+		dentry = list_entry(list->prev, struct dentry, d_lru);
 		spin_lock(&dentry->d_lock);
-		if (dentry != list_entry(list->prev, struct dentry, d_lru)) {
-			spin_unlock(&dentry->d_lock);
-			rcu_read_unlock();
-			continue;
-		}
-
 		parent = lock_parent(dentry);
 
 		/*
@@ -973,10 +956,8 @@ static void shrink_dentry_list(struct list_head *list)
 			spin_unlock(&dentry->d_lock);
 			if (parent)
 				spin_unlock(&parent->d_lock);
-			rcu_read_unlock();
 			continue;
 		}
-		rcu_read_unlock();
 
 		inode = dentry->d_inode;
 		if (inode && unlikely(!spin_trylock(&inode->i_lock))) {
