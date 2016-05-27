@@ -5973,7 +5973,7 @@ void show_state_filter(unsigned long state_filter)
 		 * reset the NMI-timeout, listing all files on a slow
 		 * console might take a lot of time:
 		 */
-		touch_nmi_watchdog();
+		touch_all_softlockup_watchdogs();
 		if (!state_filter || (p->state & state_filter))
 			sched_show_task(p);
 	} while_each_thread(g, p);
