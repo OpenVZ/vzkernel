@@ -348,6 +348,73 @@ fail:
 }
 EXPORT_SYMBOL(blk_cbt_map_copy_once);
 
+static void blk_cbt_page_merge(struct page *pg_from, struct page *pg_to)
+{
+	u32 *from = page_address(pg_from);
+	u32 *to = page_address(pg_to);
+	u32 *fin = to + PAGE_SIZE/sizeof(*to);
+
+	while (to < fin) {
+		*to |= *from;
+		to++;
+		from++;
+	}
+}
+
+int blk_cbt_map_merge(struct request_queue *q, __u8 *uuid,
+		      struct page **map, blkcnt_t block_max,
+		      blkcnt_t block_bits)
+{
+	struct cbt_info *cbt;
+	unsigned long i;
+
+	mutex_lock(&cbt_mutex);
+	cbt = q->cbt;
+
+	if (!cbt) {
+		mutex_unlock(&cbt_mutex);
+		return -ENOENT;
+	}
+
+	BUG_ON(!cbt->map);
+	BUG_ON(!cbt->block_max);
+
+	if (!map || !uuid || memcmp(uuid, cbt->uuid, sizeof(cbt->uuid)) ||
+	    block_max != cbt->block_max || block_bits != cbt->block_bits) {
+		mutex_unlock(&cbt_mutex);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < NR_PAGES(cbt->block_max); i++) {
+		struct page *page_main = cbt->map[i];
+		struct page *page_addon = map[i];
+
+		BUG_ON(page_main == CBT_PAGE_MISSED);
+		BUG_ON(page_addon == CBT_PAGE_MISSED);
+
+		if (!page_addon)
+			continue;
+
+		if (!page_main) {
+			int ret = cbt_page_alloc(&cbt, i, 0);
+			if (ret) {
+				mutex_unlock(&cbt_mutex);
+				return ret;
+			}
+			page_main = cbt->map[i];
+			BUG_ON(page_main == NULL);
+			BUG_ON(page_main == CBT_PAGE_MISSED);
+		}
+
+		spin_lock_page(page_main);
+		blk_cbt_page_merge(page_addon, page_main);
+		unlock_page(page_main);
+	}
+	mutex_unlock(&cbt_mutex);
+	return 0;
+}
+EXPORT_SYMBOL(blk_cbt_map_merge);
+
 void blk_cbt_update_size(struct block_device *bdev)
 {
 	struct request_queue *q;
