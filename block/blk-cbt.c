@@ -128,7 +128,12 @@ static int cbt_page_alloc(struct cbt_info  **cbt_pp, unsigned long idx,
 		spin_unlock_irq(&cbt->lock);
 		return -ENOMEM;
 	}
-	cbt->map[idx] = page;
+
+	if (likely(CBT_PAGE(cbt, idx) == NULL))
+		cbt->map[idx] = page;
+	else
+		__free_page(page);
+
 	page = NULL;
 	spin_unlock_irq(&cbt->lock);
 
