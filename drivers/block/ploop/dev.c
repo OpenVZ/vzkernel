@@ -1908,46 +1908,64 @@ err:
 
 /* Main preq state machine */
 
+static inline bool preq_is_special(struct ploop_request * preq)
+{
+	unsigned long state = READ_ONCE(preq->state);
+
+	return state & (PLOOP_REQ_MERGE_FL |
+			PLOOP_REQ_RELOC_A_FL |
+			PLOOP_REQ_RELOC_S_FL |
+			PLOOP_REQ_DISCARD_FL |
+			PLOOP_REQ_ZERO_FL);
+}
+
 static void
 ploop_entry_request(struct ploop_request * preq)
 {
 	struct ploop_device * plo       = preq->plo;
 	struct ploop_delta  * top_delta = ploop_top_delta(plo);
+	struct ploop_io     * top_io    = &top_delta->io;
 	struct ploop_delta  * delta;
 	int level;
 	int err;
 	iblock_t iblk;
 
-	/* Control request. */
-	if (unlikely(preq->bl.head == NULL &&
-		     !test_bit(PLOOP_REQ_MERGE, &preq->state) &&
-		     !test_bit(PLOOP_REQ_RELOC_A, &preq->state) &&
-		     !test_bit(PLOOP_REQ_RELOC_S, &preq->state) &&
-		     !test_bit(PLOOP_REQ_DISCARD, &preq->state) &&
-		     !test_bit(PLOOP_REQ_ZERO, &preq->state))) {
-		complete(plo->quiesce_comp);
-		wait_for_completion(&plo->relax_comp);
-		ploop_complete_request(preq);
-		complete(&plo->relaxed_comp);
-		return;
-	}
-
-	/* Empty flush. */
-	if (unlikely(preq->req_size == 0 &&
-		     !test_bit(PLOOP_REQ_MERGE, &preq->state) &&
-		     !test_bit(PLOOP_REQ_RELOC_A, &preq->state) &&
-		     !test_bit(PLOOP_REQ_RELOC_S, &preq->state) &&
-		     !test_bit(PLOOP_REQ_ZERO, &preq->state))) {
-		if (preq->req_rw & REQ_FLUSH) {
-			if (top_delta->io.ops->issue_flush) {
-				top_delta->io.ops->issue_flush(&top_delta->io, preq);
-				return;
-			}
+	if (!preq_is_special(preq)) {
+		/* Control request */
+		if (unlikely(preq->bl.head == NULL)) {
+			complete(plo->quiesce_comp);
+			wait_for_completion(&plo->relax_comp);
+			ploop_complete_request(preq);
+			complete(&plo->relaxed_comp);
+			return;
 		}
 
-		preq->eng_state = PLOOP_E_COMPLETE;
-		ploop_complete_request(preq);
-		return;
+		/* Need to fsync before start handling FLUSH */
+		if ((preq->req_rw & REQ_FLUSH) &&
+		    test_bit(PLOOP_IO_FSYNC_DELAYED, &top_io->io_state) &&
+		    !test_bit(PLOOP_REQ_FSYNC_DONE, &preq->state)) {
+			spin_lock_irq(&plo->lock);
+			list_add_tail(&preq->list, &top_io->fsync_queue);
+			if (waitqueue_active(&top_io->fsync_waitq))
+				wake_up_interruptible(&top_io->fsync_waitq);
+			spin_unlock_irq(&plo->lock);
+			return;
+		}
+
+		/* Empty flush or unknown zero-size request */
+		if (preq->req_size == 0) {
+			if (preq->req_rw & REQ_FLUSH &&
+			    !test_bit(PLOOP_REQ_FSYNC_DONE, &preq->state)) {
+				if (top_io->ops->issue_flush) {
+					top_io->ops->issue_flush(top_io, preq);
+					return;
+				}
+			}
+
+			preq->eng_state = PLOOP_E_COMPLETE;
+			ploop_complete_request(preq);
+			return;
+		}
 	}
 
 	if (unlikely(test_bit(PLOOP_REQ_SYNC, &preq->state) &&
