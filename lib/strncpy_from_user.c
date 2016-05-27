@@ -1,5 +1,6 @@
 #include <linux/module.h>
 #include <linux/uaccess.h>
+#include <linux/kasan-checks.h>
 #include <linux/kernel.h>
 #include <linux/errno.h>
 
@@ -106,6 +107,7 @@ long strncpy_from_user(char *dst, const char __user *src, long count)
 	src_addr = (unsigned long)src;
 	if (likely(src_addr < max_addr)) {
 		unsigned long max = max_addr - src_addr;
+		kasan_check_write(dst, count);
 		return do_strncpy_from_user(dst, src, count, max);
 	}
 	return -EFAULT;
