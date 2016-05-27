@@ -854,24 +854,10 @@ static void shrink_dentry_list(struct list_head *list)
 {
 	struct dentry *dentry, *parent;
 
-	rcu_read_lock();
-	for (;;) {
+	while (!list_empty(list)) {
 		struct inode *inode;
-		dentry = list_entry_rcu(list->prev, struct dentry, d_lru);
-		if (&dentry->d_lru == list)
-			break; /* empty */
-
-		/*
-		 * Get the dentry lock, and re-verify that the dentry is
-		 * this on the shrinking list. If it is, we know that
-		 * DCACHE_SHRINK_LIST and DCACHE_LRU_LIST are set.
-		 */
+		dentry = list_entry(list->prev, struct dentry, d_lru);
 		spin_lock(&dentry->d_lock);
-		if (dentry != list_entry(list->prev, struct dentry, d_lru)) {
-			spin_unlock(&dentry->d_lock);
-			continue;
-		}
-
 		parent = lock_parent(dentry);
 
 		/*
@@ -891,7 +877,6 @@ static void shrink_dentry_list(struct list_head *list)
 				spin_unlock(&parent->d_lock);
 			continue;
 		}
-		rcu_read_unlock();
 
 		inode = dentry->d_inode;
 		if (inode && unlikely(!spin_trylock(&inode->i_lock))) {
@@ -900,7 +885,6 @@ static void shrink_dentry_list(struct list_head *list)
 			if (parent)
 				spin_unlock(&parent->d_lock);
 			cpu_relax();
-			rcu_read_lock();
 			continue;
 		}
 
@@ -933,9 +917,7 @@ static void shrink_dentry_list(struct list_head *list)
 			__dentry_kill(dentry);
 			dentry = parent;
 		}
-		rcu_read_lock();
 	}
-	rcu_read_unlock();
 }
 
 static enum lru_status dentry_lru_isolate(struct list_head *item,
