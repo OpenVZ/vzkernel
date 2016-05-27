@@ -495,14 +495,6 @@ dentry_kill(struct dentry *dentry, int unlock_on_failure)
 	struct inode *inode;
 	struct dentry *parent;
 
-	if (unlikely(dentry->d_flags & DCACHE_DENTRY_KILLED)) {
-		bool can_free = dentry->d_flags & DCACHE_MAY_FREE;
-		spin_unlock(&dentry->d_lock);
-		if (likely(can_free))
-			dentry_free(dentry);
-		return NULL;
-	}
-
 	inode = dentry->d_inode;
 	if (inode && !spin_trylock(&inode->i_lock)) {
 relock:
@@ -842,6 +834,15 @@ static void shrink_dentry_list(struct list_head *list)
 		 */
 		if (dentry->d_lockref.count) {
 			spin_unlock(&dentry->d_lock);
+			continue;
+		}
+
+
+		if (unlikely(dentry->d_flags & DCACHE_DENTRY_KILLED)) {
+			bool can_free = dentry->d_flags & DCACHE_MAY_FREE;
+			spin_unlock(&dentry->d_lock);
+			if (can_free)
+				dentry_free(dentry);
 			continue;
 		}
 
