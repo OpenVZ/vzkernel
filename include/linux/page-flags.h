@@ -524,6 +524,25 @@ static inline void __ClearPageBalloon(struct page *page)
 	atomic_set(&page->_mapcount, -1);
 }
 
+#define PAGE_KMEMCG_MAPCOUNT_VALUE (-512)
+
+static inline int PageKmemcg(struct page *page)
+{
+	return atomic_read(&page->_mapcount) == PAGE_KMEMCG_MAPCOUNT_VALUE;
+}
+
+static inline void __SetPageKmemcg(struct page *page)
+{
+	VM_BUG_ON_PAGE(atomic_read(&page->_mapcount) != -1, page);
+	atomic_set(&page->_mapcount, PAGE_KMEMCG_MAPCOUNT_VALUE);
+}
+
+static inline void __ClearPageKmemcg(struct page *page)
+{
+	VM_BUG_ON_PAGE(!PageKmemcg(page), page);
+	atomic_set(&page->_mapcount, -1);
+}
+
 /*
  * If network-based swap is enabled, sl*b must keep track of whether pages
  * were allocated from pfmemalloc reserves.
