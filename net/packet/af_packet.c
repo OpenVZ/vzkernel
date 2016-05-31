@@ -3735,8 +3735,8 @@ static void free_pg_vec(struct pgv *pg_vec, unsigned int order,
 			if (is_vmalloc_addr(pg_vec[i].buffer))
 				vfree(pg_vec[i].buffer);
 			else
-				free_kmem_pages((unsigned long)pg_vec[i].buffer,
-						order);
+				free_pages((unsigned long)pg_vec[i].buffer,
+					   order);
 			pg_vec[i].buffer = NULL;
 		}
 	}
@@ -3749,7 +3749,7 @@ static char *alloc_one_pg_vec_page(unsigned long order)
 	gfp_t gfp_flags = GFP_KERNEL_ACCOUNT | __GFP_COMP |
 			  __GFP_ZERO | __GFP_NOWARN | __GFP_NORETRY;
 
-	buffer = (char *) __get_free_kmem_pages(gfp_flags, order);
+	buffer = (char *) __get_free_pages(gfp_flags, order);
 
 	if (buffer)
 		return buffer;
@@ -3766,7 +3766,7 @@ static char *alloc_one_pg_vec_page(unsigned long order)
 	 * vmalloc failed, lets dig into swap here
 	 */
 	gfp_flags &= ~__GFP_NORETRY;
-	buffer = (char *)__get_free_kmem_pages(gfp_flags, order);
+	buffer = (char *)__get_free_pages(gfp_flags, order);
 	if (buffer)
 		return buffer;
 
