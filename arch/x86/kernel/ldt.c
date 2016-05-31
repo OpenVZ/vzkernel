@@ -83,7 +83,7 @@ static int alloc_ldt(mm_context_t *pc, int mincount, int reload)
 		if (oldsize * LDT_ENTRY_SIZE > PAGE_SIZE)
 			vfree(oldldt);
 		else
-			put_page(virt_to_page(oldldt));
+			__free_page(virt_to_page(oldldt));
 	}
 	return 0;
 }
@@ -138,7 +138,7 @@ void destroy_context(struct mm_struct *mm)
 		if (mm->context.size * LDT_ENTRY_SIZE > PAGE_SIZE)
 			vfree(mm->context.ldt);
 		else
-			put_page(virt_to_page(mm->context.ldt));
+			__free_page(virt_to_page(mm->context.ldt));
 		mm->context.size = 0;
 	}
 }
