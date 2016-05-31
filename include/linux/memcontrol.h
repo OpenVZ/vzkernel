@@ -516,10 +516,7 @@ bool memcg_kmem_is_active(struct mem_cgroup *memcg);
  * conditions, but because they are pretty simple, they are expected to be
  * fast.
  */
-bool __memcg_kmem_newpage_charge(gfp_t gfp, struct mem_cgroup **memcg,
-					int order);
-void __memcg_kmem_commit_charge(struct page *page,
-				       struct mem_cgroup *memcg, int order);
+bool __memcg_kmem_newpage_charge(struct page *page, gfp_t gfp, int order);
 void __memcg_kmem_uncharge_pages(struct page *page, int order);
 
 int memcg_cache_id(struct mem_cgroup *memcg);
@@ -535,8 +532,8 @@ void memcg_uncharge_kmem(struct mem_cgroup *memcg, u64 size);
 
 /**
  * memcg_kmem_newpage_charge: verify if a new kmem allocation is allowed.
+ * @page: page to charge.
  * @gfp: the gfp allocation flags.
- * @memcg: a pointer to the memcg this was charged against.
  * @order: allocation order.
  *
  * returns true if the memcg where the current task belongs can hold this
@@ -546,7 +543,7 @@ void memcg_uncharge_kmem(struct mem_cgroup *memcg, u64 size);
  * any memcg.
  */
 static inline bool
-memcg_kmem_newpage_charge(gfp_t gfp, struct mem_cgroup **memcg, int order)
+memcg_kmem_newpage_charge(struct page *page, gfp_t gfp, int order)
 {
 	if (!memcg_kmem_enabled())
 		return true;
@@ -568,7 +565,7 @@ memcg_kmem_newpage_charge(gfp_t gfp, struct mem_cgroup **memcg, int order)
 	if (unlikely(fatal_signal_pending(current)))
 		return true;
 
-	return __memcg_kmem_newpage_charge(gfp, memcg, order);
+	return __memcg_kmem_newpage_charge(page, gfp, order);
 }
 
 /**
@@ -583,24 +580,6 @@ memcg_kmem_uncharge_pages(struct page *page, int order)
 {
 	if (memcg_kmem_enabled())
 		__memcg_kmem_uncharge_pages(page, order);
-}
-
-/**
- * memcg_kmem_commit_charge: embeds correct memcg in a page
- * @page: pointer to struct page recently allocated
- * @memcg: the memcg structure we charged against
- * @order: allocation order.
- *
- * Needs to be called after memcg_kmem_newpage_charge, regardless of success or
- * failure of the allocation. if @page is NULL, this function will revert the
- * charges. Otherwise, it will commit the memcg given by @memcg to the
- * corresponding page_cgroup.
- */
-static inline void
-memcg_kmem_commit_charge(struct page *page, struct mem_cgroup *memcg, int order)
-{
-	if (memcg_kmem_enabled() && memcg)
-		__memcg_kmem_commit_charge(page, memcg, order);
 }
 
 /**
@@ -652,17 +631,12 @@ static inline bool memcg_kmem_is_active(struct mem_cgroup *memcg)
 }
 
 static inline bool
-memcg_kmem_newpage_charge(gfp_t gfp, struct mem_cgroup **memcg, int order)
+memcg_kmem_newpage_charge(struct page *page, gfp_t gfp, int order)
 {
 	return true;
 }
 
 static inline void memcg_kmem_uncharge_pages(struct page *page, int order)
-{
-}
-
-static inline void
-memcg_kmem_commit_charge(struct page *page, struct mem_cgroup *memcg, int order)
 {
 }
 
