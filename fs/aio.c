@@ -710,8 +710,8 @@ static int kill_ioctx(struct mm_struct *mm, struct kioctx *ctx,
 		 *  could tell).
 		 */
 		spin_lock(&ve->aio_nr_lock);
-		BUG_ON(ve->aio_nr - ctx->max_reqs > ve->aio_nr);
-		ve->aio_nr -= ctx->max_reqs;
+		BUG_ON(ve->aio_nr - ctx->nr_events > ve->aio_nr);
+		ve->aio_nr -= ctx->nr_events;
 		spin_unlock(&ve->aio_nr_lock);
 
 		if (ctx->mmap_size)
