@@ -23,6 +23,7 @@
 #include <linux/vm_event_item.h>
 #include <linux/hardirq.h>
 #include <linux/jump_label.h>
+#include <linux/page-flags.h>
 
 struct mem_cgroup;
 struct page_cgroup;
@@ -578,7 +579,7 @@ memcg_kmem_newpage_charge(struct page *page, gfp_t gfp, int order)
 static inline void
 memcg_kmem_uncharge_pages(struct page *page, int order)
 {
-	if (memcg_kmem_enabled())
+	if (memcg_kmem_enabled() && PageKmemcg(page))
 		__memcg_kmem_uncharge_pages(page, order);
 }
 
