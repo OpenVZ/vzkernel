@@ -22,6 +22,7 @@
 #include <linux/syscalls.h>
 #include <linux/fcntl.h>
 #include <linux/aio.h>
+#include <linux/memcontrol.h>
 
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
@@ -238,6 +239,18 @@ static void anon_pipe_buf_release(struct pipe_inode_info *pipe,
 		page_cache_release(page);
 }
 
+static int anon_pipe_buf_steal(struct pipe_inode_info *pipe,
+			       struct pipe_buffer *buf)
+{
+	struct page *page = buf->page;
+
+	if (page_count(page) == 1) {
+		memcg_kmem_uncharge_pages(page, 0);
+		lock_page(page);
+		return 0;
+	}
+	return 1;
+}
 /**
  * generic_pipe_buf_map - virtually map a pipe buffer
  * @pipe:	the pipe that the buffer belongs to
@@ -368,7 +381,7 @@ static const struct pipe_buf_operations anon_pipe_buf_ops = {
 	.unmap = generic_pipe_buf_unmap,
 	.confirm = generic_pipe_buf_confirm,
 	.release = anon_pipe_buf_release,
-	.steal = generic_pipe_buf_steal,
+	.steal = anon_pipe_buf_steal,
 	.get = generic_pipe_buf_get,
 };
 
@@ -378,7 +391,7 @@ static const struct pipe_buf_operations packet_pipe_buf_ops = {
 	.unmap = generic_pipe_buf_unmap,
 	.confirm = generic_pipe_buf_confirm,
 	.release = anon_pipe_buf_release,
-	.steal = generic_pipe_buf_steal,
+	.steal = anon_pipe_buf_steal,
 	.get = generic_pipe_buf_get,
 };
 
