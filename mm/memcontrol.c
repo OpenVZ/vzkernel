@@ -3542,12 +3542,11 @@ void __memcg_kmem_put_cache(struct kmem_cache *cachep)
  * Returning true means the allocation is possible.
  */
 bool
-__memcg_kmem_newpage_charge(gfp_t gfp, struct mem_cgroup **_memcg, int order)
+__memcg_kmem_newpage_charge(struct page *page, gfp_t gfp, int order)
 {
+	struct page_cgroup *pc;
 	struct mem_cgroup *memcg;
 	int ret;
-
-	*_memcg = NULL;
 
 	/*
 	 * Disabling accounting is only relevant for some specific memcg
@@ -3593,31 +3592,18 @@ __memcg_kmem_newpage_charge(gfp_t gfp, struct mem_cgroup **_memcg, int order)
 	}
 
 	ret = memcg_charge_kmem(memcg, gfp, 1 << order);
-	if (!ret)
-		*_memcg = memcg;
-
 	css_put(&memcg->css);
-	return (ret == 0);
-}
 
-void __memcg_kmem_commit_charge(struct page *page, struct mem_cgroup *memcg,
-			      int order)
-{
-	struct page_cgroup *pc;
-
-	VM_BUG_ON(mem_cgroup_is_root(memcg));
-
-	/* The page allocation failed. Revert */
-	if (!page) {
-		memcg_uncharge_kmem(memcg, 1 << order);
-		return;
-	}
+	if (ret)
+		return false;
 
 	pc = lookup_page_cgroup(page);
 	lock_page_cgroup(pc);
 	pc->mem_cgroup = memcg;
 	SetPageCgroupUsed(pc);
 	unlock_page_cgroup(pc);
+
+	return true;
 }
 
 void __memcg_kmem_uncharge_pages(struct page *page, int order)
