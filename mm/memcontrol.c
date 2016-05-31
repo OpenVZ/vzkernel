@@ -3673,6 +3673,8 @@ __memcg_kmem_newpage_charge(struct page *page, gfp_t gfp, int order)
 	SetPageCgroupUsed(pc);
 	unlock_page_cgroup(pc);
 
+	__SetPageKmemcg(page);
+
 	return true;
 }
 
@@ -3706,6 +3708,8 @@ void __memcg_kmem_uncharge_pages(struct page *page, int order)
 
 	VM_BUG_ON_PAGE(mem_cgroup_is_root(memcg), page);
 	memcg_uncharge_kmem(memcg, 1 << order);
+
+	__ClearPageKmemcg(page);
 }
 
 struct mem_cgroup *__mem_cgroup_from_kmem(void *ptr)
