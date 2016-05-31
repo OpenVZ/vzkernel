@@ -54,7 +54,7 @@ static int alloc_ldt(mm_context_t *pc, int mincount, int reload)
 	if (mincount * LDT_ENTRY_SIZE > PAGE_SIZE)
 		newldt = vmalloc_account(mincount * LDT_ENTRY_SIZE);
 	else
-		newldt = (void *)__get_free_kmem_pages(GFP_KERNEL_ACCOUNT, 0);
+		newldt = (void *)__get_free_page(GFP_KERNEL_ACCOUNT);
 
 	if (!newldt)
 		return -ENOMEM;
@@ -156,7 +156,7 @@ void destroy_context(struct mm_struct *mm)
 		if (mm->context.size * LDT_ENTRY_SIZE > PAGE_SIZE)
 			vfree(mm->context.ldt);
 		else
-			__free_kmem_pages(virt_to_page(mm->context.ldt), 0);
+			__free_page(virt_to_page(mm->context.ldt));
 		mm->context.size = 0;
 	}
 }
