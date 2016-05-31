@@ -974,6 +974,7 @@ static bool free_pages_prepare(struct page *page, unsigned int order)
 
 	if (PageAnon(page))
 		page->mapping = NULL;
+	memcg_kmem_uncharge_pages(page, order);
 	for (i = 0; i < (1 << order); i++)
 		bad += free_pages_check(page + i);
 	if (bad)
@@ -3250,6 +3251,9 @@ out:
 	 */
 	if (unlikely(!page && read_mems_allowed_retry(cpuset_mems_cookie)))
 		goto retry_cpuset;
+
+	if (page && !memcg_kmem_newpage_charge(page, gfp_mask, order))
+		__free_pages(page, order);
 
 	return page;
 }
