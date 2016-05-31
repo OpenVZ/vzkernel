@@ -4633,6 +4633,7 @@ static int ploop_push_backup_stop(struct ploop_device *plo, unsigned long arg)
 {
 	struct ploop_pushbackup_desc *pbd = plo->pbd;
 	struct ploop_push_backup_stop_ctl ctl;
+	int ret;
 
 	if (plo->maintenance_type != PLOOP_MNTN_PUSH_BACKUP)
 		return -EINVAL;
@@ -4646,7 +4647,11 @@ static int ploop_push_backup_stop(struct ploop_device *plo, unsigned long arg)
 		return -EINVAL;
 	}
 
-	return ploop_pb_destroy(plo, &ctl.status);
+	ret = ploop_pb_destroy(plo, &ctl.status);
+	if (ret)
+		return ret;
+
+	return copy_to_user((void*)arg, &ctl, sizeof(ctl));
 }
 
 static int ploop_ioctl(struct block_device *bdev, fmode_t fmode, unsigned int cmd,
