@@ -25,11 +25,11 @@ pgtable_t pte_alloc_one(struct mm_struct *mm, unsigned long address)
 {
 	struct page *pte;
 
-	pte = alloc_kmem_pages(__userpte_alloc_gfp, 0);
+	pte = alloc_pages(__userpte_alloc_gfp, 0);
 	if (!pte)
 		return NULL;
 	if (!pgtable_page_ctor(pte)) {
-		__free_kmem_pages(pte, 0);
+		__free_page(pte);
 		return NULL;
 	}
 	return pte;
@@ -56,7 +56,6 @@ void ___pte_free_tlb(struct mmu_gather *tlb, struct page *pte)
 {
 	pgtable_page_dtor(pte);
 	paravirt_release_pte(page_to_pfn(pte));
-	memcg_kmem_uncharge_pages(pte, 0);
 	tlb_remove_page(tlb, pte);
 }
 
@@ -73,7 +72,6 @@ void ___pmd_free_tlb(struct mmu_gather *tlb, pmd_t *pmd)
 	tlb->need_flush_all = 1;
 #endif
 	pgtable_pmd_page_dtor(page);
-	memcg_kmem_uncharge_pages(page, 0);
 	tlb_remove_page(tlb, page);
 }
 
@@ -83,7 +81,6 @@ void ___pud_free_tlb(struct mmu_gather *tlb, pud_t *pud)
 	struct page *page = virt_to_page(pud);
 
 	paravirt_release_pud(__pa(pud) >> PAGE_SHIFT);
-	memcg_kmem_uncharge_pages(page, 0);
 	tlb_remove_page(tlb, page);
 }
 #endif	/* PAGETABLE_LEVELS > 3 */
@@ -203,7 +200,7 @@ static void free_pmds(pmd_t *pmds[])
 	for(i = 0; i < PREALLOCATED_PMDS; i++)
 		if (pmds[i]) {
 			pgtable_pmd_page_dtor(virt_to_page(pmds[i]));
-			free_kmem_pages((unsigned long)pmds[i], 0);
+			free_page((unsigned long)pmds[i]);
 		}
 }
 
@@ -213,11 +210,11 @@ static int preallocate_pmds(pmd_t *pmds[])
 	bool failed = false;
 
 	for(i = 0; i < PREALLOCATED_PMDS; i++) {
-		pmd_t *pmd = (pmd_t *)__get_free_kmem_pages(PGALLOC_GFP, 0);
+		pmd_t *pmd = (pmd_t *)__get_free_page(PGALLOC_GFP);
 		if (!pmd)
 			failed = true;
 		if (pmd && !pgtable_pmd_page_ctor(virt_to_page(pmd))) {
-			free_kmem_pages((unsigned long)pmd, 0);
+			free_page((unsigned long)pmd);
 			pmd = NULL;
 			failed = true;
 		}
@@ -284,7 +281,7 @@ pgd_t *pgd_alloc(struct mm_struct *mm)
 	pgd_t *pgd;
 	pmd_t *pmds[PREALLOCATED_PMDS];
 
-	pgd = (pgd_t *)__get_free_kmem_pages(PGALLOC_GFP, 0);
+	pgd = (pgd_t *)__get_free_page(PGALLOC_GFP);
 
 	if (pgd == NULL)
 		goto out;
@@ -314,7 +311,7 @@ pgd_t *pgd_alloc(struct mm_struct *mm)
 out_free_pmds:
 	free_pmds(pmds);
 out_free_pgd:
-	free_kmem_pages((unsigned long)pgd, 0);
+	free_page((unsigned long)pgd);
 out:
 	return NULL;
 }
@@ -324,7 +321,7 @@ void pgd_free(struct mm_struct *mm, pgd_t *pgd)
 	pgd_mop_up_pmds(mm, pgd);
 	pgd_dtor(pgd);
 	paravirt_pgd_free(mm, pgd);
-	free_kmem_pages((unsigned long)pgd, 0);
+	free_page((unsigned long)pgd);
 }
 
 /*
