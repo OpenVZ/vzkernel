@@ -2541,7 +2541,7 @@ static int packet_sendmsg(struct kiocb *iocb, struct socket *sock,
 #ifdef CONFIG_MEMCG_KMEM
 struct packet_sk_charge {
 	struct mem_cgroup	*memcg;
-	unsigned long		amt;
+	unsigned long		nr_pages;
 };
 
 static struct cg_proto *packet_sk_charge(void)
@@ -2565,9 +2565,9 @@ static struct cg_proto *packet_sk_charge(void)
 	 * It's typically not huge and packet sockets are rare guests in
 	 * containers, so we don't disturb the memory consumption much.
 	 */
-	psc->amt = ACCESS_ONCE(sysctl_rmem_max);
+	psc->nr_pages = ACCESS_ONCE(sysctl_rmem_max)/PAGE_SIZE;
 
-	err = memcg_charge_kmem(psc->memcg, GFP_KERNEL, psc->amt);
+	err = memcg_charge_kmem(psc->memcg, GFP_KERNEL, psc->nr_pages);
 	if (!err)
 		goto out;
 
@@ -2592,7 +2592,7 @@ static void packet_sk_uncharge(struct cg_proto *cg)
 	struct packet_sk_charge *psc = (struct packet_sk_charge *)cg;
 
 	if (psc) {
-		memcg_uncharge_kmem(psc->memcg, psc->amt);
+		memcg_uncharge_kmem(psc->memcg, psc->nr_pages);
 		mem_cgroup_put(psc->memcg);
 		kfree(psc);
 	}
@@ -3794,7 +3794,7 @@ static void free_pg_vec(struct pgv *pg_vec, unsigned int order,
 static char *alloc_one_pg_vec_page(unsigned long order)
 {
 	char *buffer = NULL;
-	gfp_t gfp_flags = GFP_KERNEL_ACCOUNT | __GFP_COMP |
+	gfp_t gfp_flags = GFP_KERNEL | __GFP_COMP |
 			  __GFP_ZERO | __GFP_NOWARN | __GFP_NORETRY;
 
 	buffer = (char *) __get_free_pages(gfp_flags, order);
@@ -3805,7 +3805,7 @@ static char *alloc_one_pg_vec_page(unsigned long order)
 	/*
 	 * __get_free_pages failed, fall back to vmalloc
 	 */
-	buffer = vzalloc_account((1 << order) * PAGE_SIZE);
+	buffer = vzalloc((1 << order) * PAGE_SIZE);
 
 	if (buffer)
 		return buffer;
@@ -3852,6 +3852,7 @@ out_free_pgvec:
 static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 		int closing, int tx_ring)
 {
+	struct packet_sk_charge *psc = (struct packet_sk_charge *)sk->sk_cgrp;
 	struct pgv *pg_vec = NULL;
 	struct packet_sock *po = pkt_sk(sk);
 	int was_running, order = 0;
@@ -3926,9 +3927,16 @@ static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 
 		err = -ENOMEM;
 		order = get_order(req->tp_block_size);
-		pg_vec = alloc_pg_vec(req, order);
-		if (unlikely(!pg_vec))
+		if (psc && memcg_charge_kmem(psc->memcg, GFP_KERNEL,
+				(1 << order) * req->tp_block_nr))
 			goto out;
+		pg_vec = alloc_pg_vec(req, order);
+		if (unlikely(!pg_vec)) {
+			if (psc)
+				memcg_uncharge_kmem(psc->memcg,
+					(1 << order) * req->tp_block_nr);
+			goto out;
+		}
 		switch (po->tp_version) {
 		case TPACKET_V3:
 		/* Transmit path is not supported. We checked
@@ -3997,8 +4005,12 @@ static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 			prb_shutdown_retire_blk_timer(po, tx_ring, rb_queue);
 	}
 
-	if (pg_vec)
+	if (pg_vec) {
+		if (psc)
+			memcg_uncharge_kmem(psc->memcg,
+				(1 << order) * req->tp_block_nr);
 		free_pg_vec(pg_vec, order, req->tp_block_nr);
+	}
 out:
 	release_sock(sk);
 	return err;
