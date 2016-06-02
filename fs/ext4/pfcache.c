@@ -43,6 +43,9 @@ int ext4_open_pfcache(struct inode *inode)
 	struct path root, path;
 	int ret;
 
+	if (inode->i_mapping->i_peer_file)
+		return -EBUSY;
+
 	if (!(ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM) &&
 	      EXT4_I(inode)->i_data_csum_end < 0))
 		return -ENODATA;
