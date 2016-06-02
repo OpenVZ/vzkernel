@@ -4327,6 +4327,7 @@ out_free_pgvec:
 static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 		int closing, int tx_ring)
 {
+	struct packet_sk_charge *psc = (struct packet_sk_charge *)sk->sk_memcg;
 	struct pgv *pg_vec = NULL;
 	struct packet_sock *po = pkt_sk(sk);
 	int was_running, order = 0;
@@ -4394,9 +4395,16 @@ static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 
 		err = -ENOMEM;
 		order = get_order(req->tp_block_size);
-		pg_vec = alloc_pg_vec(req, order);
-		if (unlikely(!pg_vec))
+		if (psc && memcg_charge_kmem(psc->memcg, GFP_KERNEL,
+				(1 << order) * req->tp_block_nr))
 			goto out;
+		pg_vec = alloc_pg_vec(req, order);
+		if (unlikely(!pg_vec)) {
+			if (psc)
+				memcg_uncharge_kmem(psc->memcg,
+					(1 << order) * req->tp_block_nr);
+			goto out;
+		}
 		switch (po->tp_version) {
 		case TPACKET_V3:
 			/* Block transmit is not supported yet */
@@ -4474,8 +4482,12 @@ static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 	}
 
 out_free_pg_vec:
-	if (pg_vec)
+	if (pg_vec) {
+		if (psc)
+			memcg_uncharge_kmem(psc->memcg,
+				(1 << order) * req->tp_block_nr);
 		free_pg_vec(pg_vec, order, req->tp_block_nr);
+	}
 out:
 	return err;
 }
