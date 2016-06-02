@@ -523,7 +523,7 @@ static inline void __ClearPageBalloon(struct page *page)
 	atomic_set(&page->_mapcount, -1);
 }
 
-#define PAGE_KMEMCG_MAPCOUNT_VALUE (-256)
+#define PAGE_KMEMCG_MAPCOUNT_VALUE (-512)
 
 static inline int PageKmemcg(struct page *page)
 {
