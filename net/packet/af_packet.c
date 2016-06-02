@@ -3740,7 +3740,7 @@ static void free_pg_vec(struct pgv *pg_vec, unsigned int order,
 static char *alloc_one_pg_vec_page(unsigned long order)
 {
 	char *buffer = NULL;
-	gfp_t gfp_flags = GFP_KERNEL_ACCOUNT | __GFP_COMP |
+	gfp_t gfp_flags = GFP_KERNEL | __GFP_COMP |
 			  __GFP_ZERO | __GFP_NOWARN | __GFP_NORETRY;
 
 	buffer = (char *) __get_free_pages(gfp_flags, order);
@@ -3751,7 +3751,7 @@ static char *alloc_one_pg_vec_page(unsigned long order)
 	/*
 	 * __get_free_pages failed, fall back to vmalloc
 	 */
-	buffer = vzalloc_account((1 << order) * PAGE_SIZE);
+	buffer = vzalloc((1 << order) * PAGE_SIZE);
 
 	if (buffer)
 		return buffer;
@@ -3798,6 +3798,7 @@ out_free_pgvec:
 static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 		int closing, int tx_ring)
 {
+	struct packet_sk_charge *psc = (struct packet_sk_charge *)sk->sk_cgrp;
 	struct pgv *pg_vec = NULL;
 	struct packet_sock *po = pkt_sk(sk);
 	int was_running, order = 0;
@@ -3867,9 +3868,16 @@ static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 
 		err = -ENOMEM;
 		order = get_order(req->tp_block_size);
-		pg_vec = alloc_pg_vec(req, order);
-		if (unlikely(!pg_vec))
+		if (psc && memcg_charge_kmem(psc->memcg, GFP_KERNEL,
+				(PAGE_SIZE << order) * req->tp_block_nr))
 			goto out;
+		pg_vec = alloc_pg_vec(req, order);
+		if (unlikely(!pg_vec)) {
+			if (psc)
+				memcg_uncharge_kmem(psc->memcg,
+					(PAGE_SIZE << order) * req->tp_block_nr);
+			goto out;
+		}
 		switch (po->tp_version) {
 		case TPACKET_V3:
 		/* Transmit path is not supported. We checked
@@ -3940,8 +3948,12 @@ static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 	}
 	release_sock(sk);
 
-	if (pg_vec)
+	if (pg_vec) {
+		if (psc)
+			memcg_uncharge_kmem(psc->memcg,
+				(PAGE_SIZE << order) * req->tp_block_nr);
 		free_pg_vec(pg_vec, order, req->tp_block_nr);
+	}
 out:
 	return err;
 }
