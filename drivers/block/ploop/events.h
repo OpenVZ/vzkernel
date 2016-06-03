@@ -26,6 +26,7 @@
 #define PRINT_PREQ_STATE(state)					\
 			__print_flags(state, "|",		\
 			{ 1 << PLOOP_REQ_LOCKOUT,	"L"},	\
+			{ 1 << PLOOP_REQ_PB_LOCKOUT,	"BL"},	\
 			{ 1 << PLOOP_REQ_SYNC,		"S"},	\
 			{ 1 << PLOOP_REQ_BARRIER,	"B"},	\
 			{ 1 << PLOOP_REQ_UNSTABLE,	"U"},	\
