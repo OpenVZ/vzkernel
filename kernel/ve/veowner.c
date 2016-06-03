@@ -52,7 +52,6 @@ static void prepare_proc(void)
  * OpenVZ sysctl
  * ------------------------------------------------------------------------
  */
-int ve_xattr_policy = VE_XATTR_POLICY_ACCEPT;
 static int ve_area_access_check;
 
 /*
@@ -70,13 +69,6 @@ static struct ctl_table vz_fs_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
-	},
-	{
-		.procname	= "ve-xattr-policy",
-		.data		= &ve_xattr_policy,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= &proc_dointvec,
 	},
 	{
 		.procname	= "fsync-enable",
