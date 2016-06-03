@@ -367,6 +367,7 @@ struct ploop_device
 	struct list_head	ready_queue;
 
 	struct rb_root		lockout_tree;
+	struct rb_root		lockout_pb_tree;
 
 	int			cluster_log;
 	int			fmt_version;
@@ -452,6 +453,7 @@ struct ploop_device
 enum
 {
 	PLOOP_REQ_LOCKOUT,	/* This preq is locking overapping requests */
+	PLOOP_REQ_PB_LOCKOUT,	/* This preq is locking overlapping WRITEs */
 	PLOOP_REQ_SYNC,
 	PLOOP_REQ_BARRIER,
 	PLOOP_REQ_UNSTABLE,
@@ -573,6 +575,7 @@ struct ploop_request
 	 * until we allocate and initialize block in delta.
 	 */
 	struct rb_node		lockout_link;
+	struct rb_node		lockout_pb_link;
 
 	u32			track_cluster;
 
