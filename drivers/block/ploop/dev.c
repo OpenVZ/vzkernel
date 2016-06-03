@@ -1090,20 +1090,25 @@ static int ploop_congested(void *data, int bits)
 	return ret;
 }
 
-static int check_lockout(struct ploop_request *preq)
+static int __check_lockout(struct ploop_request *preq, bool pb)
 {
 	struct ploop_device * plo = preq->plo;
-	struct rb_node * n = plo->lockout_tree.rb_node;
+	struct rb_node * n = pb ? plo->lockout_pb_tree.rb_node :
+				  plo->lockout_tree.rb_node;
 	struct ploop_request * p;
+	int lockout_bit = pb ? PLOOP_REQ_PB_LOCKOUT : PLOOP_REQ_LOCKOUT;
 
 	if (n == NULL)
 		return 0;
 
-	if (test_bit(PLOOP_REQ_LOCKOUT, &preq->state))
+	if (test_bit(lockout_bit, &preq->state))
 		return 0;
 
 	while (n) {
-		p = rb_entry(n, struct ploop_request, lockout_link);
+		if (pb)
+			p = rb_entry(n, struct ploop_request, lockout_pb_link);
+		else
+			p = rb_entry(n, struct ploop_request, lockout_link);
 
 		if (preq->req_cluster < p->req_cluster)
 			n = n->rb_left;
@@ -1119,19 +1124,51 @@ static int check_lockout(struct ploop_request *preq)
 	return 0;
 }
 
-int ploop_add_lockout(struct ploop_request *preq, int try)
+static int check_lockout(struct ploop_request *preq)
 {
-	struct ploop_device * plo = preq->plo;
-	struct rb_node ** p = &plo->lockout_tree.rb_node;
-	struct rb_node *parent = NULL;
-	struct ploop_request * pr;
+	if (__check_lockout(preq, false))
+		return 1;
 
-	if (test_bit(PLOOP_REQ_LOCKOUT, &preq->state))
+	/* push_backup passes READs intact */
+	if (!(preq->req_rw & REQ_WRITE))
 		return 0;
 
+	if (__check_lockout(preq, true))
+		return 1;
+
+	return 0;
+}
+
+static int __ploop_add_lockout(struct ploop_request *preq, int try, bool pb)
+{
+	struct ploop_device * plo = preq->plo;
+	struct rb_node ** p;
+	struct rb_node *parent = NULL;
+	struct ploop_request * pr;
+	struct rb_node *link;
+	struct rb_root *tree;
+	int lockout_bit;
+
+	if (pb) {
+		link = &preq->lockout_pb_link;
+		tree = &plo->lockout_pb_tree;
+		lockout_bit = PLOOP_REQ_PB_LOCKOUT;
+	} else {
+		link = &preq->lockout_link;
+		tree = &plo->lockout_tree;
+		lockout_bit = PLOOP_REQ_LOCKOUT;
+	}
+
+	if (test_bit(lockout_bit, &preq->state))
+		return 0;
+
+	p = &tree->rb_node;
 	while (*p) {
 		parent = *p;
-		pr = rb_entry(parent, struct ploop_request, lockout_link);
+		if (pb)
+			pr = rb_entry(parent, struct ploop_request, lockout_pb_link);
+		else
+			pr = rb_entry(parent, struct ploop_request, lockout_link);
 
 		if (preq->req_cluster == pr->req_cluster) {
 			if (try)
@@ -1147,23 +1184,56 @@ int ploop_add_lockout(struct ploop_request *preq, int try)
 
 	trace_add_lockout(preq);
 
-	rb_link_node(&preq->lockout_link, parent, p);
-	rb_insert_color(&preq->lockout_link, &plo->lockout_tree);
-	__set_bit(PLOOP_REQ_LOCKOUT, &preq->state);
+	rb_link_node(link, parent, p);
+	rb_insert_color(link, tree);
+	__set_bit(lockout_bit, &preq->state);
 	return 0;
+}
+
+int ploop_add_lockout(struct ploop_request *preq, int try)
+{
+	return __ploop_add_lockout(preq, try, false);
 }
 EXPORT_SYMBOL(ploop_add_lockout);
 
-void del_lockout(struct ploop_request *preq)
+static void ploop_add_pb_lockout(struct ploop_request *preq)
+{
+	__ploop_add_lockout(preq, 0, true);
+}
+
+static void __del_lockout(struct ploop_request *preq, bool pb)
 {
 	struct ploop_device * plo = preq->plo;
+	struct rb_node *link;
+	struct rb_root *tree;
+	int lockout_bit;
 
-	if (!test_and_clear_bit(PLOOP_REQ_LOCKOUT, &preq->state))
+	if (pb) {
+		link = &preq->lockout_pb_link;
+		tree = &plo->lockout_pb_tree;
+		lockout_bit = PLOOP_REQ_PB_LOCKOUT;
+	} else {
+		link = &preq->lockout_link;
+		tree = &plo->lockout_tree;
+		lockout_bit = PLOOP_REQ_LOCKOUT;
+	}
+
+	if (!test_and_clear_bit(lockout_bit, &preq->state))
 		return;
 
 	trace_del_lockout(preq);
 
-	rb_erase(&preq->lockout_link, &plo->lockout_tree);
+	rb_erase(link, tree);
+}
+
+void del_lockout(struct ploop_request *preq)
+{
+	__del_lockout(preq, false);
+}
+
+static void del_pb_lockout(struct ploop_request *preq)
+{
+	__del_lockout(preq, true);
 }
 
 static void ploop_discard_wakeup(struct ploop_request *preq, int err)
@@ -1257,6 +1327,7 @@ static void ploop_complete_request(struct ploop_request * preq)
 	spin_lock_irq(&plo->lock);
 
 	del_lockout(preq);
+	del_pb_lockout(preq); /* preq may die via ploop_fail_immediate() */
 
 	if (!list_empty(&preq->delay_list))
 		list_splice_init(&preq->delay_list, plo->ready_queue.prev);
@@ -2011,23 +2082,22 @@ restart:
 	}
 
 	/* push_backup special processing */
-	if (!test_bit(PLOOP_REQ_LOCKOUT, &preq->state) &&
+	if (!test_bit(PLOOP_REQ_PB_LOCKOUT, &preq->state) &&
 	    (preq->req_rw & REQ_WRITE) && preq->req_size &&
 	    ploop_pb_check_bit(plo->pbd, preq->req_cluster)) {
 		if (ploop_pb_preq_add_pending(plo->pbd, preq)) {
 			/* already reported by userspace push_backup */
 			ploop_pb_clear_bit(plo->pbd, preq->req_cluster);
 		} else {
-			spin_lock_irq(&plo->lock);
-			ploop_add_lockout(preq, 0);
-			spin_unlock_irq(&plo->lock);
+			/* needn't lock because only ploop_thread accesses */
+			ploop_add_pb_lockout(preq);
 			/*
 			 * preq IN: preq is in ppb_pending tree waiting for
 			 * out-of-band push_backup processing by userspace ...
 			 */
 			return;
 		}
-	} else if (test_bit(PLOOP_REQ_LOCKOUT, &preq->state) &&
+	} else if (test_bit(PLOOP_REQ_PB_LOCKOUT, &preq->state) &&
 		   test_and_clear_bit(PLOOP_REQ_PUSH_BACKUP, &preq->state)) {
 		/*
 		 * preq OUT: out-of-band push_backup processing by
@@ -2035,8 +2105,8 @@ restart:
 		 */
 		ploop_pb_clear_bit(plo->pbd, preq->req_cluster);
 
+		del_pb_lockout(preq);
 		spin_lock_irq(&plo->lock);
-		del_lockout(preq);
 		if (!list_empty(&preq->delay_list))
 			list_splice_init(&preq->delay_list, plo->ready_queue.prev);
 		spin_unlock_irq(&plo->lock);
@@ -4851,6 +4921,7 @@ static struct ploop_device *__ploop_dev_alloc(int index)
 	INIT_LIST_HEAD(&plo->entry_queue);
 	plo->entry_tree[0] = plo->entry_tree[1] = RB_ROOT;
 	plo->lockout_tree = RB_ROOT;
+	plo->lockout_pb_tree = RB_ROOT;
 	INIT_LIST_HEAD(&plo->ready_queue);
 	INIT_LIST_HEAD(&plo->free_list);
 	init_waitqueue_head(&plo->waitq);
