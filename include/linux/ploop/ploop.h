@@ -470,7 +470,6 @@ enum
 	PLOOP_REQ_KAIO_FSYNC,	/*force image fsync by KAIO module */
 	PLOOP_REQ_POST_SUBMIT, /* preq needs post_submit processing */
 	PLOOP_REQ_PUSH_BACKUP, /* preq was ACKed by userspace push_backup */
-	PLOOP_REQ_ALLOW_READS, /* READs are allowed for given req_cluster */
 	PLOOP_REQ_FSYNC_DONE,  /* fsync_thread() performed f_op->fsync() */
 };
 
