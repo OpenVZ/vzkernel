@@ -405,6 +405,20 @@ static const char * const ve0_allowed_mod[] = {
 	/* netlink_diag */
 	"net-pf-16-proto-4-type-16",	/* PF_NETLINK, NETLINK_SOCK_DIAG, AF_NETLINK */
 
+	/* ip_set */
+	"nfnetlink-subsys-6",		/* NFNL_SUBSYS_IPSET */
+	"ip_set_bitmap:ip",
+	"ip_set_bitmap:ip,mac",
+	"ip_set_bitmap:port",
+	"ip_set_hash:ip",
+	"ip_set_hash:ip,port",
+	"ip_set_hash:ip,port,ip",
+	"ip_set_hash:net",
+	"ip_set_hash:net,port",
+	"ip_set_hash:ip,port,net",
+	"ip_set_hash:net,iface",
+	"ip_set_list:set",
+
 	"rtnl-link-dummy",
 	"rtnl-link-vxlan",
 
