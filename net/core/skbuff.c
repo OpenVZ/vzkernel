@@ -817,6 +817,9 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 	new->encap_hdr_csum	= old->encap_hdr_csum;
 	new->csum_valid		= old->csum_valid;
 	new->csum_complete_sw	= old->csum_complete_sw;
+	new->csum_bad		= old->csum_bad;
+	new->csum_level		= old->csum_level;
+	new->remcsum_offload	= old->remcsum_offload;
 #ifdef CONFIG_XFRM
 	new->sp			= secpath_get(old->sp);
 #endif
