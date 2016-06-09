@@ -10,6 +10,8 @@ int ploop_pb_get_uuid(struct ploop_pushbackup_desc *pbd, __u8 *uuid);
 
 int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
 			 cluster_t *clu_p, cluster_t *len_p, unsigned n_done);
+int ploop_pb_peek(struct ploop_pushbackup_desc *pbd,
+		  cluster_t *clu_p, cluster_t *len_p, unsigned n_done);
 void ploop_pb_put_reported(struct ploop_pushbackup_desc *pbd,
 			   cluster_t clu, cluster_t len);
 
