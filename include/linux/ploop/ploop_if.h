@@ -202,6 +202,7 @@ struct ploop_push_backup_ctl_extent
 enum {
 	PLOOP_READ = 0, /* wait for requests */
 	PLOOP_WRITE,    /* ACK requests */
+	PLOOP_PEEK,     /* peek at what to be backed up */
 };
 
 struct ploop_push_backup_io_ctl
