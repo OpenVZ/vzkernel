@@ -4600,24 +4600,27 @@ pb_init_done:
 	return rc;
 }
 
-static int ploop_push_backup_io_read(struct ploop_device *plo, unsigned long arg,
-				     struct ploop_push_backup_io_ctl *ctl)
+static int ploop_push_backup_io_get(struct ploop_device *plo,
+		unsigned long arg, struct ploop_push_backup_io_ctl *ctl,
+		int (*get)(struct ploop_pushbackup_desc *, cluster_t *,
+			   cluster_t *, unsigned))
 {
 	struct ploop_push_backup_ctl_extent *e;
 	unsigned n_extents = 0;
 	int rc = 0;
+	cluster_t clu = 0;
+	cluster_t len = 0;
 
 	e = kmalloc(sizeof(*e) * ctl->n_extents, GFP_KERNEL);
 	if (!e)
 		return -ENOMEM;
 
 	while (n_extents < ctl->n_extents) {
-		cluster_t clu, len;
-		rc = ploop_pb_get_pending(plo->pbd, &clu, &len, n_extents);
+		rc = get(plo->pbd, &clu, &len, n_extents);
 		if (rc == -ENOENT && n_extents)
 			break;
 		else if (rc)
-			goto io_read_done;
+			goto io_get_done;
 
 		e[n_extents].clu = clu;
 		e[n_extents].len = len;
@@ -4627,15 +4630,41 @@ static int ploop_push_backup_io_read(struct ploop_device *plo, unsigned long arg
 	rc = -EFAULT;
 	ctl->n_extents = n_extents;
 	if (copy_to_user((void*)arg, ctl, sizeof(*ctl)))
-		goto io_read_done;
+		goto io_get_done;
 	if (n_extents &&
 	    copy_to_user((void*)(arg + sizeof(*ctl)), e,
 			 n_extents * sizeof(*e)))
-			goto io_read_done;
+			goto io_get_done;
 	rc = 0;
 
-io_read_done:
+io_get_done:
 	kfree(e);
+	return rc;
+}
+
+static int ploop_push_backup_io_read(struct ploop_device *plo,
+		unsigned long arg, struct ploop_push_backup_io_ctl *ctl)
+{
+	return ploop_push_backup_io_get(plo, arg, ctl, ploop_pb_get_pending);
+}
+
+static int ploop_push_backup_io_peek(struct ploop_device *plo,
+		unsigned long arg, struct ploop_push_backup_io_ctl *ctl)
+{
+	int rc;
+
+	ploop_quiesce(plo);
+	rc = ploop_push_backup_io_get(plo, arg, ctl, ploop_pb_peek);
+	ploop_relax(plo);
+
+	if (rc == -ENOENT) {
+		ctl->n_extents = 0;
+		if (copy_to_user((void*)arg, ctl, sizeof(*ctl)))
+			rc = -EFAULT;
+		else
+			rc = 0;
+	}
+
 	return rc;
 }
 
@@ -4694,6 +4723,8 @@ static int ploop_push_backup_io(struct ploop_device *plo, unsigned long arg)
 		return ploop_push_backup_io_read(plo, arg, &ctl);
 	case PLOOP_WRITE:
 		return ploop_push_backup_io_write(plo, arg, &ctl);
+	case PLOOP_PEEK:
+		return ploop_push_backup_io_peek(plo, arg, &ctl);
 	}
 
 	return -EINVAL;
