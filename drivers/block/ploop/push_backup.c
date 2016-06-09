@@ -303,9 +303,17 @@ int ploop_pb_init(struct ploop_pushbackup_desc *pbd, __u8 *uuid, bool full)
 	memcpy(pbd->cbt_uuid, uuid, sizeof(pbd->cbt_uuid));
 
 	if (full) {
-		int i;
+		int i, off;
 		for (i = 0; i < NR_PAGES(pbd->ppb_block_max); i++)
 			memset(page_address(pbd->ppb_map[i]), 0xff, PAGE_SIZE);
+
+		/* nullify bits beyond [0, pbd->ppb_block_max) range */
+		off = pbd->ppb_block_max & (BITS_PER_PAGE -1);
+		i = pbd->ppb_block_max >> (PAGE_SHIFT + 3);
+		while (off && off < BITS_PER_PAGE) {
+			__clear_bit(off, page_address(pbd->ppb_map[i]));
+			off++;
+		}
 		return 0;
 	}
 
@@ -636,6 +644,80 @@ int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
 get_pending_unlock:
 	spin_unlock(&pbd->ppb_lock);
 	return err;
+}
+
+static void fill_page_to_backup(struct ploop_pushbackup_desc *pbd,
+				unsigned long idx, struct page *page)
+{
+	u32 *dst = page_address(page);
+	u32 *fin = page_address(page) + PAGE_SIZE;
+	u32 *map = page_address(pbd->ppb_map[idx]);
+	u32 *rep = page_address(pbd->reported_map[idx]);
+
+	while (dst < fin) {
+		*dst = *map & ~*rep;
+		dst++;
+		map++;
+		rep++;
+	}
+}
+
+int ploop_pb_peek(struct ploop_pushbackup_desc *pbd,
+		  cluster_t *clu_p, cluster_t *len_p, unsigned n_done)
+{
+	unsigned long block = *clu_p + *len_p;
+	unsigned long idx = block >> (PAGE_SHIFT + 3);
+	unsigned long clu = 0;
+	unsigned long len = 0;
+	unsigned long off, off2;
+	struct page *page;
+	bool found = 0;
+
+	if (block >= pbd->ppb_block_max)
+		return -ENOENT;
+
+	page = alloc_page(GFP_KERNEL);
+	if (!page)
+		return -ENOMEM;
+
+	spin_lock(&pbd->ppb_lock);
+	while (block < pbd->ppb_block_max) {
+		fill_page_to_backup(pbd, idx, page);
+		off = block & (BITS_PER_PAGE -1);
+
+		if (!found) {
+			clu = find_next_bit(page_address(page),
+					       BITS_PER_PAGE, off);
+			if (clu == BITS_PER_PAGE)
+				goto next;
+
+			off = clu;
+			clu += idx << (PAGE_SHIFT + 3);
+			found = 1;
+		}
+
+		if (found) {
+			off2 = find_next_zero_bit(page_address(page),
+						  BITS_PER_PAGE, off);
+			len += off2 - off;
+			if (off2 != BITS_PER_PAGE)
+				break;
+		}
+
+	next:
+		idx++;
+		block = idx << (PAGE_SHIFT + 3);
+	}
+	spin_unlock(&pbd->ppb_lock);
+
+	__free_page(page);
+
+	if (!found)
+		return -ENOENT;
+
+	*clu_p = clu;
+	*len_p = len;
+	return 0;
 }
 
 static void ploop_pb_process_extent(struct rb_root *tree, cluster_t clu,
