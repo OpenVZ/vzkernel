@@ -440,7 +440,7 @@ void blk_cbt_update_size(struct block_device *bdev)
 		return;
 	}
 	bsz = 1 << cbt->block_bits;
-	if ((new_sz + bsz) >> cbt->block_bits <= cbt->block_max)
+	if ((new_sz + bsz - 1) >> cbt->block_bits <= cbt->block_max)
 		goto err_mtx;
 
 	new = do_cbt_alloc(q, cbt->uuid, new_sz, bsz);
