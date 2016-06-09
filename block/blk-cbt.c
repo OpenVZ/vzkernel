@@ -447,7 +447,7 @@ void blk_cbt_update_size(struct block_device *bdev)
 		set_bit(CBT_ERROR, &cbt->flags);
 		goto err_mtx;
 	}
-	to_cpy = NR_PAGES(new->block_max);
+	to_cpy = NR_PAGES(cbt->block_max);
 	set_bit(CBT_NOCACHE, &cbt->flags);
 	cbt_flush_cache(cbt);
 	spin_lock_irq(&cbt->lock);
