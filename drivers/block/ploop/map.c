@@ -1,4 +1,11 @@
 /*
+ *  drivers/block/ploop/map.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
+/*
  * Generic engine for mapping virtual blocks (cluster_t) to indices
  * in image (iblock_t).
  *

@@ -1,3 +1,10 @@
+/*
+ *  include/linux/ploop/ploop_if.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #ifndef __PLOOP_IF_H__
 #define __PLOOP_IF_H__ 1
 
