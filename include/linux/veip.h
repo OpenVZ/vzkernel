@@ -1,3 +1,10 @@
+/*
+ *  include/linux/veip.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #ifndef __VE_IP_H_
 #define __VE_IP_H_
 

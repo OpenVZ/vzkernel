@@ -1,10 +1,8 @@
 /*
- *  include/bc/statd.h
+ *  include/uapi/linux/bc/statd.h
  *
- *  Copyright (C) 2005  SWsoft
- *  All rights reserved.
- *  
- *  Licensing governed by "linux/COPYING.SWsoft" file.
+ *  Copyright (c) 2005-2008 SWsoft
+ *  Copyright (c) 2009-2015 Parallels IP Holdings GmbH
  *
  */
 

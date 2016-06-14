@@ -1,3 +1,10 @@
+/*
+ *  tools/testing/selftests/memfd/memfd_test.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #define _GNU_SOURCE
 #define __EXPORTED_HEADERS__
 

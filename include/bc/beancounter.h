@@ -1,10 +1,8 @@
 /*
  *  include/bc/beancounter.h
  *
- *  Copyright (C) 1999-2005  SWsoft
- *  All rights reserved.
- *  
- *  Licensing governed by "linux/COPYING.SWsoft" file.
+ *  Copyright (c) 1999-2008 SWsoft
+ *  Copyright (c) 2009-2015 Parallels IP Holdings GmbH
  *
  *  Andrey Savochkin	saw@sw-soft.com
  *

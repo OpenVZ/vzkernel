@@ -1,10 +1,8 @@
 /*
- *  include/linux/vzctl_veth.h
+ *  include/uapi/linux/vzctl_veth.h
  *
- *  Copyright (C) 2006  SWsoft
- *  All rights reserved.
- *
- *  Licensing governed by "linux/COPYING.SWsoft" file.
+ *  Copyright (c) 2006-2008 SWsoft
+ *  Copyright (c) 2009-2015 Parallels IP Holdings GmbH
  *
  */
 
