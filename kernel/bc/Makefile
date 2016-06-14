@@ -1,10 +1,9 @@
 #
 # User resources part (UBC)
 #
-# Copyright (C) 2005  SWsoft
-# All rights reserved.
+# Copyright (c) 2005-2008 SWsoft
+# Copyright (c) 2009-2015 Parallels IP Holdings GmbH
 #
-# Licensing governed by "linux/COPYING.SWsoft" file.
 
 obj-y := sys.o beancounter.o misc.o \
 	 vm_pages.o statd.o

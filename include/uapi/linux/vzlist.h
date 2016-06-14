@@ -1,7 +1,7 @@
 /*
- * include/linux/vzlist.h
+ *  include/uapi/linux/vzlist.h
  *
- * Copyright (c) 2015 Parallels IP Holdings GmbH
+ *  Copyright (c) 2015 Parallels IP Holdings GmbH
  *
  */
 
