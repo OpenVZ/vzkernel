@@ -1,6 +1,7 @@
 /*
+ *  net/ipv4/netfilter/ip_vzprivnet.c
  *
- *  Copyright (C) 2010  Parallels
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
  *
  */
 
