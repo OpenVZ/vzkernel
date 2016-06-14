@@ -1,3 +1,10 @@
+/*
+ *  drivers/scsi/scsi_dbg.h
+ *
+ *  Copyright (c) 2016 Parallels IP Holdings GmbH
+ *
+ */
+
 #ifndef _SCSI_DBG_H
 #define _SCSI_DBG_H
 
