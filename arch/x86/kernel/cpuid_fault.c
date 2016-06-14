@@ -1,3 +1,10 @@
+/*
+ *  arch/x86/kernel/cpuid_fault.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #include <linux/gfp.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
