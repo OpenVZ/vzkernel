@@ -1,7 +1,7 @@
 /*
- * kernel/ve/vzlist.c
+ *  kernel/ve/vzlist.c
  *
- * Copyright (c) 2015 Parallels IP Holdings GmbH
+ *  Copyright (c) 2015 Parallels IP Holdings GmbH
  *
  */
 
