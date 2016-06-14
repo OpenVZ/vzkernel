@@ -1,3 +1,10 @@
+/*
+ *  drivers/block/ploop/discard.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #include <linux/module.h>
 #include <linux/bio.h>
 
