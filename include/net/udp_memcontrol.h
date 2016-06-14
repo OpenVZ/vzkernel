@@ -1,3 +1,10 @@
+/*
+ *  include/net/udp_memcontrol.h
+ *
+ *  Copyright (c) 2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #ifndef _UDP_MEMCG_H
 #define _UDP_MEMCG_H
 
