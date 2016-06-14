@@ -1,4 +1,11 @@
 /*
+ *  kernel/fence-watchdog.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
+/*
  * Provide userspace with an interface to forbid kernel to work
  * without an userspace daemon.
  *
