@@ -1,3 +1,10 @@
+/*
+ *  drivers/base/vedev.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #include <linux/kobject.h>
 #include <linux/ve.h>
 #include <linux/ve_proto.h>

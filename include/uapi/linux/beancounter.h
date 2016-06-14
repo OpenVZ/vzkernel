@@ -1,3 +1,10 @@
+/*
+ *  include/uapi/linux/beancounter.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #ifndef _UAPI_LINUX_BEANCOUNTER_H
 #define _UAPI_LINUX_BEANCOUNTER_H
 

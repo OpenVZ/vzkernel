@@ -1,3 +1,10 @@
+/*
+ *  include/linux/fence-watchdog.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #ifndef _LINUX_FENCE_WATCHDOG_H_
 #define _LINUX_FENCE_WATCHDOG_H_
 
