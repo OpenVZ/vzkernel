@@ -1,3 +1,10 @@
+/*
+ *  drivers/block/ploop/push_backup.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 struct ploop_pushbackup_desc;
 
 struct ploop_pushbackup_desc *ploop_pb_alloc(struct ploop_device *plo);
