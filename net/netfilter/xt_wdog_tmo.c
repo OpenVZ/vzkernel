@@ -1,10 +1,10 @@
 /*
  *  net/netfilter/xt_wdog_tmo.c
  *
- *  Copyright (C) 2013, Parallels inc.
- *  All rights reserved.
+ *  Copyright (c) 2013-2015 Parallels IP Holdings GmbH
  *
  */
+
 #include <linux/module.h>
 #include <linux/skbuff.h>
 #include <linux/file.h>

@@ -1,3 +1,10 @@
+/*
+ *  drivers/block/ploop/io_direct_events.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #if !defined(_TRACE_IO_DIRECT_H) || defined(TRACE_HEADER_MULTI_READ)
 #define _TRACE_IO_DIRECT_H
 

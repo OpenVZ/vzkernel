@@ -1,7 +1,7 @@
 /*
- * include/linux/vzctl_netstat.h
+ *  include/uapi/linux/vzctl_netstat.h
  *
- * Copyright (c) 2015 Parallels IP Holdings GmbH
+ *  Copyright (c) 2015 Parallels IP Holdings GmbH
  *
  */
 
