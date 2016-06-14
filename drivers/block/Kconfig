@@ -282,7 +282,7 @@ config BLK_DEV_CRYPTOLOOP
 	  cryptoloop device.
 
 config BLK_DEV_PLOOP
-	tristate "Parallels loopback device support"
+	tristate "Virtuozzo loopback device support"
 	---help---
 	  Saying Y here will allow you to use a regular file as a block
 	  device; you can then create a file system on that block device and
