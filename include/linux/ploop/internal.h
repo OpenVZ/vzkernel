@@ -1,3 +1,10 @@
+/*
+ *  include/linux/ploop/internal.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #ifndef _BIO_HELP_H_
 #define _BIO_HELP_H_ 1
 
