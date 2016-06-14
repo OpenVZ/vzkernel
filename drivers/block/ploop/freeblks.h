@@ -1,3 +1,10 @@
+/*
+ *  drivers/block/ploop/freeblks.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #ifndef __FREEBLKS_H__
 #define __FREEBLKS_H__
 
