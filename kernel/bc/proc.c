@@ -1,7 +1,8 @@
 /*
- *  kernel/bc/proc.c 
+ *  kernel/bc/proc.c
  *
- *  Copyright (C) 2006 OpenVZ. SWsoft Inc.
+ *  Copyright (c) 2006-2008 SWsoft
+ *  Copyright (c) 2009-2015 Parallels IP Holdings GmbH
  *
  */
 
