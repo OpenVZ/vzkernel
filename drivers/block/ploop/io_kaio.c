@@ -1,3 +1,10 @@
+/*
+ *  drivers/block/ploop/io_kaio.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #include <linux/module.h>
 #include <linux/errno.h>
 #include <linux/sched.h>
