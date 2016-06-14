@@ -1,3 +1,10 @@
+/*
+ *  drivers/block/ploop/io_direct_map.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #ifndef __INTERVAL_TREE_H__
 #define __INTERVAL_TREE_H__
 
