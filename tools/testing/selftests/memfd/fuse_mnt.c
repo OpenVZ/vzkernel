@@ -1,4 +1,11 @@
 /*
+ *  tools/testing/selftests/memfd/fuse_mnt.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
+/*
  * memfd test file-system
  * This file uses FUSE to create a dummy file-system with only one file /memfd.
  * This file is read-only and takes 1s per read.

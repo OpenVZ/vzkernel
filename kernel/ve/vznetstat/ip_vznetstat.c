@@ -1,7 +1,8 @@
 /*
- * kernel/ve/vznetstat/ip_vznetstat.c
+ *  kernel/ve/vznetstat/ip_vznetstat.c
  *
- * Copyright (c) 2004-2015 Parallels IP Holdings GmbH
+ *  Copyright (c) 2004-2008 SWsoft
+ *  Copyright (c) 2009-2015 Parallels IP Holdings GmbH
  *
  */
 
