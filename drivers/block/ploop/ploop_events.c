@@ -1,3 +1,10 @@
+/*
+ *  drivers/block/ploop/ploop_events.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #include <linux/module.h>
 #include <linux/interrupt.h>
 
