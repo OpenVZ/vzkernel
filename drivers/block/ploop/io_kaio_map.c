@@ -1,3 +1,10 @@
+/*
+ *  drivers/block/ploop/io_kaio_map.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #include <linux/ploop/ploop.h>
 
 struct ploop_mapping
