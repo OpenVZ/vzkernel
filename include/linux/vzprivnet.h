@@ -1,3 +1,10 @@
+/*
+ *  include/linux/vzprivnet.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #ifndef __IP_VZPRIVNET_H__
 #define __IP_VZPRIVNET_H__
 

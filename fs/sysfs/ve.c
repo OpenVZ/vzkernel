@@ -1,8 +1,8 @@
 /*
- * fs/sysfs/ve.c - sysfs permissions for containers
+ *  fs/sysfs/ve.c - sysfs permissions for containers
  *
- * Copyright (C) 2013  Parallels, inc.
- * Licensing governed by "linux/COPYING.Parallels" file.
+ *  Copyright (c) 2013-2015 Parallels IP Holdings GmbH
+ *
  */
 
 #include <linux/seq_file.h>
