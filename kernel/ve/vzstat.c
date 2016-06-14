@@ -1,7 +1,7 @@
 /*
- * kernel/ve/vzstat.c
+ *  kernel/ve/vzstat.c
  *
- * Copyright (c) 2015 Parallels IP Holdings GmbH
+ *  Copyright (c) 2015 Parallels IP Holdings GmbH
  *
  */
 
