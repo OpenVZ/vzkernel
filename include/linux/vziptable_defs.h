@@ -1,3 +1,10 @@
+/*
+ *  include/linux/vziptable_defs.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #ifndef _LINUX_VZIPTABLE_DEFS_H
 #define _LINUX_VZIPTABLE_DEFS_H
 
