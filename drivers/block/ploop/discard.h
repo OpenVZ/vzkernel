@@ -1,3 +1,10 @@
+/*
+ *  drivers/block/ploop/discard.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #ifndef _LINUX_PLOOP_DISCARD_H_
 #define _LINUX_PLOOP_DISCARD_H_
 
