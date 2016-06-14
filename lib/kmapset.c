@@ -1,3 +1,10 @@
+/*
+ *  lib/kmapset.c
+ *
+ *  Copyright (c) 2013-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #include <linux/kmapset.h>
 #include <linux/slab.h>
 #include <linux/hash.h>
