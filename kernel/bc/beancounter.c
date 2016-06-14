@@ -1,12 +1,10 @@
 /*
- *  linux/kernel/bc/beancounter.c
+ *  kernel/bc/beancounter.c
  *
  *  Copyright (C) 1998  Alan Cox
  *                1998-2000  Andrey V. Savochkin <saw@saw.sw.com.sg>
- *  Copyright (C) 2000-2005 SWsoft
- *  All rights reserved.
- *  
- *  Licensing governed by "linux/COPYING.SWsoft" file.
+ *  Copyright (c) 2000-2008 SWsoft
+ *  Copyright (c) 2009-2015 Parallels IP Holdings GmbH
  *
  * TODO:
  *   - more intelligent limit check in mremap(): currently the new size is
