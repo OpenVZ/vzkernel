@@ -1,3 +1,10 @@
+/*
+ *  block/blk-cbt.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/string.h>
