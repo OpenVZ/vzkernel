@@ -1,3 +1,10 @@
+/*
+ *  net/ipv4/udp_memcontrol.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #include <net/udp.h>
 #include <net/udp_memcontrol.h>
 #include <net/sock.h>
