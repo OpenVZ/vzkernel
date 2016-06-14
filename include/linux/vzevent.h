@@ -1,3 +1,10 @@
+/*
+ *  include/linux/vzevent.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #ifndef __LINUX_VZ_EVENT_H__
 #define __LINUX_VZ_EVENT_H__
 
