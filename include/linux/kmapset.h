@@ -1,3 +1,10 @@
+/*
+ *  include/linux/kmapset.h
+ *
+ *  Copyright (c) 2013-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #ifndef _LINUX_KMAPSET_H
 #define _LINUX_KMAPSET_H
 

@@ -1,10 +1,7 @@
 /*
  *  kernel/bc/io_prio.c
  *
- *  Copyright (C) 2010  Parallels, inc.
- *  All rights reserved.
- *
- *  Licensing governed by "linux/COPYING.Parallels" file.
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
  *
  */
 
