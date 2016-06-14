@@ -1,3 +1,10 @@
+/*
+ *  drivers/block/ploop/fmt_raw.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #include <linux/module.h>
 #include <linux/version.h>
 #include <linux/fs.h>
