@@ -1,4 +1,11 @@
 /*
+ *  tools/testing/selftests/memfd/fuse_test.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
+/*
  * memfd GUP test-case
  * This tests memfd interactions with get_user_pages(). We require the
  * fuse_mnt.c program to provide a fake direct-IO FUSE mount-point for us. This
