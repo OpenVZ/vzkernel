@@ -1,3 +1,10 @@
+/*
+ *  drivers/block/ploop/dev.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/fs.h>
