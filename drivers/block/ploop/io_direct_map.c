@@ -1,3 +1,10 @@
+/*
+ *  drivers/block/ploop/io_direct_map.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #include <linux/sched.h>
 #include <linux/err.h>
 #include <linux/gfp.h>
