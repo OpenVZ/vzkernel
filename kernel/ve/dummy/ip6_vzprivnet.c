@@ -1,6 +1,7 @@
 /*
+ *  kernel/ve/dummy/ip6_vzprivnet.c
  *
- * Copyright (c) 2015 Parallels IP Holdings GmbH
+ *  Copyright (c) 2015 Parallels IP Holdings GmbH
  *
  */
 
