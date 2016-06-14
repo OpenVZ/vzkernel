@@ -1,3 +1,10 @@
+/*
+ *  mm/page_idle.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #include <linux/init.h>
 #include <linux/bootmem.h>
 #include <linux/fs.h>
