@@ -1,3 +1,10 @@
+/*
+ *  mm/tswap.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/types.h>

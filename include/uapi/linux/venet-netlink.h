@@ -1,3 +1,10 @@
+/*
+ *  include/uapi/linux/venet-netlink.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #ifndef __NET_VENET_H_
 #define __NET_VENET_H_
 
