@@ -1,11 +1,10 @@
 /*
- * linux/fs/ext4/pfcache.c
+ *  fs/ext4/pfcache.c
  *
- * Automatic SHA-1 (FIPS 180-1) data checksummig
+ *  Automatic SHA-1 (FIPS 180-1) data checksummig
  *
- * Copyright (C) 2013 Parallels, inc.
- *
- * Author: Konstantin Khlebnikov
+ *  Copyright (c) 2013-2015 Parallels IP Holdings GmbH
+ *  Author: Konstantin Khlebnikov
  *
  */
 
