@@ -1,17 +1,16 @@
-#ifndef LINUX_PFCACHE_H
-#define LINUX_PFCACHE_H
-
-/**
- * include/linux/pfcache
+/*
+ *  include/linux/pfcache.h
  *
- * Parallels File Cache
+ *  Parallels File Cache
  *
- * Copyright (C) 2012. Parallels IP Holdings GmbH.
- * All rights reserved.
+ *  Copyright (c) 2012-2015 Parallels IP Holdings GmbH
  *
- * Author: Konstantin Khlebnikov
+ *  Author: Konstantin Khlebnikov
  *
  */
+
+#ifndef LINUX_PFCACHE_H
+#define LINUX_PFCACHE_H
 
 #include <linux/types.h>
 #include <linux/ioctl.h>
