@@ -1,3 +1,10 @@
+/*
+ *  drivers/block/ploop/ploop1_image.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #ifndef __PLOOP1_IMAGE_H__
 #define __PLOOP1_IMAGE_H__ 1
 
