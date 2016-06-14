@@ -1,3 +1,10 @@
+/*
+ *  drivers/block/ploop/ploop_events.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #if !defined(_TRACE_PLOOP_H) || defined(TRACE_HEADER_MULTI_READ)
 #define _TRACE_PLOOP_H
 

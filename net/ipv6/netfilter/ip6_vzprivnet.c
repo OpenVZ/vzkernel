@@ -1,3 +1,10 @@
+/*
+ *  net/ipv6/netfilter/ip6_vzprivnet.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv6.h>
 #include <linux/vzprivnet.h>
