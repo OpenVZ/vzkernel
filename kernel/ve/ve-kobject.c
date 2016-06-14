@@ -1,3 +1,10 @@
+/*
+ *  kernel/ve/ve-kobject.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #include <linux/ve.h>
 #include <linux/kobject_ns.h>
 

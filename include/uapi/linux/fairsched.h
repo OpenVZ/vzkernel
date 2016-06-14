@@ -1,3 +1,10 @@
+/*
+ *  include/uapi/linux/fairsched.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #ifndef _UAPI_LINUX_FAIRSCHED_H
 #define _UAPI_LINUX_FAIRSCHED_H
 
