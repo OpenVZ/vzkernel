@@ -1,3 +1,10 @@
+/*
+ *  include/linux/ploop/ploop_stat.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 __DO(bio_in)
 __DO(bio_fast)
 __DO(bio_full)

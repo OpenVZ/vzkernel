@@ -1,10 +1,10 @@
 /*
- * Fair Scheduler
+ *  include/linux/fairsched.h
  *
- * Copyright (C) 2000-2008  SWsoft
- *  All rights reserved.
+ *  Fair Scheduler
  *
- *  Licensing governed by "linux/COPYING.SWsoft" file.
+ *  Copyright (c) 2000-2008 SWsoft
+ *  Copyright (c) 2009-2015 Parallels IP Holdings GmbH
  *
  */
 
