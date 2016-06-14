@@ -1,3 +1,10 @@
+/*
+ *  mm/iov-iter.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *
+ */
+
 #include <linux/module.h>
 #include <linux/fs.h>
 #include <linux/uaccess.h>
