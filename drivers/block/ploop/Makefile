@@ -1,6 +1,9 @@
 #
-# Makefile for Parallels loop device
+# Makefile for Virtuozzo loop device
 #
+# Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+#
+
 CFLAGS_io_direct.o = -I$(src)
 CFLAGS_ploop_events.o = -I$(src)
 
