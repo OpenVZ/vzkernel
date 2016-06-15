@@ -516,3 +516,4 @@ module_init(iolimit_init)
 module_exit(iolimit_exit)
 
 MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Virtuozzo <devel@openvz.org>");
