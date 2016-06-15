@@ -781,6 +781,7 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 	struct bio * nbio;
 	struct ploop_device * plo = q->queuedata;
 	unsigned long rw = bio_data_dir(bio);
+	struct hd_struct *part;
 	int cpu;
 	LIST_HEAD(drop_list);
 
@@ -792,8 +793,9 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 	BUG_ON(bio->bi_size & 511);
 
 	cpu = part_stat_lock();
-	part_stat_inc(cpu, &plo->disk->part0, ios[rw]);
-	part_stat_add(cpu, &plo->disk->part0, sectors[rw], bio_sectors(bio));
+	part = disk_map_sector_rcu(plo->disk, bio->bi_sector);
+	part_stat_inc(cpu, part, ios[rw]);
+	part_stat_add(cpu, part, sectors[rw], bio_sectors(bio));
 	part_stat_unlock();
 
 	if (unlikely(bio->bi_size == 0)) {
