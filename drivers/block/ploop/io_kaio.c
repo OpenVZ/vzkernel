@@ -1052,4 +1052,5 @@ static void __exit pio_kaio_mod_exit(void)
 module_init(pio_kaio_mod_init);
 module_exit(pio_kaio_mod_exit);
 
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Virtuozzo <devel@openvz.org>");
