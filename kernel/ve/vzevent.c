@@ -137,7 +137,8 @@ static void __exit exit_vzevent(void)
 	netlink_kernel_release(vzev_sock);
 }
 
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Virtuozzo <devel@openvz.org>");
 
 module_init(init_vzevent);
 module_exit(exit_vzevent);
