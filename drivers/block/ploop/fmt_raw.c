@@ -265,4 +265,5 @@ static void __exit pfmt_raw_mod_exit(void)
 module_init(pfmt_raw_mod_init);
 module_exit(pfmt_raw_mod_exit);
 
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Virtuozzo <devel@openvz.org>");

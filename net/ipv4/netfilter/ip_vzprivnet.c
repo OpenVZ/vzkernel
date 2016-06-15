@@ -1185,4 +1185,5 @@ static void __exit iptable_vzprivnet_exit(void)
 module_init(iptable_vzprivnet_init)
 module_exit(iptable_vzprivnet_exit)
 
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Virtuozzo <devel@openvz.org>");
