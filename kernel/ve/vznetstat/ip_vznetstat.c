@@ -167,3 +167,4 @@ module_init(ip_venetstat_init);
 module_exit(ip_venetstat_exit);
 
 MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Virtuozzo <devel@openvz.org>");
