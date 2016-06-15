@@ -1225,7 +1225,7 @@ __exit void venet_exit(void)
 module_init(venet_init);
 module_exit(venet_exit);
 
-MODULE_AUTHOR("Parallels <info@parallels.com>");
+MODULE_AUTHOR("Parallels <devel@openvz.org>");
 MODULE_DESCRIPTION("Virtuozzo Virtual Network Device");
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS("vznet");

@@ -1160,6 +1160,7 @@ module_init(venetstat_init);
 module_exit(venetstat_exit);
 
 MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Virtuozzo <devel@openvz.org>");
 
 EXPORT_SYMBOL(venet_acct_find_create_stat);
 EXPORT_SYMBOL(venet_acct_find_stat);
