@@ -761,3 +761,4 @@ module_init(vzstat_mon_init);
 module_exit(vzstat_mon_exit);
 
 MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Virtuozzo <devel@openvz.org>");
