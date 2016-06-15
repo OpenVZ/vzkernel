@@ -345,7 +345,7 @@ static void __exit wdog_exit(void)
 }
 
 module_param(sleep_timeout, int, 0660);
-MODULE_AUTHOR("SWsoft <info@sw-soft.com>");
+MODULE_AUTHOR("SWsoft <devel@openvz.org>");
 MODULE_DESCRIPTION("Virtuozzo WDOG");
 MODULE_LICENSE("GPL v2");
 
