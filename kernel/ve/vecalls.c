@@ -755,7 +755,7 @@ static void __exit vecalls_exit(void)
 	fini_vecalls_proc();
 }
 
-MODULE_AUTHOR("SWsoft <info@sw-soft.com>");
+MODULE_AUTHOR("SWsoft <devel@openvz.org>");
 MODULE_DESCRIPTION("Virtuozzo Control");
 MODULE_LICENSE("GPL v2");
 
