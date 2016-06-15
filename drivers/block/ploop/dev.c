@@ -5213,7 +5213,9 @@ static struct block_device_operations ploop_dev_fops = {
 	.revalidate_disk =	ploop_revalidate,
 };
 
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Virtuozzo <devel@openvz.org>");
+MODULE_DESCRIPTION("Virtuozzo loopback device driver");
 MODULE_ALIAS_BLOCKDEV_MAJOR(PLOOP_DEVICE_MAJOR);
 
 atomic_t plo_count = ATOMIC_INIT(0);
