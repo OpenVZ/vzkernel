@@ -21,7 +21,7 @@
 #define VZCTL_MAJOR 126
 #define VZCTL_NAME "vzctl"
 
-MODULE_AUTHOR("SWsoft <info@sw-soft.com>");
+MODULE_AUTHOR("SWsoft <devel@openvz.org>");
 MODULE_DESCRIPTION("Virtuozzo Interface");
 MODULE_LICENSE("GPL v2");
 
