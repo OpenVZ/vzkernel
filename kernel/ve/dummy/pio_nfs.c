@@ -20,3 +20,4 @@ void __exit dummy_exit(void)
 module_init(dummy_init);
 module_exit(dummy_exit);
 MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Virtuozzo <devel@openvz.org>");
