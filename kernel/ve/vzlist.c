@@ -300,3 +300,4 @@ module_init(init_vzlist);
 module_exit(exit_vzlist);
 
 MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Virtuozzo <devel@openvz.org>");
