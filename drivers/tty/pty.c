@@ -901,6 +901,13 @@ static void vtty_map_set(vtty_map_t *map, struct tty_struct *tty)
 	map->vttys[tty->index] = tty;
 }
 
+static void vtty_map_free(vtty_map_t *map)
+{
+	lockdep_assert_held(&tty_mutex);
+	idr_remove(&vtty_idr, map->veid);
+	kfree(map);
+}
+
 static void vtty_map_clear(struct tty_struct *tty)
 {
 	vtty_map_t *map = tty->driver_data;
@@ -908,28 +915,20 @@ static void vtty_map_clear(struct tty_struct *tty)
 	lockdep_assert_held(&tty_mutex);
 	if (map) {
 		struct tty_struct *p = map->vttys[tty->index];
+		int i;
 
 		WARN_ON(p != (tty->driver == vttys_driver ? tty : tty->link));
 		map->vttys[tty->index] = NULL;
 		tty->driver_data = tty->link->driver_data = NULL;
+
+		for (i = 0; i < MAX_NR_VTTY_CONSOLES; i++) {
+			if (map->vttys[i])
+				break;
+		}
+
+		if (i >= MAX_NR_VTTY_CONSOLES)
+			vtty_map_free(map);
 	}
-}
-
-static void vtty_map_free(vtty_map_t *map)
-{
-	int i;
-
-	lockdep_assert_held(&tty_mutex);
-
-	for (i = 0; i < MAX_NR_VTTY_CONSOLES; i++) {
-		struct tty_struct *tty = map->vttys[i];
-		if (!tty)
-			continue;
-		tty->driver_data = tty->link->driver_data = NULL;
-	}
-
-	idr_remove(&vtty_idr, map->veid);
-	kfree(map);
 }
 
 static vtty_map_t *vtty_map_alloc(envid_t veid)
@@ -1209,24 +1208,6 @@ void vtty_release(struct tty_struct *tty, struct tty_struct *o_tty,
 		*o_tty_closing = 0;
 }
 
-static void ve_vtty_fini(void *data)
-{
-	struct ve_struct *ve = data;
-	vtty_map_t *map;
-
-	mutex_lock(&tty_mutex);
-	map = vtty_map_lookup(ve->veid);
-	if (map)
-		vtty_map_free(map);
-	mutex_unlock(&tty_mutex);
-}
-
-static struct ve_hook vtty_hook = {
-	.fini           = ve_vtty_fini,
-	.priority       = HOOK_PRIO_DEFAULT,
-	.owner          = THIS_MODULE,
-};
-
 static int __init vtty_init(void)
 {
 #define VTTY_DRIVER_ALLOC_FLAGS			\
@@ -1279,7 +1260,6 @@ static int __init vtty_init(void)
 	if (tty_register_driver(vttys_driver))
 		panic(pr_fmt("Can't register slave vtty driver\n"));
 
-	ve_hook_register(VE_SS_CHAIN, &vtty_hook);
 	tty_default_fops(&vtty_fops);
 	return 0;
 }
