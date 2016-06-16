@@ -289,8 +289,6 @@ extern int sysctl_tcp_min_tso_segs;
 extern int sysctl_tcp_autocorking;
 extern int sysctl_tcp_invalid_ratelimit;
 extern int sysctl_tcp_use_sg;
-extern int sysctl_tcp_max_tw_kmem_fraction;
-extern int sysctl_tcp_max_tw_buckets_ub;
 
 extern atomic_long_t tcp_memory_allocated;
 extern struct percpu_counter tcp_sockets_allocated;
