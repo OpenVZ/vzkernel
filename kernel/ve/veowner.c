@@ -50,7 +50,6 @@ static void prepare_proc(void)
  * OpenVZ sysctl
  * ------------------------------------------------------------------------
  */
-static int ve_area_access_check;
 
 /*
  * Operations with a big amount of mount points can require a lot of time.
@@ -61,13 +60,6 @@ static int ve_area_access_check;
 unsigned int sysctl_ve_mount_nr = 4096;
 
 static struct ctl_table vz_fs_table[] = {
-	{
-		.procname	= "ve-area-access-check",
-		.data		= &ve_area_access_check,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec,
-	},
 	{
 		.procname	= "fsync-enable",
 		.data		= &ve0.fsync_enable,
