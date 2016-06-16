@@ -813,20 +813,6 @@ static struct ctl_table ipv4_table[] = {
 		.extra1		= &one
 	},
 	{
-		.procname       = "tcp_max_tw_kmem_fraction",
-		.data           = &sysctl_tcp_max_tw_kmem_fraction,
-		.maxlen         = sizeof(int),
-		.mode           = 0644,
-		.proc_handler   = proc_dointvec,
-	},
-	{
-		.procname       = "tcp_max_tw_buckets_ub",
-		.data           = &sysctl_tcp_max_tw_buckets_ub,
-		.maxlen         = sizeof(int),
-		.mode           = 0644,
-		.proc_handler   = proc_dointvec,
-	},
-	{
 		.procname	= "tcp_use_sg",
 		.data		= &sysctl_tcp_use_sg,
 		.maxlen		= sizeof(int),

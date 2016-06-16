@@ -31,11 +31,6 @@ int sysctl_tcp_syncookies __read_mostly = 1;
 EXPORT_SYMBOL(sysctl_tcp_syncookies);
 
 int sysctl_tcp_abort_on_overflow __read_mostly;
-int sysctl_tcp_max_tw_kmem_fraction __read_mostly = 384;
-int sysctl_tcp_max_tw_buckets_ub __read_mostly = 16536;
-
-EXPORT_SYMBOL(sysctl_tcp_max_tw_kmem_fraction);
-EXPORT_SYMBOL(sysctl_tcp_max_tw_buckets_ub);
 
 struct inet_timewait_death_row tcp_death_row = {
 	.sysctl_max_tw_buckets = NR_FILE * 2,
