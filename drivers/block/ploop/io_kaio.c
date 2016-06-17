@@ -71,8 +71,6 @@ static void kaio_complete_io_state(struct ploop_request * preq)
 		return;
 	}
 
-	preq->req_rw &= ~REQ_FUA;
-
 	/* Convert requested fua to fsync */
 	if (test_and_clear_bit(PLOOP_REQ_FORCE_FUA, &preq->state) ||
 	    test_and_clear_bit(PLOOP_REQ_KAIO_FSYNC, &preq->state))
