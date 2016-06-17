@@ -268,7 +268,7 @@ static void devcgroup_css_free(struct cgroup *cgroup)
 #define DEVCG_LIST 3
 
 #define MAJMINLEN 13
-#define ACCLEN 4
+#define ACCLEN 5
 
 static void set_access(char *acc, short access)
 {
@@ -280,6 +280,8 @@ static void set_access(char *acc, short access)
 		acc[idx++] = 'w';
 	if (access & ACC_MKNOD)
 		acc[idx++] = 'm';
+	if (access & ACC_MOUNT)
+		acc[idx++] = 'M';
 }
 
 static char type_to_char(short type)
@@ -762,7 +764,7 @@ static int devcgroup_update_access(struct dev_cgroup *devcgroup,
 	}
 	if (!isspace(*b))
 		return -EINVAL;
-	for (b++, count = 0; count < 3; count++, b++) {
+	for (b++, count = 0; count < ACCLEN - 1; count++, b++) {
 		switch (*b) {
 		case 'r':
 			ex.access |= ACC_READ;
@@ -773,9 +775,12 @@ static int devcgroup_update_access(struct dev_cgroup *devcgroup,
 		case 'm':
 			ex.access |= ACC_MKNOD;
 			break;
+		case 'M':
+			ex.access |= ACC_MOUNT;
+			break;
 		case '\n':
 		case '\0':
-			count = 3;
+			count = ACCLEN - 1;
 			break;
 		default:
 			return -EINVAL;
