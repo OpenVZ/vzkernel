@@ -79,7 +79,7 @@ typedef void (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
 /* called from RCU mode, don't block */
 #define MAY_NOT_BLOCK		0x00000080
 /* for devgroup-vs-openvz only */
-#define MAY_QUOTACTL		0x00010000
+#define MAY_QUOTACTL		0x00010000	/* deprecated */
 #define MAY_MOUNT		0x00020000
 
 /*
