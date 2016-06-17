@@ -22,10 +22,10 @@
 #define ACC_MKNOD 1
 #define ACC_READ  2
 #define ACC_WRITE 4
-#define ACC_QUOTA 8
+#define ACC_QUOTA 8	/* deprecated */
 #define ACC_HIDDEN 16
 #define ACC_MOUNT 64
-#define ACC_MASK (ACC_MKNOD | ACC_READ | ACC_WRITE | ACC_QUOTA | ACC_MOUNT)
+#define ACC_MASK (ACC_MKNOD | ACC_READ | ACC_WRITE | ACC_MOUNT)
 
 #define DEV_BLOCK 1
 #define DEV_CHAR  2
@@ -941,8 +941,6 @@ int __devcgroup_inode_permission(struct inode *inode, int mask)
 		access |= ACC_WRITE;
 	if (mask & MAY_READ)
 		access |= ACC_READ;
-	if (mask & MAY_QUOTACTL)
-		access |= ACC_QUOTA;
 	if (mask & MAY_MOUNT)
 		access |= ACC_MOUNT;
 
@@ -962,8 +960,6 @@ int devcgroup_device_permission(umode_t mode, dev_t dev, int mask)
 		access |= ACC_WRITE;
 	if (mask & MAY_READ)
 		access |= ACC_READ;
-	if (mask & MAY_QUOTACTL)
-		access |= ACC_QUOTA;
 
 	return __devcgroup_check_permission(type, MAJOR(dev), MINOR(dev), access);
 }
@@ -972,7 +968,7 @@ int devcgroup_device_visible(umode_t mode, int major, int start_minor, int nr_mi
 {
 	struct dev_cgroup *dev_cgroup;
 	struct dev_exception_item *ex;
-	short access = ACC_READ | ACC_WRITE | ACC_QUOTA;
+	short access = ACC_READ | ACC_WRITE;
 	bool match = false;
 
 	rcu_read_lock();
@@ -1076,8 +1072,6 @@ static unsigned decode_ve_perms(unsigned perm)
 		mask |= ACC_READ;
 	if (perm & S_IWOTH)
 		mask |= ACC_WRITE;
-	if (perm & S_IXGRP)
-		mask |= ACC_QUOTA;
 	if (perm & S_IXUSR)
 		mask |= ACC_MOUNT;
 
@@ -1092,8 +1086,6 @@ static unsigned encode_ve_perms(unsigned mask)
 		perm |= S_IROTH;
 	if (mask & ACC_WRITE)
 		perm |= S_IWOTH;
-	if (mask & ACC_QUOTA)
-		perm |= S_IXGRP;
 	if (mask & ACC_MOUNT)
 		perm |= S_IXUSR;
 
