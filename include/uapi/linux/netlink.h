@@ -111,6 +111,9 @@ struct nlmsgerr {
 #define NETLINK_TX_RING		7
 #endif
 #define NETLINK_LISTEN_ALL_NSID	8
+#define NETLINK_LIST_MEMBERSHIPS 9
+#define NETLINK_CAP_ACK		10
+#define NETLINK_REPAIR		11
 
 struct nl_pktinfo {
 	__u32	group;
