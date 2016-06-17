@@ -511,7 +511,6 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 			}
 			BIO_ENDIO(plo->queue, bio, err);
 			list_add(&preq->list, &plo->free_list);
-			plo->bio_qlen--;
 			plo->bio_discard_qlen--;
 			plo->bio_total--;
 			return;
