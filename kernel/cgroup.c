@@ -1793,6 +1793,21 @@ static struct file_system_type cgroup_fs_type = {
 
 static struct kobject *cgroup_kobj;
 
+#ifdef CONFIG_VE
+void cgroup_mark_ve_root(struct ve_struct *ve)
+{
+	struct cgroup *cgrp;
+	struct cgroupfs_root *root;
+
+	mutex_lock(&cgroup_mutex);
+	for_each_active_root(root) {
+		cgrp = task_cgroup_from_root(ve->init_task, root);
+		set_bit(CGRP_VE_ROOT, &cgrp->flags);
+	}
+	mutex_unlock(&cgroup_mutex);
+}
+#endif
+
 /**
  * cgroup_path - generate the path of a cgroup
  * @cgrp: the cgroup in question
@@ -1806,7 +1821,8 @@ static struct kobject *cgroup_kobj;
  * inode's i_mutex, while on the other hand cgroup_path() can be called
  * with some irq-safe spinlocks held.
  */
-int __cgroup_path(const struct cgroup *cgrp, char *buf, int buflen, bool virt)
+static int __cgroup_path(const struct cgroup *cgrp, char *buf, int buflen,
+			 bool virt)
 {
 	int ret = -ENAMETOOLONG;
 	char *start;
@@ -1826,14 +1842,11 @@ int __cgroup_path(const struct cgroup *cgrp, char *buf, int buflen, bool virt)
 		int len;
 
 #ifdef CONFIG_VE
-		if (virt && cgrp->parent && !cgrp->parent->parent) {
+		if (virt && test_bit(CGRP_VE_ROOT, &cgrp->flags)) {
 			/*
 			 * Containers cgroups are bind-mounted from node
 			 * so they are like '/' from inside, thus we have
-			 * to mangle cgroup path output. Effectively it is
-			 * enough to remove two topmost cgroups from path.
-			 * e.g. in ct 101: /101/test.slice/test.scope ->
-			 * /test.slice/test.scope
+			 * to mangle cgroup path output.
 			 */
 			if (*start != '/') {
 				if (--start < buf)
@@ -2393,7 +2406,7 @@ static ssize_t cgroup_file_write(struct file *file, const char __user *buf,
 	 * inside a container FS.
 	 */
 	if (!ve_is_super(get_exec_env())
-	    && (!cgrp->parent || !cgrp->parent->parent)
+	    && test_bit(CGRP_VE_ROOT, &cgrp->flags)
 	    && !get_exec_env()->is_pseudosuper
 	    && !(cft->flags & CFTYPE_VE_WRITABLE))
 		return -EPERM;
