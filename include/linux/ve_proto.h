@@ -53,10 +53,6 @@ extern struct ve_struct *get_ve_by_id(envid_t);
 extern struct cgroup *ve_cgroup_open(struct cgroup *root, int flags, envid_t veid);
 extern int ve_cgroup_remove(struct cgroup *root, envid_t veid);
 
-struct env_create_param3;
-extern int real_env_create(envid_t veid, unsigned flags, u32 class_id,
-			   struct env_create_param3 *data, int datalen);
-
 extern int nr_threads_ve(struct ve_struct *ve);
 
 enum {
