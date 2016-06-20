@@ -452,6 +452,8 @@ static void ve_drop_context(struct ve_struct *ve)
 
 static const struct timespec zero_time = { };
 
+extern void cgroup_mark_ve_root(struct ve_struct *ve);
+
 /* under ve->op_sem write-lock */
 static int ve_start_container(struct ve_struct *ve)
 {
@@ -498,6 +500,8 @@ static int ve_start_container(struct ve_struct *ve)
 	err = ve_hook_iterate_init(VE_SS_CHAIN, ve);
 	if (err < 0)
 		goto err_iterate;
+
+	cgroup_mark_ve_root(ve);
 
 	ve->is_running = 1;
 
