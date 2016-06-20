@@ -2324,14 +2324,6 @@ static inline void sched_autogroup_fork(struct signal_struct *sig) { }
 static inline void sched_autogroup_exit(struct signal_struct *sig) { }
 #endif
 
-#ifdef CONFIG_CFS_CPULIMIT
-struct cgroup;
-extern int sched_cgroup_set_rate(struct cgroup *cgrp, unsigned long rate);
-extern unsigned long sched_cgroup_get_rate(struct cgroup *cgrp);
-extern int sched_cgroup_set_nr_cpus(struct cgroup *cgrp, unsigned int nr_cpus);
-extern unsigned int sched_cgroup_get_nr_cpus(struct cgroup *cgrp);
-#endif
-
 extern int yield_to(struct task_struct *p, bool preempt);
 extern void set_user_nice(struct task_struct *p, long nice);
 extern int task_prio(const struct task_struct *p);
@@ -3139,18 +3131,6 @@ extern long sched_getaffinity(pid_t pid, struct cpumask *mask);
 
 #ifdef CONFIG_CGROUP_SCHED
 extern struct task_group root_task_group;
-#ifdef CONFIG_FAIR_GROUP_SCHED
-extern int sched_cgroup_set_shares(struct cgroup *cgrp, unsigned long shares);
-unsigned long sched_cgroup_get_shares(struct cgroup *cgrp);
-extern unsigned long sched_cgroup_get_nr_running(struct cgroup *cgrp);
-#endif
-#ifdef CONFIG_RT_GROUP_SCHED
-extern int sched_cgroup_set_rt_runtime(struct cgroup *cgrp,
-				       long rt_runtime_us);
-#else
-static inline int sched_cgroup_set_rt_runtime(struct cgroup *cgrp,
-					      long rt_runtime_us) { return 0; }
-#endif
 #endif /* CONFIG_CGROUP_SCHED */
 
 extern int task_can_switch_user(struct user_struct *up,
