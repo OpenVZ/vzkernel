@@ -665,67 +665,6 @@ static struct file_operations proc_fairsched_operations = {
 	.release	= fairsched_seq_release
 };
 
-int fairsched_show_stat(const char *name, struct seq_file *p)
-{
-	struct cgroup *cgrp;
-	int err;
-
-	cgrp = cgroup_kernel_open(root_node.cpu, 0, name);
-	if (IS_ERR_OR_NULL(cgrp))
-		return cgrp ? PTR_ERR(cgrp) : -ENOENT;
-
-	err = cpu_cgroup_proc_stat(cgrp, NULL, p);
-	cgroup_kernel_close(cgrp);
-
-	return err;
-}
-
-int fairsched_show_loadavg(const char *name, struct seq_file *p)
-{
-	struct cgroup *cgrp;
-	int err;
-
-	cgrp = cgroup_kernel_open(root_node.cpu, 0, name);
-	if (IS_ERR_OR_NULL(cgrp))
-		return cgrp ? PTR_ERR(cgrp) : -ENOENT;
-
-	err = cpu_cgroup_proc_loadavg(cgrp, NULL, p);
-	cgroup_kernel_close(cgrp);
-
-	return err;
-}
-
-int fairsched_get_cpu_avenrun(const char *name, unsigned long *avenrun)
-{
-	struct cgroup *cgrp;
-	int err;
-
-	cgrp = cgroup_kernel_open(root_node.cpu, 0, name);
-	if (IS_ERR_OR_NULL(cgrp))
-		return cgrp ? PTR_ERR(cgrp) : -ENOENT;
-
-	err = cpu_cgroup_get_avenrun(cgrp, avenrun);
-	cgroup_kernel_close(cgrp);
-
-	return 0;
-}
-EXPORT_SYMBOL(fairsched_get_cpu_avenrun);
-
-int fairsched_get_cpu_stat(const char *name, struct kernel_cpustat *kstat)
-{
-	struct cgroup *cgrp;
-
-	cgrp = cgroup_kernel_open(root_node.cpu, 0, name);
-	if (IS_ERR_OR_NULL(cgrp))
-		return cgrp ? PTR_ERR(cgrp) : -ENOENT;
-
-	cpu_cgroup_get_stat(cgrp, kstat);
-	cgroup_kernel_close(cgrp);
-
-	return 0;
-}
-EXPORT_SYMBOL(fairsched_get_cpu_stat);
-
 #endif /* CONFIG_PROC_FS */
 
 extern int sysctl_sched_rt_runtime;
