@@ -6,7 +6,6 @@
 #include <linux/time.h>
 #include <linux/kernel_stat.h>
 #include <linux/cputime.h>
-#include <linux/fairsched.h>
 #include <linux/ve.h>
 #include <linux/cgroup.h>
 
@@ -26,11 +25,11 @@ static inline void get_ve0_idle(struct timespec *idle)
 	idle->tv_nsec = rem;
 }
 
-static inline void get_veX_idle(struct timespec *idle, struct cgroup* cgrp)
+static inline void get_veX_idle(struct ve_struct *ve, struct timespec *idle)
 {
 	struct kernel_cpustat kstat;
 
-	cpu_cgroup_get_stat(cgrp, &kstat);
+	ve_get_cpu_stat(ve, &kstat);
 	cputime_to_timespec(kstat.cpustat[CPUTIME_IDLE], idle);
 }
 
@@ -38,14 +37,12 @@ static int uptime_proc_show(struct seq_file *m, void *v)
 {
 	struct timespec uptime;
 	struct timespec idle;
+	struct ve_struct *ve = get_exec_env();
 
-	if (ve_is_super(get_exec_env()))
+	if (ve_is_super(ve))
 		get_ve0_idle(&idle);
-	else {
-		rcu_read_lock();
-		get_veX_idle(&idle, task_cgroup(current, cpu_cgroup_subsys_id));
-		rcu_read_unlock();
-	}
+	else
+		get_veX_idle(ve, &idle);
 
 	get_monotonic_boottime(&uptime);
 #ifdef CONFIG_VE
