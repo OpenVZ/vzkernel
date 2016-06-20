@@ -1046,11 +1046,12 @@ static unsigned encode_ve_perms(unsigned mask)
 	return perm;
 }
 
-int devcgroup_set_perms_ve(struct cgroup *cgroup,
+int devcgroup_set_perms_ve(struct ve_struct *ve,
 		unsigned type, dev_t dev, unsigned mask)
 {
 	int err = -EINVAL;
 	struct dev_exception_item new;
+	struct cgroup_subsys_state *css;
 
 	if ((type & S_IFMT) == S_IFBLK)
 		new.type = DEV_BLOCK;
@@ -1072,23 +1073,23 @@ int devcgroup_set_perms_ve(struct cgroup *cgroup,
 	}
 
 	mutex_lock(&devcgroup_mutex);
-	err = dev_exception_add(cgroup_to_devcgroup(cgroup), &new);
+	css = ve_get_init_css(ve, devices_subsys_id);
+	err = dev_exception_add(cgroup_to_devcgroup(css->cgroup), &new);
+	css_put(css);
 	mutex_unlock(&devcgroup_mutex);
 
 	return err;
 }
 EXPORT_SYMBOL(devcgroup_set_perms_ve);
 
-int devcgroup_seq_show_ve(struct cgroup *devices_root, struct ve_struct *ve, struct seq_file *m)
+int devcgroup_seq_show_ve(struct ve_struct *ve, struct seq_file *m)
 {
 	struct dev_exception_item *wh;
 	struct dev_cgroup *devcgroup;
-	struct cgroup *cgroup;
+	struct cgroup_subsys_state *css;
 
-	cgroup = cgroup_kernel_open(devices_root, 0, ve_name(ve));
-	if (IS_ERR(cgroup))
-		return PTR_ERR(cgroup);
-	devcgroup = cgroup_to_devcgroup(cgroup);
+	css = ve_get_init_css(ve, devices_subsys_id);
+	devcgroup = cgroup_to_devcgroup(css->cgroup);
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(wh, &devcgroup->exceptions, list) {
@@ -1112,7 +1113,7 @@ int devcgroup_seq_show_ve(struct cgroup *devices_root, struct ve_struct *ve, str
 	}
 	rcu_read_unlock();
 
-	cgroup_kernel_close(cgroup);
+	css_put(css);
 	return 0;
 }
 EXPORT_SYMBOL(devcgroup_seq_show_ve);
