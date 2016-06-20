@@ -111,7 +111,6 @@ header-y += errqueue.h
 header-y += ethtool.h
 header-y += eventpoll.h
 header-y += fadvise.h
-header-y += fairsched.h
 header-y += falloc.h
 header-y += fanotify.h
 header-y += fb.h
