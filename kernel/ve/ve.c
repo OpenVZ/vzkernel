@@ -87,17 +87,7 @@ DEFINE_MUTEX(ve_list_lock);
 int nr_ve = 1;	/* One VE always exists. Compatibility with vestat */
 EXPORT_SYMBOL(nr_ve);
 
-int vz_compat;
-EXPORT_SYMBOL(vz_compat);
-
 static DEFINE_IDR(ve_idr);
-
-static int __init vz_compat_setup(char *arg)
-{
-	get_option(&arg, &vz_compat);
-	return 0;
-}
-early_param("vz_compat", vz_compat_setup);
 
 struct ve_struct *get_ve(struct ve_struct *ve)
 {
