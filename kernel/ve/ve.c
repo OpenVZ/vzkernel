@@ -107,6 +107,23 @@ void put_ve(struct ve_struct *ve)
 }
 EXPORT_SYMBOL(put_ve);
 
+struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id)
+{
+	struct cgroup_subsys_state *css;
+	struct task_struct *task;
+
+	rcu_read_lock();
+	task = ve->ve_ns ? ve->init_task : &init_task;
+	while (true) {
+		css = task_subsys_state(task, subsys_id);
+		if (likely(css_tryget(css)))
+			break;
+		cpu_relax();
+	}
+	rcu_read_unlock();
+	return css;
+}
+
 static int ve_list_add(struct ve_struct *ve)
 {
 	int err;
@@ -277,6 +294,8 @@ static void ve_grab_context(struct ve_struct *ve)
 {
 	struct task_struct *tsk = current;
 
+	get_task_struct(tsk);
+	ve->init_task = tsk;
 	ve->init_cred = (struct cred *)get_current_cred();
 	rcu_assign_pointer(ve->ve_ns, get_nsproxy(tsk->nsproxy));
 	ve->ve_netns =  get_net(ve->ve_ns->net_ns);
@@ -289,13 +308,17 @@ static void ve_drop_context(struct ve_struct *ve)
 	put_net(ve->ve_netns);
 	ve->ve_netns = NULL;
 
-	/* Allows to dereference init_cred if ve_ns is set */
+	/* Allows to dereference init_cred and init_task if ve_ns is set */
 	rcu_assign_pointer(ve->ve_ns, NULL);
 	synchronize_rcu();
 	put_nsproxy(ve_ns);
 
 	put_cred(ve->init_cred);
 	ve->init_cred = NULL;
+
+	put_task_struct(ve->init_task);
+	ve->init_task = NULL;
+
 }
 
 extern void cgroup_mark_ve_root(struct ve_struct *ve);
@@ -1238,3 +1261,61 @@ int vz_security_protocol_check(struct net *net, int protocol)
 	}
 }
 EXPORT_SYMBOL_GPL(vz_security_protocol_check);
+
+#ifdef CONFIG_CGROUP_SCHED
+int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
+			 struct seq_file *p);
+
+int ve_show_cpu_stat(struct ve_struct *ve, struct seq_file *p)
+{
+	struct cgroup_subsys_state *css;
+	int err;
+
+	css = ve_get_init_css(ve, cpu_cgroup_subsys_id);
+	err = cpu_cgroup_proc_stat(css->cgroup, NULL, p);
+	css_put(css);
+	return err;
+}
+
+int cpu_cgroup_proc_loadavg(struct cgroup *cgrp, struct cftype *cft,
+			    struct seq_file *p);
+
+int ve_show_loadavg(struct ve_struct *ve, struct seq_file *p)
+{
+	struct cgroup_subsys_state *css;
+	int err;
+
+	css = ve_get_init_css(ve, cpu_cgroup_subsys_id);
+	err = cpu_cgroup_proc_loadavg(css->cgroup, NULL, p);
+	css_put(css);
+	return err;
+}
+
+int cpu_cgroup_get_avenrun(struct cgroup *cgrp, unsigned long *avnrun);
+
+int ve_get_cpu_avenrun(struct ve_struct *ve, unsigned long *avnrun)
+{
+	struct cgroup_subsys_state *css;
+	int err;
+
+	css = ve_get_init_css(ve, cpu_cgroup_subsys_id);
+	err = cpu_cgroup_get_avenrun(css->cgroup, avnrun);
+	css_put(css);
+	return err;
+}
+EXPORT_SYMBOL(ve_get_cpu_avenrun);
+
+int cpu_cgroup_get_stat(struct cgroup *cgrp, struct kernel_cpustat *kstat);
+
+int ve_get_cpu_stat(struct ve_struct *ve, struct kernel_cpustat *kstat)
+{
+	struct cgroup_subsys_state *css;
+	int err;
+
+	css = ve_get_init_css(ve, cpu_cgroup_subsys_id);
+	err = cpu_cgroup_get_stat(css->cgroup, kstat);
+	css_put(css);
+	return err;
+}
+EXPORT_SYMBOL(ve_get_cpu_stat);
+#endif /* CONFIG_CGROUP_SCHED */
