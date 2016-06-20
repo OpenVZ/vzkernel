@@ -11,7 +11,6 @@
 #include <linux/irqnr.h>
 #include <linux/cputime.h>
 #include <linux/tick.h>
-#include <linux/fairsched.h>
 #include <linux/mm.h>
 #include <linux/vmstat.h>
 #include <linux/ve.h>
@@ -126,7 +125,7 @@ static int show_stat(struct seq_file *p, void *v)
 	ve = get_exec_env();
 	if (!ve_is_super(ve)) {
 		int ret;
-		ret = fairsched_show_stat(p, ve->veid);
+		ret = ve_show_cpu_stat(ve, p);
 		if (ret != -ENOSYS)
 			return ret;
 	}
