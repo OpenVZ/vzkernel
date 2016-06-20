@@ -153,8 +153,6 @@ extern __u64 ve_setup_iptables_mask(__u64 init_mask);
 #ifdef CONFIG_VE
 #define ve_uevent_seqnum       (get_exec_env()->_uevent_seqnum)
 
-extern int vz_compat;
-
 extern struct kobj_ns_type_operations ve_ns_type_operations;
 extern struct kobject * kobject_create_and_add_ve(const char *name,
 						struct kobject *parent);
@@ -246,8 +244,6 @@ static inline void ve_mount_nr_dec(void)
 #else	/* CONFIG_VE */
 
 #define ve_uevent_seqnum uevent_seqnum
-
-#define vz_compat	(0)
 
 static inline int vz_security_family_check(struct net *net, int family) { return 0; }
 static inline int vz_security_protocol_check(struct net *net, int protocol) { return 0; }
