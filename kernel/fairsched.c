@@ -796,7 +796,6 @@ int __init fairsched_init(void)
 {
 	struct vfsmount *cpu_mnt, *cpuset_mnt;
 	struct cgroup_sb_opts cpu_opts = {
-		.name		= vz_compat ? "fairsched" : NULL,
 		.subsys_mask	=
 			(1ul << cpu_cgroup_subsys_id) |
 			(1ul << cpuacct_subsys_id),
