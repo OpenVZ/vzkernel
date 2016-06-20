@@ -33,7 +33,6 @@
 #include <linux/random.h>
 #include <linux/cgroup.h>
 #include <linux/pid_namespace.h>
-#include <linux/ve.h>
 #include <linux/cgroup.h>
 #include <linux/task_work.h>
 
@@ -1179,7 +1178,6 @@ void __init ub_init_late(void)
 int __init ub_init_cgroup(void)
 {
 	struct cgroup_sb_opts blkio_opts = {
-		.name		= vz_compat ? "beancounter" : NULL,
 		.subsys_mask    = (1ul << blkio_subsys_id),
 	};
 	struct cgroup_sb_opts mem_opts = {
