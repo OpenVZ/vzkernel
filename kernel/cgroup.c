@@ -1375,41 +1375,20 @@ static int cgroup_remount(struct super_block *sb, int *flags, char *data)
 }
 
 #ifdef CONFIG_VE
-int cgroup_show_path(struct seq_file *m, struct dentry *dentry)
+static int cgroup_show_path(struct seq_file *m, struct dentry *dentry)
 {
-	char *buf;
+	struct cgroup *cgrp = __d_cgrp(dentry);
+	char *buf, *end;
 	size_t size = seq_get_buf(m, &buf);
-	int res = -1, err = 0;
+	int res = -1;
 
-	if (size) {
-		char *p = dentry_path(dentry, buf, size);
-		if (!IS_ERR(p)) {
-			char *end;
-			if (!ve_is_super(get_exec_env())) {
-				while (*++p != '/') {
-					/*
-					 * Mangle one level when showing
-					 * cgroup mount source in container
-					 * e.g.: "/111" -> "/",
-					 * "/111/test.slice/test.scope" ->
-					 * "/test.slice/test.scope"
-					 */
-					if (*p == '\0') {
-						*--p = '/';
-						break;
-					}
-				}
-			}
-			end = mangle_path(buf, p, " \t\n\\");
-			if (end)
-				res = end - buf;
-		} else {
-			err = PTR_ERR(p);
-		}
+	if (size > 0 && cgroup_path_ve(cgrp, buf, size) == 0) {
+		end = mangle_path(buf, buf, " \t\n\\");
+		res = end - buf;
 	}
 	seq_commit(m, res);
 
-	return err;
+	return 0;
 }
 #endif
 
