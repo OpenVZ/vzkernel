@@ -104,6 +104,7 @@ struct ve_struct {
 
 	u64			_uevent_seqnum;
 	struct nsproxy __rcu	*ve_ns;
+	struct task_struct	*init_task;
 	struct cred		*init_cred;
 	struct net		*ve_netns;
 
@@ -190,6 +191,8 @@ void do_update_load_avg_ve(void);
 extern struct ve_struct *get_ve(struct ve_struct *ve);
 extern void put_ve(struct ve_struct *ve);
 
+struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id);
+
 static inline struct ve_struct *cgroup_ve(struct cgroup *cgroup)
 {
 	return container_of(cgroup_subsys_state(cgroup, ve_subsys_id),
@@ -271,5 +274,20 @@ static inline int ve_mount_allowed(void) { return 1; }
 static inline void ve_mount_nr_inc(void) { }
 static inline void ve_mount_nr_dec(void) { }
 #endif	/* CONFIG_VE */
+
+struct seq_file;
+struct kernel_cpustat;
+
+#if defined(CONFIG_VE) && defined(CONFIG_CGROUP_SCHED)
+int ve_show_cpu_stat(struct ve_struct *ve, struct seq_file *p);
+int ve_show_loadavg(struct ve_struct *ve, struct seq_file *p);
+int ve_get_cpu_avenrun(struct ve_struct *ve, unsigned long *avenrun);
+int ve_get_cpu_stat(struct ve_struct *ve, struct kernel_cpustat *kstat);
+#else
+static inline int ve_show_cpu_stat(struct ve_struct *ve, struct seq_file *p) { return -ENOSYS; }
+static inline int ve_show_loadavg(struct ve_struct *ve, struct seq_file *p) { return -ENOSYS; }
+static inline int ve_get_cpu_avenrun(struct ve_struct *ve, unsigned long *avenrun) { return -ENOSYS; }
+static inline int ve_get_cpu_stat(struct ve_struct *ve, struct kernel_cpustat *kstat) { return -ENOSYS; }
+#endif
 
 #endif /* _LINUX_VE_H */
