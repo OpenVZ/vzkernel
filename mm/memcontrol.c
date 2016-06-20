@@ -3163,10 +3163,6 @@ int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp, u64 size)
 	int ret = 0;
 	bool may_oom;
 
-	ret = res_counter_charge(&memcg->kmem, size, &fail_res);
-	if (ret)
-		return ret;
-
 	/*
 	 * Conditions under which we can wait for the oom_killer. Those are
 	 * the same conditions tested by the core page allocator
@@ -3198,8 +3194,33 @@ int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp, u64 size)
 			res_counter_charge_nofail(&memcg->memsw, size,
 						  &fail_res);
 		ret = 0;
-	} else if (ret)
-		res_counter_uncharge(&memcg->kmem, size);
+	}
+
+	if (ret)
+		return ret;
+
+	/*
+	 * When a cgroup is destroyed, all user memory pages get recharged to
+	 * the parent cgroup. Recharging is done by mem_cgroup_reparent_charges
+	 * which keeps looping until res <= kmem. This is supposed to guarantee
+	 * that by the time cgroup gets released, no pages is charged to it.
+	 *
+	 * If kmem were charged before res or uncharged after, kmem might
+	 * become greater than res for a short period of time even if there
+	 * were still user memory pages charged to the cgroup. In this case
+	 * mem_cgroup_reparent_charges would give up prematurely, and the
+	 * cgroup could be released though there were still pages charged to
+	 * it. Uncharge of such a page would trigger kernel panic.
+	 *
+	 * To prevent this from happening, kmem must be charged after res and
+	 * uncharged before res.
+	 */
+	ret = res_counter_charge(&memcg->kmem, size, &fail_res);
+	if (ret) {
+		res_counter_uncharge(&memcg->res, size);
+		if (do_swap_account)
+			res_counter_uncharge(&memcg->memsw, size);
+	}
 
 	return ret;
 }
@@ -3208,20 +3229,27 @@ void memcg_charge_kmem_nofail(struct mem_cgroup *memcg, u64 size)
 {
 	struct res_counter *fail_res;
 
-	res_counter_charge_nofail(&memcg->kmem, size, &fail_res);
 	res_counter_charge_nofail(&memcg->res, size, &fail_res);
 	if (do_swap_account)
 		res_counter_charge_nofail(&memcg->memsw, size, &fail_res);
+
+	/* kmem must be charged after res - see memcg_charge_kmem() */
+	res_counter_charge_nofail(&memcg->kmem, size, &fail_res);
 }
 
 void memcg_uncharge_kmem(struct mem_cgroup *memcg, u64 size)
 {
+	u64 kmem;
+
+	/* kmem must be uncharged before res - see memcg_charge_kmem() */
+	kmem = res_counter_uncharge(&memcg->kmem, size);
+
 	res_counter_uncharge(&memcg->res, size);
 	if (do_swap_account)
 		res_counter_uncharge(&memcg->memsw, size);
 
 	/* Not down to 0 */
-	if (res_counter_uncharge(&memcg->kmem, size))
+	if (kmem)
 		return;
 
 	/*
