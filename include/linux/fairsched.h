@@ -51,31 +51,7 @@ asmlinkage long sys_fairsched_cpumask(unsigned int id, unsigned int len,
 asmlinkage long sys_fairsched_nodemask(unsigned int id, unsigned int len,
 				       unsigned long __user *user_mask_ptr);
 
-int fairsched_get_cpu_stat(const char *name, struct kernel_cpustat *kstat);
-
-int cpu_cgroup_get_avenrun(struct cgroup *cgrp, unsigned long *avenrun);
-int fairsched_get_cpu_avenrun(const char *name, unsigned long *avenrun);
-
-struct cftype;
-int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
-				struct seq_file *p);
-int fairsched_show_stat(const char *name, struct seq_file *p);
-
-int cpu_cgroup_proc_loadavg(struct cgroup *cgrp, struct cftype *cft,
-			    struct seq_file *p);
-int fairsched_show_loadavg(const char *name, struct seq_file *p);
-
-#else /* CONFIG_VZ_FAIRSCHED */
-
-static inline int fairsched_show_stat(const char *name, struct seq_file *p) { return -ENOSYS; }
-static inline int fairsched_show_loadavg(const char *name, struct seq_file *p) { return -ENOSYS; }
-static inline int fairsched_get_cpu_avenrun(const char *name, unsigned long *avenrun) { return -ENOSYS; }
-static inline int fairsched_get_cpu_stat(const char *name, struct kernel_cpustat *kstat) { return -ENOSYS; }
-
 #endif /* CONFIG_VZ_FAIRSCHED */
-
-struct kernel_cpustat;
-void cpu_cgroup_get_stat(struct cgroup *cgrp, struct kernel_cpustat *kstat);
 
 #endif /* __KERNEL__ */
 
