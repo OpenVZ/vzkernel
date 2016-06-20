@@ -430,7 +430,7 @@ static void ve_drop_context(struct ve_struct *ve)
 static const struct timespec zero_time = { };
 
 /* under ve->op_sem write-lock */
-int ve_start_container(struct ve_struct *ve)
+static int ve_start_container(struct ve_struct *ve)
 {
 	struct task_struct *tsk = current;
 	int err;
@@ -494,7 +494,6 @@ err_list:
 	ve_drop_context(ve);
 	return err;
 }
-EXPORT_SYMBOL_GPL(ve_start_container);
 
 void ve_stop_ns(struct pid_namespace *pid_ns)
 {
@@ -566,8 +565,7 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 }
 
 #ifdef CONFIG_VE_IPTABLES
-
-__u64 ve_setup_iptables_mask(__u64 init_mask)
+static __u64 ve_setup_iptables_mask(__u64 init_mask)
 {
 	/* Remove when userspace will start supplying IPv6-related bits. */
 	init_mask &= ~VE_IP_IPTABLES6;
@@ -589,8 +587,6 @@ __u64 ve_setup_iptables_mask(__u64 init_mask)
 
 	return init_mask;
 }
-EXPORT_SYMBOL(ve_setup_iptables_mask);
-
 #endif
 
 static struct cgroup_subsys_state *ve_create(struct cgroup *cg)

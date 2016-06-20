@@ -117,7 +117,7 @@ SYSCALL_DEFINE3(fairsched_mknod, unsigned int, parent, unsigned int, weight,
 				 unsigned int, newid)
 {
 	int retval;
-	struct fairsched_node node;
+	struct fairsched_node node = {NULL, NULL};
 
 	if (!capable_setveid())
 		return -EPERM;
@@ -354,68 +354,6 @@ SYSCALL_DEFINE3(fairsched_nodemask, unsigned int, id, unsigned int, len,
 	cgroup_kernel_close(cgrp);
 	return retval;
 }
-
-int fairsched_new_node(int id, unsigned int vcpus)
-{
-	struct fairsched_node node = {NULL, NULL};
-	int err;
-
-	err = fairsched_create(&node, id);
-	if (err < 0)
-		return err;
-
-	err = sched_cgroup_set_nr_cpus(node.cpu, vcpus);
-	if (err) {
-		printk(KERN_ERR "Can't set sched vcpus on node %d err=%d\n", id, err);
-		goto err_remove;
-	}
-
-	err = fairsched_move(&node, current);
-	if (err)
-		goto err_remove;
-
-	fairsched_close(&node);
-	return 0;
-
-err_remove:
-	fairsched_close(&node);
-	fairsched_remove(id);
-	return err;
-}
-EXPORT_SYMBOL(fairsched_new_node);
-
-void fairsched_drop_node(int id, int leave)
-{
-	int err;
-
-	if (leave) {
-		err = fairsched_move(&root_node, current);
-		if (err)
-			printk(KERN_ERR "Can't leave fairsched node %d "
-					"err=%d\n", id, err);
-	}
-
-	err = fairsched_remove(id);
-	if (err)
-		printk(KERN_ERR "Can't remove fairsched node %d err=%d\n", id, err);
-}
-EXPORT_SYMBOL(fairsched_drop_node);
-
-int fairsched_move_task(int id, struct task_struct *tsk)
-{
-	struct fairsched_node node = {NULL, NULL};
-	int err;
-
-	err = fairsched_open(&node, id);
-	if (err)
-		return err;
-
-	err = fairsched_move(&node, tsk);
-	fairsched_close(&node);
-	return err;
-}
-
-EXPORT_SYMBOL(fairsched_move_task);
 
 #ifdef CONFIG_PROC_FS
 
