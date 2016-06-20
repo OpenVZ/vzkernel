@@ -387,14 +387,6 @@
 #define __NR_execveat		362
 #define __NR_switch_endian	363
 
-#define __NR_fairsched_mknod	360
-#define __NR_fairsched_rmnod	361
-#define __NR_fairsched_chwt	362
-#define __NR_fairsched_mvpr	363
-#define __NR_fairsched_rate	364
-#define __NR_fairsched_vcpus	365
-#define __NR_fairsched_cpumask	366
-#define __NR_fairsched_nodemask	367
 #define __NR_getluid		368
 #define __NR_setluid		369
 #define __NR_setublimit		370
