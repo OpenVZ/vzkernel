@@ -309,7 +309,6 @@ static struct vfsmount *ve_cgroup_mnt, *devices_cgroup_mnt;
 static int __init init_vecalls_cgroups(void)
 {
 	struct cgroup_sb_opts devices_opts = {
-		.name		= vz_compat ? "container" : NULL,
 		.subsys_mask	=
 			(1ul << devices_subsys_id),
 	};
