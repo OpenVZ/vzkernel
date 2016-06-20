@@ -32,10 +32,7 @@
 #include <linux/venet.h>
 #include <linux/vzctl.h>
 #include <uapi/linux/vzcalluser.h>
-#include <linux/fairsched.h>
 #include <linux/device_cgroup.h>
-
-static struct cgroup *devices_root;
 
 static s64 ve_get_uptime(struct ve_struct *ve)
 {
@@ -46,7 +43,7 @@ static s64 ve_get_uptime(struct ve_struct *ve)
 	return timespec_to_ns(&uptime);
 }
 
-static int ve_get_cpu_stat(envid_t veid, struct vz_cpu_stat __user *buf)
+static int fill_cpu_stat(envid_t veid, struct vz_cpu_stat __user *buf)
 {
 	struct ve_struct *ve;
 	struct vz_cpu_stat *vstat;
@@ -67,11 +64,11 @@ static int ve_get_cpu_stat(envid_t veid, struct vz_cpu_stat __user *buf)
 	if (!vstat)
 		goto out_put_ve;
 
-	retval = fairsched_get_cpu_stat(ve->ve_name, &kstat);
+	retval = ve_get_cpu_stat(ve, &kstat);
 	if (retval)
 		goto out_free;
 
-	retval = fairsched_get_cpu_avenrun(ve->ve_name, avenrun);
+	retval = ve_get_cpu_avenrun(ve, avenrun);
 	if (retval)
 		goto out_free;
 
@@ -104,7 +101,6 @@ static int real_setdevperms(envid_t veid, unsigned type,
 		dev_t dev, unsigned mask)
 {
 	struct ve_struct *ve;
-	struct cgroup *cgroup;
 	int err;
 
 	if (!capable_setveid() || veid == 0)
@@ -115,18 +111,10 @@ static int real_setdevperms(envid_t veid, unsigned type,
 
 	down_read(&ve->op_sem);
 
-	cgroup = cgroup_kernel_open(devices_root, 0, ve_name(ve));
-	if (IS_ERR_OR_NULL(cgroup)) {
-		err = PTR_ERR(cgroup) ? : -ESRCH;
-		goto out;
-	}
-
 	err = -EAGAIN;
 	if (ve->is_running)
-		err = devcgroup_set_perms_ve(cgroup, type, dev, mask);
+		err = devcgroup_set_perms_ve(ve, type, dev, mask);
 
-	cgroup_kernel_close(cgroup);
-out:
 	up_read(&ve->op_sem);
 	put_ve(ve);
 	return err;
@@ -159,40 +147,6 @@ static int ve_set_meminfo(envid_t veid, unsigned long val)
 #else
 	return -ENOTTY;
 #endif
-}
-
-static struct vfsmount *ve_cgroup_mnt, *devices_cgroup_mnt;
-
-static int __init init_vecalls_cgroups(void)
-{
-	struct cgroup_sb_opts devices_opts = {
-		.subsys_mask	=
-			(1ul << devices_subsys_id),
-	};
-
-	struct cgroup_sb_opts ve_opts = {
-		.subsys_mask	=
-			(1ul << ve_subsys_id),
-	};
-
-	devices_cgroup_mnt = cgroup_kernel_mount(&devices_opts);
-	if (IS_ERR(devices_cgroup_mnt))
-		return PTR_ERR(devices_cgroup_mnt);
-	devices_root = cgroup_get_root(devices_cgroup_mnt);
-
-	ve_cgroup_mnt = cgroup_kernel_mount(&ve_opts);
-	if (IS_ERR(ve_cgroup_mnt)) {
-		kern_unmount(devices_cgroup_mnt);
-		return PTR_ERR(ve_cgroup_mnt);
-	}
-
-	return 0;
-}
-
-static void fini_vecalls_cgroups(void)
-{
-	kern_unmount(ve_cgroup_mnt);
-	kern_unmount(devices_cgroup_mnt);
 }
 
 /**********************************************************************
@@ -340,7 +294,7 @@ static int vestat_seq_show(struct seq_file *m, void *v)
 	if (ve == get_ve0())
 		return 0;
 
-	ret = fairsched_get_cpu_stat(ve->ve_name, &kstat);
+	ret = ve_get_cpu_stat(ve, &kstat);
 	if (ret)
 		return ret;
 
@@ -430,7 +384,7 @@ static int devperms_seq_show(struct seq_file *m, void *v)
 	if (ve_is_super(ve))
 		seq_printf(m, "%10u b 016 *:*\n%10u c 006 *:*\n", 0, 0);
 	else
-		devcgroup_seq_show_ve(devices_root, ve, m);
+		devcgroup_seq_show_ve(ve, m);
 
 	return 0;
 }
@@ -697,7 +651,7 @@ int vzcalls_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			err = -EFAULT;
 			if (copy_from_user(&s, (void __user *)arg, sizeof(s)))
 				break;
-			err = ve_get_cpu_stat(s.veid, s.cpustat);
+			err = fill_cpu_stat(s.veid, s.cpustat);
 		}
 		break;
 	    case VZCTL_VE_MEMINFO: {
@@ -811,10 +765,6 @@ static int __init vecalls_init(void)
 {
 	int err;
 
-	err = init_vecalls_cgroups();
-	if (err)
-		goto out_cgroups;
-
 	err = init_vecalls_proc();
 	if (err < 0)
 		goto out_proc;
@@ -833,8 +783,6 @@ static int __init vecalls_init(void)
 out_ioctls:
 	fini_vecalls_proc();
 out_proc:
-	fini_vecalls_cgroups();
-out_cgroups:
 	return err;
 }
 
@@ -842,7 +790,6 @@ static void __exit vecalls_exit(void)
 {
 	fini_vecalls_ioctls();
 	fini_vecalls_proc();
-	fini_vecalls_cgroups();
 }
 
 MODULE_AUTHOR("SWsoft <devel@openvz.org>");
