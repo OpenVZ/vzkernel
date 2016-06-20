@@ -9255,28 +9255,6 @@ static u64 cpu_shares_read_u64(struct cgroup *cgrp, struct cftype *cft)
 	return (u64) scale_load_down(tg->shares);
 }
 
-int sched_cgroup_set_shares(struct cgroup *cgrp, unsigned long shares)
-{
-	return sched_group_set_shares(cgroup_tg(cgrp), shares);
-}
-
-unsigned long sched_cgroup_get_shares(struct cgroup *cgrp)
-{
-	return cgroup_tg(cgrp)->shares;
-}
-
-unsigned long sched_cgroup_get_nr_running(struct cgroup *cgrp)
-{
-	struct task_group *tg = cgroup_tg(cgrp);
-	unsigned long i, sum = 0;
-
-	/* FIXME make it recursive over sub-cgroups */
-	for_each_online_cpu(i)
-		sum += tg->cfs_rq[i]->nr_running;
-
-	return sum;
-}
-
 #ifdef CONFIG_CFS_BANDWIDTH
 static DEFINE_MUTEX(cfs_constraints_mutex);
 
@@ -9569,7 +9547,13 @@ static int tg_set_cpu_limit(struct task_group *tg,
 	return ret;
 }
 
-int sched_cgroup_set_rate(struct cgroup *cgrp, unsigned long rate)
+static u64 cpu_rate_read_u64(struct cgroup *cgrp, struct cftype *cft)
+{
+	return cgroup_tg(cgrp)->cpu_rate;
+}
+
+static int cpu_rate_write_u64(struct cgroup *cgrp, struct cftype *cftype,
+			      u64 rate)
 {
 	struct task_group *tg = cgroup_tg(cgrp);
 
@@ -9578,45 +9562,19 @@ int sched_cgroup_set_rate(struct cgroup *cgrp, unsigned long rate)
 	return tg_set_cpu_limit(tg, rate, tg->nr_cpus);
 }
 
-unsigned long sched_cgroup_get_rate(struct cgroup *cgrp)
+static u64 nr_cpus_read_u64(struct cgroup *cgrp, struct cftype *cft)
 {
-	return cgroup_tg(cgrp)->cpu_rate;
+	return cgroup_tg(cgrp)->nr_cpus;
 }
 
-int sched_cgroup_set_nr_cpus(struct cgroup *cgrp, unsigned int nr_cpus)
+static int nr_cpus_write_u64(struct cgroup *cgrp, struct cftype *cftype,
+			     u64 nr_cpus)
 {
 	struct task_group *tg = cgroup_tg(cgrp);
 
 	if (nr_cpus > num_online_cpus())
 		nr_cpus = num_online_cpus();
 	return tg_set_cpu_limit(tg, tg->cpu_rate, nr_cpus);
-}
-
-unsigned int sched_cgroup_get_nr_cpus(struct cgroup *cgrp)
-{
-	return cgroup_tg(cgrp)->nr_cpus;
-}
-
-static u64 cpu_rate_read_u64(struct cgroup *cgrp, struct cftype *cft)
-{
-	return sched_cgroup_get_rate(cgrp);
-}
-
-static int cpu_rate_write_u64(struct cgroup *cgrp, struct cftype *cftype,
-			      u64 rate)
-{
-	return sched_cgroup_set_rate(cgrp, rate);
-}
-
-static u64 nr_cpus_read_u64(struct cgroup *cgrp, struct cftype *cft)
-{
-	return sched_cgroup_get_nr_cpus(cgrp);
-}
-
-static int nr_cpus_write_u64(struct cgroup *cgrp, struct cftype *cftype,
-			     u64 nr_cpus)
-{
-	return sched_cgroup_set_nr_cpus(cgrp, nr_cpus);
 }
 #else
 static void tg_update_cpu_limit(struct task_group *tg)
@@ -9627,11 +9585,6 @@ static void tg_update_cpu_limit(struct task_group *tg)
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 
 #ifdef CONFIG_RT_GROUP_SCHED
-int sched_cgroup_set_rt_runtime(struct cgroup *cgrp, long rt_runtime_us)
-{
-	return sched_group_set_rt_runtime(cgroup_tg(cgrp), rt_runtime_us);
-}
-
 static int cpu_rt_runtime_write(struct cgroup *cgrp, struct cftype *cft,
 				s64 val)
 {

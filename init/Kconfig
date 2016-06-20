@@ -826,18 +826,6 @@ config NUMA_BALANCING
 
 	  This system will be inactive on UMA systems.
 
-config VZ_FAIRSCHED
-	bool "OpenVZ fairsched compat"
-	select CPUSETS
-	select CGROUP_SCHED
-	select FAIR_GROUP_SCHED
-	select CFS_BANDWIDTH
-	select CFS_CPULIMIT
-	default y
-	help
-	  This option add task cpu cgroup control with OpenVZ compatible
-	  syscall and procfs interface.
-
 menuconfig CGROUPS
 	boolean "Control Group support"
 	depends on EVENTFD
@@ -1021,9 +1009,13 @@ config FAIR_GROUP_SCHED
 	depends on CGROUP_SCHED
 	default CGROUP_SCHED
 
+config CFS_CPULIMIT
+	bool
+
 config CFS_BANDWIDTH
 	bool "CPU bandwidth provisioning for FAIR_GROUP_SCHED"
 	depends on FAIR_GROUP_SCHED
+	select CFS_CPULIMIT
 	default n
 	help
 	  This option allows users to define CPU bandwidth rates (limits) for
@@ -1031,10 +1023,6 @@ config CFS_BANDWIDTH
 	  set are considered to be unconstrained and will run with no
 	  restriction.
 	  See tip/Documentation/scheduler/sched-bwc.txt for more information.
-
-config CFS_CPULIMIT
-	bool
-	depends on CFS_BANDWIDTH
 
 config RT_GROUP_SCHED
 	bool "Group scheduling for SCHED_RR/FIFO"
