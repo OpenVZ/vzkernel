@@ -1018,52 +1018,6 @@ int devcgroup_inode_mknod(int mode, dev_t dev)
 
 #ifdef CONFIG_VE
 
-static struct dev_exception_item default_whitelist_items[] = {
-	{ ~0,				~0,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD },
-	{ ~0,				~0,	DEV_BLOCK,	ACC_HIDDEN | ACC_MKNOD },
-	{ UNIX98_PTY_MASTER_MAJOR,	~0,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE },
-	{ UNIX98_PTY_SLAVE_MAJOR,	~0,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE },
-	{ PTY_MASTER_MAJOR,		~0,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE },
-	{ PTY_SLAVE_MAJOR,		~0,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE },
-	{ MEM_MAJOR,			3,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* null */
-	{ MEM_MAJOR,			5,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* zero */
-	{ MEM_MAJOR,			7,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* full */
-	{ TTYAUX_MAJOR,			0,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* tty */
-	{ TTYAUX_MAJOR,			1,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* console */
-	{ TTYAUX_MAJOR,			2,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* ptmx */
-	{ MEM_MAJOR,			8,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* random */
-	{ MEM_MAJOR,			9,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* urandom */
-	{ MEM_MAJOR,			11,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_WRITE },            /* kmsg */
-	{ MISC_MAJOR,			200,	DEV_CHAR,	ACC_HIDDEN | ACC_MKNOD | ACC_READ | ACC_WRITE }, /* tun */
-};
-
-static LIST_HEAD(default_whitelist);
-
-int devcgroup_default_perms_ve(struct cgroup *cgroup)
-{
-	struct dev_cgroup *dev_cgroup = cgroup_to_devcgroup(cgroup);
-	struct dev_exception_item *wl, *tmp;
-	int i, err;
-
-	mutex_lock(&devcgroup_mutex);
-	if (list_empty(&default_whitelist)) {
-		for (i = 0; i < ARRAY_SIZE(default_whitelist_items); i++)
-			list_add_tail(&default_whitelist_items[i].list,
-					&default_whitelist);
-	}
-	list_for_each_entry_safe(wl, tmp, &dev_cgroup->exceptions, list) {
-		wl->access = 0;
-		list_del_rcu(&wl->list);
-		kfree_rcu(wl, rcu);
-	}
-	err = dev_exceptions_copy(&dev_cgroup->exceptions, &default_whitelist);
-	dev_cgroup->behavior = DEVCG_DEFAULT_DENY;
-	mutex_unlock(&devcgroup_mutex);
-
-	return err;
-}
-EXPORT_SYMBOL(devcgroup_default_perms_ve);
-
 static unsigned decode_ve_perms(unsigned perm)
 {
 	unsigned mask = 0;
