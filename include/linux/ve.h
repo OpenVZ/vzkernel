@@ -41,13 +41,10 @@ struct ve_struct {
 	struct list_head	ve_list;
 
 	envid_t			veid;
-	bool			legacy;	/* created using the legacy API
-					   (vzctl ioctl - see do_env_create) */
 
 	unsigned int		class_id;
 	struct rw_semaphore	op_sem;
 	int			is_running;
-	int			is_locked;
 	int			is_pseudosuper;
 	atomic_t		suspend;
 	/* see vzcalluser.h for VE_FEATURE_XXX definitions */
@@ -146,10 +143,6 @@ extern struct cgroup_subsys ve_subsys;
 
 extern unsigned int sysctl_ve_mount_nr;
 
-#ifdef CONFIG_VE_IPTABLES
-extern __u64 ve_setup_iptables_mask(__u64 init_mask);
-#endif
-
 #ifdef CONFIG_VE
 #define ve_uevent_seqnum       (get_exec_env()->_uevent_seqnum)
 
@@ -209,7 +202,6 @@ extern void monotonic_ve_to_abs(clockid_t which_clock, struct timespec *tp);
 
 void ve_stop_ns(struct pid_namespace *ns);
 void ve_exit_ns(struct pid_namespace *ns);
-int ve_start_container(struct ve_struct *ve);
 
 extern bool current_user_ns_initial(void);
 struct user_namespace *ve_init_user_ns(void);

@@ -1383,7 +1383,6 @@ struct task_struct {
 	unsigned in_execve:1;	/* Tell the LSMs that the process is doing an
 				 * execve */
 	unsigned in_iowait:1;
-	unsigned did_ve_enter:1;
 	unsigned no_new_privs:1; /* task may not gain privileges */
 	unsigned may_throttle:1;
 
