@@ -11,77 +11,31 @@
  * along with initialization script
  */
 
-#include <linux/delay.h>
-#include <linux/capability.h>
 #include <linux/ve.h>
 #include <linux/init.h>
 #include <linux/list.h>
 #include <linux/errno.h>
 #include <linux/unistd.h>
 #include <linux/slab.h>
-#include <linux/vmalloc.h>
 #include <linux/sys.h>
-#include <linux/fs_struct.h>
 #include <linux/fs.h>
-#include <linux/mnt_namespace.h>
-#include <linux/termios.h>
-#include <linux/tty_driver.h>
 #include <linux/netdevice.h>
-#include <linux/wait.h>
-#include <linux/inetdevice.h>
-#include <net/addrconf.h>
 #include <linux/utsname.h>
 #include <linux/proc_fs.h>
-#include <linux/devpts_fs.h>
-#include <linux/shmem_fs.h>
-#include <linux/user_namespace.h>
-#include <linux/sysfs.h>
 #include <linux/seq_file.h>
 #include <linux/kernel_stat.h>
 #include <linux/module.h>
-#include <linux/suspend.h>
 #include <linux/rcupdate.h>
-#include <linux/in.h>
-#include <linux/idr.h>
-#include <linux/inetdevice.h>
-#include <linux/pid.h>
-#include <net/pkt_sched.h>
-#include <bc/beancounter.h>
-#include <linux/nsproxy.h>
-#include <linux/kobject.h>
-#include <linux/freezer.h>
-#include <linux/pid_namespace.h>
-#include <linux/tty.h>
 #include <linux/mount.h>
-#include <linux/kthread.h>
-#include <linux/oom.h>
-#include <linux/kthread.h>
-#include <linux/workqueue.h>
 #include <generated/utsrelease.h>
 
-#include <net/route.h>
-#include <net/ip_fib.h>
-#include <net/ip6_route.h>
-#include <net/arp.h>
-#include <net/ipv6.h>
-
-#include <linux/ve_proto.h>
 #include <linux/venet.h>
 #include <linux/vzctl.h>
 #include <uapi/linux/vzcalluser.h>
 #include <linux/fairsched.h>
 #include <linux/device_cgroup.h>
 
-#include <linux/virtinfo.h>
-#include <linux/major.h>
-
 static struct cgroup *devices_root;
-
-static int	do_env_enter(struct ve_struct *ve, unsigned int flags);
-
-static void vecalls_exit(void);
-
-static int alone_in_pgrp(struct task_struct *tsk);
 
 static s64 ve_get_uptime(struct ve_struct *ve)
 {
@@ -181,50 +135,6 @@ out:
 /**********************************************************************
  **********************************************************************
  *
- * VE start: subsystems
- *
- **********************************************************************
- **********************************************************************/
-
-/*
- * Namespaces
- */
-
-static inline int init_ve_namespaces(void)
-{
-	int err;
-
-	err = copy_namespaces(CLONE_NEWUTS | CLONE_NEWIPC |
-			      CLONE_NEWPID | CLONE_NEWNET,
-			      current);
-	if (err < 0)
-		return err;
-
-	memcpy(utsname()->release, virt_utsname.release,
-			sizeof(virt_utsname.release));
-
-	return 0;
-}
-
-static int init_ve_struct(struct ve_struct *ve,
-		u32 class_id, env_create_param_t *data, int datalen)
-{
-	ve->class_id = class_id;
-
-#ifdef CONFIG_VE_IPTABLES
-	/* Set up ipt_mask as it will be used during
-	 * net namespace initialization
-	 */
-	ve->ipt_mask = ve_setup_iptables_mask(data ? data->iptables_mask
-						: VE_IP_DEFAULT);
-#endif
-
-	return 0;
-}
-
-/**********************************************************************
- **********************************************************************
- *
  * /proc/meminfo virtualization
  *
  **********************************************************************
@@ -249,59 +159,6 @@ static int ve_set_meminfo(envid_t veid, unsigned long val)
 #else
 	return -ENOTTY;
 #endif
-}
-
-static void init_ve_cred(struct cred *new)
-{
-	struct user_namespace *user_ns = new->user_ns;
-	kernel_cap_t bset;
-
-	bset = current_cred()->cap_effective;
-
-	/*
-	 * Task capabilities checks now user-ns aware. This deprecates old
-	 * CAP_VE_ADMIN. CAP_SYS/NET_ADMIN in container now completely safe.
-	 */
-	if (cap_raised(bset, CAP_VE_ADMIN)) {
-		cap_raise(bset, CAP_SYS_ADMIN);
-		cap_raise(bset, CAP_NET_ADMIN);
-	}
-
-	/*
-	 * Full set of capabilites in nested user-ns is safe. But vzctl can
-	 * drop some capabilites to create restricted container.
-	 */
-	new->cap_inheritable = CAP_EMPTY_SET;
-	new->cap_effective = bset;
-	new->cap_permitted = bset;
-	new->cap_bset = bset;
-
-	/*
-	 * Setup equal uid/gid mapping.
-	 * proc_uid_map_write() forbids further changings.
-	 */
-	user_ns->uid_map = user_ns->parent->uid_map;
-	user_ns->gid_map = user_ns->parent->gid_map;
-}
-
-static int alone_in_pgrp(struct task_struct *tsk)
-{
-	struct task_struct *p;
-	int alone = 0;
-
-	read_lock(&tasklist_lock);
-	do_each_pid_task(task_pid(tsk), PIDTYPE_PGID, p) {
-		if (p != tsk)
-			goto out;
-	} while_each_pid_task(task_pid(tsk), PIDTYPE_PGID, p);
-	do_each_pid_task(task_pid(tsk), PIDTYPE_SID, p) {
-		if (p != tsk)
-			goto out;
-	} while_each_pid_task(task_pid(tsk), PIDTYPE_SID, p);
-	alone = 1;
-out:
-	read_unlock(&tasklist_lock);
-	return alone;
 }
 
 static struct vfsmount *ve_cgroup_mnt, *devices_cgroup_mnt;
@@ -337,264 +194,6 @@ static void fini_vecalls_cgroups(void)
 	kern_unmount(ve_cgroup_mnt);
 	kern_unmount(devices_cgroup_mnt);
 }
-
-static int do_env_create(envid_t veid, unsigned int flags, u32 class_id,
-			 env_create_param_t *data, int datalen)
-{
-	struct task_struct *tsk = current;
-	struct ve_struct *ve;
-	struct cred *new_creds, *old_creds;
-	int err;
-	struct nsproxy *old_ns;
-	struct cgroup *ve_cgroup;
-	struct cgroup *dev_cgroup;
-
-	if (tsk->signal->tty) {
-		printk("ERR: CT init has controlling terminal\n");
-		return -EINVAL;
-	}
-	if (task_pgrp(tsk) != task_pid(tsk) ||
-			task_session(tsk) != task_pid(tsk)) {
-		int may_setsid;
-
-		read_lock(&tasklist_lock);
-		may_setsid = !tsk->signal->leader &&
-			!pid_task(find_pid_ns(task_pid_nr(tsk), &init_pid_ns), PIDTYPE_PGID);
-		read_unlock(&tasklist_lock);
-
-		if (!may_setsid) {
-			printk("ERR: CT init is process group leader\n");
-			return -EINVAL;
-		}
-	}
-	/* Check that the process is not a leader of non-empty group/session.
-	 * If it is, we cannot virtualize its PID and must fail. */
-	if (!alone_in_pgrp(tsk)) {
-		printk("ERR: CT init is not alone in process group\n");
-		return -EINVAL;
-	}
-
-	/* create new cpu-cgroup and move current task into it */
-	err = fairsched_new_node(veid, data->total_vcpus);
-	if (err)
-		goto err_sched;
-
-	ve_cgroup = ve_cgroup_open(ve0.css.cgroup, CGRP_CREAT|CGRP_EXCL, veid);
-	err = PTR_ERR(ve_cgroup);
-	if (IS_ERR(ve_cgroup))
-		goto err_ve_cgroup;
-
-	dev_cgroup = ve_cgroup_open(devices_root, CGRP_CREAT, veid);
-	err = PTR_ERR(dev_cgroup);
-	if (IS_ERR(dev_cgroup))
-		goto err_dev_cgroup;
-
-	err = devcgroup_default_perms_ve(dev_cgroup);
-	if (err)
-		goto err_devperms;
-
-	ve = cgroup_ve(ve_cgroup);
-	ve->legacy = true;
-
-	init_ve_struct(ve, class_id, data, datalen);
-
-	down_write(&ve->op_sem);
-
-	err = cgroup_kernel_attach(ve->css.cgroup, tsk);
-	if (err)
-		goto err_ve_attach;
-
-	err = cgroup_kernel_attach(dev_cgroup, tsk);
-	if (err)
-		goto err_dev_attach;
-
-	err = -ENOMEM;
-	new_creds = prepare_creds();
-	if (new_creds == NULL)
-		goto err_creds;
-
-	err = create_user_ns(new_creds);
-	if (err) {
-		put_cred(new_creds);
-		goto err_creds;
-	}
-
-	init_ve_cred(new_creds);
-
-	old_creds = (struct cred *)get_current_cred();
-
-	commit_creds(new_creds);
-
-	old_ns = tsk->nsproxy;
-
-	if ((err = init_ve_namespaces()))
-		goto err_ns;
-
-	/* for compatibility only */
-	if ((err = change_active_pid_ns(tsk, tsk->nsproxy->pid_ns)) < 0)
-		goto err_vpid;
-
-	if (flags & VE_LOCK)
-		ve->is_locked = 1;
-
-	err = ve_start_container(ve);
-	if (err)
-		goto err_ve_start;
-
-	up_write(&ve->op_sem);
-
-	cgroup_kernel_close(ve_cgroup);
-	cgroup_kernel_close(dev_cgroup);
-
-	put_nsproxy(old_ns);
-	put_cred(old_creds);
-
-	return veid;
-
-err_ve_start:
-	up_write(&ve->op_sem);
-err_vpid:
-	switch_task_namespaces(tsk, old_ns);
-err_ns:
-	commit_creds(old_creds);
-err_creds:
-	cgroup_kernel_attach(&dev_cgroup->root->top_cgroup, tsk);
-err_dev_attach:
-	cgroup_kernel_attach(ve0.css.cgroup, tsk);
-err_ve_attach:
-err_devperms:
-	cgroup_kernel_close(dev_cgroup);
-err_dev_cgroup:
-	cgroup_kernel_close(ve_cgroup);
-err_ve_cgroup:
-	fairsched_drop_node(veid, 1);
-err_sched:
-	printk(KERN_INFO "CT: %d: failed to start with err=%d\n", veid, err);
-	return err;
-}
-
-
-/**********************************************************************
- **********************************************************************
- *
- * VE start/stop callbacks
- *
- **********************************************************************
- **********************************************************************/
-
-int real_env_create(envid_t veid, unsigned flags, u32 class_id,
-			env_create_param_t *data, int datalen)
-{
-	int status;
-	struct ve_struct *ve;
-
-	if (!flags) {
-		status = get_exec_env()->veid;
-		goto out;
-	}
-
-	status = -EPERM;
-	if (!capable_setveid())
-		goto out;
-
-	status = -EINVAL;
-	if ((flags & VE_TEST) && (flags & (VE_ENTER|VE_CREATE)))
-		goto out;
-
-	status = -EINVAL;
-	ve = get_ve_by_id(veid);
-	if (ve) {
-		if (flags & VE_TEST) {
-			status = 0;
-			goto out_put;
-		}
-		if (flags & VE_EXCLUSIVE) {
-			status = -EACCES;
-			goto out_put;
-		}
-		if (flags & VE_CREATE) {
-			flags &= ~VE_CREATE;
-			flags |= VE_ENTER;
-		}
-	} else {
-		if (flags & (VE_TEST|VE_ENTER)) {
-			status = -ESRCH;
-			goto out;
-		}
-	}
-
-	if (flags & VE_CREATE) {
-		status = do_env_create(veid, flags, class_id, data, datalen);
-		goto out;
-	} else if (flags & VE_ENTER)
-		status = do_env_enter(ve, flags);
-
-	/* else: returning EINVAL */
-
-out_put:
-	put_ve(ve);
-out:
-	return status;
-}
-EXPORT_SYMBOL(real_env_create);
-
-static int do_env_enter(struct ve_struct *ve, unsigned int flags)
-{
-	struct task_struct *tsk = current;
-	int err;
-
-	err = fairsched_move_task(ve->veid, current);
-	if (err)
-		return err;
-
-	err = -EBUSY;
-	down_read(&ve->op_sem);
-	if (!ve->is_running)
-		goto out_up;
-	if (ve->is_locked && !(flags & VE_SKIPLOCK))
-		goto out_up;
-
-	switch_task_namespaces(tsk, get_nsproxy(ve->ve_ns));
-
-	commit_creds(get_new_cred(ve->init_cred));
-
-	err = cgroup_kernel_attach(ve->css.cgroup, current);
-	if (err)
-		goto out_up;
-
-	if (alone_in_pgrp(tsk) && !(flags & VE_SKIPLOCK))
-		change_active_pid_ns(tsk, ve->ve_ns->pid_ns);
-
-	/* Unlike VE_CREATE, we do not setsid() in VE_ENTER.
-	 * Process is allowed to be in an external group/session.
-	 * If user space callers wants, it will do setsid() after
-	 * VE_ENTER.
-	 */
-	err = ve->veid;
-	tsk->did_ve_enter = 1;
-
-out_up:
-	up_read(&ve->op_sem);
-
-	if (err < 0)
-		fairsched_move_task(0, current);
-
-	return err;
-}
-
-static void vzmon_stop_notifier(void *data)
-{
-	struct ve_struct *ve = data;
-
-	if (ve->legacy)
-		fairsched_drop_node(ve->veid, 0);
-}
-
-static struct ve_hook vzmon_stop_hook = {
-	.fini		= vzmon_stop_notifier,
-	.priority	= HOOK_PRIO_FINISHING,
-	.owner		= THIS_MODULE,
-};
 
 /**********************************************************************
  **********************************************************************
@@ -1086,38 +685,11 @@ int vzcalls_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 #endif
 	    case VZCTL_ENV_CREATE: {
-			struct vzctl_env_create s;
-			err = -EFAULT;
-			if (copy_from_user(&s, (void __user *)arg, sizeof(s)))
-				break;
-			err = real_env_create(s.veid, s.flags, s.class_id,
-				NULL, 0);
+			err = -ENOTSUPP;
 		}
 		break;
 	    case VZCTL_ENV_CREATE_DATA: {
-			struct vzctl_env_create_data s;
-			env_create_param_t *data;
-			err = -EFAULT;
-			if (copy_from_user(&s, (void __user *)arg, sizeof(s)))
-				break;
-			err=-EINVAL;
-			if (s.datalen < VZCTL_ENV_CREATE_DATA_MINLEN ||
-			    s.datalen > VZCTL_ENV_CREATE_DATA_MAXLEN ||
-			    s.data == 0)
-				break;
-			err = -ENOMEM;
-			data = kzalloc(sizeof(*data), GFP_KERNEL);
-			if (!data)
-				break;
-
-			err = -EFAULT;
-			if (copy_from_user(data, (void __user *)s.data,
-						s.datalen))
-				goto free_data;
-			err = real_env_create(s.veid, s.flags, s.class_id,
-				data, s.datalen);
-free_data:
-			kfree(data);
+			err = -ENOTSUPP;
 		}
 		break;
 	    case VZCTL_GET_CPU_STAT: {
@@ -1239,8 +811,6 @@ static int __init vecalls_init(void)
 {
 	int err;
 
-	ve_hook_register(VE_SS_CHAIN, &vzmon_stop_hook);
-
 	err = init_vecalls_cgroups();
 	if (err)
 		goto out_cgroups;
@@ -1265,8 +835,6 @@ out_ioctls:
 out_proc:
 	fini_vecalls_cgroups();
 out_cgroups:
-	ve_hook_unregister(&vzmon_stop_hook);
-
 	return err;
 }
 
@@ -1275,7 +843,6 @@ static void __exit vecalls_exit(void)
 	fini_vecalls_ioctls();
 	fini_vecalls_proc();
 	fini_vecalls_cgroups();
-	ve_hook_unregister(&vzmon_stop_hook);
 }
 
 MODULE_AUTHOR("SWsoft <devel@openvz.org>");
