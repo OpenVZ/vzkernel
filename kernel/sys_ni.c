@@ -222,13 +222,3 @@ cond_syscall(compat_sys_open_by_handle_at);
 
 /* compare kernel pointers */
 cond_syscall(sys_kcmp);
-
-/* fairsched compat */
-cond_syscall(sys_fairsched_mknod);
-cond_syscall(sys_fairsched_rmnod);
-cond_syscall(sys_fairsched_mvpr);
-cond_syscall(sys_fairsched_vcpus);
-cond_syscall(sys_fairsched_chwt);
-cond_syscall(sys_fairsched_rate);
-cond_syscall(sys_fairsched_cpumask);
-cond_syscall(sys_fairsched_nodemask);
