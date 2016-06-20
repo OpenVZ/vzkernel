@@ -6,7 +6,6 @@
 #include <linux/seq_file.h>
 #include <linux/seqlock.h>
 #include <linux/time.h>
-#include <linux/fairsched.h>
 #include <linux/ve.h>
 
 #define LOAD_INT(x) ((x) >> FSHIFT)
@@ -20,7 +19,7 @@ static int loadavg_proc_show(struct seq_file *m, void *v)
 	ve = get_exec_env();
 	if (!ve_is_super(ve)) {
 		int ret;
-		ret = fairsched_show_loadavg(ve_name(ve), m);
+		ret = ve_show_loadavg(ve, m);
 		if (ret != -ENOSYS)
 			return ret;
 	}
