@@ -2425,7 +2425,12 @@ again:
 		if (devmnt->dev == dev) {
 			err = ve_devmnt_check(data, devmnt->allowed_options);
 
-			if (!err && !remount)
+			/*
+			 * In case of @is_pseudouser set, ie restore procedure,
+			 * we don't check for allowed options filtering, since
+			 * restore mode is special.
+			 */
+			if ((ve->is_pseudosuper || !err) && !remount)
 				err = ve_devmnt_insert(data, devmnt->hidden_options);
 
 			break;
