@@ -9961,20 +9961,26 @@ int cpu_cgroup_proc_loadavg(struct cgroup *cgrp, struct cftype *cft,
 	return 0;
 }
 
-void cpu_cgroup_get_stat(struct cgroup *cgrp, struct kernel_cpustat *kstat)
+int cpu_cgroup_get_stat(struct cgroup *cgrp, struct kernel_cpustat *kstat)
 {
 	struct task_group *tg = cgroup_tg(cgrp);
 	int nr_vcpus = tg->nr_cpus ?: num_online_cpus();
 	int i;
+
+	kernel_cpustat_zero(kstat);
+
+	if (tg == &root_task_group)
+		return -ENOENT;
 
 	for_each_possible_cpu(i)
 		cpu_cgroup_update_stat(cgrp, i);
 
 	cpu_cgroup_update_vcpustat(cgrp);
 
-	kernel_cpustat_zero(kstat);
 	for (i = 0; i < nr_vcpus; i++)
 		kernel_cpustat_add(tg->vcpustat + i, kstat, kstat);
+
+	return 0;
 }
 
 int cpu_cgroup_get_avenrun(struct cgroup *cgrp, unsigned long *avenrun)
