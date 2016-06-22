@@ -5296,7 +5296,7 @@ static int mem_cgroup_high_write(struct cgroup *cont, struct cftype *cft,
 				 const char *buffer)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
-	unsigned long long val;
+	unsigned long long val, usage;
 	int ret;
 
 	ret = res_counter_memparse_write_strategy(buffer, &val);
@@ -5304,6 +5304,12 @@ static int mem_cgroup_high_write(struct cgroup *cont, struct cftype *cft,
 		return ret;
 
 	memcg->high = val;
+
+	usage = res_counter_read_u64(&memcg->res, RES_USAGE);
+	if (usage > val)
+		try_to_free_mem_cgroup_pages(memcg,
+					     (usage - val) >> PAGE_SHIFT,
+					     GFP_KERNEL, false);
 	return 0;
 }
 
