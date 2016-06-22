@@ -1448,16 +1448,17 @@ int ve_get_cpu_avenrun(struct ve_struct *ve, unsigned long *avenrun)
 }
 EXPORT_SYMBOL(ve_get_cpu_avenrun);
 
-void cpu_cgroup_get_stat(struct cgroup *cgrp, struct kernel_cpustat *kstat);
+int cpu_cgroup_get_stat(struct cgroup *cgrp, struct kernel_cpustat *kstat);
 
 int ve_get_cpu_stat(struct ve_struct *ve, struct kernel_cpustat *kstat)
 {
 	struct cgroup_subsys_state *css;
+	int err;
 
 	css = ve_get_init_css(ve, cpu_cgroup_subsys_id);
-	cpu_cgroup_get_stat(css->cgroup, kstat);
+	err = cpu_cgroup_get_stat(css->cgroup, kstat);
 	css_put(css);
-	return 0;
+	return err;
 }
 EXPORT_SYMBOL(ve_get_cpu_stat);
 #endif /* CONFIG_CGROUP_SCHED */
