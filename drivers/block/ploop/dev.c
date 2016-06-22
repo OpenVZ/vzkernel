@@ -479,7 +479,6 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 	preq->req_sector = bio->bi_sector;
 	preq->req_size = bio->bi_size >> 9;
 	preq->req_rw = bio->bi_rw;
-	bio->bi_rw &= ~(REQ_FLUSH | REQ_FUA);
 	preq->eng_state = PLOOP_E_ENTRY;
 	preq->state = 0;
 	preq->error = 0;
