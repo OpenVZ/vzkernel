@@ -2585,6 +2585,7 @@ void show_fd_locks(struct seq_file *f,
 		 * matches ->fl_file.
 		 */
 		if (fl->fl_owner != files &&
+		    fl->fl_owner != (fl_owner_t)filp &&
 		    fl->fl_owner != NULL)
 			continue;
 
