@@ -307,61 +307,6 @@ struct vfs_cap_data {
 
 #define CAP_SETFCAP	     31
 
-#ifdef __KERNEL__
-/*
- * Important note: VZ capabilities do intersect with CAP_AUDIT
- * this is due to compatibility reasons. Nothing bad.
- * Both VZ and Audit/SELinux caps are disabled in VPSs.
- */
-
-/* Allow access to all information. In the other case some structures will be
- * hiding to ensure different Virtual Environment non-interaction on the same
- * node (NOW OBSOLETED)
- */
-#define CAP_SETVEID	     29
-
-#define capable_setveid()	({			\
-		ve_is_super(get_exec_env()) &&		\
-			(capable(CAP_SYS_ADMIN) ||	\
-			 capable(CAP_VE_ADMIN));	\
-	})
-
-/*
- * coinsides with CAP_AUDIT_CONTROL but we don't care, since
- * audit is disabled in Virtuozzo
- */
-#define CAP_VE_ADMIN	     30
-
-#ifdef CONFIG_VE
-
-/* Replacement for CAP_NET_ADMIN:
-   delegated rights to the Virtual environment of its network administration.
-   For now the following rights have been delegated:
-
-   Allow setting arbitrary process / process group ownership on sockets
-   Allow interface configuration
- */
-#define CAP_VE_NET_ADMIN     CAP_VE_ADMIN
-
-/* Replacement for CAP_SYS_ADMIN:
-   delegated rights to the Virtual environment of its administration.
-   For now the following rights have been delegated:
- */
-/* Allow mount/umount/remount */
-/* Allow examination and configuration of disk quotas */
-/* Allow removing semaphores */
-/* Used instead of CAP_CHOWN to "chown" IPC message queues, semaphores
-   and shared memory */
-/* Allow locking/unlocking of shared memory segment */
-/* Allow forged pids on socket credentials passing */
-
-#define CAP_VE_SYS_ADMIN     CAP_VE_ADMIN
-#else
-#define CAP_VE_NET_ADMIN     CAP_NET_ADMIN
-#define CAP_VE_SYS_ADMIN     CAP_SYS_ADMIN
-#endif
-#endif
-
 /* Override MAC access.
    The base kernel enforces no MAC policy.
    An LSM may enforce a MAC policy, and if it does and it chooses
