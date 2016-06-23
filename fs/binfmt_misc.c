@@ -735,7 +735,7 @@ static int bm_fill_super(struct super_block * sb, void * data, int silent)
 static struct dentry *bm_mount(struct file_system_type *fs_type,
 	int flags, const char *dev_name, void *data)
 {
-	if (!current_user_ns_initial())
+	if (!current_user_ns_initial() && !capable(CAP_SYS_ADMIN))
 		return ERR_PTR(-EPERM);
 	return mount_ns(fs_type, flags, get_exec_env(), bm_fill_super);
 }
