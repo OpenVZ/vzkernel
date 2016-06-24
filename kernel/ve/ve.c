@@ -227,6 +227,7 @@ int vz_security_protocol_check(struct net *net, int protocol)
 
 	switch (protocol) {
 	case  IPPROTO_IP:
+	case  IPPROTO_ICMP:
 	case  IPPROTO_TCP:
 	case  IPPROTO_UDP:
 	case  IPPROTO_RAW:
