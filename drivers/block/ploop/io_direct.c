@@ -107,15 +107,6 @@ dio_submit(struct ploop_io *io, struct ploop_request * preq,
 	rw &= ~(REQ_FLUSH | REQ_FUA);
 
 
-	/* In case of eng_state != COMPLETE, we'll do FUA in
-	 * ploop_index_update(). Otherwise, we should mark
-	 * last bio as FUA here. */
-	if (rw & REQ_FUA) {
-		rw &= ~REQ_FUA;
-		if (preq->eng_state == PLOOP_E_COMPLETE)
-			postfua = 1;
-	}
-
 	bio_list_init(&bl);
 
 	if (iblk == PLOOP_ZERO_INDEX)
