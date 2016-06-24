@@ -513,27 +513,31 @@ dio_post_submit(struct ploop_io *io, struct ploop_request * preq)
 	struct ploop_device *plo = preq->plo;
 	sector_t sec = (sector_t)preq->iblock << preq->plo->cluster_log;
 	loff_t clu_siz = 1 << (preq->plo->cluster_log + 9);
+	int force_sync = preq->req_rw & REQ_FUA;
 	int err;
 
 	file_start_write(io->files.file);
 
-	/* Here io->io_count is even ... */
-	spin_lock_irq(&plo->lock);
-	io->io_count++;
-	set_bit(PLOOP_IO_FSYNC_DELAYED, &io->io_state);
-	spin_unlock_irq(&plo->lock);
-
+	if (!force_sync) {
+		/* Here io->io_count is even ... */
+		spin_lock_irq(&plo->lock);
+		io->io_count++;
+		set_bit(PLOOP_IO_FSYNC_DELAYED, &io->io_state);
+		spin_unlock_irq(&plo->lock);
+	}
 	err = io->files.file->f_op->fallocate(io->files.file,
 					      FALLOC_FL_CONVERT_UNWRITTEN,
 					      (loff_t)sec << 9, clu_siz);
 
 	/* highly unlikely case: FUA coming to a block not provisioned yet */
-	if (!err && (preq->req_rw & REQ_FUA))
+	if (!err && force_sync)
 		err = io->ops->sync(io);
 
-	spin_lock_irq(&plo->lock);
-	io->io_count++;
-	spin_unlock_irq(&plo->lock);
+	if (!force_sync) {
+		spin_lock_irq(&plo->lock);
+		io->io_count++;
+		spin_unlock_irq(&plo->lock);
+	}
 	/* and here io->io_count is even (+2) again. */
 
 	file_end_write(io->files.file);
