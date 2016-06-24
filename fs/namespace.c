@@ -2446,10 +2446,20 @@ again:
 		goto again;
 	case 1:
 		if (*data_pp) {
-			ve_printk(VE_LOG_BOTH, KERN_WARNING "VE%s: no allowed "
-				  "mount options found for device %u:%u\n",
-				  ve->ve_name, MAJOR(dev), MINOR(dev));
-			err = -EPERM;
+			/*
+			 * Same as in chunk above but for case where
+			 * ve->devmnt_list is empty. Depending on
+			 * the way userspace tool restore container
+			 * it might be nonempty as well.
+			 */
+			if (ve->is_pseudosuper) {
+				err = 0;
+			} else {
+				ve_pr_warn_ratelimited(VE_LOG_BOTH, "VE%s: no allowed "
+					  "mount options found for device %u:%u\n",
+					  ve->ve_name, MAJOR(dev), MINOR(dev));
+				err = -EPERM;
+			}
 		} else
 			err = 0;
 		break;
