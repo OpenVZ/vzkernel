@@ -301,6 +301,7 @@ static void ipip_tunnel_setup(struct net_device *dev)
 	netif_keep_dst(dev);
 
 	dev->features		|= IPIP_FEATURES;
+	dev->features		|= NETIF_F_VIRTUAL;
 	dev->hw_features	|= IPIP_FEATURES;
 	ip_tunnel_setup(dev, ipip_net_id);
 }
