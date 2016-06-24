@@ -58,6 +58,9 @@ static int vti_input(struct sk_buff *skb, int nexthdr, __be32 spi,
 	struct net *net = dev_net(skb->dev);
 	struct ip_tunnel_net *itn = net_generic(net, vti_net_id);
 
+	if (itn == NULL)
+		return -EINVAL;
+
 	tunnel = ip_tunnel_lookup(itn, skb->dev->ifindex, TUNNEL_NO_KEY,
 				  iph->saddr, iph->daddr, 0);
 	if (tunnel != NULL) {
@@ -274,6 +277,9 @@ static int vti4_err(struct sk_buff *skb, u32 info)
 	int protocol = iph->protocol;
 	struct ip_tunnel_net *itn = net_generic(net, vti_net_id);
 
+	if (itn == NULL)
+		return -1;
+
 	tunnel = ip_tunnel_lookup(itn, skb->dev->ifindex, TUNNEL_NO_KEY,
 				  iph->daddr, iph->saddr, 0);
 	if (!tunnel)
@@ -431,6 +437,9 @@ static int __net_init vti_init_net(struct net *net)
 	int err;
 	struct ip_tunnel_net *itn;
 
+	if (!ve_is_super(net->owner_ve))
+		return net_assign_generic(net, vti_net_id, NULL);
+
 	err = ip_tunnel_init_net(net, vti_net_id, &vti_link_ops, "ip_vti0");
 	if (err)
 		return err;
@@ -442,6 +451,9 @@ static int __net_init vti_init_net(struct net *net)
 static void __net_exit vti_exit_net(struct net *net)
 {
 	struct ip_tunnel_net *itn = net_generic(net, vti_net_id);
+
+	if (itn == NULL)
+		return;
 	ip_tunnel_delete_net(itn, &vti_link_ops);
 }
 
@@ -490,6 +502,9 @@ static int vti_newlink(struct net *src_net, struct net_device *dev,
 		       struct nlattr *tb[], struct nlattr *data[])
 {
 	struct ip_tunnel_parm parms;
+
+	if (net_generic(dev_net(dev), vti_net_id) == NULL)
+		return -EACCES;
 
 	vti_netlink_parms(data, &parms);
 	return ip_tunnel_newlink(dev, tb, &parms);
