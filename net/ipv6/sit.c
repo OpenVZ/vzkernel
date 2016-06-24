@@ -1480,6 +1480,9 @@ static int ipip6_newlink(struct net *src_net, struct net_device *dev,
 #endif
 	int err;
 
+	if (net_generic(net, sit_net_id) == NULL)
+		return -EACCES;
+
 	nt = netdev_priv(dev);
 
 	if (ipip6_netlink_encap_parms(data, &ipencap)) {
