@@ -357,6 +357,9 @@ static int ipip_newlink(struct net *src_net, struct net_device *dev,
 {
 	struct ip_tunnel_parm p;
 
+	if (net_generic(dev_net(dev), ipip_net_id) == NULL)
+		return -EACCES;
+
 	ipip_netlink_parms(data, &p);
 	return ip_tunnel_newlink(dev, tb, &p);
 }
