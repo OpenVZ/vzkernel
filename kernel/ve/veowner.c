@@ -39,11 +39,37 @@
 struct proc_dir_entry *proc_vz_dir;
 EXPORT_SYMBOL(proc_vz_dir);
 
+static int proc_fairsched_open(struct inode *inode, struct file *file)
+{
+	return 0;
+}
+
+static ssize_t proc_fairsched_read(struct file *file, char __user *buf,
+				   size_t size, loff_t *ppos)
+{
+	return 0;
+}
+
+static struct file_operations proc_fairsched_operations = {
+	.open		= proc_fairsched_open,
+	.read		= proc_fairsched_read,
+	.llseek		= noop_llseek,
+};
+
 static void prepare_proc(void)
 {
 	proc_vz_dir = proc_mkdir_mode("vz", S_ISVTX | S_IRUGO | S_IXUGO, NULL);
 	if (!proc_vz_dir)
 		panic("Can't create /proc/vz dir\n");
+
+	/* Legacy files. They are not really needed and should be removed
+	 * sooner or later, but leave the stubs for now as they may be required
+	 * by userspace */
+
+	proc_mkdir_mode("fairsched", 0, proc_vz_dir);
+
+	proc_create("fairsched", S_ISVTX, NULL,	&proc_fairsched_operations);
+	proc_create("fairsched2", S_ISVTX, NULL, &proc_fairsched_operations);
 }
 #endif
 
