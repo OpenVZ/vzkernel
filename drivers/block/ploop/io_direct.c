@@ -1499,15 +1499,14 @@ dio_read_page(struct ploop_io * io, struct ploop_request * preq,
 
 static void
 dio_write_page(struct ploop_io * io, struct ploop_request * preq,
-	       struct page * page, sector_t sec, int fua)
+	       struct page * page, sector_t sec, unsigned long rw)
 {
 	if (!(io->files.file->f_mode & FMODE_WRITE)) {
 		PLOOP_FAIL_REQUEST(preq, -EBADF);
 		return;
 	}
 
-	dio_io_page(io, WRITE | (fua ? REQ_FUA : 0) | REQ_SYNC,
-		    preq, page, sec);
+	dio_io_page(io, rw | WRITE | REQ_SYNC, preq, page, sec);
 }
 
 static int
