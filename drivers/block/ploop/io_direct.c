@@ -1808,7 +1808,6 @@ static void dio_issue_flush(struct ploop_io * io, struct ploop_request *preq)
 	bio->bi_private = preq;
 
 	atomic_inc(&preq->io_count);
-	preq->eng_state = PLOOP_E_COMPLETE;
 	ploop_acc_ff_out(io->plo, preq->req_rw | bio->bi_rw);
 	submit_bio(preq->req_rw, bio);
 	ploop_complete_io_request(preq);
