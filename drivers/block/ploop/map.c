@@ -959,7 +959,7 @@ void ploop_index_update(struct ploop_request * preq)
 		set_bit(PLOOP_REQ_FORCE_FUA, &preq->state);
 
 	top_delta->io.ops->write_page(&top_delta->io, preq, page, sec,
-				      !!(preq->req_rw & REQ_FUA));
+				      preq->req_rw & REQ_FUA);
 	put_page(page);
 	return;
 
@@ -1203,7 +1203,8 @@ static void map_wb_complete(struct map_node * m, int err)
 	if (force_fua)
 		set_bit(PLOOP_REQ_FORCE_FUA, &main_preq->state);
 
-	top_delta->io.ops->write_page(&top_delta->io, main_preq, page, sec, fua);
+	top_delta->io.ops->write_page(&top_delta->io, main_preq, page, sec,
+				      fua ? REQ_FUA : 0);
 	put_page(page);
 }
 
