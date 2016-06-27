@@ -406,6 +406,13 @@ static void ploop_pb_add_req_to_reported(struct ploop_pushbackup_desc *pbd,
 	ploop_pb_add_req_to_tree(preq, &pbd->reported_set);
 }
 
+static void remove_req_from_pbs(struct pb_set *pbs,
+					 struct ploop_request *preq)
+{
+	rb_erase(&preq->reloc_link, &pbs->tree);
+}
+
+
 static inline bool preq_match(struct ploop_request *preq, cluster_t clu,
 			      cluster_t len)
 {
@@ -437,7 +444,7 @@ static struct ploop_request *ploop_pb_get_req_from_tree(struct pb_set *pbs,
 			if (n)
 				*npreq = rb_entry(n, struct ploop_request,
 						  reloc_link);
-			rb_erase(&p->reloc_link, tree);
+			remove_req_from_pbs(pbs, p);
 			return p;
 		}
 	}
@@ -453,7 +460,7 @@ static struct ploop_request *ploop_pb_get_req_from_tree(struct pb_set *pbs,
 		n = rb_next(&p->reloc_link);
 		if (n)
 			*npreq = rb_entry(n, struct ploop_request, reloc_link);
-		rb_erase(&p->reloc_link, tree);
+		remove_req_from_pbs(pbs, p);
 		return p;
 	}
 
@@ -481,7 +488,7 @@ ploop_pb_get_first_req_from_tree(struct pb_set *pbs,
 	}
 
 	p = rb_entry(n, struct ploop_request, reloc_link);
-	rb_erase(&p->reloc_link, tree);
+	remove_req_from_pbs(pbs, p);
 	return p;
 }
 
@@ -641,7 +648,7 @@ int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
 		else
 			npreq = NULL;
 
-		rb_erase(&preq->reloc_link, &pbd->pending_set.tree);
+		remove_req_from_pbs(&pbd->pending_set, preq);
 		ploop_pb_add_req_to_reported(pbd, preq);
 
 		(*len_p)++;
@@ -730,7 +737,6 @@ static void ploop_pb_process_extent(struct pb_set *pbs, cluster_t clu,
 				    cluster_t len, struct list_head *ready_list,
 				    int *n_found)
 {
-	struct rb_root *tree = &pbs->tree;
 	struct ploop_request *preq, *npreq;
 
 	preq = ploop_pb_get_req_from_tree(pbs, clu, len, &npreq);
@@ -753,7 +759,7 @@ static void ploop_pb_process_extent(struct pb_set *pbs, cluster_t clu,
 			npreq = rb_entry(n, struct ploop_request, reloc_link);
 		else
 			npreq = NULL;
-		rb_erase(&preq->reloc_link, tree);
+		remove_req_from_pbs(pbs, preq);
 	}
 }
 
