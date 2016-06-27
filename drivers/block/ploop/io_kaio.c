@@ -62,6 +62,8 @@ static void kaio_complete_io_state(struct ploop_request * preq)
 	unsigned long flags;
 	int post_fsync = 0;
 	int need_fua = !!(preq->req_rw & REQ_FUA);
+	unsigned long state = READ_ONCE(preq->state);
+	int reloc = !!(state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL));
 
 	if (preq->error || !(preq->req_rw & REQ_FUA) ||
 	    preq->eng_state == PLOOP_E_INDEX_READ ||
@@ -73,9 +75,9 @@ static void kaio_complete_io_state(struct ploop_request * preq)
 	}
 
 	/* Convert requested fua to fsync */
-	if (test_and_clear_bit(PLOOP_REQ_FORCE_FUA, &preq->state) ||
-	    test_and_clear_bit(PLOOP_REQ_KAIO_FSYNC, &preq->state) ||
-	    (need_fua && !ploop_req_delay_fua_possible(preq))) {
+	if (test_and_clear_bit(PLOOP_REQ_KAIO_FSYNC, &preq->state) ||
+	    (need_fua && !ploop_req_delay_fua_possible(preq)) ||
+	    (reloc && ploop_req_delay_fua_possible(preq))) {
 		post_fsync = 1;
 		preq->req_rw &= ~REQ_FUA;
 	}
