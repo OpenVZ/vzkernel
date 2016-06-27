@@ -1271,6 +1271,8 @@ static void ploop_complete_request(struct ploop_request * preq)
 	}
 	preq->bl.tail = NULL;
 
+	WARN_ON(!preq->error && test_bit(PLOOP_REQ_ISSUE_FLUSH, &preq->state));
+
 	if (test_bit(PLOOP_REQ_RELOC_A, &preq->state) ||
 	    test_bit(PLOOP_REQ_RELOC_S, &preq->state)) {
 		if (preq->error)
@@ -2393,6 +2395,13 @@ static void ploop_req_state_process(struct ploop_request * preq)
 		preq->eng_io = NULL;
 	}
 
+	if (test_bit(PLOOP_REQ_ISSUE_FLUSH, &preq->state)) {
+		preq->eng_io->ops->issue_flush(preq->eng_io, preq);
+		clear_bit(PLOOP_REQ_ISSUE_FLUSH, &preq->state);
+		preq->eng_io = NULL;
+		goto out;
+	}
+
 restart:
 	BUG_ON(test_bit(PLOOP_REQ_POST_SUBMIT, &preq->state));
 	__TRACE("ST %p %u %lu\n", preq, preq->req_cluster, preq->eng_state);
@@ -2669,7 +2678,7 @@ restart:
 	default:
 		BUG();
 	}
-
+out:
 	if (release_ioc) {
 		struct io_context * ioc = current->io_context;
 		current->io_context = saved_ioc;
