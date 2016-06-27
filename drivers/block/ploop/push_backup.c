@@ -16,6 +16,10 @@
 #define NR_PAGES(bits) (((bits) + PAGE_SIZE*8 - 1) / (PAGE_SIZE*8))
 #define BITS_PER_PAGE  (1UL << (PAGE_SHIFT + 3))
 
+struct pb_set {
+	struct rb_root tree;
+};
+
 struct ploop_pushbackup_desc {
 	struct ploop_device *plo;
 	struct page **cbt_map; /* a 'snapshot' copy of CBT mask */
@@ -31,9 +35,8 @@ struct ploop_pushbackup_desc {
 	struct completion     ppb_comp;
 	bool                  ppb_waiting;
 
-
-	struct rb_root	      pending_tree;
-	struct rb_root	      reported_tree;
+	struct pb_set	      pending_set;
+	struct pb_set	      reported_set;
 };
 
 int ploop_pb_check_uuid(struct ploop_pushbackup_desc *pbd, __u8 *uuid)
@@ -137,8 +140,8 @@ struct ploop_pushbackup_desc *ploop_pb_alloc(struct ploop_device *plo)
 
 	spin_lock_init(&pbd->ppb_lock);
 	init_completion(&pbd->ppb_comp);
-	pbd->pending_tree = RB_ROOT;
-	pbd->reported_tree = RB_ROOT;
+	pbd->pending_set.tree = RB_ROOT;
+	pbd->reported_set.tree = RB_ROOT;
 	pbd->plo = plo;
 
 	return pbd;
@@ -333,9 +336,9 @@ void ploop_pb_fini(struct ploop_pushbackup_desc *pbd)
 	if (pbd == NULL)
 		return;
 
-	if (!RB_EMPTY_ROOT(&pbd->pending_tree))
+	if (!RB_EMPTY_ROOT(&pbd->pending_set.tree))
 		printk("ploop_pb_fini: pending_tree is not empty!\n");
-	if (!RB_EMPTY_ROOT(&pbd->reported_tree))
+	if (!RB_EMPTY_ROOT(&pbd->reported_set.tree))
 		printk("ploop_pb_fini: reported_tree is not empty!\n");
 
 	if (pbd->plo) {
@@ -369,8 +372,9 @@ int ploop_pb_copy_cbt_to_user(struct ploop_pushbackup_desc *pbd, char *user_addr
 }
 
 static void ploop_pb_add_req_to_tree(struct ploop_request *preq,
-				     struct rb_root *tree)
+				     struct pb_set *pbs)
 {
+	struct rb_root *tree = &pbs->tree;
 	struct rb_node ** p = &tree->rb_node;
 	struct rb_node *parent = NULL;
 	struct ploop_request * pr;
@@ -393,13 +397,13 @@ static void ploop_pb_add_req_to_tree(struct ploop_request *preq,
 static void ploop_pb_add_req_to_pending(struct ploop_pushbackup_desc *pbd,
 					struct ploop_request *preq)
 {
-	ploop_pb_add_req_to_tree(preq, &pbd->pending_tree);
+	ploop_pb_add_req_to_tree(preq, &pbd->pending_set);
 }
 
 static void ploop_pb_add_req_to_reported(struct ploop_pushbackup_desc *pbd,
 					 struct ploop_request *preq)
 {
-	ploop_pb_add_req_to_tree(preq, &pbd->reported_tree);
+	ploop_pb_add_req_to_tree(preq, &pbd->reported_set);
 }
 
 static inline bool preq_match(struct ploop_request *preq, cluster_t clu,
@@ -411,10 +415,11 @@ static inline bool preq_match(struct ploop_request *preq, cluster_t clu,
 }
 
 /* returns leftmost preq which req_cluster >= clu */
-static struct ploop_request *ploop_pb_get_req_from_tree(struct rb_root *tree,
+static struct ploop_request *ploop_pb_get_req_from_tree(struct pb_set *pbs,
 						cluster_t clu, cluster_t len,
 						struct ploop_request **npreq)
 {
+	struct rb_root *tree = &pbs->tree;
 	struct rb_node *n = tree->rb_node;
 	struct ploop_request *p = NULL;
 
@@ -456,9 +461,10 @@ static struct ploop_request *ploop_pb_get_req_from_tree(struct rb_root *tree,
 }
 
 static struct ploop_request *
-ploop_pb_get_first_req_from_tree(struct rb_root *tree,
+ploop_pb_get_first_req_from_tree(struct pb_set *pbs,
 				 struct ploop_request **npreq)
 {
+	struct rb_root *tree = &pbs->tree;
 	static struct ploop_request *p;
 	struct rb_node *n = rb_first(tree);
 
@@ -482,20 +488,20 @@ ploop_pb_get_first_req_from_tree(struct rb_root *tree,
 static struct ploop_request *
 ploop_pb_get_first_req_from_pending(struct ploop_pushbackup_desc *pbd)
 {
-	return ploop_pb_get_first_req_from_tree(&pbd->pending_tree, NULL);
+	return ploop_pb_get_first_req_from_tree(&pbd->pending_set, NULL);
 }
 
 static struct ploop_request *
 ploop_pb_get_first_reqs_from_pending(struct ploop_pushbackup_desc *pbd,
 				     struct ploop_request **npreq)
 {
-	return ploop_pb_get_first_req_from_tree(&pbd->pending_tree, npreq);
+	return ploop_pb_get_first_req_from_tree(&pbd->pending_set, npreq);
 }
 
 static struct ploop_request *
 ploop_pb_get_first_req_from_reported(struct ploop_pushbackup_desc *pbd)
 {
-	return ploop_pb_get_first_req_from_tree(&pbd->reported_tree, NULL);
+	return ploop_pb_get_first_req_from_tree(&pbd->reported_set, NULL);
 }
 
 int ploop_pb_preq_add_pending(struct ploop_pushbackup_desc *pbd,
@@ -538,14 +544,14 @@ unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd, bool do_merge)
 
 	spin_lock(&pbd->ppb_lock);
 
-	while (!RB_EMPTY_ROOT(&pbd->pending_tree)) {
+	while (!RB_EMPTY_ROOT(&pbd->pending_set.tree)) {
 		struct ploop_request *preq =
 			ploop_pb_get_first_req_from_pending(pbd);
 		list_add(&preq->list, &drop_list);
 		ret++;
 	}
 
-	while (!RB_EMPTY_ROOT(&pbd->reported_tree)) {
+	while (!RB_EMPTY_ROOT(&pbd->reported_set.tree)) {
 		struct ploop_request *preq =
 			ploop_pb_get_first_req_from_reported(pbd);
 		list_add(&preq->list, &drop_list);
@@ -635,7 +641,7 @@ int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
 		else
 			npreq = NULL;
 
-		rb_erase(&preq->reloc_link, &pbd->pending_tree);
+		rb_erase(&preq->reloc_link, &pbd->pending_set.tree);
 		ploop_pb_add_req_to_reported(pbd, preq);
 
 		(*len_p)++;
@@ -720,13 +726,14 @@ int ploop_pb_peek(struct ploop_pushbackup_desc *pbd,
 	return 0;
 }
 
-static void ploop_pb_process_extent(struct rb_root *tree, cluster_t clu,
+static void ploop_pb_process_extent(struct pb_set *pbs, cluster_t clu,
 				    cluster_t len, struct list_head *ready_list,
 				    int *n_found)
 {
+	struct rb_root *tree = &pbs->tree;
 	struct ploop_request *preq, *npreq;
 
-	preq = ploop_pb_get_req_from_tree(tree, clu, len, &npreq);
+	preq = ploop_pb_get_req_from_tree(pbs, clu, len, &npreq);
 
 	while (preq) {
 		struct rb_node *n;
@@ -758,8 +765,8 @@ void ploop_pb_put_reported(struct ploop_pushbackup_desc *pbd,
 
 	spin_lock(&pbd->ppb_lock);
 
-	ploop_pb_process_extent(&pbd->reported_tree, clu, len, &ready_list, &n_found);
-	ploop_pb_process_extent(&pbd->pending_tree, clu, len, &ready_list, NULL);
+	ploop_pb_process_extent(&pbd->reported_set, clu, len, &ready_list, &n_found);
+	ploop_pb_process_extent(&pbd->pending_set, clu, len, &ready_list, NULL);
 
 	/*
 	 * If preq not found above, it's unsolicited report. Then it's
