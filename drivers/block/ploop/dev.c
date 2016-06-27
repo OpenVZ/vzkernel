@@ -2574,8 +2574,8 @@ restart:
 		top_delta = ploop_top_delta(plo);
 		sbl.head = sbl.tail = preq->aux_bio;
 
-		/* Relocated data write required sync before BAT updatee */
-		set_bit(PLOOP_REQ_FORCE_FUA, &preq->state);
+		/* Relocated data write required sync before BAT update
+		 * this will happen inside index_update */
 
 		if (test_bit(PLOOP_REQ_RELOC_S, &preq->state)) {
 			preq->eng_state = PLOOP_E_DATA_WBI;
