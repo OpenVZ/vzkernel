@@ -605,12 +605,14 @@ kaio_read_page(struct ploop_io * io, struct ploop_request * preq,
 
 static void
 kaio_write_page(struct ploop_io * io, struct ploop_request * preq,
-		 struct page * page, sector_t sec, int fua)
+		 struct page * page, sector_t sec, unsigned long rw)
 {
 	ploop_prepare_tracker(preq, sec);
 
-	/* No FUA in kaio, convert it to fsync */
-	if (fua)
+	/* No FUA in kaio, convert it to fsync. Don't care
+	   about REQ_FLUSH: only io_direct relies on it,
+	   io_kaio implements delay_fua in another way... */
+	if (rw & REQ_FUA)
 		set_bit(PLOOP_REQ_KAIO_FSYNC, &preq->state);
 
 	kaio_io_page(io, IOCB_CMD_WRITE_ITER, preq, page, sec);
