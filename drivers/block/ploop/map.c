@@ -901,6 +901,7 @@ void ploop_index_update(struct ploop_request * preq)
 	int old_level;
 	struct page * page;
 	sector_t sec;
+	unsigned long rw;
 
 	/* No way back, we are going to initiate index write. */
 
@@ -958,8 +959,14 @@ void ploop_index_update(struct ploop_request * preq)
 	    test_bit(PLOOP_REQ_RELOC_S, &preq->state))
 		set_bit(PLOOP_REQ_FORCE_FUA, &preq->state);
 
-	top_delta->io.ops->write_page(&top_delta->io, preq, page, sec,
-				      preq->req_rw & REQ_FUA);
+	rw = (preq->req_rw & (REQ_FUA | REQ_FLUSH));
+
+	/* We've just set REQ_FLUSH in rw, ->write_page() below
+	   will do the FLUSH */
+	preq->req_rw &= ~REQ_FLUSH;
+
+	top_delta->io.ops->write_page(&top_delta->io, preq, page, sec, rw);
+
 	put_page(page);
 	return;
 
@@ -1078,7 +1085,8 @@ static void map_wb_complete(struct map_node * m, int err)
 	int delayed = 0;
 	unsigned int idx;
 	sector_t sec;
-	int fua, force_fua;
+	int force_fua;
+	unsigned long rw;
 
 	/* First, complete processing of written back indices,
 	 * finally instantiate indices in mapping cache.
@@ -1148,7 +1156,7 @@ static void map_wb_complete(struct map_node * m, int err)
 		copy_index_for_wb(page, m, top_delta->level);
 
 	main_preq = NULL;
-	fua = 0;
+	rw = 0;
 	force_fua = 0;
 
 	list_for_each_safe(cursor, tmp, &m->io_queue) {
@@ -1168,8 +1176,11 @@ static void map_wb_complete(struct map_node * m, int err)
 				break;
 			}
 
-			if (preq->req_rw & REQ_FUA)
-				fua = 1;
+			rw |= (preq->req_rw & (REQ_FLUSH | REQ_FUA));
+
+			/* We've just set REQ_FLUSH in rw, ->write_page() below
+			   will do the FLUSH */
+			preq->req_rw &= ~REQ_FLUSH;
 
 			if (test_bit(PLOOP_REQ_RELOC_A, &preq->state) ||
 			    test_bit(PLOOP_REQ_RELOC_S, &preq->state))
@@ -1204,7 +1215,7 @@ static void map_wb_complete(struct map_node * m, int err)
 		set_bit(PLOOP_REQ_FORCE_FUA, &main_preq->state);
 
 	top_delta->io.ops->write_page(&top_delta->io, main_preq, page, sec,
-				      fua ? REQ_FUA : 0);
+				      rw);
 	put_page(page);
 }
 
