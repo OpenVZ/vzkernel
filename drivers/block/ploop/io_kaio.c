@@ -77,8 +77,7 @@ static void kaio_complete_io_state(struct ploop_request * preq)
 		post_fsync = 1;
 
 	if (!post_fsync &&
-	    !ploop_req_delay_fua_possible(preq->req_rw, preq) &&
-	    (preq->req_rw & REQ_FUA))
+	    !(ploop_req_delay_fua_possible(preq) && (preq->req_rw & REQ_FUA)))
 		post_fsync = 1;
 
 	preq->req_rw &= ~REQ_FUA;
