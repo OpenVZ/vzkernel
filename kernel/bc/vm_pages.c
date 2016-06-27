@@ -125,6 +125,7 @@ int ub_enough_memory(struct mm_struct *mm, long pages)
 {
 	struct user_beancounter *ub;
 	struct cgroup_subsys_state *css;
+	unsigned long flags;
 	int ret;
 
 	if (!mm)
@@ -133,8 +134,10 @@ int ub_enough_memory(struct mm_struct *mm, long pages)
 	ub = mm->mm_ub;
 
 	if (ub->ub_parms[UB_PRIVVMPAGES].held >
-	    ub->ub_parms[UB_PRIVVMPAGES].barrier)
-		return -ENOMEM;
+	    ub->ub_parms[UB_PRIVVMPAGES].barrier) {
+		ret = -ENOMEM;
+		goto out;
+	}
 
 	if (ub == get_ub0() || ub_overcommit_memory)
 		return 0;
@@ -142,6 +145,12 @@ int ub_enough_memory(struct mm_struct *mm, long pages)
 	css = ub_get_mem_css(ub);
 	ret = mem_cgroup_enough_memory(mem_cgroup_from_cont(css->cgroup), pages);
 	css_put(css);
+out:
+	if (unlikely(ret < 0)) {
+		spin_lock_irqsave(&ub->ub_lock, flags);
+		ub->ub_parms[UB_PRIVVMPAGES].failcnt++;
+		spin_unlock_irqrestore(&ub->ub_lock, flags);
+	}
 	return ret;
 }
 
