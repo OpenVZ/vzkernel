@@ -450,6 +450,7 @@ _TUNE_BOOL(disable_user_threshold);
 _TUNE_U32(congestion_high_watermark);
 _TUNE_U32(congestion_low_watermark);
 _TUNE_U32(max_active_requests);
+_TUNE_U32(push_backup_timeout);
 
 
 struct pattr_sysfs_entry {
@@ -509,6 +510,7 @@ static struct attribute *tune_attributes[] = {
 	_A2(congestion_high_watermark),
 	_A2(congestion_low_watermark),
 	_A2(max_active_requests),
+	_A2(push_backup_timeout),
 	NULL
 };
 
