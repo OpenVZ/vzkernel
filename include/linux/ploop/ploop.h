@@ -603,20 +603,9 @@ void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list,
 		      int keep_locked);
 
 
-static inline int ploop_req_delay_fua_possible(unsigned long rw,
-       struct ploop_request *preq)
+static inline int ploop_req_delay_fua_possible(struct ploop_request *preq)
 {
-	int delay_fua = 0;
-
-	/* In case of eng_state != COMPLETE, we'll do FUA in
-	 * ploop_index_update(). Otherwise, we should post
-	 * fua.
-	 */
-	if (rw & REQ_FUA) {
-		if (preq->eng_state != PLOOP_E_COMPLETE)
-			delay_fua = 1;
-	}
-	return delay_fua;
+	return preq->eng_state == PLOOP_E_DATA_WBI;
 }
 
 static inline void ploop_req_set_error(struct ploop_request * preq, int err)
