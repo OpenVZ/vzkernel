@@ -1460,7 +1460,7 @@ static int __too_many_isolated(struct zone *zone, int file,
 static int too_many_isolated(struct zone *zone, int file,
 			     struct scan_control *sc)
 {
-	if (current->flags & PF_KTHREAD)
+	if (current_is_kswapd())
 		return 0;
 
 	if (!sane_reclaim(sc))
