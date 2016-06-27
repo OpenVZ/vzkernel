@@ -85,23 +85,19 @@ dio_submit(struct ploop_io *io, struct ploop_request * preq,
 	int preflush;
 	int postfua = 0;
 	int write = !!(rw & REQ_WRITE);
+	int delayed_fua = 0;
 
 	trace_submit(preq);
 
 	preflush = !!(rw & REQ_FLUSH);
 
-	if (test_and_clear_bit(PLOOP_REQ_FORCE_FLUSH, &preq->state))
-		preflush = 1;
-
 	if (test_and_clear_bit(PLOOP_REQ_FORCE_FUA, &preq->state))
 		postfua = 1;
 
-	if (!postfua && ploop_req_delay_fua_possible(preq) && (rw & REQ_FUA)) {
-
+	if ((rw & REQ_FUA) && ploop_req_delay_fua_possible(preq)) {
 		/* Mark req that delayed flush required */
-		set_bit(PLOOP_REQ_FORCE_FLUSH, &preq->state);
-	} else if (rw & REQ_FUA) {
-		postfua = 1;
+		preq->req_rw |= (REQ_FLUSH | REQ_FUA);
+		delayed_fua = 1;
 	}
 
 	rw &= ~(REQ_FLUSH | REQ_FUA);
@@ -216,7 +212,8 @@ flush_bio:
 			goto flush_bio;
 		}
 
-		bio->bi_rw |= bw.cur->bi_rw & (REQ_FLUSH | REQ_FUA);
+		bio->bi_rw |= bw.cur->bi_rw &
+			(REQ_FLUSH | delayed_fua ? 0 : REQ_FUA);
 		bw.bv_off += copy;
 		size -= copy >> 9;
 		sec += copy >> 9;
