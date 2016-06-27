@@ -82,14 +82,11 @@ dio_submit(struct ploop_io *io, struct ploop_request * preq,
 	sector_t sec, nsec;
 	int err;
 	struct bio_list_walk bw;
-	int preflush;
 	int postfua = 0;
 	int write = !!(rw & REQ_WRITE);
 	int delayed_fua = 0;
 
 	trace_submit(preq);
-
-	preflush = !!(rw & REQ_FLUSH);
 
 	if (test_and_clear_bit(PLOOP_REQ_FORCE_FUA, &preq->state))
 		postfua = 1;
@@ -230,10 +227,6 @@ flush_bio:
 		b->bi_private = preq;
 		b->bi_end_io = dio_endio_async;
 
-		if (unlikely(preflush)) {
-			rw2 |= REQ_FLUSH;
-			preflush = 0;
-		}
 		if (unlikely(postfua && !bl.head))
 			rw2 |= REQ_FUA;
 
