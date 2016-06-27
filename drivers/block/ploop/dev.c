@@ -2027,6 +2027,7 @@ ploop_entry_request(struct ploop_request * preq)
 		if (preq->req_size == 0) {
 			if (preq->req_rw & REQ_FLUSH &&
 			    !test_bit(PLOOP_REQ_FSYNC_DONE, &preq->state)) {
+				preq->eng_state = PLOOP_E_COMPLETE;
 				if (top_io->ops->issue_flush) {
 					top_io->ops->issue_flush(top_io, preq);
 					return;
