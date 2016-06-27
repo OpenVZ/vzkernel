@@ -966,11 +966,11 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		 *    __GFP_IO|__GFP_FS for this reason); but more thought
 		 *    would probably show more reasons.
 		 *
-		 * 3) Legacy memcg encounters a page that is not already marked
+		 * 3) memcg encounters a page that is already marked
 		 *    PageReclaim. memcg does not have any dirty pages
 		 *    throttling so we could easily OOM just because too many
 		 *    pages are in writeback and there is nothing else to
-		 *    reclaim. Wait for the writeback to complete.
+		 *    reclaim. Stall memcg reclaim then.
 		 */
 		if (PageWriteback(page)) {
 			/* Case 1 above */
@@ -991,7 +991,7 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 				 * enough to care.  What we do want is for this
 				 * page to have PageReclaim set next time memcg
 				 * reclaim reaches the tests above, so it will
-				 * then wait_on_page_writeback() to avoid OOM;
+				 * then stall to avoid OOM;
 				 * and it's also appropriate in global reclaim.
 				 */
 				SetPageReclaim(page);
@@ -1001,7 +1001,8 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 
 			/* Case 3 above */
 			} else {
-				wait_on_page_writeback(page);
+				nr_immediate++;
+				goto keep_locked;
 			}
 		}
 
@@ -1630,10 +1631,9 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 	if (nr_writeback && nr_writeback == nr_taken)
 		zone_set_flag(zone, ZONE_WRITEBACK);
 
-	/*
-	 * Legacy memcg will stall in page writeback so avoid forcibly
-	 * stalling here.
-	 */
+	if (!global_reclaim(sc) && nr_immediate)
+		congestion_wait(BLK_RW_ASYNC, HZ/10);
+
 	if (sane_reclaim(sc)) {
 		/*
 		 * Tag a zone as congested if all the dirty pages scanned were
