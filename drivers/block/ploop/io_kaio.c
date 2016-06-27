@@ -950,7 +950,6 @@ static void kaio_issue_flush(struct ploop_io * io, struct ploop_request *preq)
 {
 	struct ploop_delta *delta = container_of(io, struct ploop_delta, io);
 
-	preq->eng_state = PLOOP_E_COMPLETE;
 	preq->req_rw &= ~REQ_FLUSH;
 
 	spin_lock_irq(&io->plo->lock);
