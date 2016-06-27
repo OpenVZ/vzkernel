@@ -471,6 +471,7 @@ enum
 	PLOOP_REQ_POST_SUBMIT, /* preq needs post_submit processing */
 	PLOOP_REQ_PUSH_BACKUP, /* preq was ACKed by userspace push_backup */
 	PLOOP_REQ_FSYNC_DONE,  /* fsync_thread() performed f_op->fsync() */
+	PLOOP_REQ_ISSUE_FLUSH, /* preq needs ->issue_flush before completing */
 };
 
 #define PLOOP_REQ_MERGE_FL (1 << PLOOP_REQ_MERGE)
