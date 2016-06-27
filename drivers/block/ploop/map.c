@@ -902,6 +902,7 @@ void ploop_index_update(struct ploop_request * preq)
 	struct page * page;
 	sector_t sec;
 	unsigned long rw;
+	unsigned long state = READ_ONCE(preq->state);
 
 	/* No way back, we are going to initiate index write. */
 
@@ -954,16 +955,16 @@ void ploop_index_update(struct ploop_request * preq)
 	__TRACE("wbi %p %u %p\n", preq, preq->req_cluster, m);
 	plo->st.map_single_writes++;
 	top_delta->ops->map_index(top_delta, m->mn_start, &sec);
-	/* Relocate requires consistent writes, mark such reqs appropriately */
-	if (test_bit(PLOOP_REQ_RELOC_A, &preq->state) ||
-	    test_bit(PLOOP_REQ_RELOC_S, &preq->state))
-		set_bit(PLOOP_REQ_FORCE_FUA, &preq->state);
 
 	rw = (preq->req_rw & (REQ_FUA | REQ_FLUSH));
 
 	/* We've just set REQ_FLUSH in rw, ->write_page() below
 	   will do the FLUSH */
 	preq->req_rw &= ~REQ_FLUSH;
+
+	/* Relocate requires consistent index update */
+	if (state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL))
+		rw |= (REQ_FLUSH | REQ_FUA);
 
 	top_delta->io.ops->write_page(&top_delta->io, preq, page, sec, rw);
 
@@ -1087,7 +1088,6 @@ static void map_wb_complete(struct map_node * m, int err)
 	int delayed = 0;
 	unsigned int idx;
 	sector_t sec;
-	int force_fua;
 	unsigned long rw;
 
 	/* First, complete processing of written back indices,
@@ -1159,10 +1159,10 @@ static void map_wb_complete(struct map_node * m, int err)
 
 	main_preq = NULL;
 	rw = 0;
-	force_fua = 0;
 
 	list_for_each_safe(cursor, tmp, &m->io_queue) {
 		struct ploop_request * preq;
+		unsigned long state;
 
 		preq = list_entry(cursor, struct ploop_request, list);
 
@@ -1184,9 +1184,10 @@ static void map_wb_complete(struct map_node * m, int err)
 			   will do the FLUSH */
 			preq->req_rw &= ~REQ_FLUSH;
 
-			if (test_bit(PLOOP_REQ_RELOC_A, &preq->state) ||
-			    test_bit(PLOOP_REQ_RELOC_S, &preq->state))
-				force_fua = 1;
+			state = READ_ONCE(preq->state);
+			/* Relocate requires consistent index update */
+			if (state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL))
+				rw |= (REQ_FLUSH | REQ_FUA);
 
 			preq->eng_state = PLOOP_E_INDEX_WB;
 			get_page(page);
@@ -1212,9 +1213,6 @@ static void map_wb_complete(struct map_node * m, int err)
 	__TRACE("wbi2 %p %u %p\n", main_preq, main_preq->req_cluster, m);
 	plo->st.map_multi_writes++;
 	top_delta->ops->map_index(top_delta, m->mn_start, &sec);
-
-	if (force_fua)
-		set_bit(PLOOP_REQ_FORCE_FUA, &main_preq->state);
 
 	top_delta->io.ops->write_page(&top_delta->io, main_preq, page, sec,
 				      rw);
