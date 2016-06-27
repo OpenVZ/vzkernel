@@ -466,7 +466,6 @@ enum
 	PLOOP_REQ_ZERO,
 	PLOOP_REQ_DISCARD,
 	PLOOP_REQ_RSYNC,
-	PLOOP_REQ_FORCE_FUA,	/*force fua of req write I/O by engine */
 	PLOOP_REQ_KAIO_FSYNC,	/*force image fsync by KAIO module */
 	PLOOP_REQ_POST_SUBMIT, /* preq needs post_submit processing */
 	PLOOP_REQ_PUSH_BACKUP, /* preq was ACKed by userspace push_backup */
