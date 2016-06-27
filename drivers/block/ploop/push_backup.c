@@ -17,7 +17,11 @@
 #define BITS_PER_PAGE  (1UL << (PAGE_SHIFT + 3))
 
 struct pb_set {
-	struct rb_root tree;
+	struct rb_root	   tree;
+	struct list_head   list;
+	struct timer_list  timer;
+	char		  *name;
+	struct ploop_pushbackup_desc *pbd; /* points to parent pbd */
 };
 
 struct ploop_pushbackup_desc {
@@ -114,6 +118,26 @@ int ploop_pb_cbt_map_release(struct ploop_pushbackup_desc *pbd, bool do_merge)
 	return ret;
 }
 
+static void ploop_pb_timeout_func(unsigned long data);
+
+static void ploop_pbs_init(struct pb_set *pbs,
+		struct ploop_pushbackup_desc *pbd, char *name)
+{
+	pbs->pbd = pbd;
+	pbs->name = name;
+	pbs->tree = RB_ROOT;
+	INIT_LIST_HEAD(&pbs->list);
+
+	init_timer(&pbs->timer);
+	pbs->timer.function = ploop_pb_timeout_func;
+	pbs->timer.data = (unsigned long)pbs;
+}
+
+static void ploop_pbs_fini(struct pb_set *pbs)
+{
+	del_timer_sync(&pbs->timer);
+}
+
 struct ploop_pushbackup_desc *ploop_pb_alloc(struct ploop_device *plo)
 {
 	struct ploop_pushbackup_desc *pbd;
@@ -140,8 +164,8 @@ struct ploop_pushbackup_desc *ploop_pb_alloc(struct ploop_device *plo)
 
 	spin_lock_init(&pbd->ppb_lock);
 	init_completion(&pbd->ppb_comp);
-	pbd->pending_set.tree = RB_ROOT;
-	pbd->reported_set.tree = RB_ROOT;
+	ploop_pbs_init(&pbd->pending_set, pbd, "pending");
+	ploop_pbs_init(&pbd->reported_set, pbd, "reported");
 	pbd->plo = plo;
 
 	return pbd;
@@ -390,6 +414,8 @@ static void ploop_pb_add_req_to_tree(struct ploop_request *preq,
 			p = &(*p)->rb_right;
 	}
 
+	list_add_tail(&preq->list, &pbs->list);
+
 	rb_link_node(&preq->reloc_link, parent, p);
 	rb_insert_color(&preq->reloc_link, tree);
 }
@@ -410,6 +436,7 @@ static void remove_req_from_pbs(struct pb_set *pbs,
 					 struct ploop_request *preq)
 {
 	rb_erase(&preq->reloc_link, &pbs->tree);
+	list_del_init(&preq->list);
 }
 
 
@@ -546,6 +573,9 @@ unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd, bool do_merge)
 
 	if (pbd == NULL)
 		return 0;
+
+	ploop_pbs_fini(&pbd->pending_set);
+	ploop_pbs_fini(&pbd->reported_set);
 
 	merge_status = ploop_pb_cbt_map_release(pbd, do_merge);
 
@@ -819,4 +849,8 @@ int ploop_pb_destroy(struct ploop_device *plo, __u32 *status)
 	ploop_relax(plo);
 
 	return 0;
+}
+
+static void ploop_pb_timeout_func(unsigned long data)
+{
 }
