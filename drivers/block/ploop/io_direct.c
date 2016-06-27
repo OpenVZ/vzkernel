@@ -96,7 +96,7 @@ dio_submit(struct ploop_io *io, struct ploop_request * preq,
 	if (test_and_clear_bit(PLOOP_REQ_FORCE_FUA, &preq->state))
 		postfua = 1;
 
-	if (!postfua && ploop_req_delay_fua_possible(rw, preq)) {
+	if (!postfua && ploop_req_delay_fua_possible(preq) && (rw & REQ_FUA)) {
 
 		/* Mark req that delayed flush required */
 		set_bit(PLOOP_REQ_FORCE_FLUSH, &preq->state);
