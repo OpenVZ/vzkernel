@@ -1070,7 +1070,9 @@ static void map_wb_complete_post_process(struct ploop_map *map,
 	 * (see dio_submit()). So fsync of EXT4 image doesnt help us.
 	 * We need to force sync of nullified blocks.
 	 */
-	set_bit(PLOOP_REQ_FORCE_FUA, &preq->state);
+	preq->eng_io = &top_delta->io;
+	BUG_ON(test_bit(PLOOP_REQ_POST_SUBMIT, &preq->state));
+	set_bit(PLOOP_REQ_ISSUE_FLUSH, &preq->state);
 	top_delta->io.ops->submit(&top_delta->io, preq, preq->req_rw,
 				  &sbl, preq->iblock, 1<<plo->cluster_log);
 }
