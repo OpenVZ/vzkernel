@@ -308,6 +308,7 @@ struct ploop_tunable
 	int	congestion_high_watermark;
 	int	congestion_low_watermark;
 	int	max_active_requests;
+	int	push_backup_timeout; /* in seconds */
 	unsigned int pass_flushes : 1, pass_fuas : 1,
 		     congestion_detection : 1,
 		     check_zeros : 1,
@@ -332,7 +333,8 @@ struct ploop_tunable
 .pass_flushes = 1, \
 .pass_fuas = 1, \
 .check_zeros = 1, \
-.max_active_requests = DEFAULT_PLOOP_BATCH_ENTRY_QLEN / 2, }
+.max_active_requests = DEFAULT_PLOOP_BATCH_ENTRY_QLEN / 2, \
+.push_backup_timeout = 42, }
 
 struct ploop_stats
 {
