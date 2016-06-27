@@ -463,6 +463,7 @@ static void ploop_pb_add_req_to_tree(struct ploop_request *preq,
 	struct rb_node ** p = &tree->rb_node;
 	struct rb_node *parent = NULL;
 	struct ploop_request * pr;
+	unsigned long timeout = preq->plo->tune.push_backup_timeout * HZ;
 
 	while (*p) {
 		parent = *p;
@@ -474,6 +475,11 @@ static void ploop_pb_add_req_to_tree(struct ploop_request *preq,
 		else
 			p = &(*p)->rb_right;
 	}
+
+	preq->tstamp = jiffies;
+	if (timeout && list_empty(&pbs->list) &&
+	    pbs->pbd->ppb_state == PLOOP_PB_ALIVE)
+		mod_timer(&pbs->timer, preq->tstamp + timeout + 1);
 
 	list_add_tail(&preq->list, &pbs->list);
 
@@ -496,8 +502,21 @@ static void ploop_pb_add_req_to_reported(struct ploop_pushbackup_desc *pbd,
 static void remove_req_from_pbs(struct pb_set *pbs,
 					 struct ploop_request *preq)
 {
+	unsigned long timeout = preq->plo->tune.push_backup_timeout * HZ;
+	bool oldest_deleted = false;
+
+	if (preq == list_first_entry(&pbs->list, struct ploop_request, list))
+		oldest_deleted = true;
+
 	rb_erase(&preq->reloc_link, &pbs->tree);
 	list_del_init(&preq->list);
+
+	if (timeout && oldest_deleted && !list_empty(&pbs->list) &&
+	    pbs->pbd->ppb_state == PLOOP_PB_ALIVE) {
+		preq = list_first_entry(&pbs->list, struct ploop_request,
+					list);
+		mod_timer(&pbs->timer, preq->tstamp + timeout + 1);
+	}
 }
 
 
@@ -935,6 +954,65 @@ int ploop_pb_destroy(struct ploop_device *plo, __u32 *status)
 	return 0;
 }
 
+static bool ploop_pb_set_expired(struct pb_set *pbs)
+{
+	struct ploop_pushbackup_desc *pbd = pbs->pbd;
+	struct ploop_device          *plo = pbd->plo;
+	unsigned long timeout = plo->tune.push_backup_timeout * HZ;
+	unsigned long tstamp = 0;
+	cluster_t clu = 0;
+	bool ret = false;
+
+	if (!timeout)
+		return false;
+
+	spin_lock(&pbd->ppb_lock);
+
+	if (pbd->ppb_state != PLOOP_PB_ALIVE) {
+		spin_unlock(&pbd->ppb_lock);
+		return false;
+	}
+
+	/* No need to scan the whole list: the first preq is the oldest! */
+	if (!list_empty(&pbs->list)) {
+		struct ploop_request *preq = list_first_entry(&pbs->list,
+							      struct ploop_request, list);
+		if (time_before(preq->tstamp + timeout, jiffies)) {
+			tstamp = preq->tstamp;
+			clu = preq->req_cluster;
+			ret = true;
+		} else
+			mod_timer(&pbs->timer, preq->tstamp + timeout + 1);
+	}
+
+	spin_unlock(&pbd->ppb_lock);
+
+	if (ret)
+		printk(KERN_WARNING "Abort push_backup for ploop%d: found "
+		       "preq (clu=%d) in %s tree delayed for %u msecs\n",
+		       plo->index, clu, pbs->name,
+		       jiffies_to_msecs(jiffies - tstamp));
+
+	return ret;
+}
+
 static void ploop_pb_timeout_func(unsigned long data)
 {
+	struct pb_set                *pbs = (void*)data;
+	struct ploop_pushbackup_desc *pbd = pbs->pbd;
+	struct ploop_device          *plo = pbd->plo;
+
+	if (!plo->tune.push_backup_timeout ||
+	    !test_bit(PLOOP_S_RUNNING, &plo->state) ||
+	    !test_bit(PLOOP_S_PUSH_BACKUP, &plo->state) ||
+	    !ploop_pb_set_expired(pbs))
+		return;
+
+	spin_lock(&pbd->ppb_lock);
+	if (pbd->ppb_state == PLOOP_PB_ALIVE) {
+		pbd->ppb_state = PLOOP_PB_STOPPING;
+		if (waitqueue_active(&pbd->ppb_waitq))
+			wake_up_interruptible(&pbd->ppb_waitq);
+	}
+	spin_unlock(&pbd->ppb_lock);
 }
