@@ -603,6 +603,10 @@ static inline int check_entry_size_and_hooks(struct arpt_entry *e,
 	if (err)
 		return err;
 
+	/* target start is within the ip/ip6/arpt_entry struct */
+	if (e->target_offset < ((const void *)e->elems - (const void *)e))
+		return -EINVAL;
+
 	/* Check hooks & underflows */
 	for (h = 0; h < NF_ARP_NUMHOOKS; h++) {
 		if (!(valid_hooks & (1 << h)))
@@ -1260,6 +1264,10 @@ check_compat_entry_size_and_hooks(struct compat_arpt_entry *e,
 	ret = check_entry((struct arpt_entry *)e);
 	if (ret)
 		return ret;
+
+	/* target start is within the ip/ip6/arpt_entry struct */
+	if (e->target_offset < ((const void *)e->elems - (const void *)e))
+		return -EINVAL;
 
 	off = sizeof(struct arpt_entry) - sizeof(struct compat_arpt_entry);
 	entry_offset = (void *)e - (void *)base;
