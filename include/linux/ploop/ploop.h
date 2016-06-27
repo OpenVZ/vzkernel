@@ -156,7 +156,7 @@ struct ploop_io_ops
 	void	(*read_page)(struct ploop_io * io, struct ploop_request * preq,
 			     struct page * page, sector_t sec);
 	void	(*write_page)(struct ploop_io * io, struct ploop_request * preq,
-			      struct page * page, sector_t sec, int fua);
+			      struct page * page, sector_t sec, unsigned long rw);
 
 
 	int	(*sync_read)(struct ploop_io * io, struct page * page,
