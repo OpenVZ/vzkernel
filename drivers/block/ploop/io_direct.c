@@ -405,6 +405,7 @@ try_again:
 
 		preq->iblock = iblk;
 		preq->eng_io = io;
+		BUG_ON(test_bit(PLOOP_REQ_ISSUE_FLUSH, &preq->state));
 		set_bit(PLOOP_REQ_POST_SUBMIT, &preq->state);
 		dio_submit_pad(io, preq, sbl, size, em);
 		err = 0;
@@ -1809,7 +1810,7 @@ static void dio_issue_flush(struct ploop_io * io, struct ploop_request *preq)
 
 	atomic_inc(&preq->io_count);
 	ploop_acc_ff_out(io->plo, preq->req_rw | bio->bi_rw);
-	submit_bio(preq->req_rw, bio);
+	submit_bio(WRITE_FLUSH, bio);
 	ploop_complete_io_request(preq);
 }
 
