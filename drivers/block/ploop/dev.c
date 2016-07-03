@@ -4047,7 +4047,7 @@ static void ploop_relocate(struct ploop_device * plo)
 	preq->bl.tail = preq->bl.head = NULL;
 	preq->req_cluster = 0;
 	preq->req_size = 0;
-	preq->req_rw = WRITE_SYNC;
+	preq->req_rw = WRITE_SYNC|REQ_FUA;
 	preq->eng_state = PLOOP_E_ENTRY;
 	preq->state = (1 << PLOOP_REQ_SYNC) | (1 << PLOOP_REQ_RELOC_A);
 	preq->error = 0;
@@ -4351,7 +4351,7 @@ static void ploop_relocblks_process(struct ploop_device *plo)
 		preq->bl.tail = preq->bl.head = NULL;
 		preq->req_cluster = ~0U; /* uninitialized */
 		preq->req_size = 0;
-		preq->req_rw = WRITE_SYNC;
+		preq->req_rw = WRITE_SYNC|REQ_FUA;
 		preq->eng_state = PLOOP_E_ENTRY;
 		preq->state = (1 << PLOOP_REQ_SYNC) | (1 << PLOOP_REQ_RELOC_S);
 		preq->error = 0;
