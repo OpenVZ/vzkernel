@@ -913,7 +913,8 @@ static int xfrm_dump_sa_done(struct netlink_callback *cb)
 	struct sock *sk = cb->skb->sk;
 	struct net *net = sock_net(sk);
 
-	xfrm_state_walk_done(walk, net);
+	if (cb->args[0])
+		xfrm_state_walk_done(walk, net);
 	return 0;
 }
 
@@ -932,8 +933,8 @@ static int xfrm_dump_sa(struct sk_buff *skb, struct netlink_callback *cb)
 	info.nlmsg_flags = NLM_F_MULTI;
 
 	if (!cb->args[0]) {
-		cb->args[0] = 1;
 		xfrm_state_walk_init(walk, 0);
+		cb->args[0] = 1;
 	}
 
 	(void) xfrm_state_walk(net, walk, dump_one_state, &info);
