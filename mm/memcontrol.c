@@ -4814,7 +4814,7 @@ static void mem_cgroup_force_empty_list(struct mem_cgroup *memcg,
 static void mem_cgroup_reparent_charges(struct mem_cgroup *memcg)
 {
 	int node, zid;
-	u64 usage;
+	u64 res, kmem;
 
 	do {
 		/* This is for making all *used* pages to be on LRU. */
@@ -4845,10 +4845,17 @@ static void mem_cgroup_reparent_charges(struct mem_cgroup *memcg)
 		 * so the lru seemed empty but the page could have been added
 		 * right after the check. RES_USAGE should be safe as we always
 		 * charge before adding to the LRU.
+		 *
+		 * Note, we must read memcg->res strictly before memcg->kmem,
+		 * because otherwise a kmem charge might get uncharged in
+		 * between the two reads leading to res <= kmem, even though
+		 * there are still user pages charged to this cgroup out there.
+		 * (see also comment in memcg_charge_kmem())
 		 */
-		usage = res_counter_read_u64(&memcg->res, RES_USAGE) -
-			res_counter_read_u64(&memcg->kmem, RES_USAGE);
-	} while (usage > 0);
+		res = res_counter_read_u64(&memcg->res, RES_USAGE);
+		smp_rmb();
+		kmem = res_counter_read_u64(&memcg->kmem, RES_USAGE);
+	} while (res > kmem);
 }
 
 /*
