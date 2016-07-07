@@ -309,6 +309,7 @@ struct mem_cgroup {
 	 * Should the accounting and control be hierarchical, per subtree?
 	 */
 	bool use_hierarchy;
+	bool is_offline;
 	unsigned long kmem_account_flags; /* See KMEM_ACCOUNTED_*, below */
 
 	bool		oom_lock;
@@ -3109,6 +3110,23 @@ again:
 			break;
 		}
 	} while (ret != CHARGE_OK);
+
+	/*
+	 * Cancel charge in case this cgroup was destroyed while we were here,
+	 * otherwise we can get a pending user memory charge to an offline
+	 * cgroup, which might result in use-after-free after the cgroup gets
+	 * released (see also mem_cgroup_css_offline()).
+	 *
+	 * Note, no need to issue an explicit barrier here, because a
+	 * successful charge implies full memory barrier.
+	 */
+	if (unlikely(memcg->is_offline)) {
+		res_counter_uncharge(&memcg->res, batch * PAGE_SIZE);
+		if (do_swap_account)
+			res_counter_uncharge(&memcg->memsw, batch * PAGE_SIZE);
+		css_put(&memcg->css);
+		goto bypass;
+	}
 
 	if (batch > nr_pages)
 		refill_stock(memcg, batch - nr_pages);
@@ -6790,6 +6808,15 @@ static void mem_cgroup_css_offline(struct cgroup *cont)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
 	struct cgroup *iter;
+
+	/*
+	 * Mark memory cgroup as offline before going to reparent charges.
+	 * This guarantees that __mem_cgroup_try_charge() either charges before
+	 * reparenting starts or doesn't charge at all, hence we won't have
+	 * pending user memory charges after reparenting is done.
+	 */
+	memcg->is_offline = true;
+	smp_mb();
 
 	memcg_deactivate_kmem(memcg);
 
