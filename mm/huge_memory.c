@@ -61,11 +61,10 @@ static DEFINE_MUTEX(khugepaged_mutex);
 static DEFINE_SPINLOCK(khugepaged_mm_lock);
 static DECLARE_WAIT_QUEUE_HEAD(khugepaged_wait);
 /*
- * default collapse hugepages if there is at least one pte mapped like
- * it would have happened if the vma was large enough during page
- * fault.
+ * default collapse hugepages if there is at least 1/4th ptes mapped
+ * to avoid memory footprint growth due to fragmentation
  */
-static unsigned int khugepaged_max_ptes_none __read_mostly = HPAGE_PMD_NR-1;
+static unsigned int khugepaged_max_ptes_none __read_mostly = HPAGE_PMD_NR*3/4;
 
 static int khugepaged(void *none);
 static int khugepaged_slab_init(void);
