@@ -53,6 +53,7 @@ enum {
 				   (for minor mgmt only) */
 	PLOOP_S_ONCE,	        /* An event (e.g. printk once) happened */
 	PLOOP_S_PUSH_BACKUP,	/* Push_backup is in progress */
+	PLOOP_S_FROZEN		/* Frozen PLOOP_IOC_FREEZE */
 };
 
 struct ploop_snapdata
@@ -401,6 +402,7 @@ struct ploop_device
 	struct block_device	*bdev;
 	struct request_queue	*queue;
 	struct task_struct	*thread;
+	struct super_block	*sb;
 	struct rb_node		link;
 
 	/* someone who wants to quiesce state-machine waits
