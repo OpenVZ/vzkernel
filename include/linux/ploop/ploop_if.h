@@ -345,6 +345,12 @@ struct ploop_track_extent
 /* Stop push backup */
 #define PLOOP_IOC_PUSH_BACKUP_STOP _IOR(PLOOPCTLTYPE, 31, struct ploop_push_backup_stop_ctl)
 
+/* Freeze FS mounted over ploop */
+#define PLOOP_IOC_FREEZE	_IO(PLOOPCTLTYPE, 32)
+
+/* Unfreeze FS mounted over ploop */
+#define PLOOP_IOC_THAW		_IO(PLOOPCTLTYPE, 33)
+
 /* Events exposed via /sys/block/ploopN/pstate/event */
 #define PLOOP_EVENT_ABORTED	1
 #define PLOOP_EVENT_STOPPED	2
