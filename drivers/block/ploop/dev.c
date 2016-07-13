@@ -4765,6 +4765,39 @@ static int ploop_push_backup_stop(struct ploop_device *plo, unsigned long arg)
 	return copy_to_user((void*)arg, &ctl, sizeof(ctl));
 }
 
+static int ploop_freeze(struct ploop_device *plo, struct block_device *bdev)
+{
+	struct super_block *sb = plo->sb;
+
+	if (test_bit(PLOOP_S_FROZEN, &plo->state))
+		return 0;
+
+	sb = freeze_bdev(bdev);
+	if (sb && IS_ERR(sb))
+		return PTR_ERR(sb);
+
+	plo->sb = sb;
+	set_bit(PLOOP_S_FROZEN, &plo->state);
+	return 0;
+}
+
+static int ploop_thaw(struct ploop_device *plo, struct block_device *bdev)
+{
+	struct super_block *sb = plo->sb;
+	int err;
+
+	if (!test_bit(PLOOP_S_FROZEN, &plo->state))
+		return 0;
+
+	err = thaw_bdev(bdev, sb);
+	if (!err) {
+		plo->sb = NULL;
+		clear_bit(PLOOP_S_FROZEN, &plo->state);
+	}
+
+	return err;
+}
+
 static int ploop_ioctl(struct block_device *bdev, fmode_t fmode, unsigned int cmd,
 		       unsigned long arg)
 {
@@ -4877,6 +4910,12 @@ static int ploop_ioctl(struct block_device *bdev, fmode_t fmode, unsigned int cm
 		break;
 	case PLOOP_IOC_PUSH_BACKUP_STOP:
 		err = ploop_push_backup_stop(plo, arg);
+		break;
+	case PLOOP_IOC_FREEZE:
+		err = ploop_freeze(plo, bdev);
+		break;
+	case PLOOP_IOC_THAW:
+		err = ploop_thaw(plo, bdev);
 		break;
 	default:
 		err = -EINVAL;
