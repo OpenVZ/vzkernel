@@ -16,6 +16,9 @@
 #include <linux/slab.h>
 #include <asm/uaccess.h>
 
+/* Affects ability of CT users to mount fs marked as FS_EXPERIMENTAL */
+int sysctl_experimental_fs_enable;
+
 /*
  * Handling of filesystem drivers list.
  * Rules:
@@ -219,7 +222,10 @@ int __init get_filesystem_list(char *buf)
 
 static inline bool filesystem_permitted(const struct file_system_type *fs)
 {
-	return ve_is_super(get_exec_env()) || (fs->fs_flags & FS_VIRTUALIZED);
+	return ve_is_super(get_exec_env()) ||
+		(fs->fs_flags & FS_VIRTUALIZED) ||
+		((fs->fs_flags & FS_EXPERIMENTAL) &&
+		 sysctl_experimental_fs_enable);
 }
 
 #ifdef CONFIG_PROC_FS
