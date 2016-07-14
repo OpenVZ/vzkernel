@@ -3039,7 +3039,7 @@ static void check_enqueue_throttle(struct cfs_rq *cfs_rq);
 static void
 enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 {
-	if (is_top_cfs_rq(cfs_rq) && !cfs_rq->load.weight)
+	if (!cfs_rq->load.weight)
 		inc_nr_active_cfs_rqs(cfs_rq);
 
 	/*
@@ -3163,7 +3163,7 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	update_min_vruntime(cfs_rq);
 	update_cfs_shares(cfs_rq);
 
-	if (is_top_cfs_rq(cfs_rq) && !cfs_rq->load.weight)
+	if (!cfs_rq->load.weight)
 		dec_nr_active_cfs_rqs(cfs_rq, flags & DEQUEUE_TASK_SLEEP);
 }
 
