@@ -8614,6 +8614,10 @@ void __init sched_init(void)
 
 #endif /* CONFIG_CGROUP_SCHED */
 
+#ifdef CONFIG_CFS_CPULIMIT
+	root_task_group.topmost_limited_ancestor = &root_task_group;
+#endif
+
 	for_each_possible_cpu(i) {
 		struct rq *rq;
 
@@ -8935,6 +8939,8 @@ err:
 	return ERR_PTR(-ENOMEM);
 }
 
+static void tg_update_topmost_limited_ancestor(struct task_group *tg);
+
 void sched_online_group(struct task_group *tg, struct task_group *parent)
 {
 	unsigned long flags;
@@ -8947,6 +8953,9 @@ void sched_online_group(struct task_group *tg, struct task_group *parent)
 	tg->parent = parent;
 	INIT_LIST_HEAD(&tg->children);
 	list_add_rcu(&tg->siblings, &parent->children);
+
+	tg_update_topmost_limited_ancestor(tg);
+
 	spin_unlock_irqrestore(&task_group_lock, flags);
 
 	online_fair_sched_group(tg);
@@ -9531,6 +9540,8 @@ const u64 min_cfs_quota_period = 1 * NSEC_PER_MSEC; /* 1ms */
 
 static int __cfs_schedulable(struct task_group *tg, u64 period, u64 runtime);
 
+static void tg_limit_toggled(struct task_group *tg);
+
 /* call with cfs_constraints_mutex held */
 static int __tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota)
 {
@@ -9592,6 +9603,8 @@ static int __tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota)
 			unthrottle_cfs_rq(cfs_rq);
 		raw_spin_unlock_irq(&rq->lock);
 	}
+	if (runtime_enabled != runtime_was_enabled)
+		tg_limit_toggled(tg);
 	if (runtime_was_enabled && !runtime_enabled)
 		cfs_bandwidth_usage_dec();
 	return ret;
@@ -9771,6 +9784,49 @@ static int cpu_stats_show(struct cgroup *cgrp, struct cftype *cft,
 }
 
 #ifdef CONFIG_CFS_CPULIMIT
+static int __tg_update_topmost_limited_ancestor(struct task_group *tg, void *unused)
+{
+	struct task_group *parent = tg->parent;
+
+	/*
+	 * Parent and none of its uncestors is limited? The task group should
+	 * become a topmost limited uncestor then, provided it has a limit set.
+	 * Otherwise inherit topmost limited ancestor from the parent.
+	 */
+	if (parent->topmost_limited_ancestor == parent &&
+	    parent->cfs_bandwidth.quota == RUNTIME_INF)
+		tg->topmost_limited_ancestor = tg;
+	else
+		tg->topmost_limited_ancestor = parent->topmost_limited_ancestor;
+	return 0;
+}
+
+static void tg_update_topmost_limited_ancestor(struct task_group *tg)
+{
+	__tg_update_topmost_limited_ancestor(tg, NULL);
+}
+
+static void tg_limit_toggled(struct task_group *tg)
+{
+	if (tg->topmost_limited_ancestor != tg) {
+		/*
+		 * This task group is not a topmost limited ancestor, so both
+		 * it and all its children must already point to their topmost
+		 * limited ancestor, and we have nothing to do.
+		 */
+		return;
+	}
+
+	/*
+	 * This task group is a topmost limited ancestor. Walk over all its
+	 * children and update their pointers to the topmost limited ancestor.
+	 */
+
+	spin_lock_irq(&task_group_lock);
+	walk_tg_tree_from(tg, __tg_update_topmost_limited_ancestor, tg_nop, NULL);
+	spin_unlock_irq(&task_group_lock);
+}
+
 static void tg_update_cpu_limit(struct task_group *tg)
 {
 	long quota, period;
@@ -9845,6 +9901,12 @@ static int nr_cpus_write_u64(struct cgroup *cgrp, struct cftype *cftype,
 	return tg_set_cpu_limit(tg, tg->cpu_rate, nr_cpus);
 }
 #else
+static void tg_update_topmost_limited_ancestor(struct task_group *tg)
+{
+}
+static void tg_limit_toggled(struct task_group *tg)
+{
+}
 static void tg_update_cpu_limit(struct task_group *tg)
 {
 }
