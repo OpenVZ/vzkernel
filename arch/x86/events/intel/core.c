@@ -2164,8 +2164,13 @@ again:
 	intel_pmu_lbr_read();
 	intel_pmu_ack_status(status);
 	if (++loops > 100) {
-		WARN_ONCE(1, "perfevents: irq loop stuck!\n");
-		perf_event_print_debug();
+		static bool warned = false;
+		if (!warned) {
+			pr_warn("perfevents: irq loop stuck!\n");
+			dump_stack();
+			perf_event_print_debug();
+			warned = true;
+		}
 		intel_pmu_reset();
 		goto done;
 	}
