@@ -2326,7 +2326,8 @@ again:
 		static bool warned;
 
 		if (!warned) {
-			WARN(1, "perfevents: irq loop stuck!\n");
+			pr_warn("perfevents: irq loop stuck!\n");
+			dump_stack();
 			perf_event_print_debug();
 			warned = true;
 		}
@@ -2411,7 +2412,8 @@ again:
 		static bool warned;
 
 		if (!warned) {
-			WARN(1, "perfevents: irq loop stuck!\n");
+			pr_warn("perfevents: irq loop stuck!\n");
+			dump_stack();
 			perf_event_print_debug();
 			warned = true;
 		}
