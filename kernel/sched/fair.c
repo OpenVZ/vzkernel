@@ -542,9 +542,8 @@ static enum hrtimer_restart sched_cfs_active_timer(struct hrtimer *timer)
 	return HRTIMER_NORESTART;
 }
 
-static inline int check_cpulimit_spread(struct cfs_rq *cfs_rq, int target_cpu)
+static inline int check_cpulimit_spread(struct task_group *tg, int target_cpu)
 {
-	struct task_group *tg = cfs_rq->tg;
 	int nr_cpus_active = atomic_read(&tg->nr_cpus_active);
 	int nr_cpus_limit = DIV_ROUND_UP(tg->cpu_rate, MAX_CPU_RATE);
 
@@ -579,7 +578,7 @@ static inline enum hrtimer_restart sched_cfs_active_timer(struct hrtimer *timer)
 	return 0;
 }
 
-static inline int check_cpulimit_spread(struct cfs_rq *cfs_rq, int target_cpu)
+static inline int check_cpulimit_spread(struct task_group *tg, int target_cpu)
 {
 	return 1;
 }
@@ -4851,17 +4850,14 @@ done:
 
 static inline bool select_runnable_cpu(struct task_struct *p, int *new_cpu)
 {
-	struct cfs_rq *cfs_rq;
 	struct task_group *tg;
 	struct sched_domain *sd;
 	int prev_cpu = task_cpu(p);
 	int cpu;
 
-	cfs_rq = top_cfs_rq_of(&p->se);
-	if (check_cpulimit_spread(cfs_rq, *new_cpu) > 0)
+	tg = top_cfs_rq_of(&p->se)->tg;
+	if (check_cpulimit_spread(tg, *new_cpu) > 0)
 		return false;
-
-	tg = cfs_rq->tg;
 
 	if (cfs_rq_active(tg->cfs_rq[*new_cpu]))
 		return true;
@@ -5218,7 +5214,7 @@ static int cpulimit_balance_cpu_stop(void *data);
 static inline void trigger_cpulimit_balance(struct task_struct *p)
 {
 	struct rq *this_rq;
-	struct cfs_rq *cfs_rq;
+	struct task_group *tg;
 	int this_cpu, cpu, target_cpu = -1;
 	struct sched_domain *sd;
 
@@ -5228,8 +5224,8 @@ static inline void trigger_cpulimit_balance(struct task_struct *p)
 	if (!p->se.on_rq || this_rq->active_balance)
 		return;
 
-	cfs_rq = top_cfs_rq_of(&p->se);
-	if (check_cpulimit_spread(cfs_rq, this_cpu) >= 0)
+	tg = top_cfs_rq_of(&p->se)->tg;
+	if (check_cpulimit_spread(tg, this_cpu) >= 0)
 		return;
 
 	rcu_read_lock();
@@ -5239,7 +5235,7 @@ static inline void trigger_cpulimit_balance(struct task_struct *p)
 		for_each_cpu_and(cpu, sched_domain_span(sd),
 				 tsk_cpus_allowed(p)) {
 			if (cpu != this_cpu &&
-			    cfs_rq_active(cfs_rq->tg->cfs_rq[cpu])) {
+			    cfs_rq_active(tg->cfs_rq[cpu])) {
 				target_cpu = cpu;
 				goto unlock;
 			}
@@ -5605,22 +5601,22 @@ static inline bool migrate_degrades_locality(struct task_struct *p,
 static
 int can_migrate_task(struct task_struct *p, struct lb_env *env)
 {
-	struct cfs_rq *cfs_rq = top_cfs_rq_of(&p->se);
+	struct task_group *tg = top_cfs_rq_of(&p->se)->tg;
 	int tsk_cache_hot = 0;
 
-	if (check_cpulimit_spread(cfs_rq, env->dst_cpu) < 0) {
+	if (check_cpulimit_spread(tg, env->dst_cpu) < 0) {
 		int cpu;
 
 		schedstat_inc(p, se.statistics->nr_failed_migrations_cpulimit);
 
-		if (check_cpulimit_spread(cfs_rq, env->src_cpu) != 0)
+		if (check_cpulimit_spread(tg, env->src_cpu) != 0)
 			return 0;
 
 		if (!env->dst_grpmask || (env->flags & LBF_SOME_PINNED))
 			return 0;
 
 		for_each_cpu_and(cpu, env->dst_grpmask, env->cpus) {
-			if (cfs_rq_active(cfs_rq->tg->cfs_rq[cpu])) {
+			if (cfs_rq_active(tg->cfs_rq[cpu])) {
 				env->flags |= LBF_SOME_PINNED;
 				env->new_dst_cpu = cpu;
 				break;
@@ -5853,7 +5849,7 @@ static int move_task_group(struct cfs_rq *cfs_rq, struct lb_env *env)
 
 static int move_task_groups(struct lb_env *env)
 {
-	struct cfs_rq *cfs_rq, *top_cfs_rq;
+	struct cfs_rq *cfs_rq;
 	struct task_group *tg;
 	unsigned long load;
 	int cur_pulled, pulled = 0;
@@ -5862,8 +5858,7 @@ static int move_task_groups(struct lb_env *env)
 		return 0;
 
 	for_each_leaf_cfs_rq(env->src_rq, cfs_rq) {
-		tg = cfs_rq->tg;
-		if (tg == &root_task_group)
+		if (cfs_rq->tg == &root_task_group)
 			continue;
 		/*
 		 * A child always goes before its parent in a leaf_cfs_rq_list.
@@ -5874,13 +5869,14 @@ static int move_task_groups(struct lb_env *env)
 		if (cfs_rq->nr_running != cfs_rq->h_nr_running)
 			continue;
 
-		top_cfs_rq = is_top_cfs_rq(cfs_rq) ? cfs_rq :
-				top_cfs_rq_of(tg->se[env->src_cpu]);
-		if (check_cpulimit_spread(top_cfs_rq, env->src_cpu) != 0 ||
-		    cfs_rq_active(top_cfs_rq->tg->cfs_rq[env->dst_cpu]))
+		tg = is_top_cfs_rq(cfs_rq) ? cfs_rq->tg :
+				top_cfs_rq_of(cfs_rq->tg->se[env->src_cpu])->tg;
+
+		if (check_cpulimit_spread(tg, env->src_cpu) != 0 ||
+		    cfs_rq_active(tg->cfs_rq[env->dst_cpu]))
 			continue;
 
-		load = entity_h_load(top_cfs_rq->tg->se[env->src_cpu]);
+		load = entity_h_load(tg->se[env->src_cpu]);
 		if ((load / 2) > env->imbalance)
 			continue;
 
@@ -5903,21 +5899,20 @@ static int move_task_groups(struct lb_env *env)
 
 static int do_cpulimit_balance(struct lb_env *env)
 {
-	struct cfs_rq *cfs_rq, *top_cfs_rq;
+	struct cfs_rq *cfs_rq;
 	struct task_group *tg;
 	int pushed = 0;
 
 	for_each_leaf_cfs_rq(env->src_rq, cfs_rq) {
-		tg = cfs_rq->tg;
-		if (tg == &root_task_group)
+		if (cfs_rq->tg == &root_task_group)
 			continue;
 		/* see move_task_groups for why we skip such groups */
 		if (cfs_rq->nr_running != cfs_rq->h_nr_running)
 			continue;
-		top_cfs_rq = is_top_cfs_rq(cfs_rq) ? cfs_rq :
-				top_cfs_rq_of(tg->se[env->src_cpu]);
-		if (check_cpulimit_spread(top_cfs_rq, env->src_cpu) < 0 &&
-		    cfs_rq_active(top_cfs_rq->tg->cfs_rq[env->dst_cpu]) &&
+		tg = is_top_cfs_rq(cfs_rq) ? cfs_rq->tg :
+				top_cfs_rq_of(cfs_rq->tg->se[env->src_cpu])->tg;
+		if (check_cpulimit_spread(tg, env->src_cpu) < 0 &&
+		    cfs_rq_active(tg->cfs_rq[env->dst_cpu]) &&
 		    can_migrate_task_group(cfs_rq, env))
 			pushed += move_task_group(cfs_rq, env);
 	}
