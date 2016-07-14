@@ -294,6 +294,8 @@ struct task_group {
 	unsigned long cpu_rate;
 	unsigned int nr_cpus;
 	atomic_t nr_cpus_active;
+	struct task_group *topmost_limited_ancestor; /* self if none of the
+							ancestors is limited */
 #endif
 
 #if defined(CONFIG_FAIR_GROUP_SCHED)
