@@ -275,20 +275,6 @@ static inline struct cfs_rq *group_cfs_rq(struct sched_entity *grp)
 	return grp->my_q;
 }
 
-static inline bool is_top_cfs_rq(struct cfs_rq *cfs_rq)
-{
-	struct task_group *tg = cfs_rq->tg;
-
-	return tg->parent == &root_task_group;
-}
-
-static inline struct cfs_rq *top_cfs_rq_of(struct sched_entity *se)
-{
-	while (se->parent && se->parent->parent)
-		se = se->parent;
-	return cfs_rq_of(se);
-}
-
 static void update_cfs_rq_blocked_load(struct cfs_rq *cfs_rq,
 				       int force_update);
 
@@ -405,16 +391,6 @@ static inline struct cfs_rq *cfs_rq_of(struct sched_entity *se)
 static inline struct cfs_rq *group_cfs_rq(struct sched_entity *grp)
 {
 	return NULL;
-}
-
-static inline bool is_top_cfs_rq(struct cfs_rq *cfs_rq)
-{
-	return false;
-}
-
-static inline struct cfs_rq *top_cfs_rq_of(struct sched_entity *se)
-{
-	return cfs_rq_of(se);
 }
 
 static inline void list_add_leaf_cfs_rq(struct cfs_rq *cfs_rq)
@@ -4869,7 +4845,7 @@ static inline bool select_runnable_cpu(struct task_struct *p, int *new_cpu)
 	int prev_cpu = task_cpu(p);
 	int cpu;
 
-	tg = top_cfs_rq_of(&p->se)->tg;
+	tg = cfs_rq_of(&p->se)->tg->topmost_limited_ancestor;
 	if (check_cpulimit_spread(tg, *new_cpu) > 0)
 		return false;
 
@@ -5236,7 +5212,7 @@ static inline void trigger_cpulimit_balance(struct task_struct *p)
 	if (!p->se.on_rq || this_rq->active_balance)
 		return;
 
-	tg = top_cfs_rq_of(&p->se)->tg;
+	tg = cfs_rq_of(&p->se)->tg->topmost_limited_ancestor;
 	if (check_cpulimit_spread(tg, this_cpu) >= 0)
 		return;
 
@@ -5610,7 +5586,7 @@ static inline bool migrate_degrades_locality(struct task_struct *p,
 static inline int can_migrate_task_cpulimit(struct task_struct *p, struct lb_env *env)
 {
 #ifdef CONFIG_CFS_CPULIMIT
-	struct task_group *tg = top_cfs_rq_of(&p->se)->tg;
+	struct task_group *tg = cfs_rq_of(&p->se)->tg->topmost_limited_ancestor;
 
 	if (check_cpulimit_spread(tg, env->dst_cpu) < 0) {
 		int cpu;
@@ -5893,8 +5869,7 @@ static int move_task_groups(struct lb_env *env)
 		if (cfs_rq->nr_running != cfs_rq->h_nr_running)
 			continue;
 
-		tg = is_top_cfs_rq(cfs_rq) ? cfs_rq->tg :
-				top_cfs_rq_of(cfs_rq->tg->se[env->src_cpu])->tg;
+		tg = cfs_rq->tg->topmost_limited_ancestor;
 
 		if (check_cpulimit_spread(tg, env->src_cpu) != 0 ||
 		    cfs_rq_active(tg->cfs_rq[env->dst_cpu]))
@@ -5933,8 +5908,7 @@ static int do_cpulimit_balance(struct lb_env *env)
 		/* see move_task_groups for why we skip such groups */
 		if (cfs_rq->nr_running != cfs_rq->h_nr_running)
 			continue;
-		tg = is_top_cfs_rq(cfs_rq) ? cfs_rq->tg :
-				top_cfs_rq_of(cfs_rq->tg->se[env->src_cpu])->tg;
+		tg = cfs_rq->tg->topmost_limited_ancestor;
 		if (check_cpulimit_spread(tg, env->src_cpu) < 0 &&
 		    cfs_rq_active(tg->cfs_rq[env->dst_cpu]) &&
 		    can_migrate_task_group(cfs_rq, env))
