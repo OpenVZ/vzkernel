@@ -560,27 +560,12 @@ static inline int check_cpulimit_spread(struct task_group *tg, int target_cpu)
 	return cfs_rq_active(tg->cfs_rq[target_cpu]) ? 0 : -1;
 }
 #else /* !CONFIG_CFS_CPULIMIT */
-static inline int cfs_rq_active(struct cfs_rq *cfs_rq)
-{
-	return 1;
-}
-
 static inline void inc_nr_active_cfs_rqs(struct cfs_rq *cfs_rq)
 {
 }
 
 static inline void dec_nr_active_cfs_rqs(struct cfs_rq *cfs_rq, int postpone)
 {
-}
-
-static inline enum hrtimer_restart sched_cfs_active_timer(struct hrtimer *timer)
-{
-	return 0;
-}
-
-static inline int check_cpulimit_spread(struct task_group *tg, int target_cpu)
-{
-	return 1;
 }
 #endif /* CONFIG_CFS_CPULIMIT */
 
@@ -4850,6 +4835,7 @@ done:
 
 static inline bool select_runnable_cpu(struct task_struct *p, int *new_cpu)
 {
+#ifdef CONFIG_CFS_CPULIMIT
 	struct task_group *tg;
 	struct sched_domain *sd;
 	int prev_cpu = task_cpu(p);
@@ -4875,6 +4861,7 @@ static inline bool select_runnable_cpu(struct task_struct *p, int *new_cpu)
 			}
 		}
 	}
+#endif
 	return false;
 }
 
@@ -5595,14 +5582,10 @@ static inline bool migrate_degrades_locality(struct task_struct *p,
 }
 #endif
 
-/*
- * can_migrate_task - may task p from runqueue rq be migrated to this_cpu?
- */
-static
-int can_migrate_task(struct task_struct *p, struct lb_env *env)
+static inline int can_migrate_task_cpulimit(struct task_struct *p, struct lb_env *env)
 {
+#ifdef CONFIG_CFS_CPULIMIT
 	struct task_group *tg = top_cfs_rq_of(&p->se)->tg;
-	int tsk_cache_hot = 0;
 
 	if (check_cpulimit_spread(tg, env->dst_cpu) < 0) {
 		int cpu;
@@ -5624,6 +5607,20 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 		}
 		return 0;
 	}
+#endif
+	return 1;
+}
+
+/*
+ * can_migrate_task - may task p from runqueue rq be migrated to this_cpu?
+ */
+static
+int can_migrate_task(struct task_struct *p, struct lb_env *env)
+{
+	int tsk_cache_hot = 0;
+
+	if (!can_migrate_task_cpulimit(p, env))
+		return 0;
 
 	/*
 	 * We do not migrate tasks that are:
