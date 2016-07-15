@@ -4789,11 +4789,12 @@ static int ploop_thaw(struct ploop_device *plo, struct block_device *bdev)
 	if (!test_bit(PLOOP_S_FROZEN, &plo->state))
 		return 0;
 
+	plo->sb = NULL;
+	clear_bit(PLOOP_S_FROZEN, &plo->state);
+
+	mutex_unlock(&plo->ctl_mutex);
 	err = thaw_bdev(bdev, sb);
-	if (!err) {
-		plo->sb = NULL;
-		clear_bit(PLOOP_S_FROZEN, &plo->state);
-	}
+	mutex_lock(&plo->ctl_mutex);
 
 	return err;
 }
