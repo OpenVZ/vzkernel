@@ -23,3 +23,8 @@ int ploop_pb_preq_add_pending(struct ploop_pushbackup_desc *pbd,
 			       struct ploop_request *preq);
 
 int ploop_pb_destroy(struct ploop_device *plo, __u32 *status);
+
+bool ploop_pb_bio_detained(struct ploop_pushbackup_desc *pbd, struct bio *bio);
+bool ploop_pb_bio_list_empty(struct ploop_pushbackup_desc *pbd);
+struct bio *ploop_pb_bio_get(struct ploop_pushbackup_desc *pbd);
+void ploop_pb_bio_list_merge(struct ploop_pushbackup_desc *pbd, struct bio_list *tmp);
