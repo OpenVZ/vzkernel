@@ -208,6 +208,20 @@ static inline void preq_unlink(struct ploop_request * preq,
 	list_add(&preq->list, drop_list);
 }
 
+static void ploop_set_blockable(struct ploop_device *plo,
+				struct ploop_request *preq)
+{
+	if (!test_and_set_bit(PLOOP_REQ_BLOCKABLE, &preq->state))
+		plo->blockable_reqs++;
+}
+
+static void ploop_test_and_clear_blockable(struct ploop_device *plo,
+					   struct ploop_request *preq)
+{
+	if (test_and_clear_bit(PLOOP_REQ_BLOCKABLE, &preq->state))
+		plo->blockable_reqs--;
+}
+
 /* always called with plo->lock released */
 void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list,
 		      int keep_locked)
@@ -223,6 +237,7 @@ void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list,
 		}
 
 		BUG_ON (test_bit(PLOOP_REQ_ZERO, &preq->state));
+		ploop_test_and_clear_blockable(plo, preq);
 		drop_qlen++;
 	}
 
@@ -470,7 +485,7 @@ insert_entry_tree(struct ploop_device * plo, struct ploop_request * preq0,
 
 static void
 ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
-		struct list_head *drop_list)
+		struct list_head *drop_list, int account_blockable)
 {
 	struct ploop_request * preq;
 
@@ -491,6 +506,10 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 	preq->tstamp = jiffies;
 	preq->iblock = 0;
 	preq->prealloc_size = 0;
+
+	if (account_blockable && (bio->bi_rw & REQ_WRITE) && bio->bi_size &&
+	    ploop_pb_check_and_clear_bit(plo->pbd, preq->req_cluster))
+		ploop_set_blockable(plo, preq);
 
 	if (unlikely(bio->bi_rw & REQ_DISCARD)) {
 		int clu_size = 1 << plo->cluster_log;
@@ -715,7 +734,9 @@ preallocate_bio(struct bio * orig_bio, struct ploop_device * plo)
 	return nbio;
 }
 
-static void process_bio_queue(struct ploop_device * plo, struct list_head *drop_list)
+static void process_bio_queue(struct ploop_device * plo,
+			      struct list_head *drop_list,
+			      int account_blockable)
 {
 	while (plo->bio_head && !list_empty(&plo->free_list)) {
 		struct bio *tmp = plo->bio_head;
@@ -725,7 +746,7 @@ static void process_bio_queue(struct ploop_device * plo, struct list_head *drop_
 		if (!plo->bio_head)
 			plo->bio_tail = NULL;
 
-		ploop_bio_queue(plo, tmp, drop_list);
+		ploop_bio_queue(plo, tmp, drop_list, account_blockable);
 	}
 }
 
@@ -777,7 +798,7 @@ process_discard_bio_queue(struct ploop_device * plo, struct list_head *drop_list
 		/* If PLOOP_S_DISCARD isn't set, ploop_bio_queue
 		 * will complete it with a proper error.
 		 */
-		ploop_bio_queue(plo, tmp, drop_list);
+		ploop_bio_queue(plo, tmp, drop_list, 0);
 	}
 }
 
@@ -982,7 +1003,7 @@ queue:
 	ploop_congest(plo);
 
 	/* second chance to merge requests */
-	process_bio_queue(plo, &drop_list);
+	process_bio_queue(plo, &drop_list, 0);
 
 queued:
 	/* If main thread is waiting for requests, wake it up.
@@ -1337,6 +1358,7 @@ static void ploop_complete_request(struct ploop_request * preq)
 
 	del_lockout(preq);
 	del_pb_lockout(preq); /* preq may die via ploop_fail_immediate() */
+	ploop_test_and_clear_blockable(plo, preq);
 
 	if (!list_empty(&preq->delay_list))
 		list_splice_init(&preq->delay_list, plo->ready_queue.prev);
@@ -2103,6 +2125,7 @@ restart:
 		} else {
 			/* needn't lock because only ploop_thread accesses */
 			ploop_add_pb_lockout(preq);
+			ploop_set_blockable(plo, preq);
 			/*
 			 * preq IN: preq is in ppb_pending tree waiting for
 			 * out-of-band push_backup processing by userspace ...
@@ -2116,6 +2139,7 @@ restart:
 		 * userspace done; preq was re-scheduled
 		 */
 		ploop_pb_clear_bit(plo->pbd, preq->req_cluster);
+		ploop_test_and_clear_blockable(plo, preq);
 
 		del_pb_lockout(preq);
 		spin_lock_irq(&plo->lock);
@@ -2819,7 +2843,7 @@ static int ploop_thread(void * data)
 	again:
 		BUG_ON (!list_empty(&drop_list));
 
-		process_bio_queue(plo, &drop_list);
+		process_bio_queue(plo, &drop_list, 1);
 		process_discard_bio_queue(plo, &drop_list);
 
 		if (!list_empty(&drop_list)) {
