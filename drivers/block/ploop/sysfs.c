@@ -418,6 +418,11 @@ static u32 show_free_qmax(struct ploop_device * plo)
 	return plo->free_qmax;
 }
 
+static u32 show_blockable_reqs(struct ploop_device * plo)
+{
+	return plo->blockable_reqs;
+}
+
 #define _TUNE_U32(_name)				\
 static u32 show_##_name(struct ploop_device * plo)	\
 {							\
@@ -502,6 +507,7 @@ static struct attribute *state_attributes[] = {
 	_A(open_count),
 	_A(free_reqs),
 	_A(free_qmax),
+	_A(blockable_reqs),
 	NULL
 };
 
