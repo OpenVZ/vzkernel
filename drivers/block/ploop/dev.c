@@ -3929,6 +3929,13 @@ static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 		return -EBUSY;
 	}
 
+	if (plo->freeze_state != PLOOP_F_NORMAL) {
+		if (printk_ratelimit())
+			printk(KERN_INFO "stop ploop%d failed (freeze_state=%d)\n",
+			       plo->index, plo->freeze_state);
+		return -EBUSY;
+	}
+
 	clear_bit(PLOOP_S_PUSH_BACKUP, &plo->state);
 	ploop_pb_stop(plo->pbd, true);
 
@@ -4846,15 +4853,21 @@ static int ploop_freeze(struct ploop_device *plo, struct block_device *bdev)
 {
 	struct super_block *sb = plo->sb;
 
-	if (test_bit(PLOOP_S_FROZEN, &plo->state))
+	if (!test_bit(PLOOP_S_RUNNING, &plo->state))
+		return -EINVAL;
+
+	if (plo->freeze_state == PLOOP_F_FROZEN)
 		return 0;
+
+	if (plo->freeze_state == PLOOP_F_THAWING)
+		return -EBUSY;
 
 	sb = freeze_bdev(bdev);
 	if (sb && IS_ERR(sb))
 		return PTR_ERR(sb);
 
 	plo->sb = sb;
-	set_bit(PLOOP_S_FROZEN, &plo->state);
+	plo->freeze_state = PLOOP_F_FROZEN;
 	return 0;
 }
 
@@ -4863,15 +4876,28 @@ static int ploop_thaw(struct ploop_device *plo, struct block_device *bdev)
 	struct super_block *sb = plo->sb;
 	int err;
 
-	if (!test_bit(PLOOP_S_FROZEN, &plo->state))
+	if (!test_bit(PLOOP_S_RUNNING, &plo->state))
+		return -EINVAL;
+
+	if (plo->freeze_state == PLOOP_F_NORMAL)
 		return 0;
 
+	if (plo->freeze_state == PLOOP_F_THAWING)
+		return -EBUSY;
+
 	plo->sb = NULL;
-	clear_bit(PLOOP_S_FROZEN, &plo->state);
+	plo->freeze_state = PLOOP_F_THAWING;
 
 	mutex_unlock(&plo->ctl_mutex);
 	err = thaw_bdev(bdev, sb);
 	mutex_lock(&plo->ctl_mutex);
+
+	BUG_ON(plo->freeze_state != PLOOP_F_THAWING);
+
+	if (!err)
+		plo->freeze_state = PLOOP_F_NORMAL;
+	else
+		plo->freeze_state = PLOOP_F_FROZEN;
 
 	return err;
 }
