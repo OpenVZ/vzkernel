@@ -650,6 +650,28 @@ int ploop_pb_preq_add_pending(struct ploop_pushbackup_desc *pbd,
 	return 0;
 }
 
+bool ploop_pb_check_and_clear_bit(struct ploop_pushbackup_desc *pbd,
+				  cluster_t clu)
+{
+	if (!pbd)
+		return false;
+
+	if (!check_bit_in_map(pbd->ppb_map, pbd->ppb_block_max, clu))
+		return false;
+
+	spin_lock(&pbd->ppb_lock);
+
+	if (pbd->ppb_state != PLOOP_PB_ALIVE ||
+	    check_bit_in_map(pbd->reported_map, pbd->ppb_block_max, clu)) {
+		spin_unlock(&pbd->ppb_lock);
+		ploop_pb_clear_bit(pbd, clu);
+		return false;
+	}
+
+	spin_unlock(&pbd->ppb_lock);
+	return true;
+}
+
 /* Always serialized by plo->ctl_mutex */
 unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd, bool do_merge)
 {
