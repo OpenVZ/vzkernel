@@ -734,20 +734,43 @@ preallocate_bio(struct bio * orig_bio, struct ploop_device * plo)
 	return nbio;
 }
 
-static void process_bio_queue(struct ploop_device * plo,
-			      struct list_head *drop_list,
-			      int account_blockable)
+static void process_bio_queue_one(struct ploop_device * plo,
+				  struct list_head *drop_list,
+				  int check_push_backup)
 {
-	while (plo->bio_head && !list_empty(&plo->free_list)) {
-		struct bio *tmp = plo->bio_head;
+	struct bio *bio = plo->bio_head;
 
-		BUG_ON (!plo->bio_tail);
-		plo->bio_head = plo->bio_head->bi_next;
-		if (!plo->bio_head)
-			plo->bio_tail = NULL;
+	BUG_ON (!plo->bio_tail);
+	plo->bio_head = plo->bio_head->bi_next;
+	if (!plo->bio_head)
+		plo->bio_tail = NULL;
 
-		ploop_bio_queue(plo, tmp, drop_list, account_blockable);
-	}
+	if (check_push_backup &&
+	    (bio->bi_rw & REQ_WRITE) && bio->bi_size &&
+	    plo->free_qlen <= plo->free_qmax / 2 &&
+	    plo->blockable_reqs > plo->free_qmax / 4 &&
+	    ploop_pb_bio_detained(plo->pbd, bio))
+		plo->blocked_bios++;
+	else
+		ploop_bio_queue(plo, bio, drop_list, check_push_backup);
+}
+
+static void process_bio_queue_optional(struct ploop_device * plo,
+				       struct list_head *drop_list)
+{
+	while (plo->bio_head && !list_empty(&plo->free_list) &&
+	       (!test_bit(PLOOP_S_PUSH_BACKUP, &plo->state) ||
+		plo->free_qlen > plo->free_qmax / 2))
+		process_bio_queue_one(plo, drop_list, 0);
+}
+
+static void process_bio_queue_main(struct ploop_device * plo,
+				   struct list_head *drop_list)
+{
+	int check = test_bit(PLOOP_S_PUSH_BACKUP, &plo->state);
+
+	while (plo->bio_head && !list_empty(&plo->free_list))
+		process_bio_queue_one(plo, drop_list, check);
 }
 
 static void ploop_unplug(struct blk_plug_cb *cb, bool from_schedule)
@@ -1003,7 +1026,7 @@ queue:
 	ploop_congest(plo);
 
 	/* second chance to merge requests */
-	process_bio_queue(plo, &drop_list, 0);
+	process_bio_queue_optional(plo, &drop_list);
 
 queued:
 	/* If main thread is waiting for requests, wake it up.
@@ -2822,6 +2845,20 @@ static void ploop_handle_enospc_req(struct ploop_request *preq)
 	preq->iblock = 0;
 }
 
+static void
+process_pending_bios(struct ploop_device * plo, struct list_head *drop_list)
+{
+	while (!ploop_pb_bio_list_empty(plo->pbd) &&
+	       !list_empty(&plo->free_list) &&
+	       (plo->free_qlen > plo->free_qmax / 2 ||
+		plo->blockable_reqs <= plo->free_qmax / 4)) {
+		struct bio *bio = ploop_pb_bio_get(plo->pbd);
+
+		ploop_bio_queue(plo, bio, drop_list, 1);
+		plo->blocked_bios--;
+	}
+}
+
 /* Main process. Processing queues in proper order, handling pre-barrier
  * flushes and queue suspend while processing a barrier
  */
@@ -2843,7 +2880,8 @@ static int ploop_thread(void * data)
 	again:
 		BUG_ON (!list_empty(&drop_list));
 
-		process_bio_queue(plo, &drop_list, 1);
+		process_pending_bios(plo, &drop_list);
+		process_bio_queue_main(plo, &drop_list);
 		process_discard_bio_queue(plo, &drop_list);
 
 		if (!list_empty(&drop_list)) {
@@ -2922,7 +2960,8 @@ static int ploop_thread(void * data)
 		 */
 		if (kthread_should_stop() && !plo->active_reqs &&
 		    list_empty(&plo->entry_queue) && !plo->bio_head &&
-		    bio_list_empty(&plo->bio_discard_list))
+		    bio_list_empty(&plo->bio_discard_list) &&
+		    ploop_pb_bio_list_empty(plo->pbd))
 			break;
 
 wait_more:
