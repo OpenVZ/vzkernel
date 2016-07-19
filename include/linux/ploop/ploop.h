@@ -358,6 +358,7 @@ struct ploop_device
 	int			read_sync_reqs;
 	int			free_qlen; /* len of free_list */
 	int			free_qmax; /* max len of free_list */
+	int			blockable_reqs; /* depends on userspace tool */
 
 	struct bio		*bio_head;
 	struct bio		*bio_tail;
@@ -477,6 +478,7 @@ enum
 	PLOOP_REQ_PUSH_BACKUP, /* preq was ACKed by userspace push_backup */
 	PLOOP_REQ_FSYNC_DONE,  /* fsync_thread() performed f_op->fsync() */
 	PLOOP_REQ_ISSUE_FLUSH, /* preq needs ->issue_flush before completing */
+	PLOOP_REQ_BLOCKABLE,  /* preq was accounted in plo->blockable_reqs */
 };
 
 #define PLOOP_REQ_MERGE_FL (1 << PLOOP_REQ_MERGE)
