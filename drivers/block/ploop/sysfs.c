@@ -408,6 +408,16 @@ static ssize_t print_push_backup_uuid(struct ploop_device * plo, char * page)
 	return snprintf(page, PAGE_SIZE, "%pUB\n", uuid);
 }
 
+static u32 show_free_reqs(struct ploop_device * plo)
+{
+	return plo->free_qlen;
+}
+
+static u32 show_free_qmax(struct ploop_device * plo)
+{
+	return plo->free_qmax;
+}
+
 #define _TUNE_U32(_name)				\
 static u32 show_##_name(struct ploop_device * plo)	\
 {							\
@@ -490,6 +500,8 @@ static struct attribute *state_attributes[] = {
 	_A3(cookie),
 	_A3(push_backup_uuid),
 	_A(open_count),
+	_A(free_reqs),
+	_A(free_qmax),
 	NULL
 };
 
