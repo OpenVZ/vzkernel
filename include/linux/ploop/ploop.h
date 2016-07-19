@@ -359,6 +359,7 @@ struct ploop_device
 	int			free_qlen; /* len of free_list */
 	int			free_qmax; /* max len of free_list */
 	int			blockable_reqs; /* depends on userspace tool */
+	int			blocked_bios; /* depends on userspace tool */
 
 	struct bio		*bio_head;
 	struct bio		*bio_tail;
