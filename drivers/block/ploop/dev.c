@@ -184,6 +184,7 @@ ploop_alloc_request(struct ploop_device * plo)
 
 	preq = list_entry(plo->free_list.next, struct ploop_request, list);
 	list_del_init(&preq->list);
+	plo->free_qlen--;
 	ploop_congest(plo);
 	return preq;
 }
@@ -212,6 +213,7 @@ void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list,
 		      int keep_locked)
 {
 	struct ploop_request * preq;
+	int drop_qlen = 0;
 
 	list_for_each_entry(preq, drop_list, list) {
 		if (preq->ioc) {
@@ -221,11 +223,13 @@ void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list,
 		}
 
 		BUG_ON (test_bit(PLOOP_REQ_ZERO, &preq->state));
+		drop_qlen++;
 	}
 
 	spin_lock_irq(&plo->lock);
 
 	list_splice_init(drop_list, plo->free_list.prev);
+	plo->free_qlen += drop_qlen;
 	if (waitqueue_active(&plo->req_waitq))
 		wake_up(&plo->req_waitq);
 	else if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state) &&
@@ -470,9 +474,11 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 {
 	struct ploop_request * preq;
 
-	BUG_ON (list_empty(&plo->free_list));
+	BUG_ON(list_empty(&plo->free_list));
+	BUG_ON(plo->free_qlen <= 0);
 	preq = list_entry(plo->free_list.next, struct ploop_request, list);
 	list_del_init(&preq->list);
+	plo->free_qlen--;
 
 	preq->req_cluster = bio->bi_sector >> plo->cluster_log;
 	bio->bi_next = NULL;
@@ -510,6 +516,7 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 			}
 			BIO_ENDIO(plo->queue, bio, err);
 			list_add(&preq->list, &plo->free_list);
+			plo->free_qlen++;
 			plo->bio_discard_qlen--;
 			plo->bio_total--;
 			return;
@@ -1353,6 +1360,7 @@ static void ploop_complete_request(struct ploop_request * preq)
 	} else {
 		ploop_uncongest(plo);
 		list_add(&preq->list, &plo->free_list);
+		plo->free_qlen++;
 		if (waitqueue_active(&plo->req_waitq))
 			wake_up(&plo->req_waitq);
 		else if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state) &&
@@ -3752,6 +3760,8 @@ static int ploop_start(struct ploop_device * plo, struct block_device *bdev)
 		preq->plo = plo;
 		INIT_LIST_HEAD(&preq->delay_list);
 		list_add(&preq->list, &plo->free_list);
+		plo->free_qlen++;
+		plo->free_qmax++;
 	}
 
 	list_for_each_entry_reverse(delta, &plo->map.delta_list, list) {
@@ -3901,8 +3911,11 @@ static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 
 		preq = list_first_entry(&plo->free_list, struct ploop_request, list);
 		list_del(&preq->list);
+		plo->free_qlen--;
+		plo->free_qmax--;
 		kfree(preq);
 	}
+	BUG_ON(plo->free_qlen);
 
 	ploop_map_destroy(&plo->map);
 	if (plo->trans_map)
