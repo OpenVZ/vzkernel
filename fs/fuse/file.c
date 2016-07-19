@@ -667,9 +667,19 @@ int fuse_fsync_common(struct file *file, loff_t start, loff_t end,
 
 	fuse_sync_writes(inode);
 
+	/* Due to implementation of fuse writeback filemap_write_and_wait_range()
+	 * does not catch errors. We have to do this directly after fuse_sync_writes()
+	 */
+	if (test_and_clear_bit(AS_ENOSPC, &file->f_mapping->flags))
+		err = -ENOSPC;
+	if (test_and_clear_bit(AS_EIO, &file->f_mapping->flags))
+		err = -EIO;
+	if (err)
+		goto out;
+
 	if (test_bit(FUSE_I_MTIME_UPDATED,
 		     &get_fuse_inode(inode)->state)) {
-		int err = fuse_flush_mtime(file, false);
+		err = fuse_flush_mtime(file, false);
 		if (err)
 			goto out;
 	}
