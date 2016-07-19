@@ -2019,6 +2019,7 @@ ploop_entry_request(struct ploop_request * preq)
 		    !test_bit(PLOOP_REQ_FSYNC_DONE, &preq->state)) {
 			spin_lock_irq(&plo->lock);
 			list_add_tail(&preq->list, &top_io->fsync_queue);
+			top_io->fsync_qlen++;
 			if (waitqueue_active(&top_io->fsync_waitq))
 				wake_up_interruptible(&top_io->fsync_waitq);
 			spin_unlock_irq(&plo->lock);
