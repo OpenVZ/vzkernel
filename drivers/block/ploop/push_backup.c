@@ -48,6 +48,8 @@ struct ploop_pushbackup_desc {
 	struct pb_set	      pending_set;
 	struct pb_set	      reported_set;
 
+	struct bio_list	      bio_pending_list;
+
 	struct task_struct   *health_monitor_thread;
 	wait_queue_head_t     ppb_waitq;
 	int		      ppb_state; /* see enum above */
@@ -177,6 +179,7 @@ struct ploop_pushbackup_desc *ploop_pb_alloc(struct ploop_device *plo)
 	ploop_pbs_init(&pbd->pending_set, pbd, "pending");
 	ploop_pbs_init(&pbd->reported_set, pbd, "reported");
 	init_waitqueue_head(&pbd->ppb_waitq);
+	bio_list_init(&pbd->bio_pending_list);
 	pbd->plo = plo;
 
 	return pbd;
@@ -672,6 +675,22 @@ bool ploop_pb_check_and_clear_bit(struct ploop_pushbackup_desc *pbd,
 	return true;
 }
 
+static void return_bios_back_to_plo(struct ploop_device *plo,
+				    struct bio_list *bl)
+{
+	if (!bl->head)
+		return;
+
+	if (plo->bio_tail)
+		plo->bio_tail->bi_next = bl->head;
+	else
+		plo->bio_head = bl->head;
+
+	plo->bio_tail = bl->tail;
+
+	bio_list_init(bl);
+}
+
 /* Always serialized by plo->ctl_mutex */
 unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd, bool do_merge)
 {
@@ -715,12 +734,13 @@ unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd, bool do_merge)
 		complete(&pbd->ppb_comp);
 	spin_unlock(&pbd->ppb_lock);
 
-	if (!list_empty(&drop_list)) {
+	if (!list_empty(&drop_list) || !ploop_pb_bio_list_empty(pbd)) {
 		struct ploop_device *plo = pbd->plo;
 
 		BUG_ON(!plo);
 		spin_lock_irq(&plo->lock);
 		list_splice_init(&drop_list, plo->ready_queue.prev);
+		return_bios_back_to_plo(plo, &pbd->bio_pending_list);
 		if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
 			wake_up_interruptible(&plo->waitq);
 		spin_unlock_irq(&plo->lock);
@@ -1037,4 +1057,34 @@ static void ploop_pb_timeout_func(unsigned long data)
 			wake_up_interruptible(&pbd->ppb_waitq);
 	}
 	spin_unlock(&pbd->ppb_lock);
+}
+
+/* Return true if bio was detained, false otherwise */
+bool ploop_pb_bio_detained(struct ploop_pushbackup_desc *pbd, struct bio *bio)
+{
+	cluster_t   clu = bio->bi_sector >> pbd->plo->cluster_log;
+
+	if (ploop_pb_check_and_clear_bit(pbd, clu)) {
+		bio_list_add(&pbd->bio_pending_list, bio);
+		return true;
+	}
+
+	return false;
+}
+
+/* Return true if no detained bio-s present, false otherwise */
+bool ploop_pb_bio_list_empty(struct ploop_pushbackup_desc *pbd)
+{
+	return !pbd || bio_list_empty(&pbd->bio_pending_list);
+}
+
+struct bio *ploop_pb_bio_get(struct ploop_pushbackup_desc *pbd)
+{
+	return bio_list_pop(&pbd->bio_pending_list);
+}
+
+void ploop_pb_bio_list_merge(struct ploop_pushbackup_desc *pbd,
+			     struct bio_list *tmp)
+{
+	bio_list_merge(&pbd->bio_pending_list, tmp);
 }
