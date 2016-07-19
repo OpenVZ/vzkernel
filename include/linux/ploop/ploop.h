@@ -356,6 +356,8 @@ struct ploop_device
 	struct list_head	entry_queue;
 	int			entry_qlen;
 	int			read_sync_reqs;
+	int			free_qlen; /* len of free_list */
+	int			free_qmax; /* max len of free_list */
 
 	struct bio		*bio_head;
 	struct bio		*bio_tail;
