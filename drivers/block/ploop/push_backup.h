@@ -17,6 +17,7 @@ void ploop_pb_put_reported(struct ploop_pushbackup_desc *pbd,
 
 void ploop_pb_clear_bit(struct ploop_pushbackup_desc *pbd, cluster_t clu);
 bool ploop_pb_check_bit(struct ploop_pushbackup_desc *pbd, cluster_t clu);
+bool ploop_pb_check_and_clear_bit(struct ploop_pushbackup_desc *pbd, cluster_t clu);
 
 int ploop_pb_preq_add_pending(struct ploop_pushbackup_desc *pbd,
 			       struct ploop_request *preq);
