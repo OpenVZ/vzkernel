@@ -55,13 +55,6 @@ void fence_wdog_do_fence(void)
 {
 	char *killer = NULL;
 
-	if (fence_wdog_action != FENCE_WDOG_POWEROFF) {
-		bust_spinlocks(1);
-		printk(KERN_EMERG"fence-watchdog: %s\n",
-			action_names[fence_wdog_action]);
-		bust_spinlocks(0);
-	}
-
 	switch (fence_wdog_action) {
 	case FENCE_WDOG_CRASH:
 		panic_on_oops = 1;
