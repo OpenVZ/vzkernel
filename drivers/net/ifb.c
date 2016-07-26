@@ -136,18 +136,18 @@ static struct rtnl_link_stats64 *ifb_stats64(struct net_device *dev,
 	unsigned int start;
 
 	do {
-		start = u64_stats_fetch_begin_bh(&dp->rsync);
+		start = u64_stats_fetch_begin_irq(&dp->rsync);
 		stats->rx_packets = dp->rx_packets;
 		stats->rx_bytes = dp->rx_bytes;
-	} while (u64_stats_fetch_retry_bh(&dp->rsync, start));
+	} while (u64_stats_fetch_retry_irq(&dp->rsync, start));
 
 	do {
-		start = u64_stats_fetch_begin_bh(&dp->tsync);
+		start = u64_stats_fetch_begin_irq(&dp->tsync);
 
 		stats->tx_packets = dp->tx_packets;
 		stats->tx_bytes = dp->tx_bytes;
 
-	} while (u64_stats_fetch_retry_bh(&dp->tsync, start));
+	} while (u64_stats_fetch_retry_irq(&dp->tsync, start));
 
 	stats->rx_dropped = dev->stats.rx_dropped;
 	stats->tx_dropped = dev->stats.tx_dropped;
@@ -184,7 +184,8 @@ static void ifb_setup(struct net_device *dev)
 
 	dev->flags |= IFF_NOARP;
 	dev->flags &= ~IFF_MULTICAST;
-	dev->priv_flags &= ~(IFF_XMIT_DST_RELEASE | IFF_TX_SKB_SHARING);
+	dev->priv_flags &= ~IFF_TX_SKB_SHARING;
+	netif_keep_dst(dev);
 	eth_hw_addr_random(dev);
 }
 
@@ -291,11 +292,17 @@ static int __init ifb_init_module(void)
 
 	rtnl_lock();
 	err = __rtnl_link_register(&ifb_link_ops);
+	if (err < 0)
+		goto out;
 
-	for (i = 0; i < numifbs && !err; i++)
+	for (i = 0; i < numifbs && !err; i++) {
 		err = ifb_init_one(i);
+		cond_resched();
+	}
 	if (err)
 		__rtnl_link_unregister(&ifb_link_ops);
+
+out:
 	rtnl_unlock();
 
 	return err;

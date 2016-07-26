@@ -26,6 +26,9 @@
 #include <linux/math64.h>
 #include <linux/uaccess.h>
 #include <linux/ioport.h>
+#include <linux/cpumask.h>
+#include <linux/dcache.h>
+#include <linux/cred.h>
 #include <net/addrconf.h>
 
 #include <asm/page.h>		/* for PAGE_SIZE */
@@ -532,6 +535,81 @@ char *string(char *buf, char *end, const char *s, struct printf_spec spec)
 	return buf;
 }
 
+static void widen(char *buf, char *end, unsigned len, unsigned spaces)
+{
+	size_t size;
+	if (buf >= end)	/* nowhere to put anything */
+		return;
+	size = end - buf;
+	if (size <= spaces) {
+		memset(buf, ' ', size);
+		return;
+	}
+	if (len) {
+		if (len > size - spaces)
+			len = size - spaces;
+		memmove(buf + spaces, buf, len);
+	}
+	memset(buf, ' ', spaces);
+}
+
+static noinline_for_stack
+char *dentry_name(char *buf, char *end, const struct dentry *d, struct printf_spec spec,
+		  const char *fmt)
+{
+	const char *array[4], *s;
+	const struct dentry *p;
+	int depth;
+	int i, n;
+
+	switch (fmt[1]) {
+		case '2': case '3': case '4':
+			depth = fmt[1] - '0';
+			break;
+		default:
+			depth = 1;
+	}
+
+	rcu_read_lock();
+	for (i = 0; i < depth; i++, d = p) {
+		p = ACCESS_ONCE(d->d_parent);
+		array[i] = ACCESS_ONCE(d->d_name.name);
+		if (p == d) {
+			if (i)
+				array[i] = "";
+			i++;
+			break;
+		}
+	}
+	s = array[--i];
+	for (n = 0; n != spec.precision; n++, buf++) {
+		char c = *s++;
+		if (!c) {
+			if (!i)
+				break;
+			c = '/';
+			s = array[--i];
+		}
+		if (buf < end)
+			*buf = c;
+	}
+	rcu_read_unlock();
+	if (n < spec.field_width) {
+		/* we want to pad the sucker */
+		unsigned spaces = spec.field_width - n;
+		if (!(spec.flags & LEFT)) {
+			widen(buf - n, end, n, spaces);
+			return buf + spaces;
+		}
+		while (spaces--) {
+			if (buf < end)
+				*buf = ' ';
+			++buf;
+		}
+	}
+	return buf;
+}
+
 static noinline_for_stack
 char *symbol_string(char *buf, char *end, void *ptr,
 		    struct printf_spec spec, const char *fmt)
@@ -642,10 +720,15 @@ char *resource_string(char *buf, char *end, struct resource *res,
 		specp = &mem_spec;
 		decode = 0;
 	}
-	p = number(p, pend, res->start, *specp);
-	if (res->start != res->end) {
-		*p++ = '-';
-		p = number(p, pend, res->end, *specp);
+	if (decode && res->flags & IORESOURCE_UNSET) {
+		p = string(p, pend, "size ", str_spec);
+		p = number(p, pend, resource_size(res), *specp);
+	} else {
+		p = number(p, pend, res->start, *specp);
+		if (res->start != res->end) {
+			*p++ = '-';
+			p = number(p, pend, res->end, *specp);
+		}
 	}
 	if (decode) {
 		if (res->flags & IORESOURCE_MEM_64)
@@ -707,6 +790,87 @@ char *hex_string(char *buf, char *end, u8 *addr, struct printf_spec spec,
 			*buf++ = separator;
 	}
 
+	return buf;
+}
+
+static noinline_for_stack
+char *bitmap_string(char *buf, char *end, unsigned long *bitmap,
+		    struct printf_spec spec, const char *fmt)
+{
+	const int CHUNKSZ = 32;
+	int nr_bits = max_t(int, spec.field_width, 0);
+	int i, chunksz;
+	bool first = true;
+
+	/* reused to print numbers */
+	spec = (struct printf_spec){ .flags = SMALL | ZEROPAD, .base = 16 };
+
+	chunksz = nr_bits & (CHUNKSZ - 1);
+	if (chunksz == 0)
+		chunksz = CHUNKSZ;
+
+	i = ALIGN(nr_bits, CHUNKSZ) - CHUNKSZ;
+	for (; i >= 0; i -= CHUNKSZ) {
+		u32 chunkmask, val;
+		int word, bit;
+
+		chunkmask = ((1ULL << chunksz) - 1);
+		word = i / BITS_PER_LONG;
+		bit = i % BITS_PER_LONG;
+		val = (bitmap[word] >> bit) & chunkmask;
+
+		if (!first) {
+			if (buf < end)
+				*buf = ',';
+			buf++;
+		}
+		first = false;
+
+		spec.field_width = DIV_ROUND_UP(chunksz, 4);
+		buf = number(buf, end, val, spec);
+
+		chunksz = CHUNKSZ;
+	}
+	return buf;
+}
+
+static noinline_for_stack
+char *bitmap_list_string(char *buf, char *end, unsigned long *bitmap,
+			 struct printf_spec spec, const char *fmt)
+{
+	int nr_bits = max_t(int, spec.field_width, 0);
+	/* current bit is 'cur', most recently seen range is [rbot, rtop] */
+	int cur, rbot, rtop;
+	bool first = true;
+
+	/* reused to print numbers */
+	spec = (struct printf_spec){ .base = 10 };
+
+	rbot = cur = find_first_bit(bitmap, nr_bits);
+	while (cur < nr_bits) {
+		rtop = cur;
+		cur = find_next_bit(bitmap, nr_bits, cur + 1);
+		if (cur < nr_bits && cur <= rtop + 1)
+			continue;
+
+		if (!first) {
+			if (buf < end)
+				*buf = ',';
+			buf++;
+		}
+		first = false;
+
+		buf = number(buf, end, rbot, spec);
+		if (rbot < rtop) {
+			if (buf < end)
+				*buf = '-';
+			buf++;
+
+			buf = number(buf, end, rtop, spec);
+		}
+
+		rbot = cur;
+	}
 	return buf;
 }
 
@@ -923,6 +1087,103 @@ char *ip4_addr_string(char *buf, char *end, const u8 *addr,
 }
 
 static noinline_for_stack
+char *ip6_addr_string_sa(char *buf, char *end, const struct sockaddr_in6 *sa,
+			 struct printf_spec spec, const char *fmt)
+{
+	bool have_p = false, have_s = false, have_f = false, have_c = false;
+	char ip6_addr[sizeof("[xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:255.255.255.255]") +
+		      sizeof(":12345") + sizeof("/123456789") +
+		      sizeof("%1234567890")];
+	char *p = ip6_addr, *pend = ip6_addr + sizeof(ip6_addr);
+	const u8 *addr = (const u8 *) &sa->sin6_addr;
+	char fmt6[2] = { fmt[0], '6' };
+	u8 off = 0;
+
+	fmt++;
+	while (isalpha(*++fmt)) {
+		switch (*fmt) {
+		case 'p':
+			have_p = true;
+			break;
+		case 'f':
+			have_f = true;
+			break;
+		case 's':
+			have_s = true;
+			break;
+		case 'c':
+			have_c = true;
+			break;
+		}
+	}
+
+	if (have_p || have_s || have_f) {
+		*p = '[';
+		off = 1;
+	}
+
+	if (fmt6[0] == 'I' && have_c)
+		p = ip6_compressed_string(ip6_addr + off, addr);
+	else
+		p = ip6_string(ip6_addr + off, addr, fmt6);
+
+	if (have_p || have_s || have_f)
+		*p++ = ']';
+
+	if (have_p) {
+		*p++ = ':';
+		p = number(p, pend, ntohs(sa->sin6_port), spec);
+	}
+	if (have_f) {
+		*p++ = '/';
+		p = number(p, pend, ntohl(sa->sin6_flowinfo &
+					  IPV6_FLOWINFO_MASK), spec);
+	}
+	if (have_s) {
+		*p++ = '%';
+		p = number(p, pend, sa->sin6_scope_id, spec);
+	}
+	*p = '\0';
+
+	return string(buf, end, ip6_addr, spec);
+}
+
+static noinline_for_stack
+char *ip4_addr_string_sa(char *buf, char *end, const struct sockaddr_in *sa,
+			 struct printf_spec spec, const char *fmt)
+{
+	bool have_p = false;
+	char *p, ip4_addr[sizeof("255.255.255.255") + sizeof(":12345")];
+	char *pend = ip4_addr + sizeof(ip4_addr);
+	const u8 *addr = (const u8 *) &sa->sin_addr.s_addr;
+	char fmt4[3] = { fmt[0], '4', 0 };
+
+	fmt++;
+	while (isalpha(*++fmt)) {
+		switch (*fmt) {
+		case 'p':
+			have_p = true;
+			break;
+		case 'h':
+		case 'l':
+		case 'n':
+		case 'b':
+			fmt4[2] = *fmt;
+			break;
+		}
+	}
+
+	p = ip4_string(ip4_addr, addr, fmt4);
+	if (have_p) {
+		*p++ = ':';
+		p = number(p, pend, ntohs(sa->sin_port), spec);
+	}
+	*p = '\0';
+
+	return string(buf, end, ip4_addr, spec);
+}
+
+static noinline_for_stack
 char *uuid_string(char *buf, char *end, const u8 *addr,
 		  struct printf_spec spec, const char *fmt)
 {
@@ -998,6 +1259,10 @@ int kptr_restrict __read_mostly;
  * - 'B' For backtraced symbolic direct pointers with offset
  * - 'R' For decoded struct resource, e.g., [mem 0x0-0x1f 64bit pref]
  * - 'r' For raw struct resource, e.g., [mem 0x0-0x1f flags 0x201]
+ * - 'b[l]' For a bitmap, the number of bits is determined by the field
+ *       width which must be explicitly specified either as part of the
+ *       format string '%32b[l]' or through '%*b[l]', [l] selects
+ *       range-list format instead of hex format
  * - 'M' For a 6-byte MAC address, it prints the address in the
  *       usual colon-separated hex notation
  * - 'm' For a 6-byte MAC address, it prints the hex address without colons
@@ -1007,11 +1272,17 @@ int kptr_restrict __read_mostly;
  * - 'I' [46] for IPv4/IPv6 addresses printed in the usual way
  *       IPv4 uses dot-separated decimal without leading 0's (1.2.3.4)
  *       IPv6 uses colon separated network-order 16 bit hex with leading 0's
+ *       [S][pfs]
+ *       Generic IPv4/IPv6 address (struct sockaddr *) that falls back to
+ *       [4] or [6] and is able to print port [p], flowinfo [f], scope [s]
  * - 'i' [46] for 'raw' IPv4/IPv6 addresses
  *       IPv6 omits the colons (01020304...0f)
  *       IPv4 uses dot-separated decimal with leading 0's (010.123.045.006)
- * - '[Ii]4[hnbl]' IPv4 addresses in host, network, big or little endian order
- * - 'I6c' for IPv6 addresses printed as specified by
+ *       [S][pfs]
+ *       Generic IPv4/IPv6 address (struct sockaddr *) that falls back to
+ *       [4] or [6] and is able to print port [p], flowinfo [f], scope [s]
+ * - '[Ii][4S][hnbl]' IPv4 addresses in host, network, big or little endian order
+ * - 'I[6S]c' for IPv6 addresses printed as specified by
  *       http://tools.ietf.org/html/rfc5952
  * - 'U' For a 16 byte UUID/GUID, it prints the UUID/GUID in the form
  *       "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
@@ -1039,6 +1310,9 @@ int kptr_restrict __read_mostly;
  *            The maximum supported length is 64 bytes of the input. Consider
  *            to use print_hex_dump() for the larger input.
  * - 'a' For a phys_addr_t type and its derivative types (passed by reference)
+ * - 'c' For a cpumask list
+ * - 'd[234]' For a dentry name (optionally 2-4 last components)
+ * - 'D[234]' Same as 'd' but for a struct file
  *
  * Note: The difference between 'S' and 'F' is that on ia64 and ppc64
  * function pointers are really function descriptors, which contain a
@@ -1074,6 +1348,13 @@ char *pointer(const char *fmt, char *buf, char *end, void *ptr,
 		return resource_string(buf, end, ptr, spec, fmt);
 	case 'h':
 		return hex_string(buf, end, ptr, spec, fmt);
+	case 'b':
+		switch (fmt[1]) {
+		case 'l':
+			return bitmap_list_string(buf, end, ptr, spec, fmt);
+		default:
+			return bitmap_string(buf, end, ptr, spec, fmt);
+		}
 	case 'M':			/* Colon separated: 00:01:02:03:04:05 */
 	case 'm':			/* Contiguous: 000102030405 */
 					/* [mM]F (FDDI) */
@@ -1093,6 +1374,21 @@ char *pointer(const char *fmt, char *buf, char *end, void *ptr,
 			return ip6_addr_string(buf, end, ptr, spec, fmt);
 		case '4':
 			return ip4_addr_string(buf, end, ptr, spec, fmt);
+		case 'S': {
+			const union {
+				struct sockaddr		raw;
+				struct sockaddr_in	v4;
+				struct sockaddr_in6	v6;
+			} *sa = ptr;
+
+			switch (sa->raw.sa_family) {
+			case AF_INET:
+				return ip4_addr_string_sa(buf, end, &sa->v4, spec, fmt);
+			case AF_INET6:
+				return ip6_addr_string_sa(buf, end, &sa->v6, spec, fmt);
+			default:
+				return string(buf, end, "(invalid address)", spec);
+			}}
 		}
 		break;
 	case 'U':
@@ -1118,11 +1414,37 @@ char *pointer(const char *fmt, char *buf, char *end, void *ptr,
 				spec.field_width = default_width;
 			return string(buf, end, "pK-error", spec);
 		}
-		if (!((kptr_restrict == 0) ||
-		      (kptr_restrict == 1 &&
-		       has_capability_noaudit(current, CAP_SYSLOG))))
+
+		switch (kptr_restrict) {
+		case 0:
+			/* Always print %pK values */
+			break;
+		case 1: {
+			/*
+			 * Only print the real pointer value if the current
+			 * process has CAP_SYSLOG and is running with the
+			 * same credentials it started with. This is because
+			 * access to files is checked at open() time, but %pK
+			 * checks permission at read() time. We don't want to
+			 * leak pointer values if a binary opens a file using
+			 * %pK and then elevates privileges before reading it.
+			 */
+			const struct cred *cred = current_cred();
+
+			if (!has_capability_noaudit(current, CAP_SYSLOG) ||
+			    !uid_eq(cred->euid, cred->uid) ||
+			    !gid_eq(cred->egid, cred->gid))
+				ptr = NULL;
+			break;
+		}
+		case 2:
+		default:
+			/* Always print 0's for %pK */
 			ptr = NULL;
+			break;
+		}
 		break;
+
 	case 'N':
 		switch (fmt[1]) {
 		case 'F':
@@ -1135,6 +1457,14 @@ char *pointer(const char *fmt, char *buf, char *end, void *ptr,
 		spec.base = 16;
 		return number(buf, end,
 			      (unsigned long long) *((phys_addr_t *)ptr), spec);
+	case 'c':
+		return buf + cpulist_scnprintf(buf, end - buf, ptr);
+	case 'd':
+		return dentry_name(buf, end, ptr, spec, fmt);
+	case 'D':
+		return dentry_name(buf, end,
+				   ((const struct file *)ptr)->f_path.dentry,
+				   spec, fmt);
 	}
 	spec.flags |= SMALL;
 	if (spec.field_width == -1) {
@@ -1360,6 +1690,8 @@ qualifier:
  * %pB output the name of a backtrace symbol with its offset
  * %pR output the address range in a struct resource with decoded flags
  * %pr output the address range in a struct resource with raw flags
+ * %pb output the bitmap with field width as the number of bits
+ * %pbl output the bitmap as range list with field width as the number of bits
  * %pM output a 6-byte MAC address with colons
  * %pMR output a 6-byte MAC address with colons in reversed order
  * %pMF output a 6-byte MAC address with dashes
@@ -1370,10 +1702,13 @@ qualifier:
  * %pI6 print an IPv6 address with colons
  * %pi6 print an IPv6 address without colons
  * %pI6c print an IPv6 address as specified by RFC 5952
+ * %pIS depending on sa_family of 'struct sockaddr *' print IPv4/IPv6 address
+ * %piS depending on sa_family of 'struct sockaddr *' print IPv4/IPv6 address
  * %pU[bBlL] print a UUID/GUID in big or little endian using lower or upper
  *   case.
  * %*ph[CDN] a variable-length hex string with a separator (supports up to 64
  *           bytes of the input)
+ * %pc print a cpumask as comma-separated list
  * %n is ignored
  *
  * ** Please update Documentation/printk-formats.txt when making changes **

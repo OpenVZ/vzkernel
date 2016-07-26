@@ -1078,7 +1078,7 @@ static inline int samsung_i2s_get_driver_data(struct platform_device *pdev)
 		return platform_get_device_id(pdev)->driver_data;
 }
 
-#ifdef CONFIG_PM_RUNTIME
+#ifdef CONFIG_PM
 static int i2s_runtime_suspend(struct device *dev)
 {
 	struct i2s_dai *i2s = dev_get_drvdata(dev);
@@ -1096,7 +1096,7 @@ static int i2s_runtime_resume(struct device *dev)
 
 	return 0;
 }
-#endif /* CONFIG_PM_RUNTIME */
+#endif /* CONFIG_PM */
 
 static int samsung_i2s_probe(struct platform_device *pdev)
 {

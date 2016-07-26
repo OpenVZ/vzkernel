@@ -26,7 +26,10 @@
 #include <linux/atomic.h>
 #include <linux/ratelimit.h>
 #include <linux/uidgid.h>
+#include <linux/gfp.h>
 #include <asm/device.h>
+
+#include <linux/rh_kabi.h>
 
 struct device;
 struct device_private;
@@ -47,7 +50,11 @@ struct bus_attribute {
 };
 
 #define BUS_ATTR(_name, _mode, _show, _store)	\
-struct bus_attribute bus_attr_##_name = __ATTR(_name, _mode, _show, _store)
+	struct bus_attribute bus_attr_##_name = __ATTR(_name, _mode, _show, _store)
+#define BUS_ATTR_RW(_name) \
+	struct bus_attribute bus_attr_##_name = __ATTR_RW(_name)
+#define BUS_ATTR_RO(_name) \
+	struct bus_attribute bus_attr_##_name = __ATTR_RO(_name)
 
 extern int __must_check bus_create_file(struct bus_type *,
 					struct bus_attribute *);
@@ -62,6 +69,9 @@ extern void bus_remove_file(struct bus_type *, struct bus_attribute *);
  * @bus_attrs:	Default attributes of the bus.
  * @dev_attrs:	Default attributes of the devices on the bus.
  * @drv_attrs:	Default attributes of the device drivers on the bus.
+ * @bus_groups:	Default attributes of the bus.
+ * @dev_groups:	Default attributes of the devices on the bus.
+ * @drv_groups: Default attributes of the device drivers on the bus.
  * @match:	Called, perhaps multiple times, whenever a new device or driver
  *		is added for this bus. It should return a nonzero value if the
  *		given device can be handled by the given driver.
@@ -71,6 +81,10 @@ extern void bus_remove_file(struct bus_type *, struct bus_attribute *);
  *		the specific driver's probe to initial the matched device.
  * @remove:	Called when a device removed from this bus.
  * @shutdown:	Called at shut-down time to quiesce the device.
+ *
+ * @online:	Called to put the device back online (after offlining it).
+ * @offline:	Called to put the device offline for hot-removal. May fail.
+ *
  * @suspend:	Called when a device on this bus wants to go to sleep mode.
  * @resume:	Called to bring a device on this bus out of sleep mode.
  * @pm:		Power management operations of this bus, callback the specific
@@ -94,15 +108,21 @@ struct bus_type {
 	const char		*name;
 	const char		*dev_name;
 	struct device		*dev_root;
-	struct bus_attribute	*bus_attrs;
-	struct device_attribute	*dev_attrs;
-	struct driver_attribute	*drv_attrs;
+	struct bus_attribute	*bus_attrs;	/* use bus_groups instead */
+	struct device_attribute	*dev_attrs;	/* use dev_groups instead */
+	struct driver_attribute	*drv_attrs;	/* use drv_groups instead */
+	const struct attribute_group **bus_groups;
+	const struct attribute_group **dev_groups;
+	const struct attribute_group **drv_groups;
 
 	int (*match)(struct device *dev, struct device_driver *drv);
 	int (*uevent)(struct device *dev, struct kobj_uevent_env *env);
 	int (*probe)(struct device *dev);
 	int (*remove)(struct device *dev);
 	void (*shutdown)(struct device *dev);
+
+	int (*online)(struct device *dev);
+	int (*offline)(struct device *dev);
 
 	int (*suspend)(struct device *dev, pm_message_t state);
 	int (*resume)(struct device *dev);
@@ -164,9 +184,12 @@ extern int bus_unregister_notifier(struct bus_type *bus,
 /* All 4 notifers below get called with the target struct device *
  * as an argument. Note that those functions are likely to be called
  * with the device lock held in the core, so be careful.
+ *
+ * RHEL7 - Note that the following notifier values differ from upstream.
+ * This was due to KABI and upstream commit 599bad38cf71.
  */
 #define BUS_NOTIFY_ADD_DEVICE		0x00000001 /* device added */
-#define BUS_NOTIFY_DEL_DEVICE		0x00000002 /* device removed */
+#define BUS_NOTIFY_DEL_DEVICE		0x00000002 /* device to be removed */
 #define BUS_NOTIFY_BIND_DRIVER		0x00000003 /* driver about to be
 						      bound */
 #define BUS_NOTIFY_BOUND_DRIVER		0x00000004 /* driver bound to device */
@@ -174,6 +197,8 @@ extern int bus_unregister_notifier(struct bus_type *bus,
 						      unbound */
 #define BUS_NOTIFY_UNBOUND_DRIVER	0x00000006 /* driver is unbound
 						      from the device */
+#define BUS_NOTIFY_REMOVED_DEVICE	0x00000007 /* device removed */
+
 
 extern struct kset *bus_get_kset(struct bus_type *bus);
 extern struct klist *bus_get_device_klist(struct bus_type *bus);
@@ -232,8 +257,20 @@ struct device_driver {
 	const struct dev_pm_ops *pm;
 
 	struct driver_private *p;
+
+	/* Extension to accomodate future upstream changes to this structure
+	 * yet maintain RHEL7 KABI.  For Red Hat internal use only!
+	 */
+	struct device_driver_rh	*device_driver_rh;
 };
 
+/* RHEL7 specific 'struct device_driver' shadow structure to help maintain
+ * KABI going forward.  This structure will never be under KABI restrictions.
+ */
+struct device_driver_rh {
+#ifndef __GENKSYMS__
+#endif
+};
 
 extern int __must_check driver_register(struct device_driver *drv);
 extern void driver_unregister(struct device_driver *drv);
@@ -253,9 +290,14 @@ struct driver_attribute {
 			 size_t count);
 };
 
-#define DRIVER_ATTR(_name, _mode, _show, _store)	\
-struct driver_attribute driver_attr_##_name =		\
-	__ATTR(_name, _mode, _show, _store)
+#define DRIVER_ATTR(_name, _mode, _show, _store) \
+	struct driver_attribute driver_attr_##_name = __ATTR(_name, _mode, _show, _store)
+#define DRIVER_ATTR_RW(_name) \
+	struct driver_attribute driver_attr_##_name = __ATTR_RW(_name)
+#define DRIVER_ATTR_RO(_name) \
+	struct driver_attribute driver_attr_##_name = __ATTR_RO(_name)
+#define DRIVER_ATTR_WO(_name) \
+	struct driver_attribute driver_attr_##_name = __ATTR_WO(_name)
 
 extern int __must_check driver_create_file(struct device_driver *driver,
 					const struct driver_attribute *attr);
@@ -305,6 +347,7 @@ int subsys_virtual_register(struct bus_type *subsys,
  * @name:	Name of the class.
  * @owner:	The module owner.
  * @class_attrs: Default attributes of this class.
+ * @dev_groups:	Default attributes of the devices that belong to the class.
  * @dev_attrs:	Default attributes of the devices belong to the class.
  * @dev_bin_attrs: Default binary attributes of the devices belong to the class.
  * @dev_kobj:	The kobject that represents this class and links it into the hierarchy.
@@ -334,7 +377,8 @@ struct class {
 	struct module		*owner;
 
 	struct class_attribute		*class_attrs;
-	struct device_attribute		*dev_attrs;
+	struct device_attribute		*dev_attrs;	/* use dev_groups instead */
+	const struct attribute_group	**dev_groups;
 	struct bin_attribute		*dev_bin_attrs;
 	struct kobject			*dev_kobj;
 
@@ -406,8 +450,12 @@ struct class_attribute {
 				 const struct class_attribute *attr);
 };
 
-#define CLASS_ATTR(_name, _mode, _show, _store)			\
-struct class_attribute class_attr_##_name = __ATTR(_name, _mode, _show, _store)
+#define CLASS_ATTR(_name, _mode, _show, _store) \
+	struct class_attribute class_attr_##_name = __ATTR(_name, _mode, _show, _store)
+#define CLASS_ATTR_RW(_name) \
+	struct class_attribute class_attr_##_name = __ATTR_RW(_name)
+#define CLASS_ATTR_RO(_name) \
+	struct class_attribute class_attr_##_name = __ATTR_RO(_name)
 
 extern int __must_check class_create_file(struct class *class,
 					  const struct class_attribute *attr);
@@ -415,7 +463,6 @@ extern void class_remove_file(struct class *class,
 			      const struct class_attribute *attr);
 
 /* Simple class attribute that is just a static string */
-
 struct class_attribute_string {
 	struct class_attribute attr;
 	char *str;
@@ -504,6 +551,12 @@ ssize_t device_store_bool(struct device *dev, struct device_attribute *attr,
 
 #define DEVICE_ATTR(_name, _mode, _show, _store) \
 	struct device_attribute dev_attr_##_name = __ATTR(_name, _mode, _show, _store)
+#define DEVICE_ATTR_RW(_name) \
+	struct device_attribute dev_attr_##_name = __ATTR_RW(_name)
+#define DEVICE_ATTR_RO(_name) \
+	struct device_attribute dev_attr_##_name = __ATTR_RO(_name)
+#define DEVICE_ATTR_WO(_name) \
+	struct device_attribute dev_attr_##_name = __ATTR_WO(_name)
 #define DEVICE_ULONG_ATTR(_name, _mode, _var) \
 	struct dev_ext_attribute dev_attr_##_name = \
 		{ __ATTR(_name, _mode, device_show_ulong, device_store_ulong), &(_var) }
@@ -568,8 +621,24 @@ extern void devres_close_group(struct device *dev, void *id);
 extern void devres_remove_group(struct device *dev, void *id);
 extern int devres_release_group(struct device *dev, void *id);
 
-/* managed kzalloc/kfree for device drivers, no kmalloc, always use kzalloc */
-extern void *devm_kzalloc(struct device *dev, size_t size, gfp_t gfp);
+/* managed devm_k.alloc/kfree for device drivers */
+extern void *devm_kmalloc(struct device *dev, size_t size, gfp_t gfp);
+static inline void *devm_kzalloc(struct device *dev, size_t size, gfp_t gfp)
+{
+	return devm_kmalloc(dev, size, gfp | __GFP_ZERO);
+}
+static inline void *devm_kmalloc_array(struct device *dev,
+				       size_t n, size_t size, gfp_t flags)
+{
+	if (size != 0 && n > SIZE_MAX / size)
+		return NULL;
+	return devm_kmalloc(dev, n * size, flags);
+}
+static inline void *devm_kcalloc(struct device *dev,
+				 size_t n, size_t size, gfp_t flags)
+{
+	return devm_kmalloc_array(dev, n, size, flags | __GFP_ZERO);
+}
 extern void devm_kfree(struct device *dev, void *p);
 
 void __iomem *devm_ioremap_resource(struct device *dev, struct resource *res);
@@ -589,9 +658,13 @@ struct device_dma_parameters {
 	unsigned long segment_boundary_mask;
 };
 
+struct acpi_device;
+
 struct acpi_dev_node {
 #ifdef CONFIG_ACPI
-	void	*handle;
+	RH_KABI_REPLACE(void	*handle,
+		          struct acpi_device *companion)
+
 #endif
 };
 
@@ -648,6 +721,8 @@ struct acpi_dev_node {
  * @release:	Callback to free the device after all references have
  * 		gone away. This should be set by the allocator of the
  * 		device (i.e. the bus driver that discovered the device).
+ * @offline_disabled: If set, the device is permanently online.
+ * @offline:	Set after successful invocation of bus type's .offline().
  *
  * At the lowest level, every device in a Linux system is represented by an
  * instance of struct device. The device structure contains the information
@@ -698,7 +773,7 @@ struct device {
 
 	struct dma_coherent_mem	*dma_mem; /* internal for coherent mem
 					     override */
-#ifdef CONFIG_CMA
+#ifdef CONFIG_DMA_CMA
 	struct cma *cma_area;		/* contiguous memory area for dma
 					   allocations */
 #endif
@@ -720,20 +795,27 @@ struct device {
 
 	void	(*release)(struct device *dev);
 	struct iommu_group	*iommu_group;
+
+	bool			offline_disabled:1;
+	bool			offline:1;
+
+	/* Extension to accomodate future upstream changes to this structure
+	 * yet maintain RHEL7 KABI.  For Red Hat internal use only!
+	 */
+	struct device_rh	*device_rh;
+};
+
+/* RHEL7 specific 'struct device_rh' shadow structure to help maintain KABI
+ * going forward.  This structure will never be under KABI restrictions.
+ */
+struct device_rh {
+	RH_KABI_EXTEND(struct dev_pm_info_rh power)
 };
 
 static inline struct device *kobj_to_dev(struct kobject *kobj)
 {
 	return container_of(kobj, struct device, kobj);
 }
-
-#ifdef CONFIG_ACPI
-#define ACPI_HANDLE(dev)	((dev)->acpi_node.handle)
-#define ACPI_HANDLE_SET(dev, _handle_)	(dev)->acpi_node.handle = (_handle_)
-#else
-#define ACPI_HANDLE(dev)	(NULL)
-#define ACPI_HANDLE_SET(dev, _handle_)	do { } while (0)
-#endif
 
 /* Get the wakeup routines, which depend on struct device */
 #include <linux/pm_wakeup.h>
@@ -833,6 +915,13 @@ static inline void device_unlock(struct device *dev)
 	mutex_unlock(&dev->mutex);
 }
 
+static inline struct device_node *dev_of_node(struct device *dev)
+{
+	if (!IS_ENABLED(CONFIG_OF))
+		return NULL;
+	return dev->of_node;
+}
+
 void driver_init(void);
 
 /*
@@ -856,6 +945,16 @@ extern const char *device_get_devnode(struct device *dev,
 extern void *dev_get_drvdata(const struct device *dev);
 extern int dev_set_drvdata(struct device *dev, void *data);
 
+static inline bool device_supports_offline(struct device *dev)
+{
+	return dev->bus && dev->bus->offline && dev->bus->online;
+}
+
+extern void lock_device_hotplug(void);
+extern void unlock_device_hotplug(void);
+extern int lock_device_hotplug_sysfs(void);
+extern int device_offline(struct device *dev);
+extern int device_online(struct device *dev);
 /*
  * Root device objects for grouping under /sys/devices
  */
@@ -898,6 +997,11 @@ extern struct device *device_create_vargs(struct class *cls,
 extern __printf(5, 6)
 struct device *device_create(struct class *cls, struct device *parent,
 			     dev_t devt, void *drvdata,
+			     const char *fmt, ...);
+extern __printf(6, 7)
+struct device *device_create_with_groups(struct class *cls,
+			     struct device *parent, dev_t devt, void *drvdata,
+			     const struct attribute_group **groups,
 			     const char *fmt, ...);
 extern void device_destroy(struct class *cls, dev_t devt);
 

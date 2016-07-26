@@ -58,9 +58,11 @@ obj-$(CONFIG_DYNAMIC_FTRACE)	+= ftrace.o
 obj-$(CONFIG_FUNCTION_GRAPH_TRACER) += ftrace.o
 obj-$(CONFIG_FTRACE_SYSCALLS)  += ftrace.o
 obj-$(CONFIG_CRASH_DUMP)	+= crash_dump.o
+obj-$(CONFIG_UPROBES)		+= uprobes.o
 
 ifdef CONFIG_64BIT
-obj-$(CONFIG_PERF_EVENTS)	+= perf_event.o perf_cpum_cf.o
+obj-$(CONFIG_PERF_EVENTS)	+= perf_event.o perf_cpum_cf.o perf_cpum_sf.o \
+						perf_cpum_cf_events.o
 obj-y				+= runtime_instr.o cache.o
 endif
 

@@ -40,7 +40,7 @@ static inline unsigned int packet_length(const struct sk_buff *skb)
 	return skb->len - (skb->protocol == htons(ETH_P_8021Q) ? VLAN_HLEN : 0);
 }
 
-int br_dev_queue_push_xmit(struct sk_buff *skb)
+int br_dev_queue_push_xmit(struct sock *sk, struct sk_buff *skb)
 {
 	/* ip_fragment doesn't copy the MAC header */
 	if (nf_bridge_maybe_copy_header(skb) ||
@@ -55,9 +55,10 @@ int br_dev_queue_push_xmit(struct sk_buff *skb)
 	return 0;
 }
 
-int br_forward_finish(struct sk_buff *skb)
+int br_forward_finish(struct sock *sk, struct sk_buff *skb)
 {
-	return NF_HOOK(NFPROTO_BRIDGE, NF_BR_POST_ROUTING, skb, NULL, skb->dev,
+	return NF_HOOK(NFPROTO_BRIDGE, NF_BR_POST_ROUTING, sk, skb,
+		       NULL, skb->dev,
 		       br_dev_queue_push_xmit);
 
 }
@@ -80,7 +81,8 @@ static void __br_deliver(const struct net_bridge_port *to, struct sk_buff *skb)
 		return;
 	}
 
-	NF_HOOK(NFPROTO_BRIDGE, NF_BR_LOCAL_OUT, skb, NULL, skb->dev,
+	NF_HOOK(NFPROTO_BRIDGE, NF_BR_LOCAL_OUT, NULL, skb,
+		NULL, skb->dev,
 		br_forward_finish);
 }
 
@@ -101,7 +103,8 @@ static void __br_forward(const struct net_bridge_port *to, struct sk_buff *skb)
 	skb->dev = to->dev;
 	skb_forward_csum(skb);
 
-	NF_HOOK(NFPROTO_BRIDGE, NF_BR_FORWARD, skb, indev, skb->dev,
+	NF_HOOK(NFPROTO_BRIDGE, NF_BR_FORWARD, NULL, skb,
+		indev, skb->dev,
 		br_forward_finish);
 }
 
@@ -174,7 +177,8 @@ out:
 static void br_flood(struct net_bridge *br, struct sk_buff *skb,
 		     struct sk_buff *skb0,
 		     void (*__packet_hook)(const struct net_bridge_port *p,
-					   struct sk_buff *skb))
+					   struct sk_buff *skb),
+		     bool unicast)
 {
 	struct net_bridge_port *p;
 	struct net_bridge_port *prev;
@@ -182,6 +186,9 @@ static void br_flood(struct net_bridge *br, struct sk_buff *skb,
 	prev = NULL;
 
 	list_for_each_entry_rcu(p, &br->port_list, list) {
+		/* Do not flood unicast traffic to ports that turn it off */
+		if (unicast && !(p->flags & BR_FLOOD))
+			continue;
 		prev = maybe_deliver(prev, p, skb, __packet_hook);
 		if (IS_ERR(prev))
 			goto out;
@@ -203,16 +210,16 @@ out:
 
 
 /* called with rcu_read_lock */
-void br_flood_deliver(struct net_bridge *br, struct sk_buff *skb)
+void br_flood_deliver(struct net_bridge *br, struct sk_buff *skb, bool unicast)
 {
-	br_flood(br, skb, NULL, __br_deliver);
+	br_flood(br, skb, NULL, __br_deliver, unicast);
 }
 
 /* called under bridge lock */
 void br_flood_forward(struct net_bridge *br, struct sk_buff *skb,
-		      struct sk_buff *skb2)
+		      struct sk_buff *skb2, bool unicast)
 {
-	br_flood(br, skb, skb2, __br_forward);
+	br_flood(br, skb, skb2, __br_forward, unicast);
 }
 
 #ifdef CONFIG_BRIDGE_IGMP_SNOOPING

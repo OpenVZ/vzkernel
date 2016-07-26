@@ -110,7 +110,6 @@ struct csio_scsi_cpu_info {
 };
 
 extern int csio_dbg_level;
-extern int csio_force_master;
 extern unsigned int csio_port_mask;
 extern int csio_msi;
 
@@ -118,10 +117,10 @@ extern int csio_msi;
 #define CSIO_ASIC_DEVID_PROTO_MASK		0xFF00
 #define CSIO_ASIC_DEVID_TYPE_MASK		0x00FF
 
-#define CSIO_GLBL_INTR_MASK		(CIM | MPS | PL | PCIE | MC | EDC0 | \
-					 EDC1 | LE | TP | MA | PM_TX | PM_RX | \
-					 ULP_RX | CPL_SWITCH | SGE | \
-					 ULP_TX | SF)
+#define CSIO_GLBL_INTR_MASK	(CIM_F | MPS_F | PL_F | PCIE_F | MC_F | \
+				 EDC0_F | EDC1_F | LE_F | TP_F | MA_F | \
+				 PM_TX_F | PM_RX_F | ULP_RX_F | \
+				 CPL_SWITCH_F | SGE_F | ULP_TX_F | SF_F)
 
 /*
  * Hard parameters used to initialize the card in the absence of a
@@ -153,17 +152,6 @@ enum {
 	CSIO_SGE_INT_CNT_VAL_1		= 4,
 	CSIO_SGE_INT_CNT_VAL_2		= 8,
 	CSIO_SGE_INT_CNT_VAL_3		= 16,
-
-	/* Storage specific - used by FW_PFVF_CMD */
-	CSIO_WX_CAPS			= FW_CMD_CAP_PF, /* w/x all */
-	CSIO_R_CAPS			= FW_CMD_CAP_PF, /* r all */
-	CSIO_NVI			= 4,
-	CSIO_NIQ_FLINT			= 34,
-	CSIO_NETH_CTRL			= 32,
-	CSIO_NEQ			= 66,
-	CSIO_NEXACTF			= 32,
-	CSIO_CMASK			= FW_PFVF_CMD_CMASK_MASK,
-	CSIO_PMASK			= FW_PFVF_CMD_PMASK_MASK,
 };
 
 /* Slowpath events */

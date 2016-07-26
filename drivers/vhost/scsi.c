@@ -49,7 +49,6 @@
 #include <linux/llist.h>
 #include <linux/bitmap.h>
 
-#include "vhost.c"
 #include "vhost.h"
 
 #define TCM_VHOST_VERSION  "v0.1"
@@ -588,7 +587,7 @@ static void tcm_vhost_do_evt_work(struct vhost_scsi *vs,
 
 again:
 	vhost_disable_notify(&vs->dev, vq);
-	head = vhost_get_vq_desc(&vs->dev, vq, vq->iov,
+	head = vhost_get_vq_desc(vq, vq->iov,
 			ARRAY_SIZE(vq->iov), &out, &in,
 			NULL, NULL);
 	if (head < 0) {
@@ -885,23 +884,19 @@ static void vhost_scsi_handle_vq(struct vhost_scsi *vs,
 	int head, ret;
 	u8 target;
 
+	mutex_lock(&vq->mutex);
 	/*
 	 * We can handle the vq only after the endpoint is setup by calling the
 	 * VHOST_SCSI_SET_ENDPOINT ioctl.
-	 *
-	 * TODO: Check that we are running from vhost_worker which acts
-	 * as read-side critical section for vhost kind of RCU.
-	 * See the comments in struct vhost_virtqueue in drivers/vhost/vhost.h
 	 */
-	vs_tpg = rcu_dereference_check(vq->private_data, 1);
+	vs_tpg = vq->private_data;
 	if (!vs_tpg)
-		return;
+		goto out;
 
-	mutex_lock(&vq->mutex);
 	vhost_disable_notify(&vs->dev, vq);
 
 	for (;;) {
-		head = vhost_get_vq_desc(&vs->dev, vq, vq->iov,
+		head = vhost_get_vq_desc(vq, vq->iov,
 					ARRAY_SIZE(vq->iov), &out, &in,
 					NULL, NULL);
 		pr_debug("vhost_get_vq_desc: head: %d, out: %u in: %u\n",
@@ -1017,7 +1012,7 @@ static void vhost_scsi_handle_vq(struct vhost_scsi *vs,
 		if (data_direction != DMA_NONE) {
 			ret = vhost_scsi_map_iov_to_sgl(tv_cmd,
 					&vq->iov[data_first], data_num,
-					data_direction == DMA_TO_DEVICE);
+					data_direction == DMA_FROM_DEVICE);
 			if (unlikely(ret)) {
 				vq_err(vq, "Failed to map iov to sgl\n");
 				goto err_free;
@@ -1047,6 +1042,7 @@ err_free:
 	vhost_scsi_free_cmd(tv_cmd);
 err_cmd:
 	vhost_scsi_send_bad_target(vs, vq, head, out);
+out:
 	mutex_unlock(&vq->mutex);
 }
 
@@ -1211,9 +1207,8 @@ static int vhost_scsi_set_endpoint(
 		       sizeof(vs->vs_vhost_wwpn));
 		for (i = 0; i < VHOST_SCSI_MAX_VQ; i++) {
 			vq = &vs->vqs[i].vq;
-			/* Flushing the vhost_work acts as synchronize_rcu */
 			mutex_lock(&vq->mutex);
-			rcu_assign_pointer(vq->private_data, vs_tpg);
+			vq->private_data = vs_tpg;
 			vhost_init_used(vq);
 			mutex_unlock(&vq->mutex);
 		}
@@ -1292,9 +1287,8 @@ static int vhost_scsi_clear_endpoint(
 	if (match) {
 		for (i = 0; i < VHOST_SCSI_MAX_VQ; i++) {
 			vq = &vs->vqs[i].vq;
-			/* Flushing the vhost_work acts as synchronize_rcu */
 			mutex_lock(&vq->mutex);
-			rcu_assign_pointer(vq->private_data, NULL);
+			vq->private_data = NULL;
 			mutex_unlock(&vq->mutex);
 		}
 	}
@@ -1320,6 +1314,9 @@ err_dev:
 
 static int vhost_scsi_set_features(struct vhost_scsi *vs, u64 features)
 {
+	struct vhost_virtqueue *vq;
+	int i;
+
 	if (features & ~VHOST_SCSI_FEATURES)
 		return -EOPNOTSUPP;
 
@@ -1329,9 +1326,13 @@ static int vhost_scsi_set_features(struct vhost_scsi *vs, u64 features)
 		mutex_unlock(&vs->dev.mutex);
 		return -EFAULT;
 	}
-	vs->dev.acked_features = features;
-	smp_wmb();
-	vhost_scsi_flush(vs);
+
+	for (i = 0; i < VHOST_SCSI_MAX_VQ; i++) {
+		vq = &vs->vqs[i].vq;
+		mutex_lock(&vq->mutex);
+		vq->acked_features = features;
+		mutex_unlock(&vq->mutex);
+	}
 	mutex_unlock(&vs->dev.mutex);
 	return 0;
 }
@@ -1527,10 +1528,6 @@ static void tcm_vhost_do_plug(struct tcm_vhost_tpg *tpg,
 		return;
 
 	mutex_lock(&vs->dev.mutex);
-	if (!vhost_has_feature(&vs->dev, VIRTIO_SCSI_F_HOTPLUG)) {
-		mutex_unlock(&vs->dev.mutex);
-		return;
-	}
 
 	if (plug)
 		reason = VIRTIO_SCSI_EVT_RESET_RESCAN;
@@ -1539,8 +1536,9 @@ static void tcm_vhost_do_plug(struct tcm_vhost_tpg *tpg,
 
 	vq = &vs->vqs[VHOST_SCSI_VQ_EVT].vq;
 	mutex_lock(&vq->mutex);
-	tcm_vhost_send_evt(vs, tpg, lun,
-			VIRTIO_SCSI_T_TRANSPORT_RESET, reason);
+	if (vhost_has_feature(vq, VIRTIO_SCSI_F_HOTPLUG))
+		tcm_vhost_send_evt(vs, tpg, lun,
+				   VIRTIO_SCSI_T_TRANSPORT_RESET, reason);
 	mutex_unlock(&vq->mutex);
 	mutex_unlock(&vs->dev.mutex);
 }

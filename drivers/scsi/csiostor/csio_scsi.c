@@ -230,10 +230,10 @@ csio_scsi_init_cmd_wr(struct csio_ioreq *req, void *addr, uint32_t size)
 	struct csio_dma_buf *dma_buf;
 	uint8_t imm = csio_hw_to_scsim(hw)->proto_cmd_len;
 
-	wr->op_immdlen = cpu_to_be32(FW_WR_OP(FW_SCSI_CMD_WR) |
+	wr->op_immdlen = cpu_to_be32(FW_WR_OP_V(FW_SCSI_CMD_WR) |
 					  FW_SCSI_CMD_WR_IMMDLEN(imm));
-	wr->flowid_len16 = cpu_to_be32(FW_WR_FLOWID(rn->flowid) |
-					    FW_WR_LEN16(
+	wr->flowid_len16 = cpu_to_be32(FW_WR_FLOWID_V(rn->flowid) |
+					    FW_WR_LEN16_V(
 						DIV_ROUND_UP(size, 16)));
 
 	wr->cookie = (uintptr_t) req;
@@ -322,8 +322,8 @@ csio_scsi_init_ultptx_dsgl(struct csio_hw *hw, struct csio_ioreq *req,
 	struct csio_dma_buf *dma_buf;
 	struct scsi_cmnd *scmnd = csio_scsi_cmnd(req);
 
-	sgl->cmd_nsge = htonl(ULPTX_CMD(ULP_TX_SC_DSGL) | ULPTX_MORE |
-				     ULPTX_NSGE(req->nsge));
+	sgl->cmd_nsge = htonl(ULPTX_CMD_V(ULP_TX_SC_DSGL) | ULPTX_MORE_F |
+				     ULPTX_NSGE_V(req->nsge));
 	/* Now add the data SGLs */
 	if (likely(!req->dcopy)) {
 		scsi_for_each_sg(scmnd, sgel, req->nsge, i) {
@@ -391,10 +391,10 @@ csio_scsi_init_read_wr(struct csio_ioreq *req, void *wrp, uint32_t size)
 	uint8_t imm = csio_hw_to_scsim(hw)->proto_cmd_len;
 	struct scsi_cmnd *scmnd = csio_scsi_cmnd(req);
 
-	wr->op_immdlen = cpu_to_be32(FW_WR_OP(FW_SCSI_READ_WR) |
+	wr->op_immdlen = cpu_to_be32(FW_WR_OP_V(FW_SCSI_READ_WR) |
 				     FW_SCSI_READ_WR_IMMDLEN(imm));
-	wr->flowid_len16 = cpu_to_be32(FW_WR_FLOWID(rn->flowid) |
-				       FW_WR_LEN16(DIV_ROUND_UP(size, 16)));
+	wr->flowid_len16 = cpu_to_be32(FW_WR_FLOWID_V(rn->flowid) |
+				       FW_WR_LEN16_V(DIV_ROUND_UP(size, 16)));
 	wr->cookie = (uintptr_t)req;
 	wr->iqid = cpu_to_be16(csio_q_physiqid(hw, req->iq_idx));
 	wr->tmo_val = (uint8_t)(req->tmo);
@@ -444,10 +444,10 @@ csio_scsi_init_write_wr(struct csio_ioreq *req, void *wrp, uint32_t size)
 	uint8_t imm = csio_hw_to_scsim(hw)->proto_cmd_len;
 	struct scsi_cmnd *scmnd = csio_scsi_cmnd(req);
 
-	wr->op_immdlen = cpu_to_be32(FW_WR_OP(FW_SCSI_WRITE_WR) |
+	wr->op_immdlen = cpu_to_be32(FW_WR_OP_V(FW_SCSI_WRITE_WR) |
 				     FW_SCSI_WRITE_WR_IMMDLEN(imm));
-	wr->flowid_len16 = cpu_to_be32(FW_WR_FLOWID(rn->flowid) |
-				       FW_WR_LEN16(DIV_ROUND_UP(size, 16)));
+	wr->flowid_len16 = cpu_to_be32(FW_WR_FLOWID_V(rn->flowid) |
+				       FW_WR_LEN16_V(DIV_ROUND_UP(size, 16)));
 	wr->cookie = (uintptr_t)req;
 	wr->iqid = cpu_to_be16(csio_q_physiqid(hw, req->iq_idx));
 	wr->tmo_val = (uint8_t)(req->tmo);
@@ -674,9 +674,9 @@ csio_scsi_init_abrt_cls_wr(struct csio_ioreq *req, void *addr, uint32_t size,
 	struct csio_rnode *rn = req->rnode;
 	struct fw_scsi_abrt_cls_wr *wr = (struct fw_scsi_abrt_cls_wr *)addr;
 
-	wr->op_immdlen = cpu_to_be32(FW_WR_OP(FW_SCSI_ABRT_CLS_WR));
-	wr->flowid_len16 = cpu_to_be32(FW_WR_FLOWID(rn->flowid) |
-					    FW_WR_LEN16(
+	wr->op_immdlen = cpu_to_be32(FW_WR_OP_V(FW_SCSI_ABRT_CLS_WR));
+	wr->flowid_len16 = cpu_to_be32(FW_WR_FLOWID_V(rn->flowid) |
+					    FW_WR_LEN16_V(
 						DIV_ROUND_UP(size, 16)));
 
 	wr->cookie = (uintptr_t) req;
@@ -1479,8 +1479,8 @@ csio_store_dbg_level(struct device *dev,
 }
 
 static DEVICE_ATTR(hw_state, S_IRUGO, csio_show_hw_state, NULL);
-static DEVICE_ATTR(device_reset, S_IRUGO | S_IWUSR, NULL, csio_device_reset);
-static DEVICE_ATTR(disable_port, S_IRUGO | S_IWUSR, NULL, csio_disable_port);
+static DEVICE_ATTR(device_reset, S_IWUSR, NULL, csio_device_reset);
+static DEVICE_ATTR(disable_port, S_IWUSR, NULL, csio_disable_port);
 static DEVICE_ATTR(dbg_level, S_IRUGO | S_IWUSR, csio_show_dbg_level,
 		  csio_store_dbg_level);
 

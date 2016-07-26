@@ -67,7 +67,7 @@ static int ingress_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	switch (result) {
 	case TC_ACT_SHOT:
 		result = TC_ACT_SHOT;
-		sch->qstats.drops++;
+		qdisc_qstats_drop(sch);
 		break;
 	case TC_ACT_STOLEN:
 	case TC_ACT_QUEUED:
@@ -100,8 +100,7 @@ static int ingress_dump(struct Qdisc *sch, struct sk_buff *skb)
 	nest = nla_nest_start(skb, TCA_OPTIONS);
 	if (nest == NULL)
 		goto nla_put_failure;
-	nla_nest_end(skb, nest);
-	return skb->len;
+	return nla_nest_end(skb, nest);
 
 nla_put_failure:
 	nla_nest_cancel(skb, nest);

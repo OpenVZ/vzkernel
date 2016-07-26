@@ -41,7 +41,7 @@ static void quirk_fsl_pcie_header(struct pci_dev *dev)
 	u8 hdr_type;
 
 	/* if we aren't a PCIe don't bother */
-	if (!pci_find_capability(dev, PCI_CAP_ID_EXP))
+	if (!pci_is_pcie(dev))
 		return;
 
 	/* if we aren't in host mode don't bother */
@@ -64,7 +64,7 @@ static int fsl_pcie_check_link(struct pci_controller *hose)
 	if (hose->indirect_type & PPC_INDIRECT_TYPE_FSL_CFG_REG_LINK) {
 		if (hose->ops->read == fsl_indirect_read_config) {
 			struct pci_bus bus;
-			bus.number = 0;
+			bus.number = hose->first_busno;
 			bus.sysdata = hose;
 			bus.ops = hose->ops;
 			indirect_read_config(&bus, 0, PCIE_LTSSM, 4, &val);

@@ -34,8 +34,17 @@ static int edac_set_debug_level(const char *buf, struct kernel_param *kp)
 	return param_set_int(buf, kp);
 }
 
-/* Values of 0 to 4 will generate output */
-int edac_debug_level = 2;
+/*
+ * In RHEL7 this is set to -1 to disable all output by default.  This is
+ * because there are EDAC debug events that generate a message at a rate
+ * of one/second which results in a slow flood of the printk buffer and
+ * console.  This can be changed at load time by adding
+ * 'edac_core.edac_debug_level=2' as a kernel parameter, or adding a file to
+ * /etc/modprobe.d.
+ *
+ *  Values of 0 to 4 will generate output
+ */
+int edac_debug_level = -1;
 EXPORT_SYMBOL_GPL(edac_debug_level);
 
 module_param_call(edac_debug_level, edac_set_debug_level, param_get_int,
@@ -112,20 +121,23 @@ static int __init edac_init(void)
 
 	err = edac_mc_sysfs_init();
 	if (err)
-		goto error;
+		goto err_sysfs;
 
 	edac_debugfs_init();
 
-	/* Setup/Initialize the workq for this core */
 	err = edac_workqueue_setup();
 	if (err) {
-		edac_printk(KERN_ERR, EDAC_MC, "init WorkQueue failure\n");
-		goto error;
+		edac_printk(KERN_ERR, EDAC_MC, "Failure initializing workqueue\n");
+		goto err_wq;
 	}
 
 	return 0;
 
-error:
+err_wq:
+	edac_debugfs_exit();
+	edac_mc_sysfs_exit();
+
+err_sysfs:
 	return err;
 }
 

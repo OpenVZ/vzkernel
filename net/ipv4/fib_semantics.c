@@ -157,9 +157,12 @@ static void rt_fibinfo_free(struct rtable __rcu **rtp)
 
 static void free_nh_exceptions(struct fib_nh *nh)
 {
-	struct fnhe_hash_bucket *hash = nh->nh_exceptions;
+	struct fnhe_hash_bucket *hash;
 	int i;
 
+	hash = rcu_dereference_protected(nh->nh_exceptions, 1);
+	if (!hash)
+		return;
 	for (i = 0; i < FNHE_HASH_SIZE; i++) {
 		struct fib_nh_exception *fnhe;
 
@@ -204,13 +207,11 @@ static void free_fib_info_rcu(struct rcu_head *head)
 	change_nexthops(fi) {
 		if (nexthop_nh->nh_dev)
 			dev_put(nexthop_nh->nh_dev);
-		if (nexthop_nh->nh_exceptions)
-			free_nh_exceptions(nexthop_nh);
+		free_nh_exceptions(nexthop_nh);
 		rt_fibinfo_free_cpus(nexthop_nh->nh_pcpu_rth_output);
 		rt_fibinfo_free(&nexthop_nh->nh_rth_input);
 	} endfor_nexthops(fi);
 
-	release_net(fi->fib_net);
 	if (fi->fib_metrics != (u32 *) dst_default_metrics)
 		kfree(fi->fib_metrics);
 	kfree(fi);
@@ -357,7 +358,8 @@ static inline size_t fib_nlmsg_size(struct fib_info *fi)
 			 + nla_total_size(4) /* RTA_TABLE */
 			 + nla_total_size(4) /* RTA_DST */
 			 + nla_total_size(4) /* RTA_PRIORITY */
-			 + nla_total_size(4); /* RTA_PREFSRC */
+			 + nla_total_size(4) /* RTA_PREFSRC */
+			 + nla_total_size(TCP_CA_NAME_MAX); /* RTAX_CC_ALGO */
 
 	/* space for nested metrics */
 	payload += nla_total_size((RTAX_MAX * nla_total_size(4)));
@@ -405,24 +407,6 @@ void rtmsg_fib(int event, __be32 key, struct fib_alias *fa,
 errout:
 	if (err < 0)
 		rtnl_set_sk_err(info->nl_net, RTNLGRP_IPV4_ROUTE, err);
-}
-
-/* Return the first fib alias matching TOS with
- * priority less than or equal to PRIO.
- */
-struct fib_alias *fib_find_alias(struct list_head *fah, u8 tos, u32 prio)
-{
-	if (fah) {
-		struct fib_alias *fa;
-		list_for_each_entry(fa, fah, fa_list) {
-			if (fa->fa_tos > tos)
-				continue;
-			if (fa->fa_info->fib_priority >= prio ||
-			    fa->fa_tos < tos)
-				return fa;
-		}
-	}
-	return NULL;
 }
 
 int fib_detect_death(struct fib_info *fi, int order,
@@ -482,7 +466,7 @@ static int fib_get_nhs(struct fib_info *fi, struct rtnexthop *rtnh,
 			struct nlattr *nla, *attrs = rtnh_attrs(rtnh);
 
 			nla = nla_find(attrs, attrlen, RTA_GATEWAY);
-			nexthop_nh->nh_gw = nla ? nla_get_be32(nla) : 0;
+			nexthop_nh->nh_gw = nla ? nla_get_in_addr(nla) : 0;
 #ifdef CONFIG_IP_ROUTE_CLASSID
 			nla = nla_find(attrs, attrlen, RTA_FLOW);
 			nexthop_nh->nh_tclassid = nla ? nla_get_u32(nla) : 0;
@@ -533,11 +517,11 @@ int fib_nh_match(struct fib_config *cfg, struct fib_info *fi)
 			return 1;
 
 		attrlen = rtnh_attrlen(rtnh);
-		if (attrlen < 0) {
+		if (attrlen > 0) {
 			struct nlattr *nla, *attrs = rtnh_attrs(rtnh);
 
 			nla = nla_find(attrs, attrlen, RTA_GATEWAY);
-			if (nla && nla_get_be32(nla) != nh->nh_gw)
+			if (nla && nla_get_in_addr(nla) != nh->nh_gw)
 				return 1;
 #ifdef CONFIG_IP_ROUTE_CLASSID
 			nla = nla_find(attrs, attrlen, RTA_FLOW);
@@ -770,6 +754,50 @@ __be32 fib_info_update_nh_saddr(struct net *net, struct fib_nh *nh)
 	return nh->nh_saddr;
 }
 
+static int
+fib_convert_metrics(struct fib_info *fi, const struct fib_config *cfg)
+{
+	bool ecn_ca = false;
+	struct nlattr *nla;
+	int remaining;
+
+	if (!cfg->fc_mx)
+		return 0;
+
+	nla_for_each_attr(nla, cfg->fc_mx, cfg->fc_mx_len, remaining) {
+		int type = nla_type(nla);
+		u32 val;
+
+		if (!type)
+			continue;
+		if (type > RTAX_MAX)
+			return -EINVAL;
+
+		if (type == RTAX_CC_ALGO) {
+			char tmp[TCP_CA_NAME_MAX];
+
+			nla_strlcpy(tmp, nla, sizeof(tmp));
+			val = tcp_ca_get_key_by_name(tmp, &ecn_ca);
+			if (val == TCP_CA_UNSPEC)
+				return -EINVAL;
+		} else {
+			val = nla_get_u32(nla);
+		}
+		if (type == RTAX_ADVMSS && val > 65535 - 40)
+			val = 65535 - 40;
+		if (type == RTAX_MTU && val > 65535 - 15)
+			val = 65535 - 15;
+		if (type == RTAX_FEATURES && (val & ~RTAX_FEATURE_MASK))
+			return -EINVAL;
+		fi->fib_metrics[type - 1] = val;
+	}
+
+	if (ecn_ca)
+		fi->fib_metrics[RTAX_FEATURES - 1] |= DST_FEATURE_ECN_CA;
+
+	return 0;
+}
+
 struct fib_info *fib_create_info(struct fib_config *cfg)
 {
 	int err;
@@ -826,7 +854,7 @@ struct fib_info *fib_create_info(struct fib_config *cfg)
 		fi->fib_metrics = (u32 *) dst_default_metrics;
 	fib_info_cnt++;
 
-	fi->fib_net = hold_net(net);
+	fi->fib_net = net;
 	fi->fib_protocol = cfg->fc_protocol;
 	fi->fib_scope = cfg->fc_scope;
 	fi->fib_flags = cfg->fc_flags;
@@ -842,27 +870,9 @@ struct fib_info *fib_create_info(struct fib_config *cfg)
 			goto failure;
 	} endfor_nexthops(fi)
 
-	if (cfg->fc_mx) {
-		struct nlattr *nla;
-		int remaining;
-
-		nla_for_each_attr(nla, cfg->fc_mx, cfg->fc_mx_len, remaining) {
-			int type = nla_type(nla);
-
-			if (type) {
-				u32 val;
-
-				if (type > RTAX_MAX)
-					goto err_inval;
-				val = nla_get_u32(nla);
-				if (type == RTAX_ADVMSS && val > 65535 - 40)
-					val = 65535 - 40;
-				if (type == RTAX_MTU && val > 65535 - 15)
-					val = 65535 - 15;
-				fi->fib_metrics[type - 1] = val;
-			}
-		}
-	}
+	err = fib_convert_metrics(fi, cfg);
+	if (err)
+		goto failure;
 
 	if (cfg->fc_mp) {
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
@@ -1019,7 +1029,7 @@ int fib_dump_info(struct sk_buff *skb, u32 portid, u32 seq, int event,
 	rtm->rtm_protocol = fi->fib_protocol;
 
 	if (rtm->rtm_dst_len &&
-	    nla_put_be32(skb, RTA_DST, dst))
+	    nla_put_in_addr(skb, RTA_DST, dst))
 		goto nla_put_failure;
 	if (fi->fib_priority &&
 	    nla_put_u32(skb, RTA_PRIORITY, fi->fib_priority))
@@ -1028,11 +1038,11 @@ int fib_dump_info(struct sk_buff *skb, u32 portid, u32 seq, int event,
 		goto nla_put_failure;
 
 	if (fi->fib_prefsrc &&
-	    nla_put_be32(skb, RTA_PREFSRC, fi->fib_prefsrc))
+	    nla_put_in_addr(skb, RTA_PREFSRC, fi->fib_prefsrc))
 		goto nla_put_failure;
 	if (fi->fib_nhs == 1) {
 		if (fi->fib_nh->nh_gw &&
-		    nla_put_be32(skb, RTA_GATEWAY, fi->fib_nh->nh_gw))
+		    nla_put_in_addr(skb, RTA_GATEWAY, fi->fib_nh->nh_gw))
 			goto nla_put_failure;
 		if (fi->fib_nh->nh_oif &&
 		    nla_put_u32(skb, RTA_OIF, fi->fib_nh->nh_oif))
@@ -1062,7 +1072,7 @@ int fib_dump_info(struct sk_buff *skb, u32 portid, u32 seq, int event,
 			rtnh->rtnh_ifindex = nh->nh_oif;
 
 			if (nh->nh_gw &&
-			    nla_put_be32(skb, RTA_GATEWAY, nh->nh_gw))
+			    nla_put_in_addr(skb, RTA_GATEWAY, nh->nh_gw))
 				goto nla_put_failure;
 #ifdef CONFIG_IP_ROUTE_CLASSID
 			if (nh->nh_tclassid &&
@@ -1165,12 +1175,12 @@ int fib_sync_down_dev(struct net_device *dev, int force)
 void fib_select_default(struct fib_result *res)
 {
 	struct fib_info *fi = NULL, *last_resort = NULL;
-	struct list_head *fa_head = res->fa_head;
+	struct hlist_head *fa_head = res->fa_head;
 	struct fib_table *tb = res->table;
 	int order = -1, last_idx = -1;
 	struct fib_alias *fa;
 
-	list_for_each_entry_rcu(fa, fa_head, fa_list) {
+	hlist_for_each_entry_rcu(fa, fa_head, fa_list) {
 		struct fib_info *next_fi = fa->fa_info;
 
 		if (next_fi->fib_scope != res->scope ||
