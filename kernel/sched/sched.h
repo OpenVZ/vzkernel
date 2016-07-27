@@ -446,7 +446,7 @@ struct cfs_rq {
 
 	u64 throttled_clock, throttled_clock_task;
 	u64 throttled_clock_task_time;
-	int throttled, throttle_count;
+	int throttled, throttle_count, throttle_uptodate;
 	struct list_head throttled_list;
 
 	struct list_head boosted_entities;
