@@ -2413,6 +2413,7 @@ retry:
 
 	inode->i_op = &ext4_dir_inode_operations.ops;
 	inode->i_fop = &ext4_dir_operations;
+	inode->i_flags |= S_IOPS_WRAPPER;
 	err = ext4_init_new_dir(handle, dir, inode);
 	if (err)
 		goto out_clear_inode;
