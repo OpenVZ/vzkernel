@@ -99,7 +99,11 @@ static void br_set_lockdep_class(struct net_device *dev)
 static int br_dev_init(struct net_device *dev)
 {
 	struct net_bridge *br = netdev_priv(dev);
+	struct net *net = dev_net(dev);
 	int err;
+
+	if (!(net->owner_ve->features & VE_FEATURE_BRIDGE))
+		return -EACCES;
 
 	br->stats = netdev_alloc_pcpu_stats(struct pcpu_sw_netstats);
 	if (!br->stats)
