@@ -18,6 +18,9 @@
 #include <linux/uaccess.h>
 #include "br_private.h"
 
+#include <uapi/linux/vzcalluser.h>
+#include <linux/ve.h>
+
 #define COMMON_FEATURES (NETIF_F_SG | NETIF_F_FRAGLIST | NETIF_F_HIGHDMA | \
 			 NETIF_F_GSO_MASK | NETIF_F_HW_CSUM)
 
@@ -118,6 +121,9 @@ static int br_dev_init(struct net_device *dev)
 {
 	struct net_bridge *br = netdev_priv(dev);
 	int err;
+
+	if (!ve_feature_set(dev_net(dev)->owner_ve, BRIDGE))
+		return -EACCES;
 
 	dev->tstats = netdev_alloc_pcpu_stats(struct pcpu_sw_netstats);
 	if (!dev->tstats)
