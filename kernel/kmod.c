@@ -213,6 +213,7 @@ static struct {
 	{ "ip6table_filter",	VE_IP_FILTER6	},
 	{ "ip6table_nat",	VE_IP_NAT	},
 	{ "ip6table_mangle",	VE_IP_MANGLE6	},
+	{ "ip6table_raw",	VE_IP_IPTABLES6	},
 
 	{ "xt_CONNMARK",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
 	{ "xt_CONNSECMARK",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
