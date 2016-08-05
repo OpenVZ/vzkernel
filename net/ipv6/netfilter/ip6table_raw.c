@@ -34,6 +34,9 @@ static int __net_init ip6table_raw_net_init(struct net *net)
 {
 	struct ip6t_replace *repl;
 
+	if (!net_ipt_permitted(net, VE_IP_IPTABLES6))
+		return 0;
+
 	repl = ip6t_alloc_initial_table(&packet_raw);
 	if (repl == NULL)
 		return -ENOMEM;
