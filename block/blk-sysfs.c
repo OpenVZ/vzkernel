@@ -7,9 +7,11 @@
 #include <linux/bio.h>
 #include <linux/blkdev.h>
 #include <linux/blktrace_api.h>
+#include <linux/blk-mq.h>
 
 #include "blk.h"
 #include "blk-cgroup.h"
+#include "blk-mq.h"
 
 struct queue_sysfs_entry {
 	struct attribute attr;
@@ -46,11 +48,10 @@ static ssize_t queue_requests_show(struct request_queue *q, char *page)
 static ssize_t
 queue_requests_store(struct request_queue *q, const char *page, size_t count)
 {
-	struct request_list *rl;
 	unsigned long nr;
-	int ret;
+	int ret, err;
 
-	if (!q->request_fn)
+	if (!q->request_fn && !q->mq_ops)
 		return -EINVAL;
 
 	ret = queue_var_store(&nr, page, count);
@@ -60,40 +61,14 @@ queue_requests_store(struct request_queue *q, const char *page, size_t count)
 	if (nr < BLKDEV_MIN_RQ)
 		nr = BLKDEV_MIN_RQ;
 
-	spin_lock_irq(q->queue_lock);
-	q->nr_requests = nr;
-	blk_queue_congestion_threshold(q);
+	if (q->request_fn)
+		err = blk_update_nr_requests(q, nr);
+	else
+		err = blk_mq_update_nr_requests(q, nr);
 
-	/* congestion isn't cgroup aware and follows root blkcg for now */
-	rl = &q->root_rl;
+	if (err)
+		return err;
 
-	if (rl->count[BLK_RW_SYNC] >= queue_congestion_on_threshold(q))
-		blk_set_queue_congested(q, BLK_RW_SYNC);
-	else if (rl->count[BLK_RW_SYNC] < queue_congestion_off_threshold(q))
-		blk_clear_queue_congested(q, BLK_RW_SYNC);
-
-	if (rl->count[BLK_RW_ASYNC] >= queue_congestion_on_threshold(q))
-		blk_set_queue_congested(q, BLK_RW_ASYNC);
-	else if (rl->count[BLK_RW_ASYNC] < queue_congestion_off_threshold(q))
-		blk_clear_queue_congested(q, BLK_RW_ASYNC);
-
-	blk_queue_for_each_rl(rl, q) {
-		if (rl->count[BLK_RW_SYNC] >= q->nr_requests) {
-			blk_set_rl_full(rl, BLK_RW_SYNC);
-		} else {
-			blk_clear_rl_full(rl, BLK_RW_SYNC);
-			wake_up(&rl->wait[BLK_RW_SYNC]);
-		}
-
-		if (rl->count[BLK_RW_ASYNC] >= q->nr_requests) {
-			blk_set_rl_full(rl, BLK_RW_ASYNC);
-		} else {
-			blk_clear_rl_full(rl, BLK_RW_ASYNC);
-			wake_up(&rl->wait[BLK_RW_ASYNC]);
-		}
-	}
-
-	spin_unlock_irq(q->queue_lock);
 	return ret;
 }
 
@@ -213,6 +188,32 @@ static ssize_t queue_max_hw_sectors_show(struct request_queue *q, char *page)
 	int max_hw_sectors_kb = queue_max_hw_sectors(q) >> 1;
 
 	return queue_var_show(max_hw_sectors_kb, (page));
+}
+
+static ssize_t
+queue_show_unpriv_sgio(struct request_queue *q, char *page)
+{
+	int bit;
+	bit = test_bit(QUEUE_FLAG_UNPRIV_SGIO, &q->queue_flags);
+	return queue_var_show(bit, page);
+}
+static ssize_t
+queue_store_unpriv_sgio(struct request_queue *q, const char *page, size_t count)
+{
+	unsigned long val;
+	ssize_t ret;
+
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	ret = queue_var_store(&val, page, count);
+	spin_lock_irq(q->queue_lock);
+	if (val)
+		queue_flag_set(QUEUE_FLAG_UNPRIV_SGIO, q);
+	else
+		queue_flag_clear(QUEUE_FLAG_UNPRIV_SGIO, q);
+	spin_unlock_irq(q->queue_lock);
+	return ret;
 }
 
 #define QUEUE_SYSFS_BIT_FNS(name, flag, neg)				\
@@ -405,6 +406,12 @@ static struct queue_sysfs_entry queue_nonrot_entry = {
 	.store = queue_store_nonrot,
 };
 
+static struct queue_sysfs_entry queue_unpriv_sgio_entry = {
+	.attr = {.name = "unpriv_sgio", .mode = S_IRUGO | S_IWUSR },
+	.show = queue_show_unpriv_sgio,
+	.store = queue_store_unpriv_sgio,
+};
+
 static struct queue_sysfs_entry queue_nomerges_entry = {
 	.attr = {.name = "nomerges", .mode = S_IRUGO | S_IWUSR },
 	.show = queue_nomerges_show,
@@ -447,6 +454,7 @@ static struct attribute *default_attrs[] = {
 	&queue_discard_max_entry.attr,
 	&queue_discard_zeroes_data_entry.attr,
 	&queue_write_same_max_entry.attr,
+	&queue_unpriv_sgio_entry.attr,
 	&queue_nonrot_entry.attr,
 	&queue_nomerges_entry.attr,
 	&queue_rq_affinity_entry.attr,
@@ -517,16 +525,14 @@ static void blk_free_queue_rcu(struct rcu_head *rcu_head)
  *     Currently, its primary task it to free all the &struct request
  *     structures that were allocated to the queue and the queue itself.
  *
- * Caveat:
- *     Hopefully the low level driver will have finished any
- *     outstanding requests first...
+ * Note:
+ *     The low level driver must have finished any outstanding requests first
+ *     via blk_cleanup_queue().
  **/
 static void blk_release_queue(struct kobject *kobj)
 {
 	struct request_queue *q =
 		container_of(kobj, struct request_queue, kobj);
-
-	blk_sync_queue(q);
 
 	blkcg_exit_queue(q);
 
@@ -541,6 +547,11 @@ static void blk_release_queue(struct kobject *kobj)
 
 	if (q->queue_tags)
 		__blk_queue_free_tags(q);
+
+	if (!q->mq_ops)
+		blk_free_flush_queue(q->fq);
+	else
+		blk_mq_release(q);
 
 	blk_trace_shutdown(q);
 
@@ -571,10 +582,20 @@ int blk_register_queue(struct gendisk *disk)
 		return -ENXIO;
 
 	/*
-	 * Initialization must be complete by now.  Finish the initial
-	 * bypass from queue allocation.
+	 * SCSI probing may synchronously create and destroy a lot of
+	 * request_queues for non-existent devices.  Shutting down a fully
+	 * functional queue takes measureable wallclock time as RCU grace
+	 * periods are involved.  To avoid excessive latency in these
+	 * cases, a request_queue starts out in a degraded mode which is
+	 * faster to shut down and is made fully functional here as
+	 * request_queues for non-existent devices never get registered.
 	 */
-	blk_queue_bypass_end(q);
+	if (!blk_queue_init_done(q)) {
+		queue_flag_set_unlocked(QUEUE_FLAG_INIT_DONE, q);
+		blk_queue_bypass_end(q);
+		if (q->mq_ops)
+			blk_mq_finish_init(q);
+	}
 
 	ret = blk_trace_init_sysfs(dev);
 	if (ret)
@@ -587,6 +608,9 @@ int blk_register_queue(struct gendisk *disk)
 	}
 
 	kobject_uevent(&q->kobj, KOBJ_ADD);
+
+	if (q->mq_ops)
+		blk_mq_register_disk(disk);
 
 	if (!q->request_fn)
 		return 0;
@@ -609,6 +633,9 @@ void blk_unregister_queue(struct gendisk *disk)
 
 	if (WARN_ON(!q))
 		return;
+
+	if (q->mq_ops)
+		blk_mq_unregister_disk(disk);
 
 	if (q->request_fn)
 		elv_unregister_queue(q);

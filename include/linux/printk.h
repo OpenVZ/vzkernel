@@ -9,6 +9,9 @@
 extern const char linux_banner[];
 extern const char linux_proc_banner[];
 
+extern char *log_buf_addr_get(void);
+extern u32 log_buf_len_get(void);
+
 static inline int printk_get_level(const char *buffer)
 {
 	if (buffer[0] == KERN_SOH_ASCII && buffer[1]) {
@@ -143,6 +146,8 @@ extern int dmesg_restrict;
 extern int kptr_restrict;
 
 extern void wake_up_klogd(void);
+
+typedef int(*printk_func_t)(const char *fmt, va_list args);
 
 void log_buf_kexec_setup(void);
 void __init setup_log_buf(int early);

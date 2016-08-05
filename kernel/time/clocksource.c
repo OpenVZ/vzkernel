@@ -31,81 +31,7 @@
 #include <linux/tick.h>
 #include <linux/kthread.h>
 
-void timecounter_init(struct timecounter *tc,
-		      const struct cyclecounter *cc,
-		      u64 start_tstamp)
-{
-	tc->cc = cc;
-	tc->cycle_last = cc->read(cc);
-	tc->nsec = start_tstamp;
-}
-EXPORT_SYMBOL_GPL(timecounter_init);
-
-/**
- * timecounter_read_delta - get nanoseconds since last call of this function
- * @tc:         Pointer to time counter
- *
- * When the underlying cycle counter runs over, this will be handled
- * correctly as long as it does not run over more than once between
- * calls.
- *
- * The first call to this function for a new time counter initializes
- * the time tracking and returns an undefined result.
- */
-static u64 timecounter_read_delta(struct timecounter *tc)
-{
-	cycle_t cycle_now, cycle_delta;
-	u64 ns_offset;
-
-	/* read cycle counter: */
-	cycle_now = tc->cc->read(tc->cc);
-
-	/* calculate the delta since the last timecounter_read_delta(): */
-	cycle_delta = (cycle_now - tc->cycle_last) & tc->cc->mask;
-
-	/* convert to nanoseconds: */
-	ns_offset = cyclecounter_cyc2ns(tc->cc, cycle_delta);
-
-	/* update time stamp of timecounter_read_delta() call: */
-	tc->cycle_last = cycle_now;
-
-	return ns_offset;
-}
-
-u64 timecounter_read(struct timecounter *tc)
-{
-	u64 nsec;
-
-	/* increment time by nanoseconds since last call */
-	nsec = timecounter_read_delta(tc);
-	nsec += tc->nsec;
-	tc->nsec = nsec;
-
-	return nsec;
-}
-EXPORT_SYMBOL_GPL(timecounter_read);
-
-u64 timecounter_cyc2time(struct timecounter *tc,
-			 cycle_t cycle_tstamp)
-{
-	u64 cycle_delta = (cycle_tstamp - tc->cycle_last) & tc->cc->mask;
-	u64 nsec;
-
-	/*
-	 * Instead of always treating cycle_tstamp as more recent
-	 * than tc->cycle_last, detect when it is too far in the
-	 * future and treat it as old time stamp instead.
-	 */
-	if (cycle_delta > tc->cc->mask / 2) {
-		cycle_delta = (tc->cycle_last - cycle_tstamp) & tc->cc->mask;
-		nsec = tc->nsec - cyclecounter_cyc2ns(tc->cc, cycle_delta);
-	} else {
-		nsec = cyclecounter_cyc2ns(tc->cc, cycle_delta) + tc->nsec;
-	}
-
-	return nsec;
-}
-EXPORT_SYMBOL_GPL(timecounter_cyc2time);
+#include "timekeeping_internal.h"
 
 /**
  * clocks_calc_mult_shift - calculate mult/shift factors for scaled math of clocks
@@ -246,7 +172,7 @@ void clocksource_mark_unstable(struct clocksource *cs)
 static void clocksource_watchdog(unsigned long data)
 {
 	struct clocksource *cs;
-	cycle_t csnow, wdnow;
+	cycle_t csnow, wdnow, delta;
 	int64_t wd_nsec, cs_nsec;
 	int next_cpu, reset_pending;
 
@@ -279,11 +205,12 @@ static void clocksource_watchdog(unsigned long data)
 			continue;
 		}
 
-		wd_nsec = clocksource_cyc2ns((wdnow - cs->wd_last) & watchdog->mask,
-					     watchdog->mult, watchdog->shift);
+		delta = clocksource_delta(wdnow, cs->wd_last, watchdog->mask);
+		wd_nsec = clocksource_cyc2ns(delta, watchdog->mult,
+					     watchdog->shift);
 
-		cs_nsec = clocksource_cyc2ns((csnow - cs->cs_last) &
-					     cs->mask, cs->mult, cs->shift);
+		delta = clocksource_delta(csnow, cs->cs_last, cs->mask);
+		cs_nsec = clocksource_cyc2ns(delta, cs->mult, cs->shift);
 		cs->cs_last = csnow;
 		cs->wd_last = wdnow;
 

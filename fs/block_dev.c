@@ -50,25 +50,22 @@ inline struct block_device *I_BDEV(struct inode *inode)
 EXPORT_SYMBOL(I_BDEV);
 
 /*
- * Move the inode from its current bdi to a new bdi. If the inode is dirty we
- * need to move it onto the dirty list of @dst so that the inode is always on
- * the right list.
+ * Move the inode from its current bdi to a new bdi.  Make sure the inode
+ * is clean before moving so that it doesn't linger on the old bdi.
  */
 static void bdev_inode_switch_bdi(struct inode *inode,
 			struct backing_dev_info *dst)
 {
-	struct backing_dev_info *old = inode->i_data.backing_dev_info;
-
-	if (unlikely(dst == old))		/* deadlock avoidance */
-		return;
-	bdi_lock_two(&old->wb, &dst->wb);
-	spin_lock(&inode->i_lock);
-	inode->i_data.backing_dev_info = dst;
-	if (inode->i_state & I_DIRTY)
-		list_move(&inode->i_wb_list, &dst->wb.b_dirty);
-	spin_unlock(&inode->i_lock);
-	spin_unlock(&old->wb.list_lock);
-	spin_unlock(&dst->wb.list_lock);
+	while (true) {
+		spin_lock(&inode->i_lock);
+		if (!(inode->i_state & I_DIRTY)) {
+			inode->i_data.backing_dev_info = dst;
+			spin_unlock(&inode->i_lock);
+			return;
+		}
+		spin_unlock(&inode->i_lock);
+		WARN_ON_ONCE(write_inode_now(inode, true));
+	}
 }
 
 /* Kill _all_ buffers and pagecache , dirty or not.. */
@@ -76,7 +73,7 @@ void kill_bdev(struct block_device *bdev)
 {
 	struct address_space *mapping = bdev->bd_inode->i_mapping;
 
-	if (mapping->nrpages == 0)
+	if (mapping->nrpages == 0 && mapping->nrshadows == 0)
 		return;
 
 	invalidate_bh_lrus();
@@ -165,7 +162,8 @@ blkdev_direct_IO(int rw, struct kiocb *iocb, const struct iovec *iov,
 	struct inode *inode = file->f_mapping->host;
 
 	return __blockdev_direct_IO(rw, iocb, inode, I_BDEV(inode), iov, offset,
-				    nr_segs, blkdev_get_block, NULL, NULL, 0);
+				    nr_segs, blkdev_get_block, NULL, NULL,
+				    DIO_IGNORE_TRUNCATE);
 }
 
 int __sync_blockdev(struct block_device *bdev, int wait)
@@ -294,6 +292,12 @@ static int blkdev_writepage(struct page *page, struct writeback_control *wbc)
 static int blkdev_readpage(struct file * file, struct page * page)
 {
 	return block_read_full_page(page, blkdev_get_block);
+}
+
+static int blkdev_readpages(struct file *file, struct address_space *mapping,
+			struct list_head *pages, unsigned nr_pages)
+{
+	return mpage_readpages(mapping, pages, nr_pages, blkdev_get_block);
 }
 
 static int blkdev_write_begin(struct file *file, struct address_space *mapping,
@@ -433,7 +437,7 @@ static void bdev_evict_inode(struct inode *inode)
 {
 	struct block_device *bdev = &BDEV_I(inode)->bdev;
 	struct list_head *p;
-	truncate_inode_pages(&inode->i_data, 0);
+	truncate_inode_pages_final(&inode->i_data);
 	invalidate_inode_buffers(inode); /* is it needed here? */
 	clear_inode(inode);
 	spin_lock(&bdev_lock);
@@ -606,7 +610,7 @@ static struct block_device *bd_acquire(struct inode *inode)
 	return bdev;
 }
 
-static inline int sb_is_blkdev_sb(struct super_block *sb)
+int sb_is_blkdev_sb(struct super_block *sb)
 {
 	return sb == blockdev_superblock;
 }
@@ -1123,8 +1127,6 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 			if (!ret) {
 				bd_set_size(bdev,(loff_t)get_capacity(disk)<<9);
 				bdi = blk_get_backing_dev_info(bdev);
-				if (bdi == NULL)
-					bdi = &default_backing_dev_info;
 				bdev_inode_switch_bdi(bdev->bd_inode, bdi);
 			}
 
@@ -1545,8 +1547,8 @@ ssize_t blkdev_aio_write(struct kiocb *iocb, const struct iovec *iov,
 }
 EXPORT_SYMBOL_GPL(blkdev_aio_write);
 
-static ssize_t blkdev_aio_read(struct kiocb *iocb, const struct iovec *iov,
-			 unsigned long nr_segs, loff_t pos)
+ssize_t blkdev_aio_read(struct kiocb *iocb, const struct iovec *iov,
+			unsigned long nr_segs, loff_t pos)
 {
 	struct file *file = iocb->ki_filp;
 	struct inode *bd_inode = file->f_mapping->host;
@@ -1560,6 +1562,7 @@ static ssize_t blkdev_aio_read(struct kiocb *iocb, const struct iovec *iov,
 		nr_segs = iov_shorten((struct iovec *)iov, nr_segs, size);
 	return generic_file_aio_read(iocb, iov, nr_segs, pos);
 }
+EXPORT_SYMBOL_GPL(blkdev_aio_read);
 
 /*
  * Try to release a page associated with block device when the system
@@ -1577,12 +1580,14 @@ static int blkdev_releasepage(struct page *page, gfp_t wait)
 
 static const struct address_space_operations def_blk_aops = {
 	.readpage	= blkdev_readpage,
+	.readpages	= blkdev_readpages,
 	.writepage	= blkdev_writepage,
 	.write_begin	= blkdev_write_begin,
 	.write_end	= blkdev_write_end,
 	.writepages	= generic_writepages,
 	.releasepage	= blkdev_releasepage,
 	.direct_IO	= blkdev_direct_IO,
+	.is_dirty_writeback = buffer_check_dirty_writeback,
 };
 
 const struct file_operations def_blk_fops = {

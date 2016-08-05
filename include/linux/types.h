@@ -142,6 +142,7 @@ typedef unsigned long blkcnt_t;
 #define pgoff_t unsigned long
 #endif
 
+/* A dma_addr_t can hold any valid DMA or bus address for the platform */
 #ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
 typedef u64 dma_addr_t;
 #else
@@ -211,6 +212,9 @@ struct callback_head {
 	void (*func)(struct callback_head *head);
 };
 #define rcu_head callback_head
+
+/* clocksource cycle base type */
+typedef u64 cycle_t;
 
 #endif /*  __ASSEMBLY__ */
 #endif /* _LINUX_TYPES_H */

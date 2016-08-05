@@ -25,10 +25,13 @@
 #include <linux/fs.h>
 #include <linux/slab.h>
 #include <linux/dma-buf.h>
+#include <linux/fence.h>
 #include <linux/anon_inodes.h>
 #include <linux/export.h>
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
+#include <linux/poll.h>
+#include <linux/reservation.h>
 
 static inline int is_dma_buf_file(struct file *);
 
@@ -50,11 +53,24 @@ static int dma_buf_release(struct inode *inode, struct file *file)
 
 	BUG_ON(dmabuf->vmapping_counter);
 
+	/*
+	 * Any fences that a dma-buf poll can wait on should be signaled
+	 * before releasing dma-buf. This is the responsibility of each
+	 * driver that uses the reservation objects.
+	 *
+	 * If you hit this BUG() it means someone dropped their ref to the
+	 * dma-buf while still having pending operation to the buffer.
+	 */
+	BUG_ON(dmabuf->cb_shared.active || dmabuf->cb_excl.active);
+
 	dmabuf->ops->release(dmabuf);
 
 	mutex_lock(&db_list.lock);
 	list_del(&dmabuf->list_node);
 	mutex_unlock(&db_list.lock);
+
+	if (dmabuf->resv == (struct reservation_object *)&dmabuf[1])
+		reservation_object_fini(dmabuf->resv);
 
 	kfree(dmabuf);
 	return 0;
@@ -77,9 +93,167 @@ static int dma_buf_mmap_internal(struct file *file, struct vm_area_struct *vma)
 	return dmabuf->ops->mmap(dmabuf, vma);
 }
 
+static loff_t dma_buf_llseek(struct file *file, loff_t offset, int whence)
+{
+	struct dma_buf *dmabuf;
+	loff_t base;
+
+	if (!is_dma_buf_file(file))
+		return -EBADF;
+
+	dmabuf = file->private_data;
+
+	/* only support discovering the end of the buffer,
+	   but also allow SEEK_SET to maintain the idiomatic
+	   SEEK_END(0), SEEK_CUR(0) pattern */
+	if (whence == SEEK_END)
+		base = dmabuf->size;
+	else if (whence == SEEK_SET)
+		base = 0;
+	else
+		return -EINVAL;
+
+	if (offset != 0)
+		return -EINVAL;
+
+	return base + offset;
+}
+
+static void dma_buf_poll_cb(struct fence *fence, struct fence_cb *cb)
+{
+	struct dma_buf_poll_cb_t *dcb = (struct dma_buf_poll_cb_t *)cb;
+	unsigned long flags;
+
+	spin_lock_irqsave(&dcb->poll->lock, flags);
+	wake_up_locked_poll(dcb->poll, dcb->active);
+	dcb->active = 0;
+	spin_unlock_irqrestore(&dcb->poll->lock, flags);
+}
+
+static unsigned int dma_buf_poll(struct file *file, poll_table *poll)
+{
+	struct dma_buf *dmabuf;
+	struct reservation_object *resv;
+	struct reservation_object_list *fobj;
+	struct fence *fence_excl;
+	unsigned long events;
+	unsigned shared_count, seq;
+
+	dmabuf = file->private_data;
+	if (!dmabuf || !dmabuf->resv)
+		return POLLERR;
+
+	resv = dmabuf->resv;
+
+	poll_wait(file, &dmabuf->poll, poll);
+
+	events = poll_requested_events(poll) & (POLLIN | POLLOUT);
+	if (!events)
+		return 0;
+
+retry:
+	seq = read_seqcount_begin(&resv->seq);
+	rcu_read_lock();
+
+	fobj = rcu_dereference(resv->fence);
+	if (fobj)
+		shared_count = fobj->shared_count;
+	else
+		shared_count = 0;
+	fence_excl = rcu_dereference(resv->fence_excl);
+	if (read_seqcount_retry(&resv->seq, seq)) {
+		rcu_read_unlock();
+		goto retry;
+	}
+
+	if (fence_excl && (!(events & POLLOUT) || shared_count == 0)) {
+		struct dma_buf_poll_cb_t *dcb = &dmabuf->cb_excl;
+		unsigned long pevents = POLLIN;
+
+		if (shared_count == 0)
+			pevents |= POLLOUT;
+
+		spin_lock_irq(&dmabuf->poll.lock);
+		if (dcb->active) {
+			dcb->active |= pevents;
+			events &= ~pevents;
+		} else
+			dcb->active = pevents;
+		spin_unlock_irq(&dmabuf->poll.lock);
+
+		if (events & pevents) {
+			if (!fence_get_rcu(fence_excl)) {
+				/* force a recheck */
+				events &= ~pevents;
+				dma_buf_poll_cb(NULL, &dcb->cb);
+			} else if (!fence_add_callback(fence_excl, &dcb->cb,
+						       dma_buf_poll_cb)) {
+				events &= ~pevents;
+				fence_put(fence_excl);
+			} else {
+				/*
+				 * No callback queued, wake up any additional
+				 * waiters.
+				 */
+				fence_put(fence_excl);
+				dma_buf_poll_cb(NULL, &dcb->cb);
+			}
+		}
+	}
+
+	if ((events & POLLOUT) && shared_count > 0) {
+		struct dma_buf_poll_cb_t *dcb = &dmabuf->cb_shared;
+		int i;
+
+		/* Only queue a new callback if no event has fired yet */
+		spin_lock_irq(&dmabuf->poll.lock);
+		if (dcb->active)
+			events &= ~POLLOUT;
+		else
+			dcb->active = POLLOUT;
+		spin_unlock_irq(&dmabuf->poll.lock);
+
+		if (!(events & POLLOUT))
+			goto out;
+
+		for (i = 0; i < shared_count; ++i) {
+			struct fence *fence = rcu_dereference(fobj->shared[i]);
+
+			if (!fence_get_rcu(fence)) {
+				/*
+				 * fence refcount dropped to zero, this means
+				 * that fobj has been freed
+				 *
+				 * call dma_buf_poll_cb and force a recheck!
+				 */
+				events &= ~POLLOUT;
+				dma_buf_poll_cb(NULL, &dcb->cb);
+				break;
+			}
+			if (!fence_add_callback(fence, &dcb->cb,
+						dma_buf_poll_cb)) {
+				fence_put(fence);
+				events &= ~POLLOUT;
+				break;
+			}
+			fence_put(fence);
+		}
+
+		/* No callback queued, wake up any additional waiters. */
+		if (i == shared_count)
+			dma_buf_poll_cb(NULL, &dcb->cb);
+	}
+
+out:
+	rcu_read_unlock();
+	return events;
+}
+
 static const struct file_operations dma_buf_fops = {
 	.release	= dma_buf_release,
 	.mmap		= dma_buf_mmap_internal,
+	.llseek		= dma_buf_llseek,
+	.poll		= dma_buf_poll,
 };
 
 /*
@@ -91,49 +265,69 @@ static inline int is_dma_buf_file(struct file *file)
 }
 
 /**
- * dma_buf_export_named - Creates a new dma_buf, and associates an anon file
+ * dma_buf_export - Creates a new dma_buf, and associates an anon file
  * with this buffer, so it can be exported.
  * Also connect the allocator specific data and ops to the buffer.
  * Additionally, provide a name string for exporter; useful in debugging.
  *
- * @priv:	[in]	Attach private data of allocator to this buffer
- * @ops:	[in]	Attach allocator-defined dma buf ops to the new buffer.
- * @size:	[in]	Size of the buffer
- * @flags:	[in]	mode flags for the file.
- * @exp_name:	[in]	name of the exporting module - useful for debugging.
+ * @exp_info:	[in]	holds all the export related information provided
+ *			by the exporter. see struct dma_buf_export_info
+ *			for further details.
  *
  * Returns, on success, a newly created dma_buf object, which wraps the
  * supplied private data and operations for dma_buf_ops. On either missing
  * ops, or error in allocating struct dma_buf, will return negative error.
  *
  */
-struct dma_buf *dma_buf_export_named(void *priv, const struct dma_buf_ops *ops,
-				size_t size, int flags, const char *exp_name)
+struct dma_buf *dma_buf_export(const struct dma_buf_export_info *exp_info)
 {
 	struct dma_buf *dmabuf;
+	struct reservation_object *resv = exp_info->resv;
 	struct file *file;
+	size_t alloc_size = sizeof(struct dma_buf);
+	if (!exp_info->resv)
+		alloc_size += sizeof(struct reservation_object);
+	else
+		/* prevent &dma_buf[1] == dma_buf->resv */
+		alloc_size += 1;
 
-	if (WARN_ON(!priv || !ops
-			  || !ops->map_dma_buf
-			  || !ops->unmap_dma_buf
-			  || !ops->release
-			  || !ops->kmap_atomic
-			  || !ops->kmap
-			  || !ops->mmap)) {
+	if (WARN_ON(!exp_info->priv
+			  || !exp_info->ops
+			  || !exp_info->ops->map_dma_buf
+			  || !exp_info->ops->unmap_dma_buf
+			  || !exp_info->ops->release
+			  || !exp_info->ops->kmap_atomic
+			  || !exp_info->ops->kmap
+			  || !exp_info->ops->mmap)) {
 		return ERR_PTR(-EINVAL);
 	}
 
-	dmabuf = kzalloc(sizeof(struct dma_buf), GFP_KERNEL);
+	dmabuf = kzalloc(alloc_size, GFP_KERNEL);
 	if (dmabuf == NULL)
 		return ERR_PTR(-ENOMEM);
 
-	dmabuf->priv = priv;
-	dmabuf->ops = ops;
-	dmabuf->size = size;
-	dmabuf->exp_name = exp_name;
+	dmabuf->priv = exp_info->priv;
+	dmabuf->ops = exp_info->ops;
+	dmabuf->size = exp_info->size;
+	dmabuf->exp_name = exp_info->exp_name;
+	init_waitqueue_head(&dmabuf->poll);
+	dmabuf->cb_excl.poll = dmabuf->cb_shared.poll = &dmabuf->poll;
+	dmabuf->cb_excl.active = dmabuf->cb_shared.active = 0;
 
-	file = anon_inode_getfile("dmabuf", &dma_buf_fops, dmabuf, flags);
+	if (!resv) {
+		resv = (struct reservation_object *)&dmabuf[1];
+		reservation_object_init(resv);
+	}
+	dmabuf->resv = resv;
 
+	file = anon_inode_getfile("dmabuf", &dma_buf_fops, dmabuf,
+					exp_info->flags);
+	if (IS_ERR(file)) {
+		kfree(dmabuf);
+		return ERR_CAST(file);
+	}
+
+	file->f_mode |= FMODE_LSEEK;
 	dmabuf->file = file;
 
 	mutex_init(&dmabuf->lock);
@@ -145,8 +339,7 @@ struct dma_buf *dma_buf_export_named(void *priv, const struct dma_buf_ops *ops,
 
 	return dmabuf;
 }
-EXPORT_SYMBOL_GPL(dma_buf_export_named);
-
+EXPORT_SYMBOL_GPL(dma_buf_export);
 
 /**
  * dma_buf_fd - returns a file descriptor for the given dma_buf
@@ -219,9 +412,8 @@ EXPORT_SYMBOL_GPL(dma_buf_put);
  * @dmabuf:	[in]	buffer to attach device to.
  * @dev:	[in]	device to be attached.
  *
- * Returns struct dma_buf_attachment * for this attachment; may return negative
- * error codes.
- *
+ * Returns struct dma_buf_attachment * for this attachment; returns ERR_PTR on
+ * error.
  */
 struct dma_buf_attachment *dma_buf_attach(struct dma_buf *dmabuf,
 					  struct device *dev)
@@ -287,9 +479,8 @@ EXPORT_SYMBOL_GPL(dma_buf_detach);
  * @attach:	[in]	attachment whose scatterlist is to be returned
  * @direction:	[in]	direction of DMA transfer
  *
- * Returns sg_table containing the scatterlist to be returned; may return NULL
- * or ERR_PTR.
- *
+ * Returns sg_table containing the scatterlist to be returned; returns ERR_PTR
+ * on error.
  */
 struct sg_table *dma_buf_map_attachment(struct dma_buf_attachment *attach,
 					enum dma_data_direction direction)
@@ -302,6 +493,8 @@ struct sg_table *dma_buf_map_attachment(struct dma_buf_attachment *attach,
 		return ERR_PTR(-EINVAL);
 
 	sg_table = attach->dmabuf->ops->map_dma_buf(attach, direction);
+	if (!sg_table)
+		sg_table = ERR_PTR(-ENOMEM);
 
 	return sg_table;
 }
@@ -459,7 +652,7 @@ EXPORT_SYMBOL_GPL(dma_buf_kunmap);
  * 			dma-buf buffer.
  *
  * This function adjusts the passed in vma so that it points at the file of the
- * dma_buf operation. It alsog adjusts the starting pgoff and does bounds
+ * dma_buf operation. It also adjusts the starting pgoff and does bounds
  * checking on the size of the vma. Then it calls the exporters mmap function to
  * set up the mapping.
  *
@@ -512,6 +705,8 @@ EXPORT_SYMBOL_GPL(dma_buf_mmap);
  * These calls are optional in drivers. The intended use for them
  * is for mapping objects linear in kernel space for high use objects.
  * Please attempt to use kmap/kunmap before thinking about these interfaces.
+ *
+ * Returns NULL on error.
  */
 void *dma_buf_vmap(struct dma_buf *dmabuf)
 {
@@ -534,7 +729,9 @@ void *dma_buf_vmap(struct dma_buf *dmabuf)
 	BUG_ON(dmabuf->vmap_ptr);
 
 	ptr = dmabuf->ops->vmap(dmabuf);
-	if (IS_ERR_OR_NULL(ptr))
+	if (WARN_ON_ONCE(IS_ERR(ptr)))
+		ptr = NULL;
+	if (!ptr)
 		goto out_unlock;
 
 	dmabuf->vmap_ptr = ptr;
@@ -584,36 +781,35 @@ static int dma_buf_describe(struct seq_file *s)
 	if (ret)
 		return ret;
 
-	seq_printf(s, "\nDma-buf Objects:\n");
-	seq_printf(s, "\texp_name\tsize\tflags\tmode\tcount\n");
+	seq_puts(s, "\nDma-buf Objects:\n");
+	seq_puts(s, "size\tflags\tmode\tcount\texp_name\n");
 
 	list_for_each_entry(buf_obj, &db_list.head, list_node) {
 		ret = mutex_lock_interruptible(&buf_obj->lock);
 
 		if (ret) {
-			seq_printf(s,
-				  "\tERROR locking buffer object: skipping\n");
+			seq_puts(s,
+				 "\tERROR locking buffer object: skipping\n");
 			continue;
 		}
 
-		seq_printf(s, "\t");
-
-		seq_printf(s, "\t%s\t%08zu\t%08x\t%08x\t%08ld\n",
-				buf_obj->exp_name, buf_obj->size,
+		seq_printf(s, "%08zu\t%08x\t%08x\t%08ld\t%s\n",
+				buf_obj->size,
 				buf_obj->file->f_flags, buf_obj->file->f_mode,
-				(long)(buf_obj->file->f_count.counter));
+				file_count(buf_obj->file),
+				buf_obj->exp_name);
 
-		seq_printf(s, "\t\tAttached Devices:\n");
+		seq_puts(s, "\tAttached Devices:\n");
 		attach_count = 0;
 
 		list_for_each_entry(attach_obj, &buf_obj->attachments, node) {
-			seq_printf(s, "\t\t");
+			seq_puts(s, "\t");
 
-			seq_printf(s, "%s\n", attach_obj->dev->init_name);
+			seq_printf(s, "%s\n", dev_name(attach_obj->dev));
 			attach_count++;
 		}
 
-		seq_printf(s, "\n\t\tTotal %d devices attached\n",
+		seq_printf(s, "Total %d devices attached\n\n",
 				attach_count);
 
 		count++;
@@ -680,10 +876,7 @@ int dma_buf_debugfs_create_file(const char *name,
 	d = debugfs_create_file(name, S_IRUGO, dma_buf_debugfs_dir,
 			write, &dma_buf_debug_fops);
 
-	if (IS_ERR(d))
-		return PTR_ERR(d);
-
-	return 0;
+	return PTR_ERR_OR_ZERO(d);
 }
 #else
 static inline int dma_buf_init_debugfs(void)

@@ -1,5 +1,5 @@
 /*
- * Linux network driver for Brocade Converged Network Adapter.
+ * Linux network driver for QLogic BR-series Converged Network Adapter.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License (GPL) Version 2 as
@@ -11,9 +11,10 @@
  * General Public License for more details.
  */
 /*
- * Copyright (c) 2005-2010 Brocade Communications Systems, Inc.
+ * Copyright (c) 2005-2014 Brocade Communications Systems, Inc.
+ * Copyright (c) 2014-2015 QLogic Corporation
  * All rights reserved
- * www.brocade.com
+ * www.qlogic.com
  */
 
 #include "bfa_ioc.h"
@@ -23,7 +24,7 @@
 #include "bfa_defs.h"
 
 #define bfa_ioc_ct_sync_pos(__ioc)	\
-		((u32) (1 << bfa_ioc_pcifn(__ioc)))
+		((u32)BIT(bfa_ioc_pcifn(__ioc)))
 #define BFA_IOC_SYNC_REQD_SH		16
 #define bfa_ioc_ct_get_sync_ackd(__val) (__val & 0x0000ffff)
 #define bfa_ioc_ct_clear_sync_ackd(__val) (__val & 0xffff0000)
@@ -48,6 +49,12 @@ static void bfa_ioc_ct_sync_join(struct bfa_ioc *ioc);
 static void bfa_ioc_ct_sync_leave(struct bfa_ioc *ioc);
 static void bfa_ioc_ct_sync_ack(struct bfa_ioc *ioc);
 static bool bfa_ioc_ct_sync_complete(struct bfa_ioc *ioc);
+static void bfa_ioc_ct_set_cur_ioc_fwstate(
+			struct bfa_ioc *ioc, enum bfi_ioc_state fwstate);
+static enum bfi_ioc_state bfa_ioc_ct_get_cur_ioc_fwstate(struct bfa_ioc *ioc);
+static void bfa_ioc_ct_set_alt_ioc_fwstate(
+			struct bfa_ioc *ioc, enum bfi_ioc_state fwstate);
+static enum bfi_ioc_state bfa_ioc_ct_get_alt_ioc_fwstate(struct bfa_ioc *ioc);
 static enum bfa_status bfa_ioc_ct_pll_init(void __iomem *rb,
 				enum bfi_asic_mode asic_mode);
 static enum bfa_status bfa_ioc_ct2_pll_init(void __iomem *rb,
@@ -68,6 +75,10 @@ static const struct bfa_ioc_hwif nw_hwif_ct = {
 	.ioc_sync_leave	     = bfa_ioc_ct_sync_leave,
 	.ioc_sync_ack	     = bfa_ioc_ct_sync_ack,
 	.ioc_sync_complete   = bfa_ioc_ct_sync_complete,
+	.ioc_set_fwstate     = bfa_ioc_ct_set_cur_ioc_fwstate,
+	.ioc_get_fwstate     = bfa_ioc_ct_get_cur_ioc_fwstate,
+	.ioc_set_alt_fwstate     = bfa_ioc_ct_set_alt_ioc_fwstate,
+	.ioc_get_alt_fwstate     = bfa_ioc_ct_get_alt_ioc_fwstate,
 };
 
 static const struct bfa_ioc_hwif nw_hwif_ct2 = {
@@ -85,6 +96,10 @@ static const struct bfa_ioc_hwif nw_hwif_ct2 = {
 	.ioc_sync_leave	     = bfa_ioc_ct_sync_leave,
 	.ioc_sync_ack	     = bfa_ioc_ct_sync_ack,
 	.ioc_sync_complete   = bfa_ioc_ct_sync_complete,
+	.ioc_set_fwstate     = bfa_ioc_ct_set_cur_ioc_fwstate,
+	.ioc_get_fwstate     = bfa_ioc_ct_get_cur_ioc_fwstate,
+	.ioc_set_alt_fwstate     = bfa_ioc_ct_set_alt_ioc_fwstate,
+	.ioc_get_alt_fwstate     = bfa_ioc_ct_get_alt_ioc_fwstate,
 };
 
 /* Called from bfa_ioc_attach() to map asic specific calls. */
@@ -565,6 +580,32 @@ bfa_ioc_ct_sync_complete(struct bfa_ioc *ioc)
 	return false;
 }
 
+static void
+bfa_ioc_ct_set_cur_ioc_fwstate(struct bfa_ioc *ioc,
+			       enum bfi_ioc_state fwstate)
+{
+	writel(fwstate, ioc->ioc_regs.ioc_fwstate);
+}
+
+static enum bfi_ioc_state
+bfa_ioc_ct_get_cur_ioc_fwstate(struct bfa_ioc *ioc)
+{
+	return (enum bfi_ioc_state)readl(ioc->ioc_regs.ioc_fwstate);
+}
+
+static void
+bfa_ioc_ct_set_alt_ioc_fwstate(struct bfa_ioc *ioc,
+			       enum bfi_ioc_state fwstate)
+{
+	writel(fwstate, ioc->ioc_regs.alt_ioc_fwstate);
+}
+
+static enum bfi_ioc_state
+bfa_ioc_ct_get_alt_ioc_fwstate(struct bfa_ioc *ioc)
+{
+	return (enum bfi_ioc_state)readl(ioc->ioc_regs.alt_ioc_fwstate);
+}
+
 static enum bfa_status
 bfa_ioc_ct_pll_init(void __iomem *rb, enum bfi_asic_mode asic_mode)
 {
@@ -658,7 +699,7 @@ bfa_ioc_ct2_sclk_init(void __iomem *rb)
 
 	/*
 	 * Ignore mode and program for the max clock (which is FC16)
-	 * Firmware/NFC will do the PLL init appropiately
+	 * Firmware/NFC will do the PLL init appropriately
 	 */
 	r32 = readl((rb + CT2_APP_PLL_SCLK_CTL_REG));
 	r32 &= ~(__APP_PLL_SCLK_REFCLK_SEL | __APP_PLL_SCLK_CLK_DIV2);

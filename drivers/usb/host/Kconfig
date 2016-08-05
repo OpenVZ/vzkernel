@@ -17,7 +17,6 @@ config USB_C67X00_HCD
 
 config USB_XHCI_HCD
 	tristate "xHCI HCD (USB 3.0) support"
-	depends on USB_ARCH_HAS_XHCI
 	---help---
 	  The eXtensible Host Controller Interface (xHCI) is standard for USB 3.0
 	  "SuperSpeed" host controller hardware.
@@ -27,23 +26,18 @@ config USB_XHCI_HCD
 
 if USB_XHCI_HCD
 
+config USB_XHCI_PCI
+       tristate
+       depends on PCI
+       default y
+
 config USB_XHCI_PLATFORM
 	tristate
-
-config USB_XHCI_HCD_DEBUGGING
-	bool "Debugging for the xHCI host controller"
-	---help---
-	  Say 'Y' to turn on debugging for the xHCI host controller driver.
-	  This will spew debugging output, even in interrupt context.
-	  This should only be used for debugging xHCI driver bugs.
-
-	  If unsure, say N.
 
 endif # USB_XHCI_HCD
 
 config USB_EHCI_HCD
 	tristate "EHCI HCD (USB 2.0) support"
-	depends on USB_ARCH_HAS_EHCI
 	---help---
 	  The Enhanced Host Controller Interface (EHCI) is standard for USB 2.0
 	  "high speed" (480 Mbit/sec, 60 Mbyte/sec) host controller hardware.
@@ -65,7 +59,7 @@ config USB_EHCI_HCD
 
 config USB_EHCI_ROOT_HUB_TT
 	bool "Root Hub Transaction Translators"
-	depends on USB_EHCI_HCD || USB_CHIPIDEA_HOST
+	depends on USB_EHCI_HCD
 	---help---
 	  Some EHCI chips have vendor-specific extensions to integrate
 	  transaction translators, so that no OHCI or UHCI companion
@@ -77,7 +71,7 @@ config USB_EHCI_ROOT_HUB_TT
 
 config USB_EHCI_TT_NEWSCHED
 	bool "Improved Transaction Translator scheduling"
-	depends on USB_EHCI_HCD || USB_CHIPIDEA_HOST
+	depends on USB_EHCI_HCD
 	default y
 	---help---
 	  This changes the periodic scheduling code to fill more of the low
@@ -114,12 +108,6 @@ config USB_EHCI_HCD_PMC_MSP
 	---help---
 		Enables support for the onchip USB controller on the PMC_MSP7100 Family SoC's.
 		If unsure, say N.
-
-config USB_EHCI_BIG_ENDIAN_MMIO
-	bool
-
-config USB_EHCI_BIG_ENDIAN_DESC
-	bool
 
 config XPS_USB_HCD_XILINX
 	bool "Use Xilinx usb host EHCI controller core"
@@ -210,7 +198,7 @@ config USB_EHCI_TEGRA
 
 config USB_EHCI_HCD_PPC_OF
 	bool "EHCI support for PPC USB controller on OF platform bus"
-	depends on PPC_OF
+	depends on PPC
 	default y
 	---help---
 	  Enables support for the USB controller present on the PowerPC
@@ -346,8 +334,7 @@ config USB_ISP1362_HCD
 	  module will be called isp1362-hcd.
 
 config USB_OHCI_HCD
-	tristate "OHCI HCD support"
-	depends on USB_ARCH_HAS_OHCI
+	tristate "OHCI HCD (USB 1.1) support"
 	select ISP1301_OMAP if MACH_OMAP_H2 || MACH_OMAP_H3
 	depends on USB_ISP1301 || !ARCH_LPC32XX
 	---help---
@@ -394,7 +381,7 @@ config USB_OHCI_ATH79
 
 config USB_OHCI_HCD_PPC_OF_BE
 	bool "OHCI support for OF platform bus (big endian)"
-	depends on PPC_OF
+	depends on PPC
 	select USB_OHCI_BIG_ENDIAN_DESC
 	select USB_OHCI_BIG_ENDIAN_MMIO
 	---help---
@@ -403,7 +390,7 @@ config USB_OHCI_HCD_PPC_OF_BE
 
 config USB_OHCI_HCD_PPC_OF_LE
 	bool "OHCI support for OF platform bus (little endian)"
-	depends on PPC_OF
+	depends on PPC
 	select USB_OHCI_LITTLE_ENDIAN
 	---help---
 	  Enables support for little-endian USB controllers present on the
@@ -411,12 +398,12 @@ config USB_OHCI_HCD_PPC_OF_LE
 
 config USB_OHCI_HCD_PPC_OF
 	bool
-	depends on PPC_OF
+	depends on PPC
 	default USB_OHCI_HCD_PPC_OF_BE || USB_OHCI_HCD_PPC_OF_LE
 
 config USB_OHCI_HCD_PCI
-	bool "OHCI support for PCI-bus USB controllers"
-	depends on PCI && (STB03xxx || PPC_MPC52xx || USB_OHCI_HCD_PPC_OF)
+	tristate "OHCI support for PCI-bus USB controllers"
+	depends on PCI
 	default y
 	select USB_OHCI_LITTLE_ENDIAN
 	---help---
@@ -470,7 +457,7 @@ config USB_CNS3XXX_OHCI
 	  It is needed for low-speed USB 1.0 device support.
 
 config USB_OHCI_HCD_PLATFORM
-	bool "Generic OHCI driver for a platform device"
+	tristate "Generic OHCI driver for a platform device"
 	default n
 	---help---
 	  Adds an OHCI host driver for a generic platform device, which
@@ -488,20 +475,6 @@ config USB_OCTEON_OHCI
 	  Enable support for the Octeon II SOC's on-chip OHCI
 	  controller.  It is needed for low-speed USB 1.0 device
 	  support.  All CN6XXX based chips with USB are supported.
-
-
-config USB_OHCI_BIG_ENDIAN_DESC
-	bool
-	default n
-
-config USB_OHCI_BIG_ENDIAN_MMIO
-	bool
-	default n
-
-config USB_OHCI_LITTLE_ENDIAN
-	bool
-	default n if STB03xxx || PPC_MPC52xx
-	default y
 
 endif # USB_OHCI_HCD
 
@@ -558,7 +531,6 @@ config FHCI_DEBUG
 config USB_U132_HCD
 	tristate "Elan U132 Adapter Host Controller"
 	depends on USB_FTDI_ELAN
-	default M
 	help
 	  The U132 adapter is a USB to CardBus adapter specifically designed
 	  for PC cards that contain an OHCI host controller. Typical PC cards
@@ -651,7 +623,7 @@ config USB_WHCI_HCD
 
 config USB_HWA_HCD
 	tristate "Host Wire Adapter (HWA) driver"
-	depends on UWB
+	depends on USB && UWB
 	select USB_WUSB
 	select UWB_HWA
 	help
@@ -702,3 +674,20 @@ config USB_HCD_SSB
 	  for ehci and ohci.
 
 	  If unsure, say N.
+
+config USB_HCD_TEST_MODE
+	bool "HCD test mode support"
+	---help---
+	  Say 'Y' to enable additional software test modes that may be
+	  supported by the host controller drivers.
+
+	  One such test mode is the Embedded High-speed Host Electrical Test
+	  (EHSET) for EHCI host controller hardware, specifically the "Single
+	  Step Set Feature" test.  Typically this will be enabled for On-the-Go
+	  or embedded hosts that need to undergo USB-IF compliance testing with
+	  the aid of special testing hardware.  In the future, this may expand
+	  to include other tests that require support from a HCD driver.
+
+	  This option is of interest only to developers who need to validate
+	  their USB hardware designs.  It is not needed for normal use.  If
+	  unsure, say N.

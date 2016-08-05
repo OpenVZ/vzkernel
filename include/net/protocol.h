@@ -81,7 +81,6 @@ struct inet_protosw {
 	struct proto	 *prot;
 	const struct proto_ops *ops;
   
-	char             no_check;   /* checksum on rcv/xmit/none? */
 	unsigned char	 flags;      /* See INET_PROTOSW_* below.  */
 };
 #define INET_PROTOSW_REUSE 0x01	     /* Are ports automatically reusable? */
@@ -102,6 +101,9 @@ extern int	inet_add_offload(const struct net_offload *prot, unsigned char num);
 extern int	inet_del_offload(const struct net_offload *prot, unsigned char num);
 extern void	inet_register_protosw(struct inet_protosw *p);
 extern void	inet_unregister_protosw(struct inet_protosw *p);
+
+int  udp_add_offload(struct udp_offload *prot);
+void udp_del_offload(struct udp_offload *prot);
 
 #if IS_ENABLED(CONFIG_IPV6)
 extern int	inet6_add_protocol(const struct inet6_protocol *prot, unsigned char num);

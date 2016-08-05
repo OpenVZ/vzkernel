@@ -343,6 +343,7 @@ static int audit_field_valid(struct audit_entry *entry, struct audit_field *f)
 	case AUDIT_DEVMINOR:
 	case AUDIT_EXIT:
 	case AUDIT_SUCCESS:
+	case AUDIT_INODE:
 		/* bit ops are only useful on syscall args */
 		if (f->op == Audit_bitmask || f->op == Audit_bittest)
 			return -EINVAL;
@@ -423,9 +424,10 @@ static struct audit_entry *audit_data_to_entry(struct audit_rule_data *data,
 		f->lsm_rule = NULL;
 
 		/* Support legacy tests for a valid loginuid */
-		if ((f->type == AUDIT_LOGINUID) && (f->val == 4294967295)) {
+		if ((f->type == AUDIT_LOGINUID) && (f->val == AUDIT_UID_UNSET)) {
 			f->type = AUDIT_LOGINUID_SET;
 			f->val = 0;
+			entry->rule.pflags |= AUDIT_LOGINUID_LEGACY;
 		}
 
 		err = audit_field_valid(entry, f);
@@ -601,6 +603,13 @@ static struct audit_rule_data *audit_krule_to_data(struct audit_krule *krule)
 			data->buflen += data->values[i] =
 				audit_pack_string(&bufp, krule->filterkey);
 			break;
+		case AUDIT_LOGINUID_SET:
+			if (krule->pflags & AUDIT_LOGINUID_LEGACY && !f->val) {
+				data->fields[i] = AUDIT_LOGINUID;
+				data->values[i] = AUDIT_UID_UNSET;
+				break;
+			}
+			/* fallthrough if set */
 		default:
 			data->values[i] = f->val;
 		}
@@ -617,6 +626,7 @@ static int audit_compare_rule(struct audit_krule *a, struct audit_krule *b)
 	int i;
 
 	if (a->flags != b->flags ||
+	    a->pflags != b->pflags ||
 	    a->listnr != b->listnr ||
 	    a->action != b->action ||
 	    a->field_count != b->field_count)
@@ -735,6 +745,7 @@ struct audit_entry *audit_dupe_rule(struct audit_krule *old)
 	new = &entry->rule;
 	new->vers_ops = old->vers_ops;
 	new->flags = old->flags;
+	new->pflags = old->pflags;
 	new->listnr = old->listnr;
 	new->action = old->action;
 	for (i = 0; i < AUDIT_BITMASK_SIZE; i++)
@@ -1060,7 +1071,7 @@ int audit_receive_filter(int type, int pid, int seq, void *data, size_t datasz)
 			return PTR_ERR(entry);
 
 		err = audit_add_rule(entry);
-		audit_log_rule_change("add rule", &entry->rule, !err);
+		audit_log_rule_change("add_rule", &entry->rule, !err);
 		if (err)
 			audit_free_rule(entry);
 		break;
@@ -1070,7 +1081,7 @@ int audit_receive_filter(int type, int pid, int seq, void *data, size_t datasz)
 			return PTR_ERR(entry);
 
 		err = audit_del_rule(entry);
-		audit_log_rule_change("remove rule", &entry->rule, !err);
+		audit_log_rule_change("remove_rule", &entry->rule, !err);
 		audit_free_rule(entry);
 		break;
 	default:
@@ -1215,12 +1226,14 @@ static int audit_filter_user_rules(struct audit_krule *rule, int type,
 
 	for (i = 0; i < rule->field_count; i++) {
 		struct audit_field *f = &rule->fields[i];
+		pid_t pid;
 		int result = 0;
 		u32 sid;
 
 		switch (f->type) {
 		case AUDIT_PID:
-			result = audit_comparator(task_pid_vnr(current), f->op, f->val);
+			pid = task_pid_nr(current);
+			result = audit_comparator(pid, f->op, f->val);
 			break;
 		case AUDIT_UID:
 			result = audit_uid_comparator(current_uid(), f->op, f->uid);
@@ -1269,19 +1282,22 @@ int audit_filter_user(int type)
 {
 	enum audit_state state = AUDIT_DISABLED;
 	struct audit_entry *e;
-	int ret = 1;
+	int rc, ret;
+
+	ret = 1; /* Audit by default */
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(e, &audit_filter_list[AUDIT_FILTER_USER], list) {
-		if (audit_filter_user_rules(&e->rule, type, &state)) {
-			if (state == AUDIT_DISABLED)
+		rc = audit_filter_user_rules(&e->rule, type, &state);
+		if (rc) {
+			if (rc > 0 && state == AUDIT_DISABLED)
 				ret = 0;
 			break;
 		}
 	}
 	rcu_read_unlock();
 
-	return ret; /* Audit by default */
+	return ret;
 }
 
 int audit_filter_type(int type)
