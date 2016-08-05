@@ -33,19 +33,34 @@ static struct nf_hook_ops *rawtable_ops __read_mostly;
 static int __net_init ip6table_raw_net_init(struct net *net)
 {
 	struct ip6t_replace *repl;
+	struct xt_table *ip6table_raw;
+
+	if (WARN_ON(net->ipv6.ip6table_raw))
+		net->ipv6.ip6table_raw = NULL;
+
+	if (!net_ipt_permitted(net, VE_IP_IPTABLES6))
+		return 0;
 
 	repl = ip6t_alloc_initial_table(&packet_raw);
 	if (repl == NULL)
 		return -ENOMEM;
-	net->ipv6.ip6table_raw =
-		ip6t_register_table(net, &packet_raw, repl);
+	ip6table_raw = ip6t_register_table(net, &packet_raw, repl);
 	kfree(repl);
-	return PTR_RET(net->ipv6.ip6table_raw);
+
+	if (!IS_ERR(ip6table_raw))
+		net->ipv6.ip6table_raw = ip6table_raw;
+
+	return PTR_RET(ip6table_raw);
 }
 
 static void __net_exit ip6table_raw_net_exit(struct net *net)
 {
+	if (!net->ipv6.ip6table_raw)
+		return;
+
 	ip6t_unregister_table(net, net->ipv6.ip6table_raw);
+
+	net->ipv6.ip6table_raw = NULL;
 }
 
 static struct pernet_operations ip6table_raw_net_ops = {
