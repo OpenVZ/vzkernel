@@ -118,14 +118,12 @@ static int vzethdev_filter(struct sk_buff *skb, struct net_device *dev, struct n
 		if (is_multicast_ether_addr(
 					((struct ethhdr *)skb->data)->h_dest))
 			return 1;
-		if (!br_port_get_rcu(rcv) &&
-			compare_ether_addr(((struct ethhdr *)skb->data)->h_dest, rcv->dev_addr))
+		if (compare_ether_addr(((struct ethhdr *)skb->data)->h_dest, rcv->dev_addr))
 				return 0;
 	} else if (!ve_is_super(dev_net(dev)->owner_ve) &&
 		   dev->features & NETIF_F_FIXED_ADDR) {
 		/* from VEX to VE0 */
-		if (!br_port_get_rcu(dev) &&
-			compare_ether_addr(((struct ethhdr *)skb->data)->h_source, dev->dev_addr))
+		if (compare_ether_addr(((struct ethhdr *)skb->data)->h_source, dev->dev_addr))
 				return 0;
 	}
 
