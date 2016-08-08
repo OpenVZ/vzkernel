@@ -283,6 +283,7 @@ void truncate_inode_pages_range(struct address_space *mapping,
 	pgoff_t		indices[PAGEVEC_SIZE];
 	pgoff_t		index;
 	int		i;
+	int		bug_if_page_has_bh = 0;
 
 	cleancache_invalidate_inode(mapping);
 	if (mapping->nrpages == 0 && mapping->nrexceptional == 0)
@@ -292,7 +293,7 @@ void truncate_inode_pages_range(struct address_space *mapping,
 	partial_start = lstart & (PAGE_CACHE_SIZE - 1);
 	partial_end = (lend + 1) & (PAGE_CACHE_SIZE - 1);
 	if (!inode_has_invalidate_range(mapping->host))
-		BUG_ON(partial_end);
+		bug_if_page_has_bh = 1;
 
 	/*
 	 * 'start' and 'end' always covers the range of pages to be fully
@@ -377,9 +378,11 @@ void truncate_inode_pages_range(struct address_space *mapping,
 			wait_on_page_writeback(page);
 			zero_user_segment(page, 0, partial_end);
 			cleancache_invalidate_page(mapping, page);
-			if (page_has_private(page))
+			if (page_has_private(page)) {
+				BUG_ON(bug_if_page_has_bh);
 				do_invalidatepage_range(page, 0,
 							partial_end);
+			}
 			unlock_page(page);
 			page_cache_release(page);
 		}
