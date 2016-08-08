@@ -3252,8 +3252,10 @@ out:
 	if (unlikely(!page && read_mems_allowed_retry(cpuset_mems_cookie)))
 		goto retry_cpuset;
 
-	if (page && !memcg_kmem_newpage_charge(page, gfp_mask, order))
+	if (page && !memcg_kmem_newpage_charge(page, gfp_mask, order)) {
 		__free_pages(page, order);
+		return NULL;
+	}
 
 	return page;
 }
