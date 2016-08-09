@@ -780,15 +780,17 @@ resize_out:
 		struct ext4_ioc_mfsync_info mfsync;
 		struct file **filpp;
 		unsigned int *flags;
+		__u32 __user *usr_fd;
 		int i, err;
 
 		if (copy_from_user(&mfsync, (struct ext4_ioc_mfsync_info *)arg,
-				   sizeof(mfsync))) {
-			printk("%s:%d", __FUNCTION__, __LINE__);
+				   sizeof(mfsync)))
 			return -EFAULT;
-		}
+
 		if (mfsync.size == 0)
 			return 0;
+		usr_fd = (__u32 __user *) (arg + sizeof(__u32));
+
 		filpp = kzalloc(mfsync.size * sizeof(*filp), GFP_KERNEL);
 		if (!filpp)
 			return -ENOMEM;
@@ -802,12 +804,9 @@ resize_out:
 			int ret;
 
 			err = -EFAULT;
-			ret = get_user(fd, mfsync.fd + i);
-			if (ret) {
-				printk("%s:%d i:%d p:%p", __FUNCTION__, __LINE__,
-				       i, mfsync.fd + i);
+			ret = get_user(fd, usr_fd + i);
+			if (ret)
 				goto mfsync_fput;
-			}
 
 			/* negative fd means fdata_sync */
 			flags[i] = (fd & (1<< 31)) != 0;
@@ -815,10 +814,8 @@ resize_out:
 
 			err = -EBADF;
 			filpp[i] = fget(fd);
-			if (!filpp[i]) {
-				printk("%s:%d", __FUNCTION__, __LINE__);
+			if (!filpp[i])
 				goto mfsync_fput;
-			}
 		}
 		err = ext4_sync_files(filpp, flags, mfsync.size);
 mfsync_fput:
