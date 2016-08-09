@@ -516,6 +516,7 @@ enum
 	PLOOP_E_ZERO_INDEX,	/* Zeroing index of free block; original request
 				   can use .submit on completion */
 	PLOOP_E_DELTA_ZERO_INDEX,/* the same but for PLOOP_E_DELTA_READ */
+	PLOOP_E_FSYNC_PENDED,   /* INDEX_WB needs io->ops->sync() to proceed */
 };
 
 #define BIO_BDEV_REUSED	14	/* io_context is stored in bi_bdev */
