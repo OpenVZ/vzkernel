@@ -810,6 +810,7 @@ void ploop_index_update(struct ploop_request * preq);
 void ploop_index_wb_complete(struct ploop_request * preq);
 int __init ploop_map_init(void);
 void ploop_map_exit(void);
+void ploop_add_req_to_fsync_queue(struct ploop_request * preq);
 
 
 void ploop_quiesce(struct ploop_device * plo);
