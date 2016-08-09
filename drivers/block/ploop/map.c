@@ -913,6 +913,24 @@ out:
 	put_page(page);
 }
 
+static void ploop_index_wb_proceed_or_delay(struct ploop_request * preq,
+					    int do_fsync_if_delayed)
+{
+	if (do_fsync_if_delayed) {
+		struct map_node * m = preq->map;
+		struct ploop_delta * top_delta = map_top_delta(m->parent);
+		struct ploop_io * top_io = &top_delta->io;
+
+		if (test_bit(PLOOP_IO_FSYNC_DELAYED, &top_io->io_state)) {
+			preq->eng_state = PLOOP_E_FSYNC_PENDED;
+			ploop_add_req_to_fsync_queue(preq);
+			return;
+		}
+	}
+
+	ploop_index_wb_proceed(preq);
+}
+
 /* Data write is commited. Now we need to update index. */
 
 void ploop_index_update(struct ploop_request * preq)
@@ -925,6 +943,7 @@ void ploop_index_update(struct ploop_request * preq)
 	int old_level;
 	struct page * page;
 	unsigned long state = READ_ONCE(preq->state);
+	int do_fsync_if_delayed = 0;
 
 	/* No way back, we are going to initiate index write. */
 
@@ -983,10 +1002,12 @@ void ploop_index_update(struct ploop_request * preq)
 	preq->req_rw &= ~REQ_FLUSH;
 
 	/* Relocate requires consistent index update */
-	if (state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL))
+	if (state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL)) {
 		preq->req_index_update_rw |= (REQ_FLUSH | REQ_FUA);
+		do_fsync_if_delayed = 1;
+	}
 
-	ploop_index_wb_proceed(preq);
+	ploop_index_wb_proceed_or_delay(preq, do_fsync_if_delayed);
 	return;
 
 enomem:
@@ -1107,6 +1128,7 @@ static void map_wb_complete(struct map_node * m, int err)
 	int delayed = 0;
 	unsigned int idx;
 	unsigned long rw;
+	int do_fsync_if_delayed = 0;
 
 	/* First, complete processing of written back indices,
 	 * finally instantiate indices in mapping cache.
@@ -1204,8 +1226,10 @@ static void map_wb_complete(struct map_node * m, int err)
 
 			state = READ_ONCE(preq->state);
 			/* Relocate requires consistent index update */
-			if (state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL))
+			if (state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL)) {
 				rw |= (REQ_FLUSH | REQ_FUA);
+				do_fsync_if_delayed = 1;
+			}
 
 			preq->eng_state = PLOOP_E_INDEX_WB;
 			get_page(page);
@@ -1232,7 +1256,7 @@ static void map_wb_complete(struct map_node * m, int err)
 	plo->st.map_multi_writes++;
 
 	main_preq->req_index_update_rw = rw;
-	ploop_index_wb_proceed(main_preq);
+	ploop_index_wb_proceed_or_delay(main_preq, do_fsync_if_delayed);
 }
 
 void
