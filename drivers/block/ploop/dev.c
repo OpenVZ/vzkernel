@@ -2045,6 +2045,20 @@ static inline bool preq_is_special(struct ploop_request * preq)
 			PLOOP_REQ_ZERO_FL);
 }
 
+void ploop_add_req_to_fsync_queue(struct ploop_request * preq)
+{
+	struct ploop_device * plo       = preq->plo;
+	struct ploop_delta  * top_delta = ploop_top_delta(plo);
+	struct ploop_io     * top_io    = &top_delta->io;
+
+	spin_lock_irq(&plo->lock);
+	list_add_tail(&preq->list, &top_io->fsync_queue);
+	top_io->fsync_qlen++;
+	if (waitqueue_active(&top_io->fsync_waitq))
+		wake_up_interruptible(&top_io->fsync_waitq);
+	spin_unlock_irq(&plo->lock);
+}
+
 static void
 ploop_entry_request(struct ploop_request * preq)
 {
@@ -2070,12 +2084,7 @@ ploop_entry_request(struct ploop_request * preq)
 		if ((preq->req_rw & REQ_FLUSH) &&
 		    test_bit(PLOOP_IO_FSYNC_DELAYED, &top_io->io_state) &&
 		    !test_bit(PLOOP_REQ_FSYNC_DONE, &preq->state)) {
-			spin_lock_irq(&plo->lock);
-			list_add_tail(&preq->list, &top_io->fsync_queue);
-			top_io->fsync_qlen++;
-			if (waitqueue_active(&top_io->fsync_waitq))
-				wake_up_interruptible(&top_io->fsync_waitq);
-			spin_unlock_irq(&plo->lock);
+			ploop_add_req_to_fsync_queue(preq);
 			return;
 		}
 
