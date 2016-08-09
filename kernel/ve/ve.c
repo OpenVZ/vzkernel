@@ -1204,6 +1204,7 @@ enum {
 	VE_CF_CLOCK_MONOTONIC,
 	VE_CF_CLOCK_BOOTBASED,
 	VE_CF_AIO_MAX_NR,
+	VE_CF_PID_MAX,
 	VE_CF_NETNS_MAX_NR,
 	VE_CF_NETNS_NR,
 	VE_CF_NETIF_MAX_NR,
@@ -1269,7 +1270,11 @@ static u64 ve_read_u64(struct cgroup *cg, struct cftype *cft)
 		return cgroup_ve(cg)->is_pseudosuper;
 	else if (cft->private == VE_CF_AIO_MAX_NR)
 		return cgroup_ve(cg)->aio_max_nr;
-	else if (cft->private == VE_CF_NETNS_MAX_NR)
+	else if (cft->private == VE_CF_PID_MAX) {
+		struct ve_struct *ve = cgroup_ve(cg);
+		if (ve->ve_ns && ve->ve_ns->pid_ns)
+			return ve->ve_ns->pid_ns->pid_max;
+	} else if (cft->private == VE_CF_NETNS_MAX_NR)
 		return cgroup_ve(cg)->netns_max_nr;
 	else if (cft->private == VE_CF_NETNS_NR)
 		return atomic_read(&cgroup_ve(cg)->netns_avail_nr);
@@ -1312,7 +1317,26 @@ static int ve_write_pseudosuper(struct cgroup *cg,
 	return 0;
 }
 
-static int ve_write_u64(struct cgroup *cg, struct cftype *cft, u64 value)
+extern int pid_max_min, pid_max_max;
+
+static int ve_write_pid_max(struct cgroup *cg,
+			    struct cftype *cft,
+			    u64 value)
+{
+	struct ve_struct *ve = cgroup_ve(cg);
+	if (!ve->ve_ns || !ve->ve_ns->pid_ns)
+		return -EBUSY;
+
+	if (pid_max_min > value ||
+	     pid_max_max < value)
+		return -EINVAL;
+
+	ve->ve_ns->pid_ns->pid_max = value;
+	return 0;
+}
+
+static int _ve_write_u64(struct cgroup *cg, struct cftype *cft,
+                         u64 value, int running)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 
@@ -1321,7 +1345,7 @@ static int ve_write_u64(struct cgroup *cg, struct cftype *cft, u64 value)
 		return -EPERM;
 
 	down_write(&ve->op_sem);
-	if (ve->is_running || ve->ve_ns) {
+	if (!running && (ve->is_running || ve->ve_ns)) {
 		up_write(&ve->op_sem);
 		return -EBUSY;
 	}
@@ -1334,7 +1358,12 @@ static int ve_write_u64(struct cgroup *cg, struct cftype *cft, u64 value)
 #endif
 	else if (cft->private == VE_CF_AIO_MAX_NR)
 		ve->aio_max_nr = value;
-	else if (cft->private == VE_CF_NETNS_MAX_NR) {
+	else if (cft->private == VE_CF_PID_MAX) {
+		int ret;
+		ret = ve_write_pid_max(cg, cft, value);
+		up_write(&ve->op_sem);
+		return ret;
+	} else if (cft->private == VE_CF_NETNS_MAX_NR) {
 		int delta = value - ve->netns_max_nr;
 
 		ve->netns_max_nr = value;
@@ -1347,6 +1376,16 @@ static int ve_write_u64(struct cgroup *cg, struct cftype *cft, u64 value)
 	}
 	up_write(&ve->op_sem);
 	return 0;
+}
+
+static int ve_write_u64(struct cgroup *cg, struct cftype *cft, u64 value)
+{
+	return _ve_write_u64(cg, cft, value, 0);
+}
+
+static int ve_write_running_u64(struct cgroup *cg, struct cftype *cft, u64 value)
+{
+	return _ve_write_u64(cg, cft, value, 1);
 }
 
 static struct cftype ve_cftypes[] = {
@@ -1420,6 +1459,13 @@ static struct cftype ve_cftypes[] = {
 		.read_u64		= ve_read_u64,
 		.write_u64		= ve_write_u64,
 		.private		= VE_CF_AIO_MAX_NR,
+	},
+	{
+		.name			= "pid_max",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_u64		= ve_read_u64,
+		.write_u64		= ve_write_running_u64,
+		.private		= VE_CF_PID_MAX,
 	},
 	{
 		.name			= "netns_max_nr",
