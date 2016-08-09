@@ -2280,6 +2280,7 @@ void console_unlock(void)
 	struct log_state *log = &init_log_state;
 	unsigned long flags;
 	bool wake_klogd = false;
+	bool first = true;
 	bool retry;
 	unsigned cnt;
 
@@ -2298,6 +2299,11 @@ again:
 		struct log *msg;
 		size_t len;
 		int level;
+
+		if (first)
+			first = false;
+		else
+			touch_all_softlockup_watchdogs();
 
 		raw_spin_lock_irqsave(&logbuf_lock, flags);
 		if (log->seen_seq != log->next_seq) {
