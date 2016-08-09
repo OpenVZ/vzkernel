@@ -118,6 +118,8 @@ struct ve_struct {
 	unsigned long		aio_nr;
 	unsigned long		aio_max_nr;
 #endif
+	atomic_t		netns_avail_nr;
+	int			netns_max_nr;
 	/* Number of mounts. May become unbalanced if VE0 mounts something
 	 * and the VE unmounts it. This is acceptable.
 	 */
@@ -134,6 +136,8 @@ struct ve_devmnt {
 	char			*allowed_options;
 	char			*hidden_options; /* balloon_ino, etc. */
 };
+
+#define NETNS_MAX_NR_DEFAULT	256	/* number of net-namespaces per-VE */
 
 #define VE_MEMINFO_DEFAULT      1       /* default behaviour */
 #define VE_MEMINFO_SYSTEM       0       /* disable meminfo virtualization */
