@@ -286,9 +286,9 @@ SYSCALL_DEFINE3(setitimer, int, which, struct itimerval __user *, value,
 			return -EFAULT;
 	} else {
 		memset(&set_buffer, 0, sizeof(set_buffer));
-		printk_once(KERN_WARNING "%s calls setitimer() with new_value NULL pointer."
+		printk_once(KERN_WARNING "cmd: %s CT: %s calls setitimer() with new_value NULL pointer."
 			    " Misfeature support will be removed\n",
-			    current->comm);
+			    current->comm, task_ve_name(current));
 	}
 
 	error = do_setitimer(which, &set_buffer, ovalue ? &get_buffer : NULL);
