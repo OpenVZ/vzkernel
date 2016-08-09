@@ -110,6 +110,8 @@ struct ve_struct {
 	unsigned long		aio_nr;
 	unsigned long		aio_max_nr;
 #endif
+	atomic_t		netns_avail_nr;
+	int			netns_max_nr;
 	atomic_t		netif_avail_nr;
 	int			netif_max_nr;
 	atomic_t		mnt_nr;	/* number of present VE mounts */
@@ -126,6 +128,7 @@ struct ve_devmnt {
 	char			*hidden_options; /* balloon_ino, etc. */
 };
 
+#define NETNS_MAX_NR_DEFAULT	256	/* number of net-namespaces per-VE */
 #define NETIF_MAX_NR_DEFAULT	256	/* number of net-interfaces per-VE */
 
 #define VE_MEMINFO_DEFAULT      1       /* default behaviour */
