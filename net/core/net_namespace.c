@@ -381,6 +381,7 @@ void net_drop_ns(void *p)
 struct net *copy_net_ns(unsigned long flags,
 			struct user_namespace *user_ns, struct net *old_net)
 {
+	struct ve_struct *ve = get_exec_env();
 	struct ucounts *ucounts;
 	struct net *net;
 	int rv;
@@ -391,6 +392,9 @@ struct net *copy_net_ns(unsigned long flags,
 	ucounts = inc_net_namespaces(user_ns);
 	if (!ucounts)
 		return ERR_PTR(-ENOSPC);
+
+	if (atomic_dec_if_positive(&ve->netns_avail_nr) < 0)
+		return ERR_PTR(-ENOMEM);
 
 	net = net_alloc();
 	if (!net) {
@@ -413,6 +417,7 @@ struct net *copy_net_ns(unsigned long flags,
 		dec_net_namespaces(ucounts);
 		put_user_ns(user_ns);
 		net_drop_ns(net);
+		atomic_inc(&ve->netns_avail_nr);
 		return ERR_PTR(rv);
 	}
 	return net;
@@ -475,6 +480,8 @@ static void cleanup_net(struct work_struct *work)
 
 	list_for_each_entry(net, &net_kill_list, cleanup_list) {
 		struct ve_struct *ve = net->owner_ve;
+
+		atomic_inc(&ve->netns_avail_nr);
 		if (ve->ve_netns == net)
 			ve->ve_netns = NULL;
 		put_ve(ve);
