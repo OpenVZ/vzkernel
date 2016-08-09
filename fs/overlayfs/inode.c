@@ -368,6 +368,21 @@ out:
 	return err;
 }
 
+struct inode *ovl_d_select_inode(struct dentry *dentry)
+{
+	struct path realpath;
+
+	if (d_is_dir(dentry))
+		return d_backing_inode(dentry);
+
+	ovl_path_real(dentry, &realpath);
+
+	if (realpath.dentry->d_flags & DCACHE_OP_SELECT_INODE)
+		return realpath.dentry->d_op->d_select_inode(realpath.dentry);
+
+	return d_backing_inode(realpath.dentry);
+}
+
 static const struct inode_operations_wrapper ovl_file_inode_operations = {
 	.ops = {
 	.setattr	= ovl_setattr,
