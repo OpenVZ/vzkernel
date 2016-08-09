@@ -79,6 +79,8 @@ struct ve_struct ve0 = {
 	.sched_lat_ve.cur	= &ve0_lat_stats,
 	.init_cred		= &init_cred,
 	.mnt_nr			= ATOMIC_INIT(0),
+	.netns_avail_nr		= ATOMIC_INIT(INT_MAX),
+	.netns_max_nr		= INT_MAX,
 	.netif_avail_nr		= ATOMIC_INIT(INT_MAX),
 	.netif_max_nr		= INT_MAX,
 };
@@ -666,6 +668,9 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 
 	ve->meminfo_val = VE_MEMINFO_DEFAULT;
 
+	atomic_set(&ve->netns_avail_nr, NETNS_MAX_NR_DEFAULT);
+	ve->netns_max_nr = NETNS_MAX_NR_DEFAULT;
+
 	atomic_set(&ve->netif_avail_nr, NETIF_MAX_NR_DEFAULT);
 	ve->netif_max_nr = NETIF_MAX_NR_DEFAULT;
 
@@ -1194,6 +1199,8 @@ enum {
 	VE_CF_CLOCK_MONOTONIC,
 	VE_CF_CLOCK_BOOTBASED,
 	VE_CF_AIO_MAX_NR,
+	VE_CF_NETNS_MAX_NR,
+	VE_CF_NETNS_NR,
 	VE_CF_NETIF_MAX_NR,
 	VE_CF_NETIF_NR,
 };
@@ -1257,6 +1264,10 @@ static u64 ve_read_u64(struct cgroup *cg, struct cftype *cft)
 		return cgroup_ve(cg)->is_pseudosuper;
 	else if (cft->private == VE_CF_AIO_MAX_NR)
 		return cgroup_ve(cg)->aio_max_nr;
+	else if (cft->private == VE_CF_NETNS_MAX_NR)
+		return cgroup_ve(cg)->netns_max_nr;
+	else if (cft->private == VE_CF_NETNS_NR)
+		return atomic_read(&cgroup_ve(cg)->netns_avail_nr);
 	else if (cft->private == VE_CF_NETIF_MAX_NR)
 		return cgroup_ve(cg)->netif_max_nr;
 	else if (cft->private == VE_CF_NETIF_NR)
@@ -1318,7 +1329,12 @@ static int ve_write_u64(struct cgroup *cg, struct cftype *cft, u64 value)
 #endif
 	else if (cft->private == VE_CF_AIO_MAX_NR)
 		ve->aio_max_nr = value;
-	else if (cft->private == VE_CF_NETIF_MAX_NR) {
+	else if (cft->private == VE_CF_NETNS_MAX_NR) {
+		int delta = value - ve->netns_max_nr;
+
+		ve->netns_max_nr = value;
+		atomic_add(delta, &ve->netns_avail_nr);
+	} else if (cft->private == VE_CF_NETIF_MAX_NR) {
 		int delta = value - ve->netif_max_nr;
 
 		ve->netif_max_nr = value;
@@ -1399,6 +1415,18 @@ static struct cftype ve_cftypes[] = {
 		.read_u64		= ve_read_u64,
 		.write_u64		= ve_write_u64,
 		.private		= VE_CF_AIO_MAX_NR,
+	},
+	{
+		.name			= "netns_max_nr",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_u64		= ve_read_u64,
+		.write_u64		= ve_write_u64,
+		.private		= VE_CF_NETNS_MAX_NR,
+	},
+	{
+		.name			= "netns_avail_nr",
+		.read_u64		= ve_read_u64,
+		.private		= VE_CF_NETNS_NR,
 	},
 	{
 		.name			= "netif_max_nr",
