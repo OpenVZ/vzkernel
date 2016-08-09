@@ -537,6 +537,7 @@ struct ploop_request
 	sector_t		req_sector;
 	unsigned int		req_size;
 	unsigned int		req_rw;
+	unsigned int		req_index_update_rw;
 	unsigned long		tstamp;
 	struct io_context	*ioc;
 
@@ -806,6 +807,7 @@ void map_init(struct ploop_device *, struct ploop_map * map);
 void ploop_map_start(struct ploop_map * map, u64 bd_size);
 void ploop_map_destroy(struct ploop_map * map);
 void ploop_map_remove_delta(struct ploop_map * map, int level);
+void ploop_index_wb_proceed(struct ploop_request * preq);
 void ploop_index_update(struct ploop_request * preq);
 void ploop_index_wb_complete(struct ploop_request * preq);
 int __init ploop_map_init(void);
