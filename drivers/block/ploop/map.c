@@ -889,6 +889,25 @@ static void copy_index_for_wb(struct page * page, struct map_node * m, int level
 	}
 }
 
+
+void ploop_index_wb_proceed(struct ploop_request * preq)
+{
+	struct map_node * m = preq->map;
+	struct ploop_delta * top_delta = map_top_delta(m->parent);
+	struct page * page = preq->sinfo.wi.tpage;
+	unsigned long rw = preq->req_index_update_rw;
+	sector_t sec;
+
+	preq->eng_state = PLOOP_E_INDEX_WB;
+
+	top_delta->ops->map_index(top_delta, m->mn_start, &sec);
+
+	__TRACE("wbi-proceed %p %u %p\n", preq, preq->req_cluster, m);
+	top_delta->io.ops->write_page(&top_delta->io, preq, page, sec, rw);
+
+	put_page(page);
+}
+
 /* Data write is commited. Now we need to update index. */
 
 void ploop_index_update(struct ploop_request * preq)
@@ -900,8 +919,6 @@ void ploop_index_update(struct ploop_request * preq)
 	map_index_t blk;
 	int old_level;
 	struct page * page;
-	sector_t sec;
-	unsigned long rw;
 	unsigned long state = READ_ONCE(preq->state);
 
 	/* No way back, we are going to initiate index write. */
@@ -948,15 +965,13 @@ void ploop_index_update(struct ploop_request * preq)
 
 	((map_index_t*)page_address(page))[idx] = preq->iblock << ploop_map_log(plo);
 
-	preq->eng_state = PLOOP_E_INDEX_WB;
 	get_page(page);
 	preq->sinfo.wi.tpage = page;
 
 	__TRACE("wbi %p %u %p\n", preq, preq->req_cluster, m);
 	plo->st.map_single_writes++;
-	top_delta->ops->map_index(top_delta, m->mn_start, &sec);
 
-	rw = (preq->req_rw & (REQ_FUA | REQ_FLUSH));
+	preq->req_index_update_rw = (preq->req_rw & (REQ_FUA | REQ_FLUSH));
 
 	/* We've just set REQ_FLUSH in rw, ->write_page() below
 	   will do the FLUSH */
@@ -964,11 +979,9 @@ void ploop_index_update(struct ploop_request * preq)
 
 	/* Relocate requires consistent index update */
 	if (state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL))
-		rw |= (REQ_FLUSH | REQ_FUA);
+		preq->req_index_update_rw |= (REQ_FLUSH | REQ_FUA);
 
-	top_delta->io.ops->write_page(&top_delta->io, preq, page, sec, rw);
-
-	put_page(page);
+	ploop_index_wb_proceed(preq);
 	return;
 
 enomem:
@@ -983,6 +996,7 @@ out:
 	return;
 }
 EXPORT_SYMBOL(ploop_index_update);
+
 
 int map_index(struct ploop_delta * delta, struct ploop_request * preq, unsigned long *sec)
 {
@@ -1087,7 +1101,6 @@ static void map_wb_complete(struct map_node * m, int err)
 	struct page * page = NULL;
 	int delayed = 0;
 	unsigned int idx;
-	sector_t sec;
 	unsigned long rw;
 
 	/* First, complete processing of written back indices,
@@ -1212,11 +1225,9 @@ static void map_wb_complete(struct map_node * m, int err)
 
 	__TRACE("wbi2 %p %u %p\n", main_preq, main_preq->req_cluster, m);
 	plo->st.map_multi_writes++;
-	top_delta->ops->map_index(top_delta, m->mn_start, &sec);
 
-	top_delta->io.ops->write_page(&top_delta->io, main_preq, page, sec,
-				      rw);
-	put_page(page);
+	main_preq->req_index_update_rw = rw;
+	ploop_index_wb_proceed(main_preq);
 }
 
 void
