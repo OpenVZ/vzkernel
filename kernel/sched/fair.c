@@ -6955,7 +6955,7 @@ static inline void calculate_imbalance(struct lb_env *env, struct sd_lb_stats *s
 	/* How much load to actually move to equalise the imbalance */
 	env->imbalance = min(
 		max_pull * busiest->group_power,
-		(sds->avg_load - local->avg_load) * local->group_power
+		(busiest->avg_load - local->avg_load) * local->group_power
 	) / SCHED_POWER_SCALE;
 
 	/*
@@ -7030,13 +7030,6 @@ static struct sched_group *find_busiest_group(struct lb_env *env)
 	 * don't try and pull any tasks.
 	 */
 	if (local->avg_load >= busiest->avg_load)
-		goto out_balanced;
-
-	/*
-	 * Don't pull any tasks if this group is already above the domain
-	 * average load.
-	 */
-	if (local->avg_load >= sds.avg_load)
 		goto out_balanced;
 
 	if (env->idle == CPU_IDLE) {
