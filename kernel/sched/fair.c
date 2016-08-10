@@ -981,9 +981,10 @@ update_stats_curr_start(struct cfs_rq *cfs_rq, struct sched_entity *se)
 #ifdef CONFIG_CFS_BANDWIDTH
 static inline void update_entity_boost(struct sched_entity *se)
 {
-	if (!entity_is_task(se))
+	if (!entity_is_task(se)) {
 		se->boosted = cfs_rq_has_boosted_entities(group_cfs_rq(se));
-	else {
+		WARN_ON(se->boosted && cfs_rq_throttled(group_cfs_rq(se)));
+	} else {
 		struct task_struct *p = task_of(se);
 
 		if (unlikely(p != current))
@@ -1015,6 +1016,8 @@ static inline void __enqueue_boosted_entity(struct cfs_rq *cfs_rq,
 static inline void __dequeue_boosted_entity(struct cfs_rq *cfs_rq,
 					    struct sched_entity *se)
 {
+	if (WARN_ON(se->boost_node.next == LIST_POISON1))
+		return;
 	list_del(&se->boost_node);
 }
 
@@ -1025,8 +1028,11 @@ static int enqueue_boosted_entity(struct cfs_rq *cfs_rq,
 		if (se != cfs_rq->curr)
 			__enqueue_boosted_entity(cfs_rq, se);
 		se->boosted = 1;
+		WARN_ON(!entity_is_task(se) &&
+			cfs_rq_throttled(group_cfs_rq(se)));
 		return 1;
-	}
+	} else
+		WARN_ON(cfs_rq_throttled(group_cfs_rq(se)));
 
 	return 0;
 }
@@ -3977,6 +3983,8 @@ static void do_sched_cfs_slack_timer(struct cfs_bandwidth *cfs_b)
  */
 static void check_enqueue_throttle(struct cfs_rq *cfs_rq, int flags)
 {
+	WARN_ON(cfs_rq_has_boosted_entities(cfs_rq));
+
 	if (!cfs_bandwidth_used())
 		return;
 
@@ -4313,8 +4321,10 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	} else if (boost) {
 		for_each_sched_entity(se) {
 			cfs_rq = cfs_rq_of(se);
-			if (!enqueue_boosted_entity(cfs_rq, se))
+			if (!enqueue_boosted_entity(cfs_rq, se)) {
+				WARN_ON(throttled_hierarchy(cfs_rq));
 				break;
+			}
 			if (cfs_rq_throttled(cfs_rq))
 				unthrottle_cfs_rq(cfs_rq);
 		}
@@ -4375,8 +4385,10 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		cfs_rq = cfs_rq_of(se);
 		cfs_rq->h_nr_running--;
 
-		if (cfs_rq_throttled(cfs_rq))
+		if (cfs_rq_throttled(cfs_rq)) {
+			WARN_ON(boosted);
 			break;
+		}
 
 		if (boosted)
 			boosted = dequeue_boosted_entity(cfs_rq, se);
