@@ -600,6 +600,7 @@ void proc_sched_show_task(struct task_struct *p, struct seq_file *m)
 		P(se.statistics->nr_migrations_cold);
 		P(se.statistics->nr_failed_migrations_affine);
 		P(se.statistics->nr_failed_migrations_running);
+		P(se.statistics->nr_failed_migrations_cpulimit);
 		P(se.statistics->nr_failed_migrations_hot);
 		P(se.statistics->nr_forced_migrations);
 		P(se.statistics->nr_wakeups);
