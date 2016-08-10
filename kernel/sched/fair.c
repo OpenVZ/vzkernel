@@ -5600,15 +5600,17 @@ static inline int can_migrate_task_cpulimit(struct task_struct *p, struct lb_env
 
 		schedstat_inc(p, se.statistics->nr_failed_migrations_cpulimit);
 
+		env->flags |= LBF_SOME_PINNED;
+
 		if (check_cpulimit_spread(tg, env->src_cpu) != 0)
 			return 0;
 
-		if (!env->dst_grpmask || (env->flags & LBF_SOME_PINNED))
+		if (!env->dst_grpmask || (env->flags & LBF_DST_PINNED))
 			return 0;
 
 		for_each_cpu_and(cpu, env->dst_grpmask, env->cpus) {
 			if (cfs_rq_active(tg->cfs_rq[cpu])) {
-				env->flags |= LBF_SOME_PINNED;
+				env->flags |= LBF_DST_PINNED;
 				env->new_dst_cpu = cpu;
 				break;
 			}
