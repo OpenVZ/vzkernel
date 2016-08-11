@@ -50,8 +50,6 @@ extern struct list_head ve_list_head;
 #define for_each_ve(ve)	list_for_each_entry((ve), &ve_list_head, ve_list)
 extern struct mutex ve_list_lock;
 extern struct ve_struct *get_ve_by_id(envid_t);
-extern struct cgroup *ve_cgroup_open(struct cgroup *root, int flags, envid_t veid);
-extern int ve_cgroup_remove(struct cgroup *root, envid_t veid);
 
 extern int nr_threads_ve(struct ve_struct *ve);
 
