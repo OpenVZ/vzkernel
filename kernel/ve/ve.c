@@ -158,27 +158,6 @@ const char *ve_name(struct ve_struct *ve)
 }
 EXPORT_SYMBOL(ve_name);
 
-/* Cgroup must be closed with cgroup_kernel_close */
-struct cgroup *ve_cgroup_open(struct cgroup *root, int flags, envid_t veid)
-{
-	char name[16];
-	struct cgroup *cgrp;
-
-	snprintf(name, sizeof(name), "%u", veid);
-	cgrp = cgroup_kernel_open(root, flags, name);
-	return cgrp ? cgrp : ERR_PTR(-ENOENT);
-}
-EXPORT_SYMBOL(ve_cgroup_open);
-
-int ve_cgroup_remove(struct cgroup *root, envid_t veid)
-{
-	char name[16];
-
-	snprintf(name, sizeof(name), "%u", veid);
-	return cgroup_kernel_remove(root, name);
-}
-EXPORT_SYMBOL(ve_cgroup_remove);
-
 /* under rcu_read_lock if task != current */
 const char *task_ve_name(struct task_struct *task)
 {
