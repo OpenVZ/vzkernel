@@ -3151,6 +3151,11 @@ COMPAT_SYSCALL_DEFINE4(rt_tgsigqueueinfo,
 }
 #endif
 
+void __weak sigaction_compat_abi(struct k_sigaction *act,
+		struct k_sigaction *oact)
+{
+}
+
 int do_sigaction(int sig, struct k_sigaction *act, struct k_sigaction *oact)
 {
 	struct task_struct *t = current;
@@ -3167,6 +3172,8 @@ int do_sigaction(int sig, struct k_sigaction *act, struct k_sigaction *oact)
 	spin_lock_irq(&current->sighand->siglock);
 	if (oact)
 		*oact = *k;
+
+	sigaction_compat_abi(act, oact);
 
 	if (act) {
 		sigdelsetmask(&act->sa.sa_mask,
