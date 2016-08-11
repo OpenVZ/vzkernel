@@ -754,7 +754,6 @@ static int __init ub_init_proc(void)
 	entry = proc_create("user_beancounters",
 			S_IRUSR|S_ISVTX, NULL, &ub_file_operations);
 	proc_create("vswap", S_IRUSR, proc_vz_dir, &ub_vswap_fops);
-	proc_mkdir_mode("beancounter", 0, proc_vz_dir);
 	return 0;
 }
 
