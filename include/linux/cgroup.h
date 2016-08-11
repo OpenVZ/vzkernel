@@ -61,7 +61,6 @@ struct cgroup *cgroup_kernel_lookup(struct vfsmount *mnt,
 				    const char *pathname);
 struct cgroup *cgroup_kernel_open(struct cgroup *parent,
 		enum cgroup_open_flags flags, const char *name);
-int cgroup_kernel_remove(struct cgroup *parent, const char *name);
 int cgroup_kernel_attach(struct cgroup *cgrp, struct task_struct *tsk);
 void cgroup_kernel_close(struct cgroup *cgrp);
 

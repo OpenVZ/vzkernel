@@ -5744,13 +5744,11 @@ struct vfsmount *cgroup_kernel_mount(struct cgroup_sb_opts *opts)
 {
 	return kern_mount_data(&cgroup_fs_type, opts);
 }
-EXPORT_SYMBOL(cgroup_kernel_mount);
 
 struct cgroup *cgroup_get_root(struct vfsmount *mnt)
 {
 	return mnt->mnt_root->d_fsdata;
 }
-EXPORT_SYMBOL(cgroup_get_root);
 
 struct cgroup *cgroup_kernel_lookup(struct vfsmount *mnt,
 				    const char *pathname)
@@ -5773,7 +5771,6 @@ struct cgroup *cgroup_kernel_lookup(struct vfsmount *mnt,
 	path_put(&path);
 	return cgrp;
 }
-EXPORT_SYMBOL(cgroup_kernel_lookup);
 
 struct cgroup *cgroup_kernel_open(struct cgroup *parent,
 		enum cgroup_open_flags flags, const char *name)
@@ -5804,27 +5801,6 @@ out:
 	mutex_unlock(&parent->dentry->d_inode->i_mutex);
 	return cgrp;
 }
-EXPORT_SYMBOL(cgroup_kernel_open);
-
-int cgroup_kernel_remove(struct cgroup *parent, const char *name)
-{
-	struct dentry *dentry;
-	int ret;
-
-	mutex_lock_nested(&parent->dentry->d_inode->i_mutex, I_MUTEX_PARENT);
-	dentry = lookup_one_len(name, parent->dentry, strlen(name));
-	ret = PTR_ERR(dentry);
-	if (IS_ERR(dentry))
-		goto out;
-	ret = -ENOENT;
-	if (dentry->d_inode)
-		ret = vfs_rmdir(parent->dentry->d_inode, dentry);
-	dput(dentry);
-out:
-	mutex_unlock(&parent->dentry->d_inode->i_mutex);
-	return ret;
-}
-EXPORT_SYMBOL(cgroup_kernel_remove);
 
 int cgroup_kernel_attach(struct cgroup *cgrp, struct task_struct *tsk)
 {
@@ -5836,7 +5812,6 @@ int cgroup_kernel_attach(struct cgroup *cgrp, struct task_struct *tsk)
 	mutex_unlock(&cgroup_mutex);
 	return ret;
 }
-EXPORT_SYMBOL(cgroup_kernel_attach);
 
 void cgroup_kernel_close(struct cgroup *cgrp)
 {
@@ -5845,4 +5820,3 @@ void cgroup_kernel_close(struct cgroup *cgrp)
 		check_for_release(cgrp);
 	}
 }
-EXPORT_SYMBOL(cgroup_kernel_close);
