@@ -12,6 +12,7 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
+#include <linux/key.h>
 #include <linux/bio.h>
 #include <linux/blkdev.h>
 #include <linux/mempool.h>
@@ -28,6 +29,7 @@
 #include <crypto/hash.h>
 #include <crypto/md5.h>
 #include <crypto/algapi.h>
+#include <keys/user-type.h>
 
 #include <linux/device-mapper.h>
 
@@ -1488,14 +1490,94 @@ static int crypt_setkey(struct crypt_config *cc)
 	return err;
 }
 
+#ifdef CONFIG_KEYS
+static struct key *crypt_decode_get_keyring_key(char *key_desc)
+{
+	int ret;
+	struct key *key;
+	char *decoded_key_desc;
+	int key_desc_size = strlen(key_desc) >> 1;
+
+	decoded_key_desc = kmalloc(key_desc_size + 1, GFP_KERNEL);
+	if (!decoded_key_desc)
+		return ERR_PTR(-ENOMEM);
+
+	if (hex2bin(decoded_key_desc, key_desc, key_desc_size) < 0) {
+		kfree(decoded_key_desc);
+		return ERR_PTR(-EINVAL);
+	}
+
+	decoded_key_desc[key_desc_size] = '\0';
+
+	key = request_key(&key_type_user, decoded_key_desc, NULL);
+	kfree(decoded_key_desc);
+	if (IS_ERR(key))
+		return key;
+
+	ret = key_validate(key);
+	if (ret < 0)
+		return ERR_PTR(ret);
+
+	return key;
+}
+
+static int crypt_set_keyring_key(struct crypt_config *cc, char *key_desc)
+{
+	int ret = 0;
+	struct key *key;
+	const struct user_key_payload *ukp;
+
+	key = crypt_decode_get_keyring_key(key_desc);
+	if (IS_ERR(key))
+		return PTR_ERR(key);
+
+	rcu_read_lock();
+	ukp = user_key_payload(key);
+	if (cc->key_size != ukp->datalen) {
+		ret = -EINVAL;
+		goto out;
+	}
+	memcpy(cc->key, ukp->data, cc->key_size);
+out:
+	rcu_read_unlock();
+	key_put(key);
+	return ret;
+}
+
+static int get_key_size(char *key_desc)
+{
+	int ret;
+	struct key *key;
+
+	if (key_desc[0] != ':')
+		return strlen(key_desc) >> 1;
+
+	key = crypt_decode_get_keyring_key(key_desc + 1);
+	if (IS_ERR(key))
+		return PTR_ERR(key);
+
+	rcu_read_lock();
+	ret = user_key_payload(key)->datalen;
+	rcu_read_unlock();
+	key_put(key);
+	return ret;
+}
+#else
+static int crypt_set_keyring_key(struct crypt_config *cc, char *key_desc)
+{
+	return -EINVAL;
+}
+
+static int get_key_size(const char *key)
+{
+	return strlen(key) >> 1;
+}
+#endif
+
 static int crypt_set_key(struct crypt_config *cc, char *key)
 {
 	int r = -EINVAL;
 	int key_string_len = strlen(key);
-
-	/* The key size may not be changed. */
-	if (cc->key_size != (key_string_len >> 1))
-		goto out;
 
 	/* Hyphen (which gives a key_size of zero) means there is no key. */
 	if (!cc->key_size && strcmp(key, "-"))
@@ -1505,8 +1587,19 @@ static int crypt_set_key(struct crypt_config *cc, char *key)
 	clear_bit(DM_CRYPT_KEY_VALID, &cc->flags);
 
 	/* Decode key from its hex representation. */
-	if (cc->key_size && hex2bin(cc->key, key, cc->key_size) < 0)
-		goto out;
+	/* ':' means that the key is in kernel keyring */
+	if (key[0] == ':') {
+		if (crypt_set_keyring_key(cc, key + 1))
+			goto out;
+	} else {
+		/* The key size may not be changed. */
+		if (cc->key_size != (key_string_len >> 1))
+			goto out;
+
+		if (cc->key_size &&
+			hex2bin(cc->key, key, cc->key_size) < 0)
+			goto out;
+	}
 
 	r = crypt_setkey(cc);
 	if (!r)
@@ -1790,12 +1883,12 @@ static int crypt_ctr_optional(struct dm_target *ti, unsigned int argc, char **ar
 
 /*
  * Construct an encryption mapping:
- * <cipher> <key> <iv_offset> <dev_path> <start>
+ * <cipher> [<key>|:<key description>] <iv_offset> <dev_path> <start>
  */
 static int crypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 {
 	struct crypt_config *cc;
-	unsigned int key_size;
+	int key_size;
 	unsigned long long tmpll;
 	int ret;
 	size_t iv_size_padding;
@@ -1806,7 +1899,11 @@ static int crypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		return -EINVAL;
 	}
 
-	key_size = strlen(argv[1]) >> 1;
+	key_size = get_key_size(argv[1]);
+	if (key_size < 0) {
+		ti->error = "Cannot get the key";
+		return -EINVAL;
+	}
 
 	cc = kzalloc(sizeof(*cc) + key_size * sizeof(u8), GFP_KERNEL);
 	if (!cc) {
