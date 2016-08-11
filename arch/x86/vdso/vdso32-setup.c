@@ -416,6 +416,37 @@ out:
 	return pages;
 }
 
+/* Call under mm->mmap_sem */
+static int __arch_setup_additional_pages(unsigned long addr, bool compat)
+{
+	struct mm_struct *mm = current->mm;
+	int ret;
+
+	current->mm->context.vdso = (void *)addr;
+
+	if (compat_uses_vma || !compat) {
+		struct page **pages = uts_prep_vdso_pages_locked(compat);
+		if (IS_ERR(pages))
+			return PTR_ERR(pages);
+
+		/*
+		 * MAYWRITE to allow gdb to COW and set breakpoints
+		 */
+		ret = install_special_mapping(mm, addr, PAGE_SIZE,
+					      VM_READ|VM_EXEC|
+					      VM_MAYREAD|VM_MAYWRITE|VM_MAYEXEC,
+					      pages);
+
+		if (ret)
+			return ret;
+	}
+
+	current_thread_info()->sysenter_return =
+		VDSO32_SYMBOL(addr, SYSENTER_RETURN);
+
+	return 0;
+}
+
 /* Setup a VMA at program startup for the vsyscall page */
 int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 {
@@ -450,33 +481,11 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 		}
 	}
 
-	current->mm->context.vdso = (void *)addr;
-
-	if (compat_uses_vma || !compat) {
-		struct page **pages = uts_prep_vdso_pages_locked(compat);
-		if (IS_ERR(pages)) {
-			ret = PTR_ERR(pages);
-			goto up_fail;
-		}
-
-		/*
-		 * MAYWRITE to allow gdb to COW and set breakpoints
-		 */
-		ret = install_special_mapping(mm, addr, PAGE_SIZE,
-					      VM_READ|VM_EXEC|
-					      VM_MAYREAD|VM_MAYWRITE|VM_MAYEXEC,
-					      pages);
-
-		if (ret)
-			goto up_fail;
-	}
-
-	current_thread_info()->sysenter_return =
-		VDSO32_SYMBOL(addr, SYSENTER_RETURN);
-
-  up_fail:
+	ret = __arch_setup_additional_pages(addr, compat);
 	if (ret)
 		current->mm->context.vdso = NULL;
+
+up_fail:
 
 	up_write(&mm->mmap_sem);
 
@@ -484,6 +493,60 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 }
 
 #ifdef CONFIG_X86_64
+
+int do_map_compat_vdso(unsigned long req_addr)
+{
+	struct mm_struct *mm = current->mm;
+	unsigned long vdso_addr;
+	struct vm_area_struct *vdso_vma;
+	int ret;
+	bool compat;
+
+	if (vdso_enabled == VDSO_DISABLED)
+		return -ENOENT;
+
+	down_write(&mm->mmap_sem);
+
+	compat = (vdso_enabled == VDSO_COMPAT);
+	/* Maybe we can omit this check, but yet let it be for safety */
+	if (compat && req_addr != VDSO_HIGH_BASE) {
+		ret = -EFAULT;
+		goto up_fail;
+	}
+
+	/* Don't wanna copy security checks like security_mmap_addr() */
+	vdso_addr = get_unmapped_area(NULL, req_addr, PAGE_SIZE, 0, 0);
+	if (IS_ERR_VALUE(vdso_addr)) {
+		ret = vdso_addr;
+		goto up_fail;
+	}
+
+	if (req_addr != vdso_addr) {
+		ret = -EFAULT;
+		goto up_fail;
+	}
+
+	/*
+	 * Firstly, unmap old vdso - as install_special_mapping may not
+	 * do rlimit/cgroup accounting right - get rid of the old one by
+	 * remove_vma().
+	 */
+	vdso_vma = find_vma_intersection(mm, (unsigned long)mm->context.vdso,
+			(unsigned long)mm->context.vdso +
+			PAGE_SIZE*init_uts_ns.vdso.nr_pages);
+	if (vdso_vma)
+		do_munmap(mm, vdso_vma->vm_start,
+			vdso_vma->vm_end - vdso_vma->vm_start);
+
+	ret = __arch_setup_additional_pages(req_addr, compat);
+	if (ret)
+		current->mm->context.vdso = NULL;
+
+up_fail:
+	up_write(&mm->mmap_sem);
+
+	return ret;
+}
 
 subsys_initcall(sysenter_setup);
 
