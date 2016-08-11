@@ -161,7 +161,7 @@ struct vzctl_cpustatctl {
 #define VZCTLTYPE			'.'
 #define VZCTL_OLD_ENV_CREATE		_IOW(VZCTLTYPE,  0, struct vzctl_old_env_create)
 #define VZCTL_MARK_ENV_TO_DOWN		_IOW(VZCTLTYPE,  1, struct vzctl_mark_env_to_down)
-#define VZCTL_SETDEVPERMS		_IOW(VZCTLTYPE,  2, struct vzctl_setdevperms)
+#define VZCTL_SETDEVPERMS		_IOW(VZCTLTYPE,  2, struct vzctl_setdevperms) /* DEPRECATED */
 #define VZCTL_ENV_CREATE_CID		_IOW(VZCTLTYPE,  4, struct vzctl_env_create_cid)
 #define VZCTL_ENV_CREATE		_IOW(VZCTLTYPE,  5, struct vzctl_env_create)
 #define VZCTL_GET_CPU_STAT		_IOW(VZCTLTYPE,  6, struct vzctl_cpustatctl)

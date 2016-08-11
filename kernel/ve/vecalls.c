@@ -97,29 +97,6 @@ out_put_ve:
 	return retval;
 }
 
-static int real_setdevperms(envid_t veid, unsigned type,
-		dev_t dev, unsigned mask)
-{
-	struct ve_struct *ve;
-	int err;
-
-	if (!capable_setveid() || veid == 0)
-		return -EPERM;
-
-	if ((ve = get_ve_by_id(veid)) == NULL)
-		return -ESRCH;
-
-	down_read(&ve->op_sem);
-
-	err = -EAGAIN;
-	if (ve->is_running)
-		err = devcgroup_set_perms_ve(ve, type, dev, mask);
-
-	up_read(&ve->op_sem);
-	put_ve(ve);
-	return err;
-}
-
 /**********************************************************************
  **********************************************************************
  *
@@ -602,20 +579,6 @@ int vzcalls_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	    case VZCTL_MARK_ENV_TO_DOWN: {
 		        /* Compatibility issue */
 		        err = 0;
-		}
-		break;
-	    case VZCTL_SETDEVPERMS: {
-			/* Device type was mistakenly declared as dev_t
-			 * in the old user-kernel interface.
-			 * That's wrong, dev_t is a kernel internal type.
-			 * I use `unsigned' not having anything better in mind.
-			 * 2001/08/11  SAW  */
-			struct vzctl_setdevperms s;
-			err = -EFAULT;
-			if (copy_from_user(&s, (void __user *)arg, sizeof(s)))
-				break;
-			err = real_setdevperms(s.veid, s.type,
-					new_decode_dev(s.dev), s.mask);
 		}
 		break;
 #ifdef CONFIG_INET
