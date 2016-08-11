@@ -23,6 +23,7 @@
 #include <asm/uaccess.h>
 #include <asm/xsave.h>
 #include <asm/smap.h>
+#include <asm/signal.h>
 
 #ifdef CONFIG_X86_64
 # include <asm/sigcontext32.h>
@@ -38,6 +39,12 @@ int ia32_setup_frame(int sig, struct ksignal *ksig,
 # define ia32_setup_frame	__setup_frame
 # define ia32_setup_rt_frame	__setup_rt_frame
 #endif
+
+#ifdef CONFIG_COMPAT
+int __copy_siginfo_to_user32(compat_siginfo_t __user *to,
+		const siginfo_t *from, bool x32_ABI);
+#endif
+
 
 extern unsigned int mxcsr_feature_mask;
 extern void fpu_init(void);
@@ -70,20 +77,21 @@ extern void finit_soft_fpu(struct i387_soft_struct *soft);
 static inline void finit_soft_fpu(struct i387_soft_struct *soft) {}
 #endif
 
-static inline int is_ia32_compat_frame(void)
+static inline int is_ia32_compat_frame(struct ksignal *ksig)
 {
 	return config_enabled(CONFIG_IA32_EMULATION) &&
-	       test_thread_flag(TIF_IA32);
+		ksig->ka.sa.sa_flags & SA_IA32_ABI;
 }
 
-static inline int is_ia32_frame(void)
+static inline int is_ia32_frame(struct ksignal *ksig)
 {
-	return config_enabled(CONFIG_X86_32) || is_ia32_compat_frame();
+	return config_enabled(CONFIG_X86_32) || is_ia32_compat_frame(ksig);
 }
 
-static inline int is_x32_frame(void)
+static inline int is_x32_frame(struct ksignal *ksig)
 {
-	return config_enabled(CONFIG_X86_X32_ABI) && test_thread_flag(TIF_X32);
+	return config_enabled(CONFIG_X86_X32_ABI) &&
+		ksig->ka.sa.sa_flags & SA_X32_ABI;
 }
 
 #define X87_FSW_ES (1 << 7)	/* Exception Summary */

@@ -480,7 +480,7 @@ static int x32_setup_rt_frame(struct ksignal *ksig,
 		return -EFAULT;
 
 	if (ksig->ka.sa.sa_flags & SA_SIGINFO) {
-		if (copy_siginfo_to_user32(&frame->info, &ksig->info))
+		if (__copy_siginfo_to_user32(&frame->info, &ksig->info, true))
 			return -EFAULT;
 	}
 
@@ -613,12 +613,12 @@ setup_rt_frame(struct ksignal *ksig, struct pt_regs *regs)
 	compat_sigset_t *cset = (compat_sigset_t *) set;
 
 	/* Set up the stack frame */
-	if (is_ia32_frame()) {
+	if (is_ia32_frame(ksig)) {
 		if (ksig->ka.sa.sa_flags & SA_SIGINFO)
 			return ia32_setup_rt_frame(usig, ksig, cset, regs);
 		else
 			return ia32_setup_frame(usig, ksig, cset, regs);
-	} else if (is_x32_frame()) {
+	} else if (is_x32_frame(ksig)) {
 		return x32_setup_rt_frame(ksig, cset, regs);
 	} else {
 		return __setup_rt_frame(ksig->sig, ksig, set, regs);
