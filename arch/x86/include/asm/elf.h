@@ -346,6 +346,10 @@ extern int x32_setup_additional_pages(struct linux_binprm *bprm,
 extern int syscall32_setup_pages(struct linux_binprm *, int exstack);
 #define compat_arch_setup_additional_pages	syscall32_setup_pages
 
+#ifdef CONFIG_X86_64
+extern int do_map_compat_vdso(unsigned long addr);
+#endif
+
 /*
  * True on X86_32 or when emulating IA32 on X86_64
  */
