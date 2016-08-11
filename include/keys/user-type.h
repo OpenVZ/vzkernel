@@ -46,5 +46,9 @@ extern void user_describe(const struct key *user, struct seq_file *m);
 extern long user_read(const struct key *key,
 		      char __user *buffer, size_t buflen);
 
+static inline const struct user_key_payload *user_key_payload(const struct key *key)
+{
+	return (struct user_key_payload *)rcu_dereference_key(key);
+}
 
 #endif /* _KEYS_USER_TYPE_H */
