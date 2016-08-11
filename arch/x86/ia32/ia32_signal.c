@@ -19,6 +19,7 @@
 #include <linux/personality.h>
 #include <linux/compat.h>
 #include <linux/binfmts.h>
+#include <linux/ptrace.h>
 #include <asm/ucontext.h>
 #include <asm/uaccess.h>
 #include <asm/i387.h>
@@ -34,10 +35,31 @@
 #include <asm/sys_ia32.h>
 #include <asm/smap.h>
 
-int copy_siginfo_to_user32(compat_siginfo_t __user *to, siginfo_t *from)
+void sigaction_compat_abi(struct k_sigaction *act, struct k_sigaction *oact)
+{
+	/* Don't leak in-kernel non-uapi flags to user-space */
+	if (oact)
+		oact->sa.sa_flags &= ~(SA_IA32_ABI | SA_X32_ABI);
+
+	if (!act)
+		return;
+
+	/* Don't let flags to be set from userspace */
+	act->sa.sa_flags &= ~(SA_IA32_ABI | SA_X32_ABI);
+
+	if (user_64bit_mode(current_pt_regs()))
+		return;
+
+	if (is_ia32_task())
+		act->sa.sa_flags |= SA_IA32_ABI;
+	if (is_x32_task())
+		act->sa.sa_flags |= SA_X32_ABI;
+}
+
+int __copy_siginfo_to_user32(compat_siginfo_t __user *to, const siginfo_t *from,
+		bool x32_ABI)
 {
 	int err = 0;
-	bool ia32 = test_thread_flag(TIF_IA32);
 
 	if (!access_ok(VERIFY_WRITE, to, sizeof(compat_siginfo_t)))
 		return -EFAULT;
@@ -86,7 +108,7 @@ int copy_siginfo_to_user32(compat_siginfo_t __user *to, siginfo_t *from)
 				put_user_ex(from->si_arch, &to->si_arch);
 				break;
 			case __SI_CHLD >> 16:
-				if (ia32) {
+				if (!x32_ABI) {
 					put_user_ex(from->si_utime, &to->si_utime);
 					put_user_ex(from->si_stime, &to->si_stime);
 				} else {
@@ -118,6 +140,12 @@ int copy_siginfo_to_user32(compat_siginfo_t __user *to, siginfo_t *from)
 	} put_user_catch(err);
 
 	return err;
+}
+
+/* from syscall's path, where we know the ABI */
+int copy_siginfo_to_user32(compat_siginfo_t __user *to, siginfo_t *from)
+{
+	return __copy_siginfo_to_user32(to, from, is_x32_task());
 }
 
 int copy_siginfo_from_user32(siginfo_t *to, compat_siginfo_t __user *from)
@@ -488,7 +516,7 @@ int ia32_setup_rt_frame(int sig, struct ksignal *ksig,
 		put_user_ex(*((u64 *)&code), (u64 __user *)frame->retcode);
 	} put_user_catch(err);
 
-	err |= copy_siginfo_to_user32(&frame->info, &ksig->info);
+	err |= __copy_siginfo_to_user32(&frame->info, &ksig->info, false);
 	err |= ia32_setup_sigcontext(&frame->uc.uc_mcontext, fpstate,
 				     regs, set->sig[0]);
 	err |= __copy_to_user(&frame->uc.uc_sigmask, set, sizeof(*set));
