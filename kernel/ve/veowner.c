@@ -63,7 +63,6 @@ static void prepare_proc(void)
 	 * sooner or later, but leave the stubs for now as they may be required
 	 * by userspace */
 
-	proc_mkdir_mode("container", 0, proc_vz_dir);
 	proc_mkdir_mode("fairsched", 0, proc_vz_dir);
 
 	proc_create("fairsched", S_ISVTX, NULL,	&proc_fairsched_operations);
