@@ -8,6 +8,11 @@ struct tss_struct;
 void __switch_to_xtra(struct task_struct *prev_p, struct task_struct *next_p,
 		      struct tss_struct *tss);
 
+/* data that is pointed to by thread.sp */
+struct inactive_task_frame {
+	unsigned long bp;
+};
+
 #ifdef CONFIG_X86_32
 
 #ifdef CONFIG_CC_STACKPROTECTOR
