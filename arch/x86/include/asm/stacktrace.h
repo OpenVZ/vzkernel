@@ -8,6 +8,7 @@
 
 #include <linux/uaccess.h>
 #include <linux/ptrace.h>
+#include <asm/switch_to.h>
 
 enum stack_type {
 	STACK_TYPE_UNKNOWN,
@@ -58,8 +59,7 @@ get_frame_pointer(struct task_struct *task, struct pt_regs *regs)
 	if (task == current)
 		return __builtin_frame_address(0);
 
-	/* bp is the last reg pushed by switch_to */
-	return (unsigned long *)*(unsigned long *)task->thread.sp;
+	return ((struct inactive_task_frame *)task->thread.sp)->bp;
 }
 #else
 static inline unsigned long *
