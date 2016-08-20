@@ -4868,7 +4868,7 @@ static int ploop_push_backup_stop(struct ploop_device *plo, unsigned long arg)
 
 static int ploop_freeze(struct ploop_device *plo, struct block_device *bdev)
 {
-	struct super_block *sb = plo->sb;
+	struct super_block *sb;
 
 	if (!test_bit(PLOOP_S_RUNNING, &plo->state))
 		return -EINVAL;
@@ -4883,14 +4883,15 @@ static int ploop_freeze(struct ploop_device *plo, struct block_device *bdev)
 	if (sb && IS_ERR(sb))
 		return PTR_ERR(sb);
 
-	plo->sb = sb;
+	plo->frozen_bdev = bdev;
 	plo->freeze_state = PLOOP_F_FROZEN;
 	return 0;
 }
 
-static int ploop_thaw(struct ploop_device *plo, struct block_device *bdev)
+static int ploop_thaw(struct ploop_device *plo)
 {
-	struct super_block *sb = plo->sb;
+	struct block_device *bdev = plo->frozen_bdev;
+	struct super_block *sb = bdev->bd_super;
 	int err;
 
 	if (!test_bit(PLOOP_S_RUNNING, &plo->state))
@@ -4902,7 +4903,7 @@ static int ploop_thaw(struct ploop_device *plo, struct block_device *bdev)
 	if (plo->freeze_state == PLOOP_F_THAWING)
 		return -EBUSY;
 
-	plo->sb = NULL;
+	plo->frozen_bdev = NULL;
 	plo->freeze_state = PLOOP_F_THAWING;
 
 	mutex_unlock(&plo->ctl_mutex);
@@ -5036,7 +5037,7 @@ static int ploop_ioctl(struct block_device *bdev, fmode_t fmode, unsigned int cm
 		err = ploop_freeze(plo, bdev);
 		break;
 	case PLOOP_IOC_THAW:
-		err = ploop_thaw(plo, bdev);
+		err = ploop_thaw(plo);
 		break;
 	default:
 		err = -EINVAL;
