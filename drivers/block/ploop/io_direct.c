@@ -862,13 +862,25 @@ static int dio_invalidate_cache(struct address_space * mapping,
 retry:
 	err = invalidate_inode_pages2(mapping);
 	if (err) {
+		struct ploop_device *plo = bdev->bd_disk->private_data;
+		struct block_device *dm_crypt_bdev;
+
 		printk("PLOOP: failed to invalidate page cache %d/%d\n", err, attempt2);
 		if (attempt2)
 			return err;
 		attempt2 = 1;
 
 		mutex_unlock(&mapping->host->i_mutex);
+
+		dm_crypt_bdev = ploop_get_dm_crypt_bdev(plo);
+		if (dm_crypt_bdev)
+			bdev = dm_crypt_bdev;
+		else
+			bdgrab(bdev);
+
 		thaw_bdev(bdev, freeze_bdev(bdev));
+		bdput(bdev);
+
 		mutex_lock(&mapping->host->i_mutex);
 		goto retry;
 	}
