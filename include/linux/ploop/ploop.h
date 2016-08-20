@@ -460,6 +460,7 @@ struct ploop_device
 
 	struct ploop_freeblks_desc *fbd;
 	struct ploop_pushbackup_desc *pbd;
+	struct block_device *dm_crypt_bdev;
 
 	unsigned long		locking_state; /* plo locked by userspace */
 };
@@ -622,6 +623,37 @@ void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list,
 static inline int ploop_req_delay_fua_possible(struct ploop_request *preq)
 {
 	return preq->eng_state == PLOOP_E_DATA_WBI;
+}
+
+static inline void ploop_set_dm_crypt_bdev(struct block_device *ploop_bdev,
+				struct block_device *bdev)
+{
+	if (MAJOR(ploop_bdev->bd_dev) == PLOOP_DEVICE_MAJOR) {
+		struct ploop_device *plo = ploop_bdev->bd_disk->private_data;
+		mutex_lock(&plo->ctl_mutex);
+		plo->dm_crypt_bdev = bdev;
+		mutex_unlock(&plo->ctl_mutex);
+	}
+}
+
+static inline struct block_device *__ploop_get_dm_crypt_bdev(
+	struct ploop_device *plo)
+{
+	if (plo->dm_crypt_bdev)
+		bdgrab(plo->dm_crypt_bdev);
+
+	return plo->dm_crypt_bdev;
+}
+
+static inline struct block_device *ploop_get_dm_crypt_bdev(
+				struct ploop_device *plo)
+{
+	struct block_device *ret;
+
+	mutex_lock(&plo->ctl_mutex);
+	ret = __ploop_get_dm_crypt_bdev(plo);
+	mutex_unlock(&plo->ctl_mutex);
+	return ret;
 }
 
 static inline void ploop_req_set_error(struct ploop_request * preq, int err)
