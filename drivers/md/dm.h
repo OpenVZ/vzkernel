@@ -75,6 +75,8 @@ struct dm_md_mempools *dm_table_get_md_mempools(struct dm_table *t);
 
 int dm_queue_merge_is_compulsory(struct request_queue *q);
 
+struct block_device *dm_md_get_bdev(struct mapped_device *md);
+
 void dm_lock_md_type(struct mapped_device *md);
 void dm_unlock_md_type(struct mapped_device *md);
 void dm_set_md_type(struct mapped_device *md, enum dm_queue_mode type);
