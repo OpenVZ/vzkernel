@@ -35,6 +35,8 @@
 
 #define DM_MSG_PREFIX "crypt"
 
+#include <linux/ploop/ploop.h>
+#include "dm.h"
 /*
  * context holding the current state of a multi-part conversion
  */
@@ -1652,8 +1654,10 @@ static void crypt_dtr(struct dm_target *ti)
 	if (cc->iv_gen_ops && cc->iv_gen_ops->dtr)
 		cc->iv_gen_ops->dtr(cc);
 
-	if (cc->dev)
+	if (cc->dev) {
+		ploop_set_dm_crypt_bdev(cc->dev->bdev, NULL);
 		dm_put_device(ti, cc->dev);
+	}
 
 	kzfree(cc->cipher);
 	kzfree(cc->cipher_string);
@@ -1984,6 +1988,8 @@ static int crypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		ti->error = "Device lookup failed";
 		goto bad;
 	}
+
+	ploop_set_dm_crypt_bdev(cc->dev->bdev, dm_md_get_bdev(dm_table_get_md(ti->table)));
 
 	ret = -EINVAL;
 	if (sscanf(argv[4], "%llu%c", &tmpll, &dummy) != 1) {
