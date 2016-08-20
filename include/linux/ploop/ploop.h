@@ -411,7 +411,7 @@ struct ploop_device
 	struct block_device	*bdev;
 	struct request_queue	*queue;
 	struct task_struct	*thread;
-	struct super_block	*sb;
+	struct block_device	*frozen_bdev;
 	int			freeze_state;
 	struct rb_node		link;
 
