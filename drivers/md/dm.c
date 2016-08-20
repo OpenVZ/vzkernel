@@ -166,6 +166,12 @@ static unsigned dm_get_numa_node(void)
 					 DM_NUMA_NODE, num_online_nodes() - 1);
 }
 
+struct block_device *dm_md_get_bdev(struct mapped_device *md)
+{
+	return md->bdev;
+}
+EXPORT_SYMBOL_GPL(dm_md_get_bdev);
+
 static int __init local_init(void)
 {
 	int r = -ENOMEM;
