@@ -3303,7 +3303,10 @@ static struct super_block *find_and_freeze_bdev(struct gendisk *disk,
 		bdev = NULL;
 	}
 
-	*bdev_pp = bdev;
+	if (IS_ERR(sb))
+		bdput(bdev);
+	else
+		*bdev_pp = bdev;
 	return sb;
 }
 
