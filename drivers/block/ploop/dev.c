@@ -3282,12 +3282,19 @@ void ploop_relax(struct ploop_device * plo)
 }
 
 /* search disk for first partition bdev with mounted fs and freeze it */
-static struct super_block *find_and_freeze_bdev(struct gendisk *disk,
+static struct super_block *find_and_freeze_bdev(struct ploop_device *plo,
 						struct block_device ** bdev_pp)
 {
 	struct super_block  * sb   = NULL;
 	struct block_device * bdev = NULL;
+	struct gendisk *disk = plo->disk;
 	int i;
+
+	bdev = ploop_get_dm_crypt_bdev(plo);
+	if (bdev) {
+		sb = freeze_bdev(bdev);
+		goto out;
+	}
 
 	for (i = 0; i <= (*bdev_pp)->bd_part_count; i++) {
 		bdev = bdget_disk(disk, i);
@@ -3303,6 +3310,7 @@ static struct super_block *find_and_freeze_bdev(struct gendisk *disk,
 		bdev = NULL;
 	}
 
+out:
 	if (IS_ERR(sb))
 		bdput(bdev);
 	else
@@ -3365,7 +3373,7 @@ static int ploop_snapshot(struct ploop_device * plo, unsigned long arg,
 		/* freeze_bdev() may trigger ploop_bd_full() */
 		plo->maintenance_type = PLOOP_MNTN_SNAPSHOT;
 		mutex_unlock(&plo->ctl_mutex);
-		sb = find_and_freeze_bdev(plo->disk, &bdev);
+		sb = find_and_freeze_bdev(plo, &bdev);
 		mutex_lock(&plo->ctl_mutex);
 		plo->maintenance_type = PLOOP_MNTN_OFF;
 		if (IS_ERR(sb)) {
@@ -4879,9 +4887,15 @@ static int ploop_freeze(struct ploop_device *plo, struct block_device *bdev)
 	if (plo->freeze_state == PLOOP_F_THAWING)
 		return -EBUSY;
 
+	if (plo->dm_crypt_bdev)
+		bdev = plo->dm_crypt_bdev;
+
+	bdgrab(bdev);
 	sb = freeze_bdev(bdev);
-	if (sb && IS_ERR(sb))
+	if (sb && IS_ERR(sb)) {
+		bdput(bdev);
 		return PTR_ERR(sb);
+	}
 
 	plo->frozen_bdev = bdev;
 	plo->freeze_state = PLOOP_F_FROZEN;
@@ -4891,7 +4905,7 @@ static int ploop_freeze(struct ploop_device *plo, struct block_device *bdev)
 static int ploop_thaw(struct ploop_device *plo)
 {
 	struct block_device *bdev = plo->frozen_bdev;
-	struct super_block *sb = bdev->bd_super;
+	struct super_block *sb = bdev ? bdev->bd_super : NULL;
 	int err;
 
 	if (!test_bit(PLOOP_S_RUNNING, &plo->state))
@@ -4908,6 +4922,7 @@ static int ploop_thaw(struct ploop_device *plo)
 
 	mutex_unlock(&plo->ctl_mutex);
 	err = thaw_bdev(bdev, sb);
+	bdput(bdev);
 	mutex_lock(&plo->ctl_mutex);
 
 	BUG_ON(plo->freeze_state != PLOOP_F_THAWING);
