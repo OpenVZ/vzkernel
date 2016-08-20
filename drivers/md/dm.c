@@ -310,6 +310,12 @@ unsigned dm_get_reserved_rq_based_ios(void)
 }
 EXPORT_SYMBOL_GPL(dm_get_reserved_rq_based_ios);
 
+struct block_device *dm_md_get_bdev(struct mapped_device *md)
+{
+	return md->bdev;
+}
+EXPORT_SYMBOL_GPL(dm_md_get_bdev);
+
 static int __init local_init(void)
 {
 	int r = -ENOMEM;
