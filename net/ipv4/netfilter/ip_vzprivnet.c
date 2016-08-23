@@ -250,8 +250,13 @@ static unsigned int vzprivnet_hook(struct sk_buff *skb, int can_be_bridge)
 {
 	struct dst_entry *dst;
 	unsigned int pmark = VZPRIV_MARK_UNKNOWN;
+	struct net *src_net;
 
-	if (!ve_is_super(skb->dev->nd_net->owner_ve))
+	if (WARN_ON_ONCE(!skb->dev && !skb->sk))
+		return NF_ACCEPT;
+
+	src_net = skb->dev ? dev_net(skb->dev) : sock_net(skb->sk);
+	if (!ve_is_super(src_net->owner_ve))
 		return NF_ACCEPT;
 
 	dst = skb_dst(skb);
