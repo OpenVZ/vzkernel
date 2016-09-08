@@ -52,7 +52,7 @@ xattr_permission(struct inode *inode, const char *name, int mask)
 	 * The trusted.* namespace can only be accessed by privileged users.
 	 */
 	if (!strncmp(name, XATTR_TRUSTED_PREFIX, XATTR_TRUSTED_PREFIX_LEN)) {
-		if (!capable(CAP_SYS_ADMIN))
+		if (!ve_capable(CAP_SYS_ADMIN))
 			return (mask & MAY_WRITE) ? -EPERM : -ENODATA;
 		return 0;
 	}
