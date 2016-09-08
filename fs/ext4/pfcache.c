@@ -655,6 +655,9 @@ static int ext4_xattr_trusted_csum_get(struct dentry *dentry, const char *name,
 	if (!test_opt2(inode->i_sb, PFCACHE_CSUM))
 		return -EOPNOTSUPP;
 
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
 	if (S_ISDIR(inode->i_mode))
 		return ext4_xattr_get(inode, EXT4_XATTR_INDEX_TRUSTED,
 				      EXT4_DATA_CSUM_NAME, buffer, size);
@@ -702,6 +705,9 @@ static int ext4_xattr_trusted_csum_set(struct dentry *dentry, const char *name,
 
 	if (!test_opt2(inode->i_sb, PFCACHE_CSUM))
 		return -EOPNOTSUPP;
+
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
 
 	if (S_ISDIR(inode->i_mode)) {
 		if (!value)
