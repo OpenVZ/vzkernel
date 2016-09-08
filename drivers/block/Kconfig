@@ -283,6 +283,7 @@ config BLK_DEV_CRYPTOLOOP
 
 config BLK_DEV_PLOOP
 	tristate "Virtuozzo loopback device support"
+	depends on BLK_DEV_CBT
 	---help---
 	  Saying Y here will allow you to use a regular file as a block
 	  device; you can then create a file system on that block device and
