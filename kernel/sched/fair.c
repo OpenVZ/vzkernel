@@ -510,7 +510,7 @@ static enum hrtimer_restart sched_cfs_active_timer(struct hrtimer *timer)
 	unsigned long flags;
 
 	raw_spin_lock_irqsave(&rq->lock, flags);
-	cfs_rq->active = !!list_empty(&cfs_rq->tasks);
+	cfs_rq->active = !list_empty(&cfs_rq->tasks);
 	raw_spin_unlock_irqrestore(&rq->lock, flags);
 
 	atomic_dec(&cfs_rq->tg->nr_cpus_active);
