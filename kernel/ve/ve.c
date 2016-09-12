@@ -216,6 +216,7 @@ int vz_security_protocol_check(struct net *net, int protocol)
 	case  IPPROTO_GRE:
 	case  IPPROTO_ESP:
 	case  IPPROTO_AH:
+	case  IPPROTO_SCTP:
 		return 0;
 	default:
 		return -EAFNOSUPPORT;
