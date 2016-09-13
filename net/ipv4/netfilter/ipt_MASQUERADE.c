@@ -41,6 +41,7 @@ static int masquerade_tg_check(const struct xt_tgchk_param *par)
 		pr_debug("bad rangesize %u\n", mr->rangesize);
 		return -EINVAL;
 	}
+	allow_conntrack_allocation(par->net);
 	return 0;
 }
 
