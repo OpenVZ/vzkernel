@@ -393,6 +393,8 @@ static int connlimit_mt_check(const struct xt_mtchk_param *par)
 	for (i = 0; i < ARRAY_SIZE(info->data->climit_root6); ++i)
 		info->data->climit_root6[i] = RB_ROOT;
 
+	allow_conntrack_allocation(par->net);
+
 	return 0;
 }
 
