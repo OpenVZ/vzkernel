@@ -209,6 +209,8 @@ static int nft_nat_init(const struct nft_ctx *ctx, const struct nft_expr *expr,
 			return -EINVAL;
 	}
 
+	allow_conntrack_allocation(ctx->net);
+
 	return 0;
 }
 
