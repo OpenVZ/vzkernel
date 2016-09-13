@@ -44,6 +44,7 @@
 #include <linux/netdevice.h>
 #include <linux/icmpv6.h>
 #include <linux/netfilter_ipv6.h>
+#include <linux/cpu.h>
 
 #include <net/ip.h>
 #include <net/ipv6.h>
@@ -718,6 +719,54 @@ bool ipv6_opt_accepted(const struct sock *sk, const struct sk_buff *skb)
 }
 EXPORT_SYMBOL_GPL(ipv6_opt_accepted);
 
+static void move_ipv6_percpu_stats(int cpu, void **mib, int items)
+{
+	int this_cpu, i;
+
+	local_irq_disable();
+	this_cpu = smp_processor_id();
+
+	for (i = 1; i < items; i++) {
+		*(((u64 *) per_cpu_ptr(mib[0], this_cpu)) + i) +=
+		*(((u64 *) per_cpu_ptr(mib[0], cpu)) + i);
+
+		*(((u64 *) per_cpu_ptr(mib[0], cpu)) + i) = 0;
+	}
+	local_irq_enable();
+}
+
+
+static int ipv6_cpu_notify(struct notifier_block *self,
+			   unsigned long action, void *hcpu)
+{
+	int cpu = (unsigned long)hcpu;
+	struct net_device *dev;
+	struct inet6_dev *idev;
+	struct net *net;
+
+	switch (action) {
+		case CPU_DEAD:
+		case CPU_DEAD_FROZEN:
+		rtnl_lock();
+		for_each_net(net) {
+			for_each_netdev(net, dev) {
+				idev = __in6_dev_get(dev);
+				if (!idev)
+					continue;
+				move_ipv6_percpu_stats(cpu,
+						(void **)idev->stats.ipv6,
+						IPSTATS_MIB_MAX);
+			}
+		}
+		rtnl_unlock();
+	}
+	return NOTIFY_OK;
+}
+
+static struct notifier_block ipv6_cpu_notifier = {
+	.notifier_call  = ipv6_cpu_notify,
+};
+
 static struct packet_type ipv6_packet_type __read_mostly = {
 	.type = cpu_to_be16(ETH_P_IPV6),
 	.func = ipv6_rcv,
@@ -975,6 +1024,7 @@ static int __init inet6_init(void)
 	if (err)
 		goto sysctl_fail;
 #endif
+	register_cpu_notifier(&ipv6_cpu_notifier);
 out:
 	return err;
 
@@ -1045,6 +1095,8 @@ static void __exit inet6_exit(void)
 {
 	if (disable_ipv6_mod)
 		return;
+
+	unregister_cpu_notifier(&ipv6_cpu_notifier);
 
 	/* First of all disallow new sockets creation. */
 	sock_unregister(PF_INET6);
