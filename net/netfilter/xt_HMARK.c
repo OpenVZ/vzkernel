@@ -334,6 +334,7 @@ static int hmark_tg_check(const struct xt_tgchk_param *par)
 		pr_info("xt_HMARK: spi-set and port-set can't be combined\n");
 		return -EINVAL;
 	}
+	allow_conntrack_allocation(par->net);
 	return 0;
 }
 
