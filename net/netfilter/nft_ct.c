@@ -336,6 +336,8 @@ static int nft_ct_get_init(const struct nft_ctx *ctx,
 	if (err < 0)
 		return err;
 
+	allow_conntrack_allocation(ctx->net);
+
 	return 0;
 }
 
