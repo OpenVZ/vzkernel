@@ -855,6 +855,12 @@ __nf_conntrack_alloc(struct net *net,
 	unsigned int ct_max = net->ct.max ? net->ct.max : init_net.ct.max;
 	struct nf_conn *ct;
 
+	if (!net->ct.can_alloc) {
+		/* No rules loaded */
+		return NULL;
+	}
+	smp_rmb(); /* Pairs with wmb in allow_conntrack_allocation() */
+
 	if (unlikely(!nf_conntrack_hash_rnd)) {
 		init_nf_conntrack_hash_rnd();
 		/* recompute the hash as nf_conntrack_hash_rnd is initialized */
@@ -971,7 +977,7 @@ init_conntrack(struct net *net, struct nf_conn *tmpl,
 	zone = nf_ct_zone_tmpl(tmpl, skb, &tmp);
 	ct = __nf_conntrack_alloc(net, zone, tuple, &repl_tuple, GFP_ATOMIC,
 				  hash);
-	if (IS_ERR(ct))
+	if (IS_ERR_OR_NULL(ct))
 		return (struct nf_conntrack_tuple_hash *)ct;
 
 	if (tmpl && nfct_synproxy(tmpl)) {
@@ -1829,6 +1835,7 @@ int nf_conntrack_init_net(struct net *net)
 	int cpu;
 
 	atomic_set(&net->ct.count, 0);
+	net->ct.can_alloc = false;
 	net->ct.max = init_net.ct.max;
 	seqcount_init(&net->ct.generation);
 
