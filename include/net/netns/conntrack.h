@@ -73,6 +73,7 @@ struct ct_pcpu {
 
 struct netns_ct {
 	atomic_t		count;
+	bool			can_alloc;
 	unsigned int		max;
 	unsigned int		expect_count;
 	unsigned int		expect_max;
