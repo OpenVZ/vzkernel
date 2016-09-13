@@ -182,6 +182,7 @@ static int connmark_mt_check_v0(const struct xt_mtchk_param *par)
 				    "proto=%u\n", par->family);
 		return -EINVAL;
 	}
+	allow_conntrack_allocation(par->net);
 	return 0;
 }
 
@@ -207,6 +208,8 @@ static int connmark_mt_check(const struct xt_mtchk_param *par)
 	if (ret < 0)
 		pr_info("cannot load conntrack support for proto=%u\n",
 			par->family);
+	else
+		allow_conntrack_allocation(par->net);
 	return ret;
 }
 
