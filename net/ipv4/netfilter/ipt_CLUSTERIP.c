@@ -487,6 +487,8 @@ static int clusterip_tg_check(const struct xt_tgchk_param *par)
 	if (ret < 0)
 		pr_info("cannot load conntrack support for proto=%u\n",
 			par->family);
+	else
+		allow_conntrack_allocation(par->net);
 	return ret;
 }
 

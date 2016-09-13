@@ -23,6 +23,13 @@ static int xt_nat_checkentry_v0(const struct xt_tgchk_param *par)
 			par->target->name);
 		return -EINVAL;
 	}
+	allow_conntrack_allocation(par->net);
+	return 0;
+}
+
+static int xt_nat_checkentry_v1(const struct xt_tgchk_param *par)
+{
+	allow_conntrack_allocation(par->net);
 	return 0;
 }
 
@@ -129,6 +136,7 @@ static struct xt_target xt_nat_target_reg[] __read_mostly = {
 	{
 		.name		= "SNAT",
 		.revision	= 1,
+		.checkentry	= xt_nat_checkentry_v1,
 		.target		= xt_snat_target_v1,
 		.targetsize	= sizeof(struct nf_nat_range),
 		.table		= "nat",
@@ -139,6 +147,7 @@ static struct xt_target xt_nat_target_reg[] __read_mostly = {
 	{
 		.name		= "DNAT",
 		.revision	= 1,
+		.checkentry	= xt_nat_checkentry_v1,
 		.target		= xt_dnat_target_v1,
 		.targetsize	= sizeof(struct nf_nat_range),
 		.table		= "nat",
