@@ -205,13 +205,26 @@ void ip_send_unicast_reply(struct sock *sk, struct sk_buff *skb,
 #define NET_ADD_STATS_BH(net, field, adnd) SNMP_ADD_STATS_BH((net)->mib.net_statistics, field, adnd)
 #define NET_ADD_STATS_USER(net, field, adnd) SNMP_ADD_STATS_USER((net)->mib.net_statistics, field, adnd)
 
-unsigned long snmp_fold_field(void __percpu *mib[], int offt);
+unsigned long __snmp_fold_field(void __percpu *mib[], int offt, const struct cpumask *mask);
+static inline unsigned long snmp_fold_field(void __percpu *mib[], int offt)
+{
+	return __snmp_fold_field(mib, offt, cpu_possible_mask);
+}
 #if BITS_PER_LONG==32
-u64 snmp_fold_field64(void __percpu *mib[], int offt, size_t sync_off);
+u64 __snmp_fold_field64(void __percpu *mib[], int offt, size_t sync_off,
+			const struct cpumask *mask);
+static inline u64 snmp_fold_field64(void __percpu *mib[], int offt, size_t sync_off)
+{
+	return __snmp_fold_field64(mib, offt, sync_off, cpu_possible_mask)
+}
 #else
 static inline u64 snmp_fold_field64(void __percpu *mib[], int offt, size_t syncp_off)
 {
 	return snmp_fold_field(mib, offt);
+}
+static inline unsigned long __snmp_fold_field64(void __percpu *mib[], int offt, size_t syncp_off, const struct cpumask *mask)
+{
+	return __snmp_fold_field(mib, offt, mask);
 }
 #endif
 int snmp_mib_init(void __percpu *ptr[2], size_t mibsize, size_t align);
