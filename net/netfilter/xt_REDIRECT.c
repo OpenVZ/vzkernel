@@ -76,6 +76,7 @@ static int redirect_tg6_checkentry(const struct xt_tgchk_param *par)
 
 	if (range->flags & NF_NAT_RANGE_MAP_IPS)
 		return -EINVAL;
+	allow_conntrack_allocation(par->net);
 	return 0;
 }
 
@@ -92,6 +93,7 @@ static int redirect_tg4_check(const struct xt_tgchk_param *par)
 		pr_debug("bad rangesize %u.\n", mr->rangesize);
 		return -EINVAL;
 	}
+	allow_conntrack_allocation(par->net);
 	return 0;
 }
 
