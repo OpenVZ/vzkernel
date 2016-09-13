@@ -407,12 +407,16 @@ static unsigned int ipv4_synproxy_hook(const struct nf_hook_ops *ops,
 static int synproxy_tg4_check(const struct xt_tgchk_param *par)
 {
 	const struct ipt_entry *e = par->entryinfo;
+	int ret;
 
 	if (e->ip.proto != IPPROTO_TCP ||
 	    e->ip.invflags & XT_INV_PROTO)
 		return -EINVAL;
 
-	return nf_ct_l3proto_try_module_get(par->family);
+	ret = nf_ct_l3proto_try_module_get(par->family);
+	if (ret == 0)
+		allow_conntrack_allocation(par->net);
+	return ret;
 }
 
 static void synproxy_tg4_destroy(const struct xt_tgdtor_param *par)
