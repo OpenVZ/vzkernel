@@ -148,6 +148,7 @@ static int xt_cluster_mt_checkentry(const struct xt_mtchk_param *par)
 			"higher than the total number of nodes\n");
 		return -EDOM;
 	}
+	allow_conntrack_allocation(par->net);
 	return 0;
 }
 
