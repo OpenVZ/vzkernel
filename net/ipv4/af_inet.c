@@ -1481,27 +1481,29 @@ int inet_ctl_sock_create(struct sock **sk, unsigned short family,
 }
 EXPORT_SYMBOL_GPL(inet_ctl_sock_create);
 
-unsigned long snmp_fold_field(void __percpu *mib[], int offt)
+unsigned long __snmp_fold_field(void __percpu *mib[], int offt,
+				const struct cpumask *mask)
 {
 	unsigned long res = 0;
 	int i, j;
 
-	for_each_possible_cpu(i) {
+	for_each_cpu(i, mask) {
 		for (j = 0; j < SNMP_ARRAY_SZ; j++)
 			res += *(((unsigned long *) per_cpu_ptr(mib[j], i)) + offt);
 	}
 	return res;
 }
-EXPORT_SYMBOL_GPL(snmp_fold_field);
+EXPORT_SYMBOL_GPL(__snmp_fold_field);
 
 #if BITS_PER_LONG==32
 
-u64 snmp_fold_field64(void __percpu *mib[], int offt, size_t syncp_offset)
+u64 __snmp_fold_field64(void __percpu *mib[], int offt, size_t syncp_offset,
+			const struct cpumask *mask)
 {
 	u64 res = 0;
 	int cpu;
 
-	for_each_possible_cpu(cpu) {
+	for_each_cpu(cpu, mask) {
 		void *bhptr;
 		struct u64_stats_sync *syncp;
 		u64 v;
