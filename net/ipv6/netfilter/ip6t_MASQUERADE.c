@@ -33,6 +33,7 @@ static int masquerade_tg6_checkentry(const struct xt_tgchk_param *par)
 
 	if (range->flags & NF_NAT_RANGE_MAP_IPS)
 		return -EINVAL;
+	allow_conntrack_allocation(par->net);
 	return 0;
 }
 
