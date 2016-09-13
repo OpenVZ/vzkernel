@@ -161,6 +161,7 @@ static int ipvs_mt_check(const struct xt_mtchk_param *par)
 		return -EINVAL;
 	}
 
+	allow_conntrack_allocation(par->net);
 	return 0;
 }
 

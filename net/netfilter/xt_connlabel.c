@@ -57,7 +57,8 @@ static int connlabel_mt_check(const struct xt_mtchk_param *par)
 		pr_info("cannot load conntrack support for proto=%u\n",
 							par->family);
 		return ret;
-	}
+	} else
+		allow_conntrack_allocation(par->net);
 
 	par->net->ct.labels_used++;
 	words = BITS_TO_LONGS(info->bit+1);
