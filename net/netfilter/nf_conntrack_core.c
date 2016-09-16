@@ -832,16 +832,16 @@ void init_nf_conntrack_hash_rnd(void)
 	cmpxchg(&nf_conntrack_hash_rnd, 0, rand);
 }
 
-static struct nf_conn *
+struct nf_conn *
 __nf_conntrack_alloc(struct net *net, u16 zone,
 		     const struct nf_conntrack_tuple *orig,
 		     const struct nf_conntrack_tuple *repl,
-		     gfp_t gfp, u32 hash)
+		     gfp_t gfp, u32 hash, bool can_alloc)
 {
 	unsigned int ct_max = net->ct.max ? net->ct.max : init_net.ct.max;
 	struct nf_conn *ct;
 
-	if (!net->ct.can_alloc) {
+	if (!net->ct.can_alloc && !can_alloc) {
 		/* No rules loaded */
 		return NULL;
 	}
@@ -915,13 +915,14 @@ out_free:
 	return ERR_PTR(-ENOMEM);
 #endif
 }
+EXPORT_SYMBOL_GPL(__nf_conntrack_alloc);
 
 struct nf_conn *nf_conntrack_alloc(struct net *net, u16 zone,
 				   const struct nf_conntrack_tuple *orig,
 				   const struct nf_conntrack_tuple *repl,
 				   gfp_t gfp)
 {
-	return __nf_conntrack_alloc(net, zone, orig, repl, gfp, 0);
+	return __nf_conntrack_alloc(net, zone, orig, repl, gfp, 0, false);
 }
 EXPORT_SYMBOL_GPL(nf_conntrack_alloc);
 
@@ -968,7 +969,7 @@ init_conntrack(struct net *net, struct nf_conn *tmpl,
 	}
 
 	ct = __nf_conntrack_alloc(net, zone, tuple, &repl_tuple, GFP_ATOMIC,
-				  hash);
+				  hash, false);
 	if (IS_ERR_OR_NULL(ct))
 		return (struct nf_conntrack_tuple_hash *)ct;
 
