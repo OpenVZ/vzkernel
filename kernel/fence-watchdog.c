@@ -42,34 +42,29 @@ DEFINE_VVAR(volatile unsigned long, fence_wdog_jiffies64) = MAX_U64;
 static int fence_wdog_action = FENCE_WDOG_CRASH;
 static atomic_t not_fenced = ATOMIC_INIT(-1);
 
-static void do_halt(struct work_struct *dummy)
+static void do_halt_or_reboot(struct work_struct *dummy)
 {
 	printk(KERN_EMERG"fence-watchdog: %s\n",
 	       action_names[fence_wdog_action]);
-	kernel_halt();
-}
-
-static DECLARE_WORK(halt_work, do_halt);
-
-void fence_wdog_do_fence(void)
-{
-	char *killer = NULL;
-
 	switch (fence_wdog_action) {
-	case FENCE_WDOG_CRASH:
-		panic_on_oops = 1;
-		wmb();
-		*killer = 1;
-		break;
 	case FENCE_WDOG_REBOOT:
-		lockdep_off();
-		local_irq_enable();
 		emergency_restart();
 		break;
 	case FENCE_WDOG_POWEROFF:
-		schedule_work(&halt_work);
+		kernel_halt();
 		break;
 	}
+}
+
+static DECLARE_WORK(halt_or_reboot_work, do_halt_or_reboot);
+
+void fence_wdog_do_fence(void)
+{
+	if (fence_wdog_action == FENCE_WDOG_CRASH)
+		panic("fence-watchdog: %s\n",
+		      action_names[fence_wdog_action]);
+	else
+		schedule_work(&halt_or_reboot_work);
 }
 
 inline int fence_wdog_check_timer(void)
