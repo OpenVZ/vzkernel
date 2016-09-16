@@ -196,8 +196,6 @@ static int ovl_readlink(struct dentry *dentry, char __user *buf, int bufsiz)
 	if (!realinode->i_op->readlink)
 		return -EINVAL;
 
-	touch_atime(&realpath);
-
 	return realinode->i_op->readlink(realpath.dentry, buf, bufsiz);
 }
 
@@ -383,6 +381,29 @@ struct inode *ovl_d_select_inode(struct dentry *dentry)
 	return d_backing_inode(realpath.dentry);
 }
 
+int ovl_update_time(struct inode *inode, struct timespec *ts, int flags)
+{
+	struct dentry *alias;
+	struct path upperpath;
+
+	if (!(flags & S_ATIME))
+		return 0;
+
+	alias = d_find_any_alias(inode);
+	if (!alias)
+		return 0;
+
+	ovl_path_upper(alias, &upperpath);
+	if (upperpath.dentry) {
+		touch_atime(&upperpath);
+		inode->i_atime = d_inode(upperpath.dentry)->i_atime;
+	}
+
+	dput(alias);
+
+	return 0;
+}
+
 static const struct inode_operations_wrapper ovl_file_inode_operations = {
 	.ops = {
 	.setattr	= ovl_setattr,
@@ -392,6 +413,7 @@ static const struct inode_operations_wrapper ovl_file_inode_operations = {
 	.getxattr	= ovl_getxattr,
 	.listxattr	= ovl_listxattr,
 	.removexattr	= ovl_removexattr,
+	.update_time	= ovl_update_time,
 	},
 	.dentry_open	= ovl_dentry_open,
 };
@@ -406,6 +428,7 @@ static const struct inode_operations ovl_symlink_inode_operations = {
 	.getxattr	= ovl_getxattr,
 	.listxattr	= ovl_listxattr,
 	.removexattr	= ovl_removexattr,
+	.update_time	= ovl_update_time,
 };
 
 struct inode *ovl_new_inode(struct super_block *sb, umode_t mode,
@@ -421,7 +444,7 @@ struct inode *ovl_new_inode(struct super_block *sb, umode_t mode,
 
 	inode->i_ino = get_next_ino();
 	inode->i_mode = mode;
-	inode->i_flags |= S_NOATIME | S_NOCMTIME;
+	inode->i_flags |= S_NOCMTIME;
 
 	switch (mode) {
 	case S_IFDIR:
