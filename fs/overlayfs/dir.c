@@ -924,6 +924,7 @@ const struct inode_operations_wrapper ovl_dir_inode_operations = {
 	.getxattr	= ovl_getxattr,
 	.listxattr	= ovl_listxattr,
 	.removexattr	= ovl_removexattr,
+	.update_time	= ovl_update_time,
 	},
 	.rename2	= ovl_rename2,
 };
