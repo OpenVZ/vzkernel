@@ -2703,7 +2703,8 @@ struct sk_buff *dev_hard_start_xmit(struct sk_buff *first, struct net_device *de
 #ifdef CONFIG_FENCE_WATCHDOG
 	if (unlikely(fence_wdog_check_timer())) {
 		kfree_skb(skb);
-		return NETDEV_TX_OK;
+		*ret = rc;
+		return NULL;
 	}
 #endif
 
