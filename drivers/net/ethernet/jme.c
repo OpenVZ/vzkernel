@@ -2131,9 +2131,9 @@ jme_tx_csum(struct jme_adapter *jme, struct sk_buff *skb, u8 *flags)
 static inline void
 jme_tx_vlan(struct sk_buff *skb, __le16 *vlan, u8 *flags)
 {
-	if (vlan_tx_tag_present(skb)) {
+	if (skb_vlan_tag_present(skb)) {
 		*flags |= TXFLAG_TAGON;
-		*vlan = cpu_to_le16(vlan_tx_tag_get(skb));
+		*vlan = cpu_to_le16(skb_vlan_tag_get(skb));
 	}
 }
 
@@ -3308,7 +3308,7 @@ static SIMPLE_DEV_PM_OPS(jme_pm_ops, jme_suspend, jme_resume);
 #define JME_PM_OPS NULL
 #endif
 
-static DEFINE_PCI_DEVICE_TABLE(jme_pci_tbl) = {
+static const struct pci_device_id jme_pci_tbl[] = {
 	{ PCI_VDEVICE(JMICRON, PCI_DEVICE_ID_JMICRON_JMC250) },
 	{ PCI_VDEVICE(JMICRON, PCI_DEVICE_ID_JMICRON_JMC260) },
 	{ }

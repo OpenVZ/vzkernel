@@ -1575,7 +1575,7 @@ static int zero;
 static int three = 3;
 
 static int
-proc_do_defense_mode(ctl_table *table, int write,
+proc_do_defense_mode(struct ctl_table *table, int write,
 		     void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	struct net *net = current->nsproxy->net_ns;
@@ -1596,7 +1596,7 @@ proc_do_defense_mode(ctl_table *table, int write,
 }
 
 static int
-proc_do_sync_threshold(ctl_table *table, int write,
+proc_do_sync_threshold(struct ctl_table *table, int write,
 		       void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int *valp = table->data;
@@ -1616,7 +1616,7 @@ proc_do_sync_threshold(ctl_table *table, int write,
 }
 
 static int
-proc_do_sync_mode(ctl_table *table, int write,
+proc_do_sync_mode(struct ctl_table *table, int write,
 		     void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int *valp = table->data;
@@ -1634,7 +1634,7 @@ proc_do_sync_mode(ctl_table *table, int write,
 }
 
 static int
-proc_do_sync_ports(ctl_table *table, int write,
+proc_do_sync_ports(struct ctl_table *table, int write,
 		   void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int *valp = table->data;
@@ -1779,6 +1779,12 @@ static struct ctl_table vs_vars[] = {
 	},
 	{
 		.procname	= "backup_only",
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "conn_reuse_mode",
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
@@ -2162,10 +2168,10 @@ static int ip_vs_stats_percpu_show(struct seq_file *seq, void *v)
 		__u64 inbytes, outbytes;
 
 		do {
-			start = u64_stats_fetch_begin_bh(&u->syncp);
+			start = u64_stats_fetch_begin_irq(&u->syncp);
 			inbytes = u->ustats.inbytes;
 			outbytes = u->ustats.outbytes;
-		} while (u64_stats_fetch_retry_bh(&u->syncp, start));
+		} while (u64_stats_fetch_retry_irq(&u->syncp, start));
 
 		seq_printf(seq, "%3X %8X %8X %8X %16LX %16LX\n",
 			   i, u->ustats.conns, u->ustats.inpkts,
@@ -3565,7 +3571,7 @@ out:
 }
 
 
-static struct genl_ops ip_vs_genl_ops[] __read_mostly = {
+static const struct genl_ops ip_vs_genl_ops[] __read_mostly = {
 	{
 		.cmd	= IPVS_CMD_NEW_SERVICE,
 		.flags	= GENL_ADMIN_PERM,
@@ -3664,7 +3670,7 @@ static struct genl_ops ip_vs_genl_ops[] __read_mostly = {
 static int __init ip_vs_genl_register(void)
 {
 	return genl_register_family_with_ops(&ip_vs_genl_family,
-		ip_vs_genl_ops, ARRAY_SIZE(ip_vs_genl_ops));
+					     ip_vs_genl_ops);
 }
 
 static void ip_vs_genl_unregister(void)
@@ -3736,6 +3742,8 @@ static int __net_init ip_vs_control_net_init_sysctl(struct net *net)
 	ipvs->sysctl_pmtu_disc = 1;
 	tbl[idx++].data = &ipvs->sysctl_pmtu_disc;
 	tbl[idx++].data = &ipvs->sysctl_backup_only;
+	ipvs->sysctl_conn_reuse_mode = 1;
+	tbl[idx++].data = &ipvs->sysctl_conn_reuse_mode;
 
 
 	ipvs->sysctl_hdr = register_net_sysctl(net, "net/ipv4/vs", tbl);

@@ -27,6 +27,7 @@
 #include <linux/wait.h>
 #include <linux/timer.h>
 #include <linux/completion.h>
+#include <linux/rh_kabi.h>
 
 /*
  * Callbacks for platform drivers to implement.
@@ -507,11 +508,11 @@ struct pm_domain_data {
 struct pm_subsys_data {
 	spinlock_t lock;
 	unsigned int refcount;
-#ifdef CONFIG_PM_CLK
-	struct list_head clock_list;
-#endif
 #ifdef CONFIG_PM_GENERIC_DOMAINS
 	struct pm_domain_data *domain_data;
+#endif
+#ifdef CONFIG_PM_CLK
+	RH_KABI_EXTEND(struct list_head clock_list)
 #endif
 };
 
@@ -562,6 +563,11 @@ struct dev_pm_info {
 #endif
 	struct pm_subsys_data	*subsys_data;  /* Owned by the subsystem. */
 	struct dev_pm_qos	*qos;
+};
+
+/* This struct is never under KABI restrictions */
+struct dev_pm_info_rh {
+	RH_KABI_EXTEND(void (*set_latency_tolerance)(struct device *, s32))
 };
 
 extern void update_pm_runtime_accounting(struct device *dev);

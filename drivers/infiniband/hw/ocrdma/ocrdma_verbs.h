@@ -36,10 +36,14 @@ int ocrdma_post_recv(struct ib_qp *, struct ib_recv_wr *,
 int ocrdma_poll_cq(struct ib_cq *, int num_entries, struct ib_wc *wc);
 int ocrdma_arm_cq(struct ib_cq *, enum ib_cq_notify_flags flags);
 
-int ocrdma_query_device(struct ib_device *, struct ib_device_attr *props);
+int ocrdma_query_device(struct ib_device *, struct ib_device_attr *props,
+			struct ib_udata *uhw);
 int ocrdma_query_port(struct ib_device *, u8 port, struct ib_port_attr *props);
 int ocrdma_modify_port(struct ib_device *, u8 port, int mask,
 		       struct ib_port_modify *props);
+
+enum rdma_protocol_type
+ocrdma_query_protocol(struct ib_device *device, u8 port_num);
 
 void ocrdma_get_guid(struct ocrdma_dev *, u8 *guid);
 int ocrdma_query_gid(struct ib_device *, u8 port,
@@ -56,8 +60,10 @@ struct ib_pd *ocrdma_alloc_pd(struct ib_device *,
 			      struct ib_ucontext *, struct ib_udata *);
 int ocrdma_dealloc_pd(struct ib_pd *pd);
 
-struct ib_cq *ocrdma_create_cq(struct ib_device *, int entries, int vector,
-			       struct ib_ucontext *, struct ib_udata *);
+struct ib_cq *ocrdma_create_cq(struct ib_device *ibdev,
+			       const struct ib_cq_init_attr *attr,
+			       struct ib_ucontext *ib_ctx,
+			       struct ib_udata *udata);
 int ocrdma_resize_cq(struct ib_cq *, int cqe, struct ib_udata *);
 int ocrdma_destroy_cq(struct ib_cq *);
 
@@ -72,6 +78,7 @@ int ocrdma_query_qp(struct ib_qp *,
 		    struct ib_qp_attr *qp_attr,
 		    int qp_attr_mask, struct ib_qp_init_attr *);
 int ocrdma_destroy_qp(struct ib_qp *);
+void ocrdma_del_flush_qp(struct ocrdma_qp *qp);
 
 struct ib_srq *ocrdma_create_srq(struct ib_pd *, struct ib_srq_init_attr *,
 				 struct ib_udata *);
@@ -89,5 +96,10 @@ struct ib_mr *ocrdma_reg_kernel_mr(struct ib_pd *,
 				   int num_phys_buf, int acc, u64 *iova_start);
 struct ib_mr *ocrdma_reg_user_mr(struct ib_pd *, u64 start, u64 length,
 				 u64 virt, int acc, struct ib_udata *);
+struct ib_mr *ocrdma_alloc_frmr(struct ib_pd *pd, int max_page_list_len);
+struct ib_fast_reg_page_list *ocrdma_alloc_frmr_page_list(struct ib_device
+							*ibdev,
+							int page_list_len);
+void ocrdma_free_frmr_page_list(struct ib_fast_reg_page_list *page_list);
 
 #endif				/* __OCRDMA_VERBS_H__ */

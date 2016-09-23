@@ -121,103 +121,8 @@ static int ipgre_tunnel_init(struct net_device *dev);
 static int ipgre_net_id __read_mostly;
 static int gre_tap_net_id __read_mostly;
 
-static __sum16 check_checksum(struct sk_buff *skb)
-{
-	__sum16 csum = 0;
-
-	switch (skb->ip_summed) {
-	case CHECKSUM_COMPLETE:
-		csum = csum_fold(skb->csum);
-
-		if (!csum)
-			break;
-		/* Fall through. */
-
-	case CHECKSUM_NONE:
-		skb->csum = 0;
-		csum = __skb_checksum_complete(skb);
-		skb->ip_summed = CHECKSUM_COMPLETE;
-		break;
-	}
-
-	return csum;
-}
-
-static int ip_gre_calc_hlen(__be16 o_flags)
-{
-	int addend = 4;
-
-	if (o_flags&TUNNEL_CSUM)
-		addend += 4;
-	if (o_flags&TUNNEL_KEY)
-		addend += 4;
-	if (o_flags&TUNNEL_SEQ)
-		addend += 4;
-	return addend;
-}
-
-static int parse_gre_header(struct sk_buff *skb, struct tnl_ptk_info *tpi,
-			    bool *csum_err, int *hdr_len)
-{
-	unsigned int ip_hlen = ip_hdrlen(skb);
-	const struct gre_base_hdr *greh;
-	__be32 *options;
-
-	if (unlikely(!pskb_may_pull(skb, sizeof(struct gre_base_hdr))))
-		return -EINVAL;
-
-	greh = (struct gre_base_hdr *)(skb_network_header(skb) + ip_hlen);
-	if (unlikely(greh->flags & (GRE_VERSION | GRE_ROUTING)))
-		return -EINVAL;
-
-	tpi->flags = gre_flags_to_tnl_flags(greh->flags);
-	*hdr_len = ip_gre_calc_hlen(tpi->flags);
-
-	if (!pskb_may_pull(skb, *hdr_len))
-		return -EINVAL;
-
-	greh = (struct gre_base_hdr *)(skb_network_header(skb) + ip_hlen);
-
-	tpi->proto = greh->protocol;
-
-	options = (__be32 *)(greh + 1);
-	if (greh->flags & GRE_CSUM) {
-		if (check_checksum(skb)) {
-			*csum_err = true;
-			return -EINVAL;
-		}
-		options++;
-	}
-
-	if (greh->flags & GRE_KEY) {
-		tpi->key = *options;
-		options++;
-	} else
-		tpi->key = 0;
-
-	if (unlikely(greh->flags & GRE_SEQ)) {
-		tpi->seq = *options;
-		options++;
-	} else
-		tpi->seq = 0;
-
-	/* WCCP version 1 and 2 protocol decoding.
-	 * - Change protocol to IP
-	 * - When dealing with WCCPv2, Skip extra 4 bytes in GRE header
-	 */
-	if (greh->flags == 0 && tpi->proto == htons(ETH_P_WCCP)) {
-		tpi->proto = htons(ETH_P_IP);
-		if ((*(u8 *)options & 0xF0) != 0x40) {
-			*hdr_len += 4;
-			if (!pskb_may_pull(skb, *hdr_len))
-				return -EINVAL;
-		}
-	}
-
-	return 0;
-}
-
-static void ipgre_err(struct sk_buff *skb, u32 info)
+static int ipgre_err(struct sk_buff *skb, u32 info,
+		     const struct tnl_ptk_info *tpi)
 {
 
 	/* All the routers (except for Linux) return only
@@ -239,26 +144,18 @@ static void ipgre_err(struct sk_buff *skb, u32 info)
 	const int type = icmp_hdr(skb)->type;
 	const int code = icmp_hdr(skb)->code;
 	struct ip_tunnel *t;
-	struct tnl_ptk_info tpi;
-	int hdr_len;
-	bool csum_err = false;
-
-	if (parse_gre_header(skb, &tpi, &csum_err, &hdr_len)) {
-		if (!csum_err)          /* ignore csum errors. */
-			return;
-	}
 
 	switch (type) {
 	default:
 	case ICMP_PARAMETERPROB:
-		return;
+		return PACKET_RCVD;
 
 	case ICMP_DEST_UNREACH:
 		switch (code) {
 		case ICMP_SR_FAILED:
 		case ICMP_PORT_UNREACH:
 			/* Impossible event. */
-			return;
+			return PACKET_RCVD;
 		default:
 			/* All others are translated to HOST_UNREACH.
 			   rfc2003 contains "deep thoughts" about NET_UNREACH,
@@ -269,138 +166,61 @@ static void ipgre_err(struct sk_buff *skb, u32 info)
 		break;
 	case ICMP_TIME_EXCEEDED:
 		if (code != ICMP_EXC_TTL)
-			return;
+			return PACKET_RCVD;
 		break;
 
 	case ICMP_REDIRECT:
 		break;
 	}
 
-	if (tpi.proto == htons(ETH_P_TEB))
+	if (tpi->proto == htons(ETH_P_TEB))
 		itn = net_generic(net, gre_tap_net_id);
 	else
 		itn = net_generic(net, ipgre_net_id);
 
 	iph = (const struct iphdr *)skb->data;
-	t = ip_tunnel_lookup(itn, skb->dev->ifindex, tpi.flags,
-			     iph->daddr, iph->saddr, tpi.key);
+	t = ip_tunnel_lookup(itn, skb->dev->ifindex, tpi->flags,
+			     iph->daddr, iph->saddr, tpi->key);
 
 	if (t == NULL)
-		return;
+		return PACKET_REJECT;
 
-	if (type == ICMP_DEST_UNREACH && code == ICMP_FRAG_NEEDED) {
-		ipv4_update_pmtu(skb, dev_net(skb->dev), info,
-				 t->parms.link, 0, IPPROTO_GRE, 0);
-		return;
-	}
-	if (type == ICMP_REDIRECT) {
-		ipv4_redirect(skb, dev_net(skb->dev), t->parms.link, 0,
-			      IPPROTO_GRE, 0);
-		return;
-	}
 	if (t->parms.iph.daddr == 0 ||
 	    ipv4_is_multicast(t->parms.iph.daddr))
-		return;
+		return PACKET_RCVD;
 
 	if (t->parms.iph.ttl == 0 && type == ICMP_TIME_EXCEEDED)
-		return;
+		return PACKET_RCVD;
 
 	if (time_before(jiffies, t->err_time + IPTUNNEL_ERR_TIMEO))
 		t->err_count++;
 	else
 		t->err_count = 1;
 	t->err_time = jiffies;
+	return PACKET_RCVD;
 }
 
-static int ipgre_rcv(struct sk_buff *skb)
+static int ipgre_rcv(struct sk_buff *skb, const struct tnl_ptk_info *tpi)
 {
 	struct net *net = dev_net(skb->dev);
 	struct ip_tunnel_net *itn;
 	const struct iphdr *iph;
 	struct ip_tunnel *tunnel;
-	struct tnl_ptk_info tpi;
-	int hdr_len;
-	bool csum_err = false;
 
-	if (parse_gre_header(skb, &tpi, &csum_err, &hdr_len) < 0)
-		goto drop;
-
-	if (tpi.proto == htons(ETH_P_TEB))
+	if (tpi->proto == htons(ETH_P_TEB))
 		itn = net_generic(net, gre_tap_net_id);
 	else
 		itn = net_generic(net, ipgre_net_id);
 
 	iph = ip_hdr(skb);
-	tunnel = ip_tunnel_lookup(itn, skb->dev->ifindex, tpi.flags,
-				  iph->saddr, iph->daddr, tpi.key);
+	tunnel = ip_tunnel_lookup(itn, skb->dev->ifindex, tpi->flags,
+				  iph->saddr, iph->daddr, tpi->key);
 
 	if (tunnel) {
-		ip_tunnel_rcv(tunnel, skb, &tpi, log_ecn_error);
-		return 0;
+		ip_tunnel_rcv(tunnel, skb, tpi, log_ecn_error);
+		return PACKET_RCVD;
 	}
-	icmp_send(skb, ICMP_DEST_UNREACH, ICMP_PORT_UNREACH, 0);
-drop:
-	kfree_skb(skb);
-	return 0;
-}
-
-static struct sk_buff *handle_offloads(struct ip_tunnel *tunnel, struct sk_buff *skb)
-{
-	int err;
-
-	if (skb_is_gso(skb)) {
-		err = skb_unclone(skb, GFP_ATOMIC);
-		if (unlikely(err))
-			goto error;
-		skb_shinfo(skb)->gso_type |= SKB_GSO_GRE;
-		return skb;
-	} else if (skb->ip_summed == CHECKSUM_PARTIAL &&
-		   tunnel->parms.o_flags&TUNNEL_CSUM) {
-		err = skb_checksum_help(skb);
-		if (unlikely(err))
-			goto error;
-	} else if (skb->ip_summed != CHECKSUM_PARTIAL)
-		skb->ip_summed = CHECKSUM_NONE;
-
-	return skb;
-
-error:
-	kfree_skb(skb);
-	return ERR_PTR(err);
-}
-
-static struct sk_buff *gre_build_header(struct sk_buff *skb,
-					const struct tnl_ptk_info *tpi,
-					int hdr_len)
-{
-	struct gre_base_hdr *greh;
-
-	skb_push(skb, hdr_len);
-
-	greh = (struct gre_base_hdr *)skb->data;
-	greh->flags = tnl_flags_to_gre_flags(tpi->flags);
-	greh->protocol = tpi->proto;
-
-	if (tpi->flags&(TUNNEL_KEY|TUNNEL_CSUM|TUNNEL_SEQ)) {
-		__be32 *ptr = (__be32 *)(((u8 *)greh) + hdr_len - 4);
-
-		if (tpi->flags&TUNNEL_SEQ) {
-			*ptr = tpi->seq;
-			ptr--;
-		}
-		if (tpi->flags&TUNNEL_KEY) {
-			*ptr = tpi->key;
-			ptr--;
-		}
-		if (tpi->flags&TUNNEL_CSUM &&
-		    !(skb_shinfo(skb)->gso_type & SKB_GSO_GRE)) {
-			*(__sum16 *)ptr = 0;
-			*(__sum16 *)ptr = csum_fold(skb_checksum(skb, 0,
-								 skb->len, 0));
-		}
-	}
-
-	return skb;
+	return PACKET_REJECT;
 }
 
 static void __gre_xmit(struct sk_buff *skb, struct net_device *dev,
@@ -410,11 +230,6 @@ static void __gre_xmit(struct sk_buff *skb, struct net_device *dev,
 	struct ip_tunnel *tunnel = netdev_priv(dev);
 	struct tnl_ptk_info tpi;
 
-	if (likely(!skb->encapsulation)) {
-		skb_reset_inner_headers(skb);
-		skb->encapsulation = 1;
-	}
-
 	tpi.flags = tunnel->parms.o_flags;
 	tpi.proto = proto;
 	tpi.key = tunnel->parms.o_key;
@@ -423,13 +238,11 @@ static void __gre_xmit(struct sk_buff *skb, struct net_device *dev,
 	tpi.seq = htonl(tunnel->o_seqno);
 
 	/* Push GRE header. */
-	skb = gre_build_header(skb, &tpi, tunnel->hlen);
-	if (unlikely(!skb)) {
-		dev->stats.tx_dropped++;
-		return;
-	}
+	gre_build_header(skb, &tpi, tunnel->hlen);
 
-	ip_tunnel_xmit(skb, dev, tnl_params);
+	skb_set_inner_protocol(skb, tpi.proto);
+
+	ip_tunnel_xmit(skb, dev, tnl_params, tnl_params->protocol);
 }
 
 static netdev_tx_t ipgre_xmit(struct sk_buff *skb,
@@ -437,10 +250,6 @@ static netdev_tx_t ipgre_xmit(struct sk_buff *skb,
 {
 	struct ip_tunnel *tunnel = netdev_priv(dev);
 	const struct iphdr *tnl_params;
-
-	skb = handle_offloads(tunnel, skb);
-	if (IS_ERR(skb))
-		goto out;
 
 	if (dev->header_ops) {
 		/* Need space for new headers */
@@ -454,6 +263,7 @@ static netdev_tx_t ipgre_xmit(struct sk_buff *skb,
 		 * to gre header.
 		 */
 		skb_pull(skb, tunnel->hlen + sizeof(struct iphdr));
+		skb_reset_mac_header(skb);
 	} else {
 		if (skb_cow_head(skb, dev->needed_headroom))
 			goto free_skb;
@@ -461,12 +271,16 @@ static netdev_tx_t ipgre_xmit(struct sk_buff *skb,
 		tnl_params = &tunnel->parms.iph;
 	}
 
+	skb = gre_handle_offloads(skb, !!(tunnel->parms.o_flags&TUNNEL_CSUM));
+	if (IS_ERR(skb))
+		goto out;
+
 	__gre_xmit(skb, dev, tnl_params, skb->protocol);
 
 	return NETDEV_TX_OK;
 
 free_skb:
-	dev_kfree_skb(skb);
+	kfree_skb(skb);
 out:
 	dev->stats.tx_dropped++;
 	return NETDEV_TX_OK;
@@ -477,7 +291,7 @@ static netdev_tx_t gre_tap_xmit(struct sk_buff *skb,
 {
 	struct ip_tunnel *tunnel = netdev_priv(dev);
 
-	skb = handle_offloads(tunnel, skb);
+	skb = gre_handle_offloads(skb, !!(tunnel->parms.o_flags&TUNNEL_CSUM));
 	if (IS_ERR(skb))
 		goto out;
 
@@ -489,7 +303,7 @@ static netdev_tx_t gre_tap_xmit(struct sk_buff *skb,
 	return NETDEV_TX_OK;
 
 free_skb:
-	dev_kfree_skb(skb);
+	kfree_skb(skb);
 out:
 	dev->stats.tx_dropped++;
 	return NETDEV_TX_OK;
@@ -503,10 +317,11 @@ static int ipgre_tunnel_ioctl(struct net_device *dev,
 
 	if (copy_from_user(&p, ifr->ifr_ifru.ifru_data, sizeof(p)))
 		return -EFAULT;
-	if (p.iph.version != 4 || p.iph.protocol != IPPROTO_GRE ||
-	    p.iph.ihl != 5 || (p.iph.frag_off&htons(~IP_DF)) ||
-	    ((p.i_flags|p.o_flags)&(GRE_VERSION|GRE_ROUTING))) {
-		return -EINVAL;
+	if (cmd == SIOCADDTUNNEL || cmd == SIOCCHGTUNNEL) {
+		if (p.iph.version != 4 || p.iph.protocol != IPPROTO_GRE ||
+		    p.iph.ihl != 5 || (p.iph.frag_off&htons(~IP_DF)) ||
+		    ((p.i_flags|p.o_flags)&(GRE_VERSION|GRE_ROUTING)))
+			return -EINVAL;
 	}
 	p.i_flags = gre_flags_to_tnl_flags(p.i_flags);
 	p.o_flags = gre_flags_to_tnl_flags(p.o_flags);
@@ -571,7 +386,7 @@ static int ipgre_header(struct sk_buff *skb, struct net_device *dev,
 	if (daddr)
 		memcpy(&iph->daddr, daddr, 4);
 	if (iph->daddr)
-		return t->hlen;
+		return t->hlen + sizeof(*iph);
 
 	return -(t->hlen + sizeof(*iph));
 }
@@ -597,7 +412,7 @@ static int ipgre_open(struct net_device *dev)
 		struct flowi4 fl4;
 		struct rtable *rt;
 
-		rt = ip_route_output_gre(dev_net(dev), &fl4,
+		rt = ip_route_output_gre(t->net, &fl4,
 					 t->parms.iph.daddr,
 					 t->parms.iph.saddr,
 					 t->parms.o_key,
@@ -621,7 +436,7 @@ static int ipgre_close(struct net_device *dev)
 
 	if (ipv4_is_multicast(t->parms.iph.daddr) && t->mlink) {
 		struct in_device *in_dev;
-		in_dev = inetdev_by_index(dev_net(dev), t->mlink);
+		in_dev = inetdev_by_index(t->net, t->mlink);
 		if (in_dev)
 			ip_mc_dec_group(in_dev, t->parms.iph.daddr);
 	}
@@ -640,6 +455,7 @@ static const struct net_device_ops ipgre_netdev_ops = {
 	.ndo_do_ioctl		= ipgre_tunnel_ioctl,
 	.ndo_change_mtu		= ip_tunnel_change_mtu,
 	.ndo_get_stats64	= ip_tunnel_get_stats64,
+	.ndo_get_iflink		= ip_tunnel_get_iflink,
 };
 
 #define GRE_FEATURES (NETIF_F_SG |		\
@@ -650,6 +466,7 @@ static const struct net_device_ops ipgre_netdev_ops = {
 static void ipgre_tunnel_setup(struct net_device *dev)
 {
 	dev->netdev_ops		= &ipgre_netdev_ops;
+	dev->type		= ARPHRD_IPGRE;
 	ip_tunnel_setup(dev, ipgre_net_id);
 }
 
@@ -664,7 +481,7 @@ static void __gre_tunnel_init(struct net_device *dev)
 	dev->needed_headroom	= LL_MAX_HEADER + sizeof(struct iphdr) + 4;
 	dev->mtu		= ETH_DATA_LEN - sizeof(struct iphdr) - 4;
 
-	dev->features		|= NETIF_F_NETNS_LOCAL | GRE_FEATURES;
+	dev->features		|= GRE_FEATURES;
 	dev->hw_features	|= GRE_FEATURES;
 
 	if (!(tunnel->parms.o_flags & TUNNEL_SEQ)) {
@@ -688,9 +505,8 @@ static int ipgre_tunnel_init(struct net_device *dev)
 	memcpy(dev->dev_addr, &iph->saddr, 4);
 	memcpy(dev->broadcast, &iph->daddr, 4);
 
-	dev->type		= ARPHRD_IPGRE;
 	dev->flags		= IFF_NOARP;
-	dev->priv_flags		&= ~IFF_XMIT_DST_RELEASE;
+	netif_keep_dst(dev);
 	dev->addr_len		= 4;
 
 	if (iph->daddr) {
@@ -708,9 +524,10 @@ static int ipgre_tunnel_init(struct net_device *dev)
 	return ip_tunnel_init(dev);
 }
 
-static const struct gre_protocol ipgre_protocol = {
-	.handler     = ipgre_rcv,
-	.err_handler = ipgre_err,
+static struct gre_cisco_protocol ipgre_protocol = {
+	.handler        = ipgre_rcv,
+	.err_handler    = ipgre_err,
+	.priority       = 0,
 };
 
 static int __net_init ipgre_init_net(struct net *net)
@@ -721,7 +538,7 @@ static int __net_init ipgre_init_net(struct net *net)
 static void __net_exit ipgre_exit_net(struct net *net)
 {
 	struct ip_tunnel_net *itn = net_generic(net, ipgre_net_id);
-	ip_tunnel_delete_net(itn);
+	ip_tunnel_delete_net(itn, &ipgre_link_ops);
 }
 
 static struct pernet_operations ipgre_net_ops = {
@@ -799,10 +616,10 @@ static void ipgre_netlink_parms(struct nlattr *data[], struct nlattr *tb[],
 		parms->o_key = nla_get_be32(data[IFLA_GRE_OKEY]);
 
 	if (data[IFLA_GRE_LOCAL])
-		parms->iph.saddr = nla_get_be32(data[IFLA_GRE_LOCAL]);
+		parms->iph.saddr = nla_get_in_addr(data[IFLA_GRE_LOCAL]);
 
 	if (data[IFLA_GRE_REMOTE])
-		parms->iph.daddr = nla_get_be32(data[IFLA_GRE_REMOTE]);
+		parms->iph.daddr = nla_get_in_addr(data[IFLA_GRE_REMOTE]);
 
 	if (data[IFLA_GRE_TTL])
 		parms->iph.ttl = nla_get_u8(data[IFLA_GRE_TTL]);
@@ -829,6 +646,7 @@ static const struct net_device_ops gre_tap_netdev_ops = {
 	.ndo_validate_addr	= eth_validate_addr,
 	.ndo_change_mtu		= ip_tunnel_change_mtu,
 	.ndo_get_stats64	= ip_tunnel_get_stats64,
+	.ndo_get_iflink		= ip_tunnel_get_iflink,
 };
 
 static void ipgre_tap_setup(struct net_device *dev)
@@ -892,8 +710,8 @@ static int ipgre_fill_info(struct sk_buff *skb, const struct net_device *dev)
 	    nla_put_be16(skb, IFLA_GRE_OFLAGS, tnl_flags_to_gre_flags(p->o_flags)) ||
 	    nla_put_be32(skb, IFLA_GRE_IKEY, p->i_key) ||
 	    nla_put_be32(skb, IFLA_GRE_OKEY, p->o_key) ||
-	    nla_put_be32(skb, IFLA_GRE_LOCAL, p->iph.saddr) ||
-	    nla_put_be32(skb, IFLA_GRE_REMOTE, p->iph.daddr) ||
+	    nla_put_in_addr(skb, IFLA_GRE_LOCAL, p->iph.saddr) ||
+	    nla_put_in_addr(skb, IFLA_GRE_REMOTE, p->iph.daddr) ||
 	    nla_put_u8(skb, IFLA_GRE_TTL, p->iph.ttl) ||
 	    nla_put_u8(skb, IFLA_GRE_TOS, p->iph.tos) ||
 	    nla_put_u8(skb, IFLA_GRE_PMTUDISC,
@@ -930,6 +748,7 @@ static struct rtnl_link_ops ipgre_link_ops __read_mostly = {
 	.dellink	= ip_tunnel_dellink,
 	.get_size	= ipgre_get_size,
 	.fill_info	= ipgre_fill_info,
+	.get_link_net	= ip_tunnel_get_link_net,
 };
 
 static struct rtnl_link_ops ipgre_tap_ops __read_mostly = {
@@ -944,6 +763,7 @@ static struct rtnl_link_ops ipgre_tap_ops __read_mostly = {
 	.dellink	= ip_tunnel_dellink,
 	.get_size	= ipgre_get_size,
 	.fill_info	= ipgre_fill_info,
+	.get_link_net	= ip_tunnel_get_link_net,
 };
 
 static int __net_init ipgre_tap_init_net(struct net *net)
@@ -954,7 +774,7 @@ static int __net_init ipgre_tap_init_net(struct net *net)
 static void __net_exit ipgre_tap_exit_net(struct net *net)
 {
 	struct ip_tunnel_net *itn = net_generic(net, gre_tap_net_id);
-	ip_tunnel_delete_net(itn);
+	ip_tunnel_delete_net(itn, &ipgre_tap_ops);
 }
 
 static struct pernet_operations ipgre_tap_net_ops = {
@@ -978,7 +798,7 @@ static int __init ipgre_init(void)
 	if (err < 0)
 		goto pnet_tap_faied;
 
-	err = gre_add_protocol(&ipgre_protocol, GREPROTO_CISCO);
+	err = gre_cisco_register(&ipgre_protocol);
 	if (err < 0) {
 		pr_info("%s: can't add protocol\n", __func__);
 		goto add_proto_failed;
@@ -997,7 +817,7 @@ static int __init ipgre_init(void)
 tap_ops_failed:
 	rtnl_link_unregister(&ipgre_link_ops);
 rtnl_link_failed:
-	gre_del_protocol(&ipgre_protocol, GREPROTO_CISCO);
+	gre_cisco_unregister(&ipgre_protocol);
 add_proto_failed:
 	unregister_pernet_device(&ipgre_tap_net_ops);
 pnet_tap_faied:
@@ -1009,8 +829,7 @@ static void __exit ipgre_fini(void)
 {
 	rtnl_link_unregister(&ipgre_tap_ops);
 	rtnl_link_unregister(&ipgre_link_ops);
-	if (gre_del_protocol(&ipgre_protocol, GREPROTO_CISCO) < 0)
-		pr_info("%s: can't remove protocol\n", __func__);
+	gre_cisco_unregister(&ipgre_protocol);
 	unregister_pernet_device(&ipgre_tap_net_ops);
 	unregister_pernet_device(&ipgre_net_ops);
 }

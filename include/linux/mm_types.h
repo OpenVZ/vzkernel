@@ -16,6 +16,8 @@
 #include <asm/page.h>
 #include <asm/mmu.h>
 
+#include <linux/rh_kabi.h>
+
 #ifndef AT_VECTOR_SIZE_ARCH
 #define AT_VECTOR_SIZE_ARCH 0
 #endif
@@ -23,7 +25,9 @@
 
 struct address_space;
 
-#define USE_SPLIT_PTLOCKS	(NR_CPUS >= CONFIG_SPLIT_PTLOCK_CPUS)
+#define USE_SPLIT_PTE_PTLOCKS	(NR_CPUS >= CONFIG_SPLIT_PTLOCK_CPUS)
+#define USE_SPLIT_PMD_PTLOCKS	(USE_SPLIT_PTE_PTLOCKS && \
+		IS_ENABLED(CONFIG_ARCH_ENABLE_SPLIT_PMD_PTLOCK))
 
 /*
  * Each physical page in the system has a struct page associated with
@@ -63,6 +67,9 @@ struct page {
 						 * this page is only used to
 						 * free other pages.
 						 */
+#if defined(CONFIG_TRANSPARENT_HUGEPAGE) && USE_SPLIT_PMD_PTLOCKS
+		pgtable_t pmd_huge_pte; /* protected by page->ptl */
+#endif
 		};
 
 		union {
@@ -141,8 +148,12 @@ struct page {
 						 * indicates order in the buddy
 						 * system if PG_buddy is set.
 						 */
-#if USE_SPLIT_PTLOCKS
+#if USE_SPLIT_PTE_PTLOCKS
+#if BLOATED_SPINLOCKS
+		spinlock_t *ptl;
+#else
 		spinlock_t ptl;
+#endif
 #endif
 		struct kmem_cache *slab_cache;	/* SL[AU]B: Pointer to slab */
 		struct page *first_page;	/* Compound tail pages */
@@ -174,8 +185,8 @@ struct page {
 	void *shadow;
 #endif
 
-#ifdef LAST_NID_NOT_IN_PAGE_FLAGS
-	int _last_nid;
+#ifdef LAST_CPUPID_NOT_IN_PAGE_FLAGS
+	int _last_cpupid;
 #endif
 }
 /*
@@ -218,6 +229,18 @@ struct vm_region {
 	bool		vm_icache_flushed : 1; /* true if the icache has been flushed for
 						* this region */
 };
+
+#ifdef CONFIG_USERFAULTFD
+#define NULL_VM_UFFD_CTX ((struct vm_userfaultfd_ctx) { NULL, })
+struct vm_userfaultfd_ctx {
+	struct userfaultfd_ctx *ctx;
+};
+#else /* CONFIG_USERFAULTFD */
+#define NULL_VM_UFFD_CTX ((struct vm_userfaultfd_ctx) {0, })
+struct vm_userfaultfd_ctx {
+	unsigned long rh_reserved1_placeholder;
+};
+#endif /* CONFIG_USERFAULTFD */
 
 /*
  * This struct defines a memory VMM memory area. There is one of these
@@ -289,6 +312,12 @@ struct vm_area_struct {
 #ifdef CONFIG_NUMA
 	struct mempolicy *vm_policy;	/* NUMA policy for the VMA */
 #endif
+
+	/* reserved for Red Hat */
+	RH_KABI_USE(1, struct vm_userfaultfd_ctx vm_userfaultfd_ctx)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
 };
 
 struct core_thread {
@@ -309,14 +338,14 @@ enum {
 	NR_MM_COUNTERS
 };
 
-#if USE_SPLIT_PTLOCKS && defined(CONFIG_MMU)
+#if USE_SPLIT_PTE_PTLOCKS && defined(CONFIG_MMU)
 #define SPLIT_RSS_COUNTING
 /* per-thread cached information, */
 struct task_rss_stat {
 	int events;	/* for synchronization threshold */
 	int count[NR_MM_COUNTERS];
 };
-#endif /* USE_SPLIT_PTLOCKS */
+#endif /* USE_SPLIT_PTE_PTLOCKS */
 
 struct mm_rss_stat {
 	atomic_long_t count[NR_MM_COUNTERS];
@@ -333,6 +362,7 @@ struct mm_struct {
 	void (*unmap_area) (struct mm_struct *mm, unsigned long addr);
 #endif
 	unsigned long mmap_base;		/* base of mmap area */
+	unsigned long mmap_legacy_base;         /* base of mmap area in bottom-up allocations */
 	unsigned long task_size;		/* size of task vm space */
 	unsigned long cached_hole_size; 	/* if non-zero, the largest hole below free_area_cache */
 	unsigned long free_area_cache;		/* first hole of size cached_hole_size or larger */
@@ -340,6 +370,7 @@ struct mm_struct {
 	pgd_t * pgd;
 	atomic_t mm_users;			/* How many users with user space? */
 	atomic_t mm_count;			/* How many references to "struct mm_struct" (users count as 1) */
+	atomic_long_t nr_ptes;			/* Page table pages */
 	int map_count;				/* number of VMAs */
 
 	spinlock_t page_table_lock;		/* Protects page tables and some counters */
@@ -361,7 +392,6 @@ struct mm_struct {
 	unsigned long exec_vm;		/* VM_EXEC & ~VM_WRITE */
 	unsigned long stack_vm;		/* VM_GROWSUP/DOWN */
 	unsigned long def_flags;
-	unsigned long nr_ptes;		/* Page table pages */
 	unsigned long start_code, end_code, start_data, end_data;
 	unsigned long start_brk, brk, start_stack;
 	unsigned long arg_start, arg_end, env_start, env_end;
@@ -407,7 +437,7 @@ struct mm_struct {
 #ifdef CONFIG_MMU_NOTIFIER
 	struct mmu_notifier_mm *mmu_notifier_mm;
 #endif
-#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+#if defined(CONFIG_TRANSPARENT_HUGEPAGE) && !USE_SPLIT_PMD_PTLOCKS
 	pgtable_t pmd_huge_pte; /* protected by page_table_lock */
 #endif
 #ifdef CONFIG_CPUMASK_OFFSTACK
@@ -421,27 +451,39 @@ struct mm_struct {
 	 */
 	unsigned long numa_next_scan;
 
-	/* numa_next_reset is when the PTE scanner period will be reset */
-	unsigned long numa_next_reset;
-
 	/* Restart point for scanning and setting pte_numa */
 	unsigned long numa_scan_offset;
 
 	/* numa_scan_seq prevents two threads setting pte_numa */
 	int numa_scan_seq;
-
+#endif
+#if defined(CONFIG_NUMA_BALANCING) || defined(CONFIG_COMPACTION)
 	/*
-	 * The first node a task was scheduled on. If a task runs on
-	 * a different node than Make PTE Scan Go Now.
+	 * An operation with batched TLB flushing is going on. Anything that
+	 * can move process memory needs to flush the TLB when moving a
+	 * PROT_NONE or PROT_NUMA mapped page.
 	 */
-	int first_nid;
+	bool tlb_flush_pending;
 #endif
 	struct uprobes_state uprobes_state;
-};
 
-/* first nid will either be a valid NID or one of these values */
-#define NUMA_PTE_SCAN_INIT	-1
-#define NUMA_PTE_SCAN_ACTIVE	-2
+	/* reserved for Red Hat */
+#if defined(__GENKSYMS__) || !defined(CONFIG_SPAPR_TCE_IOMMU)
+	/* We're adding a list_head, so we need to take two reserved
+	 * fields, unfortunately there are no handy RH_KABI macros for
+	 * that case */
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+#else
+	struct list_head iommu_group_mem_list;
+#endif
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+	RH_KABI_RESERVE(5)
+	RH_KABI_RESERVE(6)
+	RH_KABI_RESERVE(7)
+	RH_KABI_RESERVE(8)
+};
 
 static inline void mm_init_cpumask(struct mm_struct *mm)
 {
@@ -455,5 +497,46 @@ static inline cpumask_t *mm_cpumask(struct mm_struct *mm)
 {
 	return mm->cpu_vm_mask_var;
 }
+
+#if defined(CONFIG_NUMA_BALANCING) || defined(CONFIG_COMPACTION)
+/*
+ * Memory barriers to keep this state in sync are graciously provided by
+ * the page table locks, outside of which no page table modifications happen.
+ * The barriers below prevent the compiler from re-ordering the instructions
+ * around the memory barriers that are already present in the code.
+ */
+static inline bool tlb_flush_pending(struct mm_struct *mm)
+{
+	barrier();
+	return mm->tlb_flush_pending;
+}
+static inline void set_tlb_flush_pending(struct mm_struct *mm)
+{
+	mm->tlb_flush_pending = true;
+
+	/*
+	 * Guarantee that the tlb_flush_pending store does not leak into the
+	 * critical section updating the page tables
+	 */
+	smp_mb__before_spinlock();
+}
+/* Clearing is done after a TLB flush, which also provides a barrier. */
+static inline void clear_tlb_flush_pending(struct mm_struct *mm)
+{
+	barrier();
+	mm->tlb_flush_pending = false;
+}
+#else
+static inline bool tlb_flush_pending(struct mm_struct *mm)
+{
+	return false;
+}
+static inline void set_tlb_flush_pending(struct mm_struct *mm)
+{
+}
+static inline void clear_tlb_flush_pending(struct mm_struct *mm)
+{
+}
+#endif
 
 #endif /* _LINUX_MM_TYPES_H */

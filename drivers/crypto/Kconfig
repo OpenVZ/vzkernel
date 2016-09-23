@@ -309,11 +309,13 @@ config CRYPTO_DEV_TEGRA_AES
 	  will be called tegra-aes.
 
 config CRYPTO_DEV_NX
-	bool "Support for IBM Power7+ in-Nest cryptographic acceleration"
-	depends on PPC64 && IBMVIO
-	default n
+	bool "Support for IBM PowerPC Nest (NX) cryptographic acceleration"
+	depends on PPC64
 	help
-	  Support for Power7+ in-Nest cryptographic acceleration.
+	  This enables support for the NX hardware cryptographic accelerator
+	  coprocessor that is in IBM PowerPC P7+ or later processors.  This
+	  does not actually enable any drivers, it only allows you to select
+	  which acceleration type (encryption and/or compression) to enable.
 
 if CRYPTO_DEV_NX
 	source "drivers/crypto/nx/Kconfig"
@@ -386,4 +388,5 @@ config CRYPTO_DEV_ATMEL_SHA
 	  To compile this driver as a module, choose M here: the module
 	  will be called atmel-sha.
 
+source "drivers/crypto/qat/Kconfig"
 endif # CRYPTO_HW

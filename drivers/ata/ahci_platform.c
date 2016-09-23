@@ -17,7 +17,6 @@
 #include <linux/gfp.h>
 #include <linux/module.h>
 #include <linux/pm.h>
-#include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/device.h>
 #include <linux/platform_device.h>
@@ -184,7 +183,7 @@ static int ahci_probe(struct platform_device *pdev)
 	if (!(hpriv->cap & HOST_CAP_SSS) || ahci_ignore_sss)
 		host->flags |= ATA_HOST_PARALLEL_SCAN;
 	else
-		printk(KERN_INFO "ahci: SSS flag set, parallel bus scan disabled\n");
+		dev_info(dev, "SSS flag set, parallel bus scan disabled\n");
 
 	if (pi.flags & ATA_FLAG_EM)
 		ahci_reset_em(host);
@@ -211,8 +210,7 @@ static int ahci_probe(struct platform_device *pdev)
 	ahci_init_controller(host);
 	ahci_print_info(host, "platform");
 
-	rc = ata_host_activate(host, irq, ahci_interrupt, IRQF_SHARED,
-			       &ahci_platform_sht);
+	rc = ahci_host_activate(host, irq, &ahci_platform_sht);
 	if (rc)
 		goto pdata_exit;
 

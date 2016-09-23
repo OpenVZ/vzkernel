@@ -8,9 +8,11 @@
 /**
  * struct acpi_gpio_info - ACPI GPIO specific information
  * @gpioint: if %true this GPIO is of type GpioInt otherwise type is GpioIo
+ * @active_low: in case of @gpioint, the pin is active low
  */
 struct acpi_gpio_info {
 	bool gpioint;
+	bool active_low; /* not currently in RHEL7 -- done to protect KABI */
 };
 
 #ifdef CONFIG_GPIO_ACPI

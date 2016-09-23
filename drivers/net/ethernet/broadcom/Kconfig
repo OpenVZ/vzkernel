@@ -62,24 +62,24 @@ config BCM63XX_ENET
 	  MIPS chipset family (BCM63XX).
 
 config BNX2
-	tristate "Broadcom NetXtremeII support"
+	tristate "QLogic bnx2 support"
 	depends on PCI
 	select CRC32
 	select FW_LOADER
 	---help---
-	  This driver supports Broadcom NetXtremeII gigabit Ethernet cards.
+	  This driver supports QLogic bnx2 gigabit Ethernet cards.
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called bnx2.  This is recommended.
 
 config CNIC
-	tristate "Broadcom CNIC support"
-	depends on PCI
+	tristate "QLogic CNIC support"
+	depends on PCI && (IPV6 || IPV6=n)
 	select BNX2
 	select UIO
 	---help---
-	  This driver supports offload features of Broadcom NetXtremeII
-	  gigabit Ethernet cards.
+	  This driver supports offload features of QLogic bnx2 gigabit
+	  Ethernet cards.
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called cnic.  This is recommended.

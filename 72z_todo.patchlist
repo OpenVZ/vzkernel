@@ -1,0 +1,16 @@
+# ZBZ 1364074 POST              [x86] cpu/intel: Introduce macros for Intel family numbers
+#	rhel-7.2.z+, pm_ack+, devel_ack+, qa_ack+
+# YBZ 1273778 ON_QA             [Intel 7.3 FEAT] RAPL support for Harrisonville (Denverton SoC)
+#	qe_test_coverage?, rhel-7.3.0+, blocker+, pm_ack+, devel_ack+, qa_ack+
+153469 1364074:1273778; AAA----- Committed       [PATCH RHEL7.3 BZ1273778 1/5] x86/cpu/intel: Introduce macros for      1273778 <20160616174744.2777.32915.sen 2016-06-16 17:47:45
+
+# ZBZ 1363860 ASSIGNED          [Intel 7.3 Bug] Knights Landing A/D leak [rhel-7.2.z]
+#	rhel-7.2.z+, pm_ack+, devel_ack+, qa_ack+
+# YBZ 1347159 ON_QA             [Intel 7.3 Bug] Knights Landing A/D leak
+#	needinfo+, qe_test_coverage?, rhel-7.3.0+, blocker+, pm_ack+, devel_ack+, qa_ack+
+156832 1363860:1347159; A------- Under Review    [RHEL7.2.z PATCH BZ 1363860 0/4] x86: Fix Intel Knights Landing A/D le 1347159 <cover.1471249063.git.agordeev 2016-08-15 10:01:42
+156833 1363860:1347159; AA------ Under Review    [RHEL7.2.z PATCH BZ 1363860 1/4] x86: Move swap offset/type up in PTE  1347159 <d500bf7298678e12f09d93ed66b08 2016-08-15 10:01:43
+156834 1363860:1347159; AA------ Under Review    [RHEL7.2.z PATCH BZ 1363860 2/4] x86: Ignore A/D bits in               1347159 <723e6b4be2574f79966078ad42e63 2016-08-15 10:01:44
+155922 1363860:1347159; AA------ Committed       [RHEL7.3 PATCH 3/4] Disallow running with 32-bit PTEs to work around   1347159 <1469459775-5464-4-git-send-em 2016-07-25 15:16:14
+155924 1363860:1347159; AA------ Committed       [RHEL7.3 PATCH 4/4] Use pte_none() to test for empty PTE               1347159 <1469459775-5464-5-git-send-em 2016-07-25 15:16:15
+

@@ -14,7 +14,6 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/skbuff.h>
-#include <linux/reciprocal_div.h>
 #include <linux/vmalloc.h>
 #include <net/pkt_sched.h>
 #include <net/inet_ecn.h>
@@ -77,12 +76,6 @@ struct choke_sched_data {
 	struct sk_buff **tab;
 };
 
-/* deliver a random number between 0 and N - 1 */
-static u32 random_N(unsigned int N)
-{
-	return reciprocal_divide(prandom_u32(), N);
-}
-
 /* number of elements in queue including holes */
 static unsigned int choke_len(const struct choke_sched_data *q)
 {
@@ -134,16 +127,22 @@ static void choke_drop_by_idx(struct Qdisc *sch, unsigned int idx)
 	if (idx == q->tail)
 		choke_zap_tail_holes(q);
 
-	sch->qstats.backlog -= qdisc_pkt_len(skb);
+	qdisc_qstats_backlog_dec(sch, skb);
 	qdisc_drop(skb, sch);
 	qdisc_tree_decrease_qlen(sch, 1);
 	--sch->q.qlen;
 }
 
+/* private part of skb->cb[] that a qdisc is allowed to use
+ * is limited to QDISC_CB_PRIV_LEN bytes.
+ * As a flow key might be too large, we store a part of it only.
+ */
+#define CHOKE_K_LEN min_t(u32, sizeof(struct flow_keys), QDISC_CB_PRIV_LEN - 3)
+
 struct choke_skb_cb {
 	u16			classid;
 	u8			keys_valid;
-	struct flow_keys	keys;
+	u8			keys[QDISC_CB_PRIV_LEN - 3];
 };
 
 static inline struct choke_skb_cb *choke_skb_cb(const struct sk_buff *skb)
@@ -170,22 +169,26 @@ static u16 choke_get_classid(const struct sk_buff *skb)
 static bool choke_match_flow(struct sk_buff *skb1,
 			     struct sk_buff *skb2)
 {
+	struct flow_keys temp;
+
 	if (skb1->protocol != skb2->protocol)
 		return false;
 
 	if (!choke_skb_cb(skb1)->keys_valid) {
 		choke_skb_cb(skb1)->keys_valid = 1;
-		skb_flow_dissect(skb1, &choke_skb_cb(skb1)->keys);
+		skb_flow_dissect(skb1, &temp);
+		memcpy(&choke_skb_cb(skb1)->keys, &temp, CHOKE_K_LEN);
 	}
 
 	if (!choke_skb_cb(skb2)->keys_valid) {
 		choke_skb_cb(skb2)->keys_valid = 1;
-		skb_flow_dissect(skb2, &choke_skb_cb(skb2)->keys);
+		skb_flow_dissect(skb2, &temp);
+		memcpy(&choke_skb_cb(skb2)->keys, &temp, CHOKE_K_LEN);
 	}
 
 	return !memcmp(&choke_skb_cb(skb1)->keys,
 		       &choke_skb_cb(skb2)->keys,
-		       sizeof(struct flow_keys));
+		       CHOKE_K_LEN);
 }
 
 /*
@@ -233,7 +236,7 @@ static struct sk_buff *choke_peek_random(const struct choke_sched_data *q,
 	int retrys = 3;
 
 	do {
-		*pidx = (q->head + random_N(choke_len(q))) & q->tab_mask;
+		*pidx = (q->head + prandom_u32_max(choke_len(q))) & q->tab_mask;
 		skb = q->tab[*pidx];
 		if (skb)
 			return skb;
@@ -297,7 +300,7 @@ static int choke_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 		if (q->vars.qavg > p->qth_max) {
 			q->vars.qcount = -1;
 
-			sch->qstats.overlimits++;
+			qdisc_qstats_overlimit(sch);
 			if (use_harddrop(q) || !use_ecn(q) ||
 			    !INET_ECN_set_ce(skb)) {
 				q->stats.forced_drop++;
@@ -310,7 +313,7 @@ static int choke_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 				q->vars.qcount = 0;
 				q->vars.qR = red_random(p);
 
-				sch->qstats.overlimits++;
+				qdisc_qstats_overlimit(sch);
 				if (!use_ecn(q) || !INET_ECN_set_ce(skb)) {
 					q->stats.prob_drop++;
 					goto congestion_drop;
@@ -327,7 +330,7 @@ static int choke_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 		q->tab[q->tail] = skb;
 		q->tail = (q->tail + 1) & q->tab_mask;
 		++sch->q.qlen;
-		sch->qstats.backlog += qdisc_pkt_len(skb);
+		qdisc_qstats_backlog_inc(sch, skb);
 		return NET_XMIT_SUCCESS;
 	}
 
@@ -340,7 +343,7 @@ congestion_drop:
 
 other_drop:
 	if (ret & __NET_XMIT_BYPASS)
-		sch->qstats.drops++;
+		qdisc_qstats_drop(sch);
 	kfree_skb(skb);
 	return ret;
 }
@@ -360,7 +363,7 @@ static struct sk_buff *choke_dequeue(struct Qdisc *sch)
 	q->tab[q->head] = NULL;
 	choke_zap_head_holes(q);
 	--sch->q.qlen;
-	sch->qstats.backlog -= qdisc_pkt_len(skb);
+	qdisc_qstats_backlog_dec(sch, skb);
 	qdisc_bstats_update(sch, skb);
 
 	return skb;
@@ -459,7 +462,7 @@ static int choke_change(struct Qdisc *sch, struct nlattr *opt)
 					ntab[tail++] = skb;
 					continue;
 				}
-				sch->qstats.backlog -= qdisc_pkt_len(skb);
+				qdisc_qstats_backlog_dec(sch, skb);
 				--sch->q.qlen;
 				qdisc_drop(skb, sch);
 			}

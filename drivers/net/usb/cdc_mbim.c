@@ -173,7 +173,7 @@ static struct sk_buff *cdc_mbim_tx_fixup(struct usbnet *dev, struct sk_buff *skb
 	}
 
 	spin_lock_bh(&ctx->mtx);
-	skb_out = cdc_ncm_fill_tx_frame(ctx, skb, sign);
+	skb_out = cdc_ncm_fill_tx_frame(dev, skb, sign);
 	spin_unlock_bh(&ctx->mtx);
 	return skb_out;
 
@@ -221,7 +221,7 @@ static struct sk_buff *cdc_mbim_process_dgram(struct usbnet *dev, u8 *buf, size_
 
 	/* map MBIM session to VLAN */
 	if (tci)
-		vlan_put_tag(skb, htons(ETH_P_8021Q), tci);
+		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), tci);
 err:
 	return skb;
 }
@@ -398,6 +398,10 @@ static const struct usb_device_id mbim_devs[] = {
 	},
 	/* Sierra Wireless MC7710 need ZLPs */
 	{ USB_DEVICE_AND_INTERFACE_INFO(0x1199, 0x68a2, USB_CLASS_COMM, USB_CDC_SUBCLASS_MBIM, USB_CDC_PROTO_NONE),
+	  .driver_info = (unsigned long)&cdc_mbim_info_zlp,
+	},
+	/* HP hs2434 Mobile Broadband Module needs ZLPs */
+	{ USB_DEVICE_AND_INTERFACE_INFO(0x3f0, 0x4b1d, USB_CLASS_COMM, USB_CDC_SUBCLASS_MBIM, USB_CDC_PROTO_NONE),
 	  .driver_info = (unsigned long)&cdc_mbim_info_zlp,
 	},
 	{ USB_INTERFACE_INFO(USB_CLASS_COMM, USB_CDC_SUBCLASS_MBIM, USB_CDC_PROTO_NONE),

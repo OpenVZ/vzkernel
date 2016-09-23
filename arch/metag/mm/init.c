@@ -205,7 +205,8 @@ static void __init do_init_bootmem(void)
 		start_pfn = memblock_region_memory_base_pfn(reg);
 		end_pfn = memblock_region_memory_end_pfn(reg);
 		memblock_set_node(PFN_PHYS(start_pfn),
-				  PFN_PHYS(end_pfn - start_pfn), 0);
+				  PFN_PHYS(end_pfn - start_pfn),
+				  &memblock.memory, 0);
 	}
 
 	/* All of system RAM sits in node 0 for the non-NUMA case */
@@ -380,6 +381,12 @@ void __init mem_init(void)
 
 #ifdef CONFIG_HIGHMEM
 	unsigned long tmp;
+
+	/*
+	 * Explicitly reset zone->managed_pages because highmem pages are
+	 * freed before calling free_all_bootmem_node();
+	 */
+	reset_all_zones_managed_pages();
 	for (tmp = highstart_pfn; tmp < highend_pfn; tmp++)
 		free_highmem_page(pfn_to_page(tmp));
 	num_physpages += totalhigh_pages;

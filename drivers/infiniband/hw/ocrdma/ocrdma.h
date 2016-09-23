@@ -35,36 +35,54 @@
 
 #include <rdma/ib_verbs.h>
 #include <rdma/ib_user_verbs.h>
+#include <rdma/ib_addr.h>
 
 #include <be_roce.h>
 #include "ocrdma_sli.h"
 
-#define OCRDMA_ROCE_DEV_VERSION "1.0.0"
+#define OCRDMA_ROCE_DRV_VERSION "10.6.0.0"
+
+#define OCRDMA_ROCE_DRV_DESC "Emulex OneConnect RoCE Driver"
 #define OCRDMA_NODE_DESC "Emulex OneConnect RoCE HCA"
 
-#define ocrdma_err(format, arg...) printk(KERN_ERR format, ##arg)
+#define OC_NAME_SH	OCRDMA_NODE_DESC "(Skyhawk)"
+#define OC_NAME_UNKNOWN OCRDMA_NODE_DESC "(Unknown)"
 
+#define OC_SKH_DEVICE_PF 0x720
+#define OC_SKH_DEVICE_VF 0x728
 #define OCRDMA_MAX_AH 512
 
 #define OCRDMA_UVERBS(CMD_NAME) (1ull << IB_USER_VERBS_CMD_##CMD_NAME)
+
+#define convert_to_64bit(lo, hi) ((u64)hi << 32 | (u64)lo)
+#define EQ_INTR_PER_SEC_THRSH_HI 150000
+#define EQ_INTR_PER_SEC_THRSH_LOW 100000
+#define EQ_AIC_MAX_EQD 20
+#define EQ_AIC_MIN_EQD 0
+
+void ocrdma_eqd_set_task(struct work_struct *work);
 
 struct ocrdma_dev_attr {
 	u8 fw_ver[32];
 	u32 vendor_id;
 	u32 device_id;
 	u16 max_pd;
+	u16 max_dpp_pds;
 	u16 max_cq;
 	u16 max_cqe;
 	u16 max_qp;
 	u16 max_wqe;
 	u16 max_rqe;
+	u16 max_srq;
 	u32 max_inline_data;
 	int max_send_sge;
 	int max_recv_sge;
 	int max_srq_sge;
+	int max_rdma_sge;
 	int max_mr;
 	u64 max_mr_size;
 	u32 max_num_mr_pbl;
+	int max_mw;
 	int max_fmr;
 	int max_map_per_fmr;
 	int max_pages_per_frmr;
@@ -83,6 +101,12 @@ struct ocrdma_dev_attr {
 	u8 num_ird_pages;
 };
 
+struct ocrdma_dma_mem {
+	void *va;
+	dma_addr_t pa;
+	u32 size;
+};
+
 struct ocrdma_pbl {
 	void *va;
 	dma_addr_t pa;
@@ -97,7 +121,12 @@ struct ocrdma_queue_info {
 	u16 id;			/* qid, where to ring the doorbell. */
 	u16 head, tail;
 	bool created;
-	atomic_t used;		/* Number of valid elements in the queue */
+};
+
+struct ocrdma_aic_obj {         /* Adaptive interrupt coalescing (AIC) info */
+	u32 prev_eqd;
+	u64 eq_intr_cnt;
+	u64 prev_eq_intr_cnt;
 };
 
 struct ocrdma_eq {
@@ -106,6 +135,7 @@ struct ocrdma_eq {
 	int cq_cnt;
 	struct ocrdma_dev *dev;
 	char irq_name[32];
+	struct ocrdma_aic_obj aic_obj;
 };
 
 struct ocrdma_mq {
@@ -121,6 +151,68 @@ struct mqe_ctx {
 	u16 cqe_status;
 	u16 ext_status;
 	bool cmd_done;
+	bool fw_error_state;
+};
+
+struct ocrdma_hw_mr {
+	u32 lkey;
+	u8 fr_mr;
+	u8 remote_atomic;
+	u8 remote_rd;
+	u8 remote_wr;
+	u8 local_rd;
+	u8 local_wr;
+	u8 mw_bind;
+	u8 rsvd;
+	u64 len;
+	struct ocrdma_pbl *pbl_table;
+	u32 num_pbls;
+	u32 num_pbes;
+	u32 pbl_size;
+	u32 pbe_size;
+	u64 fbo;
+	u64 va;
+};
+
+struct ocrdma_mr {
+	struct ib_mr ibmr;
+	struct ib_umem *umem;
+	struct ocrdma_hw_mr hwmr;
+};
+
+struct ocrdma_stats {
+	u8 type;
+	struct ocrdma_dev *dev;
+};
+
+struct ocrdma_pd_resource_mgr {
+	u32 pd_norm_start;
+	u16 pd_norm_count;
+	u16 pd_norm_thrsh;
+	u16 max_normal_pd;
+	u32 pd_dpp_start;
+	u16 pd_dpp_count;
+	u16 pd_dpp_thrsh;
+	u16 max_dpp_pd;
+	u16 dpp_page_index;
+	unsigned long *pd_norm_bitmap;
+	unsigned long *pd_dpp_bitmap;
+	bool pd_prealloc_valid;
+};
+
+struct stats_mem {
+	struct ocrdma_mqe mqe;
+	void *va;
+	dma_addr_t pa;
+	u32 size;
+	char *debugfs_mem;
+};
+
+struct phy_info {
+	u16 auto_speeds_supported;
+	u16 fixed_speeds_supported;
+	u16 phy_type;
+	u16 interface_type;
 };
 
 struct ocrdma_dev {
@@ -133,9 +225,9 @@ struct ocrdma_dev {
 	struct ocrdma_cq **cq_tbl;
 	struct ocrdma_qp **qp_tbl;
 
-	struct ocrdma_eq meq;
-	struct ocrdma_eq *qp_eq_tbl;
+	struct ocrdma_eq *eq_tbl;
 	int eq_cnt;
+	struct delayed_work eqd_work;
 	u16 base_eqid;
 	u16 max_eq;
 
@@ -167,15 +259,42 @@ struct ocrdma_dev {
 	struct mqe_ctx mqe_ctx;
 
 	struct be_dev_info nic_info;
+	struct phy_info phy;
+	char model_number[32];
+	u32 hba_port_num;
 
 	struct list_head entry;
 	struct rcu_head rcu;
 	int id;
+	u64 *stag_arr;
+	u8 sl; /* service level */
+	bool pfc_state;
+	atomic_t update_sl;
+	u16 pvid;
+	u32 asic_id;
+
+	ulong last_stats_time;
+	struct mutex stats_lock; /* provide synch for debugfs operations */
+	struct stats_mem stats_mem;
+	struct ocrdma_stats rsrc_stats;
+	struct ocrdma_stats rx_stats;
+	struct ocrdma_stats wqe_stats;
+	struct ocrdma_stats tx_stats;
+	struct ocrdma_stats db_err_stats;
+	struct ocrdma_stats tx_qp_err_stats;
+	struct ocrdma_stats rx_qp_err_stats;
+	struct ocrdma_stats tx_dbg_stats;
+	struct ocrdma_stats rx_dbg_stats;
+	struct ocrdma_stats driver_stats;
+	struct ocrdma_stats reset_stats;
+	struct dentry *dir;
+	atomic_t async_err_stats[OCRDMA_MAX_ASYNC_ERRORS];
+	atomic_t cqe_err_stats[OCRDMA_MAX_CQE_ERR];
+	struct ocrdma_pd_resource_mgr *pd_mgr;
 };
 
 struct ocrdma_cq {
 	struct ib_cq ibcq;
-	struct ocrdma_dev *dev;
 	struct ocrdma_cqe *va;
 	u32 phase;
 	u32 getp;	/* pointer to pending wrs to
@@ -184,8 +303,8 @@ struct ocrdma_cq {
 			 */
 	u32 max_hw_cqe;
 	bool phase_change;
-	bool armed, solicited;
-	bool arm_needed;
+	bool deferred_arm, deferred_sol;
+	bool first_arm;
 
 	spinlock_t cq_lock ____cacheline_aligned; /* provide synchronization
 						   * to cq polling
@@ -198,7 +317,7 @@ struct ocrdma_cq {
 	struct ocrdma_ucontext *ucontext;
 	dma_addr_t pa;
 	u32 len;
-	atomic_t use_cnt;
+	u32 cqe_cnt;
 
 	/* head of all qp's sq and rq for which cqes need to be flushed
 	 * by the software.
@@ -208,9 +327,7 @@ struct ocrdma_cq {
 
 struct ocrdma_pd {
 	struct ib_pd ibpd;
-	struct ocrdma_dev *dev;
 	struct ocrdma_ucontext *uctx;
-	atomic_t use_cnt;
 	u32 id;
 	int num_dpp_qp;
 	u32 dpp_page;
@@ -219,7 +336,6 @@ struct ocrdma_pd {
 
 struct ocrdma_ah {
 	struct ib_ah ibah;
-	struct ocrdma_dev *dev;
 	struct ocrdma_av *av;
 	u16 sgid_index;
 	u32 id;
@@ -239,27 +355,23 @@ struct ocrdma_qp_hwq_info {
 
 struct ocrdma_srq {
 	struct ib_srq ibsrq;
-	struct ocrdma_dev *dev;
 	u8 __iomem *db;
-	/* provide synchronization to multiple context(s) posting rqe */
-	spinlock_t q_lock ____cacheline_aligned;
-
 	struct ocrdma_qp_hwq_info rq;
-	struct ocrdma_pd *pd;
-	atomic_t use_cnt;
-	u32 id;
 	u64 *rqe_wr_id_tbl;
 	u32 *idx_bit_fields;
 	u32 bit_fields_len;
+
+	/* provide synchronization to multiple context(s) posting rqe */
+	spinlock_t q_lock ____cacheline_aligned;
+
+	struct ocrdma_pd *pd;
+	u32 id;
 };
 
 struct ocrdma_qp {
 	struct ib_qp ibqp;
-	struct ocrdma_dev *dev;
 
 	u8 __iomem *sq_db;
-	/* provide synchronization to multiple context(s) posting wqe, rqe */
-	spinlock_t q_lock ____cacheline_aligned;
 	struct ocrdma_qp_hwq_info sq;
 	struct {
 		uint64_t wrid;
@@ -269,6 +381,9 @@ struct ocrdma_qp {
 		uint8_t  rsvd[3];
 	} *wqe_wr_id_tbl;
 	u32 max_inline_data;
+
+	/* provide synchronization to multiple context(s) posting wqe, rqe */
+	spinlock_t q_lock ____cacheline_aligned;
 	struct ocrdma_cq *sq_cq;
 	/* list maintained per CQ to flush SQ errors */
 	struct list_head sq_entry;
@@ -294,46 +409,17 @@ struct ocrdma_qp {
 	u32 qkey;
 	bool dpp_enabled;
 	u8 *ird_q_va;
-};
-
-#define OCRDMA_GET_NUM_POSTED_SHIFT_VAL(qp) \
-	(((qp->dev->nic_info.dev_family == OCRDMA_GEN2_FAMILY) && \
-		(qp->id < 64)) ? 24 : 16)
-
-struct ocrdma_hw_mr {
-	struct ocrdma_dev *dev;
-	u32 lkey;
-	u8 fr_mr;
-	u8 remote_atomic;
-	u8 remote_rd;
-	u8 remote_wr;
-	u8 local_rd;
-	u8 local_wr;
-	u8 mw_bind;
-	u8 rsvd;
-	u64 len;
-	struct ocrdma_pbl *pbl_table;
-	u32 num_pbls;
-	u32 num_pbes;
-	u32 pbl_size;
-	u32 pbe_size;
-	u64 fbo;
-	u64 va;
-};
-
-struct ocrdma_mr {
-	struct ib_mr ibmr;
-	struct ib_umem *umem;
-	struct ocrdma_hw_mr hwmr;
-	struct ocrdma_pd *pd;
+	bool signaled;
 };
 
 struct ocrdma_ucontext {
 	struct ib_ucontext ibucontext;
-	struct ocrdma_dev *dev;
 
 	struct list_head mm_head;
 	struct mutex mm_list_lock; /* protects list entries of mm type */
+	struct ocrdma_pd *cntxt_pd;
+	int pd_in_use;
+
 	struct {
 		u32 *va;
 		dma_addr_t pa;
@@ -388,6 +474,106 @@ static inline struct ocrdma_ah *get_ocrdma_ah(struct ib_ah *ibah)
 static inline struct ocrdma_srq *get_ocrdma_srq(struct ib_srq *ibsrq)
 {
 	return container_of(ibsrq, struct ocrdma_srq, ibsrq);
+}
+
+static inline int is_cqe_valid(struct ocrdma_cq *cq, struct ocrdma_cqe *cqe)
+{
+	int cqe_valid;
+	cqe_valid = le32_to_cpu(cqe->flags_status_srcqpn) & OCRDMA_CQE_VALID;
+	return (cqe_valid == cq->phase);
+}
+
+static inline int is_cqe_for_sq(struct ocrdma_cqe *cqe)
+{
+	return (le32_to_cpu(cqe->flags_status_srcqpn) &
+		OCRDMA_CQE_QTYPE) ? 0 : 1;
+}
+
+static inline int is_cqe_invalidated(struct ocrdma_cqe *cqe)
+{
+	return (le32_to_cpu(cqe->flags_status_srcqpn) &
+		OCRDMA_CQE_INVALIDATE) ? 1 : 0;
+}
+
+static inline int is_cqe_imm(struct ocrdma_cqe *cqe)
+{
+	return (le32_to_cpu(cqe->flags_status_srcqpn) &
+		OCRDMA_CQE_IMM) ? 1 : 0;
+}
+
+static inline int is_cqe_wr_imm(struct ocrdma_cqe *cqe)
+{
+	return (le32_to_cpu(cqe->flags_status_srcqpn) &
+		OCRDMA_CQE_WRITE_IMM) ? 1 : 0;
+}
+
+static inline int ocrdma_resolve_dmac(struct ocrdma_dev *dev,
+		struct ib_ah_attr *ah_attr, u8 *mac_addr)
+{
+	struct in6_addr in6;
+
+	memcpy(&in6, ah_attr->grh.dgid.raw, sizeof(in6));
+	if (rdma_is_multicast_addr(&in6))
+		rdma_get_mcast_mac(&in6, mac_addr);
+	else if (rdma_link_local_addr(&in6))
+		rdma_get_ll_mac(&in6, mac_addr);
+	else
+		memcpy(mac_addr, ah_attr->dmac, ETH_ALEN);
+	return 0;
+}
+
+static inline char *hca_name(struct ocrdma_dev *dev)
+{
+	switch (dev->nic_info.pdev->device) {
+	case OC_SKH_DEVICE_PF:
+	case OC_SKH_DEVICE_VF:
+		return OC_NAME_SH;
+	default:
+		return OC_NAME_UNKNOWN;
+	}
+}
+
+static inline int ocrdma_get_eq_table_index(struct ocrdma_dev *dev,
+		int eqid)
+{
+	int indx;
+
+	for (indx = 0; indx < dev->eq_cnt; indx++) {
+		if (dev->eq_tbl[indx].q.id == eqid)
+			return indx;
+	}
+
+	return -EINVAL;
+}
+
+static inline u8 ocrdma_get_asic_type(struct ocrdma_dev *dev)
+{
+	if (dev->nic_info.dev_family == 0xF && !dev->asic_id) {
+		pci_read_config_dword(
+			dev->nic_info.pdev,
+			OCRDMA_SLI_ASIC_ID_OFFSET, &dev->asic_id);
+	}
+
+	return (dev->asic_id & OCRDMA_SLI_ASIC_GEN_NUM_MASK) >>
+				OCRDMA_SLI_ASIC_GEN_NUM_SHIFT;
+}
+
+static inline u8 ocrdma_get_pfc_prio(u8 *pfc, u8 prio)
+{
+	return *(pfc + prio);
+}
+
+static inline u8 ocrdma_get_app_prio(u8 *app_prio, u8 prio)
+{
+	return *(app_prio + prio);
+}
+
+static inline u8 ocrdma_is_enabled_and_synced(u32 state)
+{	/* May also be used to interpret TC-state, QCN-state
+	 * Appl-state and Logical-link-state in future.
+	 */
+	return (state & OCRDMA_STATE_FLAG_ENABLED) &&
+		(state & OCRDMA_STATE_FLAG_SYNC);
 }
 
 #endif

@@ -146,6 +146,33 @@ int eth_rebuild_header(struct sk_buff *skb)
 EXPORT_SYMBOL(eth_rebuild_header);
 
 /**
+ * eth_get_headlen - determine the the length of header for an ethernet frame
+ * @data: pointer to start of frame
+ * @len: total length of frame
+ *
+ * Make a best effort attempt to pull the length for all of the headers for
+ * a given frame in a linear buffer.
+ */
+u32 eth_get_headlen(void *data, unsigned int len)
+{
+	const struct ethhdr *eth = (const struct ethhdr *)data;
+	struct flow_keys keys;
+
+	/* this should never happen, but better safe than sorry */
+	if (len < sizeof(*eth))
+		return len;
+
+	/* parse any remaining L2/L3 headers, check for L4 */
+	if (!__skb_flow_dissect(NULL, &keys, data,
+				eth->h_proto, sizeof(*eth), len))
+		return max_t(u32, keys.thoff, sizeof(*eth));
+
+	/* parse for any L4 headers */
+	return min_t(u32, __skb_get_poff(NULL, data, &keys, len), len);
+}
+EXPORT_SYMBOL(eth_get_headlen);
+
+/**
  * eth_type_trans - determine the packet's protocol ID.
  * @skb: received socket data
  * @dev: receiving network device
@@ -425,3 +452,96 @@ ssize_t sysfs_format_mac(char *buf, const unsigned char *addr, int len)
 	return (ssize_t)l;
 }
 EXPORT_SYMBOL(sysfs_format_mac);
+
+struct sk_buff **eth_gro_receive(struct sk_buff **head,
+				 struct sk_buff *skb)
+{
+	struct sk_buff *p, **pp = NULL;
+	struct ethhdr *eh, *eh2;
+	unsigned int hlen, off_eth;
+	const struct packet_offload *ptype;
+	__be16 type;
+	int flush = 1;
+
+	off_eth = skb_gro_offset(skb);
+	hlen = off_eth + sizeof(*eh);
+	eh = skb_gro_header_fast(skb, off_eth);
+	if (skb_gro_header_hard(skb, hlen)) {
+		eh = skb_gro_header_slow(skb, hlen, off_eth);
+		if (unlikely(!eh))
+			goto out;
+	}
+
+	flush = 0;
+
+	for (p = *head; p; p = p->next) {
+		if (!NAPI_GRO_CB(p)->same_flow)
+			continue;
+
+		eh2 = (struct ethhdr *)(p->data + off_eth);
+		if (compare_ether_header(eh, eh2)) {
+			NAPI_GRO_CB(p)->same_flow = 0;
+			continue;
+		}
+	}
+
+	type = eh->h_proto;
+
+	rcu_read_lock();
+	ptype = gro_find_receive_by_type(type);
+	if (ptype == NULL) {
+		flush = 1;
+		goto out_unlock;
+	}
+
+	skb_gro_pull(skb, sizeof(*eh));
+	skb_gro_postpull_rcsum(skb, eh, sizeof(*eh));
+	pp = ptype->callbacks.gro_receive(head, skb);
+
+out_unlock:
+	rcu_read_unlock();
+out:
+	NAPI_GRO_CB(skb)->flush |= flush;
+
+	return pp;
+}
+EXPORT_SYMBOL(eth_gro_receive);
+
+int eth_gro_complete(struct sk_buff *skb, int nhoff)
+{
+	struct ethhdr *eh = (struct ethhdr *)(skb->data + nhoff);
+	__be16 type = eh->h_proto;
+	struct packet_offload *ptype;
+	int err = -ENOSYS;
+
+	if (skb->encapsulation)
+		skb_set_inner_mac_header(skb, nhoff);
+
+	rcu_read_lock();
+	ptype = gro_find_complete_by_type(type);
+	if (ptype != NULL)
+		err = ptype->callbacks.gro_complete(skb, nhoff +
+						    sizeof(struct ethhdr));
+
+	rcu_read_unlock();
+	return err;
+}
+EXPORT_SYMBOL(eth_gro_complete);
+
+static struct packet_offload eth_packet_offload __read_mostly = {
+	.type = cpu_to_be16(ETH_P_TEB),
+	.priority = 10,
+	.callbacks = {
+		.gro_receive = eth_gro_receive,
+		.gro_complete = eth_gro_complete,
+	},
+};
+
+static int __init eth_offload_init(void)
+{
+	dev_add_offload(&eth_packet_offload);
+
+	return 0;
+}
+
+fs_initcall(eth_offload_init);

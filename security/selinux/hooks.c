@@ -53,6 +53,7 @@
 #include <net/ip.h>		/* for local_port_range[] */
 #include <net/sock.h>
 #include <net/tcp.h>		/* struct or_callable used in sock_rcv_skb */
+#include <net/inet_connection_sock.h>
 #include <net/net_namespace.h>
 #include <net/netlabel.h>
 #include <linux/uaccess.h>
@@ -81,6 +82,7 @@
 #include <linux/syslog.h>
 #include <linux/user_namespace.h>
 #include <linux/export.h>
+#include <linux/security.h>
 #include <linux/msg.h>
 #include <linux/shm.h>
 
@@ -144,6 +146,17 @@ static struct kmem_cache *sel_inode_cache;
 static int selinux_secmark_enabled(void)
 {
 	return (atomic_read(&selinux_secmark_refcount) > 0);
+}
+
+static int selinux_netcache_avc_callback(u32 event)
+{
+	if (event == AVC_CALLBACK_RESET) {
+		sel_netif_flush();
+		sel_netnode_flush();
+		sel_netport_flush();
+		synchronize_net();
+	}
+	return 0;
 }
 
 /*
@@ -218,6 +231,14 @@ static int inode_alloc_security(struct inode *inode)
 	return 0;
 }
 
+static void inode_free_rcu(struct rcu_head *head)
+{
+	struct inode_security_struct *isec;
+
+	isec = container_of(head, struct inode_security_struct, rcu);
+	kmem_cache_free(sel_inode_cache, isec);
+}
+
 static void inode_free_security(struct inode *inode)
 {
 	struct inode_security_struct *isec = inode->i_security;
@@ -228,8 +249,16 @@ static void inode_free_security(struct inode *inode)
 		list_del_init(&isec->list);
 	spin_unlock(&sbsec->isec_lock);
 
-	inode->i_security = NULL;
-	kmem_cache_free(sel_inode_cache, isec);
+	/*
+	 * The inode may still be referenced in a path walk and
+	 * a call to selinux_inode_permission() can be made
+	 * after inode_free_security() is called. Ideally, the VFS
+	 * wouldn't do this, but fixing that is a much harder
+	 * job. For now, simply free the i_security via RCU, and
+	 * leave the current inode->i_security pointer intact.
+	 * The inode will be freed after the RCU grace period too.
+	 */
+	call_rcu(&isec->rcu, inode_free_rcu);
 }
 
 static int file_alloc_security(struct file *file)
@@ -284,13 +313,14 @@ static void superblock_free_security(struct super_block *sb)
 
 /* The file system's label must be initialized prior to use. */
 
-static const char *labeling_behaviors[6] = {
+static const char *labeling_behaviors[7] = {
 	"uses xattr",
 	"uses transition SIDs",
 	"uses task SIDs",
 	"uses genfs_contexts",
 	"not configured for labeling",
 	"uses mountpoint labeling",
+	"uses native labeling",
 };
 
 static int inode_doinit_with_dentry(struct inode *inode, struct dentry *opt_dentry);
@@ -420,6 +450,7 @@ next_inode:
 				list_entry(sbsec->isec_head.next,
 					   struct inode_security_struct, list);
 		struct inode *inode = isec->inode;
+		list_del_init(&isec->list);
 		spin_unlock(&sbsec->isec_lock);
 		inode = igrab(inode);
 		if (inode) {
@@ -428,7 +459,6 @@ next_inode:
 			iput(inode);
 		}
 		spin_lock(&sbsec->isec_lock);
-		list_del_init(&isec->list);
 		goto next_inode;
 	}
 	spin_unlock(&sbsec->isec_lock);
@@ -552,7 +582,9 @@ static int bad_option(struct superblock_security_struct *sbsec, char flag,
  * labeling information.
  */
 static int selinux_set_mnt_opts(struct super_block *sb,
-				struct security_mnt_opts *opts)
+				struct security_mnt_opts *opts,
+				unsigned long kern_flags,
+				unsigned long *set_kern_flags)
 {
 	const struct cred *cred = current_cred();
 	int rc = 0, i;
@@ -578,6 +610,12 @@ static int selinux_set_mnt_opts(struct super_block *sb,
 		rc = -EINVAL;
 		printk(KERN_WARNING "SELinux: Unable to set superblock options "
 			"before the security server is initialized\n");
+		goto out;
+	}
+	if (kern_flags && !set_kern_flags) {
+		/* Specifying internal flags without providing a place to
+		 * place the results is not allowed */
+		rc = -EINVAL;
 		goto out;
 	}
 
@@ -670,14 +708,21 @@ static int selinux_set_mnt_opts(struct super_block *sb,
 	if (strcmp(sb->s_type->name, "proc") == 0)
 		sbsec->flags |= SE_SBPROC;
 
-	/* Determine the labeling behavior to use for this filesystem type. */
-	rc = security_fs_use((sbsec->flags & SE_SBPROC) ? "proc" : sb->s_type->name, &sbsec->behavior, &sbsec->sid);
-	if (rc) {
-		printk(KERN_WARNING "%s: security_fs_use(%s) returned %d\n",
-		       __func__, sb->s_type->name, rc);
-		goto out;
+	if (!sbsec->behavior) {
+		/*
+		 * Determine the labeling behavior to use for this
+		 * filesystem type.
+		 */
+		rc = security_fs_use((sbsec->flags & SE_SBPROC) ?
+					"proc" : sb->s_type->name,
+					&sbsec->behavior, &sbsec->sid);
+		if (rc) {
+			printk(KERN_WARNING
+				"%s: security_fs_use(%s) returned %d\n",
+					__func__, sb->s_type->name, rc);
+			goto out;
+		}
 	}
-
 	/* sets the context of the superblock for the fs being mounted. */
 	if (fscontext_sid) {
 		rc = may_context_mount_sb_relabel(fscontext_sid, sbsec, cred);
@@ -692,6 +737,11 @@ static int selinux_set_mnt_opts(struct super_block *sb,
 	 * sets the label used on all file below the mountpoint, and will set
 	 * the superblock context if not already set.
 	 */
+	if (kern_flags & SECURITY_LSM_NATIVE_LABELS && !context_sid) {
+		sbsec->behavior = SECURITY_FS_USE_NATIVE;
+		*set_kern_flags |= SECURITY_LSM_NATIVE_LABELS;
+	}
+
 	if (context_sid) {
 		if (!fscontext_sid) {
 			rc = may_context_mount_sb_relabel(context_sid, sbsec,
@@ -723,7 +773,8 @@ static int selinux_set_mnt_opts(struct super_block *sb,
 	}
 
 	if (defcontext_sid) {
-		if (sbsec->behavior != SECURITY_FS_USE_XATTR) {
+		if (sbsec->behavior != SECURITY_FS_USE_XATTR &&
+			sbsec->behavior != SECURITY_FS_USE_NATIVE) {
 			rc = -EINVAL;
 			printk(KERN_WARNING "SELinux: defcontext option is "
 			       "invalid for this filesystem type\n");
@@ -980,7 +1031,7 @@ static int superblock_doinit(struct super_block *sb, void *data)
 		goto out_err;
 
 out:
-	rc = selinux_set_mnt_opts(sb, &opts);
+	rc = selinux_set_mnt_opts(sb, &opts, 0, NULL);
 
 out_err:
 	security_free_mnt_opts(&opts);
@@ -1222,6 +1273,8 @@ static int inode_doinit_with_dentry(struct inode *inode, struct dentry *opt_dent
 	}
 
 	switch (sbsec->behavior) {
+	case SECURITY_FS_USE_NATIVE:
+		break;
 	case SECURITY_FS_USE_XATTR:
 		if (!inode->i_op->getxattr) {
 			isec->sid = sbsec->def_sid;
@@ -1344,15 +1397,33 @@ static int inode_doinit_with_dentry(struct inode *inode, struct dentry *opt_dent
 		isec->sid = sbsec->sid;
 
 		if ((sbsec->flags & SE_SBPROC) && !S_ISLNK(inode->i_mode)) {
-			if (opt_dentry) {
-				isec->sclass = inode_mode_to_security_class(inode->i_mode);
-				rc = selinux_proc_get_sid(opt_dentry,
-							  isec->sclass,
-							  &sid);
-				if (rc)
-					goto out_unlock;
-				isec->sid = sid;
-			}
+			/* We must have a dentry to determine the label on
+			 * procfs inodes */
+			if (opt_dentry)
+				/* Called from d_instantiate or
+				 * d_splice_alias. */
+				dentry = dget(opt_dentry);
+			else
+				/* Called from selinux_complete_init, try to
+				 * find a dentry. */
+				dentry = d_find_alias(inode);
+			/*
+			 * This can be hit on boot when a file is accessed
+			 * before the policy is loaded.  When we load policy we
+			 * may find inodes that have no dentry on the
+			 * sbsec->isec_head list.  No reason to complain as
+			 * these will get fixed up the next time we go through
+			 * inode_doinit() with a dentry, before these inodes
+			 * could be used again by userspace.
+			 */
+			if (!dentry)
+				goto out_unlock;
+			isec->sclass = inode_mode_to_security_class(inode->i_mode);
+			rc = selinux_proc_get_sid(dentry, isec->sclass, &sid);
+			dput(dentry);
+			if (rc)
+				goto out_unlock;
+			isec->sid = sid;
 		}
 		break;
 	}
@@ -2515,6 +2586,40 @@ static void selinux_inode_free_security(struct inode *inode)
 	inode_free_security(inode);
 }
 
+static int selinux_dentry_init_security(struct dentry *dentry, int mode,
+					struct qstr *name, void **ctx,
+					u32 *ctxlen)
+{
+	const struct cred *cred = current_cred();
+	struct task_security_struct *tsec;
+	struct inode_security_struct *dsec;
+	struct superblock_security_struct *sbsec;
+	struct inode *dir = dentry->d_parent->d_inode;
+	u32 newsid;
+	int rc;
+
+	tsec = cred->security;
+	dsec = dir->i_security;
+	sbsec = dir->i_sb->s_security;
+
+	if (tsec->create_sid && sbsec->behavior != SECURITY_FS_USE_MNTPOINT) {
+		newsid = tsec->create_sid;
+	} else {
+		rc = security_transition_sid(tsec->sid, dsec->sid,
+					     inode_mode_to_security_class(mode),
+					     name,
+					     &newsid);
+		if (rc) {
+			printk(KERN_WARNING
+				"%s: security_transition_sid failed, rc=%d\n",
+			       __func__, -rc);
+			return rc;
+		}
+	}
+
+	return security_sid_to_context(newsid, (char **)ctx, ctxlen);
+}
+
 static int selinux_inode_init_security(struct inode *inode, struct inode *dir,
 				       const struct qstr *qstr, char **name,
 				       void **value, size_t *len)
@@ -2849,7 +2954,10 @@ static void selinux_inode_post_setxattr(struct dentry *dentry, const char *name,
 		return;
 	}
 
+	isec->sclass = inode_mode_to_security_class(inode->i_mode);
 	isec->sid = newsid;
+	isec->initialized = 1;
+
 	return;
 }
 
@@ -2937,6 +3045,7 @@ static int selinux_inode_setsecurity(struct inode *inode, const char *name,
 	if (rc)
 		return rc;
 
+	isec->sclass = inode_mode_to_security_class(inode->i_mode);
 	isec->sid = newsid;
 	isec->initialized = 1;
 	return 0;
@@ -3086,24 +3195,20 @@ error:
 
 static int selinux_mmap_addr(unsigned long addr)
 {
-	int rc = 0;
-	u32 sid = current_sid();
-
-	/*
-	 * notice that we are intentionally putting the SELinux check before
-	 * the secondary cap_file_mmap check.  This is such a likely attempt
-	 * at bad behaviour/exploit that we always want to get the AVC, even
-	 * if DAC would have also denied the operation.
-	 */
-	if (addr < CONFIG_LSM_MMAP_MIN_ADDR) {
-		rc = avc_has_perm(sid, sid, SECCLASS_MEMPROTECT,
-				  MEMPROTECT__MMAP_ZERO, NULL);
-		if (rc)
-			return rc;
-	}
+	int rc;
 
 	/* do DAC check on address space usage */
-	return cap_mmap_addr(addr);
+	rc = cap_mmap_addr(addr);
+	if (rc)
+		return rc;
+
+	if (addr < CONFIG_LSM_MMAP_MIN_ADDR) {
+		u32 sid = current_sid();
+		rc = avc_has_perm(sid, sid, SECCLASS_MEMPROTECT,
+				  MEMPROTECT__MMAP_ZERO, NULL);
+	}
+
+	return rc;
 }
 
 static int selinux_mmap_file(struct file *file, unsigned long reqprot,
@@ -3722,7 +3827,7 @@ static int selinux_skb_peerlbl_sid(struct sk_buff *skb, u16 family, u32 *sid)
 	u32 nlbl_sid;
 	u32 nlbl_type;
 
-	selinux_skb_xfrm_sid(skb, &xfrm_sid);
+	selinux_xfrm_skb_sid(skb, &xfrm_sid);
 	selinux_netlbl_skbuff_getsid(skb, family, &nlbl_type, &nlbl_sid);
 
 	err = security_net_peersid_resolve(nlbl_sid, nlbl_type, xfrm_sid, sid);
@@ -3734,6 +3839,30 @@ static int selinux_skb_peerlbl_sid(struct sk_buff *skb, u16 family, u32 *sid)
 	}
 
 	return 0;
+}
+
+/**
+ * selinux_conn_sid - Determine the child socket label for a connection
+ * @sk_sid: the parent socket's SID
+ * @skb_sid: the packet's SID
+ * @conn_sid: the resulting connection SID
+ *
+ * If @skb_sid is valid then the user:role:type information from @sk_sid is
+ * combined with the MLS information from @skb_sid in order to create
+ * @conn_sid.  If @skb_sid is not valid then then @conn_sid is simply a copy
+ * of @sk_sid.  Returns zero on success, negative values on failure.
+ *
+ */
+static int selinux_conn_sid(u32 sk_sid, u32 skb_sid, u32 *conn_sid)
+{
+	int err = 0;
+
+	if (skb_sid != SECSID_NULL)
+		err = security_sid_mls_copy(sk_sid, skb_sid, conn_sid);
+	else
+		*conn_sid = sk_sid;
+
+	return err;
 }
 
 /* socket security operations */
@@ -3859,7 +3988,7 @@ static int selinux_socket_bind(struct socket *sock, struct sockaddr *address, in
 		if (snum) {
 			int low, high;
 
-			inet_get_local_port_range(&low, &high);
+			inet_get_local_port_range(sock_net(sk), &low, &high);
 
 			if (snum < max(PROT_SOCK, low) || snum > high) {
 				err = sel_netport_sid(sk->sk_protocol,
@@ -4094,15 +4223,15 @@ static int selinux_socket_unix_may_send(struct socket *sock,
 			    &ad);
 }
 
-static int selinux_inet_sys_rcv_skb(int ifindex, char *addrp, u16 family,
-				    u32 peer_sid,
+static int selinux_inet_sys_rcv_skb(struct net *ns, int ifindex,
+				    char *addrp, u16 family, u32 peer_sid,
 				    struct common_audit_data *ad)
 {
 	int err;
 	u32 if_sid;
 	u32 node_sid;
 
-	err = sel_netif_sid(ifindex, &if_sid);
+	err = sel_netif_sid(ns, ifindex, &if_sid);
 	if (err)
 		return err;
 	err = avc_has_perm(peer_sid, if_sid,
@@ -4195,16 +4324,18 @@ static int selinux_socket_sock_rcv_skb(struct sock *sk, struct sk_buff *skb)
 		err = selinux_skb_peerlbl_sid(skb, family, &peer_sid);
 		if (err)
 			return err;
-		err = selinux_inet_sys_rcv_skb(skb->skb_iif, addrp, family,
-					       peer_sid, &ad);
+		err = selinux_inet_sys_rcv_skb(sock_net(sk), skb->skb_iif,
+					       addrp, family, peer_sid, &ad);
 		if (err) {
 			selinux_netlbl_err(skb, err, 0);
 			return err;
 		}
 		err = avc_has_perm(sk_sid, peer_sid, SECCLASS_PEER,
 				   PEER__RECV, &ad);
-		if (err)
+		if (err) {
 			selinux_netlbl_err(skb, err, 0);
+			return err;
+		}
 	}
 
 	if (secmark_active) {
@@ -4342,7 +4473,7 @@ static int selinux_inet_conn_request(struct sock *sk, struct sk_buff *skb,
 	struct sk_security_struct *sksec = sk->sk_security;
 	int err;
 	u16 family = sk->sk_family;
-	u32 newsid;
+	u32 connsid;
 	u32 peersid;
 
 	/* handle mapped IPv4 packets arriving via IPv6 sockets */
@@ -4352,16 +4483,11 @@ static int selinux_inet_conn_request(struct sock *sk, struct sk_buff *skb,
 	err = selinux_skb_peerlbl_sid(skb, family, &peersid);
 	if (err)
 		return err;
-	if (peersid == SECSID_NULL) {
-		req->secid = sksec->sid;
-		req->peer_secid = SECSID_NULL;
-	} else {
-		err = security_sid_mls_copy(sksec->sid, peersid, &newsid);
-		if (err)
-			return err;
-		req->secid = newsid;
-		req->peer_secid = peersid;
-	}
+	err = selinux_conn_sid(sksec->sid, peersid, &connsid);
+	if (err)
+		return err;
+	req->secid = connsid;
+	req->peer_secid = peersid;
 
 	return selinux_netlbl_inet_conn_request(req, family);
 }
@@ -4521,10 +4647,10 @@ static int selinux_nlmsg_perm(struct sock *sk, struct sk_buff *skb)
 	err = selinux_nlmsg_lookup(sksec->sclass, nlh->nlmsg_type, &perm);
 	if (err) {
 		if (err == -EINVAL) {
-			audit_log(current->audit_context, GFP_KERNEL, AUDIT_SELINUX_ERR,
-				  "SELinux:  unrecognized netlink message"
-				  " type=%hu for sclass=%hu\n",
-				  nlh->nlmsg_type, sksec->sclass);
+			printk(KERN_WARNING
+			       "SELinux: unrecognized netlink message:"
+			       " protocol=%hu nlmsg_type=%hu sclass=%hu\n",
+			       sk->sk_protocol, nlh->nlmsg_type, sksec->sclass);
 			if (!selinux_enforcing || security_get_allow_unknown())
 				err = 0;
 		}
@@ -4542,7 +4668,8 @@ out:
 
 #ifdef CONFIG_NETFILTER
 
-static unsigned int selinux_ip_forward(struct sk_buff *skb, int ifindex,
+static unsigned int selinux_ip_forward(struct sk_buff *skb,
+				       const struct net_device *indev,
 				       u16 family)
 {
 	int err;
@@ -4568,14 +4695,14 @@ static unsigned int selinux_ip_forward(struct sk_buff *skb, int ifindex,
 
 	ad.type = LSM_AUDIT_DATA_NET;
 	ad.u.net = &net;
-	ad.u.net->netif = ifindex;
+	ad.u.net->netif = indev->ifindex;
 	ad.u.net->family = family;
 	if (selinux_parse_skb(skb, &ad, &addrp, 1, NULL) != 0)
 		return NF_DROP;
 
 	if (peerlbl_active) {
-		err = selinux_inet_sys_rcv_skb(ifindex, addrp, family,
-					       peer_sid, &ad);
+		err = selinux_inet_sys_rcv_skb(dev_net(indev), indev->ifindex,
+					       addrp, family, peer_sid, &ad);
 		if (err) {
 			selinux_netlbl_err(skb, err, 1);
 			return NF_DROP;
@@ -4598,29 +4725,30 @@ static unsigned int selinux_ip_forward(struct sk_buff *skb, int ifindex,
 	return NF_ACCEPT;
 }
 
-static unsigned int selinux_ipv4_forward(unsigned int hooknum,
+static unsigned int selinux_ipv4_forward(const struct nf_hook_ops *ops,
 					 struct sk_buff *skb,
 					 const struct net_device *in,
 					 const struct net_device *out,
-					 int (*okfn)(struct sk_buff *))
+					 const struct nf_hook_state *state)
 {
-	return selinux_ip_forward(skb, in->ifindex, PF_INET);
+	return selinux_ip_forward(skb, state->in, PF_INET);
 }
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-static unsigned int selinux_ipv6_forward(unsigned int hooknum,
+static unsigned int selinux_ipv6_forward(const struct nf_hook_ops *ops,
 					 struct sk_buff *skb,
 					 const struct net_device *in,
 					 const struct net_device *out,
-					 int (*okfn)(struct sk_buff *))
+					 const struct nf_hook_state *state)
 {
-	return selinux_ip_forward(skb, in->ifindex, PF_INET6);
+	return selinux_ip_forward(skb, state->in, PF_INET6);
 }
 #endif	/* IPV6 */
 
 static unsigned int selinux_ip_output(struct sk_buff *skb,
 				      u16 family)
 {
+	struct sock *sk;
 	u32 sid;
 
 	if (!netlbl_enabled())
@@ -4629,8 +4757,27 @@ static unsigned int selinux_ip_output(struct sk_buff *skb,
 	/* we do this in the LOCAL_OUT path and not the POST_ROUTING path
 	 * because we want to make sure we apply the necessary labeling
 	 * before IPsec is applied so we can leverage AH protection */
-	if (skb->sk) {
-		struct sk_security_struct *sksec = skb->sk->sk_security;
+	sk = skb->sk;
+	if (sk) {
+		struct sk_security_struct *sksec;
+
+		if (sk->sk_state == TCP_LISTEN)
+			/* if the socket is the listening state then this
+			 * packet is a SYN-ACK packet which means it needs to
+			 * be labeled based on the connection/request_sock and
+			 * not the parent socket.  unfortunately, we can't
+			 * lookup the request_sock yet as it isn't queued on
+			 * the parent socket until after the SYN-ACK is sent.
+			 * the "solution" is to simply pass the packet as-is
+			 * as any IP option based labeling should be copied
+			 * from the initial connection request (in the IP
+			 * layer).  it is far from ideal, but until we get a
+			 * security label in the packet itself this is the
+			 * best we can do. */
+			return NF_ACCEPT;
+
+		/* standard practice, label using the parent socket */
+		sksec = sk->sk_security;
 		sid = sksec->sid;
 	} else
 		sid = SECINITSID_KERNEL;
@@ -4640,11 +4787,11 @@ static unsigned int selinux_ip_output(struct sk_buff *skb,
 	return NF_ACCEPT;
 }
 
-static unsigned int selinux_ipv4_output(unsigned int hooknum,
+static unsigned int selinux_ipv4_output(const struct nf_hook_ops *ops,
 					struct sk_buff *skb,
 					const struct net_device *in,
 					const struct net_device *out,
-					int (*okfn)(struct sk_buff *))
+					const struct nf_hook_state *state)
 {
 	return selinux_ip_output(skb, PF_INET);
 }
@@ -4682,11 +4829,13 @@ static unsigned int selinux_ip_postroute_compat(struct sk_buff *skb,
 	return NF_ACCEPT;
 }
 
-static unsigned int selinux_ip_postroute(struct sk_buff *skb, int ifindex,
+static unsigned int selinux_ip_postroute(struct sk_buff *skb,
+					 const struct net_device *outdev,
 					 u16 family)
 {
 	u32 secmark_perm;
 	u32 peer_sid;
+	int ifindex = outdev->ifindex;
 	struct sock *sk;
 	struct common_audit_data ad;
 	struct lsm_network_audit net = {0,};
@@ -4700,27 +4849,37 @@ static unsigned int selinux_ip_postroute(struct sk_buff *skb, int ifindex,
 	 * as fast and as clean as possible. */
 	if (!selinux_policycap_netpeer)
 		return selinux_ip_postroute_compat(skb, ifindex, family);
+
+	secmark_active = selinux_secmark_enabled();
+	peerlbl_active = netlbl_enabled() || selinux_xfrm_enabled();
+	if (!secmark_active && !peerlbl_active)
+		return NF_ACCEPT;
+
+	sk = skb->sk;
+
 #ifdef CONFIG_XFRM
 	/* If skb->dst->xfrm is non-NULL then the packet is undergoing an IPsec
 	 * packet transformation so allow the packet to pass without any checks
 	 * since we'll have another chance to perform access control checks
 	 * when the packet is on it's final way out.
 	 * NOTE: there appear to be some IPv6 multicast cases where skb->dst
-	 *       is NULL, in this case go ahead and apply access control. */
-	if (skb_dst(skb) != NULL && skb_dst(skb)->xfrm != NULL)
+	 *       is NULL, in this case go ahead and apply access control.
+	 *       is NULL, in this case go ahead and apply access control.
+	 * NOTE: if this is a local socket (skb->sk != NULL) that is in the
+	 *       TCP listening state we cannot wait until the XFRM processing
+	 *       is done as we will miss out on the SA label if we do;
+	 *       unfortunately, this means more work, but it is only once per
+	 *       connection. */
+	if (skb_dst(skb) != NULL && skb_dst(skb)->xfrm != NULL &&
+	    !(sk != NULL && sk->sk_state == TCP_LISTEN))
 		return NF_ACCEPT;
 #endif
-	secmark_active = selinux_secmark_enabled();
-	peerlbl_active = netlbl_enabled() || selinux_xfrm_enabled();
-	if (!secmark_active && !peerlbl_active)
-		return NF_ACCEPT;
 
-	/* if the packet is being forwarded then get the peer label from the
-	 * packet itself; otherwise check to see if it is from a local
-	 * application or the kernel, if from an application get the peer label
-	 * from the sending socket, otherwise use the kernel's sid */
-	sk = skb->sk;
 	if (sk == NULL) {
+		/* Without an associated socket the packet is either coming
+		 * from the kernel or it is being forwarded; check the packet
+		 * to determine which and if the packet is being forwarded
+		 * query the packet directly to determine the security label. */
 		if (skb->skb_iif) {
 			secmark_perm = PACKET__FORWARD_OUT;
 			if (selinux_skb_peerlbl_sid(skb, family, &peer_sid))
@@ -4729,7 +4888,46 @@ static unsigned int selinux_ip_postroute(struct sk_buff *skb, int ifindex,
 			secmark_perm = PACKET__SEND;
 			peer_sid = SECINITSID_KERNEL;
 		}
+	} else if (sk->sk_state == TCP_LISTEN) {
+		/* Locally generated packet but the associated socket is in the
+		 * listening state which means this is a SYN-ACK packet.  In
+		 * this particular case the correct security label is assigned
+		 * to the connection/request_sock but unfortunately we can't
+		 * query the request_sock as it isn't queued on the parent
+		 * socket until after the SYN-ACK packet is sent; the only
+		 * viable choice is to regenerate the label like we do in
+		 * selinux_inet_conn_request().  See also selinux_ip_output()
+		 * for similar problems. */
+		u32 skb_sid;
+		struct sk_security_struct *sksec = sk->sk_security;
+		if (selinux_skb_peerlbl_sid(skb, family, &skb_sid))
+			return NF_DROP;
+		/* At this point, if the returned skb peerlbl is SECSID_NULL
+		 * and the packet has been through at least one XFRM
+		 * transformation then we must be dealing with the "final"
+		 * form of labeled IPsec packet; since we've already applied
+		 * all of our access controls on this packet we can safely
+		 * pass the packet. */
+		if (skb_sid == SECSID_NULL) {
+			switch (family) {
+			case PF_INET:
+				if (IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED)
+					return NF_ACCEPT;
+				break;
+			case PF_INET6:
+				if (IP6CB(skb)->flags & IP6SKB_XFRM_TRANSFORMED)
+					return NF_ACCEPT;
+				break;
+			default:
+				return NF_DROP_ERR(-ECONNREFUSED);
+			}
+		}
+		if (selinux_conn_sid(sksec->sid, skb_sid, &peer_sid))
+			return NF_DROP;
+		secmark_perm = PACKET__SEND;
 	} else {
+		/* Locally generated packet, fetch the security label from the
+		 * associated socket. */
 		struct sk_security_struct *sksec = sk->sk_security;
 		peer_sid = sksec->sid;
 		secmark_perm = PACKET__SEND;
@@ -4751,7 +4949,7 @@ static unsigned int selinux_ip_postroute(struct sk_buff *skb, int ifindex,
 		u32 if_sid;
 		u32 node_sid;
 
-		if (sel_netif_sid(ifindex, &if_sid))
+		if (sel_netif_sid(dev_net(outdev), ifindex, &if_sid))
 			return NF_DROP;
 		if (avc_has_perm(peer_sid, if_sid,
 				 SECCLASS_NETIF, NETIF__EGRESS, &ad))
@@ -4767,23 +4965,23 @@ static unsigned int selinux_ip_postroute(struct sk_buff *skb, int ifindex,
 	return NF_ACCEPT;
 }
 
-static unsigned int selinux_ipv4_postroute(unsigned int hooknum,
+static unsigned int selinux_ipv4_postroute(const struct nf_hook_ops *ops,
 					   struct sk_buff *skb,
 					   const struct net_device *in,
 					   const struct net_device *out,
-					   int (*okfn)(struct sk_buff *))
+					   const struct nf_hook_state *state)
 {
-	return selinux_ip_postroute(skb, out->ifindex, PF_INET);
+	return selinux_ip_postroute(skb, state->out, PF_INET);
 }
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-static unsigned int selinux_ipv6_postroute(unsigned int hooknum,
+static unsigned int selinux_ipv6_postroute(const struct nf_hook_ops *ops,
 					   struct sk_buff *skb,
 					   const struct net_device *in,
 					   const struct net_device *out,
-					   int (*okfn)(struct sk_buff *))
+					   const struct nf_hook_state *state)
 {
-	return selinux_ip_postroute(skb, out->ifindex, PF_INET6);
+	return selinux_ip_postroute(skb, state->out, PF_INET6);
 }
 #endif	/* IPV6 */
 
@@ -5393,11 +5591,11 @@ static int selinux_setprocattr(struct task_struct *p,
 		/* Check for ptracing, and update the task SID if ok.
 		   Otherwise, leave SID unchanged and fail. */
 		ptsid = 0;
-		task_lock(p);
+		rcu_read_lock();
 		tracer = ptrace_parent(p);
 		if (tracer)
 			ptsid = task_sid(tracer);
-		task_unlock(p);
+		rcu_read_unlock();
 
 		if (tracer) {
 			error = avc_has_perm(ptsid, sid, SECCLASS_PROCESS,
@@ -5418,6 +5616,11 @@ static int selinux_setprocattr(struct task_struct *p,
 abort_change:
 	abort_creds(new);
 	return error;
+}
+
+static int selinux_ismaclabel(const char *name)
+{
+	return (strcmp(name, XATTR_SELINUX_SUFFIX) == 0);
 }
 
 static int selinux_secid_to_secctx(u32 secid, char **secdata, u32 *seclen)
@@ -5562,6 +5765,7 @@ static struct security_operations selinux_ops = {
 	.sb_clone_mnt_opts =		selinux_sb_clone_mnt_opts,
 	.sb_parse_opts_str = 		selinux_parse_opts_str,
 
+	.dentry_init_security =		selinux_dentry_init_security,
 
 	.inode_alloc_security =		selinux_inode_alloc_security,
 	.inode_free_security =		selinux_inode_free_security,
@@ -5657,6 +5861,7 @@ static struct security_operations selinux_ops = {
 	.getprocattr =			selinux_getprocattr,
 	.setprocattr =			selinux_setprocattr,
 
+	.ismaclabel =			selinux_ismaclabel,
 	.secid_to_secctx =		selinux_secid_to_secctx,
 	.secctx_to_secid =		selinux_secctx_to_secid,
 	.release_secctx =		selinux_release_secctx,
@@ -5757,6 +5962,9 @@ static __init int selinux_init(void)
 
 	if (register_security(&selinux_ops))
 		panic("SELinux: Unable to register with kernel.\n");
+
+	if (avc_add_callback(selinux_netcache_avc_callback, AVC_CALLBACK_RESET))
+		panic("SELinux: Unable to register AVC netcache callback\n");
 
 	if (selinux_enforcing)
 		printk(KERN_DEBUG "SELinux:  Starting in enforcing mode\n");

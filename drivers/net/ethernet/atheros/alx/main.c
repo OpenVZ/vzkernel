@@ -1303,6 +1303,8 @@ static int alx_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	SET_NETDEV_DEV(netdev, &pdev->dev);
 	alx = netdev_priv(netdev);
+	spin_lock_init(&alx->hw.mdio_lock);
+	spin_lock_init(&alx->irq_lock);
 	alx->dev = netdev;
 	alx->hw.pdev = pdev;
 	alx->msg_enable = NETIF_MSG_LINK | NETIF_MSG_HW | NETIF_MSG_IFUP |
@@ -1385,9 +1387,6 @@ static int alx_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	INIT_WORK(&alx->link_check_wk, alx_link_check);
 	INIT_WORK(&alx->reset_wk, alx_reset);
-	spin_lock_init(&alx->hw.mdio_lock);
-	spin_lock_init(&alx->irq_lock);
-
 	netif_carrier_off(netdev);
 
 	err = register_netdev(netdev);
@@ -1594,7 +1593,7 @@ static SIMPLE_DEV_PM_OPS(alx_pm_ops, alx_suspend, alx_resume);
 #define ALX_PM_OPS      NULL
 #endif
 
-static DEFINE_PCI_DEVICE_TABLE(alx_pci_tbl) = {
+static const struct pci_device_id alx_pci_tbl[] = {
 	{ PCI_VDEVICE(ATTANSIC, ALX_DEV_ID_AR8161),
 	  .driver_data = ALX_DEV_QUIRK_MSI_INTX_DISABLE_BUG },
 	{ PCI_VDEVICE(ATTANSIC, ALX_DEV_ID_E2200),

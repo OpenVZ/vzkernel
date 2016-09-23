@@ -241,6 +241,7 @@ int  rfcomm_dlc_send(struct rfcomm_dlc *d, struct sk_buff *skb);
 int  rfcomm_dlc_set_modem_status(struct rfcomm_dlc *d, u8 v24_sig);
 int  rfcomm_dlc_get_modem_status(struct rfcomm_dlc *d, u8 *v24_sig);
 void rfcomm_dlc_accept(struct rfcomm_dlc *d);
+struct rfcomm_dlc *rfcomm_dlc_exists(bdaddr_t *src, bdaddr_t *dst, u8 channel);
 
 #define rfcomm_dlc_lock(d)     spin_lock(&d->lock)
 #define rfcomm_dlc_unlock(d)   spin_unlock(&d->lock)
@@ -300,6 +301,8 @@ struct rfcomm_conninfo {
 
 struct rfcomm_pinfo {
 	struct bt_sock bt;
+	bdaddr_t src;
+	bdaddr_t dst;
 	struct rfcomm_dlc   *dlc;
 	u8     channel;
 	u8     sec_level;
@@ -321,11 +324,16 @@ int  rfcomm_connect_ind(struct rfcomm_session *s, u8 channel,
 #define RFCOMMGETDEVINFO	_IOR('R', 211, int)
 #define RFCOMMSTEALDLC		_IOW('R', 220, int)
 
+/* rfcomm_dev.flags bit definitions */
 #define RFCOMM_REUSE_DLC      0
 #define RFCOMM_RELEASE_ONHUP  1
 #define RFCOMM_HANGUP_NOW     2
 #define RFCOMM_TTY_ATTACHED   3
-#define RFCOMM_TTY_RELEASED   4
+#define RFCOMM_DEFUNCT_BIT4   4	  /* don't reuse this bit - userspace visible */
+
+/* rfcomm_dev.status bit definitions */
+#define RFCOMM_DEV_RELEASED   0
+#define RFCOMM_TTY_OWNED      1
 
 struct rfcomm_dev_req {
 	s16      dev_id;

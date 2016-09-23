@@ -44,6 +44,12 @@
 #undef __field_ext
 #define __field_ext(type, item, filter_type)	type	item;
 
+#undef __field_struct
+#define __field_struct(type, item)	type	item;
+
+#undef __field_struct_ext
+#define __field_struct_ext(type, item, filter_type)	type	item;
+
 #undef __array
 #define __array(type, item, len)	type	item[len];
 
@@ -70,6 +76,10 @@
 #define DEFINE_EVENT(template, name, proto, args)	\
 	static struct ftrace_event_call	__used		\
 	__attribute__((__aligned__(4))) event_##name
+
+#undef DEFINE_EVENT_FN
+#define DEFINE_EVENT_FN(template, name, proto, args, reg, unreg)	\
+	DEFINE_EVENT(template, name, PARAMS(proto), PARAMS(args))
 
 #undef DEFINE_EVENT_PRINT
 #define DEFINE_EVENT_PRINT(template, name, proto, args, print)	\
@@ -110,6 +120,12 @@
 
 #undef __field_ext
 #define __field_ext(type, item, filter_type)
+
+#undef __field_struct
+#define __field_struct(type, item)
+
+#undef __field_struct_ext
+#define __field_struct_ext(type, item, filter_type)
 
 #undef __array
 #define __array(type, item, len)
@@ -293,8 +309,20 @@ static struct trace_event_functions ftrace_event_type_funcs_##call = {	\
 	if (ret)							\
 		return ret;
 
+#undef __field_struct_ext
+#define __field_struct_ext(type, item, filter_type)			\
+	ret = trace_define_field(event_call, #type, #item,		\
+				 offsetof(typeof(field), item),		\
+				 sizeof(field.item),			\
+				 0, filter_type);			\
+	if (ret)							\
+		return ret;
+
 #undef __field
 #define __field(type, item)	__field_ext(type, item, FILTER_OTHER)
+
+#undef __field_struct
+#define __field_struct(type, item) __field_struct_ext(type, item, FILTER_OTHER)
 
 #undef __array
 #define __array(type, item, len)					\
@@ -357,6 +385,12 @@ ftrace_define_fields_##call(struct ftrace_event_call *event_call)	\
 #undef __field_ext
 #define __field_ext(type, item, filter_type)
 
+#undef __field_struct
+#define __field_struct(type, item)
+
+#undef __field_struct_ext
+#define __field_struct_ext(type, item, filter_type)
+
 #undef __array
 #define __array(type, item, len)
 
@@ -368,7 +402,8 @@ ftrace_define_fields_##call(struct ftrace_event_call *event_call)	\
 	__data_size += (len) * sizeof(type);
 
 #undef __string
-#define __string(item, src) __dynamic_array(char, item, strlen(src) + 1)
+#define __string(item, src) __dynamic_array(char, item,			\
+		    strlen((src) ? (const char *)(src) : "(null)") + 1)
 
 #undef DECLARE_EVENT_CLASS
 #define DECLARE_EVENT_CLASS(call, proto, args, tstruct, assign, print)	\
@@ -486,6 +521,9 @@ static inline notrace int ftrace_get_offsets_##call(			\
 #undef __field
 #define __field(type, item)
 
+#undef __field_struct
+#define __field_struct(type, item)
+
 #undef __array
 #define __array(type, item, len)
 
@@ -498,7 +536,7 @@ static inline notrace int ftrace_get_offsets_##call(			\
 
 #undef __assign_str
 #define __assign_str(dst, src)						\
-	strcpy(__get_str(dst), src);
+	strcpy(__get_str(dst), (src) ? (const char *)(src) : "(null)");
 
 #undef TP_fast_assign
 #define TP_fast_assign(args...) args
@@ -651,15 +689,13 @@ perf_trace_##call(void *__data, proto)					\
 	struct ftrace_event_call *event_call = __data;			\
 	struct ftrace_data_offsets_##call __maybe_unused __data_offsets;\
 	struct ftrace_raw_##call *entry;				\
-	struct pt_regs __regs;						\
+	struct pt_regs *__regs;						\
 	u64 __addr = 0, __count = 1;					\
 	struct task_struct *__task = NULL;				\
 	struct hlist_head *head;					\
 	int __entry_size;						\
 	int __data_size;						\
 	int rctx;							\
-									\
-	perf_fetch_caller_regs(&__regs);				\
 									\
 	__data_size = ftrace_get_offsets_##call(&__data_offsets, args); \
 	__entry_size = ALIGN(__data_size + sizeof(*entry) + sizeof(u32),\
@@ -675,13 +711,15 @@ perf_trace_##call(void *__data, proto)					\
 	if (!entry)							\
 		return;							\
 									\
+	perf_fetch_caller_regs(__regs);					\
+									\
 	tstruct								\
 									\
 	{ assign; }							\
 									\
 	head = this_cpu_ptr(event_call->perf_events);			\
 	perf_trace_buf_submit(entry, __entry_size, rctx, __addr,	\
-		__count, &__regs, head, __task);			\
+		__count, __regs, head, __task);				\
 }
 
 /*

@@ -154,6 +154,7 @@ static struct audit_chunk *alloc_chunk(int count)
 		chunk->owners[i].index = i;
 	}
 	fsnotify_init_mark(&chunk->mark, audit_tree_destroy_watch);
+	chunk->mark.mask = FS_IN_IGNORED;
 	return chunk;
 }
 
@@ -457,7 +458,7 @@ static void audit_log_remove_rule(struct audit_krule *rule)
 	if (unlikely(!ab))
 		return;
 	audit_log_format(ab, "op=");
-	audit_log_string(ab, "remove rule");
+	audit_log_string(ab, "remove_rule");
 	audit_log_format(ab, " dir=");
 	audit_log_untrustedstring(ab, rule->tree->pathname);
 	audit_log_key(ab, rule->filterkey);
@@ -912,12 +913,13 @@ static void evict_chunk(struct audit_chunk *chunk)
 }
 
 static int audit_tree_handle_event(struct fsnotify_group *group,
+				   struct inode *to_tell,
 				   struct fsnotify_mark *inode_mark,
-				   struct fsnotify_mark *vfsmonut_mark,
-				   struct fsnotify_event *event)
+				   struct fsnotify_mark *vfsmount_mark,
+				   u32 mask, void *data, int data_type,
+				   const unsigned char *file_name, u32 cookie)
 {
-	BUG();
-	return -EOPNOTSUPP;
+	return 0;
 }
 
 static void audit_tree_freeing_mark(struct fsnotify_mark *entry, struct fsnotify_group *group)
@@ -933,19 +935,8 @@ static void audit_tree_freeing_mark(struct fsnotify_mark *entry, struct fsnotify
 	BUG_ON(atomic_read(&entry->refcnt) < 1);
 }
 
-static bool audit_tree_send_event(struct fsnotify_group *group, struct inode *inode,
-				  struct fsnotify_mark *inode_mark,
-				  struct fsnotify_mark *vfsmount_mark,
-				  __u32 mask, void *data, int data_type)
-{
-	return false;
-}
-
 static const struct fsnotify_ops audit_tree_ops = {
 	.handle_event = audit_tree_handle_event,
-	.should_send_event = audit_tree_send_event,
-	.free_group_priv = NULL,
-	.free_event_priv = NULL,
 	.freeing_mark = audit_tree_freeing_mark,
 };
 

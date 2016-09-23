@@ -16,7 +16,6 @@
 
 #include "internal.h"
 
-#define PREFIX			"ACPI: "
 #define _COMPONENT		ACPI_PROCESSOR_COMPONENT
 ACPI_MODULE_NAME("processor_core");
 
@@ -95,7 +94,7 @@ static int map_madt_entry(int type, u32 acpi_id)
 	unsigned long madt_end, entry;
 	static struct acpi_table_madt *madt;
 	static int read_madt;
-	int apic_id = -1;
+	int phys_id = -1;	/* CPU hardware ID */
 
 	if (!read_madt) {
 		if (ACPI_FAILURE(acpi_get_table(ACPI_SIG_MADT, 0,
@@ -105,7 +104,7 @@ static int map_madt_entry(int type, u32 acpi_id)
 	}
 
 	if (!madt)
-		return apic_id;
+		return phys_id;
 
 	entry = (unsigned long)madt;
 	madt_end = entry + madt->header.length;
@@ -117,18 +116,18 @@ static int map_madt_entry(int type, u32 acpi_id)
 		struct acpi_subtable_header *header =
 			(struct acpi_subtable_header *)entry;
 		if (header->type == ACPI_MADT_TYPE_LOCAL_APIC) {
-			if (map_lapic_id(header, acpi_id, &apic_id))
+			if (map_lapic_id(header, acpi_id, &phys_id))
 				break;
 		} else if (header->type == ACPI_MADT_TYPE_LOCAL_X2APIC) {
-			if (map_x2apic_id(header, type, acpi_id, &apic_id))
+			if (map_x2apic_id(header, type, acpi_id, &phys_id))
 				break;
 		} else if (header->type == ACPI_MADT_TYPE_LOCAL_SAPIC) {
-			if (map_lsapic_id(header, type, acpi_id, &apic_id))
+			if (map_lsapic_id(header, type, acpi_id, &phys_id))
 				break;
 		}
 		entry += header->length;
 	}
-	return apic_id;
+	return phys_id;
 }
 
 static int map_mat_entry(acpi_handle handle, int type, u32 acpi_id)
@@ -136,7 +135,7 @@ static int map_mat_entry(acpi_handle handle, int type, u32 acpi_id)
 	struct acpi_buffer buffer = { ACPI_ALLOCATE_BUFFER, NULL };
 	union acpi_object *obj;
 	struct acpi_subtable_header *header;
-	int apic_id = -1;
+	int phys_id = -1;
 
 	if (ACPI_FAILURE(acpi_evaluate_object(handle, "_MAT", NULL, &buffer)))
 		goto exit;
@@ -152,30 +151,39 @@ static int map_mat_entry(acpi_handle handle, int type, u32 acpi_id)
 
 	header = (struct acpi_subtable_header *)obj->buffer.pointer;
 	if (header->type == ACPI_MADT_TYPE_LOCAL_APIC) {
-		map_lapic_id(header, acpi_id, &apic_id);
+		map_lapic_id(header, acpi_id, &phys_id);
 	} else if (header->type == ACPI_MADT_TYPE_LOCAL_SAPIC) {
-		map_lsapic_id(header, type, acpi_id, &apic_id);
+		map_lsapic_id(header, type, acpi_id, &phys_id);
+	} else if (header->type == ACPI_MADT_TYPE_LOCAL_X2APIC) {
+		map_x2apic_id(header, type, acpi_id, &phys_id);
 	}
 
 exit:
 	kfree(buffer.pointer);
-	return apic_id;
+	return phys_id;
 }
 
-int acpi_get_cpuid(acpi_handle handle, int type, u32 acpi_id)
+int acpi_get_phys_id(acpi_handle handle, int type, u32 acpi_id)
+{
+	int phys_id;
+
+	phys_id = map_mat_entry(handle, type, acpi_id);
+	if (phys_id == -1)
+		phys_id = map_madt_entry(type, acpi_id);
+
+	return phys_id;
+}
+
+int acpi_map_cpuid(int phys_id, u32 acpi_id)
 {
 #ifdef CONFIG_SMP
 	int i;
 #endif
-	int apic_id = -1;
 
-	apic_id = map_mat_entry(handle, type, acpi_id);
-	if (apic_id == -1)
-		apic_id = map_madt_entry(type, acpi_id);
-	if (apic_id == -1) {
+	if (phys_id == -1) {
 		/*
 		 * On UP processor, there is no _MAT or MADT table.
-		 * So above apic_id is always set to -1.
+		 * So above phys_id is always set to -1.
 		 *
 		 * BIOS may define multiple CPU handles even for UP processor.
 		 * For example,
@@ -188,7 +196,7 @@ int acpi_get_cpuid(acpi_handle handle, int type, u32 acpi_id)
 		 *     Processor (CPU3, 0x03, 0x00000410, 0x06) {}
 		 * }
 		 *
-		 * Ignores apic_id and always returns 0 for the processor
+		 * Ignores phys_id and always returns 0 for the processor
 		 * handle with acpi id 0 if nr_cpu_ids is 1.
 		 * This should be the case if SMP tables are not found.
 		 * Return -1 for other CPU's handle.
@@ -196,20 +204,29 @@ int acpi_get_cpuid(acpi_handle handle, int type, u32 acpi_id)
 		if (nr_cpu_ids <= 1 && acpi_id == 0)
 			return acpi_id;
 		else
-			return apic_id;
+			return phys_id;
 	}
 
 #ifdef CONFIG_SMP
 	for_each_possible_cpu(i) {
-		if (cpu_physical_id(i) == apic_id)
+		if (cpu_physical_id(i) == phys_id)
 			return i;
 	}
 #else
 	/* In UP kernel, only processor 0 is valid */
-	if (apic_id == 0)
-		return apic_id;
+	if (phys_id == 0)
+		return phys_id;
 #endif
 	return -1;
+}
+
+int acpi_get_cpuid(acpi_handle handle, int type, u32 acpi_id)
+{
+	int phys_id;
+
+	phys_id = acpi_get_phys_id(handle, type, acpi_id);
+
+	return acpi_map_cpuid(phys_id, acpi_id);
 }
 EXPORT_SYMBOL_GPL(acpi_get_cpuid);
 
@@ -253,7 +270,7 @@ static bool __init processor_physically_present(acpi_handle handle)
 	return true;
 }
 
-static void __cpuinit acpi_set_pdc_bits(u32 *buf)
+static void acpi_set_pdc_bits(u32 *buf)
 {
 	buf[0] = ACPI_PDC_REVISION_ID;
 	buf[1] = 1;
@@ -265,7 +282,7 @@ static void __cpuinit acpi_set_pdc_bits(u32 *buf)
 	arch_acpi_set_pdc_bits(buf);
 }
 
-static struct acpi_object_list *__cpuinit acpi_processor_alloc_pdc(void)
+static struct acpi_object_list *acpi_processor_alloc_pdc(void)
 {
 	struct acpi_object_list *obj_list;
 	union acpi_object *obj;
@@ -308,7 +325,7 @@ static struct acpi_object_list *__cpuinit acpi_processor_alloc_pdc(void)
  * _PDC is required for a BIOS-OS handshake for most of the newer
  * ACPI processor features.
  */
-static int __cpuinit
+static int
 acpi_processor_eval_pdc(acpi_handle handle, struct acpi_object_list *pdc_in)
 {
 	acpi_status status = AE_OK;
@@ -336,7 +353,7 @@ acpi_processor_eval_pdc(acpi_handle handle, struct acpi_object_list *pdc_in)
 	return status;
 }
 
-void __cpuinit acpi_processor_set_pdc(acpi_handle handle)
+void acpi_processor_set_pdc(acpi_handle handle)
 {
 	struct acpi_object_list *obj_list;
 

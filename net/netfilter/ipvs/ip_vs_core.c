@@ -1027,6 +1027,26 @@ static inline bool is_new_conn(const struct sk_buff *skb,
 	}
 }
 
+static inline bool is_new_conn_expected(const struct ip_vs_conn *cp,
+					int conn_reuse_mode)
+{
+	/* Controlled (FTP DATA or persistence)? */
+	if (cp->control)
+		return false;
+
+	switch (cp->protocol) {
+	case IPPROTO_TCP:
+		return (cp->state == IP_VS_TCP_S_TIME_WAIT) ||
+			((conn_reuse_mode & 2) &&
+			 (cp->state == IP_VS_TCP_S_FIN_WAIT) &&
+			 (cp->flags & IP_VS_CONN_F_NOOUTPUT));
+	case IPPROTO_SCTP:
+		return cp->state == IP_VS_SCTP_S_CLOSED;
+	default:
+		return false;
+	}
+}
+
 /* Handle response packets: rewrite addresses and send away...
  */
 static unsigned int
@@ -1131,12 +1151,6 @@ ip_vs_out(unsigned int hooknum, struct sk_buff *skb, int af)
 	ip_vs_fill_iph_skb(af, skb, &iph);
 #ifdef CONFIG_IP_VS_IPV6
 	if (af == AF_INET6) {
-		if (!iph.fragoffs && skb_nfct_reasm(skb)) {
-			struct sk_buff *reasm = skb_nfct_reasm(skb);
-			/* Save fw mark for coming frags */
-			reasm->ipvs_property = 1;
-			reasm->mark = skb->mark;
-		}
 		if (unlikely(iph.protocol == IPPROTO_ICMPV6)) {
 			int related;
 			int verdict = ip_vs_out_icmp_v6(skb, &related,
@@ -1231,11 +1245,11 @@ ip_vs_out(unsigned int hooknum, struct sk_buff *skb, int af)
  *	Check if packet is reply for established ip_vs_conn.
  */
 static unsigned int
-ip_vs_reply4(unsigned int hooknum, struct sk_buff *skb,
+ip_vs_reply4(const struct nf_hook_ops *ops, struct sk_buff *skb,
 	     const struct net_device *in, const struct net_device *out,
-	     int (*okfn)(struct sk_buff *))
+	     const struct nf_hook_state *state)
 {
-	return ip_vs_out(hooknum, skb, AF_INET);
+	return ip_vs_out(ops->hooknum, skb, AF_INET);
 }
 
 /*
@@ -1243,11 +1257,11 @@ ip_vs_reply4(unsigned int hooknum, struct sk_buff *skb,
  *	Check if packet is reply for established ip_vs_conn.
  */
 static unsigned int
-ip_vs_local_reply4(unsigned int hooknum, struct sk_buff *skb,
+ip_vs_local_reply4(const struct nf_hook_ops *ops, struct sk_buff *skb,
 		   const struct net_device *in, const struct net_device *out,
-		   int (*okfn)(struct sk_buff *))
+		   const struct nf_hook_state *state)
 {
-	return ip_vs_out(hooknum, skb, AF_INET);
+	return ip_vs_out(ops->hooknum, skb, AF_INET);
 }
 
 #ifdef CONFIG_IP_VS_IPV6
@@ -1258,11 +1272,11 @@ ip_vs_local_reply4(unsigned int hooknum, struct sk_buff *skb,
  *	Check if packet is reply for established ip_vs_conn.
  */
 static unsigned int
-ip_vs_reply6(unsigned int hooknum, struct sk_buff *skb,
+ip_vs_reply6(const struct nf_hook_ops *ops, struct sk_buff *skb,
 	     const struct net_device *in, const struct net_device *out,
-	     int (*okfn)(struct sk_buff *))
+	     const struct nf_hook_state *state)
 {
-	return ip_vs_out(hooknum, skb, AF_INET6);
+	return ip_vs_out(ops->hooknum, skb, AF_INET6);
 }
 
 /*
@@ -1270,11 +1284,11 @@ ip_vs_reply6(unsigned int hooknum, struct sk_buff *skb,
  *	Check if packet is reply for established ip_vs_conn.
  */
 static unsigned int
-ip_vs_local_reply6(unsigned int hooknum, struct sk_buff *skb,
+ip_vs_local_reply6(const struct nf_hook_ops *ops, struct sk_buff *skb,
 		   const struct net_device *in, const struct net_device *out,
-		   int (*okfn)(struct sk_buff *))
+		   const struct nf_hook_state *state)
 {
-	return ip_vs_out(hooknum, skb, AF_INET6);
+	return ip_vs_out(ops->hooknum, skb, AF_INET6);
 }
 
 #endif
@@ -1566,6 +1580,7 @@ ip_vs_in(unsigned int hooknum, struct sk_buff *skb, int af)
 	struct ip_vs_conn *cp;
 	int ret, pkts;
 	struct netns_ipvs *ipvs;
+	int conn_reuse_mode;
 
 	/* Already marked as IPVS request or reply? */
 	if (skb->ipvs_property)
@@ -1606,12 +1621,6 @@ ip_vs_in(unsigned int hooknum, struct sk_buff *skb, int af)
 
 #ifdef CONFIG_IP_VS_IPV6
 	if (af == AF_INET6) {
-		if (!iph.fragoffs && skb_nfct_reasm(skb)) {
-			struct sk_buff *reasm = skb_nfct_reasm(skb);
-			/* Save fw mark for coming frags. */
-			reasm->ipvs_property = 1;
-			reasm->mark = skb->mark;
-		}
 		if (unlikely(iph.protocol == IPPROTO_ICMPV6)) {
 			int related;
 			int verdict = ip_vs_in_icmp_v6(skb, &related, hooknum,
@@ -1640,10 +1649,14 @@ ip_vs_in(unsigned int hooknum, struct sk_buff *skb, int af)
 	 */
 	cp = pp->conn_in_get(af, skb, &iph, 0);
 
-	if (unlikely(sysctl_expire_nodest_conn(ipvs)) && cp && cp->dest &&
-	    unlikely(!atomic_read(&cp->dest->weight)) && !iph.fragoffs &&
-	    is_new_conn(skb, &iph)) {
-		ip_vs_conn_expire_now(cp);
+	conn_reuse_mode = sysctl_conn_reuse_mode(ipvs);
+	if (conn_reuse_mode && !iph.fragoffs &&
+	    is_new_conn(skb, &iph) && cp &&
+	    ((unlikely(sysctl_expire_nodest_conn(ipvs)) && cp->dest &&
+	      unlikely(!atomic_read(&cp->dest->weight))) ||
+	     unlikely(is_new_conn_expected(cp, conn_reuse_mode)))) {
+		if (!atomic_read(&cp->n_control))
+			ip_vs_conn_expire_now(cp);
 		__ip_vs_conn_put(cp);
 		cp = NULL;
 	}
@@ -1663,9 +1676,8 @@ ip_vs_in(unsigned int hooknum, struct sk_buff *skb, int af)
 		/* sorry, all this trouble for a no-hit :) */
 		IP_VS_DBG_PKT(12, af, pp, skb, 0,
 			      "ip_vs_in: packet continues traversal as normal");
-		if (iph.fragoffs && !skb_nfct_reasm(skb)) {
+		if (iph.fragoffs) {
 			/* Fragment that couldn't be mapped to a conn entry
-			 * and don't have any pointer to a reasm skb
 			 * is missing module nf_defrag_ipv6
 			 */
 			IP_VS_DBG_RL("Unhandled frag, load nf_defrag_ipv6\n");
@@ -1725,12 +1737,12 @@ ip_vs_in(unsigned int hooknum, struct sk_buff *skb, int af)
  *	Schedule and forward packets from remote clients
  */
 static unsigned int
-ip_vs_remote_request4(unsigned int hooknum, struct sk_buff *skb,
+ip_vs_remote_request4(const struct nf_hook_ops *ops, struct sk_buff *skb,
 		      const struct net_device *in,
 		      const struct net_device *out,
-		      int (*okfn)(struct sk_buff *))
+		      const struct nf_hook_state *state)
 {
-	return ip_vs_in(hooknum, skb, AF_INET);
+	return ip_vs_in(ops->hooknum, skb, AF_INET);
 }
 
 /*
@@ -1738,58 +1750,26 @@ ip_vs_remote_request4(unsigned int hooknum, struct sk_buff *skb,
  *	Schedule and forward packets from local clients
  */
 static unsigned int
-ip_vs_local_request4(unsigned int hooknum, struct sk_buff *skb,
+ip_vs_local_request4(const struct nf_hook_ops *ops, struct sk_buff *skb,
 		     const struct net_device *in, const struct net_device *out,
-		     int (*okfn)(struct sk_buff *))
+		     const struct nf_hook_state *state)
 {
-	return ip_vs_in(hooknum, skb, AF_INET);
+	return ip_vs_in(ops->hooknum, skb, AF_INET);
 }
 
 #ifdef CONFIG_IP_VS_IPV6
-
-/*
- * AF_INET6 fragment handling
- * Copy info from first fragment, to the rest of them.
- */
-static unsigned int
-ip_vs_preroute_frag6(unsigned int hooknum, struct sk_buff *skb,
-		     const struct net_device *in,
-		     const struct net_device *out,
-		     int (*okfn)(struct sk_buff *))
-{
-	struct sk_buff *reasm = skb_nfct_reasm(skb);
-	struct net *net;
-
-	/* Skip if not a "replay" from nf_ct_frag6_output or first fragment.
-	 * ipvs_property is set when checking first fragment
-	 * in ip_vs_in() and ip_vs_out().
-	 */
-	if (reasm)
-		IP_VS_DBG(2, "Fragment recv prop:%d\n", reasm->ipvs_property);
-	if (!reasm || !reasm->ipvs_property)
-		return NF_ACCEPT;
-
-	net = skb_net(skb);
-	if (!net_ipvs(net)->enable)
-		return NF_ACCEPT;
-
-	/* Copy stored fw mark, saved in ip_vs_{in,out} */
-	skb->mark = reasm->mark;
-
-	return NF_ACCEPT;
-}
 
 /*
  *	AF_INET6 handler in NF_INET_LOCAL_IN chain
  *	Schedule and forward packets from remote clients
  */
 static unsigned int
-ip_vs_remote_request6(unsigned int hooknum, struct sk_buff *skb,
+ip_vs_remote_request6(const struct nf_hook_ops *ops, struct sk_buff *skb,
 		      const struct net_device *in,
 		      const struct net_device *out,
-		      int (*okfn)(struct sk_buff *))
+		      const struct nf_hook_state *state)
 {
-	return ip_vs_in(hooknum, skb, AF_INET6);
+	return ip_vs_in(ops->hooknum, skb, AF_INET6);
 }
 
 /*
@@ -1797,11 +1777,11 @@ ip_vs_remote_request6(unsigned int hooknum, struct sk_buff *skb,
  *	Schedule and forward packets from local clients
  */
 static unsigned int
-ip_vs_local_request6(unsigned int hooknum, struct sk_buff *skb,
+ip_vs_local_request6(const struct nf_hook_ops *ops, struct sk_buff *skb,
 		     const struct net_device *in, const struct net_device *out,
-		     int (*okfn)(struct sk_buff *))
+		     const struct nf_hook_state *state)
 {
-	return ip_vs_in(hooknum, skb, AF_INET6);
+	return ip_vs_in(ops->hooknum, skb, AF_INET6);
 }
 
 #endif
@@ -1817,9 +1797,9 @@ ip_vs_local_request6(unsigned int hooknum, struct sk_buff *skb,
  *      and send them to ip_vs_in_icmp.
  */
 static unsigned int
-ip_vs_forward_icmp(unsigned int hooknum, struct sk_buff *skb,
+ip_vs_forward_icmp(const struct nf_hook_ops *ops, struct sk_buff *skb,
 		   const struct net_device *in, const struct net_device *out,
-		   int (*okfn)(struct sk_buff *))
+		   const struct nf_hook_state *state)
 {
 	int r;
 	struct net *net;
@@ -1834,14 +1814,14 @@ ip_vs_forward_icmp(unsigned int hooknum, struct sk_buff *skb,
 	if (unlikely(sysctl_backup_only(ipvs) || !ipvs->enable))
 		return NF_ACCEPT;
 
-	return ip_vs_in_icmp(skb, &r, hooknum);
+	return ip_vs_in_icmp(skb, &r, ops->hooknum);
 }
 
 #ifdef CONFIG_IP_VS_IPV6
 static unsigned int
-ip_vs_forward_icmp_v6(unsigned int hooknum, struct sk_buff *skb,
+ip_vs_forward_icmp_v6(const struct nf_hook_ops *ops, struct sk_buff *skb,
 		      const struct net_device *in, const struct net_device *out,
-		      int (*okfn)(struct sk_buff *))
+		      const struct nf_hook_state *state)
 {
 	int r;
 	struct net *net;
@@ -1858,7 +1838,7 @@ ip_vs_forward_icmp_v6(unsigned int hooknum, struct sk_buff *skb,
 	if (unlikely(sysctl_backup_only(ipvs) || !ipvs->enable))
 		return NF_ACCEPT;
 
-	return ip_vs_in_icmp_v6(skb, &r, hooknum, &iphdr);
+	return ip_vs_in_icmp_v6(skb, &r, ops->hooknum, &iphdr);
 }
 #endif
 
@@ -1916,14 +1896,6 @@ static struct nf_hook_ops ip_vs_ops[] __read_mostly = {
 		.priority	= 100,
 	},
 #ifdef CONFIG_IP_VS_IPV6
-	/* After mangle & nat fetch 2:nd fragment and following */
-	{
-		.hook		= ip_vs_preroute_frag6,
-		.owner		= THIS_MODULE,
-		.pf		= NFPROTO_IPV6,
-		.hooknum	= NF_INET_PRE_ROUTING,
-		.priority	= NF_IP6_PRI_NAT_DST + 1,
-	},
 	/* After packet filtering, change source only for VS/NAT */
 	{
 		.hook		= ip_vs_reply6,

@@ -26,18 +26,18 @@
 #include "pnode.h"
 #include "internal.h"
 
-#define HASH_SHIFT ilog2(PAGE_SIZE / sizeof(struct list_head))
+#define HASH_SHIFT 12
 #define HASH_SIZE (1UL << HASH_SHIFT)
 
-static int event;
+static u64 event;
 static DEFINE_IDA(mnt_id_ida);
 static DEFINE_IDA(mnt_group_ida);
 static DEFINE_SPINLOCK(mnt_id_lock);
 static int mnt_id_start = 0;
 static int mnt_group_start = 1;
 
-static struct list_head *mount_hashtable __read_mostly;
-static struct list_head *mountpoint_hashtable __read_mostly;
+static struct list_head mount_hashtable[HASH_SIZE];
+static struct list_head mountpoint_hashtable[HASH_SIZE];
 static struct kmem_cache *mnt_cache __read_mostly;
 static struct rw_semaphore namespace_sem;
 
@@ -611,6 +611,7 @@ static struct mountpoint *new_mountpoint(struct dentry *dentry)
 {
 	struct list_head *chain = mountpoint_hashtable + hash(NULL, dentry);
 	struct mountpoint *mp;
+	int ret;
 
 	list_for_each_entry(mp, chain, m_hash) {
 		if (mp->m_dentry == dentry) {
@@ -626,14 +627,12 @@ static struct mountpoint *new_mountpoint(struct dentry *dentry)
 	if (!mp)
 		return ERR_PTR(-ENOMEM);
 
-	spin_lock(&dentry->d_lock);
-	if (d_unlinked(dentry)) {
-		spin_unlock(&dentry->d_lock);
+	ret = d_set_mounted(dentry);
+	if (ret) {
 		kfree(mp);
-		return ERR_PTR(-ENOENT);
+		return ERR_PTR(ret);
 	}
-	dentry->d_flags |= DCACHE_MOUNTED;
-	spin_unlock(&dentry->d_lock);
+
 	mp->m_dentry = dentry;
 	mp->m_count = 1;
 	list_add(&mp->m_hash, chain);
@@ -826,7 +825,7 @@ static struct mount *clone_mnt(struct mount *old, struct dentry *root,
 			goto out_free;
 	}
 
-	mnt->mnt.mnt_flags = old->mnt.mnt_flags & ~MNT_WRITE_HOLD;
+	mnt->mnt.mnt_flags = old->mnt.mnt_flags & ~(MNT_WRITE_HOLD|MNT_MARKED);
 	/* Don't allow unprivileged users to change mount flags */
 	if ((flag & CL_UNPRIVILEGED) && (mnt->mnt.mnt_flags & MNT_READONLY))
 		mnt->mnt.mnt_flags |= MNT_LOCK_READONLY;
@@ -1035,14 +1034,29 @@ static void *m_start(struct seq_file *m, loff_t *pos)
 	struct proc_mounts *p = proc_mounts(m);
 
 	down_read(&namespace_sem);
-	return seq_list_start(&p->ns->list, *pos);
+	if (p->cached_event == p->ns->event) {
+		void *v = p->cached_mount;
+		if (*pos == p->cached_index)
+			return v;
+		if (*pos == p->cached_index + 1) {
+			v = seq_list_next(v, &p->ns->list, &p->cached_index);
+			return p->cached_mount = v;
+		}
+	}
+
+	p->cached_event = p->ns->event;
+	p->cached_mount = seq_list_start(&p->ns->list, *pos);
+	p->cached_index = *pos;
+	return p->cached_mount;
 }
 
 static void *m_next(struct seq_file *m, void *v, loff_t *pos)
 {
 	struct proc_mounts *p = proc_mounts(m);
 
-	return seq_list_next(v, &p->ns->list, pos);
+	p->cached_mount = seq_list_next(v, &p->ns->list, pos);
+	p->cached_index = *pos;
+	return p->cached_mount;
 }
 
 static void m_stop(struct seq_file *m, void *v)
@@ -1318,7 +1332,7 @@ SYSCALL_DEFINE2(umount, char __user *, name, int, flags)
 	if (!(flags & UMOUNT_NOFOLLOW))
 		lookup_flags |= LOOKUP_FOLLOW;
 
-	retval = user_path_at(AT_FDCWD, name, lookup_flags, &path);
+	retval = user_path_mountpoint_at(AT_FDCWD, name, lookup_flags, &path);
 	if (retval)
 		goto out;
 	mnt = real_mount(path.mnt);
@@ -1349,14 +1363,11 @@ SYSCALL_DEFINE1(oldumount, char __user *, name)
 
 #endif
 
-static bool mnt_ns_loop(struct path *path)
+static bool is_mnt_ns_file(struct dentry *dentry)
 {
-	/* Could bind mounting the mount namespace inode cause a
-	 * mount namespace loop?
-	 */
-	struct inode *inode = path->dentry->d_inode;
+	/* Is this a proxy for a mount namespace? */
+	struct inode *inode = dentry->d_inode;
 	struct proc_ns *ei;
-	struct mnt_namespace *mnt_ns;
 
 	if (!proc_ns_inode(inode))
 		return false;
@@ -1365,7 +1376,19 @@ static bool mnt_ns_loop(struct path *path)
 	if (ei->ns_ops != &mntns_operations)
 		return false;
 
-	mnt_ns = ei->ns;
+	return true;
+}
+
+static bool mnt_ns_loop(struct dentry *dentry)
+{
+	/* Could bind mounting the mount namespace inode cause a
+	 * mount namespace loop?
+	 */
+	struct mnt_namespace *mnt_ns;
+	if (!is_mnt_ns_file(dentry))
+		return false;
+
+	mnt_ns = get_proc_ns(dentry->d_inode)->ns;
 	return current->nsproxy->mnt_ns->seq >= mnt_ns->seq;
 }
 
@@ -1374,7 +1397,10 @@ struct mount *copy_tree(struct mount *mnt, struct dentry *dentry,
 {
 	struct mount *res, *p, *q, *r, *parent;
 
-	if (!(flag & CL_COPY_ALL) && IS_MNT_UNBINDABLE(mnt))
+	if (!(flag & CL_COPY_UNBINDABLE) && IS_MNT_UNBINDABLE(mnt))
+		return ERR_PTR(-EINVAL);
+
+	if (!(flag & CL_COPY_MNT_NS_FILE) && is_mnt_ns_file(dentry))
 		return ERR_PTR(-EINVAL);
 
 	res = q = clone_mnt(mnt, dentry, flag);
@@ -1390,7 +1416,13 @@ struct mount *copy_tree(struct mount *mnt, struct dentry *dentry,
 			continue;
 
 		for (s = r; s; s = next_mnt(s, r)) {
-			if (!(flag & CL_COPY_ALL) && IS_MNT_UNBINDABLE(s)) {
+			if (!(flag & CL_COPY_UNBINDABLE) &&
+			    IS_MNT_UNBINDABLE(s)) {
+				s = skip_mnt_tree(s);
+				continue;
+			}
+			if (!(flag & CL_COPY_MNT_NS_FILE) &&
+			    is_mnt_ns_file(s->mnt.mnt_root)) {
 				s = skip_mnt_tree(s);
 				continue;
 			}
@@ -1429,7 +1461,7 @@ struct vfsmount *collect_mounts(struct path *path)
 			 CL_COPY_ALL | CL_PRIVATE);
 	namespace_unlock();
 	if (IS_ERR(tree))
-		return NULL;
+		return ERR_CAST(tree);
 	return &tree->mnt;
 }
 
@@ -1441,6 +1473,33 @@ void drop_collected_mounts(struct vfsmount *mnt)
 	br_write_unlock(&vfsmount_lock);
 	namespace_unlock();
 }
+
+/**
+ * clone_private_mount - create a private clone of a path
+ *
+ * This creates a new vfsmount, which will be the clone of @path.  The new will
+ * not be attached anywhere in the namespace and will be private (i.e. changes
+ * to the originating mount won't be propagated into this).
+ *
+ * Release with mntput().
+ */
+struct vfsmount *clone_private_mount(struct path *path)
+{
+	struct mount *old_mnt = real_mount(path->mnt);
+	struct mount *new_mnt;
+
+	if (IS_MNT_UNBINDABLE(old_mnt))
+		return ERR_PTR(-EINVAL);
+
+	down_read(&namespace_sem);
+	new_mnt = clone_mnt(old_mnt, path->dentry, CL_PRIVATE);
+	up_read(&namespace_sem);
+	if (IS_ERR(new_mnt))
+		return ERR_CAST(new_mnt);
+
+	return &new_mnt->mnt;
+}
+EXPORT_SYMBOL_GPL(clone_private_mount);
 
 int iterate_mounts(int (*f)(struct vfsmount *, void *), void *arg,
 		   struct vfsmount *root)
@@ -1560,16 +1619,14 @@ static int attach_recursive_mnt(struct mount *source_mnt,
 		err = invent_group_ids(source_mnt, true);
 		if (err)
 			goto out;
-	}
-	err = propagate_mnt(dest_mnt, dest_mp, source_mnt, &tree_list);
-	if (err)
-		goto out_cleanup_ids;
-
-	br_write_lock(&vfsmount_lock);
-
-	if (IS_MNT_SHARED(dest_mnt)) {
+		err = propagate_mnt(dest_mnt, dest_mp, source_mnt, &tree_list);
+		br_write_lock(&vfsmount_lock);
+		if (err)
+			goto out_cleanup_ids;
 		for (p = source_mnt; p; p = next_mnt(p, source_mnt))
 			set_mnt_shared(p);
+	} else {
+		br_write_lock(&vfsmount_lock);
 	}
 	if (parent_path) {
 		detach_mnt(source_mnt, parent_path);
@@ -1589,8 +1646,12 @@ static int attach_recursive_mnt(struct mount *source_mnt,
 	return 0;
 
  out_cleanup_ids:
-	if (IS_MNT_SHARED(dest_mnt))
-		cleanup_group_ids(source_mnt, NULL);
+	while (!list_empty(&tree_list)) {
+		child = list_first_entry(&tree_list, struct mount, mnt_hash);
+		umount_tree(child, 0);
+	}
+	br_write_unlock(&vfsmount_lock);
+	cleanup_group_ids(source_mnt, NULL);
  out:
 	return err;
 }
@@ -1713,7 +1774,7 @@ static int do_loopback(struct path *path, const char *old_name,
 		return err;
 
 	err = -EINVAL;
-	if (mnt_ns_loop(&old_path))
+	if (mnt_ns_loop(old_path.dentry))
 		goto out; 
 
 	mp = lock_mount(path);
@@ -1732,7 +1793,7 @@ static int do_loopback(struct path *path, const char *old_name,
 		goto out2;
 
 	if (recurse)
-		mnt = copy_tree(old, old_path.dentry, 0);
+		mnt = copy_tree(old, old_path.dentry, CL_COPY_MNT_NS_FILE);
 	else
 		mnt = clone_mnt(old, old_path.dentry, 0);
 
@@ -1927,7 +1988,7 @@ static int do_add_mount(struct mount *newmnt, struct path *path, int mnt_flags)
 	struct mount *parent;
 	int err;
 
-	mnt_flags &= ~(MNT_SHARED | MNT_WRITE_HOLD | MNT_INTERNAL);
+	mnt_flags &= ~MNT_INTERNAL_FLAGS;
 
 	mp = lock_mount(path);
 	if (IS_ERR(mp))
@@ -2389,7 +2450,7 @@ static struct mnt_namespace *dup_mnt_ns(struct mnt_namespace *mnt_ns,
 
 	namespace_lock();
 	/* First pass: copy the tree topology */
-	copy_flags = CL_COPY_ALL | CL_EXPIRE;
+	copy_flags = CL_COPY_UNBINDABLE | CL_EXPIRE;
 	if (user_ns != mnt_ns->user_ns)
 		copy_flags |= CL_SHARED_TO_SLAVE | CL_UNPRIVILEGED;
 	new = copy_tree(old, old->mnt.mnt_root, copy_flags);
@@ -2424,6 +2485,10 @@ static struct mnt_namespace *dup_mnt_ns(struct mnt_namespace *mnt_ns,
 		}
 		p = next_mnt(p, old);
 		q = next_mnt(q, new);
+		if (!q)
+			break;
+		while (p->mnt.mnt_root != q->mnt.mnt_root)
+			p = next_mnt(p, old);
 	}
 	namespace_unlock();
 
@@ -2445,6 +2510,10 @@ struct mnt_namespace *copy_mnt_ns(unsigned long flags, struct mnt_namespace *ns,
 
 	if (!(flags & CLONE_NEWNS))
 		return ns;
+
+	/* Unprivileged creation currently disabled in RHEL7  */
+	if (!capable(CAP_SYS_ADMIN))
+		return ERR_PTR(-EPERM);
 
 	new_ns = dup_mnt_ns(ns, user_ns, new_fs);
 
@@ -2717,12 +2786,6 @@ void __init mnt_init(void)
 	mnt_cache = kmem_cache_create("mnt_cache", sizeof(struct mount),
 			0, SLAB_HWCACHE_ALIGN | SLAB_PANIC, NULL);
 
-	mount_hashtable = (struct list_head *)__get_free_page(GFP_ATOMIC);
-	mountpoint_hashtable = (struct list_head *)__get_free_page(GFP_ATOMIC);
-
-	if (!mount_hashtable || !mountpoint_hashtable)
-		panic("Failed to allocate mount hash table\n");
-
 	printk(KERN_INFO "Mount-cache hash table entries: %lu\n", HASH_SIZE);
 
 	for (u = 0; u < HASH_SIZE; u++)
@@ -2837,13 +2900,13 @@ static void *mntns_get(struct task_struct *task)
 	struct mnt_namespace *ns = NULL;
 	struct nsproxy *nsproxy;
 
-	rcu_read_lock();
-	nsproxy = task_nsproxy(task);
+	task_lock(task);
+	nsproxy = task->nsproxy;
 	if (nsproxy) {
 		ns = nsproxy->mnt_ns;
 		get_mnt_ns(ns);
 	}
-	rcu_read_unlock();
+	task_unlock(task);
 
 	return ns;
 }
@@ -2860,8 +2923,8 @@ static int mntns_install(struct nsproxy *nsproxy, void *ns)
 	struct path root;
 
 	if (!ns_capable(mnt_ns->user_ns, CAP_SYS_ADMIN) ||
-	    !nsown_capable(CAP_SYS_CHROOT) ||
-	    !nsown_capable(CAP_SYS_ADMIN))
+	    !ns_capable(current_user_ns(), CAP_SYS_CHROOT) ||
+	    !ns_capable(current_user_ns(), CAP_SYS_ADMIN))
 		return -EPERM;
 
 	if (fs->users != 1)

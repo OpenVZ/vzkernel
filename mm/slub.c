@@ -346,6 +346,21 @@ static __always_inline void slab_unlock(struct page *page)
 	__bit_spin_unlock(PG_locked, &page->flags);
 }
 
+static inline void set_page_slub_counters(struct page *page, unsigned long counters_new)
+{
+	struct page tmp;
+	tmp.counters = counters_new;
+	/*
+	 * page->counters can cover frozen/inuse/objects as well
+	 * as page->_count.  If we assign to ->counters directly
+	 * we run the risk of losing updates to page->_count, so
+	 * be careful and only assign to the fields we need.
+	 */
+	page->frozen  = tmp.frozen;
+	page->inuse   = tmp.inuse;
+	page->objects = tmp.objects;
+}
+
 /* Interrupts must be disabled (for the fallback code to work right) */
 static inline bool __cmpxchg_double_slab(struct kmem_cache *s, struct page *page,
 		void *freelist_old, unsigned long counters_old,
@@ -366,7 +381,7 @@ static inline bool __cmpxchg_double_slab(struct kmem_cache *s, struct page *page
 		slab_lock(page);
 		if (page->freelist == freelist_old && page->counters == counters_old) {
 			page->freelist = freelist_new;
-			page->counters = counters_new;
+			set_page_slub_counters(page, counters_new);
 			slab_unlock(page);
 			return 1;
 		}
@@ -404,7 +419,7 @@ static inline bool cmpxchg_double_slab(struct kmem_cache *s, struct page *page,
 		slab_lock(page);
 		if (page->freelist == freelist_old && page->counters == counters_old) {
 			page->freelist = freelist_new;
-			page->counters = counters_new;
+			set_page_slub_counters(page, counters_new);
 			slab_unlock(page);
 			local_irq_restore(flags);
 			return 1;
@@ -1201,8 +1216,8 @@ static unsigned long kmem_cache_flags(unsigned long object_size,
 	/*
 	 * Enable debugging if selected on the kernel commandline.
 	 */
-	if (slub_debug && (!slub_debug_slabs ||
-		!strncmp(slub_debug_slabs, name, strlen(slub_debug_slabs))))
+	if (slub_debug && (!slub_debug_slabs || (name &&
+		!strncmp(slub_debug_slabs, name, strlen(slub_debug_slabs)))))
 		flags |= slub_debug;
 
 	return flags;
@@ -1618,7 +1633,7 @@ static void *get_any_partial(struct kmem_cache *s, gfp_t flags,
 		return NULL;
 
 	do {
-		cpuset_mems_cookie = get_mems_allowed();
+		cpuset_mems_cookie = read_mems_allowed_begin();
 		zonelist = node_zonelist(slab_node(), flags);
 		for_each_zone_zonelist(zone, z, zonelist, high_zoneidx) {
 			struct kmem_cache_node *n;
@@ -1630,19 +1645,17 @@ static void *get_any_partial(struct kmem_cache *s, gfp_t flags,
 				object = get_partial_node(s, n, c, flags);
 				if (object) {
 					/*
-					 * Return the object even if
-					 * put_mems_allowed indicated that
-					 * the cpuset mems_allowed was
-					 * updated in parallel. It's a
-					 * harmless race between the alloc
-					 * and the cpuset update.
+					 * Don't check read_mems_allowed_retry()
+					 * here - if mems_allowed was updated in
+					 * parallel, that was a harmless race
+					 * between allocation and the cpuset
+					 * update
 					 */
-					put_mems_allowed(cpuset_mems_cookie);
 					return object;
 				}
 			}
 		}
-	} while (!put_mems_allowed(cpuset_mems_cookie));
+	} while (read_mems_allowed_retry(cpuset_mems_cookie));
 #endif
 	return NULL;
 }
@@ -1654,7 +1667,12 @@ static void *get_partial(struct kmem_cache *s, gfp_t flags, int node,
 		struct kmem_cache_cpu *c)
 {
 	void *object;
-	int searchnode = (node == NUMA_NO_NODE) ? numa_node_id() : node;
+	int searchnode = node;
+
+	if (node == NUMA_NO_NODE)
+		searchnode = numa_mem_id();
+	else if (!node_present_pages(node))
+		searchnode = node_to_mem_node(node);
 
 	object = get_partial_node(s, get_node(s, searchnode), c, flags);
 	if (object || node != NUMA_NO_NODE)
@@ -2227,11 +2245,18 @@ static void *__slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
 redo:
 
 	if (unlikely(!node_match(page, node))) {
-		stat(s, ALLOC_NODE_MISMATCH);
-		deactivate_slab(s, page, c->freelist);
-		c->page = NULL;
-		c->freelist = NULL;
-		goto new_slab;
+		int searchnode = node;
+
+		if (node != NUMA_NO_NODE && !node_present_pages(node))
+			searchnode = node_to_mem_node(node);
+
+		if (unlikely(!node_match(page, searchnode))) {
+			stat(s, ALLOC_NODE_MISMATCH);
+			deactivate_slab(s, page, c->freelist);
+			c->page = NULL;
+			c->freelist = NULL;
+			goto new_slab;
+		}
 	}
 
 	/*
@@ -3163,8 +3188,9 @@ int __kmem_cache_shutdown(struct kmem_cache *s)
 
 	if (!rc) {
 		/*
-		 * We do the same lock strategy around sysfs_slab_add, see
-		 * __kmem_cache_create. Because this is pretty much the last
+		 * Since slab_attr_store may take the slab_mutex, we should
+		 * release the lock while removing the sysfs entry in order to
+		 * avoid a deadlock. Because this is pretty much the last
 		 * operation we do and the lock will be released shortly after
 		 * that in slab_common.c, we could just move sysfs_slab_remove
 		 * to a later point in common code. We should do that when we
@@ -3740,10 +3766,7 @@ int __kmem_cache_create(struct kmem_cache *s, unsigned long flags)
 		return 0;
 
 	memcg_propagate_slab_attrs(s);
-	mutex_unlock(&slab_mutex);
 	err = sysfs_slab_add(s);
-	mutex_lock(&slab_mutex);
-
 	if (err)
 		kmem_cache_close(s);
 
@@ -3755,7 +3778,7 @@ int __kmem_cache_create(struct kmem_cache *s, unsigned long flags)
  * Use the cpu notifier to insure that the cpu slabs are flushed when
  * necessary.
  */
-static int __cpuinit slab_cpuup_callback(struct notifier_block *nfb,
+static int slab_cpuup_callback(struct notifier_block *nfb,
 		unsigned long action, void *hcpu)
 {
 	long cpu = (long)hcpu;
@@ -3781,7 +3804,7 @@ static int __cpuinit slab_cpuup_callback(struct notifier_block *nfb,
 	return NOTIFY_OK;
 }
 
-static struct notifier_block __cpuinitdata slab_notifier = {
+static struct notifier_block slab_notifier = {
 	.notifier_call = slab_cpuup_callback
 };
 
