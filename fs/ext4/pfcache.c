@@ -441,8 +441,8 @@ int ext4_load_data_csum(struct inode *inode)
 {
 	int ret;
 
-	ret = ext4_xattr_get(inode, EXT4_XATTR_INDEX_TRUSTED,
-			EXT4_DATA_CSUM_NAME, EXT4_I(inode)->i_data_csum,
+	ret = ext4_xattr_get(inode, EXT4_XATTR_INDEX_TRUSTED_CSUM,
+			"", EXT4_I(inode)->i_data_csum,
 			EXT4_DATA_CSUM_SIZE);
 	if (ret < 0)
 		return ret;
@@ -482,8 +482,8 @@ static int ext4_save_data_csum(struct inode *inode, u8 *csum)
 	if (ret)
 		return ret;
 
-	return ext4_xattr_set(inode, EXT4_XATTR_INDEX_TRUSTED,
-			EXT4_DATA_CSUM_NAME, EXT4_I(inode)->i_data_csum,
+	return ext4_xattr_set(inode, EXT4_XATTR_INDEX_TRUSTED_CSUM,
+			"", EXT4_I(inode)->i_data_csum,
 			EXT4_DATA_CSUM_SIZE, 0);
 }
 
@@ -492,8 +492,8 @@ void ext4_load_dir_csum(struct inode *inode)
 	char value[EXT4_DIR_CSUM_VALUE_LEN];
 	int ret;
 
-	ret = ext4_xattr_get(inode, EXT4_XATTR_INDEX_TRUSTED,
-			     EXT4_DATA_CSUM_NAME, value, sizeof(value));
+	ret = ext4_xattr_get(inode, EXT4_XATTR_INDEX_TRUSTED_CSUM,
+			     "", value, sizeof(value));
 	if (ret == EXT4_DIR_CSUM_VALUE_LEN &&
 	    !strncmp(value, EXT4_DIR_CSUM_VALUE, sizeof(value)))
 		ext4_set_inode_state(inode, EXT4_STATE_PFCACHE_CSUM);
@@ -502,8 +502,8 @@ void ext4_load_dir_csum(struct inode *inode)
 void ext4_save_dir_csum(struct inode *inode)
 {
 	ext4_set_inode_state(inode, EXT4_STATE_PFCACHE_CSUM);
-	ext4_xattr_set(inode, EXT4_XATTR_INDEX_TRUSTED,
-			EXT4_DATA_CSUM_NAME,
+	ext4_xattr_set(inode, EXT4_XATTR_INDEX_TRUSTED_CSUM,
+			"",
 			EXT4_DIR_CSUM_VALUE,
 			EXT4_DIR_CSUM_VALUE_LEN, 0);
 }
@@ -516,8 +516,8 @@ void ext4_truncate_data_csum(struct inode *inode, loff_t pos)
 
 	if (EXT4_I(inode)->i_data_csum_end < 0) {
 		WARN_ON(journal_current_handle());
-		ext4_xattr_set(inode, EXT4_XATTR_INDEX_TRUSTED,
-				EXT4_DATA_CSUM_NAME, NULL, 0, 0);
+		ext4_xattr_set(inode, EXT4_XATTR_INDEX_TRUSTED_CSUM,
+				"", NULL, 0, 0);
 		ext4_close_pfcache(inode);
 	}
 	spin_lock(&inode->i_lock);
@@ -658,8 +658,8 @@ static int ext4_xattr_trusted_csum_get(struct dentry *dentry, const char *name,
 		return -EPERM;
 
 	if (S_ISDIR(inode->i_mode))
-		return ext4_xattr_get(inode, EXT4_XATTR_INDEX_TRUSTED,
-				      EXT4_DATA_CSUM_NAME, buffer, size);
+		return ext4_xattr_get(inode, EXT4_XATTR_INDEX_TRUSTED_CSUM,
+				      "", buffer, size);
 
 	if (!S_ISREG(inode->i_mode))
 		return -ENODATA;
@@ -717,8 +717,8 @@ static int ext4_xattr_trusted_csum_set(struct dentry *dentry, const char *name,
 		else
 			return -EINVAL;
 
-		return ext4_xattr_set(inode, EXT4_XATTR_INDEX_TRUSTED,
-				      EXT4_DATA_CSUM_NAME, value, size, flags);
+		return ext4_xattr_set(inode, EXT4_XATTR_INDEX_TRUSTED_CSUM,
+				      "", value, size, flags);
 	}
 
 	if (!S_ISREG(inode->i_mode))
@@ -763,7 +763,22 @@ static size_t
 ext4_xattr_trusted_csum_list(struct dentry *dentry, char *list, size_t list_size,
 			     const char *name, size_t name_len, int handler_flags)
 {
-	return 0;
+	struct inode *inode = dentry->d_inode;
+	const size_t len = XATTR_TRUSTED_CSUM_PREFIX_LEN + 1;
+
+	BUG_ON(name_len);
+
+	if (!test_opt2(inode->i_sb, PFCACHE_CSUM))
+		return 0;
+
+	if (!capable(CAP_SYS_ADMIN))
+		return 0;
+
+	if (list && len <= list_size) {
+		memcpy(list, XATTR_TRUSTED_CSUM_PREFIX, XATTR_TRUSTED_CSUM_PREFIX_LEN);
+		list[len] = '\0';
+	}
+	return len;
 }
 
 struct xattr_handler ext4_xattr_trusted_csum_handler = {
