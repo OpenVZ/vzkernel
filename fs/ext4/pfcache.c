@@ -776,7 +776,7 @@ ext4_xattr_trusted_csum_list(struct dentry *dentry, char *list, size_t list_size
 
 	if (list && len <= list_size) {
 		memcpy(list, XATTR_TRUSTED_CSUM_PREFIX, XATTR_TRUSTED_CSUM_PREFIX_LEN);
-		list[len] = '\0';
+		list[XATTR_TRUSTED_CSUM_PREFIX_LEN] = '\0';
 	}
 	return len;
 }
