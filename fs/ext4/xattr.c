@@ -102,7 +102,6 @@ static const struct xattr_handler *ext4_xattr_handler_map[] = {
 #ifdef CONFIG_EXT4_FS_SECURITY
 	[EXT4_XATTR_INDEX_SECURITY]	     = &ext4_xattr_security_handler,
 #endif
-	[EXT4_XATTR_INDEX_TRUSTED_CSUM]	     = &ext4_xattr_trusted_csum_handler,
 };
 
 const struct xattr_handler *ext4_xattr_handlers[] = {
