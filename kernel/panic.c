@@ -337,7 +337,8 @@ void add_taint(unsigned flag, enum lockdep_ok lockdep_ok)
 		       "Disabling lock debugging due to kernel taint\n");
 
 	/* Do not confuse people with calltraces on proprietary modules */
-	if (flag != TAINT_PROPRIETARY_MODULE) {
+	if (flag != TAINT_PROPRIETARY_MODULE && flag != TAINT_OOT_MODULE &&
+	    flag != TAINT_UNSIGNED_MODULE) {
 		printk(KERN_WARNING "Tainting kernel with flag 0x%x\n", flag);
 		dump_stack();
 	}
