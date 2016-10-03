@@ -147,11 +147,6 @@ static inline int pte_write(pte_t pte)
 	return pte_flags(pte) & _PAGE_RW;
 }
 
-static inline int pte_file(pte_t pte)
-{
-	return pte_flags(pte) & _PAGE_FILE;
-}
-
 static inline int pte_huge(pte_t pte)
 {
 	return pte_flags(pte) & _PAGE_PSE;
@@ -483,21 +478,6 @@ static inline pmd_t pmd_mksoft_dirty(pmd_t pmd)
 static inline pud_t pud_mksoft_dirty(pud_t pud)
 {
 	return pud_set_flags(pud, _PAGE_SOFT_DIRTY);
-}
-
-static inline pte_t pte_file_clear_soft_dirty(pte_t pte)
-{
-	return pte_clear_flags(pte, _PAGE_SOFT_DIRTY);
-}
-
-static inline pte_t pte_file_mksoft_dirty(pte_t pte)
-{
-	return pte_set_flags(pte, _PAGE_SOFT_DIRTY);
-}
-
-static inline int pte_file_soft_dirty(pte_t pte)
-{
-	return pte_flags(pte) & _PAGE_SOFT_DIRTY;
 }
 
 static inline pte_t pte_swp_mksoft_dirty(pte_t pte)
