@@ -419,6 +419,8 @@ static const char * const ve0_allowed_mod[] = {
 	"ip_set_hash:ip,port,net",
 	"ip_set_hash:net,iface",
 	"ip_set_list:set",
+
+	"rtnl-link-dummy",
 };
 
 /*
