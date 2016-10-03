@@ -2000,9 +2000,6 @@ static int migrate_vma_collect_pmd(pmd_t *pmdp,
 		if (!pte_present(pte)) {
 			mpfn = pfn = 0;
 
-			if (pte_file(pte))
-				goto next;
-
 			/*
 			 * Only care about unaddressable device page special
 			 * page table entry. Other special swap entries are not
