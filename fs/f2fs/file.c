@@ -100,7 +100,6 @@ out:
 static const struct vm_operations_struct f2fs_file_vm_ops = {
 	.fault		= filemap_fault,
 	.page_mkwrite	= f2fs_vm_page_mkwrite,
-	.remap_pages	= generic_file_remap_pages,
 };
 
 int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
