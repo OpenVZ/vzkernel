@@ -849,61 +849,64 @@ copy_one_pte(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 
 	/* pte contains position in swap or file, so copy. */
 	if (unlikely(!pte_present(pte))) {
-		if (!pte_file(pte)) {
-			swp_entry_t entry = pte_to_swp_entry(pte);
+		swp_entry_t entry = pte_to_swp_entry(pte);
 
-			if (swap_duplicate(entry) < 0)
-				return entry.val;
+		if (swap_duplicate(entry) < 0)
+			return entry.val;
 
-			/* make sure dst_mm is on swapoff's mmlist. */
-			if (unlikely(list_empty(&dst_mm->mmlist))) {
-				spin_lock(&mmlist_lock);
-				if (list_empty(&dst_mm->mmlist))
-					list_add(&dst_mm->mmlist,
-						 &src_mm->mmlist);
-				spin_unlock(&mmlist_lock);
-			}
-			if (likely(!non_swap_entry(entry)))
-				rss[MM_SWAPENTS]++;
-			else if (is_migration_entry(entry)) {
-				page = migration_entry_to_page(entry);
-
-				rss[mm_counter(page)]++;
-
-				if (is_write_migration_entry(entry) &&
-				    is_cow_mapping(vm_flags)) {
-					/*
-					 * COW mappings require pages in both
-					 * parent and child to be set to read.
-					 */
-					make_migration_entry_read(&entry);
-					pte = swp_entry_to_pte(entry);
-					if (pte_swp_soft_dirty(*src_pte))
-						pte = pte_swp_mksoft_dirty(pte);
-					set_pte_at(src_mm, addr, src_pte, pte);
-				}
-			} else if (is_hmm_entry(entry)) {
-				page = hmm_entry_to_page(entry);
-
-				/*
-				 * Update rss count even for un-addressable
-				 * page as they should be consider just like
-				 * any other page.
-				 */
-				get_page(page);
-				rss[mm_counter(page)]++;
-				page_dup_rmap(page);
-
-				if (is_write_hmm_entry(entry) &&
-				    is_cow_mapping(vm_flags)) {
-					make_hmm_entry_read(&entry);
-					pte = swp_entry_to_pte(entry);
-					if (pte_swp_soft_dirty(*src_pte))
-						pte = pte_swp_mksoft_dirty(pte);
-					set_pte_at(src_mm, addr, src_pte, pte);
-				}
-			}
+		/* make sure dst_mm is on swapoff's mmlist. */
+		if (unlikely(list_empty(&dst_mm->mmlist))) {
+			spin_lock(&mmlist_lock);
+			if (list_empty(&dst_mm->mmlist))
+				list_add(&dst_mm->mmlist,
+					 &src_mm->mmlist);
+			spin_unlock(&mmlist_lock);
 		}
+		if (likely(!non_swap_entry(entry)))
+			rss[MM_SWAPENTS]++;
+		else if (is_migration_entry(entry)) {
+			page = migration_entry_to_page(entry);
+
+			rss[mm_counter(page)]++;
+
+			if (is_write_migration_entry(entry) &&
+			    is_cow_mapping(vm_flags)) {
+				/*
+				 * COW mappings require pages in both
+				 * parent and child to be set to read.
+				 */
+				make_migration_entry_read(&entry);
+				pte = swp_entry_to_pte(entry);
+				if (pte_swp_soft_dirty(*src_pte))
+					pte = pte_swp_mksoft_dirty(pte);
+				set_pte_at(src_mm, addr, src_pte, pte);
+			}
+		} else if (is_hmm_entry(entry)) {
+			page = hmm_entry_to_page(entry);
+
+			/*
+			 * Update rss count even for un-addressable
+			 * page as they should be consider just like
+			 * any other page.
+			 */
+			get_page(page);
+			rss[mm_counter(page)]++;
+			page_dup_rmap(page);
+
+			if (is_write_hmm_entry(entry) &&
+				is_cow_mapping(vm_flags)) {
+				make_hmm_entry_read(&entry);
+				pte = swp_entry_to_pte(entry);
+				if (pte_swp_soft_dirty(*src_pte))
+					pte = pte_swp_mksoft_dirty(pte);
+				set_pte_at(src_mm, addr, src_pte, pte);
+			}
+		} else
+			/*
+			 * This can not happen because HMM migration holds
+			 * mmap_sem in read mode.
+			 */
+			 VM_BUG_ON(is_hmm_entry(entry));
 		goto out_set_pte;
 	}
 
@@ -1084,11 +1087,9 @@ int copy_page_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 	 * readonly mappings. The tradeoff is that copy_page_range is more
 	 * efficient than faulting.
 	 */
-	if (!(vma->vm_flags & (VM_HUGETLB | VM_NONLINEAR |
-			       VM_PFNMAP | VM_MIXEDMAP))) {
-		if (!vma->anon_vma)
-			return 0;
-	}
+	if (!(vma->vm_flags & (VM_HUGETLB | VM_PFNMAP | VM_MIXEDMAP)) &&
+			!vma->anon_vma)
+		return 0;
 
 	if (is_vm_hugetlb_page(vma))
 		return copy_hugetlb_page_range(dst_mm, src_mm, vma);
