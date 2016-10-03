@@ -37,13 +37,6 @@
 /* If _PAGE_BIT_PRESENT is clear, we use these: */
 /* - if the user mapped it with PROT_NONE; pte_present gives true */
 #define _PAGE_BIT_PROTNONE	_PAGE_BIT_GLOBAL
-/* - set: nonlinear file mapping, saved PTE; unset:swap */
-#if defined(CONFIG_X86_64) || defined(CONFIG_X86_PAE)
-/* Pick a bit unaffected by the "KNL4 erratum": */
-#define _PAGE_BIT_FILE		_PAGE_BIT_PCD
-#else
-#define _PAGE_BIT_FILE		_PAGE_BIT_DIRTY
-#endif
 
 #define _PAGE_PRESENT	(_AT(pteval_t, 1) << _PAGE_BIT_PRESENT)
 #define _PAGE_RW	(_AT(pteval_t, 1) << _PAGE_BIT_RW)
@@ -129,29 +122,6 @@
 #endif
 
 #if defined(CONFIG_X86_64) || defined(CONFIG_X86_PAE)
-/*
- * Do compile-time checks for all the bits that may be set on
- * non-present PTEs
- */
-#if _PAGE_BIT_FILE == _PAGE_BIT_SWP_SOFT_DIRTY
-#error conflicting _PAGE_BIT_FILE
-#endif
-#if _PAGE_BIT_FILE == _PAGE_BIT_PROTNONE
-#error conflicting _PAGE_BIT_FILE
-#endif
-/*
- * Do compile-time checks for all the bits affected by the "KNL4"
- * erratum:
- */
-#if _PAGE_BIT_FILE == _PAGE_BIT_DIRTY
-#error conflicting _PAGE_BIT_FILE
-#endif
-#if _PAGE_BIT_FILE == _PAGE_BIT_ACCESSED
-#error conflicting _PAGE_BIT_FILE
-#endif
-#endif
-
-#if defined(CONFIG_X86_64) || defined(CONFIG_X86_PAE)
 #define _PAGE_NX	(_AT(pteval_t, 1) << _PAGE_BIT_NX)
 #define _PAGE_DEVMAP	(_AT(u64, 1) << _PAGE_BIT_DEVMAP)
 #define __HAVE_ARCH_PTE_DEVMAP
@@ -160,7 +130,6 @@
 #define _PAGE_DEVMAP	(_AT(pteval_t, 0))
 #endif
 
-#define _PAGE_FILE	(_AT(pteval_t, 1) << _PAGE_BIT_FILE)
 #define _PAGE_PROTNONE	(_AT(pteval_t, 1) << _PAGE_BIT_PROTNONE)
 
 /*
