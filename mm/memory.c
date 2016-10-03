@@ -3891,12 +3891,7 @@ restart:
 	vma_interval_tree_foreach(vma, &mapping->i_mmap, 0, ULONG_MAX)
 		if (synchronize_mapping_faults_vma(mapping, vma))
 			goto restart;
-	list_for_each_entry(vma, &mapping->i_mmap_nonlinear, shared.nonlinear)
-		if (synchronize_mapping_faults_vma(mapping, vma))
-			goto restart;
 	vma_interval_tree_foreach(vma, &mapping->i_mmap, 0, ULONG_MAX)
-		vma->vm_private_data = NULL;
-	list_for_each_entry(vma, &mapping->i_mmap_nonlinear, shared.nonlinear)
 		vma->vm_private_data = NULL;
 }
 
