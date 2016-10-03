@@ -454,7 +454,6 @@ struct mem_size_stats {
 	unsigned long anonymous;
 	unsigned long anonymous_thp;
 	unsigned long swap;
-	unsigned long nonlinear;
 	u64 pss;
 	bool check_shmem_swap;
 };
@@ -477,7 +476,6 @@ static void smaps_pte_entry(pte_t ptent, unsigned long addr,
 {
 	struct mem_size_stats *mss = walk->private;
 	struct vm_area_struct *vma = mss->vma;
-	pgoff_t pgoff = linear_page_index(vma, addr);
 	struct page *page = NULL;
 	int mapcount;
 
@@ -490,9 +488,6 @@ static void smaps_pte_entry(pte_t ptent, unsigned long addr,
 			mss->swap += ptent_size;
 		else if (is_migration_entry(swpent))
 			page = migration_entry_to_page(swpent);
-	} else if (pte_file(ptent)) {
-		if (pte_to_pgoff(ptent) != pgoff)
-			mss->nonlinear += ptent_size;
 	} else if (unlikely(IS_ENABLED(CONFIG_SHMEM) && mss->check_shmem_swap
 			    && pte_none(ptent))) {
 		/* We shouldn't encounter huge pages here */
@@ -515,9 +510,6 @@ static void smaps_pte_entry(pte_t ptent, unsigned long addr,
 
 	if (PageAnon(page))
 		mss->anonymous += ptent_size;
-
-	if (page->index != pgoff)
-		mss->nonlinear += ptent_size;
 
 	mss->resident += ptent_size;
 	/* Accumulate the size in pages that have been accessed. */
@@ -603,7 +595,6 @@ static void show_smap_vma_flags(struct seq_file *m, struct vm_area_struct *vma)
 		[ilog2(VM_ACCOUNT)]	= "ac",
 		[ilog2(VM_NORESERVE)]	= "nr",
 		[ilog2(VM_HUGETLB)]	= "ht",
-		[ilog2(VM_NONLINEAR)]	= "nl",
 		[ilog2(VM_ARCH_1)]	= "ar",
 		[ilog2(VM_DONTDUMP)]	= "dd",
 #ifdef CONFIG_MEM_SOFT_DIRTY
@@ -703,10 +694,6 @@ static int show_smap(struct seq_file *m, void *v, int is_pid)
 		   vma_mmu_pagesize(vma) >> 10,
 		   (vma->vm_flags & VM_LOCKED) ?
 			(unsigned long)(mss.pss >> (10 + PSS_SHIFT)) : 0);
-
-	if (vma->vm_flags & VM_NONLINEAR)
-		seq_printf(m, "Nonlinear:      %8lu kB\n",
-				mss.nonlinear >> 10);
 
 	show_smap_vma_flags(m, vma);
 
@@ -811,8 +798,6 @@ static inline void clear_soft_dirty(struct vm_area_struct *vma,
 		ptent = pte_clear_flags(ptent, _PAGE_SOFT_DIRTY);
 	} else if (is_swap_pte(ptent)) {
 		ptent = pte_swp_clear_soft_dirty(ptent);
-	} else if (pte_file(ptent)) {
-		ptent = pte_file_clear_soft_dirty(ptent);
 	}
 
 	set_pte_at(vma->vm_mm, addr, pte, ptent);
