@@ -896,7 +896,7 @@ int vfs_open(const struct path *path, struct file *filp,
 	int do_cleanup = 0;
 	int ret;
 
-	if (!filp->f_original_path.mnt) {
+	if (!filp->f_original_path.mnt && dentry_open) {
 		filp->f_original_path = *path;
 		path_get(&filp->f_original_path);
 		do_cleanup = 1;
