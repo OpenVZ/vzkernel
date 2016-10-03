@@ -1357,7 +1357,7 @@ int try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 			goto out;
 
 		pteval = ptep_get_and_clear(mm, address, pte);
-		if (pte_present(pteval) || pte_none(pteval) || pte_file(pteval)) {
+		if (pte_present(pteval) || pte_none(pteval)) {
 			set_pte_at(mm, address, pte, pteval);
 			goto out_unmap;
 		}
