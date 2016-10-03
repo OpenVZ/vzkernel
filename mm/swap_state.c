@@ -507,7 +507,6 @@ int init_swap_address_space(unsigned int type, unsigned long nr_pages)
 		/* swap cache doesn't use writeback related tags */
 		mapping_set_no_writeback_tags(space);
 		spin_lock_init(&space->tree_lock);
-		INIT_LIST_HEAD(&space->i_mmap_nonlinear);
 	}
 	nr_swapper_spaces[type] = nr;
 	rcu_assign_pointer(swapper_spaces[type], spaces);
