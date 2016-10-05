@@ -19,6 +19,11 @@ ext4_xattr_trusted_list(struct dentry *dentry, char *list, size_t list_size,
 	const size_t prefix_len = XATTR_TRUSTED_PREFIX_LEN;
 	const size_t total_len = prefix_len + name_len + 1;
 
+	if (!strcmp(name, EXT4_DATA_CSUM_NAME) &&
+	    (!capable(CAP_SYS_ADMIN) ||
+	     !test_opt2(dentry->d_inode->i_sb, PFCACHE_CSUM)))
+		return 0;
+
 	if (!ve_capable(CAP_SYS_ADMIN))
 		return 0;
 
