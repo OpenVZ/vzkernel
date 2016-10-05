@@ -1691,7 +1691,6 @@ ctnetlink_create_conntrack(struct net *net,
 	struct nf_conntrack_helper *helper;
 	struct nf_conn_tstamp *tstamp;
 
-	allow_conntrack_allocation(net);
 	ct = nf_conntrack_alloc(net, zone, otuple, rtuple, GFP_ATOMIC);
 	if (IS_ERR(ct))
 		return ERR_PTR(-ENOMEM);
