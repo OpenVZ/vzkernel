@@ -253,12 +253,6 @@ struct nf_conn *nf_conntrack_alloc(struct net *net, u16 zone,
 				   const struct nf_conntrack_tuple *orig,
 				   const struct nf_conntrack_tuple *repl,
 				   gfp_t gfp);
-struct nf_conn *
-__nf_conntrack_alloc(struct net *net, u16 zone,
-		     const struct nf_conntrack_tuple *orig,
-		     const struct nf_conntrack_tuple *repl,
-		     gfp_t gfp, u32 hash, bool can_alloc);
-
 static inline int nf_ct_is_template(const struct nf_conn *ct)
 {
 	return test_bit(IPS_TEMPLATE_BIT, &ct->status);
