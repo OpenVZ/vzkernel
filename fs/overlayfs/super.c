@@ -1252,13 +1252,6 @@ out:
 static struct dentry *ovl_mount(struct file_system_type *fs_type, int flags,
 				const char *dev_name, void *raw_data)
 {
-	static bool seen = false;
-
-	if (!seen) {
-		mark_tech_preview("Overlay filesystem", THIS_MODULE);
-		seen = true;
-	}
-
 	return mount_nodev(fs_type, flags, raw_data, ovl_fill_super);
 }
 
