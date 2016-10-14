@@ -568,6 +568,7 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 	ext4_lblk_t o_end, o_start = orig_blk;
 	ext4_lblk_t d_start = donor_blk;
 	int ret;
+	__u64 m_len = *moved_len;
 
 	if (orig_inode->i_sb != donor_inode->i_sb) {
 		ext4_debug("ext4 move extent: The argument files "
@@ -624,7 +625,7 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 
 		ret = get_ext_path(orig_inode, o_start, &path);
 		if (ret)
-			goto out;
+			break;
 		ex = path[path->p_depth].p_ext;
 		next_blk = ext4_ext_next_allocated_block(path);
 		cur_blk = le32_to_cpu(ex->ee_block);
@@ -634,7 +635,7 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 			if (next_blk == EXT_MAX_BLOCKS) {
 				o_start = o_end;
 				ret = -ENODATA;
-				goto out;
+				break;
 			}
 			d_start += next_blk - o_start;
 			o_start = next_blk;
@@ -646,7 +647,7 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 			o_start = cur_blk;
 			/* Extent inside requested range ?*/
 			if (cur_blk >= o_end)
-				goto out;
+				break;
 		} else { /* in_range(o_start, o_blk, o_len) */
 			cur_len += cur_blk - o_start;
 		}
@@ -679,17 +680,12 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 			break;
 		o_start += cur_len;
 		d_start += cur_len;
+		m_len += cur_len;
 	}
-	*moved_len = o_start - orig_blk;
-	if (*moved_len > len)
-		*moved_len = len;
-
 out:
-	if (*moved_len) {
-		ext4_discard_preallocations(orig_inode);
-		ext4_discard_preallocations(donor_inode);
-	}
-
+	WARN_ON(m_len > len);
+	if (ret == 0)
+		*moved_len = m_len;
 	ext4_ext_drop_refs(path);
 	kfree(path);
 	ext4_double_up_write_data_sem(orig_inode, donor_inode);
