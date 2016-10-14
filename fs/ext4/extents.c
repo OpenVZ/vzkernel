@@ -5666,9 +5666,11 @@ ext4_swap_extents(handle_t *handle, struct inode *inode1,
 	BUG_ON(!mutex_is_locked(&inode1->i_mutex));
 	BUG_ON(!mutex_is_locked(&inode2->i_mutex));
 
+	ext4_discard_preallocations(inode1);
 	*erp = ext4_es_remove_extent(inode1, lblk1, count);
 	if (unlikely(*erp))
 		return 0;
+	ext4_discard_preallocations(inode2);
 	*erp = ext4_es_remove_extent(inode2, lblk2, count);
 	if (unlikely(*erp))
 		return 0;
