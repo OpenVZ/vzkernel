@@ -605,7 +605,12 @@ static inline struct sk_buff *macvtap_alloc_skb(struct sock *sk, size_t prepad,
 {
 	struct sk_buff *skb;
 
-	skb = sock_alloc_send_skb(sk, prepad + linear, noblock, err);
+	/* Under a page?  Don't bother with paged skb. */
+	if (prepad + len < PAGE_SIZE || !linear)
+		linear = len;
+
+	skb = sock_alloc_send_pskb(sk, prepad + linear, len - linear, noblock,
+				   err, 0);
 	if (!skb)
 		return NULL;
 
