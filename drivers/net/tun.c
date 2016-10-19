@@ -1095,8 +1095,12 @@ static struct sk_buff *tun_alloc_skb(struct tun_file *tfile,
 	struct sk_buff *skb;
 	int err;
 
-	linear = len;
-	skb = sock_alloc_send_skb(sk, prepad + linear, noblock, &err);
+	/* Under a page?  Don't bother with paged skb. */
+	if (prepad + len < PAGE_SIZE || !linear)
+		linear = len;
+
+	skb = sock_alloc_send_pskb(sk, prepad + linear, len - linear, noblock,
+				   &err, 0);
 	if (!skb)
 		return ERR_PTR(err);
 
