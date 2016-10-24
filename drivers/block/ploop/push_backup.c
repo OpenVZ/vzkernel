@@ -342,7 +342,7 @@ static int ploop_pb_health_monitor(void * data)
 	struct ploop_pushbackup_desc *pbd = data;
 	struct ploop_device	     *plo = pbd->plo;
 
-	spin_lock(&pbd->ppb_lock);
+	spin_lock_irq(&pbd->ppb_lock);
 	while (!kthread_should_stop() || pbd->ppb_state == PLOOP_PB_STOPPING) {
 
 		DEFINE_WAIT(_wait);
@@ -352,21 +352,21 @@ static int ploop_pb_health_monitor(void * data)
 			    kthread_should_stop())
 				break;
 
-			spin_unlock(&pbd->ppb_lock);
+			spin_unlock_irq(&pbd->ppb_lock);
 			schedule();
-			spin_lock(&pbd->ppb_lock);
+			spin_lock_irq(&pbd->ppb_lock);
 		}
 		finish_wait(&pbd->ppb_waitq, &_wait);
 
 		if (pbd->ppb_state == PLOOP_PB_STOPPING) {
-			spin_unlock(&pbd->ppb_lock);
+			spin_unlock_irq(&pbd->ppb_lock);
 			mutex_lock(&plo->ctl_mutex);
 			ploop_pb_stop(pbd, true);
 			mutex_unlock(&plo->ctl_mutex);
-			spin_lock(&pbd->ppb_lock);
+			spin_lock_irq(&pbd->ppb_lock);
 		}
 	}
-	spin_unlock(&pbd->ppb_lock);
+	spin_unlock_irq(&pbd->ppb_lock);
 	return 0;
 }
 
@@ -626,21 +626,21 @@ int ploop_pb_preq_add_pending(struct ploop_pushbackup_desc *pbd,
 {
 	BUG_ON(!pbd);
 
-	spin_lock(&pbd->ppb_lock);
+	spin_lock_irq(&pbd->ppb_lock);
 
 	if (pbd->ppb_state != PLOOP_PB_ALIVE) {
-		spin_unlock(&pbd->ppb_lock);
+		spin_unlock_irq(&pbd->ppb_lock);
 		return -ESTALE;
 	}
 
 	if (!test_bit(PLOOP_S_PUSH_BACKUP, &pbd->plo->state)) {
-		spin_unlock(&pbd->ppb_lock);
+		spin_unlock_irq(&pbd->ppb_lock);
 		return -EINTR;
 	}
 
 	if (check_bit_in_map(pbd->reported_map, pbd->ppb_block_max,
 			     preq->req_cluster)) {
-		spin_unlock(&pbd->ppb_lock);
+		spin_unlock_irq(&pbd->ppb_lock);
 		return -EALREADY;
 	}
 
@@ -649,7 +649,7 @@ int ploop_pb_preq_add_pending(struct ploop_pushbackup_desc *pbd,
 	if (pbd->ppb_waiting)
 		complete(&pbd->ppb_comp);
 
-	spin_unlock(&pbd->ppb_lock);
+	spin_unlock_irq(&pbd->ppb_lock);
 	return 0;
 }
 
@@ -701,20 +701,20 @@ unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd, bool do_merge)
 	if (pbd == NULL)
 		return 0;
 
-	spin_lock(&pbd->ppb_lock);
+	spin_lock_irq(&pbd->ppb_lock);
 	if (pbd->ppb_state == PLOOP_PB_DEAD) {
-		spin_unlock(&pbd->ppb_lock);
+		spin_unlock_irq(&pbd->ppb_lock);
 		return 0;
 	}
 	pbd->ppb_state = PLOOP_PB_DEAD;
-	spin_unlock(&pbd->ppb_lock);
+	spin_unlock_irq(&pbd->ppb_lock);
 
 	ploop_pbs_fini(&pbd->pending_set);
 	ploop_pbs_fini(&pbd->reported_set);
 
 	merge_status = ploop_pb_cbt_map_release(pbd, do_merge);
 
-	spin_lock(&pbd->ppb_lock);
+	spin_lock_irq(&pbd->ppb_lock);
 
 	while (!RB_EMPTY_ROOT(&pbd->pending_set.tree)) {
 		struct ploop_request *preq =
@@ -732,7 +732,7 @@ unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd, bool do_merge)
 
 	if (pbd->ppb_waiting)
 		complete(&pbd->ppb_comp);
-	spin_unlock(&pbd->ppb_lock);
+	spin_unlock_irq(&pbd->ppb_lock);
 
 	if (!list_empty(&drop_list) || !ploop_pb_bio_list_empty(pbd)) {
 		struct ploop_device *plo = pbd->plo;
@@ -756,7 +756,7 @@ int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
 	struct ploop_request *preq, *npreq;
 	int err = 0;
 
-	spin_lock(&pbd->ppb_lock);
+	spin_lock_irq(&pbd->ppb_lock);
 
 	preq = ploop_pb_get_first_reqs_from_pending(pbd, &npreq);
 	if (!preq) {
@@ -778,7 +778,7 @@ int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
 			goto get_pending_unlock;
 		}
 		pbd->ppb_waiting = true;
-		spin_unlock(&pbd->ppb_lock);
+		spin_unlock_irq(&pbd->ppb_lock);
 
 		mutex_unlock(&plo->ctl_mutex);
 		err = wait_for_completion_interruptible(&pbd->ppb_comp);
@@ -787,7 +787,7 @@ int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
 		if (plo->pbd != pbd)
 			return -EINTR;
 
-		spin_lock(&pbd->ppb_lock);
+		spin_lock_irq(&pbd->ppb_lock);
 		pbd->ppb_waiting = false;
 		init_completion(&pbd->ppb_comp);
 
@@ -827,7 +827,7 @@ int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
 	}
 
 get_pending_unlock:
-	spin_unlock(&pbd->ppb_lock);
+	spin_unlock_irq(&pbd->ppb_lock);
 	return err;
 }
 
@@ -868,7 +868,7 @@ int ploop_pb_peek(struct ploop_pushbackup_desc *pbd,
 	if (!page)
 		return -ENOMEM;
 
-	spin_lock(&pbd->ppb_lock);
+	spin_lock_irq(&pbd->ppb_lock);
 	while (block < pbd->ppb_block_max) {
 		fill_page_to_backup(pbd, idx, page);
 		off = block & (BITS_PER_PAGE -1);
@@ -896,7 +896,7 @@ int ploop_pb_peek(struct ploop_pushbackup_desc *pbd,
 		idx++;
 		block = idx << (PAGE_SHIFT + 3);
 	}
-	spin_unlock(&pbd->ppb_lock);
+	spin_unlock_irq(&pbd->ppb_lock);
 
 	__free_page(page);
 
@@ -944,7 +944,7 @@ void ploop_pb_put_reported(struct ploop_pushbackup_desc *pbd,
 	int n_found = 0;
 	LIST_HEAD(ready_list);
 
-	spin_lock(&pbd->ppb_lock);
+	spin_lock_irq(&pbd->ppb_lock);
 
 	ploop_pb_process_extent(&pbd->reported_set, clu, len, &ready_list, &n_found);
 	ploop_pb_process_extent(&pbd->pending_set, clu, len, &ready_list, NULL);
@@ -959,7 +959,7 @@ void ploop_pb_put_reported(struct ploop_pushbackup_desc *pbd,
 	 */
 	set_bits_in_map(pbd->reported_map, pbd->ppb_block_max, clu, len);
 
-	spin_unlock(&pbd->ppb_lock);
+	spin_unlock_irq(&pbd->ppb_lock);
 
 	if (!list_empty(&ready_list)) {
 		struct ploop_device *plo = pbd->plo;
@@ -1004,14 +1004,15 @@ static bool ploop_pb_set_expired(struct pb_set *pbs)
 	unsigned long tstamp = 0;
 	cluster_t clu = 0;
 	bool ret = false;
+	unsigned long flags;
 
 	if (!timeout)
 		return false;
 
-	spin_lock(&pbd->ppb_lock);
+	spin_lock_irqsave(&pbd->ppb_lock, flags);
 
 	if (pbd->ppb_state != PLOOP_PB_ALIVE) {
-		spin_unlock(&pbd->ppb_lock);
+		spin_unlock_irqrestore(&pbd->ppb_lock, flags);
 		return false;
 	}
 
@@ -1027,7 +1028,7 @@ static bool ploop_pb_set_expired(struct pb_set *pbs)
 			mod_timer(&pbs->timer, preq->tstamp + timeout + 1);
 	}
 
-	spin_unlock(&pbd->ppb_lock);
+	spin_unlock_irqrestore(&pbd->ppb_lock, flags);
 
 	if (ret)
 		printk(KERN_WARNING "Abort push_backup for ploop%d: found "
@@ -1043,6 +1044,7 @@ static void ploop_pb_timeout_func(unsigned long data)
 	struct pb_set                *pbs = (void*)data;
 	struct ploop_pushbackup_desc *pbd = pbs->pbd;
 	struct ploop_device          *plo = pbd->plo;
+	unsigned long flags;
 
 	if (!plo->tune.push_backup_timeout ||
 	    !test_bit(PLOOP_S_RUNNING, &plo->state) ||
@@ -1050,13 +1052,13 @@ static void ploop_pb_timeout_func(unsigned long data)
 	    !ploop_pb_set_expired(pbs))
 		return;
 
-	spin_lock(&pbd->ppb_lock);
+	spin_lock_irqsave(&pbd->ppb_lock, flags);
 	if (pbd->ppb_state == PLOOP_PB_ALIVE) {
 		pbd->ppb_state = PLOOP_PB_STOPPING;
 		if (waitqueue_active(&pbd->ppb_waitq))
 			wake_up_interruptible(&pbd->ppb_waitq);
 	}
-	spin_unlock(&pbd->ppb_lock);
+	spin_unlock_irqrestore(&pbd->ppb_lock, flags);
 }
 
 /* Return true if bio was detained, false otherwise */
