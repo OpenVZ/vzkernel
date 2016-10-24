@@ -112,6 +112,14 @@ typedef int (*dm_iterate_devices_fn) (struct dm_target *ti,
 typedef void (*dm_io_hints_fn) (struct dm_target *ti,
 				struct queue_limits *limits);
 
+typedef void (*dm_ploop_modify_fn) (struct dm_target *ti, int action);
+
+/* "action" arg of dm_ploop_modify_fn */
+enum {
+	DM_PLOOP_ATTACH,
+	DM_PLOOP_DETACH,
+};
+
 /*
  * Returns:
  *    0: The target can handle the next I/O immediately.
@@ -166,6 +174,7 @@ struct target_type {
 	dm_busy_fn busy;
 	dm_iterate_devices_fn iterate_devices;
 	dm_io_hints_fn io_hints;
+	dm_ploop_modify_fn ploop_modify;
 
 	/* For internal device-mapper use. */
 	struct list_head list;
