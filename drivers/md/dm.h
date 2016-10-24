@@ -72,6 +72,7 @@ bool dm_table_request_based(struct dm_table *t);
 bool dm_table_all_blk_mq_devices(struct dm_table *t);
 void dm_table_free_md_mempools(struct dm_table *t);
 struct dm_md_mempools *dm_table_get_md_mempools(struct dm_table *t);
+void dm_table_ploop_modify(struct dm_table *t, int action);
 
 int dm_queue_merge_is_compulsory(struct request_queue *q);
 
