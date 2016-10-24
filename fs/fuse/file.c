@@ -3372,8 +3372,11 @@ fuse_direct_IO(int rw, struct kiocb *iocb, const struct iovec *iov,
 	 * We cannot asynchronously extend the size of a file. We have no method
 	 * to wait on real async I/O requests, so we must submit this request
 	 * synchronously.
+	 * And it's useless to process small sync READs asynchronously.
 	 */
-	if (!is_sync_kiocb(iocb) && (offset + count > i_size) && rw == WRITE)
+	if ((!is_sync_kiocb(iocb) && (offset + count > i_size) && rw == WRITE) ||
+	    (rw != WRITE && is_sync_kiocb(iocb) &&
+	     count <= (FUSE_MAX_PAGES_PER_REQ << PAGE_SHIFT)))
 		io->async = false;
 
 	if (rw == WRITE)
