@@ -1048,6 +1048,9 @@ static int do_resume(struct dm_ioctl *param)
 			return PTR_ERR(old_map);
 		}
 
+		dm_table_ploop_modify(old_map, DM_PLOOP_DETACH);
+		dm_table_ploop_modify(new_map, DM_PLOOP_ATTACH);
+
 		if (dm_table_get_mode(new_map) & FMODE_WRITE)
 			set_disk_ro(dm_disk(md), 0);
 		else
