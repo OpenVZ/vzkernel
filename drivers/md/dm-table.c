@@ -1819,3 +1819,18 @@ void dm_table_run_md_queue_async(struct dm_table *t)
 }
 EXPORT_SYMBOL(dm_table_run_md_queue_async);
 
+void dm_table_ploop_modify(struct dm_table *t, int action)
+{
+	unsigned int i;
+
+	if (!t)
+		return;
+
+	/* attach or detach the targets */
+	for (i = 0; i < t->num_targets; i++) {
+		struct dm_target *tgt = t->targets + i;
+
+		if (tgt->type->ploop_modify)
+			tgt->type->ploop_modify(tgt, action);
+	}
+}
