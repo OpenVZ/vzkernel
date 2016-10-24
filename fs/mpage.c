@@ -28,6 +28,7 @@
 #include <linux/backing-dev.h>
 #include <linux/pagevec.h>
 #include <linux/cleancache.h>
+#include "internal.h"
 
 /*
  * I/O completion handler for multipage BIOs.
@@ -74,6 +75,7 @@ static void mpage_end_io(struct bio *bio, int err)
 static struct bio *mpage_bio_submit(int rw, struct bio *bio)
 {
 	bio->bi_end_io = mpage_end_io;
+	guard_bio_eod(rw, bio);
 	submit_bio(rw, bio);
 	return NULL;
 }
