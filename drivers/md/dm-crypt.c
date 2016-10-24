@@ -1647,10 +1647,8 @@ static void crypt_dtr(struct dm_target *ti)
 	if (cc->iv_gen_ops && cc->iv_gen_ops->dtr)
 		cc->iv_gen_ops->dtr(cc);
 
-	if (cc->dev) {
-		ploop_set_dm_crypt_bdev(cc->dev->bdev, NULL);
+	if (cc->dev)
 		dm_put_device(ti, cc->dev);
-	}
 
 	kzfree(cc->cipher);
 	kzfree(cc->cipher_string);
@@ -1919,8 +1917,6 @@ static int crypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto bad;
 	}
 
-	ploop_set_dm_crypt_bdev(cc->dev->bdev, dm_md_get_bdev(dm_table_get_md(ti->table)));
-
 	if (sscanf(argv[4], "%llu%c", &tmpll, &dummy) != 1) {
 		ti->error = "Invalid device sector";
 		goto bad;
@@ -2173,6 +2169,24 @@ static void crypt_io_hints(struct dm_target *ti, struct queue_limits *limits)
 	limits->max_segment_size = PAGE_SIZE;
 }
 
+static void crypt_ploop_modify(struct dm_target *ti, int action)
+{
+	struct crypt_config *cc = ti->private;
+
+	if (cc && cc->dev)
+		switch (action) {
+		case DM_PLOOP_ATTACH:
+			ploop_set_dm_crypt_bdev(cc->dev->bdev,
+				dm_md_get_bdev(dm_table_get_md(ti->table)));
+			break;
+		case DM_PLOOP_DETACH:
+			ploop_set_dm_crypt_bdev(cc->dev->bdev, NULL);
+			break;
+		default:
+			BUG();
+		}
+}
+
 static struct target_type crypt_target = {
 	.name   = "crypt",
 	.version = {1, 14, 1},
@@ -2188,6 +2202,7 @@ static struct target_type crypt_target = {
 	.merge  = crypt_merge,
 	.iterate_devices = crypt_iterate_devices,
 	.io_hints = crypt_io_hints,
+	.ploop_modify = crypt_ploop_modify,
 };
 
 static int __init dm_crypt_init(void)
