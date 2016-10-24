@@ -22,6 +22,7 @@
 #include <net/iucv/af_iucv.h>
 
 #include <asm/ebcdic.h>
+#include <asm/chpid.h>
 #include <asm/io.h>
 #include <asm/sysinfo.h>
 #include <asm/compat.h>
@@ -1282,8 +1283,10 @@ static void qeth_free_qdio_buffers(struct qeth_card *card)
 
 	qeth_free_cq(card);
 	cancel_delayed_work_sync(&card->buffer_reclaim_work);
-	for (j = 0; j < QDIO_MAX_BUFFERS_PER_Q; ++j)
-		dev_kfree_skb_any(card->qdio.in_q->bufs[j].rx_skb);
+	for (j = 0; j < QDIO_MAX_BUFFERS_PER_Q; ++j) {
+		if (card->qdio.in_q->bufs[j].rx_skb)
+			dev_kfree_skb_any(card->qdio.in_q->bufs[j].rx_skb);
+	}
 	kfree(card->qdio.in_q);
 	card->qdio.in_q = NULL;
 	/* inbound buffer pool */
@@ -1334,16 +1337,7 @@ static void qeth_set_multiple_write_queues(struct qeth_card *card)
 static void qeth_update_from_chp_desc(struct qeth_card *card)
 {
 	struct ccw_device *ccwdev;
-	struct channelPath_dsc {
-		u8 flags;
-		u8 lsn;
-		u8 desc;
-		u8 chpid;
-		u8 swla;
-		u8 zeroes;
-		u8 chla;
-		u8 chpp;
-	} *chp_dsc;
+	struct channel_path_desc *chp_dsc;
 
 	QETH_DBF_TEXT(SETUP, 2, "chp_desc");
 
@@ -1650,7 +1644,6 @@ int qeth_qdio_clear_card(struct qeth_card *card, int use_halt)
 				QDIO_FLAG_CLEANUP_USING_CLEAR);
 		if (rc)
 			QETH_CARD_TEXT_(card, 3, "1err%d", rc);
-		qdio_free(CARD_DDEV(card));
 		atomic_set(&card->qdio.state, QETH_QDIO_ALLOCATED);
 		break;
 	case QETH_QDIO_CLEANING:
@@ -1729,14 +1722,14 @@ static void qeth_configure_blkt_default(struct qeth_card *card, char *prcd)
 	QETH_DBF_TEXT(SETUP, 2, "cfgblkt");
 
 	if (prcd[74] == 0xF0 && prcd[75] == 0xF0 &&
-	    (prcd[76] == 0xF5 || prcd[76] == 0xF6)) {
-		card->info.blkt.time_total = 250;
-		card->info.blkt.inter_packet = 5;
-		card->info.blkt.inter_packet_jumbo = 15;
-	} else {
+	    prcd[76] >= 0xF1 && prcd[76] <= 0xF4) {
 		card->info.blkt.time_total = 0;
 		card->info.blkt.inter_packet = 0;
 		card->info.blkt.inter_packet_jumbo = 0;
+	} else {
+		card->info.blkt.time_total = 250;
+		card->info.blkt.inter_packet = 5;
+		card->info.blkt.inter_packet_jumbo = 15;
 	}
 }
 
@@ -2198,11 +2191,11 @@ static inline int qeth_get_initial_mtu_for_card(struct qeth_card *card)
 		case QETH_LINK_TYPE_LANE_TR:
 			return 2000;
 		default:
-			return 1492;
+			return card->options.layer2 ? 1500 : 1492;
 		}
 	case QETH_CARD_TYPE_OSM:
 	case QETH_CARD_TYPE_OSX:
-		return 1492;
+		return card->options.layer2 ? 1500 : 1492;
 	default:
 		return 1500;
 	}
@@ -2275,9 +2268,10 @@ static int qeth_ulp_enable_cb(struct qeth_card *card, struct qeth_reply *reply,
 		card->info.max_mtu = mtu;
 		card->qdio.in_buf_size = mtu + 2 * PAGE_SIZE;
 	} else {
-		card->info.initial_mtu = qeth_get_initial_mtu_for_card(card);
 		card->info.max_mtu = *(__u16 *)QETH_ULP_ENABLE_RESP_MAX_MTU(
 			iob->data);
+		card->info.initial_mtu = min(card->info.max_mtu,
+					qeth_get_initial_mtu_for_card(card));
 		card->qdio.in_buf_size = QETH_IN_BUF_SIZE_DEFAULT;
 	}
 
@@ -2594,6 +2588,7 @@ static int qeth_mpc_initialize(struct qeth_card *card)
 	return 0;
 out_qdio:
 	qeth_qdio_clear_card(card, card->info.type != QETH_CARD_TYPE_IQD);
+	qdio_free(CARD_DDEV(card));
 	return rc;
 }
 
@@ -3032,6 +3027,45 @@ int qeth_query_ipassists(struct qeth_card *card, enum qeth_prot_versions prot)
 	return rc;
 }
 EXPORT_SYMBOL_GPL(qeth_query_ipassists);
+
+static int qeth_query_switch_attributes_cb(struct qeth_card *card,
+				struct qeth_reply *reply, unsigned long data)
+{
+	struct qeth_ipa_cmd *cmd;
+	struct qeth_switch_info *sw_info;
+	struct qeth_query_switch_attributes *attrs;
+
+	QETH_CARD_TEXT(card, 2, "qswiatcb");
+	cmd = (struct qeth_ipa_cmd *) data;
+	sw_info = (struct qeth_switch_info *)reply->param;
+	if (cmd->data.setadapterparms.hdr.return_code == 0) {
+		attrs = &cmd->data.setadapterparms.data.query_switch_attributes;
+		sw_info->capabilities = attrs->capabilities;
+		sw_info->settings = attrs->settings;
+		QETH_CARD_TEXT_(card, 2, "%04x%04x", sw_info->capabilities,
+							sw_info->settings);
+	}
+	qeth_default_setadapterparms_cb(card, reply, (unsigned long) cmd);
+
+	return 0;
+}
+
+int qeth_query_switch_attributes(struct qeth_card *card,
+				 struct qeth_switch_info *sw_info)
+{
+	struct qeth_cmd_buffer *iob;
+
+	QETH_CARD_TEXT(card, 2, "qswiattr");
+	if (!qeth_adp_supported(card, IPA_SETADP_QUERY_SWITCH_ATTRIBUTES))
+		return -EOPNOTSUPP;
+	if (!netif_carrier_ok(card->dev))
+		return -ENOMEDIUM;
+	iob = qeth_get_adapter_cmd(card, IPA_SETADP_QUERY_SWITCH_ATTRIBUTES,
+				sizeof(struct qeth_ipacmd_setadpparms_hdr));
+	return qeth_send_ipa_cmd(card, iob,
+				qeth_query_switch_attributes_cb, sw_info);
+}
+EXPORT_SYMBOL_GPL(qeth_query_switch_attributes);
 
 static int qeth_query_setdiagass_cb(struct qeth_card *card,
 		struct qeth_reply *reply, unsigned long data)
@@ -4448,7 +4482,7 @@ int qeth_snmp_command(struct qeth_card *card, char __user *udata)
 	struct qeth_cmd_buffer *iob;
 	struct qeth_ipa_cmd *cmd;
 	struct qeth_snmp_ureq *ureq;
-	int req_len;
+	unsigned int req_len;
 	struct qeth_arp_query_info qinfo = {0, };
 	int rc = 0;
 
@@ -4464,6 +4498,10 @@ int qeth_snmp_command(struct qeth_card *card, char __user *udata)
 	/* skip 4 bytes (data_len struct member) to get req_len */
 	if (copy_from_user(&req_len, udata + sizeof(int), sizeof(int)))
 		return -EFAULT;
+	if (req_len > (QETH_BUFSIZE - IPA_PDU_HEADER_SIZE -
+		       sizeof(struct qeth_ipacmd_hdr) -
+		       sizeof(struct qeth_ipacmd_setadpparms_hdr)))
+		return -EINVAL;
 	ureq = memdup_user(udata, req_len + sizeof(struct qeth_snmp_ureq_hdr));
 	if (IS_ERR(ureq)) {
 		QETH_CARD_TEXT(card, 2, "snmpnome");
@@ -4594,6 +4632,42 @@ out:
 	return rc;
 }
 EXPORT_SYMBOL_GPL(qeth_query_oat_command);
+
+int qeth_query_card_info_cb(struct qeth_card *card,
+			struct qeth_reply *reply, unsigned long data)
+{
+	struct qeth_ipa_cmd *cmd;
+	struct qeth_query_card_info *card_info;
+	struct carrier_info *carrier_info;
+
+	QETH_CARD_TEXT(card, 2, "qcrdincb");
+	carrier_info = (struct carrier_info *)reply->param;
+	cmd = (struct qeth_ipa_cmd *)data;
+	card_info = &cmd->data.setadapterparms.data.card_info;
+	if (cmd->data.setadapterparms.hdr.return_code == 0) {
+		carrier_info->card_type = card_info->card_type;
+		carrier_info->port_mode = card_info->port_mode;
+		carrier_info->port_speed = card_info->port_speed;
+	}
+
+	qeth_default_setadapterparms_cb(card, reply, (unsigned long) cmd);
+	return 0;
+}
+
+int qeth_query_card_info(struct qeth_card *card,
+				struct carrier_info *carrier_info)
+{
+	struct qeth_cmd_buffer *iob;
+
+	QETH_CARD_TEXT(card, 2, "qcrdinfo");
+	if (!qeth_adp_supported(card, IPA_SETADP_QUERY_CARD_INFO))
+		return -EOPNOTSUPP;
+	iob = qeth_get_adapter_cmd(card, IPA_SETADP_QUERY_CARD_INFO,
+		sizeof(struct qeth_ipacmd_setadpparms_hdr));
+	return qeth_send_ipa_cmd(card, iob, qeth_query_card_info_cb,
+					(void *)carrier_info);
+}
+EXPORT_SYMBOL_GPL(qeth_query_card_info);
 
 static inline int qeth_get_qdio_q_format(struct qeth_card *card)
 {
@@ -4855,9 +4929,11 @@ retry:
 	if (retries < 3)
 		QETH_DBF_MESSAGE(2, "%s Retrying to do IDX activates.\n",
 			dev_name(&card->gdev->dev));
+	rc = qeth_qdio_clear_card(card, card->info.type != QETH_CARD_TYPE_IQD);
 	ccw_device_set_offline(CARD_DDEV(card));
 	ccw_device_set_offline(CARD_WDEV(card));
 	ccw_device_set_offline(CARD_RDEV(card));
+	qdio_free(CARD_DDEV(card));
 	rc = ccw_device_set_online(CARD_RDEV(card));
 	if (rc)
 		goto retriable;
@@ -4867,7 +4943,6 @@ retry:
 	rc = ccw_device_set_online(CARD_DDEV(card));
 	if (rc)
 		goto retriable;
-	rc = qeth_qdio_clear_card(card, card->info.type != QETH_CARD_TYPE_IQD);
 retriable:
 	if (rc == -ERESTARTSYS) {
 		QETH_DBF_TEXT(SETUP, 2, "break1");
@@ -5599,11 +5674,66 @@ void qeth_core_get_drvinfo(struct net_device *dev,
 }
 EXPORT_SYMBOL_GPL(qeth_core_get_drvinfo);
 
+/* Helper function to fill 'advertizing' and 'supported' which are the same. */
+/* Autoneg and full-duplex are supported and advertized uncondionally.	     */
+/* Always advertize and support all speeds up to specified, and only one     */
+/* specified port type.							     */
+static void qeth_set_ecmd_adv_sup(struct ethtool_cmd *ecmd,
+				int maxspeed, int porttype)
+{
+	int port_sup, port_adv, spd_sup, spd_adv;
+
+	switch (porttype) {
+	case PORT_TP:
+		port_sup = SUPPORTED_TP;
+		port_adv = ADVERTISED_TP;
+		break;
+	case PORT_FIBRE:
+		port_sup = SUPPORTED_FIBRE;
+		port_adv = ADVERTISED_FIBRE;
+		break;
+	default:
+		port_sup = SUPPORTED_TP;
+		port_adv = ADVERTISED_TP;
+		WARN_ON_ONCE(1);
+	}
+
+	/* "Fallthrough" case'es ordered from high to low result in setting  */
+	/* flags cumulatively, starting from the specified speed and down to */
+	/* the lowest possible.						     */
+	spd_sup = 0;
+	spd_adv = 0;
+	switch (maxspeed) {
+	case SPEED_10000:
+		spd_sup |= SUPPORTED_10000baseT_Full;
+		spd_adv |= ADVERTISED_10000baseT_Full;
+	case SPEED_1000:
+		spd_sup |= SUPPORTED_1000baseT_Half | SUPPORTED_1000baseT_Full;
+		spd_adv |= ADVERTISED_1000baseT_Half |
+						ADVERTISED_1000baseT_Full;
+	case SPEED_100:
+		spd_sup |= SUPPORTED_100baseT_Half | SUPPORTED_100baseT_Full;
+		spd_adv |= ADVERTISED_100baseT_Half | ADVERTISED_100baseT_Full;
+	case SPEED_10:
+		spd_sup |= SUPPORTED_10baseT_Half | SUPPORTED_10baseT_Full;
+		spd_adv |= ADVERTISED_10baseT_Half | ADVERTISED_10baseT_Full;
+	break;
+	default:
+		spd_sup = SUPPORTED_10baseT_Half | SUPPORTED_10baseT_Full;
+		spd_adv = ADVERTISED_10baseT_Half | ADVERTISED_10baseT_Full;
+		WARN_ON_ONCE(1);
+	}
+	ecmd->advertising = ADVERTISED_Autoneg | port_adv | spd_adv;
+	ecmd->supported = SUPPORTED_Autoneg | port_sup | spd_sup;
+}
+
 int qeth_core_ethtool_get_settings(struct net_device *netdev,
 					struct ethtool_cmd *ecmd)
 {
 	struct qeth_card *card = netdev->ml_priv;
 	enum qeth_link_types link_type;
+	struct carrier_info carrier_info;
+	int rc;
 
 	if ((card->info.type == QETH_CARD_TYPE_IQD) || (card->info.guestlan))
 		link_type = QETH_LINK_TYPE_10GBIT_ETH;
@@ -5611,78 +5741,97 @@ int qeth_core_ethtool_get_settings(struct net_device *netdev,
 		link_type = card->info.link_type;
 
 	ecmd->transceiver = XCVR_INTERNAL;
-	ecmd->supported = SUPPORTED_Autoneg;
-	ecmd->advertising = ADVERTISED_Autoneg;
 	ecmd->duplex = DUPLEX_FULL;
 	ecmd->autoneg = AUTONEG_ENABLE;
 
 	switch (link_type) {
 	case QETH_LINK_TYPE_FAST_ETH:
 	case QETH_LINK_TYPE_LANE_ETH100:
-		ecmd->supported |= SUPPORTED_10baseT_Half |
-					SUPPORTED_10baseT_Full |
-					SUPPORTED_100baseT_Half |
-					SUPPORTED_100baseT_Full |
-					SUPPORTED_TP;
-		ecmd->advertising |= ADVERTISED_10baseT_Half |
-					ADVERTISED_10baseT_Full |
-					ADVERTISED_100baseT_Half |
-					ADVERTISED_100baseT_Full |
-					ADVERTISED_TP;
+		qeth_set_ecmd_adv_sup(ecmd, SPEED_100, PORT_TP);
 		ecmd->speed = SPEED_100;
 		ecmd->port = PORT_TP;
 		break;
 
 	case QETH_LINK_TYPE_GBIT_ETH:
 	case QETH_LINK_TYPE_LANE_ETH1000:
-		ecmd->supported |= SUPPORTED_10baseT_Half |
-					SUPPORTED_10baseT_Full |
-					SUPPORTED_100baseT_Half |
-					SUPPORTED_100baseT_Full |
-					SUPPORTED_1000baseT_Half |
-					SUPPORTED_1000baseT_Full |
-					SUPPORTED_FIBRE;
-		ecmd->advertising |= ADVERTISED_10baseT_Half |
-					ADVERTISED_10baseT_Full |
-					ADVERTISED_100baseT_Half |
-					ADVERTISED_100baseT_Full |
-					ADVERTISED_1000baseT_Half |
-					ADVERTISED_1000baseT_Full |
-					ADVERTISED_FIBRE;
+		qeth_set_ecmd_adv_sup(ecmd, SPEED_1000, PORT_FIBRE);
 		ecmd->speed = SPEED_1000;
 		ecmd->port = PORT_FIBRE;
 		break;
 
 	case QETH_LINK_TYPE_10GBIT_ETH:
-		ecmd->supported |= SUPPORTED_10baseT_Half |
-					SUPPORTED_10baseT_Full |
-					SUPPORTED_100baseT_Half |
-					SUPPORTED_100baseT_Full |
-					SUPPORTED_1000baseT_Half |
-					SUPPORTED_1000baseT_Full |
-					SUPPORTED_10000baseT_Full |
-					SUPPORTED_FIBRE;
-		ecmd->advertising |= ADVERTISED_10baseT_Half |
-					ADVERTISED_10baseT_Full |
-					ADVERTISED_100baseT_Half |
-					ADVERTISED_100baseT_Full |
-					ADVERTISED_1000baseT_Half |
-					ADVERTISED_1000baseT_Full |
-					ADVERTISED_10000baseT_Full |
-					ADVERTISED_FIBRE;
+		qeth_set_ecmd_adv_sup(ecmd, SPEED_10000, PORT_FIBRE);
 		ecmd->speed = SPEED_10000;
 		ecmd->port = PORT_FIBRE;
 		break;
 
 	default:
-		ecmd->supported |= SUPPORTED_10baseT_Half |
-					SUPPORTED_10baseT_Full |
-					SUPPORTED_TP;
-		ecmd->advertising |= ADVERTISED_10baseT_Half |
-					ADVERTISED_10baseT_Full |
-					ADVERTISED_TP;
+		qeth_set_ecmd_adv_sup(ecmd, SPEED_10, PORT_TP);
 		ecmd->speed = SPEED_10;
 		ecmd->port = PORT_TP;
+	}
+
+	/* Check if we can obtain more accurate information.	 */
+	/* If QUERY_CARD_INFO command is not supported or fails, */
+	/* just return the heuristics that was filled above.	 */
+	if ((card->state != CARD_STATE_SOFTSETUP) &&
+	    (card->state != CARD_STATE_UP))
+		return -ENODEV;
+	rc = qeth_query_card_info(card, &carrier_info);
+	if (rc == -EOPNOTSUPP) /* for old hardware, return heuristic */
+		return 0;
+	if (rc) /* report error from the hardware operation */
+		return rc;
+	/* on success, fill in the information got from the hardware */
+
+	netdev_dbg(netdev,
+	"card info: card_type=0x%02x, port_mode=0x%04x, port_speed=0x%08x\n",
+			carrier_info.card_type,
+			carrier_info.port_mode,
+			carrier_info.port_speed);
+
+	/* Update attributes for which we've obtained more authoritative */
+	/* information, leave the rest the way they where filled above.  */
+	switch (carrier_info.card_type) {
+	case CARD_INFO_TYPE_1G_COPPER_A:
+	case CARD_INFO_TYPE_1G_COPPER_B:
+		qeth_set_ecmd_adv_sup(ecmd, SPEED_1000, PORT_TP);
+		ecmd->port = PORT_TP;
+		break;
+	case CARD_INFO_TYPE_1G_FIBRE_A:
+	case CARD_INFO_TYPE_1G_FIBRE_B:
+		qeth_set_ecmd_adv_sup(ecmd, SPEED_1000, PORT_FIBRE);
+		ecmd->port = PORT_FIBRE;
+		break;
+	case CARD_INFO_TYPE_10G_FIBRE_A:
+	case CARD_INFO_TYPE_10G_FIBRE_B:
+		qeth_set_ecmd_adv_sup(ecmd, SPEED_10000, PORT_FIBRE);
+		ecmd->port = PORT_FIBRE;
+		break;
+	}
+
+	switch (carrier_info.port_mode) {
+	case CARD_INFO_PORTM_FULLDUPLEX:
+		ecmd->duplex = DUPLEX_FULL;
+		break;
+	case CARD_INFO_PORTM_HALFDUPLEX:
+		ecmd->duplex = DUPLEX_HALF;
+		break;
+	}
+
+	switch (carrier_info.port_speed) {
+	case CARD_INFO_PORTS_10M:
+		ecmd->speed = SPEED_10;
+		break;
+	case CARD_INFO_PORTS_100M:
+		ecmd->speed = SPEED_100;
+		break;
+	case CARD_INFO_PORTS_1G:
+		ecmd->speed = SPEED_1000;
+		break;
+	case CARD_INFO_PORTS_10G:
+		ecmd->speed = SPEED_10000;
+		break;
 	}
 
 	return 0;

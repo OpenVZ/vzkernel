@@ -3,6 +3,7 @@
 #
 # create a compressed vmlinux image from the original vmlinux
 #
+OBJECT_FILES_NON_STANDARD	:= y
 
 targets := vmlinux vmlinux.bin vmlinux.bin.gz vmlinux.bin.bz2 vmlinux.bin.lzma vmlinux.bin.xz vmlinux.bin.lzo
 
@@ -12,6 +13,7 @@ KBUILD_CFLAGS += -DDISABLE_BRANCH_PROFILING
 cflags-$(CONFIG_X86_32) := -march=i386
 cflags-$(CONFIG_X86_64) := -mcmodel=small
 KBUILD_CFLAGS += $(cflags-y)
+KBUILD_CFLAGS += -mno-mmx -mno-sse
 KBUILD_CFLAGS += $(call cc-option,-ffreestanding)
 KBUILD_CFLAGS += $(call cc-option,-fno-stack-protector)
 
@@ -32,6 +34,9 @@ $(obj)/eboot.o: KBUILD_CFLAGS += -fshort-wchar -mno-red-zone
 
 ifeq ($(CONFIG_EFI_STUB), y)
 	VMLINUX_OBJS += $(obj)/eboot.o $(obj)/efi_stub_$(BITS).o
+endif
+ifeq ($(CONFIG_EFI_MIXED), y)
+	VMLINUX_OBJS += $(obj)/efi_thunk_$(BITS).o
 endif
 
 $(obj)/vmlinux: $(VMLINUX_OBJS) FORCE

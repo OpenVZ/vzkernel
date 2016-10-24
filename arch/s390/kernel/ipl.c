@@ -2032,7 +2032,8 @@ static void do_reset_calls(void)
 
 u32 dump_prefix_page;
 
-void s390_reset_system(void (*func)(void *), void *data)
+void s390_reset_system(void (*fn_pre)(void),
+		       void (*fn_post)(void *), void *data)
 {
 	struct _lowcore *lc;
 
@@ -2051,19 +2052,23 @@ void s390_reset_system(void (*func)(void *), void *data)
 	__ctl_clear_bit(0,28);
 
 	/* Set new machine check handler */
-	S390_lowcore.mcck_new_psw.mask = psw_kernel_bits | PSW_MASK_DAT;
+	S390_lowcore.mcck_new_psw.mask = PSW_KERNEL_BITS | PSW_MASK_DAT;
 	S390_lowcore.mcck_new_psw.addr =
 		PSW_ADDR_AMODE | (unsigned long) s390_base_mcck_handler;
 
 	/* Set new program check handler */
-	S390_lowcore.program_new_psw.mask = psw_kernel_bits | PSW_MASK_DAT;
+	S390_lowcore.program_new_psw.mask = PSW_KERNEL_BITS | PSW_MASK_DAT;
 	S390_lowcore.program_new_psw.addr =
 		PSW_ADDR_AMODE | (unsigned long) s390_base_pgm_handler;
 
 	/* Store status at absolute zero */
 	store_status();
 
+	/* Call function before reset */
+	if (fn_pre)
+		fn_pre();
 	do_reset_calls();
-	if (func)
-		func(data);
+	/* Call function after reset */
+	if (fn_post)
+		fn_post(data);
 }

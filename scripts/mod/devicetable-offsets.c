@@ -176,6 +176,17 @@ int main(void)
 
 	DEVID(mei_cl_device_id);
 	DEVID_FIELD(mei_cl_device_id, name);
+	DEVID_FIELD(mei_cl_device_id, uuid);
+	DEVID_FIELD(mei_cl_device_id, version);
+
+	DEVID(ulpi_device_id);
+	DEVID_FIELD(ulpi_device_id, vendor);
+	DEVID_FIELD(ulpi_device_id, product);
+
+	DEVID(hda_device_id);
+	DEVID_FIELD(hda_device_id, vendor_id);
+	DEVID_FIELD(hda_device_id, rev_id);
+	DEVID_FIELD(hda_device_id, api_version);
 
 	return 0;
 }

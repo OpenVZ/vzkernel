@@ -62,24 +62,24 @@ config BCM63XX_ENET
 	  MIPS chipset family (BCM63XX).
 
 config BNX2
-	tristate "Broadcom NetXtremeII support"
+	tristate "QLogic bnx2 support"
 	depends on PCI
 	select CRC32
 	select FW_LOADER
 	---help---
-	  This driver supports Broadcom NetXtremeII gigabit Ethernet cards.
+	  This driver supports QLogic bnx2 gigabit Ethernet cards.
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called bnx2.  This is recommended.
 
 config CNIC
-	tristate "Broadcom CNIC support"
-	depends on PCI
+	tristate "QLogic CNIC support"
+	depends on PCI && (IPV6 || IPV6=n)
 	select BNX2
 	select UIO
 	---help---
-	  This driver supports offload features of Broadcom NetXtremeII
-	  gigabit Ethernet cards.
+	  This driver supports offload features of QLogic bnx2 gigabit
+	  Ethernet cards.
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called cnic.  This is recommended.
@@ -130,6 +130,26 @@ config BNX2X_SRIOV
 	  Virtualization support in the 578xx and 57712 products. This
 	  allows for virtual function acceleration in virtual environments.
 
+config BNX2X_VXLAN
+	bool "Virtual eXtensible Local Area Network support"
+	default n
+	depends on BNX2X && VXLAN && !(BNX2X=y && VXLAN=m)
+	---help---
+	  This enables hardward offload support for VXLAN protocol over the
+	  NetXtremeII series adapters.
+	  Say Y here if you want to enable hardware offload support for
+	  Virtual eXtensible Local Area Network (VXLAN) in the driver.
+
+config BNX2X_GENEVE
+	bool "Generic Network Virtualization Encapsulation (GENEVE) support"
+	depends on BNX2X && GENEVE && !(BNX2X=y && GENEVE=m)
+	---help---
+          This allows one to create GENEVE virtual interfaces that provide
+          Layer 2 Networks over Layer 3 Networks. GENEVE is often used
+          to tunnel virtual network infrastructure in virtualized environments.
+	  Say Y here if you want to enable hardware offload support for
+	  Generic Network Virtualization Encapsulation (GENEVE) in the driver.
+
 config BGMAC
 	tristate "BCMA bus GBit core support"
 	depends on BCMA_HOST_SOC && HAS_DMA
@@ -138,5 +158,24 @@ config BGMAC
 	  They can be found on BCM47xx SoCs and provide gigabit ethernet.
 	  In case of using this driver on BCM4706 it's also requires to enable
 	  BCMA_DRIVER_GMAC_CMN to make it work.
+
+config BNXT
+	tristate "Broadcom NetXtreme-C/E support"
+	depends on PCI
+	select FW_LOADER
+	select LIBCRC32C
+	---help---
+	  This driver supports Broadcom NetXtreme-C/E 10/25/40/50 gigabit
+	  Ethernet cards.  To compile this driver as a module, choose M here:
+	  the module will be called bnxt_en.  This is recommended.
+
+config BNXT_SRIOV
+	bool "Broadcom NetXtreme-C/E SR-IOV support"
+	depends on BNXT && PCI_IOV
+	default y
+	---help---
+	  This configuration parameter enables Single Root Input Output
+	  Virtualization support in the NetXtreme-C/E products. This
+	  allows for virtual function acceleration in virtual environments.
 
 endif # NET_VENDOR_BROADCOM

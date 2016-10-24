@@ -335,7 +335,7 @@ void vsock_for_each_connected_socket(void (*fn)(struct sock *sk))
 	for (i = 0; i < ARRAY_SIZE(vsock_connected_table); i++) {
 		struct vsock_sock *vsk;
 		list_for_each_entry(vsk, &vsock_connected_table[i],
-				    connected_table);
+				    connected_table)
 			fn(sk_vsock(vsk));
 	}
 
@@ -1669,8 +1669,6 @@ vsock_stream_recvmsg(struct kiocb *kiocb,
 	sk = sock->sk;
 	vsk = vsock_sk(sk);
 	err = 0;
-
-	msg->msg_namelen = 0;
 
 	lock_sock(sk);
 

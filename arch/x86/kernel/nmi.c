@@ -28,6 +28,7 @@
 #include <asm/mach_traps.h>
 #include <asm/nmi.h>
 #include <asm/x86_init.h>
+#include <asm/reboot.h>
 
 struct nmi_desc {
 	spinlock_t lock;
@@ -186,7 +187,7 @@ pci_serr_error(unsigned char reason, struct pt_regs *regs)
 #endif
 
 	if (panic_on_unrecovered_nmi)
-		panic("NMI: Not continuing");
+		nmi_panic(regs, "NMI: Not continuing");
 
 	pr_emerg("Dazed and confused, but trying to continue\n");
 
@@ -209,8 +210,16 @@ io_check_error(unsigned char reason, struct pt_regs *regs)
 		 reason, smp_processor_id());
 	show_regs(regs);
 
-	if (panic_on_io_nmi)
-		panic("NMI IOCK error: Not continuing");
+	if (panic_on_io_nmi) {
+		nmi_panic(regs, "NMI IOCK error: Not continuing");
+
+		/*
+		 * If we end up here, it means we have received an NMI while
+		 * processing panic(). Simply return without delaying and
+		 * re-enabling NMIs.
+		 */
+		return;
+	}
 
 	/* Re-enable the IOCK line, wait for a few seconds */
 	reason = (reason & NMI_REASON_CLEAR_MASK) | NMI_REASON_CLEAR_IOCHK;
@@ -250,7 +259,7 @@ unknown_nmi_error(unsigned char reason, struct pt_regs *regs)
 
 	pr_emerg("Do you have a strange power saving mode enabled?\n");
 	if (unknown_nmi_panic || panic_on_unrecovered_nmi)
-		panic("NMI: Not continuing");
+		nmi_panic(regs, "NMI: Not continuing");
 
 	pr_emerg("Dazed and confused, but trying to continue\n");
 }
@@ -300,8 +309,19 @@ static __kprobes void default_do_nmi(struct pt_regs *regs)
 		return;
 	}
 
-	/* Non-CPU-specific NMI: NMI sources can be processed on any CPU */
-	raw_spin_lock(&nmi_reason_lock);
+	/*
+	 * Non-CPU-specific NMI: NMI sources can be processed on any CPU.
+	 *
+	 * Another CPU may be processing panic routines while holding
+	 * nmi_reason_lock. Check if the CPU issued the IPI for crash dumping,
+	 * and if so, call its callback directly.  If there is no CPU preparing
+	 * crash dump, we simply loop here.
+	 */
+	while (!raw_spin_trylock(&nmi_reason_lock)) {
+		run_crash_ipi_callback(regs);
+		cpu_relax();
+	}
+
 	reason = x86_platform.get_nmi_reason();
 
 	if (reason & NMI_REASON_MASK) {

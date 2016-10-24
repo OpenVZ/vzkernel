@@ -288,31 +288,35 @@ static noinline_for_stack long fw_file_size(struct file *file)
 	return st.size;
 }
 
-static bool fw_read_file_contents(struct file *file, struct firmware_buf *fw_buf)
+static int fw_read_file_contents(struct file *file, struct firmware_buf *fw_buf)
 {
 	long size;
 	char *buf;
+	int rc;
 
 	size = fw_file_size(file);
 	if (size <= 0)
-		return false;
+		return -EINVAL;
 	buf = vmalloc(size);
 	if (!buf)
-		return false;
-	if (kernel_read(file, 0, buf, size) != size) {
+		return -ENOMEM;
+	rc = kernel_read(file, 0, buf, size);
+	if (rc != size) {
+		if (rc > 0)
+			rc = -EIO;
 		vfree(buf);
-		return false;
+		return rc;
 	}
 	fw_buf->data = buf;
 	fw_buf->size = size;
-	return true;
+	return 0;
 }
 
-static bool fw_get_filesystem_firmware(struct device *device,
+static int fw_get_filesystem_firmware(struct device *device,
 				       struct firmware_buf *buf)
 {
 	int i;
-	bool success = false;
+	int rc = -ENOENT;
 	char *path = __getname();
 
 	for (i = 0; i < ARRAY_SIZE(fw_path); i++) {
@@ -327,14 +331,17 @@ static bool fw_get_filesystem_firmware(struct device *device,
 		file = filp_open(path, O_RDONLY, 0);
 		if (IS_ERR(file))
 			continue;
-		success = fw_read_file_contents(file, buf);
+		rc = fw_read_file_contents(file, buf);
 		fput(file);
-		if (success)
+		if (rc)
+			dev_warn(device, "firmware, attempted to load %s, but failed with error %d\n",
+				path, rc);
+		else
 			break;
 	}
 	__putname(path);
 
-	if (success) {
+	if (!rc) {
 		dev_dbg(device, "firmware: direct-loading firmware %s\n",
 			buf->fw_id);
 		mutex_lock(&fw_lock);
@@ -343,7 +350,7 @@ static bool fw_get_filesystem_firmware(struct device *device,
 		mutex_unlock(&fw_lock);
 	}
 
-	return success;
+	return rc;
 }
 
 /* firmware holds the ownership of pages */
@@ -1012,7 +1019,7 @@ static int assign_firmware_buf(struct firmware *fw, struct device *device)
 /* called from request_firmware() and request_firmware_work_func() */
 static int
 _request_firmware(const struct firmware **firmware_p, const char *name,
-		  struct device *device, bool uevent, bool nowait)
+		  struct device *device, bool uevent, bool nowait, bool fallback)
 {
 	struct firmware *fw;
 	long timeout;
@@ -1044,9 +1051,18 @@ _request_firmware(const struct firmware **firmware_p, const char *name,
 		}
 	}
 
-	if (!fw_get_filesystem_firmware(device, fw->priv))
-		ret = fw_load_from_user_helper(fw, name, device,
+	ret = fw_get_filesystem_firmware(device, fw->priv);
+	if (ret) {
+		if (fallback) {
+			dev_warn(device,
+				 "Direct firmware load failed with error %d\n",
+				 ret);
+			dev_warn(device, "Falling back to user helper\n");
+			ret = fw_load_from_user_helper(fw, name, device,
 					       uevent, nowait, timeout);
+		}
+	}
+
 	if (!ret)
 		ret = assign_firmware_buf(fw, device);
 
@@ -1086,8 +1102,32 @@ int
 request_firmware(const struct firmware **firmware_p, const char *name,
                  struct device *device)
 {
-	return _request_firmware(firmware_p, name, device, true, false);
+	return _request_firmware(firmware_p, name, device, true, false, true);
 }
+
+#ifdef CONFIG_FW_LOADER_USER_HELPER
+/**
+ * request_firmware: - load firmware directly without usermode helper
+ * @firmware_p: pointer to firmware image
+ * @name: name of firmware file
+ * @device: device for which firmware is being loaded
+ *
+ * This function works pretty much like request_firmware(), but this doesn't
+ * fall back to usermode helper even if the firmware couldn't be loaded
+ * directly from fs.  Hence it's useful for loading optional firmwares, which
+ * aren't always present, without extra long timeouts of udev.
+ **/
+int request_firmware_direct(const struct firmware **firmware_p,
+			    const char *name, struct device *device)
+{
+	int ret;
+	__module_get(THIS_MODULE);
+	ret = _request_firmware(firmware_p, name, device, true, false, false);
+	module_put(THIS_MODULE);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(request_firmware_direct);
+#endif
 
 /**
  * release_firmware: - release the resource associated with a firmware image
@@ -1121,7 +1161,7 @@ static void request_firmware_work_func(struct work_struct *work)
 	fw_work = container_of(work, struct firmware_work, work);
 
 	_request_firmware(&fw, fw_work->name, fw_work->device,
-			  fw_work->uevent, true);
+			  fw_work->uevent, true, true);
 	fw_work->cont(fw, fw_work->context);
 	put_device(fw_work->device); /* taken in request_firmware_nowait() */
 

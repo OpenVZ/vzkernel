@@ -300,7 +300,7 @@ NCR_700_detect(struct scsi_host_template *tpnt,
 	memory = dma_alloc_noncoherent(hostdata->dev, TOTAL_MEM_SIZE,
 				       &pScript, GFP_KERNEL);
 	if(memory == NULL) {
-		printk(KERN_ERR "53c700: Failed to allocate memory for driver, detatching\n");
+		printk(KERN_ERR "53c700: Failed to allocate memory for driver, detaching\n");
 		return NULL;
 	}
 
@@ -592,19 +592,14 @@ NCR_700_scsi_done(struct NCR_700_Host_Parameters *hostdata,
 	hostdata->cmd = NULL;
 
 	if(SCp != NULL) {
-		struct NCR_700_command_slot *slot = 
+		struct NCR_700_command_slot *slot =
 			(struct NCR_700_command_slot *)SCp->host_scribble;
-		
+
 		dma_unmap_single(hostdata->dev, slot->pCmd,
 				 MAX_COMMAND_SIZE, DMA_TO_DEVICE);
 		if (slot->flags == NCR_700_FLAG_AUTOSENSE) {
 			char *cmnd = NCR_700_get_sense_cmnd(SCp->device);
-#ifdef NCR_700_DEBUG
-			printk(" ORIGINAL CMD %p RETURNED %d, new return is %d sense is\n",
-			       SCp, SCp->cmnd[7], result);
-			scsi_print_sense("53c700", SCp);
 
-#endif
 			dma_unmap_single(hostdata->dev, slot->dma_handle,
 					 SCSI_SENSE_BUFFERSIZE, DMA_FROM_DEVICE);
 			/* restore the old result if the request sense was
@@ -1910,9 +1905,7 @@ NCR_700_abort(struct scsi_cmnd * SCp)
 {
 	struct NCR_700_command_slot *slot;
 
-	scmd_printk(KERN_INFO, SCp,
-		"New error handler wants to abort command\n\t");
-	scsi_print_command(SCp);
+	scmd_printk(KERN_INFO, SCp, "abort command\n");
 
 	slot = (struct NCR_700_command_slot *)SCp->host_scribble;
 

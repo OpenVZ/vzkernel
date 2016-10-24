@@ -35,6 +35,10 @@ struct rtnl_link_stats {
 	/* for cslip etc */
 	__u32	rx_compressed;
 	__u32	tx_compressed;
+
+#ifndef __GENKSYMS__
+	__u32	rx_nohandler;		/* dropped, no handler found	*/
+#endif
 };
 
 /* The main device statistics structure */
@@ -68,6 +72,10 @@ struct rtnl_link_stats64 {
 	/* for cslip etc */
 	__u64	rx_compressed;
 	__u64	tx_compressed;
+
+#ifndef __GENKSYMS__
+	__u64	rx_nohandler;		/* dropped, no handler found	*/
+#endif
 };
 
 /* The struct should be in sync with struct ifmap */
@@ -143,6 +151,10 @@ enum {
 	IFLA_NUM_TX_QUEUES,
 	IFLA_NUM_RX_QUEUES,
 	IFLA_CARRIER,
+	IFLA_PHYS_PORT_ID,
+	IFLA_CARRIER_CHANGES,
+	__RH_RESERVED_IFLA_PHYS_SWITCH_ID,
+	IFLA_LINK_NETNSID,
 	__IFLA_MAX
 };
 
@@ -202,10 +214,28 @@ enum {
 	IFLA_INET6_CACHEINFO,	/* time values and max reasm size */
 	IFLA_INET6_ICMP6STATS,	/* statistics (icmpv6)		*/
 	IFLA_INET6_TOKEN,	/* device token			*/
+	IFLA_INET6_ADDR_GEN_MODE, /* implicit address generator mode */
 	__IFLA_INET6_MAX
 };
 
 #define IFLA_INET6_MAX	(__IFLA_INET6_MAX - 1)
+
+enum in6_addr_gen_mode {
+	IN6_ADDR_GEN_MODE_EUI64,
+	IN6_ADDR_GEN_MODE_NONE,
+};
+
+/* Bridge section */
+
+enum {
+	IFLA_BR_UNSPEC,
+	IFLA_BR_FORWARD_DELAY,
+	IFLA_BR_HELLO_TIME,
+	IFLA_BR_MAX_AGE,
+	__IFLA_BR_MAX,
+};
+
+#define IFLA_BR_MAX	(__IFLA_BR_MAX - 1)
 
 enum {
 	BRIDGE_MODE_UNSPEC,
@@ -221,6 +251,11 @@ enum {
 	IFLA_BRPORT_GUARD,	/* bpdu guard              */
 	IFLA_BRPORT_PROTECT,	/* root port protection    */
 	IFLA_BRPORT_FAST_LEAVE,	/* multicast fast leave    */
+	IFLA_BRPORT_LEARNING,	/* mac learning */
+	IFLA_BRPORT_UNICAST_FLOOD, /* flood unicast traffic */
+	/* RHEL: IFLA_BRPORT_PROXYARP not fully supported yet */
+	RESERVED_IFLA_BRPORT_PROXYARP,	/* proxy ARP */
+	IFLA_BRPORT_LEARNING_SYNC, /* mac learning sync from device */
 	__IFLA_BRPORT_MAX
 };
 #define IFLA_BRPORT_MAX (__IFLA_BRPORT_MAX - 1)
@@ -237,6 +272,8 @@ enum {
 	IFLA_INFO_KIND,
 	IFLA_INFO_DATA,
 	IFLA_INFO_XSTATS,
+	IFLA_INFO_SLAVE_KIND,
+	IFLA_INFO_SLAVE_DATA,
 	__IFLA_INFO_MAX,
 };
 
@@ -293,6 +330,35 @@ enum macvlan_mode {
 
 #define MACVLAN_FLAG_NOPROMISC	1
 
+/* MACSEC section */
+enum {
+	IFLA_MACSEC_UNSPEC,
+	IFLA_MACSEC_SCI,
+	IFLA_MACSEC_PORT,
+	IFLA_MACSEC_ICV_LEN,
+	IFLA_MACSEC_CIPHER_SUITE,
+	IFLA_MACSEC_WINDOW,
+	IFLA_MACSEC_ENCODING_SA,
+	IFLA_MACSEC_ENCRYPT,
+	IFLA_MACSEC_PROTECT,
+	IFLA_MACSEC_INC_SCI,
+	IFLA_MACSEC_ES,
+	IFLA_MACSEC_SCB,
+	IFLA_MACSEC_REPLAY_PROTECT,
+	IFLA_MACSEC_VALIDATION,
+	__IFLA_MACSEC_MAX,
+};
+
+#define IFLA_MACSEC_MAX (__IFLA_MACSEC_MAX - 1)
+
+enum macsec_validation_type {
+	MACSEC_VALIDATE_DISABLED = 0,
+	MACSEC_VALIDATE_CHECK = 1,
+	MACSEC_VALIDATE_STRICT = 2,
+	__MACSEC_VALIDATE_END,
+	MACSEC_VALIDATE_MAX = __MACSEC_VALIDATE_END - 1,
+};
+
 /* VXLAN section */
 enum {
 	IFLA_VXLAN_UNSPEC,
@@ -311,6 +377,18 @@ enum {
 	IFLA_VXLAN_L2MISS,
 	IFLA_VXLAN_L3MISS,
 	IFLA_VXLAN_PORT,	/* destination port */
+	IFLA_VXLAN_GROUP6,
+	IFLA_VXLAN_LOCAL6,
+	IFLA_VXLAN_UDP_CSUM,
+	IFLA_VXLAN_UDP_ZERO_CSUM6_TX,
+	IFLA_VXLAN_UDP_ZERO_CSUM6_RX,
+	IFLA_VXLAN_REMCSUM_TX,
+	IFLA_VXLAN_REMCSUM_RX,
+	IFLA_VXLAN_GBP,
+	IFLA_VXLAN_REMCSUM_NOPARTIAL,
+	IFLA_VXLAN_COLLECT_METADATA,
+	IFLA_VXLAN_LABEL,
+	IFLA_VXLAN_GPE,
 	__IFLA_VXLAN_MAX
 };
 #define IFLA_VXLAN_MAX	(__IFLA_VXLAN_MAX - 1)
@@ -319,6 +397,87 @@ struct ifla_vxlan_port_range {
 	__be16	low;
 	__be16	high;
 };
+
+/* GENEVE section */
+enum {
+	IFLA_GENEVE_UNSPEC,
+	IFLA_GENEVE_ID,
+	IFLA_GENEVE_REMOTE,
+	IFLA_GENEVE_TTL,
+	IFLA_GENEVE_TOS,
+	IFLA_GENEVE_PORT,	/* destination port */
+	IFLA_GENEVE_COLLECT_METADATA,
+	IFLA_GENEVE_REMOTE6,
+	IFLA_GENEVE_UDP_CSUM,
+	IFLA_GENEVE_UDP_ZERO_CSUM6_TX,
+	IFLA_GENEVE_UDP_ZERO_CSUM6_RX,
+	IFLA_GENEVE_LABEL,
+	__IFLA_GENEVE_MAX
+};
+#define IFLA_GENEVE_MAX	(__IFLA_GENEVE_MAX - 1)
+
+/* Bonding section */
+
+enum {
+	IFLA_BOND_UNSPEC,
+	IFLA_BOND_MODE,
+	IFLA_BOND_ACTIVE_SLAVE,
+	IFLA_BOND_MIIMON,
+	IFLA_BOND_UPDELAY,
+	IFLA_BOND_DOWNDELAY,
+	IFLA_BOND_USE_CARRIER,
+	IFLA_BOND_ARP_INTERVAL,
+	IFLA_BOND_ARP_IP_TARGET,
+	IFLA_BOND_ARP_VALIDATE,
+	IFLA_BOND_ARP_ALL_TARGETS,
+	IFLA_BOND_PRIMARY,
+	IFLA_BOND_PRIMARY_RESELECT,
+	IFLA_BOND_FAIL_OVER_MAC,
+	IFLA_BOND_XMIT_HASH_POLICY,
+	IFLA_BOND_RESEND_IGMP,
+	IFLA_BOND_NUM_PEER_NOTIF,
+	IFLA_BOND_ALL_SLAVES_ACTIVE,
+	IFLA_BOND_MIN_LINKS,
+	IFLA_BOND_LP_INTERVAL,
+	IFLA_BOND_PACKETS_PER_SLAVE,
+	IFLA_BOND_AD_LACP_RATE,
+	IFLA_BOND_AD_SELECT,
+	IFLA_BOND_AD_INFO,
+	IFLA_BOND_AD_ACTOR_SYS_PRIO,
+	IFLA_BOND_AD_USER_PORT_KEY,
+	IFLA_BOND_AD_ACTOR_SYSTEM,
+	IFLA_BOND_TLB_DYNAMIC_LB,
+	__IFLA_BOND_MAX,
+};
+
+#define IFLA_BOND_MAX	(__IFLA_BOND_MAX - 1)
+
+enum {
+	IFLA_BOND_AD_INFO_UNSPEC,
+	IFLA_BOND_AD_INFO_AGGREGATOR,
+	IFLA_BOND_AD_INFO_NUM_PORTS,
+	IFLA_BOND_AD_INFO_ACTOR_KEY,
+	IFLA_BOND_AD_INFO_PARTNER_KEY,
+	IFLA_BOND_AD_INFO_PARTNER_MAC,
+	__IFLA_BOND_AD_INFO_MAX,
+};
+
+#define IFLA_BOND_AD_INFO_MAX	(__IFLA_BOND_AD_INFO_MAX - 1)
+
+enum {
+	IFLA_BOND_SLAVE_UNSPEC,
+	IFLA_BOND_SLAVE_STATE,
+	IFLA_BOND_SLAVE_MII_STATUS,
+	IFLA_BOND_SLAVE_LINK_FAILURE_COUNT,
+	IFLA_BOND_SLAVE_PERM_HWADDR,
+	IFLA_BOND_SLAVE_QUEUE_ID,
+	IFLA_BOND_SLAVE_AD_AGGREGATOR_ID,
+	IFLA_BOND_SLAVE_AD_ACTOR_OPER_PORT_STATE,
+	IFLA_BOND_SLAVE_AD_PARTNER_OPER_PORT_STATE,
+	__IFLA_BOND_SLAVE_MAX,
+};
+
+#define IFLA_BOND_SLAVE_MAX	(__IFLA_BOND_SLAVE_MAX - 1)
 
 /* SR-IOV virtual function management section */
 
@@ -334,8 +493,17 @@ enum {
 	IFLA_VF_UNSPEC,
 	IFLA_VF_MAC,		/* Hardware queue specific attributes */
 	IFLA_VF_VLAN,
-	IFLA_VF_TX_RATE,	/* TX Bandwidth Allocation */
+	IFLA_VF_TX_RATE,	/* Max TX Bandwidth Allocation */
 	IFLA_VF_SPOOFCHK,	/* Spoof Checking on/off switch */
+	IFLA_VF_LINK_STATE,	/* link state enable/disable/auto switch */
+	IFLA_VF_RATE,		/* Min and Max TX Bandwidth Allocation */
+	IFLA_VF_RSS_QUERY_EN,	/* RSS Redirection Table and Hash Key query
+				 * on/off switch
+				 */
+	IFLA_VF_STATS,		/* network device statistics */
+	IFLA_VF_TRUST,		/* Trust VF */
+	IFLA_VF_IB_NODE_GUID,	/* VF Infiniband node GUID */
+	IFLA_VF_IB_PORT_GUID,	/* VF Infiniband port GUID */
 	__IFLA_VF_MAX,
 };
 
@@ -357,7 +525,52 @@ struct ifla_vf_tx_rate {
 	__u32 rate; /* Max TX bandwidth in Mbps, 0 disables throttling */
 };
 
+struct ifla_vf_rate {
+	__u32 vf;
+	__u32 min_tx_rate; /* Min Bandwidth in Mbps */
+	__u32 max_tx_rate; /* Max Bandwidth in Mbps */
+};
+
 struct ifla_vf_spoofchk {
+	__u32 vf;
+	__u32 setting;
+};
+
+struct ifla_vf_guid {
+	__u32 vf;
+	__u64 guid;
+};
+
+enum {
+	IFLA_VF_LINK_STATE_AUTO,	/* link state of the uplink */
+	IFLA_VF_LINK_STATE_ENABLE,	/* link always up */
+	IFLA_VF_LINK_STATE_DISABLE,	/* link always down */
+	__IFLA_VF_LINK_STATE_MAX,
+};
+
+struct ifla_vf_link_state {
+	__u32 vf;
+	__u32 link_state;
+};
+
+struct ifla_vf_rss_query_en {
+	__u32 vf;
+	__u32 setting;
+};
+
+enum {
+	IFLA_VF_STATS_RX_PACKETS,
+	IFLA_VF_STATS_TX_PACKETS,
+	IFLA_VF_STATS_RX_BYTES,
+	IFLA_VF_STATS_TX_BYTES,
+	IFLA_VF_STATS_BROADCAST,
+	IFLA_VF_STATS_MULTICAST,
+	__IFLA_VF_STATS_MAX,
+};
+
+#define IFLA_VF_STATS_MAX (__IFLA_VF_STATS_MAX - 1)
+
+struct ifla_vf_trust {
 	__u32 vf;
 	__u32 setting;
 };
