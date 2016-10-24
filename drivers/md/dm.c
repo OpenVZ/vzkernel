@@ -2268,7 +2268,9 @@ static void __dm_destroy(struct mapped_device *md, bool wait)
 		       dm_device_name(md), atomic_read(&md->holders));
 
 	dm_sysfs_exit(md);
-	dm_table_destroy(__unbind(md));
+	map = __unbind(md);
+	dm_table_ploop_modify(map, DM_PLOOP_DETACH);
+	dm_table_destroy(map);
 	free_dev(md);
 }
 
