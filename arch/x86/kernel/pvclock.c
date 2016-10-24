@@ -65,7 +65,8 @@ u8 pvclock_read_flags(struct pvclock_vcpu_time_info *src)
 	u8 flags;
 
 	do {
-		version = __pvclock_read_cycles(src, &ret, &flags);
+		version = __pvclock_read_cycles(src, &ret, &flags,
+						native_read_tsc());
 	} while ((src->version & 1) || version != src->version);
 
 	return flags & valid_flags;
@@ -79,7 +80,8 @@ cycle_t pvclock_clocksource_read(struct pvclock_vcpu_time_info *src)
 	u8 flags;
 
 	do {
-		version = __pvclock_read_cycles(src, &ret, &flags);
+		version = __pvclock_read_cycles(src, &ret, &flags,
+						native_read_tsc());
 	} while ((src->version & 1) || version != src->version);
 
 	if (unlikely((flags & PVCLOCK_GUEST_STOPPED) != 0)) {
