@@ -195,7 +195,6 @@ void *dst_alloc(struct dst_ops *ops, struct net_device *dev,
 	atomic_set(&dst->__refcnt, initial_ref);
 	dst->__use = 0;
 	dst->lastuse = jiffies;
-	dst->privnet_mark = 0;
 	dst->flags = flags;
 	dst->pending_confirm = 0;
 	dst->next = NULL;
