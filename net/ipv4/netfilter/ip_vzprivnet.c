@@ -35,24 +35,7 @@
 #include <linux/vzprivnet.h>
 #define VZPRIV_PROCNAME "ip_vzprivnet"
 
-enum {
-	VZPRIV_MARK_UNKNOWN,
-	VZPRIV_MARK_ACCEPT,
-	VZPRIV_MARK_DROP,
-	VZPRIV_MARK_MAX
-};
-
 static DEFINE_PER_CPU(unsigned long, lookup_stat[2]);
-
-static inline unsigned int dst_pmark_get(struct dst_entry *dst)
-{
-	return dst->privnet_mark;
-}
-
-static inline void dst_pmark_set(struct dst_entry *dst, unsigned int mark)
-{
-	dst->privnet_mark = mark;
-}
 
 struct vzprivnet {
 	u32 nmask;
@@ -225,14 +208,14 @@ static noinline unsigned int vzprivnet_classify(struct sk_buff *skb, int type)
 
 	if (p1 == p2) {
 		if ((saddr & p1->nmask) == (daddr & p1->nmask))
-			res = VZPRIV_MARK_ACCEPT;
+			res = NF_ACCEPT;
 		else
-			res = VZPRIV_MARK_DROP;
+			res = NF_DROP;
 	} else {
 		if (p1->weak + p2->weak >= 3)
-			res = VZPRIV_MARK_ACCEPT;
+			res = NF_ACCEPT;
 		else
-			res = VZPRIV_MARK_DROP;
+			res = NF_DROP;
 	}
 
 	read_unlock(&vzprivlock);
@@ -248,7 +231,6 @@ EXPORT_SYMBOL(vzpn_filter_host);
 static unsigned int vzprivnet_hook(struct sk_buff *skb, int can_be_bridge)
 {
 	struct dst_entry *dst;
-	unsigned int pmark = VZPRIV_MARK_UNKNOWN;
 	struct net *src_net;
 
 	if (WARN_ON_ONCE(!skb->dev && !skb->sk))
@@ -259,26 +241,14 @@ static unsigned int vzprivnet_hook(struct sk_buff *skb, int can_be_bridge)
 		return NF_ACCEPT;
 
 	dst = skb_dst(skb);
-	if (dst != NULL) {
-		if (can_be_bridge && dst->output != ip_output) { /* bridge */
-			if (vzpn_handle_bridged) {
-				pmark = vzprivnet_classify(skb, 1);
-				return pmark == VZPRIV_MARK_ACCEPT ?
-					NF_ACCEPT : NF_DROP;
-			} else
-				return NF_ACCEPT;
-		}
-
-		pmark = dst_pmark_get(dst);
+	if (dst != NULL && can_be_bridge && dst->output != ip_output) { /* bridge */
+		if (vzpn_handle_bridged)
+			return vzprivnet_classify(skb, 1);
+		else
+			return NF_ACCEPT;
 	}
 
-	if (unlikely(pmark == VZPRIV_MARK_UNKNOWN)) {
-		pmark = vzprivnet_classify(skb, 0);
-		if (dst != NULL)
-			dst_pmark_set(dst, pmark);
-	}
-
-	return pmark == VZPRIV_MARK_ACCEPT ? NF_ACCEPT : NF_DROP;
+	return vzprivnet_classify(skb, 0);
 }
 
 static unsigned int vzprivnet_fwd_hook(const struct nf_hook_ops *ops,
