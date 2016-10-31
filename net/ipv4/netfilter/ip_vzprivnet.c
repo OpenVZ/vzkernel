@@ -30,7 +30,6 @@
 #include <linux/ctype.h>
 #include <linux/sysctl.h>
 #include <linux/inet.h>
-#include <net/route.h>
 #include <asm/page.h>
 
 #include <linux/vzprivnet.h>
@@ -504,8 +503,6 @@ static ssize_t vzpriv_write(struct file * file, const char __user *buf,
 	if (err)
 		goto err;
 
-	rt_cache_flush(&init_net);
-
 	s = page;
 	s[count] = 0;
 
@@ -838,8 +835,6 @@ static ssize_t sparse_write(struct file * file, const char __user *buf,
 	err = copy_from_user(page, buf, count);
 	if (err)
 		goto err;
-
-	rt_cache_flush(&init_net);
 
 	s = page;
 	s[count] = 0;
