@@ -489,7 +489,6 @@ static int parse_param(const char *param, int *add, u32 *net,
 static ssize_t vzpriv_write(struct file * file, const char __user *buf,
 			    size_t count, loff_t *ppos)
 {
-	struct net *net;
 	char *s, *page;
 	int err;
 	int offset;
@@ -504,6 +503,8 @@ static ssize_t vzpriv_write(struct file * file, const char __user *buf,
 	err = copy_from_user(page, buf, count);
 	if (err)
 		goto err;
+
+	rt_cache_flush(&init_net);
 
 	s = page;
 	s[count] = 0;
@@ -528,11 +529,6 @@ static ssize_t vzpriv_write(struct file * file, const char __user *buf,
 		s = nextline(s);
 	}
 out:
-	rtnl_lock();
-	for_each_net(net)
-		rt_cache_flush(net);
-	rtnl_unlock();
-
 	offset = s - page;
 	if (offset > 0)
 		err = offset;
@@ -828,7 +824,6 @@ static int parse_sparse(const char *param, int *add,
 static ssize_t sparse_write(struct file * file, const char __user *buf,
 			    size_t count, loff_t *ppos)
 {
-	struct net *net;
 	char *s, *page;
 	int err;
 	int offset;
@@ -843,6 +838,8 @@ static ssize_t sparse_write(struct file * file, const char __user *buf,
 	err = copy_from_user(page, buf, count);
 	if (err)
 		goto err;
+
+	rt_cache_flush(&init_net);
 
 	s = page;
 	s[count] = 0;
@@ -868,11 +865,6 @@ static ssize_t sparse_write(struct file * file, const char __user *buf,
 		s = nextline(s);
 	}
 out:
-	rtnl_lock();
-	for_each_net(net)
-		rt_cache_flush(net);
-	rtnl_unlock();
-
 	offset = s - page;
 	if (offset > 0)
 		err = offset;
