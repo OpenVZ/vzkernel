@@ -102,8 +102,6 @@ struct dst_entry {
 	atomic_t		__refcnt;	/* client references	*/
 	int			__use;
 	unsigned long		lastuse;
-	unsigned int		privnet_mark;
-
 	union {
 		struct dst_entry	*next;
 		struct rtable __rcu	*rt_next;
