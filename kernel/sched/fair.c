@@ -915,17 +915,8 @@ update_stats_dequeue(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	if (se != cfs_rq->curr)
 		update_stats_wait_end(cfs_rq, se);
 
-	if (flags & DEQUEUE_SLEEP) {
-		if (entity_is_task(se)) {
-			struct task_struct *tsk = task_of(se);
-
-			if (tsk->state & TASK_INTERRUPTIBLE)
-				se->statistics->sleep_start = rq_clock(rq_of(cfs_rq));
-			if (tsk->state & TASK_UNINTERRUPTIBLE)
-				se->statistics->block_start = rq_clock(rq_of(cfs_rq));
-		}
-	}
-
+	if (flags & DEQUEUE_SLEEP)
+		dequeue_sleeper(cfs_rq, se);
 }
 #else
 static inline void
