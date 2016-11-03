@@ -278,6 +278,7 @@ struct fuse_io_priv {
 	int err;
 	struct kiocb *iocb;
 	struct file *file;
+	struct list_head list;
 };
 
 /**
