@@ -26,6 +26,7 @@ MODULE_ALIAS_MISCDEV(FUSE_MINOR);
 MODULE_ALIAS("devname:fuse");
 
 static struct kmem_cache *fuse_req_cachep;
+extern struct workqueue_struct *fuse_fput_wq;
 
 static struct fuse_conn *fuse_get_conn(struct file *file)
 {
@@ -2251,11 +2252,16 @@ static struct miscdevice fuse_miscdevice = {
 int __init fuse_dev_init(void)
 {
 	int err = -ENOMEM;
+
+	fuse_fput_wq = create_workqueue("fuse_fput");
+	if (!fuse_fput_wq)
+		goto out;
+
 	fuse_req_cachep = kmem_cache_create("fuse_request",
 					    sizeof(struct fuse_req),
 					    0, 0, NULL);
 	if (!fuse_req_cachep)
-		goto out;
+		goto out_destroq_wq;
 
 	err = misc_register(&fuse_miscdevice);
 	if (err)
@@ -2265,6 +2271,8 @@ int __init fuse_dev_init(void)
 
  out_cache_clean:
 	kmem_cache_destroy(fuse_req_cachep);
+ out_destroq_wq:
+	destroy_workqueue(fuse_fput_wq);
  out:
 	return err;
 }
@@ -2273,4 +2281,5 @@ void fuse_dev_cleanup(void)
 {
 	misc_deregister(&fuse_miscdevice);
 	kmem_cache_destroy(fuse_req_cachep);
+	destroy_workqueue(fuse_fput_wq);
 }
