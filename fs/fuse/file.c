@@ -19,6 +19,13 @@
 #include <linux/falloc.h>
 #include <linux/task_io_accounting_ops.h>
 #include <linux/virtinfo.h>
+#include <linux/file.h>
+
+struct workqueue_struct *fuse_fput_wq;
+static DEFINE_SPINLOCK(fuse_fput_lock);
+static LIST_HEAD(fuse_fput_head);
+static void fuse_fput_routine(struct work_struct *);
+static DECLARE_WORK(fuse_fput_work, fuse_fput_routine);
 
 static const struct file_operations fuse_direct_io_file_operations;
 
@@ -749,6 +756,29 @@ static void fuse_release_user_pages(struct fuse_req *req, int write)
 	}
 }
 
+static void fuse_fput_routine(struct work_struct *data)
+{
+	spin_lock(&fuse_fput_lock);
+	while (likely(!list_empty(&fuse_fput_head))) {
+		struct fuse_io_priv *io = list_entry(fuse_fput_head.next,
+						     struct fuse_io_priv,
+						     list);
+		struct file *file = io->file;
+
+		list_del(&io->list);
+		spin_unlock(&fuse_fput_lock);
+
+		/* hack: __fput() is not visible outside fs/file_table.c */
+		BUG_ON(atomic_long_read(&file->f_count));
+		atomic_long_inc(&file->f_count);
+		fput(file);
+
+		kfree(io);
+		spin_lock(&fuse_fput_lock);
+	}
+	spin_unlock(&fuse_fput_lock);
+}
+
 /**
  * In case of short read, the caller sets 'pos' to the position of
  * actual end of fuse request in IO request. Otherwise, if bytes_requested
@@ -780,6 +810,7 @@ static void fuse_aio_complete(struct fuse_io_priv *io, int err, ssize_t pos)
 
 	if (!left) {
 		long res;
+		struct file *file = io->iocb->ki_filp;
 
 		if (io->err)
 			res = io->err;
@@ -789,7 +820,7 @@ static void fuse_aio_complete(struct fuse_io_priv *io, int err, ssize_t pos)
 			res = io->bytes < 0 ? io->size : io->bytes;
 
 			if (!is_sync_kiocb(io->iocb)) {
-				struct inode *inode = file_inode(io->iocb->ki_filp);
+				struct inode *inode = file_inode(file);
 				struct fuse_conn *fc = get_fuse_conn(inode);
 				struct fuse_inode *fi = get_fuse_inode(inode);
 
@@ -806,8 +837,25 @@ static void fuse_aio_complete(struct fuse_io_priv *io, int err, ssize_t pos)
 			       io, err, pos, io->err, io->bytes,
 			       io->size, is_sync_kiocb(io->iocb), res,
 			       io->iocb->ki_opcode, io->iocb->ki_pos);
+
+		/* We have to bump f_count here to avoid deadlock for
+		 * single-threaded fuse daemon: if process who generated
+		 * AIO is already close(2) the file, fput() called from
+		 * aio_complete will be the last fput(); hence, it will send
+		 * flush_mtime (or release) request to userspace who is busy
+		 * now writing ACK for given AIO to in-kernel fuse */
+		get_file(file);
+		BUG_ON(io->file != io->iocb->ki_filp);
 		aio_complete(io->iocb, res, 0);
-		kfree(io);
+
+		if (unlikely(atomic_long_dec_and_test(&file->f_count))) {
+			spin_lock(&fuse_fput_lock);
+			list_add(&io->list, &fuse_fput_head);
+			spin_unlock(&fuse_fput_lock);
+			queue_work(fuse_fput_wq, &fuse_fput_work);
+		} else {
+			kfree(io);
+		}
 	}
 }
 
