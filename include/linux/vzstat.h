@@ -101,11 +101,11 @@ extern void KSTAT_PERF_ADD(struct kstat_perf_pcpu_struct *ptr, u64 real_time,
 	u64 start, sleep_time;				\
 							\
 	start = ktime_to_ns(ktime_get());		\
-	sleep_time = current->se.statistics.sum_sleep_runtime; \
+	sleep_time = current->se.statistics->sum_sleep_runtime; \
 
 #define KSTAT_PERF_LEAVE(name)				\
 	start = ktime_to_ns(ktime_get()) - start;	\
-	sleep_time = current->se.statistics.sum_sleep_runtime - sleep_time; \
+	sleep_time = current->se.statistics->sum_sleep_runtime - sleep_time; \
 	KSTAT_PERF_ADD(&kstat_glob.name, start, start - sleep_time);
 
 extern void KSTAT_LAT_ADD(struct kstat_lat_struct *p, u64 dur);

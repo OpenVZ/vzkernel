@@ -8370,11 +8370,11 @@ static void nr_iowait_dec_fair(struct task_struct *p)
 		if (unlikely(delta > se->statistics.block_max))
 			se->statistics.block_max = delta;
 
-		se->statistics.block_start = 0;
-		se->statistics.sleep_start = rq->clock;
+		se->statistics->block_start = 0;
+		se->statistics->sleep_start = rq->clock;
 
-		se->statistics.iowait_sum += delta;
-		se->statistics.sum_sleep_runtime += delta;
+		se->statistics->iowait_sum += delta;
+		se->statistics->sum_sleep_runtime += delta;
 	}
 #endif
 }
