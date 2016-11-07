@@ -54,11 +54,7 @@
 #include <linux/security.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
-#ifdef __GENKSYMS__
-#include <linux/res_counter.h>
-#else
 #include <linux/page_counter.h>
-#endif
 #include <linux/memcontrol.h>
 #include <linux/static_key.h>
 #include <linux/aio.h>
@@ -1257,7 +1253,7 @@ static inline void memcg_memory_allocated_add(struct cg_proto *prot,
 {
 	struct page_counter *counter;
 
-	page_counter_charge(prot->memcg, amt);
+	memcg_charge_kmem_nofail(prot->memcg, amt);
 	if (page_counter_try_charge(prot->memory_allocated, amt, &counter))
 		return;
 
@@ -1269,7 +1265,7 @@ static inline void memcg_memory_allocated_sub(struct cg_proto *prot,
 					      unsigned long amt)
 {
 	page_counter_uncharge(prot->memory_allocated, amt);
-	page_counter_uncharge(prot->memcg, amt);
+	memcg_uncharge_kmem(prot->memcg, amt);
 }
 
 static inline long
