@@ -582,7 +582,7 @@ static void ub_cgroup_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 	}
 }
 
-static void ub_cgroup_fork(struct task_struct *tsk)
+static void ub_cgroup_fork(struct task_struct *tsk, void *private)
 {
 	/*
 	 * If a forking task is moved between cgroups, the child will have
