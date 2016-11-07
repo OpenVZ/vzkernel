@@ -20,11 +20,11 @@ static inline struct udp_memcontrol *udp_from_cgproto(struct cg_proto *cg_proto)
 int udp_init_cgroup(struct mem_cgroup *memcg, struct cgroup_subsys *ss)
 {
 	/*
-	 * The root cgroup does not use res_counters, but rather,
+	 * The root cgroup does not use page_counters, but rather,
 	 * rely on the data already collected by the network
 	 * subsystem
 	 */
-	struct res_counter *res_parent = NULL;
+	struct page_counter *counter_parent = NULL;
 	struct cg_proto *cg_proto, *parent_cg;
 	struct udp_memcontrol *udp;
 	struct mem_cgroup *parent = parent_mem_cgroup(memcg);
@@ -41,9 +41,9 @@ int udp_init_cgroup(struct mem_cgroup *memcg, struct cgroup_subsys *ss)
 
 	parent_cg = udp_prot.proto_cgroup(parent);
 	if (parent_cg)
-		res_parent = parent_cg->memory_allocated;
+		counter_parent = parent_cg->memory_allocated;
 
-	res_counter_init(&udp->udp_memory_allocated, res_parent);
+	page_counter_init(&udp->udp_memory_allocated, counter_parent);
 
 	cg_proto->sysctl_mem = udp->udp_prot_mem;
 	cg_proto->memory_allocated = &udp->udp_memory_allocated;
@@ -56,7 +56,7 @@ void udp_destroy_cgroup(struct mem_cgroup *memcg)
 {
 }
 
-static int udp_update_limit(struct mem_cgroup *memcg, u64 val)
+static int udp_update_limit(struct mem_cgroup *memcg, unsigned long nr_pages)
 {
 	struct udp_memcontrol *udp;
 	struct cg_proto *cg_proto;
@@ -68,22 +68,19 @@ static int udp_update_limit(struct mem_cgroup *memcg, u64 val)
 	if (!cg_proto)
 		return -EINVAL;
 
-	if (val > RESOURCE_MAX)
-		val = RESOURCE_MAX;
-
 	udp = udp_from_cgproto(cg_proto);
 
-	old_lim = res_counter_read_u64(&udp->udp_memory_allocated, RES_LIMIT);
-	ret = res_counter_set_limit(&udp->udp_memory_allocated, val);
+	old_lim = udp->udp_memory_allocated.limit;
+	ret = page_counter_limit(&udp->udp_memory_allocated, nr_pages);
 	if (ret)
 		return ret;
 
 	for (i = 0; i < 3; i++)
-		udp->udp_prot_mem[i] = min_t(long, val >> PAGE_SHIFT, sysctl_udp_mem[i]);
+		udp->udp_prot_mem[i] = min_t(long, nr_pages, sysctl_udp_mem[i]);
 
-	if (val == RESOURCE_MAX)
+	if (nr_pages == PAGE_COUNTER_MAX)
 		clear_bit(MEMCG_SOCK_ACTIVE, &cg_proto->flags);
-	else if (val != RESOURCE_MAX) {
+	else {
 		if (!test_and_set_bit(MEMCG_SOCK_ACTIVATED, &cg_proto->flags))
 			static_key_slow_inc(&memcg_socket_limit_enabled);
 		set_bit(MEMCG_SOCK_ACTIVE, &cg_proto->flags);
@@ -92,20 +89,32 @@ static int udp_update_limit(struct mem_cgroup *memcg, u64 val)
 	return 0;
 }
 
+enum {
+	RES_USAGE,
+	RES_LIMIT,
+	RES_MAX_USAGE,
+	RES_FAILCNT,
+};
+
+static DEFINE_MUTEX(udp_limit_mutex);
+
 static int udp_cgroup_write(struct cgroup *cont, struct cftype *cft,
 			    const char *buffer)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
-	unsigned long long val;
+	unsigned long nr_pages;
 	int ret = 0;
 
 	switch (cft->private) {
 	case RES_LIMIT:
 		/* see memcontrol.c */
-		ret = res_counter_memparse_write_strategy(buffer, &val);
+		ret = page_counter_memparse(buffer, &nr_pages);
 		if (ret)
 			break;
-		ret = udp_update_limit(memcg, val);
+
+		mutex_lock(&udp_limit_mutex);
+		ret = udp_update_limit(memcg, nr_pages);
+		mutex_unlock(&udp_limit_mutex);
 		break;
 	default:
 		ret = -EINVAL;
@@ -114,47 +123,37 @@ static int udp_cgroup_write(struct cgroup *cont, struct cftype *cft,
 	return ret;
 }
 
-static u64 udp_read_stat(struct mem_cgroup *memcg, int type, u64 default_val)
-{
-	struct udp_memcontrol *udp;
-	struct cg_proto *cg_proto;
-
-	cg_proto = udp_prot.proto_cgroup(memcg);
-	if (!cg_proto)
-		return default_val;
-
-	udp = udp_from_cgproto(cg_proto);
-	return res_counter_read_u64(&udp->udp_memory_allocated, type);
-}
-
-static u64 udp_read_usage(struct mem_cgroup *memcg)
-{
-	struct udp_memcontrol *udp;
-	struct cg_proto *cg_proto;
-
-	cg_proto = udp_prot.proto_cgroup(memcg);
-	if (!cg_proto)
-		return atomic_long_read(&udp_memory_allocated) << PAGE_SHIFT;
-
-	udp = udp_from_cgproto(cg_proto);
-	return res_counter_read_u64(&udp->udp_memory_allocated, RES_USAGE);
-}
-
 static u64 udp_cgroup_read(struct cgroup *cont, struct cftype *cft)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
+	struct cg_proto *cg_proto = udp_prot.proto_cgroup(memcg);
+
 	u64 val;
 
 	switch (cft->private) {
 	case RES_LIMIT:
-		val = udp_read_stat(memcg, RES_LIMIT, RESOURCE_MAX);
+		if (!cg_proto)
+			return PAGE_COUNTER_MAX;
+		val = cg_proto->memory_allocated->limit;
+		val *= PAGE_SIZE;
 		break;
 	case RES_USAGE:
-		val = udp_read_usage(memcg);
+		if (!cg_proto)
+			val = atomic_long_read(&udp_memory_allocated);
+		else
+			val = page_counter_read(cg_proto->memory_allocated);
+		val *= PAGE_SIZE;
 		break;
 	case RES_FAILCNT:
+		if (!cg_proto)
+			return 0;
+		val = cg_proto->memory_allocated->failcnt;
+		break;
 	case RES_MAX_USAGE:
-		val = udp_read_stat(memcg, cft->private, 0);
+		if (!cg_proto)
+			return 0;
+		val = cg_proto->memory_allocated->watermark;
+		val *= PAGE_SIZE;
 		break;
 	default:
 		BUG();
@@ -176,10 +175,10 @@ static int udp_cgroup_reset(struct cgroup *cont, unsigned int event)
 
 	switch (event) {
 	case RES_MAX_USAGE:
-		res_counter_reset_max(&udp->udp_memory_allocated);
+		page_counter_reset_watermark(&udp->udp_memory_allocated);
 		break;
 	case RES_FAILCNT:
-		res_counter_reset_failcnt(&udp->udp_memory_allocated);
+		cg_proto->memory_allocated->failcnt = 0;
 		break;
 	}
 
