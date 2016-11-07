@@ -37,6 +37,8 @@ int generic_fadvise(struct file *file, loff_t offset, loff_t len, int advice)
 	unsigned long nrpages;
 	int ret = 0;
 
+	inode = file_inode(file);
+
 	if (IS_DAX(inode)) {
 		switch (advice) {
 		case POSIX_FADV_NORMAL:
