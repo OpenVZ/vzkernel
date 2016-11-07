@@ -600,8 +600,7 @@ int blkdev_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 	case BLKCBTGET:
 	case BLKCBTSET:
 	case BLKCBTCLR:
-		ret = blk_cbt_ioctl(bdev, cmd, (char __user *)arg);
-		break;
+		return blk_cbt_ioctl(bdev, cmd, (char __user *)arg);
 	default:
 		return __blkdev_driver_ioctl(bdev, mode, cmd, arg);
 	}
