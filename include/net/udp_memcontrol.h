@@ -3,7 +3,7 @@
 
 struct udp_memcontrol {
 	struct cg_proto cg_proto;
-	struct res_counter udp_memory_allocated;
+	struct page_counter udp_memory_allocated;
 	long udp_prot_mem[3];
 };
 
