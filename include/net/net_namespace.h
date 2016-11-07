@@ -318,7 +318,7 @@ static inline struct net *read_pnet(possible_net_t const *pnet)
 static inline void allow_conntrack_allocation(struct net *net)
 {
 	net->ct.can_alloc = true;
-	smp_wmb(); /* Pairs with rmb in __nf_conntrack_alloc() */
+	smp_wmb(); /* Pairs with rmb in resolve_normal_ct() */
 }
 #else
 static inline void allow_conntrack_allocation(struct net *net) { }
