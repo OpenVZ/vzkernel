@@ -53,7 +53,6 @@
 #include <linux/module.h>
 #include <linux/xattr.h>
 #include <linux/utsname.h>
-#include <linux/freezer.h>
 
 #include "nfs4_fs.h"
 #include "delegation.h"
@@ -374,7 +373,7 @@ static int nfs4_delay(struct rpc_clnt *clnt, long *timeout)
 
 	might_sleep();
 
-	freezable_schedule_timeout_killable_unsafe(
+	schedule_timeout_killable(
 		nfs4_update_delay(timeout));
 	if (fatal_signal_pending(current))
 		res = -ERESTARTSYS;
@@ -6561,7 +6560,7 @@ nfs4_retry_setlk_simple(struct nfs4_state *state, int cmd,
 		status = nfs4_proc_setlk(state, cmd, request);
 		if ((status != -EAGAIN) || IS_SETLK(cmd))
 			break;
-		freezable_schedule_timeout_interruptible(timeout);
+		schedule_timeout_interruptible(timeout);
 		timeout *= 2;
 		timeout = min_t(unsigned long, NFS4_LOCK_MAXTIMEOUT, timeout);
 		status = -ERESTARTSYS;
@@ -6646,7 +6645,7 @@ nfs4_retry_setlk(struct nfs4_state *state, int cmd, struct file_lock *request)
 		set_current_state(TASK_INTERRUPTIBLE);
 		spin_unlock_irqrestore(&q->lock, flags);
 
-		freezable_schedule_timeout(NFS4_LOCK_MAXTIMEOUT);
+		schedule_timeout(NFS4_LOCK_MAXTIMEOUT);
 	}
 
 	finish_wait(q, &wait);
