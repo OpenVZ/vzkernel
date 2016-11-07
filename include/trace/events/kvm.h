@@ -354,6 +354,7 @@ TRACE_EVENT(
 	TP_printk("gva %#llx address %#lx",  __entry->gva,
 		  __entry->address)
 );
+#endif
 
 TRACE_EVENT(kvm_halt_poll_ns,
 	TP_PROTO(bool grow, unsigned int vcpu_id, unsigned int new,
@@ -375,38 +376,6 @@ TRACE_EVENT(kvm_halt_poll_ns,
 	),
 
 	TP_printk("vcpu %u: halt_poll_ns %u (%s %u)",
-			__entry->vcpu_id,
-			__entry->new,
-			__entry->grow ? "grow" : "shrink",
-			__entry->old)
-);
-
-#define trace_kvm_halt_poll_ns_grow(vcpu_id, new, old) \
-	trace_kvm_halt_poll_ns(true, vcpu_id, new, old)
-#define trace_kvm_halt_poll_ns_shrink(vcpu_id, new, old) \
-	trace_kvm_halt_poll_ns(false, vcpu_id, new, old)
-
-#endif
-
-TRACE_EVENT(kvm_halt_poll_ns,
-	TP_PROTO(bool grow, unsigned int vcpu_id, int new, int old),
-	TP_ARGS(grow, vcpu_id, new, old),
-
-	TP_STRUCT__entry(
-		__field(bool, grow)
-		__field(unsigned int, vcpu_id)
-		__field(int, new)
-		__field(int, old)
-	),
-
-	TP_fast_assign(
-		__entry->grow           = grow;
-		__entry->vcpu_id        = vcpu_id;
-		__entry->new            = new;
-		__entry->old            = old;
-	),
-
-	TP_printk("vcpu %u: halt_poll_ns %d (%s %d)",
 			__entry->vcpu_id,
 			__entry->new,
 			__entry->grow ? "grow" : "shrink",
