@@ -37,7 +37,6 @@
 #include <linux/nfs_xdr.h>
 #include <linux/slab.h>
 #include <linux/compat.h>
-#include <linux/freezer.h>
 
 #include <asm/uaccess.h>
 
@@ -77,7 +76,7 @@ nfs_fattr_to_ino_t(struct nfs_fattr *fattr)
  */
 int nfs_wait_bit_killable(struct wait_bit_key *key, int mode)
 {
-	freezable_schedule_unsafe();
+	schedule();
 	if (signal_pending_state(mode, current))
 		return -ERESTARTSYS;
 	return 0;
