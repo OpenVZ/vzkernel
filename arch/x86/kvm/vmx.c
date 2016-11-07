@@ -859,7 +859,6 @@ static unsigned long nested_ept_get_cr3(struct kvm_vcpu *vcpu);
 static u64 construct_eptp(unsigned long root_hpa);
 static void kvm_cpu_vmxon(u64 addr);
 static void kvm_cpu_vmxoff(void);
-static int vmx_cpu_uses_apicv(struct kvm_vcpu *vcpu);
 static int vmx_set_tss_addr(struct kvm *kvm, unsigned int addr);
 static void vmx_set_segment(struct kvm_vcpu *vcpu,
 			    struct kvm_segment *var, int seg);
@@ -2518,7 +2517,7 @@ static void nested_vmx_setup_ctls_msrs(struct vcpu_vmx *vmx)
 	vmx->nested.nested_vmx_pinbased_ctls_high |=
 		PIN_BASED_ALWAYSON_WITHOUT_TRUE_MSR |
 		PIN_BASED_VMX_PREEMPTION_TIMER;
-	if (vmx_cpu_uses_apicv(&vmx->vcpu))
+	if (kvm_vcpu_apicv_active(&vmx->vcpu))
 		vmx->nested.nested_vmx_pinbased_ctls_high |=
 			PIN_BASED_POSTED_INTR;
 
