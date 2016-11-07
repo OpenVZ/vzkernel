@@ -172,14 +172,6 @@ static inline void freezable_schedule(void)
 	freezer_count();
 }
 
-/* DO NOT ADD ANY NEW CALLERS OF THIS FUNCTION */
-static inline void freezable_schedule_unsafe(void)
-{
-	freezer_do_not_count();
-	schedule();
-	freezer_count_unsafe();
-}
-
 /*
  * Like freezable_schedule_timeout(), but should not block the freezer.  Do not
  * call this with locks held.
@@ -213,16 +205,6 @@ static inline long freezable_schedule_timeout_killable(long timeout)
 	freezer_do_not_count();
 	__retval = schedule_timeout_killable(timeout);
 	freezer_count();
-	return __retval;
-}
-
-/* DO NOT ADD ANY NEW CALLERS OF THIS FUNCTION */
-static inline long freezable_schedule_timeout_killable_unsafe(long timeout)
-{
-	long __retval;
-	freezer_do_not_count();
-	__retval = schedule_timeout_killable(timeout);
-	freezer_count_unsafe();
 	return __retval;
 }
 
@@ -315,17 +297,12 @@ static inline void set_freezable(void) {}
 
 #define freezable_schedule()  schedule()
 
-#define freezable_schedule_unsafe()  schedule()
-
 #define freezable_schedule_timeout(timeout)  schedule_timeout(timeout)
 
 #define freezable_schedule_timeout_interruptible(timeout)		\
 	schedule_timeout_interruptible(timeout)
 
 #define freezable_schedule_timeout_killable(timeout)			\
-	schedule_timeout_killable(timeout)
-
-#define freezable_schedule_timeout_killable_unsafe(timeout)		\
 	schedule_timeout_killable(timeout)
 
 #define freezable_schedule_hrtimeout_range(expires, delta, mode)	\
