@@ -2198,8 +2198,6 @@ static void kvmclock_reset(struct kvm_vcpu *vcpu)
 
 static void record_steal_time(struct kvm_vcpu *vcpu)
 {
-	accumulate_steal_time(vcpu);
-
 	if (!(vcpu->arch.st.msr_val & KVM_MSR_ENABLED))
 		return;
 
