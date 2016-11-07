@@ -28,7 +28,6 @@
  */
 int generic_fadvise(struct file *file, loff_t offset, loff_t len, int advice)
 {
-	struct fd f = fdget(fd);
 	struct inode *inode;
 	struct address_space *mapping = file->f_mapping;
 	struct backing_dev_info *bdi;
