@@ -1258,7 +1258,7 @@ static inline void memcg_memory_allocated_sub(struct cg_proto *prot,
 					      unsigned long amt)
 {
 	page_counter_uncharge(prot->memory_allocated, amt);
-	page_counter_uncharge(prot->memcg, amt);
+	memcg_uncharge_kmem(prot->memcg, amt);
 }
 
 static inline long
