@@ -3242,10 +3242,6 @@ int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 	int ret = 0;
 	bool may_oom;
 
-	ret = page_counter_try_charge(&memcg->kmem, nr_pages, &counter);
-	if (ret < 0)
-		return ret;
-
 	/*
 	 * Conditions under which we can wait for the oom_killer. Those are
 	 * the same conditions tested by the core page allocator
@@ -3276,8 +3272,33 @@ int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 		if (do_swap_account)
 			page_counter_charge(&memcg->memsw, nr_pages);
 		ret = 0;
-	} else if (ret)
-		page_counter_uncharge(&memcg->kmem, nr_pages);
+	}
+
+	if (ret)
+		return ret;
+
+	/*
+	 * When a cgroup is destroyed, all user memory pages get recharged to
+	 * the parent cgroup. Recharging is done by mem_cgroup_reparent_charges
+	 * which keeps looping until res <= kmem. This is supposed to guarantee
+	 * that by the time cgroup gets released, no pages is charged to it.
+	 *
+	 * If kmem were charged before res or uncharged after, kmem might
+	 * become greater than res for a short period of time even if there
+	 * were still user memory pages charged to the cgroup. In this case
+	 * mem_cgroup_reparent_charges would give up prematurely, and the
+	 * cgroup could be released though there were still pages charged to
+	 * it. Uncharge of such a page would trigger kernel panic.
+	 *
+	 * To prevent this from happening, kmem must be charged after res and
+	 * uncharged before res.
+	 */
+	ret = page_counter_try_charge(&memcg->kmem, nr_pages, &counter);
+	if (ret) {
+		page_counter_uncharge(&memcg->memory, nr_pages);
+		if (do_swap_account)
+			page_counter_uncharge(&memcg->memsw, nr_pages);
+	}
 
 	return ret;
 }
@@ -3285,12 +3306,16 @@ int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 void memcg_uncharge_kmem(struct mem_cgroup *memcg,
 				unsigned long nr_pages)
 {
+	u64 kmem;
+
+	kmem = page_counter_uncharge(&memcg->kmem, nr_pages);
+
 	page_counter_uncharge(&memcg->memory, nr_pages);
 	if (do_swap_account)
 		page_counter_uncharge(&memcg->memsw, nr_pages);
 
 	/* Not down to 0 */
-	if (page_counter_uncharge(&memcg->kmem, nr_pages))
+	if (kmem)
 		return;
 
 	/*
