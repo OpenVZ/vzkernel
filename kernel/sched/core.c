@@ -9649,9 +9649,9 @@ static void cpu_cgroup_update_stat(struct cgroup *cgrp, int i)
 	if (tg == &root_task_group)
 		return;
 
-	iowait = se->statistics.iowait_sum;
-	idle = se->statistics.sum_sleep_runtime;
-	steal = se->statistics.wait_sum;
+	iowait = se->statistics->iowait_sum;
+	idle = se->statistics->sum_sleep_runtime;
+	steal = se->statistics->wait_sum;
 	used = se->sum_exec_runtime;
 
 	if (idle > iowait)
@@ -9659,16 +9659,16 @@ static void cpu_cgroup_update_stat(struct cgroup *cgrp, int i)
 	else
 		idle = 0;
 
-	if (se->statistics.sleep_start) {
-		delta = now - se->statistics.sleep_start;
+	if (se->statistics->sleep_start) {
+		delta = now - se->statistics->sleep_start;
 		if ((s64)delta > 0)
 			idle += delta;
-	} else if (se->statistics.block_start) {
-		delta = now - se->statistics.block_start;
+	} else if (se->statistics->block_start) {
+		delta = now - se->statistics->block_start;
 		if ((s64)delta > 0)
 			iowait += delta;
-	} else if (se->statistics.wait_start) {
-		delta = now - se->statistics.wait_start;
+	} else if (se->statistics->wait_start) {
+		delta = now - se->statistics->wait_start;
 		if ((s64)delta > 0)
 			steal += delta;
 	}

@@ -862,7 +862,7 @@ static inline void update_sched_lat(struct task_struct *t, u64 now)
 
 	/* safe due to runqueue lock */
 	cpu = smp_processor_id();
-	ve_wstamp = t->se.statistics.wait_start;
+	ve_wstamp = t->se.statistics->wait_start;
 
 	if (ve_wstamp && now > ve_wstamp) {
 		KSTAT_LAT_PCPU_ADD(&kstat_glob.sched_lat,
@@ -2962,7 +2962,7 @@ static void enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 			}
 			account_scheduler_latency(tsk, delta >> 10, 0);
 		} else
-			se->statistics.iowait_sum += delta;
+			se->statistics->iowait_sum += delta;
 
 		se->statistics->sum_sleep_runtime += delta;
 	}
@@ -2976,16 +2976,16 @@ static void dequeue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 		struct task_struct *tsk = task_of(se);
 
 		if (tsk->state & TASK_INTERRUPTIBLE)
-			se->statistics.sleep_start = rq_clock(rq_of(cfs_rq));
+			se->statistics->sleep_start = rq_clock(rq_of(cfs_rq));
 		if (tsk->state & TASK_UNINTERRUPTIBLE)
-			se->statistics.block_start = rq_clock(rq_of(cfs_rq));
+			se->statistics->block_start = rq_clock(rq_of(cfs_rq));
 		if (tsk->in_iowait)
 			cfs_rq->nr_iowait++;
 	} else if (!cfs_rq_throttled(group_cfs_rq(se))) {
 		if (group_cfs_rq(se)->nr_iowait)
-			se->statistics.block_start = rq_clock(rq_of(cfs_rq));
+			se->statistics->block_start = rq_clock(rq_of(cfs_rq));
 		else
-			se->statistics.sleep_start = rq_clock(rq_of(cfs_rq));
+			se->statistics->sleep_start = rq_clock(rq_of(cfs_rq));
 	}
 #endif
 }
@@ -5582,7 +5582,7 @@ static inline int can_migrate_task_cpulimit(struct task_struct *p, struct lb_env
 	if (check_cpulimit_spread(tg, env->dst_cpu) < 0) {
 		int cpu;
 
-		schedstat_inc(p, se.statistics.nr_failed_migrations_cpulimit);
+		schedstat_inc(p, se.statistics->nr_failed_migrations_cpulimit);
 
 		env->flags |= LBF_SOME_PINNED;
 
@@ -8278,7 +8278,7 @@ void init_tg_cfs_entry(struct task_group *tg, struct cfs_rq *cfs_rq,
 
 #ifdef CONFIG_SCHEDSTATS
 	if (cpu_online(cpu))
-		se->statistics.sleep_start = cpu_clock(cpu);
+		se->statistics->sleep_start = cpu_clock(cpu);
 #endif
 }
 
@@ -8356,19 +8356,19 @@ static void nr_iowait_dec_fair(struct task_struct *p)
 	cfs_rq->nr_iowait--;
 
 #ifdef CONFIG_SCHEDSTATS
-	if (!cfs_rq->nr_iowait && se && se->statistics.block_start) {
+	if (!cfs_rq->nr_iowait && se && se->statistics->block_start) {
 		u64 delta;
 		struct rq *rq = rq_of(cfs_rq);
 
 		update_rq_clock(rq);
 
-		delta = rq->clock - se->statistics.block_start;
+		delta = rq->clock - se->statistics->block_start;
 
 		if ((s64)delta < 0)
 			delta = 0;
 
-		if (unlikely(delta > se->statistics.block_max))
-			se->statistics.block_max = delta;
+		if (unlikely(delta > se->statistics->block_max))
+			se->statistics->block_max = delta;
 
 		se->statistics->block_start = 0;
 		se->statistics->sleep_start = rq->clock;
@@ -8387,24 +8387,24 @@ static void nr_iowait_inc_fair(struct task_struct *p)
 	cfs_rq->nr_iowait++;
 
 #ifdef CONFIG_SCHEDSTATS
-	if (cfs_rq->nr_iowait && se && se->statistics.sleep_start) {
+	if (cfs_rq->nr_iowait && se && se->statistics->sleep_start) {
 		u64 delta;
 		struct rq *rq = rq_of(cfs_rq);
 
 		update_rq_clock(rq);
 
-		delta = rq->clock - se->statistics.sleep_start;
+		delta = rq->clock - se->statistics->sleep_start;
 
 		if ((s64)delta < 0)
 			delta = 0;
 
-		if (unlikely(delta > se->statistics.sleep_max))
-			se->statistics.sleep_max = delta;
+		if (unlikely(delta > se->statistics->sleep_max))
+			se->statistics->sleep_max = delta;
 
-		se->statistics.sleep_start = 0;
-		se->statistics.block_start = rq->clock;
+		se->statistics->sleep_start = 0;
+		se->statistics->block_start = rq->clock;
 
-		se->statistics.sum_sleep_runtime += delta;
+		se->statistics->sum_sleep_runtime += delta;
 	}
 #endif
 }
