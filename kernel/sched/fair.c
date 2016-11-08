@@ -3437,25 +3437,6 @@ static inline u64 sched_cfs_bandwidth_slice(void)
 	return (u64)sysctl_sched_cfs_bandwidth_slice * NSEC_PER_USEC;
 }
 
-void cfs_bandwidth_usage_inc(void)
-{
-	static_key_slow_inc(&__cfs_bandwidth_used);
-}
-
-void cfs_bandwidth_usage_dec(void)
-{
-	static_key_slow_dec(&__cfs_bandwidth_used);
-}
-#else /* HAVE_JUMP_LABEL */
-static bool cfs_bandwidth_used(void)
-{
-	return true;
-}
-
-void cfs_bandwidth_usage_inc(void) {}
-void cfs_bandwidth_usage_dec(void) {}
-#endif /* HAVE_JUMP_LABEL */
-
 /*
  * Replenish runtime according to assigned quota and update expiration time.
  * We use sched_clock_cpu directly instead of rq->clock to avoid adding
