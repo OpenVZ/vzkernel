@@ -155,20 +155,6 @@ static int tty_fasync(int fd, struct file *filp, int on);
 static void release_tty(struct tty_struct *tty, int idx);
 
 /**
- *	__alloc_tty_struct	-	allocate a tty object
- *
- *	Return a new empty tty structure. The data fields have not
- *	been initialized in any way but has been zeroed
- *
- *	Locking: none
- */
-
-struct tty_struct *__alloc_tty_struct(void)
-{
-	return kzalloc(sizeof(struct tty_struct), GFP_KERNEL_ACCOUNT);
-}
-
-/**
  *	free_tty_struct		-	free a disused tty
  *	@tty: tty struct to free
  *
@@ -1806,7 +1792,14 @@ int tty_release(struct inode *inode, struct file *filp)
 	while (1) {
 		do_sleep = 0;
 
+		/*
+		 * FIXME: Need to figure out how to prevent closing
+		 * peers when one is still active, unlike traditional
+		 * PTYs we don't close master if slave is closed.
+		 */
+#if 0
 		vtty_release(tty, o_tty, &tty_closing, &o_tty_closing);
+#endif
 
 		if (tty->count <= 1) {
 			if (waitqueue_active(&tty->read_wait)) {
