@@ -155,7 +155,7 @@ static int tty_fasync(int fd, struct file *filp, int on);
 static void release_tty(struct tty_struct *tty, int idx);
 
 /**
- *	alloc_tty_struct	-	allocate a tty object
+ *	__alloc_tty_struct	-	allocate a tty object
  *
  *	Return a new empty tty structure. The data fields have not
  *	been initialized in any way but has been zeroed
@@ -163,7 +163,7 @@ static void release_tty(struct tty_struct *tty, int idx);
  *	Locking: none
  */
 
-struct tty_struct *alloc_tty_struct(void)
+struct tty_struct *__alloc_tty_struct(void)
 {
 	return kzalloc(sizeof(struct tty_struct), GFP_KERNEL_ACCOUNT);
 }
@@ -3084,7 +3084,7 @@ struct tty_struct *alloc_tty_struct(struct tty_driver *driver, int idx)
 {
 	struct tty_struct *tty;
 
-	tty = kzalloc(sizeof(*tty), GFP_KERNEL);
+	tty = kzalloc(sizeof(*tty), GFP_KERNEL_ACCOUNT);
 	if (!tty)
 		return NULL;
 

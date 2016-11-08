@@ -1017,7 +1017,7 @@ static struct tty_struct *vtty_install_peer(struct tty_driver *driver,
 {
 	struct tty_struct *tty;
 
-	tty = alloc_tty_struct();
+	tty = __alloc_tty_struct();
 	if (!tty)
 		return ERR_PTR(-ENOMEM);
 	initialize_tty_struct(tty, driver, index);
