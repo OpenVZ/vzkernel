@@ -904,12 +904,6 @@ config CGROUP_CPUACCT
 config PAGE_COUNTER
        bool
 
-config RESOURCE_COUNTERS
-	bool "Resource counters"
-	help
-	  This option enables controller independent resource accounting
-	  infrastructure that works with cgroups.
-
 config MEMCG
 	bool "Memory Resource Controller for Control Groups"
 	select PAGE_COUNTER
