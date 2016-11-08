@@ -161,7 +161,7 @@ static inline int pgd_large(pgd_t pgd) { return 0; }
  * non-present PTEs.
  */
 #define SWP_TYPE_FIRST_BIT (_PAGE_BIT_PROTNONE + 1)
-#define SWP_TYPE_BITS (_PAGE_BIT_FILE - _PAGE_BIT_PRESENT - 1)
+#define SWP_TYPE_BITS 5
 /* Place the offset above the type: */
 #define SWP_OFFSET_FIRST_BIT (SWP_TYPE_FIRST_BIT + SWP_TYPE_BITS + 1)
 
