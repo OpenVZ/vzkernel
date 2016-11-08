@@ -847,6 +847,27 @@ static void update_curr_fair(struct rq *rq)
 	update_curr(cfs_rq_of(&rq->curr->se));
 }
 
+static void dequeue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+#ifdef CONFIG_SCHEDSTATS
+	if (entity_is_task(se)) {
+		struct task_struct *tsk = task_of(se);
+
+		if (tsk->state & TASK_INTERRUPTIBLE)
+			se->statistics->sleep_start = rq_clock(rq_of(cfs_rq));
+		if (tsk->state & TASK_UNINTERRUPTIBLE)
+			se->statistics->block_start = rq_clock(rq_of(cfs_rq));
+		if (tsk->in_iowait)
+			cfs_rq->nr_iowait++;
+	} else if (!cfs_rq_throttled(group_cfs_rq(se))) {
+		if (group_cfs_rq(se)->nr_iowait)
+			se->statistics->block_start = rq_clock(rq_of(cfs_rq));
+		else
+			se->statistics->sleep_start = rq_clock(rq_of(cfs_rq));
+	}
+#endif
+}
+
 #ifdef CONFIG_SCHEDSTATS
 static inline void
 update_stats_wait_start(struct cfs_rq *cfs_rq, struct sched_entity *se)
@@ -2965,27 +2986,6 @@ static void enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 			se->statistics->iowait_sum += delta;
 
 		se->statistics->sum_sleep_runtime += delta;
-	}
-#endif
-}
-
-static void dequeue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
-{
-#ifdef CONFIG_SCHEDSTATS
-	if (entity_is_task(se)) {
-		struct task_struct *tsk = task_of(se);
-
-		if (tsk->state & TASK_INTERRUPTIBLE)
-			se->statistics->sleep_start = rq_clock(rq_of(cfs_rq));
-		if (tsk->state & TASK_UNINTERRUPTIBLE)
-			se->statistics->block_start = rq_clock(rq_of(cfs_rq));
-		if (tsk->in_iowait)
-			cfs_rq->nr_iowait++;
-	} else if (!cfs_rq_throttled(group_cfs_rq(se))) {
-		if (group_cfs_rq(se)->nr_iowait)
-			se->statistics->block_start = rq_clock(rq_of(cfs_rq));
-		else
-			se->statistics->sleep_start = rq_clock(rq_of(cfs_rq));
 	}
 #endif
 }
