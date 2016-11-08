@@ -291,7 +291,7 @@ struct mem_cgroup {
 	 * the counter to account for kernel memory usage.
 	 */
 	struct page_counter kmem;
-
+	struct page_counter memsw;
 	/*
 	 * the counter to account for dcache usage.
 	 *
