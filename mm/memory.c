@@ -2844,7 +2844,7 @@ static void do_set_pte(struct vm_area_struct *vma, unsigned long address,
 		page_add_new_anon_rmap(page, vma, address);
 	} else {
 		inc_mm_counter_fast(vma->vm_mm, mm_counter_file(page));
-		page_add_file_rmap(page, mm);
+		page_add_file_rmap(page, vma->vm_mm);
 	}
 	set_pte_at(vma->vm_mm, address, pte, entry);
 
