@@ -1633,7 +1633,7 @@ bool mem_cgroup_low(struct mem_cgroup *root, struct mem_cgroup *memcg)
 	if (memcg == root_mem_cgroup)
 		return false;
 
-	if (page_counter_read(&memcg->res) >= memcg->low)
+	if (page_counter_read(&memcg->memory) >= memcg->low)
 		return false;
 
 	/*
@@ -2990,7 +2990,7 @@ again:
 	do {
 		if (!(gfp_mask & __GFP_WAIT))
 			break;
-		if (page_counter_read(&iter->res) <= iter->high)
+		if (page_counter_read(&iter->memory) <= iter->high)
 			continue;
 		try_to_free_mem_cgroup_pages(iter, nr_pages, gfp_mask, false);
 	} while ((iter = parent_mem_cgroup(iter)));
@@ -3209,7 +3209,7 @@ int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 
 void memcg_charge_kmem_nofail(struct mem_cgroup *memcg, unsigned long nr_pages)
 {
-	page_counter_charge(&memcg->res, nr_pages);
+	page_counter_charge(&memcg->memory, nr_pages);
 	if (do_swap_account)
 		page_counter_charge(&memcg->memsw, nr_pages);
 
@@ -3243,7 +3243,6 @@ void memcg_uncharge_kmem(struct mem_cgroup *memcg,
 
 int __memcg_charge_slab(struct kmem_cache *s, gfp_t gfp, unsigned int nr_pages)
 {
-	int nr_pages = size >> PAGE_SHIFT;
 	struct mem_cgroup *memcg;
 	int idx;
 	int ret;
@@ -3266,7 +3265,6 @@ int __memcg_charge_slab(struct kmem_cache *s, gfp_t gfp, unsigned int nr_pages)
 
 void __memcg_uncharge_slab(struct kmem_cache *s, unsigned int nr_pages)
 {
-	int nr_pages = size >> PAGE_SHIFT;
 	struct mem_cgroup *memcg;
 	int idx;
 
@@ -5001,12 +4999,12 @@ void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
 	for_each_online_node(nid)
 		mem_cgroup_get_nr_pages(memcg, nid, mi->pages);
 
-	mi->slab_reclaimable = mem_cgroup_recursive_stat(memcg,
+	mi->slab_reclaimable = tree_stat(memcg,
 					MEM_CGROUP_STAT_SLAB_RECLAIMABLE);
-	mi->slab_unreclaimable = mem_cgroup_recursive_stat(memcg,
+	mi->slab_unreclaimable = tree_stat(memcg,
 					MEM_CGROUP_STAT_SLAB_UNRECLAIMABLE);
-	mi->cached = mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_CACHE);
-	mi->shmem = mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_SHMEM);
+	mi->cached = tree_stat(memcg, MEM_CGROUP_STAT_CACHE);
+	mi->shmem = tree_stat(memcg, MEM_CGROUP_STAT_SHMEM);
 }
 
 int mem_cgroup_enough_memory(struct mem_cgroup *memcg, long pages)
@@ -5020,11 +5018,11 @@ int mem_cgroup_enough_memory(struct mem_cgroup *memcg, long pages)
 	free += page_counter_read(&memcg->dcache);
 
 	/* assume file cache is reclaimable */
-	free += mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_CACHE);
+	free += tree_stat(memcg, MEM_CGROUP_STAT_CACHE);
 
 	/* but do not count shmem pages as they can't be purged,
 	 * only swapped out */
-	free -= mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_SHMEM);
+	free -= tree_stat(memcg, MEM_CGROUP_STAT_SHMEM);
 
 	return free < pages ? -ENOMEM : 0;
 }
@@ -5290,7 +5288,7 @@ static int mem_cgroup_high_write(struct cgroup *cont, struct cftype *cft,
 
 	memcg->high = nr_pages;
 
-	usage = page_counter_read_u64(&memcg->res);
+	usage = page_counter_read(&memcg->memory);
 	if (usage > nr_pages)
 		try_to_free_mem_cgroup_pages(memcg, usage - nr_pages,
 					     GFP_KERNEL, false);
@@ -5485,7 +5483,7 @@ void mem_cgroup_sync_beancounter(struct mem_cgroup *memcg,
 		page_counter_read(&memcg->memory);
 	maxheld = memcg->swap_max;
 	s->failcnt = atomic_long_read(&memcg->swap_failcnt);
-	lim = &memcg->memsw.limit;
+	lim = memcg->memsw.limit;
 	lim = lim >= PAGE_COUNTER_MAX ? UB_MAXVALUE :
 		min_t(unsigned long long, lim, UB_MAXVALUE);
 	if (lim != UB_MAXVALUE)
@@ -5537,7 +5535,7 @@ int mem_cgroup_apply_beancounter(struct mem_cgroup *memcg,
 		pr_warn_once("ub: dcachesize limit is deprecated\n");
 
 	/* activate kmem accounting */
-	ret = memcg_update_kmem_limit(cg, PAGE_COUNTER_MAX);
+	ret = memcg_update_kmem_limit(memcg->css.cgroup, PAGE_COUNTER_MAX);
 	if (ret)
 		goto out;
 
@@ -6741,7 +6739,7 @@ mem_cgroup_css_alloc(struct cgroup *cont)
 		root_mem_cgroup = memcg;
 		page_counter_init(&memcg->memory, NULL);
 		memcg->soft_limit = PAGE_COUNTER_MAX;
-		memcg->high = RESOURCE_MAX;
+		memcg->high = PAGE_COUNTER_MAX;
 		page_counter_init(&memcg->memsw, NULL);
 		page_counter_init(&memcg->kmem, NULL);
 		page_counter_init(&memcg->dcache, NULL);
@@ -6789,7 +6787,7 @@ mem_cgroup_css_online(struct cgroup *cont)
 	if (parent->use_hierarchy) {
 		page_counter_init(&memcg->memory, &parent->memory);
 		memcg->soft_limit = PAGE_COUNTER_MAX;
-		memcg->high = RESOURCE_MAX;
+		memcg->high = PAGE_COUNTER_MAX;
 		page_counter_init(&memcg->memsw, &parent->memsw);
 		page_counter_init(&memcg->kmem, &parent->kmem);
 		page_counter_init(&memcg->dcache, &parent->dcache);
@@ -6801,7 +6799,7 @@ mem_cgroup_css_online(struct cgroup *cont)
 	} else {
 		page_counter_init(&memcg->memory, NULL);
 		memcg->soft_limit = PAGE_COUNTER_MAX;
-		memcg->high = RESOURCE_MAX;
+		memcg->high = PAGE_COUNTER_MAX;
 		page_counter_init(&memcg->memsw, NULL);
 		page_counter_init(&memcg->kmem, NULL);
 		page_counter_init(&memcg->dcache, NULL);
