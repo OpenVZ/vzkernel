@@ -255,7 +255,6 @@ static int hmm_migrate_unmap(struct vm_area_struct *vma,
 			pte = swp_entry_to_pte(swap);
 		set_pte_at(vma->vm_mm, addr, ptep, pte);
 		hmm_migrate_get(migrate);
-		BUG_ON(pte_file(*ptep));
 
 	} while (ptep++, gtep++, addr += PAGE_SIZE, addr != end);
 	arch_leave_lazy_mmu_mode();
@@ -286,7 +285,7 @@ static int hmm_migrate_isolate(struct vm_area_struct *vma,
 		pte_t pte = *ptep;
 		swp_entry_t swap;
 
-		if (pte_present(pte) || pte_file(pte))
+		if (pte_present(pte))
 			continue;
 
 		swap = pte_to_swp_entry(pte);
@@ -352,7 +351,7 @@ static int hmm_migrate_check(struct vm_area_struct *vma,
 		pte_t pte = *ptep;
 		swp_entry_t swap;
 
-		if (pte_present(pte) || pte_file(pte))
+		if (pte_present(pte))
 			continue;
 
 		swap = pte_to_swp_entry(pte);
@@ -484,7 +483,7 @@ static int hmm_migrate_finalize(struct vm_area_struct *vma,
 		pte_t pte = *ptep;
 		swp_entry_t swap;
 
-		if (pte_present(pte) || pte_file(pte))
+		if (pte_present(pte))
 			continue;
 
 		swap = pte_to_swp_entry(pte);
@@ -521,7 +520,7 @@ static int hmm_migrate_cleanup(struct vm_area_struct *vma,
 		pte_t pte = *ptep;
 		swp_entry_t swap;
 
-		if (pte_present(pte) || pte_file(pte))
+		if (pte_present(pte))
 			continue;
 
 		swap = pte_to_swp_entry(pte);
