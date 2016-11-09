@@ -1676,10 +1676,11 @@ static int __vprintk_emit(struct log_state *log,
 
 	err = log_state_init(log);
 	if (err) {
+		logbuf_cpu = UINT_MAX;
 		raw_spin_unlock(&logbuf_lock);
-		printed_len = err;
 		lockdep_on();
-		goto out;
+		local_irq_restore(flags);
+		return err;
 	}
 
 	if (recursion_bug) {
@@ -1789,20 +1790,21 @@ static int __vprintk_emit(struct log_state *log,
 		 * /dev/kmsg and syslog() users.
 		 */
 		if (log != &init_log_state) {
+			raw_spin_lock_irqsave(&logbuf_lock, flags);
 			if (log->seen_seq != log->next_seq && !oops_in_progress) {
 				log->seen_seq = log->next_seq;
 				need_wake = true;
 			}
 			logbuf_cpu = UINT_MAX;
-			raw_spin_unlock(&logbuf_lock);
+			raw_spin_unlock_irqrestore(&logbuf_lock, flags);
 		} else if (console_trylock_for_printk())
 			console_unlock();
 		preempt_enable();
 		lockdep_on();
+
+		if (need_wake)
+			wake_up_interruptible(&log->wait);
 	}
-out:
-	if (need_wake)
-		wake_up_interruptible(&log->wait);
 
 	return printed_len;
 }
@@ -1880,6 +1882,10 @@ asmlinkage int ve_vprintk(int dst, const char *fmt, va_list args)
 
 	return r;
 }
+
+/*
+ * Do not use it from scheduler code - can lead to deadlocks.
+ */
 
 asmlinkage int ve_printk(int dst, const char *fmt, ...)
 {
