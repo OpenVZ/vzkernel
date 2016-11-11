@@ -5365,33 +5365,6 @@ static int mem_cgroup_disable_cleancache_write(struct cgroup *cgrp,
 }
 #endif
 
-static void memcg_get_hierarchical_limit(struct mem_cgroup *memcg,
-		unsigned long long *mem_limit, unsigned long long *memsw_limit)
-{
-	struct cgroup *cgroup;
-	unsigned long min_limit, min_memsw_limit, tmp;
-
-	min_limit = memcg->memory.limit;
-	min_memsw_limit = memcg->memsw.limit;
-	cgroup = memcg->css.cgroup;
-	if (!memcg->use_hierarchy)
-		goto out;
-
-	while (cgroup->parent) {
-		cgroup = cgroup->parent;
-		memcg = mem_cgroup_from_cont(cgroup);
-		if (!memcg->use_hierarchy)
-			break;
-		tmp = memcg->memory.limit;
-		min_limit = min(min_limit, tmp);
-		tmp = memcg->memsw.limit;
-		min_memsw_limit = min(min_memsw_limit, tmp);
-	}
-out:
-	*mem_limit = min_limit;
-	*memsw_limit = min_memsw_limit;
-}
-
 static int mem_cgroup_reset(struct cgroup *cont, unsigned int event)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
