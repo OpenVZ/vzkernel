@@ -98,7 +98,7 @@ static inline u64 get_task_lat(struct task_struct *t, u64 now)
 {
 	u64 wstamp;
 
-	wstamp = t->se.statistics.wait_start;
+	wstamp = t->se.statistics->wait_start;
 	if (wstamp && now > wstamp && now - wstamp < (1ULL << 63))
 		return now - wstamp;
 	return 0;
