@@ -48,7 +48,7 @@ int udp_init_cgroup(struct mem_cgroup *memcg, struct cgroup_subsys *ss)
 
 	parent_cg = udp_prot.proto_cgroup(parent);
 	if (parent_cg)
-		counter_parent = &parent_cg->memory_allocated;
+		counter_parent = parent_cg->memory_allocated;
 
 	page_counter_init(&udp->udp_memory_allocated, counter_parent);
 
@@ -109,7 +109,7 @@ static int udp_cgroup_write(struct cgroup *cont, struct cftype *cft,
 			    const char *buffer)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
-	unsigned long val;
+	unsigned long nr_pages;
 	int ret = 0;
 
 	switch (cft->private) {
@@ -141,25 +141,25 @@ static u64 udp_cgroup_read(struct cgroup *cont, struct cftype *cft)
 	case RES_LIMIT:
 		if (!cg_proto)
 			return PAGE_COUNTER_MAX;
-		val = cg_proto->memory_allocated.limit;
-		val *= PAGE_SIZE
+		val = cg_proto->memory_allocated->limit;
+		val *= PAGE_SIZE;
 		break;
 	case RES_USAGE:
 		if (!cg_proto)
-			val = atomic_long_read(&tcp_memory_allocated);
+			val = atomic_long_read(&udp_memory_allocated);
 		else
-			val = page_counter_read(&cg_proto->memory_allocated);
+			val = page_counter_read(cg_proto->memory_allocated);
 		val *= PAGE_SIZE;
 		break;
 	case RES_FAILCNT:
 		if (!cg_proto)
 			return 0;
-		val = cg_proto->memory_allocated.failcnt;
+		val = cg_proto->memory_allocated->failcnt;
 		break;
 	case RES_MAX_USAGE:
 		if (!cg_proto)
 			return 0;
-		val = cg_proto->memory_allocated.watermark;
+		val = cg_proto->memory_allocated->watermark;
 		val *= PAGE_SIZE;
 		break;
 	default:
@@ -185,7 +185,7 @@ static int udp_cgroup_reset(struct cgroup *cont, unsigned int event)
 		page_counter_reset_watermark(&udp->udp_memory_allocated);
 		break;
 	case RES_FAILCNT:
-		cg_proto->memory_allocated.failcnt = 0;
+		cg_proto->memory_allocated->failcnt = 0;
 		break;
 	}
 
