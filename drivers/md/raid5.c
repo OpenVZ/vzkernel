@@ -6637,14 +6637,14 @@ static unsigned long raid5_cache_scan(struct shrinker *shrink,
 				      struct shrink_control *sc)
 {
 	struct r5conf *conf = container_of(shrink, struct r5conf, shrinker);
-	unsigned long ret = ~0UL; /* SHRINK_STOP */
+	unsigned long ret = SHRINK_STOP;
 
 	if (mutex_trylock(&conf->cache_size_mutex)) {
 		ret= 0;
 		while (ret < sc->nr_to_scan &&
 		       conf->max_nr_stripes > conf->min_nr_stripes) {
 			if (drop_one_stripe(conf) == 0) {
-				ret = ~0UL; /* SHRINK_STOP */
+				ret = SHRINK_STOP;
 				break;
 			}
 			ret++;
@@ -6663,14 +6663,6 @@ static unsigned long raid5_cache_count(struct shrinker *shrink,
 		/* unlikely, but not impossible */
 		return 0;
 	return conf->max_nr_stripes - conf->min_nr_stripes;
-}
-
-static int raid5_cache_shrink(struct shrinker *shrink, struct shrink_control *sc)
-{
-	if (sc->nr_to_scan)
-		(void) raid5_cache_scan(shrink, sc);
-
-	return raid5_cache_count(shrink, sc);
 }
 
 static struct r5conf *setup_conf(struct mddev *mddev)
@@ -6865,8 +6857,10 @@ static struct r5conf *setup_conf(struct mddev *mddev)
 	 * So set it rather large, scaled by number of devices.
 	 */
 	conf->shrinker.seeks = DEFAULT_SEEKS * conf->raid_disks * 4;
-	conf->shrinker.shrink = raid5_cache_shrink;
+	conf->shrinker.scan_objects = raid5_cache_scan;
+	conf->shrinker.count_objects = raid5_cache_count;
 	conf->shrinker.batch = 128;
+	conf->shrinker.flags = 0;
 	register_shrinker(&conf->shrinker);
 
 	sprintf(pers_name, "raid%d", mddev->new_level);
