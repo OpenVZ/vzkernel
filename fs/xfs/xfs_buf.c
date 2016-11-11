@@ -1582,7 +1582,7 @@ xfs_buftarg_wait_rele(
 
 {
 	struct xfs_buf		*bp = container_of(item, struct xfs_buf, b_lru);
-
+	struct xfs_buftarg	*btp = bp->b_target;
 	/*
 	 * First wait on the buftarg I/O count for all in-flight buffers to be
 	 * released. This is critical as new buffers do not make the LRU until
