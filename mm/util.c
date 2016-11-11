@@ -16,9 +16,6 @@
 
 #include "internal.h"
 
-#define CREATE_TRACE_POINTS
-#include <trace/events/kmem.h>
-
 static inline int is_kernel_rodata(unsigned long addr)
 {
 	return addr >= (unsigned long)__start_rodata &&
