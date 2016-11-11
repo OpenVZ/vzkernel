@@ -2174,7 +2174,7 @@ nfs_access_cache_enforce_limit(void)
 	diff = nr_entries - nfs_access_max_cachesize;
 	if (diff < nr_to_scan)
 		nr_to_scan = diff;
-	nfs_do_access_cache_shrinker(nr_to_scan);
+	nfs_do_access_cache_scan(nr_to_scan);
 }
 
 static void __nfs_access_zap_cache(struct nfs_inode *nfsi, struct list_head *head)
