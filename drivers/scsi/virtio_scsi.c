@@ -62,6 +62,13 @@ struct virtio_scsi_vq {
 	struct virtqueue *vq;
 };
 
+#define __check_ret(val) do {				\
+		if (val == FAILED) {			\
+			printk("virtscsi_failure");	\
+			dump_stack();			\
+		}					\
+	} while(0)
+
 /*
  * Per-target queue state.
  *
@@ -490,6 +497,7 @@ static int virtscsi_add_cmd(struct virtqueue *vq,
 	return virtqueue_add_sgs(vq, sgs, out_num, in_num, cmd, GFP_ATOMIC);
 }
 
+
 static int virtscsi_kick_cmd(struct virtio_scsi_vq *vq,
 			     struct virtio_scsi_cmd *cmd,
 			     size_t req_size, size_t resp_size)
@@ -648,6 +656,7 @@ static int virtscsi_tmf(struct virtio_scsi *vscsi, struct virtio_scsi_cmd *cmd)
 	virtscsi_poll_requests(vscsi);
 
 out:
+	__check_ret(ret);
 	mempool_free(cmd, virtscsi_cmd_pool);
 	return ret;
 }
@@ -659,8 +668,10 @@ static int virtscsi_device_reset(struct scsi_cmnd *sc)
 
 	sdev_printk(KERN_INFO, sc->device, "device reset\n");
 	cmd = mempool_alloc(virtscsi_cmd_pool, GFP_NOIO);
-	if (!cmd)
+	if (!cmd) {
+		__check_ret(FAILED);
 		return FAILED;
+	}
 
 	memset(cmd, 0, sizeof(*cmd));
 	cmd->sc = sc;
@@ -702,11 +713,12 @@ static int virtscsi_abort(struct scsi_cmnd *sc)
 	struct virtio_scsi *vscsi = shost_priv(sc->device->host);
 	struct virtio_scsi_cmd *cmd;
 
-	scmd_printk(KERN_INFO, sc, "abort\n");
+	scmd_printk(KERN_INFO, sc, "%s abort\n", __FUNCTION__);
 	cmd = mempool_alloc(virtscsi_cmd_pool, GFP_NOIO);
-	if (!cmd)
+	if (!cmd) {
+		__check_ret(FAILED);
 		return FAILED;
-
+	}
 	memset(cmd, 0, sizeof(*cmd));
 	cmd->sc = sc;
 	cmd->req.tmf = (struct virtio_scsi_ctrl_tmf_req){
