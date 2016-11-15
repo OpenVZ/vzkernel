@@ -24,8 +24,8 @@
 /*
  * This controls the default maximum pid allocated to a process
  */
-#define PID_MAX_DEFAULT 	(sizeof(long) > 4 ? 1024 * 1024 : 32 * 1024)
-#define PID_MAX_NS_DEFAULT	(32 * 1024)
+#define PID_MAX_DEFAULT (CONFIG_BASE_SMALL ? 0x1000 : 0x8000)
+#define PID_MAX_NS_DEFAULT	(PID_MAX_DEFAULT)
 
 /*
  * A maximum of 4 million PIDs should be enough for a while.
