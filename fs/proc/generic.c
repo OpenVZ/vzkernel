@@ -278,8 +278,10 @@ struct dentry *proc_lookup_de(struct proc_dir_entry *de, struct inode *dir,
 	spin_lock(&proc_subdir_lock);
 	de = pde_subdir_find(de, dentry->d_name.name, dentry->d_name.len);
 	if (de) {
-		if (in_container && !(de->mode & S_ISVTX))
+		if (in_container && !(de->mode & S_ISVTX)) {
+			spin_unlock(&proc_subdir_lock);
 			return ERR_PTR(-ENOENT);
+		}
 		pde_get(de);
 		spin_unlock(&proc_subdir_lock);
 		inode = proc_get_inode(dir->i_sb, de);
