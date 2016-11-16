@@ -112,6 +112,7 @@ u8   __read_mostly kvm_tsc_scaling_ratio_frac_bits;
 EXPORT_SYMBOL_GPL(kvm_tsc_scaling_ratio_frac_bits);
 u64  __read_mostly kvm_max_tsc_scaling_ratio;
 EXPORT_SYMBOL_GPL(kvm_max_tsc_scaling_ratio);
+static u64 __read_mostly kvm_default_tsc_scaling_ratio;
 
 /* tsc tolerance in parts per million - default to 1/2 of the NTP threshold */
 static u32 __read_mostly tsc_tolerance_ppm = 250;
@@ -1236,8 +1237,11 @@ static void kvm_set_tsc_khz(struct kvm_vcpu *vcpu, u32 this_tsc_khz)
 	int use_scaling = 0;
 
 	/* tsc_khz can be zero if TSC calibration fails */
-	if (this_tsc_khz == 0)
+	if (this_tsc_khz == 0) {
+		/* set tsc_scaling_ratio to a safe value */
+		vcpu->arch.tsc_scaling_ratio = kvm_default_tsc_scaling_ratio;
 		return;
+	}
 
 	/* Compute a scale to convert nanoseconds in TSC cycles */
 	kvm_get_time_scale(this_tsc_khz, NSEC_PER_SEC / 1000,
@@ -7466,7 +7470,17 @@ void kvm_arch_hardware_disable(void)
 
 int kvm_arch_hardware_setup(void)
 {
-	return kvm_x86_ops->hardware_setup();
+	int r;
+
+	r = kvm_x86_ops->hardware_setup();
+	if (r != 0)
+		return r;
+
+	if (kvm_has_tsc_control)
+		kvm_default_tsc_scaling_ratio = 1ULL << kvm_tsc_scaling_ratio_frac_bits;
+
+	kvm_init_msr_list();
+	return 0;
 }
 
 void kvm_arch_hardware_unsetup(void)
