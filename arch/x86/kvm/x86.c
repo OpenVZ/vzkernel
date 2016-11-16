@@ -1504,6 +1504,20 @@ void kvm_write_tsc(struct kvm_vcpu *vcpu, struct msr_data *msr)
 
 EXPORT_SYMBOL_GPL(kvm_write_tsc);
 
+static inline void adjust_tsc_offset_guest(struct kvm_vcpu *vcpu,
+					   s64 adjustment)
+{
+	kvm_x86_ops->adjust_tsc_offset_guest(vcpu, adjustment);
+}
+
+static inline void adjust_tsc_offset_host(struct kvm_vcpu *vcpu, s64 adjustment)
+{
+	if (vcpu->arch.tsc_scaling_ratio != kvm_default_tsc_scaling_ratio)
+		WARN_ON(adjustment < 0);
+	adjustment = kvm_scale_tsc(vcpu, (u64) adjustment);
+	kvm_x86_ops->adjust_tsc_offset_guest(vcpu, adjustment);
+}
+
 #ifdef CONFIG_X86_64
 
 static cycle_t read_tsc(void)
@@ -2263,7 +2277,7 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		if (guest_cpuid_has_tsc_adjust(vcpu)) {
 			if (!msr_info->host_initiated) {
 				s64 adj = data - vcpu->arch.ia32_tsc_adjust_msr;
-				kvm_x86_ops->adjust_tsc_offset(vcpu, adj, true);
+				adjust_tsc_offset_host(vcpu, adj);
 			}
 			vcpu->arch.ia32_tsc_adjust_msr = data;
 		}
