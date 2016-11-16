@@ -398,7 +398,7 @@ static u64 get_time_ref_counter(struct kvm *kvm)
 		return div_u64(get_kvmclock_ns(kvm), 100);
 
 	vcpu = kvm_get_vcpu(kvm, 0);
-	tsc = kvm_x86_ops->read_l1_tsc(vcpu, native_read_tsc());
+	tsc = kvm_read_l1_tsc(vcpu, native_read_tsc());
 	return mul_u64_u64_shr(tsc, hv->tsc_ref.tsc_scale, 64)
 		+ hv->tsc_ref.tsc_offset;
 }
