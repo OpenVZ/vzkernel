@@ -15,6 +15,7 @@
 #include <linux/notifier.h>
 #include <linux/module.h>
 #include <linux/random.h>
+#include <linux/ftrace.h>
 #include <linux/reboot.h>
 #include <linux/delay.h>
 #include <linux/kexec.h>
@@ -31,8 +32,9 @@ static unsigned long tainted_mask;
 static int pause_on_oops;
 static int pause_on_oops_flag;
 static DEFINE_SPINLOCK(pause_on_oops_lock);
+int panic_on_warn __read_mostly;
 
-int panic_timeout;
+int panic_timeout = CONFIG_PANIC_TIMEOUT;
 EXPORT_SYMBOL_GPL(panic_timeout);
 
 ATOMIC_NOTIFIER_HEAD(panic_notifier_list);
@@ -57,6 +59,37 @@ void __weak panic_smp_self_stop(void)
 		cpu_relax();
 }
 
+/*
+ * Stop ourselves in NMI context if another CPU has already panicked. Arch code
+ * may override this to prepare for crash dumping, e.g. save regs info.
+ */
+void __weak nmi_panic_self_stop(struct pt_regs *regs)
+{
+	panic_smp_self_stop();
+}
+
+atomic_t panic_cpu = ATOMIC_INIT(PANIC_CPU_INVALID);
+
+/*
+ * A variant of panic() called from NMI context. We return if we've already
+ * panicked on this CPU. If another CPU already panicked, loop in
+ * nmi_panic_self_stop() which can provide architecture dependent code such
+ * as saving register state for crash dump.
+ */
+void nmi_panic(struct pt_regs *regs, const char *msg)
+{
+	int old_cpu, cpu;
+
+	cpu = raw_smp_processor_id();
+	old_cpu = atomic_cmpxchg(&panic_cpu, PANIC_CPU_INVALID, cpu);
+
+	if (old_cpu == PANIC_CPU_INVALID)
+		panic("%s", msg);
+	else if (old_cpu != cpu)
+		nmi_panic_self_stop(regs);
+}
+EXPORT_SYMBOL(nmi_panic);
+
 /**
  *	panic - halt the system
  *	@fmt: The text string to print
@@ -67,17 +100,17 @@ void __weak panic_smp_self_stop(void)
  */
 void panic(const char *fmt, ...)
 {
-	static DEFINE_SPINLOCK(panic_lock);
 	static char buf[1024];
 	va_list args;
 	long i, i_next = 0;
 	int state = 0;
+	int old_cpu, this_cpu;
 
 	/*
 	 * Disable local interrupts. This will prevent panic_smp_self_stop
 	 * from deadlocking the first cpu that invokes the panic, since
 	 * there is nothing to prevent an interrupt handler (that runs
-	 * after the panic_lock is acquired) from invoking panic again.
+	 * after setting panic_cpu) from invoking panic() again.
 	 */
 	local_irq_disable();
 
@@ -90,8 +123,16 @@ void panic(const char *fmt, ...)
 	 * multiple parallel invocations of panic, all other CPUs either
 	 * stop themself or will wait until they are stopped by the 1st CPU
 	 * with smp_send_stop().
+	 *
+	 * `old_cpu == PANIC_CPU_INVALID' means this is the 1st CPU which
+	 * comes here, so go ahead.
+	 * `old_cpu == this_cpu' means we came from nmi_panic() which sets
+	 * panic_cpu to this CPU.  In this case, this is also the 1st CPU.
 	 */
-	if (!spin_trylock(&panic_lock))
+	this_cpu = raw_smp_processor_id();
+	old_cpu  = atomic_cmpxchg(&panic_cpu, PANIC_CPU_INVALID, this_cpu);
+
+	if (old_cpu != PANIC_CPU_INVALID && old_cpu != this_cpu)
 		panic_smp_self_stop();
 
 	console_verbose();
@@ -112,8 +153,10 @@ void panic(const char *fmt, ...)
 	 * If we have crashed and we have a crash kernel loaded let it handle
 	 * everything else.
 	 * Do we want to call this before we try to display a message?
+	 *
+	 * Bypass the panic_cpu check and call __crash_kexec directly.
 	 */
-	crash_kexec(NULL);
+	__crash_kexec(NULL);
 
 	/*
 	 * Note smp_send_stop is the usual smp shutdown function, which
@@ -205,6 +248,24 @@ static const struct tnt tnts[] = {
 	{ TAINT_CRAP,			'C', ' ' },
 	{ TAINT_FIRMWARE_WORKAROUND,	'I', ' ' },
 	{ TAINT_OOT_MODULE,		'O', ' ' },
+	{ TAINT_UNSIGNED_MODULE,	'E', ' ' },
+	{ TAINT_SOFTLOCKUP,		'L', ' ' },
+	{ TAINT_LIVEPATCH,		'K', ' ' },
+	{ TAINT_16,			'?', '-' },
+	{ TAINT_17,			'?', '-' },
+	{ TAINT_18,			'?', '-' },
+	{ TAINT_19,			'?', '-' },
+	{ TAINT_20,			'?', '-' },
+	{ TAINT_21,			'?', '-' },
+	{ TAINT_22,			'?', '-' },
+	{ TAINT_23,			'?', '-' },
+	{ TAINT_24,			'?', '-' },
+	{ TAINT_25,			'?', '-' },
+	{ TAINT_26,			'?', '-' },
+	{ TAINT_27,			'?', '-' },
+	{ TAINT_HARDWARE_UNSUPPORTED,	'H', ' ' },
+	{ TAINT_TECH_PREVIEW,		'T', ' ' },
+
 };
 
 /**
@@ -223,6 +284,9 @@ static const struct tnt tnts[] = {
  *  'C' - modules from drivers/staging are loaded.
  *  'I' - Working around severe firmware bug.
  *  'O' - Out-of-tree module has been loaded.
+ *  'E' - Unsigned module has been loaded.
+ *  'L' - A soft lockup has previously occurred.
+ *  'K' - Kernel has been live patched.
  *
  *	The string is overwritten by the next call to print_tainted().
  */
@@ -399,11 +463,24 @@ struct slowpath_args {
 static void warn_slowpath_common(const char *file, int line, void *caller,
 				 unsigned taint, struct slowpath_args *args)
 {
+	disable_trace_on_warning();
+
 	printk(KERN_WARNING "------------[ cut here ]------------\n");
 	printk(KERN_WARNING "WARNING: at %s:%d %pS()\n", file, line, caller);
 
 	if (args)
 		vprintk(args->fmt, args->args);
+
+	if (panic_on_warn) {
+		/*
+		 * This thread may hit another WARN() in the panic path.
+		 * Resetting this prevents additional WARN() from panicking the
+		 * system on this thread.  Other threads are blocked by the
+		 * panic_mutex in panic().
+		 */
+		panic_on_warn = 0;
+		panic("panic_on_warn set ...\n");
+	}
 
 	print_modules();
 	dump_stack();
@@ -462,6 +539,7 @@ EXPORT_SYMBOL(__stack_chk_fail);
 
 core_param(panic, panic_timeout, int, 0644);
 core_param(pause_on_oops, pause_on_oops, int, 0644);
+core_param(panic_on_warn, panic_on_warn, int, 0644);
 
 static int __init oops_setup(char *s)
 {

@@ -62,6 +62,7 @@ void rds_tcp_state_change(struct sock *sk)
 		case TCP_ESTABLISHED:
 			rds_connect_complete(conn);
 			break;
+		case TCP_CLOSE_WAIT:
 		case TCP_CLOSE:
 			rds_conn_drop(conn);
 		default:
@@ -77,8 +78,16 @@ int rds_tcp_conn_connect(struct rds_connection *conn)
 	struct socket *sock = NULL;
 	struct sockaddr_in src, dest;
 	int ret;
+	struct rds_tcp_connection *tc = conn->c_transport_data;
 
-	ret = sock_create(PF_INET, SOCK_STREAM, IPPROTO_TCP, &sock);
+	mutex_lock(&tc->t_conn_lock);
+
+	if (rds_conn_up(conn)) {
+		mutex_unlock(&tc->t_conn_lock);
+		return 0;
+	}
+	ret = sock_create_kern(rds_conn_net(conn), PF_INET,
+			       SOCK_STREAM, IPPROTO_TCP, &sock);
 	if (ret < 0)
 		goto out;
 
@@ -106,13 +115,19 @@ int rds_tcp_conn_connect(struct rds_connection *conn)
 	rds_tcp_set_callbacks(sock, conn);
 	ret = sock->ops->connect(sock, (struct sockaddr *)&dest, sizeof(dest),
 				 O_NONBLOCK);
-	sock = NULL;
 
 	rdsdebug("connect to address %pI4 returned %d\n", &conn->c_faddr, ret);
 	if (ret == -EINPROGRESS)
 		ret = 0;
+	if (ret == 0) {
+		rds_tcp_keepalive(sock);
+		sock = NULL;
+	} else {
+		rds_tcp_restore_callbacks(sock, conn->c_transport_data);
+	}
 
 out:
+	mutex_unlock(&tc->t_conn_lock);
 	if (sock)
 		sock_release(sock);
 	return ret;

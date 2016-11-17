@@ -433,7 +433,7 @@ static void tcm_qla2xxx_free_cmd(struct qla_tgt_cmd *cmd)
  */
 static int tcm_qla2xxx_check_stop_free(struct se_cmd *se_cmd)
 {
-	return target_put_sess_cmd(se_cmd->se_sess, se_cmd);
+	return target_put_sess_cmd(se_cmd);
 }
 
 /* tcm_qla2xxx_release_cmd - Callback from TCM Core to release underlying
@@ -567,6 +567,12 @@ static u32 tcm_qla2xxx_get_task_tag(struct se_cmd *se_cmd)
 
 static int tcm_qla2xxx_get_cmd_state(struct se_cmd *se_cmd)
 {
+	if (!(se_cmd->se_cmd_flags & SCF_SCSI_TMR_CDB)) {
+		struct qla_tgt_cmd *cmd = container_of(se_cmd,
+				struct qla_tgt_cmd, se_cmd);
+		return cmd->state;
+	}
+
 	return 0;
 }
 
@@ -1474,15 +1480,11 @@ static void tcm_qla2xxx_update_sess(struct qla_tgt_sess *sess, port_id_t s_id,
 
 
 	if (sess->loop_id != loop_id || sess->s_id.b24 != s_id.b24)
-		pr_info("Updating session %p from port %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x loop_id %d -> %d s_id %x:%x:%x -> %x:%x:%x\n",
-			sess,
-			sess->port_name[0], sess->port_name[1],
-			sess->port_name[2], sess->port_name[3],
-			sess->port_name[4], sess->port_name[5],
-			sess->port_name[6], sess->port_name[7],
-			sess->loop_id, loop_id,
-			sess->s_id.b.domain, sess->s_id.b.area, sess->s_id.b.al_pa,
-			s_id.b.domain, s_id.b.area, s_id.b.al_pa);
+		pr_info("Updating session %p from port %8phC loop_id %d -> %d s_id %x:%x:%x -> %x:%x:%x\n",
+		    sess, sess->port_name,
+		    sess->loop_id, loop_id, sess->s_id.b.domain,
+		    sess->s_id.b.area, sess->s_id.b.al_pa, s_id.b.domain,
+		    s_id.b.area, s_id.b.al_pa);
 
 	if (sess->loop_id != loop_id) {
 		/*

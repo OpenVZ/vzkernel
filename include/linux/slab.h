@@ -378,7 +378,7 @@ void print_slabinfo_header(struct seq_file *m);
  *
  * %GFP_NOWAIT - Allocation will not sleep.
  *
- * %GFP_THISNODE - Allocate node-local memory only.
+ * %__GFP_THISNODE - Allocate node-local memory only.
  *
  * %GFP_DMA - Allocation suitable for DMA.
  *   Should only be used for kmalloc() caches. Otherwise, use a
@@ -423,6 +423,16 @@ static inline void *kcalloc(size_t n, size_t size, gfp_t flags)
 {
 	return kmalloc_array(n, size, flags | __GFP_ZERO);
 }
+
+/*
+ * Bulk allocation and freeing operations. These are accellerated in an
+ * allocator specific way to avoid taking locks repeatedly or building
+ * metadata structures unnecessarily.
+ *
+ * Note that interrupts must be enabled when calling these functions.
+ */
+void kmem_cache_free_bulk(struct kmem_cache *, size_t, void **);
+int kmem_cache_alloc_bulk(struct kmem_cache *, gfp_t, size_t, void **);
 
 #if !defined(CONFIG_NUMA) && !defined(CONFIG_SLOB)
 /**

@@ -45,6 +45,13 @@ config WATCHDOG_NOWAYOUT
 	  get killed. If you say Y here, the watchdog cannot be stopped once
 	  it has been started.
 
+config WATCHDOG_SYSFS
+	bool "Read different watchdog information through sysfs"
+	default n
+	help
+	  Say Y here if you want to enable watchdog device status read through
+	  sysfs attributes.
+
 #
 # General Watchdog drivers
 #
@@ -619,7 +626,8 @@ config ITCO_WDT
 	tristate "Intel TCO Timer/Watchdog"
 	depends on (X86 || IA64) && PCI
 	select WATCHDOG_CORE
-	select LPC_ICH
+	select LPC_ICH if !EXPERT
+	select I2C_I801 if !EXPERT
 	---help---
 	  Hardware driver for the intel TCO timer based watchdog devices.
 	  These drivers are included in the Intel 82801 I/O Controller
@@ -1185,14 +1193,17 @@ config WATCHDOG_RTAS
 
 # S390 Architecture
 
-config ZVM_WATCHDOG
-	tristate "z/VM Watchdog Timer"
+config DIAG288_WATCHDOG
+	tristate "System z diag288 Watchdog"
 	depends on S390
+	select WATCHDOG_CORE
 	help
 	  IBM s/390 and zSeries machines running under z/VM 5.1 or later
 	  provide a virtual watchdog timer to their guest that cause a
 	  user define Control Program command to be executed after a
 	  timeout.
+	  LPAR provides a very similar interface. This driver handles
+	  both.
 
 	  To compile this driver as a module, choose M here. The module
 	  will be called vmwatchdog.

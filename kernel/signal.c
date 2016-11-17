@@ -275,6 +275,7 @@ void task_clear_jobctl_trapping(struct task_struct *task)
 {
 	if (unlikely(task->jobctl & JOBCTL_TRAPPING)) {
 		task->jobctl &= ~JOBCTL_TRAPPING;
+		smp_mb();	/* advised by wake_up_bit() */
 		wake_up_bit(&task->jobctl, JOBCTL_TRAPPING_BIT);
 	}
 }
@@ -1444,7 +1445,7 @@ static int kill_something_info(int sig, struct siginfo *info, pid_t pid)
 		return ret;
 	}
 
-	read_lock(&tasklist_lock);
+	tasklist_read_lock();
 	if (pid != -1) {
 		ret = __kill_pgrp_info(sig, info,
 				pid ? find_vpid(-pid) : task_pgrp(current));
@@ -2771,6 +2772,10 @@ int copy_siginfo_to_user(siginfo_t __user *to, siginfo_t *from)
 		if (from->si_code == BUS_MCEERR_AR || from->si_code == BUS_MCEERR_AO)
 			err |= __put_user(from->si_addr_lsb, &to->si_addr_lsb);
 #endif
+#ifdef SEGV_BNDERR
+		err |= __put_user(from->si_lower, &to->si_lower);
+		err |= __put_user(from->si_upper, &to->si_upper);
+#endif
 		break;
 	case __SI_CHLD:
 		err |= __put_user(from->si_pid, &to->si_pid);
@@ -2848,7 +2853,7 @@ int do_sigtimedwait(const sigset_t *which, siginfo_t *info,
 		recalc_sigpending();
 		spin_unlock_irq(&tsk->sighand->siglock);
 
-		timeout = schedule_timeout_interruptible(timeout);
+		timeout = freezable_schedule_timeout_interruptible(timeout);
 
 		spin_lock_irq(&tsk->sighand->siglock);
 		__set_task_blocked(tsk, &tsk->real_blocked);
@@ -3003,11 +3008,9 @@ static int do_rt_sigqueueinfo(pid_t pid, int sig, siginfo_t *info)
 	 * Nor can they impersonate a kill()/tgkill(), which adds source info.
 	 */
 	if ((info->si_code >= 0 || info->si_code == SI_TKILL) &&
-	    (task_pid_vnr(current) != pid)) {
-		/* We used to allow any < 0 si_code */
-		WARN_ON_ONCE(info->si_code < 0);
+	    (task_pid_vnr(current) != pid))
 		return -EPERM;
-	}
+
 	info->si_signo = sig;
 
 	/* POSIX.1b doesn't mention process groups.  */
@@ -3052,12 +3055,10 @@ static int do_rt_tgsigqueueinfo(pid_t tgid, pid_t pid, int sig, siginfo_t *info)
 	/* Not even root can pretend to send signals from the kernel.
 	 * Nor can they impersonate a kill()/tgkill(), which adds source info.
 	 */
-	if (((info->si_code >= 0 || info->si_code == SI_TKILL)) &&
-	    (task_pid_vnr(current) != pid)) {
-		/* We used to allow any < 0 si_code */
-		WARN_ON_ONCE(info->si_code < 0);
+	if ((info->si_code >= 0 || info->si_code == SI_TKILL) &&
+	    (task_pid_vnr(current) != pid))
 		return -EPERM;
-	}
+
 	info->si_signo = sig;
 
 	return do_send_specific(tgid, pid, sig, info);

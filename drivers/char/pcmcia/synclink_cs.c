@@ -2509,15 +2509,6 @@ static int mgslpc_open(struct tty_struct *tty, struct file * filp)
 		printk("%s(%d):mgslpc_open(%s), old ref count = %d\n",
 			 __FILE__, __LINE__, tty->driver->name, port->count);
 
-	/* If port is closing, signal caller to try again */
-	if (tty_hung_up_p(filp) || port->flags & ASYNC_CLOSING){
-		if (port->flags & ASYNC_CLOSING)
-			interruptible_sleep_on(&port->close_wait);
-		retval = ((port->flags & ASYNC_HUP_NOTIFY) ?
-			-EAGAIN : -ERESTARTSYS);
-		goto cleanup;
-	}
-
 	port->low_latency = (port->flags & ASYNC_LOW_LATENCY) ? 1 : 0;
 
 	spin_lock_irqsave(&info->netlock, flags);

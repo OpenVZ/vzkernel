@@ -146,7 +146,7 @@ ENTRY(compat_sys_times_wrapper)
 	jg	compat_sys_times	# branch to system call
 
 ENTRY(sys32_brk_wrapper)
-	llgtr	%r2,%r2			# unsigned long
+	llgfr	%r2,%r2			# unsigned long
 	jg	sys_brk			# branch to system call
 
 ENTRY(sys32_setgid16_wrapper)
@@ -1412,3 +1412,26 @@ ENTRY(sys_finit_module_wrapper)
 	llgtr	%r3,%r3			# const char __user *
 	lgfr	%r4,%r4			# int
 	jg	sys_finit_module
+
+ENTRY(sys_sched_setattr_wrapper)
+	lgfr	%r2,%r2			# pid_t
+	llgtr	%r3,%r3			# struct sched_attr __user *
+	jg	sys_sched_setattr
+
+ENTRY(sys_sched_getattr_wrapper)
+	lgfr	%r2,%r2			# pid_t
+	llgtr	%r3,%r3			# const char __user *
+	llgfr	%r3,%r3			# unsigned int
+	jg	sys_sched_getattr
+
+ENTRY(sys_s390_pci_mmio_write_wrapper)
+	llgfr   %r2,%r2                 # unsigned long
+	llgtr   %r3,%r3                 # void __user *
+	llgfr   %r4,%r4                 # size_t
+	jg      sys_s390_pci_mmio_write
+
+ENTRY(sys_s390_pci_mmio_read_wrapper)
+	llgfr   %r2,%r2                 # unsigned long
+	llgtr   %r3,%r3                 # void __user *
+	llgfr   %r4,%r4                 # size_t
+	jg      sys_s390_pci_mmio_read

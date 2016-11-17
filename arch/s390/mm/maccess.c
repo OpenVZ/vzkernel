@@ -13,6 +13,7 @@
 #include <linux/errno.h>
 #include <linux/gfp.h>
 #include <linux/cpu.h>
+#include <linux/export.h>
 #include <asm/ctl_reg.h>
 
 /*
@@ -127,7 +128,7 @@ void memcpy_absolute(void *dest, void *src, size_t count)
 /*
  * Copy memory from kernel (real) to user (virtual)
  */
-int copy_to_user_real(void __user *dest, void *src, size_t count)
+int copy_to_user_real(void __user *dest, void *src, unsigned long count)
 {
 	int offs = 0, size, rc;
 	char *buf;
@@ -153,7 +154,7 @@ out:
 /*
  * Copy memory from user (virtual) to kernel (real)
  */
-int copy_from_user_real(void *dest, void __user *src, size_t count)
+int copy_from_user_real(void *dest, void __user *src, unsigned long count)
 {
 	int offs = 0, size, rc;
 	char *buf;
@@ -218,6 +219,7 @@ void *xlate_dev_mem_ptr(unsigned long addr)
 	put_online_cpus();
 	return bounce;
 }
+EXPORT_SYMBOL_GPL(xlate_dev_mem_ptr);
 
 /*
  * Free converted buffer for /dev/mem access (if necessary)
@@ -227,3 +229,4 @@ void unxlate_dev_mem_ptr(unsigned long addr, void *buf)
 	if ((void *) addr != buf)
 		free_page((unsigned long) buf);
 }
+EXPORT_SYMBOL_GPL(unxlate_dev_mem_ptr);

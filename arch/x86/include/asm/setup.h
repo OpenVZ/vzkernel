@@ -3,7 +3,6 @@
 
 #include <uapi/asm/setup.h>
 
-
 #define COMMAND_LINE_SIZE 2048
 
 #ifdef __i386__
@@ -26,6 +25,8 @@
 #ifndef __ASSEMBLY__
 #include <asm/bootparam.h>
 #include <asm/x86_init.h>
+
+extern u64 relocated_ramdisk;
 
 /* Interrupt control for vSMPowered x86_64 systems */
 #ifdef CONFIG_X86_64

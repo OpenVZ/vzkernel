@@ -65,6 +65,10 @@ struct posix_acl *gfs2_get_acl(struct inode *inode, int type)
 
 	acl = posix_acl_from_xattr(&init_user_ns, data, len);
 	kfree(data);
+
+	if (!IS_ERR(acl))
+		set_cached_acl(inode, type, acl);
+
 	return acl;
 }
 
@@ -263,7 +267,7 @@ static int gfs2_xattr_system_set(struct dentry *dentry, const char *name,
 		goto out_release;
 
 	error = -EINVAL;
-	if (acl->a_count > GFS2_ACL_MAX_ENTRIES)
+	if (acl->a_count > GFS2_ACL_MAX_ENTRIES(GFS2_SB(inode)))
 		goto out_release;
 
 	if (type == ACL_TYPE_ACCESS) {

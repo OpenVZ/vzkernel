@@ -179,9 +179,23 @@ static int deferred_probe_initcall(void)
 }
 late_initcall(deferred_probe_initcall);
 
+/**
+ * device_is_bound() - Check if device is bound to a driver
+ * @dev: device to check
+ *
+ * Returns true if passed device has already finished probing successfully
+ * against a driver.
+ *
+ * This function must be called with the device lock held.
+ */
+bool device_is_bound(struct device *dev)
+{
+	return dev->p && klist_node_attached(&dev->p->knode_driver);
+}
+
 static void driver_bound(struct device *dev)
 {
-	if (klist_node_attached(&dev->p->knode_driver)) {
+	if (device_is_bound(dev)) {
 		printk(KERN_WARNING "%s: device %s already bound\n",
 			__func__, kobject_name(&dev->kobj));
 		return;
@@ -367,6 +381,8 @@ EXPORT_SYMBOL_GPL(wait_for_device_probe);
  *
  * This function must be called with @dev lock held.  When called for a
  * USB interface, @dev->parent lock must be held as well.
+ *
+ * If the device has a parent, runtime-resume the parent before driver probing.
  */
 int driver_probe_device(struct device_driver *drv, struct device *dev)
 {
@@ -378,9 +394,15 @@ int driver_probe_device(struct device_driver *drv, struct device *dev)
 	pr_debug("bus: '%s': %s: matched device %s with driver %s\n",
 		 drv->bus->name, __func__, dev_name(dev), drv->name);
 
+	if (dev->parent)
+		pm_runtime_get_sync(dev->parent);
+
 	pm_runtime_barrier(dev);
 	ret = really_probe(dev, drv);
 	pm_request_idle(dev);
+
+	if (dev->parent)
+		pm_runtime_put(dev->parent);
 
 	return ret;
 }
@@ -415,7 +437,7 @@ int device_attach(struct device *dev)
 
 	device_lock(dev);
 	if (dev->driver) {
-		if (klist_node_attached(&dev->p->knode_driver)) {
+		if (device_is_bound(dev)) {
 			ret = 1;
 			goto out_unlock;
 		}
@@ -499,7 +521,7 @@ static void __device_release_driver(struct device *dev)
 						     BUS_NOTIFY_UNBIND_DRIVER,
 						     dev);
 
-		pm_runtime_put(dev);
+		pm_runtime_put_sync(dev);
 
 		if (dev->bus && dev->bus->remove)
 			dev->bus->remove(dev);

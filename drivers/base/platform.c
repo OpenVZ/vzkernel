@@ -22,6 +22,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/idr.h>
 #include <linux/acpi.h>
+#include <linux/property.h>
 
 #include "base.h"
 #include "power/power.h"
@@ -209,6 +210,7 @@ struct platform_device *platform_device_alloc(const char *name, int id)
 		device_initialize(&pa->pdev.dev);
 		pa->pdev.dev.release = platform_device_release;
 		arch_setup_pdev_archdata(&pa->pdev);
+		device_rh_alloc(&pa->pdev.dev);
 	}
 
 	return pa ? &pa->pdev : NULL;
@@ -269,6 +271,22 @@ int platform_device_add_data(struct platform_device *pdev, const void *data,
 	return 0;
 }
 EXPORT_SYMBOL_GPL(platform_device_add_data);
+
+/**
+ * platform_device_add_properties - add built-in properties to a platform device
+ * @pdev: platform device to add properties to
+ * @pset: properties to add
+ *
+ * The function will take deep copy of the properties in @pset and attach
+ * the copy to the platform device. The memory associated with properties
+ * will be freed when the platform device is released.
+ */
+int platform_device_add_properties(struct platform_device *pdev,
+				   const struct property_set *pset)
+{
+	return device_add_property_set(&pdev->dev, pset);
+}
+EXPORT_SYMBOL_GPL(platform_device_add_properties);
 
 /**
  * platform_device_add - add a platform device to device hierarchy
@@ -371,6 +389,7 @@ void platform_device_del(struct platform_device *pdev)
 	int i;
 
 	if (pdev) {
+		device_remove_property_set(&pdev->dev);
 		device_del(&pdev->dev);
 
 		if (pdev->id_auto) {
@@ -435,7 +454,7 @@ struct platform_device *platform_device_register_full(
 		goto err_alloc;
 
 	pdev->dev.parent = pdevinfo->parent;
-	ACPI_HANDLE_SET(&pdev->dev, pdevinfo->acpi_node.handle);
+	set_rh_dev_fwnode(&pdev->dev, pdevinfo->fwnode);
 
 	if (pdevinfo->dma_mask) {
 		/*
@@ -463,10 +482,16 @@ struct platform_device *platform_device_register_full(
 	if (ret)
 		goto err;
 
+	if (pdevinfo->pset) {
+		ret = platform_device_add_properties(pdev, pdevinfo->pset);
+		if (ret)
+			goto err;
+	}
+
 	ret = platform_device_add(pdev);
 	if (ret) {
 err:
-		ACPI_HANDLE_SET(&pdev->dev, NULL);
+		ACPI_COMPANION_SET(&pdev->dev, NULL);
 		kfree(pdev->dev.dma_mask);
 
 err_alloc:
@@ -888,7 +913,6 @@ int platform_pm_restore(struct device *dev)
 static const struct dev_pm_ops platform_dev_pm_ops = {
 	.runtime_suspend = pm_generic_runtime_suspend,
 	.runtime_resume = pm_generic_runtime_resume,
-	.runtime_idle = pm_generic_runtime_idle,
 	USE_PLATFORM_PM_SLEEP_OPS
 };
 

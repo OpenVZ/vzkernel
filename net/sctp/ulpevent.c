@@ -57,9 +57,9 @@ static void sctp_ulpevent_release_frag_data(struct sctp_ulpevent *event);
 
 
 /* Initialize an ULP event from an given skb.  */
-SCTP_STATIC void sctp_ulpevent_init(struct sctp_ulpevent *event,
-				    int msg_flags,
-				    unsigned int len)
+static void sctp_ulpevent_init(struct sctp_ulpevent *event,
+			       __u16 msg_flags,
+			       unsigned int len)
 {
 	memset(event, 0, sizeof(struct sctp_ulpevent));
 	event->msg_flags = msg_flags;
@@ -67,8 +67,8 @@ SCTP_STATIC void sctp_ulpevent_init(struct sctp_ulpevent *event,
 }
 
 /* Create a new sctp_ulpevent.  */
-SCTP_STATIC struct sctp_ulpevent *sctp_ulpevent_new(int size, int msg_flags,
-						    gfp_t gfp)
+static struct sctp_ulpevent *sctp_ulpevent_new(int size, __u16 msg_flags,
+					       gfp_t gfp)
 {
 	struct sctp_ulpevent *event;
 	struct sk_buff *skb;
@@ -98,6 +98,7 @@ int sctp_ulpevent_is_notification(const struct sctp_ulpevent *event)
 static inline void sctp_ulpevent_set_owner(struct sctp_ulpevent *event,
 					   const struct sctp_association *asoc)
 {
+	struct sctp_chunk *chunk = event->chunk;
 	struct sk_buff *skb;
 
 	/* Cast away the const, as we are just wanting to
@@ -108,6 +109,8 @@ static inline void sctp_ulpevent_set_owner(struct sctp_ulpevent *event,
 	event->asoc = (struct sctp_association *)asoc;
 	atomic_add(event->rmem_len, &event->asoc->rmem_alloc);
 	sctp_skb_set_owner_r(skb, asoc->base.sk);
+	if (chunk && chunk->head_skb && !chunk->head_skb->sk)
+		chunk->head_skb->sk = asoc->base.sk;
 }
 
 /* A simple destructor to give up the reference to the association. */
@@ -348,7 +351,7 @@ struct sctp_ulpevent *sctp_ulpevent_make_peer_addr_change(
 	memcpy(&spc->spc_aaddr, aaddr, sizeof(struct sockaddr_storage));
 
 	/* Map ipv4 address into v4-mapped-on-v6 address.  */
-	sctp_get_pf_specific(asoc->base.sk->sk_family)->addr_v4map(
+	sctp_get_pf_specific(asoc->base.sk->sk_family)->addr_to_user(
 					sctp_sk(asoc->base.sk),
 					(union sctp_addr *)&spc->spc_aaddr);
 
@@ -747,6 +750,12 @@ struct sctp_ulpevent *sctp_ulpevent_make_rcvmsg(struct sctp_association *asoc,
 	 */
 	sctp_ulpevent_init(event, 0, skb->len + sizeof(struct sk_buff));
 
+	/* And hold the chunk as we need it for getting the IP headers
+	 * later in recvmsg
+	 */
+	sctp_chunk_hold(chunk);
+	event->chunk = chunk;
+
 	sctp_ulpevent_receive_data(event, asoc);
 
 	event->stream = ntohs(chunk->subh.data_hdr->stream);
@@ -758,11 +767,11 @@ struct sctp_ulpevent *sctp_ulpevent_make_rcvmsg(struct sctp_association *asoc,
 	}
 	event->tsn = ntohl(chunk->subh.data_hdr->tsn);
 	event->msg_flags |= chunk->chunk_hdr->flags;
-	event->iif = sctp_chunk_iif(chunk);
 
 	return event;
 
 fail_mark:
+	sctp_chunk_put(chunk);
 	kfree_skb(skb);
 fail:
 	return NULL;
@@ -1043,6 +1052,7 @@ static void sctp_ulpevent_release_data(struct sctp_ulpevent *event)
 
 done:
 	sctp_assoc_rwnd_increase(event->asoc, len);
+	sctp_chunk_put(event->chunk);
 	sctp_ulpevent_release_owner(event);
 }
 
@@ -1065,6 +1075,7 @@ static void sctp_ulpevent_release_frag_data(struct sctp_ulpevent *event)
 	}
 
 done:
+	sctp_chunk_put(event->chunk);
 	sctp_ulpevent_release_owner(event);
 }
 

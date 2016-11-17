@@ -1983,7 +1983,7 @@ static void xmit_common(struct sk_buff *skb, struct ehea_swqe *swqe)
 {
 	swqe->tx_control |= EHEA_SWQE_IMM_DATA_PRESENT | EHEA_SWQE_CRC;
 
-	if (skb->protocol != htons(ETH_P_IP))
+	if (vlan_get_protocol(skb) != htons(ETH_P_IP))
 		return;
 
 	if (skb->ip_summed == CHECKSUM_PARTIAL)
@@ -2053,9 +2053,9 @@ static int ehea_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	memset(swqe, 0, SWQE_HEADER_SIZE);
 	atomic_dec(&pr->swqe_avail);
 
-	if (vlan_tx_tag_present(skb)) {
+	if (skb_vlan_tag_present(skb)) {
 		swqe->tx_control |= EHEA_SWQE_VLAN_INSERT;
-		swqe->vlan_tag = vlan_tx_tag_get(skb);
+		swqe->vlan_tag = skb_vlan_tag_get(skb);
 	}
 
 	pr->tx_packets++;

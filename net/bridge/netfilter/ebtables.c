@@ -6,7 +6,7 @@
  *
  *  ebtables.c,v 2.0, July, 2002
  *
- *  This code is stongly inspired on the iptables code which is
+ *  This code is strongly inspired by the iptables code which is
  *  Copyright (C) 1999 Paul `Rusty' Russell & Michael J. Neuling
  *
  *  This program is free software; you can redistribute it and/or
@@ -26,6 +26,7 @@
 #include <asm/uaccess.h>
 #include <linux/smp.h>
 #include <linux/cpumask.h>
+#include <linux/audit.h>
 #include <net/sock.h>
 /* needed for logical [in,out]-dev filtering */
 #include "../br_private.h"
@@ -132,7 +133,7 @@ ebt_basic_match(const struct ebt_entry *e, const struct sk_buff *skb,
 	__be16 ethproto;
 	int verdict, i;
 
-	if (vlan_tx_tag_present(skb))
+	if (skb_vlan_tag_present(skb))
 		ethproto = htons(ETH_P_8021Q);
 	else
 		ethproto = h->h_proto;
@@ -370,7 +371,13 @@ ebt_check_match(struct ebt_entry_match *m, struct xt_mtchk_param *par,
 	    left - sizeof(struct ebt_entry_match) < m->match_size)
 		return -EINVAL;
 
-	match = xt_request_find_match(NFPROTO_BRIDGE, m->u.name, 0);
+	match = xt_find_match(NFPROTO_BRIDGE, m->u.name, 0);
+	if (IS_ERR(match) || match->family != NFPROTO_BRIDGE) {
+		if (!IS_ERR(match))
+			module_put(match->me);
+		request_module("ebt_%s", m->u.name);
+		match = xt_find_match(NFPROTO_BRIDGE, m->u.name, 0);
+	}
 	if (IS_ERR(match))
 		return PTR_ERR(match);
 	m->u.match = match;
@@ -1044,10 +1051,9 @@ static int do_replace_finish(struct net *net, struct ebt_replace *repl,
 	if (repl->num_counters &&
 	   copy_to_user(repl->counters, counterstmp,
 	   repl->num_counters * sizeof(struct ebt_counter))) {
-		ret = -EFAULT;
+		/* Silent error, can't fail, new table is already in place */
+		net_warn_ratelimited("ebtables: counters copy to user failed while replacing table\n");
 	}
-	else
-		ret = 0;
 
 	/* decrease module count and free resources */
 	EBT_ENTRY_ITERATE(table->entries, table->entries_size,
@@ -1062,6 +1068,20 @@ static int do_replace_finish(struct net *net, struct ebt_replace *repl,
 	vfree(table);
 
 	vfree(counterstmp);
+
+#ifdef CONFIG_AUDIT
+	if (audit_enabled) {
+		struct audit_buffer *ab;
+
+		ab = audit_log_start(current->audit_context, GFP_KERNEL,
+				     AUDIT_NETFILTER_CFG);
+		if (ab) {
+			audit_log_format(ab, "table=%s family=%u entries=%u",
+					 repl->name, AF_BRIDGE, repl->nentries);
+			audit_log_end(ab);
+		}
+	}
+#endif
 	return ret;
 
 free_unlock:
@@ -1339,7 +1359,7 @@ static inline int ebt_make_matchname(const struct ebt_entry_match *m,
 
 	/* ebtables expects 32 bytes long names but xt_match names are 29 bytes
 	   long. Copy 29 bytes and fill remaining bytes with zeroes. */
-	strncpy(name, m->u.match->name, sizeof(name));
+	strlcpy(name, m->u.match->name, sizeof(name));
 	if (copy_to_user(hlp, name, EBT_FUNCTION_MAXNAMELEN))
 		return -EFAULT;
 	return 0;
@@ -1351,7 +1371,7 @@ static inline int ebt_make_watchername(const struct ebt_entry_watcher *w,
 	char __user *hlp = ubase + ((char *)w - base);
 	char name[EBT_FUNCTION_MAXNAMELEN] = {};
 
-	strncpy(name, w->u.watcher->name, sizeof(name));
+	strlcpy(name, w->u.watcher->name, sizeof(name));
 	if (copy_to_user(hlp , name, EBT_FUNCTION_MAXNAMELEN))
 		return -EFAULT;
 	return 0;
@@ -1377,7 +1397,7 @@ ebt_make_names(struct ebt_entry *e, const char *base, char __user *ubase)
 	ret = EBT_WATCHER_ITERATE(e, ebt_make_watchername, base, ubase);
 	if (ret != 0)
 		return ret;
-	strncpy(name, t->u.target->name, sizeof(name));
+	strlcpy(name, t->u.target->name, sizeof(name));
 	if (copy_to_user(hlp, name, EBT_FUNCTION_MAXNAMELEN))
 		return -EFAULT;
 	return 0;
@@ -1502,6 +1522,8 @@ static int do_ebt_get_ctl(struct sock *sk, int cmd, void __user *user, int *len)
 
 	if (copy_from_user(&tmp, user, sizeof(tmp)))
 		return -EFAULT;
+
+	tmp.name[sizeof(tmp.name) - 1] = '\0';
 
 	t = find_table_lock(net, tmp.name, &ret, &ebt_mutex);
 	if (!t)
@@ -2318,6 +2340,8 @@ static int compat_do_ebt_get_ctl(struct sock *sk, int cmd,
 	if (copy_from_user(&tmp, user, sizeof(tmp)))
 		return -EFAULT;
 
+	tmp.name[sizeof(tmp.name) - 1] = '\0';
+
 	t = find_table_lock(net, tmp.name, &ret, &ebt_mutex);
 	if (!t)
 		return ret;
@@ -2375,8 +2399,7 @@ static int compat_do_ebt_get_ctl(struct sock *sk, int cmd,
 }
 #endif
 
-static struct nf_sockopt_ops ebt_sockopts =
-{
+static struct nf_sockopt_ops ebt_sockopts = {
 	.pf		= PF_INET,
 	.set_optmin	= EBT_BASE_CTL,
 	.set_optmax	= EBT_SO_SET_MAX + 1,

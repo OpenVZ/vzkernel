@@ -82,7 +82,10 @@ void ceph_auth_reset(struct ceph_auth_client *ac)
 	mutex_unlock(&ac->mutex);
 }
 
-int ceph_entity_name_encode(const char *name, void **p, void *end)
+/*
+ * EntityName, not to be confused with entity_name_t
+ */
+int ceph_auth_entity_name_encode(const char *name, void **p, void *end)
 {
 	int len = strlen(name);
 
@@ -124,7 +127,7 @@ int ceph_auth_build_hello(struct ceph_auth_client *ac, void *buf, size_t len)
 	for (i = 0; i < num; i++)
 		ceph_encode_32(&p, supported_protocols[i]);
 
-	ret = ceph_entity_name_encode(ac->name, &p, end);
+	ret = ceph_auth_entity_name_encode(ac->name, &p, end);
 	if (ret < 0)
 		goto out;
 	ceph_decode_need(&p, end, sizeof(u64), bad);
@@ -293,13 +296,9 @@ int ceph_auth_create_authorizer(struct ceph_auth_client *ac,
 }
 EXPORT_SYMBOL(ceph_auth_create_authorizer);
 
-void ceph_auth_destroy_authorizer(struct ceph_auth_client *ac,
-				  struct ceph_authorizer *a)
+void ceph_auth_destroy_authorizer(struct ceph_authorizer *a)
 {
-	mutex_lock(&ac->mutex);
-	if (ac->ops && ac->ops->destroy_authorizer)
-		ac->ops->destroy_authorizer(ac, a);
-	mutex_unlock(&ac->mutex);
+	a->destroy(a);
 }
 EXPORT_SYMBOL(ceph_auth_destroy_authorizer);
 

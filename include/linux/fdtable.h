@@ -72,8 +72,6 @@ struct file_operations;
 struct vfsmount;
 struct dentry;
 
-extern void __init files_defer_init(void);
-
 static inline struct file * fcheck_files(struct files_struct *files, unsigned int fd)
 {
 	struct file * file = NULL;

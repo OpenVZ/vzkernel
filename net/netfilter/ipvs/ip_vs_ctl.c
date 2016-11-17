@@ -465,8 +465,7 @@ __ip_vs_bind_svc(struct ip_vs_dest *dest, struct ip_vs_service *svc)
 
 static void ip_vs_service_free(struct ip_vs_service *svc)
 {
-	if (svc->stats.cpustats)
-		free_percpu(svc->stats.cpustats);
+	free_percpu(svc->stats.cpustats);
 	kfree(svc);
 }
 
@@ -814,15 +813,16 @@ __ip_vs_update_dest(struct ip_vs_service *svc, struct ip_vs_dest *dest,
 	__ip_vs_dst_cache_reset(dest);
 	spin_unlock_bh(&dest->dst_lock);
 
-	sched = rcu_dereference_protected(svc->scheduler, 1);
 	if (add) {
 		ip_vs_start_estimator(svc->net, &dest->stats);
 		list_add_rcu(&dest->n_list, &svc->destinations);
 		svc->num_dests++;
-		if (sched->add_dest)
+		sched = rcu_dereference_protected(svc->scheduler, 1);
+		if (sched && sched->add_dest)
 			sched->add_dest(svc, dest);
 	} else {
-		if (sched->upd_dest)
+		sched = rcu_dereference_protected(svc->scheduler, 1);
+		if (sched && sched->upd_dest)
 			sched->upd_dest(svc, dest);
 	}
 }
@@ -1061,7 +1061,7 @@ static void __ip_vs_unlink_dest(struct ip_vs_service *svc,
 		struct ip_vs_scheduler *sched;
 
 		sched = rcu_dereference_protected(svc->scheduler, 1);
-		if (sched->del_dest)
+		if (sched && sched->del_dest)
 			sched->del_dest(svc, dest);
 	}
 }
@@ -1146,11 +1146,14 @@ ip_vs_add_service(struct net *net, struct ip_vs_service_user_kern *u,
 	ip_vs_use_count_inc();
 
 	/* Lookup the scheduler by 'u->sched_name' */
-	sched = ip_vs_scheduler_get(u->sched_name);
-	if (sched == NULL) {
-		pr_info("Scheduler module ip_vs_%s not found\n", u->sched_name);
-		ret = -ENOENT;
-		goto out_err;
+	if (strcmp(u->sched_name, "none")) {
+		sched = ip_vs_scheduler_get(u->sched_name);
+		if (!sched) {
+			pr_info("Scheduler module ip_vs_%s not found\n",
+				u->sched_name);
+			ret = -ENOENT;
+			goto out_err;
+		}
 	}
 
 	if (u->pe_name && *u->pe_name) {
@@ -1204,10 +1207,12 @@ ip_vs_add_service(struct net *net, struct ip_vs_service_user_kern *u,
 	spin_lock_init(&svc->stats.lock);
 
 	/* Bind the scheduler */
-	ret = ip_vs_bind_scheduler(svc, sched);
-	if (ret)
-		goto out_err;
-	sched = NULL;
+	if (sched) {
+		ret = ip_vs_bind_scheduler(svc, sched);
+		if (ret)
+			goto out_err;
+		sched = NULL;
+	}
 
 	/* Bind the ct retriever */
 	RCU_INIT_POINTER(svc->pe, pe);
@@ -1255,17 +1260,20 @@ ip_vs_add_service(struct net *net, struct ip_vs_service_user_kern *u,
 static int
 ip_vs_edit_service(struct ip_vs_service *svc, struct ip_vs_service_user_kern *u)
 {
-	struct ip_vs_scheduler *sched, *old_sched;
+	struct ip_vs_scheduler *sched = NULL, *old_sched;
 	struct ip_vs_pe *pe = NULL, *old_pe = NULL;
 	int ret = 0;
 
 	/*
 	 * Lookup the scheduler, by 'u->sched_name'
 	 */
-	sched = ip_vs_scheduler_get(u->sched_name);
-	if (sched == NULL) {
-		pr_info("Scheduler module ip_vs_%s not found\n", u->sched_name);
-		return -ENOENT;
+	if (strcmp(u->sched_name, "none")) {
+		sched = ip_vs_scheduler_get(u->sched_name);
+		if (!sched) {
+			pr_info("Scheduler module ip_vs_%s not found\n",
+				u->sched_name);
+			return -ENOENT;
+		}
 	}
 	old_sched = sched;
 
@@ -1293,14 +1301,20 @@ ip_vs_edit_service(struct ip_vs_service *svc, struct ip_vs_service_user_kern *u)
 
 	old_sched = rcu_dereference_protected(svc->scheduler, 1);
 	if (sched != old_sched) {
-		/* Bind the new scheduler */
-		ret = ip_vs_bind_scheduler(svc, sched);
-		if (ret) {
-			old_sched = sched;
-			goto out;
+		if (old_sched) {
+			ip_vs_unbind_scheduler(svc, old_sched);
+			RCU_INIT_POINTER(svc->scheduler, NULL);
+			/* Wait all svc->sched_data users */
+			synchronize_rcu();
 		}
-		/* Unbind the old scheduler on success */
-		ip_vs_unbind_scheduler(svc, old_sched);
+		/* Bind the new scheduler */
+		if (sched) {
+			ret = ip_vs_bind_scheduler(svc, sched);
+			if (ret) {
+				ip_vs_scheduler_put(sched);
+				goto out;
+			}
+		}
 	}
 
 	/*
@@ -1487,9 +1501,9 @@ ip_vs_forget_dev(struct ip_vs_dest *dest, struct net_device *dev)
  * Currently only NETDEV_DOWN is handled to release refs to cached dsts
  */
 static int ip_vs_dst_event(struct notifier_block *this, unsigned long event,
-			    void *ptr)
+			   void *ptr)
 {
-	struct net_device *dev = ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct net *net = dev_net(dev);
 	struct netns_ipvs *ipvs = net_ipvs(net);
 	struct ip_vs_service *svc;
@@ -1575,7 +1589,7 @@ static int zero;
 static int three = 3;
 
 static int
-proc_do_defense_mode(ctl_table *table, int write,
+proc_do_defense_mode(struct ctl_table *table, int write,
 		     void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	struct net *net = current->nsproxy->net_ns;
@@ -1596,7 +1610,7 @@ proc_do_defense_mode(ctl_table *table, int write,
 }
 
 static int
-proc_do_sync_threshold(ctl_table *table, int write,
+proc_do_sync_threshold(struct ctl_table *table, int write,
 		       void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int *valp = table->data;
@@ -1616,7 +1630,7 @@ proc_do_sync_threshold(ctl_table *table, int write,
 }
 
 static int
-proc_do_sync_mode(ctl_table *table, int write,
+proc_do_sync_mode(struct ctl_table *table, int write,
 		     void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int *valp = table->data;
@@ -1634,7 +1648,7 @@ proc_do_sync_mode(ctl_table *table, int write,
 }
 
 static int
-proc_do_sync_ports(ctl_table *table, int write,
+proc_do_sync_ports(struct ctl_table *table, int write,
 		   void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int *valp = table->data;
@@ -1779,6 +1793,12 @@ static struct ctl_table vs_vars[] = {
 	},
 	{
 		.procname	= "backup_only",
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "conn_reuse_mode",
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
@@ -2022,6 +2042,7 @@ static int ip_vs_info_seq_show(struct seq_file *seq, void *v)
 		const struct ip_vs_iter *iter = seq->private;
 		const struct ip_vs_dest *dest;
 		struct ip_vs_scheduler *sched = rcu_dereference(svc->scheduler);
+		char *sched_name = sched ? sched->name : "none";
 
 		if (iter->table == ip_vs_svc_table) {
 #ifdef CONFIG_IP_VS_IPV6
@@ -2030,18 +2051,18 @@ static int ip_vs_info_seq_show(struct seq_file *seq, void *v)
 					   ip_vs_proto_name(svc->protocol),
 					   &svc->addr.in6,
 					   ntohs(svc->port),
-					   sched->name);
+					   sched_name);
 			else
 #endif
 				seq_printf(seq, "%s  %08X:%04X %s %s ",
 					   ip_vs_proto_name(svc->protocol),
 					   ntohl(svc->addr.ip),
 					   ntohs(svc->port),
-					   sched->name,
+					   sched_name,
 					   (svc->flags & IP_VS_SVC_F_ONEPACKET)?"ops ":"");
 		} else {
 			seq_printf(seq, "FWM  %08X %s %s",
-				   svc->fwmark, sched->name,
+				   svc->fwmark, sched_name,
 				   (svc->flags & IP_VS_SVC_F_ONEPACKET)?"ops ":"");
 		}
 
@@ -2162,10 +2183,10 @@ static int ip_vs_stats_percpu_show(struct seq_file *seq, void *v)
 		__u64 inbytes, outbytes;
 
 		do {
-			start = u64_stats_fetch_begin_bh(&u->syncp);
+			start = u64_stats_fetch_begin_irq(&u->syncp);
 			inbytes = u->ustats.inbytes;
 			outbytes = u->ustats.outbytes;
-		} while (u64_stats_fetch_retry_bh(&u->syncp, start));
+		} while (u64_stats_fetch_retry_irq(&u->syncp, start));
 
 		seq_printf(seq, "%3X %8X %8X %8X %16LX %16LX\n",
 			   i, u->ustats.conns, u->ustats.inpkts,
@@ -2456,13 +2477,15 @@ static void
 ip_vs_copy_service(struct ip_vs_service_entry *dst, struct ip_vs_service *src)
 {
 	struct ip_vs_scheduler *sched;
+	char *sched_name;
 
 	sched = rcu_dereference_protected(src->scheduler, 1);
+	sched_name = sched ? sched->name : "none";
 	dst->protocol = src->protocol;
 	dst->addr = src->addr.ip;
 	dst->port = src->port;
 	dst->fwmark = src->fwmark;
-	strlcpy(dst->sched_name, sched->name, sizeof(dst->sched_name));
+	strlcpy(dst->sched_name, sched_name, sizeof(dst->sched_name));
 	dst->flags = src->flags;
 	dst->timeout = src->timeout / HZ;
 	dst->netmask = src->netmask;
@@ -2888,6 +2911,7 @@ static int ip_vs_genl_fill_service(struct sk_buff *skb,
 	struct nlattr *nl_service;
 	struct ip_vs_flags flags = { .flags = svc->flags,
 				     .mask = ~0 };
+	char *sched_name;
 
 	nl_service = nla_nest_start(skb, IPVS_CMD_ATTR_SERVICE);
 	if (!nl_service)
@@ -2906,8 +2930,9 @@ static int ip_vs_genl_fill_service(struct sk_buff *skb,
 	}
 
 	sched = rcu_dereference_protected(svc->scheduler, 1);
+	sched_name = sched ? sched->name : "none";
 	pe = rcu_dereference_protected(svc->pe, 1);
-	if (nla_put_string(skb, IPVS_SVC_ATTR_SCHED_NAME, sched->name) ||
+	if (nla_put_string(skb, IPVS_SVC_ATTR_SCHED_NAME, sched_name) ||
 	    (pe && nla_put_string(skb, IPVS_SVC_ATTR_PE_NAME, pe->name)) ||
 	    nla_put(skb, IPVS_SVC_ATTR_FLAGS, sizeof(flags), &flags) ||
 	    nla_put_u32(skb, IPVS_SVC_ATTR_TIMEOUT, svc->timeout / HZ) ||
@@ -2940,7 +2965,8 @@ static int ip_vs_genl_dump_service(struct sk_buff *skb,
 	if (ip_vs_genl_fill_service(skb, svc) < 0)
 		goto nla_put_failure;
 
-	return genlmsg_end(skb, hdr);
+	genlmsg_end(skb, hdr);
+	return 0;
 
 nla_put_failure:
 	genlmsg_cancel(skb, hdr);
@@ -3131,7 +3157,8 @@ static int ip_vs_genl_dump_dest(struct sk_buff *skb, struct ip_vs_dest *dest,
 	if (ip_vs_genl_fill_dest(skb, dest) < 0)
 		goto nla_put_failure;
 
-	return genlmsg_end(skb, hdr);
+	genlmsg_end(skb, hdr);
+	return 0;
 
 nla_put_failure:
 	genlmsg_cancel(skb, hdr);
@@ -3260,7 +3287,8 @@ static int ip_vs_genl_dump_daemon(struct sk_buff *skb, __u32 state,
 	if (ip_vs_genl_fill_daemon(skb, state, mcast_ifn, syncid))
 		goto nla_put_failure;
 
-	return genlmsg_end(skb, hdr);
+	genlmsg_end(skb, hdr);
+	return 0;
 
 nla_put_failure:
 	genlmsg_cancel(skb, hdr);
@@ -3565,7 +3593,7 @@ out:
 }
 
 
-static struct genl_ops ip_vs_genl_ops[] __read_mostly = {
+static const struct genl_ops ip_vs_genl_ops[] __read_mostly = {
 	{
 		.cmd	= IPVS_CMD_NEW_SERVICE,
 		.flags	= GENL_ADMIN_PERM,
@@ -3664,7 +3692,7 @@ static struct genl_ops ip_vs_genl_ops[] __read_mostly = {
 static int __init ip_vs_genl_register(void)
 {
 	return genl_register_family_with_ops(&ip_vs_genl_family,
-		ip_vs_genl_ops, ARRAY_SIZE(ip_vs_genl_ops));
+					     ip_vs_genl_ops);
 }
 
 static void ip_vs_genl_unregister(void)
@@ -3736,6 +3764,8 @@ static int __net_init ip_vs_control_net_init_sysctl(struct net *net)
 	ipvs->sysctl_pmtu_disc = 1;
 	tbl[idx++].data = &ipvs->sysctl_pmtu_disc;
 	tbl[idx++].data = &ipvs->sysctl_backup_only;
+	ipvs->sysctl_conn_reuse_mode = 1;
+	tbl[idx++].data = &ipvs->sysctl_conn_reuse_mode;
 
 
 	ipvs->sysctl_hdr = register_net_sysctl(net, "net/ipv4/vs", tbl);
@@ -3872,7 +3902,7 @@ int __init ip_vs_control_init(void)
 
 	smp_wmb();	/* Do we really need it now ? */
 
-	ret = register_netdevice_notifier(&ip_vs_dst_notifier);
+	ret = register_netdevice_notifier_rh(&ip_vs_dst_notifier);
 	if (ret < 0)
 		return ret;
 
@@ -3884,6 +3914,6 @@ int __init ip_vs_control_init(void)
 void ip_vs_control_cleanup(void)
 {
 	EnterFunction(2);
-	unregister_netdevice_notifier(&ip_vs_dst_notifier);
+	unregister_netdevice_notifier_rh(&ip_vs_dst_notifier);
 	LeaveFunction(2);
 }

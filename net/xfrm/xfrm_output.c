@@ -19,7 +19,7 @@
 #include <net/dst.h>
 #include <net/xfrm.h>
 
-static int xfrm_output2(struct sk_buff *skb);
+static int xfrm_output2(struct sock *sk, struct sk_buff *skb);
 
 static int xfrm_skb_check_space(struct sk_buff *skb)
 {
@@ -87,6 +87,9 @@ static int xfrm_output_one(struct sk_buff *skb, int err)
 
 		skb_dst_force(skb);
 
+		/* Inner headers are invalid now. */
+		skb->encapsulation = 0;
+
 		err = x->type->output(x, skb);
 		if (err == -EINPROGRESS)
 			goto out_exit;
@@ -131,7 +134,7 @@ int xfrm_output_resume(struct sk_buff *skb, int err)
 			return dst_output(skb);
 
 		err = nf_hook(skb_dst(skb)->ops->family,
-			      NF_INET_POST_ROUTING, skb,
+			      NF_INET_POST_ROUTING, skb->sk, skb,
 			      NULL, skb_dst(skb)->dev, xfrm_output2);
 		if (unlikely(err != 1))
 			goto out;
@@ -145,26 +148,30 @@ out:
 }
 EXPORT_SYMBOL_GPL(xfrm_output_resume);
 
-static int xfrm_output2(struct sk_buff *skb)
+static int xfrm_output2(struct sock *sk, struct sk_buff *skb)
 {
 	return xfrm_output_resume(skb, 1);
 }
 
-static int xfrm_output_gso(struct sk_buff *skb)
+static int xfrm_output_gso(struct sock *sk, struct sk_buff *skb)
 {
 	struct sk_buff *segs;
 
+	BUILD_BUG_ON(sizeof(*IPCB(skb)) > SKB_SGO_CB_OFFSET);
+	BUILD_BUG_ON(sizeof(*IP6CB(skb)) > SKB_SGO_CB_OFFSET);
 	segs = skb_gso_segment(skb, 0);
 	kfree_skb(skb);
 	if (IS_ERR(segs))
 		return PTR_ERR(segs);
+	if (segs == NULL)
+		return -EINVAL;
 
 	do {
 		struct sk_buff *nskb = segs->next;
 		int err;
 
 		segs->next = NULL;
-		err = xfrm_output2(segs);
+		err = xfrm_output2(sk, segs);
 
 		if (unlikely(err)) {
 			while ((segs = nskb)) {
@@ -181,13 +188,13 @@ static int xfrm_output_gso(struct sk_buff *skb)
 	return 0;
 }
 
-int xfrm_output(struct sk_buff *skb)
+int xfrm_output(struct sock *sk, struct sk_buff *skb)
 {
 	struct net *net = dev_net(skb_dst(skb)->dev);
 	int err;
 
 	if (skb_is_gso(skb))
-		return xfrm_output_gso(skb);
+		return xfrm_output_gso(sk, skb);
 
 	if (skb->ip_summed == CHECKSUM_PARTIAL) {
 		err = skb_checksum_help(skb);
@@ -198,7 +205,7 @@ int xfrm_output(struct sk_buff *skb)
 		}
 	}
 
-	return xfrm_output2(skb);
+	return xfrm_output2(sk, skb);
 }
 
 int xfrm_inner_extract_output(struct xfrm_state *x, struct sk_buff *skb)

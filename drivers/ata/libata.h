@@ -76,7 +76,6 @@ extern unsigned ata_exec_internal_sg(struct ata_device *dev,
 				     struct ata_taskfile *tf, const u8 *cdb,
 				     int dma_dir, struct scatterlist *sg,
 				     unsigned int n_elem, unsigned long timeout);
-extern unsigned int ata_do_simple_cmd(struct ata_device *dev, u8 cmd);
 extern int ata_wait_ready(struct ata_link *link, unsigned long deadline,
 			  int (*check_ready)(struct ata_link *link));
 extern int ata_dev_read_id(struct ata_device *dev, unsigned int *p_class,
@@ -118,11 +117,9 @@ extern void ata_acpi_on_resume(struct ata_port *ap);
 extern int ata_acpi_on_devcfg(struct ata_device *dev);
 extern void ata_acpi_on_disable(struct ata_device *dev);
 extern void ata_acpi_set_state(struct ata_port *ap, pm_message_t state);
-extern int ata_acpi_register(void);
-extern void ata_acpi_unregister(void);
-extern void ata_acpi_bind(struct ata_device *dev);
-extern void ata_acpi_unbind(struct ata_device *dev);
-extern void ata_acpi_hotplug_init(struct ata_host *host);
+extern void ata_acpi_bind_port(struct ata_port *ap);
+extern void ata_acpi_bind_dev(struct ata_device *dev);
+extern acpi_handle ata_dev_acpi_handle(struct ata_device *dev);
 #else
 static inline void ata_acpi_dissociate(struct ata_host *host) { }
 static inline int ata_acpi_on_suspend(struct ata_port *ap) { return 0; }
@@ -131,11 +128,8 @@ static inline int ata_acpi_on_devcfg(struct ata_device *dev) { return 0; }
 static inline void ata_acpi_on_disable(struct ata_device *dev) { }
 static inline void ata_acpi_set_state(struct ata_port *ap,
 				      pm_message_t state) { }
-static inline int ata_acpi_register(void) { return 0; }
-static inline void ata_acpi_unregister(void) { }
-static inline void ata_acpi_bind(struct ata_device *dev) { }
-static inline void ata_acpi_unbind(struct ata_device *dev) { }
-static inline void ata_acpi_hotplug_init(struct ata_host *host) {}
+static inline void ata_acpi_bind_port(struct ata_port *ap) {}
+static inline void ata_acpi_bind_dev(struct ata_device *dev) {}
 #endif
 
 /* libata-scsi.c */

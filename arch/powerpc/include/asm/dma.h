@@ -339,6 +339,7 @@ static __inline__ int get_dma_residue(unsigned int dmanr)
 extern int request_dma(unsigned int dmanr, const char *device_id);
 /* release it again */
 extern void free_dma(unsigned int dmanr);
+extern int arch_dma_init(struct device *dev);
 
 #ifdef CONFIG_PCI
 extern int isa_dma_bridge_buggy;

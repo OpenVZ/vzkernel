@@ -15,8 +15,9 @@
 	 : (prot))
 
 #ifndef __ASSEMBLY__
-
 #include <asm/x86_init.h>
+
+void ptdump_walk_pgd_level(struct seq_file *m, pgd_t *pgd);
 
 /*
  * ZERO_PAGE is a global shared page that is always zero: used
@@ -207,7 +208,7 @@ static inline pte_t pte_mkexec(pte_t pte)
 
 static inline pte_t pte_mkdirty(pte_t pte)
 {
-	return pte_set_flags(pte, _PAGE_DIRTY);
+	return pte_set_flags(pte, _PAGE_DIRTY | _PAGE_SOFT_DIRTY);
 }
 
 static inline pte_t pte_mkyoung(pte_t pte)
@@ -245,6 +246,11 @@ static inline pte_t pte_mkspecial(pte_t pte)
 	return pte_set_flags(pte, _PAGE_SPECIAL);
 }
 
+static inline pte_t pte_mkdevmap(pte_t pte)
+{
+	return pte_set_flags(pte, _PAGE_SPECIAL|_PAGE_DEVMAP);
+}
+
 static inline pmd_t pmd_set_flags(pmd_t pmd, pmdval_t set)
 {
 	pmdval_t v = native_pmd_val(pmd);
@@ -271,7 +277,12 @@ static inline pmd_t pmd_wrprotect(pmd_t pmd)
 
 static inline pmd_t pmd_mkdirty(pmd_t pmd)
 {
-	return pmd_set_flags(pmd, _PAGE_DIRTY);
+	return pmd_set_flags(pmd, _PAGE_DIRTY | _PAGE_SOFT_DIRTY);
+}
+
+static inline pmd_t pmd_mkdevmap(pmd_t pmd)
+{
+	return pmd_set_flags(pmd, _PAGE_DEVMAP);
 }
 
 static inline pmd_t pmd_mkhuge(pmd_t pmd)
@@ -292,6 +303,56 @@ static inline pmd_t pmd_mkwrite(pmd_t pmd)
 static inline pmd_t pmd_mknotpresent(pmd_t pmd)
 {
 	return pmd_clear_flags(pmd, _PAGE_PRESENT);
+}
+
+static inline int pte_soft_dirty(pte_t pte)
+{
+	return pte_flags(pte) & _PAGE_SOFT_DIRTY;
+}
+
+static inline int pmd_soft_dirty(pmd_t pmd)
+{
+	return pmd_flags(pmd) & _PAGE_SOFT_DIRTY;
+}
+
+static inline pte_t pte_mksoft_dirty(pte_t pte)
+{
+	return pte_set_flags(pte, _PAGE_SOFT_DIRTY);
+}
+
+static inline pmd_t pmd_mksoft_dirty(pmd_t pmd)
+{
+	return pmd_set_flags(pmd, _PAGE_SOFT_DIRTY);
+}
+
+static inline pte_t pte_swp_mksoft_dirty(pte_t pte)
+{
+	return pte_set_flags(pte, _PAGE_SWP_SOFT_DIRTY);
+}
+
+static inline int pte_swp_soft_dirty(pte_t pte)
+{
+	return pte_flags(pte) & _PAGE_SWP_SOFT_DIRTY;
+}
+
+static inline pte_t pte_swp_clear_soft_dirty(pte_t pte)
+{
+	return pte_clear_flags(pte, _PAGE_SWP_SOFT_DIRTY);
+}
+
+static inline pte_t pte_file_clear_soft_dirty(pte_t pte)
+{
+	return pte_clear_flags(pte, _PAGE_SOFT_DIRTY);
+}
+
+static inline pte_t pte_file_mksoft_dirty(pte_t pte)
+{
+	return pte_set_flags(pte, _PAGE_SOFT_DIRTY);
+}
+
+static inline int pte_file_soft_dirty(pte_t pte)
+{
+	return pte_flags(pte) & _PAGE_SOFT_DIRTY;
 }
 
 /*
@@ -399,7 +460,7 @@ pte_t *populate_extra_pte(unsigned long vaddr);
 
 static inline int pte_none(pte_t pte)
 {
-	return !pte.pte;
+	return !(pte.pte & ~(_PAGE_KNL_ERRATUM_MASK));
 }
 
 #define __HAVE_ARCH_PTE_SAME
@@ -414,10 +475,24 @@ static inline int pte_present(pte_t a)
 			       _PAGE_NUMA);
 }
 
-#define pte_accessible pte_accessible
-static inline int pte_accessible(pte_t a)
+#ifdef __HAVE_ARCH_PTE_DEVMAP
+static inline int pte_devmap(pte_t a)
 {
-	return pte_flags(a) & _PAGE_PRESENT;
+	return (pte_flags(a) & _PAGE_DEVMAP) == _PAGE_DEVMAP;
+}
+#endif
+
+#define pte_accessible pte_accessible
+static inline bool pte_accessible(struct mm_struct *mm, pte_t a)
+{
+	if (pte_flags(a) & _PAGE_PRESENT)
+		return true;
+
+	if ((pte_flags(a) & (_PAGE_PROTNONE | _PAGE_NUMA)) &&
+			tlb_flush_pending(mm))
+		return true;
+
+	return false;
 }
 
 static inline int pte_hidden(pte_t pte)
@@ -441,7 +516,8 @@ static inline int pmd_none(pmd_t pmd)
 {
 	/* Only check low word on 32-bit platforms, since it might be
 	   out of sync with upper half. */
-	return (unsigned long)native_pmd_val(pmd) == 0;
+	unsigned long val = native_pmd_val(pmd);
+	return (val & ~_PAGE_KNL_ERRATUM_MASK) == 0;
 }
 
 static inline unsigned long pmd_page_vaddr(pmd_t pmd)
@@ -512,7 +588,7 @@ static inline unsigned long pages_to_mb(unsigned long npg)
 #if PAGETABLE_LEVELS > 2
 static inline int pud_none(pud_t pud)
 {
-	return native_pud_val(pud) == 0;
+	return (native_pud_val(pud) & ~(_PAGE_KNL_ERRATUM_MASK)) == 0;
 }
 
 static inline int pud_present(pud_t pud)
@@ -589,6 +665,12 @@ static inline int pgd_bad(pgd_t pgd)
 
 static inline int pgd_none(pgd_t pgd)
 {
+	/*
+	 * There is no need to do a workaround for the KNL stray
+	 * A/D bit erratum here.  PGDs only point to page tables
+	 * except on 32-bit non-PAE which is not supported on
+	 * KNL.
+	 */
 	return !native_pgd_val(pgd);
 }
 #endif	/* PAGETABLE_LEVELS > 3 */

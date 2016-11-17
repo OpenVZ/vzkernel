@@ -570,4 +570,73 @@ DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_15H_NB_F4,
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_15H_NB_F5,
 			quirk_amd_nb_node);
 
+static void quirk_intel_soc_ixgbe_variant(struct pci_dev *dev)
+{
+	/* Only mark Broadwell-DE SoC unsupported */
+	if (boot_cpu_data.x86_model != 86)
+		return;
+	mark_hardware_unsupported("Intel ixgbe device");
+}
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_INTEL, 0x15AE,
+			quirk_intel_soc_ixgbe_variant);
+
+/*
+ * This "quirk" marks Intel Kabylake systems as supported.  The header fixup,
+ * quirk_intel_kabylake_sunrisepoint_variant(), calls examine all the PCI
+ * devices looking for a PCH in the device ID range of 0xA141 to 0xA15F.  The
+ * final lookup, quirk_intel_kabylake_check_supported(), which is executed
+ * later, is the actual call that marks the hardware unsupported.
+ *
+ * Note: As of RHEL7.3, the Intel datasheet
+ *
+ * http://www.intel.com/content/www/us/en/chipsets/100-series-chipset-datasheet-vol-1.html?wapkw=intel+100+series,
+ *
+ * indicates only a subset of the device IDs are valid on page 25.  I have
+ * enabled only those device IDs below.
+ */
+
+static bool is_kabylake_sunrisepoint = false;
+static void quirk_intel_kabylake_sunrisepoint_variant(struct pci_dev *dev)
+{
+	if (boot_cpu_data.x86_model != 158)
+		return;
+
+	is_kabylake_sunrisepoint = true;
+}
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0xA143,
+			 quirk_intel_kabylake_sunrisepoint_variant);
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0xA144,
+			 quirk_intel_kabylake_sunrisepoint_variant);
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0xA145,
+			 quirk_intel_kabylake_sunrisepoint_variant);
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0xA146,
+			 quirk_intel_kabylake_sunrisepoint_variant);
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0xA147,
+			 quirk_intel_kabylake_sunrisepoint_variant);
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0xA148,
+			 quirk_intel_kabylake_sunrisepoint_variant);
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0xA14D,
+			 quirk_intel_kabylake_sunrisepoint_variant);
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0xA14E,
+			 quirk_intel_kabylake_sunrisepoint_variant);
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0xA150,
+			 quirk_intel_kabylake_sunrisepoint_variant);
+
+static void quirk_intel_kabylake_check_supported(struct pci_dev *dev)
+{
+	if (boot_cpu_data.x86_model != 158)
+		return;
+
+	if (((dev->class >> 8) & 0xffff) != PCI_CLASS_BRIDGE_ISA)
+		return;
+
+	if (!is_kabylake_sunrisepoint) {
+		pr_crit("Unknown Intel PCH (0x%0x) detected\n",
+			dev->device);
+		mark_hardware_unsupported("Intel Kabylake processor with unknown PCH");
+	}
+}
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_INTEL, PCI_ANY_ID,
+			quirk_intel_kabylake_check_supported);
+
 #endif

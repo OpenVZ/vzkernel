@@ -225,6 +225,7 @@ source "drivers/pinctrl/mvebu/Kconfig"
 source "drivers/pinctrl/sh-pfc/Kconfig"
 source "drivers/pinctrl/spear/Kconfig"
 source "drivers/pinctrl/vt8500/Kconfig"
+source "drivers/pinctrl/intel/Kconfig"
 
 config PINCTRL_XWAY
 	bool

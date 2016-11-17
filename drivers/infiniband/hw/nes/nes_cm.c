@@ -132,7 +132,7 @@ static void print_core(struct nes_cm_core *core);
 /* External CM API Interface */
 /* instance of function pointers for client API */
 /* set address of this instance to cm_core->cm_ops at cm_core alloc */
-static struct nes_cm_ops nes_cm_api = {
+static const struct nes_cm_ops nes_cm_api = {
 	mini_cm_accelerated,
 	mini_cm_listen,
 	mini_cm_del_listen,
@@ -1331,8 +1331,9 @@ static int nes_addr_resolve_neigh(struct nes_vnic *nesvnic, u32 dst_ip, int arpi
 	int rc = arpindex;
 	struct net_device *netdev;
 	struct nes_adapter *nesadapter = nesvnic->nesdev->nesadapter;
+	__be32 dst_ipaddr = htonl(dst_ip);
 
-	rt = ip_route_output(&init_net, htonl(dst_ip), 0, 0, 0);
+	rt = ip_route_output(&init_net, dst_ipaddr, nesvnic->local_ipaddr, 0, 0);
 	if (IS_ERR(rt)) {
 		printk(KERN_ERR "%s: ip_route_output_key failed for 0x%08X\n",
 		       __func__, dst_ip);
@@ -1344,7 +1345,7 @@ static int nes_addr_resolve_neigh(struct nes_vnic *nesvnic, u32 dst_ip, int arpi
 	else
 		netdev = nesvnic->netdev;
 
-	neigh = neigh_lookup(&arp_tbl, &rt->rt_gateway, netdev);
+	neigh = dst_neigh_lookup(&rt->dst, &dst_ipaddr);
 
 	rcu_read_lock();
 	if (neigh) {
@@ -1417,6 +1418,8 @@ static struct nes_cm_node *make_cm_node(struct nes_cm_core *cm_core,
 		  &cm_node->loc_addr, cm_node->loc_port,
 		  &cm_node->rem_addr, cm_node->rem_port);
 	cm_node->listener = listener;
+	if (listener)
+		cm_node->tos = listener->tos;
 	cm_node->netdev = nesvnic->netdev;
 	cm_node->cm_id = cm_info->cm_id;
 	memcpy(cm_node->loc_mac, nesvnic->netdev->dev_addr, ETH_ALEN);
@@ -2701,6 +2704,9 @@ static int nes_cm_init_tsa_conn(struct nes_qp *nesqp, struct nes_cm_node *cm_nod
 
 	nesqp->nesqp_context->misc2 |= cpu_to_le32(64 << NES_QPCONTEXT_MISC2_TTL_SHIFT);
 
+	nesqp->nesqp_context->misc2 |= cpu_to_le32(
+		cm_node->tos << NES_QPCONTEXT_MISC2_TOS_SHIFT);
+
 	nesqp->nesqp_context->mss |= cpu_to_le32(((u32)cm_node->tcp_cntxt.mss) << 16);
 
 	nesqp->nesqp_context->tcp_state_flow_label |= cpu_to_le32(
@@ -2989,7 +2995,6 @@ int nes_accept(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 	int passive_state;
 	struct nes_ib_device *nesibdev;
 	struct ib_mr *ibmr = NULL;
-	struct ib_phys_buf ibphysbuf;
 	struct nes_pd *nespd;
 	u64 tagged_offset;
 	u8 mpa_frame_offset = 0;
@@ -2998,6 +3003,8 @@ int nes_accept(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 	u8 *start_ptr = &start_addr;
 	u8 **start_buff = &start_ptr;
 	u16 buff_len = 0;
+	struct sockaddr_in *laddr = (struct sockaddr_in *)&cm_id->local_addr;
+	struct sockaddr_in *raddr = (struct sockaddr_in *)&cm_id->remote_addr;
 
 	ibqp = nes_get_qp(cm_id->device, conn_param->qpn);
 	if (!ibqp)
@@ -3062,26 +3069,23 @@ int nes_accept(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 	/* setup our first outgoing iWarp send WQE (the IETF frame response) */
 	wqe = &nesqp->hwqp.sq_vbase[0];
 
-	if (cm_id->remote_addr.sin_addr.s_addr !=
-	    cm_id->local_addr.sin_addr.s_addr) {
+	if (raddr->sin_addr.s_addr != laddr->sin_addr.s_addr) {
 		u64temp = (unsigned long)nesqp;
 		nesibdev = nesvnic->nesibdev;
 		nespd = nesqp->nespd;
-		ibphysbuf.addr = nesqp->ietf_frame_pbase + mpa_frame_offset;
-		ibphysbuf.size = buff_len;
 		tagged_offset = (u64)(unsigned long)*start_buff;
-		ibmr = nesibdev->ibdev.reg_phys_mr((struct ib_pd *)nespd,
-						   &ibphysbuf, 1,
-						   IB_ACCESS_LOCAL_WRITE,
-						   &tagged_offset);
-		if (!ibmr) {
+		ibmr = nes_reg_phys_mr(&nespd->ibpd,
+				nesqp->ietf_frame_pbase + mpa_frame_offset,
+				buff_len, IB_ACCESS_LOCAL_WRITE,
+				&tagged_offset);
+		if (IS_ERR(ibmr)) {
 			nes_debug(NES_DBG_CM, "Unable to register memory region"
 				  "for lSMM for cm_node = %p \n",
 				  cm_node);
 			pci_free_consistent(nesdev->pcidev,
 					    nesqp->private_data_len + nesqp->ietf_frame_size,
 					    nesqp->ietf_frame, nesqp->ietf_frame_pbase);
-			return -ENOMEM;
+			return PTR_ERR(ibmr);
 		}
 
 		ibmr->pd = &nespd->ibpd;
@@ -3132,13 +3136,10 @@ int nes_accept(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 
 	nes_cm_init_tsa_conn(nesqp, cm_node);
 
-	nesqp->nesqp_context->tcpPorts[0] =
-		cpu_to_le16(ntohs(cm_id->local_addr.sin_port));
-	nesqp->nesqp_context->tcpPorts[1] =
-		cpu_to_le16(ntohs(cm_id->remote_addr.sin_port));
+	nesqp->nesqp_context->tcpPorts[0] = cpu_to_le16(ntohs(laddr->sin_port));
+	nesqp->nesqp_context->tcpPorts[1] = cpu_to_le16(ntohs(raddr->sin_port));
 
-	nesqp->nesqp_context->ip0 =
-			cpu_to_le32(ntohl(cm_id->remote_addr.sin_addr.s_addr));
+	nesqp->nesqp_context->ip0 = cpu_to_le32(ntohl(raddr->sin_addr.s_addr));
 
 	nesqp->nesqp_context->misc2 |= cpu_to_le32(
 		(u32)PCI_FUNC(nesdev->pcidev->devfn) <<
@@ -3162,9 +3163,9 @@ int nes_accept(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 	memset(&nes_quad, 0, sizeof(nes_quad));
 	nes_quad.DstIpAdrIndex =
 		cpu_to_le32((u32)PCI_FUNC(nesdev->pcidev->devfn) << 24);
-	nes_quad.SrcIpadr = cm_id->remote_addr.sin_addr.s_addr;
-	nes_quad.TcpPorts[0] = cm_id->remote_addr.sin_port;
-	nes_quad.TcpPorts[1] = cm_id->local_addr.sin_port;
+	nes_quad.SrcIpadr = raddr->sin_addr.s_addr;
+	nes_quad.TcpPorts[0] = raddr->sin_port;
+	nes_quad.TcpPorts[1] = laddr->sin_port;
 
 	/* Produce hash key */
 	crc_value = get_crc_value(&nes_quad);
@@ -3180,10 +3181,8 @@ int nes_accept(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 	nes_debug(NES_DBG_CM, "QP%u, Destination IP = 0x%08X:0x%04X, local = "
 		  "0x%08X:0x%04X, rcv_nxt=0x%08X, snd_nxt=0x%08X, mpa + "
 		  "private data length=%u.\n", nesqp->hwqp.qp_id,
-		  ntohl(cm_id->remote_addr.sin_addr.s_addr),
-		  ntohs(cm_id->remote_addr.sin_port),
-		  ntohl(cm_id->local_addr.sin_addr.s_addr),
-		  ntohs(cm_id->local_addr.sin_port),
+		  ntohl(raddr->sin_addr.s_addr), ntohs(raddr->sin_port),
+		  ntohl(laddr->sin_addr.s_addr), ntohs(laddr->sin_port),
 		  le32_to_cpu(nesqp->nesqp_context->rcv_nxt),
 		  le32_to_cpu(nesqp->nesqp_context->snd_nxt),
 		  buff_len);
@@ -3263,7 +3262,11 @@ int nes_connect(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 	struct nes_cm_node *cm_node;
 	struct nes_cm_info cm_info;
 	int apbvt_set = 0;
+	struct sockaddr_in *laddr = (struct sockaddr_in *)&cm_id->local_addr;
+	struct sockaddr_in *raddr = (struct sockaddr_in *)&cm_id->remote_addr;
 
+	if (cm_id->remote_addr.ss_family != AF_INET)
+		return -ENOSYS;
 	ibqp = nes_get_qp(cm_id->device, conn_param->qpn);
 	if (!ibqp)
 		return -EINVAL;
@@ -3277,16 +3280,14 @@ int nes_connect(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 	if (!nesdev)
 		return -EINVAL;
 
-	if (!(cm_id->local_addr.sin_port) || !(cm_id->remote_addr.sin_port))
+	if (!laddr->sin_port || !raddr->sin_port)
 		return -EINVAL;
 
 	nes_debug(NES_DBG_CM, "QP%u, current IP = 0x%08X, Destination IP = "
 		  "0x%08X:0x%04X, local = 0x%08X:0x%04X.\n", nesqp->hwqp.qp_id,
-		  ntohl(nesvnic->local_ipaddr),
-		  ntohl(cm_id->remote_addr.sin_addr.s_addr),
-		  ntohs(cm_id->remote_addr.sin_port),
-		  ntohl(cm_id->local_addr.sin_addr.s_addr),
-		  ntohs(cm_id->local_addr.sin_port));
+		  ntohl(nesvnic->local_ipaddr), ntohl(raddr->sin_addr.s_addr),
+		  ntohs(raddr->sin_port), ntohl(laddr->sin_addr.s_addr),
+		  ntohs(laddr->sin_port));
 
 	atomic_inc(&cm_connects);
 	nesqp->active_conn = 1;
@@ -3306,18 +3307,18 @@ int nes_connect(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 	nes_debug(NES_DBG_CM, "mpa private data len =%u\n",
 		  conn_param->private_data_len);
 
-	if (cm_id->local_addr.sin_addr.s_addr !=
-	    cm_id->remote_addr.sin_addr.s_addr) {
-		nes_manage_apbvt(nesvnic, ntohs(cm_id->local_addr.sin_port),
-				 PCI_FUNC(nesdev->pcidev->devfn), NES_MANAGE_APBVT_ADD);
+	if (laddr->sin_addr.s_addr != raddr->sin_addr.s_addr) {
+		nes_manage_apbvt(nesvnic, ntohs(laddr->sin_port),
+				 PCI_FUNC(nesdev->pcidev->devfn),
+				 NES_MANAGE_APBVT_ADD);
 		apbvt_set = 1;
 	}
 
 	/* set up the connection params for the node */
-	cm_info.loc_addr = htonl(cm_id->local_addr.sin_addr.s_addr);
-	cm_info.loc_port = htons(cm_id->local_addr.sin_port);
-	cm_info.rem_addr = htonl(cm_id->remote_addr.sin_addr.s_addr);
-	cm_info.rem_port = htons(cm_id->remote_addr.sin_port);
+	cm_info.loc_addr = htonl(laddr->sin_addr.s_addr);
+	cm_info.loc_port = htons(laddr->sin_port);
+	cm_info.rem_addr = htonl(raddr->sin_addr.s_addr);
+	cm_info.rem_port = htons(raddr->sin_port);
 	cm_info.cm_id = cm_id;
 	cm_info.conn_type = NES_CM_IWARP_CONN_TYPE;
 
@@ -3329,7 +3330,7 @@ int nes_connect(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 					  &cm_info);
 	if (!cm_node) {
 		if (apbvt_set)
-			nes_manage_apbvt(nesvnic, ntohs(cm_id->local_addr.sin_port),
+			nes_manage_apbvt(nesvnic, ntohs(laddr->sin_port),
 					 PCI_FUNC(nesdev->pcidev->devfn),
 					 NES_MANAGE_APBVT_DEL);
 
@@ -3338,6 +3339,7 @@ int nes_connect(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 	}
 
 	cm_node->apbvt_set = apbvt_set;
+	cm_node->tos = cm_id->tos;
 	nesqp->cm_node = cm_node;
 	cm_node->nesqp = nesqp;
 	nes_add_ref(&nesqp->ibqp);
@@ -3355,10 +3357,13 @@ int nes_create_listen(struct iw_cm_id *cm_id, int backlog)
 	struct nes_cm_listener *cm_node;
 	struct nes_cm_info cm_info;
 	int err;
+	struct sockaddr_in *laddr = (struct sockaddr_in *)&cm_id->local_addr;
 
 	nes_debug(NES_DBG_CM, "cm_id = %p, local port = 0x%04X.\n",
-			cm_id, ntohs(cm_id->local_addr.sin_port));
+		  cm_id, ntohs(laddr->sin_port));
 
+	if (cm_id->local_addr.ss_family != AF_INET)
+		return -ENOSYS;
 	nesvnic = to_nesvnic(cm_id->device);
 	if (!nesvnic)
 		return -EINVAL;
@@ -3367,11 +3372,11 @@ int nes_create_listen(struct iw_cm_id *cm_id, int backlog)
 			nesvnic, nesvnic->netdev, nesvnic->netdev->name);
 
 	nes_debug(NES_DBG_CM, "nesvnic->local_ipaddr=0x%08x, sin_addr.s_addr=0x%08x\n",
-			nesvnic->local_ipaddr, cm_id->local_addr.sin_addr.s_addr);
+			nesvnic->local_ipaddr, laddr->sin_addr.s_addr);
 
 	/* setup listen params in our api call struct */
 	cm_info.loc_addr = nesvnic->local_ipaddr;
-	cm_info.loc_port = cm_id->local_addr.sin_port;
+	cm_info.loc_port = laddr->sin_port;
 	cm_info.backlog = backlog;
 	cm_info.cm_id = cm_id;
 
@@ -3386,10 +3391,10 @@ int nes_create_listen(struct iw_cm_id *cm_id, int backlog)
 	}
 
 	cm_id->provider_data = cm_node;
+	cm_node->tos = cm_id->tos;
 
 	if (!cm_node->reused_node) {
-		err = nes_manage_apbvt(nesvnic,
-				       ntohs(cm_id->local_addr.sin_port),
+		err = nes_manage_apbvt(nesvnic, ntohs(laddr->sin_port),
 				       PCI_FUNC(nesvnic->nesdev->pcidev->devfn),
 				       NES_MANAGE_APBVT_ADD);
 		if (err) {
@@ -3487,6 +3492,9 @@ static void cm_event_connected(struct nes_cm_event *event)
 	struct nes_v4_quad nes_quad;
 	u32 crc_value;
 	int ret;
+	struct sockaddr_in *laddr;
+	struct sockaddr_in *raddr;
+	struct sockaddr_in *cm_event_laddr;
 
 	/* get all our handles */
 	cm_node = event->cm_node;
@@ -3496,27 +3504,24 @@ static void cm_event_connected(struct nes_cm_event *event)
 	nesvnic = to_nesvnic(nesqp->ibqp.device);
 	nesdev = nesvnic->nesdev;
 	nesadapter = nesdev->nesadapter;
+	laddr = (struct sockaddr_in *)&cm_id->local_addr;
+	raddr = (struct sockaddr_in *)&cm_id->remote_addr;
+	cm_event_laddr = (struct sockaddr_in *)&cm_event.local_addr;
 
 	if (nesqp->destroyed)
 		return;
 	atomic_inc(&cm_connecteds);
 	nes_debug(NES_DBG_CM, "QP%u attempting to connect to  0x%08X:0x%04X on"
 		  " local port 0x%04X. jiffies = %lu.\n",
-		  nesqp->hwqp.qp_id,
-		  ntohl(cm_id->remote_addr.sin_addr.s_addr),
-		  ntohs(cm_id->remote_addr.sin_port),
-		  ntohs(cm_id->local_addr.sin_port),
-		  jiffies);
+		  nesqp->hwqp.qp_id, ntohl(raddr->sin_addr.s_addr),
+		  ntohs(raddr->sin_port), ntohs(laddr->sin_port), jiffies);
 
 	nes_cm_init_tsa_conn(nesqp, cm_node);
 
 	/* set the QP tsa context */
-	nesqp->nesqp_context->tcpPorts[0] =
-		cpu_to_le16(ntohs(cm_id->local_addr.sin_port));
-	nesqp->nesqp_context->tcpPorts[1] =
-		cpu_to_le16(ntohs(cm_id->remote_addr.sin_port));
-	nesqp->nesqp_context->ip0 =
-			cpu_to_le32(ntohl(cm_id->remote_addr.sin_addr.s_addr));
+	nesqp->nesqp_context->tcpPorts[0] = cpu_to_le16(ntohs(laddr->sin_port));
+	nesqp->nesqp_context->tcpPorts[1] = cpu_to_le16(ntohs(raddr->sin_port));
+	nesqp->nesqp_context->ip0 = cpu_to_le32(ntohl(raddr->sin_addr.s_addr));
 
 	nesqp->nesqp_context->misc2 |= cpu_to_le32(
 			(u32)PCI_FUNC(nesdev->pcidev->devfn) <<
@@ -3544,9 +3549,9 @@ static void cm_event_connected(struct nes_cm_event *event)
 
 	nes_quad.DstIpAdrIndex =
 		cpu_to_le32((u32)PCI_FUNC(nesdev->pcidev->devfn) << 24);
-	nes_quad.SrcIpadr = cm_id->remote_addr.sin_addr.s_addr;
-	nes_quad.TcpPorts[0] = cm_id->remote_addr.sin_port;
-	nes_quad.TcpPorts[1] = cm_id->local_addr.sin_port;
+	nes_quad.SrcIpadr = raddr->sin_addr.s_addr;
+	nes_quad.TcpPorts[0] = raddr->sin_port;
+	nes_quad.TcpPorts[1] = laddr->sin_port;
 
 	/* Produce hash key */
 	crc_value = get_crc_value(&nes_quad);
@@ -3565,8 +3570,8 @@ static void cm_event_connected(struct nes_cm_event *event)
 	cm_event.event = IW_CM_EVENT_CONNECT_REPLY;
 	cm_event.status = 0;
 	cm_event.provider_data = cm_id->provider_data;
-	cm_event.local_addr.sin_family = AF_INET;
-	cm_event.local_addr.sin_port = cm_id->local_addr.sin_port;
+	cm_event_laddr->sin_family = AF_INET;
+	cm_event_laddr->sin_port = laddr->sin_port;
 	cm_event.remote_addr = cm_id->remote_addr;
 
 	cm_event.private_data = (void *)event->cm_node->mpa_frame_buf;
@@ -3574,7 +3579,7 @@ static void cm_event_connected(struct nes_cm_event *event)
 	cm_event.ird = cm_node->ird_size;
 	cm_event.ord = cm_node->ord_size;
 
-	cm_event.local_addr.sin_addr.s_addr = event->cm_info.rem_addr;
+	cm_event_laddr->sin_addr.s_addr = event->cm_info.rem_addr;
 	ret = cm_id->event_handler(cm_id, &cm_event);
 	nes_debug(NES_DBG_CM, "OFA CM event_handler returned, ret=%d\n", ret);
 
@@ -3627,9 +3632,16 @@ static void cm_event_connect_error(struct nes_cm_event *event)
 	cm_event.private_data = NULL;
 	cm_event.private_data_len = 0;
 
-	nes_debug(NES_DBG_CM, "call CM_EVENT REJECTED, local_addr=%08x, "
-		  "remove_addr=%08x\n", cm_event.local_addr.sin_addr.s_addr,
-		  cm_event.remote_addr.sin_addr.s_addr);
+#ifdef CONFIG_INFINIBAND_NES_DEBUG
+	{
+		struct sockaddr_in *cm_event_laddr = (struct sockaddr_in *)
+						     &cm_event.local_addr;
+		struct sockaddr_in *cm_event_raddr = (struct sockaddr_in *)
+						     &cm_event.remote_addr;
+		nes_debug(NES_DBG_CM, "call CM_EVENT REJECTED, local_addr=%08x, remote_addr=%08x\n",
+			  cm_event_laddr->sin_addr.s_addr, cm_event_raddr->sin_addr.s_addr);
+	}
+#endif
 
 	ret = cm_id->event_handler(cm_id, &cm_event);
 	nes_debug(NES_DBG_CM, "OFA CM event_handler returned, ret=%d\n", ret);
@@ -3709,6 +3721,10 @@ static void cm_event_mpa_req(struct nes_cm_event *event)
 	struct iw_cm_event cm_event;
 	int ret;
 	struct nes_cm_node *cm_node;
+	struct sockaddr_in *cm_event_laddr = (struct sockaddr_in *)
+					     &cm_event.local_addr;
+	struct sockaddr_in *cm_event_raddr = (struct sockaddr_in *)
+					     &cm_event.remote_addr;
 
 	cm_node = event->cm_node;
 	if (!cm_node)
@@ -3723,13 +3739,13 @@ static void cm_event_mpa_req(struct nes_cm_event *event)
 	cm_event.status = 0;
 	cm_event.provider_data = (void *)cm_node;
 
-	cm_event.local_addr.sin_family = AF_INET;
-	cm_event.local_addr.sin_port = htons(event->cm_info.loc_port);
-	cm_event.local_addr.sin_addr.s_addr = htonl(event->cm_info.loc_addr);
+	cm_event_laddr->sin_family = AF_INET;
+	cm_event_laddr->sin_port = htons(event->cm_info.loc_port);
+	cm_event_laddr->sin_addr.s_addr = htonl(event->cm_info.loc_addr);
 
-	cm_event.remote_addr.sin_family = AF_INET;
-	cm_event.remote_addr.sin_port = htons(event->cm_info.rem_port);
-	cm_event.remote_addr.sin_addr.s_addr = htonl(event->cm_info.rem_addr);
+	cm_event_raddr->sin_family = AF_INET;
+	cm_event_raddr->sin_port = htons(event->cm_info.rem_port);
+	cm_event_raddr->sin_addr.s_addr = htonl(event->cm_info.rem_addr);
 	cm_event.private_data = cm_node->mpa_frame_buf;
 	cm_event.private_data_len = (u8)cm_node->mpa_frame_size;
 	cm_event.ird = cm_node->ird_size;
@@ -3749,6 +3765,10 @@ static void cm_event_mpa_reject(struct nes_cm_event *event)
 	struct iw_cm_event cm_event;
 	struct nes_cm_node *cm_node;
 	int ret;
+	struct sockaddr_in *cm_event_laddr = (struct sockaddr_in *)
+					     &cm_event.local_addr;
+	struct sockaddr_in *cm_event_raddr = (struct sockaddr_in *)
+					     &cm_event.remote_addr;
 
 	cm_node = event->cm_node;
 	if (!cm_node)
@@ -3763,21 +3783,21 @@ static void cm_event_mpa_reject(struct nes_cm_event *event)
 	cm_event.status = -ECONNREFUSED;
 	cm_event.provider_data = cm_id->provider_data;
 
-	cm_event.local_addr.sin_family = AF_INET;
-	cm_event.local_addr.sin_port = htons(event->cm_info.loc_port);
-	cm_event.local_addr.sin_addr.s_addr = htonl(event->cm_info.loc_addr);
+	cm_event_laddr->sin_family = AF_INET;
+	cm_event_laddr->sin_port = htons(event->cm_info.loc_port);
+	cm_event_laddr->sin_addr.s_addr = htonl(event->cm_info.loc_addr);
 
-	cm_event.remote_addr.sin_family = AF_INET;
-	cm_event.remote_addr.sin_port = htons(event->cm_info.rem_port);
-	cm_event.remote_addr.sin_addr.s_addr = htonl(event->cm_info.rem_addr);
+	cm_event_raddr->sin_family = AF_INET;
+	cm_event_raddr->sin_port = htons(event->cm_info.rem_port);
+	cm_event_raddr->sin_addr.s_addr = htonl(event->cm_info.rem_addr);
 
 	cm_event.private_data = cm_node->mpa_frame_buf;
 	cm_event.private_data_len = (u8)cm_node->mpa_frame_size;
 
 	nes_debug(NES_DBG_CM, "call CM_EVENT_MPA_REJECTED, local_addr=%08x, "
 		  "remove_addr=%08x\n",
-		  cm_event.local_addr.sin_addr.s_addr,
-		  cm_event.remote_addr.sin_addr.s_addr);
+		  cm_event_laddr->sin_addr.s_addr,
+		  cm_event_raddr->sin_addr.s_addr);
 
 	ret = cm_id->event_handler(cm_id, &cm_event);
 	if (ret)

@@ -296,7 +296,7 @@ void __init page_cgroup_init(void)
 			 * -------------pfn-------------->
 			 * N0 | N1 | N2 | N0 | N1 | N2|....
 			 */
-			if (pfn_to_nid(pfn) != nid)
+			if (early_pfn_to_nid(pfn) != nid)
 				continue;
 			if (init_section_page_cgroup(pfn, nid))
 				goto oom;

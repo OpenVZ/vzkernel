@@ -63,6 +63,7 @@ EXPORT_SYMBOL(memmove);
 EXPORT_SYMBOL(phys_base);
 #endif
 EXPORT_SYMBOL(empty_zero_page);
+EXPORT_SYMBOL(init_level4_pgt);
 #ifndef CONFIG_PARAVIRT
 EXPORT_SYMBOL(native_load_gs_index);
 #endif

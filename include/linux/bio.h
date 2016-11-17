@@ -218,6 +218,7 @@ struct bio_pair {
 };
 extern struct bio_pair *bio_split(struct bio *bi, int first_sectors);
 extern void bio_pair_release(struct bio_pair *dbio);
+extern void bio_trim(struct bio *bio, int offset, int size);
 
 extern struct bio_set *bioset_create(unsigned int, unsigned int);
 extern void bioset_free(struct bio_set *);
@@ -261,6 +262,7 @@ extern void bio_advance(struct bio *, unsigned);
 
 extern void bio_init(struct bio *);
 extern void bio_reset(struct bio *);
+void bio_chain(struct bio *, struct bio *);
 
 extern int bio_add_page(struct bio *, struct page *, unsigned int,unsigned int);
 extern int bio_add_pc_page(struct request_queue *, struct bio *, struct page *,
@@ -419,6 +421,8 @@ static inline void bio_list_init(struct bio_list *bl)
 	bl->head = bl->tail = NULL;
 }
 
+#define BIO_EMPTY_LIST	{ NULL, NULL }
+
 #define bio_list_for_each(bio, bl) \
 	for (bio = (bl)->head; bio; bio = bio->bi_next)
 
@@ -509,6 +513,20 @@ static inline struct bio *bio_list_get(struct bio_list *bl)
 	bl->head = bl->tail = NULL;
 
 	return bio;
+}
+
+/*
+ * Increment chain count for the bio. Make sure the CHAIN flag update
+ * is visible before the raised count.
+ */
+static inline void bio_inc_remaining(struct bio *bio)
+{
+	if (WARN_ON_ONCE(!bio->bio_aux))
+		return;
+
+	bio->bio_aux->bi_flags |= (1 << BIO_AUX_CHAIN);
+	smp_mb__before_atomic();
+	atomic_inc(&bio->bio_aux->__bi_remaining);
 }
 
 /*
