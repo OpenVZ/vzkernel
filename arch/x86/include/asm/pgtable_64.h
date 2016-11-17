@@ -147,11 +147,6 @@ static inline int pgd_large(pgd_t pgd) { return 0; }
 #define pte_offset_map(dir, address) pte_offset_kernel((dir), (address))
 #define pte_unmap(pte) ((void)(pte))/* NOP */
 
-/* Encode and de-code a swap entry */
-#if _PAGE_BIT_FILE > _PAGE_BIT_PROTNONE
-#error unsupported PTE bit arrangement
-#endif
-
 /*
  * Encode and de-code a swap entry
  *
