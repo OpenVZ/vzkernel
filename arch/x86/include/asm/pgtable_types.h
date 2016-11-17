@@ -98,29 +98,6 @@
 #endif
 
 #if defined(CONFIG_X86_64) || defined(CONFIG_X86_PAE)
-/*
- * Do compile-time checks for all the bits that may be set on
- * non-present PTEs
- */
-#if _PAGE_BIT_FILE == _PAGE_BIT_SWP_SOFT_DIRTY
-#error conflicting _PAGE_BIT_FILE
-#endif
-#if _PAGE_BIT_FILE == _PAGE_BIT_PROTNONE
-#error conflicting _PAGE_BIT_FILE
-#endif
-/*
- * Do compile-time checks for all the bits affected by the "KNL4"
- * erratum:
- */
-#if _PAGE_BIT_FILE == _PAGE_BIT_DIRTY
-#error conflicting _PAGE_BIT_FILE
-#endif
-#if _PAGE_BIT_FILE == _PAGE_BIT_ACCESSED
-#error conflicting _PAGE_BIT_FILE
-#endif
-#endif
-
-#if defined(CONFIG_X86_64) || defined(CONFIG_X86_PAE)
 #define _PAGE_NX	(_AT(pteval_t, 1) << _PAGE_BIT_NX)
 #define _PAGE_DEVMAP	(_AT(u64, 1) << _PAGE_BIT_DEVMAP)
 #define __HAVE_ARCH_PTE_DEVMAP
