@@ -30,6 +30,7 @@
 #include <linux/types.h>
 #include <linux/hardirq.h>
 #include <linux/acpi.h>
+#include <linux/dmi.h>
 #include <acpi/acpi_bus.h>
 #include <acpi/acpi_drivers.h>
 
@@ -645,6 +646,16 @@ bool acpi_check_dsm(acpi_handle handle, const u8 *uuid, int rev, u64 funcs)
 		for (i = 0; i < obj->buffer.length && i < 8; i++)
 			mask |= (((u8)obj->buffer.pointer[i]) << (i * 8));
 	ACPI_FREE(obj);
+
+	/*
+	 * RHEL7: If this is a Cisco system and a mask of 0x80 is returned
+	 * then set the value to 0x81 so the Bit 0 check passes.
+	 */
+	if ((mask == 0x80) &&
+	    dmi_match(DMI_BIOS_VENDOR, "Cisco Systems, Inc.")) {
+		acpi_handle_warn(handle, FW_WARN "Cisco Systems, Inc.: _DSM mask returns 0x80 but should return 0x81.  Please contact Cisco Systems, Inc. for a BIOS upgrade.\n");
+		mask = 0x81;
+	}
 
 	/*
 	 * Bit 0 indicates whether there's support for any functions other than
