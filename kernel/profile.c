@@ -614,5 +614,5 @@ out:
 	cpu_notifier_register_done();
 	return err;
 }
-module_init(create_proc_profile);
+subsys_initcall(create_proc_profile);
 #endif /* CONFIG_PROC_FS */

@@ -225,5 +225,4 @@ static int __init uid_cache_init(void)
 
 	return 0;
 }
-
-module_init(uid_cache_init);
+subsys_initcall(uid_cache_init);
