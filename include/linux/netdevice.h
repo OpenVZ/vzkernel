@@ -1601,7 +1601,7 @@ struct net_device {
 	 * additions of your backport.
 	 */
 	RH_KABI_USE_P(1, unsigned long	gro_flush_timeout)
-	RH_KABI_RESERVE_P(2)
+	RH_KABI_USE_P(2, atomic_long_t  rx_nohandler) /* inactive slave drops */
 	RH_KABI_RESERVE_P(3)
 	RH_KABI_RESERVE_P(4)
 	RH_KABI_RESERVE_P(5)

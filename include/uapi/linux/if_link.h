@@ -35,6 +35,10 @@ struct rtnl_link_stats {
 	/* for cslip etc */
 	__u32	rx_compressed;
 	__u32	tx_compressed;
+
+#ifndef __GENKSYMS__
+	__u32	rx_nohandler;		/* dropped, no handler found	*/
+#endif
 };
 
 /* The main device statistics structure */
@@ -68,6 +72,10 @@ struct rtnl_link_stats64 {
 	/* for cslip etc */
 	__u64	rx_compressed;
 	__u64	tx_compressed;
+
+#ifndef __GENKSYMS__
+	__u64	rx_nohandler;		/* dropped, no handler found	*/
+#endif
 };
 
 /* The struct should be in sync with struct ifmap */
