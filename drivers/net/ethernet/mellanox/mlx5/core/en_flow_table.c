@@ -498,26 +498,24 @@ static void mlx5e_del_vlan_rule(struct mlx5e_priv *priv,
 
 void mlx5e_enable_vlan_filter(struct mlx5e_priv *priv)
 {
-	WARN_ON(!mutex_is_locked(&priv->state_lock));
+	if (!priv->vlan.filter_disabled)
+		return;
 
-	if (priv->vlan.filter_disabled) {
-		priv->vlan.filter_disabled = false;
-		if (test_bit(MLX5E_STATE_OPENED, &priv->state))
-			mlx5e_del_vlan_rule(priv, MLX5E_VLAN_RULE_TYPE_ANY_VID,
-					    0);
-	}
+	priv->vlan.filter_disabled = false;
+	if (priv->netdev->flags & IFF_PROMISC)
+		return;
+	mlx5e_del_vlan_rule(priv, MLX5E_VLAN_RULE_TYPE_ANY_VID, 0);
 }
 
 void mlx5e_disable_vlan_filter(struct mlx5e_priv *priv)
 {
-	WARN_ON(!mutex_is_locked(&priv->state_lock));
+	if (priv->vlan.filter_disabled)
+		return;
 
-	if (!priv->vlan.filter_disabled) {
-		priv->vlan.filter_disabled = true;
-		if (test_bit(MLX5E_STATE_OPENED, &priv->state))
-			mlx5e_add_vlan_rule(priv, MLX5E_VLAN_RULE_TYPE_ANY_VID,
-					    0);
-	}
+	priv->vlan.filter_disabled = true;
+	if (priv->netdev->flags & IFF_PROMISC)
+		return;
+	mlx5e_add_vlan_rule(priv, MLX5E_VLAN_RULE_TYPE_ANY_VID, 0);
 }
 
 int mlx5e_vlan_rx_add_vid(struct net_device *dev, __always_unused __be16 proto,
@@ -679,8 +677,12 @@ void mlx5e_set_rx_mode_core(struct mlx5e_priv *priv)
 	bool enable_broadcast  = !ea->broadcast_enabled &&  broadcast_enabled;
 	bool disable_broadcast =  ea->broadcast_enabled && !broadcast_enabled;
 
-	if (enable_promisc)
+	if (enable_promisc) {
 		mlx5e_add_eth_addr_rule(priv, &ea->promisc, MLX5E_PROMISC);
+		if (!priv->vlan.filter_disabled)
+			mlx5e_add_vlan_rule(priv, MLX5E_VLAN_RULE_TYPE_ANY_VID,
+					    0);
+	}
 	if (enable_allmulti)
 		mlx5e_add_eth_addr_rule(priv, &ea->allmulti, MLX5E_ALLMULTI);
 	if (enable_broadcast)
@@ -692,8 +694,12 @@ void mlx5e_set_rx_mode_core(struct mlx5e_priv *priv)
 		mlx5e_del_eth_addr_from_flow_table(priv, &ea->broadcast);
 	if (disable_allmulti)
 		mlx5e_del_eth_addr_from_flow_table(priv, &ea->allmulti);
-	if (disable_promisc)
+	if (disable_promisc) {
+		if (!priv->vlan.filter_disabled)
+			mlx5e_del_vlan_rule(priv, MLX5E_VLAN_RULE_TYPE_ANY_VID,
+					    0);
 		mlx5e_del_eth_addr_from_flow_table(priv, &ea->promisc);
+	}
 
 	ea->promisc_enabled   = promisc_enabled;
 	ea->allmulti_enabled  = allmulti_enabled;
