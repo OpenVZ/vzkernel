@@ -79,9 +79,10 @@
 #include <linux/netfilter_ipv4.h>
 #include <linux/compat.h>
 
-static struct raw_hashinfo raw_v4_hashinfo = {
+struct raw_hashinfo raw_v4_hashinfo = {
 	.lock = __RW_LOCK_UNLOCKED(raw_v4_hashinfo.lock),
 };
+EXPORT_SYMBOL_GPL(raw_v4_hashinfo);
 
 void raw_hash_sk(struct sock *sk)
 {
@@ -108,7 +109,7 @@ void raw_unhash_sk(struct sock *sk)
 }
 EXPORT_SYMBOL_GPL(raw_unhash_sk);
 
-static struct sock *__raw_v4_lookup(struct net *net, struct sock *sk,
+struct sock *__raw_v4_lookup(struct net *net, struct sock *sk,
 		unsigned short num, __be32 raddr, __be32 laddr, int dif)
 {
 	sk_for_each_from(sk) {
@@ -124,6 +125,7 @@ static struct sock *__raw_v4_lookup(struct net *net, struct sock *sk,
 found:
 	return sk;
 }
+EXPORT_SYMBOL_GPL(__raw_v4_lookup);
 
 /*
  *	0 - deliver
