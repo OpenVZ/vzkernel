@@ -406,6 +406,7 @@ static const char * const ve0_allowed_mod[] = {
 	"net-pf-16-proto-4-type-16",	/* PF_NETLINK, NETLINK_SOCK_DIAG, AF_NETLINK */
 
 	"rtnl-link-dummy",
+	"rtnl-link-vxlan",
 };
 
 /*
