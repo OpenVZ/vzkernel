@@ -1317,7 +1317,7 @@ int __sock_create(struct net *net, int family, int type, int protocol,
 	}
 
 	/* VZ compatibility layer */
-	err = vz_security_family_check(net, family);
+	err = vz_security_family_check(net, family, 0);
 	if (err < 0)
 		return err;
 
