@@ -174,6 +174,8 @@ struct in6_flowlabel_req {
 #define IPV6_JOIN_ANYCAST	27
 #define IPV6_LEAVE_ANYCAST	28
 
+#define IPV6_HDRINCL		36
+
 /* IPV6_MTU_DISCOVER values */
 #define IPV6_PMTUDISC_DONT		0
 #define IPV6_PMTUDISC_WANT		1
