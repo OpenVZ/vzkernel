@@ -421,6 +421,7 @@ static const char * const ve0_allowed_mod[] = {
 	"ip_set_list:set",
 
 	"rtnl-link-dummy",
+	"rtnl-link-vxlan",
 };
 
 /*
