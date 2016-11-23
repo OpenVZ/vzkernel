@@ -2793,7 +2793,7 @@ static int rtnl_dump_all(struct sk_buff *skb, struct netlink_callback *cb)
 		if (rtnl_msg_handlers[idx] == NULL ||
 		    rtnl_msg_handlers[idx][type].dumpit == NULL)
 			continue;
-		if (vz_security_family_check(net, idx))
+		if (vz_security_family_check(net, idx, cb->nlh->nlmsg_type))
 			continue;
 		if (idx > s_idx) {
 			memset(&cb->args[0], 0, sizeof(cb->args));
@@ -4107,7 +4107,7 @@ static int rtnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 		return 0;
 
 	family = ((struct rtgenmsg *)nlmsg_data(nlh))->rtgen_family;
-	if (vz_security_family_check(net, family))
+	if (vz_security_family_check(net, family, nlh->nlmsg_type))
 		return -EAFNOSUPPORT;
 
 	sz_idx = type>>2;
