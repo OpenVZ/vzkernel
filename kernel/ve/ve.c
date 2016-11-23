@@ -41,6 +41,7 @@
 #include <uapi/linux/vzcalluser.h>
 #include <linux/venet.h>
 #include <linux/vziptable_defs.h>
+#include <net/rtnetlink.h>
 
 static struct kmem_cache *ve_cachep;
 
@@ -180,7 +181,7 @@ EXPORT_SYMBOL(get_ve_by_id);
 EXPORT_SYMBOL(ve_list_lock);
 EXPORT_SYMBOL(ve_list_head);
 
-int vz_security_family_check(struct net *net, int family)
+int vz_security_family_check(struct net *net, int family, int type)
 {
 	if (ve_is_super(net->owner_ve))
 		return 0;
@@ -195,6 +196,14 @@ int vz_security_family_check(struct net *net, int family)
 	case PF_PPPOX:
 	case PF_KEY:
 		return 0;
+	case PF_BRIDGE:
+		if (type)
+			switch (type) {
+				case RTM_NEWNEIGH:
+				case RTM_DELNEIGH:
+				case RTM_GETNEIGH:
+					return 0;
+			}
 	default:
 		return -EAFNOSUPPORT;
 	}
