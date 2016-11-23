@@ -148,7 +148,7 @@ extern unsigned int sysctl_ve_mount_nr;
 
 extern struct kmapset_set ve_sysfs_perms;
 
-extern int vz_security_family_check(struct net *net, int family);
+extern int vz_security_family_check(struct net *net, int family, int type);
 extern int vz_security_protocol_check(struct net *net, int protocol);
 
 extern struct task_struct *kthread_create_on_node_ve(struct ve_struct *ve,
@@ -218,7 +218,7 @@ extern struct cgroup *cgroup_get_ve_root(struct cgroup *cgrp);
 
 #define ve_uevent_seqnum uevent_seqnum
 
-static inline int vz_security_family_check(struct net *net, int family) { return 0; }
+static inline int vz_security_family_check(struct net *net, int family, int type) { return 0; }
 static inline int vz_security_protocol_check(struct net *net, int protocol) { return 0; }
 
 #define ve_utsname	system_utsname
