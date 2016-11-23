@@ -43,6 +43,7 @@
 
 #include <uapi/linux/vzcalluser.h>
 #include <linux/vziptable_defs.h>
+#include <net/rtnetlink.h>
 
 static struct kmem_cache *ve_cachep;
 
@@ -179,6 +180,58 @@ EXPORT_SYMBOL(get_ve_by_id);
 
 EXPORT_SYMBOL(ve_list_lock);
 EXPORT_SYMBOL(ve_list_head);
+
+int vz_security_family_check(struct net *net, int family, int type)
+{
+	if (ve_is_super(net->owner_ve))
+		return 0;
+
+	switch (family) {
+	case PF_UNSPEC:
+	case PF_PACKET:
+	case PF_NETLINK:
+	case PF_UNIX:
+	case PF_INET:
+	case PF_INET6:
+	case PF_PPPOX:
+	case PF_KEY:
+		return 0;
+	case PF_BRIDGE:
+		if (type)
+			switch (type) {
+				case RTM_NEWNEIGH:
+				case RTM_DELNEIGH:
+				case RTM_GETNEIGH:
+					return 0;
+			}
+	default:
+		return -EAFNOSUPPORT;
+	}
+}
+EXPORT_SYMBOL_GPL(vz_security_family_check);
+
+int vz_security_protocol_check(struct net *net, int protocol)
+{
+	if (ve_is_super(net->owner_ve))
+		return 0;
+
+	switch (protocol) {
+	case  IPPROTO_IP:
+	case  IPPROTO_ICMP:
+	case  IPPROTO_TCP:
+	case  IPPROTO_UDP:
+	case  IPPROTO_RAW:
+	case  IPPROTO_DCCP:
+	case  IPPROTO_GRE:
+	case  IPPROTO_ESP:
+	case  IPPROTO_AH:
+	case  IPPROTO_SCTP:
+		return 0;
+	default:
+		return -EAFNOSUPPORT;
+	}
+}
+EXPORT_SYMBOL_GPL(vz_security_protocol_check);
 
 /* Check if current user_ns is initial for current ve */
 bool current_user_ns_initial(void)
@@ -1380,50 +1433,6 @@ static int __init ve_subsys_init(void)
 	return 0;
 }
 late_initcall(ve_subsys_init);
-
-int vz_security_family_check(struct net *net, int family)
-{
-	if (ve_is_super(net->owner_ve))
-		return 0;
-
-	switch (family) {
-	case PF_UNSPEC:
-	case PF_PACKET:
-	case PF_NETLINK:
-	case PF_UNIX:
-	case PF_INET:
-	case PF_INET6:
-	case PF_PPPOX:
-	case PF_KEY:
-		return 0;
-	default:
-		return -EAFNOSUPPORT;
-	}
-}
-EXPORT_SYMBOL_GPL(vz_security_family_check);
-
-int vz_security_protocol_check(struct net *net, int protocol)
-{
-	if (ve_is_super(net->owner_ve))
-		return 0;
-
-	switch (protocol) {
-	case  IPPROTO_IP:
-	case  IPPROTO_ICMP:
-	case  IPPROTO_TCP:
-	case  IPPROTO_UDP:
-	case  IPPROTO_RAW:
-	case  IPPROTO_DCCP:
-	case  IPPROTO_GRE:
-	case  IPPROTO_ESP:
-	case  IPPROTO_AH:
-	case  IPPROTO_SCTP:
-		return 0;
-	default:
-		return -EAFNOSUPPORT;
-	}
-}
-EXPORT_SYMBOL_GPL(vz_security_protocol_check);
 
 #ifdef CONFIG_CGROUP_SCHED
 int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
