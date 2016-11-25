@@ -502,6 +502,7 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 	preq->req_rw = bio->bi_rw;
 	preq->eng_state = PLOOP_E_ENTRY;
 	preq->state = 0;
+	preq->ppb_state = 0;
 	preq->error = 0;
 	preq->tstamp = jiffies;
 	preq->iblock = 0;
@@ -2230,7 +2231,7 @@ restart:
 			return;
 		}
 	} else if (test_bit(PLOOP_REQ_PB_LOCKOUT, &preq->state) &&
-		   test_and_clear_bit(PLOOP_REQ_PUSH_BACKUP, &preq->state)) {
+		   test_and_clear_bit(PLOOP_REQ_PUSH_BACKUP, &preq->ppb_state)) {
 		/*
 		 * preq OUT: out-of-band push_backup processing by
 		 * userspace done; preq was re-scheduled
