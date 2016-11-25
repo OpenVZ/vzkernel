@@ -919,7 +919,7 @@ static void ploop_pb_process_extent(struct pb_set *pbs, cluster_t clu,
 	while (preq) {
 		struct rb_node *n;
 
-		__set_bit(PLOOP_REQ_PUSH_BACKUP, &preq->state);
+		set_bit(PLOOP_REQ_PUSH_BACKUP, &preq->ppb_state);
 		list_add(&preq->list, ready_list);
 
 		if (n_found)
