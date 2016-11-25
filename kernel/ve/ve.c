@@ -1278,6 +1278,9 @@ static int ve_write_pseudosuper(struct cgroup *cg,
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 
+	if (!ve_capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
 	if (!ve_is_super(get_exec_env()) && value)
 		return -EPERM;
 
