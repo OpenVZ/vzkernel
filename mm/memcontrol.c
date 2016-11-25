@@ -5655,12 +5655,13 @@ static long memcg_numa_isolate_pages(struct lruvec *lruvec, enum lru_list lru,
 {
 	struct list_head *src = &lruvec->lists[lru];
 	struct zone *zone = lruvec_zone(lruvec);
+	struct page *page;
 	long scanned = 0, taken = 0;
 
 	spin_lock_irq(&zone->lru_lock);
 	while (!list_empty(src) && scanned < nr_to_scan && taken < nr_to_scan) {
-		struct page *page = list_last_entry(src, struct page, lru);
 		int nr_pages;
+		page = list_last_entry(src, struct page, lru);
 
 		scanned++;
 
@@ -5683,6 +5684,15 @@ static long memcg_numa_isolate_pages(struct lruvec *lruvec, enum lru_list lru,
 	__mod_zone_page_state(zone, NR_LRU_BASE + lru, -taken);
 	__mod_zone_page_state(zone, NR_ISOLATED_ANON + is_file_lru(lru), taken);
 	spin_unlock_irq(&zone->lru_lock);
+
+	list_for_each_entry(page, dst, lru) {
+		if (PageTransHuge(page) && split_huge_page_to_list(page, dst)) {
+			list_del(&page->lru);
+			mod_zone_page_state(zone, NR_ISOLATED_ANON,
+					HPAGE_PMD_NR);
+			putback_lru_page(page);
+		}
+	}
 
 	return scanned;
 }
