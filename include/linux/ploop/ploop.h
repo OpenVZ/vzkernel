@@ -53,6 +53,7 @@ enum {
 				   (for minor mgmt only) */
 	PLOOP_S_ONCE,	        /* An event (e.g. printk once) happened */
 	PLOOP_S_PUSH_BACKUP,	/* Push_backup is in progress */
+	PLOOP_S_NULLIFY,	/* Nullifying BAT is in progress */
 };
 
 enum {
@@ -478,6 +479,7 @@ enum
 	PLOOP_REQ_MERGE,
 	PLOOP_REQ_RELOC_A,	/* 'A' stands for allocate() */
 	PLOOP_REQ_RELOC_S,	/* 'S' stands for submit() */
+	PLOOP_REQ_RELOC_N,	/* 'N' stands for "nullify" */
 	PLOOP_REQ_ZERO,
 	PLOOP_REQ_DISCARD,
 	PLOOP_REQ_RSYNC,
@@ -492,6 +494,7 @@ enum
 #define PLOOP_REQ_MERGE_FL (1 << PLOOP_REQ_MERGE)
 #define PLOOP_REQ_RELOC_A_FL (1 << PLOOP_REQ_RELOC_A)
 #define PLOOP_REQ_RELOC_S_FL (1 << PLOOP_REQ_RELOC_S)
+#define PLOOP_REQ_RELOC_N_FL (1 << PLOOP_REQ_RELOC_N)
 #define PLOOP_REQ_DISCARD_FL (1 << PLOOP_REQ_DISCARD)
 #define PLOOP_REQ_ZERO_FL (1 << PLOOP_REQ_ZERO)
 
@@ -506,7 +509,7 @@ enum
 	PLOOP_E_DELTA_COPIED,	/* Data from previos delta was bcopy-ied */
 	PLOOP_E_TRANS_DELTA_READ,/* Write request reads data from trans delta */
 	PLOOP_E_RELOC_DATA_READ,/* Read user data to relocate */
-	PLOOP_E_RELOC_NULLIFY,  /* Zeroing relocated block is in progress */
+	PLOOP_E_RELOC_NULLIFY,  /* Zeroing given iblock is in progress */
 	PLOOP_E_INDEX_DELAY,	/* Index update is blocked by already queued
 				 * index update.
 				 */
