@@ -36,6 +36,7 @@
 			{ 1 << PLOOP_REQ_MERGE,		"M"},	\
 			{ 1 << PLOOP_REQ_RELOC_A,	"RA"},	\
 			{ 1 << PLOOP_REQ_RELOC_S,	"RS"},	\
+			{ 1 << PLOOP_REQ_RELOC_N,	"RN"},	\
 			{ 1 << PLOOP_REQ_ZERO,		"Z"},	\
 			{ 1 << PLOOP_REQ_DISCARD,	"D"})
 
