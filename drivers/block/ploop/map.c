@@ -1065,9 +1065,6 @@ static void map_wb_complete_post_process(struct ploop_map *map,
 					 struct ploop_request *preq, int err)
 {
 	struct ploop_device *plo       = map->plo;
-	struct ploop_delta  *top_delta = map_top_delta(map);
-	struct bio_list sbl;
-	int i;
 
 	if (likely(err ||
 		   (!test_bit(PLOOP_REQ_RELOC_A, &preq->state) &&
@@ -1091,26 +1088,14 @@ static void map_wb_complete_post_process(struct ploop_map *map,
 	BUG_ON (!test_bit(PLOOP_REQ_RELOC_A, &preq->state));
 	BUG_ON (!preq->aux_bio);
 
-	sbl.head = sbl.tail = preq->aux_bio;
-	preq->eng_state = PLOOP_E_RELOC_NULLIFY;
-	list_del_init(&preq->list);
-	for (i = 0; i < preq->aux_bio->bi_vcnt; i++)
-		memset(page_address(preq->aux_bio->bi_io_vec[i].bv_page),
-		       0, PAGE_SIZE);
+	if (++plo->grow_relocated > plo->grow_end - plo->grow_start) {
+		requeue_req(preq, PLOOP_E_COMPLETE);
+		return;
+	}
 
-	/*
-	 * Lately we think we does sync of nullified blocks at format
-	 * driver by image fsync before header update.
-	 * But we write this data directly into underlying device
-	 * bypassing EXT4 by usage of extent map tree
-	 * (see dio_submit()). So fsync of EXT4 image doesnt help us.
-	 * We need to force sync of nullified blocks.
-	 */
-	preq->eng_io = &top_delta->io;
-	BUG_ON(test_bit(PLOOP_REQ_POST_SUBMIT, &preq->state));
-	set_bit(PLOOP_REQ_ISSUE_FLUSH, &preq->state);
-	top_delta->io.ops->submit(&top_delta->io, preq, preq->req_rw,
-				  &sbl, preq->iblock, 1<<plo->cluster_log);
+	del_lockout(preq);
+	preq->req_cluster++;
+	requeue_req(preq, PLOOP_E_ENTRY);
 }
 
 static void map_wb_complete(struct map_node * m, int err)
