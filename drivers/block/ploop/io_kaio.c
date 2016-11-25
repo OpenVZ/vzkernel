@@ -63,7 +63,9 @@ static void kaio_complete_io_state(struct ploop_request * preq)
 	int post_fsync = 0;
 	int need_fua = !!(preq->req_rw & REQ_FUA);
 	unsigned long state = READ_ONCE(preq->state);
-	int reloc = !!(state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL));
+	int reloc = !!(state & (PLOOP_REQ_RELOC_A_FL|
+				PLOOP_REQ_RELOC_S_FL|
+				PLOOP_REQ_RELOC_N_FL));
 
 	if (preq->error || !(preq->req_rw & REQ_FUA) ||
 	    preq->eng_state == PLOOP_E_INDEX_READ ||
