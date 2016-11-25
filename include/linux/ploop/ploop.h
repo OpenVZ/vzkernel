@@ -562,8 +562,13 @@ struct ploop_request
 	iblock_t		iblock;
 
 	/* relocation info */
-	iblock_t		src_iblock;
-	iblock_t		dst_iblock;
+	union {
+		struct {
+			iblock_t      src_iblock;
+			iblock_t      dst_iblock;
+		};
+		unsigned long	      ppb_state;
+	};
 	cluster_t		dst_cluster;
 	struct rb_node		reloc_link;
 
