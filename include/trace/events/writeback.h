@@ -49,7 +49,8 @@ TRACE_EVENT(writeback_dirty_page,
 
 	TP_fast_assign(
 		strncpy(__entry->name,
-			mapping ? dev_name(mapping->backing_dev_info->dev) : "(unknown)", 32);
+			mapping && mapping->backing_dev_info->dev
+			? dev_name(mapping->backing_dev_info->dev) : "(unknown)", 32);
 		__entry->ino = mapping ? mapping->host->i_ino : 0;
 		__entry->index = page->index;
 	),
