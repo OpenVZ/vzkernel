@@ -1325,7 +1325,8 @@ static void ploop_complete_request(struct ploop_request * preq)
 	WARN_ON(!preq->error && test_bit(PLOOP_REQ_ISSUE_FLUSH, &preq->state));
 
 	if (test_bit(PLOOP_REQ_RELOC_A, &preq->state) ||
-	    test_bit(PLOOP_REQ_RELOC_S, &preq->state)) {
+	    test_bit(PLOOP_REQ_RELOC_S, &preq->state) ||
+	    test_bit(PLOOP_REQ_RELOC_N, &preq->state)) {
 		if (preq->error)
 			set_bit(PLOOP_S_ABORT, &plo->state);
 
@@ -1369,8 +1370,11 @@ static void ploop_complete_request(struct ploop_request * preq)
 		int i;
 		struct bio * bio = preq->aux_bio;
 
-		for (i = 0; i < bio->bi_vcnt; i++)
-			put_page(bio->bi_io_vec[i].bv_page);
+		for (i = 0; i < bio->bi_vcnt; i++) {
+			struct page *page = bio->bi_io_vec[i].bv_page;
+			if (page != ZERO_PAGE(0))
+				put_page(page);
+		}
 
 		bio_put(bio);
 
@@ -1949,6 +1953,61 @@ ploop_entry_reloc_req(struct ploop_request *preq, iblock_t *iblk)
 		BUG();
 }
 
+static void fill_zero_bio(struct ploop_device *plo, struct bio * bio)
+{
+	int pages = block_vecs(plo);
+
+	for (; bio->bi_vcnt < pages; bio->bi_vcnt++) {
+		bio->bi_io_vec[bio->bi_vcnt].bv_page = ZERO_PAGE(0);
+		bio->bi_io_vec[bio->bi_vcnt].bv_offset = 0;
+		bio->bi_io_vec[bio->bi_vcnt].bv_len = PAGE_SIZE;
+	}
+	bio->bi_sector = 0;
+	bio->bi_size = (1 << (plo->cluster_log + 9));
+}
+
+/*
+ * Returns 0 if and only if RELOC_A preq was successfully processed.
+ *
+ * Advance preq->req_cluster till it points to *iblk in grow range.
+ * Returning 0, always set *iblk to a meaningful value: either zero
+ * (if preq->req_cluster went out of allowed range or map is being read)
+ * or iblock in grow range that preq->req_cluster points to.
+ */
+static int
+ploop_entry_nullify_req(struct ploop_request *preq)
+{
+	struct ploop_device *plo       = preq->plo;
+	struct ploop_delta  *top_delta = ploop_top_delta(plo);
+	struct bio_list sbl;
+
+	if (!preq->aux_bio) {
+		preq->aux_bio = bio_alloc(GFP_NOFS, block_vecs(plo));
+		if (!preq->aux_bio)
+			return -ENOMEM;
+		fill_zero_bio(plo, preq->aux_bio);
+	}
+
+	sbl.head = sbl.tail = preq->aux_bio;
+	preq->eng_state = PLOOP_E_RELOC_NULLIFY;
+	list_del_init(&preq->list);
+
+	/*
+	 * Lately we think we does sync of nullified blocks at format
+	 * driver by image fsync before header update.
+	 * But we write this data directly into underlying device
+	 * bypassing EXT4 by usage of extent map tree
+	 * (see dio_submit()). So fsync of EXT4 image doesnt help us.
+	 * We need to force sync of nullified blocks.
+	 */
+
+	preq->eng_io = &top_delta->io;
+	set_bit(PLOOP_REQ_ISSUE_FLUSH, &preq->state);
+	top_delta->io.ops->submit(&top_delta->io, preq, preq->req_rw,
+				  &sbl, preq->iblock, 1<<plo->cluster_log);
+	return 0;
+}
+
 static int discard_get_index(struct ploop_request *preq)
 {
 	struct ploop_device *plo       = preq->plo;
@@ -2041,6 +2100,7 @@ static inline bool preq_is_special(struct ploop_request * preq)
 	return state & (PLOOP_REQ_MERGE_FL |
 			PLOOP_REQ_RELOC_A_FL |
 			PLOOP_REQ_RELOC_S_FL |
+			PLOOP_REQ_RELOC_N_FL |
 			PLOOP_REQ_DISCARD_FL |
 			PLOOP_REQ_ZERO_FL);
 }
@@ -2127,6 +2187,11 @@ restart:
 			goto error;
 		if (iblk)
 			ploop_reloc_sched_read(preq, iblk);
+		return;
+	} else if (test_bit(PLOOP_REQ_RELOC_N, &preq->state)) {
+		err = ploop_entry_nullify_req(preq);
+		if (err)
+			goto error;
 		return;
 	} else if (preq->req_cluster == ~0U) {
 		BUG_ON(!test_bit(PLOOP_REQ_MERGE, &preq->state));
@@ -2674,7 +2739,7 @@ restart:
 
 		del_lockout(preq);
 		preq->eng_state = PLOOP_E_ENTRY;
-		preq->req_cluster++;
+		preq->iblock++;
 		goto restart;
 	}
 	case PLOOP_E_TRANS_DELTA_READ:
@@ -2830,8 +2895,11 @@ static void ploop_handle_enospc_req(struct ploop_request *preq)
 		int i;
 		struct bio * bio = preq->aux_bio;
 
-		for (i = 0; i < bio->bi_vcnt; i++)
-			put_page(bio->bi_io_vec[i].bv_page);
+		for (i = 0; i < bio->bi_vcnt; i++) {
+			struct page *page = bio->bi_io_vec[i].bv_page;
+			if (page != ZERO_PAGE(0))
+				put_page(page);
+		}
 
 		bio_put(bio);
 
@@ -4081,6 +4149,7 @@ static int ploop_clear(struct ploop_device * plo, struct block_device * bdev)
 
 	clear_bit(PLOOP_S_DISCARD_LOADED, &plo->state);
 	clear_bit(PLOOP_S_DISCARD, &plo->state);
+	clear_bit(PLOOP_S_NULLIFY, &plo->state);
 
 	destroy_deltas(plo, &plo->map);
 
@@ -4140,14 +4209,28 @@ static int ploop_index_update_ioc(struct ploop_device *plo, unsigned long arg)
 	return 0;
 }
 
-static void ploop_relocate(struct ploop_device * plo)
+enum {
+	PLOOP_GROW_RELOC = 0,
+	PLOOP_GROW_NULLIFY,
+	PLOOP_GROW_MAX,
+};
+
+static void ploop_relocate(struct ploop_device * plo, int grow_stage)
 {
 	struct ploop_request * preq;
+	int reloc_type = (grow_stage == PLOOP_GROW_RELOC) ?
+		PLOOP_REQ_RELOC_A : PLOOP_REQ_RELOC_N;
+
+	BUG_ON(grow_stage != PLOOP_GROW_RELOC &&
+	       grow_stage != PLOOP_GROW_NULLIFY);
 
 	spin_lock_irq(&plo->lock);
 
 	atomic_set(&plo->maintenance_cnt, 1);
 	plo->grow_relocated = 0;
+
+	if (grow_stage == PLOOP_GROW_NULLIFY)
+		set_bit(PLOOP_S_NULLIFY, &plo->state);
 
 	init_completion(&plo->maintenance_comp);
 
@@ -4158,10 +4241,10 @@ static void ploop_relocate(struct ploop_device * plo)
 	preq->req_size = 0;
 	preq->req_rw = WRITE_SYNC;
 	preq->eng_state = PLOOP_E_ENTRY;
-	preq->state = (1 << PLOOP_REQ_SYNC) | (1 << PLOOP_REQ_RELOC_A);
+	preq->state = (1 << PLOOP_REQ_SYNC) | (1 << reloc_type);
 	preq->error = 0;
 	preq->tstamp = jiffies;
-	preq->iblock = 0;
+	preq->iblock = (reloc_type == PLOOP_REQ_RELOC_A) ? 0 : plo->grow_start;
 	preq->prealloc_size = 0;
 
 	atomic_inc(&plo->maintenance_cnt);
@@ -4185,12 +4268,16 @@ static int ploop_grow(struct ploop_device *plo, struct block_device *bdev,
 	struct ploop_delta *delta = ploop_top_delta(plo);
 	int reloc = 0; /* 'relocation needed' flag */
 	int err;
+	int grow_stage = PLOOP_GROW_RELOC;
 
 	if (!delta)
 		return -ENOENT;
 
-	if (plo->maintenance_type == PLOOP_MNTN_GROW)
+	if (plo->maintenance_type == PLOOP_MNTN_GROW) {
+		if (test_bit(PLOOP_S_NULLIFY, &plo->state))
+			grow_stage = PLOOP_GROW_NULLIFY;
 		goto already;
+	}
 
 	if (plo->maintenance_type != PLOOP_MNTN_OFF)
 		return -EBUSY;
@@ -4226,24 +4313,28 @@ static int ploop_grow(struct ploop_device *plo, struct block_device *bdev,
 	if (reloc) {
 		plo->maintenance_type = PLOOP_MNTN_GROW;
 		ploop_relax(plo);
-		ploop_relocate(plo);
+		for (; grow_stage < PLOOP_GROW_MAX; grow_stage++) {
+			ploop_relocate(plo, grow_stage);
 already:
-		err = ploop_maintenance_wait(plo);
-		if (err)
-			return err;
+			err = ploop_maintenance_wait(plo);
+			if (err)
+				return err;
 
-		BUG_ON(atomic_read(&plo->maintenance_cnt));
+			BUG_ON(atomic_read(&plo->maintenance_cnt));
 
-		if (plo->maintenance_type != PLOOP_MNTN_GROW)
-			return -EALREADY;
+			if (plo->maintenance_type != PLOOP_MNTN_GROW)
+				return -EALREADY;
 
-		if (test_bit(PLOOP_S_ABORT, &plo->state)) {
-			plo->maintenance_type = PLOOP_MNTN_OFF;
-			return -EIO;
+			if (test_bit(PLOOP_S_ABORT, &plo->state)) {
+				clear_bit(PLOOP_S_NULLIFY, &plo->state);
+				plo->maintenance_type = PLOOP_MNTN_OFF;
+				return -EIO;
+			}
 		}
 
 		ploop_quiesce(plo);
 		new_size = plo->grow_new_size;
+		clear_bit(PLOOP_S_NULLIFY, &plo->state);
 		plo->maintenance_type = PLOOP_MNTN_OFF;
 	}
 
@@ -5226,8 +5317,11 @@ static struct ploop_device *ploop_dev_init(int index)
 {
 	struct ploop_device *plo = ploop_dev_search(index);
 
-	if (plo)
+	if (plo) {
+		BUG_ON(list_empty(&plo->map.delta_list) &&
+		       test_bit(PLOOP_S_NULLIFY, &plo->state));
 		return plo;
+	}
 
 	plo = __ploop_dev_alloc(index);
 	if (plo) {
@@ -5335,6 +5429,7 @@ static int ploop_minor_open(struct inode *inode, struct file *file)
 		ploop_sysfs_init(plo);
 		ploop_dev_insert(plo);
 	}
+	BUG_ON(test_bit(PLOOP_S_NULLIFY, &plo->state));
 	set_bit(PLOOP_S_LOCKED, &plo->locking_state);
 	mutex_unlock(&ploop_devices_mutex);
 
