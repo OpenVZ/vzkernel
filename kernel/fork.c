@@ -57,6 +57,7 @@
 #include <linux/userfaultfd_k.h>
 #include <linux/tsacct_kern.h>
 #include <linux/cn_proc.h>
+#include <linux/kcov.h>
 #include <linux/freezer.h>
 #include <linux/kaiser.h>
 #include <linux/delayacct.h>
@@ -395,6 +396,8 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
 	tsk->wake_q.next = NULL;
 
 	account_kernel_stack(ti, 1);
+
+	kcov_task_init(tsk);
 
 	return tsk;
 
