@@ -1,5 +1,7 @@
 KASAN_SANITIZE := n
 
+KCOV_INSTRUMENT := n
+
 CFLAGS_REMOVE_kasan.o = -pg
 # Function splitter causes unnecessary splits in __asan_load1/__asan_store1
 # see: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=63533
