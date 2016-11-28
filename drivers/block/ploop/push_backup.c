@@ -373,7 +373,6 @@ static int ploop_pb_health_monitor(void * data)
 int ploop_pb_init(struct ploop_pushbackup_desc *pbd, __u8 *uuid, bool full)
 {
 	struct task_struct *ts;
-	int rc;
 
 	memcpy(pbd->cbt_uuid, uuid, sizeof(pbd->cbt_uuid));
 
@@ -389,20 +388,19 @@ int ploop_pb_init(struct ploop_pushbackup_desc *pbd, __u8 *uuid, bool full)
 			__clear_bit(off, page_address(pbd->ppb_map[i]));
 			off++;
 		}
-		return 0;
+	} else {
+		int rc = blk_cbt_map_copy_once(pbd->plo->queue,
+					       uuid,
+					       &pbd->cbt_map,
+					       &pbd->cbt_block_max,
+					       &pbd->cbt_block_bits);
+		if (rc)
+			return rc;
+
+		rc = convert_map_to_map(pbd);
+		if (rc)
+			return rc;
 	}
-
-	rc = blk_cbt_map_copy_once(pbd->plo->queue,
-				   uuid,
-				   &pbd->cbt_map,
-				   &pbd->cbt_block_max,
-				   &pbd->cbt_block_bits);
-	if (rc)
-		return rc;
-
-	rc = convert_map_to_map(pbd);
-	if (rc)
-		return rc;
 
 	ts = kthread_create(ploop_pb_health_monitor, pbd, "ploop_pb_hm%d",
 			    pbd->plo->index);
