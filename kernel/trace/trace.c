@@ -4454,6 +4454,8 @@ tracing_read_pipe(struct file *filp, char __user *ubuf,
 	struct trace_iterator *iter = filp->private_data;
 	struct trace_array *tr = iter->tr;
 	ssize_t sret;
+	size_t loops = 0;
+	enum print_line_t ret = 0;
 
 	/* return any leftover data */
 	sret = trace_seq_to_user(&iter->seq, ubuf, cnt);
@@ -4504,7 +4506,6 @@ waitagain:
 	trace_event_read_lock();
 	trace_access_lock(iter->cpu_file);
 	while (trace_find_next_entry_inc(iter) != NULL) {
-		enum print_line_t ret;
 		int len = iter->seq.len;
 
 		ret = print_trace_line(iter);
@@ -4539,8 +4540,20 @@ waitagain:
 	 * If there was nothing to send to user, in spite of consuming trace
 	 * entries, go back to wait for more entries.
 	 */
-	if (sret == -EBUSY)
+	if (sret == -EBUSY) {
+		if ((++loops % 10000) == 0) {
+			WARN_ON(1);
+			printk("%ldk loops in tracing_read_pipe\n", loops / 1000);
+			printk("trace_empty(iter): %d\n", trace_empty(iter));
+			printk("iter->seq.len    : %d\n", iter->seq.len);
+			printk("iter->seq.readpos: %d\n", iter->seq.readpos);
+			printk("iter->cpu_file   : %d\n", iter->cpu_file);
+			printk("iter->lost_events: %ld\n", iter->lost_events);
+			printk("ret              : %d\n", ret);
+			printk("cnt              : %ld\n", cnt);
+		}
 		goto waitagain;
+	}
 
 out:
 	mutex_unlock(&iter->mutex);
