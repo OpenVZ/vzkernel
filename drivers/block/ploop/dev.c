@@ -4864,9 +4864,7 @@ static int ploop_push_backup_io_peek(struct ploop_device *plo,
 {
 	int rc;
 
-	ploop_quiesce(plo);
 	rc = ploop_push_backup_io_get(plo, arg, ctl, ploop_pb_peek);
-	ploop_relax(plo);
 
 	if (rc == -ENOENT) {
 		ctl->n_extents = 0;
