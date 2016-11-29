@@ -2384,9 +2384,11 @@ EXPORT_SYMBOL(block_commit_write);
  * Direct callers of this function should protect against filesystem freezing
  * using sb_start_write() - sb_end_write() functions.
  */
-int __block_page_mkwrite(struct inode *inode, struct page *page,
+int __block_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf,
 			 get_block_t get_block)
 {
+	struct page *page = vmf->page;
+	struct inode *inode = file_inode(vma->vm_file);
 	unsigned long end;
 	loff_t size;
 	int ret;
@@ -2425,8 +2427,7 @@ int block_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf,
 		   get_block_t get_block)
 {
 	int ret;
-	struct inode *inode = file_inode(vma->vm_file);
-	struct super_block *sb = inode->i_sb;
+	struct super_block *sb = file_inode(vma->vm_file)->i_sb;
 
 	sb_start_pagefault(sb);
 
@@ -2436,7 +2437,7 @@ int block_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf,
 	 */
 	file_update_time(vma->vm_file);
 
-	ret = __block_page_mkwrite(inode, vmf->page, get_block);
+	ret = __block_page_mkwrite(vma, vmf, get_block);
 	sb_end_pagefault(sb);
 	return block_page_mkwrite_return(ret);
 }
