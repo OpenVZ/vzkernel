@@ -91,7 +91,7 @@ out_unlock:
 
 static int raw_diag_dump_one(struct sk_buff *in_skb,
 			     const struct nlmsghdr *nlh,
-			     struct inet_diag_req_v2 *r)
+			     const struct inet_diag_req_v2 *r)
 {
 	struct net *net = sock_net(in_skb->sk);
 	struct sk_buff *rep;
@@ -131,7 +131,7 @@ static int raw_diag_dump_one(struct sk_buff *in_skb,
 
 static int sk_diag_dump(struct sock *sk, struct sk_buff *skb,
 			struct netlink_callback *cb,
-			struct inet_diag_req_v2 *r,
+			const struct inet_diag_req_v2 *r,
 			struct nlattr *bc)
 {
 	if (!inet_diag_bc_sk(bc, sk))
@@ -145,7 +145,7 @@ static int sk_diag_dump(struct sock *sk, struct sk_buff *skb,
 }
 
 static void raw_diag_dump(struct sk_buff *skb, struct netlink_callback *cb,
-			  struct inet_diag_req_v2 *r, struct nlattr *bc)
+			  const struct inet_diag_req_v2 *r, struct nlattr *bc)
 {
 	struct raw_hashinfo *hashinfo = raw_get_hashinfo(r);
 	struct net *net = sock_net(skb->sk);
