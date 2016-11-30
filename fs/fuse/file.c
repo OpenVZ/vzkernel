@@ -704,6 +704,8 @@ int fuse_fsync_common(struct file *file, loff_t start, loff_t end,
 		goto out;
 	}
 
+	mutex_unlock(&inode->i_mutex);
+
 	memset(&inarg, 0, sizeof(inarg));
 	inarg.fh = ff->fh;
 	inarg.fsync_flags = datasync ? 1 : 0;
@@ -722,6 +724,7 @@ int fuse_fsync_common(struct file *file, loff_t start, loff_t end,
 			fc->no_fsync = 1;
 		err = 0;
 	}
+	return err;
 out:
 	mutex_unlock(&inode->i_mutex);
 	return err;
