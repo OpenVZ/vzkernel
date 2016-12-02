@@ -691,8 +691,8 @@ int fuse_fsync_common(struct file *file, loff_t start, loff_t end,
 	if (err)
 		goto out;
 
-	if (test_bit(FUSE_I_MTIME_UPDATED,
-		     &get_fuse_inode(inode)->state)) {
+	if (!datasync && test_bit(FUSE_I_MTIME_UPDATED,
+				  &get_fuse_inode(inode)->state)) {
 		err = fuse_flush_mtime(file, false);
 		if (err)
 			goto out;
