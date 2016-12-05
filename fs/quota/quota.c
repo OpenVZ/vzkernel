@@ -445,6 +445,7 @@ static long compat_quotactl(unsigned int cmds, unsigned int type,
 			copy_to_if_dqblk(&idq, &fdq);
 			if (ret)
 				break;
+			memset(&cdq, 0, sizeof(cdq));
 			cdq.dqb_ihardlimit = fdq.d_ino_hardlimit;
 			cdq.dqb_isoftlimit = fdq.d_ino_softlimit;
 			cdq.dqb_curinodes = fdq.d_icount;
@@ -511,14 +512,12 @@ static long compat_quotactl(unsigned int cmds, unsigned int type,
 			ret = sb->s_qcop->get_info(sb, type, &iinf);
 			if (ret)
 				break;
+
+			memset(&cinf, 0, sizeof(cinf));
 			cinf.dqi_bgrace = iinf.dqi_bgrace;
 			cinf.dqi_igrace = iinf.dqi_igrace;
-			cinf.dqi_flags = 0;
 			if (iinf.dqi_flags & DQF_INFO_DIRTY)
 				cinf.dqi_flags |= 0x0010;
-			cinf.dqi_blocks = 0;
-			cinf.dqi_free_blk = 0;
-			cinf.dqi_free_entry = 0;
 			ret = 0;
 			if (copy_to_user(addr, &cinf, sizeof(cinf)))
 				ret = -EFAULT;
