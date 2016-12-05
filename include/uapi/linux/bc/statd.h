@@ -29,6 +29,11 @@ typedef struct {
 	ubstattime_t	start_time;
 	ubstattime_t	end_time;
 	ubstattime_t	cur_time;
+	/*
+	 * On any changes to this struct keep in mind fixing
+	 * all copy_to_user instances, initializing new fields/paddings
+	 * to prevent possible leaks from kernel-space.
+	 */
 } ubgettime_t;
 
 typedef struct {
@@ -39,6 +44,11 @@ typedef struct {
 typedef struct {
 	unsigned long	maxheld;
 	unsigned long	failcnt;
+	/*
+	 * On any changes to this struct keep in mind fixing
+	 * all copy_to_user instances, initializing new fields/paddings
+	 * to prevent possible leaks from kernel-space.
+	 */
 } ubstatparm_t;
 
 typedef struct {
@@ -50,6 +60,11 @@ typedef struct {
 	unsigned long	failcnt;
 	unsigned long __unused1;
 	unsigned long __unused2;
+	/*
+	 * On any changes to this struct keep in mind fixing
+	 * all copy_to_user instances, initializing new fields/paddings
+	 * to prevent possible leaks from kernel-space.
+	 */
 } ubstatparmf_t;
 
 typedef struct {
