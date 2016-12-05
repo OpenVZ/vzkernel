@@ -24,6 +24,11 @@ struct vz_tc_class_info {
 	__u32				cid;	/* class number */
 	__u32				addr;	/* Network byte order */
 	__u32				mask;	/* subnet mask */
+	/*
+	 * On any changes to this struct keep in mind fixing
+	 * all copy_to_user instances, initializing new fields/paddings
+	 * to prevent possible leaks from kernel-space.
+	 */
 };
 
 
@@ -37,6 +42,11 @@ struct vz_tc_class_info_v6 {
 	__u32				cid;	/* class number */
 	__u32				addr[4];/* Network byte order */
 	__u32				mask[4];/* subnet mask */
+	/*
+	 * On any changes to this struct keep in mind fixing
+	 * all copy_to_user instances, initializing new fields/paddings
+	 * to prevent possible leaks from kernel-space.
+	 */
 };
 
 struct vzctl_tc_classes_v6 {
