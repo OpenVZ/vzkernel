@@ -209,6 +209,7 @@ int ploop_fb_copy_freeblks_to_user(struct ploop_freeblks_desc *fbd, void *arg,
 	struct ploop_freeblks_extent	 *fextent;
 	struct ploop_freeblks_ctl_extent  cext;
 
+	memset(&cext, 0, sizeof(cext));
 	list_for_each_entry(fextent, &fbd->fbd_free_list, list)
 		if (ctl->n_extents) {
 			int off = offsetof(struct ploop_freeblks_ctl,
