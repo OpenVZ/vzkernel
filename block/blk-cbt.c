@@ -699,6 +699,7 @@ static int cbt_ioc_get(struct block_device *bdev, struct blk_user_cbt_info __use
 	if (end > cbt->block_max)
 		end = cbt->block_max;
 
+	memset(&u_ex, 0, sizeof(u_ex));
 	while (ci.ci_mapped_extents < ci.ci_extent_count) {
 		cbt_find_next_extent(cbt, block, &ex);
 		if (!ex.len || ex.start > end) {
