@@ -3012,6 +3012,7 @@ void guard_bio_eod(int rw, struct bio *bio)
 
 	/* Truncate the bio.. */
 	bio->bi_size -= truncated_bytes;
+	BUG_ON(truncated_bytes > bvec->bv_len);
 	bvec->bv_len -= truncated_bytes;
 
 	/* ..and clear the end of the buffer for reads */
