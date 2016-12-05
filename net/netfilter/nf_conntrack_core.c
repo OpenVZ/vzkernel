@@ -1823,7 +1823,6 @@ int nf_conntrack_init_net(struct net *net)
 	int cpu;
 
 	atomic_set(&net->ct.count, 0);
-	net->ct.can_alloc = false;
 	net->ct.max = init_net.ct.max;
 	seqcount_init(&net->ct.generation);
 
