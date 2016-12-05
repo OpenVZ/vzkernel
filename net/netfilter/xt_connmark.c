@@ -240,11 +240,12 @@ static void connmark_tg_compat_from_user_v0(void *dst, const void *src)
 static int connmark_tg_compat_to_user_v0(void __user *dst, const void *src)
 {
 	const struct xt_connmark_target_info *m = src;
-	struct compat_xt_connmark_target_info cm = {
-		.mark	= m->mark,
-		.mask	= m->mask,
-		.mode	= m->mode,
-	};
+	struct compat_xt_connmark_target_info cm;
+
+	memset(&cm, 0, sizeof(cm));
+	cm.mark	= m->mark;
+	cm.mask	= m->mask;
+	cm.mode	= m->mode;
 	return copy_to_user(dst, &cm, sizeof(cm)) ? -EFAULT : 0;
 }
 #endif /* CONFIG_COMPAT */
@@ -299,11 +300,12 @@ static void connmark_mt_compat_from_user_v0(void *dst, const void *src)
 static int connmark_mt_compat_to_user_v0(void __user *dst, const void *src)
 {
 	const struct xt_connmark_info *m = src;
-	struct compat_xt_connmark_info cm = {
-		.mark	= m->mark,
-		.mask	= m->mask,
-		.invert	= m->invert,
-	};
+	struct compat_xt_connmark_info cm;
+
+	memset(&cm, 0, sizeof(cm));
+	cm.mark = m->mark;
+	cm.mask = m->mask;
+	cm.invert = m->invert;
 	return copy_to_user(dst, &cm, sizeof(cm)) ? -EFAULT : 0;
 }
 #endif /* CONFIG_COMPAT */
