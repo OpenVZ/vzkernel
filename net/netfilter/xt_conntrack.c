@@ -368,14 +368,15 @@ static void conntrack_mt_compat_from_user_v0(void *dst, const void *src)
 static int conntrack_mt_compat_to_user_v0(void __user *dst, const void *src)
 {
 	const struct xt_conntrack_info *m = src;
-	struct compat_xt_conntrack_info cm = {
-		.statemask	= m->statemask,
-		.statusmask	= m->statusmask,
-		.expires_min	= m->expires_min,
-		.expires_max	= m->expires_max,
-		.flags		= m->flags,
-		.invflags	= m->invflags,
-	};
+	struct compat_xt_conntrack_info cm;
+
+	memset(&cm, 0, sizeof(cm));
+	cm.statemask	= m->statemask;
+	cm.statusmask	= m->statusmask;
+	cm.expires_min	= m->expires_min;
+	cm.expires_max	= m->expires_max;
+	cm.flags	= m->flags;
+	cm.invflags	= m->invflags;
 	memcpy(cm.tuple, m->tuple, sizeof(cm.tuple));
 	memcpy(cm.sipmsk, m->sipmsk, sizeof(cm.sipmsk));
 	memcpy(cm.dipmsk, m->dipmsk, sizeof(cm.dipmsk));
