@@ -3049,7 +3049,7 @@ static void *netlink_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 
 	i = iter->link;
 	ht = &nl_table[i].hash;
-	rht_for_each_entry(nlk, nlk->node.next, ht, node)
+	rht_for_each_entry_rcu(nlk, nlk->node.next, node)
 		if (net_eq(sock_net((struct sock *)nlk), net))
 			return nlk;
 
@@ -3059,7 +3059,7 @@ static void *netlink_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 		const struct bucket_table *tbl = rht_dereference_rcu(ht->tbl, ht);
 
 		for (; j < tbl->size; j++) {
-			rht_for_each_entry(nlk, tbl->buckets[j], ht, node) {
+			rht_for_each_entry_rcu(nlk, tbl->buckets[j], node) {
 				if (net_eq(sock_net((struct sock *)nlk), net)) {
 					iter->link = i;
 					iter->hash_idx = j;
