@@ -21,7 +21,8 @@ struct group_info *groups_alloc(int gidsetsize)
 	nblocks = (gidsetsize + NGROUPS_PER_BLOCK - 1) / NGROUPS_PER_BLOCK;
 	/* Make sure we always allocate at least one indirect block pointer */
 	nblocks = nblocks ? : 1;
-	group_info = kmalloc(sizeof(*group_info) + nblocks*sizeof(gid_t *), GFP_USER);
+	group_info = kmalloc(sizeof(*group_info) + nblocks*sizeof(gid_t *),
+			GFP_USER | __GFP_NOWARN);
 	if (!group_info)
 		return NULL;
 	group_info->ngroups = gidsetsize;
