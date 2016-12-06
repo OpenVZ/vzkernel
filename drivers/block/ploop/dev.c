@@ -2001,9 +2001,11 @@ ploop_entry_nullify_req(struct ploop_request *preq)
 	 * (see dio_submit()). So fsync of EXT4 image doesnt help us.
 	 * We need to force sync of nullified blocks.
 	 */
+	if (top_delta->io.ops->issue_flush) {
+		preq->eng_io = &top_delta->io;
+		set_bit(PLOOP_REQ_ISSUE_FLUSH, &preq->state);
+	}
 
-	preq->eng_io = &top_delta->io;
-	set_bit(PLOOP_REQ_ISSUE_FLUSH, &preq->state);
 	top_delta->io.ops->submit(&top_delta->io, preq, preq->req_rw,
 				  &sbl, preq->iblock, 1<<plo->cluster_log);
 	return 0;
