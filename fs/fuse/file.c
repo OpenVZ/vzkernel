@@ -1870,7 +1870,8 @@ __acquires(fc->lock)
 	struct fuse_write_in *inarg = &req->misc.write.in;
 	__u64 data_size = req->num_pages * PAGE_CACHE_SIZE;
 
-	if (!fc->connected)
+	if (!fc->connected ||
+	    test_bit(FUSE_S_FAIL_IMMEDIATELY, &req->ff->ff_state))
 		goto out_free;
 
 	if (inarg->offset + data_size <= size) {
