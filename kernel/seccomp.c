@@ -58,6 +58,9 @@
 struct seccomp_filter {
 	atomic_t usage;
 	struct seccomp_filter *prev;
+#if CONFIG_VE
+	struct sock_fprog orig_prog;
+#endif
 	unsigned short len;  /* Instruction count */
 	struct sock_filter insns[];
 };
@@ -417,6 +420,16 @@ static struct seccomp_filter *seccomp_prepare_filter(struct sock_fprog *fprog)
 	if (copy_from_user(filter->insns, fprog->filter, fp_size))
 		goto fail;
 
+#if CONFIG_VE
+	filter->orig_prog.len = fprog->len;
+	filter->orig_prog.filter = kmemdup(filter->insns, fp_size,
+					   GFP_KERNEL|__GFP_NOWARN);
+	if (!filter->orig_prog.filter) {
+		ret = -ENOMEM;
+		goto fail;
+	}
+#endif
+
 	/* Check and rewrite the fprog via the skb checker */
 	ret = sk_chk_filter(filter->insns, filter->len);
 	if (ret)
@@ -429,6 +442,9 @@ static struct seccomp_filter *seccomp_prepare_filter(struct sock_fprog *fprog)
 
 	return filter;
 fail:
+#if CONFIG_VE
+	kfree(filter->orig_prog.filter);
+#endif
 	kfree(filter);
 	return ERR_PTR(ret);
 }
@@ -533,6 +549,9 @@ void put_seccomp_filter(struct task_struct *tsk)
 	while (orig && atomic_dec_and_test(&orig->usage)) {
 		struct seccomp_filter *freeme = orig;
 		orig = orig->prev;
+#if CONFIG_VE
+		kfree(freeme->orig_prog.filter);
+#endif
 		seccomp_filter_free(freeme);
 	}
 }
@@ -876,8 +895,14 @@ long seccomp_get_filter(struct task_struct *task, unsigned long filter_off,
 	get_seccomp_filter(task);
 	spin_unlock_irq(&task->sighand->siglock);
 
+#if CONFIG_VE
+	if (copy_to_user(data, filter->orig_prog.filter,
+			 filter->orig_prog.len * sizeof(filter->orig_prog.filter[0])))
+		ret = -EFAULT;
+#else
 	if (copy_to_user(data, filter->insns, filter->len * sizeof(filter->insns[0])))
 		ret = -EFAULT;
+#endif
 
 	put_seccomp_filter(task);
 	return ret;
