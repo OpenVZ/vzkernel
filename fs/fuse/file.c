@@ -1860,6 +1860,9 @@ __acquires(fi->lock)
 	__u64 data_size = req->num_pages * PAGE_CACHE_SIZE;
 	bool queued;
 
+	if (test_bit(FUSE_S_FAIL_IMMEDIATELY, &req->ff->ff_state))
+		goto out_free;
+
 	if (inarg->offset + data_size <= size) {
 		inarg->size = data_size;
 	} else if (inarg->offset < size) {
