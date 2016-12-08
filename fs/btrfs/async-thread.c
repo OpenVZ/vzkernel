@@ -70,6 +70,14 @@ void btrfs_##name(struct work_struct *arg)				\
 	normal_work_helper(work);					\
 }
 
+bool btrfs_workqueue_normal_congested(struct btrfs_workqueue *wq)
+{
+	int thresh = wq->normal->thresh != NO_THRESHOLD ?
+		wq->normal->thresh : num_possible_cpus();
+
+	return atomic_read(&wq->normal->pending) > thresh * 2;
+}
+
 BTRFS_WORK_HELPER(worker_helper);
 BTRFS_WORK_HELPER(delalloc_helper);
 BTRFS_WORK_HELPER(flush_delalloc_helper);
