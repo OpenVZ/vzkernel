@@ -3646,9 +3646,6 @@ need_resched:
 	clear_tsk_need_resched(prev);
 	rq->skip_clock_update = 0;
 
-	resched_next = rq->resched_next;
-	rq->resched_next = 0;
-
 	if (likely(prev != next)) {
 		rq->nr_switches++;
 		rq->curr = next;
@@ -3668,8 +3665,11 @@ need_resched:
 
 	post_schedule(rq);
 
-	if (resched_next)
+	resched_next = READ_ONCE(rq->resched_next);
+	if (resched_next) {
 		set_tsk_need_resched(current);
+		rq->resched_next = 0;
+	}
 
 	sched_preempt_enable_no_resched();
 	if (!resched_next && need_resched())
