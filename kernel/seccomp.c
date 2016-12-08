@@ -566,7 +566,7 @@ long seccomp_get_filter(struct task_struct *task, unsigned long filter_off,
 	get_seccomp_filter(task);
 	spin_unlock_irq(&task->sighand->siglock);
 
-	if (copy_to_user(data, filter->insns, filter->len))
+	if (copy_to_user(data, filter->insns, filter->len * sizeof(filter->insns[0])))
 		ret = -EFAULT;
 
 	put_seccomp_filter(task);
