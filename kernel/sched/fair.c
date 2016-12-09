@@ -3261,7 +3261,7 @@ check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 }
 
 static void
-set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
+set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, bool boosted)
 {
 	/* 'current' is not kept within the tree. */
 	if (se->on_rq) {
@@ -3273,7 +3273,7 @@ set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 		if (schedstat_enabled())
 			update_stats_wait_end(cfs_rq, se);
 		__dequeue_entity(cfs_rq, se);
-		if (entity_boosted(se))
+		if (entity_boosted(se) && boosted)
 			__dequeue_boosted_entity(cfs_rq, se);
 	}
 
@@ -5167,7 +5167,15 @@ static struct task_struct *pick_next_task_fair(struct rq *rq)
 
 	do {
 		se = pick_next_entity(cfs_rq);
-		set_next_entity(cfs_rq, se);
+		/*
+		 * If se can be dequeued from boosted node,
+		 * we will pick a boosted task at the end,
+		 * because we pick boosted tasks firstly.
+		 * So, "true" covers this case.
+		 * If se is not boosted, "true" does not
+		 * affect any way. Thus, pass it unconditionally.
+		 */
+		set_next_entity(cfs_rq, se, true);
 		cfs_rq = group_cfs_rq(se);
 	} while (cfs_rq);
 
@@ -8083,11 +8091,16 @@ static void switched_to_fair(struct rq *rq, struct task_struct *p)
 static void set_curr_task_fair(struct rq *rq)
 {
 	struct sched_entity *se = &rq->curr->se;
+	bool boosted = false;
+
+#ifdef CONFIG_CFS_BANDWIDTH
+	boosted = se->boosted;
+#endif
 
 	for_each_sched_entity(se) {
 		struct cfs_rq *cfs_rq = cfs_rq_of(se);
 
-		set_next_entity(cfs_rq, se);
+		set_next_entity(cfs_rq, se, boosted);
 		/* ensure bandwidth has been allocated on our new cfs_rq */
 		account_cfs_rq_runtime(cfs_rq, 0);
 	}
