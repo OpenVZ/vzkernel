@@ -1665,6 +1665,8 @@ static int raid1_add_disk(struct mddev *mddev, struct md_rdev *rdev)
 	}
 	if (mddev->queue && blk_queue_discard(bdev_get_queue(rdev->bdev)))
 		queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, mddev->queue);
+	if (mddev->queue && blk_queue_sg_gaps(bdev_get_queue(rdev->bdev)))
+		queue_flag_set_unlocked(QUEUE_FLAG_SG_GAPS, mddev->queue);
 	print_conf(conf);
 	return err;
 }
@@ -2916,6 +2918,7 @@ static int raid1_run(struct mddev *mddev)
 	struct md_rdev *rdev;
 	int ret;
 	bool discard_supported = false;
+	bool sg_gaps_disabled = false;
 
 	if (mddev->level != 1) {
 		printk(KERN_ERR "md/raid1:%s: raid level not set to mirroring (%d)\n",
@@ -2950,6 +2953,8 @@ static int raid1_run(struct mddev *mddev)
 				  rdev->data_offset << 9);
 		if (blk_queue_discard(bdev_get_queue(rdev->bdev)))
 			discard_supported = true;
+		if (blk_queue_sg_gaps(bdev_get_queue(rdev->bdev)))
+			sg_gaps_disabled = true;
 	}
 
 	mddev->degraded = 0;
@@ -2986,6 +2991,12 @@ static int raid1_run(struct mddev *mddev)
 						mddev->queue);
 		else
 			queue_flag_clear_unlocked(QUEUE_FLAG_DISCARD,
+						  mddev->queue);
+		if (sg_gaps_disabled)
+			queue_flag_set_unlocked(QUEUE_FLAG_SG_GAPS,
+						mddev->queue);
+		else
+			queue_flag_clear_unlocked(QUEUE_FLAG_SG_GAPS,
 						  mddev->queue);
 	}
 

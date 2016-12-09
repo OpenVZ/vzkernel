@@ -6975,6 +6975,7 @@ static int raid5_run(struct mddev *mddev)
 	if (mddev->queue) {
 		int chunk_size;
 		bool discard_supported = true;
+		bool sg_gaps_disabled = false;
 		/* read-ahead size must cover two whole stripes, which
 		 * is 2 * (datadisks) * chunksize where 'n' is the
 		 * number of raid devices
@@ -7039,6 +7040,8 @@ static int raid5_run(struct mddev *mddev)
 				}
 				discard_supported = false;
 			}
+			if (blk_queue_sg_gaps(bdev_get_queue(rdev->bdev)))
+				sg_gaps_disabled = true;
 		}
 
 		if (discard_supported &&
@@ -7048,6 +7051,13 @@ static int raid5_run(struct mddev *mddev)
 						mddev->queue);
 		else
 			queue_flag_clear_unlocked(QUEUE_FLAG_DISCARD,
+						mddev->queue);
+
+		if (sg_gaps_disabled)
+			queue_flag_set_unlocked(QUEUE_FLAG_SG_GAPS,
+						mddev->queue);
+		else
+			queue_flag_clear_unlocked(QUEUE_FLAG_SG_GAPS,
 						mddev->queue);
 	}
 
