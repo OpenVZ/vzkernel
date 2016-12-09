@@ -1865,6 +1865,8 @@ static int raid10_add_disk(struct mddev *mddev, struct md_rdev *rdev)
 	md_integrity_add_rdev(rdev, mddev);
 	if (mddev->queue && blk_queue_discard(bdev_get_queue(rdev->bdev)))
 		queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, mddev->queue);
+	if (mddev->queue && blk_queue_sg_gaps(bdev_get_queue(rdev->bdev)))
+		queue_flag_set_unlocked(QUEUE_FLAG_SG_GAPS, mddev->queue);
 
 	print_conf(conf);
 	return err;
@@ -3650,6 +3652,7 @@ static int run(struct mddev *mddev)
 	sector_t min_offset_diff = 0;
 	int first = 1;
 	bool discard_supported = false;
+	bool sg_gaps_disabled = false;
 
 	if (mddev->private == NULL) {
 		conf = setup_conf(mddev);
@@ -3717,6 +3720,9 @@ static int run(struct mddev *mddev)
 
 		if (blk_queue_discard(bdev_get_queue(rdev->bdev)))
 			discard_supported = true;
+
+		if (blk_queue_sg_gaps(bdev_get_queue(rdev->bdev)))
+			sg_gaps_disabled = true;
 	}
 
 	if (mddev->queue) {
@@ -3725,6 +3731,12 @@ static int run(struct mddev *mddev)
 						mddev->queue);
 		else
 			queue_flag_clear_unlocked(QUEUE_FLAG_DISCARD,
+						  mddev->queue);
+		if (sg_gaps_disabled)
+			queue_flag_set_unlocked(QUEUE_FLAG_SG_GAPS,
+						mddev->queue);
+		else
+			queue_flag_clear_unlocked(QUEUE_FLAG_SG_GAPS,
 						  mddev->queue);
 	}
 	/* need to check that every block has at least one working mirror */
