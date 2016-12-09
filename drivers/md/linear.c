@@ -128,6 +128,7 @@ static struct linear_conf *linear_conf(struct mddev *mddev, int raid_disks)
 	struct md_rdev *rdev;
 	int i, cnt;
 	bool discard_supported = false;
+	bool sg_gaps_disabled = false;
 
 	conf = kzalloc (sizeof (*conf) + raid_disks*sizeof(struct dev_info),
 			GFP_KERNEL);
@@ -163,6 +164,9 @@ static struct linear_conf *linear_conf(struct mddev *mddev, int raid_disks)
 
 		if (blk_queue_discard(bdev_get_queue(rdev->bdev)))
 			discard_supported = true;
+
+		if (blk_queue_sg_gaps(bdev_get_queue(rdev->bdev)))
+			sg_gaps_disabled = true;
 	}
 	if (cnt != raid_disks) {
 		printk(KERN_ERR "md/linear:%s: not enough drives present. Aborting!\n",
@@ -174,6 +178,11 @@ static struct linear_conf *linear_conf(struct mddev *mddev, int raid_disks)
 		queue_flag_clear_unlocked(QUEUE_FLAG_DISCARD, mddev->queue);
 	else
 		queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, mddev->queue);
+
+	if (!sg_gaps_disabled)
+		queue_flag_clear_unlocked(QUEUE_FLAG_SG_GAPS, mddev->queue);
+	else
+		queue_flag_set_unlocked(QUEUE_FLAG_SG_GAPS, mddev->queue);
 
 	/*
 	 * Here we calculate the device offsets.

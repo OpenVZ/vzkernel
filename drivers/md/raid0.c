@@ -436,6 +436,7 @@ static int raid0_run(struct mddev *mddev)
 	if (mddev->queue) {
 		struct md_rdev *rdev;
 		bool discard_supported = false;
+		bool sg_gaps_disabled = false;
 
 		blk_queue_max_hw_sectors(mddev->queue, mddev->chunk_sectors);
 		blk_queue_max_write_same_sectors(mddev->queue, mddev->chunk_sectors);
@@ -450,6 +451,8 @@ static int raid0_run(struct mddev *mddev)
 					  rdev->data_offset << 9);
 			if (blk_queue_discard(bdev_get_queue(rdev->bdev)))
 				discard_supported = true;
+			if (blk_queue_sg_gaps(bdev_get_queue(rdev->bdev)))
+				sg_gaps_disabled = true;
 		}
 
 		/* Unfortunately, some devices have awful discard performance,
@@ -471,6 +474,11 @@ static int raid0_run(struct mddev *mddev)
 			queue_flag_clear_unlocked(QUEUE_FLAG_DISCARD, mddev->queue);
 		else
 			queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, mddev->queue);
+
+		if (!sg_gaps_disabled)
+			queue_flag_clear_unlocked(QUEUE_FLAG_SG_GAPS, mddev->queue);
+		else
+			queue_flag_set_unlocked(QUEUE_FLAG_SG_GAPS, mddev->queue);
 	}
 
 	/* calculate array device size */
