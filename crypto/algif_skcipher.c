@@ -765,7 +765,8 @@ static int skcipher_accept_parent(void *private, struct sock *sk)
 	struct crypto_tfm *ctfm = crypto_ablkcipher_tfm(tfm->ablkcipher);
 	struct crypto_alg *calg = ctfm->__crt_alg;
 
-	if (!tfm->has_key && calg->cra_u.ablkcipher.max_keysize)
+	if (!tfm->has_key && calg->cra_u.ablkcipher.max_keysize &&
+			crypto_ablkcipher_has_setkey(tfm->ablkcipher))
 		return -ENOKEY;
 
 	return skcipher_accept_parent_common(private, sk);
