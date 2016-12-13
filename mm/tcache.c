@@ -1141,27 +1141,24 @@ static void tcache_cleancache_put_page(int pool_id,
 {
 	struct tcache_node *node;
 	struct page *cache_page = NULL;
-	bool may_put = ACCESS_ONCE(tcache_active);
 
 	/* It makes no sense to populate tcache when we are short on memory */
-	if (current->flags & PF_MEMALLOC)
-		may_put = false;
+	if (!READ_ONCE(tcache_active) || current->flags & PF_MEMALLOC)
+		return;
 
-	node = tcache_get_node_and_pool(pool_id, &key, may_put);
+	node = tcache_get_node_and_pool(pool_id, &key, true);
 	if (node) {
-		if (may_put)
-			cache_page = tcache_alloc_page(node->pool);
+		cache_page = tcache_alloc_page(node->pool);
 		if (cache_page) {
 			copy_highpage(cache_page, page);
 			/* cleancache does not care about failures */
 			(void)tcache_attach_page(node, index, cache_page);
-		} else
-			cache_page = tcache_detach_page(node, index, false);
+		}
 		tcache_put_node_and_pool(node);
-	}
+		if (cache_page)
+			tcache_put_page(cache_page);
 
-	if (cache_page)
-		tcache_put_page(cache_page);
+	}
 }
 
 static int tcache_cleancache_get_page(int pool_id,
