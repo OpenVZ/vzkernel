@@ -98,6 +98,8 @@ struct tcache_pool {
 	struct tcache_pool_nodeinfo	nodeinfo[0];
 };
 
+static atomic_long_t nr_tcache_nodes;
+
 /*
  * Tcache nodes correspond to inodes. A node is created automatically when a
  * new page is added to the cache (cleancache_put_page) and destroyed either
@@ -561,6 +563,7 @@ retry:
 		node->pool = pool;
 		node->key = *key;
 		atomic_long_inc(&pool->nr_nodes);
+		atomic_long_inc(&nr_tcache_nodes);
 		__tcache_insert_node(&tree->root, node, rb_link, rb_parent);
 	}
 	spin_unlock_irqrestore(&tree->lock, flags);
@@ -590,6 +593,7 @@ static void tcache_node_release_fn(struct kref *kref)
 	__tcache_delete_node(&tree->root, node);
 	spin_unlock(&tree->lock);
 
+	atomic_long_dec(&nr_tcache_nodes);
 	atomic_long_dec(&node->pool->nr_nodes);
 	kfree(node);
 }
@@ -1168,6 +1172,9 @@ static int tcache_cleancache_get_page(int pool_id,
 	struct tcache_node *node;
 	struct page *cache_page = NULL;
 
+	if (!atomic_long_read(&nr_tcache_nodes))
+		return -1;
+
 	node = tcache_get_node_and_pool(pool_id, &key, false);
 	if (node) {
 		cache_page = tcache_detach_page(node, index, true);
@@ -1192,6 +1199,9 @@ static void tcache_cleancache_invalidate_page(int pool_id,
 	struct tcache_node *node;
 	struct page *page;
 
+	if (!atomic_long_read(&nr_tcache_nodes))
+		return;
+
 	node = tcache_get_node_and_pool(pool_id, &key, false);
 	if (node) {
 		page = tcache_detach_page(node, index, false);
@@ -1205,6 +1215,9 @@ static void tcache_cleancache_invalidate_inode(int pool_id,
 					       struct cleancache_filekey key)
 {
 	struct tcache_pool *pool;
+
+	if (!atomic_long_read(&nr_tcache_nodes))
+		return;
 
 	pool = tcache_get_pool(pool_id);
 	if (pool) {
