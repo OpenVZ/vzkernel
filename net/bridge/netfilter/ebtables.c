@@ -30,8 +30,9 @@
 /* needed for logical [in,out]-dev filtering */
 #include "../br_private.h"
 
-#define BUGPRINT(format, args...) printk("kernel msg: ebtables bug: please "\
-					 "report to author: "format, ## args)
+#define BUGPRINT(format, args...)					\
+	ve_printk(VE_LOG, "kernel msg: ebtables bug: please "		\
+			"report to author: "format, ## args)
 /* #define BUGPRINT(format, args...) */
 
 /*
