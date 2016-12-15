@@ -833,7 +833,7 @@ static void fuse_aio_complete(struct fuse_io_priv *io, int err, ssize_t pos)
 			}
 		}
 
-		if (res < 0)
+		if (res < 0 && printk_ratelimit())
 			printk("fuse_aio_complete(io=%p, err=%d, pos=%ld"
 			       "): io->err=%d io->bytes=%ld io->size=%ld "
 			       "is_sync=%d res=%ld ki_opcode=%d ki_pos=%llu\n",
@@ -3537,7 +3537,7 @@ fuse_direct_IO(int rw, struct kiocb *iocb, const struct iovec *iov,
 		ret = __fuse_direct_read(io, iov, nr_segs, &pos, count);
 
 	if (io->async) {
-		if (ret != count) {
+		if (ret != count && printk_ratelimit()) {
 			struct fuse_file *ff = file->private_data;
 			printk("fuse_direct_IO: failed to %s %ld bytes "
 			       "(offset=%llu ret=%ld i_size=%llu ino=%lu "
