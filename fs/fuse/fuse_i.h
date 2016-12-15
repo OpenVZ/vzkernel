@@ -125,6 +125,9 @@ struct fuse_inode {
 
 	/** Mostly to detect very first open */
 	atomic_t num_openers;
+
+	/** Even though num_openers>0, trust server i_size */
+	int i_size_unstable;
 };
 
 /** FUSE inode state bits */
