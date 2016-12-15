@@ -965,8 +965,9 @@ static inline void print_unload_info(struct seq_file *m, struct module *mod)
 {
 	struct module_use *use;
 	int printed_something = 0;
+	bool in_container = !ve_is_super(get_exec_env());
 
-	seq_printf(m, " %lu ", module_refcount(mod));
+	seq_printf(m, " %lu ", in_container ? 1 : module_refcount(mod));
 
 	/* Always include a trailing , so userspace can differentiate
            between this and the old multi-field proc format. */
@@ -4023,6 +4024,7 @@ static void m_stop(struct seq_file *m, void *p)
 static int m_show(struct seq_file *m, void *p)
 {
 	struct module *mod = list_entry(p, struct module, list);
+	bool in_container = !ve_is_super(get_exec_env());
 	char buf[MODULE_FLAGS_BUF_SIZE];
 
 	/* We always ignore unformed modules. */
@@ -4030,7 +4032,7 @@ static int m_show(struct seq_file *m, void *p)
 		return 0;
 
 	seq_printf(m, "%s %u",
-		   mod->name, mod->init_size + mod->core_size);
+		   mod->name, in_container ? 4242 : mod->init_size + mod->core_size);
 	print_unload_info(m, mod);
 
 	/* Informative for users. */
@@ -4042,7 +4044,7 @@ static int m_show(struct seq_file *m, void *p)
 	seq_printf(m, " 0x%pK", mod->module_core);
 
 	/* Taints info */
-	if (mod->taints)
+	if (mod->taints && !in_container)
 		seq_printf(m, " %s", module_flags(mod, buf));
 
 	seq_printf(m, "\n");
