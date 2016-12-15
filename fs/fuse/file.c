@@ -827,7 +827,7 @@ static void fuse_aio_complete(struct fuse_io_priv *io, int err, ssize_t pos)
 			spin_lock(&fi->lock);
 			fi->attr_version = atomic64_inc_return(&fc->attr_version);
 			spin_unlock(&fi->lock);
-		} else {
+		} else if (printk_ratelimit()) {
 			printk("fuse_aio_complete(io=%p, err=%d, pos=%ld"
 			       "): io->err=%d io->bytes=%ld io->size=%ld "
 			       "is_sync=%d res=%ld ki_flags=%d ki_pos=%llu\n",
@@ -3163,7 +3163,7 @@ fuse_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 	if (io->async) {
 		bool blocking = io->blocking;
 
-		if (ret != count) {
+		if (ret != count && printk_ratelimit()) {
 			struct fuse_file *ff = file->private_data;
 			printk("fuse_direct_IO: failed to %s %ld bytes "
 			       "(offset=%llu ret=%ld i_size=%llu ino=%lu "
