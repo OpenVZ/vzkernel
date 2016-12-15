@@ -319,12 +319,18 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 		struct fuse_inode *fi = get_fuse_inode(inode);
 		u64 size;
 
+		spin_lock(&fi->lock);
 		atomic_inc(&fi->num_openers);
 
 		if (atomic_read(&fi->num_openers) == 1) {
+			fi->i_size_unstable = 1;
+			spin_unlock(&fi->lock);
 			err = fuse_getattr_size(inode, file, &size);
 			if (err) {
+				spin_lock(&fi->lock);
 				atomic_dec(&fi->num_openers);
+				fi->i_size_unstable = 0;
+				spin_unlock(&fi->lock);
 				if (lock_inode)
 					mutex_unlock(&inode->i_mutex);
 				fuse_release_common(file, false);
@@ -333,8 +339,11 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 
 			spin_lock(&fi->lock);
 			i_size_write(inode, size);
+			fi->i_size_unstable = 0;
 			spin_unlock(&fi->lock);
-		}
+		} else
+			spin_unlock(&fi->lock);
+
 	}
 
 	fuse_finish_open(inode, file);
