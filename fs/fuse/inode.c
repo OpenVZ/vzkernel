@@ -86,6 +86,7 @@ static struct inode *fuse_alloc_inode(struct super_block *sb)
 	fi->attr_version = 0;
 	fi->orig_ino = 0;
 	fi->state = 0;
+	fi->i_size_unstable = 0;
 	INIT_LIST_HEAD(&fi->rw_files);
 	mutex_init(&fi->mutex);
 	init_rwsem(&fi->i_mmap_sem);
@@ -251,7 +252,8 @@ void fuse_change_attributes(struct inode *inode, struct fuse_attr *attr,
 	 * extend local i_size without keeping userspace server in sync. So,
 	 * attr->size coming from server can be stale. We cannot trust it.
 	 */
-	if (!is_wb || !S_ISREG(inode->i_mode))
+	if (!is_wb || !S_ISREG(inode->i_mode) ||
+	    !atomic_read(&fi->num_openers) || fi->i_size_unstable)
 		i_size_write(inode, attr->size);
 	spin_unlock(&fi->lock);
 
