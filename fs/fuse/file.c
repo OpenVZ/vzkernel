@@ -2148,9 +2148,9 @@ static inline bool fuse_blocked_for_wb(struct inode *inode)
 		return false;
 
 	spin_lock(&fc->lock);
-	if (!list_empty(&fi->write_files)) {
-		struct fuse_file *ff = list_entry(fi->write_files.next,
-						  struct fuse_file, write_entry);
+	if (!list_empty(&fi->rw_files)) {
+		struct fuse_file *ff = list_entry(fi->rw_files.next,
+						  struct fuse_file, rw_entry);
 		if (test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state))
 			blocked = false;
 	}
