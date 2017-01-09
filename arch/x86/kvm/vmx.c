@@ -2329,7 +2329,9 @@ static void vmx_set_msr_bitmap(struct kvm_vcpu *vcpu)
 
 	if (is_guest_mode(vcpu))
 		msr_bitmap = vmx_msr_bitmap_nested;
-	else if (vcpu->arch.apic_base & X2APIC_ENABLE) {
+    else if (cpu_has_secondary_exec_ctrls() &&
+             (vmcs_read32(SECONDARY_VM_EXEC_CONTROL) &
+              SECONDARY_EXEC_VIRTUALIZE_X2APIC_MODE)) {
 		if (is_long_mode(vcpu))
 			msr_bitmap = vmx_msr_bitmap_longmode_x2apic;
 		else
