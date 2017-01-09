@@ -6,6 +6,21 @@
 
 #define FRAME_HEADER_SIZE (sizeof(long) * 2)
 
+/*
+ * This disables KASAN checking when reading a value from another task's stack,
+ * since the other task could be running on another CPU and could have poisoned
+ * the stack in the meantime.
+ */
+#define READ_ONCE_TASK_STACK(task, x)			\
+({							\
+	unsigned long val;				\
+	if (task == current)				\
+		val = READ_ONCE(x);			\
+	else						\
+		val = READ_ONCE_NOCHECK(x);		\
+	val;						\
+})
+
 unsigned long unwind_get_return_address(struct unwind_state *state)
 {
 	if (unwind_done(state))
@@ -44,7 +59,7 @@ static bool update_stack_state(struct unwind_state *state,
 	/* Move state to the next frame: */
 	state->bp = next_bp;
 	addr_p = state->bp + 1;
-	addr = READ_ONCE(*addr_p);
+	addr = READ_ONCE_TASK_STACK(state->task, *addr_p);
 	state->ip = ftrace_graph_ret_addr(state->task, &state->graph_idx,
 					  addr, addr_p);
 
@@ -113,7 +128,7 @@ bool unwind_next_frame(struct unwind_state *state)
 	if (unwind_end(state))
 		goto the_end;
 
-	next_bp = (unsigned long *)READ_ONCE(*state->bp);
+	next_bp = (unsigned long *)READ_ONCE_TASK_STACK(state->task,*state->bp);
 
 	/* make sure the next frame's data is accessible */
 	if (!update_stack_state(state, next_bp)) {
