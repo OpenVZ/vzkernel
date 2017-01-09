@@ -52,6 +52,8 @@ static inline bool on_stack(struct stack_info *info, void *addr, size_t len)
 static inline unsigned long *
 get_frame_pointer(struct task_struct *task, struct pt_regs *regs)
 {
+	unsigned long *frame;
+
 	if (regs)
 		return (unsigned long *)regs->bp;
 
@@ -59,7 +61,8 @@ get_frame_pointer(struct task_struct *task, struct pt_regs *regs)
 		return __builtin_frame_address(0);
 
 	/* bp is the last reg pushed by switch_to */
-	return (unsigned long *)*(unsigned long *)task->thread.sp;
+	frame = (unsigned long *)task->thread.sp;
+	return (unsigned long *)READ_ONCE_NOCHECK(*frame);
 }
 #else
 static inline unsigned long *
