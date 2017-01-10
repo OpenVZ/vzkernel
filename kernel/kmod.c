@@ -422,6 +422,10 @@ static const char * const ve0_allowed_mod[] = {
 
 	"rtnl-link-dummy",
 	"rtnl-link-vxlan",
+
+	/* NFS */
+	"nfsv3",
+	"nfsv4",
 };
 
 /*
