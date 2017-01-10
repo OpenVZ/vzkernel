@@ -1393,7 +1393,7 @@ static int btrfs_wq_run_delayed_node(struct btrfs_delayed_root *delayed_root,
 	struct btrfs_async_delayed_work *async_work;
 
 	if (atomic_read(&delayed_root->items) < BTRFS_DELAYED_BACKGROUND ||
-	    btrfs_workqueue_normal_congested(root->fs_info->delayed_workers))
+	    btrfs_workqueue_normal_congested(fs_info->delayed_workers))
 		return 0;
 
 	async_work = kmalloc(sizeof(*async_work), GFP_NOFS);
