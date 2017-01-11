@@ -17,6 +17,7 @@
 #define POSIX_FADV_DONTNEED	4 /* Don't need these pages.  */
 #define POSIX_FADV_NOREUSE	5 /* Data will be accessed once.  */
 #endif
+#define FADV_DEACTIVATE		32 /* Mark pages as good candidates for reclaim */
 
 #ifdef __KERNEL__
 extern int generic_fadvise(struct file* file, loff_t off, loff_t len, int adv);
