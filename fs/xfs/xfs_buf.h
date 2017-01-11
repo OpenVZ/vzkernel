@@ -63,7 +63,6 @@ typedef enum {
 #define _XBF_KMEM	 (1 << 21)/* backed by heap memory */
 #define _XBF_DELWRI_Q	 (1 << 22)/* buffer on a delwri queue */
 #define _XBF_COMPOUND	 (1 << 23)/* compound buffer */
-#define _XBF_LRU_DISPOSE (1 << 24)/* buffer being discarded */
 
 typedef unsigned int xfs_buf_flags_t;
 
@@ -84,13 +83,13 @@ typedef unsigned int xfs_buf_flags_t;
 	{ _XBF_PAGES,		"PAGES" }, \
 	{ _XBF_KMEM,		"KMEM" }, \
 	{ _XBF_DELWRI_Q,	"DELWRI_Q" }, \
-	{ _XBF_COMPOUND,	"COMPOUND" }, \
-	{ _XBF_LRU_DISPOSE,	"LRU_DISPOSE" }
+	{ _XBF_COMPOUND,	"COMPOUND" }
 
 /*
  * Internal state flags.
  */
-#define XFS_BSTATE_IN_FLIGHT	(1 << 1)	/* I/O in flight */
+#define XFS_BSTATE_DISPOSE	 (1 << 0)	/* buffer being discarded */
+#define XFS_BSTATE_IN_FLIGHT	 (1 << 1)	/* I/O in flight */
 
 /*
  * The xfs_buftarg contains 2 notions of "sector size" -
@@ -167,6 +166,7 @@ typedef struct xfs_buf {
 	struct list_head	b_lru;		/* lru list */
 	xfs_buf_flags_t		b_lru_flags;	/* internal lru status flags */
 	spinlock_t		b_lock;		/* internal state lock */
+	unsigned int		b_state;	/* internal state flags */
 	int			b_io_error;	/* internal IO error state */
 	wait_queue_head_t	b_waiters;	/* unpin waiters */
 	struct list_head	b_list;
