@@ -966,8 +966,7 @@ int macvlan_common_newlink(struct net *src_net, struct net_device *dev,
 
 	err = netdev_upper_dev_link(lowerdev, dev);
 	if (err)
-		goto destroy_port;
-
+		goto unregister_netdev;
 
 	dev->priv_flags |= IFF_MACVLAN;
 	list_add_tail_rcu(&vlan->list, &port->vlans);
@@ -975,6 +974,8 @@ int macvlan_common_newlink(struct net *src_net, struct net_device *dev,
 
 	return 0;
 
+unregister_netdev:
+	unregister_netdevice(dev);
 destroy_port:
 	port->count -= 1;
 	if (!port->count)
