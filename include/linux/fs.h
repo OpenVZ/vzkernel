@@ -448,13 +448,13 @@ static inline int iov_iter_has_iovec(const struct iov_iter *i)
 {
 	return i->ops == &ii_iovec_ops;
 }
-static inline struct iovec *iov_iter_iovec(struct iov_iter *i)
+static inline struct iovec *iov_iter_iovec(const struct iov_iter *i)
 {
 	BUG_ON(!iov_iter_has_iovec(i));
 	return (struct iovec *)i->data;
 }
 
-static inline size_t iov_iter_count(struct iov_iter *i)
+static inline size_t iov_iter_count(const struct iov_iter *i)
 {
 	return i->count;
 }
