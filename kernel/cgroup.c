@@ -4467,11 +4467,29 @@ static int cgroup_destroy_locked(struct cgroup *cgrp)
 	struct dentry *d = cgrp->dentry;
 	struct cgroup_event *event, *tmp;
 	struct cgroup_subsys *ss;
+	struct cgroup *child;
+	bool empty;
 
 	lockdep_assert_held(&d->d_inode->i_mutex);
 	lockdep_assert_held(&cgroup_mutex);
 
-	if (atomic_read(&cgrp->count) || !list_empty(&cgrp->children))
+	if (atomic_read(&cgrp->count))
+		return -EBUSY;
+
+	/*
+	 * Make sure there's no live children.  We can't test ->children
+	 * emptiness as dead children linger on it while being destroyed;
+	 * otherwise, "rmdir parent/child parent" may fail with -EBUSY.
+	 */
+	empty = true;
+	rcu_read_lock();
+	list_for_each_entry_rcu(child, &cgrp->children, sibling) {
+		empty = cgroup_is_removed(child);
+		if (!empty)
+			break;
+	}
+	rcu_read_unlock();
+	if (!empty)
 		return -EBUSY;
 
 	/*
