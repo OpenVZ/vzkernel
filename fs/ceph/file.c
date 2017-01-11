@@ -74,8 +74,8 @@ static __le32 ceph_flags_sys2wire(u32 flags)
  */
 static size_t dio_get_pagev_size(const struct iov_iter *it)
 {
-    const struct iovec *iov = it->iov;
-    const struct iovec *iovend = iov + it->nr_segs;
+    const struct iovec *iov = iov_iter_iovec(it);
+    size_t total = iov_iter_count(it);
     size_t size;
 
     size = iov->iov_len - it->iov_offset;
@@ -84,8 +84,10 @@ static size_t dio_get_pagev_size(const struct iov_iter *it)
      * and the next base are page aligned.
      */
     while (PAGE_ALIGNED((iov->iov_base + iov->iov_len)) &&
-           (++iov < iovend && PAGE_ALIGNED((iov->iov_base)))) {
-        size += iov->iov_len;
+           PAGE_ALIGNED(((iov++)->iov_base))) {
+	    size_t n =  min(iov->iov_len, total);
+	    size += n;
+	    total -= n;
     }
     dout("dio_get_pagevlen len = %zu\n", size);
     return size;
@@ -105,7 +107,7 @@ dio_get_pages_alloc(const struct iov_iter *it, size_t nbytes,
 	struct page **pages;
 	int ret = 0, idx, npages;
 
-	align = (unsigned long)(it->iov->iov_base + it->iov_offset) &
+	align = (unsigned long)(iov_iter_iovec(it)->iov_base + it->iov_offset) &
 		(PAGE_SIZE - 1);
 	npages = calc_pages_for(align, nbytes);
 	pages = kvmalloc(sizeof(*pages) * npages, GFP_KERNEL);
@@ -113,10 +115,11 @@ dio_get_pages_alloc(const struct iov_iter *it, size_t nbytes,
 		return ERR_PTR(-ENOMEM);
 
 	for (idx = 0; idx < npages; ) {
-		void __user *data = tmp_it.iov->iov_base + tmp_it.iov_offset;
+		struct iovec *tmp_iov = iov_iter_iovec(&tmp_it);
+		void __user *data = tmp_iov->iov_base + tmp_it.iov_offset;
 		size_t off = (unsigned long)data & (PAGE_SIZE - 1);
 		size_t len = min_t(size_t, nbytes,
-				   tmp_it.iov->iov_len - tmp_it.iov_offset);
+				   tmp_iov->iov_len - tmp_it.iov_offset);
 		int n = (len + off + PAGE_SIZE - 1) >> PAGE_SHIFT;
 		ret = get_user_pages_fast((unsigned long)data, n, write,
 					   pages + idx);
@@ -649,10 +652,9 @@ static ssize_t ceph_sync_read(struct kiocb *iocb, struct iov_iter *i,
 		size_t left = len = ret;
 
 		while (left) {
-			void __user *data = i->iov[0].iov_base +
-					    i->iov_offset;
-			l = min(i->iov[0].iov_len - i->iov_offset,
-				left);
+			struct iovec *iov = (struct iovec *)i->data;
+			void __user *data = iov->iov_base + i->iov_offset;
+			l = min(iov->iov_len - i->iov_offset, left);
 
 			ret = ceph_copy_page_vector_to_user(&pages[k],
 							    data, off, l);
@@ -1215,7 +1217,7 @@ static ssize_t inline_to_iov(struct kiocb *iocb, struct iov_iter *i,
 
 		while (left) {
 			struct iovec *iov = iov_iter_iovec(i);
-			void __user *udata = iov->iov_base + i->iov_offset;
+			void __user *udata = iov->iov_base;
 			size_t n = min(iov->iov_len - i->iov_offset, left);
 
 			if (__copy_to_user(udata, kdata, n)) {
@@ -1233,8 +1235,8 @@ static ssize_t inline_to_iov(struct kiocb *iocb, struct iov_iter *i,
 		size_t left = min_t(loff_t, iocb->ki_pos + len, i_size) - pos;
 
 		while (left) {
-			struct iovec *iov = iov_iter_iovec(i);
-			void __user *udata = iov->iov_base + i->iov_offset;
+			struct iovec *iov = (struct iovec *)i->data;
+			void __user *udata = iov->iov_base;
 			size_t n = min(iov->iov_len - i->iov_offset, left);
 
 			if (__clear_user(udata, n)) {
