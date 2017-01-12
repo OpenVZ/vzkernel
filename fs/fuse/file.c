@@ -1958,7 +1958,8 @@ static struct fuse_file *fuse_write_file(struct fuse_conn *fc,
 }
 
 static int fuse_writepage_locked(struct page *page,
-				 struct writeback_control *wbc)
+				 struct writeback_control *wbc,
+				 struct fuse_file **ff_pp)
 {
 	struct address_space *mapping = page->mapping;
 	struct inode *inode = mapping->host;
@@ -1966,13 +1967,30 @@ static int fuse_writepage_locked(struct page *page,
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	struct fuse_req *req;
 	struct page *tmp_page;
+	struct fuse_file *ff;
+	int err = 0;
 
 	if (fuse_page_is_writeback(inode, page->index)) {
 		if (wbc->sync_mode != WB_SYNC_ALL) {
 			redirty_page_for_writepage(wbc, page);
 			return 0;
 		}
-		fuse_wait_on_page_writeback(inode, page->index);
+
+		/* we can acquire ff here because we do have locked pages here! */
+		ff = fuse_write_file(fc, get_fuse_inode(inode));
+		if (!ff)
+			goto dummy_end_page_wb_err;
+
+		/* FUSE_NOTIFY_INVAL_FILES must be able to wake us up */
+		__fuse_wait_on_page_writeback_or_invalidate(inode, ff, page->index);
+
+		if (test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
+			if (ff_pp)
+				*ff_pp = ff;
+			goto dummy_end_page_wb;
+		}
+
+		fuse_release_ff(inode, ff);
 	}
 
 	if (test_set_page_writeback(page))
@@ -1990,6 +2008,8 @@ static int fuse_writepage_locked(struct page *page,
 	req->ff = fuse_write_file(fc, fi);
 	if (!req->ff)
 		goto err_nofile;
+	if (ff_pp)
+		*ff_pp = fuse_file_get(req->ff);
 	fuse_write_fill(req, req->ff, page_offset(page), 0);
 	fuse_account_request(fc, PAGE_CACHE_SIZE);
 
@@ -2024,13 +2044,23 @@ err_free:
 err:
 	end_page_writeback(page);
 	return -ENOMEM;
+
+dummy_end_page_wb_err:
+	printk("FUSE: page under fwb dirtied on dead file\n");
+	err = -EIO;
+	/* fall through ... */
+dummy_end_page_wb:
+	if (test_set_page_writeback(page))
+		BUG();
+	end_page_writeback(page);
+	return err;
 }
 
 static int fuse_writepage(struct page *page, struct writeback_control *wbc)
 {
 	int err;
 
-	err = fuse_writepage_locked(page, wbc);
+	err = fuse_writepage_locked(page, wbc, NULL);
 	unlock_page(page);
 
 	return err;
@@ -2418,9 +2448,18 @@ static int fuse_launder_page(struct page *page)
 		struct writeback_control wbc = {
 			.sync_mode = WB_SYNC_ALL,
 		};
-		err = fuse_writepage_locked(page, &wbc);
-		if (!err)
-			fuse_wait_on_page_writeback(inode, page->index);
+		struct fuse_file *ff = NULL;
+		err = fuse_writepage_locked(page, &wbc, &ff);
+		if (!err) {
+			/*
+			 * We need to check FAIL_IMMEDIATELY because otherwise
+			 * fuse_do_setattr may stick in invalidate_inode_pages2
+			 * forever (if fuse_invalidate_files is in progress).
+			 */
+			__fuse_wait_on_page_writeback_or_invalidate(inode,
+								    ff, page->index);
+			fuse_release_ff(inode, ff);
+		}
 	}
 	return err;
 }
