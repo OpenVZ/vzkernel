@@ -218,7 +218,7 @@ retry:
 	return 0;
 
 out_free_swapcache:
-	swapcache_free(entry, NULL);
+	swapcache_free(entry);
 out:
 	return err;
 }
