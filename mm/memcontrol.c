@@ -7068,15 +7068,16 @@ void mem_cgroup_cancel_charge(struct page *page, struct mem_cgroup *memcg)
 static void uncharge_batch(struct mem_cgroup *memcg, unsigned long pgpgout,
 			   unsigned long nr_mem, unsigned long nr_memsw,
 			   unsigned long nr_anon, unsigned long nr_file,
-			   unsigned long nr_huge, struct page *dummy_page)
+			   unsigned long nr_huge, unsigned long nr_kmem,
+			   struct page *dummy_page)
 {
 	unsigned long flags;
 
 	if (!mem_cgroup_is_root(memcg)) {
 		if (nr_mem)
-			page_counter_uncharge(&memcg->memory, nr_mem);
+			page_counter_uncharge(&memcg->memory, nr_mem + nr_kmem);
 		if (nr_memsw)
-			page_counter_uncharge(&memcg->memsw, nr_memsw);
+			page_counter_uncharge(&memcg->memsw, nr_memsw + nr_kmem);
 
 		memcg_oom_recover(memcg);
 	}
@@ -7098,6 +7099,7 @@ static void uncharge_list(struct list_head *page_list)
 	unsigned long nr_anon = 0;
 	unsigned long nr_file = 0;
 	unsigned long nr_huge = 0;
+	unsigned long nr_kmem = 0;
 	unsigned long pgpgout = 0;
 	unsigned long nr_mem = 0;
 	struct list_head *next;
@@ -7127,23 +7129,26 @@ static void uncharge_list(struct list_head *page_list)
 		if (memcg != pc->mem_cgroup) {
 			if (memcg) {
 				uncharge_batch(memcg, pgpgout, nr_mem, nr_memsw,
-					       nr_anon, nr_file, nr_huge, page);
-				pgpgout = nr_mem = nr_memsw = 0;
+					nr_anon, nr_file, nr_huge, nr_kmem, page);
+				pgpgout = nr_mem = nr_memsw = nr_kmem = 0;
 				nr_anon = nr_file = nr_huge = 0;
 			}
 			memcg = pc->mem_cgroup;
 		}
 
-		if (PageTransHuge(page)) {
-			nr_pages <<= compound_order(page);
-			VM_BUG_ON_PAGE(!PageTransHuge(page), page);
-			nr_huge += nr_pages;
-		}
-
-		if (PageAnon(page))
-			nr_anon += nr_pages;
-		else
-			nr_file += nr_pages;
+		if (!PageKmemcg(page)) {
+			if (PageTransHuge(page)) {
+				nr_pages <<= compound_order(page);
+				VM_BUG_ON_PAGE(!PageTransHuge(page), page);
+				nr_huge += nr_pages;
+			}
+			if (PageAnon(page))
+				nr_anon += nr_pages;
+			else
+				nr_file += nr_pages;
+			pgpgout++;
+		} else
+			nr_kmem += 1 << compound_order(page);
 
 		if (pc->flags & PCG_MEM)
 			nr_mem += nr_pages;
@@ -7156,7 +7161,7 @@ static void uncharge_list(struct list_head *page_list)
 
 	if (memcg)
 		uncharge_batch(memcg, pgpgout, nr_mem, nr_memsw,
-			       nr_anon, nr_file, nr_huge, page);
+			       nr_anon, nr_file, nr_huge, nr_kmem, page);
 }
 
 /**
