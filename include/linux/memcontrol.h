@@ -52,15 +52,17 @@ void mem_cgroup_commit_charge(struct page *page, struct mem_cgroup *memcg,
 			      bool lrucare);
 void mem_cgroup_cancel_charge(struct page *page, struct mem_cgroup *memcg);
 
+void mem_cgroup_uncharge(struct page *page);
+
+/* Batched uncharging */
+void mem_cgroup_uncharge_start(void);
+void mem_cgroup_uncharge_end(void);
+
+void mem_cgroup_migrate(struct page *oldpage, struct page *newpage,
+			bool lrucare);
+
 struct lruvec *mem_cgroup_zone_lruvec(struct zone *, struct mem_cgroup *);
 struct lruvec *mem_cgroup_page_lruvec(struct page *, struct zone *);
-
-/* For coalescing uncharge for reducing memcg' overhead*/
-extern void mem_cgroup_uncharge_start(void);
-extern void mem_cgroup_uncharge_end(void);
-
-extern void mem_cgroup_uncharge_page(struct page *page);
-extern void mem_cgroup_uncharge_cache_page(struct page *page);
 
 bool __mem_cgroup_same_or_subtree(const struct mem_cgroup *root_memcg,
 				  struct mem_cgroup *memcg);
@@ -90,12 +92,6 @@ extern struct cgroup_subsys_state *mem_cgroup_css(struct mem_cgroup *memcg);
 
 unsigned long page_cgroup_ino(struct page *page);
 
-extern void
-mem_cgroup_prepare_migration(struct page *page, struct page *newpage,
-			     struct mem_cgroup **memcgp);
-extern void mem_cgroup_end_migration(struct mem_cgroup *memcg,
-	struct page *oldpage, struct page *newpage, bool migration_ok);
-
 struct mem_cgroup *mem_cgroup_iter(struct mem_cgroup *,
 				   struct mem_cgroup *,
 				   struct mem_cgroup_reclaim_cookie *);
@@ -117,8 +113,6 @@ extern void mem_cgroup_note_oom_kill(struct mem_cgroup *memcg,
 				     struct task_struct *task);
 extern void mem_cgroup_print_oom_info(struct mem_cgroup *memcg,
 					struct task_struct *p);
-extern void mem_cgroup_replace_page_cache(struct page *oldpage,
-					struct page *newpage);
 
 static inline void mem_cgroup_oom_enable(void)
 {
@@ -246,6 +240,10 @@ static inline void mem_cgroup_cancel_charge(struct page *page,
 {
 }
 
+static inline void mem_cgroup_uncharge(struct page *page)
+{
+}
+
 static inline void mem_cgroup_uncharge_start(void)
 {
 }
@@ -254,11 +252,9 @@ static inline void mem_cgroup_uncharge_end(void)
 {
 }
 
-static inline void mem_cgroup_uncharge_page(struct page *page)
-{
-}
-
-static inline void mem_cgroup_uncharge_cache_page(struct page *page)
+static inline void mem_cgroup_migrate(struct page *oldpage,
+				      struct page *newpage,
+				      bool lrucare)
 {
 }
 
@@ -300,17 +296,6 @@ static inline struct cgroup_subsys_state
 		*mem_cgroup_css(struct mem_cgroup *memcg)
 {
 	return NULL;
-}
-
-static inline void
-mem_cgroup_prepare_migration(struct page *page, struct page *newpage,
-			     struct mem_cgroup **memcgp)
-{
-}
-
-static inline void mem_cgroup_end_migration(struct mem_cgroup *memcg,
-		struct page *oldpage, struct page *newpage, bool migration_ok)
-{
 }
 
 static inline struct mem_cgroup *
@@ -447,10 +432,6 @@ static inline void mem_cgroup_split_huge_fixup(struct page *head)
 
 static inline
 void mem_cgroup_count_vm_event(struct mm_struct *mm, enum vm_event_item idx)
-{
-}
-static inline void mem_cgroup_replace_page_cache(struct page *oldpage,
-				struct page *newpage)
 {
 }
 #endif /* CONFIG_MEMCG */
