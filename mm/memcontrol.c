@@ -1191,15 +1191,24 @@ struct mem_cgroup *mem_cgroup_from_task(struct task_struct *p)
 	return mem_cgroup_from_css(task_subsys_state(p, mem_cgroup_subsys_id));
 }
 
-struct mem_cgroup *try_get_mem_cgroup_from_mm(struct mm_struct *mm)
+struct mem_cgroup *get_mem_cgroup_from_mm(struct mm_struct *mm)
 {
 	struct mem_cgroup *memcg = NULL;
 
 	rcu_read_lock();
 	do {
-		memcg = mem_cgroup_from_task(rcu_dereference(mm->owner));
-		if (unlikely(!memcg))
-			break;
+		/*
+		 * Page cache insertions can happen withou an
+		 * actual mm context, e.g. during disk probing
+		 * on boot, loopback IO, acct() writes etc.
+		 */
+		if (unlikely(!mm))
+			memcg = root_mem_cgroup;
+		else {
+			memcg = mem_cgroup_from_task(rcu_dereference(mm->owner));
+			if (unlikely(!memcg))
+				memcg = root_mem_cgroup;
+		}
 	} while (!css_tryget(&memcg->css));
 	rcu_read_unlock();
 	return memcg;
@@ -1611,7 +1620,7 @@ int task_in_mem_cgroup(struct task_struct *task, const struct mem_cgroup *memcg)
 
 	p = find_lock_task_mm(task);
 	if (p) {
-		curr = try_get_mem_cgroup_from_mm(p->mm);
+		curr = get_mem_cgroup_from_mm(p->mm);
 		task_unlock(p);
 	} else {
 		/*
@@ -1625,8 +1634,6 @@ int task_in_mem_cgroup(struct task_struct *task, const struct mem_cgroup *memcg)
 			css_get(&curr->css);
 		task_unlock(task);
 	}
-	if (!curr)
-		return 0;
 	/*
 	 * We should check use_hierarchy of "memcg" not "curr". Because checking
 	 * use_hierarchy of "curr" here make this function true if hierarchy is
@@ -1758,7 +1765,7 @@ void mem_cgroup_note_oom_kill(struct mem_cgroup *root_memcg,
 
 	p = find_lock_task_mm(task);
 	if (p) {
-		memcg = try_get_mem_cgroup_from_mm(p->mm);
+		memcg = get_mem_cgroup_from_mm(p->mm);
 		task_unlock(p);
 	} else {
 		rcu_read_lock();
@@ -3499,9 +3506,7 @@ struct kmem_cache *__memcg_kmem_get_cache(struct kmem_cache *cachep,
 	if (!current->mm || current->memcg_kmem_skip_account)
 		return cachep;
 
-	memcg = try_get_mem_cgroup_from_mm(current->mm);
-	if (unlikely(!memcg))
-		return cachep;
+	memcg = get_mem_cgroup_from_mm(current->mm);
 
 	if (!memcg_kmem_is_active(memcg))
 		goto out;
@@ -3583,15 +3588,7 @@ __memcg_kmem_newpage_charge(struct page *page, gfp_t gfp, int order)
 	if (!current->mm || current->memcg_kmem_skip_account)
 		return true;
 
-	memcg = try_get_mem_cgroup_from_mm(current->mm);
-
-	/*
-	 * very rare case described in mem_cgroup_from_task. Unfortunately there
-	 * isn't much we can do without complicating this too much, and it would
-	 * be gfp-dependent anyway. Just let it go
-	 */
-	if (unlikely(!memcg))
-		return true;
+	memcg = get_mem_cgroup_from_mm(current->mm);
 
 	if (!memcg_kmem_is_active(memcg)) {
 		css_put(&memcg->css);

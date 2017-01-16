@@ -2554,7 +2554,7 @@ static struct cg_proto *packet_sk_charge(void)
 		goto out;
 
 	err = 0;
-	psc->memcg = try_get_mem_cgroup_from_mm(current->mm);
+	psc->memcg = get_mem_cgroup_from_mm(current->mm);
 	if (!psc->memcg)
 		goto out_free_psc;
 	if (!memcg_kmem_is_active(psc->memcg))
