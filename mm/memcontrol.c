@@ -4198,8 +4198,8 @@ out:
 }
 
 
-static unsigned long tree_stat(struct mem_cgroup *memcg,
-			       enum mem_cgroup_stat_index idx)
+static unsigned long mem_cgroup_recursive_stat(struct mem_cgroup *memcg,
+					       enum mem_cgroup_stat_index idx)
 {
 	struct mem_cgroup *iter;
 	long val = 0;
@@ -4213,6 +4213,30 @@ static unsigned long tree_stat(struct mem_cgroup *memcg,
 	return val;
 }
 
+static inline u64 mem_cgroup_usage(struct mem_cgroup *memcg, bool swap)
+{
+	u64 val;
+
+	if (!mem_cgroup_is_root(memcg)) {
+		if (!swap)
+			return page_counter_read(&memcg->memory);
+		else
+			return page_counter_read(&memcg->memsw);
+	}
+
+	/*
+	 * Transparent hugepages are still accounted for in MEM_CGROUP_STAT_RSS
+	 * as well as in MEM_CGROUP_STAT_RSS_HUGE.
+	 */
+	val = mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_CACHE);
+	val += mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_RSS);
+
+	if (swap)
+		val += mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_SWAP);
+
+	return val;
+}
+
 void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
 {
 	int nid;
@@ -4221,12 +4245,12 @@ void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
 	for_each_online_node(nid)
 		mem_cgroup_get_nr_pages(memcg, nid, mi->pages);
 
-	mi->slab_reclaimable = tree_stat(memcg,
+	mi->slab_reclaimable = mem_cgroup_recursive_stat(memcg,
 					MEM_CGROUP_STAT_SLAB_RECLAIMABLE);
-	mi->slab_unreclaimable = tree_stat(memcg,
+	mi->slab_unreclaimable = mem_cgroup_recursive_stat(memcg,
 					MEM_CGROUP_STAT_SLAB_UNRECLAIMABLE);
-	mi->cached = tree_stat(memcg, MEM_CGROUP_STAT_CACHE);
-	mi->shmem = tree_stat(memcg, MEM_CGROUP_STAT_SHMEM);
+	mi->cached = mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_CACHE);
+	mi->shmem = mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_SHMEM);
 }
 
 int mem_cgroup_enough_memory(struct mem_cgroup *memcg, long pages)
@@ -4240,31 +4264,13 @@ int mem_cgroup_enough_memory(struct mem_cgroup *memcg, long pages)
 	free += page_counter_read(&memcg->dcache);
 
 	/* assume file cache is reclaimable */
-	free += tree_stat(memcg, MEM_CGROUP_STAT_CACHE);
+	free += mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_CACHE);
 
 	/* but do not count shmem pages as they can't be purged,
 	 * only swapped out */
-	free -= tree_stat(memcg, MEM_CGROUP_STAT_SHMEM);
+	free -= mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_SHMEM);
 
 	return free < pages ? -ENOMEM : 0;
-}
-
-static inline unsigned long mem_cgroup_usage(struct mem_cgroup *memcg, bool swap)
-{
-	unsigned long val;
-
-	if (mem_cgroup_is_root(memcg)) {
-		val = tree_stat(memcg, MEM_CGROUP_STAT_CACHE);
-		val += tree_stat(memcg, MEM_CGROUP_STAT_RSS);
-		if (swap)
-			val += tree_stat(memcg, MEM_CGROUP_STAT_SWAP);
-	} else {
-		if (!swap)
-			val = page_counter_read(&memcg->memory);
-		else
-			val = page_counter_read(&memcg->memsw);
-	}
-	return val;
 }
 
 struct accumulated_stats {
@@ -6906,7 +6912,8 @@ void mem_cgroup_uncharge_swap(swp_entry_t entry)
 	rcu_read_lock();
 	memcg = mem_cgroup_lookup(id);
 	if (memcg) {
-		page_counter_uncharge(&memcg->memsw, 1);
+		if (!mem_cgroup_is_root(memcg))
+			page_counter_uncharge(&memcg->memsw, 1);
 		mem_cgroup_swap_statistics(memcg, false);
 		css_put(&memcg->css);
 	}
@@ -7065,12 +7072,14 @@ static void uncharge_batch(struct mem_cgroup *memcg, unsigned long pgpgout,
 {
 	unsigned long flags;
 
-	if (nr_mem)
-		page_counter_uncharge(&memcg->memory, nr_mem);
-	if (nr_memsw)
-		page_counter_uncharge(&memcg->memsw, nr_memsw);
+	if (!mem_cgroup_is_root(memcg)) {
+		if (nr_mem)
+			page_counter_uncharge(&memcg->memory, nr_mem);
+		if (nr_memsw)
+			page_counter_uncharge(&memcg->memsw, nr_memsw);
 
-	memcg_oom_recover(memcg);
+		memcg_oom_recover(memcg);
+	}
 
 	local_irq_save(flags);
 	__this_cpu_sub(memcg->stat->count[MEM_CGROUP_STAT_RSS], nr_anon);
