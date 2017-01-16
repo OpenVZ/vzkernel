@@ -347,7 +347,6 @@ static int hmm_migrate_check(struct vm_area_struct *vma,
 
 	do {
 		struct page *spage, *dpage;
-		struct mem_cgroup *memcg;
 		pte_t pte = *ptep;
 		swp_entry_t swap;
 
@@ -403,8 +402,6 @@ static int hmm_migrate_check(struct vm_area_struct *vma,
 		if (PageSwapBacked(spage))
 			SetPageSwapBacked(dpage);
 
-		mem_cgroup_prepare_migration(spage, dpage, &memcg);
-		dpage->mapping = (void *)memcg;
 		*gtep = hmm_entry_set_memcg(*gtep);
 	} while (ptep++, gtep++, addr += PAGE_SIZE, addr != end);
 
@@ -530,15 +527,6 @@ static int hmm_migrate_cleanup(struct vm_area_struct *vma,
 		VM_BUG_ON(!spage);
 
 		dpage = hmm_entry_to_page(*gtep);
-		if (hmm_entry_is_memcg(*gtep)) {
-			struct mem_cgroup *memcg;
-
-			memcg = (struct mem_cgroup *)dpage->mapping;
-			dpage->mapping = NULL;
-			mem_cgroup_end_migration(memcg, spage, dpage,
-					         hmm_entry_is_migrate(*gtep));
-		}
-
 		if (hmm_entry_is_migrate(*gtep)) {
 			VM_BUG_ON(!spage);
 
