@@ -961,7 +961,7 @@ static int zcache_get_swap_cache_page(int type, pgoff_t offset,
 		 * add_to_swap_cache() doesn't return -EEXIST, so we can safely
 		 * clear SWAP_HAS_CACHE flag.
 		 */
-		swapcache_free(entry, NULL);
+		swapcache_free(entry);
 		/* FIXME: is it possible to get here without err==-ENOMEM?
 		 * If not, we can dispense with the do loop, use goto retry */
 	} while (err != -ENOMEM);
