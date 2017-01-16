@@ -643,7 +643,6 @@ static void *dax_insert_mapping_entry(struct address_space *mapping,
 		       RADIX_DAX_ENTRY_LOCK);
 	if (hole_fill) {
 		__delete_from_page_cache(entry, NULL);
-		mem_cgroup_uncharge_page(entry);
 		/* Drop pagecache reference */
 		page_cache_release(entry);
 		error = radix_tree_insert(page_tree, index, new_entry);
