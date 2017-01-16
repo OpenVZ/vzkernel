@@ -7147,8 +7147,10 @@ static void uncharge_list(struct list_head *page_list)
 			else
 				nr_file += nr_pages;
 			pgpgout++;
-		} else
+		} else {
 			nr_kmem += 1 << compound_order(page);
+			__ClearPageKmemcg(page);
+		}
 
 		if (pc->flags & PCG_MEM)
 			nr_mem += nr_pages;
