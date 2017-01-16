@@ -182,7 +182,7 @@ static unsigned long mm_overdraft(struct mm_struct *mm)
 	struct oom_context *ctx;
 	unsigned long overdraft;
 
-	memcg = try_get_mem_cgroup_from_mm(mm);
+	memcg = get_mem_cgroup_from_mm(mm);
 	ctx = mem_cgroup_oom_context(memcg);
 	overdraft = ctx->overdraft;
 	if (memcg)
@@ -476,7 +476,7 @@ void mark_oom_victim(struct task_struct *tsk)
 	 * owner memcg so that others can wait for it to exit. It will
 	 * be cleared in exit_oom_victim.
 	 */
-	memcg = try_get_mem_cgroup_from_mm(tsk->mm);
+	memcg = get_mem_cgroup_from_mm(tsk->mm);
 	ctx = mem_cgroup_oom_context(memcg);
 	spin_lock(&oom_context_lock);
 	if (!ctx->victim) {
