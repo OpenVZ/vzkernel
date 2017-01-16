@@ -954,8 +954,6 @@ void release_pages(struct page **pages, int nr, bool cold)
 	unsigned long uninitialized_var(flags);
 	unsigned int uninitialized_var(lock_batch);
 
-	mem_cgroup_uncharge_start();
-
 	for (i = 0; i < nr; i++) {
 		struct page *page = pages[i];
 		const bool was_thp = is_trans_huge_page_release(page);
@@ -1051,7 +1049,6 @@ void release_pages(struct page **pages, int nr, bool cold)
 			__ClearPageLRU(page);
 			del_page_from_lru_list(page, lruvec, page_off_lru(page));
 		}
-		mem_cgroup_uncharge(page);
 
 		if (!was_thp) {
 			/*
@@ -1067,12 +1064,15 @@ void release_pages(struct page **pages, int nr, bool cold)
 	if (zone)
 		spin_unlock_irqrestore(&zone->lru_lock, flags);
 
-	mem_cgroup_uncharge_end();
-	if (!list_empty(&pages_to_free))
+	if (!list_empty(&pages_to_free)) {
+		mem_cgroup_uncharge_list(&pages_to_free);
 		free_hot_cold_page_list(&pages_to_free, cold);
+	}
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
-	if (!list_empty(&trans_huge_pages_to_free))
+	if (!list_empty(&trans_huge_pages_to_free)) {
+		mem_cgroup_uncharge_list(&trans_huge_pages_to_free);
 		free_trans_huge_page_list(&trans_huge_pages_to_free);
+	}
 #endif
 }
 EXPORT_SYMBOL(release_pages);
