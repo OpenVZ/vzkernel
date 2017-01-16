@@ -2809,85 +2809,6 @@ static int memcg_cpu_hotplug_callback(struct notifier_block *nb,
 	return NOTIFY_OK;
 }
 
-
-/* See mem_cgroup_try_charge() for details */
-enum {
-	CHARGE_OK,		/* success */
-	CHARGE_RETRY,		/* need to retry but retry is not bad */
-	CHARGE_NOMEM,		/* we can't do more. return -ENOMEM */
-	CHARGE_WOULDBLOCK,	/* GFP_WAIT wasn't set and no enough res. */
-};
-
-static int mem_cgroup_do_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
-				unsigned int nr_pages, unsigned int min_pages,
-				bool invoke_oom)
-{
-	struct mem_cgroup *mem_over_limit;
-	struct page_counter *counter;
-	unsigned long flags = 0;
-	int ret = -ENOMEM;
-
-	if (likely(page_counter_try_charge(&memcg->memory, nr_pages,
-					   &counter))) {
-		if (!do_swap_account)
-			return CHARGE_OK;
-		if (likely(page_counter_try_charge(&memcg->memsw, nr_pages,
-						   &counter)))
-			return CHARGE_OK;
-
-		page_counter_uncharge(&memcg->memory, nr_pages);
-		mem_over_limit = mem_cgroup_from_counter(counter, memsw);
-		flags |= MEM_CGROUP_RECLAIM_NOSWAP;
-	} else
-		mem_over_limit = mem_cgroup_from_counter(counter, memory);
-	/*
-	 * Never reclaim on behalf of optional batching, retry with a
-	 * single page instead.
-	 */
-	if (nr_pages > min_pages)
-		return CHARGE_RETRY;
-
-	if (!(gfp_mask & __GFP_WAIT)) {
-		mem_cgroup_inc_failcnt(mem_over_limit, gfp_mask, nr_pages);
-		return CHARGE_WOULDBLOCK;
-	}
-
-	if (gfp_mask & __GFP_NORETRY) {
-		mem_cgroup_inc_failcnt(mem_over_limit, gfp_mask, nr_pages);
-		return CHARGE_NOMEM;
-	}
-
-	ret = mem_cgroup_reclaim(mem_over_limit, gfp_mask, flags);
-	if (mem_cgroup_margin(mem_over_limit) >= nr_pages)
-		return CHARGE_RETRY;
-	/*
-	 * Even though the limit is exceeded at this point, reclaim
-	 * may have been able to free some pages.  Retry the charge
-	 * before killing the task.
-	 *
-	 * Only for regular pages, though: huge pages are rather
-	 * unlikely to succeed so close to the limit, and we fall back
-	 * to regular pages anyway in case of failure.
-	 */
-	if (nr_pages <= (1 << PAGE_ALLOC_COSTLY_ORDER) && ret)
-		return CHARGE_RETRY;
-
-	/*
-	 * At task move, charge accounts can be doubly counted. So, it's
-	 * better to wait until the end of task_move if something is going on.
-	 */
-	if (mem_cgroup_wait_acct_move(mem_over_limit))
-		return CHARGE_RETRY;
-
-	if (invoke_oom) {
-		mem_cgroup_inc_failcnt(mem_over_limit, gfp_mask, nr_pages);
-		mem_cgroup_oom(mem_over_limit, gfp_mask,
-			       get_order(nr_pages * PAGE_SIZE));
-	}
-
-	return CHARGE_NOMEM;
-}
-
 /**
  * mem_cgroup_try_charge - try charging a memcg
  * @memcg: memcg to charge
@@ -2904,8 +2825,10 @@ static int mem_cgroup_try_charge(struct mem_cgroup *memcg,
 {
 	unsigned int batch = max(CHARGE_BATCH, nr_pages);
 	int nr_oom_retries = MEM_CGROUP_RECLAIM_RETRIES;
-	struct mem_cgroup *iter;
-	int ret;
+	struct mem_cgroup *mem_over_limit;
+	struct page_counter *counter;
+	unsigned long nr_reclaimed;
+	unsigned long flags = 0;
 
 	if (mem_cgroup_is_root(memcg))
 		goto done;
@@ -2933,76 +2856,77 @@ static int mem_cgroup_try_charge(struct mem_cgroup *memcg,
 
 	if (gfp_mask & __GFP_NOFAIL)
 		oom = false;
-again:
+retry:
 	if (consume_stock(memcg, nr_pages))
 		goto done;
 
-	do {
-		bool invoke_oom = oom && !nr_oom_retries;
-
-		/* If killed, bypass charge */
-		if (test_thread_flag(TIF_MEMDIE) ||
-		    fatal_signal_pending(current))
-			goto bypass;
-
-		ret = mem_cgroup_do_charge(memcg, gfp_mask, batch,
-					   nr_pages, invoke_oom);
-		switch (ret) {
-		case CHARGE_OK:
-			break;
-		case CHARGE_RETRY: /* not in OOM situation but retry */
-			batch = nr_pages;
-			goto again;
-		case CHARGE_WOULDBLOCK: /* !__GFP_WAIT */
-			goto nomem;
-		case CHARGE_NOMEM: /* OOM routine works */
-			if (!oom || invoke_oom)
-				goto nomem;
-			nr_oom_retries--;
-			break;
-		}
-	} while (ret != CHARGE_OK);
-
-	/*
-	 * Cancel charge in case this cgroup was destroyed while we were here,
-	 * otherwise we can get a pending user memory charge to an offline
-	 * cgroup, which might result in use-after-free after the cgroup gets
-	 * released (see also mem_cgroup_css_offline()).
-	 *
-	 * Note, no need to issue an explicit barrier here, because a
-	 * successful charge implies full memory barrier.
-	 */
-	if (unlikely(memcg->is_offline)) {
+	if (page_counter_try_charge(&memcg->memory, batch, &counter)) {
+		if (!do_swap_account)
+			goto done_restock;
+		if (page_counter_try_charge(&memcg->memsw, batch, &counter))
+			goto done_restock;
 		page_counter_uncharge(&memcg->memory, batch);
-		if (do_swap_account)
-			page_counter_uncharge(&memcg->memsw, batch);
-		css_put(&memcg->css);
-		goto bypass;
+		mem_over_limit = mem_cgroup_from_counter(counter, memsw);
+		flags |= MEM_CGROUP_RECLAIM_NOSWAP;
+	} else
+		mem_over_limit = mem_cgroup_from_counter(counter, memory);
+
+	if (batch > nr_pages) {
+		batch = nr_pages;
+		goto retry;
 	}
 
-	if (batch > nr_pages)
-		refill_stock(memcg, batch - nr_pages);
+	if (!(gfp_mask & __GFP_WAIT))
+		goto nomem;
 
+	if (gfp_mask & __GFP_NORETRY)
+		goto nomem;
+
+	nr_reclaimed = mem_cgroup_reclaim(mem_over_limit, gfp_mask, flags);
+
+	if (mem_cgroup_margin(mem_over_limit) >= batch)
+		goto retry;
 	/*
-	 * If the hierarchy is above the normal consumption range,
-	 * make the charging task trim their excess contribution.
+	 * Even though the limit is exceeded at this point, reclaim
+	 * may have been able to free some pages.  Retry the charge
+	 * before killing the task.
+	 *
+	 * Only for regular pages, though: huge pages are rather
+	 * unlikely to succeed so close to the limit, and we fall back
+	 * to regular pages anyway in case of failure.
 	 */
-	iter = memcg;
-	do {
-		if (!(gfp_mask & __GFP_WAIT))
-			break;
-		if (page_counter_read(&iter->memory) <= iter->high)
-			continue;
-		try_to_free_mem_cgroup_pages(iter, nr_pages, gfp_mask, false);
-	} while ((iter = parent_mem_cgroup(iter)));
+	if (nr_reclaimed && batch <= (1 << PAGE_ALLOC_COSTLY_ORDER))
+		goto retry;
+	/*
+	 * At task move, charge accounts can be doubly counted. So, it's
+	 * better to wait until the end of task_move if something is going on.
+	 */
+	if (mem_cgroup_wait_acct_move(mem_over_limit))
+		goto retry;
 
-done:
-	return 0;
+	if (fatal_signal_pending(current))
+		goto bypass;
+
+	if (!oom)
+		goto nomem;
+
+	if (nr_oom_retries--)
+		goto retry;
+
+	mem_cgroup_oom(mem_over_limit, gfp_mask, get_order(batch));
+	mem_cgroup_inc_failcnt(mem_over_limit, gfp_mask, nr_pages);
+
 nomem:
 	if (!(gfp_mask & __GFP_NOFAIL))
 		return -ENOMEM;
 bypass:
 	return -EINTR;
+
+done_restock:
+	if (batch > nr_pages)
+		refill_stock(memcg, batch - nr_pages);
+done:
+	return 0;
 }
 
 /**
