@@ -851,7 +851,6 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 
 	cond_resched();
 
-	mem_cgroup_uncharge_start();
 	while (!list_empty(page_list)) {
 		struct address_space *mapping;
 		struct page *page;
@@ -1135,7 +1134,6 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		 */
 		__clear_page_locked(page);
 free_it:
-		mem_cgroup_uncharge(page);
 		nr_reclaimed++;
 
 		/*
@@ -1165,8 +1163,8 @@ keep:
 		list_add(&page->lru, &ret_pages);
 		VM_BUG_ON_PAGE(PageLRU(page) || PageUnevictable(page), page);
 	}
-	mem_cgroup_uncharge_end();
 
+	mem_cgroup_uncharge_list(&free_pages);
 	try_to_unmap_flush();
 	free_hot_cold_page_list(&free_pages, true);
 
@@ -1488,10 +1486,9 @@ putback_inactive_pages(struct lruvec *lruvec, struct list_head *page_list)
 			__ClearPageActive(page);
 			del_page_from_lru_list(page, lruvec, lru);
 
-			mem_cgroup_uncharge(page);
-
 			if (unlikely(PageCompound(page))) {
 				spin_unlock_irq(&zone->lru_lock);
+				mem_cgroup_uncharge(page);
 				(*get_compound_page_dtor(page))(page);
 				spin_lock_irq(&zone->lru_lock);
 			} else
@@ -1586,6 +1583,7 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 
 	spin_unlock_irq(&zone->lru_lock);
 
+	mem_cgroup_uncharge_list(&page_list);
 	free_hot_cold_page_list(&page_list, true);
 
 	/*
@@ -1697,10 +1695,9 @@ static void move_active_pages_to_lru(struct lruvec *lruvec,
 			__ClearPageActive(page);
 			del_page_from_lru_list(page, lruvec, lru);
 
-			mem_cgroup_uncharge(page);
-
 			if (unlikely(PageCompound(page))) {
 				spin_unlock_irq(&zone->lru_lock);
+				mem_cgroup_uncharge(page);
 				(*get_compound_page_dtor(page))(page);
 				spin_lock_irq(&zone->lru_lock);
 			} else
@@ -1810,6 +1807,7 @@ static void shrink_active_list(unsigned long nr_to_scan,
 	__mod_zone_page_state(zone, NR_ISOLATED_ANON + file, -nr_taken);
 	spin_unlock_irq(&zone->lru_lock);
 
+	mem_cgroup_uncharge_list(&l_hold);
 	free_hot_cold_page_list(&l_hold, true);
 
 	KSTAT_PERF_LEAVE(refill_inact);
