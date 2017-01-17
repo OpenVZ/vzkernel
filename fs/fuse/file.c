@@ -1158,10 +1158,7 @@ static void fuse_send_readpages(struct fuse_req *req, struct file *file)
 
 struct fuse_fill_data {
 	struct fuse_req *req;
-	union {
-		struct file *file;
-		struct fuse_file *ff;
-	};
+	struct file *file;
 	struct inode *inode;
 	unsigned nr_pages;
 };
@@ -2041,28 +2038,27 @@ static int fuse_send_writepages(struct fuse_fill_data *data)
 	struct backing_dev_info *bdi = inode->i_mapping->backing_dev_info;
 	struct fuse_conn *fc = get_fuse_conn(inode);
 	struct fuse_inode *fi = get_fuse_inode(inode);
+	struct fuse_file *ff;
 	loff_t off = -1;
 
 	/* we can acquire ff here because we do have locked pages here! */
-	if (!data->ff)
-		data->ff = fuse_write_file(fc, fi);
+	ff = fuse_write_file(fc, fi);
 
-	if (!data->ff) {
+	if (!ff) {
 		printk("FUSE: pages dirtied on dead file\n");
 		for (i = 0; i < req->num_pages; i++)
 			end_page_writeback(req->pages[i]);
 		return -EIO;
 	}
 
-	if (test_bit(FUSE_S_FAIL_IMMEDIATELY, &data->ff->ff_state)) {
+	if (test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
 		for (i = 0; i < req->num_pages; i++) {
 			struct page *page = req->pages[i];
 			req->pages[i] = NULL;
 			SetPageError(page);
 			end_page_writeback(page);
 		}
-		fuse_release_ff(inode, data->ff);
-		data->ff = NULL;
+		fuse_release_ff(inode, ff);
 		fuse_put_request(fc, req);
 		return 0;
 	}
@@ -2108,13 +2104,12 @@ static int fuse_send_writepages(struct fuse_fill_data *data)
 		wake_up(&fi->page_waitq);
 		spin_unlock(&fc->lock);
 
-		fuse_release_ff(inode, data->ff);
-		data->ff = NULL;
+		fuse_release_ff(inode, ff);
 		return -ENOMEM;
 	}
 
-	req->ff = fuse_file_get(data->ff);
-	fuse_write_fill(req, data->ff, off, 0);
+	req->ff = fuse_file_get(ff);
+	fuse_write_fill(req, ff, off, 0);
 	fuse_account_request(fc, req->num_pages << PAGE_CACHE_SHIFT);
 
 	req->misc.write.in.write_flags |= FUSE_WRITE_CACHE;
@@ -2128,8 +2123,7 @@ static int fuse_send_writepages(struct fuse_fill_data *data)
 	fuse_flush_writepages(data->inode);
 	spin_unlock(&fc->lock);
 
-	fuse_release_ff(inode, data->ff);
-	data->ff = NULL;
+	fuse_release_ff(inode, ff);
 	return 0;
 }
 
@@ -2226,6 +2220,7 @@ static int fuse_writepages(struct address_space *mapping,
 	struct inode *inode = mapping->host;
 	struct fuse_conn *fc = get_fuse_conn(inode);
 	struct fuse_fill_data data;
+	struct fuse_file *ff;
 	int err;
 
 	if (!fc->writeback_cache)
@@ -2251,24 +2246,21 @@ static int fuse_writepages(struct address_space *mapping,
 	 * fuse_writepages_fill() would possibly deadlock on
 	 * fuse_page_is_writeback().
 	 */
- 	data.ff = fuse_write_file(fc, get_fuse_inode(inode));
-	if (data.ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &data.ff->ff_state)) {
+	ff = fuse_write_file(fc, get_fuse_inode(inode));
+	if (ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
 		err = write_cache_pages(mapping, wbc, fuse_dummy_writepage,
 					mapping);
-		fuse_release_ff(inode, data.ff);
-		data.ff = NULL;
-		goto out_put;
+		fuse_release_ff(inode, ff);
+		goto out;
 	}
-	if (data.ff) {
-		fuse_release_ff(inode, data.ff);
-		data.ff = NULL;
-	}
+	if (ff)
+		fuse_release_ff(inode, ff);
 
 	data.inode = inode;
 	data.req = fuse_request_alloc_nofs(FUSE_MAX_PAGES_PER_REQ);
 	err = -ENOMEM;
 	if (!data.req)
-		goto out_put;
+		goto out;
 
 	err = write_cache_pages(mapping, wbc, fuse_writepages_fill, &data);
 	if (data.req) {
@@ -2279,8 +2271,6 @@ static int fuse_writepages(struct address_space *mapping,
 		} else
 			fuse_put_request(fc, data.req);
 	}
-out_put:
-	BUG_ON(data.ff);
 out:
 	return err;
 }
