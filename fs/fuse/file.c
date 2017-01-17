@@ -567,15 +567,22 @@ static void fuse_wait_on_page_writeback(struct inode *inode, pgoff_t index)
 /*
  * Can be woken up by FUSE_NOTIFY_INVAL_FILES
  */
+static void __fuse_wait_on_page_writeback_or_invalidate(struct inode *inode,
+							struct fuse_file *ff,
+							pgoff_t index)
+{
+	struct fuse_inode *fi = get_fuse_inode(inode);
+
+	wait_event(fi->page_waitq, !fuse_page_is_writeback(inode, index) ||
+		   test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state));
+}
+
 static void fuse_wait_on_page_writeback_or_invalidate(struct inode *inode,
 						      struct file *file,
 						      pgoff_t index)
 {
-	struct fuse_inode *fi = get_fuse_inode(inode);
-	struct fuse_file *ff = file->private_data;
-
-	wait_event(fi->page_waitq, !fuse_page_is_writeback(inode, index) ||
-		   test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state));
+	return __fuse_wait_on_page_writeback_or_invalidate(inode,
+				file->private_data, index);
 }
 
 static void fuse_wait_on_writeback(struct inode *inode, pgoff_t start,
@@ -2161,12 +2168,32 @@ static int fuse_writepages_fill(struct page *page,
 	int check_for_blocked = 0;
 
 	if (fuse_page_is_writeback(inode, page->index)) {
+		struct fuse_file *ff;
+
 		if (wbc->sync_mode != WB_SYNC_ALL) {
 			redirty_page_for_writepage(wbc, page);
 			unlock_page(page);
 			return 0;
 		}
-		fuse_wait_on_page_writeback(inode, page->index);
+
+		/* we can acquire ff here because we do have locked pages here! */
+		ff = fuse_write_file(fc, get_fuse_inode(inode));
+		if (!ff) {
+			printk("FUSE: dirty page on dead file\n");
+			unlock_page(page);
+			return -EIO;
+		}
+
+		/* FUSE_NOTIFY_INVAL_FILES must be able to wake us up */
+		__fuse_wait_on_page_writeback_or_invalidate(inode, ff, page->index);
+
+		if (test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
+			unlock_page(page);
+			fuse_release_ff(inode, ff);
+			return 0;
+		}
+
+		fuse_release_ff(inode, ff);
 	}
 
 	if (req->num_pages &&
