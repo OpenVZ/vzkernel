@@ -115,7 +115,7 @@ static inline bool setup_remapped_irq(int irq,
 	return false;
 }
 
-int irq_set_vcpu_affinity(unsigned int irq, void *vcpu_info)
+static inline int irq_set_vcpu_affinity(unsigned int irq, void *vcpu_info)
 {
 	return -ENOSYS;
 }
