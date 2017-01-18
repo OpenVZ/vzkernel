@@ -55,12 +55,15 @@
 #include <net/transp_v6.h>
 #include <net/ip6_route.h>
 #include <net/addrconf.h>
+#include <net/ndisc.h>
 #ifdef CONFIG_IPV6_TUNNEL
 #include <net/ip6_tunnel.h>
 #endif
 
 #include <asm/uaccess.h>
 #include <linux/mroute6.h>
+
+#include "ip6_offload.h"
 
 MODULE_AUTHOR("Cast of dozens");
 MODULE_DESCRIPTION("IPv6 protocol stack for Linux");
@@ -104,14 +107,11 @@ static int inet6_create(struct net *net, struct socket *sock, int protocol,
 	struct inet_protosw *answer;
 	struct proto *answer_prot;
 	unsigned char answer_flags;
-	char answer_no_check;
 	int try_loading_module = 0;
 	int err;
 
-	if (sock->type != SOCK_RAW &&
-	    sock->type != SOCK_DGRAM &&
-	    !inet_ehash_secret)
-		build_ehash_secret();
+	if (protocol < 0 || protocol >= IPPROTO_MAX)
+		return -EINVAL;
 
 	/* Look for the requested type/protocol pair. */
 lookup_protocol:
@@ -165,7 +165,6 @@ lookup_protocol:
 
 	sock->ops = answer->ops;
 	answer_prot = answer->prot;
-	answer_no_check = answer->no_check;
 	answer_flags = answer->flags;
 	rcu_read_unlock();
 
@@ -179,7 +178,6 @@ lookup_protocol:
 	sock_init_data(sock, sk);
 
 	err = 0;
-	sk->sk_no_check = answer_no_check;
 	if (INET_PROTOSW_REUSE & answer_flags)
 		sk->sk_reuse = SK_CAN_REUSE;
 
@@ -216,7 +214,7 @@ lookup_protocol:
 	inet->mc_list	= NULL;
 	inet->rcv_tos	= 0;
 
-	if (ipv4_config.no_pmtu_disc)
+	if (net->sysctl_ip_no_pmtu_disc)
 		inet->pmtudisc = IP_PMTUDISC_DONT;
 	else
 		inet->pmtudisc = IP_PMTUDISC_WANT;
@@ -308,7 +306,7 @@ int inet6_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 		/* Reproduce AF_INET checks to make the bindings consistent */
 		v4addr = addr->sin6_addr.s6_addr32[3];
 		chk_addr_ret = inet_addr_type(net, v4addr);
-		if (!sysctl_ip_nonlocal_bind &&
+		if (!net->ipv4_sysctl_ip_nonlocal_bind &&
 		    !(inet->freebind || inet->transparent) &&
 		    v4addr != htonl(INADDR_ANY) &&
 		    chk_addr_ret != RTN_LOCAL &&
@@ -348,7 +346,8 @@ int inet6_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 			 */
 			v4addr = LOOPBACK4_IPV6;
 			if (!(addr_type & IPV6_ADDR_MULTICAST))	{
-				if (!(inet->freebind || inet->transparent) &&
+				if (!net->ipv6_sysctl_ip_nonlocal_bind &&
+				    !(inet->freebind || inet->transparent) &&
 				    !ipv6_chk_addr(net, &addr->sin6_addr,
 						   dev, 0)) {
 					err = -EADDRNOTAVAIL;
@@ -362,7 +361,7 @@ int inet6_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	inet->inet_rcv_saddr = v4addr;
 	inet->inet_saddr = v4addr;
 
-	np->rcv_saddr = addr->sin6_addr;
+	sk->sk_v6_rcv_saddr = addr->sin6_addr;
 
 	if (!(addr_type & IPV6_ADDR_MULTICAST))
 		np->saddr = addr->sin6_addr;
@@ -431,9 +430,11 @@ void inet6_destroy_sock(struct sock *sk)
 
 	/* Free tx options */
 
-	opt = xchg(&np->opt, NULL);
-	if (opt != NULL)
-		sock_kfree_s(sk, opt, opt->tot_len);
+	opt = xchg((__force struct ipv6_txoptions **)&np->opt, NULL);
+	if (opt) {
+		atomic_sub(opt->tot_len, &sk->sk_omem_alloc);
+		txopt_put(opt);
+	}
 }
 EXPORT_SYMBOL_GPL(inet6_destroy_sock);
 
@@ -459,14 +460,14 @@ int inet6_getname(struct socket *sock, struct sockaddr *uaddr,
 		    peer == 1)
 			return -ENOTCONN;
 		sin->sin6_port = inet->inet_dport;
-		sin->sin6_addr = np->daddr;
+		sin->sin6_addr = sk->sk_v6_daddr;
 		if (np->sndflow)
 			sin->sin6_flowinfo = np->flow_label;
 	} else {
-		if (ipv6_addr_any(&np->rcv_saddr))
+		if (ipv6_addr_any(&sk->sk_v6_rcv_saddr))
 			sin->sin6_addr = np->saddr;
 		else
-			sin->sin6_addr = np->rcv_saddr;
+			sin->sin6_addr = sk->sk_v6_rcv_saddr;
 
 		sin->sin6_port = inet->inet_sport;
 	}
@@ -653,7 +654,7 @@ int inet6_sk_rebuild_header(struct sock *sk)
 
 		memset(&fl6, 0, sizeof(fl6));
 		fl6.flowi6_proto = sk->sk_protocol;
-		fl6.daddr = np->daddr;
+		fl6.daddr = sk->sk_v6_daddr;
 		fl6.saddr = np->saddr;
 		fl6.flowlabel = np->flow_label;
 		fl6.flowi6_oif = sk->sk_bound_dev_if;
@@ -662,16 +663,19 @@ int inet6_sk_rebuild_header(struct sock *sk)
 		fl6.fl6_sport = inet->inet_sport;
 		security_sk_classify_flow(sk, flowi6_to_flowi(&fl6));
 
-		final_p = fl6_update_dst(&fl6, np->opt, &final);
+		rcu_read_lock();
+		final_p = fl6_update_dst(&fl6, rcu_dereference(np->opt),
+					 &final);
+		rcu_read_unlock();
 
-		dst = ip6_dst_lookup_flow(sk, &fl6, final_p, false);
+		dst = ip6_dst_lookup_flow(sk, &fl6, final_p);
 		if (IS_ERR(dst)) {
 			sk->sk_route_caps = 0;
 			sk->sk_err_soft = -PTR_ERR(dst);
 			return PTR_ERR(dst);
 		}
 
-		__ip6_dst_store(sk, dst, NULL, NULL);
+		ip6_dst_store(sk, dst, NULL, NULL);
 	}
 
 	return 0;
@@ -808,6 +812,15 @@ static struct pernet_operations inet6_net_ops = {
 	.exit = inet6_net_exit,
 };
 
+static const struct ipv6_stub ipv6_stub_impl = {
+	.ipv6_sock_mc_join = ipv6_sock_mc_join,
+	.ipv6_sock_mc_drop = ipv6_sock_mc_drop,
+	.ipv6_dst_lookup = ip6_dst_lookup,
+	.udpv6_encap_enable = udpv6_encap_enable,
+	.ndisc_send_na = ndisc_send_na,
+	.nd_tbl	= &nd_tbl,
+};
+
 static int __init inet6_init(void)
 {
 	struct list_head *r;
@@ -879,6 +892,9 @@ static int __init inet6_init(void)
 	err = igmp6_init();
 	if (err)
 		goto igmp_fail;
+
+	ipv6_stub = &ipv6_stub_impl;
+
 	err = ipv6_netfilter_init();
 	if (err)
 		goto netfilter_fail;
@@ -897,6 +913,9 @@ static int __init inet6_init(void)
 	err = ip6_route_init();
 	if (err)
 		goto ip6_route_fail;
+	err = ndisc_late_init();
+	if (err)
+		goto ndisc_late_fail;
 	err = ip6_flowlabel_init();
 	if (err)
 		goto ip6_flowlabel_fail;
@@ -922,6 +941,10 @@ static int __init inet6_init(void)
 	if (err)
 		goto udplitev6_fail;
 
+	err = udpv6_offload_init();
+	if (err)
+		goto udpv6_offload_fail;
+
 	err = tcpv6_init();
 	if (err)
 		goto tcpv6_fail;
@@ -945,6 +968,8 @@ sysctl_fail:
 ipv6_packet_fail:
 	tcpv6_exit();
 tcpv6_fail:
+	udpv6_offload_exit();
+udpv6_offload_fail:
 	udplitev6_exit();
 udplitev6_fail:
 	udpv6_exit();
@@ -957,6 +982,8 @@ ipv6_exthdrs_fail:
 addrconf_fail:
 	ip6_flowlabel_cleanup();
 ip6_flowlabel_fail:
+	ndisc_late_cleanup();
+ndisc_late_fail:
 	ip6_route_cleanup();
 ip6_route_fail:
 #ifdef CONFIG_PROC_FS
@@ -1017,6 +1044,7 @@ static void __exit inet6_exit(void)
 	ipv6_exthdrs_exit();
 	addrconf_cleanup();
 	ip6_flowlabel_cleanup();
+	ndisc_late_cleanup();
 	ip6_route_cleanup();
 #ifdef CONFIG_PROC_FS
 
@@ -1027,6 +1055,7 @@ static void __exit inet6_exit(void)
 	raw6_proc_exit();
 #endif
 	ipv6_netfilter_fini();
+	ipv6_stub = NULL;
 	igmp6_cleanup();
 	ndisc_cleanup();
 	ip6_mr_cleanup();

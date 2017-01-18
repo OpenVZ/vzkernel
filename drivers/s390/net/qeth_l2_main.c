@@ -431,7 +431,7 @@ static int qeth_l2_process_inbound_buffer(struct qeth_card *card,
 			if (skb->protocol == htons(ETH_P_802_2))
 				*((__u32 *)skb->cb) = ++card->seqno.pkt_seqno;
 			len = skb->len;
-			netif_receive_skb(skb);
+			napi_gro_receive(&card->napi, skb);
 			break;
 		case QETH_HEADER_TYPE_OSN:
 			if (card->info.type == QETH_CARD_TYPE_OSN) {
@@ -898,6 +898,7 @@ static void qeth_l2_remove_device(struct ccwgroup_device *cgdev)
 		qeth_l2_set_offline(cgdev);
 
 	if (card->dev) {
+		netif_napi_del(&card->napi);
 		unregister_netdev(card->dev);
 		card->dev = NULL;
 	}
@@ -965,6 +966,7 @@ static int qeth_l2_setup_netdev(struct qeth_card *card)
 	qeth_l2_request_initial_mac(card);
 	SET_NETDEV_DEV(card->dev, &card->gdev->dev);
 	netif_napi_add(card->dev, &card->napi, qeth_l2_poll, QETH_NAPI_WEIGHT);
+	netif_carrier_off(card->dev);
 	return register_netdev(card->dev);
 }
 
@@ -1077,6 +1079,7 @@ out_remove:
 	ccw_device_set_offline(CARD_DDEV(card));
 	ccw_device_set_offline(CARD_WDEV(card));
 	ccw_device_set_offline(CARD_RDEV(card));
+	qdio_free(CARD_DDEV(card));
 	if (recover_flag == CARD_STATE_RECOVER)
 		card->state = CARD_STATE_RECOVER;
 	else
@@ -1118,6 +1121,7 @@ static int __qeth_l2_set_offline(struct ccwgroup_device *cgdev,
 		rc = (rc2) ? rc2 : rc3;
 	if (rc)
 		QETH_DBF_TEXT_(SETUP, 2, "1err%d", rc);
+	qdio_free(CARD_DDEV(card));
 	if (recover_flag == CARD_STATE_UP)
 		card->state = CARD_STATE_RECOVER;
 	/* let user_space know that device is offline */
@@ -1180,6 +1184,7 @@ static void qeth_l2_shutdown(struct ccwgroup_device *gdev)
 		qeth_hw_trap(card, QETH_DIAGS_TRAP_DISARM);
 	qeth_qdio_clear_card(card, 0);
 	qeth_clear_qdio_buffers(card);
+	qdio_free(CARD_DDEV(card));
 }
 
 static int qeth_l2_pm_suspend(struct ccwgroup_device *gdev)

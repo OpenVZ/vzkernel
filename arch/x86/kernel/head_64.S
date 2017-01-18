@@ -65,6 +65,9 @@ startup_64:
 	 * tables and then reload them.
 	 */
 
+	/* Sanitize CPU configuration */
+	call verify_cpu
+
 	/*
 	 * Compute the delta between the address I am compiled to run at and the
 	 * address I am actually running at.
@@ -173,6 +176,9 @@ ENTRY(secondary_startup_64)
 	 * to have any identity mapped pages in the kernel page table
 	 * after the boot processor executes this code.
 	 */
+
+	/* Sanitize CPU configuration */
+	call verify_cpu
 
 	movq	$(init_level4_pgt - __START_KERNEL_map), %rax
 1:
@@ -288,6 +294,8 @@ ENTRY(secondary_startup_64)
 	pushq	%rax		# target address in negative space
 	lretq
 
+#include "verify_cpu.S"
+
 #ifdef CONFIG_HOTPLUG_CPU
 /*
  * Boot CPU0 entry point. It's called from play_dead(). Everything has been set
@@ -342,6 +350,9 @@ early_idt_handlers:
 /* This is global to keep gas from relaxing the jumps */
 ENTRY(early_idt_handler)
 	cld
+
+	cmpl $2,(%rsp)		# X86_TRAP_NMI
+	je is_nmi		# Ignore NMI
 
 	cmpl $2,early_recursion_flag(%rip)
 	jz  1f
@@ -405,8 +416,9 @@ ENTRY(early_idt_handler)
 	popq %rdx
 	popq %rcx
 	popq %rax
-	addq $16,%rsp		# drop vector number and error code
 	decl early_recursion_flag(%rip)
+is_nmi:
+	addq $16,%rsp		# drop vector number and error code
 	INTERRUPT_RETURN
 ENDPROC(early_idt_handler)
 
@@ -513,13 +525,19 @@ ENTRY(phys_base)
 #include "../../x86/xen/xen-head.S"
 	
 	.section .bss, "aw", @nobits
-	.align L1_CACHE_BYTES
+	.align PAGE_SIZE
 ENTRY(idt_table)
 	.skip IDT_ENTRIES * 16
 
 	.align L1_CACHE_BYTES
-ENTRY(nmi_idt_table)
+ENTRY(debug_idt_table)
 	.skip IDT_ENTRIES * 16
+
+#ifdef CONFIG_TRACING
+	.align L1_CACHE_BYTES
+ENTRY(trace_idt_table)
+	.skip IDT_ENTRIES * 16
+#endif
 
 	__PAGE_ALIGNED_BSS
 NEXT_PAGE(empty_zero_page)

@@ -46,15 +46,28 @@
 #include <linux/completion.h>
 #include <linux/slab.h>
 #include <linux/module.h>
+#include <linux/sysctl.h>
 
 #include <rdma/iw_cm.h>
 #include <rdma/ib_addr.h>
+#include <rdma/iw_portmap.h>
+#include <rdma/rdma_netlink.h>
 
 #include "iwcm.h"
 
 MODULE_AUTHOR("Tom Tucker");
 MODULE_DESCRIPTION("iWARP CM");
 MODULE_LICENSE("Dual BSD/GPL");
+
+static struct ibnl_client_cbs iwcm_nl_cb_table[] = {
+	[RDMA_NL_IWPM_REG_PID] = {.dump = iwpm_register_pid_cb},
+	[RDMA_NL_IWPM_ADD_MAPPING] = {.dump = iwpm_add_mapping_cb},
+	[RDMA_NL_IWPM_QUERY_MAPPING] = {.dump = iwpm_add_and_query_mapping_cb},
+	[RDMA_NL_IWPM_REMOTE_INFO] = {.dump = iwpm_remote_info_cb},
+	[RDMA_NL_IWPM_HANDLE_ERR] = {.dump = iwpm_mapping_error_cb},
+	[RDMA_NL_IWPM_MAPINFO] = {.dump = iwpm_mapping_info_cb},
+	[RDMA_NL_IWPM_MAPINFO_NUM] = {.dump = iwpm_ack_mapping_info_cb}
+};
 
 static struct workqueue_struct *iwcm_wq;
 struct iwcm_work {
@@ -63,6 +76,20 @@ struct iwcm_work {
 	struct list_head list;
 	struct iw_cm_event event;
 	struct list_head free_list;
+};
+
+static unsigned int default_backlog = 256;
+
+static struct ctl_table_header *iwcm_ctl_table_hdr;
+static struct ctl_table iwcm_ctl_table[] = {
+	{
+		.procname	= "default_backlog",
+		.data		= &default_backlog,
+		.maxlen		= sizeof(default_backlog),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{ }
 };
 
 /*
@@ -181,9 +208,16 @@ static void add_ref(struct iw_cm_id *cm_id)
 static void rem_ref(struct iw_cm_id *cm_id)
 {
 	struct iwcm_id_private *cm_id_priv;
+	int cb_destroy;
+
 	cm_id_priv = container_of(cm_id, struct iwcm_id_private, id);
-	if (iwcm_deref_id(cm_id_priv) &&
-	    test_bit(IWCM_F_CALLBACK_DESTROY, &cm_id_priv->flags)) {
+
+	/*
+	 * Test bit before deref in case the cm_id gets freed on another
+	 * thread.
+	 */
+	cb_destroy = test_bit(IWCM_F_CALLBACK_DESTROY, &cm_id_priv->flags);
+	if (iwcm_deref_id(cm_id_priv) && cb_destroy) {
 		BUG_ON(!list_empty(&cm_id_priv->work_list));
 		free_cm_id(cm_id_priv);
 	}
@@ -327,7 +361,6 @@ static void destroy_cm_id(struct iw_cm_id *cm_id)
 {
 	struct iwcm_id_private *cm_id_priv;
 	unsigned long flags;
-	int ret;
 
 	cm_id_priv = container_of(cm_id, struct iwcm_id_private, id);
 	/*
@@ -343,7 +376,7 @@ static void destroy_cm_id(struct iw_cm_id *cm_id)
 		cm_id_priv->state = IW_CM_STATE_DESTROYING;
 		spin_unlock_irqrestore(&cm_id_priv->lock, flags);
 		/* destroy the listening endpoint */
-		ret = cm_id->device->iwcm->destroy_listen(cm_id);
+		cm_id->device->iwcm->destroy_listen(cm_id);
 		spin_lock_irqsave(&cm_id_priv->lock, flags);
 		break;
 	case IW_CM_STATE_ESTABLISHED:
@@ -381,6 +414,11 @@ static void destroy_cm_id(struct iw_cm_id *cm_id)
 	}
 	spin_unlock_irqrestore(&cm_id_priv->lock, flags);
 
+	if (cm_id->mapped) {
+		iwpm_remove_mapinfo(&cm_id->local_addr, &cm_id->m_local_addr);
+		iwpm_remove_mapping(&cm_id->local_addr, RDMA_NL_IWCM);
+	}
+
 	(void)iwcm_deref_id(cm_id_priv);
 }
 
@@ -405,6 +443,97 @@ void iw_destroy_cm_id(struct iw_cm_id *cm_id)
 }
 EXPORT_SYMBOL(iw_destroy_cm_id);
 
+/**
+ * iw_cm_check_wildcard - If IP address is 0 then use original
+ * @pm_addr: sockaddr containing the ip to check for wildcard
+ * @cm_addr: sockaddr containing the actual IP address
+ * @cm_outaddr: sockaddr to set IP addr which leaving port
+ *
+ *  Checks the pm_addr for wildcard and then sets cm_outaddr's
+ *  IP to the actual (cm_addr).
+ */
+static void iw_cm_check_wildcard(struct sockaddr_storage *pm_addr,
+				 struct sockaddr_storage *cm_addr,
+				 struct sockaddr_storage *cm_outaddr)
+{
+	if (pm_addr->ss_family == AF_INET) {
+		struct sockaddr_in *pm4_addr = (struct sockaddr_in *)pm_addr;
+
+		if (pm4_addr->sin_addr.s_addr == htonl(INADDR_ANY)) {
+			struct sockaddr_in *cm4_addr =
+				(struct sockaddr_in *)cm_addr;
+			struct sockaddr_in *cm4_outaddr =
+				(struct sockaddr_in *)cm_outaddr;
+
+			cm4_outaddr->sin_addr = cm4_addr->sin_addr;
+		}
+	} else {
+		struct sockaddr_in6 *pm6_addr = (struct sockaddr_in6 *)pm_addr;
+
+		if (ipv6_addr_type(&pm6_addr->sin6_addr) == IPV6_ADDR_ANY) {
+			struct sockaddr_in6 *cm6_addr =
+				(struct sockaddr_in6 *)cm_addr;
+			struct sockaddr_in6 *cm6_outaddr =
+				(struct sockaddr_in6 *)cm_outaddr;
+
+			cm6_outaddr->sin6_addr = cm6_addr->sin6_addr;
+		}
+	}
+}
+
+/**
+ * iw_cm_map - Use portmapper to map the ports
+ * @cm_id: connection manager pointer
+ * @active: Indicates the active side when true
+ * returns nonzero for error only if iwpm_create_mapinfo() fails
+ *
+ * Tries to add a mapping for a port using the Portmapper. If
+ * successful in mapping the IP/Port it will check the remote
+ * mapped IP address for a wildcard IP address and replace the
+ * zero IP address with the remote_addr.
+ */
+static int iw_cm_map(struct iw_cm_id *cm_id, bool active)
+{
+	struct iwpm_dev_data pm_reg_msg;
+	struct iwpm_sa_data pm_msg;
+	int status;
+
+	cm_id->m_local_addr = cm_id->local_addr;
+	cm_id->m_remote_addr = cm_id->remote_addr;
+
+	memcpy(pm_reg_msg.dev_name, cm_id->device->name,
+	       sizeof(pm_reg_msg.dev_name));
+	memcpy(pm_reg_msg.if_name, cm_id->device->iwcm->ifname,
+	       sizeof(pm_reg_msg.if_name));
+
+	if (iwpm_register_pid(&pm_reg_msg, RDMA_NL_IWCM) ||
+	    !iwpm_valid_pid())
+		return 0;
+
+	cm_id->mapped = true;
+	pm_msg.loc_addr = cm_id->local_addr;
+	pm_msg.rem_addr = cm_id->remote_addr;
+	if (active)
+		status = iwpm_add_and_query_mapping(&pm_msg,
+						    RDMA_NL_IWCM);
+	else
+		status = iwpm_add_mapping(&pm_msg, RDMA_NL_IWCM);
+
+	if (!status) {
+		cm_id->m_local_addr = pm_msg.mapped_loc_addr;
+		if (active) {
+			cm_id->m_remote_addr = pm_msg.mapped_rem_addr;
+			iw_cm_check_wildcard(&pm_msg.mapped_rem_addr,
+					     &cm_id->remote_addr,
+					     &cm_id->m_remote_addr);
+		}
+	}
+
+	return iwpm_create_mapinfo(&cm_id->local_addr,
+				   &cm_id->m_local_addr,
+				   RDMA_NL_IWCM);
+}
+
 /*
  * CM_ID <-- LISTEN
  *
@@ -419,6 +548,9 @@ int iw_cm_listen(struct iw_cm_id *cm_id, int backlog)
 
 	cm_id_priv = container_of(cm_id, struct iwcm_id_private, id);
 
+	if (!backlog)
+		backlog = default_backlog;
+
 	ret = alloc_work_entries(cm_id_priv, backlog);
 	if (ret)
 		return ret;
@@ -428,7 +560,9 @@ int iw_cm_listen(struct iw_cm_id *cm_id, int backlog)
 	case IW_CM_STATE_IDLE:
 		cm_id_priv->state = IW_CM_STATE_LISTEN;
 		spin_unlock_irqrestore(&cm_id_priv->lock, flags);
-		ret = cm_id->device->iwcm->create_listen(cm_id, backlog);
+		ret = iw_cm_map(cm_id, false);
+		if (!ret)
+			ret = cm_id->device->iwcm->create_listen(cm_id, backlog);
 		if (ret)
 			cm_id_priv->state = IW_CM_STATE_IDLE;
 		spin_lock_irqsave(&cm_id_priv->lock, flags);
@@ -558,39 +692,37 @@ int iw_cm_connect(struct iw_cm_id *cm_id, struct iw_cm_conn_param *iw_param)
 	spin_lock_irqsave(&cm_id_priv->lock, flags);
 
 	if (cm_id_priv->state != IW_CM_STATE_IDLE) {
-		spin_unlock_irqrestore(&cm_id_priv->lock, flags);
-		clear_bit(IWCM_F_CONNECT_WAIT, &cm_id_priv->flags);
-		wake_up_all(&cm_id_priv->connect_wait);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err;
 	}
 
 	/* Get the ib_qp given the QPN */
 	qp = cm_id->device->iwcm->get_qp(cm_id->device, iw_param->qpn);
 	if (!qp) {
-		spin_unlock_irqrestore(&cm_id_priv->lock, flags);
-		clear_bit(IWCM_F_CONNECT_WAIT, &cm_id_priv->flags);
-		wake_up_all(&cm_id_priv->connect_wait);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err;
 	}
 	cm_id->device->iwcm->add_ref(qp);
 	cm_id_priv->qp = qp;
 	cm_id_priv->state = IW_CM_STATE_CONN_SENT;
 	spin_unlock_irqrestore(&cm_id_priv->lock, flags);
 
-	ret = cm_id->device->iwcm->connect(cm_id, iw_param);
-	if (ret) {
-		spin_lock_irqsave(&cm_id_priv->lock, flags);
-		if (cm_id_priv->qp) {
-			cm_id->device->iwcm->rem_ref(qp);
-			cm_id_priv->qp = NULL;
-		}
-		spin_unlock_irqrestore(&cm_id_priv->lock, flags);
-		BUG_ON(cm_id_priv->state != IW_CM_STATE_CONN_SENT);
-		cm_id_priv->state = IW_CM_STATE_IDLE;
-		clear_bit(IWCM_F_CONNECT_WAIT, &cm_id_priv->flags);
-		wake_up_all(&cm_id_priv->connect_wait);
-	}
+	ret = iw_cm_map(cm_id, true);
+	if (!ret)
+		ret = cm_id->device->iwcm->connect(cm_id, iw_param);
+	if (!ret)
+		return 0;	/* success */
 
+	spin_lock_irqsave(&cm_id_priv->lock, flags);
+	if (cm_id_priv->qp) {
+		cm_id->device->iwcm->rem_ref(qp);
+		cm_id_priv->qp = NULL;
+	}
+	cm_id_priv->state = IW_CM_STATE_IDLE;
+err:
+	spin_unlock_irqrestore(&cm_id_priv->lock, flags);
+	clear_bit(IWCM_F_CONNECT_WAIT, &cm_id_priv->flags);
+	wake_up_all(&cm_id_priv->connect_wait);
 	return ret;
 }
 EXPORT_SYMBOL(iw_cm_connect);
@@ -632,8 +764,23 @@ static void cm_conn_req_handler(struct iwcm_id_private *listen_id_priv,
 		goto out;
 
 	cm_id->provider_data = iw_event->provider_data;
-	cm_id->local_addr = iw_event->local_addr;
-	cm_id->remote_addr = iw_event->remote_addr;
+	cm_id->m_local_addr = iw_event->local_addr;
+	cm_id->m_remote_addr = iw_event->remote_addr;
+	cm_id->local_addr = listen_id_priv->id.local_addr;
+
+	ret = iwpm_get_remote_info(&listen_id_priv->id.m_local_addr,
+				   &iw_event->remote_addr,
+				   &cm_id->remote_addr,
+				   RDMA_NL_IWCM);
+	if (ret) {
+		cm_id->remote_addr = iw_event->remote_addr;
+	} else {
+		iw_cm_check_wildcard(&listen_id_priv->id.m_local_addr,
+				     &iw_event->local_addr,
+				     &cm_id->local_addr);
+		iw_event->local_addr = cm_id->local_addr;
+		iw_event->remote_addr = cm_id->remote_addr;
+	}
 
 	cm_id_priv = container_of(cm_id, struct iwcm_id_private, id);
 	cm_id_priv->state = IW_CM_STATE_CONN_RECV;
@@ -729,8 +876,10 @@ static int cm_conn_rep_handler(struct iwcm_id_private *cm_id_priv,
 	clear_bit(IWCM_F_CONNECT_WAIT, &cm_id_priv->flags);
 	BUG_ON(cm_id_priv->state != IW_CM_STATE_CONN_SENT);
 	if (iw_event->status == 0) {
-		cm_id_priv->id.local_addr = iw_event->local_addr;
-		cm_id_priv->id.remote_addr = iw_event->remote_addr;
+		cm_id_priv->id.m_local_addr = iw_event->local_addr;
+		cm_id_priv->id.m_remote_addr = iw_event->remote_addr;
+		iw_event->local_addr = cm_id_priv->id.local_addr;
+		iw_event->remote_addr = cm_id_priv->id.remote_addr;
 		cm_id_priv->state = IW_CM_STATE_ESTABLISHED;
 	} else {
 		/* REJECTED or RESET */
@@ -1020,16 +1169,38 @@ EXPORT_SYMBOL(iw_cm_init_qp_attr);
 
 static int __init iw_cm_init(void)
 {
+	int ret;
+
+	ret = iwpm_init(RDMA_NL_IWCM);
+	if (ret)
+		pr_err("iw_cm: couldn't init iwpm\n");
+
+	ret = ibnl_add_client(RDMA_NL_IWCM, ARRAY_SIZE(iwcm_nl_cb_table),
+			      iwcm_nl_cb_table);
+	if (ret)
+		pr_err("iw_cm: couldn't register netlink callbacks\n");
+
 	iwcm_wq = create_singlethread_workqueue("iw_cm_wq");
 	if (!iwcm_wq)
 		return -ENOMEM;
+
+	iwcm_ctl_table_hdr = register_net_sysctl(&init_net, "net/iw_cm",
+						 iwcm_ctl_table);
+	if (!iwcm_ctl_table_hdr) {
+		pr_err("iw_cm: couldn't register sysctl paths\n");
+		destroy_workqueue(iwcm_wq);
+		return -ENOMEM;
+	}
 
 	return 0;
 }
 
 static void __exit iw_cm_cleanup(void)
 {
+	unregister_net_sysctl_table(iwcm_ctl_table_hdr);
 	destroy_workqueue(iwcm_wq);
+	ibnl_remove_client(RDMA_NL_IWCM);
+	iwpm_exit(RDMA_NL_IWCM);
 }
 
 module_init(iw_cm_init);

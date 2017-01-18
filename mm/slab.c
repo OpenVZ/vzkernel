@@ -565,7 +565,7 @@ static void init_node_lock_keys(int q)
 	if (slab_state < UP)
 		return;
 
-	for (i = 1; i < PAGE_SHIFT + MAX_ORDER; i++) {
+	for (i = 1; i <= KMALLOC_SHIFT_HIGH; i++) {
 		struct kmem_cache_node *n;
 		struct kmem_cache *cache = kmalloc_caches[i];
 
@@ -787,7 +787,7 @@ static void next_reap_node(void)
  * the CPUs getting into lockstep and contending for the global cache chain
  * lock.
  */
-static void __cpuinit start_cpu_timer(int cpu)
+static void start_cpu_timer(int cpu)
 {
 	struct delayed_work *reap_work = &per_cpu(slab_reap_work, cpu);
 
@@ -1180,7 +1180,7 @@ static int init_cache_node_node(int node)
 	return 0;
 }
 
-static void __cpuinit cpuup_canceled(long cpu)
+static void cpuup_canceled(long cpu)
 {
 	struct kmem_cache *cachep;
 	struct kmem_cache_node *n = NULL;
@@ -1245,7 +1245,7 @@ free_array_cache:
 	}
 }
 
-static int __cpuinit cpuup_prepare(long cpu)
+static int cpuup_prepare(long cpu)
 {
 	struct kmem_cache *cachep;
 	struct kmem_cache_node *n = NULL;
@@ -1328,7 +1328,7 @@ bad:
 	return -ENOMEM;
 }
 
-static int __cpuinit cpuup_callback(struct notifier_block *nfb,
+static int cpuup_callback(struct notifier_block *nfb,
 				    unsigned long action, void *hcpu)
 {
 	long cpu = (long)hcpu;
@@ -1384,7 +1384,7 @@ static int __cpuinit cpuup_callback(struct notifier_block *nfb,
 	return notifier_from_errno(err);
 }
 
-static struct notifier_block __cpuinitdata cpucache_notifier = {
+static struct notifier_block cpucache_notifier = {
 	&cpuup_callback, NULL, 0
 };
 
@@ -1756,7 +1756,7 @@ static void *kmem_getpages(struct kmem_cache *cachep, gfp_t flags, int nodeid)
 	}
 
 	/* Record if ALLOC_NO_WATERMARKS was set when allocating the slab */
-	if (unlikely(page->pfmemalloc))
+	if (page_is_pfmemalloc(page))
 		pfmemalloc_active = true;
 
 	nr_pages = (1 << cachep->gfporder);
@@ -1769,7 +1769,7 @@ static void *kmem_getpages(struct kmem_cache *cachep, gfp_t flags, int nodeid)
 	for (i = 0; i < nr_pages; i++) {
 		__SetPageSlab(page + i);
 
-		if (page->pfmemalloc)
+		if (page_is_pfmemalloc(page))
 			SetPageSlabPfmemalloc(page + i);
 	}
 	memcg_bind_pages(cachep, cachep->gfporder);
@@ -3168,7 +3168,7 @@ out:
 
 #ifdef CONFIG_NUMA
 /*
- * Try allocating on another node if PF_SPREAD_SLAB|PF_MEMPOLICY.
+ * Try allocating on another node if PFA_SPREAD_SLAB|PF_MEMPOLICY.
  *
  * If we are in_interrupt, then process context, including cpusets and
  * mempolicy, may not apply and should not be used for allocation policy.
@@ -3214,7 +3214,7 @@ static void *fallback_alloc(struct kmem_cache *cache, gfp_t flags)
 	local_flags = flags & (GFP_CONSTRAINT_MASK|GFP_RECLAIM_MASK);
 
 retry_cpuset:
-	cpuset_mems_cookie = get_mems_allowed();
+	cpuset_mems_cookie = read_mems_allowed_begin();
 	zonelist = node_zonelist(slab_node(), flags);
 
 retry:
@@ -3270,7 +3270,7 @@ retry:
 		}
 	}
 
-	if (unlikely(!put_mems_allowed(cpuset_mems_cookie) && !obj))
+	if (unlikely(!obj && read_mems_allowed_retry(cpuset_mems_cookie)))
 		goto retry_cpuset;
 	return obj;
 }
@@ -3412,7 +3412,8 @@ __do_cache_alloc(struct kmem_cache *cache, gfp_t flags)
 {
 	void *objp;
 
-	if (unlikely(current->flags & (PF_SPREAD_SLAB | PF_MEMPOLICY))) {
+	if (unlikely(current->flags & PF_MEMPOLICY ||
+			cpuset_do_slab_mem_spread())) {
 		objp = alternate_node_alloc(cache, flags);
 		if (objp)
 			goto out;
@@ -3626,6 +3627,19 @@ void *kmem_cache_alloc(struct kmem_cache *cachep, gfp_t flags)
 	return ret;
 }
 EXPORT_SYMBOL(kmem_cache_alloc);
+
+void kmem_cache_free_bulk(struct kmem_cache *s, size_t size, void **p)
+{
+	__kmem_cache_free_bulk(s, size, p);
+}
+EXPORT_SYMBOL(kmem_cache_free_bulk);
+
+int kmem_cache_alloc_bulk(struct kmem_cache *s, gfp_t flags, size_t size,
+								void **p)
+{
+	return __kmem_cache_alloc_bulk(s, flags, size, p);
+}
+EXPORT_SYMBOL(kmem_cache_alloc_bulk);
 
 #ifdef CONFIG_TRACING
 void *

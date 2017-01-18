@@ -95,6 +95,7 @@ obj-$(CONFIG_SCSI_PAS16)	+= pas16.o
 obj-$(CONFIG_SCSI_T128)		+= t128.o
 obj-$(CONFIG_SCSI_DMX3191D)	+= dmx3191d.o
 obj-$(CONFIG_SCSI_HPSA)		+= hpsa.o
+obj-$(CONFIG_SCSI_SMARTPQI)	+= smartpqi/
 obj-$(CONFIG_SCSI_DTC3280)	+= dtc.o
 obj-$(CONFIG_SCSI_SYM53C8XX_2)	+= sym53c8xx_2/
 obj-$(CONFIG_SCSI_ZALON)	+= zalon7xx.o
@@ -103,10 +104,10 @@ obj-$(CONFIG_SCSI_7000FASST)	+= wd7000.o
 obj-$(CONFIG_SCSI_EATA)		+= eata.o
 obj-$(CONFIG_SCSI_DC395x)	+= dc395x.o
 obj-$(CONFIG_SCSI_DC390T)	+= tmscsim.o
+obj-$(CONFIG_CXLFLASH)		+= cxlflash/
 obj-$(CONFIG_MEGARAID_LEGACY)	+= megaraid.o
 obj-$(CONFIG_MEGARAID_NEWGEN)	+= megaraid/
 obj-$(CONFIG_MEGARAID_SAS)	+= megaraid/
-obj-$(CONFIG_SCSI_MPT2SAS)	+= mpt2sas/
 obj-$(CONFIG_SCSI_MPT3SAS)	+= mpt3sas/
 obj-$(CONFIG_SCSI_UFSHCD)	+= ufs/
 obj-$(CONFIG_SCSI_ACARD)	+= atp870u.o
@@ -160,15 +161,15 @@ obj-$(CONFIG_SCSI_OSD_INITIATOR) += osd/
 
 # This goes last, so that "real" scsi devices probe earlier
 obj-$(CONFIG_SCSI_DEBUG)	+= scsi_debug.o
-
-scsi_mod-y			+= scsi.o hosts.o scsi_ioctl.o constants.o \
+scsi_mod-y			+= scsi.o hosts.o scsi_ioctl.o \
 				   scsicam.o scsi_error.o scsi_lib.o
+scsi_mod-$(CONFIG_SCSI_CONSTANTS) += constants.o
 scsi_mod-$(CONFIG_SCSI_DMA)	+= scsi_lib_dma.o
 scsi_mod-y			+= scsi_scan.o scsi_sysfs.o scsi_devinfo.o
 scsi_mod-$(CONFIG_SCSI_NETLINK)	+= scsi_netlink.o
 scsi_mod-$(CONFIG_SYSCTL)	+= scsi_sysctl.o
 scsi_mod-$(CONFIG_SCSI_PROC_FS)	+= scsi_proc.o
-scsi_mod-y			+= scsi_trace.o
+scsi_mod-y			+= scsi_trace.o scsi_logging.o
 scsi_mod-$(CONFIG_PM)		+= scsi_pm.o
 
 hv_storvsc-y			:= storvsc_drv.o

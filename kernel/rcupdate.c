@@ -175,7 +175,7 @@ int rcu_read_lock_bh_held(void)
 {
 	if (!debug_lockdep_rcu_enabled())
 		return 1;
-	if (rcu_is_cpu_idle())
+	if (!rcu_is_watching())
 		return 0;
 	if (!rcu_lockdep_current_cpu_online())
 		return 0;
@@ -446,6 +446,18 @@ int rcu_jiffies_till_stall_check(void)
 		till_stall_check = 300;
 	}
 	return till_stall_check * HZ + RCU_STALL_DELAY_DELTA;
+}
+
+void rcu_sysrq_start(void)
+{
+	if (!rcu_cpu_stall_suppress)
+		rcu_cpu_stall_suppress = 2;
+}
+
+void rcu_sysrq_end(void)
+{
+	if (rcu_cpu_stall_suppress == 2)
+		rcu_cpu_stall_suppress = 0;
 }
 
 static int rcu_panic(struct notifier_block *this, unsigned long ev, void *ptr)

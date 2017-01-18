@@ -522,7 +522,7 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 			  unsigned long fault_status)
 {
 	pte_t new_pte;
-	pfn_t pfn;
+	kvm_pfn_t pfn;
 	int ret;
 	bool write_fault, writable;
 	unsigned long mmu_seq;

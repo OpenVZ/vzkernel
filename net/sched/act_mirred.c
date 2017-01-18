@@ -243,7 +243,7 @@ nla_put_failure:
 static int mirred_device_event(struct notifier_block *unused,
 			       unsigned long event, void *ptr)
 {
-	struct net_device *dev = ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct tcf_mirred *m;
 
 	if (event == NETDEV_UNREGISTER)
@@ -282,7 +282,7 @@ MODULE_LICENSE("GPL");
 
 static int __init mirred_init_module(void)
 {
-	int err = register_netdevice_notifier(&mirred_device_notifier);
+	int err = register_netdevice_notifier_rh(&mirred_device_notifier);
 	if (err)
 		return err;
 
@@ -292,7 +292,7 @@ static int __init mirred_init_module(void)
 
 static void __exit mirred_cleanup_module(void)
 {
-	unregister_netdevice_notifier(&mirred_device_notifier);
+	unregister_netdevice_notifier_rh(&mirred_device_notifier);
 	tcf_unregister_action(&act_mirred_ops);
 }
 

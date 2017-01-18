@@ -10,7 +10,8 @@
 #include "blk.h"
 
 static unsigned int __blk_recalc_rq_segments(struct request_queue *q,
-					     struct bio *bio)
+					     struct bio *bio,
+					     bool no_sg_merge)
 {
 	struct bio_vec *bv, *bvprv = NULL;
 	int cluster, i, high, highprv = 1;
@@ -24,12 +25,20 @@ static unsigned int __blk_recalc_rq_segments(struct request_queue *q,
 	cluster = blk_queue_cluster(q);
 	seg_size = 0;
 	nr_phys_segs = 0;
+	high = 0;
 	for_each_bio(bio) {
 		bio_for_each_segment(bv, bio, i) {
 			/*
+			 * If SG merging is disabled, each bio vector is
+			 * a segment
+			 */
+			if (no_sg_merge)
+				goto new_segment;
+
+			/*
 			 * the trick here is making sure that a high page is
-			 * never considered part of another segment, since that
-			 * might change with the bounce page.
+			 * never considered part of another segment, since
+			 * that might change with the bounce page.
 			 */
 			high = page_to_pfn(bv->bv_page) > queue_bounce_pfn(q);
 			if (high || highprv)
@@ -70,16 +79,26 @@ new_segment:
 
 void blk_recalc_rq_segments(struct request *rq)
 {
-	rq->nr_phys_segments = __blk_recalc_rq_segments(rq->q, rq->bio);
+	bool no_sg_merge = !!test_bit(QUEUE_FLAG_NO_SG_MERGE,
+			&rq->q->queue_flags);
+
+	rq->nr_phys_segments = __blk_recalc_rq_segments(rq->q, rq->bio,
+			no_sg_merge);
 }
 
 void blk_recount_segments(struct request_queue *q, struct bio *bio)
 {
-	struct bio *nxt = bio->bi_next;
+	if (test_bit(QUEUE_FLAG_NO_SG_MERGE, &q->queue_flags) &&
+			bio->bi_vcnt < queue_max_segments(q))
+		bio->bi_phys_segments = bio->bi_vcnt;
+	else {
+		struct bio *nxt = bio->bi_next;
 
-	bio->bi_next = NULL;
-	bio->bi_phys_segments = __blk_recalc_rq_segments(q, bio);
-	bio->bi_next = nxt;
+		bio->bi_next = NULL;
+		bio->bi_phys_segments = __blk_recalc_rq_segments(q, bio, false);
+		bio->bi_next = nxt;
+	}
+
 	bio->bi_flags |= (1 << BIO_SEG_VALID);
 }
 EXPORT_SYMBOL(blk_recount_segments);
@@ -192,7 +211,7 @@ int blk_rq_map_sg(struct request_queue *q, struct request *rq,
 		if (rq->cmd_flags & REQ_WRITE)
 			memset(q->dma_drain_buffer, 0, q->dma_drain_size);
 
-		sg->page_link &= ~0x02;
+		sg_unmark_end(sg);
 		sg = sg_next(sg);
 		sg_set_page(sg, virt_to_page(q->dma_drain_buffer),
 			    q->dma_drain_size,
@@ -308,6 +327,25 @@ int ll_front_merge_fn(struct request_queue *q, struct request *req,
 	return ll_new_hw_segment(q, req, bio);
 }
 
+/*
+ * blk-mq uses req->special to carry normal driver per-request payload, it
+ * does not indicate a prepared command that we cannot merge with.
+ */
+static bool req_no_special_merge(struct request *req)
+{
+	struct request_queue *q = req->q;
+
+	return !q->mq_ops && req->special;
+}
+
+static int req_gap_to_prev(struct request *req, struct bio *next)
+{
+	struct bio *prev = req->biotail;
+
+	return bvec_gap_to_prev(req->q, &prev->bi_io_vec[prev->bi_vcnt - 1],
+			next->bi_io_vec[0].bv_offset);
+}
+
 static int ll_merge_requests_fn(struct request_queue *q, struct request *req,
 				struct request *next)
 {
@@ -319,7 +357,10 @@ static int ll_merge_requests_fn(struct request_queue *q, struct request *req,
 	 * First check if the either of the requests are re-queued
 	 * requests.  Can't merge them if they are.
 	 */
-	if (req->special || next->special)
+	if (req_no_special_merge(req) || req_no_special_merge(next))
+		return 0;
+
+	if (req_gap_to_prev(req, next->bio))
 		return 0;
 
 	/*
@@ -416,7 +457,7 @@ static int attempt_merge(struct request_queue *q, struct request *req,
 
 	if (rq_data_dir(req) != rq_data_dir(next)
 	    || req->rq_disk != next->rq_disk
-	    || next->special)
+	    || req_no_special_merge(next))
 		return 0;
 
 	if (req->cmd_flags & REQ_WRITE_SAME &&
@@ -515,7 +556,7 @@ bool blk_rq_merge_ok(struct request *rq, struct bio *bio)
 		return false;
 
 	/* must be same device and not a special request */
-	if (rq->rq_disk != bio->bi_bdev->bd_disk || rq->special)
+	if (rq->rq_disk != bio->bi_bdev->bd_disk || req_no_special_merge(rq))
 		return false;
 
 	/* only merge integrity protected bio into ditto rq */
@@ -525,6 +566,10 @@ bool blk_rq_merge_ok(struct request *rq, struct bio *bio)
 	/* must be using the same buffer */
 	if (rq->cmd_flags & REQ_WRITE_SAME &&
 	    !blk_write_same_mergeable(rq->bio, bio))
+		return false;
+
+	/* Only check gaps if the bio carries data */
+	if (bio_has_data(bio) && req_gap_to_prev(rq, bio))
 		return false;
 
 	return true;

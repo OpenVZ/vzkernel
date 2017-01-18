@@ -68,13 +68,13 @@ static char *check[] = {
 };
 
 static int test_cipher_jiffies(struct blkcipher_desc *desc, int enc,
-			       struct scatterlist *sg, int blen, int sec)
+			       struct scatterlist *sg, int blen, int secs)
 {
 	unsigned long start, end;
 	int bcount;
 	int ret;
 
-	for (start = jiffies, end = start + sec * HZ, bcount = 0;
+	for (start = jiffies, end = start + secs * HZ, bcount = 0;
 	     time_before(jiffies, end); bcount++) {
 		if (enc)
 			ret = crypto_blkcipher_encrypt(desc, sg, sg, blen);
@@ -86,7 +86,7 @@ static int test_cipher_jiffies(struct blkcipher_desc *desc, int enc,
 	}
 
 	printk("%d operations in %d seconds (%ld bytes)\n",
-	       bcount, sec, (long)bcount * blen);
+	       bcount, secs, (long)bcount * blen);
 	return 0;
 }
 
@@ -139,7 +139,7 @@ out:
 
 static u32 block_sizes[] = { 16, 64, 256, 1024, 8192, 0 };
 
-static void test_cipher_speed(const char *algo, int enc, unsigned int sec,
+static void test_cipher_speed(const char *algo, int enc, unsigned int secs,
 			      struct cipher_speed_template *template,
 			      unsigned int tcount, u8 *keysize)
 {
@@ -217,9 +217,9 @@ static void test_cipher_speed(const char *algo, int enc, unsigned int sec,
 				crypto_blkcipher_set_iv(tfm, iv, iv_len);
 			}
 
-			if (sec)
+			if (secs)
 				ret = test_cipher_jiffies(&desc, enc, sg,
-							  *b_size, sec);
+							  *b_size, secs);
 			else
 				ret = test_cipher_cycles(&desc, enc, sg,
 							 *b_size);
@@ -240,13 +240,13 @@ out:
 
 static int test_hash_jiffies_digest(struct hash_desc *desc,
 				    struct scatterlist *sg, int blen,
-				    char *out, int sec)
+				    char *out, int secs)
 {
 	unsigned long start, end;
 	int bcount;
 	int ret;
 
-	for (start = jiffies, end = start + sec * HZ, bcount = 0;
+	for (start = jiffies, end = start + secs * HZ, bcount = 0;
 	     time_before(jiffies, end); bcount++) {
 		ret = crypto_hash_digest(desc, sg, blen, out);
 		if (ret)
@@ -254,22 +254,22 @@ static int test_hash_jiffies_digest(struct hash_desc *desc,
 	}
 
 	printk("%6u opers/sec, %9lu bytes/sec\n",
-	       bcount / sec, ((long)bcount * blen) / sec);
+	       bcount / secs, ((long)bcount * blen) / secs);
 
 	return 0;
 }
 
 static int test_hash_jiffies(struct hash_desc *desc, struct scatterlist *sg,
-			     int blen, int plen, char *out, int sec)
+			     int blen, int plen, char *out, int secs)
 {
 	unsigned long start, end;
 	int bcount, pcount;
 	int ret;
 
 	if (plen == blen)
-		return test_hash_jiffies_digest(desc, sg, blen, out, sec);
+		return test_hash_jiffies_digest(desc, sg, blen, out, secs);
 
-	for (start = jiffies, end = start + sec * HZ, bcount = 0;
+	for (start = jiffies, end = start + secs * HZ, bcount = 0;
 	     time_before(jiffies, end); bcount++) {
 		ret = crypto_hash_init(desc);
 		if (ret)
@@ -286,7 +286,7 @@ static int test_hash_jiffies(struct hash_desc *desc, struct scatterlist *sg,
 	}
 
 	printk("%6u opers/sec, %9lu bytes/sec\n",
-	       bcount / sec, ((long)bcount * blen) / sec);
+	       bcount / secs, ((long)bcount * blen) / secs);
 
 	return 0;
 }
@@ -407,7 +407,7 @@ static void test_hash_sg_init(struct scatterlist *sg)
 	}
 }
 
-static void test_hash_speed(const char *algo, unsigned int sec,
+static void test_hash_speed(const char *algo, unsigned int secs,
 			    struct hash_speed *speed)
 {
 	struct scatterlist sg[TVMEMSIZE];
@@ -452,9 +452,9 @@ static void test_hash_speed(const char *algo, unsigned int sec,
 		       "(%5u byte blocks,%5u bytes per update,%4u updates): ",
 		       i, speed[i].blen, speed[i].plen, speed[i].blen / speed[i].plen);
 
-		if (sec)
+		if (secs)
 			ret = test_hash_jiffies(&desc, sg, speed[i].blen,
-						speed[i].plen, output, sec);
+						speed[i].plen, output, secs);
 		else
 			ret = test_hash_cycles(&desc, sg, speed[i].blen,
 					       speed[i].plen, output);
@@ -499,13 +499,13 @@ static inline int do_one_ahash_op(struct ahash_request *req, int ret)
 }
 
 static int test_ahash_jiffies_digest(struct ahash_request *req, int blen,
-				     char *out, int sec)
+				     char *out, int secs)
 {
 	unsigned long start, end;
 	int bcount;
 	int ret;
 
-	for (start = jiffies, end = start + sec * HZ, bcount = 0;
+	for (start = jiffies, end = start + secs * HZ, bcount = 0;
 	     time_before(jiffies, end); bcount++) {
 		ret = do_one_ahash_op(req, crypto_ahash_digest(req));
 		if (ret)
@@ -513,22 +513,22 @@ static int test_ahash_jiffies_digest(struct ahash_request *req, int blen,
 	}
 
 	printk("%6u opers/sec, %9lu bytes/sec\n",
-	       bcount / sec, ((long)bcount * blen) / sec);
+	       bcount / secs, ((long)bcount * blen) / secs);
 
 	return 0;
 }
 
 static int test_ahash_jiffies(struct ahash_request *req, int blen,
-			      int plen, char *out, int sec)
+			      int plen, char *out, int secs)
 {
 	unsigned long start, end;
 	int bcount, pcount;
 	int ret;
 
 	if (plen == blen)
-		return test_ahash_jiffies_digest(req, blen, out, sec);
+		return test_ahash_jiffies_digest(req, blen, out, secs);
 
-	for (start = jiffies, end = start + sec * HZ, bcount = 0;
+	for (start = jiffies, end = start + secs * HZ, bcount = 0;
 	     time_before(jiffies, end); bcount++) {
 		ret = crypto_ahash_init(req);
 		if (ret)
@@ -545,7 +545,7 @@ static int test_ahash_jiffies(struct ahash_request *req, int blen,
 	}
 
 	pr_cont("%6u opers/sec, %9lu bytes/sec\n",
-		bcount / sec, ((long)bcount * blen) / sec);
+		bcount / secs, ((long)bcount * blen) / secs);
 
 	return 0;
 }
@@ -645,7 +645,7 @@ out:
 	return 0;
 }
 
-static void test_ahash_speed(const char *algo, unsigned int sec,
+static void test_ahash_speed(const char *algo, unsigned int secs,
 			     struct hash_speed *speed)
 {
 	struct scatterlist sg[TVMEMSIZE];
@@ -694,9 +694,9 @@ static void test_ahash_speed(const char *algo, unsigned int sec,
 
 		ahash_request_set_crypt(req, sg, output, speed[i].plen);
 
-		if (sec)
+		if (secs)
 			ret = test_ahash_jiffies(req, speed[i].blen,
-						 speed[i].plen, output, sec);
+						 speed[i].plen, output, secs);
 		else
 			ret = test_ahash_cycles(req, speed[i].blen,
 						speed[i].plen, output);
@@ -728,13 +728,13 @@ static inline int do_one_acipher_op(struct ablkcipher_request *req, int ret)
 }
 
 static int test_acipher_jiffies(struct ablkcipher_request *req, int enc,
-				int blen, int sec)
+				int blen, int secs)
 {
 	unsigned long start, end;
 	int bcount;
 	int ret;
 
-	for (start = jiffies, end = start + sec * HZ, bcount = 0;
+	for (start = jiffies, end = start + secs * HZ, bcount = 0;
 	     time_before(jiffies, end); bcount++) {
 		if (enc)
 			ret = do_one_acipher_op(req,
@@ -748,7 +748,7 @@ static int test_acipher_jiffies(struct ablkcipher_request *req, int enc,
 	}
 
 	pr_cont("%d operations in %d seconds (%ld bytes)\n",
-		bcount, sec, (long)bcount * blen);
+		bcount, secs, (long)bcount * blen);
 	return 0;
 }
 
@@ -799,7 +799,7 @@ out:
 	return ret;
 }
 
-static void test_acipher_speed(const char *algo, int enc, unsigned int sec,
+static void test_acipher_speed(const char *algo, int enc, unsigned int secs,
 			       struct cipher_speed_template *template,
 			       unsigned int tcount, u8 *keysize)
 {
@@ -902,9 +902,9 @@ static void test_acipher_speed(const char *algo, int enc, unsigned int sec,
 
 			ablkcipher_request_set_crypt(req, sg, sg, *b_size, iv);
 
-			if (sec)
+			if (secs)
 				ret = test_acipher_jiffies(req, enc,
-							   *b_size, sec);
+							   *b_size, secs);
 			else
 				ret = test_acipher_cycles(req, enc,
 							  *b_size);
@@ -1172,6 +1172,10 @@ static int do_test(int m)
 
 	case 46:
 		ret += tcrypt_test("ghash");
+		break;
+
+	case 47:
+		ret += tcrypt_test("crct10dif");
 		break;
 
 	case 100:
@@ -1496,6 +1500,10 @@ static int do_test(int m)
 
 	case 319:
 		test_hash_speed("crc32c", sec, generic_hash_speed_template);
+		if (mode > 300 && mode < 400) break;
+
+	case 320:
+		test_hash_speed("crct10dif", sec, generic_hash_speed_template);
 		if (mode > 300 && mode < 400) break;
 
 	case 399:

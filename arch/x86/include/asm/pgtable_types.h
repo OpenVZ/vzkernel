@@ -23,13 +23,20 @@
 #define _PAGE_BIT_SPECIAL	_PAGE_BIT_UNUSED1
 #define _PAGE_BIT_CPA_TEST	_PAGE_BIT_UNUSED1
 #define _PAGE_BIT_SPLITTING	_PAGE_BIT_UNUSED1 /* only valid on a PSE pmd */
-#define _PAGE_BIT_NX           63       /* No execute: only valid after cpuid check */
+#define _PAGE_BIT_SOFTW4	58	/* available for programmer */
+#define _PAGE_BIT_DEVMAP		_PAGE_BIT_SOFTW4
+#define _PAGE_BIT_NX		63	/* No execute: only valid after cpuid check */
 
 /* If _PAGE_BIT_PRESENT is clear, we use these: */
 /* - if the user mapped it with PROT_NONE; pte_present gives true */
 #define _PAGE_BIT_PROTNONE	_PAGE_BIT_GLOBAL
 /* - set: nonlinear file mapping, saved PTE; unset:swap */
+#if defined(CONFIG_X86_64) || defined(CONFIG_X86_PAE)
+/* Pick a bit unaffected by the "KNL4 erratum": */
+#define _PAGE_BIT_FILE		_PAGE_BIT_PCD
+#else
 #define _PAGE_BIT_FILE		_PAGE_BIT_DIRTY
+#endif
 
 #define _PAGE_PRESENT	(_AT(pteval_t, 1) << _PAGE_BIT_PRESENT)
 #define _PAGE_RW	(_AT(pteval_t, 1) << _PAGE_BIT_RW)
@@ -49,16 +56,84 @@
 #define _PAGE_SPLITTING	(_AT(pteval_t, 1) << _PAGE_BIT_SPLITTING)
 #define __HAVE_ARCH_PTE_SPECIAL
 
+#if defined(CONFIG_X86_64) || defined(CONFIG_X86_PAE)
+#define _PAGE_KNL_ERRATUM_MASK (_PAGE_DIRTY | _PAGE_ACCESSED)
+#else
+/*
+ * With 32-bit PTEs, _PAGE_DIRTY is used to denote a nonlinear
+ * PTE.  We must not clear the bit.  We do not allow 32-bit
+ * kernels to run on KNL
+ */
+#define _PAGE_KNL_ERRATUM_MASK 0
+#endif
+
 #ifdef CONFIG_KMEMCHECK
 #define _PAGE_HIDDEN	(_AT(pteval_t, 1) << _PAGE_BIT_HIDDEN)
 #else
 #define _PAGE_HIDDEN	(_AT(pteval_t, 0))
 #endif
 
+/*
+ * The same hidden bit is used by kmemcheck, but since kmemcheck
+ * works on kernel pages while soft-dirty engine on user space,
+ * they do not conflict with each other.
+ *
+ * Note that this is well in to the swap PTE's entry/type space
+ * so can not be used for !present PTEs.
+ */
+
+#define _PAGE_BIT_SOFT_DIRTY	_PAGE_BIT_HIDDEN
+
+#ifdef CONFIG_MEM_SOFT_DIRTY
+#define _PAGE_SOFT_DIRTY	(_AT(pteval_t, 1) << _PAGE_BIT_SOFT_DIRTY)
+#else
+#define _PAGE_SOFT_DIRTY	(_AT(pteval_t, 0))
+#endif
+
+/*
+ * Tracking soft dirty bit when a page goes to a swap is tricky.
+ * We need a bit which can be stored in pte _and_ not conflict
+ * with swap entry format. On x86 bits 6 and 7 are *not* involved
+ * into swap entry computation, but bit 6 is used for nonlinear
+ * file mapping, so we borrow bit 7 for soft dirty tracking.
+ */
+#ifdef CONFIG_MEM_SOFT_DIRTY
+#define _PAGE_BIT_SWP_SOFT_DIRTY	_PAGE_BIT_PSE
+#define _PAGE_SWP_SOFT_DIRTY	(_AT(pteval_t, 1) << _PAGE_BIT_SWP_SOFT_DIRTY)
+#else
+#define _PAGE_SWP_SOFT_DIRTY	(_AT(pteval_t, 0))
+#endif
+
+#if defined(CONFIG_X86_64) || defined(CONFIG_X86_PAE)
+/*
+ * Do compile-time checks for all the bits that may be set on
+ * non-present PTEs
+ */
+#if _PAGE_BIT_FILE == _PAGE_BIT_SWP_SOFT_DIRTY
+#error conflicting _PAGE_BIT_FILE
+#endif
+#if _PAGE_BIT_FILE == _PAGE_BIT_PROTNONE
+#error conflicting _PAGE_BIT_FILE
+#endif
+/*
+ * Do compile-time checks for all the bits affected by the "KNL4"
+ * erratum:
+ */
+#if _PAGE_BIT_FILE == _PAGE_BIT_DIRTY
+#error conflicting _PAGE_BIT_FILE
+#endif
+#if _PAGE_BIT_FILE == _PAGE_BIT_ACCESSED
+#error conflicting _PAGE_BIT_FILE
+#endif
+#endif
+
 #if defined(CONFIG_X86_64) || defined(CONFIG_X86_PAE)
 #define _PAGE_NX	(_AT(pteval_t, 1) << _PAGE_BIT_NX)
+#define _PAGE_DEVMAP	(_AT(u64, 1) << _PAGE_BIT_DEVMAP)
+#define __HAVE_ARCH_PTE_DEVMAP
 #else
 #define _PAGE_NX	(_AT(pteval_t, 0))
+#define _PAGE_DEVMAP	(_AT(pteval_t, 0))
 #endif
 
 #define _PAGE_FILE	(_AT(pteval_t, 1) << _PAGE_BIT_FILE)
@@ -91,14 +166,37 @@
 
 /* Set of bits not changed in pte_modify */
 #define _PAGE_CHG_MASK	(PTE_PFN_MASK | _PAGE_PCD | _PAGE_PWT |		\
-			 _PAGE_SPECIAL | _PAGE_ACCESSED | _PAGE_DIRTY)
+			 _PAGE_SPECIAL | _PAGE_ACCESSED | _PAGE_DIRTY |	\
+			 _PAGE_SOFT_DIRTY)
 #define _HPAGE_CHG_MASK (_PAGE_CHG_MASK | _PAGE_PSE)
 
-#define _PAGE_CACHE_MASK	(_PAGE_PCD | _PAGE_PWT)
 #define _PAGE_CACHE_WB		(0)
 #define _PAGE_CACHE_WC		(_PAGE_PWT)
 #define _PAGE_CACHE_UC_MINUS	(_PAGE_PCD)
 #define _PAGE_CACHE_UC		(_PAGE_PCD | _PAGE_PWT)
+
+/*
+ * The cache modes defined here are used to translate between pure SW usage
+ * and the HW defined cache mode bits and/or PAT entries.
+ *
+ * The resulting bits for PWT, PCD and PAT should be chosen in a way
+ * to have the WB mode at index 0 (all bits clear). This is the default
+ * right now and likely would break too much if changed.
+ */
+#ifndef __ASSEMBLY__
+enum page_cache_mode {
+	_PAGE_CACHE_MODE_WB = 0,
+	_PAGE_CACHE_MODE_WC = 1,
+	_PAGE_CACHE_MODE_UC_MINUS = 2,
+	_PAGE_CACHE_MODE_UC = 3,
+	_PAGE_CACHE_MODE_WT = 4,
+	_PAGE_CACHE_MODE_WP = 5,
+	_PAGE_CACHE_MODE_NUM = 8
+};
+#endif
+
+#define _PAGE_CACHE_MASK	(_PAGE_PAT | _PAGE_PCD | _PAGE_PWT)
+#define _PAGE_NOCACHE		(cachemode2protval(_PAGE_CACHE_MODE_UC))
 
 #define PAGE_NONE	__pgprot(_PAGE_PROTNONE | _PAGE_ACCESSED)
 #define PAGE_SHARED	__pgprot(_PAGE_PRESENT | _PAGE_RW | _PAGE_USER | \
@@ -298,6 +396,55 @@ static inline pteval_t pte_flags(pte_t pte)
 #define pgprot_val(x)	((x).pgprot)
 #define __pgprot(x)	((pgprot_t) { (x) } )
 
+extern uint16_t __cachemode2pte_tbl[_PAGE_CACHE_MODE_NUM];
+extern uint8_t __pte2cachemode_tbl[8];
+
+#define __pte2cm_idx(cb)				\
+	((((cb) >> (_PAGE_BIT_PAT - 2)) & 4) |		\
+	 (((cb) >> (_PAGE_BIT_PCD - 1)) & 2) |		\
+	 (((cb) >> _PAGE_BIT_PWT) & 1))
+
+static inline unsigned long cachemode2protval(enum page_cache_mode pcm)
+{
+	if (likely(pcm == 0))
+		return 0;
+	return __cachemode2pte_tbl[pcm];
+}
+static inline pgprot_t cachemode2pgprot(enum page_cache_mode pcm)
+{
+	return __pgprot(cachemode2protval(pcm));
+}
+static inline enum page_cache_mode pgprot2cachemode(pgprot_t pgprot)
+{
+	unsigned long masked;
+
+	masked = pgprot_val(pgprot) & _PAGE_CACHE_MASK;
+	if (likely(masked == 0))
+		return 0;
+	return __pte2cachemode_tbl[__pte2cm_idx(masked)];
+}
+static inline pgprot_t pgprot_4k_2_large(pgprot_t pgprot)
+{
+	pgprot_t new;
+	unsigned long val;
+
+	val = pgprot_val(pgprot);
+	pgprot_val(new) = (val & ~(_PAGE_PAT | _PAGE_PAT_LARGE)) |
+		((val & _PAGE_PAT) << (_PAGE_BIT_PAT_LARGE - _PAGE_BIT_PAT));
+	return new;
+}
+static inline pgprot_t pgprot_large_2_4k(pgprot_t pgprot)
+{
+	pgprot_t new;
+	unsigned long val;
+
+	val = pgprot_val(pgprot);
+	pgprot_val(new) = (val & ~(_PAGE_PAT | _PAGE_PAT_LARGE)) |
+			  ((val & _PAGE_PAT_LARGE) >>
+			   (_PAGE_BIT_PAT_LARGE - _PAGE_BIT_PAT));
+	return new;
+}
+
 
 typedef struct page *pgtable_t;
 
@@ -352,7 +499,10 @@ static inline void update_page_count(int level, unsigned long pages) { }
  */
 extern pte_t *lookup_address(unsigned long address, unsigned int *level);
 extern phys_addr_t slow_virt_to_phys(void *__address);
-
+extern int kernel_map_pages_in_pgd(pgd_t *pgd, u64 pfn, unsigned long address,
+				   unsigned numpages, unsigned long page_flags);
+void kernel_unmap_pages_in_pgd(pgd_t *root, unsigned long address,
+			       unsigned numpages);
 #endif	/* !__ASSEMBLY__ */
 
 #endif /* _ASM_X86_PGTABLE_DEFS_H */

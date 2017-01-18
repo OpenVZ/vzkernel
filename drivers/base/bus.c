@@ -242,13 +242,15 @@ static ssize_t store_drivers_probe(struct bus_type *bus,
 				   const char *buf, size_t count)
 {
 	struct device *dev;
+	int err = -EINVAL;
 
 	dev = bus_find_device_by_name(bus, NULL, buf);
 	if (!dev)
 		return -ENODEV;
-	if (bus_rescan_devices_helper(dev, NULL) != 0)
-		return -EINVAL;
-	return count;
+	if (bus_rescan_devices_helper(dev, NULL) == 0)
+		err = count;
+	put_device(dev);
+	return err;
 }
 
 static struct device *next_device(struct klist_iter *i)
@@ -499,6 +501,9 @@ int bus_add_device(struct device *dev)
 		error = device_add_attrs(bus, dev);
 		if (error)
 			goto out_put;
+		error = device_add_groups(dev, bus->dev_groups);
+		if (error)
+			goto out_groups;
 		error = sysfs_create_link(&bus->p->devices_kset->kobj,
 						&dev->kobj, dev_name(dev));
 		if (error)
@@ -513,6 +518,8 @@ int bus_add_device(struct device *dev)
 
 out_subsys:
 	sysfs_remove_link(&bus->p->devices_kset->kobj, dev_name(dev));
+out_groups:
+	device_remove_groups(dev, bus->dev_groups);
 out_id:
 	device_remove_attrs(bus, dev);
 out_put:
@@ -575,6 +582,7 @@ void bus_remove_device(struct device *dev)
 	sysfs_remove_link(&dev->bus->p->devices_kset->kobj,
 			  dev_name(dev));
 	device_remove_attrs(dev->bus, dev);
+	device_remove_groups(dev, dev->bus->dev_groups);
 	if (klist_node_attached(&dev->p->knode_bus))
 		klist_del(&dev->p->knode_bus);
 
@@ -719,6 +727,10 @@ int bus_add_driver(struct device_driver *drv)
 		printk(KERN_ERR "%s: driver_add_attrs(%s) failed\n",
 			__func__, drv->name);
 	}
+	error = driver_add_groups(drv, bus->drv_groups);
+	if (error)
+		printk(KERN_ERR "%s: driver_create_groups(%s) failed\n",
+			__func__, drv->name);
 
 	if (!drv->suppress_bind_attrs) {
 		error = add_bind_files(drv);
@@ -756,6 +768,7 @@ void bus_remove_driver(struct device_driver *drv)
 	if (!drv->suppress_bind_attrs)
 		remove_bind_files(drv);
 	driver_remove_attrs(drv->bus, drv);
+	driver_remove_groups(drv, drv->bus->drv_groups);
 	driver_remove_file(drv, &driver_attr_uevent);
 	klist_remove(&drv->p->knode_bus);
 	pr_debug("bus: '%s': remove driver %s\n", drv->bus->name, drv->name);
@@ -870,6 +883,18 @@ static void bus_remove_attrs(struct bus_type *bus)
 	}
 }
 
+static int bus_add_groups(struct bus_type *bus,
+			  const struct attribute_group **groups)
+{
+	return sysfs_create_groups(&bus->p->subsys.kobj, groups);
+}
+
+static void bus_remove_groups(struct bus_type *bus,
+			      const struct attribute_group **groups)
+{
+	sysfs_remove_groups(&bus->p->subsys.kobj, groups);
+}
+
 static void klist_devices_get(struct klist_node *n)
 {
 	struct device_private *dev_prv = to_device_private_bus(n);
@@ -962,10 +987,15 @@ int bus_register(struct bus_type *bus)
 	retval = bus_add_attrs(bus);
 	if (retval)
 		goto bus_attrs_fail;
+	retval = bus_add_groups(bus, bus->bus_groups);
+	if (retval)
+		goto bus_groups_fail;
 
 	pr_debug("bus: '%s': registered\n", bus->name);
 	return 0;
 
+bus_groups_fail:
+	bus_remove_attrs(bus);
 bus_attrs_fail:
 	remove_probe_files(bus);
 bus_probe_files_fail:
@@ -996,6 +1026,7 @@ void bus_unregister(struct bus_type *bus)
 	if (bus->dev_root)
 		device_unregister(bus->dev_root);
 	bus_remove_attrs(bus);
+	bus_remove_groups(bus, bus->bus_groups);
 	remove_probe_files(bus);
 	kset_unregister(bus->p->drivers_kset);
 	kset_unregister(bus->p->devices_kset);

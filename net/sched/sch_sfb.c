@@ -289,7 +289,7 @@ static int sfb_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	struct flow_keys keys;
 
 	if (unlikely(sch->q.qlen >= q->limit)) {
-		sch->qstats.overlimits++;
+		qdisc_qstats_overlimit(sch);
 		q->stats.queuedrop++;
 		goto drop;
 	}
@@ -346,7 +346,7 @@ static int sfb_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	sfb_skb_cb(skb)->hashes[slot] = 0;
 
 	if (unlikely(minqlen >= q->max)) {
-		sch->qstats.overlimits++;
+		qdisc_qstats_overlimit(sch);
 		q->stats.bucketdrop++;
 		goto drop;
 	}
@@ -374,7 +374,7 @@ static int sfb_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 			}
 		}
 		if (sfb_rate_limit(skb, q)) {
-			sch->qstats.overlimits++;
+			qdisc_qstats_overlimit(sch);
 			q->stats.penaltydrop++;
 			goto drop;
 		}
@@ -409,7 +409,7 @@ enqueue:
 		increment_qlen(skb, q);
 	} else if (net_xmit_drop_count(ret)) {
 		q->stats.childdrop++;
-		sch->qstats.drops++;
+		qdisc_qstats_drop(sch);
 	}
 	return ret;
 
@@ -418,7 +418,7 @@ drop:
 	return NET_XMIT_CN;
 other_drop:
 	if (ret & __NET_XMIT_BYPASS)
-		sch->qstats.drops++;
+		qdisc_qstats_drop(sch);
 	kfree_skb(skb);
 	return ret;
 }
@@ -508,7 +508,7 @@ static int sfb_change(struct Qdisc *sch, struct nlattr *opt)
 
 	limit = ctl->limit;
 	if (limit == 0)
-		limit = max_t(u32, qdisc_dev(sch)->tx_queue_len, 1);
+		limit = qdisc_dev(sch)->tx_queue_len;
 
 	child = fifo_create_dflt(sch, &pfifo_qdisc_ops, limit);
 	if (IS_ERR(child))

@@ -227,7 +227,7 @@ efivar_store_raw(struct efivar_entry *entry, const char *buf, size_t count)
 	memcpy(&entry->var, new_var, count);
 
 	err = efivar_entry_set(entry, new_var->Attributes,
-			       new_var->DataSize, new_var->Data, false);
+			       new_var->DataSize, new_var->Data, NULL);
 	if (err) {
 		printk(KERN_WARNING "efivars: set_variable() failed: status=%d\n", err);
 		return -EIO;
@@ -383,12 +383,16 @@ static ssize_t efivar_delete(struct file *filp, struct kobject *kobj,
 	else if (__efivar_entry_delete(entry))
 		err = -EIO;
 
-	efivar_entry_iter_end();
-
-	if (err)
+	if (err) {
+		efivar_entry_iter_end();
 		return err;
+	}
 
-	efivar_unregister(entry);
+	if (!entry->scanning) {
+		efivar_entry_iter_end();
+		efivar_unregister(entry);
+	} else
+		efivar_entry_iter_end();
 
 	/* It's dead Jim.... */
 	return count;
@@ -564,7 +568,7 @@ static int efivar_sysfs_destroy(struct efivar_entry *entry, void *data)
 	return 0;
 }
 
-void efivars_sysfs_exit(void)
+static void efivars_sysfs_exit(void)
 {
 	/* Remove all entries and destroy */
 	__efivar_entry_iter(efivar_sysfs_destroy, &efivar_sysfs_list, NULL, NULL);
@@ -582,6 +586,9 @@ int efivars_sysfs_init(void)
 {
 	struct kobject *parent_kobj = efivars_kobject();
 	int error = 0;
+
+	if (!efi_enabled(EFI_RUNTIME_SERVICES))
+		return -ENODEV;
 
 	/* No efivars has been registered yet */
 	if (!parent_kobj)

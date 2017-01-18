@@ -47,6 +47,7 @@
 #define HAS_PCBC
 #endif
 
+
 /* This data is stored at the end of the crypto_tfm struct.
  * It's a type of per "session" data storage location.
  * This needs to be 16 byte aligned.
@@ -102,6 +103,9 @@ int crypto_fpu_init(void);
 void crypto_fpu_exit(void);
 
 #ifdef CONFIG_X86_64
+
+static void (*aesni_ctr_enc_tfm)(struct crypto_aes_ctx *ctx, u8 *out,
+			      const u8 *in, unsigned int len, u8 *iv);
 asmlinkage void aesni_ctr_enc(struct crypto_aes_ctx *ctx, u8 *out,
 			      const u8 *in, unsigned int len, u8 *iv);
 
@@ -149,6 +153,15 @@ asmlinkage void aesni_gcm_dec(void *ctx, u8 *out,
 			const u8 *in, unsigned long ciphertext_len, u8 *iv,
 			u8 *hash_subkey, const u8 *aad, unsigned long aad_len,
 			u8 *auth_tag, unsigned long auth_tag_len);
+
+#ifdef CONFIG_AS_AVX
+asmlinkage void aes_ctr_enc_128_avx_by8(const u8 *in, u8 *iv,
+		void *keys, u8 *out, unsigned int num_bytes);
+asmlinkage void aes_ctr_enc_192_avx_by8(const u8 *in, u8 *iv,
+		void *keys, u8 *out, unsigned int num_bytes);
+asmlinkage void aes_ctr_enc_256_avx_by8(const u8 *in, u8 *iv,
+		void *keys, u8 *out, unsigned int num_bytes);
+#endif
 
 static inline struct
 aesni_rfc4106_gcm_ctx *aesni_rfc4106_gcm_ctx_get(struct crypto_aead *tfm)
@@ -352,6 +365,25 @@ static void ctr_crypt_final(struct crypto_aes_ctx *ctx,
 	crypto_inc(ctrblk, AES_BLOCK_SIZE);
 }
 
+#ifdef CONFIG_AS_AVX
+static void aesni_ctr_enc_avx_tfm(struct crypto_aes_ctx *ctx, u8 *out,
+			      const u8 *in, unsigned int len, u8 *iv)
+{
+	/*
+	 * based on key length, override with the by8 version
+	 * of ctr mode encryption/decryption for improved performance
+	 * aes_set_key_common() ensures that key length is one of
+	 * {128,192,256}
+	 */
+	if (ctx->key_length == AES_KEYSIZE_128)
+		aes_ctr_enc_128_avx_by8(in, iv, (void *)ctx, out, len);
+	else if (ctx->key_length == AES_KEYSIZE_192)
+		aes_ctr_enc_192_avx_by8(in, iv, (void *)ctx, out, len);
+	else
+		aes_ctr_enc_256_avx_by8(in, iv, (void *)ctx, out, len);
+}
+#endif
+
 static int ctr_crypt(struct blkcipher_desc *desc,
 		     struct scatterlist *dst, struct scatterlist *src,
 		     unsigned int nbytes)
@@ -366,8 +398,8 @@ static int ctr_crypt(struct blkcipher_desc *desc,
 
 	kernel_fpu_begin();
 	while ((nbytes = walk.nbytes) >= AES_BLOCK_SIZE) {
-		aesni_ctr_enc(ctx, walk.dst.virt.addr, walk.src.virt.addr,
-			      nbytes & AES_BLOCK_MASK, walk.iv);
+		aesni_ctr_enc_tfm(ctx, walk.dst.virt.addr, walk.src.virt.addr,
+				  nbytes & AES_BLOCK_MASK, walk.iv);
 		nbytes &= AES_BLOCK_SIZE - 1;
 		err = blkcipher_walk_done(desc, &walk, nbytes);
 	}
@@ -758,7 +790,8 @@ static int rfc4106_set_key(struct crypto_aead *parent, const u8 *key,
 	}
 	/*Account for 4 byte nonce at the end.*/
 	key_len -= 4;
-	if (key_len != AES_KEYSIZE_128) {
+	if (key_len != AES_KEYSIZE_128 && key_len != AES_KEYSIZE_192 &&
+	    key_len != AES_KEYSIZE_256) {
 		crypto_tfm_set_flags(tfm, CRYPTO_TFM_RES_BAD_KEY_LEN);
 		return -EINVAL;
 	}
@@ -869,6 +902,7 @@ static int __driver_rfc4106_encrypt(struct aead_request *req)
 	__be32 counter = cpu_to_be32(1);
 	struct crypto_aead *tfm = crypto_aead_reqtfm(req);
 	struct aesni_rfc4106_gcm_ctx *ctx = aesni_rfc4106_gcm_ctx_get(tfm);
+	u32 key_len = ctx->aes_key_expanded.key_length;
 	void *aes_ctx = &(ctx->aes_key_expanded);
 	unsigned long auth_tag_len = crypto_aead_authsize(tfm);
 	u8 iv_tab[16+AESNI_ALIGN];
@@ -883,6 +917,13 @@ static int __driver_rfc4106_encrypt(struct aead_request *req)
 	/* to 8 or 12 bytes */
 	if (unlikely(req->assoclen != 8 && req->assoclen != 12))
 		return -EINVAL;
+	if (unlikely(auth_tag_len != 8 && auth_tag_len != 12 && auth_tag_len != 16))
+	        return -EINVAL;
+	if (unlikely(key_len != AES_KEYSIZE_128 &&
+	             key_len != AES_KEYSIZE_192 &&
+	             key_len != AES_KEYSIZE_256))
+	        return -EINVAL;
+
 	/* IV below built */
 	for (i = 0; i < 4; i++)
 		*(iv+i) = ctx->nonce[i];
@@ -947,6 +988,7 @@ static int __driver_rfc4106_decrypt(struct aead_request *req)
 	int retval = 0;
 	struct crypto_aead *tfm = crypto_aead_reqtfm(req);
 	struct aesni_rfc4106_gcm_ctx *ctx = aesni_rfc4106_gcm_ctx_get(tfm);
+	u32 key_len = ctx->aes_key_expanded.key_length;
 	void *aes_ctx = &(ctx->aes_key_expanded);
 	unsigned long auth_tag_len = crypto_aead_authsize(tfm);
 	u8 iv_and_authTag[32+AESNI_ALIGN];
@@ -960,6 +1002,13 @@ static int __driver_rfc4106_decrypt(struct aead_request *req)
 	if (unlikely((req->cryptlen < auth_tag_len) ||
 		(req->assoclen != 8 && req->assoclen != 12)))
 		return -EINVAL;
+	if (unlikely(auth_tag_len != 8 && auth_tag_len != 12 && auth_tag_len != 16))
+	        return -EINVAL;
+	if (unlikely(key_len != AES_KEYSIZE_128 &&
+	             key_len != AES_KEYSIZE_192 &&
+	             key_len != AES_KEYSIZE_256))
+	        return -EINVAL;
+
 	/* Assuming we are supporting rfc4106 64-bit extended */
 	/* sequence numbers We need to have the AAD length */
 	/* equal to 8 or 12 bytes */
@@ -989,7 +1038,7 @@ static int __driver_rfc4106_decrypt(struct aead_request *req)
 		src = kmalloc(req->cryptlen + req->assoclen, GFP_ATOMIC);
 		if (!src)
 			return -ENOMEM;
-		assoc = (src + req->cryptlen + auth_tag_len);
+		assoc = (src + req->cryptlen);
 		scatterwalk_map_and_copy(src, req->src, 0, req->cryptlen, 0);
 		scatterwalk_map_and_copy(assoc, req->assoc, 0,
 			req->assoclen, 0);
@@ -1014,7 +1063,7 @@ static int __driver_rfc4106_decrypt(struct aead_request *req)
 		scatterwalk_done(&src_sg_walk, 0, 0);
 		scatterwalk_done(&assoc_sg_walk, 0, 0);
 	} else {
-		scatterwalk_map_and_copy(dst, req->dst, 0, req->cryptlen, 1);
+		scatterwalk_map_and_copy(dst, req->dst, 0, tempCipherLen, 1);
 		kfree(src);
 	}
 	return retval;
@@ -1353,6 +1402,16 @@ static int __init aesni_init(void)
 
 	if (!x86_match_cpu(aesni_cpu_id))
 		return -ENODEV;
+#ifdef CONFIG_X86_64
+	aesni_ctr_enc_tfm = aesni_ctr_enc;
+#ifdef CONFIG_AS_AVX
+	if (cpu_has_avx) {
+		/* optimize performance of ctr mode encryption transform */
+		aesni_ctr_enc_tfm = aesni_ctr_enc_avx_tfm;
+		pr_info("AES CTR mode by8 optimization enabled\n");
+	}
+#endif
+#endif
 
 	err = crypto_fpu_init();
 	if (err)
@@ -1373,4 +1432,4 @@ module_exit(aesni_exit);
 
 MODULE_DESCRIPTION("Rijndael (AES) Cipher Algorithm, Intel AES-NI instructions optimized");
 MODULE_LICENSE("GPL");
-MODULE_ALIAS("aes");
+MODULE_ALIAS_CRYPTO("aes");

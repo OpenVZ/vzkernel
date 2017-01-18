@@ -13,11 +13,13 @@
  */
 static inline void native_set_pte(pte_t *ptep , pte_t pte)
 {
+	mm_track_pte(ptep);
 	*ptep = pte;
 }
 
 static inline void native_set_pmd(pmd_t *pmdp, pmd_t pmd)
 {
+	mm_track_pmd(pmdp);
 	*pmdp = pmd;
 }
 
@@ -34,12 +36,14 @@ static inline void native_pmd_clear(pmd_t *pmdp)
 static inline void native_pte_clear(struct mm_struct *mm,
 				    unsigned long addr, pte_t *xp)
 {
+	mm_track_pte(xp);
 	*xp = native_make_pte(0);
 }
 
 #ifdef CONFIG_SMP
 static inline pte_t native_ptep_get_and_clear(pte_t *xp)
 {
+	mm_track_pte(xp);
 	return __pte(xchg(&xp->pte_low, 0));
 }
 #else
@@ -49,15 +53,60 @@ static inline pte_t native_ptep_get_and_clear(pte_t *xp)
 #ifdef CONFIG_SMP
 static inline pmd_t native_pmdp_get_and_clear(pmd_t *xp)
 {
+	mm_track_pmd(xp);
 	return __pmd(xchg((pmdval_t *)xp, 0));
 }
 #else
 #define native_pmdp_get_and_clear(xp) native_local_pmdp_get_and_clear(xp)
 #endif
 
+#ifdef CONFIG_MEM_SOFT_DIRTY
+
+/*
+ * Bits _PAGE_BIT_PRESENT, _PAGE_BIT_FILE, _PAGE_BIT_SOFT_DIRTY and
+ * _PAGE_BIT_PROTNONE are taken, split up the 28 bits of offset
+ * into this range.
+ */
+#define PTE_FILE_MAX_BITS	28
+#define PTE_FILE_SHIFT1		(_PAGE_BIT_PRESENT + 1)
+#define PTE_FILE_SHIFT2		(_PAGE_BIT_FILE + 1)
+#define PTE_FILE_SHIFT3		(_PAGE_BIT_PROTNONE + 1)
+#define PTE_FILE_SHIFT4		(_PAGE_BIT_SOFT_DIRTY + 1)
+#define PTE_FILE_BITS1		(PTE_FILE_SHIFT2 - PTE_FILE_SHIFT1 - 1)
+#define PTE_FILE_BITS2		(PTE_FILE_SHIFT3 - PTE_FILE_SHIFT2 - 1)
+#define PTE_FILE_BITS3		(PTE_FILE_SHIFT4 - PTE_FILE_SHIFT3 - 1)
+
+#define pte_to_pgoff(pte)						\
+	((((pte).pte_low >> (PTE_FILE_SHIFT1))				\
+	  & ((1U << PTE_FILE_BITS1) - 1)))				\
+	+ ((((pte).pte_low >> (PTE_FILE_SHIFT2))			\
+	    & ((1U << PTE_FILE_BITS2) - 1))				\
+	   << (PTE_FILE_BITS1))						\
+	+ ((((pte).pte_low >> (PTE_FILE_SHIFT3))			\
+	    & ((1U << PTE_FILE_BITS3) - 1))				\
+	   << (PTE_FILE_BITS1 + PTE_FILE_BITS2))			\
+	+ ((((pte).pte_low >> (PTE_FILE_SHIFT4)))			\
+	    << (PTE_FILE_BITS1 + PTE_FILE_BITS2 + PTE_FILE_BITS3))
+
+#define pgoff_to_pte(off)						\
+	((pte_t) { .pte_low =						\
+	 ((((off)) & ((1U << PTE_FILE_BITS1) - 1)) << PTE_FILE_SHIFT1)	\
+	 + ((((off) >> PTE_FILE_BITS1)					\
+	     & ((1U << PTE_FILE_BITS2) - 1))				\
+	    << PTE_FILE_SHIFT2)						\
+	 + ((((off) >> (PTE_FILE_BITS1 + PTE_FILE_BITS2))		\
+	     & ((1U << PTE_FILE_BITS3) - 1))				\
+	    << PTE_FILE_SHIFT3)						\
+	 + ((((off) >>							\
+	      (PTE_FILE_BITS1 + PTE_FILE_BITS2 + PTE_FILE_BITS3)))	\
+	    << PTE_FILE_SHIFT4)						\
+	 + _PAGE_FILE })
+
+#else /* CONFIG_MEM_SOFT_DIRTY */
+
 /*
  * Bits _PAGE_BIT_PRESENT, _PAGE_BIT_FILE and _PAGE_BIT_PROTNONE are taken,
- * split up the 29 bits of offset into this range:
+ * split up the 29 bits of offset into this range.
  */
 #define PTE_FILE_MAX_BITS	29
 #define PTE_FILE_SHIFT1		(_PAGE_BIT_PRESENT + 1)
@@ -87,6 +136,8 @@ static inline pmd_t native_pmdp_get_and_clear(pmd_t *xp)
 	 + (((off) >> (PTE_FILE_BITS1 + PTE_FILE_BITS2))		\
 	    << PTE_FILE_SHIFT3)						\
 	 + _PAGE_FILE })
+
+#endif /* CONFIG_MEM_SOFT_DIRTY */
 
 /* Encode and de-code a swap entry */
 #if _PAGE_BIT_FILE < _PAGE_BIT_PROTNONE

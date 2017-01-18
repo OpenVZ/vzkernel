@@ -349,6 +349,15 @@ void __lockfunc _raw_spin_lock_nested(raw_spinlock_t *lock, int subclass)
 }
 EXPORT_SYMBOL(_raw_spin_lock_nested);
 
+void __lockfunc _raw_spin_lock_bh_nested(raw_spinlock_t *lock, int subclass)
+{
+	local_bh_disable();
+	preempt_disable();
+	spin_acquire(&lock->dep_map, subclass, 0, _RET_IP_);
+	LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);
+}
+EXPORT_SYMBOL(_raw_spin_lock_bh_nested);
+
 unsigned long __lockfunc _raw_spin_lock_irqsave_nested(raw_spinlock_t *lock,
 						   int subclass)
 {

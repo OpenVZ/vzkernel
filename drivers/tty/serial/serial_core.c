@@ -144,6 +144,11 @@ static int uart_port_startup(struct tty_struct *tty, struct uart_state *state,
 		return 1;
 
 	/*
+	 * Make sure the device is in D0 state.
+	 */
+	uart_change_pm(state, UART_PM_STATE_ON);
+
+	/*
 	 * Initialise and allocate the transmit and temporary
 	 * buffer.
 	 */
@@ -832,25 +837,29 @@ static int uart_set_info(struct tty_struct *tty, struct tty_port *port,
 		 * If we fail to request resources for the
 		 * new port, try to restore the old settings.
 		 */
-		if (retval && old_type != PORT_UNKNOWN) {
+		if (retval) {
 			uport->iobase = old_iobase;
 			uport->type = old_type;
 			uport->hub6 = old_hub6;
 			uport->iotype = old_iotype;
 			uport->regshift = old_shift;
 			uport->mapbase = old_mapbase;
-			retval = uport->ops->request_port(uport);
-			/*
-			 * If we failed to restore the old settings,
-			 * we fail like this.
-			 */
-			if (retval)
-				uport->type = PORT_UNKNOWN;
 
-			/*
-			 * We failed anyway.
-			 */
-			retval = -EBUSY;
+			if (old_type != PORT_UNKNOWN) {
+				retval = uport->ops->request_port(uport);
+				/*
+				 * If we failed to restore the old settings,
+				 * we fail like this.
+				 */
+				if (retval)
+					uport->type = PORT_UNKNOWN;
+
+				/*
+				 * We failed anyway.
+				 */
+				retval = -EBUSY;
+			}
+
 			/* Added to return the correct error -Ram Gupta */
 			goto exit;
 		}
@@ -1376,7 +1385,6 @@ static void uart_close(struct tty_struct *tty, struct file *filp)
 	clear_bit(ASYNCB_CLOSING, &port->flags);
 	spin_unlock_irqrestore(&port->lock, flags);
 	wake_up_interruptible(&port->open_wait);
-	wake_up_interruptible(&port->close_wait);
 
 	mutex_unlock(&port->mutex);
 }
@@ -1566,20 +1574,6 @@ static int uart_open(struct tty_struct *tty, struct file *filp)
 	state->port.low_latency =
 		(state->uart_port->flags & UPF_LOW_LATENCY) ? 1 : 0;
 	tty_port_tty_set(port, tty);
-
-	/*
-	 * If the port is in the middle of closing, bail out now.
-	 */
-	if (tty_hung_up_p(filp)) {
-		retval = -EAGAIN;
-		goto err_dec_count;
-	}
-
-	/*
-	 * Make sure the device is in D0 state.
-	 */
-	if (port->count == 1)
-		uart_change_pm(state, UART_PM_STATE_ON);
 
 	/*
 	 * Start up the serial port.

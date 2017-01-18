@@ -1,7 +1,7 @@
 /*
  *	SGI UltraViolet TLB flush routines.
  *
- *	(c) 2008-2012 Cliff Wickman <cpw@sgi.com>, SGI.
+ *	(c) 2008-2014 Cliff Wickman <cpw@sgi.com>, SGI.
  *
  *	This code is released under the GNU General Public License version 2 or
  *	later.
@@ -37,7 +37,7 @@ static int timeout_base_ns[] = {
 };
 
 static int timeout_us;
-static int nobau;
+static bool nobau = true;
 static int nobau_perm;
 static cycles_t congested_cycles;
 
@@ -106,13 +106,28 @@ static char *stat_description[] = {
 	"enable:   number times use of the BAU was re-enabled"
 };
 
-static int __init
-setup_nobau(char *arg)
+static int __init setup_bau(char *arg)
 {
-	nobau = 1;
+	int result;
+
+	if (!arg)
+		return -EINVAL;
+
+	result = strtobool(arg, &nobau);
+	if (result)
+		return result;
+
+	/* we need to flip the logic here, so that bau=y sets nobau to false */
+	nobau = !nobau;
+
+	if (!nobau)
+		pr_info("UV BAU Enabled\n");
+	else
+		pr_info("UV BAU Disabled\n");
+
 	return 0;
 }
-early_param("nobau", setup_nobau);
+early_param("bau", setup_bau);
 
 /* base pnode in this partition */
 static int uv_base_pnode __read_mostly;
@@ -131,10 +146,10 @@ set_bau_on(void)
 		pr_info("BAU not initialized; cannot be turned on\n");
 		return;
 	}
-	nobau = 0;
+	nobau = false;
 	for_each_present_cpu(cpu) {
 		bcp = &per_cpu(bau_control, cpu);
-		bcp->nobau = 0;
+		bcp->nobau = false;
 	}
 	pr_info("BAU turned on\n");
 	return;
@@ -146,10 +161,10 @@ set_bau_off(void)
 	int cpu;
 	struct bau_control *bcp;
 
-	nobau = 1;
+	nobau = true;
 	for_each_present_cpu(cpu) {
 		bcp = &per_cpu(bau_control, cpu);
-		bcp->nobau = 1;
+		bcp->nobau = true;
 	}
 	pr_info("BAU turned off\n");
 	return;
@@ -433,15 +448,49 @@ static void reset_with_ipi(struct pnmask *distribution, struct bau_control *bcp)
 	return;
 }
 
+/*
+ * Not to be confused with cycles_2_ns() from tsc.c; this gives a relative
+ * number, not an absolute. It converts a duration in cycles to a duration in
+ * ns.
+ */
+static inline unsigned long long cycles_2_ns(unsigned long long cyc)
+{
+	struct cyc2ns_data *data = cyc2ns_read_begin();
+	unsigned long long ns;
+
+	ns = mul_u64_u32_shr(cyc, data->cyc2ns_mul, data->cyc2ns_shift);
+
+	cyc2ns_read_end(data);
+	return ns;
+}
+
+/*
+ * The reverse of the above; converts a duration in ns to a duration in cycles.
+ */ 
+static inline unsigned long long ns_2_cycles(unsigned long long ns)
+{
+	struct cyc2ns_data *data = cyc2ns_read_begin();
+	unsigned long long cyc;
+
+	cyc = (ns << data->cyc2ns_shift) / data->cyc2ns_mul;
+
+	cyc2ns_read_end(data);
+	return cyc;
+}
+
 static inline unsigned long cycles_2_us(unsigned long long cyc)
 {
-	unsigned long long ns;
-	unsigned long us;
-	int cpu = smp_processor_id();
+	return cycles_2_ns(cyc) / NSEC_PER_USEC;
+}
 
-	ns =  (cyc * per_cpu(cyc2ns, cpu)) >> CYC2NS_SCALE_FACTOR;
-	us = ns / 1000;
-	return us;
+static inline cycles_t sec_2_cycles(unsigned long sec)
+{
+	return ns_2_cycles(sec * NSEC_PER_SEC);
+}
+
+static inline unsigned long long usec_2_cycles(unsigned long usec)
+{
+	return ns_2_cycles(usec * NSEC_PER_USEC);
 }
 
 /*
@@ -529,7 +578,7 @@ static int uv1_wait_completion(struct bau_desc *bau_desc,
  * UV2 could have an extra bit of status in the ACTIVATION_STATUS_2 register.
  * But not currently used.
  */
-static unsigned long uv2_read_status(unsigned long offset, int rshft, int desc)
+static unsigned long uv2_3_read_status(unsigned long offset, int rshft, int desc)
 {
 	unsigned long descriptor_status;
 
@@ -572,7 +621,7 @@ int handle_uv2_busy(struct bau_control *bcp)
 	return FLUSH_GIVEUP;
 }
 
-static int uv2_wait_completion(struct bau_desc *bau_desc,
+static int uv2_3_wait_completion(struct bau_desc *bau_desc,
 				unsigned long mmr_offset, int right_shift,
 				struct bau_control *bcp, long try)
 {
@@ -582,7 +631,7 @@ static int uv2_wait_completion(struct bau_desc *bau_desc,
 	long busy_reps = 0;
 	struct ptc_stats *stat = bcp->statp;
 
-	descriptor_stat = uv2_read_status(mmr_offset, right_shift, desc);
+	descriptor_stat = uv2_3_read_status(mmr_offset, right_shift, desc);
 
 	/* spin on the status MMR, waiting for it to go idle */
 	while (descriptor_stat != UV2H_DESC_IDLE) {
@@ -624,8 +673,7 @@ static int uv2_wait_completion(struct bau_desc *bau_desc,
 				/* not to hammer on the clock */
 				busy_reps = 0;
 				ttm = get_cycles();
-				if ((ttm - bcp->send_message) >
-						bcp->timeout_interval)
+				if ((ttm - bcp->send_message) > bcp->timeout_interval)
 					return handle_uv2_busy(bcp);
 			}
 			/*
@@ -633,8 +681,7 @@ static int uv2_wait_completion(struct bau_desc *bau_desc,
 			 */
 			cpu_relax();
 		}
-		descriptor_stat = uv2_read_status(mmr_offset, right_shift,
-									desc);
+		descriptor_stat = uv2_3_read_status(mmr_offset, right_shift, desc);
 	}
 	bcp->conseccompletes++;
 	return FLUSH_COMPLETE;
@@ -645,8 +692,7 @@ static int uv2_wait_completion(struct bau_desc *bau_desc,
  * which register to read and position in that register based on cpu in
  * current hub.
  */
-static int wait_completion(struct bau_desc *bau_desc,
-				struct bau_control *bcp, long try)
+static int wait_completion(struct bau_desc *bau_desc, struct bau_control *bcp, long try)
 {
 	int right_shift;
 	unsigned long mmr_offset;
@@ -661,21 +707,9 @@ static int wait_completion(struct bau_desc *bau_desc,
 	}
 
 	if (bcp->uvhub_version == 1)
-		return uv1_wait_completion(bau_desc, mmr_offset, right_shift,
-								bcp, try);
+		return uv1_wait_completion(bau_desc, mmr_offset, right_shift, bcp, try);
 	else
-		return uv2_wait_completion(bau_desc, mmr_offset, right_shift,
-								bcp, try);
-}
-
-static inline cycles_t sec_2_cycles(unsigned long sec)
-{
-	unsigned long ns;
-	cycles_t cyc;
-
-	ns = sec * 1000000000;
-	cyc = (ns << CYC2NS_SCALE_FACTOR)/(per_cpu(cyc2ns, smp_processor_id()));
-	return cyc;
+		return uv2_3_wait_completion(bau_desc, mmr_offset, right_shift, bcp, try);
 }
 
 /*
@@ -864,7 +898,7 @@ int uv_flush_send_and_wait(struct cpumask *flush_mask, struct bau_control *bcp,
 	struct ptc_stats *stat = bcp->statp;
 	struct bau_control *hmaster = bcp->uvhub_master;
 	struct uv1_bau_msg_header *uv1_hdr = NULL;
-	struct uv2_bau_msg_header *uv2_hdr = NULL;
+	struct uv2_3_bau_msg_header *uv2_3_hdr = NULL;
 
 	if (bcp->uvhub_version == 1) {
 		uv1 = 1;
@@ -878,27 +912,28 @@ int uv_flush_send_and_wait(struct cpumask *flush_mask, struct bau_control *bcp,
 	if (uv1)
 		uv1_hdr = &bau_desc->header.uv1_hdr;
 	else
-		uv2_hdr = &bau_desc->header.uv2_hdr;
+		/* uv2 and uv3 */
+		uv2_3_hdr = &bau_desc->header.uv2_3_hdr;
 
 	do {
 		if (try == 0) {
 			if (uv1)
 				uv1_hdr->msg_type = MSG_REGULAR;
 			else
-				uv2_hdr->msg_type = MSG_REGULAR;
+				uv2_3_hdr->msg_type = MSG_REGULAR;
 			seq_number = bcp->message_number++;
 		} else {
 			if (uv1)
 				uv1_hdr->msg_type = MSG_RETRY;
 			else
-				uv2_hdr->msg_type = MSG_RETRY;
+				uv2_3_hdr->msg_type = MSG_RETRY;
 			stat->s_retry_messages++;
 		}
 
 		if (uv1)
 			uv1_hdr->sequence = seq_number;
 		else
-			uv2_hdr->sequence = seq_number;
+			uv2_3_hdr->sequence = seq_number;
 		index = (1UL << AS_PUSH_SHIFT) | bcp->uvhub_cpu;
 		bcp->send_message = get_cycles();
 
@@ -1056,8 +1091,10 @@ static int set_distrib_bits(struct cpumask *flush_mask, struct bau_control *bcp,
  * done.  The returned pointer is valid till preemption is re-enabled.
  */
 const struct cpumask *uv_flush_tlb_others(const struct cpumask *cpumask,
-				struct mm_struct *mm, unsigned long start,
-				unsigned long end, unsigned int cpu)
+						struct mm_struct *mm,
+						unsigned long start,
+						unsigned long end,
+						unsigned int cpu)
 {
 	int locals = 0;
 	int remotes = 0;
@@ -1070,11 +1107,12 @@ const struct cpumask *uv_flush_tlb_others(const struct cpumask *cpumask,
 	unsigned long status;
 
 	bcp = &per_cpu(bau_control, cpu);
-	stat = bcp->statp;
-	stat->s_enters++;
 
 	if (bcp->nobau)
 		return cpumask;
+
+	stat = bcp->statp;
+	stat->s_enters++;
 
 	if (bcp->busy) {
 		descriptor_status =
@@ -1243,6 +1281,7 @@ void uv_bau_message_interrupt(struct pt_regs *regs)
 		if (bcp->uvhub_version == 2)
 			process_uv2_message(&msgdesc, bcp);
 		else
+			/* no error workaround for uv1 or uv3 */
 			bau_process_message(&msgdesc, bcp, 1);
 
 		msg++;
@@ -1300,8 +1339,12 @@ static void __init enable_timeouts(void)
 		 */
 		mmr_image |= (1L << SOFTACK_MSHIFT);
 		if (is_uv2_hub()) {
+			/* do not touch the legacy mode bit */
 			/* hw bug workaround; do not use extended status */
 			mmr_image &= ~(1L << UV2_EXT_SHFT);
+		} else if (is_uv3_hub()) {
+			mmr_image &= ~(1L << PREFETCH_HINT_SHFT);
+			mmr_image |= (1L << SB_STATUS_SHFT);
 		}
 		write_mmr_misc_control(pnode, mmr_image);
 	}
@@ -1324,16 +1367,6 @@ static void *ptc_seq_next(struct seq_file *file, void *data, loff_t *offset)
 
 static void ptc_seq_stop(struct seq_file *file, void *data)
 {
-}
-
-static inline unsigned long long usec_2_cycles(unsigned long microsec)
-{
-	unsigned long ns;
-	unsigned long long cyc;
-
-	ns = microsec * 1000;
-	cyc = (ns << CYC2NS_SCALE_FACTOR)/(per_cpu(cyc2ns, smp_processor_id()));
-	return cyc;
 }
 
 /*
@@ -1366,6 +1399,10 @@ static int ptc_seq_show(struct seq_file *file, void *data)
 	}
 	if (cpu < num_possible_cpus() && cpu_online(cpu)) {
 		bcp = &per_cpu(bau_control, cpu);
+		if (bcp->nobau) {
+			seq_printf(file, "cpu %d bau disabled\n", cpu);
+			return 0;
+		}
 		stat = bcp->statp;
 		/* source side statistics */
 		seq_printf(file,
@@ -1461,7 +1498,7 @@ static ssize_t ptc_proc_write(struct file *file, const char __user *user,
 		return count;
 	}
 
-	if (strict_strtol(optstr, 10, &input_arg) < 0) {
+	if (kstrtol(optstr, 10, &input_arg) < 0) {
 		printk(KERN_DEBUG "%s is invalid\n", optstr);
 		return -EINVAL;
 	}
@@ -1677,7 +1714,7 @@ static void activation_descriptor_init(int node, int pnode, int base_pnode)
 	struct bau_desc *bau_desc;
 	struct bau_desc *bd2;
 	struct uv1_bau_msg_header *uv1_hdr;
-	struct uv2_bau_msg_header *uv2_hdr;
+	struct uv2_3_bau_msg_header *uv2_3_hdr;
 	struct bau_control *bcp;
 
 	/*
@@ -1724,15 +1761,15 @@ static void activation_descriptor_init(int node, int pnode, int base_pnode)
 			 */
 		} else {
 			/*
-			 * BIOS uses legacy mode, but UV2 hardware always
+			 * BIOS uses legacy mode, but uv2 and uv3 hardware always
 			 * uses native mode for selective broadcasts.
 			 */
-			uv2_hdr = &bd2->header.uv2_hdr;
-			uv2_hdr->swack_flag =	1;
-			uv2_hdr->base_dest_nasid =
+			uv2_3_hdr = &bd2->header.uv2_3_hdr;
+			uv2_3_hdr->swack_flag =	1;
+			uv2_3_hdr->base_dest_nasid =
 						UV_PNODE_TO_NASID(base_pnode);
-			uv2_hdr->dest_subnodeid =	UV_LB_SUBNODEID;
-			uv2_hdr->command =		UV_NET_ENDPOINT_INTD;
+			uv2_3_hdr->dest_subnodeid =	UV_LB_SUBNODEID;
+			uv2_3_hdr->command =		UV_NET_ENDPOINT_INTD;
 		}
 	}
 	for_each_present_cpu(cpu) {
@@ -1843,6 +1880,7 @@ static int calculate_destination_timeout(void)
 		ts_ns *= (mult1 * mult2);
 		ret = ts_ns / 1000;
 	} else {
+		/* same destination timeout for uv2 and uv3 */
 		/* 4 bits  0/1 for 10/80us base, 3 bits of multiplier */
 		mmr_image = uv_read_local_mmr(UVH_LB_BAU_MISC_CONTROL);
 		mmr_image = (mmr_image & UV_SA_MASK) >> UV_SA_SHFT;
@@ -1865,7 +1903,7 @@ static void __init init_per_cpu_tunables(void)
 		bcp = &per_cpu(bau_control, cpu);
 		bcp->baudisabled		= 0;
 		if (nobau)
-			bcp->nobau		= 1;
+			bcp->nobau		= true;
 		bcp->statp			= &per_cpu(ptcstats, cpu);
 		/* time interval to catch a hardware stay-busy bug */
 		bcp->timeout_interval		= usec_2_cycles(2*timeout_us);
@@ -1997,12 +2035,15 @@ static int scan_sock(struct socket_desc *sdp, struct uvhub_desc *bdp,
 			bcp->uvhub_version = 1;
 		else if (is_uv2_hub())
 			bcp->uvhub_version = 2;
+		else if (is_uv3_hub())
+			bcp->uvhub_version = 3;
 		else {
-			printk(KERN_EMERG "uvhub version not 1 or 2\n");
+			printk(KERN_EMERG "uvhub version not 1, 2 or 3\n");
 			return 1;
 		}
 		bcp->uvhub_master = *hmasterp;
-		bcp->uvhub_cpu = uv_cpu_hub_info(cpu)->blade_processor_id;
+		bcp->uvhub_cpu = uv_cpu_blade_processor_id(cpu);
+
 		if (bcp->uvhub_cpu >= MAX_CPUS_PER_UVHUB) {
 			printk(KERN_EMERG "%d cpus per uvhub invalid\n",
 				bcp->uvhub_cpu);
@@ -2123,9 +2164,10 @@ static int __init uv_bau_init(void)
 	}
 
 	vector = UV_BAU_MESSAGE;
-	for_each_possible_blade(uvhub)
+	for_each_possible_blade(uvhub) {
 		if (uv_blade_nr_possible_cpus(uvhub))
 			init_uvhub(uvhub, vector, uv_base_pnode);
+	}
 
 	alloc_intr_gate(vector, uv_bau_message_intr1);
 
