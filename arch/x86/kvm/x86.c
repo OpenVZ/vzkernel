@@ -8367,6 +8367,9 @@ static inline bool kvm_vcpu_has_events(struct kvm_vcpu *vcpu)
 	    kvm_cpu_has_interrupt(vcpu))
 		return true;
 
+	if (kvm_hv_has_stimer_pending(vcpu))
+		return true;
+
 	return false;
 }
 
