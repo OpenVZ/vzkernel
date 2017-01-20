@@ -286,6 +286,7 @@ struct cgroup {
 
 	/* directory xattrs */
 	struct simple_xattrs xattrs;
+	u64 subgroups_limit;
 };
 
 #define MAX_CGROUP_ROOT_NAMELEN 64
