@@ -139,6 +139,8 @@ void ve_exit_ns(struct pid_namespace *ns);
 extern bool current_user_ns_initial(void);
 struct user_namespace *ve_init_user_ns(void);
 
+extern struct cgroup *cgroup_get_ve_root(struct cgroup *cgrp);
+
 #else	/* CONFIG_VE */
 #define ve_utsname	system_utsname
 #define get_ve(ve)	(NULL)
@@ -157,6 +159,10 @@ static inline struct user_namespace *ve_init_user_ns(void)
 	return &init_user_ns;
 }
 
+static inline struct cgroup *cgroup_get_ve_root(struct cgroup *cgrp)
+{
+	return NULL;
+}
 #endif	/* CONFIG_VE */
 
 #endif /* _LINUX_VE_H */
