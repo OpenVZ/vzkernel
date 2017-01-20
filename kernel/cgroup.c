@@ -4034,6 +4034,22 @@ static int cgroup_clone_children_write(struct cgroup *cgrp,
 	return 0;
 }
 
+static u64 cgroup_read_subgroups_limit(struct cgroup *cgrp,
+				struct cftype *cft)
+{
+	return cgrp->subgroups_limit;
+}
+static int cgroup_write_subgroups_limit(struct cgroup *cgrp,
+					struct cftype *cft,
+					u64 val)
+{
+	if (!test_bit(CGRP_VE_ROOT, &cgrp->flags))
+		return -EACCES;
+
+	cgrp->subgroups_limit = val;
+	return 0;
+}
+
 /*
  * for the common functions, 'private' gives the type of file
  */
@@ -4083,6 +4099,12 @@ static struct cftype files[] = {
 		.read_seq_string = cgroup_release_agent_show,
 		.write_string = cgroup_release_agent_write,
 		.max_write_len = PATH_MAX,
+	},
+	{
+		.name = "cgroup.subgroups_limit",
+		.read_u64 = cgroup_read_subgroups_limit,
+		.write_u64 = cgroup_write_subgroups_limit,
+		.mode = S_IRUGO | S_IWUSR,
 	},
 	{ }	/* terminate */
 };
@@ -4186,6 +4208,19 @@ static void offline_css(struct cgroup_subsys *ss, struct cgroup *cgrp)
 	cgrp->subsys[ss->subsys_id]->flags &= ~CSS_ONLINE;
 }
 
+static int subgroups_count(struct cgroup *cgroup)
+{
+	struct cgroup *pos;
+	int cgrps_count = 0;
+
+	rcu_read_lock();
+	cgroup_for_each_descendant_post(pos, cgroup)
+		cgrps_count++;
+	rcu_read_unlock();
+
+	return cgrps_count;
+}
+
 #ifdef CONFIG_VE
 void cgroup_mark_ve_roots(struct ve_struct *ve)
 {
@@ -4213,6 +4248,20 @@ void cgroup_unmark_ve_roots(struct ve_struct *ve)
 	mutex_unlock(&cgroup_mutex);
 }
 
+struct cgroup *cgroup_get_ve_root(struct cgroup *cgrp)
+{
+	struct cgroup *ve_root = NULL;
+
+	do {
+		if (test_bit(CGRP_VE_ROOT, &cgrp->flags)) {
+			ve_root = cgrp;
+			break;
+		}
+		cgrp = cgrp->parent;
+	} while (cgrp);
+
+	return ve_root;
+}
 #endif
 
 /*
@@ -4232,6 +4281,7 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 	int err = 0;
 	struct cgroup_subsys *ss;
 	struct super_block *sb = root->sb;
+	struct cgroup *ve_root = parent;
 
 	/* allocate the cgroup and its ID, 0 is reserved for the root */
 	cgrp = kzalloc(sizeof(*cgrp), GFP_KERNEL);
@@ -4246,6 +4296,13 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 	cgrp->id = ida_simple_get(&root->cgroup_ida, 1, 0, GFP_KERNEL);
 	if (cgrp->id < 0)
 		goto err_free_name;
+
+	ve_root = cgroup_get_ve_root(parent);
+	if (ve_root && ve_root->subgroups_limit > 0 &&
+			subgroups_count(ve_root) >= ve_root->subgroups_limit) {
+		err = -EACCES;
+		goto err_free_name;
+	}
 
 	/*
 	 * Only live parents can have children.  Note that the liveliness
