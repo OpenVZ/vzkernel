@@ -295,10 +295,10 @@ struct nf_log_buf *nf_log_buf_open(void)
 }
 EXPORT_SYMBOL_GPL(nf_log_buf_open);
 
-void nf_log_buf_close(struct nf_log_buf *m)
+void nf_log_buf_close(struct nf_log_buf *m, struct ve_struct *ve)
 {
 	m->buf[m->count] = 0;
-	printk("%s\n", m->buf);
+	ve_log_printk(ve, "%s\n", m->buf);
 
 	if (likely(m != &emergency))
 		kfree(m);
