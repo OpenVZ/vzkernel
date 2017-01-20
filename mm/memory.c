@@ -4065,10 +4065,13 @@ int open_mapping_peer(struct address_space *mapping,
 	struct inode *inode = path->dentry->d_inode;
 	struct address_space *peer = inode->i_mapping;
 	struct file *file = NULL;
+	struct user_beancounter *ub;
 
 restart:
 	if (!peer->i_peer_file) {
+		ub = set_exec_ub(&ub0);
 		file = dentry_open(path, O_RDONLY | O_LARGEFILE, cred);
+		set_exec_ub(ub);
 		if (IS_ERR(file)) {
 			return PTR_ERR(file);
 		}
