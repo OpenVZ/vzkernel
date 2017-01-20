@@ -316,10 +316,6 @@ static void nf_log_ip_packet(struct net *net, u_int8_t pf,
 {
 	struct nf_log_buf *m;
 
-	/* FIXME: Disabled from containers until syslog ns is supported */
-	if (!net_eq(net, &init_net) && !sysctl_nf_log_all_netns)
-		return;
-
 	m = nf_log_buf_open();
 
 	if (!loginfo)
@@ -333,7 +329,7 @@ static void nf_log_ip_packet(struct net *net, u_int8_t pf,
 
 	dump_ipv4_packet(net, m, loginfo, skb, 0);
 
-	nf_log_buf_close(m);
+	nf_log_buf_close(m, net->owner_ve);
 }
 
 static struct nf_logger nf_ip_logger __read_mostly = {
