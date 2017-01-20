@@ -6350,7 +6350,7 @@ static int inject_pending_event(struct kvm_vcpu *vcpu, bool req_int_win)
 				return r;
 		}
 		if (kvm_x86_ops->interrupt_allowed(vcpu)) {
-			kvm_queue_interrupt(vcpu, kvm_cpu_get_interrupt(vcpu),
+			kvm_queue_interrupt(vcpu, kvm_cpu_get_interrupt(vcpu, false),
 					    false);
 			kvm_x86_ops->set_irq(vcpu);
 		}

@@ -82,7 +82,7 @@ int kvm_cpu_has_injectable_intr(struct kvm_vcpu *v)
 	if (kvm_vcpu_apicv_active(v))
 		return 0;
 
-	return kvm_apic_has_interrupt(v) != -1; /* LAPIC */
+	return kvm_apic_has_interrupt(v, false) != -1; /* LAPIC */
 }
 
 /*
@@ -97,7 +97,7 @@ int kvm_cpu_has_interrupt(struct kvm_vcpu *v)
 	if (kvm_cpu_has_extint(v))
 		return 1;
 
-	return kvm_apic_has_interrupt(v) != -1;	/* LAPIC */
+	return kvm_apic_has_interrupt(v, true) != -1;	/* LAPIC */
 }
 EXPORT_SYMBOL_GPL(kvm_cpu_has_interrupt);
 
@@ -122,7 +122,7 @@ static int kvm_cpu_get_extint(struct kvm_vcpu *v)
 /*
  * Read pending interrupt vector and intack.
  */
-int kvm_cpu_get_interrupt(struct kvm_vcpu *v)
+int kvm_cpu_get_interrupt(struct kvm_vcpu *v, bool make_req)
 {
 	int vector;
 
@@ -134,7 +134,7 @@ int kvm_cpu_get_interrupt(struct kvm_vcpu *v)
 	if (vector != -1)
 		return vector;			/* PIC */
 
-	return kvm_get_apic_interrupt(v);	/* APIC */
+	return kvm_get_apic_interrupt(v, make_req);	/* APIC */
 }
 EXPORT_SYMBOL_GPL(kvm_cpu_get_interrupt);
 
