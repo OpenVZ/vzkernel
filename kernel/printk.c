@@ -1900,6 +1900,22 @@ asmlinkage int ve_printk(int dst, const char *fmt, ...)
 }
 EXPORT_SYMBOL(ve_printk);
 
+asmlinkage int ve_log_printk(struct ve_struct *ve, const char *fmt, ...)
+{
+	struct log_state *log = &init_log_state;
+	va_list args;
+	int r;
+
+	if (likely(ve && ve->log_state))
+		log = ve->log_state;
+
+	va_start(args, fmt);
+	r = __vprintk_emit(log, 0, -1, NULL, 0, fmt, args);
+	va_end(args);
+
+	return r;
+}
+EXPORT_SYMBOL(ve_log_printk);
 /**
  * printk - print a kernel message
  * @fmt: format string
