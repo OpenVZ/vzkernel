@@ -1793,21 +1793,6 @@ static struct file_system_type cgroup_fs_type = {
 
 static struct kobject *cgroup_kobj;
 
-#ifdef CONFIG_VE
-void cgroup_mark_ve_root(struct ve_struct *ve)
-{
-	struct cgroup *cgrp;
-	struct cgroupfs_root *root;
-
-	mutex_lock(&cgroup_mutex);
-	for_each_active_root(root) {
-		cgrp = task_cgroup_from_root(ve->init_task, root);
-		set_bit(CGRP_VE_ROOT, &cgrp->flags);
-	}
-	mutex_unlock(&cgroup_mutex);
-}
-#endif
-
 /**
  * cgroup_path - generate the path of a cgroup
  * @cgrp: the cgroup in question
@@ -2821,6 +2806,9 @@ static int cgroup_addrm_files(struct cgroup *cgrp, struct cgroup_subsys *subsys,
 		if ((cft->flags & CFTYPE_NOT_ON_ROOT) && !cgrp->parent)
 			continue;
 		if ((cft->flags & CFTYPE_ONLY_ON_ROOT) && cgrp->parent)
+			continue;
+		if ((cft->flags & CFTYPE_ONLY_ON_VE_ROOT) &&
+				!test_bit(CGRP_VE_ROOT, &cgrp->flags))
 			continue;
 
 		if (is_add) {
@@ -4216,6 +4204,47 @@ static void offline_css(struct cgroup_subsys *ss, struct cgroup *cgrp)
 
 	cgrp->subsys[ss->subsys_id]->flags &= ~CSS_ONLINE;
 }
+
+#ifdef CONFIG_VE
+static void cgroup_add_ve_root_files(struct cgroup *cgrp,
+				struct cgroup_subsys *subsys,
+				struct cftype cfts[])
+{
+	struct cftype *cft;
+
+	if (!test_bit(CGRP_VE_ROOT, &cgrp->flags))
+		return;
+
+	mutex_lock(&cgrp->dentry->d_inode->i_mutex);
+	for (cft = cfts; cft->name[0] != '\0'; cft++) {
+		int err;
+
+		if (!(cft->flags & CFTYPE_ONLY_ON_VE_ROOT))
+			continue;
+
+		err = cgroup_add_file(cgrp, subsys, cft);
+		if (err)
+			pr_warn("cgroup_add_ve_root_files: failed to add %s, err=%d\n",
+				cft->name, err);
+	}
+	mutex_unlock(&cgrp->dentry->d_inode->i_mutex);
+}
+
+void cgroup_mark_ve_root(struct ve_struct *ve)
+{
+	struct cgroup *cgrp;
+	struct cgroupfs_root *root;
+
+	mutex_lock(&cgroup_mutex);
+	for_each_active_root(root) {
+		cgrp = task_cgroup_from_root(ve->init_task, root);
+		set_bit(CGRP_VE_ROOT, &cgrp->flags);
+		cgroup_add_ve_root_files(cgrp, NULL, files);
+	}
+	mutex_unlock(&cgroup_mutex);
+}
+
+#endif
 
 /*
  * cgroup_create - create a cgroup
