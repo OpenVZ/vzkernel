@@ -4203,7 +4203,7 @@ static inline u64 mem_cgroup_usage(struct mem_cgroup *memcg, bool swap)
 	if (swap)
 		val += mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_SWAP);
 
-	return val << PAGE_SHIFT;
+	return val;
 }
 
 void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
@@ -4277,9 +4277,9 @@ static ssize_t mem_cgroup_read(struct cgroup *cont, struct cftype *cft,
 	switch (MEMFILE_ATTR(cft->private)) {
 	case RES_USAGE:
 		if (counter == &memcg->memory)
-			val = mem_cgroup_usage(memcg, false);
+			val = mem_cgroup_usage(memcg, false) * PAGE_SIZE;
 		else if (counter == &memcg->memsw)
-			val = mem_cgroup_usage(memcg, true);
+			val = mem_cgroup_usage(memcg, true) * PAGE_SIZE;
 		else
 			val = (u64)page_counter_read(counter) * PAGE_SIZE;
 		break;
