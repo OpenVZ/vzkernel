@@ -1252,10 +1252,10 @@ EXPORT_SYMBOL(__pskb_copy);
 int pskb_expand_head(struct sk_buff *skb, int nhead, int ntail,
 		     gfp_t gfp_mask)
 {
-	int i;
-	u8 *data;
-	int size = nhead + skb_end_offset(skb) + ntail;
+	int i, osize = skb_end_offset(skb);
+	int size = osize + nhead + ntail;
 	long off;
+	u8 *data;
 
 	BUG_ON(nhead < 0);
 
@@ -1317,6 +1317,14 @@ int pskb_expand_head(struct sk_buff *skb, int nhead, int ntail,
 	skb->hdr_len  = 0;
 	skb->nohdr    = 0;
 	atomic_set(&skb_shinfo(skb)->dataref, 1);
+
+	/* It is not generally safe to change skb->truesize.
+	 * For the moment, we really care of rx path, or
+	 * when skb is orphaned (not attached to a socket).
+	 */
+	if (!skb->sk || skb->destructor == sock_edemux)
+		skb->truesize += size - osize;
+
 	return 0;
 
 nofrags:
