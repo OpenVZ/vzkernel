@@ -1169,9 +1169,7 @@ static struct sk_buff *netlink_trim(struct sk_buff *skb, gfp_t allocation)
 		skb = nskb;
 	}
 
-	if (!pskb_expand_head(skb, 0, -delta, allocation))
-		skb->truesize -= delta;
-
+	pskb_expand_head(skb, 0, -delta, allocation);
 	return skb;
 }
 
