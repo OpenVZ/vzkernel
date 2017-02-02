@@ -4271,8 +4271,8 @@ void cgroup_mark_ve_root(struct ve_struct *ve)
 	mutex_lock(&cgroup_mutex);
 	for_each_active_root(root) {
 		cgrp = task_cgroup_from_root(ve->init_task, root);
-		set_bit(CGRP_VE_ROOT, &cgrp->flags);
-		cgroup_add_ve_root_files(cgrp, NULL, files);
+		if (!test_and_set_bit(CGRP_VE_ROOT, &cgrp->flags))
+			cgroup_add_ve_root_files(cgrp, NULL, files);
 	}
 	mutex_unlock(&cgroup_mutex);
 }
