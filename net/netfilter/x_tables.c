@@ -760,8 +760,8 @@ EXPORT_SYMBOL(xt_check_entry_offsets);
  */
 unsigned int *xt_alloc_entry_offsets(unsigned int size)
 {
-	return kvmalloc_array(size, sizeof(unsigned int), GFP_KERNEL | __GFP_ZERO);
-
+	return kvmalloc_array(size, sizeof(unsigned int),
+			      GFP_KERNEL_ACCOUNT | __GFP_ZERO);
 }
 EXPORT_SYMBOL(xt_alloc_entry_offsets);
 
