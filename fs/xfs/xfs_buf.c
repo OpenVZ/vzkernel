@@ -1596,7 +1596,7 @@ xfs_buftarg_wait_rele(
 	 */
 	atomic_set(&bp->b_lru_ref, 0);
 	bp->b_state |= XFS_BSTATE_DISPOSE;
-	list_move(item, dispose);
+	list_lru_isolate_move(lru, item, dispose);
 	spin_unlock(&bp->b_lock);
 	return LRU_REMOVED;
 }
@@ -1657,7 +1657,7 @@ xfs_buftarg_isolate(
 	}
 
 	bp->b_state |= XFS_BSTATE_DISPOSE;
-	list_move(item, dispose);
+	list_lru_isolate_move(lru, item, dispose);
 	spin_unlock(&bp->b_lock);
 	return LRU_REMOVED;
 }
