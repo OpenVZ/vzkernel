@@ -799,13 +799,14 @@ unsigned int *xt_alloc_entry_offsets(unsigned int size)
 {
 	unsigned int *off;
 
-	off = kcalloc(size, sizeof(unsigned int), GFP_KERNEL | __GFP_NOWARN);
+	off = kcalloc(size, sizeof(unsigned int),
+		GFP_KERNEL_ACCOUNT | __GFP_NOWARN);
 
 	if (off)
 		return off;
 
 	if (size < (SIZE_MAX / sizeof(unsigned int)))
-		off = vmalloc(size * sizeof(unsigned int));
+		off = vmalloc_account(size * sizeof(unsigned int));
 
 	return off;
 }
