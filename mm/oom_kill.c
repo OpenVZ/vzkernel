@@ -570,10 +570,8 @@ bool oom_trylock(struct mem_cgroup *memcg)
 			struct task_struct *p = ctx->victim;
 
 			if (p && ctx->marked) {
-				task_lock(p);
 				pr_err("OOM kill timeout: %d (%s)\n",
 				       task_pid_nr(p), p->comm);
-				task_unlock(p);
 				show_stack(p, NULL);
 			}
 
@@ -766,12 +764,9 @@ static void oom_berserker(unsigned long points, unsigned long overdraft,
 		    points * 100 / totalpages)
 			continue;
 
-		if (__ratelimit(&berserker_rs)) {
-			task_lock(p);
+		if (__ratelimit(&berserker_rs))
 			pr_err("Rage kill process %d (%s)\n",
 			       task_pid_nr(p), p->comm);
-			task_unlock(p);
-		}
 
 		do_send_sig_info(SIGKILL, SEND_SIG_FORCED, p, true);
 		mem_cgroup_note_oom_kill(memcg, p);
@@ -818,10 +813,8 @@ void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 	if (__ratelimit(&oom_rs))
 		dump_header(p, gfp_mask, order, memcg, nodemask);
 
-	task_lock(p);
 	pr_err("%s: Kill process %d (%s) score %lu or sacrifice child\n",
 		message, task_pid_nr(p), p->comm, points * 1000 / totalpages);
-	task_unlock(p);
 
 	/*
 	 * If any of p's children has a different mm and is eligible for kill,
@@ -892,10 +885,8 @@ void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 			if (p->signal->oom_score_adj == OOM_SCORE_ADJ_MIN)
 				continue;
 
-			task_lock(p);	/* Protect ->comm from prctl() */
 			pr_err("Kill process %d (%s) in VE \"%s\" sharing same memory\n",
 				task_pid_nr(p), p->comm, task_ve_name(p));
-			task_unlock(p);
 			do_send_sig_info(SIGKILL, SEND_SIG_FORCED, p, true);
 			mem_cgroup_note_oom_kill(memcg, p);
 		}
