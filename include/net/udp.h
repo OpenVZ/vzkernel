@@ -259,6 +259,7 @@ extern void udp4_hwcsum(struct sk_buff *skb, __be32 src, __be32 dst);
 extern int udp_rcv(struct sk_buff *skb);
 extern int udp_ioctl(struct sock *sk, int cmd, unsigned long arg);
 int udp_init_sock(struct sock *sk);
+extern int __udp_disconnect(struct sock *sk, int flags);
 extern int udp_disconnect(struct sock *sk, int flags);
 extern unsigned int udp_poll(struct file *file, struct socket *sock,
 			     poll_table *wait);
