@@ -328,7 +328,9 @@ replay:
 		nlh = nlmsg_hdr(skb);
 		err = 0;
 
-		if (nlh->nlmsg_len < NLMSG_HDRLEN) {
+		if (nlh->nlmsg_len < NLMSG_HDRLEN ||
+		    skb->len < nlh->nlmsg_len ||
+		    nlmsg_len(nlh) < sizeof(struct nfgenmsg)) {
 			err = -EINVAL;
 			goto ack;
 		}
