@@ -57,8 +57,21 @@ nf_nat_redirect_ipv4(struct sk_buff *skb,
 			const struct in_ifaddr *ifa;
 
 			ifa = rcu_dereference(indev->ifa_list);
-			if (ifa)
+			if (ifa) {
+#ifdef CONFIG_VE
+				/*
+				 * Because of venet device specific, we
+				 * should use first nonloopback ifa in
+				 * the list.
+				 */
+				if (skb->dev->features & NETIF_F_VENET) {
+					while (IN_LOOPBACK(ntohl(ifa->ifa_local)) &&
+					       ifa->ifa_next)
+						ifa = ifa->ifa_next;
+				}
+#endif
 				newdst = ifa->ifa_local;
+			}
 		}
 		rcu_read_unlock();
 
