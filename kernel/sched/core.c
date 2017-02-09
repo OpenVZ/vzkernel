@@ -5945,11 +5945,10 @@ void sched_show_task(struct task_struct *p)
 #endif
 	rcu_read_lock();
 	ppid = task_pid_nr(rcu_dereference(p->real_parent));
-	rcu_read_unlock();
 	printk(KERN_CONT "%5lu %5d %6d %4s 0x%08lx\n", free,
 		task_pid_nr(p), ppid,
 		task_ve_name(p), (unsigned long)task_thread_info(p)->flags);
-
+	rcu_read_unlock();
 	print_worker_info(KERN_INFO, p);
 	show_stack(p, NULL);
 }
