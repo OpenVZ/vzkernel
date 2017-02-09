@@ -1985,7 +1985,7 @@ again:
 			if (ve->is_pseudosuper) {
 				err = 0;
 			} else {
-				ve_printk(VE_LOG_BOTH, KERN_WARNING "VE%s: no allowed "
+				ve_pr_warn_ratelimited(VE_LOG_BOTH, "VE%s: no allowed "
 					  "mount options found for device %u:%u\n",
 					  ve->ve_name, MAJOR(dev), MINOR(dev));
 				err = -EPERM;
