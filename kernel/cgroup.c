@@ -2807,9 +2807,6 @@ static int cgroup_addrm_files(struct cgroup *cgrp, struct cgroup_subsys *subsys,
 			continue;
 		if ((cft->flags & CFTYPE_ONLY_ON_ROOT) && cgrp->parent)
 			continue;
-		if ((cft->flags & CFTYPE_ONLY_ON_VE_ROOT) &&
-				!test_bit(CGRP_VE_ROOT, &cgrp->flags))
-			continue;
 
 		if (is_add) {
 			err = cgroup_add_file(cgrp, subsys, cft);
@@ -4049,6 +4046,9 @@ static int cgroup_write_subgroups_limit(struct cgroup *cgrp,
 					struct cftype *cft,
 					u64 val)
 {
+	if (!test_bit(CGRP_VE_ROOT, &cgrp->flags))
+		return -EACCES;
+
 	cgrp->subgroups_limit = val;
 	return 0;
 }
@@ -4105,7 +4105,6 @@ static struct cftype files[] = {
 	},
 	{
 		.name = "cgroup.subgroups_limit",
-		.flags = CFTYPE_ONLY_ON_VE_ROOT,
 		.read_u64 = cgroup_read_subgroups_limit,
 		.write_u64 = cgroup_write_subgroups_limit,
 		.mode = S_IRUGO | S_IWUSR,
@@ -4239,30 +4238,6 @@ static int subgroups_count(struct cgroup *cgroup)
 }
 
 #ifdef CONFIG_VE
-static void cgroup_add_ve_root_files(struct cgroup *cgrp,
-				struct cgroup_subsys *subsys,
-				struct cftype cfts[])
-{
-	struct cftype *cft;
-
-	if (!test_bit(CGRP_VE_ROOT, &cgrp->flags))
-		return;
-
-	mutex_lock(&cgrp->dentry->d_inode->i_mutex);
-	for (cft = cfts; cft->name[0] != '\0'; cft++) {
-		int err;
-
-		if (!(cft->flags & CFTYPE_ONLY_ON_VE_ROOT))
-			continue;
-
-		err = cgroup_add_file(cgrp, subsys, cft);
-		if (err)
-			pr_warn("cgroup_add_ve_root_files: failed to add %s, err=%d\n",
-				cft->name, err);
-	}
-	mutex_unlock(&cgrp->dentry->d_inode->i_mutex);
-}
-
 void cgroup_mark_ve_root(struct ve_struct *ve)
 {
 	struct cgroup *cgrp;
@@ -4271,8 +4246,7 @@ void cgroup_mark_ve_root(struct ve_struct *ve)
 	mutex_lock(&cgroup_mutex);
 	for_each_active_root(root) {
 		cgrp = task_cgroup_from_root(ve->init_task, root);
-		if (!test_and_set_bit(CGRP_VE_ROOT, &cgrp->flags))
-			cgroup_add_ve_root_files(cgrp, NULL, files);
+		set_bit(CGRP_VE_ROOT, &cgrp->flags);
 	}
 	mutex_unlock(&cgroup_mutex);
 }
