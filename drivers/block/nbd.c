@@ -1116,8 +1116,10 @@ static int __init nbd_init(void)
 	if (!recv_workqueue)
 		return -ENOMEM;
 
-	if (register_blkdev(NBD_MAJOR, "nbd"))
+	if (register_blkdev(NBD_MAJOR, "nbd")) {
+		destroy_workqueue(recv_workqueue);
 		return -EIO;
+	}
 
 	nbd_dbg_init();
 
