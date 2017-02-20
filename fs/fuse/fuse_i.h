@@ -302,6 +302,9 @@ struct fuse_args {
 	/** Request contains pages from page-cache */
 	unsigned page_cache:1;
 
+	/** Request pages need page_cache_release() */
+	unsigned page_needs_release:1;
+
 	/** Request was killed -- pages were released */
 	unsigned killed:1;
 
