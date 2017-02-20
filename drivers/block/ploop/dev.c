@@ -199,23 +199,11 @@ ploop_alloc_request(struct ploop_device * plo)
 static void ploop_grab_iocontext(struct bio *bio)
 {
 	struct io_context **ioc_pp = (struct io_context **)(&bio->bi_bdev);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
-	/* This is WRONG. Seems, in 2.6.18 we can do nothing.
-	 * But leave this piece of art for now.
-	 */
-	if (current->io_context) {
-		*ioc_pp = current->io_context;
-		if (!atomic_inc_not_zero((*ioc_pp)->refcount))
-			*ioc_pp = NULL;
-		set_bit(BIO_BDEV_REUSED, &bio->bi_flags);
-	}
-#else
 	if (current->io_context) {
 		ioc_task_link(current->io_context);
 		*ioc_pp = current->io_context;
 		set_bit(BIO_BDEV_REUSED, &bio->bi_flags);
 	}
-#endif
 }
 
 /* always called with plo->lock held */
@@ -1158,21 +1146,6 @@ static int ploop_congested(void *data, int bits)
 	if (top_delta->io.ops->congested)
 		ret |= top_delta->io.ops->congested(&top_delta->io, bits);
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,24) && LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
-	if (plo->tune.congestion_detection &&
-	    plo->entry_qlen + plo->active_reqs - plo->fastpath_reqs
-	    > (3*plo->tune.max_requests)/4) {
-		if ((bits & (1<<BDI_write_congested)) && !(ret & (1<<BDI_write_congested))) {
-			ret |= (1<<BDI_write_congested);
-			set_bit(PLOOP_S_WRITE_CONG, &plo->state);
-		}
-		if ((bits & (1<<BDI_read_congested)) && !(ret & (1<<BDI_read_congested))) {
-			ret |= (1<<BDI_read_congested);
-			set_bit(PLOOP_S_READ_CONG, &plo->state);
-		}
-	}
-#endif
-
 	return ret;
 }
 
@@ -1455,7 +1428,6 @@ static void ploop_complete_request(struct ploop_request * preq)
 	}
 	plo->bio_total -= nr_completed;
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,24)
 	if (plo->tune.congestion_detection &&
 	    plo->entry_qlen + plo->active_reqs - plo->fastpath_reqs
 	    <= plo->tune.max_requests/2) {
@@ -1464,7 +1436,6 @@ static void ploop_complete_request(struct ploop_request * preq)
 		if (test_and_clear_bit(PLOOP_S_READ_CONG, &plo->state))
 			clear_bdi_congested(&plo->queue->backing_dev_info, READ);
 	}
-#endif
 
 	spin_unlock_irq(&plo->lock);
 
@@ -3870,17 +3841,6 @@ static int ploop_truncate(struct ploop_device * plo, unsigned long arg)
 	return err;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
-static int ploop_issue_flush_fn(request_queue_t *q, struct gendisk *disk,
-				sector_t *error_sector)
-{
-	/* Should queue barrier request on ploop and wait for completion.
-	 * The interface is broken and obsolete.
-	 */
-	return -EOPNOTSUPP;
-}
-#endif
-
 #define FUSE_SUPER_MAGIC 0x65735546
 #define IS_PSTORAGE(sb) (sb->s_magic == FUSE_SUPER_MAGIC && \
 			 !strcmp(sb->s_subtype, "pstorage"))
@@ -3996,9 +3956,6 @@ static int ploop_start(struct ploop_device * plo, struct block_device *bdev)
 
 	blk_queue_merge_bvec(plo->queue, ploop_merge_bvec);
 	blk_queue_flush(plo->queue, REQ_FLUSH);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
-	blk_queue_issue_flush_fn(plo->queue, ploop_issue_flush_fn);
-#endif
 
 	if (top_delta->io.ops->queue_settings)
 		top_delta->io.ops->queue_settings(&top_delta->io, plo->queue);
