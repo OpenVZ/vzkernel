@@ -1003,7 +1003,7 @@ static void fuse_short_read(struct fuse_req *req, struct inode *inode,
 
 static int __fuse_readpage(struct file *file, struct page *page, size_t count,
 			   int *err, struct fuse_req **req_pp, u64 *attr_ver_p,
-			   bool *killed_p)
+			   bool page_needs_release, bool *killed_p)
 {
 	struct fuse_io_priv io = { .async = 0, .file = file };
 	struct inode *inode = page->mapping->host;
@@ -1035,6 +1035,7 @@ static int __fuse_readpage(struct file *file, struct page *page, size_t count,
 	req->pages[0] = page;
 	req->page_descs[0].length = count;
 	req->page_cache = 1;
+	req->page_needs_release = page_needs_release;
 
 	num_read = fuse_send_read(req, &io, page_offset(page), count, NULL);
 	killed = req->killed;
@@ -1066,7 +1067,7 @@ static int fuse_readpage(struct file *file, struct page *page)
 		goto out;
 
 	num_read = __fuse_readpage(file, page, count, &err, &req, &attr_ver,
-				   &killed);
+				   false, &killed);
 	if (!err) {
 		/*
 		 * Short read means EOF.  If file size is larger, truncate it
@@ -1148,6 +1149,7 @@ static void fuse_send_readpages(struct fuse_req *req, struct file *file)
 	req->out.page_zeroing = 1;
 	req->out.page_replace = 1;
 	req->page_cache = 1;
+	req->page_needs_release = false;
 	fuse_read_fill(req, file, pos, count, FUSE_READ);
 	fuse_account_request(fc, count);
 	req->misc.read.attr_ver = fuse_get_attr_version(fc);
@@ -2363,6 +2365,7 @@ static int fuse_prepare_write(struct fuse_conn *fc, struct file *file,
 	unsigned num_read;
 	unsigned page_len;
 	int err;
+	bool killed = false;
 
 	if (fuse_file_fail_immediately(file)) {
 		unlock_page(page);
@@ -2380,12 +2383,14 @@ static int fuse_prepare_write(struct fuse_conn *fc, struct file *file,
 	}
 
 	num_read = __fuse_readpage(file, page, page_len, &err, &req, NULL,
-				   NULL);
+				   true, &killed);
 	if (req)
 		fuse_put_request(fc, req);
 	if (err) {
-		unlock_page(page);
-		page_cache_release(page);
+		if (!killed) {
+			unlock_page(page);
+			page_cache_release(page);
+		}
 	} else if (num_read != PAGE_CACHE_SIZE) {
 		zero_user_segment(page, num_read, PAGE_CACHE_SIZE);
 	}
