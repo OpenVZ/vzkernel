@@ -88,13 +88,7 @@ static ssize_t delta_image_show(struct ploop_delta *delta, char *page)
 
 	mutex_lock(&delta->plo->sysfs_mutex);
 	if (delta->io.files.file) {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
-		res = d_path(delta->io.files.file->f_dentry,
-			     delta->io.files.file->f_vfsmnt,
-			     page, PAGE_SIZE-1);
-#else
 		res = d_path(&delta->io.files.file->f_path, page, PAGE_SIZE-1);
-#endif
 		len = PTR_ERR(res);
 		if (!IS_ERR(res)) {
 			len = strlen(res);
@@ -223,11 +217,7 @@ static const struct attribute_group stats_group = {
 
 
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
 #define to_disk(obj) dev_to_disk(container_of(obj,struct device,kobj))
-#else
-#define to_disk(obj) container_of(obj,struct gendisk,kobj)
-#endif
 
 static ssize_t pstat_show(struct kobject *kobj, struct attribute *attr,
 			  char *page)
@@ -631,7 +621,6 @@ static struct kobj_type pstat_ktype = {
 	.sysfs_ops	= &pstat_sysfs_ops,
 };
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
 struct kobject *kobject_add_attr(struct gendisk *gd, const char *name,
 				 struct kobj_type * type)
 {
@@ -652,31 +641,6 @@ struct kobject *kobject_add_attr(struct gendisk *gd, const char *name,
 	}
 	return k;
 }
-#else
-struct kobject *kobject_add_attr(struct gendisk *gd, const char *name,
-				 struct kobj_type * type)
-{
-	struct kobject *k;
-	int err;
-	struct kobject * parent = &gd->kobj;
-
-	k = kzalloc(sizeof(*k), GFP_KERNEL);
-	if (!k)
-		return NULL;
-
-	snprintf(k->name, KOBJ_NAME_LEN, "%s", name);
-	k->ktype = type;
-	kobject_init(k);
-
-	k->parent = parent;
-	err = kobject_add(k);
-	if (err) {
-		kobject_put(k);
-		return NULL;
-	}
-	return k;
-}
-#endif
 
 void ploop_sysfs_init(struct ploop_device * plo)
 {
@@ -696,14 +660,8 @@ void ploop_sysfs_init(struct ploop_device * plo)
 			printk("ploop: were not able to create ptune dir\n");
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
 	if (kobject_add(&plo->kobj, kobject_get(&disk_to_dev(plo->disk)->kobj), "%s", "pdelta"))
 		printk("ploop: were not able to create pdelta dir\n");
-#else
-	plo->kobj.parent = kobject_get(&plo->disk->kobj);
-	if (kobject_add(&plo->kobj))
-		printk("ploop: were not able to create pdelta dir\n");
-#endif
 }
 
 void ploop_sysfs_uninit(struct ploop_device * plo)
@@ -728,9 +686,5 @@ void ploop_sysfs_uninit(struct ploop_device * plo)
 	}
 	kobject_del(&plo->kobj);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
 	kobject_put(&disk_to_dev(plo->disk)->kobj);
-#else
-	kobject_put(&plo->disk->kobj);
-#endif
 }
