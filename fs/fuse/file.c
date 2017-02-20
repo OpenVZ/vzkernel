@@ -970,7 +970,7 @@ static void fuse_short_read(struct inode *inode, u64 attr_ver, size_t num_read,
 }
 
 static int fuse_do_readpage(struct file *file, struct page *page,
-		bool *killed_p)
+		bool page_needs_release, bool *killed_p)
 {
 	struct inode *inode = page->mapping->host;
 	struct fuse_conn *fc = get_fuse_conn(inode);
@@ -983,6 +983,7 @@ static int fuse_do_readpage(struct file *file, struct page *page,
 		.ap.pages = &page,
 		.ap.descs = &desc,
 		.ap.args.page_cache = 1,
+		.ap.args.page_needs_release = page_needs_release,
 	};
 	ssize_t res;
 	u64 attr_ver;
@@ -1031,7 +1032,7 @@ static int fuse_readpage(struct file *file, struct page *page)
 	if (fuse_is_bad(inode))
 		goto out;
 
-	err = fuse_do_readpage(file, page, &killed);
+	err = fuse_do_readpage(file, page, false, &killed);
 	fuse_invalidate_atime(inode);
  out:
 	if (!killed)
@@ -1106,6 +1107,7 @@ static void fuse_send_readpages(struct fuse_io_args *ia, struct file *file)
 	ap->args.page_zeroing = true;
 	ap->args.page_replace = true;
 	ap->args.page_cache = 1;
+	ap->args.page_needs_release = false;
 
 	/* Don't overflow end offset */
 	if (pos + (count - 1) == LLONG_MAX) {
@@ -2499,6 +2501,7 @@ static int fuse_write_begin(struct file *file, struct address_space *mapping,
 	struct page *page;
 	loff_t fsize;
 	int err = -ENOMEM;
+	bool killed = false;
 
 	WARN_ON(!fc->writeback_cache);
 
@@ -2526,7 +2529,7 @@ static int fuse_write_begin(struct file *file, struct address_space *mapping,
 			zero_user_segment(page, 0, off);
 		goto success;
 	}
-	err = fuse_do_readpage(file, page, NULL);
+	err = fuse_do_readpage(file, page, true, &killed);
 	if (err)
 		goto cleanup;
 success:
@@ -2534,8 +2537,10 @@ success:
 	return 0;
 
 cleanup:
-	unlock_page(page);
-	put_page(page);
+	if (!killed) {
+		unlock_page(page);
+		put_page(page);
+	}
 error:
 	return err;
 }
