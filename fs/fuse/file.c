@@ -981,7 +981,7 @@ static void fuse_short_read(struct fuse_req *req, struct inode *inode,
 }
 
 static int fuse_do_readpage(struct file *file, struct page *page,
-			    bool *killed_p)
+			    bool page_needs_release, bool *killed_p)
 {
 	struct fuse_io_priv io = { .async = 0, .file = file };
 	struct inode *inode = page->mapping->host;
@@ -1016,6 +1016,7 @@ static int fuse_do_readpage(struct file *file, struct page *page,
 	req->pages[0] = page;
 	req->page_descs[0].length = count;
 	req->page_cache = 1;
+	req->page_needs_release = page_needs_release;
 
 	num_read = fuse_send_read(req, &io, pos, count, NULL);
 	killed = req->killed;
@@ -1049,7 +1050,7 @@ static int fuse_readpage(struct file *file, struct page *page)
 	if (is_bad_inode(inode))
 		goto out;
 
-	err = fuse_do_readpage(file, page, &killed);
+	err = fuse_do_readpage(file, page, false, &killed);
 	fuse_invalidate_atime(inode);
  out:
 	if (!killed)
@@ -1119,6 +1120,7 @@ static void fuse_send_readpages(struct fuse_req *req, struct file *file)
 	req->out.page_zeroing = 1;
 	req->out.page_replace = 1;
 	req->page_cache = 1;
+	req->page_needs_release = false;
 	fuse_read_fill(req, file, pos, count, FUSE_READ);
 	fuse_account_request(fc, count);
 	req->misc.read.attr_ver = fuse_get_attr_version(fc);
@@ -2420,6 +2422,7 @@ static int fuse_write_begin(struct file *file, struct address_space *mapping,
 	struct fuse_conn *fc = get_fuse_conn(file->f_dentry->d_inode);
 	struct page *page;
 	loff_t fsize;
+	bool killed = false;
 	int err = -ENOMEM;
 
 	WARN_ON(!fc->writeback_cache);
@@ -2447,7 +2450,7 @@ static int fuse_write_begin(struct file *file, struct address_space *mapping,
 			zero_user_segment(page, 0, off);
 		goto success;
 	}
-	err = fuse_do_readpage(file, page, NULL);
+	err = fuse_do_readpage(file, page, true, &killed);
 	if (err)
 		goto cleanup;
 success:
@@ -2455,8 +2458,9 @@ success:
 	return 0;
 
 cleanup:
-	unlock_page(page);
-	page_cache_release(page);
+	if(!killed)
+		unlock_page(page);
+		page_cache_release(page);
 error:
 	return err;
 }
