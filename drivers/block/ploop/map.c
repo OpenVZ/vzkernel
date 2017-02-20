@@ -1326,9 +1326,6 @@ int __init ploop_map_init(void)
 	ploop_map_cache = kmem_cache_create("ploop_map",
 						sizeof(struct map_node), 0,
 						SLAB_MEM_SPREAD, NULL
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,18)
-						, NULL
-#endif
 						);
 	if (!ploop_map_cache)
 		return -ENOMEM;

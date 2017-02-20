@@ -365,7 +365,6 @@ cached_submit(struct ploop_io *io, iblock_t iblk, struct ploop_request * preq,
 
 	file_start_write(io->files.file);
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,24)
 	if (use_prealloc && end_pos > used_pos && may_fallocate) {
 		if (unlikely(io->prealloced_size < clu_siz)) {
 			loff_t prealloc = end_pos;
@@ -393,7 +392,6 @@ try_again:
 
 		io->prealloced_size -= clu_siz;
 	}
-#endif
 
 	if (may_fallocate) {
 		sector_t sec = (sector_t)iblk << preq->plo->cluster_log;
@@ -1317,7 +1315,6 @@ static int dio_alloc_sync(struct ploop_io * io, loff_t pos, loff_t len)
 	struct page *pad = NULL;
 	int pad_len = pos & (PAGE_CACHE_SIZE - 1);
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,24)
 	if (pos + len > i_size_read(io->files.inode) &&
 	    io->files.file->f_op->fallocate) {
 		err = io->files.file->f_op->fallocate(io->files.file, 0,
@@ -1325,7 +1322,6 @@ static int dio_alloc_sync(struct ploop_io * io, loff_t pos, loff_t len)
 		if (err)
 			return err;
 	}
-#endif
 
 	if (pad_len) {
 		BUILD_BUG_ON(PAGE_SIZE != PAGE_CACHE_SIZE);
@@ -1807,10 +1803,6 @@ static int dio_congested(struct ploop_io * io, int bits)
 
 static void dio_queue_settings(struct ploop_io * io, struct request_queue * q)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
-	q->max_sectors = 0;
-	q->max_hw_sectors = 0;
-#endif
 	blk_queue_stack_limits(q, bdev_get_queue(io->files.bdev));
 }
 
