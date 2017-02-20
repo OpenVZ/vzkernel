@@ -17,7 +17,6 @@
 
 #include "ploop_if.h"
 #include "compat.h"
-#include "internal.h"
 
 #define PLOOP_NAME_SIZE		64
 #define PLOOP_MAX_FORMATS	32
