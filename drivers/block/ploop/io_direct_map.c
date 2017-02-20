@@ -232,9 +232,6 @@ int __init ploop_extent_map_init(void)
 	extent_map_cache = kmem_cache_create("ploop_itree",
 						sizeof(struct extent_map), 0,
 						SLAB_MEM_SPREAD, NULL
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,18)
-						, NULL
-#endif
 						);
 	if (!extent_map_cache)
 		return -ENOMEM;
