@@ -466,6 +466,8 @@ static void fuse_kill_requests(struct fuse_conn *fc, struct inode *inode,
 				struct page *page = ia->ap.pages[i];
 				SetPageError(page);
 				unlock_page(page);
+				if (req->args->page_needs_release)
+					put_page(page);
 				ia->ap.pages[i] = NULL;
 			}
 
