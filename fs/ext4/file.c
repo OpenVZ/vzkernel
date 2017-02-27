@@ -612,7 +612,17 @@ static loff_t ext4_seek_data(struct file *file, loff_t offset, loff_t maxsize)
 			if (unwritten)
 				break;
 		}
-
+		if (signal_pending(current)) {
+			mutex_unlock(&inode->i_mutex);
+			return -EINTR;
+		}
+		if (need_resched()) {
+			mutex_unlock(&inode->i_mutex);
+			cond_resched();
+			mutex_lock(&inode->i_mutex);
+			isize = inode->i_size;
+			end = isize >> blkbits;
+		}
 		last++;
 		dataoff = (loff_t)last << blkbits;
 	} while (last <= end);
