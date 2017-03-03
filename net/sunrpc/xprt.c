@@ -777,10 +777,18 @@ static void xprt_connect_status(struct rpc_task *task)
 	}
 
 	switch (task->tk_status) {
+	case -ENETUNREACH:
+		if (current->task_ve->ve_netns == NULL) {
+			dprintk("RPC: %5u xprt_connect_status: error %d connecting to "
+					"server %s\n", task->tk_pid, -task->tk_status,
+					xprt->servername);
+			dprintk("RPC: CT %s is dying\n", task_ve_name(current));
+			task->tk_status = -EIO;
+			break;
+		}
 	case -ECONNREFUSED:
 	case -ECONNRESET:
 	case -ECONNABORTED:
-	case -ENETUNREACH:
 	case -EHOSTUNREACH:
 	case -EPIPE:
 	case -EAGAIN:
