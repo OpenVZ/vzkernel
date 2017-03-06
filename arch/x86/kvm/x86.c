@@ -1711,11 +1711,10 @@ static u64 __get_kvmclock_ns(struct kvm *kvm)
 	struct kvm_vcpu *vcpu = kvm_get_vcpu(kvm, 0);
 	struct kvm_arch *ka = &kvm->arch;
 	u64 ns;
-	u8 flags;
 
 	if (vcpu->arch.hv_clock.flags & PVCLOCK_TSC_STABLE_BIT) {
 		u64 tsc = kvm_read_l1_tsc(vcpu, native_read_tsc());
-		__pvclock_read_cycles(&vcpu->arch.hv_clock, &ns, &flags, tsc);
+		ns = __pvclock_read_cycles(&vcpu->arch.hv_clock, tsc);
 	} else {
 		ns = ktime_to_ns(ktime_get_boottime()) + ka->kvmclock_offset;
 	}

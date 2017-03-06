@@ -68,52 +68,47 @@ static notrace const struct pvclock_vsyscall_time_info *get_pvti(int cpu)
 	return &pvti_base[offset];
 }
 
-static notrace cycle_t vread_pvclock(int *mode)
+static notrace u64 vread_pvclock(int *mode)
 {
-	const struct pvclock_vsyscall_time_info *pvti;
-	cycle_t ret;
+	const struct pvclock_vcpu_time_info *pvti = &get_pvti(0)->pvti;
+	u64 ret;
 	u64 last;
 	u32 version;
-	u8 flags;
-	unsigned cpu, cpu1;
-
 
 	/*
-	 * Note: hypervisor must guarantee that:
-	 * 1. cpu ID number maps 1:1 to per-CPU pvclock time info.
-	 * 2. that per-CPU pvclock time info is updated if the
-	 *    underlying CPU changes.
-	 * 3. that version is increased whenever underlying CPU
-	 *    changes.
+	 * Note: The kernel and hypervisor must guarantee that cpu ID
+	 * number maps 1:1 to per-CPU pvclock time info.
 	 *
+	 * Because the hypervisor is entirely unaware of guest userspace
+	 * preemption, it cannot guarantee that per-CPU pvclock time
+	 * info is updated if the underlying CPU changes or that that
+	 * version is increased whenever underlying CPU changes.
+	 *
+	 * On KVM, we are guaranteed that pvti updates for any vCPU are
+	 * atomic as seen by *all* vCPUs.  This is an even stronger
+	 * guarantee than we get with a normal seqlock.
+	 *
+	 * On Xen, we don't appear to have that guarantee, but Xen still
+	 * supplies a valid seqlock using the version field.
+	 *
+	 * We only do pvclock vdso timing at all if
+	 * PVCLOCK_TSC_STABLE_BIT is set, and we interpret that bit to
+	 * mean that all vCPUs have matching pvti and that the TSC is
+	 * synced, so we can just look at vCPU 0's pvti.
 	 */
+
 	do {
-		cpu = __getcpu() & VGETCPU_CPU_MASK;
-		/* TODO: We can put vcpu id into higher bits of pvti.version.
-		 * This will save a couple of cycles by getting rid of
-		 * __getcpu() calls (Gleb).
-		 */
+		version = pvclock_read_begin(pvti);
 
-		pvti = get_pvti(cpu);
+		if (unlikely(!(pvti->flags & PVCLOCK_TSC_STABLE_BIT))) {
+			*mode = VCLOCK_NONE;
+			return 0;
+		}
 
-		version = __pvclock_read_cycles(&pvti->pvti, &ret, &flags,
-						rdtsc());
+		ret = __pvclock_read_cycles(pvti, rdtsc_ordered());
+	} while (pvclock_read_retry(pvti, version));
 
-		/*
-		 * Test we're still on the cpu as well as the version.
-		 * We could have been migrated just after the first
-		 * vgetcpu but before fetching the version, so we
-		 * wouldn't notice a version change.
-		 */
-		cpu1 = __getcpu() & VGETCPU_CPU_MASK;
-	} while (unlikely(cpu != cpu1 ||
-			  (pvti->pvti.version & 1) ||
-			  pvti->pvti.version != version));
-
-	if (unlikely(!(flags & PVCLOCK_TSC_STABLE_BIT)))
-		*mode = VCLOCK_NONE;
-
-	/* refer to tsc.c read_tsc() comment for rationale */
+	/* refer to vread_tsc() comment for rationale */
 	last = VVAR(vsyscall_gtod_data).clock.cycle_last;
 
 	if (likely(ret >= last))
