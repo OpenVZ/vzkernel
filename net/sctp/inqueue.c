@@ -135,30 +135,33 @@ struct sctp_chunk *sctp_inq_pop(struct sctp_inq *queue)
 	 * at this time.
 	 */
 
-	if ((chunk = queue->in_progress)) {
+	chunk = queue->in_progress;
+	if (chunk) {
 		/* There is a packet that we have been working on.
 		 * Any post processing work to do before we move on?
 		 */
 		if (chunk->singleton ||
 		    chunk->end_of_packet ||
 		    chunk->pdiscard) {
+			if (chunk->head_skb == chunk->skb) {
+				chunk->skb = skb_shinfo(chunk->skb)->frag_list;
+				goto new_skb;
+			}
+			if (chunk->skb->next) {
+				chunk->skb = chunk->skb->next;
+				goto new_skb;
+			}
+
+			if (chunk->head_skb)
+				chunk->skb = chunk->head_skb;
 			sctp_chunk_free(chunk);
 			chunk = queue->in_progress = NULL;
 		} else {
 			/* Nothing to do. Next chunk in the packet, please. */
 			ch = (sctp_chunkhdr_t *) chunk->chunk_end;
-
 			/* Force chunk->skb->data to chunk->chunk_end.  */
-			skb_pull(chunk->skb,
-				 chunk->chunk_end - chunk->skb->data);
-
-			/* Verify that we have at least chunk headers
-			 * worth of buffer left.
-			 */
-			if (skb_headlen(chunk->skb) < sizeof(sctp_chunkhdr_t)) {
-				sctp_chunk_free(chunk);
-				chunk = queue->in_progress = NULL;
-			}
+			skb_pull(chunk->skb, chunk->chunk_end - chunk->skb->data);
+			/* We are guaranteed to pull a SCTP header. */
 		}
 	}
 
@@ -166,52 +169,68 @@ struct sctp_chunk *sctp_inq_pop(struct sctp_inq *queue)
 	if (!chunk) {
 		struct list_head *entry;
 
+next_chunk:
 		/* Is the queue empty?  */
-		if (list_empty(&queue->in_chunk_list))
+		entry = sctp_list_dequeue(&queue->in_chunk_list);
+		if (!entry)
 			return NULL;
 
-		entry = queue->in_chunk_list.next;
-		chunk = queue->in_progress =
-			list_entry(entry, struct sctp_chunk, list);
-		list_del_init(entry);
+		chunk = list_entry(entry, struct sctp_chunk, list);
 
+		if ((skb_shinfo(chunk->skb)->gso_type & SKB_GSO_SCTP) == SKB_GSO_SCTP) {
+			/* GSO-marked skbs but without frags, handle
+			 * them normally
+			 */
+			if (skb_shinfo(chunk->skb)->frag_list)
+				chunk->head_skb = chunk->skb;
+
+			/* skbs with "cover letter" */
+			if (chunk->head_skb && chunk->skb->data_len == chunk->skb->len)
+				chunk->skb = skb_shinfo(chunk->skb)->frag_list;
+
+			if (WARN_ON(!chunk->skb)) {
+				SCTP_INC_STATS_BH(dev_net(chunk->skb->dev), SCTP_MIB_IN_PKT_DISCARDS);
+				sctp_chunk_free(chunk);
+				goto next_chunk;
+			}
+		}
+
+		if (chunk->asoc)
+			sock_rps_save_rxhash(chunk->asoc->base.sk, chunk->skb);
+
+		queue->in_progress = chunk;
+
+new_skb:
 		/* This is the first chunk in the packet.  */
-		chunk->singleton = 1;
 		ch = (sctp_chunkhdr_t *) chunk->skb->data;
+		chunk->singleton = 1;
 		chunk->data_accepted = 0;
+		chunk->pdiscard = 0;
+		chunk->auth = 0;
+		chunk->has_asconf = 0;
+		chunk->end_of_packet = 0;
+		if (chunk->head_skb) {
+			struct sctp_input_cb
+				*cb = SCTP_INPUT_CB(chunk->skb),
+				*head_cb = SCTP_INPUT_CB(chunk->head_skb);
+
+			cb->chunk = head_cb->chunk;
+		}
 	}
 
 	chunk->chunk_hdr = ch;
-	chunk->chunk_end = ((__u8 *)ch) + WORD_ROUND(ntohs(ch->length));
-	/* In the unlikely case of an IP reassembly, the skb could be
-	 * non-linear. If so, update chunk_end so that it doesn't go past
-	 * the skb->tail.
-	 */
-	if (unlikely(skb_is_nonlinear(chunk->skb))) {
-		if (chunk->chunk_end > skb_tail_pointer(chunk->skb))
-			chunk->chunk_end = skb_tail_pointer(chunk->skb);
-	}
+	chunk->chunk_end = ((__u8 *)ch) + SCTP_PAD4(ntohs(ch->length));
 	skb_pull(chunk->skb, sizeof(sctp_chunkhdr_t));
 	chunk->subh.v = NULL; /* Subheader is no longer valid.  */
 
-	if (chunk->chunk_end < skb_tail_pointer(chunk->skb)) {
+	if (chunk->chunk_end + sizeof(sctp_chunkhdr_t) <
+	    skb_tail_pointer(chunk->skb)) {
 		/* This is not a singleton */
 		chunk->singleton = 0;
 	} else if (chunk->chunk_end > skb_tail_pointer(chunk->skb)) {
-		/* RFC 2960, Section 6.10  Bundling
-		 *
-		 * Partial chunks MUST NOT be placed in an SCTP packet.
-		 * If the receiver detects a partial chunk, it MUST drop
-		 * the chunk.
-		 *
-		 * Since the end of the chunk is past the end of our buffer
-		 * (which contains the whole packet, we can freely discard
-		 * the whole packet.
-		 */
-		sctp_chunk_free(chunk);
-		chunk = queue->in_progress = NULL;
-
-		return NULL;
+		/* Discard inside state machine. */
+		chunk->pdiscard = 1;
+		chunk->chunk_end = skb_tail_pointer(chunk->skb);
 	} else {
 		/* We are at the end of the packet, so mark the chunk
 		 * in case we need to send a SACK.
@@ -219,10 +238,10 @@ struct sctp_chunk *sctp_inq_pop(struct sctp_inq *queue)
 		chunk->end_of_packet = 1;
 	}
 
-	SCTP_DEBUG_PRINTK("+++sctp_inq_pop+++ chunk %p[%s],"
-			  " length %d, skb->len %d\n",chunk,
-			  sctp_cname(SCTP_ST_CHUNK(chunk->chunk_hdr->type)),
-			  ntohs(chunk->chunk_hdr->length), chunk->skb->len);
+	pr_debug("+++sctp_inq_pop+++ chunk:%p[%s], length:%d, skb->len:%d\n",
+		 chunk, sctp_cname(SCTP_ST_CHUNK(chunk->chunk_hdr->type)),
+		 ntohs(chunk->chunk_hdr->length), chunk->skb->len);
+
 	return chunk;
 }
 
@@ -238,4 +257,3 @@ void sctp_inq_set_th_handler(struct sctp_inq *q, work_func_t callback)
 {
 	INIT_WORK(&q->immediate, callback);
 }
-

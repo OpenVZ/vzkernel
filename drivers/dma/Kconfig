@@ -99,6 +99,14 @@ config DW_DMAC_BIG_ENDIAN_IO
 
 	  If unsure, use the default setting.
 
+config IDMA64
+	tristate "Intel integrated DMA 64-bit support"
+	select DMA_ENGINE
+	select DMA_VIRTUAL_CHANNELS
+	help
+	  Enable DMA support for Intel Low Power Subsystem such as found on
+	  Intel Skylake PCH.
+
 config AT_HDMAC
 	tristate "Atmel AHB DMA support"
 	depends on ARCH_AT91
@@ -329,16 +337,9 @@ config DMA_OF
 comment "DMA Clients"
 	depends on DMA_ENGINE
 
-config NET_DMA
-	bool "Network: TCP receive copy offload"
+config NET_DMA_RH_KABI
+	bool "Preserve Red Hat kABI after NET_DMA removal"
 	depends on DMA_ENGINE && NET
-	default (INTEL_IOATDMA || FSL_DMA)
-	help
-	  This enables the use of DMA engines in the network stack to
-	  offload receive copy-to-user operations, freeing CPU cycles.
-
-	  Say Y here if you enabled INTEL_IOATDMA or FSL_DMA, otherwise
-	  say N.
 
 config ASYNC_TX_DMA
 	bool "Async_tx: Offload support for the async_tx api"

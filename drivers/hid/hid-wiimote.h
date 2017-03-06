@@ -113,8 +113,7 @@ enum wiiproto_reqs {
 	WIIPROTO_REQ_MAX
 };
 
-#define dev_to_wii(pdev) hid_get_drvdata(container_of(pdev, struct hid_device, \
-									dev))
+#define dev_to_wii(pdev) hid_get_drvdata(to_hid_device(pdev))
 
 extern void wiiproto_req_drm(struct wiimote_data *wdata, __u8 drm);
 extern int wiimote_cmd_write(struct wiimote_data *wdata, __u32 offset,

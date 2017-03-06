@@ -71,15 +71,10 @@
 #define CAUSEB_DC       27
 #define CAUSEF_DC       (_ULCAST_(1)   << 27)
 
-struct kvm;
-struct kvm_run;
-struct kvm_vcpu;
-struct kvm_interrupt;
-
 extern atomic_t kvm_mips_instance;
-extern pfn_t(*kvm_mips_gfn_to_pfn) (struct kvm *kvm, gfn_t gfn);
-extern void (*kvm_mips_release_pfn_clean) (pfn_t pfn);
-extern bool(*kvm_mips_is_error_pfn) (pfn_t pfn);
+extern kvm_pfn_t(*kvm_mips_gfn_to_pfn) (struct kvm *kvm, gfn_t gfn);
+extern void (*kvm_mips_release_pfn_clean) (kvm_pfn_t pfn);
+extern bool(*kvm_mips_is_error_pfn) (kvm_pfn_t pfn);
 
 struct kvm_vm_stat {
 	u32 remote_tlb_flush;
@@ -100,6 +95,8 @@ struct kvm_vcpu_stat {
 	u32 resvd_inst_exits;
 	u32 break_inst_exits;
 	u32 flush_dcache_exits;
+	u32 halt_successful_poll;
+	u32 halt_attempted_poll;
 	u32 halt_wakeup;
 };
 

@@ -31,6 +31,9 @@
 #define rmb()		asm volatile("dsb ld" : : : "memory")
 #define wmb()		asm volatile("dsb st" : : : "memory")
 
+#define dma_rmb()	dmb(oshld)
+#define dma_wmb()	dmb(oshst)
+
 #ifndef CONFIG_SMP
 #define smp_mb()	barrier()
 #define smp_rmb()	barrier()

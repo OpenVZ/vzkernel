@@ -157,7 +157,9 @@ struct l2tp_tunnel_cfg {
 #endif
 	u16			local_udp_port;
 	u16			peer_udp_port;
-	unsigned int		use_udp_checksums:1;
+	unsigned int		use_udp_checksums:1,
+				udp6_zero_tx_checksums:1,
+				udp6_zero_rx_checksums:1;
 };
 
 struct l2tp_tunnel {
@@ -189,6 +191,9 @@ struct l2tp_tunnel {
 	struct sock		*sock;		/* Parent socket */
 	int			fd;		/* Parent fd, if tunnel socket
 						 * was created by userspace */
+#if IS_ENABLED(CONFIG_IPV6)
+	bool			v4mapped;
+#endif
 
 	struct work_struct	del_work;
 

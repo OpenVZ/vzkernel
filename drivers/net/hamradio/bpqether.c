@@ -103,7 +103,7 @@ static struct packet_type bpq_packet_type __read_mostly = {
 };
 
 static struct notifier_block bpq_dev_notifier = {
-	.notifier_call =bpq_device_event,
+	.notifier_call = bpq_device_event,
 };
 
 
@@ -544,9 +544,10 @@ static void bpq_free_device(struct net_device *ndev)
 /*
  *	Handle device status changes.
  */
-static int bpq_device_event(struct notifier_block *this,unsigned long event, void *ptr)
+static int bpq_device_event(struct notifier_block *this,
+			    unsigned long event, void *ptr)
 {
-	struct net_device *dev = (struct net_device *)ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 
 	if (!net_eq(dev_net(dev), &init_net))
 		return NOTIFY_DONE;
@@ -596,7 +597,7 @@ static int __init bpq_init_driver(void)
 
 	dev_add_pack(&bpq_packet_type);
 
-	register_netdevice_notifier(&bpq_dev_notifier);
+	register_netdevice_notifier_rh(&bpq_dev_notifier);
 
 	printk(banner);
 
@@ -609,7 +610,7 @@ static void __exit bpq_cleanup_driver(void)
 
 	dev_remove_pack(&bpq_packet_type);
 
-	unregister_netdevice_notifier(&bpq_dev_notifier);
+	unregister_netdevice_notifier_rh(&bpq_dev_notifier);
 
 	remove_proc_entry("bpqether", init_net.proc_net);
 

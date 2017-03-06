@@ -317,7 +317,7 @@ static int snd_cs5535audio_trigger(struct snd_pcm_substream *substream, int cmd)
 		dma->ops->disable_dma(cs5535au);
 		break;
 	default:
-		snd_printk(KERN_ERR "unhandled trigger\n");
+		dev_err(cs5535au->card->dev, "unhandled trigger\n");
 		err = -EINVAL;
 		break;
 	}
@@ -335,13 +335,13 @@ static snd_pcm_uframes_t snd_cs5535audio_pcm_pointer(struct snd_pcm_substream
 	dma = substream->runtime->private_data;
 	curdma = dma->ops->read_dma_pntr(cs5535au);
 	if (curdma < dma->buf_addr) {
-		snd_printk(KERN_ERR "curdma=%x < %x bufaddr.\n",
+		dev_err(cs5535au->card->dev, "curdma=%x < %x bufaddr.\n",
 					curdma, dma->buf_addr);
 		return 0;
 	}
 	curdma -= dma->buf_addr;
 	if (curdma >= dma->buf_bytes) {
-		snd_printk(KERN_ERR "diff=%x >= %x buf_bytes.\n",
+		dev_err(cs5535au->card->dev, "diff=%x >= %x buf_bytes.\n",
 					curdma, dma->buf_bytes);
 		return 0;
 	}
@@ -402,7 +402,7 @@ static struct snd_pcm_ops snd_cs5535audio_capture_ops = {
 	.pointer =	snd_cs5535audio_pcm_pointer,
 };
 
-static struct cs5535audio_dma_ops snd_cs5535audio_playback_dma_ops = {
+static const struct cs5535audio_dma_ops snd_cs5535audio_playback_dma_ops = {
         .type = CS5535AUDIO_DMA_PLAYBACK,
         .enable_dma = cs5535audio_playback_enable_dma,
         .disable_dma = cs5535audio_playback_disable_dma,
@@ -412,7 +412,7 @@ static struct cs5535audio_dma_ops snd_cs5535audio_playback_dma_ops = {
         .read_dma_pntr = cs5535audio_playback_read_dma_pntr,
 };
 
-static struct cs5535audio_dma_ops snd_cs5535audio_capture_dma_ops = {
+static const struct cs5535audio_dma_ops snd_cs5535audio_capture_dma_ops = {
         .type = CS5535AUDIO_DMA_CAPTURE,
         .enable_dma = cs5535audio_capture_enable_dma,
         .disable_dma = cs5535audio_capture_disable_dma,

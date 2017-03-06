@@ -7,6 +7,7 @@
 #include <linux/nfsacl.h>
 
 #include "internal.h"
+#include "nfs3_fs.h"
 
 #define NFSDBG_FACILITY	NFSDBG_PROC
 
@@ -130,7 +131,7 @@ static void __nfs3_forget_cached_acls(struct nfs_inode *nfsi)
 
 void nfs3_forget_cached_acls(struct inode *inode)
 {
-	dprintk("NFS: nfs3_forget_cached_acls(%s/%ld)\n", inode->i_sb->s_id,
+	dprintk("NFS: nfs3_forget_cached_acls(%s/%lu)\n", inode->i_sb->s_id,
 		inode->i_ino);
 	spin_lock(&inode->i_lock);
 	__nfs3_forget_cached_acls(NFS_I(inode));
@@ -161,7 +162,7 @@ static struct posix_acl *nfs3_get_cached_acl(struct inode *inode, int type)
 		acl = posix_acl_dup(acl);
 out:
 	spin_unlock(&inode->i_lock);
-	dprintk("NFS: nfs3_get_cached_acl(%s/%ld, %d) = %p\n", inode->i_sb->s_id,
+	dprintk("NFS: nfs3_get_cached_acl(%s/%lu, %d) = %p\n", inode->i_sb->s_id,
 		inode->i_ino, type, acl);
 	return acl;
 }
@@ -305,7 +306,10 @@ static int nfs3_proc_setacls(struct inode *inode, struct posix_acl *acl,
 		.rpc_argp	= &args,
 		.rpc_resp	= &fattr,
 	};
-	int status;
+	int status = 0;
+
+	if (acl == NULL && (!S_ISDIR(inode->i_mode) || dfacl == NULL))
+		goto out;
 
 	status = -EOPNOTSUPP;
 	if (!nfs_server_capable(inode, NFS_CAP_ACLS))

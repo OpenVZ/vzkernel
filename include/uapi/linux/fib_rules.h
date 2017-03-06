@@ -43,7 +43,7 @@ enum {
 	FRA_UNUSED5,
 	FRA_FWMARK,	/* mark */
 	FRA_FLOW,	/* flow/class id */
-	FRA_UNUSED6,
+	FRA_TUN_ID,
 	FRA_UNUSED7,
 	FRA_UNUSED8,
 	FRA_TABLE,	/* Extended table id */

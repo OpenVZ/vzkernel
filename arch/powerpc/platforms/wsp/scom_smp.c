@@ -20,6 +20,7 @@
 #include <asm/reg_a2.h>
 #include <asm/scom.h>
 #include <asm/udbg.h>
+#include <asm/code-patching.h>
 
 #include "wsp.h"
 
@@ -116,7 +117,14 @@ static int a2_scom_ram(scom_map_t scom, int thread, u32 insn, int extmask)
 
 	scom_write(scom, SCOM_RAMIC, cmd);
 
-	while (!((val = scom_read(scom, SCOM_RAMC)) & mask)) {
+	for (;;) {
+		if (scom_read(scom, SCOM_RAMC, &val) != 0) {
+			pr_err("SCOM error on instruction 0x%08x, thread %d\n",
+			       insn, thread);
+			return -1;
+		}
+		if (val & mask)
+			break;
 		pr_devel("Waiting on RAMC = 0x%llx\n", val);
 		if (++n == 3) {
 			pr_err("RAMC timeout on instruction 0x%08x, thread %d\n",
@@ -151,9 +159,7 @@ static int a2_scom_getgpr(scom_map_t scom, int thread, int gpr, int alt,
 	if (rc)
 		return rc;
 
-	*out_gpr = scom_read(scom, SCOM_RAMD);
-
-	return 0;
+	return scom_read(scom, SCOM_RAMD, out_gpr);
 }
 
 static int a2_scom_getspr(scom_map_t scom, int thread, int spr, u64 *out_spr)
@@ -353,7 +359,10 @@ int a2_scom_startup_cpu(unsigned int lcpu, int thr_idx, struct device_node *np)
 
 	pr_devel("Bringing up CPU%d using SCOM...\n", lcpu);
 
-	pccr0 = scom_read(scom, SCOM_PCCR0);
+	if (scom_read(scom, SCOM_PCCR0, &pccr0) != 0) {
+		printk(KERN_ERR "XSCOM failure readng PCCR0 on CPU%d\n", lcpu);
+		return -1;
+	}
 	scom_write(scom, SCOM_PCCR0, pccr0 | SCOM_PCCR0_ENABLE_DEBUG |
 				     SCOM_PCCR0_ENABLE_RAM);
 
@@ -397,7 +406,7 @@ int a2_scom_startup_cpu(unsigned int lcpu, int thr_idx, struct device_node *np)
 			goto fail;
 	}
 
-	start_here = *(unsigned long *)(core_setup ? generic_secondary_smp_init
+	start_here = ppc_function_entry(core_setup ? generic_secondary_smp_init
 					: generic_secondary_thread_init);
 	pr_devel("CPU%d entry point at 0x%lx...\n", lcpu, start_here);
 

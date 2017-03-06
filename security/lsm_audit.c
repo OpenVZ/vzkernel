@@ -211,7 +211,7 @@ static inline void print_ipv4_addr(struct audit_buffer *ab, __be32 addr,
 static void dump_common_audit_data(struct audit_buffer *ab,
 				   struct common_audit_data *a)
 {
-	struct task_struct *tsk = current;
+	char comm[sizeof(current->comm)];
 
 	/*
 	 * To keep stack sizes in check force programers to notice if they
@@ -220,8 +220,8 @@ static void dump_common_audit_data(struct audit_buffer *ab,
 	 */
 	BUILD_BUG_ON(sizeof(a->u) > sizeof(void *)*2);
 
-	audit_log_format(ab, " pid=%d comm=", tsk->pid);
-	audit_log_untrustedstring(ab, tsk->comm);
+	audit_log_format(ab, " pid=%d comm=", task_pid_nr(current));
+	audit_log_untrustedstring(ab, memcpy(comm, current->comm, sizeof(comm)));
 
 	switch (a->type) {
 	case LSM_AUDIT_DATA_NONE:
@@ -276,13 +276,19 @@ static void dump_common_audit_data(struct audit_buffer *ab,
 		audit_log_format(ab, " ino=%lu", inode->i_ino);
 		break;
 	}
-	case LSM_AUDIT_DATA_TASK:
-		tsk = a->u.tsk;
-		if (tsk && tsk->pid) {
-			audit_log_format(ab, " pid=%d comm=", tsk->pid);
-			audit_log_untrustedstring(ab, tsk->comm);
+	case LSM_AUDIT_DATA_TASK: {
+		struct task_struct *tsk = a->u.tsk;
+		if (tsk) {
+			pid_t pid = task_pid_nr(tsk);
+			if (pid) {
+				char comm[sizeof(tsk->comm)];
+				audit_log_format(ab, " pid=%d comm=", pid);
+				audit_log_untrustedstring(ab,
+				    memcpy(comm, tsk->comm, sizeof(comm)));
+			}
 		}
 		break;
+	}
 	case LSM_AUDIT_DATA_NET:
 		if (a->u.net->sk) {
 			struct sock *sk = a->u.net->sk;
@@ -302,18 +308,19 @@ static void dump_common_audit_data(struct audit_buffer *ab,
 						"faddr", "fport");
 				break;
 			}
+#if IS_ENABLED(CONFIG_IPV6)
 			case AF_INET6: {
 				struct inet_sock *inet = inet_sk(sk);
-				struct ipv6_pinfo *inet6 = inet6_sk(sk);
 
-				print_ipv6_addr(ab, &inet6->rcv_saddr,
+				print_ipv6_addr(ab, &sk->sk_v6_rcv_saddr,
 						inet->inet_sport,
 						"laddr", "lport");
-				print_ipv6_addr(ab, &inet6->daddr,
+				print_ipv6_addr(ab, &sk->sk_v6_daddr,
 						inet->inet_dport,
 						"faddr", "fport");
 				break;
 			}
+#endif
 			case AF_UNIX:
 				u = unix_sk(sk);
 				if (u->path.dentry) {
@@ -396,7 +403,8 @@ void common_lsm_audit(struct common_audit_data *a,
 	if (a == NULL)
 		return;
 	/* we use GFP_ATOMIC so we won't sleep */
-	ab = audit_log_start(current->audit_context, GFP_ATOMIC, AUDIT_AVC);
+	ab = audit_log_start(current->audit_context, GFP_ATOMIC | __GFP_NOWARN,
+			     AUDIT_AVC);
 
 	if (ab == NULL)
 		return;
