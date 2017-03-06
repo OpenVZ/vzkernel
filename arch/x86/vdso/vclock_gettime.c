@@ -127,7 +127,7 @@ static notrace u64 vread_pvclock(int *mode)
 		ret = __pvclock_read_cycles(pvti, rdtsc_ordered());
 	} while (pvclock_read_retry(pvti, version));
 
-	/* refer to tsc.c read_tsc() comment for rationale */
+	/* refer to vread_tsc() comment for rationale */
 	last = VVAR(vsyscall_gtod_data).clock.cycle_last;
 
 	if (likely(ret >= last))
