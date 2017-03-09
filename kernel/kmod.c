@@ -45,6 +45,8 @@
 
 extern int max_threads;
 
+static struct workqueue_struct *khelper_wq;
+
 /*
  * kmod_thread_locker is used for deadlock avoidance.  There is no explicit
  * locking to protect this global - it is private to the singleton khelper
@@ -572,7 +574,7 @@ int call_usermodehelper_exec(struct subprocess_info *sub_info, int wait)
 	if (sub_info->path[0] == '\0')
 		goto out;
 
-	if (usermodehelper_disabled) {
+	if (!khelper_wq || usermodehelper_disabled) {
 		retval = -EBUSY;
 		goto out;
 	}
@@ -590,7 +592,7 @@ int call_usermodehelper_exec(struct subprocess_info *sub_info, int wait)
 	sub_info->complete = &done;
 	sub_info->wait = wait;
 
-	queue_work(system_unbound_wq, &sub_info->work);
+	queue_work(khelper_wq, &sub_info->work);
 	if (wait == UMH_NO_WAIT)	/* task has freed sub_info */
 		goto unlock;
 
@@ -720,3 +722,9 @@ struct ctl_table usermodehelper_table[] = {
 	},
 	{ }
 };
+
+void __init usermodehelper_init(void)
+{
+	khelper_wq = create_singlethread_workqueue("khelper");
+	BUG_ON(!khelper_wq);
+}
