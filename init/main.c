@@ -857,6 +857,7 @@ static void __init do_basic_setup(void)
 {
 	init_ve_system();
 	cpuset_init_smp();
+	usermodehelper_init();
 	shmem_init();
 	driver_init();
 	init_irq_proc();
