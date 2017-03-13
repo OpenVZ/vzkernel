@@ -7,6 +7,9 @@
 #include <linux/err.h>
 #include <linux/rh_kabi.h>
 
+#define UIDHASH_BITS   (CONFIG_BASE_SMALL ? 3 : 7)
+#define UIDHASH_SZ     (1 << UIDHASH_BITS)
+
 #define UID_GID_MAP_MAX_EXTENTS 5
 
 struct uid_gid_map {	/* 64 bytes -- 1 cache line */
@@ -49,6 +52,7 @@ struct user_namespace {
 	struct uid_gid_map	gid_map;
 	struct uid_gid_map	projid_map;
 	atomic_t		count;
+	struct hlist_head       uidhash_table[UIDHASH_SZ];
 	struct user_namespace	*parent;
 	kuid_t			owner;
 	kgid_t			group;
