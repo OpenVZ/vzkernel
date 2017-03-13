@@ -2443,6 +2443,8 @@ extern void __set_special_pids(struct pid *pid);
 
 /* per-UID process charging. */
 extern struct user_struct * alloc_uid(kuid_t);
+extern struct user_struct * alloc_uid_ns(struct user_namespace *ns, kuid_t);
+
 static inline struct user_struct *get_uid(struct user_struct *u)
 {
 	atomic_inc(&u->__count);
