@@ -64,14 +64,11 @@ EXPORT_SYMBOL_GPL(init_user_ns);
  * when changing user ID's (ie setuid() and friends).
  */
 
-#define UIDHASH_BITS	(CONFIG_BASE_SMALL ? 3 : 7)
-#define UIDHASH_SZ	(1 << UIDHASH_BITS)
 #define UIDHASH_MASK		(UIDHASH_SZ - 1)
 #define __uidhashfn(uid)	(((uid >> UIDHASH_BITS) + uid) & UIDHASH_MASK)
-#define uidhashentry(uid)	(uidhash_table + __uidhashfn((__kuid_val(uid))))
+#define uidhashentry(ns, uid)  ((ns)->uidhash_table + __uidhashfn((__kuid_val(uid))))
 
 static struct kmem_cache *uid_cachep;
-struct hlist_head uidhash_table[UIDHASH_SZ];
 
 /*
  * The uidhash_lock is mostly taken from process context, but it is
@@ -145,9 +142,10 @@ struct user_struct *find_user(kuid_t uid)
 {
 	struct user_struct *ret;
 	unsigned long flags;
+	struct user_namespace *ns = current_user_ns();
 
 	spin_lock_irqsave(&uidhash_lock, flags);
-	ret = uid_hash_find(uid, uidhashentry(uid));
+	ret = uid_hash_find(uid, uidhashentry(ns, uid));
 	spin_unlock_irqrestore(&uidhash_lock, flags);
 	return ret;
 }
@@ -166,9 +164,9 @@ void free_uid(struct user_struct *up)
 		local_irq_restore(flags);
 }
 
-struct user_struct *alloc_uid(kuid_t uid)
+struct user_struct *alloc_uid_ns(struct user_namespace *ns, kuid_t uid)
 {
-	struct hlist_head *hashent = uidhashentry(uid);
+	struct hlist_head *hashent = uidhashentry(ns, uid);
 	struct user_struct *up, *new;
 
 	spin_lock_irq(&uidhash_lock);
@@ -206,6 +204,11 @@ out_unlock:
 	return NULL;
 }
 
+struct user_struct *alloc_uid(kuid_t uid)
+{
+	return alloc_uid_ns(current_user_ns(), uid);
+}
+
 static int __init uid_cache_init(void)
 {
 	int n;
@@ -214,11 +217,11 @@ static int __init uid_cache_init(void)
 			0, SLAB_HWCACHE_ALIGN|SLAB_PANIC, NULL);
 
 	for(n = 0; n < UIDHASH_SZ; ++n)
-		INIT_HLIST_HEAD(uidhash_table + n);
+		INIT_HLIST_HEAD(init_user_ns.uidhash_table + n);
 
 	/* Insert the root user immediately (init already runs as root) */
 	spin_lock_irq(&uidhash_lock);
-	uid_hash_insert(&root_user, uidhashentry(GLOBAL_ROOT_UID));
+	uid_hash_insert(&root_user, uidhashentry(&init_user_ns, GLOBAL_ROOT_UID));
 	spin_unlock_irq(&uidhash_lock);
 
 	return 0;
