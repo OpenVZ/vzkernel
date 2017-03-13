@@ -68,9 +68,10 @@ MODULE_PARM_DESC(enable, "Enable creation of new user namespaces");
 int create_user_ns(struct cred *new)
 {
 	struct user_namespace *ns, *parent_ns = new->user_ns;
+	struct user_struct *new_user;
 	kuid_t owner = new->euid;
 	kgid_t group = new->egid;
-	int ret;
+	int ret, i;
 
 	if (!enable_user_ns_creation)
 		return -EINVAL;
@@ -104,6 +105,19 @@ int create_user_ns(struct cred *new)
 		kmem_cache_free(user_ns_cachep, ns);
 		return ret;
 	}
+
+	for (i = 0; i < UIDHASH_SZ; ++i)
+		INIT_HLIST_HEAD(ns->uidhash_table + i);
+
+	new_user = alloc_uid_ns(ns, owner);
+	if (!new_user) {
+		proc_free_inum(ns->proc_inum);
+		kmem_cache_free(user_ns_cachep, ns);
+		return -ENOMEM;
+	}
+
+	free_uid(new->user);
+	new->user = new_user;
 
 	atomic_set(&ns->count, 1);
 	/* Leave the new->user_ns reference with the new user namespace. */
