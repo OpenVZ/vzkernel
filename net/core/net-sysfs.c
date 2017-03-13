@@ -920,7 +920,7 @@ net_rx_queue_update_kobjects(struct net_device *net, int old_num, int new_num)
 	while (--i >= new_num) {
 		struct kobject *kobj = &net->_rx[i].kobj;
 
-		if (!list_empty(&dev_net(net)->exit_list))
+		if (!atomic_read(&dev_net(net)->count))
 			kobj->uevent_suppress = 1;
 
 		kobject_put(kobj);
@@ -1337,7 +1337,7 @@ netdev_queue_update_kobjects(struct net_device *net, int old_num, int new_num)
 	while (--i >= new_num) {
 		struct netdev_queue *queue = net->_tx + i;
 
-		if (!list_empty(&dev_net(net)->exit_list))
+		if (!atomic_read(&dev_net(net)->count))
 			queue->kobj.uevent_suppress = 1;
 #ifdef CONFIG_BQL
 		sysfs_remove_group(&queue->kobj, &dql_group);
@@ -1497,7 +1497,7 @@ void netdev_unregister_kobject(struct net_device * net)
 {
 	struct device *dev = &(net->dev);
 
-	if (!list_empty(&dev_net(net)->exit_list))
+	if (!atomic_read(&dev_net(net)->count))
 		dev_set_uevent_suppress(dev, 1);
 
 	kobject_get(&dev->kobj);
