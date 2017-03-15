@@ -784,10 +784,9 @@ resize_out:
 		int i, err;
 
 		if (copy_from_user(&mfsync, (struct ext4_ioc_mfsync_info *)arg,
-				   sizeof(mfsync))) {
-			printk("%s:%d", __FUNCTION__, __LINE__);
+				   sizeof(mfsync)))
 			return -EFAULT;
-		}
+
 		if (mfsync.size == 0)
 			return 0;
 		usr_fd = (__u32 __user *) (arg + sizeof(__u32));
