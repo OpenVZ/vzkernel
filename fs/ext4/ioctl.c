@@ -783,12 +783,17 @@ resize_out:
 		__u32 __user *usr_fd;
 		int i, err;
 
+		if (!ve_is_super(get_exec_env()))
+			return -ENOTSUPP;
 		if (copy_from_user(&mfsync, (struct ext4_ioc_mfsync_info *)arg,
 				   sizeof(mfsync)))
 			return -EFAULT;
 
 		if (mfsync.size == 0)
 			return 0;
+		if (mfsync.size > NR_FILE)
+			return -ENFILE;
+
 		usr_fd = (__u32 __user *) (arg + sizeof(__u32));
 
 		filpp = kzalloc(mfsync.size * sizeof(*filp), GFP_KERNEL);
