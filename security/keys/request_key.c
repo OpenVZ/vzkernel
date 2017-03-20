@@ -19,6 +19,8 @@
 #include <linux/slab.h>
 #include "internal.h"
 
+#include <keys/user-type.h>
+
 #define key_negative_timeout	60	/* default timeout on a negative key's existence */
 
 /**
@@ -517,7 +519,7 @@ struct key *request_key_and_link(struct key_type *type,
 		.index_key.type		= type,
 		.index_key.description	= description,
 		.cred			= current_cred(),
-		.match			= type->match,
+		.match			= type->match ? : user_match,
 		.match_data		= description,
 		.flags			= (KEYRING_SEARCH_LOOKUP_DIRECT |
 					   KEYRING_SEARCH_DO_STATE_CHECK |
