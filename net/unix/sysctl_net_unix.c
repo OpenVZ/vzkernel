@@ -35,7 +35,7 @@ int __net_init unix_sysctl_register(struct net *net)
 		goto err_alloc;
 
 	/* Don't export sysctls to unprivileged users */
-	if (net->user_ns != &init_user_ns)
+	if (ve_net_hide_sysctl(net))
 		table[0].procname = NULL;
 
 	table[0].data = &net->unx.sysctl_max_dgram_qlen;
