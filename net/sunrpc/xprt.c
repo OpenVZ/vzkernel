@@ -778,7 +778,9 @@ static void xprt_connect_status(struct rpc_task *task)
 
 	switch (task->tk_status) {
 	case -ENETUNREACH:
-		if (current->task_ve->ve_netns == NULL) {
+		dprintk("RPC: ve_name(xprt->xprt_net->owner_ve): %s\n",
+				ve_name(xprt->xprt_net->owner_ve));
+		if (xprt->xprt_net->owner_ve->ve_netns == NULL) {
 			dprintk("RPC: %5u xprt_connect_status: error %d connecting to "
 					"server %s\n", task->tk_pid, -task->tk_status,
 					xprt->servername);
