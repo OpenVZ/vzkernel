@@ -47,6 +47,8 @@ static DEFINE_MUTEX(nbd_index_mutex);
 struct nbd_sock {
 	struct socket *sock;
 	struct mutex tx_lock;
+	struct request *pending;
+	int sent;
 };
 
 #define NBD_TIMEDOUT			0
@@ -202,7 +204,7 @@ static enum blk_eh_timer_return nbd_xmit_timeout(struct request *req,
  *  Send or receive packet.
  */
 static int sock_xmit(struct nbd_device *nbd, int index, int send, void *buf,
-		     int size, int msg_flags)
+		     int size, int msg_flags, int *sent)
 {
 	struct socket *sock = nbd->socks[index]->sock;
 	int result;
@@ -241,6 +243,8 @@ static int sock_xmit(struct nbd_device *nbd, int index, int send, void *buf,
 		}
 		size -= result;
 		buf += result;
+		if (sent)
+			*sent += result;
 	} while (size > 0);
 
 	tsk_restore_flags(current, pflags, PF_MEMALLOC);
@@ -249,12 +253,13 @@ static int sock_xmit(struct nbd_device *nbd, int index, int send, void *buf,
 }
 
 static inline int sock_send_bvec(struct nbd_device *nbd, int index,
-				 struct bio_vec *bvec, int flags)
+				 struct bio_vec *bvec, int flags, int skip,
+				 int *sent)
 {
 	int result;
 	void *kaddr = kmap(bvec->bv_page);
-	result = sock_xmit(nbd, index, 1, kaddr + bvec->bv_offset,
-			   bvec->bv_len, flags);
+	result = sock_xmit(nbd, index, 1, kaddr + bvec->bv_offset + skip,
+			   bvec->bv_len - skip, flags, sent);
 	kunmap(bvec->bv_page);
 	return result;
 }
@@ -263,12 +268,16 @@ static inline int sock_send_bvec(struct nbd_device *nbd, int index,
 static int nbd_send_cmd(struct nbd_device *nbd, struct nbd_cmd *cmd, int index)
 {
 	struct request *req = blk_mq_rq_from_pdu(cmd);
+	struct nbd_sock *nsock = nbd->socks[index];
+	char *from;
+	int sent_size;
 	int result;
 	struct nbd_request request;
 	unsigned long size = blk_rq_bytes(req);
 	struct bio *bio;
 	u32 type;
 	u32 tag = blk_mq_unique_tag(req);
+	int sent = nsock->sent, skip = 0;
 
 	if (req->cmd_type != REQ_TYPE_FS)
 		return -EIO;
@@ -291,6 +300,19 @@ static int nbd_send_cmd(struct nbd_device *nbd, struct nbd_cmd *cmd, int index)
 
 	memset(&request, 0, sizeof(request));
 	request.magic = htonl(NBD_REQUEST_MAGIC);
+
+	/* We did a partial send previously, and we at least sent the whole
+	 * request struct, so just go and send the rest of the pages in the
+	 * request.
+	 */
+	if (sent) {
+		if (sent >= sizeof(request)) {
+			skip = sent - sizeof(request);
+			goto send_pages;
+		}
+	}
+	from = ((char*)&request) + sent;
+	sent_size = sizeof(request) - sent;
 	request.type = htonl(type);
 	if (type != NBD_CMD_FLUSH) {
 		request.from = cpu_to_be64((u64)blk_rq_pos(req) << 9);
@@ -301,16 +323,28 @@ static int nbd_send_cmd(struct nbd_device *nbd, struct nbd_cmd *cmd, int index)
 	dev_dbg(nbd_to_dev(nbd), "request %p: sending control (%s@%llu,%uB)\n",
 		cmd, nbdcmd_to_ascii(type),
 		(unsigned long long)blk_rq_pos(req) << 9, blk_rq_bytes(req));
-	result = sock_xmit(nbd, index, 1, &request, sizeof(request),
-			(type == NBD_CMD_WRITE) ? MSG_MORE : 0);
+	result = sock_xmit(nbd, index, 1, from, sent_size,
+			(type == NBD_CMD_WRITE) ? MSG_MORE : 0, &sent);
 	if (result <= 0) {
+		if (result == -ERESTARTSYS) {
+			/* If we havne't sent anything we can just return BUSY,
+			 * however if we have sent something we need to make
+			 * sure we only allow this req to be sent until we are
+			 * completely done.
+			 */
+			if (sent) {
+				nsock->pending = req;
+				nsock->sent = sent;
+			}
+			return BLK_MQ_RQ_QUEUE_BUSY;
+		}
 		dev_err_ratelimited(disk_to_dev(nbd->disk),
 			"Send control failed (result %d)\n", result);
 		return -EIO;
 	}
-
+send_pages:
 	if (type != NBD_CMD_WRITE)
-		return 0;
+		goto out;
 
 	bio = req->bio;
 	while (bio) {
@@ -324,8 +358,25 @@ static int nbd_send_cmd(struct nbd_device *nbd, struct nbd_cmd *cmd, int index)
 
 			dev_dbg(nbd_to_dev(nbd), "request %p: sending %d bytes data\n",
 				cmd, bvec->bv_len);
-			result = sock_send_bvec(nbd, index, bvec, flags);
+
+			if (skip) {
+				if (skip >= bvec->bv_len) {
+					skip -= bvec->bv_len;
+					continue;
+				}
+			}
+			result = sock_send_bvec(nbd, index, bvec, flags, skip, &sent);
+			skip = 0;
 			if (result <= 0) {
+				if (result == -ERESTARTSYS) {
+					/* We've already sent the header, we
+					 * have no choice but to set pending and
+					 * return BUSY.
+					 */
+					nsock->pending = req;
+					nsock->sent = sent;
+					return BLK_MQ_RQ_QUEUE_BUSY;
+				}
 				dev_err(disk_to_dev(nbd->disk),
 					"Send data failed (result %d)\n",
 					result);
@@ -342,6 +393,9 @@ static int nbd_send_cmd(struct nbd_device *nbd, struct nbd_cmd *cmd, int index)
 		}
 		bio = next;
 	}
+out:
+	nsock->pending = NULL;
+	nsock->sent = 0;
 	return 0;
 }
 
@@ -351,7 +405,7 @@ static inline int sock_recv_bvec(struct nbd_device *nbd, int index,
 	int result;
 	void *kaddr = kmap(bvec->bv_page);
 	result = sock_xmit(nbd, index, 0, kaddr + bvec->bv_offset,
-			   bvec->bv_len, MSG_WAITALL);
+			   bvec->bv_len, MSG_WAITALL, NULL);
 	kunmap(bvec->bv_page);
 	return result;
 }
@@ -367,7 +421,7 @@ static struct nbd_cmd *nbd_read_stat(struct nbd_device *nbd, int index)
 	u32 tag;
 
 	reply.magic = 0;
-	result = sock_xmit(nbd, index, 0, &reply, sizeof(reply), MSG_WAITALL);
+	result = sock_xmit(nbd, index, 0, &reply, sizeof(reply), MSG_WAITALL, NULL);
 	if (result <= 0) {
 		if (!test_bit(NBD_DISCONNECTED, &nbd->runtime_flags) &&
 		    !test_bit(NBD_DISCONNECT_REQUESTED, &nbd->runtime_flags))
@@ -494,22 +548,23 @@ static void nbd_clear_que(struct nbd_device *nbd)
 }
 
 
-static void nbd_handle_cmd(struct nbd_cmd *cmd, int index)
+static int nbd_handle_cmd(struct nbd_cmd *cmd, int index)
 {
 	struct request *req = blk_mq_rq_from_pdu(cmd);
 	struct nbd_device *nbd = cmd->nbd;
 	struct nbd_sock *nsock;
+	int ret;
 
 	if (index >= nbd->num_connections) {
 		dev_err_ratelimited(disk_to_dev(nbd->disk),
 				    "Attempted send on invalid socket\n");
-		goto error_out;
+		return -EINVAL;
 	}
 
 	if (test_bit(NBD_DISCONNECTED, &nbd->runtime_flags)) {
 		dev_err_ratelimited(disk_to_dev(nbd->disk),
 				    "Attempted send on closed socket\n");
-		goto error_out;
+		return -EINVAL;
 	}
 
 	req->errors = 0;
@@ -520,29 +575,30 @@ static void nbd_handle_cmd(struct nbd_cmd *cmd, int index)
 		mutex_unlock(&nsock->tx_lock);
 		dev_err_ratelimited(disk_to_dev(nbd->disk),
 				    "Attempted send on closed socket\n");
-		goto error_out;
+		return -EINVAL;
 	}
 
-	if (nbd_send_cmd(nbd, cmd, index) != 0) {
-		dev_err_ratelimited(disk_to_dev(nbd->disk),
-				    "Request send failed\n");
-		req->errors++;
-		nbd_end_request(cmd);
+	/* Handle the case that we have a pending request that was partially
+	 * transmitted that _has_ to be serviced first.  We need to call requeue
+	 * here so that it gets put _after_ the request that is already on the
+	 * dispatch list.
+	 */
+	if (unlikely(nsock->pending && nsock->pending != req)) {
+		blk_mq_requeue_request(req, true);
+		ret = 0;
+		goto out;
 	}
-
+	ret = nbd_send_cmd(nbd, cmd, index);
+out:
 	mutex_unlock(&nsock->tx_lock);
-
-	return;
-
-error_out:
-	req->errors++;
-	nbd_end_request(cmd);
+	return ret;
 }
 
 static int nbd_queue_rq(struct blk_mq_hw_ctx *hctx,
 			const struct blk_mq_queue_data *bd)
 {
 	struct nbd_cmd *cmd = blk_mq_rq_to_pdu(bd->rq);
+	int ret;
 
 	/*
 	 * Since we look at the bio's to send the request over the network we
@@ -555,10 +611,20 @@ static int nbd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	 */
 	init_completion(&cmd->send_complete);
 	blk_mq_start_request(bd->rq);
-	nbd_handle_cmd(cmd, hctx->queue_num);
+
+	/* We can be called directly from the user space process, which means we
+	 * could possibly have signals pending so our sendmsg will fail.  In
+	 * this case we need to return that we are busy, otherwise error out as
+	 * appropriate.
+	 */
+	ret = nbd_handle_cmd(cmd, hctx->queue_num);
+	if (ret < 0)
+		ret = BLK_MQ_RQ_QUEUE_ERROR;
+	if (!ret)
+		ret = BLK_MQ_RQ_QUEUE_OK;
 	complete(&cmd->send_complete);
 
-	return BLK_MQ_RQ_QUEUE_OK;
+	return ret;
 }
 
 static int nbd_add_socket(struct nbd_device *nbd, struct block_device *bdev,
@@ -593,6 +659,8 @@ static int nbd_add_socket(struct nbd_device *nbd, struct block_device *bdev,
 
 	mutex_init(&nsock->tx_lock);
 	nsock->sock = sock;
+	nsock->pending = NULL;
+	nsock->sent = 0;
 	socks[nbd->num_connections++] = nsock;
 
 	if (max_part)
@@ -643,7 +711,7 @@ static void send_disconnects(struct nbd_device *nbd)
 	request.type = htonl(NBD_CMD_DISC);
 
 	for (i = 0; i < nbd->num_connections; i++) {
-		ret = sock_xmit(nbd, i, 1, &request, sizeof(request), 0);
+		ret = sock_xmit(nbd, i, 1, &request, sizeof(request), 0, NULL);
 		if (ret <= 0)
 			dev_err(disk_to_dev(nbd->disk),
 				"Send disconnect failed %d\n", ret);
