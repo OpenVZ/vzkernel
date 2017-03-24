@@ -71,7 +71,7 @@ static int nf_conntrack_acct_init_sysctl(struct net *net)
 	table[0].data = &net->ct.sysctl_acct;
 
 	/* Don't export sysctls to unprivileged users */
-	if (nf_conntrack_hide_sysctl(net))
+	if (ve_net_hide_sysctl(net))
 		table[0].procname = NULL;
 
 	net->ct.acct_sysctl_header = register_net_sysctl(net, "net/netfilter",
