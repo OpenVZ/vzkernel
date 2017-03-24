@@ -3788,7 +3788,9 @@ static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 	lock_sock(sk);
 	/* Opening a Tx-ring is NOT supported in TPACKET_V3 */
 	if (!closing && tx_ring && (po->tp_version > TPACKET_V2)) {
-		WARN(1, "Tx-ring is not supported.\n");
+		/* Hide warnings initiated from CT */
+		if (ve_is_super(get_exec_env()))
+			WARN(1, "Tx-ring is not supported.\n");
 		goto out;
 	}
 
