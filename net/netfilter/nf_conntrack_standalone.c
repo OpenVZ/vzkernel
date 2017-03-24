@@ -505,21 +505,6 @@ static struct ctl_table nf_ct_netfilter_table[] = {
 
 static int zero;
 
-int nf_conntrack_hide_sysctl(struct net *net)
-{
-	/*
-	 * This can happen only on VE creation, when process created VE cgroup,
-	 * and clones a child with new network namespace.
-	 */
-	if (net->owner_ve->init_cred == NULL)
-		return 0;
-
-	/*
-	 * Expose sysctl only for container's init user namespace
-	 */
-	return net->user_ns != net->owner_ve->init_cred->user_ns;
-}
-
 static int nf_conntrack_netfilter_init_sysctl(struct net *net)
 {
 	struct ctl_table *table;
@@ -532,7 +517,7 @@ static int nf_conntrack_netfilter_init_sysctl(struct net *net)
 	table[0].data = &net->ct.max;
 
 	/* Don't export sysctls to unprivileged users */
-	if (nf_conntrack_hide_sysctl(net))
+	if (ve_net_hide_sysctl(net))
 		table[0].procname = NULL;
 
 	net->ct.netfilter_header = register_net_sysctl(net, "net", table);
@@ -573,7 +558,7 @@ static int nf_conntrack_standalone_init_sysctl(struct net *net)
 	table[5].data = &net->ct.expect_max;
 
 	/* Don't export sysctls to unprivileged users */
-	if (nf_conntrack_hide_sysctl(net))
+	if (ve_net_hide_sysctl(net))
 		table[0].procname = NULL;
 
 	if (!net_eq(net, &init_net)) {
@@ -603,11 +588,6 @@ static void nf_conntrack_standalone_fini_sysctl(struct net *net)
 	kfree(table);
 }
 #else
-int nf_conntrack_hide_sysctl(struct net *net)
-{
-	return 0;
-}
-
 static int nf_conntrack_netfilter_init_sysctl(struct net *net)
 {
 	return 0;
