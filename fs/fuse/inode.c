@@ -449,12 +449,14 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 		spin_lock(&fc->lock);
 		list_for_each_entry(fud, &fc->devices, entry) {
 			struct fuse_pqueue *fpq = &fud->pq;
+			struct fuse_iqueue *fiq = fud->fiq;
 			spin_lock(&fpq->lock);
 			fuse_kill_requests(fc, inode, &fpq->processing);
+			fuse_kill_requests(fc, inode, &fiq->pending);
 			fuse_kill_requests(fc, inode, &fpq->io);
 			spin_unlock(&fpq->lock);
 		}
-		fuse_kill_requests(fc, inode, &fc->iq.pending);
+		fuse_kill_requests(fc, inode, &fc->main_iq.pending);
 		fuse_kill_requests(fc, inode, &fc->bg_queue);
 		wake_up(&fi->page_waitq); /* readpage[s] can wait on fuse wb */
 		spin_unlock(&fc->lock);
@@ -733,8 +735,9 @@ static void fuse_pqueue_init(struct fuse_pqueue *fpq)
 	fpq->connected = 1;
 }
 
-void fuse_conn_init(struct fuse_conn *fc, struct user_namespace *user_ns)
+int fuse_conn_init(struct fuse_conn *fc, struct user_namespace *user_ns)
 {
+	int cpu;
 	memset(fc, 0, sizeof(*fc));
 	spin_lock_init(&fc->lock);
 	init_rwsem(&fc->killsb);
@@ -742,7 +745,12 @@ void fuse_conn_init(struct fuse_conn *fc, struct user_namespace *user_ns)
 	atomic_set(&fc->dev_count, 1);
 	init_waitqueue_head(&fc->blocked_waitq);
 	init_waitqueue_head(&fc->reserved_req_waitq);
-	fuse_iqueue_init(&fc->iq);
+	fuse_iqueue_init(&fc->main_iq);
+	fc->iqs = alloc_percpu(struct fuse_iqueue);
+	if (!fc->iqs)
+		return -ENOMEM;
+	for_each_online_cpu(cpu)
+		fuse_iqueue_init(per_cpu_ptr(fc->iqs, cpu));
 	INIT_LIST_HEAD(&fc->bg_queue);
 	INIT_LIST_HEAD(&fc->entry);
 	INIT_LIST_HEAD(&fc->devices);
@@ -759,6 +767,8 @@ void fuse_conn_init(struct fuse_conn *fc, struct user_namespace *user_ns)
 	get_random_bytes(&fc->scramble_key, sizeof(fc->scramble_key));
 	fc->pid_ns = get_pid_ns(task_active_pid_ns(current));
 	fc->user_ns = get_user_ns(user_ns);
+
+	return 0;
 }
 EXPORT_SYMBOL_GPL(fuse_conn_init);
 
@@ -1109,6 +1119,7 @@ static void fuse_send_init(struct fuse_conn *fc, struct fuse_req *req)
 static void fuse_free_conn(struct fuse_conn *fc)
 {
 	WARN_ON(!list_empty(&fc->devices));
+	free_percpu(fc->iqs);
 	kfree_rcu(fc, rcu);
 }
 
@@ -1159,9 +1170,11 @@ struct fuse_dev *fuse_dev_alloc(struct fuse_conn *fc)
 	fud = kzalloc(sizeof(struct fuse_dev), GFP_KERNEL);
 	if (fud) {
 		fud->fc = fuse_conn_get(fc);
+		fud->fiq = &fc->main_iq;
 		fuse_pqueue_init(&fud->pq);
 
 		spin_lock(&fc->lock);
+		fud->fiq->handled_by_fud++;
 		list_add_tail(&fud->entry, &fc->devices);
 		spin_unlock(&fc->lock);
 	}
@@ -1176,6 +1189,8 @@ void fuse_dev_free(struct fuse_dev *fud)
 
 	if (fc) {
 		spin_lock(&fc->lock);
+		fud->fiq->handled_by_fud--;
+		BUG_ON(fud->fiq->handled_by_fud < 0);
 		list_del(&fud->entry);
 		spin_unlock(&fc->lock);
 
@@ -1251,7 +1266,11 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 	if (!fc)
 		goto err_fput;
 
-	fuse_conn_init(fc, sb->s_user_ns);
+	err = fuse_conn_init(fc, sb->s_user_ns);
+	if (err) {
+		kfree(fc);
+		goto err_fput;
+	}
 	fc->release = fuse_free_conn;
 
 	fud = fuse_dev_alloc(fc);
@@ -1291,13 +1310,13 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 	/* Root dentry doesn't have .d_revalidate */
 	sb->s_d_op = &fuse_dentry_operations;
 
-	init_req = fuse_request_alloc(0);
+	init_req = fuse_request_alloc(fc, 0);
 	if (!init_req)
 		goto err_put_root;
 	__set_bit(FR_BACKGROUND, &init_req->flags);
 
 	if (is_bdev || fc->umount_wait) {
-		fc->destroy_req = fuse_request_alloc(0);
+		fc->destroy_req = fuse_request_alloc(fc, 0);
 		if (!fc->destroy_req)
 			goto err_free_init_req;
 	}
