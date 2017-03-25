@@ -509,7 +509,11 @@ static int cuse_channel_open(struct inode *inode, struct file *file)
 	 * Limit the cuse channel to requests that can
 	 * be represented in file->f_cred->user_ns.
 	 */
-	fuse_conn_init(&cc->fc, file->f_cred->user_ns);
+	rc = fuse_conn_init(&cc->fc, file->f_cred->user_ns);
+	if (rc) {
+		kfree(cc);
+		return rc;
+	}
 
 	fud = fuse_dev_alloc(&cc->fc);
 	if (!fud) {
