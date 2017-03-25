@@ -280,15 +280,17 @@ static int fuse_conn_seq_open(struct file *filp, int list_id)
 
 	fcp->conn = conn;
 	switch (list_id) {
-	case FUSE_PROCESSING_REQ:
-		fcp->req_list = &conn->pq.processing;
-		break;
 	case FUSE_PENDING_REQ:
 		fcp->req_list = &conn->iq.pending;
+		break;
+#if 0
+	case FUSE_PROCESSING_REQ:
+		fcp->req_list = &conn->pq.processing;
 		break;
 	case FUSE_IO_REQ:
 		fcp->req_list = &conn->pq.io;
 		break;
+#endif
 	default:
 		BUG();
 	}
@@ -318,6 +320,7 @@ static const struct file_operations fuse_conn_pending_req = {
 	.release = fuse_conn_release,
 };
 
+#if 0
 static int fuse_conn_processing_open(struct inode *inode, struct file *filp)
 {
 	return fuse_conn_seq_open(filp, FUSE_PROCESSING_REQ);
@@ -341,6 +344,7 @@ static const struct file_operations fuse_conn_io_req = {
 	.llseek = seq_lseek,
 	.release = fuse_conn_release,
 };
+#endif
 
 static int fuse_files_show(struct seq_file *f, void *v)
 {
@@ -504,12 +508,14 @@ int fuse_ctl_add_conn(struct fuse_conn *fc)
 	    !fuse_ctl_add_dentry(parent, fc, "pending_req",
 		    		S_IFREG | 0600, 1, NULL,
 				&fuse_conn_pending_req) ||
+#if 0
 	    !fuse_ctl_add_dentry(parent, fc, "processing_req",
 		    		S_IFREG | 0600, 1, NULL,
 				&fuse_conn_processing_req) ||
 	    !fuse_ctl_add_dentry(parent, fc, "io_req",
 		    		S_IFREG | 0600, 1, NULL,
 				&fuse_conn_io_req) ||
+#endif
 	    !fuse_ctl_add_dentry(parent, fc, "open_files",
 		    		S_IFREG | 0600, 1, NULL,
 				&fuse_conn_files_ops) ||
