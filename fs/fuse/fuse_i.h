@@ -308,6 +308,9 @@ struct fuse_args {
 
 	/** Inode used in the request or NULL */
 	struct inode *inode;
+
+	/** Request will be handled by fud pointing to this fiq */
+	struct fuse_iqueue *fiq;
 };
 
 struct fuse_args_pages {
@@ -462,6 +465,9 @@ struct fuse_iqueue {
 	/** Connection established */
 	unsigned connected;
 
+	/** # of fuds pointing to this fiq */
+	int handled_by_fud;
+
 	/** Lock protecting accesses to members of this structure */
 	spinlock_t lock;
 
@@ -517,6 +523,9 @@ struct fuse_pqueue {
 struct fuse_dev {
 	/** Fuse connection for this device */
 	struct fuse_conn *fc;
+
+	/** Input queue */
+	struct fuse_iqueue *fiq;
 
 	/** Processing queue */
 	struct fuse_pqueue pq;
@@ -604,7 +613,10 @@ struct fuse_conn {
 	unsigned int max_pages_limit;
 
 	/** Input queue */
-	struct fuse_iqueue iq;
+	struct fuse_iqueue main_iq;
+
+	/** Per-cpu input queues */
+	struct fuse_iqueue __percpu *iqs;
 
 	/** The next unique kernel file handle */
 	atomic64_t khctr;
@@ -1140,7 +1152,7 @@ struct fuse_conn *fuse_conn_get(struct fuse_conn *fc);
 /**
  * Initialize fuse_conn
  */
-void fuse_conn_init(struct fuse_conn *fc, struct fuse_mount *fm,
+int fuse_conn_init(struct fuse_conn *fc, struct fuse_mount *fm,
 		    struct user_namespace *user_ns,
 		    const struct fuse_iqueue_ops *fiq_ops, void *fiq_priv);
 
