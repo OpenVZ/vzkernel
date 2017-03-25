@@ -409,6 +409,9 @@ struct fuse_req {
 };
 
 struct fuse_iqueue {
+	/** Connection established */
+	unsigned connected;
+
 	/** Readers of the connection are waiting on this */
 	wait_queue_head_t waitq;
 
