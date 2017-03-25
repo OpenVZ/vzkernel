@@ -419,11 +419,17 @@ struct fuse_req {
 
 	/** Request is stolen from fuse_file->reserved_req */
 	struct file *stolen_file;
+
+	/** Request will be handled by fud pointing to this fiq */
+	struct fuse_iqueue *fiq;
 };
 
 struct fuse_iqueue {
 	/** Connection established */
 	unsigned connected;
+
+	/** # of fuds pointing to this fiq */
+	int handled_by_fud;
 
 	/** Readers of the connection are waiting on this */
 	wait_queue_head_t waitq;
@@ -472,6 +478,9 @@ struct fuse_dev {
 	/** Fuse connection for this device */
 	struct fuse_conn *fc;
 
+	/** Input queue */
+	struct fuse_iqueue *fiq;
+
 	/** Processing queue */
 	struct fuse_pqueue pq;
 
@@ -516,8 +525,11 @@ struct fuse_conn {
 	/** Maximum write size */
 	unsigned max_write;
 
-	/** Input queue */
-	struct fuse_iqueue iq;
+	/** Main input queue */
+	struct fuse_iqueue main_iq;
+
+	/** Per-cpu input queues */
+	struct fuse_iqueue __percpu *iqs;
 
 	/** The next unique kernel file handle */
 	u64 khctr;
@@ -855,9 +867,9 @@ void __exit fuse_ctl_cleanup(void);
 /**
  * Allocate a request
  */
-struct fuse_req *fuse_request_alloc(unsigned npages);
+struct fuse_req *fuse_request_alloc(struct fuse_conn *fc, unsigned npages);
 
-struct fuse_req *fuse_request_alloc_nofs(unsigned npages);
+struct fuse_req *fuse_request_alloc_nofs(struct fuse_conn *fc, unsigned npages);
 
 /**
  * Free a request
@@ -936,7 +948,7 @@ struct fuse_conn *fuse_conn_get(struct fuse_conn *fc);
 /**
  * Initialize fuse_conn
  */
-void fuse_conn_init(struct fuse_conn *fc, struct user_namespace *user_ns);
+int fuse_conn_init(struct fuse_conn *fc, struct user_namespace *user_ns);
 
 /**
  * Release reference to fuse_conn
