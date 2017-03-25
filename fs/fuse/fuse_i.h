@@ -871,8 +871,6 @@ void fuse_invalidate_entry_cache(struct dentry *entry);
  */
 struct fuse_conn *fuse_conn_get(struct fuse_conn *fc);
 
-void fuse_conn_kill(struct fuse_conn *fc);
-
 /**
  * Initialize fuse_conn
  */
