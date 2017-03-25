@@ -80,7 +80,7 @@ struct fuse_file *fuse_file_alloc(struct fuse_conn *fc)
 	ff->ff_state = 0;
 
 	ff->fc = fc;
-	ff->reserved_req = fuse_request_alloc(0);
+	ff->reserved_req = fuse_request_alloc(fc, 0);
 	if (unlikely(!ff->reserved_req)) {
 		kfree(ff);
 		return NULL;
@@ -770,8 +770,12 @@ void fuse_read_fill(struct fuse_req *req, struct file *file, loff_t pos,
 	req->out.numargs = 1;
 	req->out.args[0].size = count;
 
-	if (opcode == FUSE_READ)
+	if (opcode == FUSE_READ) {
+		struct fuse_iqueue *fiq = __this_cpu_ptr(ff->fc->iqs);
+		if (fiq->handled_by_fud)
+			req->fiq = fiq;
 		req->inode = file->f_dentry->d_inode;
+	}
 }
 
 static void fuse_release_user_pages(struct fuse_req *req, int write)
@@ -1998,7 +2002,7 @@ static int fuse_writepage_locked(struct page *page,
 	if (test_set_page_writeback(page))
 		BUG();
 
-	req = fuse_request_alloc_nofs(1);
+	req = fuse_request_alloc_nofs(fc, 1);
 	if (!req)
 		goto err;
 
@@ -2242,7 +2246,7 @@ static int fuse_writepages_fill(struct page *page,
 		}
 
 		data->req = req =
-			fuse_request_alloc_nofs(FUSE_MAX_PAGES_PER_REQ);
+			fuse_request_alloc_nofs(fc, FUSE_MAX_PAGES_PER_REQ);
 		if (!req) {
 			unlock_page(page);
 			return -ENOMEM;
@@ -2316,7 +2320,7 @@ static int fuse_writepages(struct address_space *mapping,
 		fuse_release_ff(inode, ff);
 
 	data.inode = inode;
-	data.req = fuse_request_alloc_nofs(FUSE_MAX_PAGES_PER_REQ);
+	data.req = fuse_request_alloc_nofs(fc, FUSE_MAX_PAGES_PER_REQ);
 	err = -ENOMEM;
 	if (!data.req)
 		goto out;

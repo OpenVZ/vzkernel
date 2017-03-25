@@ -503,7 +503,11 @@ static int cuse_channel_open(struct inode *inode, struct file *file)
 	if (!cc)
 		return -ENOMEM;
 
-	fuse_conn_init(&cc->fc);
+	rc = fuse_conn_init(&cc->fc);
+	if (rc) {
+		kfree(cc);
+		return rc;
+	}
 
 	fud = fuse_dev_alloc(&cc->fc);
 	if (!fud) {
