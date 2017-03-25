@@ -299,7 +299,7 @@ static int fuse_conn_seq_open(struct file *filp, int list_id)
 	fcp->conn = conn;
 	switch (list_id) {
 	case FUSE_PENDING_REQ:
-		fcp->req_list = &conn->iq.pending;
+		fcp->req_list = &conn->main_iq.pending;
 		break;
 #if 0
 	case FUSE_PROCESSING_REQ:
@@ -418,10 +418,23 @@ static const struct file_operations fuse_conn_files_ops = {
 static int fuse_conn_show(struct seq_file *sf, void *v)
 {
 	struct fuse_conn *fc = sf->private;
+	struct fuse_dev *fud;
+	int n_total = 0;
+	int n_active = 0;
+
+	spin_lock(&fc->lock);
+	list_for_each_entry(fud, &fc->devices, entry) {
+		struct fuse_iqueue *fiq = fud->fiq;
+		if (waitqueue_active(&fiq->waitq))
+			n_active++;
+		n_total++;
+	}
+	spin_unlock(&fc->lock);
+
 	seq_printf(sf, "Connected: %d\n", fc->connected);
 	seq_printf(sf, "Initialized: %d\n", fc->initialized);
 	seq_printf(sf, "Blocked: %d\n", fc->blocked);
-	seq_printf(sf, "WQ active: %d\n", waitqueue_active(&fc->iq.waitq));
+	seq_printf(sf, "WQ active: %d of %d\n", n_active, n_total);
 	seq_printf(sf, "Blocked_wq active: %d\n", waitqueue_active(&fc->blocked_waitq));
 	seq_printf(sf, "num_background: %d\n", fc->num_background);
 	seq_printf(sf, "num_waiting: %d\n", atomic_read(&fc->num_waiting));
