@@ -771,8 +771,12 @@ void fuse_read_args_fill(struct fuse_io_args *ia, struct file *file, loff_t pos,
 	args->out_numargs = 1;
 	args->out_args[0].size = count;
 
-	if (opcode == FUSE_READ)
+	if (opcode == FUSE_READ) {
+		struct fuse_iqueue *fiq = raw_cpu_ptr(ff->fm->fc->iqs);
+		if (fiq->handled_by_fud)
+			args->fiq = fiq;
 		args->inode = file->f_path.dentry->d_inode;
+	}
 }
 
 static void fuse_release_user_pages(struct fuse_args_pages *ap,

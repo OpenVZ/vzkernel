@@ -514,14 +514,16 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 		spin_lock(&fc->lock);
 		list_for_each_entry(fud, &fc->devices, entry) {
 			struct fuse_pqueue *fpq = &fud->pq;
+			struct fuse_iqueue *fiq = fud->fiq;
 			int i;
 			spin_lock(&fpq->lock);
 			for (i = 0; i < FUSE_PQ_HASH_SIZE; i++)
 				fuse_kill_requests(fc, inode, &fpq->processing[i]);
+			fuse_kill_requests(fc, inode, &fiq->pending);
 			fuse_kill_requests(fc, inode, &fpq->io);
 			spin_unlock(&fpq->lock);
 		}
-		fuse_kill_requests(fc, inode, &fc->iq.pending);
+		fuse_kill_requests(fc, inode, &fc->main_iq.pending);
 		fuse_kill_requests(fc, inode, &fc->bg_queue);
 		wake_up(&fi->page_waitq); /* readpage[s] can wait on fuse wb */
 		spin_unlock(&fc->lock);
@@ -915,10 +917,11 @@ static void fuse_pqueue_init(struct fuse_pqueue *fpq)
 	fpq->connected = 1;
 }
 
-void fuse_conn_init(struct fuse_conn *fc, struct fuse_mount *fm,
+int fuse_conn_init(struct fuse_conn *fc, struct fuse_mount *fm,
 		    struct user_namespace *user_ns,
 		    const struct fuse_iqueue_ops *fiq_ops, void *fiq_priv)
 {
+	int cpu;
 	memset(fc, 0, sizeof(*fc));
 	spin_lock_init(&fc->lock);
 	spin_lock_init(&fc->bg_lock);
@@ -926,7 +929,12 @@ void fuse_conn_init(struct fuse_conn *fc, struct fuse_mount *fm,
 	refcount_set(&fc->count, 1);
 	atomic_set(&fc->dev_count, 1);
 	init_waitqueue_head(&fc->blocked_waitq);
-	fuse_iqueue_init(&fc->iq, fiq_ops, fiq_priv);
+	fuse_iqueue_init(&fc->main_iq, fiq_ops, fiq_priv);
+	fc->iqs = alloc_percpu(struct fuse_iqueue);
+	if (!fc->iqs)
+		return -ENOMEM;
+	for_each_online_cpu(cpu)
+		fuse_iqueue_init(per_cpu_ptr(fc->iqs, cpu), fiq_ops, fiq_priv);
 	INIT_LIST_HEAD(&fc->bg_queue);
 	INIT_LIST_HEAD(&fc->entry);
 	INIT_LIST_HEAD(&fc->devices);
@@ -949,13 +957,15 @@ void fuse_conn_init(struct fuse_conn *fc, struct fuse_mount *fm,
 	INIT_LIST_HEAD(&fc->mounts);
 	list_add(&fm->fc_entry, &fc->mounts);
 	fm->fc = fc;
+
+	return 0;
 }
 EXPORT_SYMBOL_GPL(fuse_conn_init);
 
 void fuse_conn_put(struct fuse_conn *fc)
 {
 	if (refcount_dec_and_test(&fc->count)) {
-		struct fuse_iqueue *fiq = &fc->iq;
+		struct fuse_iqueue *fiq = &fc->main_iq;
 		struct fuse_sync_bucket *bucket;
 
 		if (IS_ENABLED(CONFIG_FUSE_DAX))
@@ -1378,6 +1388,7 @@ EXPORT_SYMBOL_GPL(fuse_send_init);
 void fuse_free_conn(struct fuse_conn *fc)
 {
 	WARN_ON(!list_empty(&fc->devices));
+	free_percpu(fc->iqs);
 	kfree_rcu(fc, rcu);
 }
 EXPORT_SYMBOL_GPL(fuse_free_conn);
@@ -1447,7 +1458,9 @@ EXPORT_SYMBOL_GPL(fuse_dev_alloc);
 void fuse_dev_install(struct fuse_dev *fud, struct fuse_conn *fc)
 {
 	fud->fc = fuse_conn_get(fc);
+	fud->fiq = &fc->main_iq;
 	spin_lock(&fc->lock);
+	fud->fiq->handled_by_fud++;
 	list_add_tail(&fud->entry, &fc->devices);
 	spin_unlock(&fc->lock);
 }
@@ -1472,6 +1485,8 @@ void fuse_dev_free(struct fuse_dev *fud)
 
 	if (fc) {
 		spin_lock(&fc->lock);
+		fud->fiq->handled_by_fud--;
+		BUG_ON(fud->fiq->handled_by_fud < 0);
 		list_del(&fud->entry);
 		spin_unlock(&fc->lock);
 
@@ -1781,7 +1796,12 @@ static int fuse_get_tree(struct fs_context *fsc)
 		return -ENOMEM;
 	}
 
-	fuse_conn_init(fc, fm, fsc->user_ns, &fuse_dev_fiq_ops, NULL);
+	err = fuse_conn_init(fc, fm, fsc->user_ns, &fuse_dev_fiq_ops, NULL);
+	if (err) {
+		kfree(fc);
+		kfree(fm);
+		return -ENOMEM;
+	}
 	fc->release = fuse_free_conn;
 
 	fsc->s_fs_info = fm;
