@@ -262,14 +262,6 @@ struct fuse_page_desc {
 	unsigned int offset;
 };
 
-/** The request state */
-enum fuse_req_state {
-	FUSE_REQ_PENDING = 0,
-	FUSE_REQ_IO,
-	FUSE_REQ_SENT,
-	FUSE_REQ_FINISHED
-};
-
 /** The request IO state (for asynchronous processing) */
 struct fuse_io_priv {
 	int async;
@@ -295,6 +287,9 @@ struct fuse_io_priv {
  * FR_ABORTED:		the request was aborted
  * FR_INTERRUPTED:	the request has been interrupted
  * FR_LOCKED:		data is being copied to/from the request
+ * FR_PENDING:		request is not yet in userspace
+ * FR_SENT:		request is in userspace, waiting for an answer
+ * FR_FINISHED:		request is finished
  */
 enum fuse_req_flag {
 	FR_ISREPLY,
@@ -304,6 +299,9 @@ enum fuse_req_flag {
 	FR_ABORTED,
 	FR_INTERRUPTED,
 	FR_LOCKED,
+	FR_PENDING,
+	FR_SENT,
+	FR_FINISHED,
 };
 
 /**
@@ -338,9 +336,6 @@ struct fuse_req {
 
 	/** Request was killed -- pages were released */
 	unsigned killed:1;
-
-	/** State of the request */
-	enum fuse_req_state state;
 
 	/** The request input */
 	struct fuse_in in;
