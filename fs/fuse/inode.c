@@ -423,7 +423,7 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 	if (!err || err == -EIO) { /* AS_EIO might trigger -EIO */
 		spin_lock(&fc->lock);
 		fuse_kill_requests(fc, inode, &fc->processing);
-		fuse_kill_requests(fc, inode, &fc->pending);
+		fuse_kill_requests(fc, inode, &fc->iq.pending);
 		fuse_kill_requests(fc, inode, &fc->bg_queue);
 		fuse_kill_requests(fc, inode, &fc->io);
 		wake_up(&fi->page_waitq); /* readpage[s] can wait on fuse wb */
@@ -471,8 +471,8 @@ void fuse_conn_kill(struct fuse_conn *fc)
 	fc->initialized = 1;
 	spin_unlock(&fc->lock);
 	/* Flush all readers on this fs */
-	kill_fasync(&fc->fasync, SIGIO, POLL_IN);
-	wake_up_all(&fc->waitq);
+	kill_fasync(&fc->iq.fasync, SIGIO, POLL_IN);
+	wake_up_all(&fc->iq.waitq);
 	wake_up_all(&fc->blocked_waitq);
 	wake_up_all(&fc->reserved_req_waitq);
 }
@@ -703,6 +703,15 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 	return 0;
 }
 
+static void fuse_iqueue_init(struct fuse_iqueue *fiq)
+{
+	memset(fiq, 0, sizeof(struct fuse_iqueue));
+	init_waitqueue_head(&fiq->waitq);
+	INIT_LIST_HEAD(&fiq->pending);
+	INIT_LIST_HEAD(&fiq->interrupts);
+	fiq->forget_list_tail = &fiq->forget_list_head;
+}
+
 void fuse_conn_init(struct fuse_conn *fc)
 {
 	memset(fc, 0, sizeof(*fc));
@@ -710,17 +719,14 @@ void fuse_conn_init(struct fuse_conn *fc)
 	mutex_init(&fc->inst_mutex);
 	init_rwsem(&fc->killsb);
 	atomic_set(&fc->count, 1);
-	init_waitqueue_head(&fc->waitq);
 	init_waitqueue_head(&fc->blocked_waitq);
 	init_waitqueue_head(&fc->reserved_req_waitq);
-	INIT_LIST_HEAD(&fc->pending);
+	fuse_iqueue_init(&fc->iq);
 	INIT_LIST_HEAD(&fc->processing);
 	INIT_LIST_HEAD(&fc->io);
-	INIT_LIST_HEAD(&fc->interrupts);
 	INIT_LIST_HEAD(&fc->bg_queue);
 	INIT_LIST_HEAD(&fc->entry);
 	INIT_LIST_HEAD(&fc->conn_files);
-	fc->forget_list_tail = &fc->forget_list_head;
 	atomic_set(&fc->num_waiting, 0);
 	fc->max_background = FUSE_DEFAULT_MAX_BACKGROUND;
 	fc->congestion_threshold = FUSE_DEFAULT_CONGESTION_THRESHOLD;
