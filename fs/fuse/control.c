@@ -281,13 +281,13 @@ static int fuse_conn_seq_open(struct file *filp, int list_id)
 	fcp->conn = conn;
 	switch (list_id) {
 	case FUSE_PROCESSING_REQ:
-		fcp->req_list = &conn->processing;
+		fcp->req_list = &conn->pq.processing;
 		break;
 	case FUSE_PENDING_REQ:
 		fcp->req_list = &conn->iq.pending;
 		break;
 	case FUSE_IO_REQ:
-		fcp->req_list = &conn->io;
+		fcp->req_list = &conn->pq.io;
 		break;
 	default:
 		BUG();
