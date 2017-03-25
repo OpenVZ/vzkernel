@@ -1244,7 +1244,6 @@ static ssize_t fuse_dev_do_read(struct fuse_conn *fc, struct file *file,
 	list_del_init(&req->list);
 	spin_unlock(&fiq->waitq.lock);
 
-	spin_lock(&fc->lock);
 	in = &req->in;
 	reqsize = in->h.len;
 
@@ -1260,21 +1259,18 @@ static ssize_t fuse_dev_do_read(struct fuse_conn *fc, struct file *file,
 		/* SETXATTR is special, since it may contain too large data */
 		if (in->h.opcode == FUSE_SETXATTR)
 			req->out.h.error = -E2BIG;
-		spin_unlock(&fc->lock);
 		request_end(fc, req);
 		goto restart;
 	}
 	spin_lock(&fpq->lock);
 	list_add(&req->list, &fpq->io);
 	spin_unlock(&fpq->lock);
-	spin_unlock(&fc->lock);
 	cs->req = req;
 	err = fuse_copy_one(cs, &in->h, sizeof(in->h));
 	if (!err)
 		err = fuse_copy_args(cs, in->numargs, in->argpages, in->argbvec,
 				     (struct fuse_arg *) in->args, 0);
 	fuse_copy_finish(cs);
-	spin_lock(&fc->lock);
 	spin_lock(&fpq->lock);
 	clear_bit(FR_LOCKED, &req->flags);
 	if (!fpq->connected) {
@@ -1296,7 +1292,6 @@ static ssize_t fuse_dev_do_read(struct fuse_conn *fc, struct file *file,
 	smp_mb__after_atomic();
 	if (test_bit(FR_INTERRUPTED, &req->flags))
 		queue_interrupt(fiq, req);
-	spin_unlock(&fc->lock);
 
 	return reqsize;
 
@@ -1304,7 +1299,6 @@ out_end:
 	if (!test_bit(FR_PRIVATE, &req->flags))
 		list_del_init(&req->list);
 	spin_unlock(&fpq->lock);
-	spin_unlock(&fc->lock);
 	request_end(fc, req);
 	return err;
 
@@ -1904,7 +1898,6 @@ static ssize_t fuse_dev_do_write(struct fuse_conn *fc,
 	if (oh.error <= -1000 || oh.error > 0)
 		goto err_finish;
 
-	spin_lock(&fc->lock);
 	spin_lock(&fpq->lock);
 	err = -ENOENT;
 	if (!fpq->connected)
@@ -1920,14 +1913,13 @@ static ssize_t fuse_dev_do_write(struct fuse_conn *fc,
 
 		err = -EINVAL;
 		if (nbytes != sizeof(struct fuse_out_header))
-			goto err_unlock;
+			goto err_finish;
 
 		if (oh.error == -ENOSYS)
 			fc->no_interrupt = 1;
 		else if (oh.error == -EAGAIN)
 			queue_interrupt(&fc->iq, req);
 
-		spin_unlock(&fc->lock);
 		fuse_copy_finish(cs);
 		return nbytes;
 	}
@@ -1940,12 +1932,10 @@ static ssize_t fuse_dev_do_write(struct fuse_conn *fc,
 	cs->req = req;
 	if (!req->out.page_replace)
 		cs->move_pages = 0;
-	spin_unlock(&fc->lock);
 
 	err = copy_out_args(cs, &req->out, nbytes);
 	fuse_copy_finish(cs);
 
-	spin_lock(&fc->lock);
 	spin_lock(&fpq->lock);
 	clear_bit(FR_LOCKED, &req->flags);
 	if (!fpq->connected)
@@ -1955,15 +1945,13 @@ static ssize_t fuse_dev_do_write(struct fuse_conn *fc,
 	if (!test_bit(FR_PRIVATE, &req->flags))
 		list_del_init(&req->list);
 	spin_unlock(&fpq->lock);
-	spin_unlock(&fc->lock);
+
 	request_end(fc, req);
 
 	return err ? err : nbytes;
 
  err_unlock_pq:
 	spin_unlock(&fpq->lock);
- err_unlock:
-	spin_unlock(&fc->lock);
  err_finish:
 	fuse_copy_finish(cs);
 	return err;
