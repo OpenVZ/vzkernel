@@ -369,7 +369,6 @@ __releases(fc->lock)
 	struct fuse_iqueue *fiq = &fc->iq;
 	void (*end) (struct fuse_conn *, struct fuse_req *) = req->end;
 	req->end = NULL;
-	list_del_init(&req->list);
 	spin_lock(&fiq->waitq.lock);
 	list_del_init(&req->intr_entry);
 	spin_unlock(&fiq->waitq.lock);
@@ -538,6 +537,7 @@ void fuse_request_send_background(struct fuse_conn *fc, struct fuse_req *req)
 		BUG_ON(req->in.h.opcode != FUSE_READ);
 		req->out.h.error = -EIO;
 		__clear_bit(FR_BACKGROUND, &req->flags);
+		list_del_init(&req->list);
 		request_end(fc, req);
 	} else if (fc->connected) {
 		fuse_request_send_background_locked(fc, req);
@@ -1263,6 +1263,7 @@ static ssize_t fuse_dev_do_read(struct fuse_conn *fc, struct file *file,
 		/* SETXATTR is special, since it may contain too large data */
 		if (in->h.opcode == FUSE_SETXATTR)
 			req->out.h.error = -E2BIG;
+		list_del_init(&req->list);
 		request_end(fc, req);
 		goto restart;
 	}
@@ -1276,15 +1277,18 @@ static ssize_t fuse_dev_do_read(struct fuse_conn *fc, struct file *file,
 	spin_lock(&fc->lock);
 	clear_bit(FR_LOCKED, &req->flags);
 	if (!fpq->connected) {
+		list_del_init(&req->list);
 		request_end(fc, req);
 		return -ENODEV;
 	}
 	if (err) {
 		req->out.h.error = -EIO;
+		list_del_init(&req->list);
 		request_end(fc, req);
 		return err;
 	}
 	if (!test_bit(FR_ISREPLY, &req->flags)) {
+		list_del_init(&req->list);
 		request_end(fc, req);
 	} else {
 		list_move_tail(&req->list, &fpq->processing);
@@ -1936,6 +1940,7 @@ static ssize_t fuse_dev_do_write(struct fuse_conn *fc,
 		err = -ENOENT;
 	else if (err)
 		req->out.h.error = -EIO;
+	list_del_init(&req->list);
 	request_end(fc, req);
 
 	return err ? err : nbytes;
@@ -2074,6 +2079,7 @@ __acquires(fc->lock)
 		req->out.h.error = -ECONNABORTED;
 		clear_bit(FR_PENDING, &req->flags);
 		clear_bit(FR_SENT, &req->flags);
+		list_del_init(&req->list);
 		request_end(fc, req);
 		spin_lock(&fc->lock);
 	}
@@ -2151,6 +2157,7 @@ void fuse_abort_conn(struct fuse_conn *fc)
 		while (!list_empty(&to_end1)) {
 			req = list_first_entry(&to_end1, struct fuse_req, list);
 			__fuse_get_request(req);
+			list_del_init(&req->list);
 			request_end(fc, req);
 			spin_lock(&fc->lock);
 		}
