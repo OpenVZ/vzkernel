@@ -233,10 +233,9 @@ static int fuse_req_show(struct seq_file *f, void *v)
 	struct fuse_req *req;
 
 	req = list_entry((struct list_head *)v, struct fuse_req, list);
-	seq_printf(f, "state: %-2d flags: %c%c%c%c%c%c%c "
+	seq_printf(f, "flags: %c%c%c%c%c%c%c%c%c%c "
 			"in: op %-4d uniq 0x%016Lx node 0x%016Lx "
 			"out: err %-6d uniq 0x%016Lx\n",
-			req->state,
 			test_bit(FR_ISREPLY, &req->flags) ? 'r' : '-',
 			test_bit(FR_FORCE, &req->flags) ? 'f' : '-',
 			test_bit(FR_ABORTED, &req->flags) ? 'a' : '-',
@@ -244,6 +243,9 @@ static int fuse_req_show(struct seq_file *f, void *v)
 			test_bit(FR_INTERRUPTED, &req->flags) ? 'i' : '-',
 			test_bit(FR_LOCKED, &req->flags) ? 'l' : '-',
 			test_bit(FR_WAITING, &req->flags) ? 'w': '-',
+			test_bit(FR_PENDING, &req->flags) ? 'p': '-',
+			test_bit(FR_SENT, &req->flags) ? 's': '-',
+			test_bit(FR_FINISHED, &req->flags) ? 'f': '-',
 			req->in.h.opcode,
 			req->in.h.unique,
 			req->in.h.nodeid,
