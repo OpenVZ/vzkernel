@@ -300,10 +300,6 @@ static void queue_request(struct fuse_conn *fc, struct fuse_req *req)
 		len_args(req->in.numargs, (struct fuse_arg *) req->in.args);
 	list_add_tail(&req->list, &fc->pending);
 	req->state = FUSE_REQ_PENDING;
-	if (!req->waiting) {
-		req->waiting = 1;
-		atomic_inc(&fc->num_waiting);
-	}
 	wake_up(&fc->waitq);
 	kill_fasync(&fc->fasync, SIGIO, POLL_IN);
 }
@@ -505,6 +501,10 @@ void fuse_request_check_and_send(struct fuse_conn *fc, struct fuse_req *req,
 				 struct fuse_file *ff)
 {
 	req->isreply = 1;
+	if (!req->waiting) {
+		req->waiting = 1;
+		atomic_inc(&fc->num_waiting);
+	}
 	__fuse_request_send(fc, req, ff);
 }
 
@@ -518,6 +518,10 @@ static void fuse_request_send_nowait_locked(struct fuse_conn *fc,
 					    struct fuse_req *req)
 {
 	BUG_ON(!req->background);
+	if (!req->waiting) {
+		req->waiting = 1;
+		atomic_inc(&fc->num_waiting);
+	}
 	fc->num_background++;
 	if (fc->num_background == fc->max_background)
 		fc->blocked = 1;
