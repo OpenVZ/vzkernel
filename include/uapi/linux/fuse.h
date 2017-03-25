@@ -777,5 +777,6 @@ struct fuse_notify_inval_files_out {
 
 /* Device ioctls: */
 #define FUSE_DEV_IOC_CLONE	_IOR(229, 0, uint32_t)
+#define FUSE_DEV_IOC_SETAFF	 _IO(229, 1)
 
 #endif /* _LINUX_FUSE_H */
