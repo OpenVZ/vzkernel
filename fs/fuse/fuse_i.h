@@ -439,6 +439,9 @@ struct fuse_pqueue {
 	/** Connection established */
 	unsigned connected;
 
+	/** Lock protecting accessess to  members of this structure */
+	spinlock_t lock;
+
 	/** The list of requests being processed */
 	struct list_head processing;
 
