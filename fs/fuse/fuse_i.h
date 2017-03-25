@@ -286,6 +286,7 @@ struct fuse_io_priv {
  * FR_PENDING:		request is not yet in userspace
  * FR_SENT:		request is in userspace, waiting for an answer
  * FR_FINISHED:		request is finished
+ * FR_PRIVATE:		request is on private list
  */
 enum fuse_req_flag {
 	FR_ISREPLY,
@@ -298,6 +299,7 @@ enum fuse_req_flag {
 	FR_PENDING,
 	FR_SENT,
 	FR_FINISHED,
+	FR_PRIVATE,
 };
 
 /**
