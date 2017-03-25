@@ -2385,6 +2385,22 @@ static long fuse_dev_ioctl(struct file *file, unsigned int cmd,
 			}
 		}
 		break;
+	case FUSE_DEV_IOC_SETAFF:
+		res = -EINVAL;
+		if (arg < NR_CPUS && cpu_possible(arg)) {
+			struct fuse_dev *fud = fuse_get_dev(file);
+			spin_lock(&fud->fc->lock);
+
+			fud->fiq->handled_by_fud--;
+			BUG_ON(fud->fiq->handled_by_fud < 0);
+
+			fud->fiq = per_cpu_ptr(fud->fc->iqs, arg);
+
+			fud->fiq->handled_by_fud++;
+			spin_unlock(&fud->fc->lock);
+			res = 0;
+		}
+		break;
 	default:
 		res = -ENOTTY;
 		break;
