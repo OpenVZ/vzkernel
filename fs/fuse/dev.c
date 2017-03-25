@@ -529,6 +529,7 @@ static void fuse_request_send_nowait_locked(struct fuse_conn *fc,
 
 static void fuse_request_send_nowait(struct fuse_conn *fc, struct fuse_req *req)
 {
+	BUG_ON(!req->end);
 	spin_lock(&fc->lock);
 	if (req->page_cache && req->ff &&
 	    test_bit(FUSE_S_FAIL_IMMEDIATELY, &req->ff->ff_state)) {
@@ -540,8 +541,10 @@ static void fuse_request_send_nowait(struct fuse_conn *fc, struct fuse_req *req)
 		fuse_request_send_nowait_locked(fc, req);
 		spin_unlock(&fc->lock);
 	} else {
+		spin_unlock(&fc->lock);
 		req->out.h.error = -ENOTCONN;
-		request_end(fc, req);
+		req->end(fc, req);
+		fuse_put_request(fc, req);
 	}
 }
 
