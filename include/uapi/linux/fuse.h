@@ -764,4 +764,7 @@ struct fuse_notify_inval_files_out {
 	__u64	ino;
 };
 
+/* Device ioctls: */
+#define FUSE_DEV_IOC_CLONE	_IOR(229, 0, uint32_t)
+
 #endif /* _LINUX_FUSE_H */
