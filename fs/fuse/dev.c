@@ -1301,7 +1301,8 @@ static ssize_t fuse_dev_do_read(struct fuse_conn *fc, struct file *file,
 	return reqsize;
 
 out_end:
-	list_del_init(&req->list);
+	if (!test_bit(FR_PRIVATE, &req->flags))
+		list_del_init(&req->list);
 	spin_unlock(&fpq->lock);
 	request_end(fc, req);
 	return err;
@@ -1950,7 +1951,8 @@ static ssize_t fuse_dev_do_write(struct fuse_conn *fc,
 		err = -ENOENT;
 	else if (err)
 		req->out.h.error = -EIO;
-	list_del_init(&req->list);
+	if (!test_bit(FR_PRIVATE, &req->flags))
+		list_del_init(&req->list);
 	spin_unlock(&fpq->lock);
 	request_end(fc, req);
 
@@ -2151,8 +2153,10 @@ void fuse_abort_conn(struct fuse_conn *fc)
 			req->out.h.error = -ECONNABORTED;
 			spin_lock(&req->waitq.lock);
 			set_bit(FR_ABORTED, &req->flags);
-			if (!test_bit(FR_LOCKED, &req->flags))
+			if (!test_bit(FR_LOCKED, &req->flags)) {
+				set_bit(FR_PRIVATE, &req->flags);
 				list_move(&req->list, &to_end1);
+			}
 			spin_unlock(&req->waitq.lock);
 		}
 		list_splice_init(&fpq->processing, &to_end2);
