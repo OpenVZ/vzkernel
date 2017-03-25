@@ -284,7 +284,7 @@ static int fuse_conn_seq_open(struct file *filp, int list_id)
 		fcp->req_list = &conn->processing;
 		break;
 	case FUSE_PENDING_REQ:
-		fcp->req_list = &conn->pending;
+		fcp->req_list = &conn->iq.pending;
 		break;
 	case FUSE_IO_REQ:
 		fcp->req_list = &conn->io;
@@ -399,7 +399,7 @@ static int fuse_conn_show(struct seq_file *sf, void *v)
 	seq_printf(sf, "Connected: %d\n", fc->connected);
 	seq_printf(sf, "Initialized: %d\n", fc->initialized);
 	seq_printf(sf, "Blocked: %d\n", fc->blocked);
-	seq_printf(sf, "WQ active: %d\n", waitqueue_active(&fc->waitq));
+	seq_printf(sf, "WQ active: %d\n", waitqueue_active(&fc->iq.waitq));
 	seq_printf(sf, "Blocked_wq active: %d\n", waitqueue_active(&fc->blocked_waitq));
 	seq_printf(sf, "num_background: %d\n", fc->num_background);
 	seq_printf(sf, "num_waiting: %d\n", atomic_read(&fc->num_waiting));
