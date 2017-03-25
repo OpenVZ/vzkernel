@@ -435,6 +435,14 @@ struct fuse_iqueue {
 	struct fasync_struct *fasync;
 };
 
+struct fuse_pqueue {
+	/** The list of requests being processed */
+	struct list_head processing;
+
+	/** The list of requests under I/O */
+	struct list_head io;
+};
+
 /**
  * A Fuse connection.
  *
@@ -475,11 +483,8 @@ struct fuse_conn {
 	/** Input queue */
 	struct fuse_iqueue iq;
 
-	/** The list of requests being processed */
-	struct list_head processing;
-
-	/** The list of requests under I/O */
-	struct list_head io;
+	/** Processing queue */
+	struct fuse_pqueue pq;
 
 	/** The next unique kernel file handle */
 	u64 khctr;
