@@ -163,7 +163,7 @@ static void fuse_file_put(struct fuse_file *ff, bool sync)
 			__clear_bit(FR_BACKGROUND, &req->flags);
 			fuse_request_send(ff->fc, req);
 			if (req->out.h.error == -EINTR) {
-				req->state = FUSE_REQ_INIT;
+				req->state = FUSE_REQ_PENDING;
 				req->out.h.error = 0;
 				goto async_fallback;
 			}
