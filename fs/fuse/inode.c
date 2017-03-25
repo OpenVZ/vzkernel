@@ -421,11 +421,17 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 
 	err = filemap_write_and_wait(inode->i_mapping);
 	if (!err || err == -EIO) { /* AS_EIO might trigger -EIO */
+		struct fuse_dev *fud;
 		spin_lock(&fc->lock);
-		fuse_kill_requests(fc, inode, &fc->pq.processing);
+		list_for_each_entry(fud, &fc->devices, entry) {
+			struct fuse_pqueue *fpq = &fud->pq;
+			spin_lock(&fpq->lock);
+			fuse_kill_requests(fc, inode, &fpq->processing);
+			fuse_kill_requests(fc, inode, &fpq->io);
+			spin_unlock(&fpq->lock);
+		}
 		fuse_kill_requests(fc, inode, &fc->iq.pending);
 		fuse_kill_requests(fc, inode, &fc->bg_queue);
-		fuse_kill_requests(fc, inode, &fc->pq.io);
 		wake_up(&fi->page_waitq); /* readpage[s] can wait on fuse wb */
 		spin_unlock(&fc->lock);
 
@@ -714,10 +720,10 @@ void fuse_conn_init(struct fuse_conn *fc)
 	mutex_init(&fc->inst_mutex);
 	init_rwsem(&fc->killsb);
 	atomic_set(&fc->count, 1);
+	atomic_set(&fc->dev_count, 1);
 	init_waitqueue_head(&fc->blocked_waitq);
 	init_waitqueue_head(&fc->reserved_req_waitq);
 	fuse_iqueue_init(&fc->iq);
-	fuse_pqueue_init(&fc->pq);
 	INIT_LIST_HEAD(&fc->bg_queue);
 	INIT_LIST_HEAD(&fc->entry);
 	INIT_LIST_HEAD(&fc->conn_files);
@@ -1125,6 +1131,7 @@ struct fuse_dev *fuse_dev_alloc(struct fuse_conn *fc)
 	fud = kzalloc(sizeof(struct fuse_dev), GFP_KERNEL);
 	if (fud) {
 		fud->fc = fuse_conn_get(fc);
+		fuse_pqueue_init(&fud->pq);
 
 		spin_lock(&fc->lock);
 		list_add_tail(&fud->entry, &fc->devices);
