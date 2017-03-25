@@ -1073,7 +1073,7 @@ static const struct fuse_iqueue_ops virtio_fs_fiq_ops = {
 static int virtio_fs_fill_super(struct super_block *sb)
 {
 	struct fuse_conn *fc = get_fuse_conn_super(sb);
-	struct virtio_fs *fs = fc->iq.priv;
+	struct virtio_fs *fs = fc->main_iq.priv;
 	unsigned int i;
 	int err;
 	struct fuse_fs_context ctx = {
@@ -1148,7 +1148,7 @@ static void virtio_kill_sb(struct super_block *sb)
 	if (!fc)
 		return fuse_kill_sb_anon(sb);
 
-	vfs = fc->iq.priv;
+	vfs = fc->main_iq.priv;
 	fsvq = &vfs->vqs[VQ_HIPRIO];
 
 	/* Stop forget queue. Soon destroy will be sent */
@@ -1173,7 +1173,7 @@ static int virtio_fs_test_super(struct super_block *sb, void *data)
 {
 	struct fuse_conn *fc = data;
 
-	return fc->iq.priv == get_fuse_conn_super(sb)->iq.priv;
+	return fc->main_iq.priv == get_fuse_conn_super(sb)->main_iq.priv;
 }
 
 static int virtio_fs_set_super(struct super_block *sb, void *data)
@@ -1201,7 +1201,7 @@ static struct dentry *virtio_fs_mount(struct file_system_type *fs_type,
 		return ERR_PTR(-EINVAL);
 
 	/* This gets a reference on virtio_fs object. This ptr gets installed
-	 * in fc->iq->priv. Once fuse_conn is going away, it calls ->put()
+	 * in fc->main_iq->priv. Once fuse_conn is going away, it calls ->put()
 	 * to drop the reference to this object.
 	 */
 	fs = virtio_fs_find_instance(dev_name);
@@ -1218,8 +1218,14 @@ static struct dentry *virtio_fs_mount(struct file_system_type *fs_type,
 		return ERR_PTR(-ENOMEM);
 	}
 
-	fuse_conn_init(fc, get_user_ns(current_user_ns()), &virtio_fs_fiq_ops,
-		       fs);
+	err = fuse_conn_init(fc, get_user_ns(current_user_ns()), &virtio_fs_fiq_ops,
+			     fs);
+	if (err) {
+		mutex_lock(&virtio_fs_mutex);
+		virtio_fs_put(fs);
+		mutex_unlock(&virtio_fs_mutex);
+		return ERR_PTR(err);
+	}
 	fc->release = fuse_free_conn;
 	fc->delete_stale = true;
 
