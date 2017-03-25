@@ -422,10 +422,10 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 	err = filemap_write_and_wait(inode->i_mapping);
 	if (!err || err == -EIO) { /* AS_EIO might trigger -EIO */
 		spin_lock(&fc->lock);
-		fuse_kill_requests(fc, inode, &fc->processing);
+		fuse_kill_requests(fc, inode, &fc->pq.processing);
 		fuse_kill_requests(fc, inode, &fc->iq.pending);
 		fuse_kill_requests(fc, inode, &fc->bg_queue);
-		fuse_kill_requests(fc, inode, &fc->io);
+		fuse_kill_requests(fc, inode, &fc->pq.io);
 		wake_up(&fi->page_waitq); /* readpage[s] can wait on fuse wb */
 		spin_unlock(&fc->lock);
 
@@ -698,6 +698,13 @@ static void fuse_iqueue_init(struct fuse_iqueue *fiq)
 	fiq->connected = 1;
 }
 
+static void fuse_pqueue_init(struct fuse_pqueue *fpq)
+{
+	memset(fpq, 0, sizeof(struct fuse_pqueue));
+	INIT_LIST_HEAD(&fpq->processing);
+	INIT_LIST_HEAD(&fpq->io);
+}
+
 void fuse_conn_init(struct fuse_conn *fc)
 {
 	memset(fc, 0, sizeof(*fc));
@@ -708,8 +715,7 @@ void fuse_conn_init(struct fuse_conn *fc)
 	init_waitqueue_head(&fc->blocked_waitq);
 	init_waitqueue_head(&fc->reserved_req_waitq);
 	fuse_iqueue_init(&fc->iq);
-	INIT_LIST_HEAD(&fc->processing);
-	INIT_LIST_HEAD(&fc->io);
+	fuse_pqueue_init(&fc->pq);
 	INIT_LIST_HEAD(&fc->bg_queue);
 	INIT_LIST_HEAD(&fc->entry);
 	INIT_LIST_HEAD(&fc->conn_files);
