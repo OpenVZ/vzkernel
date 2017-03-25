@@ -1297,7 +1297,7 @@ static int virtio_fs_fill_super(struct super_block *sb, struct fs_context *fsc)
 {
 	struct fuse_mount *fm = get_fuse_mount_super(sb);
 	struct fuse_conn *fc = fm->fc;
-	struct virtio_fs *fs = fc->iq.priv;
+	struct virtio_fs *fs = fc->main_iq.priv;
 	struct fuse_fs_context *ctx = fsc->fs_private;
 	unsigned int i;
 	int err;
@@ -1362,7 +1362,7 @@ err:
 static void virtio_fs_conn_destroy(struct fuse_mount *fm)
 {
 	struct fuse_conn *fc = fm->fc;
-	struct virtio_fs *vfs = fc->iq.priv;
+	struct virtio_fs *vfs = fc->main_iq.priv;
 	struct virtio_fs_vq *fsvq = &vfs->vqs[VQ_HIPRIO];
 
 	/* Stop dax worker. Soon evict_inodes() will be called which
@@ -1410,7 +1410,7 @@ static int virtio_fs_test_super(struct super_block *sb,
 	struct fuse_mount *fsc_fm = fsc->s_fs_info;
 	struct fuse_mount *sb_fm = get_fuse_mount_super(sb);
 
-	return fsc_fm->fc->iq.priv == sb_fm->fc->iq.priv;
+	return fsc_fm->fc->main_iq.priv == sb_fm->fc->main_iq.priv;
 }
 
 static int virtio_fs_get_tree(struct fs_context *fsc)
@@ -1423,7 +1423,7 @@ static int virtio_fs_get_tree(struct fs_context *fsc)
 	int err = -EIO;
 
 	/* This gets a reference on virtio_fs object. This ptr gets installed
-	 * in fc->iq->priv. Once fuse_conn is going away, it calls ->put()
+	 * in fc->main_iq->priv. Once fuse_conn is going away, it calls ->put()
 	 * to drop the reference to this object.
 	 */
 	fs = virtio_fs_find_instance(fsc->source);
@@ -1445,7 +1445,11 @@ static int virtio_fs_get_tree(struct fs_context *fsc)
 	if (!fm)
 		goto out_err;
 
-	fuse_conn_init(fc, fm, fsc->user_ns, &virtio_fs_fiq_ops, fs);
+	err = fuse_conn_init(fc, fm, fsc->user_ns, &virtio_fs_fiq_ops, fs);
+	if (err) {
+		kfree(fm);
+		goto out_err;
+	}
 	fc->release = fuse_free_conn;
 	fc->delete_stale = true;
 	fc->auto_submounts = true;
