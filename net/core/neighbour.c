@@ -2047,13 +2047,9 @@ static int neightbl_set(struct sk_buff *skb, struct nlmsghdr *nlh)
 		if (tbp[NDTPA_IFINDEX])
 			ifindex = nla_get_u32(tbp[NDTPA_IFINDEX]);
 
-		err = -ENOENT;
 		p = lookup_neigh_parms(tbl, net, ifindex);
-		if (p == NULL)
-			goto errout_tbl_lock;
-		if (!net_eq(net, &init_net) && !p->dev && !ifindex) {
-			pr_warn_once("CT %d tries to change ntable defaults\n",
-				net->owner_ve->veid);
+		if (p == NULL) {
+			err = -ENOENT;
 			goto errout_tbl_lock;
 		}
 
