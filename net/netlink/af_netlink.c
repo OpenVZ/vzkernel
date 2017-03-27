@@ -2483,11 +2483,12 @@ static int netlink_recvmsg(struct kiocb *kiocb, struct socket *sock,
 
 	skb_reset_transport_header(data_skb);
 	err = skb_copy_datagram_iovec(data_skb, skip, msg->msg_iov, copied);
-
-	if (flags & MSG_PEEK)
-		sk_peek_offset_fwd(sk, copied);
-	else
-		sk_peek_offset_bwd(sk, skb->len);
+	if (!err) {
+		if (flags & MSG_PEEK)
+			sk_peek_offset_fwd(sk, copied);
+		else
+			sk_peek_offset_bwd(sk, skb->len);
+	}
 
 	if (msg->msg_name) {
 		struct sockaddr_nl *addr = (struct sockaddr_nl *)msg->msg_name;
