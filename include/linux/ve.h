@@ -94,6 +94,8 @@ struct ve_struct {
 
 	struct list_head	devmnt_list;
 	struct mutex		devmnt_mutex;
+	atomic_t		netif_avail_nr;
+	int			netif_max_nr;
 };
 
 struct ve_devmnt {
@@ -103,6 +105,8 @@ struct ve_devmnt {
 	char			*allowed_options;
 	char			*hidden_options; /* balloon_ino, etc. */
 };
+
+#define NETIF_MAX_NR_DEFAULT	256	/* number of net-interfaces per-VE */
 
 #define VE_MEMINFO_DEFAULT      1       /* default behaviour */
 #define VE_MEMINFO_SYSTEM       0       /* disable meminfo virtualization */
