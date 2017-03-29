@@ -7496,6 +7496,10 @@ int register_netdevice(struct net_device *dev)
 	if (!ve_is_super(net->owner_ve) && ve_is_dev_movable(dev))
 		goto out;
 
+	ret = -ENOMEM;
+	if (atomic_dec_if_positive(&net->owner_ve->netif_avail_nr) < 0)
+		goto out;
+
 	spin_lock_init(&dev->addr_list_lock);
 	netdev_set_addr_lockdep_class(dev);
 
@@ -7503,7 +7507,7 @@ int register_netdevice(struct net_device *dev)
 
 	ret = dev_get_valid_name(net, dev, dev->name);
 	if (ret < 0)
-		goto out;
+		goto err_avail;
 
 	/* Init, if this function is available */
 	if (dev->netdev_ops->ndo_init) {
@@ -7511,7 +7515,7 @@ int register_netdevice(struct net_device *dev)
 		if (ret) {
 			if (ret > 0)
 				ret = -EIO;
-			goto out;
+			goto err_avail;
 		}
 	}
 
@@ -7648,6 +7652,8 @@ err_uninit:
 		dev->netdev_ops->ndo_uninit(dev);
 	if (dev->extended->priv_destructor)
 		dev->extended->priv_destructor(dev);
+err_avail:
+	atomic_inc(&net->owner_ve->netif_avail_nr);
 	goto out;
 }
 EXPORT_SYMBOL(register_netdevice);
@@ -7926,6 +7932,8 @@ void netdev_run_todo(void)
 		WARN_ON(rcu_access_pointer(dev->ip_ptr));
 		WARN_ON(rcu_access_pointer(dev->ip6_ptr));
 		WARN_ON(dev->dn_ptr);
+
+		atomic_inc(&dev_net(dev)->owner_ve->netif_avail_nr);
 
 		/* It must be the very last action,
 		 * after this 'dev' may point to freed up memory.
@@ -8340,6 +8348,11 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
 		if (dev_get_valid_name(net, dev, pat) < 0)
 			goto out;
 	}
+
+	err = -ENOMEM;
+	if (atomic_dec_if_positive(&net->owner_ve->netif_avail_nr) < 0)
+		goto out;
+	atomic_inc(&dev_net(dev)->owner_ve->netif_avail_nr);
 
 	/*
 	 * And now a mini version of register_netdevice unregister_netdevice.
