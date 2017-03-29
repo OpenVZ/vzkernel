@@ -2273,7 +2273,7 @@ static long fuse_dev_ioctl(struct file *file, unsigned int cmd,
 			}
 		}
 	} else if (cmd == FUSE_DEV_IOC_SETAFF) {
-		if (arg >= num_online_cpus()) {
+		if (arg >= NR_CPUS || !cpu_possible(arg)) {
 			err = -EINVAL;
 		} else {
 			struct fuse_dev *fud = fuse_get_dev(file);
