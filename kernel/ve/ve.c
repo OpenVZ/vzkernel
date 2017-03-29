@@ -76,6 +76,8 @@ struct ve_struct ve0 = {
 #endif
 	.sched_lat_ve.cur	= &ve0_lat_stats,
 	.init_cred		= &init_cred,
+	.netif_avail_nr		= ATOMIC_INIT(INT_MAX),
+	.netif_max_nr		= INT_MAX,
 };
 EXPORT_SYMBOL(ve0);
 
@@ -472,6 +474,9 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 		goto err_lat;
 
 	ve->meminfo_val = VE_MEMINFO_DEFAULT;
+
+	atomic_set(&ve->netif_avail_nr, NETIF_MAX_NR_DEFAULT);
+	ve->netif_max_nr = NETIF_MAX_NR_DEFAULT;
 
 do_init:
 	init_rwsem(&ve->op_sem);
@@ -981,6 +986,8 @@ enum {
 	VE_CF_FEATURES,
 	VE_CF_IPTABLES_MASK,
 	VE_CF_PSEUDOSUPER,
+	VE_CF_NETIF_MAX_NR,
+	VE_CF_NETIF_NR,
 };
 
 static u64 ve_read_u64(struct cgroup *cg, struct cftype *cft)
@@ -993,6 +1000,10 @@ static u64 ve_read_u64(struct cgroup *cg, struct cftype *cft)
 #endif
 	else if (cft->private == VE_CF_PSEUDOSUPER)
 		return cgroup_ve(cg)->is_pseudosuper;
+	else if (cft->private == VE_CF_NETIF_MAX_NR)
+		return cgroup_ve(cg)->netif_max_nr;
+	else if (cft->private == VE_CF_NETIF_NR)
+		return atomic_read(&cgroup_ve(cg)->netif_avail_nr);
 	return 0;
 }
 
@@ -1047,6 +1058,12 @@ static int ve_write_u64(struct cgroup *cg, struct cftype *cft, u64 value)
 	else if (cft->private == VE_CF_IPTABLES_MASK)
 		ve->ipt_mask = ve_setup_iptables_mask(value);
 #endif
+	} else if (cft->private == VE_CF_NETIF_MAX_NR) {
+		int delta = value - ve->netif_max_nr;
+
+		ve->netif_max_nr = value;
+		atomic_add(delta, &ve->netif_avail_nr);
+	}
 	up_write(&ve->op_sem);
 	return 0;
 }
@@ -1101,6 +1118,18 @@ static struct cftype ve_cftypes[] = {
 		.read_u64		= ve_read_u64,
 		.write_u64		= ve_write_pseudosuper,
 		.private		= VE_CF_PSEUDOSUPER,
+	},
+	{
+		.name			= "netif_max_nr",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_u64		= ve_read_u64,
+		.write_u64		= ve_write_u64,
+		.private		= VE_CF_NETIF_MAX_NR,
+	},
+	{
+		.name			= "netif_avail_nr",
+		.read_u64		= ve_read_u64,
+		.private		= VE_CF_NETIF_NR,
 	},
 	{ }
 };
