@@ -81,6 +81,8 @@ struct ve_struct ve0 = {
 	.mnt_nr			= 0,
 	.netns_avail_nr		= ATOMIC_INIT(INT_MAX),
 	.netns_max_nr		= INT_MAX,
+	.netif_avail_nr		= ATOMIC_INIT(INT_MAX),
+	.netif_max_nr		= INT_MAX,
 };
 EXPORT_SYMBOL(ve0);
 
@@ -669,6 +671,9 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 	atomic_set(&ve->netns_avail_nr, NETNS_MAX_NR_DEFAULT);
 	ve->netns_max_nr = NETNS_MAX_NR_DEFAULT;
 
+	atomic_set(&ve->netif_avail_nr, NETIF_MAX_NR_DEFAULT);
+	ve->netif_max_nr = NETIF_MAX_NR_DEFAULT;
+
 do_init:
 	init_rwsem(&ve->op_sem);
 	INIT_LIST_HEAD(&ve->devices);
@@ -1207,6 +1212,8 @@ enum {
 	VE_CF_PID_MAX,
 	VE_CF_NETNS_MAX_NR,
 	VE_CF_NETNS_NR,
+	VE_CF_NETIF_MAX_NR,
+	VE_CF_NETIF_NR,
 };
 
 static int ve_ts_read(struct cgroup *cg, struct cftype *cft, struct seq_file *m)
@@ -1276,6 +1283,10 @@ static u64 ve_read_u64(struct cgroup *cg, struct cftype *cft)
 		return cgroup_ve(cg)->netns_max_nr;
 	else if (cft->private == VE_CF_NETNS_NR)
 		return atomic_read(&cgroup_ve(cg)->netns_avail_nr);
+	else if (cft->private == VE_CF_NETIF_MAX_NR)
+		return cgroup_ve(cg)->netif_max_nr;
+	else if (cft->private == VE_CF_NETIF_NR)
+		return atomic_read(&cgroup_ve(cg)->netif_avail_nr);
 	return 0;
 }
 
@@ -1362,6 +1373,11 @@ static int _ve_write_u64(struct cgroup *cg, struct cftype *cft,
 
 		ve->netns_max_nr = value;
 		atomic_add(delta, &ve->netns_avail_nr);
+	} else if (cft->private == VE_CF_NETIF_MAX_NR) {
+		int delta = value - ve->netif_max_nr;
+
+		ve->netif_max_nr = value;
+		atomic_add(delta, &ve->netif_avail_nr);
 	}
 	up_write(&ve->op_sem);
 	return 0;
@@ -1466,6 +1482,18 @@ static struct cftype ve_cftypes[] = {
 		.name			= "netns_avail_nr",
 		.read_u64		= ve_read_u64,
 		.private		= VE_CF_NETNS_NR,
+	},
+	{
+		.name			= "netif_max_nr",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_u64		= ve_read_u64,
+		.write_u64		= ve_write_u64,
+		.private		= VE_CF_NETIF_MAX_NR,
+	},
+	{
+		.name			= "netif_avail_nr",
+		.read_u64		= ve_read_u64,
+		.private		= VE_CF_NETIF_NR,
 	},
 	{ }
 };
