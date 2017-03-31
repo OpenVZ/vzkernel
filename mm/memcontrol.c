@@ -4313,6 +4313,8 @@ static int __memcg_activate_kmem(struct mem_cgroup *memcg,
 	 * patched.
 	 */
 	memcg->kmemcg_id = memcg_id;
+	set_bit(KMEM_ACCOUNTED_ACTIVE, &memcg->kmem_account_flags);
+	set_bit(KMEM_ACCOUNTED_ACTIVATED, &memcg->kmem_account_flags);
 out:
 	return err;
 }
