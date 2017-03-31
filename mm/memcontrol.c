@@ -6932,10 +6932,12 @@ static void uncharge_batch(struct mem_cgroup *memcg, unsigned long pgpgout,
 	unsigned long flags;
 
 	if (!mem_cgroup_is_root(memcg)) {
-		if (nr_mem)
+		if (nr_mem + nr_kmem)
 			page_counter_uncharge(&memcg->memory, nr_mem + nr_kmem);
-		if (nr_memsw)
+		if (nr_memsw + nr_kmem)
 			page_counter_uncharge(&memcg->memsw, nr_memsw + nr_kmem);
+		if (nr_kmem)
+			page_counter_uncharge(&memcg->kmem, nr_kmem);
 
 		memcg_oom_recover(memcg);
 	}
