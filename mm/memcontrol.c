@@ -2876,7 +2876,7 @@ retry:
 	if (fatal_signal_pending(current))
 		goto bypass;
 
-	mem_cgroup_oom(mem_over_limit, gfp_mask, get_order(batch));
+	mem_cgroup_oom(mem_over_limit, gfp_mask, get_order(batch * PAGE_SIZE));
 
 nomem:
 	mem_cgroup_inc_failcnt(mem_over_limit, gfp_mask, nr_pages);
