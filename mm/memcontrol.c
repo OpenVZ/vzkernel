@@ -3417,10 +3417,10 @@ __memcg_kmem_newpage_charge(struct page *page, gfp_t gfp, int order)
 	}
 
 	ret = memcg_charge_kmem(memcg, gfp, 1 << order);
-	css_put(&memcg->css);
-
-	if (ret)
+	if (ret) {
+		css_put(&memcg->css);
 		return false;
+	}
 
 	pc = lookup_page_cgroup(page);
 	pc->mem_cgroup = memcg;
@@ -3428,6 +3428,7 @@ __memcg_kmem_newpage_charge(struct page *page, gfp_t gfp, int order)
 
 	__SetPageKmemcg(page);
 
+	css_put(&memcg->css);
 	return true;
 }
 
