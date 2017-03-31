@@ -3075,12 +3075,16 @@ void memcg_charge_kmem_nofail(struct mem_cgroup *memcg, unsigned long nr_pages)
 void memcg_uncharge_kmem(struct mem_cgroup *memcg,
 				unsigned long nr_pages)
 {
+	u64 kmem;
+
+	kmem = page_counter_uncharge(&memcg->kmem, nr_pages);
+
 	page_counter_uncharge(&memcg->memory, nr_pages);
 	if (do_swap_account)
 		page_counter_uncharge(&memcg->memsw, nr_pages);
 
 	/* Not down to 0 */
-	if (page_counter_uncharge(&memcg->kmem, nr_pages))
+	if (kmem)
 		return;
 
 	/*
