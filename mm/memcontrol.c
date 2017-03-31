@@ -3052,9 +3052,6 @@ int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 	 * uncharged before res.
 	 */
 	ret = page_counter_try_charge(&memcg->kmem, nr_pages, &counter);
-	if (ret < 0)
-		return ret;
-
 	if (ret) {
 		page_counter_uncharge(&memcg->memory, nr_pages);
 		if (do_swap_account)
