@@ -758,11 +758,13 @@ static int proc_sys_getattr(struct vfsmount *mnt, struct dentry *dentry, struct 
 {
 	struct inode *inode = dentry->d_inode;
 	struct ctl_table_header *head = grab_header(inode);
-	struct ctl_table_root *root = head->root;
 	struct ctl_table *table = PROC_I(inode)->sysctl_entry;
+	struct ctl_table_root *root;
 
 	if (IS_ERR(head))
 		return PTR_ERR(head);
+
+	root = head->root;
 
 	generic_fillattr(inode, stat);
 
