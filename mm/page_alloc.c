@@ -3178,7 +3178,8 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 	lockdep_trace_alloc(gfp_mask);
 
 	might_sleep_if(gfp_mask & __GFP_WAIT);
-	WARN_ON_ONCE((gfp_mask & __GFP_FS) && current->journal_info);
+	WARN_ON_ONCE((gfp_mask & __GFP_FS) && current->journal_info &&
+		!(current->flags & PF_MEMALLOC));
 
 	if (should_fail_alloc_page(gfp_mask, order))
 		return NULL;
