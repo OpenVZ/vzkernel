@@ -665,7 +665,7 @@ static int zswap_frontswap_store(unsigned type, pgoff_t offset,
 	}
 
 	/* allocate entry */
-	entry = zswap_entry_cache_alloc(GFP_NOIO | __GFP_NOWARN);
+	entry = zswap_entry_cache_alloc(GFP_KERNEL);
 	if (!entry) {
 		zswap_reject_kmemcache_fail++;
 		ret = -ENOMEM;
