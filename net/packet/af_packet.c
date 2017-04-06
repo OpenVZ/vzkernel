@@ -2508,7 +2508,7 @@ static int packet_sendmsg(struct kiocb *iocb, struct socket *sock,
 #ifdef CONFIG_MEMCG_KMEM
 struct packet_sk_charge {
 	struct mem_cgroup	*memcg;
-	unsigned long		amt;
+	unsigned long		nr_pages;
 };
 
 static struct cg_proto *packet_sk_charge(void)
@@ -2532,9 +2532,9 @@ static struct cg_proto *packet_sk_charge(void)
 	 * It's typically not huge and packet sockets are rare guests in
 	 * containers, so we don't disturb the memory consumption much.
 	 */
-	psc->amt = ACCESS_ONCE(sysctl_rmem_max);
+	psc->nr_pages = ACCESS_ONCE(sysctl_rmem_max)/PAGE_SIZE;
 
-	err = memcg_charge_kmem(psc->memcg, GFP_KERNEL, psc->amt);
+	err = memcg_charge_kmem(psc->memcg, GFP_KERNEL, psc->nr_pages);
 	if (!err)
 		goto out;
 
@@ -2559,7 +2559,7 @@ static void packet_sk_uncharge(struct cg_proto *cg)
 	struct packet_sk_charge *psc = (struct packet_sk_charge *)cg;
 
 	if (psc) {
-		memcg_uncharge_kmem(psc->memcg, psc->amt);
+		memcg_uncharge_kmem(psc->memcg, psc->nr_pages);
 		mem_cgroup_put(psc->memcg);
 		kfree(psc);
 	}
@@ -3882,13 +3882,13 @@ static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 		err = -ENOMEM;
 		order = get_order(req->tp_block_size);
 		if (psc && memcg_charge_kmem(psc->memcg, GFP_KERNEL,
-				(PAGE_SIZE << order) * req->tp_block_nr))
+				(1 << order) * req->tp_block_nr))
 			goto out;
 		pg_vec = alloc_pg_vec(req, order);
 		if (unlikely(!pg_vec)) {
 			if (psc)
 				memcg_uncharge_kmem(psc->memcg,
-					(PAGE_SIZE << order) * req->tp_block_nr);
+					(1 << order) * req->tp_block_nr);
 			goto out;
 		}
 		switch (po->tp_version) {
@@ -3962,7 +3962,7 @@ static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 	if (pg_vec) {
 		if (psc)
 			memcg_uncharge_kmem(psc->memcg,
-				(PAGE_SIZE << order) * req->tp_block_nr);
+				(1 << order) * req->tp_block_nr);
 		free_pg_vec(pg_vec, order, req->tp_block_nr);
 	}
 out:
