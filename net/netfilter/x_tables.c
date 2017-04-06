@@ -1045,7 +1045,9 @@ struct xt_table_info *xt_alloc_table_info(unsigned int size)
 	if (sz <= (PAGE_SIZE << PAGE_ALLOC_COSTLY_ORDER))
 		info = kmalloc(sz, GFP_KERNEL_ACCOUNT | __GFP_NOWARN | __GFP_NORETRY);
 	if (!info) {
-		info = vmalloc_account(sz);
+		info = __vmalloc(sz, GFP_KERNEL_ACCOUNT | __GFP_NOWARN |
+				     __GFP_NORETRY | __GFP_HIGHMEM,
+				 PAGE_KERNEL);
 		if (!info)
 			return NULL;
 	}
