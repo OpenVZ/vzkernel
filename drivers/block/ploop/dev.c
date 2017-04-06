@@ -3836,7 +3836,8 @@ static int ploop_truncate(struct ploop_device * plo, unsigned long arg)
 
 #define FUSE_SUPER_MAGIC 0x65735546
 #define IS_PSTORAGE(sb) (sb->s_magic == FUSE_SUPER_MAGIC && \
-			 !strcmp(sb->s_subtype, "pstorage"))
+			 (!strcmp(sb->s_subtype, "pstorage") || \
+			  !strcmp(sb->s_subtype, "vstorage")))
 
 static int ploop_bd_full(struct backing_dev_info *bdi, long long nr, int root)
 {
