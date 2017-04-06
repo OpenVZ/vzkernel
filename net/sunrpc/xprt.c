@@ -778,8 +778,6 @@ static void xprt_connect_status(struct rpc_task *task)
 
 	switch (task->tk_status) {
 	case -ENETUNREACH:
-		dprintk("RPC: ve_name(xprt->xprt_net->owner_ve): %s\n",
-				ve_name(xprt->xprt_net->owner_ve));
 		if (xprt->xprt_net->owner_ve->ve_netns == NULL) {
 			dprintk("RPC: %5u xprt_connect_status: error %d connecting to "
 					"server %s\n", task->tk_pid, -task->tk_status,
@@ -794,7 +792,12 @@ static void xprt_connect_status(struct rpc_task *task)
 	case -EHOSTUNREACH:
 	case -EPIPE:
 	case -EAGAIN:
-		dprintk("RPC: %5u xprt_connect_status: retrying\n", task->tk_pid);
+		dprintk("RPC: ve_name(xprt->xprt_net->owner_ve): %s\n",
+				ve_name(xprt->xprt_net->owner_ve));
+		dprintk("RPC: xprt->xprt_net->owner_ve->ve_netns: %p\n",
+				xprt->xprt_net->owner_ve->ve_netns);
+		dprintk("RPC: %5u xprt_connect_status: retrying (status: %d)\n",
+				task->tk_pid, -task->tk_status);
 		break;
 	case -ETIMEDOUT:
 		dprintk("RPC: %5u xprt_connect_status: connect attempt timed "
