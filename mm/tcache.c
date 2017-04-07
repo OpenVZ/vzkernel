@@ -724,7 +724,6 @@ static int tcache_page_tree_replace(struct tcache_node *node, pgoff_t index,
 
 	*old_page = NULL;
 
-	spin_lock(&node->tree_lock);
 	/*
 	 * If the node was invalidated after we looked it up, abort in order to
 	 * avoid clashes with tcache_invalidate_node_pages.
@@ -752,7 +751,6 @@ static int tcache_page_tree_replace(struct tcache_node *node, pgoff_t index,
 		}
 	}
 out:
-	spin_unlock(&node->tree_lock);
 	return err;
 }
 
@@ -792,7 +790,7 @@ tcache_attach_page(struct tcache_node *node, pgoff_t index, struct page *page)
 
 	tcache_init_page(page, node, index);
 
-	local_irq_save(flags);
+	spin_lock_irqsave(&node->tree_lock, flags);
 	err = tcache_page_tree_replace(node, index, page, &old_page);
 	if (err)
 		goto out;
@@ -804,7 +802,7 @@ tcache_attach_page(struct tcache_node *node, pgoff_t index, struct page *page)
 	tcache_hold_page(page);
 	tcache_lru_add(node->pool, page);
 out:
-	local_irq_restore(flags);
+	spin_unlock_irqrestore(&node->tree_lock, flags);
 	return err;
 }
 
