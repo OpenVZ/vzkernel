@@ -397,7 +397,7 @@ static int fuse_release(struct inode *inode, struct file *file)
 		 * enqueued on this file and it is not going to get new one: it is closing.
 		 */
 		if (!ff->fc->close_wait)
-			wait_event(fi->page_waitq, list_empty_careful(&fi->writepages));
+			wait_event(fi->page_waitq, RB_EMPTY_ROOT(&fi->writepages));
 		else
 			wait_event(fi->page_waitq, refcount_read(&ff->count) == 1);
 
@@ -464,17 +464,26 @@ static bool fuse_range_is_writeback(struct inode *inode, pgoff_t idx_from,
 {
 	struct fuse_conn *fc = get_fuse_conn(inode);
 	struct fuse_inode *fi = get_fuse_inode(inode);
-	struct fuse_req *req;
 	bool found = false;
+	struct rb_node *n;
 
 	spin_lock(&fc->lock);
-	list_for_each_entry(req, &fi->writepages, writepages_entry) {
+
+	n = fi->writepages.rb_node;
+
+	while (n) {
+		struct fuse_req *req;
 		pgoff_t curr_index;
 
+		req = rb_entry(n, struct fuse_req, writepages_entry);
 		BUG_ON(req->inode != inode);
 		curr_index = req->misc.write.in.offset >> PAGE_SHIFT;
-		if (idx_from < curr_index + req->num_pages &&
-		    curr_index <= idx_to) {
+
+		if (idx_from >= curr_index + req->num_pages)
+			n = n->rb_right;
+		else if (idx_to < curr_index)
+			n = n->rb_left;
+		else {
 			found = true;
 			break;
 		}
@@ -1670,7 +1679,8 @@ static void fuse_writepage_finish(struct fuse_conn *fc, struct fuse_req *req)
 	struct backing_dev_info *bdi = inode_to_bdi(inode);
 	int i;
 
-	list_del(&req->writepages_entry);
+	if (!RB_EMPTY_NODE(&req->writepages_entry))
+		rb_erase(&req->writepages_entry, &fi->writepages);
 	if (req->ff && (fc->writeback_cache || fc->close_wait))
 		__fuse_file_put(req->ff);
 	for (i = 0; i < req->num_pages; i++) {
@@ -1739,13 +1749,57 @@ __acquires(fc->lock)
 	}
 }
 
+static int tree_insert(struct rb_root *root, struct fuse_req *ins_req)
+{
+	pgoff_t idx_from = ins_req->misc.write.in.offset >> PAGE_SHIFT;
+	pgoff_t idx_to   = idx_from + ins_req->num_pages - 1;
+	struct rb_node **p = &root->rb_node;
+	struct rb_node  *parent = NULL;
+
+	while (*p) {
+		struct fuse_req *req;
+		pgoff_t curr_index;
+
+		parent = *p;
+		req = rb_entry(parent, struct fuse_req, writepages_entry);
+		BUG_ON(req->inode != ins_req->inode);
+		curr_index = req->misc.write.in.offset >> PAGE_SHIFT;
+
+		if (idx_from >= curr_index + req->num_pages)
+			p = &(*p)->rb_right;
+		else if (idx_to < curr_index)
+			p = &(*p)->rb_left;
+		else
+			BUG();
+	}
+
+	rb_link_node(&ins_req->writepages_entry, parent, p);
+	rb_insert_color(&ins_req->writepages_entry, root);
+	return 0;
+}
+
 static void fuse_writepage_end(struct fuse_conn *fc, struct fuse_req *req)
 {
 	struct inode *inode = req->inode;
 	struct fuse_inode *fi = get_fuse_inode(inode);
+	struct fuse_req dummy_req = {};
 
 	mapping_set_error(inode->i_mapping, req->out.h.error);
 	spin_lock(&fc->lock);
+	if (req->misc.write.next) {
+		/*
+		 * The req->misc.write.next requests always intersect with
+		 * current request, and to avoid BUG in the tree_insert() function
+		 * we should first remove the current request. And also we
+		 * temprorary insert an dummy request so that the fi->writepages
+		 * tree is not empty here (this actual for fuse_release as example).
+		 */
+		dummy_req.misc.write.in.offset = U64_MAX;
+		dummy_req.num_pages = 1;
+		tree_insert(&fi->writepages, &dummy_req);
+		rb_erase(&req->writepages_entry, &fi->writepages);
+		RB_CLEAR_NODE(&req->writepages_entry);
+	}
 	while (req->misc.write.next) {
 		struct fuse_conn *fc = get_fuse_conn(inode);
 		struct fuse_write_in *inarg = &req->misc.write.in;
@@ -1753,7 +1807,7 @@ static void fuse_writepage_end(struct fuse_conn *fc, struct fuse_req *req)
 		req->misc.write.next = next->misc.write.next;
 		next->misc.write.next = NULL;
 		next->ff = fuse_file_get(req->ff);
-		list_add(&next->writepages_entry, &fi->writepages);
+		tree_insert(&fi->writepages, next);
 
 		/*
 		 * Skip fuse_flush_writepages() to make it easy to crop requests
@@ -1780,6 +1834,8 @@ static void fuse_writepage_end(struct fuse_conn *fc, struct fuse_req *req)
 		 */
 		fuse_send_writepage(fc, next, inarg->offset + inarg->size);
 	}
+	if (dummy_req.num_pages)
+		rb_erase(&dummy_req.writepages_entry, &fi->writepages);
 	fi->writectr--;
 	fuse_writepage_finish(fc, req);
 	spin_unlock(&fc->lock);
@@ -1870,7 +1926,7 @@ static int fuse_writepage_locked(struct page *page)
 	inc_node_page_state(tmp_page, NR_WRITEBACK_TEMP);
 
 	spin_lock(&fc->lock);
-	list_add(&req->writepages_entry, &fi->writepages);
+	tree_insert(&fi->writepages, req);
 	list_add_tail(&req->list, &fi->queued_writes);
 	fuse_flush_writepages(inode);
 	spin_unlock(&fc->lock);
@@ -1958,24 +2014,31 @@ static bool fuse_writepage_in_flight(struct fuse_req *new_req,
 	struct fuse_req *old_req;
 	bool found = false;
 	pgoff_t curr_index;
+	struct rb_node *n;
 
 	BUG_ON(new_req->num_pages != 0);
 
 	spin_lock(&fc->lock);
-	list_del(&new_req->writepages_entry);
-	list_for_each_entry(old_req, &fi->writepages, writepages_entry) {
+
+	n = fi->writepages.rb_node;
+	while (n) {
+		pgoff_t curr_index;
+
+		old_req = rb_entry(n, struct fuse_req, writepages_entry);
 		BUG_ON(old_req->inode != new_req->inode);
 		curr_index = old_req->misc.write.in.offset >> PAGE_SHIFT;
-		if (curr_index <= page->index &&
-		    page->index < curr_index + old_req->num_pages) {
+
+		if (curr_index + old_req->num_pages <= page->index)
+			n = n->rb_right;
+		else if (page->index < curr_index)
+			n = n->rb_left;
+		else {
 			found = true;
 			break;
 		}
 	}
-	if (!found) {
-		list_add(&new_req->writepages_entry, &fi->writepages);
+	if (!found)
 		goto out_unlock;
-	}
 
 	new_req->num_pages = 1;
 	for (tmp = old_req; tmp != NULL; tmp = tmp->misc.write.next) {
@@ -2044,6 +2107,7 @@ static int fuse_writepages_fill(struct page *page,
 	struct fuse_fill_wb_data *data = _data;
 	struct fuse_req *req = data->req;
 	struct inode *inode = data->inode;
+	struct fuse_inode *fi = get_fuse_inode(inode);
 	struct fuse_conn *fc = get_fuse_conn(inode);
 	struct page *tmp_page;
 	bool is_writeback;
@@ -2088,8 +2152,6 @@ static int fuse_writepages_fill(struct page *page,
 	 * under writeback, so we can release the page lock.
 	 */
 	if (data->req == NULL) {
-		struct fuse_inode *fi = get_fuse_inode(inode);
-
 		/* we can acquire ff here because we do have locked pages here! */
 		BUG_ON(data->ff);
 		err = -EIO;
@@ -2113,9 +2175,7 @@ static int fuse_writepages_fill(struct page *page,
 		req->end = fuse_writepage_end;
 		req->inode = inode;
 
-		spin_lock(&fc->lock);
-		list_add(&req->writepages_entry, &fi->writepages);
-		spin_unlock(&fc->lock);
+		RB_CLEAR_NODE(&req->writepages_entry);
 
 		data->req = req;
 
@@ -2147,6 +2207,8 @@ static int fuse_writepages_fill(struct page *page,
 	 */
 	spin_lock(&fc->lock);
 	req->num_pages++;
+	if (RB_EMPTY_NODE(&req->writepages_entry))
+		tree_insert(&fi->writepages, req);
 	spin_unlock(&fc->lock);
 
 out_unlock:
@@ -2330,6 +2392,12 @@ static int fuse_launder_page(struct page *page)
 	int err = 0;
 	if (clear_page_dirty_for_io(page)) {
 		struct inode *inode = page->mapping->host;
+		/*
+		 * We should wait until the writeback of pages is complete
+		 * before calling fuse_writepage_locked() to avoid inserting of
+		 * intersected requests into the fi->writepages tree.
+		 */
+		fuse_wait_on_page_writeback(inode, page->index);
 		err = fuse_writepage_locked(page);
 		if (!err)
 			fuse_wait_on_page_writeback(inode, page->index);
