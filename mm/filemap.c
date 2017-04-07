@@ -1963,30 +1963,28 @@ generic_file_read_iter(struct kiocb *iocb, struct iov_iter *iter, loff_t pos)
 		if (!count)
 			goto out; /* skip atime */
 		size = i_size_read(inode);
-		if (pos < size) {
-			retval = filemap_write_and_wait_range(mapping, pos,
-					pos + count - 1);
-			if (!retval) {
-				retval = mapping_direct_IO(mapping, READ,
-							   iocb, iter, pos);
-			}
-			if (retval > 0) {
-				*ppos = pos + retval;
-				count -= retval;
-			}
+		retval = filemap_write_and_wait_range(mapping, pos,
+				pos + count - 1);
+		if (!retval) {
+			retval = mapping_direct_IO(mapping, READ,
+						   iocb, iter, pos);
+		}
+		if (retval > 0) {
+			*ppos = pos + retval;
+			count -= retval;
+		}
 
-			/*
-			 * Btrfs can have a short DIO read if we encounter
-			 * compressed extents, so if there was an error, or if
-			 * we've already read everything we wanted to, or if
-			 * there was a short read because we hit EOF, go ahead
-			 * and return.  Otherwise fallthrough to buffered io for
-			 * the rest of the read.
-			 */
-			if (retval < 0 || !count || *ppos >= size) {
-				file_accessed(filp);
-				goto out;
-			}
+		/*
+		 * Btrfs can have a short DIO read if we encounter
+		 * compressed extents, so if there was an error, or if
+		 * we've already read everything we wanted to, or if
+		 * there was a short read because we hit EOF, go ahead
+		 * and return.  Otherwise fallthrough to buffered io for
+		 * the rest of the read.
+		 */
+		if (retval < 0 || !count || *ppos >= size) {
+			file_accessed(filp);
+			goto out;
 		}
 
 		/*
