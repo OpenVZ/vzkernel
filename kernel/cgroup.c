@@ -1377,18 +1377,47 @@ static int cgroup_remount(struct super_block *sb, int *flags, char *data)
 #ifdef CONFIG_VE
 static int cgroup_show_path(struct seq_file *m, struct dentry *dentry)
 {
+	struct inode *inode = dentry->d_inode;
 	struct cgroup *cgrp = __d_cgrp(dentry);
-	char *buf, *end;
-	size_t size = seq_get_buf(m, &buf);
-	int res = -1;
+	char *buf;
+	int ret;
 
-	if (size > 0 && cgroup_path_ve(cgrp, buf, size) == 0) {
-		end = mangle_path(buf, buf, " \t\n\\");
-		res = end - buf;
+	/*
+	 * dentry can be of cgroup file (but not only of
+	 * directory) so use parent's cgroup for it to find
+	 * dirname and append dentry name to it at the end
+	 */
+	if (!inode || !S_ISDIR(inode->i_mode))
+		cgrp = __d_cgrp(dentry->d_parent);
+
+	ret = -ENOMEM;
+	buf = kmalloc(PATH_MAX, GFP_KERNEL);
+	if (!buf)
+		goto out;
+
+	ret = cgroup_path_ve(cgrp, buf, PATH_MAX);
+	if (ret < 0)
+		goto out_free;
+
+	ret = seq_puts(m, buf);
+	if (ret < 0)
+		goto out_free;
+
+	if (!inode || !S_ISDIR(inode->i_mode)) {
+		if (buf[1] != '\0') {
+			ret = seq_putc(m, '/');
+			if (ret < 0)
+				goto out_free;
+		}
+
+		ret = seq_puts(m, dentry->d_name.name);
+		if (ret < 0)
+			goto out_free;
 	}
-	seq_commit(m, res);
-
-	return 0;
+out_free:
+	kfree(buf);
+out:
+	return ret;
 }
 #endif
 
