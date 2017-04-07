@@ -102,7 +102,7 @@ static struct inode *fuse_alloc_inode(struct super_block *sb)
 	INIT_LIST_HEAD(&fi->write_files);
 	INIT_LIST_HEAD(&fi->rw_files);
 	INIT_LIST_HEAD(&fi->queued_writes);
-	INIT_LIST_HEAD(&fi->writepages);
+	fi->writepages = RB_ROOT;
 	init_waitqueue_head(&fi->page_waitq);
 	fi->forget = fuse_alloc_forget();
 	if (!fi->forget) {
