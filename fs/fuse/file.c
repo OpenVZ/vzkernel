@@ -465,7 +465,7 @@ static int fuse_release(struct inode *inode, struct file *file)
 		 * enqueued on this file and it is not going to get new one: it is closing.
 		 */
 		if (!ff->fc->close_wait)
-			wait_event(fi->page_waitq, list_empty_careful(&fi->writepages));
+			wait_event(fi->page_waitq, RB_EMPTY_ROOT(&fi->writepages));
 		else
 			wait_event(fi->page_waitq, atomic_read(&ff->count) == 1);
 
@@ -534,17 +534,23 @@ u64 fuse_lock_owner_id(struct fuse_conn *fc, fl_owner_t id)
 static struct fuse_req *fuse_find_writeback(struct fuse_inode *fi,
 					    pgoff_t idx_from, pgoff_t idx_to)
 {
-	struct fuse_req *req;
+	struct rb_node *n;
 
-	list_for_each_entry(req, &fi->writepages, writepages_entry) {
+	n = fi->writepages.rb_node;
+
+	while (n) {
+		struct fuse_req *req;
 		pgoff_t curr_index;
 
+		req = rb_entry(n, struct fuse_req, writepages_entry);
 		WARN_ON(get_fuse_inode(req->inode) != fi);
 		curr_index = req->misc.write.in.offset >> PAGE_SHIFT;
-		if (idx_from < curr_index + req->num_pages &&
-		    curr_index <= idx_to) {
+		if (idx_from >= curr_index + req->num_pages)
+			n = n->rb_right;
+		else if (idx_to < curr_index)
+			n = n->rb_left;
+		else
 			return req;
-		}
 	}
 	return NULL;
 }
@@ -687,7 +693,7 @@ int fuse_fsync_common(struct file *file, loff_t start, loff_t end,
 	if (err)
 		goto out;
 
-	if (!list_empty(&get_fuse_inode(inode)->writepages))
+	if (!RB_EMPTY_ROOT(&get_fuse_inode(inode)->writepages))
 		fuse_sync_writes(inode);
 
 	/*
@@ -1914,7 +1920,7 @@ static void fuse_writepage_finish(struct fuse_conn *fc, struct fuse_req *req)
 	struct backing_dev_info *bdi = inode->i_mapping->backing_dev_info;
 	int i;
 
-	list_del(&req->writepages_entry);
+	rb_erase(&req->writepages_entry, &fi->writepages);
 	if (fc->writeback_cache || fc->close_wait)
 		__fuse_file_put(req->ff);
 	for (i = 0; i < req->num_pages; i++) {
@@ -1999,6 +2005,36 @@ __acquires(fi->lock)
 	}
 }
 
+static int tree_insert(struct rb_root *root, struct fuse_req *ins_req)
+{
+	pgoff_t idx_from = ins_req->misc.write.in.offset >> PAGE_CACHE_SHIFT;
+	pgoff_t idx_to   = ins_req->num_pages ?
+				idx_from + ins_req->num_pages - 1 : idx_from;
+	struct rb_node **p = &root->rb_node;
+	struct rb_node  *parent = NULL;
+
+	while (*p) {
+		struct fuse_req *req;
+		pgoff_t curr_index;
+
+		parent = *p;
+		req = rb_entry(parent, struct fuse_req, writepages_entry);
+		BUG_ON(req->inode != ins_req->inode);
+		curr_index = req->misc.write.in.offset >> PAGE_CACHE_SHIFT;
+
+		if (idx_from >= curr_index + req->num_pages)
+			p = &(*p)->rb_right;
+		else if (idx_to < curr_index)
+			p = &(*p)->rb_left;
+		else
+			BUG();
+	}
+
+	rb_link_node(&ins_req->writepages_entry, parent, p);
+	rb_insert_color(&ins_req->writepages_entry, root);
+	return 0;
+}
+
 static void fuse_writepage_end(struct fuse_conn *fc, struct fuse_req *req)
 {
 	struct inode *inode = req->inode;
@@ -2013,7 +2049,7 @@ static void fuse_writepage_end(struct fuse_conn *fc, struct fuse_req *req)
 		req->misc.write.next = next->misc.write.next;
 		next->misc.write.next = NULL;
 		next->ff = fuse_file_get(req->ff);
-		list_add(&next->writepages_entry, &fi->writepages);
+		tree_insert(&fi->writepages, next);
 
 		/*
 		 * Skip fuse_flush_writepages() to make it easy to crop requests
@@ -2124,7 +2160,7 @@ static int fuse_writepage_locked(struct page *page)
 	inc_zone_page_state(tmp_page, NR_WRITEBACK_TEMP);
 
 	spin_lock(&fi->lock);
-	list_add(&req->writepages_entry, &fi->writepages);
+	tree_insert(&fi->writepages, req);
 	list_add_tail(&req->list, &fi->queued_writes);
 	fuse_flush_writepages(inode);
 	spin_unlock(&fi->lock);
@@ -2208,10 +2244,10 @@ static bool fuse_writepage_in_flight(struct fuse_req *new_req,
 	WARN_ON(new_req->num_pages != 0);
 
 	spin_lock(&fi->lock);
-	list_del(&new_req->writepages_entry);
+	rb_erase(&new_req->writepages_entry, &fi->writepages);
 	old_req = fuse_find_writeback(fi, page->index, page->index);
 	if (!old_req) {
-		list_add(&new_req->writepages_entry, &fi->writepages);
+		tree_insert(&fi->writepages, new_req);
 		spin_unlock(&fi->lock);
 		return false;
 	}
@@ -2350,7 +2386,7 @@ static int fuse_writepages_fill(struct page *page,
 		req->inode = inode;
 
 		spin_lock(&fi->lock);
-		list_add(&req->writepages_entry, &fi->writepages);
+		tree_insert(&fi->writepages, req);
 		spin_unlock(&fi->lock);
 
 		data->req = req;
