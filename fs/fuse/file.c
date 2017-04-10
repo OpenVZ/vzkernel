@@ -507,10 +507,6 @@ static bool fuse_range_is_writeback(struct inode *inode, pgoff_t idx_from,
 	spin_lock(&fc->lock);
 
 	n = fi->writepages.rb_node;
-	if (!n) {
-		spin_unlock(&fc->lock);
-		return false;
-	}
 
 	while (n) {
 		struct fuse_req *req;
@@ -550,11 +546,6 @@ static bool fuse_page_is_writeback(struct inode *inode, pgoff_t index)
 	spin_lock(&fc->lock);
 
 	n = fi->writepages.rb_node;
-	if (!n) {
-		spin_unlock(&fc->lock);
-		return false;
-	}
-
 
 	while (n) {
 		struct fuse_req *req;
