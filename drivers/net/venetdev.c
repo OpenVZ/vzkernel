@@ -1110,37 +1110,6 @@ static struct cftype venet_cftypes[] = {
 	{ }
 };
 
-/*
- * VE context dropping is happening earlier than
- * pernet_operations::exit method so we can't
- * rely on it and do the cleanup earlier.
- */
-static void venet_stop_notifier(void *data)
-{
-	struct ve_struct *env = data;
-
-	if (env->ve_netns) {
-		struct net_device *dev = env->_venet_dev;
-
-		venet_ext_clean(env);
-		veip_stop(env);
-
-		if (dev) {
-			env->_venet_dev = NULL;
-			rtnl_lock();
-			unregister_netdevice(dev);
-			rtnl_unlock();
-			free_netdev(dev);
-		}
-	}
-}
-
-static struct ve_hook venet_stop_hook = {
-	.fini		= venet_stop_notifier,
-	.priority	= HOOK_PRIO_FINISHING,
-	.owner		= THIS_MODULE,
-};
-
 static int venet_changelink(struct net_device *dev, struct nlattr *tb[],
 			    struct nlattr *data[])
 {
@@ -1220,7 +1189,6 @@ __init int venet_init(void)
 
 	vzioctl_register(&venetcalls);
 	vzmon_register_veaddr_print_cb(veaddr_seq_print);
-	ve_hook_register(VE_SS_CHAIN, &venet_stop_hook);
 
 	return rtnl_link_register(&venet_link_ops);
 
