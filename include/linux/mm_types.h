@@ -327,6 +327,15 @@ struct vm_area_struct {
 					   units, *not* PAGE_CACHE_SIZE */
 	struct file * vm_file;		/* File we map to (can be NULL). */
 	void * vm_private_data;		/* was vm_pte (shared mem) */
+	/*
+	 * Special for pfcache - we can't reuse vm_private_data
+	 * to save up memory as the field is inherited on fork and
+	 * to distinquish if it is our and we need to clear it we will
+	 * still need some kind of flag on address_space of these vma,
+	 * and there are too few free flags left so it implyes adding
+	 * yet another variable.
+	 */
+	void * vm_private_data2;
 
 #ifndef CONFIG_MMU
 	struct vm_region *vm_region;	/* NOMMU mapping region */
