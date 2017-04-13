@@ -1154,12 +1154,10 @@ ssize_t nfs_file_direct_write(struct kiocb *iocb, const struct iovec *iov,
 	if (result)
 		goto out_unlock;
 
-	if (mapping->nrpages) {
-		result = invalidate_inode_pages2_range(mapping,
-					pos >> PAGE_CACHE_SHIFT, end);
-		if (result)
-			goto out_unlock;
-	}
+	result = invalidate_inode_pages2_range(mapping,
+				pos >> PAGE_CACHE_SHIFT, end);
+	if (result)
+		goto out_unlock;
 
 	task_io_account_write(count);
 
@@ -1183,10 +1181,8 @@ ssize_t nfs_file_direct_write(struct kiocb *iocb, const struct iovec *iov,
 
 	result = nfs_direct_write_schedule_iovec(dreq, iov, nr_segs, pos, uio);
 
-	if (mapping->nrpages) {
-		invalidate_inode_pages2_range(mapping,
-					      pos >> PAGE_CACHE_SHIFT, end);
-	}
+	invalidate_inode_pages2_range(mapping,
+				pos >> PAGE_CACHE_SHIFT, end);
 
 	mutex_unlock(&inode->i_mutex);
 
