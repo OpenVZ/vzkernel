@@ -285,9 +285,8 @@ void truncate_inode_pages_range(struct address_space *mapping,
 	int		i;
 	int		bug_if_page_has_bh = 0;
 
-	cleancache_invalidate_inode(mapping);
 	if (mapping->nrpages == 0 && mapping->nrexceptional == 0)
-		return;
+		goto out;
 
 	/* Offsets within partial pages */
 	partial_start = lstart & (PAGE_CACHE_SIZE - 1);
@@ -390,7 +389,7 @@ void truncate_inode_pages_range(struct address_space *mapping,
 	 * will be released, just zeroed, so we can bail out now.
 	 */
 	if (start >= end)
-		return;
+		goto out;
 
 	index = start;
 	for ( ; ; ) {
@@ -431,6 +430,8 @@ void truncate_inode_pages_range(struct address_space *mapping,
 		pagevec_release(&pvec);
 		index++;
 	}
+
+out:
 	cleancache_invalidate_inode(mapping);
 }
 EXPORT_SYMBOL(truncate_inode_pages_range);
@@ -627,10 +628,8 @@ int invalidate_inode_pages2_range(struct address_space *mapping,
 	int ret2 = 0;
 	int did_range_unmap = 0;
 
-	cleancache_invalidate_inode(mapping);
-
 	if (mapping->nrpages == 0 && mapping->nrexceptional == 0)
-		return 0;
+		goto out;
 
 	pagevec_init(&pvec, 0);
 	index = start;
@@ -692,6 +691,8 @@ int invalidate_inode_pages2_range(struct address_space *mapping,
 		cond_resched();
 		index++;
 	}
+
+out:
 	cleancache_invalidate_inode(mapping);
 	return ret;
 }
