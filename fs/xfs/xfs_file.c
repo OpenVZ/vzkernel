@@ -281,7 +281,7 @@ xfs_file_dio_aio_read(
 	file_accessed(iocb->ki_filp);
 
 	xfs_rw_ilock(ip, XFS_IOLOCK_SHARED);
-	if (mapping->nrpages) {
+	{
 		ret = filemap_write_and_wait_range(mapping, iocb->ki_pos, end);
 		if (ret)
 			goto out_unlock;
