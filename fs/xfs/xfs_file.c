@@ -346,7 +346,7 @@ xfs_file_aio_read(
 	 * serialisation.
 	 */
 	xfs_rw_ilock(ip, XFS_IOLOCK_SHARED);
-	if ((ioflags & XFS_IO_ISDIRECT) && inode->i_mapping->nrpages) {
+	if ((ioflags & XFS_IO_ISDIRECT)) {
 		xfs_rw_iunlock(ip, XFS_IOLOCK_SHARED);
 		xfs_rw_ilock(ip, XFS_IOLOCK_EXCL);
 
@@ -361,22 +361,20 @@ xfs_file_aio_read(
 		 * flush and reduce the chances of repeated iolock cycles going
 		 * forward.
 		 */
-		if (inode->i_mapping->nrpages) {
-			ret = filemap_write_and_wait(VFS_I(ip)->i_mapping);
-			if (ret) {
-				xfs_rw_iunlock(ip, XFS_IOLOCK_EXCL);
-				return ret;
-			}
-
-			/*
-			 * Invalidate whole pages. This can return an error if
-			 * we fail to invalidate a page, but this should never
-			 * happen on XFS. Warn if it does fail.
-			 */
-			ret = invalidate_inode_pages2(VFS_I(ip)->i_mapping);
-			WARN_ON_ONCE(ret);
-			ret = 0;
+		ret = filemap_write_and_wait(VFS_I(ip)->i_mapping);
+		if (ret) {
+			xfs_rw_iunlock(ip, XFS_IOLOCK_EXCL);
+			return ret;
 		}
+
+		/*
+		 * Invalidate whole pages. This can return an error if
+		 * we fail to invalidate a page, but this should never
+		 * happen on XFS. Warn if it does fail.
+		 */
+		ret = invalidate_inode_pages2(VFS_I(ip)->i_mapping);
+		WARN_ON_ONCE(ret);
+		ret = 0;
 		xfs_rw_ilock_demote(ip, XFS_IOLOCK_EXCL);
 	}
 
