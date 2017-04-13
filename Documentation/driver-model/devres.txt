@@ -236,16 +236,23 @@ certainly invest a bit more effort into libata core layer).
 MEM
   devm_kzalloc()
   devm_kfree()
+  devm_kmemdup()
 
 IO region
-  devm_request_region()
-  devm_request_mem_region()
-  devm_release_region()
   devm_release_mem_region()
+  devm_release_region()
+  devm_release_resource()
+  devm_request_mem_region()
+  devm_request_region()
+  devm_request_resource()
 
 IRQ
   devm_request_irq()
   devm_free_irq()
+
+LED
+  devm_led_classdev_register()
+  devm_led_classdev_unregister()
 
 DMA
   dmam_alloc_coherent()

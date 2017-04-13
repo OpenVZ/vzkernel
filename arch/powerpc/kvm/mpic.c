@@ -1635,6 +1635,7 @@ static void mpic_destroy(struct kvm_device *dev)
 
 	dev->kvm->arch.mpic = NULL;
 	kfree(opp);
+	kfree(dev);
 }
 
 static int mpic_set_default_irq_routing(struct openpic *opp)
@@ -1822,7 +1823,7 @@ int kvm_set_msi(struct kvm_kernel_irq_routing_entry *e,
 	return 0;
 }
 
-int kvm_set_routing_entry(struct kvm_irq_routing_table *rt,
+int kvm_set_routing_entry(struct kvm *kvm,
 			  struct kvm_kernel_irq_routing_entry *e,
 			  const struct kvm_irq_routing_entry *ue)
 {
@@ -1835,7 +1836,6 @@ int kvm_set_routing_entry(struct kvm_irq_routing_table *rt,
 		e->irqchip.pin = ue->u.irqchip.pin;
 		if (e->irqchip.pin >= KVM_IRQCHIP_NUM_PINS)
 			goto out;
-		rt->chip[ue->u.irqchip.irqchip][e->irqchip.pin] = ue->gsi;
 		break;
 	case KVM_IRQ_ROUTING_MSI:
 		e->set = kvm_set_msi;

@@ -20,11 +20,11 @@
 static inline int gup_pte_range(pmd_t *pmdp, pmd_t pmd, unsigned long addr,
 		unsigned long end, int write, struct page **pages, int *nr)
 {
+	struct page *head, *page;
 	unsigned long mask;
 	pte_t *ptep, pte;
-	struct page *page;
 
-	mask = (write ? _PAGE_RO : 0) | _PAGE_INVALID | _PAGE_SPECIAL;
+	mask = (write ? _PAGE_PROTECT : 0) | _PAGE_INVALID | _PAGE_SPECIAL;
 
 	ptep = ((pte_t *) pmd_deref(pmd)) + pte_index(addr);
 	do {
@@ -34,12 +34,14 @@ static inline int gup_pte_range(pmd_t *pmdp, pmd_t pmd, unsigned long addr,
 			return 0;
 		VM_BUG_ON(!pfn_valid(pte_pfn(pte)));
 		page = pte_page(pte);
-		if (!page_cache_get_speculative(page))
+		head = compound_head(page);
+		if (!page_cache_get_speculative(head))
 			return 0;
 		if (unlikely(pte_val(pte) != pte_val(*ptep))) {
-			put_page(page);
+			put_page(head);
 			return 0;
 		}
+		VM_BUG_ON_PAGE(compound_head(page) != head, page);
 		pages[*nr] = page;
 		(*nr)++;
 
@@ -55,8 +57,8 @@ static inline int gup_huge_pmd(pmd_t *pmdp, pmd_t pmd, unsigned long addr,
 	struct page *head, *page, *tail;
 	int refs;
 
-	result = write ? 0 : _SEGMENT_ENTRY_RO;
-	mask = result | _SEGMENT_ENTRY_INV;
+	result = write ? 0 : _SEGMENT_ENTRY_PROTECT;
+	mask = result | _SEGMENT_ENTRY_INVALID;
 	if ((pmd_val(pmd) & mask) != result)
 		return 0;
 	VM_BUG_ON(!pfn_valid(pmd_val(pmd) >> PAGE_SHIFT));
@@ -263,10 +265,8 @@ slow_irqon:
 		start += nr << PAGE_SHIFT;
 		pages += nr;
 
-		down_read(&mm->mmap_sem);
-		ret = get_user_pages(current, mm, start,
-			(end - start) >> PAGE_SHIFT, write, 0, pages, NULL);
-		up_read(&mm->mmap_sem);
+		ret = get_user_pages_unlocked(current, mm, start,
+			(end - start) >> PAGE_SHIFT, write, 0, pages);
 
 		/* Have to be a bit careful with return values */
 		if (nr > 0) {

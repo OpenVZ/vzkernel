@@ -908,7 +908,7 @@ static void bgmac_chip_reset(struct bgmac *bgmac)
 		struct bcma_drv_cc *cc = &bgmac->core->bus->drv_cc;
 		u8 et_swtype = 0;
 		u8 sw_type = BGMAC_CHIPCTL_1_SW_TYPE_EPHY |
-			     BGMAC_CHIPCTL_1_IF_TYPE_RMII;
+			     BGMAC_CHIPCTL_1_IF_TYPE_MII;
 		char buf[2];
 
 		if (bcm47xx_nvram_getenv("et_swtype", buf, 1) > 0) {
@@ -969,8 +969,6 @@ static void bgmac_chip_reset(struct bgmac *bgmac)
 		bgmac_set(bgmac, BGMAC_PHY_CNTL, BGMAC_PC_MTE);
 	bgmac_miiconfig(bgmac);
 	bgmac_phy_init(bgmac);
-
-	bgmac->int_status = 0;
 }
 
 static void bgmac_chip_intrs_on(struct bgmac *bgmac)
@@ -1088,13 +1086,12 @@ static irqreturn_t bgmac_interrupt(int irq, void *dev_id)
 	if (!int_status)
 		return IRQ_NONE;
 
-	/* Ack */
-	bgmac_write(bgmac, BGMAC_INT_STATUS, int_status);
+	int_status &= ~(BGMAC_IS_TX0 | BGMAC_IS_RX);
+	if (int_status)
+		bgmac_err(bgmac, "Unknown IRQs: 0x%08X\n", int_status);
 
 	/* Disable new interrupts until handling existing ones */
 	bgmac_chip_intrs_off(bgmac);
-
-	bgmac->int_status = int_status;
 
 	napi_schedule(&bgmac->napi);
 
@@ -1104,25 +1101,17 @@ static irqreturn_t bgmac_interrupt(int irq, void *dev_id)
 static int bgmac_poll(struct napi_struct *napi, int weight)
 {
 	struct bgmac *bgmac = container_of(napi, struct bgmac, napi);
-	struct bgmac_dma_ring *ring;
 	int handled = 0;
 
-	if (bgmac->int_status & BGMAC_IS_TX0) {
-		ring = &bgmac->tx_ring[0];
-		bgmac_dma_tx_free(bgmac, ring);
-		bgmac->int_status &= ~BGMAC_IS_TX0;
-	}
+	/* Ack */
+	bgmac_write(bgmac, BGMAC_INT_STATUS, ~0);
 
-	if (bgmac->int_status & BGMAC_IS_RX) {
-		ring = &bgmac->rx_ring[0];
-		handled += bgmac_dma_rx_read(bgmac, ring, weight);
-		bgmac->int_status &= ~BGMAC_IS_RX;
-	}
+	bgmac_dma_tx_free(bgmac, &bgmac->tx_ring[0]);
+	handled += bgmac_dma_rx_read(bgmac, &bgmac->rx_ring[0], weight);
 
-	if (bgmac->int_status) {
-		bgmac_err(bgmac, "Unknown IRQs: 0x%08X\n", bgmac->int_status);
-		bgmac->int_status = 0;
-	}
+	/* Poll again if more events arrived in the meantime */
+	if (bgmac_read(bgmac, BGMAC_INT_STATUS) & (BGMAC_IS_TX0 | BGMAC_IS_RX))
+		return weight;
 
 	if (handled < weight)
 		napi_complete(napi);

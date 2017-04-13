@@ -672,15 +672,6 @@ static int open(struct tty_struct *tty, struct file *filp)
 
 	DBGINFO(("%s open, old ref count = %d\n", info->device_name, info->port.count));
 
-	/* If port is closing, signal caller to try again */
-	if (tty_hung_up_p(filp) || info->port.flags & ASYNC_CLOSING){
-		if (info->port.flags & ASYNC_CLOSING)
-			interruptible_sleep_on(&info->port.close_wait);
-		retval = ((info->port.flags & ASYNC_HUP_NOTIFY) ?
-			-EAGAIN : -ERESTARTSYS);
-		goto cleanup;
-	}
-
 	mutex_lock(&info->port.mutex);
 	info->port.low_latency = (info->port.flags & ASYNC_LOW_LATENCY) ? 1 : 0;
 
@@ -3273,7 +3264,6 @@ static int block_til_ready(struct tty_struct *tty, struct file *filp,
 	DECLARE_WAITQUEUE(wait, current);
 	int		retval;
 	bool		do_clocal = false;
-	bool		extra_count = false;
 	unsigned long	flags;
 	int		cd;
 	struct tty_port *port = &info->port;
@@ -3300,10 +3290,7 @@ static int block_til_ready(struct tty_struct *tty, struct file *filp,
 	add_wait_queue(&port->open_wait, &wait);
 
 	spin_lock_irqsave(&info->lock, flags);
-	if (!tty_hung_up_p(filp)) {
-		extra_count = true;
-		port->count--;
-	}
+	port->count--;
 	spin_unlock_irqrestore(&info->lock, flags);
 	port->blocked_open++;
 
@@ -3320,9 +3307,8 @@ static int block_til_ready(struct tty_struct *tty, struct file *filp,
 		}
 
 		cd = tty_port_carrier_raised(port);
-
- 		if (!(port->flags & ASYNC_CLOSING) && (do_clocal || cd ))
- 			break;
+		if (do_clocal || cd)
+			break;
 
 		if (signal_pending(current)) {
 			retval = -ERESTARTSYS;
@@ -3338,7 +3324,7 @@ static int block_til_ready(struct tty_struct *tty, struct file *filp,
 	set_current_state(TASK_RUNNING);
 	remove_wait_queue(&port->open_wait, &wait);
 
-	if (extra_count)
+	if (!tty_hung_up_p(filp))
 		port->count++;
 	port->blocked_open--;
 

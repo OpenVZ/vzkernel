@@ -16,6 +16,8 @@ source "drivers/pnp/Kconfig"
 
 source "drivers/block/Kconfig"
 
+source "drivers/nvme/Kconfig"
+
 # misc before ide - BLK_DEV_SGIIOC4 depends on SGI_IOC4
 
 source "drivers/misc/Kconfig"
@@ -67,6 +69,8 @@ source "drivers/gpio/Kconfig"
 source "drivers/w1/Kconfig"
 
 source "drivers/power/Kconfig"
+
+source "drivers/powercap/Kconfig"
 
 source "drivers/hwmon/Kconfig"
 
@@ -165,5 +169,9 @@ source "drivers/irqchip/Kconfig"
 source "drivers/ipack/Kconfig"
 
 source "drivers/reset/Kconfig"
+
+source "drivers/ras/Kconfig"
+
+source "drivers/nvdimm/Kconfig"
 
 endmenu

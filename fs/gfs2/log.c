@@ -642,6 +642,7 @@ void gfs2_log_flush(struct gfs2_sbd *sdp, struct gfs2_glock *gl)
 	gfs2_log_flush_bio(sdp, WRITE);
 
 	if (sdp->sd_log_head != sdp->sd_log_flush_head) {
+		log_flush_wait(sdp);
 		log_write_header(sdp, 0);
 	} else if (sdp->sd_log_tail != current_tail(sdp) && !sdp->sd_log_idle){
 		atomic_dec(&sdp->sd_log_blks_free); /* Adjust for unreserved buffer */
@@ -696,7 +697,7 @@ static void log_refund(struct gfs2_sbd *sdp, struct gfs2_trans *tr)
 	    (tr->tr_num_buf_new || tr->tr_num_databuf_new)) {
 		gfs2_assert_withdraw(sdp, tr->tr_t_gh.gh_gl);
 		sdp->sd_log_tr = tr;
-		tr->tr_attached = 1;
+		set_bit(TR_ATTACHED, &tr->tr_flags);
 	}
 	gfs2_log_unlock(sdp);
 }

@@ -2421,7 +2421,8 @@ static struct usb_device_id uvc_ids[] = {
 	  .driver_info		= UVC_QUIRK_PROBE_MINMAX
 				| UVC_QUIRK_IGNORE_SELECTOR_UNIT },
 	/* Generic USB Video Class */
-	{ USB_INTERFACE_INFO(USB_CLASS_VIDEO, 1, 0) },
+	{ USB_INTERFACE_INFO(USB_CLASS_VIDEO, 1, UVC_PC_PROTOCOL_UNDEFINED) },
+	{ USB_INTERFACE_INFO(USB_CLASS_VIDEO, 1, UVC_PC_PROTOCOL_15) },
 	{}
 };
 

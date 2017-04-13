@@ -133,6 +133,7 @@ struct pnp_dev *pnp_alloc_dev(struct pnp_protocol *protocol, int id,
 	dev = kzalloc(sizeof(struct pnp_dev), GFP_KERNEL);
 	if (!dev)
 		return NULL;
+	device_rh_alloc(&dev->dev);
 
 	INIT_LIST_HEAD(&dev->resources);
 	INIT_LIST_HEAD(&dev->options);
