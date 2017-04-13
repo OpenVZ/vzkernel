@@ -1094,10 +1094,11 @@ static int nfs_invalidate_mapping(struct inode *inode, struct address_space *map
 			if (ret < 0)
 				return ret;
 		}
-		ret = invalidate_inode_pages2(mapping);
-		if (ret < 0)
-			return ret;
 	}
+	ret = invalidate_inode_pages2(mapping);
+	if (ret < 0)
+		return ret;
+
 	if (S_ISDIR(inode->i_mode)) {
 		spin_lock(&inode->i_lock);
 		memset(nfsi->cookieverf, 0, sizeof(nfsi->cookieverf));
