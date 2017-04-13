@@ -2631,18 +2631,16 @@ generic_file_direct_write_iter(struct kiocb *iocb, struct iov_iter *iter,
 	 * about to write.  We do this *before* the write so that we can return
 	 * without clobbering -EIOCBQUEUED from ->direct_IO().
 	 */
-	if (mapping->nrpages) {
-		written = invalidate_inode_pages2_range(mapping,
-					pos >> PAGE_CACHE_SHIFT, end);
-		/*
-		 * If a page can not be invalidated, return 0 to fall back
-		 * to buffered write.
-		 */
-		if (written) {
-			if (written == -EBUSY)
-				return 0;
-			goto out;
-		}
+	written = invalidate_inode_pages2_range(mapping,
+						pos >> PAGE_CACHE_SHIFT, end);
+	/*
+	 * If a page can not be invalidated, return 0 to fall back
+	 * to buffered write.
+	 */
+	if (written) {
+		if (written == -EBUSY)
+			return 0;
+		goto out;
 	}
 
 	written = mapping_direct_IO(mapping, WRITE, iocb, iter, pos);
@@ -2655,10 +2653,8 @@ generic_file_direct_write_iter(struct kiocb *iocb, struct iov_iter *iter,
 	 * so we don't support it 100%.  If this invalidation
 	 * fails, tough, the write still worked...
 	 */
-	if (mapping->nrpages) {
-		invalidate_inode_pages2_range(mapping,
-					      pos >> PAGE_CACHE_SHIFT, end);
-	}
+	invalidate_inode_pages2_range(mapping,
+				pos >> PAGE_CACHE_SHIFT, end);
 
 	if (written > 0) {
 		pos += written;
