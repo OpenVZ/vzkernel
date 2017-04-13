@@ -482,7 +482,7 @@ v9fs_file_write_internal(struct inode *inode, struct p9_fid *fid,
 	if (invalidate && (total > 0)) {
 		pg_start = origin >> PAGE_CACHE_SHIFT;
 		pg_end = (origin + total - 1) >> PAGE_CACHE_SHIFT;
-		if (inode->i_mapping && inode->i_mapping->nrpages)
+		if (inode->i_mapping)
 			invalidate_inode_pages2_range(inode->i_mapping,
 						      pg_start, pg_end);
 		*offset += total;
@@ -688,7 +688,7 @@ v9fs_direct_write(struct file *filp, const char __user * data,
 	 * about to write.  We do this *before* the write so that if we fail
 	 * here we fall back to buffered write
 	 */
-	if (mapping->nrpages) {
+	{
 		pgoff_t pg_start = offset >> PAGE_CACHE_SHIFT;
 		pgoff_t pg_end   = (offset + count - 1) >> PAGE_CACHE_SHIFT;
 
