@@ -4246,10 +4246,10 @@ static bool synchronize_mapping_faults_vma(struct address_space *mapping,
 {
 	struct mm_struct *mm = vma->vm_mm;
 
-	if (vma->vm_private_data == vma)
+	if (vma->vm_private_data2 == vma)
 		return false;
-	BUG_ON(vma->vm_private_data);
-	vma->vm_private_data = vma;
+	BUG_ON(vma->vm_private_data2);
+	vma->vm_private_data2 = vma;
 
 	atomic_inc(&mm->mm_count);
 	mutex_unlock(&mapping->i_mmap_mutex);
@@ -4270,7 +4270,7 @@ restart:
 		if (synchronize_mapping_faults_vma(mapping, vma))
 			goto restart;
 	vma_interval_tree_foreach(vma, &mapping->i_mmap, 0, ULONG_MAX)
-		vma->vm_private_data = NULL;
+		vma->vm_private_data2 = NULL;
 }
 
 void close_mapping_peer(struct address_space *mapping)
