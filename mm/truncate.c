@@ -670,6 +670,10 @@ int invalidate_inode_pages2_range(struct address_space *mapping,
 	int did_range_unmap = 0;
 
 	cleancache_invalidate_inode(mapping);
+
+	if (mapping->nrpages == 0 && mapping->nrexceptional == 0)
+		return 0;
+
 	pagevec_init(&pvec, 0);
 	index = start;
 	while (index <= end && __pagevec_lookup(&pvec, mapping, index,
