@@ -3079,7 +3079,7 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 	se->vruntime = max_vruntime(se->vruntime, vruntime);
 }
 
-static void check_enqueue_throttle(struct cfs_rq *cfs_rq);
+static void check_enqueue_throttle(struct cfs_rq *cfs_rq, int flags);
 
 static inline void check_schedstat_required(void)
 {
@@ -3139,8 +3139,7 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 
 	if (cfs_rq->nr_running == 1) {
 		list_add_leaf_cfs_rq(cfs_rq);
-		if (!(flags & ENQUEUE_BOOST))
-			check_enqueue_throttle(cfs_rq);
+		check_enqueue_throttle(cfs_rq, flags);
 	}
 }
 
@@ -3975,7 +3974,7 @@ static void do_sched_cfs_slack_timer(struct cfs_bandwidth *cfs_b)
  * expired/exceeded, otherwise it may be allowed to steal additional ticks of
  * runtime as update_curr() throttling can not not trigger until it's on-rq.
  */
-static void check_enqueue_throttle(struct cfs_rq *cfs_rq)
+static void check_enqueue_throttle(struct cfs_rq *cfs_rq, int flags)
 {
 	WARN_ON(cfs_rq_has_boosted_entities(cfs_rq));
 
@@ -4001,6 +4000,9 @@ static void check_enqueue_throttle(struct cfs_rq *cfs_rq)
 			cfs_rq->throttled_clock_task = rq_clock_task(rq);
 		}
 	}
+
+	if (flags & ENQUEUE_BOOST)
+		return;
 
 	/* an active group must be handled by the update_curr()->put() path */
 	if (!cfs_rq->runtime_enabled || cfs_rq->curr)
@@ -4174,7 +4176,7 @@ static inline u64 cfs_rq_clock_task(struct cfs_rq *cfs_rq)
 
 static void account_cfs_rq_runtime(struct cfs_rq *cfs_rq, u64 delta_exec) {}
 static void check_cfs_rq_runtime(struct cfs_rq *cfs_rq) {}
-static void check_enqueue_throttle(struct cfs_rq *cfs_rq) {}
+static void check_enqueue_throttle(struct cfs_rq *cfs_rq, int flags) {}
 static inline void sync_throttle(struct task_group *tg, int cpu) {}
 static __always_inline void return_cfs_rq_runtime(struct cfs_rq *cfs_rq) {}
 
