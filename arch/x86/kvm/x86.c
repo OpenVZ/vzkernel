@@ -3295,13 +3295,10 @@ static int kvm_vcpu_ioctl_x86_set_vcpu_events(struct kvm_vcpu *vcpu,
 		vcpu->arch.apic->sipi_vector = events->sipi_vector;
 
 	if (events->flags & KVM_VCPUEVENT_VALID_SMM) {
-		u32 hflags = vcpu->arch.hflags;
 		if (events->smi.smm)
-			hflags |= HF_SMM_MASK;
+			vcpu->arch.hflags |= HF_SMM_MASK;
 		else
-			hflags &= ~HF_SMM_MASK;
-		kvm_set_hflags(vcpu, hflags);
-
+			vcpu->arch.hflags &= ~HF_SMM_MASK;
 		vcpu->arch.smi_pending = events->smi.pending;
 
 		if (events->smi.smm) {
