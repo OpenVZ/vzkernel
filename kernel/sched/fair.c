@@ -4291,7 +4291,7 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		if (boost)
 			boost = enqueue_boosted_entity(cfs_rq, se);
 
-		flags &= ~ENQUEUE_BOOST;
+		flags = ENQUEUE_WAKEUP;
 	}
 
 	for_each_sched_entity(se) {
