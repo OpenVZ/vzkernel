@@ -288,7 +288,7 @@ static int tswap_frontswap_store(unsigned type, pgoff_t offset,
 	if (cache_page)
 		goto copy;
 
-	if (current->flags & PF_MEMALLOC)
+	if (!(current->flags & PF_MEMCG_RECLAIM))
 		return -1;
 
 	cache_page = alloc_page(TSWAP_GFP_MASK | __GFP_HIGHMEM);
