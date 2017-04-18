@@ -1988,9 +1988,8 @@ static struct fuse_file *fuse_write_file(struct fuse_conn *fc,
 
 static int tree_insert(struct rb_root *root, struct fuse_req *ins_req)
 {
-	unsigned i = ins_req->num_pages - 1;
-	pgoff_t idx_from = ins_req->pages[0]->index;
-	pgoff_t idx_to   = ins_req->pages[i]->index;
+	pgoff_t idx_from = ins_req->misc.write.in.offset >> PAGE_CACHE_SHIFT;
+	pgoff_t idx_to   = idx_from + ins_req->num_pages - 1;
 	struct rb_node **p = &root->rb_node;
 	struct rb_node  *parent = NULL;
 
