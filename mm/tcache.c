@@ -1145,7 +1145,7 @@ static void tcache_cleancache_put_page(int pool_id,
 	struct page *cache_page = NULL;
 
 	/* It makes no sense to populate tcache when we are short on memory */
-	if (!READ_ONCE(tcache_active) || current->flags & PF_MEMALLOC)
+	if (!READ_ONCE(tcache_active) || !(current->flags & PF_MEMCG_RECLAIM))
 		return;
 
 	node = tcache_get_node_and_pool(pool_id, &key, true);
