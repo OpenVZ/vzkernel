@@ -219,11 +219,23 @@ static int synic_set_msr(struct kvm_vcpu_hv_synic *synic,
 		synic->version = data;
 		break;
 	case HV_X64_MSR_SIEFP:
+		if (data & HV_SYNIC_SIEFP_ENABLE)
+			if (kvm_clear_guest(vcpu->kvm,
+					    data & PAGE_MASK, PAGE_SIZE)) {
+				ret = 1;
+				break;
+			}
 		synic->evt_page = data;
 		if (!host)
 			synic_exit(synic, msr);
 		break;
 	case HV_X64_MSR_SIMP:
+		if (data & HV_SYNIC_SIMP_ENABLE)
+			if (kvm_clear_guest(vcpu->kvm,
+					    data & PAGE_MASK, PAGE_SIZE)) {
+				ret = 1;
+				break;
+			}
 		synic->msg_page = data;
 		if (!host)
 			synic_exit(synic, msr);
