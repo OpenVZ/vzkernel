@@ -221,7 +221,7 @@ struct veip_struct *veip_findcreate(envid_t veid)
 
 	ptr = veip_find(veid);
 	if (ptr != NULL)
-		return ptr;
+		return ERR_PTR(-EEXIST);
 
 	ptr = kmalloc(sizeof(struct veip_struct), GFP_ATOMIC);
 	if (ptr == NULL)
