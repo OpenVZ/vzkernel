@@ -203,7 +203,7 @@ static void venet_ext_clean(struct ve_struct *ve)
 	spin_unlock(&veip_lock);
 }
 
-struct veip_struct *veip_find(envid_t veid)
+static struct veip_struct *veip_find(envid_t veid)
 {
 	struct veip_struct *ptr;
 
@@ -1226,7 +1226,6 @@ EXPORT_SYMBOL(ip_entry_unhash);
 EXPORT_SYMBOL(sockaddr_to_veaddr);
 EXPORT_SYMBOL(veaddr_print);
 EXPORT_SYMBOL(venet_entry_lookup);
-EXPORT_SYMBOL(veip_find);
 EXPORT_SYMBOL(veip_findcreate);
 EXPORT_SYMBOL(veip_put);
 EXPORT_SYMBOL(venet_ext_lookup);

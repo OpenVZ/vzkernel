@@ -77,7 +77,6 @@ void ip_entry_unhash(struct ip_entry_struct *entry);
 void ip_entry_unhash(struct ip_entry_struct *entry);
 struct ip_entry_struct *venet_entry_lookup(struct ve_addr_struct *);
 
-struct veip_struct *veip_find(envid_t veid);
 struct veip_struct *veip_findcreate(envid_t veid);
 int veip_put(struct veip_struct *veip);
 void veip_cleanup(void);
