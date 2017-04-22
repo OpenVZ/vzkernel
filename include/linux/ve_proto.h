@@ -57,6 +57,7 @@ extern int nr_threads_ve(struct ve_struct *ve);
 
 enum {
 	VE_SS_CHAIN,
+	VE_SHUTDOWN_CHAIN,
 
 	VE_MAX_CHAINS
 };
