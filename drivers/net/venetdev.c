@@ -190,17 +190,12 @@ out:
 	return err;
 }
 
-static void venet_ext_clean(struct ve_struct *ve)
+static void __venet_ext_clean(struct ve_struct *ve)
 {
 	struct ext_entry_struct *entry, *tmp;
 
-	if (ve->veip == NULL)
-		return;
-
-	spin_lock(&veip_lock);
 	list_for_each_entry_safe (entry, tmp, &ve->veip->ext_lh, list)
 		venet_ext_release(entry);
-	spin_unlock(&veip_lock);
 }
 
 static struct veip_struct *veip_find(envid_t veid)
@@ -750,12 +745,23 @@ static void venet_setup(struct net_device *dev)
 	SET_ETHTOOL_OPS(dev, &venet_ethtool_ops);
 }
 
+static void veip_shutdown(void *data)
+{
+	struct ve_struct *ve = data;
+
+	spin_lock(&veip_lock);
+	if (ve->veip) {
+		__venet_ext_clean(ve);
+		__veip_stop(ve);
+	}
+	spin_unlock(&veip_lock);
+}
+
 static void venet_dellink(struct net_device *dev, struct list_head *head)
 {
 	struct ve_struct *env = dev->nd_net->owner_ve;
 
-	venet_ext_clean(env);
-	veip_stop(env);
+	veip_shutdown(env);
 
 	env->_venet_dev = NULL;
 	unregister_netdevice_queue(dev, head);
