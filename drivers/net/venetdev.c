@@ -761,7 +761,11 @@ static void venet_dellink(struct net_device *dev, struct list_head *head)
 {
 	struct ve_struct *env = dev->nd_net->owner_ve;
 
-	veip_shutdown(env);
+	/* We check ve_netns to avoid races with veip SHUTDOWN hook, called from
+	 * ve_exit_ns()
+	 */
+	if (env->ve_netns)
+		veip_shutdown(env);
 
 	env->_venet_dev = NULL;
 	unregister_netdevice_queue(dev, head);
@@ -1176,6 +1180,12 @@ static struct rtnl_link_ops venet_link_ops = {
 	.maxtype	= VENET_INFO_MAX,
 };
 
+static struct ve_hook veip_shutdown_hook = {
+	.fini		= veip_shutdown,
+	.priority	= HOOK_PRIO_FINISHING,
+	.owner		= THIS_MODULE,
+};
+
 __init int venet_init(void)
 {
 	struct proc_dir_entry *de;
@@ -1198,6 +1208,7 @@ __init int venet_init(void)
 
 	vzioctl_register(&venetcalls);
 	vzmon_register_veaddr_print_cb(veaddr_seq_print);
+	ve_hook_register(VE_SHUTDOWN_CHAIN, &veip_shutdown_hook);
 
 	return rtnl_link_register(&venet_link_ops);
 
