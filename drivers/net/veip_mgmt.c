@@ -42,6 +42,8 @@ static int veip_create(struct ve_struct *ve)
 	veip = veip_findcreate(ve->veid);
 	if (veip == NULL)
 		return -ENOMEM;
+	if (IS_ERR(veip))
+		return PTR_ERR(veip);
 
 	ve->veip = veip;
 	return 0;
