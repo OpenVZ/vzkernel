@@ -252,13 +252,10 @@ static int veip_start(struct ve_struct *ve)
 	return err;
 }
 
-static void veip_stop(struct ve_struct *ve)
+static void __veip_stop(struct ve_struct *ve)
 {
 	struct list_head *p, *tmp;
 
-	spin_lock(&veip_lock);
-	if (ve->veip == NULL)
-		goto unlock;
 	list_for_each_safe(p, tmp, &ve->veip->ip_lh) {
 		struct ip_entry_struct *ptr;
 		ptr = list_entry(p, struct ip_entry_struct, ve_list);
@@ -271,7 +268,13 @@ static void veip_stop(struct ve_struct *ve)
 	veip_pool_ops->veip_release(ve);
 	if (!ve_is_super(ve))
 		module_put(THIS_MODULE);
-unlock:
+}
+
+static void veip_stop(struct ve_struct *ve)
+{
+	spin_lock(&veip_lock);
+	if (ve->veip)
+		__veip_stop(ve);
 	spin_unlock(&veip_lock);
 }
 
