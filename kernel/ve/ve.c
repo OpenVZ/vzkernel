@@ -452,6 +452,8 @@ static void ve_drop_context(struct ve_struct *ve)
 	synchronize_rcu();
 	put_nsproxy(ve_ns);
 
+	ve_hook_iterate_fini(VE_SHUTDOWN_CHAIN, ve);
+
 	put_cred(ve->init_cred);
 	ve->init_cred = NULL;
 
