@@ -777,18 +777,19 @@ static int venet_newlink(struct net *src_net, struct net_device *dev,
 	struct ve_struct *env = src_net->owner_ve;
 	int err;
 
-	if (env->ve_netns && src_net != env->ve_netns)
+	if (!env->ve_netns)
+		return -EBUSY;
+
+	if (src_net != env->ve_netns)
 		/* Don't create venet-s in sub net namespaces */
 		return -ENOSYS;
 
 	if (env->veip)
 		return -EEXIST;
 
-	env->ve_netns = src_net;
-
 	err = veip_start(env);
 	if (err)
-		goto err;
+		return err;
 
 	dev->features |= NETIF_F_NETNS_LOCAL;
 
@@ -801,8 +802,6 @@ static int venet_newlink(struct net *src_net, struct net_device *dev,
 
 err_stop:
 	veip_stop(env);
-err:
-	env->ve_netns = NULL;
 	return err;
 }
 
