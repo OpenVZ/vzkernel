@@ -525,6 +525,10 @@ static int genl_family_rcv_msg(const struct genl_family *family,
 	    !netlink_capable(skb, CAP_NET_ADMIN))
 		return -EPERM;
 
+	if ((ops->flags & GENL_VE_ADMIN_PERM) &&
+	    !netlink_ve_capable(skb, CAP_NET_ADMIN))
+		return -EPERM;
+
 	if ((ops->flags & GENL_UNS_ADMIN_PERM) &&
 	    !netlink_ns_capable(skb, net->user_ns, CAP_NET_ADMIN))
 		return -EPERM;
