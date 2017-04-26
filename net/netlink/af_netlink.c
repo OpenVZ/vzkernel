@@ -764,6 +764,26 @@ bool netlink_ns_capable(const struct sk_buff *skb,
 }
 EXPORT_SYMBOL(netlink_ns_capable);
 
+#ifdef CONFIG_VE
+#include <linux/ve.h>
+bool netlink_ve_capable(const struct sk_buff *skb, int cap)
+{
+	struct cred *cred = get_exec_env()->init_cred;
+
+	if (cred == NULL) /* ve isn't running */
+		cred = ve0.init_cred;
+
+	return netlink_ns_capable(skb, cred->user_ns, cap);
+}
+#else
+bool netlink_ve_capable(const struct sk_buff *skb, int cap)
+{
+	return netlink_capable(skb, cap);
+}
+#endif
+
+EXPORT_SYMBOL(netlink_ve_capable);
+
 /**
  * netlink_capable - Netlink global message capability test
  * @skb: socket buffer holding a netlink command from userspace
