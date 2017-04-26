@@ -407,6 +407,22 @@ static const char * const ve0_allowed_mod[] = {
 
 	"rtnl-link-dummy",
 	"rtnl-link-vxlan",
+
+	/* IPVS */
+	"ip_vs_ftp",
+	"ip_vs_nq",
+	"ip_vs_wlc",
+	"ip6t_ipvs",
+	"ipt_ipvs",
+	"ip_vs_rr",
+	"ip_vs_pe_sip",
+	"ip_vs_lblc",
+	"ip_vs_wrr",
+	"ip_vs_sed",
+	"ip_vs_dh",
+	"ip_vs_sh",
+	"ip_vs_lblcr",
+	"ip_vs_lc",
 };
 
 /*
