@@ -3792,7 +3792,7 @@ static int __net_init ip_vs_control_net_init_sysctl(struct net *net)
 			return -ENOMEM;
 
 		/* Don't export sysctls to unprivileged users */
-		if (net->user_ns != &init_user_ns)
+		if (ve_net_hide_sysctl(net))
 			tbl[0].procname = NULL;
 	} else
 		tbl = vs_vars;
