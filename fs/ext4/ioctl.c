@@ -797,7 +797,7 @@ resize_out:
 
 		usr_fd = (__u32 __user *) (arg + sizeof(__u32));
 
-		filpp = kzalloc(mfsync.size * sizeof(*filp), GFP_KERNEL);
+		filpp = kzalloc(mfsync.size * sizeof(*filpp), GFP_KERNEL);
 		if (!filpp)
 			return -ENOMEM;
 		flags = kzalloc(mfsync.size * sizeof(*flags), GFP_KERNEL);
