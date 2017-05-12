@@ -654,11 +654,11 @@ static int unix_set_peek_off(struct sock *sk, int val)
 {
 	struct unix_sock *u = unix_sk(sk);
 
-	if (mutex_lock_interruptible(&u->readlock))
+	if (mutex_lock_interruptible(&u->iolock))
 		return -EINTR;
 
 	sk->sk_peek_off = val;
-	mutex_unlock(&u->readlock);
+	mutex_unlock(&u->iolock);
 
 	return 0;
 }
@@ -772,7 +772,8 @@ static struct sock *unix_create1(struct net *net, struct socket *sock)
 	spin_lock_init(&u->lock);
 	atomic_long_set(&u->inflight, 0);
 	INIT_LIST_HEAD(&u->link);
-	mutex_init(&u->readlock); /* single task reading lock */
+	mutex_init(&u->iolock); /* single task reading lock */
+	mutex_init(&u->bindlock); /* single task binding lock */
 	init_waitqueue_head(&u->peer_wait);
 	init_waitqueue_func_entry(&u->peer_wake, unix_dgram_peer_wake_relay);
 	unix_insert_socket(unix_sockets_unbound(sk), sk);
@@ -841,7 +842,7 @@ static int unix_autobind(struct socket *sock)
 	int err;
 	unsigned int retries = 0;
 
-	err = mutex_lock_interruptible(&u->readlock);
+	err = mutex_lock_interruptible(&u->bindlock);
 	if (err)
 		return err;
 
@@ -888,7 +889,7 @@ retry:
 	spin_unlock(&unix_table_lock);
 	err = 0;
 
-out:	mutex_unlock(&u->readlock);
+out:	mutex_unlock(&u->bindlock);
 	return err;
 }
 
@@ -1002,7 +1003,7 @@ static int unix_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 		goto out;
 	addr_len = err;
 
-	err = mutex_lock_interruptible(&u->readlock);
+	err = mutex_lock_interruptible(&u->bindlock);
 	if (err)
 		goto out;
 
@@ -1056,7 +1057,7 @@ static int unix_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 out_unlock:
 	spin_unlock(&unix_table_lock);
 out_up:
-	mutex_unlock(&u->readlock);
+	mutex_unlock(&u->bindlock);
 out:
 	return err;
 }
@@ -1959,17 +1960,17 @@ static ssize_t unix_stream_sendpage(struct socket *socket, struct page *page,
 	if (false) {
 alloc_skb:
 		unix_state_unlock(other);
-		mutex_unlock(&unix_sk(other)->readlock);
+		mutex_unlock(&unix_sk(other)->iolock);
 		newskb = sock_alloc_send_pskb(sk, 0, 0, flags & MSG_DONTWAIT,
 					      &err, 0);
 		if (!newskb)
 			goto err;
 	}
 
-	/* we must acquire readlock as we modify already present
+	/* we must acquire iolock as we modify already present
 	 * skbs in the sk_receive_queue and mess with skb->len
 	 */
-	err = mutex_lock_interruptible(&unix_sk(other)->readlock);
+	err = mutex_lock_interruptible(&unix_sk(other)->iolock);
 	if (err) {
 		err = flags & MSG_DONTWAIT ? -EAGAIN : -ERESTARTSYS;
 		goto err;
@@ -2036,7 +2037,7 @@ alloc_skb:
 	}
 
 	unix_state_unlock(other);
-	mutex_unlock(&unix_sk(other)->readlock);
+	mutex_unlock(&unix_sk(other)->iolock);
 
 	other->sk_data_ready(other, 0);
 	scm_destroy(&scm);
@@ -2045,7 +2046,7 @@ alloc_skb:
 err_state_unlock:
 	unix_state_unlock(other);
 err_unlock:
-	mutex_unlock(&unix_sk(other)->readlock);
+	mutex_unlock(&unix_sk(other)->iolock);
 err:
 	kfree_skb(newskb);
 	if (send_sigpipe && !(flags & MSG_NOSIGNAL))
@@ -2113,7 +2114,7 @@ static int unix_dgram_recvmsg(struct kiocb *iocb, struct socket *sock,
 	if (flags&MSG_OOB)
 		goto out;
 
-	err = mutex_lock_interruptible(&u->readlock);
+	err = mutex_lock_interruptible(&u->iolock);
 	if (unlikely(err)) {
 		/* recvmsg() in non blocking mode is supposed to return -EAGAIN
 		 * sk_rcvtimeo is not honored by mutex_lock_interruptible()
@@ -2191,7 +2192,7 @@ static int unix_dgram_recvmsg(struct kiocb *iocb, struct socket *sock,
 out_free:
 	skb_free_datagram(sk, skb);
 out_unlock:
-	mutex_unlock(&u->readlock);
+	mutex_unlock(&u->iolock);
 out:
 	return err;
 }
@@ -2297,7 +2298,7 @@ static int unix_stream_read_generic(struct unix_stream_read_state *state)
 		siocb->scm = &tmp_scm;
 		memset(&tmp_scm, 0, sizeof(tmp_scm));
 	}
-	err = mutex_lock_interruptible(&u->readlock);
+	err = mutex_lock_interruptible(&u->iolock);
 	if (unlikely(err)) {
 		/* recvmsg() in non blocking mode is supposed to return -EAGAIN
 		 * sk_rcvtimeo is not honored by mutex_lock_interruptible()
@@ -2338,13 +2339,13 @@ again:
 			err = -EAGAIN;
 			if (!timeo)
 				break;
-			mutex_unlock(&u->readlock);
+			mutex_unlock(&u->iolock);
 
 			timeo = unix_stream_data_wait(sk, timeo, last,
 						      last_len);
 
 			if (signal_pending(current) ||
-			    mutex_lock_interruptible(&u->readlock)) {
+			    mutex_lock_interruptible(&u->iolock)) {
 				err = sock_intr_errno(timeo);
 				goto out;
 			}
@@ -2440,7 +2441,7 @@ unlock:
 		}
 	} while (size);
 
-	mutex_unlock(&u->readlock);
+	mutex_unlock(&u->iolock);
 	if (state->msg)
 		scm_recv(sock, state->msg, siocb->scm, flags);
 	else
@@ -2483,9 +2484,9 @@ static ssize_t skb_unix_socket_splice(struct sock *sk,
 	int ret;
 	struct unix_sock *u = unix_sk(sk);
 
-	mutex_unlock(&u->readlock);
+	mutex_unlock(&u->iolock);
 	ret = splice_to_pipe(pipe, spd);
-	mutex_lock(&u->readlock);
+	mutex_lock(&u->iolock);
 
 	return ret;
 }
