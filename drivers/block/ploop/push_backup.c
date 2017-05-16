@@ -482,6 +482,13 @@ static void ploop_pb_add_req_to_tree(struct ploop_request *preq,
 	    pbs->pbd->ppb_state == PLOOP_PB_ALIVE)
 		mod_timer(&pbs->timer, preq->tstamp + timeout + 1);
 
+	if (pbs->list.prev->next != &pbs->list) {
+		printk("list_add corruption. pbs->list.prev->next should be "
+		       "&pbs->list (%p), but was %p. (pbs->list.prev=%p)."
+		       " preq=%p\n",
+		       &pbs->list, pbs->list.prev->next, pbs->list.prev, preq);
+		BUG();
+	}
 	list_add_tail(&preq->list, &pbs->list);
 
 	rb_link_node(&preq->reloc_link, parent, p);
