@@ -19,7 +19,7 @@
 #include <asm/atomic.h>
 #include <asm/uaccess.h>
 
-#define CBT_MAX_EXTENTS	(UINT_MAX / sizeof(struct blk_user_cbt_extent))
+#define CBT_MAX_EXTENTS	512
 #define NR_PAGES(bits) (((bits) + PAGE_SIZE*8 - 1) / (PAGE_SIZE*8))
 #define BITS_PER_PAGE		(1UL << (PAGE_SHIFT + 3))
 
@@ -662,7 +662,7 @@ static int cbt_ioc_get(struct block_device *bdev, struct blk_user_cbt_info __use
 	struct request_queue *q;
 	struct blk_user_cbt_info ci;
 	struct blk_user_cbt_extent __user *cur_u_ex;
-	struct blk_user_cbt_extent u_ex;
+	struct blk_user_cbt_extent        *cur_ex, *cur_ex_base;
 	struct cbt_info *cbt;
 	struct cbt_extent ex;
 	blkcnt_t block , end;
@@ -683,21 +683,23 @@ static int cbt_ioc_get(struct block_device *bdev, struct blk_user_cbt_info __use
 		       ci.ci_extent_count * sizeof(struct blk_user_cbt_extent))){
 		return -EFAULT;
 	}
+
+	cur_ex_base = cur_ex = kzalloc(ci.ci_extent_count * sizeof(*cur_ex),
+				       GFP_KERNEL);
+	if (!cur_ex_base)
+		return -ENOMEM;
+
+	ret = -EINVAL;
 	q = bdev_get_queue(bdev);
 	mutex_lock(&cbt_mutex);
 	cbt = q->cbt;
-	if (!cbt) {
-		mutex_unlock(&cbt_mutex);
-		return -EINVAL;
-	}
-	if ((ci.ci_start >> cbt->block_bits) > cbt->block_max) {
-		mutex_unlock(&cbt_mutex);
-		return -EINVAL;
-	}
-	if (test_bit(CBT_ERROR, &cbt->flags)) {
-		mutex_unlock(&cbt_mutex);
-		return -EIO;
-	}
+	if (!cbt ||
+	    (ci.ci_start >> cbt->block_bits) > cbt->block_max)
+		goto ioc_get_failed;
+
+	ret = -EIO;
+	if (test_bit(CBT_ERROR, &cbt->flags))
+		goto ioc_get_failed;
 	cbt_flush_cache(cbt);
 
 	memcpy(&ci.ci_uuid, cbt->uuid, sizeof(cbt->uuid));
@@ -707,29 +709,36 @@ static int cbt_ioc_get(struct block_device *bdev, struct blk_user_cbt_info __use
 	if (end > cbt->block_max)
 		end = cbt->block_max;
 
-	memset(&u_ex, 0, sizeof(u_ex));
+	ci.ci_mapped_extents = 0;
 	while (ci.ci_mapped_extents < ci.ci_extent_count) {
 		cbt_find_next_extent(cbt, block, &ex);
-		if (!ex.len || ex.start > end) {
-			ret = 0;
+		if (!ex.len || ex.start > end)
 			break;
-		}
-		u_ex.ce_physical = ex.start << cbt->block_bits;
-		u_ex.ce_length = ex.len << cbt->block_bits;
-		if (copy_to_user(cur_u_ex, &u_ex, sizeof(u_ex))) {
-			ret = -EFAULT;
-			break;
-		}
+		cur_ex->ce_physical = ex.start << cbt->block_bits;
+		cur_ex->ce_length = ex.len << cbt->block_bits;
+
 		if (ci.ci_flags & CI_FLAG_ONCE)
 			__blk_cbt_set(cbt, ex.start, ex.len, 0, 0, NULL, NULL);
-		cur_u_ex++;
+		cur_ex++;
 		ci.ci_mapped_extents++;
 		block = ex.start + ex.len;
 	}
 	mutex_unlock(&cbt_mutex);
+
+	ret = 0;
+	if (ci.ci_mapped_extents &&
+	    copy_to_user(cur_u_ex, cur_ex_base,
+			 sizeof(*cur_ex_base) * ci.ci_mapped_extents))
+		ret = -EFAULT;
 	if (!ret && copy_to_user(ucbt_ioc, &ci, sizeof(ci)))
 		ret = -EFAULT;
 
+	kfree(cur_ex_base);
+	return ret;
+
+ioc_get_failed:
+	mutex_unlock(&cbt_mutex);
+	kfree(cur_ex_base);
 	return ret;
 }
 
@@ -738,7 +747,8 @@ static int cbt_ioc_set(struct block_device *bdev, struct blk_user_cbt_info __use
 	struct request_queue *q = bdev_get_queue(bdev);
 	struct cbt_info *cbt;
 	struct blk_user_cbt_info ci;
-	struct blk_user_cbt_extent __user u_ex, *cur_u_ex, *end;
+	struct blk_user_cbt_extent __user *cur_u_ex;
+	struct blk_user_cbt_extent *cur_ex, *cur_ex_base, *end;
 	int ret = 0;
 
 	if (copy_from_user(&ci, ucbt_ioc, sizeof(ci)))
@@ -750,41 +760,47 @@ static int cbt_ioc_set(struct block_device *bdev, struct blk_user_cbt_info __use
 
 	cur_u_ex = (struct blk_user_cbt_extent __user*)
 		((char *)ucbt_ioc + sizeof(struct blk_user_cbt_info));
-	end = cur_u_ex + ci.ci_mapped_extents;
 	if (!access_ok(VERIFY_READ, cur_u_ex,
 		       ci.ci_mapped_extents * sizeof(struct blk_user_cbt_extent)))
 		return -EFAULT;
 
+	cur_ex_base = cur_ex = kzalloc(ci.ci_mapped_extents * sizeof(*cur_ex),
+				       GFP_KERNEL);
+	if (!cur_ex_base)
+		return -ENOMEM;
+	end = cur_ex_base + ci.ci_mapped_extents;
+
+	if (copy_from_user(cur_ex_base, cur_u_ex,
+			   sizeof(*cur_ex_base) * ci.ci_mapped_extents)) {
+		kfree(cur_ex_base);
+		return -EFAULT;
+	}
+
+	ret = -EINVAL;
 	mutex_lock(&cbt_mutex);
 	cbt = q->cbt;
-	if (!cbt) {
-		mutex_unlock(&cbt_mutex);
-		return -EINVAL;
-	}
+	if (!cbt)
+		goto ioc_set_failed;
+
 	if (ci.ci_flags & CI_FLAG_NEW_UUID)
 		memcpy(cbt->uuid, &ci.ci_uuid, sizeof(ci.ci_uuid));
-	else if (memcmp(cbt->uuid, &ci.ci_uuid, sizeof(ci.ci_uuid))) {
-			mutex_unlock(&cbt_mutex);
-			return -EINVAL;
-	}
-	if (test_bit(CBT_ERROR, &cbt->flags)) {
-		mutex_unlock(&cbt_mutex);
-		return -EIO;
-	}
+	else if (memcmp(cbt->uuid, &ci.ci_uuid, sizeof(ci.ci_uuid)))
+		goto ioc_set_failed;
+
+	ret = -EIO;
+	if (test_bit(CBT_ERROR, &cbt->flags))
+		goto ioc_set_failed;
 
 	/* Do not care about pcpu caches on set, only in case of clear */
 	if (!set)
 		cbt_flush_cache(cbt);
 
-	while (cur_u_ex < end) {
+	ret = 0;
+	while (cur_ex < end) {
 		struct cbt_extent ex;
 
-		if (copy_from_user(&u_ex, cur_u_ex, sizeof(u_ex))) {
-			ret = -EFAULT;
-			break;
-		}
-		ex.start  = u_ex.ce_physical >> cbt->block_bits;
-		ex.len  = (u_ex.ce_length + (1 << cbt->block_bits) -1) >> cbt->block_bits;
+		ex.start  = cur_ex->ce_physical >> cbt->block_bits;
+		ex.len  = (cur_ex->ce_length + (1 << cbt->block_bits) -1) >> cbt->block_bits;
 		if (ex.start > q->cbt->block_max ||
 		    ex.start + ex.len > q->cbt->block_max ||
 		    ex.len == 0) {
@@ -794,9 +810,15 @@ static int cbt_ioc_set(struct block_device *bdev, struct blk_user_cbt_info __use
 		ret = __blk_cbt_set(cbt, ex.start, ex.len, 0, set, NULL, NULL);
 		if (ret)
 			break;
-		cur_u_ex++;
+		cur_ex++;
 	}
 	mutex_unlock(&cbt_mutex);
+	kfree(cur_ex_base);
+	return ret;
+
+ioc_set_failed:
+	mutex_unlock(&cbt_mutex);
+	kfree(cur_ex_base);
 	return ret;
 }
 
