@@ -364,8 +364,8 @@ static inline int module_payload_iptable_allowed(const char *module)
 	if (!strncmp("arpt_", module, 5))
 		return 1;
 
-	/* The rest of ebt_* modules */
-	if (!strncmp("ebt_", module, 4))
+	/* The rest of ebt* modules */
+	if (!strncmp("ebt", module, 3))
 		return 1;
 
 	/* The rest of nft- modules */
