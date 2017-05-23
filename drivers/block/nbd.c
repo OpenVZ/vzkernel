@@ -910,6 +910,7 @@ static void nbd_config_put(struct nbd_device *nbd)
 			}
 			kfree(config->socks);
 		}
+		kfree(nbd->config);
 		nbd_reset(nbd);
 		mutex_unlock(&nbd->config_lock);
 		bdput(bdev);
