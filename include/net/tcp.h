@@ -298,7 +298,7 @@ extern int tcp_memory_pressure;
 static inline bool tcp_under_memory_pressure(const struct sock *sk)
 {
 	if (mem_cgroup_sockets_enabled && sk->sk_cgrp)
-		return !!sk->sk_cgrp->memory_pressure;
+		return *sk->sk_cgrp->memory_pressure;
 
 	return tcp_memory_pressure;
 }
