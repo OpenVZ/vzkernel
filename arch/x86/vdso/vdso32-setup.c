@@ -416,6 +416,24 @@ out:
 	return pages;
 }
 
+void arch_remap(struct mm_struct *mm,
+		unsigned long old_start, unsigned long old_end,
+		unsigned long new_start, unsigned long new_end)
+{
+	/*
+	 * mremap() doesn't allow moving multiple vmas so we can limit the
+	 * check to old_start == vdso_base.
+	 */
+	if (old_start == (unsigned long)mm->context.vdso) {
+		if (WARN_ON_ONCE(current->mm != mm))
+			return;
+
+		mm->context.vdso = (void *)new_start;
+		current_thread_info()->sysenter_return =
+			VDSO32_SYMBOL(new_start, SYSENTER_RETURN);
+	}
+}
+
 /* Call under mm->mmap_sem */
 static int __arch_setup_additional_pages(unsigned long addr, bool compat)
 {
