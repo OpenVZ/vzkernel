@@ -29,6 +29,7 @@
 #include <linux/random.h>
 #include <linux/limits.h>
 #include <linux/sched.h>
+#include <linux/compat.h>
 #include <asm/elf.h>
 
 struct __read_mostly va_alignment va_align = {
@@ -175,4 +176,17 @@ bool pfn_modify_allowed(unsigned long pfn, pgprot_t prot)
 	if (pfn > l1tf_pfn_limit() && !capable(CAP_SYS_ADMIN))
 		return false;
 	return true;
+}
+
+unsigned long get_mmap_base(int is_legacy)
+{
+	struct mm_struct *mm = current->mm;
+
+#ifdef CONFIG_HAVE_ARCH_COMPAT_MMAP_BASES
+	if (in_compat_syscall()) {
+		return is_legacy ? mm->mmap_compat_legacy_base
+				 : mm->mmap_compat_base;
+	}
+#endif
+	return is_legacy ? mm->mmap_legacy_base : mm->mmap_base;
 }
