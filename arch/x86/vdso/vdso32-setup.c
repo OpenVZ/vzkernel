@@ -542,6 +542,8 @@ int do_map_compat_vdso(unsigned long req_addr)
 	ret = __arch_setup_additional_pages(req_addr, compat);
 	if (ret)
 		current->mm->context.vdso = NULL;
+	else
+		ret = ARRAY_SIZE(vdso32_pages) * PAGE_SIZE;
 
 up_fail:
 	up_write(&mm->mmap_sem);
