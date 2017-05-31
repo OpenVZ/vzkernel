@@ -268,7 +268,6 @@
 #include <linux/crypto.h>
 #include <linux/time.h>
 #include <linux/slab.h>
-#include <linux/ve.h>
 
 #include <net/icmp.h>
 #include <net/inet_common.h>
