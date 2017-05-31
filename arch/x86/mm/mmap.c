@@ -29,6 +29,7 @@
 #include <linux/random.h>
 #include <linux/limits.h>
 #include <linux/sched.h>
+#include <linux/compat.h>
 #include <asm/elf.h>
 
 struct __read_mostly va_alignment va_align = {
@@ -154,4 +155,17 @@ void arch_pick_mmap_layout(struct mm_struct *mm)
 	arch_pick_mmap_base(&mm->mmap_compat_base, &mm->mmap_compat_legacy_base,
 			arch_rnd(mmap32_rnd_bits), tasksize_32bit());
 #endif
+}
+
+unsigned long get_mmap_base(int is_legacy)
+{
+	struct mm_struct *mm = current->mm;
+
+#ifdef CONFIG_HAVE_ARCH_COMPAT_MMAP_BASES
+	if (in_compat_syscall()) {
+		return is_legacy ? mm->mmap_compat_legacy_base
+				 : mm->mmap_compat_base;
+	}
+#endif
+	return is_legacy ? mm->mmap_legacy_base : mm->mmap_base;
 }
