@@ -287,8 +287,19 @@ do {									\
 	}								\
 } while (0)
 
+/*
+ * True on X86_32 or when emulating IA32 on X86_64
+ */
+static inline int mmap_is_ia32(void)
+{
+	return IS_ENABLED(CONFIG_X86_32) ||
+	       (IS_ENABLED(CONFIG_COMPAT) &&
+		test_thread_flag(TIF_ADDR32));
+}
+
 #ifdef CONFIG_X86_32
 
+#define __STACK_RND_MASK(is32bit) (0x7ff)
 #define STACK_RND_MASK (0x7ff)
 
 #define VDSO_HIGH_BASE		(__fix_to_virt(FIX_VDSO))
@@ -302,7 +313,8 @@ do {									\
 #define VDSO_HIGH_BASE		0xffffe000U /* CONFIG_COMPAT_VDSO address */
 
 /* 1GB for 64bit, 8MB for 32bit */
-#define STACK_RND_MASK (test_thread_flag(TIF_ADDR32) ? 0x7ff : 0x3fffff)
+#define __STACK_RND_MASK(is32bit) ((is32bit) ? 0x7ff : 0x3fffff)
+#define STACK_RND_MASK __STACK_RND_MASK(mmap_is_ia32())
 
 #define ARCH_DLINFO							\
 do {									\
@@ -354,20 +366,6 @@ extern int do_map_vdso_32(unsigned long addr);
 # endif
 #endif
 
-/*
- * True on X86_32 or when emulating IA32 on X86_64
- */
-static inline int mmap_is_ia32(void)
-{
-#ifdef CONFIG_X86_32
-	return 1;
-#endif
-#ifdef CONFIG_IA32_EMULATION
-	if (test_thread_flag(TIF_ADDR32))
-		return 1;
-#endif
-	return 0;
-}
 
 /* Do not change the values. See get_align_mask() */
 enum align_flags {
