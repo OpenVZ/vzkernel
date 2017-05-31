@@ -474,6 +474,7 @@ try_again:
 		spin_lock_irq(&plo->lock);
 		ploop_acc_flush_skip_locked(plo, preq->req_rw);
 		preq->iblock = iblk;
+		preq_dbg_acquire(preq, OWNER_DIO_FSYNC_QUEUE, WHO_CACHED_SUBMIT);
 		list_add_tail(&preq->list, &io->fsync_queue);
 		io->fsync_qlen++;
 		plo->st.bio_syncwait++;
@@ -833,11 +834,13 @@ static int dio_fsync_thread(void * data)
 		while (!list_empty(&list)) {
 			struct ploop_request * preq;
 			preq = list_entry(list.next, struct ploop_request, list);
-			list_del(&preq->list);
+			preq_dbg_release(preq, OWNER_DIO_FSYNC_QUEUE);
+			list_del_init(&preq->list);
 			if (err)
 				PLOOP_REQ_SET_ERROR(preq, err);
 
 			__set_bit(PLOOP_REQ_FSYNC_DONE, &preq->state);
+			preq_dbg_acquire(preq, OWNER_READY_QUEUE, WHO_DIO_FSYNC_THREAD);
 			list_add_tail(&preq->list, &plo->ready_queue);
 			io->fsync_qlen--;
 		}

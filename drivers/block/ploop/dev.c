@@ -190,6 +190,7 @@ ploop_alloc_request(struct ploop_device * plo)
 	}
 
 	preq = list_entry(plo->free_list.next, struct ploop_request, list);
+	preq_dbg_release(preq, OWNER_FREE_LIST);
 	list_del_init(&preq->list);
 	plo->free_qlen--;
 	ploop_congest(plo);
@@ -208,10 +209,12 @@ static void ploop_grab_iocontext(struct bio *bio)
 
 /* always called with plo->lock held */
 static inline void preq_unlink(struct ploop_request * preq,
-			       struct list_head *drop_list)
+			       struct list_head *drop_list, unsigned who)
 {
-	list_del(&preq->list);
+	preq_dbg_release(preq, OWNER_ENTRY_QUEUE);
+	list_del_init(&preq->list);
 	ploop_entry_qlen_dec(preq);
+	preq_dbg_acquire(preq, OWNER_TEMP_DROP_LIST, who);
 	list_add(&preq->list, drop_list);
 }
 
@@ -246,6 +249,8 @@ void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list,
 		BUG_ON (test_bit(PLOOP_REQ_ZERO, &preq->state));
 		ploop_test_and_clear_blockable(plo, preq);
 		drop_qlen++;
+		preq_dbg_release(preq, OWNER_TEMP_DROP_LIST);
+		preq_dbg_acquire(preq, OWNER_FREE_LIST, WHO_PLOOP_PREQ_DROP);
 	}
 
 	spin_lock_irq(&plo->lock);
@@ -301,7 +306,7 @@ static void overlap_forward(struct ploop_device * plo,
 			preq_set_sync_bit(preq);
 		merge_rw_flags_to_req(preq1->req_rw, preq);
 		rb_erase(&preq1->lockout_link, &plo->entry_tree[preq1->req_rw & WRITE]);
-		preq_unlink(preq1, drop_list);
+		preq_unlink(preq1, drop_list, WHO_OVERLAP_FORWARD);
 		plo->st.coal_mforw++;
 	}
 
@@ -332,7 +337,7 @@ static void overlap_backward(struct ploop_device * plo,
 			preq_set_sync_bit(preq);
 		merge_rw_flags_to_req(preq1->req_rw, preq);
 		rb_erase(&preq1->lockout_link, &plo->entry_tree[preq->req_rw & WRITE]);
-		preq_unlink(preq1, drop_list);
+		preq_unlink(preq1, drop_list, WHO_OVERLAP_BACKWARD);
 		plo->st.coal_mback++;
 	}
 
@@ -446,7 +451,7 @@ insert_entry_tree(struct ploop_device * plo, struct ploop_request * preq0,
 		if (test_bit(PLOOP_REQ_SYNC, &preq0->state))
 			preq_set_sync_bit(clash);
 		merge_rw_flags_to_req(preq0->req_rw, clash);
-		preq_unlink(preq0, drop_list);
+		preq_unlink(preq0, drop_list, WHO_INSERT_ENTRY_TREE1);
 		plo->st.coal_forw2++;
 
 		n = rb_next(&clash->lockout_link);
@@ -471,7 +476,7 @@ insert_entry_tree(struct ploop_device * plo, struct ploop_request * preq0,
 		if (test_bit(PLOOP_REQ_SYNC, &preq0->state))
 			preq_set_sync_bit(clash);
 		merge_rw_flags_to_req(preq0->req_rw, clash);
-		preq_unlink(preq0, drop_list);
+		preq_unlink(preq0, drop_list, WHO_INSERT_ENTRY_TREE2);
 
 		n = rb_prev(&clash->lockout_link);
 		if (n) {
@@ -499,6 +504,7 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 	BUG_ON(list_empty(&plo->free_list));
 	BUG_ON(plo->free_qlen <= 0);
 	preq = list_entry(plo->free_list.next, struct ploop_request, list);
+	preq_dbg_release(preq, OWNER_FREE_LIST);
 	list_del_init(&preq->list);
 	plo->free_qlen--;
 
@@ -542,6 +548,7 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 				clear_bit(BIO_BDEV_REUSED, &bio->bi_flags);
 			}
 			BIO_ENDIO(plo->queue, bio, err);
+			preq_dbg_acquire(preq, OWNER_FREE_LIST, WHO_PLOOP_BIO_QUEUE);
 			list_add(&preq->list, &plo->free_list);
 			plo->free_qlen++;
 			plo->bio_discard_qlen--;
@@ -576,7 +583,7 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 		plo->bio_discard_qlen--;
 	else
 		plo->bio_qlen--;
-	ploop_entry_add(plo, preq);
+	ploop_entry_add(plo, preq, WHO_PLOOP_BIO_QUEUE);
 
 	if (bio->bi_size && !(bio->bi_rw & REQ_DISCARD))
 		insert_entry_tree(plo, preq, drop_list);
@@ -593,6 +600,8 @@ ploop_get_request(struct ploop_device * plo, struct list_head * list)
 		return NULL;
 
 	preq = list_first_entry(list, struct ploop_request, list);
+	preq_dbg_release(preq, (list == &plo->ready_queue) ?
+			 OWNER_READY_QUEUE : OWNER_ENTRY_QUEUE);
 	list_del_init(&preq->list);
 	return preq;
 }
@@ -1174,6 +1183,8 @@ static int __check_lockout(struct ploop_request *preq, bool pb)
 		else if (preq->req_cluster > p->req_cluster)
 			n = n->rb_right;
 		else {
+			preq_dbg_acquire(preq, OWNER_PREQ_DELAY_LIST,
+					 pb ? WHO_CHECK_LOCKOUT_PB : WHO_CHECK_LOCKOUT);
 			list_add_tail(&preq->list, &p->delay_list);
 			plo->st.bio_lockouts++;
 			trace_preq_lockout(preq, p);
@@ -1357,12 +1368,18 @@ static void ploop_complete_request(struct ploop_request * preq)
 
 				preq->req_cluster = ~0U;
 
-				if (!list_empty(&preq->delay_list))
+				if (!list_empty(&preq->delay_list)) {
+					struct ploop_request *pr;
+					list_for_each_entry(pr, &preq->delay_list, list) {
+						preq_dbg_release(pr, OWNER_PREQ_DELAY_LIST);
+						preq_dbg_acquire(pr, OWNER_READY_QUEUE, WHO_PLOOP_COMPLETE_REQ_MERGE);
+					}
 					list_splice_init(&preq->delay_list, plo->ready_queue.prev);
+				}
 				plo->active_reqs--;
 
 				preq->eng_state = PLOOP_E_ENTRY;
-				ploop_entry_add(plo, preq);
+				ploop_entry_add(plo, preq, WHO_PLOOP_COMPLETE_REQUEST1);
 				spin_unlock_irq(&plo->lock);
 				return;
 			}
@@ -1395,8 +1412,14 @@ static void ploop_complete_request(struct ploop_request * preq)
 	del_pb_lockout(preq); /* preq may die via ploop_fail_immediate() */
 	ploop_test_and_clear_blockable(plo, preq);
 
-	if (!list_empty(&preq->delay_list))
+	if (!list_empty(&preq->delay_list)) {
+		struct ploop_request *pr;
+		list_for_each_entry(pr, &preq->delay_list, list) {
+			preq_dbg_release(pr, OWNER_PREQ_DELAY_LIST);
+			preq_dbg_acquire(pr, OWNER_READY_QUEUE, WHO_PLOOP_COMPLETE_REQUEST2);
+		}
 		list_splice_init(&preq->delay_list, plo->ready_queue.prev);
+	}
 
 	if (preq->map) {
 		map_release(preq->map);
@@ -1416,6 +1439,7 @@ static void ploop_complete_request(struct ploop_request * preq)
 		ploop_fb_put_zero_request(plo->fbd, preq);
 	} else {
 		ploop_uncongest(plo);
+		preq_dbg_acquire(preq, OWNER_FREE_LIST, WHO_PLOOP_COMPLETE_REQUEST2);
 		list_add(&preq->list, &plo->free_list);
 		plo->free_qlen++;
 		if (waitqueue_active(&plo->req_waitq))
@@ -1454,11 +1478,13 @@ void ploop_fail_request(struct ploop_request * preq, int err)
 	spin_lock_irq(&plo->lock);
 	if (err == -ENOSPC) {
 		set_bit(PLOOP_S_ENOSPC_EVENT, &plo->state);
+		preq_dbg_acquire(preq, OWNER_READY_QUEUE, WHO_PLOOP_FAIL_REQUEST_ENOSPC);
 		list_add(&preq->list, &plo->ready_queue);
 		if (waitqueue_active(&plo->event_waitq))
 			wake_up_interruptible(&plo->event_waitq);
 	} else {
 		set_bit(PLOOP_S_ABORT, &plo->state);
+		preq_dbg_acquire(preq, OWNER_READY_QUEUE, WHO_PLOOP_FAIL_REQUEST);
 		list_add_tail(&preq->list, &plo->ready_queue);
 	}
 	spin_unlock_irq(&plo->lock);
@@ -1492,6 +1518,7 @@ void ploop_complete_io_state(struct ploop_request * preq)
 	if (preq->error)
 		set_bit(PLOOP_S_ABORT, &plo->state);
 
+	preq_dbg_acquire(preq, OWNER_READY_QUEUE, WHO_PLOOP_COMPLETE_IO_STATE);
 	list_add_tail(&preq->list, &plo->ready_queue);
 	if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state) &&
 	    waitqueue_active(&plo->waitq))
@@ -1672,8 +1699,10 @@ void ploop_queue_zero_request(struct ploop_device *plo,
 	}
 	orig_preq->iblock = 0;
 	INIT_LIST_HEAD(&preq->delay_list);
+	preq_dbg_acquire(orig_preq, OWNER_PREQ_DELAY_LIST, WHO_PLOOP_QUEUE_ZERO_REQUEST1);
 	list_add_tail(&orig_preq->list, &preq->delay_list);
 
+	preq_dbg_acquire(preq, OWNER_READY_QUEUE, WHO_PLOOP_QUEUE_ZERO_REQUEST2);
 	list_add(&preq->list, &plo->ready_queue);
 	plo->active_reqs++;
 
@@ -1998,6 +2027,15 @@ ploop_entry_nullify_req(struct ploop_request *preq)
 
 	sbl.head = sbl.tail = preq->aux_bio;
 	preq->eng_state = PLOOP_E_RELOC_NULLIFY;
+
+	/* We can replace if & list_del_init with BUG_ON:
+	   the caller always does list_del_init before calling us */
+	if (preq->list.next != &preq->list ||
+	    preq->list.prev != &preq->list) {
+		printk("ploop_entry_nullify_req(%p): unexpected preq->list: %p %p\n",
+		       preq, preq->list.next, preq->list.prev);
+		dump_stack();
+	}
 	list_del_init(&preq->list);
 
 	/*
@@ -2122,6 +2160,7 @@ void ploop_add_req_to_fsync_queue(struct ploop_request * preq)
 	struct ploop_io     * top_io    = &top_delta->io;
 
 	spin_lock_irq(&plo->lock);
+	preq_dbg_acquire(preq, OWNER_DIO_FSYNC_QUEUE, WHO_PLOOP_ADD_REQ_TO_FSYNC_QUEUE);
 	list_add_tail(&preq->list, &top_io->fsync_queue);
 	top_io->fsync_qlen++;
 	if (waitqueue_active(&top_io->fsync_waitq))
@@ -2250,8 +2289,14 @@ restart:
 
 		del_pb_lockout(preq);
 		spin_lock_irq(&plo->lock);
-		if (!list_empty(&preq->delay_list))
+		if (!list_empty(&preq->delay_list)) {
+			struct ploop_request *pr;
+			list_for_each_entry(pr, &preq->delay_list, list) {
+				preq_dbg_release(pr, OWNER_PREQ_DELAY_LIST);
+				preq_dbg_acquire(pr, OWNER_READY_QUEUE, WHO_PLOOP_ENTRY_REQUEST_PB_OUT);
+			}
 			list_splice_init(&preq->delay_list, plo->ready_queue.prev);
+		}
 		spin_unlock_irq(&plo->lock);
 	}
 
@@ -2566,8 +2611,10 @@ restart:
 			spin_lock_irq(&plo->lock);
 			if (!list_empty(&preq->delay_list)) {
 				struct ploop_request *pr;
-				pr = list_entry(preq->delay_list.next,
-						struct ploop_request, list);
+				list_for_each_entry(pr, &preq->delay_list, list) {
+					preq_dbg_release(pr, OWNER_PREQ_DELAY_LIST);
+					preq_dbg_acquire(pr, OWNER_READY_QUEUE, WHO_PLOOP_E_RELOC_COMPLETE);
+				}
 				list_splice_init(&preq->delay_list,
 						 plo->ready_queue.prev);
 			}
@@ -2919,8 +2966,14 @@ static void ploop_handle_enospc_req(struct ploop_request *preq)
 
 	del_lockout(preq);
 
-	if (!list_empty(&preq->delay_list))
+	if (!list_empty(&preq->delay_list)) {
+		struct ploop_request *pr;
+		list_for_each_entry(pr, &preq->delay_list, list) {
+			preq_dbg_release(pr, OWNER_PREQ_DELAY_LIST);
+			preq_dbg_acquire(pr, OWNER_READY_QUEUE, WHO_PLOOP_HANDLE_ENOSPC_REQ);
+		}
 		list_splice_init(&preq->delay_list, plo->ready_queue.prev);
+	}
 
 	if (preq->map) {
 		map_release(preq->map);
@@ -3009,6 +3062,7 @@ static int ploop_thread(void * data)
 			if (test_bit(PLOOP_REQ_BARRIER, &preq->state)) {
 				set_bit(PLOOP_S_ATTENTION, &plo->state);
 				if (plo->active_reqs) {
+					preq_dbg_acquire(preq, OWNER_ENTRY_QUEUE, WHO_PLOOP_THREAD1);
 					list_add(&preq->list, &plo->entry_queue);
 					continue;
 				}
@@ -3019,6 +3073,7 @@ static int ploop_thread(void * data)
 				    plo->active_reqs > plo->entry_qlen &&
 				    time_before(jiffies, preq->tstamp + plo->tune.batch_entry_delay) &&
 				    !kthread_should_stop()) {
+					preq_dbg_acquire(preq, OWNER_ENTRY_QUEUE, WHO_PLOOP_THREAD2);
 					list_add(&preq->list, &plo->entry_queue);
 					once = 1;
 					mod_timer(&plo->mitigation_timer, preq->tstamp + plo->tune.batch_entry_delay);
@@ -3339,7 +3394,7 @@ void ploop_quiesce(struct ploop_device * plo)
 	init_completion(&plo->relaxed_comp);
 	plo->quiesce_comp = &qcomp;
 
-	ploop_entry_add(plo, preq);
+	ploop_entry_add(plo, preq, WHO_PLOOP_QUIESCE);
 	plo->barrier_reqs++;
 
 	if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
@@ -3633,7 +3688,7 @@ static void ploop_merge_process(struct ploop_device * plo)
 
 		atomic_inc(&plo->maintenance_cnt);
 
-		ploop_entry_add(plo, preq);
+		ploop_entry_add(plo, preq, WHO_PLOOP_MERGE_PROCESS);
 
 		if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
 			wake_up_interruptible(&plo->waitq);
@@ -3926,6 +3981,8 @@ static int ploop_start(struct ploop_device * plo, struct block_device *bdev)
 
 		preq->plo = plo;
 		INIT_LIST_HEAD(&preq->delay_list);
+		atomic_set(&preq->dbg_state,
+			   PREQ_DBG_STATE(OWNER_FREE_LIST, WHO_PLOOP_START));
 		list_add(&preq->list, &plo->free_list);
 		plo->free_qlen++;
 		plo->free_qmax++;
@@ -4084,7 +4141,8 @@ static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 		struct ploop_request * preq;
 
 		preq = list_first_entry(&plo->free_list, struct ploop_request, list);
-		list_del(&preq->list);
+		preq_dbg_release(preq, OWNER_FREE_LIST);
+		list_del_init(&preq->list);
 		plo->free_qlen--;
 		plo->free_qmax--;
 		kfree(preq);
@@ -4260,7 +4318,7 @@ static void ploop_relocate(struct ploop_device * plo, int grow_stage)
 
 	atomic_inc(&plo->maintenance_cnt);
 
-	ploop_entry_add(plo, preq);
+	ploop_entry_add(plo, preq, WHO_PLOOP_RELOCATE);
 
 	if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
 		wake_up_interruptible(&plo->waitq);
@@ -4572,7 +4630,7 @@ static void ploop_relocblks_process(struct ploop_device *plo)
 
 		atomic_inc(&plo->maintenance_cnt);
 
-		ploop_entry_add(plo, preq);
+		ploop_entry_add(plo, preq, WHO_PLOOP_RELOCBLKS_PROCESS);
 
 		if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
 			wake_up_interruptible(&plo->waitq);
