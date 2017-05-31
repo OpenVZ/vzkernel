@@ -28,6 +28,8 @@
 
 #define gtod (&VVAR(vsyscall_gtod_data))
 
+struct timespec VDSO64_ve_start_timespec;
+
 #ifdef CONFIG_HYPERV_TSCPAGE
 static notrace u64 vread_hvclock(int *mode)
 {
@@ -196,6 +198,43 @@ notrace static int __always_inline do_realtime(struct timespec *ts)
 	return mode;
 }
 
+notrace static struct timespec *get_ve_timespec(void)
+{
+	struct timespec *ret;
+	asm volatile ("lea VDSO64_ve_start_timespec(%%rip),%0\n": "=r"(ret));
+	return ret;
+}
+
+notrace static void vdso_set_normalized_timespec(struct timespec *ts, time_t sec, s64 nsec)
+{
+	while (nsec >= NSEC_PER_SEC) {
+		/*
+		 * The following asm() prevents the compiler from
+		 * optimising this loop into a modulo operation. See
+		 * also __iter_div_u64_rem() in include/linux/time.h
+		 */
+		asm("" : "+rm"(nsec));
+		nsec -= NSEC_PER_SEC;
+		++sec;
+	}
+	while (nsec < 0) {
+		asm("" : "+rm"(nsec));
+		nsec += NSEC_PER_SEC;
+		--sec;
+	}
+	ts->tv_sec = sec;
+	ts->tv_nsec = nsec;
+}
+
+static void monotonic_time_to_ve(struct timespec *ts)
+{
+	struct timespec *ve_timespec = get_ve_timespec();
+
+	vdso_set_normalized_timespec(ts,
+		ts->tv_sec - ve_timespec->tv_sec,
+		ts->tv_nsec - ve_timespec->tv_nsec);
+}
+
 notrace static int do_monotonic(struct timespec *ts)
 {
 	unsigned long seq;
@@ -211,8 +250,9 @@ notrace static int do_monotonic(struct timespec *ts)
 		ns += vgetsns(&mode);
 		ns >>= gtod->clock.shift;
 	} while (unlikely(read_seqcount_retry(&gtod->seq, seq)));
-	timespec_add_ns(ts, ns);
 
+	timespec_add_ns(ts, ns);
+	monotonic_time_to_ve(ts);
 	return mode;
 }
 
@@ -236,6 +276,7 @@ notrace static int do_monotonic_coarse(struct timespec *ts)
 		ts->tv_nsec = gtod->monotonic_time_coarse.tv_nsec;
 	} while (unlikely(read_seqcount_retry(&gtod->seq, seq)));
 
+	monotonic_time_to_ve(ts);
 	return 0;
 }
 
