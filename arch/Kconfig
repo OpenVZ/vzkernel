@@ -473,6 +473,14 @@ config ARCH_HAS_ELF_RANDOMIZE
 	  stack, mmap, brk, and ET_DYN. Defined functions:
 	  - arch_mmap_rnd()
 
+config HAVE_ARCH_COMPAT_MMAP_BASES
+	bool
+	help
+	  This allows 64bit applications to invoke 32-bit mmap() syscall
+	  and vice-versa 32-bit applications to call 64-bit mmap().
+	  Required for applications doing different bitness syscalls.
+
+
 #
 # ABI hall of shame
 #
