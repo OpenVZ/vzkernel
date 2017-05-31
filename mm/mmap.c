@@ -3386,6 +3386,26 @@ out:
 	return ret;
 }
 
+bool vma_is_vdso_or_vvar(const struct vm_area_struct *vma,
+		   const struct mm_struct *mm)
+{
+	/*
+	 * As we have uts name virtualization, we can't tell if area
+	 * is VVAR/VDSO the same way as in mainline: vma->vm_private_data
+	 * is different, allocated in uts_prep_vdso_pages_locked().
+	 * As install_special_mapping() can be used currently only by
+	 * uprobes (besides vdso and vvar), check if special mapping
+	 * is related to uprobes, if not - it's vdso/vvar.
+	 */
+	struct page *xol_page = NULL;
+
+	if (mm->uprobes_state.xol_area)
+		xol_page = mm->uprobes_state.xol_area->page;
+
+	return (vma->vm_ops == &special_mapping_vmops) &&
+		(vma->vm_private_data != xol_page);
+}
+
 static DEFINE_MUTEX(mm_all_locks_mutex);
 
 static void vm_lock_anon_vma(struct mm_struct *mm, struct anon_vma *anon_vma)
