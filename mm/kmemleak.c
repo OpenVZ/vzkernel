@@ -299,6 +299,8 @@ static void hex_dump_object(struct seq_file *seq,
 		min(object->size, (size_t)(HEX_MAX_LINES * HEX_ROW_SIZE));
 
 	seq_printf(seq, "  hex dump (first %d bytes):\n", len);
+	kasan_disable_current();
+
 	for (i = 0; i < len; i += HEX_ROW_SIZE) {
 		int linelen = min(remaining, HEX_ROW_SIZE);
 
@@ -308,6 +310,7 @@ static void hex_dump_object(struct seq_file *seq,
 				   HEX_ASCII);
 		seq_printf(seq, "    %s\n", linebuf);
 	}
+	kasan_enable_current();
 }
 
 /*
