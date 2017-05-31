@@ -561,6 +561,7 @@ struct ploop_request
 
 	unsigned long		state;
 	unsigned long		eng_state;
+	atomic_t		dbg_state;
 	int			error;
 
 	struct map_node		*map;
@@ -618,6 +619,112 @@ struct ploop_request
 	 * the operation on the same io (see io.ops->post_submit) */
 	struct ploop_io	       *eng_io;
 };
+
+/* ploop_request->dbg_state types & operations */
+enum {
+	WHO_PLOOP_BIO_QUEUE,
+	WHO_PLOOP_QUIESCE,
+	WHO_PLOOP_MERGE_PROCESS,
+	WHO_PLOOP_RELOCATE,
+	WHO_PLOOP_RELOCBLKS_PROCESS,
+	WHO_CACHED_SUBMIT,
+	WHO_DIO_FSYNC_THREAD,
+	WHO_KAIO_QUEUE_TRUNC_REQ,
+	WHO_KAIO_QUEUE_FSYNC_REQ,
+	WHO_KAIO_FSYNC_THREAD,
+	WHO_KAIO_SUBMIT_ALLOC,
+	WHO_KAIO_ISSUE_FLUSH,
+	WHO_OVERLAP_FORWARD,
+	WHO_OVERLAP_BACKWARD,
+	WHO_INSERT_ENTRY_TREE1,
+	WHO_INSERT_ENTRY_TREE2,
+	WHO_PLOOP_PREQ_DROP,
+	WHO_PLOOP_DISCARD_FINI_IOC,
+	WHO_CHECK_LOCKOUT_PB,
+	WHO_CHECK_LOCKOUT,
+	WHO_PLOOP_COMPLETE_REQUEST1,
+	WHO_PLOOP_COMPLETE_REQUEST2,
+	WHO_PLOOP_FAIL_REQUEST_ENOSPC,
+	WHO_PLOOP_FAIL_REQUEST,
+	WHO_PLOOP_COMPLETE_IO_STATE,
+	WHO_PLOOP_QUEUE_ZERO_REQUEST1,
+	WHO_PLOOP_QUEUE_ZERO_REQUEST2,
+	WHO_PLOOP_ADD_REQ_TO_FSYNC_QUEUE,
+	WHO_PLOOP_E_RELOC_COMPLETE,
+	WHO_PLOOP_COMPLETE_REQ_MERGE,
+	WHO_PLOOP_ENTRY_REQUEST_PB_OUT,
+	WHO_PLOOP_HANDLE_ENOSPC_REQ,
+	WHO_PLOOP_PB_STOP1,
+	WHO_PLOOP_PB_STOP2,
+	WHO_PLOOP_PB_STOP3,
+	WHO_PLOOP_THREAD1,
+	WHO_PLOOP_THREAD2,
+	WHO_PLOOP_START,
+	WHO_MAP_INDEX_FAULT,
+	WHO_MAP_READ_ENDIO,
+	WHO_PLOOP_PB_PUT_REPORTED,
+	WHO_PLOOP_PB_PROCESS_EXTENT,
+	WHO_MAP_MERGE_ENDIO,
+	WHO_PLOOP_READ_MAP,
+	WHO_PLOOP_INDEX_UPDATE1,
+	WHO_PLOOP_INDEX_UPDATE2,
+	WHO_MAP_WB_COMPL_PP1,
+	WHO_MAP_WB_COMPL_PP2,
+	WHO_MAP_WB_COMPL_PP3,
+	WHO_MAP_WB_COMPL_PP4,
+	WHO_MAP_WB_COMPLETE1,
+	WHO_MAP_WB_COMPLETE2,
+	WHO_PLOOP_INDEX_WB_COMPLETE,
+	WHO_PLOOP_PB_ADD_REQ_TO_TREE,
+	WHO_PLOOP_FB_CHECK_RELOC_REQ,
+	WHO_PLOOP_FB_PUT_ZERO_REQ,
+	WHO_PLOOP_FB_INIT,
+};
+
+enum { /* owner */
+	OWNER_FREE_LIST,
+	OWNER_ENTRY_QUEUE,
+	OWNER_READY_QUEUE,
+	OWNER_DIO_FSYNC_QUEUE,
+	OWNER_KAIO_FSYNC_QUEUE,
+	OWNER_PREQ_DELAY_LIST,
+	OWNER_TEMP_DROP_LIST,
+	OWNER_MAP_NODE_IO_QUEUE,
+	OWNER_TEMP_READY_LIST,
+	OWNER_PB_PENDING_SET,
+	OWNER_PB_REPORTED_SET,
+	OWNER_FBD_FREE_ZERO_LIST,
+};
+
+#define PREQ_DBG_STATE(owner, who) (((owner) << 16) | (who))
+#define PREQ_DBG_OWNER(state) ((state) >> 16)
+#define PREQ_DBG_WHO(state) ((state) & 0xffff)
+
+static inline void preq_dbg_acquire(struct ploop_request *preq,
+				    unsigned new_owner, unsigned new_who)
+{
+	unsigned int new_state = PREQ_DBG_STATE(new_owner, new_who);
+	unsigned int old_state = atomic_xchg(&preq->dbg_state, new_state);
+	if (old_state) {
+		printk("preq_dbg_acquire(%p): "
+			"new_owner=%d new_who=%d old_owner=%d "
+		       "old_who=%d\n", preq, new_owner, new_who,
+		       PREQ_DBG_OWNER(old_state), PREQ_DBG_WHO(old_state));
+		dump_stack();
+	}
+}
+
+static inline void preq_dbg_release(struct ploop_request *preq, unsigned owner)
+{
+	unsigned int old_state = atomic_xchg(&preq->dbg_state, 0);
+	if (owner != PREQ_DBG_OWNER(old_state)) {
+		printk("preq_dbg_release(%p): "
+		       "expected owner=%d, but old_owner=%d "
+		       "old_who=%d\n", preq, owner,
+		       PREQ_DBG_OWNER(old_state), PREQ_DBG_WHO(old_state));
+		dump_stack();
+	}
+}
 
 static inline struct ploop_delta * ploop_top_delta(struct ploop_device * plo)
 {
@@ -802,8 +909,9 @@ static inline void ploop_acc_flush_skip_locked(struct ploop_device *plo,
 		plo->st.bio_flush_skip++;
 }
 
-static inline void ploop_entry_add(struct ploop_device * plo, struct ploop_request * preq)
+static inline void ploop_entry_add(struct ploop_device * plo, struct ploop_request * preq, unsigned who)
 {
+	preq_dbg_acquire(preq, OWNER_ENTRY_QUEUE, who);
 	list_add_tail(&preq->list, &plo->entry_queue);
 	plo->entry_qlen++;
 	if (test_bit(PLOOP_REQ_SYNC, &preq->state) && (!(preq->req_rw & WRITE) || (preq->req_rw & (REQ_FLUSH|REQ_FUA)))) {
