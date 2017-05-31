@@ -1979,6 +1979,8 @@ extern struct file *get_mm_exe_file(struct mm_struct *mm);
 extern struct file *get_task_exe_file(struct task_struct *task);
 
 extern int may_expand_vm(struct mm_struct *mm, unsigned long npages);
+extern bool vma_is_vdso_or_vvar(const struct vm_area_struct *vma,
+				   const struct mm_struct *mm);
 extern int install_special_mapping(struct mm_struct *mm,
 				   unsigned long addr, unsigned long len,
 				   unsigned long flags, struct page **pages);
