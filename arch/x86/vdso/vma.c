@@ -244,8 +244,6 @@ static int uts_arch_setup_additional_pages(struct linux_binprm *bprm, int uses_i
 		 * preallocated one.
 		 */
 		new_version = KERNEL_VERSION(n1, n2, n3);
-		if (new_version == LINUX_VERSION_CODE)
-			goto map_init_uts;
 	} else {
 		/*
 		 * If admin is passed malformed string here
@@ -254,8 +252,8 @@ static int uts_arch_setup_additional_pages(struct linux_binprm *bprm, int uses_i
 		 * better than walk out with error.
 		 */
 		pr_warn_once("Wrong release uts name format detected."
-			     " Ignoring vDSO virtualization.\n");
-		goto map_init_uts;
+			     " Using host's uts name.\n");
+		new_version = LINUX_VERSION_CODE;
 	}
 
 	mutex_lock(&vdso_mutex);
@@ -296,6 +294,7 @@ static int uts_arch_setup_additional_pages(struct linux_binprm *bprm, int uses_i
 	}
 
 	*((int *)(uts_ns->vdso.addr + uts_ns->vdso.version_off)) = new_version;
+	*((struct timespec*)(VDSO64_SYMBOL(uts_ns->vdso.addr, ve_start_timespec))) = ve->start_timespec;
 	smp_wmb();
 	uts_ns->vdso.pages = new_pages;
 	mutex_unlock(&vdso_mutex);
