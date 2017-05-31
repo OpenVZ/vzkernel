@@ -88,7 +88,6 @@
 #include <linux/netfilter_ipv4.h>
 #include <linux/random.h>
 #include <linux/slab.h>
-#include <linux/ve.h>
 
 #include <asm/uaccess.h>
 
