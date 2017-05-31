@@ -43,10 +43,13 @@ static void __kaio_queue_fsync_req(struct ploop_request * preq, int prio)
 	struct ploop_delta  * delta = ploop_top_delta(plo);
 	struct ploop_io     * io    = &delta->io;
 
-	if (prio)
+	if (prio) {
+		preq_dbg_acquire(preq, OWNER_KAIO_FSYNC_QUEUE, WHO_KAIO_QUEUE_TRUNC_REQ);
 		list_add(&preq->list, &io->fsync_queue);
-	else
+	} else {
+		preq_dbg_acquire(preq, OWNER_KAIO_FSYNC_QUEUE, WHO_KAIO_QUEUE_FSYNC_REQ);
 		list_add_tail(&preq->list, &io->fsync_queue);
+	}
 
 	io->fsync_qlen++;
 	if (waitqueue_active(&io->fsync_waitq))
@@ -400,7 +403,8 @@ static int kaio_fsync_thread(void * data)
 			break;
 
 		preq = list_entry(io->fsync_queue.next, struct ploop_request, list);
-		list_del(&preq->list);
+		preq_dbg_release(preq, OWNER_KAIO_FSYNC_QUEUE);
+		list_del_init(&preq->list);
 		io->fsync_qlen--;
 		if (!preq->prealloc_size)
 			plo->st.bio_fsync++;
@@ -433,6 +437,7 @@ static int kaio_fsync_thread(void * data)
 		}
 
 		spin_lock_irq(&plo->lock);
+		preq_dbg_acquire(preq, OWNER_READY_QUEUE, WHO_KAIO_FSYNC_THREAD);
 		list_add_tail(&preq->list, &plo->ready_queue);
 
 		if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
@@ -483,6 +488,7 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 			spin_unlock_irq(&io->plo->lock);
 			return;
 		} else { /* we're not first */
+			preq_dbg_acquire(preq, OWNER_PREQ_DELAY_LIST, WHO_KAIO_SUBMIT_ALLOC);
 			list_add_tail(&preq->list,
 				      &io->prealloc_preq->delay_list);
 			return;
@@ -965,9 +971,10 @@ static void kaio_issue_flush(struct ploop_io * io, struct ploop_request *preq)
 
 	spin_lock_irq(&io->plo->lock);
 
-	if (delta->flags & PLOOP_FMT_RDONLY)
+	if (delta->flags & PLOOP_FMT_RDONLY) {
+		preq_dbg_acquire(preq, OWNER_READY_QUEUE, WHO_KAIO_ISSUE_FLUSH);
 		list_add_tail(&preq->list, &io->plo->ready_queue);
-	else
+	} else
 		kaio_queue_fsync_req(preq);
 
 	spin_unlock_irq(&io->plo->lock);

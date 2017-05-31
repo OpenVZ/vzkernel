@@ -60,6 +60,8 @@ int ploop_discard_fini_ioc(struct ploop_device *plo)
 	spin_lock_irq(&plo->lock);
 	list_for_each_entry_safe(preq, tmp, &plo->entry_queue, list)
 		if (test_bit(PLOOP_REQ_DISCARD, &preq->state)) {
+			preq_dbg_release(preq, OWNER_ENTRY_QUEUE);
+			preq_dbg_acquire(preq, OWNER_TEMP_DROP_LIST, WHO_PLOOP_DISCARD_FINI_IOC);
 			list_move(&preq->list, &drop_list);
 			ploop_entry_qlen_dec(preq);
 		}

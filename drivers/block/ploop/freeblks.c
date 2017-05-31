@@ -200,6 +200,7 @@ int ploop_fb_check_reloc_req(struct ploop_freeblks_desc *fbd,
 		else {
 			spin_lock_irq(&fbd->plo->lock);
 			preq->eng_state = pin_state;
+			preq_dbg_acquire(preq, OWNER_PREQ_DELAY_LIST, WHO_PLOOP_FB_CHECK_RELOC_REQ);
 			list_add_tail(&preq->list, &p->delay_list);
 			spin_unlock_irq(&fbd->plo->lock);
 			return 1;
@@ -277,13 +278,15 @@ ploop_fb_get_zero_request(struct ploop_freeblks_desc *fbd)
 
 	preq = list_entry(fbd->free_zero_list.next,
 			  struct ploop_request, list);
-	list_del(&preq->list);
+	preq_dbg_release(preq, OWNER_FBD_FREE_ZERO_LIST);
+	list_del_init(&preq->list);
 	return preq;
 }
 
 void ploop_fb_put_zero_request(struct ploop_freeblks_desc *fbd,
 			       struct ploop_request *preq)
 {
+	preq_dbg_acquire(preq, OWNER_FBD_FREE_ZERO_LIST, WHO_PLOOP_FB_PUT_ZERO_REQ);
 	list_add(&preq->list, &fbd->free_zero_list);
 }
 
@@ -790,6 +793,8 @@ struct ploop_freeblks_desc *ploop_fb_init(struct ploop_device *plo)
 
 		preq->plo = plo;
 		INIT_LIST_HEAD(&preq->delay_list);
+		atomic_set(&preq->dbg_state,
+			   PREQ_DBG_STATE(OWNER_FBD_FREE_ZERO_LIST, WHO_PLOOP_FB_INIT));
 		list_add(&preq->list, &fbd->free_zero_list);
 	}
 
@@ -838,7 +843,8 @@ void ploop_fb_fini(struct ploop_freeblks_desc *fbd, int err)
 		preq = list_first_entry(&fbd->free_zero_list,
 					struct ploop_request,
 					list);
-		list_del(&preq->list);
+		preq_dbg_release(preq, OWNER_FBD_FREE_ZERO_LIST);
+		list_del_init(&preq->list);
 		kfree(preq);
 	}
 
