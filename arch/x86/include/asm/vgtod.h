@@ -21,7 +21,6 @@ struct vsyscall_gtod_data {
 	u64		monotonic_time_snsec;
 	time_t		monotonic_time_sec;
 
-	int		gettime_monotonic_enabled;
 	struct timezone sys_tz;
 	struct timespec wall_time_coarse;
 	struct timespec monotonic_time_coarse;
