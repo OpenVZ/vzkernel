@@ -270,14 +270,12 @@ notrace int __vdso_clock_gettime(clockid_t clock, struct timespec *ts)
 		ret = do_realtime(ts);
 		break;
 	case CLOCK_MONOTONIC:
-		if (gtod->gettime_monotonic_enabled)
-			ret = do_monotonic(ts);
+		ret = do_monotonic(ts);
 		break;
 	case CLOCK_REALTIME_COARSE:
 		return do_realtime_coarse(ts);
 	case CLOCK_MONOTONIC_COARSE:
-		if (gtod->gettime_monotonic_enabled)
-			return do_monotonic_coarse(ts);
+		return do_monotonic_coarse(ts);
 	}
 
 	if (ret == VCLOCK_NONE)
