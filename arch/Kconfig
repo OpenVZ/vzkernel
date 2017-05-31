@@ -556,6 +556,14 @@ config HAVE_RELIABLE_STACKTRACE
 	  Architecture has a save_stack_trace_tsk_reliable() function which
 	  only returns a stack trace if it can guarantee the trace is reliable.
 
+config HAVE_ARCH_COMPAT_MMAP_BASES
+	bool
+	help
+	  This allows 64bit applications to invoke 32-bit mmap() syscall
+	  and vice-versa 32-bit applications to call 64-bit mmap().
+	  Required for applications doing different bitness syscalls.
+
+
 #
 # ABI hall of shame
 #
