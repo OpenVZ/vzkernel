@@ -494,11 +494,20 @@ up_fail:
 
 #ifdef CONFIG_X86_64
 
+static bool vdso_or_vvar_present(struct mm_struct *mm)
+{
+	struct vm_area_struct *vma;
+
+	for (vma = mm->mmap; vma; vma = vma->vm_next)
+		if (vma_is_vdso_or_vvar(vma, mm))
+			return true;
+	return false;
+}
+
 int do_map_compat_vdso(unsigned long req_addr)
 {
 	struct mm_struct *mm = current->mm;
 	unsigned long vdso_addr;
-	struct vm_area_struct *vdso_vma;
 	int ret;
 	bool compat;
 
@@ -514,7 +523,11 @@ int do_map_compat_vdso(unsigned long req_addr)
 		goto up_fail;
 	}
 
-	/* Don't wanna copy security checks like security_mmap_addr() */
+	if (vdso_or_vvar_present(mm)) {
+		ret = -EEXIST;
+		goto up_fail;
+	}
+
 	vdso_addr = get_unmapped_area(NULL, req_addr, PAGE_SIZE, 0, 0);
 	if (IS_ERR_VALUE(vdso_addr)) {
 		ret = vdso_addr;
@@ -525,18 +538,6 @@ int do_map_compat_vdso(unsigned long req_addr)
 		ret = -EFAULT;
 		goto up_fail;
 	}
-
-	/*
-	 * Firstly, unmap old vdso - as install_special_mapping may not
-	 * do rlimit/cgroup accounting right - get rid of the old one by
-	 * remove_vma().
-	 */
-	vdso_vma = find_vma_intersection(mm, (unsigned long)mm->context.vdso,
-			(unsigned long)mm->context.vdso +
-			PAGE_SIZE*init_uts_ns.vdso.nr_pages);
-	if (vdso_vma)
-		do_munmap(mm, vdso_vma->vm_start,
-			vdso_vma->vm_end - vdso_vma->vm_start);
 
 	ret = __arch_setup_additional_pages(req_addr, compat);
 	if (ret)
