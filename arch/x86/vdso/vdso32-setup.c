@@ -399,8 +399,9 @@ static struct page **uts_prep_vdso_pages_locked(int map)
 	copy_page(page_address(new_pages[0]), page_address(vdso32_pages[0]));
 
 	addr = page_address(new_pages[0]);
+	uts_ns->vdso32.addr = addr;
 	*((int *)(addr + uts_ns->vdso32.version_off)) = new_version;
-	*((struct timespec*)(VDSO32_SYMBOL(uts_ns->vdso.addr, ve_start_timespec))) = ve->start_timespec;
+	*((struct timespec*)(VDSO32_SYMBOL(uts_ns->vdso32.addr, ve_start_timespec))) = ve->start_timespec;
 	smp_wmb();
 
 	pages = uts_ns->vdso32.pages = new_pages;
