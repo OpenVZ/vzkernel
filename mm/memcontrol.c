@@ -4686,10 +4686,14 @@ int mem_cgroup_apply_beancounter(struct mem_cgroup *memcg,
 
 	mem = ub->ub_parms[UB_PHYSPAGES].limit;
 	memsw = ub->ub_parms[UB_SWAPPAGES].limit;
-	if (memsw < PAGE_COUNTER_MAX - mem)
-		memsw += mem;
-	else
+
+	if (mem > PAGE_COUNTER_MAX)
+		mem = PAGE_COUNTER_MAX;
+
+	if (memsw + mem < mem || memsw + mem > PAGE_COUNTER_MAX)
 		memsw = PAGE_COUNTER_MAX;
+	else
+		memsw += mem;
 
 	oomguar = ub->ub_parms[UB_OOMGUARPAGES].barrier;
 
