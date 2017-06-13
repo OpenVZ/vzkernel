@@ -694,7 +694,7 @@ int dequeue_signal(struct task_struct *tsk, sigset_t *mask, siginfo_t *info)
 		 */
 		current->jobctl |= JOBCTL_STOP_DEQUEUED;
 	}
-	if ((info->si_code & __SI_MASK) == __SI_TIMER && info->si_sys_private) {
+	if (info->si_code== SI_TIMER && info->si_sys_private) {
 		/*
 		 * Release the siglock to ensure proper locking order
 		 * of timer locks outside of siglocks.  Note, we leave
@@ -3101,6 +3101,12 @@ static int do_rt_tgsigqueueinfo(pid_t tgid, pid_t pid, int sig, siginfo_t *info)
 		return -EPERM;
 
 	info->si_signo = sig;
+	/*
+	 * If this is a posix timer signal, prevent that the dequeue
+	 * into the timer rearming code.
+	 */
+	if (info->si_code == SI_TIMER)
+		info->si_sys_private = 0;
 
 	return do_send_specific(tgid, pid, sig, info);
 }
