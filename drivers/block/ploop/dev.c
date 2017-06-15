@@ -223,8 +223,7 @@ static void ploop_test_and_clear_blockable(struct ploop_device *plo,
 }
 
 /* always called with plo->lock released */
-void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list,
-		      int keep_locked)
+void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list)
 {
 	struct ploop_request * preq;
 	int drop_qlen = 0;
@@ -254,8 +253,7 @@ void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list,
 
 	ploop_uncongest(plo);
 
-	if (!keep_locked)
-		spin_unlock_irq(&plo->lock);
+	spin_unlock_irq(&plo->lock);
 }
 
 static void merge_rw_flags_to_req(unsigned long rw,
@@ -1059,7 +1057,7 @@ out:
 	blk_check_plugged(ploop_unplug, plo, sizeof(struct blk_plug_cb));
 
 	if (!list_empty(&drop_list))
-		ploop_preq_drop(plo, &drop_list, 0);
+		ploop_preq_drop(plo, &drop_list);
 
 	return;
 }
@@ -2957,12 +2955,12 @@ static int ploop_thread(void * data)
 	set_user_nice(current, -20);
 
 	blk_start_plug(&plug);
-	spin_lock_irq(&plo->lock);
 	for (;;) {
 		/* Convert bios to preqs early (at least before processing
 		 * entry queue) to increase chances of bio merge
 		 */
-	again:
+		cond_resched();
+		spin_lock_irq(&plo->lock);
 		BUG_ON (!list_empty(&drop_list));
 
 		process_pending_bios(plo, &drop_list);
@@ -2971,8 +2969,8 @@ static int ploop_thread(void * data)
 
 		if (!list_empty(&drop_list)) {
 			spin_unlock_irq(&plo->lock);
-			ploop_preq_drop(plo, &drop_list, 1);
-			goto again;
+			ploop_preq_drop(plo, &drop_list);
+			continue;
 		}
 
 		if (!list_empty(&plo->ready_queue)) {
@@ -2984,7 +2982,6 @@ static int ploop_thread(void * data)
 
 			ploop_req_state_process(preq);
 
-			spin_lock_irq(&plo->lock);
 			continue;
 		}
 
@@ -3003,6 +3000,7 @@ static int ploop_thread(void * data)
 				set_bit(PLOOP_S_ATTENTION, &plo->state);
 				if (plo->active_reqs) {
 					list_add(&preq->list, &plo->entry_queue);
+					spin_unlock_irq(&plo->lock);
 					continue;
 				}
 				plo->barrier_reqs--;
@@ -3035,8 +3033,6 @@ static int ploop_thread(void * data)
 			spin_unlock_irq(&plo->lock);
 
 			ploop_req_state_process(preq);
-
-			spin_lock_irq(&plo->lock);
 			continue;
 		}
 
@@ -3051,8 +3047,10 @@ static int ploop_thread(void * data)
 
 wait_more:
 		ploop_wait(plo, once, &plug);
+		spin_unlock_irq(&plo->lock);
 		once = 0;
 	}
+
 	spin_unlock_irq(&plo->lock);
 	blk_finish_plug(&plug);
 
