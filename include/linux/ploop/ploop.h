@@ -626,8 +626,7 @@ static inline struct ploop_delta * map_top_delta(struct ploop_map * map)
 
 void ploop_complete_io_state(struct ploop_request * preq);
 void ploop_fail_request(struct ploop_request * preq, int err);
-void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list,
-		      int keep_locked);
+void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list);
 
 
 static inline int ploop_req_delay_fua_possible(struct ploop_request *preq)
