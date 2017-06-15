@@ -59,7 +59,7 @@ int ploop_discard_fini_ioc(struct ploop_device *plo)
 	spin_unlock_irq(&plo->lock);
 
 	if (!list_empty(&drop_list))
-		ploop_preq_drop(plo, &drop_list, 0);
+		ploop_preq_drop(plo, &drop_list);
 
 	if (plo->maintenance_type != PLOOP_MNTN_DISCARD) {
 		ret = -EBUSY;
