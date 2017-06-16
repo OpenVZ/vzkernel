@@ -301,6 +301,79 @@ void ext4_itable_unused_set(struct super_block *sb,
 		bg->bg_itable_unused_hi = cpu_to_le16(count >> 16);
 }
 
+static int ext4_uuid_valid(const u8 *uuid)
+{
+	int i;
+
+	for (i = 0; i < 16; i++) {
+		if (uuid[i])
+			return 1;
+	}
+	return 0;
+}
+
+/**
+ * ext4_send_uevent - prepare and send uevent
+ *
+ * @sb:		super_block
+ * @action:		action type
+ *
+ */
+int ext4_send_uevent(struct super_block *sb, enum ext4_event_type action)
+{
+	int ret;
+	struct kobj_uevent_env *env;
+	const u8 *uuid = sb->s_uuid;
+	enum kobject_action kaction = KOBJ_CHANGE;
+
+	env = kzalloc(sizeof(struct kobj_uevent_env), GFP_KERNEL);
+	if (!env)
+		return -ENOMEM;
+
+	ret = add_uevent_var(env, "FS_TYPE=%s", sb->s_type->name);
+	if (ret)
+		goto out;
+	ret = add_uevent_var(env, "FS_NAME=%s", sb->s_id);
+	if (ret)
+		goto out;
+
+	if (ext4_uuid_valid(uuid)) {
+		ret = add_uevent_var(env, "UUID=%pUB", uuid);
+		if (ret)
+			goto out;
+	}
+
+	switch (action) {
+	case EXT4_UA_MOUNT:
+		kaction = KOBJ_ONLINE;
+		ret = add_uevent_var(env, "FS_ACTION=%s", "MOUNT");
+		break;
+	case EXT4_UA_UMOUNT:
+		kaction = KOBJ_OFFLINE;
+		ret = add_uevent_var(env, "FS_ACTION=%s", "UMOUNT");
+		break;
+	case EXT4_UA_REMOUNT:
+		ret = add_uevent_var(env, "FS_ACTION=%s", "REMOUNT");
+		break;
+	case EXT4_UA_ERROR:
+		ret = add_uevent_var(env, "FS_ACTION=%s", "ERROR");
+		break;
+	case EXT4_UA_FREEZE:
+		ret = add_uevent_var(env, "FS_ACTION=%s", "FREEZE");
+		break;
+	case EXT4_UA_UNFREEZE:
+		ret = add_uevent_var(env, "FS_ACTION=%s", "UNFREEZE");
+		break;
+	default:
+		ret = -EINVAL;
+	}
+	if (ret)
+		goto out;
+	ret = kobject_uevent_env(&(EXT4_SB(sb)->s_kobj), kaction, env->envp);
+out:
+	kfree(env);
+	return ret;
+}
 
 static void __save_error_info(struct super_block *sb, const char *func,
 			    unsigned int line)
@@ -389,6 +462,9 @@ static void ext4_journal_commit_callback(journal_t *journal, transaction_t *txn)
 
 static void ext4_handle_error(struct super_block *sb)
 {
+	if (!xchg(&EXT4_SB(sb)->s_err_event_sent, 1))
+		ext4_send_uevent(sb, EXT4_UA_ERROR);
+
 	if (sb->s_flags & MS_RDONLY)
 		return;
 
@@ -780,6 +856,7 @@ static void ext4_put_super(struct super_block *sb)
 	struct ext4_super_block *es = sbi->s_es;
 	int i, err;
 
+	ext4_send_uevent(sb, EXT4_UA_UMOUNT);
 	ext4_unregister_li_request(sb);
 	dquot_disable(sb, -1, DQUOT_USAGE_ENABLED | DQUOT_LIMITS_ENABLED);
 
@@ -4463,6 +4540,7 @@ no_journal:
 	ratelimit_state_init(&sbi->s_warning_ratelimit_state, 5 * HZ, 10);
 	ratelimit_state_init(&sbi->s_msg_ratelimit_state, 5 * HZ, 10);
 
+	ext4_send_uevent(sb, EXT4_UA_MOUNT);
 	kfree(orig_data);
 	return 0;
 
@@ -5011,8 +5089,10 @@ static int ext4_freeze(struct super_block *sb)
 	int error = 0;
 	journal_t *journal;
 
-	if (sb->s_flags & MS_RDONLY)
+	if (sb->s_flags & MS_RDONLY) {
+		ext4_send_uevent(sb, EXT4_UA_FREEZE);
 		return 0;
+	}
 
 	journal = EXT4_SB(sb)->s_journal;
 
@@ -5033,6 +5113,9 @@ static int ext4_freeze(struct super_block *sb)
 out:
 	/* we rely on upper layer to stop further updates */
 	jbd2_journal_unlock_updates(EXT4_SB(sb)->s_journal);
+	if (!error)
+		ext4_send_uevent(sb, EXT4_UA_FREEZE);
+
 	return error;
 }
 
@@ -5042,6 +5125,8 @@ out:
  */
 static int ext4_unfreeze(struct super_block *sb)
 {
+	ext4_send_uevent(sb, EXT4_UA_UNFREEZE);
+
 	if (sb->s_flags & MS_RDONLY)
 		return 0;
 
@@ -5287,6 +5372,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 
 	*flags = (*flags & ~MS_LAZYTIME) | (sb->s_flags & MS_LAZYTIME);
 	ext4_msg(sb, KERN_INFO, "re-mounted. Opts: %s", orig_data);
+	ext4_send_uevent(sb, EXT4_UA_REMOUNT);
 	kfree(orig_data);
 	return 0;
 
