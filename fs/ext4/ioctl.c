@@ -304,7 +304,7 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		 * This test looks nicer. Thanks to Pauline Middelink
 		 */
 		if ((flags ^ oldflags) & (EXT4_APPEND_FL | EXT4_IMMUTABLE_FL)) {
-			if (!capable(CAP_LINUX_IMMUTABLE))
+			if (!ve_capable(CAP_LINUX_IMMUTABLE))
 				goto flags_out;
 		}
 
