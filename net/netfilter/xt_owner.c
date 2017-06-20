@@ -32,14 +32,14 @@ owner_mt_v0(const struct sk_buff *skb, struct xt_action_param *par)
 		return false;
 
 	if (info->match & XT_OWNER_UID) {
-		kuid_t uid = make_kuid(&init_user_ns, info->uid);
+		kuid_t uid = make_kuid(ve_init_user_ns(), info->uid);
 		if ((!uid_eq(filp->f_cred->fsuid, uid)) ^
 		    !!(info->invert & XT_OWNER_UID))
 			return false;
 	}
 
 	if (info->match & XT_OWNER_GID) {
-		kgid_t gid = make_kgid(&init_user_ns, info->gid);
+		kgid_t gid = make_kgid(ve_init_user_ns(), info->gid);
 		if ((!gid_eq(filp->f_cred->fsgid, gid)) ^
 		    !!(info->invert & XT_OWNER_GID))
 			return false;
@@ -62,14 +62,14 @@ owner_mt6_v0(const struct sk_buff *skb, struct xt_action_param *par)
 		return false;
 
 	if (info->match & XT_OWNER_UID) {
-		kuid_t uid = make_kuid(&init_user_ns, info->uid);
+		kuid_t uid = make_kuid(ve_init_user_ns(), info->uid);
 		if ((!uid_eq(filp->f_cred->fsuid, uid)) ^
 		    !!(info->invert & XT_OWNER_UID))
 			return false;
 	}
 
 	if (info->match & XT_OWNER_GID) {
-		kgid_t gid = make_kgid(&init_user_ns, info->gid);
+		kgid_t gid = make_kgid(ve_init_user_ns(), info->gid);
 		if ((!gid_eq(filp->f_cred->fsgid, gid)) ^
 		    !!(info->invert & XT_OWNER_GID))
 			return false;
@@ -112,8 +112,8 @@ owner_mt(const struct sk_buff *skb, struct xt_action_param *par)
 		       (XT_OWNER_UID | XT_OWNER_GID)) == 0;
 
 	if (info->match & XT_OWNER_UID) {
-		kuid_t uid_min = make_kuid(&init_user_ns, info->uid_min);
-		kuid_t uid_max = make_kuid(&init_user_ns, info->uid_max);
+		kuid_t uid_min = make_kuid(ve_init_user_ns(), info->uid_min);
+		kuid_t uid_max = make_kuid(ve_init_user_ns(), info->uid_max);
 		if ((uid_gte(filp->f_cred->fsuid, uid_min) &&
 		     uid_lte(filp->f_cred->fsuid, uid_max)) ^
 		    !(info->invert & XT_OWNER_UID))
@@ -121,8 +121,8 @@ owner_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	}
 
 	if (info->match & XT_OWNER_GID) {
-		kgid_t gid_min = make_kgid(&init_user_ns, info->gid_min);
-		kgid_t gid_max = make_kgid(&init_user_ns, info->gid_max);
+		kgid_t gid_min = make_kgid(ve_init_user_ns(), info->gid_min);
+		kgid_t gid_max = make_kgid(ve_init_user_ns(), info->gid_max);
 		if ((gid_gte(filp->f_cred->fsgid, gid_min) &&
 		     gid_lte(filp->f_cred->fsgid, gid_max)) ^
 		    !(info->invert & XT_OWNER_GID))
