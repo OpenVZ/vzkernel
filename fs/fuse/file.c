@@ -3629,14 +3629,14 @@ static long fuse_file_fallocate(struct file *file, int mode, loff_t offset,
 	};
 	int err;
 	bool lock_inode = !(mode & FALLOC_FL_KEEP_SIZE) ||
-			   (mode & FALLOC_FL_PUNCH_HOLE);
+			   (mode & (FALLOC_FL_PUNCH_HOLE|FALLOC_FL_ZERO_RANGE));
 
 	if (fc->no_fallocate)
 		return -EOPNOTSUPP;
 
 	if (lock_inode) {
 		mutex_lock(&inode->i_mutex);
-		if (mode & FALLOC_FL_PUNCH_HOLE) {
+		if (mode & (FALLOC_FL_PUNCH_HOLE|FALLOC_FL_ZERO_RANGE)) {
 			loff_t endbyte = offset + length - 1;
 			err = filemap_write_and_wait_range(inode->i_mapping,
 							   offset, endbyte);
@@ -3676,7 +3676,7 @@ static long fuse_file_fallocate(struct file *file, int mode, loff_t offset,
 	if (!(mode & FALLOC_FL_KEEP_SIZE))
 		fuse_write_update_size(inode, offset + length);
 
-	if (mode & FALLOC_FL_PUNCH_HOLE)
+	if (mode & (FALLOC_FL_PUNCH_HOLE|FALLOC_FL_ZERO_RANGE))
 		truncate_pagecache_range(inode, offset, offset + length - 1);
 
 	fuse_invalidate_attr(inode);
