@@ -1043,7 +1043,7 @@ again:
 		else if (next)
 			vma_gap_update(next);
 		else
-			mm->highest_vm_end = end;
+			WARN_ON(mm->highest_vm_end != vm_end_gap(vma));
 	}
 	if (insert && file)
 		uprobe_mmap(insert);
@@ -2396,48 +2396,39 @@ int expand_upwards(struct vm_area_struct *vma, unsigned long address)
 {
 	struct vm_area_struct *next;
 	unsigned long gap_addr;
-	int error;
+	int error = 0;
 
 	if (!(vma->vm_flags & VM_GROWSUP))
 		return -EFAULT;
 
-	/*
-	 * We must make sure the anon_vma is allocated
-	 * so that the anon_vma locking is not a noop.
-	 */
+	/* Guard against wrapping around to address 0. */
+	address &= PAGE_MASK;
+	address += PAGE_SIZE;
+	if (!address)
+		return -ENOMEM;
+
+	/* Enforce stack_guard_gap */
+	gap_addr = address + stack_guard_gap;
+	if (gap_addr < address)
+		return -ENOMEM;
+	next = vma->vm_next;
+	if (next && next->vm_start < gap_addr &&
+			(next->vm_flags & (VM_WRITE|VM_READ|VM_EXEC))) {
+		if (!(next->vm_flags & VM_GROWSUP))
+			return -ENOMEM;
+		/* Check that both stack segments have the same anon_vma? */
+	}
+
+	/* We must make sure the anon_vma is allocated. */
 	if (unlikely(anon_vma_prepare(vma)))
 		return -ENOMEM;
-	vma_lock_anon_vma(vma);
 
 	/*
 	 * vma->vm_start/vm_end cannot change under us because the caller
 	 * is required to hold the mmap_sem in read mode.  We need the
 	 * anon_vma lock to serialize against concurrent expand_stacks.
-	 * Also guard against wrapping around to address 0.
 	 */
-	address &= PAGE_MASK;
-	address += PAGE_SIZE;
-	if (!address) {
-		vma_unlock_anon_vma(vma);
-		return -ENOMEM;
-	}
-	error = 0;
-
-	/* Enforce stack_guard_gap */
-	gap_addr = address + stack_guard_gap;
-	if (gap_addr < address) {
-		vma_unlock_anon_vma(vma);
-		return -ENOMEM;
-	}
-	next = vma->vm_next;
-	if (next && next->vm_start < gap_addr &&
-			(next->vm_flags & (VM_WRITE|VM_READ|VM_EXEC))) {
-		if (!(next->vm_flags & VM_GROWSUP)) {
-			vma_unlock_anon_vma(vma);
-			return -ENOMEM;
-		}
-		/* Check that both stack segments have the same anon_vma? */
-	}
+	vma_lock_anon_vma(vma);
 
 	/* Somebody else might have raced and expanded it already */
 	if (address > vma->vm_end) {
@@ -2492,13 +2483,6 @@ int expand_downwards(struct vm_area_struct *vma,
 	unsigned long gap_addr;
 	int error;
 
-	/*
-	 * We must make sure the anon_vma is allocated
-	 * so that the anon_vma locking is not a noop.
-	 */
-	if (unlikely(anon_vma_prepare(vma)))
-		return -ENOMEM;
-
 	address &= PAGE_MASK;
 	error = security_mmap_addr(address);
 	if (error)
@@ -2506,9 +2490,9 @@ int expand_downwards(struct vm_area_struct *vma,
 
 	/* Enforce stack_guard_gap */
 	gap_addr = address - stack_guard_gap;
-	if (gap_addr > address) 
+	if (gap_addr > address)
 		return -ENOMEM;
-	
+
 	prev = vma->vm_prev;
 	if (prev && prev->vm_end > gap_addr &&
 			(prev->vm_flags & (VM_WRITE|VM_READ|VM_EXEC))) {
@@ -2517,12 +2501,16 @@ int expand_downwards(struct vm_area_struct *vma,
 		/* Check that both stack segments have the same anon_vma? */
 	}
 
-	vma_lock_anon_vma(vma);
+	/* We must make sure the anon_vma is allocated. */
+	if (unlikely(anon_vma_prepare(vma)))
+		return -ENOMEM;
+
 	/*
 	 * vma->vm_start/vm_end cannot change under us because the caller
 	 * is required to hold the mmap_sem in read mode.  We need the
 	 * anon_vma lock to serialize against concurrent expand_stacks.
 	 */
+	vma_lock_anon_vma(vma);
 
 	/* Somebody else might have raced and expanded it already */
 	if (address < vma->vm_start) {
