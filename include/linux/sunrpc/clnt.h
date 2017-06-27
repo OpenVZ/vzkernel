@@ -182,5 +182,9 @@ const char	*rpc_peeraddr2str(struct rpc_clnt *, enum rpc_display_format_t);
 int		rpc_localaddr(struct rpc_clnt *, struct sockaddr *, size_t);
 
 const char *rpc_proc_name(const struct rpc_task *task);
+
+int rpc_task_kill_proc_init(struct net *net);
+void rpc_task_kill_proc_fini(struct net *net);
+
 #endif /* __KERNEL__ */
 #endif /* _LINUX_SUNRPC_CLNT_H */
