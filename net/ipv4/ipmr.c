@@ -1255,7 +1255,7 @@ static void mrtsock_destruct(struct sock *sk)
 	struct net *net = sock_net(sk);
 	struct mr_table *mrt;
 
-	rtnl_lock();
+	ASSERT_RTNL();
 	ipmr_for_each_table(mrt, net) {
 		if (sk == rtnl_dereference(mrt->mroute_sk)) {
 			IPV4_DEVCONF_ALL(net, MC_FORWARDING)--;
@@ -1266,7 +1266,6 @@ static void mrtsock_destruct(struct sock *sk)
 			mroute_clean_tables(mrt);
 		}
 	}
-	rtnl_unlock();
 }
 
 /*
@@ -1322,7 +1321,9 @@ int ip_mroute_setsockopt(struct sock *sk, int optname, char __user *optval, unsi
 	case MRT_DONE:
 		if (sk != rcu_access_pointer(mrt->mroute_sk))
 			return -EACCES;
-		return ip_ra_control(sk, 0, NULL);
+        ret = ip_ra_control(sk, 0, NULL);
+        rtnl_unlock();
+		return ret;
 	case MRT_ADD_VIF:
 	case MRT_DEL_VIF:
 		if (optlen != sizeof(vif))
