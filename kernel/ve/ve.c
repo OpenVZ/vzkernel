@@ -1039,6 +1039,7 @@ static int ve_mount_opts_release(struct inode *inode, struct file *file)
  * consisting of substrings separated by MNTOPT_DELIM.
  */
 #define MNTOPT_DELIM ';'
+#define MNTOPT_MAXLEN 256
 
 /*
  * Each substring has the form of "<type> <comma-separated-list-of-options>"
@@ -1418,6 +1419,7 @@ static struct cftype ve_cftypes[] = {
 	},
 	{
 		.name			= "mount_opts",
+		.max_write_len		= MNTOPT_MAXLEN,
 		.flags			= CFTYPE_NOT_ON_ROOT,
 		.open			= ve_mount_opts_open,
 		.read			= ve_mount_opts_read,
