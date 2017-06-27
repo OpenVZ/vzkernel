@@ -2938,3 +2938,17 @@ void rpc_task_kill_proc_fini(struct net *net)
 	if (sn->kill_tasks_proc)
 		remove_proc_entry("kill-tasks", sn->proc_net_rpc);
 }
+
+bool rpc_abort_task(struct rpc_task *task)
+{
+	struct net *net = rpc_net_ns(task->tk_client);
+	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
+
+	if (!sn->kill_tasks)
+		return false;
+
+	dprintk("RPC: SUNRPC traffic is suppressed. Drop task %5u with EIO.\n",
+			task->tk_pid);
+
+	return true;
+}
