@@ -287,6 +287,7 @@ EXPORT_SYMBOL_GPL(svc_proc_unregister);
 int rpc_proc_init(struct net *net)
 {
 	struct sunrpc_net *sn;
+	int err;
 
 	dprintk("RPC:       registering /proc/net/rpc\n");
 	sn = net_generic(net, sunrpc_net_id);
@@ -294,12 +295,19 @@ int rpc_proc_init(struct net *net)
 	if (sn->proc_net_rpc == NULL)
 		return -ENOMEM;
 
+	err = rpc_task_kill_proc_init(net);
+	if (err) {
+		remove_proc_entry("rpc", net->proc_net);
+		return err;
+	}
+
 	return 0;
 }
 
 void rpc_proc_exit(struct net *net)
 {
 	dprintk("RPC:       unregistering /proc/net/rpc\n");
+	rpc_task_kill_proc_fini(net);
 	remove_proc_entry("rpc", net->proc_net);
 }
 
