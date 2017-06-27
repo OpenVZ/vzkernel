@@ -186,5 +186,7 @@ const char *rpc_proc_name(const struct rpc_task *task);
 int rpc_task_kill_proc_init(struct net *net);
 void rpc_task_kill_proc_fini(struct net *net);
 
+bool rpc_abort_task(struct rpc_task *task);
+
 #endif /* __KERNEL__ */
 #endif /* _LINUX_SUNRPC_CLNT_H */
