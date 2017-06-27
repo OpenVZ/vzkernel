@@ -2884,3 +2884,74 @@ rpc_clnt_swap_deactivate(struct rpc_clnt *clnt)
 }
 EXPORT_SYMBOL_GPL(rpc_clnt_swap_deactivate);
 #endif /* CONFIG_SUNRPC_SWAP */
+
+static ssize_t write_kill_tasks(struct file *file, const char __user *buf,
+			 size_t count, loff_t *ppos)
+{
+	struct net *net = PDE_DATA(file->f_path.dentry->d_inode);
+	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
+	char tbuf[20];
+	unsigned long kill_tasks;
+	int res;
+
+	if (*ppos || count > sizeof(tbuf)-1)
+		return -EINVAL;
+	if (copy_from_user(tbuf, buf, count))
+		return -EFAULT;
+
+	tbuf[count] = 0;
+	res = kstrtoul(tbuf, 0, &kill_tasks);
+	if (res)
+		return res;
+
+	sn->kill_tasks = !!kill_tasks;
+	return count;
+}
+
+static ssize_t read_kill_tasks(struct file *file, char __user *buf,
+			 size_t count, loff_t *ppos)
+{
+	struct net *net = PDE_DATA(file->f_path.dentry->d_inode);
+	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
+	unsigned long p = *ppos;
+	char tbuf[10];
+	size_t len;
+
+	snprintf(tbuf, sizeof(tbuf), "%d\n", sn->kill_tasks);
+	len = strlen(tbuf);
+	if (p >= len)
+		return 0;
+	len -= p;
+	if (len > count)
+		len = count;
+	if (copy_to_user(buf, (void *)(tbuf+p), len))
+		return -EFAULT;
+	*ppos += len;
+	return len;
+}
+
+static const struct file_operations kill_tasks_ops = {
+	.open = nonseekable_open,
+	.write = write_kill_tasks,
+	.read = read_kill_tasks,
+};
+
+int rpc_task_kill_proc_init(struct net *net)
+{
+	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
+
+	sn->kill_tasks = 0;
+	sn->kill_tasks_proc = proc_create_data("kill-tasks",
+					      S_IFREG|S_IRUSR|S_IWUSR,
+					      sn->proc_net_rpc,
+					      &kill_tasks_ops, net);
+	return sn->kill_tasks_proc ? 0 : -ENOMEM;
+}
+
+void rpc_task_kill_proc_fini(struct net *net)
+{
+	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
+
+	if (sn->kill_tasks_proc)
+		remove_proc_entry("kill-tasks", sn->proc_net_rpc);
+}
