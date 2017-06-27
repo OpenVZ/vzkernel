@@ -752,6 +752,11 @@ static void __rpc_execute(struct rpc_task *task)
 	if (RPC_IS_QUEUED(task))
 		return;
 
+	if (rpc_abort_task(task)) {
+		task->tk_flags |= RPC_TASK_KILLED;
+		rpc_exit(task, -EIO);
+	}
+
 	for (;;) {
 		void (*do_action)(struct rpc_task *);
 
