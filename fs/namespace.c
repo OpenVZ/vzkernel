@@ -1899,6 +1899,7 @@ static char *strstr_separated(char *haystack, char *needle, char sep)
 static int ve_devmnt_check(char *options, char *allowed)
 {
 	char *p;
+	char *tmp_options;
 
 	if (!options || !*options)
 		return 0;
@@ -1906,14 +1907,22 @@ static int ve_devmnt_check(char *options, char *allowed)
 	if (!allowed)
 		return -EPERM;
 
-	while ((p = strsep(&options, ",")) != NULL) {
+	/* strsep() changes provided string: puts '\0' instead of separators */
+	tmp_options = kstrdup(options, GFP_KERNEL);
+	if (!tmp_options)
+		return -ENOMEM;
+
+	while ((p = strsep(&tmp_options, ",")) != NULL) {
 		if (!*p)
 			continue;
 
-		if (!strstr_separated(allowed, p, ','))
+		if (!strstr_separated(allowed, p, ',')) {
+			kfree(tmp_options);
 			return -EPERM;
+		}
 	}
 
+	kfree(tmp_options);
 	return 0;
 }
 
