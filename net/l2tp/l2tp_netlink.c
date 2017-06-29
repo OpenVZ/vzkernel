@@ -147,9 +147,9 @@ static int l2tp_nl_cmd_tunnel_create(struct sk_buff *skb, struct genl_info *info
 #endif
 		if (info->attrs[L2TP_ATTR_IP_SADDR] &&
 		    info->attrs[L2TP_ATTR_IP_DADDR]) {
-			cfg.local_ip.s_addr = nla_get_be32(
+			cfg.local_ip.s_addr = nla_get_in_addr(
 				info->attrs[L2TP_ATTR_IP_SADDR]);
-			cfg.peer_ip.s_addr = nla_get_be32(
+			cfg.peer_ip.s_addr = nla_get_in_addr(
 				info->attrs[L2TP_ATTR_IP_DADDR]);
 		} else {
 			ret = -EINVAL;
@@ -161,6 +161,13 @@ static int l2tp_nl_cmd_tunnel_create(struct sk_buff *skb, struct genl_info *info
 			cfg.peer_udp_port = nla_get_u16(info->attrs[L2TP_ATTR_UDP_DPORT]);
 		if (info->attrs[L2TP_ATTR_UDP_CSUM])
 			cfg.use_udp_checksums = nla_get_flag(info->attrs[L2TP_ATTR_UDP_CSUM]);
+
+#if IS_ENABLED(CONFIG_IPV6)
+		if (info->attrs[L2TP_ATTR_UDP_ZERO_CSUM6_TX])
+			cfg.udp6_zero_tx_checksums = nla_get_flag(info->attrs[L2TP_ATTR_UDP_ZERO_CSUM6_TX]);
+		if (info->attrs[L2TP_ATTR_UDP_ZERO_CSUM6_RX])
+			cfg.udp6_zero_rx_checksums = nla_get_flag(info->attrs[L2TP_ATTR_UDP_ZERO_CSUM6_RX]);
+#endif
 	}
 
 	if (info->attrs[L2TP_ATTR_DEBUG])
@@ -297,28 +304,30 @@ static int l2tp_nl_tunnel_send(struct sk_buff *skb, u32 portid, u32 seq, int fla
 	case L2TP_ENCAPTYPE_UDP:
 		if (nla_put_u16(skb, L2TP_ATTR_UDP_SPORT, ntohs(inet->inet_sport)) ||
 		    nla_put_u16(skb, L2TP_ATTR_UDP_DPORT, ntohs(inet->inet_dport)) ||
-		    nla_put_u8(skb, L2TP_ATTR_UDP_CSUM,
-			       (sk->sk_no_check != UDP_CSUM_NOXMIT)))
+		    nla_put_u8(skb, L2TP_ATTR_UDP_CSUM, !sk->sk_no_check_tx))
 			goto nla_put_failure;
 		/* NOBREAK */
 	case L2TP_ENCAPTYPE_IP:
 #if IS_ENABLED(CONFIG_IPV6)
 		if (np) {
-			if (nla_put(skb, L2TP_ATTR_IP6_SADDR, sizeof(np->saddr),
-				    &np->saddr) ||
-			    nla_put(skb, L2TP_ATTR_IP6_DADDR, sizeof(np->daddr),
-				    &np->daddr))
+			if (nla_put_in6_addr(skb, L2TP_ATTR_IP6_SADDR,
+					     &np->saddr) ||
+			    nla_put_in6_addr(skb, L2TP_ATTR_IP6_DADDR,
+					     &sk->sk_v6_daddr))
 				goto nla_put_failure;
 		} else
 #endif
-		if (nla_put_be32(skb, L2TP_ATTR_IP_SADDR, inet->inet_saddr) ||
-		    nla_put_be32(skb, L2TP_ATTR_IP_DADDR, inet->inet_daddr))
+		if (nla_put_in_addr(skb, L2TP_ATTR_IP_SADDR,
+				    inet->inet_saddr) ||
+		    nla_put_in_addr(skb, L2TP_ATTR_IP_DADDR,
+				    inet->inet_daddr))
 			goto nla_put_failure;
 		break;
 	}
 
 out:
-	return genlmsg_end(skb, hdr);
+	genlmsg_end(skb, hdr);
+	return 0;
 
 nla_put_failure:
 	genlmsg_cancel(skb, hdr);
@@ -379,7 +388,7 @@ static int l2tp_nl_cmd_tunnel_dump(struct sk_buff *skb, struct netlink_callback 
 
 		if (l2tp_nl_tunnel_send(skb, NETLINK_CB(cb->skb).portid,
 					cb->nlh->nlmsg_seq, NLM_F_MULTI,
-					tunnel) <= 0)
+					tunnel) < 0)
 			goto out;
 
 		ti++;
@@ -665,7 +674,8 @@ static int l2tp_nl_session_send(struct sk_buff *skb, u32 portid, u32 seq, int fl
 		goto nla_put_failure;
 	nla_nest_end(skb, nest);
 
-	return genlmsg_end(skb, hdr);
+	genlmsg_end(skb, hdr);
+	return 0;
 
  nla_put_failure:
 	genlmsg_cancel(skb, hdr);
@@ -729,7 +739,7 @@ static int l2tp_nl_cmd_session_dump(struct sk_buff *skb, struct netlink_callback
 
 		if (l2tp_nl_session_send(skb, NETLINK_CB(cb->skb).portid,
 					 cb->nlh->nlmsg_seq, NLM_F_MULTI,
-					 session) <= 0)
+					 session) < 0)
 			break;
 
 		si++;
@@ -793,7 +803,7 @@ static struct nla_policy l2tp_nl_policy[L2TP_ATTR_MAX + 1] = {
 	},
 };
 
-static struct genl_ops l2tp_nl_ops[] = {
+static const struct genl_ops l2tp_nl_ops[] = {
 	{
 		.cmd = L2TP_CMD_NOOP,
 		.doit = l2tp_nl_cmd_noop,
@@ -887,13 +897,8 @@ EXPORT_SYMBOL_GPL(l2tp_nl_unregister_ops);
 
 static int l2tp_nl_init(void)
 {
-	int err;
-
 	pr_info("L2TP netlink interface\n");
-	err = genl_register_family_with_ops(&l2tp_nl_family, l2tp_nl_ops,
-					    ARRAY_SIZE(l2tp_nl_ops));
-
-	return err;
+	return genl_register_family_with_ops(&l2tp_nl_family, l2tp_nl_ops);
 }
 
 static void l2tp_nl_cleanup(void)

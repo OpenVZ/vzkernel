@@ -85,7 +85,7 @@ enum {
 #define CH_DEVICE(devid, idx) \
 	{ PCI_VENDOR_ID_CHELSIO, devid, PCI_ANY_ID, PCI_ANY_ID, 0, 0, idx }
 
-static DEFINE_PCI_DEVICE_TABLE(cxgb3_pci_tbl) = {
+static const struct pci_device_id cxgb3_pci_tbl[] = {
 	CH_DEVICE(0x20, 0),	/* PE9000 */
 	CH_DEVICE(0x21, 1),	/* T302E */
 	CH_DEVICE(0x22, 2),	/* T310E */
@@ -701,15 +701,16 @@ static ssize_t attr_store(struct device *d,
 			  ssize_t(*set) (struct net_device *, unsigned int),
 			  unsigned int min_val, unsigned int max_val)
 {
-	char *endp;
 	ssize_t ret;
 	unsigned int val;
 
 	if (!capable(CAP_NET_ADMIN))
 		return -EPERM;
 
-	val = simple_strtoul(buf, &endp, 0);
-	if (endp == buf || val < min_val || val > max_val)
+	ret = kstrtouint(buf, 0, &val);
+	if (ret)
+		return ret;
+	if (val < min_val || val > max_val)
 		return -EINVAL;
 
 	rtnl_lock();
@@ -829,14 +830,15 @@ static ssize_t tm_attr_store(struct device *d,
 	struct port_info *pi = netdev_priv(to_net_dev(d));
 	struct adapter *adap = pi->adapter;
 	unsigned int val;
-	char *endp;
 	ssize_t ret;
 
 	if (!capable(CAP_NET_ADMIN))
 		return -EPERM;
 
-	val = simple_strtoul(buf, &endp, 0);
-	if (endp == buf || val > 10000000)
+	ret = kstrtouint(buf, 0, &val);
+	if (ret)
+		return ret;
+	if (val > 10000000)
 		return -EINVAL;
 
 	rtnl_lock();
@@ -1025,19 +1027,19 @@ int t3_get_edc_fw(struct cphy *phy, int edc_idx, int size)
 {
 	struct adapter *adapter = phy->adapter;
 	const struct firmware *fw;
-	char buf[64];
+	const char *fw_name;
 	u32 csum;
 	const __be32 *p;
 	u16 *cache = phy->phy_cache;
-	int i, ret;
+	int i, ret = -EINVAL;
 
-	snprintf(buf, sizeof(buf), get_edc_fw_name(edc_idx));
-
-	ret = request_firmware(&fw, buf, &adapter->pdev->dev);
+	fw_name = get_edc_fw_name(edc_idx);
+	if (fw_name)
+		ret = request_firmware(&fw, fw_name, &adapter->pdev->dev);
 	if (ret < 0) {
 		dev_err(&adapter->pdev->dev,
 			"could not upgrade firmware: unable to load %s\n",
-			buf);
+			fw_name);
 		return ret;
 	}
 
@@ -3037,7 +3039,9 @@ static void t3_io_resume(struct pci_dev *pdev)
 	CH_ALERT(adapter, "adapter recovering, PEX ERR 0x%x\n",
 		 t3_read_reg(adapter, A_PCIE_PEX_ERR));
 
+	rtnl_lock();
 	t3_resume_ports(adapter);
+	rtnl_unlock();
 }
 
 static const struct pci_error_handlers t3_err_handler = {
@@ -3372,7 +3376,6 @@ out_release_regions:
 	pci_release_regions(pdev);
 out_disable_device:
 	pci_disable_device(pdev);
-	pci_set_drvdata(pdev, NULL);
 out:
 	return err;
 }
@@ -3413,7 +3416,6 @@ static void remove_one(struct pci_dev *pdev)
 		kfree(adapter);
 		pci_release_regions(pdev);
 		pci_disable_device(pdev);
-		pci_set_drvdata(pdev, NULL);
 	}
 }
 

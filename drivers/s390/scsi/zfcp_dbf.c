@@ -3,7 +3,7 @@
  *
  * Debug traces for zfcp.
  *
- * Copyright IBM Corp. 2002, 2010
+ * Copyright IBM Corp. 2002, 2013
  */
 
 #define KMSG_COMPONENT "zfcp"
@@ -22,6 +22,13 @@ static u32 dbfsize = 4;
 module_param(dbfsize, uint, 0400);
 MODULE_PARM_DESC(dbfsize,
 		 "number of pages for each debug feature area (default 4)");
+
+static u32 dbflevel = 3;
+
+module_param(dbflevel, uint, 0400);
+MODULE_PARM_DESC(dbflevel,
+		 "log level for each debug feature area "
+		 "(default 3, range 0..6)");
 
 static inline unsigned int zfcp_dbf_plen(unsigned int offset)
 {
@@ -279,11 +286,12 @@ void zfcp_dbf_rec_trig(char *tag, struct zfcp_adapter *adapter,
 
 
 /**
- * zfcp_dbf_rec_run - trace event related to running recovery
+ * zfcp_dbf_rec_run_lvl - trace event related to running recovery
+ * @level: trace level to be used for event
  * @tag: identifier for event
  * @erp: erp_action running
  */
-void zfcp_dbf_rec_run(char *tag, struct zfcp_erp_action *erp)
+void zfcp_dbf_rec_run_lvl(int level, char *tag, struct zfcp_erp_action *erp)
 {
 	struct zfcp_dbf *dbf = erp->adapter->dbf;
 	struct zfcp_dbf_rec *rec = &dbf->rec_buf;
@@ -309,8 +317,18 @@ void zfcp_dbf_rec_run(char *tag, struct zfcp_erp_action *erp)
 	else
 		rec->u.run.rec_count = atomic_read(&erp->adapter->erp_counter);
 
-	debug_event(dbf->rec, 1, rec, sizeof(*rec));
+	debug_event(dbf->rec, level, rec, sizeof(*rec));
 	spin_unlock_irqrestore(&dbf->rec_lock, flags);
+}
+
+/**
+ * zfcp_dbf_rec_run - trace event related to running recovery
+ * @tag: identifier for event
+ * @erp: erp_action running
+ */
+void zfcp_dbf_rec_run(char *tag, struct zfcp_erp_action *erp)
+{
+	zfcp_dbf_rec_run_lvl(1, tag, erp);
 }
 
 static inline
@@ -447,7 +465,7 @@ static debug_info_t *zfcp_dbf_reg(const char *name, int size, int rec_size)
 		return NULL;
 
 	debug_register_view(d, &debug_hex_ascii_view);
-	debug_set_level(d, 3);
+	debug_set_level(d, dbflevel);
 
 	return d;
 }

@@ -240,6 +240,7 @@ enum qeth_ipa_setadp_cmd {
 	IPA_SETADP_SET_DIAG_ASSIST		= 0x00002000L,
 	IPA_SETADP_SET_ACCESS_CONTROL		= 0x00010000L,
 	IPA_SETADP_QUERY_OAT			= 0x00080000L,
+	IPA_SETADP_QUERY_SWITCH_ATTRIBUTES	= 0x00100000L,
 };
 enum qeth_ipa_mac_ops {
 	CHANGE_ADDR_READ_MAC		= 0,
@@ -274,7 +275,24 @@ enum qeth_ipa_set_access_mode_rc {
 	SET_ACCESS_CTRL_RC_REFLREL_FAILED	= 0x0024,
 	SET_ACCESS_CTRL_RC_REFLREL_DEACT_FAILED	= 0x0028,
 };
-
+enum qeth_card_info_card_type {
+	CARD_INFO_TYPE_1G_COPPER_A	= 0x61,
+	CARD_INFO_TYPE_1G_FIBRE_A	= 0x71,
+	CARD_INFO_TYPE_10G_FIBRE_A	= 0x91,
+	CARD_INFO_TYPE_1G_COPPER_B	= 0xb1,
+	CARD_INFO_TYPE_1G_FIBRE_B	= 0xa1,
+	CARD_INFO_TYPE_10G_FIBRE_B	= 0xc1,
+};
+enum qeth_card_info_port_mode {
+	CARD_INFO_PORTM_HALFDUPLEX	= 0x0002,
+	CARD_INFO_PORTM_FULLDUPLEX	= 0x0003,
+};
+enum qeth_card_info_port_speed {
+	CARD_INFO_PORTS_10M		= 0x00000005,
+	CARD_INFO_PORTS_100M		= 0x00000006,
+	CARD_INFO_PORTS_1G		= 0x00000007,
+	CARD_INFO_PORTS_10G		= 0x00000008,
+};
 
 /* (SET)DELIP(M) IPA stuff ***************************************************/
 struct qeth_ipacmd_setdelip4 {
@@ -404,6 +422,29 @@ struct qeth_qoat_priv {
 	char *buffer;
 };
 
+struct qeth_query_card_info {
+	__u8	card_type;
+	__u8	reserved1;
+	__u16	port_mode;
+	__u32	port_speed;
+	__u32	reserved2;
+};
+
+#define QETH_SWITCH_FORW_802_1		0x00000001
+#define QETH_SWITCH_FORW_REFL_RELAY	0x00000002
+#define QETH_SWITCH_CAP_RTE		0x00000004
+#define QETH_SWITCH_CAP_ECP		0x00000008
+#define QETH_SWITCH_CAP_VDP		0x00000010
+
+struct qeth_query_switch_attributes {
+	__u8  version;
+	__u8  reserved1;
+	__u16 reserved2;
+	__u32 capabilities;
+	__u32 settings;
+	__u8  reserved3[8];
+};
+
 struct qeth_ipacmd_setadpparms_hdr {
 	__u32 supp_hw_cmds;
 	__u32 reserved1;
@@ -424,6 +465,8 @@ struct qeth_ipacmd_setadpparms {
 		struct qeth_snmp_cmd snmp;
 		struct qeth_set_access_ctrl set_access_ctrl;
 		struct qeth_query_oat query_oat;
+		struct qeth_query_card_info card_info;
+		struct qeth_query_switch_attributes query_switch_attributes;
 		__u32 mode;
 	} data;
 } __attribute__ ((packed));

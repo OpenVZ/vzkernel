@@ -19,34 +19,25 @@
 #include <linux/sysctl.h>
 #include <linux/proc_fs.h>
 #include "xfs_error.h"
+#include "xfs_stats.h"
 
 static struct ctl_table_header *xfs_table_header;
 
 #ifdef CONFIG_PROC_FS
 STATIC int
 xfs_stats_clear_proc_handler(
-	ctl_table	*ctl,
-	int		write,
-	void		__user *buffer,
-	size_t		*lenp,
-	loff_t		*ppos)
+	struct ctl_table	*ctl,
+	int			write,
+	void			__user *buffer,
+	size_t			*lenp,
+	loff_t			*ppos)
 {
-	int		c, ret, *valp = ctl->data;
-	__uint32_t	vn_active;
+	int		ret, *valp = ctl->data;
 
 	ret = proc_dointvec_minmax(ctl, write, buffer, lenp, ppos);
 
 	if (!ret && write && *valp) {
-		xfs_notice(NULL, "Clearing xfsstats");
-		for_each_possible_cpu(c) {
-			preempt_disable();
-			/* save vn_active, it's a universal truth! */
-			vn_active = per_cpu(xfsstats, c).vn_active;
-			memset(&per_cpu(xfsstats, c), 0,
-			       sizeof(struct xfsstats));
-			per_cpu(xfsstats, c).vn_active = vn_active;
-			preempt_enable();
-		}
+		xfs_stats_clearall(xfsstats.xs_stats);
 		xfs_stats_clear = 0;
 	}
 
@@ -55,11 +46,11 @@ xfs_stats_clear_proc_handler(
 
 STATIC int
 xfs_panic_mask_proc_handler(
-	ctl_table	*ctl,
-	int		write,
-	void		__user *buffer,
-	size_t		*lenp,
-	loff_t		*ppos)
+	struct ctl_table	*ctl,
+	int			write,
+	void			__user *buffer,
+	size_t			*lenp,
+	loff_t			*ppos)
 {
 	int		ret, *valp = ctl->data;
 
@@ -74,7 +65,7 @@ xfs_panic_mask_proc_handler(
 }
 #endif /* CONFIG_PROC_FS */
 
-static ctl_table xfs_table[] = {
+static struct ctl_table xfs_table[] = {
 	{
 		.procname	= "irix_sgid_inherit",
 		.data		= &xfs_params.sgid_inherit.val,
@@ -227,7 +218,7 @@ static ctl_table xfs_table[] = {
 	{}
 };
 
-static ctl_table xfs_dir_table[] = {
+static struct ctl_table xfs_dir_table[] = {
 	{
 		.procname	= "xfs",
 		.mode		= 0555,
@@ -236,7 +227,7 @@ static ctl_table xfs_dir_table[] = {
 	{}
 };
 
-static ctl_table xfs_root_table[] = {
+static struct ctl_table xfs_root_table[] = {
 	{
 		.procname	= "fs",
 		.mode		= 0555,

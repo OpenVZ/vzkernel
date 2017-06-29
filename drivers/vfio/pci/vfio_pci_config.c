@@ -387,6 +387,7 @@ static void vfio_bar_restore(struct vfio_pci_device *vdev)
 {
 	struct pci_dev *pdev = vdev->pdev;
 	u32 *rbar = vdev->rbar;
+	u16 cmd;
 	int i;
 
 	if (pdev->is_virtfn)
@@ -399,6 +400,12 @@ static void vfio_bar_restore(struct vfio_pci_device *vdev)
 		pci_user_write_config_dword(pdev, i, *rbar);
 
 	pci_user_write_config_dword(pdev, PCI_ROM_ADDRESS, *rbar);
+
+	if (vdev->nointx) {
+		pci_user_read_config_word(pdev, PCI_COMMAND, &cmd);
+		cmd |= PCI_COMMAND_INTX_DISABLE;
+		pci_user_write_config_word(pdev, PCI_COMMAND, cmd);
+	}
 }
 
 static __le32 vfio_generate_bar_flags(struct pci_dev *pdev, int bar)
@@ -489,6 +496,23 @@ static int vfio_basic_config_read(struct vfio_pci_device *vdev, int pos,
 	return count;
 }
 
+/* Test whether BARs match the value we think they should contain */
+static bool vfio_need_bar_restore(struct vfio_pci_device *vdev)
+{
+	int i = 0, pos = PCI_BASE_ADDRESS_0, ret;
+	u32 bar;
+
+	for (; pos <= PCI_BASE_ADDRESS_5; i++, pos += 4) {
+		if (vdev->rbar[i]) {
+			ret = pci_user_read_config_dword(vdev->pdev, pos, &bar);
+			if (ret || vdev->rbar[i] != bar)
+				return true;
+		}
+	}
+
+	return false;
+}
+
 static int vfio_basic_config_write(struct vfio_pci_device *vdev, int pos,
 				   int count, struct perm_bits *perm,
 				   int offset, __le32 val)
@@ -527,7 +551,8 @@ static int vfio_basic_config_write(struct vfio_pci_device *vdev, int pos,
 		 * SR-IOV devices will trigger this, but we catch them later
 		 */
 		if ((new_mem && virt_mem && !phys_mem) ||
-		    (new_io && virt_io && !phys_io))
+		    (new_io && virt_io && !phys_io) ||
+		    vfio_need_bar_restore(vdev))
 			vfio_bar_restore(vdev);
 	}
 
@@ -609,6 +634,10 @@ static int __init init_pci_cap_basic_perm(struct perm_bits *perm)
 
 	/* Sometimes used by sw, just virtualize */
 	p_setb(perm, PCI_INTERRUPT_LINE, (u8)ALL_VIRT, (u8)ALL_WRITE);
+
+	/* Virtualize interrupt pin to allow hiding INTx */
+	p_setb(perm, PCI_INTERRUPT_PIN, (u8)ALL_VIRT, (u8)NO_WRITE);
+
 	return 0;
 }
 
@@ -667,6 +696,74 @@ static int __init init_pci_cap_pm_perm(struct perm_bits *perm)
 	return 0;
 }
 
+static int vfio_vpd_config_write(struct vfio_pci_device *vdev, int pos,
+				 int count, struct perm_bits *perm,
+				 int offset, __le32 val)
+{
+	struct pci_dev *pdev = vdev->pdev;
+	__le16 *paddr = (__le16 *)(vdev->vconfig + pos - offset + PCI_VPD_ADDR);
+	__le32 *pdata = (__le32 *)(vdev->vconfig + pos - offset + PCI_VPD_DATA);
+	u16 addr;
+	u32 data;
+
+	/*
+	 * Write through to emulation.  If the write includes the upper byte
+	 * of PCI_VPD_ADDR, then the PCI_VPD_ADDR_F bit is written and we
+	 * have work to do.
+	 */
+	count = vfio_default_config_write(vdev, pos, count, perm, offset, val);
+	if (count < 0 || offset > PCI_VPD_ADDR + 1 ||
+	    offset + count <= PCI_VPD_ADDR + 1)
+		return count;
+
+	addr = le16_to_cpu(*paddr);
+
+	if (addr & PCI_VPD_ADDR_F) {
+		data = le32_to_cpu(*pdata);
+		if (pci_write_vpd(pdev, addr & ~PCI_VPD_ADDR_F, 4, &data) != 4)
+			return count;
+	} else {
+		data = 0;
+		if (pci_read_vpd(pdev, addr, 4, &data) < 0)
+			return count;
+		*pdata = cpu_to_le32(data);
+	}
+
+	/*
+	 * Toggle PCI_VPD_ADDR_F in the emulated PCI_VPD_ADDR register to
+	 * signal completion.  If an error occurs above, we assume that not
+	 * toggling this bit will induce a driver timeout.
+	 */
+	addr ^= PCI_VPD_ADDR_F;
+	*paddr = cpu_to_le16(addr);
+
+	return count;
+}
+
+/* Permissions for Vital Product Data capability */
+static int __init init_pci_cap_vpd_perm(struct perm_bits *perm)
+{
+	if (alloc_perm_bits(perm, pci_cap_length[PCI_CAP_ID_VPD]))
+		return -ENOMEM;
+
+	perm->writefn = vfio_vpd_config_write;
+
+	/*
+	 * We always virtualize the next field so we can remove
+	 * capabilities from the chain if we want to.
+	 */
+	p_setb(perm, PCI_CAP_LIST_NEXT, (u8)ALL_VIRT, NO_WRITE);
+
+	/*
+	 * Both the address and data registers are virtualized to
+	 * enable access through the pci_vpd_read/write functions
+	 */
+	p_setw(perm, PCI_VPD_ADDR, (u16)ALL_VIRT, (u16)ALL_WRITE);
+	p_setd(perm, PCI_VPD_DATA, ALL_VIRT, ALL_WRITE);
+
+	return 0;
+}
+
 /* Permissions for PCI-X capability */
 static int __init init_pci_cap_pcix_perm(struct perm_bits *perm)
 {
@@ -681,6 +778,40 @@ static int __init init_pci_cap_pcix_perm(struct perm_bits *perm)
 	return 0;
 }
 
+static int vfio_exp_config_write(struct vfio_pci_device *vdev, int pos,
+				 int count, struct perm_bits *perm,
+				 int offset, __le32 val)
+{
+	__le16 *ctrl = (__le16 *)(vdev->vconfig + pos -
+				  offset + PCI_EXP_DEVCTL);
+
+	count = vfio_default_config_write(vdev, pos, count, perm, offset, val);
+	if (count < 0)
+		return count;
+
+	/*
+	 * The FLR bit is virtualized, if set and the device supports PCIe
+	 * FLR, issue a reset_function.  Regardless, clear the bit, the spec
+	 * requires it to be always read as zero.  NB, reset_function might
+	 * not use a PCIe FLR, we don't have that level of granularity.
+	 */
+	if (*ctrl & cpu_to_le16(PCI_EXP_DEVCTL_BCR_FLR)) {
+		u32 cap;
+		int ret;
+
+		*ctrl &= ~cpu_to_le16(PCI_EXP_DEVCTL_BCR_FLR);
+
+		ret = pci_user_read_config_dword(vdev->pdev,
+						 pos - offset + PCI_EXP_DEVCAP,
+						 &cap);
+
+		if (!ret && (cap & PCI_EXP_DEVCAP_FLR))
+			pci_try_reset_function(vdev->pdev);
+	}
+
+	return count;
+}
+
 /* Permissions for PCI Express capability */
 static int __init init_pci_cap_exp_perm(struct perm_bits *perm)
 {
@@ -688,16 +819,52 @@ static int __init init_pci_cap_exp_perm(struct perm_bits *perm)
 	if (alloc_perm_bits(perm, PCI_CAP_EXP_ENDPOINT_SIZEOF_V2))
 		return -ENOMEM;
 
+	perm->writefn = vfio_exp_config_write;
+
 	p_setb(perm, PCI_CAP_LIST_NEXT, (u8)ALL_VIRT, NO_WRITE);
 
 	/*
-	 * Allow writes to device control fields (includes FLR!)
-	 * but not to devctl_phantom which could confuse IOMMU
-	 * or to the ARI bit in devctl2 which is set at probe time
+	 * Allow writes to device control fields, except devctl_phantom,
+	 * which could confuse IOMMU, and the ARI bit in devctl2, which
+	 * is set at probe time.  FLR gets virtualized via our writefn.
 	 */
-	p_setw(perm, PCI_EXP_DEVCTL, NO_VIRT, ~PCI_EXP_DEVCTL_PHANTOM);
+	p_setw(perm, PCI_EXP_DEVCTL,
+	       PCI_EXP_DEVCTL_BCR_FLR, ~PCI_EXP_DEVCTL_PHANTOM);
 	p_setw(perm, PCI_EXP_DEVCTL2, NO_VIRT, ~PCI_EXP_DEVCTL2_ARI);
 	return 0;
+}
+
+static int vfio_af_config_write(struct vfio_pci_device *vdev, int pos,
+				int count, struct perm_bits *perm,
+				int offset, __le32 val)
+{
+	u8 *ctrl = vdev->vconfig + pos - offset + PCI_AF_CTRL;
+
+	count = vfio_default_config_write(vdev, pos, count, perm, offset, val);
+	if (count < 0)
+		return count;
+
+	/*
+	 * The FLR bit is virtualized, if set and the device supports AF
+	 * FLR, issue a reset_function.  Regardless, clear the bit, the spec
+	 * requires it to be always read as zero.  NB, reset_function might
+	 * not use an AF FLR, we don't have that level of granularity.
+	 */
+	if (*ctrl & PCI_AF_CTRL_FLR) {
+		u8 cap;
+		int ret;
+
+		*ctrl &= ~PCI_AF_CTRL_FLR;
+
+		ret = pci_user_read_config_byte(vdev->pdev,
+						pos - offset + PCI_AF_CAP,
+						&cap);
+
+		if (!ret && (cap & PCI_AF_CAP_FLR) && (cap & PCI_AF_CAP_TP))
+			pci_try_reset_function(vdev->pdev);
+	}
+
+	return count;
 }
 
 /* Permissions for Advanced Function capability */
@@ -706,8 +873,10 @@ static int __init init_pci_cap_af_perm(struct perm_bits *perm)
 	if (alloc_perm_bits(perm, pci_cap_length[PCI_CAP_ID_AF]))
 		return -ENOMEM;
 
+	perm->writefn = vfio_af_config_write;
+
 	p_setb(perm, PCI_CAP_LIST_NEXT, (u8)ALL_VIRT, NO_WRITE);
-	p_setb(perm, PCI_AF_CTRL, NO_VIRT, PCI_AF_CTRL_FLR);
+	p_setb(perm, PCI_AF_CTRL, PCI_AF_CTRL_FLR, PCI_AF_CTRL_FLR);
 	return 0;
 }
 
@@ -727,7 +896,7 @@ static int __init init_pci_ext_cap_err_perm(struct perm_bits *perm)
 	p_setd(perm, 0, ALL_VIRT, NO_WRITE);
 
 	/* Writable bits mask */
-	mask =	PCI_ERR_UNC_TRAIN |		/* Training */
+	mask =	PCI_ERR_UNC_UND |		/* Undefined */
 		PCI_ERR_UNC_DLP |		/* Data Link Protocol */
 		PCI_ERR_UNC_SURPDN |		/* Surprise Down */
 		PCI_ERR_UNC_POISON_TLP |	/* Poisoned TLP */
@@ -786,6 +955,7 @@ void vfio_pci_uninit_perm_bits(void)
 	free_perm_bits(&cap_perms[PCI_CAP_ID_BASIC]);
 
 	free_perm_bits(&cap_perms[PCI_CAP_ID_PM]);
+	free_perm_bits(&cap_perms[PCI_CAP_ID_VPD]);
 	free_perm_bits(&cap_perms[PCI_CAP_ID_PCIX]);
 	free_perm_bits(&cap_perms[PCI_CAP_ID_EXP]);
 	free_perm_bits(&cap_perms[PCI_CAP_ID_AF]);
@@ -803,7 +973,7 @@ int __init vfio_pci_init_perm_bits(void)
 
 	/* Capabilities */
 	ret |= init_pci_cap_pm_perm(&cap_perms[PCI_CAP_ID_PM]);
-	cap_perms[PCI_CAP_ID_VPD].writefn = vfio_raw_config_write;
+	ret |= init_pci_cap_vpd_perm(&cap_perms[PCI_CAP_ID_VPD]);
 	ret |= init_pci_cap_pcix_perm(&cap_perms[PCI_CAP_ID_PCIX]);
 	cap_perms[PCI_CAP_ID_VNDR].writefn = vfio_raw_config_write;
 	ret |= init_pci_cap_exp_perm(&cap_perms[PCI_CAP_ID_EXP]);
@@ -975,20 +1145,20 @@ static int vfio_vc_cap_len(struct vfio_pci_device *vdev, u16 pos)
 	int ret, evcc, phases, vc_arb;
 	int len = PCI_CAP_VC_BASE_SIZEOF;
 
-	ret = pci_read_config_dword(pdev, pos + PCI_VC_PORT_REG1, &tmp);
+	ret = pci_read_config_dword(pdev, pos + PCI_VC_PORT_CAP1, &tmp);
 	if (ret)
 		return pcibios_err_to_errno(ret);
 
-	evcc = tmp & PCI_VC_REG1_EVCC; /* extended vc count */
-	ret = pci_read_config_dword(pdev, pos + PCI_VC_PORT_REG2, &tmp);
+	evcc = tmp & PCI_VC_CAP1_EVCC; /* extended vc count */
+	ret = pci_read_config_dword(pdev, pos + PCI_VC_PORT_CAP2, &tmp);
 	if (ret)
 		return pcibios_err_to_errno(ret);
 
-	if (tmp & PCI_VC_REG2_128_PHASE)
+	if (tmp & PCI_VC_CAP2_128_PHASE)
 		phases = 128;
-	else if (tmp & PCI_VC_REG2_64_PHASE)
+	else if (tmp & PCI_VC_CAP2_64_PHASE)
 		phases = 64;
-	else if (tmp & PCI_VC_REG2_32_PHASE)
+	else if (tmp & PCI_VC_CAP2_32_PHASE)
 		phases = 32;
 	else
 		phases = 0;
@@ -1012,6 +1182,7 @@ static int vfio_vc_cap_len(struct vfio_pci_device *vdev, u16 pos)
 static int vfio_cap_len(struct vfio_pci_device *vdev, u8 cap, u8 pos)
 {
 	struct pci_dev *pdev = vdev->pdev;
+	u32 dword;
 	u16 word;
 	u8 byte;
 	int ret;
@@ -1025,7 +1196,9 @@ static int vfio_cap_len(struct vfio_pci_device *vdev, u8 cap, u8 pos)
 			return pcibios_err_to_errno(ret);
 
 		if (PCI_X_CMD_VERSION(word)) {
-			vdev->extended_caps = true;
+			/* Test for extended capabilities */
+			pci_read_config_dword(pdev, PCI_CFG_SPACE_SIZE, &dword);
+			vdev->extended_caps = (dword != 0);
 			return PCI_CAP_PCIX_SIZEOF_V2;
 		} else
 			return PCI_CAP_PCIX_SIZEOF_V0;
@@ -1037,9 +1210,11 @@ static int vfio_cap_len(struct vfio_pci_device *vdev, u8 cap, u8 pos)
 
 		return byte;
 	case PCI_CAP_ID_EXP:
-		/* length based on version */
-		vdev->extended_caps = true;
+		/* Test for extended capabilities */
+		pci_read_config_dword(pdev, PCI_CFG_SPACE_SIZE, &dword);
+		vdev->extended_caps = (dword != 0);
 
+		/* length based on version */
 		if ((pcie_caps_reg(pdev) & PCI_EXP_FLAGS_VERS) == 1)
 			return PCI_CAP_EXP_ENDPOINT_SIZEOF_V1;
 		else
@@ -1121,8 +1296,7 @@ static int vfio_ext_cap_len(struct vfio_pci_device *vdev, u16 ecap, u16 epos)
 			return pcibios_err_to_errno(ret);
 
 		byte &= PCI_DPA_CAP_SUBSTATE_MASK;
-		byte = round_up(byte + 1, 4);
-		return PCI_DPA_BASE_SIZEOF + byte;
+		return PCI_DPA_BASE_SIZEOF + byte + 1;
 	case PCI_EXT_CAP_ID_TPH:
 		ret = pci_read_config_dword(pdev, epos + PCI_TPH_CAP, &dword);
 		if (ret)
@@ -1131,9 +1305,9 @@ static int vfio_ext_cap_len(struct vfio_pci_device *vdev, u16 ecap, u16 epos)
 		if ((dword & PCI_TPH_CAP_LOC_MASK) == PCI_TPH_LOC_CAP) {
 			int sts;
 
-			sts = byte & PCI_TPH_CAP_ST_MASK;
+			sts = dword & PCI_TPH_CAP_ST_MASK;
 			sts >>= PCI_TPH_CAP_ST_SHIFT;
-			return PCI_TPH_BASE_SIZEOF + round_up(sts * 2, 4);
+			return PCI_TPH_BASE_SIZEOF + (sts * 2) + 2;
 		}
 		return PCI_TPH_BASE_SIZEOF;
 	default:
@@ -1440,6 +1614,9 @@ int vfio_config_init(struct vfio_pci_device *vdev)
 		*(__le16 *)&vconfig[PCI_VENDOR_ID] = cpu_to_le16(pdev->vendor);
 		*(__le16 *)&vconfig[PCI_DEVICE_ID] = cpu_to_le16(pdev->device);
 	}
+
+	if (!IS_ENABLED(CONFIG_VFIO_PCI_INTX) || vdev->nointx)
+		vconfig[PCI_INTERRUPT_PIN] = 0;
 
 	ret = vfio_cap_init(vdev);
 	if (ret)

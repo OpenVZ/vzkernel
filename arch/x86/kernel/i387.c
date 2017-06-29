@@ -86,10 +86,19 @@ EXPORT_SYMBOL(__kernel_fpu_begin);
 
 void __kernel_fpu_end(void)
 {
-	if (use_eager_fpu())
-		math_state_restore();
-	else
+	if (use_eager_fpu()) {
+		/*
+		 * For eager fpu, most the time, tsk_used_math() is true.
+		 * Restore the user math as we are done with the kernel usage.
+		 * At few instances during thread exit, signal handling etc,
+		 * tsk_used_math() is false. Those few places will take proper
+		 * actions, so we don't need to restore the math here.
+		 */
+		if (likely(tsk_used_math(current)))
+			math_state_restore();
+	} else {
 		stts();
+	}
 }
 EXPORT_SYMBOL(__kernel_fpu_end);
 
@@ -108,15 +117,15 @@ EXPORT_SYMBOL(unlazy_fpu);
 unsigned int mxcsr_feature_mask __read_mostly = 0xffffffffu;
 unsigned int xstate_size;
 EXPORT_SYMBOL_GPL(xstate_size);
-static struct i387_fxsave_struct fx_scratch __cpuinitdata;
+static struct i387_fxsave_struct fx_scratch;
 
-static void __cpuinit mxcsr_feature_mask_init(void)
+static void mxcsr_feature_mask_init(void)
 {
 	unsigned long mask = 0;
 
 	if (cpu_has_fxsr) {
 		memset(&fx_scratch, 0, sizeof(struct i387_fxsave_struct));
-		asm volatile("fxsave %0" : : "m" (fx_scratch));
+		asm volatile("fxsave %0" : "+m" (fx_scratch));
 		mask = fx_scratch.mxcsr_mask;
 		if (mask == 0)
 			mask = 0x0000ffbf;
@@ -124,7 +133,7 @@ static void __cpuinit mxcsr_feature_mask_init(void)
 	mxcsr_feature_mask &= mask;
 }
 
-static void __cpuinit init_thread_xstate(void)
+static void init_thread_xstate(void)
 {
 	/*
 	 * Note that xstate_size might be overwriten later during
@@ -146,6 +155,22 @@ static void __cpuinit init_thread_xstate(void)
 		xstate_size = sizeof(struct i387_fxsave_struct);
 	else
 		xstate_size = sizeof(struct i387_fsave_struct);
+
+	/*
+	 * Quirk: we don't yet handle the XSAVES* instructions
+	 * correctly, as we don't correctly convert between
+	 * standard and compacted format when interfacing
+	 * with user-space - so disable it for now.
+	 *
+	 * The difference is small: with recent CPUs the
+	 * compacted format is only marginally smaller than
+	 * the standard FPU state format.
+	 *
+	 * ( This is easy to backport while we are fixing
+	 *   XSAVES* support. )
+	 */
+	setup_clear_cpu_cap(X86_FEATURE_XSAVES);
+
 }
 
 /*
@@ -153,7 +178,7 @@ static void __cpuinit init_thread_xstate(void)
  * into all processes.
  */
 
-void __cpuinit fpu_init(void)
+void fpu_init(void)
 {
 	unsigned long cr0;
 	unsigned long cr4_mask = 0;
@@ -358,7 +383,7 @@ int xstateregs_set(struct task_struct *target, const struct user_regset *regset,
 	/*
 	 * These bits must be zero.
 	 */
-	xsave_hdr->reserved1[0] = xsave_hdr->reserved1[1] = 0;
+	memset(xsave_hdr->reserved, 0, 48);
 
 	return ret;
 }

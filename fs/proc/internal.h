@@ -24,10 +24,16 @@ struct mempolicy;
  * tree) of these proc_dir_entries, so that we can dynamically
  * add new files to /proc.
  *
- * The "next" pointer creates a linked list of one /proc directory,
- * while parent/subdir create the directory structure (every
- * /proc file has a parent, but "subdir" is NULL for all
- * non-directory entries).
+ * parent/subdir are used for the directory structure (every /proc file has a
+ * parent, but "subdir" is empty for all non-directory entries).
+ * subdir_node is used to build the rb tree "subdir" of the parent.
+ *
+ * Because proc_dir_entry structure pointers are passed as arguments for some
+ * whitelisted functions, changes in this structure break kernel's ABI.
+ * But, proc_dir_entry is an internal structure for procfs, it is not defined
+ * anywhere else other than here, and should be handled internally in procfs
+ * only, so, changes in this structure should be bypassed by kABI checker, and
+ * such changes should not impact of procfs users.
  */
 struct proc_dir_entry {
 	unsigned int low_ino;
@@ -38,7 +44,13 @@ struct proc_dir_entry {
 	loff_t size;
 	const struct inode_operations *proc_iops;
 	const struct file_operations *proc_fops;
+#ifdef __GENKSYMS__
 	struct proc_dir_entry *next, *parent, *subdir;
+#else
+	struct proc_dir_entry *parent;
+	struct rb_root subdir;
+	struct rb_node subdir_node;
+#endif
 	void *data;
 	atomic_t count;		/* use count */
 	atomic_t in_use;	/* number of callers into module in progress; */
@@ -192,6 +204,13 @@ static inline struct proc_dir_entry *pde_get(struct proc_dir_entry *pde)
 	return pde;
 }
 extern void pde_put(struct proc_dir_entry *);
+
+extern struct proc_dir_entry *pde_subdir_first(struct proc_dir_entry *dir);
+extern struct proc_dir_entry *pde_subdir_next(struct proc_dir_entry *dir);
+extern struct proc_dir_entry *pde_subdir_find(struct proc_dir_entry *dir,
+					      const char *name, unsigned int len);
+extern bool pde_subdir_insert (struct proc_dir_entry *dir,
+			       struct proc_dir_entry *de);
 
 /*
  * inode.c

@@ -2161,7 +2161,7 @@ static void gdth_next(gdth_ha_str *ha)
               case VERIFY:
               case START_STOP:
               case MODE_SENSE:
-              case SERVICE_ACTION_IN:
+              case SERVICE_ACTION_IN_16:
                 TRACE(("cache cmd %x/%x/%x/%x/%x/%x\n",nscp->cmnd[0],
                        nscp->cmnd[1],nscp->cmnd[2],nscp->cmnd[3],
                        nscp->cmnd[4],nscp->cmnd[5]));
@@ -2393,7 +2393,7 @@ static int gdth_internal_cache_cmd(gdth_ha_str *ha, Scsi_Cmnd *scp)
         gdth_copy_internal_data(ha, scp, (char*)&rdc, sizeof(gdth_rdcap_data));
         break;
 
-      case SERVICE_ACTION_IN:
+      case SERVICE_ACTION_IN_16:
         if ((scp->cmnd[1] & 0x1f) == SAI_READ_CAPACITY_16 &&
             (ha->cache_feat & GDT_64BIT)) {
             gdth_rdcap16_data rdc16;
@@ -4686,6 +4686,7 @@ static struct scsi_host_template gdth_template = {
         .cmd_per_lun            = GDTH_MAXC_P_L,
         .unchecked_isa_dma      = 1,
         .use_clustering         = ENABLE_CLUSTERING,
+	.no_write_same		= 1,
 };
 
 #ifdef CONFIG_ISA

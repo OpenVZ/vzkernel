@@ -3,6 +3,16 @@
  * patches don't collide
  */
 
+/*
+ * This file *must* be included with SUBSYS() defined.
+ * SUBSYS_TAG() is a noop if undefined.
+ */
+
+#ifndef SUBSYS_TAG
+#define __TMP_SUBSYS_TAG
+#define SUBSYS_TAG(_x)
+#endif
+
 /* */
 
 /* */
@@ -67,7 +77,7 @@ SUBSYS(perf)
 
 /* */
 
-#if IS_SUBSYS_ENABLED(CONFIG_NETPRIO_CGROUP)
+#ifdef ENABLE_NETPRIO_NOW
 SUBSYS(net_prio)
 #endif
 
@@ -83,4 +93,18 @@ SUBSYS(hugetlb)
 SUBSYS(bcache)
 #endif
 
+#ifndef __GENKSYMS__
+SUBSYS_TAG(CANFORK_START)
+
+#if IS_SUBSYS_ENABLED(CONFIG_CGROUP_PIDS)
+SUBSYS(pids)
+#endif
+
+SUBSYS_TAG(CANFORK_END)
+#endif
 /* */
+
+#ifdef __TMP_SUBSYS_TAG
+#undef __TMP_SUBSYS_TAG
+#undef SUBSYS_TAG
+#endif

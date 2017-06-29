@@ -280,6 +280,29 @@ static int pinctrl_register_pins(struct pinctrl_dev *pctldev,
 }
 
 /**
+ * gpio_to_pin() - GPIO range GPIO number to pin number translation
+ * @range: GPIO range used for the translation
+ * @gpio: gpio pin to translate to a pin number
+ *
+ * Finds the pin number for a given GPIO using the specified GPIO range
+ * as a base for translation. The distinction between linear GPIO ranges
+ * and pin list based GPIO ranges is managed correctly by this function.
+ *
+ * This function assumes the gpio is part of the specified GPIO range, use
+ * only after making sure this is the case (e.g. by calling it on the
+ * result of successful pinctrl_get_device_gpio_range calls)!
+ */
+static inline int gpio_to_pin(struct pinctrl_gpio_range *range,
+				unsigned int gpio)
+{
+	unsigned int offset = gpio - range->base;
+	if (range->pins)
+		return range->pins[offset];
+	else
+		return range->pin_base + offset;
+}
+
+/**
  * pinctrl_match_gpio_range() - check if a certain GPIO pin is in range
  * @pctldev: pin controller device to check
  * @gpio: gpio pin to check taken from the global GPIO pin space
@@ -429,6 +452,20 @@ struct pinctrl_dev *pinctrl_find_and_add_gpio_range(const char *devname,
 }
 EXPORT_SYMBOL_GPL(pinctrl_find_and_add_gpio_range);
 
+int pinctrl_get_group_pins(struct pinctrl_dev *pctldev, const char *pin_group,
+				const unsigned **pins, unsigned *num_pins)
+{
+	const struct pinctrl_ops *pctlops = pctldev->desc->pctlops;
+	int gs;
+
+	gs = pinctrl_get_group_selector(pctldev, pin_group);
+	if (gs < 0)
+		return gs;
+
+	return pctlops->get_group_pins(pctldev, gs, pins, num_pins);
+}
+EXPORT_SYMBOL_GPL(pinctrl_get_group_pins);
+
 /**
  * pinctrl_find_gpio_range_from_pin() - locate the GPIO range for a pin
  * @pctldev: the pin controller device to look in
@@ -444,8 +481,14 @@ pinctrl_find_gpio_range_from_pin(struct pinctrl_dev *pctldev,
 	/* Loop over the ranges */
 	list_for_each_entry(range, &pctldev->gpio_ranges, node) {
 		/* Check if we're in the valid range */
-		if (pin >= range->pin_base &&
-		    pin < range->pin_base + range->npins) {
+		if (range->pins) {
+			int a;
+			for (a = 0; a < range->npins; a++) {
+				if (range->pins[a] == pin)
+					return range;
+			}
+		} else if (pin >= range->pin_base &&
+			   pin < range->pin_base + range->npins) {
 			mutex_unlock(&pctldev->mutex);
 			return range;
 		}
@@ -528,7 +571,7 @@ int pinctrl_request_gpio(unsigned gpio)
 	}
 
 	/* Convert to the pin controllers number space */
-	pin = gpio - range->base + range->pin_base;
+	pin = gpio_to_pin(range, gpio);
 
 	ret = pinmux_request_gpio(pctldev, range, pin, gpio);
 
@@ -562,7 +605,7 @@ void pinctrl_free_gpio(unsigned gpio)
 	mutex_lock(&pctldev->mutex);
 
 	/* Convert to the pin controllers number space */
-	pin = gpio - range->base + range->pin_base;
+	pin = gpio_to_pin(range, gpio);
 
 	pinmux_free_gpio(pctldev, pin, range);
 
@@ -589,7 +632,7 @@ static int pinctrl_gpio_direction(unsigned gpio, bool input)
 	mutex_lock(&pctldev->mutex);
 
 	/* Convert to the pin controllers number space */
-	pin = gpio - range->base + range->pin_base;
+	pin = gpio_to_pin(range, gpio);
 	ret = pinmux_gpio_direction(pctldev, range, pin, input);
 
 	mutex_unlock(&pctldev->mutex);
@@ -807,7 +850,9 @@ static struct pinctrl *create_pinctrl(struct device *dev)
 	kref_init(&p->users);
 
 	/* Add the pinctrl handle to the global list */
+	mutex_lock(&pinctrl_list_mutex);
 	list_add_tail(&p->node, &pinctrl_list);
+	mutex_unlock(&pinctrl_list_mutex);
 
 	return p;
 }
@@ -1204,6 +1249,69 @@ int pinctrl_force_default(struct pinctrl_dev *pctldev)
 }
 EXPORT_SYMBOL_GPL(pinctrl_force_default);
 
+#ifdef CONFIG_PM
+
+/**
+ * pinctrl_pm_select_default_state() - select default pinctrl state for PM
+ * @dev: device to select default state for
+ */
+int pinctrl_pm_select_default_state(struct device *dev)
+{
+	struct dev_pin_info *pins = dev->device_rh->pins;
+	int ret;
+
+	if (!pins)
+		return 0;
+	if (IS_ERR(pins->default_state))
+		return 0; /* No default state */
+	ret = pinctrl_select_state(pins->p, pins->default_state);
+	if (ret)
+		dev_err(dev, "failed to activate default pinctrl state\n");
+	return ret;
+}
+EXPORT_SYMBOL_GPL(pinctrl_pm_select_default_state);
+
+/**
+ * pinctrl_pm_select_sleep_state() - select sleep pinctrl state for PM
+ * @dev: device to select sleep state for
+ */
+int pinctrl_pm_select_sleep_state(struct device *dev)
+{
+	struct dev_pin_info *pins = dev->device_rh->pins;
+	int ret;
+
+	if (!pins)
+		return 0;
+	if (IS_ERR(pins->sleep_state))
+		return 0; /* No sleep state */
+	ret = pinctrl_select_state(pins->p, pins->sleep_state);
+	if (ret)
+		dev_err(dev, "failed to activate pinctrl sleep state\n");
+	return ret;
+}
+EXPORT_SYMBOL_GPL(pinctrl_pm_select_sleep_state);
+
+/**
+ * pinctrl_pm_select_idle_state() - select idle pinctrl state for PM
+ * @dev: device to select idle state for
+ */
+int pinctrl_pm_select_idle_state(struct device *dev)
+{
+	struct dev_pin_info *pins = dev->device_rh->pins;
+	int ret;
+
+	if (!pins)
+		return 0;
+	if (IS_ERR(pins->idle_state))
+		return 0; /* No idle state */
+	ret = pinctrl_select_state(pins->p, pins->idle_state);
+	if (ret)
+		dev_err(dev, "failed to activate pinctrl idle state\n");
+	return ret;
+}
+EXPORT_SYMBOL_GPL(pinctrl_pm_select_idle_state);
+#endif
+
 #ifdef CONFIG_DEBUG_FS
 
 static int pinctrl_pins_show(struct seq_file *s, void *what)
@@ -1296,11 +1404,21 @@ static int pinctrl_gpioranges_show(struct seq_file *s, void *what)
 
 	/* Loop over the ranges */
 	list_for_each_entry(range, &pctldev->gpio_ranges, node) {
-		seq_printf(s, "%u: %s GPIOS [%u - %u] PINS [%u - %u]\n",
-			   range->id, range->name,
-			   range->base, (range->base + range->npins - 1),
-			   range->pin_base,
-			   (range->pin_base + range->npins - 1));
+		if (range->pins) {
+			int a;
+			seq_printf(s, "%u: %s GPIOS [%u - %u] PINS {",
+				range->id, range->name,
+				range->base, (range->base + range->npins - 1));
+			for (a = 0; a < range->npins - 1; a++)
+				seq_printf(s, "%u, ", range->pins[a]);
+			seq_printf(s, "%u}\n", range->pins[a]);
+		}
+		else
+			seq_printf(s, "%u: %s GPIOS [%u - %u] PINS [%u - %u]\n",
+				range->id, range->name,
+				range->base, (range->base + range->npins - 1),
+				range->pin_base,
+				(range->pin_base + range->npins - 1));
 	}
 
 	mutex_unlock(&pctldev->mutex);

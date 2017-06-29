@@ -112,9 +112,8 @@ static struct team_port *lb_hash_select_tx_port(struct team *team,
 						struct sk_buff *skb,
 						unsigned char hash)
 {
-	int port_index;
+	int port_index = team_num_to_port_index(team, hash);
 
-	port_index = hash % team->en_port_count;
 	return team_get_port_by_index_rcu(team, port_index);
 }
 
@@ -250,7 +249,7 @@ static int __fprog_create(struct sock_fprog **pfprog, u32 data_len,
 
 	if (data_len % sizeof(struct sock_filter))
 		return -EINVAL;
-	fprog = kmalloc(sizeof(struct sock_fprog), GFP_KERNEL);
+	fprog = kmalloc(sizeof(*fprog), GFP_KERNEL);
 	if (!fprog)
 		return -ENOMEM;
 	fprog->filter = kmemdup(filter, data_len, GFP_KERNEL);
@@ -433,9 +432,9 @@ static void __lb_one_cpu_stats_add(struct lb_stats *acc_stats,
 	struct lb_stats tmp;
 
 	do {
-		start = u64_stats_fetch_begin_bh(syncp);
+		start = u64_stats_fetch_begin_irq(syncp);
 		tmp.tx_bytes = cpu_stats->tx_bytes;
-	} while (u64_stats_fetch_retry_bh(syncp, start));
+	} while (u64_stats_fetch_retry_irq(syncp, start));
 	acc_stats->tx_bytes += tmp.tx_bytes;
 }
 

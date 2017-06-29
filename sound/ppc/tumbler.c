@@ -31,8 +31,8 @@
 #include <linux/slab.h>
 #include <linux/interrupt.h>
 #include <linux/string.h>
+#include <linux/io.h>
 #include <sound/core.h>
-#include <asm/io.h>
 #include <asm/irq.h>
 #include <asm/machdep.h>
 #include <asm/pmac_feature.h>

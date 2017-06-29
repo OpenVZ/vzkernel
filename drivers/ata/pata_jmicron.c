@@ -10,7 +10,6 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/pci.h>
-#include <linux/init.h>
 #include <linux/blkdev.h>
 #include <linux/delay.h>
 #include <linux/device.h>
@@ -143,6 +142,18 @@ static int jmicron_init_one (struct pci_dev *pdev, const struct pci_device_id *i
 		.port_ops	= &jmicron_ops,
 	};
 	const struct ata_port_info *ppi[] = { &info, NULL };
+
+	/*
+	 * The JMicron chip 361/363 contains one SATA controller and one
+	 * PATA controller,for powering on these both controllers, we must
+	 * follow the sequence one by one, otherwise one of them can not be
+	 * powered on successfully, so here we disable the async suspend
+	 * method for these chips.
+	 */
+	if (pdev->vendor == PCI_VENDOR_ID_JMICRON &&
+		(pdev->device == PCI_DEVICE_ID_JMICRON_JMB363 ||
+		pdev->device == PCI_DEVICE_ID_JMICRON_JMB361))
+		device_disable_async_suspend(&pdev->dev);
 
 	return ata_pci_bmdma_init_one(pdev, ppi, &jmicron_sht, NULL, 0);
 }
