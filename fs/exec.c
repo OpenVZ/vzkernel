@@ -201,12 +201,6 @@ static struct page *get_arg_page(struct linux_binprm *bprm, unsigned long pos,
 		unsigned long size = bprm->vma->vm_end - bprm->vma->vm_start;
 		struct rlimit *rlim;
 
-		/*
-		 * GROWSUP doesn't really have any gap at this stage because we grow
-		 * the stack down now. See the expand_downwards above.
-		 */
-		if (!IS_ENABLED(CONFIG_STACK_GROWSUP))
-			size -= stack_guard_gap;
 		acct_arg_size(bprm, size / PAGE_SIZE);
 
 		/*

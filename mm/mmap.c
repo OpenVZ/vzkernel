@@ -2462,19 +2462,6 @@ int expand_downwards(struct vm_area_struct *vma,
 /* enforced gap between the expanding stack and other mappings. */
 unsigned long stack_guard_gap = 1UL<<20;
 
-static int __init cmdline_parse_stack_guard_gap(char *p)
-{
-	unsigned long val;
-	char *endptr;
-
-	val = simple_strtoul(p, &endptr, 10);
-	if (!*endptr)
-		stack_guard_gap = val << PAGE_SHIFT;
-
-	return 0;
-}
-__setup("stack_guard_gap=", cmdline_parse_stack_guard_gap);
-
 /*
  * Note how expand_stack() refuses to expand the stack all the way to
  * abut the next virtual mapping, *unless* that mapping itself is also

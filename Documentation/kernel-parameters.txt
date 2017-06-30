@@ -3081,16 +3081,6 @@ bytes respectively. Such letter suffixes can also be entirely omitted.
 			tracing directory. Note, this enables stack tracing
 			and the stacktrace above is not needed.
 
-	stack_guard_gap=nn
-			nn is the number of stack guard pages in the user
-			stack that are reserved between the stack and the
-			heap.  The default stack_guard_gap is calculated
-			as "stack_guard_gap = 1UL<<20" which is not page size
-			dependent.  This means that an architecture with a 
-			4KB page size has 256 stack guard pages where an
-			architecture with a 64KB page has 16 stack guard
-			pages.
-
 	sti=		[PARISC,HW]
 			Format: <num>
 			Set the STI (builtin display/keyboard on the HP-PARISC
