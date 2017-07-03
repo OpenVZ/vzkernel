@@ -206,6 +206,7 @@ struct nfsd3_fsinfores {
 	__u32			f_dtpref;
 	__u64			f_maxfilesize;
 	__u32			f_properties;
+	__u32			f_time_gran;
 };
 
 struct nfsd3_pathconfres {
