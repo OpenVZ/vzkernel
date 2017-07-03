@@ -1078,8 +1078,13 @@ nfs3svc_encode_fsinfores(struct svc_rqst *rqstp, __be32 *p,
 		*p++ = htonl(resp->f_wtmult);
 		*p++ = htonl(resp->f_dtpref);
 		p = xdr_encode_hyper(p, resp->f_maxfilesize);
-		*p++ = xdr_one;
-		*p++ = xdr_zero;
+		if (resp->f_time_gran) {
+			*p++ = xdr_zero;
+			*p++ = htonl(resp->f_time_gran);
+		} else {
+			*p++ = xdr_one;
+			*p++ = xdr_zero;
+		}
 		*p++ = htonl(resp->f_properties);
 	}
 
