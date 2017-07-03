@@ -818,6 +818,13 @@ static struct ctl_table ipv4_table[] = {
 };
 
 static struct ctl_table ipv4_net_table[] = {
+	{	/* This must go first. See ipv4_sysctl_init_net() */
+		.procname	= "ip_nonlocal_bind",
+		.data		= &init_net.ipv4_sysctl_ip_nonlocal_bind,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec
+	},
 	{
 		.procname	= "icmp_echo_ignore_all",
 		.data		= &init_net.ipv4.sysctl_icmp_echo_ignore_all,
@@ -902,13 +909,6 @@ static struct ctl_table ipv4_net_table[] = {
 		.proc_handler	= proc_dointvec,
 	},
 	{
-		.procname	= "ip_nonlocal_bind",
-		.data		= &init_net.ipv4_sysctl_ip_nonlocal_bind,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec
-	},
-	{
 		.procname	= "fwmark_reflect",
 		.data		= &init_net.ipv4_sysctl_fwmark_reflect,
 		.maxlen		= sizeof(int),
@@ -955,8 +955,14 @@ static __net_init int ipv4_sysctl_init_net(struct net *net)
 		for (i = 0; i < ARRAY_SIZE(ipv4_net_table) - 1; i++)
 			table[i].data += (void *)net - (void *)&init_net;
 
+		/*
+		 * Check that it's a creating VE or VE's initial user_ns,
+		 * and allow ip_nonlocal_bind only:
+		 */
+		if (!ve_is_super(get_exec_env()) && !ve_net_hide_sysctl(net))
+			table[2].procname = NULL;
 		/* Don't export sysctls to unprivileged users */
-		if (net->user_ns != &init_user_ns)
+		else if (net->user_ns != &init_user_ns)
 			table[0].procname = NULL;
 	}
 
