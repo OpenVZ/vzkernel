@@ -561,6 +561,9 @@ nfsd3_proc_fsinfo(struct svc_rqst * rqstp, struct nfsd_fhandle    *argp,
 			resp->f_properties = NFS3_FSF_BILLYBOY;
 		}
 		resp->f_maxfilesize = sb->s_maxbytes;
+		resp->f_time_gran = 0;
+		if (!strcmp(sb->s_type->name, "ext4"))
+			resp->f_time_gran = sb->s_time_gran;
 	}
 
 	fh_put(&argp->fh);
