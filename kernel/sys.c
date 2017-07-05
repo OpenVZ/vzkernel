@@ -2349,11 +2349,11 @@ static int prctl_set_mm(int opt, unsigned long addr,
 		return prctl_set_mm_map(opt, (const void __user *)addr, arg4);
 #endif
 
-	if (!ve_capable(CAP_SYS_RESOURCE))
-		return -EPERM;
-
 	if (opt == PR_SET_MM_EXE_FILE)
 		return prctl_set_mm_exe_file(mm, (unsigned int)addr);
+
+	if (!ve_capable(CAP_SYS_RESOURCE))
+		return -EPERM;
 
 	if (opt == PR_SET_MM_AUXV)
 		return prctl_set_auxv(mm, addr, arg4);
