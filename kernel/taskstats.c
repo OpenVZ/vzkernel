@@ -635,7 +635,7 @@ static const struct genl_ops taskstats_ops[] = {
 		.cmd		= TASKSTATS_CMD_GET,
 		.doit		= taskstats_user_cmd,
 		.policy		= taskstats_cmd_get_policy,
-		.flags		= GENL_ADMIN_PERM,
+		.flags		= GENL_VE_ADMIN_PERM,
 	},
 	{
 		.cmd		= CGROUPSTATS_CMD_GET,
