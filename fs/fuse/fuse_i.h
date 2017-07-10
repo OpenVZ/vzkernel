@@ -295,7 +295,7 @@ struct fuse_args {
 	bool may_block:1;
 	bool is_ext:1;
 	struct fuse_in_arg in_args[3];
-	struct fuse_arg out_args[2];
+	struct fuse_arg out_args[3];
 	void (*end)(struct fuse_mount *fm, struct fuse_args *args, int error);
 	struct fuse_req *req;
 
@@ -851,6 +851,9 @@ struct fuse_conn {
 	/** Handle wrong FUSE_NOTIFY_INVAL_FILES from old fused */
 	unsigned compat_inval_files:1;
 
+	/** No ioctl(FIEMAP) */
+	unsigned no_fiemap:1;
+
 	/** The number of requests waiting for completion */
 	atomic_t num_waiting;
 
@@ -1337,6 +1340,9 @@ struct posix_acl;
 struct posix_acl *fuse_get_acl(struct inode *inode, int type);
 int fuse_set_acl(struct user_namespace *mnt_userns, struct inode *inode,
 		 struct posix_acl *acl, int type);
+
+int fuse_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+		__u64 start, __u64 len);
 
 /* readdir.c */
 int fuse_readdir(struct file *file, struct dir_context *ctx);
