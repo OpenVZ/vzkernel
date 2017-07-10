@@ -2105,6 +2105,7 @@ static const struct inode_operations fuse_common_inode_operations = {
 	.listxattr	= fuse_listxattr,
 	.removexattr	= fuse_removexattr,
 	.update_time	= fuse_update_time,
+	.fiemap		= fuse_fiemap,
 };
 
 static const struct inode_operations fuse_symlink_inode_operations = {
