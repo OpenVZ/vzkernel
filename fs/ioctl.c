@@ -204,7 +204,8 @@ static int ioctl_fiemap(struct file *filp, unsigned long arg)
 		return -EFAULT;
 
 	if (fieinfo.fi_flags & FIEMAP_FLAG_SYNC)
-		filemap_write_and_wait(inode->i_mapping);
+		filemap_write_and_wait_range(inode->i_mapping, fiemap.fm_start,
+					     fiemap.fm_start + len - 1);
 
 	error = inode->i_op->fiemap(inode, &fieinfo, fiemap.fm_start, len);
 	fiemap.fm_flags = fieinfo.fi_flags;
