@@ -2967,7 +2967,10 @@ void calc_load_enter_idle(void)
 	 * We're going into NOHZ mode, if there's any pending delta, fold it
 	 * into the pending idle delta.
 	 */
+
+	raw_spin_lock(&this_rq->lock);
 	delta = calc_load_fold_active(this_rq);
+	raw_spin_unlock(&this_rq->lock);
 	if (delta) {
 		int idx = calc_load_write_idx();
 		atomic_long_add(delta, &calc_load_idle[idx]);
