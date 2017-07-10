@@ -1550,15 +1550,15 @@ int ve_show_loadavg(struct ve_struct *ve, struct seq_file *p)
 	return err;
 }
 
-int cpu_cgroup_get_avenrun(struct cgroup *cgrp, unsigned long *avenrun);
+int cpu_cgroup_get_avenrun(struct cgroup *cgrp, unsigned long *avnrun);
 
-int ve_get_cpu_avenrun(struct ve_struct *ve, unsigned long *avenrun)
+int ve_get_cpu_avenrun(struct ve_struct *ve, unsigned long *avnrun)
 {
 	struct cgroup_subsys_state *css;
 	int err;
 
 	css = ve_get_init_css(ve, cpu_cgroup_subsys_id);
-	err = cpu_cgroup_get_avenrun(css->cgroup, avenrun);
+	err = cpu_cgroup_get_avenrun(css->cgroup, avnrun);
 	css_put(css);
 	return err;
 }

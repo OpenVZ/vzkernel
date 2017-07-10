@@ -10147,16 +10147,16 @@ int cpu_cgroup_get_stat(struct cgroup *cgrp, struct kernel_cpustat *kstat)
 	return 0;
 }
 
-int cpu_cgroup_get_avenrun(struct cgroup *cgrp, unsigned long *avenrun)
+int cpu_cgroup_get_avenrun(struct cgroup *cgrp, unsigned long *avnrun)
 {
 	struct task_group *tg = cgroup_tg(cgrp);
 
 	if (tg == &root_task_group)
 		return -ENOSYS;
 
-	avenrun[0] = tg->avenrun[0];
-	avenrun[1] = tg->avenrun[1];
-	avenrun[2] = tg->avenrun[2];
+	avnrun[0] = tg->avenrun[0];
+	avnrun[1] = tg->avenrun[1];
+	avnrun[2] = tg->avenrun[2];
 
 	return 0;
 }

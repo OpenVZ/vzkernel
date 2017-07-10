@@ -50,7 +50,7 @@ static int fill_cpu_stat(envid_t veid, struct vz_cpu_stat __user *buf)
 	int retval;
 	int i;
 	unsigned long tmp;
-	unsigned long avenrun[3];
+	unsigned long avnrun[3];
 	struct kernel_cpustat kstat;
 
 	if (!ve_is_super(get_exec_env()) && (veid != get_exec_env()->veid))
@@ -68,7 +68,7 @@ static int fill_cpu_stat(envid_t veid, struct vz_cpu_stat __user *buf)
 	if (retval)
 		goto out_free;
 
-	retval = ve_get_cpu_avenrun(ve, avenrun);
+	retval = ve_get_cpu_avenrun(ve, avnrun);
 	if (retval)
 		goto out_free;
 
