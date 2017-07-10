@@ -28,8 +28,6 @@
 #define gtod (&VVAR(vsyscall_gtod_data))
 
 struct timespec VDSO64_ve_start_timespec;
-extern struct timespec VDSO32_ve_start_timespec
-	__attribute__((weak, alias("VDSO64_ve_start_timespec")));
 
 notrace static cycle_t vread_tsc(void)
 {
