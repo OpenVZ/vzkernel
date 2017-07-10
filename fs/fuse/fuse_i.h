@@ -663,6 +663,9 @@ struct fuse_conn {
 	/** Handle wrong FUSE_NOTIFY_INVAL_FILES from old fused */
 	unsigned compat_inval_files:1;
 
+	/** No ioctl(FIEMAP) */
+	unsigned no_fiemap:1;
+
 	/** The number of requests waiting for completion */
 	atomic_t num_waiting;
 
@@ -1019,5 +1022,8 @@ int fuse_do_setattr(struct inode *inode, struct iattr *attr,
 		    struct file *file);
 
 void fuse_set_initialized(struct fuse_conn *fc);
+
+int fuse_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+		__u64 start, __u64 len);
 
 #endif /* _FS_FUSE_I_H */
