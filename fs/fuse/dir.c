@@ -1798,6 +1798,7 @@ static const struct inode_operations fuse_common_inode_operations = {
 	.listxattr	= fuse_listxattr,
 	.get_acl	= fuse_get_acl,
 	.set_acl	= fuse_set_acl,
+	.fiemap		= fuse_fiemap,
 };
 
 static const struct inode_operations fuse_symlink_inode_operations = {
