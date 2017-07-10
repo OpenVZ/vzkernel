@@ -344,8 +344,10 @@ static struct page **uts_prep_vdso_pages_locked(int map)
 		 * preallocated one.
 		 */
 		new_version = KERNEL_VERSION(n1, n2, n3);
+		if (new_version == LINUX_VERSION_CODE)
+			goto out;
 #ifdef CONFIG_X86_32
-		{
+		else {
 			/*
 			 * Native x86-32 mode requires vDSO runtime
 			 * relocations applied which is not supported
@@ -368,8 +370,8 @@ static struct page **uts_prep_vdso_pages_locked(int map)
 		 * better than walk out with error.
 		 */
 		pr_warn_once("Wrong release uts name format detected."
-			     " Using host's uts name.\n");
-		new_version = LINUX_VERSION_CODE;
+			     " Ignoring vDSO virtualization.\n");
+		goto out;
 	}
 
 	mutex_lock(&vdso32_mutex);
@@ -399,9 +401,7 @@ static struct page **uts_prep_vdso_pages_locked(int map)
 	copy_page(page_address(new_pages[0]), page_address(vdso32_pages[0]));
 
 	addr = page_address(new_pages[0]);
-	uts_ns->vdso32.addr = addr;
 	*((int *)(addr + uts_ns->vdso32.version_off)) = new_version;
-	*((struct timespec*)(VDSO32_SYMBOL(uts_ns->vdso32.addr, ve_start_timespec))) = ve->start_timespec;
 	smp_wmb();
 
 	pages = uts_ns->vdso32.pages = new_pages;
@@ -411,6 +411,7 @@ static struct page **uts_prep_vdso_pages_locked(int map)
 
 out_unlock:
 	mutex_unlock(&vdso32_mutex);
+out:
 	down_write(&mm->mmap_sem);
 	return pages;
 }
