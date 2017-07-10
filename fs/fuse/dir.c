@@ -1954,6 +1954,7 @@ static const struct inode_operations fuse_common_inode_operations = {
 	.set_acl	= fuse_set_acl,
 	.fileattr_get	= fuse_fileattr_get,
 	.fileattr_set	= fuse_fileattr_set,
+	.fiemap		= fuse_fiemap,
 };
 
 static const struct inode_operations fuse_symlink_inode_operations = {
