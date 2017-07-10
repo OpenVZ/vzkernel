@@ -3690,6 +3690,232 @@ out:
 	return err;
 }
 
+static void copy_fiemap_extent(struct fiemap_extent * le, struct page ** pages, int index)
+{
+	struct page * page;
+	void * addr;
+	unsigned int linear_off = index * sizeof (struct fiemap_extent);
+
+	page = pages[linear_off / PAGE_SIZE];
+	addr = kmap_atomic(page);
+	if (((linear_off + sizeof(struct fiemap_extent) - 1) / PAGE_SIZE) == (linear_off / PAGE_SIZE)) {
+		memcpy(le, addr + (linear_off % PAGE_SIZE), sizeof(struct fiemap_extent));
+	} else {
+		int split = PAGE_SIZE - (linear_off % PAGE_SIZE);
+		memcpy(le, addr + (linear_off % PAGE_SIZE), split);
+		kunmap_atomic(addr);
+		page = pages[(linear_off / PAGE_SIZE) + 1];
+		addr = kmap_atomic(page);
+		memcpy((void *)le + split, addr, sizeof(struct fiemap_extent) - split);
+	}
+	kunmap_atomic(addr);
+}
+
+static int fuse_request_fiemap(struct inode *inode, u32 cur_max,
+			       __u64 * start_p, __u64 * len_p, int * last_p, struct fiemap_extent_info * dest)
+{
+	struct fuse_conn *fc = get_fuse_conn(inode);
+	struct fuse_inode *fi = get_fuse_inode(inode);
+	struct fuse_req *req;
+	struct fuse_ioctl_in inarg;
+	struct fuse_ioctl_out outarg;
+	struct fiemap ifiemap;
+	struct fiemap ofiemap;
+	int err;
+	int npages = 0;
+	int allocated = 0;
+
+	err = 0;
+	spin_lock(&fi->lock);
+	if (!list_empty(&fi->write_files)) {
+		struct fuse_file *ff = list_entry(fi->write_files.next, struct fuse_file, write_entry);
+		inarg.fh = ff->fh;
+	} else if (!list_empty(&fi->rw_files)) {
+		struct fuse_file *ff = list_entry(fi->rw_files.next, struct fuse_file, rw_entry);
+		inarg.fh = ff->fh;
+	} else {
+		err = -EINVAL;
+	}
+	spin_unlock(&fi->lock);
+	if (err)
+		return err;
+
+	inarg.cmd = FS_IOC_FIEMAP;
+	inarg.arg = 0;
+	inarg.flags = 0;
+
+	ifiemap.fm_start = *start_p;
+	ifiemap.fm_length = *len_p;
+	ifiemap.fm_flags = dest->fi_flags;
+	ifiemap.fm_mapped_extents = 0;
+	ifiemap.fm_extent_count = cur_max;
+	ifiemap.fm_reserved = 0;
+
+	if (cur_max)
+		npages = (cur_max*sizeof(struct fiemap_extent) + PAGE_SIZE - 1) / PAGE_SIZE;
+
+	req = fuse_get_req(fc, npages);
+	if (IS_ERR(req))
+		return PTR_ERR(req);
+
+	req->in.h.opcode = FUSE_IOCTL;
+	req->in.h.nodeid = get_node_id(inode);
+
+	req->in.numargs = 2;
+	req->in.args[0].size = sizeof(inarg);
+	req->in.args[0].value = &inarg;
+	req->in.args[1].size = sizeof(ifiemap);
+	req->in.args[1].value = &ifiemap;
+
+	req->out.numargs = npages ? 3 : 2;
+	req->out.args[0].size = sizeof(outarg);
+	req->out.args[0].value = &outarg;
+	req->out.args[1].size = sizeof(ofiemap);
+	req->out.args[1].value = &ofiemap;
+	if (npages) {
+		req->out.args[2].size = npages*PAGE_SIZE;
+		req->out.argvar = 1;
+		req->out.argpages = 1;
+		req->num_pages = npages;
+
+		err = -ENOMEM;
+		for (allocated = 0; allocated < npages; allocated++) {
+			req->pages[allocated] = alloc_page(GFP_KERNEL | __GFP_HIGHMEM);
+			if (!req->pages[allocated])
+				goto out;
+			req->page_descs[allocated].length = PAGE_SIZE;
+		}
+	}
+
+	fuse_request_send(fc, req);
+	err = req->out.h.error;
+	if (err)
+		goto out;
+
+	if (cur_max == 0) {
+		dest->fi_extents_mapped += ofiemap.fm_mapped_extents;
+		goto out;
+	}
+	if (ofiemap.fm_mapped_extents == 0) {
+		/* No extents means all the range is a hole */
+		*start_p += *len_p;
+		*len_p = 0;
+	} else {
+		struct fiemap_extent fe;
+		u64 next_start;
+		int i;
+
+		if (ofiemap.fm_mapped_extents > cur_max) {
+			err = -EIO;
+			goto out;
+		}
+
+		for (i = 0; i < ofiemap.fm_mapped_extents; i++) {
+			copy_fiemap_extent(&fe, req->pages, i);
+			err = fiemap_fill_next_extent(dest, fe.fe_logical,
+						      fe.fe_physical, fe.fe_length, fe.fe_flags);
+			if (err == 1) {
+				*last_p = 1;
+				err = 0;
+				goto out;
+			}
+			if (err)
+				goto out;
+		}
+
+		if (fe.fe_flags & FIEMAP_EXTENT_LAST)
+			*last_p = 1;
+		next_start = fe.fe_logical + fe.fe_length;
+		if (next_start >= *start_p + *len_p)
+			*len_p = 0;
+		else
+			*len_p = *start_p + *len_p - next_start;
+		*start_p = next_start;
+	}
+
+out:
+	while (--allocated >= 0) {
+		__free_page(req->pages[allocated]);
+		req->pages[allocated] = NULL;
+	}
+	fuse_put_request(fc, req);
+	return err;
+}
+
+int fuse_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+		__u64 start, __u64 len)
+{
+	struct fuse_conn *fc = get_fuse_conn(inode);
+	int err = 0;
+
+	if (is_bad_inode(inode))
+		return -EIO;
+
+	if (fc->no_fiemap)
+		return -EOPNOTSUPP;
+
+	/* It is possible to implement, but implementation is going to be
+	 * very chumbersome. Ww have to get fiemap from user space daemon,
+	 * and then on each hole page-by-page we have to scan page cache
+	 * for dirty and writeback pages and fuse queue for "hidden" writeback
+	 * pages, merging all the results. It is doable and would give some
+	 * satisfaction from completed work :-), but still it does not have
+	 * any practical sense. Current coreutils use FIEMAP_FLAG_SYNC and
+	 * apparently are not going to fix this, switching to SEEK_DATA instead.
+	 * So, until the first user appears...
+	 *
+	 * Also, we can force FIEMAP_FLAG_SYNC... But for now I think it is better
+	 * to fail to catch possible users
+	 */
+	if (!(fieinfo->fi_flags & FIEMAP_FLAG_SYNC)) {
+		if (printk_ratelimit())
+			printk(KERN_DEBUG "fuse fiemap w/o sync %s[%u]\n",
+			       current->comm, current->pid);
+		return -EOPNOTSUPP;
+	}
+
+	mutex_lock(&inode->i_mutex);
+
+	fuse_sync_writes(inode);
+
+	if (fieinfo->fi_extents_max == 0) {
+		err = fuse_request_fiemap(inode, 0, &start, &len, NULL, fieinfo);
+		goto out;
+	}
+
+	for (;;) {
+		int last = 0;
+		unsigned int npages;
+		u32 cur_max = fieinfo->fi_extents_max - fieinfo->fi_extents_mapped;
+
+		if (cur_max == 0)
+			break;
+
+		npages = (cur_max*sizeof(struct fiemap_extent) + PAGE_SIZE - 1) / PAGE_SIZE;
+		if (npages > FUSE_MAX_PAGES_PER_REQ) {
+			npages = FUSE_MAX_PAGES_PER_REQ;
+			cur_max = (npages * PAGE_SIZE) / sizeof(struct fiemap_extent);
+		}
+
+		err = fuse_request_fiemap(inode, cur_max, &start, &len, &last, fieinfo);
+		if (err < 0)
+			goto out;
+
+		if (len == 0 || last)
+			break;
+	}
+
+out:
+	mutex_unlock(&inode->i_mutex);
+
+	if (err == -ENOSYS || err == -ENOIOCTLCMD || err == -ENOTTY) {
+		fc->no_fiemap = 1;
+		err = -EOPNOTSUPP;
+	}
+	return err;
+}
+
+
 static const struct file_operations fuse_file_operations = {
 	.llseek		= fuse_file_llseek,
 	.read		= do_sync_read,
