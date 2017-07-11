@@ -384,6 +384,12 @@ static void __rpc_sleep_on_priority(struct rpc_wait_queue *q,
 		struct rpc_task *task,
 		unsigned char queue_priority)
 {
+	if (rpc_abort_task(task)) {
+		rpc_signal_task(task);
+		rpc_exit(task, -EIO);
+		return;
+	}
+
 	dprintk("RPC: %5u sleep_on(queue \"%s\" time %lu)\n",
 			task->tk_pid, rpc_qname(q), jiffies);
 
