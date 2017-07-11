@@ -262,7 +262,7 @@ static int gfs2_xattr_system_set(struct dentry *dentry, const char *name,
 		goto out;
 	}
 
-	error = posix_acl_valid(acl);
+	error = posix_acl_valid(inode->i_sb->s_user_ns, acl);
 	if (error)
 		goto out_release;
 

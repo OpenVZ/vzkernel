@@ -82,7 +82,7 @@ generic_acl_set(struct dentry *dentry, const char *name, const void *value,
 			return PTR_ERR(acl);
 	}
 	if (acl) {
-		error = posix_acl_valid(acl);
+		error = posix_acl_valid(inode->i_sb->s_user_ns, acl);
 		if (error)
 			goto failed;
 		real_acl = acl;
