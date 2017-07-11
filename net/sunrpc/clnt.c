@@ -2887,6 +2887,7 @@ static ssize_t write_kill_tasks(struct file *file, const char __user *buf,
 {
 	struct net *net = PDE_DATA(file->f_path.dentry->d_inode);
 	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
+	bool prev_kill_tasks = sn->kill_tasks;
 	char tbuf[20];
 	unsigned long kill_tasks;
 	int res;
@@ -2901,11 +2902,12 @@ static ssize_t write_kill_tasks(struct file *file, const char __user *buf,
 	if (res)
 		return res;
 
+	sn->kill_tasks = !!kill_tasks;
+
 	/* Kill pending tasks */
-	if (kill_tasks && !sn->kill_tasks)
+	if (sn->kill_tasks && !prev_kill_tasks)
 		rpc_kill_tasks(net);
 
-	sn->kill_tasks = !!kill_tasks;
 	return count;
 }
 
