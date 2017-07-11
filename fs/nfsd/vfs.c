@@ -592,7 +592,7 @@ nfsd4_get_nfs4_acl(struct svc_rqst *rqstp, struct dentry *dentry, struct nfs4_ac
 		flags = NFS4_ACL_DIR;
 	}
 
-	*acl = nfs4_acl_posix_to_nfsv4(pacl, dpacl, flags);
+	*acl = nfs4_acl_posix_to_nfsv4(pacl, dpacl, flags, inode);
 	if (IS_ERR(*acl)) {
 		error = PTR_ERR(*acl);
 		*acl = NULL;
