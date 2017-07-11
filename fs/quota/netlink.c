@@ -72,7 +72,7 @@ void quota_send_warning(struct kqid qid, dev_t dev,
 	if (ret)
 		goto attr_err_out;
 	ret = nla_put_u64(skb, QUOTA_NL_A_EXCESS_ID,
-			  from_kqid_munged(&init_user_ns, qid));
+			  from_kqid_munged(current_user_ns(), qid));
 	if (ret)
 		goto attr_err_out;
 	ret = nla_put_u32(skb, QUOTA_NL_A_WARNING, warntype);
@@ -85,7 +85,7 @@ void quota_send_warning(struct kqid qid, dev_t dev,
 	if (ret)
 		goto attr_err_out;
 	ret = nla_put_u64(skb, QUOTA_NL_A_CAUSED_ID,
-			  from_kuid_munged(&init_user_ns, current_uid()));
+			  from_kuid_munged(current_user_ns(), current_uid()));
 	if (ret)
 		goto attr_err_out;
 	genlmsg_end(skb, msg_head);
