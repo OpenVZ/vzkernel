@@ -2874,11 +2874,8 @@ static void rpc_kill_tasks(struct net *net)
 	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
 
 	spin_lock(&sn->rpc_client_lock);
-	list_for_each_entry(clnt, &sn->all_clients, cl_clients) {
-		spin_lock(&clnt->cl_lock);
-		xprt_wake_pending_tasks(clnt->cl_xprt, -EIO);
-		spin_unlock(&clnt->cl_lock);
-	}
+	list_for_each_entry(clnt, &sn->all_clients, cl_clients)
+		rpc_killall_tasks(clnt);
 	spin_unlock(&sn->rpc_client_lock);
 }
 
