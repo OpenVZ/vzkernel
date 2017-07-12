@@ -171,25 +171,49 @@ static unsigned long vdso_addr(unsigned long start, unsigned len)
 	return addr;
 }
 
+bool vdso_or_vvar_present(struct mm_struct *mm)
+{
+	struct vm_area_struct *vma;
+
+	for (vma = mm->mmap; vma; vma = vma->vm_next)
+		if (vma_is_vdso_or_vvar(vma, mm))
+			return true;
+	return false;
+}
+
 /* Setup a VMA at program startup for the vsyscall page.
    Not called for compat tasks */
 static int setup_additional_pages(struct linux_binprm *bprm,
 				  int uses_interp,
 				  struct page **pages,
-				  unsigned size)
+				  unsigned size,
+				  unsigned long req_addr)
 {
 	struct mm_struct *mm = current->mm;
-	unsigned long addr;
+	unsigned long addr = req_addr;
 	int ret;
 
 	if (!vdso_enabled)
 		return 0;
 
 	down_write(&mm->mmap_sem);
-	addr = vdso_addr(mm->start_stack, size);
+
+	if (vdso_or_vvar_present(mm)) {
+		ret = -EEXIST;
+		goto up_fail;
+	}
+
+	if (!req_addr)
+		addr = vdso_addr(mm->start_stack, size);
+
 	addr = get_unmapped_area(NULL, addr, size, 0, 0);
 	if (IS_ERR_VALUE(addr)) {
 		ret = addr;
+		goto up_fail;
+	}
+
+	if (req_addr && req_addr != addr) {
+		ret = -EFAULT;
 		goto up_fail;
 	}
 
@@ -211,7 +235,8 @@ up_fail:
 
 static DEFINE_MUTEX(vdso_mutex);
 
-static int uts_arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+static int uts_arch_setup_additional_pages(struct linux_binprm *bprm,
+		int uses_interp, unsigned long addr)
 {
 	struct uts_namespace *uts_ns = current->nsproxy->uts_ns;
 	struct ve_struct *ve = get_exec_env();
@@ -303,9 +328,11 @@ static int uts_arch_setup_additional_pages(struct linux_binprm *bprm, int uses_i
 		 LINUX_VERSION_CODE, new_version, ve->veid);
 
 map_uts:
-	return setup_additional_pages(bprm, uses_interp, uts_ns->vdso.pages, uts_ns->vdso.size);
+	return setup_additional_pages(bprm, uses_interp, uts_ns->vdso.pages,
+		uts_ns->vdso.size, addr);
 map_init_uts:
-	return setup_additional_pages(bprm, uses_interp, init_uts_ns.vdso.pages, init_uts_ns.vdso.size);
+	return setup_additional_pages(bprm, uses_interp, init_uts_ns.vdso.pages,
+		init_uts_ns.vdso.size, addr);
 out_unlock:
 	mutex_unlock(&vdso_mutex);
 	return -ENOMEM;
@@ -313,14 +340,19 @@ out_unlock:
 
 int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 {
-	return uts_arch_setup_additional_pages(bprm, uses_interp);
+	return uts_arch_setup_additional_pages(bprm, uses_interp, 0);
+}
+
+int do_map_vdso_64(unsigned long req_addr)
+{
+	return uts_arch_setup_additional_pages(0, 0, req_addr);
 }
 
 #ifdef CONFIG_X86_X32_ABI
 int x32_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 {
 	return setup_additional_pages(bprm, uses_interp, vdsox32_pages,
-				      vdsox32_size);
+				      vdsox32_size, 0);
 }
 #endif
 
