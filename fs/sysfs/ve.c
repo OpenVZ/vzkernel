@@ -99,7 +99,7 @@ static int sysfs_perms_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int sysfs_perms_set(char *path, struct ve_struct *ve, int mask)
+int sysfs_perms_set(char *path, struct ve_struct *ve, int mask)
 {
 	struct sysfs_dirent *sd = &sysfs_root;
 	struct kmapset_map *map = NULL;
