@@ -64,6 +64,7 @@
 #ifndef __GENKSYMS__
 #include <linux/audit.h>
 #endif /* __GENKSYMS__ */
+#include <linux/sysfs-ve.h>
 #include <uapi/linux/module.h>
 #include "module-internal.h"
 
@@ -1792,6 +1793,49 @@ out:
 	return err;
 }
 
+#ifdef CONFIG_VE
+
+static ssize_t module_sysfs_perm_set_ve(struct module *mod, char *subdir, int mask)
+{
+	static char path[PATH_MAX];
+
+	if (snprintf(path, sizeof(path) - 1, "module/%s/%s",
+		     mod->name, (subdir) ? subdir : "") >= sizeof(path) - 1)
+		return -E2BIG;
+
+	return sysfs_set_def_perms(path, mask);
+}
+
+static ssize_t module_sysfs_hide_dir_ve(struct module *mod, char *subdir)
+{
+	return module_sysfs_perm_set_ve(mod, subdir, -1);
+}
+
+static ssize_t module_sysfs_expose_dir_ve(struct module *mod, char *subdir)
+{
+	return module_sysfs_perm_set_ve(mod, subdir, MAY_READ | MAY_EXEC);
+}
+
+static int module_sysfs_ve_init(struct module *mod)
+{
+	int err;
+
+	err = module_sysfs_expose_dir_ve(mod, NULL);
+	if (!err)
+		err = module_sysfs_expose_dir_ve(mod, "holders");
+	return err;
+}
+
+static void module_sysfs_ve_fini(struct module *mod)
+{
+	(void) module_sysfs_hide_dir_ve(mod, "holders");
+	(void) module_sysfs_hide_dir_ve(mod, NULL);
+}
+#else
+static __always_inline int module_sysfs_ve_init(struct module *mod) { }
+static __always_inline void module_sysfs_ve_fini(struct module *mod) { }
+#endif
+
 static int mod_sysfs_setup(struct module *mod,
 			   const struct load_info *info,
 			   struct kernel_param *kparam,
@@ -1822,6 +1866,7 @@ static int mod_sysfs_setup(struct module *mod,
 	add_notes_attrs(mod, info);
 
 	kobject_uevent(&mod->mkobj.kobj, KOBJ_ADD);
+	(void) module_sysfs_ve_init(mod);
 	return 0;
 
 out_unreg_param:
@@ -1836,6 +1881,7 @@ out:
 
 static void mod_sysfs_fini(struct module *mod)
 {
+	module_sysfs_ve_fini(mod);
 	remove_notes_attrs(mod);
 	remove_sect_attrs(mod);
 	kobject_put(&mod->mkobj.kobj);
