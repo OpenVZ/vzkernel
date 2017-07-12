@@ -347,7 +347,11 @@ extern int syscall32_setup_pages(struct linux_binprm *, int exstack);
 #define compat_arch_setup_additional_pages	syscall32_setup_pages
 
 #ifdef CONFIG_X86_64
-extern int do_map_compat_vdso(unsigned long addr);
+extern bool vdso_or_vvar_present(struct mm_struct *mm);
+extern int do_map_vdso_64(unsigned long addr);
+# ifdef CONFIG_COMPAT
+extern int do_map_vdso_32(unsigned long addr);
+# endif
 #endif
 
 /*
