@@ -566,16 +566,16 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 	}
 
 #ifdef CONFIG_CHECKPOINT_RESTORE
+# ifdef CONFIG_COMPAT
 	case ARCH_MAP_VDSO_32:
-		return do_map_compat_vdso(addr);
+		return do_map_vdso_32(addr);
+# endif
 
-	/*
-	 * x32 and 64 vDSO remap API is omitted for simplicity.
-	 * We do need 32-bit vDSO blob mapping for compatible
-	 * applications Restore, but not x32/64 (at least, for now).
-	 */
-	case ARCH_MAP_VDSO_X32:
 	case ARCH_MAP_VDSO_64:
+		return do_map_vdso_64(addr);
+
+	/* x32 vDSO remap API is omitted for simplicity. */
+	case ARCH_MAP_VDSO_X32:
 #endif
 
 	default:
