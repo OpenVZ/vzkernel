@@ -494,17 +494,7 @@ up_fail:
 
 #ifdef CONFIG_X86_64
 
-static bool vdso_or_vvar_present(struct mm_struct *mm)
-{
-	struct vm_area_struct *vma;
-
-	for (vma = mm->mmap; vma; vma = vma->vm_next)
-		if (vma_is_vdso_or_vvar(vma, mm))
-			return true;
-	return false;
-}
-
-int do_map_compat_vdso(unsigned long req_addr)
+int do_map_vdso_32(unsigned long req_addr)
 {
 	struct mm_struct *mm = current->mm;
 	unsigned long vdso_addr;
