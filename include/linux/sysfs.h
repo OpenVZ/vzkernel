@@ -254,6 +254,11 @@ void sysfs_put(struct sysfs_dirent *sd);
 
 int __must_check sysfs_init(void);
 
+#ifdef CONFIG_VE
+struct ve_struct;
+int sysfs_perms_set(char *path, struct ve_struct *ve, int mask);
+#endif
+
 #else /* CONFIG_SYSFS */
 
 static inline int sysfs_schedule_callback(struct kobject *kobj,
