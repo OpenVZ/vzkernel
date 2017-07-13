@@ -430,6 +430,9 @@ struct zone {
 	 */
 	unsigned int inactive_ratio;
 
+	/* Refaults at the time of last reclaim cycle */
+	unsigned long			refaults;
+
 #ifdef CONFIG_MEMCG
 	bool force_scan;
 #endif
