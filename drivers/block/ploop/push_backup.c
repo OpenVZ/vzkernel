@@ -587,7 +587,7 @@ ploop_pb_get_first_req_from_tree(struct pb_set *pbs,
 				 struct ploop_request **npreq)
 {
 	struct rb_root *tree = &pbs->tree;
-	static struct ploop_request *p;
+	struct ploop_request *p;
 	struct rb_node *n = rb_first(tree);
 
 	if (!n)
