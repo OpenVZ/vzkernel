@@ -95,6 +95,22 @@ static ssize_t delta_image_show(struct ploop_delta *delta, char *page)
 	return len;
 }
 
+static ssize_t delta_image_info_show(struct ploop_delta *delta, char *page)
+{
+	int len = -ENOENT;
+
+	mutex_lock(&delta->plo->sysfs_mutex);
+	if (delta->io.files.file) {
+		struct inode *inode = file_inode(delta->io.files.file);
+		len = snprintf(page, PAGE_SIZE, "ino:%lu\nsdev:%u:%u\n",
+				inode->i_ino,
+				MAJOR(inode->i_sb->s_dev),
+				MINOR(inode->i_sb->s_dev));
+	}
+	mutex_unlock(&delta->plo->sysfs_mutex);
+	return len;
+}
+
 static ssize_t delta_format_show(struct ploop_delta *delta, char *page)
 {
 	return delta_string_show(delta->ops->name, page);
@@ -140,6 +156,12 @@ static struct delta_sysfs_entry delta_image_entry = {
 	.store = NULL,
 };
 
+static struct delta_sysfs_entry delta_image_info_entry = {
+	.attr = {.name = "image_info", .mode = S_IRUGO },
+	.show = delta_image_info_show,
+	.store = NULL,
+};
+
 static struct delta_sysfs_entry delta_format_entry = {
 	.attr = {.name = "format", .mode = S_IRUGO },
 	.show = delta_format_show,
@@ -172,6 +194,7 @@ static struct delta_sysfs_entry delta_dump_entry = {
 static struct attribute *default_attrs[] = {
 	&delta_level_entry.attr,
 	&delta_image_entry.attr,
+	&delta_image_info_entry.attr,
 	&delta_format_entry.attr,
 	&delta_io_entry.attr,
 	&delta_ro_entry.attr,
