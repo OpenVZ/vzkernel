@@ -136,8 +136,10 @@ int ip_forward(struct sk_buff *skb)
 	    (rt->rt_flags & RTCF_NAT) == 0 &&	  /* no NAT mangling expected */
 #endif						  /* and */
 	    (skb->dev->features & NETIF_F_VENET) && /* src is VENET device and */
-	    (skb_headroom(skb) >= hroom))	 /* skb has enough headroom */
+	    (skb_headroom(skb) >= hroom)) {	  /* skb has enough headroom */
+		iph = ip_hdr(skb);
 		goto no_ttl_decr;
+	}
 
 	/* We are about to mangle packet. Copy it! */
 	if (skb_cow(skb, hroom))
