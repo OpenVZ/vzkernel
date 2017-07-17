@@ -346,6 +346,7 @@ int ip6_forward(struct sk_buff *skb)
 	struct ipv6hdr *hdr = ipv6_hdr(skb);
 	struct inet6_skb_parm *opt = IP6CB(skb);
 	struct net *net = dev_net(dst->dev);
+	unsigned int hroom;
 	u32 mtu;
 
 	if (net->ipv6.devconf_all->forwarding == 0)
@@ -487,11 +488,12 @@ int ip6_forward(struct sk_buff *skb)
 	 * in pkts path with mandatory ttl decr, that is
 	 * sufficient to prevent routing loops.
 	 */
-	hdr = ipv6_hdr(skb);
-	if (skb->dev->features & NETIF_F_VENET) /* src is VENET device */
+	hroom = dst->dev->hard_header_len;
+	if ((skb->dev->features & NETIF_F_VENET) && /* src is VENET device */
+	    (skb_headroom(skb) >= hroom))  /* and skb has enough headroom */
 		goto no_ttl_decr;
 
-	if (skb_cow(skb, dst->dev->hard_header_len)) {
+	if (skb_cow(skb, hroom)) {
 		IP6_INC_STATS(net, ip6_dst_idev(dst), IPSTATS_MIB_OUTDISCARDS);
 		goto drop;
 	}
