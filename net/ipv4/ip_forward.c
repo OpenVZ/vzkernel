@@ -75,6 +75,7 @@ int ip_forward(struct sk_buff *skb)
 	struct iphdr *iph;	/* Our header */
 	struct rtable *rt;	/* Route we use */
 	struct ip_options *opt	= &(IPCB(skb)->opt);
+	unsigned int hroom;
 
 	/* that should never happen */
 	if (skb->pkt_type != PACKET_HOST)
@@ -129,16 +130,19 @@ int ip_forward(struct sk_buff *skb)
 	 * in pkts path with mandatory ttl decr, that is
 	 * sufficient to prevent routing loops.
 	 */
-	iph = ip_hdr(skb);
+	hroom = LL_RESERVED_SPACE(rt->dst.dev)+rt->dst.header_len;
 	if (
 #ifdef CONFIG_IP_ROUTE_NAT
 	    (rt->rt_flags & RTCF_NAT) == 0 &&	  /* no NAT mangling expected */
 #endif						  /* and */
-	    (skb->dev->features & NETIF_F_VENET)) /* src is VENET device */
+	    (skb->dev->features & NETIF_F_VENET) && /* src is VENET device and */
+	    (skb_headroom(skb) >= hroom)) {	  /* skb has enough headroom */
+		iph = ip_hdr(skb);
 		goto no_ttl_decr;
+	}
 
 	/* We are about to mangle packet. Copy it! */
-	if (skb_cow(skb, LL_RESERVED_SPACE(rt->dst.dev)+rt->dst.header_len))
+	if (skb_cow(skb, hroom))
 		goto drop;
 	iph = ip_hdr(skb);
 
