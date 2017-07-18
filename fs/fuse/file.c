@@ -3886,7 +3886,6 @@ int fuse_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 	}
 
 	for (;;) {
-		int res;
 		int last = 0;
 		unsigned int npages;
 		u32 cur_max = fieinfo->fi_extents_max - fieinfo->fi_extents_mapped;
@@ -3900,8 +3899,8 @@ int fuse_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 			cur_max = (npages * PAGE_SIZE) / sizeof(struct fiemap_extent);
 		}
 
-		res = fuse_request_fiemap(inode, cur_max, &start, &len, &last, fieinfo);
-		if (res < 0)
+		err = fuse_request_fiemap(inode, cur_max, &start, &len, &last, fieinfo);
+		if (err < 0)
 			goto out;
 
 		if (len == 0 || last)
