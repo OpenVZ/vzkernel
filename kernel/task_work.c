@@ -46,7 +46,7 @@ task_work_cancel(struct task_struct *task, task_work_func_t func)
 	return work;
 }
 
-void task_work_run(void)
+void __task_work_run(bool exiting)
 {
 	struct task_struct *task = current;
 	struct callback_head *work, *head, *next;
@@ -58,7 +58,7 @@ void task_work_run(void)
 		 */
 		do {
 			work = ACCESS_ONCE(task->task_works);
-			head = !work && (task->flags & PF_EXITING) ?
+			head = !work && exiting ?
 				&work_exited : NULL;
 		} while (cmpxchg(&task->task_works, work, head) != work);
 
