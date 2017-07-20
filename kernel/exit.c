@@ -902,6 +902,15 @@ void do_exit(long code)
 	exit_fs(tsk);
 	if (group_dead)
 		disassociate_ctty(1);
+
+	/*
+	 * task_work_run() has to be called before exit_task_namespaces(),
+	 * because fuse_abort_conn() is called from __fput(). If it will not
+	 * be executed, we can hang in request_wait_answer(). We have seen this
+	 * situation when a process was the last member of a mount namespace
+	 * and the mount namespace has a vstorage fuse mount.
+	 */
+	task_work_run();
 	exit_task_namespaces(tsk);
 	exit_task_work(tsk);
 
