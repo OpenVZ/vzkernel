@@ -1191,6 +1191,7 @@ struct fuse_fill_data {
 	struct file *file;
 	struct inode *inode;
 	unsigned nr_pages;
+	struct page **orig_pages;
 };
 
 static int fuse_readpages_fill(void *_data, struct page *page)
@@ -2130,6 +2131,7 @@ static int fuse_send_writepages(struct fuse_fill_data *data)
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	struct fuse_file *ff;
 	loff_t off = -1;
+	int num_pages = req->num_pages;
 
 	/* we can acquire ff here because we do have locked pages here! */
 	ff = fuse_write_file(fc, fi);
@@ -2175,7 +2177,7 @@ static int fuse_send_writepages(struct fuse_fill_data *data)
 		if (i == 0)
 			off = page_offset(page);
 
-		end_page_writeback(page);
+		data->orig_pages[i] = page;
 	}
 
 	if (!all_ok) {
@@ -2187,6 +2189,7 @@ static int fuse_send_writepages(struct fuse_fill_data *data)
 				__free_page(page);
 				req->pages[i] = NULL;
 			}
+			end_page_writeback(data->orig_pages[i]);
 		}
 
 		spin_lock(&fc->lock);
@@ -2212,6 +2215,9 @@ static int fuse_send_writepages(struct fuse_fill_data *data)
 	list_add_tail(&req->list, &fi->queued_writes);
 	fuse_flush_writepages(data->inode);
 	spin_unlock(&fc->lock);
+
+	for (i = 0; i < num_pages; i++)
+		end_page_writeback(data->orig_pages[i]);
 
 	fuse_release_ff(inode, ff);
 	return 0;
@@ -2366,11 +2372,17 @@ static int fuse_writepages(struct address_space *mapping,
 	if (ff)
 		fuse_release_ff(inode, ff);
 
+	data.orig_pages = kcalloc(FUSE_MAX_PAGES_PER_REQ,
+				  sizeof(struct page *),
+				  GFP_NOFS);
+	if (!data.orig_pages)
+		goto out;
+
 	data.inode = inode;
 	data.req = fuse_request_alloc_nofs(fc, FUSE_MAX_PAGES_PER_REQ);
 	err = -ENOMEM;
 	if (!data.req)
-		goto out;
+		goto out_and_free;
 
 	err = write_cache_pages(mapping, wbc, fuse_writepages_fill, &data);
 	if (data.req) {
@@ -2381,6 +2393,8 @@ static int fuse_writepages(struct address_space *mapping,
 		} else
 			fuse_put_request(fc, data.req);
 	}
+out_and_free:
+	kfree(data.orig_pages);
 out:
 	return err;
 }
