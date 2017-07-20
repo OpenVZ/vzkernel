@@ -15,6 +15,7 @@
 #include <linux/spinlock.h>
 #include <linux/rcupdate.h>
 #include <linux/rwsem.h>
+#include <linux/pagemap.h>
 #include <linux/rbtree.h>
 #include <linux/radix-tree.h>
 #include <linux/idr.h>
@@ -703,17 +704,10 @@ static inline void tcache_init_page(struct page *page,
 	page->index = index;
 }
 
-static inline void tcache_hold_page(struct page *page)
-{
-	get_page(page);
-}
-
 static inline void tcache_put_page(struct page *page)
 {
-	if (put_page_testzero(page)) {
-		page->mapping = NULL;	/* to make free_pages_check happy */
-		free_hot_cold_page(page, false);
-	}
+	page->mapping = NULL;
+	free_hot_cold_page(page, false);
 }
 
 static int tcache_page_tree_insert(struct tcache_node *node, pgoff_t index,
@@ -745,6 +739,11 @@ out:
 static struct page *__tcache_page_tree_delete(struct tcache_node *node,
 					      pgoff_t index, struct page *page)
 {
+	if (!page_ref_freeze(page, 2)) {
+		put_page(page);
+		return NULL;
+	}
+
 	page = radix_tree_delete_item(&node->page_tree, index, page);
 	if (page) {
 		if (!--node->nr_pages)
@@ -779,12 +778,10 @@ tcache_attach_page(struct tcache_node *node, pgoff_t index, struct page *page)
 
 	spin_lock_irqsave(&node->tree_lock, flags);
 	err = tcache_page_tree_insert(node, index, page);
-	if (!err) {
-		tcache_hold_page(page);
+	spin_unlock(&node->tree_lock);
+	if (!err)
 		tcache_lru_add(node->pool, page);
-	}
-
-	spin_unlock_irqrestore(&node->tree_lock, flags);
+	local_irq_restore(flags);
 	return err;
 }
 
@@ -795,61 +792,127 @@ tcache_attach_page(struct tcache_node *node, pgoff_t index, struct page *page)
 static struct page *tcache_detach_page(struct tcache_node *node, pgoff_t index,
 				       bool reused)
 {
+	void **pagep;
 	unsigned long flags;
 	struct page *page;
 
-	local_irq_save(flags);
-	page = tcache_page_tree_delete(node, index, NULL);
-	if (page)
-		tcache_lru_del(node->pool, page, reused);
-	local_irq_restore(flags);
+	rcu_read_lock();
+repeat:
+	page = NULL;
+	pagep = radix_tree_lookup_slot(&node->page_tree, index);
+	if (pagep) {
+		page = radix_tree_deref_slot(pagep);
+		if (unlikely(!page))
+			goto out;
+		if (radix_tree_exception(page)) {
+			if (radix_tree_deref_retry(page))
+				goto repeat;
+			WARN_ON(1);
+		}
+		if (!page_cache_get_speculative(page))
+			goto repeat;
+		/*
+		 * Has the page moved?
+		 * This is part of the lockless pagecache protocol. See
+		 * include/linux/pagemap.h for details.
+		 */
+		if (unlikely(page != *pagep)) {
+			put_page(page);
+			goto repeat;
+		}
+	}
+out:
+	rcu_read_unlock();
+
+	if (page) {
+		local_irq_save(flags);
+		page = tcache_page_tree_delete(node, index, page);
+		if (page)
+			tcache_lru_del(node->pool, page, reused);
+		local_irq_restore(flags);
+	}
 
 	return page;
 }
 
+static unsigned tcache_lookup(struct page **pages, struct tcache_node *node,
+			pgoff_t start, unsigned int nr_pages, pgoff_t *indices)
+{
+	struct radix_tree_iter iter;
+	unsigned int ret = 0;
+	void **slot;
+
+	if (!nr_pages)
+		return 0;
+
+	rcu_read_lock();
+restart:
+	radix_tree_for_each_slot(slot, &node->page_tree, &iter, start) {
+		struct page *page;
+repeat:
+		page = radix_tree_deref_slot(slot);
+		if (unlikely(!page))
+			continue;
+
+		if (radix_tree_exception(page) && radix_tree_deref_retry(page))
+			goto restart;
+
+		if (!page_cache_get_speculative(page))
+			goto repeat;
+
+		/* Has the page moved? */
+		if (unlikely(page != *slot)) {
+			page_cache_release(page);
+			goto repeat;
+		}
+
+		indices[ret] = iter.index;
+		pages[ret] = page;
+		if (++ret == nr_pages)
+			break;
+	}
+	rcu_read_unlock();
+	return ret;
+}
+
+#define TCACHE_PAGEVEC_SIZE 16
 static noinline_for_stack void
 tcache_invalidate_node_pages(struct tcache_node *node)
 {
-	struct radix_tree_iter iter;
-	struct page *page;
-	void **slot;
+	pgoff_t indices[TCACHE_PAGEVEC_SIZE];
+	struct page *pages[TCACHE_PAGEVEC_SIZE];
 	pgoff_t index = 0;
-
-	spin_lock_irq(&node->tree_lock);
+	unsigned nr_pages;
+	int i;
 
 	/*
 	 * First forbid new page insertions - see tcache_page_tree_replace.
 	 */
 	node->invalidated = true;
 
-	/*
-	 * Now truncate all pages. Be careful, because pages can still be
-	 * deleted from this node by the shrinker or by concurrent lookups.
-	 */
-restart:
-	radix_tree_for_each_slot(slot, &node->page_tree, &iter, index) {
-		page = radix_tree_deref_slot_protected(slot, &node->tree_lock);
-		BUG_ON(!__tcache_page_tree_delete(node, page->index, page));
-		tcache_lru_del(node->pool, page, false);
-		tcache_put_page(page);
+	while ((nr_pages = tcache_lookup(pages, node, index,
+						TCACHE_PAGEVEC_SIZE, indices))) {
+		for (i = 0; i < nr_pages; i++) {
+			struct page *page = pages[i];
 
-		if (need_resched()) {
-			spin_unlock_irq(&node->tree_lock);
-			cond_resched();
+			index = indices[i];
+
 			spin_lock_irq(&node->tree_lock);
-			/*
-			 * Restart iteration over the radix tree, because the
-			 * current node could have been freed when we dropped
-			 * the lock.
-			 */
-			index = iter.index + 1;
-			goto restart;
+			page = __tcache_page_tree_delete(node, page->index, page);
+			spin_unlock(&node->tree_lock);
+
+			if (page) {
+				tcache_lru_del(node->pool, page, false);
+				local_irq_enable();
+				tcache_put_page(page);
+			} else
+				local_irq_enable();
 		}
+		cond_resched();
+		index++;
 	}
 
-	BUG_ON(node->nr_pages != 0);
-
-	spin_unlock_irq(&node->tree_lock);
+	WARN_ON(node->nr_pages != 0);
 }
 
 static noinline_for_stack void
@@ -932,12 +995,16 @@ __tcache_lru_isolate(struct tcache_nodeinfo *ni,
 	struct tcache_node *node;
 	struct page *page;
 	int nr_isolated = 0;
+	int nr_scanned = nr_to_isolate;
 
-	while (nr_to_isolate > 0 && !list_empty(&pni->lru)) {
+	while (nr_to_isolate > 0 && !list_empty(&pni->lru) && nr_scanned--) {
 		page = list_first_entry(&pni->lru, struct page, lru);
+
+		if (unlikely(!page_cache_get_speculative(page)))
+			continue;
+
 		__tcache_lru_del(ni, pni, page);
 
-		tcache_hold_page(page);
 		/*
 		 * A node can be destroyed only if all its pages have been
 		 * removed both from the tree and the LRU list. Since we are
@@ -976,7 +1043,7 @@ again:
 	if (!tcache_grab_pool(pni->pool))
 		goto again;
 
-	nr = __tcache_lru_isolate(ni, pni, pages + nr_isolated, nr_to_isolate);
+	nr = __tcache_lru_isolate(ni, pni, pages, nr_to_isolate);
 	nr_isolated += nr;
 	nr_to_isolate -= nr;
 
@@ -984,9 +1051,6 @@ again:
 		__tcache_insert_reclaim_node(ni, pni);
 
 	tcache_put_pool(pni->pool);
-
-	if (nr_to_isolate > 0)
-		goto again;
 out:
 	spin_unlock_irq(&ni->lock);
 	return nr_isolated;
@@ -998,18 +1062,7 @@ static bool __tcache_reclaim_page(struct page *page)
 	bool ret;
 
 	node = tcache_page_node(page);
-	if (tcache_page_tree_delete(node, page->index, page)) {
-		/*
-		 * We deleted the page from the tree - drop the
-		 * corresponding reference.
-		 */
-		tcache_put_page(page);
-		ret = true;
-	} else
-		/* The page was deleted by a concurrent thread - abort. */
-		ret = false;
-
-	/* Drop the reference taken in __tcache_lru_isolate. */
+	ret = tcache_page_tree_delete(node, page->index, page);
 	tcache_put_node_and_pool(node);
 	return ret;
 }
@@ -1021,9 +1074,10 @@ static int tcache_reclaim_pages(struct page **pages, int nr)
 
 	local_irq_disable();
 	for (i = 0; i < nr; i++) {
-		nr_reclaimed += !!__tcache_reclaim_page(pages[i]);
-		/* Drop the reference taken in __tcache_lru_isolate. */
-		tcache_put_page(pages[i]);
+		if (__tcache_reclaim_page(pages[i])) {
+			nr_reclaimed++;
+			tcache_put_page(pages[i]);
+		}
 		pages[i] = NULL;
 	}
 	local_irq_enable();
@@ -1048,10 +1102,10 @@ tcache_try_to_reclaim_page(struct tcache_pool *pool, int nid)
 	if (!ret)
 		goto out;
 
-	if (!__tcache_reclaim_page(page)) {
-		tcache_put_page(page);
+	if (!__tcache_reclaim_page(page))
 		page = NULL;
-	}
+	else
+		page_ref_unfreeze(page, 1);
 out:
 	local_irq_restore(flags);
 	return page;
@@ -1135,13 +1189,11 @@ static void tcache_cleancache_put_page(int pool_id,
 		cache_page = tcache_alloc_page(node->pool);
 		if (cache_page) {
 			copy_highpage(cache_page, page);
-			/* cleancache does not care about failures */
-			(void)tcache_attach_page(node, index, cache_page);
+			if (tcache_attach_page(node, index, cache_page))
+				if (put_page_testzero(cache_page))
+					tcache_put_page(page);
 		}
 		tcache_put_node_and_pool(node);
-		if (cache_page)
-			tcache_put_page(cache_page);
-
 	}
 }
 
