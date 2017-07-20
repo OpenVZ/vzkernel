@@ -14,11 +14,16 @@ init_task_work(struct callback_head *twork, task_work_func_t func)
 
 int task_work_add(struct task_struct *task, struct callback_head *twork, bool);
 struct callback_head *task_work_cancel(struct task_struct *, task_work_func_t);
-void task_work_run(void);
+void __task_work_run(bool exiting);
+
+static inline void task_work_run(void)
+{
+	return __task_work_run(false);
+}
 
 static inline void exit_task_work(struct task_struct *task)
 {
-	task_work_run();
+	__task_work_run(true);
 }
 
 #endif	/* _LINUX_TASK_WORK_H */
