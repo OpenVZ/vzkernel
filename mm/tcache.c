@@ -716,13 +716,10 @@ static inline void tcache_put_page(struct page *page)
 	}
 }
 
-static int tcache_page_tree_replace(struct tcache_node *node, pgoff_t index,
-				    struct page *page, struct page **old_page)
+static int tcache_page_tree_insert(struct tcache_node *node, pgoff_t index,
+				    struct page *page)
 {
-	void **pslot;
 	int err = 0;
-
-	*old_page = NULL;
 
 	/*
 	 * If the node was invalidated after we looked it up, abort in order to
@@ -733,22 +730,13 @@ static int tcache_page_tree_replace(struct tcache_node *node, pgoff_t index,
 		goto out;
 	}
 
-	pslot = radix_tree_lookup_slot(&node->page_tree, index);
-	if (pslot) {
-		*old_page = radix_tree_deref_slot_protected(pslot,
-							    &node->tree_lock);
-		radix_tree_replace_slot(pslot, page);
-		__dec_zone_page_state(*old_page, NR_FILE_PAGES);
+	err = radix_tree_insert(&node->page_tree, index, page);
+	WARN_ON(err == -EEXIST);
+	if (!err) {
+		if (!node->nr_pages++)
+			tcache_hold_node(node);
+		__this_cpu_inc(nr_tcache_pages);
 		__inc_zone_page_state(page, NR_FILE_PAGES);
-	} else {
-		err = radix_tree_insert(&node->page_tree, index, page);
-		BUG_ON(err == -EEXIST);
-		if (!err) {
-			if (!node->nr_pages++)
-				tcache_hold_node(node);
-			__this_cpu_inc(nr_tcache_pages);
-			__inc_zone_page_state(page, NR_FILE_PAGES);
-		}
 	}
 out:
 	return err;
@@ -784,24 +772,18 @@ static struct page *tcache_page_tree_delete(struct tcache_node *node,
 static noinline_for_stack int
 tcache_attach_page(struct tcache_node *node, pgoff_t index, struct page *page)
 {
-	struct page *old_page;
 	unsigned long flags;
 	int err = 0;
 
 	tcache_init_page(page, node, index);
 
 	spin_lock_irqsave(&node->tree_lock, flags);
-	err = tcache_page_tree_replace(node, index, page, &old_page);
-	if (err)
-		goto out;
-
-	if (old_page) {
-		tcache_lru_del(node->pool, old_page, false);
-		tcache_put_page(old_page);
+	err = tcache_page_tree_insert(node, index, page);
+	if (!err) {
+		tcache_hold_page(page);
+		tcache_lru_add(node->pool, page);
 	}
-	tcache_hold_page(page);
-	tcache_lru_add(node->pool, page);
-out:
+
 	spin_unlock_irqrestore(&node->tree_lock, flags);
 	return err;
 }
