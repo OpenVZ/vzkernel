@@ -166,8 +166,7 @@ static int btrfs_xattr_acl_set(struct dentry *dentry, const char *name,
 			return PTR_ERR(acl);
 
 		if (acl) {
-			ret = posix_acl_valid(dentry->d_inode->i_sb->s_user_ns,
-					      acl);
+			ret = posix_acl_valid(acl);
 			if (ret)
 				goto out;
 		}
