@@ -1232,28 +1232,33 @@ static int tcache_cleancache_init_shared_fs(char *uuid, size_t pagesize)
 	return -1;
 }
 
-static void tcache_cleancache_put_page(int pool_id,
+static int tcache_cleancache_put_page(int pool_id,
 				       struct cleancache_filekey key,
 				       pgoff_t index, struct page *page)
 {
+	int ret = 0;
 	struct tcache_node *node;
 	struct page *cache_page = NULL;
 
 	/* It makes no sense to populate tcache when we are short on memory */
 	if (!READ_ONCE(tcache_active) || !(current->flags & PF_MEMCG_RECLAIM))
-		return;
+		return 0;
 
 	node = tcache_get_node_and_pool(pool_id, &key, true);
 	if (node) {
 		cache_page = tcache_alloc_page(node->pool);
 		if (cache_page) {
 			copy_highpage(cache_page, page);
-			if (tcache_attach_page(node, index, cache_page))
+			if (tcache_attach_page(node, index, cache_page)) {
 				if (put_page_testzero(cache_page))
 					tcache_put_page(cache_page);
+			} else
+				ret = 1;
 		}
 		tcache_put_node_and_pool(node);
 	}
+
+	return ret;
 }
 
 static int tcache_cleancache_get_page(int pool_id,
