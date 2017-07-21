@@ -1158,8 +1158,13 @@ int ip_setsockopt(struct sock *sk, int level,
 	if (err == -ENOPROTOOPT && optname != IP_HDRINCL &&
 			optname != IP_IPSEC_POLICY &&
 			optname != IP_XFRM_POLICY &&
-			!ip_mroute_opt(optname))
+			!ip_mroute_opt(optname)) {
+
+		if (!ve_ipt_permitted(net, VE_IP_FILTER))
+			return -ENOPROTOOPT;
+
 		err = nf_setsockopt(sk, PF_INET, optname, optval, optlen);
+	}
 #endif
 	return err;
 }
@@ -1464,7 +1469,11 @@ int ip_getsockopt(struct sock *sk, int level,
 		if (get_user(len, optlen))
 			return -EFAULT;
 
-		err = nf_getsockopt(sk, PF_INET, optname, optval, &len);
+		if (!ve_ipt_permitted(net, VE_IP_FILTER))
+			return -ENOENT;
+
+		err = nf_getsockopt(sk, PF_INET, optname, optval,
+				&len);
 		if (err >= 0)
 			err = put_user(len, optlen);
 		return err;
