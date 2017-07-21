@@ -1495,7 +1495,7 @@ out:
  * to translate in-kernel semantics to zcache semantics.
  */
 
-static void zcache_cleancache_put_page(int pool_id,
+static int zcache_cleancache_put_page(int pool_id,
 					struct cleancache_filekey key,
 					pgoff_t index, struct page *page)
 {
@@ -1504,11 +1504,12 @@ static void zcache_cleancache_put_page(int pool_id,
 
 	if (!disable_cleancache_ignore_nonactive && !PageWasActive(page)) {
 		inc_zcache_eph_nonactive_puts_ignored();
-		return;
+		return 0;
 	}
 	if (likely(ind == index))
-		(void)zcache_put_page(LOCAL_CLIENT, pool_id, &oid, index,
+		return !zcache_put_page(LOCAL_CLIENT, pool_id, &oid, index,
 					page, PAGE_SIZE, false, 1);
+	return 0;
 }
 
 static int zcache_cleancache_get_page(int pool_id,
