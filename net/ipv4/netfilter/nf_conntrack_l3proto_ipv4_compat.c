@@ -418,17 +418,17 @@ static int __net_init ip_conntrack_net_init(struct net *net)
 {
 	struct proc_dir_entry *proc, *proc_exp, *proc_stat;
 
-	proc = proc_create("ip_conntrack", 0440, net->proc_net, &ct_file_ops);
+	proc = proc_net_create("ip_conntrack", 0440, net->proc_net, &ct_file_ops);
 	if (!proc)
 		goto err1;
 
-	proc_exp = proc_create("ip_conntrack_expect", 0440, net->proc_net,
+	proc_exp = proc_net_create("ip_conntrack_expect", 0440, net->proc_net,
 			       &ip_exp_file_ops);
 	if (!proc_exp)
 		goto err2;
 
-	proc_stat = proc_net_create_data("ip_conntrack", S_IRUGO,
-				net->proc_net_stat, &ct_cpu_seq_fops, NULL);
+	proc_stat = proc_net_create("ip_conntrack", S_IRUGO,
+				net->proc_net_stat, &ct_cpu_seq_fops);
 	if (!proc_stat)
 		goto err3;
 	return 0;
