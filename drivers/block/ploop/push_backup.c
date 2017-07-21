@@ -782,6 +782,7 @@ int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
 			err = -EBUSY;
 			goto get_pending_unlock;
 		}
+wait_again:
 		pbd->ppb_waiting = true;
 		spin_unlock_irq(&pbd->ppb_lock);
 
@@ -804,7 +805,8 @@ int ploop_pb_get_pending(struct ploop_pushbackup_desc *pbd,
 				err =  -ESTALE;
 			else if (signal_pending(current))
 				err = -ERESTARTSYS;
-			else err = -ENOENT;
+			else
+				goto wait_again;
 
 			goto get_pending_unlock;
 		}
