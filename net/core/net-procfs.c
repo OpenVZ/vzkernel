@@ -304,12 +304,12 @@ static int __net_init dev_proc_net_init(struct net *net)
 {
 	int rc = -ENOMEM;
 
-	if (!proc_create("dev", S_IRUGO, net->proc_net, &dev_seq_fops))
+	if (!proc_net_create("dev", S_IRUGO, net->proc_net, &dev_seq_fops))
 		goto out;
-	if (!proc_create("softnet_stat", S_IRUGO, net->proc_net,
+	if (!proc_net_create("softnet_stat", S_IRUGO, net->proc_net,
 			 &softnet_seq_fops))
 		goto out_dev;
-	if (!proc_create("ptype", S_IRUGO, net->proc_net, &ptype_seq_fops))
+	if (!proc_net_create("ptype", S_IRUGO, net->proc_net, &ptype_seq_fops))
 		goto out_softnet;
 
 	if (wext_proc_init(net))
@@ -387,7 +387,7 @@ static const struct file_operations dev_mc_seq_fops = {
 
 static int __net_init dev_mc_net_init(struct net *net)
 {
-	if (!proc_create("dev_mcast", 0, net->proc_net, &dev_mc_seq_fops))
+	if (!proc_net_create("dev_mcast", 0, net->proc_net, &dev_mc_seq_fops))
 		return -ENOMEM;
 	return 0;
 }
