@@ -168,7 +168,7 @@ static int xen_tmem_destroy_pool(u32 pool_id)
 
 /* cleancache ops */
 
-static void tmem_cleancache_put_page(int pool, struct cleancache_filekey key,
+static int tmem_cleancache_put_page(int pool, struct cleancache_filekey key,
 				     pgoff_t index, struct page *page)
 {
 	u32 ind = (u32) index;
@@ -176,11 +176,11 @@ static void tmem_cleancache_put_page(int pool, struct cleancache_filekey key,
 	unsigned long pfn = page_to_pfn(page);
 
 	if (pool < 0)
-		return;
+		return 0;
 	if (ind != index)
-		return;
+		return 0;
 	mb(); /* ensure page is quiescent; tmem may address it with an alias */
-	(void)xen_tmem_put_page((u32)pool, oid, ind, pfn);
+	return !xen_tmem_put_page((u32)pool, oid, ind, pfn);
 }
 
 static int tmem_cleancache_get_page(int pool, struct cleancache_filekey key,
