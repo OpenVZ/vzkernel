@@ -122,18 +122,18 @@ static void _posix_to_nfsv4_one(struct posix_acl *, struct nfs4_acl *,
 
 struct nfs4_acl *
 nfs4_acl_posix_to_nfsv4(struct posix_acl *pacl, struct posix_acl *dpacl,
-			unsigned int flags, struct inode *inode)
+			unsigned int flags)
 {
 	struct nfs4_acl *acl;
 	int size = 0;
 
 	if (pacl) {
-		if (posix_acl_valid(inode->i_sb->s_user_ns, pacl) < 0)
+		if (posix_acl_valid(pacl) < 0)
 			return ERR_PTR(-EINVAL);
 		size += 2*pacl->a_count;
 	}
 	if (dpacl) {
-		if (posix_acl_valid(inode->i_sb->s_user_ns, dpacl) < 0)
+		if (posix_acl_valid(dpacl) < 0)
 			return ERR_PTR(-EINVAL);
 		size += 2*dpacl->a_count;
 	}
