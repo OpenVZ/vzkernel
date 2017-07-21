@@ -42,7 +42,14 @@ const char *action_names[] = {"crash", "reboot", "halt", "netfilter", NULL};
 
 DEFINE_VVAR(volatile unsigned long, fence_wdog_jiffies64) = MAX_U64;
 static int fence_wdog_action = FENCE_WDOG_CRASH;
-static atomic_t not_fenced = ATOMIC_INIT(-1);
+
+enum {
+	NOT_FENCED = 0,
+	FENCED = 1,
+	FENCED_TIMEOUT = 2,
+};
+
+static atomic_t fence_stage = ATOMIC_INIT(NOT_FENCED);
 static char fence_wdog_log_path[PATH_MAX] = "/fence_wdog.log";
 
 #define SECS_PER_MIN	60
@@ -132,19 +139,26 @@ static DECLARE_WORK(halt_or_reboot_work, do_halt_or_reboot);
 
 void fence_wdog_do_fence(void)
 {
-	if (fence_wdog_action == FENCE_WDOG_CRASH)
+	if (fence_wdog_action == FENCE_WDOG_CRASH ||
+			atomic_read(&fence_stage) == FENCED_TIMEOUT)
 		panic("fence-watchdog: %s\n",
 		      action_names[fence_wdog_action]);
 	else
 		schedule_work(&halt_or_reboot_work);
 }
 
+#define FENCE_WDOG_TIMEOUT 30
+
 inline int fence_wdog_check_timer(void)
 {
 	if (unlikely(get_jiffies_64() > fence_wdog_jiffies64 &&
 			fence_wdog_action != FENCE_WDOG_NETFILTER)) {
-		if (atomic_inc_not_zero(&not_fenced))
+		if (atomic_cmpxchg(&fence_stage, NOT_FENCED, FENCED) == NOT_FENCED
+		    || (get_jiffies_64() > fence_wdog_jiffies64
+		    + FENCE_WDOG_TIMEOUT * HZ
+		    && atomic_cmpxchg(&fence_stage, FENCED, FENCED_TIMEOUT) == FENCED))
 			fence_wdog_do_fence();
+
 		return 1;
 	}
 
