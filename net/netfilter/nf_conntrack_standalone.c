@@ -399,12 +399,12 @@ static int nf_conntrack_standalone_init_proc(struct net *net)
 {
 	struct proc_dir_entry *pde;
 
-	pde = proc_create("nf_conntrack", 0440, net->proc_net, &ct_file_ops);
+	pde = proc_net_create("nf_conntrack", 0440, net->proc_net, &ct_file_ops);
 	if (!pde)
 		goto out_nf_conntrack;
 
-	pde = proc_net_create_data("nf_conntrack", S_IRUGO, net->proc_net_stat,
-			  &ct_cpu_seq_fops, NULL);
+	pde = proc_net_create("nf_conntrack", S_IRUGO, net->proc_net_stat,
+			  &ct_cpu_seq_fops);
 	if (!pde)
 		goto out_stat_nf_conntrack;
 	return 0;
