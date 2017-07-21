@@ -22,10 +22,10 @@ MODULE_LICENSE("GPL");
 
 #define __QUOTA_QT_PARANOIA
 
-static int get_index(struct qtree_mem_dqinfo *info, struct dquot *dquot, int depth)
+static int get_index(struct qtree_mem_dqinfo *info, struct kqid qid, int depth)
 {
 	unsigned int epb = info->dqi_usable_bs >> 2;
-	qid_t id = from_kqid(dquot->dq_sb->s_user_ns, dquot->dq_id);
+	qid_t id = from_kqid(&init_user_ns, qid);
 
 	depth = info->dqi_qtree_depth - depth - 1;
 	while (depth--)
@@ -314,7 +314,7 @@ static int do_insert_tree(struct qtree_mem_dqinfo *info, struct dquot *dquot,
 		}
 	}
 	ref = (__le32 *)buf;
-	newblk = le32_to_cpu(ref[get_index(info, dquot, depth)]);
+	newblk = le32_to_cpu(ref[get_index(info, dquot->dq_id, depth)]);
 	if (!newblk)
 		newson = 1;
 	if (depth == info->dqi_qtree_depth - 1) {
@@ -323,7 +323,7 @@ static int do_insert_tree(struct qtree_mem_dqinfo *info, struct dquot *dquot,
 			quota_error(dquot->dq_sb, "Inserting already present "
 				    "quota entry (block %u)",
 				    le32_to_cpu(ref[get_index(info,
-						dquot, depth)]));
+						dquot->dq_id, depth)]));
 			ret = -EIO;
 			goto out_buf;
 		}
@@ -333,7 +333,8 @@ static int do_insert_tree(struct qtree_mem_dqinfo *info, struct dquot *dquot,
 		ret = do_insert_tree(info, dquot, &newblk, depth+1);
 	}
 	if (newson && ret >= 0) {
-		ref[get_index(info, dquot, depth)] = cpu_to_le32(newblk);
+		ref[get_index(info, dquot->dq_id, depth)] =
+							cpu_to_le32(newblk);
 		ret = write_blk(info, *treeblk, buf);
 	} else if (newact && ret < 0) {
 		put_free_dqblk(info, buf, *treeblk);
@@ -472,7 +473,7 @@ static int remove_tree(struct qtree_mem_dqinfo *info, struct dquot *dquot,
 			    *blk);
 		goto out_buf;
 	}
-	newblk = le32_to_cpu(ref[get_index(info, dquot, depth)]);
+	newblk = le32_to_cpu(ref[get_index(info, dquot->dq_id, depth)]);
 	if (depth == info->dqi_qtree_depth - 1) {
 		ret = free_dqentry(info, dquot, newblk);
 		newblk = 0;
@@ -481,7 +482,7 @@ static int remove_tree(struct qtree_mem_dqinfo *info, struct dquot *dquot,
 	}
 	if (ret >= 0 && !newblk) {
 		int i;
-		ref[get_index(info, dquot, depth)] = cpu_to_le32(0);
+		ref[get_index(info, dquot->dq_id, depth)] = cpu_to_le32(0);
 		/* Block got empty? */
 		for (i = 0; i < (info->dqi_usable_bs >> 2) && !ref[i]; i++)
 			;
@@ -540,7 +541,7 @@ static loff_t find_block_dqentry(struct qtree_mem_dqinfo *info,
 	if (i == qtree_dqstr_in_blk(info)) {
 		quota_error(dquot->dq_sb,
 			    "Quota for id %u referenced but not present",
-			    from_kqid(dquot->dq_sb->s_user_ns, dquot->dq_id));
+			    from_kqid(&init_user_ns, dquot->dq_id));
 		ret = -EIO;
 		goto out_buf;
 	} else {
@@ -569,7 +570,7 @@ static loff_t find_tree_dqentry(struct qtree_mem_dqinfo *info,
 		goto out_buf;
 	}
 	ret = 0;
-	blk = le32_to_cpu(ref[get_index(info, dquot, depth)]);
+	blk = le32_to_cpu(ref[get_index(info, dquot->dq_id, depth)]);
 	if (!blk)	/* No reference? */
 		goto out_buf;
 	if (depth < info->dqi_qtree_depth - 1)
@@ -610,7 +611,7 @@ int qtree_read_dquot(struct qtree_mem_dqinfo *info, struct dquot *dquot)
 			if (offset < 0)
 				quota_error(sb,"Can't read quota structure "
 					    "for id %u",
-					    from_kqid(sb->s_user_ns,
+					    from_kqid(&init_user_ns,
 						      dquot->dq_id));
 			dquot->dq_off = 0;
 			set_bit(DQ_FAKE_B, &dquot->dq_flags);
@@ -629,7 +630,7 @@ int qtree_read_dquot(struct qtree_mem_dqinfo *info, struct dquot *dquot)
 		if (ret >= 0)
 			ret = -EIO;
 		quota_error(sb, "Error while reading quota structure for id %u",
-			    from_kqid(sb->s_user_ns, dquot->dq_id));
+			    from_kqid(&init_user_ns, dquot->dq_id));
 		set_bit(DQ_FAKE_B, &dquot->dq_flags);
 		memset(&dquot->dq_dqb, 0, sizeof(struct mem_dqblk));
 		kfree(ddquot);
