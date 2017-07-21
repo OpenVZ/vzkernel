@@ -2706,14 +2706,14 @@ static const struct file_operations fib_route_fops = {
 
 int __net_init fib_proc_init(struct net *net)
 {
-	if (!proc_create("fib_trie", S_IRUGO, net->proc_net, &fib_trie_fops))
+	if (!proc_net_create("fib_trie", S_IRUGO, net->proc_net, &fib_trie_fops))
 		goto out1;
 
-	if (!proc_create("fib_triestat", S_IRUGO, net->proc_net,
+	if (!proc_net_create("fib_triestat", S_IRUGO, net->proc_net,
 			 &fib_triestat_fops))
 		goto out2;
 
-	if (!proc_create("route", S_IRUGO, net->proc_net, &fib_route_fops))
+	if (!proc_net_create("route", S_IRUGO, net->proc_net, &fib_route_fops))
 		goto out3;
 
 	return 0;
