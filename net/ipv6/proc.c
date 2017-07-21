@@ -302,11 +302,11 @@ int snmp6_unregister_dev(struct inet6_dev *idev)
 
 static int __net_init ipv6_proc_init_net(struct net *net)
 {
-	if (!proc_create("sockstat6", S_IRUGO, net->proc_net,
+	if (!proc_net_create("sockstat6", S_IRUGO, net->proc_net,
 			 &sockstat6_seq_fops))
 		return -ENOMEM;
 
-	if (!proc_create("snmp6", S_IRUGO, net->proc_net, &snmp6_seq_fops))
+	if (!proc_net_create("snmp6", S_IRUGO, net->proc_net, &snmp6_seq_fops))
 		goto proc_snmp6_fail;
 
 	net->mib.proc_net_devsnmp6 = proc_net_mkdir(net, "dev_snmp6", net->proc_net);
