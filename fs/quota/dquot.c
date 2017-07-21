@@ -251,7 +251,7 @@ static void __dquot_initialize(struct inode *inode, int type);
 static inline unsigned int
 hashfn(const struct super_block *sb, struct kqid qid)
 {
-	unsigned int id = from_kqid(sb->s_user_ns, qid);
+	unsigned int id = from_kqid(&init_user_ns, qid);
 	int type = qid.type;
 	unsigned long tmp;
 
@@ -732,7 +732,7 @@ void dqput(struct dquot *dquot)
 	if (!atomic_read(&dquot->dq_count)) {
 		quota_error(dquot->dq_sb, "trying to free free dquot of %s %d",
 			    quotatypes[dquot->dq_id.type],
-			    from_kqid(dquot->dq_sb->s_user_ns, dquot->dq_id));
+			    from_kqid(&init_user_ns, dquot->dq_id));
 		BUG();
 	}
 #endif
