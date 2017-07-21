@@ -2098,9 +2098,6 @@ static int __net_init ip6_tables_net_init(struct net *net)
 {
 	int res;
 
-	if (!net_ipt_permitted(net, VE_IP_IPTABLES6))
-		return 0;
-
 	res = xt_proto_init(net, NFPROTO_IPV6);
 	if (!res)
 		net_ipt_module_set(net, VE_IP_IPTABLES6);
@@ -2109,9 +2106,6 @@ static int __net_init ip6_tables_net_init(struct net *net)
 
 static void __net_exit ip6_tables_net_exit(struct net *net)
 {
-	if (!net_is_ipt_module_set(net, VE_IP_IPTABLES6))
-		return;
-
 	xt_proto_fini(net, NFPROTO_IPV6);
 
 	net_ipt_module_clear(net, VE_IP_IPTABLES6);
