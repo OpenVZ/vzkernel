@@ -410,6 +410,9 @@ DECLARE_PER_CPU(bool, nf_skb_duplicated);
 #ifdef CONFIG_VE_IPTABLES
 #include <linux/vziptable_defs.h>
 
+#define ve_ipt_permitted(netns, ipt)					\
+	(mask_ipt_allow(get_exec_env()->ipt_mask, ipt))
+
 #define net_ipt_permitted(netns, ipt)					\
 	(mask_ipt_allow((netns)->owner_ve->ipt_mask, ipt))
 
