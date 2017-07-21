@@ -320,7 +320,7 @@ static int __net_init phonet_init_net(struct net *net)
 {
 	struct phonet_net *pnn = phonet_pernet(net);
 
-	if (!proc_create("phonet", 0, net->proc_net, &pn_sock_seq_fops))
+	if (!proc_net_create("phonet", 0, net->proc_net, &pn_sock_seq_fops))
 		return -ENOMEM;
 
 	INIT_LIST_HEAD(&pnn->pndevs.list);
