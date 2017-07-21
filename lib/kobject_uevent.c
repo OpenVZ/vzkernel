@@ -259,11 +259,13 @@ int kobject_uevent_env_one(struct kobject *kobj, enum kobject_action action,
 		struct sock *uevent_sock = ue_sk->sk;
 		struct sk_buff *skb;
 		size_t len;
+		struct ve_struct *owner_ve;
 
 		if (!netlink_has_listeners(uevent_sock, 1))
 			continue;
 
-		if (sock_net(uevent_sock)->owner_ve != get_exec_env())
+		owner_ve = sock_net(uevent_sock)->owner_ve;
+		if (!ve_is_super(owner_ve) && owner_ve != get_exec_env())
 			continue;
 
 		/* allocate message with the maximum possible size */
