@@ -219,19 +219,16 @@ void __cleancache_put_page(struct page *page)
 	int pool_id;
 	struct cleancache_filekey key = { .u.key = { 0 } };
 
-	if (!cleancache_ops) {
-		cleancache_puts++;
+	if (!cleancache_ops)
 		return;
-	}
 
 	VM_BUG_ON_PAGE(!PageLocked(page), page);
 	pool_id = page->mapping->host->i_sb->cleancache_poolid;
 	if (pool_id >= 0 &&
 		cleancache_get_key(page->mapping->host, &key) >= 0) {
 		if (!mem_cgroup_cleancache_disabled(page)) {
-			cleancache_ops->put_page(pool_id, key,
+			cleancache_puts += cleancache_ops->put_page(pool_id, key,
 						 page->index, page);
-			cleancache_puts++;
 		} else
 			cleancache_ops->invalidate_page(pool_id, key,
 							page->index);
