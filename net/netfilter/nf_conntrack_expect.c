@@ -595,7 +595,7 @@ static int exp_proc_init(struct net *net)
 #ifdef CONFIG_NF_CONNTRACK_PROCFS
 	struct proc_dir_entry *proc;
 
-	proc = proc_create("nf_conntrack_expect", 0440, net->proc_net,
+	proc = proc_net_create("nf_conntrack_expect", 0440, net->proc_net,
 			   &exp_file_ops);
 	if (!proc)
 		return -ENOMEM;
