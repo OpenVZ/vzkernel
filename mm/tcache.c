@@ -1190,14 +1190,16 @@ static int tcache_cleancache_put_page(int pool_id,
 		cache_page = tcache_alloc_page(node->pool);
 		if (cache_page) {
 			copy_highpage(cache_page, page);
-			if (tcache_attach_page(node, index, cache_page))
+			if (tcache_attach_page(node, index, cache_page)) {
 				if (put_page_testzero(cache_page))
 					tcache_put_page(page);
-			else
+			} else
 				ret = 1;
 		}
 		tcache_put_node_and_pool(node);
 	}
+
+	return ret;
 }
 
 static int tcache_cleancache_get_page(int pool_id,
