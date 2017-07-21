@@ -59,9 +59,6 @@ static int __net_init iptable_filter_net_init(struct net *net)
 {
 	struct ipt_replace *repl;
 
-	if (!net_ipt_permitted(net, VE_IP_FILTER))
-		return 0;
-
 	repl = ipt_alloc_initial_table(&packet_filter);
 	if (repl == NULL)
 		return -ENOMEM;
@@ -81,9 +78,6 @@ static int __net_init iptable_filter_net_init(struct net *net)
 
 static void __net_exit iptable_filter_net_exit(struct net *net)
 {
-	if (!net_is_ipt_module_set(net, VE_IP_FILTER))
-		return;
-
 	ipt_unregister_table(net, net->ipv4.iptable_filter);
 	net->ipv4.iptable_filter = NULL;
 
