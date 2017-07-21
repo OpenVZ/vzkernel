@@ -2719,9 +2719,9 @@ static int __net_init ipmr_net_init(struct net *net)
 
 #ifdef CONFIG_PROC_FS
 	err = -ENOMEM;
-	if (!proc_create("ip_mr_vif", 0, net->proc_net, &ipmr_vif_fops))
+	if (!proc_net_create("ip_mr_vif", 0, net->proc_net, &ipmr_vif_fops))
 		goto proc_vif_fail;
-	if (!proc_create("ip_mr_cache", 0, net->proc_net, &ipmr_mfc_fops))
+	if (!proc_net_create("ip_mr_cache", 0, net->proc_net, &ipmr_mfc_fops))
 		goto proc_cache_fail;
 #endif
 	return 0;
