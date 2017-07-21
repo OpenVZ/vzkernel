@@ -30,7 +30,7 @@ struct cleancache_ops {
 	int (*init_shared_fs)(char *uuid, size_t);
 	int (*get_page)(int, struct cleancache_filekey,
 			pgoff_t, struct page *);
-	void (*put_page)(int, struct cleancache_filekey,
+	int (*put_page)(int, struct cleancache_filekey,
 			pgoff_t, struct page *);
 	void (*invalidate_page)(int, struct cleancache_filekey, pgoff_t);
 	void (*invalidate_inode)(int, struct cleancache_filekey);
