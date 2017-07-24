@@ -203,9 +203,12 @@ static int ioctl_fiemap(struct file *filp, unsigned long arg)
 		       fieinfo.fi_extents_max * sizeof(struct fiemap_extent)))
 		return -EFAULT;
 
-	if (fieinfo.fi_flags & FIEMAP_FLAG_SYNC)
-		filemap_write_and_wait_range(inode->i_mapping, fiemap.fm_start,
-					     fiemap.fm_start + len - 1);
+	if (fieinfo.fi_flags & FIEMAP_FLAG_SYNC) {
+		error = filemap_write_and_wait_range(inode->i_mapping,
+				fiemap.fm_start, fiemap.fm_start + len - 1);
+		if (error)
+			return error;
+	}
 
 	error = inode->i_op->fiemap(inode, &fieinfo, fiemap.fm_start, len);
 	fiemap.fm_flags = fieinfo.fi_flags;
