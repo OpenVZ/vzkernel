@@ -241,6 +241,9 @@ bool current_user_ns_initial(void)
 	struct ve_struct *ve = get_exec_env();
 	bool ret = false;
 
+	if (current_user_ns() == &init_user_ns)
+		return true;
+
 	rcu_read_lock();
 	if (ve->ve_ns && ve->init_cred->user_ns == current_user_ns())
 		ret = true;
