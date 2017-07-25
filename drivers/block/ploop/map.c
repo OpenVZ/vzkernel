@@ -509,7 +509,6 @@ int map_index_fault(struct ploop_request * preq)
 
 	if (test_and_set_bit(PLOOP_MAP_READ, &m->state)) {
 		__TRACE("r %p %u %p\n", preq, preq->req_cluster, m);
-		preq_dbg_acquire(preq, OWNER_MAP_NODE_IO_QUEUE, WHO_MAP_INDEX_FAULT);
 		list_add_tail(&preq->list, &m->io_queue);
 		plo->st.merge_lockouts++;
 		spin_unlock_irq(&plo->lock);
@@ -560,9 +559,7 @@ static void map_read_endio(struct ploop_request * preq, struct map_node * m)
 	list_for_each_safe(n, pn, &m->io_queue) {
 		preq = list_entry(n, struct ploop_request, list);
 		if (preq->eng_state == PLOOP_E_ENTRY) {
-			preq_dbg_release(preq, OWNER_MAP_NODE_IO_QUEUE);
-			list_del_init(&preq->list);
-			preq_dbg_acquire(preq, OWNER_READY_QUEUE, WHO_MAP_READ_ENDIO);
+			list_del(&preq->list);
 			list_add_tail(&preq->list, &list);
 		}
 	}
@@ -621,9 +618,7 @@ flush_queue:
 	list_for_each_safe(n, pn, &m->io_queue) {
 		preq = list_entry(n, struct ploop_request, list);
 		if (preq->eng_state == PLOOP_E_ENTRY) {
-			preq_dbg_release(preq, OWNER_MAP_NODE_IO_QUEUE);
-			list_del_init(&preq->list);
-			preq_dbg_acquire(preq, OWNER_READY_QUEUE, WHO_MAP_MERGE_ENDIO);
+			list_del(&preq->list);
 			list_add_tail(&preq->list, &list);
 		}
 	}
@@ -722,7 +717,6 @@ static int ploop_read_map(struct ploop_map * map, struct ploop_request * preq)
 		} else {
 			__TRACE("g %p %u %p\n", preq, preq->req_cluster, m);
 			plo->st.map_lockouts++;
-			preq_dbg_acquire(preq, OWNER_MAP_NODE_IO_QUEUE, WHO_PLOOP_READ_MAP);
 			list_add_tail(&preq->list, &m->io_queue);
 			err = 1;
 		}
@@ -982,7 +976,6 @@ void ploop_index_update(struct ploop_request * preq)
 
 	if (test_and_set_bit(PLOOP_MAP_WRITEBACK, &m->state)) {
 		preq->eng_state = PLOOP_E_INDEX_DELAY;
-		preq_dbg_acquire(preq, OWNER_MAP_NODE_IO_QUEUE, WHO_PLOOP_INDEX_UPDATE1);
 		list_add_tail(&preq->list, &m->io_queue);
 		__TRACE("d %p %u %p\n", preq, preq->req_cluster, m);
 		return;
@@ -1026,7 +1019,6 @@ corrupted:
 out:
 	preq->eng_state = PLOOP_E_COMPLETE;
 	spin_lock_irq(&plo->lock);
-	preq_dbg_acquire(preq, OWNER_MAP_NODE_IO_QUEUE, WHO_PLOOP_INDEX_UPDATE2);
 	list_add_tail(&preq->list, &plo->ready_queue);
 	spin_unlock_irq(&plo->lock);
 	return;
@@ -1060,13 +1052,11 @@ static void map_idx_swap(struct map_node *m, unsigned int idx,
 }
 
 static inline void requeue_req(struct ploop_request *preq,
-			       unsigned long new_eng_state, unsigned who)
+			       unsigned long new_eng_state)
 {
 	preq->eng_state = new_eng_state;
 	spin_lock_irq(&preq->plo->lock);
-	preq_dbg_release(preq, OWNER_MAP_NODE_IO_QUEUE);
-	list_del_init(&preq->list);
-	preq_dbg_acquire(preq, OWNER_READY_QUEUE, who);
+	list_del(&preq->list);
 	list_add_tail(&preq->list, &preq->plo->ready_queue);
 	spin_unlock_irq(&preq->plo->lock);
 }
@@ -1087,7 +1077,7 @@ static void map_wb_complete_post_process(struct ploop_map *map,
 		   (!test_bit(PLOOP_REQ_RELOC_A, &preq->state) &&
 		    !test_bit(PLOOP_REQ_RELOC_S, &preq->state)))) {
 
-		requeue_req(preq, PLOOP_E_COMPLETE, WHO_MAP_WB_COMPL_PP1);
+		requeue_req(preq, PLOOP_E_COMPLETE);
 		return;
 	}
 
@@ -1098,7 +1088,7 @@ static void map_wb_complete_post_process(struct ploop_map *map,
 		preq->map = NULL;
 		spin_unlock_irq(&plo->lock);
 
-		requeue_req(preq, PLOOP_E_RELOC_COMPLETE, WHO_MAP_WB_COMPL_PP2);
+		requeue_req(preq, PLOOP_E_RELOC_COMPLETE);
 		return;
 	}
 
@@ -1106,13 +1096,13 @@ static void map_wb_complete_post_process(struct ploop_map *map,
 	BUG_ON (!preq->aux_bio);
 
 	if (++plo->grow_relocated > plo->grow_end - plo->grow_start) {
-		requeue_req(preq, PLOOP_E_COMPLETE, WHO_MAP_WB_COMPL_PP3);
+		requeue_req(preq, PLOOP_E_COMPLETE);
 		return;
 	}
 
 	del_lockout(preq);
 	preq->req_cluster++;
-	requeue_req(preq, PLOOP_E_ENTRY, WHO_MAP_WB_COMPL_PP4);
+	requeue_req(preq, PLOOP_E_ENTRY);
 }
 
 static void map_wb_complete(struct map_node * m, int err)
@@ -1175,9 +1165,7 @@ static void map_wb_complete(struct map_node * m, int err)
 				PLOOP_REQ_SET_ERROR(preq, err);
 				preq->eng_state = PLOOP_E_COMPLETE;
 				spin_lock_irq(&plo->lock);
-				preq_dbg_release(preq, OWNER_MAP_NODE_IO_QUEUE);
-				list_del_init(cursor);
-				preq_dbg_acquire(preq, OWNER_READY_QUEUE, WHO_MAP_WB_COMPLETE1);
+				list_del(cursor);
 				list_add_tail(cursor, &preq->plo->ready_queue);
 				spin_unlock_irq(&plo->lock);
 			} else {
@@ -1211,9 +1199,7 @@ static void map_wb_complete(struct map_node * m, int err)
 				PLOOP_REQ_SET_ERROR(preq, -ENOMEM);
 				preq->eng_state = PLOOP_E_COMPLETE;
 				spin_lock_irq(&plo->lock);
-				preq_dbg_release(preq, OWNER_MAP_NODE_IO_QUEUE);
-				list_del_init(cursor);
-				preq_dbg_acquire(preq, OWNER_READY_QUEUE, WHO_MAP_WB_COMPLETE2);
+				list_del(cursor);
 				list_add_tail(cursor, &plo->ready_queue);
 				spin_unlock_irq(&plo->lock);
 				break;
@@ -1241,7 +1227,6 @@ static void map_wb_complete(struct map_node * m, int err)
 
 			if (!main_preq) {
 				main_preq = preq;
-				preq_dbg_release(main_preq, OWNER_MAP_NODE_IO_QUEUE);
 				list_del_init(&main_preq->list);
 			}
 			plo->st.map_multi_updates++;
@@ -1268,7 +1253,6 @@ ploop_index_wb_complete(struct ploop_request * preq)
 	struct map_node * m = preq->map;
 
 	spin_lock_irq(&plo->lock);
-	preq_dbg_acquire(preq, OWNER_MAP_NODE_IO_QUEUE, WHO_PLOOP_INDEX_WB_COMPLETE);
 	list_add_tail(&preq->list, &m->io_queue);
 	spin_unlock_irq(&plo->lock);
 
