@@ -98,26 +98,36 @@ enum mem_cgroup_stat_index {
 	/*
 	 * For MEM_CONTAINER_TYPE_ALL, usage = pagecache + rss.
 	 */
-	MEM_CGROUP_STAT_CACHE,		/* # of pages charged as cache */
-	MEM_CGROUP_STAT_RSS,		/* # of pages charged as anon rss */
 	MEM_CGROUP_STAT_RSS_HUGE,	/* # of pages charged as anon huge */
 	MEM_CGROUP_STAT_FILE_MAPPED,	/* # of pages charged as file rss */
 	MEM_CGROUP_STAT_SHMEM,		/* # of charged shmem pages */
-	MEM_CGROUP_STAT_SLAB_RECLAIMABLE, /* # of reclaimable slab pages */
 	MEM_CGROUP_STAT_SLAB_UNRECLAIMABLE, /* # of unreclaimable slab pages */
 	MEM_CGROUP_STAT_SWAP,		/* # of pages, swapped out */
 	MEM_CGROUP_STAT_NSTATS,
 };
 
+enum mem_cgroup_stat2_index {
+	/*
+	 * For MEM_CONTAINER_TYPE_ALL, usage = pagecache + rss.
+	 */
+	MEM_CGROUP_STAT_CACHE,		/* # of pages charged as cache */
+	MEM_CGROUP_STAT_RSS,		/* # of pages charged as anon rss */
+	MEM_CGROUP_STAT_SLAB_RECLAIMABLE, /* # of reclaimable slab pages */
+	MEM_CGROUP_STAT2_NSTATS,
+};
+
 static const char * const mem_cgroup_stat_names[] = {
-	"cache",
-	"rss",
 	"rss_huge",
 	"mapped_file",
 	"shmem",
-	"slab_reclaimable",
 	"slab_unreclaimable",
 	"swap",
+};
+
+static const char * const mem_cgroup_stat2_names[] = {
+	"cache",
+	"rss",
+	"slab_reclaimable",
 };
 
 enum mem_cgroup_events_index {
@@ -173,6 +183,10 @@ struct mem_cgroup_stat_cpu {
 	unsigned long events[MEM_CGROUP_EVENTS_NSTATS];
 	unsigned long nr_page_events;
 	unsigned long targets[MEM_CGROUP_NTARGETS];
+};
+
+struct mem_cgroup_stat2_cpu {
+	struct percpu_counter counters[MEM_CGROUP_STAT2_NSTATS];
 };
 
 struct mem_cgroup_reclaim_iter {
@@ -379,6 +393,7 @@ struct mem_cgroup {
 	 * percpu counter.
 	 */
 	struct mem_cgroup_stat_cpu __percpu *stat;
+	struct mem_cgroup_stat2_cpu stat2;
 	spinlock_t pcp_counter_lock;
 
 	atomic_t	dead_count;
@@ -959,6 +974,11 @@ mem_cgroup_read_stat(struct mem_cgroup *memcg, enum mem_cgroup_stat_index idx)
 		val = 0;
 	return val;
 }
+static inline unsigned long
+mem_cgroup_read_stat2(struct mem_cgroup *memcg, enum mem_cgroup_stat2_index idx)
+{
+	return percpu_counter_read_positive(&memcg->stat2.counters[idx]);
+}
 
 static void mem_cgroup_update_swap_max(struct mem_cgroup *memcg)
 {
@@ -1041,10 +1061,10 @@ static void mem_cgroup_charge_statistics(struct mem_cgroup *memcg,
 	 * counted as CACHE even if it's on ANON LRU.
 	 */
 	if (PageAnon(page))
-		__this_cpu_add(memcg->stat->count[MEM_CGROUP_STAT_RSS],
+		percpu_counter_add(&memcg->stat2.counters[MEM_CGROUP_STAT_RSS],
 				nr_pages);
 	else {
-		__this_cpu_add(memcg->stat->count[MEM_CGROUP_STAT_CACHE],
+		percpu_counter_add(&memcg->stat2.counters[MEM_CGROUP_STAT_CACHE],
 				nr_pages);
 		if (PageSwapBacked(page))
 			__this_cpu_add(memcg->stat->count[MEM_CGROUP_STAT_SHMEM],
@@ -1657,9 +1677,9 @@ bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg, int vfs_cache_min_ratio)
 {
 	unsigned long anon, file, dcache;
 
-	anon = mem_cgroup_read_stat(memcg, MEM_CGROUP_STAT_RSS);
-	file = mem_cgroup_read_stat(memcg, MEM_CGROUP_STAT_CACHE);
-	dcache = mem_cgroup_read_stat(memcg, MEM_CGROUP_STAT_SLAB_RECLAIMABLE);
+	anon = mem_cgroup_read_stat2(memcg, MEM_CGROUP_STAT_RSS);
+	file = mem_cgroup_read_stat2(memcg, MEM_CGROUP_STAT_CACHE);
+	dcache = mem_cgroup_read_stat2(memcg, MEM_CGROUP_STAT_SLAB_RECLAIMABLE);
 
 	return dcache / vfs_cache_min_ratio <
 			(anon + file + dcache) / 100;
@@ -2049,6 +2069,10 @@ done:
 				continue;
 			pr_cont(" %s:%luKB", mem_cgroup_stat_names[i],
 				K(mem_cgroup_read_stat(iter, i)));
+		}
+		for (i = 0; i < MEM_CGROUP_STAT2_NSTATS; i++) {
+			pr_cont(" %s:%luKB", mem_cgroup_stat2_names[i],
+				K(mem_cgroup_read_stat2(iter, i)));
 		}
 
 		for (i = 0; i < NR_LRU_LISTS; i++)
@@ -3190,10 +3214,11 @@ int __memcg_charge_slab(struct kmem_cache *s, gfp_t gfp, unsigned int nr_pages)
 	if (s->flags & SLAB_RECLAIM_ACCOUNT) {
 		page_counter_charge(&memcg->dcache, nr_pages);
 		idx = MEM_CGROUP_STAT_SLAB_RECLAIMABLE;
-	} else
+		percpu_counter_add(&memcg->stat2.counters[idx], nr_pages);
+	} else {
 		idx = MEM_CGROUP_STAT_SLAB_UNRECLAIMABLE;
-
-	this_cpu_add(memcg->stat->count[idx], nr_pages);
+		this_cpu_add(memcg->stat->count[idx], nr_pages);
+	}
 	return 0;
 }
 
@@ -3209,10 +3234,11 @@ void __memcg_uncharge_slab(struct kmem_cache *s, unsigned int nr_pages)
 	if (s->flags & SLAB_RECLAIM_ACCOUNT) {
 		page_counter_uncharge(&memcg->dcache, nr_pages);
 		idx = MEM_CGROUP_STAT_SLAB_RECLAIMABLE;
-	} else
+		percpu_counter_sub(&memcg->stat2.counters[idx], nr_pages);
+	} else {
 		idx = MEM_CGROUP_STAT_SLAB_UNRECLAIMABLE;
-
-	this_cpu_sub(memcg->stat->count[idx], nr_pages);
+		this_cpu_sub(memcg->stat->count[idx], nr_pages);
+	}
 }
 
 /*
@@ -4265,6 +4291,17 @@ static unsigned long mem_cgroup_recursive_stat(struct mem_cgroup *memcg,
 
 	return val;
 }
+static unsigned long mem_cgroup_recursive_stat2(struct mem_cgroup *memcg,
+					       enum mem_cgroup_stat2_index idx)
+{
+	struct mem_cgroup *iter;
+	unsigned long val = 0;
+
+	for_each_mem_cgroup_tree(iter, memcg)
+		val += mem_cgroup_read_stat2(iter, idx);
+
+	return val;
+}
 
 static inline u64 mem_cgroup_usage(struct mem_cgroup *memcg, bool swap)
 {
@@ -4281,8 +4318,8 @@ static inline u64 mem_cgroup_usage(struct mem_cgroup *memcg, bool swap)
 	 * Transparent hugepages are still accounted for in MEM_CGROUP_STAT_RSS
 	 * as well as in MEM_CGROUP_STAT_RSS_HUGE.
 	 */
-	val = mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_CACHE);
-	val += mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_RSS);
+	val = mem_cgroup_recursive_stat2(memcg, MEM_CGROUP_STAT_CACHE);
+	val += mem_cgroup_recursive_stat2(memcg, MEM_CGROUP_STAT_RSS);
 
 	if (swap)
 		val += mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_SWAP);
@@ -4298,12 +4335,12 @@ void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
 	for_each_online_node(nid)
 		mem_cgroup_get_nr_pages(memcg, nid, mi->pages);
 
-	mi->slab_reclaimable = tree_stat(memcg,
+	mi->slab_reclaimable = mem_cgroup_recursive_stat2(memcg,
 					MEM_CGROUP_STAT_SLAB_RECLAIMABLE);
 	mi->slab_unreclaimable = mem_cgroup_recursive_stat(memcg,
 					MEM_CGROUP_STAT_SLAB_UNRECLAIMABLE);
-	mi->cached = tree_stat(memcg, MEM_CGROUP_STAT_CACHE);
-	mi->shmem = tree_stat(memcg, MEM_CGROUP_STAT_SHMEM);
+	mi->cached = mem_cgroup_recursive_stat2(memcg, MEM_CGROUP_STAT_CACHE);
+	mi->shmem = mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_SHMEM);
 }
 
 int mem_cgroup_enough_memory(struct mem_cgroup *memcg, long pages)
@@ -4317,7 +4354,7 @@ int mem_cgroup_enough_memory(struct mem_cgroup *memcg, long pages)
 	free += page_counter_read(&memcg->dcache);
 
 	/* assume file cache is reclaimable */
-	free += tree_stat(memcg, MEM_CGROUP_STAT_CACHE);
+	free += mem_cgroup_recursive_stat2(memcg, MEM_CGROUP_STAT_CACHE);
 
 	/* but do not count shmem pages as they can't be purged,
 	 * only swapped out */
@@ -5196,6 +5233,10 @@ static int memcg_stat_show(struct cgroup *cont, struct cftype *cft,
 		seq_printf(m, "%s %lu\n", mem_cgroup_stat_names[i],
 			   mem_cgroup_read_stat(memcg, i) * PAGE_SIZE);
 	}
+	for (i = 0; i < MEM_CGROUP_STAT2_NSTATS; i++) {
+		seq_printf(m, "%s %lu\n", mem_cgroup_stat2_names[i],
+			   mem_cgroup_read_stat2(memcg, i) * PAGE_SIZE);
+	}
 
 	for (i = 0; i < MEM_CGROUP_EVENTS_NSTATS; i++)
 		seq_printf(m, "%s %lu\n", mem_cgroup_events_names[i],
@@ -5225,6 +5266,13 @@ static int memcg_stat_show(struct cgroup *cont, struct cftype *cft,
 			continue;
 		seq_printf(m, "total_%s %llu\n", mem_cgroup_stat_names[i],
 			   (u64)acc.stat[i] * PAGE_SIZE);
+	}
+	for (i = 0; i < MEM_CGROUP_STAT2_NSTATS; i++) {
+		unsigned long long val = 0;
+
+		for_each_mem_cgroup_tree(mi, memcg)
+			val += mem_cgroup_read_stat2(mi, i) * PAGE_SIZE;
+		seq_printf(m, "total_%s %llu\n", mem_cgroup_stat2_names[i], val);
 	}
 
 	for (i = 0; i < MEM_CGROUP_EVENTS_NSTATS; i++)
@@ -6014,6 +6062,7 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	struct mem_cgroup *memcg;
 	size_t size;
 	int id;
+	int i, ret;
 
 	size = sizeof(struct mem_cgroup);
 	size += nr_node_ids * sizeof(struct mem_cgroup_per_node *);
@@ -6035,6 +6084,12 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	memcg->stat = alloc_percpu(struct mem_cgroup_stat_cpu);
 	if (!memcg->stat)
 		goto out_free;
+
+	for (i = 0; i < MEM_CGROUP_STAT2_NSTATS; i++) {
+		ret = percpu_counter_init(&memcg->stat2.counters[i], 0, GFP_KERNEL);
+		if (ret)
+			goto out_pcpu_free;
+	}
 	spin_lock_init(&memcg->pcp_counter_lock);
 	mutex_lock(&mem_cgroup_idr_lock);
 	idr_replace(&mem_cgroup_idr, memcg, memcg->id);
@@ -6042,6 +6097,11 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	synchronize_rcu();
 	return memcg;
 
+out_pcpu_free:
+	while (--i >= 0)
+		percpu_counter_destroy(&memcg->stat2.counters[i]);
+
+	free_percpu(memcg->stat);
 out_free:
 	if (memcg->id > 0) {
 		mutex_lock(&mem_cgroup_idr_lock);
@@ -6068,6 +6128,7 @@ fail:
 static void __mem_cgroup_free(struct mem_cgroup *memcg)
 {
 	int node;
+	int i;
 
 	mem_cgroup_remove_from_trees(memcg);
 
@@ -6075,6 +6136,9 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 
 	for_each_node(node)
 		free_mem_cgroup_per_zone_info(memcg, node);
+
+	for (i = 0; i < MEM_CGROUP_STAT2_NSTATS; i++)
+		percpu_counter_destroy(&memcg->stat2.counters[i]);
 
 	free_percpu(memcg->stat);
 
@@ -7196,8 +7260,8 @@ static void uncharge_batch(struct mem_cgroup *memcg, unsigned long pgpgout,
 	}
 
 	local_irq_save(flags);
-	__this_cpu_sub(memcg->stat->count[MEM_CGROUP_STAT_RSS], nr_anon);
-	__this_cpu_sub(memcg->stat->count[MEM_CGROUP_STAT_CACHE], nr_file);
+	percpu_counter_sub(&memcg->stat2.counters[MEM_CGROUP_STAT_RSS], nr_anon);
+	percpu_counter_sub(&memcg->stat2.counters[MEM_CGROUP_STAT_CACHE], nr_file);
 	__this_cpu_sub(memcg->stat->count[MEM_CGROUP_STAT_RSS_HUGE], nr_huge);
 	__this_cpu_sub(memcg->stat->count[MEM_CGROUP_STAT_SHMEM], nr_shmem);
 	__this_cpu_add(memcg->stat->events[MEM_CGROUP_EVENTS_PGPGOUT], pgpgout);
