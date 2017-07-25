@@ -1585,7 +1585,7 @@ int mem_cgroup_inactive_anon_is_low(struct lruvec *lruvec)
 	return inactive * inactive_ratio < active;
 }
 
-bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg)
+bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg, int vfs_cache_min_ratio)
 {
 	unsigned long anon, file, dcache;
 
@@ -1593,7 +1593,7 @@ bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg)
 	file = mem_cgroup_read_stat(memcg, MEM_CGROUP_STAT_CACHE);
 	dcache = mem_cgroup_read_stat(memcg, MEM_CGROUP_STAT_SLAB_RECLAIMABLE);
 
-	return dcache / sysctl_vfs_cache_min_ratio <
+	return dcache / vfs_cache_min_ratio <
 			(anon + file + dcache) / 100;
 }
 
