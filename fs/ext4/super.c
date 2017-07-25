@@ -365,6 +365,9 @@ static void ext4_send_uevent_work(struct work_struct *w)
 	case EXT4_UA_ERROR:
 		ret = add_uevent_var(env, "FS_ACTION=%s", "ERROR");
 		break;
+	case EXT4_UA_ABORT:
+		ret = add_uevent_var(env, "FS_ACTION=%s", "ABORT");
+		break;
 	case EXT4_UA_FREEZE:
 		ret = add_uevent_var(env, "FS_ACTION=%s", "FREEZE");
 		break;
@@ -509,6 +512,9 @@ static void ext4_handle_error(struct super_block *sb)
 
 	if (!test_opt(sb, ERRORS_CONT)) {
 		journal_t *journal = EXT4_SB(sb)->s_journal;
+
+		if (!xchg(&EXT4_SB(sb)->s_abrt_event_sent, 1))
+			ext4_send_uevent(sb, EXT4_UA_ABORT);
 
 		EXT4_SB(sb)->s_mount_flags |= EXT4_MF_FS_ABORTED;
 		if (journal)
@@ -711,6 +717,10 @@ void __ext4_abort(struct super_block *sb, const char *function,
 
 	if ((sb->s_flags & MS_RDONLY) == 0) {
 		ext4_msg(sb, KERN_CRIT, "Remounting filesystem read-only");
+
+		if (!xchg(&EXT4_SB(sb)->s_abrt_event_sent, 1))
+			ext4_send_uevent(sb, EXT4_UA_ABORT);
+
 		EXT4_SB(sb)->s_mount_flags |= EXT4_MF_FS_ABORTED;
 		/*
 		 * Make sure updated value of ->s_mount_flags will be visible
