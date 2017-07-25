@@ -96,7 +96,7 @@ void mem_cgroup_iter_break(struct mem_cgroup *, struct mem_cgroup *);
 /*
  * For memory reclaim.
  */
-bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg);
+bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg, int vfs_cache_min_ratio);
 bool mem_cgroup_low(struct mem_cgroup *root, struct mem_cgroup *memcg);
 bool mem_cgroup_cleancache_disabled(struct page *page);
 int mem_cgroup_select_victim_node(struct mem_cgroup *memcg);
@@ -315,7 +315,8 @@ static inline void mem_cgroup_put(struct mem_cgroup *memcg)
 {
 }
 
-static inline bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg)
+static inline bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg,
+	int vfs_cache_min_ratio)
 {
 	return false;
 }
