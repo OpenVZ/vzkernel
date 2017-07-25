@@ -465,7 +465,7 @@ int ploop_pb_copy_cbt_to_user(struct ploop_pushbackup_desc *pbd, char *user_addr
 }
 
 static void ploop_pb_add_req_to_tree(struct ploop_request *preq,
-				     struct pb_set *pbs, unsigned new_owner)
+				     struct pb_set *pbs)
 {
 	struct rb_root *tree = &pbs->tree;
 	struct rb_node ** p = &tree->rb_node;
@@ -496,7 +496,6 @@ static void ploop_pb_add_req_to_tree(struct ploop_request *preq,
 		       &pbs->list, pbs->list.prev->next, pbs->list.prev, preq);
 		BUG();
 	}
-	preq_dbg_acquire(preq, new_owner, WHO_PLOOP_PB_ADD_REQ_TO_TREE);
 	list_add_tail(&preq->list, &pbs->list);
 
 	rb_link_node(&preq->reloc_link, parent, p);
@@ -506,17 +505,17 @@ static void ploop_pb_add_req_to_tree(struct ploop_request *preq,
 static void ploop_pb_add_req_to_pending(struct ploop_pushbackup_desc *pbd,
 					struct ploop_request *preq)
 {
-	ploop_pb_add_req_to_tree(preq, &pbd->pending_set, OWNER_PB_PENDING_SET);
+	ploop_pb_add_req_to_tree(preq, &pbd->pending_set);
 }
 
 static void ploop_pb_add_req_to_reported(struct ploop_pushbackup_desc *pbd,
 					 struct ploop_request *preq)
 {
-	ploop_pb_add_req_to_tree(preq, &pbd->reported_set, OWNER_PB_REPORTED_SET);
+	ploop_pb_add_req_to_tree(preq, &pbd->reported_set);
 }
 
 static void remove_req_from_pbs(struct pb_set *pbs,
-				struct ploop_request *preq, unsigned old_owner)
+					 struct ploop_request *preq)
 {
 	unsigned long timeout = preq->plo->tune.push_backup_timeout * HZ;
 	bool oldest_deleted = false;
@@ -525,7 +524,6 @@ static void remove_req_from_pbs(struct pb_set *pbs,
 		oldest_deleted = true;
 
 	rb_erase(&preq->reloc_link, &pbs->tree);
-	preq_dbg_release(preq, old_owner);
 	list_del_init(&preq->list);
 
 	if (timeout && oldest_deleted && !list_empty(&pbs->list) &&
@@ -548,8 +546,7 @@ static inline bool preq_match(struct ploop_request *preq, cluster_t clu,
 /* returns leftmost preq which req_cluster >= clu */
 static struct ploop_request *ploop_pb_get_req_from_tree(struct pb_set *pbs,
 						cluster_t clu, cluster_t len,
-						struct ploop_request **npreq,
-						unsigned old_owner)
+						struct ploop_request **npreq)
 {
 	struct rb_root *tree = &pbs->tree;
 	struct rb_node *n = tree->rb_node;
@@ -569,7 +566,7 @@ static struct ploop_request *ploop_pb_get_req_from_tree(struct pb_set *pbs,
 			if (n)
 				*npreq = rb_entry(n, struct ploop_request,
 						  reloc_link);
-			remove_req_from_pbs(pbs, p, old_owner);
+			remove_req_from_pbs(pbs, p);
 			return p;
 		}
 	}
@@ -585,7 +582,7 @@ static struct ploop_request *ploop_pb_get_req_from_tree(struct pb_set *pbs,
 		n = rb_next(&p->reloc_link);
 		if (n)
 			*npreq = rb_entry(n, struct ploop_request, reloc_link);
-		remove_req_from_pbs(pbs, p, old_owner);
+		remove_req_from_pbs(pbs, p);
 		return p;
 	}
 
@@ -594,8 +591,7 @@ static struct ploop_request *ploop_pb_get_req_from_tree(struct pb_set *pbs,
 
 static struct ploop_request *
 ploop_pb_get_first_req_from_tree(struct pb_set *pbs,
-				 struct ploop_request **npreq,
-				 unsigned old_owner)
+				 struct ploop_request **npreq)
 {
 	struct rb_root *tree = &pbs->tree;
 	struct ploop_request *p;
@@ -614,30 +610,27 @@ ploop_pb_get_first_req_from_tree(struct pb_set *pbs,
 	}
 
 	p = rb_entry(n, struct ploop_request, reloc_link);
-	remove_req_from_pbs(pbs, p, old_owner);
+	remove_req_from_pbs(pbs, p);
 	return p;
 }
 
 static struct ploop_request *
 ploop_pb_get_first_req_from_pending(struct ploop_pushbackup_desc *pbd)
 {
-	return ploop_pb_get_first_req_from_tree(&pbd->pending_set, NULL,
-						OWNER_PB_PENDING_SET);
+	return ploop_pb_get_first_req_from_tree(&pbd->pending_set, NULL);
 }
 
 static struct ploop_request *
 ploop_pb_get_first_reqs_from_pending(struct ploop_pushbackup_desc *pbd,
 				     struct ploop_request **npreq)
 {
-	return ploop_pb_get_first_req_from_tree(&pbd->pending_set, npreq,
-						OWNER_PB_PENDING_SET);
+	return ploop_pb_get_first_req_from_tree(&pbd->pending_set, npreq);
 }
 
 static struct ploop_request *
 ploop_pb_get_first_req_from_reported(struct ploop_pushbackup_desc *pbd)
 {
-	return ploop_pb_get_first_req_from_tree(&pbd->reported_set, NULL,
-						OWNER_PB_REPORTED_SET);
+	return ploop_pb_get_first_req_from_tree(&pbd->reported_set, NULL);
 }
 
 int ploop_pb_preq_add_pending(struct ploop_pushbackup_desc *pbd,
@@ -738,7 +731,6 @@ unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd, bool do_merge)
 	while (!RB_EMPTY_ROOT(&pbd->pending_set.tree)) {
 		struct ploop_request *preq =
 			ploop_pb_get_first_req_from_pending(pbd);
-		preq_dbg_acquire(preq, OWNER_TEMP_DROP_LIST, WHO_PLOOP_PB_STOP1);
 		list_add(&preq->list, &drop_list);
 		ret++;
 	}
@@ -746,7 +738,6 @@ unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd, bool do_merge)
 	while (!RB_EMPTY_ROOT(&pbd->reported_set.tree)) {
 		struct ploop_request *preq =
 			ploop_pb_get_first_req_from_reported(pbd);
-		preq_dbg_acquire(preq, OWNER_TEMP_DROP_LIST, WHO_PLOOP_PB_STOP2);
 		list_add(&preq->list, &drop_list);
 		ret++;
 	}
@@ -757,14 +748,9 @@ unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd, bool do_merge)
 
 	if (!list_empty(&drop_list) || !ploop_pb_bio_list_empty(pbd)) {
 		struct ploop_device *plo = pbd->plo;
-		struct ploop_request *pr;
 
 		BUG_ON(!plo);
 		spin_lock_irq(&plo->lock);
-		list_for_each_entry(pr, &drop_list, list) {
-			preq_dbg_release(pr, OWNER_TEMP_DROP_LIST);
-			preq_dbg_acquire(pr, OWNER_READY_QUEUE, WHO_PLOOP_PB_STOP3);
-		}
 		list_splice_init(&drop_list, plo->ready_queue.prev);
 		return_bios_back_to_plo(plo, &pbd->bio_pending_list);
 		if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
@@ -848,7 +834,7 @@ wait_again:
 		else
 			npreq = NULL;
 
-		remove_req_from_pbs(&pbd->pending_set, preq, OWNER_PB_PENDING_SET);
+		remove_req_from_pbs(&pbd->pending_set, preq);
 		ploop_pb_add_req_to_reported(pbd, preq);
 
 		(*len_p)++;
@@ -941,15 +927,13 @@ static void ploop_pb_process_extent(struct pb_set *pbs, cluster_t clu,
 				    int *n_found)
 {
 	struct ploop_request *preq, *npreq;
-	unsigned old_owner = n_found ? OWNER_PB_REPORTED_SET : OWNER_PB_PENDING_SET;
 
-	preq = ploop_pb_get_req_from_tree(pbs, clu, len, &npreq, old_owner);
+	preq = ploop_pb_get_req_from_tree(pbs, clu, len, &npreq);
 
 	while (preq) {
 		struct rb_node *n;
 
 		set_bit(PLOOP_REQ_PUSH_BACKUP, &preq->ppb_state);
-		preq_dbg_acquire(preq, OWNER_TEMP_READY_LIST, WHO_PLOOP_PB_PROCESS_EXTENT);
 		list_add(&preq->list, ready_list);
 
 		if (n_found)
@@ -964,7 +948,7 @@ static void ploop_pb_process_extent(struct pb_set *pbs, cluster_t clu,
 			npreq = rb_entry(n, struct ploop_request, reloc_link);
 		else
 			npreq = NULL;
-		remove_req_from_pbs(pbs, preq, old_owner);
+		remove_req_from_pbs(pbs, preq);
 	}
 }
 
@@ -993,13 +977,8 @@ void ploop_pb_put_reported(struct ploop_pushbackup_desc *pbd,
 
 	if (!list_empty(&ready_list)) {
 		struct ploop_device *plo = pbd->plo;
-		struct ploop_request *pr;
 
 		spin_lock_irq(&plo->lock);
-		list_for_each_entry(pr, &ready_list, list) {
-			preq_dbg_release(pr, OWNER_TEMP_READY_LIST);
-			preq_dbg_acquire(pr, OWNER_READY_QUEUE, WHO_PLOOP_PB_PUT_REPORTED);
-		}
 		list_splice(&ready_list, plo->ready_queue.prev);
 		if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
 			wake_up_interruptible(&plo->waitq);
