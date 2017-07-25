@@ -312,6 +312,12 @@ static int ext4_uuid_valid(const u8 *uuid)
 	return 0;
 }
 
+struct ext4_uevent {
+	struct super_block *sb;
+	enum ext4_event_type action;
+	struct work_struct work;
+};
+
 /**
  * ext4_send_uevent - prepare and send uevent
  *
@@ -319,17 +325,20 @@ static int ext4_uuid_valid(const u8 *uuid)
  * @action:		action type
  *
  */
-int ext4_send_uevent(struct super_block *sb, enum ext4_event_type action)
+static void ext4_send_uevent_work(struct work_struct *w)
 {
-	int ret;
+	struct ext4_uevent *e = container_of(w, struct ext4_uevent, work);
+	struct super_block *sb = e->sb;
 	struct kobj_uevent_env *env;
 	const u8 *uuid = sb->s_uuid;
 	enum kobject_action kaction = KOBJ_CHANGE;
+	int ret;
 
 	env = kzalloc(sizeof(struct kobj_uevent_env), GFP_KERNEL);
-	if (!env)
-		return -ENOMEM;
-
+	if (!env){
+		kfree(e);
+		return;
+	}
 	ret = add_uevent_var(env, "FS_TYPE=%s", sb->s_type->name);
 	if (ret)
 		goto out;
@@ -343,7 +352,7 @@ int ext4_send_uevent(struct super_block *sb, enum ext4_event_type action)
 			goto out;
 	}
 
-	switch (action) {
+	switch (e->action) {
 	case EXT4_UA_MOUNT:
 		kaction = KOBJ_ONLINE;
 		ret = add_uevent_var(env, "FS_ACTION=%s", "MOUNT");
@@ -357,6 +366,9 @@ int ext4_send_uevent(struct super_block *sb, enum ext4_event_type action)
 		break;
 	case EXT4_UA_ERROR:
 		ret = add_uevent_var(env, "FS_ACTION=%s", "ERROR");
+		break;
+	case EXT4_UA_ABORT:
+		ret = add_uevent_var(env, "FS_ACTION=%s", "ABORT");
 		break;
 	case EXT4_UA_FREEZE:
 		ret = add_uevent_var(env, "FS_ACTION=%s", "FREEZE");
@@ -372,7 +384,33 @@ int ext4_send_uevent(struct super_block *sb, enum ext4_event_type action)
 	ret = kobject_uevent_env(&(EXT4_SB(sb)->s_kobj), kaction, env->envp);
 out:
 	kfree(env);
-	return ret;
+	kfree(e);
+}
+
+/**
+ * ext4_send_uevent - prepare and schedule event submission
+ *
+ * @sb:		super_block
+ * @action:		action type
+ *
+ */
+int ext4_send_uevent(struct super_block *sb, enum ext4_event_type action)
+{
+	struct ext4_uevent *e;
+
+	smp_rmb();
+	if (!EXT4_SB(sb)->rsv_conversion_wq)
+		return -EPROTO;
+
+	e = kzalloc(sizeof(*e), GFP_NOIO);
+	if (!e)
+		return -ENOMEM;
+
+	e->sb = sb;
+	e->action = action;
+	INIT_WORK(&e->work, ext4_send_uevent_work);
+	queue_work(EXT4_SB(sb)->rsv_conversion_wq, &e->work);
+	return 0;
 }
 
 static void __save_error_info(struct super_block *sb, const char *func,
@@ -470,6 +508,9 @@ static void ext4_handle_error(struct super_block *sb)
 
 	if (!test_opt(sb, ERRORS_CONT)) {
 		journal_t *journal = EXT4_SB(sb)->s_journal;
+
+		if (!xchg(&EXT4_SB(sb)->s_abrt_event_sent, 1))
+			ext4_send_uevent(sb, EXT4_UA_ABORT);
 
 		EXT4_SB(sb)->s_mount_flags |= EXT4_MF_FS_ABORTED;
 		if (journal)
@@ -668,6 +709,10 @@ void __ext4_abort(struct super_block *sb, const char *function,
 
 	if ((sb->s_flags & MS_RDONLY) == 0) {
 		ext4_msg(sb, KERN_CRIT, "Remounting filesystem read-only");
+
+		if (!xchg(&EXT4_SB(sb)->s_abrt_event_sent, 1))
+			ext4_send_uevent(sb, EXT4_UA_ABORT);
+
 		EXT4_SB(sb)->s_mount_flags |= EXT4_MF_FS_ABORTED;
 		/*
 		 * Make sure updated value of ->s_mount_flags will be visible
@@ -863,14 +908,17 @@ static void ext4_put_super(struct super_block *sb)
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	struct ext4_super_block *es = sbi->s_es;
 	int aborted = 0;
+	struct workqueue_struct * rsv_conversion_wq = sbi->rsv_conversion_wq;
 	int i, err;
 
 	ext4_send_uevent(sb, EXT4_UA_UMOUNT);
 	ext4_unregister_li_request(sb);
 	dquot_disable(sb, -1, DQUOT_USAGE_ENABLED | DQUOT_LIMITS_ENABLED);
 
-	flush_workqueue(sbi->rsv_conversion_wq);
-	destroy_workqueue(sbi->rsv_conversion_wq);
+	sbi->rsv_conversion_wq = NULL;
+	smp_wmb();
+	flush_workqueue(rsv_conversion_wq);
+	destroy_workqueue(rsv_conversion_wq);
 
 	if (sbi->s_journal) {
 		aborted = is_journal_aborted(sbi->s_journal);
