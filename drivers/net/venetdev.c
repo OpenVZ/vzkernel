@@ -466,6 +466,8 @@ static void venet_destructor(struct net_device *dev)
 
 	if (venet_free_stat)
 		venet_free_stat(dev->nd_net->owner_ve);
+
+	free_netdev(dev);
 }
 
 /*
