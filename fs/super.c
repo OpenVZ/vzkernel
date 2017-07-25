@@ -52,18 +52,19 @@ static char *sb_writers_name[SB_FREEZE_LEVELS] = {
 static bool dcache_is_low(struct mem_cgroup *memcg)
 {
 	unsigned long anon, file, dcache;
+	int vfs_cache_min_ratio = READ_ONCE(sysctl_vfs_cache_min_ratio);
 
-	if (sysctl_vfs_cache_min_ratio <= 0)
+	if (vfs_cache_min_ratio <= 0)
 		return false;
 
 	if (memcg)
-		return mem_cgroup_dcache_is_low(memcg);
+		return mem_cgroup_dcache_is_low(memcg, vfs_cache_min_ratio);
 
 	anon = global_page_state(NR_ANON_PAGES);
 	file = global_page_state(NR_FILE_PAGES);
 	dcache = global_page_state(NR_SLAB_RECLAIMABLE);
 
-	return dcache / sysctl_vfs_cache_min_ratio <
+	return dcache / vfs_cache_min_ratio <
 			(anon + file + dcache) / 100;
 }
 
