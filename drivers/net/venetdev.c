@@ -458,15 +458,12 @@ EXPORT_SYMBOL(venet_free_stat);
 static void venet_destructor(struct net_device *dev)
 {
 	struct venet_stats *stats = (struct venet_stats *)dev->ml_priv;
-	if (stats == NULL)
-		return;
-	free_percpu(stats->real_stats);
-	kfree(stats);
-	dev->ml_priv = NULL;
 
 	if (venet_free_stat)
 		venet_free_stat(dev->nd_net->owner_ve);
 
+	free_percpu(stats->real_stats);
+	kfree(stats);
 	free_netdev(dev);
 }
 
