@@ -3531,6 +3531,7 @@ static int load_module(struct load_info *info, const char __user *uargs,
 	mutex_lock(&module_ext_mutex);
 	list_del(&mod_ext->next);
 	mutex_unlock(&module_ext_mutex);
+	kfree(mod_ext);
  free_unload:
 	module_unload_free(mod);
  unlink_mod:
