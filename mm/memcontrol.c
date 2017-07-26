@@ -1520,7 +1520,7 @@ bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg, int vfs_cache_min_ratio)
  * Returns the maximum amount of memory @mem can be charged with, in
  * pages.
  */
-static unsigned long mem_cgroup_margin(struct mem_cgroup *memcg)
+static unsigned long mem_cgroup_margin(struct mem_cgroup *memcg, bool kmem)
 {
 	unsigned long margin = 0;
 	unsigned long count;
@@ -1534,6 +1534,15 @@ static unsigned long mem_cgroup_margin(struct mem_cgroup *memcg)
 	if (do_memsw_account()) {
 		count = page_counter_read(&memcg->memsw);
 		limit = READ_ONCE(memcg->memsw.max);
+		if (count <= limit)
+			margin = min(margin, limit - count);
+		else
+			margin = 0;
+	}
+
+	if (kmem && margin) {
+		count = page_counter_read(&memcg->kmem);
+		limit = READ_ONCE(memcg->kmem.max);
 		if (count <= limit)
 			margin = min(margin, limit - count);
 		else
@@ -1794,7 +1803,7 @@ unsigned long mem_cgroup_size(struct mem_cgroup *memcg)
 }
 
 static bool mem_cgroup_out_of_memory(struct mem_cgroup *memcg, gfp_t gfp_mask,
-				     int order)
+				     int order, bool kmem)
 {
 	struct oom_control oc = {
 		.zonelist = NULL,
@@ -1808,7 +1817,7 @@ static bool mem_cgroup_out_of_memory(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	if (mutex_lock_killable(&oom_lock))
 		return true;
 
-	if (mem_cgroup_margin(memcg) >= (1 << order))
+	if (mem_cgroup_margin(memcg, kmem) >= (1 << order))
 		goto unlock;
 
 	/*
@@ -2003,7 +2012,8 @@ enum oom_status {
 	OOM_SKIPPED
 };
 
-static enum oom_status mem_cgroup_oom(struct mem_cgroup *memcg, gfp_t mask, int order)
+static enum oom_status mem_cgroup_oom(struct mem_cgroup *memcg, gfp_t mask,
+				      int order, bool kmem)
 {
 	enum oom_status ret;
 	bool locked;
@@ -2050,7 +2060,7 @@ static enum oom_status mem_cgroup_oom(struct mem_cgroup *memcg, gfp_t mask, int 
 		mem_cgroup_oom_notify(memcg);
 
 	mem_cgroup_unmark_under_oom(memcg);
-	if (mem_cgroup_out_of_memory(memcg, mask, order))
+	if (mem_cgroup_out_of_memory(memcg, mask, order, kmem))
 		ret = OOM_SUCCESS;
 	else
 		ret = OOM_FAILED;
@@ -2109,7 +2119,7 @@ bool mem_cgroup_oom_synchronize(bool handle)
 		mem_cgroup_unmark_under_oom(memcg);
 		finish_wait(&memcg_oom_waitq, &owait.wait);
 		mem_cgroup_out_of_memory(memcg, current->memcg_oom_gfp_mask,
-					 current->memcg_oom_order);
+					 current->memcg_oom_order, false);
 	} else {
 		schedule();
 		mem_cgroup_unmark_under_oom(memcg);
@@ -2754,7 +2764,7 @@ out:
 	css_put(&memcg->css);
 }
 
-static int try_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
+static int try_charge(struct mem_cgroup *memcg, gfp_t gfp_mask, bool kmem_charge,
 		      unsigned int nr_pages)
 {
 	unsigned int batch = max(MEMCG_CHARGE_BATCH, nr_pages);
@@ -2762,6 +2772,7 @@ static int try_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	struct mem_cgroup *mem_over_limit;
 	struct page_counter *counter;
 	unsigned long nr_reclaimed;
+	bool kmem_limit = false;
 	bool may_swap = true;
 	bool drained = false;
 	enum oom_status oom_status;
@@ -2769,20 +2780,39 @@ static int try_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	if (mem_cgroup_is_root(memcg))
 		return 0;
 retry:
-	if (consume_stock(memcg, nr_pages))
-		return 0;
-
-	if (!do_memsw_account() ||
-	    page_counter_try_charge(&memcg->memsw, batch, &counter)) {
-		if (page_counter_try_charge(&memcg->memory, batch, &counter))
-			goto done_restock;
-		if (do_memsw_account())
-			page_counter_uncharge(&memcg->memsw, batch);
-		mem_over_limit = mem_cgroup_from_counter(counter, memory);
-	} else {
-		mem_over_limit = mem_cgroup_from_counter(counter, memsw);
-		may_swap = false;
+	may_swap = true;
+	kmem_limit = false;
+	if (consume_stock(memcg, nr_pages)) {
+		if (!kmem_charge)
+			return 0;
+		if (page_counter_try_charge(&memcg->kmem, nr_pages, &counter))
+			return 0;
+		refill_stock(memcg, nr_pages);
 	}
+
+	mem_over_limit = NULL;
+	if (page_counter_try_charge(&memcg->memory, batch, &counter)) {
+		if (do_memsw_account() && !page_counter_try_charge(
+				&memcg->memsw, batch, &counter)) {
+			page_counter_uncharge(&memcg->memory, batch);
+			mem_over_limit = mem_cgroup_from_counter(counter, memsw);
+			may_swap = false;
+		}
+	} else
+		mem_over_limit = mem_cgroup_from_counter(counter, memory);
+
+	if (!mem_over_limit && kmem_charge) {
+		if (!page_counter_try_charge(&memcg->kmem, nr_pages, &counter)) {
+			kmem_limit = true;
+			mem_over_limit = mem_cgroup_from_counter(counter, kmem);
+			page_counter_uncharge(&memcg->memory, batch);
+			if (do_memsw_account())
+				page_counter_uncharge(&memcg->memsw, batch);
+		}
+	}
+
+	if (!mem_over_limit)
+		goto done_restock;
 
 	if (batch > nr_pages) {
 		batch = nr_pages;
@@ -2827,7 +2857,7 @@ retry:
 	nr_reclaimed = try_to_free_mem_cgroup_pages(mem_over_limit, nr_pages,
 						    gfp_mask, may_swap);
 
-	if (mem_cgroup_margin(mem_over_limit) >= nr_pages)
+	if (mem_cgroup_margin(mem_over_limit, kmem_limit) >= nr_pages)
 		goto retry;
 
 	if (!drained) {
@@ -2874,7 +2904,7 @@ retry:
 	 * couldn't make any progress.
 	 */
 	oom_status = mem_cgroup_oom(mem_over_limit, gfp_mask,
-		       get_order(nr_pages * PAGE_SIZE));
+		       get_order(nr_pages * PAGE_SIZE), kmem_limit);
 	switch (oom_status) {
 	case OOM_SUCCESS:
 		nr_retries = MAX_RECLAIM_RETRIES;
@@ -3124,28 +3154,12 @@ static void memcg_free_cache_id(int id)
 int __memcg_kmem_charge(struct mem_cgroup *memcg, gfp_t gfp,
 			unsigned int nr_pages)
 {
-	struct page_counter *counter;
 	int ret;
 
-	ret = try_charge(memcg, gfp, nr_pages);
+	ret = try_charge(memcg, gfp, true, nr_pages);
 	if (ret)
 		return ret;
 
-	if (!cgroup_subsys_on_dfl(memory_cgrp_subsys) &&
-	    !page_counter_try_charge(&memcg->kmem, nr_pages, &counter)) {
-
-		/*
-		 * Enforce __GFP_NOFAIL allocation because callers are not
-		 * prepared to see failures and likely do not have any failure
-		 * handling code.
-		 */
-		if (gfp & __GFP_NOFAIL) {
-			page_counter_charge(&memcg->kmem, nr_pages);
-			return 0;
-		}
-		cancel_charge(memcg, nr_pages);
-		return -ENOMEM;
-	}
 	return 0;
 }
 
@@ -3353,10 +3367,7 @@ int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 {
 	int ret = 0;
 
-	ret = try_charge(memcg, gfp, nr_pages);
-	if (!ret)
-		page_counter_charge(&memcg->kmem, nr_pages);
-
+	ret = try_charge(memcg, gfp, true, nr_pages);
 	return ret;
 }
 
@@ -6022,7 +6033,7 @@ static int mem_cgroup_do_precharge(unsigned long count)
 	int ret;
 
 	/* Try a single bulk charge without reclaim first, kswapd may wake */
-	ret = try_charge(mc.to, GFP_KERNEL & ~__GFP_DIRECT_RECLAIM, count);
+	ret = try_charge(mc.to, GFP_KERNEL & ~__GFP_DIRECT_RECLAIM, false, count);
 	if (!ret) {
 		mc.precharge += count;
 		return ret;
@@ -6030,7 +6041,7 @@ static int mem_cgroup_do_precharge(unsigned long count)
 
 	/* Try charges one by one with reclaim, but do not retry */
 	while (count--) {
-		ret = try_charge(mc.to, GFP_KERNEL | __GFP_NORETRY, 1);
+		ret = try_charge(mc.to, GFP_KERNEL | __GFP_NORETRY, false, 1);
 		if (ret)
 			return ret;
 		mc.precharge++;
@@ -6921,7 +6932,7 @@ static ssize_t memory_max_write(struct kernfs_open_file *of,
 		}
 
 		memcg_memory_event(memcg, MEMCG_OOM);
-		if (!mem_cgroup_out_of_memory(memcg, GFP_KERNEL, 0))
+		if (!mem_cgroup_out_of_memory(memcg, GFP_KERNEL, 0, false))
 			break;
 	}
 
@@ -7288,7 +7299,7 @@ int mem_cgroup_charge(struct page *page, struct mm_struct *mm, gfp_t gfp_mask)
 	if (!memcg)
 		memcg = get_mem_cgroup_from_mm(mm);
 
-	ret = try_charge(memcg, gfp_mask, nr_pages);
+	ret = try_charge(memcg, gfp_mask, false, nr_pages);
 	if (ret)
 		goto out_put;
 
@@ -7590,10 +7601,10 @@ bool mem_cgroup_charge_skmem(struct mem_cgroup *memcg, unsigned int nr_pages)
 
 	mod_memcg_state(memcg, MEMCG_SOCK, nr_pages);
 
-	if (try_charge(memcg, gfp_mask, nr_pages) == 0)
+	if (try_charge(memcg, gfp_mask, false, nr_pages) == 0)
 		return true;
 
-	try_charge(memcg, gfp_mask|__GFP_NOFAIL, nr_pages);
+	try_charge(memcg, gfp_mask|__GFP_NOFAIL, false, nr_pages);
 	return false;
 }
 
