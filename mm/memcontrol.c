@@ -491,6 +491,8 @@ enum res_type {
 #define MEM_CGROUP_RECLAIM_NOSWAP	(1 << MEM_CGROUP_RECLAIM_NOSWAP_BIT)
 #define MEM_CGROUP_RECLAIM_SHRINK_BIT	0x1
 #define MEM_CGROUP_RECLAIM_SHRINK	(1 << MEM_CGROUP_RECLAIM_SHRINK_BIT)
+#define MEM_CGROUP_RECLAIM_KMEM_BIT	0x2
+#define MEM_CGROUP_RECLAIM_KMEM		(1 << MEM_CGROUP_RECLAIM_KMEM_BIT)
 
 /*
  * The memcg_create_mutex will be held whenever a new cgroup is created.
@@ -1734,7 +1736,7 @@ unsigned long mem_cgroup_total_pages(struct mem_cgroup *memcg, bool swap)
  * Returns the maximum amount of memory @mem can be charged with, in
  * pages.
  */
-static unsigned long mem_cgroup_margin(struct mem_cgroup *memcg)
+static unsigned long mem_cgroup_margin(struct mem_cgroup *memcg, bool kmem)
 {
 	unsigned long margin = 0;
 	unsigned long count;
@@ -1752,6 +1754,13 @@ static unsigned long mem_cgroup_margin(struct mem_cgroup *memcg)
 			margin = min(margin, limit - count);
 		else
 			margin = 0;
+	}
+
+	if (kmem && margin) {
+		count = page_counter_read(&memcg->kmem);
+		limit = READ_ONCE(memcg->kmem.limit);
+		if (count <= limit)
+			margin = min(margin, limit - count);
 	}
 
 	return margin;
@@ -2097,7 +2106,7 @@ static unsigned long mem_cgroup_reclaim(struct mem_cgroup *memcg,
 		 */
 		if (total && (flags & MEM_CGROUP_RECLAIM_SHRINK))
 			break;
-		if (mem_cgroup_margin(memcg))
+		if (mem_cgroup_margin(memcg, flags & MEM_CGROUP_RECLAIM_KMEM))
 			break;
 		/*
 		 * If nothing was reclaimed after two attempts, there
@@ -2719,7 +2728,7 @@ static int memcg_cpu_hotplug_callback(struct notifier_block *nb,
  * Returns 0 if @memcg was charged successfully, -EINTR if the charge
  * was bypassed to root_mem_cgroup, and -ENOMEM if the charge failed.
  */
-static int try_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
+static int try_charge(struct mem_cgroup *memcg, gfp_t gfp_mask, bool kmem_charge,
 		      unsigned int nr_pages)
 {
 	unsigned int batch = max(CHARGE_BATCH, nr_pages);
@@ -2732,19 +2741,35 @@ static int try_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	if (mem_cgroup_is_root(memcg))
 		goto done;
 retry:
-	if (consume_stock(memcg, nr_pages))
-		goto done;
+	if (consume_stock(memcg, nr_pages)) {
+		if (!kmem_charge)
+			goto done;
+		if (!page_counter_try_charge(&memcg->kmem, nr_pages, &counter))
+			goto done;
+	}
 
+	mem_over_limit = NULL;
 	if (!page_counter_try_charge(&memcg->memory, batch, &counter)) {
-		if (!do_swap_account)
-			goto done_restock;
-		if (!page_counter_try_charge(&memcg->memsw, batch, &counter))
-			goto done_restock;
-		page_counter_uncharge(&memcg->memory, batch);
-		mem_over_limit = mem_cgroup_from_counter(counter, memsw);
-		flags |= MEM_CGROUP_RECLAIM_NOSWAP;
+		if (do_swap_account && page_counter_try_charge(
+				&memcg->memsw, batch, &counter)) {
+			page_counter_uncharge(&memcg->memory, batch);
+			mem_over_limit = mem_cgroup_from_counter(counter, memsw);
+			flags |= MEM_CGROUP_RECLAIM_NOSWAP;
+		}
 	} else
 		mem_over_limit = mem_cgroup_from_counter(counter, memory);
+
+	if (!mem_over_limit && kmem_charge) {
+		if (!page_counter_try_charge(&memcg->kmem, nr_pages, &counter))
+			goto done_restock;
+
+		flags |= MEM_CGROUP_RECLAIM_KMEM;
+		mem_over_limit = mem_cgroup_from_counter(counter, kmem);
+		page_counter_uncharge(&memcg->memory, batch);
+		if (do_swap_account)
+			page_counter_uncharge(&memcg->memsw, batch);
+	} else if (!mem_over_limit)
+		goto done_restock;
 
 	if (batch > nr_pages) {
 		batch = nr_pages;
@@ -2779,7 +2804,8 @@ retry:
 
 	nr_reclaimed = mem_cgroup_reclaim(mem_over_limit, gfp_mask, flags);
 
-	if (mem_cgroup_margin(mem_over_limit) >= batch)
+	if (mem_cgroup_margin(mem_over_limit,
+				flags & MEM_CGROUP_RECLAIM_KMEM) >= batch)
 		goto retry;
 
 	if (gfp_mask & __GFP_NORETRY)
@@ -2996,10 +3022,9 @@ static int mem_cgroup_slabinfo_read(struct cgroup *cont, struct cftype *cft,
 int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 			     unsigned long nr_pages)
 {
-	struct page_counter *counter;
 	int ret = 0;
 
-	ret = try_charge(memcg, gfp, nr_pages);
+	ret = try_charge(memcg, gfp, true, nr_pages);
 	if (ret == -EINTR)  {
 		/*
 		 * try_charge() chose to bypass to root due to OOM kill or
@@ -3019,33 +3044,9 @@ int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 		page_counter_charge(&memcg->memory, nr_pages);
 		if (do_swap_account)
 			page_counter_charge(&memcg->memsw, nr_pages);
+		page_counter_charge(&memcg->kmem, nr_pages);
+
 		ret = 0;
-	}
-
-	if (ret)
-		return ret;
-
-	/*
-	 * When a cgroup is destroyed, all user memory pages get recharged to
-	 * the parent cgroup. Recharging is done by mem_cgroup_reparent_charges
-	 * which keeps looping until res <= kmem. This is supposed to guarantee
-	 * that by the time cgroup gets released, no pages is charged to it.
-	 *
-	 * If kmem were charged before res or uncharged after, kmem might
-	 * become greater than res for a short period of time even if there
-	 * were still user memory pages charged to the cgroup. In this case
-	 * mem_cgroup_reparent_charges would give up prematurely, and the
-	 * cgroup could be released though there were still pages charged to
-	 * it. Uncharge of such a page would trigger kernel panic.
-	 *
-	 * To prevent this from happening, kmem must be charged after res and
-	 * uncharged before res.
-	 */
-	ret = page_counter_try_charge(&memcg->kmem, nr_pages, &counter);
-	if (ret) {
-		page_counter_uncharge(&memcg->memory, nr_pages);
-		if (do_swap_account)
-			page_counter_uncharge(&memcg->memsw, nr_pages);
 	}
 
 	return ret;
@@ -6115,7 +6116,7 @@ static int mem_cgroup_do_precharge(unsigned long count)
 	}
 
 	/* Try a single bulk charge without reclaim first */
-	ret = try_charge(mc.to, GFP_KERNEL & ~__GFP_WAIT, count);
+	ret = try_charge(mc.to, GFP_KERNEL & ~__GFP_WAIT, false, count);
 	if (!ret) {
 		mc.precharge += count;
 		return ret;
@@ -6127,7 +6128,7 @@ static int mem_cgroup_do_precharge(unsigned long count)
 
 	/* Try charges one by one with reclaim */
 	while (count--) {
-		ret = try_charge(mc.to, GFP_KERNEL & ~__GFP_NORETRY, 1);
+		ret = try_charge(mc.to, GFP_KERNEL & ~__GFP_NORETRY, false, 1);
 		/*
 		 * In case of failure, any residual charges against
 		 * mc.to will be dropped by mem_cgroup_clear_mc()
@@ -6856,7 +6857,7 @@ int mem_cgroup_try_charge(struct page *page, struct mm_struct *mm,
 	if (!memcg)
 		memcg = get_mem_cgroup_from_mm(mm);
 
-	ret = try_charge(memcg, gfp_mask, nr_pages);
+	ret = try_charge(memcg, gfp_mask, false, nr_pages);
 
 	css_put(&memcg->css);
 
