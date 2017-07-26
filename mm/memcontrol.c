@@ -5946,12 +5946,16 @@ out_free:
 static void __mem_cgroup_free(struct mem_cgroup *memcg)
 {
 	int node;
+	int i;
 
 	mem_cgroup_remove_from_trees(memcg);
 	free_css_id(&mem_cgroup_subsys, &memcg->css);
 
 	for_each_node(node)
 		free_mem_cgroup_per_zone_info(memcg, node);
+
+	for (i = 0; i < MEM_CGROUP_STAT2_NSTATS; i++)
+		percpu_counter_destroy(&memcg->stat2.counters[i]);
 
 	free_percpu(memcg->stat);
 
