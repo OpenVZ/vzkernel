@@ -963,10 +963,17 @@ mem_cgroup_read_stat(struct mem_cgroup *memcg, enum mem_cgroup_stat_index idx)
 		val = 0;
 	return val;
 }
+
+static inline unsigned long
+mem_cgroup_read_stat2_fast(struct mem_cgroup *memcg, enum mem_cgroup_stat2_index idx)
+{
+	return percpu_counter_read_positive(&memcg->stat2.counters[idx]);
+}
+
 static inline unsigned long
 mem_cgroup_read_stat2(struct mem_cgroup *memcg, enum mem_cgroup_stat2_index idx)
 {
-	return percpu_counter_read_positive(&memcg->stat2.counters[idx]);
+	return percpu_counter_sum_positive(&memcg->stat2.counters[idx]);
 }
 
 static void mem_cgroup_update_swap_max(struct mem_cgroup *memcg)
@@ -1601,9 +1608,9 @@ bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg, int vfs_cache_min_ratio)
 {
 	unsigned long anon, file, dcache;
 
-	anon = mem_cgroup_read_stat2(memcg, MEM_CGROUP_STAT_RSS);
-	file = mem_cgroup_read_stat2(memcg, MEM_CGROUP_STAT_CACHE);
-	dcache = mem_cgroup_read_stat2(memcg, MEM_CGROUP_STAT_SLAB_RECLAIMABLE);
+	anon = mem_cgroup_read_stat2_fast(memcg, MEM_CGROUP_STAT_RSS);
+	file = mem_cgroup_read_stat2_fast(memcg, MEM_CGROUP_STAT_CACHE);
+	dcache = mem_cgroup_read_stat2_fast(memcg, MEM_CGROUP_STAT_SLAB_RECLAIMABLE);
 
 	return dcache / vfs_cache_min_ratio <
 			(anon + file + dcache) / 100;
