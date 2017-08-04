@@ -1,0 +1,8 @@
+config MHVTL
+	tristate "A Virtual Tape module"
+	help
+	  Say Y here to enable the Virtual Tape module.
+	  The vtl is basically a stripped down scsi_debug kernel module + a
+	  char dev 'back end' to pass the SCSI commands thru to user space
+	  daemons. It is the user space daemons responsibility to respond and
+	  process the SCSI commands.
