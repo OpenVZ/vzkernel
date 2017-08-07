@@ -133,8 +133,6 @@ struct dentry {
 	struct hlist_node d_alias;	/* inode alias list */
 };
 
-extern struct kmem_cache *dentry_cache;
-
 /*
  * dentry->d_lock spinlock nesting subclasses:
  *

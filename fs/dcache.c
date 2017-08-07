@@ -92,7 +92,7 @@ __cacheline_aligned_in_smp DEFINE_SEQLOCK(rename_lock);
 
 EXPORT_SYMBOL(rename_lock);
 
-struct kmem_cache *dentry_cache __read_mostly;
+static struct kmem_cache *dentry_cache __read_mostly;
 
 /*
  * This is the single most critical data structure when it comes
