@@ -244,6 +244,47 @@ static inline int dentry_cmp(const struct dentry *dentry, const unsigned char *c
 	return dentry_string_cmp(cs, ct, tcount);
 }
 
+void take_dentry_name_snapshot(struct name_snapshot *name, struct dentry *dentry)
+{
+	size_t size = 0;
+	char *buf = NULL;
+
+	if (unlikely(dname_external(dentry))) {
+		size = READ_ONCE(dentry->d_name.len);
+retry:
+		/* Pre allocate buffer */
+		name->name = buf = kmalloc(size + 1, GFP_KERNEL);
+		if (!buf)
+			return;
+	}
+
+	spin_lock(&dentry->d_lock);
+	if (unlikely(dname_external(dentry))) {
+		if (size < dentry->d_name.len) {
+			/* Raced with rename and need to redo the allocation */
+			size = dentry->d_name.len;
+			spin_unlock(&dentry->d_lock);
+			kfree(buf);
+			goto retry;
+		}
+		strcpy(buf, dentry->d_name.name);
+		buf = NULL;
+	} else {
+		memcpy(name->inline_name, dentry->d_iname, DNAME_INLINE_LEN);
+		name->name = name->inline_name;
+	}
+	spin_unlock(&dentry->d_lock);
+	kfree(buf);
+}
+EXPORT_SYMBOL(take_dentry_name_snapshot);
+
+void release_dentry_name_snapshot(struct name_snapshot *name)
+{
+	if (unlikely(name->name != name->inline_name))
+		kfree(name->name);
+}
+EXPORT_SYMBOL(release_dentry_name_snapshot);
+
 static void __d_free(struct rcu_head *head)
 {
 	struct dentry *dentry = container_of(
