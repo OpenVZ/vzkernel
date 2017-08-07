@@ -2973,9 +2973,16 @@ void rpc_task_kill_proc_fini(struct net *net)
 		remove_proc_entry("kill-tasks", sn->proc_net_rpc);
 }
 
+static struct net *rpc_task_net(struct rpc_task *task)
+{
+	if (task->tk_client)
+		return rpc_net_ns(task->tk_client);
+	return task->tk_rqstp->rq_xprt->xprt_net;
+}
+
 bool rpc_abort_task(struct rpc_task *task)
 {
-	struct net *net = rpc_net_ns(task->tk_client);
+	struct net *net = rpc_task_net(task);
 	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
 
 	if (!sn->kill_tasks)
