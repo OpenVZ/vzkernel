@@ -613,10 +613,17 @@ struct inode *devpts_pty_new(struct inode *ptmx_inode, dev_t device, int index,
 	struct dentry *dentry;
 	struct super_block *sb = pts_sb_from_inode(ptmx_inode);
 	struct inode *inode;
-	struct dentry *root = sb->s_root;
-	struct pts_fs_info *fsi = DEVPTS_SB(sb);
-	struct pts_mount_opts *opts = &fsi->mount_opts;
+	struct dentry *root;
+	struct pts_fs_info *fsi;
+	struct pts_mount_opts *opts;
 	char s[12];
+
+	if (!sb)
+		return ERR_PTR(-ENODEV);
+
+	root = sb->s_root;
+	fsi = DEVPTS_SB(sb);
+	opts = &fsi->mount_opts;
 
 	inode = new_inode(sb);
 	if (!inode)
@@ -705,12 +712,16 @@ static int __init init_devpts_fs(void)
 	struct ctl_table_header *table;
 
 	if (!err) {
+		struct vfsmount *mnt;
+
 		table = register_sysctl_table(pty_root_table);
-		devpts_mnt = kern_mount(&devpts_fs_type);
-		if (IS_ERR(devpts_mnt)) {
-			err = PTR_ERR(devpts_mnt);
+		mnt = kern_mount(&devpts_fs_type);
+		if (IS_ERR(mnt)) {
+			err = PTR_ERR(mnt);
 			unregister_filesystem(&devpts_fs_type);
 			unregister_sysctl_table(table);
+		} else {
+			devpts_mnt = mnt;
 		}
 	}
 	return err;
