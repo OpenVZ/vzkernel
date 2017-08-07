@@ -28,7 +28,6 @@
 struct tty_driver;
 struct file_system_type;
 struct veip_struct;
-struct ve_monitor;
 struct nsproxy;
 struct user_namespace;
 extern struct user_namespace init_user_ns;
@@ -94,8 +93,6 @@ struct ve_struct {
 	unsigned long		down_at;
 	struct list_head	cleanup_list;
 	unsigned char		disable_net;
-	struct ve_monitor	*monitor;
-	struct proc_dir_entry	*monitor_proc;
 	unsigned long		meminfo_val;
 	int _randomize_va_space;
 
