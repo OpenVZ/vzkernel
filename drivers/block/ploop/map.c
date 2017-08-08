@@ -1125,12 +1125,18 @@ static void map_wb_complete(struct map_node * m, int err)
 			idx = (preq->req_cluster + PLOOP_MAP_OFFSET) & (INDEX_PER_PAGE - 1);
 			if (!err) {
 				struct ploop_request *pr = preq;
+				int do_levels_update = 0;
 
 				if (unlikely(test_bit(PLOOP_REQ_ZERO, &preq->state))) {
 					BUG_ON (list_empty(&preq->delay_list));
 					pr = list_first_entry(&preq->delay_list,
 							      struct ploop_request,
 							      list);
+				}
+
+				if (m->levels &&  m->levels[idx] != top_delta->level) {
+					spin_lock_irq(&plo->lock);
+					do_levels_update = 1;
 				}
 
 				if (unlikely(test_bit(PLOOP_REQ_RELOC_A, &preq->state) ||
@@ -1142,7 +1148,10 @@ static void map_wb_complete(struct map_node * m, int err)
 						pr->iblock << ploop_map_log(plo);
 
 				if (m->levels) {
-					m->levels[idx] = top_delta->level;
+					if (do_levels_update) {
+						m->levels[idx] = top_delta->level;
+						spin_unlock_irq(&plo->lock);
+					}
 				} else {
 					BUG_ON(MAP_LEVEL(m) != top_delta->level);
 				}
