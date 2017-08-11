@@ -122,7 +122,7 @@ struct ve_struct {
 	/* Number of mounts. May become unbalanced if VE0 mounts something
 	 * and the VE unmounts it. This is acceptable.
 	 */
-	int			mnt_nr;
+	atomic_t		mnt_nr;
 #ifdef CONFIG_COREDUMP
 	char 			core_pattern[CORENAME_MAX_SIZE];
 #endif
@@ -232,17 +232,18 @@ static inline int ve_mount_allowed(void)
 {
 	struct ve_struct *ve = get_exec_env();
 
-	return ve_is_super(ve) || ve->mnt_nr < (int)sysctl_ve_mount_nr;
+	return ve_is_super(ve) ||
+		atomic_read(&ve->mnt_nr) < (int)sysctl_ve_mount_nr;
 }
 
 static inline void ve_mount_nr_inc(void)
 {
-	get_exec_env()->mnt_nr++;
+	atomic_inc(&get_exec_env()->mnt_nr);
 }
 
 static inline void ve_mount_nr_dec(void)
 {
-	get_exec_env()->mnt_nr--;
+	atomic_dec(&get_exec_env()->mnt_nr);
 }
 
 #else	/* CONFIG_VE */
