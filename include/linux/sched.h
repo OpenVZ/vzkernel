@@ -1441,6 +1441,7 @@ struct task_struct {
 	unsigned sched_contributes_to_load:1;
 	unsigned sched_interruptible_sleep:1;
 	unsigned woken_while_running:1;
+	unsigned sched_iothrottled_sleep:1;
 	unsigned :0; /* force alignment to the next boundary */
 
 	/* unserialized, strictly 'current' */
