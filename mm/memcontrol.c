@@ -4621,8 +4621,9 @@ static int mem_cgroup_disable_cleancache_write(struct cgroup *cgrp,
 	memcg->cleancache_disabled_toggle = !!val;
 	for_each_mem_cgroup_tree(iter, memcg) {
 		parent = parent_mem_cgroup(iter);
-		iter->cleancache_disabled = parent->cleancache_disabled ||
-					iter->cleancache_disabled_toggle;
+		iter->cleancache_disabled = iter->cleancache_disabled_toggle;
+		if (parent)
+			iter->cleancache_disabled |= parent->cleancache_disabled;
 	}
 	mutex_unlock(&memcg_create_mutex);
 	return 0;
