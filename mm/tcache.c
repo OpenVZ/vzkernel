@@ -990,14 +990,13 @@ __tcache_insert_reclaim_node(struct tcache_nodeinfo *ni,
 static noinline_for_stack int
 __tcache_lru_isolate(struct tcache_nodeinfo *ni,
 		     struct tcache_pool_nodeinfo *pni,
-		     struct page **pages, int nr_to_isolate)
+		     struct page **pages, int nr_to_scan)
 {
 	struct tcache_node *node;
 	struct page *page;
 	int nr_isolated = 0;
-	int nr_scanned = nr_to_isolate;
 
-	while (nr_to_isolate > 0 && !list_empty(&pni->lru) && nr_scanned--) {
+	while (nr_to_scan-- > 0 && !list_empty(&pni->lru)) {
 		page = list_first_entry(&pni->lru, struct page, lru);
 
 		if (unlikely(!page_cache_get_speculative(page)))
@@ -1017,7 +1016,6 @@ __tcache_lru_isolate(struct tcache_nodeinfo *ni,
 		tcache_hold_pool(node->pool);
 
 		pages[nr_isolated++] = page;
-		nr_to_isolate--;
 	}
 	return nr_isolated;
 }
