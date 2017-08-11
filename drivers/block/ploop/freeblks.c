@@ -860,14 +860,24 @@ int ploop_fb_add_free_extent(struct ploop_freeblks_desc *fbd,
 		tmp = list_entry(ex->list.next, struct ploop_freeblks_extent, list);
 
 		if (iblk + len > tmp->iblk) {
-			printk("ploop_fb_add_free_extent(): intersected extents");
+			int c = &ex->list != &fbd->fbd_free_list;
+			printk("ploop_fb_add_free_extent(): next (%u %u %u) "
+			       "intersects with (%u %u %u); ex (%u %u %d)\n",
+			       tmp->clu, tmp->iblk, tmp->len, clu, iblk, len,
+			       c ? ex->clu : 0, c ? ex->iblk : 0, c ? ex->len : -1);
 			return -EINVAL;
 		}
 	}
 
 	if (&ex->list != &fbd->fbd_free_list) {
 		if (ex->iblk + ex->len > iblk) {
-			printk("ploop_fb_add_free_extent(): intersected extents");
+			struct ploop_freeblks_extent *t = NULL;
+			if (ex->list.next != &fbd->fbd_free_list)
+				t = list_entry(ex->list.next, struct ploop_freeblks_extent, list);
+			printk("ploop_fb_add_free_extent(): ex (%u %u %u) "
+			       "intersects with (%u %u %u); next (%u %u %d)\n",
+			       ex->clu, ex->iblk, ex->len, clu, iblk, len,
+			       t ? t->clu : 0, t ? t->iblk : 0, t ? t->len : -1);
 			return -EINVAL;
 		}
 	}
@@ -905,7 +915,7 @@ int ploop_fb_add_reloc_extent(struct ploop_freeblks_desc *fbd,
 		rblk_extent = list_entry(fbd->fbd_reloc_list.prev,
 					 struct ploop_relocblks_extent, list);
 		if (rblk_extent->iblk + rblk_extent->len > iblk) {
-			printk("ploop_fb_add_reloc_extent(): extents should be sorted");
+			printk("ploop_fb_add_reloc_extent(): extents should be sorted\n");
 			return -EINVAL;
 		}
 
@@ -913,7 +923,7 @@ int ploop_fb_add_reloc_extent(struct ploop_freeblks_desc *fbd,
 			rblk_extent = list_entry(rblk_extent->list.next,
 					 struct ploop_relocblks_extent, list);
 			if (iblk + len > rblk_extent->iblk) {
-				printk("ploop_fb_add_reloc_extent(): intersected extents");
+				printk("ploop_fb_add_reloc_extent(): intersected extents\n");
 				return -EINVAL;
 			}
 		}
