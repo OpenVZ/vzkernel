@@ -163,6 +163,10 @@ unsigned int mnt_get_count(struct mount *mnt)
 #endif
 }
 
+static inline int ve_mount_allowed(void);
+static inline void ve_mount_nr_inc(struct mount *mnt);
+static inline void ve_mount_nr_dec(struct mount *mnt);
+
 static struct mount *alloc_vfsmnt(const char *name)
 {
 	struct mount *mnt;
@@ -211,7 +215,7 @@ static struct mount *alloc_vfsmnt(const char *name)
 		INIT_HLIST_HEAD(&mnt->mnt_fsnotify_marks);
 #endif
 	}
-	ve_mount_nr_inc();
+	ve_mount_nr_inc(mnt);
 	return mnt;
 
 #ifdef CONFIG_SMP
@@ -552,7 +556,7 @@ int sb_prepare_remount_readonly(struct super_block *sb)
 
 static void free_vfsmnt(struct mount *mnt)
 {
-	ve_mount_nr_dec();
+	ve_mount_nr_dec(mnt);
 	kfree(mnt->mnt_devname);
 	mnt_free_id(mnt);
 #ifdef CONFIG_SMP
@@ -2012,7 +2016,38 @@ again:
 
 	return err;
 }
-#endif
+
+static inline int ve_mount_allowed(void)
+{
+	struct ve_struct *ve = get_exec_env();
+
+	return ve_is_super(ve) ||
+		atomic_read(&ve->mnt_nr) < (int)sysctl_ve_mount_nr;
+}
+
+static inline void ve_mount_nr_inc(struct mount *mnt)
+{
+	struct ve_struct *ve = get_exec_env();
+
+	mnt->ve_owner = get_ve(ve);
+	atomic_inc(&ve->mnt_nr);
+}
+
+static inline void ve_mount_nr_dec(struct mount *mnt)
+{
+	struct ve_struct *ve = mnt->ve_owner;
+
+	atomic_dec(&ve->mnt_nr);
+	put_ve(ve);
+	mnt->ve_owner = NULL;
+}
+
+#else /* CONFIG_VE */
+
+static inline int ve_mount_allowed(void) { return 1; }
+static inline void ve_mount_nr_inc(struct mount *mnt) { }
+static inline void ve_mount_nr_dec(struct mount *mnt) { }
+#endif /* CONFIG_VE */
 
 static int do_check_and_remount_sb(struct super_block *sb, int flags, void *data)
 {
