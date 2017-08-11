@@ -1192,7 +1192,7 @@ static int tcache_cleancache_put_page(int pool_id,
 			copy_highpage(cache_page, page);
 			if (tcache_attach_page(node, index, cache_page)) {
 				if (put_page_testzero(cache_page))
-					tcache_put_page(page);
+					tcache_put_page(cache_page);
 			} else
 				ret = 1;
 		}
