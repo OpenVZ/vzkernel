@@ -119,10 +119,7 @@ struct ve_struct {
 	int			netns_max_nr;
 	atomic_t		netif_avail_nr;
 	int			netif_max_nr;
-	/* Number of mounts. May become unbalanced if VE0 mounts something
-	 * and the VE unmounts it. This is acceptable.
-	 */
-	atomic_t		mnt_nr;
+	atomic_t		mnt_nr;	/* number of present VE mounts */
 #ifdef CONFIG_COREDUMP
 	char 			core_pattern[CORENAME_MAX_SIZE];
 #endif
@@ -228,24 +225,6 @@ extern void vtty_release(struct tty_struct *tty, struct tty_struct *o_tty,
 extern bool vtty_is_master(struct tty_struct *tty);
 #endif /* CONFIG_TTY */
 
-static inline int ve_mount_allowed(void)
-{
-	struct ve_struct *ve = get_exec_env();
-
-	return ve_is_super(ve) ||
-		atomic_read(&ve->mnt_nr) < (int)sysctl_ve_mount_nr;
-}
-
-static inline void ve_mount_nr_inc(void)
-{
-	atomic_inc(&get_exec_env()->mnt_nr);
-}
-
-static inline void ve_mount_nr_dec(void)
-{
-	atomic_dec(&get_exec_env()->mnt_nr);
-}
-
 #else	/* CONFIG_VE */
 
 #define ve_uevent_seqnum uevent_seqnum
@@ -279,10 +258,6 @@ static inline void monotonic_abs_to_ve(clockid_t which_clock,
 				struct timespec *tp) { }
 static inline void monotonic_ve_to_abs(clockid_t which_clock,
 				struct timepsec *tp) { }
-
-static inline int ve_mount_allowed(void) { return 1; }
-static inline void ve_mount_nr_inc(void) { }
-static inline void ve_mount_nr_dec(void) { }
 #endif	/* CONFIG_VE */
 
 struct seq_file;
