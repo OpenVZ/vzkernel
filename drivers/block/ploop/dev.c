@@ -2068,8 +2068,17 @@ static int ploop_entry_discard_req(struct ploop_request *preq)
 							preq->dst_cluster,
 							preq->dst_iblock, len);
 			preq->dst_iblock = 0;
-			if (err)
+			if (err) {
+				if (err == -EINVAL) {
+					printk("ploop_entry_discard_req1: "
+					       "(%lu %u; %u %u; %u %u)\n",
+					       preq->req_sector, preq->req_size,
+					       preq->req_cluster, preq->iblock,
+					       preq->dst_cluster, preq->dst_iblock);
+					WARN_ONCE(1, "add_free_extent failed\n");
+				}
 				goto err;
+			}
 		}
 
 		if (!preq->dst_iblock && preq->iblock) {
@@ -2082,6 +2091,14 @@ static int ploop_entry_discard_req(struct ploop_request *preq)
 		len = preq->req_cluster - preq->dst_cluster;
 		err = ploop_fb_add_free_extent(plo->fbd, preq->dst_cluster,
 						preq->dst_iblock, len);
+		if (err == -EINVAL) {
+			printk("ploop_entry_discard_req2: "
+			       "(%lu %u; %u %u; %u %u)\n",
+			       preq->req_sector, preq->req_size,
+			       preq->req_cluster, preq->iblock,
+			       preq->dst_cluster, preq->dst_iblock);
+			WARN_ONCE(1, "add_free_extent failed\n");
+		}
 	}
 
 err:
@@ -4462,6 +4479,19 @@ static int ploop_freeblks_ioc(struct ploop_device *plo, unsigned long arg)
 		rc = ploop_fb_add_free_extent(fbd, extent.clu,
 					extent.iblk, extent.len);
 		if (rc) {
+			if (rc == -EINVAL) {
+				printk("ploop_freeblks_ioc: n=%d\n", ctl.n_extents);
+				for (i = 0; i < ctl.n_extents; i++) {
+					if (copy_from_user(&extent, &extents[i],
+							   sizeof(extent))) {
+						printk("copy failed: i=%d\n", i);
+						break;
+					}
+					printk("ploop_freeblks_ioc: i=%d: %u %u %u\n",
+					       i, extent.clu, extent.iblk, extent.len);
+				}
+				WARN_ONCE(1, "add_free_extent failed\n");
+			}
 			ploop_fb_fini(fbd, rc);
 			goto exit;
 		}
