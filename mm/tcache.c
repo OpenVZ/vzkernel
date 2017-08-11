@@ -1059,12 +1059,11 @@ out:
 static bool __tcache_reclaim_page(struct page *page)
 {
 	struct tcache_node *node;
-	bool ret;
 
 	node = tcache_page_node(page);
-	ret = tcache_page_tree_delete(node, page->index, page);
+	page = tcache_page_tree_delete(node, page->index, page);
 	tcache_put_node_and_pool(node);
-	return ret;
+	return (page != NULL);
 }
 
 static int tcache_reclaim_pages(struct page **pages, int nr)
