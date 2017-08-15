@@ -81,14 +81,14 @@ static int mmap_is_legacy(void)
 
 static unsigned long arch_rnd(unsigned int rndbits)
 {
+	if (!(current->flags & PF_RANDOMIZE))
+		return 0;
 	return ((unsigned long)get_random_int() &
 			((1UL << rndbits) - 1)) << PAGE_SHIFT;
 }
 
 unsigned long arch_mmap_rnd(void)
 {
-	if (!(current->flags & PF_RANDOMIZE))
-		return 0;
 	return arch_rnd(mmap_is_ia32() ? mmap32_rnd_bits : mmap64_rnd_bits);
 }
 
