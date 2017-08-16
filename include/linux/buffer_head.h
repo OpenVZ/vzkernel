@@ -40,6 +40,8 @@ enum bh_state_bits {
 	BH_PrivateStart,/* not a state bit, but the first bit available
 			 * for private allocation by other entities
 			 */
+	BH_Defer_Completion = BITS_PER_LONG-1,/* Defer AIO completion to
+					       * workqueue */
 };
 
 #define MAX_BUF_PER_PAGE (PAGE_CACHE_SIZE / 512)
@@ -128,6 +130,7 @@ BUFFER_FNS(Write_EIO, write_io_error)
 BUFFER_FNS(Unwritten, unwritten)
 BUFFER_FNS(Meta, meta)
 BUFFER_FNS(Prio, prio)
+BUFFER_FNS(Defer_Completion, defer_completion)
 
 #define bh_offset(bh)		((unsigned long)(bh)->b_data & ~PAGE_MASK)
 
@@ -138,6 +141,9 @@ BUFFER_FNS(Prio, prio)
 		((struct buffer_head *)page_private(page));	\
 	})
 #define page_has_buffers(page)	PagePrivate(page)
+
+void buffer_check_dirty_writeback(struct page *page,
+				     bool *dirty, bool *writeback);
 
 /*
  * Declarations
@@ -199,10 +205,13 @@ extern int buffer_heads_over_limit;
  * address_spaces.
  */
 void block_invalidatepage(struct page *page, unsigned long offset);
+void block_invalidatepage_range(struct page *page, unsigned int offset,
+				unsigned int length);
 int block_write_full_page(struct page *page, get_block_t *get_block,
 				struct writeback_control *wbc);
-int block_write_full_page_endio(struct page *page, get_block_t *get_block,
-			struct writeback_control *wbc, bh_end_io_t *handler);
+int __block_write_full_page(struct inode *inode, struct page *page,
+			get_block_t *get_block, struct writeback_control *wbc,
+			bh_end_io_t *handler);
 int block_read_full_page(struct page*, get_block_t*);
 int block_is_partially_uptodate(struct page *page, read_descriptor_t *desc,
 				unsigned long from);

@@ -26,6 +26,9 @@
 /* Not more than 2GB */
 #define KEXEC_CONTROL_MEMORY_LIMIT (1UL<<31)
 
+/* Allocate control page with GFP_DMA */
+#define KEXEC_CONTROL_MEMORY_GFP GFP_DMA
+
 /* Maximum address we can use for the crash control pages */
 #define KEXEC_CRASH_CONTROL_MEMORY_LIMIT (-1UL)
 
@@ -44,7 +47,7 @@
  * Seven notes plus zero note at the end: prstatus, fpregset, timer,
  * tod_cmp, tod_reg, control regs, and prefix
  */
-#define KEXEC_NOTE_BYTES \
+#define CRASH_CORE_NOTE_BYTES \
 	(ALIGN(sizeof(struct elf_note), 4) * 8 + \
 	 ALIGN(sizeof("CORE"), 4) * 7 + \
 	 ALIGN(sizeof(struct elf_prstatus), 4) + \
@@ -59,5 +62,8 @@
 /* Provide a dummy definition to avoid build failures. */
 static inline void crash_setup_regs(struct pt_regs *newregs,
 					struct pt_regs *oldregs) { }
+
+#define KEXEC_AUTO_RESERVED_SIZE ((1ULL<<27) + (1ULL<<25)) /* 160M */
+#define KEXEC_AUTO_THRESHOLD (1ULL<<32) /* 4G */
 
 #endif /*_S390_KEXEC_H */

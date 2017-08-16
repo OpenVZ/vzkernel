@@ -186,8 +186,8 @@ int mthca_create_ah(struct mthca_dev *dev,
 
 on_hca_fail:
 	if (ah->type == MTHCA_AH_PCI_POOL) {
-		ah->av = pci_pool_alloc(dev->av_table.pool,
-					GFP_ATOMIC, &ah->avdma);
+		ah->av = pci_pool_zalloc(dev->av_table.pool,
+					 GFP_ATOMIC, &ah->avdma);
 		if (!ah->av)
 			return -ENOMEM;
 
@@ -195,8 +195,6 @@ on_hca_fail:
 	}
 
 	ah->key = pd->ntmr.ibmr.lkey;
-
-	memset(av, 0, MTHCA_AV_SIZE);
 
 	av->port_pd = cpu_to_be32(pd->pd_num | (ah_attr->port_num << 24));
 	av->g_slid  = ah_attr->src_path_bits;
@@ -281,7 +279,7 @@ int mthca_read_ah(struct mthca_dev *dev, struct mthca_ah *ah,
 		ib_get_cached_gid(&dev->ib_dev,
 				  be32_to_cpu(ah->av->port_pd) >> 24,
 				  ah->av->gid_index % dev->limits.gid_table_len,
-				  &header->grh.source_gid);
+				  &header->grh.source_gid, NULL);
 		memcpy(header->grh.destination_gid.raw,
 		       ah->av->dgid, 16);
 	}

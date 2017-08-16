@@ -60,6 +60,9 @@
  * bitmap_find_free_region(bitmap, bits, order)	Find and allocate bit region
  * bitmap_release_region(bitmap, pos, order)	Free specified bit region
  * bitmap_allocate_region(bitmap, pos, order)	Allocate specified bit region
+ * bitmap_print_to_pagebuf(list, buf, mask, nbits) Print bitmap src as list/hex
+ * bitmap_from_u32array(dst, nbits, buf, nwords) *dst = *buf (nwords 32b words)
+ * bitmap_to_u32array(buf, nwords, src, nbits)	*buf = *dst (nwords 32b words)
  */
 
 /*
@@ -143,8 +146,18 @@ extern void bitmap_fold(unsigned long *dst, const unsigned long *orig,
 extern int bitmap_find_free_region(unsigned long *bitmap, int bits, int order);
 extern void bitmap_release_region(unsigned long *bitmap, int pos, int order);
 extern int bitmap_allocate_region(unsigned long *bitmap, int pos, int order);
+extern unsigned int bitmap_from_u32array(unsigned long *bitmap,
+					 unsigned int nbits,
+					 const u32 *buf,
+					 unsigned int nwords);
+extern unsigned int bitmap_to_u32array(u32 *buf,
+				       unsigned int nwords,
+				       const unsigned long *bitmap,
+				       unsigned int nbits);
 extern void bitmap_copy_le(void *dst, const unsigned long *src, int nbits);
 extern int bitmap_ord_to_pos(const unsigned long *bitmap, int n, int bits);
+extern int bitmap_print_to_pagebuf(bool list, char *buf,
+				   const unsigned long *maskp, int nmaskbits);
 
 #define BITMAP_FIRST_WORD_MASK(start) (~0UL << ((start) % BITS_PER_LONG))
 #define BITMAP_LAST_WORD_MASK(nbits)					\
@@ -302,6 +315,24 @@ static inline int bitmap_parse(const char *buf, unsigned int buflen,
 			unsigned long *maskp, int nmaskbits)
 {
 	return __bitmap_parse(buf, buflen, 0, maskp, nmaskbits);
+}
+
+/*
+ * bitmap_from_u64 - Check and swap words within u64.
+ *  @mask: source bitmap
+ *  @dst:  destination bitmap
+ *
+ * In 32-bit Big Endian kernel, when using (u32 *)(&val)[*]
+ * to read u64 mask, we will get the wrong word.
+ * That is "(u32 *)(&val)[0]" gets the upper 32 bits,
+ * but we expect the lower 32-bits of u64.
+ */
+static inline void bitmap_from_u64(unsigned long *dst, u64 mask)
+{
+	dst[0] = mask & ULONG_MAX;
+
+	if (sizeof(mask) > sizeof(unsigned long))
+		dst[1] = mask >> 32;
 }
 
 #endif /* __ASSEMBLY__ */

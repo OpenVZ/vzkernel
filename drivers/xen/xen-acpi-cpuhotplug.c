@@ -15,6 +15,8 @@
  * details.
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -89,7 +91,7 @@ static int xen_acpi_processor_enable(struct acpi_device *device)
 	return 0;
 }
 
-static int __cpuinit xen_acpi_processor_add(struct acpi_device *device)
+static int xen_acpi_processor_add(struct acpi_device *device)
 {
 	int ret;
 	struct acpi_processor *pr;
@@ -267,7 +269,8 @@ static void acpi_processor_hotplug_notify(acpi_handle handle,
 		if (!is_processor_present(handle))
 			break;
 
-		if (!acpi_bus_get_device(handle, &device))
+		acpi_bus_get_device(handle, &device);
+		if (acpi_device_enumerated(device))
 			break;
 
 		result = acpi_bus_scan(handle);
@@ -275,8 +278,9 @@ static void acpi_processor_hotplug_notify(acpi_handle handle,
 			pr_err(PREFIX "Unable to add the device\n");
 			break;
 		}
-		result = acpi_bus_get_device(handle, &device);
-		if (result) {
+		device = NULL;
+		acpi_bus_get_device(handle, &device);
+		if (!acpi_device_enumerated(device)) {
 			pr_err(PREFIX "Missing device object\n");
 			break;
 		}
@@ -312,7 +316,7 @@ static void acpi_processor_hotplug_notify(acpi_handle handle,
 		goto out;
 	}
 
-	(void) acpi_evaluate_hotplug_ost(handle, event, ost_code, NULL);
+	(void) acpi_evaluate_ost(handle, event, ost_code, NULL);
 
 out:
 	acpi_scan_lock_release();

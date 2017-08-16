@@ -204,6 +204,7 @@ static int max63xx_wdt_probe(struct platform_device *pdev)
 		return PTR_ERR(wdt_base);
 
 	max63xx_wdt_dev.timeout = heartbeat;
+	max63xx_wdt_dev.parent = &pdev->dev;
 	watchdog_set_nowayout(&max63xx_wdt_dev, nowayout);
 	watchdog_set_drvdata(&max63xx_wdt_dev, current_timeout);
 

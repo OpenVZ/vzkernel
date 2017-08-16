@@ -697,7 +697,6 @@ static int afs_d_revalidate(struct dentry *dentry, unsigned int flags)
 
 out_valid:
 	dentry->d_fsdata = dir_version;
-out_skip:
 	dput(parent);
 	key_put(key);
 	_leave(" = 1 [valid]");
@@ -710,16 +709,8 @@ not_found:
 	spin_unlock(&dentry->d_lock);
 
 out_bad:
-	if (dentry->d_inode) {
-		/* don't unhash if we have submounts */
-		if (have_submounts(dentry))
-			goto out_skip;
-	}
-
 	_debug("dropping dentry %s/%s",
 	       parent->d_name.name, dentry->d_name.name);
-	shrink_dcache_parent(dentry);
-	d_drop(dentry);
 	dput(parent);
 	key_put(key);
 

@@ -446,6 +446,7 @@ struct uvc_streaming {
 	struct uvc_format *def_format;
 	struct uvc_format *cur_format;
 	struct uvc_frame *cur_frame;
+
 	/* Protect access to ctrl, cur_format, cur_frame and hardware video
 	 * probe control.
 	 */
@@ -582,6 +583,7 @@ extern unsigned int uvc_clock_param;
 extern unsigned int uvc_no_drop_param;
 extern unsigned int uvc_trace_param;
 extern unsigned int uvc_timeout_param;
+extern unsigned int uvc_hw_timestamps_param;
 
 #define uvc_trace(flag, msg...) \
 	do { \

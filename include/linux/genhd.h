@@ -161,6 +161,7 @@ struct disk_part_tbl {
 };
 
 struct disk_events;
+struct badblocks;
 
 struct gendisk {
 	/* major, first_minor and minors are input parameters only,
@@ -200,6 +201,7 @@ struct gendisk {
 	struct blk_integrity *integrity;
 #endif
 	int node_id;
+	RH_KABI_EXTEND(struct badblocks *bb)
 };
 
 static inline struct gendisk *part_to_disk(struct hd_struct *part)

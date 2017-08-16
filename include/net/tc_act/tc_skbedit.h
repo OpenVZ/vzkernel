@@ -21,6 +21,7 @@
 #define __NET_TC_SKBEDIT_H
 
 #include <net/act_api.h>
+#include <linux/tc_act/tc_skbedit.h>
 
 struct tcf_skbedit {
 	struct tcf_common	common;
@@ -30,7 +31,22 @@ struct tcf_skbedit {
 	u16			queue_mapping;
 	/* XXX: 16-bit pad here? */
 };
-#define to_skbedit(pc) \
-	container_of(pc, struct tcf_skbedit, common)
+#define to_skbedit(a) \
+	container_of(a->priv, struct tcf_skbedit, common)
+
+/* Return true iff action is mark */
+static inline bool is_tcf_skbedit_mark(const struct tc_action *a)
+{
+#ifdef CONFIG_NET_CLS_ACT
+	if (a->ops && a->ops->type == TCA_ACT_SKBEDIT)
+		return to_skbedit(a)->flags == SKBEDIT_F_MARK;
+#endif
+	return false;
+}
+
+static inline u32 tcf_skbedit_mark(const struct tc_action *a)
+{
+	return to_skbedit(a)->mark;
+}
 
 #endif /* __NET_TC_SKBEDIT_H */

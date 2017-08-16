@@ -167,7 +167,7 @@ dasd_fba_check_characteristics(struct dasd_device *device)
 	}
 
 	device->default_expires = DASD_EXPIRES;
-	device->path_data.opm = LPM_ANYPATH;
+	dasd_path_set_opm(device, LPM_ANYPATH);
 
 	readonly = dasd_device_is_ro(device);
 	if (readonly)

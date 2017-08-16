@@ -49,7 +49,6 @@ extern unsigned long pci_mem_start;
 #define PCIBIOS_MIN_MEM		0xB8000000
 
 void pcibios_set_master(struct pci_dev *dev);
-void pcibios_penalize_isa_irq(int irq);
 
 /* Dynamic DMA mapping stuff.
  * i386 has everything mapped statically.

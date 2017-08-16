@@ -35,6 +35,7 @@
 #include "elantech.h"
 #include "sentelic.h"
 #include "cypress_ps2.h"
+#include "vmmouse.h"
 
 #define DRIVER_DESC	"PS/2 mouse driver"
 
@@ -462,6 +463,20 @@ static int psmouse_poll(struct psmouse *psmouse)
 			   PSMOUSE_CMD_POLL | (psmouse->pktsize << 8));
 }
 
+/*
+ * psmouse_matches_pnp_id - check if psmouse matches one of the passed in ids.
+ */
+bool psmouse_matches_pnp_id(struct psmouse *psmouse, const char * const ids[])
+{
+	int i;
+
+	if (!strncmp(psmouse->ps2dev.serio->firmware_id, "PNP:", 4))
+		for (i = 0; ids[i]; i++)
+			if (strstr(psmouse->ps2dev.serio->firmware_id, ids[i]))
+				return true;
+
+	return false;
+}
 
 /*
  * Genius NetMouse magic init.
@@ -670,6 +685,8 @@ static void psmouse_apply_defaults(struct psmouse *psmouse)
 	__set_bit(REL_X, input_dev->relbit);
 	__set_bit(REL_Y, input_dev->relbit);
 
+	__set_bit(INPUT_PROP_POINTER, input_dev->propbit);
+
 	psmouse->set_rate = psmouse_set_rate;
 	psmouse->set_resolution = psmouse_set_resolution;
 	psmouse->poll = psmouse_poll;
@@ -714,6 +731,13 @@ static int psmouse_extensions(struct psmouse *psmouse,
 		if (max_proto > PSMOUSE_IMEX) {
 			if (!set_properties || lifebook_init(psmouse) == 0)
 				return PSMOUSE_LIFEBOOK;
+		}
+	}
+
+	if (psmouse_do_detect(vmmouse_detect, psmouse, set_properties) == 0) {
+		if (max_proto > PSMOUSE_IMEX) {
+			if (!set_properties || vmmouse_init(psmouse) == 0)
+				return PSMOUSE_VMMOUSE;
 		}
 	}
 
@@ -1031,6 +1055,15 @@ static const struct psmouse_protocol psmouse_protocols[] = {
 		.alias		= "cortps",
 		.detect		= cortron_detect,
 	},
+#ifdef CONFIG_MOUSE_PS2_VMMOUSE
+	{
+		.type		= PSMOUSE_VMMOUSE,
+		.name		= VMMOUSE_PSNAME,
+		.alias		= "vmmouse",
+		.detect		= vmmouse_detect,
+		.init		= vmmouse_init,
+	},
+#endif
 	{
 		.type		= PSMOUSE_AUTO,
 		.name		= "auto",

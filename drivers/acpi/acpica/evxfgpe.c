@@ -41,7 +41,8 @@
  * POSSIBILITY OF SUCH DAMAGES.
  */
 
-#include <linux/export.h>
+#define EXPORT_ACPI_INTERFACES
+
 #include <acpi/acpi.h>
 #include "accommon.h"
 #include "acevents.h"
@@ -366,16 +367,19 @@ acpi_set_gpe_wake_mask(acpi_handle gpe_device, u32 gpe_number, u8 action)
 
 	switch (action) {
 	case ACPI_GPE_ENABLE:
+
 		ACPI_SET_BIT(gpe_register_info->enable_for_wake,
 			     (u8)register_bit);
 		break;
 
 	case ACPI_GPE_DISABLE:
+
 		ACPI_CLEAR_BIT(gpe_register_info->enable_for_wake,
 			       (u8)register_bit);
 		break;
 
 	default:
+
 		ACPI_ERROR((AE_INFO, "%u, Invalid action", action));
 		status = AE_BAD_PARAMETER;
 		break;

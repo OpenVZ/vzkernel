@@ -61,6 +61,7 @@ static int __init batadv_init(void)
 	batadv_recv_handler_init();
 
 	batadv_iv_init();
+	batadv_nc_init();
 
 	batadv_event_workqueue = create_singlethread_workqueue("bat_events");
 
@@ -70,7 +71,7 @@ static int __init batadv_init(void)
 	batadv_socket_init();
 	batadv_debugfs_init();
 
-	register_netdevice_notifier(&batadv_hard_if_notifier);
+	register_netdevice_notifier_rh(&batadv_hard_if_notifier);
 	rtnl_link_register(&batadv_link_ops);
 
 	pr_info("B.A.T.M.A.N. advanced %s (compatibility version %i) loaded\n",
@@ -83,7 +84,7 @@ static void __exit batadv_exit(void)
 {
 	batadv_debugfs_destroy();
 	rtnl_link_unregister(&batadv_link_ops);
-	unregister_netdevice_notifier(&batadv_hard_if_notifier);
+	unregister_netdevice_notifier_rh(&batadv_hard_if_notifier);
 	batadv_hardif_remove_interfaces();
 
 	flush_workqueue(batadv_event_workqueue);
@@ -138,7 +139,7 @@ int batadv_mesh_init(struct net_device *soft_iface)
 	if (ret < 0)
 		goto err;
 
-	ret = batadv_nc_init(bat_priv);
+	ret = batadv_nc_mesh_init(bat_priv);
 	if (ret < 0)
 		goto err;
 
@@ -163,7 +164,7 @@ void batadv_mesh_free(struct net_device *soft_iface)
 	batadv_vis_quit(bat_priv);
 
 	batadv_gw_node_purge(bat_priv);
-	batadv_nc_free(bat_priv);
+	batadv_nc_mesh_free(bat_priv);
 	batadv_dat_free(bat_priv);
 	batadv_bla_free(bat_priv);
 

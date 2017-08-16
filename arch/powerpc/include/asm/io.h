@@ -21,7 +21,7 @@ extern struct pci_dev *isa_bridge_pcidev;
 /*
  * has legacy ISA devices ?
  */
-#define arch_has_dev_port()	(isa_bridge_pcidev != NULL)
+#define arch_has_dev_port()	(isa_bridge_pcidev != NULL || isa_io_special)
 #endif
 
 #include <linux/device.h>
@@ -69,8 +69,18 @@ extern unsigned long pci_dram_offset;
 
 extern resource_size_t isa_mem_base;
 
-#if defined(CONFIG_PPC32) && defined(CONFIG_PPC_INDIRECT_IO)
-#error CONFIG_PPC_INDIRECT_IO is not yet supported on 32 bits
+/* Boolean set by platform if PIO accesses are suppored while _IO_BASE
+ * is not set or addresses cannot be translated to MMIO. This is typically
+ * set when the platform supports "special" PIO accesses via a non memory
+ * mapped mechanism, and allows things like the early udbg UART code to
+ * function.
+ */
+extern bool isa_io_special;
+
+#ifdef CONFIG_PPC32
+#if defined(CONFIG_PPC_INDIRECT_PIO) || defined(CONFIG_PPC_INDIRECT_MMIO)
+#error CONFIG_PPC_INDIRECT_{PIO,MMIO} are not yet supported on 32 bits
+#endif
 #endif
 
 /*
@@ -103,7 +113,7 @@ extern resource_size_t isa_mem_base;
 
 /* gcc 4.0 and older doesn't have 'Z' constraint */
 #if __GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ == 0)
-#define DEF_MMIO_IN_LE(name, size, insn)				\
+#define DEF_MMIO_IN_X(name, size, insn)				\
 static inline u##size name(const volatile u##size __iomem *addr)	\
 {									\
 	u##size ret;							\
@@ -112,7 +122,7 @@ static inline u##size name(const volatile u##size __iomem *addr)	\
 	return ret;							\
 }
 
-#define DEF_MMIO_OUT_LE(name, size, insn) 				\
+#define DEF_MMIO_OUT_X(name, size, insn)				\
 static inline void name(volatile u##size __iomem *addr, u##size val)	\
 {									\
 	__asm__ __volatile__("sync;"#insn" %1,0,%2"			\
@@ -120,7 +130,7 @@ static inline void name(volatile u##size __iomem *addr, u##size val)	\
 	IO_SET_SYNC_FLAG();						\
 }
 #else /* newer gcc */
-#define DEF_MMIO_IN_LE(name, size, insn)				\
+#define DEF_MMIO_IN_X(name, size, insn)				\
 static inline u##size name(const volatile u##size __iomem *addr)	\
 {									\
 	u##size ret;							\
@@ -129,7 +139,7 @@ static inline u##size name(const volatile u##size __iomem *addr)	\
 	return ret;							\
 }
 
-#define DEF_MMIO_OUT_LE(name, size, insn) 				\
+#define DEF_MMIO_OUT_X(name, size, insn)				\
 static inline void name(volatile u##size __iomem *addr, u##size val)	\
 {									\
 	__asm__ __volatile__("sync;"#insn" %1,%y0"			\
@@ -138,7 +148,7 @@ static inline void name(volatile u##size __iomem *addr, u##size val)	\
 }
 #endif
 
-#define DEF_MMIO_IN_BE(name, size, insn)				\
+#define DEF_MMIO_IN_D(name, size, insn)				\
 static inline u##size name(const volatile u##size __iomem *addr)	\
 {									\
 	u##size ret;							\
@@ -147,7 +157,7 @@ static inline u##size name(const volatile u##size __iomem *addr)	\
 	return ret;							\
 }
 
-#define DEF_MMIO_OUT_BE(name, size, insn)				\
+#define DEF_MMIO_OUT_D(name, size, insn)				\
 static inline void name(volatile u##size __iomem *addr, u##size val)	\
 {									\
 	__asm__ __volatile__("sync;"#insn"%U0%X0 %1,%0"			\
@@ -155,22 +165,53 @@ static inline void name(volatile u##size __iomem *addr, u##size val)	\
 	IO_SET_SYNC_FLAG();						\
 }
 
+DEF_MMIO_IN_D(in_8,     8, lbz);
+DEF_MMIO_OUT_D(out_8,   8, stb);
 
-DEF_MMIO_IN_BE(in_8,     8, lbz);
-DEF_MMIO_IN_BE(in_be16, 16, lhz);
-DEF_MMIO_IN_BE(in_be32, 32, lwz);
-DEF_MMIO_IN_LE(in_le16, 16, lhbrx);
-DEF_MMIO_IN_LE(in_le32, 32, lwbrx);
+#ifdef __BIG_ENDIAN__
+DEF_MMIO_IN_D(in_be16, 16, lhz);
+DEF_MMIO_IN_D(in_be32, 32, lwz);
+DEF_MMIO_IN_X(in_le16, 16, lhbrx);
+DEF_MMIO_IN_X(in_le32, 32, lwbrx);
 
-DEF_MMIO_OUT_BE(out_8,     8, stb);
-DEF_MMIO_OUT_BE(out_be16, 16, sth);
-DEF_MMIO_OUT_BE(out_be32, 32, stw);
-DEF_MMIO_OUT_LE(out_le16, 16, sthbrx);
-DEF_MMIO_OUT_LE(out_le32, 32, stwbrx);
+DEF_MMIO_OUT_D(out_be16, 16, sth);
+DEF_MMIO_OUT_D(out_be32, 32, stw);
+DEF_MMIO_OUT_X(out_le16, 16, sthbrx);
+DEF_MMIO_OUT_X(out_le32, 32, stwbrx);
+#else
+DEF_MMIO_IN_X(in_be16, 16, lhbrx);
+DEF_MMIO_IN_X(in_be32, 32, lwbrx);
+DEF_MMIO_IN_D(in_le16, 16, lhz);
+DEF_MMIO_IN_D(in_le32, 32, lwz);
+
+DEF_MMIO_OUT_X(out_be16, 16, sthbrx);
+DEF_MMIO_OUT_X(out_be32, 32, stwbrx);
+DEF_MMIO_OUT_D(out_le16, 16, sth);
+DEF_MMIO_OUT_D(out_le32, 32, stw);
+
+#endif /* __BIG_ENDIAN */
+
+/*
+ * Cache inhibitied accessors for use in real mode, you don't want to use these
+ * unless you know what you're doing.
+ *
+ * NB. These use the cpu byte ordering.
+ */
+DEF_MMIO_OUT_X(out_rm8,   8, stbcix);
+DEF_MMIO_OUT_X(out_rm16, 16, sthcix);
+DEF_MMIO_OUT_X(out_rm32, 32, stwcix);
+DEF_MMIO_IN_X(in_rm8,   8, lbzcix);
+DEF_MMIO_IN_X(in_rm16, 16, lhzcix);
+DEF_MMIO_IN_X(in_rm32, 32, lwzcix);
 
 #ifdef __powerpc64__
-DEF_MMIO_OUT_BE(out_be64, 64, std);
-DEF_MMIO_IN_BE(in_be64, 64, ld);
+
+DEF_MMIO_OUT_X(out_rm64, 64, stdcix);
+DEF_MMIO_IN_X(in_rm64, 64, ldcix);
+
+#ifdef __BIG_ENDIAN__
+DEF_MMIO_OUT_D(out_be64, 64, std);
+DEF_MMIO_IN_D(in_be64, 64, ld);
 
 /* There is no asm instructions for 64 bits reverse loads and stores */
 static inline u64 in_le64(const volatile u64 __iomem *addr)
@@ -182,7 +223,52 @@ static inline void out_le64(volatile u64 __iomem *addr, u64 val)
 {
 	out_be64(addr, swab64(val));
 }
+#else
+DEF_MMIO_OUT_D(out_le64, 64, std);
+DEF_MMIO_IN_D(in_le64, 64, ld);
+
+/* There is no asm instructions for 64 bits reverse loads and stores */
+static inline u64 in_be64(const volatile u64 __iomem *addr)
+{
+	return swab64(in_le64(addr));
+}
+
+static inline void out_be64(volatile u64 __iomem *addr, u64 val)
+{
+	out_le64(addr, swab64(val));
+}
+
+#endif
 #endif /* __powerpc64__ */
+
+
+/*
+ * Simple Cache inhibited accessors
+ * Unlike the DEF_MMIO_* macros, these don't include any h/w memory
+ * barriers, callers need to manage memory barriers on their own.
+ * These can only be used in hypervisor real mode.
+ */
+
+static inline u32 _lwzcix(unsigned long addr)
+{
+	u32 ret;
+
+	__asm__ __volatile__("lwzcix %0,0, %1"
+			     : "=r" (ret) : "r" (addr) : "memory");
+	return ret;
+}
+
+static inline void _stbcix(u64 addr, u8 val)
+{
+	__asm__ __volatile__("stbcix %0,0,%1"
+		: : "r" (val), "r" (addr) : "memory");
+}
+
+static inline void _stwcix(u64 addr, u32 val)
+{
+	__asm__ __volatile__("stwcix %0,0,%1"
+		: : "r" (val), "r" (addr) : "memory");
+}
 
 /*
  * Low level IO stream instructions are defined out of line for now
@@ -222,9 +308,9 @@ extern void _memcpy_toio(volatile void __iomem *dest, const void *src,
  * for PowerPC is as close as possible to the x86 version of these, and thus
  * provides fairly heavy weight barriers for the non-raw versions
  *
- * In addition, they support a hook mechanism when CONFIG_PPC_INDIRECT_IO
- * allowing the platform to provide its own implementation of some or all
- * of the accessors.
+ * In addition, they support a hook mechanism when CONFIG_PPC_INDIRECT_MMIO
+ * or CONFIG_PPC_INDIRECT_PIO are set allowing the platform to provide its
+ * own implementation of some or all of the accessors.
  */
 
 /*
@@ -240,8 +326,8 @@ extern void _memcpy_toio(volatile void __iomem *dest, const void *src,
 
 /* Indirect IO address tokens:
  *
- * When CONFIG_PPC_INDIRECT_IO is set, the platform can provide hooks
- * on all IOs. (Note that this is all 64 bits only for now)
+ * When CONFIG_PPC_INDIRECT_MMIO is set, the platform can provide hooks
+ * on all MMIOs. (Note that this is all 64 bits only for now)
  *
  * To help platforms who may need to differenciate MMIO addresses in
  * their hooks, a bitfield is reserved for use by the platform near the
@@ -263,11 +349,14 @@ extern void _memcpy_toio(volatile void __iomem *dest, const void *src,
  *
  * The direct IO mapping operations will then mask off those bits
  * before doing the actual access, though that only happen when
- * CONFIG_PPC_INDIRECT_IO is set, thus be careful when you use that
+ * CONFIG_PPC_INDIRECT_MMIO is set, thus be careful when you use that
  * mechanism
+ *
+ * For PIO, there is a separate CONFIG_PPC_INDIRECT_PIO which makes
+ * all PIO functions call through a hook.
  */
 
-#ifdef CONFIG_PPC_INDIRECT_IO
+#ifdef CONFIG_PPC_INDIRECT_MMIO
 #define PCI_IO_IND_TOKEN_MASK	0x0fff000000000000ul
 #define PCI_IO_IND_TOKEN_SHIFT	48
 #define PCI_FIX_ADDR(addr)						\
@@ -325,6 +414,17 @@ static inline void __raw_writeq(unsigned long v, volatile void __iomem *addr)
 {
 	*(volatile unsigned long __force *)PCI_FIX_ADDR(addr) = v;
 }
+
+/*
+ * Real mode version of the above. stdcix is only supposed to be used
+ * in hypervisor real mode as per the architecture spec.
+ */
+static inline void __raw_rm_writeq(u64 val, volatile void __iomem *paddr)
+{
+	__asm__ __volatile__("stdcix %0,0,%1"
+		: : "r" (val), "r" (paddr) : "memory");
+}
+
 #endif /* __powerpc64__ */
 
 /*
@@ -672,7 +772,7 @@ extern void __iomem * __ioremap_at(phys_addr_t pa, void *ea,
 extern void __iounmap_at(void *ea, unsigned long size);
 
 /*
- * When CONFIG_PPC_INDIRECT_IO is set, we use the generic iomap implementation
+ * When CONFIG_PPC_INDIRECT_PIO is set, we use the generic iomap implementation
  * which needs some additional definitions here. They basically allow PIO
  * space overall to be 1GB. This will work as long as we never try to use
  * iomap to map MMIO below 1GB which should be fine on ppc64

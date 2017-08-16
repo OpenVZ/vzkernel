@@ -91,7 +91,10 @@ static int cap_sb_pivotroot(struct path *old_path, struct path *new_path)
 }
 
 static int cap_sb_set_mnt_opts(struct super_block *sb,
-			       struct security_mnt_opts *opts)
+			       struct security_mnt_opts *opts,
+			       unsigned long kern_flags,
+			       unsigned long *set_kern_flags)
+
 {
 	if (unlikely(opts->num_mnt_opts))
 		return -EOPNOTSUPP;
@@ -99,12 +102,28 @@ static int cap_sb_set_mnt_opts(struct super_block *sb,
 }
 
 static int cap_sb_clone_mnt_opts(const struct super_block *oldsb,
-				  struct super_block *newsb)
+				  struct super_block *newsb,
+			          unsigned long kern_flags,
+			          unsigned long *set_kern_flags)
 {
 	return 0;
 }
 
 static int cap_sb_parse_opts_str(char *options, struct security_mnt_opts *opts)
+{
+	return 0;
+}
+
+static int cap_dentry_init_security(struct dentry *dentry, int mode,
+					struct qstr *name, void **ctx,
+					u32 *ctxlen)
+{
+	return -EOPNOTSUPP;
+}
+
+static int cap_dentry_create_files_as(struct dentry *dentry, int mode,
+				      struct qstr *name,
+				      const struct cred *old, struct cred *new)
 {
 	return 0;
 }
@@ -212,7 +231,7 @@ static int cap_inode_listxattr(struct dentry *dentry)
 	return 0;
 }
 
-static int cap_inode_getsecurity(const struct inode *inode, const char *name,
+static int cap_inode_getsecurity(struct inode *inode, const char *name,
 				 void **buffer, bool alloc)
 {
 	return -EOPNOTSUPP;
@@ -230,9 +249,19 @@ static int cap_inode_listsecurity(struct inode *inode, char *buffer,
 	return 0;
 }
 
-static void cap_inode_getsecid(const struct inode *inode, u32 *secid)
+static void cap_inode_getsecid(struct inode *inode, u32 *secid)
 {
 	*secid = 0;
+}
+
+static int cap_inode_copy_up(struct dentry *src, struct cred **new)
+{
+	return 0;
+}
+
+static int cap_inode_copy_up_xattr(const char *name)
+{
+	return -EOPNOTSUPP;
 }
 
 #ifdef CONFIG_SECURITY_PATH
@@ -816,6 +845,11 @@ static int cap_setprocattr(struct task_struct *p, char *name, void *value,
 	return -EINVAL;
 }
 
+static int cap_ismaclabel(const char *name)
+{
+	return 0;
+}
+
 static int cap_secid_to_secctx(u32 secid, char **secdata, u32 *seclen)
 {
 	return -EOPNOTSUPP;
@@ -831,6 +865,10 @@ static void cap_release_secctx(char *secdata, u32 seclen)
 {
 }
 
+static void cap_inode_invalidate_secctx(struct inode *inode)
+{
+}
+
 static int cap_inode_notifysecctx(struct inode *inode, void *ctx, u32 ctxlen)
 {
 	return 0;
@@ -843,7 +881,7 @@ static int cap_inode_setsecctx(struct dentry *dentry, void *ctx, u32 ctxlen)
 
 static int cap_inode_getsecctx(struct inode *inode, void **ctx, u32 *ctxlen)
 {
-	return 0;
+	return -EOPNOTSUPP;
 }
 #ifdef CONFIG_KEYS
 static int cap_key_alloc(struct key *key, const struct cred *cred,
@@ -931,6 +969,8 @@ void __init security_fixup_ops(struct security_operations *ops)
 	set_to_cap_if_null(ops, sb_set_mnt_opts);
 	set_to_cap_if_null(ops, sb_clone_mnt_opts);
 	set_to_cap_if_null(ops, sb_parse_opts_str);
+	set_to_cap_if_null(ops, dentry_init_security);
+	set_to_cap_if_null(ops, dentry_create_files_as);
 	set_to_cap_if_null(ops, inode_alloc_security);
 	set_to_cap_if_null(ops, inode_free_security);
 	set_to_cap_if_null(ops, inode_init_security);
@@ -958,6 +998,8 @@ void __init security_fixup_ops(struct security_operations *ops)
 	set_to_cap_if_null(ops, inode_setsecurity);
 	set_to_cap_if_null(ops, inode_listsecurity);
 	set_to_cap_if_null(ops, inode_getsecid);
+	set_to_cap_if_null(ops, inode_copy_up);
+	set_to_cap_if_null(ops, inode_copy_up_xattr);
 #ifdef CONFIG_SECURITY_PATH
 	set_to_cap_if_null(ops, path_mknod);
 	set_to_cap_if_null(ops, path_mkdir);
@@ -1034,9 +1076,11 @@ void __init security_fixup_ops(struct security_operations *ops)
 	set_to_cap_if_null(ops, d_instantiate);
 	set_to_cap_if_null(ops, getprocattr);
 	set_to_cap_if_null(ops, setprocattr);
+	set_to_cap_if_null(ops, ismaclabel);
 	set_to_cap_if_null(ops, secid_to_secctx);
 	set_to_cap_if_null(ops, secctx_to_secid);
 	set_to_cap_if_null(ops, release_secctx);
+	set_to_cap_if_null(ops, inode_invalidate_secctx);
 	set_to_cap_if_null(ops, inode_notifysecctx);
 	set_to_cap_if_null(ops, inode_setsecctx);
 	set_to_cap_if_null(ops, inode_getsecctx);

@@ -63,9 +63,7 @@ static void pty_close(struct tty_struct *tty, struct file *filp)
 			mutex_unlock(&devpts_mutex);
 		}
 #endif
-		tty_unlock(tty);
 		tty_vhangup(tty->link);
-		tty_lock(tty);
 	}
 }
 
@@ -322,7 +320,7 @@ done:
  *	pty_common_install		-	set up the pty pair
  *	@driver: the pty driver
  *	@tty: the tty being instantiated
- *	@bool: legacy, true if this is BSD style
+ *	@legacy: true if this is BSD style
  *
  *	Perform the initial set up for the tty/pty pair. Called from the
  *	tty layer when the port is first opened.
@@ -337,18 +335,23 @@ static int pty_common_install(struct tty_driver *driver, struct tty_struct *tty,
 	int idx = tty->index;
 	int retval = -ENOMEM;
 
-	o_tty = alloc_tty_struct();
-	if (!o_tty)
-		goto err;
+	/* Opening the slave first has always returned -EIO */
+	if (driver->subtype != PTY_TYPE_MASTER)
+		return -EIO;
+
 	ports[0] = kmalloc(sizeof **ports, GFP_KERNEL);
 	ports[1] = kmalloc(sizeof **ports, GFP_KERNEL);
 	if (!ports[0] || !ports[1])
-		goto err_free_tty;
+		goto err;
 	if (!try_module_get(driver->other->owner)) {
 		/* This cannot in fact currently happen */
-		goto err_free_tty;
+		goto err;
 	}
-	initialize_tty_struct(o_tty, driver->other, idx);
+	o_tty = alloc_tty_struct(driver->other, idx);
+	if (!o_tty)
+		goto err_put_module;
+
+	tty_set_lock_subclass(o_tty);
 
 	if (legacy) {
 		/* We always use new tty termios data so we can do this
@@ -374,8 +377,6 @@ static int pty_common_install(struct tty_driver *driver, struct tty_struct *tty,
 	 * Everything allocated ... set up the o_tty structure.
 	 */
 	tty_driver_kref_get(driver->other);
-	if (driver->subtype == PTY_TYPE_MASTER)
-		o_tty->count++;
 	/* Establish the links in both directions */
 	tty->link   = o_tty;
 	o_tty->link = tty;
@@ -387,18 +388,19 @@ static int pty_common_install(struct tty_driver *driver, struct tty_struct *tty,
 
 	tty_driver_kref_get(driver);
 	tty->count++;
+	o_tty->count++;
 	return 0;
 err_free_termios:
 	if (legacy)
 		tty_free_termios(tty);
 err_deinit_tty:
 	deinitialize_tty_struct(o_tty);
-	module_put(o_tty->driver->owner);
-err_free_tty:
+	free_tty_struct(o_tty);
+err_put_module:
+	module_put(driver->other->owner);
+err:
 	kfree(ports[0]);
 	kfree(ports[1]);
-	free_tty_struct(o_tty);
-err:
 	return retval;
 }
 
@@ -620,7 +622,14 @@ static void pty_unix98_remove(struct tty_driver *driver, struct tty_struct *tty)
 /* this is called once with whichever end is closed last */
 static void pty_unix98_shutdown(struct tty_struct *tty)
 {
-	devpts_kill_index(tty->driver_data, tty->index);
+	struct pts_fs_info *fsi;
+
+	if (tty->driver->subtype == PTY_TYPE_MASTER)
+		fsi = tty->driver_data;
+	else
+		fsi = tty->link->driver_data;
+	devpts_kill_index(fsi, tty->index);
+	devpts_put_ref(fsi);
 }
 
 static const struct tty_operations ptm_unix98_ops = {
@@ -671,6 +680,7 @@ static const struct tty_operations pty_unix98_ops = {
 
 static int ptmx_open(struct inode *inode, struct file *filp)
 {
+	struct pts_fs_info *fsi;
 	struct tty_struct *tty;
 	struct inode *slave_inode;
 	int retval;
@@ -685,35 +695,41 @@ static int ptmx_open(struct inode *inode, struct file *filp)
 	if (retval)
 		return retval;
 
+	fsi = devpts_get_ref(inode, filp);
+	retval = -ENODEV;
+	if (!fsi)
+		goto out_free_file;
+
 	/* find a device that is not in use. */
 	mutex_lock(&devpts_mutex);
-	index = devpts_new_index(inode);
-	if (index < 0) {
-		retval = index;
-		mutex_unlock(&devpts_mutex);
-		goto err_file;
-	}
-
+	index = devpts_new_index(fsi);
 	mutex_unlock(&devpts_mutex);
+
+	retval = index;
+	if (index < 0)
+		goto out_put_ref;
+
 
 	mutex_lock(&tty_mutex);
 	tty = tty_init_dev(ptm_driver, index);
-
-	if (IS_ERR(tty)) {
-		retval = PTR_ERR(tty);
-		goto out;
-	}
-
 	/* The tty returned here is locked so we can safely
 	   drop the mutex */
 	mutex_unlock(&tty_mutex);
 
+	retval = PTR_ERR(tty);
+	if (IS_ERR(tty))
+		goto out;
+
+	/*
+	 * From here on out, the tty is "live", and the index and
+	 * fsi will be killed/put by the tty_release()
+	 */
 	set_bit(TTY_PTY_LOCK, &tty->flags); /* LOCK THE SLAVE */
-	tty->driver_data = inode;
+	tty->driver_data = fsi;
 
 	tty_add_file(tty, filp);
 
-	slave_inode = devpts_pty_new(inode,
+	slave_inode = devpts_pty_new(fsi,
 			MKDEV(UNIX98_PTY_SLAVE_MAJOR, index), index,
 			tty->link);
 	if (IS_ERR(slave_inode)) {
@@ -730,12 +746,14 @@ static int ptmx_open(struct inode *inode, struct file *filp)
 	return 0;
 err_release:
 	tty_unlock(tty);
+	// This will also put-ref the fsi
 	tty_release(inode, filp);
 	return retval;
 out:
-	mutex_unlock(&tty_mutex);
-	devpts_kill_index(inode, index);
-err_file:
+	devpts_kill_index(fsi, index);
+out_put_ref:
+	devpts_put_ref(fsi);
+out_free_file:
 	tty_free_file(filp);
 	return retval;
 }

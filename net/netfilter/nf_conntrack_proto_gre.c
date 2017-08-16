@@ -398,7 +398,9 @@ static struct nf_conntrack_l4proto nf_conntrack_l4proto_gre4 __read_mostly = {
 static int proto_gre_net_init(struct net *net)
 {
 	int ret = 0;
-	ret = nf_ct_l4proto_pernet_register(net, &nf_conntrack_l4proto_gre4);
+
+	ret = nf_ct_l4proto_pernet_register_one(net,
+						&nf_conntrack_l4proto_gre4);
 	if (ret < 0)
 		pr_err("nf_conntrack_gre4: pernet registration failed.\n");
 	return ret;
@@ -406,7 +408,7 @@ static int proto_gre_net_init(struct net *net)
 
 static void proto_gre_net_exit(struct net *net)
 {
-	nf_ct_l4proto_pernet_unregister(net, &nf_conntrack_l4proto_gre4);
+	nf_ct_l4proto_pernet_unregister_one(net, &nf_conntrack_l4proto_gre4);
 	nf_ct_gre_keymap_flush(net);
 }
 
@@ -424,8 +426,7 @@ static int __init nf_ct_proto_gre_init(void)
 	ret = register_pernet_subsys(&proto_gre_net_ops);
 	if (ret < 0)
 		goto out_pernet;
-
-	ret = nf_ct_l4proto_register(&nf_conntrack_l4proto_gre4);
+	ret = nf_ct_l4proto_register_one(&nf_conntrack_l4proto_gre4);
 	if (ret < 0)
 		goto out_gre4;
 
@@ -438,7 +439,7 @@ out_pernet:
 
 static void __exit nf_ct_proto_gre_fini(void)
 {
-	nf_ct_l4proto_unregister(&nf_conntrack_l4proto_gre4);
+	nf_ct_l4proto_unregister_one(&nf_conntrack_l4proto_gre4);
 	unregister_pernet_subsys(&proto_gre_net_ops);
 }
 
