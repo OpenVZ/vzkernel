@@ -2957,13 +2957,9 @@ struct mnt_namespace *copy_mnt_ns(unsigned long flags, struct mnt_namespace *ns,
 
 	/* Unprivileged creation currently tech preview in RHEL7  */
 	if (user_ns != &init_user_ns) {
-		static int __read_mostly called_mark_tech_preview = 0;
 		if (!enable_unpriv_mnt_ns_creation) {
 			return ERR_PTR(-EPERM);
 		}
-		if (!called_mark_tech_preview &&
-		    !xchg(&called_mark_tech_preview, 1))
-			mark_tech_preview("unpriv mount namespace", NULL);
 	}
 
 	old = ns->root;
