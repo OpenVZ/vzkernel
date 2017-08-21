@@ -31,5 +31,27 @@ int kvm_hv_hypercall(struct kvm_vcpu *vcpu);
 
 void kvm_hv_setup_tsc_page(struct kvm *kvm,
 			   struct pvclock_vcpu_time_info *hv_clock);
+int kvm_hv_synic_set_irq(struct kvm *kvm, u32 vcpu_id, u32 sint);
+void kvm_hv_synic_send_eoi(struct kvm_vcpu *vcpu, int vector);
+
+static inline struct kvm_vcpu_hv_synic *vcpu_to_synic(struct kvm_vcpu *vcpu)
+{
+	return &vcpu->arch.hyperv.synic;
+}
+
+static inline struct kvm_vcpu *synic_to_vcpu(struct kvm_vcpu_hv_synic *synic)
+{
+	struct kvm_vcpu_hv *hv;
+	struct kvm_vcpu_arch *arch;
+
+	hv = container_of(synic, struct kvm_vcpu_hv, synic);
+	arch = container_of(hv, struct kvm_vcpu_arch, hyperv);
+	return container_of(arch, struct kvm_vcpu, arch);
+}
+void kvm_hv_irq_routing_update(struct kvm *kvm);
+
+void kvm_hv_vcpu_init(struct kvm_vcpu *vcpu);
+
+int kvm_hv_activate_synic(struct kvm_vcpu *vcpu);
 
 #endif
