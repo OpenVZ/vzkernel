@@ -41,6 +41,7 @@
 #include "trace.h"
 #include "x86.h"
 #include "cpuid.h"
+#include "hyperv.h"
 
 #ifndef CONFIG_X86_64
 #define mod_64(x, y) ((x) - (y) * div64_u64(x, y))
@@ -1093,6 +1094,9 @@ static int apic_set_eoi(struct kvm_lapic *apic)
 
 	apic_clear_isr(vector, apic);
 	apic_update_ppr(apic);
+
+	if (test_bit(vector, vcpu_to_synic(apic->vcpu)->vec_bitmap))
+		kvm_hv_synic_send_eoi(apic->vcpu, vector);
 
 	kvm_ioapic_send_eoi(apic, vector);
 	kvm_make_request(KVM_REQ_EVENT, apic->vcpu);
