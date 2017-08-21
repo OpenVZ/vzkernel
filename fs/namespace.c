@@ -2996,7 +2996,11 @@ static struct mnt_namespace *alloc_mnt_ns(struct user_namespace *user_ns)
 }
 
 /* namespace.unpriv_enable = 1 */
-static bool enable_unpriv_mnt_ns_creation;
+/* While unprivileged user namespaces remain in tech preview in RHEL7 - they
+ * are disabled by default. Virtuozzo Containers are run in user namespaces and
+ * we want to run Docker Containers inside Virtuozzo Containers, so enable them
+ * by default. */
+static bool enable_unpriv_mnt_ns_creation = true;
 module_param_named(unpriv_enable, enable_unpriv_mnt_ns_creation, bool, 0444);
 MODULE_PARM_DESC(unpriv_enable, "Enable unprivileged creation of mount namespaces");
 
