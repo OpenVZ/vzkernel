@@ -13,6 +13,8 @@
 #include <linux/err.h>
 #include <linux/io.h>
 #include <linux/console.h>
+#include <linux/rwsem.h>
+#include <linux/mm.h>
 
 /**
  * ktime_mono_to_real - Convert monotonic time to clock realtime
