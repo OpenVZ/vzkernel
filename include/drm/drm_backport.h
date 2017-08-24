@@ -13,6 +13,8 @@
 #include <linux/err.h>
 #include <linux/io.h>
 #include <linux/console.h>
+#include <linux/rwsem.h>
+#include <linux/mm.h>
 
 
 #include <linux/time64.h>
