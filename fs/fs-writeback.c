@@ -787,10 +787,14 @@ static long __writeback_inodes_wb(struct bdi_writeback *wb,
 {
 	unsigned long start_time = jiffies;
 	long wrote = 0;
+	int trace = 0;
 
 	while (!list_empty(&wb->b_io)) {
 		struct inode *inode = wb_inode(wb->b_io.prev);
 		struct super_block *sb = inode->i_sb;
+
+		if (time_is_before_jiffies(start_time + 15* HZ))
+			trace = 1;
 
 		if (!grab_super_passive(sb)) {
 			/*
@@ -799,6 +803,9 @@ static long __writeback_inodes_wb(struct bdi_writeback *wb,
 			 * requeue_io() to avoid busy retrying the inode/sb.
 			 */
 			redirty_tail(inode, wb);
+			if (trace)
+				printk("%s:%d writeback is taking too long ino:%ld sb(%p):%s\n",
+				       __FUNCTION__, __LINE__, inode->i_ino, sb, sb->s_id);
 			continue;
 		}
 		wrote += writeback_sb_inodes(sb, wb, work);
@@ -890,6 +897,7 @@ static long wb_writeback(struct bdi_writeback *wb,
 	unsigned long oldest_jif;
 	struct inode *inode;
 	long progress;
+	int trace = 0;
 
 	oldest_jif = jiffies;
 	work->older_than_this = &oldest_jif;
@@ -901,6 +909,9 @@ static long wb_writeback(struct bdi_writeback *wb,
 		 */
 		if (work->nr_pages <= 0)
 			break;
+
+		if (time_is_before_jiffies(wb_start + 15* HZ))
+			trace = 1;
 
 		/*
 		 * Background writeout and kupdate-style writeback may
@@ -973,6 +984,10 @@ static long wb_writeback(struct bdi_writeback *wb,
 			inode = wb_inode(wb->b_more_io.prev);
 			spin_lock(&inode->i_lock);
 			spin_unlock(&wb->list_lock);
+			if (trace)
+				printk("%s:%d writeback is taking too long ino:%ld st:%ld sb(%p):%s\n",
+				       __FUNCTION__, __LINE__, inode->i_ino,
+				       inode->i_state, inode->i_sb, inode->i_sb->s_id);
 			/* This function drops i_lock... */
 			inode_sleep_on_writeback(inode);
 			spin_lock(&wb->list_lock);
