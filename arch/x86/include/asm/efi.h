@@ -110,6 +110,16 @@ struct efi_scratch {
 extern void __iomem *__init efi_ioremap(unsigned long addr, unsigned long size,
 					u32 type, u64 attribute);
 
+/*
+ * CONFIG_KASAN may redefine memset to __memset.  __memset function is present
+ * only in kernel binary.  Since the EFI stub linked into a separate binary it
+ * doesn't have __memset().  So we should use standard memset from
+ * arch/x86/boot/compressed/string.c.  The same applies to memcpy and memmove.
+ */
+#undef memcpy
+#undef memset
+#undef memmove
+
 #endif /* CONFIG_X86_32 */
 
 extern int add_efi_memmap;
