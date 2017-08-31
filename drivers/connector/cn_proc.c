@@ -50,21 +50,17 @@ static inline struct cn_msg *buffer_to_cn_msg(__u8 *buffer)
 	return (struct cn_msg *)(buffer + 4);
 }
 
-static atomic_t proc_event_num_listeners = ATOMIC_INIT(0);
 static struct cb_id cn_proc_event_id = { CN_IDX_PROC, CN_VAL_PROC };
 
-/* proc_event_counts is used as the sequence number of the netlink message */
-static DEFINE_PER_CPU(__u32, proc_event_counts) = { 0 };
-
-static inline void get_seq(__u32 *ts, int *cpu)
+static inline void get_seq(struct ve_struct *ve, __u32 *ts, int *cpu)
 {
 	preempt_disable();
-	*ts = __this_cpu_inc_return(proc_event_counts) - 1;
+	*ts = __this_cpu_inc_return(*ve->cn->proc_event_counts) - 1;
 	*cpu = smp_processor_id();
 	preempt_enable();
 }
 
-static struct cn_msg *cn_msg_fill(__u8 *buffer,
+static struct cn_msg *cn_msg_fill(__u8 *buffer, struct ve_struct *ve,
 				  struct task_struct *task,
 				  int what, int cookie,
 				  bool (*fill_event)(struct proc_event *ev,
@@ -78,7 +74,7 @@ static struct cn_msg *cn_msg_fill(__u8 *buffer,
 	msg = buffer_to_cn_msg(buffer);
 	ev = (struct proc_event *)msg->data;
 
-	get_seq(&msg->seq, &ev->cpu);
+	get_seq(ve, &msg->seq, &ev->cpu);
 	memcpy(&msg->id, &cn_proc_event_id, sizeof(msg->id));
 	msg->ack = 0; /* not used */
 	msg->len = sizeof(*ev);
@@ -92,6 +88,13 @@ static struct cn_msg *cn_msg_fill(__u8 *buffer,
 	return fill_event(ev, task, cookie) ? msg : NULL;
 }
 
+static int proc_event_num_listeners(struct ve_struct *ve)
+{
+	if (ve->cn)
+		return atomic_read(&ve->cn->proc_event_num_listeners);
+	return 0;
+}
+
 static void proc_event_connector(struct task_struct *task,
 				 int what, int cookie,
 				 bool (*fill_event)(struct proc_event *ev,
@@ -100,11 +103,12 @@ static void proc_event_connector(struct task_struct *task,
 {
 	struct cn_msg *msg;
 	__u8 buffer[CN_PROC_MSG_SIZE] __aligned(8);
+	struct ve_struct *ve = task->task_ve;
 
-	if (atomic_read(&proc_event_num_listeners) < 1)
+	if (proc_event_num_listeners(ve) < 1)
 		return;
 
-	msg = cn_msg_fill(buffer, task, what, cookie, fill_event);
+	msg = cn_msg_fill(buffer, ve, task, what, cookie, fill_event);
 	if (!msg)
 		return;
 
@@ -258,14 +262,14 @@ void proc_exit_connector(struct task_struct *task)
  * values because it's not being returned via syscall return
  * mechanisms.
  */
-static void cn_proc_ack(int err, int rcvd_seq, int rcvd_ack)
+static void cn_proc_ack(struct ve_struct *ve, int err, int rcvd_seq, int rcvd_ack)
 {
 	struct cn_msg *msg;
 	struct proc_event *ev;
 	__u8 buffer[CN_PROC_MSG_SIZE] __aligned(8);
 	struct timespec ts;
 
-	if (atomic_read(&proc_event_num_listeners) < 1)
+	if (proc_event_num_listeners(ve) < 1)
 		return;
 
 	msg = buffer_to_cn_msg(buffer);
@@ -292,6 +296,7 @@ static void cn_proc_mcast_ctl(struct cn_msg *msg,
 			      struct netlink_skb_parms *nsp)
 {
 	enum proc_cn_mcast_op *mc_op = NULL;
+	struct ve_struct *ve = get_exec_env();
 	int err = 0;
 
 	if (msg->len != sizeof(*mc_op))
@@ -315,10 +320,10 @@ static void cn_proc_mcast_ctl(struct cn_msg *msg,
 	mc_op = (enum proc_cn_mcast_op *)msg->data;
 	switch (*mc_op) {
 	case PROC_CN_MCAST_LISTEN:
-		atomic_inc(&proc_event_num_listeners);
+		atomic_inc(&ve->cn->proc_event_num_listeners);
 		break;
 	case PROC_CN_MCAST_IGNORE:
-		atomic_dec(&proc_event_num_listeners);
+		atomic_dec(&ve->cn->proc_event_num_listeners);
 		break;
 	default:
 		err = EINVAL;
@@ -326,22 +331,31 @@ static void cn_proc_mcast_ctl(struct cn_msg *msg,
 	}
 
 out:
-	cn_proc_ack(err, msg->seq, msg->ack);
+	cn_proc_ack(ve, err, msg->seq, msg->ack);
 }
 
 int cn_proc_init_ve(struct ve_struct *ve)
 {
-	int err = cn_add_callback_ve(ve, &cn_proc_event_id,
-				     "cn_proc",
-				     &cn_proc_mcast_ctl);
+	int err;
+
+	ve->cn->proc_event_counts = alloc_percpu(u32);
+	if (!ve->cn->proc_event_counts)
+		return -ENOMEM;
+
+	err = cn_add_callback_ve(ve, &cn_proc_event_id,
+				  "cn_proc",
+				  &cn_proc_mcast_ctl);
 	if (err) {
 		pr_warn("VE#%d: cn_proc failed to register\n", ve->veid);
+		free_percpu(ve->cn->proc_event_counts);
 		return err;
 	}
+	atomic_set(&ve->cn->proc_event_num_listeners, 0);
 	return 0;
 }
 
 void cn_proc_fini_ve(struct ve_struct *ve)
 {
 	cn_del_callback_ve(ve, &cn_proc_event_id);
+	free_percpu(ve->cn->proc_event_counts);
 }
