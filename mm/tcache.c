@@ -1049,7 +1049,6 @@ again:
 	nr = __tcache_lru_isolate(pni, pages, nr_to_isolate);
 	ni->nr_pages -= nr;
 	nr_isolated += nr;
-	nr_to_isolate -= nr;
 
 	if (!list_empty(&pni->lru))
 		__tcache_insert_reclaim_node(ni, pni);
