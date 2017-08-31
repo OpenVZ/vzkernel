@@ -38,8 +38,6 @@ MODULE_AUTHOR("Evgeniy Polyakov <zbr@ioremap.net>");
 MODULE_DESCRIPTION("Generic userspace <-> kernelspace connector.");
 MODULE_ALIAS_NET_PF_PROTO(PF_NETLINK, NETLINK_CONNECTOR);
 
-static struct cn_dev cdev;
-
 static int cn_already_initialized;
 
 /*
@@ -66,7 +64,7 @@ static int cn_already_initialized;
 
 static struct cn_dev *get_cdev(struct ve_struct *ve)
 {
-	return &cdev;
+	return &ve->cn->cdev;
 }
 
 int cn_netlink_send(struct cn_msg *msg, u32 __group, gfp_t gfp_mask)
@@ -256,7 +254,7 @@ static const struct file_operations cn_file_ops = {
 
 static int cn_init_ve(struct ve_struct *ve)
 {
-	struct cn_dev *dev = get_cdev(get_ve0());
+	struct cn_dev *dev;
 	struct netlink_kernel_cfg cfg = {
 		.groups	= CN_NETLINK_USERS + 0xf,
 		.input	= cn_rx_skb,
@@ -266,6 +264,8 @@ static int cn_init_ve(struct ve_struct *ve)
 	ve->cn = kzalloc(sizeof(*ve->cn), GFP_KERNEL);
 	if (!ve->cn)
 		return -ENOMEM;
+
+	dev = &ve->cn->cdev;
 
 	dev->nls = netlink_kernel_create(net, NETLINK_CONNECTOR, &cfg);
 	if (!dev->nls)
