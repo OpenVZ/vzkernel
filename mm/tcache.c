@@ -1044,33 +1044,49 @@ tcache_lru_isolate(int nid, struct page **pages, int nr_to_isolate)
 	int nr_isolated = 0;
 	struct rb_node *rbn;
 
-	spin_lock_irq(&ni->lock);
+	rcu_read_lock();
 again:
-	rbn = rb_first(&ni->reclaim_tree);
-	if (!rbn)
+	rbn = rcu_dereference(ni->rb_first);
+	if (!rbn) {
+		rcu_read_unlock();
 		goto out;
-
-	rb_erase(rbn, &ni->reclaim_tree);
-	RB_CLEAR_NODE(rbn);
-	update_ni_rb_first(ni);
-
-	pni = rb_entry(rbn, struct tcache_pool_nodeinfo, reclaim_node);
-	if (!tcache_grab_pool(pni->pool))
-		goto again;
-
-	spin_lock(&pni->lock);
-	nr_isolated = __tcache_lru_isolate(pni, pages, nr_to_isolate);
-	ni->nr_pages -= nr_isolated;
-
-	if (!list_empty(&pni->lru)) {
-		__tcache_insert_reclaim_node(ni, pni);
-		update_ni_rb_first(ni);
 	}
 
+	pni = rb_entry(rbn, struct tcache_pool_nodeinfo, reclaim_node);
+	if (!tcache_grab_pool(pni->pool)) {
+		spin_lock_irq(&ni->lock);
+		if (!RB_EMPTY_NODE(rbn) && list_empty(&pni->lru)) {
+			rb_erase(rbn, &ni->reclaim_tree);
+			RB_CLEAR_NODE(rbn);
+			update_ni_rb_first(ni);
+		}
+		spin_unlock_irq(&ni->lock);
+		goto again;
+	}
+	rcu_read_unlock();
+
+	spin_lock_irq(&ni->lock);
+	spin_lock(&pni->lock);
+	nr_isolated = __tcache_lru_isolate(pni, pages, nr_to_isolate);
+
+	if (!nr_isolated)
+		goto unlock;
+
+	ni->nr_pages -= nr_isolated;
+
+	if (!RB_EMPTY_NODE(rbn)) {
+		rb_erase(rbn, &ni->reclaim_tree);
+		RB_CLEAR_NODE(rbn);
+	}
+	if (!list_empty(&pni->lru))
+		__tcache_insert_reclaim_node(ni, pni);
+	update_ni_rb_first(ni);
+
+unlock:
 	spin_unlock(&pni->lock);
+	spin_unlock_irq(&ni->lock);
 	tcache_put_pool(pni->pool);
 out:
-	spin_unlock_irq(&ni->lock);
 	return nr_isolated;
 }
 
