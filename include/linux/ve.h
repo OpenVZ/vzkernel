@@ -29,6 +29,7 @@ struct file_system_type;
 struct veip_struct;
 struct nsproxy;
 struct user_namespace;
+struct cn_private;
 extern struct user_namespace init_user_ns;
 
 struct ve_struct {
@@ -115,6 +116,9 @@ struct ve_struct {
 	atomic_t		mnt_nr;	/* number of present VE mounts */
 #ifdef CONFIG_COREDUMP
 	char 			core_pattern[CORENAME_MAX_SIZE];
+#endif
+#ifdef CONFIG_CONNECTOR
+	struct cn_private	*cn;
 #endif
 };
 

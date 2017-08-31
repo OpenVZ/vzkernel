@@ -67,6 +67,15 @@ struct cn_dev {
 	struct cn_queue_dev *cbdev;
 };
 
+struct cn_private {
+	struct cn_dev   cdev;
+	int             cn_already_initialized;
+
+	atomic_t        proc_event_num_listeners;
+	u32 __percpu    *proc_event_counts;
+
+};
+
 int cn_add_callback(struct cb_id *id, const char *name,
 		    void (*callback)(struct cn_msg *, struct netlink_skb_parms *));
 void cn_del_callback(struct cb_id *);
