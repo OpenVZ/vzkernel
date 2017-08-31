@@ -160,7 +160,7 @@ struct tcache_nodeinfo {
 	struct rb_node __rcu *rb_first;
 
 	/* total number of pages on all LRU lists corresponding to this node */
-	unsigned long nr_pages;
+	atomic_long_t nr_pages;
 } ____cacheline_aligned_in_smp;
 
 /*
@@ -263,8 +263,7 @@ static void tcache_lru_add(struct tcache_pool *pool, struct page *page)
 
 	spin_lock(&ni->lock);
 	spin_lock(&pni->lock);
-
-	ni->nr_pages++;
+	atomic_long_inc(&ni->nr_pages);
 	pni->nr_pages++;
 	list_add_tail(&page->lru, &pni->lru);
 
@@ -310,7 +309,7 @@ static void tcache_lru_del(struct tcache_pool *pool, struct page *page,
 		goto out;
 
 	__tcache_lru_del(pni, page);
-	ni->nr_pages--;
+	atomic_long_dec(&ni->nr_pages);
 
 	if (reused)
 		pni->recent_gets++;
@@ -1073,7 +1072,7 @@ again:
 	if (!nr_isolated)
 		goto unlock;
 
-	ni->nr_pages -= nr_isolated;
+	atomic_long_sub(nr_isolated, &ni->nr_pages);
 
 	if (!RB_EMPTY_NODE(rbn)) {
 		rb_erase(rbn, &ni->reclaim_tree);
@@ -1136,9 +1135,7 @@ tcache_try_to_reclaim_page(struct tcache_pool *pool, int nid)
 	if (!ret)
 		goto out;
 
-	spin_lock(&ni->lock);
-	ni->nr_pages -= ret;
-	spin_unlock(&ni->lock);
+	atomic_long_dec(&ni->nr_pages);
 
 	if (!__tcache_reclaim_page(page))
 		page = NULL;
@@ -1163,7 +1160,12 @@ static struct page *tcache_alloc_page(struct tcache_pool *pool)
 static unsigned long tcache_shrink_count(struct shrinker *shrink,
 					 struct shrink_control *sc)
 {
-	return tcache_nodeinfo[sc->nid].nr_pages;
+	atomic_long_t *nr_pages = &tcache_nodeinfo[sc->nid].nr_pages;
+	long ret;
+
+	ret = atomic_long_read(nr_pages);
+	WARN_ON(ret < 0);
+	return ret >= 0 ? ret : 0;
 }
 
 #define TCACHE_SCAN_BATCH 128UL
@@ -1380,6 +1382,7 @@ static int __init tcache_nodeinfo_init(void)
 	for (i = 0; i < nr_node_ids; i++) {
 		ni = &tcache_nodeinfo[i];
 		spin_lock_init(&ni->lock);
+		atomic_long_set(&ni->nr_pages, 0);
 		ni->reclaim_tree = RB_ROOT;
 		update_ni_rb_first(ni);
 	}
