@@ -157,6 +157,7 @@ struct tcache_nodeinfo {
 
 	/* tree of pools, sorted by reclaim prio */
 	struct rb_root reclaim_tree;
+	struct rb_node __rcu *rb_first;
 
 	/* total number of pages on all LRU lists corresponding to this node */
 	unsigned long nr_pages;
@@ -205,6 +206,13 @@ node_tree_from_key(struct tcache_pool *pool,
 	return &pool->node_tree[key_hash(key) & (num_node_trees - 1)];
 }
 
+static struct rb_node *update_ni_rb_first(struct tcache_nodeinfo *ni)
+{
+	struct rb_node *first = rb_first(&ni->reclaim_tree);
+	rcu_assign_pointer(ni->rb_first, first);
+	return first;
+}
+
 static void __tcache_insert_reclaim_node(struct tcache_nodeinfo *ni,
 					 struct tcache_pool_nodeinfo *pni);
 
@@ -242,6 +250,7 @@ static inline void __tcache_check_events(struct tcache_nodeinfo *ni,
 
 	rb_erase(&pni->reclaim_node, &ni->reclaim_tree);
 	__tcache_insert_reclaim_node(ni, pni);
+	update_ni_rb_first(ni);
 }
 
 /*
@@ -270,8 +279,10 @@ static void tcache_lru_add(struct tcache_pool *pool, struct page *page)
 
 	__tcache_check_events(ni, pni);
 
-	if (unlikely(RB_EMPTY_NODE(&pni->reclaim_node)))
+	if (unlikely(RB_EMPTY_NODE(&pni->reclaim_node))) {
 		__tcache_insert_reclaim_node(ni, pni);
+		update_ni_rb_first(ni);
+	}
 
 	spin_unlock(&pni->lock);
 	spin_unlock(&ni->lock);
@@ -934,6 +945,7 @@ tcache_remove_from_reclaim_trees(struct tcache_pool *pool)
 		spin_lock_irq(&ni->lock);
 		if (!RB_EMPTY_NODE(&pni->reclaim_node)) {
 			rb_erase(&pni->reclaim_node, &ni->reclaim_tree);
+			update_ni_rb_first(ni);
 			/*
 			 * Clear the node for __tcache_check_events() not to
 			 * reinsert the pool back into the tree.
@@ -1040,6 +1052,7 @@ again:
 
 	rb_erase(rbn, &ni->reclaim_tree);
 	RB_CLEAR_NODE(rbn);
+	update_ni_rb_first(ni);
 
 	pni = rb_entry(rbn, struct tcache_pool_nodeinfo, reclaim_node);
 	if (!tcache_grab_pool(pni->pool))
@@ -1049,8 +1062,10 @@ again:
 	nr_isolated = __tcache_lru_isolate(pni, pages, nr_to_isolate);
 	ni->nr_pages -= nr_isolated;
 
-	if (!list_empty(&pni->lru))
+	if (!list_empty(&pni->lru)) {
 		__tcache_insert_reclaim_node(ni, pni);
+		update_ni_rb_first(ni);
+	}
 
 	spin_unlock(&pni->lock);
 	tcache_put_pool(pni->pool);
@@ -1349,6 +1364,7 @@ static int __init tcache_nodeinfo_init(void)
 		ni = &tcache_nodeinfo[i];
 		spin_lock_init(&ni->lock);
 		ni->reclaim_tree = RB_ROOT;
+		update_ni_rb_first(ni);
 	}
 	return 0;
 }
