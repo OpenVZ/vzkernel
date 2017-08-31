@@ -265,41 +265,70 @@ static int cn_proc_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int cn_init(void)
+static int cn_init_ve(struct ve_struct *ve)
 {
 	struct cn_dev *dev = get_cdev(get_ve0());
 	struct netlink_kernel_cfg cfg = {
 		.groups	= CN_NETLINK_USERS + 0xf,
 		.input	= cn_rx_skb,
 	};
+	struct net *net;
+	int err;
 
-	dev->nls = netlink_kernel_create(&init_net, NETLINK_CONNECTOR, &cfg);
+	ve->cn = kzalloc(sizeof(*ve->cn), GFP_KERNEL);
+	if (!ve->cn)
+		return -ENOMEM;
+
+	net = ve_net_lock(ve);
+
+	err = -EIO;
+	dev->nls = netlink_kernel_create(net, NETLINK_CONNECTOR, &cfg);
 	if (!dev->nls)
-		return -EIO;
+		goto net_unlock;
 
+	err = -EINVAL;
 	dev->cbdev = cn_queue_alloc_dev("cqueue", dev->nls);
 	if (!dev->cbdev) {
 		netlink_kernel_release(dev->nls);
-		return -EINVAL;
+		goto net_unlock;
 	}
 
 	cn_already_initialized = 1;
 
-	proc_create_single("connector", S_IRUGO, init_net.proc_net, cn_proc_show);
+	proc_create_single("connector", S_IRUGO, net->proc_net, cn_proc_show);
+	err = 0;
 
-	return 0;
+net_unlock:
+	ve_net_unlock(ve);
+	return err;
+}
+
+static void cn_fini_ve(struct ve_struct *ve)
+{
+	struct cn_dev *dev = get_cdev(ve);
+	struct net *net;
+
+	cn_already_initialized = 0;
+
+	net = ve_net_lock(ve);
+	remove_proc_entry("connector", net->proc_net);
+	ve_net_unlock(ve);
+
+	cn_queue_free_dev(dev->cbdev);
+	netlink_kernel_release(dev->nls);
+
+	kfree(ve->cn);
+	ve->cn = NULL;
+}
+
+static int cn_init(void)
+{
+	return cn_init_ve(get_ve0());
 }
 
 static void cn_fini(void)
 {
-	struct cn_dev *dev = get_cdev(get_ve0());
-
-	cn_already_initialized = 0;
-
-	remove_proc_entry("connector", init_net.proc_net);
-
-	cn_queue_free_dev(dev->cbdev);
-	netlink_kernel_release(dev->nls);
+	return cn_fini_ve(get_ve0());
 }
 
 subsys_initcall(cn_init);
