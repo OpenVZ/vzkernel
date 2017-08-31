@@ -42,19 +42,24 @@ static void list_lru_unregister(struct list_lru *lru)
 #ifdef CONFIG_MEMCG_KMEM
 static inline bool list_lru_memcg_aware(struct list_lru *lru)
 {
-	return !!lru->node[0].memcg_lrus;
+	struct list_lru_memcg *memcg_lrus;
+	/* Here we only check the pointer is not NULL, so RCU lock isn't need */
+	memcg_lrus = rcu_dereference_check(lru->node[0].memcg_lrus, true);
+	return !!memcg_lrus;
 }
 
 static inline struct list_lru_one *
 list_lru_from_memcg_idx(struct list_lru_node *nlru, int idx)
 {
+	struct list_lru_memcg *memcg_lrus;
 	/*
-	 * The lock protects the array of per cgroup lists from relocation
-	 * (see memcg_update_list_lru_node).
+	 * Either lock and RCU protects the array of per cgroup lists
+	 * from relocation (see memcg_update_list_lru_node).
 	 */
-	lockdep_assert_held(&nlru->lock);
-	if (nlru->memcg_lrus && idx >= 0)
-		return nlru->memcg_lrus->lru[idx];
+	memcg_lrus = rcu_dereference_check(nlru->memcg_lrus,
+					   lockdep_is_held(&nlru->lock));
+	if (memcg_lrus && idx >= 0)
+		return memcg_lrus->lru[idx];
 
 	return &nlru->lru;
 }
@@ -62,9 +67,12 @@ list_lru_from_memcg_idx(struct list_lru_node *nlru, int idx)
 static inline struct list_lru_one *
 list_lru_from_kmem(struct list_lru_node *nlru, void *ptr)
 {
+	struct list_lru_memcg *memcg_lrus;
 	struct mem_cgroup *memcg;
 
-	if (!nlru->memcg_lrus)
+	memcg_lrus = rcu_dereference_check(nlru->memcg_lrus,
+					   lockdep_is_held(&nlru->lock));
+	if (!memcg_lrus)
 		return &nlru->lru;
 
 	memcg = mem_cgroup_from_kmem(ptr);
@@ -311,25 +319,34 @@ fail:
 
 static int memcg_init_list_lru_node(struct list_lru_node *nlru)
 {
+	struct list_lru_memcg *memcg_lrus;
 	int size = memcg_nr_cache_ids;
 
-	nlru->memcg_lrus = kmalloc(sizeof(struct list_lru_memcg) +
-				   size * sizeof(void *), GFP_KERNEL);
-	if (!nlru->memcg_lrus)
+	memcg_lrus = kmalloc(sizeof(*memcg_lrus) +
+			     size * sizeof(void *), GFP_KERNEL);
+	if (!memcg_lrus)
 		return -ENOMEM;
 
-	if (__memcg_init_list_lru_node(nlru->memcg_lrus, 0, size)) {
-		kfree(nlru->memcg_lrus);
+	if (__memcg_init_list_lru_node(memcg_lrus, 0, size)) {
+		kfree(memcg_lrus);
 		return -ENOMEM;
 	}
+	rcu_assign_pointer(nlru->memcg_lrus, memcg_lrus);
 
 	return 0;
 }
 
 static void memcg_destroy_list_lru_node(struct list_lru_node *nlru)
 {
-	__memcg_destroy_list_lru_node(nlru->memcg_lrus, 0, memcg_nr_cache_ids);
-	kfree(nlru->memcg_lrus);
+	struct list_lru_memcg *memcg_lrus;
+
+	/*
+	 * This is called when shrinker has already been unregistered,
+	 * so nobody can use it.
+	 */
+	memcg_lrus = rcu_dereference_check(nlru->memcg_lrus, true);
+	__memcg_destroy_list_lru_node(memcg_lrus, 0, memcg_nr_cache_ids);
+	kfree(memcg_lrus);
 }
 
 static int memcg_update_list_lru_node(struct list_lru_node *nlru,
@@ -338,8 +355,10 @@ static int memcg_update_list_lru_node(struct list_lru_node *nlru,
 	struct list_lru_memcg *old, *new;
 
 	BUG_ON(old_size > new_size);
+	lockdep_assert_held(&list_lrus_mutex);
 
-	old = nlru->memcg_lrus;
+	/* list_lrus_mutex is held, nobody can change memcg_lrus. Silence RCU */
+	old = rcu_dereference_check(nlru->memcg_lrus, true);
 	new = kmalloc(sizeof(*new) + new_size * sizeof(void *), GFP_KERNEL);
 	if (!new)
 		return -ENOMEM;
@@ -352,17 +371,17 @@ static int memcg_update_list_lru_node(struct list_lru_node *nlru,
 	memcpy(&new->lru, &old->lru, old_size * sizeof(void *));
 
 	/*
-	 * The lock guarantees that we won't race with a reader
-	 * (see list_lru_from_memcg_idx).
+	 * The locking below allows the readers, that already take nlru->lock,
+	 * not to use additional rcu_read_lock()/rcu_read_unlock() pair.
 	 *
 	 * Since list_lru_{add,del} may be called under an IRQ-safe lock,
 	 * we have to use IRQ-safe primitives here to avoid deadlock.
 	 */
 	spin_lock_irq(&nlru->lock);
-	nlru->memcg_lrus = new;
+	rcu_assign_pointer(nlru->memcg_lrus, new);
 	spin_unlock_irq(&nlru->lock);
 
-	kfree(old);
+	kfree_rcu(old, rcu);
 	return 0;
 }
 
@@ -380,7 +399,7 @@ static int memcg_init_list_lru(struct list_lru *lru, bool memcg_aware)
 
 	for (i = 0; i < nr_node_ids; i++) {
 		if (!memcg_aware)
-			lru->node[i].memcg_lrus = NULL;
+			rcu_assign_pointer(lru->node[i].memcg_lrus, NULL);
 		else if (memcg_init_list_lru_node(&lru->node[i]))
 			goto fail;
 	}
