@@ -254,9 +254,7 @@ EXPORT_SYMBOL(unregister_shrinker);
 #define SHRINK_BATCH 128
 
 static unsigned long do_shrink_slab(struct shrink_control *shrinkctl,
-				    struct shrinker *shrinker,
-				    unsigned long nr_scanned,
-				    unsigned long nr_eligible)
+				    struct shrinker *shrinker, int priority)
 {
 	unsigned long freed = 0;
 	unsigned long long delta;
@@ -280,9 +278,8 @@ static unsigned long do_shrink_slab(struct shrink_control *shrinkctl,
 	nr = atomic_long_xchg(&shrinker->nr_deferred[nid], 0);
 
 	total_scan = nr;
-	delta = nr_scanned / shrinker->seeks;
-	delta *= max_pass;
-	do_div(delta, nr_eligible + 1);
+	delta = max_pass >> priority;
+	delta = (4 * delta) / shrinker->seeks;
 	total_scan += delta;
 	if (total_scan < 0) {
 		printk(KERN_ERR
@@ -315,8 +312,7 @@ static unsigned long do_shrink_slab(struct shrink_control *shrinkctl,
 		total_scan = max_pass * 2;
 
 	trace_mm_shrink_slab_start(shrinker, shrinkctl, nr,
-				   nr_scanned, nr_eligible,
-				   max_pass, delta, total_scan);
+				   max_pass, delta, total_scan, priority);
 
 	while (total_scan >= batch_size) {
 		unsigned long ret;
@@ -356,8 +352,7 @@ static unsigned long do_shrink_slab(struct shrink_control *shrinkctl,
  * @gfp_mask: allocation context
  * @nid: node whose slab caches to target
  * @memcg: memory cgroup whose slab caches to target
- * @nr_scanned: pressure numerator
- * @nr_eligible: pressure denominator
+ * @priority: the reclaim priority
  *
  * Call the shrink functions to age shrinkable caches.
  *
@@ -370,20 +365,14 @@ static unsigned long do_shrink_slab(struct shrink_control *shrinkctl,
  * are called, and memcg aware shrinkers are supposed to scan the
  * global list then.
  *
- * @nr_scanned and @nr_eligible form a ratio that indicate how much of
- * the available objects should be scanned.  Page reclaim for example
- * passes the number of pages scanned and the number of pages on the
- * LRU lists that it considered on @nid, plus a bias in @nr_scanned
- * when it encountered mapped pages.  The ratio is further biased by
- * the ->seeks setting of the shrink function, which indicates the
- * cost to recreate an object relative to that of an LRU page.
+ * @priority is sc->priority, we take the number of objects and >> by priority
+ * in order to get the scan target.
  *
  * Returns the number of reclaimed slab objects.
  */
 static unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 				 struct mem_cgroup *memcg,
-				 unsigned long nr_scanned,
-				 unsigned long nr_eligible,
+				 int priority,
 				 bool for_drop_caches)
 {
 	struct shrinker *shrinker;
@@ -391,9 +380,6 @@ static unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 
 	if (memcg && !memcg_kmem_is_active(memcg))
 		return 0;
-
-	if (nr_scanned == 0)
-		nr_scanned = SWAP_CLUSTER_MAX;
 
 	if (unlikely(test_tsk_thread_flag(current, TIF_MEMDIE)))
 		return 0;
@@ -423,7 +409,7 @@ static unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 		if (!(shrinker->flags & SHRINKER_NUMA_AWARE))
 			sc.nid = 0;
 
-		freed += do_shrink_slab(&sc, shrinker, nr_scanned, nr_eligible);
+		freed += do_shrink_slab(&sc, shrinker, priority);
 	}
 
 	up_read(&shrinker_rwsem);
@@ -442,7 +428,7 @@ void drop_slab_node(int nid)
 		freed = 0;
 		do {
 			freed += shrink_slab(GFP_KERNEL, nid, memcg,
-					     1000, 1000, true);
+					     0, true);
 		} while ((memcg = mem_cgroup_iter(NULL, memcg, NULL)) != NULL);
 	} while (freed > 10);
 }
@@ -2419,14 +2405,12 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 
 			lruvec = mem_cgroup_zone_lruvec(zone, memcg);
 			scanned = sc->nr_scanned;
-
 			shrink_lruvec(lruvec, sc, &lru_pages);
 			zone_lru_pages += lru_pages;
 
 			if (memcg && is_classzone)
 				shrink_slab(slab_gfp, zone_to_nid(zone),
-					    memcg, sc->nr_scanned - scanned,
-					    lru_pages, false);
+					    memcg, sc->priority, false);
 
 			/*
 			 * Direct reclaim and kswapd have to scan all memory
@@ -2445,10 +2429,6 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 			}
 		} while ((memcg = mem_cgroup_iter(root, memcg, &reclaim)));
 
-		/*
-		 * Shrink the slab caches in the same proportion that
-		 * the eligible LRU pages were scanned.
-		 */
 		if (global_reclaim(sc) && is_classzone) {
 			unsigned long scanned, eligible;
 
@@ -2470,7 +2450,7 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 			}
 
 			shrink_slab(slab_gfp, zone_to_nid(zone), NULL,
-				    scanned, eligible, false);
+				    sc->priority, false);
 		}
 
 		if (reclaim_state) {
