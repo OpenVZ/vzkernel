@@ -137,8 +137,6 @@ struct autofs_v5_packet {
 	__u32 pid;
 	__u32 tgid;
 	__u32 len;
-	__u32 blob;		/* This is needed to align structure up to 8
-				   bytes for ALL archs including 32-bit */
 	char name[NAME_MAX+1];
 };
 
