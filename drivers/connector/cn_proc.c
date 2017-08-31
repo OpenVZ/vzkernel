@@ -64,6 +64,54 @@ static inline void get_seq(__u32 *ts, int *cpu)
 	preempt_enable();
 }
 
+static struct cn_msg *cn_msg_fill(__u8 *buffer,
+				  struct task_struct *task,
+				  int what, int cookie,
+				  bool (*fill_event)(struct proc_event *ev,
+						     struct task_struct *task,
+						     int cookie))
+{
+	struct cn_msg *msg;
+	struct proc_event *ev;
+	struct timespec ts;
+
+	msg = buffer_to_cn_msg(buffer);
+	ev = (struct proc_event *)msg->data;
+
+	get_seq(&msg->seq, &ev->cpu);
+	memcpy(&msg->id, &cn_proc_event_id, sizeof(msg->id));
+	msg->ack = 0; /* not used */
+	msg->len = sizeof(*ev);
+	msg->flags = 0; /* not used */
+
+	memset(&ev->event_data, 0, sizeof(ev->event_data));
+	ktime_get_ts(&ts); /* get high res monotonic timestamp */
+	ev->timestamp_ns = timespec_to_ns(&ts);
+	ev->what = what;
+
+	return fill_event(ev, task, cookie) ? msg : NULL;
+}
+
+static void proc_event_connector(struct task_struct *task,
+				 int what, int cookie,
+				 bool (*fill_event)(struct proc_event *ev,
+						    struct task_struct *task,
+						    int cookie))
+{
+	struct cn_msg *msg;
+	__u8 buffer[CN_PROC_MSG_SIZE] __aligned(8);
+
+	if (atomic_read(&proc_event_num_listeners) < 1)
+		return;
+
+	msg = cn_msg_fill(buffer, task, what, cookie, fill_event);
+	if (!msg)
+		return;
+
+	/*  If cn_netlink_send() failed, the data is not sent */
+	cn_netlink_send(msg, CN_IDX_PROC, GFP_KERNEL);
+}
+
 void proc_fork_connector(struct task_struct *task)
 {
 	struct cn_msg *msg;
@@ -71,6 +119,8 @@ void proc_fork_connector(struct task_struct *task)
 	__u8 buffer[CN_PROC_MSG_SIZE] __aligned(8);
 	struct timespec ts;
 	struct task_struct *parent;
+
+	(void) proc_event_connector;
 
 	if (atomic_read(&proc_event_num_listeners) < 1)
 		return;
