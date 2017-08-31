@@ -31,6 +31,7 @@
 #include <linux/ptrace.h>
 #include <linux/atomic.h>
 #include <linux/pid_namespace.h>
+#include <linux/ve.h>
 
 #include <linux/cn_proc.h>
 
@@ -327,6 +328,23 @@ static void cn_proc_mcast_ctl(struct cn_msg *msg,
 
 out:
 	cn_proc_ack(err, msg->seq, msg->ack);
+}
+
+int cn_proc_init_ve(struct ve_struct *ve)
+{
+	int err = cn_add_callback_ve(ve, &cn_proc_event_id,
+				     "cn_proc",
+				     &cn_proc_mcast_ctl);
+	if (err) {
+		pr_warn("VE#%d: cn_proc failed to register\n", ve->veid);
+		return err;
+	}
+	return 0;
+}
+
+void cn_proc_fini_ve(struct ve_struct *ve)
+{
+	cn_del_callback_ve(ve, &cn_proc_event_id);
 }
 
 /*
