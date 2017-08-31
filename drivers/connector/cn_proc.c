@@ -145,21 +145,11 @@ void proc_exec_connector(struct task_struct *task)
 	proc_event_connector(task, PROC_EVENT_EXEC, 0, fill_exec_event);
 }
 
-void proc_id_connector(struct task_struct *task, int which_id)
+static bool fill_id_event(struct proc_event *ev, struct task_struct *task,
+			  int which_id)
 {
-	struct cn_msg *msg;
-	struct proc_event *ev;
-	__u8 buffer[CN_PROC_MSG_SIZE] __aligned(8);
-	struct timespec ts;
 	const struct cred *cred;
 
-	if (atomic_read(&proc_event_num_listeners) < 1)
-		return;
-
-	msg = buffer_to_cn_msg(buffer);
-	ev = (struct proc_event *)msg->data;
-	memset(&ev->event_data, 0, sizeof(ev->event_data));
-	ev->what = which_id;
 	ev->event_data.id.process_pid = task->pid;
 	ev->event_data.id.process_tgid = task->tgid;
 	rcu_read_lock();
@@ -172,18 +162,15 @@ void proc_id_connector(struct task_struct *task, int which_id)
 		ev->event_data.id.e.egid = from_kgid_munged(&init_user_ns, cred->egid);
 	} else {
 		rcu_read_unlock();
-		return;
+		return false;
 	}
 	rcu_read_unlock();
-	get_seq(&msg->seq, &ev->cpu);
-	ktime_get_ts(&ts); /* get high res monotonic timestamp */
-	ev->timestamp_ns = timespec_to_ns(&ts);
+	return true;
+}
 
-	memcpy(&msg->id, &cn_proc_event_id, sizeof(msg->id));
-	msg->ack = 0; /* not used */
-	msg->len = sizeof(*ev);
-	msg->flags = 0; /* not used */
-	cn_netlink_send(msg, CN_IDX_PROC, GFP_KERNEL);
+void proc_id_connector(struct task_struct *task, int which_id)
+{
+	proc_event_connector(task, which_id, which_id, fill_id_event);
 }
 
 void proc_sid_connector(struct task_struct *task)
