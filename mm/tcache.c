@@ -261,8 +261,9 @@ static void tcache_lru_add(struct tcache_pool *pool, struct page *page)
 	struct tcache_nodeinfo *ni = &tcache_nodeinfo[nid];
 	struct tcache_pool_nodeinfo *pni = &pool->nodeinfo[nid];
 
-	spin_lock(&pni->lock);
 	atomic_long_inc(&ni->nr_pages);
+
+	spin_lock(&pni->lock);
 	pni->nr_pages++;
 	list_add_tail(&page->lru, &pni->lru);
 
@@ -300,6 +301,7 @@ static void tcache_lru_del(struct tcache_pool *pool, struct page *page,
 	int nid = page_to_nid(page);
 	struct tcache_nodeinfo *ni = &tcache_nodeinfo[nid];
 	struct tcache_pool_nodeinfo *pni = &pool->nodeinfo[nid];
+	bool deleted = false;
 
 	spin_lock(&pni->lock);
 
@@ -308,7 +310,7 @@ static void tcache_lru_del(struct tcache_pool *pool, struct page *page,
 		goto out;
 
 	__tcache_lru_del(pni, page);
-	atomic_long_dec(&ni->nr_pages);
+	deleted = true;
 
 	if (reused)
 		pni->recent_gets++;
@@ -323,6 +325,8 @@ static void tcache_lru_del(struct tcache_pool *pool, struct page *page,
 	}
 out:
 	spin_unlock(&pni->lock);
+	if (deleted)
+		atomic_long_dec(&ni->nr_pages);
 }
 
 static int tcache_create_pool(void)
@@ -1071,8 +1075,6 @@ again:
 	if (!nr_isolated)
 		goto unlock;
 
-	atomic_long_sub(nr_isolated, &ni->nr_pages);
-
 	if (!RB_EMPTY_NODE(rbn) || !list_empty(&pni->lru)) {
 		spin_lock(&ni->lock);
 		if (!RB_EMPTY_NODE(rbn))
@@ -1088,6 +1090,8 @@ unlock:
 	spin_unlock_irq(&pni->lock);
 	tcache_put_pool(pni->pool);
 out:
+	if (nr_isolated)
+		atomic_long_sub(nr_isolated, &ni->nr_pages);
 	return nr_isolated;
 }
 
