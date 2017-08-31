@@ -228,30 +228,19 @@ void proc_comm_connector(struct task_struct *task)
 	proc_event_connector(task, PROC_EVENT_COMM, 0, fill_comm_event);
 }
 
-void proc_coredump_connector(struct task_struct *task)
+static bool fill_coredump_event(struct proc_event *ev, struct task_struct *task,
+				int unused)
 {
-	struct cn_msg *msg;
-	struct proc_event *ev;
-	__u8 buffer[CN_PROC_MSG_SIZE] __aligned(8);
-
-	if (atomic_read(&proc_event_num_listeners) < 1)
-		return;
-
-	msg = buffer_to_cn_msg(buffer);
-	ev = (struct proc_event *)msg->data;
-	memset(&ev->event_data, 0, sizeof(ev->event_data));
-	ev->timestamp_ns = ktime_get_ns();
-	ev->what = PROC_EVENT_COREDUMP;
 	ev->event_data.coredump.process_pid = task->pid;
 	ev->event_data.coredump.process_tgid = task->tgid;
 	ev->event_data.coredump.parent_pid = task->real_parent->pid;
 	ev->event_data.coredump.parent_tgid = task->real_parent->tgid;
+	return true;
+}
 
-	memcpy(&msg->id, &cn_proc_event_id, sizeof(msg->id));
-	msg->ack = 0; /* not used */
-	msg->len = sizeof(*ev);
-	msg->flags = 0; /* not used */
-	send_msg(msg);
+void proc_coredump_connector(struct task_struct *task)
+{
+	proc_event_connector(task, PROC_EVENT_COREDUMP, 0, fill_coredump_event);
 }
 
 void proc_exit_connector(struct task_struct *task)
