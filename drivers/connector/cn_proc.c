@@ -86,10 +86,11 @@ static inline void send_msg_ve(struct ve_struct *ve, struct cn_msg *msg)
 	local_unlock(&ve->cn->local_event->lock);
 }
 
-static struct cn_msg *cn_msg_fill(__u8 *buffer,
+static struct cn_msg *cn_msg_fill(__u8 *buffer, struct ve_struct *ve,
 				  struct task_struct *task,
 				  int what, int cookie,
 				  bool (*fill_event)(struct proc_event *ev,
+						     struct ve_struct *ve,
 						     struct task_struct *task,
 						     int cookie))
 {
@@ -108,7 +109,7 @@ static struct cn_msg *cn_msg_fill(__u8 *buffer,
 	msg->len = sizeof(*ev);
 	msg->flags = 0; /* not used */
 
-	return fill_event(ev, task, cookie) ? msg : NULL;
+	return fill_event(ev, ve, task, cookie) ? msg : NULL;
 }
 
 static int proc_event_num_listeners(struct ve_struct *ve)
@@ -121,6 +122,7 @@ static int proc_event_num_listeners(struct ve_struct *ve)
 static void proc_event_connector(struct task_struct *task,
 				 int what, int cookie,
 				 bool (*fill_event)(struct proc_event *ev,
+						    struct ve_struct *ve,
 						    struct task_struct *task,
 						    int cookie))
 {
@@ -131,7 +133,7 @@ static void proc_event_connector(struct task_struct *task,
 	if (proc_event_num_listeners(ve) < 1)
 		return;
 
-	msg = cn_msg_fill(buffer, task, what, cookie, fill_event);
+	msg = cn_msg_fill(buffer, ve, task, what, cookie, fill_event);
 	if (!msg)
 		return;
 
@@ -139,8 +141,8 @@ static void proc_event_connector(struct task_struct *task,
 	send_msg_ve(ve, msg);
 }
 
-static bool fill_fork_event(struct proc_event *ev, struct task_struct *task,
-		int unused)
+static bool fill_fork_event(struct proc_event *ev, struct ve_struct *ve,
+			    struct task_struct *task, int unused)
 {
 	struct task_struct *parent;
 
@@ -159,8 +161,8 @@ void proc_fork_connector(struct task_struct *task)
 	proc_event_connector(task, PROC_EVENT_FORK, 0, fill_fork_event);
 }
 
-static bool fill_exec_event(struct proc_event *ev, struct task_struct *task,
-			    int unused)
+static bool fill_exec_event(struct proc_event *ev, struct ve_struct *ve,
+			    struct task_struct *task, int unused)
 {
 	ev->event_data.exec.process_pid = task_pid_nr_ns(task, &init_pid_ns);
 	ev->event_data.exec.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
@@ -172,8 +174,8 @@ void proc_exec_connector(struct task_struct *task)
 	proc_event_connector(task, PROC_EVENT_EXEC, 0, fill_exec_event);
 }
 
-static bool fill_id_event(struct proc_event *ev, struct task_struct *task,
-			  int which_id)
+static bool fill_id_event(struct proc_event *ev, struct ve_struct *ve,
+			  struct task_struct *task, int which_id)
 {
 	const struct cred *cred;
 
@@ -200,8 +202,8 @@ void proc_id_connector(struct task_struct *task, int which_id)
 	proc_event_connector(task, which_id, which_id, fill_id_event);
 }
 
-static bool fill_sid_event(struct proc_event *ev, struct task_struct *task,
-			   int unused)
+static bool fill_sid_event(struct proc_event *ev, struct ve_struct *ve,
+			   struct task_struct *task, int unused)
 {
 	ev->event_data.sid.process_pid = task_pid_nr_ns(task, &init_pid_ns);
 	ev->event_data.sid.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
@@ -213,8 +215,8 @@ void proc_sid_connector(struct task_struct *task)
 	proc_event_connector(task, PROC_EVENT_SID, 0, fill_sid_event);
 }
 
-static bool fill_ptrace_event(struct proc_event *ev, struct task_struct *task,
-			   int ptrace_id)
+static bool fill_ptrace_event(struct proc_event *ev, struct ve_struct *ve,
+			      struct task_struct *task, int ptrace_id)
 {
 	ev->event_data.ptrace.process_pid  = task_pid_nr_ns(task, &init_pid_ns);
 	ev->event_data.ptrace.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
@@ -235,8 +237,8 @@ void proc_ptrace_connector(struct task_struct *task, int ptrace_id)
 			     fill_ptrace_event);
 }
 
-static bool fill_comm_event(struct proc_event *ev, struct task_struct *task,
-			    int unused)
+static bool fill_comm_event(struct proc_event *ev, struct ve_struct *ve,
+			    struct task_struct *task, int unused)
 {
 	ev->event_data.comm.process_pid  = task_pid_nr_ns(task, &init_pid_ns);
 	ev->event_data.comm.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
@@ -249,8 +251,8 @@ void proc_comm_connector(struct task_struct *task)
 	proc_event_connector(task, PROC_EVENT_COMM, 0, fill_comm_event);
 }
 
-static bool fill_coredump_event(struct proc_event *ev, struct task_struct *task,
-				int unused)
+static bool fill_coredump_event(struct proc_event *ev, struct ve_struct *ve,
+				struct task_struct *task, int unused)
 {
 	ev->event_data.coredump.process_pid =
 		task_pid_nr_ns(task, &init_pid_ns);
@@ -268,8 +270,8 @@ void proc_coredump_connector(struct task_struct *task)
 	proc_event_connector(task, PROC_EVENT_COREDUMP, 0, fill_coredump_event);
 }
 
-static bool fill_exit_event(struct proc_event *ev, struct task_struct *task,
-			    int unused)
+static bool fill_exit_event(struct proc_event *ev, struct ve_struct *ve,
+			    struct task_struct *task, int unused)
 {
 	ev->event_data.exit.process_pid = task_pid_nr_ns(task, &init_pid_ns);
 	ev->event_data.exit.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
