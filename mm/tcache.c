@@ -261,7 +261,6 @@ static void tcache_lru_add(struct tcache_pool *pool, struct page *page)
 	struct tcache_nodeinfo *ni = &tcache_nodeinfo[nid];
 	struct tcache_pool_nodeinfo *pni = &pool->nodeinfo[nid];
 
-	spin_lock(&ni->lock);
 	spin_lock(&pni->lock);
 	atomic_long_inc(&ni->nr_pages);
 	pni->nr_pages++;
@@ -274,13 +273,14 @@ static void tcache_lru_add(struct tcache_pool *pool, struct page *page)
 	}
 
 	if (tcache_check_events(pni) || RB_EMPTY_NODE(&pni->reclaim_node)) {
+		spin_lock(&ni->lock);
 		if (!RB_EMPTY_NODE(&pni->reclaim_node))
 			rb_erase(&pni->reclaim_node, &ni->reclaim_tree);
 		__tcache_insert_reclaim_node(ni, pni);
 		update_ni_rb_first(ni);
+		spin_unlock(&ni->lock);
 	}
 	spin_unlock(&pni->lock);
-	spin_unlock(&ni->lock);
 }
 
 static void __tcache_lru_del(struct tcache_pool_nodeinfo *pni,
@@ -301,7 +301,6 @@ static void tcache_lru_del(struct tcache_pool *pool, struct page *page,
 	struct tcache_nodeinfo *ni = &tcache_nodeinfo[nid];
 	struct tcache_pool_nodeinfo *pni = &pool->nodeinfo[nid];
 
-	spin_lock(&ni->lock);
 	spin_lock(&pni->lock);
 
 	/* Raced with reclaimer? */
@@ -315,14 +314,15 @@ static void tcache_lru_del(struct tcache_pool *pool, struct page *page,
 		pni->recent_gets++;
 
 	if (tcache_check_events(pni)) {
+		spin_lock(&ni->lock);
 		if (!RB_EMPTY_NODE(&pni->reclaim_node))
 			rb_erase(&pni->reclaim_node, &ni->reclaim_tree);
 		__tcache_insert_reclaim_node(ni, pni);
 		update_ni_rb_first(ni);
+		spin_unlock(&ni->lock);
 	}
 out:
 	spin_unlock(&pni->lock);
-	spin_unlock(&ni->lock);
 }
 
 static int tcache_create_pool(void)
@@ -1065,8 +1065,7 @@ again:
 	}
 	rcu_read_unlock();
 
-	spin_lock_irq(&ni->lock);
-	spin_lock(&pni->lock);
+	spin_lock_irq(&pni->lock);
 	nr_isolated = __tcache_lru_isolate(pni, pages, nr_to_isolate);
 
 	if (!nr_isolated)
@@ -1074,17 +1073,19 @@ again:
 
 	atomic_long_sub(nr_isolated, &ni->nr_pages);
 
-	if (!RB_EMPTY_NODE(rbn)) {
-		rb_erase(rbn, &ni->reclaim_tree);
-		RB_CLEAR_NODE(rbn);
+	if (!RB_EMPTY_NODE(rbn) || !list_empty(&pni->lru)) {
+		spin_lock(&ni->lock);
+		if (!RB_EMPTY_NODE(rbn))
+			rb_erase(rbn, &ni->reclaim_tree);
+		if (!list_empty(&pni->lru))
+			__tcache_insert_reclaim_node(ni, pni);
+		else
+			RB_CLEAR_NODE(rbn);
+		update_ni_rb_first(ni);
+		spin_unlock(&ni->lock);
 	}
-	if (!list_empty(&pni->lru))
-		__tcache_insert_reclaim_node(ni, pni);
-	update_ni_rb_first(ni);
-
 unlock:
-	spin_unlock(&pni->lock);
-	spin_unlock_irq(&ni->lock);
+	spin_unlock_irq(&pni->lock);
 	tcache_put_pool(pni->pool);
 out:
 	return nr_isolated;
