@@ -274,11 +274,9 @@ static void tcache_lru_add(struct tcache_pool *pool, struct page *page)
 	spin_unlock(&ni->lock);
 }
 
-static void __tcache_lru_del(struct tcache_nodeinfo *ni,
-			     struct tcache_pool_nodeinfo *pni,
+static void __tcache_lru_del(struct tcache_pool_nodeinfo *pni,
 			     struct page *page)
 {
-	ni->nr_pages--;
 	pni->nr_pages--;
 	list_del_init(&page->lru);
 }
@@ -300,7 +298,8 @@ static void tcache_lru_del(struct tcache_pool *pool, struct page *page,
 	if (unlikely(list_empty(&page->lru)))
 		goto out;
 
-	__tcache_lru_del(ni, pni, page);
+	__tcache_lru_del(pni, page);
+	ni->nr_pages--;
 
 	if (reused)
 		pni->recent_gets++;
@@ -988,8 +987,7 @@ __tcache_insert_reclaim_node(struct tcache_nodeinfo *ni,
 }
 
 static noinline_for_stack int
-__tcache_lru_isolate(struct tcache_nodeinfo *ni,
-		     struct tcache_pool_nodeinfo *pni,
+__tcache_lru_isolate(struct tcache_pool_nodeinfo *pni,
 		     struct page **pages, int nr_to_scan)
 {
 	struct tcache_node *node;
@@ -1002,7 +1000,7 @@ __tcache_lru_isolate(struct tcache_nodeinfo *ni,
 		if (unlikely(!page_cache_get_speculative(page)))
 			continue;
 
-		__tcache_lru_del(ni, pni, page);
+		__tcache_lru_del(pni, page);
 
 		/*
 		 * A node can be destroyed only if all its pages have been
@@ -1041,7 +1039,8 @@ again:
 	if (!tcache_grab_pool(pni->pool))
 		goto again;
 
-	nr = __tcache_lru_isolate(ni, pni, pages, nr_to_isolate);
+	nr = __tcache_lru_isolate(pni, pages, nr_to_isolate);
+	ni->nr_pages -= nr;
 	nr_isolated += nr;
 	nr_to_isolate -= nr;
 
@@ -1093,7 +1092,8 @@ tcache_try_to_reclaim_page(struct tcache_pool *pool, int nid)
 	local_irq_save(flags);
 
 	spin_lock(&ni->lock);
-	ret = __tcache_lru_isolate(ni, pni, &page, 1);
+	ret = __tcache_lru_isolate(pni, &page, 1);
+	ni->nr_pages -= ret;
 	spin_unlock(&ni->lock);
 
 	if (!ret)
