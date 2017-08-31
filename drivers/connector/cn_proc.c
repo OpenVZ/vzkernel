@@ -97,16 +97,16 @@ static int proc_event_num_listeners(struct ve_struct *ve)
 	return 0;
 }
 
-static void proc_event_connector(struct task_struct *task,
-				 int what, int cookie,
-				 bool (*fill_event)(struct proc_event *ev,
-						    struct ve_struct *ve,
-						    struct task_struct *task,
-						    int cookie))
+static void proc_event_connector_ve(struct task_struct *task,
+				    struct ve_struct *ve,
+				    int what, int cookie,
+				    bool (*fill_event)(struct proc_event *ev,
+						       struct ve_struct *ve,
+						       struct task_struct *task,
+						       int cookie))
 {
 	struct cn_msg *msg;
 	__u8 buffer[CN_PROC_MSG_SIZE] __aligned(8);
-	struct ve_struct *ve = task->task_ve;
 
 	if (proc_event_num_listeners(ve) < 1)
 		return;
@@ -117,6 +117,21 @@ static void proc_event_connector(struct task_struct *task,
 
 	/*  If cn_netlink_send() failed, the data is not sent */
 	cn_netlink_send_ve(ve, msg, CN_IDX_PROC, GFP_KERNEL);
+}
+
+static void proc_event_connector(struct task_struct *task,
+				 int what, int cookie,
+				 bool (*fill_event)(struct proc_event *ev,
+						    struct ve_struct *ve,
+						    struct task_struct *task,
+						    int cookie))
+{
+	struct ve_struct *ve = task->task_ve;
+
+	if (!ve_is_super(ve))
+		proc_event_connector_ve(task, ve, what, cookie, fill_event);
+
+	proc_event_connector_ve(task, get_ve0(), what, cookie, fill_event);
 }
 
 static bool fill_fork_event(struct proc_event *ev, struct ve_struct *ve,
