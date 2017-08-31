@@ -277,6 +277,7 @@ static int cn_init_ve(struct ve_struct *ve)
 		.input	= cn_rx_skb,
 	};
 	struct net *net = ve->ve_netns;
+	int err;
 
 	ve->cn = kzalloc(sizeof(*ve->cn), GFP_KERNEL);
 	if (!ve->cn)
@@ -285,20 +286,40 @@ static int cn_init_ve(struct ve_struct *ve)
 	dev = &ve->cn->cdev;
 
 	dev->nls = netlink_kernel_create(net, NETLINK_CONNECTOR, &cfg);
-	if (!dev->nls)
-		return -EIO;
+	if (!dev->nls) {
+		err = -EIO;
+		goto free_cn;
+	}
 
 	dev->cbdev = cn_queue_alloc_dev("cqueue", dev->nls);
 	if (!dev->cbdev) {
-		netlink_kernel_release(dev->nls);
-		return -EINVAL;
+		err = -EINVAL;
+		goto netlink_release;
 	}
 
 	ve->cn->cn_already_initialized = 1;
 
-	proc_create("connector", S_IRUGO, net->proc_net, &cn_file_ops);
+	if (!proc_create("connector", S_IRUGO, net->proc_net, &cn_file_ops)) {
+		err = -ENOMEM;
+		goto free_cdev;
+	}
+
+	err = cn_proc_init_ve(ve);
+	if (err)
+		goto remove_proc;
 
 	return 0;
+
+remove_proc:
+	remove_proc_entry("connector", net->proc_net);
+free_cdev:
+	cn_queue_free_dev(dev->cbdev);
+netlink_release:
+	netlink_kernel_release(dev->nls);
+free_cn:
+	kfree(ve->cn);
+	ve->cn = NULL;
+	return err;
 }
 
 static void cn_fini_ve(struct ve_struct *ve)
@@ -307,6 +328,8 @@ static void cn_fini_ve(struct ve_struct *ve)
 	struct net *net = ve->ve_netns;
 
 	ve->cn->cn_already_initialized = 0;
+
+	cn_proc_fini_ve(ve);
 
 	remove_proc_entry("connector", net->proc_net);
 
