@@ -38,8 +38,6 @@ MODULE_AUTHOR("Evgeniy Polyakov <zbr@ioremap.net>");
 MODULE_DESCRIPTION("Generic userspace <-> kernelspace connector.");
 MODULE_ALIAS_NET_PF_PROTO(PF_NETLINK, NETLINK_CONNECTOR);
 
-static int cn_already_initialized;
-
 static struct cn_dev *get_cdev(struct ve_struct *ve)
 {
 	return &ve->cn->cdev;
@@ -224,7 +222,7 @@ int cn_add_callback_ve(struct ve_struct *ve,
 	int err;
 	struct cn_dev *dev = get_cdev(ve);
 
-	if (!cn_already_initialized)
+	if (!ve->cn->cn_already_initialized)
 		return -EAGAIN;
 
 	err = cn_queue_add_callback(dev->cbdev, name, id, callback);
@@ -320,7 +318,7 @@ static int cn_init_ve(struct ve_struct *ve)
 		goto net_unlock;
 	}
 
-	cn_already_initialized = 1;
+	ve->cn->cn_already_initialized = 1;
 
 	proc_create_single("connector", S_IRUGO, net->proc_net, cn_proc_show);
 	err = 0;
@@ -335,7 +333,7 @@ static void cn_fini_ve(struct ve_struct *ve)
 	struct cn_dev *dev = get_cdev(ve);
 	struct net *net;
 
-	cn_already_initialized = 0;
+	ve->cn->cn_already_initialized = 0;
 
 	net = ve_net_lock(ve);
 	remove_proc_entry("connector", net->proc_net);
