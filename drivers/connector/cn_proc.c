@@ -186,23 +186,9 @@ void proc_sid_connector(struct task_struct *task)
 	proc_event_connector(task, PROC_EVENT_SID, 0, fill_sid_event);
 }
 
-void proc_ptrace_connector(struct task_struct *task, int ptrace_id)
+static bool fill_ptrace_event(struct proc_event *ev, struct task_struct *task,
+			   int ptrace_id)
 {
-	struct cn_msg *msg;
-	struct proc_event *ev;
-	struct timespec ts;
-	__u8 buffer[CN_PROC_MSG_SIZE] __aligned(8);
-
-	if (atomic_read(&proc_event_num_listeners) < 1)
-		return;
-
-	msg = buffer_to_cn_msg(buffer);
-	ev = (struct proc_event *)msg->data;
-	memset(&ev->event_data, 0, sizeof(ev->event_data));
-	get_seq(&msg->seq, &ev->cpu);
-	ktime_get_ts(&ts); /* get high res monotonic timestamp */
-	ev->timestamp_ns = timespec_to_ns(&ts);
-	ev->what = PROC_EVENT_PTRACE;
 	ev->event_data.ptrace.process_pid  = task->pid;
 	ev->event_data.ptrace.process_tgid = task->tgid;
 	if (ptrace_id == PTRACE_ATTACH) {
@@ -212,13 +198,14 @@ void proc_ptrace_connector(struct task_struct *task, int ptrace_id)
 		ev->event_data.ptrace.tracer_pid  = 0;
 		ev->event_data.ptrace.tracer_tgid = 0;
 	} else
-		return;
+		return false;
+	return true;
+}
 
-	memcpy(&msg->id, &cn_proc_event_id, sizeof(msg->id));
-	msg->ack = 0; /* not used */
-	msg->len = sizeof(*ev);
-	msg->flags = 0; /* not used */
-	cn_netlink_send(msg, CN_IDX_PROC, GFP_KERNEL);
+void proc_ptrace_connector(struct task_struct *task, int ptrace_id)
+{
+	proc_event_connector(task, PROC_EVENT_PTRACE, ptrace_id,
+			     fill_ptrace_event);
 }
 
 void proc_comm_connector(struct task_struct *task)
