@@ -63,6 +63,12 @@ static int cn_already_initialized;
  * a new message.
  *
  */
+
+static struct cn_dev *get_cdev(struct ve_struct *ve)
+{
+	return &cdev;
+}
+
 int cn_netlink_send(struct cn_msg *msg, u32 __group, gfp_t gfp_mask)
 {
 	struct cn_callback_entry *__cbq;
@@ -70,7 +76,7 @@ int cn_netlink_send(struct cn_msg *msg, u32 __group, gfp_t gfp_mask)
 	struct sk_buff *skb;
 	struct nlmsghdr *nlh;
 	struct cn_msg *data;
-	struct cn_dev *dev = &cdev;
+	struct cn_dev *dev = get_cdev(get_ve0());
 	u32 group = 0;
 	int found = 0;
 
@@ -123,7 +129,7 @@ EXPORT_SYMBOL_GPL(cn_netlink_send);
 static int cn_call_callback(struct sk_buff *skb)
 {
 	struct cn_callback_entry *i, *cbq = NULL;
-	struct cn_dev *dev = &cdev;
+	struct cn_dev *dev = get_cdev(get_ve0());
 	struct cn_msg *msg = nlmsg_data(nlmsg_hdr(skb));
 	struct netlink_skb_parms *nsp = &NETLINK_CB(skb);
 	int err = -ENODEV;
@@ -185,7 +191,7 @@ int cn_add_callback(struct cb_id *id, const char *name,
 				     struct netlink_skb_parms *))
 {
 	int err;
-	struct cn_dev *dev = &cdev;
+	struct cn_dev *dev = get_cdev(get_ve0());
 
 	if (!cn_already_initialized)
 		return -EAGAIN;
@@ -208,7 +214,7 @@ EXPORT_SYMBOL_GPL(cn_add_callback);
  */
 void cn_del_callback(struct cb_id *id)
 {
-	struct cn_dev *dev = &cdev;
+	struct cn_dev *dev = get_cdev(get_ve0());
 
 	cn_queue_del_callback(dev->cbdev, id);
 }
@@ -216,7 +222,7 @@ EXPORT_SYMBOL_GPL(cn_del_callback);
 
 static int cn_proc_show(struct seq_file *m, void *v)
 {
-	struct cn_queue_dev *dev = cdev.cbdev;
+	struct cn_queue_dev *dev = get_cdev(get_ve0())->cbdev;
 	struct cn_callback_entry *cbq;
 
 	seq_printf(m, "Name            ID\n");
@@ -250,7 +256,7 @@ static const struct file_operations cn_file_ops = {
 
 static int cn_init(void)
 {
-	struct cn_dev *dev = &cdev;
+	struct cn_dev *dev = get_cdev(get_ve0());
 	struct netlink_kernel_cfg cfg = {
 		.groups	= CN_NETLINK_USERS + 0xf,
 		.input	= cn_rx_skb,
@@ -275,7 +281,7 @@ static int cn_init(void)
 
 static void cn_fini(void)
 {
-	struct cn_dev *dev = &cdev;
+	struct cn_dev *dev = get_cdev(get_ve0());
 
 	cn_already_initialized = 0;
 
