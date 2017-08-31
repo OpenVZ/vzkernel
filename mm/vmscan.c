@@ -89,6 +89,9 @@ struct scan_control {
 	/* Scan (total_size >> priority) pages at once */
 	int priority;
 
+	/* Reclaim only slab */
+	bool slab_only;
+
 	/*
 	 * The memory cgroup that hit its limit and as a result is the
 	 * primary target of this reclaim invocation.
@@ -2382,6 +2385,7 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 	struct reclaim_state *reclaim_state = current->reclaim_state;
 	unsigned long nr_reclaimed, nr_scanned;
 	gfp_t slab_gfp = sc->gfp_mask;
+	bool slab_only = sc->slab_only;
 
 	/* Disable fs-related IO for direct reclaim */
 	if (!sc->target_mem_cgroup &&
@@ -2408,14 +2412,24 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 			if (!sc->may_thrash && mem_cgroup_low(root, memcg))
 				continue;
 
-			lruvec = mem_cgroup_zone_lruvec(zone, memcg);
 			scanned = sc->nr_scanned;
-			shrink_lruvec(lruvec, sc, &lru_pages);
-			zone_lru_pages += lru_pages;
 
-			if (memcg && is_classzone)
+			if (!slab_only) {
+				lruvec = mem_cgroup_zone_lruvec(zone, memcg);
+				shrink_lruvec(lruvec, sc, &lru_pages);
+				zone_lru_pages += lru_pages;
+			}
+
+			if (memcg && is_classzone) {
 				shrink_slab(slab_gfp, zone_to_nid(zone),
 					    memcg, sc->priority, false);
+				if (reclaim_state) {
+					sc->nr_reclaimed += reclaim_state->reclaimed_slab;
+					sc->nr_scanned += reclaim_state->reclaimed_slab;
+					reclaim_state->reclaimed_slab = 0;
+				}
+
+			}
 
 			/*
 			 * Direct reclaim and kswapd have to scan all memory
@@ -2910,15 +2924,17 @@ unsigned long mem_cgroup_shrink_node_zone(struct mem_cgroup *memcg,
 unsigned long try_to_free_mem_cgroup_pages(struct mem_cgroup *memcg,
 					   unsigned long nr_pages,
 					   gfp_t gfp_mask,
-					   bool noswap)
+					   int flags)
 {
 	struct zonelist *zonelist;
 	unsigned long nr_reclaimed;
+	struct reclaim_state reclaim_state = { 0 };
 	int nid;
 	struct scan_control sc = {
 		.may_writepage = !laptop_mode,
 		.may_unmap = 1,
-		.may_swap = !noswap,
+		.may_swap = !(flags & MEM_CGROUP_RECLAIM_NOSWAP),
+		.slab_only = flags & MEM_CGROUP_RECLAIM_KMEM,
 		.nr_to_reclaim = max(nr_pages, SWAP_CLUSTER_MAX),
 		.order = 0,
 		.priority = DEF_PRIORITY,
@@ -2941,10 +2957,11 @@ unsigned long try_to_free_mem_cgroup_pages(struct mem_cgroup *memcg,
 					    sc.may_writepage,
 					    sc.gfp_mask);
 
+	current->reclaim_state = &reclaim_state;
 	current->flags |= PF_MEMALLOC | PF_MEMCG_RECLAIM;
 	nr_reclaimed = do_try_to_free_pages(zonelist, &sc);
 	current->flags &= ~(PF_MEMALLOC | PF_MEMCG_RECLAIM);
-
+	current->reclaim_state = NULL;
 	trace_mm_vmscan_memcg_reclaim_end(nr_reclaimed);
 
 	return nr_reclaimed;
