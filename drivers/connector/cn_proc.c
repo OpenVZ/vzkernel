@@ -119,11 +119,11 @@ static bool fill_fork_event(struct proc_event *ev, struct task_struct *task,
 
 	rcu_read_lock();
 	parent = rcu_dereference(task->real_parent);
-	ev->event_data.fork.parent_pid = parent->pid;
-	ev->event_data.fork.parent_tgid = parent->tgid;
+	ev->event_data.fork.parent_pid = task_pid_nr_ns(parent, &init_pid_ns);
+	ev->event_data.fork.parent_tgid = task_tgid_nr_ns(parent, &init_pid_ns);
 	rcu_read_unlock();
-	ev->event_data.fork.child_pid = task->pid;
-	ev->event_data.fork.child_tgid = task->tgid;
+	ev->event_data.fork.child_pid = task_pid_nr_ns(task, &init_pid_ns);
+	ev->event_data.fork.child_tgid = task_tgid_nr_ns(task, &init_pid_ns);
 	return true;
 }
 
@@ -135,8 +135,8 @@ void proc_fork_connector(struct task_struct *task)
 static bool fill_exec_event(struct proc_event *ev, struct task_struct *task,
 			    int unused)
 {
-	ev->event_data.exec.process_pid = task->pid;
-	ev->event_data.exec.process_tgid = task->tgid;
+	ev->event_data.exec.process_pid = task_pid_nr_ns(task, &init_pid_ns);
+	ev->event_data.exec.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
 	return true;
 }
 
@@ -150,8 +150,8 @@ static bool fill_id_event(struct proc_event *ev, struct task_struct *task,
 {
 	const struct cred *cred;
 
-	ev->event_data.id.process_pid = task->pid;
-	ev->event_data.id.process_tgid = task->tgid;
+	ev->event_data.id.process_pid = task_pid_nr_ns(task, &init_pid_ns);
+	ev->event_data.id.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
 	rcu_read_lock();
 	cred = __task_cred(task);
 	if (which_id == PROC_EVENT_UID) {
@@ -176,8 +176,8 @@ void proc_id_connector(struct task_struct *task, int which_id)
 static bool fill_sid_event(struct proc_event *ev, struct task_struct *task,
 			   int unused)
 {
-	ev->event_data.sid.process_pid = task->pid;
-	ev->event_data.sid.process_tgid = task->tgid;
+	ev->event_data.sid.process_pid = task_pid_nr_ns(task, &init_pid_ns);
+	ev->event_data.sid.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
 	return true;
 }
 
@@ -189,11 +189,11 @@ void proc_sid_connector(struct task_struct *task)
 static bool fill_ptrace_event(struct proc_event *ev, struct task_struct *task,
 			   int ptrace_id)
 {
-	ev->event_data.ptrace.process_pid  = task->pid;
-	ev->event_data.ptrace.process_tgid = task->tgid;
+	ev->event_data.ptrace.process_pid  = task_pid_nr_ns(task, &init_pid_ns);
+	ev->event_data.ptrace.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
 	if (ptrace_id == PTRACE_ATTACH) {
-		ev->event_data.ptrace.tracer_pid  = current->pid;
-		ev->event_data.ptrace.tracer_tgid = current->tgid;
+		ev->event_data.ptrace.tracer_pid  = task_pid_nr_ns(current, &init_pid_ns);
+		ev->event_data.ptrace.tracer_tgid = task_tgid_nr_ns(current, &init_pid_ns);
 	} else if (ptrace_id == PTRACE_DETACH) {
 		ev->event_data.ptrace.tracer_pid  = 0;
 		ev->event_data.ptrace.tracer_tgid = 0;
@@ -211,8 +211,8 @@ void proc_ptrace_connector(struct task_struct *task, int ptrace_id)
 static bool fill_comm_event(struct proc_event *ev, struct task_struct *task,
 			    int unused)
 {
-	ev->event_data.comm.process_pid  = task->pid;
-	ev->event_data.comm.process_tgid = task->tgid;
+	ev->event_data.comm.process_pid  = task_pid_nr_ns(task, &init_pid_ns);
+	ev->event_data.comm.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
 	get_task_comm(ev->event_data.comm.comm, task);
 	return true;
 }
@@ -225,8 +225,8 @@ void proc_comm_connector(struct task_struct *task)
 static bool fill_coredump_event(struct proc_event *ev, struct task_struct *task,
 				int unused)
 {
-	ev->event_data.coredump.process_pid = task->pid;
-	ev->event_data.coredump.process_tgid = task->tgid;
+	ev->event_data.coredump.process_pid = task_pid_nr_ns(task, &init_pid_ns);
+	ev->event_data.coredump.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
 	return true;
 }
 
@@ -238,8 +238,8 @@ void proc_coredump_connector(struct task_struct *task)
 static bool fill_exit_event(struct proc_event *ev, struct task_struct *task,
 			    int unused)
 {
-	ev->event_data.exit.process_pid = task->pid;
-	ev->event_data.exit.process_tgid = task->tgid;
+	ev->event_data.exit.process_pid = task_pid_nr_ns(task, &init_pid_ns);
+	ev->event_data.exit.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
 	ev->event_data.exit.exit_code = task->exit_code;
 	ev->event_data.exit.exit_signal = task->exit_signal;
 	return true;
