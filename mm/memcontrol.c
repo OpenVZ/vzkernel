@@ -3086,6 +3086,8 @@ int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 		page_counter_charge(&memcg->memory, nr_pages);
 		if (do_swap_account)
 			page_counter_charge(&memcg->memsw, nr_pages);
+		page_counter_charge(&memcg->kmem, nr_pages);
+
 		ret = 0;
 	}
 
