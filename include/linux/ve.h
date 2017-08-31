@@ -24,6 +24,7 @@ struct user_namespace;
 struct super_block;
 struct tty_driver;
 struct tty_struct;
+struct cn_private;
 
 struct ve_struct {
 	struct cgroup_subsys_state	css;
@@ -81,6 +82,9 @@ struct ve_struct {
 	unsigned long		meminfo_val;
 #ifdef CONFIG_COREDUMP
 	char			core_pattern[CORENAME_MAX_SIZE];
+#endif
+#ifdef CONFIG_CONNECTOR
+	struct cn_private	*cn;
 #endif
 };
 
