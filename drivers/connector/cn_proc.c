@@ -345,22 +345,3 @@ void cn_proc_fini_ve(struct ve_struct *ve)
 {
 	cn_del_callback_ve(ve, &cn_proc_event_id);
 }
-
-/*
- * cn_proc_init - initialization entry point
- *
- * Adds the connector callback to the connector driver.
- */
-static int __init cn_proc_init(void)
-{
-	int err = cn_add_callback(&cn_proc_event_id,
-				  "cn_proc",
-				  &cn_proc_mcast_ctl);
-	if (err) {
-		pr_warn("cn_proc failed to register\n");
-		return err;
-	}
-	return 0;
-}
-
-module_init(cn_proc_init);
