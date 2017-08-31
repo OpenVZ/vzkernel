@@ -67,14 +67,14 @@ static struct cn_dev *get_cdev(struct ve_struct *ve)
 	return &ve->cn->cdev;
 }
 
-int cn_netlink_send(struct cn_msg *msg, u32 __group, gfp_t gfp_mask)
+int cn_netlink_send_ve(struct ve_struct *ve, struct cn_msg *msg, u32 __group, gfp_t gfp_mask)
 {
 	struct cn_callback_entry *__cbq;
 	unsigned int size;
 	struct sk_buff *skb;
 	struct nlmsghdr *nlh;
 	struct cn_msg *data;
-	struct cn_dev *dev = get_cdev(get_ve0());
+	struct cn_dev *dev = get_cdev(ve);
 	u32 group = 0;
 	int found = 0;
 
@@ -118,6 +118,11 @@ int cn_netlink_send(struct cn_msg *msg, u32 __group, gfp_t gfp_mask)
 	NETLINK_CB(skb).dst_group = group;
 
 	return netlink_broadcast(dev->nls, skb, 0, group, gfp_mask);
+}
+
+int cn_netlink_send(struct cn_msg *msg, u32 __group, gfp_t gfp_mask)
+{
+	return cn_netlink_send_ve(get_ve0(), msg, __group, gfp_mask);
 }
 EXPORT_SYMBOL_GPL(cn_netlink_send);
 
@@ -178,18 +183,13 @@ static void cn_rx_skb(struct sk_buff *skb)
 	}
 }
 
-/*
- * Callback add routing - adds callback with given ID and name.
- * If there is registered callback with the same ID it will not be added.
- *
- * May sleep.
- */
-int cn_add_callback(struct cb_id *id, const char *name,
-		    void (*callback)(struct cn_msg *,
-				     struct netlink_skb_parms *))
+int cn_add_callback_ve(struct ve_struct *ve,
+		       struct cb_id *id, const char *name,
+		       void (*callback)(struct cn_msg *,
+					struct netlink_skb_parms *))
 {
 	int err;
-	struct cn_dev *dev = get_cdev(get_ve0());
+	struct cn_dev *dev = get_cdev(ve);
 
 	if (!cn_already_initialized)
 		return -EAGAIN;
@@ -200,7 +200,27 @@ int cn_add_callback(struct cb_id *id, const char *name,
 
 	return 0;
 }
+
+/*
+ * Callback add routing - adds callback with given ID and name.
+ * If there is registered callback with the same ID it will not be added.
+ *
+ * May sleep.
+ */
+int cn_add_callback(struct cb_id *id, const char *name,
+		    void (*callback)(struct cn_msg *,
+				     struct netlink_skb_parms *))
+{
+	return cn_add_callback_ve(get_ve0(), id, name, callback);
+}
 EXPORT_SYMBOL_GPL(cn_add_callback);
+
+void cn_del_callback_ve(struct ve_struct *ve, struct cb_id *id)
+{
+	struct cn_dev *dev = get_cdev(ve);
+
+	cn_queue_del_callback(dev->cbdev, id);
+}
 
 /*
  * Callback remove routing - removes callback
@@ -212,9 +232,7 @@ EXPORT_SYMBOL_GPL(cn_add_callback);
  */
 void cn_del_callback(struct cb_id *id)
 {
-	struct cn_dev *dev = get_cdev(get_ve0());
-
-	cn_queue_del_callback(dev->cbdev, id);
+	cn_del_callback_ve(get_ve0(), id);
 }
 EXPORT_SYMBOL_GPL(cn_del_callback);
 
