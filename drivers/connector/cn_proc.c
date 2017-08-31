@@ -116,7 +116,7 @@ static void proc_event_connector(struct task_struct *task,
 		return;
 
 	/*  If cn_netlink_send() failed, the data is not sent */
-	cn_netlink_send(msg, CN_IDX_PROC, GFP_KERNEL);
+	cn_netlink_send_ve(ve, msg, CN_IDX_PROC, GFP_KERNEL);
 }
 
 static bool fill_fork_event(struct proc_event *ev, struct ve_struct *ve,
@@ -303,7 +303,7 @@ static void cn_proc_ack(struct ve_struct *ve, int err, int rcvd_seq, int rcvd_ac
 	msg->ack = rcvd_ack + 1;
 	msg->len = sizeof(*ev);
 	msg->flags = 0; /* not used */
-	cn_netlink_send(msg, CN_IDX_PROC, GFP_KERNEL);
+	cn_netlink_send_ve(ve, msg, CN_IDX_PROC, GFP_KERNEL);
 }
 
 /**
