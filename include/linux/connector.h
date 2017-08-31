@@ -76,6 +76,13 @@ struct cn_private {
 
 };
 
+int cn_add_callback_ve(struct ve_struct *ve,
+		       struct cb_id *id, const char *name,
+		       void (*callback)(struct cn_msg *,
+					struct netlink_skb_parms *));
+void cn_del_callback_ve(struct ve_struct *ve, struct cb_id *id);
+int cn_netlink_send_ve(struct ve_struct *ve, struct cn_msg *, u32, gfp_t);
+
 int cn_add_callback(struct cb_id *id, const char *name,
 		    void (*callback)(struct cn_msg *, struct netlink_skb_parms *));
 void cn_del_callback(struct cb_id *);
