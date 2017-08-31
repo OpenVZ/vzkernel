@@ -216,8 +216,7 @@ static struct rb_node *update_ni_rb_first(struct tcache_nodeinfo *ni)
 static void __tcache_insert_reclaim_node(struct tcache_nodeinfo *ni,
 					 struct tcache_pool_nodeinfo *pni);
 
-static inline void __tcache_check_events(struct tcache_nodeinfo *ni,
-					 struct tcache_pool_nodeinfo *pni)
+static inline bool tcache_check_events(struct tcache_pool_nodeinfo *pni)
 {
 	/*
 	 * We don't want to rebalance reclaim_tree on each get/put, because it
@@ -228,7 +227,7 @@ static inline void __tcache_check_events(struct tcache_nodeinfo *ni,
 	 */
 	pni->events++;
 	if (likely(pni->events < 1024))
-		return;
+		return false;
 
 	pni->events = 0;
 
@@ -238,7 +237,7 @@ static inline void __tcache_check_events(struct tcache_nodeinfo *ni,
 	 * it will be done by the shrinker once it tries to scan it.
 	 */
 	if (unlikely(list_empty(&pni->lru)))
-		return;
+		return false;
 
 	/*
 	 * This can only happen if the node was removed from the tree on pool
@@ -246,11 +245,9 @@ static inline void __tcache_check_events(struct tcache_nodeinfo *ni,
 	 * then.
 	 */
 	if (unlikely(RB_EMPTY_NODE(&pni->reclaim_node)))
-		return;
+		return false;
 
-	rb_erase(&pni->reclaim_node, &ni->reclaim_tree);
-	__tcache_insert_reclaim_node(ni, pni);
-	update_ni_rb_first(ni);
+	return true;
 }
 
 /*
@@ -277,13 +274,12 @@ static void tcache_lru_add(struct tcache_pool *pool, struct page *page)
 		pni->recent_puts /= 2;
 	}
 
-	__tcache_check_events(ni, pni);
-
-	if (unlikely(RB_EMPTY_NODE(&pni->reclaim_node))) {
+	if (tcache_check_events(pni) || RB_EMPTY_NODE(&pni->reclaim_node)) {
+		if (!RB_EMPTY_NODE(&pni->reclaim_node))
+			rb_erase(&pni->reclaim_node, &ni->reclaim_tree);
 		__tcache_insert_reclaim_node(ni, pni);
 		update_ni_rb_first(ni);
 	}
-
 	spin_unlock(&pni->lock);
 	spin_unlock(&ni->lock);
 }
@@ -319,7 +315,12 @@ static void tcache_lru_del(struct tcache_pool *pool, struct page *page,
 	if (reused)
 		pni->recent_gets++;
 
-	__tcache_check_events(ni, pni);
+	if (tcache_check_events(pni)) {
+		if (!RB_EMPTY_NODE(&pni->reclaim_node))
+			rb_erase(&pni->reclaim_node, &ni->reclaim_tree);
+		__tcache_insert_reclaim_node(ni, pni);
+		update_ni_rb_first(ni);
+	}
 out:
 	spin_unlock(&pni->lock);
 	spin_unlock(&ni->lock);
@@ -947,7 +948,7 @@ tcache_remove_from_reclaim_trees(struct tcache_pool *pool)
 			rb_erase(&pni->reclaim_node, &ni->reclaim_tree);
 			update_ni_rb_first(ni);
 			/*
-			 * Clear the node for __tcache_check_events() not to
+			 * Clear the node for tcache_check_events() not to
 			 * reinsert the pool back into the tree.
 			 */
 			RB_CLEAR_NODE(&pni->reclaim_node);
