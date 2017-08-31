@@ -255,15 +255,20 @@ static const struct file_operations cn_file_ops = {
 	.release = single_release
 };
 
-static int cn_init(void)
+static int cn_init_ve(struct ve_struct *ve)
 {
 	struct cn_dev *dev = get_cdev(get_ve0());
 	struct netlink_kernel_cfg cfg = {
 		.groups	= CN_NETLINK_USERS + 0xf,
 		.input	= cn_rx_skb,
 	};
+	struct net *net = ve->ve_netns;
 
-	dev->nls = netlink_kernel_create(&init_net, NETLINK_CONNECTOR, &cfg);
+	ve->cn = kzalloc(sizeof(*ve->cn), GFP_KERNEL);
+	if (!ve->cn)
+		return -ENOMEM;
+
+	dev->nls = netlink_kernel_create(net, NETLINK_CONNECTOR, &cfg);
 	if (!dev->nls)
 		return -EIO;
 
@@ -275,21 +280,35 @@ static int cn_init(void)
 
 	cn_already_initialized = 1;
 
-	proc_create("connector", S_IRUGO, init_net.proc_net, &cn_file_ops);
+	proc_create("connector", S_IRUGO, net->proc_net, &cn_file_ops);
 
 	return 0;
 }
 
-static void cn_fini(void)
+static void cn_fini_ve(struct ve_struct *ve)
 {
-	struct cn_dev *dev = get_cdev(get_ve0());
+	struct cn_dev *dev = get_cdev(ve);
+	struct net *net = ve->ve_netns;
 
 	cn_already_initialized = 0;
 
-	remove_proc_entry("connector", init_net.proc_net);
+	remove_proc_entry("connector", net->proc_net);
 
 	cn_queue_free_dev(dev->cbdev);
 	netlink_kernel_release(dev->nls);
+
+	kfree(ve->cn);
+	ve->cn = NULL;
+}
+
+static int cn_init(void)
+{
+	return cn_init_ve(get_ve0());
+}
+
+static void cn_fini(void)
+{
+	return cn_fini_ve(get_ve0());
 }
 
 subsys_initcall(cn_init);
