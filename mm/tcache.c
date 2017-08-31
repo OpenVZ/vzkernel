@@ -66,6 +66,7 @@ struct tcache_pool_nodeinfo {
 	/* increased on every LRU add/del, reset once it gets big enough;
 	 * used for rate limiting rebalancing of reclaim_tree */
 	unsigned long			events;
+	spinlock_t			lock;
 } ____cacheline_aligned_in_smp;
 
 /*
@@ -255,6 +256,7 @@ static void tcache_lru_add(struct tcache_pool *pool, struct page *page)
 	struct tcache_pool_nodeinfo *pni = &pool->nodeinfo[nid];
 
 	spin_lock(&ni->lock);
+	spin_lock(&pni->lock);
 
 	ni->nr_pages++;
 	pni->nr_pages++;
@@ -271,6 +273,7 @@ static void tcache_lru_add(struct tcache_pool *pool, struct page *page)
 	if (unlikely(RB_EMPTY_NODE(&pni->reclaim_node)))
 		__tcache_insert_reclaim_node(ni, pni);
 
+	spin_unlock(&pni->lock);
 	spin_unlock(&ni->lock);
 }
 
@@ -293,6 +296,7 @@ static void tcache_lru_del(struct tcache_pool *pool, struct page *page,
 	struct tcache_pool_nodeinfo *pni = &pool->nodeinfo[nid];
 
 	spin_lock(&ni->lock);
+	spin_lock(&pni->lock);
 
 	/* Raced with reclaimer? */
 	if (unlikely(list_empty(&page->lru)))
@@ -306,6 +310,7 @@ static void tcache_lru_del(struct tcache_pool *pool, struct page *page,
 
 	__tcache_check_events(ni, pni);
 out:
+	spin_unlock(&pni->lock);
 	spin_unlock(&ni->lock);
 }
 
@@ -342,6 +347,7 @@ static int tcache_create_pool(void)
 		pni->pool = pool;
 		RB_CLEAR_NODE(&pni->reclaim_node);
 		INIT_LIST_HEAD(&pni->lru);
+		spin_lock_init(&pni->lock);
 	}
 
 	idr_preload(GFP_KERNEL);
@@ -1039,6 +1045,7 @@ again:
 	if (!tcache_grab_pool(pni->pool))
 		goto again;
 
+	spin_lock(&pni->lock);
 	nr = __tcache_lru_isolate(pni, pages, nr_to_isolate);
 	ni->nr_pages -= nr;
 	nr_isolated += nr;
@@ -1047,6 +1054,7 @@ again:
 	if (!list_empty(&pni->lru))
 		__tcache_insert_reclaim_node(ni, pni);
 
+	spin_unlock(&pni->lock);
 	tcache_put_pool(pni->pool);
 out:
 	spin_unlock_irq(&ni->lock);
@@ -1091,13 +1099,16 @@ tcache_try_to_reclaim_page(struct tcache_pool *pool, int nid)
 
 	local_irq_save(flags);
 
-	spin_lock(&ni->lock);
+	spin_lock(&pni->lock);
 	ret = __tcache_lru_isolate(pni, &page, 1);
-	ni->nr_pages -= ret;
-	spin_unlock(&ni->lock);
+	spin_unlock(&pni->lock);
 
 	if (!ret)
 		goto out;
+
+	spin_lock(&ni->lock);
+	ni->nr_pages -= ret;
+	spin_unlock(&ni->lock);
 
 	if (!__tcache_reclaim_page(page))
 		page = NULL;
