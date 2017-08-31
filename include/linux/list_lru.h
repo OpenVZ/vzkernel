@@ -43,7 +43,7 @@ struct list_lru_node {
 	struct list_lru_one	lru;
 #ifdef CONFIG_MEMCG_KMEM
 	/* for cgroup aware lrus points to per cgroup lists, otherwise NULL */
-	struct list_lru_memcg	*memcg_lrus;
+	struct list_lru_memcg	__rcu *memcg_lrus;
 #endif
 } ____cacheline_aligned_in_smp;
 
