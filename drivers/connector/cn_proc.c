@@ -112,26 +112,11 @@ static void proc_event_connector(struct task_struct *task,
 	cn_netlink_send(msg, CN_IDX_PROC, GFP_KERNEL);
 }
 
-void proc_fork_connector(struct task_struct *task)
+static bool fill_fork_event(struct proc_event *ev, struct task_struct *task,
+			    int unused)
 {
-	struct cn_msg *msg;
-	struct proc_event *ev;
-	__u8 buffer[CN_PROC_MSG_SIZE] __aligned(8);
-	struct timespec ts;
 	struct task_struct *parent;
 
-	(void) proc_event_connector;
-
-	if (atomic_read(&proc_event_num_listeners) < 1)
-		return;
-
-	msg = buffer_to_cn_msg(buffer);
-	ev = (struct proc_event *)msg->data;
-	memset(&ev->event_data, 0, sizeof(ev->event_data));
-	get_seq(&msg->seq, &ev->cpu);
-	ktime_get_ts(&ts); /* get high res monotonic timestamp */
-	ev->timestamp_ns = timespec_to_ns(&ts);
-	ev->what = PROC_EVENT_FORK;
 	rcu_read_lock();
 	parent = rcu_dereference(task->real_parent);
 	ev->event_data.fork.parent_pid = parent->pid;
@@ -139,13 +124,12 @@ void proc_fork_connector(struct task_struct *task)
 	rcu_read_unlock();
 	ev->event_data.fork.child_pid = task->pid;
 	ev->event_data.fork.child_tgid = task->tgid;
+	return true;
+}
 
-	memcpy(&msg->id, &cn_proc_event_id, sizeof(msg->id));
-	msg->ack = 0; /* not used */
-	msg->len = sizeof(*ev);
-	msg->flags = 0; /* not used */
-	/*  If cn_netlink_send() failed, the data is not sent */
-	cn_netlink_send(msg, CN_IDX_PROC, GFP_KERNEL);
+void proc_fork_connector(struct task_struct *task)
+{
+	proc_event_connector(task, PROC_EVENT_FORK, 0, fill_fork_event);
 }
 
 void proc_exec_connector(struct task_struct *task)
