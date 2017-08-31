@@ -1029,7 +1029,7 @@ tcache_lru_isolate(int nid, struct page **pages, int nr_to_isolate)
 {
 	struct tcache_nodeinfo *ni = &tcache_nodeinfo[nid];
 	struct tcache_pool_nodeinfo *pni;
-	int nr, nr_isolated = 0;
+	int nr_isolated = 0;
 	struct rb_node *rbn;
 
 	spin_lock_irq(&ni->lock);
@@ -1046,9 +1046,8 @@ again:
 		goto again;
 
 	spin_lock(&pni->lock);
-	nr = __tcache_lru_isolate(pni, pages, nr_to_isolate);
-	ni->nr_pages -= nr;
-	nr_isolated += nr;
+	nr_isolated = __tcache_lru_isolate(pni, pages, nr_to_isolate);
+	ni->nr_pages -= nr_isolated;
 
 	if (!list_empty(&pni->lru))
 		__tcache_insert_reclaim_node(ni, pni);
