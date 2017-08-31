@@ -39,8 +39,6 @@ MODULE_AUTHOR("Evgeniy Polyakov <zbr@ioremap.net>");
 MODULE_DESCRIPTION("Generic userspace <-> kernelspace connector.");
 MODULE_ALIAS_NET_PF_PROTO(PF_NETLINK, NETLINK_CONNECTOR);
 
-static int cn_already_initialized;
-
 /*
  * msg->seq and msg->ack are used to determine message genealogy.
  * When someone sends message it puts there locally unique sequence
@@ -192,7 +190,7 @@ int cn_add_callback_ve(struct ve_struct *ve,
 	int err;
 	struct cn_dev *dev = get_cdev(ve);
 
-	if (!cn_already_initialized)
+	if (!ve->cn->cn_already_initialized)
 		return -EAGAIN;
 
 	err = cn_queue_add_callback(dev->cbdev, name, id, callback);
@@ -296,7 +294,7 @@ static int cn_init_ve(struct ve_struct *ve)
 		return -EINVAL;
 	}
 
-	cn_already_initialized = 1;
+	ve->cn->cn_already_initialized = 1;
 
 	proc_create("connector", S_IRUGO, net->proc_net, &cn_file_ops);
 
@@ -308,7 +306,7 @@ static void cn_fini_ve(struct ve_struct *ve)
 	struct cn_dev *dev = get_cdev(ve);
 	struct net *net = ve->ve_netns;
 
-	cn_already_initialized = 0;
+	ve->cn->cn_already_initialized = 0;
 
 	remove_proc_entry("connector", net->proc_net);
 
