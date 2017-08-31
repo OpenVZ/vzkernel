@@ -485,16 +485,6 @@ enum res_type {
 #define OOM_CONTROL		(0)
 
 /*
- * Reclaim flags for mem_cgroup_hierarchical_reclaim
- */
-#define MEM_CGROUP_RECLAIM_NOSWAP_BIT	0x0
-#define MEM_CGROUP_RECLAIM_NOSWAP	(1 << MEM_CGROUP_RECLAIM_NOSWAP_BIT)
-#define MEM_CGROUP_RECLAIM_SHRINK_BIT	0x1
-#define MEM_CGROUP_RECLAIM_SHRINK	(1 << MEM_CGROUP_RECLAIM_SHRINK_BIT)
-#define MEM_CGROUP_RECLAIM_KMEM_BIT	0x2
-#define MEM_CGROUP_RECLAIM_KMEM		(1 << MEM_CGROUP_RECLAIM_KMEM_BIT)
-
-/*
  * The memcg_create_mutex will be held whenever a new cgroup is created.
  * As a consequence, any change that needs to protect against new child cgroups
  * appearing has to hold it as well.
@@ -2095,7 +2085,7 @@ static unsigned long mem_cgroup_reclaim(struct mem_cgroup *memcg,
 		if (loop)
 			drain_all_stock_async(memcg);
 		total += try_to_free_mem_cgroup_pages(memcg, SWAP_CLUSTER_MAX,
-						      gfp_mask, noswap);
+						      gfp_mask, flags);
 		if (test_thread_flag(TIF_MEMDIE) ||
 		    fatal_signal_pending(current))
 			return 1;
@@ -2108,6 +2098,16 @@ static unsigned long mem_cgroup_reclaim(struct mem_cgroup *memcg,
 			break;
 		if (mem_cgroup_margin(memcg, flags & MEM_CGROUP_RECLAIM_KMEM))
 			break;
+
+		/*
+		 * Try harder to reclaim dcache. dcache reclaim may
+		 * temporarly fail due to dcache->dlock being held
+		 * by someone else. We must try harder to avoid premature
+		 * slab allocation failures.
+		 */
+		if (flags & MEM_CGROUP_RECLAIM_KMEM &&
+		    page_counter_read(&memcg->dcache))
+			continue;
 		/*
 		 * If nothing was reclaimed after two attempts, there
 		 * may be no reclaimable pages in this hierarchy.
@@ -2736,11 +2736,13 @@ static int try_charge(struct mem_cgroup *memcg, gfp_t gfp_mask, bool kmem_charge
 	struct mem_cgroup *mem_over_limit;
 	struct page_counter *counter;
 	unsigned long nr_reclaimed;
-	unsigned long flags = 0;
+	unsigned long flags;
 
 	if (mem_cgroup_is_root(memcg))
 		goto done;
 retry:
+	flags = 0;
+
 	if (consume_stock(memcg, nr_pages)) {
 		if (!kmem_charge)
 			goto done;
@@ -4066,7 +4068,7 @@ static int mem_cgroup_force_empty(struct mem_cgroup *memcg)
 			return -EINTR;
 
 		progress = try_to_free_mem_cgroup_pages(memcg, SWAP_CLUSTER_MAX,
-							GFP_KERNEL, false);
+							GFP_KERNEL, 0);
 		if (!progress) {
 			nr_retries--;
 			/* maybe some writeback is necessary */
@@ -4490,7 +4492,7 @@ static int mem_cgroup_high_write(struct cgroup *cont, struct cftype *cft,
 	usage = page_counter_read(&memcg->memory);
 	if (usage > nr_pages)
 		try_to_free_mem_cgroup_pages(memcg, usage - nr_pages,
-					     GFP_KERNEL, false);
+					     GFP_KERNEL, 0);
 	return 0;
 }
 
