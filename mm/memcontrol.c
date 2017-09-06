@@ -3950,7 +3950,7 @@ static void mem_cgroup_force_empty_list(struct mem_cgroup *memcg,
 		struct page_cgroup *pc;
 		struct page *page;
 
-		cond_resched();
+		schedule_timeout_uninterruptible(1);
 		spin_lock_irqsave(&zone->lru_lock, flags);
 		if (list_empty(list)) {
 			spin_unlock_irqrestore(&zone->lru_lock, flags);
