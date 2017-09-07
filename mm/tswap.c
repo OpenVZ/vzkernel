@@ -38,6 +38,10 @@ module_param_named(active, tswap_active, bool, 0644);
 static unsigned long tswap_nr_pages;
 module_param_named(nr_pages, tswap_nr_pages, ulong, 0444);
 
+/* Enable/disable zero pages */
+static bool tswap_check_zero __read_mostly = true;
+module_param_named(check_zero, tswap_check_zero, bool, 0644);
+
 unsigned long get_nr_tswap_pages(void)
 {
 	return tswap_nr_pages;
@@ -47,16 +51,20 @@ static void tswap_lru_add(struct page *page)
 {
 	struct tswap_lru *lru = &tswap_lru_node[page_to_nid(page)];
 
-	list_add_tail(&page->lru, &lru->list);
-	lru->nr_items++;
+	if (page != ZERO_PAGE(0)) {
+		list_add_tail(&page->lru, &lru->list);
+		lru->nr_items++;
+	}
 }
 
 static void tswap_lru_del(struct page *page)
 {
 	struct tswap_lru *lru = &tswap_lru_node[page_to_nid(page)];
 
-	list_del(&page->lru);
-	lru->nr_items--;
+	if (page != ZERO_PAGE(0)) {
+		list_del(&page->lru);
+		lru->nr_items--;
+	}
 }
 
 static struct page *tswap_lookup_page(swp_entry_t entry)
@@ -66,7 +74,7 @@ static struct page *tswap_lookup_page(swp_entry_t entry)
 	spin_lock(&tswap_lock);
 	page = radix_tree_lookup(&tswap_page_tree, entry.val);
 	spin_unlock(&tswap_lock);
-	BUG_ON(page && page_private(page) != entry.val);
+	BUG_ON(page && page != ZERO_PAGE(0) && page_private(page) != entry.val);
 	return page;
 }
 
@@ -78,7 +86,8 @@ static int tswap_insert_page(swp_entry_t entry, struct page *page)
 	if (err)
 		return err;
 
-	set_page_private(page, entry.val);
+	if (page != ZERO_PAGE(0))
+		set_page_private(page, entry.val);
 	spin_lock(&tswap_lock);
 	err = radix_tree_insert(&tswap_page_tree, entry.val, page);
 	if (!err) {
@@ -104,7 +113,7 @@ static struct page *tswap_delete_page(swp_entry_t entry, struct page *expected)
 	spin_unlock(&tswap_lock);
 	if (page) {
 		BUG_ON(expected && page != expected);
-		BUG_ON(page_private(page) != entry.val);
+		BUG_ON(page_private(page) != entry.val && page != ZERO_PAGE(0));
 	}
 	return page;
 }
@@ -267,26 +276,60 @@ static void tswap_frontswap_init(unsigned type)
 	 */
 }
 
+static bool is_zero_filled_page(struct page *page)
+{
+	bool zero_filled = true;
+	unsigned long *v;
+	int i;
+
+	if (!tswap_check_zero)
+		return false;
+
+	v = kmap_atomic(page);
+	for (i = 0; i < PAGE_SIZE / sizeof(*v); i++) {
+		if (v[i] != 0) {
+			zero_filled = false;
+			break;
+		}
+	}
+	kunmap_atomic(v);
+	return zero_filled;
+}
+
 static int tswap_frontswap_store(unsigned type, pgoff_t offset,
 				 struct page *page)
 {
 	swp_entry_t entry = swp_entry(type, offset);
+	int zero_filled = -1, err = 0;
 	struct page *cache_page;
-	int err = 0;
 
 	if (!tswap_active)
 		return -1;
 
 	cache_page = tswap_lookup_page(entry);
-	if (cache_page)
-		goto copy;
+	if (cache_page) {
+		zero_filled = is_zero_filled_page(page);
+		/* If type of page has not changed, just reuse it */
+		if (zero_filled == (cache_page == ZERO_PAGE(0)))
+			goto copy;
+		tswap_delete_page(entry, NULL);
+		put_page(cache_page);
+	}
 
 	if (!(current->flags & PF_MEMCG_RECLAIM))
 		return -1;
 
-	cache_page = alloc_page(TSWAP_GFP_MASK | __GFP_HIGHMEM);
-	if (!cache_page)
-		return -1;
+	if (zero_filled == -1)
+		zero_filled = is_zero_filled_page(page);
+
+	if (!zero_filled) {
+		cache_page = alloc_page(TSWAP_GFP_MASK | __GFP_HIGHMEM);
+		if (!cache_page)
+			return -1;
+	} else {
+		cache_page = ZERO_PAGE(0);
+		get_page(cache_page);
+	}
 
 	err = tswap_insert_page(entry, cache_page);
 	if (err) {
@@ -299,7 +342,8 @@ static int tswap_frontswap_store(unsigned type, pgoff_t offset,
 		return -1;
 	}
 copy:
-	copy_highpage(cache_page, page);
+	if (cache_page != ZERO_PAGE(0))
+		copy_highpage(cache_page, page);
 	return 0;
 }
 
