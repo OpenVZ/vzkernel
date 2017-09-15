@@ -2623,6 +2623,7 @@ static void cache_init_objs(struct kmem_cache *cachep,
 
 	for (i = 0; i < cachep->num; i++) {
 		void *objp = index_to_obj(cachep, slabp, i);
+		kasan_init_slab_obj(cachep, objp);
 #if DEBUG
 		/* need to poison the objs? */
 		if (cachep->flags & SLAB_POISON)
