@@ -943,13 +943,15 @@ static int __ext4_es_shrink(struct ext4_sb_info *sbi, int nr_to_scan,
 	struct ext4_inode_info *ei;
 	struct list_head *cur, *tmp;
 	LIST_HEAD(skipped);
-	int ret, nr_shrunk = 0;
+	int nr_shrunk = 0;
 	int retried = 0, skip_precached = 1, nr_skipped = 0;
 
 	spin_lock(&sbi->s_es_lru_lock);
 
 retry:
 	list_for_each_safe(cur, tmp, &sbi->s_es_lru) {
+		int shrunk;
+
 		/*
 		 * If we have already reclaimed all extents from extent
 		 * status tree, just stop the loop immediately.
@@ -976,13 +978,13 @@ retry:
 		    !write_trylock(&ei->i_es_lock))
 			continue;
 
-		ret = __es_try_to_reclaim_extents(ei, nr_to_scan);
+		shrunk = __es_try_to_reclaim_extents(ei, nr_to_scan);
 		if (ei->i_es_lru_nr == 0)
 			list_del_init(&ei->i_es_lru);
 		write_unlock(&ei->i_es_lock);
 
-		nr_shrunk += ret;
-		nr_to_scan -= ret;
+		nr_shrunk += shrunk;
+		nr_to_scan -= shrunk;
 		if (nr_to_scan == 0)
 			break;
 	}
