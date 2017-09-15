@@ -204,7 +204,7 @@ EXPORT_SYMBOL(local_bh_enable_ip);
 #define MAX_SOFTIRQ_TIME  msecs_to_jiffies(2)
 #define MAX_SOFTIRQ_RESTART 10
 
-asmlinkage void __do_softirq(void)
+asmlinkage void __softirq_entry __do_softirq(void)
 {
 	struct user_beancounter *ub;
 	struct softirq_action *h;
