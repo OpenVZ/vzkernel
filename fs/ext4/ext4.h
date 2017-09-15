@@ -952,6 +952,7 @@ struct ext4_inode_info {
 	struct ext4_es_tree i_es_tree;
 	rwlock_t i_es_lock;
 	struct list_head i_es_lru;
+	unsigned int i_es_all_nr;	/* protected by i_es_lock */
 	unsigned int i_es_lru_nr;	/* protected by i_es_lock */
 	unsigned long i_touch_when;	/* jiffies of last accessing */
 
@@ -1404,8 +1405,7 @@ struct ext4_sb_info {
 	/* Reclaim extents from extent status tree */
 	struct shrinker s_es_shrinker;
 	struct list_head s_es_lru;
-	unsigned long s_es_last_sorted;
-	struct percpu_counter s_extent_cache_cnt;
+	struct ext4_es_stats s_es_stats;
 	spinlock_t s_es_lru_lock ____cacheline_aligned_in_smp;
 
 	/* Ratelimit ext4 messages. */
