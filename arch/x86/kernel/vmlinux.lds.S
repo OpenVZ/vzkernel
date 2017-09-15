@@ -111,6 +111,7 @@ SECTIONS
 		ENTRY_TEXT
 		IRQENTRY_TEXT
 		ALIGN_KAISER()
+		SOFTIRQENTRY_TEXT
 		*(.fixup)
 		*(.gnu.warning)
 		/* End of text section */
