@@ -361,6 +361,10 @@ EXPORT_SYMBOL(kmem_cache_create);
 static int do_kmem_cache_shutdown(struct kmem_cache *s,
 		struct list_head *release, bool *need_rcu_barrier)
 {
+
+	/* free asan quarantined objects */
+	kasan_cache_shutdown(s);
+
 	if (__kmem_cache_shutdown(s) != 0) {
 		printk(KERN_ERR "kmem_cache_destroy %s: "
 		       "Slab cache still has objects\n", s->name);
@@ -545,8 +549,6 @@ void kmem_cache_destroy(struct kmem_cache *s)
 		return;
 
 	BUG_ON(!is_root_cache(s));
-
-	kasan_cache_destroy(s);
 
 	get_online_cpus();
 	mutex_lock(&slab_mutex);
