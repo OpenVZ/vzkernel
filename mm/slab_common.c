@@ -546,6 +546,8 @@ void kmem_cache_destroy(struct kmem_cache *s)
 
 	BUG_ON(!is_root_cache(s));
 
+	kasan_cache_destroy(s);
+
 	get_online_cpus();
 	mutex_lock(&slab_mutex);
 
@@ -582,6 +584,7 @@ int kmem_cache_shrink(struct kmem_cache *cachep)
 
 	get_online_cpus();
 	mutex_lock(&slab_mutex);
+	kasan_cache_shrink(cachep);
 	ret = __kmem_cache_shrink(cachep, false);
 	mutex_unlock(&slab_mutex);
 	put_online_cpus();
