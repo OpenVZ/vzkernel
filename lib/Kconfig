@@ -506,4 +506,8 @@ config PARMAN
 config SBITMAP
 	bool
 
+config STACKDEPOT
+	bool
+	select STACKTRACE
+
 endmenu
