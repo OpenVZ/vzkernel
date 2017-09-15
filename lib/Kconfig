@@ -492,4 +492,8 @@ config ARCH_HAS_MMIO_FLUSH
 config PARMAN
 	tristate
 
+config STACKDEPOT
+	bool
+	select STACKTRACE
+
 endmenu
