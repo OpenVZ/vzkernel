@@ -293,6 +293,9 @@ static inline size_t slab_ksize(const struct kmem_cache *s)
 		return s->object_size;
 
 #endif
+	if (s->flags & SLAB_KASAN)
+		return s->object_size;
+
 	/*
 	 * If we have the need to store the freelist pointer
 	 * back there or track user information then we can
@@ -457,8 +460,6 @@ static void get_map(struct kmem_cache *s, struct page *page, unsigned long *map)
  */
 #ifdef CONFIG_SLUB_DEBUG_ON
 static int slub_debug = DEBUG_DEFAULT_FLAGS;
-#elif defined (CONFIG_KASAN)
-static int slub_debug = SLAB_STORE_USER;
 #else
 static int slub_debug;
 #endif
@@ -641,6 +642,8 @@ static void print_trailer(struct kmem_cache *s, struct page *page, u8 *p)
 	if (s->flags & SLAB_STORE_USER)
 		off += 2 * sizeof(struct track);
 
+	off += kasan_metadata_size(s);
+
 	if (off != s->size)
 		/* Beginning of the filler is the free pointer */
 		print_section("Padding ", p + off, s->size - off);
@@ -763,6 +766,8 @@ static int check_pad_bytes(struct kmem_cache *s, struct page *page, u8 *p)
 	if (s->flags & SLAB_STORE_USER)
 		/* We also have user information there */
 		off += 2 * sizeof(struct track);
+
+	off += kasan_metadata_size(s);
 
 	if (s->size == off)
 		return 1;
@@ -1288,8 +1293,10 @@ static inline void slab_post_alloc_hook(struct kmem_cache *s, gfp_t flags,
 	}
 }
 
-static inline void slab_free_hook(struct kmem_cache *s, void *x)
+static inline void *slab_free_hook(struct kmem_cache *s, void *x)
 {
+	void *freeptr;
+
 	kmemleak_free_recursive(x, s->flags);
 
 	/*
@@ -1310,7 +1317,13 @@ static inline void slab_free_hook(struct kmem_cache *s, void *x)
 	if (!(s->flags & SLAB_DEBUG_OBJECTS))
 		debug_check_no_obj_freed(x, s->object_size);
 
+	freeptr = get_freepointer(s, x);
+	/*
+	 * kasan_slab_free() may put x into memory quarantine, delaying its
+	 * reuse. In this case the object's freelist pointer is changed.
+	 */
 	kasan_slab_free(s, x);
+	return freeptr;
 }
 
 static inline void slab_free_freelist_hook(struct kmem_cache *s,
@@ -1328,11 +1341,11 @@ static inline void slab_free_freelist_hook(struct kmem_cache *s,
 
 	void *object = head;
 	void *tail_obj = tail ? : head;
+	void *freeptr;
 
 	do {
-		slab_free_hook(s, object);
-	} while ((object != tail_obj) &&
-		 (object = get_freepointer(s, object)));
+		freeptr = slab_free_hook(s, object);
+	} while ((object != tail_obj) && (object = freeptr));
 #endif
 }
 
@@ -2719,16 +2732,13 @@ slab_empty:
  * same page) possible by specifying head and tail ptr, plus objects
  * count (cnt). Bulk free indicated by tail pointer being set.
  */
-static __always_inline void slab_free(struct kmem_cache *s, struct page *page,
-				      void *head, void *tail, int cnt,
-				      unsigned long addr)
+static __always_inline void do_slab_free(struct kmem_cache *s,
+				struct page *page, void *head, void *tail,
+				int cnt, unsigned long addr)
 {
 	void *tail_obj = tail ? : head;
 	struct kmem_cache_cpu *c;
 	unsigned long tid;
-
-	slab_free_freelist_hook(s, head, tail);
-
 redo:
 	/*
 	 * Determine the currently cpus per cpu slab.
@@ -2758,6 +2768,27 @@ redo:
 		__slab_free(s, page, head, tail_obj, cnt, addr);
 
 }
+
+static __always_inline void slab_free(struct kmem_cache *s, struct page *page,
+				      void *head, void *tail, int cnt,
+				      unsigned long addr)
+{
+	slab_free_freelist_hook(s, head, tail);
+	/*
+	 * slab_free_freelist_hook() could have put the items into quarantine.
+	 * If so, no need to free them.
+	 */
+	if (s->flags & SLAB_KASAN && !(s->flags & SLAB_DESTROY_BY_RCU))
+		return;
+	do_slab_free(s, page, head, tail, cnt, addr);
+}
+
+#ifdef CONFIG_KASAN
+void ___cache_free(struct kmem_cache *cache, void *x, unsigned long addr)
+{
+	do_slab_free(cache, virt_to_head_page(x), x, NULL, 1, addr);
+}
+#endif
 
 void kmem_cache_free(struct kmem_cache *s, void *x)
 {
@@ -3201,7 +3232,7 @@ static void set_min_partial(struct kmem_cache *s, unsigned long min)
 static int calculate_sizes(struct kmem_cache *s, int forced_order)
 {
 	unsigned long flags = s->flags;
-	unsigned long size = s->object_size;
+	size_t size = s->object_size;
 	int order;
 
 	/*
@@ -3260,7 +3291,10 @@ static int calculate_sizes(struct kmem_cache *s, int forced_order)
 		 * the object.
 		 */
 		size += 2 * sizeof(struct track);
+#endif
 
+	kasan_cache_create(s, &size, &s->flags);
+#ifdef CONFIG_SLUB_DEBUG
 	if (flags & SLAB_RED_ZONE)
 		/*
 		 * Add some empty padding so that we can catch
