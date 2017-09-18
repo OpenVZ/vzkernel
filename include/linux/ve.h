@@ -56,9 +56,6 @@ struct ve_struct {
 	struct task_struct	*ve_umh_task;
 	struct kthread_worker	ve_umh_worker;
 
-/* VE's root */
-	struct path		root_path;
-
 	struct super_block	*dev_sb;
 	struct super_block	*devpts_sb;
 
