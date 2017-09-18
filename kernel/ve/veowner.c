@@ -124,17 +124,6 @@ static void prepare_sysctl(void)
 
 void init_ve_system(void)
 {
-	struct task_struct *init_entry;
-	struct ve_struct *ve;
-	struct path root;
-
-	ve = get_ve0();
-
-	init_entry = init_pid_ns.child_reaper;
-
-	get_fs_root(init_entry->fs, &root);
-	ve->root_path = root;
-
 #ifdef CONFIG_PROC_FS
 	prepare_proc();
 #endif
