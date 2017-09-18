@@ -1298,12 +1298,6 @@ static int follow_dotdot(struct nameidata *nd)
 		    nd->path.mnt == nd->root.mnt) {
 			break;
 		}
-#ifdef CONFIG_VE
-		if (nd->path.dentry == get_exec_env()->root_path.dentry &&
-			nd->path.mnt == get_exec_env()->root_path.mnt) {
-			break;
-		}
-#endif
 		if (nd->path.dentry != nd->path.mnt->mnt_root) {
 			/* rare case of legitimate dget_parent()... */
 			nd->path.dentry = dget_parent(nd->path.dentry);

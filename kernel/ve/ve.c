@@ -436,16 +436,12 @@ static void ve_grab_context(struct ve_struct *ve)
 	ve->init_cred = (struct cred *)get_current_cred();
 	rcu_assign_pointer(ve->ve_ns, get_nsproxy(tsk->nsproxy));
 	ve->ve_netns =  get_net(ve->ve_ns->net_ns);
-	get_fs_root(tsk->fs, &ve->root_path);
 	synchronize_rcu();
 }
 
 static void ve_drop_context(struct ve_struct *ve)
 {
 	struct nsproxy *ve_ns = ve->ve_ns;
-	path_put(&ve->root_path);
-	ve->root_path.mnt = NULL;
-	ve->root_path.dentry = NULL;
 
 	put_net(ve->ve_netns);
 	ve->ve_netns = NULL;
