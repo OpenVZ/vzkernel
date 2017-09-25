@@ -6883,8 +6883,7 @@ static int vcpu_run(struct kvm_vcpu *vcpu)
 			break;
 		}
 
-		if (!is_guest_mode(vcpu))
-			kvm_check_async_pf_completion(vcpu);
+		kvm_check_async_pf_completion(vcpu);
 
 		if (signal_pending(current)) {
 			r = -EINTR;
