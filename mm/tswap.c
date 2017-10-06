@@ -45,6 +45,10 @@ module_param_named(active, tswap_active, bool, 0644);
 static unsigned long tswap_nr_pages;
 module_param_named(nr_pages, tswap_nr_pages, ulong, 0444);
 
+/* Enable/disable zero pages */
+static bool tswap_check_zero __read_mostly = true;
+module_param_named(check_zero, tswap_check_zero, bool, 0644);
+
 unsigned long get_nr_tswap_pages(void)
 {
 	return tswap_nr_pages;
@@ -284,6 +288,9 @@ static bool is_zero_filled_page(struct page *page)
 	bool zero_filled = true;
 	unsigned long *v;
 	int i;
+
+	if (!tswap_check_zero)
+		return false;
 
 	v = kmap_atomic(page);
 	for (i = 0; i < PAGE_SIZE / sizeof(*v); i++) {
