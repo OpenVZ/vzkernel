@@ -1634,7 +1634,7 @@ static int proc_set_may_detach_mounts(struct ctl_table *table, int write,
 
 	tbl = *table;
 	tbl.data = &new;
-	ret = proc_dointvec_minmax(&tbl, write, buffer, lenp, ppos);
+	ret = proc_dointvec_minmax_immutable(&tbl, write, buffer, lenp, ppos);
 	if (ret)
 		return ret;
 
@@ -1654,7 +1654,7 @@ static struct ctl_table fs_table[] = {
 		.procname	= "may_detach_mounts",
 		.data		= NULL,
 		.maxlen		= sizeof(int),
-		.mode		= 0644,
+		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= proc_set_may_detach_mounts,
 		.extra1		= &zero,
 		.extra2		= &one,
