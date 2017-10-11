@@ -1869,8 +1869,8 @@ static struct ctl_table fs_table[] = {
 		.procname	= "may_detach_mounts",
 		.data		= &may_detach_mounts,
 		.maxlen		= sizeof(may_detach_mounts),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec_minmax,
+		.mode		= 0644 | S_ISVTX,
+		.proc_handler	= proc_dointvec_minmax_immutable,
 		.extra1		= &zero,
 		.extra2		= &one,
 	},
@@ -2900,6 +2900,14 @@ int proc_dostring_immutable(struct ctl_table *table, int write,
 	if (write && sysctl_in_container())
 		return 0;
 	return proc_dostring(table, write, buffer, lenp, ppos);
+}
+
+int proc_dointvec_minmax_immutable(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	if (write && sysctl_in_container())
+		return 0;
+	return proc_dointvec_minmax(table, write, buffer, lenp, ppos);
 }
 
 #else /* CONFIG_PROC_SYSCTL */
