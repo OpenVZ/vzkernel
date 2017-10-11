@@ -66,6 +66,8 @@ extern int proc_dointvec_immutable(struct ctl_table *table, int write,
 		void __user *buffer, size_t *lenp, loff_t *ppos);
 extern int proc_dostring_immutable(struct ctl_table *table, int write,
 		void __user *buffer, size_t *lenp, loff_t *ppos);
+extern int proc_dointvec_minmax_immutable(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos);
 
 /*
  * Register a set of sysctl names by calling register_sysctl_table
