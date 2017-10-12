@@ -735,6 +735,7 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_MAX_VCPU_ID 128
 #define KVM_CAP_X2APIC_API 129
 #define KVM_CAP_SPAPR_RESIZE_HPT 133
+#define KVM_CAP_HYPERV_SYNIC2 148
 #define KVM_CAP_PPC_GET_CPU_CHAR 151
 
 #ifdef KVM_CAP_IRQ_ROUTING
