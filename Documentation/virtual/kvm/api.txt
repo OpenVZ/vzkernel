@@ -3434,3 +3434,12 @@ In order to use SynIC, it has to be activated by setting this
 capability via KVM_ENABLE_CAP ioctl on the vcpu fd. Note that this
 will disable the use of APIC hardware virtualization even if supported
 by the CPU, as it's incompatible with SynIC auto-EOI behavior.
+
+8.11 KVM_CAP_HYPERV_SYNIC2
+
+Architectures: x86
+
+This capability enables a newer version of Hyper-V Synthetic interrupt
+controller (SynIC).  The only difference with KVM_CAP_HYPERV_SYNIC is that KVM
+doesn't clear SynIC message and event flags pages when they are enabled by
+writing to the respective MSRs.
