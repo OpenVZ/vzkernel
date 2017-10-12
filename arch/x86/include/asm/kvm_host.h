@@ -435,6 +435,7 @@ struct kvm_mtrr {
 
 /* Hyper-V per vcpu emulation context */
 struct kvm_vcpu_hv {
+	u32 vp_index;
 	u64 hv_vapic;
 	s64 runtime_offset;
 	struct kvm_vcpu_hv_synic synic;
