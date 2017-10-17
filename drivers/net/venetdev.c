@@ -744,10 +744,8 @@ static void venet_setup(struct net_device *dev)
 	SET_ETHTOOL_OPS(dev, &venet_ethtool_ops);
 }
 
-static void veip_shutdown(void *data)
+static void veip_shutdown(struct ve_struct *ve)
 {
-	struct ve_struct *ve = data;
-
 	spin_lock(&veip_lock);
 	if (ve->veip) {
 		__venet_ext_clean(ve);
@@ -1178,8 +1176,18 @@ static struct rtnl_link_ops venet_link_ops = {
 	.maxtype	= VENET_INFO_MAX,
 };
 
+static void veip_shutdown_fini(void *data)
+{
+	struct ve_struct *ve = data;
+
+	if (ve->features & VE_FEATURE_NFS)
+		return;
+
+	veip_shutdown(ve);
+}
+
 static struct ve_hook veip_shutdown_hook = {
-	.fini		= veip_shutdown,
+	.fini		= veip_shutdown_fini,
 	.priority	= HOOK_PRIO_FINISHING,
 	.owner		= THIS_MODULE,
 };
