@@ -759,9 +759,12 @@ static void venet_dellink(struct net_device *dev, struct list_head *head)
 	struct ve_struct *env = dev->nd_net->owner_ve;
 
 	/* We check ve_netns to avoid races with veip SHUTDOWN hook, called from
-	 * ve_exit_ns()
+	 * ve_exit_ns().
+	 * Also, in veip SHUTDOWN hook we skip veip destruction, if container
+	 * has VE_FEATURE_NFS enabled. Thus here we have to destroy veip in
+	 * this case.
 	 */
-	if (env->ve_netns)
+	if (env->ve_netns || (env->features & VE_FEATURE_NFS))
 		veip_shutdown(env);
 
 	env->_venet_dev = NULL;
