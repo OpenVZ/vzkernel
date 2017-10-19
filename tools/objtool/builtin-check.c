@@ -279,12 +279,13 @@ static int decode_instructions(struct objtool_file *file)
 						      &insn->len, &insn->type,
 						      &insn->immediate);
 			if (ret)
-				return ret;
+				goto err;
 
 			if (!insn->type || insn->type > INSN_LAST) {
 				WARN_FUNC("invalid instruction type %d",
 					  insn->sec, insn->offset, insn->type);
-				return -1;
+				ret = -1;
+				goto err;
 			}
 
 			hash_add(file->insn_hash, &insn->hash, insn->offset);
@@ -308,6 +309,10 @@ static int decode_instructions(struct objtool_file *file)
 	}
 
 	return 0;
+
+err:
+	free(insn);
+	return ret;
 }
 
 /*
