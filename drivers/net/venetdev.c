@@ -512,11 +512,9 @@ static int venet_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	dev_hold(rcv);
 
-	if (!(rcv->flags & IFF_UP)) {
+	if (!(rcv->flags & IFF_UP))
 		/* Target VE does not want to receive packets */
-		dev_put(rcv);
 		goto outf;
-	}
 
 	skb->pkt_type = PACKET_HOST;
 	skb->dev = rcv;
@@ -537,10 +535,9 @@ static int venet_xmit(struct sk_buff *skb, struct net_device *dev)
 		struct sk_buff *skb2;
 
 		skb2 = skb_realloc_headroom(skb, LL_RESERVED_SPACE(dev));
-		if (!skb2) {
-			dev_put(rcv);
+		if (!skb2)
 			goto outf;
-		}
+
 		if (skb->sk)
 			skb_set_owner_w(skb2, skb->sk);
 		kfree_skb(skb);
@@ -553,7 +550,8 @@ static int venet_xmit(struct sk_buff *skb, struct net_device *dev)
 	nf_reset(skb);
 	length = skb->len;
 
-	netif_rx(skb);
+	if (unlikely(netif_rx(skb) != NET_RX_SUCCESS))
+		goto dropped;
 
 	stats->tx_bytes += length;
 	stats->tx_packets++;
@@ -570,6 +568,9 @@ static int venet_xmit(struct sk_buff *skb, struct net_device *dev)
 
 outf:
 	kfree_skb(skb);
+dropped:
+	if (rcv)
+		dev_put(rcv);
 	++stats->tx_dropped;
 	return 0;
 }
