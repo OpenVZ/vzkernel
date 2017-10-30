@@ -765,7 +765,7 @@ static void venet_dellink(struct net_device *dev, struct list_head *head)
 	 * has VE_FEATURE_NFS enabled. Thus here we have to destroy veip in
 	 * this case.
 	 */
-	if (env->ve_netns || (env->features & VE_FEATURE_NFS))
+	if (env->ve_netns)
 		veip_shutdown(env);
 
 	env->_venet_dev = NULL;
@@ -1182,12 +1182,7 @@ static struct rtnl_link_ops venet_link_ops = {
 
 static void veip_shutdown_fini(void *data)
 {
-	struct ve_struct *ve = data;
-
-	if (ve->features & VE_FEATURE_NFS)
-		return;
-
-	veip_shutdown(ve);
+	veip_shutdown(data);
 }
 
 static struct ve_hook veip_shutdown_hook = {
