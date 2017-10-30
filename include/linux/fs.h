@@ -1321,6 +1321,8 @@ extern int send_sigurg(struct fown_struct *fown);
 /* sb->s_iflags to limit user namespace mounts */
 #define SB_I_USERNS_VISIBLE		0x00000010 /* fstype already mounted */
 
+#define SB_I_UMOUNT_SYNC		0x10000000 /* don't use delayed unmount */
+
 /* Possible states of 'frozen' field */
 enum {
 	SB_UNFROZEN = 0,		/* FS is unfrozen */
