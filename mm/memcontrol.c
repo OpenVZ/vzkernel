@@ -3524,15 +3524,14 @@ static int mem_cgroup_move_account(struct page *page,
 
 	/* caller should have done css_get */
 	pc->mem_cgroup = to;
-	move_unlock_mem_cgroup(from, &flags);
+	spin_unlock(&from->move_lock);
 	ret = 0;
 
-	local_irq_disable();
 	mem_cgroup_charge_statistics(to, page, nr_pages);
 	memcg_check_events(to, page);
 	mem_cgroup_charge_statistics(from, page, -nr_pages);
 	memcg_check_events(from, page);
-	local_irq_enable();
+	local_irq_restore(flags);
 out_unlock:
 	unlock_page(page);
 out:
