@@ -3965,8 +3965,10 @@ static void mem_cgroup_force_empty_list(struct mem_cgroup *memcg,
 			/* found lock contention or "pc" is obsolete. */
 			busy = page;
 			schedule_timeout_uninterruptible(1);
-		} else
+		} else {
 			busy = NULL;
+			cond_resched();
+		}
 	} while (!list_empty(list));
 }
 
