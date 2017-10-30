@@ -1234,7 +1234,8 @@ static void mntput_no_expire(struct mount *mnt)
 	}
 	unlock_mount_hash();
 
-	if (likely(!(mnt->mnt.mnt_flags & MNT_INTERNAL))) {
+	if (likely(!(mnt->mnt.mnt_flags & MNT_INTERNAL))
+	    && !(mnt->mnt.mnt_sb->s_iflags & SB_I_UMOUNT_SYNC)) {
 		struct task_struct *task = current;
 		if (likely(!(task->flags & PF_KTHREAD))) {
 			init_task_work(&mnt->mnt_rcu, __cleanup_mnt);
