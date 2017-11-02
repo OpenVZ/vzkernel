@@ -29,17 +29,9 @@
 
 
 #define IPT_TAB_MASK     15
-static struct tcf_common *tcf_ipt_ht[IPT_TAB_MASK + 1];
-static u32 ipt_idx_gen;
-static DEFINE_RWLOCK(ipt_lock);
 
-static struct tcf_hashinfo ipt_hash_info = {
-	.htab	=	tcf_ipt_ht,
-	.hmask	=	IPT_TAB_MASK,
-	.lock	=	&ipt_lock,
-};
-
-static int ipt_init_target(struct xt_entry_target *t, char *table, unsigned int hook)
+static int ipt_init_target(struct xt_entry_target *t, char *table,
+			   unsigned int hook)
 {
 	struct xt_tgchk_param par;
 	struct xt_target *target;
@@ -71,28 +63,19 @@ static void ipt_destroy_target(struct xt_entry_target *t)
 	struct xt_tgdtor_param par = {
 		.target   = t->u.kernel.target,
 		.targinfo = t->data,
+		.family   = NFPROTO_IPV4,
 	};
 	if (par.target->destroy != NULL)
 		par.target->destroy(&par);
 	module_put(par.target->me);
 }
 
-static int tcf_ipt_release(struct tcf_ipt *ipt, int bind)
+static void tcf_ipt_release(struct tc_action *a, int bind)
 {
-	int ret = 0;
-	if (ipt) {
-		if (bind)
-			ipt->tcf_bindcnt--;
-		ipt->tcf_refcnt--;
-		if (ipt->tcf_bindcnt <= 0 && ipt->tcf_refcnt <= 0) {
-			ipt_destroy_target(ipt->tcfi_t);
-			kfree(ipt->tcfi_tname);
-			kfree(ipt->tcfi_t);
-			tcf_hash_destroy(&ipt->common, &ipt_hash_info);
-			ret = ACT_P_DELETED;
-		}
-	}
-	return ret;
+	struct tcf_ipt *ipt = to_ipt(a);
+	ipt_destroy_target(ipt->tcfi_t);
+	kfree(ipt->tcfi_tname);
+	kfree(ipt->tcfi_t);
 }
 
 static const struct nla_policy ipt_policy[TCA_IPT_MAX + 1] = {
@@ -107,7 +90,6 @@ static int tcf_ipt_init(struct net *net, struct nlattr *nla, struct nlattr *est,
 {
 	struct nlattr *tb[TCA_IPT_MAX + 1];
 	struct tcf_ipt *ipt;
-	struct tcf_common *pc;
 	struct xt_entry_target *td, *t;
 	char *tname;
 	int ret = 0, err;
@@ -133,20 +115,20 @@ static int tcf_ipt_init(struct net *net, struct nlattr *nla, struct nlattr *est,
 	if (tb[TCA_IPT_INDEX] != NULL)
 		index = nla_get_u32(tb[TCA_IPT_INDEX]);
 
-	pc = tcf_hash_check(index, a, bind, &ipt_hash_info);
-	if (!pc) {
-		pc = tcf_hash_create(index, est, a, sizeof(*ipt), bind,
-				     &ipt_idx_gen, &ipt_hash_info);
-		if (IS_ERR(pc))
-			return PTR_ERR(pc);
+	if (!tcf_hash_check(index, a, bind) ) {
+		ret = tcf_hash_create(index, est, a, sizeof(*ipt), bind, false);
+		if (ret)
+			return ret;
 		ret = ACT_P_CREATED;
 	} else {
-		if (!ovr) {
-			tcf_ipt_release(to_ipt(pc), bind);
+		if (bind)/* dont override defaults */
+			return 0;
+		tcf_hash_release(a, bind);
+
+		if (!ovr)
 			return -EEXIST;
-		}
 	}
-	ipt = to_ipt(pc);
+	ipt = to_ipt(a);
 
 	hook = nla_get_u32(tb[TCA_IPT_HOOK]);
 
@@ -177,7 +159,7 @@ static int tcf_ipt_init(struct net *net, struct nlattr *nla, struct nlattr *est,
 	ipt->tcfi_hook  = hook;
 	spin_unlock_bh(&ipt->tcf_lock);
 	if (ret == ACT_P_CREATED)
-		tcf_hash_insert(pc, &ipt_hash_info);
+		tcf_hash_insert(a);
 	return ret;
 
 err3:
@@ -185,19 +167,9 @@ err3:
 err2:
 	kfree(tname);
 err1:
-	if (ret == ACT_P_CREATED) {
-		if (est)
-			gen_kill_estimator(&pc->tcfc_bstats,
-					   &pc->tcfc_rate_est);
-		kfree_rcu(pc, tcfc_rcu);
-	}
+	if (ret == ACT_P_CREATED)
+		tcf_hash_cleanup(a, est);
 	return err;
-}
-
-static int tcf_ipt_cleanup(struct tc_action *a, int bind)
-{
-	struct tcf_ipt *ipt = a->priv;
-	return tcf_ipt_release(ipt, bind);
 }
 
 static int tcf_ipt(struct sk_buff *skb, const struct tc_action *a,
@@ -212,7 +184,7 @@ static int tcf_ipt(struct sk_buff *skb, const struct tc_action *a,
 
 	spin_lock(&ipt->tcf_lock);
 
-	ipt->tcf_tm.lastuse = jiffies;
+	tcf_lastuse_update(&ipt->tcf_tm);
 	bstats_update(&ipt->tcf_bstats, skb);
 
 	/* yes, we have to worry about both in and out dev
@@ -224,6 +196,7 @@ static int tcf_ipt(struct sk_buff *skb, const struct tc_action *a,
 	par.hooknum  = ipt->tcfi_hook;
 	par.target   = ipt->tcfi_t->u.kernel.target;
 	par.targinfo = ipt->tcfi_t->data;
+	par.family   = NFPROTO_IPV4;
 	ret = par.target->target(skb, &par);
 
 	switch (ret) {
@@ -248,7 +221,8 @@ static int tcf_ipt(struct sk_buff *skb, const struct tc_action *a,
 
 }
 
-static int tcf_ipt_dump(struct sk_buff *skb, struct tc_action *a, int bind, int ref)
+static int tcf_ipt_dump(struct sk_buff *skb, struct tc_action *a, int bind,
+			int ref)
 {
 	unsigned char *b = skb_tail_pointer(skb);
 	struct tcf_ipt *ipt = a->priv;
@@ -275,11 +249,11 @@ static int tcf_ipt_dump(struct sk_buff *skb, struct tc_action *a, int bind, int 
 	    nla_put(skb, TCA_IPT_CNT, sizeof(struct tc_cnt), &c) ||
 	    nla_put_string(skb, TCA_IPT_TABLE, ipt->tcfi_tname))
 		goto nla_put_failure;
-	tm.install = jiffies_to_clock_t(jiffies - ipt->tcf_tm.install);
-	tm.lastuse = jiffies_to_clock_t(jiffies - ipt->tcf_tm.lastuse);
-	tm.expires = jiffies_to_clock_t(ipt->tcf_tm.expires);
-	if (nla_put(skb, TCA_IPT_TM, sizeof (tm), &tm))
+
+	tcf_tm_dump(&tm, &ipt->tcf_tm);
+	if (nla_put_64bit(skb, TCA_IPT_TM, sizeof(tm), &tm, TCA_IPT_PAD))
 		goto nla_put_failure;
+
 	kfree(t);
 	return skb->len;
 
@@ -291,30 +265,22 @@ nla_put_failure:
 
 static struct tc_action_ops act_ipt_ops = {
 	.kind		=	"ipt",
-	.hinfo		=	&ipt_hash_info,
 	.type		=	TCA_ACT_IPT,
-	.capab		=	TCA_CAP_NONE,
 	.owner		=	THIS_MODULE,
 	.act		=	tcf_ipt,
 	.dump		=	tcf_ipt_dump,
-	.cleanup	=	tcf_ipt_cleanup,
-	.lookup		=	tcf_hash_search,
+	.cleanup	=	tcf_ipt_release,
 	.init		=	tcf_ipt_init,
-	.walk		=	tcf_generic_walker
 };
 
 static struct tc_action_ops act_xt_ops = {
 	.kind		=	"xt",
-	.hinfo		=	&ipt_hash_info,
 	.type		=	TCA_ACT_IPT,
-	.capab		=	TCA_CAP_NONE,
 	.owner		=	THIS_MODULE,
 	.act		=	tcf_ipt,
 	.dump		=	tcf_ipt_dump,
-	.cleanup	=	tcf_ipt_cleanup,
-	.lookup		=	tcf_hash_search,
+	.cleanup	=	tcf_ipt_release,
 	.init		=	tcf_ipt_init,
-	.walk		=	tcf_generic_walker
 };
 
 MODULE_AUTHOR("Jamal Hadi Salim(2002-13)");
@@ -325,16 +291,17 @@ MODULE_ALIAS("act_xt");
 static int __init ipt_init_module(void)
 {
 	int ret1, ret2;
-	ret1 = tcf_register_action(&act_xt_ops);
+
+	ret1 = tcf_register_action(&act_xt_ops, IPT_TAB_MASK);
 	if (ret1 < 0)
 		printk("Failed to load xt action\n");
-	ret2 = tcf_register_action(&act_ipt_ops);
+	ret2 = tcf_register_action(&act_ipt_ops, IPT_TAB_MASK);
 	if (ret2 < 0)
 		printk("Failed to load ipt action\n");
 
-	if (ret1 < 0 && ret2 < 0)
+	if (ret1 < 0 && ret2 < 0) {
 		return ret1;
-	else
+	} else
 		return 0;
 }
 

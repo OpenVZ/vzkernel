@@ -18,6 +18,8 @@
 #include <net/netfilter/nf_conntrack_ecache.h>
 #include <net/netfilter/nf_conntrack_labels.h>
 
+static spinlock_t nf_connlabels_lock;
+
 static unsigned int label_bits(const struct nf_conn_labels *l)
 {
 	unsigned int longs = l->words;
@@ -52,7 +54,6 @@ int nf_connlabel_set(struct nf_conn *ct, u16 bit)
 }
 EXPORT_SYMBOL_GPL(nf_connlabel_set);
 
-#if IS_ENABLED(CONFIG_NF_CT_NETLINK)
 static void replace_u32(u32 *address, u32 mask, u32 new)
 {
 	u32 old, tmp;
@@ -93,7 +94,34 @@ int nf_connlabels_replace(struct nf_conn *ct,
 	return 0;
 }
 EXPORT_SYMBOL_GPL(nf_connlabels_replace);
-#endif
+
+int nf_connlabels_get(struct net *net, unsigned int bits)
+{
+	size_t words;
+
+	words = BIT_WORD(bits) + 1;
+	if (words > NF_CT_LABELS_MAX_SIZE / sizeof(long))
+		return -ERANGE;
+
+	spin_lock(&nf_connlabels_lock);
+	net->ct.labels_used++;
+	if (words > net->ct.label_words)
+		net->ct.label_words = words;
+	spin_unlock(&nf_connlabels_lock);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(nf_connlabels_get);
+
+void nf_connlabels_put(struct net *net)
+{
+	spin_lock(&nf_connlabels_lock);
+	net->ct.labels_used--;
+	if (net->ct.labels_used == 0)
+		net->ct.label_words = 0;
+	spin_unlock(&nf_connlabels_lock);
+}
+EXPORT_SYMBOL_GPL(nf_connlabels_put);
 
 static struct nf_ct_ext_type labels_extend __read_mostly = {
 	.len    = sizeof(struct nf_conn_labels),
@@ -103,6 +131,9 @@ static struct nf_ct_ext_type labels_extend __read_mostly = {
 
 int nf_conntrack_labels_init(void)
 {
+	BUILD_BUG_ON(NF_CT_LABELS_MAX_SIZE / sizeof(long) >= U8_MAX);
+
+	spin_lock_init(&nf_connlabels_lock);
 	return nf_ct_extend_register(&labels_extend);
 }
 

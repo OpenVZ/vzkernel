@@ -113,7 +113,6 @@
 
 #define FRAC_BITS		30	/* fixed point arithmetic */
 #define ONE_FP			(1UL << FRAC_BITS)
-#define IWSUM			(ONE_FP/QFQ_MAX_WSUM)
 
 #define QFQ_MTU_SHIFT		16	/* to support TSO/GSO */
 #define QFQ_MIN_LMAX		512	/* see qfq_slot_insert */
@@ -138,7 +137,7 @@ struct qfq_class {
 
 	struct gnet_stats_basic_packed bstats;
 	struct gnet_stats_queue qstats;
-	struct gnet_stats_rate_est rate_est;
+	struct gnet_stats_rate_est64 rate_est;
 	struct Qdisc *qdisc;
 	struct list_head alist;		/* Link for active-classes list. */
 	struct qfq_aggregate *agg;	/* Parent aggregate. */
@@ -182,13 +181,14 @@ struct qfq_group {
 };
 
 struct qfq_sched {
-	struct tcf_proto *filter_list;
+	struct tcf_proto __rcu *filter_list;
 	struct Qdisc_class_hash clhash;
 
 	u64			oldV, V;	/* Precise virtual times. */
 	struct qfq_aggregate	*in_serv_agg;   /* Aggregate being served. */
 	u32			num_active_agg; /* Num. of active aggregates */
 	u32			wsum;		/* weight sum */
+	u32			iwsum;		/* inverse weight sum */
 
 	unsigned long bitmaps[QFQ_MAX_STATE];	    /* Group bitmaps. */
 	struct qfq_group groups[QFQ_MAX_INDEX + 1]; /* The groups. */
@@ -221,9 +221,10 @@ static struct qfq_class *qfq_find_class(struct Qdisc *sch, u32 classid)
 static void qfq_purge_queue(struct qfq_class *cl)
 {
 	unsigned int len = cl->qdisc->q.qlen;
+	unsigned int backlog = cl->qdisc->qstats.backlog;
 
 	qdisc_reset(cl->qdisc);
-	qdisc_tree_decrease_qlen(cl->qdisc, len);
+	qdisc_tree_reduce_backlog(cl->qdisc, len, backlog);
 }
 
 static const struct nla_policy qfq_policy[TCA_QFQ_MAX + 1] = {
@@ -314,6 +315,7 @@ static void qfq_update_agg(struct qfq_sched *q, struct qfq_aggregate *agg,
 
 	q->wsum +=
 		(int) agg->class_weight * (new_num_classes - agg->num_classes);
+	q->iwsum = ONE_FP / q->wsum;
 
 	agg->num_classes = new_num_classes;
 }
@@ -340,6 +342,10 @@ static void qfq_destroy_agg(struct qfq_sched *q, struct qfq_aggregate *agg)
 {
 	if (!hlist_unhashed(&agg->nonfull_next))
 		hlist_del_init(&agg->nonfull_next);
+	q->wsum -= agg->class_weight;
+	if (q->wsum != 0)
+		q->iwsum = ONE_FP / q->wsum;
+
 	if (q->in_serv_agg == agg)
 		q->in_serv_agg = qfq_choose_next_agg(q);
 	kfree(agg);
@@ -454,7 +460,8 @@ static int qfq_change_class(struct Qdisc *sch, u32 classid, u32 parentid,
 
 	if (cl != NULL) { /* modify existing class */
 		if (tca[TCA_RATE]) {
-			err = gen_replace_estimator(&cl->bstats, &cl->rate_est,
+			err = gen_replace_estimator(&cl->bstats, NULL,
+						    &cl->rate_est,
 						    qdisc_root_sleeping_lock(sch),
 						    tca[TCA_RATE]);
 			if (err)
@@ -479,7 +486,8 @@ static int qfq_change_class(struct Qdisc *sch, u32 classid, u32 parentid,
 		cl->qdisc = &noop_qdisc;
 
 	if (tca[TCA_RATE]) {
-		err = gen_new_estimator(&cl->bstats, &cl->rate_est,
+		err = gen_new_estimator(&cl->bstats, NULL,
+					&cl->rate_est,
 					qdisc_root_sleeping_lock(sch),
 					tca[TCA_RATE]);
 		if (err)
@@ -571,7 +579,8 @@ static void qfq_put_class(struct Qdisc *sch, unsigned long arg)
 		qfq_destroy_class(sch, cl);
 }
 
-static struct tcf_proto **qfq_tcf_chain(struct Qdisc *sch, unsigned long cl)
+static struct tcf_proto __rcu **qfq_tcf_chain(struct Qdisc *sch,
+					      unsigned long cl)
 {
 	struct qfq_sched *q = qdisc_priv(sch);
 
@@ -611,11 +620,7 @@ static int qfq_graft_class(struct Qdisc *sch, unsigned long arg,
 			new = &noop_qdisc;
 	}
 
-	sch_tree_lock(sch);
-	qfq_purge_queue(cl);
-	*old = cl->qdisc;
-	cl->qdisc = new;
-	sch_tree_unlock(sch);
+	*old = qdisc_replace(sch, new, &cl->qdisc);
 	return 0;
 }
 
@@ -656,14 +661,14 @@ static int qfq_dump_class_stats(struct Qdisc *sch, unsigned long arg,
 	struct tc_qfq_stats xstats;
 
 	memset(&xstats, 0, sizeof(xstats));
-	cl->qdisc->qstats.qlen = cl->qdisc->q.qlen;
 
 	xstats.weight = cl->agg->class_weight;
 	xstats.lmax = cl->agg->lmax;
 
-	if (gnet_stats_copy_basic(d, &cl->bstats) < 0 ||
+	if (gnet_stats_copy_basic(d, NULL, &cl->bstats) < 0 ||
 	    gnet_stats_copy_rate_est(d, &cl->bstats, &cl->rate_est) < 0 ||
-	    gnet_stats_copy_queue(d, &cl->qdisc->qstats) < 0)
+	    gnet_stats_copy_queue(d, NULL,
+				  &cl->qdisc->qstats, cl->qdisc->q.qlen) < 0)
 		return -1;
 
 	return gnet_stats_copy_app(d, &xstats, sizeof(xstats));
@@ -699,6 +704,7 @@ static struct qfq_class *qfq_classify(struct sk_buff *skb, struct Qdisc *sch,
 	struct qfq_sched *q = qdisc_priv(sch);
 	struct qfq_class *cl;
 	struct tcf_result res;
+	struct tcf_proto *fl;
 	int result;
 
 	if (TC_H_MAJ(skb->priority ^ sch->handle) == 0) {
@@ -709,7 +715,8 @@ static struct qfq_class *qfq_classify(struct sk_buff *skb, struct Qdisc *sch,
 	}
 
 	*qerr = NET_XMIT_SUCCESS | __NET_XMIT_BYPASS;
-	result = tc_classify(skb, q->filter_list, &res);
+	fl = rcu_dereference_bh(q->filter_list);
+	result = tc_classify(skb, fl, &res);
 	if (result >= 0) {
 #ifdef CONFIG_NET_CLS_ACT
 		switch (result) {
@@ -827,38 +834,60 @@ static void qfq_make_eligible(struct qfq_sched *q)
 	}
 }
 
-
 /*
- * The index of the slot in which the aggregate is to be inserted must
- * not be higher than QFQ_MAX_SLOTS-2. There is a '-2' and not a '-1'
- * because the start time of the group may be moved backward by one
- * slot after the aggregate has been inserted, and this would cause
- * non-empty slots to be right-shifted by one position.
+ * The index of the slot in which the input aggregate agg is to be
+ * inserted must not be higher than QFQ_MAX_SLOTS-2. There is a '-2'
+ * and not a '-1' because the start time of the group may be moved
+ * backward by one slot after the aggregate has been inserted, and
+ * this would cause non-empty slots to be right-shifted by one
+ * position.
  *
- * If the weight and lmax (max_pkt_size) of the classes do not change,
- * then QFQ+ does meet the above contraint according to the current
- * values of its parameters. In fact, if the weight and lmax of the
- * classes do not change, then, from the theory, QFQ+ guarantees that
- * the slot index is never higher than
- * 2 + QFQ_MAX_AGG_CLASSES * ((1<<QFQ_MTU_SHIFT)/QFQ_MIN_LMAX) *
- * (QFQ_MAX_WEIGHT/QFQ_MAX_WSUM) = 2 + 8 * 128 * (1 / 64) = 18
+ * QFQ+ fully satisfies this bound to the slot index if the parameters
+ * of the classes are not changed dynamically, and if QFQ+ never
+ * happens to postpone the service of agg unjustly, i.e., it never
+ * happens that the aggregate becomes backlogged and eligible, or just
+ * eligible, while an aggregate with a higher approximated finish time
+ * is being served. In particular, in this case QFQ+ guarantees that
+ * the timestamps of agg are low enough that the slot index is never
+ * higher than 2. Unfortunately, QFQ+ cannot provide the same
+ * guarantee if it happens to unjustly postpone the service of agg, or
+ * if the parameters of some class are changed.
  *
- * When the weight of a class is increased or the lmax of the class is
- * decreased, a new aggregate with smaller slot size than the original
- * parent aggregate of the class may happen to be activated. The
- * activation of this aggregate should be properly delayed to when the
- * service of the class has finished in the ideal system tracked by
- * QFQ+. If the activation of the aggregate is not delayed to this
- * reference time instant, then this aggregate may be unjustly served
- * before other aggregates waiting for service. This may cause the
- * above bound to the slot index to be violated for some of these
- * unlucky aggregates.
+ * As for the first event, i.e., an out-of-order service, the
+ * upper bound to the slot index guaranteed by QFQ+ grows to
+ * 2 +
+ * QFQ_MAX_AGG_CLASSES * ((1<<QFQ_MTU_SHIFT)/QFQ_MIN_LMAX) *
+ * (current_max_weight/current_wsum) <= 2 + 8 * 128 * 1.
+ *
+ * The following function deals with this problem by backward-shifting
+ * the timestamps of agg, if needed, so as to guarantee that the slot
+ * index is never higher than QFQ_MAX_SLOTS-2. This backward-shift may
+ * cause the service of other aggregates to be postponed, yet the
+ * worst-case guarantees of these aggregates are not violated.  In
+ * fact, in case of no out-of-order service, the timestamps of agg
+ * would have been even lower than they are after the backward shift,
+ * because QFQ+ would have guaranteed a maximum value equal to 2 for
+ * the slot index, and 2 < QFQ_MAX_SLOTS-2. Hence the aggregates whose
+ * service is postponed because of the backward-shift would have
+ * however waited for the service of agg before being served.
+ *
+ * The other event that may cause the slot index to be higher than 2
+ * for agg is a recent change of the parameters of some class. If the
+ * weight of a class is increased or the lmax (max_pkt_size) of the
+ * class is decreased, then a new aggregate with smaller slot size
+ * than the original parent aggregate of the class may happen to be
+ * activated. The activation of this aggregate should be properly
+ * delayed to when the service of the class has finished in the ideal
+ * system tracked by QFQ+. If the activation of the aggregate is not
+ * delayed to this reference time instant, then this aggregate may be
+ * unjustly served before other aggregates waiting for service. This
+ * may cause the above bound to the slot index to be violated for some
+ * of these unlucky aggregates.
  *
  * Instead of delaying the activation of the new aggregate, which is
- * quite complex, the following inaccurate but simple solution is used:
- * if the slot index is higher than QFQ_MAX_SLOTS-2, then the
- * timestamps of the aggregate are shifted backward so as to let the
- * slot index become equal to QFQ_MAX_SLOTS-2.
+ * quite complex, the above-discussed capping of the slot index is
+ * used to handle also the consequences of a change of the parameters
+ * of a class.
  */
 static void qfq_slot_insert(struct qfq_group *grp, struct qfq_aggregate *agg,
 			    u64 roundedS)
@@ -1064,6 +1093,7 @@ static struct sk_buff *qfq_dequeue(struct Qdisc *sch)
 	if (!skb)
 		return NULL;
 
+	qdisc_qstats_backlog_dec(sch, skb);
 	sch->q.qlen--;
 	qdisc_bstats_update(sch, skb);
 
@@ -1077,7 +1107,7 @@ static struct sk_buff *qfq_dequeue(struct Qdisc *sch)
 	else
 		in_serv_agg->budget -= len;
 
-	q->V += (u64)len * IWSUM;
+	q->V += (u64)len * q->iwsum;
 	pr_debug("qfq dequeue: len %u F %lld now %lld\n",
 		 len, (unsigned long long) in_serv_agg->F,
 		 (unsigned long long) q->V);
@@ -1198,7 +1228,7 @@ static int qfq_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	cl = qfq_classify(skb, sch, &err);
 	if (cl == NULL) {
 		if (err & __NET_XMIT_BYPASS)
-			sch->qstats.drops++;
+			qdisc_qstats_drop(sch);
 		kfree_skb(skb);
 		return err;
 	}
@@ -1218,12 +1248,13 @@ static int qfq_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 		pr_debug("qfq_enqueue: enqueue failed %d\n", err);
 		if (net_xmit_drop_count(err)) {
 			cl->qstats.drops++;
-			sch->qstats.drops++;
+			qdisc_qstats_drop(sch);
 		}
 		return err;
 	}
 
 	bstats_update(&cl->bstats, skb);
+	qdisc_qstats_backlog_inc(sch, skb);
 	++sch->q.qlen;
 
 	agg = cl->agg;
@@ -1430,6 +1461,7 @@ static unsigned int qfq_drop(struct Qdisc *sch)
 		for (j = 0; j < QFQ_MAX_SLOTS; j++) {
 			len = qfq_drop_from_slot(q, &grp->slots[j]);
 			if (len > 0) {
+				sch->qstats.backlog -= len;
 				sch->q.qlen--;
 				return len;
 			}
@@ -1490,6 +1522,7 @@ static void qfq_reset_qdisc(struct Qdisc *sch)
 			qdisc_reset(cl->qdisc);
 		}
 	}
+	sch->qstats.backlog = 0;
 	sch->q.qlen = 0;
 }
 
