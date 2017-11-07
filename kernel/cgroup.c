@@ -4280,7 +4280,7 @@ void cgroup_mark_ve_root(struct ve_struct *ve)
 	mutex_unlock(&cgroup_mutex);
 }
 
-static struct cgroup *cgroup_get_ve_root(struct cgroup *cgrp)
+struct cgroup *cgroup_get_ve_root(struct cgroup *cgrp)
 {
 	struct cgroup *ve_root = NULL;
 
@@ -4293,11 +4293,6 @@ static struct cgroup *cgroup_get_ve_root(struct cgroup *cgrp)
 	} while (cgrp);
 
 	return ve_root;
-}
-#else
-static inline struct cgroup *cgroup_get_ve_root(struct cgroup *cgrp)
-{
-	return NULL;
 }
 #endif
 
