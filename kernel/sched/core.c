@@ -349,7 +349,6 @@ static struct task_group *ve_root_tg(struct task_group *tg) {
 		return NULL;
 
 	cg = cgroup_get_ve_root(tg->css.cgroup);
-	WARN_ONCE(!cg, "Failed to find ve root cgroup, possible container configuration problem.\n");
 	return cg ? cgroup_tg(cg) : NULL;
 }
 
