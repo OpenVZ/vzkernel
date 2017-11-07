@@ -340,20 +340,56 @@ __read_mostly int scheduler_running;
  */
 int sysctl_sched_rt_runtime = 950000;
 
+static inline struct task_group *cgroup_tg(struct cgroup *cgrp);
+
+static struct task_group *ve_root_tg(struct task_group *tg) {
+	struct cgroup *cg;
+
+	if (!tg)
+		return NULL;
+
+	cg = cgroup_get_ve_root(tg->css.cgroup);
+	WARN_ONCE(!cg, "Failed to find ve root cgroup, possible container configuration problem.\n");
+	return cg ? cgroup_tg(cg) : NULL;
+}
+
+unsigned int tg_cpu_rate(struct task_group *tg)
+{
+	unsigned int cpu_rate = 0;
 #ifdef CONFIG_CFS_CPULIMIT
-unsigned int task_nr_cpus(struct task_struct *p)
+	tg = ve_root_tg(tg);
+	if (tg)
+		cpu_rate = tg->cpu_rate;
+#endif
+	return cpu_rate;
+}
+
+unsigned int tg_nr_cpus(struct task_group *tg)
 {
 	unsigned int nr_cpus = 0;
 	unsigned int max_nr_cpus = num_online_cpus();
 
-	rcu_read_lock();
-	nr_cpus = task_group(p)->nr_cpus;
-	rcu_read_unlock();
+#ifdef CONFIG_CFS_CPULIMIT
+	tg = ve_root_tg(tg);
+	if (tg)
+		nr_cpus = tg->nr_cpus;
+#endif
 
 	if (!nr_cpus || nr_cpus > max_nr_cpus)
 		nr_cpus = max_nr_cpus;
 
 	return nr_cpus;
+}
+
+#ifdef CONFIG_CFS_CPULIMIT
+unsigned int task_nr_cpus(struct task_struct *p)
+{
+	return tg_nr_cpus(task_group(p));
+}
+
+static unsigned int task_cpu_rate(struct task_struct *p)
+{
+	return tg_cpu_rate(task_group(p));
 }
 
 unsigned int task_vcpu_id(struct task_struct *p)
@@ -370,9 +406,7 @@ unsigned int sched_cpulimit_scale_cpufreq(unsigned int freq)
 	if (!sysctl_sched_cpulimit_scale_cpufreq)
 		return freq;
 
-	rcu_read_lock();
-	rate = task_group(current)->cpu_rate;
-	rcu_read_unlock();
+	rate = task_cpu_rate(current);
 
 	max_rate = num_online_vcpus() * MAX_CPU_RATE;
 	if (!rate || rate >= max_rate)
@@ -9919,8 +9953,8 @@ static void cpu_cgroup_update_vcpustat(struct cgroup *cgrp)
 	spin_lock(&tg->vcpustat_lock);
 
 	now = ktime_get();
-	nr_vcpus = tg->nr_cpus ?: num_online_cpus();
-	vcpu_rate = DIV_ROUND_UP(tg->cpu_rate, nr_vcpus);
+	nr_vcpus = tg_nr_cpus(tg);
+	vcpu_rate = DIV_ROUND_UP(tg_cpu_rate(tg), nr_vcpus);
 	if (!vcpu_rate || vcpu_rate > MAX_CPU_RATE)
 		vcpu_rate = MAX_CPU_RATE;
 
@@ -10005,7 +10039,7 @@ int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
 	struct timespec boottime;
 	struct task_group *tg = cgroup_tg(cgrp);
 	bool virt = !ve_is_super(get_exec_env()) && tg != &root_task_group;
-	int nr_vcpus = tg->nr_cpus ?: num_online_cpus();
+	int nr_vcpus = tg_nr_cpus(tg);
 	struct kernel_cpustat *kcpustat;
 	unsigned long tg_nr_running = 0;
 	unsigned long tg_nr_iowait = 0;
@@ -10132,7 +10166,7 @@ int cpu_cgroup_proc_loadavg(struct cgroup *cgrp, struct cftype *cft,
 int cpu_cgroup_get_stat(struct cgroup *cgrp, struct kernel_cpustat *kstat)
 {
 	struct task_group *tg = cgroup_tg(cgrp);
-	int nr_vcpus = tg->nr_cpus ?: num_online_cpus();
+	int nr_vcpus = tg_nr_cpus(tg);
 	int i;
 
 	kernel_cpustat_zero(kstat);
