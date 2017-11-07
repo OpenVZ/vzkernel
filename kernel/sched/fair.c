@@ -524,11 +524,12 @@ static enum hrtimer_restart sched_cfs_active_timer(struct hrtimer *timer)
 static inline int check_cpulimit_spread(struct task_group *tg, int target_cpu)
 {
 	int nr_cpus_active = atomic_read(&tg->nr_cpus_active);
-	int nr_cpus_limit = DIV_ROUND_UP(tg->cpu_rate, MAX_CPU_RATE);
+	int nr_cpus_limit = DIV_ROUND_UP(tg_cpu_rate(tg), MAX_CPU_RATE);
+	int nr_vcpus = tg_nr_cpus(tg);
 
-	nr_cpus_limit = nr_cpus_limit && tg->nr_cpus ?
-		min_t(int, nr_cpus_limit, tg->nr_cpus) :
-		max_t(int, nr_cpus_limit, tg->nr_cpus);
+	nr_cpus_limit = nr_cpus_limit && nr_vcpus ?
+		min_t(int, nr_cpus_limit, nr_vcpus) :
+		max_t(int, nr_cpus_limit, nr_vcpus);
 
 	if (!nr_cpus_limit || nr_cpus_active < nr_cpus_limit)
 		return 1;
