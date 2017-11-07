@@ -226,6 +226,8 @@ extern void vtty_release(struct tty_struct *tty, struct tty_struct *o_tty,
 extern bool vtty_is_master(struct tty_struct *tty);
 #endif /* CONFIG_TTY */
 
+extern struct cgroup *cgroup_get_ve_root(struct cgroup *cgrp);
+
 #else	/* CONFIG_VE */
 
 #define ve_uevent_seqnum uevent_seqnum
@@ -259,6 +261,11 @@ static inline void monotonic_abs_to_ve(clockid_t which_clock,
 				struct timespec *tp) { }
 static inline void monotonic_ve_to_abs(clockid_t which_clock,
 				struct timepsec *tp) { }
+
+static inline struct cgroup *cgroup_get_ve_root(struct cgroup *cgrp)
+{
+	return NULL;
+}
 #endif	/* CONFIG_VE */
 
 struct seq_file;
