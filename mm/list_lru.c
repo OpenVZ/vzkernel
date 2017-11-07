@@ -322,13 +322,13 @@ static int memcg_init_list_lru_node(struct list_lru_node *nlru)
 	struct list_lru_memcg *memcg_lrus;
 	int size = memcg_nr_cache_ids;
 
-	memcg_lrus = kmalloc(sizeof(*memcg_lrus) +
+	memcg_lrus = kvmalloc(sizeof(*memcg_lrus) +
 			     size * sizeof(void *), GFP_KERNEL);
 	if (!memcg_lrus)
 		return -ENOMEM;
 
 	if (__memcg_init_list_lru_node(memcg_lrus, 0, size)) {
-		kfree(memcg_lrus);
+		kvfree(memcg_lrus);
 		return -ENOMEM;
 	}
 	rcu_assign_pointer(nlru->memcg_lrus, memcg_lrus);
@@ -346,7 +346,12 @@ static void memcg_destroy_list_lru_node(struct list_lru_node *nlru)
 	 */
 	memcg_lrus = rcu_dereference_check(nlru->memcg_lrus, true);
 	__memcg_destroy_list_lru_node(memcg_lrus, 0, memcg_nr_cache_ids);
-	kfree(memcg_lrus);
+	kvfree(memcg_lrus);
+}
+
+static void free_list_lru_memcg(struct rcu_head *head)
+{
+	kvfree(container_of(head, struct list_lru_memcg, rcu));
 }
 
 static int memcg_update_list_lru_node(struct list_lru_node *nlru,
@@ -359,12 +364,12 @@ static int memcg_update_list_lru_node(struct list_lru_node *nlru,
 
 	/* list_lrus_mutex is held, nobody can change memcg_lrus. Silence RCU */
 	old = rcu_dereference_check(nlru->memcg_lrus, true);
-	new = kmalloc(sizeof(*new) + new_size * sizeof(void *), GFP_KERNEL);
+	new = kvmalloc(sizeof(*new) + new_size * sizeof(void *), GFP_KERNEL);
 	if (!new)
 		return -ENOMEM;
 
 	if (__memcg_init_list_lru_node(new, old_size, new_size)) {
-		kfree(new);
+		kvfree(new);
 		return -ENOMEM;
 	}
 
@@ -381,7 +386,7 @@ static int memcg_update_list_lru_node(struct list_lru_node *nlru,
 	rcu_assign_pointer(nlru->memcg_lrus, new);
 	spin_unlock_irq(&nlru->lock);
 
-	kfree_rcu(old, rcu);
+	call_rcu(&old->rcu, free_list_lru_memcg);
 	return 0;
 }
 
