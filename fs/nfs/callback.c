@@ -118,7 +118,6 @@ nfs41_callback_svc(void *vrqstp)
 			continue;
 
 		prepare_to_wait(&serv->sv_cb_waitq, &wq, TASK_INTERRUPTIBLE);
-		mutex_lock(&nfs_callback_mutex);
 		spin_lock_bh(&serv->sv_cb_lock);
 		if (!list_empty(&serv->sv_cb_list)) {
 			req = list_first_entry(&serv->sv_cb_list,
@@ -130,10 +129,8 @@ nfs41_callback_svc(void *vrqstp)
 			error = bc_svc_process(serv, req, rqstp);
 			dprintk("bc_svc_process() returned w/ error code= %d\n",
 				error);
-			mutex_unlock(&nfs_callback_mutex);
 		} else {
 			spin_unlock_bh(&serv->sv_cb_lock);
-			mutex_unlock(&nfs_callback_mutex);
 			schedule();
 			finish_wait(&serv->sv_cb_waitq, &wq);
 		}
