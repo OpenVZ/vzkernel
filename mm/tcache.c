@@ -1202,7 +1202,7 @@ static unsigned long tcache_shrink_scan(struct shrinker *shrink,
 struct shrinker tcache_shrinker = {
 	.count_objects		= tcache_shrink_count,
 	.scan_objects		= tcache_shrink_scan,
-	.seeks			= 1,
+	.seeks			= 4,
 	.batch			= TCACHE_SCAN_BATCH,
 	.flags			= SHRINKER_NUMA_AWARE,
 };
