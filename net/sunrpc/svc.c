@@ -1338,6 +1338,21 @@ out_drop:
 EXPORT_SYMBOL_GPL(svc_process);
 
 #if defined(CONFIG_SUNRPC_BACKCHANNEL)
+void bc_svc_flush_queue_net(struct svc_serv *serv, struct net *net)
+{
+	struct rpc_rqst *req, *tmp;
+
+	spin_lock_bh(&serv->sv_cb_lock);
+	list_for_each_entry_safe(req, tmp, &serv->sv_cb_list, rq_bc_list) {
+		if (req->rq_xprt->xprt_net == net) {
+			list_del(&req->rq_bc_list);
+			xprt_free_bc_request(req);
+		}
+	}
+	spin_unlock_bh(&serv->sv_cb_lock);
+}
+EXPORT_SYMBOL_GPL(bc_svc_flush_queue_net);
+
 /*
  * Process a backchannel RPC request that arrived over an existing
  * outbound connection
