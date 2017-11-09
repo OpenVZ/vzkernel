@@ -485,6 +485,8 @@ void		   svc_reserve(struct svc_rqst *rqstp, int space);
 struct svc_pool *  svc_pool_for_cpu(struct svc_serv *serv, int cpu);
 char *		   svc_print_addr(struct svc_rqst *, char *, size_t);
 
+void bc_svc_flush_queue_net(struct svc_serv *serv, struct net *net);
+
 #define	RPC_MAX_ADDRBUFLEN	(63U)
 
 /*
