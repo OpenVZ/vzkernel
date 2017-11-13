@@ -860,16 +860,17 @@ static int dio_fsync_thread(void * data)
  * must not be quiesced.
  */
 
-static int dio_invalidate_cache(struct address_space * mapping,
-				struct block_device * bdev)
+static int dio_invalidate_cache(struct ploop_io * io)
 {
+	struct address_space *mapping = io->files.mapping;
+	struct block_device  *bdev    = io->files.bdev;
 	int err;
 	int attempt2 = 0;
 
 retry:
 	err = invalidate_inode_pages2(mapping);
 	if (err) {
-		struct ploop_device *plo = bdev->bd_disk->private_data;
+		struct ploop_device *plo = io->plo;
 		struct block_device *dm_crypt_bdev;
 
 		printk("PLOOP: failed to invalidate page cache %d/%d\n", err, attempt2);
@@ -879,7 +880,8 @@ retry:
 
 		mutex_unlock(&mapping->host->i_mutex);
 
-		dm_crypt_bdev = ploop_get_dm_crypt_bdev(plo);
+		WARN_ONCE(!mutex_is_locked(&plo->ctl_mutex), "ctl_mutex is not held");
+		dm_crypt_bdev = __ploop_get_dm_crypt_bdev(plo);
 		if (dm_crypt_bdev)
 			bdev = dm_crypt_bdev;
 		else
@@ -928,7 +930,7 @@ static void dio_destroy(struct ploop_io * io)
 			io->files.em_tree = NULL;
 			mutex_lock(&io->files.inode->i_mutex);
 			ploop_dio_close(io, delta->flags & PLOOP_FMT_RDONLY);
-			(void)dio_invalidate_cache(io->files.mapping, io->files.bdev);
+			(void)dio_invalidate_cache(io);
 			mutex_unlock(&io->files.inode->i_mutex);
 		}
 
@@ -991,7 +993,7 @@ static int dio_open(struct ploop_io * io)
 
 	io->files.em_tree = em_tree;
 
-	err = dio_invalidate_cache(io->files.mapping, io->files.bdev);
+	err = dio_invalidate_cache(io);
 	if (err) {
 		io->files.em_tree = NULL;
 		ploop_dio_close(io, 0);
@@ -1637,7 +1639,7 @@ static int dio_prepare_snapshot(struct ploop_io * io, struct ploop_snapdata *sd)
 	}
 
 	mutex_lock(&io->files.inode->i_mutex);
-	err = dio_invalidate_cache(io->files.mapping, io->files.bdev);
+	err = dio_invalidate_cache(io);
 	mutex_unlock(&io->files.inode->i_mutex);
 
 	if (err) {
@@ -1709,7 +1711,7 @@ static int dio_prepare_merge(struct ploop_io * io, struct ploop_snapdata *sd)
 
 	mutex_lock(&io->files.inode->i_mutex);
 
-	err = dio_invalidate_cache(io->files.mapping, io->files.bdev);
+	err = dio_invalidate_cache(io);
 	if (err) {
 		mutex_unlock(&io->files.inode->i_mutex);
 		fput(file);
