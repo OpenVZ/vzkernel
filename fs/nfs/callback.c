@@ -99,6 +99,8 @@ nfs4_callback_up(struct svc_serv *serv)
 }
 
 #if defined(CONFIG_NFS_V4_1)
+static DEFINE_MUTEX(nfs41_callback_mutex);
+
 /*
  * The callback service for NFSv4.1 callbacks
  */
@@ -117,6 +119,12 @@ nfs41_callback_svc(void *vrqstp)
 		if (try_to_freeze())
 			continue;
 
+		mutex_lock(&nfs41_callback_mutex);
+		if (kthread_should_stop()) {
+			mutex_unlock(&nfs41_callback_mutex);
+			return 0;
+		}
+
 		prepare_to_wait(&serv->sv_cb_waitq, &wq, TASK_INTERRUPTIBLE);
 		spin_lock_bh(&serv->sv_cb_lock);
 		if (!list_empty(&serv->sv_cb_list)) {
@@ -129,14 +137,23 @@ nfs41_callback_svc(void *vrqstp)
 			error = bc_svc_process(serv, req, rqstp);
 			dprintk("bc_svc_process() returned w/ error code= %d\n",
 				error);
+			mutex_unlock(&nfs41_callback_mutex);
 		} else {
 			spin_unlock_bh(&serv->sv_cb_lock);
+			mutex_unlock(&nfs41_callback_mutex);
 			schedule();
 			finish_wait(&serv->sv_cb_waitq, &wq);
 		}
 		flush_signals(current);
 	}
 	return 0;
+}
+
+static void nfs41_callback_down_net(struct svc_serv *serv, struct net *net)
+{
+	mutex_lock(&nfs41_callback_mutex);
+	bc_svc_flush_queue_net(serv, net);
+	mutex_unlock(&nfs41_callback_mutex);
 }
 
 /*
@@ -150,6 +167,7 @@ nfs41_callback_up(struct svc_serv *serv)
 	INIT_LIST_HEAD(&serv->sv_cb_list);
 	spin_lock_init(&serv->sv_cb_lock);
 	init_waitqueue_head(&serv->sv_cb_waitq);
+	serv->svc_cb_down_net = nfs41_callback_down_net;
 	rqstp = svc_prepare_thread(serv, &serv->sv_pools[0], NUMA_NO_NODE);
 	dprintk("--> %s return %d\n", __func__, PTR_ERR_OR_ZERO(rqstp));
 	return rqstp;
@@ -242,6 +260,8 @@ static void nfs_callback_down_net(u32 minorversion, struct svc_serv *serv, struc
 		return;
 
 	dprintk("NFS: destroy per-net callback data; net=%p\n", net);
+	if (serv->svc_cb_down_net)
+		serv->svc_cb_down_net(serv, net);
 	svc_shutdown_net(serv, net);
 }
 
