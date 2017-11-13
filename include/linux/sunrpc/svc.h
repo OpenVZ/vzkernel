@@ -108,6 +108,7 @@ struct svc_serv {
 	wait_queue_head_t	sv_cb_waitq;	/* sleep here if there are no
 						 * entries in the svc_cb_list */
 	struct svc_xprt		*sv_bc_xprt;	/* callback on fore channel */
+	void			(*svc_cb_down_net)(struct svc_serv *serv, struct net *net);
 #endif /* CONFIG_SUNRPC_BACKCHANNEL */
 };
 
