@@ -99,8 +99,6 @@ nfs4_callback_up(struct svc_serv *serv)
 }
 
 #if defined(CONFIG_NFS_V4_1)
-static DEFINE_MUTEX(nfs41_callback_mutex);
-
 /*
  * The callback service for NFSv4.1 callbacks
  */
@@ -119,12 +117,6 @@ nfs41_callback_svc(void *vrqstp)
 		if (try_to_freeze())
 			continue;
 
-		mutex_lock(&nfs41_callback_mutex);
-		if (kthread_should_stop()) {
-			mutex_unlock(&nfs41_callback_mutex);
-			return 0;
-		}
-
 		prepare_to_wait(&serv->sv_cb_waitq, &wq, TASK_INTERRUPTIBLE);
 		spin_lock_bh(&serv->sv_cb_lock);
 		if (!list_empty(&serv->sv_cb_list)) {
@@ -137,10 +129,8 @@ nfs41_callback_svc(void *vrqstp)
 			error = bc_svc_process(serv, req, rqstp);
 			dprintk("bc_svc_process() returned w/ error code= %d\n",
 				error);
-			mutex_unlock(&nfs41_callback_mutex);
 		} else {
 			spin_unlock_bh(&serv->sv_cb_lock);
-			mutex_unlock(&nfs41_callback_mutex);
 			schedule();
 			finish_wait(&serv->sv_cb_waitq, &wq);
 		}
@@ -252,7 +242,6 @@ static void nfs_callback_down_net(u32 minorversion, struct svc_serv *serv, struc
 		return;
 
 	dprintk("NFS: destroy per-net callback data; net=%p\n", net);
-	bc_svc_flush_queue_net(serv, net);
 	svc_shutdown_net(serv, net);
 }
 
@@ -388,13 +377,7 @@ void nfs_callback_down(int minorversion, struct net *net)
 	struct nfs_callback_data *cb_info = &nfs_callback_info[minorversion];
 
 	mutex_lock(&nfs_callback_mutex);
-#if defined(CONFIG_NFS_V4_1)
-	mutex_lock(&nfs41_callback_mutex);
 	nfs_callback_down_net(minorversion, cb_info->serv, net);
-	mutex_unlock(&nfs41_callback_mutex);
-#else
-	nfs_callback_down_net(minorversion, cb_info->serv, net);
-#endif
 	cb_info->users--;
 	if (cb_info->users == 0 && cb_info->task != NULL) {
 		kthread_stop(cb_info->task);
