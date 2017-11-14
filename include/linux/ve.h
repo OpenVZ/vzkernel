@@ -55,6 +55,8 @@ struct ve_struct {
 #ifdef CONFIG_VE_IPTABLES
 	__u64			ipt_mask;
 #endif
+
+	u64			_uevent_seqnum;
 };
 
 extern int nr_ve;
@@ -93,6 +95,8 @@ static inline void ve_net_unlock(struct ve_struct *ve)
 extern bool current_user_ns_initial(void);
 struct user_namespace *ve_init_user_ns(void);
 
+#define ve_uevent_seqnum       (get_exec_env()->_uevent_seqnum)
+
 #else	/* CONFIG_VE */
 #define get_ve(ve)	(NULL)
 #define put_ve(ve)	do { } while (0)
@@ -111,6 +115,8 @@ static inline struct user_namespace *ve_init_user_ns(void)
 {
 	return &init_user_ns;
 }
+
+#define ve_uevent_seqnum uevent_seqnum
 
 #endif	/* CONFIG_VE */
 
