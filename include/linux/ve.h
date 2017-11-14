@@ -51,6 +51,8 @@ struct ve_struct {
 #define VE_LOG_BUF_LEN		4096
 
 	int			_randomize_va_space;
+
+	u64			_uevent_seqnum;
 };
 
 extern int nr_ve;
@@ -80,6 +82,8 @@ struct user_namespace *ve_init_user_ns(void);
 
 extern struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp);
 
+#define ve_uevent_seqnum       (get_exec_env()->_uevent_seqnum)
+
 #else	/* CONFIG_VE */
 #define get_ve(ve)	(NULL)
 #define put_ve(ve)	do { } while (0)
@@ -103,6 +107,8 @@ static inline struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
 {
 	return NULL;
 }
+#define ve_uevent_seqnum uevent_seqnum
+
 #endif	/* CONFIG_VE */
 
 #endif /* _LINUX_VE_H */
