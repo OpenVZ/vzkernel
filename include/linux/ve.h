@@ -87,6 +87,7 @@ struct ve_struct {
 
 	int			odirect_enable;
 
+	u64			_uevent_seqnum;
 	struct nsproxy		*ve_ns;
 	struct cred		*init_cred;
 	struct net		*ve_netns;
@@ -117,6 +118,7 @@ extern struct proc_dir_entry *glob_proc_vz_dir;
 extern struct cgroup_subsys ve_subsys;
 
 #ifdef CONFIG_VE
+#define ve_uevent_seqnum       (get_exec_env()->_uevent_seqnum)
 
 void do_update_load_avg_ve(void);
 
@@ -145,6 +147,9 @@ extern bool current_user_ns_initial(void);
 struct user_namespace *ve_init_user_ns(void);
 
 #else	/* CONFIG_VE */
+
+#define ve_uevent_seqnum uevent_seqnum
+
 #define ve_utsname	system_utsname
 #define get_ve(ve)	(NULL)
 #define put_ve(ve)	do { } while (0)
