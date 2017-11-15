@@ -199,15 +199,31 @@ void nfs_inode_reclaim_delegation(struct inode *inode, struct rpc_cred *cred,
 	nfs_inode_set_delegation(inode, cred, res);
 }
 
+static bool ve_abort_delegation(struct inode *inode)
+{
+	struct nfs_client *clp = NFS_SERVER(inode)->nfs_client;
+	struct rpc_xprt *xprt;
+	bool abort;
+
+	rcu_read_lock();
+	xprt = rcu_dereference(clp->cl_rpcclient->cl_xprt);
+	abort = xprt->xprt_net->owner_ve->ve_netns == NULL;
+	rcu_read_unlock();
+
+	return abort;
+}
+
 static int nfs_do_return_delegation(struct inode *inode, struct nfs_delegation *delegation, int issync)
 {
 	int res = 0;
 
-	if (!test_bit(NFS_DELEGATION_REVOKED, &delegation->flags))
+	if (!test_bit(NFS_DELEGATION_REVOKED, &delegation->flags) &&
+	    !ve_abort_delegation(inode)) {
 		res = nfs4_proc_delegreturn(inode,
 				delegation->cred,
 				&delegation->stateid,
 				issync);
+	}
 	nfs_free_delegation(delegation);
 	return res;
 }
