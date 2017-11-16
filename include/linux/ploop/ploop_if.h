@@ -267,6 +267,11 @@ struct ploop_track_extent
 {
 	__u64	start;
 	__u64	end;
+	/*
+	 * On any changes to this struct keep in mind fixing
+	 * all copy_to_user instances, initializing new fields/paddings
+	 * to prevent possible leaks from kernel-space.
+	 */
 };
 
 /* Start tracking of top delta image. */
