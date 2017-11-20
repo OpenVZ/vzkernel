@@ -21,7 +21,6 @@
 #include <linux/fs.h>
 #include <linux/shmem_fs.h>
 #include <linux/ramfs.h>
-#include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/kthread.h>
 #include <linux/ve.h>
