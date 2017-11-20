@@ -32,7 +32,6 @@
 #include <linux/kbd_kern.h>
 #include <linux/console.h>
 #include <linux/device.h>
-#include <linux/sched.h>
 #include <linux/fs.h>
 #include <linux/poll.h>
 #include <linux/signal.h>

@@ -116,6 +116,7 @@
 #include	<linux/kmemcheck.h>
 #include	<linux/memory.h>
 #include	<linux/prefetch.h>
+#include	<linux/vzstat.h>
 
 #include	<net/sock.h>
 
@@ -4131,6 +4132,7 @@ static void cache_reap(struct work_struct *w)
 		/* Give up. Setup the next iteration. */
 		goto out;
 
+	KSTAT_PERF_ENTER(cache_reap)
 	list_for_each_entry(searchp, &slab_caches, list) {
 		check_irq_on();
 
@@ -4171,6 +4173,7 @@ next:
 	check_irq_on();
 	mutex_unlock(&slab_mutex);
 	next_reap_node();
+	KSTAT_PERF_LEAVE(cache_reap);
 out:
 	/* Set up the next iteration */
 	schedule_delayed_work(work, round_jiffies_relative(REAPTIMEOUT_CPUC));

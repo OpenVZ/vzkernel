@@ -13,7 +13,6 @@
 #include <linux/proc_fs.h>
 #include <linux/fs.h>
 #include <linux/syslog.h>
-#include <linux/sched.h>
 #include <linux/module.h>
 #include <linux/ve.h>
 
