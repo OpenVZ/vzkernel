@@ -67,7 +67,6 @@
 #include <linux/kernel.h>
 #include <linux/spinlock.h>
 #include <linux/kthread.h>
-#include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/errno.h>
 #include <linux/jiffies.h>
