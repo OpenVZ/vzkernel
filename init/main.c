@@ -59,7 +59,6 @@
 #include <linux/pid_namespace.h>
 #include <linux/device.h>
 #include <linux/kthread.h>
-#include <linux/sched.h>
 #include <linux/signal.h>
 #include <linux/idr.h>
 #include <linux/kgdb.h>
