@@ -11,7 +11,6 @@
  * along with initialization script
  */
 
-#include <linux/sched.h>
 #include <linux/ve.h>
 #include <linux/init.h>
 #include <linux/list.h>
