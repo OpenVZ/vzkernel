@@ -36,7 +36,6 @@
 #include <linux/slab.h>
 #include <linux/namei.h>
 #include <linux/crypto.h>
-#include <linux/sched.h>
 #include <linux/fs.h>
 #include <linux/module.h>
 #include <net/net_namespace.h>
