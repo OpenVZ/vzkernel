@@ -39,6 +39,7 @@
 #include <linux/prefetch.h>
 #include <linux/ratelimit.h>
 #include <linux/list_lru.h>
+#include <linux/vzstat.h>
 #include <linux/ve.h>
 #include "internal.h"
 #include "mount.h"
@@ -1078,9 +1079,11 @@ long prune_dcache_sb(struct super_block *sb, struct shrink_control *sc)
 	LIST_HEAD(dispose);
 	long freed;
 
+	KSTAT_PERF_ENTER(shrink_dcache);
 	freed = list_lru_shrink_walk(&sb->s_dentry_lru, sc,
 				     dentry_lru_isolate, &dispose);
 	shrink_dentry_list(&dispose);
+	KSTAT_PERF_LEAVE(shrink_dcache);
 	return freed;
 }
 
