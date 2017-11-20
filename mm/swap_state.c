@@ -43,12 +43,13 @@ static unsigned int nr_swapper_spaces[MAX_SWAPFILES];
 
 #define INC_CACHE_INFO(x)	do { swap_cache_info.x++; } while (0)
 
-static struct {
+struct {
 	unsigned long add_total;
 	unsigned long del_total;
 	unsigned long find_success;
 	unsigned long find_total;
 } swap_cache_info;
+EXPORT_SYMBOL(swap_cache_info);
 
 unsigned long total_swapcache_pages(void)
 {
