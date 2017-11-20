@@ -50,6 +50,7 @@
 
 #include <linux/swapops.h>
 #include <linux/balloon_compaction.h>
+#include <linux/vzstat.h>
 
 #include "internal.h"
 
@@ -1746,6 +1747,8 @@ static void shrink_active_list(unsigned long nr_to_scan,
 	int file = is_file_lru(lru);
 	struct zone *zone = lruvec_zone(lruvec);
 
+	KSTAT_PERF_ENTER(refill_inact);
+
 	lru_add_drain();
 
 	if (!sc->may_unmap)
@@ -1826,6 +1829,8 @@ static void shrink_active_list(unsigned long nr_to_scan,
 
 	mem_cgroup_uncharge_list(&l_hold);
 	free_hot_cold_page_list(&l_hold, true);
+
+	KSTAT_PERF_LEAVE(refill_inact);
 }
 
 
