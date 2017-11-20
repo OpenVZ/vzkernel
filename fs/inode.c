@@ -18,6 +18,7 @@
 #include <linux/buffer_head.h> /* for inode_has_buffers */
 #include <linux/ratelimit.h>
 #include <linux/list_lru.h>
+#include <linux/vzstat.h>
 #include "internal.h"
 
 /*
@@ -776,11 +777,13 @@ long prune_icache_sb(struct super_block *sb, struct shrink_control *sc)
 	LIST_HEAD(freeable);
 	long freed;
 
-	cond_resched();
-
+	KSTAT_PERF_ENTER(shrink_icache);
 	freed = list_lru_shrink_walk(&sb->s_inode_lru, sc,
 				     inode_lru_isolate, &freeable);
 	dispose_list(&freeable);
+	KSTAT_PERF_LEAVE(shrink_icache);
+
+	cond_resched();
 	return freed;
 }
 
