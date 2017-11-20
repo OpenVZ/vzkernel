@@ -8,7 +8,6 @@
  *
  */
 
-#include <linux/sched.h>
 #include <linux/ve.h>
 #include <linux/list.h>
 #include <linux/spinlock.h>
