@@ -1,5 +1,4 @@
 #include <linux/module.h>
-#include <linux/sched.h>
 #include <linux/proc_fs.h>
 #include <asm/uaccess.h>
 #include <linux/seq_file.h>
