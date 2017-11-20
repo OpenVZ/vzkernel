@@ -2765,7 +2765,7 @@ unlock:
 	pte_unmap_unlock(page_table, ptl);
 out:
 	local_irq_disable();
-	KSTAT_LAT_PCPU_ADD(&kstat_glob.swap_in, smp_processor_id(), get_cycles() - start);
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.swap_in, get_cycles() - start);
 	local_irq_enable();
 
 	return ret;
@@ -2910,8 +2910,7 @@ static int __do_fault(struct vm_area_struct *vma, unsigned long address,
 		VM_BUG_ON_PAGE(!PageLocked(vmf.page), vmf.page);
 
 	local_irq_disable();
-	KSTAT_LAT_PCPU_ADD(&kstat_glob.page_in, smp_processor_id(),
-			get_cycles() - start);
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.page_in, get_cycles() - start);
 	local_irq_enable();
 
 	*page = vmf.page;

@@ -6,7 +6,6 @@
 #include <linux/smp.h>
 #include <linux/prctl.h>
 #include <linux/slab.h>
-#include <linux/sched.h>
 #include <linux/module.h>
 #include <linux/pm.h>
 #include <linux/clockchips.h>

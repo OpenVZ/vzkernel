@@ -140,21 +140,39 @@ struct kernel_stat_glob kstat_glob;
 DEFINE_SPINLOCK(kstat_glb_lock);
 EXPORT_SYMBOL(kstat_glob);
 EXPORT_SYMBOL(kstat_glb_lock);
+
+DEFINE_PER_CPU(seqcount_t, kstat_pcpu_seq);
+EXPORT_SYMBOL(kstat_pcpu_seq);
+
 static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, glob_kstat_lat);
 static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, glob_kstat_page_in);
 static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, glob_kstat_swap_in);
 static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, alloc_kstat_lat[KSTAT_ALLOCSTAT_NR]);
+
+static DEFINE_PER_CPU(struct kstat_perf_pcpu_snap_struct, kstat_pcpu_ttfp);
+static DEFINE_PER_CPU(struct kstat_perf_pcpu_snap_struct, kstat_pcpu_cache_reap);
+static DEFINE_PER_CPU(struct kstat_perf_pcpu_snap_struct, kstat_pcpu_shrink_icache);
+static DEFINE_PER_CPU(struct kstat_perf_pcpu_snap_struct, kstat_pcpu_shrink_dcache);
+static DEFINE_PER_CPU(struct kstat_perf_pcpu_snap_struct, kstat_pcpu_refill_inact);
 
 void __init kstat_init(void)
 {
 	int i;
 
 	seqcount_init(&kstat_glob.nr_unint_avg_seq);
+	for_each_possible_cpu(i)
+		seqcount_init(per_cpu_ptr(&kstat_pcpu_seq, i));
 	kstat_glob.sched_lat.cur = &glob_kstat_lat;
 	kstat_glob.page_in.cur = &glob_kstat_page_in;
 	kstat_glob.swap_in.cur = &glob_kstat_swap_in;
 	for ( i = 0 ; i < KSTAT_ALLOCSTAT_NR ; i++)
 		kstat_glob.alloc_lat[i].cur = &alloc_kstat_lat[i];
+
+	kstat_glob.ttfp.cur = &kstat_pcpu_ttfp;
+	kstat_glob.cache_reap.cur = &kstat_pcpu_cache_reap;
+	kstat_glob.shrink_icache.cur = &kstat_pcpu_shrink_icache;
+	kstat_glob.shrink_dcache.cur = &kstat_pcpu_shrink_dcache;
+	kstat_glob.refill_inact.cur = &kstat_pcpu_refill_inact;
 }
 
 /*

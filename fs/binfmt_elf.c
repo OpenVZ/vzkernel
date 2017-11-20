@@ -34,7 +34,6 @@
 #include <linux/elf-randomize.h>
 #include <linux/utsname.h>
 #include <linux/coredump.h>
-#include <linux/sched.h>
 #include <linux/dax.h>
 #include <linux/ve.h>
 #include <asm/uaccess.h>
