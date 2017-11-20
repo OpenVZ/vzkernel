@@ -51,7 +51,6 @@
 #include <linux/user_namespace.h>
 #include <linux/binfmts.h>
 
-#include <linux/sched.h>
 #include <linux/rcupdate.h>
 #include <linux/uidgid.h>
 #include <linux/cred.h>

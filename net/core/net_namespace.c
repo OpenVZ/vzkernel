@@ -7,7 +7,6 @@
 #include <linux/slab.h>
 #include <linux/list.h>
 #include <linux/delay.h>
-#include <linux/sched.h>
 #include <linux/idr.h>
 #include <linux/rculist.h>
 #include <linux/nsproxy.h>
