@@ -7,3 +7,5 @@
 #
 
 obj-$(CONFIG_VE) = ve.o hooks.o veowner.o
+
+obj-$(CONFIG_VZ_DEV) += vzdev.o
