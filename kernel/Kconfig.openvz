@@ -49,4 +49,15 @@ config VE_NETDEV
 	  This option controls whether to build venet device. This is a
 	  common interface for networking in VE.
 
+config VZ_EVENT
+	tristate "Enable sending notifications of the VE status change through the netlink socket"
+	depends on VE && VE_CALLS && NET
+	default m
+	help
+	  This option provides for sending notifications of the VE
+	  events to the curious user space applications through
+	  the netlink socket just like the core kernel
+	  networking code does. By now just the notifications of
+	  the VE essensial status changes are being sent.
+
 endmenu
