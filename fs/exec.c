@@ -884,6 +884,8 @@ static int exec_mmap(struct mm_struct *mm)
 			return -EINTR;
 		}
 	}
+
+	mm->vps_dumpable = VD_PTRACE_COREDUMP;
 	task_lock(tsk);
 	active_mm = tsk->active_mm;
 	tsk->mm = mm;
