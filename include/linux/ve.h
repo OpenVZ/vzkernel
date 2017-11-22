@@ -15,6 +15,7 @@
 #include <linux/cgroup.h>
 
 struct nsproxy;
+struct veip_struct;
 
 struct ve_struct {
 	struct cgroup_subsys_state	css;
@@ -37,6 +38,10 @@ struct ve_struct {
 	/* Please, use ve_net_lock() and ve_net_unlock() instead of ve_netns */
 #define ve_netns		[:|||||||:]
 	struct cred		*init_cred;
+
+#if defined(CONFIG_VE_NETDEV) || defined (CONFIG_VE_NETDEV_MODULE)
+	struct veip_struct	*veip;
+#endif
 };
 
 extern int nr_ve;
