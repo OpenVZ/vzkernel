@@ -13,11 +13,18 @@
 #include <linux/slab.h>
 #include <linux/rcupdate.h>
 #include <linux/mutex.h>
+#include <uapi/linux/vzcalluser.h>
+#include <linux/major.h>
+#include <linux/module.h>
+#include <linux/capability.h>
+#include <linux/ve.h>
 
 #define ACC_MKNOD 1
 #define ACC_READ  2
 #define ACC_WRITE 4
-#define ACC_MASK (ACC_MKNOD | ACC_READ | ACC_WRITE)
+#define ACC_QUOTA 8
+#define ACC_HIDDEN 16
+#define ACC_MASK (ACC_MKNOD | ACC_READ | ACC_WRITE | ACC_QUOTA)
 
 #define DEV_BLOCK 1
 #define DEV_CHAR  2
@@ -75,7 +82,7 @@ static int devcgroup_can_attach(struct cgroup *new_cgrp,
 {
 	struct task_struct *task = cgroup_taskset_first(set);
 
-	if (current != task && !capable(CAP_SYS_ADMIN))
+	if (current != task && !capable(CAP_SYS_ADMIN) && !capable(CAP_VE_SYS_ADMIN))
 		return -EPERM;
 	return 0;
 }
@@ -657,7 +664,7 @@ static int devcgroup_update_access(struct dev_cgroup *devcgroup,
 	struct cgroup *p = devcgroup->css.cgroup;
 	struct dev_cgroup *parent = NULL;
 
-	if (!capable(CAP_SYS_ADMIN))
+	if (!capable(CAP_SYS_ADMIN) && !capable(CAP_VE_SYS_ADMIN))
 		return -EPERM;
 
 	if (p->parent)
@@ -899,9 +906,64 @@ int __devcgroup_inode_permission(struct inode *inode, int mask)
 		access |= ACC_WRITE;
 	if (mask & MAY_READ)
 		access |= ACC_READ;
+	if (mask & MAY_QUOTACTL)
+		access |= ACC_QUOTA;
 
 	return __devcgroup_check_permission(type, imajor(inode), iminor(inode),
 			access);
+}
+
+int devcgroup_device_permission(umode_t mode, dev_t dev, int mask)
+{
+	short type, access = 0;
+
+	if (S_ISBLK(mode))
+		type = DEV_BLOCK;
+	if (S_ISCHR(mode))
+		type = DEV_CHAR;
+	if (mask & MAY_WRITE)
+		access |= ACC_WRITE;
+	if (mask & MAY_READ)
+		access |= ACC_READ;
+	if (mask & MAY_QUOTACTL)
+		access |= ACC_QUOTA;
+
+	return __devcgroup_check_permission(type, MAJOR(dev), MINOR(dev), access);
+}
+
+int devcgroup_device_visible(umode_t mode, int major, int start_minor, int nr_minors)
+{
+	struct dev_cgroup *dev_cgroup;
+	struct dev_exception_item *ex;
+	short access = ACC_READ | ACC_WRITE | ACC_QUOTA;
+	bool match = false;
+
+	rcu_read_lock();
+	dev_cgroup = task_devcgroup(current);
+
+	if (dev_cgroup->behavior == DEVCG_DEFAULT_ALLOW) {
+		match = true;
+		goto out;
+	}
+
+	list_for_each_entry_rcu(ex, &dev_cgroup->exceptions, list) {
+		if ((ex->type & DEV_BLOCK) && !S_ISBLK(mode))
+			continue;
+		if ((ex->type & DEV_CHAR) && !S_ISCHR(mode))
+			continue;
+		if (ex->major != ~0 && ex->major != major)
+			continue;
+		if (ex->minor != ~0 && (ex->minor < start_minor ||
+					ex->minor >= start_minor + nr_minors))
+			continue;
+		if (!(access & ex->access))
+			continue;
+		match = true;
+		break;
+	}
+out:
+	rcu_read_unlock();
+	return match;
 }
 
 int devcgroup_inode_mknod(int mode, dev_t dev)
@@ -920,3 +982,106 @@ int devcgroup_inode_mknod(int mode, dev_t dev)
 			ACC_MKNOD);
 
 }
+
+#ifdef CONFIG_VE
+
+static unsigned decode_ve_perms(unsigned perm)
+{
+	unsigned mask = 0;
+
+	if (perm & S_IROTH)
+		mask |= ACC_READ;
+	if (perm & S_IWOTH)
+		mask |= ACC_WRITE;
+	if (perm & S_IXGRP)
+		mask |= ACC_QUOTA;
+
+	return mask;
+}
+
+static unsigned encode_ve_perms(unsigned mask)
+{
+	unsigned perm = 0;
+
+	if (mask & ACC_READ)
+		perm |= S_IROTH;
+	if (mask & ACC_WRITE)
+		perm |= S_IWOTH;
+	if (mask & ACC_QUOTA)
+		perm |= S_IXGRP;
+
+	return perm;
+}
+
+int devcgroup_set_perms_ve(struct cgroup *cgroup,
+		unsigned type, dev_t dev, unsigned mask)
+{
+	int err = -EINVAL;
+	struct dev_exception_item new;
+
+	if ((type & S_IFMT) == S_IFBLK)
+		new.type = DEV_BLOCK;
+	else if ((type & S_IFMT) == S_IFCHR)
+		new.type = DEV_CHAR;
+	else
+		return -EINVAL;
+
+	new.access = decode_ve_perms(mask) | (mask ? ACC_MKNOD : 0);
+	new.major = new.minor = ~0;
+
+	switch (type & VE_USE_MASK) {
+	default:
+		new.minor = MINOR(dev);
+	case VE_USE_MAJOR:
+		new.major = MAJOR(dev);
+	case 0:
+		;
+	}
+
+	mutex_lock(&devcgroup_mutex);
+	err = dev_exception_add(cgroup_to_devcgroup(cgroup), &new);
+	mutex_unlock(&devcgroup_mutex);
+
+	return err;
+}
+EXPORT_SYMBOL(devcgroup_set_perms_ve);
+
+int devcgroup_seq_show_ve(struct cgroup *devices_root, struct ve_struct *ve, struct seq_file *m)
+{
+	struct dev_exception_item *wh;
+	struct dev_cgroup *devcgroup;
+	struct cgroup *cgroup;
+
+	cgroup = cgroup_kernel_open(devices_root, 0, ve_name(ve));
+	if (IS_ERR(cgroup))
+		return PTR_ERR(cgroup);
+	devcgroup = cgroup_to_devcgroup(cgroup);
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(wh, &devcgroup->exceptions, list) {
+		char maj[MAJMINLEN], min[MAJMINLEN];
+		unsigned perm;
+
+		if (wh->access & ACC_HIDDEN)
+			continue;
+
+		set_majmin(maj, wh->major);
+		set_majmin(min, wh->minor);
+
+		perm = encode_ve_perms(wh->access);
+		if (perm & (S_IROTH | S_IWOTH))
+			perm |= S_IXOTH;
+
+		seq_printf(m, "%10u %c %03o %s:%s\n",
+				ve->veid,
+				type_to_char(wh->type),
+				perm, maj, min);
+	}
+	rcu_read_unlock();
+
+	cgroup_kernel_close(cgroup);
+	return 0;
+}
+EXPORT_SYMBOL(devcgroup_seq_show_ve);
+
+#endif /* CONFIG_VE */
