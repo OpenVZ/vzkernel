@@ -149,9 +149,15 @@ static inline void root_tag_clear(struct radix_tree_root *root, unsigned tag)
 	root->gfp_mask &= (__force gfp_t)~(1 << (tag + __GFP_BITS_SHIFT));
 }
 
+static inline void root_tag_move_all_to_prev(struct radix_tree_root *root)
+{
+	root->gfp_mask = (root->gfp_mask & __GFP_BITS_MASK) |
+		(root->gfp_mask & RADIX_ROOT_TAG_MASK) << RADIX_TREE_MAX_TAGS;
+}
+
 static inline void root_tag_clear_all(struct radix_tree_root *root)
 {
-	root->gfp_mask &= __GFP_BITS_MASK;
+	root->gfp_mask &= (__force gfp_t)~RADIX_ROOT_TAG_MASK;
 }
 
 static inline int root_tag_get(struct radix_tree_root *root, unsigned int tag)
@@ -162,6 +168,27 @@ static inline int root_tag_get(struct radix_tree_root *root, unsigned int tag)
 static inline unsigned root_tags_get(struct radix_tree_root *root)
 {
 	return (__force unsigned)root->gfp_mask >> __GFP_BITS_SHIFT;
+}
+
+static inline void prev_tag_set(struct radix_tree_root *root, unsigned int tag)
+{
+	root->gfp_mask |= (1 << (tag + RADIX_TREE_MAX_TAGS + __GFP_BITS_SHIFT));
+}
+
+static inline void prev_tag_clear(struct radix_tree_root *root, unsigned int tag)
+{
+	root->gfp_mask &= ~(1 << (tag + RADIX_TREE_MAX_TAGS + __GFP_BITS_SHIFT));
+}
+
+static inline void prev_tag_clear_all(struct radix_tree_root *root)
+{
+	root->gfp_mask &= __GFP_BITS_MASK | RADIX_ROOT_TAG_MASK;
+}
+
+static inline int prev_tag_get(struct radix_tree_root *root, unsigned int tag)
+{
+	BUILD_BUG_ON(__GFP_BITS_SHIFT + RADIX_TREE_MAX_TAGS * 2 > 32);
+	return root->gfp_mask & (1 << (tag + RADIX_TREE_MAX_TAGS + __GFP_BITS_SHIFT));
 }
 
 /*
@@ -742,9 +769,14 @@ void *radix_tree_tag_set(struct radix_tree_root *root,
 {
 	struct radix_tree_node *node, *parent;
 	unsigned long maxindex;
+	int prev;
+	int right_prev = radix_tree_tag_get(root, index, tag);
 
 	radix_tree_load_root(root, &node, &maxindex);
 	BUG_ON(index > maxindex);
+
+	/* save the root tag, need in case the height is 0 */
+	prev = root_tag_get(root, tag);
 
 	while (radix_tree_is_internal_node(node)) {
 		unsigned offset;
@@ -753,9 +785,17 @@ void *radix_tree_tag_set(struct radix_tree_root *root,
 		offset = radix_tree_descend(parent, &node, index);
 		BUG_ON(!node);
 
-		if (!tag_get(parent, tag, offset))
+		prev = tag_get(parent, tag, offset);
+		if (!prev)
 			tag_set(parent, tag, offset);
 	}
+
+	if (prev)
+		prev_tag_set(root, tag);
+	else
+		prev_tag_clear(root, tag);
+
+	BUG_ON(!prev != !right_prev);
 
 	/* set the root's tag bit */
 	if (!root_tag_get(root, tag))
@@ -767,10 +807,11 @@ EXPORT_SYMBOL(radix_tree_tag_set);
 
 static void node_tag_clear(struct radix_tree_root *root,
 				struct radix_tree_node *node,
-				unsigned int tag, unsigned int offset)
+				unsigned int tag, unsigned int offset, int *prev)
 {
 	while (node) {
-		if (!tag_get(node, tag, offset))
+		*prev = tag_get(node, tag, offset);
+		if (!*prev)
 			return;
 		tag_clear(node, tag, offset);
 		if (any_tag_set(node, tag))
@@ -805,12 +846,16 @@ void *radix_tree_tag_clear(struct radix_tree_root *root,
 	struct radix_tree_node *node, *parent;
 	unsigned long maxindex;
 	int uninitialized_var(offset);
+	int prev;
+	int right_prev = radix_tree_tag_get(root, index, tag);
 
 	radix_tree_load_root(root, &node, &maxindex);
 	if (index > maxindex)
 		return NULL;
 
 	parent = NULL;
+	/* make sure 'prev' is filled even if 'node' or 'parent' == NULL */
+	prev = root_tag_get(root, tag);
 
 	while (radix_tree_is_internal_node(node)) {
 		parent = entry_to_node(node);
@@ -818,7 +863,18 @@ void *radix_tree_tag_clear(struct radix_tree_root *root,
 	}
 
 	if (node)
-		node_tag_clear(root, parent, tag, offset);
+		node_tag_clear(root, parent, tag, offset, &prev);
+	else {
+		if (prev)
+			root_tag_clear(root, tag);
+	}
+
+	if (prev)
+		prev_tag_set(root, tag);
+	else
+		prev_tag_clear(root, tag);
+
+	BUG_ON(!prev != !right_prev);
 
 	return node;
 }
@@ -1516,25 +1572,33 @@ void *radix_tree_delete_item(struct radix_tree_root *root,
 	void **slot;
 	void *entry;
 	int tag;
+	int prev = 0;
+	int right_prev[RADIX_TREE_MAX_TAGS] = {0,};
 
 	entry = __radix_tree_lookup(root, index, &node, &slot);
 	if (!entry)
-		return NULL;
+		goto out_none;
 
 	if (item && entry != item)
-		return NULL;
+		goto out_none;
+
+	for (tag = 0; tag < RADIX_TREE_MAX_TAGS; tag++)
+		right_prev[tag] = radix_tree_tag_get(root, index, tag);
 
 	if (!node) {
-		root_tag_clear_all(root);
+		root_tag_move_all_to_prev(root);
 		root->rnode = NULL;
-		return entry;
+		goto out;
 	}
 
 	offset = get_slot_offset(node, slot);
 
 	/* Clear all tags associated with the item to be deleted.  */
-	for (tag = 0; tag < RADIX_TREE_MAX_TAGS; tag++)
-		node_tag_clear(root, node, tag, offset);
+	for (tag = 0; tag < RADIX_TREE_MAX_TAGS; tag++) {
+		node_tag_clear(root, node, tag, offset, &prev);
+		if (!prev)
+			prev_tag_clear(root, tag);
+	}
 
 	delete_sibling_entries(node, node_to_entry(slot), offset);
 	node->slots[offset] = NULL;
@@ -1542,7 +1606,13 @@ void *radix_tree_delete_item(struct radix_tree_root *root,
 
 	__radix_tree_delete_node(root, node);
 
+out:
+	for (tag = 0; tag < RADIX_TREE_MAX_TAGS; tag++)
+		BUG_ON(!right_prev[tag] != !prev_tag_get(root, tag));
 	return entry;
+out_none:
+	prev_tag_clear_all(root);
+	goto out;
 }
 EXPORT_SYMBOL(radix_tree_delete_item);
 
@@ -1565,13 +1635,18 @@ void radix_tree_clear_tags(struct radix_tree_root *root,
 			   struct radix_tree_node *node,
 			   void **slot)
 {
+	int prev = 0;
+
 	if (node) {
 		unsigned int tag, offset = get_slot_offset(node, slot);
-		for (tag = 0; tag < RADIX_TREE_MAX_TAGS; tag++)
-			node_tag_clear(root, node, tag, offset);
+		for (tag = 0; tag < RADIX_TREE_MAX_TAGS; tag++) {
+			node_tag_clear(root, node, tag, offset, &prev);
+			if (!prev)
+				prev_tag_clear(root, tag);
+		}
 	} else {
 		/* Clear root node tags */
-		root->gfp_mask &= __GFP_BITS_MASK;
+		root_tag_move_all_to_prev(root);
 	}
 }
 
@@ -1585,6 +1660,19 @@ int radix_tree_tagged(struct radix_tree_root *root, unsigned int tag)
 	return root_tag_get(root, tag);
 }
 EXPORT_SYMBOL(radix_tree_tagged);
+
+/**
+ *	radix_tree_prev_tag_get - get previous tag status for last changed item
+ *			call is valid right after radix_tree_tag_set/clear for
+ *			changed tag and after radix_tree_delete for all tags
+ *	@root:		radix tree root
+ *	@tag:		tag to test
+ */
+int radix_tree_prev_tag_get(struct radix_tree_root *root, unsigned int tag)
+{
+	return prev_tag_get(root, tag);
+}
+EXPORT_SYMBOL(radix_tree_prev_tag_get);
 
 static void
 radix_tree_node_ctor(void *arg)
