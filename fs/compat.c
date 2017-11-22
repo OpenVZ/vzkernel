@@ -48,6 +48,7 @@
 #include <linux/slab.h>
 #include <linux/pagemap.h>
 #include <linux/aio.h>
+#include <linux/device_cgroup.h>
 
 #include <asm/uaccess.h>
 #include <asm/mmu_context.h>
@@ -333,9 +334,16 @@ asmlinkage long compat_sys_fstatfs64(unsigned int fd, compat_size_t sz, struct c
  */
 asmlinkage long compat_sys_ustat(unsigned dev, struct compat_ustat __user *u)
 {
+	dev_t kdev = new_decode_dev(dev);
 	struct compat_ustat tmp;
 	struct kstatfs sbuf;
-	int err = vfs_ustat(new_decode_dev(dev), &sbuf);
+	int err;
+
+	err = devcgroup_device_permission(S_IFBLK, kdev, MAY_READ);
+	if (err)
+		return err;
+
+	err = vfs_ustat(kdev, &sbuf);
 	if (err)
 		return err;
 
