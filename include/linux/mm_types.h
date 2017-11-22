@@ -459,6 +459,7 @@ struct mm_struct {
 
 	unsigned long flags; /* Must use atomic bitops to access the bits */
 
+	unsigned int vps_dumpable:2;
 	struct core_state *core_state; /* coredumping support */
 #ifdef CONFIG_AIO
 	spinlock_t		ioctx_lock;
@@ -559,6 +560,12 @@ struct mm_struct {
 	RH_KABI_RESERVE(8)
 #endif
 };
+
+#define VD_VE_ENTER_TASK	0/* tasks entered to VE from host, no ptrace,
+				  * or coredump or licdata access allowed */
+#define VD_PTRACE_COREDUMP	1/* tasks with ptrace and coredump allowed */
+#define VD_LICDATA_ACCESS	2/* tasks accessed containers license data,
+				  * no ptrace and no coredump allowed */
 
 static inline void mm_init_cpumask(struct mm_struct *mm)
 {
