@@ -336,6 +336,10 @@ ok:
 	     !ptrace_has_cap(mm->user_ns, mode)))
 	    return -EPERM;
 
+	if (mm && (mm->vps_dumpable != VD_PTRACE_COREDUMP) &&
+	    !ve_is_super(get_exec_env()))
+		return -EPERM;
+
 	return security_ptrace_access_check(task, mode);
 }
 
@@ -385,6 +389,10 @@ static int ptrace_attach(struct task_struct *task, long request,
 
 	task_lock(task);
 	retval = __ptrace_may_access(task, PTRACE_MODE_ATTACH_REALCREDS);
+	if (!retval) {
+		if (task->mm && task->mm->vps_dumpable == VD_LICDATA_ACCESS)
+			retval = -EPERM;
+	}
 	task_unlock(task);
 	if (retval)
 		goto unlock_creds;
