@@ -76,6 +76,8 @@ static inline bool radix_tree_is_internal_node(void *ptr)
 #define RADIX_TREE_TAG_LONGS	\
 	((RADIX_TREE_MAP_SIZE + BITS_PER_LONG - 1) / BITS_PER_LONG)
 
+#define RADIX_ROOT_TAG_MASK	(((1<<RADIX_TREE_MAX_TAGS)-1) << __GFP_BITS_SHIFT)
+
 #define RADIX_TREE_INDEX_BITS  (8 /* CHAR_BIT */ * sizeof(unsigned long))
 #define RADIX_TREE_MAX_PATH (DIV_ROUND_UP(RADIX_TREE_INDEX_BITS, \
 					  RADIX_TREE_MAP_SHIFT))
@@ -310,6 +312,7 @@ void *radix_tree_tag_clear(struct radix_tree_root *root,
 			unsigned long index, unsigned int tag);
 int radix_tree_tag_get(struct radix_tree_root *root,
 			unsigned long index, unsigned int tag);
+int radix_tree_prev_tag_get(struct radix_tree_root *root, unsigned int tag);
 unsigned int
 radix_tree_gang_lookup_tag(struct radix_tree_root *root, void **results,
 		unsigned long first_index, unsigned int max_items,
