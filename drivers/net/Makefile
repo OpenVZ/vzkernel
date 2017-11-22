@@ -38,6 +38,9 @@ obj-$(CONFIG_NET_VRF) += vrf.o
 obj-$(CONFIG_VSOCKMON) += vsockmon.o
 obj-$(CONFIG_MHI_NET) += mhi/
 
+obj-$(CONFIG_VE_NETDEV) += vznetdev.o
+vznetdev-objs := veip.o
+
 #
 # Networking Drivers
 #
