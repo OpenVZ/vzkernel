@@ -246,6 +246,7 @@ int __ptrace_may_access(struct task_struct *task, unsigned int mode)
 	 * because setting up the necessary parent/child relationship
 	 * or halting the specified task is impossible.
 	 */
+	int vps_dumpable = 0;
 
 	/* Don't let security modules deny introspection */
 	if (same_thread_group(task, current))
@@ -282,12 +283,18 @@ int __ptrace_may_access(struct task_struct *task, unsigned int mode)
 ok:
 	rcu_read_unlock();
 	smp_rmb();
-	if (task->mm)
+	if (task->mm) {
 		dumpable = get_dumpable(task->mm);
+		vps_dumpable = (task->mm->vps_dumpable == VD_PTRACE_COREDUMP);
+	}
 	rcu_read_lock();
 	if (dumpable != SUID_DUMP_USER &&
 	    ((mode & PTRACE_MODE_NOACCESS_CHK) ||
 	     !ptrace_has_cap(__task_cred(task)->user_ns, mode))) {
+		rcu_read_unlock();
+		return -EPERM;
+	}
+	if (!vps_dumpable && !ve_is_super(get_exec_env())) {
 		rcu_read_unlock();
 		return -EPERM;
 	}
@@ -345,6 +352,10 @@ static int ptrace_attach(struct task_struct *task, long request,
 
 	task_lock(task);
 	retval = __ptrace_may_access(task, PTRACE_MODE_ATTACH_REALCREDS);
+	if (!retval) {
+		if (!task->mm || task->mm->vps_dumpable == VD_LICDATA_ACCESS)
+			retval = -EACCES;
+	}
 	task_unlock(task);
 	if (retval)
 		goto unlock_creds;
