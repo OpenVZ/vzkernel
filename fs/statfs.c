@@ -7,6 +7,7 @@
 #include <linux/statfs.h>
 #include <linux/security.h>
 #include <linux/uaccess.h>
+#include <linux/device_cgroup.h>
 #include "internal.h"
 
 static int flags_by_mnt(int mnt_flags)
@@ -229,9 +230,16 @@ int vfs_ustat(dev_t dev, struct kstatfs *sbuf)
 
 SYSCALL_DEFINE2(ustat, unsigned, dev, struct ustat __user *, ubuf)
 {
+	dev_t kdev = new_decode_dev(dev);
 	struct ustat tmp;
 	struct kstatfs sbuf;
-	int err = vfs_ustat(new_decode_dev(dev), &sbuf);
+	int err;
+
+	err = devcgroup_device_permission(S_IFBLK, kdev, MAY_READ);
+	if (err)
+		return err;
+
+	err = vfs_ustat(kdev, &sbuf);
 	if (err)
 		return err;
 
