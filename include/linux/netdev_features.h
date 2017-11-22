@@ -73,7 +73,7 @@ enum {
 	__NETIF_F_RH_KABI_PLACEHOLDER_5,
 	__NETIF_F_RH_KABI_PLACEHOLDER_6,
 	NETIF_F_VIRTUAL_BIT,		/* can be registered inside VE */
-	__NETIF_F_RH_KABI_PLACEHOLDER_8,
+	NETIF_F_VENET_BIT,		/* device is venet device */
 	NETIF_F_HW_TLS_RX_BIT,		/* Hardware TLS RX offload */
 
 	NETIF_F_FCOE_CRC_BIT,		/* FCoE CRC32 */
@@ -171,6 +171,7 @@ enum {
 #define NETIF_F_HW_TLS_RX	__NETIF_F(HW_TLS_RX)
 
 #define NETIF_F_VIRTUAL		__NETIF_F(VIRTUAL)
+#define	NETIF_F_VENET		__NETIF_F(VENET)
 
 #define for_each_netdev_feature(mask_addr, bit)	\
 	for_each_set_bit(bit, (unsigned long *)mask_addr, NETDEV_FEATURE_COUNT)
