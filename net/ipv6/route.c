@@ -3729,6 +3729,7 @@ void __init ip6_route_init_special_entries(void)
   #endif
 }
 
+#if 0
 static void ip6_rt_dump_dst(void *o)
 {
 	struct rt6_info *r = (struct rt6_info *)o;
@@ -3742,11 +3743,13 @@ static void ip6_rt_dump_dst(void *o)
 			r->rt6i_flags, atomic_read(&r->rt6i_ref),
 			(int)r->rt6i_protocol);
 }
+#endif
 
 static void _ip6_rt_dump_dsts(void)
 {
 	printk("IPv6 dst cache:\n");
-	slab_obj_walk(ip6_dst_ops_template.kmem_cachep, ip6_rt_dump_dst);
+	//FIXME
+	//slab_obj_walk(ip6_dst_ops_template.kmem_cachep, ip6_rt_dump_dst);
 }
 
 int __init ip6_route_init(void)
