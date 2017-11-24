@@ -2951,6 +2951,8 @@ static int mem_cgroup_do_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	return CHARGE_NOMEM;
 
 done:
+	if (!(gfp_mask & __GFP_WAIT))
+		goto out;
 	/*
 	 * If the hierarchy is above the normal consumption range,
 	 * make the charging task trim their excess contribution.
@@ -2960,6 +2962,7 @@ done:
 			continue;
 		try_to_free_mem_cgroup_pages(memcg, nr_pages, gfp_mask, false);
 	} while ((memcg = parent_mem_cgroup(memcg)));
+out:
 	return CHARGE_OK;
 }
 
