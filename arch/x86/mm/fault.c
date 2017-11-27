@@ -1048,7 +1048,7 @@ spurious_fault(unsigned long error_code, unsigned long address)
 	return ret;
 }
 
-int show_unhandled_signals = 1;
+int show_unhandled_signals = 0;
 
 static inline int
 access_error(unsigned long error_code, struct vm_area_struct *vma)
