@@ -40,6 +40,7 @@
 #include <linux/ftrace.h>
 #include <linux/syscalls.h>
 #include <linux/iommu.h>
+#include <linux/ve.h>
 
 #include <asm/processor.h>
 #include <asm/pkru.h>
