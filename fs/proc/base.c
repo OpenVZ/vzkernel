@@ -1231,7 +1231,7 @@ static ssize_t oom_score_adj_read(struct file *file, char __user *buf,
 	if (!task)
 		return -ESRCH;
 	if (lock_task_sighand(task, &flags)) {
-		oom_score_adj = task->signal->oom_score_adj;
+		oom_score_adj = get_task_oom_score_adj(task);
 		unlock_task_sighand(task, &flags);
 	}
 	put_task_struct(task);
