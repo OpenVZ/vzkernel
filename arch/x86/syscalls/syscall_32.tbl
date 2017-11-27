@@ -370,3 +370,8 @@
 380	i386	pkey_mprotect		sys_pkey_mprotect
 381	i386	pkey_alloc		sys_pkey_alloc
 382	i386	pkey_free		sys_pkey_free
+
+510	i386	getluid			sys_getluid
+511	i386	setluid			sys_setluid
+512	i386	setublimit		sys_setublimit			compat_sys_setublimit
+513	i386	ubstat			sys_ubstat			compat_sys_ubstat
