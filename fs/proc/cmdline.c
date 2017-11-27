@@ -2,10 +2,12 @@
 #include <linux/init.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <linux/sched.h>
 
 static int cmdline_proc_show(struct seq_file *m, void *v)
 {
-	seq_printf(m, "%s\n", saved_command_line);
+	seq_printf(m, "%s\n",
+		ve_is_super(get_exec_env()) ? saved_command_line : "quiet");
 	return 0;
 }
 
