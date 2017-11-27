@@ -64,6 +64,7 @@
 #include <linux/sched/sysctl.h>
 #include <linux/kexec.h>
 #include <linux/mount.h>
+#include <linux/ve.h>
 
 #include <asm/uaccess.h>
 #include <asm/processor.h>
@@ -1026,9 +1027,11 @@ static struct ctl_table kern_table[] = {
 #if defined(CONFIG_MMU)
 	{
 		.procname	= "randomize_va_space",
-		.data		= &randomize_va_space,
+		.data		= &_randomize_va_space,
+		.extra1		= (void *)offsetof(struct ve_struct,
+							_randomize_va_space),
 		.maxlen		= sizeof(int),
-		.mode		= 0644,
+		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= proc_dointvec,
 	},
 #endif
