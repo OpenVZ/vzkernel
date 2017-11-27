@@ -1073,5 +1073,5 @@ static void __exit ib_core_cleanup(void)
 	destroy_workqueue(ib_wq);
 }
 
-module_init(ib_core_init);
+subsys_initcall(ib_core_init);
 module_exit(ib_core_cleanup);
