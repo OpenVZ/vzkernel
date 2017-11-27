@@ -169,6 +169,15 @@ enum {
 #define NETIF_F_HW_HSR_FWD	__NETIF_F(HW_HSR_FWD)
 #define NETIF_F_HW_HSR_DUP	__NETIF_F(HW_HSR_DUP)
 
+#ifdef CONFIG_VE
+/* For net_device->ve_features */
+enum {
+	NETIF_F_VIRTUAL_BIT,	/* Can be registered inside VE */
+};
+
+#define NETIF_F_VIRTUAL		__NETIF_F(VIRTUAL)
+#endif
+
 /* Finds the next feature with the highest number of the range of start-1 till 0.
  */
 static inline int find_next_netdev_feature(u64 feature, unsigned long start)

@@ -2062,6 +2062,10 @@ struct net_device {
 	netdev_features_t	mpls_features;
 	netdev_features_t	gso_partial_features;
 
+#ifdef CONFIG_VE
+	netdev_features_t	ve_features;
+#endif
+
 	unsigned int		min_mtu;
 	unsigned int		max_mtu;
 	unsigned short		type;
@@ -4913,6 +4917,19 @@ netdev_features_t passthru_features_check(struct sk_buff *skb,
 					  struct net_device *dev,
 					  netdev_features_t features);
 netdev_features_t netif_skb_features(struct sk_buff *skb);
+
+#ifdef CONFIG_VE
+static inline int ve_is_dev_movable(struct net_device *dev)
+{
+	return !(dev->ve_features & NETIF_F_VIRTUAL ||
+		 dev->features & NETIF_F_NETNS_LOCAL);
+}
+#else
+static inline int ve_is_dev_movable(struct net_device *dev)
+{
+	return 0;
+}
+#endif
 
 static inline bool net_gso_ok(netdev_features_t features, int gso_type)
 {

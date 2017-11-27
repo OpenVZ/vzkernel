@@ -150,6 +150,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/prandom.h>
 #include <linux/once_lite.h>
+#include <linux/ve.h>
 
 #include "dev.h"
 #include "net-sysfs.h"
@@ -9936,6 +9937,12 @@ int register_netdevice(struct net_device *dev)
 				ret = -EIO;
 			goto err_free_name;
 		}
+	}
+
+	/* Keep the check after .ndo_init() call. */
+	if (!ve_is_super(net->owner_ve) && ve_is_dev_movable(dev)) {
+		ret = -EPERM;
+		goto err_uninit;
 	}
 
 	if (((dev->hw_features | dev->features) &
