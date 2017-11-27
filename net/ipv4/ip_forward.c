@@ -119,6 +119,24 @@ int ip_forward(struct sk_buff *skb)
 		goto drop;
 	}
 
+	/*
+	 * We try to optimize forwarding of VE packets:
+	 * do not decrement TTL (and so save skb_cow)
+	 * during forwarding of outgoing pkts from VE.
+	 * For incoming pkts we still do ttl decr,
+	 * since such skb is not cloned and does not require
+	 * actual cow. So, there is at least one place
+	 * in pkts path with mandatory ttl decr, that is
+	 * sufficient to prevent routing loops.
+	 */
+	iph = ip_hdr(skb);
+	if (
+#ifdef CONFIG_IP_ROUTE_NAT
+	    (rt->rt_flags & RTCF_NAT) == 0 &&	  /* no NAT mangling expected */
+#endif						  /* and */
+	    (skb->dev->features & NETIF_F_VENET)) /* src is VENET device */
+		goto no_ttl_decr;
+
 	/* We are about to mangle packet. Copy it! */
 	if (skb_cow(skb, LL_RESERVED_SPACE(rt->dst.dev)+rt->dst.header_len))
 		goto drop;
@@ -126,6 +144,8 @@ int ip_forward(struct sk_buff *skb)
 
 	/* Decrease ttl after skb cow done */
 	ip_decrease_ttl(iph);
+
+no_ttl_decr:
 
 	/*
 	 *	We now generate an ICMP HOST REDIRECT giving the route
