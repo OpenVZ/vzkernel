@@ -132,6 +132,7 @@ static struct pid_namespace *create_pid_namespace(struct user_namespace *user_ns
 	ns->ucounts = ucounts;
 	ns->nr_hashed = PIDNS_HASH_ADDING;
 	INIT_WORK(&ns->proc_work, proc_cleanup_work);
+	ns->pid_max = PID_MAX_NS_DEFAULT;
 
 	set_bit(0, ns->pidmap[0].page);
 	atomic_set(&ns->pidmap[0].nr_free, BITS_PER_PAGE - 1);
@@ -290,6 +291,7 @@ static int pid_ns_ctl_handler(struct ctl_table *table, int write,
 	 */
 
 	tmp.data = &pid_ns->last_pid;
+	tmp.extra2 = &pid_ns->pid_max;
 	return proc_dointvec_minmax(&tmp, write, buffer, lenp, ppos);
 }
 
@@ -302,7 +304,6 @@ static struct ctl_table pid_ns_ctl_table[] = {
 		.mode = 0666 | S_ISVTX, /* permissions are checked in the handler */
 		.proc_handler = pid_ns_ctl_handler,
 		.extra1 = &zero,
-		.extra2 = &pid_max,
 	},
 	{ }
 };
