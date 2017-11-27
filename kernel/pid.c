@@ -45,8 +45,6 @@ static struct hlist_head *pid_hash;
 static unsigned int pidhash_shift = 4;
 struct pid init_struct_pid = INIT_STRUCT_PID;
 
-int pid_max = PID_MAX_DEFAULT;
-
 #define RESERVED_PIDS		300
 
 int pid_max_min = RESERVED_PIDS + 1;
@@ -153,7 +151,7 @@ static int alloc_pidmap(struct pid_namespace *pid_ns)
 	struct pidmap *map;
 
 	pid = last + 1;
-	if (pid >= pid_max)
+	if (pid >= pid_ns->pid_max)
 		pid = RESERVED_PIDS;
 	offset = pid & BITS_PER_PAGE_MASK;
 	map = &pid_ns->pidmap[pid/BITS_PER_PAGE];
@@ -162,7 +160,7 @@ static int alloc_pidmap(struct pid_namespace *pid_ns)
 	 * want to scan this bitmap block twice, the second time
 	 * we start with offset == 0 (or RESERVED_PIDS).
 	 */
-	max_scan = DIV_ROUND_UP(pid_max, BITS_PER_PAGE) - !offset;
+	max_scan = DIV_ROUND_UP(pid_ns->pid_max, BITS_PER_PAGE) - !offset;
 	for (i = 0; i <= max_scan; ++i) {
 		if (unlikely(!map->page)) {
 			void *page = kzalloc(PAGE_SIZE, GFP_KERNEL);
@@ -191,11 +189,11 @@ static int alloc_pidmap(struct pid_namespace *pid_ns)
 				if (offset >= BITS_PER_PAGE)
 					break;
 				pid = mk_pid(pid_ns, map, offset);
-				if (pid >= pid_max)
+				if (pid >= pid_ns->pid_max)
 					break;
 			}
 		}
-		if (map < &pid_ns->pidmap[(pid_max-1)/BITS_PER_PAGE]) {
+		if (map < &pid_ns->pidmap[(pid_ns->pid_max-1)/BITS_PER_PAGE]) {
 			++map;
 			offset = 0;
 		} else {
@@ -595,11 +593,11 @@ void __init pidmap_init(void)
 	BUILD_BUG_ON(PID_MAX_LIMIT >= PIDNS_HASH_ADDING);
 
 	/* bump default and minimum pid_max based on number of cpus */
-	pid_max = min(pid_max_max, max_t(int, pid_max,
+	init_pid_ns.pid_max = min(pid_max_max, max_t(int, PID_MAX_DEFAULT,
 				PIDS_PER_CPU_DEFAULT * num_possible_cpus()));
 	pid_max_min = max_t(int, pid_max_min,
 				PIDS_PER_CPU_MIN * num_possible_cpus());
-	pr_info("pid_max: default: %u minimum: %u\n", pid_max, pid_max_min);
+	pr_info("pid_max: default: %u minimum: %u\n", init_pid_ns.pid_max, pid_max_min);
 
 	init_pid_ns.pidmap[0].page = kzalloc(PAGE_SIZE, GFP_KERNEL);
 	/* Reserve PID 0. We never call free_pidmap(0) */
