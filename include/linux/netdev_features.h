@@ -72,7 +72,7 @@ enum {
 	__NETIF_F_RH_KABI_PLACEHOLDER_4,
 	__NETIF_F_RH_KABI_PLACEHOLDER_5,
 	__NETIF_F_RH_KABI_PLACEHOLDER_6,
-	__NETIF_F_RH_KABI_PLACEHOLDER_7,
+	NETIF_F_VIRTUAL_BIT,		/* can be registered inside VE */
 	__NETIF_F_RH_KABI_PLACEHOLDER_8,
 	NETIF_F_HW_TLS_RX_BIT,		/* Hardware TLS RX offload */
 
@@ -170,6 +170,8 @@ enum {
 #define NETIF_F_HW_TLS_TX	__NETIF_F(HW_TLS_TX)
 #define NETIF_F_HW_TLS_RX	__NETIF_F(HW_TLS_RX)
 
+#define NETIF_F_VIRTUAL		__NETIF_F(VIRTUAL)
+
 #define for_each_netdev_feature(mask_addr, bit)	\
 	for_each_set_bit(bit, (unsigned long *)mask_addr, NETDEV_FEATURE_COUNT)
 
@@ -232,7 +234,8 @@ enum {
 				 NETIF_F_HW_VLAN_CTAG_TX | \
 				 NETIF_F_HW_VLAN_STAG_FILTER | \
 				 NETIF_F_HW_VLAN_STAG_RX | \
-				 NETIF_F_HW_VLAN_STAG_TX)
+				 NETIF_F_HW_VLAN_STAG_TX |	\
+				 NETIF_F_VIRTUAL)
 
 #define NETIF_F_GSO_ENCAP_ALL	(NETIF_F_GSO_GRE |			\
 				 NETIF_F_GSO_GRE_CSUM |			\
