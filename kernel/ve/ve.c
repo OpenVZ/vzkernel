@@ -19,6 +19,7 @@
 #include <linux/init_task.h>
 #include <linux/mutex.h>
 #include <linux/printk.h>
+#include <linux/mm.h>
 #include <uapi/linux/vzcalluser.h>
 
 #include "../cgroup/cgroup-internal.h" /* For cgroup_task_count() */
@@ -36,6 +37,12 @@ struct ve_struct ve0 = {
 
 	.init_cred		= &init_cred,
 	.features		= -1,
+	._randomize_va_space	=
+#ifdef CONFIG_COMPAT_BRK
+					1,
+#else
+					2,
+#endif
 };
 EXPORT_SYMBOL(ve0);
 
@@ -312,6 +319,7 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 		goto err_log;
 
 	ve->features = VE_FEATURES_DEF;
+	ve->_randomize_va_space = ve0._randomize_va_space;
 
 do_init:
 	init_rwsem(&ve->op_sem);
