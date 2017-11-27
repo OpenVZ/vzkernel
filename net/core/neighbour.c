@@ -308,6 +308,7 @@ static struct neighbour *neigh_alloc(struct neigh_table *tbl, struct net_device 
 	int entries;
 
 	entries = atomic_inc_return(&tbl->entries) - 1;
+	n = ERR_PTR(-ENOBUFS);
 	if (entries >= tbl->gc_thresh3 ||
 	    (entries >= tbl->gc_thresh2 &&
 	     time_after(now, tbl->last_flush + 5 * HZ))) {
@@ -318,7 +319,7 @@ static struct neighbour *neigh_alloc(struct neigh_table *tbl, struct net_device 
 
 	n = kzalloc(tbl->entry_size + dev->neigh_priv_len, GFP_ATOMIC);
 	if (!n)
-		goto out_entries;
+		goto out_nomem;
 
 	__skb_queue_head_init(&n->arp_queue);
 	rwlock_init(&n->lock);
@@ -337,6 +338,8 @@ static struct neighbour *neigh_alloc(struct neigh_table *tbl, struct net_device 
 out:
 	return n;
 
+out_nomem:
+	n = ERR_PTR(-ENOMEM);
 out_entries:
 	atomic_dec(&tbl->entries);
 	goto out;
@@ -498,13 +501,12 @@ struct neighbour *__neigh_create(struct neigh_table *tbl, const void *pkey,
 	u32 hash_val;
 	int key_len = tbl->key_len;
 	int error;
-	struct neighbour *n1, *rc, *n = neigh_alloc(tbl, dev);
+	struct neighbour *n1, *rc, *n;
 	struct neigh_hash_table *nht;
 
-	if (!n) {
-		rc = ERR_PTR(-ENOBUFS);
+	rc = n = neigh_alloc(tbl, dev);
+	if (IS_ERR(n))
 		goto out;
-	}
 
 	memcpy(n->primary_key, pkey, key_len);
 	n->dev = dev;
