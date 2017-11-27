@@ -29,6 +29,7 @@
 #include <linux/pgtable.h>
 #include <linux/kasan.h>
 #include <linux/memremap.h>
+#include <linux/ve_proto.h>
 
 struct mempolicy;
 struct anon_vma;
@@ -3203,7 +3204,12 @@ void drop_slab(void);
 #ifndef CONFIG_MMU
 #define randomize_va_space 0
 #else
-extern int randomize_va_space;
+extern int _randomize_va_space;
+#ifndef CONFIG_VE
+#define randomize_va_space _randomize_va_space
+#else
+#define randomize_va_space (get_exec_env()->_randomize_va_space)
+#endif
 #endif
 
 const char * arch_vma_name(struct vm_area_struct *vma);
