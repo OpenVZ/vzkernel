@@ -333,6 +333,11 @@
 330	common	pkey_alloc		sys_pkey_alloc
 331	common	pkey_free		sys_pkey_free
 
+500	64	getluid			sys_getluid
+501	64	setluid			sys_setluid
+502	64	setublimit		sys_setublimit
+503	64	ubstat			sys_ubstat
+
 #
 # x32-specific system call numbers start at 512 to avoid cache impact
 # for native 64-bit operation.
