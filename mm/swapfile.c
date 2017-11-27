@@ -2350,10 +2350,41 @@ static const struct seq_operations swaps_op = {
 	.show =		swap_show
 };
 
+#include <linux/virtinfo.h>
+
+static int swap_show_ve(struct seq_file *swap, void *v)
+{
+	struct user_beancounter *old_ub;
+	struct sysinfo si;
+	int ret;
+
+	si_swapinfo(&si);
+	old_ub = set_exec_ub(current->mm->mm_ub);
+	ret = virtinfo_notifier_call(VITYPE_GENERAL, VIRTINFO_SYSINFO, &si);
+	(void)set_exec_ub(old_ub);
+	if (ret & NOTIFY_FAIL)
+		goto out;
+
+	seq_printf(swap, "Filename\t\t\t\tType\t\tSize\tUsed\tPriority\n");
+	if (!si.totalswap)
+		goto out;
+	seq_printf(swap, "%-40s%s\t%lu\t%lu\t%d\n",
+			"/dev/null",
+			"partition",
+			si.totalswap  << (PAGE_SHIFT - 10),
+			(si.totalswap - si.freeswap) << (PAGE_SHIFT - 10),
+			-1);
+out:
+	return 0;
+}
+
 static int swaps_open(struct inode *inode, struct file *file)
 {
 	struct seq_file *seq;
 	int ret;
+
+	if (!ve_is_super(get_exec_env()))
+		return single_open(file, &swap_show_ve, NULL);
 
 	ret = seq_open(file, &swaps_op);
 	if (ret)
@@ -2364,11 +2395,20 @@ static int swaps_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static int swaps_release(struct inode *inode, struct file *file)
+{
+	struct seq_file *f = file->private_data;
+
+	if (f->op != &swaps_op)
+		return single_release(inode, file);
+	return seq_release(inode, file);
+}
+
 static const struct file_operations proc_swaps_operations = {
 	.open		= swaps_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
-	.release	= seq_release,
+	.release	= swaps_release,
 	.poll		= swaps_poll,
 };
 
