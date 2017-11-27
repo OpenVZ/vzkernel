@@ -363,3 +363,8 @@
 356	i386	memfd_create		sys_memfd_create
 374	i386	userfaultfd		sys_userfaultfd
 377	i386	copy_file_range		sys_copy_file_range
+
+510	i386	getluid			sys_getluid
+511	i386	setluid			sys_setluid
+512	i386	setublimit		sys_setublimit			compat_sys_setublimit
+513	i386	ubstat			sys_ubstat			compat_sys_ubstat
