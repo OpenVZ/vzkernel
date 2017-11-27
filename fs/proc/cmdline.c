@@ -3,10 +3,13 @@
 #include <linux/init.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <linux/sched.h>
+
+#include <linux/ve.h>
 
 static int cmdline_proc_show(struct seq_file *m, void *v)
 {
-	seq_puts(m, saved_command_line);
+	seq_puts(m, ve_is_super(get_exec_env()) ? saved_command_line : "quiet");
 	seq_putc(m, '\n');
 	return 0;
 }
