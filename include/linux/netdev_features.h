@@ -78,6 +78,8 @@ enum {
 	NETIF_F_HW_ESP_TX_CSUM_BIT,	/* ESP with TX checksum offload */
 	NETIF_F_RX_UDP_TUNNEL_PORT_BIT, /* Offload of RX port for UDP tunnels */
 
+	NETIF_F_VIRTUAL_BIT,		/* can be registered inside VE */
+
 	/*
 	 * Add your fresh new feature above and remember to update
 	 * netdev_features_strings[] in net/core/ethtool.c and maybe
@@ -143,6 +145,8 @@ enum {
 #define NETIF_F_HW_ESP_TX_CSUM	__NETIF_F(HW_ESP_TX_CSUM)
 #define	NETIF_F_RX_UDP_TUNNEL_PORT  __NETIF_F(RX_UDP_TUNNEL_PORT)
 
+#define NETIF_F_VIRTUAL		__NETIF_F(VIRTUAL)
+
 #define for_each_netdev_feature(mask_addr, bit)	\
 	for_each_set_bit(bit, (unsigned long *)mask_addr, NETDEV_FEATURE_COUNT)
 
@@ -205,7 +209,8 @@ enum {
 				 NETIF_F_HW_VLAN_CTAG_TX | \
 				 NETIF_F_HW_VLAN_STAG_FILTER | \
 				 NETIF_F_HW_VLAN_STAG_RX | \
-				 NETIF_F_HW_VLAN_STAG_TX)
+				 NETIF_F_HW_VLAN_STAG_TX |	\
+				 NETIF_F_VIRTUAL)
 
 #define NETIF_F_GSO_ENCAP_ALL	(NETIF_F_GSO_GRE |			\
 				 NETIF_F_GSO_GRE_CSUM |			\
