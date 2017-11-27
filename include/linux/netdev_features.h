@@ -96,6 +96,7 @@ enum {
 
 	NETIF_F_HW_TC_BIT,		/* Offload TC infrastructure */
 	NETIF_F_RX_UDP_TUNNEL_PORT_BIT, /* Offload of RX port for UDP tunnels */
+	NETIF_F_VENET_BIT,		/* device is venet device */
 
 	/*
 	 * Add your fresh new feature above and remember to update
@@ -159,6 +160,7 @@ enum {
 #define NETIF_F_BUSY_POLL	__NETIF_F(BUSY_POLL)
 #define NETIF_F_HW_TC		__NETIF_F(HW_TC)
 #define	NETIF_F_RX_UDP_TUNNEL_PORT  __NETIF_F(RX_UDP_TUNNEL_PORT)
+#define NETIF_F_VENET		__NETIF_F(VENET)
 
 /* RHEL-7: stubs for UDP GSO */
 #define NETIF_F_GSO_UDP_L4	0
