@@ -20,6 +20,7 @@
 #include <linux/log2.h>
 #include <linux/pm_runtime.h>
 #include <linux/badblocks.h>
+#include <linux/device_cgroup.h>
 
 #include "blk.h"
 
@@ -260,8 +261,12 @@ void blkdev_show(struct seq_file *seqf, off_t offset)
 
 	if (offset < BLKDEV_MAJOR_HASH_SIZE) {
 		mutex_lock(&block_class_lock);
-		for (dp = major_names[offset]; dp; dp = dp->next)
+		for (dp = major_names[offset]; dp; dp = dp->next) {
+			if (!devcgroup_device_visible(S_IFBLK, dp->major,
+						0, INT_MAX))
+				continue;
 			seq_printf(seqf, "%3d %s\n", dp->major, dp->name);
+		}
 		mutex_unlock(&block_class_lock);
 	}
 }
