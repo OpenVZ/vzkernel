@@ -150,6 +150,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/prandom.h>
 #include <linux/once_lite.h>
+#include <linux/ve.h>
 
 #include "net-sysfs.h"
 
@@ -9586,6 +9587,12 @@ int register_netdevice(struct net_device *dev)
 		}
 	}
 
+	/* Keep the check after .ndo_init() call. */
+	if (!ve_is_super(net->owner_ve) && ve_is_dev_movable(dev)) {
+		ret = -EPERM;
+		goto err_uninit;
+	}
+
 	if (((dev->hw_features | dev->features) &
 	     NETIF_F_HW_VLAN_CTAG_FILTER) &&
 	    (!dev->netdev_ops->ndo_vlan_rx_add_vid ||
@@ -10690,7 +10697,7 @@ netdev_features_t netdev_increment_features(netdev_features_t all,
 		mask |= NETIF_F_CSUM_MASK;
 	mask |= NETIF_F_VLAN_CHALLENGED;
 
-	all |= one & (NETIF_F_ONE_FOR_ALL | NETIF_F_CSUM_MASK) & mask;
+	all |= one & (NETIF_F_ONE_FOR_ALL|NETIF_F_CSUM_MASK|NETIF_F_VIRTUAL) & mask;
 	all &= one | ~NETIF_F_ALL_FOR_ALL;
 
 	/* If one device supports hw checksumming, set for all. */
