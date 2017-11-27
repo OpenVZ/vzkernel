@@ -55,6 +55,9 @@ extern unsigned long oom_badness(struct task_struct *p,
 
 extern int oom_kills_count(void);
 extern void note_oom_kill(void);
+/* linux/mm/oom_group.c */
+extern int get_task_oom_score_adj(struct task_struct *t);
+
 extern void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 			     unsigned int points, unsigned long totalpages,
 			     struct mem_cgroup *memcg, nodemask_t *nodemask,
