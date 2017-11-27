@@ -35,6 +35,7 @@
 #include <linux/init.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/if_ether.h>
+#include <uapi/linux/vzcalluser.h>
 #include <linux/ve.h>
 
 #include <net/sock.h>
@@ -98,6 +99,9 @@ static struct ip_tunnel *ipip6_tunnel_lookup(struct net *net,
 	unsigned int h1 = HASH(local);
 	struct ip_tunnel *t;
 	struct sit_net *sitn = net_generic(net, sit_net_id);
+
+	if (sitn == NULL)
+		return NULL;
 
 	for_each_ip_tunnel_rcu(t, sitn->tunnels_r_l[h0 ^ h1]) {
 		if (local == t->parms.iph.saddr &&
@@ -1731,6 +1735,9 @@ static int __net_init sit_init_net(struct net *net)
 	struct ip_tunnel *t;
 	int err;
 
+	if (!(net->owner_ve->features & VE_FEATURE_SIT))
+		return net_assign_generic(net, sit_net_id, NULL);
+
 	sitn->tunnels[0] = sitn->tunnels_wc;
 	sitn->tunnels[1] = sitn->tunnels_l;
 	sitn->tunnels[2] = sitn->tunnels_r;
@@ -1769,12 +1776,17 @@ err_alloc_dev:
 
 static void __net_exit sit_exit_net(struct net *net)
 {
+	struct sit_net *sitn = net_generic(net, sit_net_id);
 	LIST_HEAD(list);
+
+	if (sitn == NULL) /* no VE_FEATURE_SIT */
+		return;
 
 	rtnl_lock();
 	sit_destroy_tunnels(net, &list);
 	unregister_netdevice_many(&list);
 	rtnl_unlock();
+	net_assign_generic(net, sit_net_id, NULL);
 }
 
 static struct pernet_operations sit_net_ops = {
