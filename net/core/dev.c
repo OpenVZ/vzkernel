@@ -6709,8 +6709,13 @@ static int __dev_set_promiscuity(struct net_device *dev, int inc, bool notify)
 			return -EOVERFLOW;
 		}
 	}
-	if (dev->flags != old_flags) {
-		pr_info("device %s %s promiscuous mode\n",
+	/*
+	 * Promiscous mode on LOOPBACK/POINTTOPOINT devices does
+	 * not mean anything
+	 */
+	if ((dev->flags != old_flags) &&
+			!(dev->flags & (IFF_LOOPBACK | IFF_POINTOPOINT))) {
+		ve_printk(VE_LOG, KERN_INFO "device %s %s promiscuous mode\n",
 			dev->name,
 			dev->flags & IFF_PROMISC ? "entered" : "left");
 		if (audit_enabled) {
