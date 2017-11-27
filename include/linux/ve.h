@@ -45,6 +45,8 @@ struct ve_struct {
 
 	atomic_t		netns_avail_nr;
 	int			netns_max_nr;
+
+	int			_randomize_va_space;
 };
 
 extern int nr_ve;

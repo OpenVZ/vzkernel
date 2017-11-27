@@ -46,6 +46,7 @@
 #include <linux/cred.h>
 #include <linux/dax.h>
 #include <linux/uaccess.h>
+#include <linux/ve.h>
 #include <asm/param.h>
 #include <asm/page.h>
 
