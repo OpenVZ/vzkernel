@@ -423,6 +423,7 @@ int ip6_forward(struct sk_buff *skb)
 	struct inet6_skb_parm *opt = IP6CB(skb);
 	struct net *net = dev_net(dst->dev);
 	u32 mtu;
+	unsigned int hroom;
 
 	if (net->ipv6.devconf_all->forwarding == 0)
 		goto error;
@@ -551,7 +552,22 @@ int ip6_forward(struct sk_buff *skb)
 		return -EMSGSIZE;
 	}
 
-	if (skb_cow(skb, dst->dev->hard_header_len)) {
+	/*
+	 * We try to optimize forwarding of VE packets:
+	 * do not decrement TTL (and so save skb_cow)
+	 * during forwarding of outgoing pkts from VE.
+	 * For incoming pkts we still do ttl decr,
+	 * since such skb is not cloned and does not require
+	 * actual cow. So, there is at least one place
+	 * in pkts path with mandatory ttl decr, that is
+	 * sufficient to prevent routing loops.
+	 */
+	hroom = dst->dev->hard_header_len;
+	if ((skb->dev->features & NETIF_F_VENET) && /* src is VENET device */
+	    (skb_headroom(skb) >= hroom))  /* and skb has enough headroom */
+		goto no_ttl_decr;
+
+	if (skb_cow(skb, hroom)) {
 		__IP6_INC_STATS(net, ip6_dst_idev(dst),
 				IPSTATS_MIB_OUTDISCARDS);
 		goto drop;
@@ -563,6 +579,7 @@ int ip6_forward(struct sk_buff *skb)
 
 	hdr->hop_limit--;
 
+no_ttl_decr:
 	return NF_HOOK(NFPROTO_IPV6, NF_INET_FORWARD,
 		       net, NULL, skb, skb->dev, dst->dev,
 		       ip6_forward_finish);
