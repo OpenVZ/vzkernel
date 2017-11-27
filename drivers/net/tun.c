@@ -1992,9 +1992,10 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
 		if (err < 0)
 			goto err_detach;
 
-		if (device_create_file(&tun->dev->dev, &dev_attr_tun_flags) ||
+		if ((dev_net(tun->dev) == &init_net) &&
+		    (device_create_file(&tun->dev->dev, &dev_attr_tun_flags) ||
 		    device_create_file(&tun->dev->dev, &dev_attr_owner) ||
-		    device_create_file(&tun->dev->dev, &dev_attr_group))
+		    device_create_file(&tun->dev->dev, &dev_attr_group)))
 			pr_err("Failed to create tun sysfs files\n");
 	}
 
