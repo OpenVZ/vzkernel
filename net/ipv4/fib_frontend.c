@@ -385,7 +385,8 @@ static int __fib_validate_source(struct sk_buff *skb, __be32 src, __be32 dst,
 	if (fib_lookup(net, &fl4, &res, 0))
 		goto last_resort;
 	if (res.type != RTN_UNICAST &&
-	    (res.type != RTN_LOCAL || !IN_DEV_ACCEPT_LOCAL(idev)))
+	    (!(dev->features & NETIF_F_VENET) ||
+	     res.type != RTN_LOCAL || !IN_DEV_ACCEPT_LOCAL(idev)))
 		goto e_inval;
 	fib_combine_itag(itag, &res);
 
