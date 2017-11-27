@@ -44,6 +44,9 @@ static int ip_ping_group_range_max[] = { GID_T_MAX, GID_T_MAX };
 
 static int rhel_unused_sysctl __read_mostly;
 
+int sysctl_tcp_use_sg = 1;
+EXPORT_SYMBOL(sysctl_tcp_use_sg);
+
 /* Update system visible IP port range */
 static void set_local_port_range(struct net *net, int range[2])
 {
@@ -803,6 +806,13 @@ static struct ctl_table ipv4_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= &one
+	},
+	{
+		.procname	= "tcp_use_sg",
+		.data		= &sysctl_tcp_use_sg,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
 	},
 	{ }
 };
