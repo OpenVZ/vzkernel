@@ -159,7 +159,7 @@ unsigned long oom_badness(struct task_struct *p, struct mem_cgroup *memcg,
 	if (!p)
 		return 0;
 
-	adj = (long)p->signal->oom_score_adj;
+	adj = get_task_oom_score_adj(p);
 	if (adj == OOM_SCORE_ADJ_MIN) {
 		task_unlock(p);
 		return 0;
