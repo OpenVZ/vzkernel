@@ -204,6 +204,14 @@ cond_syscall(sys_userfaultfd);
 /* performance counters: */
 cond_syscall(sys_perf_event_open);
 
+/* user-beancounters */
+cond_syscall(sys_getluid);
+cond_syscall(sys_setluid);
+cond_syscall(sys_setublimit);
+cond_syscall(sys_ubstat);
+cond_syscall(compat_sys_setublimit);
+cond_syscall(compat_sys_ubstat);
+
 /* fanotify! */
 cond_syscall(sys_fanotify_init);
 cond_syscall(sys_fanotify_mark);
