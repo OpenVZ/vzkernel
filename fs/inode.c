@@ -172,6 +172,7 @@ int inode_init_always(struct super_block *sb, struct inode *inode)
 	mapping->private_data = NULL;
 	mapping->backing_dev_info = &default_backing_dev_info;
 	mapping->writeback_index = 0;
+	mapping->dirtied_ub = NULL;
 
 	/*
 	 * If the block_device provides a backing_dev_info for client
@@ -235,6 +236,7 @@ EXPORT_SYMBOL(free_inode_nonrcu);
 void __destroy_inode(struct inode *inode)
 {
 	BUG_ON(inode_has_buffers(inode));
+	BUG_ON(inode->i_data.dirtied_ub);
 	security_inode_free(inode);
 	fsnotify_inode_delete(inode);
 	if (!inode->i_nlink) {
