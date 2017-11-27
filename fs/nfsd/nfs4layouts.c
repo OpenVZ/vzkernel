@@ -174,7 +174,7 @@ nfsd4_layout_setlease(struct nfs4_layout_stateid *ls)
 	struct file_lock *fl;
 	int status;
 
-	fl = locks_alloc_lock();
+	fl = locks_alloc_lock(1);
 	if (!fl)
 		return -ENOMEM;
 	locks_init_lock(fl);
