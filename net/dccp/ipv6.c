@@ -545,6 +545,8 @@ static struct sock *dccp_v6_request_recv_sock(struct sock *sk,
 	ip6_dst_store(newsk, dst, NULL, NULL);
 	newsk->sk_route_caps = dst->dev->features & ~(NETIF_F_IP_CSUM |
 						      NETIF_F_TSO);
+	if (!sysctl_tcp_use_sg)
+		newsk->sk_route_caps &= ~NETIF_F_SG;
 	newdp6 = (struct dccp6_sock *)newsk;
 	newinet = inet_sk(newsk);
 	newinet->pinet6 = &newdp6->inet6;
