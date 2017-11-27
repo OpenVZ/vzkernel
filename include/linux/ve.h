@@ -48,6 +48,8 @@ struct ve_struct {
 
 	void			*log_state;
 #define VE_LOG_BUF_LEN		4096
+
+	int			_randomize_va_space;
 };
 
 extern int nr_ve;

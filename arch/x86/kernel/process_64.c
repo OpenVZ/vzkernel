@@ -38,6 +38,7 @@
 #include <linux/io.h>
 #include <linux/ftrace.h>
 #include <linux/syscalls.h>
+#include <linux/ve.h>
 
 #include <asm/pgtable.h>
 #include <asm/processor.h>
