@@ -108,7 +108,6 @@ extern int suid_dumpable;
 extern int core_uses_pid;
 extern unsigned int core_pipe_limit;
 #endif
-extern int pid_max;
 extern int pid_max_min, pid_max_max;
 extern int percpu_pagelist_fraction;
 extern int compat_log;
@@ -317,6 +316,16 @@ static int max_sched_tunable_scaling = SCHED_TUNABLESCALING_END-1;
 static int min_extfrag_threshold;
 static int max_extfrag_threshold = 1000;
 #endif
+
+static int proc_dointvec_pidmax(struct ctl_table *table, int write,
+		  void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	struct ctl_table tmp;
+
+	tmp = *table;
+	tmp.data = &current->nsproxy->pid_ns->pid_max;
+	return proc_dointvec_minmax(&tmp, write, buffer, lenp, ppos);
+}
 
 #ifdef CONFIG_COREDUMP
 sysctl_virtual(proc_dostring_coredump);
@@ -830,10 +839,10 @@ static struct ctl_table kern_table[] = {
 #endif
 	{
 		.procname	= "pid_max",
-		.data		= &pid_max,
+		.data		= NULL,
 		.maxlen		= sizeof (int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec_minmax,
+		.mode		= 0644 | S_ISVTX,
+		.proc_handler	= proc_dointvec_pidmax,
 		.extra1		= &pid_max_min,
 		.extra2		= &pid_max_max,
 	},
