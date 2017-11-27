@@ -597,8 +597,9 @@ static int __nla_validate_parse(const struct nlattr *head, int len, int maxtype,
 	}
 
 	if (unlikely(rem > 0)) {
-		pr_warn_ratelimited("netlink: %d bytes leftover after parsing attributes in process `%s'.\n",
-				    rem, current->comm);
+		ve_pr_warn_ratelimited(VE_LOG,
+			"netlink: %d bytes leftover after parsing attributes in process `%s'.\n",
+			rem, current->comm);
 		NL_SET_ERR_MSG(extack, "bytes leftover after parsing attributes");
 		if (validate & NL_VALIDATE_TRAILING)
 			return -EINVAL;
