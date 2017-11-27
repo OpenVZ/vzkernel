@@ -2897,10 +2897,35 @@ static const struct seq_operations swaps_op = {
 	.show =		swap_show
 };
 
+extern void si_meminfo_ve(struct sysinfo *si, struct ve_struct *ve);
+
+static int swap_show_ve(struct seq_file *swap, void *v)
+{
+	struct ve_struct *ve = get_exec_env();
+	struct sysinfo si;
+
+	si_meminfo_ve(&si, ve);
+
+	seq_printf(swap, "Filename\t\t\t\tType\t\tSize\tUsed\tPriority\n");
+	if (!si.totalswap)
+		goto out;
+	seq_printf(swap, "%-40s%s\t%lu\t%lu\t%d\n",
+			"/dev/null",
+			"partition",
+			si.totalswap  << (PAGE_SHIFT - 10),
+			(si.totalswap - si.freeswap) << (PAGE_SHIFT - 10),
+			-1);
+out:
+	return 0;
+}
+
 static int swaps_open(struct inode *inode, struct file *file)
 {
 	struct seq_file *seq;
 	int ret;
+
+	if (!ve_is_super(get_exec_env()))
+		return single_open(file, &swap_show_ve, NULL);
 
 	ret = seq_open(file, &swaps_op);
 	if (ret)
@@ -2911,11 +2936,20 @@ static int swaps_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static int swaps_release(struct inode *inode, struct file *file)
+{
+	struct seq_file *f = file->private_data;
+
+	if (f->op != &swaps_op)
+		return single_release(inode, file);
+	return seq_release(inode, file);
+}
+
 static const struct file_operations proc_swaps_operations = {
 	.open		= swaps_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
-	.release	= seq_release,
+	.release	= swaps_release,
 	.poll		= swaps_poll,
 };
 
