@@ -27,8 +27,12 @@
 #include <linux/task_work.h>
 #include <linux/ima.h>
 #include <linux/swap.h>
+#include <linux/ve.h>
 
 #include <linux/atomic.h>
+
+#include <bc/beancounter.h>
+#include <bc/misc.h>
 
 #include "internal.h"
 
@@ -52,7 +56,9 @@ static void file_free_rcu(struct rcu_head *head)
 
 static inline void file_free(struct file *f)
 {
-	percpu_counter_dec(&nr_files);
+	if (f->f_ub == get_ub0())
+		percpu_counter_dec(&nr_files);
+	ub_file_uncharge(f);
 	call_rcu(&f->f_u.fu_rcuhead, file_free_rcu);
 }
 
@@ -107,11 +113,14 @@ struct file *get_empty_filp(void)
 	static long old_max;
 	struct file *f;
 	int error;
+	int acct;
 
+	acct = (get_exec_ub() == get_ub0());
 	/*
 	 * Privileged users can go above max_files
 	 */
-	if (get_nr_files() >= files_stat.max_files && !capable(CAP_SYS_ADMIN)) {
+	if (acct && get_nr_files() >= files_stat.max_files &&
+			!capable(CAP_SYS_ADMIN)) {
 		/*
 		 * percpu_counters are inaccurate.  Do an expensive check before
 		 * we go and fail.
@@ -124,7 +133,13 @@ struct file *get_empty_filp(void)
 	if (unlikely(!f))
 		return ERR_PTR(-ENOMEM);
 
-	percpu_counter_inc(&nr_files);
+	if (ub_file_charge(f)) {
+		kmem_cache_free(filp_cachep, f);
+		return ERR_PTR(-ENOMEM);
+	}
+	if (acct)
+		percpu_counter_inc(&nr_files);
+
 	f->f_cred = get_cred(cred);
 	error = security_file_alloc(f);
 	if (unlikely(error)) {
