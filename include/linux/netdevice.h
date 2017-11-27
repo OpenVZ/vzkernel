@@ -1694,6 +1694,7 @@ struct net_device {
 						   because most packets are
 						   unicast) */
 
+	unsigned char		is_leaked;
 
 #ifdef CONFIG_RPS
 	struct netdev_rx_queue	*_rx;

@@ -24,6 +24,7 @@
 #include <linux/socket.h>
 #include <linux/netdevice.h>
 #include <linux/proc_fs.h>
+#include <linux/sched.h>
 #include <linux/ve.h>
 #ifdef CONFIG_SYSCTL
 #include <linux/sysctl.h>
@@ -706,6 +707,13 @@ void neigh_destroy(struct neighbour *neigh)
 	struct net_device *dev = neigh->dev;
 
 	NEIGH_CACHE_STAT_INC(neigh->tbl, destroys);
+
+	if (neigh->dev->is_leaked) {
+		printk(KERN_WARNING
+		       "Destroying neighbour %p on leaked device\n", neigh);
+		dump_stack();
+		return;
+	}
 
 	if (!neigh->dead) {
 		pr_warn("Destroying alive neighbour %p\n", neigh);
