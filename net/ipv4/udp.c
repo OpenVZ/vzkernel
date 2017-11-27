@@ -2349,7 +2349,7 @@ static struct sock *udp_get_first(struct seq_file *seq, int start)
 
 		spin_lock_bh(&hslot->lock);
 		sk_for_each(sk, &hslot->head) {
-			if (!net_eq(sock_net(sk), net))
+			if (!net_access_allowed(sock_net(sk), net))
 				continue;
 			if (sk->sk_family == state->family)
 				goto found;
@@ -2368,7 +2368,7 @@ static struct sock *udp_get_next(struct seq_file *seq, struct sock *sk)
 
 	do {
 		sk = sk_next(sk);
-	} while (sk && (!net_eq(sock_net(sk), net) || sk->sk_family != state->family));
+	} while (sk && (!net_access_allowed(sock_net(sk), net) || sk->sk_family != state->family));
 
 	if (!sk) {
 		if (state->bucket <= state->udp_table->mask)
