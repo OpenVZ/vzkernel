@@ -97,6 +97,7 @@ enum {
 	NETIF_F_HW_TC_BIT,		/* Offload TC infrastructure */
 	NETIF_F_RX_UDP_TUNNEL_PORT_BIT, /* Offload of RX port for UDP tunnels */
 	NETIF_F_VENET_BIT,		/* device is venet device */
+	NETIF_F_VIRTUAL_BIT,		/* can be registered inside VE */
 
 	/*
 	 * Add your fresh new feature above and remember to update
@@ -160,6 +161,7 @@ enum {
 #define NETIF_F_HW_TC		__NETIF_F(HW_TC)
 #define	NETIF_F_RX_UDP_TUNNEL_PORT  __NETIF_F(RX_UDP_TUNNEL_PORT)
 #define NETIF_F_VENET		__NETIF_F(VENET)
+#define NETIF_F_VIRTUAL		__NETIF_F(VIRTUAL)
 
 #define for_each_netdev_feature(mask_addr, bit)	\
 	for_each_set_bit(bit, (unsigned long *)mask_addr, NETDEV_FEATURE_COUNT)
