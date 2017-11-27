@@ -16,6 +16,7 @@
 #include <linux/pid_namespace.h>
 #include <linux/user_namespace.h>
 #include <asm/uaccess.h>
+#include <linux/ve.h>
 
 /*
  * Leveraged for setting/resetting capabilities
@@ -396,6 +397,25 @@ bool ns_capable(struct user_namespace *ns, int cap)
 	return false;
 }
 EXPORT_SYMBOL(ns_capable);
+
+#if CONFIG_VE
+bool ve_capable(int cap)
+{
+	struct cred *cred = get_exec_env()->init_cred;
+
+	if (cred == NULL) /* ve isn't running */
+		cred = ve0.init_cred;
+
+	return ns_capable(cred->user_ns, cap);
+}
+#else
+bool ve_capable(int cap)
+{
+	return capable(cap);
+}
+#endif
+
+EXPORT_SYMBOL_GPL(ve_capable);
 
 /**
  * file_ns_capable - Determine if the file's opener had a capability in effect
