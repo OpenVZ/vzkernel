@@ -150,6 +150,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/prandom.h>
 #include <linux/once_lite.h>
+#include <linux/ve.h>
 
 #include "net-sysfs.h"
 
@@ -10258,6 +10259,10 @@ int register_netdevice(struct net_device *dev)
 	BUG_ON(dev->reg_state != NETREG_UNINITIALIZED);
 	BUG_ON(!net);
 
+	ret = -EPERM;
+	if (!ve_is_super(net->owner_ve) && ve_is_dev_movable(dev))
+		goto out;
+
 	ret = ethtool_check_ops(dev->ethtool_ops);
 	if (ret)
 		return ret;
@@ -11380,7 +11385,7 @@ netdev_features_t netdev_increment_features(netdev_features_t all,
 		mask |= NETIF_F_CSUM_MASK;
 	mask |= NETIF_F_VLAN_CHALLENGED;
 
-	all |= one & (NETIF_F_ONE_FOR_ALL | NETIF_F_CSUM_MASK) & mask;
+	all |= one & (NETIF_F_ONE_FOR_ALL|NETIF_F_CSUM_MASK|NETIF_F_VIRTUAL) & mask;
 	all &= one | ~NETIF_F_ALL_FOR_ALL;
 
 	/* If one device supports hw checksumming, set for all. */
