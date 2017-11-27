@@ -115,7 +115,7 @@ static int ve0_load_sockopt_module(struct net *net, u8 pf, int val, int get)
 	const char *name;
 	int ret = -EPERM;
 
-	if (!capable(CAP_VE_NET_ADMIN))
+	if (!ve_capable(CAP_NET_ADMIN))
 		goto out;
 
 	if (sockopt_module_fits(pf, val, get, PF_INET,
