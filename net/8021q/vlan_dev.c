@@ -861,4 +861,6 @@ void vlan_setup(struct net_device *dev)
 	dev->ethtool_ops	= &vlan_ethtool_ops;
 
 	memset(dev->broadcast, 0, ETH_ALEN);
+	if (!ve_is_super(dev_net(dev)->owner_ve))
+		dev->features |= NETIF_F_VIRTUAL;
 }
