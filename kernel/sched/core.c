@@ -310,6 +310,12 @@ __read_mostly int scheduler_running;
  */
 int sysctl_sched_rt_runtime = 950000;
 
+unsigned long nr_zombie = 0;	/* protected by tasklist_lock */
+EXPORT_SYMBOL(nr_zombie);
+
+atomic_t nr_dead = ATOMIC_INIT(0);
+EXPORT_SYMBOL(nr_dead);
+
 /*
  * this_rq_lock - lock this runqueue and disable interrupts.
  */
