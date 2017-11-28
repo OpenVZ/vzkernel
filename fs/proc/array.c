@@ -312,7 +312,7 @@ static void collect_sigign_sigcatch(struct task_struct *p, sigset_t *ign,
 static inline void task_sig(struct seq_file *m, struct task_struct *p)
 {
 	unsigned long flags;
-	sigset_t pending, shpending, blocked, ignored, caught;
+	sigset_t pending, shpending, blocked, ignored, caught, saved;
 	int num_threads = 0;
 	unsigned long qsize = 0;
 	unsigned long qlim = 0;
@@ -322,11 +322,13 @@ static inline void task_sig(struct seq_file *m, struct task_struct *p)
 	sigemptyset(&blocked);
 	sigemptyset(&ignored);
 	sigemptyset(&caught);
+	sigemptyset(&saved);
 
 	if (lock_task_sighand(p, &flags)) {
 		pending = p->pending.signal;
 		shpending = p->signal->shared_pending.signal;
 		blocked = p->blocked;
+		saved = p->saved_sigmask;
 		collect_sigign_sigcatch(p, &ignored, &caught);
 		num_threads = get_nr_threads(p);
 		rcu_read_lock();  /* FIXME: is this correct? */
@@ -345,6 +347,7 @@ static inline void task_sig(struct seq_file *m, struct task_struct *p)
 	render_sigset_t(m, "SigBlk:\t", &blocked);
 	render_sigset_t(m, "SigIgn:\t", &ignored);
 	render_sigset_t(m, "SigCgt:\t", &caught);
+	render_sigset_t(m, "SigSvd:\t", &saved);
 }
 
 static void render_cap_t(struct seq_file *m, const char *header,
