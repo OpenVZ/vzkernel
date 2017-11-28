@@ -1919,7 +1919,7 @@ static int vmscan_swappiness(struct scan_control *sc)
 }
 
 #ifdef CONFIG_MEMCG
-int sysctl_force_scan_thresh = 50;
+int sysctl_force_scan_thresh = 100;
 
 static inline bool zone_force_scan(struct zone *zone)
 {
