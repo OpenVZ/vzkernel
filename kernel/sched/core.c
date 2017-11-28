@@ -6286,6 +6286,7 @@ void __init sched_init(void)
 #ifdef CONFIG_CFS_CPULIMIT
 	root_task_group.topmost_limited_ancestor = &root_task_group;
 #endif
+	root_task_group.start_time = 0;
 #endif /* CONFIG_CGROUP_SCHED */
 
 	for_each_possible_cpu(i) {
@@ -6603,6 +6604,9 @@ struct task_group *sched_create_group(struct task_group *parent)
 
 	if (!alloc_rt_sched_group(tg, parent))
 		goto err;
+
+	/* start_timespec is saved CT0 uptime */
+	tg->start_time = ktime_get_boot_ns();
 
 	return tg;
 

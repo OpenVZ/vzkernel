@@ -413,6 +413,9 @@ struct task_group {
 	struct autogroup	*autogroup;
 #endif
 
+	/* Monotonic time in nsecs: */
+	u64			start_time;
+
 	struct cfs_bandwidth	cfs_bandwidth;
 #ifdef CONFIG_CFS_CPULIMIT
 #define MAX_CPU_RATE 1024
