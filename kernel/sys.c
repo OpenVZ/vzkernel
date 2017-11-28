@@ -957,8 +957,24 @@ static void do_sys_times(struct tms *tms)
 	tms->tms_cstime = nsec_to_clock_t(cstime);
 }
 
+#ifdef CONFIG_VE
+static u64 ve_relative_clock(u64 time)
+{
+	u64 offset = 0;
+	struct ve_struct *ve = get_exec_env();
+
+	if (time > ve->start_time)
+		offset = time - ve->start_time;
+	return nsec_to_clock_t(offset);
+}
+#endif
+
 SYSCALL_DEFINE1(times, struct tms __user *, tbuf)
 {
+#ifdef CONFIG_VE
+	u64 now;
+#endif
+
 	if (tbuf) {
 		struct tms tmp;
 
@@ -966,8 +982,15 @@ SYSCALL_DEFINE1(times, struct tms __user *, tbuf)
 		if (copy_to_user(tbuf, &tmp, sizeof(struct tms)))
 			return -EFAULT;
 	}
+#ifndef CONFIG_VE
 	force_successful_syscall_return();
 	return (long) jiffies_64_to_clock_t(get_jiffies_64());
+#else
+	/* Compare to calculation in fs/proc/array.c */
+	now = ktime_get_ns();
+	force_successful_syscall_return();
+	return (long) ve_relative_clock(now);
+#endif
 }
 
 #ifdef CONFIG_COMPAT
