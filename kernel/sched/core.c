@@ -137,6 +137,26 @@ void update_rq_clock(struct rq *rq)
 	update_rq_clock_task(rq, delta);
 }
 
+struct kernel_stat_glob kstat_glob;
+DEFINE_SPINLOCK(kstat_glb_lock);
+EXPORT_SYMBOL(kstat_glob);
+EXPORT_SYMBOL(kstat_glb_lock);
+static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, glob_kstat_lat);
+static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, glob_kstat_page_in);
+static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, glob_kstat_swap_in);
+static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, alloc_kstat_lat[KSTAT_ALLOCSTAT_NR]);
+
+void __init kstat_init(void)
+{
+	int i;
+
+	kstat_glob.sched_lat.cur = &glob_kstat_lat;
+	kstat_glob.page_in.cur = &glob_kstat_page_in;
+	kstat_glob.swap_in.cur = &glob_kstat_swap_in;
+	for ( i = 0 ; i < KSTAT_ALLOCSTAT_NR ; i++)
+		kstat_glob.alloc_lat[i].cur = &alloc_kstat_lat[i];
+}
+
 /*
  * Debugging: various feature bits
  */
