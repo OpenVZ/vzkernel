@@ -2558,7 +2558,9 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	struct mem_cgroup *ptr;
 	int exclusive = 0;
 	int ret = 0;
+	cycles_t start;
 
+	start = get_cycles();
 	if (!pte_unmap_same(mm, pmd, page_table, orig_pte))
 		goto out;
 
@@ -2719,6 +2721,10 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 unlock:
 	pte_unmap_unlock(page_table, ptl);
 out:
+	spin_lock_irq(&kstat_glb_lock);
+	KSTAT_LAT_ADD(&kstat_glob.swap_in, get_cycles() - start);
+	spin_unlock_irq(&kstat_glb_lock);
+
 	return ret;
 out_nomap:
 	mem_cgroup_cancel_charge_swapin(ptr);
@@ -2829,6 +2835,7 @@ static int __do_fault(struct vm_area_struct *vma, unsigned long address,
 {
 	struct vm_fault vmf;
 	int ret;
+	cycles_t start;
 
 	vmf.virtual_address = (void __user *)(address & PAGE_MASK);
 	vmf.pgoff = pgoff;
@@ -2836,6 +2843,7 @@ static int __do_fault(struct vm_area_struct *vma, unsigned long address,
 	vmf.page = NULL;
 	vmf.cow_page = cow_page;
 
+	start = get_cycles();
 	ret = vma->vm_ops->fault(vma, &vmf);
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
 		return ret;
@@ -2855,6 +2863,11 @@ static int __do_fault(struct vm_area_struct *vma, unsigned long address,
 		lock_page(vmf.page);
 	else
 		VM_BUG_ON_PAGE(!PageLocked(vmf.page), vmf.page);
+
+	preempt_disable();
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.page_in, smp_processor_id(),
+			get_cycles() - start);
+	preempt_enable();
 
 	*page = vmf.page;
 	return ret;
