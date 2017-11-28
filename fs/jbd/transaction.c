@@ -27,6 +27,7 @@
 #include <linux/highmem.h>
 #include <linux/hrtimer.h>
 #include <linux/backing-dev.h>
+#include <linux/virtinfo.h>
 
 static void __journal_temp_unlink_buffer(struct journal_head *jh);
 
@@ -97,6 +98,8 @@ static int start_this_handle(journal_t *journal, handle_t *handle)
 		ret = -ENOSPC;
 		goto out;
 	}
+
+	virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_JOURNAL, NULL);
 
 alloc_transaction:
 	if (!journal->j_running_transaction) {
