@@ -189,7 +189,7 @@ static int remove_migration_pte(struct page *new, struct vm_area_struct *vma,
 	} else if (PageAnon(new))
 		page_add_anon_rmap(new, vma, addr);
 	else
-		page_add_file_rmap(new);
+		page_add_file_rmap(new, mm);
 
 	/* No need to invalidate - it was non-present before */
 	update_mmu_cache(vma, addr, ptep);
