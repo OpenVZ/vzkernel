@@ -221,6 +221,7 @@ enum res_type {
 	_OOM_TYPE,
 	_KMEM,
 	_TCP,
+	_CACHE,
 };
 
 #define MEMFILE_PRIVATE(x, val)	((x) << 16 | (val))
@@ -2368,7 +2369,7 @@ void mem_cgroup_handle_over_high(void)
 }
 
 static int try_charge(struct mem_cgroup *memcg, gfp_t gfp_mask, bool kmem_charge,
-		      unsigned int nr_pages)
+		      unsigned int nr_pages, bool cache_charge)
 {
 	unsigned int batch = max(MEMCG_CHARGE_BATCH, nr_pages);
 	int nr_retries = MEM_CGROUP_RECLAIM_RETRIES;
@@ -2387,13 +2388,21 @@ retry:
 	may_swap = true;
 	kmem_limit = false;
 	if (consume_stock(memcg, nr_pages)) {
-		if (!kmem_charge)
-			return 0;
-		if (page_counter_try_charge(&memcg->kmem, nr_pages, &counter))
-			return 0;
-		refill_stock(memcg, nr_pages);
+		if (kmem_charge && !page_counter_try_charge(
+				&memcg->kmem, nr_pages, &counter)) {
+			refill_stock(memcg, nr_pages);
+			goto charge;
+		}
+
+		if (cache_charge && !page_counter_try_charge(
+				&memcg->cache, nr_pages, &counter)) {
+			refill_stock(memcg, nr_pages);
+			goto charge;
+		}
+		return 0;
 	}
 
+charge:
 	mem_over_limit = NULL;
 	if (page_counter_try_charge(&memcg->memory, batch, &counter)) {
 		if (do_memsw_account() && !page_counter_try_charge(
@@ -2413,6 +2422,19 @@ retry:
 			if (do_memsw_account())
 				page_counter_uncharge(&memcg->memsw, batch);
 		}
+	}
+
+	if (!mem_over_limit && cache_charge) {
+		if (page_counter_try_charge(&memcg->cache, nr_pages, &counter))
+			goto done_restock;
+
+		may_swap = false;
+		mem_over_limit = mem_cgroup_from_counter(counter, cache);
+		page_counter_uncharge(&memcg->memory, batch);
+		if (do_memsw_account())
+			page_counter_uncharge(&memcg->memsw, batch);
+		if (kmem_charge)
+			page_counter_uncharge(&memcg->kmem, nr_pages);
 	}
 
 	if (!mem_over_limit)
@@ -2531,6 +2553,10 @@ force:
 	page_counter_charge(&memcg->memory, nr_pages);
 	if (do_memsw_account())
 		page_counter_charge(&memcg->memsw, nr_pages);
+	if (kmem_charge)
+		page_counter_charge(&memcg->kmem, nr_pages);
+	if (cache_charge)
+		page_counter_charge(&memcg->cache, nr_pages);
 	css_get_many(&memcg->css, nr_pages);
 
 	return 0;
@@ -2565,7 +2591,8 @@ done_restock:
 	return 0;
 }
 
-static void cancel_charge(struct mem_cgroup *memcg, unsigned int nr_pages)
+static void cancel_charge(struct mem_cgroup *memcg, unsigned int nr_pages,
+			bool cache_charge)
 {
 	if (mem_cgroup_is_root(memcg))
 		return;
@@ -2573,6 +2600,8 @@ static void cancel_charge(struct mem_cgroup *memcg, unsigned int nr_pages)
 	page_counter_uncharge(&memcg->memory, nr_pages);
 	if (do_memsw_account())
 		page_counter_uncharge(&memcg->memsw, nr_pages);
+	if (cache_charge)
+		page_counter_uncharge(&memcg->cache, nr_pages);
 
 	css_put_many(&memcg->css, nr_pages);
 }
@@ -2865,7 +2894,7 @@ int __memcg_kmem_charge(struct mem_cgroup *memcg, gfp_t gfp,
 {
 	int ret;
 
-	ret = try_charge(memcg, gfp, true, nr_pages);
+	ret = try_charge(memcg, gfp, true, nr_pages, false);
 	if (ret)
 		return ret;
 
@@ -2945,7 +2974,7 @@ int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 {
 	int ret = 0;
 
-	ret = try_charge(memcg, gfp, true, nr_pages);
+	ret = try_charge(memcg, gfp, true, nr_pages, false);
 	return ret;
 }
 
@@ -3296,6 +3325,8 @@ static u64 mem_cgroup_read_u64(struct cgroup_subsys_state *css,
 		break;
 	case _TCP:
 		counter = &memcg->tcpmem;
+	case _CACHE:
+		counter = &memcg->cache;
 		break;
 	default:
 		BUG();
@@ -3522,6 +3553,43 @@ out:
 	return ret;
 }
 
+static int memcg_update_cache_max(struct mem_cgroup *memcg,
+				  unsigned long limit)
+{
+	unsigned long nr_pages;
+	bool enlarge = false;
+	int ret;
+
+	do {
+		if (signal_pending(current)) {
+			ret = -EINTR;
+			break;
+		}
+		mutex_lock(&memcg_max_mutex);
+
+		if (limit > memcg->cache.max)
+			enlarge = true;
+
+		ret = page_counter_set_max(&memcg->cache, limit);
+		mutex_unlock(&memcg_max_mutex);
+
+		if (!ret)
+			break;
+
+		nr_pages = max_t(long, 1, page_counter_read(&memcg->cache) - limit);
+		if (!try_to_free_mem_cgroup_pages(memcg, nr_pages,
+						GFP_KERNEL, false)) {
+			ret = -EBUSY;
+			break;
+		}
+	} while (1);
+
+	if (!ret && enlarge)
+		memcg_oom_recover(memcg);
+
+	return ret;
+}
+
 /*
  * The user of this function is...
  * RES_LIMIT.
@@ -3556,6 +3624,8 @@ static ssize_t mem_cgroup_write(struct kernfs_open_file *of,
 			break;
 		case _TCP:
 			ret = memcg_update_tcp_max(memcg, nr_pages);
+		case _CACHE:
+			ret = memcg_update_cache_max(memcg, nr_pages);
 			break;
 		}
 		break;
@@ -3585,6 +3655,8 @@ static ssize_t mem_cgroup_reset(struct kernfs_open_file *of, char *buf,
 		break;
 	case _TCP:
 		counter = &memcg->tcpmem;
+	case _CACHE:
+		counter = &memcg->cache;
 		break;
 	default:
 		BUG();
@@ -4984,6 +5056,12 @@ static struct cftype mem_cgroup_legacy_files[] = {
 	{
 		.name = "pressure_level",
 	},
+	{
+		.name = "cache.limit_in_bytes",
+		.private = MEMFILE_PRIVATE(_CACHE, RES_LIMIT),
+		.write = mem_cgroup_write,
+		.read_u64 = mem_cgroup_read_u64,
+	},
 #ifdef CONFIG_NUMA
 	{
 		.name = "numa_stat",
@@ -5290,12 +5368,15 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 		page_counter_init(&memcg->memsw, &parent->memsw);
 		page_counter_init(&memcg->kmem, &parent->kmem);
 		page_counter_init(&memcg->tcpmem, &parent->tcpmem);
+		page_counter_init(&memcg->cache, &parent->cache);
 	} else {
 		page_counter_init(&memcg->memory, NULL);
 		page_counter_init(&memcg->swap, NULL);
 		page_counter_init(&memcg->memsw, NULL);
 		page_counter_init(&memcg->kmem, NULL);
 		page_counter_init(&memcg->tcpmem, NULL);
+		page_counter_init(&memcg->cache, NULL);
+
 		/*
 		 * Deeper hierachy with use_hierarchy == false doesn't make
 		 * much sense so let cgroup subsystem know about this
@@ -5437,7 +5518,8 @@ static int mem_cgroup_do_precharge(unsigned long count)
 	int ret;
 
 	/* Try a single bulk charge without reclaim first, kswapd may wake */
-	ret = try_charge(mc.to, GFP_KERNEL & ~__GFP_DIRECT_RECLAIM, false, count);
+	ret = try_charge(mc.to, GFP_KERNEL & ~__GFP_DIRECT_RECLAIM, false,
+			count, false);
 	if (!ret) {
 		mc.precharge += count;
 		return ret;
@@ -5445,7 +5527,8 @@ static int mem_cgroup_do_precharge(unsigned long count)
 
 	/* Try charges one by one with reclaim, but do not retry */
 	while (count--) {
-		ret = try_charge(mc.to, GFP_KERNEL | __GFP_NORETRY, false, 1);
+		ret = try_charge(mc.to, GFP_KERNEL | __GFP_NORETRY, false, 1, false);
+
 		if (ret)
 			return ret;
 		mc.precharge++;
@@ -5838,7 +5921,7 @@ static void __mem_cgroup_clear_mc(void)
 
 	/* we must uncharge all the leftover precharges from mc.to */
 	if (mc.precharge) {
-		cancel_charge(mc.to, mc.precharge);
+		cancel_charge(mc.to, mc.precharge, false);
 		mc.precharge = 0;
 	}
 	/*
@@ -5846,7 +5929,7 @@ static void __mem_cgroup_clear_mc(void)
 	 * we must uncharge here.
 	 */
 	if (mc.moved_charge) {
-		cancel_charge(mc.from, mc.moved_charge);
+		cancel_charge(mc.from, mc.moved_charge, false);
 		mc.moved_charge = 0;
 	}
 	/* we must fixup refcnts and charges */
@@ -6579,27 +6662,9 @@ out:
 		return MEMCG_PROT_NONE;
 }
 
-/**
- * mem_cgroup_try_charge - try charging a page
- * @page: page to charge
- * @mm: mm context of the victim
- * @gfp_mask: reclaim mode
- * @memcgp: charged memcg return
- * @compound: charge the page as compound or small page
- *
- * Try to charge @page to the memcg that @mm belongs to, reclaiming
- * pages according to @gfp_mask if necessary.
- *
- * Returns 0 on success, with *@memcgp pointing to the charged memcg.
- * Otherwise, an error code is returned.
- *
- * After page->mapping has been set up, the caller must finalize the
- * charge with mem_cgroup_commit_charge().  Or abort the transaction
- * with mem_cgroup_cancel_charge() in case page instantiation fails.
- */
-int mem_cgroup_try_charge(struct page *page, struct mm_struct *mm,
+static int __mem_cgroup_try_charge(struct page *page, struct mm_struct *mm,
 			  gfp_t gfp_mask, struct mem_cgroup **memcgp,
-			  bool compound)
+			  bool compound, bool cache_charge)
 {
 	struct mem_cgroup *memcg = NULL;
 	unsigned int nr_pages = compound ? hpage_nr_pages(page) : 1;
@@ -6635,7 +6700,7 @@ int mem_cgroup_try_charge(struct page *page, struct mm_struct *mm,
 	if (!memcg)
 		memcg = get_mem_cgroup_from_mm(mm);
 
-	ret = try_charge(memcg, gfp_mask, false, nr_pages);
+	ret = try_charge(memcg, gfp_mask, false, nr_pages, cache_charge);
 
 	css_put(&memcg->css);
 out:
@@ -6654,6 +6719,41 @@ int mem_cgroup_try_charge_delay(struct page *page, struct mm_struct *mm,
 	memcg = *memcgp;
 	mem_cgroup_throttle_swaprate(memcg, page_to_nid(page), gfp_mask);
 	return ret;
+}
+
+/**
+ * mem_cgroup_try_charge - try charging a page
+ * @page: page to charge
+ * @mm: mm context of the victim
+ * @gfp_mask: reclaim mode
+ * @memcgp: charged memcg return
+ * @compound: charge the page as compound or small page
+ *
+ * Try to charge @page to the memcg that @mm belongs to, reclaiming
+ * pages according to @gfp_mask if necessary.
+ *
+ * Returns 0 on success, with *@memcgp pointing to the charged memcg.
+ * Otherwise, an error code is returned.
+ *
+ * After page->mapping has been set up, the caller must finalize the
+ * charge with mem_cgroup_commit_charge().  Or abort the transaction
+ * with mem_cgroup_cancel_charge() in case page instantiation fails.
+ */
+int mem_cgroup_try_charge(struct page *page, struct mm_struct *mm,
+			  gfp_t gfp_mask, struct mem_cgroup **memcgp,
+			  bool compound)
+{
+
+	return __mem_cgroup_try_charge(page, mm, gfp_mask, memcgp,
+				compound, false);
+}
+
+int mem_cgroup_try_charge_cache(struct page *page, struct mm_struct *mm,
+			  gfp_t gfp_mask, struct mem_cgroup **memcgp)
+{
+
+	return __mem_cgroup_try_charge(page, mm, gfp_mask, memcgp,
+				false, true);
 }
 
 /**
@@ -6709,16 +6809,8 @@ void mem_cgroup_commit_charge(struct page *page, struct mem_cgroup *memcg,
 	}
 }
 
-/**
- * mem_cgroup_cancel_charge - cancel a page charge
- * @page: page to charge
- * @memcg: memcg to charge the page to
- * @compound: charge the page as compound or small page
- *
- * Cancel a charge transaction started by mem_cgroup_try_charge().
- */
-void mem_cgroup_cancel_charge(struct page *page, struct mem_cgroup *memcg,
-		bool compound)
+static void __mem_cgroup_cancel_charge(struct page *page, struct mem_cgroup *memcg,
+		bool compound, bool cache_charge)
 {
 	unsigned int nr_pages = compound ? hpage_nr_pages(page) : 1;
 
@@ -6732,8 +6824,27 @@ void mem_cgroup_cancel_charge(struct page *page, struct mem_cgroup *memcg,
 	if (!memcg)
 		return;
 
-	cancel_charge(memcg, nr_pages);
+	cancel_charge(memcg, nr_pages, cache_charge);
 }
+
+/**
+ * mem_cgroup_cancel_charge - cancel a page charge
+ * @page: page to charge
+ * @memcg: memcg to charge the page to
+ * @compound: charge the page as compound or small page
+ *
+ * Cancel a charge transaction started by mem_cgroup_try_charge().
+ */
+void mem_cgroup_cancel_charge(struct page *page, struct mem_cgroup *memcg, bool compound)
+{
+	__mem_cgroup_cancel_charge(page, memcg, compound, false);
+}
+
+void mem_cgroup_cancel_cache_charge(struct page *page, struct mem_cgroup *memcg)
+{
+	__mem_cgroup_cancel_charge(page, memcg, false, true);
+}
+
 
 struct uncharge_gather {
 	struct mem_cgroup *memcg;
@@ -6762,6 +6873,9 @@ static void uncharge_batch(const struct uncharge_gather *ug)
 			page_counter_uncharge(&ug->memcg->memsw, nr_pages);
 		if (!cgroup_subsys_on_dfl(memory_cgrp_subsys) && ug->nr_kmem)
 			page_counter_uncharge(&ug->memcg->kmem, ug->nr_kmem);
+		if (ug->nr_file)
+                        page_counter_uncharge(&ug->memcg->cache, ug->nr_file -
+					ug->nr_shmem);
 		memcg_oom_recover(ug->memcg);
 	}
 
@@ -7014,10 +7128,10 @@ bool mem_cgroup_charge_skmem(struct mem_cgroup *memcg, unsigned int nr_pages)
 
 	mod_memcg_state(memcg, MEMCG_SOCK, nr_pages);
 
-	if (try_charge(memcg, gfp_mask, false, nr_pages) == 0)
+	if (try_charge(memcg, gfp_mask, false, nr_pages, false) == 0)
 		return true;
 
-	try_charge(memcg, gfp_mask|__GFP_NOFAIL, false, nr_pages);
+	try_charge(memcg, gfp_mask|__GFP_NOFAIL, false, nr_pages, false);
 	return false;
 }
 
