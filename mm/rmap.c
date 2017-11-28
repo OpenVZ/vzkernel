@@ -1249,7 +1249,7 @@ void page_add_new_anon_rmap(struct page *page,
  *
  * The caller needs to hold the pte lock.
  */
-void page_add_file_rmap(struct page *page)
+void page_add_file_rmap(struct page *page, struct mm_struct *mm)
 {
 	bool locked;
 	unsigned long flags;
@@ -1435,7 +1435,7 @@ int try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 
 	/* Move the dirty bit to the physical page now the pte is gone. */
 	if (pte_dirty(pteval))
-		set_page_dirty(page);
+		set_page_dirty_mm(page, mm);
 
 	/* Update high watermark before we lower rss */
 	update_hiwater_rss(mm);
@@ -1623,7 +1623,7 @@ static int try_to_unmap_cluster(unsigned long cursor, unsigned int *mapcount,
 
 		/* Move the dirty bit to the physical page now the pte is gone. */
 		if (pte_dirty(pteval))
-			set_page_dirty(page);
+			set_page_dirty_mm(page, mm);
 
 		page_remove_rmap(page);
 		page_cache_release(page);
