@@ -8,6 +8,7 @@
 #include <linux/mm.h>
 #include <linux/utsname.h>
 #include <linux/mman.h>
+#include <linux/virtinfo.h>
 #include <linux/reboot.h>
 #include <linux/prctl.h>
 #include <linux/highuid.h>
@@ -130,6 +131,122 @@ EXPORT_SYMBOL(fs_overflowgid);
 int C_A_D = 1;
 struct pid *cad_pid;
 EXPORT_SYMBOL(cad_pid);
+
+DEFINE_SEMAPHORE(virtinfo_sem);
+EXPORT_SYMBOL(virtinfo_sem);
+static struct vnotifier_block *virtinfo_chain[VIRT_TYPES];
+
+void __virtinfo_notifier_register(int type, struct vnotifier_block *nb)
+{
+	struct vnotifier_block **p;
+
+	for (p = &virtinfo_chain[type];
+	     *p != NULL && nb->priority < (*p)->priority;
+	     p = &(*p)->next);
+	nb->next = *p;
+	smp_wmb();
+	*p = nb;
+}
+
+EXPORT_SYMBOL(__virtinfo_notifier_register);
+
+void virtinfo_notifier_register(int type, struct vnotifier_block *nb)
+{
+	down(&virtinfo_sem);
+	__virtinfo_notifier_register(type, nb);
+	up(&virtinfo_sem);
+}
+
+EXPORT_SYMBOL(virtinfo_notifier_register);
+
+struct virtinfo_cnt_struct {
+	volatile unsigned long exit[NR_CPUS];
+	volatile unsigned long entry;
+};
+static DEFINE_PER_CPU(struct virtinfo_cnt_struct, virtcnt);
+
+void virtinfo_notifier_unregister(int type, struct vnotifier_block *nb)
+{
+	struct vnotifier_block **p;
+	int entry_cpu, exit_cpu;
+	unsigned long cnt, ent;
+
+	down(&virtinfo_sem);
+	for (p = &virtinfo_chain[type]; *p != nb; p = &(*p)->next);
+	*p = nb->next;
+	smp_mb();
+
+	for_each_possible_cpu(entry_cpu) {
+		while (1) {
+			cnt = 0;
+			for_each_possible_cpu(exit_cpu)
+				cnt +=
+				    per_cpu(virtcnt, entry_cpu).exit[exit_cpu];
+			smp_rmb();
+			ent = per_cpu(virtcnt, entry_cpu).entry;
+			if (cnt == ent)
+				break;
+			__set_current_state(TASK_UNINTERRUPTIBLE);
+			schedule_timeout(HZ / 100);
+		}
+	}
+
+	/* FIXME: replace virtinfo with srcu-notifier-chains */
+	rcu_barrier_sched();
+
+	up(&virtinfo_sem);
+}
+
+EXPORT_SYMBOL(virtinfo_notifier_unregister);
+
+static int do_virtinfo_notifier_call(int type, unsigned long n, void *data)
+{
+	int ret;
+	struct vnotifier_block *nb;
+
+	nb = virtinfo_chain[type];
+	ret = NOTIFY_DONE;
+	while (nb)
+	{
+		ret = nb->notifier_call(nb, n, data, ret);
+		if(ret & NOTIFY_STOP_MASK) {
+			ret &= ~NOTIFY_STOP_MASK;
+			break;
+		}
+		nb = nb->next;
+	}
+
+	return ret;
+}
+
+int virtinfo_notifier_call(int type, unsigned long n, void *data)
+{
+	int ret;
+	int entry_cpu, exit_cpu;
+
+	entry_cpu = get_cpu();
+	per_cpu(virtcnt, entry_cpu).entry++;
+	smp_wmb();
+	put_cpu();
+
+	ret = do_virtinfo_notifier_call(type, n, data);
+
+	exit_cpu = get_cpu();
+	smp_wmb();
+	per_cpu(virtcnt, entry_cpu).exit[exit_cpu]++;
+	put_cpu();
+
+	return ret;
+}
+EXPORT_SYMBOL(virtinfo_notifier_call);
+
+int virtinfo_notifier_call_irq(int type, unsigned long n, void *data)
+{
+	if (!in_interrupt())
+		return virtinfo_notifier_call(type, n, data);
+	return do_virtinfo_notifier_call(type, n, data);
+}
+EXPORT_SYMBOL(virtinfo_notifier_call_irq);
 
 /*
  * If set, this is used for preparing the system to power off.
