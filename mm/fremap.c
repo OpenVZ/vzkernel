@@ -23,6 +23,8 @@
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
 
+#include <bc/vmpages.h>
+
 #include "internal.h"
 
 static void zap_pte(struct mm_struct *mm, struct vm_area_struct *vma,
@@ -38,7 +40,7 @@ static void zap_pte(struct mm_struct *mm, struct vm_area_struct *vma,
 		page = vm_normal_page(vma, addr, pte);
 		if (page) {
 			if (pte_dirty(pte))
-				set_page_dirty(page);
+				set_page_dirty_mm(page, mm);
 			update_hiwater_rss(mm);
 			dec_mm_counter(mm, mm_counter(page));
 			page_remove_rmap(page);
