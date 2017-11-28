@@ -50,6 +50,8 @@
 #include <linux/hashtable.h>
 #include <linux/ve.h>
 
+#include <bc/beancounter.h>
+
 #include "time/timekeeping.h"
 
 /*
@@ -450,8 +452,14 @@ int posix_timer_event(struct k_itimer *timr, int si_private)
 	rcu_read_lock();
 	task = pid_task(timr->it_pid, PIDTYPE_PID);
 	if (task) {
+		struct user_beancounter *ub;
+
+		ub = set_exec_ub(task->task_bc.task_ub);
+
 		shared = !(timr->it_sigev_notify & SIGEV_THREAD_ID);
 		ret = send_sigqueue(timr->sigq, task, shared);
+
+		(void)set_exec_ub(ub);
 	}
 	rcu_read_unlock();
 	/* If we failed to send the signal the timer stops. */
