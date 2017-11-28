@@ -1666,7 +1666,7 @@ static int shmem_mfill_atomic_pte(struct mm_struct *dst_mm,
 	spin_unlock(&info->lock);
 
 	inc_mm_counter(dst_mm, mm_counter_file(page));
-	page_add_file_rmap(page);
+	page_add_file_rmap(page, dst_mm);
 	set_pte_at(dst_mm, dst_addr, dst_pte, _dst_pte);
 
 	/* No need to invalidate - it was non-present before */
