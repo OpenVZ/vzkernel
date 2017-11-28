@@ -5675,7 +5675,7 @@ static struct file_system_type ext4_fs_type = {
 	.mount		= ext4_mount,
 	.kill_sb	= kill_block_super,
 	.fs_flags	= FS_REQUIRES_DEV | FS_HAS_INVALIDATE_RANGE |
-			  FS_HAS_DIO_IODONE2,
+			  FS_HAS_DIO_IODONE2 | FS_VIRTUALIZED,
 };
 MODULE_ALIAS_FS("ext4");
 
