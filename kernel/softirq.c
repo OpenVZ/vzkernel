@@ -24,6 +24,8 @@
 #include <linux/smpboot.h>
 #include <linux/tick.h>
 
+#include <bc/beancounter.h>
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/irq.h>
 
@@ -204,6 +206,7 @@ EXPORT_SYMBOL(local_bh_enable_ip);
 
 asmlinkage void __do_softirq(void)
 {
+	struct user_beancounter *ub;
 	struct softirq_action *h;
 	__u32 pending;
 	unsigned long end = jiffies + MAX_SOFTIRQ_TIME;
@@ -233,6 +236,7 @@ restart:
 
 	h = softirq_vec;
 
+	ub = set_exec_ub(get_ub0());
 	do {
 		if (pending & 1) {
 			unsigned int vec_nr = h - softirq_vec;
@@ -257,6 +261,7 @@ restart:
 		h++;
 		pending >>= 1;
 	} while (pending);
+	(void)set_exec_ub(ub);
 
 	local_irq_disable();
 
