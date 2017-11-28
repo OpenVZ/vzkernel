@@ -33,6 +33,7 @@
 #include <linux/socket.h>
 #include <linux/compat.h>
 #include "internal.h"
+#include <linux/virtinfo.h>
 
 /*
  * Attempt to steal a page from a pipe buffer. This should perhaps go into
@@ -103,6 +104,7 @@ static int page_cache_pipe_buf_confirm(struct pipe_inode_info *pipe,
 	int err;
 
 	if (!PageUptodate(page)) {
+		virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_PREPARE, NULL);
 		lock_page(page);
 
 		/*
@@ -409,6 +411,7 @@ __generic_file_splice_read(struct file *in, loff_t *ppos,
 		 * If the page isn't uptodate, we may need to start io on it
 		 */
 		if (!PageUptodate(page)) {
+			virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_PREPARE, NULL);
 			lock_page(page);
 
 			/*
