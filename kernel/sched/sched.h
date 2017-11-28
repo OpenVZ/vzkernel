@@ -349,6 +349,8 @@ struct cfs_rq {
 	struct load_weight load;
 	unsigned int nr_running, h_nr_running;
 
+	unsigned long nr_unint;
+
 	u64 exec_clock;
 	u64 min_vruntime;
 #ifndef CONFIG_64BIT
@@ -609,6 +611,9 @@ struct rq {
 	 * it on another CPU. Always updated under the runqueue lock:
 	 */
 	unsigned long nr_uninterruptible;
+
+	unsigned long nr_sleeping;
+	unsigned long nr_stopped;
 
 	struct task_struct *curr, *idle, *stop;
 	unsigned long next_balance;
