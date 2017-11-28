@@ -528,6 +528,7 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 	priority = task_prio(task);
 	nice = task_nice(task);
 
+#ifndef CONFIG_VE
 	/* Temporary variable needed for gcc-2.96 */
 	/* convert timespec -> nsec*/
 	start_time =
@@ -535,6 +536,9 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 				+ task->real_start_time.tv_nsec;
 	/* convert nsec -> ticks */
 	start_time = nsec_to_clock_t(start_time);
+#else
+	start_time = ve_relative_clock(&task->start_time);
+#endif
 
 	seq_printf(m, "%d (%s) %c", pid_nr_ns(pid, ns), tcomm, state);
 	seq_put_decimal_ll(m, ' ', ppid);
