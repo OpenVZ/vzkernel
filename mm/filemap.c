@@ -47,6 +47,7 @@
 #include <asm/mman.h>
 
 #include <linux/virtinfo.h>
+#include <bc/io_acct.h>
 
 /*
  * Shared mappings implemented 30.11.1994. It's not fully working yet,
@@ -244,6 +245,15 @@ void __delete_from_page_cache(struct page *page, void *shadow)
 		cleancache_invalidate_page(mapping, page);
 
 	page_cache_tree_delete(mapping, page, shadow);
+	if (mapping_cap_account_dirty(mapping) &&
+			radix_tree_prev_tag_get(&mapping->page_tree,
+				PAGECACHE_TAG_DIRTY))
+		ub_io_account_cancel(mapping);
+
+	if (mapping_cap_account_writeback(mapping) &&
+			radix_tree_prev_tag_get(&mapping->page_tree,
+				PAGECACHE_TAG_WRITEBACK))
+		ub_io_writeback_dec(mapping);
 
 	page->mapping = NULL;
 	/* Leave page->index set: truncation lookup relies upon it */
