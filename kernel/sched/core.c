@@ -8722,6 +8722,8 @@ void __init sched_init(void)
 	INIT_LIST_HEAD(&root_task_group.siblings);
 	autogroup_init(&init_task);
 
+	root_task_group.start_time = (struct timespec){0, 0};
+
 #endif /* CONFIG_CGROUP_SCHED */
 
 	for_each_possible_cpu(i) {
@@ -8993,6 +8995,10 @@ struct task_group *sched_create_group(struct task_group *parent)
 
 	if (!alloc_rt_sched_group(tg, parent))
 		goto err;
+
+	/* start_timespec is saved CT0 uptime */
+	do_posix_clock_monotonic_gettime(&tg->start_time);
+	monotonic_to_bootbased(&tg->start_time);
 
 	return tg;
 
