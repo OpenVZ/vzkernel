@@ -994,10 +994,38 @@ struct pid *task_pid_type(struct task_struct *task, enum pid_type type)
 	return task->pids[type].pid;
 }
 
-static int eligible_pid(struct wait_opts *wo, struct task_struct *p)
+static int __eligible_pid(struct wait_opts *wo, struct task_struct *p)
 {
 	return	wo->wo_type == PIDTYPE_MAX ||
 		task_pid_type(p, wo->wo_type) == wo->wo_pid;
+}
+
+static int __entered_pid(struct wait_opts *wo, struct task_struct *p)
+{
+	struct pid *pid, *wo_pid;
+
+	wo_pid = wo->wo_pid;
+	if ((wo_pid == NULL) || (wo_pid->level != 0))
+		return 0;
+
+	pid = task_pid_type(p, wo->wo_type);
+	if (pid->level != 1)
+		return 0;
+
+	if (wo_pid->numbers[0].nr != pid->numbers[0].nr)
+		return 0;
+
+	wo->wo_pid = get_pid(pid);
+	put_pid(wo_pid);
+	return 1;
+}
+
+static int eligible_pid(struct wait_opts *wo, struct task_struct *p)
+{
+	if (__eligible_pid(wo, p))
+		return 1;
+	else
+		return __entered_pid(wo, p);
 }
 
 static int eligible_child(struct wait_opts *wo, struct task_struct *p)
@@ -1659,7 +1687,7 @@ SYSCALL_DEFINE5(waitid, int, which, pid_t, upid, struct siginfo __user *,
 			ret = put_user(0, &infop->si_status);
 	}
 
-	put_pid(pid);
+	put_pid(wo.wo_pid);
 	return ret;
 }
 
@@ -1695,7 +1723,7 @@ SYSCALL_DEFINE4(wait4, pid_t, upid, int __user *, stat_addr,
 	wo.wo_stat	= stat_addr;
 	wo.wo_rusage	= ru;
 	ret = do_wait(&wo);
-	put_pid(pid);
+	put_pid(wo.wo_pid);
 
 	return ret;
 }
