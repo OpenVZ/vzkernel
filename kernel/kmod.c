@@ -127,6 +127,10 @@ int __request_module(bool wait, const char *fmt, ...)
 	char module_name[MODULE_NAME_LEN];
 	int ret;
 
+	/* Don't allow request_module() inside VE. */
+	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
+
 	/*
 	 * We don't allow synchronous module loading from async.  Module
 	 * init may invoke async_synchronize_full() which will end up
