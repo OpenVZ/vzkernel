@@ -310,6 +310,46 @@ __read_mostly int scheduler_running;
  */
 int sysctl_sched_rt_runtime = 950000;
 
+#ifdef CONFIG_CFS_CPULIMIT
+unsigned int task_nr_cpus(struct task_struct *p)
+{
+	unsigned int nr_cpus = 0;
+	unsigned int max_nr_cpus = num_online_cpus();
+
+	rcu_read_lock();
+	nr_cpus = task_group(p)->nr_cpus;
+	rcu_read_unlock();
+
+	if (!nr_cpus || nr_cpus > max_nr_cpus)
+		nr_cpus = max_nr_cpus;
+
+	return nr_cpus;
+}
+
+unsigned int task_vcpu_id(struct task_struct *p)
+{
+	return task_cpu(p) % task_nr_cpus(p);
+}
+
+unsigned int sysctl_sched_cpulimit_scale_cpufreq = 1;
+
+unsigned int sched_cpulimit_scale_cpufreq(unsigned int freq)
+{
+	unsigned long rate, max_rate;
+
+	if (!sysctl_sched_cpulimit_scale_cpufreq)
+		return freq;
+
+	rate = task_cpu_rate(current);
+
+	max_rate = num_online_vcpus() * MAX_CPU_RATE;
+	if (!rate || rate >= max_rate)
+		return freq;
+
+	return div_u64((u64)freq * rate, max_rate); /* avoid 32bit overflow */
+}
+#endif
+
 #ifdef CONFIG_VE
 static inline void write_wakeup_stamp(struct task_struct *p, u64 now)
 {
@@ -3229,6 +3269,7 @@ static void __update_cpu_load(struct rq *this_rq, unsigned long this_load,
 	this_rq->nr_load_updates++;
 
 	/* Update our load: */
+	this_rq->nr_active = this_rq->nr_running;
 	this_rq->cpu_load[0] = this_load; /* Fasttrack for idx 0 */
 	for (i = 1, scale = 2; i < CPU_LOAD_IDX_MAX; i++, scale += scale) {
 		unsigned long old_load, new_load;
@@ -9670,7 +9711,8 @@ const u64 min_cfs_quota_period = 1 * NSEC_PER_MSEC; /* 1ms */
 
 static int __cfs_schedulable(struct task_group *tg, u64 period, u64 runtime);
 
-static int tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota)
+/* call with cfs_constraints_mutex held */
+static int __tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota)
 {
 	int i, ret = 0, runtime_enabled, runtime_was_enabled;
 	struct cfs_bandwidth *cfs_b = &tg->cfs_bandwidth;
@@ -9694,10 +9736,9 @@ static int tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota)
 	if (period > max_cfs_quota_period)
 		return -EINVAL;
 
-	mutex_lock(&cfs_constraints_mutex);
 	ret = __cfs_schedulable(tg, period, quota);
 	if (ret)
-		goto out_unlock;
+		return ret;
 
 	runtime_enabled = quota != RUNTIME_INF;
 	runtime_was_enabled = cfs_b->quota != RUNTIME_INF;
@@ -9712,6 +9753,7 @@ static int tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota)
 	cfs_b->quota = quota;
 
 	__refill_cfs_bandwidth_runtime(cfs_b);
+	update_cfs_bandwidth_idle_scale(cfs_b);
 	/* restart the period timer (if active) to handle new period expiry */
 	if (runtime_enabled && cfs_b->timer_active) {
 		/* force a reprogram */
@@ -9733,7 +9775,18 @@ static int tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota)
 	}
 	if (runtime_was_enabled && !runtime_enabled)
 		cfs_bandwidth_usage_dec();
-out_unlock:
+	return ret;
+}
+
+static void tg_update_cpu_limit(struct task_group *tg);
+
+static int tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota)
+{
+	int ret;
+
+	mutex_lock(&cfs_constraints_mutex);
+	ret = __tg_set_cfs_bandwidth(tg, period, quota);
+	tg_update_cpu_limit(tg);
 	mutex_unlock(&cfs_constraints_mutex);
 
 	return ret;
@@ -9897,6 +9950,86 @@ static int cpu_stats_show(struct cgroup *cgrp, struct cftype *cft,
 
 	return 0;
 }
+
+#ifdef CONFIG_CFS_CPULIMIT
+static void tg_update_cpu_limit(struct task_group *tg)
+{
+	long quota, period;
+	unsigned long rate = 0;
+
+	quota = tg_get_cfs_quota(tg);
+	period = tg_get_cfs_period(tg);
+
+	if (quota > 0 && period > 0) {
+		rate = quota * MAX_CPU_RATE / period;
+		rate = max(rate, 1UL);
+	}
+
+	tg->cpu_rate = rate;
+	tg->nr_cpus = 0;
+}
+
+static int tg_set_cpu_limit(struct task_group *tg,
+			    unsigned long cpu_rate, unsigned int nr_cpus)
+{
+	int ret;
+	unsigned long rate;
+	u64 quota = RUNTIME_INF;
+	u64 period = default_cfs_period();
+
+	rate = (cpu_rate && nr_cpus) ?
+		min_t(unsigned long, cpu_rate, nr_cpus * MAX_CPU_RATE) :
+		max_t(unsigned long, cpu_rate, nr_cpus * MAX_CPU_RATE);
+	if (rate) {
+		quota = div_u64(period * rate, MAX_CPU_RATE);
+		quota = max(quota, min_cfs_quota_period);
+	}
+
+	mutex_lock(&cfs_constraints_mutex);
+	ret = __tg_set_cfs_bandwidth(tg, period, quota);
+	if (!ret) {
+		tg->cpu_rate = cpu_rate;
+		tg->nr_cpus = nr_cpus;
+	}
+	mutex_unlock(&cfs_constraints_mutex);
+
+	return ret;
+}
+
+static u64 cpu_rate_read_u64(struct cgroup *cgrp, struct cftype *cft)
+{
+	return cgroup_tg(cgrp)->cpu_rate;
+}
+
+static int cpu_rate_write_u64(struct cgroup *cgrp, struct cftype *cftype,
+			      u64 rate)
+{
+	struct task_group *tg = cgroup_tg(cgrp);
+
+	if (rate > num_online_cpus() * MAX_CPU_RATE)
+		rate = num_online_cpus() * MAX_CPU_RATE;
+	return tg_set_cpu_limit(tg, rate, tg->nr_cpus);
+}
+
+static u64 nr_cpus_read_u64(struct cgroup *cgrp, struct cftype *cft)
+{
+	return cgroup_tg(cgrp)->nr_cpus;
+}
+
+static int nr_cpus_write_u64(struct cgroup *cgrp, struct cftype *cftype,
+			     u64 nr_cpus)
+{
+	struct task_group *tg = cgroup_tg(cgrp);
+
+	if (nr_cpus > num_online_cpus())
+		nr_cpus = num_online_cpus();
+	return tg_set_cpu_limit(tg, tg->cpu_rate, nr_cpus);
+}
+#else
+static void tg_update_cpu_limit(struct task_group *tg)
+{
+}
+#endif /* CONFIG_CFS_CPULIMIT */
 #endif /* CONFIG_CFS_BANDWIDTH */
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 
@@ -10190,6 +10323,18 @@ static struct cftype cpu_files[] = {
 	{
 		.name = "stat",
 		.read_map = cpu_stats_show,
+	},
+#endif
+#ifdef CONFIG_CFS_CPULIMIT
+	{
+		.name = "rate",
+		.read_u64 = cpu_rate_read_u64,
+		.write_u64 = cpu_rate_write_u64,
+	},
+	{
+		.name = "nr_cpus",
+		.read_u64 = nr_cpus_read_u64,
+		.write_u64 = nr_cpus_write_u64,
 	},
 #endif
 #ifdef CONFIG_RT_GROUP_SCHED
