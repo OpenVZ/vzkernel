@@ -1191,7 +1191,7 @@ again:
 			}
 			if (!PageAnon(page)) {
 				if (pte_dirty(ptent))
-					set_page_dirty(page);
+					set_page_dirty_mm(page, mm);
 				if (pte_young(ptent) &&
 				    likely(!VM_SequentialReadHint(vma)))
 					mark_page_accessed(page);
@@ -1573,7 +1573,7 @@ static int insert_page(struct vm_area_struct *vma, unsigned long addr,
 	/* Ok, finally just insert the thing.. */
 	get_page(page);
 	inc_mm_counter_fast(mm, mm_counter_file(page));
-	page_add_file_rmap(page);
+	page_add_file_rmap(page, mm);
 	set_pte_at(mm, addr, pte, mk_pte(page, prot));
 
 	retval = 0;
@@ -2783,7 +2783,8 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	mem_cgroup_commit_charge_swapin(page, ptr);
 
 	swap_free(entry);
-	if (vm_swap_full() || (vma->vm_flags & VM_LOCKED) || PageMlocked(page))
+	if (vm_swap_full() || ub_swap_full(mm->mm_ub) ||
+			(vma->vm_flags & VM_LOCKED) || PageMlocked(page))
 		try_to_free_swap(page);
 	unlock_page(page);
 	if (page != swapcache) {
@@ -2861,7 +2862,6 @@ static int do_anonymous_page(struct vm_fault *vmf)
 		goto setpte;
 	}
 
-	/* Allocate our own private page. */
 	if (unlikely(anon_vma_prepare(vma)))
 		goto oom;
 	page = alloc_zeroed_user_highpage_movable(vma, address);
@@ -2968,7 +2968,7 @@ static void do_set_pte(struct vm_area_struct *vma, unsigned long address,
 		page_add_new_anon_rmap(page, vma, address);
 	} else {
 		inc_mm_counter_fast(vma->vm_mm, mm_counter_file(page));
-		page_add_file_rmap(page);
+		page_add_file_rmap(page, vma->vm_mm);
 	}
 	set_pte_at(vma->vm_mm, address, pte, entry);
 
