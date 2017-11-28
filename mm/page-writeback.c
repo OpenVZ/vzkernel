@@ -36,6 +36,7 @@
 #include <linux/pagevec.h>
 #include <linux/timer.h>
 #include <linux/sched/rt.h>
+#include <linux/virtinfo.h>
 #include <trace/events/writeback.h>
 
 /*
@@ -1544,6 +1545,9 @@ pause:
 	if (!dirty_exceeded && bdi->dirty_exceeded)
 		bdi->dirty_exceeded = 0;
 
+	virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_BALANCE_DIRTY,
+			       (void*)pages_dirtied);
+
 	if (writeback_in_progress(bdi))
 		return;
 
@@ -1927,6 +1931,8 @@ retry:
 			}
 
 			done_index = page->index;
+
+			virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_PREPARE, NULL);
 
 			lock_page(page);
 
