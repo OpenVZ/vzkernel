@@ -2558,6 +2558,8 @@ SYSCALL_DEFINE3(getcpu, unsigned __user *, cpup, unsigned __user *, nodep,
 	return err ? -EFAULT : 0;
 }
 
+extern void si_meminfo_ve(struct sysinfo *si, struct ve_struct *ve);
+
 /**
  * do_sysinfo - fill in sysinfo struct
  * @info: pointer to buffer to fill
@@ -2567,18 +2569,29 @@ static int do_sysinfo(struct sysinfo *info)
 	unsigned long mem_total, sav_total;
 	unsigned int mem_unit, bitcount;
 	struct timespec tp;
+	struct ve_struct *ve;
 
 	memset(info, 0, sizeof(struct sysinfo));
 
-	get_monotonic_boottime(&tp);
-	info->uptime = tp.tv_sec + (tp.tv_nsec ? 1 : 0);
-
-	get_avenrun(info->loads, 0, SI_LOAD_SHIFT - FSHIFT);
-
-	info->procs = nr_threads;
-
 	si_meminfo(info);
 	si_swapinfo(info);
+
+	get_monotonic_boottime(&tp);
+
+	ve = get_exec_env();
+	if (ve_is_super(ve)) {
+		info->uptime = tp.tv_sec + (tp.tv_nsec ? 1 : 0);
+		get_avenrun(info->loads, 0, SI_LOAD_SHIFT - FSHIFT);
+
+		info->procs = nr_threads;
+	} else {
+		si_meminfo_ve(info, ve);
+		info->uptime = tp.tv_sec + (tp.tv_nsec ? 1 : 0) -
+			       ve->real_start_time / NSEC_PER_SEC;
+
+		info->procs = nr_threads_ve(ve);
+	}
+
 
 	/*
 	 * If the sum of all the available memory (i.e. ram + swap)
