@@ -1313,19 +1313,24 @@ static void *vmstat_start(struct seq_file *m, loff_t *pos)
 	m->private = v;
 	if (!v)
 		return ERR_PTR(-ENOMEM);
-	for (i = 0; i < NR_VM_ZONE_STAT_ITEMS; i++)
-		v[i] = global_page_state(i);
-	v += NR_VM_ZONE_STAT_ITEMS;
 
-	global_dirty_limits(v + NR_DIRTY_BG_THRESHOLD,
-			    v + NR_DIRTY_THRESHOLD);
-	v += NR_VM_WRITEBACK_STAT_ITEMS;
+	if (ve_is_super(get_exec_env())) {
+		for (i = 0; i < NR_VM_ZONE_STAT_ITEMS; i++)
+			v[i] = global_page_state(i);
+
+		v += NR_VM_ZONE_STAT_ITEMS;
+
+		global_dirty_limits(v + NR_DIRTY_BG_THRESHOLD,
+				    v + NR_DIRTY_THRESHOLD);
+		v += NR_VM_WRITEBACK_STAT_ITEMS;
 
 #ifdef CONFIG_VM_EVENT_COUNTERS
-	all_vm_events(v);
-	v[PGPGIN] /= 2;		/* sectors -> kbytes */
-	v[PGPGOUT] /= 2;
+		all_vm_events(v);
+		v[PGPGIN] /= 2;		/* sectors -> kbytes */
+		v[PGPGOUT] /= 2;
 #endif
+	} else
+		memset(v, 0, stat_items_size);
 
 	if (virtinfo_notifier_call(VITYPE_GENERAL,
 				VIRTINFO_VMSTAT, v) & NOTIFY_FAIL) {
