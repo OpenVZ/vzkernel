@@ -2805,24 +2805,34 @@ static int do_sysinfo(struct sysinfo *info)
 	unsigned long mem_total, sav_total;
 	unsigned int mem_unit, bitcount;
 	struct timespec tp;
+	struct ve_struct *ve;
 
 	memset(info, 0, sizeof(struct sysinfo));
+
+	si_meminfo(info);
+	si_swapinfo(info);
 
 #ifdef CONFIG_BEANCOUNTERS
 	if (virtinfo_notifier_call(VITYPE_GENERAL, VIRTINFO_SYSINFO, info)
 			& NOTIFY_FAIL)
 		return -ENOMSG;
 #endif
+	ve = get_exec_env();
 
 	get_monotonic_boottime(&tp);
 	info->uptime = tp.tv_sec + (tp.tv_nsec ? 1 : 0);
 
-	get_avenrun(info->loads, 0, SI_LOAD_SHIFT - FSHIFT);
+	if (ve_is_super(ve)) {
+		get_avenrun(info->loads, 0, SI_LOAD_SHIFT - FSHIFT);
 
-	info->procs = nr_threads;
+		info->procs = nr_threads;
+	} else {
+		info->uptime -= ve->real_start_timespec.tv_sec;
 
-	si_meminfo(info);
-	si_swapinfo(info);
+		info->procs = nr_threads_ve(ve);
+
+		get_avenrun_ve(info->loads, 0, SI_LOAD_SHIFT - FSHIFT);
+	}
 
 	/*
 	 * If the sum of all the available memory (i.e. ram + swap)
