@@ -368,6 +368,7 @@ struct cfs_rq {
 	struct load_weight load;
 	unsigned int nr_running, h_nr_running;
 
+	unsigned long nr_iowait;
 	unsigned long nr_unint;
 
 	u64 exec_clock;
@@ -1331,6 +1332,8 @@ struct sched_class {
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	void (*task_move_group) (struct task_struct *p, int on_rq);
 #endif
+	void (*nr_iowait_inc) (struct task_struct *p);
+	void (*nr_iowait_dec) (struct task_struct *p);
 	RH_KABI_EXTEND(void (*update_curr) (struct rq *rq))
 	RH_KABI_EXTEND(void (*task_dead) (struct task_struct *p))
 };
@@ -1750,6 +1753,9 @@ extern void init_dl_rq(struct dl_rq *dl_rq, struct rq *rq);
 
 extern void cfs_bandwidth_usage_inc(void);
 extern void cfs_bandwidth_usage_dec(void);
+
+extern void start_cfs_idle_time_accounting(int cpu);
+extern void stop_cfs_idle_time_accounting(int cpu);
 
 #ifdef CONFIG_NO_HZ_COMMON
 enum rq_nohz_flag_bits {
