@@ -47,6 +47,7 @@
 #include <asm/unistd.h>
 #include <asm/siginfo.h>
 #include <asm/cacheflush.h>
+#include <bc/misc.h>
 #include "audit.h"	/* audit_signal_info() */
 
 /*
@@ -397,6 +398,10 @@ __sigqueue_alloc(int sig, struct task_struct *t, gfp_t flags, int override_rlimi
 	    atomic_read(&user->sigpending) <=
 			task_rlimit(t, RLIMIT_SIGPENDING)) {
 		q = kmem_cache_alloc(sigqueue_cachep, flags);
+		if (q && ub_siginfo_charge(q, get_task_ub(t), flags)) {
+			kmem_cache_free(sigqueue_cachep, q);
+			q = NULL;
+		}
 	} else {
 		print_dropped_signal(sig);
 	}
@@ -419,6 +424,7 @@ static void __sigqueue_free(struct sigqueue *q)
 		return;
 	atomic_dec(&q->user->sigpending);
 	free_uid(q->user);
+	ub_siginfo_uncharge(q);
 	kmem_cache_free(sigqueue_cachep, q);
 }
 
