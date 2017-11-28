@@ -18,6 +18,7 @@
 #include <linux/cpumask.h>
 #include <linux/vmstat.h>
 #include <linux/sched.h>
+#include <linux/virtinfo.h>
 #include <linux/math64.h>
 #include <linux/writeback.h>
 #include <linux/compaction.h>
@@ -1189,6 +1190,14 @@ static void *vmstat_start(struct seq_file *m, loff_t *pos)
 	v[PGPGIN] /= 2;		/* sectors -> kbytes */
 	v[PGPGOUT] /= 2;
 #endif
+
+	if (virtinfo_notifier_call(VITYPE_GENERAL,
+				VIRTINFO_VMSTAT, v) & NOTIFY_FAIL) {
+		kfree(v);
+		m->private = NULL;
+		return ERR_PTR(-ENOMSG);
+	}
+
 	return (unsigned long *)m->private + *pos;
 }
 
