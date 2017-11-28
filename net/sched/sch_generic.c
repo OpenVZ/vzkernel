@@ -222,6 +222,7 @@ static inline int qdisc_restart(struct Qdisc *q)
 	if (unlikely(!skb))
 		return 0;
 
+	WARN_ON_ONCE(skb_dst_is_noref(skb));
 	root_lock = qdisc_lock(q);
 	dev = qdisc_dev(q);
 	txq = skb_get_tx_queue(dev, skb);

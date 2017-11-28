@@ -2922,3 +2922,25 @@ void __init ip_static_sysctl_init(void)
 	register_net_sysctl(&init_net, "net/ipv4/route", ipv4_route_table);
 }
 #endif
+
+static void ip_rt_dump_dst(void *o)
+{
+	struct rtable *rt = (struct rtable *)o;
+
+	if (rt->dst.flags & DST_FREE)
+		return;
+
+	printk("=== %p\n", o);
+	dst_dump_one(&rt->dst);
+	printk("\tgen %x flags %x type %d\n",
+			rt->rt_genid, rt->rt_flags, (int)rt->rt_type);
+}
+
+void ip_rt_dump_dsts(void)
+{
+	printk("IPv4 dst cache:\n");
+	slab_obj_walk(ipv4_dst_ops.kmem_cachep, ip_rt_dump_dst);
+}
+
+void (*ip6_rt_dump_dsts)(void);
+EXPORT_SYMBOL_GPL(ip6_rt_dump_dsts);
