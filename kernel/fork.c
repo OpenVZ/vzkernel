@@ -89,6 +89,9 @@
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
 
+#include <bc/misc.h>
+#include <bc/oom_kill.h>
+
 #include <trace/events/sched.h>
 
 #define CREATE_TRACE_POINTS
@@ -295,6 +298,7 @@ void __put_task_struct(struct task_struct *tsk)
 	WARN_ON(tsk == current);
 
 	task_numa_free(tsk, true);
+	ub_task_put(tsk);
 	security_task_free(tsk);
 	exit_creds(tsk);
 	delayacct_tsk_free(tsk);
@@ -596,6 +600,27 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
 __cacheline_aligned_in_smp DEFINE_SPINLOCK(mmlist_lock);
 
 #define allocate_mm()	(kmem_cache_alloc(mm_cachep, GFP_KERNEL))
+
+#ifdef CONFIG_BEANCOUNTERS
+
+static inline void set_mm_ub(struct mm_struct *mm, struct user_beancounter *ub)
+{
+	mm->mm_ub = get_beancounter_longterm(ub);
+}
+
+static inline void put_mm_ub(struct mm_struct *mm)
+{
+	put_beancounter_longterm(mm->mm_ub);
+	mm->mm_ub = NULL;
+}
+
+#else /* CONFIG_BEANCOUNTERS */
+
+#define set_mm_ub(mm, ub)
+#define put_mm_ub(mm)
+
+#endif /* CONFIG_BEANCOUNTERS */
+
 #define free_mm(mm)	(kmem_cache_free(mm_cachep, (mm)))
 
 static unsigned long default_dump_filter = MMF_DUMP_FILTER_DEFAULT;
@@ -659,6 +684,7 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p)
 		return mm;
 	}
 
+	put_mm_ub(mm);
 	free_mm(mm);
 	return NULL;
 }
@@ -692,6 +718,7 @@ struct mm_struct *mm_alloc(void)
 		return NULL;
 
 	memset(mm, 0, sizeof(*mm));
+	set_mm_ub(mm, get_exec_ub());
 	mm_init_cpumask(mm);
 	return mm_init(mm, current);
 }
@@ -704,6 +731,8 @@ struct mm_struct *mm_alloc(void)
 void __mmdrop(struct mm_struct *mm)
 {
 	BUG_ON(mm == &init_mm);
+	if (unlikely(atomic_read(&mm->mm_users)))
+		put_mm_ub(mm);
 	mm_free_pgd(mm);
 	destroy_context(mm);
 	hmm_mm_destroy(mm);
@@ -734,6 +763,9 @@ void mmput(struct mm_struct *mm)
 		}
 		if (mm->binfmt)
 			module_put(mm->binfmt->module);
+		if (mm->global_oom || mm->ub_oom)
+			ub_oom_mm_dead(mm);
+		put_mm_ub(mm);
 		mmdrop(mm);
 	}
 }
@@ -969,11 +1001,14 @@ struct mm_struct *dup_mm(struct task_struct *tsk)
 		goto fail_nomem;
 
 	memcpy(mm, oldmm, sizeof(*mm));
+	mm->global_oom = 0;
+	mm->ub_oom = 0;
 	mm_init_cpumask(mm);
 
 #if defined(CONFIG_TRANSPARENT_HUGEPAGE) && !USE_SPLIT_PMD_PTLOCKS
 	mm->pmd_huge_pte = NULL;
 #endif
+	set_mm_ub(mm, tsk->task_bc.task_ub);
 	if (!mm_init(mm, tsk))
 		goto fail_nomem;
 
@@ -1006,6 +1041,7 @@ fail_nocontext:
 	 * If init_new_context() failed, we cannot use mmput() to free the mm
 	 * because it calls destroy_context()
 	 */
+	put_mm_ub(mm);
 	mm_free_pgd(mm);
 	free_mm(mm);
 	return NULL;
@@ -1398,9 +1434,14 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 		goto fork_out;
 
 	retval = -ENOMEM;
+	if (ub_task_charge(get_exec_ub()))
+		goto fork_out;
+
 	p = dup_task_struct(current, node);
 	if (!p)
-		goto fork_out;
+		goto bad_fork_uncharge;
+
+	ub_task_get(get_exec_ub(), p);
 
 	ftrace_graph_init_task(p);
 
@@ -1773,7 +1814,10 @@ bad_fork_cleanup_count:
 	atomic_dec(&p->cred->user->processes);
 	exit_creds(p);
 bad_fork_free:
+	ub_task_put(p);
 	delayed_free_task(p);
+bad_fork_uncharge:
+	ub_task_uncharge(get_exec_ub());
 fork_out:
 	return ERR_PTR(retval);
 }
