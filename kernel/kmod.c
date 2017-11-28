@@ -139,6 +139,10 @@ int __request_module(bool wait, const char *fmt, ...)
 #define MAX_KMOD_CONCURRENT 50	/* Completely arbitrary value - KAO */
 	static int kmod_loop_msg;
 
+	/* Don't allow request_module() inside VE. */
+	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
+
 	/*
 	 * We don't allow synchronous module loading from async.  Module
 	 * init may invoke async_synchronize_full() which will end up
@@ -564,6 +568,9 @@ int call_usermodehelper_exec(struct subprocess_info *sub_info, int wait)
 {
 	DECLARE_COMPLETION_ONSTACK(done);
 	int retval = 0;
+
+	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
 
 	helper_lock();
 	if (!sub_info->path) {
