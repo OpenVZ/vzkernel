@@ -280,6 +280,8 @@ struct task_group {
 	struct autogroup *autogroup;
 #endif
 
+	struct timespec start_time;
+
 	struct cfs_bandwidth cfs_bandwidth;
 
 #if defined(CONFIG_FAIR_GROUP_SCHED)
