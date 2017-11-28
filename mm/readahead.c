@@ -20,6 +20,7 @@
 #include <linux/pagemap.h>
 #include <linux/syscalls.h>
 #include <linux/file.h>
+#include <linux/virtinfo.h>
 
 /*
  * Initialise a struct file's readahead state.  Assumes that the caller has
@@ -117,6 +118,8 @@ static int read_pages(struct address_space *mapping, struct file *filp,
 	int ret;
 
 	blk_start_plug(&plug);
+
+	virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_PREPARE, NULL);
 
 	if (mapping->a_ops->readpages) {
 		ret = mapping->a_ops->readpages(filp, mapping, pages, nr_pages);
@@ -514,6 +517,10 @@ void page_cache_sync_readahead(struct address_space *mapping,
 		return;
 	}
 
+	if (virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_READAHEAD,
+				NULL) & NOTIFY_FAIL)
+		return;
+
 	/* do read-ahead */
 	ondemand_readahead(mapping, ra, filp, false, offset, req_size);
 }
@@ -556,6 +563,10 @@ page_cache_async_readahead(struct address_space *mapping,
 	 * Defer asynchronous read-ahead on IO congestion.
 	 */
 	if (bdi_read_congested(mapping->backing_dev_info))
+		return;
+
+	if (virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_READAHEAD,
+				NULL) & NOTIFY_FAIL)
 		return;
 
 	/* do read-ahead */
