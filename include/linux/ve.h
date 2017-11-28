@@ -46,6 +46,10 @@ struct ve_struct {
 	struct net_device	*venet_dev;
 #endif
 
+/* per VE CPU stats*/
+	struct timespec		start_timespec;		/* monotonic time */
+	struct timespec		real_start_timespec;	/* boot based time */
+
 	/* see vzcalluser.h for VE_FEATURE_XXX definitions */
 	__u64			features;
 
