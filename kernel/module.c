@@ -4012,6 +4012,8 @@ static char *module_flags(struct module *mod, char *buf)
 static void *m_start(struct seq_file *m, loff_t *pos)
 {
 	mutex_lock(&module_mutex);
+	if (!ve_is_super(get_exec_env()))
+		return NULL;
 	return seq_list_start(&modules, *pos);
 }
 
