@@ -5,10 +5,12 @@
 #define __TASK_IO_ACCOUNTING_OPS_INCLUDED
 
 #include <linux/sched.h>
+#include <bc/io_acct.h>
 
 #ifdef CONFIG_TASK_IO_ACCOUNTING
 static inline void task_io_account_read(size_t bytes)
 {
+	ub_io_account_read(bytes);
 	current->ioac.read_bytes += bytes;
 }
 
@@ -22,6 +24,12 @@ static inline unsigned long task_io_get_inblock(const struct task_struct *p)
 }
 
 static inline void task_io_account_write(size_t bytes)
+{
+	ub_io_account_write(bytes);
+	current->ioac.write_bytes += bytes;
+}
+
+static inline void task_io_account_dirty(size_t bytes)
 {
 	current->ioac.write_bytes += bytes;
 }
@@ -71,6 +79,10 @@ static inline void task_io_account_write(size_t bytes)
 static inline unsigned long task_io_get_oublock(const struct task_struct *p)
 {
 	return 0;
+}
+
+static inline void task_io_account_dirty(size_t bytes)
+{
 }
 
 static inline void task_io_account_cancelled_write(size_t bytes)
