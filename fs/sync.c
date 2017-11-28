@@ -12,14 +12,20 @@
 #include <linux/writeback.h>
 #include <linux/syscalls.h>
 #include <linux/linkage.h>
+#include <linux/pid_namespace.h>
 #include <linux/pagemap.h>
 #include <linux/quotaops.h>
 #include <linux/backing-dev.h>
 #include <linux/ve.h>
 #include "internal.h"
 
+#include <bc/beancounter.h>
+#include <bc/io_acct.h>
+
 #define VALID_FLAGS (SYNC_FILE_RANGE_WAIT_BEFORE|SYNC_FILE_RANGE_WRITE| \
 			SYNC_FILE_RANGE_WAIT_AFTER)
+
+int sysctl_fsync_enable = 2;
 
 /*
  * Do the filesystem syncing work. For simple filesystems
@@ -28,7 +34,8 @@
  * wait == 1 case since in that case write_inode() functions do
  * sync_dirty_buffer() and thus effectively write one block at a time.
  */
-static int __sync_filesystem(struct super_block *sb, int wait)
+static int __sync_filesystem(struct super_block *sb,
+			     struct user_beancounter *ub, int wait)
 {
 	if (wait)
 		sync_inodes_sb(sb);
@@ -45,7 +52,7 @@ static int __sync_filesystem(struct super_block *sb, int wait)
  * superblock.  Filesystem data as well as the underlying block
  * device.  Takes the superblock lock.
  */
-int sync_filesystem(struct super_block *sb)
+static int sync_filesystem_ub(struct super_block *sb, struct user_beancounter *ub)
 {
 	int ret;
 
@@ -61,10 +68,15 @@ int sync_filesystem(struct super_block *sb)
 	if (sb->s_flags & MS_RDONLY)
 		return 0;
 
-	ret = __sync_filesystem(sb, 0);
+	ret = __sync_filesystem(sb, ub, 0);
 	if (ret < 0)
 		return ret;
-	return __sync_filesystem(sb, 1);
+	return __sync_filesystem(sb, ub, 1);
+}
+
+int sync_filesystem(struct super_block *sb)
+{
+	return sync_filesystem_ub(sb, NULL);
 }
 EXPORT_SYMBOL_GPL(sync_filesystem);
 
@@ -94,6 +106,98 @@ static void fdatawait_one_bdev(struct block_device *bdev, void *arg)
 	 */
 	filemap_fdatawait_keep_errors(bdev->bd_inode->i_mapping);
 }
+
+#if 0
+
+struct sync_sb {
+	struct list_head list;
+	struct super_block *sb;
+};
+
+static void sync_release_filesystems(struct list_head *sync_list)
+{
+	struct sync_sb *ss, *tmp;
+
+	list_for_each_entry_safe(ss, tmp, sync_list, list) {
+		list_del(&ss->list);
+		put_super(ss->sb);
+		kfree(ss);
+	}
+}
+
+static int sync_filesystem_collected(struct list_head *sync_list, struct super_block *sb)
+{
+	struct sync_sb *ss;
+
+	list_for_each_entry(ss, sync_list, list)
+		if (ss->sb == sb)
+			return 1;
+	return 0;
+}
+
+static int sync_collect_filesystems(struct ve_struct *ve, struct list_head *sync_list)
+{
+	struct vfsmount *root = ve->root_path.mnt;
+	struct vfsmount *mnt;
+	struct sync_sb *ss;
+	int ret = 0;
+
+	BUG_ON(!list_empty(sync_list));
+
+	down_read(&namespace_sem);
+	for (mnt = root; mnt; mnt = next_mnt(mnt, root)) {
+		if (sync_filesystem_collected(sync_list, mnt->mnt_sb))
+			continue;
+
+		ss = kmalloc(sizeof(*ss), GFP_KERNEL);
+		if (ss == NULL) {
+			ret = -ENOMEM;
+			break;
+		}
+		ss->sb = mnt->mnt_sb;
+		/*
+		 * We hold mount point and thus can be sure, that superblock is
+		 * alive. And it means, that we can safely increase it's usage
+		 * counter.
+		 */
+		spin_lock(&sb_lock);
+		ss->sb->s_count++;
+		spin_unlock(&sb_lock);
+		list_add_tail(&ss->list, sync_list);
+	}
+	up_read(&namespace_sem);
+	return ret;
+}
+
+static void sync_filesystems_ve(struct ve_struct *ve, struct user_beancounter *ub, int wait)
+{
+	struct super_block *sb;
+	LIST_HEAD(sync_list);
+	struct sync_sb *ss;
+
+	mutex_lock(&ve->sync_mutex);		/* Could be down_interruptible */
+
+	/*
+	 * We don't need to care about allocating failure here. At least we
+	 * don't need to skip sync on such error.
+	 * Let's sync what we collected already instead.
+	 */
+	sync_collect_filesystems(ve, &sync_list);
+
+	list_for_each_entry(ss, &sync_list, list) {
+		sb = ss->sb;
+		down_read(&sb->s_umount);
+		if (!(sb->s_flags & MS_RDONLY) && sb->s_root && sb->s_bdi)
+			__sync_filesystem(sb, ub, wait);
+		up_read(&sb->s_umount);
+	}
+
+	sync_release_filesystems(&sync_list);
+
+	mutex_unlock(&ve->sync_mutex);
+}
+
+#endif
 
 /*
  * Sync everything. We start by waking flusher threads so that most of
@@ -156,17 +260,47 @@ SYSCALL_DEFINE1(syncfs, int, fd)
 {
 	struct fd f = fdget(fd);
 	struct super_block *sb;
-	int ret;
+	int ret = 0;
+	struct user_beancounter *ub, *sync_ub = NULL;
+	struct ve_struct *ve;
 
-	if (!f.file)
-		return -EBADF;
+	ub = get_exec_ub();
+	ve = get_exec_env();
+	ub_percpu_inc(ub, sync);
+
+	if (!ve_is_super(ve)) {
+		/*
+		 * init can't sync during VE stop. Rationale:
+		 *  - NFS with -o hard will block forever as network is down
+		 *  - no useful job is performed as VE0 will call umount/sync
+		 *    by his own later
+		 *  Den
+		 */
+		if (is_child_reaper(task_pid(current)))
+			goto skip;
+
+		if (!sysctl_fsync_enable)
+			goto skip;
+
+		if (sysctl_fsync_enable == 2)
+			sync_ub = get_io_ub();
+	}
+
+	if (!f.file) {
+		ret = -EBADF;
+		goto skip;
+	}
+
 	sb = f.file->f_dentry->d_sb;
 
 	down_read(&sb->s_umount);
-	ret = sync_filesystem(sb);
+	if (sb->s_root)
+		ret = sync_filesystem_ub(sb, sync_ub);
 	up_read(&sb->s_umount);
 
 	fdput(f);
+skip:
+	ub_percpu_inc(ub, sync_done);
 	return ret;
 }
 
@@ -205,9 +339,13 @@ EXPORT_SYMBOL(vfs_fsync);
 
 static int do_fsync(unsigned int fd, int datasync)
 {
-	struct fd f = fdget(fd);
+	struct fd f;
 	int ret = -EBADF;
 
+	if (!ve_is_super(get_exec_env()) && !sysctl_fsync_enable)
+		return 0;
+
+	f = fdget(fd);
 	if (f.file) {
 		ret = vfs_fsync(f.file, datasync);
 		fdput(f);
@@ -297,6 +435,9 @@ SYSCALL_DEFINE4(sync_file_range, int, fd, loff_t, offset, loff_t, nbytes,
 	struct address_space *mapping;
 	loff_t endbyte;			/* inclusive */
 	umode_t i_mode;
+
+	if (!ve_is_super(get_exec_env()) && !sysctl_fsync_enable)
+ 		return 0;
 
 	ret = -EINVAL;
 	if (flags & ~VALID_FLAGS)
