@@ -1274,8 +1274,27 @@ void do_sys_times(struct tms *tms)
 	tms->tms_cstime = cputime_to_clock_t(cstime);
 }
 
+#ifdef CONFIG_VE
+unsigned long long ve_relative_clock(struct timespec * ts)
+{
+	unsigned long long offset = 0;
+
+	if (ts->tv_sec > get_exec_env()->start_timespec.tv_sec ||
+	    (ts->tv_sec == get_exec_env()->start_timespec.tv_sec &&
+	     ts->tv_nsec >= get_exec_env()->start_timespec.tv_nsec))
+		offset = (unsigned long long)(ts->tv_sec -
+			get_exec_env()->start_timespec.tv_sec) * NSEC_PER_SEC
+			+ ts->tv_nsec -	get_exec_env()->start_timespec.tv_nsec;
+	return nsec_to_clock_t(offset);
+}
+#endif
+
 SYSCALL_DEFINE1(times, struct tms __user *, tbuf)
 {
+#ifdef CONFIG_VE
+	struct timespec now;
+#endif
+
 	if (tbuf) {
 		struct tms tmp;
 
@@ -1283,8 +1302,15 @@ SYSCALL_DEFINE1(times, struct tms __user *, tbuf)
 		if (copy_to_user(tbuf, &tmp, sizeof(struct tms)))
 			return -EFAULT;
 	}
+#ifndef CONFIG_VE
 	force_successful_syscall_return();
 	return (long) jiffies_64_to_clock_t(get_jiffies_64());
+#else
+	/* Compare to calculation in fs/proc/array.c */
+	do_posix_clock_monotonic_gettime(&now);
+	force_successful_syscall_return();
+	return ve_relative_clock(&now);
+#endif
 }
 
 /*
