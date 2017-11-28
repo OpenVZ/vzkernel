@@ -325,6 +325,8 @@ struct mem_cgroup {
 	 */
 	struct page_counter dcache;
 
+	struct page_counter cache;
+
 	/* beancounter-related stats */
 	unsigned long long swap_max;
 	atomic_long_t mem_failcnt;
@@ -513,6 +515,7 @@ enum res_type {
 	_MEMSWAP,
 	_OOM_TYPE,
 	_KMEM,
+	_CACHE,
 };
 
 #define MEMFILE_PRIVATE(x, val)	((x) << 16 | (val))
@@ -2847,7 +2850,7 @@ static int memcg_cpu_hotplug_callback(struct notifier_block *nb,
  * was bypassed to root_mem_cgroup, and -ENOMEM if the charge failed.
  */
 static int try_charge(struct mem_cgroup *memcg, gfp_t gfp_mask, bool kmem_charge,
-		      unsigned int nr_pages)
+		      unsigned int nr_pages, bool cache_charge)
 {
 	unsigned int batch = max(CHARGE_BATCH, nr_pages);
 	int nr_retries = MEM_CGROUP_RECLAIM_RETRIES;
@@ -2862,12 +2865,22 @@ retry:
 	flags = 0;
 
 	if (consume_stock(memcg, nr_pages)) {
-		if (!kmem_charge)
+		if (kmem_charge && !page_counter_try_charge(
+				&memcg->kmem, nr_pages, &counter)) {
+			refill_stock(memcg, nr_pages);
+			goto charge;
+		}
+
+		if (cache_charge && page_counter_try_charge(
+				&memcg->cache, nr_pages, &counter))
 			goto done;
-		if (page_counter_try_charge(&memcg->kmem, nr_pages, &counter))
-			goto done;
+
+		refill_stock(memcg, nr_pages);
+		if (kmem_charge)
+			page_counter_uncharge(&memcg->kmem, nr_pages);
 	}
 
+charge:
 	mem_over_limit = NULL;
 	if (page_counter_try_charge(&memcg->memory, batch, &counter)) {
 		if (do_swap_account && !page_counter_try_charge(
@@ -2880,15 +2893,29 @@ retry:
 		mem_over_limit = mem_cgroup_from_counter(counter, memory);
 
 	if (!mem_over_limit && kmem_charge) {
-		if (page_counter_try_charge(&memcg->kmem, nr_pages, &counter))
+		if (!page_counter_try_charge(&memcg->kmem, nr_pages, &counter)) {
+			flags |= MEM_CGROUP_RECLAIM_KMEM;
+			mem_over_limit = mem_cgroup_from_counter(counter, kmem);
+			page_counter_uncharge(&memcg->memory, batch);
+			if (do_swap_account)
+				page_counter_uncharge(&memcg->memsw, batch);
+		}
+	}
+
+	if (!mem_over_limit && cache_charge) {
+		if (page_counter_try_charge(&memcg->cache, nr_pages, &counter))
 			goto done_restock;
 
-		flags |= MEM_CGROUP_RECLAIM_KMEM;
-		mem_over_limit = mem_cgroup_from_counter(counter, kmem);
+		flags |= MEM_CGROUP_RECLAIM_NOSWAP;
+		mem_over_limit = mem_cgroup_from_counter(counter, cache);
 		page_counter_uncharge(&memcg->memory, batch);
 		if (do_swap_account)
 			page_counter_uncharge(&memcg->memsw, batch);
-	} else if (!mem_over_limit)
+		if (kmem_charge)
+			page_counter_uncharge(&memcg->kmem, batch);
+	}
+
+	if (!mem_over_limit)
 		goto done_restock;
 
 	if (batch > nr_pages) {
@@ -2974,12 +3001,15 @@ done:
 	return 0;
 }
 
-static void cancel_charge(struct mem_cgroup *memcg, unsigned int nr_pages)
+static void cancel_charge(struct mem_cgroup *memcg, unsigned int nr_pages,
+			bool cache_charge)
 {
 	if (!mem_cgroup_is_root(memcg)) {
 		page_counter_uncharge(&memcg->memory, nr_pages);
 		if (do_swap_account)
 			page_counter_uncharge(&memcg->memsw, nr_pages);
+		if (cache_charge)
+			page_counter_uncharge(&memcg->cache, nr_pages);
 	}
 }
 
@@ -3140,7 +3170,7 @@ int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 {
 	int ret = 0;
 
-	ret = try_charge(memcg, gfp, true, nr_pages);
+	ret = try_charge(memcg, gfp, true, nr_pages, false);
 	if (ret == -EINTR)  {
 		/*
 		 * try_charge() chose to bypass to root due to OOM kill or
@@ -4420,6 +4450,9 @@ static ssize_t mem_cgroup_read(struct cgroup *cont, struct cftype *cft,
 	case _KMEM:
 		counter = &memcg->kmem;
 		break;
+	case _CACHE:
+		counter = &memcg->cache;
+		break;
 	default:
 		BUG();
 	}
@@ -4580,6 +4613,57 @@ static int memcg_update_kmem_limit(struct mem_cgroup *memcg,
 }
 #endif /* CONFIG_MEMCG_KMEM */
 
+static int memcg_update_cache_limit(struct mem_cgroup *memcg,
+				   unsigned long limit)
+{
+	unsigned long curusage;
+	unsigned long oldusage;
+	bool enlarge = false;
+	int retry_count;
+	int ret;
+
+	/*
+	 * For keeping hierarchical_reclaim simple, how long we should retry
+	 * is depends on callers. We set our retry-count to be function
+	 * of # of children which we should visit in this loop.
+	 */
+	retry_count = MEM_CGROUP_RECLAIM_RETRIES *
+		      mem_cgroup_count_children(memcg);
+
+	oldusage = page_counter_read(&memcg->cache);
+
+	do {
+		if (signal_pending(current)) {
+			ret = -EINTR;
+			break;
+		}
+		mutex_lock(&memcg_limit_mutex);
+
+		if (limit > memcg->cache.limit)
+			enlarge = true;
+
+		ret = page_counter_limit(&memcg->cache, limit);
+		mutex_unlock(&memcg_limit_mutex);
+
+		if (!ret)
+			break;
+
+		mem_cgroup_reclaim(memcg, GFP_KERNEL,
+				   MEM_CGROUP_RECLAIM_NOSWAP);
+		curusage = page_counter_read(&memcg->cache);
+		/* Usage is reduced ? */
+		if (curusage >= oldusage)
+			retry_count--;
+		else
+			oldusage = curusage;
+	} while (retry_count);
+
+	if (!ret && enlarge)
+		memcg_oom_recover(memcg);
+
+	return ret;
+}
+
 /*
  * The user of this function is...
  * RES_LIMIT.
@@ -4610,6 +4694,9 @@ static int mem_cgroup_write(struct cgroup *cont, struct cftype *cft,
 			break;
 		case _KMEM:
 			ret = memcg_update_kmem_limit(memcg, nr_pages);
+			break;
+		case _CACHE:
+			ret = memcg_update_cache_limit(memcg, nr_pages);
 			break;
 		}
 		break;
@@ -4750,6 +4837,9 @@ static int mem_cgroup_reset(struct cgroup *cont, unsigned int event)
 		break;
 	case _KMEM:
 		counter = &memcg->kmem;
+		break;
+	case _CACHE:
+		counter = &memcg->cache;
 		break;
 	default:
 		BUG();
@@ -5891,6 +5981,12 @@ static struct cftype mem_cgroup_files[] = {
 		.register_event = vmpressure_register_event,
 		.unregister_event = vmpressure_unregister_event,
 	},
+	{
+		.name = "cache.limit_in_bytes",
+		.private = MEMFILE_PRIVATE(_CACHE, RES_LIMIT),
+		.write_string = mem_cgroup_write,
+		.read = mem_cgroup_read,
+	},
 #ifdef CONFIG_NUMA
 	{
 		.name = "numa_stat",
@@ -6222,6 +6318,7 @@ mem_cgroup_css_alloc(struct cgroup *cont)
 		page_counter_init(&memcg->memsw, NULL);
 		page_counter_init(&memcg->kmem, NULL);
 		page_counter_init(&memcg->dcache, NULL);
+		page_counter_init(&memcg->cache, NULL);
 	}
 
 	memcg->last_scanned_node = MAX_NUMNODES;
@@ -6269,6 +6366,7 @@ mem_cgroup_css_online(struct cgroup *cont)
 		page_counter_init(&memcg->memsw, &parent->memsw);
 		page_counter_init(&memcg->kmem, &parent->kmem);
 		page_counter_init(&memcg->dcache, &parent->dcache);
+		page_counter_init(&memcg->cache, &parent->cache);
 
 		/*
 		 * No need to take a reference to the parent because cgroup
@@ -6281,6 +6379,8 @@ mem_cgroup_css_online(struct cgroup *cont)
 		page_counter_init(&memcg->memsw, NULL);
 		page_counter_init(&memcg->kmem, NULL);
 		page_counter_init(&memcg->dcache, NULL);
+		page_counter_init(&memcg->cache, NULL);
+
 		/*
 		 * Deeper hierachy with use_hierarchy == false doesn't make
 		 * much sense so let cgroup subsystem know about this
@@ -6413,19 +6513,19 @@ static int mem_cgroup_do_precharge(unsigned long count)
 	}
 
 	/* Try a single bulk charge without reclaim first */
-	ret = try_charge(mc.to, GFP_KERNEL & ~__GFP_WAIT, false, count);
+	ret = try_charge(mc.to, GFP_KERNEL & ~__GFP_WAIT, false, count, false);
 	if (!ret) {
 		mc.precharge += count;
 		return ret;
 	}
 	if (ret == -EINTR) {
-		cancel_charge(root_mem_cgroup, count);
+		cancel_charge(root_mem_cgroup, count, false);
 		return ret;
 	}
 
 	/* Try charges one by one with reclaim */
 	while (count--) {
-		ret = try_charge(mc.to, GFP_KERNEL & ~__GFP_NORETRY, false, 1);
+		ret = try_charge(mc.to, GFP_KERNEL & ~__GFP_NORETRY, false, 1, false);
 		/*
 		 * In case of failure, any residual charges against
 		 * mc.to will be dropped by mem_cgroup_clear_mc()
@@ -6433,7 +6533,7 @@ static int mem_cgroup_do_precharge(unsigned long count)
 		 * bypassed to root right away or they'll be lost.
 		 */
 		if (ret == -EINTR)
-			cancel_charge(root_mem_cgroup, 1);
+			cancel_charge(root_mem_cgroup, 1, false);
 		if (ret)
 			return ret;
 		mc.precharge++;
@@ -6699,7 +6799,7 @@ static void __mem_cgroup_clear_mc(void)
 
 	/* we must uncharge all the leftover precharges from mc.to */
 	if (mc.precharge) {
-		cancel_charge(mc.to, mc.precharge);
+		cancel_charge(mc.to, mc.precharge, false);
 		mc.precharge = 0;
 	}
 	/*
@@ -6707,7 +6807,7 @@ static void __mem_cgroup_clear_mc(void)
 	 * we must uncharge here.
 	 */
 	if (mc.moved_charge) {
-		cancel_charge(mc.from, mc.moved_charge);
+		cancel_charge(mc.from, mc.moved_charge, false);
 		mc.moved_charge = 0;
 	}
 	/* we must fixup refcnts and charges */
@@ -7126,6 +7226,7 @@ int mem_cgroup_try_charge(struct page *page, struct mm_struct *mm,
 	struct mem_cgroup *memcg = NULL;
 	unsigned int nr_pages = 1;
 	int ret = 0;
+	bool cache_charge;
 
 	if (mem_cgroup_disabled())
 		goto out;
@@ -7148,12 +7249,14 @@ int mem_cgroup_try_charge(struct page *page, struct mm_struct *mm,
 		VM_BUG_ON_PAGE(!PageTransHuge(page), page);
 	}
 
+	cache_charge = !PageAnon(page) && !PageSwapBacked(page);
+
 	if (do_swap_account && PageSwapCache(page))
 		memcg = try_get_mem_cgroup_from_page(page);
 	if (!memcg)
 		memcg = get_mem_cgroup_from_mm(mm);
 
-	ret = try_charge(memcg, gfp_mask, false, nr_pages);
+	ret = try_charge(memcg, gfp_mask, false, nr_pages, cache_charge);
 
 	css_put(&memcg->css);
 
@@ -7228,6 +7331,7 @@ void mem_cgroup_commit_charge(struct page *page, struct mem_cgroup *memcg,
 void mem_cgroup_cancel_charge(struct page *page, struct mem_cgroup *memcg)
 {
 	unsigned int nr_pages = 1;
+	bool cache_charge;
 
 	if (mem_cgroup_disabled())
 		return;
@@ -7244,7 +7348,9 @@ void mem_cgroup_cancel_charge(struct page *page, struct mem_cgroup *memcg)
 		VM_BUG_ON_PAGE(!PageTransHuge(page), page);
 	}
 
-	cancel_charge(memcg, nr_pages);
+	cache_charge = !PageKmemcg(page) && !PageAnon(page)
+		&& !PageSwapBacked(page);
+	cancel_charge(memcg, nr_pages, cache_charge);
 }
 
 static void uncharge_batch(struct mem_cgroup *memcg, unsigned long pgpgout,
@@ -7262,6 +7368,8 @@ static void uncharge_batch(struct mem_cgroup *memcg, unsigned long pgpgout,
 			page_counter_uncharge(&memcg->memsw, nr_memsw + nr_kmem);
 		if (nr_kmem)
 			page_counter_uncharge(&memcg->kmem, nr_kmem);
+		if (nr_file)
+			page_counter_uncharge(&memcg->cache, nr_file - nr_shmem);
 
 		memcg_oom_recover(memcg);
 	}
