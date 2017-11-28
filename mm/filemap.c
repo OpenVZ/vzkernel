@@ -833,8 +833,8 @@ static int __add_to_page_cache_locked(struct page *page,
 	mapping_set_update(&xas, mapping);
 
 	if (!huge) {
-		error = mem_cgroup_try_charge(page, current->mm,
-					      gfp_mask, &memcg, false);
+		error = mem_cgroup_try_charge_cache(page, current->mm,
+					      gfp_mask, &memcg);
 		if (error)
 			return error;
 	}
@@ -877,7 +877,7 @@ error:
 	page->mapping = NULL;
 	/* Leave page->index set: truncation relies upon it */
 	if (!huge)
-		mem_cgroup_cancel_charge(page, memcg, false);
+		mem_cgroup_cancel_cache_charge(page, memcg);
 	put_page(page);
 	return xas_error(&xas);
 }
