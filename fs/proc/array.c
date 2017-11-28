@@ -87,6 +87,8 @@
 #include <linux/nospec.h>
 #include <linux/ve.h>
 
+#include <bc/beancounter.h>
+
 #include <asm/pgtable.h>
 #include <asm/processor.h>
 #include "internal.h"
@@ -418,6 +420,20 @@ static inline void task_seccomp(struct seq_file *m, struct task_struct *p)
 	seq_putc(m, '\n');
 }
 
+#ifdef CONFIG_BEANCOUNTERS
+static inline void ub_dump_task_info(struct task_struct *tsk,
+		char *stsk, int ltsk, char *smm, int lmm)
+{
+	snprintf(stsk, ltsk, "%u", tsk->task_bc.task_ub->ub_uid);
+	task_lock(tsk);
+	if (tsk->mm)
+		snprintf(smm, lmm, "%u", tsk->mm->mm_ub->ub_uid);
+	else
+		strncpy(smm, "N/A", lmm);
+	task_unlock(tsk);
+}
+#endif
+
 static inline void task_context_switch_counts(struct seq_file *m,
 						struct task_struct *p)
 {
@@ -441,6 +457,9 @@ int proc_pid_status(struct seq_file *m, struct pid_namespace *ns,
 			struct pid *pid, struct task_struct *task)
 {
 	struct mm_struct *mm = get_task_mm(task);
+#ifdef CONFIG_BEANCOUNTERS
+	char tsk_ub_info[64], mm_ub_info[64];
+#endif
 
 	task_name(m, task);
 	task_state(m, ns, pid, task);
@@ -455,6 +474,14 @@ int proc_pid_status(struct seq_file *m, struct pid_namespace *ns,
 	task_cpus_allowed(m, task);
 	cpuset_task_status_allowed(m, task);
 	task_context_switch_counts(m, task);
+#ifdef CONFIG_BEANCOUNTERS
+	ub_dump_task_info(task,
+			tsk_ub_info, sizeof(tsk_ub_info),
+			mm_ub_info, sizeof(mm_ub_info));
+
+	seq_printf(m, "TaskUB:\t%s\n", tsk_ub_info);
+	seq_printf(m, "MMUB:\t%s\n", mm_ub_info);
+#endif
 	return 0;
 }
 
@@ -479,6 +506,10 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 	char tcomm[sizeof(task->comm)];
 	unsigned long flags;
 	int is_super = ve_is_super(get_exec_env());
+#ifdef CONFIG_BEANCOUNTERS
+	char ub_task_info[64];
+	char ub_mm_info[64];
+#endif
 
 	state = *get_task_state(task);
 	vsize = eip = esp = 0;
@@ -577,6 +608,11 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 #endif
 	/* convert nsec -> ticks */
 	start_time = nsec_to_clock_t(start_time);
+
+#ifdef CONFIG_BEANCOUNTERS
+	ub_dump_task_info(task, ub_task_info, sizeof(ub_task_info),
+			ub_mm_info, sizeof(ub_mm_info));
+#endif
 
 	seq_printf(m, "%d (%s) %c", pid_nr_ns(pid, ns), tcomm, state);
 	seq_put_decimal_ll(m, ' ', ppid);
