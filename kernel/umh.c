@@ -411,6 +411,10 @@ int call_usermodehelper_exec(struct subprocess_info *sub_info, int wait)
 		call_usermodehelper_freeinfo(sub_info);
 		return -EINVAL;
 	}
+
+	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
+
 	helper_lock();
 	if (usermodehelper_disabled) {
 		retval = -EBUSY;
