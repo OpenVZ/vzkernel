@@ -534,8 +534,15 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 	priority = task_prio(task);
 	nice = task_nice(task);
 
+	start_time = task->real_start_time;
+
+#ifdef CONFIG_VE
+	if (!is_super)
+		start_time = task->real_start_time_ct;
+#endif
+
 	/* convert nsec -> ticks */
-	start_time = nsec_to_clock_t(task->real_start_time);
+	start_time = nsec_to_clock_t(start_time);
 
 	seq_put_decimal_ull(m, "", pid_nr_ns(pid, ns));
 	seq_puts(m, " (");

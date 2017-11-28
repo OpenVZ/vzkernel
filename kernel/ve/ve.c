@@ -561,6 +561,7 @@ static void ve_attach(struct cgroup_taskset *tset)
 		/* Leave parent exec domain */
 		task->task_struct_rh->parent_exec_id--;
 
+		ve_set_task_start_time(ve, task);
 		task->task_ve = ve;
 	}
 }

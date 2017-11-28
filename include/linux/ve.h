@@ -77,6 +77,27 @@ static inline struct ve_struct *css_to_ve(struct cgroup_subsys_state *css)
 
 extern struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id);
 
+static u64 ve_get_uptime(struct ve_struct *ve)
+{
+	return ktime_get_boot_ns() - ve->real_start_time;
+}
+
+static inline void ve_set_task_start_time(struct ve_struct *ve,
+					  struct task_struct *t)
+{
+	/*
+	 * Mitigate memory access reordering risks by doing double check,
+	 * 'is_running' could be read as 1 before we see
+	 * 'real_start_time' updated here. If it's still 0,
+	 * we know 'is_running' is being modified right NOW in
+	 * parallel so it's safe to say that start time is also 0.
+	 */
+	if (!ve->is_running || !ve->real_start_time)
+		t->real_start_time_ct = 0;
+	else
+		t->real_start_time_ct = ve_get_uptime(ve);
+}
+
 #define ve_feature_set(ve, f)			\
 	!!((ve)->features & VE_FEATURE_##f)
 

@@ -91,6 +91,7 @@
 #include <linux/kcov.h>
 #include <linux/livepatch.h>
 #include <linux/thread_info.h>
+#include <linux/ve.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -1726,6 +1727,9 @@ static __latent_entropy struct task_struct *copy_process(
 	struct task_struct *p;
 	struct multiprocess_signals delayed;
 	struct nsproxy *nsp = current->nsproxy;
+#ifdef CONFIG_VE
+	struct ve_struct *ve = get_exec_env();
+#endif
 
 	/*
 	 * Don't allow sharing the root directory with processes in a different
@@ -1886,6 +1890,14 @@ static __latent_entropy struct task_struct *copy_process(
 
 	p->start_time = ktime_get_ns();
 	p->real_start_time = ktime_get_boot_ns();
+
+	p->real_start_time_ct = 0;
+
+#ifdef CONFIG_VE
+	if (!ve_is_super(ve))
+		ve_set_task_start_time(ve, p);
+#endif
+
 	p->io_context = NULL;
 	audit_set_context(p, NULL);
 	cgroup_fork(p);
