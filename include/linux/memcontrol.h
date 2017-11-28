@@ -196,6 +196,7 @@ struct mem_cgroup {
 	struct page_counter memsw;
 	struct page_counter kmem;
 	struct page_counter tcpmem;
+	struct page_counter cache;
 
 	/* Upper bound of normal memory consumption range */
 	unsigned long high;
@@ -339,6 +340,10 @@ void mem_cgroup_commit_charge(struct page *page, struct mem_cgroup *memcg,
 			      bool lrucare, bool compound);
 void mem_cgroup_cancel_charge(struct page *page, struct mem_cgroup *memcg,
 		bool compound);
+
+int mem_cgroup_try_charge_cache(struct page *page, struct mm_struct *mm,
+			  gfp_t gfp_mask, struct mem_cgroup **memcgp);
+void mem_cgroup_cancel_cache_charge(struct page *page, struct mem_cgroup *memcg);
 void mem_cgroup_uncharge(struct page *page);
 void mem_cgroup_uncharge_list(struct list_head *page_list);
 
@@ -837,6 +842,14 @@ static inline int mem_cgroup_try_charge_delay(struct page *page,
 	return 0;
 }
 
+static inline int mem_cgroup_try_charge_cache(struct page *page, struct mm_struct *mm,
+					gfp_t gfp_mask,
+					struct mem_cgroup **memcgp)
+{
+	*memcgp = NULL;
+	return 0;
+}
+
 static inline void mem_cgroup_commit_charge(struct page *page,
 					    struct mem_cgroup *memcg,
 					    bool lrucare, bool compound)
@@ -846,6 +859,11 @@ static inline void mem_cgroup_commit_charge(struct page *page,
 static inline void mem_cgroup_cancel_charge(struct page *page,
 					    struct mem_cgroup *memcg,
 					    bool compound)
+{
+}
+
+static inline void mem_cgroup_cancel_cache_charge(struct page *page,
+					    struct mem_cgroup *memcg)
 {
 }
 
