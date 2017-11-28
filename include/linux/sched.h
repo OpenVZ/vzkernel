@@ -163,6 +163,9 @@ extern void get_avenrun_ve(unsigned long *loads,
 	load += n*(FIXED_1-exp); \
 	load >>= FSHIFT;
 
+#define LOAD_INT(x) ((x) >> FSHIFT)
+#define LOAD_FRAC(x) LOAD_INT(((x) & (FIXED_1-1)) * 100)
+
 extern unsigned long total_forks;
 extern int nr_threads;
 DECLARE_PER_CPU(unsigned long, process_counts);
@@ -174,8 +177,7 @@ extern unsigned long nr_stopped(void);
 extern unsigned long nr_uninterruptible(void);
 extern unsigned long nr_iowait(void);
 extern unsigned long nr_iowait_cpu(int cpu);
-extern unsigned long this_cpu_load(void);
-
+extern unsigned long nr_active_cpu(void);
 extern atomic_t nr_dead;
 extern unsigned long nr_zombie;
 
