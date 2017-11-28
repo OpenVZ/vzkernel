@@ -171,6 +171,7 @@ static inline pid_t pid_nr(struct pid *pid)
 
 pid_t pid_nr_ns(struct pid *pid, struct pid_namespace *ns);
 pid_t pid_vnr(struct pid *pid);
+pid_t ve_task_ppid_nr_ns(struct task_struct *tsk, struct pid_namespace *ns);
 
 #define do_each_pid_task(pid, type, task)				\
 	do {								\
