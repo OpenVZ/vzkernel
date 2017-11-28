@@ -357,6 +357,11 @@ static inline bool mapping_cap_account_dirty(struct address_space *mapping)
 	return bdi_cap_account_dirty(mapping->backing_dev_info);
 }
 
+static inline bool mapping_cap_account_writeback(struct address_space *mapping)
+{
+	return bdi_cap_account_writeback(mapping->backing_dev_info);
+}
+
 static inline bool mapping_cap_swap_backed(struct address_space *mapping)
 {
 	return bdi_cap_swap_backed(mapping->backing_dev_info);
