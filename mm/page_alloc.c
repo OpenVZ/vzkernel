@@ -3160,6 +3160,34 @@ got_pg:
 	return page;
 }
 
+static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
+		struct page *page, u64 time)
+{
+#ifdef CONFIG_VE
+	int ind, cpu;
+
+	time = jiffies_to_usecs(jiffies - time) * 1000;
+	if (!(gfp_mask & __GFP_WAIT))
+		ind = KSTAT_ALLOCSTAT_ATOMIC;
+	else if (!(gfp_mask & __GFP_HIGHMEM))
+		if (order > 0)
+			ind = KSTAT_ALLOCSTAT_LOW_MP;
+		else
+			ind = KSTAT_ALLOCSTAT_LOW;
+	else
+		if (order > 0)
+			ind = KSTAT_ALLOCSTAT_HIGH_MP;
+		else
+			ind = KSTAT_ALLOCSTAT_HIGH;
+
+	cpu = get_cpu();
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.alloc_lat[ind], cpu, time);
+	if (!page)
+		kstat_glob.alloc_fails[cpu][ind]++;
+	put_cpu();
+#endif
+}
+
 /*
  * This is the 'heart' of the zoned buddy allocator.
  */
@@ -3209,6 +3237,7 @@ retry_cpuset:
 		alloc_flags |= ALLOC_CMA;
 #endif
 retry:
+	start = jiffies;
 	/* First allocation attempt */
 	page = get_page_from_freelist(gfp_mask|__GFP_HARDWALL, nodemask, order,
 			zonelist, high_zoneidx, alloc_flags,
@@ -3241,6 +3270,7 @@ retry:
 				preferred_zone, migratetype);
 	}
 
+	__alloc_collect_stats(gfp_mask, order, page, start);
 	trace_mm_page_alloc(page, order, gfp_mask, migratetype);
 
 out:
