@@ -81,6 +81,7 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 
 		if (!freq)
 			freq = cpu_khz;
+		freq = sched_cpulimit_scale_cpufreq(freq);
 		seq_printf(m, "cpu MHz\t\t: %u.%03u\n",
 			   freq / 1000, (freq % 1000));
 	}
