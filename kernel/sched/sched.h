@@ -284,6 +284,12 @@ struct task_group {
 
 	struct cfs_bandwidth cfs_bandwidth;
 
+#ifdef CONFIG_CFS_CPULIMIT
+#define MAX_CPU_RATE 1024
+	unsigned long cpu_rate;
+	unsigned int nr_cpus;
+#endif
+
 #if defined(CONFIG_FAIR_GROUP_SCHED)
 	/*
 	 * Put load_avg/runnable_avg in its own cacheline to avoid
@@ -661,6 +667,9 @@ struct rq {
 #ifdef CONFIG_RT_GROUP_SCHED
 	struct list_head leaf_rt_rq_list;
 #endif
+
+	/* nr_running last seen in update_cpu_load() */
+	unsigned long nr_active;
 
 	/*
 	 * This is part of a global counter where only the total sum
