@@ -131,7 +131,7 @@ conntrack_mt_v0(const struct sk_buff *skb, struct xt_action_param *par)
 
 #define FWINV(bool, invflg) ((bool) ^ !!(sinfo->invflags & (invflg)))
 
-	if (ct == &nf_conntrack_untracked)
+	if (ctinfo == IP_CT_UNTRACKED)
 		statebit = XT_CONNTRACK_STATE_UNTRACKED;
 	else if (ct)
 		statebit = XT_CONNTRACK_STATE_BIT(ctinfo);
@@ -261,12 +261,11 @@ conntrack_mt(const struct sk_buff *skb, struct xt_action_param *par,
 
 	ct = nf_ct_get(skb, &ctinfo);
 
-	if (ct) {
-		if (nf_ct_is_untracked(ct))
-			statebit = XT_CONNTRACK_STATE_UNTRACKED;
-		else
-			statebit = XT_CONNTRACK_STATE_BIT(ctinfo);
-	} else
+	if (ct)
+		statebit = XT_CONNTRACK_STATE_BIT(ctinfo);
+	else if (ctinfo == IP_CT_UNTRACKED)
+		statebit = XT_CONNTRACK_STATE_UNTRACKED;
+	else
 		statebit = XT_CONNTRACK_STATE_INVALID;
 
 	if (info->match_flags & XT_CONNTRACK_STATE) {
