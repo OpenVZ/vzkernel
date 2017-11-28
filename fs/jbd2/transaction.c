@@ -29,6 +29,7 @@
 #include <linux/backing-dev.h>
 #include <linux/bug.h>
 #include <linux/module.h>
+#include <linux/virtinfo.h>
 
 #include <trace/events/jbd2.h>
 
@@ -293,6 +294,8 @@ static int start_this_handle(journal_t *journal, handle_t *handle,
 		WARN_ON(1);
 		return -ENOSPC;
 	}
+
+	virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_JOURNAL, NULL);
 
 alloc_transaction:
 	if (!journal->j_running_transaction) {

@@ -51,6 +51,7 @@
 #include <linux/nfs_fs.h>
 #include <linux/nfs_page.h>
 #include <linux/sunrpc/clnt.h>
+#include <linux/virtinfo.h>
 
 #include <asm/uaccess.h>
 #include <linux/atomic.h>
@@ -630,6 +631,8 @@ ssize_t nfs_file_direct_read(struct kiocb *iocb, const struct iovec *iov,
 	ssize_t result = -EINVAL;
 	size_t count;
 
+	virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_PREPARE, NULL);
+
 	count = iov_length(iov, nr_segs);
 	nfs_add_stats(mapping->host, NFSIOS_DIRECTREADBYTES, count);
 
@@ -1104,6 +1107,8 @@ ssize_t nfs_file_direct_write(struct kiocb *iocb, const struct iovec *iov,
 	struct nfs_lock_context *l_ctx;
 	loff_t end;
 	size_t count;
+
+	virtinfo_notifier_call(VITYPE_IO, VIRTINFO_IO_PREPARE, NULL);
 
 	count = iov_length(iov, nr_segs);
 	end = (pos + count - 1) >> PAGE_CACHE_SHIFT;
