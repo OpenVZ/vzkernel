@@ -141,9 +141,7 @@ static inline struct super_block *pts_sb_from_inode(struct inode *inode)
 	if (inode->i_sb->s_magic == DEVPTS_SUPER_MAGIC)
 		return inode->i_sb;
 #endif
-	if (!devpts_mnt)
-		return NULL;
-	return devpts_mnt->mnt_sb;
+	return get_exec_env()->devpts_sb;
 }
 
 #define PARSE_MOUNT	0
@@ -407,11 +405,19 @@ fail:
 }
 
 #ifdef CONFIG_DEVPTS_MULTIPLE_INSTANCES
-static int compare_init_pts_sb(struct super_block *s, void *p)
+static int test_devpts_sb(struct super_block *s, void *p)
 {
-	if (devpts_mnt)
-		return devpts_mnt->mnt_sb == s;
-	return 0;
+	return get_exec_env()->devpts_sb == s;
+}
+
+static int set_devpts_sb(struct super_block *s, void *p)
+{
+	int error = set_anon_super(s, p);
+	if (!error) {
+		atomic_inc(&s->s_active);
+		get_exec_env()->devpts_sb = s;
+	}
+	return error;
 }
 
 /*
@@ -461,8 +467,7 @@ static struct dentry *devpts_mount(struct file_system_type *fs_type,
 	if (opts.newinstance)
 		s = sget(fs_type, NULL, set_anon_super, flags, NULL);
 	else
-		s = sget(fs_type, compare_init_pts_sb, set_anon_super, flags,
-			 NULL);
+		s = sget(fs_type, test_devpts_sb, set_devpts_sb, flags, NULL);
 
 	if (IS_ERR(s))
 		return ERR_CAST(s);
