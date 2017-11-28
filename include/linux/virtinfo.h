@@ -1,0 +1,68 @@
+/*
+ *  include/linux/virtinfo.h
+ *
+ *  Copyright (C) 2005  SWsoft
+ *  All rights reserved.
+ *
+ *  Licensing governed by "linux/COPYING.SWsoft" file.
+ *
+ */
+
+#ifndef __LINUX_VIRTINFO_H
+#define __LINUX_VIRTINFO_H
+
+#include <linux/kernel.h>
+#include <linux/page-flags.h>
+#include <linux/notifier.h>
+#include <linux/mmzone.h>
+
+struct vnotifier_block
+{
+	int (*notifier_call)(struct vnotifier_block *self,
+			unsigned long, void *, int);
+	struct vnotifier_block *next;
+	int priority;
+};
+
+extern struct semaphore virtinfo_sem;
+void __virtinfo_notifier_register(int type, struct vnotifier_block *nb);
+void virtinfo_notifier_register(int type, struct vnotifier_block *nb);
+void virtinfo_notifier_unregister(int type, struct vnotifier_block *nb);
+int virtinfo_notifier_call(int type, unsigned long n, void *data);
+int virtinfo_notifier_call_irq(int type, unsigned long n, void *data);
+
+struct page_info {
+	unsigned long nr_file_dirty;
+	unsigned long nr_writeback;
+	unsigned long nr_anon_pages;
+	unsigned long nr_file_mapped;
+	unsigned long nr_slab_rec;
+	unsigned long nr_slab_unrec;
+	unsigned long nr_pagetable;
+	unsigned long nr_unstable_nfs;
+	unsigned long nr_bounce;
+	unsigned long nr_writeback_temp;
+};
+
+#define VIRTINFO_MEMINFO	0
+#define VIRTINFO_SYSINFO	2
+#define VIRTINFO_VMSTAT		3
+#define VIRTINFO_OOMKILL	4
+
+#define VIRTINFO_IO_ACCOUNT	0
+#define VIRTINFO_IO_PREPARE	1
+#define VIRTINFO_IO_JOURNAL	2
+#define VIRTINFO_IO_READAHEAD	3
+#define VIRTINFO_IO_CONGESTION	4
+#define VIRTINFO_IO_OP_ACCOUNT	5
+#define VIRTINFO_IO_BALANCE_DIRTY	6
+
+enum virt_info_types {
+	VITYPE_GENERAL,
+	VITYPE_QUOTA,
+	VITYPE_IO,
+
+	VIRT_TYPES
+};
+
+#endif /* __LINUX_VIRTINFO_H */
