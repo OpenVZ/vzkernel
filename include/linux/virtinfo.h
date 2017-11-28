@@ -44,6 +44,21 @@ struct page_info {
 	unsigned long nr_writeback_temp;
 };
 
+struct sysinfo;
+struct user_beancounter;
+
+struct meminfo {
+	struct sysinfo *si;
+	struct user_beancounter *ub;
+	unsigned long meminfo_val;
+	unsigned long pages[NR_LRU_LISTS];
+	unsigned long cached, dirty_pages, writeback_pages, locked, shmem;
+	unsigned long slab_reclaimable, slab_unreclaimable;
+};
+
+int meminfo_proc_show_ub(struct seq_file *m, void *v,
+		struct user_beancounter *ub, unsigned long meminfo_val);
+
 #define VIRTINFO_MEMINFO	0
 #define VIRTINFO_SYSINFO	2
 #define VIRTINFO_VMSTAT		3
