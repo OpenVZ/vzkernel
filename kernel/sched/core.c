@@ -909,18 +909,44 @@ static inline void dequeue_task(struct rq *rq, struct task_struct *p, int flags)
 	p->sched_class->dequeue_task(rq, p, flags);
 }
 
+static inline void check_inc_sleeping(struct rq *rq, struct task_struct *t)
+{
+	if (t->state == TASK_INTERRUPTIBLE)
+		rq->nr_sleeping++;
+}
+
+static inline void check_dec_sleeping(struct rq *rq, struct task_struct *t)
+{
+	if (t->state == TASK_INTERRUPTIBLE)
+		rq->nr_sleeping--;
+}
+
 void activate_task(struct rq *rq, struct task_struct *p, int flags)
 {
-	if (task_contributes_to_load(p))
+	if (task_contributes_to_load(p)) {
 		rq->nr_uninterruptible--;
+		task_cfs_rq(p)->nr_unint--;
+	}
+
+	check_dec_sleeping(rq, p);
 
 	enqueue_task(rq, p, flags);
 }
 
 void deactivate_task(struct rq *rq, struct task_struct *p, int flags)
 {
-	if (task_contributes_to_load(p))
+	check_inc_sleeping(rq, p);
+
+#if 0 /* this is broken */
+	if (p->state == TASK_STOPPED) {
+		rq->nr_stopped++;
+	}
+#endif
+
+	if (task_contributes_to_load(p)) {
 		rq->nr_uninterruptible++;
+		task_cfs_rq(p)->nr_unint++;
+	}
 
 	dequeue_task(rq, p, flags);
 }
@@ -1602,12 +1628,17 @@ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags)
 	int en_flags = ENQUEUE_WAKEUP;
 
 #ifdef CONFIG_SMP
-	if (p->sched_contributes_to_load)
+	if (p->sched_contributes_to_load) {
 		rq->nr_uninterruptible--;
+		task_cfs_rq(p)->nr_unint--;
+	}
 
 	if (wake_flags & WF_MIGRATED)
 		en_flags |= ENQUEUE_MIGRATED;
 #endif
+
+	if (p->state == TASK_INTERRUPTIBLE)
+		rq->nr_sleeping--;
 
 	ttwu_activate(rq, p, en_flags);
 	ttwu_do_wakeup(rq, p, wake_flags);
@@ -9020,6 +9051,13 @@ void sched_move_task(struct task_struct *tsk)
 
 	if (queued)
 		dequeue_task(rq, tsk, DEQUEUE_SAVE);
+	else {
+		if (task_contributes_to_load(tsk))
+			task_cfs_rq(tsk)->nr_unint--;
+
+		check_dec_sleeping(rq, tsk);
+	}
+
 	if (unlikely(running))
 		tsk->sched_class->put_prev_task(rq, tsk);
 
@@ -9044,6 +9082,12 @@ void sched_move_task(struct task_struct *tsk)
 		tsk->sched_class->set_curr_task(rq);
 	if (queued)
 		enqueue_task(rq, tsk, ENQUEUE_RESTORE);
+	else {
+		if (task_contributes_to_load(tsk))
+			task_cfs_rq(tsk)->nr_unint++;
+
+		check_inc_sleeping(rq, tsk);
+	}
 
 	task_rq_unlock(rq, tsk, &flags);
 }
