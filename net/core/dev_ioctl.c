@@ -295,6 +295,8 @@ static int dev_ifsioc(struct net *net, struct ifreq *ifr, unsigned int cmd)
 		return dev_mc_del_global(dev, ifr->ifr_hwaddr.sa_data);
 
 	case SIOCSIFTXQLEN:
+		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+			return -EPERM;
 		if (ifr->ifr_qlen < 0)
 			return -EINVAL;
 		dev->tx_queue_len = ifr->ifr_qlen;
@@ -492,25 +494,23 @@ int dev_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 
 	/*
 	 *	These ioctl calls:
-	 *	- require superuser power.
-	 *	- require strict serialization.
-	 *	- do not return a value
-	 */
-	case SIOCSIFMAP:
-	case SIOCSIFTXQLEN:
-		if (!capable(CAP_NET_ADMIN))
-			return -EPERM;
-		/* fall through */
-	/*
-	 *	These ioctl calls:
 	 *	- require local superuser power.
 	 *	- require strict serialization.
 	 *	- do not return a value
 	 */
-	case SIOCSIFFLAGS:
-	case SIOCSIFMETRIC:
+	case SIOCSIFMAP:
 	case SIOCSIFMTU:
 	case SIOCSIFHWADDR:
+	case SIOCSIFFLAGS:
+		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+			return -EPERM;
+		dev_load(net, ifr.ifr_name);
+		rtnl_lock();
+		ret = dev_ifsioc(net, &ifr, cmd);
+		rtnl_unlock();
+		return ret;
+
+	case SIOCSIFMETRIC:
 	case SIOCSIFSLAVE:
 	case SIOCADDMULTI:
 	case SIOCDELMULTI:
