@@ -202,6 +202,9 @@ enum {
 	CGRP_CPUSET_CLONE_CHILDREN,
 	/* see the comment above CGRP_ROOT_SANE_BEHAVIOR for details */
 	CGRP_SANE_BEHAVIOR,
+
+	/* The cgroup is root in a VE */
+	CGRP_VE_ROOT,
 };
 
 struct cgroup_name {
