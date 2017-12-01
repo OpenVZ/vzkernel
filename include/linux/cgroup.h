@@ -202,6 +202,9 @@ enum {
 	CGRP_CPUSET_CLONE_CHILDREN,
 	/* see the comment above CGRP_ROOT_SANE_BEHAVIOR for details */
 	CGRP_SANE_BEHAVIOR,
+
+	/* The cgroup is root in a VE */
+	CGRP_VE_ROOT,
 };
 
 struct cgroup_name {
@@ -602,6 +605,11 @@ bool cgroup_is_descendant(struct cgroup *cgrp, struct cgroup *ancestor);
 int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen);
 
 int cgroup_task_count(const struct cgroup *cgrp);
+
+#ifdef CONFIG_VE
+void cgroup_mark_ve_roots(struct ve_struct *ve);
+void cgroup_unmark_ve_roots(struct ve_struct *ve);
+#endif
 
 /*
  * Control Group taskset, used to pass around set of tasks to cgroup_subsys
