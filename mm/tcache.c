@@ -446,6 +446,7 @@ static void tcache_destroy_pool(int id)
 {
 	int i;
 	struct tcache_pool *pool;
+	unsigned long nr_nodes;
 
 	spin_lock(&tcache_pool_lock);
 	pool = idr_find(&tcache_pool_idr, id);
@@ -473,7 +474,9 @@ static void tcache_destroy_pool(int id)
 	for (i = 0; i < num_node_trees; i++)
 		tcache_invalidate_node_tree(&pool->node_tree[i]);
 
-	BUG_ON(atomic_long_read(&pool->nr_nodes) != 0);
+	nr_nodes = atomic_long_read(&pool->nr_nodes);
+	if (WARN(nr_nodes != 0, "pool->nr_nodes %ld", nr_nodes))
+		return;
 
 	kfree(pool->node_tree);
 	kfree_rcu(pool, rcu);
@@ -590,9 +593,10 @@ retry:
 	spin_unlock_irqrestore(&tree->lock, flags);
 
 	if (node) {
-		BUG_ON(node->pool != pool);
 		if (node != new_node)
 			kfree(new_node);
+		if (WARN_ON(node->pool != pool))
+			node = NULL;
 		return node;
 	}
 
@@ -696,9 +700,9 @@ tcache_invalidate_node_tree(struct tcache_node_tree *tree)
 				struct tcache_node, tree_node);
 
 		/* Remaining nodes must be held solely by their pages */
-		BUG_ON(atomic_read(&node->kref.refcount) != 1);
-		BUG_ON(node->nr_pages == 0);
-		BUG_ON(node->invalidated);
+		WARN_ON(atomic_read(&node->kref.refcount) != 1);
+		WARN_ON(node->nr_pages == 0);
+		WARN_ON(node->invalidated);
 
 		tcache_hold_node(node);
 		tcache_invalidate_node_pages(node);
@@ -1182,7 +1186,8 @@ static unsigned long tcache_shrink_scan(struct shrinker *shrink,
 	struct page **pages = get_cpu_var(tcache_page_vec);
 	int nr_isolated, nr_reclaimed;
 
-	BUG_ON(sc->nr_to_scan > TCACHE_SCAN_BATCH);
+	if (WARN_ON(sc->nr_to_scan > TCACHE_SCAN_BATCH))
+		sc->nr_to_scan = TCACHE_SCAN_BATCH;
 
 	nr_isolated = tcache_lru_isolate(sc->nid, pages, sc->nr_to_scan);
 	if (!nr_isolated) {
@@ -1209,7 +1214,6 @@ struct shrinker tcache_shrinker = {
 
 static int tcache_cleancache_init_fs(size_t pagesize)
 {
-	BUG_ON(pagesize != PAGE_SIZE);
 	return tcache_create_pool();
 }
 
