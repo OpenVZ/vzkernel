@@ -4130,6 +4130,21 @@ static void offline_css(struct cgroup_subsys *ss, struct cgroup *cgrp)
 	cgrp->subsys[ss->subsys_id]->flags &= ~CSS_ONLINE;
 }
 
+#ifdef CONFIG_VE
+void cgroup_mark_ve_root(struct ve_struct *ve)
+{
+	struct cgroup *cgrp;
+	struct cgroupfs_root *root;
+
+	mutex_lock(&cgroup_mutex);
+	for_each_active_root(root) {
+		cgrp = task_cgroup_from_root(ve->init_task, root);
+		set_bit(CGRP_VE_ROOT, &cgrp->flags);
+	}
+	mutex_unlock(&cgroup_mutex);
+}
+#endif
+
 /*
  * cgroup_create - create a cgroup
  * @parent: cgroup that will be parent of the new cgroup
