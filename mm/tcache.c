@@ -850,6 +850,14 @@ out:
 		if (page)
 			tcache_lru_del(node->pool, page, reused);
 		local_irq_restore(flags);
+		/*
+		 * Shrinker could isolated the page in parallel
+		 * with us. This case page_ref_freeze(page, 2)
+		 * in __tcache_page_tree_delete() fails, and
+		 * we have to repeat the cycle.
+		 */
+		if (!page)
+			goto repeat;
 	}
 
 	return page;
@@ -903,13 +911,15 @@ tcache_invalidate_node_pages(struct tcache_node *node)
 	struct page *pages[TCACHE_PAGEVEC_SIZE];
 	pgoff_t index = 0;
 	unsigned nr_pages;
+	bool repeat;
 	int i;
 
 	/*
 	 * First forbid new page insertions - see tcache_page_tree_replace.
 	 */
 	node->invalidated = true;
-
+again:
+	repeat = false;
 	while ((nr_pages = tcache_lookup(pages, node, index,
 						TCACHE_PAGEVEC_SIZE, indices))) {
 		for (i = 0; i < nr_pages; i++) {
@@ -925,11 +935,18 @@ tcache_invalidate_node_pages(struct tcache_node *node)
 				tcache_lru_del(node->pool, page, false);
 				local_irq_enable();
 				tcache_put_page(page);
-			} else
+			} else {
 				local_irq_enable();
+				repeat = true;
+			}
 		}
 		cond_resched();
 		index++;
+	}
+
+	if (repeat) {
+		index = 0;
+		goto again;
 	}
 
 	WARN_ON(node->nr_pages != 0);
