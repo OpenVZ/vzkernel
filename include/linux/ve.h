@@ -97,6 +97,9 @@ struct user_namespace *ve_init_user_ns(void);
 
 #define ve_uevent_seqnum       (get_exec_env()->_uevent_seqnum)
 
+extern int vz_security_family_check(struct net *net, int family);
+extern int vz_security_protocol_check(struct net *net, int protocol);
+
 #else	/* CONFIG_VE */
 #define get_ve(ve)	(NULL)
 #define put_ve(ve)	do { } while (0)
@@ -117,6 +120,9 @@ static inline struct user_namespace *ve_init_user_ns(void)
 }
 
 #define ve_uevent_seqnum uevent_seqnum
+
+static inline int vz_security_family_check(struct net *net, int family) { return 0; }
+static inline int vz_security_protocol_check(struct net *net, int protocol) { return 0; }
 
 #endif	/* CONFIG_VE */
 
