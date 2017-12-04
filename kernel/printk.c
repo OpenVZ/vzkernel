@@ -465,13 +465,13 @@ static int check_syslog_permissions(int type, bool from_file)
 		return 0;
 
 	if (syslog_action_restricted(type)) {
-		if (nsown_capable(CAP_SYSLOG))
+		if (ve_capable(CAP_SYSLOG))
 			return 0;
 		/*
 		 * For historical reasons, accept CAP_SYS_ADMIN too, with
 		 * a warning.
 		 */
-		if (nsown_capable(CAP_SYS_ADMIN)) {
+		if (ve_capable(CAP_SYS_ADMIN)) {
 			pr_warn_once("%s (%d): Attempt to access syslog with "
 				     "CAP_SYS_ADMIN but no CAP_SYSLOG "
 				     "(deprecated).\n",
@@ -1886,6 +1886,22 @@ asmlinkage int ve_printk(int dst, const char *fmt, ...)
 }
 EXPORT_SYMBOL(ve_printk);
 
+asmlinkage int ve_log_printk(struct ve_struct *ve, const char *fmt, ...)
+{
+	struct log_state *log = &init_log_state;
+	va_list args;
+	int r;
+
+	if (likely(ve && ve->log_state))
+		log = ve->log_state;
+
+	va_start(args, fmt);
+	r = __vprintk_emit(log, 0, -1, NULL, 0, fmt, args);
+	va_end(args);
+
+	return r;
+}
+EXPORT_SYMBOL(ve_log_printk);
 /**
  * printk - print a kernel message
  * @fmt: format string
