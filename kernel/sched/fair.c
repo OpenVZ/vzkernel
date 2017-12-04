@@ -275,6 +275,20 @@ static inline struct cfs_rq *group_cfs_rq(struct sched_entity *grp)
 	return grp->my_q;
 }
 
+static inline bool is_top_cfs_rq(struct cfs_rq *cfs_rq)
+{
+	struct task_group *tg = cfs_rq->tg;
+
+	return tg->parent == &root_task_group;
+}
+
+static inline struct cfs_rq *top_cfs_rq_of(struct sched_entity *se)
+{
+	while (se->parent && se->parent->parent)
+		se = se->parent;
+	return cfs_rq_of(se);
+}
+
 static void update_cfs_rq_blocked_load(struct cfs_rq *cfs_rq,
 				       int force_update);
 
@@ -401,6 +415,16 @@ static inline struct cfs_rq *cfs_rq_of(struct sched_entity *se)
 static inline struct cfs_rq *group_cfs_rq(struct sched_entity *grp)
 {
 	return NULL;
+}
+
+static inline bool is_top_cfs_rq(struct cfs_rq *cfs_rq)
+{
+	return false;
+}
+
+static inline struct cfs_rq *top_cfs_rq_of(struct sched_entity *se)
+{
+	return cfs_rq_of(se);
 }
 
 static inline void list_add_leaf_cfs_rq(struct cfs_rq *cfs_rq)
@@ -3108,6 +3132,9 @@ static inline void check_schedstat_required(void)
 static void
 enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 {
+	if (!cfs_rq->load.weight)
+		inc_nr_active_cfs_rqs(cfs_rq);
+
 	/*
 	 * Update the normalized vruntime before updating min_vruntime
 	 * through callig update_curr().
@@ -3230,6 +3257,9 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 
 	update_min_vruntime(cfs_rq);
 	update_cfs_shares(cfs_rq);
+
+	if (!cfs_rq->load.weight)
+		dec_nr_active_cfs_rqs(cfs_rq, flags & DEQUEUE_TASK_SLEEP);
 }
 
 /*
@@ -4264,10 +4294,6 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	struct sched_entity *se = &p->se;
 	int boost = check_enqueue_boost(rq, p, flags);
 
-	cfs_rq = task_cfs_rq(p);
-	if (list_empty(&cfs_rq->tasks))
-		inc_nr_active_cfs_rqs(cfs_rq);
-
 	for_each_sched_entity(se) {
 		if (se->on_rq)
 			break;
@@ -4335,6 +4361,9 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	int boosted = entity_boosted(se);
 	int task_sleep = flags & DEQUEUE_SLEEP;
 
+	if (task_sleep)
+		flags |= DEQUEUE_TASK_SLEEP;
+
 	for_each_sched_entity(se) {
 		cfs_rq = cfs_rq_of(se);
 		dequeue_entity(cfs_rq, se, flags);
@@ -4386,10 +4415,6 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		update_rq_runnable_avg(rq, 1);
 	}
 	hrtick_update(rq);
-
-	cfs_rq = task_cfs_rq(p);
-	if (list_empty(&cfs_rq->tasks))
-		dec_nr_active_cfs_rqs(cfs_rq, task_sleep);
 }
 
 #ifdef CONFIG_SMP
@@ -4842,33 +4867,36 @@ done:
 	return target;
 }
 
-static inline int cpu_is_runnable(struct task_struct *p, int cpu)
-{
-	return cfs_rq_active(task_cfs_rq(p)->tg->cfs_rq[cpu]);
-}
-
-static int select_runnable_cpu(struct task_struct *p, int new_cpu)
+static inline bool select_runnable_cpu(struct task_struct *p, int *new_cpu)
 {
 #ifdef CONFIG_CFS_CPULIMIT
+	struct task_group *tg;
 	struct sched_domain *sd;
 	int prev_cpu = task_cpu(p);
 	int cpu;
 
-	if (cpu_is_runnable(p, new_cpu))
-		return new_cpu;
+	tg = top_cfs_rq_of(&p->se)->tg;
+	if (check_cpulimit_spread(tg, *new_cpu) > 0)
+		return false;
 
-	if (cpu_is_runnable(p, prev_cpu))
-		return prev_cpu;
+	if (cfs_rq_active(tg->cfs_rq[*new_cpu]))
+		return true;
 
-	for_each_domain(new_cpu, sd) {
-		for_each_cpu_and(cpu, sched_domain_span(sd), &p->cpus_allowed) {
-			if (cpu_is_runnable(p, cpu))
-				return cpu;
-		}
+	if (cfs_rq_active(tg->cfs_rq[prev_cpu])) {
+		*new_cpu = prev_cpu;
+		return true;
 	}
 
-	return new_cpu;
+	for_each_domain(*new_cpu, sd) {
+		for_each_cpu_and(cpu, sched_domain_span(sd), &p->cpus_allowed) {
+			if (cfs_rq_active(tg->cfs_rq[cpu])) {
+				*new_cpu = cpu;
+				return true;
+			}
+		}
+	}
 #endif
+	return false;
 }
 
 /*
@@ -4923,10 +4951,8 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 			new_cpu = prev_cpu;
 	}
 
-	if (check_cpulimit_spread(task_cfs_rq(p), new_cpu) <= 0) {
-		new_cpu = select_runnable_cpu(p, new_cpu);
+	if (select_runnable_cpu(p, &new_cpu))
 		goto unlock;
-	}
 
 	if (affine_sd) {
 		new_cpu = select_idle_sibling(p, new_cpu);
@@ -5203,21 +5229,31 @@ static struct task_struct *pick_next_task_fair(struct rq *rq)
 #if defined(CONFIG_SMP) && defined(CONFIG_CFS_CPULIMIT)
 static int cpulimit_balance_cpu_stop(void *data);
 
-static void trigger_cpulimit_balance(struct rq *this_rq, struct task_struct *p)
+static inline void trigger_cpulimit_balance(struct task_struct *p)
 {
-	int this_cpu = cpu_of(this_rq);
-	int cpu, target_cpu = -1;
+	struct rq *this_rq;
+	struct task_group *tg;
+	int this_cpu, cpu, target_cpu = -1;
 	struct sched_domain *sd;
 
-	raw_spin_unlock(&this_rq->lock);
+	this_rq = rq_of(cfs_rq_of(&p->se));
+	this_cpu = cpu_of(this_rq);
+
+	if (!p->se.on_rq || this_rq->active_balance)
+		return;
+
+	tg = top_cfs_rq_of(&p->se)->tg;
+	if (check_cpulimit_spread(tg, this_cpu) >= 0)
+		return;
 
 	rcu_read_lock();
 	for_each_domain(this_cpu, sd) {
 		if (!(sd->flags & SD_LOAD_BALANCE))
 			continue;
-		for_each_cpu_and(cpu, sched_domain_span(sd), tsk_cpus_allowed(p)) {
+		for_each_cpu_and(cpu, sched_domain_span(sd),
+				 tsk_cpus_allowed(p)) {
 			if (cpu != this_cpu &&
-			    cfs_rq_active(task_cfs_rq(p)->tg->cfs_rq[cpu])) {
+			    cfs_rq_active(tg->cfs_rq[cpu])) {
 				target_cpu = cpu;
 				goto unlock;
 			}
@@ -5226,22 +5262,18 @@ static void trigger_cpulimit_balance(struct rq *this_rq, struct task_struct *p)
 unlock:
 	rcu_read_unlock();
 
-	raw_spin_lock(&this_rq->lock);
 	if (target_cpu >= 0) {
-		if (!this_rq->active_balance) {
-			this_rq->active_balance = 1;
-			this_rq->push_cpu = target_cpu;
-			raw_spin_unlock(&this_rq->lock);
-			stop_one_cpu_nowait(this_cpu,
-					    cpulimit_balance_cpu_stop, this_rq,
-					    &this_rq->active_balance_work);
-			raw_spin_lock(&this_rq->lock);
-		}
+		this_rq->active_balance = 1;
+		this_rq->push_cpu = target_cpu;
+		raw_spin_unlock(&this_rq->lock);
+		stop_one_cpu_nowait(this_rq->cpu,
+				    cpulimit_balance_cpu_stop, this_rq,
+				    &this_rq->active_balance_work);
+		raw_spin_lock(&this_rq->lock);
 	}
 }
 #else
-static inline void trigger_cpulimit_balance(struct rq *this_rq,
-					    struct task_struct *p)
+static inline void trigger_cpulimit_balance(struct task_struct *p)
 {
 }
 #endif
@@ -5258,10 +5290,6 @@ static void put_prev_task_fair(struct rq *rq, struct task_struct *prev)
 		cfs_rq = cfs_rq_of(se);
 		put_prev_entity(cfs_rq, se);
 	}
-
-	if (prev->se.on_rq &&
-	    check_cpulimit_spread(task_cfs_rq(prev), cpu_of(rq)) < 0)
-		trigger_cpulimit_balance(rq, prev);
 }
 
 /*
@@ -5588,27 +5616,28 @@ static inline bool migrate_degrades_locality(struct task_struct *p,
 static inline int can_migrate_task_cpulimit(struct task_struct *p, struct lb_env *env)
 {
 #ifdef CONFIG_CFS_CPULIMIT
-	if (check_cpulimit_spread(task_cfs_rq(p), env->dst_cpu) < 0) {
+	struct task_group *tg = top_cfs_rq_of(&p->se)->tg;
+
+	if (check_cpulimit_spread(tg, env->dst_cpu) < 0) {
 		int cpu;
 
 		schedstat_inc(p, se.statistics->nr_failed_migrations_cpulimit);
 
 		env->flags |= LBF_SOME_PINNED;
 
-		if (check_cpulimit_spread(task_cfs_rq(p), env->src_cpu) != 0)
+		if (check_cpulimit_spread(tg, env->src_cpu) != 0)
 			return 0;
 
 		if (!env->dst_grpmask || (env->flags & LBF_DST_PINNED))
 			return 0;
 
 		for_each_cpu_and(cpu, env->dst_grpmask, env->cpus) {
-			if (cfs_rq_active(task_cfs_rq(p)->tg->cfs_rq[cpu])) {
+			if (cfs_rq_active(tg->cfs_rq[cpu])) {
 				env->flags |= LBF_DST_PINNED;
 				env->new_dst_cpu = cpu;
 				break;
 			}
 		}
-
 		return 0;
 	}
 #endif
@@ -5851,6 +5880,7 @@ static int move_task_group(struct cfs_rq *cfs_rq, struct lb_env *env)
 static int move_task_groups(struct lb_env *env)
 {
 	struct cfs_rq *cfs_rq;
+	struct task_group *tg;
 	unsigned long load;
 	int cur_pulled, pulled = 0;
 
@@ -5858,11 +5888,25 @@ static int move_task_groups(struct lb_env *env)
 		return 0;
 
 	for_each_leaf_cfs_rq(env->src_rq, cfs_rq) {
-		if (check_cpulimit_spread(cfs_rq, env->src_cpu) != 0 ||
-		    cfs_rq_active(cfs_rq->tg->cfs_rq[env->dst_cpu]))
+		if (cfs_rq->tg == &root_task_group)
+			continue;
+		/*
+		 * A child always goes before its parent in a leaf_cfs_rq_list.
+		 * Therefore, if we encounter a cfs_rq that has a child cfs_rq,
+		 * we could not migrate the child and therefore we should not
+		 * even try to migrate the parent.
+		 */
+		if (cfs_rq->nr_running != cfs_rq->h_nr_running)
 			continue;
 
-		load = entity_h_load(cfs_rq->tg->se[env->src_cpu]);
+		tg = is_top_cfs_rq(cfs_rq) ? cfs_rq->tg :
+				top_cfs_rq_of(cfs_rq->tg->se[env->src_cpu])->tg;
+
+		if (check_cpulimit_spread(tg, env->src_cpu) != 0 ||
+		    cfs_rq_active(tg->cfs_rq[env->dst_cpu]))
+			continue;
+
+		load = entity_h_load(tg->se[env->src_cpu]);
 		if ((load / 2) > env->imbalance)
 			continue;
 
@@ -5886,11 +5930,19 @@ static int move_task_groups(struct lb_env *env)
 static int do_cpulimit_balance(struct lb_env *env)
 {
 	struct cfs_rq *cfs_rq;
+	struct task_group *tg;
 	int pushed = 0;
 
 	for_each_leaf_cfs_rq(env->src_rq, cfs_rq) {
-		if (check_cpulimit_spread(cfs_rq, env->src_cpu) < 0 &&
-		    cfs_rq_active(cfs_rq->tg->cfs_rq[env->dst_cpu]) &&
+		if (cfs_rq->tg == &root_task_group)
+			continue;
+		/* see move_task_groups for why we skip such groups */
+		if (cfs_rq->nr_running != cfs_rq->h_nr_running)
+			continue;
+		tg = is_top_cfs_rq(cfs_rq) ? cfs_rq->tg :
+				top_cfs_rq_of(cfs_rq->tg->se[env->src_cpu])->tg;
+		if (check_cpulimit_spread(tg, env->src_cpu) < 0 &&
+		    cfs_rq_active(tg->cfs_rq[env->dst_cpu]) &&
 		    can_migrate_task_group(cfs_rq, env))
 			pushed += move_task_group(cfs_rq, env);
 	}
@@ -5907,7 +5959,8 @@ static int cpulimit_balance_cpu_stop(void *data)
 
 	raw_spin_lock_irq(&rq->lock);
 
-	if (unlikely(cpu != smp_processor_id() || !rq->active_balance))
+	if (unlikely(cpu != smp_processor_id() || !rq->active_balance ||
+		     !cpu_online(target_cpu)))
 		goto out_unlock;
 
 	if (unlikely(!rq->nr_running))
@@ -7527,6 +7580,11 @@ out_unlock:
 	return 0;
 }
 
+static void pre_schedule_fair(struct rq *rq, struct task_struct *prev)
+{
+	trigger_cpulimit_balance(prev);
+}
+
 #ifdef CONFIG_NO_HZ_COMMON
 /*
  * idle load balancing details
@@ -8495,6 +8553,7 @@ const struct sched_class fair_sched_class = {
 	.rq_offline		= rq_offline_fair,
 
 	.task_waking		= task_waking_fair,
+	.pre_schedule		= pre_schedule_fair,
 #endif
 
 	.set_curr_task          = set_curr_task_fair,
