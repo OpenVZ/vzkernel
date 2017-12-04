@@ -1270,7 +1270,7 @@ static ssize_t oom_score_adj_write(struct file *file, const char __user *buf,
 	}
 
 	if ((short)oom_score_adj < task->signal->oom_score_adj_min &&
-			!capable(CAP_SYS_RESOURCE)) {
+			!ve_capable(CAP_SYS_RESOURCE)) {
 		err = -EACCES;
 		goto err_sighand;
 	}
