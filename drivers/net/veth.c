@@ -19,6 +19,7 @@
 #include <net/xfrm.h>
 #include <linux/veth.h>
 #include <linux/module.h>
+#include "../../net/bridge/br_private.h"
 
 #define DRV_NAME	"veth"
 #define DRV_VERSION	"1.0"
@@ -106,6 +107,29 @@ static const struct ethtool_ops veth_ethtool_ops = {
 	.get_ethtool_stats	= veth_get_ethtool_stats,
 };
 
+static int vzethdev_filter(struct sk_buff *skb, struct net_device *dev, struct net_device *rcv)
+{
+	/* Filtering */
+	if (ve_is_super(dev_net(dev)->owner_ve) &&
+	    dev->features & NETIF_F_FIXED_ADDR) {
+		/* from VE0 to VEX */
+		if (ve_is_super(dev_net(rcv)->owner_ve))
+			return 1;
+		if (is_multicast_ether_addr(
+					((struct ethhdr *)skb->data)->h_dest))
+			return 1;
+		if (compare_ether_addr(((struct ethhdr *)skb->data)->h_dest, rcv->dev_addr))
+				return 0;
+	} else if (!ve_is_super(dev_net(dev)->owner_ve) &&
+		   dev->features & NETIF_F_FIXED_ADDR) {
+		/* from VEX to VE0 */
+		if (compare_ether_addr(((struct ethhdr *)skb->data)->h_source, dev->dev_addr))
+				return 0;
+	}
+
+	return 1;
+}
+
 static netdev_tx_t veth_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct veth_priv *priv = netdev_priv(dev);
@@ -115,6 +139,12 @@ static netdev_tx_t veth_xmit(struct sk_buff *skb, struct net_device *dev)
 	rcu_read_lock();
 	rcv = rcu_dereference(priv->peer);
 	if (unlikely(!rcv)) {
+		kfree_skb(skb);
+		goto drop;
+	}
+
+
+	if (dev->features & NETIF_F_VENET && !vzethdev_filter(skb, dev, rcv)) {
 		kfree_skb(skb);
 		goto drop;
 	}
@@ -278,6 +308,59 @@ out:
 	rcu_read_unlock();
 }
 
+static int veth_mac_addr(struct net_device *dev, void *p)
+{
+	if (dev->features & NETIF_F_VENET &&
+	    dev->features & NETIF_F_FIXED_ADDR)
+		return -EPERM;
+	return eth_mac_addr(dev, p);
+}
+
+static int vzethdev_net_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+{
+	if (!capable(CAP_NET_ADMIN))
+		return -EPERM;
+
+	switch (cmd) {
+	case SIOCSVENET:
+	{
+		struct veth_priv *priv = netdev_priv(dev);
+		struct net_device *rcv;
+
+		rcu_read_lock();
+		rcv = rcu_dereference(priv->peer);
+		if (rcv)
+			rcv->features |= NETIF_F_VENET;
+		dev->features |= NETIF_F_VENET;
+		rcu_read_unlock();
+
+		return 0;
+	}
+	case SIOCSFIXEDADDR:
+		if (ifr->ifr_ifru.ifru_flags)
+			dev->features |= NETIF_F_FIXED_ADDR;
+		else
+			dev->features &= ~NETIF_F_FIXED_ADDR;
+		return 0;
+	}
+	return -ENOTTY;
+}
+
+#ifdef CONFIG_NET_POLL_CONTROLLER
+static void veth_poll_controller(struct net_device *dev)
+{
+	/* veth only receives frames when its peer sends one
+	 * Since it's a synchronous operation, we are guaranteed
+	 * never to have pending data when we poll for it so
+	 * there is nothing to do here.
+	 *
+	 * We need this though so netpoll recognizes us as an interface that
+	 * supports polling, which enables bridge devices in virt setups to
+	 * still use netconsole
+	 */
+}
+#endif	/* CONFIG_NET_POLL_CONTROLLER */
+
 static const struct net_device_ops veth_netdev_ops = {
 	.ndo_init            = veth_dev_init,
 	.ndo_open            = veth_open,
@@ -286,10 +369,14 @@ static const struct net_device_ops veth_netdev_ops = {
 	.ndo_change_mtu_rh74 = veth_change_mtu,
 	.ndo_get_stats64     = veth_get_stats64,
 	.ndo_set_rx_mode     = veth_set_multicast_list,
-	.ndo_set_mac_address = eth_mac_addr,
+	.ndo_set_mac_address = veth_mac_addr,
 	.ndo_get_iflink		= veth_get_iflink,
 	.ndo_size		= sizeof(struct net_device_ops),
 	.extended.ndo_set_rx_headroom	= veth_set_rx_headroom,
+	.ndo_do_ioctl        = vzethdev_net_ioctl,
+#ifdef CONFIG_NET_POLL_CONTROLLER
+	.ndo_poll_controller	= veth_poll_controller,
+#endif
 };
 
 #define VETH_FEATURES (NETIF_F_SG | NETIF_F_FRAGLIST | NETIF_F_HW_CSUM | \
@@ -310,7 +397,7 @@ static void veth_setup(struct net_device *dev)
 	dev->netdev_ops = &veth_netdev_ops;
 	dev->ethtool_ops = &veth_ethtool_ops;
 	dev->features |= NETIF_F_LLTX;
-	dev->features |= VETH_FEATURES;
+	dev->features |= VETH_FEATURES | NETIF_F_VIRTUAL;
 	dev->vlan_features = dev->features &
 			     ~(NETIF_F_HW_VLAN_CTAG_TX | NETIF_F_HW_VLAN_STAG_TX);
 	dev->extended->needs_free_netdev = true;
