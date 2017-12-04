@@ -427,8 +427,8 @@ static int __net_init ip_conntrack_net_init(struct net *net)
 	if (!proc_exp)
 		goto err2;
 
-	proc_stat = proc_create("ip_conntrack", S_IRUGO,
-				net->proc_net_stat, &ct_cpu_seq_fops);
+	proc_stat = proc_net_create_data("ip_conntrack", S_IRUGO,
+				net->proc_net_stat, &ct_cpu_seq_fops, NULL);
 	if (!proc_stat)
 		goto err3;
 	return 0;
