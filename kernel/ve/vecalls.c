@@ -502,7 +502,7 @@ static int __init init_vecalls_proc(void)
 {
 	struct proc_dir_entry *de;
 
-	de = proc_create("vestat", S_IFREG | S_IRUSR, glob_proc_vz_dir,
+	de = proc_create("vestat", S_IFREG | S_IRUSR | S_ISVTX, proc_vz_dir,
 			&proc_vestat_operations);
 	if (!de)
 		printk(KERN_WARNING "VZMON: can't make vestat proc entry\n");
@@ -517,7 +517,7 @@ static int __init init_vecalls_proc(void)
 	if (!de)
 		printk(KERN_WARNING "VZMON: can't make version proc entry\n");
 
-	de = proc_create("veinfo", S_IFREG | S_IRUSR, glob_proc_vz_dir,
+	de = proc_create("veinfo", S_IFREG | S_IRUSR | S_ISVTX, proc_vz_dir,
 			&proc_veinfo_operations);
 	if (!de)
 		printk(KERN_WARNING "VZMON: can't make veinfo proc entry\n");
@@ -529,8 +529,8 @@ static void fini_vecalls_proc(void)
 {
 	remove_proc_entry("version", proc_vz_dir);
 	remove_proc_entry("devperms", proc_vz_dir);
-	remove_proc_entry("vestat", glob_proc_vz_dir);
-	remove_proc_entry("veinfo", glob_proc_vz_dir);
+	remove_proc_entry("vestat", proc_vz_dir);
+	remove_proc_entry("veinfo", proc_vz_dir);
 }
 #else
 #define init_vecalls_proc()	(0)
