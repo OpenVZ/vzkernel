@@ -327,6 +327,7 @@ static void ipip_tunnel_setup(struct net_device *dev)
 	netif_keep_dst(dev);
 
 	dev->features		|= IPIP_FEATURES;
+	dev->features		|= NETIF_F_VIRTUAL;
 	dev->hw_features	|= IPIP_FEATURES;
 	ip_tunnel_setup(dev, ipip_net_id);
 }
@@ -381,6 +382,9 @@ static int ipip_newlink(struct net *src_net, struct net_device *dev,
 			struct nlattr *tb[], struct nlattr *data[])
 {
 	struct ip_tunnel_parm p;
+
+	if (net_generic(dev_net(dev), ipip_net_id) == NULL)
+		return -EACCES;
 
 	ipip_netlink_parms(data, &p);
 	return ip_tunnel_newlink(dev, tb, &p);
