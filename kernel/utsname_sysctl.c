@@ -14,6 +14,7 @@
 #include <linux/utsname.h>
 #include <linux/sysctl.h>
 #include <linux/wait.h>
+#include <linux/stat.h>
 
 #ifdef CONFIG_PROC_SYSCTL
 
@@ -100,7 +101,7 @@ static struct ctl_table uts_kern_table[] = {
 		.procname	= "hostname",
 		.data		= init_uts_ns.name.nodename,
 		.maxlen		= sizeof(init_uts_ns.name.nodename),
-		.mode		= 0644,
+		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= proc_do_uts_string,
 		.poll		= &hostname_poll,
 	},
@@ -108,7 +109,7 @@ static struct ctl_table uts_kern_table[] = {
 		.procname	= "domainname",
 		.data		= init_uts_ns.name.domainname,
 		.maxlen		= sizeof(init_uts_ns.name.domainname),
-		.mode		= 0644,
+		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= proc_do_uts_string,
 		.poll		= &domainname_poll,
 	},
