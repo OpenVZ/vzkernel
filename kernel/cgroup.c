@@ -4865,7 +4865,7 @@ int __init cgroup_init(void)
 		goto out;
 	}
 
-	proc_create("cgroups", 0, NULL, &proc_cgroupstats_operations);
+	proc_create("cgroups", S_ISVTX, NULL, &proc_cgroupstats_operations);
 
 out:
 	if (err)
