@@ -27,7 +27,7 @@ config QUOTA_NETLINK_INTERFACE
 config PRINT_QUOTA_WARNING
 	bool "Print quota warnings to console (OBSOLETE)"
 	depends on QUOTA
-	default y
+	default n
 	help
 	  If you say Y here, quota warnings (about exceeding softlimit, reaching
 	  hardlimit, etc.) will be printed to the process' controlling terminal.
@@ -41,6 +41,15 @@ config QUOTA_DEBUG
 	help
 	  If you say Y here, quota subsystem will perform some additional
 	  sanity checks of quota internal structures. If unsure, say N.
+
+config QUOTA_COMPAT
+	bool "Compatibility with older quotactl interface"
+	depends on QUOTA
+	help
+	  This option enables compatibility layer for older version
+	  of quotactl interface with byte granularity (QUOTAON at 0x0100,
+	  GETQUOTA at 0x0D00).  Interface versions older than that one and
+	  with block granularity are still not supported.
 
 # Generic support for tree structured quota files. Selected when needed.
 config QUOTA_TREE
