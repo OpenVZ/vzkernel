@@ -84,6 +84,9 @@ enum {
 	NETIF_F_GRO_FRAGLIST_BIT,	/* Fraglist GRO */
 
 	NETIF_F_GRO_UDP_FWD_BIT,	/* Allow UDP GRO for forwarding */
+	/* here goes NETIF_F_HW_MACSEC_BIT in ms, temporarily reverted */
+					/* Offload MACsec operations */
+	NETIF_F_VENET_BIT,		/* Device is venet device */
 
 	NETIF_F_HW_HSR_TAG_INS_BIT,	/* Offload HSR tag insertion */
 	NETIF_F_HW_HSR_TAG_RM_BIT,	/* Offload HSR tag removal */
@@ -168,6 +171,7 @@ enum {
 #define NETIF_F_HW_HSR_DUP	__NETIF_F(HW_HSR_DUP)
 
 #define NETIF_F_VIRTUAL		__NETIF_F(VIRTUAL)
+#define NETIF_F_VENET		__NETIF_F(VENET)
 
 /* Finds the next feature with the highest number of the range of start till 0.
  */
