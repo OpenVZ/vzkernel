@@ -403,8 +403,8 @@ static int nf_conntrack_standalone_init_proc(struct net *net)
 	if (!pde)
 		goto out_nf_conntrack;
 
-	pde = proc_create("nf_conntrack", S_IRUGO, net->proc_net_stat,
-			  &ct_cpu_seq_fops);
+	pde = proc_net_create_data("nf_conntrack", S_IRUGO, net->proc_net_stat,
+			  &ct_cpu_seq_fops, NULL);
 	if (!pde)
 		goto out_stat_nf_conntrack;
 	return 0;
