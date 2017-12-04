@@ -41,6 +41,7 @@ struct ve_struct {
 
 #if defined(CONFIG_VE_NETDEV) || defined (CONFIG_VE_NETDEV_MODULE)
 	struct veip_struct	*veip;
+	struct net_device	*venet_dev;
 #endif
 };
 
