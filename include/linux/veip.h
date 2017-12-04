@@ -9,19 +9,6 @@
 #ifndef __VE_IP_H_
 #define __VE_IP_H_
 
-#include <linux/list.h>
-
-struct veip_struct
-{
-	struct list_head	src_lh;
-	struct list_head	dst_lh;
-	struct list_head	ip_lh;
-	struct list_head	list;
-	struct list_head	ext_lh;
-	envid_t			veid;
-	struct rcu_head		rcu;
-};
-
 struct ve_addr_struct {
 	int family;
 	__u32 key[4];
