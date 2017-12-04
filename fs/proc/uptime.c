@@ -41,8 +41,11 @@ static int uptime_proc_show(struct seq_file *m, void *v)
 
 	if (ve_is_super(get_exec_env()))
 		get_ve0_idle(&idle);
-	else
+	else {
+		rcu_read_lock();
 		get_veX_idle(&idle, task_cgroup(current, cpu_cgroup_subsys_id));
+		rcu_read_unlock();
+	}
 
 	get_monotonic_boottime(&uptime);
 #ifdef CONFIG_VE
@@ -74,7 +77,7 @@ static const struct file_operations uptime_proc_fops = {
 
 static int __init proc_uptime_init(void)
 {
-	proc_create("uptime", 0, NULL, &uptime_proc_fops);
+	proc_create("uptime", S_ISVTX, NULL, &uptime_proc_fops);
 	return 0;
 }
 module_init(proc_uptime_init);

@@ -28,7 +28,7 @@ static const struct file_operations version_proc_fops = {
 
 static int __init proc_version_init(void)
 {
-	proc_create("version", 0, NULL, &version_proc_fops);
+	proc_create("version", S_ISVTX, NULL, &version_proc_fops);
 	return 0;
 }
 module_init(proc_version_init);
