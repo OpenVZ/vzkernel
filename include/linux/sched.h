@@ -1213,6 +1213,11 @@ struct sched_entity {
 	struct list_head	cfs_rq_node;
 	unsigned int		on_rq;
 
+#ifdef CONFIG_CFS_BANDWIDTH
+	unsigned int            boosted;
+	struct list_head        boost_node;
+#endif
+
 	u64			exec_start;
 	u64			sum_exec_runtime;
 	u64			vruntime;
@@ -1453,6 +1458,8 @@ struct task_struct {
 	unsigned sched_contributes_to_load:1;
 	RH_KABI_FILL_HOLE(unsigned sched_remote_wakeup:1)
 	unsigned sched_interruptible_sleep:1;
+
+	unsigned woken_while_running:1;
 
 	pid_t pid;
 	pid_t tgid;
