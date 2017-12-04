@@ -38,6 +38,7 @@
 #include <linux/stat.h>
 #include <linux/init.h>
 #include <linux/slab.h>
+#include <linux/ve.h>
 
 #include <linux/inet.h>
 #include <linux/netdevice.h>
@@ -166,6 +167,10 @@ lookup_protocol:
 		} else
 			goto out_rcu_unlock;
 	}
+
+	err = vz_security_protocol_check(net, answer->protocol);
+	if (err < 0)
+		goto out_rcu_unlock;
 
 	err = -EPERM;
 	if (sock->type == SOCK_RAW && !kern &&
