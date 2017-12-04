@@ -38,6 +38,11 @@ module_param_named(active, tswap_active, bool, 0644);
 static unsigned long tswap_nr_pages;
 module_param_named(nr_pages, tswap_nr_pages, ulong, 0444);
 
+unsigned long get_nr_tswap_pages(void)
+{
+	return tswap_nr_pages;
+}
+
 static void tswap_lru_add(struct page *page)
 {
 	struct tswap_lru *lru = &tswap_lru_node[page_to_nid(page)];
