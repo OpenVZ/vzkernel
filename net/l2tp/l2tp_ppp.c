@@ -98,6 +98,9 @@
 
 #include "l2tp_core.h"
 
+#include <uapi/linux/vzcalluser.h>
+#include <linux/ve.h>
+
 #define PPPOL2TP_DRV_VERSION	"V2.0"
 
 /* Space for UDP, L2TP and PPP headers */
@@ -500,6 +503,9 @@ static int pppol2tp_create(struct net *net, struct socket *sock, int kern)
 {
 	int error = -ENOMEM;
 	struct sock *sk;
+
+	if (!ve_feature_set(net->owner_ve, PPP))
+		return -EACCES;
 
 	sk = sk_alloc(net, PF_PPPOX, GFP_KERNEL, &pppol2tp_sk_proto, kern);
 	if (!sk)
