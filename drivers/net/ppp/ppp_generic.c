@@ -54,6 +54,9 @@
 #include <net/net_namespace.h>
 #include <net/netns/generic.h>
 
+#include <linux/ve.h>
+#include <uapi/linux/vzcalluser.h>
+
 #define PPP_VERSION	"2.4.2"
 
 /*
@@ -379,8 +382,10 @@ static int ppp_open(struct inode *inode, struct file *file)
 	/*
 	 * This could (should?) be enforced by the permissions on /dev/ppp.
 	 */
-	if (!capable(CAP_NET_ADMIN))
+	if (!ns_capable(current_user_ns(), CAP_NET_ADMIN))
 		return -EPERM;
+	if (!net_generic(current->nsproxy->net_ns, ppp_net_id)) /* no VE_FEATURE_PPP */
+		return -EACCES;
 	return 0;
 }
 
@@ -879,6 +884,9 @@ static __net_init int ppp_init_net(struct net *net)
 {
 	struct ppp_net *pn = net_generic(net, ppp_net_id);
 
+	if (!(net->owner_ve->features & VE_FEATURE_PPP))
+		return net_assign_generic(net, ppp_net_id, NULL);
+
 	idr_init(&pn->units_idr);
 	mutex_init(&pn->all_ppp_mutex);
 
@@ -893,6 +901,9 @@ static __net_init int ppp_init_net(struct net *net)
 static __net_exit void ppp_exit_net(struct net *net)
 {
 	struct ppp_net *pn = net_generic(net, ppp_net_id);
+
+	if (!pn) /* no VE_FEATURE_PPP */
+		return;
 
 	idr_destroy(&pn->units_idr);
 }
@@ -1078,7 +1089,7 @@ static void ppp_setup(struct net_device *dev)
 	dev->tx_queue_len = 3;
 	dev->type = ARPHRD_PPP;
 	dev->flags = IFF_POINTOPOINT | IFF_NOARP | IFF_MULTICAST;
-	dev->features |= NETIF_F_NETNS_LOCAL;
+	dev->features |= NETIF_F_NETNS_LOCAL | NETIF_F_VIRTUAL;
 	netif_keep_dst(dev);
 }
 
@@ -2211,11 +2222,13 @@ int ppp_register_net_channel(struct net *net, struct ppp_channel *chan)
 	struct channel *pch;
 	struct ppp_net *pn;
 
+	pn = ppp_pernet(net);
+	if (!pn)
+		return -EACCES;
+
 	pch = kzalloc(sizeof(struct channel), GFP_KERNEL);
 	if (!pch)
 		return -ENOMEM;
-
-	pn = ppp_pernet(net);
 
 	pch->ppp = NULL;
 	pch->chan = chan;
