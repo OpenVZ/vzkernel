@@ -1114,6 +1114,7 @@ struct cgroup_subsys ve_subsys = {
 	.attach		= ve_attach,
 	.base_cftypes	= ve_cftypes,
 };
+EXPORT_SYMBOL(ve_subsys);
 
 static int __init ve_subsys_init(void)
 {
