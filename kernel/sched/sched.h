@@ -291,6 +291,7 @@ struct task_group {
 #define MAX_CPU_RATE 1024
 	unsigned long cpu_rate;
 	unsigned int nr_cpus;
+	atomic_t nr_cpus_active;
 #endif
 
 #if defined(CONFIG_FAIR_GROUP_SCHED)
@@ -390,6 +391,8 @@ struct cfs_rq {
 
 	struct rb_root tasks_timeline;
 	struct rb_node *rb_leftmost;
+
+	struct list_head tasks;
 
 	/*
 	 * 'curr' points to currently running entity on this cfs_rq.
