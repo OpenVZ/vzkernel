@@ -80,6 +80,9 @@
 
 #include <linux/uaccess.h>
 
+#include <uapi/linux/vzcalluser.h>
+#include <linux/ve.h>
+
 #define PPPOE_HASH_BITS 4
 #define PPPOE_HASH_SIZE (1 << PPPOE_HASH_BITS)
 #define PPPOE_HASH_MASK	(PPPOE_HASH_SIZE - 1)
@@ -276,6 +279,8 @@ static void pppoe_flush_dev(struct net_device *dev)
 	int i;
 
 	pn = pppoe_pernet(dev_net(dev));
+	if (!pn) /* no VE_FEATURE_PPP */
+		return;
 	write_lock_bh(&pn->hash_lock);
 	for (i = 0; i < PPPOE_HASH_SIZE; i++) {
 		struct pppox_sock *po = pn->hash_table[i];
@@ -440,6 +445,8 @@ static int pppoe_rcv(struct sk_buff *skb, struct net_device *dev,
 
 	ph = pppoe_hdr(skb);
 	pn = pppoe_pernet(dev_net(dev));
+	if (!pn) /* no VE_FEATURE_PPP */
+		goto drop;
 
 	/* Note that get_item does a sock_hold(), so sk_pppox(po)
 	 * is known to be safe.
@@ -501,6 +508,9 @@ static int pppoe_disc_rcv(struct sk_buff *skb, struct net_device *dev,
 		goto abort;
 
 	pn = pppoe_pernet(dev_net(dev));
+	if (!pn) /* no VE_FEATURE_PPP */
+		goto abort;
+
 	po = get_item(pn, ph->sid, eth_hdr(skb)->h_source, dev->ifindex);
 	if (po)
 		if (!schedule_work(&po->proto.pppoe.padt_work))
@@ -536,6 +546,9 @@ static struct proto pppoe_sk_proto __read_mostly = {
 static int pppoe_create(struct net *net, struct socket *sock, int kern)
 {
 	struct sock *sk;
+
+	if (!ve_feature_set(net->owner_ve, PPP))
+		return -EACCES;
 
 	sk = sk_alloc(net, PF_PPPOX, GFP_KERNEL, &pppoe_sk_proto, kern);
 	if (!sk)
@@ -1153,6 +1166,15 @@ static __net_init int pppoe_init_net(struct net *net)
 	struct pppoe_net *pn = pppoe_pernet(net);
 	struct proc_dir_entry *pde;
 
+	if (!ve_feature_set(net->owner_ve, PPP)) {
+		/*
+		 * Need to free memory allocated in ops_init()
+		 * and nullify pointer for peer checks.
+		 */
+		net_generic_free(net, pppoe_net_id);
+		return 0;
+	}
+
 	rwlock_init(&pn->hash_lock);
 
 	pde = proc_create_net("pppoe", 0444, net->proc_net,
@@ -1167,6 +1189,12 @@ static __net_init int pppoe_init_net(struct net *net)
 
 static __net_exit void pppoe_exit_net(struct net *net)
 {
+	struct pppoe_net *pn;
+
+	pn = net_generic(net, pppoe_net_id);
+	if (!pn) /* no VE_FEATURE_PPP */
+		return;
+
 	remove_proc_entry("pppoe", net->proc_net);
 }
 
