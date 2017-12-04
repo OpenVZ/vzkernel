@@ -475,6 +475,10 @@ struct cfs_rq {
 #ifdef CONFIG_CFS_BANDWIDTH
 	RH_KABI_EXTEND(int expires_seq)
 #endif
+#ifdef CONFIG_CFS_CPULIMIT
+	int active;
+	struct hrtimer active_timer;
+#endif /* CONFIG_CFS_CPULIMIT */
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 };
 
