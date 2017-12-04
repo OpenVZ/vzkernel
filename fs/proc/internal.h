@@ -210,6 +210,7 @@ static inline bool is_empty_pde(const struct proc_dir_entry *pde)
 	return S_ISDIR(pde->mode) && !pde->proc_iops;
 }
 struct proc_dir_entry *proc_create_mount_point(const char *name);
+struct proc_dir_entry *proc_create_mount_point_mode(const char *name, umode_t mode);
 
 extern struct proc_dir_entry *pde_subdir_first(struct proc_dir_entry *dir);
 extern struct proc_dir_entry *pde_subdir_next(struct proc_dir_entry *dir);
