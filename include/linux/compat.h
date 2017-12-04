@@ -705,6 +705,72 @@ asmlinkage long compat_sys_fanotify_mark(int, unsigned int, __u32, __u32,
 static inline bool in_compat_syscall(void) { return is_compat_task(); }
 #endif
 
+#ifdef CONFIG_QUOTA_COMPAT
+
+#define QC_QUOTAON  0x0100	/* enable quotas */
+#define QC_QUOTAOFF 0x0200	/* disable quotas */
+/* GETQUOTA, SETQUOTA and SETUSE which were at 0x0300-0x0500 has now other parameteres */
+#define QC_SYNC     0x0600	/* sync disk copy of a filesystems quotas */
+#define QC_SETQLIM  0x0700	/* set limits */
+/* GETSTATS at 0x0800 is now longer... */
+#define QC_GETINFO  0x0900	/* get info about quotas - graces, flags... */
+#define QC_SETINFO  0x0A00	/* set info about quotas */
+#define QC_SETGRACE 0x0B00	/* set inode and block grace */
+#define QC_SETFLAGS 0x0C00	/* set flags for quota */
+#define QC_GETQUOTA 0x0D00	/* get limits and usage */
+#define QC_SETQUOTA 0x0E00	/* set limits and usage */
+#define QC_SETUSE   0x0F00	/* set usage */
+/* 0x1000 used by old RSQUASH */
+#define QC_GETSTATS 0x1100	/* get collected stats */
+
+struct compat_dqblk {
+	unsigned int dqb_ihardlimit;
+	unsigned int dqb_isoftlimit;
+	unsigned int dqb_curinodes;
+	unsigned int dqb_bhardlimit;
+	unsigned int dqb_bsoftlimit;
+	qsize_t dqb_curspace;
+	__kernel_time_t dqb_btime;
+	__kernel_time_t dqb_itime;
+};
+
+#ifdef CONFIG_COMPAT
+
+struct compat_compat_dqblk {
+	compat_uint_t	dqb_ihardlimit;
+	compat_uint_t	dqb_isoftlimit;
+	compat_uint_t	dqb_curinodes;
+	compat_uint_t	dqb_bhardlimit;
+	compat_uint_t	dqb_bsoftlimit;
+	compat_u64	dqb_curspace;
+	compat_time_t	dqb_btime;
+	compat_time_t	dqb_itime;
+};
+
+#endif
+
+struct compat_dqinfo {
+	unsigned int dqi_bgrace;
+	unsigned int dqi_igrace;
+	unsigned int dqi_flags;
+	unsigned int dqi_blocks;
+	unsigned int dqi_free_blk;
+	unsigned int dqi_free_entry;
+};
+
+struct compat_dqstats {
+	__u32 lookups;
+	__u32 drops;
+	__u32 reads;
+	__u32 writes;
+	__u32 cache_hits;
+	__u32 allocated_dquots;
+	__u32 free_dquots;
+	__u32 syncs;
+	__u32 version;
+};
+#endif /* CONFIG_QUOTA_COMPAT */
+
 #else
 
 #define is_compat_task() (0)
