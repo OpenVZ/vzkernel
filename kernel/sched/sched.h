@@ -462,6 +462,8 @@ struct cfs_rq {
 	u64 throttled_clock_task_time;
 	int throttled, throttle_count;
 	struct list_head throttled_list;
+
+	struct list_head boosted_entities;
 #endif /* CONFIG_CFS_BANDWIDTH */
 #ifdef CONFIG_SMP
 	RH_KABI_EXTEND(u64 last_h_load_update)
@@ -646,7 +648,8 @@ struct rq {
 #ifdef CONFIG_NO_HZ_FULL
 	unsigned long last_sched_tick;
 #endif
-	int skip_clock_update;
+	signed char skip_clock_update;
+	unsigned char resched_next;
 
 	/* capture load from *all* tasks on this cpu: */
 	struct load_weight load;
@@ -1262,6 +1265,7 @@ static const u32 prio_to_wmult[40] = {
 #endif
 #define ENQUEUE_HEAD		0x08
 #define ENQUEUE_REPLENISH	0x10
+#define ENQUEUE_BOOST		0x20
 
 #define DEQUEUE_SLEEP		0x01
 #define DEQUEUE_SAVE		0x02
