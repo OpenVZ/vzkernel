@@ -441,6 +441,7 @@ header-y += vsockmon.h
 header-y += vt.h
 header-y += vtpm_proxy.h
 header-y += vzcalluser.h
+header-y += vzctl_veth.h
 header-y += vzctl_venet.h
 header-y += vziptable_defs.h
 header-y += wait.h
