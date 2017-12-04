@@ -98,6 +98,7 @@
 #include <net/udp.h>
 #include <net/xfrm.h>
 #include <net/inet_common.h>
+#include <uapi/linux/vzcalluser.h>
 #include <linux/ve.h>
 
 #include <asm/byteorder.h>
@@ -549,6 +550,9 @@ static int pppol2tp_create(struct net *net, struct socket *sock)
 {
 	int error = -ENOMEM;
 	struct sock *sk;
+
+	if (!(net->owner_ve->features & VE_FEATURE_PPP))
+		return -EACCES;
 
 	sk = sk_alloc(net, PF_PPPOX, GFP_KERNEL, &pppol2tp_sk_proto);
 	if (!sk)
