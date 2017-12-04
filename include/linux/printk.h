@@ -141,6 +141,8 @@ int ve_printk(int dst, const char *fmt, ...);
 
 int ve_log_init(struct ve_struct *ve);
 void ve_log_destroy(struct ve_struct *ve);
+asmlinkage __printf(2, 3) __cold
+int ve_log_printk(struct ve_struct *ve, const char *s, ...);
 
 /*
  * Special printk facility for scheduler/timekeeping use only, _DO_NOT_USE_ !
@@ -199,6 +201,11 @@ int ve_log_init(struct ve_struct *ve)
 static inline
 void ve_log_destroy(struct ve_struct *ve)
 {
+}
+static inline __printf(2, 3) __cold
+int ve_log_printk(struct ve_struct *ve, const char *s, ...)
+{
+	return 0;
 }
 static inline __printf(1, 2) __cold
 int printk_deferred(const char *s, ...)
@@ -366,8 +373,20 @@ extern void dump_stack(void) __cold;
 	if (__ratelimit(&_rs))						\
 		printk(fmt, ##__VA_ARGS__);				\
 })
+
+#define ve_printk_ratelimited(dst, fmt, ...)				\
+({									\
+	static DEFINE_RATELIMIT_STATE(_rs,				\
+				      DEFAULT_RATELIMIT_INTERVAL,	\
+				      DEFAULT_RATELIMIT_BURST);		\
+									\
+	if (__ratelimit(&_rs))						\
+		ve_printk(dst, fmt, ##__VA_ARGS__);			\
+})
 #else
 #define printk_ratelimited(fmt, ...)					\
+	no_printk(fmt, ##__VA_ARGS__)
+#define ve_printk_ratelimited(dst, fmt, ...)				\
 	no_printk(fmt, ##__VA_ARGS__)
 #endif
 
@@ -386,6 +405,20 @@ extern void dump_stack(void) __cold;
 #define pr_info_ratelimited(fmt, ...)					\
 	printk_ratelimited(KERN_INFO pr_fmt(fmt), ##__VA_ARGS__)
 /* no pr_cont_ratelimited, don't do that... */
+#define ve_pr_emerg_ratelimited(dst, fmt, ...)					\
+	ve_printk_ratelimited(dst, KERN_EMERG pr_fmt(fmt), ##__VA_ARGS__)
+#define ve_pr_alert_ratelimited(dst, fmt, ...)					\
+	ve_printk_ratelimited(dst, KERN_ALERT pr_fmt(fmt), ##__VA_ARGS__)
+#define ve_pr_crit_ratelimited(dst, fmt, ...)					\
+	ve_printk_ratelimited(dst, KERN_CRIT pr_fmt(fmt), ##__VA_ARGS__)
+#define ve_pr_err_ratelimited(dst, fmt, ...)					\
+	ve_printk_ratelimited(dst, KERN_ERR pr_fmt(fmt), ##__VA_ARGS__)
+#define ve_pr_warn_ratelimited(dst, fmt, ...)					\
+	ve_printk_ratelimited(dst, KERN_WARNING pr_fmt(fmt), ##__VA_ARGS__)
+#define ve_pr_notice_ratelimited(dst, fmt, ...)					\
+	ve_printk_ratelimited(dst, KERN_NOTICE pr_fmt(fmt), ##__VA_ARGS__)
+#define ve_pr_info_ratelimited(dst, fmt, ...)					\
+	ve_printk_ratelimited(dst, KERN_INFO pr_fmt(fmt), ##__VA_ARGS__)
 
 #if defined(DEBUG)
 #define pr_devel_ratelimited(fmt, ...)					\
