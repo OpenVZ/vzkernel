@@ -388,7 +388,7 @@ static int recent_mt_check(const struct xt_mtchk_param *par,
 		ret = -EINVAL;
 		goto out;
 	}
-	pde = proc_create_data(t->name, ip_list_perms, recent_net->xt_recent,
+	pde = proc_net_create_data(t->name, ip_list_perms, recent_net->xt_recent,
 		  &recent_mt_fops, t);
 	if (pde == NULL) {
 		recent_table_free(t);
@@ -612,7 +612,7 @@ static int __net_init recent_proc_net_init(struct net *net)
 {
 	struct recent_net *recent_net = recent_pernet(net);
 
-	recent_net->xt_recent = proc_mkdir("xt_recent", net->proc_net);
+	recent_net->xt_recent = proc_net_mkdir(net, "xt_recent", net->proc_net);
 	if (!recent_net->xt_recent)
 		return -ENOMEM;
 	return 0;
