@@ -708,7 +708,7 @@ static int check_syslog_permissions(int type, int source)
 		goto ok;
 
 	if (syslog_action_restricted(type)) {
-		if (capable(CAP_SYSLOG))
+		if (ve_capable(CAP_SYSLOG))
 			goto ok;
 		/*
 		 * For historical reasons, accept CAP_SYS_ADMIN too, with
