@@ -43,14 +43,6 @@ config VE_NETDEV
 	  This option controls whether to build venet device. This is a
 	  common interface for networking in VE.
 
-config VE_ETHDEV
-	tristate "Virtual ethernet device"
-	depends on VE_CALLS && NET
-	select VZ_DEV
-	default m
-	help
-	  This option controls whether to build virtual ethernet device.
-
 config VZ_DEV
 	tristate "VE device"
 	default m
