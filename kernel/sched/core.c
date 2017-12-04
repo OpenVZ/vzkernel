@@ -1668,6 +1668,7 @@ static int ttwu_remote(struct task_struct *p, int wake_flags)
 	rq = __task_rq_lock(p);
 	if (p->on_rq) {
 		ttwu_do_wakeup(rq, p, wake_flags);
+		p->woken_while_running = 1;
 		ret = 1;
 	}
 	__task_rq_unlock(rq);
@@ -1982,6 +1983,10 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	p->se.nr_migrations		= 0;
 	p->se.vruntime			= 0;
 	INIT_LIST_HEAD(&p->se.group_node);
+
+#ifdef CONFIG_CFS_BANDWIDTH
+	p->se.boosted = 0;
+#endif
 
 #ifdef CONFIG_SCHEDSTATS
 	/* Even if schedstat is disabled, there should not be garbage */
@@ -3568,6 +3573,7 @@ static void __sched __schedule(void)
 	struct task_struct *prev, *next;
 	unsigned long *switch_count;
 	struct rq *rq;
+	int resched_next;
 	int cpu;
 
 need_resched:
@@ -3643,8 +3649,14 @@ need_resched:
 
 	post_schedule(rq);
 
+	resched_next = READ_ONCE(rq->resched_next);
+	if (resched_next) {
+		set_tsk_need_resched(current);
+		rq->resched_next = 0;
+	}
+
 	sched_preempt_enable_no_resched();
-	if (need_resched())
+	if (!resched_next && need_resched())
 		goto need_resched;
 }
 STACK_FRAME_NON_STANDARD(__schedule); /* switch_to() */
