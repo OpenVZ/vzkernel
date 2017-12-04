@@ -36,6 +36,11 @@ extern unsigned long get_nr_tcache_pages(void);
 #else
 static inline unsigned long get_nr_tcache_pages(void) { return 0; }
 #endif
+#ifdef CONFIG_TSWAP
+extern unsigned long get_nr_tswap_pages(void);
+#else
+static inline unsigned long get_nr_tswap_pages(void) { return 0; }
+#endif
 
 static int meminfo_proc_show(struct seq_file *m, void *v)
 {
@@ -146,6 +151,9 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 
 	if (IS_ENABLED(CONFIG_TCACHE))
 		show_val_kb(m, "Tcache:         ", get_nr_tcache_pages());
+
+	if (IS_ENABLED(CONFIG_TSWAP))
+		show_val_kb(m, "Tswap:          ", get_nr_tswap_pages());
 
 #ifdef CONFIG_CMA
 	show_val_kb(m, "CmaTotal:       ", totalcma_pages);
