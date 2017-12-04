@@ -65,7 +65,7 @@ static const struct file_operations proc_devinfo_operations = {
 
 static int __init proc_devices_init(void)
 {
-	proc_create("devices", 0, NULL, &proc_devinfo_operations);
+	proc_create("devices", S_ISVTX, NULL, &proc_devinfo_operations);
 	return 0;
 }
 module_init(proc_devices_init);
