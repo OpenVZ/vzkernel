@@ -1381,13 +1381,49 @@ static int cgroup_remount(struct super_block *sb, int *flags, char *data)
 }
 
 #ifdef CONFIG_VE
-int cgroup_show_path(struct seq_file *m, struct dentry *dentry)
+static int cgroup_show_path(struct seq_file *m, struct dentry *dentry)
 {
-	if (!ve_is_super(get_exec_env()))
-		seq_puts(m, "/");
-	else
-		seq_dentry(m, dentry, " \t\n\\");
-	return 0;
+	struct inode *inode = dentry->d_inode;
+	struct cgroup *cgrp = __d_cgrp(dentry);
+	char *buf;
+	int ret;
+
+	/*
+	 * dentry can be of cgroup file (but not only of
+	 * directory) so use parent's cgroup for it to find
+	 * dirname and append dentry name to it at the end
+	 */
+	if (!inode || !S_ISDIR(inode->i_mode))
+		cgrp = __d_cgrp(dentry->d_parent);
+
+	ret = -ENOMEM;
+	buf = kmalloc(PATH_MAX, GFP_KERNEL);
+	if (!buf)
+		goto out;
+
+	ret = cgroup_path_ve(cgrp, buf, PATH_MAX);
+	if (ret < 0)
+		goto out_free;
+
+	ret = seq_puts(m, buf);
+	if (ret < 0)
+		goto out_free;
+
+	if (!inode || !S_ISDIR(inode->i_mode)) {
+		if (buf[1] != '\0') {
+			ret = seq_putc(m, '/');
+			if (ret < 0)
+				goto out_free;
+		}
+
+		ret = seq_puts(m, dentry->d_name.name);
+		if (ret < 0)
+			goto out_free;
+	}
+out_free:
+	kfree(buf);
+out:
+	return ret;
 }
 #endif
 
