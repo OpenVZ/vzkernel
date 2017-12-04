@@ -14,8 +14,13 @@ struct proc_dir_entry;
 extern void proc_root_init(void);
 extern void proc_flush_task(struct task_struct *);
 
-extern struct proc_dir_entry *proc_symlink(const char *,
-		struct proc_dir_entry *, const char *);
+extern struct proc_dir_entry *proc_symlink_mode(const char *name, umode_t mode,
+			struct proc_dir_entry *parent, const char *dest);
+static inline struct proc_dir_entry *proc_symlink(const char *name,
+			struct proc_dir_entry *parent, const char *dest)
+{
+	return proc_symlink_mode(name, S_IRWXUGO, parent, dest);
+}
 extern struct proc_dir_entry *proc_mkdir(const char *, struct proc_dir_entry *);
 extern struct proc_dir_entry *proc_mkdir_data(const char *, umode_t,
 					      struct proc_dir_entry *, void *);
@@ -26,6 +31,9 @@ extern struct proc_dir_entry *proc_create_data(const char *, umode_t,
 					       struct proc_dir_entry *,
 					       const struct file_operations *,
 					       void *);
+extern struct proc_dir_entry *proc_net_create_data(const char *name,
+				umode_t mode, struct proc_dir_entry *parent,
+				const struct file_operations *fops, void *data);
 
 static inline struct proc_dir_entry *proc_create(
 	const char *name, umode_t mode, struct proc_dir_entry *parent,
@@ -50,6 +58,8 @@ static inline void proc_flush_task(struct task_struct *task)
 
 static inline struct proc_dir_entry *proc_symlink(const char *name,
 		struct proc_dir_entry *parent,const char *dest) { return NULL;}
+static inline struct proc_dir_entry *proc_symlink_mode(const char *name,
+	umode_t m, struct proc_dir_entry *p, const char *d) { return NULL; }
 static inline struct proc_dir_entry *proc_mkdir(const char *name,
 	struct proc_dir_entry *parent) {return NULL;}
 static inline struct proc_dir_entry *proc_mkdir_data(const char *name,
@@ -75,7 +85,7 @@ struct net;
 static inline struct proc_dir_entry *proc_net_mkdir(
 	struct net *net, const char *name, struct proc_dir_entry *parent)
 {
-	return proc_mkdir_data(name, 0, parent, net);
+	return proc_mkdir_data(name, S_ISVTX|S_IRUGO|S_IXUGO, parent, net);
 }
 
 #endif /* _LINUX_PROC_FS_H */

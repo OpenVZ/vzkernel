@@ -100,11 +100,20 @@ bool pde_subdir_insert(struct proc_dir_entry *dir,
 	return true;
 }
 
+bool proc_in_container(struct super_block *sb)
+{
+	return !ve_is_super(get_exec_env());
+}
+
 static int proc_notify_change(struct dentry *dentry, struct iattr *iattr)
 {
 	struct inode *inode = dentry->d_inode;
 	struct proc_dir_entry *de = PDE(inode);
 	int error;
+
+	if (proc_in_container(dentry->d_sb) &&
+	    (iattr->ia_valid & (ATTR_MODE|ATTR_UID|ATTR_GID)))
+	    return -EPERM;
 
 	error = inode_change_ok(inode, iattr);
 	if (error)
@@ -113,9 +122,14 @@ static int proc_notify_change(struct dentry *dentry, struct iattr *iattr)
 	setattr_copy(inode, iattr);
 	mark_inode_dirty(inode);
 
-	de->uid = inode->i_uid;
-	de->gid = inode->i_gid;
-	de->mode = inode->i_mode;
+	if (iattr->ia_valid & ATTR_UID)
+		de->uid = inode->i_uid;
+	if (iattr->ia_valid & ATTR_GID)
+		de->gid = inode->i_gid;
+	if (iattr->ia_valid & ATTR_MODE)
+		de->mode = (de->mode & ~S_IRWXUGO) |
+			   (inode->i_mode & S_IRWXUGO);
+
 	return 0;
 }
 
@@ -259,10 +273,15 @@ struct dentry *proc_lookup_de(struct proc_dir_entry *de, struct inode *dir,
 		struct dentry *dentry)
 {
 	struct inode *inode;
+	bool in_container = proc_in_container(dentry->d_sb);
 
 	spin_lock(&proc_subdir_lock);
 	de = pde_subdir_find(de, dentry->d_name.name, dentry->d_name.len);
 	if (de) {
+		if (in_container && !(de->mode & S_ISVTX)) {
+			spin_unlock(&proc_subdir_lock);
+			return ERR_PTR(-ENOENT);
+		}
 		pde_get(de);
 		spin_unlock(&proc_subdir_lock);
 		inode = proc_get_inode(dir->i_sb, de);
@@ -298,6 +317,7 @@ int proc_readdir_de(struct proc_dir_entry *de, struct file *filp, void *dirent,
 	int i;
 	struct inode *inode = file_inode(filp);
 	int ret = 0;
+	bool in_container = proc_in_container(filp->f_path.dentry->d_sb);
 
 	ino = inode->i_ino;
 	i = filp->f_pos;
@@ -326,14 +346,21 @@ int proc_readdir_de(struct proc_dir_entry *de, struct file *filp, void *dirent,
 					spin_unlock(&proc_subdir_lock);
 					goto out;
 				}
-				if (!i)
-					break;
+				if (!in_container || (de->mode & S_ISVTX)) {
+					if (!i)
+						break;
+					i--;
+				}
 				de = pde_subdir_next(de);
-				i--;
 			}
 
 			do {
 				struct proc_dir_entry *next;
+
+				if (in_container && !(de->mode & S_ISVTX)) {
+					de = pde_subdir_next(de);
+					continue;
+				}
 
 				/* filldir passes info to user space */
 				pde_get(de);
@@ -449,13 +476,12 @@ out:
 	return ent;
 }
 
-struct proc_dir_entry *proc_symlink(const char *name,
+struct proc_dir_entry *proc_symlink_mode(const char *name, umode_t mode,
 		struct proc_dir_entry *parent, const char *dest)
 {
 	struct proc_dir_entry *ent;
 
-	ent = __proc_create(&parent, name,
-			  (S_IFLNK | S_IRUGO | S_IWUGO | S_IXUGO),1);
+	ent = __proc_create(&parent, name, S_IFLNK | mode, 1);
 
 	if (ent) {
 		ent->data = kmalloc((ent->size=strlen(dest))+1, GFP_KERNEL);
@@ -474,7 +500,7 @@ struct proc_dir_entry *proc_symlink(const char *name,
 	}
 	return ent;
 }
-EXPORT_SYMBOL(proc_symlink);
+EXPORT_SYMBOL(proc_symlink_mode);
 
 struct proc_dir_entry *proc_mkdir_data(const char *name, umode_t mode,
 		struct proc_dir_entry *parent, void *data)
@@ -516,10 +542,17 @@ EXPORT_SYMBOL(proc_mkdir);
 
 struct proc_dir_entry *proc_create_mount_point(const char *name)
 {
-	umode_t mode = S_IFDIR | S_IRUGO | S_IXUGO;
+	return proc_create_mount_point_mode(name, 0);
+}
+
+struct proc_dir_entry *proc_create_mount_point_mode(const char *name, umode_t mode)
+{
 	struct proc_dir_entry *ent, *parent = NULL;
 
-	ent = __proc_create(&parent, name, mode, 2);
+	if (mode == 0)
+		mode = S_IRUGO | S_IXUGO;
+
+	ent = __proc_create(&parent, name, S_IFDIR | mode, 2);
 	if (ent) {
 		ent->data = NULL;
 		ent->proc_fops = NULL;
@@ -550,7 +583,7 @@ struct proc_dir_entry *proc_create_data(const char *name, umode_t mode,
 
 	BUG_ON(proc_fops == NULL);
 
-	if ((mode & S_IALLUGO) == 0)
+	if ((mode & S_IRWXUGO) == 0)
 		mode |= S_IRUGO;
 	pde = __proc_create(&parent, name, mode, 1);
 	if (!pde)
