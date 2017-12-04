@@ -247,7 +247,7 @@ do_register(struct net *net, const char *name, void *data,
 
 	dprintk("RPC:       registering /proc/net/rpc/%s\n", name);
 	sn = net_generic(net, sunrpc_net_id);
-	return proc_create_data(name, 0, sn->proc_net_rpc, fops, data);
+	return proc_net_create_data(name, 0, sn->proc_net_rpc, fops, data);
 }
 
 struct proc_dir_entry *
@@ -290,7 +290,7 @@ int rpc_proc_init(struct net *net)
 
 	dprintk("RPC:       registering /proc/net/rpc\n");
 	sn = net_generic(net, sunrpc_net_id);
-	sn->proc_net_rpc = proc_mkdir("rpc", net->proc_net);
+	sn->proc_net_rpc = proc_net_mkdir(net, "rpc", net->proc_net);
 	if (sn->proc_net_rpc == NULL)
 		return -ENOMEM;
 
