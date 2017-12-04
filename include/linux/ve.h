@@ -110,6 +110,7 @@ struct ve_devmnt {
 extern int nr_ve;
 extern struct proc_dir_entry *proc_vz_dir;
 extern struct proc_dir_entry *glob_proc_vz_dir;
+extern struct cgroup_subsys ve_subsys;
 
 #ifdef CONFIG_VE
 
