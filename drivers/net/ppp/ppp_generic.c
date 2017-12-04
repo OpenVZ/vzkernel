@@ -53,6 +53,9 @@
 #include <net/net_namespace.h>
 #include <net/netns/generic.h>
 
+#include <uapi/linux/vzcalluser.h>
+#include <linux/ve.h>
+
 #define PPP_VERSION	"2.4.2"
 
 /*
@@ -390,6 +393,8 @@ static int ppp_open(struct inode *inode, struct file *file)
 	 */
 	if (!ns_capable(file->f_cred->user_ns, CAP_NET_ADMIN))
 		return -EPERM;
+	if (!net_generic(current->nsproxy->net_ns, ppp_net_id)) /* no VE_FEATURE_PPP */
+		return -EACCES;
 	return 0;
 }
 
@@ -1106,6 +1111,15 @@ static __net_init int ppp_init_net(struct net *net)
 {
 	struct ppp_net *pn = net_generic(net, ppp_net_id);
 
+	if (!ve_feature_set(net->owner_ve, PPP)) {
+		/*
+		 * Need to free memory allocated in ops_init()
+		 * and nullify pointer for peer checks.
+		 */
+		net_generic_free(net, ppp_net_id);
+		return 0;
+	}
+
 	idr_init(&pn->units_idr);
 	mutex_init(&pn->all_ppp_mutex);
 
@@ -1126,6 +1140,9 @@ static __net_exit void ppp_exit_net(struct net *net)
 	LIST_HEAD(list);
 	int id;
 
+	if (!pn) /* no VE_FEATURE_PPP */
+		return;
+
 	rtnl_lock();
 	for_each_netdev_safe(net, dev, aux) {
 		if (dev->netdev_ops == &ppp_netdev_ops)
@@ -1141,6 +1158,7 @@ static __net_exit void ppp_exit_net(struct net *net)
 	rtnl_unlock();
 
 	mutex_destroy(&pn->all_ppp_mutex);
+
 	idr_destroy(&pn->units_idr);
 	WARN_ON_ONCE(!list_empty(&pn->all_channels));
 	WARN_ON_ONCE(!list_empty(&pn->new_channels));
@@ -1617,6 +1635,9 @@ static void ppp_setup(struct net_device *dev)
 	SET_NETDEV_DEVTYPE(dev, &ppp_type);
 
 	dev->features |= NETIF_F_LLTX;
+#ifdef CONFIG_VE
+	dev->ve_features = NETIF_F_VIRTUAL;
+#endif
 
 	dev->hard_header_len = PPP_HDRLEN;
 	dev->mtu = PPP_MRU;
@@ -2877,11 +2898,13 @@ int ppp_register_net_channel(struct net *net, struct ppp_channel *chan)
 	struct channel *pch;
 	struct ppp_net *pn;
 
+	pn = ppp_pernet(net);
+	if (!pn)
+		return -EACCES;
+
 	pch = kzalloc(sizeof(struct channel), GFP_KERNEL);
 	if (!pch)
 		return -ENOMEM;
-
-	pn = ppp_pernet(net);
 
 	pch->ppp = NULL;
 	pch->chan = chan;
