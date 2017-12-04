@@ -17,6 +17,7 @@
 #include <linux/quotaops.h>
 #include <linux/types.h>
 #include <linux/writeback.h>
+#include <linux/compat.h>
 
 static int check_quotactl_permission(struct super_block *sb, int type, int cmd,
 				     qid_t id)
@@ -459,6 +460,181 @@ static struct super_block *quotactl_block(const char __user *special, int cmd)
 #endif
 }
 
+#ifdef CONFIG_QUOTA_COMPAT
+
+asmlinkage long sys_quotactl(unsigned int cmd, const char __user *special, qid_t id, void __user *addr);
+
+static long compat_quotactl(unsigned int cmds, unsigned int type,
+		const char __user *special, qid_t id,
+		void __user *addr)
+{
+	struct super_block *sb;
+	long ret;
+
+	sb = NULL;
+	switch (cmds) {
+		case QC_QUOTAON:
+			return sys_quotactl(QCMD(Q_QUOTAON, type),
+					special, id, addr);
+
+		case QC_QUOTAOFF:
+			return sys_quotactl(QCMD(Q_QUOTAOFF, type),
+					special, id, addr);
+
+		case QC_SYNC:
+			return sys_quotactl(QCMD(Q_SYNC, type),
+					special, id, addr);
+
+		case QC_GETQUOTA: {
+			struct if_dqblk idq;
+			struct fs_disk_quota fdq;
+			struct compat_dqblk cdq;
+			struct kqid qid;
+
+			sb = quotactl_block(special, cmds);
+			ret = PTR_ERR(sb);
+			if (IS_ERR(sb))
+				break;
+			ret = check_quotactl_permission(sb, type, Q_GETQUOTA, id);
+			if (ret)
+				break;
+			qid = make_kqid(current_user_ns(), type, id);
+			ret = -EINVAL;
+			if (!qid_valid(qid))
+				break;
+			ret = sb->s_qcop->get_dqblk(sb, qid, &fdq);
+			copy_to_if_dqblk(&idq, &fdq);
+			if (ret)
+				break;
+			memset(&cdq, 0, sizeof(cdq));
+			cdq.dqb_ihardlimit = fdq.d_ino_hardlimit;
+			cdq.dqb_isoftlimit = fdq.d_ino_softlimit;
+			cdq.dqb_curinodes = fdq.d_icount;
+			cdq.dqb_bhardlimit = fdq.d_blk_hardlimit;
+			cdq.dqb_bsoftlimit = fdq.d_blk_softlimit;
+			cdq.dqb_curspace = fdq.d_bcount;
+			cdq.dqb_btime = fdq.d_btimer;
+			cdq.dqb_itime = fdq.d_itimer;
+			ret = 0;
+			if (copy_to_user(addr, &cdq, sizeof(cdq)))
+				ret = -EFAULT;
+			break;
+		}
+
+		case QC_SETQUOTA:
+		case QC_SETUSE:
+		case QC_SETQLIM: {
+			struct if_dqblk idq;
+			struct fs_disk_quota fdq;
+			struct compat_dqblk cdq;
+			struct kqid qid;
+
+			sb = quotactl_block(special, cmds);
+			ret = PTR_ERR(sb);
+			if (IS_ERR(sb))
+				break;
+			ret = check_quotactl_permission(sb, type, Q_GETQUOTA, id);
+			if (ret)
+				break;
+			ret = -EFAULT;
+			if (copy_from_user(&cdq, addr, sizeof(cdq)))
+				break;
+			qid = make_kqid(current_user_ns(), type, id);
+			ret = -EINVAL;
+			if (!qid_valid(qid))
+				break;
+			idq.dqb_ihardlimit = cdq.dqb_ihardlimit;
+			idq.dqb_isoftlimit = cdq.dqb_isoftlimit;
+			idq.dqb_curinodes = cdq.dqb_curinodes;
+			idq.dqb_bhardlimit = cdq.dqb_bhardlimit;
+			idq.dqb_bsoftlimit = cdq.dqb_bsoftlimit;
+			idq.dqb_curspace = cdq.dqb_curspace;
+			idq.dqb_valid = 0;
+			if (cmds == QC_SETQUOTA || cmds == QC_SETQLIM)
+				idq.dqb_valid |= QIF_LIMITS;
+			if (cmds == QC_SETQUOTA || cmds == QC_SETUSE)
+				idq.dqb_valid |= QIF_USAGE;
+			copy_from_if_dqblk(&fdq, &idq);
+			ret = sb->s_qcop->set_dqblk(sb, qid, &fdq);
+			break;
+		}
+
+		case QC_GETINFO: {
+			struct if_dqinfo iinf;
+			struct compat_dqinfo cinf;
+
+			sb = quotactl_block(special, cmds);
+			ret = PTR_ERR(sb);
+			if (IS_ERR(sb))
+				break;
+			ret = check_quotactl_permission(sb, type, Q_GETQUOTA, id);
+			if (ret)
+				break;
+			ret = sb->s_qcop->get_info(sb, type, &iinf);
+			if (ret)
+				break;
+
+			memset(&cinf, 0, sizeof(cinf));
+			cinf.dqi_bgrace = iinf.dqi_bgrace;
+			cinf.dqi_igrace = iinf.dqi_igrace;
+			if (iinf.dqi_flags & DQF_INFO_DIRTY)
+				cinf.dqi_flags |= 0x0010;
+			ret = 0;
+			if (copy_to_user(addr, &cinf, sizeof(cinf)))
+				ret = -EFAULT;
+			break;
+		}
+
+		case QC_SETINFO:
+		case QC_SETGRACE:
+		case QC_SETFLAGS: {
+			struct if_dqinfo iinf;
+			struct compat_dqinfo cinf;
+
+			sb = quotactl_block(special, cmds);
+			ret = PTR_ERR(sb);
+			if (IS_ERR(sb))
+				break;
+			ret = check_quotactl_permission(sb, type, Q_GETQUOTA, id);
+			if (ret)
+				break;
+			ret = -EFAULT;
+			if (copy_from_user(&cinf, addr, sizeof(cinf)))
+				break;
+			iinf.dqi_bgrace = cinf.dqi_bgrace;
+			iinf.dqi_igrace = cinf.dqi_igrace;
+			iinf.dqi_flags = cinf.dqi_flags;
+			iinf.dqi_valid = 0;
+			if (cmds == QC_SETINFO || cmds == QC_SETGRACE)
+				iinf.dqi_valid |= IIF_BGRACE | IIF_IGRACE;
+			if (cmds == QC_SETINFO || cmds == QC_SETFLAGS)
+				iinf.dqi_valid |= IIF_FLAGS;
+			ret = sb->s_qcop->set_info(sb, type, &iinf);
+			break;
+		}
+
+		case QC_GETSTATS: {
+			struct compat_dqstats stat;
+
+			memset(&stat, 0, sizeof(stat));
+			stat.version = 6*10000+5*100+0;
+			ret = 0;
+			if (copy_to_user(addr, &stat, sizeof(stat)))
+				ret = -EFAULT;
+			break;
+		}
+
+		default:
+			ret = -ENOSYS;
+			break;
+	}
+	if (sb && !IS_ERR(sb))
+		drop_super(sb);
+	return ret;
+}
+
+#endif
+
 /*
  * This is the system call interface. This communicates with
  * the user-level programs. Currently this only supports diskquota
@@ -475,6 +651,11 @@ SYSCALL_DEFINE4(quotactl, unsigned int, cmd, const char __user *, special,
 
 	cmds = cmd >> SUBCMDSHIFT;
 	type = cmd & SUBCMDMASK;
+
+#ifdef CONFIG_QUOTA_COMPAT
+	if (cmds >= 0x0100 && cmds < 0x3000)
+		return compat_quotactl(cmds, type, special, id, addr);
+#endif
 
 	/*
 	 * As a special case Q_SYNC can be called without a specific device.
