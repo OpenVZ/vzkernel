@@ -58,6 +58,9 @@
 #define TUNGETVNETBE _IOR('T', 223, int)
 #define TUNSETCARRIER _IOW('T', 226, int)
 
+/* CONFIG_VE_TUNTAP_ACCOUNTING should be set */
+#define TUNSETACCTID _IOW('T', 300, struct ifreq)
+
 /* TUNSETIFF ifr flags */
 #define IFF_TUN		0x0001
 #define IFF_TAP		0x0002
