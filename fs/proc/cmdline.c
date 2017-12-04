@@ -25,7 +25,7 @@ static const struct file_operations cmdline_proc_fops = {
 
 static int __init proc_cmdline_init(void)
 {
-	proc_create("cmdline", 0, NULL, &cmdline_proc_fops);
+	proc_create("cmdline", S_ISVTX, NULL, &cmdline_proc_fops);
 	return 0;
 }
 module_init(proc_cmdline_init);
