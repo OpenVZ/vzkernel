@@ -84,6 +84,7 @@ enum {
 	NETIF_F_HW_TLS_RECORD_BIT,	/* Offload TLS record */
 
 	NETIF_F_VIRTUAL_BIT,		/* can be registered inside VE */
+	NETIF_F_VENET_BIT,		/* device is venet device */
 
 	/*
 	 * Add your fresh new feature above and remember to update
@@ -155,6 +156,7 @@ enum {
 #define NETIF_F_HW_TLS_TX	__NETIF_F(HW_TLS_TX)
 
 #define NETIF_F_VIRTUAL		__NETIF_F(VIRTUAL)
+#define	NETIF_F_VENET		__NETIF_F(VENET)
 
 #define for_each_netdev_feature(mask_addr, bit)	\
 	for_each_set_bit(bit, (unsigned long *)mask_addr, NETDEV_FEATURE_COUNT)
