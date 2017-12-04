@@ -1067,6 +1067,11 @@ struct sched_domain {
 	unsigned int alb_failed;
 	unsigned int alb_pushed;
 
+	/* cpulimit balancing */
+	unsigned int clb_count;
+	unsigned int clb_failed;
+	unsigned int clb_pushed;
+
 	/* SD_BALANCE_EXEC stats */
 	unsigned int sbe_count;
 	unsigned int sbe_balanced;
@@ -1209,6 +1214,7 @@ struct sched_statistics {
 	u64			nr_migrations_cold;
 	u64			nr_failed_migrations_affine;
 	u64			nr_failed_migrations_running;
+	u64			nr_failed_migrations_cpulimit;
 	u64			nr_failed_migrations_hot;
 	u64			nr_forced_migrations;
 
@@ -1228,6 +1234,7 @@ struct sched_entity {
 	struct load_weight	load;		/* for load-balancing */
 	struct rb_node		run_node;
 	struct list_head	group_node;
+	struct list_head	cfs_rq_node;
 	unsigned int		on_rq;
 
 	u64			exec_start;
