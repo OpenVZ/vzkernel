@@ -4012,8 +4012,6 @@ static char *module_flags(struct module *mod, char *buf)
 static void *m_start(struct seq_file *m, loff_t *pos)
 {
 	mutex_lock(&module_mutex);
-	if (!ve_is_super(get_exec_env()))
-		return NULL;
 	return seq_list_start(&modules, *pos);
 }
 
@@ -4082,7 +4080,7 @@ static const struct file_operations proc_modules_operations = {
 
 static int __init proc_modules_init(void)
 {
-	proc_create("modules", 0, NULL, &proc_modules_operations);
+	proc_create("modules", S_ISVTX, NULL, &proc_modules_operations);
 	return 0;
 }
 module_init(proc_modules_init);
