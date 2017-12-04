@@ -183,6 +183,15 @@ const struct file_operations proc_net_operations = {
 	.readdir	= proc_tgid_net_readdir,
 };
 
+struct proc_dir_entry *proc_net_create_data(const char *name, umode_t mode,
+					    struct proc_dir_entry *parent,
+					    const struct file_operations *fops,
+					    void *data)
+{
+	return proc_create_data(name, S_ISVTX | mode, parent, fops, data);
+}
+EXPORT_SYMBOL_GPL(proc_net_create_data);
+
 static __net_init int proc_net_ns_init(struct net *net)
 {
 	struct proc_dir_entry *netd, *net_statd;
@@ -228,7 +237,7 @@ static struct pernet_operations __net_initdata proc_net_ns_ops = {
 
 int __init proc_net_init(void)
 {
-	proc_symlink("net", NULL, "self/net");
+	proc_symlink_mode("net", S_ISVTX | S_IRWXUGO, NULL, "self/net");
 
 	return register_pernet_subsys(&proc_net_ns_ops);
 }
