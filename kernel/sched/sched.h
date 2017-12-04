@@ -1269,6 +1269,7 @@ static const u32 prio_to_wmult[40] = {
 
 #define DEQUEUE_SLEEP		0x01
 #define DEQUEUE_SAVE		0x02
+#define DEQUEUE_TASK_SLEEP	0x04
 
 struct sched_class {
 	const struct sched_class *next;
