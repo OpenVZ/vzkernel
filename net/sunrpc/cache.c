@@ -1640,13 +1640,13 @@ static int create_cache_proc_entries(struct cache_detail *cd, struct net *net)
 	struct sunrpc_net *sn;
 
 	sn = net_generic(net, sunrpc_net_id);
-	cd->u.procfs.proc_ent = proc_mkdir(cd->name, sn->proc_net_rpc);
+	cd->u.procfs.proc_ent = proc_net_mkdir(net, cd->name, sn->proc_net_rpc);
 	if (cd->u.procfs.proc_ent == NULL)
 		goto out_nomem;
 	cd->u.procfs.channel_ent = NULL;
 	cd->u.procfs.content_ent = NULL;
 
-	p = proc_create_data("flush", S_IFREG|S_IRUSR|S_IWUSR,
+	p = proc_net_create_data("flush", S_IFREG|S_IRUSR|S_IWUSR,
 			     cd->u.procfs.proc_ent,
 			     &cache_flush_operations_procfs, cd);
 	cd->u.procfs.flush_ent = p;
@@ -1654,7 +1654,7 @@ static int create_cache_proc_entries(struct cache_detail *cd, struct net *net)
 		goto out_nomem;
 
 	if (cd->cache_request || cd->cache_parse) {
-		p = proc_create_data("channel", S_IFREG|S_IRUSR|S_IWUSR,
+		p = proc_net_create_data("channel", S_IFREG|S_IRUSR|S_IWUSR,
 				     cd->u.procfs.proc_ent,
 				     &cache_file_operations_procfs, cd);
 		cd->u.procfs.channel_ent = p;
@@ -1662,7 +1662,7 @@ static int create_cache_proc_entries(struct cache_detail *cd, struct net *net)
 			goto out_nomem;
 	}
 	if (cd->cache_show) {
-		p = proc_create_data("content", S_IFREG|S_IRUSR,
+		p = proc_net_create_data("content", S_IFREG|S_IRUSR,
 				cd->u.procfs.proc_ent,
 				&content_file_operations_procfs, cd);
 		cd->u.procfs.content_ent = p;
