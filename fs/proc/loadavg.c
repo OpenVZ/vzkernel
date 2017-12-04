@@ -39,7 +39,7 @@ static const struct file_operations loadavg_proc_fops = {
 
 static int __init proc_loadavg_init(void)
 {
-	proc_create("loadavg", 0, NULL, &loadavg_proc_fops);
+	proc_create("loadavg", S_ISVTX, NULL, &loadavg_proc_fops);
 	return 0;
 }
 module_init(proc_loadavg_init);
