@@ -56,6 +56,9 @@
 #include <net/net_namespace.h>
 #include <net/netns/generic.h>
 
+#include <uapi/linux/vzcalluser.h>
+#include <linux/ve.h>
+
 #define PPP_VERSION	"2.4.2"
 
 /*
@@ -389,8 +392,10 @@ static int ppp_open(struct inode *inode, struct file *file)
 	/*
 	 * This could (should?) be enforced by the permissions on /dev/ppp.
 	 */
-	if (!capable(CAP_NET_ADMIN))
+	if (!ns_capable(current_user_ns(), CAP_NET_ADMIN))
 		return -EPERM;
+	if (!net_generic(current->nsproxy->net_ns, ppp_net_id)) /* no VE_FEATURE_PPP */
+		return -EACCES;
 	return 0;
 }
 
@@ -925,6 +930,9 @@ static __net_init int ppp_init_net(struct net *net)
 {
 	struct ppp_net *pn = net_generic(net, ppp_net_id);
 
+	if (!ve_feature_set(net->owner_ve, PPP))
+		return net_assign_generic(net, ppp_net_id, NULL);
+
 	idr_init(&pn->units_idr);
 	mutex_init(&pn->all_ppp_mutex);
 
@@ -958,6 +966,9 @@ static __net_exit void ppp_exit_net(struct net *net)
 
 	unregister_netdevice_many(&list);
 	rtnl_unlock();
+
+	if (!pn) /* no VE_FEATURE_PPP */
+		return;
 
 	idr_destroy(&pn->units_idr);
 }
@@ -1398,7 +1409,7 @@ static void ppp_setup(struct net_device *dev)
 	dev->netdev_ops = &ppp_netdev_ops;
 	SET_NETDEV_DEVTYPE(dev, &ppp_type);
 
-	dev->features |= NETIF_F_LLTX;
+	dev->features |= NETIF_F_LLTX | NETIF_F_VIRTUAL;
 
 	dev->hard_header_len = PPP_HDRLEN;
 	dev->mtu = PPP_MRU;
@@ -2568,11 +2579,13 @@ int ppp_register_net_channel(struct net *net, struct ppp_channel *chan)
 	struct channel *pch;
 	struct ppp_net *pn;
 
+	pn = ppp_pernet(net);
+	if (!pn)
+		return -EACCES;
+
 	pch = kzalloc(sizeof(struct channel), GFP_KERNEL);
 	if (!pch)
 		return -ENOMEM;
-
-	pn = ppp_pernet(net);
 
 	pch->ppp = NULL;
 	pch->chan = chan;
