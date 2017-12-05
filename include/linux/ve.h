@@ -56,6 +56,10 @@ struct ve_struct {
 	struct super_block	*dev_sb;
 	struct super_block	*devpts_sb;
 
+#if IS_ENABLED(CONFIG_BINFMT_MISC)
+	struct binfmt_misc	*binfmt_misc;
+#endif
+
 #define	MAX_NR_VTTY		12
 	struct tty_struct	*vtty[MAX_NR_VTTY];
 
