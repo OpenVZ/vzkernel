@@ -16,6 +16,14 @@ struct kiocb;
 
 #define AIO_MAX_NR_DEFAULT	0x10000
 
+struct ve_ioc_arg
+{
+	aio_context_t	ctx_id;
+	unsigned	val;
+};
+
+#define VE_AIO_IOC_WAIT_ACTIVE	_IOW('a',  1, struct ve_ioc_arg)
+
 /*
  * We use ki_cancel == KIOCB_CANCELLED to indicate that a kiocb has been either
  * cancelled or completed (this makes a certain amount of sense because
@@ -108,6 +116,10 @@ void aio_kernel_init_callback(struct kiocb *iocb,
 			      void (*complete)(u64 user_data, long res),
 			      u64 user_data);
 int aio_kernel_submit(struct kiocb *iocb);
+#ifdef CONFIG_VE
+int ve_aio_ioctl(struct task_struct *, unsigned int, unsigned long);
+#endif
+
 #else
 static inline ssize_t wait_on_sync_kiocb(struct kiocb *iocb) { return 0; }
 static inline void aio_put_req(struct kiocb *iocb) { }
@@ -119,6 +131,8 @@ static inline long do_io_submit(aio_context_t ctx_id, long nr,
 				bool compat) { return 0; }
 static inline void kiocb_set_cancel_fn(struct kiocb *req,
 				       kiocb_cancel_fn *cancel) { }
+static int ve_aio_ioctl(struct task_struct *task, unsigned int cmd,
+			unsigned long arg) { return 0; }
 #endif /* CONFIG_AIO */
 
 static inline struct kiocb *list_kiocb(struct list_head *h)
