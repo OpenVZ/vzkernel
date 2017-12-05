@@ -15,6 +15,7 @@
 #include <linux/sunrpc/gss_krb5_enctypes.h>
 #include <linux/sunrpc/rpc_pipe_fs.h>
 #include <linux/module.h>
+#include <uapi/linux/vzcalluser.h>
 
 #include "idmap.h"
 #include "nfsd.h"
@@ -1162,6 +1163,11 @@ static struct dentry *nfsd_mount(struct file_system_type *fs_type,
 	int flags, const char *dev_name, void *data)
 {
 	struct net *net = current->nsproxy->net_ns;
+
+	if (!(get_exec_env()->features & VE_FEATURE_NFSD))
+		return ERR_PTR(-ENODEV);
+	if (!current_user_ns_initial())
+		return ERR_PTR(-EPERM);
 	return mount_ns(fs_type, flags, data, net, net->user_ns, nfsd_fill_super);
 }
 
@@ -1178,6 +1184,7 @@ static struct file_system_type nfsd_fs_type = {
 	.name		= "nfsd",
 	.mount		= nfsd_mount,
 	.kill_sb	= nfsd_umount,
+	.fs_flags	= FS_VIRTUALIZED|FS_USERNS_MOUNT,
 };
 MODULE_ALIAS_FS("nfsd");
 
