@@ -50,6 +50,10 @@ struct alx_buffer {
 };
 
 struct alx_rx_queue {
+	struct net_device *netdev;
+	struct device *dev;
+	struct alx_napi *np;
+
 	struct alx_rrd *rrd;
 	dma_addr_t rrd_dma;
 
@@ -58,16 +62,26 @@ struct alx_rx_queue {
 
 	struct alx_buffer *bufs;
 
+	u16 count;
 	u16 write_idx, read_idx;
 	u16 rrd_read_idx;
+	u16 queue_idx;
 };
 #define ALX_RX_ALLOC_THRESH	32
 
 struct alx_tx_queue {
+	struct net_device *netdev;
+	struct device *dev;
+
 	struct alx_txd *tpd;
 	dma_addr_t tpd_dma;
+
 	struct alx_buffer *bufs;
+
+	u16 count;
 	u16 write_idx, read_idx;
+	u16 queue_idx;
+	u16 p_reg, c_reg;
 };
 
 #define ALX_DEFAULT_TX_WORK 128
@@ -76,36 +90,59 @@ enum alx_device_quirks {
 	ALX_DEV_QUIRK_MSI_INTX_DISABLE_BUG = BIT(0),
 };
 
+struct alx_napi {
+	struct napi_struct	napi;
+	struct alx_priv		*alx;
+	struct alx_rx_queue	*rxq;
+	struct alx_tx_queue	*txq;
+	int			vec_idx;
+	u32			vec_mask;
+	char			irq_lbl[IFNAMSIZ + 8];
+};
+
+#define ALX_MAX_NAPIS 8
+
+#define ALX_FLAG_USING_MSIX	BIT(0)
+#define ALX_FLAG_USING_MSI	BIT(1)
+
 struct alx_priv {
 	struct net_device *dev;
 
 	struct alx_hw hw;
 
+	/* msi-x vectors */
+	int num_vec;
+	struct msix_entry *msix_entries;
+
 	/* all descriptor memory */
 	struct {
 		dma_addr_t dma;
 		void *virt;
-		int size;
+		unsigned int size;
 	} descmem;
+
+	struct alx_napi *qnapi[ALX_MAX_NAPIS];
+	int num_txq;
+	int num_rxq;
+	int num_napi;
 
 	/* protect int_mask updates */
 	spinlock_t irq_lock;
 	u32 int_mask;
 
-	int tx_ringsz;
-	int rx_ringsz;
-	int rxbuf_size;
-
-	struct napi_struct napi;
-	struct alx_tx_queue txq;
-	struct alx_rx_queue rxq;
+	unsigned int tx_ringsz;
+	unsigned int rx_ringsz;
+	unsigned int rxbuf_size;
 
 	struct work_struct link_check_wk;
 	struct work_struct reset_wk;
 
 	u16 msg_enable;
 
-	bool msi;
+	int flags;
+
+	/* protects hw.stats */
+	spinlock_t stats_lock;
 };
 
 extern const struct ethtool_ops alx_ethtool_ops;

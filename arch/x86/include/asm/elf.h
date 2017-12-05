@@ -251,6 +251,15 @@ extern int force_personality32;
 
 #define ELF_HWCAP		(boot_cpu_data.x86_capability[0])
 
+extern u32 elf_hwcap2;
+
+/*
+ * HWCAP2 supplies mask with kernel enabled CPU features, so that
+ * the application can discover that it can safely use them.
+ * The bits are defined in uapi/asm/hwcap2.h.
+ */
+#define ELF_HWCAP2		(elf_hwcap2)
+
 /* This yields a string that ld.so will use to load implementation
    specific libraries for optimization.  This is more specific in
    intent than poking at uname or /proc/cpuinfo.
@@ -336,9 +345,6 @@ extern int x32_setup_additional_pages(struct linux_binprm *bprm,
 extern int syscall32_setup_pages(struct linux_binprm *, int exstack);
 #define compat_arch_setup_additional_pages	syscall32_setup_pages
 
-extern unsigned long arch_randomize_brk(struct mm_struct *mm);
-#define arch_randomize_brk arch_randomize_brk
-
 /*
  * True on X86_32 or when emulating IA32 on X86_64
  */
@@ -363,6 +369,7 @@ enum align_flags {
 struct va_alignment {
 	int flags;
 	unsigned long mask;
+	unsigned long bits;
 } ____cacheline_aligned;
 
 extern struct va_alignment va_align;

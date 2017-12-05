@@ -58,9 +58,17 @@ qxl_debugfs_buffers_info(struct seq_file *m, void *data)
 	struct qxl_bo *bo;
 
 	list_for_each_entry(bo, &qdev->gem.objects, list) {
-		seq_printf(m, "size %ld, pc %d, sync obj %p, num releases %d\n",
-			   (unsigned long)bo->gem_base.size, bo->pin_count,
-			   bo->tbo.sync_obj, bo->fence.num_active_releases);
+		struct reservation_object_list *fobj;
+		int rel;
+
+		rcu_read_lock();
+		fobj = rcu_dereference(bo->tbo.resv->fence);
+		rel = fobj ? fobj->shared_count : 0;
+		rcu_read_unlock();
+
+		seq_printf(m, "size %ld, pc %d, num releases %d\n",
+			   (unsigned long)bo->gem_base.size,
+			   bo->pin_count, rel);
 	}
 	return 0;
 }
@@ -115,9 +123,6 @@ int qxl_debugfs_add_files(struct qxl_device *qdev,
 	qdev->debugfs_count = i;
 #if defined(CONFIG_DEBUG_FS)
 	drm_debugfs_create_files(files, nfiles,
-				 qdev->ddev->control->debugfs_root,
-				 qdev->ddev->control);
-	drm_debugfs_create_files(files, nfiles,
 				 qdev->ddev->primary->debugfs_root,
 				 qdev->ddev->primary);
 #endif
@@ -130,9 +135,6 @@ void qxl_debugfs_remove_files(struct qxl_device *qdev)
 	unsigned i;
 
 	for (i = 0; i < qdev->debugfs_count; i++) {
-		drm_debugfs_remove_files(qdev->debugfs[i].files,
-					 qdev->debugfs[i].num_files,
-					 qdev->ddev->control);
 		drm_debugfs_remove_files(qdev->debugfs[i].files,
 					 qdev->debugfs[i].num_files,
 					 qdev->ddev->primary);

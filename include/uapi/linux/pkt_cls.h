@@ -35,6 +35,8 @@ bits 9,10,11: redirect counter -  redirect TTL. Loop avoidance
  *
  * */
 
+#ifndef __KERNEL__
+/* backwards compat for userspace only */
 #define TC_MUNGED          _TC_MAKEMASK1(0)
 #define SET_TC_MUNGED(v)   ( TC_MUNGED | (v & ~TC_MUNGED))
 #define CLR_TC_MUNGED(v)   ( v & ~TC_MUNGED)
@@ -48,6 +50,7 @@ bits 9,10,11: redirect counter -  redirect TTL. Loop avoidance
 #define G_TC_VERD(x)       _TC_GETVALUE(x,S_TC_VERD,M_TC_VERD)
 #define V_TC_VERD(x)       _TC_MAKEVALUE(x,S_TC_VERD)
 #define SET_TC_VERD(v,n)   ((V_TC_VERD(n)) | (v & ~M_TC_VERD))
+#endif
 
 #define S_TC_FROM          _TC_MAKE32(6)
 #define M_TC_FROM          _TC_MAKEMASK(2,S_TC_FROM)
@@ -62,17 +65,21 @@ bits 9,10,11: redirect counter -  redirect TTL. Loop avoidance
 #define SET_TC_NCLS(v)   ( TC_NCLS | (v & ~TC_NCLS))
 #define CLR_TC_NCLS(v)   ( v & ~TC_NCLS)
 
+#ifndef __KERNEL__
 #define S_TC_RTTL          _TC_MAKE32(9)
 #define M_TC_RTTL          _TC_MAKEMASK(3,S_TC_RTTL)
 #define G_TC_RTTL(x)       _TC_GETVALUE(x,S_TC_RTTL,M_TC_RTTL)
 #define V_TC_RTTL(x)       _TC_MAKEVALUE(x,S_TC_RTTL)
 #define SET_TC_RTTL(v,n)   ((V_TC_RTTL(n)) | (v & ~M_TC_RTTL))
+#endif
 
 #define S_TC_AT          _TC_MAKE32(12)
 #define M_TC_AT          _TC_MAKEMASK(2,S_TC_AT)
 #define G_TC_AT(x)       _TC_GETVALUE(x,S_TC_AT,M_TC_AT)
 #define V_TC_AT(x)       _TC_MAKEVALUE(x,S_TC_AT)
 #define SET_TC_AT(v,n)   ((V_TC_AT(n)) | (v & ~M_TC_AT))
+
+#define TC_COOKIE_MAX_SIZE 16
 
 /* Action attributes */
 enum {
@@ -81,6 +88,8 @@ enum {
 	TCA_ACT_OPTIONS,
 	TCA_ACT_INDEX,
 	TCA_ACT_STATS,
+	TCA_ACT_PAD,
+	TCA_ACT_COOKIE,
 	__TCA_ACT_MAX
 };
 
@@ -130,8 +139,8 @@ struct tc_police {
 	__u32			mtu;
 	struct tc_ratespec	rate;
 	struct tc_ratespec	peakrate;
-	int 			refcnt;
-	int 			bindcnt;
+	int			refcnt;
+	int			bindcnt;
 	__u32			capab;
 };
 
@@ -139,10 +148,11 @@ struct tcf_t {
 	__u64   install;
 	__u64   lastuse;
 	__u64   expires;
+	__u64   firstuse;
 };
 
 struct tc_cnt {
-	int                   refcnt; 
+	int                   refcnt;
 	int                   bindcnt;
 };
 
@@ -160,11 +170,19 @@ enum {
 	TCA_POLICE_PEAKRATE,
 	TCA_POLICE_AVRATE,
 	TCA_POLICE_RESULT,
+	TCA_POLICE_TM,
+	TCA_POLICE_PAD,
 	__TCA_POLICE_MAX
 #define TCA_POLICE_RESULT TCA_POLICE_RESULT
 };
 
 #define TCA_POLICE_MAX (__TCA_POLICE_MAX - 1)
+
+/* tca flags definitions */
+#define TCA_CLS_FLAGS_SKIP_HW	(1 << 0) /* don't offload filter to HW */
+#define TCA_CLS_FLAGS_SKIP_SW	(1 << 1) /* don't use filter in SW */
+#define TCA_CLS_FLAGS_IN_HW	(1 << 2) /* filter is offloaded to HW */
+#define TCA_CLS_FLAGS_NOT_IN_HW (1 << 3) /* filter isn't offloaded to HW */
 
 /* U32 filters */
 
@@ -184,10 +202,12 @@ enum {
 	TCA_U32_DIVISOR,
 	TCA_U32_SEL,
 	TCA_U32_POLICE,
-	TCA_U32_ACT,   
+	TCA_U32_ACT,
 	TCA_U32_INDEV,
 	TCA_U32_PCNT,
 	TCA_U32_MARK,
+	TCA_U32_FLAGS,
+	TCA_U32_PAD,
 	__TCA_U32_MAX
 };
 
@@ -387,6 +407,120 @@ enum {
 };
 
 #define TCA_CGROUP_MAX (__TCA_CGROUP_MAX - 1)
+
+/* BPF classifier */
+
+enum {
+	TCA_BPF_UNSPEC,
+	TCA_BPF_ACT,
+	TCA_BPF_POLICE,
+	TCA_BPF_CLASSID,
+	TCA_BPF_OPS_LEN,
+	TCA_BPF_OPS,
+	__TCA_BPF_MAX,
+};
+
+#define TCA_BPF_MAX (__TCA_BPF_MAX - 1)
+
+/* Flower classifier */
+
+enum {
+	TCA_FLOWER_UNSPEC,
+	TCA_FLOWER_CLASSID,
+	TCA_FLOWER_INDEV,
+	TCA_FLOWER_ACT,
+	TCA_FLOWER_KEY_ETH_DST,		/* ETH_ALEN */
+	TCA_FLOWER_KEY_ETH_DST_MASK,	/* ETH_ALEN */
+	TCA_FLOWER_KEY_ETH_SRC,		/* ETH_ALEN */
+	TCA_FLOWER_KEY_ETH_SRC_MASK,	/* ETH_ALEN */
+	TCA_FLOWER_KEY_ETH_TYPE,	/* be16 */
+	TCA_FLOWER_KEY_IP_PROTO,	/* u8 */
+	TCA_FLOWER_KEY_IPV4_SRC,	/* be32 */
+	TCA_FLOWER_KEY_IPV4_SRC_MASK,	/* be32 */
+	TCA_FLOWER_KEY_IPV4_DST,	/* be32 */
+	TCA_FLOWER_KEY_IPV4_DST_MASK,	/* be32 */
+	TCA_FLOWER_KEY_IPV6_SRC,	/* struct in6_addr */
+	TCA_FLOWER_KEY_IPV6_SRC_MASK,	/* struct in6_addr */
+	TCA_FLOWER_KEY_IPV6_DST,	/* struct in6_addr */
+	TCA_FLOWER_KEY_IPV6_DST_MASK,	/* struct in6_addr */
+	TCA_FLOWER_KEY_TCP_SRC,		/* be16 */
+	TCA_FLOWER_KEY_TCP_DST,		/* be16 */
+	TCA_FLOWER_KEY_UDP_SRC,		/* be16 */
+	TCA_FLOWER_KEY_UDP_DST,		/* be16 */
+
+	TCA_FLOWER_FLAGS,
+	TCA_FLOWER_KEY_VLAN_ID,		/* be16 */
+	TCA_FLOWER_KEY_VLAN_PRIO,	/* u8   */
+	TCA_FLOWER_KEY_VLAN_ETH_TYPE,	/* be16 */
+
+	TCA_FLOWER_KEY_ENC_KEY_ID,	/* be32 */
+	TCA_FLOWER_KEY_ENC_IPV4_SRC,	/* be32 */
+	TCA_FLOWER_KEY_ENC_IPV4_SRC_MASK,/* be32 */
+	TCA_FLOWER_KEY_ENC_IPV4_DST,	/* be32 */
+	TCA_FLOWER_KEY_ENC_IPV4_DST_MASK,/* be32 */
+	TCA_FLOWER_KEY_ENC_IPV6_SRC,	/* struct in6_addr */
+	TCA_FLOWER_KEY_ENC_IPV6_SRC_MASK,/* struct in6_addr */
+	TCA_FLOWER_KEY_ENC_IPV6_DST,	/* struct in6_addr */
+	TCA_FLOWER_KEY_ENC_IPV6_DST_MASK,/* struct in6_addr */
+
+	TCA_FLOWER_KEY_TCP_SRC_MASK,	/* be16 */
+	TCA_FLOWER_KEY_TCP_DST_MASK,	/* be16 */
+	TCA_FLOWER_KEY_UDP_SRC_MASK,	/* be16 */
+	TCA_FLOWER_KEY_UDP_DST_MASK,	/* be16 */
+	TCA_FLOWER_KEY_SCTP_SRC_MASK,	/* be16 */
+	TCA_FLOWER_KEY_SCTP_DST_MASK,	/* be16 */
+
+	TCA_FLOWER_KEY_SCTP_SRC,	/* be16 */
+	TCA_FLOWER_KEY_SCTP_DST,	/* be16 */
+
+	TCA_FLOWER_KEY_ENC_UDP_SRC_PORT,	/* be16 */
+	TCA_FLOWER_KEY_ENC_UDP_SRC_PORT_MASK,	/* be16 */
+	TCA_FLOWER_KEY_ENC_UDP_DST_PORT,	/* be16 */
+	TCA_FLOWER_KEY_ENC_UDP_DST_PORT_MASK,	/* be16 */
+
+	TCA_FLOWER_KEY_FLAGS,		/* be32 */
+	TCA_FLOWER_KEY_FLAGS_MASK,	/* be32 */
+
+	TCA_FLOWER_KEY_ICMPV4_CODE,	/* u8 */
+	TCA_FLOWER_KEY_ICMPV4_CODE_MASK,/* u8 */
+	TCA_FLOWER_KEY_ICMPV4_TYPE,	/* u8 */
+	TCA_FLOWER_KEY_ICMPV4_TYPE_MASK,/* u8 */
+	TCA_FLOWER_KEY_ICMPV6_CODE,	/* u8 */
+	TCA_FLOWER_KEY_ICMPV6_CODE_MASK,/* u8 */
+	TCA_FLOWER_KEY_ICMPV6_TYPE,	/* u8 */
+	TCA_FLOWER_KEY_ICMPV6_TYPE_MASK,/* u8 */
+
+	TCA_FLOWER_KEY_ARP_SIP,		/* be32 */
+	TCA_FLOWER_KEY_ARP_SIP_MASK,	/* be32 */
+	TCA_FLOWER_KEY_ARP_TIP,		/* be32 */
+	TCA_FLOWER_KEY_ARP_TIP_MASK,	/* be32 */
+	TCA_FLOWER_KEY_ARP_OP,		/* u8 */
+	TCA_FLOWER_KEY_ARP_OP_MASK,	/* u8 */
+	TCA_FLOWER_KEY_ARP_SHA,		/* ETH_ALEN */
+	TCA_FLOWER_KEY_ARP_SHA_MASK,	/* ETH_ALEN */
+	TCA_FLOWER_KEY_ARP_THA,		/* ETH_ALEN */
+	TCA_FLOWER_KEY_ARP_THA_MASK,	/* ETH_ALEN */
+
+	__TCA_FLOWER_MAX,
+};
+
+#define TCA_FLOWER_MAX (__TCA_FLOWER_MAX - 1)
+
+enum {
+	TCA_FLOWER_KEY_FLAGS_IS_FRAGMENT = (1 << 0),
+};
+
+/* Match-all classifier */
+
+enum {
+	TCA_MATCHALL_UNSPEC,
+	TCA_MATCHALL_CLASSID,
+	TCA_MATCHALL_ACT,
+	TCA_MATCHALL_FLAGS,
+	__TCA_MATCHALL_MAX,
+};
+
+#define TCA_MATCHALL_MAX (__TCA_MATCHALL_MAX - 1)
 
 /* Extended Matches */
 

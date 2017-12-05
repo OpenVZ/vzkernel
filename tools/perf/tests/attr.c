@@ -1,4 +1,3 @@
-
 /*
  * The struct perf_event_attr test support.
  *
@@ -19,19 +18,13 @@
  * permissions. All the event text files are stored there.
  */
 
-/*
- * Powerpc needs __SANE_USERSPACE_TYPES__ before <linux/types.h> to select
- * 'int-ll64.h' and avoid compile warnings when printing __u64 with %llu.
- */
-#define __SANE_USERSPACE_TYPES__
 #include <stdlib.h>
 #include <stdio.h>
-#include <inttypes.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include "../perf.h"
 #include "util.h"
-#include "exec_cmd.h"
+#include <subcmd/exec-cmd.h>
 #include "tests.h"
 
 #define ENV "PERF_TEST_ATTR"
@@ -160,7 +153,7 @@ static int run_dir(const char *d, const char *perf)
 	return system(cmd);
 }
 
-int test__attr(void)
+int test__attr(int subtest __maybe_unused)
 {
 	struct stat st;
 	char path_perf[PATH_MAX];
@@ -171,13 +164,12 @@ int test__attr(void)
 		return run_dir("./tests", "./perf");
 
 	/* Then installed path. */
-	snprintf(path_dir,  PATH_MAX, "%s/tests", perf_exec_path());
+	snprintf(path_dir,  PATH_MAX, "%s/tests", get_argv_exec_path());
 	snprintf(path_perf, PATH_MAX, "%s/perf", BINDIR);
 
 	if (!lstat(path_dir, &st) &&
 	    !lstat(path_perf, &st))
 		return run_dir(path_dir, path_perf);
 
-	fprintf(stderr, " (omitted)");
-	return 0;
+	return TEST_SKIP;
 }

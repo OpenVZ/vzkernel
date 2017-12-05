@@ -367,6 +367,20 @@ void sas_remove_host(struct Scsi_Host *shost)
 EXPORT_SYMBOL(sas_remove_host);
 
 /**
+ * sas_get_address - return the SAS address of the device
+ * @sdev: scsi device
+ *
+ * Returns the SAS address of the scsi device
+ */
+u64 sas_get_address(struct scsi_device *sdev)
+{
+	struct sas_end_device *rdev = sas_sdev_to_rdev(sdev);
+
+	return rdev->rphy.identify.sas_address;
+}
+EXPORT_SYMBOL(sas_get_address);
+
+/**
  * sas_tlr_supported - checking TLR bit in vpd 0x90
  * @sdev: scsi device struct
  *
@@ -1593,7 +1607,8 @@ int sas_rphy_add(struct sas_rphy *rphy)
 		else
 			lun = 0;
 
-		scsi_scan_target(&rphy->dev, 0, rphy->scsi_target_id, lun, 0);
+		scsi_scan_target(&rphy->dev, 0, rphy->scsi_target_id, lun,
+				 SCSI_SCAN_INITIAL);
 	}
 
 	return 0;
@@ -1719,8 +1734,8 @@ static int sas_user_scan(struct Scsi_Host *shost, uint channel,
 
 		if ((channel == SCAN_WILD_CARD || channel == 0) &&
 		    (id == SCAN_WILD_CARD || id == rphy->scsi_target_id)) {
-			scsi_scan_target(&rphy->dev, 0,
-					 rphy->scsi_target_id, lun, 1);
+			scsi_scan_target(&rphy->dev, 0, rphy->scsi_target_id,
+					 lun, SCSI_SCAN_MANUAL);
 		}
 	}
 	mutex_unlock(&sas_host->lock);

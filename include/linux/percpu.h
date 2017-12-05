@@ -1,6 +1,7 @@
 #ifndef __LINUX_PERCPU_H
 #define __LINUX_PERCPU_H
 
+#include <linux/mmdebug.h>
 #include <linux/preempt.h>
 #include <linux/smp.h>
 #include <linux/cpumask.h>
@@ -73,9 +74,9 @@
  * intelligent way to determine this would be nice.
  */
 #if BITS_PER_LONG > 32
-#define PERCPU_DYNAMIC_RESERVE		(20 << 10)
+#define PERCPU_DYNAMIC_RESERVE		(28 << 10)
 #else
-#define PERCPU_DYNAMIC_RESERVE		(12 << 10)
+#define PERCPU_DYNAMIC_RESERVE		(20 << 10)
 #endif
 
 extern void *pcpu_base_addr;
@@ -158,12 +159,17 @@ extern void __init setup_per_cpu_areas(void);
 #endif
 extern void __init percpu_init_late(void);
 
+extern void __percpu *__alloc_percpu_gfp(size_t size, size_t align, gfp_t gfp);
 extern void __percpu *__alloc_percpu(size_t size, size_t align);
 extern void free_percpu(void __percpu *__pdata);
 extern phys_addr_t per_cpu_ptr_to_phys(void *addr);
 
-#define alloc_percpu(type)	\
-	(typeof(type) __percpu *)__alloc_percpu(sizeof(type), __alignof__(type))
+#define alloc_percpu_gfp(type, gfp)					\
+	(typeof(type) __percpu *)__alloc_percpu_gfp(sizeof(type),	\
+						__alignof__(type), gfp)
+#define alloc_percpu(type)						\
+	(typeof(type) __percpu *)__alloc_percpu(sizeof(type),		\
+						__alignof__(type))
 
 /*
  * Branching function to split up a function into a set of functions that
@@ -754,5 +760,8 @@ do {									\
 # define __this_cpu_cmpxchg_double(pcp1, pcp2, oval1, oval2, nval1, nval2)	\
 	__pcpu_double_call_return_bool(__this_cpu_cmpxchg_double_, (pcp1), (pcp2), (oval1), (oval2), (nval1), (nval2))
 #endif
+
+/* To avoid include hell, as printk can not declare this, we declare it here */
+DECLARE_PER_CPU(printk_func_t, printk_func);
 
 #endif /* __LINUX_PERCPU_H */

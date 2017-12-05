@@ -25,7 +25,10 @@
 
 int sysctl_nr_open __read_mostly = 1024*1024;
 int sysctl_nr_open_min = BITS_PER_LONG;
-int sysctl_nr_open_max = 1024 * 1024; /* raised later */
+/* our min() is unusable in constant expressions ;-/ */
+#define __const_min(x, y) ((x) < (y) ? (x) : (y))
+int sysctl_nr_open_max = __const_min(INT_MAX, ~(size_t)0/sizeof(void *)) &
+			 -BITS_PER_LONG;
 
 static void *alloc_fdmem(size_t size)
 {
@@ -437,12 +440,6 @@ void exit_files(struct task_struct *tsk)
 	}
 }
 
-void __init files_defer_init(void)
-{
-	sysctl_nr_open_max = min((size_t)INT_MAX, ~(size_t)0/sizeof(void *)) &
-			     -BITS_PER_LONG;
-}
-
 struct files_struct init_files = {
 	.count		= ATOMIC_INIT(1),
 	.fdt		= &init_files.fdtab,
@@ -654,8 +651,7 @@ struct file *fget(unsigned int fd)
 	file = fcheck_files(files, fd);
 	if (file) {
 		/* File object ref couldn't be taken */
-		if (file->f_mode & FMODE_PATH ||
-		    !atomic_long_inc_not_zero(&file->f_count))
+		if (file->f_mode & FMODE_PATH || !get_file_rcu(file))
 			file = NULL;
 	}
 	rcu_read_unlock();

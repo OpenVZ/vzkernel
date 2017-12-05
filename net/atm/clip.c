@@ -286,7 +286,7 @@ static const struct neigh_ops clip_neigh_ops = {
 	.connected_output =	neigh_direct_output,
 };
 
-static int clip_constructor(struct neighbour *neigh)
+static int clip_constructor(struct net_device *dev, struct neighbour *neigh)
 {
 	struct atmarp_entry *entry = neighbour_priv(neigh);
 
@@ -484,8 +484,9 @@ static int clip_setentry(struct atm_vcc *vcc, __be32 ip)
 }
 
 static const struct net_device_ops clip_netdev_ops = {
+	.ndo_size		= sizeof(struct net_device_ops),
 	.ndo_start_xmit		= clip_start_xmit,
-	.ndo_neigh_construct	= clip_constructor,
+	.extended.ndo_neigh_construct	= clip_constructor,
 };
 
 static void clip_setup(struct net_device *dev)
@@ -501,7 +502,7 @@ static void clip_setup(struct net_device *dev)
 	/* without any more elaborate queuing. 100 is a reasonable */
 	/* compromise between decent burst-tolerance and protection */
 	/* against memory hogs. */
-	dev->priv_flags &= ~IFF_XMIT_DST_RELEASE;
+	netif_keep_dst(dev);
 }
 
 static int clip_create(int number)
@@ -539,9 +540,9 @@ static int clip_create(int number)
 }
 
 static int clip_device_event(struct notifier_block *this, unsigned long event,
-			     void *arg)
+			     void *ptr)
 {
-	struct net_device *dev = arg;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 
 	if (!net_eq(dev_net(dev), &init_net))
 		return NOTIFY_DONE;
@@ -575,6 +576,7 @@ static int clip_inet_event(struct notifier_block *this, unsigned long event,
 			   void *ifa)
 {
 	struct in_device *in_dev;
+	struct netdev_notifier_info info;
 
 	in_dev = ((struct in_ifaddr *)ifa)->ifa_dev;
 	/*
@@ -583,7 +585,8 @@ static int clip_inet_event(struct notifier_block *this, unsigned long event,
 	 */
 	if (event != NETDEV_UP)
 		return NOTIFY_DONE;
-	return clip_device_event(this, NETDEV_CHANGE, in_dev->dev);
+	netdev_notifier_info_init(&info, in_dev->dev);
+	return clip_device_event(this, NETDEV_CHANGE, &info);
 }
 
 static struct notifier_block clip_dev_notifier = {
@@ -878,7 +881,7 @@ static void atm_clip_exit_noproc(void);
 static int __init atm_clip_init(void)
 {
 	register_atm_ioctl(&clip_ioctl_ops);
-	register_netdevice_notifier(&clip_dev_notifier);
+	register_netdevice_notifier_rh(&clip_dev_notifier);
 	register_inetaddr_notifier(&clip_inet_notifier);
 
 	setup_timer(&idle_timer, idle_timer_check, 0);
@@ -904,7 +907,7 @@ static void atm_clip_exit_noproc(void)
 	struct net_device *dev, *next;
 
 	unregister_inetaddr_notifier(&clip_inet_notifier);
-	unregister_netdevice_notifier(&clip_dev_notifier);
+	unregister_netdevice_notifier_rh(&clip_dev_notifier);
 
 	deregister_atm_ioctl(&clip_ioctl_ops);
 
