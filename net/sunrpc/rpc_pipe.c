@@ -1468,6 +1468,7 @@ static struct file_system_type rpc_pipe_fs_type = {
 	.name		= "rpc_pipefs",
 	.init_fs_context = rpc_init_fs_context,
 	.kill_sb	= rpc_kill_sb,
+	.fs_flags	= FS_VIRTUALIZED,
 };
 MODULE_ALIAS_FS("rpc_pipefs");
 MODULE_ALIAS("rpc_pipefs");
