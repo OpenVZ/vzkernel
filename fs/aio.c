@@ -1857,3 +1857,73 @@ SYSCALL_DEFINE5(io_getevents, aio_context_t, ctx_id,
 	}
 	return ret;
 }
+
+#ifdef CONFIG_VE
+static bool has_reqs_active(struct kioctx *ctx)
+{
+	unsigned long flags;
+	unsigned nr;
+
+	spin_lock_irqsave(&ctx->completion_lock, flags);
+	nr = atomic_read(&ctx->reqs_active);
+	nr -= ctx->completed_events;
+	spin_unlock_irqrestore(&ctx->completion_lock, flags);
+
+	return !!nr;
+}
+
+static int ve_aio_wait_inflight_reqs(struct task_struct *p)
+{
+	struct mm_struct *mm;
+	struct kioctx *ctx;
+	int ret;
+
+	if (p->flags & PF_KTHREAD)
+		return -EINVAL;
+
+	task_lock(p);
+	mm = p->mm;
+	if (mm)
+		atomic_inc(&mm->mm_count);
+	task_unlock(p);
+	if (!mm)
+		return -ESRCH;
+
+again:
+	spin_lock_irq(&mm->ioctx_lock);
+	hlist_for_each_entry_rcu(ctx, &mm->ioctx_list, list) {
+		if (!has_reqs_active(ctx))
+			continue;
+
+		atomic_inc(&ctx->users);
+		spin_unlock_irq(&mm->ioctx_lock);
+
+		ret = wait_event_interruptible(ctx->wait, !has_reqs_active(ctx));
+		put_ioctx(ctx);
+
+		if (ret)
+			goto mmdrop;
+		goto again;
+	}
+	spin_unlock_irq(&mm->ioctx_lock);
+	ret = 0;
+mmdrop:
+	mmdrop(mm);
+	return ret;
+}
+
+int ve_aio_ioctl(struct task_struct *task, unsigned int cmd, unsigned long arg)
+{
+	int ret;
+
+	switch (cmd) {
+		case VE_AIO_IOC_WAIT_ACTIVE:
+			ret = ve_aio_wait_inflight_reqs(task);
+			break;
+		default:
+			ret = -EINVAL;
+	}
+
+	return ret;
+}
+#endif
