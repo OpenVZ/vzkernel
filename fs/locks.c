@@ -1548,8 +1548,9 @@ static int
 generic_add_lease(struct file *filp, long arg, struct file_lock **flp, void **priv)
 {
 	struct file_lock *fl, **before, **my_before = NULL, *lease;
-	struct dentry *dentry = filp->f_path.dentry;
-	struct inode *inode = dentry->d_inode;
+	struct dentry *dentry = filp->f_original_path.mnt ?
+		filp->f_original_path.dentry: filp->f_path.dentry;
+	struct inode *inode = filp->f_path.dentry->d_inode;
 	bool is_deleg = (*flp)->fl_flags & FL_DELEG;
 	int error;
 
