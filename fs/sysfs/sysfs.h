@@ -81,6 +81,8 @@ struct sysfs_dirent {
 	umode_t 		s_mode;
 	unsigned int		s_ino;
 	struct sysfs_inode_attrs *s_iattr;
+
+	struct kmapset_map	*s_ve_perms;
 };
 
 #define SD_DEACTIVATED_BIAS		INT_MIN
@@ -147,6 +149,7 @@ struct sysfs_addrm_cxt {
  */
 struct sysfs_super_info {
 	void *ns[KOBJ_NS_TYPES];
+	struct ve_struct *ve;
 };
 #define sysfs_info(SB) ((struct sysfs_super_info *)(SB->s_fs_info))
 extern struct sysfs_dirent sysfs_root;

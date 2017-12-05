@@ -54,6 +54,8 @@ struct module no_module = { .state = MODULE_STATE_GOING };
 EXPORT_SYMBOL(no_module);
 #endif
 
+struct kmapset_set ve_sysfs_perms;
+
 static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, ve0_lat_stats);
 
 struct ve_struct ve0 = {
@@ -524,6 +526,7 @@ do_init:
 	INIT_LIST_HEAD(&ve->ve_list);
 	INIT_LIST_HEAD(&ve->devmnt_list);
 	mutex_init(&ve->devmnt_mutex);
+	kmapset_init_key(&ve->ve_sysfs_perms);
 
 #ifdef CONFIG_AIO
 	spin_lock_init(&ve->aio_nr_lock);
@@ -632,7 +635,9 @@ static void ve_destroy(struct cgroup *cg)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 
+	kmapset_unlink(&ve->ve_sysfs_perms, &ve_sysfs_perms);
 	free_ve_devmnts(ve);
+
 	ve_log_destroy(ve);
 #if IS_ENABLED(CONFIG_BINFMT_MISC)
 	kfree(ve->binfmt_misc);
