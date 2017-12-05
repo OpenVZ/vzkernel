@@ -7083,7 +7083,9 @@ unsigned long try_to_free_mem_cgroup_pages(struct mem_cgroup *memcg,
 	trace_mm_vmscan_memcg_reclaim_begin(0, sc.gfp_mask);
 	noreclaim_flag = memalloc_noreclaim_save();
 
+	current->flags |= PF_MEMCG_RECLAIM;
 	nr_reclaimed = do_try_to_free_pages(zonelist, &sc);
+	current->flags &= ~PF_MEMCG_RECLAIM;
 
 	memalloc_noreclaim_restore(noreclaim_flag);
 	trace_mm_vmscan_memcg_reclaim_end(nr_reclaimed);
