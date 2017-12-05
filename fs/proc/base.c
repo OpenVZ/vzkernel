@@ -87,6 +87,7 @@
 #include <linux/slab.h>
 #include <linux/flex_array.h>
 #include <linux/posix-timers.h>
+#include <linux/aio.h>
 #ifdef CONFIG_HARDWALL
 #include <asm/hardwall.h>
 #endif
@@ -2369,7 +2370,32 @@ static const struct file_operations proc_timers_operations = {
 	.llseek		= seq_lseek,
 	.release	= seq_release_private,
 };
+
+
 #endif /* CONFIG_CHECKPOINT_RESTORE */
+
+#ifdef CONFIG_VE
+static long proc_aio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	struct inode *inode = file_inode(file);
+	struct task_struct *task;
+	int ret;
+
+	task = get_proc_task(inode);
+	if (!task)
+		return -ESRCH;
+
+	ret = ve_aio_ioctl(task, cmd, arg);
+
+	put_task_struct(task);
+
+	return ret;
+}
+
+static const struct file_operations proc_aio_operations = {
+	.unlocked_ioctl		= proc_aio_ioctl,
+};
+#endif /* CONFIG_VE */
 
 static struct dentry *proc_pident_instantiate(struct inode *dir,
 	struct dentry *dentry, struct task_struct *task, const void *ptr)
@@ -3005,6 +3031,7 @@ static const struct pid_entry tgid_base_stuff[] = {
 #endif
 #ifdef CONFIG_CHECKPOINT_RESTORE
 	REG("timers",	  S_IRUGO, proc_timers_operations),
+	REG("aio",	  S_IRUGO|S_IWUSR, proc_aio_operations),
 #endif
 #ifdef CONFIG_LIVEPATCH
 	ONE("patch_state",  S_IRUSR, proc_pid_patch_state),
