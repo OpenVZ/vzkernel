@@ -886,6 +886,7 @@ struct file {
 		struct rcu_head 	fu_rcuhead;
 	} f_u;
 	struct path		f_path;
+	struct path		f_original_path;
 #define f_dentry	f_path.dentry
 	struct inode		*f_inode;	/* cached value */
 	const struct file_operations	*f_op;
@@ -2142,7 +2143,8 @@ extern void touch_atime(struct path *);
 static inline void file_accessed(struct file *file)
 {
 	if (!(file->f_flags & O_NOATIME))
-		touch_atime(&file->f_path);
+		touch_atime(file->f_original_path.mnt ?
+			    &file->f_original_path : &file->f_path);
 }
 
 int sync_inode(struct inode *inode, struct writeback_control *wbc);
