@@ -77,6 +77,7 @@ struct ve_struct ve0 = {
 #endif
 	.sched_lat_ve.cur	= &ve0_lat_stats,
 	.init_cred		= &init_cred,
+	.mnt_nr			= ATOMIC_INIT(0),
 	.netif_avail_nr		= ATOMIC_INIT(INT_MAX),
 	.netif_max_nr		= INT_MAX,
 };
@@ -495,6 +496,8 @@ do_init:
 	INIT_LIST_HEAD(&ve->ve_list);
 	INIT_LIST_HEAD(&ve->devmnt_list);
 	mutex_init(&ve->devmnt_mutex);
+
+	atomic_set(&ve->mnt_nr, 0);
 
 #ifdef CONFIG_COREDUMP
 	strcpy(ve->core_pattern, "core");
