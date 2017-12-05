@@ -104,9 +104,14 @@ struct ve_struct {
 
 	struct list_head	devmnt_list;
 	struct mutex		devmnt_mutex;
+
+#ifdef CONFIG_AIO
+	spinlock_t		aio_nr_lock;
+	unsigned long		aio_nr;
+	unsigned long		aio_max_nr;
+#endif
 	atomic_t		netif_avail_nr;
 	int			netif_max_nr;
-
 	atomic_t		mnt_nr;	/* number of present VE mounts */
 #ifdef CONFIG_COREDUMP
 	char 			core_pattern[CORENAME_MAX_SIZE];
