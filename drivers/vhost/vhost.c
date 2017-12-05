@@ -750,7 +750,8 @@ static int vhost_copy_to_user(struct vhost_virtqueue *vq, void __user *to,
 			goto out;
 		iov_iter_init(&t, (const struct iovec *)vq->iotlb_iov,
 			      ret, size, 0);
-		ret = memcpy_toiovecend(t.iov, (unsigned char *)from, 0, size);
+		ret = memcpy_toiovecend((struct iovec *)t.data,
+					(unsigned char *)from, 0, size);
 	}
 out:
 	return ret;
@@ -788,7 +789,8 @@ static int vhost_copy_from_user(struct vhost_virtqueue *vq, void *to,
 		}
 		iov_iter_init(&f, (const struct iovec *)vq->iotlb_iov,
 			      ret, size, 0);
-		ret = memcpy_fromiovecend((unsigned char *)to, f.iov, 0, size);
+		ret = memcpy_fromiovecend((unsigned char *)to,
+					  (struct iovec *)f.data, 0, size);
 	}
 
 out:
