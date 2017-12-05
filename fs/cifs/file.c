@@ -2544,8 +2544,9 @@ wdata_fill_from_iovec(struct cifs_writedata *wdata, struct iov_iter *from,
 	save_len = cur_len;
 	for (i = 0; i < nr_pages; i++) {
 		bytes = min_t(const size_t, cur_len, PAGE_SIZE);
-		copied = copy_page_from_iter(wdata->pages[i], 0, bytes, from);
+		copied = iov_iter_copy_from_user(wdata->pages[i], from, 0, bytes);
 		cur_len -= copied;
+		iov_iter_advance(from, copied);
 		/*
 		 * If we didn't copy as much as we expected, then that
 		 * may mean we trod into an unmapped area. Stop copying
@@ -2964,8 +2965,10 @@ cifs_readdata_to_iov(struct cifs_readdata *rdata, struct iov_iter *iter)
 	for (i = 0; i < rdata->nr_pages; i++) {
 		struct page *page = rdata->pages[i];
 		size_t copy = min_t(size_t, remaining, PAGE_SIZE);
-		size_t written = copy_page_to_iter(page, 0, copy, iter);
+		size_t written = iov_iter_copy_to_user(page, iter, 0, copy);
+
 		remaining -= written;
+		iov_iter_advance(iter, written);
 		if (written < copy && iov_iter_count(iter) > 0)
 			break;
 	}
