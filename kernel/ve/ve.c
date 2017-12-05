@@ -596,6 +596,9 @@ static void ve_destroy(struct cgroup *cg)
 
 	free_ve_devmnts(ve);
 	ve_log_destroy(ve);
+#if IS_ENABLED(CONFIG_BINFMT_MISC)
+	kfree(ve->binfmt_misc);
+#endif
 	free_percpu(ve->sched_lat_ve.cur);
 	kfree(ve->ve_name);
 	kmem_cache_free(ve_cachep, ve);
