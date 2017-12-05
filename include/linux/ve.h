@@ -24,6 +24,7 @@
 #include <linux/ve_proto.h>
 #include <net/inet_frag.h>
 #include <linux/cgroup.h>
+#include <linux/kmapset.h>
 #include <linux/binfmts.h>
 
 struct tty_driver;
@@ -106,6 +107,8 @@ struct ve_struct {
 	struct list_head	devmnt_list;
 	struct mutex		devmnt_mutex;
 
+	struct kmapset_key	ve_sysfs_perms;
+
 #ifdef CONFIG_AIO
 	spinlock_t		aio_nr_lock;
 	unsigned long		aio_nr;
@@ -140,6 +143,8 @@ extern unsigned int sysctl_ve_mount_nr;
 
 #ifdef CONFIG_VE
 #define ve_uevent_seqnum       (get_exec_env()->_uevent_seqnum)
+
+extern struct kmapset_set ve_sysfs_perms;
 
 extern int vz_security_family_check(struct net *net, int family);
 extern int vz_security_protocol_check(struct net *net, int protocol);
