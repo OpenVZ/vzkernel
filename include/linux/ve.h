@@ -53,6 +53,7 @@ struct ve_struct {
 	struct task_struct	*ve_kthread_task;
 	struct kthread_worker	ve_kthread_worker;
 
+	struct super_block	*dev_sb;
 	struct super_block	*devpts_sb;
 
 #define	MAX_NR_VTTY		12
