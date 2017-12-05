@@ -29,6 +29,7 @@
 #include <linux/slab.h>
 #include <linux/timer.h>
 #include <linux/aio.h>
+#include <linux/ve.h>
 #include <linux/highmem.h>
 #include <linux/workqueue.h>
 #include <linux/security.h>
@@ -122,13 +123,8 @@ struct kioctx {
 
 	struct page		*internal_pages[AIO_RING_PAGES];
 	struct file		*aio_ring_file;
+	struct ve_struct	*ve;
 };
-
-/*------ sysctl variables----*/
-static DEFINE_SPINLOCK(aio_nr_lock);
-unsigned long aio_nr;		/* current system wide number of aio requests */
-unsigned long aio_max_nr = 0x10000; /* system wide maximum number of aio requests */
-/*----end sysctl variables---*/
 
 static struct kmem_cache	*kiocb_cachep;
 static struct kmem_cache	*kioctx_cachep;
@@ -526,6 +522,9 @@ static int kiocb_cancel(struct kioctx *ctx, struct kiocb *kiocb,
 static void free_ioctx_rcu(struct rcu_head *head)
 {
 	struct kioctx *ctx = container_of(head, struct kioctx, rcu_head);
+	struct ve_struct *ve = ctx->ve;
+
+	put_ve(ve);
 	kmem_cache_free(kioctx_cachep, ctx);
 }
 
@@ -602,6 +601,7 @@ static struct kioctx *ioctx_alloc(unsigned nr_events)
 {
 	struct mm_struct *mm = current->mm;
 	struct kioctx *ctx;
+	struct ve_struct *ve = get_exec_env();
 	int err = -ENOMEM;
 
 	/* Prevent overflows */
@@ -611,7 +611,7 @@ static struct kioctx *ioctx_alloc(unsigned nr_events)
 		return ERR_PTR(-EINVAL);
 	}
 
-	if (!nr_events || (unsigned long)nr_events > aio_max_nr)
+	if (!nr_events || (unsigned long)nr_events > ve->aio_max_nr)
 		return ERR_PTR(-EAGAIN);
 
 	ctx = kmem_cache_zalloc(kioctx_cachep, GFP_KERNEL);
@@ -619,6 +619,7 @@ static struct kioctx *ioctx_alloc(unsigned nr_events)
 		return ERR_PTR(-ENOMEM);
 
 	ctx->max_reqs = nr_events;
+	ctx->ve = get_ve(ve);
 
 	spin_lock_init(&ctx->ctx_lock);
 	spin_lock_init(&ctx->completion_lock);
@@ -639,14 +640,14 @@ static struct kioctx *ioctx_alloc(unsigned nr_events)
 		goto out_freectx;
 
 	/* limit the number of system wide aios */
-	spin_lock(&aio_nr_lock);
-	if (aio_nr + nr_events > aio_max_nr ||
-	    aio_nr + nr_events < aio_nr) {
-		spin_unlock(&aio_nr_lock);
+	spin_lock(&ve->aio_nr_lock);
+	if (ve->aio_nr + ctx->nr_events > ve->aio_max_nr ||
+	    ve->aio_nr + ctx->nr_events < ve->aio_nr) {
+		spin_unlock(&ve->aio_nr_lock);
 		goto out_cleanup;
 	}
-	aio_nr += ctx->max_reqs;
-	spin_unlock(&aio_nr_lock);
+	ve->aio_nr += ctx->nr_events;
+	spin_unlock(&ve->aio_nr_lock);
 
 	/* now link into global list. */
 	spin_lock(&mm->ioctx_lock);
@@ -667,6 +668,7 @@ out_cleanup:
 		vm_munmap(ctx->mmap_base, ctx->mmap_size);
 	aio_free_ring(ctx);
 out_freectx:
+	put_ve(ctx->ve);
 	mutex_unlock(&ctx->ring_lock);
 	put_aio_ring_file(ctx);
 	kmem_cache_free(kioctx_cachep, ctx);
@@ -699,6 +701,8 @@ static int kill_ioctx(struct mm_struct *mm, struct kioctx *ctx,
 		struct completion *requests_done)
 {
 	if (!atomic_xchg(&ctx->dead, 1)) {
+		struct ve_struct *ve = ctx->ve;
+
 		spin_lock(&mm->ioctx_lock);
 		hlist_del_rcu(&ctx->list);
 		spin_unlock(&mm->ioctx_lock);
@@ -710,10 +714,10 @@ static int kill_ioctx(struct mm_struct *mm, struct kioctx *ctx,
 		 * -EAGAIN with no ioctxs actually in use (as far as userspace
 		 *  could tell).
 		 */
-		spin_lock(&aio_nr_lock);
-		BUG_ON(aio_nr - ctx->max_reqs > aio_nr);
-		aio_nr -= ctx->max_reqs;
-		spin_unlock(&aio_nr_lock);
+		spin_lock(&ve->aio_nr_lock);
+		BUG_ON(ve->aio_nr - ctx->nr_events > ve->aio_nr);
+		ve->aio_nr -= ctx->nr_events;
+		spin_unlock(&ve->aio_nr_lock);
 
 		if (ctx->mmap_size)
 			vm_munmap(ctx->mmap_base, ctx->mmap_size);
