@@ -2419,6 +2419,11 @@ static void cfq_bio_merged(struct request_queue *q, struct request *req,
 				struct bio *bio)
 {
 	cfqg_stats_update_io_merged(RQ_CFQG(req), bio->bi_rw);
+#ifdef CONFIG_BC_IO_PRIORITY
+	if (get_exec_ub()->ub_bound_css[UB_BLKIO_CGROUP] !=
+	    &(RQ_CFQG(req))->pd.blkg->blkcg->css)
+		ub_writeback_io(0, bio_sectors(bio));
+#endif
 }
 
 static void
@@ -3989,6 +3994,12 @@ static void cfq_insert_request(struct request_queue *q, struct request *rq)
 	cfq_add_rq_rb(rq);
 	cfqg_stats_update_io_add(RQ_CFQG(rq), cfqd->serving_group,
 				 rq->cmd_flags);
+
+#ifdef CONFIG_BC_IO_PRIORITY
+	if (get_exec_ub()->ub_bound_css[UB_BLKIO_CGROUP] !=
+	    &(RQ_CFQG(rq))->pd.blkg->blkcg->css)
+		ub_writeback_io(1, blk_rq_sectors(rq));
+#endif
 	cfq_rq_enqueued(cfqd, cfqq, rq);
 }
 
