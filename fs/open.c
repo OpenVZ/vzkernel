@@ -896,9 +896,17 @@ int vfs_open(const struct path *path, struct file *filp,
 {
 	struct inode *inode = path->dentry->d_inode;
 	iop_dentry_open_t dentry_open = get_dentry_open_iop(inode);
+	int do_cleanup = 0;
+	int ret;
+
+	if (!filp->f_original_path.mnt && dentry_open) {
+		filp->f_original_path = *path;
+		path_get(&filp->f_original_path);
+		do_cleanup = 1;
+	}
 
 	if (dentry_open)
-		return dentry_open(path->dentry, filp, cred);
+		ret = dentry_open(path->dentry, filp, cred);
 	else {
 		struct dentry *dentry = d_real(path->dentry, NULL, filp->f_flags);
 
@@ -906,8 +914,15 @@ int vfs_open(const struct path *path, struct file *filp,
 			return PTR_ERR(dentry);
 
 		filp->f_path = *path;
-		return do_dentry_open(filp, dentry->d_inode, NULL, cred);
+		ret = do_dentry_open(filp, dentry->d_inode, NULL, cred);
 	}
+
+	if (ret && do_cleanup) {
+		path_put(&filp->f_original_path);
+		filp->f_original_path.mnt = NULL;
+		filp->f_original_path.dentry = NULL;
+	}
+	return ret;
 }
 EXPORT_SYMBOL(vfs_open);
 
