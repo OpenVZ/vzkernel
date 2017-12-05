@@ -98,7 +98,7 @@ struct ve_struct {
 	int			fsync_enable;
 
 	u64			_uevent_seqnum;
-	struct nsproxy		*ve_ns;
+	struct nsproxy __rcu	*ve_ns;
 	struct cred		*init_cred;
 	struct net		*ve_netns;
 
