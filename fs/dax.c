@@ -1036,7 +1036,8 @@ dax_iomap_actor(int rw, struct inode *inode, loff_t pos, loff_t length, void *da
 		if (iomap->type == IOMAP_HOLE ||
 		    iomap->type == IOMAP_UNWRITTEN) {
 			loff_t len;
-			len = zero_toiovecend_partial(iter->iov,
+			len = zero_toiovecend_partial(
+					(struct iovec *)iter->data,
 					iter->iov_offset, end - pos);
 			iov_iter_advance(iter, len);
 			return len;
@@ -1091,10 +1092,11 @@ dax_iomap_actor(int rw, struct inode *inode, loff_t pos, loff_t length, void *da
 
 		if (rw & WRITE)
 			map_len = memcpy_fromiovecend_partial_flushcache(
-					kaddr, iter->iov,
+					kaddr, (struct iovec *)iter->data,
 					iter->iov_offset, map_len);
 		else
-			map_len = memcpy_toiovecend_partial(iter->iov,
+			map_len = memcpy_toiovecend_partial(
+					(struct iovec *)iter->data,
 					kaddr, iter->iov_offset, map_len);
 
 		if (map_len <= 0) {
