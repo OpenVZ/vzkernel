@@ -1750,17 +1750,17 @@ static struct ctl_table fs_table[] = {
 #ifdef CONFIG_AIO
 	{
 		.procname	= "aio-nr",
-		.data		= &aio_nr,
-		.maxlen		= sizeof(aio_nr),
-		.mode		= 0444,
-		.proc_handler	= proc_doulongvec_minmax,
+		.data		= &ve0.aio_nr,
+		.maxlen		= sizeof(unsigned long),
+		.mode		= 0444 | S_ISVTX,
+		.proc_handler	= proc_doulongvec_minmax_virtual,
 	},
 	{
 		.procname	= "aio-max-nr",
-		.data		= &aio_max_nr,
-		.maxlen		= sizeof(aio_max_nr),
-		.mode		= 0644,
-		.proc_handler	= proc_doulongvec_minmax,
+		.data		= &ve0.aio_max_nr,
+		.maxlen		= sizeof(unsigned long),
+		.mode		= 0644 | S_ISVTX,
+		.proc_handler	= proc_doulongvec_minmax_virtual,
 	},
 #endif /* CONFIG_AIO */
 #ifdef CONFIG_INOTIFY_USER
