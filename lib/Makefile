@@ -38,6 +38,7 @@ obj-$(CONFIG_TEST_RHASHTABLE) += test_rhashtable.o
 obj-$(CONFIG_TEST_PARMAN) += test_parman.o
 
 obj-$(CONFIG_TEST_LIVEPATCH) += livepatch/
+obj-y += kmapset.o
 
 ifeq ($(CONFIG_DEBUG_KOBJECT),y)
 CFLAGS_kobject.o += -DDEBUG
