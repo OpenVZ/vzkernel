@@ -1181,7 +1181,12 @@ static inline void fuse_page_descs_length_init(struct fuse_req *req,
 
 static inline unsigned long fuse_get_user_addr(const struct iov_iter *ii)
 {
-	return (unsigned long)ii->iov->iov_base + ii->iov_offset;
+	struct iovec *iov;
+
+	BUG_ON(!iov_iter_has_iovec(ii));
+	iov = (struct iovec *)ii->data;
+
+	return (unsigned long)iov->iov_base + ii->iov_offset;
 }
 
 static inline size_t fuse_get_frag_size(const struct iov_iter *ii,
@@ -1948,8 +1953,9 @@ static int fuse_ioctl_copy_user(struct page **pages, struct iovec *iov,
 		kaddr = kmap(page);
 
 		while (todo) {
-			char __user *uaddr = ii.iov->iov_base + ii.iov_offset;
-			size_t iov_len = ii.iov->iov_len - ii.iov_offset;
+			struct iovec *iiov = (struct iovec *)ii.data;
+			char __user *uaddr = iiov->iov_base + ii.iov_offset;
+			size_t iov_len = iiov->iov_len - ii.iov_offset;
 			size_t copy = min(todo, iov_len);
 			size_t left;
 
