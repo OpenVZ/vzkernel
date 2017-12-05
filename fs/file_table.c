@@ -227,6 +227,8 @@ static void __fput(struct file *file)
 	struct dentry *dentry = file->f_path.dentry;
 	struct vfsmount *mnt = file->f_path.mnt;
 	struct inode *inode = file->f_inode;
+	struct dentry *original_dentry = file->f_original_path.dentry;
+	struct vfsmount *original_mnt = file->f_original_path.mnt;
 
 	might_sleep();
 
@@ -258,10 +260,14 @@ static void __fput(struct file *file)
 		drop_file_write_access(file);
 	file->f_path.dentry = NULL;
 	file->f_path.mnt = NULL;
+	file->f_original_path.dentry = NULL;
+	file->f_original_path.mnt = NULL;
 	file->f_inode = NULL;
 	file_free(file);
 	dput(dentry);
 	mntput(mnt);
+	dput(original_dentry);
+	mntput(original_mnt);
 }
 
 static DEFINE_SPINLOCK(delayed_fput_lock);
