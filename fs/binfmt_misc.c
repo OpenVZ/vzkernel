@@ -30,6 +30,7 @@
 #include <linux/mount.h>
 #include <linux/syscalls.h>
 #include <linux/fs.h>
+#include <linux/ve.h>
 
 #include <asm/uaccess.h>
 
@@ -65,11 +66,7 @@ struct binfmt_misc {
 	int entry_count;
 };
 
-struct binfmt_misc binfmt_data = {
-	.entries	= LIST_HEAD_INIT(binfmt_data.entries),
-	.enabled	= 1,
-	.entries_lock	= __RW_LOCK_UNLOCKED(binfmt_data.entries_lock),
-};
+#define BINFMT_MISC(sb)		(((struct ve_struct *)(sb)->s_fs_info)->binfmt_misc)
 
 /* 
  * Check if we support the binfmt
@@ -122,7 +119,7 @@ static int load_misc_binary(struct linux_binprm *bprm)
 	const char *iname_addr = iname;
 	int retval;
 	int fd_binary = -1;
-	struct binfmt_misc *bm_data = &binfmt_data;
+	struct binfmt_misc *bm_data = get_exec_env()->binfmt_misc;
 
 	retval = -ENOEXEC;
 	if (!bm_data || !bm_data->enabled)
@@ -553,7 +550,7 @@ static ssize_t bm_entry_write(struct file *file, const char __user *buffer,
 	Node *e = file_inode(file)->i_private;
 	int res = parse_command(buffer, count);
 	struct super_block *sb = file->f_path.dentry->d_sb;
-	struct binfmt_misc *bm_data = sb->s_fs_info;
+	struct binfmt_misc *bm_data = BINFMT_MISC(sb);
 
 	switch (res) {
 		case 1: clear_bit(Enabled, &e->flags);
@@ -588,7 +585,7 @@ static ssize_t bm_register_write(struct file *file, const char __user *buffer,
 	struct inode *inode;
 	struct dentry *root, *dentry;
 	struct super_block *sb = file->f_path.dentry->d_sb;
-	struct binfmt_misc *bm_data = sb->s_fs_info;
+	struct binfmt_misc *bm_data = BINFMT_MISC(sb);
 	int err = 0;
 
 	e = create_entry(buffer, count);
@@ -653,7 +650,7 @@ static const struct file_operations bm_register_operations = {
 static ssize_t
 bm_status_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 {
-	struct binfmt_misc *bm_data = file->f_dentry->d_sb->s_fs_info;
+	struct binfmt_misc *bm_data = BINFMT_MISC(file->f_dentry->d_sb);
 	char *s = bm_data->enabled ? "enabled\n" : "disabled\n";
 
 	return simple_read_from_buffer(buf, nbytes, ppos, s, strlen(s));
@@ -662,7 +659,7 @@ bm_status_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 static ssize_t bm_status_write(struct file * file, const char __user * buffer,
 		size_t count, loff_t *ppos)
 {
-	struct binfmt_misc *bm_data = file->f_dentry->d_sb->s_fs_info;
+	struct binfmt_misc *bm_data = BINFMT_MISC(file->f_dentry->d_sb);
 	int res = parse_command(buffer, count);
 	struct dentry *root;
 
@@ -691,9 +688,19 @@ static const struct file_operations bm_status_operations = {
 
 /* Superblock handling */
 
+static void bm_put_super(struct super_block *sb)
+{
+	struct binfmt_misc *bm_data = BINFMT_MISC(sb);
+	struct ve_struct *ve = sb->s_fs_info;
+
+	bm_data->enabled = 0;
+	put_ve(ve);
+}
+
 static const struct super_operations s_ops = {
 	.statfs		= simple_statfs,
 	.evict_inode	= bm_evict_inode,
+	.put_super	= bm_put_super,
 };
 
 static int bm_fill_super(struct super_block * sb, void * data, int silent)
@@ -703,18 +710,43 @@ static int bm_fill_super(struct super_block * sb, void * data, int silent)
 		[3] = {"register", &bm_register_operations, S_IWUSR},
 		/* last one */ {""}
 	};
-	int err = simple_fill_super(sb, BINFMTFS_MAGIC, bm_files);
-	if (!err) {
-		sb->s_op = &s_ops;
-		sb->s_fs_info = &binfmt_data;
+	struct ve_struct *ve = data;
+	struct binfmt_misc *bm_data = ve->binfmt_misc;
+	int err;
+
+	if (!bm_data) {
+		bm_data = kzalloc(sizeof(struct binfmt_misc), GFP_KERNEL);
+		if (!bm_data)
+			return -ENOMEM;
+
+		INIT_LIST_HEAD(&bm_data->entries);
+		rwlock_init(&bm_data->entries_lock);
+
+		ve->binfmt_misc = bm_data;
 	}
-	return err;
+
+	err = simple_fill_super(sb, BINFMTFS_MAGIC, bm_files);
+	if (err) {
+		kfree(bm_data);
+		return err;
+	}
+
+	sb->s_op = &s_ops;
+
+	bm_data->enabled = 1;
+	get_ve(ve);
+
+	return 0;
 }
 
 static struct dentry *bm_mount(struct file_system_type *fs_type,
 	int flags, const char *dev_name, void *data)
 {
-	return mount_single(fs_type, flags, data, bm_fill_super);
+	if (!current_user_ns_initial() && !capable(CAP_SYS_ADMIN))
+		return ERR_PTR(-EPERM);
+
+	return mount_ns(fs_type, flags, get_exec_env(), get_exec_env(),
+			current_user_ns(), bm_fill_super);
 }
 
 static struct linux_binfmt misc_format = {
@@ -727,6 +759,7 @@ static struct file_system_type bm_fs_type = {
 	.name		= "binfmt_misc",
 	.mount		= bm_mount,
 	.kill_sb	= kill_litter_super,
+	.fs_flags	= FS_VIRTUALIZED | FS_USERNS_MOUNT,
 };
 MODULE_ALIAS_FS("binfmt_misc");
 
