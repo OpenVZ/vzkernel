@@ -107,6 +107,8 @@ struct ve_struct {
 	struct mutex		devmnt_mutex;
 	atomic_t		netif_avail_nr;
 	int			netif_max_nr;
+
+	atomic_t		mnt_nr;	/* number of present VE mounts */
 #ifdef CONFIG_COREDUMP
 	char 			core_pattern[CORENAME_MAX_SIZE];
 #endif
@@ -128,6 +130,8 @@ struct ve_devmnt {
 extern int nr_ve;
 extern struct proc_dir_entry *proc_vz_dir;
 extern struct cgroup_subsys ve_subsys;
+
+extern unsigned int sysctl_ve_mount_nr;
 
 #ifdef CONFIG_VE
 #define ve_uevent_seqnum       (get_exec_env()->_uevent_seqnum)
