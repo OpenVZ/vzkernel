@@ -28,6 +28,14 @@ struct bio_vec {
 	unsigned int	bv_offset;
 };
 
+static inline ssize_t bvec_length(const struct bio_vec *bvec, unsigned long nr)
+{
+	ssize_t bytes = 0;
+	while (nr--)
+		bytes += (bvec++)->bv_len;
+	return bytes;
+}
+
 /*
  * RHEL7 auxillary shadow structure used to extend 'struct bio' without
  * breaking RHEL kABI -- bio_init_aux() must be used to set bio->bio_aux
