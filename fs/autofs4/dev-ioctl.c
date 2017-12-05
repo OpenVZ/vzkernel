@@ -616,7 +616,7 @@ static int _autofs_dev_ioctl(unsigned int command,
 	int err = 0;
 
 	/* only root can play with this */
-	if (!capable(CAP_SYS_ADMIN))
+	if (!ve_capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
 	cmd_first = _IOC_NR(AUTOFS_DEV_IOCTL_IOC_FIRST);
