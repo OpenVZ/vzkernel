@@ -79,6 +79,16 @@ static void prepare_proc(void)
  * ------------------------------------------------------------------------
  */
 
+/*
+ * Operations with a big amount of mount points can require a lot of time.
+ * These operations take the global lock namespace_sem, so they can affect
+ * other containers. Let us allow no more than sysctl_ve_mount_nr mount
+ * points for a VE.
+ */
+unsigned int sysctl_ve_mount_nr = 4096;
+static int ve_mount_nr_min = 0;
+static int ve_mount_nr_max = INT_MAX;
+
 static struct ctl_table vz_fs_table[] = {
 	{
 		.procname	= "fsync-enable",
@@ -86,6 +96,15 @@ static struct ctl_table vz_fs_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= &proc_dointvec_virtual,
+	},
+	{
+		.procname       = "ve-mount-nr",
+		.data           = &sysctl_ve_mount_nr,
+		.maxlen         = sizeof(sysctl_ve_mount_nr),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1		= &ve_mount_nr_min,
+		.extra2		= &ve_mount_nr_max,
 	},
 	{ 0 }
 };
