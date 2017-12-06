@@ -542,8 +542,9 @@ lookup_extent_mapping(struct extent_map_tree *tree, sector_t start, sector_t len
 {
 	struct extent_map *em;
 	struct rb_node *rb_node;
+	unsigned long flags;
 
-	read_lock_irq(&tree->lock);
+	read_lock_irqsave(&tree->lock, flags);
 	rb_node = tree_search(&tree->map, start);
 	if (!rb_node) {
 		em = NULL;
@@ -557,25 +558,29 @@ lookup_extent_mapping(struct extent_map_tree *tree, sector_t start, sector_t len
 	atomic_inc(&em->refs);
 
 out:
-	read_unlock_irq(&tree->lock);
+	read_unlock_irqrestore(&tree->lock, flags);
 	return em;
 }
 
 /*
  * removes an extent_map struct from the tree.  No reference counts are
  * dropped, and no checks are done to  see if the range is in use
+ *
+ * caller called spin_lock_irq(plo->lock), so we needn't _irq locking
  */
 static int remove_extent_mapping(struct extent_map_tree *tree, struct extent_map *em)
 {
 	int ret;
 
-	write_lock_irq(&tree->lock);
+	WARN_ON(!irqs_disabled());
+
+	write_lock(&tree->lock);
 	ret = tree_delete(&tree->map, em->start);
 	if (!ret) {
 		list_del_init(&em->lru_link);
 		tree->map_size--;
 	}
-	write_unlock_irq(&tree->lock);
+	write_unlock(&tree->lock);
 	return ret;
 }
 
@@ -834,10 +839,12 @@ static int drop_extent_map(struct extent_map_tree *tree)
 	return 0;
 }
 
-void trim_extent_mappings(struct extent_map_tree *tree, sector_t start)
+void trim_extent_mappings(struct ploop_device *plo,
+			  struct extent_map_tree *tree, sector_t start)
 {
 	struct extent_map *em;
 
+	spin_lock_irq(&plo->lock);
 	while ((em = lookup_extent_mapping(tree, start, ((sector_t)(-1ULL)) - start))) {
 		remove_extent_mapping(tree, em);
 		WARN_ON(atomic_read(&em->refs) != 2);
@@ -847,6 +854,7 @@ void trim_extent_mappings(struct extent_map_tree *tree, sector_t start)
 		/* once for the tree */
 		ploop_extent_put(em);
 	}
+	spin_unlock_irq(&plo->lock);
 }
 
 
