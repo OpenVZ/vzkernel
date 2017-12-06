@@ -121,7 +121,8 @@ static struct softnet_data *softnet_get_online(loff_t *pos)
 
 	while (*pos < nr_cpu_ids)
 		if (cpu_online(*pos)) {
-			sd = &per_cpu(softnet_data, *pos);
+			if (__cpus_weight(cpu_online_mask, *pos) < num_online_vcpus())
+				sd = &per_cpu(softnet_data, *pos);
 			break;
 		} else
 			++*pos;
