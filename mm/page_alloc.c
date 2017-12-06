@@ -6438,27 +6438,6 @@ void setup_per_zone_wmarks(void)
 
 /*
  * Initialise min_free_kbytes.
- *
- * For small machines we want it small (128k min).  For large machines
- * we want it large (64MB max).  But it is not linear, because network
- * bandwidth does not increase linearly with machine size.  We use
- *
- * 	min_free_kbytes = 4 * sqrt(lowmem_kbytes), for better accuracy:
- *	min_free_kbytes = sqrt(lowmem_kbytes * 16)
- *
- * which yields
- *
- * 16MB:	512k
- * 32MB:	724k
- * 64MB:	1024k
- * 128MB:	1448k
- * 256MB:	2048k
- * 512MB:	2896k
- * 1024MB:	4096k
- * 2048MB:	5792k
- * 4096MB:	8192k
- * 8192MB:	11584k
- * 16384MB:	16384k
  */
 int __meminit init_per_zone_wmark_min(void)
 {
@@ -6466,14 +6445,14 @@ int __meminit init_per_zone_wmark_min(void)
 	int new_min_free_kbytes;
 
 	lowmem_kbytes = nr_free_buffer_pages() * (PAGE_SIZE >> 10);
-	new_min_free_kbytes = int_sqrt(lowmem_kbytes * 16);
+	new_min_free_kbytes = lowmem_kbytes * 2 / 100; /* 2% */
 
 	if (new_min_free_kbytes > user_min_free_kbytes) {
 		min_free_kbytes = new_min_free_kbytes;
 		if (min_free_kbytes < 128)
 			min_free_kbytes = 128;
-		if (min_free_kbytes > 65536)
-			min_free_kbytes = 65536;
+		if (min_free_kbytes > 4194304)
+			min_free_kbytes = 4194304;
 	} else {
 		pr_warn("min_free_kbytes is not updated to %d because user defined value %d is preferred\n",
 				new_min_free_kbytes, user_min_free_kbytes);
