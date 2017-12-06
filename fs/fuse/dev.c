@@ -543,6 +543,7 @@ void fuse_request_send_background(struct fuse_conn *fc, struct fuse_req *req)
 		BUG_ON(req->in.h.opcode != FUSE_READ);
 		req->out.h.error = -EIO;
 		__clear_bit(FR_BACKGROUND, &req->flags);
+		__clear_bit(FR_PENDING, &req->flags);
 		list_del_init(&req->list);
 		spin_unlock(&fc->lock);
 		request_end(fc, req);
