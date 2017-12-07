@@ -1062,6 +1062,12 @@ static unsigned int netns_inum(void *ns)
 	return net->proc_inum;
 }
 
+static struct user_namespace *netns_owner(void *ns)
+{
+	struct net *net_ns = ns;
+	return net_ns->user_ns;
+}
+
 const struct proc_ns_operations netns_operations = {
 	.name		= "net",
 	.type		= CLONE_NEWNET,
@@ -1069,5 +1075,6 @@ const struct proc_ns_operations netns_operations = {
 	.put		= netns_put,
 	.install	= netns_install,
 	.inum		= netns_inum,
+	.owner		= netns_owner,
 };
 #endif
