@@ -17,6 +17,7 @@ struct proc_ns_operations {
 	int (*install)(struct nsproxy *nsproxy, void *ns);
 	unsigned int (*inum)(void *ns);
 	struct user_namespace *(*owner)(void *ns);
+	void *(*get_parent)(void *ns, const struct proc_ns_operations *ns_ops);
 };
 
 struct proc_ns {
