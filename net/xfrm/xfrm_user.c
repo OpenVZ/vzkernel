@@ -1650,6 +1650,14 @@ static int xfrm_dump_policy_done(struct netlink_callback *cb)
 	struct xfrm_policy_walk *walk = (struct xfrm_policy_walk *) &cb->args[1];
 	struct net *net = sock_net(cb->skb->sk);
 
+	/*
+	 * .done callback runs only once for a given 'cb', so there is no
+	 * need to  set cb->args[0] to indicate that xfrm_policy_walk_init()
+	 * has already been called.
+	 */
+	if (!cb->args[0])
+		xfrm_policy_walk_init(walk, XFRM_POLICY_TYPE_ANY);
+
 	if (cb->args[0])
 		xfrm_policy_walk_done(walk, net);
 	return 0;
