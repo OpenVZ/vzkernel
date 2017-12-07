@@ -213,6 +213,12 @@ static unsigned int ipcns_inum(void *vp)
 	return ns->proc_inum;
 }
 
+static struct user_namespace *ipcns_owner(void *ns)
+{
+	struct ipc_namespace *ipc_ns = ns;
+	return ipc_ns->user_ns;
+}
+
 const struct proc_ns_operations ipcns_operations = {
 	.name		= "ipc",
 	.type		= CLONE_NEWIPC,
@@ -220,4 +226,5 @@ const struct proc_ns_operations ipcns_operations = {
 	.put		= ipcns_put,
 	.install	= ipcns_install,
 	.inum		= ipcns_inum,
+	.owner		= ipcns_owner,
 };
