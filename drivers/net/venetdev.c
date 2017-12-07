@@ -1173,6 +1173,12 @@ static struct rtnl_link_ops venet_link_ops = {
 	.maxtype	= VENET_INFO_MAX,
 };
 
+/*
+ * veip is already removed from userspace by vzctl
+ * since libvzctl-7.0.449: PSBM-77750.
+ * Remove this hook couple releases after the vzctl
+ * version begins used in official Virtuozzo 7.
+ */
 static struct ve_hook veip_shutdown_hook = {
 	.fini		= veip_shutdown,
 	.priority	= HOOK_PRIO_FINISHING,
