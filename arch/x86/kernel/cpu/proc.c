@@ -3,6 +3,7 @@
 #include <linux/string.h>
 #include <linux/seq_file.h>
 #include <linux/cpufreq.h>
+#include <linux/sched.h>
 
 /*
  *	Get CPU information for use by the procfs.
@@ -56,10 +57,54 @@ extern void __do_cpuid_fault(unsigned int op, unsigned int count,
 			     unsigned int *eax, unsigned int *ebx,
 			     unsigned int *ecx, unsigned int *edx);
 
+struct cpu_flags {
+	u32 val[NCAPINTS];
+};
+
+static DEFINE_PER_CPU(struct cpu_flags, cpu_flags);
+
+static void init_cpu_flags(void *dummy)
+{
+	int cpu = smp_processor_id();
+	struct cpu_flags *flags = &per_cpu(cpu_flags, cpu);
+	struct cpuinfo_x86 *c = &cpu_data(cpu);
+	unsigned int eax, ebx, ecx, edx;
+
+	memcpy(flags->val, c->x86_capability, NCAPINTS * sizeof(u32));
+
+	/*
+	 * Clear feature bits masked using cpuid masking/faulting.
+	 */
+
+	if (c->cpuid_level >= 0x00000001) {
+		__do_cpuid_fault(0x00000001, 0, &eax, &ebx, &ecx, &edx);
+		flags->val[4] &= ecx;
+		flags->val[0] &= edx;
+	}
+
+	if (c->cpuid_level >= 0x00000007) {
+		__do_cpuid_fault(0x00000007, 0, &eax, &ebx, &ecx, &edx);
+		flags->val[9] &= ebx;
+	}
+
+	if ((c->extended_cpuid_level & 0xffff0000) == 0x80000000 &&
+	    c->extended_cpuid_level >= 0x80000001) {
+		__do_cpuid_fault(0x80000001, 0, &eax, &ebx, &ecx, &edx);
+		flags->val[6] &= ecx;
+		flags->val[1] &= edx;
+	}
+
+	if (c->cpuid_level >= 0x0000000d) {
+		__do_cpuid_fault(0x0000000d, 1, &eax, &ebx, &ecx, &edx);
+		flags->val[10] &= eax;
+	}
+}
+
 static int show_cpuinfo(struct seq_file *m, void *v)
 {
 	struct cpuinfo_x86 *c = v;
 	unsigned int cpu;
+	int is_super = ve_is_super(get_exec_env());
 	int i;
 
 	cpu = c->cpu_index;
@@ -100,7 +145,10 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 
 	seq_printf(m, "flags\t\t:");
 	for (i = 0; i < 32*NCAPINTS; i++)
-		if (cpu_has(c, i) && x86_cap_flags[i] != NULL)
+		if (x86_cap_flags[i] != NULL &&
+				((is_super && cpu_has(c, i)) ||
+				 (!is_super && test_bit(i, (unsigned long *)
+							&per_cpu(cpu_flags, cpu)))))
 			seq_printf(m, " %s", x86_cap_flags[i]);
 
 	seq_printf(m, "\nbogomips\t: %lu.%02lu\n",
@@ -137,13 +185,14 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 static void *__c_start(struct seq_file *m, loff_t *pos)
 {
 	*pos = cpumask_next(*pos - 1, cpu_online_mask);
-	if ((*pos) < nr_cpu_ids)
+	if (__cpus_weight(cpu_online_mask, *pos) < num_online_vcpus())
 		return &cpu_data(*pos);
 	return NULL;
 }
 
 static void *c_start(struct seq_file *m, loff_t *pos)
 {
+	on_each_cpu(init_cpu_flags, NULL, 1);
 	return __c_start(m, pos);
 }
 
