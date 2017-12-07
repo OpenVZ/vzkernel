@@ -27,6 +27,8 @@ struct uid_gid_map {	/* 64 bytes -- 1 cache line */
 
 struct ucounts;
 
+struct proc_ns_operations;
+
 enum ucount_type {
 	UCOUNT_USER_NAMESPACES,
 	UCOUNT_PID_NAMESPACES,
@@ -119,6 +121,8 @@ extern ssize_t proc_setgroups_write(struct file *, const char __user *, size_t, 
 extern int proc_setgroups_show(struct seq_file *m, void *v);
 extern bool userns_may_setgroups(const struct user_namespace *ns);
 extern bool current_in_userns(const struct user_namespace *target_ns);
+
+void *ns_get_owner(void *ns, const struct proc_ns_operations *ns_ops);
 #else
 
 static inline struct user_namespace *get_user_ns(struct user_namespace *ns)
@@ -151,6 +155,12 @@ static inline bool userns_may_setgroups(const struct user_namespace *ns)
 static inline bool current_in_userns(const struct user_namespace *target_ns)
 {
 	return true;
+}
+
+static inline void *ns_get_owner(void *ns,
+		const struct proc_ns_operations *ns_ops)
+{
+	return ERR_PTR(-EPERM);
 }
 #endif
 
