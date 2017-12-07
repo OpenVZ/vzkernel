@@ -1078,6 +1078,30 @@ static unsigned int userns_inum(void *ns)
 	return user_ns->proc_inum;
 }
 
+void *ns_get_owner(void *ns, const struct proc_ns_operations *ns_ops)
+{
+	struct user_namespace *my_user_ns = current_user_ns();
+	struct user_namespace *owner, *p;
+
+	/* See if the owner is in the current user namespace */
+	owner = p = ns_ops->owner(ns);
+	for (;;) {
+		if (!p)
+			return ERR_PTR(-EPERM);
+		if (p == my_user_ns)
+			break;
+		p = p->parent;
+	}
+
+	return get_user_ns(owner);
+}
+
+static struct user_namespace *userns_owner(void *ns)
+{
+	struct user_namespace *user_ns = ns;
+	return user_ns->parent;
+}
+
 const struct proc_ns_operations userns_operations = {
 	.name		= "user",
 	.type		= CLONE_NEWUSER,
@@ -1085,6 +1109,7 @@ const struct proc_ns_operations userns_operations = {
 	.put		= userns_put,
 	.install	= userns_install,
 	.inum		= userns_inum,
+	.owner		= userns_owner,
 };
 
 static __init int user_namespaces_init(void)
