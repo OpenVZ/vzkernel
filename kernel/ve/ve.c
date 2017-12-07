@@ -846,7 +846,7 @@ static int ve_state_read(struct cgroup *cg, struct cftype *cft,
 
 	if (ve->is_running)
 		seq_puts(m, "RUNNING");
-	else if (!nr_threads_ve(ve))
+	else if (!ve->init_task)
 		seq_puts(m, "STOPPED");
 	else if (ve->ve_ns)
 		seq_puts(m, "STOPPING");
