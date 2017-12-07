@@ -1096,6 +1096,7 @@ const struct proc_ns_operations userns_operations = {
 	.install	= userns_install,
 	.inum		= userns_inum,
 	.owner		= userns_owner,
+	.get_parent	= ns_get_owner,
 };
 
 static __init int user_namespaces_init(void)
