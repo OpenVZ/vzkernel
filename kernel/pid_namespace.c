@@ -426,6 +426,24 @@ static struct user_namespace *pidns_owner(void *ns)
 	return pid_ns->user_ns;
 }
 
+static void *pidns_get_parent(void *ns, const struct proc_ns_operations *ns_ops)
+{
+	struct pid_namespace *active = task_active_pid_ns(current);
+	struct pid_namespace *pid_ns, *p;
+
+	/* See if the parent is in the current namespace */
+	pid_ns = p = ((struct pid_namespace *)ns)->parent;
+	for (;;) {
+		if (!p)
+			return ERR_PTR(-EPERM);
+		if (p == active)
+			break;
+		p = p->parent;
+	}
+
+	return get_pid_ns(pid_ns);
+}
+
 const struct proc_ns_operations pidns_operations = {
 	.name		= "pid",
 	.type		= CLONE_NEWPID,
@@ -434,6 +452,7 @@ const struct proc_ns_operations pidns_operations = {
 	.install	= pidns_install,
 	.inum		= pidns_inum,
 	.owner		= pidns_owner,
+	.get_parent     = pidns_get_parent,
 };
 
 const struct proc_ns_operations pidns_for_children_operations = {
@@ -445,6 +464,7 @@ const struct proc_ns_operations pidns_for_children_operations = {
 	.install	= pidns_install,
 	.inum		= pidns_inum,
 	.owner		= pidns_owner,
+	.get_parent     = pidns_get_parent,
 };
 
 static __init int pid_namespaces_init(void)
