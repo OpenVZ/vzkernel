@@ -13,7 +13,12 @@
 #include <linux/pid_namespace.h>
 #include <linux/user_namespace.h>
 #include "internal.h"
+#include <linux/ioctl.h>
 
+#define NSIO   0xb7
+
+/* Returns a file descriptor that refers to an owning user namespace */
+#define NS_GET_USERNS  _IO(NSIO, 0x1)
 
 static const struct proc_ns_operations *ns_entries[] = {
 #ifdef CONFIG_NET_NS
@@ -35,8 +40,11 @@ static const struct proc_ns_operations *ns_entries[] = {
 	&mntns_operations,
 };
 
+static long ns_ioctl(struct file *filp, unsigned int ioctl,
+		unsigned long arg);
 static const struct file_operations ns_file_operations = {
 	.llseek		= no_llseek,
+	.unlocked_ioctl = ns_ioctl,
 };
 
 static const struct inode_operations ns_inode_operations = {
@@ -64,18 +72,13 @@ const struct dentry_operations ns_dentry_operations =
 	.d_dname	= ns_dname,
 };
 
-static struct dentry *proc_ns_get_dentry(struct super_block *sb,
-	struct task_struct *task, const struct proc_ns_operations *ns_ops)
+static struct dentry *__proc_ns_get_dentry(struct super_block *sb,
+	void *ns, const struct proc_ns_operations *ns_ops)
 {
 	struct dentry *dentry, *result;
 	struct inode *inode;
 	struct proc_inode *ei;
 	struct qstr qname = { .name = "", };
-	void *ns;
-
-	ns = ns_ops->get(task);
-	if (!ns)
-		return ERR_PTR(-ENOENT);
 
 	dentry = d_alloc_pseudo(sb, &qname);
 	if (!dentry) {
@@ -111,6 +114,70 @@ static struct dentry *proc_ns_get_dentry(struct super_block *sb,
 	}
 
 	return dentry;
+}
+
+static struct dentry *proc_ns_get_dentry(struct super_block *sb,
+	struct task_struct *task, const struct proc_ns_operations *ns_ops)
+{
+	void *ns;
+
+	ns = ns_ops->get(task);
+	if (!ns)
+		return ERR_PTR(-ENOENT);
+
+	return __proc_ns_get_dentry(sb, ns, ns_ops);
+}
+
+static int open_related_ns(struct vfsmount *mnt, struct proc_ns *ns,
+		const struct proc_ns_operations *relative_ns_ops,
+		void *(*get_ns)(void *ns,
+			const struct proc_ns_operations *ns_ops)) {
+	struct path path = {};
+	struct file *f;
+	int fd;
+	void *relative;
+
+	fd = get_unused_fd_flags(O_CLOEXEC);
+	if (fd < 0)
+		return fd;
+
+	relative = get_ns(ns->ns, ns->ns_ops);
+	if (IS_ERR(relative)) {
+		put_unused_fd(fd);
+		return PTR_ERR(relative);
+	}
+
+	path.mnt = mntget(mnt);
+	path.dentry = __proc_ns_get_dentry(mnt->mnt_sb, relative, relative_ns_ops);
+	if (IS_ERR(path.dentry)) {
+		mntput(mnt);
+		put_unused_fd(fd);
+		return PTR_ERR(path.dentry);
+	}
+
+	f = dentry_open(&path, O_RDONLY, current_cred());
+	path_put(&path);
+	if (IS_ERR(f)) {
+		put_unused_fd(fd);
+		fd = PTR_ERR(f);
+	} else
+		fd_install(fd, f);
+
+	return fd;
+}
+
+static long ns_ioctl(struct file *filp, unsigned int ioctl,
+		unsigned long arg)
+{
+	struct vfsmount *mnt = filp->f_path.mnt;
+	struct proc_ns *ns = get_proc_ns(file_inode(filp));
+
+	switch (ioctl) {
+	case NS_GET_USERNS:
+		return open_related_ns(mnt, ns, &userns_operations, ns_get_owner);
+	default:
+		return -ENOTTY;
+	}
 }
 
 static void *proc_ns_follow_link(struct dentry *dentry, struct nameidata *nd)
