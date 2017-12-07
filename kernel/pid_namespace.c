@@ -420,6 +420,12 @@ static unsigned int pidns_inum(void *ns)
 	return pid_ns->proc_inum;
 }
 
+static struct user_namespace *pidns_owner(void *ns)
+{
+	struct pid_namespace *pid_ns = ns;
+	return pid_ns->user_ns;
+}
+
 const struct proc_ns_operations pidns_operations = {
 	.name		= "pid",
 	.type		= CLONE_NEWPID,
@@ -427,6 +433,7 @@ const struct proc_ns_operations pidns_operations = {
 	.put		= pidns_put,
 	.install	= pidns_install,
 	.inum		= pidns_inum,
+	.owner		= pidns_owner,
 };
 
 const struct proc_ns_operations pidns_for_children_operations = {
@@ -437,6 +444,7 @@ const struct proc_ns_operations pidns_for_children_operations = {
 	.put		= pidns_put,
 	.install	= pidns_install,
 	.inum		= pidns_inum,
+	.owner		= pidns_owner,
 };
 
 static __init int pid_namespaces_init(void)
