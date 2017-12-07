@@ -19,6 +19,8 @@
 
 /* Returns a file descriptor that refers to an owning user namespace */
 #define NS_GET_USERNS  _IO(NSIO, 0x1)
+/* Returns a file descriptor that refers to a parent namespace */
+#define NS_GET_PARENT  _IO(NSIO, 0x2)
 
 static const struct proc_ns_operations *ns_entries[] = {
 #ifdef CONFIG_NET_NS
@@ -175,6 +177,10 @@ static long ns_ioctl(struct file *filp, unsigned int ioctl,
 	switch (ioctl) {
 	case NS_GET_USERNS:
 		return open_related_ns(mnt, ns, &userns_operations, ns_get_owner);
+	case NS_GET_PARENT:
+		if (!ns->ns_ops->get_parent)
+			return -EINVAL;
+		return open_related_ns(mnt, ns, ns->ns_ops, ns->ns_ops->get_parent);
 	default:
 		return -ENOTTY;
 	}
