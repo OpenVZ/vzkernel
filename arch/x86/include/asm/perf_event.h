@@ -124,6 +124,15 @@ struct x86_pmu_capability {
 	int		events_mask_len;
 };
 
+struct x86_pmu_lbr {
+	unsigned long	tos, from, to;	/* MSR base regs */
+	int		nr;		/* hardware stack size */
+	u64		sel_mask;	/* LBR_SELECT valid bits */
+	const int	*sel_map;	/* lbr_select mappings */
+	bool		double_abort;	/* duplicated lbr aborts */
+	bool		pt_coexist;	/* (LBR|BTS) may coexist with PT */
+};
+
 /*
  * Fixed-purpose performance events:
  */
@@ -298,5 +307,7 @@ static inline void perf_check_microcode(void) { }
 #endif
 
 #define arch_perf_out_copy_user copy_from_user_nmi
+
+extern void intel_pmu_lbr_fill(struct x86_pmu_lbr *lbr, u8 family, u8 model);
 
 #endif /* _ASM_X86_PERF_EVENT_H */
