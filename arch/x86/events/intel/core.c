@@ -2123,7 +2123,7 @@ static void intel_pmu_reset(void)
 	}
 
 	/* Reset LBRs and LBR freezing */
-	if (x86_pmu.lbr_nr) {
+	if (x86_pmu.lbr.nr) {
 		update_debugctlmsr(get_debugctlmsr() &
 			~(DEBUGCTLMSR_FREEZE_LBRS_ON_PMI|DEBUGCTLMSR_LBR));
 	}
@@ -3207,7 +3207,7 @@ static int intel_pmu_cpu_prepare(int cpu)
 {
 	struct cpu_hw_events *cpuc = &per_cpu(cpu_hw_events, cpu);
 
-	if (x86_pmu.extra_regs || x86_pmu.lbr_sel_map) {
+	if (x86_pmu.extra_regs || x86_pmu.lbr.sel_map) {
 		cpuc->shared_regs = allocate_shared_regs(cpu);
 		if (!cpuc->shared_regs)
 			goto err;
@@ -3300,7 +3300,7 @@ static void intel_pmu_cpu_starting(int cpu)
 		cpuc->shared_regs->refcnt++;
 	}
 
-	if (x86_pmu.lbr_sel_map)
+	if (x86_pmu.lbr.sel_map)
 		cpuc->lbr_sel = &cpuc->shared_regs->regs[EXTRA_REG_LBR];
 
 	if (x86_pmu.flags & PMU_FL_EXCL_CNTRS) {
@@ -3746,7 +3746,7 @@ static ssize_t branches_show(struct device *cdev,
 			     struct device_attribute *attr,
 			     char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%d\n", x86_pmu.lbr_nr);
+	return snprintf(buf, PAGE_SIZE, "%d\n", x86_pmu.lbr.nr);
 }
 
 static DEVICE_ATTR_RO(branches);
@@ -3848,6 +3848,8 @@ __init int intel_pmu_init(void)
 
 	intel_ds_init();
 
+	intel_pmu_lbr_init();
+
 	x86_add_quirk(intel_arch_events_quirk); /* Install first, so it runs last */
 
 	/*
@@ -3867,8 +3869,6 @@ __init int intel_pmu_init(void)
 		memcpy(hw_cache_event_ids, core2_hw_cache_event_ids,
 		       sizeof(hw_cache_event_ids));
 
-		intel_pmu_lbr_init_core();
-
 		x86_pmu.event_constraints = intel_core2_event_constraints;
 		x86_pmu.pebs_constraints = intel_core2_pebs_event_constraints;
 		pr_cont("Core2 events, ");
@@ -3882,8 +3882,6 @@ __init int intel_pmu_init(void)
 		       sizeof(hw_cache_event_ids));
 		memcpy(hw_cache_extra_regs, nehalem_hw_cache_extra_regs,
 		       sizeof(hw_cache_extra_regs));
-
-		intel_pmu_lbr_init_nhm();
 
 		x86_pmu.event_constraints = intel_nehalem_event_constraints;
 		x86_pmu.pebs_constraints = intel_nehalem_pebs_event_constraints;
@@ -3916,8 +3914,6 @@ __init int intel_pmu_init(void)
 		memcpy(hw_cache_event_ids, atom_hw_cache_event_ids,
 		       sizeof(hw_cache_event_ids));
 
-		intel_pmu_lbr_init_atom();
-
 		x86_pmu.event_constraints = intel_gen_event_constraints;
 		x86_pmu.pebs_constraints = intel_atom_pebs_event_constraints;
 		x86_pmu.pebs_aliases = intel_pebs_aliases_core2;
@@ -3932,8 +3928,6 @@ __init int intel_pmu_init(void)
 			sizeof(hw_cache_event_ids));
 		memcpy(hw_cache_extra_regs, slm_hw_cache_extra_regs,
 		       sizeof(hw_cache_extra_regs));
-
-		intel_pmu_lbr_init_slm();
 
 		x86_pmu.event_constraints = intel_slm_event_constraints;
 		x86_pmu.pebs_constraints = intel_slm_pebs_event_constraints;
@@ -3951,8 +3945,6 @@ __init int intel_pmu_init(void)
 		memcpy(hw_cache_extra_regs, glm_hw_cache_extra_regs,
 		       sizeof(hw_cache_extra_regs));
 
-		intel_pmu_lbr_init_skl();
-
 		x86_pmu.event_constraints = intel_slm_event_constraints;
 		x86_pmu.pebs_constraints = intel_glm_pebs_event_constraints;
 		x86_pmu.extra_regs = intel_glm_extra_regs;
@@ -3963,7 +3955,6 @@ __init int intel_pmu_init(void)
 		 */
 		x86_pmu.pebs_aliases = NULL;
 		x86_pmu.pebs_prec_dist = true;
-		x86_pmu.lbr_pt_coexist = true;
 		x86_pmu.flags |= PMU_FL_HAS_RSP_1;
 		x86_pmu.cpu_events = glm_events_attrs;
 		extra_attr = slm_format_attr;
@@ -3977,8 +3968,6 @@ __init int intel_pmu_init(void)
 		memcpy(hw_cache_extra_regs, glp_hw_cache_extra_regs,
 		       sizeof(hw_cache_extra_regs));
 
-		intel_pmu_lbr_init_skl();
-
 		x86_pmu.event_constraints = intel_slm_event_constraints;
 		x86_pmu.pebs_constraints = intel_glp_pebs_event_constraints;
 		x86_pmu.extra_regs = intel_glm_extra_regs;
@@ -3988,7 +3977,6 @@ __init int intel_pmu_init(void)
 		 */
 		x86_pmu.pebs_aliases = NULL;
 		x86_pmu.pebs_prec_dist = true;
-		x86_pmu.lbr_pt_coexist = true;
 		x86_pmu.flags |= PMU_FL_HAS_RSP_1;
 		x86_pmu.get_event_constraints = glp_get_event_constraints;
 		x86_pmu.cpu_events = glm_events_attrs;
@@ -4006,8 +3994,6 @@ __init int intel_pmu_init(void)
 		       sizeof(hw_cache_event_ids));
 		memcpy(hw_cache_extra_regs, nehalem_hw_cache_extra_regs,
 		       sizeof(hw_cache_extra_regs));
-
-		intel_pmu_lbr_init_nhm();
 
 		x86_pmu.event_constraints = intel_westmere_event_constraints;
 		x86_pmu.enable_all = intel_pmu_nhm_enable_all;
@@ -4038,8 +4024,6 @@ __init int intel_pmu_init(void)
 		       sizeof(hw_cache_event_ids));
 		memcpy(hw_cache_extra_regs, snb_hw_cache_extra_regs,
 		       sizeof(hw_cache_extra_regs));
-
-		intel_pmu_lbr_init_snb();
 
 		x86_pmu.event_constraints = intel_snb_event_constraints;
 		x86_pmu.pebs_constraints = intel_snb_pebs_event_constraints;
@@ -4080,8 +4064,6 @@ __init int intel_pmu_init(void)
 		memcpy(hw_cache_extra_regs, snb_hw_cache_extra_regs,
 		       sizeof(hw_cache_extra_regs));
 
-		intel_pmu_lbr_init_snb();
-
 		x86_pmu.event_constraints = intel_ivb_event_constraints;
 		x86_pmu.pebs_constraints = intel_ivb_pebs_event_constraints;
 		x86_pmu.pebs_aliases = intel_pebs_aliases_ivb;
@@ -4116,8 +4098,6 @@ __init int intel_pmu_init(void)
 		memcpy(hw_cache_event_ids, hsw_hw_cache_event_ids, sizeof(hw_cache_event_ids));
 		memcpy(hw_cache_extra_regs, hsw_hw_cache_extra_regs, sizeof(hw_cache_extra_regs));
 
-		intel_pmu_lbr_init_hsw();
-
 		x86_pmu.event_constraints = intel_hsw_event_constraints;
 		x86_pmu.pebs_constraints = intel_hsw_pebs_event_constraints;
 		x86_pmu.extra_regs = intel_snbep_extra_regs;
@@ -4130,7 +4110,6 @@ __init int intel_pmu_init(void)
 		x86_pmu.hw_config = hsw_hw_config;
 		x86_pmu.get_event_constraints = hsw_get_event_constraints;
 		x86_pmu.cpu_events = get_hsw_events_attrs();
-		x86_pmu.lbr_double_abort = true;
 		extra_attr = boot_cpu_has(X86_FEATURE_RTM) ?
 			hsw_format_attr : nhm_format_attr;
 		pr_cont("Haswell events, ");
@@ -4154,8 +4133,6 @@ __init int intel_pmu_init(void)
 									     BDW_L3_MISS_LOCAL|HSW_SNOOP_DRAM;
 		hw_cache_extra_regs[C(NODE)][C(OP_WRITE)][C(RESULT_ACCESS)] = HSW_DEMAND_WRITE|
 									      BDW_L3_MISS_LOCAL|HSW_SNOOP_DRAM;
-
-		intel_pmu_lbr_init_hsw();
 
 		x86_pmu.event_constraints = intel_bdw_event_constraints;
 		x86_pmu.pebs_constraints = intel_bdw_pebs_event_constraints;
@@ -4182,7 +4159,6 @@ __init int intel_pmu_init(void)
 		       slm_hw_cache_event_ids, sizeof(hw_cache_event_ids));
 		memcpy(hw_cache_extra_regs,
 		       knl_hw_cache_extra_regs, sizeof(hw_cache_extra_regs));
-		intel_pmu_lbr_init_knl();
 
 		x86_pmu.event_constraints = intel_slm_event_constraints;
 		x86_pmu.pebs_constraints = intel_slm_pebs_event_constraints;
@@ -4204,7 +4180,6 @@ __init int intel_pmu_init(void)
 		x86_pmu.late_ack = true;
 		memcpy(hw_cache_event_ids, skl_hw_cache_event_ids, sizeof(hw_cache_event_ids));
 		memcpy(hw_cache_extra_regs, skl_hw_cache_extra_regs, sizeof(hw_cache_extra_regs));
-		intel_pmu_lbr_init_skl();
 
 		x86_pmu.event_constraints = intel_skl_event_constraints;
 		x86_pmu.pebs_constraints = intel_skl_pebs_event_constraints;
@@ -4292,19 +4267,19 @@ __init int intel_pmu_init(void)
 	 * Check all LBT MSR here.
 	 * Disable LBR access if any LBR MSRs can not be accessed.
 	 */
-	if (x86_pmu.lbr_nr && !check_msr(x86_pmu.lbr_tos, 0x3UL))
-		x86_pmu.lbr_nr = 0;
-	for (i = 0; i < x86_pmu.lbr_nr; i++) {
-		if (!(check_msr(x86_pmu.lbr_from + i, 0xffffUL) &&
-		      check_msr(x86_pmu.lbr_to + i, 0xffffUL)))
-			x86_pmu.lbr_nr = 0;
+	if (x86_pmu.lbr.nr && !check_msr(x86_pmu.lbr.tos, 0x3UL))
+		x86_pmu.lbr.nr = 0;
+	for (i = 0; i < x86_pmu.lbr.nr; i++) {
+		if (!(check_msr(x86_pmu.lbr.from + i, 0xffffUL) &&
+		      check_msr(x86_pmu.lbr.to + i, 0xffffUL)))
+			x86_pmu.lbr.nr = 0;
 	}
 
 	x86_pmu.caps_attrs = intel_pmu_caps_attrs;
 
-	if (x86_pmu.lbr_nr) {
+	if (x86_pmu.lbr.nr) {
 		x86_pmu.caps_attrs = merge_attr(x86_pmu.caps_attrs, lbr_attrs);
-		pr_cont("%d-deep LBR, ", x86_pmu.lbr_nr);
+		pr_cont("%d-deep LBR, ", x86_pmu.lbr.nr);
 	}
 
 	/*
@@ -4317,7 +4292,7 @@ __init int intel_pmu_init(void)
 			er->extra_msr_access = check_msr(er->msr, 0x11UL);
 			/* Disable LBR select mapping */
 			if ((er->idx == EXTRA_REG_LBR) && !er->extra_msr_access)
-				x86_pmu.lbr_sel_map = NULL;
+				x86_pmu.lbr.sel_map = NULL;
 		}
 	}
 
