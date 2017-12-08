@@ -4,6 +4,7 @@
 #include <asm/perf_event.h>
 #include <asm/msr.h>
 #include <asm/insn.h>
+#include <asm/intel-family.h>
 
 #include "../perf_event.h"
 
@@ -161,7 +162,7 @@ static void __intel_pmu_lbr_enable(bool pmi)
 	 * did not change.
 	 */
 	if (cpuc->lbr_sel)
-		lbr_select = cpuc->lbr_sel->config & x86_pmu.lbr_sel_mask;
+		lbr_select = cpuc->lbr_sel->config & x86_pmu.lbr.sel_mask;
 	if (!pmi && cpuc->lbr_sel)
 		wrmsrl(MSR_LBR_SELECT, lbr_select);
 
@@ -190,17 +191,17 @@ static void intel_pmu_lbr_reset_32(void)
 {
 	int i;
 
-	for (i = 0; i < x86_pmu.lbr_nr; i++)
-		wrmsrl(x86_pmu.lbr_from + i, 0);
+	for (i = 0; i < x86_pmu.lbr.nr; i++)
+		wrmsrl(x86_pmu.lbr.from + i, 0);
 }
 
 static void intel_pmu_lbr_reset_64(void)
 {
 	int i;
 
-	for (i = 0; i < x86_pmu.lbr_nr; i++) {
-		wrmsrl(x86_pmu.lbr_from + i, 0);
-		wrmsrl(x86_pmu.lbr_to   + i, 0);
+	for (i = 0; i < x86_pmu.lbr.nr; i++) {
+		wrmsrl(x86_pmu.lbr.from + i, 0);
+		wrmsrl(x86_pmu.lbr.to   + i, 0);
 		if (x86_pmu.intel_cap.lbr_format == LBR_FORMAT_INFO)
 			wrmsrl(MSR_LBR_INFO_0 + i, 0);
 	}
@@ -208,7 +209,7 @@ static void intel_pmu_lbr_reset_64(void)
 
 void intel_pmu_lbr_reset(void)
 {
-	if (!x86_pmu.lbr_nr)
+	if (!x86_pmu.lbr.nr)
 		return;
 
 	if (x86_pmu.intel_cap.lbr_format == LBR_FORMAT_32)
@@ -224,7 +225,7 @@ static inline u64 intel_pmu_lbr_tos(void)
 {
 	u64 tos;
 
-	rdmsrl(x86_pmu.lbr_tos, tos);
+	rdmsrl(x86_pmu.lbr.tos, tos);
 	return tos;
 }
 
@@ -245,12 +246,12 @@ static void __intel_pmu_lbr_restore(struct x86_perf_task_context *task_ctx)
 		return;
 	}
 
-	mask = x86_pmu.lbr_nr - 1;
+	mask = x86_pmu.lbr.nr - 1;
 	tos = intel_pmu_lbr_tos();
 	for (i = 0; i < tos; i++) {
 		lbr_idx = (tos - i) & mask;
-		wrmsrl(x86_pmu.lbr_from + lbr_idx, task_ctx->lbr_from[i]);
-		wrmsrl(x86_pmu.lbr_to + lbr_idx, task_ctx->lbr_to[i]);
+		wrmsrl(x86_pmu.lbr.from + lbr_idx, task_ctx->lbr_from[i]);
+		wrmsrl(x86_pmu.lbr.to + lbr_idx, task_ctx->lbr_to[i]);
 		if (x86_pmu.intel_cap.lbr_format == LBR_FORMAT_INFO)
 			wrmsrl(MSR_LBR_INFO_0 + lbr_idx, task_ctx->lbr_info[i]);
 	}
@@ -268,12 +269,12 @@ static void __intel_pmu_lbr_save(struct x86_perf_task_context *task_ctx)
 		return;
 	}
 
-	mask = x86_pmu.lbr_nr - 1;
+	mask = x86_pmu.lbr.nr - 1;
 	tos = intel_pmu_lbr_tos();
 	for (i = 0; i < tos; i++) {
 		lbr_idx = (tos - i) & mask;
-		rdmsrl(x86_pmu.lbr_from + lbr_idx, task_ctx->lbr_from[i]);
-		rdmsrl(x86_pmu.lbr_to + lbr_idx, task_ctx->lbr_to[i]);
+		rdmsrl(x86_pmu.lbr.from + lbr_idx, task_ctx->lbr_from[i]);
+		rdmsrl(x86_pmu.lbr.to + lbr_idx, task_ctx->lbr_to[i]);
 		if (x86_pmu.intel_cap.lbr_format == LBR_FORMAT_INFO)
 			rdmsrl(MSR_LBR_INFO_0 + lbr_idx, task_ctx->lbr_info[i]);
 	}
@@ -318,7 +319,7 @@ void intel_pmu_lbr_add(struct perf_event *event)
 	struct cpu_hw_events *cpuc = &__get_cpu_var(cpu_hw_events);
 	struct x86_perf_task_context *task_ctx;
 
-	if (!x86_pmu.lbr_nr)
+	if (!x86_pmu.lbr.nr)
 		return;
 
 	cpuc->br_sel = event->hw.branch_reg.reg;
@@ -357,7 +358,7 @@ void intel_pmu_lbr_del(struct perf_event *event)
 	struct cpu_hw_events *cpuc = &__get_cpu_var(cpu_hw_events);
 	struct x86_perf_task_context *task_ctx;
 
-	if (!x86_pmu.lbr_nr)
+	if (!x86_pmu.lbr.nr)
 		return;
 
 	if (branch_user_callstack(cpuc->br_sel) &&
@@ -389,11 +390,11 @@ void intel_pmu_lbr_disable_all(void)
 
 static void intel_pmu_lbr_read_32(struct cpu_hw_events *cpuc)
 {
-	unsigned long mask = x86_pmu.lbr_nr - 1;
+	unsigned long mask = x86_pmu.lbr.nr - 1;
 	u64 tos = intel_pmu_lbr_tos();
 	int i;
 
-	for (i = 0; i < x86_pmu.lbr_nr; i++) {
+	for (i = 0; i < x86_pmu.lbr.nr; i++) {
 		unsigned long lbr_idx = (tos - i) & mask;
 		union {
 			struct {
@@ -403,7 +404,7 @@ static void intel_pmu_lbr_read_32(struct cpu_hw_events *cpuc)
 			u64     lbr;
 		} msr_lastbranch;
 
-		rdmsrl(x86_pmu.lbr_from + lbr_idx, msr_lastbranch.lbr);
+		rdmsrl(x86_pmu.lbr.from + lbr_idx, msr_lastbranch.lbr);
 
 		cpuc->lbr_entries[i].from	= msr_lastbranch.from;
 		cpuc->lbr_entries[i].to		= msr_lastbranch.to;
@@ -425,12 +426,12 @@ static void intel_pmu_lbr_read_32(struct cpu_hw_events *cpuc)
 static void intel_pmu_lbr_read_64(struct cpu_hw_events *cpuc)
 {
 	bool need_info = false;
-	unsigned long mask = x86_pmu.lbr_nr - 1;
+	unsigned long mask = x86_pmu.lbr.nr - 1;
 	int lbr_format = x86_pmu.intel_cap.lbr_format;
 	u64 tos = intel_pmu_lbr_tos();
 	int i;
 	int out = 0;
-	int num = x86_pmu.lbr_nr;
+	int num = x86_pmu.lbr.nr;
 
 	if (cpuc->lbr_sel) {
 		need_info = !(cpuc->lbr_sel->config & LBR_NO_INFO);
@@ -445,8 +446,8 @@ static void intel_pmu_lbr_read_64(struct cpu_hw_events *cpuc)
 		u16 cycles = 0;
 		int lbr_flags = lbr_desc[lbr_format];
 
-		rdmsrl(x86_pmu.lbr_from + lbr_idx, from);
-		rdmsrl(x86_pmu.lbr_to   + lbr_idx, to);
+		rdmsrl(x86_pmu.lbr.from + lbr_idx, from);
+		rdmsrl(x86_pmu.lbr.to   + lbr_idx, to);
 
 		if (lbr_format == LBR_FORMAT_INFO && need_info) {
 			u64 info;
@@ -488,7 +489,7 @@ static void intel_pmu_lbr_read_64(struct cpu_hw_events *cpuc)
 		 * If the abort just happened outside the window
 		 * the extra entry cannot be removed.
 		 */
-		if (abort && x86_pmu.lbr_double_abort && out > 0)
+		if (abort && x86_pmu.lbr.double_abort && out > 0)
 			out--;
 
 		cpuc->lbr_entries[out].from	 = from;
@@ -597,7 +598,7 @@ static int intel_pmu_setup_hw_lbr_filter(struct perf_event *event)
 		if (!(br_type & (1ULL << i)))
 			continue;
 
-		v = x86_pmu.lbr_sel_map[i];
+		v = x86_pmu.lbr.sel_map[i];
 		if (v == LBR_NOT_SUPP)
 			return -EOPNOTSUPP;
 
@@ -615,7 +616,7 @@ static int intel_pmu_setup_hw_lbr_filter(struct perf_event *event)
 	 * But the 10th bit LBR_CALL_STACK does not operate
 	 * in suppress mode.
 	 */
-	reg->config = mask ^ (x86_pmu.lbr_sel_mask & ~LBR_CALL_STACK);
+	reg->config = mask ^ (x86_pmu.lbr.sel_mask & ~LBR_CALL_STACK);
 
 	if ((br_type & PERF_SAMPLE_BRANCH_NO_CYCLES) &&
 	    (br_type & PERF_SAMPLE_BRANCH_NO_FLAGS) &&
@@ -632,7 +633,7 @@ int intel_pmu_setup_lbr_filter(struct perf_event *event)
 	/*
 	 * no LBR on this PMU
 	 */
-	if (!x86_pmu.lbr_nr)
+	if (!x86_pmu.lbr.nr)
 		return -EOPNOTSUPP;
 
 	/*
@@ -645,7 +646,7 @@ int intel_pmu_setup_lbr_filter(struct perf_event *event)
 	/*
 	 * setup HW LBR filter, if any
 	 */
-	if (x86_pmu.lbr_sel_map)
+	if (x86_pmu.lbr.sel_map)
 		ret = intel_pmu_setup_hw_lbr_filter(event);
 
 	return ret;
@@ -934,12 +935,12 @@ static const int hsw_lbr_sel_map[PERF_SAMPLE_BRANCH_MAX_SHIFT] = {
 };
 
 /* core */
-void __init intel_pmu_lbr_init_core(void)
+static void intel_pmu_lbr_init_core(struct x86_pmu_lbr *lbr)
 {
-	x86_pmu.lbr_nr     = 4;
-	x86_pmu.lbr_tos    = MSR_LBR_TOS;
-	x86_pmu.lbr_from   = MSR_LBR_CORE_FROM;
-	x86_pmu.lbr_to     = MSR_LBR_CORE_TO;
+	lbr->nr     = 4;
+	lbr->tos    = MSR_LBR_TOS;
+	lbr->from   = MSR_LBR_CORE_FROM;
+	lbr->to     = MSR_LBR_CORE_TO;
 
 	/*
 	 * SW branch filter usage:
@@ -949,15 +950,15 @@ void __init intel_pmu_lbr_init_core(void)
 }
 
 /* nehalem/westmere */
-void __init intel_pmu_lbr_init_nhm(void)
+static void intel_pmu_lbr_init_nhm(struct x86_pmu_lbr *lbr)
 {
-	x86_pmu.lbr_nr     = 16;
-	x86_pmu.lbr_tos    = MSR_LBR_TOS;
-	x86_pmu.lbr_from   = MSR_LBR_NHM_FROM;
-	x86_pmu.lbr_to     = MSR_LBR_NHM_TO;
+	lbr->nr     = 16;
+	lbr->tos    = MSR_LBR_TOS;
+	lbr->from   = MSR_LBR_NHM_FROM;
+	lbr->to     = MSR_LBR_NHM_TO;
 
-	x86_pmu.lbr_sel_mask = LBR_SEL_MASK;
-	x86_pmu.lbr_sel_map  = nhm_lbr_sel_map;
+	lbr->sel_mask = LBR_SEL_MASK;
+	lbr->sel_map  = nhm_lbr_sel_map;
 
 	/*
 	 * SW branch filter usage:
@@ -970,15 +971,15 @@ void __init intel_pmu_lbr_init_nhm(void)
 }
 
 /* sandy bridge */
-void __init intel_pmu_lbr_init_snb(void)
+static void intel_pmu_lbr_init_snb(struct x86_pmu_lbr *lbr)
 {
-	x86_pmu.lbr_nr	 = 16;
-	x86_pmu.lbr_tos	 = MSR_LBR_TOS;
-	x86_pmu.lbr_from = MSR_LBR_NHM_FROM;
-	x86_pmu.lbr_to   = MSR_LBR_NHM_TO;
+	lbr->nr   = 16;
+	lbr->tos  = MSR_LBR_TOS;
+	lbr->from = MSR_LBR_NHM_FROM;
+	lbr->to   = MSR_LBR_NHM_TO;
 
-	x86_pmu.lbr_sel_mask = LBR_SEL_MASK;
-	x86_pmu.lbr_sel_map  = snb_lbr_sel_map;
+	lbr->sel_mask = LBR_SEL_MASK;
+	lbr->sel_map  = snb_lbr_sel_map;
 
 	/*
 	 * SW branch filter usage:
@@ -990,29 +991,27 @@ void __init intel_pmu_lbr_init_snb(void)
 }
 
 /* haswell */
-void intel_pmu_lbr_init_hsw(void)
+static void intel_pmu_lbr_init_hsw(struct x86_pmu_lbr *lbr)
 {
-	x86_pmu.lbr_nr	 = 16;
-	x86_pmu.lbr_tos	 = MSR_LBR_TOS;
-	x86_pmu.lbr_from = MSR_LBR_NHM_FROM;
-	x86_pmu.lbr_to   = MSR_LBR_NHM_TO;
+	lbr->nr   = 16;
+	lbr->tos  = MSR_LBR_TOS;
+	lbr->from = MSR_LBR_NHM_FROM;
+	lbr->to   = MSR_LBR_NHM_TO;
 
-	x86_pmu.lbr_sel_mask = LBR_SEL_MASK;
-	x86_pmu.lbr_sel_map  = hsw_lbr_sel_map;
-
-	pr_cont("16-deep LBR, ");
+	lbr->sel_mask = LBR_SEL_MASK;
+	lbr->sel_map  = hsw_lbr_sel_map;
 }
 
 /* skylake */
-__init void intel_pmu_lbr_init_skl(void)
+static void intel_pmu_lbr_init_skl(struct x86_pmu_lbr *lbr)
 {
-	x86_pmu.lbr_nr	 = 32;
-	x86_pmu.lbr_tos	 = MSR_LBR_TOS;
-	x86_pmu.lbr_from = MSR_LBR_NHM_FROM;
-	x86_pmu.lbr_to   = MSR_LBR_NHM_TO;
+	lbr->nr   = 32;
+	lbr->tos  = MSR_LBR_TOS;
+	lbr->from = MSR_LBR_NHM_FROM;
+	lbr->to   = MSR_LBR_NHM_TO;
 
-	x86_pmu.lbr_sel_mask = LBR_SEL_MASK;
-	x86_pmu.lbr_sel_map  = hsw_lbr_sel_map;
+	lbr->sel_mask = LBR_SEL_MASK;
+	lbr->sel_map  = hsw_lbr_sel_map;
 
 	/*
 	 * SW branch filter usage:
@@ -1024,23 +1023,12 @@ __init void intel_pmu_lbr_init_skl(void)
 }
 
 /* atom */
-void __init intel_pmu_lbr_init_atom(void)
+static void intel_pmu_lbr_init_atom(struct x86_pmu_lbr *lbr)
 {
-	/*
-	 * only models starting at stepping 10 seems
-	 * to have an operational LBR which can freeze
-	 * on PMU interrupt
-	 */
-	if (boot_cpu_data.x86_model == 28
-	    && boot_cpu_data.x86_mask < 10) {
-		pr_cont("LBR disabled due to erratum");
-		return;
-	}
-
-	x86_pmu.lbr_nr	   = 8;
-	x86_pmu.lbr_tos    = MSR_LBR_TOS;
-	x86_pmu.lbr_from   = MSR_LBR_CORE_FROM;
-	x86_pmu.lbr_to     = MSR_LBR_CORE_TO;
+	lbr->nr     = 8;
+	lbr->tos    = MSR_LBR_TOS;
+	lbr->from   = MSR_LBR_CORE_FROM;
+	lbr->to     = MSR_LBR_CORE_TO;
 
 	/*
 	 * SW branch filter usage:
@@ -1050,33 +1038,132 @@ void __init intel_pmu_lbr_init_atom(void)
 }
 
 /* slm */
-void __init intel_pmu_lbr_init_slm(void)
+static void intel_pmu_lbr_init_slm(struct x86_pmu_lbr *lbr)
 {
-	x86_pmu.lbr_nr	   = 8;
-	x86_pmu.lbr_tos    = MSR_LBR_TOS;
-	x86_pmu.lbr_from   = MSR_LBR_CORE_FROM;
-	x86_pmu.lbr_to     = MSR_LBR_CORE_TO;
+	lbr->nr     = 8;
+	lbr->tos    = MSR_LBR_TOS;
+	lbr->from   = MSR_LBR_CORE_FROM;
+	lbr->to     = MSR_LBR_CORE_TO;
 
-	x86_pmu.lbr_sel_mask = LBR_SEL_MASK;
-	x86_pmu.lbr_sel_map  = nhm_lbr_sel_map;
+	lbr->sel_mask = LBR_SEL_MASK;
+	lbr->sel_map  = nhm_lbr_sel_map;
 
 	/*
 	 * SW branch filter usage:
 	 * - compensate for lack of HW filter
 	 */
-	pr_cont("8-deep LBR, ");
 }
 
 /* Knights Landing */
-void intel_pmu_lbr_init_knl(void)
+static void intel_pmu_lbr_init_knl(struct x86_pmu_lbr *lbr)
 {
-	x86_pmu.lbr_nr	   = 8;
-	x86_pmu.lbr_tos    = MSR_LBR_TOS;
-	x86_pmu.lbr_from   = MSR_LBR_NHM_FROM;
-	x86_pmu.lbr_to     = MSR_LBR_NHM_TO;
+	lbr->nr     = 8;
+	lbr->tos    = MSR_LBR_TOS;
+	lbr->from   = MSR_LBR_NHM_FROM;
+	lbr->to     = MSR_LBR_NHM_TO;
 
-	x86_pmu.lbr_sel_mask = LBR_SEL_MASK;
-	x86_pmu.lbr_sel_map  = snb_lbr_sel_map;
-
-	pr_cont("8-deep LBR, ");
+	lbr->sel_mask = LBR_SEL_MASK;
+	lbr->sel_map  = snb_lbr_sel_map;
 }
+
+static void __intel_pmu_lbr_fill(struct x86_pmu_lbr *lbr, u8 family, u8 model)
+{
+	bool apply_tweaks = lbr == &x86_pmu.lbr;
+
+	memset(lbr, 0, sizeof(struct x86_pmu_lbr));
+
+	if (family != 0x6)
+		return;
+
+	switch (model) {
+	case INTEL_FAM6_CORE_YONAH:
+		break;
+	case INTEL_FAM6_CORE2_MEROM:
+	case INTEL_FAM6_CORE2_MEROM_L:
+	case INTEL_FAM6_CORE2_PENRYN:
+	case INTEL_FAM6_CORE2_DUNNINGTON:
+		intel_pmu_lbr_init_core(lbr);
+		break;
+	case INTEL_FAM6_NEHALEM:
+	case INTEL_FAM6_NEHALEM_EP:
+	case INTEL_FAM6_NEHALEM_EX:
+	case INTEL_FAM6_WESTMERE:
+	case INTEL_FAM6_WESTMERE_EP:
+	case INTEL_FAM6_WESTMERE_EX:
+		intel_pmu_lbr_init_nhm(lbr);
+		break;
+	case INTEL_FAM6_ATOM_PINEVIEW:
+	case INTEL_FAM6_ATOM_LINCROFT:
+	case INTEL_FAM6_ATOM_PENWELL:
+	case INTEL_FAM6_ATOM_CLOVERVIEW:
+	case INTEL_FAM6_ATOM_CEDARVIEW:
+		/*
+		 * only models starting at stepping 10 seems
+		 * to have an operational LBR which can freeze
+		 * on PMU interrupt
+		 */
+		if (apply_tweaks &&
+		    boot_cpu_data.x86_model == INTEL_FAM6_ATOM_PINEVIEW &&
+		    boot_cpu_data.x86_mask < 10) {
+			pr_cont("LBR disabled due to erratum");
+			return;
+		}
+		intel_pmu_lbr_init_atom(lbr);
+		break;
+	case INTEL_FAM6_ATOM_SILVERMONT1:
+	case INTEL_FAM6_ATOM_SILVERMONT2:
+	case INTEL_FAM6_ATOM_AIRMONT:
+		intel_pmu_lbr_init_slm(lbr);
+		break;
+	case INTEL_FAM6_ATOM_GOLDMONT:
+	case INTEL_FAM6_ATOM_DENVERTON:
+	case INTEL_FAM6_ATOM_GEMINI_LAKE:
+		lbr->pt_coexist = true;
+	case INTEL_FAM6_SKYLAKE_MOBILE:
+	case INTEL_FAM6_SKYLAKE_DESKTOP:
+	case INTEL_FAM6_SKYLAKE_X:
+	case INTEL_FAM6_KABYLAKE_MOBILE:
+	case INTEL_FAM6_KABYLAKE_DESKTOP:
+		intel_pmu_lbr_init_skl(lbr);
+		break;
+	case INTEL_FAM6_SANDYBRIDGE:
+	case INTEL_FAM6_SANDYBRIDGE_X:
+	case INTEL_FAM6_IVYBRIDGE:
+	case INTEL_FAM6_IVYBRIDGE_X:
+		intel_pmu_lbr_init_snb(lbr);
+		break;
+	case INTEL_FAM6_HASWELL_CORE:
+	case INTEL_FAM6_HASWELL_X:
+	case INTEL_FAM6_HASWELL_ULT:
+	case INTEL_FAM6_HASWELL_GT3E:
+		lbr->double_abort = true;
+	case INTEL_FAM6_BROADWELL_CORE:
+	case INTEL_FAM6_BROADWELL_XEON_D:
+	case INTEL_FAM6_BROADWELL_GT3E:
+	case INTEL_FAM6_BROADWELL_X:
+		/*
+		 * OpenVZ kernel doesn't have Goldmont Plus CPU PMU support
+		 */
+		if (apply_tweaks &&
+		    boot_cpu_data.x86_model == INTEL_FAM6_ATOM_GEMINI_LAKE)
+			return;
+		intel_pmu_lbr_init_hsw(lbr);
+		break;
+	case INTEL_FAM6_XEON_PHI_KNL:
+	case INTEL_FAM6_XEON_PHI_KNM:
+		intel_pmu_lbr_init_knl(lbr);
+		break;
+	}
+}
+
+void __init intel_pmu_lbr_init(void)
+{
+	__intel_pmu_lbr_fill(&x86_pmu.lbr, boot_cpu_data.x86,
+			     boot_cpu_data.x86_model);
+}
+
+void intel_pmu_lbr_fill(struct x86_pmu_lbr *lbr, u8 family, u8 model)
+{
+	__intel_pmu_lbr_fill(lbr, family, model);
+}
+EXPORT_SYMBOL_GPL(intel_pmu_lbr_fill);
