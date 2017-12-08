@@ -360,7 +360,7 @@ int x86_add_exclusive(unsigned int what)
 	 * When lbr_pt_coexist we allow PT to coexist with either LBR or BTS.
 	 * LBR and BTS are still mutually exclusive.
 	 */
-	if (x86_pmu.lbr_pt_coexist && what == x86_lbr_exclusive_pt)
+	if (x86_pmu.lbr.pt_coexist && what == x86_lbr_exclusive_pt)
 		return 0;
 
 	if (!atomic_inc_not_zero(&x86_pmu.lbr_exclusive[what])) {
@@ -383,7 +383,7 @@ fail_unlock:
 
 void x86_del_exclusive(unsigned int what)
 {
-	if (x86_pmu.lbr_pt_coexist && what == x86_lbr_exclusive_pt)
+	if (x86_pmu.lbr.pt_coexist && what == x86_lbr_exclusive_pt)
 		return;
 
 	atomic_dec(&x86_pmu.lbr_exclusive[what]);
@@ -487,7 +487,7 @@ int x86_pmu_hw_config(struct perf_event *event)
 			precise++;
 
 			/* Support for IP fixup */
-			if (x86_pmu.lbr_nr || x86_pmu.intel_cap.pebs_format >= 2)
+			if (x86_pmu.lbr.nr || x86_pmu.intel_cap.pebs_format >= 2)
 				precise++;
 
 			if (x86_pmu.pebs_prec_dist)
