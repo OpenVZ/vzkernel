@@ -603,12 +603,7 @@ struct x86_pmu {
 	/*
 	 * Intel LBR
 	 */
-	unsigned long	lbr_tos, lbr_from, lbr_to; /* MSR base regs       */
-	int		lbr_nr;			   /* hardware stack size */
-	u64		lbr_sel_mask;		   /* LBR_SELECT valid bits */
-	const int	*lbr_sel_map;		   /* lbr_select mappings */
-	bool		lbr_double_abort;	   /* duplicated lbr aborts */
-	bool		lbr_pt_coexist;		   /* (LBR|BTS) may coexist with PT */
+	struct x86_pmu_lbr lbr;
 
 	/*
 	 * Intel PT/LBR/BTS are exclusive
@@ -678,8 +673,8 @@ extern struct x86_pmu x86_pmu __read_mostly;
 
 static inline bool x86_pmu_has_lbr_callstack(void)
 {
-	return  x86_pmu.lbr_sel_map &&
-		x86_pmu.lbr_sel_map[PERF_SAMPLE_BRANCH_CALL_STACK_SHIFT] > 0;
+	return  x86_pmu.lbr.sel_map &&
+		x86_pmu.lbr.sel_map[PERF_SAMPLE_BRANCH_CALL_STACK_SHIFT] > 0;
 }
 
 DECLARE_PER_CPU(struct cpu_hw_events, cpu_hw_events);
@@ -913,21 +908,9 @@ void intel_pmu_lbr_disable_all(void);
 
 void intel_pmu_lbr_read(void);
 
-void intel_pmu_lbr_init_core(void);
+void intel_pmu_lbr_init(void);
 
-void intel_pmu_lbr_init_nhm(void);
-
-void intel_pmu_lbr_init_atom(void);
-
-void intel_pmu_lbr_init_slm(void);
-
-void intel_pmu_lbr_init_snb(void);
-
-void intel_pmu_lbr_init_hsw(void);
-
-void intel_pmu_lbr_init_skl(void);
-
-void intel_pmu_lbr_init_knl(void);
+void intel_pmu_lbr_fill(struct x86_pmu_lbr *lbr, u8 family, u8 model);
 
 void intel_pmu_pebs_data_source_nhm(void);
 
