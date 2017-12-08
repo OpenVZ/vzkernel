@@ -34,6 +34,7 @@
 #include <asm/asm.h>
 #include <asm/kvm_page_track.h>
 #include <asm/spec_ctrl.h>
+#include <asm/perf_event.h>
 
 #define KVM_MAX_VCPUS 384
 #define KVM_SOFT_MAX_VCPUS 384
@@ -384,6 +385,7 @@ struct kvm_pmu {
 	struct kvm_pmc fixed_counters[INTEL_PMC_MAX_FIXED];
 	struct irq_work irq_work;
 	u64 reprogram_pmi;
+	struct x86_pmu_lbr lbr;
 };
 
 struct kvm_pmu_ops;
