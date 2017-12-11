@@ -2818,6 +2818,11 @@ extern int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 			__u64 start, __u64 len);
 extern int ext4_ext_precache(struct inode *inode);
 extern int ext4_collapse_range(struct inode *inode, loff_t offset, loff_t len);
+extern ext4_lblk_t ext4_ext_next_allocated_block(struct ext4_ext_path *path);
+extern int ext4_swap_extents(handle_t *handle, struct inode *inode1,
+			     struct inode *inode2, ext4_lblk_t lblk1,
+			     ext4_lblk_t lblk2,  ext4_lblk_t count,
+			     int mark_unwritten,int *err);
 
 /* move_extent.c */
 extern void ext4_double_down_write_data_sem(struct inode *first,
