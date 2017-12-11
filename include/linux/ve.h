@@ -80,6 +80,9 @@ struct ve_struct {
 #endif /* CONFIG_VE_IPTABLES */
 #endif
 
+	void			*log_state;
+#define VE_LOG_BUF_LEN		4096
+
 	unsigned long		down_at;
 	struct list_head	cleanup_list;
 	unsigned long		meminfo_val;
