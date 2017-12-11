@@ -15,6 +15,9 @@
 #include <linux/smp.h>
 #include <linux/vmalloc.h>
 #include <linux/uaccess.h>
+#include <linux/module.h>
+#include <linux/ratelimit.h>
+#include <linux/slab.h>
 
 #include <asm/ldt.h>
 #include <asm/desc.h>
