@@ -23,6 +23,7 @@
 #include <linux/sched/clock.h>
 #include <linux/sched/stat.h>
 #include <linux/sched/nohz.h>
+#include <linux/sched/loadavg.h>
 #include <linux/module.h>
 #include <linux/irq_work.h>
 #include <linux/posix-timers.h>
@@ -57,6 +58,7 @@ static ktime_t last_jiffies_update;
 static void tick_do_update_jiffies64(ktime_t now)
 {
 	unsigned long ticks = 0;
+	bool calc_ve = false;
 	ktime_t delta;
 
 	/*
@@ -85,7 +87,7 @@ static void tick_do_update_jiffies64(ktime_t now)
 			last_jiffies_update = ktime_add_ns(last_jiffies_update,
 							   incr * ticks);
 		}
-		do_timer(++ticks);
+		calc_ve = do_timer(++ticks);
 
 		/* Keep the tick_next_period variable up to date */
 		tick_next_period = ktime_add(last_jiffies_update, tick_period);
@@ -94,6 +96,8 @@ static void tick_do_update_jiffies64(ktime_t now)
 		return;
 	}
 	write_sequnlock(&jiffies_lock);
+	if (calc_ve)
+		calc_load_ve();
 	update_wall_time();
 }
 
