@@ -350,35 +350,6 @@ unsigned int sched_cpulimit_scale_cpufreq(unsigned int freq)
 }
 #endif
 
-#ifdef CONFIG_VE
-static inline void write_wakeup_stamp(struct task_struct *p, u64 now)
-{
-	struct ve_task_info *ti;
-
-	ti = VE_TASK_INFO(p);
-	write_seqcount_begin(&ti->wakeup_lock);
-	ti->wakeup_stamp = now;
-	write_seqcount_end(&ti->wakeup_lock);
-}
-
-static inline void update_sched_lat(struct task_struct *t, u64 now)
-{
-	int cpu;
-	u64 ve_wstamp;
-
-	/* safe due to runqueue lock */
-	cpu = smp_processor_id();
-	ve_wstamp = t->ve_task_info.wakeup_stamp;
-
-	if (ve_wstamp && now > ve_wstamp) {
-		KSTAT_LAT_PCPU_ADD(&kstat_glob.sched_lat,
-				cpu, now - ve_wstamp);
-		KSTAT_LAT_PCPU_ADD(&t->task_ve->sched_lat_ve,
-				cpu, now - ve_wstamp);
-	}
-}
-#endif
-
 unsigned long nr_zombie = 0;	/* protected by tasklist_lock */
 EXPORT_SYMBOL(nr_zombie);
 
@@ -992,7 +963,6 @@ static inline void check_dec_sleeping(struct rq *rq, struct task_struct *t)
 
 void activate_task(struct rq *rq, struct task_struct *p, int flags)
 {
-	u64 now;
 	if (task_contributes_to_load(p)) {
 		rq->nr_uninterruptible--;
 		task_cfs_rq(p)->nr_unint--;
@@ -1001,22 +971,10 @@ void activate_task(struct rq *rq, struct task_struct *p, int flags)
 	check_dec_sleeping(rq, p);
 
 	enqueue_task(rq, p, flags);
-
-	/* rq->clock is updated in enqueue_task() */
-	now = rq->clock;
-#ifdef CONFIG_VE
-	write_wakeup_stamp(p, now);
-	p->ve_task_info.sleep_time += now;
-#endif
 }
 
 void deactivate_task(struct rq *rq, struct task_struct *p, int flags)
 {
-	unsigned int cpu;
-	u64 now;
-
-	cpu = task_cpu(p);
-
 	check_inc_sleeping(rq, p);
 
 #if 0 /* this is broken */
@@ -1031,10 +989,6 @@ void deactivate_task(struct rq *rq, struct task_struct *p, int flags)
 	}
 
 	dequeue_task(rq, p, flags);
-
-	/* rq->clock is updated in denqueue_task() */
-	now = rq->clock;
-	p->ve_task_info.sleep_time -= now;
 }
 
 static void update_rq_clock_task(struct rq *rq, s64 delta)
@@ -1723,7 +1677,7 @@ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags)
 		en_flags |= ENQUEUE_MIGRATED;
 #endif
 
-	if (p->state == TASK_INTERRUPTIBLE)
+	if (p->sched_interruptible_sleep)
 		rq->nr_sleeping--;
 
 	ttwu_activate(rq, p, en_flags);
@@ -1948,6 +1902,7 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	}
 
 	p->sched_contributes_to_load = !!task_contributes_to_load(p);
+	p->sched_interruptible_sleep = (p->state == TASK_INTERRUPTIBLE);
 	p->state = TASK_WAKING;
 
 	cpu = select_task_rq(p, p->wake_cpu, SD_BALANCE_WAKE, wake_flags);
@@ -2299,10 +2254,6 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 #ifdef CONFIG_PREEMPT_COUNT
 	/* Want to start with kernel preemption disabled. */
 	task_thread_info(p)->preempt_count = 1;
-#endif
-#ifdef CONFIG_VE
-	/* cosmetic: sleep till wakeup below */
-	p->ve_task_info.sleep_time -= task_rq(p)->clock;
 #endif
 #ifdef CONFIG_SMP
 	plist_node_init(&p->pushable_tasks, MAX_PRIO);
@@ -3759,21 +3710,6 @@ need_resched:
 		 *   is a RELEASE barrier),
 		 */
 		++*switch_count;
-
-#ifdef CONFIG_VE
-		prev->ve_task_info.sleep_stamp = rq->clock;
-		if (prev->state == TASK_RUNNING && prev != this_rq()->idle)
-			write_wakeup_stamp(prev, rq->clock);
-		update_sched_lat(next, rq->clock);
-
-		/* because next & prev are protected with
-		 * runqueue lock we may not worry about
-		 * wakeup_stamp and sched_time protection
-		 * (same thing in 'else' branch below)
-		 */
-		next->ve_task_info.sched_time = rq->clock;
-		write_wakeup_stamp(next, 0);
-#endif
 
 		context_switch(rq, prev, next); /* unlocks the rq */
 		/*
