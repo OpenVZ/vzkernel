@@ -4728,7 +4728,7 @@ recheck:
 	/*
 	 * Allow unprivileged RT tasks to decrease priority:
 	 */
-	if (user && !capable(CAP_SYS_NICE)) {
+	if (user && !capable(CAP_SYS_ADMIN)) {
 		if (fair_policy(policy)) {
 			if (attr->sched_nice < TASK_NICE(p) &&
 			    !can_nice(p, attr->sched_nice))
