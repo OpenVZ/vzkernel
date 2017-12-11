@@ -134,6 +134,9 @@ struct ve_devmnt {
 #define VE_MEMINFO_DEFAULT      1       /* default behaviour */
 #define VE_MEMINFO_SYSTEM       0       /* disable meminfo virtualization */
 
+#define capable_setveid() \
+	(ve_is_super(get_exec_env()) && capable(CAP_SYS_ADMIN))
+
 extern int nr_ve;
 extern struct proc_dir_entry *proc_vz_dir;
 extern struct cgroup_subsys ve_subsys;
