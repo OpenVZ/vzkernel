@@ -199,6 +199,27 @@ static void sync_filesystems_ve(struct ve_struct *ve, struct user_beancounter *u
 
 #endif
 
+static int __ve_fsync_behavior(struct ve_struct *ve)
+{
+	if (ve->fsync_enable == 2)
+		return get_ve0()->fsync_enable;
+	else if (ve->fsync_enable)
+		return FSYNC_FILTERED; /* sync forced by ve is always filtered */
+	else
+		return 0;
+}
+
+int ve_fsync_behavior(void)
+{
+	struct ve_struct *ve;
+
+	ve = get_exec_env();
+	if (ve_is_super(ve))
+		return FSYNC_ALWAYS;
+	else
+		return __ve_fsync_behavior(ve);
+}
+
 /*
  * Sync everything. We start by waking flusher threads so that most of
  * writeback runs on all devices in parallel. Then we sync all inodes reliably
@@ -211,7 +232,25 @@ static void sync_filesystems_ve(struct ve_struct *ve, struct user_beancounter *u
  */
 SYSCALL_DEFINE0(sync)
 {
+	struct ve_struct *ve = get_exec_env();
 	int nowait = 0, wait = 1;
+
+	if (!ve_is_super(ve)) {
+		int fsb;
+		/*
+		 * init can't sync during VE stop. Rationale:
+		 *  - NFS with -o hard will block forever as network is down
+		 *  - no useful job is performed as VE0 will call umount/sync
+		 *    by his own later
+		 *  Den
+		 */
+		if (is_child_reaper(task_pid(current)))
+			goto skip;
+
+		fsb = __ve_fsync_behavior(ve);
+		if (fsb == FSYNC_NEVER)
+			goto skip;
+	}
 
 	wakeup_flusher_threads(0, WB_REASON_SYNC);
 	iterate_supers(sync_inodes_one_sb, NULL);
@@ -221,6 +260,7 @@ SYSCALL_DEFINE0(sync)
 	iterate_bdevs(fdatawait_one_bdev, NULL);
 	if (unlikely(laptop_mode))
 		laptop_sync_completion();
+skip:
 	return 0;
 }
 
@@ -268,7 +308,13 @@ SYSCALL_DEFINE1(syncfs, int, fd)
 	ve = get_exec_env();
 	ub_percpu_inc(ub, sync);
 
+	if (!f.file) {
+		ret = -EBADF;
+		goto skip;
+	}
+
 	if (!ve_is_super(ve)) {
+		int fsb;
 		/*
 		 * init can't sync during VE stop. Rationale:
 		 *  - NFS with -o hard will block forever as network is down
@@ -277,18 +323,16 @@ SYSCALL_DEFINE1(syncfs, int, fd)
 		 *  Den
 		 */
 		if (is_child_reaper(task_pid(current)))
-			goto skip;
+			goto fdput;
 
 		if (!sysctl_fsync_enable)
-			goto skip;
+			goto fdput;
+		fsb = __ve_fsync_behavior(ve);
+		if (fsb == FSYNC_NEVER)
+			goto fdput;
 
-		if (sysctl_fsync_enable == 2)
+		if (fsb == FSYNC_FILTERED)
 			sync_ub = get_io_ub();
-	}
-
-	if (!f.file) {
-		ret = -EBADF;
-		goto skip;
 	}
 
 	sb = f.file->f_dentry->d_sb;
@@ -297,7 +341,7 @@ SYSCALL_DEFINE1(syncfs, int, fd)
 	if (sb->s_root)
 		ret = sync_filesystem_ub(sb, sync_ub);
 	up_read(&sb->s_umount);
-
+fdput:
 	fdput(f);
 skip:
 	ub_percpu_inc(ub, sync_done);
@@ -343,6 +387,8 @@ static int do_fsync(unsigned int fd, int datasync)
 	int ret = -EBADF;
 
 	if (!ve_is_super(get_exec_env()) && !sysctl_fsync_enable)
+		return 0;
+	if (ve_fsync_behavior() == FSYNC_NEVER)
 		return 0;
 
 	f = fdget(fd);
