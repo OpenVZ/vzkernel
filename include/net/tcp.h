@@ -48,6 +48,9 @@
 #include <linux/memcontrol.h>
 #include <net/tcp_memcontrol.h>
 
+#define TCP_PAGE(sk)	(sk->sk_sndmsg_page)
+#define TCP_OFF(sk)	(sk->sk_sndmsg_off)
+
 #define TW_WSCALE_MASK		0x0f
 #define TW_WSCALE_SPEC		0x10
 
