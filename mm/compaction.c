@@ -490,6 +490,10 @@ static bool too_many_isolated(struct zone *zone)
 	isolated = zone_page_state(zone, NR_ISOLATED_FILE) +
 					zone_page_state(zone, NR_ISOLATED_ANON);
 
+	if (isolated > (inactive + active) / 2)
+		isolated = zone_page_state_snapshot(zone, NR_ISOLATED_FILE) +
+			   zone_page_state_snapshot(zone, NR_ISOLATED_ANON);
+
 	return isolated > (inactive + active) / 2;
 }
 
