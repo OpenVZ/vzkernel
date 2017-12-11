@@ -257,11 +257,6 @@ static inline struct task_struct *task_of(struct sched_entity *se)
 #define for_each_sched_entity(se) \
 		for (; se; se = se->parent)
 
-static inline struct cfs_rq *task_cfs_rq(struct task_struct *p)
-{
-	return p->se.cfs_rq;
-}
-
 /* runqueue on which this entity is (to be) queued */
 static inline struct cfs_rq *cfs_rq_of(struct sched_entity *se)
 {
@@ -377,11 +372,6 @@ static inline struct rq *rq_of(struct cfs_rq *cfs_rq)
 #define for_each_sched_entity(se) \
 		for (; se; se = NULL)
 
-static inline struct cfs_rq *task_cfs_rq(struct task_struct *p)
-{
-	return &task_rq(p)->cfs;
-}
-
 static inline struct cfs_rq *cfs_rq_of(struct sched_entity *se)
 {
 	struct task_struct *p = task_of(se);
@@ -424,6 +414,47 @@ find_matching_se(struct sched_entity **se, struct sched_entity **pse)
 }
 
 #endif	/* CONFIG_FAIR_GROUP_SCHED */
+
+#ifdef CONFIG_CFS_BANDWIDTH
+
+#ifdef HAVE_JUMP_LABEL
+static struct static_key __cfs_bandwidth_used;
+
+static inline bool cfs_bandwidth_used(void)
+{
+	return static_key_false(&__cfs_bandwidth_used);
+}
+
+void account_cfs_bandwidth_used(int enabled, int was_enabled)
+{
+	/* only need to count groups transitioning between enabled/!enabled */
+	if (enabled && !was_enabled)
+		static_key_slow_inc(&__cfs_bandwidth_used);
+	else if (!enabled && was_enabled)
+		static_key_slow_dec(&__cfs_bandwidth_used);
+}
+#else /* HAVE_JUMP_LABEL */
+static bool cfs_bandwidth_used(void)
+{
+	return true;
+}
+
+void account_cfs_bandwidth_used(int enabled, int was_enabled) {}
+#endif /* HAVE_JUMP_LABEL */
+
+static inline int cfs_rq_throttled(struct cfs_rq *cfs_rq)
+{
+	return cfs_bandwidth_used() && cfs_rq->throttled;
+}
+
+#else /* !CONFIG_CFS_BANDWIDTH */
+
+static inline int cfs_rq_throttled(struct cfs_rq *cfs_rq)
+{
+	return 0;
+}
+
+#endif /* CONFIG_CFS_BANDWIDTH */
 
 static __always_inline
 void account_cfs_rq_runtime(struct cfs_rq *cfs_rq, u64 delta_exec);
@@ -3228,12 +3259,9 @@ entity_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr, int queued)
 
 #ifdef CONFIG_CFS_BANDWIDTH
 
-#ifdef HAVE_JUMP_LABEL
-static struct static_key __cfs_bandwidth_used;
-
-static inline bool cfs_bandwidth_used(void)
+static inline u64 sched_cfs_bandwidth_slice(void)
 {
-	return static_key_false(&__cfs_bandwidth_used);
+	return (u64)sysctl_sched_cfs_bandwidth_slice * NSEC_PER_USEC;
 }
 
 void cfs_bandwidth_usage_inc(void)
@@ -3256,20 +3284,6 @@ void cfs_bandwidth_usage_dec(void) {}
 #endif /* HAVE_JUMP_LABEL */
 
 /*
- * default period for cfs group bandwidth.
- * default: 0.1s, units: nanoseconds
- */
-static inline u64 default_cfs_period(void)
-{
-	return 100000000ULL;
-}
-
-static inline u64 sched_cfs_bandwidth_slice(void)
-{
-	return (u64)sysctl_sched_cfs_bandwidth_slice * NSEC_PER_USEC;
-}
-
-/*
  * Replenish runtime according to assigned quota and update expiration time.
  * We use sched_clock_cpu directly instead of rq->clock to avoid adding
  * additional synchronization around rq->lock.
@@ -3279,6 +3293,8 @@ static inline u64 sched_cfs_bandwidth_slice(void)
 void __refill_cfs_bandwidth_runtime(struct cfs_bandwidth *cfs_b)
 {
 	u64 now;
+
+	update_cfs_bandwidth_idle_scale(cfs_b);
 
 	if (cfs_b->quota == RUNTIME_INF)
 		return;
@@ -3364,11 +3380,6 @@ void account_cfs_rq_runtime(struct cfs_rq *cfs_rq, u64 delta_exec)
 	__account_cfs_rq_runtime(cfs_rq, delta_exec);
 }
 
-static inline int cfs_rq_throttled(struct cfs_rq *cfs_rq)
-{
-	return cfs_bandwidth_used() && cfs_rq->throttled;
-}
-
 /* check whether cfs_rq, or any parent, is throttled */
 static inline int throttled_hierarchy(struct cfs_rq *cfs_rq)
 {
@@ -3437,6 +3448,8 @@ static void throttle_cfs_rq(struct cfs_rq *cfs_rq)
 	walk_tg_tree_from(cfs_rq->tg, tg_throttle_down, tg_nop, (void *)rq);
 	rcu_read_unlock();
 
+	cfs_rq->throttled = 1;
+
 	task_delta = cfs_rq->h_nr_running;
 	for_each_sched_entity(se) {
 		struct cfs_rq *qcfs_rq = cfs_rq_of(se);
@@ -3455,7 +3468,6 @@ static void throttle_cfs_rq(struct cfs_rq *cfs_rq)
 	if (!se)
 		rq->nr_running -= task_delta;
 
-	cfs_rq->throttled = 1;
 	cfs_rq->throttled_clock = rq_clock(rq);
 	raw_spin_lock(&cfs_b->lock);
 	/*
@@ -3886,6 +3898,7 @@ void init_cfs_bandwidth(struct cfs_bandwidth *cfs_b)
 	cfs_b->runtime = 0;
 	cfs_b->quota = RUNTIME_INF;
 	cfs_b->period = ns_to_ktime(default_cfs_period());
+	cfs_b->idle_scale_inv = CFS_IDLE_SCALE;
 
 	INIT_LIST_HEAD(&cfs_b->throttled_cfs_rq);
 	hrtimer_init(&cfs_b->period_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
@@ -3960,11 +3973,6 @@ static bool check_cfs_rq_runtime(struct cfs_rq *cfs_rq) { return false; }
 static void check_enqueue_throttle(struct cfs_rq *cfs_rq) {}
 static inline void sync_throttle(struct task_group *tg, int cpu) {}
 static __always_inline void return_cfs_rq_runtime(struct cfs_rq *cfs_rq) {}
-
-static inline int cfs_rq_throttled(struct cfs_rq *cfs_rq)
-{
-	return 0;
-}
 
 static inline int throttled_hierarchy(struct cfs_rq *cfs_rq)
 {
