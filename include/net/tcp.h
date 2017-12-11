@@ -47,6 +47,9 @@
 #include <linux/seq_file.h>
 #include <linux/memcontrol.h>
 
+#define TW_WSCALE_MASK		0x0f
+#define TW_WSCALE_SPEC		0x10
+
 extern struct inet_hashinfo tcp_hashinfo;
 
 extern struct percpu_counter tcp_orphan_count;
