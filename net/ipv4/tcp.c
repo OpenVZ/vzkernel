@@ -268,6 +268,7 @@
 #include <linux/crypto.h>
 #include <linux/time.h>
 #include <linux/slab.h>
+#include <linux/ve.h>
 
 #include <net/icmp.h>
 #include <net/inet_common.h>
@@ -1382,8 +1383,10 @@ static void tcp_cleanup_rbuf(struct sock *sk, int copied)
 	struct sk_buff *skb = skb_peek(&sk->sk_receive_queue);
 
 	WARN(skb && !before(tp->copied_seq, TCP_SKB_CB(skb)->end_seq),
-	     "cleanup rbuf bug: copied %X seq %X rcvnxt %X\n",
-	     tp->copied_seq, TCP_SKB_CB(skb)->end_seq, tp->rcv_nxt);
+	     KERN_INFO "cleanup rbuf bug (%s/%s): copied %X seq %X/%X rcvnxt %X\n",
+	     ve_name(sock_net(sk)->owner_ve), current->comm,
+	     tp->copied_seq, TCP_SKB_CB(skb)->end_seq,
+	     TCP_SKB_CB(skb)->seq, tp->rcv_nxt);
 
 	if (inet_csk_ack_scheduled(sk)) {
 		const struct inet_connection_sock *icsk = inet_csk(sk);
@@ -1652,7 +1655,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			if (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN)
 				goto found_fin_ok;
 			WARN(!(flags & MSG_PEEK),
-			     "recvmsg bug 2: copied %X seq %X rcvnxt %X fl %X\n",
+			     "recvmsg bug 2 (%s/%s): "
+			     "copied %X seq %X rcvnxt %X fl %X\n",
+			     ve_name(sock_net(sk)->owner_ve), current->comm,
 			     *seq, TCP_SKB_CB(skb)->seq, tp->rcv_nxt, flags);
 		}
 
@@ -1714,8 +1719,18 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 			tp->ucopy.len = len;
 
-			WARN_ON(tp->copied_seq != tp->rcv_nxt &&
-				!(flags & (MSG_PEEK | MSG_TRUNC)));
+			if (WARN_ON(tp->copied_seq != tp->rcv_nxt &&
+				!(flags & (MSG_PEEK | MSG_TRUNC)))) {
+				printk("KERNEL: assertion: tp->copied_seq == "
+						"tp->rcv_nxt || ...\n");
+				printk("VE%s pid %d comm %.16s\n",
+						ve_name(sock_net(sk)->owner_ve),
+						current->pid, current->comm);
+				printk("flags=0x%x, len=%d, copied_seq=%d, "
+						"rcv_nxt=%d\n", flags,
+						(int)len, tp->copied_seq,
+						tp->rcv_nxt);
+			}
 
 			/* Ugly... If prequeue is not empty, we have to
 			 * process it before releasing socket, otherwise

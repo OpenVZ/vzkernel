@@ -24,6 +24,7 @@
 #include <linux/socket.h>
 #include <linux/netdevice.h>
 #include <linux/proc_fs.h>
+#include <linux/ve.h>
 #ifdef CONFIG_SYSCTL
 #include <linux/sysctl.h>
 #endif
