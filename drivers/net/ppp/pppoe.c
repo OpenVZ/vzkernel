@@ -77,6 +77,7 @@
 #include <linux/file.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <linux/ve.h>
 
 #include <linux/nsproxy.h>
 #include <net/net_namespace.h>
