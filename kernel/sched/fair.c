@@ -802,6 +802,21 @@ update_stats_wait_start(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	schedstat_set(se->statistics->wait_start, rq_clock(rq_of(cfs_rq)));
 }
 
+static inline void update_sched_lat(struct task_struct *t, u64 now)
+{
+#ifdef CONFIG_VE
+	u64 ve_wstamp;
+
+	/* safe due to runqueue lock */
+	ve_wstamp = t->se.statistics->wait_start;
+
+	if (ve_wstamp && now > ve_wstamp) {
+		KSTAT_LAT_PCPU_ADD(&kstat_glob.sched_lat, now - ve_wstamp);
+		KSTAT_LAT_PCPU_ADD(&t->task_ve->sched_lat_ve, now - ve_wstamp);
+	}
+#endif
+}
+
 static void
 update_stats_wait_end(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
@@ -811,8 +826,11 @@ update_stats_wait_end(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	schedstat_set(se->statistics->wait_sum, se->statistics->wait_sum +
 			rq_clock(rq_of(cfs_rq)) - se->statistics->wait_start);
 	if (entity_is_task(se)) {
-		trace_sched_stat_wait(task_of(se),
-			rq_clock(rq_of(cfs_rq)) - se->statistics->wait_start);
+		u64 now = rq_clock(rq_of(cfs_rq));
+		struct task_struct *p = task_of(se);
+
+		trace_sched_stat_wait(p, now - se->statistics->wait_start);
+		update_sched_lat(p, now);
 	}
 	schedstat_set(se->statistics->wait_start, 0);
 }
@@ -7860,12 +7878,12 @@ static void nr_iowait_dec_fair(struct task_struct *p)
 		if (unlikely(delta > se->statistics->block_max))
 			se->statistics->block_max = delta;
 
-		se->statistics.block_start = 0;
-		se->statistics.sleep_start = rq->clock;
+		se->statistics->block_start = 0;
+		se->statistics->sleep_start = rq->clock;
 
 		delta = SCALE_IDLE_TIME(delta, se);
-		se->statistics.iowait_sum += delta;
-		se->statistics.sum_sleep_runtime += delta;
+		se->statistics->iowait_sum += delta;
+		se->statistics->sum_sleep_runtime += delta;
 	}
 #endif
 }
