@@ -108,7 +108,9 @@ struct ct_pcpu {
 
 struct netns_ct {
 	atomic_t		count;
+	unsigned int		max;
 	unsigned int		expect_count;
+	unsigned int		expect_max;
 #ifdef CONFIG_SYSCTL
 	struct ctl_table_header	*sysctl_header;
 	struct ctl_table_header	*acct_sysctl_header;
