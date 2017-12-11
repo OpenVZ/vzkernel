@@ -36,6 +36,33 @@ struct cgroup;
 struct css_id;
 struct eventfd_ctx;
 
+struct cgroup_sb_opts {
+	unsigned long subsys_mask;
+	unsigned long flags;
+	char *release_agent;
+	bool cpuset_clone_children;
+	char *name;
+	/* User explicitly requested empty subsystem */
+	bool none;
+
+	struct cgroupfs_root *new_root;
+
+};
+
+enum cgroup_open_flags {
+	CGRP_CREAT	= 0x0001,	/* create if not found */
+	CGRP_EXCL	= 0x0002,	/* fail if already exist */
+};
+
+struct vfsmount *cgroup_kernel_mount(struct cgroup_sb_opts *opts);
+struct cgroup *cgroup_get_root(struct vfsmount *mnt);
+struct cgroup *cgroup_kernel_lookup(struct vfsmount *mnt,
+				    const char *pathname);
+struct cgroup *cgroup_kernel_open(struct cgroup *parent,
+		enum cgroup_open_flags flags, const char *name);
+int cgroup_kernel_attach(struct cgroup *cgrp, struct task_struct *tsk);
+void cgroup_kernel_close(struct cgroup *cgrp);
+
 /*
  * Define the enumeration of all cgroup subsystems.
  *
@@ -165,6 +192,8 @@ static inline void css_put(struct cgroup_subsys_state *css)
 	if (!(css->flags & CSS_ROOT))
 		__css_put(css);
 }
+
+extern bool css_refcnt_inc_not_zero(struct cgroup_subsys_state *css);
 
 /* bits in struct cgroup flags field */
 enum {
