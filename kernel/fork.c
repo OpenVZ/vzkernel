@@ -18,6 +18,7 @@
 #include <linux/vmalloc.h>
 #include <linux/completion.h>
 #include <linux/personality.h>
+#include <linux/ratelimit.h>
 #include <linux/mempolicy.h>
 #include <linux/sem.h>
 #include <linux/file.h>
@@ -77,6 +78,7 @@
 #ifndef __GENKSYMS__
 #include <linux/user_namespace.h>
 #endif
+#include <linux/ve.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -95,6 +97,7 @@
  */
 unsigned long total_forks;	/* Handle normal Linux uptimes. */
 int nr_threads;			/* The idle threads do not count.. */
+EXPORT_SYMBOL(nr_threads);
 
 int max_threads;		/* tunable limit on nr_threads */
 

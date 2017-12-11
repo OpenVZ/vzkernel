@@ -58,6 +58,7 @@
 #include <linux/percpu.h>
 #include <net/net_namespace.h>
 #include <linux/u64_stats_sync.h>
+#include <linux/ve.h>
 
 struct pcpu_lstats {
 	u64			packets;
