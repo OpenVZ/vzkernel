@@ -789,9 +789,9 @@ show_signal_msg(struct pt_regs *regs, unsigned long error_code,
 		tsk->comm, task_pid_nr(tsk), address,
 		(void *)regs->ip, (void *)regs->sp, error_code);
 
-	print_vma_addr(KERN_CONT " in ", regs->ip);
+	ve_print_vma_addr(VE_LOG, KERN_CONT " in ", regs->ip);
 
-	printk(KERN_CONT "\n");
+	ve_printk(VE_LOG, KERN_CONT "\n");
 }
 
 static void
