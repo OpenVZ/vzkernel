@@ -170,6 +170,9 @@ int __vm_enough_memory(struct mm_struct *mm, long pages, int cap_sys_admin)
 {
 	long free, allowed, reserve;
 
+	if (mm && ub_enough_memory(mm, pages) != 0)
+		return -ENOMEM;
+
 	vm_acct_memory(pages);
 
 	/*
