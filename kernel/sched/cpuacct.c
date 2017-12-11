@@ -286,6 +286,11 @@ void cpuacct_account_field(struct task_struct *p, int index, u64 val)
 	rcu_read_unlock();
 }
 
+struct kernel_cpustat *cpuacct_cpustat(struct cgroup *cgrp, int cpu)
+{
+	return per_cpu_ptr(cgroup_ca(cgrp)->cpustat, cpu);
+}
+
 struct cgroup_subsys cpuacct_subsys = {
 	.name		= "cpuacct",
 	.css_alloc	= cpuacct_css_alloc,
