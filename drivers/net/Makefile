@@ -27,7 +27,7 @@ obj-$(CONFIG_GENEVE) += geneve.o
 obj-$(CONFIG_NLMON) += nlmon.o
 
 obj-$(CONFIG_VE_NETDEV) += vznetdev.o
-vznetdev-objs := veip_mgmt.o
+vznetdev-objs := veip_mgmt.o venetdev.o
 
 #
 # Networking Drivers
