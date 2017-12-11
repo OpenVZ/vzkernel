@@ -75,6 +75,10 @@ struct net {
 	unsigned int		dev_base_seq;	/* protected by rtnl_mutex */
 	int			ifindex;
 
+#ifdef CONFIG_VE
+	struct ve_struct	*owner_ve;
+#endif
+
 	/* core fib_rules */
 	struct list_head	rules_ops;
 
