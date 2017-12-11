@@ -56,4 +56,11 @@ config VZ_EVENT
 	  networking code does. By now just the notifications of
 	  the VE essensial status changes are being sent.
 
+config VE_IPTABLES
+	bool "VE netfiltering"
+	depends on VE && VE_NETDEV && INET && NETFILTER
+	default y
+	help
+	  This option controls whether to build VE netfiltering code.
+
 endmenu
