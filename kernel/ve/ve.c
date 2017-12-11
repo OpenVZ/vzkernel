@@ -473,6 +473,10 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 	if (!ve->sched_lat_ve.cur)
 		goto err_lat;
 
+	err = ve_log_init(ve);
+	if (err)
+		goto err_log;
+
 	ve->meminfo_val = VE_MEMINFO_DEFAULT;
 
 	atomic_set(&ve->netif_avail_nr, NETIF_MAX_NR_DEFAULT);
@@ -488,6 +492,7 @@ do_init:
 
 	return &ve->css;
 
+err_log:
 	free_percpu(ve->sched_lat_ve.cur);
 err_lat:
 	kfree(ve->ve_name);
@@ -582,7 +587,7 @@ static void ve_destroy(struct cgroup *cg)
 	struct ve_struct *ve = cgroup_ve(cg);
 
 	free_ve_devmnts(ve);
-
+	ve_log_destroy(ve);
 	free_percpu(ve->sched_lat_ve.cur);
 	kfree(ve->ve_name);
 	kmem_cache_free(ve_cachep, ve);
