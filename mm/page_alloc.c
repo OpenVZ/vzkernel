@@ -63,6 +63,7 @@
 #include <linux/sched/rt.h>
 #include <linux/kthread.h>
 #include <linux/nmi.h>
+#include <linux/ve.h>
 
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
