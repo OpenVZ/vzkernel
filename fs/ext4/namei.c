@@ -2274,6 +2274,8 @@ retry:
 		ext4_journal_stop(handle);
 	if (err == -ENOSPC && ext4_should_retry_alloc(dir->i_sb, &retries))
 		goto retry;
+	if (!err && S_ISREG(mode) && ext4_want_data_csum(dir))
+		ext4_start_data_csum(inode);
 	return err;
 }
 
@@ -2464,6 +2466,8 @@ out_clear_inode:
 	err = ext4_mark_inode_dirty(handle, dir);
 	if (err)
 		goto out_clear_inode;
+	if (ext4_test_inode_state(dir, EXT4_STATE_PFCACHE_CSUM))
+		ext4_save_dir_csum(inode);
 	unlock_new_inode(inode);
 	d_instantiate(dentry, inode);
 	if (IS_DIRSYNC(dir))
