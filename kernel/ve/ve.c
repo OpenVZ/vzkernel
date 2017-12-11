@@ -18,6 +18,7 @@
 #include <linux/rcupdate.h>
 #include <linux/init_task.h>
 #include <linux/mutex.h>
+#include <linux/printk.h>
 #include <uapi/linux/vzcalluser.h>
 
 #include "../cgroup/cgroup-internal.h" /* For cgroup_task_count() */
@@ -306,12 +307,19 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 	if (!ve)
 		goto err_ve;
 
+	err = ve_log_init(ve);
+	if (err)
+		goto err_log;
+
 	ve->features = VE_FEATURES_DEF;
+
 do_init:
 	init_rwsem(&ve->op_sem);
 	INIT_LIST_HEAD(&ve->ve_list);
 	return &ve->css;
 
+err_log:
+	kmem_cache_free(ve_cachep, ve);
 err_ve:
 	return ERR_PTR(err);
 }
@@ -350,6 +358,7 @@ static void ve_destroy(struct cgroup_subsys_state *css)
 {
 	struct ve_struct *ve = css_to_ve(css);
 
+	ve_log_destroy(ve);
 	kmem_cache_free(ve_cachep, ve);
 }
 
