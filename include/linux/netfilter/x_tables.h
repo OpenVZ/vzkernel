@@ -480,4 +480,21 @@ int xt_compat_check_entry_offsets(const void *base, const char *elems,
 				  unsigned int next_offset);
 
 #endif /* CONFIG_COMPAT */
+
+#ifdef CONFIG_VE
+static inline bool ve_xt_table_forbidden(struct xt_table *xt)
+{
+	/*
+	 * The only purpose to have this check as a separate
+	 * helper is "grep"-a-bility
+	 *
+	 * If this helper hit it means that a VE has been
+	 * configured without the particular xt_table support
+	 */
+	return xt == NULL;
+}
+#else
+static inline bool ve_xt_table_forbidden(struct xt_table *xt) { return true; }
+#endif
+
 #endif /* _X_TABLES_H */
