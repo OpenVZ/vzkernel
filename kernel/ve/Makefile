@@ -15,3 +15,5 @@ vzmon-objs = vecalls.o
 
 obj-$(CONFIG_VZ_DEV) += vzdev.o
 obj-$(CONFIG_VZ_EVENT) += vzevent.o
+
+obj-$(CONFIG_VE_IPTABLES) += ve.o
