@@ -198,18 +198,6 @@ static inline void dev_base_seq_inc(struct net *net)
 	while (++net->dev_base_seq == 0);
 }
 
-static inline struct hlist_head *dev_name_hash(struct net *net, const char *name)
-{
-	unsigned int hash = full_name_hash(name, strnlen(name, IFNAMSIZ));
-
-	return &net->dev_name_head[hash_32(hash, NETDEV_HASHBITS)];
-}
-
-static inline struct hlist_head *dev_index_hash(struct net *net, int ifindex)
-{
-	return &net->dev_index_head[ifindex & (NETDEV_HASHENTRIES - 1)];
-}
-
 static inline void rps_lock(struct softnet_data *sd)
 {
 #ifdef CONFIG_RPS
