@@ -16,6 +16,8 @@
  */
 extern unsigned long avenrun[];		/* Load averages */
 extern void get_avenrun(unsigned long *loads, unsigned long offset, int shift);
+extern void get_avenrun_ve(unsigned long *loads,
+			   unsigned long offset, int shift);
 
 #define FSHIFT		11		/* nr of bits of precision */
 #define FIXED_1		(1<<FSHIFT)	/* 1.0 as fixed-point */
@@ -46,5 +48,11 @@ extern unsigned long calc_load_n(unsigned long load, unsigned long exp,
 #define LOAD_FRAC(x) LOAD_INT(((x) & (FIXED_1-1)) * 100)
 
 extern bool calc_global_load(unsigned long ticks);
+
+#ifdef CONFIG_VE
+extern void calc_load_ve(void);
+#else
+#define calc_load_ve() do { } while (0)
+#endif
 
 #endif /* _LINUX_SCHED_LOADAVG_H */
