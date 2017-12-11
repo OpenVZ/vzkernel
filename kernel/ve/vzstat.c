@@ -316,7 +316,7 @@ static void task_counts_seq_show(struct seq_file *m, void *v)
 {
 	unsigned long _nr_running, _nr_sleeping, _nr_unint,
 				_nr_zombie, _nr_dead, _nr_stopped;
-	unsigned long avg[3];
+	unsigned long avg[3], seq;
 
 	_nr_running = nr_running();
 	_nr_unint = nr_uninterruptible();
@@ -325,9 +325,10 @@ static void task_counts_seq_show(struct seq_file *m, void *v)
 	_nr_dead = atomic_read(&nr_dead);
 	_nr_stopped = nr_stopped();
 
-	spin_lock_irq(&kstat_glb_lock);
-	memcpy(avg, kstat_glob.nr_unint_avg, sizeof(avg));
-	spin_unlock_irq(&kstat_glb_lock);
+	do {
+		seq = read_seqcount_begin(&kstat_glob.nr_unint_avg_seq);
+		memcpy(avg, kstat_glob.nr_unint_avg, sizeof(avg));
+	} while (read_seqcount_retry(&kstat_glob.nr_unint_avg_seq, seq));
 
 	seq_printf(m, "VEs: %d\n", nr_ve);
 	seq_printf(m, "Processes: R %lu, S %lu, D %lu, "

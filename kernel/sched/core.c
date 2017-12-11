@@ -155,6 +155,7 @@ void __init kstat_init(void)
 {
 	int i;
 
+	seqcount_init(&kstat_glob.nr_unint_avg_seq);
 	kstat_glob.sched_lat.cur = &glob_kstat_lat;
 	kstat_glob.page_in.cur = &glob_kstat_page_in;
 	for ( i = 0 ; i < KSTAT_ALLOCSTAT_NR ; i++)
@@ -2876,7 +2877,7 @@ calc_load(unsigned long load, unsigned long exp, unsigned long active)
 #ifdef CONFIG_VE
 static void calc_load_ve(void)
 {
-	unsigned long flags, nr_unint, nr_active;
+	unsigned long nr_unint, nr_active;
 	struct task_group *tg;
 	int i;
 
@@ -2898,12 +2899,16 @@ static void calc_load_ve(void)
 	rcu_read_unlock();
 
 	nr_unint = nr_uninterruptible() * FIXED_1;
-	spin_lock_irqsave(&kstat_glb_lock, flags);
+	/*
+	 * This is called from do_timer() only, which can't be excuted
+	 * in parallel on two or more cpus. So, we have to protect
+	 * the below modifications from readers only.
+	 */
+	write_seqcount_begin(&kstat_glob.nr_unint_avg_seq);
 	CALC_LOAD(kstat_glob.nr_unint_avg[0], EXP_1, nr_unint);
 	CALC_LOAD(kstat_glob.nr_unint_avg[1], EXP_5, nr_unint);
 	CALC_LOAD(kstat_glob.nr_unint_avg[2], EXP_15, nr_unint);
-	spin_unlock_irqrestore(&kstat_glb_lock, flags);
-
+	write_seqcount_end(&kstat_glob.nr_unint_avg_seq);
 }
 #else
 #define calc_load_ve()	do { } while (0)
