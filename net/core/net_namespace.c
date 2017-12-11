@@ -3,6 +3,7 @@
 #include <linux/workqueue.h>
 #include <linux/rtnetlink.h>
 #include <linux/cache.h>
+#include <linux/proc_fs.h>
 #include <linux/slab.h>
 #include <linux/list.h>
 #include <linux/delay.h>
@@ -22,6 +23,7 @@
 #include <net/netlink.h>
 #include <net/net_namespace.h>
 #include <net/netns/generic.h>
+#include <linux/ve.h>
 
 /*
  *	Our network namespace constructor/destructor lists
@@ -289,6 +291,10 @@ static __net_init int setup_net(struct net *net, struct user_namespace *user_ns)
 	int error = 0;
 	LIST_HEAD(net_exit_list);
 
+#ifdef CONFIG_VE
+	net->owner_ve = get_ve(get_exec_env());
+#endif
+
 	atomic_set(&net->count, 1);
 	atomic_set(&net->passive, 1);
 	get_random_bytes(&net->hash_mix, sizeof(u32));
@@ -319,6 +325,9 @@ out_undo:
 		ops_free_list(ops, &net_exit_list);
 
 	rcu_barrier();
+#ifdef CONFIG_VE
+	put_ve(net->owner_ve);
+#endif
 	goto out;
 }
 
@@ -456,6 +465,13 @@ static void cleanup_net(struct work_struct *work)
 	/* Free the net generic variables */
 	list_for_each_entry_reverse(ops, &pernet_list, list)
 		ops_free_list(ops, &net_exit_list);
+
+	list_for_each_entry(net, &net_kill_list, cleanup_list) {
+		struct ve_struct *ve = net->owner_ve;
+		if (ve->ve_netns == net)
+			ve->ve_netns = NULL;
+		put_ve(ve);
+	}
 
 	mutex_unlock(&net_mutex);
 

@@ -223,6 +223,7 @@ void switch_task_namespaces(struct task_struct *p, struct nsproxy *new)
 	if (ns && atomic_dec_and_test(&ns->count))
 		free_nsproxy(ns);
 }
+EXPORT_SYMBOL_GPL(switch_task_namespaces);
 
 void exit_task_namespaces(struct task_struct *p)
 {
