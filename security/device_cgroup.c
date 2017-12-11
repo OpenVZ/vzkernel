@@ -82,7 +82,7 @@ static int devcgroup_can_attach(struct cgroup *new_cgrp,
 {
 	struct task_struct *task = cgroup_taskset_first(set);
 
-	if (current != task && !capable(CAP_SYS_ADMIN) && !capable(CAP_VE_SYS_ADMIN))
+	if (current != task && !ve_capable(CAP_SYS_ADMIN))
 		return -EPERM;
 	return 0;
 }
@@ -664,7 +664,7 @@ static int devcgroup_update_access(struct dev_cgroup *devcgroup,
 	struct cgroup *p = devcgroup->css.cgroup;
 	struct dev_cgroup *parent = NULL;
 
-	if (!capable(CAP_SYS_ADMIN) && !capable(CAP_VE_SYS_ADMIN))
+	if (!ve_capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
 	if (p->parent)
