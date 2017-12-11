@@ -624,9 +624,10 @@ static int proc_oom_score(struct task_struct *task, char *buffer)
 {
 	unsigned long totalpages = totalram_pages + total_swap_pages;
 	unsigned long points = 0;
+	struct user_beancounter *ub = get_exec_ub();
 
-	if (!ve_is_super(get_exec_env()))
-		totalpages = min(totalpages, mem_cgroup_total_pages(true));
+	if (ub != get_ub0())
+		totalpages = min(totalpages, ub_total_pages(ub, true));
 
 	tasklist_read_lock();
 	if (pid_alive(task))
