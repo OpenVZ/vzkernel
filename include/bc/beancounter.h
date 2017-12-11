@@ -278,6 +278,7 @@ extern void uncharge_warn(struct user_beancounter *ub, const char *resource,
 
 extern int ub_update_memcg(struct user_beancounter *ub);
 extern void ub_sync_memcg(struct user_beancounter *ub);
+extern unsigned long ub_total_pages(struct user_beancounter *ub, bool swap);
 
 extern const char *ub_rnames[];
 /*
