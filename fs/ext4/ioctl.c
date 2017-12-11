@@ -747,6 +747,59 @@ static int ext4_ioctl_check_project(struct inode *inode, struct fsxattr *fa)
 	return 0;
 }
 
+static int ext4_open_balloon(struct super_block *sb, struct vfsmount *mnt)
+{
+	struct inode *balloon_ino;
+	int err, fd;
+	struct file *filp;
+	struct dentry *de;
+	struct path path;
+	fmode_t mode;
+
+	balloon_ino = EXT4_SB(sb)->s_balloon_ino;
+	err = -ENOENT;
+	if (balloon_ino == NULL)
+		goto err;
+
+	err = fd = get_unused_fd_flags(0);
+	if (err < 0)
+		goto err_fd;
+
+	__iget(balloon_ino);
+	de = d_obtain_alias(balloon_ino);
+	err = PTR_ERR(de);
+	if (IS_ERR(de))
+		goto err_de;
+
+	path.dentry = de;
+	path.mnt = mntget(mnt);
+	err = mnt_want_write(path.mnt);
+	if (err)
+		mode = O_RDONLY;
+	else
+		mode = O_RDWR;
+	filp = alloc_file(&path, mode, &ext4_file_operations);
+	if (filp->f_mode & FMODE_WRITE)
+		mnt_drop_write(path.mnt);
+	if (IS_ERR(filp)) {
+		err = PTR_ERR(filp);
+		goto err_filp;
+	}
+
+	filp->f_flags |= O_LARGEFILE;
+	fd_install(fd, filp);
+	return fd;
+
+err_filp:
+	path_put(&path);
+err_de:
+	put_unused_fd(fd);
+err_fd:
+	/* nothing */
+err:
+	return err;
+}
+
 long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	struct inode *inode = file_inode(filp);
@@ -1240,6 +1293,12 @@ mfsync_fput:
 		kfree(flags);
 		return err;
 	}
+	case EXT4_IOC_OPEN_BALLOON:
+		if (!capable(CAP_SYS_ADMIN))
+			return -EACCES;
+
+		return ext4_open_balloon(inode->i_sb, filp->f_path.mnt);
+
 	default:
 		return -ENOTTY;
 	}
