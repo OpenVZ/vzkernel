@@ -28,6 +28,7 @@
 #include <linux/netdevice.h>
 #include <linux/net_tstamp.h>
 #include <linux/etherdevice.h>
+#include <linux/sched.h>
 #include <linux/ethtool.h>
 #include <net/arp.h>
 #include <net/switchdev.h>
