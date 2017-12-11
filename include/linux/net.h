@@ -248,6 +248,11 @@ do {								\
 	net_ratelimited_function(pr_info, fmt, ##__VA_ARGS__)
 #define net_dbg_ratelimited(fmt, ...)				\
 	net_ratelimited_function(pr_debug, fmt, ##__VA_ARGS__)
+#define net_velog_ratelimited(fmt, ...)				\
+	net_ratelimited_function(ve_printk, VE_LOG, fmt, ##__VA_ARGS__)
+#define net_veboth_ratelimited(fmt, ...)				\
+	net_ratelimited_function(ve_printk, VE_LOG_BOTH, fmt, ##__VA_ARGS__)
+
 
 bool __net_get_random_once(void *buf, int nbytes, bool *done,
 			   struct static_key *done_key);
