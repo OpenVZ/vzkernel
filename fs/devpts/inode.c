@@ -25,6 +25,7 @@
 #include <linux/parser.h>
 #include <linux/fsnotify.h>
 #include <linux/seq_file.h>
+#include <linux/ve.h>
 
 #define DEVPTS_DEFAULT_MODE 0600
 /*
