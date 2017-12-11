@@ -6,6 +6,8 @@
 #include <linux/types.h>
 #include <linux/nodemask.h>
 #include <uapi/linux/oom.h>
+#include <linux/spinlock_types.h>
+#include <linux/wait.h>
 
 struct zonelist;
 struct notifier_block;
