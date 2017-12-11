@@ -64,6 +64,7 @@
 #include <linux/dma-debug.h>
 #include <linux/userfaultfd_k.h>
 #include <linux/dax.h>
+#include <linux/ve.h>
 
 #include <asm/io.h>
 #include <asm/mmu_context.h>
