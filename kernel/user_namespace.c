@@ -178,6 +178,7 @@ fail_dec:
 fail:
 	return ret;
 }
+EXPORT_SYMBOL(create_user_ns);
 
 int unshare_userns(unsigned long unshare_flags, struct cred **new_cred)
 {
