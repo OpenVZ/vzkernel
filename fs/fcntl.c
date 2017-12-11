@@ -22,6 +22,7 @@
 #include <linux/pid_namespace.h>
 #include <linux/user_namespace.h>
 #include <linux/shmem_fs.h>
+#include <linux/ve.h>
 
 #include <asm/poll.h>
 #include <asm/siginfo.h>
@@ -29,11 +30,32 @@
 
 #define SETFL_MASK (O_APPEND | O_NONBLOCK | O_NDELAY | O_DIRECT | O_NOATIME)
 
+int may_use_odirect(void)
+{
+	int may;
+
+	if (ve_is_super(get_exec_env()))
+		return 1;
+
+	may = capable(CAP_SYS_RAWIO);
+	if (!may) {
+		may = get_exec_env()->odirect_enable;
+		if (may == 2)
+			may = get_ve0()->odirect_enable;
+	}
+
+	return may;
+}
+
 static int setfl(int fd, struct file * filp, unsigned long arg)
 {
 	struct inode * inode = file_inode(filp);
 	int error = 0;
 
+	if (!may_use_odirect())
+		arg &= ~O_DIRECT;
+	if (ve_fsync_behavior() == FSYNC_NEVER)
+		arg &= ~O_SYNC;
 	/*
 	 * O_APPEND cannot be cleared if the file is marked as append-only
 	 * and the file is open for write.
