@@ -165,6 +165,7 @@ out:
 	put_nsproxy(old_ns);
 	return err;
 }
+EXPORT_SYMBOL(copy_namespaces);
 
 void free_nsproxy(struct nsproxy *ns)
 {
@@ -179,6 +180,7 @@ void free_nsproxy(struct nsproxy *ns)
 	put_net(ns->net_ns);
 	kmem_cache_free(nsproxy_cachep, ns);
 }
+EXPORT_SYMBOL(free_nsproxy);
 
 /*
  * Called from unshare. Unshare all the namespaces part of nsproxy.
