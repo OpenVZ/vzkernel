@@ -1320,7 +1320,7 @@ static int add_dirent_to_buf(handle_t *handle, struct dentry *dentry,
 	if (err)
 		ext3_std_error(dir->i_sb, err);
 	brelse(bh);
-	return 0;
+	return err;
 }
 
 /*
