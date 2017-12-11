@@ -1075,19 +1075,6 @@ static int cgroup_show_options(struct seq_file *seq, struct dentry *dentry)
 	return 0;
 }
 
-struct cgroup_sb_opts {
-	unsigned long subsys_mask;
-	unsigned long flags;
-	char *release_agent;
-	bool cpuset_clone_children;
-	char *name;
-	/* User explicitly requested empty subsystem */
-	bool none;
-
-	struct cgroupfs_root *new_root;
-
-};
-
 /*
  * Convert a hierarchy specifier into a bitmask of subsystems and flags. Call
  * with cgroup_mutex held to protect the subsys[] array. This function takes
@@ -1555,9 +1542,15 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 	struct inode *inode;
 
 	/* First find the desired set of subsystems */
-	mutex_lock(&cgroup_mutex);
-	ret = parse_cgroupfs_options(data, &opts);
-	mutex_unlock(&cgroup_mutex);
+	if (!(flags & MS_KERNMOUNT)) {
+		mutex_lock(&cgroup_mutex);
+		ret = parse_cgroupfs_options(data, &opts);
+		mutex_unlock(&cgroup_mutex);
+	} else {
+		opts = *(struct cgroup_sb_opts *)data;
+		opts.name = kstrdup(opts.name, GFP_KERNEL);
+		opts.release_agent = kstrdup(opts.release_agent, GFP_KERNEL);
+	}
 	if (ret)
 		goto out_err;
 
@@ -1749,6 +1742,7 @@ static struct file_system_type cgroup_fs_type = {
 	.name = "cgroup",
 	.mount = cgroup_mount,
 	.kill_sb = cgroup_kill_sb,
+	.fs_flags = FS_VIRTUALIZED,
 };
 
 /**
@@ -2194,10 +2188,13 @@ static int cgroup_release_agent_write(struct cgroup *cgrp, struct cftype *cft,
 				      const char *buffer)
 {
 	BUILD_BUG_ON(sizeof(cgrp->root->release_agent_path) < PATH_MAX);
+
 	if (strlen(buffer) >= PATH_MAX)
 		return -EINVAL;
+
 	if (!cgroup_lock_live_group(cgrp))
 		return -ENODEV;
+
 	mutex_lock(&cgroup_root_mutex);
 	strcpy(cgrp->root->release_agent_path, buffer);
 	mutex_unlock(&cgroup_root_mutex);
@@ -5011,6 +5008,24 @@ static void check_for_release(struct cgroup *cgrp)
 	}
 }
 
+bool css_refcnt_inc_not_zero(struct cgroup_subsys_state *css)
+{
+	if (css->flags & CSS_ROOT)
+		return true;
+
+	while (true) {
+		int t, v;
+
+		v = atomic_read(&css->refcnt);
+		if (!css_unbias_refcnt(v))
+			return false;
+		t = atomic_cmpxchg(&css->refcnt, v, v + 1);
+		if (likely(t == v))
+			return true;
+		cpu_relax();
+	}
+}
+
 /* Caller must verify that the css is not for root cgroup */
 bool __css_tryget(struct cgroup_subsys_state *css)
 {
@@ -5069,7 +5084,7 @@ static void cgroup_release_agent(struct work_struct *work)
 	raw_spin_lock(&release_list_lock);
 	while (!list_empty(&release_list)) {
 		char *argv[3], *envp[3];
-		int i;
+		int i, err;
 		char *pathbuf = NULL, *agentbuf = NULL;
 		struct cgroup *cgrp = list_entry(release_list.next,
 						    struct cgroup,
@@ -5100,7 +5115,12 @@ static void cgroup_release_agent(struct work_struct *work)
 		 * since the exec could involve hitting disk and hence
 		 * be a slow process */
 		mutex_unlock(&cgroup_mutex);
-		call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
+		err = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
+		if (err < 0)
+			pr_warn_ratelimited("cgroup release_agent "
+					    "%s %s failed: %d\n",
+					    agentbuf, pathbuf, err);
+
 		mutex_lock(&cgroup_mutex);
  continue_free:
 		kfree(pathbuf);
@@ -5312,3 +5332,85 @@ struct cgroup_subsys debug_subsys = {
 	.base_cftypes = debug_files,
 };
 #endif /* CONFIG_CGROUP_DEBUG */
+
+
+struct vfsmount *cgroup_kernel_mount(struct cgroup_sb_opts *opts)
+{
+	return kern_mount_data(&cgroup_fs_type, opts);
+}
+
+struct cgroup *cgroup_get_root(struct vfsmount *mnt)
+{
+	return mnt->mnt_root->d_fsdata;
+}
+
+struct cgroup *cgroup_kernel_lookup(struct vfsmount *mnt,
+				    const char *pathname)
+{
+	int err;
+	struct path path;
+	struct dentry *dentry;
+	struct cgroup *cgrp;
+
+	err = vfs_path_lookup(mnt->mnt_root, mnt, pathname,
+			      LOOKUP_DIRECTORY, &path);
+	if (err)
+		return ERR_PTR(err);
+	dentry = path.dentry;
+	if (dentry->d_inode) {
+		cgrp = __d_cgrp(dentry);
+		atomic_inc(&cgrp->count);
+	} else
+		cgrp = ERR_PTR(-ENOENT);
+	path_put(&path);
+	return cgrp;
+}
+
+struct cgroup *cgroup_kernel_open(struct cgroup *parent,
+		enum cgroup_open_flags flags, const char *name)
+{
+	struct dentry *dentry;
+	struct cgroup *cgrp;
+	int ret = 0;
+
+	mutex_lock_nested(&parent->dentry->d_inode->i_mutex, I_MUTEX_PARENT);
+	dentry = lookup_one_len(name, parent->dentry, strlen(name));
+	cgrp = ERR_CAST(dentry);
+	if (IS_ERR(dentry))
+		goto out;
+
+	if (flags & CGRP_CREAT) {
+		if ((flags & CGRP_EXCL) && dentry->d_inode)
+			ret = -EEXIST;
+		else if (!dentry->d_inode)
+			ret = vfs_mkdir(parent->dentry->d_inode, dentry, 0755);
+	}
+	if (!ret && dentry->d_inode) {
+		cgrp = __d_cgrp(dentry);
+		atomic_inc(&cgrp->count);
+	} else
+		cgrp = ret ? ERR_PTR(ret) : NULL;
+	dput(dentry);
+out:
+	mutex_unlock(&parent->dentry->d_inode->i_mutex);
+	return cgrp;
+}
+
+int cgroup_kernel_attach(struct cgroup *cgrp, struct task_struct *tsk)
+{
+	int ret;
+
+	if (!cgroup_lock_live_group(cgrp))
+		return -ENODEV;
+	ret = cgroup_attach_task(cgrp, tsk, true);
+	mutex_unlock(&cgroup_mutex);
+	return ret;
+}
+
+void cgroup_kernel_close(struct cgroup *cgrp)
+{
+	if (atomic_dec_and_test(&cgrp->count)) {
+		set_bit(CGRP_RELEASABLE, &cgrp->flags);
+		check_for_release(cgrp);
+	}
+}
