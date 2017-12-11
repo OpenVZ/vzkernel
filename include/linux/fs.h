@@ -131,6 +131,9 @@ typedef void (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
 /* File needs atomic accesses to f_pos */
 #define FMODE_ATOMIC_POS	((__force fmode_t)0x8000)
 
+/* Can do sys_quotactl (for devperms) */
+#define FMODE_QUOTACTL		((__force fmode_t)0x8000)
+
 /* File is a block device opened by mount(2)  */
 #define FMODE_MOUNT		((__force fmode_t)0x10000)
 
