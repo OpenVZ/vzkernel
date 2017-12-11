@@ -133,6 +133,8 @@ static inline int vtty_open_master(int veid, int idx) { return -ENODEV; }
 void ve_stop_ns(struct pid_namespace *ns);
 void ve_exit_ns(struct pid_namespace *ns);
 
+extern bool current_user_ns_initial(void);
+
 #else	/* CONFIG_VE */
 #define ve_utsname	system_utsname
 #define get_ve(ve)	(NULL)
@@ -141,6 +143,10 @@ void ve_exit_ns(struct pid_namespace *ns);
 static inline void ve_stop_ns(struct pid_namespace *ns) { }
 static inline void ve_exit_ns(struct pid_namespace *ns) { }
 
+static inline bool current_user_ns_initial(void)
+{
+	return current_user_ns() == init_cred.user_ns;
+}
 #endif	/* CONFIG_VE */
 
 #endif /* _LINUX_VE_H */
