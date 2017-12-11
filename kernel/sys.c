@@ -43,6 +43,7 @@
 #include <linux/syscore_ops.h>
 #include <linux/version.h>
 #include <linux/ctype.h>
+#include <linux/ve.h>
 
 #include <linux/compat.h>
 #include <linux/syscalls.h>
@@ -1492,6 +1493,7 @@ out:
 }
 
 DECLARE_RWSEM(uts_sem);
+EXPORT_SYMBOL_GPL(uts_sem);
 
 #ifdef COMPAT_UTS_MACHINE
 #define override_architecture(name) \
