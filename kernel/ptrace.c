@@ -1073,6 +1073,10 @@ static struct task_struct *ptrace_get_task_struct(pid_t pid)
 {
 	struct task_struct *child;
 
+	/* ptracing of init from inside CT is dangerous */
+	if (pid == 1 && !capable(CAP_SYS_ADMIN))
+		return ERR_PTR(-EPERM);
+
 	rcu_read_lock();
 	child = find_task_by_vpid(pid);
 	if (child)
