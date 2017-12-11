@@ -92,13 +92,18 @@ struct writeback_control {
  */	
 struct bdi_writeback;
 void writeback_inodes_sb(struct super_block *, enum wb_reason reason);
+void writeback_inodes_sb_ub(struct super_block *, struct user_beancounter *,
+							enum wb_reason reason);
 void writeback_inodes_sb_nr(struct super_block *, unsigned long nr,
 							enum wb_reason reason);
 int try_to_writeback_inodes_sb(struct super_block *, enum wb_reason reason);
 int try_to_writeback_inodes_sb_nr(struct super_block *, unsigned long nr,
 				  enum wb_reason reason);
 void sync_inodes_sb(struct super_block *);
+void sync_inodes_sb_ub(struct super_block *, struct user_beancounter *ub);
 void wakeup_flusher_threads(long nr_pages, enum wb_reason reason);
+void wakeup_flusher_threads_ub(long nr_pages, struct user_beancounter *ub,
+			enum wb_reason reason);
 void inode_wait_for_writeback(struct inode *inode);
 
 /* writeback.h requires fs.h; it, too, is not included from here. */
