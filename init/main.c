@@ -79,6 +79,7 @@
 #include <linux/context_tracking.h>
 #include <linux/list.h>
 #include <linux/io.h>
+#include <linux/ve.h>
 
 #include <asm/io.h>
 #include <asm/bugs.h>
@@ -116,6 +117,12 @@ bool early_boot_irqs_disabled __read_mostly;
 
 enum system_states system_state __read_mostly;
 EXPORT_SYMBOL(system_state);
+
+#ifdef CONFIG_VE
+extern void init_ve_system(void);
+#else
+#define init_ve_system()		do { } while (0)
+#endif
 
 /*
  * Boot command-line arguments
@@ -863,6 +870,7 @@ static void __init do_initcalls(void)
  */
 static void __init do_basic_setup(void)
 {
+	init_ve_system();
 	cpuset_init_smp();
 	usermodehelper_init();
 	shmem_init();
