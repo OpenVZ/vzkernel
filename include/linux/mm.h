@@ -2357,7 +2357,9 @@ extern int _randomize_va_space;
 #endif
 
 const char * arch_vma_name(struct vm_area_struct *vma);
-void print_vma_addr(char *prefix, unsigned long rip);
+void ve_print_vma_addr(int dst, char *prefix, unsigned long rip);
+#define print_vma_addr(prefix, rip) \
+	ve_print_vma_addr(VE0_LOG, (prefix), (rip))
 
 void sparse_mem_maps_populate_node(struct page **map_map,
 				   unsigned long pnum_begin,
