@@ -686,6 +686,11 @@ static int do_dentry_open(struct file *f,
 	static const struct file_operations empty_fops = {};
 	int error;
 
+	if (!may_use_odirect())
+		f->f_flags &= ~O_DIRECT;
+	if (ve_fsync_behavior() == FSYNC_NEVER)
+		f->f_flags &= ~O_SYNC;
+
 	f->f_mode = OPEN_FMODE(f->f_flags) | FMODE_LSEEK |
 				FMODE_PREAD | FMODE_PWRITE;
 
