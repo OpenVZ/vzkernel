@@ -324,10 +324,6 @@ void check_tsc_sync_source(int cpu)
 		return;
 	}
 
-#ifdef CONFIG_VE
-	/* TSC reset. kill whatever might rely on old values */
-	VE_TASK_INFO(current)->wakeup_stamp = 0;
-#endif
 	/*
 	 * Set the maximum number of test runs to
 	 *  1 if the CPU does not provide the TSC_ADJUST MSR
