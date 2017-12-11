@@ -1638,6 +1638,17 @@ int mem_cgroup_inactive_anon_is_low(struct lruvec *lruvec)
 	return inactive * inactive_ratio < active;
 }
 
+unsigned long mem_cgroup_total_pages(struct mem_cgroup *memcg, bool swap)
+{
+	unsigned long long limit;
+
+	limit = swap ? res_counter_read_u64(&memcg->memsw, RES_LIMIT) :
+			res_counter_read_u64(&memcg->res, RES_LIMIT);
+	if (limit >= RESOURCE_MAX)
+		return ULONG_MAX;
+	return min_t(unsigned long long, ULONG_MAX, limit >> PAGE_SHIFT);
+}
+
 #define mem_cgroup_from_counter(counter, member)	\
 	container_of(counter, struct mem_cgroup, member)
 
