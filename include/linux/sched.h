@@ -53,6 +53,7 @@ struct sched_param {
 #include <linux/llist.h>
 #include <linux/uidgid.h>
 #include <linux/gfp.h>
+#include <linux/ve_proto.h>
 
 #include <asm/processor.h>
 
@@ -1452,6 +1453,7 @@ struct task_struct {
 	unsigned in_execve:1;	/* Tell the LSMs that the process is doing an
 				 * execve */
 	unsigned in_iowait:1;
+	unsigned did_ve_enter:1;
 
 	/* task may not gain privileges */
 	unsigned no_new_privs:1;
@@ -1783,6 +1785,9 @@ struct task_struct {
 	/* bitmask and counter of trace recursion */
 	unsigned long trace_recursion;
 #endif /* CONFIG_TRACING */
+#ifdef CONFIG_VE
+	struct ve_struct *task_ve;
+#endif
 #ifdef CONFIG_MEMCG /* memcg uses this to do batch job */
 	struct memcg_batch_info {
 		int do_batch;	/* incremented when batch uncharge started */

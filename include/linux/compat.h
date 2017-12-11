@@ -17,9 +17,11 @@
 #include <linux/fs.h>
 #include <linux/aio_abi.h>	/* for aio_context_t */
 
+#ifdef __KERNEL__
 #include <asm/compat.h>
 #include <asm/siginfo.h>
 #include <asm/signal.h>
+#endif
 
 #ifndef COMPAT_USE_64BIT_TIME
 #define COMPAT_USE_64BIT_TIME 0
@@ -141,6 +143,7 @@ struct compat_sigaction {
 	compat_sigset_t			sa_mask __packed;
 };
 
+#ifdef __KERNEL__
 /*
  * These functions operate strictly on struct compat_time*
  */
@@ -161,6 +164,7 @@ extern int compat_get_timespec(struct timespec *, const void __user *);
 extern int compat_put_timespec(const struct timespec *, void __user *);
 extern int compat_get_timeval(struct timeval *, const void __user *);
 extern int compat_put_timeval(const struct timeval *, void __user *);
+#endif
 
 struct compat_iovec {
 	compat_uptr_t	iov_base;
@@ -191,14 +195,18 @@ struct compat_rusage {
 	compat_long_t	ru_nivcsw;
 };
 
+#ifdef __KERNEL__
 extern int put_compat_rusage(const struct rusage *,
 			     struct compat_rusage __user *);
+#endif
 
 struct compat_siginfo;
 
+#ifdef __KERNEL__
 extern asmlinkage long compat_sys_waitid(int, compat_pid_t,
 		struct compat_siginfo __user *, int,
 		struct compat_rusage __user *);
+#endif
 
 struct compat_dirent {
 	u32		d_ino;
@@ -304,6 +312,7 @@ struct compat_kexec_segment;
 struct compat_mq_attr;
 struct compat_msgbuf;
 
+#ifdef __KERNEL__
 extern void compat_exit_robust_list(struct task_struct *curr);
 
 asmlinkage long
@@ -661,6 +670,7 @@ asmlinkage ssize_t compat_sys_process_vm_writev(compat_pid_t pid,
 		const struct compat_iovec __user *lvec,
 		unsigned long liovcnt, const struct compat_iovec __user *rvec,
 		unsigned long riovcnt, unsigned long flags);
+#endif
 
 asmlinkage long compat_sys_sendfile(int out_fd, int in_fd,
 				    compat_off_t __user *offset, compat_size_t count);
