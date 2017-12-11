@@ -160,6 +160,7 @@ static int proc_fd_link(struct dentry *dentry, struct path *path)
 
 		spin_lock(&files->file_lock);
 		fd_file = fcheck_files(files, fd);
+		ret = -EACCES;
 		if (fd_file) {
 			*path = fd_file->f_path;
 			path_get(&fd_file->f_path);
