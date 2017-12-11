@@ -85,6 +85,7 @@
 #include <linux/user_namespace.h>
 #include <linux/fs_struct.h>
 #include <linux/nospec.h>
+#include <linux/ve.h>
 
 #include <asm/pgtable.h>
 #include <asm/processor.h>
@@ -184,6 +185,18 @@ static inline int get_task_umask(struct task_struct *tsk)
 	return umask;
 }
 
+static int task_virtual_pid(struct task_struct *t)
+{
+	struct pid *pid;
+
+	pid = task_pid(t);
+	/*
+	 * this will give wrong result for tasks,
+	 * that failed to enter VE, but that's OK
+	 */
+	return pid ? pid->numbers[pid->level].nr : 0;
+}
+
 static inline void task_state(struct seq_file *m, struct pid_namespace *ns,
 				struct pid *pid, struct task_struct *p)
 {
@@ -192,7 +205,7 @@ static inline void task_state(struct seq_file *m, struct pid_namespace *ns,
 	int g, umask;
 	struct fdtable *fdt = NULL;
 	const struct cred *cred;
-	pid_t ppid, tpid;
+	pid_t ppid, tpid, vpid;
 
 	rcu_read_lock();
 	ppid = pid_alive(p) ? ve_task_ppid_nr_ns(p, ns) : 0;
@@ -202,6 +215,7 @@ static inline void task_state(struct seq_file *m, struct pid_namespace *ns,
 		if (tracer)
 			tpid = task_pid_nr_ns(tracer, ns);
 	}
+	vpid = task_virtual_pid(p);
 	cred = get_task_cred(p);
 
 	umask = get_task_umask(p);
@@ -249,6 +263,13 @@ static inline void task_state(struct seq_file *m, struct pid_namespace *ns,
 	put_cred(cred);
 
 	seq_putc(m, '\n');
+
+#ifdef CONFIG_VE
+	rcu_read_lock();
+	seq_printf(m, "envID:\t%s\nVPid:\t%d\n",
+			task_ve_name(p), vpid);
+	rcu_read_unlock();
+#endif
 }
 
 void render_sigset_t(struct seq_file *m, const char *header,
@@ -605,6 +626,14 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 		seq_put_decimal_ll(m, ' ', task->exit_code);
 	else
 		seq_put_decimal_ll(m, ' ', 0);
+
+#ifdef CONFIG_VE
+	seq_printf(m, " %s", " 0 0 0 0 0");
+	seq_put_decimal_ll(m, ' ', task_pid_nr_ns(task, task_active_pid_ns(task)));
+	rcu_read_lock();
+	seq_printf(m, " %s", task_ve_name(task));
+	rcu_read_unlock();
+#endif
 
 	seq_putc(m, '\n');
 	if (mm)
