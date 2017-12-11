@@ -37,6 +37,7 @@
 #include <linux/personality.h>
 #include <linux/random.h>
 #include <linux/hw_breakpoint.h>
+#include <linux/ve.h>
 
 #include <asm/pgtable.h>
 #include <asm/uaccess.h>
