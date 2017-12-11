@@ -5131,6 +5131,27 @@ void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
 	mi->shmem = mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_SHMEM);
 }
 
+int mem_cgroup_enough_memory(struct mem_cgroup *memcg, long pages)
+{
+	long free;
+
+	/* unused memory */
+	free = (res_counter_read_u64(&memcg->memsw, RES_LIMIT) -
+		res_counter_read_u64(&memcg->memsw, RES_USAGE)) >> PAGE_SHIFT;
+
+	/* reclaimable slabs */
+	free += res_counter_read_u64(&memcg->dcache, RES_USAGE) >> PAGE_SHIFT;
+
+	/* assume file cache is reclaimable */
+	free += mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_CACHE);
+
+	/* but do not count shmem pages as they can't be purged,
+	 * only swapped out */
+	free -= mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_SHMEM);
+
+	return free < pages ? -ENOMEM : 0;
+}
+
 static inline unsigned long mem_cgroup_usage(struct mem_cgroup *memcg, bool swap)
 {
 	unsigned long val;
