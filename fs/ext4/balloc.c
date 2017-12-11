@@ -252,6 +252,7 @@ unsigned ext4_free_clusters_after_init(struct super_block *sb,
 	return num_clusters_in_group(sb, block_group) - 
 		ext4_num_overhead_clusters(sb, block_group, gdp);
 }
+EXPORT_SYMBOL(ext4_get_group_desc);
 
 /*
  * The free blocks are managed by bitmaps.  A file system contains several
