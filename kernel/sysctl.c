@@ -713,7 +713,7 @@ static struct ctl_table kern_table[] = {
 		.data		= &uevent_helper,
 		.maxlen		= UEVENT_HELPER_PATH_LEN,
 		.mode		= 0644 | S_ISVTX,
-		.proc_handler	= proc_dostring,
+		.proc_handler	= proc_dostring_immutable,
 	},
 
 #ifdef CONFIG_CHR_DEV_SG
@@ -827,7 +827,7 @@ static struct ctl_table kern_table[] = {
 		.data		= &console_loglevel,
 		.maxlen		= 4*sizeof(int),
 		.mode		= 0644 | S_ISVTX,
-		.proc_handler	= proc_dointvec,
+		.proc_handler	= proc_dointvec_immutable,
 	},
 	{
 		.procname	= "printk_ratelimit",
@@ -1034,12 +1034,10 @@ static struct ctl_table kern_table[] = {
 #if defined(CONFIG_MMU)
 	{
 		.procname	= "randomize_va_space",
-		.data		= &_randomize_va_space,
-		.extra1		= (void *)offsetof(struct ve_struct,
-							_randomize_va_space),
+		.data		= &ve0._randomize_va_space,
 		.maxlen		= sizeof(int),
 		.mode		= 0644 | S_ISVTX,
-		.proc_handler	= proc_dointvec,
+		.proc_handler	= proc_dointvec_virtual,
 	},
 #endif
 #if defined(CONFIG_S390) && defined(CONFIG_SMP)
