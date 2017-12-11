@@ -237,6 +237,8 @@ void ext4_evict_inode(struct inode *inode)
 	 * protection against it
 	 */
 	sb_start_intwrite(inode->i_sb);
+	if (inode->i_blocks && ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+		ext4_truncate_data_csum(inode, inode->i_size);
 	handle = ext4_journal_start(inode, EXT4_HT_TRUNCATE,
 				    ext4_blocks_for_truncate(inode)+3);
 	if (IS_ERR(handle)) {
@@ -1013,6 +1015,10 @@ retry_grab:
 	unlock_page(page);
 
 retry_journal:
+	/* Check csum window position before journal_start */
+	if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+		ext4_check_pos_data_csum(inode, pos);
+
 	handle = ext4_journal_start(inode, EXT4_HT_WRITE_PAGE, needed_blocks);
 	if (IS_ERR(handle)) {
 		page_cache_release(page);
@@ -1123,6 +1129,10 @@ static int ext4_write_end(struct file *file,
 	 * page writeout could otherwise come in and zero beyond i_size.
 	 */
 	i_size_changed = ext4_update_inode_size(inode, pos + copied);
+
+	if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+		ext4_update_data_csum(inode, pos, copied, page);
+
 	unlock_page(page);
 	page_cache_release(page);
 
@@ -1196,6 +1206,9 @@ static int ext4_journalled_write_end(struct file *file,
 	size_changed = ext4_update_inode_size(inode, pos + copied);
 	ext4_set_inode_state(inode, EXT4_STATE_JDATA);
 	EXT4_I(inode)->i_datasync_tid = handle->h_transaction->t_tid;
+
+	if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+		ext4_update_data_csum(inode, pos, copied, page);
 	unlock_page(page);
 	page_cache_release(page);
 
@@ -2714,6 +2727,10 @@ retry_grab:
 	 * of file which has an already mapped buffer.
 	 */
 retry_journal:
+	/* Check csum window position before journal_start */
+	if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+		ext4_check_pos_data_csum(inode, pos);
+
 	handle = ext4_journal_start(inode, EXT4_HT_WRITE_PAGE,
 				ext4_da_write_credits(inode, pos, len));
 	if (IS_ERR(handle)) {
@@ -2825,6 +2842,9 @@ static int ext4_da_write_end(struct file *file,
 	else
 		ret2 = generic_write_end(file, mapping, pos, len, copied,
 							page, fsdata);
+
+	if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+		ext4_update_data_csum(inode, pos, copied, page);
 
 	copied = ret2;
 	if (ret2 < 0)
@@ -3471,6 +3491,10 @@ static ssize_t ext4_direct_IO(int rw, struct kiocb *iocb,
 	if (ext4_has_inline_data(inode))
 		return 0;
 
+	if ((rw == WRITE) &&
+	    ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+		ext4_truncate_data_csum(inode, -1);
+
 	trace_ext4_direct_IO_enter(inode, offset, iov_length(iov, nr_segs), rw);
 	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
 		ret = ext4_ext_direct_IO(rw, iocb, iov, offset, nr_segs);
@@ -4050,6 +4074,9 @@ void ext4_truncate(struct inode *inode)
 	if (inode->i_size == 0 && !test_opt(inode->i_sb, NO_AUTO_DA_ALLOC))
 		ext4_set_inode_state(inode, EXT4_STATE_DA_ALLOC_CLOSE);
 
+	if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+		ext4_truncate_data_csum(inode, inode->i_size);
+
 	if (ext4_has_inline_data(inode)) {
 		int has_inline = 1;
 
@@ -4575,10 +4602,14 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 		inode->i_op = &ext4_file_inode_operations;
 		inode->i_fop = &ext4_file_operations.kabi_fops;
 		ext4_set_aops(inode);
+		if (test_opt2(sb, PFCACHE_CSUM) && !ext4_load_data_csum(inode))
+			ext4_open_pfcache(inode);
 	} else if (S_ISDIR(inode->i_mode)) {
 		inode->i_op = &ext4_dir_inode_operations.ops;
 		inode->i_fop = &ext4_dir_operations;
 		inode->i_flags |= S_IOPS_WRAPPER;
+		if (test_opt2(sb, PFCACHE_CSUM))
+			ext4_load_dir_csum(inode);
 	} else if (S_ISLNK(inode->i_mode)) {
 		if (ext4_inode_is_fast_symlink(inode)) {
 			inode->i_op = &ext4_fast_symlink_inode_operations;
@@ -4605,6 +4636,8 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 		goto bad_inode;
 	}
 	brelse(iloc.bh);
+	if (test_opt2(sb, PFCACHE_CSUM))
+		ext4_load_data_csum(inode);
 	unlock_new_inode(inode);
 	return inode;
 
@@ -5005,6 +5038,9 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
 				goto err_out;
 		}
 		if (attr->ia_size != inode->i_size) {
+			if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+				ext4_truncate_data_csum(inode, attr->ia_size);
+
 			handle = ext4_journal_start(inode, EXT4_HT_INODE, 3);
 			if (IS_ERR(handle)) {
 				error = PTR_ERR(handle);
