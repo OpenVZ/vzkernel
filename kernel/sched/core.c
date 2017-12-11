@@ -5437,6 +5437,9 @@ long sched_setaffinity(pid_t pid, const struct cpumask *in_mask)
 	struct task_struct *p;
 	int retval;
 
+	if (!ve_is_super(get_exec_env()))
+		return 0;
+
 	rcu_read_lock();
 
 	p = find_process_by_pid(pid);
