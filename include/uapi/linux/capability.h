@@ -187,12 +187,9 @@ struct vfs_ns_cap_data {
 
 #define CAP_NET_BROADCAST    11
 
-/* Allow interface configuration */
 /* Allow administration of IP firewall, masquerading and accounting */
 /* Allow setting debug option on sockets */
 /* Allow modification of routing tables */
-/* Allow setting arbitrary process / process group ownership on
-   sockets */
 /* Allow binding to any address for transparent proxying (also via NET_RAW) */
 /* Allow setting TOS (type of service) */
 /* Allow setting promiscuous mode */
@@ -223,6 +220,7 @@ struct vfs_ns_cap_data {
 #define CAP_SYS_MODULE       16
 
 /* Allow ioperm/iopl access */
+/* Allow O_DIRECT access */
 /* Allow sending USB messages to any device via /dev/bus/usb */
 
 #define CAP_SYS_RAWIO        17
@@ -241,23 +239,18 @@ struct vfs_ns_cap_data {
 
 /* Allow configuration of the secure attention key */
 /* Allow administration of the random device */
-/* Allow examination and configuration of disk quotas */
 /* Allow setting the domainname */
 /* Allow setting the hostname */
 /* Allow calling bdflush() */
-/* Allow mount() and umount(), setting up new smb connection */
+/* Allow setting up new smb connection */
 /* Allow some autofs root ioctls */
 /* Allow nfsservctl */
 /* Allow VM86_REQUEST_IRQ */
 /* Allow to read/write pci config on alpha */
 /* Allow irix_prctl on mips (setstacksize) */
 /* Allow flushing all cache on m68k (sys_cacheflush) */
-/* Allow removing semaphores */
-/* Used instead of CAP_CHOWN to "chown" IPC message queues, semaphores
-   and shared memory */
 /* Allow locking/unlocking of shared memory segment */
 /* Allow turning swap on/off */
-/* Allow forged pids on socket credentials passing */
 /* Allow setting readahead and flushing buffers on block devices */
 /* Allow setting geometry in floppy driver */
 /* Allow turning DMA on/off in xd driver */
