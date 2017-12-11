@@ -301,6 +301,9 @@ ipt_do_table(struct sk_buff *skb,
 	struct xt_action_param acpar;
 	unsigned int addend;
 
+	if (ve_xt_table_forbidden(table))
+		return NF_ACCEPT;
+
 	/* Initialization */
 	ip = ip_hdr(skb);
 	indev = state->in ? state->in->name : nulldevname;
@@ -465,8 +468,9 @@ mark_source_chains(const struct xt_table_info *newinfo,
 			int visited = e->comefrom & (1 << hook);
 
 			if (e->comefrom & (1 << NF_INET_NUMHOOKS)) {
-				pr_err("iptables: loop hook %u pos %u %08X.\n",
-				       hook, pos, e->comefrom);
+				ve_printk(VE_LOG, "iptables: loop hook %u pos "
+						  "%u %08X.\n",
+					  hook, pos, e->comefrom);
 				return 0;
 			}
 			e->comefrom |= ((1 << hook) | (1 << NF_INET_NUMHOOKS));
@@ -1723,12 +1727,16 @@ compat_do_replace(struct net *net, void __user *user, unsigned int len)
 }
 
 static int
+do_ipt_set_ctl(struct sock *sk, int cmd, void __user *user, unsigned int len);
+
+static int
 compat_do_ipt_set_ctl(struct sock *sk,	int cmd, void __user *user,
 		      unsigned int len)
 {
+	struct user_namespace *user_ns = sock_net(sk)->user_ns;
 	int ret;
 
-	if (!ns_capable(sock_net(sk)->user_ns, CAP_NET_ADMIN))
+	if (!ns_capable(user_ns, CAP_NET_ADMIN))
 		return -EPERM;
 
 	switch (cmd) {
@@ -1741,8 +1749,7 @@ compat_do_ipt_set_ctl(struct sock *sk,	int cmd, void __user *user,
 		break;
 
 	default:
-		duprintf("do_ipt_set_ctl:  unknown request %i\n", cmd);
-		ret = -EINVAL;
+		ret = do_ipt_set_ctl(sk, cmd, user, len);
 	}
 
 	return ret;
@@ -1836,9 +1843,10 @@ static int do_ipt_get_ctl(struct sock *, int, void __user *, int *);
 static int
 compat_do_ipt_get_ctl(struct sock *sk, int cmd, void __user *user, int *len)
 {
+	struct user_namespace *user_ns = sock_net(sk)->user_ns;
 	int ret;
 
-	if (!ns_capable(sock_net(sk)->user_ns, CAP_NET_ADMIN))
+	if (!ns_capable(user_ns, CAP_NET_ADMIN))
 		return -EPERM;
 
 	switch (cmd) {
@@ -1858,9 +1866,10 @@ compat_do_ipt_get_ctl(struct sock *sk, int cmd, void __user *user, int *len)
 static int
 do_ipt_set_ctl(struct sock *sk, int cmd, void __user *user, unsigned int len)
 {
+	struct user_namespace *user_ns = sock_net(sk)->user_ns;
 	int ret;
 
-	if (!ns_capable(sock_net(sk)->user_ns, CAP_NET_ADMIN))
+	if (!ns_capable(user_ns, CAP_NET_ADMIN))
 		return -EPERM;
 
 	switch (cmd) {
@@ -1883,9 +1892,10 @@ do_ipt_set_ctl(struct sock *sk, int cmd, void __user *user, unsigned int len)
 static int
 do_ipt_get_ctl(struct sock *sk, int cmd, void __user *user, int *len)
 {
+	struct user_namespace *user_ns = sock_net(sk)->user_ns;
 	int ret;
 
-	if (!ns_capable(sock_net(sk)->user_ns, CAP_NET_ADMIN))
+	if (!ns_capable(user_ns, CAP_NET_ADMIN))
 		return -EPERM;
 
 	switch (cmd) {
