@@ -18,6 +18,7 @@
 #include <linux/mutex.h>
 #include <linux/printk.h>
 #include <linux/mm.h>
+#include <linux/vziptable_defs.h>
 #include <uapi/linux/vzcalluser.h>
 
 #include "../cgroup/cgroup-internal.h" /* For cgroup_task_count() */
@@ -40,6 +41,9 @@ struct ve_struct ve0 = {
 					1,
 #else
 					2,
+#endif
+#ifdef CONFIG_VE_IPTABLES
+	.ipt_mask		= VE_IP_ALL,    /* everything is allowed */
 #endif
 };
 EXPORT_SYMBOL(ve0);
@@ -287,6 +291,31 @@ unlock:
 	up_write(&ve->op_sem);
 }
 
+#ifdef CONFIG_VE_IPTABLES
+static __u64 ve_setup_iptables_mask(__u64 init_mask)
+{
+	/* Remove when userspace will start supplying IPv6-related bits. */
+	init_mask &= ~VE_IP_IPTABLES6;
+	init_mask &= ~VE_IP_FILTER6;
+	init_mask &= ~VE_IP_MANGLE6;
+	init_mask &= ~VE_IP_IPTABLE_NAT_MOD;
+	init_mask &= ~VE_NF_CONNTRACK_MOD;
+
+	if (mask_ipt_allow(init_mask, VE_IP_IPTABLES))
+		init_mask |= VE_IP_IPTABLES6;
+	if (mask_ipt_allow(init_mask, VE_IP_FILTER))
+		init_mask |= VE_IP_FILTER6;
+	if (mask_ipt_allow(init_mask, VE_IP_MANGLE))
+		init_mask |= VE_IP_MANGLE6;
+	if (mask_ipt_allow(init_mask, VE_IP_NAT))
+		init_mask |= VE_IP_IPTABLE_NAT;
+	if (mask_ipt_allow(init_mask, VE_IP_CONNTRACK))
+		init_mask |= VE_NF_CONNTRACK;
+
+	return init_mask;
+}
+#endif
+
 static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_css)
 {
 	struct ve_struct *ve = &ve0;
@@ -311,6 +340,9 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 	ve->features = VE_FEATURES_DEF;
 	ve->_randomize_va_space = ve0._randomize_va_space;
 
+#ifdef CONFIG_VE_IPTABLES
+	ve->ipt_mask = ve_setup_iptables_mask(VE_IP_DEFAULT);
+#endif
 do_init:
 	init_rwsem(&ve->op_sem);
 	INIT_LIST_HEAD(&ve->ve_list);
@@ -570,6 +602,30 @@ static int ve_reatures_write(struct cgroup_subsys_state *css, struct cftype *cft
 	return 0;
 }
 
+#ifdef CONFIG_VE_IPTABLES
+static u64 ve_iptables_mask_read(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	return css_to_ve(css)->ipt_mask;
+}
+
+static int ve_iptables_mask_write(struct cgroup_subsys_state *css, struct cftype *cft, u64 val)
+{
+	struct ve_struct *ve = css_to_ve(css);
+
+	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
+
+	down_write(&ve->op_sem);
+	if (ve->is_running || ve->ve_ns) {
+		up_write(&ve->op_sem);
+		return -EBUSY;
+	}
+	ve->ipt_mask = ve_setup_iptables_mask(val);
+	up_write(&ve->op_sem);
+	return 0;
+}
+#endif
+
 static struct cftype ve_cftypes[] = {
 
 	{
@@ -596,7 +652,14 @@ static struct cftype ve_cftypes[] = {
 		.read_u64		= ve_reatures_read,
 		.write_u64		= ve_reatures_write,
 	},
-
+#ifdef CONFIG_VE_IPTABLES
+	{
+		.name			= "iptables_mask",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_u64		= ve_iptables_mask_read,
+		.write_u64		= ve_iptables_mask_write,
+	},
+#endif
 	{ }
 };
 

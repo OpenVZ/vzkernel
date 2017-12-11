@@ -50,6 +50,10 @@ struct ve_struct {
 #define VE_LOG_BUF_LEN		4096
 
 	int			_randomize_va_space;
+
+#ifdef CONFIG_VE_IPTABLES
+	__u64			ipt_mask;
+#endif
 };
 
 extern int nr_ve;
