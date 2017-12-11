@@ -11,6 +11,7 @@
 #include <linux/irqnr.h>
 #include <linux/cputime.h>
 #include <linux/tick.h>
+#include <linux/ve.h>
 
 #ifndef arch_irq_stat_cpu
 #define arch_irq_stat_cpu(cpu) 0

@@ -10,6 +10,7 @@
 #include <linux/seq_file.h>
 #include <linux/swap.h>
 #include <linux/vmstat.h>
+#include <linux/ve.h>
 #include <linux/atomic.h>
 #include <linux/vmalloc.h>
 #include <asm/page.h>
