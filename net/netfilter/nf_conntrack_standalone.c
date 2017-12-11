@@ -486,7 +486,7 @@ static struct ctl_table nf_ct_sysctl_table[] = {
 	},
 	{
 		.procname	= "nf_conntrack_expect_max",
-		.data		= &nf_ct_expect_max,
+		.data		= &init_net.ct.expect_max,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
@@ -520,6 +520,7 @@ static int nf_conntrack_standalone_init_sysctl(struct net *net)
 	table[2].data = &net->ct.htable_size;
 	table[3].data = &net->ct.sysctl_checksum;
 	table[4].data = &net->ct.sysctl_log_invalid;
+	table[5].data = &net->ct.expect_max;
 
 	/* Don't export sysctls to unprivileged users */
 	if (net->user_ns != &init_user_ns)
