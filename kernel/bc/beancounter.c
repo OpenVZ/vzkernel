@@ -1133,6 +1133,13 @@ static ctl_table ub_sysctl_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &proc_resource_precharge,
 	},
+	{
+		.procname	= "overcommit_memory",
+		.data		= &ub_overcommit_memory,
+		.maxlen		= sizeof(ub_overcommit_memory),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
 #ifdef CONFIG_BC_IO_ACCOUNTING
 	{
 		.procname	= "dirty_ratio",
