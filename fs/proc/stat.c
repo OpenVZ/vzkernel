@@ -11,6 +11,9 @@
 #include <linux/irqnr.h>
 #include <linux/cputime.h>
 #include <linux/tick.h>
+#include <linux/fairsched.h>
+#include <linux/mm.h>
+#include <linux/vmstat.h>
 #include <linux/ve.h>
 
 #ifndef arch_irq_stat_cpu
@@ -115,12 +118,22 @@ static int show_stat(struct seq_file *p, void *v)
 	u64 sum_softirq = 0;
 	unsigned int per_softirq_sums[NR_SOFTIRQS] = {0};
 	struct timespec boottime;
+	struct ve_struct *ve;
+
+	getboottime(&boottime);
+	jif = boottime.tv_sec;
+
+	ve = get_exec_env();
+	if (!ve_is_super(ve)) {
+		int ret;
+		ret = fairsched_show_stat(p, ve->veid);
+		if (ret != -ENOSYS)
+			return ret;
+	}
 
 	user = nice = system = idle = iowait =
 		irq = softirq = steal = 0;
 	guest = guest_nice = 0;
-	getboottime(&boottime);
-	jif = boottime.tv_sec;
 
 	for_each_possible_cpu(i) {
 		user += kcpustat_cpu(i).cpustat[CPUTIME_USER];
