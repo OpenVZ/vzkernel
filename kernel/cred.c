@@ -55,6 +55,7 @@ struct cred init_cred = {
 	.user_ns		= &init_user_ns,
 	.group_info		= &init_groups,
 };
+EXPORT_SYMBOL(init_cred);
 
 static inline void set_cred_subscribers(struct cred *cred, int n)
 {
