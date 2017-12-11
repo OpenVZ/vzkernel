@@ -52,6 +52,7 @@
  */
 
 static struct kmem_cache *sigqueue_cachep;
+static inline int is_si_special(const struct siginfo *info);
 
 int print_fatal_signals __read_mostly;
 
