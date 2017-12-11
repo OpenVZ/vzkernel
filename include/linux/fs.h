@@ -2263,6 +2263,13 @@ dentry_operations_wrapper */
 #define FS_RENAME_DOES_D_MOVE	32768	/* FS will handle d_move() during rename() internally. */
 #define FS_HAS_WBLIST		131072	/* KABI: fs has writeback list super ops */
 #define FS_SETLEASE_NOLOCK	262144	/* KABI: setlease should be called w/o the i_lock */
+/*
+ * f_op->mmap must be called with vma=NULL before taking mmap_sem;
+ * workaround for wrong i_mutex vs mmap_sem lock ordering in pfcache
+ * (PSBM-23133) - vdavydov@
+ */
+#define FS_HAS_MMAP_PREP	(1<<19)
+
 	struct dentry *(*mount) (struct file_system_type *, int,
 		       const char *, void *);
 	void (*kill_sb) (struct super_block *);
