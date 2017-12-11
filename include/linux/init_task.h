@@ -145,6 +145,12 @@ extern struct task_group root_task_group;
 # define INIT_CGROUP_SCHED(tsk)
 #endif
 
+#ifdef CONFIG_VE
+#define	INIT_TASK_VE(tsk) .task_ve = &ve0,
+#else
+#define	INIT_TASK_VE(tsk)
+#endif
+
 #ifdef CONFIG_PERF_EVENTS
 # define INIT_PERF_EVENTS(tsk)						\
 	.perf_event_mutex = 						\
@@ -201,6 +207,7 @@ extern struct task_group root_task_group;
 	.tasks		= LIST_HEAD_INIT(tsk.tasks),			\
 	INIT_PUSHABLE_TASKS(tsk)					\
 	INIT_CGROUP_SCHED(tsk)						\
+	INIT_TASK_VE(tsk)						\
 	.ptraced	= LIST_HEAD_INIT(tsk.ptraced),			\
 	.ptrace_entry	= LIST_HEAD_INIT(tsk.ptrace_entry),		\
 	.real_parent	= &tsk,						\
