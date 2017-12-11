@@ -35,8 +35,6 @@
 unsigned int nf_ct_expect_hsize __read_mostly;
 EXPORT_SYMBOL_GPL(nf_ct_expect_hsize);
 
-unsigned int nf_ct_expect_max __read_mostly;
-
 static struct kmem_cache *nf_ct_expect_cachep __read_mostly;
 
 /* nf_conntrack_expect helper functions */
@@ -430,7 +428,7 @@ static inline int __nf_ct_expect_check(struct nf_conntrack_expect *expect)
 		}
 	}
 
-	if (net->ct.expect_count >= nf_ct_expect_max) {
+	if (net->ct.expect_count >= init_net.ct.expect_max) {
 		net_warn_ratelimited("nf_conntrack: expectation table full\n");
 		ret = -EMFILE;
 	}
@@ -617,6 +615,7 @@ int nf_conntrack_expect_pernet_init(struct net *net)
 	int err = -ENOMEM;
 
 	net->ct.expect_count = 0;
+	net->ct.expect_max = init_net.ct.expect_max;
 	net->ct.expect_hash = nf_ct_alloc_hashtable(&nf_ct_expect_hsize, 0);
 	if (net->ct.expect_hash == NULL)
 		goto err1;
@@ -645,7 +644,7 @@ int nf_conntrack_expect_init(void)
 		if (!nf_ct_expect_hsize)
 			nf_ct_expect_hsize = 1;
 	}
-	nf_ct_expect_max = nf_ct_expect_hsize * 4;
+	init_net.ct.expect_max = nf_ct_expect_hsize * 4;
 	nf_ct_expect_cachep = kmem_cache_create("nf_conntrack_expect",
 				sizeof(struct nf_conntrack_expect),
 				0, 0, NULL);
