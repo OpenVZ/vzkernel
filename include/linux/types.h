@@ -26,6 +26,11 @@ typedef __kernel_timer_t	timer_t;
 typedef __kernel_clockid_t	clockid_t;
 typedef __kernel_mqd_t		mqd_t;
 
+#ifndef __ENVID_T_DEFINED__
+typedef unsigned envid_t;
+#define __ENVID_T_DEFINED__
+#endif
+
 typedef _Bool			bool;
 
 typedef __kernel_uid32_t	uid_t;
