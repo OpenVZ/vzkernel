@@ -618,7 +618,6 @@ static struct cftype ve_cftypes[] = {
 		.read_u64		= ve_reatures_read,
 		.write_u64		= ve_reatures_write,
 	},
-
 	{ }
 };
 
