@@ -7,6 +7,7 @@
 #include <linux/kernel_stat.h>
 #include <linux/cputime.h>
 #include <linux/fairsched.h>
+#include <linux/ve.h>
 #include <linux/cgroup.h>
 
 static inline void get_ve0_idle(struct timespec *idle)
