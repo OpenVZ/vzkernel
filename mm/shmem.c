@@ -111,14 +111,24 @@ enum sgp_type {
 };
 
 #ifdef CONFIG_TMPFS
+static unsigned long tmpfs_ram_pages(void)
+{
+	struct user_beancounter *ub = get_exec_ub();
+
+	if (ub == get_ub0())
+		return totalram_pages;
+
+	return min(totalram_pages, ub_total_pages(ub, false));
+}
+
 static unsigned long shmem_default_max_blocks(void)
 {
-	return totalram_pages / 2;
+	return tmpfs_ram_pages() / 2;
 }
 
 static unsigned long shmem_default_max_inodes(void)
 {
-	return min(totalram_pages - totalhigh_pages, totalram_pages / 2);
+	return min(totalram_pages - totalhigh_pages, tmpfs_ram_pages() / 2);
 }
 #endif
 
@@ -3136,7 +3146,7 @@ static int shmem_parse_options(char *options, struct shmem_sb_info *sbinfo,
 			size = memparse(value,&rest);
 			if (*rest == '%') {
 				size <<= PAGE_SHIFT;
-				size *= totalram_pages;
+				size *= tmpfs_ram_pages();
 				do_div(size, 100);
 				rest++;
 			}
