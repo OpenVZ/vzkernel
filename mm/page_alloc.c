@@ -65,6 +65,7 @@
 #include <linux/kthread.h>
 #include <linux/nmi.h>
 #include <linux/page_owner.h>
+#include <linux/ve.h>
 
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
