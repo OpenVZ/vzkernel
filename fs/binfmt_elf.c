@@ -36,6 +36,7 @@
 #include <linux/coredump.h>
 #include <linux/sched.h>
 #include <linux/dax.h>
+#include <linux/ve.h>
 #include <asm/uaccess.h>
 #include <asm/param.h>
 #include <asm/page.h>
