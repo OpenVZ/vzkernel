@@ -95,6 +95,7 @@ struct ve_struct {
 	int _randomize_va_space;
 
 	int			odirect_enable;
+	int			fsync_enable;
 
 	u64			_uevent_seqnum;
 	struct nsproxy		*ve_ns;
