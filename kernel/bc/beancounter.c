@@ -199,6 +199,8 @@ extern int mem_cgroup_apply_beancounter(struct mem_cgroup *memcg,
 					struct user_beancounter *ub);
 extern void mem_cgroup_get_nr_pages(struct mem_cgroup *memcg, int nid,
 				    unsigned long *pages);
+extern unsigned long mem_cgroup_total_pages(struct mem_cgroup *memcg,
+					    bool swap);
 
 /*
  * Update memcg limits according to beancounter configuration.
@@ -225,6 +227,17 @@ void ub_sync_memcg(struct user_beancounter *ub)
 	css = ub_get_mem_css(ub);
 	mem_cgroup_sync_beancounter(mem_cgroup_from_cont(css->cgroup), ub);
 	css_put(css);
+}
+
+unsigned long ub_total_pages(struct user_beancounter *ub, bool swap)
+{
+	struct cgroup_subsys_state *css;
+	unsigned long ret;
+
+	css = ub_get_mem_css(ub);
+	ret = mem_cgroup_total_pages(mem_cgroup_from_cont(css->cgroup), swap);
+	css_put(css);
+	return ret;
 }
 
 void init_beancounter_precharge(struct user_beancounter *ub, int resource)
@@ -1125,6 +1138,9 @@ static ctl_table ub_sysctl_root[] = {
 
 void __init ub_init_late(void)
 {
+	ub_set_mem_css(&ub0, task_subsys_state_check(&init_task,  mem_cgroup_subsys_id, true));
+	ub_set_blkio_css(&ub0, task_subsys_state_check(&init_task, blkio_subsys_id, true));
+
 	register_sysctl_table(ub_sysctl_root);
 }
 
@@ -1154,11 +1170,6 @@ int __init ub_init_cgroup(void)
 	if (IS_ERR(ub_cgroup_mnt))
 		panic("Failed to mount beancounter cgroup: %ld\n",
 		      PTR_ERR(ub_cgroup_mnt));
-
-	ub_set_mem_css(&ub0, cgroup_subsys_state(
-		cgroup_get_root(mem_cgroup_mnt), mem_cgroup_subsys_id));
-	ub_set_blkio_css(&ub0, cgroup_subsys_state(
-		cgroup_get_root(blkio_cgroup_mnt), blkio_subsys_id));
 
 	return 0;
 }
