@@ -32,6 +32,12 @@
 #include <net/netfilter/nf_conntrack_zones.h>
 #include <net/netfilter/nf_conntrack_timestamp.h>
 #include <linux/rculist_nulls.h>
+#include <linux/ve.h>
+#include <linux/vziptable_defs.h>
+
+int ip_conntrack_disable_ve0 = 0;
+module_param(ip_conntrack_disable_ve0, int, 0440);
+EXPORT_SYMBOL(ip_conntrack_disable_ve0);
 
 MODULE_LICENSE("GPL");
 
@@ -596,7 +602,19 @@ static struct pernet_operations nf_conntrack_net_ops = {
 
 static int __init nf_conntrack_standalone_init(void)
 {
-	int ret = nf_conntrack_init_start();
+	int ret;
+
+#ifdef CONFIG_VE_IPTABLES
+	if (ip_conntrack_disable_ve0) {
+		printk("Disabling conntracks and NAT for ve0\n");
+		get_ve0()->ipt_mask &= ~(VE_NF_CONNTRACK_MOD | VE_IP_IPTABLE_NAT_MOD);
+	} else {
+		printk("Enabling conntracks and NAT for ve0\n");
+		get_ve0()->ipt_mask |= VE_NF_CONNTRACK_MOD | VE_IP_IPTABLE_NAT_MOD;
+	}
+#endif
+
+	ret = nf_conntrack_init_start();
 	if (ret < 0)
 		goto out_start;
 
