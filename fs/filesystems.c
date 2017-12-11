@@ -217,6 +217,11 @@ int __init get_filesystem_list(char *buf)
 	return len;
 }
 
+static inline bool filesystem_permitted(const struct file_system_type *fs)
+{
+	return ve_is_super(get_exec_env()) || (fs->fs_flags & FS_VIRTUALIZED);
+}
+
 #ifdef CONFIG_PROC_FS
 static int filesystems_proc_show(struct seq_file *m, void *v)
 {
@@ -225,9 +230,11 @@ static int filesystems_proc_show(struct seq_file *m, void *v)
 	read_lock(&file_systems_lock);
 	tmp = file_systems;
 	while (tmp) {
-		seq_printf(m, "%s\t%s\n",
-			(tmp->fs_flags & FS_REQUIRES_DEV) ? "" : "nodev",
-			tmp->name);
+		if (filesystem_permitted(tmp)) {
+			seq_printf(m, "%s\t%s\n",
+				(tmp->fs_flags & FS_REQUIRES_DEV) ? "" : "nodev",
+				tmp->name);
+		}
 		tmp = tmp->next;
 	}
 	read_unlock(&file_systems_lock);
@@ -236,7 +243,7 @@ static int filesystems_proc_show(struct seq_file *m, void *v)
 
 static int filesystems_proc_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, filesystems_proc_show, NULL);
+	return single_open(file, filesystems_proc_show, inode->i_sb);
 }
 
 static const struct file_operations filesystems_proc_fops = {
@@ -276,7 +283,8 @@ struct file_system_type *get_fs_type(const char *name)
 	if (!fs && (request_module("fs-%.*s", len, name) == 0))
 		fs = __get_fs_type(name, len);
 
-	if (dot && fs && !(fs->fs_flags & FS_HAS_SUBTYPE)) {
+	if (fs && (!filesystem_permitted(fs) ||
+		   (dot && !(fs->fs_flags & FS_HAS_SUBTYPE)))) {
 		put_filesystem(fs);
 		fs = NULL;
 	}
