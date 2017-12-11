@@ -45,6 +45,9 @@ struct ve_struct {
 
 	/* see vzcalluser.h for VE_FEATURE_XXX definitions */
 	__u64			features;
+
+	void			*log_state;
+#define VE_LOG_BUF_LEN		4096
 };
 
 extern int nr_ve;
