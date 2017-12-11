@@ -16,6 +16,7 @@ config VE
 	select CGROUPS
 	select CGROUP_DEVICE
 	select CGROUP_FREEZER
+	select SCHEDSTATS
 	help
 	  This option adds support of virtual Linux running on the original box
 	  with fully supported virtual network driver, tty subsystem and
