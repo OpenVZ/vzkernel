@@ -34,6 +34,8 @@
 #include <linux/compat.h>
 #include <linux/cn_proc.h>
 #include <linux/compiler.h>
+#include <linux/interrupt.h>
+#include <linux/ve.h>
 #ifndef __GENKSYMS__
 #include <linux/livepatch.h>
 #endif
@@ -602,7 +604,18 @@ still_pending:
 static int __dequeue_signal(struct sigpending *pending, sigset_t *mask,
 			siginfo_t *info)
 {
-	int sig = next_signal(pending, mask);
+	int sig = 0;
+
+	/* SIGKILL must have priority, otherwise it is quite easy
+	 * to create an unkillable process, sending sig < SIGKILL
+	 * to self */
+	if (unlikely(sigismember(&pending->signal, SIGKILL))) {
+		if (!sigismember(mask, SIGKILL))
+			sig = SIGKILL;
+	}
+
+	if (likely(!sig))
+		sig = next_signal(pending, mask);
 
 	if (sig) {
 		if (current->notifier) {
