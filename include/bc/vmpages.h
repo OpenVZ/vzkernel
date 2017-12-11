@@ -17,6 +17,8 @@
 #include <bc/beancounter.h>
 #include <bc/decl.h>
 
+extern int ub_overcommit_memory;
+
 /*
  * Check whether vma has private or copy-on-write mapping.
  */
@@ -46,5 +48,7 @@ UB_DECLARE_FUNC(int, ub_lockedshm_charge(struct shmem_inode_info *shi,
 			unsigned long size))
 UB_DECLARE_VOID_FUNC(ub_lockedshm_uncharge(struct shmem_inode_info *shi,
 			unsigned long size))
+
+UB_DECLARE_FUNC(int, ub_enough_memory(struct mm_struct *mm, long pages))
 
 #endif /* __UB_PAGES_H_ */
