@@ -158,6 +158,24 @@ EXPORT_SYMBOL(get_ve_by_id);
 EXPORT_SYMBOL(ve_list_lock);
 EXPORT_SYMBOL(ve_list_head);
 
+/* Check if current user_ns is initial for current ve */
+bool current_user_ns_initial(void)
+{
+	struct ve_struct *ve = get_exec_env();
+	bool ret = false;
+
+	if (current_user_ns() == &init_user_ns)
+		return true;
+
+	rcu_read_lock();
+	if (ve->ve_ns && ve->init_cred->user_ns == current_user_ns())
+		ret = true;
+	rcu_read_unlock();
+
+	return ret;
+}
+EXPORT_SYMBOL(current_user_ns_initial);
+
 int nr_threads_ve(struct ve_struct *ve)
 {
 	return cgroup_task_count(ve->css.cgroup);
@@ -254,6 +272,7 @@ static void ve_drop_context(struct ve_struct *ve)
 	put_net(ve->ve_netns);
 	ve->ve_netns = NULL;
 
+	/* Allows to dereference init_cred if ve_ns is set */
 	put_nsproxy(ve->ve_ns);
 	ve->ve_ns = NULL;
 
