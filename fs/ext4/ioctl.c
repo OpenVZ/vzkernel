@@ -693,6 +693,39 @@ resizefs_out:
 
 		return ext4_open_balloon(inode->i_sb, filp->f_path.mnt);
 
+	case FS_IOC_PFCACHE_OPEN:
+	{
+		int err;
+
+		if (!capable(CAP_SYS_ADMIN))
+			return -EPERM;
+
+		mutex_lock(&inode->i_mutex);
+		err = ext4_open_pfcache(inode);
+		mutex_unlock(&inode->i_mutex);
+
+		return err;
+	}
+	case FS_IOC_PFCACHE_CLOSE:
+	{
+		int err;
+
+		if (!capable(CAP_SYS_ADMIN))
+			return -EPERM;
+
+		mutex_lock(&inode->i_mutex);
+		err = ext4_close_pfcache(inode);
+		mutex_unlock(&inode->i_mutex);
+
+		return err;
+	}
+	case FS_IOC_PFCACHE_DUMP:
+		if (!capable(CAP_SYS_ADMIN))
+			return -EPERM;
+
+		return ext4_dump_pfcache(inode->i_sb,
+				(struct pfcache_dump_request __user *) arg);
+
 	default:
 		return -ENOTTY;
 	}
@@ -757,6 +790,10 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case FITRIM:
 	case EXT4_IOC_RESIZE_FS:
 	case EXT4_IOC_PRECACHE_EXTENTS:
+		break;
+	case FS_IOC_PFCACHE_OPEN:
+	case FS_IOC_PFCACHE_CLOSE:
+	case FS_IOC_PFCACHE_DUMP:
 		break;
 	default:
 		return -ENOIOCTLCMD;
