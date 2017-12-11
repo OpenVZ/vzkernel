@@ -84,6 +84,7 @@
 #include <linux/kmod.h>
 #include <linux/audit.h>
 #include <linux/wireless.h>
+#include <linux/in.h>
 #include <linux/nsproxy.h>
 #include <linux/magic.h>
 #include <linux/slab.h>
@@ -196,6 +197,7 @@ int move_addr_to_kernel(void __user *uaddr, int ulen, struct sockaddr_storage *k
 		return -EFAULT;
 	return audit_sockaddr(ulen, kaddr);
 }
+EXPORT_SYMBOL(move_addr_to_kernel);
 
 /**
  *	move_addr_to_user	-	copy an address to user space
