@@ -60,6 +60,7 @@
 #include <linux/poll.h>
 #include <linux/flex_array.h> /* used in cgroup_attach_task */
 #include <linux/kthread.h>
+#include <linux/ve.h>
 
 #include <linux/atomic.h>
 

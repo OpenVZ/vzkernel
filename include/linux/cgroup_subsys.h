@@ -104,6 +104,12 @@ SUBSYS_TAG(CANFORK_END)
 #endif
 /* */
 
+#if IS_SUBSYS_ENABLED(CONFIG_VE)
+SUBSYS(ve)
+#endif
+
+/* */
+
 #ifdef __TMP_SUBSYS_TAG
 #undef __TMP_SUBSYS_TAG
 #undef SUBSYS_TAG
