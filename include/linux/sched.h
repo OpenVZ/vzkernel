@@ -2732,8 +2732,10 @@ int same_thread_group(struct task_struct *p1, struct task_struct *p2)
 
 static inline struct task_struct *next_thread(const struct task_struct *p)
 {
-	return list_entry_rcu(p->thread_group.next,
+	struct task_struct *tsk;
+	tsk = list_entry_rcu(p->thread_group.next,
 			      struct task_struct, thread_group);
+	return tsk;
 }
 
 static inline int thread_group_empty(struct task_struct *p)
