@@ -260,7 +260,9 @@ extern int sysctl_tcp_dsack;
 extern int sysctl_tcp_wmem[3];
 extern int sysctl_tcp_rmem[3];
 extern int sysctl_tcp_app_win;
+#ifndef sysctl_tcp_adv_win_scale
 extern int sysctl_tcp_adv_win_scale;
+#endif
 extern int sysctl_tcp_tw_reuse;
 extern int sysctl_tcp_frto;
 extern int sysctl_tcp_low_latency;
