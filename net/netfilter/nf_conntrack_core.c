@@ -1197,6 +1197,12 @@ resolve_normal_ct(struct net *net, struct nf_conn *tmpl,
 	if (!net_ipt_permitted(net, VE_NF_CONNTRACK))
 		return NULL;
 
+	if (!net->ct.can_alloc) {
+		/* No rules loaded */
+		return NULL;
+	}
+	smp_rmb(); /* Pairs with wmb in allow_conntrack_allocation() */
+
 	if (!nf_ct_get_tuple(skb, skb_network_offset(skb),
 			     dataoff, l3num, protonum, net, &tuple, l3proto,
 			     l4proto)) {
