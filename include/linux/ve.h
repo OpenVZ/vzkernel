@@ -89,6 +89,8 @@ static inline void ve_net_unlock(struct ve_struct *ve)
 #define ve_feature_set(ve, f)			\
 	!!((ve)->features & VE_FEATURE_##f)
 
+extern bool current_user_ns_initial(void);
+
 #else	/* CONFIG_VE */
 #define get_ve(ve)	(NULL)
 #define put_ve(ve)	do { } while (0)
@@ -98,6 +100,10 @@ static inline void ve_exit_ns(struct pid_namespace *ns) { }
 
 #define ve_feature_set(ve, f)		{ true; }
 
+static inline bool current_user_ns_initial(void)
+{
+	return current_user_ns() == init_cred.user_ns;
+}
 #endif	/* CONFIG_VE */
 
 #endif /* _LINUX_VE_H */
