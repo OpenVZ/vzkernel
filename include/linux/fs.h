@@ -206,6 +206,8 @@ typedef void (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
 #define WRITE_FUA		(WRITE | REQ_SYNC | REQ_NOIDLE | REQ_FUA)
 #define WRITE_FLUSH_FUA		(WRITE | REQ_SYNC | REQ_NOIDLE | REQ_FLUSH | REQ_FUA)
 
+extern int may_use_odirect(void);
+
 /*
  * Attribute flags.  These should be or-ed together to figure out what
  * has been changed!
@@ -2869,6 +2871,12 @@ extern struct file * open_exec(const char *);
 extern int is_subdir(struct dentry *, struct dentry *);
 extern bool path_is_under(const struct path *, const struct path *);
 extern ino_t find_inode_number(struct dentry *, struct qstr *);
+
+int ve_fsync_behavior(void);
+
+#define FSYNC_NEVER	0	/* ve syncs are ignored    */
+#define FSYNC_ALWAYS	1	/* ve syncs work as ususal */
+#define FSYNC_FILTERED	2	/* ve syncs only its files */
 
 #include <linux/err.h>
 
