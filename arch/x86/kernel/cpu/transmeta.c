@@ -1,5 +1,7 @@
 #include <linux/kernel.h>
 #include <linux/mm.h>
+#include <linux/sched.h>
+#include <linux/ve.h>
 #include <asm/cpufeature.h>
 #include <asm/msr.h>
 #include "cpu.h"
