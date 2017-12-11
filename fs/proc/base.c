@@ -733,17 +733,36 @@ static int proc_pid_syscall(struct task_struct *task, char *buffer)
 static int proc_fd_access_allowed(struct inode *inode)
 {
 	struct task_struct *task;
-	int allowed = 0;
+	int err;
+
 	/* Allow access to a task's file descriptors if it is us or we
 	 * may use ptrace attach to the process and find out that
 	 * information.
 	 */
+	err = -ENOENT;
 	task = get_proc_task(inode);
 	if (task) {
-		allowed = ptrace_may_access(task, PTRACE_MODE_READ_FSCREDS);
+		if (task->flags & PF_KTHREAD)
+			/*
+			 * Always allow access to kernel threads /proc entries.
+			 */
+			err = 0;
+		else if (ptrace_may_access(task, PTRACE_MODE_READ_FSCREDS))
+			err = 0;
+		else
+			/*
+			 * This clever ptrace_may_attach() may play a trick
+			 * on us. If the task is zombie it will consider this
+			 * task to be not dumpable at all and will deny any
+			 * ptracing in VE. Not a big deal for ptrace(), but
+			 * following the link will fail with the -EACCESS
+			 * reason. Some software is unable to stand such a
+			 * swindle and refuses to work :(
+			 */
+			err = (task->mm ? -EACCES : -ENOENT);
 		put_task_struct(task);
 	}
-	return allowed;
+	return err;
 }
 
 int proc_setattr(struct dentry *dentry, struct iattr *attr)
@@ -1658,10 +1677,11 @@ static void *proc_pid_follow_link(struct dentry *dentry, struct nameidata *nd)
 {
 	struct inode *inode = dentry->d_inode;
 	struct path path;
-	int error = -EACCES;
+	int error;
 
 	/* Are we allowed to snoop on the tasks file descriptors? */
-	if (!proc_fd_access_allowed(inode))
+	error = proc_fd_access_allowed(inode);
+	if (error < 0)
 		goto out;
 
 	error = PROC_I(inode)->op.proc_get_link(dentry, &path);
@@ -1700,12 +1720,13 @@ static int do_proc_readlink(struct path *path, char __user *buffer, int buflen)
 
 static int proc_pid_readlink(struct dentry * dentry, char __user * buffer, int buflen)
 {
-	int error = -EACCES;
+	int error;
 	struct inode *inode = dentry->d_inode;
 	struct path path;
 
 	/* Are we allowed to snoop on the tasks file descriptors? */
-	if (!proc_fd_access_allowed(inode))
+	error = proc_fd_access_allowed(inode);
+	if (error < 0)
 		goto out;
 
 	error = PROC_I(inode)->op.proc_get_link(dentry, &path);
