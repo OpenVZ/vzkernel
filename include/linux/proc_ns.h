@@ -4,6 +4,7 @@
 #ifndef _LINUX_PROC_NS_H
 #define _LINUX_PROC_NS_H
 
+struct super_block;
 struct pid_namespace;
 struct nsproxy;
 
@@ -48,6 +49,8 @@ extern struct proc_ns *get_proc_ns(struct inode *);
 extern int proc_alloc_inum(unsigned int *pino);
 extern void proc_free_inum(unsigned int inum);
 extern bool proc_ns_inode(struct inode *inode);
+
+extern bool proc_in_container(struct super_block *sb);
 
 #else /* CONFIG_PROC_FS */
 
