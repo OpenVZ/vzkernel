@@ -326,6 +326,9 @@ ip6t_do_table(struct sk_buff *skb,
 	struct xt_action_param acpar;
 	unsigned int addend;
 
+	if (ve_xt_table_forbidden(table))
+		return NF_ACCEPT;
+
 	/* Initialization */
 	indev = state->in ? state->in->name : nulldevname;
 	outdev = state->out ? state->out->name : nulldevname;
