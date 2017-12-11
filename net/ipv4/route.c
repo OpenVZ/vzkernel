@@ -70,6 +70,7 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
+#include <linux/nsproxy.h>
 #include <linux/string.h>
 #include <linux/socket.h>
 #include <linux/sockios.h>
