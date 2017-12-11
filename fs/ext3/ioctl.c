@@ -73,7 +73,7 @@ long ext3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		 * the relevant capability.
 		 */
 		if ((jflag ^ oldflags) & (EXT3_JOURNAL_DATA_FL)) {
-			if (!capable(CAP_SYS_RESOURCE))
+			if (!capable(CAP_SYS_ADMIN))
 				goto flags_out;
 		}
 
