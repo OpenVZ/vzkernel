@@ -104,6 +104,7 @@
 
 #include <linux/kmod.h>
 #include <linux/nsproxy.h>
+#include <linux/ve.h>
 
 #undef TTY_DEBUG_HANGUP
 
