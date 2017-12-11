@@ -2382,6 +2382,13 @@ static inline void sk_change_net(struct sock *sk, struct net *net)
 	}
 }
 
+static inline void sk_change_net_get(struct sock *sk, struct net *net)
+{
+	struct net *old_net = sock_net(sk);
+	sock_net_set(sk, get_net(net));
+	put_net(old_net);
+}
+
 static inline struct sock *skb_steal_sock(struct sk_buff *skb)
 {
 	if (skb->sk) {
