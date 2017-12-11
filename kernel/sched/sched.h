@@ -417,6 +417,7 @@ struct task_group {
 	struct list_head ve_root_list;
 #endif
 
+	unsigned long avenrun[3];	/* loadavg data */
 	/* Monotonic time in nsecs: */
 	u64			start_time;
 
