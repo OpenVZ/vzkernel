@@ -74,6 +74,7 @@ enum {
 
 struct kernel_stat_glob {
 	unsigned long nr_unint_avg[3];
+	seqcount_t nr_unint_avg_seq;
 
 	unsigned long alloc_fails[NR_CPUS][KSTAT_ALLOCSTAT_NR];
 	struct kstat_lat_pcpu_struct alloc_lat[KSTAT_ALLOCSTAT_NR];
