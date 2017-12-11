@@ -658,6 +658,7 @@ asmlinkage void __init start_kernel(void)
 	proc_root_init();
 #endif
 	cgroup_init();
+	ub_init_late();
 	cpuset_init();
 	taskstats_init_early();
 	delayacct_init();
