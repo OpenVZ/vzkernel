@@ -2902,6 +2902,7 @@ int cgroup_rm_cftypes(struct cgroup_subsys *ss, struct cftype *cfts)
 	cgroup_cfts_commit(ss, NULL, false);
 	return -ENOENT;
 }
+EXPORT_SYMBOL_GPL(cgroup_rm_cftypes);
 
 /**
  * cgroup_task_count - count the number of tasks in a cgroup.
