@@ -119,6 +119,7 @@
 
 #define RT_GC_TIMEOUT (300*HZ)
 
+int ip_rt_src_check		= 1;
 static int ip_rt_max_size;
 static int ip_rt_redirect_number __read_mostly	= 9;
 static int ip_rt_redirect_load __read_mostly	= HZ / 50;
@@ -2212,7 +2213,7 @@ struct rtable *__ip_route_output_key_hash(struct net *net, struct flowi4 *fl4,
 			goto make_route;
 		}
 
-		if (!(fl4->flowi4_flags & FLOWI_FLAG_ANYSRC)) {
+		if (!(fl4->flowi4_flags & FLOWI_FLAG_ANYSRC) && ip_rt_src_check) {
 			/* It is equivalent to inet_addr_type(saddr) == RTN_LOCAL */
 			if (!__ip_dev_find(net, fl4->saddr, false))
 				goto out;
