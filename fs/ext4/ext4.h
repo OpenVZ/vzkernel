@@ -606,6 +606,7 @@ enum {
 #define EXT4_IOC_RESIZE_FS		_IOW('f', 16, __u64)
 #define EXT4_IOC_SWAP_BOOT		_IO('f', 17)
 #define EXT4_IOC_PRECACHE_EXTENTS	_IO('f', 18)
+#define EXT4_IOC_OPEN_BALLOON		_IO('f', 42)
 
 #if defined(__KERNEL__) && defined(CONFIG_COMPAT)
 /*
