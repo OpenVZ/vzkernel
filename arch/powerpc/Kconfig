@@ -1131,6 +1131,8 @@ endif
 config	ARCH_RANDOM
 	def_bool n
 
+source "kernel/Kconfig.openvz"
+
 source "net/Kconfig"
 
 source "drivers/Kconfig"
