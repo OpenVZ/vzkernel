@@ -337,6 +337,16 @@ static inline struct net *read_pnet(possible_net_t const *pnet)
 #define __net_initconst	__initconst
 #endif
 
+#if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
+static inline void allow_conntrack_allocation(struct net *net)
+{
+	net->ct.can_alloc = true;
+	smp_wmb(); /* Pairs with rmb in resolve_normal_ct() */
+}
+#else
+static inline void allow_conntrack_allocation(struct net *net) { }
+#endif
+
 int peernet2id_alloc(struct net *net, struct net *peer);
 int peernet2id(struct net *net, struct net *peer);
 bool peernet_has_id(struct net *net, struct net *peer);
