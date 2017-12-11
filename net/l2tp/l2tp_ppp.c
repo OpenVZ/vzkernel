@@ -98,6 +98,7 @@
 #include <net/udp.h>
 #include <net/xfrm.h>
 #include <net/inet_common.h>
+#include <linux/ve.h>
 
 #include <asm/byteorder.h>
 #include <linux/atomic.h>
