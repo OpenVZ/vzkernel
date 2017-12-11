@@ -150,6 +150,7 @@ void __init kstat_init(void)
 {
 	int i;
 
+	seqcount_init(&kstat_glob.nr_unint_avg_seq);
 	kstat_glob.sched_lat.cur = &glob_kstat_lat;
 	kstat_glob.page_in.cur = &glob_kstat_page_in;
 	kstat_glob.swap_in.cur = &glob_kstat_swap_in;
@@ -2880,6 +2881,14 @@ void get_avenrun(unsigned long *loads, unsigned long offset, int shift)
 	loads[2] = (avenrun[2] + offset) << shift;
 }
 
+void get_avenrun_ve(unsigned long *loads, unsigned long offset, int shift)
+{
+	struct task_group *tg = task_group(current);
+	loads[0] = (tg->avenrun[0] + offset) << shift;
+	loads[1] = (tg->avenrun[1] + offset) << shift;
+	loads[2] = (tg->avenrun[2] + offset) << shift;
+}
+
 static long calc_load_fold_active(struct rq *this_rq)
 {
 	long nr_active, delta = 0;
@@ -2906,6 +2915,46 @@ calc_load(unsigned long load, unsigned long exp, unsigned long active)
 	load += 1UL << (FSHIFT - 1);
 	return load >> FSHIFT;
 }
+
+#ifdef CONFIG_VE
+static void calc_load_ve(void)
+{
+	unsigned long nr_unint, nr_active;
+	struct task_group *tg;
+	int i;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(tg, &task_groups, list) {
+		nr_active = 0;
+		for_each_possible_cpu(i) {
+#ifdef CONFIG_FAIR_GROUP_SCHED
+			nr_active += tg->cfs_rq[i]->nr_running;
+			nr_active += tg->cfs_rq[i]->nr_unint;
+#endif
+		}
+		nr_active *= FIXED_1;
+
+		tg->avenrun[0] = calc_load(tg->avenrun[0], EXP_1, nr_active);
+		tg->avenrun[1] = calc_load(tg->avenrun[1], EXP_5, nr_active);
+		tg->avenrun[2] = calc_load(tg->avenrun[2], EXP_15, nr_active);
+	}
+	rcu_read_unlock();
+
+	nr_unint = nr_uninterruptible() * FIXED_1;
+	/*
+	 * This is called from do_timer() only, which can't be excuted
+	 * in parallel on two or more cpus. So, we have to protect
+	 * the below modifications from readers only.
+	 */
+	write_seqcount_begin(&kstat_glob.nr_unint_avg_seq);
+	CALC_LOAD(kstat_glob.nr_unint_avg[0], EXP_1, nr_unint);
+	CALC_LOAD(kstat_glob.nr_unint_avg[1], EXP_5, nr_unint);
+	CALC_LOAD(kstat_glob.nr_unint_avg[2], EXP_15, nr_unint);
+	write_seqcount_end(&kstat_glob.nr_unint_avg_seq);
+}
+#else
+#define calc_load_ve()	do { } while (0)
+#endif
 
 #ifdef CONFIG_NO_HZ_COMMON
 /*
@@ -3169,6 +3218,8 @@ void calc_global_load(unsigned long ticks)
 	avenrun[2] = calc_load(avenrun[2], EXP_15, active);
 
 	calc_load_update += LOAD_FREQ;
+
+	calc_load_ve();
 
 	/*
 	 * In case we idled for multiple LOAD_FREQ intervals, catch up in bulk.
@@ -8812,6 +8863,8 @@ void __init sched_init(void)
 	init_dl_bandwidth(&def_dl_bandwidth,
 			global_rt_period(), global_rt_runtime());
 
+	root_task_group.taskstats = alloc_percpu(struct taskstats);
+
 #ifdef CONFIG_SMP
 	init_defrootdomain();
 #endif
@@ -9087,6 +9140,7 @@ static void free_sched_group(struct task_group *tg)
 	free_fair_sched_group(tg);
 	free_rt_sched_group(tg);
 	autogroup_free(tg);
+	free_percpu(tg->taskstats);
 	kvfree(tg->cpustat_last);
 	kvfree(tg->vcpustat);
 	kfree(tg);
@@ -9105,6 +9159,10 @@ struct task_group *sched_create_group(struct task_group *parent)
 		goto err;
 
 	if (!alloc_rt_sched_group(tg, parent))
+		goto err;
+
+	tg->taskstats = alloc_percpu(struct taskstats);
+	if (!tg->taskstats)
 		goto err;
 
 	tg->cpustat_last = kvzalloc(nr_cpu_ids * sizeof(struct kernel_cpustat),
@@ -9721,6 +9779,19 @@ cpu_cgroup_exit(struct cgroup *cgrp, struct cgroup *old_cgrp,
 		return;
 
 	sched_move_task(task);
+
+	if (thread_group_leader(task)) {
+		struct task_group *tg = cgroup_tg(old_cgrp);
+		struct taskstats *stats = get_cpu_ptr(tg->taskstats);
+		struct signal_struct *sig = task->signal;
+
+		if (sig->stats)
+			delayacct_add_stats(stats, sig->stats);
+		else
+			delayacct_add_tsk(stats, task);
+
+		put_cpu_ptr(stats);
+	}
 }
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
