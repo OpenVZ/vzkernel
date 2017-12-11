@@ -860,10 +860,10 @@ ssize_t read_code(struct file *file, unsigned long addr, loff_t pos, size_t len)
 }
 EXPORT_SYMBOL(read_code);
 
-static int exec_mmap(struct mm_struct *mm)
+static int exec_mmap(struct linux_binprm *bprm)
 {
 	struct task_struct *tsk;
-	struct mm_struct * old_mm, *active_mm;
+	struct mm_struct *old_mm, *active_mm, *mm;
 
 	/* Notify parent that we're no longer interested in the old VM */
 	tsk = current;
@@ -885,6 +885,7 @@ static int exec_mmap(struct mm_struct *mm)
 		}
 	}
 
+	mm = bprm->mm;
 	mm->vps_dumpable = VD_PTRACE_COREDUMP;
 	task_lock(tsk);
 	active_mm = tsk->active_mm;
@@ -893,6 +894,8 @@ static int exec_mmap(struct mm_struct *mm)
 	activate_mm(active_mm, mm);
 	task_unlock(tsk);
 	arch_pick_mmap_layout(mm);
+	bprm->mm = NULL;		/* We're using it now */
+
 	if (old_mm) {
 		up_read(&old_mm->mmap_sem);
 		BUG_ON(active_mm != old_mm);
@@ -1135,11 +1138,9 @@ int flush_old_exec(struct linux_binprm * bprm)
 	 * Release all of the old mmap stuff
 	 */
 	acct_arg_size(bprm, 0);
-	retval = exec_mmap(bprm->mm);
+	retval = exec_mmap(bprm);
 	if (retval)
 		goto out;
-
-	bprm->mm = NULL;		/* We're using it now */
 
 	set_fs(USER_DS);
 	current->flags &=
