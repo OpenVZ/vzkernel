@@ -1,0 +1,92 @@
+# Copyright (C) 2005  SWsoft
+# All rights reserved.
+# Licensing governed by "linux/COPYING.SWsoft" file.
+
+menu "OpenVZ"
+
+config VE
+	bool "Virtual Environment support"
+	default y
+	select NAMESPACES
+	select PID_NS
+	select IPC_NS
+	select UTS_NS
+	select NET_NS
+	select USER_NS
+	select CGROUPS
+	select CGROUP_DEVICE
+	select CGROUP_FREEZER
+	help
+	  This option adds support of virtual Linux running on the original box
+	  with fully supported virtual network driver, tty subsystem and
+	  configurable access for hardware and other resources.
+
+config VE_CALLS
+	tristate "VE calls interface"
+	depends on VE
+	select VZ_DEV
+	default m
+	help
+	  This option controls how to build vzmon code containing VE calls.
+	  By default it's build in module vzmon.o
+
+config VZ_GENCALLS
+	bool
+	default y
+
+config VE_NETDEV
+	tristate "VE network device"
+	depends on VE_CALLS && NET
+	select VZ_DEV
+	default m
+	help
+	  This option controls whether to build venet device. This is a
+	  common interface for networking in VE.
+
+config VE_ETHDEV
+	tristate "Virtual ethernet device"
+	depends on VE_CALLS && NET
+	select VZ_DEV
+	default m
+	help
+	  This option controls whether to build virtual ethernet device.
+
+config VZ_DEV
+	tristate "VE device"
+	default m
+	help
+	  This option adds support of vzdev device, which is used by
+	  user-space applications to control Virtual Environments.
+
+config VE_IPTABLES
+	bool "VE netfiltering"
+	depends on VE && VE_NETDEV && INET && NETFILTER
+	default y
+	help
+	  This option controls whether to build VE netfiltering code.
+
+config VZ_WDOG
+	tristate "VE watchdog module"
+	depends on VE_CALLS
+	default m
+	help
+	  This option controls building of vzwdog module, which dumps
+	  a lot of useful system info on console periodically.
+
+config VZ_EVENT
+ 	tristate "Enable sending notifications of the VE status change through the netlink socket"
+ 	depends on VE && VE_CALLS && NET
+ 	default m
+ 	help
+ 	  This option provides for sending notifications of the VE
+ 	  events to the curious user space applications through
+ 	  the netlink socket just like the core kernel
+ 	  networking code does. By now just the notifications of
+ 	  the VE essensial status changes are being sent.
+
+config VTTYS
+	bool "Virtual tty device"
+	depends on VE && VZ_DEV
+	default y
+
+endmenu
