@@ -46,12 +46,14 @@ static int ext4_release_file(struct inode *inode, struct file *filp)
 	}
 	/* if we are the last writer on the inode, drop the block reservation */
 	if ((filp->f_mode & FMODE_WRITE) &&
-			(atomic_read(&inode->i_writecount) == 1) &&
-		        !EXT4_I(inode)->i_reserved_data_blocks)
-	{
-		down_write(&EXT4_I(inode)->i_data_sem);
-		ext4_discard_preallocations(inode);
-		up_write(&EXT4_I(inode)->i_data_sem);
+	    (atomic_read(&inode->i_writecount) == 1)) {
+		if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM))
+			ext4_commit_data_csum(inode);
+		if (!EXT4_I(inode)->i_reserved_data_blocks) {
+			down_write(&EXT4_I(inode)->i_data_sem);
+			ext4_discard_preallocations(inode);
+			up_write(&EXT4_I(inode)->i_data_sem);
+		}
 	}
 	if (is_dx(inode) && filp->private_data)
 		ext4_htree_free_dir_info(filp->private_data);
@@ -370,6 +372,22 @@ static const struct vm_operations_struct ext4_file_vm_ops = {
 
 static int ext4_file_mmap(struct file *file, struct vm_area_struct *vma)
 {
+	struct inode *inode = file->f_inode;
+
+	/*
+	 * f_op->mmap must be called with vma=NULL before taking mmap_sem;
+	 * workaround for wrong i_mutex vs mmap_sem lock ordering in pfcache
+	 * (PSBM-23133) - vdavydov@
+	 */
+	if (!vma) {
+		if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM)) {
+			mutex_lock(&inode->i_mutex);
+			ext4_truncate_data_csum(inode, -1);
+			mutex_unlock(&inode->i_mutex);
+		}
+		return 0;
+	}
+
 	file_accessed(file);
 	if (IS_DAX(file_inode(file))) {
 		vma->vm_ops = &ext4_dax_vm_ops;
@@ -430,6 +448,13 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
 		if (ret < 0)
 			return ret;
 	}
+
+	if ((filp->f_mode & FMODE_WRITE) && inode->i_mapping->i_peer_file) {
+		mutex_lock(&inode->i_mutex);
+		ext4_close_pfcache(inode);
+		mutex_unlock(&inode->i_mutex);
+	}
+
 	return dquot_file_open(inode, filp);
 }
 
