@@ -12,6 +12,7 @@
 #include <linux/random.h>
 #include <linux/tick.h>
 #include <linux/workqueue.h>
+#include <linux/module.h>
 
 /*
  * Called after updating RLIMIT_CPU to run cpu timer and update
