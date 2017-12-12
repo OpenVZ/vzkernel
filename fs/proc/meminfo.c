@@ -17,6 +17,7 @@
 #include <linux/vmalloc.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
+#include <bc/beancounter.h>
 #include "internal.h"
 
 void __attribute__((weak)) arch_report_meminfo(struct seq_file *m)
@@ -258,7 +259,7 @@ int meminfo_proc_show_ub(struct seq_file *m, void *v,
 
 static int meminfo_proc_show(struct seq_file *m, void *v)
 {
-	return meminfo_proc_show_ub(m, v, current->mm->mm_ub,
+	return meminfo_proc_show_ub(m, v, mm_ub(current->mm),
 			get_exec_env()->meminfo_val);
 }
 

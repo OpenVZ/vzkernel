@@ -29,6 +29,7 @@
 #include <linux/rmap.h>
 #include <linux/mmu_notifier.h>
 #include <linux/perf_event.h>
+#include <linux/virtinfo.h>
 #include <linux/audit.h>
 #include <linux/khugepaged.h>
 #include <linux/uprobes.h>
@@ -38,6 +39,9 @@
 #include <linux/userfaultfd_k.h>
 #include <linux/pkeys.h>
 #include <linux/sched/mm.h>
+
+#include <bc/beancounter.h>
+#include <bc/vmpages.h>
 
 #include <asm/uaccess.h>
 #include <asm/cacheflush.h>
@@ -282,6 +286,9 @@ static struct vm_area_struct *remove_vma(struct vm_area_struct *vma)
 	struct vm_area_struct *next = vma->vm_next;
 
 	might_sleep();
+
+	ub_memory_uncharge(vma->vm_mm, vma->vm_end - vma->vm_start,
+			vma->vm_flags, vma->vm_file);
 	if (vma->vm_ops && vma->vm_ops->close)
 		vma->vm_ops->close(vma);
 	if (vma->vm_file)
@@ -292,7 +299,7 @@ static struct vm_area_struct *remove_vma(struct vm_area_struct *vma)
 }
 
 static unsigned long do_brk(unsigned long addr, unsigned long len,
-			    struct list_head *uf);
+			    struct list_head *uf, int soft);
 
 SYSCALL_DEFINE1(brk, unsigned long, brk)
 {
@@ -351,7 +358,7 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 		goto out;
 
 	/* Ok, looks good - let it rip. */
-	if (do_brk(oldbrk, newbrk-oldbrk, &uf) != oldbrk)
+	if (do_brk(oldbrk, newbrk-oldbrk, &uf, UB_HARD) != oldbrk)
 		goto out;
 
 set_brk:
@@ -1720,6 +1727,7 @@ unsigned long mmap_region(struct file *file, unsigned long addr,
 	int error;
 	struct rb_node **rb_link, *rb_parent;
 	unsigned long charged = 0;
+	unsigned long ub_charged = 0;
 
 	/* Check against address space limit. */
 	if (!may_expand_vm(mm, len >> PAGE_SHIFT)) {
@@ -1756,6 +1764,10 @@ munmap_back:
 			return -ENOMEM;
 		vm_flags |= VM_ACCOUNT;
 	}
+
+	if (ub_memory_charge(mm, len, vm_flags, file, UB_HARD))
+		goto charge_error;
+	ub_charged = 1;
 
 	/*
 	 * Can we just expand an old mapping?
@@ -1809,6 +1821,18 @@ munmap_back:
 		error = file->f_op->mmap(file, vma);
 		if (error)
 			goto unmap_and_free_vma;
+		if (vm_flags != vma->vm_flags) {
+		/*
+		 * ->vm_flags has been changed in f_op->mmap method.
+		 * We have to recharge ub memory.
+		 */
+			ub_memory_uncharge(mm, len, vm_flags, file);
+			if (ub_memory_charge(mm, len, vma->vm_flags, file, UB_HARD)) {
+				ub_charged = 0;
+				error = -ENOMEM;
+				goto unmap_and_free_vma;
+			}
+		}
 
 		/* Can addr have changed??
 		 *
@@ -1846,9 +1870,10 @@ out:
 	if (vm_flags & VM_LOCKED) {
 		if ((vm_flags & VM_SPECIAL) || vma_is_dax(vma) ||
 					is_vm_hugetlb_page(vma) ||
-					vma == get_gate_vma(current->mm))
+					vma == get_gate_vma(current->mm)) {
 			vma->vm_flags &= VM_LOCKED_CLEAR_MASK;
-		else
+			ub_locked_uncharge(mm, len);
+		} else
 			mm->locked_vm += (len >> PAGE_SHIFT);
 	}
 
@@ -1883,6 +1908,9 @@ allow_write_and_free_vma:
 free_vma:
 	kmem_cache_free(vm_area_cachep, vma);
 unacct_error:
+	if (ub_charged)
+		ub_memory_uncharge(mm, len, vm_flags, file);
+charge_error:
 	if (charged)
 		vm_unacct_memory(charged);
 	return error;
@@ -2342,18 +2370,27 @@ static int acct_stack_growth(struct vm_area_struct *vma, unsigned long size, uns
 	if (is_hugepage_only_range(vma->vm_mm, new_start, size))
 		return -EFAULT;
 
+	if (ub_memory_charge(mm, grow << PAGE_SHIFT, vma->vm_flags,
+				vma->vm_file, UB_SOFT))
+		goto fail_charge;
+
 	/*
 	 * Overcommit..  This must be the final test, as it will
 	 * update security statistics.
 	 */
 	if (security_vm_enough_memory_mm(mm, grow))
-		return -ENOMEM;
+		goto fail_sec;
 
 	/* Ok, everything looks good - let it rip */
 	if (vma->vm_flags & VM_LOCKED)
 		mm->locked_vm += grow;
 	vm_stat_account(mm, vma->vm_flags, vma->vm_file, grow);
 	return 0;
+
+fail_sec:
+	ub_memory_uncharge(mm, grow << PAGE_SHIFT, vma->vm_flags, vma->vm_file);
+fail_charge:
+	return -ENOMEM;
 }
 
 #if defined(CONFIG_STACK_GROWSUP) || defined(CONFIG_IA64)
@@ -2900,7 +2937,8 @@ static inline void verify_mm_writelocked(struct mm_struct *mm)
  *  anonymous maps.  eventually we may be able to do some
  *  brk-specific accounting here.
  */
-static unsigned long do_brk_flags(unsigned long addr, unsigned long len, struct list_head *uf, unsigned long flags)
+static unsigned long do_brk_flags(unsigned long addr, unsigned long len,
+	struct list_head *uf, unsigned long flags, int soft)
 {
 	struct mm_struct * mm = current->mm;
 	struct vm_area_struct * vma, * prev;
@@ -2957,8 +2995,11 @@ static unsigned long do_brk_flags(unsigned long addr, unsigned long len, struct 
 	if (mm->map_count > sysctl_max_map_count)
 		return -ENOMEM;
 
+	if (ub_memory_charge(mm, len, flags, NULL, soft))
+		goto fail_charge;
+
 	if (security_vm_enough_memory_mm(mm, len >> PAGE_SHIFT))
-		return -ENOMEM;
+		goto fail_sec;
 
 	/* Can we just expand an old private anonymous mapping? */
 	vma = vma_merge(mm, prev, addr, addr + len, flags,
@@ -2970,10 +3011,8 @@ static unsigned long do_brk_flags(unsigned long addr, unsigned long len, struct 
 	 * create a vma struct for an anonymous mapping
 	 */
 	vma = kmem_cache_zalloc(vm_area_cachep, GFP_KERNEL);
-	if (!vma) {
-		vm_unacct_memory(len >> PAGE_SHIFT);
-		return -ENOMEM;
-	}
+	if (!vma)
+		goto fail_alloc;
 
 	INIT_LIST_HEAD(&vma->anon_vma_chain);
 	vma->vm_mm = mm;
@@ -2990,11 +3029,19 @@ out:
 		mm->locked_vm += (len >> PAGE_SHIFT);
 	vma->vm_flags |= VM_SOFTDIRTY;
 	return addr;
+
+fail_alloc:
+	vm_unacct_memory(len >> PAGE_SHIFT);
+fail_sec:
+	ub_memory_uncharge(mm, len, flags, NULL);
+fail_charge:
+	return -ENOMEM;
 }
 
-static unsigned long do_brk(unsigned long addr, unsigned long len, struct list_head *uf)
+static unsigned long do_brk(unsigned long addr, unsigned long len,
+			    struct list_head *uf, int soft)
 {
-	return do_brk_flags(addr, len, uf, 0);
+	return do_brk_flags(addr, len, uf, 0, soft);
 }
 
 unsigned long vm_brk_flags(unsigned long addr, unsigned long len, unsigned long flags)
@@ -3005,7 +3052,7 @@ unsigned long vm_brk_flags(unsigned long addr, unsigned long len, unsigned long 
 	LIST_HEAD(uf);
 
 	down_write(&mm->mmap_sem);
-	ret = do_brk_flags(addr, len, &uf, flags);
+	ret = do_brk_flags(addr, len, &uf, flags, UB_SOFT);
 	populate = ((mm->def_flags & VM_LOCKED) != 0);
 	up_write(&mm->mmap_sem);
 	userfaultfd_unmap_complete(mm, &uf);

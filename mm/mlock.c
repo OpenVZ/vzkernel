@@ -22,6 +22,8 @@
 #include <linux/memcontrol.h>
 #include <linux/mm_inline.h>
 
+#include <bc/vmpages.h>
+
 #include "internal.h"
 
 int can_do_mlock(void)
@@ -420,10 +422,13 @@ static unsigned long __munlock_pagevec_fill(struct pagevec *pvec,
  * and re-mlocked by try_to_{munlock|unmap} before we unmap and
  * free them.  This will result in freeing mlocked pages.
  */
-void munlock_vma_pages_range(struct vm_area_struct *vma,
-			     unsigned long start, unsigned long end)
+void __munlock_vma_pages_range(struct vm_area_struct *vma,
+			       unsigned long start, unsigned long end, int acct)
 {
 	vma->vm_flags &= VM_LOCKED_CLEAR_MASK;
+
+	if (acct)
+		ub_locked_uncharge(vma->vm_mm, end - start);
 
 	while (start < end) {
 		struct page *page = NULL;
@@ -512,6 +517,12 @@ static int mlock_fixup(struct vm_area_struct *vma, struct vm_area_struct **prev,
 		/* don't set VM_LOCKED or VM_LOCKONFAULT and don't count */
 		goto out;
 
+	if (newflags & VM_LOCKED) {
+		ret = ub_locked_charge(mm, end - start);
+		if (ret < 0)
+			goto out;
+	}
+
 	pgoff = vma->vm_pgoff + ((start - vma->vm_start) >> PAGE_SHIFT);
 	*prev = vma_merge(mm, *prev, start, end, newflags, vma->anon_vma,
 			  vma->vm_file, pgoff, vma_policy(vma),
@@ -524,13 +535,13 @@ static int mlock_fixup(struct vm_area_struct *vma, struct vm_area_struct **prev,
 	if (start != vma->vm_start) {
 		ret = split_vma(mm, vma, start, 1);
 		if (ret)
-			goto out;
+			goto out_uncharge;
 	}
 
 	if (end != vma->vm_end) {
 		ret = split_vma(mm, vma, end, 0);
 		if (ret)
-			goto out;
+			goto out_uncharge;
 	}
 
 success:
@@ -558,6 +569,11 @@ success:
 out:
 	*prev = vma;
 	return ret;
+
+out_uncharge:
+	if (newflags & VM_LOCKED)
+		ub_locked_uncharge(mm, end - start);
+	goto out;
 }
 
 static int apply_vma_lock_flags(unsigned long start, size_t len,
