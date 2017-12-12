@@ -57,6 +57,8 @@ struct sched_param {
 
 #include <asm/processor.h>
 
+#include <bc/task.h>
+
 #define SCHED_ATTR_SIZE_VER0	48	/* sizeof first published struct */
 
 /*
@@ -1759,6 +1761,9 @@ struct task_struct {
 	/* bitmask and counter of trace recursion */
 	unsigned long trace_recursion;
 #endif /* CONFIG_TRACING */
+#ifdef CONFIG_BEANCOUNTERS
+	struct task_beancounter task_bc;
+#endif
 #ifdef CONFIG_VE
 	struct ve_struct *task_ve;
 #endif
