@@ -26,6 +26,8 @@
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
 
+#include <bc/beancounter.h>
+
 typedef ssize_t (*io_fn_t)(struct file *, char __user *, size_t, loff_t *);
 typedef ssize_t (*iov_fn_t)(struct kiocb *, const struct iovec *,
 		unsigned long, loff_t);
