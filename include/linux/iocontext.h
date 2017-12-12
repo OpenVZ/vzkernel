@@ -115,6 +115,9 @@ struct io_context {
 	struct hlist_head	icq_list;
 
 	struct work_struct release_work;
+#ifdef CONFIG_BEANCOUNTERS
+	struct user_beancounter *ioc_ub;
+#endif
 };
 
 /**

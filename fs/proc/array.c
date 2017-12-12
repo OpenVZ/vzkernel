@@ -420,10 +420,10 @@ static inline void task_seccomp(struct seq_file *m, struct task_struct *p)
 static inline void ub_dump_task_info(struct task_struct *tsk,
 		char *stsk, int ltsk, char *smm, int lmm)
 {
-	snprintf(stsk, ltsk, "%u", tsk->task_bc.task_ub->ub_uid);
+	snprintf(stsk, ltsk, "%s", tsk->task_bc.task_ub->ub_name);
 	task_lock(tsk);
 	if (tsk->mm)
-		snprintf(smm, lmm, "%u", tsk->mm->mm_ub->ub_uid);
+		snprintf(smm, lmm, "%s", tsk->mm->mm_ub->ub_name);
 	else
 		strncpy(smm, "N/A", lmm);
 	task_unlock(tsk);
@@ -679,6 +679,10 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 	rcu_read_lock();
 	seq_printf(m, " %s", task_ve_name(task));
 	rcu_read_unlock();
+#endif
+#ifdef CONFIG_BEANCOUNTERS
+	seq_printf(m, " %s", ub_task_info);
+	seq_printf(m, " %s", ub_mm_info);
 #endif
 
 	seq_putc(m, '\n');
