@@ -55,6 +55,7 @@ struct anon_vma {
 	RH_KABI_EXTEND(unsigned degree)
 
 	RH_KABI_EXTEND(struct anon_vma *parent)	/* Parent of this anon_vma */
+	struct user_beancounter *anon_vma_ub;
 };
 
 /*

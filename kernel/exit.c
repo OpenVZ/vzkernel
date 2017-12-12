@@ -57,7 +57,6 @@
 #include <linux/userfaultfd_k.h>
 
 #include <bc/misc.h>
-#include <bc/oom_kill.h>
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -214,7 +213,7 @@ repeat:
 	qwrite_unlock_irq(&tasklist_lock);
 	cgroup_pids_release(p);
 	release_thread(p);
-	ub_task_uncharge(p->task_bc.task_ub);
+	ub_task_uncharge(get_task_ub(p));
 	call_rcu(&p->rcu, delayed_put_task_struct);
 
 	p = leader;
