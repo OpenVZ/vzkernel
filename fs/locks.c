@@ -135,6 +135,7 @@
 
 #include <asm/uaccess.h>
 
+#include <bc/beancounter.h>
 #include <bc/misc.h>
 
 #define IS_POSIX(fl)	(fl->fl_flags & FL_POSIX)
@@ -228,12 +229,14 @@ struct file_lock *locks_alloc_lock(int charge)
 #ifdef CONFIG_BEANCOUNTERS
 	if (fl == NULL)
 		goto out;
+	fl->fl_ub = get_beancounter(get_exec_ub());
 	fl->fl_charged = 0;
 	if (!charge)
 		goto out;
 	if (!ub_flock_charge(fl, 1))
 		goto out;
 
+	put_beancounter(fl->fl_ub);
 	kmem_cache_free(filelock_cache, fl);
 	fl = NULL;
 out:
@@ -273,6 +276,9 @@ void locks_free_lock(struct file_lock *fl)
 
 	ub_flock_uncharge(fl);
 	locks_release_private(fl);
+#ifdef CONFIG_BEANCOUNTERS
+	put_beancounter(fl->fl_ub);
+#endif
 	kmem_cache_free(filelock_cache, fl);
 }
 EXPORT_SYMBOL(locks_free_lock);
