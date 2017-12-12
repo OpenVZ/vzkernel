@@ -428,5 +428,11 @@ config IP_NF_ARP_MANGLE
 
 endif # IP_NF_ARPTABLES
 
+config VE_IP_NF_VZPRIVNET
+	tristate "VE private networking filtering"
+	default m
+	depends on IP_NF_IPTABLES && m
+	help
+	  This option allows filtering private subnets.
 endmenu
 
