@@ -33,6 +33,7 @@ obj-$(CONFIG_FREEZER) += freezer.o
 obj-$(CONFIG_PROFILING) += profile.o
 obj-$(CONFIG_STACKTRACE) += stacktrace.o
 obj-y += time/
+obj-$(CONFIG_BEANCOUNTERS) += bc/
 obj-y += ve/
 
 obj-$(CONFIG_DEBUG_MUTEXES) += mutex-debug.o
