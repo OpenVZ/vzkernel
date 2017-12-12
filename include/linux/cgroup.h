@@ -181,8 +181,6 @@ static inline void css_put(struct cgroup_subsys_state *css)
 		percpu_ref_put(&css->refcnt);
 }
 
-extern bool css_refcnt_inc_not_zero(struct cgroup_subsys_state *css);
-
 /* bits in struct cgroup flags field */
 enum {
 	/* Control Group is dead */
