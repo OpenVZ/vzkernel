@@ -42,6 +42,7 @@
 #include <linux/log2.h>
 #include <linux/inetdevice.h>
 #include <net/addrconf.h>
+#include <bc/beancounter.h>
 
 #define DEBUG
 #define NEIGH_DEBUG 1
