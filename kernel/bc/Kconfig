@@ -1,0 +1,56 @@
+#
+# User resources part (UBC)
+#
+# Copyright (C) 2005  SWsoft
+# All rights reserved.
+#
+# Licensing governed by "linux/COPYING.SWsoft" file.
+
+menu "User resources"
+
+config BEANCOUNTERS
+	bool "Enable user resource accounting"
+	default y
+	select CGROUPS
+	select MEMCG
+	select MEMCG_KMEM
+	select MEMCG_SWAP if SWAP
+	select MEMCG_SWAP_ENABLED if SWAP
+	help 
+          This patch provides accounting and allows to configure
+          limits for user's consumption of exhaustible system resources.
+          The most important resource controlled by this patch is unswappable 
+          memory (either mlock'ed or used by internal kernel structures and 
+          buffers). The main goal of this patch is to protect processes
+          from running short of important resources because of an accidental
+          misbehavior of processes or malicious activity aiming to ``kill'' 
+          the system. It's worth to mention that resource limits configured 
+          by setrlimit(2) do not give an acceptable level of protection 
+          because they cover only small fraction of resources and work on a 
+          per-process basis.  Per-process accounting doesn't prevent malicious
+          users from spawning a lot of resource-consuming processes.
+
+config BC_IO_ACCOUNTING
+	bool "Account file I/O"
+	default y
+	depends on BEANCOUNTERS
+	help
+	  This option allows seeing I/O activity caused by tasks from each UB
+
+config BC_IO_PRIORITY
+	bool "Disk I/O priority"
+	default y
+	depends on BEANCOUNTERS
+	select BLK_CGROUP
+	help
+	  This option add compat-layer on top of the blkio-cgroup for groupping
+	  and prioritizing disk access.
+
+config BC_PROC
+	bool "Report resource usage in /proc"
+	default y
+	depends on BEANCOUNTERS
+	help
+          Allows a system administrator to inspect resource accounts and limits.
+
+endmenu
