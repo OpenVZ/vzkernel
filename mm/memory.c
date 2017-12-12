@@ -42,6 +42,7 @@
 #include <linux/mm.h>
 #include <linux/hugetlb.h>
 #include <linux/mman.h>
+#include <linux/virtinfo.h>
 #include <linux/swap.h>
 #include <linux/highmem.h>
 #include <linux/pagemap.h>
@@ -65,6 +66,10 @@
 #include <linux/userfaultfd_k.h>
 #include <linux/dax.h>
 #include <linux/ve.h>
+
+#include <bc/beancounter.h>
+#include <bc/io_acct.h>
+#include <bc/vmpages.h>
 
 #include <asm/io.h>
 #include <asm/mmu_context.h>
@@ -2904,8 +2909,7 @@ static int do_swap_page(struct vm_fault *vmf, pte_t orig_pte)
 	mem_cgroup_commit_charge_swapin(page, ptr);
 
 	swap_free(entry);
-	if (vm_swap_full() || ub_swap_full(mm->mm_ub) ||
-			(vmf->vma->vm_flags & VM_LOCKED) || PageMlocked(page))
+	if (vm_swap_full() || (vmf->vma->vm_flags & VM_LOCKED) || PageMlocked(page))
 		try_to_free_swap(page);
 	unlock_page(page);
 	if (page != swapcache) {
