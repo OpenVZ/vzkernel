@@ -110,6 +110,11 @@ SUBSYS(ve)
 
 /* */
 
+#if IS_SUBSYS_ENABLED(CONFIG_BEANCOUNTERS)
+SUBSYS(ub)
+#endif
+
+/* */
 #ifdef __TMP_SUBSYS_TAG
 #undef __TMP_SUBSYS_TAG
 #undef SUBSYS_TAG
