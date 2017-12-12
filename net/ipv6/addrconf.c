@@ -873,7 +873,7 @@ ipv6_add_addr(struct inet6_dev *idev, const struct in6_addr *addr,
 			goto out;
 	}
 
-	ifa = kzalloc(sizeof(*ifa), gfp_flags);
+	ifa = kzalloc(sizeof(*ifa), gfp_flags | __GFP_ACCOUNT);
 	if (!ifa) {
 		ADBG("ipv6_add_addr: malloc failed\n");
 		err = -ENOBUFS;
