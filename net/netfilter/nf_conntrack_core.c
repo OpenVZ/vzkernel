@@ -1631,11 +1631,11 @@ void *nf_ct_alloc_hashtable(unsigned int *sizep, int nulls)
 	BUILD_BUG_ON(sizeof(struct hlist_nulls_head) != sizeof(struct hlist_head));
 	nr_slots = *sizep = roundup(*sizep, PAGE_SIZE / sizeof(struct hlist_nulls_head));
 	sz = nr_slots * sizeof(struct hlist_nulls_head);
-	hash = (void *)__get_free_pages(GFP_KERNEL | __GFP_NOWARN | __GFP_ZERO,
+	hash = (void *)__get_free_pages(GFP_KERNEL_ACCOUNT | __GFP_NOWARN | __GFP_ZERO,
 					get_order(sz));
 	if (!hash) {
 		printk(KERN_WARNING "nf_conntrack: falling back to vmalloc.\n");
-		hash = vzalloc(sz);
+		hash = vzalloc_account(sz);
 	}
 
 	if (hash && nulls)
