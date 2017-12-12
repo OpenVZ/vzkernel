@@ -131,6 +131,8 @@
 #include <net/cls_cgroup.h>
 #include <net/netprio_cgroup.h>
 
+#include <bc/beancounter.h>
+
 #include <linux/filter.h>
 
 #include <trace/events/sock.h>
