@@ -48,7 +48,6 @@
 #include <linux/nospec.h>
 #include <linux/ve.h>
 
-#include <bc/oom_kill.h>
 #include <bc/vmpages.h>
 
 #include <asm/ptrace.h>
@@ -322,13 +321,6 @@ static struct sysrq_key_op sysrq_ftrace_dump_op = {
 
 static void sysrq_handle_showmem(int key)
 {
-	struct user_beancounter *ub;
-
-	rcu_read_lock();
-	for_each_beancounter(ub)
-		show_ub_mem(ub);
-	rcu_read_unlock();
-
 	show_mem(0);
 }
 static struct sysrq_key_op sysrq_showmem_op = {

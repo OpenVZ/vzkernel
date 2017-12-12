@@ -54,6 +54,7 @@
 #include <linux/page_cgroup.h>
 #include <linux/cpu.h>
 #include <linux/oom.h>
+#include <linux/virtinfo.h>
 #include "internal.h"
 #include <net/sock.h>
 #include <net/ip.h>
@@ -296,6 +297,12 @@ struct mem_cgroup {
 	 * the counter to account for kernel memory usage.
 	 */
 	struct page_counter kmem;
+
+	/* beancounter-related stats */
+	unsigned long long swap_max;
+	atomic_long_t mem_failcnt;
+	atomic_long_t swap_failcnt;
+
 	/*
 	 * Should the accounting and control be hierarchical, per subtree?
 	 */
@@ -916,6 +923,32 @@ static void mem_cgroup_swap_statistics(struct mem_cgroup *memcg,
 	this_cpu_add(memcg->stat->count[MEM_CGROUP_STAT_SWAP], val);
 }
 
+static void mem_cgroup_update_swap_max(struct mem_cgroup *memcg)
+{
+	long long swap;
+
+	for (; memcg; memcg = parent_mem_cgroup(memcg)) {
+		swap = res_counter_read_u64(&memcg->memsw, RES_USAGE) -
+			res_counter_read_u64(&memcg->res, RES_USAGE);
+
+		/* This is racy, but we don't have to be absolutely precise */
+		if (swap > (long long)memcg->swap_max)
+			memcg->swap_max = swap;
+	}
+}
+
+static void mem_cgroup_inc_failcnt(struct mem_cgroup *memcg,
+				   gfp_t gfp_mask, unsigned int nr_pages)
+{
+	if (gfp_mask & __GFP_NOWARN)
+		return;
+
+	atomic_long_inc(&memcg->mem_failcnt);
+	if (do_swap_account &&
+	    res_counter_margin(&memcg->memsw) < nr_pages * PAGE_SIZE)
+		atomic_long_inc(&memcg->swap_failcnt);
+}
+
 static unsigned long mem_cgroup_read_events(struct mem_cgroup *memcg,
 					    enum mem_cgroup_events_index idx)
 {
@@ -1296,6 +1329,19 @@ void mem_cgroup_iter_break(struct mem_cgroup *root,
 	for (iter = mem_cgroup_iter(NULL, NULL, NULL);	\
 	     iter != NULL;				\
 	     iter = mem_cgroup_iter(NULL, iter, NULL))
+
+void mem_cgroup_get_nr_pages(struct mem_cgroup *memcg, int nid,
+			     unsigned long *pages)
+{
+	struct mem_cgroup *iter;
+	int i;
+
+	for_each_mem_cgroup_tree(iter, memcg) {
+		for (i = 0; i < NR_LRU_LISTS; i++)
+			pages[i] += mem_cgroup_node_nr_lru_pages(iter, nid,
+								 BIT(i));
+	}
+}
 
 void __mem_cgroup_count_vm_event(struct mm_struct *mm, enum vm_event_item idx)
 {
@@ -2633,11 +2679,15 @@ static int mem_cgroup_do_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	if (nr_pages > min_pages)
 		return CHARGE_RETRY;
 
-	if (!(gfp_mask & __GFP_WAIT))
+	if (!(gfp_mask & __GFP_WAIT)) {
+		mem_cgroup_inc_failcnt(mem_over_limit, gfp_mask, nr_pages);
 		return CHARGE_WOULDBLOCK;
+	}
 
-	if (gfp_mask & __GFP_NORETRY)
+	if (gfp_mask & __GFP_NORETRY) {
+		mem_cgroup_inc_failcnt(mem_over_limit, gfp_mask, nr_pages);
 		return CHARGE_NOMEM;
+	}
 
 	ret = mem_cgroup_reclaim(mem_over_limit, gfp_mask, flags);
 	if (mem_cgroup_margin(mem_over_limit) >= nr_pages)
@@ -2661,9 +2711,11 @@ static int mem_cgroup_do_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	if (mem_cgroup_wait_acct_move(mem_over_limit))
 		return CHARGE_RETRY;
 
-	if (invoke_oom)
+	if (invoke_oom) {
+		mem_cgroup_inc_failcnt(mem_over_limit, gfp_mask, nr_pages);
 		mem_cgroup_oom(mem_over_limit, gfp_mask,
 			       get_order(nr_pages * PAGE_SIZE));
+	}
 
 	return CHARGE_NOMEM;
 }
@@ -4239,6 +4291,7 @@ __mem_cgroup_uncharge_common(struct page *page, enum charge_type ctype,
 	if (do_swap_account && ctype == MEM_CGROUP_CHARGE_TYPE_SWAPOUT) {
 		mem_cgroup_swap_statistics(memcg, true);
 		mem_cgroup_get(memcg);
+		mem_cgroup_update_swap_max(memcg);
 	}
 	/*
 	 * Migration does not charge the page_counter for the
@@ -5090,6 +5143,24 @@ static unsigned long tree_stat(struct mem_cgroup *memcg,
 	return val;
 }
 
+void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
+{
+	int nid;
+	unsigned long slab;
+
+	memset(&mi->pages, 0, sizeof(mi->pages));
+	for_each_online_node(nid)
+		mem_cgroup_get_nr_pages(memcg, nid, mi->pages);
+
+	slab = res_counter_read_u64(&memcg->kmem, RES_USAGE) >> PAGE_SHIFT;
+	mi->slab_reclaimable = res_counter_read_u64(&memcg->dcache, RES_USAGE)
+								>> PAGE_SHIFT;
+	mi->slab_unreclaimable = max_t(long, slab - mi->slab_reclaimable, 0);
+
+	mi->cached = mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_CACHE);
+	mi->shmem = mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_SHMEM);
+}
+
 static inline unsigned long mem_cgroup_usage(struct mem_cgroup *memcg, bool swap)
 {
 	unsigned long val;
@@ -5368,6 +5439,148 @@ static int mem_cgroup_move_charge_write(struct cgroup *cgrp,
 	return -ENOSYS;
 }
 #endif
+
+#ifdef CONFIG_BEANCOUNTERS
+
+#include <bc/beancounter.h>
+
+void mem_cgroup_sync_beancounter(struct mem_cgroup *memcg,
+				 struct user_beancounter *ub)
+{
+	unsigned long long lim, held, maxheld;
+	volatile struct ubparm *k, *d, *p, *s, *o;
+
+	k = &ub->ub_parms[UB_KMEMSIZE];
+	d = &ub->ub_parms[UB_DCACHESIZE];
+	p = &ub->ub_parms[UB_PHYSPAGES];
+	s = &ub->ub_parms[UB_SWAPPAGES];
+	o = &ub->ub_parms[UB_OOMGUARPAGES];
+
+	p->held	= res_counter_read_u64(&memcg->res, RES_USAGE) >> PAGE_SHIFT;
+	p->maxheld = res_counter_read_u64(&memcg->res, RES_MAX_USAGE) >> PAGE_SHIFT;
+	p->failcnt = atomic_long_read(&memcg->mem_failcnt);
+	lim = res_counter_read_u64(&memcg->res, RES_LIMIT);
+	lim = lim >= RESOURCE_MAX ? UB_MAXVALUE :
+		min_t(unsigned long long, lim >> PAGE_SHIFT, UB_MAXVALUE);
+	p->barrier = p->limit = lim;
+
+	k->held = res_counter_read_u64(&memcg->kmem, RES_USAGE);
+	k->maxheld = res_counter_read_u64(&memcg->kmem, RES_MAX_USAGE);
+	k->failcnt = res_counter_read_u64(&memcg->kmem, RES_FAILCNT);
+	lim = res_counter_read_u64(&memcg->kmem, RES_LIMIT);
+	lim = lim >= RESOURCE_MAX ? UB_MAXVALUE :
+		min_t(unsigned long long, lim, UB_MAXVALUE);
+	k->barrier = k->limit = lim;
+
+	d->held = res_counter_read_u64(&memcg->dcache, RES_USAGE);
+	d->maxheld = res_counter_read_u64(&memcg->dcache, RES_MAX_USAGE);
+	d->failcnt = 0;
+	d->barrier = d->limit = UB_MAXVALUE;
+
+	held = (res_counter_read_u64(&memcg->memsw, RES_USAGE) -
+		res_counter_read_u64(&memcg->res, RES_USAGE)) >> PAGE_SHIFT;
+	maxheld = memcg->swap_max >> PAGE_SHIFT;
+	s->failcnt = atomic_long_read(&memcg->swap_failcnt);
+	lim = res_counter_read_u64(&memcg->memsw, RES_LIMIT);
+	lim = lim >= RESOURCE_MAX ? UB_MAXVALUE :
+		min_t(unsigned long long, lim >> PAGE_SHIFT, UB_MAXVALUE);
+	if (lim != UB_MAXVALUE)
+		lim -= p->limit;
+	s->barrier = s->limit = lim;
+
+	/* Due to global reclaim, memory.memsw.usage can be greater than
+	 * (memory.memsw.limit - memory.limit). */
+	s->held = min(held, lim);
+	s->maxheld = min(maxheld, lim);
+
+	o->held = res_counter_read_u64(&memcg->memsw, RES_USAGE) >> PAGE_SHIFT;
+	o->maxheld = res_counter_read_u64(&memcg->memsw, RES_MAX_USAGE) >> PAGE_SHIFT;
+	o->failcnt = atomic_long_read(&memcg->oom_kill_cnt);
+	lim = memcg->oom_guarantee;
+	lim = lim >= RESOURCE_MAX ? UB_MAXVALUE :
+		min_t(unsigned long long, lim >> PAGE_SHIFT, UB_MAXVALUE);
+	o->barrier = o->limit = lim;
+}
+
+int mem_cgroup_apply_beancounter(struct mem_cgroup *memcg,
+				 struct user_beancounter *ub)
+{
+	unsigned long long mem, memsw, mem_old, memsw_old, oomguar;
+	int ret = 0;
+
+	if (mem_cgroup_is_root(memcg))
+		return -EPERM;
+
+	mem = ub->ub_parms[UB_PHYSPAGES].limit;
+	if (mem < RESOURCE_MAX >> PAGE_SHIFT)
+		mem <<= PAGE_SHIFT;
+	else
+		mem = RESOURCE_MAX;
+
+	memsw = ub->ub_parms[UB_SWAPPAGES].limit;
+	if (memsw < RESOURCE_MAX >> PAGE_SHIFT)
+		memsw <<= PAGE_SHIFT;
+	else
+		memsw = RESOURCE_MAX;
+	if (memsw < RESOURCE_MAX - mem)
+		memsw += mem;
+	else
+		memsw = RESOURCE_MAX;
+
+	oomguar = ub->ub_parms[UB_OOMGUARPAGES].barrier;
+	if (oomguar < RESOURCE_MAX >> PAGE_SHIFT)
+		oomguar <<= PAGE_SHIFT;
+	else
+		oomguar = RESOURCE_MAX;
+
+	if (ub->ub_parms[UB_KMEMSIZE].limit != UB_MAXVALUE)
+		pr_warn_once("ub: kmemsize limit is deprecated\n");
+	if (ub->ub_parms[UB_DCACHESIZE].limit != UB_MAXVALUE)
+		pr_warn_once("ub: dcachesize limit is deprecated\n");
+
+	/* activate kmem accounting */
+	ret = memcg_update_kmem_limit(cg, RESOURCE_MAX);
+	if (ret)
+		goto out;
+
+	/* try change mem+swap before changing mem limit */
+	if (res_counter_read_u64(&memcg->memsw, RES_LIMIT) != memsw)
+		(void)mem_cgroup_resize_memsw_limit(memcg, memsw);
+
+	if (res_counter_read_u64(&memcg->res, RES_LIMIT) != mem) {
+		ret = mem_cgroup_resize_limit(memcg, mem);
+		if (ret)
+			goto out;
+	}
+
+	mem_old = res_counter_read_u64(&memcg->res, RES_LIMIT);
+	memsw_old = res_counter_read_u64(&memcg->memsw, RES_LIMIT);
+
+	if (mem != mem_old) {
+		/* first, reset memsw limit since it cannot be < mem limit */
+		if (memsw_old < RESOURCE_MAX) {
+			memsw_old = RESOURCE_MAX;
+			ret = mem_cgroup_resize_memsw_limit(memcg, memsw_old);
+			if (ret)
+				goto out;
+		}
+		ret = mem_cgroup_resize_limit(memcg, mem);
+		if (ret)
+			goto out;
+	}
+
+	if (memsw != memsw_old) {
+		ret = mem_cgroup_resize_memsw_limit(memcg, memsw);
+		if (ret)
+			goto out;
+	}
+
+	memcg->oom_guarantee = oomguar;
+out:
+	return ret;
+}
+
+#endif /* CONFIG_BEANCOUNTERS */
 
 #ifdef CONFIG_NUMA
 static int memcg_numa_stat_show(struct cgroup *cont, struct cftype *cft,
@@ -6712,6 +6925,10 @@ static void __mem_cgroup_clear_mc(void)
 
 		/* we've already done mem_cgroup_get(mc.to) */
 		mc.moved_swap = 0;
+	}
+	if (do_swap_account) {
+		mem_cgroup_update_swap_max(from);
+		mem_cgroup_update_swap_max(to);
 	}
 	memcg_oom_recover(from);
 	memcg_oom_recover(to);
