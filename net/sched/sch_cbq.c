@@ -895,19 +895,19 @@ static void cbq_normalize_quanta(struct cbq_sched_data *q, int prio)
 
 	for (h = 0; h < q->clhash.hashsize; h++) {
 		hlist_for_each_entry(cl, &q->clhash.hash[h], common.hnode) {
+			long mtu;
 			/* BUGGGG... Beware! This expression suffer of
 			 * arithmetic overflows!
 			 */
 			if (cl->priority == prio) {
-				cl->quantum = (cl->weight*cl->allot*q->nclasses[prio])/
-					q->quanta[prio];
+				cl->quantum = (cl->weight * cl->allot) /
+					(q->quanta[prio] / q->nclasses[prio]);
 			}
-			if (cl->quantum <= 0 ||
-			    cl->quantum > 32*qdisc_dev(cl->qdisc)->mtu) {
-				pr_warn("CBQ: class %08x has bad quantum==%ld, repaired.\n",
-					cl->common.classid, cl->quantum);
-				cl->quantum = qdisc_dev(cl->qdisc)->mtu/2 + 1;
-			}
+			mtu = qdisc_dev(cl->qdisc)->mtu;
+			if (cl->quantum <= mtu/2)
+				cl->quantum = mtu/2 + 1;
+			else if (cl->quantum > 32*mtu)
+				cl->quantum = 32*mtu;
 		}
 	}
 }
