@@ -192,6 +192,8 @@ static int ip_local_deliver_finish(struct sock *sk, struct sk_buff *skb)
 {
 	struct net *net = dev_net(skb->dev);
 
+	if (skb->destructor)
+		skb_orphan(skb);
 	__skb_pull(skb, skb_network_header_len(skb));
 
 	rcu_read_lock();
