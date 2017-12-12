@@ -736,7 +736,7 @@ int sk_attach_filter(struct sock_fprog *fprog, struct sock *sk)
 	if (fprog->filter == NULL)
 		return -EINVAL;
 
-	fp = sock_kmalloc(sk, fsize+sizeof(*fp), GFP_KERNEL);
+	fp = sock_kmalloc(sk, fsize+sizeof(*fp), GFP_KERNEL_ACCOUNT);
 	if (!fp)
 		return -ENOMEM;
 	if (copy_from_user(fp->insns, fprog->filter, fsize)) {
