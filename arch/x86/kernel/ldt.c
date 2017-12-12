@@ -77,7 +77,7 @@ static struct ldt_struct *alloc_ldt_struct(unsigned int size)
 	if (size > LDT_ENTRIES)
 		return NULL;
 
-	new_ldt = kmalloc(sizeof(struct ldt_struct), GFP_KERNEL);
+	new_ldt = kmalloc(sizeof(struct ldt_struct), GFP_KERNEL_ACCOUNT);
 	if (!new_ldt)
 		return NULL;
 
@@ -91,9 +91,9 @@ static struct ldt_struct *alloc_ldt_struct(unsigned int size)
 	 * than PAGE_SIZE.
 	 */
 	if (alloc_size > PAGE_SIZE)
-		new_ldt->entries = vzalloc(alloc_size);
+		new_ldt->entries = vzalloc_account(alloc_size);
 	else
-		new_ldt->entries = (void *)get_zeroed_page(GFP_KERNEL);
+		new_ldt->entries = (void *)get_zeroed_page(GFP_KERNEL_ACCOUNT);
 
 	ret = kaiser_add_mapping((unsigned long)new_ldt->entries,
 				alloc_size,

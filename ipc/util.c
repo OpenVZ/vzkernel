@@ -456,7 +456,7 @@ void *ipc_rcu_alloc(int size)
 	/*
 	 * We prepend the allocation with the rcu struct
 	 */
-	struct ipc_rcu *out = kvmalloc(sizeof(struct ipc_rcu) + size, GFP_KERNEL);
+	struct ipc_rcu *out = kvmalloc(sizeof(struct ipc_rcu) + size, GFP_KERNEL_ACCOUNT);
 	if (unlikely(!out))
 		return NULL;
 	atomic_set(&out->refcount, 1);
