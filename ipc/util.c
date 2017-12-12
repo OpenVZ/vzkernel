@@ -464,7 +464,7 @@ void ipc_rmid(struct ipc_ids *ids, struct kern_ipc_perm *ipcp)
  
 void *ipc_alloc(int size)
 {
-	return kvmalloc(size, GFP_KERNEL);
+	return kvmalloc(size, GFP_KERNEL_ACCOUNT);
 }
 
 /**
