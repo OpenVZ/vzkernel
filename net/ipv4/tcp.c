@@ -1264,7 +1264,7 @@ new_segment:
 wait_for_sndbuf:
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 wait_for_memory:
-			if (copied)
+			if (copied && likely(!tp->repair))
 				tcp_push(sk, flags & ~MSG_MORE, mss_now,
 					 TCP_NAGLE_PUSH, size_goal);
 
