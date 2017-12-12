@@ -813,7 +813,7 @@ static int __init fcntl_init(void)
 		));
 
 	fasync_cache = kmem_cache_create("fasync_cache",
-		sizeof(struct fasync_struct), 0, SLAB_PANIC, NULL);
+		sizeof(struct fasync_struct), 0, SLAB_PANIC | SLAB_ACCOUNT, NULL);
 	return 0;
 }
 
