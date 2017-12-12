@@ -88,7 +88,7 @@
 #include <asm/tlbflush.h>
 
 #include <bc/misc.h>
-#include <bc/oom_kill.h>
+#include <bc/vmpages.h>
 
 #include <trace/events/sched.h>
 
@@ -110,6 +110,7 @@ DEFINE_PER_CPU(unsigned long, process_counts) = 0;
 __attribute__((__section__(".data..cacheline_aligned")))
 static atomic_t tasklist_waiters = ATOMIC_INIT(0);
 __cacheline_aligned DEFINE_QRWLOCK(tasklist_lock);  /* outer */
+EXPORT_SYMBOL(tasklist_lock);
 
 void tasklist_write_lock_irq(void)
 {
@@ -443,6 +444,10 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
 			continue;
 		}
 		charge = 0;
+		if (ub_memory_charge(mm, mpnt->vm_end - mpnt->vm_start,
+					mpnt->vm_flags & ~VM_LOCKED,
+					mpnt->vm_file, UB_HARD))
+			goto fail_noch;
 		if (mpnt->vm_flags & VM_ACCOUNT) {
 			unsigned long len = vma_pages(mpnt);
 
@@ -535,6 +540,9 @@ fail_nomem_anon_vma_fork:
 fail_nomem_policy:
 	kmem_cache_free(vm_area_cachep, tmp);
 fail_nomem:
+	ub_memory_uncharge(mm, mpnt->vm_end - mpnt->vm_start,
+			mpnt->vm_flags & ~VM_LOCKED, mpnt->vm_file);
+fail_noch:
 	retval = -ENOMEM;
 	vm_unacct_memory(charge);
 	goto out;
@@ -572,12 +580,12 @@ __cacheline_aligned_in_smp DEFINE_SPINLOCK(mmlist_lock);
 
 static inline void set_mm_ub(struct mm_struct *mm, struct user_beancounter *ub)
 {
-	mm->mm_ub = get_beancounter_longterm(ub);
+	mm->mm_ub = get_beancounter(ub);
 }
 
 static inline void put_mm_ub(struct mm_struct *mm)
 {
-	put_beancounter_longterm(mm->mm_ub);
+	put_beancounter(mm->mm_ub);
 	mm->mm_ub = NULL;
 }
 
@@ -721,8 +729,6 @@ void mmput(struct mm_struct *mm)
 		}
 		if (mm->binfmt)
 			module_put(mm->binfmt->module);
-		if (mm->global_oom || mm->ub_oom)
-			ub_oom_mm_dead(mm);
 		put_mm_ub(mm);
 		mmdrop(mm);
 	}
@@ -959,8 +965,6 @@ struct mm_struct *dup_mm(struct task_struct *tsk)
 		goto fail_nomem;
 
 	memcpy(mm, oldmm, sizeof(*mm));
-	mm->global_oom = 0;
-	mm->ub_oom = 0;
 	mm_init_cpumask(mm);
 
 #if defined(CONFIG_TRANSPARENT_HUGEPAGE) && !USE_SPLIT_PMD_PTLOCKS
