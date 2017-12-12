@@ -377,6 +377,7 @@ static void ip_copy_addrs(struct iphdr *iph, const struct flowi4 *fl4)
 	memcpy(&iph->saddr, &fl4->saddr,
 	       sizeof(fl4->saddr) + sizeof(fl4->daddr));
 }
+EXPORT_SYMBOL(ip_output);
 
 int ip_queue_xmit(struct sk_buff *skb, struct flowi *fl)
 {
