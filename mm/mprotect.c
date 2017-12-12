@@ -33,6 +33,8 @@
 #include <asm/mmu_context.h>
 #include <asm/tlbflush.h>
 
+#include <bc/vmpages.h>
+
 static unsigned long change_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
 		unsigned long addr, unsigned long end, pgprot_t newprot,
 		int dirty_accountable, int prot_numa)
@@ -274,6 +276,12 @@ mprotect_fixup(struct vm_area_struct *vma, struct vm_area_struct **pprev,
 		return 0;
 	}
 
+	error = -ENOMEM;
+	if (!VM_UB_PRIVATE(oldflags, vma->vm_file) &&
+	    VM_UB_PRIVATE(newflags, vma->vm_file) &&
+	    charge_beancounter_fast(mm_ub(mm), UB_PRIVVMPAGES, nrpages, UB_SOFT))
+		goto fail_ch;
+
 	/*
 	 * If we make a private mapping writable we increase our commit;
 	 * but (without finer accounting) cannot reduce our commit if we
@@ -285,7 +293,7 @@ mprotect_fixup(struct vm_area_struct *vma, struct vm_area_struct **pprev,
 						VM_SHARED|VM_NORESERVE))) {
 			charged = nrpages;
 			if (security_vm_enough_memory_mm(mm, charged))
-				return -ENOMEM;
+				goto fail_sec;
 			newflags |= VM_ACCOUNT;
 		}
 	}
@@ -331,11 +339,21 @@ success:
 
 	vm_stat_account(mm, oldflags, vma->vm_file, -nrpages);
 	vm_stat_account(mm, newflags, vma->vm_file, nrpages);
+
+	if (VM_UB_PRIVATE(oldflags, vma->vm_file) &&
+	    !VM_UB_PRIVATE(newflags, vma->vm_file))
+		uncharge_beancounter_fast(mm_ub(mm), UB_PRIVVMPAGES, nrpages);
+
 	perf_event_mmap(vma);
 	return 0;
 
 fail:
 	vm_unacct_memory(charged);
+fail_sec:
+	if (!VM_UB_PRIVATE(oldflags, vma->vm_file) &&
+	    VM_UB_PRIVATE(newflags, vma->vm_file))
+		uncharge_beancounter_fast(mm_ub(mm), UB_PRIVVMPAGES, nrpages);
+fail_ch:
 	return error;
 }
 

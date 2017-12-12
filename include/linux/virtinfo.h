@@ -56,6 +56,8 @@ struct meminfo {
 	unsigned long slab_reclaimable, slab_unreclaimable;
 };
 
+struct seq_file;
+
 int meminfo_proc_show_ub(struct seq_file *m, void *v,
 		struct user_beancounter *ub, unsigned long meminfo_val);
 
