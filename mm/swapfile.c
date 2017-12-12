@@ -2171,6 +2171,10 @@ SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)
 	struct filename *pathname;
 	int err, found = 0;
 
+	/* VE admin check is just to be on the safe side, the admin may affect
+	 * swaps only if he has access to special, i.e. if he has been granted
+	 * access to the block device or if the swap file is in the area
+	 * visible to him. */
 	if (!capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
