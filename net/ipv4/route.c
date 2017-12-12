@@ -987,6 +987,7 @@ static int ip_error(struct sk_buff *skb)
 out:	kfree_skb(skb);
 	return 0;
 }
+EXPORT_SYMBOL(rt_cache_flush);
 
 static void __ip_rt_update_pmtu(struct rtable *rt, struct flowi4 *fl4, u32 mtu)
 {
