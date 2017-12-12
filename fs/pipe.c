@@ -843,7 +843,7 @@ struct pipe_inode_info *alloc_pipe_info(void)
 	struct user_struct *user = get_current_user();
 	unsigned long user_bufs;
 
-	pipe = kzalloc(sizeof(struct pipe_inode_info), GFP_KERNEL);
+	pipe = kzalloc(sizeof(struct pipe_inode_info), GFP_KERNEL_ACCOUNT);
 	if (pipe == NULL)
 		goto out_free_uid;
 
