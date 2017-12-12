@@ -2242,7 +2242,7 @@ nfsd_racache_init(int cache_size)
 
 		raparm = &raparm_hash[i].pb_head;
 		for (j = 0; j < nperbucket; j++) {
-			*raparm = kzalloc(sizeof(struct raparms), GFP_KERNEL);
+			*raparm = kzalloc(sizeof(struct raparms), GFP_KERNEL_ACCOUNT);
 			if (!*raparm)
 				goto out_nomem;
 			raparm = &(*raparm)->p_next;
