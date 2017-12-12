@@ -989,7 +989,8 @@ static struct inet6_ifaddr *
 ipv6_add_addr(struct inet6_dev *idev, struct ifa6_config *cfg,
 	      bool can_block, struct netlink_ext_ack *extack)
 {
-	gfp_t gfp_flags = can_block ? GFP_KERNEL : GFP_ATOMIC;
+	gfp_t gfp_flags = (can_block ? GFP_KERNEL : GFP_ATOMIC) |
+			   __GFP_ACCOUNT;
 	int addr_type = ipv6_addr_type(cfg->pfx);
 	struct net *net = dev_net(idev->dev);
 	struct inet6_ifaddr *ifa = NULL;

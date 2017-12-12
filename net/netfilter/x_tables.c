@@ -1094,7 +1094,7 @@ void *xt_copy_counters_from_user(const void __user *user, unsigned int len,
 	if (size != (u64)len)
 		return ERR_PTR(-EINVAL);
 
-	mem = vmalloc(len);
+	mem = vmalloc_account(len);
 	if (!mem)
 		return ERR_PTR(-ENOMEM);
 
@@ -1183,7 +1183,7 @@ struct xt_table_info *xt_alloc_table_info(unsigned int size)
 	 * than shoot all processes down before realizing there is nothing
 	 * more to reclaim.
 	 */
-	info = kvmalloc(sz, GFP_KERNEL | __GFP_NORETRY);
+	info = kvmalloc(sz, GFP_KERNEL_ACCOUNT | __GFP_NORETRY);
 	if (!info)
 		return NULL;
 
@@ -1355,7 +1355,7 @@ struct xt_counters *xt_counters_alloc(unsigned int counters)
 	if (counters > XT_MAX_TABLE_SIZE)
 		return NULL;
 
-	return vzalloc(counters);
+	return vzalloc_account(counters);
 }
 EXPORT_SYMBOL(xt_counters_alloc);
 
