@@ -35,8 +35,6 @@
 #include <uapi/linux/vzcalluser.h>
 #include <linux/device_cgroup.h>
 
-#include <bc/dcache.h>
-
 static s64 ve_get_uptime(struct ve_struct *ve)
 {
 	struct timespec uptime;
