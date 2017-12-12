@@ -31,4 +31,13 @@ config VZ_DEV
 	  This option adds support of vzdev device, which is used by
 	  user-space applications to control Virtual Environments.
 
+config VE_CALLS
+	tristate "VE calls interface"
+	depends on VE
+	select VZ_DEV
+	default m
+	help
+	  This option controls how to build vzmon code containing VE calls.
+	  By default it's build in module vzmon.o
+
 endmenu
