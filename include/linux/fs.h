@@ -1214,6 +1214,7 @@ struct file_lock {
 	unsigned char fl_type;
 #ifdef CONFIG_BEANCOUNTERS
 	unsigned char fl_charged;
+	struct user_beancounter *fl_ub;
 #endif
 	unsigned int fl_pid;
 	int fl_link_cpu;		/* what cpu's list is this on? */
