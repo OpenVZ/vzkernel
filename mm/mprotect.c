@@ -32,6 +32,7 @@
 #include <asm/cacheflush.h>
 #include <asm/mmu_context.h>
 #include <asm/tlbflush.h>
+#include <bc/vmpages.h>
 
 #include "internal.h"
 
@@ -308,6 +309,12 @@ mprotect_fixup(struct vm_area_struct *vma, struct vm_area_struct **pprev,
 		return 0;
 	}
 
+	error = -ENOMEM;
+	if (!VM_UB_PRIVATE(oldflags, vma->vm_file) &&
+	    VM_UB_PRIVATE(newflags, vma->vm_file) &&
+	    charge_beancounter_fast(mm_ub(mm), UB_PRIVVMPAGES, nrpages, UB_SOFT))
+		goto fail_ch;
+
 	/*
 	 * Do PROT_NONE PFN permission checks here when we can still
 	 * bail out without undoing a lot of state. This is a rather
@@ -332,7 +339,7 @@ mprotect_fixup(struct vm_area_struct *vma, struct vm_area_struct **pprev,
 						VM_SHARED|VM_NORESERVE))) {
 			charged = nrpages;
 			if (security_vm_enough_memory_mm(mm, charged))
-				return -ENOMEM;
+				goto fail_sec;
 			newflags |= VM_ACCOUNT;
 		}
 	}
@@ -387,11 +394,21 @@ success:
 
 	vm_stat_account(mm, oldflags, vma->vm_file, -nrpages);
 	vm_stat_account(mm, newflags, vma->vm_file, nrpages);
+
+	if (VM_UB_PRIVATE(oldflags, vma->vm_file) &&
+	    !VM_UB_PRIVATE(newflags, vma->vm_file))
+		uncharge_beancounter_fast(mm_ub(mm), UB_PRIVVMPAGES, nrpages);
+
 	perf_event_mmap(vma);
 	return 0;
 
 fail:
 	vm_unacct_memory(charged);
+fail_sec:
+	if (!VM_UB_PRIVATE(oldflags, vma->vm_file) &&
+	    VM_UB_PRIVATE(newflags, vma->vm_file))
+		uncharge_beancounter_fast(mm_ub(mm), UB_PRIVVMPAGES, nrpages);
+fail_ch:
 	return error;
 }
 

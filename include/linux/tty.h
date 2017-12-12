@@ -284,6 +284,10 @@ struct tty_struct {
 	RH_KABI_EXTEND(struct ld_semaphore ldisc_sem)
 	RH_KABI_EXTEND(struct rw_semaphore termios_rwsem)
 	RH_KABI_EXTEND(struct mutex winsize_mutex)
+
+#ifdef CONFIG_BEANCOUNTERS
+	struct user_beancounter *ub;
+#endif
 };
 
 /* Each of a tty's open files has private_data pointing to tty_file_private */
@@ -316,6 +320,7 @@ struct tty_file_private {
 #define TTY_NO_WRITE_SPLIT 	17	/* Preserve write boundaries to driver */
 #define TTY_HUPPED 		18	/* Post driver->hangup() */
 #define TTY_LDISC_HALTED	22	/* Line discipline is halted */
+#define TTY_CHARGED		23	/* Charged as ub resource */
 
 #define TTY_WRITE_FLUSH(tty) tty_write_flush((tty))
 
