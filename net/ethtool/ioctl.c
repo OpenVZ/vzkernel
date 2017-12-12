@@ -2702,6 +2702,9 @@ int dev_ethtool(struct net *net, struct ifreq *ifr)
 	case ETHTOOL_GLINKSETTINGS:
 	case ETHTOOL_GFECPARAM:
 		break;
+	case ETHTOOL_SEEPROM:
+		if (!capable(CAP_NET_ADMIN))
+			return -EPERM;
 	default:
 		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
 			return -EPERM;
