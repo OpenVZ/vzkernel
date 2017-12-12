@@ -38,6 +38,7 @@
 #include <linux/atomic.h>
 #include <linux/prefetch.h>
 #include <linux/aio.h>
+#include <linux/virtinfo.h>
 
 /*
  * How many user pages to map in one call to get_user_pages().  This determines

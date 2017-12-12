@@ -400,7 +400,7 @@ config TASK_XACCT
 
 config TASK_IO_ACCOUNTING
 	bool "Enable per-task storage I/O accounting"
-	depends on TASK_XACCT
+	depends on TASK_XACCT && BEANCOUNTERS
 	help
 	  Collect information on the number of bytes of storage I/O which this
 	  task has caused.
