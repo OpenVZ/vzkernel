@@ -915,7 +915,7 @@ void *xt_copy_counters_from_user(const void __user *user, unsigned int len,
 	if (size != (u64)len)
 		return ERR_PTR(-EINVAL);
 
-	mem = vmalloc(len);
+	mem = vmalloc_account(len);
 	if (!mem)
 		return ERR_PTR(-ENOMEM);
 
@@ -1003,7 +1003,7 @@ struct xt_table_info *xt_alloc_table_info(unsigned int size)
 	if ((SMP_ALIGN(size) >> PAGE_SHIFT) + 2 > totalram_pages)
 		return NULL;
 
-	info = kvmalloc(sz, GFP_KERNEL);
+	info = kvmalloc(sz, GFP_KERNEL_ACCOUNT);
 	if (!info)
 		return NULL;
 

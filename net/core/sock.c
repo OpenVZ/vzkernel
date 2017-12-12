@@ -3173,7 +3173,7 @@ int proto_register(struct proto *prot, int alloc_slab)
 {
 	if (alloc_slab) {
 		prot->slab = kmem_cache_create(prot->name, prot->obj_size, 0,
-					SLAB_HWCACHE_ALIGN | prot->slab_flags,
+					SLAB_HWCACHE_ALIGN | SLAB_ACCOUNT | prot->slab_flags,
 					NULL);
 
 		if (prot->slab == NULL) {
