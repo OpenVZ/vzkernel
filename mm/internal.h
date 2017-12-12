@@ -166,8 +166,13 @@ void __vma_link_list(struct mm_struct *mm, struct vm_area_struct *vma,
 #ifdef CONFIG_MMU
 extern long __mlock_vma_pages_range(struct vm_area_struct *vma,
 		unsigned long start, unsigned long end, int *nonblocking);
-extern void munlock_vma_pages_range(struct vm_area_struct *vma,
-			unsigned long start, unsigned long end);
+extern void __munlock_vma_pages_range(struct vm_area_struct *vma,
+			unsigned long start, unsigned long end, int acct);
+static inline void munlock_vma_pages_range(struct vm_area_struct *vma,
+			unsigned long start, unsigned long end)
+{
+	__munlock_vma_pages_range(vma, start, end, 1);
+}
 static inline void munlock_vma_pages_all(struct vm_area_struct *vma)
 {
 	munlock_vma_pages_range(vma, vma->vm_start, vma->vm_end);

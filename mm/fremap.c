@@ -251,7 +251,7 @@ get_write_lock:
 		if (!has_write_lock)
 			goto get_write_lock;
 		vm_flags = vma->vm_flags;
-		munlock_vma_pages_range(vma, start, start + size);
+		__munlock_vma_pages_range(vma, start, start + size, 0);
 		vma->vm_flags = vm_flags;
 	}
 
