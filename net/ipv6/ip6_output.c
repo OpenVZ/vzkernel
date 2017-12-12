@@ -149,6 +149,7 @@ int ip6_output(struct sock *sk, struct sk_buff *skb)
 			    ip6_finish_output,
 			    !(IP6CB(skb)->flags & IP6SKB_REROUTED));
 }
+EXPORT_SYMBOL(ip6_output);
 
 /*
  *	xmit an sk_buff (used by TCP, SCTP and DCCP)
