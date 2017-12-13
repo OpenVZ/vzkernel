@@ -22,6 +22,7 @@
 #include <net/netlink.h>
 #include <net/net_namespace.h>
 #include <net/netns/generic.h>
+#include <linux/ve.h>
 
 /*
  *	Our network namespace constructor/destructor lists
@@ -40,6 +41,9 @@ EXPORT_SYMBOL_GPL(net_rwsem);
 struct net init_net = {
 	.count		= REFCOUNT_INIT(1),
 	.dev_base_head	= LIST_HEAD_INIT(init_net.dev_base_head),
+#ifdef CONFIG_VE
+	.owner_ve = &ve0,
+#endif
 };
 EXPORT_SYMBOL(init_net);
 
@@ -319,6 +323,10 @@ static __net_init int setup_net(struct net *net, struct user_namespace *user_ns)
 	int error = 0;
 	LIST_HEAD(net_exit_list);
 
+#ifdef CONFIG_VE
+	net->owner_ve = get_ve(get_exec_env());
+#endif
+
 	refcount_set(&net->count, 1);
 	refcount_set(&net->passive, 1);
 	get_random_bytes(&net->hash_mix, sizeof(u32));
@@ -359,6 +367,9 @@ out_undo:
 		ops_free_list(ops, &net_exit_list);
 
 	rcu_barrier();
+#ifdef CONFIG_VE
+	put_ve(net->owner_ve);
+#endif
 	goto out;
 }
 
@@ -569,6 +580,9 @@ static void cleanup_net(struct work_struct *work)
 		list_del_init(&net->exit_list);
 		dec_net_namespaces(net->ucounts);
 		put_user_ns(net->user_ns);
+#ifdef CONFIG_VE
+		put_ve(net->owner_ve);
+#endif
 		net_drop_ns(net);
 	}
 }
