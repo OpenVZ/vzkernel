@@ -18,6 +18,7 @@
 #include <linux/sched/rt.h>
 #include <linux/livepatch.h>
 #include <linux/mm_types.h>
+#include <linux/ve_proto.h>
 
 #include <asm/thread_info.h>
 
@@ -154,6 +155,12 @@ extern struct cred init_cred;
 # define INIT_CGROUP_SCHED(tsk)
 #endif
 
+#ifdef CONFIG_VE
+#define INIT_TASK_VE(tsk) .task_ve = &ve0,
+#else
+#define INIT_TASK_VE(tsk)
+#endif
+
 #ifdef CONFIG_PERF_EVENTS
 # define INIT_PERF_EVENTS(tsk)						\
 	.perf_event_mutex = 						\
@@ -251,6 +258,7 @@ extern struct cred init_cred;
 	.tasks		= LIST_HEAD_INIT(tsk.tasks),			\
 	INIT_PUSHABLE_TASKS(tsk)					\
 	INIT_CGROUP_SCHED(tsk)						\
+	INIT_TASK_VE(tsk)						\
 	.ptraced	= LIST_HEAD_INIT(tsk.ptraced),			\
 	.ptrace_entry	= LIST_HEAD_INIT(tsk.ptrace_entry),		\
 	.real_parent	= &tsk,						\
