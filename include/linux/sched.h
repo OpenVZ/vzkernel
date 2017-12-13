@@ -66,6 +66,7 @@ struct sighand_struct;
 struct signal_struct;
 struct task_delay_info;
 struct task_group;
+struct ve_struct;
 
 /*
  * Task state bitmask. NOTE! These bits are also
@@ -863,7 +864,9 @@ struct task_struct {
 	/* Used by page_owner=on to detect recursion in page tracking. */
 	unsigned			in_page_owner:1;
 #endif
-
+#ifdef CONFIG_VE
+        struct ve_struct *task_ve;
+#endif
 	unsigned long			atomic_flags; /* Flags requiring atomic access. */
 
 	struct restart_block		restart_block;
