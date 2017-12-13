@@ -3007,6 +3007,8 @@ config X86_DMA_REMAP
 config HAVE_GENERIC_GUP
 	def_bool y
 
+source "kernel/Kconfig.openvz"
+
 source "net/Kconfig"
 
 source "drivers/Kconfig"
