@@ -1240,6 +1240,7 @@ static int es_do_reclaim_extents(struct ext4_inode_info *ei, ext4_lblk_t end,
 	struct inode *inode = &ei->vfs_inode;
 	struct ext4_es_tree *tree = &ei->i_es_tree;
 	struct extent_status *es;
+	struct rb_node *node;
 
 	es = __es_tree_search(&tree->root, ei->i_es_shrink_lblk);
 	if (!es)
