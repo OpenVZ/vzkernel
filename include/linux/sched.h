@@ -59,6 +59,7 @@ struct sighand_struct;
 struct signal_struct;
 struct task_delay_info;
 struct task_group;
+struct ve_struct;
 
 /*
  * Task state bitmask. NOTE! These bits are also
@@ -735,7 +736,9 @@ struct task_struct {
 	/* task is frozen/stopped (used by the cgroup freezer) */
 	RH_KABI_FILL_HOLE(unsigned	frozen:1)
 #endif
-
+#ifdef CONFIG_VE
+        struct ve_struct *task_ve;
+#endif
 	unsigned long			atomic_flags; /* Flags requiring atomic access. */
 
 	struct restart_block		restart_block;
