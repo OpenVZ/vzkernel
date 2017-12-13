@@ -61,6 +61,10 @@ SUBSYS(pids)
 SUBSYS(rdma)
 #endif
 
+#if IS_ENABLED(CONFIG_VE)
+SUBSYS(ve)
+#endif
+
 /*
  * The following subsystems are not supported on the default hierarchy.
  */
