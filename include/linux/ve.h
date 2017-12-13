@@ -52,6 +52,7 @@ static inline struct ve_struct *css_to_ve(struct cgroup_subsys_state *css)
 }
 
 extern struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id);
+
 #else	/* CONFIG_VE */
 #define get_ve(ve)	((void)(ve), NULL)
 #define put_ve(ve)	do { (void)(ve); } while (0)
