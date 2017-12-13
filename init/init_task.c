@@ -12,6 +12,7 @@
 #include <linux/audit.h>
 #include <linux/numa.h>
 #include <linux/scs.h>
+#include <linux/ve_proto.h>
 
 #include <linux/uaccess.h>
 
@@ -55,6 +56,12 @@ unsigned long init_shadow_call_stack[SCS_SIZE / sizeof(long)]
 		__init_task_data = {
 	[(SCS_SIZE / sizeof(long)) - 1] = SCS_END_MAGIC
 };
+#endif
+
+#ifdef CONFIG_VE
+#define INIT_TASK_VE(tsk) .task_ve = &ve0,
+#else
+#define INIT_TASK_VE(tsk)
 #endif
 
 /*
@@ -102,6 +109,7 @@ struct task_struct init_task
 #ifdef CONFIG_CGROUP_SCHED
 	.sched_task_group = &root_task_group,
 #endif
+	INIT_TASK_VE(tsk)
 	.ptraced	= LIST_HEAD_INIT(init_task.ptraced),
 	.ptrace_entry	= LIST_HEAD_INIT(init_task.ptrace_entry),
 	.real_parent	= &init_task,
