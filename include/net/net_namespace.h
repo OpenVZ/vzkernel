@@ -117,6 +117,10 @@ struct net {
 
 	struct net_device       *loopback_dev;          /* The loopback */
 
+#ifdef CONFIG_VE
+	struct ve_struct	*owner_ve;
+#endif
+
 	/* core fib_rules */
 	struct list_head	rules_ops;
 

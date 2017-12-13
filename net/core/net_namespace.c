@@ -25,6 +25,7 @@
 #include <net/netlink.h>
 #include <net/net_namespace.h>
 #include <net/netns/generic.h>
+#include <linux/ve.h>
 
 /*
  *	Our network namespace constructor/destructor lists
@@ -314,6 +315,10 @@ static __net_init int setup_net(struct net *net, struct user_namespace *user_ns)
 	int error = 0;
 	LIST_HEAD(net_exit_list);
 
+#ifdef CONFIG_VE
+	net->owner_ve = get_ve(get_exec_env());
+#endif
+
 	refcount_set(&net->ns.count, 1);
 	ref_tracker_dir_init(&net->refcnt_tracker, 128);
 
@@ -359,6 +364,9 @@ out_undo:
 		ops_free_list(ops, &net_exit_list);
 
 	rcu_barrier();
+#ifdef CONFIG_VE
+	put_ve(net->owner_ve);
+#endif
 	goto out;
 }
 
@@ -612,6 +620,9 @@ static void cleanup_net(struct work_struct *work)
 		dec_net_namespaces(net->ucounts);
 		key_remove_domain(net->key_domain);
 		put_user_ns(net->user_ns);
+#ifdef CONFIG_VE
+		put_ve(net->owner_ve);
+#endif
 		net_drop_ns(net);
 	}
 }
@@ -1104,6 +1115,9 @@ void __init net_ns_init(void)
 
 #ifdef CONFIG_KEYS
 	init_net.key_domain = &init_net_key_domain;
+#endif
+#ifdef CONFIG_VE
+	init_net.owner_ve = &ve0;
 #endif
 	down_write(&pernet_ops_rwsem);
 	if (setup_net(&init_net, &init_user_ns))
