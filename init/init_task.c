@@ -10,6 +10,7 @@
 #include <linux/fs.h>
 #include <linux/mm.h>
 #include <linux/audit.h>
+#include <linux/ve_proto.h>
 
 #include <asm/pgtable.h>
 #include <linux/uaccess.h>
@@ -42,6 +43,12 @@ static struct sighand_struct init_sighand = {
 	.siglock	= __SPIN_LOCK_UNLOCKED(init_sighand.siglock),
 	.signalfd_wqh	= __WAIT_QUEUE_HEAD_INITIALIZER(init_sighand.signalfd_wqh),
 };
+
+#ifdef CONFIG_VE
+#define INIT_TASK_VE(tsk) .task_ve = &ve0,
+#else
+#define INIT_TASK_VE(tsk)
+#endif
 
 /*
  * Set up the first task table, touch at your own risk!. Base=0,
@@ -85,6 +92,7 @@ struct task_struct init_task
 #ifdef CONFIG_CGROUP_SCHED
 	.sched_task_group = &root_task_group,
 #endif
+	INIT_TASK_VE(tsk)
 	.ptraced	= LIST_HEAD_INIT(init_task.ptraced),
 	.ptrace_entry	= LIST_HEAD_INIT(init_task.ptrace_entry),
 	.real_parent	= &init_task,
