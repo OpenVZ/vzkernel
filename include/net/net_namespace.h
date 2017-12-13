@@ -100,6 +100,10 @@ struct net {
 	int			ifindex;
 	unsigned int		dev_unreg_count;
 
+#ifdef CONFIG_VE
+	struct ve_struct	*owner_ve;
+#endif
+
 	/* core fib_rules */
 	struct list_head	rules_ops;
 
