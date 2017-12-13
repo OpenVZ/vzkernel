@@ -34,6 +34,8 @@ struct ve_struct {
 	u64			start_jiffies;		/* Deprecated */
 
 	struct nsproxy __rcu	*ve_ns;
+	/* Please, use ve_net_lock() and ve_net_unlock() instead of ve_netns */
+#define ve_netns		[:|||||||:]
 	struct cred		*init_cred;
 };
 
@@ -52,6 +54,7 @@ static inline struct ve_struct *css_to_ve(struct cgroup_subsys_state *css)
 }
 
 extern struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id);
+
 #else	/* CONFIG_VE */
 #define get_ve(ve)	(NULL)
 #define put_ve(ve)	do { } while (0)
