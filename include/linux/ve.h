@@ -41,6 +41,9 @@ struct ve_struct {
 
 extern int nr_ve;
 
+#define capable_setveid() \
+	(ve_is_super(get_exec_env()) && capable(CAP_SYS_ADMIN))
+
 #ifdef CONFIG_VE
 extern struct ve_struct *get_ve(struct ve_struct *ve);
 extern void put_ve(struct ve_struct *ve);
