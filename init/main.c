@@ -88,6 +88,7 @@
 #include <linux/io.h>
 #include <linux/cache.h>
 #include <linux/rodata_test.h>
+#include <linux/veowner.h>
 
 #include <asm/io.h>
 #include <asm/bugs.h>
@@ -909,6 +910,7 @@ static void __init do_initcalls(void)
  */
 static void __init do_basic_setup(void)
 {
+	init_ve_system();
 	cpuset_init_smp();
 	shmem_init();
 	driver_init();
