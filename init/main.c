@@ -100,6 +100,7 @@
 #include <linux/init_syscalls.h>
 #include <linux/stackdepot.h>
 #include <net/net_namespace.h>
+#include <linux/veowner.h>
 
 #include <asm/io.h>
 #include <asm/bugs.h>
@@ -1405,6 +1406,7 @@ static void __init do_initcalls(void)
  */
 static void __init do_basic_setup(void)
 {
+	init_ve_system();
 	cpuset_init_smp();
 	driver_init();
 	init_irq_proc();
