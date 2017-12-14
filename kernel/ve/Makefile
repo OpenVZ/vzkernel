@@ -4,4 +4,4 @@
 # Copyright (c) 2000-2017 Virtuozzo International GmbH.  All rights reserved.
 #
 
-obj-$(CONFIG_VE) = ve.o hooks.o
+obj-$(CONFIG_VE) = ve.o hooks.o veowner.o
