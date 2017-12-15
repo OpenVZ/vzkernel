@@ -30,6 +30,7 @@ struct ve_struct ve0 = {
 	RCU_POINTER_INITIALIZER(ve_ns, &init_nsproxy),
 
 	.is_running		= 1,
+	.is_pseudosuper		= 1,
 
 	.init_cred		= &init_cred,
 };
@@ -246,6 +247,11 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	 * ve_mutex works as barrier for ve_can_attach().
 	 */
 	ve->is_running = 0;
+	/*
+	 * Neither it can be in pseudosuper state
+	 * anymore, setup it again if needed.
+	 */
+	ve->is_pseudosuper = 0;
 unlock:
 	up_write(&ve->op_sem);
 }
@@ -494,6 +500,54 @@ static int ve_id_write(struct cgroup_subsys_state *css, struct cftype *cft, u64 
 	return err;
 }
 
+static u64 ve_pseudosuper_read(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	struct ve_struct *ve = css_to_ve(css);
+	return ve->is_pseudosuper;
+}
+
+/*
+ * Move VE into pseudosuper state where some of privilegued
+ * operations such as mounting cgroups from inside of VE context
+ * is allowed in a sake of container restore for example.
+ *
+ * While dropping pseudosuper privilegues is allowed from
+ * any context to set this value up one have to be a real
+ * node's owner.
+ */
+static int ve_pseudosuper_write(struct cgroup_subsys_state *css, struct cftype *cft, u64 val)
+{
+	struct ve_struct *ve = css_to_ve(css);
+
+	if (!ve_capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	if (!ve_is_super(get_exec_env()) && val)
+		return -EPERM;
+
+	down_write(&ve->op_sem);
+	if (val && (ve->is_running || ve->ve_ns)) {
+		up_write(&ve->op_sem);
+		return -EBUSY;
+	}
+	ve->is_pseudosuper = val;
+	/*
+	 * In CRIU we do unset pseudosuper on ve cgroup just before doing
+	 * ptrace(PTRACE_DETACH) to release restored process, what if one of
+	 * them will see pseudosuper flag still set to 1?
+	 *
+	 * To be 100% sure that these will never happen we need to call
+	 * synchronize_sched_expedited(); here to make cross cpu memory
+	 * barrier.
+	 *
+	 * For now we rely on userspace that ptrace from CRIU will do wake-up
+	 * on CT tasks which should imply memory barrier.
+	 */
+	up_write(&ve->op_sem);
+
+	return 0;
+}
+
 static struct cftype ve_cftypes[] = {
 
 	{
@@ -507,6 +561,12 @@ static struct cftype ve_cftypes[] = {
 		.flags			= CFTYPE_NOT_ON_ROOT,
 		.read_u64		= ve_id_read,
 		.write_u64		= ve_id_write,
+	},
+	{
+		.name			= "pseudosuper",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_u64		= ve_pseudosuper_read,
+		.write_u64		= ve_pseudosuper_write,
 	},
 	{ }
 };
