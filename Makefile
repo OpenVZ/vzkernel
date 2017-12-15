@@ -4,6 +4,21 @@ PATCHLEVEL = 18
 SUBLEVEL = 0
 EXTRAVERSION =
 NAME = Merciless Moray
+VZVERSION = ovz.custom
+
+ifeq ($(VZVERSION), ovz.custom)
+  GIT_DIR := .git
+#  ifneq ("$(wildcard $(GIT_DIR) )", "")
+#    VZVERSION := $(shell git describe --abbrev=0 2>/dev/null | \
+#		   sed -r 's/^.*\.vz8\.//')
+#  else
+    VZVERSION := custom
+#  endif
+
+  ifeq ($(EXTRAVERSION),)
+    EXTRAVERSION := .ovz.$(VZVERSION)
+  endif
+endif
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
@@ -290,7 +305,7 @@ include scripts/Kbuild.include
 # Read KERNELRELEASE from include/config/kernel.release (if it exists)
 KERNELRELEASE = $(shell cat include/config/kernel.release 2> /dev/null)
 KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if $(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)
-export VERSION PATCHLEVEL SUBLEVEL KERNELRELEASE KERNELVERSION
+export VERSION PATCHLEVEL SUBLEVEL KERNELRELEASE KERNELVERSION VZVERSION
 
 # SUBARCH tells the usermode build what the underlying arch is.  That is set
 # first, and if a usermode build is happening, the "ARCH=um" on the command
@@ -1123,7 +1138,8 @@ define filechk_utsrelease.h
 	  echo '"$(KERNELRELEASE)" exceeds $(uts_len) characters' >&2;    \
 	  exit 1;                                                         \
 	fi;                                                               \
-	(echo \#define UTS_RELEASE \"$(KERNELRELEASE)\";)
+	(echo \#define UTS_RELEASE \"$(KERNELRELEASE)\"; 		  \
+		echo \#define VZVERSION \"$(VZVERSION)\";)
 endef
 
 define filechk_version.h
