@@ -4,6 +4,22 @@ PATCHLEVEL = 14
 SUBLEVEL = 7
 EXTRAVERSION =
 NAME = Petit Gorille
+VZVERSION = ovz.custom
+
+ifeq ($(VZVERSION), ovz.custom)
+  GIT_DIR := .git
+#  ifneq ("$(wildcard $(GIT_DIR) )", "")
+#    VZVERSION := $(shell git describe --abbrev=0 2>/dev/null | \
+#		   sed -r 's/^.*\.vz7\.//')
+#  else
+    VZVERSION := custom
+#  endif
+
+  ifeq ($(EXTRAVERSION),)
+    EXTRAVERSION := .ovz.$(VZVERSION)
+  endif
+endif
+
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
@@ -409,7 +425,7 @@ GCC_PLUGINS_CFLAGS :=
 KERNELRELEASE = $(shell cat include/config/kernel.release 2> /dev/null)
 KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if $(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)
 
-export VERSION PATCHLEVEL SUBLEVEL KERNELRELEASE KERNELVERSION
+export VERSION PATCHLEVEL SUBLEVEL KERNELRELEASE KERNELVERSION VZVERSION
 export ARCH SRCARCH CONFIG_SHELL HOSTCC HOSTCFLAGS CROSS_COMPILE AS LD CC
 export CPP AR NM STRIP OBJCOPY OBJDUMP HOSTLDFLAGS HOST_LOADLIBES
 export MAKE AWK GENKSYMS INSTALLKERNEL PERL PYTHON UTS_MACHINE
@@ -1113,7 +1129,8 @@ define filechk_utsrelease.h
 	  echo '"$(KERNELRELEASE)" exceeds $(uts_len) characters' >&2;    \
 	  exit 1;                                                         \
 	fi;                                                               \
-	(echo \#define UTS_RELEASE \"$(KERNELRELEASE)\";)
+	(echo \#define UTS_RELEASE \"$(KERNELRELEASE)\"; 		  \
+		echo \#define VZVERSION \"$(VZVERSION)\";)
 endef
 
 define filechk_version.h
