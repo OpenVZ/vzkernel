@@ -60,6 +60,7 @@
 #include <linux/sched/deadline.h>
 #include <linux/psi.h>
 #include <net/sock.h>
+#include <linux/ve.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/cgroup.h>
