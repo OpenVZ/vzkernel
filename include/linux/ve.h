@@ -36,6 +36,9 @@ struct ve_struct {
 
 	struct nsproxy __rcu	*ve_ns;
 	struct cred		*init_cred;
+
+	/* see vzcalluser.h for VE_FEATURE_XXX definitions */
+	__u64			features;
 };
 
 extern int nr_ve;
@@ -54,12 +57,18 @@ static inline struct ve_struct *css_to_ve(struct cgroup_subsys_state *css)
 
 extern struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id);
 
+#define ve_feature_set(ve, f)			\
+	!!((ve)->features & VE_FEATURE_##f)
+
 #else	/* CONFIG_VE */
 #define get_ve(ve)	((void)(ve), NULL)
 #define put_ve(ve)	do { (void)(ve); } while (0)
 
 static inline void ve_stop_ns(struct pid_namespace *ns) { }
 static inline void ve_exit_ns(struct pid_namespace *ns) { }
+
+#define ve_feature_set(ve, f)		{ true; }
+
 #endif	/* CONFIG_VE */
 
 #endif /* _LINUX_VE_H */
