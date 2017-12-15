@@ -198,6 +198,7 @@ int move_addr_to_kernel(void __user *uaddr, int ulen, struct sockaddr_storage *k
 		return -EFAULT;
 	return audit_sockaddr(ulen, kaddr);
 }
+EXPORT_SYMBOL_GPL(move_addr_to_kernel);
 
 /**
  *	move_addr_to_user	-	copy an address to user space
