@@ -18,6 +18,7 @@
 #include <linux/rcupdate.h>
 #include <linux/init_task.h>
 #include <linux/mutex.h>
+#include <uapi/linux/vzcalluser.h>
 
 #include "../cgroup/cgroup-internal.h" /* For cgroup_task_count() */
 
@@ -33,6 +34,7 @@ struct ve_struct ve0 = {
 	.is_pseudosuper		= 1,
 
 	.init_cred		= &init_cred,
+	.features		= -1,
 };
 EXPORT_SYMBOL(ve0);
 
@@ -300,6 +302,8 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 	ve = kmem_cache_zalloc(ve_cachep, GFP_KERNEL);
 	if (!ve)
 		goto err_ve;
+
+	ve->features = VE_FEATURES_DEF;
 do_init:
 	init_rwsem(&ve->op_sem);
 	INIT_LIST_HEAD(&ve->ve_list);
@@ -548,6 +552,28 @@ static int ve_pseudosuper_write(struct cgroup_subsys_state *css, struct cftype *
 	return 0;
 }
 
+static u64 ve_reatures_read(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	return css_to_ve(css)->features;
+}
+
+static int ve_reatures_write(struct cgroup_subsys_state *css, struct cftype *cft, u64 val)
+{
+	struct ve_struct *ve = css_to_ve(css);
+
+	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
+
+	down_write(&ve->op_sem);
+	if (ve->is_running || ve->ve_ns) {
+		up_write(&ve->op_sem);
+		return -EBUSY;
+	}
+	ve->features = val;
+	up_write(&ve->op_sem);
+	return 0;
+}
+
 static struct cftype ve_cftypes[] = {
 
 	{
@@ -568,6 +594,13 @@ static struct cftype ve_cftypes[] = {
 		.read_u64		= ve_pseudosuper_read,
 		.write_u64		= ve_pseudosuper_write,
 	},
+	{
+		.name			= "features",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_u64		= ve_reatures_read,
+		.write_u64		= ve_reatures_write,
+	},
+
 	{ }
 };
 
