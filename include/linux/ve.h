@@ -25,6 +25,7 @@ struct ve_struct {
 
 	envid_t			veid;
 	int			is_running;
+	u8			is_pseudosuper:1;
 
 	struct rw_semaphore	op_sem;
 
