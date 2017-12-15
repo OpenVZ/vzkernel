@@ -57,6 +57,7 @@
 #include <linux/sched/cputime.h>
 #include <linux/psi.h>
 #include <net/sock.h>
+#include <linux/ve.h>
 
 #include <linux/rh_features.h>
 
@@ -2058,6 +2059,12 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 	struct dentry *dentry;
 	int ret;
 
+#ifdef CONFIG_VE
+	if (!ve_is_super(get_exec_env()) && !(flags & MS_KERNMOUNT)) {
+		if (!get_exec_env()->is_pseudosuper)
+			return ERR_PTR(-EACCES);
+	}
+#endif
 	get_cgroup_ns(ns);
 
 	/* Check if the caller has permission to mount. */
