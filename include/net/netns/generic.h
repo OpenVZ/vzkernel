@@ -48,4 +48,7 @@ static inline void *net_generic(const struct net *net, unsigned int id)
 
 	return ptr;
 }
+
+extern int net_assign_generic(struct net *net, unsigned int id, void *data);
+
 #endif

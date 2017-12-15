@@ -65,7 +65,7 @@ static struct net_generic *net_alloc_generic(void)
 	return ng;
 }
 
-static int net_assign_generic(struct net *net, unsigned int id, void *data)
+int net_assign_generic(struct net *net, unsigned int id, void *data)
 {
 	struct net_generic *ng, *old_ng;
 
@@ -102,6 +102,7 @@ static int net_assign_generic(struct net *net, unsigned int id, void *data)
 	kfree_rcu(old_ng, s.rcu);
 	return 0;
 }
+EXPORT_SYMBOL_GPL(net_assign_generic);
 
 static int ops_init(const struct pernet_operations *ops, struct net *net)
 {
