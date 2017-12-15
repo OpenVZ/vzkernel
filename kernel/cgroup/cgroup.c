@@ -58,6 +58,7 @@
 #include <linux/sched/cputime.h>
 #include <linux/psi.h>
 #include <net/sock.h>
+#include <linux/ve.h>
 
 #include <linux/rh_features.h>
 
