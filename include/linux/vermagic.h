@@ -3,7 +3,7 @@
 #define _LINUX_VERMAGIC_H
 
 #ifndef INCLUDE_VERMAGIC
-#error "This header can be included from kernel/module.c or *.mod.c only"
+#error "This header can be included from kernel/module.c, *.mod.c or lib/dump_stack.c only"
 #endif
 
 #include <generated/utsrelease.h>
