@@ -19,6 +19,7 @@
 #include <linux/pid_namespace.h>
 #include <linux/user_namespace.h>
 #include <linux/uaccess.h>
+#include <linux/ve.h>
 
 /*
  * Leveraged for setting/resetting capabilities
@@ -397,6 +398,31 @@ bool ns_capable(struct user_namespace *ns, int cap)
 	return ns_capable_common(ns, cap, CAP_OPT_NONE);
 }
 EXPORT_SYMBOL(ns_capable);
+
+#if CONFIG_VE
+bool ve_capable(int cap)
+{
+	struct cred *cred;
+	bool ret;
+
+	rcu_read_lock();
+	cred = get_exec_env()->init_cred;
+
+	if (cred == NULL) /* ve isn't running */
+		cred = ve0.init_cred;
+
+	ret = ns_capable(cred->user_ns, cap);
+	rcu_read_unlock();
+
+	return ret;
+}
+#else
+bool ve_capable(int cap)
+{
+	return capable(cap);
+}
+#endif
+EXPORT_SYMBOL_GPL(ve_capable);
 
 /**
  * ns_capable_noaudit - Determine if the current task has a superior capability
