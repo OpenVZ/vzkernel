@@ -52,6 +52,9 @@
 #include <net/net_namespace.h>
 #include <net/netns/generic.h>
 
+#include <uapi/linux/vzcalluser.h>
+#include <linux/ve.h>
+
 /*
    This version of net/ipv6/sit.c is cloned of net/ipv4/ip_gre.c
 
@@ -103,6 +106,9 @@ static struct ip_tunnel *ipip6_tunnel_lookup(struct net *net,
 	struct ip_tunnel *t;
 	struct sit_net *sitn = net_generic(net, sit_net_id);
 	int ifindex = dev ? dev->ifindex : 0;
+
+	if (sitn == NULL)
+		return NULL;
 
 	for_each_ip_tunnel_rcu(t, sitn->tunnels_r_l[h0 ^ h1]) {
 		if (local == t->parms.iph.saddr &&
@@ -1620,6 +1626,9 @@ static int ipip6_newlink(struct net *src_net, struct net_device *dev,
 #endif
 	int err;
 
+	if (net_generic(net, sit_net_id) == NULL)
+		return -EACCES;
+
 	nt = netdev_priv(dev);
 
 	if (ipip6_netlink_encap_parms(data, &ipencap)) {
@@ -1893,6 +1902,15 @@ static int __net_init sit_init_net(struct net *net)
 	struct ip_tunnel *t;
 	int err;
 
+	if (!ve_feature_set(net->owner_ve, SIT)) {
+               /*
+                * Need to free memory allocated in ops_init()
+                * and nullify pointer for peer checks.
+                */
+		net_generic_free(net, sit_net_id);
+		return 0;
+	}
+
 	sitn->tunnels[0] = sitn->tunnels_wc;
 	sitn->tunnels[1] = sitn->tunnels_l;
 	sitn->tunnels[2] = sitn->tunnels_r;
@@ -1935,12 +1953,16 @@ err_alloc_dev:
 
 static void __net_exit sit_exit_batch_net(struct list_head *net_list)
 {
+	struct sit_net *sitn;
 	LIST_HEAD(list);
 	struct net *net;
 
 	rtnl_lock();
-	list_for_each_entry(net, net_list, exit_list)
-		sit_destroy_tunnels(net, &list);
+	list_for_each_entry(net, net_list, exit_list) {
+		sitn = net_generic(net, sit_net_id);
+		if (sitn) /* VE_FEATURE_SIT is set */
+			sit_destroy_tunnels(net, &list);
+	}
 
 	unregister_netdevice_many(&list);
 	rtnl_unlock();
