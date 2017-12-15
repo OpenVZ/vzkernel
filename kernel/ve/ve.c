@@ -516,6 +516,7 @@ struct cgroup_subsys ve_cgrp_subsys = {
 	.attach		= ve_attach,
 	.legacy_cftypes	= ve_cftypes,
 };
+EXPORT_SYMBOL_GPL(ve_cgrp_subsys);
 
 static int __init ve_subsys_init(void)
 {
