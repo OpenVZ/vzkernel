@@ -1842,7 +1842,7 @@ unlock:
 	spin_unlock_irq(&css_set_lock);
 	mutex_unlock(&cgroup_mutex);
 }
-#endif
+#endif /* CONFIG_VE */
 
 /*
  * To reduce the fork() overhead for systems that are not actually using
@@ -3506,6 +3506,12 @@ static ssize_t cgroup_file_write(struct kernfs_open_file *of, char *buf,
 	    !(cft->flags & CFTYPE_NS_DELEGATABLE) &&
 	    ns != &init_cgroup_ns && ns->root_cset->dfl_cgrp == cgrp)
 		return -EPERM;
+
+	if (!ve_is_super(get_exec_env())
+	    && test_bit(CGRP_VE_ROOT, &cgrp->flags)
+            && !get_exec_env()->is_pseudosuper
+            && !(cft->flags & CFTYPE_VE_WRITABLE))
+                return -EPERM;
 
 	if (cft->write)
 		return cft->write(of, buf, nbytes, off);
