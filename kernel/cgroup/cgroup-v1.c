@@ -14,6 +14,7 @@
 #include <linux/pid_namespace.h>
 #include <linux/cgroupstats.h>
 #include <linux/fs_parser.h>
+#include <linux/ve.h>
 
 #include <trace/events/cgroup.h>
 
@@ -607,6 +608,22 @@ static int cgroup_clone_children_write(struct cgroup_subsys_state *css,
 	return 0;
 }
 
+static u64 cgroup_read_subgroups_limit(struct cgroup_subsys_state *css,
+				       struct cftype *cft)
+{
+	return css->cgroup->subgroups_limit;
+}
+
+static int cgroup_write_subgroups_limit(struct cgroup_subsys_state *css,
+					struct cftype *cft, u64 val)
+{
+	if (!test_bit(CGRP_VE_ROOT, &css->cgroup->flags))
+		return -EACCES;
+
+	css->cgroup->subgroups_limit = val;
+	return 0;
+}
+
 /* cgroup core interface files for the legacy hierarchies */
 struct cftype cgroup1_base_files[] = {
 	{
@@ -650,6 +667,11 @@ struct cftype cgroup1_base_files[] = {
 		.seq_show = cgroup_release_agent_show,
 		.write = cgroup_release_agent_write,
 		.max_write_len = PATH_MAX - 1,
+	},
+	{
+		.name = "cgroup.subgroups_limit",
+		.read_u64 = cgroup_read_subgroups_limit,
+		.write_u64 = cgroup_write_subgroups_limit,
 	},
 	{ }	/* terminate */
 };
