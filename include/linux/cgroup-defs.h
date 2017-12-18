@@ -117,6 +117,13 @@ enum {
 	CFTYPE_WORLD_WRITABLE	= (1 << 4),	/* (DON'T USE FOR NEW FILES) S_IWUGO */
 	CFTYPE_DEBUG		= (1 << 5),	/* create when cgroup_debug */
 
+	/*
+	 * Allow write to file when it's on writer's ve init cgroup ns root. We don't
+	 * use CFTYPE_NS_DELEGATABLE as 1)it's implemented for cgroup v2 and 2)it won't
+	 * be good to begin use "mount -o nsdelegate" interface for cgroup v1.
+	 */
+	CFTYPE_VE_WRITABLE	= (1 << 15),
+
 	/* internal flags, do not use outside cgroup core proper */
 	__CFTYPE_ONLY_ON_DFL	= (1 << 16),	/* only on default hierarchy */
 	__CFTYPE_NOT_ON_DFL	= (1 << 17),	/* not on default hierarchy */
