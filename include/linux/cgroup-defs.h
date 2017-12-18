@@ -517,6 +517,8 @@ struct cgroup {
 	 * External kernel modules should not used it.
 	 */
 
+	u64 subgroups_limit;
+
 	/* ids of the ancestors at each level including self */
 	int ancestor_ids[];
 };
