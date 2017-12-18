@@ -198,9 +198,11 @@ static void fib6_link_table(struct net *net, struct fib6_table *tb)
 
 	h = tb->tb6_id & (FIB6_TABLE_HASHSZ - 1);
 
-	write_lock_bh(&tb->tb6_lock);
+	/*
+	 * No protection necessary, this is the only list mutatation
+	 * operation, tables never disappear once they exist.
+	 */
 	hlist_add_head_rcu(&tb->tb6_hlist, &net->ipv6.fib_table_hash[h]);
-	write_unlock_bh(&tb->tb6_lock);
 }
 
 #ifdef CONFIG_IPV6_MULTIPLE_TABLES
