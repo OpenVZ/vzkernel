@@ -1184,7 +1184,7 @@ static struct dst_entry *ip6_route_input_lookup(struct net *net,
 	return fib6_rule_lookup(net, fl6, flags, ip6_pol_route_input);
 }
 
-void __ip6_route_input(struct sk_buff *skb, struct in6_addr *daddr)
+void ip6_route_input(struct sk_buff *skb)
 {
 	const struct ipv6hdr *iph = ipv6_hdr(skb);
 	struct net *net = dev_net(skb->dev);
@@ -1192,7 +1192,7 @@ void __ip6_route_input(struct sk_buff *skb, struct in6_addr *daddr)
 	struct ip_tunnel_info *tun_info;
 	struct flowi6 fl6 = {
 		.flowi6_iif = skb->dev->ifindex,
-		.daddr = *daddr,
+		.daddr = iph->daddr,
 		.saddr = iph->saddr,
 		.flowlabel = ip6_flowinfo(iph),
 		.flowi6_mark = skb->mark,
@@ -1204,12 +1204,6 @@ void __ip6_route_input(struct sk_buff *skb, struct in6_addr *daddr)
 		flowi6_tun_id_set(&fl6, tun_info->key.tun_id);
 	skb_dst_drop(skb);
 	skb_dst_set(skb, ip6_route_input_lookup(net, skb->dev, &fl6, flags));
-}
-EXPORT_SYMBOL(__ip6_route_input);
-
-void ip6_route_input(struct sk_buff *skb)
-{
-	__ip6_route_input(skb, &ipv6_hdr(skb)->daddr);
 }
 
 static struct rt6_info *ip6_pol_route_output(struct net *net, struct fib6_table *table,
