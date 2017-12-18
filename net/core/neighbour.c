@@ -732,6 +732,13 @@ void neigh_destroy(struct neighbour *neigh)
 
 	NEIGH_CACHE_STAT_INC(neigh->tbl, destroys);
 
+	if (neigh->dev->leaked) {
+		printk(KERN_WARNING
+		       "Destroying neighbour %p on leaked device\n", neigh);
+		dump_stack();
+		return;
+	}
+
 	if (!neigh->dead) {
 		pr_warn("Destroying alive neighbour %p\n", neigh);
 		dump_stack();
