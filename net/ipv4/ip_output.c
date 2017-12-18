@@ -1565,7 +1565,6 @@ void ip_send_unicast_reply(struct sock *sk, struct sk_buff *skb,
 	if (__ip_options_echo(&replyopts.opt.opt, skb, sopt))
 		return;
 
-	saddr = ip_hdr(skb)->daddr;
 	ipc.addr = daddr;
 	ipc.opt = NULL;
 	ipc.tx_flags = 0;
