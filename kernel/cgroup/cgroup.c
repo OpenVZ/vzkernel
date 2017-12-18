@@ -1939,6 +1939,32 @@ unlock:
 	spin_unlock_irq(&css_set_lock);
 }
 
+struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
+{
+	struct cgroup *ve_root = NULL;
+
+	do {
+		if (test_bit(CGRP_VE_ROOT, &cgrp->flags)) {
+			ve_root = cgrp;
+			break;
+		}
+		cgrp = cgroup_parent(cgrp);
+	} while (cgrp);
+
+	return ve_root;
+}
+
+static bool subgroup_limit_reached(struct cgroup *cgroup)
+{
+	struct cgroup *ve_root;
+	bool ret = false;
+
+	ve_root = cgroup_get_ve_root1(cgroup);
+	if (ve_root && ve_root->subgroups_limit > 0 &&
+	    ve_root->nr_descendants >= ve_root->subgroups_limit)
+		ret = true;
+	return ret;
+}
 #endif /* CONFIG_VE */
 
 static void init_cgroup_housekeeping(struct cgroup *cgrp)
@@ -5391,6 +5417,13 @@ int cgroup_mkdir(struct kernfs_node *parent_kn, const char *name, umode_t mode)
 		ret = PTR_ERR(cgrp);
 		goto out_unlock;
 	}
+
+#ifdef CONFIG_VE
+	if (!cgroup_on_dfl(cgrp) && subgroup_limit_reached(parent)) {
+		ret = -EACCES;
+		goto out_destroy;
+	}
+#endif
 
 	/*
 	 * This extra ref will be put in cgroup_free_fn() and guarantees
