@@ -208,6 +208,8 @@ static int ve_start_container(struct ve_struct *ve)
 	if (err < 0)
 		goto err_iterate;
 
+	cgroup_mark_ve_root(ve);
+
 	ve->is_running = 1;
 
 	printk(KERN_INFO "CT: %s: started\n", ve_name(ve));
