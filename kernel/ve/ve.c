@@ -215,6 +215,8 @@ static int ve_start_container(struct ve_struct *ve)
 	if (err < 0)
 		goto err_iterate;
 
+	cgroup_mark_ve_root(ve);
+
 	ve->is_running = 1;
 
 	printk(KERN_INFO "CT: %s: started\n", ve_name(ve));
@@ -272,6 +274,9 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 	 */
 	if (!ve_ns || ve_ns->pid_ns_for_children != pid_ns)
 		goto unlock;
+
+	cgroup_unmark_ve_roots(ve);
+
 	/*
 	 * At this point all userspace tasks in container are dead.
 	 */
