@@ -380,6 +380,8 @@ struct cgroup {
 	/* used to store eBPF programs */
 	struct cgroup_bpf bpf;
 
+	u64 subgroups_limit;
+
 	/* ids of the ancestors at each level including self */
 	int ancestor_ids[];
 };
