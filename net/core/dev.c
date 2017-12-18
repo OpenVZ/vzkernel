@@ -7372,7 +7372,6 @@ static void ve_netdev_leak(struct net_device *dev)
 	pr_emerg("Device (%s:%d:%s:%p) marked as leaked\n",
 			dev->name, netdev_refcnt_read(dev) - 1,
 			ve_name(dev_net(dev)->owner_ve), dev);
-	dst_cache_dump();
 }
 
 /**
