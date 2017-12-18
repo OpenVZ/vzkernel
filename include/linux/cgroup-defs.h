@@ -63,6 +63,9 @@ enum {
 	 * specified at mount time and thus is implemented here.
 	 */
 	CGRP_CPUSET_CLONE_CHILDREN,
+
+	/* The cgroup is root in a VE */
+	CGRP_VE_ROOT,
 };
 
 /* cgroup_root->flags */

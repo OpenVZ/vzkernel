@@ -1817,6 +1817,33 @@ static int cgroup_remount(struct kernfs_root *kf_root, int *flags, char *data)
 	return 0;
 }
 
+#ifdef CONFIG_VE
+void cgroup_mark_ve_root(struct ve_struct *ve)
+{
+	struct cgrp_cset_link *link;
+	struct css_set *cset;
+	struct cgroup *cgrp;
+
+	mutex_lock(&cgroup_mutex);
+	spin_lock_irq(&css_set_lock);
+
+	rcu_read_lock();
+	cset = rcu_dereference(ve->ve_ns)->cgroup_ns->root_cset;
+	if (WARN_ON(!cset))
+		goto unlock;
+
+	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
+		cgrp = link->cgrp;
+		set_bit(CGRP_VE_ROOT, &cgrp->flags);
+	}
+unlock:
+	rcu_read_unlock();
+
+	spin_unlock_irq(&css_set_lock);
+	mutex_unlock(&cgroup_mutex);
+}
+#endif
+
 /*
  * To reduce the fork() overhead for systems that are not actually using
  * their cgroups capability, we don't maintain the lists running through
