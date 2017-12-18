@@ -451,6 +451,8 @@ struct cgroup {
 	/* If there is block congestion on this cgroup. */
 	atomic_t congestion_count;
 
+	u64 subgroups_limit;
+
 	/* ids of the ancestors at each level including self */
 	int ancestor_ids[];
 };
