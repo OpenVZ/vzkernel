@@ -1165,6 +1165,17 @@ int dev_get_valid_name(struct net *net, struct net_device *dev,
 }
 EXPORT_SYMBOL(dev_get_valid_name);
 
+static bool ve_dev_can_rename(struct net_device *dev)
+{
+	struct net *net;
+	bool can;
+
+	net = ve_net_lock(dev_net(dev)->owner_ve);
+	can = !net || net == dev_net(dev);
+	ve_net_unlock(dev_net(dev)->owner_ve);
+	return can;
+}
+
 /**
  *	dev_change_name - change name of a device
  *	@dev: device
@@ -1210,6 +1221,10 @@ int dev_change_name(struct net_device *dev, const char *newname)
 	dev->name_assign_type = NET_NAME_RENAMED;
 
 rollback:
+
+	if (!ve_dev_can_rename(dev))
+		goto skip_rename;
+
 	ret = device_rename(&dev->dev, dev->name);
 	if (ret) {
 		memcpy(dev->name, oldname, IFNAMSIZ);
@@ -1218,6 +1233,7 @@ rollback:
 		return ret;
 	}
 
+skip_rename:
 	write_seqcount_end(&devnet_rename_seq);
 
 	netdev_adjacent_rename_links(dev, oldname);
