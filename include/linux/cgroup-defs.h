@@ -71,6 +71,9 @@ enum {
 
 	/* Cgroup is frozen. */
 	CGRP_FROZEN,
+
+	/* The cgroup is root in a VE */
+	CGRP_VE_ROOT,
 };
 
 /* cgroup_root->flags */
