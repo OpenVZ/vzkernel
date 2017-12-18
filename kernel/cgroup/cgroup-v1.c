@@ -15,6 +15,7 @@
 #include <linux/pid_namespace.h>
 #include <linux/cgroupstats.h>
 #include <linux/fs_parser.h>
+#include <linux/ve.h>
 
 #include <trace/events/cgroup.h>
 
@@ -665,6 +666,16 @@ struct cftype cgroup1_base_files[] = {
 		.seq_show = cgroup_release_agent_show,
 		.write = cgroup_release_agent_write,
 		.max_write_len = PATH_MAX - 1,
+	},
+	{
+		.name = "cgroup.subgroups_limit",
+		.seq_show = cgroup_max_descendants_show,
+		.write = cgroup_max_descendants_write,
+	},
+	{
+		.name = "cgroup.max.descendants",
+		.seq_show = cgroup_max_descendants_show,
+		.write = cgroup_max_descendants_write,
 	},
 	{ }	/* terminate */
 };

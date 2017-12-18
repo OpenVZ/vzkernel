@@ -265,6 +265,10 @@ int cgroup_show_path(struct seq_file *sf, struct kernfs_node *kf_node,
 int __cgroup_task_count(const struct cgroup *cgrp);
 int cgroup_task_count(const struct cgroup *cgrp);
 
+int cgroup_max_descendants_show(struct seq_file *seq, void *v);
+ssize_t cgroup_max_descendants_write(struct kernfs_open_file *of,
+				     char *buf, size_t nbytes, loff_t off);
+
 /*
  * rstat.c
  */
