@@ -2061,6 +2061,20 @@ void cgroup_unmark_ve_roots(struct ve_struct *ve)
 	spin_unlock_irq(&css_set_lock);
 }
 
+struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
+{
+	struct cgroup *ve_root = NULL;
+
+	do {
+		if (test_bit(CGRP_VE_ROOT, &cgrp->flags)) {
+			ve_root = cgrp;
+			break;
+		}
+		cgrp = cgroup_parent(cgrp);
+	} while (cgrp);
+
+	return ve_root;
+}
 #endif /* CONFIG_VE */
 
 static void init_cgroup_housekeeping(struct cgroup *cgrp)
@@ -3607,7 +3621,7 @@ static ssize_t cgroup_type_write(struct kernfs_open_file *of, char *buf,
 	return ret ?: nbytes;
 }
 
-static int cgroup_max_descendants_show(struct seq_file *seq, void *v)
+int cgroup_max_descendants_show(struct seq_file *seq, void *v)
 {
 	struct cgroup *cgrp = seq_css(seq)->cgroup;
 	int descendants = READ_ONCE(cgrp->max_descendants);
@@ -3620,8 +3634,8 @@ static int cgroup_max_descendants_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
-static ssize_t cgroup_max_descendants_write(struct kernfs_open_file *of,
-					   char *buf, size_t nbytes, loff_t off)
+ssize_t cgroup_max_descendants_write(struct kernfs_open_file *of,
+				     char *buf, size_t nbytes, loff_t off)
 {
 	struct cgroup *cgrp;
 	int descendants;
