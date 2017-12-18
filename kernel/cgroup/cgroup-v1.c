@@ -616,6 +616,7 @@ struct cftype cgroup1_base_files[] = {
 		.seq_show = cgroup_pidlist_show,
 		.private = CGROUP_FILE_PROCS,
 		.write = cgroup1_procs_write,
+		.flags = CFTYPE_VE_WRITABLE,
 	},
 	{
 		.name = "cgroup.clone_children",
@@ -635,6 +636,7 @@ struct cftype cgroup1_base_files[] = {
 		.seq_show = cgroup_pidlist_show,
 		.private = CGROUP_FILE_TASKS,
 		.write = cgroup1_tasks_write,
+		.flags = CFTYPE_VE_WRITABLE,
 	},
 	{
 		.name = "notify_on_release",
