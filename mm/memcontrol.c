@@ -5117,6 +5117,7 @@ static struct cftype mem_cgroup_legacy_files[] = {
 	},
 	{
 		.name = "use_hierarchy",
+		.flags = CFTYPE_VE_WRITABLE,
 		.write_u64 = mem_cgroup_hierarchy_write,
 		.read_u64 = mem_cgroup_hierarchy_read,
 	},
