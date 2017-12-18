@@ -1977,6 +1977,58 @@ static int cgroup_reconfigure(struct fs_context *fc)
 	return 0;
 }
 
+#ifdef CONFIG_VE
+void cgroup_mark_ve_roots(struct ve_struct *ve)
+{
+	struct cgrp_cset_link *link;
+	struct css_set *cset;
+	struct cgroup *cgrp;
+
+	spin_lock_irq(&css_set_lock);
+
+	/*
+	 * We can safely use ve->ve_ns without rcu_read_lock here, as we are
+	 * always called _after_ ve_grab_context under ve->op_sem, so we've
+	 * just set ve_ns and nobody else can modify it under us.
+	 */
+	cset = rcu_dereference_protected(ve->ve_ns,
+			lockdep_is_held(&ve->op_sem))->cgroup_ns->root_cset;
+
+	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
+		cgrp = link->cgrp;
+		set_bit(CGRP_VE_ROOT, &cgrp->flags);
+	}
+
+	link_ve_root_cpu_cgroup(cset->subsys[cpu_cgrp_id]);
+	spin_unlock_irq(&css_set_lock);
+}
+
+void cgroup_unmark_ve_roots(struct ve_struct *ve)
+{
+	struct cgrp_cset_link *link;
+	struct css_set *cset;
+	struct cgroup *cgrp;
+
+	spin_lock_irq(&css_set_lock);
+
+	/*
+	 * We can safely use ve->ve_ns without rcu_read_lock here, as we are
+	 * always called _before_ ve_drop_context under ve->op_sem, so we
+	 * did not change ve_ns yet and nobody else can modify it under us.
+	 */
+	cset = rcu_dereference_protected(ve->ve_ns,
+			lockdep_is_held(&ve->op_sem))->cgroup_ns->root_cset;
+
+	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
+		cgrp = link->cgrp;
+		clear_bit(CGRP_VE_ROOT, &cgrp->flags);
+	}
+
+	spin_unlock_irq(&css_set_lock);
+}
+
+#endif /* CONFIG_VE */
+
 static void init_cgroup_housekeeping(struct cgroup *cgrp)
 {
 	struct cgroup_subsys *ss;

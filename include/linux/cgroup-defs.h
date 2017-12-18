@@ -74,6 +74,9 @@ enum {
 
 	/* Control group has to be killed. */
 	CGRP_KILL,
+
+	/* The cgroup is root in a VE */
+	CGRP_VE_ROOT,
 };
 
 /* cgroup_root->flags */
