@@ -496,6 +496,8 @@ struct cgroup {
 	/* Used to store internal freezer state */
 	struct cgroup_freezer_state freezer;
 
+	u64 subgroups_limit;
+
 	/* ids of the ancestors at each level including self */
 	u64 ancestor_ids[];
 };
