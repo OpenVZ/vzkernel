@@ -2149,6 +2149,7 @@ struct net_device {
 	struct lock_class_key	*qdisc_tx_busylock;
 	struct lock_class_key	*qdisc_running_key;
 	bool			proto_down;
+	unsigned char		leaked;
 
 	RH_KABI_RESERVE(1)
 	RH_KABI_RESERVE(2)
