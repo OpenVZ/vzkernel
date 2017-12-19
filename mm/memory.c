@@ -5607,7 +5607,7 @@ EXPORT_SYMBOL_GPL(access_process_vm);
 /*
  * Print the name of a VMA.
  */
-void print_vma_addr(char *prefix, unsigned long ip)
+void ve_print_vma_addr(int dst, char *prefix, unsigned long ip)
 {
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma;
@@ -5628,7 +5628,7 @@ void print_vma_addr(char *prefix, unsigned long ip)
 			p = file_path(f, buf, PAGE_SIZE);
 			if (IS_ERR(p))
 				p = "?";
-			printk("%s%s[%lx+%lx]", prefix, kbasename(p),
+			ve_printk(dst, "%s%s[%lx+%lx]", prefix, kbasename(p),
 					vma->vm_start,
 					vma->vm_end - vma->vm_start);
 			free_page((unsigned long)buf);

@@ -782,17 +782,18 @@ show_signal_msg(struct pt_regs *regs, unsigned long error_code,
 		loglvl, tsk->comm, task_pid_nr(tsk), address,
 		(void *)regs->ip, (void *)regs->sp, error_code);
 
-	print_vma_addr(KERN_CONT " in ", regs->ip);
+	ve_print_vma_addr(VE_LOG, KERN_CONT " in ", regs->ip);
 
 	/*
 	 * Dump the likely CPU where the fatal segfault happened.
 	 * This can help identify faulty hardware.
 	 */
-	printk(KERN_CONT " likely on CPU %d (core %d, socket %d)", cpu,
-	       topology_core_id(cpu), topology_physical_package_id(cpu));
+	ve_printk(VE_LOG,
+		  KERN_CONT " likely on CPU %d (core %d, socket %d)", cpu,
+		  topology_core_id(cpu), topology_physical_package_id(cpu));
 
 
-	printk(KERN_CONT "\n");
+	ve_printk(VE_LOG, KERN_CONT "\n");
 
 	show_opcodes(regs, loglvl);
 }
