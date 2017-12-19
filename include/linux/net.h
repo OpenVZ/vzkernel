@@ -304,6 +304,11 @@ do {									\
 	} while (0)
 #endif
 
+#define net_velog_ratelimited(fmt, ...)                                \
+	net_ratelimited_function(ve_printk, VE_LOG, fmt, ##__VA_ARGS__)
+#define net_veboth_ratelimited(fmt, ...)                               \
+	net_ratelimited_function(ve_printk, VE_LOG_BOTH, fmt, ##__VA_ARGS__)
+
 #define net_get_random_once(buf, nbytes)			\
 	get_random_once((buf), (nbytes))
 
