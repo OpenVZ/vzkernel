@@ -33,6 +33,8 @@
 #include <linux/shmem_fs.h>
 #include <linux/mnt_idmapping.h>
 
+#include <linux/ve.h>
+
 #include "pnode.h"
 #include "internal.h"
 
@@ -4455,7 +4457,7 @@ static bool mount_too_revealing(const struct super_block *sb, int *new_mnt_flags
 	struct mnt_namespace *ns = current->nsproxy->mnt_ns;
 	unsigned long s_iflags;
 
-	if (ns->user_ns == &init_user_ns)
+	if (ns->user_ns == ve_init_user_ns())
 		return false;
 
 	/* Can this filesystem be too revealing? */
