@@ -513,6 +513,7 @@ static int queue_pages_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
 			break;
 	} while (pte++, addr += PAGE_SIZE, addr != end);
 	pte_unmap_unlock(orig_pte, ptl);
+	cond_resched();
 	return addr != end;
 }
 
