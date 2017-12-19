@@ -2034,7 +2034,8 @@ static void *established_get_next(struct seq_file *seq, void *cur)
 	sk = sk_nulls_next(sk);
 
 	sk_nulls_for_each_from(sk, node) {
-		if (sk->sk_family == st->family && net_eq(sock_net(sk), net))
+		if (sk->sk_family == st->family &&
+		    net_eq(sock_net(sk), net))
 			return sk;
 	}
 
