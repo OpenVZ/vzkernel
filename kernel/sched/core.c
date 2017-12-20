@@ -760,6 +760,18 @@ static void set_load_weight(struct task_struct *p, bool update_load)
 	}
 }
 
+static inline void check_inc_sleeping(struct rq *rq, struct task_struct *t)
+{
+	if (t->state == TASK_INTERRUPTIBLE)
+		rq->nr_sleeping++;
+}
+
+static inline void check_dec_sleeping(struct rq *rq, struct task_struct *t)
+{
+	if (t->state == TASK_INTERRUPTIBLE)
+		rq->nr_sleeping--;
+}
+
 static inline void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 {
 	if (!(flags & ENQUEUE_NOCLOCK))
@@ -788,8 +800,12 @@ static inline void dequeue_task(struct rq *rq, struct task_struct *p, int flags)
 
 void activate_task(struct rq *rq, struct task_struct *p, int flags)
 {
-	if (task_contributes_to_load(p))
+	if (task_contributes_to_load(p)) {
 		rq->nr_uninterruptible--;
+		task_cfs_rq(p)->nr_unint--;
+	}
+
+	check_dec_sleeping(rq, p);
 
 	enqueue_task(rq, p, flags);
 
@@ -798,10 +814,13 @@ void activate_task(struct rq *rq, struct task_struct *p, int flags)
 
 void deactivate_task(struct rq *rq, struct task_struct *p, int flags)
 {
+	check_inc_sleeping(rq, p);
 	p->on_rq = (flags & DEQUEUE_SLEEP) ? 0 : TASK_ON_RQ_MIGRATING;
 
-	if (task_contributes_to_load(p))
+	if (task_contributes_to_load(p)) {
 		rq->nr_uninterruptible++;
+		task_cfs_rq(p)->nr_unint++;
+	}
 
 	dequeue_task(rq, p, flags);
 }
@@ -1716,12 +1735,17 @@ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags,
 	lockdep_assert_held(&rq->lock);
 
 #ifdef CONFIG_SMP
-	if (p->sched_contributes_to_load)
+	if (p->sched_contributes_to_load) {
 		rq->nr_uninterruptible--;
+		task_cfs_rq(p)->nr_unint--;
+	}
 
 	if (wake_flags & WF_MIGRATED)
 		en_flags |= ENQUEUE_MIGRATED;
 #endif
+
+	if (p->sched_interruptible_sleep)
+		rq->nr_sleeping--;
 
 	activate_task(rq, p, en_flags);
 	ttwu_do_wakeup(rq, p, wake_flags, rf);
@@ -2054,6 +2078,7 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	smp_cond_load_acquire(&p->on_cpu, !VAL);
 
 	p->sched_contributes_to_load = !!task_contributes_to_load(p);
+	p->sched_interruptible_sleep = (p->state == TASK_INTERRUPTIBLE);
 	p->state = TASK_WAKING;
 
 	if (p->in_iowait) {
@@ -6374,6 +6399,13 @@ void sched_move_task(struct task_struct *tsk)
 
 	if (queued)
 		dequeue_task(rq, tsk, queue_flags);
+	else {
+		if (task_contributes_to_load(tsk))
+			task_cfs_rq(tsk)->nr_unint--;
+
+		check_dec_sleeping(rq, tsk);
+	}
+
 	if (running)
 		put_prev_task(rq, tsk);
 
@@ -6381,6 +6413,13 @@ void sched_move_task(struct task_struct *tsk)
 
 	if (queued)
 		enqueue_task(rq, tsk, queue_flags);
+	else {
+		if (task_contributes_to_load(tsk))
+			task_cfs_rq(tsk)->nr_unint++;
+
+		check_inc_sleeping(rq, tsk);
+	}
+
 	if (running)
 		set_curr_task(rq, tsk);
 
