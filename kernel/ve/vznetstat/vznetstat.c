@@ -88,15 +88,11 @@ static int venet_acct_set_classes(const void __user *user_info, int length, int 
 			goto out_free;
 	}
 
-	rcu_read_lock();
-	if (v6) {
-		old = rcu_dereference(info_v6);
-		rcu_assign_pointer(info_v6, info);
-	} else {
-		old = rcu_dereference(info_v4);
-		rcu_assign_pointer(info_v4, info);
-	}
-	rcu_read_unlock();
+	if (v6)
+		old = xchg(&info_v6, info);
+	else
+		old = xchg(&info_v4, info);
+	/* xchg() implies rcu_assign_pointer() barriers */
 
 	synchronize_net();
 	/* IMPORTANT. I think reset of statistics collected should not be
