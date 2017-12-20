@@ -25,19 +25,6 @@ void KSTAT_PERF_ADD(struct kstat_perf_pcpu_struct *ptr, u64 real_time, u64 cpu_t
 }
 
 /*
- * Add another statistics reading.
- * Serialization is the caller's due.
- */
-void KSTAT_LAT_ADD(struct kstat_lat_struct *p,
-		u64 dur)
-{
-	p->cur.count++;
-	if (p->cur.maxlat < dur)
-		p->cur.maxlat = dur;
-	p->cur.totlat += dur;
-}
-
-/*
  * Must be called with disabled interrupts to remove any possible
  * locks and seqcounts under write-lock and avoid this 3-way deadlock:
  *
@@ -74,18 +61,6 @@ void KSTAT_LAT_PCPU_ADD(struct kstat_lat_pcpu_struct *p, int cpu,
  * Move current statistics to last, clear last.
  * Serialization is the caller's due.
  */
-void KSTAT_LAT_UPDATE(struct kstat_lat_struct *p)
-{
-	u64 m;
-	memcpy(&p->last, &p->cur, sizeof(p->last));
-	p->cur.maxlat = 0;
-	m = p->last.maxlat;
-	CALC_LOAD(p->avg[0], EXP_1, m)
-	CALC_LOAD(p->avg[1], EXP_5, m)
-	CALC_LOAD(p->avg[2], EXP_15, m)
-}
-EXPORT_SYMBOL(KSTAT_LAT_UPDATE);
-
 void KSTAT_LAT_PCPU_UPDATE(struct kstat_lat_pcpu_struct *p)
 {
 	unsigned i, cpu;
