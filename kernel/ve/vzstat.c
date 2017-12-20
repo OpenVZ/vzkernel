@@ -151,7 +151,7 @@ static void update_alloc_latency(void)
 	spin_lock_irq(&kstat_glb_lock);
 	for (i = 0; i < KSTAT_ALLOCSTAT_NR; i++)
 		KSTAT_LAT_PCPU_UPDATE(&kstat_glob.alloc_lat[i]);
-	KSTAT_LAT_UPDATE(&kstat_glob.swap_in);
+	KSTAT_LAT_PCPU_UPDATE(&kstat_glob.swap_in);
 	KSTAT_LAT_PCPU_UPDATE(&kstat_glob.page_in);
 	spin_unlock_irq(&kstat_glb_lock);
 }

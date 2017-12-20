@@ -2672,9 +2672,9 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 unlock:
 	pte_unmap_unlock(page_table, ptl);
 out:
-	spin_lock_irq(&kstat_glb_lock);
-	KSTAT_LAT_ADD(&kstat_glob.swap_in, get_cycles() - start);
-	spin_unlock_irq(&kstat_glb_lock);
+	local_irq_disable();
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.swap_in, smp_processor_id(), get_cycles() - start);
+	local_irq_enable();
 
 	return ret;
 out_nomap:
