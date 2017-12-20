@@ -43,12 +43,11 @@ void KSTAT_PERF_ADD(struct kstat_perf_pcpu_struct *ptr, u64 real_time, u64 cpu_t
  *      ktime_get()
  *       read_seqcount_begin(&xtime_lock);
  */
-void KSTAT_LAT_PCPU_ADD(struct kstat_lat_pcpu_struct *p, int cpu,
-		u64 dur)
+void KSTAT_LAT_PCPU_ADD(struct kstat_lat_pcpu_struct *p, u64 dur)
 {
 	struct kstat_lat_pcpu_snap_struct *cur;
 
-	cur = per_cpu_ptr(p->cur, cpu);
+	cur = this_cpu_ptr(p->cur);
 	write_seqcount_begin(&cur->lock);
 	cur->count++;
 	if (cur->maxlat < dur)
