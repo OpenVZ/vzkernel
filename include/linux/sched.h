@@ -168,6 +168,8 @@ struct ve_struct;
 #define TASK_COMM_LEN			16
 
 extern cpumask_var_t			cpu_isolated_map;
+extern atomic_t nr_dead;
+extern unsigned long nr_zombie;
 
 extern void scheduler_tick(void);
 
