@@ -5466,10 +5466,10 @@ void sched_show_task(struct task_struct *p)
 	rcu_read_lock();
 	if (pid_alive(p))
 		ppid = task_pid_nr(rcu_dereference(p->real_parent));
-	rcu_read_unlock();
-	printk(KERN_CONT "%5lu %5d %6d 0x%08lx\n", free,
+	printk(KERN_CONT "%5lu %5d %6d %4s 0x%08lx\n", free,
 		task_pid_nr(p), ppid,
-		(unsigned long)task_thread_info(p)->flags);
+		task_ve_name(p), (unsigned long)task_thread_info(p)->flags);
+	rcu_read_unlock();
 
 	print_worker_info(KERN_INFO, p);
 	show_stack(p, NULL);
@@ -5505,10 +5505,10 @@ void show_state_filter(unsigned long state_filter)
 
 #if BITS_PER_LONG == 32
 	printk(KERN_INFO
-		"  task                PC stack   pid father\n");
+		"  task          taskaddr stack   pid father veid\n");
 #else
 	printk(KERN_INFO
-		"  task                        PC stack   pid father\n");
+		"  task                  taskaddr stack   pid father veid\n");
 #endif
 	rcu_read_lock();
 	for_each_process_thread(g, p) {
