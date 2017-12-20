@@ -21,6 +21,7 @@
 #include <linux/log2.h>
 #include <linux/pm_runtime.h>
 #include <linux/badblocks.h>
+#include <linux/device_cgroup.h>
 
 #include "blk.h"
 
@@ -298,9 +299,13 @@ void blkdev_show(struct seq_file *seqf, off_t offset)
 	struct blk_major_name *dp;
 
 	mutex_lock(&block_class_lock);
-	for (dp = major_names[major_to_index(offset)]; dp; dp = dp->next)
+	for (dp = major_names[major_to_index(offset)]; dp; dp = dp->next) {
+		if (!devcgroup_device_visible(S_IFBLK, dp->major,
+					0, INT_MAX))
+			continue;
 		if (dp->major == offset)
 			seq_printf(seqf, "%3d %s\n", dp->major, dp->name);
+	}
 	mutex_unlock(&block_class_lock);
 }
 #endif /* CONFIG_PROC_FS */
@@ -943,11 +948,15 @@ static int show_partition(struct seq_file *seqf, void *v)
 
 	/* show the full disk and all non-0 size partitions of it */
 	disk_part_iter_init(&piter, sgp, DISK_PITER_INCL_PART0);
-	while ((part = disk_part_iter_next(&piter)))
-		seq_printf(seqf, "%4d  %7d %10llu %s\n",
-			   MAJOR(part_devt(part)), MINOR(part_devt(part)),
+	while ((part = disk_part_iter_next(&piter))) {
+		unsigned int major = MAJOR(part_devt(part));
+		unsigned int minor = MINOR(part_devt(part));
+
+		if (devcgroup_device_visible(S_IFBLK, major, minor, 1))
+			seq_printf(seqf, "%4d  %7d %10llu %s\n", major, minor,
 			   (unsigned long long)part_nr_sects_read(part) >> 1,
 			   disk_name(sgp, part->partno, buf));
+	}
 	disk_part_iter_exit(&piter);
 
 	return 0;
@@ -1313,7 +1322,7 @@ static const struct file_operations proc_diskstats_operations = {
 static int __init proc_genhd_init(void)
 {
 	proc_create("diskstats", 0, NULL, &proc_diskstats_operations);
-	proc_create("partitions", 0, NULL, &proc_partitions_operations);
+	proc_create("partitions", S_ISVTX, NULL, &proc_partitions_operations);
 	return 0;
 }
 module_init(proc_genhd_init);

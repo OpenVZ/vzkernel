@@ -22,6 +22,7 @@
 #include <linux/mutex.h>
 #include <linux/backing-dev.h>
 #include <linux/tty.h>
+#include <linux/device_cgroup.h>
 
 #include "internal.h"
 
@@ -54,6 +55,9 @@ void chrdev_show(struct seq_file *f, off_t offset)
 
 	mutex_lock(&chrdevs_lock);
 	for (cd = chrdevs[major_to_index(offset)]; cd; cd = cd->next) {
+		if (!devcgroup_device_visible(S_IFCHR, cd->major,
+					cd->baseminor, cd->minorct))
+			continue;
 		if (cd->major == offset)
 			seq_printf(f, "%3d %s\n", cd->major, cd->name);
 	}
