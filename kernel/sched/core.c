@@ -2082,6 +2082,15 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	 */
 	smp_cond_load_acquire(&p->on_cpu, !VAL);
 
+	if (p->in_iowait && p->sched_class->nr_iowait_dec) {
+		struct rq_flags rf;
+		struct rq *rq;
+
+		rq = __task_rq_lock(p, &rf);
+		p->sched_class->nr_iowait_dec(p);
+		__task_rq_unlock(rq, &rf);
+	}
+
 	p->sched_contributes_to_load = !!task_contributes_to_load(p);
 	p->sched_interruptible_sleep = (p->state == TASK_INTERRUPTIBLE);
 	p->state = TASK_WAKING;
@@ -6438,6 +6447,10 @@ void sched_move_task(struct task_struct *tsk)
 	if (queued)
 		dequeue_task(rq, tsk, queue_flags);
 	else {
+		if (!(tsk->state & TASK_WAKING) && tsk->in_iowait &&
+		    tsk->sched_class->nr_iowait_dec)
+			tsk->sched_class->nr_iowait_dec(tsk);
+
 		if (task_contributes_to_load(tsk))
 			task_cfs_rq(tsk)->nr_unint--;
 
@@ -6452,6 +6465,10 @@ void sched_move_task(struct task_struct *tsk)
 	if (queued)
 		enqueue_task(rq, tsk, queue_flags);
 	else {
+		if (!(tsk->state & TASK_WAKING) && tsk->in_iowait &&
+		    tsk->sched_class->nr_iowait_inc)
+			tsk->sched_class->nr_iowait_inc(tsk);
+
 		if (task_contributes_to_load(tsk))
 			task_cfs_rq(tsk)->nr_unint++;
 
