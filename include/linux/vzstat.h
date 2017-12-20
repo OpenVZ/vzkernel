@@ -25,7 +25,6 @@ struct kstat_lat_snap_struct {
 struct kstat_lat_pcpu_snap_struct {
 	u64 maxlat, totlat;
 	unsigned long count;
-	seqcount_t lock;
 } ____cacheline_aligned_in_smp;
 
 struct kstat_lat_pcpu_struct {
@@ -83,6 +82,8 @@ struct kernel_stat_glob {
 
 	struct kstat_zone_avg zone_avg[MAX_NR_ZONES];
 } ____cacheline_aligned;
+
+DECLARE_PER_CPU(seqcount_t, kstat_pcpu_seq);
 
 extern struct kernel_stat_glob kstat_glob ____cacheline_aligned;
 extern spinlock_t kstat_glb_lock;
