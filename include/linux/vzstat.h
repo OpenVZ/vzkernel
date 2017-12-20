@@ -80,7 +80,7 @@ struct kernel_stat_glob {
 	struct kstat_lat_pcpu_struct alloc_lat[KSTAT_ALLOCSTAT_NR];
 	struct kstat_lat_pcpu_struct sched_lat;
 	struct kstat_lat_pcpu_struct page_in;
-	struct kstat_lat_struct swap_in;
+	struct kstat_lat_pcpu_struct swap_in;
 
 	struct kstat_perf_pcpu_struct ttfp, cache_reap,
 			refill_inact, shrink_icache, shrink_dcache;

@@ -143,6 +143,7 @@ EXPORT_SYMBOL(kstat_glb_lock);
 
 static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, glob_kstat_lat);
 static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, glob_kstat_page_in);
+static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, glob_kstat_swap_in);
 static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, alloc_kstat_lat[KSTAT_ALLOCSTAT_NR]);
 
 static DEFINE_PER_CPU(struct kstat_perf_pcpu_snap_struct, kstat_pcpu_ttfp);
@@ -158,6 +159,7 @@ void __init kstat_init(void)
 	seqcount_init(&kstat_glob.nr_unint_avg_seq);
 	kstat_glob.sched_lat.cur = &glob_kstat_lat;
 	kstat_glob.page_in.cur = &glob_kstat_page_in;
+	kstat_glob.swap_in.cur = &glob_kstat_swap_in;
 	for ( i = 0 ; i < KSTAT_ALLOCSTAT_NR ; i++)
 		kstat_glob.alloc_lat[i].cur = &alloc_kstat_lat[i];
 
