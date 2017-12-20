@@ -46,14 +46,17 @@ void KSTAT_PERF_ADD(struct kstat_perf_pcpu_struct *ptr, u64 real_time, u64 cpu_t
 void KSTAT_LAT_PCPU_ADD(struct kstat_lat_pcpu_struct *p, u64 dur)
 {
 	struct kstat_lat_pcpu_snap_struct *cur;
+	seqcount_t *seq;
 
 	cur = this_cpu_ptr(p->cur);
-	write_seqcount_begin(&cur->lock);
+	seq = this_cpu_ptr(&kstat_pcpu_seq);
+
+	write_seqcount_begin(seq);
 	cur->count++;
 	if (cur->maxlat < dur)
 		cur->maxlat = dur;
 	cur->totlat += dur;
-	write_seqcount_end(&cur->lock);
+	write_seqcount_end(seq);
 }
 
 /*
@@ -62,17 +65,19 @@ void KSTAT_LAT_PCPU_ADD(struct kstat_lat_pcpu_struct *p, u64 dur)
  */
 void KSTAT_LAT_PCPU_UPDATE(struct kstat_lat_pcpu_struct *p)
 {
-	unsigned i, cpu;
 	struct kstat_lat_pcpu_snap_struct snap, *cur;
+	unsigned i, cpu;
+	seqcount_t *seq;
 	u64 m;
 
 	memset(&p->last, 0, sizeof(p->last));
 	for_each_online_cpu(cpu) {
 		cur = per_cpu_ptr(p->cur, cpu);
+		seq = per_cpu_ptr(&kstat_pcpu_seq, cpu);
 		do {
-			i = read_seqcount_begin(&cur->lock);
+			i = read_seqcount_begin(seq);
 			memcpy(&snap, cur, sizeof(snap));
-		} while (read_seqcount_retry(&cur->lock, i));
+		} while (read_seqcount_retry(seq, i));
 		/* 
 		 * read above and this update of maxlat is not atomic,
 		 * but this is OK, since it happens rarely and losing
