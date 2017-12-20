@@ -65,7 +65,10 @@ static int venet_acct_set_classes(const void __user *user_info, int length, int 
 	else
 		size = sizeof(struct vz_tc_class_info);
 
-	info = kmalloc(sizeof(struct class_info_set) + size * length, GFP_KERNEL);
+	info = __vmalloc((sizeof(struct class_info_set) + size * length),
+			 GFP_KERNEL | __GFP_HIGHMEM | __GFP_NOWARN,
+			 PAGE_KERNEL);
+
 	if (info == NULL)
 		return -ENOMEM;
 
@@ -97,11 +100,11 @@ static int venet_acct_set_classes(const void __user *user_info, int length, int 
 	synchronize_net();
 	/* IMPORTANT. I think reset of statistics collected should not be
 	 * done here. */
-	kfree(old);
+	vfree(old);
 	return 0;
 
 out_free:
-	kfree(info);
+	vfree(info);
 	return err;
 }
 
@@ -119,7 +122,9 @@ static int venet_acct_get_classes(void __user *ret, int length, int v6)
 		size = sizeof(struct vz_tc_class_info);
 
 	/* due to spinlock locking, see below */
-	info = kmalloc(size * length, GFP_KERNEL);
+	info = __vmalloc(size * length,
+			 GFP_KERNEL | __GFP_HIGHMEM | __GFP_NOWARN,
+			 PAGE_KERNEL);
 	if (!info)
 		return -ENOMEM;
 
@@ -136,7 +141,7 @@ static int venet_acct_get_classes(void __user *ret, int length, int v6)
 	err = -EFAULT;
 	if (!copy_to_user(ret, info, size * len))
 		err = len;
-	kfree(info);
+	vfree(info);
 	return err;
 }
 
@@ -502,7 +507,9 @@ static int venet_acct_get_stat_list(envid_t *__list, int length)
 	if (length <= 0)
 		return -EINVAL;
 
-	list = kmalloc(sizeof(envid_t) * length, GFP_KERNEL);
+	list = __vmalloc(sizeof(envid_t) * length,
+			 GFP_KERNEL | __GFP_HIGHMEM | __GFP_NOWARN,
+			 PAGE_KERNEL);
 	if (list == NULL)
 		return -ENOMEM;
 
@@ -520,7 +527,7 @@ static int venet_acct_get_stat_list(envid_t *__list, int length)
 	err = -EFAULT;
 	if (!copy_to_user(__list, list, sizeof(envid_t) * i))
 		err = i;
-	kfree(list);
+	vfree(list);
 	return err;
 }
 
@@ -1145,8 +1152,8 @@ void __exit venetstat_exit(void)
 	remove_proc_entry("venetstat_v6", proc_vz_dir);
 	remove_proc_entry("venetstat", proc_vz_dir);
 #endif
-	kfree(info_v4);
-	kfree(info_v6);
+	vfree(info_v4);
+	vfree(info_v6);
 }
 
 module_init(venetstat_init);
