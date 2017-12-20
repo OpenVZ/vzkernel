@@ -4282,6 +4282,13 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 
 	update_stats_dequeue(cfs_rq, se, flags);
 
+	if ((flags & DEQUEUE_SLEEP) && entity_is_task(se)) {
+		struct task_struct *tsk = task_of(se);
+
+		if (tsk->in_iowait)
+			cfs_rq->nr_iowait++;
+	}
+
 	clear_buddies(cfs_rq, se);
 
 	if (se != cfs_rq->curr)
@@ -11065,6 +11072,22 @@ static unsigned int get_rr_interval_fair(struct rq *rq, struct task_struct *task
 	return rr_interval;
 }
 
+#ifdef CONFIG_FAIR_GROUP_SCHED
+static void nr_iowait_dec_fair(struct task_struct *p)
+{
+	struct cfs_rq *cfs_rq = task_cfs_rq(p);
+
+	cfs_rq->nr_iowait--;
+}
+
+static void nr_iowait_inc_fair(struct task_struct *p)
+{
+	struct cfs_rq *cfs_rq = task_cfs_rq(p);
+
+	cfs_rq->nr_iowait++;
+}
+#endif /* CONFIG_FAIR_GROUP_SCHED */
+
 /*
  * All the scheduling class methods:
  */
@@ -11106,6 +11129,8 @@ const struct sched_class fair_sched_class = {
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	.task_change_group	= task_change_group_fair,
+	.nr_iowait_inc          = nr_iowait_inc_fair,
+	.nr_iowait_dec          = nr_iowait_dec_fair,
 #endif
 };
 
