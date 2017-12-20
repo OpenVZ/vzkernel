@@ -509,6 +509,8 @@ struct cfs_rq {
 	unsigned int		nr_running;
 	unsigned int		h_nr_running;      /* SCHED_{NORMAL,BATCH,IDLE} */
 
+	unsigned long nr_unint;
+
 	u64			exec_clock;
 	u64			min_vruntime;
 #ifndef CONFIG_64BIT
@@ -888,6 +890,7 @@ struct rq {
 	 * it on another CPU. Always updated under the runqueue lock:
 	 */
 	unsigned long		nr_uninterruptible;
+	unsigned long		nr_sleeping;
 
 	struct task_struct __rcu	*curr;
 	struct task_struct	*idle;
@@ -2359,6 +2362,18 @@ static inline void cpufreq_update_util(struct rq *rq, unsigned int flags)
 #else
 static inline void cpufreq_update_util(struct rq *rq, unsigned int flags) {}
 #endif /* CONFIG_CPU_FREQ */
+
+#ifdef CONFIG_FAIR_GROUP_SCHED
+static inline struct cfs_rq *task_cfs_rq(struct task_struct *p)
+{
+	return p->se.cfs_rq;
+}
+#else
+static inline struct cfs_rq *task_cfs_rq(struct task_struct *p)
+{
+	return &task_rq(p)->cfs;
+}
+#endif /* CONFIG_FAIR_GROUP_SCHED */
 
 #ifdef arch_scale_freq_capacity
 # ifndef arch_scale_freq_invariant
