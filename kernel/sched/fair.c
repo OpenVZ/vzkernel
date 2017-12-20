@@ -880,18 +880,14 @@ update_stats_wait_start(struct cfs_rq *cfs_rq, struct sched_entity *se)
 static inline void update_sched_lat(struct task_struct *t, u64 now)
 {
 #ifdef CONFIG_VE
-	int cpu;
 	u64 ve_wstamp;
 
 	/* safe due to runqueue lock */
-	cpu = smp_processor_id();
 	ve_wstamp = t->se.statistics->wait_start;
 
 	if (ve_wstamp && now > ve_wstamp) {
-		KSTAT_LAT_PCPU_ADD(&kstat_glob.sched_lat,
-				cpu, now - ve_wstamp);
-		KSTAT_LAT_PCPU_ADD(&t->task_ve->sched_lat_ve,
-				cpu, now - ve_wstamp);
+		KSTAT_LAT_PCPU_ADD(&kstat_glob.sched_lat, now - ve_wstamp);
+		KSTAT_LAT_PCPU_ADD(&t->task_ve->sched_lat_ve, now - ve_wstamp);
 	}
 #endif
 }
