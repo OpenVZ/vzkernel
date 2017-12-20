@@ -501,6 +501,7 @@ struct cfs_rq {
 	unsigned int		nr_running;
 	unsigned int		h_nr_running;      /* SCHED_{NORMAL,BATCH,IDLE} */
 
+	unsigned long nr_iowait;
 	unsigned long nr_unint;
 
 	u64			exec_clock;
@@ -1737,6 +1738,8 @@ struct sched_class {
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	void (*task_change_group)(struct task_struct *p, int type);
 #endif
+	void (*nr_iowait_inc) (struct task_struct *p);
+	void (*nr_iowait_dec) (struct task_struct *p);
 
 	RH_KABI_USE(1, int (*balance)(struct rq *rq, struct task_struct *prev, struct rq_flags *rf))
 	RH_KABI_RESERVE(2)
