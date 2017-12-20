@@ -5,7 +5,9 @@
 #define DEVCG_ACC_MKNOD 1
 #define DEVCG_ACC_READ  2
 #define DEVCG_ACC_WRITE 4
-#define DEVCG_ACC_MASK (DEVCG_ACC_MKNOD | DEVCG_ACC_READ | DEVCG_ACC_WRITE)
+#define DEVCG_ACC_MOUNT 64
+#define DEVCG_ACC_MASK (DEVCG_ACC_MKNOD | DEVCG_ACC_READ | DEVCG_ACC_WRITE | \
+			DEVCG_ACC_MOUNT)
 
 #define DEVCG_DEV_BLOCK 1
 #define DEVCG_DEV_CHAR  2
@@ -39,6 +41,8 @@ static inline int devcgroup_inode_permission(struct inode *inode, int mask)
 		access |= DEVCG_ACC_WRITE;
 	if (mask & MAY_READ)
 		access |= DEVCG_ACC_READ;
+	if (mask & MAY_MOUNT)
+		access |= DEVCG_ACC_MOUNT;
 
 	return devcgroup_check_permission(type, imajor(inode), iminor(inode),
 					  access);
@@ -60,9 +64,19 @@ static inline int devcgroup_inode_mknod(int mode, dev_t dev)
 					  DEVCG_ACC_MKNOD);
 }
 
+extern int devcgroup_device_permission(umode_t mode, dev_t dev, int mask);
+extern int devcgroup_device_visible(umode_t mode, int major,
+		int start_minor, int nr_minors);
+struct ve_struct;
+extern int devcgroup_seq_show_ve(struct ve_struct *, struct seq_file *);
 #else
 static inline int devcgroup_inode_permission(struct inode *inode, int mask)
 { return 0; }
 static inline int devcgroup_inode_mknod(int mode, dev_t dev)
+{ return 0; }
+static inline int devcgroup_device_permission(umode_t mode, dev_t dev, int mask)
+{ return 0; }
+static inline int devcgroup_device_visible(umode_t mode, int major,
+		int start_minor, int nr_minors)
 { return 0; }
 #endif
