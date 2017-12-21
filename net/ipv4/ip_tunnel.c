@@ -1121,7 +1121,12 @@ void ip_tunnel_delete_nets(struct list_head *net_list, unsigned int id,
 	rtnl_lock();
 	list_for_each_entry(net, net_list, exit_list) {
 		itn = net_generic(net, id);
-		ip_tunnel_destroy(net, itn, &list, ops);
+		/*
+		 * Can be NULL if a CT feature is missing like
+		 * VE_FEATURE_IPIP.
+		 */
+		if (itn != NULL)
+			ip_tunnel_destroy(net, itn, &list, ops);
 	}
 	unregister_netdevice_many(&list);
 	rtnl_unlock();
