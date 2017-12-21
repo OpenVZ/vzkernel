@@ -7725,12 +7725,12 @@ static void update_cfs_rq_h_load(struct cfs_rq *cfs_rq)
 	}
 }
 
-static unsigned long task_h_load(struct task_struct *p)
+static unsigned long entity_h_load(struct sched_entity *se)
 {
-	struct cfs_rq *cfs_rq = task_cfs_rq(p);
+	struct cfs_rq *cfs_rq = cfs_rq_of(se);
 
 	update_cfs_rq_h_load(cfs_rq);
-	return div64_ul(p->se.avg.load_avg * cfs_rq->h_load,
+	return div64_ul(se->avg.load_avg * cfs_rq->h_load,
 			cfs_rq_load_avg(cfs_rq) + 1);
 }
 #else
@@ -7751,12 +7751,16 @@ static inline void update_blocked_averages(int cpu)
 	rq_unlock_irqrestore(rq, &rf);
 }
 
-static unsigned long task_h_load(struct task_struct *p)
+static unsigned long entity_h_load(struct sched_entity *se)
 {
-	return p->se.avg.load_avg;
+	return se->avg.load_avg;
 }
 #endif
 
+static unsigned long task_h_load(struct task_struct *p)
+{
+	return entity_h_load(&p->se);
+}
 /********** Helpers for find_busiest_group ************************/
 
 enum group_type {
