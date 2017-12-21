@@ -117,6 +117,9 @@
 #include <net/netns/generic.h>
 #include <net/dst_metadata.h>
 
+#include <uapi/linux/vzcalluser.h>
+#include <linux/ve.h>
+
 static bool log_ecn_error = true;
 module_param(log_ecn_error, bool, 0644);
 MODULE_PARM_DESC(log_ecn_error, "Log packets received with corrupted ECN");
@@ -166,6 +169,10 @@ static int ipip_err(struct sk_buff *skb, u32 info)
 	default:
 		goto out;
 	}
+
+	err = -ENOENT;
+	if (itn == NULL)
+		goto out;
 
 	t = ip_tunnel_lookup(itn, skb->dev->ifindex, TUNNEL_NO_KEY,
 			     iph->daddr, iph->saddr, 0);
@@ -224,6 +231,10 @@ static int ipip_tunnel_rcv(struct sk_buff *skb, u8 ipproto)
 	const struct iphdr *iph;
 
 	iph = ip_hdr(skb);
+
+	if (itn == NULL)
+		return -1;
+
 	tunnel = ip_tunnel_lookup(itn, skb->dev->ifindex, TUNNEL_NO_KEY,
 			iph->saddr, iph->daddr, 0);
 	if (tunnel) {
@@ -387,6 +398,7 @@ static void ipip_tunnel_setup(struct net_device *dev)
 	netif_keep_dst(dev);
 
 	dev->features		|= IPIP_FEATURES;
+	dev->features		|= NETIF_F_VIRTUAL;
 	dev->hw_features	|= IPIP_FEATURES;
 	ip_tunnel_setup(dev, ipip_net_id);
 }
@@ -505,6 +517,9 @@ static int ipip_newlink(struct net *src_net, struct net_device *dev,
 	struct ip_tunnel_parm p;
 	struct ip_tunnel_encap ipencap;
 	__u32 fwmark = 0;
+
+	if (net_generic(dev_net(dev), ipip_net_id) == NULL)
+		return -EACCES;
 
 	if (ipip_netlink_encap_parms(data, &ipencap)) {
 		int err = ip_tunnel_encap_setup(t, &ipencap);
@@ -659,6 +674,15 @@ static struct xfrm_tunnel mplsip_handler __read_mostly = {
 
 static int __net_init ipip_init_net(struct net *net)
 {
+	if (!ve_feature_set(net->owner_ve, IPIP)) {
+		/*
+		 * Need to free memory allocated in ops_init()
+		 * and nullify pointer for peer checks.
+		 */
+		net_generic_free(net, ipip_net_id);
+		return 0;
+	}
+
 	return ip_tunnel_init_net(net, ipip_net_id, &ipip_link_ops, "tunl0");
 }
 

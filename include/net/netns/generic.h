@@ -48,4 +48,18 @@ static inline void *net_generic(const struct net *net, unsigned int id)
 
 	return ptr;
 }
+
+static inline void net_generic_free(const struct net *net, unsigned int id)
+{
+	struct net_generic *ng;
+	void *ptr;
+
+	rcu_read_lock();
+	ng = rcu_dereference(net->gen);
+	ptr = ng->ptr[id];
+	ng->ptr[id] = NULL;
+	rcu_read_unlock();
+
+	kfree(ptr);
+}
 #endif
