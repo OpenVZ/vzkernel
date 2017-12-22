@@ -27,6 +27,8 @@
 
 static struct kmem_cache *ve_cachep;
 
+static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, ve0_lat_stats);
+
 struct ve_struct ve0 = {
 	.ve_name		= "0",
 	.start_jiffies		= INITIAL_JIFFIES,
@@ -38,6 +40,7 @@ struct ve_struct ve0 = {
 
 	.init_cred		= &init_cred,
 	.features		= -1,
+	.sched_lat_ve.cur	= &ve0_lat_stats,
 	._randomize_va_space	=
 #ifdef CONFIG_COMPAT_BRK
 					1,
@@ -395,6 +398,10 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 	if (!ve)
 		goto err_ve;
 
+	ve->sched_lat_ve.cur = alloc_percpu(struct kstat_lat_pcpu_snap_struct);
+	if (!ve->sched_lat_ve.cur)
+		goto err_lat;
+
 	err = ve_log_init(ve);
 	if (err)
 		goto err_log;
@@ -408,6 +415,8 @@ do_init:
 	return &ve->css;
 
 err_log:
+	free_percpu(ve->sched_lat_ve.cur);
+err_lat:
 	kmem_cache_free(ve_cachep, ve);
 err_ve:
 	return ERR_PTR(err);
@@ -448,6 +457,7 @@ static void ve_destroy(struct cgroup_subsys_state *css)
 	struct ve_struct *ve = css_to_ve(css);
 
 	ve_log_destroy(ve);
+	free_percpu(ve->sched_lat_ve.cur);
 	kmem_cache_free(ve_cachep, ve);
 }
 
