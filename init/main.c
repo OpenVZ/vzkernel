@@ -96,6 +96,7 @@
 #include <linux/mem_encrypt.h>
 #include <linux/kcsan.h>
 #include <linux/veowner.h>
+#include <linux/vzstat.h>
 
 #include <asm/io.h>
 #include <asm/bugs.h>
@@ -565,6 +566,7 @@ asmlinkage __visible void __init start_kernel(void)
 	setup_command_line(command_line);
 	setup_nr_cpu_ids();
 	setup_per_cpu_areas();
+	kstat_init();
 	smp_prepare_boot_cpu();	/* arch-specific boot-cpu hooks */
 	boot_cpu_hotplug_init();
 
