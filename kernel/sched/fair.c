@@ -21,6 +21,8 @@
  *  Copyright (C) 2007 Red Hat, Inc., Peter Zijlstra
  */
 #include "sched.h"
+#include <linux/ve.h>
+#include <linux/vzstat.h>
 
 #include <trace/events/sched.h>
 
@@ -945,6 +947,14 @@ update_stats_wait_start(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	__schedstat_set(se->statistics.wait_start, wait_start);
 }
 
+static inline void update_sched_lat(struct task_struct *t, u64 delta)
+{
+#ifdef CONFIG_VE
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.sched_lat, delta);
+	KSTAT_LAT_PCPU_ADD(&t->task_ve->sched_lat_ve, delta);
+#endif
+}
+
 static inline void
 update_stats_wait_end(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
@@ -968,6 +978,7 @@ update_stats_wait_end(struct cfs_rq *cfs_rq, struct sched_entity *se)
 			return;
 		}
 		trace_sched_stat_wait(p, delta);
+		update_sched_lat(p, delta);
 	}
 
 	__schedstat_set(se->statistics.wait_max,

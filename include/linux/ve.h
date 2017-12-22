@@ -13,6 +13,7 @@
 #include <linux/types.h>
 #include <linux/ve_proto.h>
 #include <linux/cgroup.h>
+#include <linux/vzstat.h>
 
 struct nsproxy;
 struct veip_struct;
@@ -55,6 +56,8 @@ struct ve_struct {
 	int			_randomize_va_space;
 
 	u64			_uevent_seqnum;
+
+	struct kstat_lat_pcpu_struct	sched_lat_ve;
 };
 
 extern int nr_ve;
