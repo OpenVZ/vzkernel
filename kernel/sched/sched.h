@@ -153,6 +153,14 @@ static inline void cpu_load_update_active(struct rq *this_rq) { }
  * Single value that denotes runtime == period, ie unlimited time.
  */
 #define RUNTIME_INF		((u64)~0ULL)
+/*
+ * default period for cfs group bandwidth.
+ * default: 0.1s, units: nanoseconds
+ */
+static inline u64 default_cfs_period(void)
+{
+	return 100000000ULL;
+}
 
 static inline int idle_policy(int policy)
 {
