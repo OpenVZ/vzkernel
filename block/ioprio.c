@@ -41,7 +41,7 @@ int set_task_ioprio(struct task_struct *task, int ioprio)
 	rcu_read_lock();
 	tcred = __task_cred(task);
 	if (!uid_eq(tcred->uid, cred->euid) &&
-	    !uid_eq(tcred->uid, cred->uid) && !capable(CAP_SYS_NICE)) {
+	    !uid_eq(tcred->uid, cred->uid) && !ve_capable(CAP_SYS_NICE)) {
 		rcu_read_unlock();
 		return -EPERM;
 	}
@@ -68,7 +68,7 @@ int ioprio_check_cap(int ioprio)
 
 	switch (class) {
 		case IOPRIO_CLASS_RT:
-			if (!capable(CAP_SYS_ADMIN))
+			if (!ve_capable(CAP_SYS_ADMIN))
 				return -EPERM;
 			/* fall through */
 			/* rt has prio field too */
