@@ -1314,7 +1314,7 @@ EXPORT_SYMBOL_GPL(fuse_kill_sb_anon);
 static struct file_system_type fuse_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "fuse",
-	.fs_flags	= FS_HAS_SUBTYPE | FS_USERNS_MOUNT,
+	.fs_flags	= FS_HAS_SUBTYPE | FS_USERNS_MOUNT | FS_VIRTUALIZED,
 	.mount		= fuse_mount,
 	.kill_sb	= fuse_kill_sb_anon,
 };
