@@ -24,6 +24,7 @@
 #include <net/netns/generic.h>
 #include <linux/ve.h>
 
+#include <uapi/linux/vziptable_defs.h>
 /*
  *	Our network namespace constructor/destructor lists
  */
@@ -43,6 +44,9 @@ struct net init_net = {
 	.dev_base_head	= LIST_HEAD_INIT(init_net.dev_base_head),
 #ifdef CONFIG_VE
 	.owner_ve = &ve0,
+#ifdef CONFIG_VE_IPTABLES
+	._iptables_modules = VE_IP_NONE,
+#endif
 #endif
 };
 EXPORT_SYMBOL(init_net);
