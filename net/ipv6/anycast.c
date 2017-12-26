@@ -528,7 +528,7 @@ static const struct seq_operations ac6_seq_ops = {
 
 int __net_init ac6_proc_init(struct net *net)
 {
-	if (!proc_create_net("anycast6", 0444, net->proc_net, &ac6_seq_ops,
+	if (!proc_net_create_net("anycast6", 0444, net->proc_net, &ac6_seq_ops,
 			sizeof(struct ac6_iter_state)))
 		return -ENOMEM;
 
