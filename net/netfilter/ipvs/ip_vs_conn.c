@@ -1353,9 +1353,9 @@ int __net_init ip_vs_conn_net_init(struct netns_ipvs *ipvs)
 {
 	atomic_set(&ipvs->conn_count, 0);
 
-	proc_create_net("ip_vs_conn", 0, ipvs->net->proc_net,
+	proc_net_create_net("ip_vs_conn", 0, ipvs->net->proc_net,
 			&ip_vs_conn_seq_ops, sizeof(struct ip_vs_iter_state));
-	proc_create_net("ip_vs_conn_sync", 0, ipvs->net->proc_net,
+	proc_net_create_net("ip_vs_conn_sync", 0, ipvs->net->proc_net,
 			&ip_vs_conn_sync_seq_ops,
 			sizeof(struct ip_vs_iter_state));
 	return 0;
