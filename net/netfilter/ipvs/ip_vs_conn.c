@@ -1387,8 +1387,8 @@ int __net_init ip_vs_conn_net_init(struct netns_ipvs *ipvs)
 {
 	atomic_set(&ipvs->conn_count, 0);
 
-	proc_create("ip_vs_conn", 0, ipvs->net->proc_net, &ip_vs_conn_fops);
-	proc_create("ip_vs_conn_sync", 0, ipvs->net->proc_net,
+	proc_net_create("ip_vs_conn", 0, ipvs->net->proc_net, &ip_vs_conn_fops);
+	proc_net_create("ip_vs_conn_sync", 0, ipvs->net->proc_net,
 		    &ip_vs_conn_sync_fops);
 	return 0;
 }

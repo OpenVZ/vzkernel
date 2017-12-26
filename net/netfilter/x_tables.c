@@ -1588,7 +1588,7 @@ int xt_proto_init(struct net *net, u_int8_t af)
 
 	strlcpy(buf, xt_prefix[af], sizeof(buf));
 	strlcat(buf, FORMAT_TABLES, sizeof(buf));
-	proc = proc_create_data(buf, 0440, net->proc_net, &xt_table_ops,
+	proc = proc_net_create_data(buf, 0440, net->proc_net, &xt_table_ops,
 				(void *)(unsigned long)af);
 	if (!proc)
 		goto out;
@@ -1597,7 +1597,7 @@ int xt_proto_init(struct net *net, u_int8_t af)
 
 	strlcpy(buf, xt_prefix[af], sizeof(buf));
 	strlcat(buf, FORMAT_MATCHES, sizeof(buf));
-	proc = proc_create_data(buf, 0440, net->proc_net, &xt_match_ops,
+	proc = proc_net_create_data(buf, 0440, net->proc_net, &xt_match_ops,
 				(void *)(unsigned long)af);
 	if (!proc)
 		goto out_remove_tables;
@@ -1606,7 +1606,7 @@ int xt_proto_init(struct net *net, u_int8_t af)
 
 	strlcpy(buf, xt_prefix[af], sizeof(buf));
 	strlcat(buf, FORMAT_TARGETS, sizeof(buf));
-	proc = proc_create_data(buf, 0440, net->proc_net, &xt_target_ops,
+	proc = proc_net_create_data(buf, 0440, net->proc_net, &xt_target_ops,
 				(void *)(unsigned long)af);
 	if (!proc)
 		goto out_remove_matches;

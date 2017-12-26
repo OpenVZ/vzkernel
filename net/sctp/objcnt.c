@@ -125,8 +125,8 @@ void sctp_dbg_objcnt_init(struct net *net)
 {
 	struct proc_dir_entry *ent;
 
-	ent = proc_create("sctp_dbg_objcnt", 0,
-			  net->sctp.proc_net_sctp, &sctp_objcnt_ops);
+	ent = proc_net_create("sctp_dbg_objcnt", 0,
+			net->sctp.proc_net_sctp, &sctp_objcnt_ops);
 	if (!ent)
 		pr_warn("sctp_dbg_objcnt: Unable to create /proc entry.\n");
 }

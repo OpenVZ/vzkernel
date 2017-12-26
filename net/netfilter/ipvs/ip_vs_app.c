@@ -606,7 +606,7 @@ static const struct file_operations ip_vs_app_fops = {
 int __net_init ip_vs_app_net_init(struct netns_ipvs *ipvs)
 {
 	INIT_LIST_HEAD(&ipvs->app_list);
-	proc_create("ip_vs_app", 0, ipvs->net->proc_net, &ip_vs_app_fops);
+	proc_net_create("ip_vs_app", 0, ipvs->net->proc_net, &ip_vs_app_fops);
 	return 0;
 }
 

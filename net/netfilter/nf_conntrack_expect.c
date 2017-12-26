@@ -669,7 +669,7 @@ static int exp_proc_init(struct net *net)
 	kuid_t root_uid;
 	kgid_t root_gid;
 
-	proc = proc_create("nf_conntrack_expect", 0440, net->proc_net,
+	proc = proc_net_create("nf_conntrack_expect", 0440, net->proc_net,
 			   &exp_file_ops);
 	if (!proc)
 		return -ENOMEM;

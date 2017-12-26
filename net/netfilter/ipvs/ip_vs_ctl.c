@@ -4038,9 +4038,9 @@ int __net_init ip_vs_control_net_init(struct netns_ipvs *ipvs)
 
 	spin_lock_init(&ipvs->tot_stats.lock);
 
-	proc_create("ip_vs", 0, ipvs->net->proc_net, &ip_vs_info_fops);
-	proc_create("ip_vs_stats", 0, ipvs->net->proc_net, &ip_vs_stats_fops);
-	proc_create("ip_vs_stats_percpu", 0, ipvs->net->proc_net,
+	proc_net_create("ip_vs", 0, ipvs->net->proc_net, &ip_vs_info_fops);
+	proc_net_create("ip_vs_stats", 0, ipvs->net->proc_net, &ip_vs_stats_fops);
+	proc_net_create("ip_vs_stats_percpu", 0, ipvs->net->proc_net,
 		    &ip_vs_stats_percpu_fops);
 
 	if (ip_vs_control_net_init_sysctl(ipvs))

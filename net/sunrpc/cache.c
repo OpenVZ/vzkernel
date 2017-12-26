@@ -1617,23 +1617,23 @@ static int create_cache_proc_entries(struct cache_detail *cd, struct net *net)
 	struct sunrpc_net *sn;
 
 	sn = net_generic(net, sunrpc_net_id);
-	cd->procfs = proc_mkdir(cd->name, sn->proc_net_rpc);
+	cd->procfs = proc_net_mkdir(net, cd->name, sn->proc_net_rpc);
 	if (cd->procfs == NULL)
 		goto out_nomem;
 
-	p = proc_create_data("flush", S_IFREG|S_IRUSR|S_IWUSR,
+	p = proc_net_create_data("flush", S_IFREG|S_IRUSR|S_IWUSR,
 			     cd->procfs, &cache_flush_operations_procfs, cd);
 	if (p == NULL)
 		goto out_nomem;
 
 	if (cd->cache_request || cd->cache_parse) {
-		p = proc_create_data("channel", S_IFREG|S_IRUSR|S_IWUSR,
+		p = proc_net_create_data("channel", S_IFREG|S_IRUSR|S_IWUSR,
 				cd->procfs, &cache_file_operations_procfs, cd);
 		if (p == NULL)
 			goto out_nomem;
 	}
 	if (cd->cache_show) {
-		p = proc_create_data("content", S_IFREG|S_IRUSR,
+		p = proc_net_create_data("content", S_IFREG|S_IRUSR,
 				cd->procfs, &content_file_operations_procfs, cd);
 		if (p == NULL)
 			goto out_nomem;

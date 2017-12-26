@@ -107,8 +107,8 @@ int __net_init sctp_snmp_proc_init(struct net *net)
 {
 	struct proc_dir_entry *p;
 
-	p = proc_create("snmp", S_IRUGO, net->sctp.proc_net_sctp,
-			&sctp_snmp_seq_fops);
+	p = proc_net_create("snmp", S_IRUGO, net->sctp.proc_net_sctp,
+				 &sctp_snmp_seq_fops);
 	if (!p)
 		return -ENOMEM;
 
@@ -265,8 +265,8 @@ int __net_init sctp_eps_proc_init(struct net *net)
 {
 	struct proc_dir_entry *p;
 
-	p = proc_create("eps", S_IRUGO, net->sctp.proc_net_sctp,
-			&sctp_eps_seq_fops);
+	p = proc_net_create("eps", S_IRUGO, net->sctp.proc_net_sctp,
+				 &sctp_eps_seq_fops);
 	if (!p)
 		return -ENOMEM;
 
@@ -400,8 +400,8 @@ int __net_init sctp_assocs_proc_init(struct net *net)
 {
 	struct proc_dir_entry *p;
 
-	p = proc_create("assocs", S_IRUGO, net->sctp.proc_net_sctp,
-			&sctp_assocs_seq_fops);
+	p = proc_net_create("assocs", S_IRUGO, net->sctp.proc_net_sctp,
+				 &sctp_assocs_seq_fops);
 	if (!p)
 		return -ENOMEM;
 
@@ -516,8 +516,8 @@ int __net_init sctp_remaddr_proc_init(struct net *net)
 {
 	struct proc_dir_entry *p;
 
-	p = proc_create("remaddr", S_IRUGO, net->sctp.proc_net_sctp,
-			&sctp_remaddr_seq_fops);
+	p = proc_net_create("remaddr", S_IRUGO, net->sctp.proc_net_sctp,
+				 &sctp_remaddr_seq_fops);
 	if (!p)
 		return -ENOMEM;
 	return 0;
