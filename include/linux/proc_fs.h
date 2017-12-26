@@ -76,7 +76,21 @@ struct net;
 static inline struct proc_dir_entry *proc_net_mkdir(
 	struct net *net, const char *name, struct proc_dir_entry *parent)
 {
-	return proc_mkdir_data(name, 0, parent, net);
+	return proc_mkdir_data(name, S_IRUGO | S_IXUGO | S_ISVTX, parent, net);
+}
+
+static inline struct proc_dir_entry *proc_net_create_data(const char *name,
+				umode_t mode, struct proc_dir_entry *parent,
+				const struct file_operations *fops, void *data)
+{
+	return proc_create_data(name, S_ISVTX | mode, parent, fops, data);
+}
+
+static inline struct proc_dir_entry *proc_net_create(const char *name,
+				umode_t mode, struct proc_dir_entry *parent,
+				const struct file_operations *fops)
+{
+	return proc_net_create_data(name, mode, parent, fops, NULL);
 }
 
 struct ns_common;
