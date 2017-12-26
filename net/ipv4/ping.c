@@ -1163,7 +1163,7 @@ static const struct seq_operations ping_v4_seq_ops = {
 
 static int __net_init ping_v4_proc_init_net(struct net *net)
 {
-	if (!proc_create_net("icmp", 0444, net->proc_net, &ping_v4_seq_ops,
+	if (!proc_net_create_net("icmp", 0444, net->proc_net, &ping_v4_seq_ops,
 			sizeof(struct ping_iter_state)))
 		return -ENOMEM;
 	return 0;

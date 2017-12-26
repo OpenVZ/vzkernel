@@ -604,7 +604,7 @@ static const struct seq_operations ip_vs_app_seq_ops = {
 int __net_init ip_vs_app_net_init(struct netns_ipvs *ipvs)
 {
 	INIT_LIST_HEAD(&ipvs->app_list);
-	proc_create_net("ip_vs_app", 0, ipvs->net->proc_net, &ip_vs_app_seq_ops,
+	proc_net_create_net("ip_vs_app", 0, ipvs->net->proc_net, &ip_vs_app_seq_ops,
 			sizeof(struct seq_net_private));
 	return 0;
 }

@@ -4012,11 +4012,11 @@ int __net_init ip_vs_control_net_init(struct netns_ipvs *ipvs)
 
 	spin_lock_init(&ipvs->tot_stats.lock);
 
-	proc_create_net("ip_vs", 0, ipvs->net->proc_net, &ip_vs_info_seq_ops,
+	proc_net_create_net("ip_vs", 0, ipvs->net->proc_net, &ip_vs_info_seq_ops,
 			sizeof(struct ip_vs_iter));
-	proc_create_net_single("ip_vs_stats", 0, ipvs->net->proc_net,
+	proc_net_create_net_single("ip_vs_stats", 0, ipvs->net->proc_net,
 			ip_vs_stats_show, NULL);
-	proc_create_net_single("ip_vs_stats_percpu", 0, ipvs->net->proc_net,
+	proc_net_create_net_single("ip_vs_stats_percpu", 0, ipvs->net->proc_net,
 			ip_vs_stats_percpu_show, NULL);
 
 	if (ip_vs_control_net_init_sysctl(ipvs))
