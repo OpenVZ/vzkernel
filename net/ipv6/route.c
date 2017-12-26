@@ -5621,9 +5621,9 @@ static void __net_exit ip6_route_net_exit(struct net *net)
 static int __net_init ip6_route_net_init_late(struct net *net)
 {
 #ifdef CONFIG_PROC_FS
-	proc_create_net("ipv6_route", 0, net->proc_net, &ipv6_route_seq_ops,
+	proc_net_create_net("ipv6_route", 0, net->proc_net, &ipv6_route_seq_ops,
 			sizeof(struct ipv6_route_iter));
-	proc_create_net_single("rt6_stats", 0444, net->proc_net,
+	proc_net_create_net_single("rt6_stats", 0444, net->proc_net,
 			rt6_stats_seq_show, NULL);
 #endif
 	return 0;
