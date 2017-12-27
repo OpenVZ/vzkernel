@@ -128,6 +128,4 @@ void init_ve_system(void)
 	prepare_proc();
 #endif
 	prepare_sysctl();
-
-	kobj_ns_type_register(&ve_ns_type_operations);
 }
