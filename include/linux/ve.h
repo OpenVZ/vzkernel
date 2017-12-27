@@ -152,10 +152,6 @@ extern unsigned int sysctl_ve_mount_nr;
 #ifdef CONFIG_VE
 #define ve_uevent_seqnum       (get_exec_env()->_uevent_seqnum)
 
-extern struct kobj_ns_type_operations ve_ns_type_operations;
-extern struct kobject * kobject_create_and_add_ve(const char *name,
-						struct kobject *parent);
-
 extern struct kmapset_set ve_sysfs_perms;
 
 extern int vz_security_family_check(struct net *net, int family, int type);
