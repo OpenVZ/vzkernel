@@ -27,7 +27,6 @@ struct kobject;
 enum kobj_ns_type {
 	KOBJ_NS_TYPE_NONE = 0,
 	KOBJ_NS_TYPE_NET,
-	KOBJ_NS_TYPE_VE,
 	KOBJ_NS_TYPES
 };
 
