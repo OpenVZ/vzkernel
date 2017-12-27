@@ -494,7 +494,9 @@ static int __init socket_mt_init(void)
 #ifdef XT_SOCKET_HAVE_IPV6
 	nf_defrag_ipv6_enable();
 #endif
-
+#ifdef XT_SOCKET_HAVE_CONNTRACK
+	need_ipv4_conntrack();
+#endif
 	return xt_register_matches(socket_mt_reg, ARRAY_SIZE(socket_mt_reg));
 }
 
