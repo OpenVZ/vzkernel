@@ -89,4 +89,9 @@ extern int sched_energy_aware_handler(struct ctl_table *table, int write,
 				 loff_t *ppos);
 #endif
 
+#ifdef CONFIG_CFS_CPULIMIT
+extern unsigned int sysctl_sched_vcpu_hotslice;
+extern unsigned int sysctl_sched_cpulimit_scale_cpufreq;
+#endif
+
 #endif /* _LINUX_SCHED_SYSCTL_H */
