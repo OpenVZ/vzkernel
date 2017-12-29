@@ -104,3 +104,31 @@ void kernfs_put_ve_perms(struct kernfs_node *kn)
 	if (kn->ve_perms_map)
 		kmapset_put(kn->ve_perms_map);
 }
+
+bool kernfs_d_visible(struct kernfs_node *kn, struct kernfs_super_info *info)
+{
+	struct ve_struct *ve = info->ve;
+	struct kernfs_node *tmp_kn = kn;
+
+	/* Non-containerized fs */
+	if (!ve)
+		return true;
+
+	/* Host sees anything */
+	if (ve_is_super(ve))
+		return true;
+
+	/* Entries with namespace tag and their sub-entries always visible */
+	while (tmp_kn) {
+		if (tmp_kn->ns)
+			return true;
+		tmp_kn = tmp_kn->parent;
+	}
+
+	/* Symlinks are visible if target kn is visible */
+	if (kernfs_type(kn) == KERNFS_LINK)
+		kn = kn->symlink.target_kn;
+
+	return !!kmapset_get_value(kn->ve_perms_map,
+				   kernfs_info_perms_key(info));
+}
