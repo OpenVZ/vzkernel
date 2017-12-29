@@ -24,6 +24,8 @@ int kernfs_ve_permission(struct kernfs_node *kn,
 
 int kernfs_ve_allowed(struct kernfs_node *kn);
 
+bool kernfs_d_visible(struct kernfs_node *kn, struct kernfs_super_info *info);
+
 #else // CONFIG_VE
 
 void kernfs_get_ve_perms(struct kernfs_node *kn) { }
@@ -38,6 +40,11 @@ static inline int kernfs_ve_permission(struct kernfs_node *kn,
 static inline int kernfs_ve_allowed(void)
 {
 	return 1;
+}
+
+bool kernfs_d_visible(struct kernfs_node *kn, struct kernfs_super_info *info)
+{
+	return true;
 }
 
 #endif
