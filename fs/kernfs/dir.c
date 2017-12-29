@@ -463,6 +463,9 @@ static int kernfs_dop_revalidate(struct dentry *dentry, unsigned int flags)
 	    kernfs_info(dentry->d_sb)->ns != kn->ns)
 		goto out_bad;
 
+	if (!kernfs_d_visible(kn, kernfs_info(dentry->d_sb)))
+		goto out_bad;
+
 	mutex_unlock(&kernfs_mutex);
 	return 1;
 out_bad:
@@ -835,6 +838,11 @@ static struct dentry *kernfs_iop_lookup(struct inode *dir,
 	}
 	kernfs_get(kn);
 	dentry->d_fsdata = kn;
+
+	if(!kernfs_d_visible(kn, kernfs_info(dentry->d_sb))) {
+		ret = NULL;
+		goto out_unlock;
+	}
 
 	/* attach dentry and inode */
 	inode = kernfs_get_inode(dir->i_sb, kn);
@@ -1426,6 +1434,9 @@ static int kernfs_fop_readdir(struct file *file, struct dir_context *ctx)
 		ctx->pos = pos->hash;
 		file->private_data = pos;
 		kernfs_get(pos);
+
+		if (!kernfs_d_visible(pos, kernfs_info(dentry->d_sb)))
+			continue;
 
 		mutex_unlock(&kernfs_mutex);
 		if (!dir_emit(ctx, name, len, ino, type))
