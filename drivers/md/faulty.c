@@ -170,7 +170,7 @@ static void add_sector(struct faulty_conf *conf, sector_t start, int mode)
 		conf->nfaults = n+1;
 }
 
-static void make_request(struct mddev *mddev, struct bio *bio)
+static bool faulty_make_request(struct mddev *mddev, struct bio *bio)
 {
 	struct faulty_conf *conf = mddev->private;
 	int failit = 0;
@@ -182,7 +182,7 @@ static void make_request(struct mddev *mddev, struct bio *bio)
 			 * just fail immediately
 			 */
 			bio_endio(bio, -EIO);
-			return;
+			return true;
 		}
 
 		if (check_sector(conf, bio->bi_sector, bio_end_sector(bio), WRITE))
@@ -219,9 +219,10 @@ static void make_request(struct mddev *mddev, struct bio *bio)
 		bio->bi_bdev = conf->rdev->bdev;
 
 	generic_make_request(bio);
+	return true;
 }
 
-static void status(struct seq_file *seq, struct mddev *mddev)
+static void faulty_status(struct seq_file *seq, struct mddev *mddev)
 {
 	struct faulty_conf *conf = mddev->private;
 	int n;
@@ -254,7 +255,7 @@ static void status(struct seq_file *seq, struct mddev *mddev)
 }
 
 
-static int reshape(struct mddev *mddev)
+static int faulty_reshape(struct mddev *mddev)
 {
 	int mode = mddev->new_layout & ModeMask;
 	int count = mddev->new_layout >> ModeShift;
@@ -294,7 +295,7 @@ static sector_t faulty_size(struct mddev *mddev, sector_t sectors, int raid_disk
 	return sectors;
 }
 
-static int run(struct mddev *mddev)
+static int faulty_run(struct mddev *mddev)
 {
 	struct md_rdev *rdev;
 	int i;
@@ -322,18 +323,16 @@ static int run(struct mddev *mddev)
 	md_set_array_sectors(mddev, faulty_size(mddev, 0, 0));
 	mddev->private = conf;
 
-	reshape(mddev);
+	faulty_reshape(mddev);
 
 	return 0;
 }
 
-static int stop(struct mddev *mddev)
+static void faulty_free(struct mddev *mddev, void *priv)
 {
-	struct faulty_conf *conf = mddev->private;
+	struct faulty_conf *conf = priv;
 
 	kfree(conf);
-	mddev->private = NULL;
-	return 0;
 }
 
 static struct md_personality faulty_personality =
@@ -341,11 +340,11 @@ static struct md_personality faulty_personality =
 	.name		= "faulty",
 	.level		= LEVEL_FAULTY,
 	.owner		= THIS_MODULE,
-	.make_request	= make_request,
-	.run		= run,
-	.stop		= stop,
-	.status		= status,
-	.check_reshape	= reshape,
+	.make_request	= faulty_make_request,
+	.run		= faulty_run,
+	.free		= faulty_free,
+	.status		= faulty_status,
+	.check_reshape	= faulty_reshape,
 	.size		= faulty_size,
 };
 

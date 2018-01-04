@@ -586,10 +586,10 @@ static unsigned long __init lance_probe1( struct net_device *dev,
 	switch( lp->cardtype ) {
 	  case OLD_RIEBL:
 		/* No ethernet address! (Set some default address) */
-		memcpy( dev->dev_addr, OldRieblDefHwaddr, 6 );
+		memcpy(dev->dev_addr, OldRieblDefHwaddr, ETH_ALEN);
 		break;
 	  case NEW_RIEBL:
-		lp->memcpy_f( dev->dev_addr, RIEBL_HWADDR_ADDR, 6 );
+		lp->memcpy_f(dev->dev_addr, RIEBL_HWADDR_ADDR, ETH_ALEN);
 		break;
 	  case PAM_CARD:
 		i = IO->eeprom;
@@ -764,7 +764,7 @@ static void lance_tx_timeout (struct net_device *dev)
 	/* lance_restart, essentially */
 	lance_init_ring(dev);
 	REGA( CSR0 ) = CSR0_INEA | CSR0_INIT | CSR0_STRT;
-	dev->trans_start = jiffies; /* prevent tx timeout */
+	netif_trans_update(dev); /* prevent tx timeout */
 	netif_wake_queue(dev);
 }
 

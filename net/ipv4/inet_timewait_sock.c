@@ -87,26 +87,17 @@ static void __inet_twsk_kill(struct inet_timewait_sock *tw,
 	refcnt += inet_twsk_bind_unhash(tw, hashinfo);
 	spin_unlock(&bhead->lock);
 
-#ifdef SOCK_REFCNT_DEBUG
-	if (atomic_read(&tw->tw_refcnt) != 1) {
-		pr_debug("%s timewait_sock %p refcnt=%d\n",
-			 tw->tw_prot->name, tw, atomic_read(&tw->tw_refcnt));
-	}
-#endif
-	while (refcnt) {
-		inet_twsk_put(tw);
-		refcnt--;
-	}
+	BUG_ON(refcnt >= atomic_read(&tw->tw_refcnt));
+	atomic_sub(refcnt, &tw->tw_refcnt);
 }
 
-static noinline void inet_twsk_free(struct inet_timewait_sock *tw)
+void inet_twsk_free(struct inet_timewait_sock *tw)
 {
 	struct module *owner = tw->tw_prot->owner;
 	twsk_destructor((struct sock *)tw);
 #ifdef SOCK_REFCNT_DEBUG
 	pr_debug("%s timewait_sock %p released\n", tw->tw_prot->name, tw);
 #endif
-	release_net(twsk_net(tw));
 	kmem_cache_free(tw->tw_prot->twsk_prot->twsk_slab, tw);
 	module_put(owner);
 }
@@ -117,6 +108,18 @@ void inet_twsk_put(struct inet_timewait_sock *tw)
 		inet_twsk_free(tw);
 }
 EXPORT_SYMBOL_GPL(inet_twsk_put);
+
+static void inet_twsk_add_node_rcu(struct inet_timewait_sock *tw,
+				   struct hlist_nulls_head *list)
+{
+	hlist_nulls_add_head_rcu(&tw->tw_node, list);
+}
+
+static void inet_twsk_add_bind_node(struct inet_timewait_sock *tw,
+				    struct hlist_head *list)
+{
+	hlist_add_head(&tw->tw_bind_node, list);
+}
 
 /*
  * Enter the time wait state. This is called with locally disabled BH.
@@ -146,25 +149,20 @@ void __inet_twsk_hashdance(struct inet_timewait_sock *tw, struct sock *sk,
 	spin_lock(lock);
 
 	/*
-	 * Step 2: Hash TW into TIMEWAIT chain.
-	 * Should be done before removing sk from established chain
-	 * because readers are lockless and search established first.
+	 * Step 2: Hash TW into tcp ehash chain.
+	 * Notes :
+	 * - tw_refcnt is set to 3 because :
+	 * - We have one reference from bhash chain.
+	 * - We have one reference from ehash chain.
+	 * We can use atomic_set() because prior spin_lock()/spin_unlock()
+	 * committed into memory all tw fields.
 	 */
-	inet_twsk_add_node_rcu(tw, &ehead->twchain);
+	atomic_set(&tw->tw_refcnt, 1 + 1 + 1);
+	inet_twsk_add_node_rcu(tw, &ehead->chain);
 
-	/* Step 3: Remove SK from established hash. */
+	/* Step 3: Remove SK from hash chain */
 	if (__sk_nulls_del_node_init_rcu(sk))
 		sock_prot_inuse_add(sock_net(sk), sk->sk_prot, -1);
-
-	/*
-	 * Notes :
-	 * - We initially set tw_refcnt to 0 in inet_twsk_alloc()
-	 * - We add one reference for the bhash link
-	 * - We add one reference for the ehash link
-	 * - We want this refcnt update done before allowing other
-	 *   threads to find this tw in ehash chain.
-	 */
-	atomic_add(1 + 1 + 1, &tw->tw_refcnt);
 
 	spin_unlock(lock);
 }
@@ -196,7 +194,7 @@ struct inet_timewait_sock *inet_twsk_alloc(const struct sock *sk, const int stat
 		tw->tw_ipv6only	    = 0;
 		tw->tw_transparent  = inet->transparent;
 		tw->tw_prot	    = sk->sk_prot_creator;
-		twsk_net_set(tw, hold_net(sock_net(sk)));
+		twsk_net_set(tw, sock_net(sk));
 		/*
 		 * Because we use RCU lookups, we should not set tw_refcnt
 		 * to a non null value before everything is setup for this
@@ -342,7 +340,7 @@ void inet_twsk_schedule(struct inet_timewait_sock *tw,
 		       const int timeo, const int timewait_len)
 {
 	struct hlist_head *list;
-	int slot;
+	unsigned int slot;
 
 	/* timeout := RTO * 3.5
 	 *
@@ -387,11 +385,11 @@ void inet_twsk_schedule(struct inet_timewait_sock *tw,
 			if (slot >= INET_TWDR_TWKILL_SLOTS)
 				slot = INET_TWDR_TWKILL_SLOTS - 1;
 		}
-		tw->tw_ttd = jiffies + timeo;
+		tw->tw_ttd = inet_tw_time_stamp() + timeo;
 		slot = (twdr->slot + slot) & (INET_TWDR_TWKILL_SLOTS - 1);
 		list = &twdr->cells[slot];
 	} else {
-		tw->tw_ttd = jiffies + (slot << INET_TWDR_RECYCLE_TICK);
+		tw->tw_ttd = inet_tw_time_stamp() + (slot << INET_TWDR_RECYCLE_TICK);
 
 		if (twdr->twcal_hand < 0) {
 			twdr->twcal_hand = 0;
@@ -490,7 +488,9 @@ void inet_twsk_purge(struct inet_hashinfo *hashinfo,
 restart_rcu:
 		rcu_read_lock();
 restart:
-		sk_nulls_for_each_rcu(sk, node, &head->twchain) {
+		sk_nulls_for_each_rcu(sk, node, &head->chain) {
+			if (sk->sk_state != TCP_TIME_WAIT)
+				continue;
 			tw = inet_twsk(sk);
 			if ((tw->tw_family != family) ||
 				atomic_read(&twsk_net(tw)->count))

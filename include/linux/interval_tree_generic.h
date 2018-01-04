@@ -76,10 +76,13 @@ ITSTATIC void ITPREFIX ## _insert(ITSTRUCT *node, struct rb_root *root)	      \
 		parent = rb_entry(rb_parent, ITSTRUCT, ITRB);		      \
 		if (parent->ITSUBTREE < last)				      \
 			parent->ITSUBTREE = last;			      \
-		if (start < ITSTART(parent))				      \
+		if (start < ITSTART(parent)) {				      \
+			gmb();						      \
 			link = &parent->ITRB.rb_left;			      \
-		else							      \
+		} else {						      \
+			gmb();						      \
 			link = &parent->ITRB.rb_right;			      \
+		}							      \
 	}								      \
 									      \
 	node->ITSUBTREE = last;						      \

@@ -330,7 +330,7 @@ static const struct {
 	{ "SiS 191 PCI Gigabit Ethernet adapter" },
 };
 
-static DEFINE_PCI_DEVICE_TABLE(sis190_pci_tbl) = {
+static const struct pci_device_id sis190_pci_tbl[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_SI, 0x0190), 0, 0, 0 },
 	{ PCI_DEVICE(PCI_VENDOR_ID_SI, 0x0191), 0, 0, 1 },
 	{ 0, },
@@ -1769,9 +1769,6 @@ static void sis190_get_regs(struct net_device *dev, struct ethtool_regs *regs,
 {
 	struct sis190_private *tp = netdev_priv(dev);
 	unsigned long flags;
-
-	if (regs->len > SIS190_REGS_SIZE)
-		regs->len = SIS190_REGS_SIZE;
 
 	spin_lock_irqsave(&tp->lock, flags);
 	memcpy_fromio(p, tp->mmio_addr, regs->len);

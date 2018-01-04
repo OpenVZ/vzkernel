@@ -2062,7 +2062,7 @@ short rtl8192_tx(struct net_device *dev, struct sk_buff *skb)
 	__skb_queue_tail(&ring->queue, skb);
 	pdesc->OWN = 1;
 	spin_unlock_irqrestore(&priv->irq_th_lock, flags);
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 
 	write_nic_word(dev, TPPoll, 0x01 << tcb_desc->queue_index);
 	return 0;

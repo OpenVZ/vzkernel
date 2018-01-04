@@ -22,7 +22,6 @@
 int panic_on_unrecovered_nmi;
 int panic_on_io_nmi;
 unsigned int code_bytes = 64;
-int kstack_depth_to_print = 3 * STACKSLOTS_PER_LINE;
 static int die_counter;
 
 void printk_address(unsigned long address, int reliable)
@@ -188,7 +187,7 @@ void show_stack(struct task_struct *task, unsigned long *sp)
 		bp = stack_frame(current, NULL);
 	}
 
-	show_stack_log_lvl(task, NULL, sp, bp, "");
+	show_trace_log_lvl(task, NULL, sp, bp, "");
 }
 
 static arch_spinlock_t die_lock = __ARCH_SPIN_LOCK_UNLOCKED;
@@ -303,22 +302,6 @@ void die(const char *str, struct pt_regs *regs, long err)
 		sig = 0;
 	oops_end(flags, regs, sig);
 }
-
-static int __init kstack_setup(char *s)
-{
-	ssize_t ret;
-	unsigned long val;
-
-	if (!s)
-		return -EINVAL;
-
-	ret = kstrtoul(s, 0, &val);
-	if (ret)
-		return ret;
-	kstack_depth_to_print = val;
-	return 0;
-}
-early_param("kstack", kstack_setup);
 
 static int __init code_bytes_setup(char *s)
 {

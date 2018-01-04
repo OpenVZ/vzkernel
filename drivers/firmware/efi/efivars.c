@@ -39,7 +39,7 @@
  *   fix locking per Peter Chubb's findings
  *
  *  25 Mar 2002 - Matt Domsch <Matt_Domsch@dell.com>
- *   move uuid_unparse() to include/asm-ia64/efi.h:efi_guid_unparse()
+ *   move uuid_unparse() to include/asm-ia64/efi.h:efi_guid_to_str()
  *
  *  12 Feb 2002 - Matt Domsch <Matt_Domsch@dell.com>
  *   use list_for_each_safe when deleting vars.
@@ -117,7 +117,7 @@ efivar_guid_read(struct efivar_entry *entry, char *buf)
 	if (!entry || !buf)
 		return 0;
 
-	efi_guid_unparse(&var->VendorGuid, str);
+	efi_guid_to_str(&var->VendorGuid, str);
 	str += strlen(str);
 	str += sprintf(str, "\n");
 
@@ -227,7 +227,7 @@ efivar_store_raw(struct efivar_entry *entry, const char *buf, size_t count)
 	memcpy(&entry->var, new_var, count);
 
 	err = efivar_entry_set(entry, new_var->Attributes,
-			       new_var->DataSize, new_var->Data, false);
+			       new_var->DataSize, new_var->Data, NULL);
 	if (err) {
 		printk(KERN_WARNING "efivars: set_variable() failed: status=%d\n", err);
 		return -EIO;
@@ -383,12 +383,16 @@ static ssize_t efivar_delete(struct file *filp, struct kobject *kobj,
 	else if (__efivar_entry_delete(entry))
 		err = -EIO;
 
-	efivar_entry_iter_end();
-
-	if (err)
+	if (err) {
+		efivar_entry_iter_end();
 		return err;
+	}
 
-	efivar_unregister(entry);
+	if (!entry->scanning) {
+		efivar_entry_iter_end();
+		efivar_unregister(entry);
+	} else
+		efivar_entry_iter_end();
 
 	/* It's dead Jim.... */
 	return count;
@@ -432,7 +436,7 @@ efivar_create_sysfs_entry(struct efivar_entry *new_var)
 	   private variables from another's.         */
 
 	*(short_name + strlen(short_name)) = '-';
-	efi_guid_unparse(&new_var->var.VendorGuid,
+	efi_guid_to_str(&new_var->var.VendorGuid,
 			 short_name + strlen(short_name));
 
 	new_var->kobj.kset = efivars_kset;
@@ -564,7 +568,7 @@ static int efivar_sysfs_destroy(struct efivar_entry *entry, void *data)
 	return 0;
 }
 
-void efivars_sysfs_exit(void)
+static void efivars_sysfs_exit(void)
 {
 	/* Remove all entries and destroy */
 	__efivar_entry_iter(efivar_sysfs_destroy, &efivar_sysfs_list, NULL, NULL);
@@ -582,6 +586,9 @@ int efivars_sysfs_init(void)
 {
 	struct kobject *parent_kobj = efivars_kobject();
 	int error = 0;
+
+	if (!efi_enabled(EFI_RUNTIME_SERVICES))
+		return -ENODEV;
 
 	/* No efivars has been registered yet */
 	if (!parent_kobj)

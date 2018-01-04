@@ -15,6 +15,7 @@
 #include <asm/vio.h>
 #include <asm/bug.h>
 #include <asm/machdep.h>
+#include <asm/iommu.h>
 
 /*
  * Generic direct DMA implementation
@@ -26,9 +27,31 @@
  */
 
 
-void *dma_direct_alloc_coherent(struct device *dev, size_t size,
-				dma_addr_t *dma_handle, gfp_t flag,
-				struct dma_attrs *attrs)
+static int dma_direct_dma_supported(struct device *dev, u64 mask)
+{
+#ifdef CONFIG_PPC64
+	u64 limit = get_dma_offset(dev) + (memblock_end_of_DRAM() - 1);
+
+	/* Limit fits in the mask, we are good */
+	if (mask >= limit)
+		return 1;
+
+#ifdef CONFIG_FSL_SOC
+	/* Freescale gets another chance via ZONE_DMA/ZONE_DMA32, however
+	 * that will have to be refined if/when they support iommus
+	 */
+	return 1;
+#endif
+	/* Sorry ... */
+	return 0;
+#else
+	return 1;
+#endif
+}
+
+void *__dma_direct_alloc_coherent(struct device *dev, size_t size,
+				  dma_addr_t *dma_handle, gfp_t flag,
+				  struct dma_attrs *attrs)
 {
 	void *ret;
 #ifdef CONFIG_NOT_COHERENT_CACHE
@@ -55,15 +78,60 @@ void *dma_direct_alloc_coherent(struct device *dev, size_t size,
 #endif
 }
 
-void dma_direct_free_coherent(struct device *dev, size_t size,
-			      void *vaddr, dma_addr_t dma_handle,
-			      struct dma_attrs *attrs)
+void __dma_direct_free_coherent(struct device *dev, size_t size,
+				void *vaddr, dma_addr_t dma_handle,
+				struct dma_attrs *attrs)
 {
 #ifdef CONFIG_NOT_COHERENT_CACHE
 	__dma_free_coherent(size, vaddr);
 #else
 	free_pages((unsigned long)vaddr, get_order(size));
 #endif
+}
+
+static void *dma_direct_alloc_coherent(struct device *dev, size_t size,
+				       dma_addr_t *dma_handle, gfp_t flag,
+				       struct dma_attrs *attrs)
+{
+	struct iommu_table *iommu;
+
+	/* The coherent mask may be smaller than the real mask, check if
+	 * we can really use the direct ops
+	 */
+	if (dma_direct_dma_supported(dev, dev->coherent_dma_mask))
+		return __dma_direct_alloc_coherent(dev, size, dma_handle,
+						   flag, attrs);
+
+	/* Ok we can't ... do we have an iommu ? If not, fail */
+	iommu = get_iommu_table_base(dev);
+	if (!iommu)
+		return NULL;
+
+	/* Try to use the iommu */
+	return iommu_alloc_coherent(dev, iommu, size, dma_handle,
+				    dev->coherent_dma_mask, flag,
+				    dev_to_node(dev));
+}
+
+static void dma_direct_free_coherent(struct device *dev, size_t size,
+				     void *vaddr, dma_addr_t dma_handle,
+				     struct dma_attrs *attrs)
+{
+	struct iommu_table *iommu;
+
+	/* See comments in dma_direct_alloc_coherent() */
+	if (dma_direct_dma_supported(dev, dev->coherent_dma_mask))
+		return __dma_direct_free_coherent(dev, size, vaddr, dma_handle,
+						  attrs);
+	/* Maybe we used an iommu ... */
+	iommu = get_iommu_table_base(dev);
+
+	/* If we hit that we should have never allocated in the first
+	 * place so how come we are freeing ?
+	 */
+	if (WARN_ON(!iommu))
+		return;
+	iommu_free_coherent(iommu, size, vaddr, dma_handle);
 }
 
 int dma_direct_mmap_coherent(struct device *dev, struct vm_area_struct *vma,
@@ -104,18 +172,6 @@ static void dma_direct_unmap_sg(struct device *dev, struct scatterlist *sg,
 				int nents, enum dma_data_direction direction,
 				struct dma_attrs *attrs)
 {
-}
-
-static int dma_direct_dma_supported(struct device *dev, u64 mask)
-{
-#ifdef CONFIG_PPC64
-	/* Could be improved so platforms can set the limit in case
-	 * they have limited DMA windows
-	 */
-	return mask >= get_dma_offset(dev) + (memblock_end_of_DRAM() - 1);
-#else
-	return 1;
-#endif
 }
 
 static u64 dma_direct_get_required_mask(struct device *dev)
@@ -189,14 +245,31 @@ struct dma_map_ops dma_direct_ops = {
 };
 EXPORT_SYMBOL(dma_direct_ops);
 
+int dma_set_coherent_mask(struct device *dev, u64 mask)
+{
+	if (!dma_supported(dev, mask)) {
+		/*
+		 * We need to special case the direct DMA ops which can
+		 * support a fallback for coherent allocations. There
+		 * is no dma_op->set_coherent_mask() so we have to do
+		 * things the hard way:
+		 */
+		if (get_dma_ops(dev) != &dma_direct_ops ||
+		    get_iommu_table_base(dev) == NULL ||
+		    !dma_iommu_dma_supported(dev, mask))
+			return -EIO;
+	}
+	dev->coherent_dma_mask = mask;
+	return 0;
+}
+EXPORT_SYMBOL(dma_set_coherent_mask);
+
 #define PREALLOC_DMA_DEBUG_ENTRIES (1 << 16)
 
-int dma_set_mask(struct device *dev, u64 dma_mask)
+int __dma_set_mask(struct device *dev, u64 dma_mask)
 {
 	struct dma_map_ops *dma_ops = get_dma_ops(dev);
 
-	if (ppc_md.dma_set_mask)
-		return ppc_md.dma_set_mask(dev, dma_mask);
 	if ((dma_ops != NULL) && (dma_ops->set_dma_mask != NULL))
 		return dma_ops->set_dma_mask(dev, dma_mask);
 	if (!dev->dma_mask || !dma_supported(dev, dma_mask))
@@ -204,14 +277,26 @@ int dma_set_mask(struct device *dev, u64 dma_mask)
 	*dev->dma_mask = dma_mask;
 	return 0;
 }
+
+int dma_set_mask(struct device *dev, u64 dma_mask)
+{
+	if (ppc_md.dma_set_mask)
+		return ppc_md.dma_set_mask(dev, dma_mask);
+
+	if (dev_is_pci(dev)) {
+		struct pci_dev *pdev = to_pci_dev(dev);
+		struct pci_controller *phb = pci_bus_to_host(pdev->bus);
+		if (phb->controller_ops.dma_set_mask)
+			return phb->controller_ops.dma_set_mask(pdev, dma_mask);
+	}
+
+	return __dma_set_mask(dev, dma_mask);
+}
 EXPORT_SYMBOL(dma_set_mask);
 
-u64 dma_get_required_mask(struct device *dev)
+u64 __dma_get_required_mask(struct device *dev)
 {
 	struct dma_map_ops *dma_ops = get_dma_ops(dev);
-
-	if (ppc_md.dma_get_required_mask)
-		return ppc_md.dma_get_required_mask(dev);
 
 	if (unlikely(dma_ops == NULL))
 		return 0;
@@ -221,7 +306,37 @@ u64 dma_get_required_mask(struct device *dev)
 
 	return DMA_BIT_MASK(8 * sizeof(dma_addr_t));
 }
+
+u64 dma_get_required_mask(struct device *dev)
+{
+	if (ppc_md.dma_get_required_mask)
+		return ppc_md.dma_get_required_mask(dev);
+
+	return __dma_get_required_mask(dev);
+}
 EXPORT_SYMBOL_GPL(dma_get_required_mask);
+
+static void arch_dma_devres_release(struct device *dev, void *res) { }
+
+int arch_dma_init(struct device *dev)
+{
+	if (!dev->archdata.hybrid_dma_data)
+		dev->archdata.hybrid_dma_data =
+			devres_alloc(arch_dma_devres_release,
+				     sizeof(struct dev_arch_dmadata), GFP_KERNEL);
+
+	if (!dev->archdata.hybrid_dma_data)
+		return -ENOMEM;
+	return 0;
+}
+
+static int __init arch_platform_init(void)
+{
+	platform_notify = arch_dma_init;
+	return 0;
+}
+
+arch_initcall(arch_platform_init);
 
 static int __init dma_init(void)
 {

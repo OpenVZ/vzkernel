@@ -118,18 +118,56 @@ static unsigned int eventfd_poll(struct file *file, poll_table *wait)
 {
 	struct eventfd_ctx *ctx = file->private_data;
 	unsigned int events = 0;
-	unsigned long flags;
+	u64 count;
 
 	poll_wait(file, &ctx->wqh, wait);
 
-	spin_lock_irqsave(&ctx->wqh.lock, flags);
-	if (ctx->count > 0)
+	/*
+	 * All writes to ctx->count occur within ctx->wqh.lock.  This read
+	 * can be done outside ctx->wqh.lock because we know that poll_wait
+	 * takes that lock (through add_wait_queue) if our caller will sleep.
+	 *
+	 * The read _can_ therefore seep into add_wait_queue's critical
+	 * section, but cannot move above it!  add_wait_queue's spin_lock acts
+	 * as an acquire barrier and ensures that the read be ordered properly
+	 * against the writes.  The following CAN happen and is safe:
+	 *
+	 *     poll                               write
+	 *     -----------------                  ------------
+	 *     lock ctx->wqh.lock (in poll_wait)
+	 *     count = ctx->count
+	 *     __add_wait_queue
+	 *     unlock ctx->wqh.lock
+	 *                                        lock ctx->qwh.lock
+	 *                                        ctx->count += n
+	 *                                        if (waitqueue_active)
+	 *                                          wake_up_locked_poll
+	 *                                        unlock ctx->qwh.lock
+	 *     eventfd_poll returns 0
+	 *
+	 * but the following, which would miss a wakeup, cannot happen:
+	 *
+	 *     poll                               write
+	 *     -----------------                  ------------
+	 *     count = ctx->count (INVALID!)
+	 *                                        lock ctx->qwh.lock
+	 *                                        ctx->count += n
+	 *                                        **waitqueue_active is false**
+	 *                                        **no wake_up_locked_poll!**
+	 *                                        unlock ctx->qwh.lock
+	 *     lock ctx->wqh.lock (in poll_wait)
+	 *     __add_wait_queue
+	 *     unlock ctx->wqh.lock
+	 *     eventfd_poll returns 0
+	 */
+	count = READ_ONCE(ctx->count);
+
+	if (count > 0)
 		events |= POLLIN;
-	if (ctx->count == ULLONG_MAX)
+	if (count == ULLONG_MAX)
 		events |= POLLERR;
-	if (ULLONG_MAX - 1 > ctx->count)
+	if (ULLONG_MAX - 1 > count)
 		events |= POLLOUT;
-	spin_unlock_irqrestore(&ctx->wqh.lock, flags);
 
 	return events;
 }

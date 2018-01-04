@@ -58,6 +58,11 @@ struct shash_desc {
 	void *__ctx[] CRYPTO_MINALIGN_ATTR;
 };
 
+#define SHASH_DESC_ON_STACK(shash, ctx)				  \
+	char __##shash##_desc[sizeof(struct shash_desc) +	  \
+		crypto_shash_descsize(ctx)] CRYPTO_MINALIGN_ATTR; \
+	struct shash_desc *shash = (struct shash_desc *)__##shash##_desc
+
 struct shash_alg {
 	int (*init)(struct shash_desc *desc);
 	int (*update)(struct shash_desc *desc, const u8 *data,
@@ -94,6 +99,7 @@ struct crypto_ahash {
 		      unsigned int keylen);
 
 	unsigned int reqsize;
+	bool has_setkey;
 	struct crypto_tfm base;
 };
 
@@ -181,6 +187,12 @@ static inline void *ahash_request_ctx(struct ahash_request *req)
 
 int crypto_ahash_setkey(struct crypto_ahash *tfm, const u8 *key,
 			unsigned int keylen);
+
+static inline bool crypto_ahash_has_setkey(struct crypto_ahash *tfm)
+{
+	return tfm->has_setkey;
+}
+
 int crypto_ahash_finup(struct ahash_request *req);
 int crypto_ahash_final(struct ahash_request *req);
 int crypto_ahash_digest(struct ahash_request *req);
@@ -238,10 +250,10 @@ static inline struct ahash_request *ahash_request_cast(
 
 static inline void ahash_request_set_callback(struct ahash_request *req,
 					      u32 flags,
-					      crypto_completion_t complete,
+					      crypto_completion_t compl,
 					      void *data)
 {
-	req->base.complete = complete;
+	req->base.complete = compl;
 	req->base.data = data;
 	req->base.flags = flags;
 }

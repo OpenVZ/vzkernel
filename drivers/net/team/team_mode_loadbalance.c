@@ -14,8 +14,22 @@
 #include <linux/init.h>
 #include <linux/errno.h>
 #include <linux/netdevice.h>
+#include <linux/etherdevice.h>
 #include <linux/filter.h>
 #include <linux/if_team.h>
+
+static rx_handler_result_t lb_receive(struct team *team, struct team_port *port,
+				      struct sk_buff *skb)
+{
+	if (unlikely(skb->protocol == htons(ETH_P_SLOW))) {
+		/* LACPDU packets should go to exact delivery */
+		const unsigned char *dest = eth_hdr(skb)->h_dest;
+
+		if (is_link_local_ether_addr(dest) && dest[5] == 0x02)
+			return RX_HANDLER_EXACT;
+	}
+	return RX_HANDLER_ANOTHER;
+}
 
 struct lb_priv;
 
@@ -112,9 +126,8 @@ static struct team_port *lb_hash_select_tx_port(struct team *team,
 						struct sk_buff *skb,
 						unsigned char hash)
 {
-	int port_index;
+	int port_index = team_num_to_port_index(team, hash);
 
-	port_index = hash % team->en_port_count;
 	return team_get_port_by_index_rcu(team, port_index);
 }
 
@@ -250,7 +263,7 @@ static int __fprog_create(struct sock_fprog **pfprog, u32 data_len,
 
 	if (data_len % sizeof(struct sock_filter))
 		return -EINVAL;
-	fprog = kmalloc(sizeof(struct sock_fprog), GFP_KERNEL);
+	fprog = kmalloc(sizeof(*fprog), GFP_KERNEL);
 	if (!fprog)
 		return -ENOMEM;
 	fprog->filter = kmemdup(filter, data_len, GFP_KERNEL);
@@ -433,9 +446,9 @@ static void __lb_one_cpu_stats_add(struct lb_stats *acc_stats,
 	struct lb_stats tmp;
 
 	do {
-		start = u64_stats_fetch_begin_bh(syncp);
+		start = u64_stats_fetch_begin_irq(syncp);
 		tmp.tx_bytes = cpu_stats->tx_bytes;
-	} while (u64_stats_fetch_retry_bh(syncp, start));
+	} while (u64_stats_fetch_retry_irq(syncp, start));
 	acc_stats->tx_bytes += tmp.tx_bytes;
 }
 
@@ -642,6 +655,7 @@ static const struct team_mode_ops lb_mode_ops = {
 	.port_enter		= lb_port_enter,
 	.port_leave		= lb_port_leave,
 	.port_disabled		= lb_port_disabled,
+	.receive		= lb_receive,
 	.transmit		= lb_transmit,
 };
 
@@ -651,6 +665,7 @@ static const struct team_mode lb_mode = {
 	.priv_size	= sizeof(struct lb_priv),
 	.port_priv_size	= sizeof(struct lb_port_priv),
 	.ops		= &lb_mode_ops,
+	.lag_tx_type	= NETDEV_LAG_TX_TYPE_HASH,
 };
 
 static int __init lb_init_module(void)

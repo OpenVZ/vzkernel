@@ -29,15 +29,6 @@
 #include <net/tc_act/tc_skbedit.h>
 
 #define SKBEDIT_TAB_MASK     15
-static struct tcf_common *tcf_skbedit_ht[SKBEDIT_TAB_MASK + 1];
-static u32 skbedit_idx_gen;
-static DEFINE_RWLOCK(skbedit_lock);
-
-static struct tcf_hashinfo skbedit_hash_info = {
-	.htab	=	tcf_skbedit_ht,
-	.hmask	=	SKBEDIT_TAB_MASK,
-	.lock	=	&skbedit_lock,
-};
 
 static int tcf_skbedit(struct sk_buff *skb, const struct tc_action *a,
 		       struct tcf_result *res)
@@ -45,7 +36,7 @@ static int tcf_skbedit(struct sk_buff *skb, const struct tc_action *a,
 	struct tcf_skbedit *d = a->priv;
 
 	spin_lock(&d->tcf_lock);
-	d->tcf_tm.lastuse = jiffies;
+	tcf_lastuse_update(&d->tcf_tm);
 	bstats_update(&d->tcf_bstats, skb);
 
 	if (d->flags & SKBEDIT_F_PRIORITY)
@@ -74,7 +65,6 @@ static int tcf_skbedit_init(struct net *net, struct nlattr *nla,
 	struct nlattr *tb[TCA_SKBEDIT_MAX + 1];
 	struct tc_skbedit *parm;
 	struct tcf_skbedit *d;
-	struct tcf_common *pc;
 	u32 flags = 0, *priority = NULL, *mark = NULL;
 	u16 *queue_mapping = NULL;
 	int ret = 0, err;
@@ -109,21 +99,21 @@ static int tcf_skbedit_init(struct net *net, struct nlattr *nla,
 
 	parm = nla_data(tb[TCA_SKBEDIT_PARMS]);
 
-	pc = tcf_hash_check(parm->index, a, bind, &skbedit_hash_info);
-	if (!pc) {
-		pc = tcf_hash_create(parm->index, est, a, sizeof(*d), bind,
-				     &skbedit_idx_gen, &skbedit_hash_info);
-		if (IS_ERR(pc))
-			return PTR_ERR(pc);
+	if (!tcf_hash_check(parm->index, a, bind)) {
+		ret = tcf_hash_create(parm->index, est, a, sizeof(*d),
+				      bind, false);
+		if (ret)
+			return ret;
 
-		d = to_skbedit(pc);
+		d = to_skbedit(a);
 		ret = ACT_P_CREATED;
 	} else {
-		d = to_skbedit(pc);
-		if (!ovr) {
-			tcf_hash_release(pc, bind, &skbedit_hash_info);
+		d = to_skbedit(a);
+		if (bind)
+			return 0;
+		tcf_hash_release(a, bind);
+		if (!ovr)
 			return -EEXIST;
-		}
 	}
 
 	spin_lock_bh(&d->tcf_lock);
@@ -141,17 +131,8 @@ static int tcf_skbedit_init(struct net *net, struct nlattr *nla,
 	spin_unlock_bh(&d->tcf_lock);
 
 	if (ret == ACT_P_CREATED)
-		tcf_hash_insert(pc, &skbedit_hash_info);
+		tcf_hash_insert(a);
 	return ret;
-}
-
-static int tcf_skbedit_cleanup(struct tc_action *a, int bind)
-{
-	struct tcf_skbedit *d = a->priv;
-
-	if (d)
-		return tcf_hash_release(&d->common, bind, &skbedit_hash_info);
-	return 0;
 }
 
 static int tcf_skbedit_dump(struct sk_buff *skb, struct tc_action *a,
@@ -181,10 +162,9 @@ static int tcf_skbedit_dump(struct sk_buff *skb, struct tc_action *a,
 	    nla_put(skb, TCA_SKBEDIT_MARK, sizeof(d->mark),
 		    &d->mark))
 		goto nla_put_failure;
-	t.install = jiffies_to_clock_t(jiffies - d->tcf_tm.install);
-	t.lastuse = jiffies_to_clock_t(jiffies - d->tcf_tm.lastuse);
-	t.expires = jiffies_to_clock_t(d->tcf_tm.expires);
-	if (nla_put(skb, TCA_SKBEDIT_TM, sizeof(t), &t))
+
+	tcf_tm_dump(&t, &d->tcf_tm);
+	if (nla_put_64bit(skb, TCA_SKBEDIT_TM, sizeof(t), &t, TCA_SKBEDIT_PAD))
 		goto nla_put_failure;
 	return skb->len;
 
@@ -195,15 +175,11 @@ nla_put_failure:
 
 static struct tc_action_ops act_skbedit_ops = {
 	.kind		=	"skbedit",
-	.hinfo		=	&skbedit_hash_info,
 	.type		=	TCA_ACT_SKBEDIT,
-	.capab		=	TCA_CAP_NONE,
 	.owner		=	THIS_MODULE,
 	.act		=	tcf_skbedit,
 	.dump		=	tcf_skbedit_dump,
-	.cleanup	=	tcf_skbedit_cleanup,
 	.init		=	tcf_skbedit_init,
-	.walk		=	tcf_generic_walker,
 };
 
 MODULE_AUTHOR("Alexander Duyck, <alexander.h.duyck@intel.com>");
@@ -212,7 +188,7 @@ MODULE_LICENSE("GPL");
 
 static int __init skbedit_init_module(void)
 {
-	return tcf_register_action(&act_skbedit_ops);
+	return tcf_register_action(&act_skbedit_ops, SKBEDIT_TAB_MASK);
 }
 
 static void __exit skbedit_cleanup_module(void)

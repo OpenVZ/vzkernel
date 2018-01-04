@@ -295,8 +295,9 @@ void __init page_cgroup_init(void)
 			 * We know some arch can have a nodes layout such as
 			 * -------------pfn-------------->
 			 * N0 | N1 | N2 | N0 | N1 | N2|....
+			 * skip if this section starts in a higher node
 			 */
-			if (pfn_to_nid(pfn) != nid)
+			if (early_pfn_to_nid(pfn) > nid)
 				continue;
 			if (init_section_page_cgroup(pfn, nid))
 				goto oom;

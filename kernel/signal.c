@@ -33,6 +33,8 @@
 #include <linux/uprobes.h>
 #include <linux/compat.h>
 #include <linux/cn_proc.h>
+#include <linux/compiler.h>
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/signal.h>
 
@@ -275,6 +277,7 @@ void task_clear_jobctl_trapping(struct task_struct *task)
 {
 	if (unlikely(task->jobctl & JOBCTL_TRAPPING)) {
 		task->jobctl &= ~JOBCTL_TRAPPING;
+		smp_mb();	/* advised by wake_up_bit() */
 		wake_up_bit(&task->jobctl, JOBCTL_TRAPPING_BIT);
 	}
 }
@@ -1444,7 +1447,7 @@ static int kill_something_info(int sig, struct siginfo *info, pid_t pid)
 		return ret;
 	}
 
-	read_lock(&tasklist_lock);
+	tasklist_read_lock();
 	if (pid != -1) {
 		ret = __kill_pgrp_info(sig, info,
 				pid ? find_vpid(-pid) : task_pgrp(current));
@@ -1463,7 +1466,7 @@ static int kill_something_info(int sig, struct siginfo *info, pid_t pid)
 		}
 		ret = count ? retval : -ESRCH;
 	}
-	read_unlock(&tasklist_lock);
+	qread_unlock(&tasklist_lock);
 
 	return ret;
 }
@@ -1522,9 +1525,9 @@ int kill_pgrp(struct pid *pid, int sig, int priv)
 {
 	int ret;
 
-	read_lock(&tasklist_lock);
+	qread_lock(&tasklist_lock);
 	ret = __kill_pgrp_info(sig, __si_special(priv), pid);
-	read_unlock(&tasklist_lock);
+	qread_unlock(&tasklist_lock);
 
 	return ret;
 }
@@ -1892,7 +1895,7 @@ static void ptrace_stop(int exit_code, int why, int clear_code, siginfo_t *info)
 	task_clear_jobctl_trapping(current);
 
 	spin_unlock_irq(&current->sighand->siglock);
-	read_lock(&tasklist_lock);
+	qread_lock(&tasklist_lock);
 	if (may_ptrace_stop()) {
 		/*
 		 * Notify parents of the stop.
@@ -1915,7 +1918,7 @@ static void ptrace_stop(int exit_code, int why, int clear_code, siginfo_t *info)
 		 * XXX: implement read_unlock_no_resched().
 		 */
 		preempt_disable();
-		read_unlock(&tasklist_lock);
+		qread_unlock(&tasklist_lock);
 		preempt_enable_no_resched();
 		freezable_schedule();
 	} else {
@@ -1936,7 +1939,7 @@ static void ptrace_stop(int exit_code, int why, int clear_code, siginfo_t *info)
 		__set_current_state(TASK_RUNNING);
 		if (clear_code)
 			current->exit_code = 0;
-		read_unlock(&tasklist_lock);
+		qread_unlock(&tasklist_lock);
 	}
 
 	/*
@@ -2089,9 +2092,9 @@ static bool do_signal_stop(int signr)
 		 * TASK_TRACED.
 		 */
 		if (notify) {
-			read_lock(&tasklist_lock);
+			qread_lock(&tasklist_lock);
 			do_notify_parent_cldstop(current, false, notify);
-			read_unlock(&tasklist_lock);
+			qread_unlock(&tasklist_lock);
 		}
 
 		/* Now we don't run again until woken by SIGCONT or SIGKILL */
@@ -2236,13 +2239,13 @@ relock:
 		 * the ptracer of the group leader too unless it's gonna be
 		 * a duplicate.
 		 */
-		read_lock(&tasklist_lock);
+		qread_lock(&tasklist_lock);
 		do_notify_parent_cldstop(current, false, why);
 
 		if (ptrace_reparented(current->group_leader))
 			do_notify_parent_cldstop(current->group_leader,
 						true, why);
-		read_unlock(&tasklist_lock);
+		qread_unlock(&tasklist_lock);
 
 		goto relock;
 	}
@@ -2490,9 +2493,9 @@ out:
 	 * should always go to the real parent of the group leader.
 	 */
 	if (unlikely(group_stop)) {
-		read_lock(&tasklist_lock);
+		qread_lock(&tasklist_lock);
 		do_notify_parent_cldstop(tsk, false, group_stop);
-		read_unlock(&tasklist_lock);
+		qread_unlock(&tasklist_lock);
 	}
 }
 
@@ -2553,6 +2556,13 @@ void set_current_blocked(sigset_t *newset)
 void __set_current_blocked(const sigset_t *newset)
 {
 	struct task_struct *tsk = current;
+
+	/*
+	 * In case the signal mask hasn't changed, there is nothing we need
+	 * to do. The current->blocked shouldn't be modified by other task.
+	 */
+	if (sigequalsets(&tsk->blocked, newset))
+		return;
 
 	spin_lock_irq(&tsk->sighand->siglock);
 	__set_task_blocked(tsk, newset);
@@ -2771,6 +2781,10 @@ int copy_siginfo_to_user(siginfo_t __user *to, siginfo_t *from)
 		if (from->si_code == BUS_MCEERR_AR || from->si_code == BUS_MCEERR_AO)
 			err |= __put_user(from->si_addr_lsb, &to->si_addr_lsb);
 #endif
+#ifdef SEGV_BNDERR
+		err |= __put_user(from->si_lower, &to->si_lower);
+		err |= __put_user(from->si_upper, &to->si_upper);
+#endif
 		break;
 	case __SI_CHLD:
 		err |= __put_user(from->si_pid, &to->si_pid);
@@ -2848,7 +2862,7 @@ int do_sigtimedwait(const sigset_t *which, siginfo_t *info,
 		recalc_sigpending();
 		spin_unlock_irq(&tsk->sighand->siglock);
 
-		timeout = schedule_timeout_interruptible(timeout);
+		timeout = freezable_schedule_timeout_interruptible(timeout);
 
 		spin_lock_irq(&tsk->sighand->siglock);
 		__set_task_blocked(tsk, &tsk->real_blocked);
@@ -3003,11 +3017,9 @@ static int do_rt_sigqueueinfo(pid_t pid, int sig, siginfo_t *info)
 	 * Nor can they impersonate a kill()/tgkill(), which adds source info.
 	 */
 	if ((info->si_code >= 0 || info->si_code == SI_TKILL) &&
-	    (task_pid_vnr(current) != pid)) {
-		/* We used to allow any < 0 si_code */
-		WARN_ON_ONCE(info->si_code < 0);
+	    (task_pid_vnr(current) != pid))
 		return -EPERM;
-	}
+
 	info->si_signo = sig;
 
 	/* POSIX.1b doesn't mention process groups.  */
@@ -3052,12 +3064,10 @@ static int do_rt_tgsigqueueinfo(pid_t tgid, pid_t pid, int sig, siginfo_t *info)
 	/* Not even root can pretend to send signals from the kernel.
 	 * Nor can they impersonate a kill()/tgkill(), which adds source info.
 	 */
-	if (((info->si_code >= 0 || info->si_code == SI_TKILL)) &&
-	    (task_pid_vnr(current) != pid)) {
-		/* We used to allow any < 0 si_code */
-		WARN_ON_ONCE(info->si_code < 0);
+	if ((info->si_code >= 0 || info->si_code == SI_TKILL) &&
+	    (task_pid_vnr(current) != pid))
 		return -EPERM;
-	}
+
 	info->si_signo = sig;
 
 	return do_send_specific(tgid, pid, sig, info);
@@ -3619,7 +3629,7 @@ SYSCALL_DEFINE3(sigsuspend, int, unused1, int, unused2, old_sigset_t, mask)
 }
 #endif
 
-__attribute__((weak)) const char *arch_vma_name(struct vm_area_struct *vma)
+__weak const char *arch_vma_name(struct vm_area_struct *vma)
 {
 	return NULL;
 }
