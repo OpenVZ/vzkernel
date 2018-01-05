@@ -40,4 +40,15 @@ int sysfs_add_file_mode_ns(struct kernfs_node *parent,
 int sysfs_create_link_sd(struct kernfs_node *kn, struct kobject *target,
 			 const char *name);
 
+#ifdef CONFIG_VE
+void sysfs_set_ve_perms(struct dentry *root);
+int sysfs_init_ve_perms(struct kernfs_root *root);
+#else
+static inline void sysfs_set_ve_perms(struct dentry *root) { }
+static inline int sysfs_init_ve_perms(struct kernfs_root *root)
+{
+	return 0;
+}
+#endif
+
 #endif	/* __SYSFS_INTERNAL_H */
