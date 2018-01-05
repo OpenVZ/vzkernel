@@ -37,8 +37,10 @@ static struct dentry *sysfs_mount(struct file_system_type *fs_type,
 				SYSFS_MAGIC, &new_sb, ns);
 	if (!new_sb)
 		kobj_ns_drop(KOBJ_NS_TYPE_NET, ns);
-	else if (!IS_ERR(root))
+	else if (!IS_ERR(root)) {
 		root->d_sb->s_iflags |= SB_I_USERNS_VISIBLE;
+		sysfs_set_ve_perms(root);
+	}
 
 	return root;
 }
@@ -68,6 +70,12 @@ int __init sysfs_init(void)
 		return PTR_ERR(sysfs_root);
 
 	sysfs_root_kn = sysfs_root->kn;
+
+	err = sysfs_init_ve_perms(sysfs_root);
+	if (err) {
+		kernfs_destroy_root(sysfs_root);
+		return err;
+	}
 
 	err = register_filesystem(&sysfs_fs_type);
 	if (err) {
