@@ -23,6 +23,7 @@
 #include <net/inet_frag.h>
 #include <linux/cgroup.h>
 #include <linux/binfmts.h>
+#include <linux/kmapset.h>
 
 struct tty_driver;
 struct file_system_type;
@@ -120,6 +121,7 @@ struct ve_struct {
 #ifdef CONFIG_CONNECTOR
 	struct cn_private	*cn;
 #endif
+	struct kmapset_key	sysfs_perms_key;
 };
 
 struct ve_devmnt {
