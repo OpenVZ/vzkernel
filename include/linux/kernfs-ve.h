@@ -19,6 +19,19 @@ struct dentry;
 int kernfs_init_ve_perms(struct kernfs_root *root,
 			 struct kmapset_set *perms_set);
 void kernfs_set_ve_perms(struct dentry *root, off_t key_off);
+
+void *kernfs_perms_start(struct seq_file *m, loff_t *ppos,
+			 struct kernfs_node *root, struct kmapset_key *key);
+void *kernfs_perms_next(struct seq_file *m, void *v, loff_t *ppos,
+			      struct kmapset_key *key);
+void kernfs_perms_stop(struct seq_file *m, void *v);
+
+int kernfs_perms_show(struct seq_file *m, void *v, struct kmapset_key *key);
+
+ssize_t kernfs_perms_write(struct ve_struct *ve,
+			   char *buf, size_t nbytes, loff_t off,
+			   struct kernfs_node *root, struct kmapset_key *key);
+
 #else   /* CONFIG_VE */
 static inline int kernfs_init_ve_perms(struct kernfs_root *root,
 				       struct kmapset_set *perms_set)
