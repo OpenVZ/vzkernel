@@ -38,10 +38,13 @@
 #include <linux/task_work.h>
 #include <linux/ctype.h>
 #include <linux/tty.h>
+#include <linux/kmapset.h>
 
 #include <uapi/linux/vzcalluser.h>
 #include <linux/vziptable_defs.h>
 #include <net/rtnetlink.h>
+
+extern struct kmapset_set sysfs_ve_perms_set;
 
 static struct kmem_cache *ve_cachep;
 
@@ -704,7 +707,7 @@ do_init:
 #ifdef CONFIG_COREDUMP
 	strcpy(ve->core_pattern, "core");
 #endif
-
+	kmapset_init_key(&ve->sysfs_perms_key);
 	return &ve->css;
 
 err_log:
@@ -801,6 +804,7 @@ static void ve_destroy(struct cgroup *cg)
 {
 	struct ve_struct *ve = cgroup_ve(cg);
 
+	kmapset_unlink(&ve->sysfs_perms_key, &sysfs_ve_perms_set);
 	free_ve_devmnts(ve);
 	ve_log_destroy(ve);
 #if IS_ENABLED(CONFIG_BINFMT_MISC)
