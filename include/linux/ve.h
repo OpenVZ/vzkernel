@@ -14,6 +14,7 @@
 #include <linux/ve_proto.h>
 #include <linux/cgroup.h>
 #include <linux/vzstat.h>
+#include <linux/kmapset.h>
 
 struct nsproxy;
 struct veip_struct;
@@ -56,6 +57,8 @@ struct ve_struct {
 	u64			_uevent_seqnum;
 
 	struct kstat_lat_pcpu_struct	sched_lat_ve;
+
+	struct kmapset_key	sysfs_perms_key;
 
 	unsigned long		meminfo_val;
 };
