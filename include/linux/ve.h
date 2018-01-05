@@ -201,6 +201,11 @@ extern void monotonic_ve_to_abs(clockid_t which_clock, struct timespec *tp);
 void ve_stop_ns(struct pid_namespace *ns);
 void ve_exit_ns(struct pid_namespace *ns);
 
+static inline struct ve_struct *css_to_ve(struct cgroup_subsys_state *css)
+{
+	return css ? container_of(css, struct ve_struct, css) : NULL;
+}
+
 extern bool current_user_ns_initial(void);
 struct user_namespace *ve_init_user_ns(void);
 
