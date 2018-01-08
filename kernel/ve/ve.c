@@ -358,6 +358,11 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 	struct ve_struct *ve = current->task_ve;
 	struct nsproxy *ve_ns;
 
+	if (ve->dev_sb) {
+		deactivate_super(ve->dev_sb);
+		ve->dev_sb = NULL;
+	}
+
 	down_write(&ve->op_sem);
 	ve_ns = rcu_dereference_protected(ve->ve_ns, lockdep_is_held(&ve->op_sem));
 	/*

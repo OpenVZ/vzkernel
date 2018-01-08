@@ -18,6 +18,7 @@
 struct nsproxy;
 struct veip_struct;
 struct user_namespace;
+struct super_block;
 
 struct ve_struct {
 	struct cgroup_subsys_state	css;
@@ -58,6 +59,8 @@ struct ve_struct {
 	u64			_uevent_seqnum;
 
 	struct kstat_lat_pcpu_struct	sched_lat_ve;
+
+	struct super_block	*dev_sb;
 };
 
 extern int nr_ve;
