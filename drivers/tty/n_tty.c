@@ -2322,7 +2322,12 @@ static ssize_t n_tty_write(struct tty_struct *tty, struct file *file,
 			retval = -ERESTARTSYS;
 			break;
 		}
+#ifdef CONFIG_VE
+		if (tty_hung_up_p(file) ||
+		    (tty->link && !tty->link->count && !vtty_is_master(tty->link))) {
+#else
 		if (tty_hung_up_p(file) || (tty->link && !tty->link->count)) {
+#endif
 			retval = -EIO;
 			break;
 		}

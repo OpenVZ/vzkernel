@@ -367,6 +367,7 @@ struct tty_file_private {
 #define TTY_HUPPED 		18	/* Post driver->hangup() */
 #define TTY_HUPPING		19	/* Hangup in progress */
 #define TTY_LDISC_HALTED	22	/* Line discipline is halted */
+#define TTY_VTTY_BUSY		23	/* Mark tty as busy for VE sake */
 
 /* Values for tty->flow_change */
 #define TTY_THROTTLE_SAFE 1
