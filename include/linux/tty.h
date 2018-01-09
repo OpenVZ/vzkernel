@@ -365,6 +365,7 @@ struct tty_file_private {
 #define TTY_NO_WRITE_SPLIT 	17	/* Preserve write boundaries to driver */
 #define TTY_HUPPED 		18	/* Post driver->hangup() */
 #define TTY_LDISC_HALTED	22	/* Line discipline is halted */
+#define TTY_VTTY_BUSY		23	/* Mark tty as busy for VE sake */
 
 /* Values for tty->flow_change */
 #define TTY_THROTTLE_SAFE 1
