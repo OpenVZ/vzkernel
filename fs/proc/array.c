@@ -150,6 +150,18 @@ static inline const char *get_task_state(struct task_struct *tsk)
 	return task_state_array[task_state_index(tsk)];
 }
 
+static int task_virtual_pid(struct task_struct *t)
+{
+	struct pid *pid;
+
+	pid = task_pid(t);
+	/*
+	 * this will give wrong result for tasks,
+	 * that failed to enter VE, but that's OK
+	 */
+	return pid ? pid->numbers[pid->level].nr : 0;
+}
+
 static inline void task_state(struct seq_file *m, struct pid_namespace *ns,
 				struct pid *pid, struct task_struct *p)
 {
@@ -158,7 +170,7 @@ static inline void task_state(struct seq_file *m, struct pid_namespace *ns,
 	int g, umask = -1;
 	struct task_struct *tracer;
 	const struct cred *cred;
-	pid_t ppid, tpid = 0, tgid, ngid;
+	pid_t ppid, tpid = 0, tgid, ngid, vpid;
 	unsigned int max_fds = 0;
 
 	rcu_read_lock();
@@ -171,6 +183,7 @@ static inline void task_state(struct seq_file *m, struct pid_namespace *ns,
 
 	tgid = task_tgid_nr_ns(p, ns);
 	ngid = task_numa_group_id(p);
+	vpid = task_virtual_pid(p);
 	cred = get_task_cred(p);
 
 	task_lock(p);
@@ -225,6 +238,12 @@ static inline void task_state(struct seq_file *m, struct pid_namespace *ns,
 		seq_put_decimal_ull(m, "\t", task_session_nr_ns(p, pid->numbers[g].ns));
 #endif
 	seq_putc(m, '\n');
+#ifdef CONFIG_VE
+	rcu_read_lock();
+	seq_printf(m, "envID:\t%s\nVPid:\t%d\n",
+			task_ve_name(p), vpid);
+	rcu_read_unlock();
+#endif
 }
 
 void render_sigset_t(struct seq_file *m, const char *header,
