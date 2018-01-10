@@ -247,7 +247,7 @@ static bool sane_reclaim(struct scan_control *sc)
 	if (!memcg)
 		return true;
 #ifdef CONFIG_CGROUP_WRITEBACK
-	if (cgroup_subsys_on_dfl(memory_cgrp_subsys))
+	if (1/*cgroup_subsys_on_dfl(memory_cgrp_subsys)*/)
 		return true;
 #endif
 	return false;
