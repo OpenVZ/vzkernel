@@ -682,6 +682,53 @@ static struct target_stat_scsi_tgt_port_attribute			\
 	__CONFIGFS_EATTR_RO(_name,					\
 	target_stat_scsi_tgt_port_show_attr_##_name);
 
+#define DEV_STAT_SCSI_TGT_PORT_STATS_SHOW_SIMPLE(_name, _value)		\
+static ssize_t  target_stat_scsi_tgt_port_show_attr_##_name(		\
+	struct se_port_stat_grps *pgrps, char *page)			\
+{									\
+	struct se_lun *lun = container_of(pgrps,			\
+		struct se_lun, port_stat_grps);				\
+	ssize_t ret = -ENODEV;						\
+									\
+	spin_lock(&lun->lun_sep_lock);					\
+	if (lun->lun_sep) {						\
+		ret = snprintf(page, PAGE_SIZE, "%lu\n",		\
+			atomic_long_read(&lun->lun_stats._value));	\
+	}								\
+	spin_unlock(&lun->lun_sep_lock);				\
+	return ret;							\
+}
+
+DEV_STAT_SCSI_TGT_PORT_STATS_SHOW_SIMPLE(read_bytes, tx_data_octets);
+DEV_STAT_SCSI_TGT_PORT_ATTR_RO(read_bytes);
+
+DEV_STAT_SCSI_TGT_PORT_STATS_SHOW_SIMPLE(write_bytes, rx_data_octets);
+DEV_STAT_SCSI_TGT_PORT_ATTR_RO(write_bytes);
+
+DEV_STAT_SCSI_TGT_PORT_STATS_SHOW_SIMPLE(read_cmds, read_cmds);
+DEV_STAT_SCSI_TGT_PORT_ATTR_RO(read_cmds);
+
+DEV_STAT_SCSI_TGT_PORT_STATS_SHOW_SIMPLE(write_cmds, write_cmds);
+DEV_STAT_SCSI_TGT_PORT_ATTR_RO(write_cmds);
+
+DEV_STAT_SCSI_TGT_PORT_STATS_SHOW_SIMPLE(bidi_cmds, bidi_cmds);
+DEV_STAT_SCSI_TGT_PORT_ATTR_RO(bidi_cmds);
+
+DEV_STAT_SCSI_TGT_PORT_STATS_SHOW_SIMPLE(read_errors, read_errors);
+DEV_STAT_SCSI_TGT_PORT_ATTR_RO(read_errors);
+
+DEV_STAT_SCSI_TGT_PORT_STATS_SHOW_SIMPLE(write_errors, write_errors);
+DEV_STAT_SCSI_TGT_PORT_ATTR_RO(write_errors);
+
+DEV_STAT_SCSI_TGT_PORT_STATS_SHOW_SIMPLE(bidi_errors, bidi_errors);
+DEV_STAT_SCSI_TGT_PORT_ATTR_RO(bidi_errors);
+
+DEV_STAT_SCSI_TGT_PORT_STATS_SHOW_SIMPLE(aborts, aborts);
+DEV_STAT_SCSI_TGT_PORT_ATTR_RO(aborts);
+
+DEV_STAT_SCSI_TGT_PORT_STATS_SHOW_SIMPLE(queue_cmds, queue_cmds);
+DEV_STAT_SCSI_TGT_PORT_ATTR_RO(queue_cmds);
+
 static ssize_t target_stat_scsi_tgt_port_show_attr_inst(
 	struct se_port_stat_grps *pgrps, char *page)
 {
@@ -869,6 +916,16 @@ static struct configfs_attribute *target_stat_scsi_tgt_port_attrs[] = {
 	&target_stat_scsi_tgt_port_write_mbytes.attr,
 	&target_stat_scsi_tgt_port_read_mbytes.attr,
 	&target_stat_scsi_tgt_port_hs_in_cmds.attr,
+	&target_stat_scsi_tgt_port_read_bytes.attr,
+	&target_stat_scsi_tgt_port_write_bytes.attr,
+	&target_stat_scsi_tgt_port_read_cmds.attr,
+	&target_stat_scsi_tgt_port_write_cmds.attr,
+	&target_stat_scsi_tgt_port_bidi_cmds.attr,
+	&target_stat_scsi_tgt_port_read_errors.attr,
+	&target_stat_scsi_tgt_port_write_errors.attr,
+	&target_stat_scsi_tgt_port_bidi_errors.attr,
+	&target_stat_scsi_tgt_port_aborts.attr,
+	&target_stat_scsi_tgt_port_queue_cmds.attr,
 	NULL,
 };
 
