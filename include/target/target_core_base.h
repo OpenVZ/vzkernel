@@ -710,6 +710,12 @@ struct se_port_stat_grps {
 	struct config_group scsi_transport_group;
 };
 
+struct scsi_port_stats {
+	atomic_long_t	cmd_pdus;
+	atomic_long_t	tx_data_octets;
+	atomic_long_t	rx_data_octets;
+};
+
 struct se_lun {
 #define SE_LUN_LINK_MAGIC			0xffff7771
 	u32			lun_link_magic;
@@ -729,6 +735,8 @@ struct se_lun {
 	struct se_port_stat_grps port_stat_grps;
 	struct completion	lun_ref_comp;
 	struct percpu_ref	lun_ref;
+
+	struct scsi_port_stats	lun_stats;
 };
 
 struct se_dev_stat_grps {
@@ -835,19 +843,12 @@ struct se_hba {
 	struct se_subsystem_api *transport;
 };
 
-struct scsi_port_stats {
-       u64     cmd_pdus;
-       u64     tx_data_octets;
-       u64     rx_data_octets;
-};
-
 struct se_port {
 	/* RELATIVE TARGET PORT IDENTIFER */
 	u16		sep_rtpi;
 	int		sep_tg_pt_secondary_stat;
 	int		sep_tg_pt_secondary_write_md;
 	u32		sep_index;
-	struct scsi_port_stats sep_stats;
 	/* Used for ALUA Target Port Groups membership */
 	atomic_t	sep_tg_pt_secondary_offline;
 	/* Used for PR ALL_TG_PT=1 */
