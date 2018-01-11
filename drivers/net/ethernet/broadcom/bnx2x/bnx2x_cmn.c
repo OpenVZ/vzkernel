@@ -4882,6 +4882,15 @@ int bnx2x_change_mtu(struct net_device *dev, int new_mtu)
 		return -EAGAIN;
 	}
 
+	if (SKB_DATA_ALIGN(new_mtu + BNX2X_FW_RX_ALIGN_START +
+			IP_HEADER_ALIGNMENT_PADDING + ETH_OVERHEAD +
+			BNX2X_FW_RX_ALIGN_END) + NET_SKB_PAD > PAGE_SIZE) {
+		new_mtu = PAGE_SIZE - NET_SKB_PAD - BNX2X_FW_RX_ALIGN_END -
+			ETH_OVERHEAD - IP_HEADER_ALIGNMENT_PADDING -
+			BNX2X_FW_RX_ALIGN_START;
+	}
+
+
 	/* This does not race with packet allocation
 	 * because the actual alloc size is
 	 * only updated as part of load
