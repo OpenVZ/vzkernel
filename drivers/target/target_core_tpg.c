@@ -832,6 +832,9 @@ int core_tpg_add_lun(
 	}
 
 	spin_lock(&tpg->tpg_lun_lock);
+	atomic_long_set(&lun->lun_stats.cmd_pdus, 0);
+	atomic_long_set(&lun->lun_stats.rx_data_octets, 0);
+	atomic_long_set(&lun->lun_stats.tx_data_octets, 0);
 	lun->lun_access = lun_access;
 	lun->lun_status = TRANSPORT_LUN_STATUS_ACTIVE;
 	spin_unlock(&tpg->tpg_lun_lock);
