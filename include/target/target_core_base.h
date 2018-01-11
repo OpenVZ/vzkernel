@@ -714,6 +714,7 @@ struct scsi_port_stats_hist {
 	u64		items[TCM_SE_PORT_STATS_HIST_MAX];
 	atomic64_t	counters[TCM_SE_PORT_STATS_HIST_MAX];
 	u8		count;
+	atomic64_t	latencies;
 	struct rcu_head	rcu_head;
 };
 
