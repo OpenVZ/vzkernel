@@ -794,17 +794,12 @@ static ssize_t target_stat_scsi_tgt_port_show_attr_in_cmds(
 	struct se_port_stat_grps *pgrps, char *page)
 {
 	struct se_lun *lun = container_of(pgrps, struct se_lun, port_stat_grps);
-	struct se_port *sep;
-	ssize_t ret;
+	ssize_t ret = -ENODEV;
 
 	spin_lock(&lun->lun_sep_lock);
-	sep = lun->lun_sep;
-	if (!sep) {
-		spin_unlock(&lun->lun_sep_lock);
-		return -ENODEV;
-	}
-
-	ret = snprintf(page, PAGE_SIZE, "%llu\n", sep->sep_stats.cmd_pdus);
+	if (lun->lun_sep)
+		ret = snprintf(page, PAGE_SIZE, "%lu\n",
+			atomic_long_read(&lun->lun_stats.cmd_pdus));
 	spin_unlock(&lun->lun_sep_lock);
 	return ret;
 }
@@ -814,18 +809,12 @@ static ssize_t target_stat_scsi_tgt_port_show_attr_write_mbytes(
 	struct se_port_stat_grps *pgrps, char *page)
 {
 	struct se_lun *lun = container_of(pgrps, struct se_lun, port_stat_grps);
-	struct se_port *sep;
-	ssize_t ret;
+	ssize_t ret = -ENODEV;
 
 	spin_lock(&lun->lun_sep_lock);
-	sep = lun->lun_sep;
-	if (!sep) {
-		spin_unlock(&lun->lun_sep_lock);
-		return -ENODEV;
-	}
-
-	ret = snprintf(page, PAGE_SIZE, "%u\n",
-			(u32)(sep->sep_stats.rx_data_octets >> 20));
+	if (lun->lun_sep)
+		ret = snprintf(page, PAGE_SIZE, "%lu\n",
+			atomic_long_read(&lun->lun_stats.rx_data_octets) >> 20);
 	spin_unlock(&lun->lun_sep_lock);
 	return ret;
 }
@@ -835,18 +824,12 @@ static ssize_t target_stat_scsi_tgt_port_show_attr_read_mbytes(
 	struct se_port_stat_grps *pgrps, char *page)
 {
 	struct se_lun *lun = container_of(pgrps, struct se_lun, port_stat_grps);
-	struct se_port *sep;
-	ssize_t ret;
+	ssize_t ret = -ENODEV;
 
 	spin_lock(&lun->lun_sep_lock);
-	sep = lun->lun_sep;
-	if (!sep) {
-		spin_unlock(&lun->lun_sep_lock);
-		return -ENODEV;
-	}
-
-	ret = snprintf(page, PAGE_SIZE, "%u\n",
-			(u32)(sep->sep_stats.tx_data_octets >> 20));
+	if (lun->lun_sep)
+		ret = snprintf(page, PAGE_SIZE, "%lu\n",
+			atomic_long_read(&lun->lun_stats.tx_data_octets) >> 20);
 	spin_unlock(&lun->lun_sep_lock);
 	return ret;
 }
