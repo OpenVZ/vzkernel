@@ -8761,8 +8761,8 @@ static void free_sched_group(struct task_group *tg)
 	free_rt_sched_group(tg);
 	autogroup_free(tg);
 	free_percpu(tg->taskstats);
-	kfree(tg->cpustat_last);
-	kfree(tg->vcpustat);
+	kvfree(tg->cpustat_last);
+	kvfree(tg->vcpustat);
 	kfree(tg);
 }
 
@@ -8785,12 +8785,12 @@ struct task_group *sched_create_group(struct task_group *parent)
 	if (!tg->taskstats)
 		goto err;
 
-	tg->cpustat_last = kcalloc(nr_cpu_ids, sizeof(struct kernel_cpustat),
+	tg->cpustat_last = kvzalloc(nr_cpu_ids * sizeof(struct kernel_cpustat),
 				   GFP_KERNEL);
 	if (!tg->cpustat_last)
 		goto err;
 
-	tg->vcpustat = kcalloc(nr_cpu_ids, sizeof(struct kernel_cpustat),
+	tg->vcpustat = kvzalloc(nr_cpu_ids * sizeof(struct kernel_cpustat),
 			       GFP_KERNEL);
 	if (!tg->vcpustat)
 		goto err;
