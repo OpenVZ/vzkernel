@@ -854,6 +854,8 @@ void core_tpg_remove_lun(
 	struct se_portal_group *tpg,
 	struct se_lun *lun)
 {
+	struct scsi_port_stats_hist *write_hist, *read_hist, *sync_hist;
+
 	core_clear_lun_from_tpg(lun, tpg);
 	transport_clear_lun_ref(lun);
 
@@ -862,6 +864,31 @@ void core_tpg_remove_lun(
 	spin_lock(&tpg->tpg_lun_lock);
 	lun->lun_status = TRANSPORT_LUN_STATUS_FREE;
 	spin_unlock(&tpg->tpg_lun_lock);
+
+	spin_lock(&lun->lun_sep_lock);
+
+	write_hist = rcu_dereference_protected(lun->lun_stats.write_hist,
+		lockdep_is_held(&lun->lun_sep_lock));
+	rcu_assign_pointer(lun->lun_stats.write_hist, NULL);
+
+	read_hist = rcu_dereference_protected(lun->lun_stats.read_hist,
+		lockdep_is_held(&lun->lun_sep_lock));
+	rcu_assign_pointer(lun->lun_stats.read_hist, NULL);
+
+	sync_hist = rcu_dereference_protected(lun->lun_stats.sync_hist,
+		lockdep_is_held(&lun->lun_sep_lock));
+	rcu_assign_pointer(lun->lun_stats.sync_hist, NULL);
+
+	spin_unlock(&lun->lun_sep_lock);
+
+	if (write_hist)
+		kfree_rcu(write_hist, rcu_head);
+
+	if (read_hist)
+		kfree_rcu(read_hist, rcu_head);
+
+	if (sync_hist)
+		kfree_rcu(sync_hist, rcu_head);
 
 	percpu_ref_exit(&lun->lun_ref);
 }
