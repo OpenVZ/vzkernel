@@ -535,6 +535,8 @@ struct se_cmd {
 	sense_reason_t		pi_err;
 	sector_t		bad_sector;
 	int			cpuid;
+	u64			started_exec_at;
+	u64			finished_exec_at;
 };
 
 struct se_ua {
@@ -706,6 +708,17 @@ struct se_port_stat_grps {
 	struct config_group scsi_transport_group;
 };
 
+#define TCM_SE_PORT_STATS_HIST_MAX	40
+
+struct scsi_port_stats_hist {
+	u64		items[TCM_SE_PORT_STATS_HIST_MAX];
+	atomic64_t	counters[TCM_SE_PORT_STATS_HIST_MAX];
+	u8		count;
+	struct rcu_head	rcu_head;
+};
+
+void scsi_port_stats_hist_observe(struct scsi_port_stats_hist *hist, u64 val);
+
 struct scsi_port_stats {
 	atomic_long_t	cmd_pdus;
 	atomic_long_t	tx_data_octets;
@@ -718,6 +731,9 @@ struct scsi_port_stats {
 	atomic_long_t	bidi_errors;
 	atomic_long_t	queue_cmds;
 	atomic_long_t	aborts;
+	struct scsi_port_stats_hist __rcu	*read_hist;
+	struct scsi_port_stats_hist __rcu	*write_hist;
+	struct scsi_port_stats_hist __rcu	*sync_hist;
 };
 
 struct se_lun {
