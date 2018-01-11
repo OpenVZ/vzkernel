@@ -635,6 +635,7 @@ void scsi_port_stats_hist_observe(
 		return;
 
 	scsi_port_stats_hist_observe_bsearch(hist, val);
+	atomic64_add(val, &hist->latencies);
 }
 
 static ssize_t find_token(const char *page, size_t size,
@@ -727,6 +728,9 @@ static ssize_t snprintf_histogram(char *page, size_t size,
 
 	ret += snprintf(page + ret, PAGE_SIZE - ret,
 		"%llu\n", (u64)atomic64_read(&hist->counters[i]));
+
+	ret += snprintf(page + ret, PAGE_SIZE - ret,
+		"%llu\n", (u64)atomic64_read(&hist->latencies));
 
 	return ret;
 }
