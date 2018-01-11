@@ -95,6 +95,8 @@ transport_lookup_cmd_lun(struct se_cmd *se_cmd, u32 unpacked_lun)
 
 		percpu_ref_get(&se_lun->lun_ref);
 		se_cmd->lun_ref_active = true;
+
+		atomic_long_inc(&se_cmd->se_lun->lun_stats.queue_cmds);
 	}
 	spin_unlock_irqrestore(&se_sess->se_node_acl->device_list_lock, flags);
 
