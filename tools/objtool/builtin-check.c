@@ -422,8 +422,13 @@ static int add_call_destinations(struct objtool_file *file)
 			insn->call_dest = find_symbol_by_offset(insn->sec,
 								dest_off);
 			if (!insn->call_dest && !insn->visited) {
+#if 0
+				/* Compilers with -mindirect-branch=thunk-extern trigger
+				 * this everywhere on x86. Disable for now.
+				 */
 				WARN_FUNC("can't find call dest symbol at offset 0x%lx",
 					  insn->sec, insn->offset, dest_off);
+#endif
 				return -1;
 			}
 		} else if (rela->sym->type == STT_SECTION) {
