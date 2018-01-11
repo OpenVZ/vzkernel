@@ -33,6 +33,7 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/configfs.h>
+#include <linux/ctype.h>
 #include <scsi/scsi.h>
 #include <scsi/scsi_device.h>
 #include <scsi/scsi_host.h>
@@ -558,6 +559,208 @@ static struct se_lun *to_stat_tgt_port(struct config_item *item)
 	return container_of(pgrps, struct se_lun, port_stat_grps);
 }
 
+#define DEV_STAT_TGT_PORT_SHOW_HIST(_name)				\
+static ssize_t target_stat_tgt_port_##_name##_show(			\
+	struct config_item *item, char *page)				\
+{									\
+	ssize_t size = -ENODEV;						\
+	struct se_device *dev;						\
+	struct se_lun *lun = to_stat_port(item);			\
+									\
+	rcu_read_lock();						\
+	dev = rcu_dereference(lun->lun_se_dev);				\
+	if (dev) {							\
+		size = snprintf_histogram(page, PAGE_SIZE,		\
+			rcu_dereference(lun->lun_stats._name));		\
+	}								\
+	rcu_read_unlock();						\
+	return size;							\
+}
+
+#define DEV_STAT_TGT_PORT_STORE_HIST(_name)				\
+static ssize_t target_stat_tgt_port_##_name##_store(			\
+	struct config_item *item, const char *page, size_t size)	\
+{									\
+	struct se_device *dev;						\
+	struct se_lun *lun = to_stat_port(item);			\
+	struct scsi_port_stats_hist *old, *new;				\
+	ssize_t ret;							\
+									\
+	new = kzalloc(sizeof(*new), GFP_KERNEL);			\
+	if (!new)							\
+		return -ENOMEM;						\
+									\
+	ret = read_histogram_items(page,				\
+		size, new->items, TCM_SE_PORT_STATS_HIST_MAX - 1);	\
+									\
+	if (ret < 0)							\
+		goto err;						\
+									\
+	if (ret == 0) {							\
+		kfree(new);						\
+		new = NULL;						\
+	} else	{							\
+		new->items[ret] = U64_MAX;				\
+		new->count = ret + 1;					\
+	}								\
+									\
+	rcu_read_lock();						\
+	dev = rcu_dereference(lun->lun_se_dev);				\
+									\
+	if (!dev) {							\
+		rcu_read_unlock();					\
+		ret = -ENODEV;						\
+		goto err;						\
+	}								\
+									\
+	old = rcu_dereference(lun->lun_stats._name);			\
+	rcu_assign_pointer(lun->lun_stats._name, new);			\
+									\
+	rcu_read_unlock();						\
+									\
+	if (old)							\
+		kfree_rcu(old, rcu_head);				\
+									\
+	return size;							\
+									\
+err:									\
+	if (new)							\
+		kfree(new);						\
+	return ret;							\
+}
+
+static void scsi_port_stats_hist_observe_bsearch(
+		struct scsi_port_stats_hist *hist, u64 val)
+{
+	size_t start = 0, end = hist->count - 1;
+
+	while (start < end) {
+		size_t mid = start + (end - start) / 2;
+
+		if (val < hist->items[mid])
+			end = mid;
+		else
+			start = mid + 1;
+	}
+
+	atomic64_inc(&hist->counters[start]);
+}
+
+void scsi_port_stats_hist_observe(
+		struct scsi_port_stats_hist *hist, u64 val)
+{
+	if (!hist)
+		return;
+
+	scsi_port_stats_hist_observe_bsearch(hist, val);
+}
+
+static ssize_t find_token(const char *page, size_t size,
+		size_t offset, size_t *token_len)
+{
+	size_t i;
+	ssize_t pos = -1;
+	size_t len = 0;
+
+	BUG_ON(offset > size);
+
+	for (i = offset; i < size; ++i) {
+		if (isspace(page[i])) {
+			if (len)
+				break;
+		} else if (!len++) {
+			pos = i;
+		}
+	}
+
+	if (pos > -1)
+		*token_len = len;
+
+	return pos;
+}
+
+static ssize_t read_histogram_items(const char *page, size_t size,
+		u64 *items, u8 items_max)
+{
+	u8 total = 0;
+	size_t token_len = 0;
+	ssize_t pos;
+
+	if (size == 0)
+		return 0;
+
+	pos = find_token(page, size, 0, &token_len);
+	if (pos == -1)
+		return 0;
+
+	while (pos != -1) {
+		int ret;
+		char buf[64];
+		u64 item;
+
+		if (token_len >= sizeof(buf))
+			return -EINVAL;
+
+		if (total == items_max) {
+			pr_err("items count can't be greater than %d: %d",
+					items_max, -EPERM);
+			return -EINVAL;
+		}
+
+		memcpy(buf, page + pos, token_len);
+		buf[token_len] = 0;
+
+		ret = kstrtou64(buf, 10, &item);
+		if (ret < 0) {
+			pr_err("kstrtou64() failed for an item '%s': %d",
+					buf, ret);
+			return ret;
+		}
+
+		if ((item <= 0) || (total && item <= items[total - 1])) {
+			pr_err("items must be positive, unique and sorted: %d",
+					-EINVAL);
+			return -EINVAL;
+		}
+
+		items[total++] = item;
+		pos = find_token(page, size, pos + token_len, &token_len);
+	}
+
+	return total;
+}
+
+static ssize_t snprintf_histogram(char *page, size_t size,
+		struct scsi_port_stats_hist *hist)
+{
+	ssize_t ret = 0;
+	u8 i;
+
+	if (!hist)
+		return 0;
+
+	for (i = 0; i < hist->count - 1; ++i)
+		ret += snprintf(page + ret, PAGE_SIZE - ret,
+			"%llu ", (u64)atomic64_read(&hist->counters[i]));
+
+	ret += snprintf(page + ret, PAGE_SIZE - ret,
+		"%llu\n", (u64)atomic64_read(&hist->counters[i]));
+
+	return ret;
+}
+
+DEV_STAT_TGT_PORT_STORE_HIST(read_hist);
+DEV_STAT_TGT_PORT_SHOW_HIST(read_hist);
+CONFIGFS_ATTR(target_stat_tgt_port_, read_hist);
+
+DEV_STAT_TGT_PORT_STORE_HIST(write_hist);
+DEV_STAT_TGT_PORT_SHOW_HIST(write_hist);
+CONFIGFS_ATTR(target_stat_tgt_port_, write_hist);
+
+DEV_STAT_TGT_PORT_STORE_HIST(sync_hist);
+DEV_STAT_TGT_PORT_SHOW_HIST(sync_hist);
+CONFIGFS_ATTR(target_stat_tgt_port_, sync_hist);
+
 static ssize_t target_stat_tgt_port_inst_show(struct config_item *item,
 		char *page)
 {
@@ -775,6 +978,9 @@ static struct configfs_attribute *target_stat_scsi_tgt_port_attrs[] = {
 	&target_stat_tgt_port_attr_bidi_errors,
 	&target_stat_tgt_port_attr_aborts,
 	&target_stat_tgt_port_attr_queue_cmds,
+	&target_stat_tgt_port_attr_read_hist,
+	&target_stat_tgt_port_attr_write_hist,
+	&target_stat_tgt_port_attr_sync_hist,
 	NULL,
 };
 
