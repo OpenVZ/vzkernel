@@ -51,6 +51,8 @@ struct ve_struct ve0 = {
 #ifdef CONFIG_VE_IPTABLES
 	.ipt_mask		= VE_IP_ALL,    /* everything is allowed */
 #endif
+	.netns_avail_nr		= ATOMIC_INIT(INT_MAX),
+	.netns_max_nr		= INT_MAX,
 };
 EXPORT_SYMBOL(ve0);
 
@@ -401,6 +403,9 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 #ifdef CONFIG_VE_IPTABLES
 	ve->ipt_mask = ve_setup_iptables_mask(VE_IP_DEFAULT);
 #endif
+
+	atomic_set(&ve->netns_avail_nr, NETNS_MAX_NR_DEFAULT);
+	ve->netns_max_nr = NETNS_MAX_NR_DEFAULT;
 do_init:
 	init_rwsem(&ve->op_sem);
 	INIT_LIST_HEAD(&ve->ve_list);
@@ -738,6 +743,35 @@ up_opsem:
 	return ret ? ret : nbytes;
 }
 
+static u64 ve_netns_max_nr_read(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	return css_to_ve(css)->netns_max_nr;
+}
+
+static int ve_netns_max_nr_write(struct cgroup_subsys_state *css, struct cftype *cft, u64 val)
+{
+	struct ve_struct *ve = css_to_ve(css);
+	int delta;
+
+	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
+
+	down_write(&ve->op_sem);
+	if (ve->is_running || ve->ve_ns) {
+		up_write(&ve->op_sem);
+		return -EBUSY;
+	}
+	delta = val - ve->netns_max_nr;
+	ve->netns_max_nr = val;
+	atomic_add(delta, &ve->netns_avail_nr);
+	up_write(&ve->op_sem);
+	return 0;
+}
+static u64 ve_netns_avail_nr_read(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	return atomic_read(&css_to_ve(css)->netns_avail_nr);
+}
+
 static struct cftype ve_cftypes[] = {
 
 	{
@@ -779,6 +813,16 @@ static struct cftype ve_cftypes[] = {
 		.write_u64		= ve_iptables_mask_write,
 	},
 #endif
+	{
+		.name			= "netns_max_nr",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_u64		= ve_netns_max_nr_read,
+		.write_u64		= ve_netns_max_nr_write,
+	},
+	{
+		.name			= "netns_avail_nr",
+		.read_u64		= ve_netns_avail_nr_read,
+	},
 	{ }
 };
 
