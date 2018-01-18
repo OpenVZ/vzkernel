@@ -328,6 +328,7 @@ struct t10_alua_tg_pt_gp {
 	struct list_head tg_pt_gp_mem_list;
 	struct se_port *tg_pt_gp_alua_port;
 	struct se_node_acl *tg_pt_gp_alua_nacl;
+	char *tg_pt_gp_usermode_helper;
 };
 
 struct t10_alua_tg_pt_gp_member {
