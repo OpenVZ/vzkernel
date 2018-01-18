@@ -3043,7 +3043,7 @@ void __do_SAK(struct tty_struct *tty)
 			printk(KERN_NOTICE "SAK: killed process %d"
 			    " (%s): fd#%d opened to the tty\n",
 				    task_pid_nr(p), p->comm, i - 1);
-			force_sig(SIGKILL, p);
+			send_sig(SIGKILL, p, 1);
 		}
 		task_unlock(p);
 	} while_each_thread(g, p);
