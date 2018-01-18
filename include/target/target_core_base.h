@@ -303,6 +303,7 @@ struct t10_alua_tg_pt_gp {
 	struct list_head tg_pt_gp_lun_list;
 	struct se_lun *tg_pt_gp_alua_lun;
 	struct se_node_acl *tg_pt_gp_alua_nacl;
+	char *tg_pt_gp_usermode_helper;
 };
 
 struct t10_vpd {
