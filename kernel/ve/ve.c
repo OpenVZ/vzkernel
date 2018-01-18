@@ -282,6 +282,28 @@ static void ve_drop_context(struct ve_struct *ve)
 	ve->init_cred = NULL;
 }
 
+static void ve_stop_umh(struct ve_struct *ve)
+{
+	kthread_flush_worker(&ve->umh_worker);
+	kthread_stop(ve->umh_task);
+	ve->umh_task = NULL;
+}
+
+static int ve_start_umh(struct ve_struct *ve)
+{
+	struct task_struct *task;
+
+	kthread_init_worker(&ve->umh_worker);
+	task = kthread_run_ve(ve, kthread_worker_fn,
+				      &ve->umh_worker,
+				      "khelper");
+	if (IS_ERR(task))
+		return PTR_ERR(task);
+
+	ve->umh_task = task;
+	return 0;
+}
+
 static void ve_stop_kthreadd(struct ve_struct *ve)
 {
 	kthread_flush_worker(ve->kthreadd_worker);
@@ -447,6 +469,10 @@ static int ve_start_container(struct ve_struct *ve)
 	if (err)
 		goto err_kthreadd;
 
+	err = ve_start_umh(ve);
+	if (err)
+		goto err_umh;
+
 	err = ve_hook_iterate_init(VE_SS_CHAIN, ve);
 	if (err < 0)
 		goto err_iterate;
@@ -462,6 +488,8 @@ static int ve_start_container(struct ve_struct *ve)
 	return 0;
 
 err_iterate:
+	ve_stop_umh(ve);
+err_umh:
 	ve_stop_kthreadd(ve);
 err_kthreadd:
 	ve_list_del(ve);
@@ -498,6 +526,7 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	/*
 	 * Stop kthreads, or zap_pid_ns_processes() will wait them forever.
 	 */
+	ve_stop_umh(ve);
 	ve_stop_kthreadd(ve);
 unlock:
 	up_write(&ve->op_sem);
