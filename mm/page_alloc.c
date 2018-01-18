@@ -3450,6 +3450,37 @@ static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
 #endif
 }
 
+struct static_key warn_high_order_key = STATIC_KEY_INIT_FALSE;
+int warn_order = MAX_ORDER;
+
+int proc_warn_high_order(struct ctl_table *table, int write,
+			void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+
+	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (!ret) {
+		smp_wmb();
+		static_key_slow_inc(&warn_high_order_key);
+	}
+
+	return ret;
+}
+
+static __always_inline void warn_high_order(int order, gfp_t gfp_mask)
+{
+	static atomic_t warn_count = ATOMIC_INIT(32);
+
+	if (static_key_false(&warn_high_order_key)) {
+		int tmp_warn_order = smp_load_acquire(&warn_order);
+
+		if (order >= tmp_warn_order && !(gfp_mask & __GFP_NOWARN))
+			WARN(atomic_dec_if_positive(&warn_count) >= 0,
+				"order %d >= %d, gfp 0x%x\n",
+				order, tmp_warn_order, gfp_mask);
+	}
+}
+
 /*
  * This is the 'heart' of the zoned buddy allocator.
  */
@@ -3472,6 +3503,8 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 	might_sleep_if(gfp_mask & __GFP_WAIT);
 	WARN_ON_ONCE((gfp_mask & __GFP_FS) && current->journal_info &&
 		!(current->flags & PF_MEMALLOC));
+
+	warn_high_order(order, gfp_mask);
 
 	if (should_fail_alloc_page(gfp_mask, order))
 		return NULL;
