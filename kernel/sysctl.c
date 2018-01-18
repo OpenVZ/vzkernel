@@ -174,6 +174,11 @@ extern int unaligned_dump_stack;
 extern int no_unaligned_warning;
 #endif
 
+extern int warn_order;
+extern int proc_warn_high_order(struct ctl_table *table, int write,
+			void __user *buffer, size_t *lenp, loff_t *ppos);
+
+
 static bool virtual_ptr(void **ptr, void *base, size_t size, void *cur);
 #define sysctl_virtual(sysctl)							\
 int sysctl ## _virtual(struct ctl_table *table, int write,			\
@@ -1723,6 +1728,15 @@ static struct ctl_table vm_table[] = {
 		.extra2		= (void *)&mmap_rnd_compat_bits_max,
 	},
 #endif
+	{
+		.procname	= "warn_high_order",
+		.data		= &warn_order,
+		.maxlen		= sizeof(warn_order),
+		.mode		= 0644,
+		.proc_handler	= &proc_warn_high_order,
+		.extra1		= SYSCTL_ONE,
+		.extra2		= &one_hundred,
+	},
 	{ }
 };
 
