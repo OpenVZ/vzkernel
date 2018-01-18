@@ -3027,9 +3027,11 @@ void __do_SAK(struct tty_struct *tty)
 			task_pid_nr(p), p->comm);
 		send_sig(SIGKILL, p, 1);
 	} while_each_pid_task(session, PIDTYPE_SID, p);
+	qread_unlock(&tasklist_lock);
 	/* Now kill any processes that happen to have the
 	 * tty open.
 	 */
+	rcu_read_lock();
 	for_each_process(p) {
 		if (p->signal->tty == tty) {
 			printk(KERN_NOTICE "SAK: killed process %d"
@@ -3060,7 +3062,7 @@ void __do_SAK(struct tty_struct *tty)
 kill:
 		send_sig(SIGKILL, p, 1);
 	}
-	qread_unlock(&tasklist_lock);
+	rcu_read_unlock();
 #endif
 }
 
