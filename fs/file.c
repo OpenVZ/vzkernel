@@ -22,6 +22,7 @@
 #include <linux/spinlock.h>
 #include <linux/rcupdate.h>
 #include <linux/workqueue.h>
+#include <linux/ve.h>
 
 int sysctl_nr_open __read_mostly = 1024*1024;
 int sysctl_nr_open_min = BITS_PER_LONG;
@@ -70,21 +71,25 @@ static void free_fdtable_rcu(struct rcu_head *rcu)
  * spinlock held for write.
  */
 static void copy_fd_bitmaps(struct fdtable *nfdt, struct fdtable *ofdt,
-			    unsigned int count)
+			    unsigned int count, bool shrink)
 {
 	unsigned int cpy, set;
 
-	cpy = count / BITS_PER_BYTE;
+	cpy = min(count, nfdt->max_fds) / BITS_PER_BYTE;
 	set = (nfdt->max_fds - count) / BITS_PER_BYTE;
 	memcpy(nfdt->open_fds, ofdt->open_fds, cpy);
-	memset((char *)nfdt->open_fds + cpy, 0, set);
-	memcpy(nfdt->close_on_exec, ofdt->close_on_exec, cpy);
-	memset((char *)nfdt->close_on_exec + cpy, 0, set);
+	if (!shrink)
+		memset((char *)nfdt->open_fds + cpy, 0, set);
 
-	cpy = BITBIT_SIZE(count);
+	memcpy(nfdt->close_on_exec, ofdt->close_on_exec, cpy);
+	if (!shrink)
+		memset((char *)nfdt->close_on_exec + cpy, 0, set);
+
+	cpy = BITBIT_SIZE(min(count, nfdt->max_fds));
 	set = BITBIT_SIZE(nfdt->max_fds) - cpy;
 	memcpy(nfdt->full_fds_bits, ofdt->full_fds_bits, cpy);
-	memset((char *)nfdt->full_fds_bits + cpy, 0, set);
+	if (!shrink)
+		memset((char *)nfdt->full_fds_bits + cpy, 0, set);
 }
 
 /*
@@ -95,14 +100,15 @@ static void copy_fdtable(struct fdtable *nfdt, struct fdtable *ofdt, bool shrink
 {
 	unsigned int cpy, set;
 
-	BUG_ON(nfdt->max_fds < ofdt->max_fds);
+	BUG_ON((nfdt->max_fds < ofdt->max_fds) != shrink);
 
-	cpy = ofdt->max_fds * sizeof(struct file *);
+	cpy = min(ofdt->max_fds, nfdt->max_fds) * sizeof(struct file *);
 	set = (nfdt->max_fds - ofdt->max_fds) * sizeof(struct file *);
 	memcpy(nfdt->fd, ofdt->fd, cpy);
-	memset((char *)nfdt->fd + cpy, 0, set);
+	if (!shrink)
+		memset((char *)nfdt->fd + cpy, 0, set);
 
-	copy_fd_bitmaps(nfdt, ofdt, ofdt->max_fds);
+	copy_fd_bitmaps(nfdt, ofdt, ofdt->max_fds, shrink);
 }
 
 static unsigned int fdtable_align(unsigned int nr)
@@ -192,16 +198,26 @@ static int expand_fdtable(struct files_struct *files, int nr, bool shrink)
 	spin_lock(&files->file_lock);
 	if (!new_fdt)
 		return -ENOMEM;
+	cur_fdt = files_fdtable(files);
 	/*
 	 * extremely unlikely race - sysctl_nr_open decreased between the check in
 	 * caller and alloc_fdtable().  Cheaper to catch it here...
 	 */
-	if (unlikely(new_fdt->max_fds <= nr)) {
+	if (unlikely((new_fdt->max_fds <= nr && !shrink) ||
+		     (shrink && new_fdt->max_fds >= cur_fdt->max_fds))) {
 		__free_fdtable(new_fdt);
 		return -EMFILE;
 	}
-	cur_fdt = files_fdtable(files);
-	BUG_ON(nr < cur_fdt->max_fds);
+	if (unlikely(shrink)) {
+		int i;
+		i = find_last_bit(cur_fdt->open_fds, cur_fdt->max_fds);
+		i = fdtable_align(i);
+		if (i == cur_fdt->max_fds) {
+			__free_fdtable(new_fdt);
+			return 1;
+		}
+	}
+	BUG_ON((nr < cur_fdt->max_fds) != shrink);
 	copy_fdtable(new_fdt, cur_fdt, shrink);
 	rcu_assign_pointer(files->fdt, new_fdt);
 	if (cur_fdt != &files->fdtab)
@@ -230,7 +246,7 @@ repeat:
 	fdt = files_fdtable(files);
 
 	/* Do we need to expand? */
-	if (nr < fdt->max_fds)
+	if (nr < fdt->max_fds && !shrink)
 		return expanded;
 
 	/* Can we expand? */
@@ -243,6 +259,15 @@ repeat:
 		wait_event(files->resize_wait, !files->resize_in_progress);
 		spin_lock(&files->file_lock);
 		goto repeat;
+	}
+
+	if (unlikely(shrink)) {
+		unsigned int i;
+		i = find_last_bit(fdt->open_fds, fdt->max_fds);
+		nr = i;
+		i = fdtable_align(i);
+		if (i >= fdt->max_fds)
+			return expanded;
 	}
 
 	/* All good, so we try */
@@ -359,7 +384,7 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 		open_files = count_open_files(old_fdt);
 	}
 
-	copy_fd_bitmaps(new_fdt, old_fdt, open_files);
+	copy_fd_bitmaps(new_fdt, old_fdt, open_files, false);
 
 	old_fds = old_fdt->fd;
 	new_fds = new_fdt->fd;
@@ -681,6 +706,14 @@ int __close_fd(struct files_struct *files, unsigned fd)
 	rcu_assign_pointer(fdt->fd[fd], NULL);
 	__clear_close_on_exec(fd, fdt);
 	__put_unused_fd(files, fd);
+
+	/* Try to shrink fdt and to free memory */
+	if (unlikely(fd * 2 >= fdt->max_fds &&
+		     fd > (1024 / sizeof(struct file *))) &&
+		     get_exec_env() != get_ve0() &&
+		     get_exec_env()->is_pseudosuper)
+		expand_files(files, fd, true);
+
 	spin_unlock(&files->file_lock);
 	return filp_close(file, files);
 
