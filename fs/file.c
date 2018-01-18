@@ -105,11 +105,8 @@ static void copy_fdtable(struct fdtable *nfdt, struct fdtable *ofdt, bool shrink
 	copy_fd_bitmaps(nfdt, ofdt, ofdt->max_fds);
 }
 
-static struct fdtable * alloc_fdtable(unsigned int nr)
+static unsigned int fdtable_align(unsigned int nr)
 {
-	struct fdtable *fdt;
-	void *data;
-
 	/*
 	 * Figure out how many fds we actually want to support in this fdtable.
 	 * Allocation steps are keyed to the size of the fdarray, since it
@@ -130,6 +127,16 @@ static struct fdtable * alloc_fdtable(unsigned int nr)
 	 */
 	if (unlikely(nr > sysctl_nr_open))
 		nr = ((sysctl_nr_open - 1) | (BITS_PER_LONG - 1)) + 1;
+
+	return nr;
+}
+
+static struct fdtable * alloc_fdtable(unsigned int nr)
+{
+	struct fdtable *fdt;
+	void *data;
+
+	nr = fdtable_align(nr);
 
 	fdt = kmalloc(sizeof(struct fdtable), GFP_KERNEL_ACCOUNT);
 	if (!fdt)
