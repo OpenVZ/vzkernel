@@ -398,6 +398,7 @@ struct net *copy_net_ns(unsigned long flags,
 	net = net_alloc();
 	if (!net) {
 		dec_net_namespaces(ucounts);
+		atomic_inc(&ve->netns_avail_nr);
 		return ERR_PTR(-ENOMEM);
 	}
 
