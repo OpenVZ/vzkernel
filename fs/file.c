@@ -663,9 +663,7 @@ int __close_fd(struct files_struct *files, unsigned fd)
 
 	/* Try to shrink fdt and to free memory */
 	if (unlikely(fd * 2 >= fdt->max_fds &&
-		     fd > (1024 / sizeof(struct file *))) &&
-		     get_exec_env() != get_ve0() &&
-		     get_exec_env()->is_pseudosuper)
+		     fd > (1024 / sizeof(struct file *))))
 		expand_files(files, fd, true);
 
 	spin_unlock(&files->file_lock);
