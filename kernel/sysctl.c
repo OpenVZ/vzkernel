@@ -129,6 +129,7 @@ static int __maybe_unused one = 1;
 static int __maybe_unused two = 2;
 static int __maybe_unused four = 4;
 static unsigned long one_ul = 1;
+static int ten = 10;
 static int one_hundred = 100;
 #ifdef CONFIG_PRINTK
 static int ten_thousand = 10000;
@@ -174,6 +175,11 @@ extern int unaligned_dump_stack;
 #ifdef CONFIG_SYSCTL_ARCH_UNALIGN_NO_WARN
 extern int no_unaligned_warning;
 #endif
+
+extern int warn_order;
+extern int proc_warn_high_order(struct ctl_table *table, int write,
+			void __user *buffer, size_t *lenp, loff_t *ppos);
+
 
 static bool virtual_ptr(void **ptr, void *base, size_t size, void *cur);
 #define sysctl_virtual(sysctl)							\
@@ -1695,6 +1701,15 @@ static struct ctl_table vm_table[] = {
 		.extra2		= &one_hundred,
 	},
 #endif
+	{
+		.procname	= "warn_high_order",
+		.data		= &warn_order,
+		.maxlen		= sizeof(warn_order),
+		.mode		= 0644,
+		.proc_handler	= &proc_warn_high_order,
+		.extra1		= &zero,
+		.extra2		= &ten,
+	},
 	{ }
 };
 
