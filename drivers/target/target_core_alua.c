@@ -31,6 +31,7 @@
 #include <scsi/scsi.h>
 #include <scsi/scsi_cmnd.h>
 #include <asm/unaligned.h>
+#include <linux/kmod.h>
 
 #include <target/target_core_base.h>
 #include <target/target_core_backend.h>
@@ -1009,12 +1010,53 @@ static void core_alua_do_transition_ua(struct t10_alua_tg_pt_gp *tg_pt_gp)
 	spin_unlock(&tg_pt_gp->tg_pt_gp_lock);
 }
 
+static int core_alua_usermode_helper(struct t10_alua_tg_pt_gp *tg_pt_gp, int new_state, int explicit)
+{
+	char *envp[] = { "HOME=/",
+			"TERM=linux",
+			"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
+			NULL };
+	char *argv[7] = {}, str_id[6];
+	int ret;
+
+	if (!tg_pt_gp->tg_pt_gp_usermode_helper)
+		return 0;
+
+	mutex_lock(&tg_pt_gp->tg_pt_gp_transition_mutex);
+	if (!tg_pt_gp->tg_pt_gp_usermode_helper) {
+		mutex_unlock(&tg_pt_gp->tg_pt_gp_transition_mutex);
+		return 0;
+	}
+	argv[0] = kstrdup(tg_pt_gp->tg_pt_gp_usermode_helper, GFP_KERNEL);
+	mutex_unlock(&tg_pt_gp->tg_pt_gp_transition_mutex);
+
+	if (argv[0] == NULL)
+		return -ENOMEM;
+
+	snprintf(str_id, sizeof(str_id), "%hu", tg_pt_gp->tg_pt_gp_id);
+	argv[1] = config_item_name(&tg_pt_gp->tg_pt_gp_group.cg_item);
+	argv[2] = str_id;
+	argv[3] = core_alua_dump_state(tg_pt_gp->tg_pt_gp_alua_access_state);
+	argv[4] = core_alua_dump_state(new_state);
+	argv[5] = (explicit) ? "explicit" : "implicit";
+	argv[6] = NULL;
+
+	ret = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC | UMH_KILLABLE);
+	pr_debug("helper command: %s exit code %u (0x%x)\n",
+			argv[0], (ret >> 8) & 0xff, ret);
+	kfree(argv[0]);
+	return ret;
+}
+
 static int core_alua_do_transition_tg_pt(
 	struct t10_alua_tg_pt_gp *tg_pt_gp,
 	int new_state,
 	int explicit)
 {
 	int prev_state;
+
+	if (core_alua_usermode_helper(tg_pt_gp, new_state, explicit))
+		return -EAGAIN;
 
 	mutex_lock(&tg_pt_gp->tg_pt_gp_transition_mutex);
 	/* Nothing to be done here */
@@ -1660,6 +1702,7 @@ struct t10_alua_tg_pt_gp *core_alua_allocate_tg_pt_gp(struct se_device *dev,
 	tg_pt_gp->tg_pt_gp_nonop_delay_msecs = ALUA_DEFAULT_NONOP_DELAY_MSECS;
 	tg_pt_gp->tg_pt_gp_trans_delay_msecs = ALUA_DEFAULT_TRANS_DELAY_MSECS;
 	tg_pt_gp->tg_pt_gp_implicit_trans_secs = ALUA_DEFAULT_IMPLICIT_TRANS_SECS;
+	tg_pt_gp->tg_pt_gp_usermode_helper = NULL;
 
 	/*
 	 * Enable all supported states
@@ -1789,6 +1832,8 @@ void core_alua_free_tg_pt_gp(
 		spin_lock(&tg_pt_gp->tg_pt_gp_lock);
 	}
 	spin_unlock(&tg_pt_gp->tg_pt_gp_lock);
+
+	kfree(tg_pt_gp->tg_pt_gp_usermode_helper);
 
 	kmem_cache_free(t10_alua_tg_pt_gp_cache, tg_pt_gp);
 }
@@ -2094,6 +2139,45 @@ ssize_t core_alua_store_trans_delay_msecs(
 		return -EINVAL;
 	}
 	tg_pt_gp->tg_pt_gp_trans_delay_msecs = (int)tmp;
+
+	return count;
+}
+
+ssize_t core_alua_show_user_helper(
+	struct t10_alua_tg_pt_gp *tg_pt_gp,
+	char *page)
+{
+	ssize_t len;
+
+	mutex_lock(&tg_pt_gp->tg_pt_gp_transition_mutex);
+	if (!tg_pt_gp->tg_pt_gp_usermode_helper)
+		len = 0;
+	else
+		len = sprintf(page, "%s\n", tg_pt_gp->tg_pt_gp_usermode_helper);
+	mutex_unlock(&tg_pt_gp->tg_pt_gp_transition_mutex);
+
+	return len;
+}
+
+ssize_t core_alua_store_user_helper(
+	struct t10_alua_tg_pt_gp *tg_pt_gp,
+	const char *page,
+	size_t count)
+{
+	char *h;
+
+	if (count == 1 && page[0] == '-') {
+		h = NULL;
+	} else {
+		h = kstrndup(page, count, GFP_KERNEL);
+		if (h == NULL)
+			return -ENOMEM;
+	}
+
+	mutex_lock(&tg_pt_gp->tg_pt_gp_transition_mutex);
+	kfree(tg_pt_gp->tg_pt_gp_usermode_helper);
+	tg_pt_gp->tg_pt_gp_usermode_helper = h;
+	mutex_unlock(&tg_pt_gp->tg_pt_gp_transition_mutex);
 
 	return count;
 }
