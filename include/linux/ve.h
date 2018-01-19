@@ -64,6 +64,7 @@ struct ve_struct {
 	int			netns_max_nr;
 
 	struct kthread_worker	*kthreadd_worker;
+	struct task_struct	*kthreadd_task;
 
 	unsigned long		meminfo_val;
 };
