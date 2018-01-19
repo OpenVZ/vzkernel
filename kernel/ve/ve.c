@@ -284,7 +284,9 @@ static void ve_drop_context(struct ve_struct *ve)
 
 static void ve_stop_kthreadd(struct ve_struct *ve)
 {
-	kthread_destroy_worker(ve->kthreadd_worker);
+	kthread_flush_worker(ve->kthreadd_worker);
+	kthread_stop(ve->kthreadd_task);
+	kfree(ve->kthreadd_worker);
 	ve->kthreadd_worker = NULL;
 }
 
@@ -351,16 +353,49 @@ static struct kthread_worker *ve_create_kworker(struct ve_struct *ve)
 	return w;
 }
 
+static int ve_create_kthreadd(struct ve_struct *ve,
+			      struct kthread_worker *gastarbeiter)
+{
+	struct kthread_worker *w;
+	struct task_struct *task;
+
+	w = kmalloc(sizeof(struct kthread_worker), GFP_KERNEL);
+	if (!w)
+		return -ENOMEM;
+	kthread_init_worker(w);
+
+	/* This is a trick to fork kthread in a container */
+	ve->kthreadd_worker = gastarbeiter;
+
+	/* We create kthread with CLONE_PARENT flags, because otherwise when
+	 * gastarbeiter will be stopped, kthreadd will be reparented to idle,
+	 * while we want to keep all the threads in kthreadd pool */
+	task = kthread_create_on_node_ve_flags(ve, CLONE_PARENT, kthread_worker_fn,
+					       w, NUMA_NO_NODE, "kthreadd");
+	if (IS_ERR(task)) {
+		kfree(w);
+		return PTR_ERR(task);
+	}
+	wake_up_process(task);
+
+	ve->kthreadd_task = task;
+	ve->kthreadd_worker = w;
+	return 0;
+}
+
 static int ve_start_kthreadd(struct ve_struct *ve)
 {
 	struct kthread_worker *w;
+	int err;
 
 	w = ve_create_kworker(ve);
 	if (IS_ERR(w))
 		return PTR_ERR(w);
 
-	ve->kthreadd_worker = w;
-	return 0;
+	err = ve_create_kthreadd(ve, w);
+
+	kthread_destroy_worker(w);
+	return err;
 }
 
 /* under ve->op_sem write-lock */
