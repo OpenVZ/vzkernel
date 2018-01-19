@@ -63,6 +63,8 @@ struct ve_struct {
 	atomic_t		netns_avail_nr;
 	int			netns_max_nr;
 
+	struct kthread_worker	*kthreadd_worker;
+
 	unsigned long		meminfo_val;
 };
 
