@@ -17,6 +17,7 @@
 #include <linux/hash.h>
 
 #include "kernfs-internal.h"
+#include "kernfs-ve.h"
 
 DEFINE_MUTEX(kernfs_mutex);
 static DEFINE_SPINLOCK(kernfs_rename_lock);	/* kn->parent and ->name */
@@ -537,6 +538,7 @@ void kernfs_put(struct kernfs_node *kn)
 						kn->iattr->ia_secdata_len);
 		simple_xattrs_free(&kn->iattr->xattrs);
 	}
+	kernfs_put_ve_perms(kn);
 	kfree(kn->iattr);
 	spin_lock(&kernfs_idr_lock);
 	idr_remove(&root->ino_idr, kn->id.ino);
@@ -782,6 +784,7 @@ int kernfs_add_one(struct kernfs_node *kn)
 		ktime_get_real_ts64(&ps_iattrs->ia_ctime);
 		ps_iattrs->ia_mtime = ps_iattrs->ia_ctime;
 	}
+	kernfs_get_ve_perms(kn);
 
 	mutex_unlock(&kernfs_mutex);
 
