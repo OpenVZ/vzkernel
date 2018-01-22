@@ -28,6 +28,7 @@ struct subprocess_info {
 	pid_t pid;
 	int (*init)(struct subprocess_info *info, struct cred *new);
 	void (*cleanup)(struct subprocess_info *info);
+	void (*queue)(struct subprocess_info *info);
 	void *data;
 } __randomize_layout;
 
