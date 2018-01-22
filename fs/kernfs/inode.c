@@ -17,6 +17,7 @@
 #include <linux/security.h>
 
 #include "kernfs-internal.h"
+#include "kernfs-ve.h"
 
 static const struct address_space_operations kernfs_aops = {
 	.readpage	= simple_readpage,
@@ -129,6 +130,9 @@ int kernfs_iop_setattr(struct dentry *dentry, struct iattr *iattr)
 
 	if (!kn)
 		return -EINVAL;
+
+	if (!kernfs_ve_allowed(kn))
+		return -EPERM;
 
 	mutex_lock(&kernfs_mutex);
 	error = inode_change_ok(inode, iattr);
@@ -371,6 +375,7 @@ void kernfs_evict_inode(struct inode *inode)
 int kernfs_iop_permission(struct inode *inode, int mask)
 {
 	struct kernfs_node *kn;
+	int ret;
 
 	if (mask & MAY_NOT_BLOCK)
 		return -ECHILD;
@@ -378,8 +383,9 @@ int kernfs_iop_permission(struct inode *inode, int mask)
 	kn = inode->i_private;
 
 	mutex_lock(&kernfs_mutex);
+	ret = kernfs_ve_permission(kn, kernfs_info(inode->i_sb), mask);
 	kernfs_refresh_inode(kn, inode);
 	mutex_unlock(&kernfs_mutex);
 
-	return generic_permission(inode, mask);
+	return ret ? ret : generic_permission(inode, mask);
 }
