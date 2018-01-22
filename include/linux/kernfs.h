@@ -169,6 +169,9 @@ struct kernfs_node {
 	unsigned short		flags;
 	umode_t			mode;
 	struct kernfs_iattrs	*iattr;
+#ifdef CONFIG_VE
+	struct kmapset_map	*ve_perms_map;
+#endif
 };
 
 /*
@@ -210,6 +213,9 @@ struct kernfs_root {
 	struct list_head	supers;
 
 	wait_queue_head_t	deactivate_waitq;
+#ifdef CONFIG_VE
+	struct kmapset_set	*ve_perms_set;
+#endif
 };
 
 struct kernfs_open_file {
