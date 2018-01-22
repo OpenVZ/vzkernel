@@ -16,6 +16,7 @@
 #include <linux/pagemap.h>
 
 #include "kernfs-internal.h"
+#include "kernfs-ve.h"
 
 struct kmem_cache *kernfs_node_cache;
 
@@ -101,6 +102,9 @@ static int kernfs_test_super(struct super_block *sb, void *data)
 {
 	struct kernfs_super_info *sb_info = kernfs_info(sb);
 	struct kernfs_super_info *info = data;
+
+	if (!kernfs_test_ve(sb_info, info))
+		return 0;
 
 	return sb_info->root == info->root && sb_info->ns == info->ns;
 }
