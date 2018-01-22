@@ -53,6 +53,32 @@ struct task_struct *kthread_create_on_cpu(int (*threadfn)(void *data),
 	__k;								   \
 })
 
+#ifdef CONFIG_VE
+
+__printf(6, 7)
+struct task_struct *kthread_create_on_node_ve_flags(struct ve_struct *ve,
+						    unsigned long flags,
+						    int (*threadfn)(void *data),
+						    void *data, int node,
+						    const char namefmt[],
+						    ...);
+
+#define kthread_create_on_node_ve(ve, arg...)				\
+	kthread_create_on_node_ve_flags(ve, 0, ##arg)
+
+#define kthread_create_ve(ve, threadfn, data, namefmt, arg...) \
+	kthread_create_on_node_ve(ve, threadfn, data, NUMA_NO_NODE, namefmt, ##arg)
+
+#define kthread_run_ve(ve, threadfn, data, namefmt, ...)		   \
+({									   \
+	struct task_struct *__k						   \
+		= kthread_create_ve(ve, threadfn, data, namefmt, ## __VA_ARGS__); \
+	if (!IS_ERR(__k))						   \
+		wake_up_process(__k);					   \
+	__k;								   \
+})
+
+#endif
 void free_kthread_struct(struct task_struct *k);
 void kthread_bind(struct task_struct *k, unsigned int cpu);
 void kthread_bind_mask(struct task_struct *k, const struct cpumask *mask);
