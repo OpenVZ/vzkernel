@@ -64,6 +64,10 @@ struct kernfs_super_info {
 
 	/* anchored at kernfs_root->supers, protected by kernfs_mutex */
 	struct list_head	node;
+#ifdef CONFIG_VE
+	struct ve_struct	*ve;
+	off_t			ve_perms_off;
+#endif
 };
 #define kernfs_info(SB) ((struct kernfs_super_info *)(SB->s_fs_info))
 
