@@ -35,6 +35,7 @@
 #include <linux/fsnotify.h>
 #include <linux/lockdep.h>
 #include <linux/user_namespace.h>
+#include <linux/ve.h>
 #include "internal.h"
 
 static int thaw_super_locked(struct super_block *sb);
@@ -499,7 +500,10 @@ struct super_block *sget_userns(struct file_system_type *type,
 
 	if (!(flags & (SB_KERNMOUNT|SB_SUBMOUNT)) &&
 	    !(type->fs_flags & FS_USERNS_MOUNT) &&
-	    !capable(CAP_SYS_ADMIN))
+	    !capable(CAP_SYS_ADMIN) &&
+	    /* FS_VE_MOUNT allows mount in container init userns */
+	    !((type->fs_flags & FS_VE_MOUNT) &&
+	       ve_capable(CAP_SYS_ADMIN)))
 		return ERR_PTR(-EPERM);
 retry:
 	spin_lock(&sb_lock);
