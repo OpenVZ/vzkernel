@@ -56,7 +56,12 @@ struct ve_struct {
 	u64			_uevent_seqnum;
 
 	struct kstat_lat_pcpu_struct	sched_lat_ve;
+
+	unsigned long		meminfo_val;
 };
+
+#define VE_MEMINFO_DEFAULT	1	/* default behaviour */
+#define VE_MEMINFO_SYSTEM	0	/* disable meminfo virtualization */
 
 extern int nr_ve;
 
