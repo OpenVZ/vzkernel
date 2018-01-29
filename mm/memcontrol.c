@@ -66,6 +66,7 @@
 #include <linux/lockdep.h>
 #include <linux/file.h>
 #include <linux/tracehook.h>
+#include <linux/virtinfo.h>
 #include "internal.h"
 #include <net/sock.h>
 #include <net/ip.h>
@@ -2717,7 +2718,7 @@ static int mem_cgroup_hierarchy_write(struct cgroup_subsys_state *css,
 	return retval;
 }
 
-static void tree_stat(struct mem_cgroup *memcg, unsigned long *stat)
+void tree_stat(struct mem_cgroup *memcg, unsigned long *stat)
 {
 	struct mem_cgroup *iter;
 	int i;
@@ -2763,6 +2764,41 @@ static unsigned long mem_cgroup_usage(struct mem_cgroup *memcg, bool swap)
 			val = page_counter_read(&memcg->memsw);
 	}
 	return val;
+}
+
+void mem_cgroup_get_nr_pages(struct mem_cgroup *memcg, int nid,
+		unsigned long *pages)
+{
+	struct mem_cgroup *iter;
+	int i;
+
+	for_each_mem_cgroup_tree(iter, memcg) {
+		for (i = 0; i < NR_LRU_LISTS; i++)
+			pages[i] += mem_cgroup_node_nr_lru_pages(iter, nid,
+								 BIT(i));
+	}
+}
+
+void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
+{
+	int nid;
+	unsigned long stat[MEMCG_NR_STAT];
+
+	tree_stat(memcg, stat);
+
+	memset(&mi->pages, 0, sizeof(mi->pages));
+	for_each_online_node(nid)
+		mem_cgroup_get_nr_pages(memcg, nid, mi->pages);
+
+	mi->slab_reclaimable = stat[NR_SLAB_RECLAIMABLE];
+	mi->slab_unreclaimable = stat[NR_SLAB_UNRECLAIMABLE];
+	mi->cached = stat[MEMCG_CACHE];
+	mi->shmem = stat[NR_SHMEM];
+	mi->dirty_pages = stat[NR_FILE_DIRTY];
+	mi->writeback_pages = stat[NR_WRITEBACK];
+
+	/* locked pages are accounted per zone */
+	/* mi->locked = 0; */
 }
 
 enum {
