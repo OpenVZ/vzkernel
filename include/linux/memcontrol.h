@@ -70,6 +70,16 @@ struct mem_cgroup_reclaim_cookie {
 	unsigned int generation;
 };
 
+struct accumulated_stats {
+	unsigned long stat[MEMCG_NR_STAT];
+	unsigned long events[NR_VM_EVENT_ITEMS];
+	unsigned long lru_pages[NR_LRU_LISTS];
+	const unsigned int *stats_array;
+	const unsigned int *events_array;
+	int stats_size;
+	int events_size;
+};
+
 #ifdef CONFIG_MEMCG
 
 #define MEM_CGROUP_ID_SHIFT	16
