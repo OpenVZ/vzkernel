@@ -69,6 +69,7 @@
 #include <linux/tracehook.h>
 #include <linux/psi.h>
 #include <linux/seq_buf.h>
+#include <linux/virtinfo.h>
 #include "internal.h"
 #include <net/sock.h>
 #include <net/ip.h>
@@ -3987,6 +3988,42 @@ static unsigned long mem_cgroup_nr_lru_pages(struct mem_cgroup *memcg,
 			nr += memcg_page_state_local(memcg, NR_LRU_BASE + lru);
 	}
 	return nr;
+}
+
+void mem_cgroup_get_nr_pages(struct mem_cgroup *memcg, unsigned long *pages)
+{
+	enum lru_list lru;
+
+	for_each_lru(lru)
+		pages[lru] += mem_cgroup_nr_lru_pages(memcg, BIT(lru), true);
+}
+
+static unsigned long mem_page_state_recursive(struct mem_cgroup *memcg,
+					      int idx)
+{
+	struct mem_cgroup *iter;
+	unsigned long val = 0;
+
+	for_each_mem_cgroup_tree(iter, memcg)
+		val += memcg_page_state(iter, idx);
+
+	return val;
+}
+
+void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
+{
+	memset(&mi->pages, 0, sizeof(mi->pages));
+	mem_cgroup_get_nr_pages(memcg, mi->pages);
+
+	mi->slab_reclaimable = mem_page_state_recursive(memcg, NR_SLAB_RECLAIMABLE_B);
+	mi->slab_unreclaimable = mem_page_state_recursive(memcg, NR_SLAB_UNRECLAIMABLE_B);
+	mi->cached = mem_page_state_recursive(memcg, NR_FILE_PAGES);
+	mi->shmem = mem_page_state_recursive(memcg, NR_SHMEM);
+	mi->dirty_pages = mem_page_state_recursive(memcg, NR_FILE_DIRTY);
+	mi->writeback_pages = mem_page_state_recursive(memcg, NR_WRITEBACK);
+
+	/* locked pages are accounted per zone */
+	/* mi->locked = 0; */
 }
 
 static int memcg_numa_stat_show(struct seq_file *m, void *v)
