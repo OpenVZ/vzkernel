@@ -66,6 +66,7 @@
 #include <linux/lockdep.h>
 #include <linux/file.h>
 #include <linux/tracehook.h>
+#include <linux/virtinfo.h>
 #include "internal.h"
 #include <net/sock.h>
 #include <net/ip.h>
@@ -3040,18 +3041,8 @@ static int mem_cgroup_hierarchy_write(struct cgroup_subsys_state *css,
 	return retval;
 }
 
-struct accumulated_stats {
-	unsigned long stat[MEMCG_NR_STAT];
-	unsigned long events[NR_VM_EVENT_ITEMS];
-	unsigned long lru_pages[NR_LRU_LISTS];
-	const unsigned int *stats_array;
-	const unsigned int *events_array;
-	int stats_size;
-	int events_size;
-};
-
-static void accumulate_memcg_tree(struct mem_cgroup *memcg,
-				  struct accumulated_stats *acc)
+void accumulate_memcg_tree(struct mem_cgroup *memcg,
+			   struct accumulated_stats *acc)
 {
 	struct mem_cgroup *mi;
 	int i;
@@ -3093,6 +3084,45 @@ static unsigned long mem_cgroup_usage(struct mem_cgroup *memcg, bool swap)
 			val = page_counter_read(&memcg->memsw);
 	}
 	return val;
+}
+
+void mem_cgroup_get_nr_pages(struct mem_cgroup *memcg, int nid,
+		unsigned long *pages)
+{
+	struct mem_cgroup *iter;
+	int i;
+
+	for_each_mem_cgroup_tree(iter, memcg) {
+		for (i = 0; i < NR_LRU_LISTS; i++)
+			pages[i] += mem_cgroup_node_nr_lru_pages(iter, nid,
+								 BIT(i));
+	}
+}
+
+void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
+{
+	int nid;
+	struct accumulated_stats acc;
+
+	memset(&acc, 0, sizeof(acc));
+	acc.stats_size = MEMCG_NR_STAT;
+	/* Don't need events stat here. */
+	acc.events_size = 0;
+	accumulate_memcg_tree(memcg, &acc);
+
+	memset(&mi->pages, 0, sizeof(mi->pages));
+	for_each_online_node(nid)
+		mem_cgroup_get_nr_pages(memcg, nid, mi->pages);
+
+	mi->slab_reclaimable = acc.stat[NR_SLAB_RECLAIMABLE];
+	mi->slab_unreclaimable = acc.stat[NR_SLAB_UNRECLAIMABLE];
+	mi->cached = acc.stat[MEMCG_CACHE];
+	mi->shmem = acc.stat[NR_SHMEM];
+	mi->dirty_pages = acc.stat[NR_FILE_DIRTY];
+	mi->writeback_pages = acc.stat[NR_WRITEBACK];
+
+	/* locked pages are accounted per zone */
+	/* mi->locked = 0; */
 }
 
 enum {
