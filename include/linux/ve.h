@@ -76,7 +76,12 @@ struct ve_struct {
 
 	struct kthread_worker	umh_worker;
 	struct task_struct	*umh_task;
+
+	unsigned long		meminfo_val;
 };
+
+#define VE_MEMINFO_DEFAULT	1	/* default behaviour */
+#define VE_MEMINFO_SYSTEM	0	/* disable meminfo virtualization */
 
 extern int nr_ve;
 

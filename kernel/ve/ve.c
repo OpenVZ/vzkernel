@@ -55,6 +55,7 @@ struct ve_struct ve0 = {
 #endif
 	.netns_avail_nr		= ATOMIC_INIT(INT_MAX),
 	.netns_max_nr		= INT_MAX,
+	.meminfo_val		= VE_MEMINFO_SYSTEM,
 };
 EXPORT_SYMBOL(ve0);
 
@@ -595,6 +596,7 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 
 	atomic_set(&ve->netns_avail_nr, NETNS_MAX_NR_DEFAULT);
 	ve->netns_max_nr = NETNS_MAX_NR_DEFAULT;
+	ve->meminfo_val = VE_MEMINFO_DEFAULT;
 do_init:
 	init_rwsem(&ve->op_sem);
 	INIT_LIST_HEAD(&ve->ve_list);
