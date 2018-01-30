@@ -7,9 +7,11 @@
 #include <linux/compiler.h>
 #include <linux/workqueue.h>
 #include <linux/sysctl.h>
+#include <linux/kthread.h>
 
 struct cred;
 struct file;
+struct ve_struct;
 
 #define UMH_NO_WAIT	0	/* don't wait at all */
 #define UMH_WAIT_EXEC	1	/* wait for the exec, but not the process */
@@ -30,6 +32,10 @@ struct subprocess_info {
 	void (*cleanup)(struct subprocess_info *info);
 	void (*queue)(struct subprocess_info *info);
 	void *data;
+#ifdef CONFIG_VE
+	struct ve_struct *ve;
+	struct kthread_work ve_work;
+#endif
 } __randomize_layout;
 
 extern int
@@ -53,6 +59,26 @@ struct umh_info {
 	pid_t pid;
 };
 int fork_usermode_blob(void *data, size_t len, struct umh_info *info);
+
+#ifdef CONFIG_VE
+
+extern int
+call_usermodehelper_ve(struct ve_struct *ve, const char *path,
+		       char **argv, char **envp, int wait);
+
+extern int
+call_usermodehelper_exec_ve(struct ve_struct *ve,
+			    struct subprocess_info *info, int wait);
+
+#else
+
+#define call_usermodehelper_ve(ve, ...)		\
+		call_usermodehelper(##__VA_ARGS__)
+
+#define call_usermodehelper_exec_ve(ve, ...)	\
+		call_usermodehelper_exec_ve(##__VA_ARGS__)
+
+#endif
 
 extern int
 call_usermodehelper_exec(struct subprocess_info *info, int wait);
