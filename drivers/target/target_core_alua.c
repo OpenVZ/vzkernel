@@ -1010,13 +1010,14 @@ static void core_alua_do_transition_ua(struct t10_alua_tg_pt_gp *tg_pt_gp)
 	spin_unlock(&tg_pt_gp->tg_pt_gp_lock);
 }
 
-static int core_alua_usermode_helper(struct t10_alua_tg_pt_gp *tg_pt_gp, int new_state, int explicit)
+static int core_alua_usermode_helper(struct t10_alua_tg_pt_gp *tg_pt_gp,
+			struct se_device *l_dev, int new_state, int explicit)
 {
 	char *envp[] = { "HOME=/",
 			"TERM=linux",
 			"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
 			NULL };
-	char *argv[7] = {}, str_id[6];
+	char *argv[8] = {}, str_id[6];
 	int ret;
 
 	if (!tg_pt_gp->tg_pt_gp_usermode_helper)
@@ -1039,7 +1040,8 @@ static int core_alua_usermode_helper(struct t10_alua_tg_pt_gp *tg_pt_gp, int new
 	argv[3] = core_alua_dump_state(tg_pt_gp->tg_pt_gp_alua_access_state);
 	argv[4] = core_alua_dump_state(new_state);
 	argv[5] = (explicit) ? "explicit" : "implicit";
-	argv[6] = NULL;
+	argv[6] = config_item_name(&l_dev->dev_group.cg_item);
+	argv[7] = NULL;
 
 	ret = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC | UMH_KILLABLE);
 	pr_debug("helper command: %s exit code %u (0x%x)\n",
@@ -1050,12 +1052,13 @@ static int core_alua_usermode_helper(struct t10_alua_tg_pt_gp *tg_pt_gp, int new
 
 static int core_alua_do_transition_tg_pt(
 	struct t10_alua_tg_pt_gp *tg_pt_gp,
+	struct se_device *l_dev,
 	int new_state,
 	int explicit)
 {
 	int prev_state;
 
-	if (core_alua_usermode_helper(tg_pt_gp, new_state, explicit))
+	if (core_alua_usermode_helper(tg_pt_gp, l_dev, new_state, explicit))
 		return -EAGAIN;
 
 	mutex_lock(&tg_pt_gp->tg_pt_gp_transition_mutex);
@@ -1163,7 +1166,7 @@ int core_alua_do_port_transition(
 		 */
 		l_tg_pt_gp->tg_pt_gp_alua_lun = l_lun;
 		l_tg_pt_gp->tg_pt_gp_alua_nacl = l_nacl;
-		rc = core_alua_do_transition_tg_pt(l_tg_pt_gp,
+		rc = core_alua_do_transition_tg_pt(l_tg_pt_gp, l_dev,
 						   new_state, explicit);
 		atomic_dec_mb(&lu_gp->lu_gp_ref_cnt);
 		return rc;
@@ -1212,7 +1215,7 @@ int core_alua_do_port_transition(
 			 * core_alua_do_transition_tg_pt() will always return
 			 * success.
 			 */
-			rc = core_alua_do_transition_tg_pt(tg_pt_gp,
+			rc = core_alua_do_transition_tg_pt(tg_pt_gp, l_dev,
 					new_state, explicit);
 
 			spin_lock(&dev->t10_alua.tg_pt_gps_lock);
