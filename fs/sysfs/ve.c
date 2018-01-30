@@ -18,6 +18,17 @@ struct kmapset_set sysfs_ve_perms_set;
 
 static DEFINE_MUTEX(sysfs_perms_mutex);
 
+int sysfs_set_def_perms(char *path, int mask)
+{
+	int ret;
+
+	mutex_lock(&sysfs_perms_mutex);
+	ret = kernfs_perms_set(path, get_ve0(), mask, sysfs_root_kn, NULL);
+	mutex_unlock(&sysfs_perms_mutex);
+
+	return ret;
+}
+
 void sysfs_set_ve_perms(struct dentry *root)
 {
 	kernfs_set_ve_perms(root, offsetof(struct ve_struct,
