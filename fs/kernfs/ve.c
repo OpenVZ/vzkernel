@@ -245,8 +245,8 @@ int kernfs_perms_show(struct seq_file *m, void *v, struct kmapset_key *key)
 	return 0;
 }
 
-static int kernfs_perms_set(char *path, struct ve_struct *ve, int mask,
-			    struct kernfs_node *root, struct kmapset_key *key)
+int kernfs_perms_set(char *path, struct ve_struct *ve, int mask,
+		     struct kernfs_node *root, struct kmapset_key *key)
 {
 	struct kernfs_node *kn = root, *nkn;
 	struct kmapset_map *map = NULL;
