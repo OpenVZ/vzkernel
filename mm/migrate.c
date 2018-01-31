@@ -974,9 +974,9 @@ out:
  * Obtain the lock on page, remove all ptes and migrate the page
  * to the newly allocated page in newpage.
  */
-static int unmap_and_move(new_page_t get_new_page, unsigned long private,
-			struct page *page, int force, enum migrate_mode mode,
-			enum migrate_reason reason)
+static int unmap_and_move(new_page_t get_new_page, free_page_t put_new_page,
+			unsigned long private, struct page *page, int force,
+			enum migrate_mode mode,	enum migrate_reason reason)
 {
 	int rc = 0;
 	int *result = NULL;
@@ -1011,19 +1011,19 @@ out:
 		if (reason != MR_MEMORY_FAILURE)
 			putback_lru_page(page);
 	}
+
 	/*
-	 * Move the new page to the LRU. If migration was not successful
-	 * then this will free the page. Use the old state of the isolated
-	 * source page to determine if we migrated a LRU page. newpage was
-	 * already unlocked and possibly modified by its owner - don't rely
-	 * on the page state.
+	 * If migration was not successful and there's a freeing callback, use
+	 * it.  Otherwise, putback_lru_page() will drop the reference grabbed
+	 * during isolation.
 	 */
-	if (rc == MIGRATEPAGE_SUCCESS && unlikely(!is_lru)) {
+	if (rc != MIGRATEPAGE_SUCCESS && put_new_page)
+		put_new_page(newpage, private);
+	else if (rc == MIGRATEPAGE_SUCCESS && unlikely(!is_lru))
 		/* drop our reference, page already in the balloon */
 		put_page(newpage);
-	} else {
+	else
 		putback_lru_page(newpage);
-	}
 
 	if (result) {
 		if (rc)
@@ -1053,8 +1053,9 @@ out:
  * will wait in the page fault for migration to complete.
  */
 static int unmap_and_move_huge_page(new_page_t get_new_page,
-				unsigned long private, struct page *hpage,
-				int force, enum migrate_mode mode, int reason)
+				free_page_t put_new_page, unsigned long private,
+				struct page *hpage, int force,
+				enum migrate_mode mode, int reason)
 {
 	int rc = 0;
 	int *result = NULL;
@@ -1121,7 +1122,7 @@ static int unmap_and_move_huge_page(new_page_t get_new_page,
 	if (anon_vma)
 		put_anon_vma(anon_vma);
 
-	if (!rc)
+	if (rc == MIGRATEPAGE_SUCCESS)
 		hugetlb_cgroup_migrate(hpage, new_hpage);
 
 out_unlock:
@@ -1133,7 +1134,16 @@ out:
 	if (reason == MR_MEMORY_FAILURE && !test_set_page_hwpoison(hpage))
 		atomic_long_inc(&num_poisoned_pages);
 
-	putback_active_hugepage(new_hpage);
+	/*
+	 * If migration was not successful and there's a freeing callback, use
+	 * it.  Otherwise, put_page() will drop the reference grabbed during
+	 * isolation.
+	 */
+	if (rc != MIGRATEPAGE_SUCCESS && put_new_page)
+		put_new_page(new_hpage, private);
+	else
+		putback_active_hugepage(new_hpage);
+
 	if (result) {
 		if (rc)
 			*result = rc;
@@ -1150,6 +1160,8 @@ out:
  * @from:		The list of pages to be migrated.
  * @get_new_page:	The function used to allocate free pages to be used
  *			as the target of the page migration.
+ * @put_new_page:	The function used to free target pages if migration
+ *			fails, or NULL if no special handling is necessary.
  * @private:		Private data to be passed on to get_new_page()
  * @mode:		The migration mode that specifies the constraints for
  *			page migration, if any.
@@ -1163,7 +1175,8 @@ out:
  * Returns the number of pages that were not migrated, or an error code.
  */
 int migrate_pages(struct list_head *from, new_page_t get_new_page,
-		unsigned long private, enum migrate_mode mode, int reason)
+		free_page_t put_new_page, unsigned long private,
+		enum migrate_mode mode, int reason)
 {
 	int retry = 1;
 	int nr_failed = 0;
@@ -1185,11 +1198,12 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 
 			if (PageHuge(page))
 				rc = unmap_and_move_huge_page(get_new_page,
+						put_new_page, private, page,
+						pass > 2, mode, reason);
+			else
+				rc = unmap_and_move(get_new_page, put_new_page,
 						private, page, pass > 2, mode,
 						reason);
-			else
-				rc = unmap_and_move(get_new_page, private,
-						page, pass > 2, mode, reason);
 
 			switch(rc) {
 			case -ENOMEM:
@@ -1334,7 +1348,7 @@ set_status:
 
 	err = 0;
 	if (!list_empty(&pagelist)) {
-		err = migrate_pages(&pagelist, new_page_node,
+		err = migrate_pages(&pagelist, new_page_node, NULL,
 				(unsigned long)pm, MIGRATE_SYNC, MR_SYSCALL);
 		if (err)
 			putback_movable_pages(&pagelist);
@@ -1780,7 +1794,8 @@ int migrate_misplaced_page(struct page *page, struct vm_area_struct *vma,
 
 	list_add(&page->lru, &migratepages);
 	nr_remaining = migrate_pages(&migratepages, alloc_misplaced_dst_page,
-				     node, MIGRATE_ASYNC, MR_NUMA_MISPLACED);
+				     NULL, node, MIGRATE_ASYNC,
+				     MR_NUMA_MISPLACED);
 	if (nr_remaining) {
 		putback_lru_pages(&migratepages);
 		isolated = 0;
