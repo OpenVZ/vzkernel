@@ -1628,61 +1628,6 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 		sc->stat->nr_immediate += stat.nr_immediate;
 	}
 
-	/*
-	 * If reclaim is isolating dirty pages under writeback, it implies
-	 * that the long-lived page allocation rate is exceeding the page
-	 * laundering rate. Either the global limits are not being effective
-	 * at throttling processes due to the page distribution throughout
-	 * zones or there is heavy usage of a slow backing device. The
-	 * only option is to throttle from reclaim context which is not ideal
-	 * as there is no guarantee the dirtying process is throttled in the
-	 * same way balance_dirty_pages() manages.
-	 *
-	 * Once a zone is flagged ZONE_WRITEBACK, kswapd will count the number
-	 * of pages under pages flagged for immediate reclaim and stall if any
-	 * are encountered in the nr_immediate check below.
-	 */
-	if (stat.nr_writeback && stat.nr_writeback == nr_taken)
-		zone_set_flag(zone, ZONE_WRITEBACK);
-
-	if (!global_reclaim(sc) && stat.nr_immediate)
-		congestion_wait(BLK_RW_ASYNC, HZ/10);
-
-	if (sane_reclaim(sc)) {
-		/*
-		 * Tag a zone as congested if all the dirty pages scanned were
-		 * backed by a congested BDI and wait_iff_congested will stall.
-		 */
-		if (stat.nr_dirty && stat.nr_dirty == stat.nr_congested)
-			zone_set_flag(zone, ZONE_CONGESTED);
-
-		/*
-		 * If dirty pages are scanned that are not queued for IO, it
-		 * implies that flushers are not keeping up. In this case, flag
-		 * the zone ZONE_TAIL_LRU_DIRTY and kswapd will start writing
-		 * pages from reclaim context.
-		 */
-		if (stat.nr_unqueued_dirty == nr_taken)
-			zone_set_flag(zone, ZONE_TAIL_LRU_DIRTY);
-
-		/*
-		 * If kswapd scans pages marked marked for immediate
-		 * reclaim and under writeback (nr_immediate), it implies
-		 * that pages are cycling through the LRU faster than
-		 * they are written so also forcibly stall.
-		 */
-		if (stat.nr_immediate)
-			congestion_wait(BLK_RW_ASYNC, HZ/10);
-	}
-
-	/*
-	 * Stall direct reclaim for IO completions if underlying BDIs or zone
-	 * is congested. Allow kswapd to continue until it starts encountering
-	 * unqueued dirty pages or cycling through the LRU too quickly.
-	 */
-	if (!sc->hibernation_mode && !current_is_kswapd())
-		wait_iff_congested(zone, BLK_RW_ASYNC, HZ/10);
-
 	trace_mm_vmscan_lru_shrink_inactive(zone_to_nid(zone), zone_idx(zone),
 			nr_scanned, nr_reclaimed,
 			stat.nr_dirty,  stat.nr_writeback,
@@ -2484,6 +2429,60 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 		if (global_reclaim(sc) && is_classzone)
 			shrink_slab(slab_gfp, zone_to_nid(zone), NULL,
 				    sc->priority, false);
+
+		if (global_reclaim(sc)) {
+			/*
+			 * If reclaim is isolating dirty pages under writeback, it implies
+			 * that the long-lived page allocation rate is exceeding the page
+			 * laundering rate. Either the global limits are not being effective
+			 * at throttling processes due to the page distribution throughout
+			 * zones or there is heavy usage of a slow backing device. The
+			 * only option is to throttle from reclaim context which is not ideal
+			 * as there is no guarantee the dirtying process is throttled in the
+			 * same way balance_dirty_pages() manages.
+			 *
+			 * Once a zone is flagged ZONE_WRITEBACK, kswapd will count the number
+			 * of pages under pages flagged for immediate reclaim and stall if any
+			 * are encountered in the nr_immediate check below.
+			 */
+			if (stat.nr_writeback && stat.nr_writeback == stat.nr_taken)
+				zone_set_flag(zone, ZONE_WRITEBACK);
+
+			/*
+			 * Tag a zone as congested if all the dirty pages scanned were
+			 * backed by a congested BDI and wait_iff_congested will stall.
+			 */
+			if (stat.nr_dirty && stat.nr_dirty == stat.nr_congested)
+				zone_set_flag(zone, ZONE_CONGESTED);
+			/*
+			 * If dirty pages are scanned that are not queued for IO, it
+			 * implies that flushers are not keeping up. In this case, flag
+			 * the zone ZONE_TAIL_LRU_DIRTY and kswapd will start writing
+			 * pages from reclaim context.
+			 */
+			if (stat.nr_unqueued_dirty == stat.nr_taken)
+				zone_set_flag(zone, ZONE_TAIL_LRU_DIRTY);
+
+			/*
+			 * If kswapd scans pages marked marked for immediate
+			 * reclaim and under writeback (nr_immediate), it implies
+			 * that pages are cycling through the LRU faster than
+			 * they are written so also forcibly stall.
+			 */
+			if (stat.nr_immediate)
+				congestion_wait(BLK_RW_ASYNC, HZ/10);
+		}
+
+		if (!global_reclaim(sc) && stat.nr_immediate)
+			congestion_wait(BLK_RW_ASYNC, HZ/10);
+
+		/*
+		 * Stall direct reclaim for IO completions if underlying BDIs or zone
+		 * is congested. Allow kswapd to continue until it starts encountering
+		 * unqueued dirty pages or cycling through the LRU too quickly.
+		 */
+		if (!sc->hibernation_mode && !current_is_kswapd())
+			wait_iff_congested(zone, BLK_RW_ASYNC, HZ/10);
 
 		if (reclaim_state) {
 			sc->nr_reclaimed += reclaim_state->reclaimed_slab;
