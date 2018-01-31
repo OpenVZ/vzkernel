@@ -3386,9 +3386,48 @@ rebalance:
 	pages_reclaimed += did_some_progress;
 	if (should_alloc_retry(gfp_mask, order, did_some_progress,
 						pages_reclaimed)) {
-		/* Wait for some write requests to complete then retry */
-		wait_iff_congested(preferred_zone, BLK_RW_ASYNC, HZ/50);
-		goto rebalance;
+		struct zone *zone;
+		struct zoneref *z;
+
+		/*
+		 * Keep reclaiming pages while there is a chance this will lead somewhere.
+		 * If none of the target zones can satisfy our allocation request even
+		 * if all reclaimable pages are considered then we are screwed and have
+		 * to go OOM.
+		 */
+		for_each_zone_zonelist_nodemask(zone, z, zonelist, high_zoneidx,
+						nodemask) {
+			unsigned long writeback = zone_page_state_snapshot(zone, NR_WRITEBACK);
+			unsigned long dirty = zone_page_state_snapshot(zone, NR_FILE_DIRTY);
+			unsigned long reclaimable = zone_reclaimable_pages(zone);
+
+			/*
+			 * If we didn't make any progress and have a lot of
+			 * dirty + writeback pages then we should wait for
+			 * an IO to complete to slow down the reclaim and
+			 * prevent from pre mature OOM
+			 */
+			if (!did_some_progress && 2*(writeback + dirty) > reclaimable) {
+				congestion_wait(BLK_RW_ASYNC, HZ/10);
+				goto rebalance;
+			}
+
+			/*
+			 * Memory allocation/reclaim might be called from a WQ
+			 * context and the current implementation of the WQ
+			 * concurrency control doesn't recognize that
+			 * a particular WQ is congested if the worker thread is
+			 * looping without ever sleeping. Therefore we have to
+			 * do a short sleep here rather than calling
+			 * cond_resched().
+			 */
+			if (current->flags & PF_WQ_WORKER)
+				schedule_timeout(1);
+			else
+				cond_resched();
+
+			goto rebalance;
+		}
 	} else {
 		/*
 		 * High-order allocations do not necessarily loop after
