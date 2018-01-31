@@ -40,7 +40,13 @@ jiffies = jiffies_64;
 #else
 OUTPUT_ARCH(i386:x86-64)
 ENTRY(phys_startup_64)
+#ifdef CONFIG_FENCE_WATCHDOG
+jiffies_64 = jiffies_struct;
+jiffies = jiffies_struct;
+fence_wdog_jiffies64 = jiffies_struct + 8;
+#else
 jiffies_64 = jiffies;
+#endif
 #endif
 
 #if defined(CONFIG_X86_64)
