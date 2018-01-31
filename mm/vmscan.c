@@ -2489,8 +2489,8 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 		 * is congested. Allow kswapd to continue until it starts encountering
 		 * unqueued dirty pages or cycling through the LRU too quickly.
 		 */
-		if (!sc->hibernation_mode && !current_is_kswapd() &&
-		    current_may_throttle())
+		if (sc->priority < (DEF_PRIORITY - 2) && !sc->hibernation_mode &&
+		    !current_is_kswapd() && current_may_throttle())
 			wait_iff_congested(zone, BLK_RW_ASYNC, HZ/10);
 
 		if (reclaim_state) {
