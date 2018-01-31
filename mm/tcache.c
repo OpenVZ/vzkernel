@@ -676,6 +676,7 @@ static void tcache_invalidate_node(struct tcache_pool *pool,
 	node = __tcache_lookup_node(&tree->root, key, &rb_link, &rb_parent);
 	if (node) {
 		tcache_hold_node(node);
+		node->invalidated = true;
 		__tcache_delete_node(&tree->root, node);
 	}
 	spin_unlock_irq(&tree->lock);
@@ -703,6 +704,7 @@ tcache_invalidate_node_tree(struct tcache_node_tree *tree)
 		WARN_ON(atomic_read(&node->kref.refcount) != 1);
 		WARN_ON(node->nr_pages == 0);
 		WARN_ON(node->invalidated);
+		node->invalidated = true;
 
 		tcache_hold_node(node);
 		tcache_invalidate_node_pages(node);
@@ -798,13 +800,16 @@ tcache_attach_page(struct tcache_node *node, pgoff_t index, struct page *page)
 	int err = 0;
 
 	tcache_init_page(page, node, index);
-
+	/*
+	 * Disabling of irqs implies rcu_read_lock_sched().
+	 * See tcache_invalidate_node_pages() for details.
+	 */
 	spin_lock_irqsave(&node->tree_lock, flags);
 	err = tcache_page_tree_insert(node, index, page);
 	spin_unlock(&node->tree_lock);
 	if (!err)
 		tcache_lru_add(node->pool, page);
-	local_irq_restore(flags);
+	local_irq_restore(flags); /* Implies rcu_read_lock_sched() */
 	return err;
 }
 
@@ -910,17 +915,16 @@ repeat:
 static noinline_for_stack void
 tcache_invalidate_node_pages(struct tcache_node *node)
 {
+	bool repeat, synchronize_sched_once = true;
 	pgoff_t indices[TCACHE_PAGEVEC_SIZE];
 	struct page *pages[TCACHE_PAGEVEC_SIZE];
 	pgoff_t index = 0;
 	unsigned nr_pages;
-	bool repeat;
 	int i;
 
 	/*
 	 * First forbid new page insertions - see tcache_page_tree_replace.
 	 */
-	node->invalidated = true;
 again:
 	repeat = false;
 	while ((nr_pages = tcache_lookup(pages, node, index,
@@ -939,6 +943,7 @@ again:
 				local_irq_enable();
 				tcache_put_page(page);
 			} else {
+				/* Race with page_ref_freeze() */
 				local_irq_enable();
 				repeat = true;
 			}
@@ -947,9 +952,18 @@ again:
 		index++;
 	}
 
-	if (repeat) {
-		index = 0;
-		goto again;
+	if (synchronize_sched_once) {
+		synchronize_sched_once = false;
+		if (!repeat) {
+			/* Race with tcache_attach_page() */
+			spin_lock_irq(&node->tree_lock);
+			repeat = (node->nr_pages != 0);
+			spin_unlock_irq(&node->tree_lock);
+		}
+		if (repeat) {
+			synchronize_sched();
+			goto again;
+		}
 	}
 
 	WARN_ON(node->nr_pages != 0);
@@ -1202,7 +1216,7 @@ static unsigned long tcache_shrink_scan(struct shrinker *shrink,
 	long nr_isolated, nr_reclaimed;
 	struct page **pages;
 
-	pages = get_cpu_var(tcache_page_vec);
+	pages = get_cpu_var(tcache_page_vec); /* Implies rcu_read_lock_sched() */
 
 	if (WARN_ON(sc->nr_to_scan > TCACHE_SCAN_BATCH))
 		sc->nr_to_scan = TCACHE_SCAN_BATCH;
@@ -1216,7 +1230,7 @@ static unsigned long tcache_shrink_scan(struct shrinker *shrink,
 	if (current->reclaim_state)
 		current->reclaim_state->reclaimed_slab += nr_reclaimed;
 out:
-	put_cpu_var(tcache_page_vec);
+	put_cpu_var(tcache_page_vec); /* Implies rcu_read_unlock_sched() */
 	return nr_reclaimed;
 }
 
