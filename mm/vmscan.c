@@ -58,6 +58,18 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/vmscan.h>
 
+struct reclaim_stat {
+	unsigned nr_dirty;
+	unsigned nr_unqueued_dirty;
+	unsigned nr_congested;
+	unsigned nr_writeback;
+	unsigned nr_immediate;
+	unsigned nr_activate;
+	unsigned nr_ref_keep;
+	unsigned nr_unmap_fail;
+	unsigned nr_taken;
+};
+
 struct scan_control {
 	/* Incremented by the number of inactive pages that were scanned */
 	unsigned long nr_scanned;
@@ -98,6 +110,8 @@ struct scan_control {
 	 * primary target of this reclaim invocation.
 	 */
 	struct mem_cgroup *target_mem_cgroup;
+
+	struct reclaim_stat *stat;
 
 	/*
 	 * Nodemask of nodes allowed by the caller. If NULL, all nodes
@@ -846,17 +860,6 @@ static void page_check_dirty_writeback(struct page *page,
 	if (mapping && mapping->a_ops->is_dirty_writeback)
 		mapping->a_ops->is_dirty_writeback(page, dirty, writeback);
 }
-
-struct reclaim_stat {
-	unsigned nr_dirty;
-	unsigned nr_unqueued_dirty;
-	unsigned nr_congested;
-	unsigned nr_writeback;
-	unsigned nr_immediate;
-	unsigned nr_activate;
-	unsigned nr_ref_keep;
-	unsigned nr_unmap_fail;
-};
 
 /*
  * shrink_page_list() returns the number of reclaimed pages
@@ -1647,6 +1650,15 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 	mem_cgroup_uncharge_list(&page_list);
 	free_hot_cold_page_list(&page_list, true);
 
+	if (sc->stat) {
+		sc->stat->nr_taken += nr_taken;
+		sc->stat->nr_dirty += stat.nr_dirty;
+		sc->stat->nr_unqueued_dirty += stat.nr_unqueued_dirty;
+		sc->stat->nr_congested += stat.nr_congested;
+		sc->stat->nr_writeback += stat.nr_writeback;
+		sc->stat->nr_immediate += stat.nr_immediate;
+	}
+
 	/*
 	 * If reclaim is isolating dirty pages under writeback, it implies
 	 * that the long-lived page allocation rate is exceeding the page
@@ -2428,6 +2440,9 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 		};
 		unsigned long zone_lru_pages = 0;
 		struct mem_cgroup *memcg;
+		struct reclaim_stat stat = {};
+
+		sc->stat = &stat;
 
 		nr_reclaimed = sc->nr_reclaimed;
 		nr_scanned = sc->nr_scanned;
@@ -2914,6 +2929,7 @@ unsigned long mem_cgroup_shrink_node_zone(struct mem_cgroup *memcg,
 						struct zone *zone,
 						unsigned long *nr_scanned)
 {
+	struct reclaim_stat stat = {};
 	struct scan_control sc = {
 		.nr_scanned = 0,
 		.nr_to_reclaim = SWAP_CLUSTER_MAX,
@@ -2923,6 +2939,7 @@ unsigned long mem_cgroup_shrink_node_zone(struct mem_cgroup *memcg,
 		.order = 0,
 		.priority = 0,
 		.target_mem_cgroup = memcg,
+		.stat = &stat,
 	};
 	struct lruvec *lruvec = mem_cgroup_zone_lruvec(zone, memcg);
 	unsigned long lru_pages;
