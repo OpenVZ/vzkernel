@@ -14,6 +14,8 @@
 #include <linux/mm.h>
 #include <linux/migrate_mode.h>
 
+unsigned long zone_reclaimable_pages(struct zone *zone);
+
 void free_pgtables(struct mmu_gather *tlb, struct vm_area_struct *start_vma,
 		unsigned long floor, unsigned long ceiling);
 
