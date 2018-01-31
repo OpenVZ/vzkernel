@@ -1011,9 +1011,10 @@ out:
 	 * it.  Otherwise, putback_lru_page() will drop the reference grabbed
 	 * during isolation.
 	 */
-	if (rc != MIGRATEPAGE_SUCCESS && put_new_page)
+	if (rc != MIGRATEPAGE_SUCCESS && put_new_page) {
+		ClearPageSwapBacked(newpage);
 		put_new_page(newpage, private);
-	else if (unlikely(__is_movable_balloon_page(newpage)))
+	} else if (unlikely(__is_movable_balloon_page(newpage)))
 		/* drop our reference, page already in the balloon */
 		put_page(newpage);
 	else
