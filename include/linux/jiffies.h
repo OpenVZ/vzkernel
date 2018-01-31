@@ -72,6 +72,10 @@ extern int register_refined_jiffies(long clock_tick_rate);
 #define __jiffy_arch_data
 #endif
 
+#ifdef CONFIG_FENCE_WATCHDOG
+extern struct jiffies_struct_t volatile __cacheline_aligned jiffies_struct;
+#endif
+
 /*
  * The 64-bit value is not atomic - you MUST NOT read it
  * without sampling the sequence number in jiffies_lock.
