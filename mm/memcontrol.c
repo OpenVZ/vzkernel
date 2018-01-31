@@ -2186,54 +2186,6 @@ static void mem_cgroup_out_of_memory(struct mem_cgroup *memcg, gfp_t gfp_mask,
 			 NULL, "Memory cgroup out of memory");
 }
 
-static unsigned long mem_cgroup_reclaim(struct mem_cgroup *memcg,
-					gfp_t gfp_mask,
-					unsigned long flags)
-{
-	unsigned long total = 0;
-	bool noswap = false;
-	int loop;
-
-	if (flags & MEM_CGROUP_RECLAIM_NOSWAP)
-		noswap = true;
-
-	for (loop = 0; loop < MEM_CGROUP_MAX_RECLAIM_LOOPS; loop++) {
-		if (loop)
-			drain_all_stock_async(memcg);
-		total += try_to_free_mem_cgroup_pages(memcg, SWAP_CLUSTER_MAX,
-						      gfp_mask, flags);
-		if (test_thread_flag(TIF_MEMDIE) ||
-		    fatal_signal_pending(current))
-			return 1;
-		/*
-		 * Allow limit shrinkers, which are triggered directly
-		 * by userspace, to catch signals and stop reclaim
-		 * after minimal progress, regardless of the margin.
-		 */
-		if (total && (flags & MEM_CGROUP_RECLAIM_SHRINK))
-			break;
-		if (mem_cgroup_margin(memcg, flags & MEM_CGROUP_RECLAIM_KMEM))
-			break;
-
-		/*
-		 * Try harder to reclaim dcache. dcache reclaim may
-		 * temporarly fail due to dcache->dlock being held
-		 * by someone else. We must try harder to avoid premature
-		 * slab allocation failures.
-		 */
-		if (flags & MEM_CGROUP_RECLAIM_KMEM &&
-		    page_counter_read(&memcg->dcache))
-			continue;
-		/*
-		 * If nothing was reclaimed after two attempts, there
-		 * may be no reclaimable pages in this hierarchy.
-		 */
-		if (loop && !total)
-			break;
-	}
-	return total;
-}
-
 /**
  * test_mem_cgroup_node_reclaimable
  * @memcg: the target memcg
@@ -2853,6 +2805,7 @@ static int try_charge(struct mem_cgroup *memcg, gfp_t gfp_mask, bool kmem_charge
 	struct page_counter *counter;
 	unsigned long nr_reclaimed;
 	unsigned long flags;
+	bool drained = false;
 
 	if (mem_cgroup_is_root(memcg))
 		goto done;
@@ -2944,11 +2897,18 @@ charge:
 	if (!(gfp_mask & __GFP_WAIT))
 		goto nomem;
 
-	nr_reclaimed = mem_cgroup_reclaim(mem_over_limit, gfp_mask, flags);
+	nr_reclaimed = try_to_free_mem_cgroup_pages(mem_over_limit, nr_pages,
+						    gfp_mask, flags);
 
 	if (mem_cgroup_margin(mem_over_limit,
 				flags & MEM_CGROUP_RECLAIM_KMEM) >= batch)
 		goto retry;
+
+	if (!drained) {
+		drain_all_stock_async(mem_over_limit);
+		drained = true;
+		goto retry;
+	}
 
 	if (gfp_mask & __GFP_NORETRY)
 		goto nomem;
@@ -3908,8 +3868,8 @@ static int mem_cgroup_resize_limit(struct mem_cgroup *memcg,
 		if (!ret)
 			break;
 
-		mem_cgroup_reclaim(memcg, GFP_KERNEL,
-				   MEM_CGROUP_RECLAIM_SHRINK);
+		try_to_free_mem_cgroup_pages(memcg, 1, GFP_KERNEL, 0);
+
 		curusage = page_counter_read(&memcg->memory);
 		/* Usage is reduced ? */
   		if (curusage >= oldusage)
@@ -3960,9 +3920,9 @@ static int mem_cgroup_resize_memsw_limit(struct mem_cgroup *memcg,
 		if (!ret)
 			break;
 
-		mem_cgroup_reclaim(memcg, GFP_KERNEL,
-				   MEM_CGROUP_RECLAIM_NOSWAP |
-				   MEM_CGROUP_RECLAIM_SHRINK);
+		try_to_free_mem_cgroup_pages(memcg, 1, GFP_KERNEL,
+					MEM_CGROUP_RECLAIM_NOSWAP);
+
 		curusage = page_counter_read(&memcg->memsw);
 		/* Usage is reduced ? */
 		if (curusage >= oldusage)
@@ -4220,7 +4180,7 @@ static int mem_cgroup_force_empty(struct mem_cgroup *memcg)
 		if (signal_pending(current))
 			return -EINTR;
 
-		progress = try_to_free_mem_cgroup_pages(memcg, SWAP_CLUSTER_MAX,
+		progress = try_to_free_mem_cgroup_pages(memcg, 1,
 							GFP_KERNEL, 0);
 		if (!progress) {
 			nr_retries--;
