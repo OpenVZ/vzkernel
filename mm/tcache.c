@@ -1199,24 +1199,24 @@ static DEFINE_PER_CPU(struct page * [TCACHE_SCAN_BATCH], tcache_page_vec);
 static unsigned long tcache_shrink_scan(struct shrinker *shrink,
 					struct shrink_control *sc)
 {
-	struct page **pages = get_cpu_var(tcache_page_vec);
-	int nr_isolated, nr_reclaimed;
+	long nr_isolated, nr_reclaimed;
+	struct page **pages;
+
+	pages = get_cpu_var(tcache_page_vec);
 
 	if (WARN_ON(sc->nr_to_scan > TCACHE_SCAN_BATCH))
 		sc->nr_to_scan = TCACHE_SCAN_BATCH;
 
 	nr_isolated = tcache_lru_isolate(sc->nid, pages, sc->nr_to_scan);
 	if (!nr_isolated) {
-		put_cpu_var(tcache_page_vec);
-		return SHRINK_STOP;
+		nr_reclaimed = SHRINK_STOP;
+		goto out;
 	}
-
 	nr_reclaimed = tcache_reclaim_pages(pages, nr_isolated);
-	put_cpu_var(tcache_page_vec);
-
 	if (current->reclaim_state)
 		current->reclaim_state->reclaimed_slab += nr_reclaimed;
-
+out:
+	put_cpu_var(tcache_page_vec);
 	return nr_reclaimed;
 }
 
