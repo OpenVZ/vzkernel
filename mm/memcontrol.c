@@ -351,9 +351,6 @@ struct mem_cgroup {
 	/* OOM-Killer disable */
 	int		oom_kill_disable;
 
-	/* set when res.limit == memsw.limit */
-	bool		memsw_is_minimum;
-
 #ifdef CONFIG_CLEANCACHE
 	/*
 	 * cleancache_disabled_toggle: toggled by writing to
@@ -2199,8 +2196,6 @@ static unsigned long mem_cgroup_reclaim(struct mem_cgroup *memcg,
 
 	if (flags & MEM_CGROUP_RECLAIM_NOSWAP)
 		noswap = true;
-	if (!(flags & MEM_CGROUP_RECLAIM_SHRINK) && memcg->memsw_is_minimum)
-		noswap = true;
 
 	for (loop = 0; loop < MEM_CGROUP_MAX_RECLAIM_LOOPS; loop++) {
 		if (loop)
@@ -3880,7 +3875,6 @@ static int mem_cgroup_resize_limit(struct mem_cgroup *memcg,
 {
 	unsigned long curusage;
 	unsigned long oldusage;
-	unsigned long memswlimit;
 	bool enlarge = false;
 	int retry_count;
 	int ret;
@@ -3901,23 +3895,14 @@ static int mem_cgroup_resize_limit(struct mem_cgroup *memcg,
 			break;
 		}
 		mutex_lock(&memcg_limit_mutex);
-		memswlimit = memcg->memsw.limit;
-		if (limit > memswlimit) {
+		if (limit > memcg->memsw.limit) {
 			mutex_unlock(&memcg_limit_mutex);
 			ret = -EINVAL;
 			break;
 		}
-
 		if (limit > memcg->memory.limit)
 			enlarge = true;
-
 		ret = page_counter_limit(&memcg->memory, limit);
-		if (!ret) {
-			if (memswlimit == limit)
-				memcg->memsw_is_minimum = true;
-			else
-				memcg->memsw_is_minimum = false;
-		}
 		mutex_unlock(&memcg_limit_mutex);
 
 		if (!ret)
@@ -3944,7 +3929,6 @@ static int mem_cgroup_resize_memsw_limit(struct mem_cgroup *memcg,
 {
 	unsigned long curusage;
 	unsigned long oldusage;
-	unsigned long memlimit, memswlimit;
 	bool enlarge = false;
 	int retry_count;
 	int ret;
@@ -3960,23 +3944,17 @@ static int mem_cgroup_resize_memsw_limit(struct mem_cgroup *memcg,
 			ret = -EINTR;
 			break;
 		}
+
 		mutex_lock(&memcg_limit_mutex);
-		memlimit = memcg->memory.limit;
-		if (limit < memlimit) {
+		if (limit < memcg->memory.limit) {
 			mutex_unlock(&memcg_limit_mutex);
 			ret = -EINVAL;
 			break;
 		}
-		memswlimit = memcg->memsw.limit;
-		if (limit > memswlimit)
+
+		if (limit > memcg->memsw.limit)
 			enlarge = true;
 		ret = page_counter_limit(&memcg->memsw, limit);
-		if (!ret) {
-			if (memlimit == limit)
-				memcg->memsw_is_minimum = true;
-			else
-				memcg->memsw_is_minimum = false;
-		}
 		mutex_unlock(&memcg_limit_mutex);
 
 		if (!ret)
