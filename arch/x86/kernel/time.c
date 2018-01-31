@@ -25,6 +25,17 @@
 #include <asm/time.h>
 
 #ifdef CONFIG_X86_64
+#ifdef CONFIG_FENCE_WATCHDOG
+#define MAX_U64			(~(u64)0)
+__visible volatile struct jiffies_struct_t {
+	unsigned long jiffies;
+	unsigned long fence_wdog_jiffies64;
+} jiffies_struct __cacheline_aligned = {
+	INITIAL_JIFFIES,
+	MAX_U64,
+};
+#endif
+
 __visible volatile unsigned long jiffies __cacheline_aligned_in_smp = INITIAL_JIFFIES;
 #endif
 
