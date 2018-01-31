@@ -3831,13 +3831,15 @@ void mem_cgroup_print_bad_page(struct page *page)
 #endif
 
 static int mem_cgroup_resize_limit(struct mem_cgroup *memcg,
-				   unsigned long limit)
+				   unsigned long limit, bool memsw)
 {
 	unsigned long curusage;
 	unsigned long oldusage;
 	bool enlarge = false;
 	int retry_count;
 	int ret;
+	bool limits_invariant;
+	struct page_counter *counter = memsw ? &memcg->memsw : &memcg->memory;
 
 	/*
 	 * For keeping hierarchical_reclaim simple, how long we should retry
@@ -3847,7 +3849,7 @@ static int mem_cgroup_resize_limit(struct mem_cgroup *memcg,
 	retry_count = MEM_CGROUP_RECLAIM_RETRIES *
 		      mem_cgroup_count_children(memcg);
 
-	oldusage = page_counter_read(&memcg->memory);
+	oldusage = page_counter_read(counter);
 
 	do {
 		if (signal_pending(current)) {
@@ -3855,22 +3857,29 @@ static int mem_cgroup_resize_limit(struct mem_cgroup *memcg,
 			break;
 		}
 		mutex_lock(&memcg_limit_mutex);
-		if (limit > memcg->memsw.limit) {
+		/*
+		 * Make sure that the new limit (memsw or memory limit) doesn't
+		 * break our basic invariant rule memory.limit <= memsw.limit.
+		 */
+		limits_invariant = memsw ? limit >= memcg->memory.limit :
+					   limit <= memcg->memsw.limit;
+		if (!limits_invariant) {
 			mutex_unlock(&memcg_limit_mutex);
 			ret = -EINVAL;
 			break;
 		}
-		if (limit > memcg->memory.limit)
+		if (limit > counter->limit)
 			enlarge = true;
-		ret = page_counter_limit(&memcg->memory, limit);
+		ret = page_counter_limit(counter, limit);
 		mutex_unlock(&memcg_limit_mutex);
 
 		if (!ret)
 			break;
 
-		try_to_free_mem_cgroup_pages(memcg, 1, GFP_KERNEL, 0);
+		try_to_free_mem_cgroup_pages(memcg, 1, GFP_KERNEL,
+					memsw ? MEM_CGROUP_RECLAIM_NOSWAP : 0);
 
-		curusage = page_counter_read(&memcg->memory);
+		curusage = page_counter_read(counter);
 		/* Usage is reduced ? */
   		if (curusage >= oldusage)
 			retry_count--;
@@ -3881,58 +3890,6 @@ static int mem_cgroup_resize_limit(struct mem_cgroup *memcg,
 	if (!ret && enlarge)
 		memcg_oom_recover(memcg);
 
-	return ret;
-}
-
-static int mem_cgroup_resize_memsw_limit(struct mem_cgroup *memcg,
-					 unsigned long limit)
-{
-	unsigned long curusage;
-	unsigned long oldusage;
-	bool enlarge = false;
-	int retry_count;
-	int ret;
-
-	/* see mem_cgroup_resize_res_limit */
-	retry_count = MEM_CGROUP_RECLAIM_RETRIES *
-		      mem_cgroup_count_children(memcg);
-
-	oldusage = page_counter_read(&memcg->memsw);
-
-	do {
-		if (signal_pending(current)) {
-			ret = -EINTR;
-			break;
-		}
-
-		mutex_lock(&memcg_limit_mutex);
-		if (limit < memcg->memory.limit) {
-			mutex_unlock(&memcg_limit_mutex);
-			ret = -EINVAL;
-			break;
-		}
-
-		if (limit > memcg->memsw.limit)
-			enlarge = true;
-		ret = page_counter_limit(&memcg->memsw, limit);
-		mutex_unlock(&memcg_limit_mutex);
-
-		if (!ret)
-			break;
-
-		try_to_free_mem_cgroup_pages(memcg, 1, GFP_KERNEL,
-					MEM_CGROUP_RECLAIM_NOSWAP);
-
-		curusage = page_counter_read(&memcg->memsw);
-		/* Usage is reduced ? */
-		if (curusage >= oldusage)
-			retry_count--;
-		else
-			oldusage = curusage;
-	} while (retry_count);
-
-	if (!ret && enlarge)
-		memcg_oom_recover(memcg);
 	return ret;
 }
 
@@ -4625,10 +4582,10 @@ static int mem_cgroup_write(struct cgroup *cont, struct cftype *cft,
 		}
 		switch (MEMFILE_TYPE(cft->private)) {
 		case _MEM:
-			ret = mem_cgroup_resize_limit(memcg, nr_pages);
+			ret = mem_cgroup_resize_limit(memcg, nr_pages, false);
 			break;
 		case _MEMSWAP:
-			ret = mem_cgroup_resize_memsw_limit(memcg, nr_pages);
+			ret = mem_cgroup_resize_limit(memcg, nr_pages, true);
 			break;
 		case _KMEM:
 			ret = memcg_update_kmem_limit(memcg, nr_pages);
@@ -4934,10 +4891,10 @@ int mem_cgroup_apply_beancounter(struct mem_cgroup *memcg,
 
 	/* try change mem+swap before changing mem limit */
 	if (memcg->memsw.limit != memsw)
-		(void)mem_cgroup_resize_memsw_limit(memcg, memsw);
+		(void)mem_cgroup_resize_limit(memcg, memsw, true);
 
 	if (memcg->memory.limit != mem) {
-		ret = mem_cgroup_resize_limit(memcg, mem);
+		ret = mem_cgroup_resize_limit(memcg, mem, false);
 		if (ret)
 			goto out;
 	}
@@ -4949,17 +4906,17 @@ int mem_cgroup_apply_beancounter(struct mem_cgroup *memcg,
 		/* first, reset memsw limit since it cannot be < mem limit */
 		if (memsw_old < PAGE_COUNTER_MAX) {
 			memsw_old = PAGE_COUNTER_MAX;
-			ret = mem_cgroup_resize_memsw_limit(memcg, memsw_old);
+			ret = mem_cgroup_resize_limit(memcg, memsw_old, true);
 			if (ret)
 				goto out;
 		}
-		ret = mem_cgroup_resize_limit(memcg, mem);
+		ret = mem_cgroup_resize_limit(memcg, mem, false);
 		if (ret)
 			goto out;
 	}
 
 	if (memsw != memsw_old) {
-		ret = mem_cgroup_resize_memsw_limit(memcg, memsw);
+		ret = mem_cgroup_resize_limit(memcg, memsw, true);
 		if (ret)
 			goto out;
 	}
