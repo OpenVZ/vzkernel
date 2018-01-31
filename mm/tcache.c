@@ -749,7 +749,6 @@ static int tcache_page_tree_insert(struct tcache_node *node, pgoff_t index,
 	}
 
 	err = radix_tree_insert(&node->page_tree, index, page);
-	WARN_ON(err == -EEXIST);
 	if (!err) {
 		if (!node->nr_pages++)
 			tcache_hold_node(node);
@@ -1256,9 +1255,18 @@ static int tcache_cleancache_put_page(int pool_id,
 		cache_page = tcache_alloc_page(node->pool);
 		if (cache_page) {
 			copy_highpage(cache_page, page);
-			if (tcache_attach_page(node, index, cache_page)) {
+			ret = tcache_attach_page(node, index, cache_page);
+			if (ret) {
+				if (ret == -EEXIST) {
+					struct page *page;
+
+					page = tcache_detach_page(node, index, false);
+					if (page)
+						tcache_put_page(page);
+				}
 				if (put_page_testzero(cache_page))
 					tcache_put_page(cache_page);
+				ret = 0;
 			} else
 				ret = 1;
 		}
