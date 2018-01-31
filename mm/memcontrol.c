@@ -4517,15 +4517,9 @@ static int memcg_update_cache_limit(struct mem_cgroup *memcg,
 	int retry_count;
 	int ret;
 
-	/*
-	 * For keeping hierarchical_reclaim simple, how long we should retry
-	 * is depends on callers. We set our retry-count to be function
-	 * of # of children which we should visit in this loop.
-	 */
-	retry_count = MEM_CGROUP_RECLAIM_RETRIES *
-		      mem_cgroup_count_children(memcg);
+	retry_count = MEM_CGROUP_RECLAIM_RETRIES;
 
-	oldusage = page_counter_read(&memcg->cache);
+	curusage = oldusage = page_counter_read(&memcg->cache);
 
 	do {
 		if (signal_pending(current)) {
@@ -4543,8 +4537,8 @@ static int memcg_update_cache_limit(struct mem_cgroup *memcg,
 		if (!ret)
 			break;
 
-		mem_cgroup_reclaim(memcg, GFP_KERNEL,
-				   MEM_CGROUP_RECLAIM_NOSWAP);
+		try_to_free_mem_cgroup_pages(memcg, curusage - limit, GFP_KERNEL,
+					MEM_CGROUP_RECLAIM_NOSWAP);
 		curusage = page_counter_read(&memcg->cache);
 		/* Usage is reduced ? */
 		if (curusage >= oldusage)
