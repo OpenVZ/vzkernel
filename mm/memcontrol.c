@@ -5087,7 +5087,7 @@ static long __memcg_numa_migrate_pages(struct lruvec *lruvec, enum lru_list lru,
 		if (!scanned)
 			break;
 
-		ret = migrate_pages(&pages, memcg_numa_migrate_new_page,
+		ret = migrate_pages(&pages, memcg_numa_migrate_new_page, NULL,
 				    (unsigned long)&ms, MIGRATE_ASYNC,
 				    MR_SYSCALL);
 		putback_lru_pages(&pages);
