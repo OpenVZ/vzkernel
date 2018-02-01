@@ -133,9 +133,9 @@ extern ssize_t core_alua_show_trans_delay_msecs(struct t10_alua_tg_pt_gp *,
 					char *);
 extern ssize_t core_alua_store_trans_delay_msecs(struct t10_alua_tg_pt_gp *,
 					const char *, size_t);
-extern ssize_t core_alua_show_user_helper(struct t10_alua_tg_pt_gp *,
+extern ssize_t core_alua_show_user_helper(struct se_device *,
 					char *);
-extern ssize_t core_alua_store_user_helper(struct t10_alua_tg_pt_gp *,
+extern ssize_t core_alua_store_user_helper(struct se_device *,
 					const char *, size_t);
 extern ssize_t core_alua_show_implicit_trans_secs(struct t10_alua_tg_pt_gp *,
 					char *);
