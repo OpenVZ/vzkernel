@@ -1478,6 +1478,32 @@ static struct target_core_configfs_attribute target_core_attr_dev_enable = {
 	.store	= target_core_store_dev_enable,
 };
 
+static ssize_t target_core_show_attr_dev_user_helper(void *p,
+	char *page)
+{
+	struct se_device *dev = p;
+
+	return core_alua_show_user_helper(dev, page);
+}
+
+static ssize_t target_core_store_attr_dev_user_helper(
+	void *p,
+	const char *page,
+	size_t count)
+{
+	struct se_device *dev = p;
+
+	return core_alua_store_user_helper(dev, page, count);
+}
+
+static struct target_core_configfs_attribute target_core_attr_dev_user_helper = {
+	.attr	= { .ca_owner = THIS_MODULE,
+		    .ca_name = "alua_user_helper",
+		    .ca_mode =  S_IRUGO | S_IWUSR },
+	.show	= target_core_show_attr_dev_user_helper,
+	.store	= target_core_store_attr_dev_user_helper,
+};
+
 static ssize_t target_core_show_alua_lu_gp(void *p, char *page)
 {
 	struct se_device *dev = p;
@@ -1770,6 +1796,7 @@ static struct configfs_attribute *target_core_dev_attrs[] = {
 	&target_core_attr_dev_enable.attr,
 	&target_core_attr_dev_alua_lu_gp.attr,
 	&target_core_attr_dev_lba_map.attr,
+	&target_core_attr_dev_user_helper.attr,
 	NULL,
 };
 
@@ -2323,22 +2350,6 @@ static ssize_t target_core_alua_tg_pt_gp_store_attr_trans_delay_msecs(
 
 SE_DEV_ALUA_TG_PT_ATTR(trans_delay_msecs, S_IRUGO | S_IWUSR);
 
-static ssize_t target_core_alua_tg_pt_gp_show_attr_user_helper(
-	struct t10_alua_tg_pt_gp *tg_pt_gp,
-	char *page)
-{
-	return core_alua_show_user_helper(tg_pt_gp, page);
-}
-
-static ssize_t target_core_alua_tg_pt_gp_store_attr_user_helper(
-	struct t10_alua_tg_pt_gp *tg_pt_gp,
-	const char *page,
-	size_t count)
-{
-	return core_alua_store_user_helper(tg_pt_gp, page, count);
-}
-
-SE_DEV_ALUA_TG_PT_ATTR(user_helper, S_IRUGO | S_IWUSR);
 /*
  * implicit_trans_secs
  */
@@ -2490,7 +2501,6 @@ static struct configfs_attribute *target_core_alua_tg_pt_gp_attrs[] = {
 	&target_core_alua_tg_pt_gp_alua_write_metadata.attr,
 	&target_core_alua_tg_pt_gp_nonop_delay_msecs.attr,
 	&target_core_alua_tg_pt_gp_trans_delay_msecs.attr,
-	&target_core_alua_tg_pt_gp_user_helper.attr,
 	&target_core_alua_tg_pt_gp_implicit_trans_secs.attr,
 	&target_core_alua_tg_pt_gp_preferred.attr,
 	&target_core_alua_tg_pt_gp_tg_pt_gp_id.attr,
