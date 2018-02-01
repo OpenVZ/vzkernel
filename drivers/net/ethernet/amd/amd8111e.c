@@ -112,7 +112,7 @@ MODULE_PARM_DESC(coalesce, "Enable or Disable interrupt coalescing, 1: Enable, 0
 module_param_array(dynamic_ipg, bool, NULL, 0);
 MODULE_PARM_DESC(dynamic_ipg, "Enable or Disable dynamic IPG, 1: Enable, 0: Disable");
 
-static DEFINE_PCI_DEVICE_TABLE(amd8111e_pci_tbl) = {
+static const struct pci_device_id amd8111e_pci_tbl[] = {
 
 	{ PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD8111E_7462,
 	 PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0UL },
@@ -1308,11 +1308,11 @@ static netdev_tx_t amd8111e_start_xmit(struct sk_buff *skb,
 	lp->tx_ring[tx_index].tx_flags = 0;
 
 #if AMD8111E_VLAN_TAG_USED
-	if (vlan_tx_tag_present(skb)) {
+	if (skb_vlan_tag_present(skb)) {
 		lp->tx_ring[tx_index].tag_ctrl_cmd |=
 				cpu_to_le16(TCC_VLAN_INSERT);
 		lp->tx_ring[tx_index].tag_ctrl_info =
-				cpu_to_le16(vlan_tx_tag_get(skb));
+				cpu_to_le16(skb_vlan_tag_get(skb));
 
 	}
 #endif

@@ -32,6 +32,12 @@
 #include <linux/gfp.h>
 #include <linux/memblock.h>
 #include <linux/edd.h>
+#include <linux/crash_dump.h>
+#include <linux/frame.h>
+
+#ifdef CONFIG_KEXEC_CORE
+#include <linux/kexec.h>
+#endif
 
 #include <xen/xen.h>
 #include <xen/events.h>
@@ -110,6 +116,10 @@ DEFINE_PER_CPU(struct vcpu_info *, xen_vcpu);
  */
 DEFINE_PER_CPU(struct vcpu_info, xen_vcpu_info);
 
+/* Linux <-> Xen vCPU id mapping */
+DEFINE_PER_CPU(uint32_t, xen_vcpu_id);
+EXPORT_PER_CPU_SYMBOL(xen_vcpu_id);
+
 enum xen_domain_type xen_domain_type = XEN_NATIVE;
 EXPORT_SYMBOL_GPL(xen_domain_type);
 
@@ -163,6 +173,8 @@ struct tls_descs {
  */
 static DEFINE_PER_CPU(struct tls_descs, shadow_tls_desc);
 
+#define XEN_HVM_CPUID_VCPU_ID_PRESENT  (1u << 3)
+
 static void clamp_max_cpus(void)
 {
 #ifdef CONFIG_SMP
@@ -171,7 +183,7 @@ static void clamp_max_cpus(void)
 #endif
 }
 
-static void xen_vcpu_setup(int cpu)
+void xen_vcpu_setup(int cpu)
 {
 	struct vcpu_register_vcpu_info info;
 	int err;
@@ -194,8 +206,9 @@ static void xen_vcpu_setup(int cpu)
 		if (per_cpu(xen_vcpu, cpu) == &per_cpu(xen_vcpu_info, cpu))
 			return;
 	}
-	if (cpu < MAX_VIRT_CPUS)
-		per_cpu(xen_vcpu,cpu) = &HYPERVISOR_shared_info->vcpu_info[cpu];
+	if (xen_vcpu_nr(cpu) < MAX_VIRT_CPUS)
+		per_cpu(xen_vcpu, cpu) =
+			&HYPERVISOR_shared_info->vcpu_info[xen_vcpu_nr(cpu)];
 
 	if (!have_vcpu_info_placement) {
 		if (cpu >= MAX_VIRT_CPUS)
@@ -215,7 +228,8 @@ static void xen_vcpu_setup(int cpu)
 	   hypervisor has no unregister variant and this hypercall does not
 	   allow to over-write info.mfn and info.offset.
 	 */
-	err = HYPERVISOR_vcpu_op(VCPUOP_register_vcpu_info, cpu, &info);
+	err = HYPERVISOR_vcpu_op(VCPUOP_register_vcpu_info, xen_vcpu_nr(cpu),
+				 &info);
 
 	if (err) {
 		printk(KERN_DEBUG "register_vcpu_info failed: err=%d\n", err);
@@ -239,10 +253,11 @@ void xen_vcpu_restore(void)
 
 	for_each_possible_cpu(cpu) {
 		bool other_cpu = (cpu != smp_processor_id());
-		bool is_up = HYPERVISOR_vcpu_op(VCPUOP_is_up, cpu, NULL);
+		bool is_up = HYPERVISOR_vcpu_op(VCPUOP_is_up, xen_vcpu_nr(cpu),
+						NULL);
 
 		if (other_cpu && is_up &&
-		    HYPERVISOR_vcpu_op(VCPUOP_down, cpu, NULL))
+		    HYPERVISOR_vcpu_op(VCPUOP_down, xen_vcpu_nr(cpu), NULL))
 			BUG();
 
 		xen_setup_runstate_info(cpu);
@@ -251,7 +266,7 @@ void xen_vcpu_restore(void)
 			xen_vcpu_setup(cpu);
 
 		if (other_cpu && is_up &&
-		    HYPERVISOR_vcpu_op(VCPUOP_up, cpu, NULL))
+		    HYPERVISOR_vcpu_op(VCPUOP_up, xen_vcpu_nr(cpu), NULL))
 			BUG();
 	}
 }
@@ -342,8 +357,8 @@ static void xen_cpuid(unsigned int *ax, unsigned int *bx,
 	*cx &= maskecx;
 	*cx |= setecx;
 	*dx &= maskedx;
-
 }
+STACK_FRAME_NON_STANDARD(xen_cpuid); /* XEN_EMULATE_PREFIX */
 
 static bool __init xen_check_mwait(void)
 {
@@ -1135,8 +1150,11 @@ void xen_setup_vcpu_info_placement(void)
 {
 	int cpu;
 
-	for_each_possible_cpu(cpu)
+	for_each_possible_cpu(cpu) {
+		/* Set up direct vCPU id mapping for PV guests. */
+		per_cpu(xen_vcpu_id, cpu) = cpu;
 		xen_vcpu_setup(cpu);
+	}
 
 	/* xen_vcpu_setup managed to place the vcpu_info within the
 	   percpu area for all cpus, so make use of it */
@@ -1242,10 +1260,7 @@ static const struct pv_cpu_ops xen_cpu_ops __initconst = {
 	.read_msr = native_read_msr_safe,
 	.write_msr = xen_write_msr_safe,
 
-	.read_tsc = native_read_tsc,
 	.read_pmc = native_read_pmc,
-
-	.read_tscp = native_read_tscp,
 
 	.iret = xen_iret,
 	.irq_enable_sysexit = xen_sysexit,
@@ -1611,6 +1626,9 @@ asmlinkage void __init xen_start_kernel(void)
 #endif
 	xen_raw_console_write("about to get started...\n");
 
+	/* Let's presume PV guests always boot on vCPU with id 0. */
+	per_cpu(xen_vcpu_id, 0) = 0;
+
 	xen_setup_runstate_info(0);
 
 	/* Start the world */
@@ -1649,9 +1667,10 @@ void __ref xen_hvm_init_shared_info(void)
 	 * in that case multiple vcpus might be online. */
 	for_each_online_cpu(cpu) {
 		/* Leave it to be NULL. */
-		if (cpu >= MAX_VIRT_CPUS)
+		if (xen_vcpu_nr(cpu) >= MAX_VIRT_CPUS)
 			continue;
-		per_cpu(xen_vcpu, cpu) = &HYPERVISOR_shared_info->vcpu_info[cpu];
+		per_cpu(xen_vcpu, cpu) =
+			&HYPERVISOR_shared_info->vcpu_info[xen_vcpu_nr(cpu)];
 	}
 }
 
@@ -1676,20 +1695,29 @@ static void __init init_hvm_pv_info(void)
 
 	xen_setup_features();
 
+	cpuid(base + 4, &eax, &ebx, &ecx, &edx);
+	if (eax & XEN_HVM_CPUID_VCPU_ID_PRESENT)
+		this_cpu_write(xen_vcpu_id, ebx);
+	else
+		this_cpu_write(xen_vcpu_id, smp_processor_id());
+
 	pv_info.name = "Xen HVM";
 
 	xen_domain_type = XEN_HVM_DOMAIN;
 }
 
-static int __cpuinit xen_hvm_cpu_notify(struct notifier_block *self,
-				    unsigned long action, void *hcpu)
+static int xen_hvm_cpu_notify(struct notifier_block *self, unsigned long action,
+			      void *hcpu)
 {
 	int cpu = (long)hcpu;
 	switch (action) {
 	case CPU_UP_PREPARE:
+		if (cpu_acpi_id(cpu) != U32_MAX)
+			per_cpu(xen_vcpu_id, cpu) = cpu_acpi_id(cpu);
+		else
+			per_cpu(xen_vcpu_id, cpu) = cpu;
 		xen_vcpu_setup(cpu);
 		if (xen_have_vector_callback) {
-			xen_init_lock_cpu(cpu);
 			if (xen_feature(XENFEAT_hvm_safe_pvclock))
 				xen_setup_timer(cpu);
 		}
@@ -1700,15 +1728,32 @@ static int __cpuinit xen_hvm_cpu_notify(struct notifier_block *self,
 	return NOTIFY_OK;
 }
 
-static struct notifier_block xen_hvm_cpu_notifier __cpuinitdata = {
+static struct notifier_block xen_hvm_cpu_notifier = {
 	.notifier_call	= xen_hvm_cpu_notify,
 };
+
+#ifdef CONFIG_KEXEC_CORE
+static void xen_hvm_shutdown(void)
+{
+	native_machine_shutdown();
+	if (kexec_in_progress)
+		xen_reboot(SHUTDOWN_soft_reset);
+}
+
+static void xen_hvm_crash_shutdown(struct pt_regs *regs)
+{
+	native_machine_crash_shutdown(regs);
+	xen_reboot(SHUTDOWN_soft_reset);
+}
+#endif
 
 static void __init xen_hvm_guest_init(void)
 {
 	init_hvm_pv_info();
 
 	xen_hvm_init_shared_info();
+
+	xen_panic_handler_init();
 
 	if (xen_feature(XENFEAT_hvm_callback_vector))
 		xen_have_vector_callback = 1;
@@ -1718,17 +1763,41 @@ static void __init xen_hvm_guest_init(void)
 	x86_init.irqs.intr_init = xen_init_IRQ;
 	xen_hvm_init_time_ops();
 	xen_hvm_init_mmu_ops();
+#ifdef CONFIG_KEXEC_CORE
+	if (xen_running_on_version_or_later(3, 2)) {
+		machine_ops.shutdown = xen_hvm_shutdown;
+		machine_ops.crash_shutdown = xen_hvm_crash_shutdown;
+	}
+#endif
 }
 
-static bool __init xen_hvm_platform(void)
+static uint32_t __init xen_hvm_platform(void)
 {
+	uint32_t eax, ebx, ecx, edx, base;
+	int major, minor;
+
 	if (xen_pv_domain())
-		return false;
+		return 0;
 
-	if (!xen_cpuid_base())
-		return false;
+	/*
+	 * RHEL-only: old Xen versions (e.g. RHEL5 Xen) allow booting pure HVM
+	 * kernel after kdump but for newer versions this trick won't work and
+	 * we must reestablish PV interfaces if we ever used them. We hope that
+	 * crashing kernel did SHUTDOWN_soft_reset call and that this call is
+	 * supported by the hypervisor.
+	 */
 
-	return true;
+	base = xen_cpuid_base();
+
+	if (base && is_kdump_kernel()) {
+		cpuid(base + 1, &eax, &ebx, &ecx, &edx);
+		major = eax >> 16;
+		minor = eax & 0xffff;
+		if (major == 3 && minor < 2)
+			return 0;
+	}
+
+	return base;
 }
 
 bool xen_hvm_need_lapic(void)

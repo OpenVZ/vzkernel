@@ -25,7 +25,7 @@ struct kmem_cache *gfs2_inode_cachep __read_mostly;
 struct kmem_cache *gfs2_bufdata_cachep __read_mostly;
 struct kmem_cache *gfs2_rgrpd_cachep __read_mostly;
 struct kmem_cache *gfs2_quotad_cachep __read_mostly;
-struct kmem_cache *gfs2_rsrv_cachep __read_mostly;
+struct kmem_cache *gfs2_qadata_cachep __read_mostly;
 mempool_t *gfs2_page_pool __read_mostly;
 
 void gfs2_assert_i(struct gfs2_sbd *sdp)
@@ -61,6 +61,7 @@ int gfs2_lm_withdraw(struct gfs2_sbd *sdp, char *fmt, ...)
 			fs_err(sdp, "telling LM to unmount\n");
 			lm->lm_unmount(sdp);
 		}
+		set_bit(SDF_SKIP_DLM_UNLOCK, &sdp->sd_flags);
 		fs_err(sdp, "withdrawn\n");
 		dump_stack();
 	}
@@ -267,24 +268,3 @@ int gfs2_io_error_bh_i(struct gfs2_sbd *sdp, struct buffer_head *bh,
 		sdp->sd_fsname, function, file, line);
 	return rv;
 }
-
-void gfs2_icbit_munge(struct gfs2_sbd *sdp, unsigned char **bitmap,
-		      unsigned int bit, int new_value)
-{
-	unsigned int c, o, b = bit;
-	int old_value;
-
-	c = b / (8 * PAGE_SIZE);
-	b %= 8 * PAGE_SIZE;
-	o = b / 8;
-	b %= 8;
-
-	old_value = (bitmap[c][o] & (1 << b));
-	gfs2_assert_withdraw(sdp, !old_value != !new_value);
-
-	if (new_value)
-		bitmap[c][o] |= 1 << b;
-	else
-		bitmap[c][o] &= ~(1 << b);
-}
-

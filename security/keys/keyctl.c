@@ -86,6 +86,10 @@ SYSCALL_DEFINE5(add_key, const char __user *, _type,
 		if (!*description) {
 			kfree(description);
 			description = NULL;
+		} else if ((description[0] == '.') &&
+			   (strncmp(type, "keyring", 7) == 0)) {
+			ret = -EPERM;
+			goto error2;
 		}
 	}
 
@@ -271,7 +275,8 @@ error:
  * Create and join an anonymous session keyring or join a named session
  * keyring, creating it if necessary.  A named session keyring must have Search
  * permission for it to be joined.  Session keyrings without this permit will
- * be skipped over.
+ * be skipped over.  It is not permitted for userspace to create or join
+ * keyrings whose name begin with a dot.
  *
  * If successful, the ID of the joined session keyring will be returned.
  */
@@ -288,12 +293,16 @@ long keyctl_join_session_keyring(const char __user *_name)
 			ret = PTR_ERR(name);
 			goto error;
 		}
+
+		ret = -EPERM;
+		if (name[0] == '.')
+			goto error_name;
 	}
 
 	/* join the session */
 	ret = join_session_keyring(name);
+error_name:
 	kfree(name);
-
 error:
 	return ret;
 }
@@ -404,12 +413,25 @@ long keyctl_invalidate_key(key_serial_t id)
 	key_ref = lookup_user_key(id, 0, KEY_SEARCH);
 	if (IS_ERR(key_ref)) {
 		ret = PTR_ERR(key_ref);
+
+		/* Root is permitted to invalidate certain special keys */
+		if (capable(CAP_SYS_ADMIN)) {
+			key_ref = lookup_user_key(id, 0, 0);
+			if (IS_ERR(key_ref))
+				goto error;
+			if (test_bit(KEY_FLAG_ROOT_CAN_INVAL,
+				     &key_ref_to_ptr(key_ref)->flags))
+				goto invalidate;
+			goto error_put;
+		}
+
 		goto error;
 	}
 
+invalidate:
 	key_invalidate(key_ref_to_ptr(key_ref));
 	ret = 0;
-
+error_put:
 	key_ref_put(key_ref);
 error:
 	kleave(" = %ld", ret);
@@ -726,6 +748,11 @@ long keyctl_read_key(key_serial_t keyid, char __user *buffer, size_t buflen)
 
 	key = key_ref_to_ptr(key_ref);
 
+	if (test_bit(KEY_FLAG_NEGATIVE, &key->flags)) {
+		ret = -ENOKEY;
+		goto error2;
+	}
+
 	/* see if we can read it directly */
 	ret = key_permission(key_ref, KEY_READ);
 	if (ret == 0)
@@ -744,16 +771,16 @@ long keyctl_read_key(key_serial_t keyid, char __user *buffer, size_t buflen)
 
 	/* the key is probably readable - now try to read it */
 can_read_key:
-	ret = key_validate(key);
-	if (ret == 0) {
-		ret = -EOPNOTSUPP;
-		if (key->type->read) {
-			/* read the data with the semaphore held (since we
-			 * might sleep) */
-			down_read(&key->sem);
+	ret = -EOPNOTSUPP;
+	if (key->type->read) {
+		/* Read the data with the semaphore held (since we might sleep)
+		 * to protect against the key being updated or revoked.
+		 */
+		down_read(&key->sem);
+		ret = key_validate(key);
+		if (ret == 0)
 			ret = key->type->read(key, buffer, buflen);
-			up_read(&key->sem);
-		}
+		up_read(&key->sem);
 	}
 
 error2:
@@ -1240,8 +1267,8 @@ error:
  * Read or set the default keyring in which request_key() will cache keys and
  * return the old setting.
  *
- * If a process keyring is specified then this will be created if it doesn't
- * yet exist.  The old setting will be returned if successful.
+ * If a thread or process keyring is specified then it will be created if it
+ * doesn't yet exist.  The old setting will be returned if successful.
  */
 long keyctl_set_reqkey_keyring(int reqkey_defl)
 {
@@ -1266,11 +1293,8 @@ long keyctl_set_reqkey_keyring(int reqkey_defl)
 
 	case KEY_REQKEY_DEFL_PROCESS_KEYRING:
 		ret = install_process_keyring_to_cred(new);
-		if (ret < 0) {
-			if (ret != -EEXIST)
-				goto error;
-			ret = 0;
-		}
+		if (ret < 0)
+			goto error;
 		goto set;
 
 	case KEY_REQKEY_DEFL_DEFAULT:
@@ -1502,7 +1526,7 @@ long keyctl_session_to_parent(void)
 
 	me = current;
 	rcu_read_lock();
-	write_lock_irq(&tasklist_lock);
+	tasklist_write_lock_irq();
 
 	ret = -EPERM;
 	oldwork = NULL;
@@ -1551,7 +1575,7 @@ long keyctl_session_to_parent(void)
 	if (!ret)
 		newwork = NULL;
 unlock:
-	write_unlock_irq(&tasklist_lock);
+	qwrite_unlock_irq(&tasklist_lock);
 	rcu_read_unlock();
 	if (oldwork)
 		put_cred(container_of(oldwork, struct cred, rcu));
@@ -1666,6 +1690,9 @@ SYSCALL_DEFINE5(keyctl, int, option, unsigned long, arg2, unsigned long, arg3,
 
 	case KEYCTL_INVALIDATE:
 		return keyctl_invalidate_key((key_serial_t) arg2);
+
+	case KEYCTL_GET_PERSISTENT:
+		return keyctl_get_persistent((uid_t)arg2, (key_serial_t)arg3);
 
 	default:
 		return -EOPNOTSUPP;

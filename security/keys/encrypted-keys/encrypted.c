@@ -314,7 +314,7 @@ static struct key *request_user_key(const char *master_desc, u8 **master_key,
 		goto error;
 
 	down_read(&ukey->sem);
-	upayload = ukey->payload.data;
+	upayload = user_key_payload_locked(ukey);
 	*master_key = upayload->data;
 	*master_keylen = upayload->datalen;
 error:
@@ -428,7 +428,7 @@ static int init_blkcipher_desc(struct blkcipher_desc *desc, const u8 *key,
 static struct key *request_master_key(struct encrypted_key_payload *epayload,
 				      u8 **master_key, size_t *master_keylen)
 {
-	struct key *mkey = NULL;
+	struct key *mkey = ERR_PTR(-EINVAL);
 
 	if (!strncmp(epayload->master_desc, KEY_TRUSTED_PREFIX,
 		     KEY_TRUSTED_PREFIX_LEN)) {
@@ -845,6 +845,8 @@ static int encrypted_update(struct key *key, struct key_preparsed_payload *prep)
 	size_t datalen = prep->datalen;
 	int ret = 0;
 
+	if (test_bit(KEY_FLAG_NEGATIVE, &key->flags))
+		return -ENOKEY;
 	if (datalen <= 0 || datalen > 32767 || !prep->data)
 		return -EINVAL;
 
@@ -903,7 +905,7 @@ static long encrypted_read(const struct key *key, char __user *buffer,
 	size_t asciiblob_len;
 	int ret;
 
-	epayload = rcu_dereference_key(key);
+	epayload = dereference_key_locked(key);
 
 	/* returns the hex encoded iv, encrypted-data, and hmac as ascii */
 	asciiblob_len = epayload->datablob_len + ivsize + 1
@@ -962,7 +964,7 @@ static void encrypted_destroy(struct key *key)
 	if (!epayload)
 		return;
 
-	memset(epayload->decrypted_data, 0, epayload->decrypted_datalen);
+	memzero_explicit(epayload->decrypted_data, epayload->decrypted_datalen);
 	kfree(key->payload.data);
 }
 

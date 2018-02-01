@@ -5,6 +5,7 @@
 #include <asm/page_types.h>
 #include <asm/msr.h>
 #include <asm/asm-offsets.h>
+#include <asm/frame.h>
 
 # Copyright 2003 Pavel Machek <pavel@suse.cz>, distribute under GPLv2
 
@@ -39,6 +40,7 @@ bogus_64_magic:
 	jmp	bogus_64_magic
 
 ENTRY(do_suspend_lowlevel)
+	FRAME_BEGIN
 	subq	$8, %rsp
 	xorl	%eax, %eax
 	call	save_processor_state
@@ -73,7 +75,7 @@ ENTRY(do_suspend_lowlevel)
 	addq	$8, %rsp
 	movl	$3, %edi
 	xorl	%eax, %eax
-	call	acpi_enter_sleep_state
+	call	x86_acpi_enter_sleep_state
 	/* in case something went wrong, restore the machine status and go on */
 	jmp	resume_point
 
@@ -109,6 +111,7 @@ resume_point:
 
 	xorl	%eax, %eax
 	addq	$8, %rsp
+	FRAME_END
 	jmp	restore_processor_state
 ENDPROC(do_suspend_lowlevel)
 

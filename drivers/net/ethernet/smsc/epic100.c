@@ -173,7 +173,7 @@ static const struct epic_chip_info pci_id_tbl[] = {
 };
 
 
-static DEFINE_PCI_DEVICE_TABLE(epic_pci_tbl) = {
+static const struct pci_device_id epic_pci_tbl[] = {
 	{ 0x10B8, 0x0005, 0x1092, 0x0AB4, 0, 0, SMSC_83C170_0 },
 	{ 0x10B8, 0x0005, PCI_ANY_ID, PCI_ANY_ID, 0, 0, SMSC_83C170 },
 	{ 0x10B8, 0x0006, PCI_ANY_ID, PCI_ANY_ID,
@@ -895,7 +895,7 @@ static void epic_tx_timeout(struct net_device *dev)
 		ew32(COMMAND, TxQueued);
 	}
 
-	dev->trans_start = jiffies; /* prevent tx timeout */
+	netif_trans_update(dev); /* prevent tx timeout */
 	dev->stats.tx_errors++;
 	if (!ep->tx_full)
 		netif_wake_queue(dev);

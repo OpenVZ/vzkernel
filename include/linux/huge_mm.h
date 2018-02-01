@@ -33,6 +33,9 @@ extern int move_huge_pmd(struct vm_area_struct *vma,
 extern int change_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
 			unsigned long addr, pgprot_t newprot,
 			int prot_numa);
+int vmf_insert_pfn_pmd(struct vm_area_struct *, unsigned long addr, pmd_t *,
+			pfn_t pfn, bool write);
+extern void put_huge_zero_page(void);
 
 enum transparent_hugepage_flag {
 	TRANSPARENT_HUGEPAGE_FLAG,
@@ -54,15 +57,16 @@ enum page_check_address_pmd_flag {
 extern pmd_t *page_check_address_pmd(struct page *page,
 				     struct mm_struct *mm,
 				     unsigned long address,
-				     enum page_check_address_pmd_flag flag);
+				     enum page_check_address_pmd_flag flag,
+				     spinlock_t **ptl);
 
 #define HPAGE_PMD_ORDER (HPAGE_PMD_SHIFT-PAGE_SHIFT)
 #define HPAGE_PMD_NR (1<<HPAGE_PMD_ORDER)
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
-#define HPAGE_PMD_SHIFT HPAGE_SHIFT
-#define HPAGE_PMD_MASK HPAGE_MASK
-#define HPAGE_PMD_SIZE HPAGE_SIZE
+#define HPAGE_PMD_SHIFT PMD_SHIFT
+#define HPAGE_PMD_SIZE	((1UL) << HPAGE_PMD_SHIFT)
+#define HPAGE_PMD_MASK	(~(HPAGE_PMD_SIZE - 1))
 
 extern bool is_vma_temporary_stack(struct vm_area_struct *vma);
 
@@ -96,9 +100,6 @@ extern int copy_pte_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 			  pmd_t *dst_pmd, pmd_t *src_pmd,
 			  struct vm_area_struct *vma,
 			  unsigned long addr, unsigned long end);
-extern int handle_pte_fault(struct mm_struct *mm,
-			    struct vm_area_struct *vma, unsigned long address,
-			    pte_t *pte, pmd_t *pmd, unsigned int flags);
 extern int split_huge_page_to_list(struct page *page, struct list_head *list);
 static inline int split_huge_page(struct page *page)
 {
@@ -128,30 +129,21 @@ extern void split_huge_page_pmd_mm(struct mm_struct *mm, unsigned long address,
 #endif
 extern int hugepage_madvise(struct vm_area_struct *vma,
 			    unsigned long *vm_flags, int advice);
-extern void __vma_adjust_trans_huge(struct vm_area_struct *vma,
+extern void vma_adjust_trans_huge(struct vm_area_struct *vma,
 				    unsigned long start,
 				    unsigned long end,
 				    long adjust_next);
-extern int __pmd_trans_huge_lock(pmd_t *pmd,
-				 struct vm_area_struct *vma);
+extern int __pmd_trans_huge_lock(pmd_t *pmd, struct vm_area_struct *vma,
+		spinlock_t **ptl);
 /* mmap_sem must be held on entry */
-static inline int pmd_trans_huge_lock(pmd_t *pmd,
-				      struct vm_area_struct *vma)
+static inline int pmd_trans_huge_lock(pmd_t *pmd, struct vm_area_struct *vma,
+		spinlock_t **ptl)
 {
 	VM_BUG_ON(!rwsem_is_locked(&vma->vm_mm->mmap_sem));
 	if (pmd_trans_huge(*pmd))
-		return __pmd_trans_huge_lock(pmd, vma);
+		return __pmd_trans_huge_lock(pmd, vma, ptl);
 	else
 		return 0;
-}
-static inline void vma_adjust_trans_huge(struct vm_area_struct *vma,
-					 unsigned long start,
-					 unsigned long end,
-					 long adjust_next)
-{
-	if (!vma->anon_vma || vma->vm_ops)
-		return;
-	__vma_adjust_trans_huge(vma, start, end, adjust_next);
 }
 static inline int hpage_nr_pages(struct page *page)
 {
@@ -159,26 +151,88 @@ static inline int hpage_nr_pages(struct page *page)
 		return HPAGE_PMD_NR;
 	return 1;
 }
-static inline struct page *compound_trans_head(struct page *page)
-{
-	if (PageTail(page)) {
-		struct page *head;
-		head = page->first_page;
-		smp_rmb();
-		/*
-		 * head may be a dangling pointer.
-		 * __split_huge_page_refcount clears PageTail before
-		 * overwriting first_page, so if PageTail is still
-		 * there it means the head pointer isn't dangling.
-		 */
-		if (PageTail(page))
-			return head;
-	}
-	return page;
-}
 
 extern int do_huge_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 				unsigned long addr, pmd_t pmd, pmd_t *pmdp);
+
+static inline bool is_trans_huge_page_release(struct page *page)
+{
+	return (unsigned long) page & 1;
+}
+
+extern struct page *huge_zero_page;
+
+static inline bool is_huge_zero_page(struct page *page)
+{
+	return ACCESS_ONCE(huge_zero_page) == page;
+}
+
+static inline bool is_huge_zero_page_release(struct page *page)
+{
+	return (unsigned long) page == ~0UL;
+}
+
+static inline struct page *trans_huge_page_release_decode(struct page *page)
+{
+	return (struct page *) ((unsigned long)page & ~1UL);
+}
+
+static inline struct page *trans_huge_page_release_encode(struct page *page)
+{
+	return (struct page *) ((unsigned long)page | 1UL);
+}
+
+static inline struct page *huge_zero_page_release_encode(void)
+{
+	/* NOTE: is_trans_huge_page_release() must return true */
+	return (struct page *) (~0UL);
+}
+
+static inline atomic_t *__trans_huge_mmu_gather_count(struct page *page)
+{
+	return &(page + 1)->thp_mmu_gather;
+}
+
+static inline void init_trans_huge_mmu_gather_count(struct page *page)
+{
+	atomic_t *thp_mmu_gather = __trans_huge_mmu_gather_count(page);
+	atomic_set(thp_mmu_gather, 0);
+}
+
+static inline void inc_trans_huge_mmu_gather_count(struct page *page)
+{
+	atomic_t *thp_mmu_gather = __trans_huge_mmu_gather_count(page);
+	VM_BUG_ON(atomic_read(thp_mmu_gather) < 0);
+	atomic_inc(thp_mmu_gather);
+}
+
+static inline void dec_trans_huge_mmu_gather_count(struct page *page)
+{
+	atomic_t *thp_mmu_gather = __trans_huge_mmu_gather_count(page);
+	VM_BUG_ON(atomic_read(thp_mmu_gather) <= 0);
+	atomic_dec(thp_mmu_gather);
+}
+
+static inline int trans_huge_mmu_gather_count(struct page *page)
+{
+	atomic_t *thp_mmu_gather = __trans_huge_mmu_gather_count(page);
+	int ret = atomic_read(thp_mmu_gather);
+	VM_BUG_ON(ret < 0);
+	return ret;
+}
+
+/*
+ * free_trans_huge_page_list() is used to free THP pages (if still
+ * PageTransHuge()) in release_pages().
+ */
+extern void free_trans_huge_page_list(struct list_head *list);
+
+static inline bool is_huge_zero_pmd(pmd_t pmd)
+{
+	return is_huge_zero_page(pmd_page(pmd));
+}
+
+struct page *get_huge_zero_page(void);
 
 #else /* CONFIG_TRANSPARENT_HUGEPAGE */
 #define HPAGE_PMD_SHIFT ({ BUILD_BUG(); 0; })
@@ -205,7 +259,6 @@ static inline int split_huge_page(struct page *page)
 	do { } while (0)
 #define split_huge_page_pmd_mm(__mm, __address, __pmd)	\
 	do { } while (0)
-#define compound_trans_head(page) compound_head(page)
 static inline int hugepage_madvise(struct vm_area_struct *vma,
 				   unsigned long *vm_flags, int advice)
 {
@@ -218,8 +271,8 @@ static inline void vma_adjust_trans_huge(struct vm_area_struct *vma,
 					 long adjust_next)
 {
 }
-static inline int pmd_trans_huge_lock(pmd_t *pmd,
-				      struct vm_area_struct *vma)
+static inline int pmd_trans_huge_lock(pmd_t *pmd, struct vm_area_struct *vma,
+		spinlock_t **ptl)
 {
 	return 0;
 }
@@ -228,6 +281,29 @@ static inline int do_huge_pmd_numa_page(struct mm_struct *mm, struct vm_area_str
 					unsigned long addr, pmd_t pmd, pmd_t *pmdp)
 {
 	return 0;
+}
+
+static inline bool is_trans_huge_page_release(struct page *page)
+{
+	return false;
+}
+
+static inline struct page *trans_huge_page_release_encode(struct page *page)
+{
+	return page;
+}
+
+static inline struct page *trans_huge_page_release_decode(struct page *page)
+{
+	return page;
+}
+
+extern void dec_trans_huge_mmu_gather_count(struct page *page);
+extern bool is_huge_zero_page_release(struct page *page);
+
+static inline bool is_huge_zero_page(struct page *page)
+{
+	return false;
 }
 
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */

@@ -97,6 +97,11 @@ extern const struct gtype##_id __mod_##gtype##_table		\
 /* For userspace: you can also call me... */
 #define MODULE_ALIAS(_alias) MODULE_INFO(alias, _alias)
 
+/* Soft module dependencies. See man modprobe.d for details.
+ * Example: MODULE_SOFTDEP("pre: module-foo module-bar post: module-baz")
+ */
+#define MODULE_SOFTDEP(_softdep) MODULE_INFO(softdep, _softdep)
+
 /*
  * The following license idents are currently accepted as indicating free
  * software modules
@@ -220,6 +225,17 @@ struct module_ref {
 	unsigned long decs;
 } __attribute((aligned(2 * sizeof(unsigned long))));
 
+/* extended module structure for RHEL */
+struct module_ext {
+	struct list_head next;
+	struct module *module; /* "parent" struct */
+	char *rhelversion;
+#if defined(CONFIG_FTRACE_MCOUNT_RECORD) && defined(CONFIG_S390)
+	unsigned int num_ftrace_callsites;
+	unsigned long *ftrace_callsites;
+#endif
+};
+
 struct module
 {
 	enum module_state state;
@@ -298,6 +314,10 @@ struct module
 	/* Arch-specific module values */
 	struct mod_arch_specific arch;
 
+	/*
+	 * RHEL7 note - to preserve kABI, leave as an unsigned int, which
+	 * is wide enough to handle current TAINT_FLAGS_COUNT(32) bits
+	 */
 	unsigned int taints;	/* same bits as kernel:tainted */
 
 #ifdef CONFIG_GENERIC_BUG
@@ -350,7 +370,7 @@ struct module
 	struct ftrace_event_call **trace_events;
 	unsigned int num_trace_events;
 #endif
-#ifdef CONFIG_FTRACE_MCOUNT_RECORD
+#if defined(CONFIG_FTRACE_MCOUNT_RECORD) && !defined(CONFIG_S390)
 	unsigned int num_ftrace_callsites;
 	unsigned long *ftrace_callsites;
 #endif
@@ -381,6 +401,7 @@ struct module
 #endif
 
 extern struct mutex module_mutex;
+extern struct mutex module_ext_mutex;
 
 /* FIXME: It'd be nice to isolate modules during init, too, so they
    aren't used before they (may) fail.  But presently too much code
@@ -410,6 +431,8 @@ static inline int within_module_init(unsigned long addr, const struct module *mo
 
 /* Search for module by name: must hold module_mutex. */
 struct module *find_module(const char *name);
+/* RHEL-only: find extended module struct associated with a module */
+struct module_ext *find_module_ext(struct module *mod);
 
 struct symsearch {
 	const struct kernel_symbol *start, *stop;
@@ -508,6 +531,8 @@ int register_module_notifier(struct notifier_block * nb);
 int unregister_module_notifier(struct notifier_block * nb);
 
 extern void print_modules(void);
+
+bool check_module_rhelversion(struct module *mod, char *version);
 
 #else /* !CONFIG_MODULES... */
 
@@ -619,6 +644,12 @@ static inline int unregister_module_notifier(struct notifier_block * nb)
 static inline void print_modules(void)
 {
 }
+
+static inline bool check_module_rhelversion(struct module *mod, char *version)
+{
+	return false;
+}
+
 #endif /* CONFIG_MODULES */
 
 #ifdef CONFIG_SYSFS

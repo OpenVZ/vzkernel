@@ -38,9 +38,6 @@ jiffies = jiffies_64 + 4;
 #endif
 SECTIONS
 {
-	. = 0;
-	reloc_start = .;
-
 	. = KERNELBASE;
 
 /*
@@ -55,6 +52,7 @@ SECTIONS
 		/* careful! __ftr_alt_* sections need to be close to .text */
 		*(.text .fixup __ftr_alt_* .ref.text)
 		SCHED_TEXT
+		CPUIDLE_TEXT
 		LOCK_TEXT
 		KPROBES_TEXT
 		IRQENTRY_TEXT
@@ -74,6 +72,15 @@ SECTIONS
 
 	/* Read-only data */
 	RODATA
+
+#ifdef CONFIG_PPC64
+	. = ALIGN(8);
+	__rfi_flush_fixup : AT(ADDR(__rfi_flush_fixup) - LOAD_OFFSET) {
+		__start___rfi_flush_fixup = .;
+		*(__rfi_flush_fixup)
+		__stop___rfi_flush_fixup = .;
+	}
+#endif
 
 	EXCEPTION_TABLE(0)
 
@@ -216,6 +223,7 @@ SECTIONS
 		*(.opd)
 	}
 
+	. = ALIGN(256);
 	.got : AT(ADDR(.got) - LOAD_OFFSET) {
 		__toc_start = .;
 #ifndef CONFIG_RELOCATABLE

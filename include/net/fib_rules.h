@@ -25,6 +25,11 @@ struct fib_rule {
 	char			oifname[IFNAMSIZ];
 	struct rcu_head		rcu;
 	struct net *		fr_net;
+	RH_KABI_EXTEND(__be64	tun_id)
+	/* kABI: use these reserved fields to add new items; the structure
+	 * can't be further extended after we whitelist fib_rules_register.
+	 */
+	RH_KABI_EXTEND(u32	rh_reserved[4])
 };
 
 struct fib_lookup_arg {
@@ -58,7 +63,8 @@ struct fib_rules_ops {
 					   struct nlattr **);
 	int			(*fill)(struct fib_rule *, struct sk_buff *,
 					struct fib_rule_hdr *);
-	u32			(*default_pref)(struct fib_rules_ops *ops);
+	RH_KABI_REPLACE(u32     (*default_pref)(struct fib_rules_ops *ops),
+	                void    *rh_reserved_default_pref)
 	size_t			(*nlmsg_payload)(struct fib_rule *);
 
 	/* Called after modifications to the rules set, must flush
@@ -87,17 +93,10 @@ static inline void fib_rule_get(struct fib_rule *rule)
 	atomic_inc(&rule->refcnt);
 }
 
-static inline void fib_rule_put_rcu(struct rcu_head *head)
-{
-	struct fib_rule *rule = container_of(head, struct fib_rule, rcu);
-	release_net(rule->fr_net);
-	kfree(rule);
-}
-
 static inline void fib_rule_put(struct fib_rule *rule)
 {
 	if (atomic_dec_and_test(&rule->refcnt))
-		call_rcu(&rule->rcu, fib_rule_put_rcu);
+		kfree_rcu(rule, rcu);
 }
 
 static inline u32 frh_get_table(struct fib_rule_hdr *frh, struct nlattr **nla)
@@ -116,5 +115,4 @@ extern int			fib_rules_lookup(struct fib_rules_ops *,
 extern int			fib_default_rule_add(struct fib_rules_ops *,
 						     u32 pref, u32 table,
 						     u32 flags);
-extern u32			fib_default_rule_pref(struct fib_rules_ops *ops);
 #endif

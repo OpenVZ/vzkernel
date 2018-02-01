@@ -50,7 +50,7 @@ static DEFINE_SPINLOCK(sysctl_lock);
 
 static void drop_sysctl_table(struct ctl_table_header *header);
 static int sysctl_follow_link(struct ctl_table_header **phead,
-	struct ctl_table **pentry, struct nsproxy *namespaces);
+	struct ctl_table **pentry);
 static int insert_links(struct ctl_table_header *head);
 static void put_links(struct ctl_table_header *header);
 
@@ -284,11 +284,11 @@ static void sysctl_head_finish(struct ctl_table_header *head)
 }
 
 static struct ctl_table_set *
-lookup_header_set(struct ctl_table_root *root, struct nsproxy *namespaces)
+lookup_header_set(struct ctl_table_root *root)
 {
 	struct ctl_table_set *set = &root->default_set;
 	if (root->lookup)
-		set = root->lookup(root, namespaces);
+		set = root->lookup(root, current->nsproxy);
 	return set;
 }
 
@@ -454,7 +454,7 @@ static struct dentry *proc_sys_lookup(struct inode *dir, struct dentry *dentry,
 		goto out;
 
 	if (S_ISLNK(p->mode)) {
-		ret = sysctl_follow_link(&h, &p, current->nsproxy);
+		ret = sysctl_follow_link(&h, &p);
 		err = ERR_PTR(ret);
 		if (ret)
 			goto out;
@@ -616,12 +616,12 @@ static int proc_sys_link_fill_cache(struct file *filp, void *dirent,
 				    struct ctl_table_header *head,
 				    struct ctl_table *table)
 {
-	int err, ret = 0;
+	int ret = 0;
 	head = sysctl_head_grab(head);
 
 	if (S_ISLNK(table->mode)) {
 		/* It is not an error if we can not follow the link ignore it */
-		err = sysctl_follow_link(&head, &table, current->nsproxy);
+		int err = sysctl_follow_link(&head, &table);
 		if (err)
 			goto out;
 	}
@@ -813,15 +813,16 @@ static int sysctl_is_seen(struct ctl_table_header *p)
 	return res;
 }
 
-static int proc_sys_compare(const struct dentry *parent,
-		const struct inode *pinode,
-		const struct dentry *dentry, const struct inode *inode,
+static int proc_sys_compare(const struct dentry *parent, const struct dentry *dentry,
 		unsigned int len, const char *str, const struct qstr *name)
 {
 	struct ctl_table_header *head;
+	struct inode *inode;
+
 	/* Although proc doesn't have negative dentries, rcu-walk means
 	 * that inode here can be NULL */
 	/* AV: can it, indeed? */
+	inode = ACCESS_ONCE(dentry->d_inode);
 	if (!inode)
 		return 1;
 	if (name->len != len)
@@ -927,7 +928,7 @@ static struct ctl_dir *get_subdir(struct ctl_dir *dir,
 found:
 	subdir->header.nreg++;
 failed:
-	if (unlikely(IS_ERR(subdir))) {
+	if (IS_ERR(subdir)) {
 		pr_err("sysctl could not get directory: ");
 		sysctl_print_dir(dir);
 		pr_cont("/%*.*s %ld\n",
@@ -954,7 +955,7 @@ static struct ctl_dir *xlate_dir(struct ctl_table_set *set, struct ctl_dir *dir)
 }
 
 static int sysctl_follow_link(struct ctl_table_header **phead,
-	struct ctl_table **pentry, struct nsproxy *namespaces)
+	struct ctl_table **pentry)
 {
 	struct ctl_table_header *head;
 	struct ctl_table_root *root;
@@ -966,7 +967,7 @@ static int sysctl_follow_link(struct ctl_table_header **phead,
 	ret = 0;
 	spin_lock(&sysctl_lock);
 	root = (*pentry)->data;
-	set = lookup_header_set(root, namespaces);
+	set = lookup_header_set(root);
 	dir = xlate_dir(set, (*phead)->parent);
 	if (IS_ERR(dir))
 		ret = PTR_ERR(dir);

@@ -24,7 +24,6 @@ static char x86_stack_ids[][8] = {
 		[ DEBUG_STACK-1			]	= "#DB",
 		[ NMI_STACK-1			]	= "NMI",
 		[ DOUBLEFAULT_STACK-1		]	= "#DF",
-		[ STACKFAULT_STACK-1		]	= "#SS",
 		[ MCE_STACK-1			]	= "#MC",
 #if DEBUG_STKSZ > EXCEPTION_STKSZ
 		[ N_EXCEPTION_STACKS ...
@@ -196,55 +195,6 @@ void dump_trace(struct task_struct *task, struct pt_regs *regs,
 }
 EXPORT_SYMBOL(dump_trace);
 
-void
-show_stack_log_lvl(struct task_struct *task, struct pt_regs *regs,
-		   unsigned long *sp, unsigned long bp, char *log_lvl)
-{
-	unsigned long *irq_stack_end;
-	unsigned long *irq_stack;
-	unsigned long *stack;
-	int cpu;
-	int i;
-
-	preempt_disable();
-	cpu = smp_processor_id();
-
-	irq_stack_end	= (unsigned long *)(per_cpu(irq_stack_ptr, cpu));
-	irq_stack	= (unsigned long *)(per_cpu(irq_stack_ptr, cpu) - IRQ_STACK_SIZE);
-
-	/*
-	 * Debugging aid: "show_stack(NULL, NULL);" prints the
-	 * back trace for this cpu:
-	 */
-	if (sp == NULL) {
-		if (task)
-			sp = (unsigned long *)task->thread.sp;
-		else
-			sp = (unsigned long *)&sp;
-	}
-
-	stack = sp;
-	for (i = 0; i < kstack_depth_to_print; i++) {
-		if (stack >= irq_stack && stack <= irq_stack_end) {
-			if (stack == irq_stack_end) {
-				stack = (unsigned long *) (irq_stack_end[-1]);
-				pr_cont(" <EOI> ");
-			}
-		} else {
-		if (((long) stack & (THREAD_SIZE-1)) == 0)
-			break;
-		}
-		if (i && ((i % STACKSLOTS_PER_LINE) == 0))
-			pr_cont("\n");
-		pr_cont(" %016lx", *stack++);
-		touch_nmi_watchdog();
-	}
-	preempt_enable();
-
-	pr_cont("\n");
-	show_trace_log_lvl(task, regs, sp, bp, log_lvl);
-}
-
 void show_regs(struct pt_regs *regs)
 {
 	int i;
@@ -264,8 +214,7 @@ void show_regs(struct pt_regs *regs)
 		unsigned char c;
 		u8 *ip;
 
-		printk(KERN_DEFAULT "Stack:\n");
-		show_stack_log_lvl(NULL, regs, (unsigned long *)sp,
+		show_trace_log_lvl(NULL, regs, (unsigned long *)sp,
 				   0, KERN_DEFAULT);
 
 		printk(KERN_DEFAULT "Code: ");

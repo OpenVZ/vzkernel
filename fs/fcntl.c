@@ -21,6 +21,7 @@
 #include <linux/rcupdate.h>
 #include <linux/pid_namespace.h>
 #include <linux/user_namespace.h>
+#include <linux/shmem_fs.h>
 
 #include <asm/poll.h>
 #include <asm/siginfo.h>
@@ -327,6 +328,10 @@ static long do_fcntl(int fd, unsigned int cmd, unsigned long arg,
 	case F_GETPIPE_SZ:
 		err = pipe_fcntl(filp, cmd, arg);
 		break;
+	case F_ADD_SEALS:
+	case F_GET_SEALS:
+		err = shmem_fcntl(filp, cmd, arg);
+		break;
 	default:
 		break;
 	}
@@ -496,11 +501,11 @@ void send_sigio(struct fown_struct *fown, int fd, int band)
 	if (!pid)
 		goto out_unlock_fown;
 	
-	read_lock(&tasklist_lock);
+	qread_lock(&tasklist_lock);
 	do_each_pid_task(pid, type, p) {
 		send_sigio_to_task(p, fown, fd, band, group);
 	} while_each_pid_task(pid, type, p);
-	read_unlock(&tasklist_lock);
+	qread_unlock(&tasklist_lock);
  out_unlock_fown:
 	read_unlock(&fown->lock);
 }
@@ -534,11 +539,11 @@ int send_sigurg(struct fown_struct *fown)
 
 	ret = 1;
 	
-	read_lock(&tasklist_lock);
+	qread_lock(&tasklist_lock);
 	do_each_pid_task(pid, type, p) {
 		send_sigurg_to_task(p, fown, group);
 	} while_each_pid_task(pid, type, p);
-	read_unlock(&tasklist_lock);
+	qread_unlock(&tasklist_lock);
  out_unlock_fown:
 	read_unlock(&fown->lock);
 	return ret;

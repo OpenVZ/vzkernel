@@ -28,10 +28,17 @@ SECTIONS
 {
 	. = 0x00000000;
 	.text : {
-	_text = .;		/* Text and read-only data */
+		/* Text and read-only data */
 		HEAD_TEXT
+		/*
+		 * E.g. perf doesn't like symbols starting at address zero,
+		 * therefore skip the initial PSW and channel program located
+		 * at address zero and let _text start at 0x200.
+		 */
+	_text = 0x200;
 		TEXT_TEXT
 		SCHED_TEXT
+		CPUIDLE_TEXT
 		LOCK_TEXT
 		KPROBES_TEXT
 		IRQENTRY_TEXT
@@ -77,6 +84,32 @@ SECTIONS
 
 	.exit.data : {
 		EXIT_DATA
+	}
+
+	/*
+	 * struct alt_inst entries. From the header (alternative.h):
+	 * "Alternative instructions for different CPU types or capabilities"
+	 * Think locking instructions on spinlocks.
+	 * Note, that it is a part of __init region.
+	 */
+	. = ALIGN(8);
+	.altinstructions : {
+		__alt_instructions = .;
+		*(.altinstructions)
+		__alt_instructions_end = .;
+		__alt_nobp = .;
+		*(.altnobp)
+		__alt_nobp_end = . ;
+	}
+
+	/*
+	 * And here are the replacement instructions. The linker sticks
+	 * them as binary blobs. The .altinstructions has enough data to
+	 * get the address and the length of them to patch the kernel safely.
+	 * Note, that it is a part of __init region.
+	 */
+	.altinstr_replacement : {
+		*(.altinstr_replacement)
 	}
 
 	/* early.c uses stsi, which requires page aligned data. */

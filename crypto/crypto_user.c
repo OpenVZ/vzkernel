@@ -27,6 +27,8 @@
 #include <net/net_namespace.h>
 #include <crypto/internal/aead.h>
 #include <crypto/internal/skcipher.h>
+#include <crypto/akcipher.h>
+#include <crypto/kpp.h>
 
 #include "internal.h"
 
@@ -106,6 +108,36 @@ nla_put_failure:
 	return -EMSGSIZE;
 }
 
+static int crypto_report_akcipher(struct sk_buff *skb, struct crypto_alg *alg)
+{
+	struct crypto_report_akcipher rakcipher;
+
+	strncpy(rakcipher.type, "akcipher", sizeof(rakcipher.type));
+
+	if (nla_put(skb, CRYPTOCFGA_REPORT_AKCIPHER,
+		    sizeof(struct crypto_report_akcipher), &rakcipher))
+		goto nla_put_failure;
+	return 0;
+
+nla_put_failure:
+	return -EMSGSIZE;
+}
+
+static int crypto_report_kpp(struct sk_buff *skb, struct crypto_alg *alg)
+{
+	struct crypto_report_kpp rkpp;
+
+	strncpy(rkpp.type, "kpp", sizeof(rkpp.type));
+
+	if (nla_put(skb, CRYPTOCFGA_REPORT_KPP,
+		    sizeof(struct crypto_report_kpp), &rkpp))
+		goto nla_put_failure;
+	return 0;
+
+nla_put_failure:
+	return -EMSGSIZE;
+}
+
 static int crypto_report_one(struct crypto_alg *alg,
 			     struct crypto_user_alg *ualg, struct sk_buff *skb)
 {
@@ -149,6 +181,16 @@ static int crypto_report_one(struct crypto_alg *alg,
 		if (crypto_report_comp(skb, alg))
 			goto nla_put_failure;
 
+		break;
+
+	case CRYPTO_ALG_TYPE_AKCIPHER:
+		if (crypto_report_akcipher(skb, alg))
+			goto nla_put_failure;
+
+		break;
+	case CRYPTO_ALG_TYPE_KPP:
+		if (crypto_report_kpp(skb, alg))
+			goto nla_put_failure;
 		break;
 	}
 
@@ -313,7 +355,7 @@ static int crypto_del_alg(struct sk_buff *skb, struct nlmsghdr *nlh,
 	if (atomic_read(&alg->cra_refcnt) != 1)
 		return -EBUSY;
 
-	return crypto_unregister_instance(alg);
+	return crypto_unregister_instance((struct crypto_instance *)alg);
 }
 
 static struct crypto_alg *crypto_user_skcipher_alg(const char *name, u32 type,
@@ -466,7 +508,7 @@ static int crypto_user_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 	type -= CRYPTO_MSG_BASE;
 	link = &crypto_dispatch[type];
 
-	if (!capable(CAP_NET_ADMIN))
+	if (!netlink_capable(skb, CAP_NET_ADMIN))
 		return -EPERM;
 
 	if ((type == (CRYPTO_MSG_GETALG - CRYPTO_MSG_BASE) &&

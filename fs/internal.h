@@ -37,6 +37,11 @@ static inline int __sync_blockdev(struct block_device *bdev, int wait)
 #endif
 
 /*
+ * buffer.c
+ */
+extern void guard_bio_eod(int rw, struct bio *bio);
+
+/*
  * char_dev.c
  */
 extern void __init chrdev_init(void);
@@ -44,7 +49,9 @@ extern void __init chrdev_init(void);
 /*
  * namei.c
  */
-extern int __inode_permission(struct inode *, int);
+extern int user_path_mountpoint_at(int, const char __user *, unsigned int, struct path *);
+extern int vfs_path_lookup(struct dentry *, struct vfsmount *,
+			   const char *, unsigned int, struct path *);
 
 /*
  * namespace.c
@@ -59,8 +66,6 @@ extern int sb_prepare_remount_readonly(struct super_block *);
 
 extern void __init mnt_init(void);
 
-extern struct lglock vfsmount_lock;
-
 extern int __mnt_want_write(struct vfsmount *);
 extern int __mnt_want_write_file(struct file *);
 extern void __mnt_drop_write(struct vfsmount *);
@@ -74,9 +79,6 @@ extern void chroot_fs_refs(const struct path *, const struct path *);
 /*
  * file_table.c
  */
-extern void file_sb_list_add(struct file *f, struct super_block *sb);
-extern void file_sb_list_del(struct file *f);
-extern void mark_files_ro(struct super_block *);
 extern struct file *get_empty_filp(void);
 
 /*
@@ -112,6 +114,15 @@ extern int open_check_o_direct(struct file *f);
 extern spinlock_t inode_sb_list_lock;
 extern void inode_add_lru(struct inode *inode);
 
+extern bool __atime_needs_update(const struct path *, struct inode *, bool);
+static inline bool atime_needs_update_rcu(const struct path *path,
+					  struct inode *inode)
+{
+	return __atime_needs_update(path, inode, true);
+}
+
+extern bool atime_needs_update_rcu(const struct path *, struct inode *);
+
 /*
  * fs-writeback.c
  */
@@ -125,19 +136,19 @@ extern int invalidate_inodes(struct super_block *, bool);
  * dcache.c
  */
 extern struct dentry *__d_alloc(struct super_block *, const struct qstr *);
+extern int d_set_mounted(struct dentry *dentry);
 
 /*
  * read_write.c
  */
-extern ssize_t __kernel_write(struct file *, const char *, size_t, loff_t *);
-
-/*
- * splice.c
- */
-extern long do_splice_direct(struct file *in, loff_t *ppos, struct file *out,
-		loff_t *opos, size_t len, unsigned int flags);
 
 /*
  * pipe.c
  */
 extern const struct file_operations pipefifo_fops;
+
+/*
+ * fs_pin.c
+ */
+extern void group_pin_kill(struct hlist_head *p);
+extern void mnt_pin_kill(struct mount *m);

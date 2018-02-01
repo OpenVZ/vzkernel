@@ -59,6 +59,7 @@ irqreturn_t xen_debug_interrupt(int irq, void *dev_id);
 
 bool xen_vcpu_stolen(int vcpu);
 
+void xen_vcpu_setup(int cpu);
 void xen_setup_vcpu_info_placement(void);
 
 #ifdef CONFIG_SMP
@@ -73,7 +74,7 @@ static inline void xen_hvm_smp_init(void) {}
 
 #ifdef CONFIG_PARAVIRT_SPINLOCKS
 void __init xen_init_spinlocks(void);
-void __cpuinit xen_init_lock_cpu(int cpu);
+void xen_init_lock_cpu(int cpu);
 void xen_uninit_lock_cpu(int cpu);
 #else
 static inline void xen_init_spinlocks(void)
