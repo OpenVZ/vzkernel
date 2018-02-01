@@ -139,6 +139,8 @@ target_emulate_report_referrals(struct se_cmd *cmd)
 	return 0;
 }
 
+static int core_alua_usermode_helper(struct t10_alua_tg_pt_gp *tg_pt_gp,
+			struct se_device *l_dev, int new_state, int explicit);
 /*
  * REPORT_TARGET_PORT_GROUPS
  *
@@ -172,6 +174,8 @@ target_emulate_report_target_port_groups(struct se_cmd *cmd)
 	buf = transport_kmap_data_sg(cmd);
 	if (!buf)
 		return TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
+
+	core_alua_usermode_helper(dev->t10_alua.default_tg_pt_gp, dev, -1, 0);
 
 	spin_lock(&dev->t10_alua.tg_pt_gps_lock);
 	list_for_each_entry(tg_pt_gp, &dev->t10_alua.tg_pt_gps_list,
@@ -1028,7 +1032,7 @@ static int core_alua_usermode_helper(struct t10_alua_tg_pt_gp *tg_pt_gp,
 	argv[1] = config_item_name(&tg_pt_gp->tg_pt_gp_group.cg_item);
 	argv[2] = str_id;
 	argv[3] = core_alua_dump_state(tg_pt_gp->tg_pt_gp_alua_access_state);
-	argv[4] = core_alua_dump_state(new_state);
+	argv[4] = new_state < 0 ? "Read" : core_alua_dump_state(new_state);
 	argv[5] = (explicit) ? "explicit" : "implicit";
 	argv[6] = config_item_name(&l_dev->dev_group.cg_item);
 	argv[7] = NULL;
