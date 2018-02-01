@@ -1930,6 +1930,21 @@ static ssize_t target_dev_enable_store(struct config_item *item,
 	return count;
 }
 
+static ssize_t target_dev_user_helper_show(struct config_item *item, char *page)
+{
+	struct se_device *dev = to_device(item);
+
+	return core_alua_show_user_helper(dev, page);
+}
+
+static ssize_t target_dev_user_helper_store(struct config_item *item,
+		const char *page, size_t count)
+{
+	struct se_device *dev = to_device(item);
+
+	return core_alua_store_user_helper(dev, page, count);
+}
+
 static ssize_t target_dev_alua_lu_gp_show(struct config_item *item, char *page)
 {
 	struct se_device *dev = to_device(item);
@@ -2201,6 +2216,7 @@ CONFIGFS_ATTR(target_dev_, udev_path);
 CONFIGFS_ATTR(target_dev_, enable);
 CONFIGFS_ATTR(target_dev_, alua_lu_gp);
 CONFIGFS_ATTR(target_dev_, lba_map);
+CONFIGFS_ATTR(target_dev_, user_helper);
 
 static struct configfs_attribute *target_core_dev_attrs[] = {
 	&target_dev_attr_info,
@@ -2210,6 +2226,7 @@ static struct configfs_attribute *target_core_dev_attrs[] = {
 	&target_dev_attr_enable,
 	&target_dev_attr_alua_lu_gp,
 	&target_dev_attr_lba_map,
+	&target_dev_attr_user_helper,
 	NULL,
 };
 
@@ -2622,18 +2639,6 @@ static ssize_t target_tg_pt_gp_trans_delay_msecs_store(struct config_item *item,
 			count);
 }
 
-static ssize_t target_tg_pt_gp_user_helper_show(struct config_item *item,
-		char *page)
-{
-	return core_alua_show_user_helper(to_tg_pt_gp(item), page);
-}
-
-static ssize_t target_tg_pt_gp_user_helper_store(struct config_item *item,
-		const char *page, size_t count)
-{
-	return core_alua_store_user_helper(to_tg_pt_gp(item), page, count);
-}
-
 static ssize_t target_tg_pt_gp_implicit_trans_secs_show(
 		struct config_item *item, char *page)
 {
@@ -2749,7 +2754,6 @@ CONFIGFS_ATTR(target_tg_pt_gp_, alua_support_active_nonoptimized);
 CONFIGFS_ATTR(target_tg_pt_gp_, alua_write_metadata);
 CONFIGFS_ATTR(target_tg_pt_gp_, nonop_delay_msecs);
 CONFIGFS_ATTR(target_tg_pt_gp_, trans_delay_msecs);
-CONFIGFS_ATTR(target_tg_pt_gp_, user_helper);
 CONFIGFS_ATTR(target_tg_pt_gp_, implicit_trans_secs);
 CONFIGFS_ATTR(target_tg_pt_gp_, preferred);
 CONFIGFS_ATTR(target_tg_pt_gp_, tg_pt_gp_id);
@@ -2769,7 +2773,6 @@ static struct configfs_attribute *target_core_alua_tg_pt_gp_attrs[] = {
 	&target_tg_pt_gp_attr_alua_write_metadata,
 	&target_tg_pt_gp_attr_nonop_delay_msecs,
 	&target_tg_pt_gp_attr_trans_delay_msecs,
-	&target_tg_pt_gp_attr_user_helper,
 	&target_tg_pt_gp_attr_implicit_trans_secs,
 	&target_tg_pt_gp_attr_preferred,
 	&target_tg_pt_gp_attr_tg_pt_gp_id,

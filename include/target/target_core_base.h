@@ -303,7 +303,6 @@ struct t10_alua_tg_pt_gp {
 	struct list_head tg_pt_gp_lun_list;
 	struct se_lun *tg_pt_gp_alua_lun;
 	struct se_node_acl *tg_pt_gp_alua_nacl;
-	char *tg_pt_gp_usermode_helper;
 };
 
 struct t10_vpd {
@@ -852,6 +851,8 @@ struct se_device {
 	unsigned char		dev_alias[SE_DEV_ALIAS_LEN];
 #define SE_UDEV_PATH_LEN 512		/* must be less than PAGE_SIZE */
 	unsigned char		udev_path[SE_UDEV_PATH_LEN];
+#define ALUA_USER_HELPER_LEN 512	/* must be less than PAGE_SIZE */
+	char			alua_user_helper[ALUA_USER_HELPER_LEN];
 	/* Pointer to template of function pointers for transport */
 	const struct target_backend_ops *transport;
 	struct se_lun		xcopy_lun;

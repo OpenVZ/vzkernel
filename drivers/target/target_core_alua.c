@@ -1020,20 +1020,10 @@ static int core_alua_usermode_helper(struct t10_alua_tg_pt_gp *tg_pt_gp,
 	char *argv[8] = {}, str_id[6];
 	int ret;
 
-	if (!tg_pt_gp->tg_pt_gp_usermode_helper)
+	if (!l_dev->alua_user_helper[0])
 		return 0;
 
-	mutex_lock(&tg_pt_gp->tg_pt_gp_transition_mutex);
-	if (!tg_pt_gp->tg_pt_gp_usermode_helper) {
-		mutex_unlock(&tg_pt_gp->tg_pt_gp_transition_mutex);
-		return 0;
-	}
-	argv[0] = kstrdup(tg_pt_gp->tg_pt_gp_usermode_helper, GFP_KERNEL);
-	mutex_unlock(&tg_pt_gp->tg_pt_gp_transition_mutex);
-
-	if (argv[0] == NULL)
-		return -ENOMEM;
-
+	argv[0] = l_dev->alua_user_helper;
 	snprintf(str_id, sizeof(str_id), "%hu", tg_pt_gp->tg_pt_gp_id);
 	argv[1] = config_item_name(&tg_pt_gp->tg_pt_gp_group.cg_item);
 	argv[2] = str_id;
@@ -1046,7 +1036,6 @@ static int core_alua_usermode_helper(struct t10_alua_tg_pt_gp *tg_pt_gp,
 	ret = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC | UMH_KILLABLE);
 	pr_debug("helper command: %s exit code %u (0x%x)\n",
 			argv[0], (ret >> 8) & 0xff, ret);
-	kfree(argv[0]);
 	return ret;
 }
 
@@ -1705,7 +1694,6 @@ struct t10_alua_tg_pt_gp *core_alua_allocate_tg_pt_gp(struct se_device *dev,
 	tg_pt_gp->tg_pt_gp_nonop_delay_msecs = ALUA_DEFAULT_NONOP_DELAY_MSECS;
 	tg_pt_gp->tg_pt_gp_trans_delay_msecs = ALUA_DEFAULT_TRANS_DELAY_MSECS;
 	tg_pt_gp->tg_pt_gp_implicit_trans_secs = ALUA_DEFAULT_IMPLICIT_TRANS_SECS;
-	tg_pt_gp->tg_pt_gp_usermode_helper = NULL;
 
 	/*
 	 * Enable all supported states
@@ -1835,8 +1823,6 @@ void core_alua_free_tg_pt_gp(
 		spin_lock(&tg_pt_gp->tg_pt_gp_lock);
 	}
 	spin_unlock(&tg_pt_gp->tg_pt_gp_lock);
-
-	kfree(tg_pt_gp->tg_pt_gp_usermode_helper);
 
 	kmem_cache_free(t10_alua_tg_pt_gp_cache, tg_pt_gp);
 }
@@ -2147,40 +2133,25 @@ ssize_t core_alua_store_trans_delay_msecs(
 }
 
 ssize_t core_alua_show_user_helper(
-	struct t10_alua_tg_pt_gp *tg_pt_gp,
+	struct se_device *dev,
 	char *page)
 {
-	ssize_t len;
-
-	mutex_lock(&tg_pt_gp->tg_pt_gp_transition_mutex);
-	if (!tg_pt_gp->tg_pt_gp_usermode_helper)
-		len = 0;
-	else
-		len = sprintf(page, "%s\n", tg_pt_gp->tg_pt_gp_usermode_helper);
-	mutex_unlock(&tg_pt_gp->tg_pt_gp_transition_mutex);
-
-	return len;
+	return sprintf(page, "%s\n", dev->alua_user_helper);
 }
 
 ssize_t core_alua_store_user_helper(
-	struct t10_alua_tg_pt_gp *tg_pt_gp,
+	struct se_device *dev,
 	const char *page,
 	size_t count)
 {
-	char *h;
-
 	if (count == 1 && page[0] == '-') {
-		h = NULL;
+		dev->alua_user_helper[0] = 0;
+	} else if (count > ALUA_USER_HELPER_LEN - 1) {
+		return -EINVAL;
 	} else {
-		h = kstrndup(page, count, GFP_KERNEL);
-		if (h == NULL)
-			return -ENOMEM;
+		memcpy(dev->alua_user_helper, page, count);
+		dev->alua_user_helper[count] = 0;
 	}
-
-	mutex_lock(&tg_pt_gp->tg_pt_gp_transition_mutex);
-	kfree(tg_pt_gp->tg_pt_gp_usermode_helper);
-	tg_pt_gp->tg_pt_gp_usermode_helper = h;
-	mutex_unlock(&tg_pt_gp->tg_pt_gp_transition_mutex);
 
 	return count;
 }
