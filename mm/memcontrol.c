@@ -4080,6 +4080,8 @@ static const unsigned int memcg1_stats[] = {
 	NR_FILE_MAPPED,
 	NR_FILE_DIRTY,
 	NR_WRITEBACK,
+	NR_SLAB_RECLAIMABLE_B,
+	NR_SLAB_UNRECLAIMABLE_B,
 	MEMCG_SWAP,
 };
 
@@ -4093,6 +4095,8 @@ static const char *const memcg1_stat_names[] = {
 	"mapped_file",
 	"dirty",
 	"writeback",
+	"slab_reclaimable",
+	"slab_unreclaimable",
 	"swap",
 };
 
