@@ -1533,15 +1533,15 @@ static int crypt_set_keyring_key(struct crypt_config *cc, char *key_desc)
 	if (IS_ERR(key))
 		return PTR_ERR(key);
 
-	rcu_read_lock();
-	ukp = user_key_payload(key);
+	down_read(&key->sem);
+	ukp = user_key_payload_locked(key);
 	if (cc->key_size != ukp->datalen) {
 		ret = -EINVAL;
 		goto out;
 	}
 	memcpy(cc->key, ukp->data, cc->key_size);
 out:
-	rcu_read_unlock();
+	up_read(&key->sem);
 	key_put(key);
 	return ret;
 }
@@ -1558,9 +1558,9 @@ static int get_key_size(char *key_desc)
 	if (IS_ERR(key))
 		return PTR_ERR(key);
 
-	rcu_read_lock();
-	ret = user_key_payload(key)->datalen;
-	rcu_read_unlock();
+	down_read(&key->sem);
+	ret = user_key_payload_locked(key)->datalen;
+	up_read(&key->sem);
 	key_put(key);
 	return ret;
 }
