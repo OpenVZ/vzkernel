@@ -297,7 +297,7 @@ cleanup:
 int
 ext4_acl_chmod(struct inode *inode)
 {
-	struct posix_acl *acl;
+	struct posix_acl *acl, *real_acl;
 	handle_t *handle;
 	int retries = 0;
 	int error;
@@ -315,6 +315,8 @@ ext4_acl_chmod(struct inode *inode)
 	error = posix_acl_chmod(&acl, GFP_KERNEL, inode->i_mode);
 	if (error)
 		return error;
+
+	real_acl = acl;
 retry:
 	handle = ext4_journal_start(inode, EXT4_HT_XATTR,
 				    ext4_jbd2_credits_xattr(inode));
@@ -341,7 +343,7 @@ out_stop:
 	    ext4_should_retry_alloc(inode->i_sb, &retries))
 		goto retry;
 out:
-	posix_acl_release(acl);
+	posix_acl_release(real_acl);
 	return error;
 }
 
