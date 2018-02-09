@@ -405,7 +405,7 @@ ext4_xattr_set_acl(struct dentry *dentry, const char *name, const void *value,
 {
 	struct inode *inode = dentry->d_inode;
 	handle_t *handle;
-	struct posix_acl *acl;
+	struct posix_acl *acl, *real_acl;
 	int error, retries = 0;
 	int update_mode = 0;
 	umode_t mode = inode->i_mode;
@@ -418,7 +418,7 @@ ext4_xattr_set_acl(struct dentry *dentry, const char *name, const void *value,
 		return -EPERM;
 
 	if (value) {
-		acl = posix_acl_from_xattr(&init_user_ns, value, size);
+		acl = real_acl = posix_acl_from_xattr(&init_user_ns, value, size);
 		if (IS_ERR(acl))
 			return PTR_ERR(acl);
 		else if (acl) {
@@ -427,7 +427,7 @@ ext4_xattr_set_acl(struct dentry *dentry, const char *name, const void *value,
 				goto release_and_out;
 		}
 	} else
-		acl = NULL;
+		acl = real_acl = NULL;
 
 retry:
 	handle = ext4_journal_start(inode, EXT4_HT_XATTR,
@@ -454,7 +454,7 @@ out_stop:
 		goto retry;
 
 release_and_out:
-	posix_acl_release(acl);
+	posix_acl_release(real_acl);
 	return error;
 }
 
