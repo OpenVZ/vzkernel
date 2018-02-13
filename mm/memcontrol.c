@@ -6906,6 +6906,7 @@ void mem_cgroup_swapout(struct page *page, swp_entry_t entry)
 	pc->flags &= ~PCG_MEMSW;
 	css_get(&pc->mem_cgroup->css);
 	mem_cgroup_swap_statistics(pc->mem_cgroup, true);
+	this_cpu_inc(pc->mem_cgroup->stat->events[MEM_CGROUP_EVENTS_PSWPOUT]);
 }
 
 /**
@@ -6929,6 +6930,7 @@ void mem_cgroup_uncharge_swap(swp_entry_t entry)
 		if (!mem_cgroup_is_root(memcg))
 			page_counter_uncharge(&memcg->memsw, 1);
 		mem_cgroup_swap_statistics(memcg, false);
+		this_cpu_inc(memcg->stat->events[MEM_CGROUP_EVENTS_PSWPIN]);
 		css_put(&memcg->css);
 	}
 	rcu_read_unlock();
