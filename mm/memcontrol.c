@@ -3143,6 +3143,19 @@ void memcg_uncharge_kmem(struct mem_cgroup *memcg,
 	 */
 	if (memcg_kmem_test_and_clear_dead(memcg))
 		css_put(&memcg->css);
+
+	/*
+	 * page_counter_uncharge() above could zero kmem counter
+	 * for parent cgroup(s) as well, check them.
+	 */
+	memcg = parent_mem_cgroup(memcg);
+	for (; memcg; memcg = parent_mem_cgroup(memcg)) {
+		if (!page_counter_read(&memcg->kmem) &&
+		    memcg_kmem_test_and_clear_dead(memcg))
+			css_put(&memcg->css);
+		else
+			break;
+	}
 }
 
 int __memcg_charge_slab(struct kmem_cache *s, gfp_t gfp, unsigned int nr_pages)
