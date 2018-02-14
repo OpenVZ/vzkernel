@@ -860,7 +860,8 @@ struct pipe_inode_info *alloc_pipe_info(void)
 	if (too_many_pipe_buffers_hard(user_bufs) && is_unprivileged_user())
 		goto out_revert_acct;
 
-	pipe->bufs = kzalloc(sizeof(struct pipe_buffer) * pipe_bufs, GFP_KERNEL);
+	pipe->bufs = kvmalloc(sizeof(struct pipe_buffer) * pipe_bufs,
+			      GFP_KERNEL | __GFP_ZERO);
 
 	if (pipe->bufs) {
 		init_waitqueue_head(&pipe->wait);
@@ -892,7 +893,7 @@ void free_pipe_info(struct pipe_inode_info *pipe)
 	}
 	if (pipe->tmp_page)
 		__free_page(pipe->tmp_page);
-	kfree(pipe->bufs);
+	kvfree(pipe->bufs);
 	kfree(pipe);
 }
 
@@ -1302,7 +1303,8 @@ static long pipe_set_size(struct pipe_inode_info *pipe, unsigned long arg)
 		goto out_revert_acct;
 	}
 
-	bufs = kcalloc(nr_pages, sizeof(*bufs), GFP_KERNEL | __GFP_NOWARN);
+	bufs = kvmalloc(nr_pages * sizeof(*bufs),
+			GFP_KERNEL | __GFP_NOWARN | __GFP_ZERO);
 	if (unlikely(!bufs)) {
 		ret = -ENOMEM;
 		goto out_revert_acct;
@@ -1330,7 +1332,7 @@ static long pipe_set_size(struct pipe_inode_info *pipe, unsigned long arg)
 	}
 
 	pipe->curbuf = 0;
-	kfree(pipe->bufs);
+	kvfree(pipe->bufs);
 	pipe->bufs = bufs;
 	pipe->buffers = nr_pages;
 	return nr_pages * PAGE_SIZE;
