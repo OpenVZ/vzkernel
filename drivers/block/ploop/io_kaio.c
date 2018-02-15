@@ -167,7 +167,9 @@ static int kaio_kernel_submit(struct file *file, struct kaio_req *kreq,
 	if (!iocb)
 		return -ENOMEM;
 
-	if (rw & REQ_WRITE)
+	if (rw & REQ_DISCARD)
+		op = IOCB_CMD_UNMAP_ITER;
+	else if (rw & REQ_WRITE)
 		op = IOCB_CMD_WRITE_ITER;
 	else
 		op = IOCB_CMD_READ_ITER;
@@ -207,6 +209,10 @@ static size_t kaio_kreq_pack(struct kaio_req *kreq, int *nr_segs,
 
 	BUG_ON(b->bi_idx);
 
+	if (b->bi_vcnt == 0) { /* REQ_DISCARD */
+		*nr_segs = 0;
+		return size;
+	}
 	while (1) {
 		int nr = min_t(int, kreq_nr_max, b->bi_vcnt - idx);
 		BUG_ON(!nr);
