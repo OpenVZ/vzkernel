@@ -3464,16 +3464,11 @@ static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
 	time = jiffies_to_usecs(jiffies - time) * 1000;
 	if (!(gfp_mask & __GFP_WAIT))
 		ind = KSTAT_ALLOCSTAT_ATOMIC;
-	else if (!(gfp_mask & __GFP_HIGHMEM))
+	else
 		if (order > 0)
 			ind = KSTAT_ALLOCSTAT_LOW_MP;
 		else
 			ind = KSTAT_ALLOCSTAT_LOW;
-	else
-		if (order > 0)
-			ind = KSTAT_ALLOCSTAT_HIGH_MP;
-		else
-			ind = KSTAT_ALLOCSTAT_HIGH;
 
 	local_irq_save(flags);
 	cpu = smp_processor_id();
