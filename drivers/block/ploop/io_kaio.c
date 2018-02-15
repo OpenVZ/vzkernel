@@ -246,6 +246,80 @@ static size_t kaio_kreq_pack(struct kaio_req *kreq, int *nr_segs,
 	return copy;
 }
 
+static int kaio_fill_zero_submit(struct file *file,
+		struct ploop_request *preq, loff_t off, size_t size)
+{
+	struct page *zero_page = ZERO_PAGE(0);
+	int nr_segs = 1, err = -ENOMEM;
+	struct kaio_req *kreq;
+
+	BUG_ON(size > PAGE_SIZE);
+
+	if (size == 0)
+		return 0;
+
+	kreq = kaio_kreq_alloc(preq, &nr_segs);
+	if (!kreq) {
+		PLOOP_REQ_SET_ERROR(preq, -ENOMEM);
+		return err;
+	}
+
+	kreq->bvecs[0].bv_page = zero_page;
+	kreq->bvecs[0].bv_len = size;
+	kreq->bvecs[0].bv_offset = 0;
+	atomic_inc(&preq->io_count);
+
+	err = kaio_kernel_submit(file, kreq, 1, size, off, REQ_WRITE);
+	if (err) {
+		PLOOP_REQ_SET_ERROR(preq, err);
+		ploop_complete_io_request(preq);
+		kfree(kreq);
+		return err;
+	}
+
+	return 0;
+}
+
+static int preprocess_discard_req(struct file *file, struct ploop_request *preq,
+		loff_t *poff, size_t *psize)
+{
+	unsigned int alignment, granularity, zeroes_data;
+	loff_t off = *poff, off_align;
+	size_t size = *psize;
+
+	alignment   = preq->plo->queue->limits.discard_alignment;
+	granularity = preq->plo->queue->limits.discard_granularity;
+	zeroes_data = preq->plo->queue->limits.discard_zeroes_data;
+
+	if (alignment) {
+		off_align = round_up(off, alignment);
+
+		if (zeroes_data &&
+		    kaio_fill_zero_submit(file, preq,
+						off, off_align - off))
+			return -1;
+
+		size -= (off_align - off);
+		off = off_align;
+	}
+
+	if (granularity) {
+		size_t size_align;
+
+		size_align = round_down(size, granularity);
+		if (zeroes_data &&
+		    kaio_fill_zero_submit(file, preq,
+			    off + size_align, size - size_align))
+			return -1;
+
+		size = size_align;
+	}
+
+	*poff = off;
+	*psize = size;
+	return 0;
+}
+
 /*
  * WRITE case:
  *
@@ -284,6 +358,11 @@ static void kaio_sbl_submit(struct file *file, struct ploop_request *preq,
 	ploop_prepare_io_request(preq);
 
 	size <<= 9;
+
+	if ((rw & REQ_DISCARD) &&
+	    preprocess_discard_req(file, preq, &off, &size))
+		goto out;
+
 	while (size > 0) {
 		struct kaio_req *kreq;
 		int nr_segs;
@@ -311,6 +390,7 @@ static void kaio_sbl_submit(struct file *file, struct ploop_request *preq,
 		size -= copy;
 	}
 
+out:
 	kaio_complete_io_request(preq);
 }
 
