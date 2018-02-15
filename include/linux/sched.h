@@ -30,6 +30,7 @@ struct sched_param {
 
 #include <linux/smp.h>
 #include <linux/sem.h>
+#include <linux/kstat.h>
 #include <linux/signal.h>
 #include <linux/compiler.h>
 #include <linux/completion.h>
@@ -1844,6 +1845,9 @@ struct task_struct {
 #endif
 #ifdef CONFIG_ARCH_WANT_BATCHED_UNMAP_TLB_FLUSH
 	struct tlbflush_unmap_batch tlb_ubc;
+#endif
+#ifdef CONFIG_VE
+	struct kstat_lat_snap_struct alloc_lat[KSTAT_ALLOCSTAT_NR];
 #endif
 #if defined(CONFIG_FUNCTION_GRAPH_TRACER) && defined(CONFIG_S390)
 	/* Index of current stored address in ret_stack */
