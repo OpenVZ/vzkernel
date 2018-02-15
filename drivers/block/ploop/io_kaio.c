@@ -601,6 +601,7 @@ kaio_io_page(struct ploop_io * io, int op, struct ploop_request * preq,
 		       err, (op == IOCB_CMD_WRITE_ITER) ? "WRITE" : "READ",
 		       preq->eng_state, preq->state, pos);
 		PLOOP_REQ_SET_ERROR(preq, err);
+		ploop_complete_io_request(preq);
 	}
 
 out:
