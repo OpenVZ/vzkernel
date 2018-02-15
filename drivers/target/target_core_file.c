@@ -1008,6 +1008,7 @@ static struct configfs_attribute *fileio_backend_dev_attrs[] = {
 	&fileio_dev_attrib_max_unmap_block_desc_count.attr,
 	&fileio_dev_attrib_unmap_granularity.attr,
 	&fileio_dev_attrib_unmap_granularity_alignment.attr,
+	&fileio_dev_attrib_unmap_zeroes_data.attr,
 	&fileio_dev_attrib_max_write_same_len.attr,
 	NULL,
 };

@@ -112,6 +112,8 @@ static struct target_backend_dev_attrib_attribute _backend##_dev_attrib_##_name 
 	TB_DEV_ATTR(_backend, unmap_granularity, S_IRUGO | S_IWUSR);	\
 	DEF_TB_DEV_ATTRIB(_backend, unmap_granularity_alignment);	\
 	TB_DEV_ATTR(_backend, unmap_granularity_alignment, S_IRUGO | S_IWUSR); \
+	DEF_TB_DEV_ATTRIB(_backend, unmap_zeroes_data); \
+	TB_DEV_ATTR(_backend, unmap_zeroes_data, S_IRUGO | S_IWUSR); \
 	DEF_TB_DEV_ATTRIB(_backend, max_write_same_len);		\
 	TB_DEV_ATTR(_backend, max_write_same_len, S_IRUGO | S_IWUSR);
 

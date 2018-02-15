@@ -710,6 +710,38 @@ int se_dev_set_unmap_granularity_alignment(
 }
 EXPORT_SYMBOL(se_dev_set_unmap_granularity_alignment);
 
+int se_dev_set_unmap_zeroes_data(
+	struct se_device *dev,
+	u32 flag)
+{
+	struct se_dev_attrib *da = &dev->dev_attrib;
+
+	if (flag > 1)
+		return -EINVAL;
+
+	if (da->da_dev->export_count) {
+		pr_err("dev[%p]: Unable to change SE Device"
+		       " unmap_zeroes_data while export_count is %d\n",
+		       da->da_dev, da->da_dev->export_count);
+		return -EINVAL;
+	}
+	/*
+	 * We expect this value to be non-zero when generic Block Layer
+	 * Discard supported is detected iblock_configure_device().
+	 */
+	if (flag && !da->max_unmap_block_desc_count) {
+		pr_err("dev[%p]: Thin Provisioning LBPRZ will not be set"
+		       " because max_unmap_block_desc_count is zero\n",
+		       da->da_dev);
+		return -ENOSYS;
+	}
+	da->unmap_zeroes_data = flag;
+	pr_debug("dev[%p]: SE Device Thin Provisioning LBPRZ bit: %d\n",
+		 da->da_dev, flag);
+	return 0;
+}
+EXPORT_SYMBOL(se_dev_set_unmap_zeroes_data);
+
 int se_dev_set_max_write_same_len(
 	struct se_device *dev,
 	u32 max_write_same_len)
@@ -1536,6 +1568,8 @@ struct se_device *target_alloc_device(struct se_hba *hba, const char *name)
 	dev->dev_attrib.unmap_granularity = DA_UNMAP_GRANULARITY_DEFAULT;
 	dev->dev_attrib.unmap_granularity_alignment =
 				DA_UNMAP_GRANULARITY_ALIGNMENT_DEFAULT;
+	dev->dev_attrib.unmap_zeroes_data =
+				DA_UNMAP_ZEROES_DATA_DEFAULT;
 	dev->dev_attrib.max_write_same_len = DA_MAX_WRITE_SAME_LEN;
 
 	xcopy_lun = &dev->xcopy_lun;
