@@ -55,6 +55,7 @@
 #include <linux/stat.h>
 #include <linux/task_io_accounting_ops.h>
 #include <linux/init.h>
+#include <linux/kstat.h>
 #include <linux/capability.h>
 #include <linux/file.h>
 #include <linux/fdtable.h>
@@ -587,6 +588,53 @@ static const struct file_operations proc_lstats_operations = {
 	.release	= single_release,
 };
 
+#endif
+
+#ifdef CONFIG_VE
+static void lastlat_seq_show(struct seq_file *m,
+		const char *name,
+		struct kstat_lat_snap_struct *snap)
+{
+	seq_printf(m, "%-12s %20Lu %20lu\n", name,
+			snap->totlat, snap->count);
+}
+
+static int vz_lat_show_proc(struct seq_file *m, void *v)
+{
+	int i;
+	struct inode *inode = m->private;
+	struct task_struct *task = get_proc_task(inode);
+	static const char *alloc_descr[] = {
+		"allocatomic:",
+		"alloc:",
+		"allocmp:",
+	};
+	static const int alloc_types[] = {
+		KSTAT_ALLOCSTAT_ATOMIC,
+		KSTAT_ALLOCSTAT_LOW,
+		KSTAT_ALLOCSTAT_LOW_MP,
+	};
+
+	seq_printf(m, "%-11s %20s %20s\n",
+			"Type", "Total_lat", "Calls");
+
+	for (i = 0; i < ARRAY_SIZE(alloc_types); i++)
+		lastlat_seq_show(m, alloc_descr[i],
+				&task->alloc_lat[alloc_types[i]]);
+	return 0;
+}
+
+static int vz_lat_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, vz_lat_show_proc, inode);
+}
+
+static const struct file_operations proc_vz_lat_operations = {
+	.open		= vz_lat_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 #endif
 
 #ifdef CONFIG_CGROUPS
@@ -3044,6 +3092,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 #endif
 #ifdef CONFIG_LIVEPATCH
 	ONE("patch_state",  S_IRUSR, proc_pid_patch_state),
+#endif
+#ifdef CONFIG_VE
+	REG("vz_latency", S_IRUGO, proc_vz_lat_operations),
 #endif
 };
 
