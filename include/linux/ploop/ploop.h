@@ -53,6 +53,7 @@ enum {
 	PLOOP_S_ENOSPC_EVENT,	/* ENOSPC event happened but but was not
 				 * consumed by userspace yet */
 	PLOOP_S_CONGESTED,	/* Too many bios submitted to us */
+	PLOOP_S_NO_FALLOC_DISCARD, /* Unable to handle discard requests by fallocate */
 	PLOOP_S_DISCARD,	/* ploop is ready to handle discard request */
 	PLOOP_S_DISCARD_LOADED,	/* A discard request was handled and
 				   free blocks loaded */
