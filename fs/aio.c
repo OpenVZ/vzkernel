@@ -1491,6 +1491,7 @@ rw_common:
 		ret = aio_read_iter(req);
 		break;
 
+	case IOCB_CMD_UNMAP_ITER:
 	case IOCB_CMD_WRITE_ITER:
 		ret = aio_write_iter(req);
 		break;
