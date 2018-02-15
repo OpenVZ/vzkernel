@@ -10,6 +10,7 @@
 #define __VZSTAT_H__
 
 #include <linux/mmzone.h>
+#include <linux/kstat.h>
 
 struct swap_cache_info_struct {
 	unsigned long add_total;
@@ -18,53 +19,10 @@ struct swap_cache_info_struct {
 	unsigned long find_total;
 };
 
-struct kstat_lat_snap_struct {
-	u64 maxlat, totlat;
-	unsigned long count;
-};
-struct kstat_lat_pcpu_snap_struct {
-	u64 maxlat, totlat;
-	unsigned long count;
-} ____cacheline_aligned_in_smp;
-
-struct kstat_lat_pcpu_struct {
-	struct kstat_lat_pcpu_snap_struct *cur;
-	u64 max_snap;
-	struct kstat_lat_snap_struct last;
-	u64 avg[3];
-};
-
-struct kstat_perf_snap_struct {
-	u64 wall_tottime, cpu_tottime;
-	u64 wall_maxdur, cpu_maxdur;
-	unsigned long count;
-};
-
-struct kstat_perf_pcpu_snap_struct {
-	u64 wall_tottime, cpu_tottime;
-	u64 wall_maxdur, cpu_maxdur;
-	unsigned long count;
-	seqcount_t lock;
-};
-
-struct kstat_perf_pcpu_struct {
-	struct kstat_perf_pcpu_snap_struct *cur;
-	struct kstat_perf_snap_struct last;
-};
-
 struct kstat_zone_avg {
 	unsigned long		free_pages_avg[3],
 				nr_active_avg[3],
 				nr_inactive_avg[3];
-};
-
-enum {
-	KSTAT_ALLOCSTAT_ATOMIC,
-	KSTAT_ALLOCSTAT_LOW,
-	KSTAT_ALLOCSTAT_HIGH,
-	KSTAT_ALLOCSTAT_LOW_MP,
-	KSTAT_ALLOCSTAT_HIGH_MP,
-	KSTAT_ALLOCSTAT_NR,
 };
 
 struct kernel_stat_glob {
