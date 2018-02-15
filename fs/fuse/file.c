@@ -877,6 +877,19 @@ static void fuse_aio_complete_req(struct fuse_conn *fc, struct fuse_req *req)
 	if (!req->bvec)
 		fuse_release_user_pages(req, !io->write);
 
+	if (req->in.h.opcode == FUSE_FALLOCATE) {
+		if (req->out.h.error)
+			printk("fuse_aio_complete_req: request (fallocate fh=0x%llx "
+			       "offset=%lld length=%lld mode=%x) completed with err=%d\n",
+			       req->misc.fallocate.in.fh,
+			       req->misc.fallocate.in.offset,
+			       req->misc.fallocate.in.length,
+			       req->misc.fallocate.in.mode,
+			       req->out.h.error);
+		fuse_aio_complete(io, req->out.h.error, -1);
+		return;
+	}
+
 	if (io->write) {
 		if (req->misc.write.in.size != req->misc.write.out.size)
 			pos = req->misc.write.in.offset - io->offset +
@@ -1264,6 +1277,35 @@ static void fuse_write_fill(struct fuse_req *req, struct fuse_file *ff,
 	req->out.numargs = 1;
 	req->out.args[0].size = sizeof(struct fuse_write_out);
 	req->out.args[0].value = outarg;
+}
+
+static size_t fuse_send_unmap(struct fuse_req *req, struct fuse_io_priv *io,
+		loff_t pos, size_t count, fl_owner_t owner)
+{
+	struct file *file = io->file;
+	struct fuse_file *ff = file->private_data;
+	struct fuse_conn *fc = ff->fc;
+	struct fuse_fallocate_in *inarg = &req->misc.fallocate.in;
+
+	inarg->fh = ff->fh;
+	inarg->offset = pos;
+	inarg->length = count;
+	inarg->mode = FALLOC_FL_KEEP_SIZE |
+		      FALLOC_FL_PUNCH_HOLE |
+		      FALLOC_FL_ZERO_RANGE;
+	req->in.h.opcode = FUSE_FALLOCATE;
+	req->in.h.nodeid = ff->nodeid;
+	req->in.numargs = 1;
+	req->in.args[0].size = sizeof(struct fuse_fallocate_in);
+	req->in.args[0].value = inarg;
+
+	fuse_account_request(fc, count);
+
+	if (io->async)
+		return fuse_async_req_send(fc, req, count, io);
+
+	fuse_request_send(fc, req);
+	return count;
 }
 
 static size_t fuse_send_write(struct fuse_req *req, struct fuse_io_priv *io,
@@ -3434,7 +3476,7 @@ static ssize_t fuse_direct_IO_bvec(int rw, struct kiocb *iocb,
 			req->bvec = bvec;
 		}
 
-		if (filled + bvec->bv_len <= nmax) {
+		if (bvec_len && filled + bvec->bv_len <= nmax) {
 			filled += bvec->bv_len;
 			req->num_bvecs++;
 			bvec++;
@@ -3444,14 +3486,20 @@ static ssize_t fuse_direct_IO_bvec(int rw, struct kiocb *iocb,
 				continue;
 		}
 
-		BUG_ON(!filled);
-
-		if (rw == WRITE)
-			nres = fuse_send_write(req, io, pos,
-					filled, NULL);
-		else
-			nres = fuse_send_read(req, io, pos,
-					filled, NULL);
+		if (iocb->ki_opcode == IOCB_CMD_UNMAP_ITER) {
+			req->in.argbvec = 0;
+			nres = fuse_send_unmap(req, io, pos,
+					iocb->ki_nbytes, NULL);
+			filled = nres;
+		} else {
+			BUG_ON(!filled);
+			if (rw == WRITE)
+				nres = fuse_send_write(req, io, pos,
+						filled, NULL);
+			else
+				nres = fuse_send_read(req, io, pos,
+						filled, NULL);
+		}
 
 		BUG_ON(nres != filled);
 		fuse_put_request(fc, req);
