@@ -895,6 +895,7 @@ static struct configfs_attribute *iblock_backend_dev_attrs[] = {
 	&iblock_dev_attrib_max_unmap_block_desc_count.attr,
 	&iblock_dev_attrib_unmap_granularity.attr,
 	&iblock_dev_attrib_unmap_granularity_alignment.attr,
+	&iblock_dev_attrib_unmap_zeroes_data.attr,
 	&iblock_dev_attrib_max_write_same_len.attr,
 	NULL,
 };

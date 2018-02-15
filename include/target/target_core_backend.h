@@ -119,6 +119,7 @@ int	se_dev_set_max_unmap_lba_count(struct se_device *, u32);
 int	se_dev_set_max_unmap_block_desc_count(struct se_device *, u32);
 int	se_dev_set_unmap_granularity(struct se_device *, u32);
 int	se_dev_set_unmap_granularity_alignment(struct se_device *, u32);
+int	se_dev_set_unmap_zeroes_data(struct se_device *dev, u32 flag);
 int	se_dev_set_max_write_same_len(struct se_device *, u32);
 int	se_dev_set_emulate_model_alias(struct se_device *, int);
 int	se_dev_set_emulate_dpo(struct se_device *, int);

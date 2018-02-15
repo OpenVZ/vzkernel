@@ -75,6 +75,8 @@
 #define DA_UNMAP_GRANULARITY_DEFAULT		0
 /* Default unmap_granularity_alignment */
 #define DA_UNMAP_GRANULARITY_ALIGNMENT_DEFAULT	0
+/* Default unmap_zeroes_data */
+#define DA_UNMAP_ZEROES_DATA_DEFAULT		0
 /* Default max_write_same_len, disabled by default */
 #define DA_MAX_WRITE_SAME_LEN			0
 /* Use a model alias based on the configfs backend device name */
@@ -680,6 +682,7 @@ struct se_dev_attrib {
 	int		emulate_tas;
 	int		emulate_tpu;
 	int		emulate_tpws;
+	int		unmap_zeroes_data;
 	int		emulate_caw;
 	int		emulate_3pc;
 	int		pi_prot_format;
