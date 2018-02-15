@@ -517,7 +517,8 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 	    ploop_pb_check_and_clear_bit(plo->pbd, preq->req_cluster))
 		ploop_set_blockable(plo, preq);
 
-	if (unlikely(bio->bi_rw & REQ_DISCARD)) {
+	if (test_bit(PLOOP_S_DISCARD, &plo->state) &&
+	    unlikely(bio->bi_rw & REQ_DISCARD)) {
 		int clu_size = 1 << plo->cluster_log;
 		int i = (clu_size - 1) & bio->bi_sector;
 		int err = 0;
@@ -570,13 +571,13 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 
 	__TRACE("A %p %u\n", preq, preq->req_cluster);
 
-	if (unlikely(bio->bi_rw & REQ_DISCARD))
+	if (unlikely(preq->state & (1 << PLOOP_REQ_DISCARD)))
 		plo->bio_discard_qlen--;
 	else
 		plo->bio_qlen--;
 	ploop_entry_add(plo, preq);
 
-	if (bio->bi_size && !(bio->bi_rw & REQ_DISCARD))
+	if (bio->bi_size && !(preq->state & (1 << PLOOP_REQ_DISCARD)))
 		insert_entry_tree(plo, preq, drop_list);
 
 	trace_bio_queue(preq);
@@ -1487,7 +1488,7 @@ void ploop_complete_io_state(struct ploop_request * preq)
 
 	spin_lock_irqsave(&plo->lock, flags);
 	__TRACE("C %p %u\n", preq, preq->req_cluster);
-	if (preq->error)
+	if (preq->error && !(preq->req_rw & REQ_DISCARD))
 		set_bit(PLOOP_S_ABORT, &plo->state);
 
 	list_add_tail(&preq->list, &plo->ready_queue);
@@ -2568,6 +2569,15 @@ restart:
 		     test_bit(PLOOP_S_ABORT, &plo->state))) {
 			PLOOP_REQ_FAIL_IMMEDIATE(preq, preq->error ? : -EIO);
 			break;
+		}
+
+		if ((preq->req_rw & REQ_DISCARD) &&
+		    !test_bit(PLOOP_REQ_DISCARD, &preq->state) &&
+		    test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state)) {
+			preq->eng_state = PLOOP_E_COMPLETE;
+			preq->error = -EOPNOTSUPP;
+			ploop_complete_io_state(preq);
+			return;
 		}
 
 		ploop_entry_request(preq);
