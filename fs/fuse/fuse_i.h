@@ -365,6 +365,9 @@ struct fuse_req {
 			struct fuse_write_in in;
 			struct fuse_write_out out;
 		} write;
+		struct {
+			struct fuse_fallocate_in in;
+		} fallocate;
 		struct fuse_notify_retrieve_in retrieve_in;
 		struct fuse_lk_in lk_in;
 	} misc;
