@@ -362,6 +362,51 @@ static int store_aborted(struct ploop_device * plo, u32 val)
 	return 0;
 }
 
+static u32 show_discard_granularity(struct ploop_device * plo)
+{
+	return plo->queue->limits.discard_granularity;
+}
+
+static int store_discard_granularity(struct ploop_device * plo, u32 val)
+{
+	int q = ilog2(val);
+
+	/* look at kaio_fill_zero_submit */
+	if (1 << q != val || val > PAGE_SIZE || val < 512)
+		return -EINVAL;
+
+	plo->queue->limits.discard_granularity = val;
+	return 0;
+}
+
+static u32 show_discard_alignment(struct ploop_device * plo)
+{
+	return plo->queue->limits.discard_alignment;
+}
+
+static int store_discard_alignment(struct ploop_device * plo, u32 val)
+{
+	int q = ilog2(val);
+
+	/* look at kaio_fill_zero_submit */
+	if (1 << q != val || val > PAGE_SIZE || val < 512)
+		return -EINVAL;
+
+	plo->queue->limits.discard_alignment = val;
+	return 0;
+}
+
+static u32 show_discard_zeroes_data(struct ploop_device * plo)
+{
+	return plo->queue->limits.discard_zeroes_data;
+}
+
+static int store_discard_zeroes_data(struct ploop_device * plo, u32 val)
+{
+	plo->queue->limits.discard_zeroes_data = !!val;
+	return 0;
+}
+
 static u32 show_top(struct ploop_device * plo)
 {
 	int top = -1;
@@ -550,6 +595,9 @@ static struct attribute *state_attributes[] = {
 	_A(blockable_reqs),
 	_A(blocked_bios),
 	_A(freeze_state),
+	_A2(discard_granularity),
+	_A2(discard_alignment),
+	_A2(discard_zeroes_data),
 	NULL
 };
 
