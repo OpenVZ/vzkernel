@@ -1032,6 +1032,7 @@ dio_init(struct ploop_io * io)
 	init_timer(&io->fsync_timer);
 	io->fsync_timer.function = fsync_timeout;
 	io->fsync_timer.data = (unsigned long)io;
+	set_bit(PLOOP_S_NO_FALLOC_DISCARD, &io->plo->state);
 
 	return 0;
 }
