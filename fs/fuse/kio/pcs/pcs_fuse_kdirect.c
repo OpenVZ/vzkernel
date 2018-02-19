@@ -1,0 +1,742 @@
+/*
+ * Implement kdirect API for PCS cluster client kernel implementation
+ */
+#include "../../fuse_i.h"
+
+#include <linux/pagemap.h>
+#include <linux/slab.h>
+#include <linux/kernel.h>
+#include <linux/sched.h>
+#include <linux/module.h>
+#include <linux/compat.h>
+#include <linux/swap.h>
+#include <linux/aio.h>
+#include <linux/falloc.h>
+#include <linux/task_io_accounting_ops.h>
+#include <linux/virtinfo.h>
+#include <linux/file.h>
+#include <linux/workqueue.h>
+#include <linux/delay.h>
+#include <linux/socket.h>
+#include <linux/net.h>
+
+#include "pcs_ioctl.h"
+#include "pcs_cluster.h"
+#include "pcs_rpc.h"
+
+static struct kmem_cache *pcs_fuse_req_cachep;
+static struct kmem_cache *pcs_ireq_cachep;
+static struct workqueue_struct *pcs_wq;
+static struct fuse_kio_ops kio_pcs_ops;
+
+static void process_pcs_init_reply(struct fuse_conn *fc, struct fuse_req *req)
+{
+	struct pcs_fuse_cluster *pfc;
+	struct fuse_ioctl_out *arg = &req->misc.ioctl.out;
+	struct	pcs_ioc_init_kdirect *info = req->out.args[1].value;
+
+	if (req->out.h.error || arg->result) {
+		printk("Fail to initialize has_kdirect {%d,%d}\n",
+		       req->out.h.error, arg->result);
+		fc->conn_error = 1;
+		goto out;
+	}
+	pfc = kmalloc(sizeof(*pfc), GFP_NOIO);
+	if (!pfc) {
+		fc->conn_error = 1;
+		goto out;
+	}
+
+	if (pcs_cluster_init(pfc, pcs_wq, fc, &info->cluster_id, &info->node_id)) {
+		fc->conn_error = 1;
+		goto out;
+	}
+	/* TODO: Not yet implemented PSBM-80365 */
+	fc->no_fiemap = 1;
+	fc->no_fallocate = 1;
+
+	fc->kio.ctx = pfc;
+	printk("FUSE: kio_pcs: cl: " CLUSTER_ID_FMT ", clientid: " NODE_FMT "\n",
+	       CLUSTER_ID_ARGS(info->cluster_id), NODE_ARGS(info->node_id));
+out:
+	kfree(info);
+	/*  We are called from	process_init_reply before connection
+	 * was not initalized yet. Do it now. */
+	fuse_set_initialized(fc);
+	wake_up_all(&fc->blocked_waitq);
+
+}
+
+int kpcs_conn_init(struct fuse_conn *fc)
+{
+	struct fuse_req *req;
+	struct fuse_ioctl_in *inarg;
+	struct fuse_ioctl_out *outarg;
+	struct pcs_ioc_init_kdirect *info;
+
+	BUG_ON(!fc->conn_init);
+
+	info = kzalloc(sizeof(*info), GFP_NOIO);
+	if (!info)
+		return -ENOMEM;
+
+	req = fuse_request_alloc(fc, 0);
+	if (IS_ERR(req)) {
+		kfree(info);
+		return PTR_ERR(req);
+	}
+
+	__set_bit(FR_BACKGROUND, &req->flags);
+	memset(&req->misc.ioctl, 0, sizeof(req->misc.ioctl));
+	/* filehandle and nodeid are null, but this is OK */
+	inarg = &req->misc.ioctl.in;
+	outarg = &req->misc.ioctl.out;
+	inarg->cmd = PCS_IOC_INIT_KDIRECT;
+
+	req->in.h.opcode = FUSE_IOCTL;
+	req->in.numargs = 1;
+	req->in.args[0].size = sizeof(*inarg);
+	req->in.args[0].value = inarg;
+	req->out.numargs = 2;
+	req->out.args[0].size = sizeof(*outarg);
+	req->out.args[0].value = outarg;
+	req->out.args[1].size = sizeof(*info);
+	req->out.args[1].value = info;
+	req->misc.ioctl.ctx = info;
+	req->end = process_pcs_init_reply;
+
+	fuse_request_send_background(fc, req);
+	return 0;
+}
+
+void kpcs_conn_fini(struct fuse_conn *fc)
+{
+	if (!fc->kio.ctx)
+		return;
+
+	TRACE("%s fc:%p\n", __FUNCTION__, fc);
+	flush_workqueue(pcs_wq);
+	pcs_cluster_fini((struct pcs_fuse_cluster *) fc->kio.ctx);
+}
+
+void kpcs_conn_abort(struct fuse_conn *fc)
+{
+	if (!fc->kio.ctx)
+		return;
+
+	//pcs_cluster_fini((struct pcs_fuse_cluster *) fc->kio.ctx);
+	printk("%s TODO: implement this method\n", __FUNCTION__);
+
+}
+
+static int kpcs_probe(struct fuse_conn *fc, char *name)
+
+{
+	printk("%s TODO IMPLEMENT check fuse_conn args here!\n", __FUNCTION__);
+	if (!strncmp(name, kio_pcs_ops.name, FUSE_KIO_NAME))
+		return 1;
+
+	return 0;
+}
+
+
+static int fuse_pcs_getfileinfo(struct fuse_conn *fc, struct file *file,
+				struct pcs_mds_fileinfo *info)
+{
+	struct fuse_file *ff = file->private_data;
+	struct fuse_req *req;
+	struct fuse_ioctl_in *inarg;
+	struct fuse_ioctl_out *outarg;
+	struct pcs_ioc_fileinfo ioc_info;
+	int err = 0;
+
+	req = fuse_get_req(fc, 0);
+	if (IS_ERR(req))
+		return PTR_ERR(req);
+
+	memset(&req->misc.ioctl, 0, sizeof(req->misc.ioctl));
+	inarg = &req->misc.ioctl.in;
+	outarg = &req->misc.ioctl.out;
+
+	req->in.h.opcode = FUSE_IOCTL;
+	req->in.h.nodeid = ff->nodeid;
+
+	inarg->cmd = PCS_IOC_GETFILEINFO;
+	inarg->fh = ff->fh;
+	inarg->arg = 0;
+	inarg->flags = 0;
+	req->in.numargs = 1;
+	req->in.args[0].size = sizeof(*inarg);
+	req->in.args[0].value = inarg;
+
+	memset(&ioc_info, 0, sizeof(ioc_info));
+
+	req->out.numargs = 2;
+	req->out.args[0].size = sizeof(*outarg);
+	req->out.args[0].value = outarg;
+	req->out.args[1].size = sizeof(ioc_info);
+	req->out.args[1].value = &ioc_info;
+
+	fuse_request_send(fc, req);
+
+	if (req->out.h.error || outarg->result) {
+		printk("%s:%d h.err:%d result:%d\n", __FUNCTION__, __LINE__,
+		       req->out.h.error, outarg->result);
+		err = req->out.h.error ? req->out.h.error : outarg->result;
+		fuse_put_request(fc, req);
+		return err;
+	} else
+		*info = ioc_info.fileinfo;
+
+	fuse_put_request(fc, req);
+	return 0;
+}
+
+static int fuse_pcs_kdirect_claim_op(struct fuse_conn *fc, struct file *file,
+				     bool claim)
+{
+	struct fuse_file *ff = file->private_data;
+	struct fuse_req *req;
+	struct fuse_ioctl_in *inarg;
+	struct fuse_ioctl_out *outarg;
+	int err = 0;
+
+	req = fuse_get_req(fc, 0);
+	if (IS_ERR(req))
+		return PTR_ERR(req);
+
+	memset(&req->misc.ioctl, 0, sizeof(req->misc.ioctl));
+	inarg = &req->misc.ioctl.in;
+	outarg = &req->misc.ioctl.out;
+
+	req->in.h.opcode = FUSE_IOCTL;
+	req->in.h.nodeid = ff->nodeid;
+
+	if (claim)
+		inarg->cmd = PCS_IOC_KDIRECT_CLAIM;
+	else
+		inarg->cmd = PCS_IOC_KDIRECT_RELEASE;
+
+	inarg->fh = ff->fh;
+	inarg->arg = 0;
+	inarg->flags = 0;
+	req->in.numargs = 1;
+	req->in.args[0].size = sizeof(*inarg);
+	req->in.args[0].value = inarg;
+	req->out.numargs = 1;
+	req->out.args[0].size = sizeof(*outarg);
+	req->out.args[0].value = outarg;
+	fuse_request_send(fc, req);
+	if (req->out.h.error || outarg->result) {
+		printk("%s:%d h.err:%d result:%d\n", __FUNCTION__, __LINE__,
+		       req->out.h.error, outarg->result);
+		err = req->out.h.error ? req->out.h.error : outarg->result;
+	}
+
+	fuse_put_request(fc, req);
+	return err;
+}
+
+static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct inode *inode)
+{
+	struct pcs_mds_fileinfo info;
+	struct fuse_inode *fi = get_fuse_inode(inode);
+	struct pcs_fuse_cluster *pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
+	struct pcs_dentry_info *di = NULL;
+	int ret;
+
+	ret = fuse_pcs_getfileinfo(fc, file, &info);
+	if (ret)
+		return ret;
+
+	if (info.sys.map_type != PCS_MAP_PLAIN) {
+		TRACE("Unsupported map_type:%x, ignore\n", info.sys.map_type);
+		return 0;
+	}
+
+	di = kzalloc(sizeof(*di), GFP_KERNEL);
+	if (!di)
+		return -ENOMEM;
+
+	/* TODO Init fields */
+	/* di.id.parent	    = id->parent; */
+	/* di.id.name.data  = name; */
+	/* di.id.name.len   = id->name.len; */
+
+	pcs_mapping_init(&pfc->cc, &di->mapping);
+	pcs_set_fileinfo(di, &info);
+	di->cluster = &pfc->cc;
+	di->inode = fi;
+	TRACE("init id:%llu chunk_size:%d stripe_depth:%d strip_width:%d\n",
+	      fi->nodeid, di->fileinfo.sys.chunk_size,
+	      di->fileinfo.sys.stripe_depth, di->fileinfo.sys.strip_width);
+
+	mutex_lock(&inode->i_mutex);
+	/* Some one already initialized it under us ? */
+	if (fi->private) {
+		mutex_unlock(&inode->i_mutex);
+		pcs_mapping_invalidate(&di->mapping);
+		pcs_mapping_deinit(&di->mapping);
+		kfree(di);
+		return 0;
+	}
+	ret = fuse_pcs_kdirect_claim_op(fc, file, true);
+	if (ret) {
+		mutex_unlock(&inode->i_mutex);
+		pcs_mapping_invalidate(&di->mapping);
+		pcs_mapping_deinit(&di->mapping);
+		kfree(di);
+		return ret;
+	}
+	/* TODO: Propper initialization of dentry should be here!!! */
+	fi->private = di;
+	mutex_unlock(&inode->i_mutex);
+	return 0;
+}
+
+int kpcs_file_open(struct fuse_conn *fc, struct file *file, struct inode *inode)
+{
+	struct fuse_inode *fi = get_fuse_inode(inode);
+
+	if (!S_ISREG(inode->i_mode))
+		return 0;
+	if (fi->nodeid - FUSE_ROOT_ID >= PCS_FUSE_INO_SPECIAL_)
+		return 0;
+	/* Already initialized */
+	if (fi->private) {
+		/*TODO: propper refcount for claim_cnt should be here */
+		return 0;
+	}
+	return kpcs_do_file_open(fc, file, inode);
+}
+
+void kpcs_inode_release(struct fuse_inode *fi)
+{
+	struct pcs_dentry_info *di = fi->private;
+
+	if(!di)
+		return;
+
+	pcs_mapping_invalidate(&di->mapping);
+	pcs_mapping_deinit(&di->mapping);
+	/* TODO: properly destroy dentry info here!! */
+	kfree(di);
+}
+
+static void pcs_fuse_reply_handle(struct fuse_conn *fc, struct fuse_req *req)
+{
+	struct pcs_fuse_work *work = (struct pcs_fuse_work*) req->misc.ioctl.ctx;
+	int err;
+
+	err = req->out.h.error ? req->out.h.error : req->misc.ioctl.out.result;
+	if (err) {
+		/* TODO	 Fine grane error conversion here */
+		pcs_set_local_error(&work->status, PCS_ERR_PROTOCOL);
+	}
+	queue_work(pcs_wq, &work->work);
+}
+
+#define MAX_CS_CNT 32
+static void fuse_complete_map_work(struct work_struct *w)
+{
+	struct pcs_fuse_work *work = container_of(w, struct pcs_fuse_work, work);
+	struct pcs_map_entry *m = (struct pcs_map_entry *)work->ctx;
+	struct pcs_ioc_getmap *omap = (struct pcs_ioc_getmap *)work->ctx2;
+
+	BUG_ON(!m);
+	BUG_ON(!omap);
+	pcs_copy_error_cond(&omap->error, &work->status);
+	if (omap->cs_cnt > MAX_CS_CNT) {
+		printk("Corrupted cs_cnt from userspace");
+		pcs_set_local_error(&omap->error, PCS_ERR_PROTOCOL);
+	}
+
+	pcs_map_complete(m, omap);
+	kfree(omap);
+	kfree(work);
+}
+
+int fuse_map_resolve(struct pcs_map_entry *m, int direction)
+{
+	struct pcs_dentry_info *di = pcs_dentry_from_mapping(m->mapping);
+	struct fuse_conn *fc = pcs_cluster_from_cc(di->cluster)->fc;
+	struct fuse_req *req;
+	struct fuse_ioctl_in *inarg;
+	struct fuse_ioctl_out *outarg;
+	struct pcs_ioc_getmap *map_ioc;
+	struct pcs_fuse_work *reply_work;
+	size_t map_sz;
+
+	DTRACE("enter m: " MAP_FMT ", dir:%d \n", MAP_ARGS(m),	direction);
+
+	BUG_ON(!(m->state & PCS_MAP_RESOLVING));
+
+	map_sz = sizeof(*map_ioc) + MAX_CS_CNT * sizeof(struct pcs_cs_info);
+	map_ioc = kzalloc(map_sz, GFP_NOIO);
+	if (!map_ioc)
+		return -ENOMEM;
+
+	reply_work = kzalloc(sizeof(*reply_work), GFP_NOIO);
+	if (!reply_work) {
+		kfree(map_ioc);
+		return -ENOMEM;
+	}
+	req = fuse_get_req_for_background(fc, 0);
+	if (IS_ERR(req)) {
+		kfree(map_ioc);
+		kfree(reply_work);
+		return PTR_ERR(req);
+	}
+
+
+	memset(&req->misc.ioctl, 0, sizeof(req->misc.ioctl));
+	inarg = &req->misc.ioctl.in;
+	outarg = &req->misc.ioctl.out;
+	inarg->cmd = PCS_IOC_GETMAP;
+	map_ioc->cs_max = MAX_CS_CNT;
+
+	/* fill ioc_map struct */
+	if (pcs_map_encode_req(m, map_ioc, direction) != 0) {
+		kfree(map_ioc);
+		kfree(reply_work);
+		fuse_put_request(fc, req);
+		return 0;
+	}
+
+	/* Fill core ioctl */
+	req->in.h.opcode = FUSE_IOCTL;
+	/* FH is null, peer will lookup by nodeid */
+	inarg->fh = 0;
+	req->in.h.nodeid = di->inode->nodeid;
+	req->in.numargs = 2;
+	req->in.args[0].size = sizeof(*inarg);
+	req->in.args[0].value = inarg;
+	req->in.args[1].size = map_sz;
+	req->in.args[1].value = map_ioc;
+
+	req->out.numargs = 2;
+	/* TODO: make this ioctl varsizable */
+	req->out.argvar = 1;
+	req->out.args[0].size = sizeof(*outarg);
+	req->out.args[0].value = outarg;
+	req->out.args[1].size = map_sz;
+	req->out.args[1].value = map_ioc;
+
+	INIT_WORK(&reply_work->work, fuse_complete_map_work);
+	reply_work->ctx = m;
+	reply_work->ctx2 = map_ioc;
+	req->misc.ioctl.ctx = reply_work;
+	req->end = pcs_fuse_reply_handle;
+
+	fuse_request_send_background(fc, req);
+
+	return 0;
+}
+static void pfocess_pcs_csconn_work(struct work_struct *w)
+{
+	struct pcs_fuse_work *work = container_of(w, struct pcs_fuse_work, work);
+	struct pcs_rpc *ep  = (struct pcs_rpc *)work->ctx;
+	struct socket *sock = (struct socket *)work->ctx2;
+	BUG_ON(!ep);
+
+	if (pcs_if_error(&work->status)) {
+		mutex_lock(&ep->mutex);
+		pcs_rpc_reset(ep);
+		mutex_unlock(&ep->mutex);
+		TRACE(PEER_FMT" fail with %d\n", PEER_ARGS(ep), work->status.value);
+	} else	{
+		if (sock)
+			rpc_connect_done(ep, sock);
+	}
+	pcs_rpc_put(ep);
+	kfree(work);
+}
+
+static void process_pcs_csconn_reply(struct fuse_conn *fc, struct fuse_req *req)
+{
+	struct pcs_ioc_csconn *csconn = (struct pcs_ioc_csconn *)req->in.args[1].value;
+	struct fuse_ioctl_out *arg = &req->misc.ioctl.out;
+	struct pcs_fuse_work *work = (struct pcs_fuse_work*) req->misc.ioctl.ctx;
+	int is_open = csconn->flags & PCS_IOC_CS_OPEN;
+
+	if (req->out.h.error || arg->result < 0) {
+		pcs_set_local_error(&work->status, PCS_ERR_PROTOCOL);
+		goto out;
+	}
+	/* Grab socket from caller's context (fuse-evloop) and do the rest in kwork */
+	if (is_open) {
+		struct socket *sock;
+		struct file* filp;
+		int err;
+
+		filp = fget((unsigned int)arg->result);
+		arg->result = 0;
+		if (!filp) {
+			pcs_set_local_error(&work->status, PCS_ERR_PROTOCOL);
+			goto out;
+		}
+		sock = sock_from_file(filp, &err);
+		if (!sock) {
+			fput(filp);
+			pcs_set_local_error(&work->status, PCS_ERR_PROTOCOL);
+		} else
+			TRACE("id: "NODE_FMT" sock:%p\n", NODE_ARGS(csconn->id), sock);
+		work->ctx2 = sock;
+	}
+out:
+	kfree(csconn);
+	pcs_fuse_reply_handle(fc, req);
+
+}
+
+int fuse_pcs_csconn_send(struct fuse_conn *fc, struct pcs_rpc *ep, int flags)
+{
+	struct fuse_req *req;
+	struct fuse_ioctl_in *inarg;
+	struct fuse_ioctl_out *outarg;
+	struct pcs_ioc_csconn *csconn;
+	struct pcs_fuse_work *reply_work;
+
+	/* Socket must being freed from kernelspace before requesting new one*/
+	BUG_ON(!(flags & PCS_IOC_CS_REOPEN));
+
+	TRACE("start %s cmd:%ld id:%lld flags:%x\n", __FUNCTION__,
+	      PCS_IOC_CSCONN, ep->peer_id.val, flags);
+
+	csconn = kzalloc(sizeof(*csconn), GFP_NOIO);
+	if (!csconn)
+		return -ENOMEM;
+
+	reply_work = kzalloc(sizeof(*reply_work), GFP_NOIO);
+	if (!reply_work) {
+		kfree(csconn);
+		return -ENOMEM;
+	}
+
+	req = fuse_get_req_for_background(fc, 0);
+	if (IS_ERR(req)) {
+		kfree(csconn);
+		kfree(reply_work);
+		return PTR_ERR(req);
+	}
+
+	memset(&req->misc.ioctl, 0, sizeof(req->misc.ioctl));
+	inarg = &req->misc.ioctl.in;
+	outarg = &req->misc.ioctl.out;
+
+	inarg->cmd = PCS_IOC_CSCONN;
+	inarg->fh = 0;
+	inarg->arg = 0;
+	inarg->flags = 0;
+
+	csconn->id.val = ep->peer_id.val;
+	memcpy(&csconn->address, &ep->addr, sizeof(ep->addr));
+	csconn->flags = flags;
+
+	req->in.h.opcode = FUSE_IOCTL;
+	req->in.numargs = 2;
+	req->in.args[0].size = sizeof(*inarg);
+	req->in.args[0].value = inarg;
+	req->in.args[1].size = sizeof(*csconn);
+	req->in.args[1].value = csconn;
+
+	req->out.numargs = 1;
+	req->out.args[0].size = sizeof(*outarg);
+	req->out.args[0].value = outarg;
+
+	INIT_WORK(&reply_work->work, pfocess_pcs_csconn_work);
+	reply_work->ctx = pcs_rpc_get(ep);
+	reply_work->ctx2 = NULL; /* return socket should be here */
+	req->misc.ioctl.ctx = reply_work;
+
+	req->end = process_pcs_csconn_reply;
+	fuse_request_send_background(fc, req);
+
+	return 0;
+}
+
+struct fuse_req *kpcs_req_alloc(struct fuse_conn *fc,
+					unsigned npages, gfp_t flags)
+{
+	return fuse_generic_request_alloc(fc, pcs_fuse_req_cachep,
+					  npages, flags);
+}
+
+/* IOHOOKS */
+
+struct pcs_int_request * __ireq_alloc(void)
+{
+	return kmem_cache_alloc(pcs_ireq_cachep, GFP_NOIO);
+}
+void ireq_destroy(struct pcs_int_request *ireq)
+{
+	kmem_cache_free(pcs_ireq_cachep, ireq);
+}
+
+static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, int async)
+{
+	struct pcs_fuse_req *r = pcs_req_from_fuse(req);
+	struct fuse_inode *fi = get_fuse_inode(req->io_inode);
+	struct pcs_dentry_info *di = pcs_inode_from_fuse(fi);
+	struct pcs_int_request* ireq;
+
+	BUG_ON(!di);
+	BUG_ON(req->cache != pcs_fuse_req_cachep);
+
+	/* Init pcs_fuse_req */
+	memset(&r->exec.io, 0, sizeof(r->exec.io));
+	memset(&r->exec.ctl, 0, sizeof(r->exec.ctl));
+	/* Use inline request structure */
+	ireq = &r->exec.ireq;
+	ireq_init(di, ireq);
+
+	switch (r->req.in.h.opcode) {
+	case FUSE_WRITE: {
+		struct fuse_write_in *in = &r->req.misc.write.in;
+		struct fuse_write_out *out = &r->req.misc.write.out;
+		out->size = in->size;
+		break;
+	}
+	case FUSE_READ: {
+		struct fuse_read_in *in = &r->req.misc.read.in;
+		size_t size = in->size;
+
+		if (in->offset + in->size > di->fileinfo.attr.size) {
+			if (in->offset >= di->fileinfo.attr.size) {
+				req->out.args[0].size = 0;
+				break;
+			}
+			size = di->fileinfo.attr.size - in->offset;
+		}
+		pcs_fuse_prep_io(r, PCS_REQ_T_READ, in->offset, size);
+		goto submit;
+	}
+	case FUSE_FSYNC:
+		/*NOOP */
+		break;
+	}
+	r->req.out.h.error = 0;
+	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
+
+	request_end(pfc->fc, &r->req);
+	return;
+submit:
+	if (async)
+		pcs_cc_submit(ireq->cc, ireq);
+	else
+		ireq_process(ireq);
+}
+
+
+int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bool lk)
+{
+	struct pcs_fuse_cluster *pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
+	struct fuse_inode *fi = get_fuse_inode(req->io_inode);
+
+	if (!fc->initialized || fc->conn_error)
+		return 1;
+
+	BUG_ON(!pfc);
+	/* HYPOTHESIS #1
+	 * IFAIU at this point request can not belongs to any list
+	 * so I cant avoid grab fc->lock here at all
+	 */
+	BUG_ON(!list_empty(&req->list));
+
+	TRACE(" Enter req:%p op:%d bg:%d lk:%d\n", req, req->in.h.opcode, bg, lk);
+
+	/* TODO: This is just a crunch, Conn cleanup requires sane locking */
+	if (req->in.h.opcode == FUSE_DESTROY) {
+		kpcs_conn_fini(fc);
+		spin_lock(&fc->lock);
+		fc->kio.ctx = NULL;
+		spin_unlock(&fc->lock);
+		return 1;
+	}
+	if ((req->in.h.opcode != FUSE_READ &&
+	     req->in.h.opcode != FUSE_WRITE))
+		return 1;
+
+	fi = get_fuse_inode(req->io_inode);
+	if (!fi->private)
+		return 1;
+
+	/* TODO, fetch only read requests for now */
+	if (req->in.h.opcode != FUSE_READ)
+		return 1;
+
+	__clear_bit(FR_BACKGROUND, &req->flags);
+	__clear_bit(FR_PENDING, &req->flags);
+	/* request_end below will do fuse_put_request() */
+	if (!bg)
+		atomic_inc(&req->count);
+	pcs_fuse_submit(pfc, req, lk);
+	if (!bg)
+		wait_event(req->waitq, test_bit(FR_FINISHED, &req->flags));
+
+	return 0;
+}
+
+
+static struct fuse_kio_ops kio_pcs_ops = {
+	.name		= "pcs",
+	.owner		= THIS_MODULE,
+	.probe		= kpcs_probe, /*TODO: check sb->dev name */
+
+	.conn_init	= kpcs_conn_init,
+	.conn_fini	= kpcs_conn_fini,
+	.conn_abort	= kpcs_conn_abort,
+	.req_alloc	= kpcs_req_alloc,
+	.req_send	= kpcs_req_send,
+	.file_open	= kpcs_file_open,
+	.inode_release	= kpcs_inode_release,
+};
+
+
+static int __init kpcs_mod_init(void)
+{
+	int err = -ENOMEM;
+	pcs_fuse_req_cachep = kmem_cache_create("pcs_fuse_request",
+						sizeof(struct pcs_fuse_req),
+						0, 0, NULL);
+
+	if (!pcs_fuse_req_cachep)
+		return err;
+
+	pcs_ireq_cachep = kmem_cache_create("pcs_ireq",
+					    sizeof(struct pcs_int_request),
+					    0, SLAB_MEM_SPREAD, NULL);
+	if (!pcs_ireq_cachep)
+		goto free_fuse_cache;
+	pcs_wq = alloc_workqueue("pcs_cluster", WQ_MEM_RECLAIM, 0);
+	if (!pcs_wq)
+		goto free_ireq_cache;
+
+	if(fuse_register_kio(&kio_pcs_ops))
+		goto free_wq;
+	printk("%s fuse_c:%p ireq_c:%p pcs_wq:%p\n", __FUNCTION__,
+	       pcs_fuse_req_cachep, pcs_ireq_cachep, pcs_wq);
+
+	return 0;
+free_wq:
+	destroy_workqueue(pcs_wq);
+free_ireq_cache:
+	kmem_cache_destroy(pcs_ireq_cachep);
+free_fuse_cache:
+	kmem_cache_destroy(pcs_fuse_req_cachep);
+	return err;
+}
+
+static void __exit kpcs_mod_exit(void)
+{
+	fuse_unregister_kio(&kio_pcs_ops);
+	destroy_workqueue(pcs_wq);
+	kmem_cache_destroy(pcs_ireq_cachep);
+	kmem_cache_destroy(pcs_fuse_req_cachep);
+}
+
+module_init(kpcs_mod_init);
+module_exit(kpcs_mod_exit);
+
+MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Virtuozzo <devel@openvz.org>");
