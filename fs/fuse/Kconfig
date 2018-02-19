@@ -37,3 +37,11 @@ config VIRTIO_FS
 
 	  If you want to share files between guests or with the host, answer Y
 	  or M.
+
+config FUSE_KIO_NOOP
+	tristate "Enable kdirect noop io engine"
+	depends on FUSE_FS
+	help
+	  This FUSE extension allows to handle io requests directly inside kernel
+
+	  This is for kdirect io feature debugging only, answer Y or M.
