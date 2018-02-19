@@ -25,3 +25,11 @@ config CUSE
 
 	  If you want to develop or use a userspace character device
 	  based on CUSE, answer Y or M.
+
+config FUSE_KIO_NOOP
+	tristate "Enable kdirect noop io engine"
+	depends on FUSE_FS
+	help
+	  This FUSE extension allows to handle io requests directly inside kernel
+
+	  This is for kdirect io feature debugging only, answer Y or M.
