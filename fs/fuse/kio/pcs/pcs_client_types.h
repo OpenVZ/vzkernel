@@ -53,6 +53,14 @@ struct pcs_dentry_info {
 	PCS_FILETIME_T		local_mtime;
 	struct pcs_mapping	mapping;
 	struct pcs_cluster_core	*cluster;
+	spinlock_t		lock;
+	struct {
+		struct work_struct	work;
+		unsigned long long	shrink;
+		unsigned long long	required;
+		struct list_head	grow_queue;
+		struct list_head	shrink_queue;
+	} size;
 	struct fuse_inode	*inode;
 };
 
