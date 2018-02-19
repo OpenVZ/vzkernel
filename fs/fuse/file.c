@@ -85,7 +85,7 @@ static void fuse_file_list_del(struct fuse_file *ff)
 void fuse_file_free(struct fuse_file *ff)
 {
 	fuse_file_list_del(ff);
-	fuse_request_free(ff->reserved_req);
+	fuse_request_free(ff->fc, ff->reserved_req);
 	kfree(ff);
 }
 
@@ -260,6 +260,12 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 
 	if (lock_inode)
 		inode_unlock(inode);
+
+	if (!err && fc->kio.op && fc->kio.op->file_open &&
+	    fc->kio.op->file_open(fc, file, inode)) {
+		fuse_release_common(file, FUSE_RELEASE);
+		return -EINVAL;
+	}
 
 	if (!err && fc->writeback_cache && !isdir) {
 		struct fuse_inode *fi = get_fuse_inode(inode);
@@ -635,6 +641,7 @@ int fuse_fsync_common(struct file *file, loff_t start, loff_t end,
 	inarg.fh = ff->fh;
 	inarg.fsync_flags = datasync ? 1 : 0;
 	args.in.h.opcode = isdir ? FUSE_FSYNCDIR : FUSE_FSYNC;
+	args.io_inode = inode;
 	args.in.h.nodeid = get_node_id(inode);
 	args.in.numargs = 1;
 	args.in.args[0].size = sizeof(inarg);
@@ -676,6 +683,7 @@ void fuse_read_fill(struct fuse_req *req, struct file *file, loff_t pos,
 	req->out.argvar = 1;
 	req->out.numargs = 1;
 	req->out.args[0].size = count;
+	req->io_inode = file_inode(file);
 
 	if (opcode == FUSE_READ) {
 		struct fuse_iqueue *fiq = raw_cpu_ptr(ff->fc->iqs);
@@ -1144,7 +1152,7 @@ static ssize_t fuse_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 }
 
 static void fuse_write_fill(struct fuse_req *req, struct fuse_file *ff,
-			    loff_t pos, size_t count)
+			    struct inode *inode, loff_t pos, size_t count)
 {
 	struct fuse_write_in *inarg = &req->misc.write.in;
 	struct fuse_write_out *outarg = &req->misc.write.out;
@@ -1164,6 +1172,7 @@ static void fuse_write_fill(struct fuse_req *req, struct fuse_file *ff,
 	req->out.numargs = 1;
 	req->out.args[0].size = sizeof(struct fuse_write_out);
 	req->out.args[0].value = outarg;
+	req->io_inode = inode;
 }
 
 static size_t fuse_send_write(struct fuse_req *req, struct fuse_io_priv *io,
@@ -1175,7 +1184,7 @@ static size_t fuse_send_write(struct fuse_req *req, struct fuse_io_priv *io,
 	struct fuse_conn *fc = ff->fc;
 	struct fuse_write_in *inarg = &req->misc.write.in;
 
-	fuse_write_fill(req, ff, pos, count);
+	fuse_write_fill(req, ff, file_inode(file), pos, count);
 	inarg->flags = file->f_flags;
 	if (iocb->ki_flags & IOCB_DSYNC)
 		inarg->flags |= O_DSYNC;
@@ -1909,7 +1918,7 @@ static int fuse_writepage_locked(struct page *page)
 	if (!req->ff)
 		goto err_nofile;
 
-	fuse_write_fill(req, req->ff, page_offset(page), 0);
+	fuse_write_fill(req, req->ff, inode, page_offset(page), 0);
 
 	copy_highpage(tmp_page, page);
 	req->misc.write.in.write_flags |= FUSE_WRITE_CACHE;
@@ -1938,7 +1947,7 @@ static int fuse_writepage_locked(struct page *page)
 err_nofile:
 	__free_page(tmp_page);
 err_free:
-	fuse_request_free(req);
+	fuse_request_free(fc, req);
 err:
 	mapping_set_error(page->mapping, error);
 	end_page_writeback(page);
@@ -2062,7 +2071,7 @@ static bool fuse_writepage_in_flight(struct fuse_req *new_req,
 		dec_node_page_state(page, NR_WRITEBACK_TEMP);
 		wb_writeout_inc(&bdi->wb);
 		fuse_writepage_free(fc, new_req);
-		fuse_request_free(new_req);
+		fuse_request_free(fc, new_req);
 		goto out;
 	} else {
 		new_req->misc.write.next = old_req->misc.write.next;
@@ -2166,7 +2175,7 @@ static int fuse_writepages_fill(struct page *page,
 			goto out_unlock;
 		}
 
-		fuse_write_fill(req, data->ff, page_offset(page), 0);
+		fuse_write_fill(req, data->ff, data->inode, page_offset(page), 0);
 		req->misc.write.in.write_flags |= FUSE_WRITE_CACHE;
 		req->misc.write.next = NULL;
 		req->in.argpages = 1;
@@ -2645,6 +2654,7 @@ static sector_t fuse_bmap(struct address_space *mapping, sector_t block)
 	inarg.block = block;
 	inarg.blocksize = inode->i_sb->s_blocksize;
 	args.in.h.opcode = FUSE_BMAP;
+	args.io_inode = inode;
 	args.in.h.nodeid = get_node_id(inode);
 	args.in.numargs = 1;
 	args.in.args[0].size = sizeof(inarg);
@@ -3372,6 +3382,7 @@ static long fuse_file_fallocate(struct file *file, int mode, loff_t offset,
 		set_bit(FUSE_I_SIZE_UNSTABLE, &fi->state);
 
 	args.in.h.opcode = FUSE_FALLOCATE;
+	args.io_inode = inode;
 	args.in.h.nodeid = ff->nodeid;
 	args.in.numargs = 1;
 	args.in.args[0].size = sizeof(inarg);
