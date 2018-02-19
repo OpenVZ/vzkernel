@@ -600,9 +600,9 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, 
 	switch (r->req.in.h.opcode) {
 	case FUSE_WRITE: {
 		struct fuse_write_in *in = &ia->write.in;
-		struct fuse_write_out *out = &ia->write.out;
-		out->size = in->size;
-		break;
+
+		pcs_fuse_prep_io(r, PCS_REQ_T_WRITE, in->offset, in->size);
+		goto submit;
 	}
 	case FUSE_READ: {
 		struct fuse_read_in *in = &ia->read.in;
@@ -619,8 +619,8 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, 
 		goto submit;
 	}
 	case FUSE_FSYNC:
-		/*NOOP */
-		break;
+		pcs_fuse_prep_io(r, PCS_REQ_T_SYNC, 0, 0);
+		goto submit;
 	}
 	r->req.out.h.error = 0;
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
@@ -666,10 +666,6 @@ int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bool lk)
 
 	fi = get_fuse_inode(req->args->io_inode);
 	if (!fi->private)
-		return 1;
-
-	/* TODO, fetch only read requests for now */
-	if (req->in.h.opcode != FUSE_READ)
 		return 1;
 
 	__clear_bit(FR_BACKGROUND, &req->flags);
