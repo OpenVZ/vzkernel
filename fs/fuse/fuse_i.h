@@ -47,6 +47,9 @@
 /** Number of dentries for each connection in the control filesystem */
 #define FUSE_CTL_NUM_DENTRIES 10
 
+/** FUSE kdirect engine name max */
+#define FUSE_KIO_NAME 32
+
 /** List of active connections */
 extern struct list_head fuse_conn_list;
 
@@ -157,6 +160,9 @@ struct fuse_inode {
 
 	/** Even though num_openers>0, trust server i_size */
 	int i_size_unstable;
+
+	/** Private kdirect io context */
+	void *private;
 };
 
 /** FUSE inode state bits */
@@ -289,6 +295,8 @@ struct fuse_args {
 	/** Request was killed -- pages were released */
 	unsigned killed:1;
 
+	struct inode *io_inode;
+
 	/** Inode used in the request or NULL */
 	struct inode *inode;
 
@@ -401,6 +409,9 @@ struct fuse_req {
 	/** virtio-fs's physically contiguous buffer for in and out args */
 	void *argbuf;
 #endif
+
+	/** kmem cache which this request was allocated from */
+	struct kmem_cache *cache;
 };
 
 struct fuse_iqueue;
@@ -530,16 +541,47 @@ struct fuse_fs_context {
 	bool direct_enable:1;
 	bool umount_wait:1;
 	bool disable_close_wait:1;
+	bool kdirect_io:1;
 	bool destroy:1;
 	bool no_control:1;
 	bool no_force_umount:1;
 	bool no_mount_options:1;
 	unsigned int max_read;
 	unsigned int blksize;
+	char kio_name[FUSE_KIO_NAME];
 
 	/* fuse_dev pointer to fill in, should contain NULL on entry */
 	void **fudptr;
 };
+
+/**
+ * Fuse kdirect io operations
+ */
+struct fuse_kio_ops {
+	struct list_head	list;
+	char			*name;
+	struct module		*owner;
+
+	int (*probe)(struct fuse_conn *fc, char *name);
+
+	/* Connection scope hooks */
+	int (*conn_init)(struct fuse_conn *fc);
+	void (*conn_fini)(struct fuse_conn *fc);
+	void (*conn_abort)(struct fuse_conn *fc);
+
+	/* Request handling hooks */
+	struct fuse_req *(*req_alloc)(struct fuse_conn *fc, gfp_t flags);
+	int (*req_send)(struct fuse_conn *fc, struct fuse_req *req, bool bg,
+			bool locked);
+
+	/* Inode scope hooks */
+	int  (*file_open)(struct fuse_conn *fc, struct file *file,
+			  struct inode *inode);
+	void (*inode_release)(struct fuse_inode *fi);
+
+};
+int fuse_register_kio(struct fuse_kio_ops *ops);
+void fuse_unregister_kio(struct fuse_kio_ops *ops);
 
 /**
  * A Fuse connection.
@@ -791,6 +833,9 @@ struct fuse_conn {
 	/** No ioctl(FIEMAP) */
 	unsigned no_fiemap:1;
 
+	/** Enable custom kernel io engine ? **/
+	unsigned kdirect_io:1;
+
 	/** The number of requests waiting for completion */
 	atomic_t num_waiting;
 
@@ -828,6 +873,12 @@ struct fuse_conn {
 	struct list_head devices;
 
 	struct list_head conn_files;
+
+	/** Kdirect io operations */
+	struct {
+		struct fuse_kio_ops *op;
+		void *ctx;
+	} kio;
 };
 
 static inline struct fuse_conn *get_fuse_conn_super(struct super_block *sb)
@@ -906,6 +957,11 @@ struct fuse_io_args {
 			struct fuse_write_in in;
 			struct fuse_write_out out;
 		} write;
+		struct {
+			struct fuse_ioctl_in  in;
+			struct fuse_ioctl_out out;
+			void *ctx;
+		} ioctl;
 	};
 	struct fuse_args_pages ap;
 	struct fuse_io_priv *io;
@@ -1147,6 +1203,7 @@ int fuse_do_setattr(struct dentry *dentry, struct iattr *attr,
 		    struct file *file);
 
 void fuse_set_initialized(struct fuse_conn *fc);
+struct fuse_req *fuse_generic_request_alloc(struct kmem_cache *cachep, gfp_t flags);
 
 void fuse_unlock_inode(struct inode *inode, bool locked);
 bool fuse_lock_inode(struct inode *inode);
