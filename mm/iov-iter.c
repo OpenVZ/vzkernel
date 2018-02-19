@@ -235,6 +235,34 @@ static size_t ii_iovec_single_seg_count(const struct iov_iter *i)
 		return min(i->count, iov->iov_len - i->iov_offset);
 }
 
+static void *ii_iovec_kmap_atomic(const struct iov_iter *i, void **bp,
+				  size_t *len)
+{
+	struct iovec *iov = (struct iovec *)i->data;
+
+	*bp = iov->iov_base + i->iov_offset;
+	*len = min(i->count, iov->iov_len - i->iov_offset);
+
+	return NULL;
+}
+
+static struct page *ii_iovec_kmap(const struct iov_iter *i, void **bp,
+				  size_t *len)
+{
+	struct iovec *iov = (struct iovec *)i->data;
+
+	*bp = iov->iov_base + i->iov_offset;
+	*len = min(i->count, iov->iov_len - i->iov_offset);
+
+	return NULL;
+}
+
+static struct page *ii_iovec_get_page(const struct iov_iter *i, size_t *off,
+				      size_t *len)
+{
+	return NULL;
+}
+
 static int ii_iovec_shorten(struct iov_iter *i, size_t count)
 {
 	struct iovec *iov = (struct iovec *)i->data;
@@ -251,14 +279,225 @@ struct iov_iter_ops ii_iovec_ops = {
 	.ii_fault_in_readable = ii_iovec_fault_in_readable,
 	.ii_single_seg_count = ii_iovec_single_seg_count,
 	.ii_shorten = ii_iovec_shorten,
+	.ii_kmap_atomic = ii_iovec_kmap_atomic,
+	.ii_kmap = ii_iovec_kmap,
+	.ii_get_page = ii_iovec_get_page,
+
 };
 EXPORT_SYMBOL(ii_iovec_ops);
+
+/*
+ * Copy as much as we can into the page and return the number of bytes which
+ * were sucessfully copied.  If a fault is encountered then return the number of
+ * bytes which were copied.
+ */
+static size_t ii_plain_copy_to_user_atomic(struct page *page,
+		struct iov_iter *i, unsigned long offset, size_t bytes)
+{
+	char *buf = (void *)i->data + i->iov_offset;
+	size_t copied;
+	int left;
+	char *kaddr;
+
+	BUG_ON(!in_atomic());
+	kaddr = kmap_atomic(page);
+	left = __copy_to_user_inatomic(buf, kaddr + offset, bytes);
+	copied = bytes - left;
+	kunmap_atomic(kaddr);
+
+	return copied;
+}
+
+/*
+ * This has the same sideeffects and return value as
+ * ii_plain_copy_to_user_atomic().
+ * The difference is that it attempts to resolve faults.
+ * Page must not be locked.
+ */
+static size_t ii_plain_copy_to_user(struct page *page,
+		struct iov_iter *i, unsigned long offset, size_t bytes)
+{
+	char *buf =  (void *)i->data + i->iov_offset;
+	int left;
+	char *kaddr;
+	size_t copied;
+
+	kaddr = kmap(page);
+	left = copy_to_user(buf, kaddr + offset, bytes);
+	copied = bytes - left;
+	kunmap(page);
+
+	return copied;
+}
+
+/*
+ * Copy as much as we can into the page and return the number of bytes which
+ * were sucessfully copied.  If a fault is encountered then return the number of
+ * bytes which were copied.
+ */
+static size_t ii_plain_copy_from_user_atomic(struct page *page,
+		struct iov_iter *i, unsigned long offset, size_t bytes)
+{
+	char *buf = (void *)i->data + i->iov_offset;
+	char *kaddr;
+	size_t copied;
+	int left;
+
+	BUG_ON(!in_atomic());
+	kaddr = kmap_atomic(page);
+	left = __copy_from_user_inatomic(kaddr + offset, buf, bytes);
+	copied = bytes - left;
+	kunmap_atomic(kaddr);
+
+	return copied;
+}
+
+/*
+ * This has the same sideeffects and return value as
+ * ii_plain_copy_from_user_atomic().
+ * The difference is that it attempts to resolve faults.
+ * Page must not be locked.
+ */
+static size_t ii_plain_copy_from_user(struct page *page,
+		struct iov_iter *i, unsigned long offset, size_t bytes)
+{
+	char *buf = (void *)i->data + i->iov_offset;
+	char *kaddr;
+	size_t copied;
+	int left;
+
+	kaddr = kmap(page);
+	left = __copy_from_user(kaddr + offset, buf, bytes);
+	copied = bytes - left;
+	kunmap(page);
+	return copied;
+}
+
+static void ii_plain_advance(struct iov_iter *i, size_t bytes)
+{
+	BUG_ON(i->count < bytes);
+
+	BUG_ON(i->nr_segs != 1);
+
+	i->iov_offset += bytes;
+	i->count -= bytes;
+}
+
+static int ii_plain_fault_in_readable(struct iov_iter *i, size_t bytes)
+{
+	return 0;
+}
+
+static size_t ii_plain_single_seg_count(const struct iov_iter *i)
+{
+	return i->count;
+}
+
+static int ii_plain_shorten(struct iov_iter *i, size_t count)
+{
+	return 0;
+}
+
+static void *ii_plain_kmap_atomic(const struct iov_iter *i, void **bp,
+				  size_t *len)
+{
+	*bp = (void *)i->data + i->iov_offset;
+	*len = i->count;
+
+	return NULL;
+}
+
+static struct page *ii_plain_kmap(const struct iov_iter *i, void **bp,
+				  size_t *len)
+{
+	*bp = (void *)i->data + i->iov_offset;
+	*len = i->count;
+
+	return NULL;
+}
+
+static struct page *ii_plain_get_page(const struct iov_iter *i, size_t *off,
+				      size_t *len)
+{
+	return NULL;
+}
+
+struct iov_iter_ops ii_plain_ops = {
+	.ii_copy_to_user_atomic = ii_plain_copy_to_user_atomic,
+	.ii_copy_to_user = ii_plain_copy_to_user,
+	.ii_copy_from_user_atomic = ii_plain_copy_from_user_atomic,
+	.ii_copy_from_user = ii_plain_copy_from_user,
+	.ii_advance = ii_plain_advance,
+	.ii_fault_in_readable = ii_plain_fault_in_readable,
+	.ii_single_seg_count = ii_plain_single_seg_count,
+	.ii_shorten = ii_plain_shorten,
+	.ii_kmap_atomic = ii_plain_kmap_atomic,
+	.ii_kmap = ii_plain_kmap,
+	.ii_get_page = ii_plain_get_page,
+};
+EXPORT_SYMBOL(ii_plain_ops);
 
 /*
  * As an easily verifiable first pass, we implement all the methods that
  * copy data to and from bvec pages with one function.  We implement it
  * all with kmap_atomic().
  */
+
+static void *ii_bvec_kmap_atomic(const struct iov_iter *iter, void **bp,
+				 size_t *len)
+{
+	struct bio_vec *bvec = (struct bio_vec *)iter->data;
+	void *map;
+
+	BUG_ON(iter->iov_offset >= bvec->bv_len);
+
+	map = kmap_atomic(bvec->bv_page);
+	*bp = map + bvec->bv_offset + iter->iov_offset;
+	*len = min(iter->count, bvec->bv_len - iter->iov_offset);
+
+	return map;
+}
+
+static struct page *ii_bvec_kmap(const struct iov_iter *iter, void **bp,
+				 size_t *len)
+{
+	struct bio_vec *bvec = (struct bio_vec *)iter->data;
+	void *map;
+
+	BUG_ON(iter->iov_offset >= bvec->bv_len);
+
+	map = kmap(bvec->bv_page);
+	*bp = map + bvec->bv_offset + iter->iov_offset;
+	*len = min(iter->count, bvec->bv_len - iter->iov_offset);
+
+	return bvec->bv_page;
+}
+
+/*
+ * Common check that it is sage to pin page with get_page()/put_page()
+ * it page is pinnable then page can be subject zerocopy sendpage and others
+ */
+static bool get_page_is_safe(struct page *page)
+{
+	/* It is not safe to increment page count on pages with count == 0 */
+	return (page_count(page) > 0 && !PageSlab(page));
+}
+
+static struct page *ii_bvec_get_page(const struct iov_iter *iter, size_t *off,
+				     size_t *len)
+{
+	struct bio_vec *bvec = (struct bio_vec *)iter->data;
+
+	if (!get_page_is_safe(bvec->bv_page))
+		return NULL;
+
+	*off = bvec->bv_offset + iter->iov_offset;
+	*len = min(iter->count, bvec->bv_len - iter->iov_offset);
+	get_page(bvec->bv_page);
+
+	return bvec->bv_page;
+}
+
 static size_t bvec_copy_tofrom_page(struct iov_iter *iter, struct page *page,
 				    unsigned long page_offset, size_t bytes,
 				    int topage)
@@ -381,10 +620,55 @@ struct iov_iter_ops ii_bvec_ops = {
 	.ii_fault_in_readable = ii_bvec_fault_in_readable,
 	.ii_single_seg_count = ii_bvec_single_seg_count,
 	.ii_shorten = ii_bvec_shorten,
+	.ii_kmap_atomic = ii_bvec_kmap_atomic,
+	.ii_kmap = ii_bvec_kmap,
+	.ii_get_page = ii_bvec_get_page,
+
 };
 EXPORT_SYMBOL(ii_bvec_ops);
 
 /* Functions to get on with single page */
+
+static void *ii_page_kmap_atomic(const struct iov_iter *iter, void **bp,
+				 size_t *len)
+{
+	struct page *page = (struct page *)iter->data;
+	void *map;
+
+	BUG_ON(iter->iov_offset >= PAGE_SIZE);
+	map = kmap_atomic(page);
+	*bp = map + iter->iov_offset;
+	*len = iter->count;
+	return map;
+}
+
+static struct page *ii_page_kmap(const struct iov_iter *iter, void **bp,
+				 size_t *len)
+{
+	struct page *page = (struct page *)iter->data;
+	void *map;
+
+	BUG_ON(iter->iov_offset >= PAGE_SIZE);
+	map = kmap(page);
+	*bp = map + iter->iov_offset;
+	*len = iter->count;
+	return page;
+}
+
+static struct page *ii_page_get_page(const struct iov_iter *iter, size_t *off,
+				     size_t *len)
+{
+	struct page *page = (struct page *)iter->data;
+
+	if (!get_page_is_safe(page))
+		return NULL;
+
+	*off = iter->iov_offset;
+	*len = iter->count;
+	get_page(page);
+
+	return page;
+}
 
 static size_t page_copy_tofrom_page(struct iov_iter *iter, struct page *page,
 				    unsigned long page_offset, size_t bytes,
@@ -477,5 +761,97 @@ struct iov_iter_ops ii_page_ops = {
 	.ii_fault_in_readable = ii_page_fault_in_readable,
 	.ii_single_seg_count = ii_page_single_seg_count,
 	.ii_shorten = ii_page_shorten,
+	.ii_kmap_atomic = ii_page_kmap_atomic,
+	.ii_kmap = ii_page_kmap,
+	.ii_get_page = ii_page_get_page,
+
 };
 EXPORT_SYMBOL(ii_page_ops);
+
+static inline size_t ii_bad_copy_to_user_atomic(struct page *p,
+						struct iov_iter *i,
+						unsigned long off, size_t cnt)
+{
+	BUG();
+	return 0;
+}
+static inline size_t ii_bad_copy_to_user(struct page *p, struct iov_iter *i,
+					 unsigned long off, size_t c)
+{
+	BUG();
+	return 0;
+}
+
+static inline size_t ii_bad_copy_from_user_atomic(struct page *p,
+						  struct iov_iter *i,
+						  unsigned long off, size_t c)
+{
+	BUG();
+	return 0;
+}
+
+static inline size_t ii_bad_copy_from_user(struct page *p, struct iov_iter *i,
+					   unsigned long off, size_t c)
+{
+	BUG();
+	return 0;
+}
+
+static inline void ii_bad_advance(struct iov_iter *i, size_t c)
+{
+	BUG();
+}
+
+static inline int ii_bad_fault_in_readable(struct iov_iter *i, size_t c)
+{
+	BUG();
+	return 0;
+}
+
+static inline size_t ii_bad_single_seg_count(const struct iov_iter *i)
+{
+	BUG();
+	return 0;
+}
+
+static inline int ii_bad_shorten(struct iov_iter *i, size_t c)
+{
+	BUG();
+	return 0;
+}
+
+static inline void *ii_bad_kmap_atomic(const struct iov_iter *i, void **bp,
+				       size_t *len)
+{
+	BUG();
+	return NULL;
+}
+
+static inline struct page *ii_bad_kmap(const struct iov_iter *i, void **bp,
+				       size_t *len)
+{
+	BUG();
+	return NULL;
+}
+
+static inline struct page *ii_bad_get_page(const struct iov_iter *i, size_t *o,
+					   size_t *c)
+{
+	BUG();
+	return NULL;
+}
+
+struct iov_iter_ops ii_bad_ops = {
+	.ii_copy_to_user_atomic = ii_bad_copy_to_user_atomic,
+	.ii_copy_to_user = ii_bad_copy_to_user,
+	.ii_copy_from_user_atomic = ii_bad_copy_from_user_atomic,
+	.ii_copy_from_user = ii_bad_copy_from_user,
+	.ii_advance = ii_bad_advance,
+	.ii_fault_in_readable = ii_bad_fault_in_readable,
+	.ii_single_seg_count = ii_bad_single_seg_count,
+	.ii_shorten = ii_bad_shorten,
+	.ii_kmap_atomic = ii_bad_kmap_atomic,
+	.ii_kmap = ii_bad_kmap,
+	.ii_get_page = ii_bad_get_page,
+};
+EXPORT_SYMBOL(ii_bad_ops);
