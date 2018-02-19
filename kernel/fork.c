@@ -383,6 +383,10 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
 	tsk->stack_canary = get_random_int();
 #endif
 
+#ifdef CONFIG_VE
+	memset(tsk->alloc_lat, 0, sizeof(tsk->alloc_lat));
+#endif
+
 	/*
 	 * One for us, one for whoever does the "release_task()" (usually
 	 * parent)
