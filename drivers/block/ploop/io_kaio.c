@@ -1087,12 +1087,6 @@ static int kaio_autodetect(struct ploop_io * io)
 		return -1;
 	}
 
-	if (file->f_mapping->a_ops->direct_IO_page == NULL) {
-		printk("Cannot run kaio over fs (%s) w/o direct_IO_page\n",
-		       file->f_mapping->host->i_sb->s_type->name);
-		return -1;
-	}
-
 	return 0;
 }
 
