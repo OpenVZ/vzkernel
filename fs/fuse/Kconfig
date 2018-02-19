@@ -68,3 +68,9 @@ config FUSE_KIO_NULLIO
 	default n
 	help
 	  This FUSE extension allows to handle io requests directly inside kernel
+
+config FUSE_KIO_PCS
+	tristate "Enable kdirect PCS io engine"
+	depends on FUSE_FS
+	help
+	  This FUSE extension allows to forward io requests directly to PCS
