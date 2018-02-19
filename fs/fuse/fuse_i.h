@@ -36,6 +36,9 @@
 /** Number of dentries for each connection in the control filesystem */
 #define FUSE_CTL_NUM_DENTRIES 10
 
+/** FUSE kdirect engine name max */
+#define FUSE_KIO_NAME 32
+
 /** If the FUSE_DEFAULT_PERMISSIONS flag is given, the filesystem
     module will check permissions based on the file mode.  Otherwise no
     permission checking is done in the kernel */
@@ -53,6 +56,9 @@
 
 /* Disable synchronous close */
 #define FUSE_DISABLE_CLOSE_WAIT	(1 << 4)
+
+/* Enable custom kernel io engine */
+#define FUSE_KDIRECT_IO         (1 << 10)
 
 /** Number of page pointers embedded in fuse_req */
 #define FUSE_REQ_INLINE_PAGES 1
@@ -128,6 +134,9 @@ struct fuse_inode {
 
 	/** Even though num_openers>0, trust server i_size */
 	int i_size_unstable;
+
+	/** Private kdirect io context */
+	void *private;
 };
 
 /** FUSE inode state bits */
@@ -370,6 +379,11 @@ struct fuse_req {
 		} fallocate;
 		struct fuse_notify_retrieve_in retrieve_in;
 		struct fuse_lk_in lk_in;
+		struct {
+			struct fuse_ioctl_in  in;
+			struct fuse_ioctl_out out;
+			void *ctx;
+		} ioctl;
 	} misc;
 
 	/** page vector */
@@ -397,6 +411,8 @@ struct fuse_req {
 	/** File used in the request (or NULL) */
 	struct fuse_file *ff;
 
+	struct inode *io_inode;
+
 	/** Inode used in the request or NULL */
 	struct inode *inode;
 
@@ -414,6 +430,9 @@ struct fuse_req {
 
 	/** Request will be handled by fud pointing to this fiq */
 	struct fuse_iqueue *fiq;
+
+	/** kmem cache which this request was allocated from */
+	struct kmem_cache *cache;
 };
 
 struct fuse_iqueue {
@@ -477,6 +496,37 @@ struct fuse_dev {
 	struct list_head entry;
 };
 
+
+/**
+ * Fuse kdirect io operations
+ */
+struct fuse_kio_ops {
+	struct list_head	list;
+	char			*name;
+	struct module		*owner;
+
+	int (*probe)(struct fuse_conn *fc, char *name);
+
+	/* Connection scope hooks */
+	int (*conn_init)(struct fuse_conn *fc);
+	void (*conn_fini)(struct fuse_conn *fc);
+	void (*conn_abort)(struct fuse_conn *fc);
+
+	/* Request handling hooks */
+	struct fuse_req *(*req_alloc)(struct fuse_conn *fc, unsigned nrpages,
+				      gfp_t flags);
+	void (*req_free)(struct fuse_conn *fc, struct fuse_req *req);
+	int (*req_send)(struct fuse_conn *fc, struct fuse_req *req, bool bg,
+			bool locked);
+
+	/* Inode scope hooks */
+	int  (*file_open)(struct fuse_conn *fc, struct file *file,
+			  struct inode *inode);
+	void (*inode_release)(struct fuse_inode *fi);
+
+};
+int fuse_register_kio(struct fuse_kio_ops *ops);
+void fuse_unregister_kio(struct fuse_kio_ops *ops);
 /**
  * A Fuse connection.
  *
@@ -712,6 +762,12 @@ struct fuse_conn {
 
 	/** List of device instances belonging to this connection */
 	struct list_head devices;
+
+	/** Kdirect io operations */
+	struct {
+		struct fuse_kio_ops *op;
+		void *ctx;
+	} kio;
 };
 
 static inline struct fuse_conn *get_fuse_conn_super(struct super_block *sb)
@@ -852,7 +908,7 @@ struct fuse_req *fuse_request_alloc_nofs(struct fuse_conn *fc, unsigned npages);
 /**
  * Free a request
  */
-void fuse_request_free(struct fuse_req *req);
+void fuse_request_free(struct fuse_conn *fc, struct fuse_req *req);
 
 /**
  * Get a request, may fail with -ENOMEM,
@@ -1025,6 +1081,10 @@ int fuse_do_setattr(struct inode *inode, struct iattr *attr,
 		    struct file *file);
 
 void fuse_set_initialized(struct fuse_conn *fc);
+void request_end(struct fuse_conn *fc, struct fuse_req *req);
+struct fuse_req *fuse_generic_request_alloc(struct fuse_conn *fc,
+					    struct kmem_cache *cachep,
+					    unsigned npages, gfp_t flags);
 
 int fuse_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 		__u64 start, __u64 len);
