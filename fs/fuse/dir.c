@@ -495,11 +495,19 @@ static int fuse_create_open(struct inode *dir, struct dentry *entry,
 			atomic_dec(&fi->num_openers);
 		}
 		fuse_sync_release(ff, flags);
-	} else {
-		file->private_data = fuse_file_get(ff);
-		fuse_finish_open(inode, file);
+		return err;
 	}
-	return err;
+
+	file->private_data = fuse_file_get(ff);
+	fuse_finish_open(inode, file);
+	if (fc->kio.op && fc->kio.op->file_open &&
+	    fc->kio.op->file_open(fc, file, inode)) {
+		if (err) {
+			fput(file);
+			return  err;
+		}
+	}
+	return 0;
 
 out_free_ff:
 	fuse_file_free(ff);
@@ -1663,6 +1671,7 @@ static void fuse_setattr_fill(struct fuse_conn *fc, struct fuse_req *req,
 			      struct fuse_setattr_in *inarg_p,
 			      struct fuse_attr_out *outarg_p)
 {
+	req->io_inode = inode;
 	req->in.h.opcode = FUSE_SETATTR;
 	req->in.h.nodeid = get_node_id(inode);
 	req->in.numargs = 1;
