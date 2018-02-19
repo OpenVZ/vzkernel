@@ -3446,7 +3446,11 @@ static ssize_t fuse_direct_IO_bvec(int rw, struct kiocb *iocb,
 	size_t nmax = (rw == WRITE ? fc->max_write : fc->max_read);
 	size_t filled, nres;
 	loff_t pos = iocb->ki_pos;
+	loff_t i_size = i_size_read(file->f_mapping->host);
 	int i;
+
+	/* TODO: File extension is not yet implemented */
+	BUG_ON(offset + bvec_length(bvec, bvec_len) > i_size);
 
 	if (nmax > FUSE_MAX_PAGES_PER_REQ << PAGE_SHIFT)
 		nmax = FUSE_MAX_PAGES_PER_REQ << PAGE_SHIFT;
