@@ -3625,32 +3625,6 @@ fuse_direct_IO(int rw, struct kiocb *iocb, const struct iovec *iov,
 	return ret;
 }
 
-static ssize_t fuse_direct_IO_page(int rw, struct kiocb *iocb,
-	struct page *page, loff_t offset)
-{
-	struct iovec iov;
-	mm_segment_t oldfs;
-	ssize_t ret;
-
-	iov.iov_base = kmap(page);
-	iov.iov_len = PAGE_SIZE;
-
-	oldfs = get_fs();
-	set_fs(KERNEL_DS);
-
-	ret = fuse_direct_IO(rw, iocb, &iov, offset, 1);
-	if (ret != -EIOCBQUEUED && ret != PAGE_SIZE)
-		printk("fuse_direct_IO_page: io failed with err=%ld "
-		       "(rw=%s fh=0x%llx pos=%lld)\n",
-		       ret, rw == WRITE ? "WRITE" : "READ",
-		       ((struct fuse_file *)iocb->ki_filp->private_data)->fh,
-		       offset);
-
-	set_fs(oldfs);
-	kunmap(page);
-	return ret;
-}
-
 static long fuse_file_fallocate(struct file *file, int mode, loff_t offset,
 				loff_t length)
 {
@@ -3828,7 +3802,7 @@ static int fuse_request_fiemap(struct inode *inode, u32 cur_max,
 
 		err = -ENOMEM;
 		for (allocated = 0; allocated < npages; allocated++) {
-			req->pages[allocated] = alloc_page(GFP_KERNEL | __GFP_HIGHMEM);
+			req->pages[allocated] = alloc_page(GFP_KERNEL| __GFP_HIGHMEM);
 			if (!req->pages[allocated])
 				goto out;
 			req->page_descs[allocated].length = PAGE_SIZE;
@@ -4014,7 +3988,6 @@ static const struct address_space_operations fuse_file_aops  = {
 	.bmap		= fuse_bmap,
 	.direct_IO	= fuse_direct_IO,
 	.direct_IO_bvec	= fuse_direct_IO_bvec,
-	.direct_IO_page	= fuse_direct_IO_page,
 	.write_begin	= fuse_write_begin,
 	.write_end	= fuse_write_end,
 };
