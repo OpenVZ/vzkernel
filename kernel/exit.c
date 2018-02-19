@@ -736,6 +736,20 @@ static void check_stack_usage(void)
 static inline void check_stack_usage(void) {}
 #endif
 
+void kstat_add_dying(struct task_struct *tsk)
+{
+#ifdef CONFIG_VE
+	int i;
+
+	spin_lock_irq(&tsk->sighand->siglock);
+	for (i = 0; i < KSTAT_ALLOCSTAT_NR; i++) {
+		tsk->signal->alloc_lat[i].totlat += tsk->alloc_lat[i].totlat;
+		tsk->signal->alloc_lat[i].count += tsk->alloc_lat[i].count;
+	}
+	spin_unlock_irq(&tsk->sighand->siglock);
+#endif
+}
+
 void do_exit(long code)
 {
 	struct task_struct *tsk = current;
@@ -808,6 +822,8 @@ void do_exit(long code)
 		exit_itimers(tsk->signal);
 		if (tsk->mm)
 			setmax_mm_hiwater_rss(&tsk->signal->maxrss, tsk->mm);
+	} else {
+		kstat_add_dying(tsk);
 	}
 	acct_collect(code, group_dead);
 	if (group_dead)
