@@ -2143,7 +2143,6 @@ int pcs_cslist_submit(struct pcs_int_request *ireq, struct pcs_cs_list *csl, int
 	BUG_ON(!atomic_read(&csl->refcnt));
 
 	if (ireq->type == PCS_IREQ_FLUSH) {
-		BUG();
 		return pcs_cslist_submit_flush(ireq, csl, requeue);
 	} else if (!ireq->iochunk.direction) {
 		return pcs_cslist_submit_read(ireq, csl, requeue);
@@ -2151,7 +2150,6 @@ int pcs_cslist_submit(struct pcs_int_request *ireq, struct pcs_cs_list *csl, int
 		BUG();
 		return -EIO;
 	} else {
-		BUG();
 		return pcs_cslist_submit_write(ireq, csl, requeue);
 	}
 	BUG();
