@@ -977,6 +977,7 @@ static int fuse_do_getattr(struct inode *inode, struct kstat *stat,
 	req->in.args[0].size = sizeof(inarg);
 	req->in.args[0].value = &inarg;
 	req->out.numargs = 1;
+	req->io_inode = inode;
 	if (fc->minor < 9)
 		req->out.args[0].size = FUSE_COMPAT_ATTR_OUT_SIZE;
 	else
@@ -1639,6 +1640,7 @@ void fuse_set_nowrite(struct inode *inode)
 	BUG_ON(fi->writectr < 0);
 	fi->writectr += FUSE_NOWRITE;
 	spin_unlock(&fc->lock);
+	inode_dio_wait(inode);
 	wait_event(fi->page_waitq, fi->writectr == FUSE_NOWRITE);
 }
 
