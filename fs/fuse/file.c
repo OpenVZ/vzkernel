@@ -317,6 +317,12 @@ out_inode_unlock:
 	if (is_wb_truncate || dax_truncate)
 		inode_unlock(inode);
 
+	if (!err && fc->kio.op && fc->kio.op->file_open &&
+	    fc->kio.op->file_open(file, inode)) {
+		fuse_release_common(file, false);
+		return -EINVAL;
+	}
+
 	if (!err && fc->writeback_cache && !isdir) {
 		struct fuse_inode *fi = get_fuse_inode(inode);
 		u64 size;
@@ -696,6 +702,7 @@ int fuse_fsync_common(struct file *file, loff_t start, loff_t end,
 	inarg.fh = ff->fh;
 	inarg.fsync_flags = datasync ? FUSE_FSYNC_FDATASYNC : 0;
 	args.opcode = opcode;
+	args.io_inode = inode;
 	args.nodeid = get_node_id(inode);
 	args.in_numargs = 1;
 	args.in_args[0].size = sizeof(inarg);
@@ -771,6 +778,7 @@ void fuse_read_args_fill(struct fuse_io_args *ia, struct file *file, loff_t pos,
 	args->out_argvar = true;
 	args->out_numargs = 1;
 	args->out_args[0].size = count;
+	args->io_inode = file_inode(file);
 
 	if (opcode == FUSE_READ) {
 		struct fuse_iqueue *fiq = raw_cpu_ptr(ff->fm->fc->iqs);
@@ -1220,7 +1228,7 @@ static ssize_t fuse_cache_read_iter(struct kiocb *iocb, struct iov_iter *to)
 }
 
 static void fuse_write_args_fill(struct fuse_io_args *ia, struct fuse_file *ff,
-				 loff_t pos, size_t count)
+				 struct inode *inode, loff_t pos, size_t count)
 {
 	struct fuse_args *args = &ia->ap.args;
 
@@ -1239,6 +1247,7 @@ static void fuse_write_args_fill(struct fuse_io_args *ia, struct fuse_file *ff,
 	args->out_numargs = 1;
 	args->out_args[0].size = sizeof(ia->write.out);
 	args->out_args[0].value = &ia->write.out;
+	args->io_inode = inode;
 }
 
 static unsigned int fuse_write_flags(struct kiocb *iocb)
@@ -1263,7 +1272,7 @@ static ssize_t fuse_send_write(struct fuse_io_args *ia, loff_t pos,
 	struct fuse_write_in *inarg = &ia->write.in;
 	ssize_t err;
 
-	fuse_write_args_fill(ia, ff, pos, count);
+	fuse_write_args_fill(ia, ff, file_inode(file), pos, count);
 	inarg->flags = fuse_write_flags(iocb);
 	if (owner != NULL) {
 		inarg->write_flags |= FUSE_WRITE_LOCKOWNER;
@@ -1312,7 +1321,7 @@ static ssize_t fuse_send_write_pages(struct fuse_io_args *ia,
 	for (i = 0; i < ap->num_pages; i++)
 		fuse_wait_on_page_writeback(inode, ap->pages[i]->index);
 
-	fuse_write_args_fill(ia, ff, pos, count);
+	fuse_write_args_fill(ia, ff, file_inode(file), pos, count);
 	ia->write.in.flags = fuse_write_flags(iocb);
 	if (fm->fc->handle_killpriv_v2 && !capable(CAP_FSETID))
 		ia->write.in.write_flags |= FUSE_WRITE_KILL_SUIDGID;
@@ -2174,7 +2183,7 @@ static int fuse_writepage_locked(struct page *page)
 		goto err_nofile;
 
 	fuse_writepage_add_to_bucket(fc, wpa);
-	fuse_write_args_fill(&wpa->ia, wpa->ia.ff, page_offset(page), 0);
+	fuse_write_args_fill(&wpa->ia, wpa->ia.ff, inode, page_offset(page), 0);
 
 	copy_highpage(tmp_page, page);
 	wpa->ia.write.in.write_flags |= FUSE_WRITE_CACHE;
@@ -2470,7 +2479,7 @@ static int fuse_writepages_fill(struct page *page,
 		data->max_pages = 1;
 
 		ap = &wpa->ia.ap;
-		fuse_write_args_fill(&wpa->ia, data->ff, page_offset(page), 0);
+		fuse_write_args_fill(&wpa->ia, data->ff, data->inode, page_offset(page), 0);
 		wpa->ia.write.in.write_flags |= FUSE_WRITE_CACHE;
 		wpa->next = NULL;
 		ap->args.in_pages = true;
@@ -2946,6 +2955,7 @@ static sector_t fuse_bmap(struct address_space *mapping, sector_t block)
 	inarg.block = block;
 	inarg.blocksize = inode->i_sb->s_blocksize;
 	args.opcode = FUSE_BMAP;
+	args.io_inode = inode;
 	args.nodeid = get_node_id(inode);
 	args.in_numargs = 1;
 	args.in_args[0].size = sizeof(inarg);
@@ -3345,6 +3355,7 @@ static long fuse_file_fallocate(struct file *file, int mode, loff_t offset,
 		set_bit(FUSE_I_SIZE_UNSTABLE, &fi->state);
 
 	args.opcode = FUSE_FALLOCATE;
+	args.io_inode = inode;
 	args.nodeid = ff->nodeid;
 	args.in_numargs = 1;
 	args.in_args[0].size = sizeof(inarg);

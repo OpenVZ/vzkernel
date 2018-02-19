@@ -29,6 +29,7 @@ MODULE_DESCRIPTION("Filesystem in Userspace");
 MODULE_LICENSE("GPL");
 
 static struct kmem_cache *fuse_inode_cachep;
+static LIST_HEAD(fuse_kios_list);
 struct list_head fuse_conn_list;
 DEFINE_MUTEX(fuse_mutex);
 
@@ -87,6 +88,7 @@ static struct inode *fuse_alloc_inode(struct super_block *sb)
 	fi->orig_ino = 0;
 	fi->state = 0;
 	fi->i_size_unstable = 0;
+	fi->private = NULL;
 	INIT_LIST_HEAD(&fi->rw_files);
 	mutex_init(&fi->mutex);
 	init_rwsem(&fi->i_mmap_sem);
@@ -116,6 +118,11 @@ static void fuse_free_inode(struct inode *inode)
 #ifdef CONFIG_FUSE_DAX
 	kfree(fi->dax);
 #endif
+
+	/* TODO: Probably kio context should be released inside fuse forget */
+	if (fc->kio.op && fc->kio.op->inode_release)
+		fc->kio.op->inode_release(fi);
+
 	kmem_cache_free(fuse_inode_cachep, fi);
 }
 
@@ -552,6 +559,52 @@ static void fuse_send_destroy(struct fuse_mount *fm)
 	}
 }
 
+int fuse_register_kio(struct fuse_kio_ops *ops)
+{
+	mutex_lock(&fuse_mutex);
+	list_add(&ops->list, &fuse_kios_list);
+	mutex_unlock(&fuse_mutex);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(fuse_register_kio);
+
+void fuse_unregister_kio(struct fuse_kio_ops *ops)
+{
+	mutex_lock(&fuse_mutex);
+	list_del(&ops->list);
+	mutex_unlock(&fuse_mutex);
+}
+EXPORT_SYMBOL_GPL(fuse_unregister_kio);
+
+static struct fuse_kio_ops *fuse_kio_get(struct fuse_conn *fc, char *name)
+{
+	struct fuse_kio_ops *ops;
+
+	mutex_lock(&fuse_mutex);
+	list_for_each_entry(ops, &fuse_kios_list, list) {
+		if (!strncmp(name, ops->name, FUSE_KIO_NAME) &&
+		    ops->probe(fc, name) && try_module_get(ops->owner)) {
+			__module_get(THIS_MODULE);
+			mutex_unlock(&fuse_mutex);
+			return ops;
+		}
+	}
+	mutex_unlock(&fuse_mutex);
+	return NULL;
+}
+
+static void fuse_kio_put(struct fuse_kio_ops *ops)
+{
+	module_put(ops->owner);
+	module_put(THIS_MODULE);
+}
+
+static void fuse_kdirect_put(struct fuse_conn *fc)
+{
+	if (fc->kio.op)
+		fuse_kio_put(fc->kio.op);
+}
+
 static void convert_fuse_statfs(struct kstatfs *stbuf, struct fuse_kstatfs *attr)
 {
 	stbuf->f_type    = FUSE_SUPER_MAGIC;
@@ -699,7 +752,8 @@ enum {
 	OPT_ODIRECT,
 	OPT_UMOUNT_WAIT,
 	OPT_DISABLE_CLOSE_WAIT,
-	OPT_ERR
+	OPT_ERR,
+	OPT_KIO_NAME
 };
 
 static const struct fs_parameter_spec fuse_fs_parameters[] = {
@@ -716,6 +770,7 @@ static const struct fs_parameter_spec fuse_fs_parameters[] = {
 	fsparam_flag	("direct_enable",	OPT_ODIRECT),
 	fsparam_flag	("umount_wait",		OPT_UMOUNT_WAIT),
 	fsparam_flag	("disable_close_wait",	OPT_DISABLE_CLOSE_WAIT),
+	fsparam_string	("kdirect",		OPT_KIO_NAME),
 	fsparam_string	("subtype",		OPT_SUBTYPE),
 	{}
 };
@@ -833,6 +888,19 @@ static int fuse_parse_param(struct fs_context *fsc, struct fs_parameter *param)
 		ctx->close_wait = 0;
 		break;
 
+	case OPT_KIO_NAME: {
+		if (param->size > FUSE_KIO_NAME)
+			return -EINVAL;
+
+		strncpy(ctx->kio_name, param->string, FUSE_KIO_NAME);
+		ctx->kio_name[FUSE_KIO_NAME] = '\0';
+		ctx->kdirect_io = 1;
+
+		kfree(param->string);
+		param->string = NULL;
+		break;
+	}
+
 	default:
 		return -EINVAL;
 	}
@@ -876,6 +944,8 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 			seq_printf(m, ",blksize=%lu", sb->s_blocksize);
 		if (fc->writeback_cache)
 			seq_puts(m, ",writeback_enable");
+		if (fc->kdirect_io)
+			seq_printf(m, ",kdirect=%s", fc->kio.op->name);
 	}
 #ifdef CONFIG_FUSE_DAX
 	if (fc->dax)
@@ -1314,6 +1384,14 @@ static void process_init_reply(struct fuse_mount *fm, struct fuse_args *args,
 		fc->max_write = arg->minor < 5 ? 4096 : arg->max_write;
 		fc->max_write = max_t(unsigned, 4096, fc->max_write);
 		fc->conn_init = 1;
+
+		if (fc->kio.op) {
+			if (!fc->kio.op->conn_init(fc)) {
+				kfree(ia);
+				return;
+			}
+			fc->conn_error = 1;
+		}
 	}
 	kfree(ia);
 
@@ -1690,12 +1768,20 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *ctx)
 	fc->no_control = ctx->no_control;
 	fc->no_force_umount = ctx->no_force_umount;
 
+	if (fc->kdirect_io) {
+		fc->kio.op = fuse_kio_get(fc, ctx->kio_name);
+		if (!fc->kio.op) {
+			err = -EINVAL;
+			goto err_dev_free;
+		}
+	}
+
 	err = -ENOMEM;
 	root = fuse_get_root_inode(sb, ctx->rootmode);
 	sb->s_d_op = &fuse_root_dentry_operations;
 	root_dentry = d_make_root(root);
 	if (!root_dentry)
-		goto err_dev_free;
+		goto err_put_io;
 	/* Root dentry doesn't have .d_revalidate */
 	sb->s_d_op = &fuse_dentry_operations;
 
@@ -1718,6 +1804,8 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *ctx)
  err_unlock:
 	mutex_unlock(&fuse_mutex);
 	dput(root_dentry);
+ err_put_io:
+	fuse_kdirect_put(fc);
  err_dev_free:
 	if (fud)
 		fuse_dev_free(fud);
@@ -1902,6 +1990,7 @@ void fuse_conn_destroy(struct fuse_mount *fm)
 		fuse_ctl_remove_conn(fc);
 		mutex_unlock(&fuse_mutex);
 	}
+	fuse_kdirect_put(fc);
 }
 EXPORT_SYMBOL_GPL(fuse_conn_destroy);
 
