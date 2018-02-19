@@ -598,24 +598,23 @@ static void lastlat_seq_show(struct seq_file *m,
 	seq_printf(m, "%-12s %20Lu %20lu\n", name,
 			snap->totlat, snap->count);
 }
+static const char *alloc_descr[] = {
+	"allocatomic:",
+	"alloc:",
+	"allocmp:",
+};
+static const int alloc_types[] = {
+	KSTAT_ALLOCSTAT_ATOMIC,
+	KSTAT_ALLOCSTAT_LOW,
+	KSTAT_ALLOCSTAT_LOW_MP,
+};
 
-static int vz_lat_show_proc(struct seq_file *m, void *v)
+static int proc_tid_vz_lat(struct seq_file *m, struct pid_namespace *ns,
+			struct pid *pid, struct task_struct *task)
 {
 	int i;
-	struct inode *inode = m->private;
-	struct task_struct *task = get_proc_task(inode);
-	static const char *alloc_descr[] = {
-		"allocatomic:",
-		"alloc:",
-		"allocmp:",
-	};
-	static const int alloc_types[] = {
-		KSTAT_ALLOCSTAT_ATOMIC,
-		KSTAT_ALLOCSTAT_LOW,
-		KSTAT_ALLOCSTAT_LOW_MP,
-	};
 
-	seq_printf(m, "%-11s %20s %20s\n",
+	seq_printf(m, "%-12s %20s %20s\n",
 			"Type", "Total_lat", "Calls");
 
 	for (i = 0; i < ARRAY_SIZE(alloc_types); i++)
@@ -624,17 +623,43 @@ static int vz_lat_show_proc(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int vz_lat_open(struct inode *inode, struct file *file)
+static int proc_tgid_vz_lat(struct seq_file *m, struct pid_namespace *ns,
+			struct pid *pid, struct task_struct *task)
 {
-	return single_open(file, vz_lat_show_proc, inode);
-}
+	int i;
+	unsigned long flags;
+	u64 lat[ARRAY_SIZE(alloc_types)];
+	u64 count[ARRAY_SIZE(alloc_types)];
 
-static const struct file_operations proc_vz_lat_operations = {
-	.open		= vz_lat_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
+	for (i = 0; i < ARRAY_SIZE(alloc_types); i++) {
+		lat[i] = task->alloc_lat[alloc_types[i]].totlat;
+		count[i] = task->alloc_lat[alloc_types[i]].count;
+	}
+
+	if (lock_task_sighand(task, &flags)) {
+		struct task_struct *t = task;
+		while_each_thread(task, t) {
+			for (i = 0; i < ARRAY_SIZE(alloc_types); i++) {
+				lat[i] += t->alloc_lat[alloc_types[i]].totlat;
+				count[i] += t->alloc_lat[alloc_types[i]].count;
+			}
+		}
+		for (i = 0; i < ARRAY_SIZE(alloc_types); i++) {
+			lat[i] += t->signal->alloc_lat[alloc_types[i]].totlat;
+			count[i] += t->signal->alloc_lat[alloc_types[i]].count;
+		}
+		unlock_task_sighand(task, &flags);
+	}
+
+	seq_printf(m, "%-12s %20s %20s\n",
+			"Type", "Total_lat", "Calls");
+
+	for (i = 0; i < ARRAY_SIZE(alloc_types); i++)
+		seq_printf(m, "%-12s %20Lu %20Lu\n", alloc_descr[i],
+			lat[i], count[i]);
+
+	return 0;
+}
 #endif
 
 #ifdef CONFIG_CGROUPS
@@ -3094,7 +3119,7 @@ static const struct pid_entry tgid_base_stuff[] = {
 	ONE("patch_state",  S_IRUSR, proc_pid_patch_state),
 #endif
 #ifdef CONFIG_VE
-	REG("vz_latency", S_IRUGO, proc_vz_lat_operations),
+	ONE("vz_latency", S_IRUGO, proc_tgid_vz_lat),
 #endif
 };
 
@@ -3452,6 +3477,9 @@ static const struct pid_entry tid_base_stuff[] = {
 #endif
 #ifdef CONFIG_LIVEPATCH
 	ONE("patch_state",  S_IRUSR, proc_pid_patch_state),
+#endif
+#ifdef CONFIG_VE
+	ONE("vz_latency", S_IRUGO, proc_tid_vz_lat),
 #endif
 };
 
