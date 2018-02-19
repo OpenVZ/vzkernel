@@ -345,6 +345,9 @@ struct iov_iter_ops {
 	int (*ii_fault_in_readable)(struct iov_iter *, size_t);
 	size_t (*ii_single_seg_count)(const struct iov_iter *);
 	int (*ii_shorten)(struct iov_iter *, size_t);
+	void* (*ii_kmap_atomic)(const struct iov_iter *, void **, size_t*);
+	struct page* (*ii_kmap)(const struct iov_iter *, void **, size_t*);
+	struct page* (*ii_get_page)(const struct iov_iter *, size_t *, size_t*);
 };
 
 static inline size_t iov_iter_copy_to_user_atomic(struct page *page,
@@ -382,6 +385,24 @@ static inline size_t iov_iter_single_seg_count(const struct iov_iter *i)
 static inline int iov_iter_shorten(struct iov_iter *i, size_t count)
 {
 	return i->ops->ii_shorten(i, count);
+}
+
+static inline void *iov_iter_kmap_atomic(const struct iov_iter *i, void **bufp,
+					 size_t *len)
+{
+	return i->ops->ii_kmap_atomic(i, bufp, len);
+}
+
+static inline struct page *iov_iter_kmap(const struct iov_iter *i, void **bufp,
+					 size_t *len)
+{
+	return i->ops->ii_kmap(i, bufp, len);
+}
+
+static inline struct page *iov_iter_get_page(const struct iov_iter *i,
+					     size_t *off, size_t *len)
+{
+	return i->ops->ii_get_page(i, off, len);
 }
 
 extern struct iov_iter_ops ii_bvec_ops;
@@ -448,6 +469,31 @@ static inline void iov_iter_init(struct iov_iter *i,
 
 	iov_iter_advance(i, written);
 }
+
+extern struct iov_iter_ops ii_bad_ops;
+
+static inline void iov_iter_init_bad(struct iov_iter *i)
+{
+	i->ops = &ii_bad_ops;
+	i->data = 0;
+	i->nr_segs = 0;
+	i->iov_offset = 0;
+	i->count = 0;
+}
+
+extern struct iov_iter_ops ii_plain_ops;
+static inline void iov_iter_init_plain(struct iov_iter *i, void *data,
+				       size_t count, size_t written)
+{
+	i->ops = &ii_plain_ops;
+	i->data = (unsigned long)data;
+	i->nr_segs = 1;
+	i->iov_offset = 0;
+	i->count = count + written;
+
+	iov_iter_advance(i, written);
+}
+
 static inline int iov_iter_has_iovec(const struct iov_iter *i)
 {
 	return i->ops == &ii_iovec_ops;
@@ -456,6 +502,16 @@ static inline struct iovec *iov_iter_iovec(const struct iov_iter *i)
 {
 	BUG_ON(!iov_iter_has_iovec(i));
 	return (struct iovec *)i->data;
+}
+
+static inline int iov_iter_has_plain(const struct iov_iter *i)
+{
+	return i->ops == &ii_plain_ops;
+}
+static inline void *iov_iter_plain(const struct iov_iter *i)
+{
+	BUG_ON(!iov_iter_has_plain(i));
+	return (void *)i->data;
 }
 
 static inline size_t iov_iter_count(const struct iov_iter *i)
