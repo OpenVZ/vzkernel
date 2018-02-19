@@ -110,7 +110,7 @@ static void fuse_file_list_del(struct fuse_file *ff)
 void fuse_file_free(struct fuse_file *ff)
 {
 	fuse_file_list_del(ff);
-	fuse_request_free(ff->reserved_req);
+	fuse_request_free(ff->fc, ff->reserved_req);
 	kfree(ff);
 }
 
@@ -314,6 +314,13 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 	err = fuse_do_open(fc, get_node_id(inode), file, isdir);
 	if (err)
 		goto out;
+	if (fc->kio.op && fc->kio.op->file_open &&
+	    fc->kio.op->file_open(fc, file, inode)) {
+		if (lock_mode)
+			mutex_unlock(&inode->i_mutex);
+		fuse_release_common(file, false);
+		return -EINVAL;
+	}
 
 	if (fc->writeback_cache && !isdir) {
 		struct fuse_inode *fi = get_fuse_inode(inode);
@@ -705,6 +712,7 @@ int fuse_fsync_common(struct file *file, loff_t start, loff_t end,
 	inarg.fh = ff->fh;
 	inarg.fsync_flags = datasync ? 1 : 0;
 	req->in.h.opcode = isdir ? FUSE_FSYNCDIR : FUSE_FSYNC;
+	req->io_inode = inode;
 	req->in.h.nodeid = get_node_id(inode);
 	req->in.numargs = 1;
 	req->in.args[0].size = sizeof(inarg);
@@ -749,6 +757,7 @@ void fuse_read_fill(struct fuse_req *req, struct file *file, loff_t pos,
 	req->out.argvar = 1;
 	req->out.numargs = 1;
 	req->out.args[0].size = count;
+	req->io_inode = file_inode(file);
 
 	if (opcode == FUSE_READ) {
 		struct fuse_iqueue *fiq = __this_cpu_ptr(ff->fc->iqs);
@@ -1261,7 +1270,7 @@ static ssize_t fuse_file_aio_read(struct kiocb *iocb, const struct iovec *iov,
 }
 
 static void fuse_write_fill(struct fuse_req *req, struct fuse_file *ff,
-			    loff_t pos, size_t count)
+			    struct inode *inode, loff_t pos, size_t count)
 {
 	struct fuse_write_in *inarg = &req->misc.write.in;
 	struct fuse_write_out *outarg = &req->misc.write.out;
@@ -1281,6 +1290,7 @@ static void fuse_write_fill(struct fuse_req *req, struct fuse_file *ff,
 	req->out.numargs = 1;
 	req->out.args[0].size = sizeof(struct fuse_write_out);
 	req->out.args[0].value = outarg;
+	req->io_inode = inode;
 }
 
 static size_t fuse_send_unmap(struct fuse_req *req, struct fuse_io_priv *io,
@@ -1320,7 +1330,7 @@ static size_t fuse_send_write(struct fuse_req *req, struct fuse_io_priv *io,
 	struct fuse_conn *fc = ff->fc;
 	struct fuse_write_in *inarg = &req->misc.write.in;
 
-	fuse_write_fill(req, ff, pos, count);
+	fuse_write_fill(req, ff, file_inode(file), pos, count);
 	fuse_account_request(fc, count);
 	inarg->flags = file->f_flags;
 	if (owner != NULL) {
@@ -2089,7 +2099,7 @@ static int fuse_writepage_locked(struct page *page)
 	if (!req->ff)
 		goto err_nofile;
 
-	fuse_write_fill(req, req->ff, page_offset(page), 0);
+	fuse_write_fill(req, req->ff, inode, page_offset(page), 0);
 	fuse_account_request(fc, PAGE_CACHE_SIZE);
 
 	copy_highpage(tmp_page, page);
@@ -2119,7 +2129,7 @@ static int fuse_writepage_locked(struct page *page)
 err_nofile:
 	__free_page(tmp_page);
 err_free:
-	fuse_request_free(req);
+	fuse_request_free(fc, req);
 err:
 	mapping_set_error(page->mapping, error);
 	end_page_writeback(page);
@@ -2228,7 +2238,7 @@ static bool fuse_writepage_in_flight(struct fuse_req *new_req,
 		dec_zone_page_state(new_req->pages[0], NR_WRITEBACK_TEMP);
 		bdi_writeout_inc(bdi);
 		fuse_writepage_free(fc, new_req);
-		fuse_request_free(new_req);
+		fuse_request_free(fc, new_req);
 	}
 
 	return true;
@@ -2322,7 +2332,7 @@ static int fuse_writepages_fill(struct page *page,
 			goto out_unlock;
 		}
 
-		fuse_write_fill(req, data->ff, page_offset(page), 0);
+		fuse_write_fill(req, data->ff, inode, page_offset(page), 0);
 		fuse_account_request(fc, PAGE_CACHE_SIZE);
 		req->misc.write.in.write_flags |= FUSE_WRITE_CACHE;
 		req->misc.write.next = NULL;
@@ -2804,6 +2814,7 @@ static sector_t fuse_bmap(struct address_space *mapping, sector_t block)
 	memset(&inarg, 0, sizeof(inarg));
 	inarg.block = block;
 	inarg.blocksize = inode->i_sb->s_blocksize;
+	req->io_inode = inode;
 	req->in.h.opcode = FUSE_BMAP;
 	req->in.h.nodeid = get_node_id(inode);
 	req->in.numargs = 1;
@@ -3681,6 +3692,7 @@ static long fuse_file_fallocate(struct file *file, int mode, loff_t offset,
 		goto out;
 	}
 
+	req->io_inode = inode;
 	req->in.h.opcode = FUSE_FALLOCATE;
 	req->in.h.nodeid = ff->nodeid;
 	req->in.numargs = 1;
