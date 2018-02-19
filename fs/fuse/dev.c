@@ -50,18 +50,32 @@ static void fuse_request_init(struct fuse_mount *fm, struct fuse_req *req)
 	req->fm = fm;
 }
 
-static struct fuse_req *fuse_request_alloc(struct fuse_mount *fm, gfp_t flags)
+struct fuse_req *fuse_generic_request_alloc(struct fuse_mount *fm,
+				struct kmem_cache *cachep, gfp_t flags)
 {
-	struct fuse_req *req = kmem_cache_zalloc(fuse_req_cachep, flags);
-	if (req)
+	struct fuse_req *req = kmem_cache_zalloc(cachep, flags);
+	if (req) {
 		fuse_request_init(fm, req);
+		req->cache = cachep;
+	}
 
 	return req;
+}
+EXPORT_SYMBOL_GPL(fuse_generic_request_alloc);
+
+static struct fuse_req *fuse_request_alloc(struct fuse_mount *fm, gfp_t flags)
+{
+	struct fuse_conn *fc = fm->fc;
+
+	if (fc->kio.op && fc->kio.op->req_alloc)
+		return fc->kio.op->req_alloc(fm, flags);
+
+	return fuse_generic_request_alloc(fm, fuse_req_cachep, flags);
 }
 
 static void fuse_request_free(struct fuse_req *req)
 {
-	kmem_cache_free(fuse_req_cachep, req);
+	kmem_cache_free(req->cache, req);
 }
 
 static void __fuse_get_request(struct fuse_req *req)
@@ -81,6 +95,7 @@ void fuse_set_initialized(struct fuse_conn *fc)
 	smp_wmb();
 	fc->initialized = 1;
 }
+EXPORT_SYMBOL_GPL(fuse_set_initialized);
 
 static bool fuse_block_alloc(struct fuse_conn *fc, bool for_background)
 {
@@ -407,9 +422,15 @@ static void request_wait_answer(struct fuse_req *req)
 
 static void __fuse_request_send(struct fuse_req *req, struct fuse_file *ff)
 {
+	struct fuse_mount *fm = req->fm;
+	struct fuse_conn *fc = fm->fc;
 	struct fuse_iqueue *fiq = req->args->fiq;
 
 	BUG_ON(test_bit(FR_BACKGROUND, &req->flags));
+
+	if (fc->kio.op && !fc->kio.op->req_send(req, false, false))
+		return;
+
 	spin_lock(&fiq->lock);
 	if (!fiq->connected) {
 		spin_unlock(&fiq->lock);
@@ -531,6 +552,7 @@ ssize_t fuse_simple_request(struct fuse_mount *fm, struct fuse_args *args)
 {
 	return fuse_simple_check_request(fm, args, NULL);
 }
+EXPORT_SYMBOL_GPL(fuse_simple_request);
 
 bool fuse_has_req_ff(struct fuse_req *req)
 {
@@ -582,6 +604,10 @@ static int fuse_request_queue_background(struct fuse_req *req)
 	int ret = -ENOTCONN;
 
 	WARN_ON(!test_bit(FR_BACKGROUND, &req->flags));
+
+	if (fc->kio.op && !fc->kio.op->req_send(fc, req, true, false))
+		return 0;
+
 	if (!test_bit(FR_WAITING, &req->flags)) {
 		__set_bit(FR_WAITING, &req->flags);
 		atomic_inc(&fc->num_waiting);
@@ -2265,6 +2291,9 @@ void fuse_abort_conn(struct fuse_conn *fc)
 						      &to_end);
 			spin_unlock(&fpq->lock);
 		}
+		if (fc->kio.op)
+			fc->kio.op->conn_abort(fc);
+
 		spin_lock(&fc->bg_lock);
 		fc->blocked = 0;
 		fc->max_background = UINT_MAX;
