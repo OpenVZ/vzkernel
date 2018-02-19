@@ -256,7 +256,7 @@ static int kaio_fill_zero_submit(struct file *file,
 	if (size == 0)
 		return 0;
 
-	kreq = kaio_kreq_alloc(preq, &nr_segs);
+	kreq = kaio_kreq_alloc(preq, nr_segs);
 	if (!kreq) {
 		PLOOP_REQ_SET_ERROR(preq, -ENOMEM);
 		return err;
