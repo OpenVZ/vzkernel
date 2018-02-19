@@ -395,9 +395,9 @@ static void request_end(struct fuse_conn *fc, struct fuse_req *req)
 		flush_bg_queue(fc, fiq);
 		spin_unlock(&fc->lock);
 	}
-	wake_up(&req->waitq);
 	if (req->end)
 		req->end(fc, req);
+	wake_up(&req->waitq);
 	fuse_put_request(fc, req);
 }
 
