@@ -141,16 +141,14 @@ static void kaio_rw_kreq_complete(u64 data, long res)
 	kaio_rw_aio_complete((u64)preq, res);
 }
 
-static struct kaio_req *kaio_kreq_alloc(struct ploop_request *preq, int *nr_p)
+static struct kaio_req *kaio_kreq_alloc(struct ploop_request *preq, int nr)
 {
-	static const int nr = KAIO_MAX_PAGES_PER_REQ;
 	struct kaio_req *kreq;
 
-	kreq = kmalloc(offsetof(struct kaio_req, bvecs[nr]), GFP_NOFS);
-	if (kreq) {
-		*nr_p = nr;
+	kreq = kmalloc(sizeof(struct kaio_req) + sizeof(struct bio_vec) * nr,
+		       GFP_NOFS);
+	if (kreq)
 		kreq->preq = preq;
-	}
 
 	return kreq;
 }
@@ -365,11 +363,11 @@ static void kaio_sbl_submit(struct file *file, struct ploop_request *preq,
 
 	while (size > 0) {
 		struct kaio_req *kreq;
-		int nr_segs;
+		int nr_segs = KAIO_MAX_PAGES_PER_REQ;
 		size_t copy;
 		int err;
 
-		kreq = kaio_kreq_alloc(preq, &nr_segs);
+		kreq = kaio_kreq_alloc(preq, nr_segs);
 		if (!kreq) {
 			PLOOP_REQ_SET_ERROR(preq, -ENOMEM);
 			break;
