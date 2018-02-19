@@ -44,6 +44,7 @@ static void on_read_done(struct pcs_fuse_req *r, size_t size)
 
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
 	r->req.args->out_args[0].size = size;
+	inode_dio_end(r->req.args->io_inode);
 	fuse_request_end(pfc->fc, &r->req);
 }
 
@@ -65,6 +66,7 @@ static void on_write_done(struct pcs_fuse_req *r, off_t pos, size_t size)
 	out->size = size;
 
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
+	inode_dio_end(r->req.args->io_inode);
 	fuse_request_end(pfc->fc, &r->req);
 }
 
