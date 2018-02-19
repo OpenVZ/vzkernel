@@ -10,4 +10,7 @@ obj-$(CONFIG_VIRTIO_FS) += virtiofs.o
 fuse-y := dev.o dir.o file.o inode.o control.o xattr.o acl.o readdir.o ioctl.o
 fuse-$(CONFIG_FUSE_DAX) += dax.o
 
+obj-$(CONFIG_FUSE_KIO_NOOP)	+= fuse_kio_noop.o
+fuse_kio_noop-objs := kio/kio_noop.o
+
 virtiofs-y := virtio_fs.o
