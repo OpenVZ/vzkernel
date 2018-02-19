@@ -56,10 +56,12 @@ static void fuse_request_init(struct fuse_conn *fc,
 	__set_bit(FR_PENDING, &req->flags);
 }
 
-static struct fuse_req *__fuse_request_alloc(struct fuse_conn *fc,
+struct fuse_req *fuse_generic_request_alloc(struct fuse_conn *fc,
+					    struct kmem_cache *cachep,
 					     unsigned npages, gfp_t flags)
 {
-	struct fuse_req *req = kmem_cache_alloc(fuse_req_cachep, flags);
+	struct fuse_req *req = kmem_cache_alloc(cachep, flags);
+
 	if (req) {
 		struct page **pages;
 		struct fuse_page_desc *page_descs;
@@ -81,8 +83,20 @@ static struct fuse_req *__fuse_request_alloc(struct fuse_conn *fc,
 		}
 
 		fuse_request_init(fc, req, pages, page_descs, npages);
+		req->cache = cachep;
 	}
 	return req;
+}
+EXPORT_SYMBOL_GPL(fuse_generic_request_alloc);
+
+static struct fuse_req *__fuse_request_alloc(struct fuse_conn *fc,
+					     unsigned npages, gfp_t flags)
+{
+
+	if (fc->kio.op && fc->kio.op->req_alloc)
+		return fc->kio.op->req_alloc(fc, npages, flags);
+
+	return fuse_generic_request_alloc(fc, fuse_req_cachep, npages, flags);
 }
 
 struct fuse_req *fuse_request_alloc(struct fuse_conn *fc, unsigned npages)
@@ -96,13 +110,21 @@ struct fuse_req *fuse_request_alloc_nofs(struct fuse_conn *fc, unsigned npages)
 	return __fuse_request_alloc(fc, npages, GFP_NOFS);
 }
 
-void fuse_request_free(struct fuse_req *req)
+void fuse_generic_request_free(struct fuse_req *req)
 {
 	if (req->pages != req->inline_pages) {
 		kfree(req->pages);
 		kfree(req->page_descs);
 	}
-	kmem_cache_free(fuse_req_cachep, req);
+	kmem_cache_free(req->cache, req);
+}
+
+void fuse_request_free(struct fuse_conn *fc, struct fuse_req *req)
+{
+	if (fc->kio.op && fc->kio.op->req_free)
+		return fc->kio.op->req_free(fc, req);
+
+	return fuse_generic_request_free(req);
 }
 
 void __fuse_get_request(struct fuse_req *req)
@@ -130,6 +152,7 @@ void fuse_set_initialized(struct fuse_conn *fc)
 	smp_wmb();
 	fc->initialized = 1;
 }
+EXPORT_SYMBOL_GPL(fuse_set_initialized);
 
 static bool fuse_block_alloc(struct fuse_conn *fc, bool for_background)
 {
@@ -289,7 +312,7 @@ void fuse_put_request(struct fuse_conn *fc, struct fuse_req *req)
 		if (req->stolen_file)
 			put_reserved_req(fc, req);
 		else
-			fuse_request_free(req);
+			fuse_request_free(fc, req);
 	}
 }
 EXPORT_SYMBOL_GPL(fuse_put_request);
@@ -363,7 +386,7 @@ static void flush_bg_queue(struct fuse_conn *fc, struct fuse_iqueue *fiq)
  * the 'end' callback is called if given, else the reference to the
  * request is released
  */
-static void request_end(struct fuse_conn *fc, struct fuse_req *req)
+void request_end(struct fuse_conn *fc, struct fuse_req *req)
 {
 	struct fuse_iqueue *fiq = req->fiq;
 
@@ -400,6 +423,7 @@ static void request_end(struct fuse_conn *fc, struct fuse_req *req)
 	wake_up(&req->waitq);
 	fuse_put_request(fc, req);
 }
+EXPORT_SYMBOL_GPL(request_end);
 
 static void queue_interrupt(struct fuse_iqueue *fiq, struct fuse_req *req)
 {
@@ -468,6 +492,10 @@ static void __fuse_request_send(struct fuse_conn *fc, struct fuse_req *req,
 	struct fuse_iqueue *fiq = req->fiq;
 
 	BUG_ON(test_bit(FR_BACKGROUND, &req->flags));
+
+	if (fc->kio.op && !fc->kio.op->req_send(fc, req, false, false))
+		return;
+
 	spin_lock(&fiq->waitq.lock);
 	if (!fiq->connected) {
 		spin_unlock(&fiq->waitq.lock);
@@ -517,6 +545,10 @@ void fuse_request_send_background_locked(struct fuse_conn *fc,
 	struct fuse_iqueue *fiq = req->fiq;
 
 	BUG_ON(!test_bit(FR_BACKGROUND, &req->flags));
+
+	if (fc->kio.op && !fc->kio.op->req_send(fc, req, true, true))
+		return;
+
 	if (!test_bit(FR_WAITING, &req->flags)) {
 		__set_bit(FR_WAITING, &req->flags);
 		atomic_inc(&fc->num_waiting);
@@ -537,6 +569,10 @@ void fuse_request_send_background_locked(struct fuse_conn *fc,
 void fuse_request_send_background(struct fuse_conn *fc, struct fuse_req *req)
 {
 	BUG_ON(!req->end);
+
+	if (fc->kio.op && !fc->kio.op->req_send(fc, req, true, false))
+		return;
+
 	spin_lock(&fc->lock);
 	if (req->page_cache && req->ff &&
 	    test_bit(FUSE_S_FAIL_IMMEDIATELY, &req->ff->ff_state)) {
@@ -2182,6 +2218,9 @@ void fuse_abort_conn(struct fuse_conn *fc)
 			list_splice_init(&fpq->processing, &to_end2);
 			spin_unlock(&fpq->lock);
 		}
+		if (fc->kio.op)
+			fc->kio.op->conn_abort(fc);
+
 		fc->max_background = UINT_MAX;
 		for_each_online_cpu(cpu)
 			flush_bg_queue(fc, per_cpu_ptr(fc->iqs, cpu));
