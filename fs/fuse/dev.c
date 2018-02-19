@@ -49,18 +49,29 @@ static void fuse_request_init(struct fuse_req *req)
 	__set_bit(FR_PENDING, &req->flags);
 }
 
-static struct fuse_req *fuse_request_alloc(gfp_t flags)
+struct fuse_req *fuse_generic_request_alloc(struct kmem_cache *cachep, gfp_t flags)
 {
-	struct fuse_req *req = kmem_cache_zalloc(fuse_req_cachep, flags);
-	if (req)
+	struct fuse_req *req = kmem_cache_zalloc(cachep, flags);
+	if (req) {
 		fuse_request_init(req);
+		req->cache = cachep;
+	}
 
 	return req;
+}
+EXPORT_SYMBOL_GPL(fuse_generic_request_alloc);
+
+static struct fuse_req *fuse_request_alloc(struct fuse_conn *fc, gfp_t flags)
+{
+	if (fc->kio.op && fc->kio.op->req_alloc)
+		return fc->kio.op->req_alloc(fc, flags);
+
+	return fuse_generic_request_alloc(fuse_req_cachep, flags);
 }
 
 static void fuse_request_free(struct fuse_req *req)
 {
-	kmem_cache_free(fuse_req_cachep, req);
+	kmem_cache_free(req->cache, req);
 }
 
 static void __fuse_get_request(struct fuse_req *req)
@@ -80,6 +91,7 @@ void fuse_set_initialized(struct fuse_conn *fc)
 	smp_wmb();
 	fc->initialized = 1;
 }
+EXPORT_SYMBOL_GPL(fuse_set_initialized);
 
 static bool fuse_block_alloc(struct fuse_conn *fc, bool for_background)
 {
@@ -123,7 +135,7 @@ static struct fuse_req *fuse_get_req(struct fuse_conn *fc, bool for_background)
 	if (fc->conn_error)
 		goto out;
 
-	req = fuse_request_alloc(GFP_KERNEL);
+	req = fuse_request_alloc(fc, GFP_KERNEL);
 	err = -ENOMEM;
 	if (!req) {
 		if (for_background)
@@ -404,6 +416,10 @@ static void __fuse_request_send(struct fuse_conn *fc, struct fuse_req *req,
 	struct fuse_iqueue *fiq = req->args->fiq;
 
 	BUG_ON(test_bit(FR_BACKGROUND, &req->flags));
+
+	if (fc->kio.op && !fc->kio.op->req_send(fc, req, false, false))
+		return;
+
 	spin_lock(&fiq->lock);
 	if (!fiq->connected) {
 		spin_unlock(&fiq->lock);
@@ -484,7 +500,7 @@ ssize_t fuse_simple_check_request(struct fuse_conn *fc, struct fuse_args *args,
 
 	if (args->force) {
 		atomic_inc(&fc->num_waiting);
-		req = fuse_request_alloc(GFP_KERNEL | __GFP_NOFAIL);
+		req = fuse_request_alloc(fc, GFP_KERNEL | __GFP_NOFAIL);
 
 		if (!args->nocreds)
 			fuse_force_creds(fc, req);
@@ -520,6 +536,7 @@ ssize_t fuse_simple_request(struct fuse_conn *fc, struct fuse_args *args)
 {
 	return fuse_simple_check_request(fc, args, NULL);
 }
+EXPORT_SYMBOL_GPL(fuse_simple_request);
 
 bool fuse_has_req_ff(struct fuse_req *req)
 {
@@ -570,6 +587,10 @@ static int fuse_request_queue_background(struct fuse_conn *fc,
 	int ret = -ENOTCONN;
 
 	WARN_ON(!test_bit(FR_BACKGROUND, &req->flags));
+
+	if (fc->kio.op && !fc->kio.op->req_send(fc, req, true, false))
+		return 0;
+
 	if (!test_bit(FR_WAITING, &req->flags)) {
 		__set_bit(FR_WAITING, &req->flags);
 		atomic_inc(&fc->num_waiting);
@@ -605,7 +626,7 @@ int fuse_simple_background(struct fuse_conn *fc, struct fuse_args *args,
 
 	if (args->force) {
 		WARN_ON(!args->nocreds);
-		req = fuse_request_alloc(gfp_flags);
+		req = fuse_request_alloc(fc, gfp_flags);
 		if (!req)
 			return -ENOMEM;
 		__set_bit(FR_BACKGROUND, &req->flags);
@@ -2236,6 +2257,9 @@ void fuse_abort_conn(struct fuse_conn *fc)
 						      &to_end);
 			spin_unlock(&fpq->lock);
 		}
+		if (fc->kio.op)
+			fc->kio.op->conn_abort(fc);
+
 		spin_lock(&fc->bg_lock);
 		fc->blocked = 0;
 		fc->max_background = UINT_MAX;
