@@ -314,13 +314,12 @@ void fuse_request_end(struct fuse_conn *fc, struct fuse_req *req)
 		fc->active_background--;
 		flush_bg_queue(fc, fiq);
 		spin_unlock(&fc->bg_lock);
-	} else {
-		/* Wake up waiter sleeping in request_wait_answer() */
-		wake_up(&req->waitq);
 	}
 
 	if (test_bit(FR_ASYNC, &req->flags))
 		req->args->end(fc, req->args, req->out.h.error);
+	/* Wake up waiter sleeping in request_wait_answer() */
+	wake_up(&req->waitq);
 put_request:
 	fuse_put_request(fc, req);
 }
