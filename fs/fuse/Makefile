@@ -11,4 +11,15 @@ fuse_kio_noop-objs := kio/kio_noop.o
 obj-$(CONFIG_FUSE_KIO_NULLIO)	+= fuse_kio_nullio.o
 fuse_kio_nullio-objs := kio/kio_nullio.o
 
+obj-$(CONFIG_FUSE_KIO_PCS)	+= fuse_kio_pcs.o
+fuse_kio_pcs-objs := kio/pcs/pcs_fuse_kdirect.o \
+	kio/pcs/pcs_sock_io.o \
+	kio/pcs/pcs_rpc.o \
+	kio/pcs/pcs_req.o \
+	kio/pcs/pcs_map.o \
+	kio/pcs/pcs_cluster.o \
+	kio/pcs/pcs_cluster_core.o \
+	kio/pcs/pcs_cs.o \
+	kio/pcs/fuse_io.o
+
 fuse-objs := dev.o dir.o file.o inode.o control.o
