@@ -37,6 +37,7 @@
 #include <linux/fs_struct.h>
 #include <linux/task_work.h>
 #include <linux/ctype.h>
+#include <linux/tty.h>
 
 #include <uapi/linux/vzcalluser.h>
 #include <linux/vziptable_defs.h>
@@ -1209,6 +1210,7 @@ enum {
 	VE_CF_NETNS_NR,
 	VE_CF_NETIF_MAX_NR,
 	VE_CF_NETIF_NR,
+	VE_CF_CTTY,
 };
 
 static int ve_ts_read(struct cgroup *cg, struct cftype *cft, struct seq_file *m)
@@ -1388,6 +1390,94 @@ static int ve_write_running_u64(struct cgroup *cg, struct cftype *cft, u64 value
 	return _ve_write_u64(cg, cft, value, 1);
 }
 
+static int ve_write_ctty(struct cgroup *cg, struct cftype *cft, const char *buffer)
+{
+	struct task_struct *tsk_from, *tsk_to;
+	struct tty_struct *tty_from, *tty_to;
+	pid_t pid_from, pid_to;
+	unsigned long flags;
+	char *pids;
+	int ret;
+
+	/*
+	 * Buffer format is the following
+	 *
+	 * 	pid_from pid_to pid_to ...
+	 *
+	 * where pid_to are pids to propagate
+	 * current terminal into.
+	 */
+
+	pids = skip_spaces(buffer);
+	if (sscanf(pids, "%d", &pid_from) != 1)
+		return -EINVAL;
+	pids = strchr(pids, ' ');
+	if (!pids)
+		return -EINVAL;
+	pids = skip_spaces(pids);
+
+	rcu_read_lock();
+	tsk_from = find_task_by_vpid(pid_from);
+	if (tsk_from)
+		get_task_struct(tsk_from);
+	rcu_read_unlock();
+
+	if (!tsk_from)
+		return -ESRCH;
+
+	spin_lock_irqsave(&tsk_from->sighand->siglock, flags);
+	tty_from = tty_kref_get(tsk_from->signal->tty);
+	spin_unlock_irqrestore(&tsk_from->sighand->siglock, flags);
+
+	if (!tty_from) {
+		ret = -ENOTTY;
+		goto out;
+	}
+
+	ret = 0;
+	while (pids && *pids) {
+		if (sscanf(pids, "%d", &pid_to) != 1) {
+			ret = -EINVAL;
+			goto out;
+		}
+		pids = strchr(pids, ' ');
+		if (pids)
+			pids = skip_spaces(pids);
+
+		rcu_read_lock();
+		tsk_to = find_task_by_vpid(pid_to);
+		if (tsk_to)
+			get_task_struct(tsk_to);
+		rcu_read_unlock();
+
+		if (!tsk_to) {
+			ret = -ESRCH;
+			goto out;
+		}
+
+		if (tsk_from->task_ve == tsk_to->task_ve) {
+			spin_lock_irqsave(&tsk_to->sighand->siglock, flags);
+			tty_to = tsk_to->signal->tty;
+			if (!tty_to)
+				tsk_to->signal->tty = tty_kref_get(tty_from);
+			else
+				ret = -EBUSY;
+			spin_unlock_irqrestore(&tsk_to->sighand->siglock, flags);
+		} else
+			ret = -EINVAL;
+
+		put_task_struct(tsk_to);
+
+		if (ret)
+			goto out;
+	}
+
+out:
+	tty_kref_put(tty_from);
+	put_task_struct(tsk_from);
+	return ret;
+}
+
 static struct cftype ve_cftypes[] = {
 	{
 		.name			= "state",
@@ -1490,6 +1580,12 @@ static struct cftype ve_cftypes[] = {
 		.name			= "netif_avail_nr",
 		.read_u64		= ve_read_u64,
 		.private		= VE_CF_NETIF_NR,
+	},
+	{
+		.name			= "ctty",
+		.flags			= CFTYPE_ONLY_ON_ROOT,
+		.write_string		= ve_write_ctty,
+		.private		= VE_CF_CTTY,
 	},
 	{ }
 };
