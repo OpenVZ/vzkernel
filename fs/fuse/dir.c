@@ -917,6 +917,7 @@ static int fuse_do_getattr(struct inode *inode, struct kstat *stat,
 		inarg.fh = ff->fh;
 	}
 	args.in.h.opcode = FUSE_GETATTR;
+	args.io_inode = inode;
 	args.in.h.nodeid = get_node_id(inode);
 	args.in.numargs = 1;
 	args.in.args[0].size = sizeof(inarg);
@@ -1572,6 +1573,7 @@ void fuse_set_nowrite(struct inode *inode)
 	BUG_ON(fi->writectr < 0);
 	fi->writectr += FUSE_NOWRITE;
 	spin_unlock(&fc->lock);
+	inode_dio_wait(inode);
 	wait_event(fi->page_waitq, fi->writectr == FUSE_NOWRITE);
 }
 
