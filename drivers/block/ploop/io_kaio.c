@@ -662,6 +662,7 @@ kaio_io_page(struct ploop_io * io, int op, struct ploop_request * preq,
 	struct iov_iter iter;
 	loff_t pos = (loff_t) sec << 9;
 	struct file *file = io->files.file;
+	struct kaio_req *kreq;
 	int err;
 
 	ploop_prepare_io_request(preq);
@@ -671,10 +672,19 @@ kaio_io_page(struct ploop_io * io, int op, struct ploop_request * preq,
 		PLOOP_REQ_SET_ERROR(preq, -ENOMEM);
 		goto out;
 	}
+	kreq = kaio_kreq_alloc(preq, 1);
+	if (!kreq) {
+		aio_kernel_free(iocb);
+		PLOOP_REQ_SET_ERROR(preq, -ENOMEM);
+		goto out;
+	}
+	kreq->bvecs->bv_page = page;
+	kreq->bvecs->bv_offset = 0;
+	kreq->bvecs->bv_len = PAGE_SIZE;
 
-	iov_iter_init_page(&iter, page, PAGE_SIZE, 0);
+	iov_iter_init_bvec(&iter, kreq->bvecs, 1, PAGE_SIZE, 0);
 	aio_kernel_init_iter(iocb, file, op, &iter, pos);
-	aio_kernel_init_callback(iocb, kaio_rw_aio_complete, (u64)preq);
+	aio_kernel_init_callback(iocb, kaio_rw_kreq_complete, (u64)kreq);
 
 	atomic_inc(&preq->io_count);
 
