@@ -78,6 +78,7 @@
 #include <linux/context_tracking.h>
 #include <linux/list.h>
 #include <linux/io.h>
+#include <linux/jump_label.h>
 #include <linux/ve.h>
 
 #include <bc/beancounter.h>
@@ -920,6 +921,7 @@ static int __ref kernel_init(void *unused)
 	kernel_init_freeable();
 	/* need to finish all async __init code before freeing the memory */
 	async_synchronize_full();
+	jump_label_invalidate_init();
 	free_initmem();
 	mark_rodata_ro();
 	system_state = SYSTEM_RUNNING;
