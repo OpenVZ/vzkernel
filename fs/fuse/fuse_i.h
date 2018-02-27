@@ -785,6 +785,9 @@ struct fuse_conn {
 		struct fuse_kio_ops *op;
 		void *ctx;
 	} kio;
+
+	int ktrace_level;
+	struct fuse_ktrace * ktrace;
 };
 
 static inline struct fuse_conn *get_fuse_conn_super(struct super_block *sb)
@@ -1107,6 +1110,9 @@ void request_end(struct fuse_conn *fc, struct fuse_req *req);
 struct fuse_req *fuse_generic_request_alloc(struct fuse_conn *fc,
 					    struct kmem_cache *cachep,
 					    unsigned npages, gfp_t flags);
+
+void fuse_stat_account(struct fuse_conn * fc, int op, ktime_t val);
+
 
 int fuse_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 		__u64 start, __u64 len);
