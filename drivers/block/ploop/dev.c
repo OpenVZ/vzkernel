@@ -846,7 +846,11 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 	plo->st.bio_in++;
 
 	BUG_ON(bio->bi_idx);
-	BUG_ON(bio->bi_size & 511);
+	if (bio->bi_size & 511) {
+		pr_err_once("ploop%d: dropped bio: bi_size=%u\n", plo->index, bio->bi_size);
+		BIO_ENDIO(q, bio, -EIO);
+		return;
+	}
 
 	cpu = part_stat_lock();
 	part = disk_map_sector_rcu(plo->disk, bio->bi_sector);
