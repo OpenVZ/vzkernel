@@ -3457,4 +3457,9 @@ struct update_util_data {
 void cpufreq_set_update_util_data(int cpu, struct update_util_data *data);
 #endif /* CONFIG_CPU_FREQ */
 
+#ifdef CONFIG_VE
+struct cgroup;
+extern void link_ve_root_cpu_cgroup(struct cgroup *);
+#endif
+
 #endif

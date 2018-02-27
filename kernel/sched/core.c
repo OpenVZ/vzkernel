@@ -2947,6 +2947,8 @@ calc_load(unsigned long load, unsigned long exp, unsigned long active)
 }
 
 #ifdef CONFIG_VE
+static LIST_HEAD(ve_root_list);
+
 static void calc_load_ve(void)
 {
 	unsigned long nr_unint, nr_active;
@@ -9168,6 +9170,19 @@ void set_curr_task(int cpu, struct task_struct *p)
 /* task_group_lock serializes the addition/removal of task groups */
 static DEFINE_SPINLOCK(task_group_lock);
 
+#ifdef CONFIG_VE
+void link_ve_root_cpu_cgroup(struct cgroup *cgrp)
+{
+	struct task_group *tg = cgroup_tg(cgrp);
+	unsigned long flags;
+
+	spin_lock_irqsave(&task_group_lock, flags);
+	BUG_ON(!(cgrp->subsys[cpu_cgroup_subsys_id]->flags & CSS_ONLINE));
+	list_add_rcu(&tg->ve_root_list, &ve_root_list);
+	spin_unlock_irqrestore(&task_group_lock, flags);
+}
+#endif
+
 static void free_sched_group(struct task_group *tg)
 {
 	free_fair_sched_group(tg);
@@ -9745,6 +9760,9 @@ static int cpu_cgroup_css_online(struct cgroup *cgrp)
 	struct task_group *tg = cgroup_tg(cgrp);
 	struct task_group *parent;
 
+#ifdef CONFIG_VE
+	INIT_LIST_HEAD(&tg->ve_root_list);
+#endif
 	if (!cgrp->parent)
 		return 0;
 
@@ -9763,7 +9781,13 @@ static void cpu_cgroup_css_free(struct cgroup *cgrp)
 static void cpu_cgroup_css_offline(struct cgroup *cgrp)
 {
 	struct task_group *tg = cgroup_tg(cgrp);
+#ifdef CONFIG_VE
+	unsigned long flags;
 
+	spin_lock_irqsave(&task_group_lock, flags);
+	list_del_rcu(&tg->ve_root_list);
+	spin_unlock_irqrestore(&task_group_lock, flags);
+#endif
 	sched_offline_group(tg);
 }
 
