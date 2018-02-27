@@ -261,6 +261,10 @@ struct task_group {
 	struct autogroup *autogroup;
 #endif
 
+#ifdef CONFIG_VE
+	struct list_head ve_root_list;
+#endif
+
 	struct taskstats __percpu *taskstats;
 	unsigned long avenrun[3];	/* loadavg data */
 	struct timespec start_time;
