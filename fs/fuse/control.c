@@ -171,6 +171,42 @@ static ssize_t fuse_conn_congestion_threshold_write(struct file *file,
 	return ret;
 }
 
+static ssize_t fuse_conn_loglevel_read(struct file *file,
+				       char __user *buf, size_t len,
+				       loff_t *ppos)
+{
+	struct fuse_conn *fc;
+	unsigned val;
+
+	fc = fuse_ctl_file_conn_get(file);
+	if (!fc)
+		return 0;
+
+	val = fc->ktrace_level;
+	fuse_conn_put(fc);
+
+	return fuse_conn_limit_read(file, buf, len, ppos, val);
+}
+
+static ssize_t fuse_conn_loglevel_write(struct file *file,
+					const char __user *buf,
+					size_t count, loff_t *ppos)
+{
+	unsigned uninitialized_var(val);
+	ssize_t ret;
+
+	ret = fuse_conn_limit_write(file, buf, count, ppos, &val, 16);
+	if (ret > 0) {
+		struct fuse_conn *fc = fuse_ctl_file_conn_get(file);
+		if (fc) {
+			fc->ktrace_level = val;
+			fuse_conn_put(fc);
+		}
+	}
+
+	return ret;
+}
+
 static const struct file_operations fuse_ctl_abort_ops = {
 	.open = nonseekable_open,
 	.write = fuse_conn_abort_write,
@@ -194,6 +230,13 @@ static const struct file_operations fuse_conn_congestion_threshold_ops = {
 	.open = nonseekable_open,
 	.read = fuse_conn_congestion_threshold_read,
 	.write = fuse_conn_congestion_threshold_write,
+	.llseek = no_llseek,
+};
+
+static const struct file_operations fuse_conn_loglevel_ops = {
+	.open = nonseekable_open,
+	.read = fuse_conn_loglevel_read,
+	.write = fuse_conn_loglevel_write,
 	.llseek = no_llseek,
 };
 
@@ -534,7 +577,10 @@ int fuse_ctl_add_conn(struct fuse_conn *fc)
 				&fuse_conn_files_ops) ||
 	    !fuse_ctl_add_dentry(parent, fc, "conn_info",
 			    	S_IFREG | 0600, 1, NULL,
-				&fuse_conn_info_ops)
+				&fuse_conn_info_ops) ||
+	    !fuse_ctl_add_dentry(parent, fc, "loglevel",
+				S_IFREG | 0600, 1, NULL,
+				&fuse_conn_loglevel_ops)
 	    )
 		goto err;
 
