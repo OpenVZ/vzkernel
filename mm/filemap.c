@@ -620,7 +620,7 @@ static int __add_to_page_cache_locked(struct page *page,
 	gfp_mask = mapping_gfp_constraint(mapping, gfp_mask);
 
 	if (!huge) {
-		error = mem_cgroup_try_charge(page, current->mm, gfp_mask,
+		error = mem_cgroup_try_charge_cache(page, current->mm, gfp_mask,
 					&memcg);
 		if (error)
 			return error;
@@ -650,7 +650,7 @@ static int __add_to_page_cache_locked(struct page *page,
 		}
 		radix_tree_preload_end();
 	} else if (!huge)
-		mem_cgroup_cancel_charge(page, memcg);
+		mem_cgroup_cancel_cache_charge(page, memcg);
 	return error;
 }
 
