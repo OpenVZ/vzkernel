@@ -15,6 +15,7 @@
 #include "pcs_cluster.h"
 #include "pcs_ioctl.h"
 #include "log.h"
+#include "fuse_ktrace.h"
 
 /* Lock order: cs->lock -> css->lock (lru, hash, bl_list) */
 
@@ -242,6 +243,64 @@ void cs_set_io_times_logger(void (*logger)(struct pcs_int_request *ireq, struct 
 	io_times_logger_ctx = ctx;
 }
 
+void cs_log_io_times(struct pcs_int_request * ireq, struct pcs_msg * resp, unsigned int max_iolat)
+{
+	/* Ugly. Need to move fc ref to get rid of pcs_cluster_core */
+	struct fuse_conn * fc = container_of(ireq->cc, struct pcs_fuse_cluster, cc)->fc;
+	if (fc->ktrace && fc->ktrace_level >= LOG_TRACE) {
+		struct pcs_cs_iohdr * h = (struct pcs_cs_iohdr *)msg_inline_head(resp);
+		int n = 1;
+		struct fuse_trace_hdr * t;
+
+		if (h->hdr.type != PCS_CS_READ_RESP) {
+			struct pcs_cs_sync_resp * srec;
+
+			for (srec = (struct pcs_cs_sync_resp*)(h + 1);
+			     (void*)(srec + 1) <= (void*)h + h->hdr.len;
+			     srec++)
+				n++;
+		}
+
+		t = FUSE_TRACE_PREPARE(fc->ktrace, FUSE_KTRACE_IOTIMES, sizeof(struct fuse_tr_iotimes_hdr) +
+				       n*sizeof(struct fuse_tr_iotimes_cs));
+		if (t) {
+			struct fuse_tr_iotimes_hdr * th = (struct fuse_tr_iotimes_hdr *)(t + 1);
+			struct fuse_tr_iotimes_cs * ch = (struct fuse_tr_iotimes_cs *)(th + 1);
+
+			th->chunk = ireq->iochunk.chunk;
+			th->offset = h->hdr.type != PCS_CS_SYNC_RESP ? ireq->iochunk.chunk + ireq->iochunk.offset : 0;
+			th->size = h->hdr.type != PCS_CS_SYNC_RESP ? ireq->iochunk.size : 0;
+			th->start_time = ktime_to_us(ireq->ts);
+			th->local_delay = ktime_to_us(ktime_sub(ireq->ts_sent, ireq->ts));
+			th->lat = t->time - ktime_to_us(ireq->ts_sent);
+			th->ino = ireq->dentry->fileinfo.attr.id;
+			th->type = h->hdr.type;
+			th->cses = 1;
+
+			ch->csid = resp->rpc->peer_id.val;
+			ch->misc = h->sync.misc;
+			ch->ts_net = h->sync.ts_net;
+			ch->ts_io = h->sync.ts_io;
+			ch++;
+
+			if (h->hdr.type != PCS_CS_READ_RESP) {
+				struct pcs_cs_sync_resp * srec;
+
+				for (srec = (struct pcs_cs_sync_resp*)(h + 1);
+				     (void*)(srec + 1) <= (void*)h + h->hdr.len;
+				     srec++) {
+					ch->csid = srec->cs_id.val;
+					ch->misc = srec->sync.misc;
+					ch->ts_net = srec->sync.ts_net;
+					ch->ts_io = srec->sync.ts_io;
+					ch++;
+					th->cses++;
+				}
+			}
+		}
+		FUSE_TRACE_COMMIT(fc->ktrace);
+	}
+}
 
 void pcs_cs_update_stat(struct pcs_cs *cs, u32 iolat, u32 netlat, int op_type)
 {
@@ -443,7 +502,7 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 		msg->timeout = csl->write_timeout;
 	else
 		msg->timeout = csl->read_timeout;
-	ireq->ts_sent = jiffies;
+	ireq->ts_sent = ktime_get();
 	ireq->wait_origin.val = 0;
 
 
@@ -525,7 +584,7 @@ static void cs_keep_waiting(struct pcs_rpc *ep, struct pcs_msg *req, struct pcs_
 	who = lookup_and_lock_cs(cs->css, &h->xid.origin);
 	if (who) {
 		struct pcs_int_request *ireq = req->private2;
-		abs_time_t lat = ((jiffies - ireq->ts_sent) * 1000) / HZ;
+		abs_time_t lat = ktime_to_ms(ktime_sub(ktime_get(), ireq->ts_sent));
 		if (ireq)
 			ireq->wait_origin = h->xid.origin;
 
