@@ -61,8 +61,8 @@ struct pcs_int_request
 	atomic_t		iocount;
 
 	int			qdepth;
-	abs_time_t		ts;
-	abs_time_t		ts_sent;
+	ktime_t			ts;
+	ktime_t			ts_sent;
 	PCS_NODE_ID_T		wait_origin;
 
 	struct {
