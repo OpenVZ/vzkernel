@@ -2073,4 +2073,12 @@ int sched_trace_rq_nr_running(struct rq *rq);
 
 const struct cpumask *sched_trace_rd_span(struct root_domain *rd);
 
+#ifdef CONFIG_VE
+struct cgroup_subsys_state;
+extern void link_ve_root_cpu_cgroup(struct cgroup_subsys_state *css);
+void unlink_ve_root_cpu_cgroup(struct cgroup_subsys_state *css);
+#else /* CONFIG_VE */
+void unlink_ve_root_cpu_cgroup(struct cgroup_subsys_state *css) { }
+#endif /* CONFIG_VE */
+
 #endif
