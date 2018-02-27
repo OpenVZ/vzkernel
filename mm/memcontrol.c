@@ -2769,13 +2769,12 @@ retry:
 			goto charge;
 		}
 
-		if (cache_charge && !page_counter_try_charge(
-				&memcg->cache, nr_pages, &counter))
-			goto done;
-
-		refill_stock(memcg, nr_pages);
-		if (kmem_charge)
-			page_counter_uncharge(&memcg->kmem, nr_pages);
+		if (cache_charge && page_counter_try_charge(
+				&memcg->cache, nr_pages, &counter)) {
+			refill_stock(memcg, nr_pages);
+			goto charge;
+		}
+		goto done;
 	}
 
 charge:
