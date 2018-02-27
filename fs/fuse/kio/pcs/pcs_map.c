@@ -1316,7 +1316,7 @@ static int worth_to_grow(struct pcs_int_request *ireq, struct pcs_cs * cs)
 	if (ireq->type == PCS_IREQ_FLUSH)
 		return 0;
 
-	return jiffies < ireq->ts_sent + cc_from_csset(cs->css)->netlat_cutoff;
+	return ktime_to_ms(ktime_sub(ktime_get(), ireq->ts_sent)) + cc_from_csset(cs->css)->netlat_cutoff;
 }
 
 static void pcs_cs_deaccount(struct pcs_int_request *ireq, struct pcs_cs * cs, int error)
@@ -2107,7 +2107,7 @@ static int pcs_cslist_submit_flush(struct pcs_int_request *ireq, struct pcs_cs_l
 	BUG_ON(ireq->flushreq.csl);
 	cslist_get(csl);
 	ireq->flushreq.csl = csl;
-	ireq->ts_sent = jiffies;
+	ireq->ts_sent = ktime_get();
 	ireq->wait_origin.val = 0;
 
 	msg = ireq->flushreq.msg;
@@ -2508,11 +2508,16 @@ static void update_net_latency(struct pcs_cs_list * csl, PCS_NODE_ID_T id,
 	}
 }
 
-static inline u32 calc_latency(abs_time_t start)
+static inline u32 calc_latency(ktime_t start)
 {
-	abs_time_t now = jiffies;
-	u64 elapsed = (now > start)? now - start: 0;
-	return elapsed > ~0U ? ~0U : elapsed;
+	ktime_t now = ktime_get();
+
+	if (ktime_compare(now, start) > 0) {
+		u64 elapsed = ktime_to_ms(ktime_sub(now, start));
+		return elapsed > ~0U ? ~0U : elapsed;
+	} else {
+		return 0;
+	}
 }
 
 static int commit_sync_info(struct pcs_int_request *req,
@@ -2550,8 +2555,7 @@ static int commit_sync_info(struct pcs_int_request *req,
 				max_iolat = srec->sync.ts_io;
 		}
 	}
-	//// temproraly disable logging
-	////cs_log_io_times(req, resp, max_iolat);
+	cs_log_io_times(req, resp, max_iolat);
 
 	evaluate_dirty_status(m);
 	return err;
@@ -2871,7 +2875,7 @@ static int prepare_map_flush_ireq(struct pcs_map_entry *m, struct pcs_int_reques
 	}
 	prepare_map_flush_msg(m, sreq, msg);
 	sreq->type = PCS_IREQ_FLUSH;
-	sreq->ts = jiffies;
+	sreq->ts = ktime_get();
 	sreq->completion_data.parent = NULL;
 	sreq->flushreq.map = m;
 	sreq->flushreq.csl = NULL;
