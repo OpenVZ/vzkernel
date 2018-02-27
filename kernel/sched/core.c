@@ -2960,7 +2960,13 @@ static void calc_load_ve(void)
 		nr_active = 0;
 		for_each_possible_cpu(i) {
 #ifdef CONFIG_FAIR_GROUP_SCHED
-			nr_active += tg->cfs_rq[i]->nr_running;
+			nr_active += tg->cfs_rq[i]->h_nr_running;
+			/*
+                         * We do not export nr_unint to parent task groups
+                         * like we do for h_nr_running, as it gives additional
+                         * overhead for activate/deactivate operations. So, we
+			 * don't account child cgroup unint tasks here.
+                         */
 			nr_active += tg->cfs_rq[i]->nr_unint;
 #endif
 		}
