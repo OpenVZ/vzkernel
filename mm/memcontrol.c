@@ -7076,6 +7076,51 @@ void mem_cgroup_uncharge_swap(swp_entry_t entry)
 }
 #endif
 
+static int __mem_cgroup_try_charge(struct page *page, struct mm_struct *mm,
+				gfp_t gfp_mask, struct mem_cgroup **memcgp,
+				bool cache_charge)
+{
+	struct mem_cgroup *memcg = NULL;
+	unsigned int nr_pages = 1;
+	int ret = 0;
+
+	if (mem_cgroup_disabled())
+		goto out;
+
+	if (PageSwapCache(page)) {
+		struct page_cgroup *pc = lookup_page_cgroup(page);
+		/*
+		 * Every swap fault against a single page tries to charge the
+		 * page, bail as early as possible.  shmem_unuse() encounters
+		 * already charged pages, too.  The USED bit is protected by
+		 * the page lock, which serializes swap cache removal, which
+		 * in turn serializes uncharging.
+		 */
+		if (PageCgroupUsed(pc))
+			goto out;
+	}
+
+	if (PageTransHuge(page))
+		nr_pages <<= compound_order(page);
+
+	if (do_swap_account && PageSwapCache(page))
+		memcg = try_get_mem_cgroup_from_page(page);
+	if (!memcg)
+		memcg = get_mem_cgroup_from_mm(mm);
+
+	ret = try_charge(memcg, gfp_mask, false, nr_pages, cache_charge);
+
+	css_put(&memcg->css);
+
+	if (ret == -EINTR) {
+		memcg = root_mem_cgroup;
+		ret = 0;
+	}
+out:
+	*memcgp = memcg;
+	return ret;
+}
+
 /**
  * mem_cgroup_try_charge - try charging a page
  * @page: page to charge
@@ -7096,50 +7141,15 @@ void mem_cgroup_uncharge_swap(swp_entry_t entry)
 int mem_cgroup_try_charge(struct page *page, struct mm_struct *mm,
 			  gfp_t gfp_mask, struct mem_cgroup **memcgp)
 {
-	struct mem_cgroup *memcg = NULL;
-	unsigned int nr_pages = 1;
-	int ret = 0;
-	bool cache_charge;
 
-	if (mem_cgroup_disabled())
-		goto out;
+	return __mem_cgroup_try_charge(page, mm, gfp_mask, memcgp, false);
+}
 
-	if (PageSwapCache(page)) {
-		struct page_cgroup *pc = lookup_page_cgroup(page);
-		/*
-		 * Every swap fault against a single page tries to charge the
-		 * page, bail as early as possible.  shmem_unuse() encounters
-		 * already charged pages, too.  The USED bit is protected by
-		 * the page lock, which serializes swap cache removal, which
-		 * in turn serializes uncharging.
-		 */
-		if (PageCgroupUsed(pc))
-			goto out;
-	}
+int mem_cgroup_try_charge_cache(struct page *page, struct mm_struct *mm,
+			  gfp_t gfp_mask, struct mem_cgroup **memcgp)
+{
 
-	if (PageTransHuge(page)) {
-		nr_pages <<= compound_order(page);
-		VM_BUG_ON_PAGE(!PageTransHuge(page), page);
-	}
-
-	cache_charge = !PageAnon(page) && !PageSwapBacked(page);
-
-	if (do_swap_account && PageSwapCache(page))
-		memcg = try_get_mem_cgroup_from_page(page);
-	if (!memcg)
-		memcg = get_mem_cgroup_from_mm(mm);
-
-	ret = try_charge(memcg, gfp_mask, false, nr_pages, cache_charge);
-
-	css_put(&memcg->css);
-
-	if (ret == -EINTR) {
-		memcg = root_mem_cgroup;
-		ret = 0;
-	}
-out:
-	*memcgp = memcg;
-	return ret;
+	return __mem_cgroup_try_charge(page, mm, gfp_mask, memcgp, true);
 }
 
 /**
@@ -7194,17 +7204,10 @@ void mem_cgroup_commit_charge(struct page *page, struct mem_cgroup *memcg,
 	}
 }
 
-/**
- * mem_cgroup_cancel_charge - cancel a page charge
- * @page: page to charge
- * @memcg: memcg to charge the page to
- *
- * Cancel a charge transaction started by mem_cgroup_try_charge().
- */
-void mem_cgroup_cancel_charge(struct page *page, struct mem_cgroup *memcg)
+static void __mem_cgroup_cancel_charge(struct page *page,
+				struct mem_cgroup *memcg, bool cache_charge)
 {
 	unsigned int nr_pages = 1;
-	bool cache_charge;
 
 	if (mem_cgroup_disabled())
 		return;
@@ -7221,9 +7224,24 @@ void mem_cgroup_cancel_charge(struct page *page, struct mem_cgroup *memcg)
 		VM_BUG_ON_PAGE(!PageTransHuge(page), page);
 	}
 
-	cache_charge = !PageKmemcg(page) && !PageAnon(page)
-		&& !PageSwapBacked(page);
 	cancel_charge(memcg, nr_pages, cache_charge);
+}
+
+/**
+ * mem_cgroup_cancel_charge - cancel a page charge
+ * @page: page to charge
+ * @memcg: memcg to charge the page to
+ *
+ * Cancel a charge transaction started by mem_cgroup_try_charge().
+ */
+void mem_cgroup_cancel_charge(struct page *page, struct mem_cgroup *memcg)
+{
+	__mem_cgroup_cancel_charge(page, memcg, false);
+}
+
+void mem_cgroup_cancel_cache_charge(struct page *page, struct mem_cgroup *memcg)
+{
+	__mem_cgroup_cancel_charge(page, memcg, true);
 }
 
 static void uncharge_batch(struct mem_cgroup *memcg, unsigned long pgpgout,
