@@ -13,6 +13,7 @@
 #include "pcs_cs.h"
 #include "pcs_cluster.h"
 #include "log.h"
+#include "fuse_prometheus.h"
 
 #include "../../fuse_i.h"
 
@@ -36,6 +37,7 @@ static void on_read_done(struct pcs_fuse_req *r, size_t size)
 	struct pcs_fuse_cluster *pfc = cl_from_req(r);
 
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
+	fuse_stat_account(pfc->fc, KFUSE_OP_READ, ktime_sub(ktime_get(), r->exec.ireq.ts));
 	r->req.out.args[0].size = size;
 	inode_dio_end(r->req.io_inode);
 	request_end(pfc->fc, &r->req);
@@ -46,6 +48,7 @@ static void on_sync_done(struct pcs_fuse_req *r)
 	struct pcs_fuse_cluster *pfc = cl_from_req(r);
 
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
+	fuse_stat_account(pfc->fc, KFUSE_OP_FSYNC, ktime_sub(ktime_get(), r->exec.ireq.ts));
 	request_end(pfc->fc, &r->req);
 }
 
@@ -57,6 +60,7 @@ static void on_write_done(struct pcs_fuse_req *r, off_t pos, size_t size)
 	out->size = size;
 
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
+	fuse_stat_account(pfc->fc, KFUSE_OP_WRITE, ktime_sub(ktime_get(), r->exec.ireq.ts));
 	inode_dio_end(r->req.io_inode);
 	request_end(pfc->fc, &r->req);
 }
@@ -126,6 +130,7 @@ static void prepare_io_(struct pcs_fuse_req *r, unsigned short type, off_t offse
 
 	/* Initialize internal request structure */
 	ireq->type = PCS_IREQ_API;
+	ireq->ts = ktime_get();
 	ireq->apireq.req = &r->exec.io.req;
 	ireq->complete_cb = intreq_complete;
 	ireq->completion_data.parent = 0;
