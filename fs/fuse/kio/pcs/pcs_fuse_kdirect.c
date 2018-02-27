@@ -899,13 +899,17 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 	case FUSE_SETATTR: {
 		struct pcs_fuse_req *r = pcs_req_from_fuse(req);
 		struct fuse_setattr_in *inarg = (void*) req->in.args[0].value;
-		struct pcs_dentry_info *di = pcs_inode_from_fuse(fi);
+		struct pcs_dentry_info *di;
 		int shrink = 0;
+
+		/* Skip speciall inodes */
+		if (!fi->private)
+			return 1;
 
 		if (!(inarg->valid & FATTR_SIZE))
 			return 1;
 
-
+		di = pcs_inode_from_fuse(fi);
 		spin_lock(&di->lock);
 		if (inarg->size < di->fileinfo.attr.size) {
 			BUG_ON(di->size.shrink);
