@@ -19,15 +19,22 @@
 #include <linux/delay.h>
 #include <linux/socket.h>
 #include <linux/net.h>
+#include <linux/debugfs.h>
 
 #include "pcs_ioctl.h"
 #include "pcs_cluster.h"
 #include "pcs_rpc.h"
+#include "fuse_ktrace.h"
+#include "fuse_prometheus.h"
+
+static int fuse_ktrace_setup(struct fuse_conn * fc);
+static int fuse_ktrace_remove(struct fuse_conn *fc);
 
 static struct kmem_cache *pcs_fuse_req_cachep;
 static struct kmem_cache *pcs_ireq_cachep;
 static struct workqueue_struct *pcs_wq;
 static struct fuse_kio_ops kio_pcs_ops;
+static struct dentry *fuse_trace_root;
 
 static void process_pcs_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 {
@@ -58,6 +65,10 @@ static void process_pcs_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 	fc->kio.ctx = pfc;
 	printk("FUSE: kio_pcs: cl: " CLUSTER_ID_FMT ", clientid: " NODE_FMT "\n",
 	       CLUSTER_ID_ARGS(info->cluster_id), NODE_ARGS(info->node_id));
+
+	fuse_ktrace_setup(fc);
+	fc->ktrace_level = LOG_TRACE;
+
 out:
 	kfree(info);
 	/*  We are called from	process_init_reply before connection
@@ -111,6 +122,9 @@ int kpcs_conn_init(struct fuse_conn *fc)
 
 void kpcs_conn_fini(struct fuse_conn *fc)
 {
+	if (fc->ktrace)
+		fuse_ktrace_remove(fc);
+
 	if (!fc->kio.ctx)
 		return;
 
@@ -937,6 +951,249 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 	return 0;
 }
 
+static void fuse_trace_free(struct fuse_ktrace *tr)
+{
+	relay_close(tr->rchan);
+	free_percpu(tr->ovfl);
+	if (tr->prometheus_dentry) {
+		debugfs_remove(tr->prometheus_dentry);
+	}
+	if (tr->prometheus_hist) {
+		int cpu;
+
+		for_each_possible_cpu(cpu) {
+			struct kfuse_histogram ** histp;
+			histp = per_cpu_ptr(tr->prometheus_hist, cpu);
+			if (*histp)
+				free_page((unsigned long)*histp);
+		}
+		free_percpu(tr->prometheus_hist);
+	}
+	debugfs_remove(tr->dir);
+	kfree(tr);
+}
+
+static int fuse_ktrace_remove(struct fuse_conn *fc)
+{
+	struct fuse_ktrace *tr;
+
+	tr = xchg(&fc->ktrace, NULL);
+	if (!tr)
+		return -EINVAL;
+
+	if (atomic_dec_and_test(&tr->refcnt))
+		fuse_trace_free(tr);
+	return 0;
+}
+
+static int subbuf_start_callback(struct rchan_buf *buf, void *subbuf,
+				 void *prev_subbuf, size_t prev_padding)
+{
+	return !relay_buf_full(buf);
+}
+
+static struct dentry * create_buf_file_callback(const char *filename,
+						struct dentry *parent,
+						umode_t mode,
+						struct rchan_buf *buf,
+						int *is_global)
+{
+	return debugfs_create_file(filename, mode, parent, buf,
+				   &relay_file_operations);
+}
+
+static int remove_buf_file_callback(struct dentry *dentry)
+{
+	debugfs_remove(dentry);
+	return 0;
+}
+
+
+static struct rchan_callbacks relay_callbacks = {
+	.subbuf_start		= subbuf_start_callback,
+	.create_buf_file	= create_buf_file_callback,
+	.remove_buf_file	= remove_buf_file_callback,
+};
+
+void fuse_stat_account(struct fuse_conn * fc, int op, ktime_t val)
+{
+	struct fuse_ktrace * tr = fc->ktrace;
+
+	BUG_ON(op >= KFUSE_OP_MAX);
+
+	if (tr) {
+		struct kfuse_histogram ** histp;
+		int cpu;
+
+		cpu = get_cpu();
+		histp = per_cpu_ptr(tr->prometheus_hist, cpu);
+		if (histp && *histp) {
+			struct kfuse_stat_rec * buckets = (*histp)->buckets[op];
+			struct kfuse_stat_rec * bucket;
+			unsigned long long lat = ktime_to_ns(val)/1000;
+
+			if (lat < 1000)
+				bucket = buckets + (lat/100);
+			else if (lat < 10000)
+				bucket = buckets + 9*1 + (lat/1000);
+			else if (lat < 100000)
+				bucket = buckets + 9*2 + (lat/10000);
+			else if (lat < 1000000)
+				bucket = buckets + 9*3 + (lat/100000);
+			else if (lat < 10000000)
+				bucket = buckets + 9*4 + (lat/1000000);
+			else
+				bucket = buckets + 9*5;
+
+			bucket->value += lat;
+			bucket->count++;
+			buckets[KFUSE_PROM_MAX].value += lat;
+			buckets[KFUSE_PROM_MAX].count++;
+		}
+		put_cpu();
+	}
+}
+
+static int prometheus_file_open(struct inode *inode, struct file *filp)
+{
+	struct fuse_ktrace * tr = inode->i_private;
+
+	atomic_inc(&tr->refcnt);
+	filp->private_data = tr;
+
+	return generic_file_open(inode, filp);
+}
+
+static int prometheus_file_release(struct inode *inode, struct file *filp)
+{
+	struct fuse_ktrace * tr = inode->i_private;
+
+	if (atomic_dec_and_test(&tr->refcnt))
+		fuse_trace_free(tr);
+
+	return 0;
+}
+
+static ssize_t prometheus_file_read(struct file *filp,
+				    char __user *buffer,
+				    size_t count,
+				    loff_t *ppos)
+{
+	struct fuse_ktrace * tr = filp->private_data;
+	struct kfuse_histogram * hist;
+	int cpu;
+
+	if (*ppos >= KFUSE_PROM_MAX*KFUSE_OP_MAX*sizeof(struct kfuse_stat_rec))
+		return 0;
+	if (*ppos + count > KFUSE_PROM_MAX*KFUSE_OP_MAX*sizeof(struct kfuse_stat_rec))
+		count = KFUSE_PROM_MAX*KFUSE_OP_MAX*sizeof(struct kfuse_stat_rec) - *ppos;
+
+	hist = (void*)get_zeroed_page(GFP_KERNEL);
+	if (!hist)
+		return -ENOMEM;
+
+	if (!tr->prometheus_hist)
+		return -EINVAL;
+
+	for_each_possible_cpu(cpu) {
+		struct kfuse_histogram ** histp;
+
+		histp = per_cpu_ptr(tr->prometheus_hist, cpu);
+		if (histp && *histp) {
+			int i, k;
+			for (i = 0; i < KFUSE_OP_MAX; i++) {
+				for (k = 0; k < KFUSE_PROM_MAX + 1; k++) {
+					hist->buckets[i][k].value += (*histp)->buckets[i][k].value;
+					hist->buckets[i][k].count += (*histp)->buckets[i][k].count;
+				}
+			}
+		}
+	}
+
+	if (copy_to_user(buffer, (char*)hist + *ppos, count))
+		count = -EFAULT;
+	else
+		*ppos += count;
+
+	free_page((unsigned long)hist);
+	return count;
+}
+
+const struct file_operations prometheus_file_operations = {
+	.open		= prometheus_file_open,
+	.read		= prometheus_file_read,
+	.release	= prometheus_file_release,
+};
+
+static int fuse_ktrace_setup(struct fuse_conn * fc)
+{
+	int ret;
+	struct fuse_ktrace * tr = NULL;
+	struct fuse_ktrace * old_tr;
+	struct dentry * dir;
+	struct kfuse_histogram * __percpu * hist;
+	char name[16];
+
+	if (!fuse_trace_root)
+		return -ENOENT;
+
+	tr = kzalloc(sizeof(*tr), GFP_KERNEL);
+	if (!tr)
+		return -ENOMEM;
+
+	ret = -ENOMEM;
+	tr->ovfl = alloc_percpu(unsigned long);
+	if (!tr->ovfl)
+		goto err;
+
+	ret = -ENOENT;
+
+	snprintf(name, sizeof(name), "%u", fc->dev);
+
+	dir = debugfs_create_dir(name, fuse_trace_root);
+
+	if (!dir)
+		goto err;
+
+	tr->dir = dir;
+	tr->rchan = relay_open("trace", dir, FUSE_KTRACE_SIZE,
+				FUSE_KTRACE_NR, &relay_callbacks, tr);
+	if (!tr->rchan)
+		goto err;
+
+	tr->prometheus_dentry = debugfs_create_file("prometheus", S_IFREG|0444, dir, tr,
+						    &prometheus_file_operations);
+	hist = (void*)alloc_percpu(void *);
+	if (hist) {
+		int cpu;
+
+		BUILD_BUG_ON(sizeof(struct kfuse_histogram) > PAGE_SIZE);
+
+		for_each_possible_cpu(cpu) {
+			struct kfuse_histogram ** histp;
+			histp = per_cpu_ptr(hist, cpu);
+			*histp = (void*)get_zeroed_page(GFP_KERNEL);
+		}
+		tr->prometheus_hist = hist;
+	}
+
+	atomic_set(&tr->refcnt, 1);
+
+	ret = -EBUSY;
+	old_tr = xchg(&fc->ktrace, tr);
+	if (old_tr) {
+		(void) xchg(&fc->ktrace, old_tr);
+		goto err;
+	}
+
+	return 0;
+
+err:
+	if (tr && atomic_dec_and_test(&tr->refcnt))
+		fuse_trace_free(tr);
+	return ret;
+}
+
 
 static struct fuse_kio_ops kio_pcs_ops = {
 	.name		= "pcs",
@@ -974,6 +1231,9 @@ static int __init kpcs_mod_init(void)
 
 	if(fuse_register_kio(&kio_pcs_ops))
 		goto free_wq;
+
+	fuse_trace_root = debugfs_create_dir("fuse", NULL);
+
 	printk("%s fuse_c:%p ireq_c:%p pcs_wq:%p\n", __FUNCTION__,
 	       pcs_fuse_req_cachep, pcs_ireq_cachep, pcs_wq);
 
@@ -989,6 +1249,9 @@ free_fuse_cache:
 
 static void __exit kpcs_mod_exit(void)
 {
+	if (fuse_trace_root)
+		debugfs_remove(fuse_trace_root);
+
 	fuse_unregister_kio(&kio_pcs_ops);
 	destroy_workqueue(pcs_wq);
 	kmem_cache_destroy(pcs_ireq_cachep);
