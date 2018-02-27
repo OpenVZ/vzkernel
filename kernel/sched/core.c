@@ -2956,7 +2956,7 @@ static void calc_load_ve(void)
 	int i;
 
 	rcu_read_lock();
-	list_for_each_entry_rcu(tg, &task_groups, list) {
+	list_for_each_entry_rcu(tg, &ve_root_list, ve_root_list) {
 		nr_active = 0;
 		for_each_possible_cpu(i) {
 #ifdef CONFIG_FAIR_GROUP_SCHED
