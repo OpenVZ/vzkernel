@@ -45,7 +45,7 @@
 #define FUSE_NAME_MAX 1024
 
 /** Number of dentries for each connection in the control filesystem */
-#define FUSE_CTL_NUM_DENTRIES 10
+#define FUSE_CTL_NUM_DENTRIES 11
 
 /** FUSE kdirect engine name max */
 #define FUSE_KIO_NAME 32
@@ -936,6 +936,9 @@ struct fuse_conn {
 		struct fuse_kio_ops *op;
 		void *ctx;
 	} kio;
+
+	int ktrace_level;
+	struct fuse_ktrace * ktrace;
 };
 
 /*
@@ -1372,6 +1375,8 @@ struct posix_acl;
 struct posix_acl *fuse_get_acl(struct inode *inode, int type);
 int fuse_set_acl(struct user_namespace *mnt_userns, struct inode *inode,
 		 struct posix_acl *acl, int type);
+
+void fuse_stat_account(struct fuse_conn * fc, int op, ktime_t val);
 
 int fuse_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 		__u64 start, __u64 len);
