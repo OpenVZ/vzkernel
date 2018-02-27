@@ -58,9 +58,12 @@ struct mem_cgroup_reclaim_cookie {
 #ifdef CONFIG_MEMCG
 int mem_cgroup_try_charge(struct page *page, struct mm_struct *mm,
 			  gfp_t gfp_mask, struct mem_cgroup **memcgp);
+int mem_cgroup_try_charge_cache(struct page *page, struct mm_struct *mm,
+			  gfp_t gfp_mask, struct mem_cgroup **memcgp);
 void mem_cgroup_commit_charge(struct page *page, struct mem_cgroup *memcg,
 			      bool lrucare);
 void mem_cgroup_cancel_charge(struct page *page, struct mem_cgroup *memcg);
+void mem_cgroup_cancel_cache_charge(struct page *page, struct mem_cgroup *memcg);
 void mem_cgroup_uncharge(struct page *page);
 void mem_cgroup_uncharge_list(struct list_head *page_list);
 
@@ -234,6 +237,14 @@ static inline int mem_cgroup_try_charge(struct page *page, struct mm_struct *mm,
 	return 0;
 }
 
+static inline int mem_cgroup_try_charge_cache(struct page *page, struct mm_struct *mm,
+					gfp_t gfp_mask,
+					struct mem_cgroup **memcgp)
+{
+	*memcgp = NULL;
+	return 0;
+}
+
 static inline void mem_cgroup_commit_charge(struct page *page,
 					    struct mem_cgroup *memcg,
 					    bool lrucare)
@@ -241,6 +252,11 @@ static inline void mem_cgroup_commit_charge(struct page *page,
 }
 
 static inline void mem_cgroup_cancel_charge(struct page *page,
+					    struct mem_cgroup *memcg)
+{
+}
+
+static inline void mem_cgroup_cancel_cache_charge(struct page *page,
 					    struct mem_cgroup *memcg)
 {
 }
