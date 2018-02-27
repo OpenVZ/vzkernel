@@ -10602,6 +10602,9 @@ int cpu_cgroup_proc_loadavg(struct cgroup *cgrp, struct cftype *cft,
 	int nr_running = 0;
 	int i;
 
+	if (!test_bit(CGRP_VE_ROOT, &cgrp->flags))
+		return 0;
+
 	avnrun[0] = tg->avenrun[0] + FIXED_1/200;
 	avnrun[1] = tg->avenrun[1] + FIXED_1/200;
 	avnrun[2] = tg->avenrun[2] + FIXED_1/200;
@@ -10752,6 +10755,7 @@ static struct cftype cpu_files[] = {
 	{
 		.name = "proc.loadavg",
 		.read_seq_string = cpu_cgroup_proc_loadavg,
+		.flags = CFTYPE_NOT_ON_ROOT,
 	},
 	{
 		.name = "delayacct.total",
