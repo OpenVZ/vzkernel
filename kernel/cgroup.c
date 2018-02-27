@@ -4228,6 +4228,9 @@ void cgroup_mark_ve_root(struct ve_struct *ve)
 	for_each_active_root(root) {
 		cgrp = task_cgroup_from_root(ve->init_task, root);
 		set_bit(CGRP_VE_ROOT, &cgrp->flags);
+
+		if (test_bit(cpu_cgroup_subsys_id, &root->subsys_mask))
+			link_ve_root_cpu_cgroup(cgrp);
 	}
 	mutex_unlock(&cgroup_mutex);
 }
