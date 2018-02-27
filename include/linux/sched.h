@@ -2008,4 +2008,12 @@ static inline void rseq_syscall(struct pt_regs *regs)
 
 #endif
 
+#ifdef CONFIG_VE
+struct cgroup_subsys_state;
+extern void link_ve_root_cpu_cgroup(struct cgroup_subsys_state *css);
+void unlink_ve_root_cpu_cgroup(struct cgroup_subsys_state *css);
+#else /* CONFIG_VE */
+void unlink_ve_root_cpu_cgroup(struct cgroup_subsys_state *css) { }
+#endif /* CONFIG_VE */
+
 #endif
