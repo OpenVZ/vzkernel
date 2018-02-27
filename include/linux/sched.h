@@ -3301,4 +3301,9 @@ static inline unsigned long rlimit_max(unsigned int limit)
 	return task_rlimit_max(current, limit);
 }
 
+#ifdef CONFIG_VE
+struct cgroup;
+extern void link_ve_root_cpu_cgroup(struct cgroup *);
+#endif
+
 #endif
