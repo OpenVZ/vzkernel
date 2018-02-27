@@ -109,8 +109,9 @@ EXPORT_SYMBOL(put_ve);
 
 struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id)
 {
-	struct cgroup_subsys_state *css;
+	struct cgroup_subsys_state *css, *tmp;
 	struct task_struct *task;
+	struct cgroup *cgroup;
 
 	rcu_read_lock();
 	task = ve->ve_ns ? ve->init_task : &init_task;
@@ -120,6 +121,18 @@ struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id)
 			break;
 		cpu_relax();
 	}
+
+	cgroup = css->cgroup;
+	while (!test_bit(CGRP_VE_ROOT, &cgroup->flags) && cgroup->parent)
+		cgroup = cgroup->parent;
+
+	if (cgroup != css->cgroup) {
+		tmp = cgroup->subsys[subsys_id];
+		css_get(tmp);
+		css_put(css);
+		css = tmp;
+	}
+
 	rcu_read_unlock();
 	return css;
 }
