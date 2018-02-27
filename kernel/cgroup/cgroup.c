@@ -1901,6 +1901,7 @@ void cgroup_mark_ve_root(struct ve_struct *ve)
 		cgrp = link->cgrp;
 		set_bit(CGRP_VE_ROOT, &cgrp->flags);
 	}
+	link_ve_root_cpu_cgroup(cset->subsys[cpu_cgrp_id]);
 unlock:
 	rcu_read_unlock();
 

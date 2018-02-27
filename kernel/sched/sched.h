@@ -413,6 +413,10 @@ struct task_group {
 	struct autogroup	*autogroup;
 #endif
 
+#ifdef CONFIG_VE
+	struct list_head ve_root_list;
+#endif
+
 	/* Monotonic time in nsecs: */
 	u64			start_time;
 

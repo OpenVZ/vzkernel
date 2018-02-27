@@ -6779,6 +6779,9 @@ static int cpu_cgroup_css_online(struct cgroup_subsys_state *css)
 	struct task_group *tg = css_tg(css);
 	struct task_group *parent = css_tg(css->parent);
 
+#ifdef CONFIG_VE
+	INIT_LIST_HEAD(&tg->ve_root_list);
+#endif
 	if (parent)
 		sched_online_group(tg, parent);
 	return 0;
@@ -6788,6 +6791,7 @@ static void cpu_cgroup_css_released(struct cgroup_subsys_state *css)
 {
 	struct task_group *tg = css_tg(css);
 
+	unlink_ve_root_cpu_cgroup(css);
 	sched_offline_group(tg);
 }
 
@@ -6874,6 +6878,33 @@ static u64 cpu_shares_read_u64(struct cgroup_subsys_state *css,
 
 	return (u64) scale_load_down(tg->shares);
 }
+
+#ifdef CONFIG_VE
+LIST_HEAD(ve_root_list);
+DEFINE_SPINLOCK(load_ve_lock);
+
+void link_ve_root_cpu_cgroup(struct cgroup_subsys_state *css)
+{
+	struct task_group *tg = css_tg(css);
+	unsigned long flags;
+
+	spin_lock_irqsave(&load_ve_lock, flags);
+	BUG_ON(!(css->flags & CSS_ONLINE));
+	if (list_empty(&tg->ve_root_list))
+		list_add(&tg->ve_root_list, &ve_root_list);
+	spin_unlock_irqrestore(&load_ve_lock, flags);
+}
+
+void unlink_ve_root_cpu_cgroup(struct cgroup_subsys_state *css)
+{
+       struct task_group *tg = css_tg(css);
+       unsigned long flags;
+
+       spin_lock_irqsave(&load_ve_lock, flags);
+       list_del_init(&tg->ve_root_list);
+       spin_unlock_irqrestore(&load_ve_lock, flags);
+}
+#endif /* CONFIG_VE */
 
 #ifdef CONFIG_CFS_BANDWIDTH
 static DEFINE_MUTEX(cfs_constraints_mutex);
