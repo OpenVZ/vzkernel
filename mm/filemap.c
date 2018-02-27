@@ -608,7 +608,7 @@ static int __add_to_page_cache_locked(struct page *page,
 	gfp_mask = mapping_gfp_constraint(mapping, gfp_mask);
 
 	if (!huge) {
-		error = mem_cgroup_try_charge(page, current->mm, gfp_mask,
+		error = mem_cgroup_try_charge_cache(page, current->mm, gfp_mask,
 					&memcg);
 		if (error)
 			return error;
@@ -641,7 +641,7 @@ err_insert:
 	/* Leave page->index set: truncation relies upon it */
 	spin_unlock_irq(&mapping->tree_lock);
 	if (!huge)
-		mem_cgroup_cancel_charge(page, memcg);
+		mem_cgroup_cancel_cache_charge(page, memcg);
 	page_cache_release(page);
 	return error;
 }
