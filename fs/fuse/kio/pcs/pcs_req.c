@@ -29,7 +29,8 @@ static void __ireq_init(struct pcs_dentry_info *di, struct pcs_cluster_core *cc,
 {
 	memset(ireq, 0, sizeof(*ireq));
 	ireq->cc = cc;
-	ireq->ts = ireq->create_ts = jiffies;
+	ireq->ts = ktime_get();
+	ireq->create_ts = jiffies;
 	timer_setup(&ireq->timer, ireq_timer_handler, 0);
 	INIT_HLIST_HEAD(&ireq->completion_data.child_list);
 	spin_lock_init(&ireq->completion_data.child_lock);
