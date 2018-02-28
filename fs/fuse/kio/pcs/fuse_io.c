@@ -37,6 +37,14 @@ static void on_read_done(struct pcs_fuse_req *r, size_t size)
 	struct pcs_fuse_cluster *pfc = cl_from_req(r);
 
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
+
+	if (r->req.out.h.error && r->req.out.page_zeroing) {
+		int i;
+		for (i = 0; i < r->exec.io.num_bvecs; i++) {
+			BUG_ON(!r->exec.io.bvec[i].bv_page);
+			clear_highpage(r->exec.io.bvec[i].bv_page);
+		}
+	}
 	fuse_stat_account(pfc->fc, KFUSE_OP_READ, ktime_sub(ktime_get(), r->exec.ireq.ts));
 	r->req.out.args[0].size = size;
 	inode_dio_end(r->req.io_inode);
@@ -76,28 +84,33 @@ static void req_get_iter(void *data, unsigned int offset, struct iov_iter *it)
 static inline void set_io_buff(struct pcs_fuse_req *r, off_t offset, size_t size,
 			       int is_bvec, int zeroing)
 {
-	int i;
-	size_t count = 0;
+
 	if (is_bvec) {
 		r->exec.io.bvec = r->req.bvec;
 		r->exec.io.num_bvecs = r->req.num_bvecs;
 	} else {
-		r->exec.io.bvec = r->exec.io.inline_bvec;
+		struct bio_vec *bvec;
+		size_t count = size;
+		int i;
+
+		bvec = r->exec.io.bvec = r->exec.io.inline_bvec;
 		r->exec.io.num_bvecs = r->req.num_pages;
-		for (i = 0; i < r->req.num_pages && count < size; i++) {
-			r->exec.io.bvec[i].bv_page = r->req.pages[i];
-			r->exec.io.bvec[i].bv_offset = r->req.page_descs[i].offset;
-			r->exec.io.bvec[i].bv_len = r->req.page_descs[i].length;
-			count += r->exec.io.bvec[i].bv_len;
+		for (i = 0; i < r->req.num_pages; i++) {
+			bvec->bv_page = r->req.pages[i];
+			bvec->bv_offset = r->req.page_descs[i].offset;
+			bvec->bv_len = r->req.page_descs[i].length;
+			if (bvec->bv_len > count)
+				bvec->bv_len = count;
+			if (zeroing && bvec->bv_page &&
+			    bvec->bv_len != PAGE_SIZE)
+				zero_user_segments(bvec->bv_page,
+						   0, bvec->bv_offset,
+						   bvec->bv_offset + bvec->bv_len,
+						   PAGE_SIZE);
+			count -= bvec->bv_len;
+			bvec++;
 		}
 	}
-	count = 0;
-	for (i = 0; i < r->exec.io.num_bvecs; i++) {
-		count += r->exec.io.bvec[i].bv_len;
-		if (zeroing && r->exec.io.bvec[i].bv_len < PAGE_SIZE)
-			clear_highpage(r->exec.io.bvec[i].bv_page);
-	}
-	BUG_ON(size > count);
 	r->exec.io.req.pos = offset;
 	r->exec.io.req.size = size;
 }
