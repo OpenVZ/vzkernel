@@ -44,6 +44,14 @@ static void on_read_done(struct pcs_fuse_req *r, size_t size)
 	struct pcs_fuse_cluster *pfc = cl_from_req(r);
 
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
+
+	if (r->req.out.h.error && r->req.args->page_zeroing) {
+		int i;
+		for (i = 0; i < r->exec.io.num_bvecs; i++) {
+			BUG_ON(!r->exec.io.bvec[i].bv_page);
+			clear_highpage(r->exec.io.bvec[i].bv_page);
+		}
+	}
 	fuse_stat_account(pfc->fc, KFUSE_OP_READ, ktime_sub(ktime_get(), r->exec.ireq.ts));
 	r->req.args->out_args[0].size = size;
 	inode_dio_end(r->req.args->io_inode);
@@ -87,23 +95,27 @@ static inline void set_io_buff(struct pcs_fuse_req *r, off_t offset, size_t size
 {
 	struct fuse_args *args = r->req.args;
 	struct fuse_io_args *ia = container_of(args, typeof(*ia), ap.args);
+	struct bio_vec *bvec;
+	size_t count = size;
 	int i;
-	size_t count = 0;
-	r->exec.io.bvec = r->exec.io.inline_bvec;
+
+	bvec = r->exec.io.bvec = r->exec.io.inline_bvec;
 	r->exec.io.num_bvecs = ia->ap.num_pages;
-	for (i = 0; i < ia->ap.num_pages && count < size; i++) {
-		r->exec.io.bvec[i].bv_page = ia->ap.pages[i];
-		r->exec.io.bvec[i].bv_offset = ia->ap.descs[i].offset;
-		r->exec.io.bvec[i].bv_len = ia->ap.descs[i].length;
-		count += r->exec.io.bvec[i].bv_len;
+	for (i = 0; i < ia->ap.num_pages; i++) {
+		bvec->bv_page = ia->ap.pages[i];
+		bvec->bv_offset = ia->ap.descs[i].offset;
+		bvec->bv_len = ia->ap.descs[i].length;
+		if (bvec->bv_len > count)
+			bvec->bv_len = count;
+		if (zeroing && bvec->bv_page &&
+				bvec->bv_len != PAGE_SIZE)
+			zero_user_segments(bvec->bv_page,
+					0, bvec->bv_offset,
+					bvec->bv_offset + bvec->bv_len,
+					PAGE_SIZE);
+		count -= bvec->bv_len;
+		bvec++;
 	}
-	count = 0;
-	for (i = 0; i < r->exec.io.num_bvecs; i++) {
-		count += r->exec.io.bvec[i].bv_len;
-		if (zeroing && r->exec.io.bvec[i].bv_len < PAGE_SIZE)
-			clear_highpage(r->exec.io.bvec[i].bv_page);
-	}
-	BUG_ON(size > count);
 	r->exec.io.req.pos = offset;
 	r->exec.io.req.size = size;
 }
