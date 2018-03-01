@@ -610,6 +610,8 @@ struct request_queue {
 #define QUEUE_FLAG_POLL_STATS  27	/* collecting stats for hybrid polling */
 #define QUEUE_FLAG_PREEMPT_ONLY	28	/* only process REQ_PREEMPT requests */
 
+#define QUEUE_FLAG_STANDBY     31	/* unable to handle read/write requests */
+
 #define QUEUE_FLAG_DEFAULT	((1 << QUEUE_FLAG_IO_STAT) |		\
 				 (1 << QUEUE_FLAG_STACKABLE)	|	\
 				 (1 << QUEUE_FLAG_SAME_COMP)	|	\
@@ -702,6 +704,7 @@ static inline void queue_flag_clear(unsigned int flag, struct request_queue *q)
 #define blk_queue_dax(q)	test_bit(QUEUE_FLAG_DAX, &(q)->queue_flags)
 #define blk_queue_preempt_only(q)				\
 	test_bit(QUEUE_FLAG_PREEMPT_ONLY, &(q)->queue_flags)
+#define blk_queue_standby(q)	test_bit(QUEUE_FLAG_STANDBY, &(q)->queue_flags)
 
 extern int blk_set_preempt_only(struct request_queue *q);
 extern void blk_clear_preempt_only(struct request_queue *q);

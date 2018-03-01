@@ -118,15 +118,33 @@ static void kaio_rw_aio_complete(u64 data, long res)
 
 	if (unlikely(res < 0)) {
 		struct bio *b = preq->aux_bio;
+
 		printk("kaio_rw_aio_complete: kaio failed with err=%ld "
 		       "(rw=%s; state=%ld/0x%lx; clu=%d; iblk=%d; aux=%ld)\n",
 		       res, (preq->req_rw & REQ_WRITE) ? "WRITE" : "READ",
 		       preq->eng_state, preq->state, preq->req_cluster,
 		       preq->iblock, b ? b->bi_sector : -1);
+
 		bio_list_for_each(b, &preq->bl)
 			printk(" bio=%p: bi_sector=%ld bi_size=%d\n",
 			       b, b->bi_sector, b->bi_size);
-		PLOOP_REQ_SET_ERROR(preq, res);
+
+		if (res == -EBUSY) { /* a delta lease was stolen */
+			struct request_queue *q = preq->plo->queue;
+			int prev;
+
+			spin_lock_irq(q->queue_lock);
+			prev = queue_flag_test_and_set(QUEUE_FLAG_STANDBY, q);
+			spin_unlock_irq(q->queue_lock);
+
+			if (!prev)
+				printk("ploop%d was switched into "
+					"the standby mode\n", preq->plo->index);
+
+			ploop_req_set_error(preq, res);
+		} else {
+			PLOOP_REQ_SET_ERROR(preq, res);
+		}
 	}
 
 	kaio_complete_io_request(preq);
