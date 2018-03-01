@@ -460,6 +460,11 @@ static inline void set_ascq(struct se_cmd *cmd, u8 alua_ascq)
 	cmd->scsi_ascq = alua_ascq;
 }
 
+void core_alua_set_ascq(struct se_cmd *cmd, u8 alua_ascq)
+{
+	set_ascq(cmd, alua_ascq);
+}
+
 static inline void core_alua_state_nonoptimized(
 	struct se_cmd *cmd,
 	unsigned char *cdb,
