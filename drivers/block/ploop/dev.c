@@ -858,6 +858,11 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 	part_stat_add(cpu, part, sectors[rw], bio_sectors(bio));
 	part_stat_unlock();
 
+	if (blk_queue_standby(plo->queue)) {
+		BIO_ENDIO(q, bio, -EIO);
+		return;
+	}
+
 	if (unlikely(bio->bi_size == 0)) {
 		/* Is it possible? This makes sense if the request is
 		 * marked as FLUSH, otherwise just warn and complete. */
@@ -3329,6 +3334,11 @@ static int ploop_replace_delta(struct ploop_device * plo, unsigned long arg)
 	ploop_quiesce(plo);
 	ploop_map_destroy(&plo->map);
 	list_replace_init(&old_delta->list, &delta->list);
+
+	spin_lock_irq(plo->queue->queue_lock);
+	queue_flag_clear(QUEUE_FLAG_STANDBY, plo->queue);
+	spin_unlock_irq(plo->queue->queue_lock);
+
 	ploop_relax(plo);
 
 	old_delta->ops->stop(old_delta);
@@ -3992,6 +4002,7 @@ static int ploop_start(struct ploop_device * plo, struct block_device *bdev)
 
 	blk_queue_max_discard_sectors(plo->queue, INT_MAX);
 	queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, plo->queue);
+	queue_flag_clear_unlocked(QUEUE_FLAG_STANDBY, plo->queue);
 
 	set_capacity(plo->disk, plo->bd_size);
 	bd_set_size(bdev, (loff_t)plo->bd_size << 9);
