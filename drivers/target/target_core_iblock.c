@@ -283,9 +283,15 @@ static void iblock_complete_cmd(struct se_cmd *cmd)
 	if (!refcount_dec_and_test(&ibr->pending))
 		return;
 
-	if (atomic_read(&ibr->ib_bio_err_cnt))
+	if (atomic_read(&ibr->ib_bio_err_cnt)) {
+		struct iblock_dev *ib_dev = IBLOCK_DEV(cmd->se_dev);
+		struct request_queue *q = bdev_get_queue(ib_dev->ibd_bd);
+
+		if (blk_queue_standby(q))
+			cmd->transport_state |= CMD_T_STANDBY;
+
 		status = SAM_STAT_CHECK_CONDITION;
-	else
+	} else
 		status = SAM_STAT_GOOD;
 
 	target_complete_cmd(cmd, status);
