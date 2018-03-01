@@ -918,7 +918,7 @@ tcache_invalidate_node_pages(struct tcache_node *node)
 	bool repeat, synchronize_sched_once = true;
 	pgoff_t indices[TCACHE_PAGEVEC_SIZE];
 	struct page *pages[TCACHE_PAGEVEC_SIZE];
-	pgoff_t index = 0;
+	pgoff_t index;
 	unsigned nr_pages;
 	int i;
 
@@ -926,6 +926,7 @@ tcache_invalidate_node_pages(struct tcache_node *node)
 	 * First forbid new page insertions - see tcache_page_tree_replace.
 	 */
 again:
+	index = 0;
 	repeat = false;
 	while ((nr_pages = tcache_lookup(pages, node, index,
 						TCACHE_PAGEVEC_SIZE, indices))) {
