@@ -1829,6 +1829,8 @@ static unsigned long mem_cgroup_margin(struct mem_cgroup *memcg, bool kmem)
 		limit = READ_ONCE(memcg->kmem.limit);
 		if (count <= limit)
 			margin = min(margin, limit - count);
+		else
+			margin = 0;
 	}
 
 	return margin;
