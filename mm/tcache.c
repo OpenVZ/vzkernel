@@ -915,7 +915,7 @@ repeat:
 static noinline_for_stack void
 tcache_invalidate_node_pages(struct tcache_node *node)
 {
-	bool repeat, synchronize_sched_once = true;
+	bool repeat = false, synchronize_sched_once = true;
 	pgoff_t indices[TCACHE_PAGEVEC_SIZE];
 	struct page *pages[TCACHE_PAGEVEC_SIZE];
 	pgoff_t index;
@@ -927,7 +927,6 @@ tcache_invalidate_node_pages(struct tcache_node *node)
 	 */
 again:
 	index = 0;
-	repeat = false;
 	while ((nr_pages = tcache_lookup(pages, node, index,
 						TCACHE_PAGEVEC_SIZE, indices))) {
 		for (i = 0; i < nr_pages; i++) {
