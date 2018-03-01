@@ -705,6 +705,7 @@ void transport_cmd_finish_abort(struct se_cmd *cmd, int remove)
 static void target_complete_failure_work(struct work_struct *work)
 {
 	struct se_cmd *cmd = container_of(work, struct se_cmd, work);
+	sense_reason_t sense_reason = TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
 
 	switch (cmd->data_direction) {
 	case DMA_FROM_DEVICE:
@@ -719,8 +720,11 @@ static void target_complete_failure_work(struct work_struct *work)
 		break;
 	}
 
-	transport_generic_request_failure(cmd,
-			TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE);
+	if (cmd->transport_state & CMD_T_STANDBY) {
+		core_alua_set_ascq(cmd, ASCQ_04H_ALUA_TG_PT_STANDBY);
+		sense_reason = TCM_CHECK_CONDITION_NOT_READY;
+	}
+	transport_generic_request_failure(cmd, sense_reason);
 }
 
 /*
