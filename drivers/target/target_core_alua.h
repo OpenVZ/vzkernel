@@ -157,5 +157,6 @@ extern ssize_t core_alua_store_secondary_write_metadata(struct se_lun *,
 					const char *, size_t);
 extern int core_setup_alua(struct se_device *);
 extern sense_reason_t target_alua_state_check(struct se_cmd *cmd);
+extern void core_alua_set_ascq(struct se_cmd *cmd, u8 alua_ascq);
 
 #endif /* TARGET_CORE_ALUA_H */
