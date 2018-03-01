@@ -595,9 +595,6 @@ static struct attribute *state_attributes[] = {
 	_A(blockable_reqs),
 	_A(blocked_bios),
 	_A(freeze_state),
-	_A2(discard_granularity),
-	_A2(discard_alignment),
-	_A2(discard_zeroes_data),
 	NULL
 };
 
@@ -619,6 +616,9 @@ static struct attribute *tune_attributes[] = {
 	_A2(congestion_low_watermark),
 	_A2(max_active_requests),
 	_A2(push_backup_timeout),
+	_A2(discard_granularity),
+	_A2(discard_alignment),
+	_A2(discard_zeroes_data),
 	NULL
 };
 
