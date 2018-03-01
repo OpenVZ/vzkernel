@@ -539,6 +539,7 @@ struct se_cmd {
 #define CMD_T_DEV_ACTIVE	(1 << 7)
 #define CMD_T_REQUEST_STOP	(1 << 8)
 #define CMD_T_BUSY		(1 << 9)
+#define CMD_T_STANDBY		(1 << 31)
 	spinlock_t		t_state_lock;
 	struct completion	t_transport_stop_comp;
 
