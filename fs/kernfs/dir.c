@@ -639,16 +639,17 @@ static struct kernfs_node *kernfs_find_ns(struct kernfs_node *parent,
 					  const void *ns)
 {
 	struct rb_node *node = parent->dir.children.rb_node;
-	bool has_ns = kernfs_ns_enabled(parent);
 	unsigned int hash;
 
 	lockdep_assert_held(&kernfs_mutex);
 
-	if (has_ns != (bool)ns) {
+#ifndef CONFIG_VE
+	if ((bool)kernfs_ns_enabled(parent) != (bool)ns) {
 		WARN(1, KERN_WARNING "kernfs: ns %s in '%s' for '%s'\n",
 		     has_ns ? "required" : "invalid", parent->name, name);
 		return NULL;
 	}
+#endif
 
 	hash = kernfs_name_hash(name, ns);
 	while (node) {
