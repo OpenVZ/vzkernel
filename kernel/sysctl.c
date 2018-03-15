@@ -129,7 +129,6 @@ static int __maybe_unused one = 1;
 static int __maybe_unused two = 2;
 static int __maybe_unused four = 4;
 static unsigned long one_ul = 1;
-static int ten = 10;
 static int one_hundred = 100;
 #ifdef CONFIG_PRINTK
 static int ten_thousand = 10000;
@@ -1708,7 +1707,7 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &proc_warn_high_order,
 		.extra1		= &zero,
-		.extra2		= &ten,
+		.extra2		= &one_hundred,
 	},
 	{ }
 };
