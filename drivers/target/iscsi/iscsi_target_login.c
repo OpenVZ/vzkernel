@@ -20,6 +20,7 @@
 #include <linux/string.h>
 #include <linux/kthread.h>
 #include <linux/idr.h>
+#include <linux/cgroup.h>
 #include <scsi/iscsi_proto.h>
 #include <target/target_core_base.h>
 #include <target/target_core_fabric.h>
@@ -658,7 +659,17 @@ static void iscsi_post_login_start_timers(struct iscsi_conn *conn)
 
 int iscsit_start_kthreads(struct iscsi_conn *conn)
 {
+	struct iscsi_portal_group *tpg = conn->tpg;
+	struct cgroup_subsys_state *blk_css = NULL;
 	int ret = 0;
+
+	if (iscsit_get_tpg(tpg) < 0)
+		return -EINVAL;
+	if (tpg->blk_css) {
+		blk_css = tpg->blk_css;
+		css_get(blk_css);
+	}
+	iscsit_put_tpg(tpg);
 
 	spin_lock(&iscsit_global->ts_bitmap_lock);
 	conn->bitmap_id = bitmap_find_free_region(iscsit_global->ts_bitmap,
@@ -668,7 +679,8 @@ int iscsit_start_kthreads(struct iscsi_conn *conn)
 	if (conn->bitmap_id < 0) {
 		pr_err("bitmap_find_free_region() failed for"
 		       " iscsit_start_kthreads()\n");
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto put_blk_css;
 	}
 
 	conn->tx_thread = kthread_run(iscsi_target_tx_thread, conn,
@@ -677,6 +689,11 @@ int iscsit_start_kthreads(struct iscsi_conn *conn)
 		pr_err("Unable to start iscsi_target_tx_thread\n");
 		ret = PTR_ERR(conn->tx_thread);
 		goto out_bitmap;
+	}
+	if (blk_css) {
+		ret = cgroup_kernel_attach(blk_css->cgroup, conn->tx_thread);
+		if (ret < 0)
+			goto out_tx;
 	}
 	conn->tx_thread_active = true;
 
@@ -687,9 +704,21 @@ int iscsit_start_kthreads(struct iscsi_conn *conn)
 		ret = PTR_ERR(conn->rx_thread);
 		goto out_tx;
 	}
+	if (blk_css) {
+		ret = cgroup_kernel_attach(blk_css->cgroup, conn->rx_thread);
+		if (ret < 0)
+			goto out_rx;
+	}
 	conn->rx_thread_active = true;
 
+	if (blk_css)
+		css_put(blk_css);
+
 	return 0;
+out_rx:
+	send_sig(SIGINT, conn->rx_thread, 1);
+	kthread_stop(conn->rx_thread);
+	conn->rx_thread_active = false;
 out_tx:
 	send_sig(SIGINT, conn->tx_thread, 1);
 	kthread_stop(conn->tx_thread);
@@ -699,6 +728,9 @@ out_bitmap:
 	bitmap_release_region(iscsit_global->ts_bitmap, conn->bitmap_id,
 			      get_order(1));
 	spin_unlock(&iscsit_global->ts_bitmap_lock);
+put_blk_css:
+	if (blk_css)
+		css_put(blk_css);
 	return ret;
 }
 

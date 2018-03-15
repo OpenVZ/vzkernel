@@ -16,6 +16,7 @@
  * GNU General Public License for more details.
  ******************************************************************************/
 
+#include <linux/cgroup.h>
 #include <target/target_core_base.h>
 #include <target/target_core_fabric.h>
 
@@ -297,6 +298,9 @@ int iscsit_tpg_del_portal_group(
 	tiqn->tiqn_ntpgs--;
 	list_del(&tpg->tpg_list);
 	spin_unlock(&tiqn->tiqn_tpg_lock);
+
+	if (tpg->blk_css)
+		css_put(tpg->blk_css);
 
 	pr_debug("CORE[%s]_TPG[%hu] - Deleted iSCSI Target Portal Group\n",
 			tiqn->tiqn, tpg->tpgt);
@@ -898,4 +902,36 @@ int iscsit_ta_fabric_prot_type(
 		 tpg->tpgt, prot_type);
 
 	return 0;
+}
+
+int iscsit_ta_tpg_set_blkcg(struct iscsi_portal_group *tpg, u32 flag)
+{
+	struct cgroup_subsys_state *css;
+
+	if (flag != 1)
+		return -EINVAL;
+
+	css = task_get_css(current, blkio_subsys_id);
+	if (tpg->blk_css)
+		css_put(tpg->blk_css);
+	tpg->blk_css = css;
+
+	return 0;
+}
+
+int iscsit_ta_tpg_show_blkcg(struct iscsi_portal_group *tpg, char *page)
+{
+	int rb;
+
+	if (tpg->blk_css) {
+		rb = cgroup_path(tpg->blk_css->cgroup, page, PAGE_SIZE - 1);
+		if (rb == 0)
+			rb = strlen(page);
+		page[rb] = '\n';
+		page[rb + 1] = 0;
+		rb++;
+	} else
+		rb = 0;
+
+	return rb;
 }
