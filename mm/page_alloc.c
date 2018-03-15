@@ -3243,7 +3243,7 @@ static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
 }
 
 struct static_key warn_high_order_key = STATIC_KEY_INIT_FALSE;
-int warn_order = MAX_ORDER+1;
+int warn_order = MAX_ORDER;
 
 int proc_warn_high_order(struct ctl_table *table, int write,
 			void __user *buffer, size_t *lenp, loff_t *ppos)
@@ -3267,7 +3267,7 @@ static __always_inline void warn_high_order(int order, gfp_t gfp_mask)
 		int tmp_warn_order = smp_load_acquire(&warn_order);
 
 		if (order >= tmp_warn_order && !(gfp_mask & __GFP_NOWARN))
-			WARN(atomic_dec_return(&warn_count),
+			WARN(atomic_dec_if_positive(&warn_count) >= 0,
 				"order %d >= %d, gfp 0x%x\n",
 				order, tmp_warn_order, gfp_mask);
 	}
