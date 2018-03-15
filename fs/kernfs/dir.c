@@ -644,11 +644,13 @@ static struct kernfs_node *kernfs_find_ns(struct kernfs_node *parent,
 
 	lockdep_assert_held(&kernfs_mutex);
 
+#ifndef CONFIG_VE
 	if (has_ns != (bool)ns) {
 		WARN(1, KERN_WARNING "kernfs: ns %s in '%s' for '%s'\n",
 		     has_ns ? "required" : "invalid", parent->name, name);
 		return NULL;
 	}
+#endif
 
 	hash = kernfs_name_hash(name, ns);
 	while (node) {
