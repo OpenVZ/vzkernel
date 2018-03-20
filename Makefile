@@ -4,16 +4,17 @@ PATCHLEVEL = 18
 SUBLEVEL = 0
 EXTRAVERSION =
 NAME = Merciless Moray
+# VZVERSION = ovz.1.1
 VZVERSION = ovz.custom
 
 ifeq ($(VZVERSION), ovz.custom)
   GIT_DIR := .git
-#  ifneq ("$(wildcard $(GIT_DIR) )", "")
-#    VZVERSION := $(shell git describe --abbrev=0 2>/dev/null | \
-#		   sed -r 's/^.*\.vz8\.//')
-#  else
+  ifneq ("$(wildcard $(GIT_DIR) )", "")
+    VZVERSION := $(shell git describe --abbrev=0 2>/dev/null | \
+		   sed -r 's/^.*\.vz8\.//')
+  else
     VZVERSION := custom
-#  endif
+  endif
 
   ifeq ($(EXTRAVERSION),)
     EXTRAVERSION := .ovz.$(VZVERSION)
