@@ -803,6 +803,12 @@ int __usermodehelper_disable(enum umh_disable_depth depth)
 	return -EAGAIN;
 }
 
+void wait_khelpers(void)
+{
+	wait_event(running_helpers_waitq,
+		atomic_read(&running_helpers) == 0);
+}
+
 static void helper_lock(void)
 {
 	atomic_inc(&running_helpers);
@@ -891,7 +897,8 @@ static int __call_usermodehelper_exec(struct subprocess_info *sub_info,
 	if (sub_info->path[0] == '\0')
 		goto out;
 
-	if (usermodehelper_disabled) {
+	if (usermodehelper_disabled ||
+	    (ve && (ve->init_task->flags & PF_EXITING))) {
 		retval = -EBUSY;
 		goto out;
 	}
@@ -975,30 +982,10 @@ int call_usermodehelper_fns_ve(struct ve_struct *ve,
 	if (!ve)
 		return -EFAULT;
 
-	if (ve_is_super(ve) || (get_exec_env() == ve)) {
-		err = call_usermodehelper_by(path, argv, envp, wait, init, cleanup,
-					     data, ve_is_super(ve) ? NULL : ve);
-		goto out_put;
-	}
+	err = call_usermodehelper_by(path, argv, envp,
+			wait, init, cleanup, data,
+			ve_is_super(ve) ? NULL : ve);
 
-	if (wait > UMH_WAIT_EXEC) {
-		printk(KERN_ERR "VE#%s: Sleeping call for containers UMH is "
-				"not supported\n", ve->ve_name);
-		err = -EINVAL;
-		goto out_put;
-	}
-
-	down_read(&ve->op_sem);
-	err = -EPIPE;
-	if (!ve->is_running)
-		goto out;
-
-	err = call_usermodehelper_by(path, argv, envp, wait, init,
-				     cleanup, data, ve);
-
-out:
-	up_read(&ve->op_sem);
-out_put:
 	put_ve(ve);
 	return err;
 }
