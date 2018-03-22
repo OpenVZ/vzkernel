@@ -78,8 +78,8 @@ static void free_modprobe_argv(struct subprocess_info *info)
 	kfree(info->argv);
 }
 
-static int __call_usermodehelper_exec(struct kthread_worker *worker,
-		struct subprocess_info *sub_info, int wait);
+static int __call_usermodehelper_exec(struct subprocess_info *sub_info,
+		int wait, struct ve_struct *ve);
 
 static int call_modprobe(char *module_name, int wait, int blacklist)
 {
@@ -118,7 +118,7 @@ static int call_modprobe(char *module_name, int wait, int blacklist)
 	 * We enter to this function with the right permittions, so
 	 * it's possible to directly call __call_usermodehelper_exec()
 	 */
-	return __call_usermodehelper_exec(&khelper_worker, info, wait | UMH_KILLABLE);
+	return __call_usermodehelper_exec(info, wait | UMH_KILLABLE, NULL);
 
 free_module_name:
 	kfree(module_name);
@@ -874,9 +874,11 @@ EXPORT_SYMBOL(call_usermodehelper_setup);
  * asynchronously if wait is not set, and runs as a child of keventd.
  * (ie. it runs with full root capabilities).
  */
-static int __call_usermodehelper_exec(struct kthread_worker *worker,
-		struct subprocess_info *sub_info, int wait)
+static int __call_usermodehelper_exec(struct subprocess_info *sub_info,
+		int wait, struct ve_struct *ve)
 {
+	struct kthread_worker *worker = ve ? &ve->ve_umh_worker
+		: &khelper_worker;
 	DECLARE_COMPLETION_ONSTACK(done);
 	int retval = 0;
 
@@ -937,7 +939,7 @@ int call_usermodehelper_exec(struct subprocess_info *sub_info, int wait)
 	if (!ve_is_super(get_exec_env()))
 		return -EPERM;
 
-	return __call_usermodehelper_exec(&khelper_worker, sub_info, wait);
+	return __call_usermodehelper_exec(sub_info, wait, NULL);
 }
 EXPORT_SYMBOL(call_usermodehelper_exec);
 
@@ -956,8 +958,8 @@ EXPORT_SYMBOL(call_usermodehelper_exec);
  */
 int call_usermodehelper(char *path, char **argv, char **envp, int wait)
 {
-	return call_usermodehelper_by(&khelper_worker, path, argv, envp,
-			wait, NULL, NULL, NULL);
+	return call_usermodehelper_by(path, argv, envp,
+			wait, NULL, NULL, NULL, NULL);
 }
 EXPORT_SYMBOL(call_usermodehelper);
 
@@ -968,17 +970,14 @@ int call_usermodehelper_fns_ve(struct ve_struct *ve,
 	void (*cleanup)(struct subprocess_info *), void *data)
 {
 	int err;
-	struct kthread_worker *khelper;
 
 	ve = get_ve(ve);
 	if (!ve)
 		return -EFAULT;
 
-	khelper = ve_is_super(ve) ? &khelper_worker : &ve->ve_umh_worker;
-
 	if (ve_is_super(ve) || (get_exec_env() == ve)) {
-		err = call_usermodehelper_by(khelper, path, argv, envp, wait, init,
-					     cleanup, data);
+		err = call_usermodehelper_by(path, argv, envp, wait, init, cleanup,
+					     data, ve_is_super(ve) ? NULL : ve);
 		goto out_put;
 	}
 
@@ -994,8 +993,8 @@ int call_usermodehelper_fns_ve(struct ve_struct *ve,
 	if (!ve->is_running)
 		goto out;
 
-	err = call_usermodehelper_by(khelper, path, argv, envp, wait, init,
-				     cleanup, data);
+	err = call_usermodehelper_by(path, argv, envp, wait, init,
+				     cleanup, data, ve);
 
 out:
 	up_read(&ve->op_sem);
@@ -1006,15 +1005,15 @@ out_put:
 EXPORT_SYMBOL(call_usermodehelper_fns_ve);
 #endif
 
-int call_usermodehelper_by(struct kthread_worker *worker,
-	char *path, char **argv, char **envp, int wait,
+int call_usermodehelper_by(char *path, char **argv, char **envp, int wait,
 	int (*init)(struct subprocess_info *info, struct cred *new),
-	void (*cleanup)(struct subprocess_info *), void *data)
+	void (*cleanup)(struct subprocess_info *), void *data,
+	struct ve_struct *ve)
 {
 	struct subprocess_info *info;
 	gfp_t gfp_mask = (wait == UMH_NO_WAIT) ? GFP_ATOMIC : GFP_KERNEL;
 
-	if (worker == &khelper_worker && !ve_is_super(get_exec_env()))
+	if (!ve && !ve_is_super(get_exec_env()))
 		return -EPERM;
 
 	info = call_usermodehelper_setup(path, argv, envp, gfp_mask,
@@ -1022,7 +1021,7 @@ int call_usermodehelper_by(struct kthread_worker *worker,
 	if (info == NULL)
 		return -ENOMEM;
 
-	return __call_usermodehelper_exec(worker, info, wait);
+	return __call_usermodehelper_exec(info, wait, ve);
 }
 EXPORT_SYMBOL(call_usermodehelper_by);
 
