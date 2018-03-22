@@ -365,8 +365,8 @@ acpi_ev_create_gpe_block(struct acpi_namespace_node *gpe_device,
 	gpe_block->register_count = register_count;
 	gpe_block->block_base_number = gpe_block_base_number;
 
-	ACPI_MEMCPY(&gpe_block->block_address, gpe_block_address,
-		    sizeof(struct acpi_generic_address));
+	memcpy(&gpe_block->block_address, gpe_block_address,
+	       sizeof(struct acpi_generic_address));
 
 	/*
 	 * Create the register_info and event_info sub-structures
@@ -382,6 +382,8 @@ acpi_ev_create_gpe_block(struct acpi_namespace_node *gpe_device,
 
 	status = acpi_ev_install_gpe_block(gpe_block, interrupt_number);
 	if (ACPI_FAILURE(status)) {
+		ACPI_FREE(gpe_block->register_info);
+		ACPI_FREE(gpe_block->event_info);
 		ACPI_FREE(gpe_block);
 		return_ACPI_STATUS(status);
 	}

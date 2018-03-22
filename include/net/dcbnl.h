@@ -101,4 +101,15 @@ struct dcbnl_rtnl_ops {
 	int (*cee_peer_getpfc) (struct net_device *, struct cee_pfc *);
 };
 
+struct dcbnl_rtnl_ops_ext {
+	int (*ieee_getqcn) (struct net_device *, struct ieee_qcn *);
+	int (*ieee_setqcn) (struct net_device *, struct ieee_qcn *);
+	int (*ieee_getqcnstats) (struct net_device *, struct ieee_qcn_stats *);
+	RH_KABI_RESERVE_P(1)
+	RH_KABI_RESERVE_P(2)
+	RH_KABI_RESERVE_P(3)
+	RH_KABI_RESERVE_P(4)
+	RH_KABI_RESERVE_P(5)
+};
+
 #endif /* __NET_DCBNL_H__ */

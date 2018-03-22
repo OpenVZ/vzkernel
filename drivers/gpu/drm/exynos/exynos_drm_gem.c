@@ -12,6 +12,7 @@
 #include <drm/drmP.h>
 
 #include <linux/shmem_fs.h>
+#include <linux/pfn_t.h>
 #include <drm/exynos_drm.h>
 
 #include "exynos_drm_drv.h"

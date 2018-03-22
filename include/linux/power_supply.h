@@ -15,6 +15,7 @@
 
 #include <linux/workqueue.h>
 #include <linux/leds.h>
+#include <linux/spinlock.h>
 
 struct device;
 
@@ -194,6 +195,8 @@ struct power_supply {
 	/* private */
 	struct device *dev;
 	struct work_struct changed_work;
+	spinlock_t changed_lock;
+	bool changed;
 #ifdef CONFIG_THERMAL
 	struct thermal_zone_device *tzd;
 	struct thermal_cooling_device *tcd;
@@ -244,6 +247,12 @@ static inline int power_supply_is_system_supplied(void) { return -ENOSYS; }
 #endif
 
 extern int power_supply_register(struct device *parent,
+				 struct power_supply *psy);
+extern int power_supply_register_no_ws(struct device *parent,
+				 struct power_supply *psy);
+extern int devm_power_supply_register(struct device *parent,
+				 struct power_supply *psy);
+extern int devm_power_supply_register_no_ws(struct device *parent,
 				 struct power_supply *psy);
 extern void power_supply_unregister(struct power_supply *psy);
 extern int power_supply_powers(struct power_supply *psy, struct device *dev);

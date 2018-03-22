@@ -7,6 +7,7 @@ TARGETS += mqueue
 TARGETS += net
 TARGETS += ptrace
 TARGETS += vm
+TARGETS += powerpc
 
 all:
 	for TARGET in $(TARGETS); do \

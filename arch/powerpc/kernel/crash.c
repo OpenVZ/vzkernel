@@ -17,7 +17,6 @@
 #include <linux/export.h>
 #include <linux/crash_dump.h>
 #include <linux/delay.h>
-#include <linux/init.h>
 #include <linux/irq.h>
 #include <linux/types.h>
 
@@ -44,8 +43,6 @@
 #define IPI_TIMEOUT		10000
 #define REAL_MODE_TIMEOUT	10000
 
-/* This keeps a track of which one is the crashing cpu. */
-int crashing_cpu = -1;
 static int time_to_dump;
 
 #define CRASH_HANDLER_MAX 3
@@ -82,7 +79,7 @@ void crash_ipi_callback(struct pt_regs *regs)
 	}
 
 	atomic_inc(&cpus_in_crash);
-	smp_mb__after_atomic_inc();
+	smp_mb__after_atomic();
 
 	/*
 	 * Starting the kdump boot.

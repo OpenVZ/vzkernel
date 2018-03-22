@@ -25,14 +25,15 @@ static int logon_vet_description(const char *desc);
  * arbitrary blob of data as the payload
  */
 struct key_type key_type_user = {
-	.name		= "user",
-	.instantiate	= user_instantiate,
-	.update		= user_update,
-	.match		= user_match,
-	.revoke		= user_revoke,
-	.destroy	= user_destroy,
-	.describe	= user_describe,
-	.read		= user_read,
+	.name			= "user",
+	.def_lookup_type	= KEYRING_SEARCH_LOOKUP_DIRECT,
+	.instantiate		= user_instantiate,
+	.update			= user_update,
+	.match			= user_match,
+	.revoke			= user_revoke,
+	.destroy		= user_destroy,
+	.describe		= user_describe,
+	.read			= user_read,
 };
 
 EXPORT_SYMBOL_GPL(key_type_user);
@@ -45,6 +46,7 @@ EXPORT_SYMBOL_GPL(key_type_user);
  */
 struct key_type key_type_logon = {
 	.name			= "logon",
+	.def_lookup_type	= KEYRING_SEARCH_LOOKUP_DIRECT,
 	.instantiate		= user_instantiate,
 	.update			= user_update,
 	.match			= user_match,
@@ -119,7 +121,10 @@ int user_update(struct key *key, struct key_preparsed_payload *prep)
 
 	if (ret == 0) {
 		/* attach the new data, displacing the old */
-		zap = key->payload.data;
+		if (!test_bit(KEY_FLAG_NEGATIVE, &key->flags))
+			zap = dereference_key_locked(key);
+		else
+			zap = NULL;
 		rcu_assign_keypointer(key, upayload);
 		key->expiry = 0;
 	}
@@ -149,7 +154,7 @@ EXPORT_SYMBOL_GPL(user_match);
  */
 void user_revoke(struct key *key)
 {
-	struct user_key_payload *upayload = key->payload.data;
+	struct user_key_payload *upayload = user_key_payload_locked(key);
 
 	/* clear the quota */
 	key_payload_reserve(key, 0);
@@ -195,7 +200,7 @@ long user_read(const struct key *key, char __user *buffer, size_t buflen)
 	struct user_key_payload *upayload;
 	long ret;
 
-	upayload = rcu_dereference_key(key);
+	upayload = user_key_payload_locked(key);
 	ret = upayload->datalen;
 
 	/* we can return the data as is */

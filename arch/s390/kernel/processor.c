@@ -8,20 +8,28 @@
 
 #include <linux/kernel.h>
 #include <linux/init.h>
-#include <linux/smp.h>
 #include <linux/seq_file.h>
 #include <linux/delay.h>
 #include <linux/cpu.h>
 #include <asm/elf.h>
 #include <asm/lowcore.h>
 #include <asm/param.h>
+#include <asm/smp.h>
 
 static DEFINE_PER_CPU(struct cpuid, cpu_id);
+
+void notrace cpu_relax(void)
+{
+	if (!smp_cpu_mtid && MACHINE_HAS_DIAG44)
+		asm volatile("diag 0,0,0x44");
+	barrier();
+}
+EXPORT_SYMBOL(cpu_relax);
 
 /*
  * cpu_init - initializes state that is per-CPU.
  */
-void __cpuinit cpu_init(void)
+void cpu_init(void)
 {
 	struct s390_idle_data *idle = &__get_cpu_var(s390_idle);
 	struct cpuid *id = &__get_cpu_var(cpu_id);
@@ -41,7 +49,10 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 {
 	static const char *hwcap_str[] = {
 		"esan3", "zarch", "stfle", "msa", "ldisp", "eimm", "dfp",
-		"edat", "etf3eh", "highgprs", "te"
+		"edat", "etf3eh", "highgprs", "te", "vx"
+	};
+	static const char * const int_hwcap_str[] = {
+		"sie"
 	};
 	unsigned long n = (unsigned long) v - 1;
 	int i;
@@ -53,10 +64,14 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 			   "bogomips per cpu: %lu.%02lu\n",
 			   num_online_cpus(), loops_per_jiffy/(500000/HZ),
 			   (loops_per_jiffy/(5000/HZ))%100);
+		seq_printf(m, "max thread id   : %d\n", smp_cpu_mtid);
 		seq_puts(m, "features\t: ");
 		for (i = 0; i < ARRAY_SIZE(hwcap_str); i++)
 			if (hwcap_str[i] && (elf_hwcap & (1UL << i)))
 				seq_printf(m, "%s ", hwcap_str[i]);
+		for (i = 0; i < ARRAY_SIZE(int_hwcap_str); i++)
+			if (int_hwcap_str[i] && (int_hwcap & (1UL << i)))
+				seq_printf(m, "%s ", int_hwcap_str[i]);
 		seq_puts(m, "\n");
 		show_cacheinfo(m);
 	}

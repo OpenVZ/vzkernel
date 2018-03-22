@@ -4,7 +4,7 @@
  * Modern ConfigFS group context specific statistics based on original
  * target_core_mib.c code
  *
- * (c) Copyright 2006-2012 RisingTide Systems LLC.
+ * (c) Copyright 2006-2013 Datera, Inc.
  *
  * Nicholas A. Bellinger <nab@linux-iscsi.org>
  *
@@ -32,7 +32,6 @@
 #include <linux/utsname.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
-#include <linux/blkdev.h>
 #include <linux/configfs.h>
 #include <scsi/scsi.h>
 #include <scsi/scsi_device.h>
@@ -214,7 +213,8 @@ static ssize_t target_stat_scsi_tgt_dev_show_attr_resets(
 	struct se_device *dev =
 		container_of(sgrps, struct se_device, dev_stat_grps);
 
-	return snprintf(page, PAGE_SIZE, "%u\n", dev->num_resets);
+	return snprintf(page, PAGE_SIZE, "%lu\n",
+			atomic_long_read(&dev->num_resets));
 }
 DEV_STAT_SCSI_TGT_DEV_ATTR_RO(resets);
 
@@ -333,7 +333,7 @@ static ssize_t target_stat_scsi_lu_show_attr_prod(
 	char str[sizeof(dev->t10_wwn.model)+1];
 
 	/* scsiLuProductId */
-	for (i = 0; i < sizeof(dev->t10_wwn.vendor); i++)
+	for (i = 0; i < sizeof(dev->t10_wwn.model); i++)
 		str[i] = ISPRINT(dev->t10_wwn.model[i]) ?
 			dev->t10_wwn.model[i] : ' ';
 	str[i] = '\0';
@@ -397,8 +397,8 @@ static ssize_t target_stat_scsi_lu_show_attr_num_cmds(
 		container_of(sgrps, struct se_device, dev_stat_grps);
 
 	/* scsiLuNumCommands */
-	return snprintf(page, PAGE_SIZE, "%llu\n",
-			(unsigned long long)dev->num_cmds);
+	return snprintf(page, PAGE_SIZE, "%lu\n",
+			atomic_long_read(&dev->num_cmds));
 }
 DEV_STAT_SCSI_LU_ATTR_RO(num_cmds);
 
@@ -409,7 +409,8 @@ static ssize_t target_stat_scsi_lu_show_attr_read_mbytes(
 		container_of(sgrps, struct se_device, dev_stat_grps);
 
 	/* scsiLuReadMegaBytes */
-	return snprintf(page, PAGE_SIZE, "%u\n", (u32)(dev->read_bytes >> 20));
+	return snprintf(page, PAGE_SIZE, "%lu\n",
+			atomic_long_read(&dev->read_bytes) >> 20);
 }
 DEV_STAT_SCSI_LU_ATTR_RO(read_mbytes);
 
@@ -420,7 +421,8 @@ static ssize_t target_stat_scsi_lu_show_attr_write_mbytes(
 		container_of(sgrps, struct se_device, dev_stat_grps);
 
 	/* scsiLuWrittenMegaBytes */
-	return snprintf(page, PAGE_SIZE, "%u\n", (u32)(dev->write_bytes >> 20));
+	return snprintf(page, PAGE_SIZE, "%lu\n",
+			atomic_long_read(&dev->write_bytes) >> 20);
 }
 DEV_STAT_SCSI_LU_ATTR_RO(write_mbytes);
 
@@ -431,7 +433,7 @@ static ssize_t target_stat_scsi_lu_show_attr_resets(
 		container_of(sgrps, struct se_device, dev_stat_grps);
 
 	/* scsiLuInResets */
-	return snprintf(page, PAGE_SIZE, "%u\n", dev->num_resets);
+	return snprintf(page, PAGE_SIZE, "%lu\n", atomic_long_read(&dev->num_resets));
 }
 DEV_STAT_SCSI_LU_ATTR_RO(resets);
 
@@ -1012,6 +1014,28 @@ static ssize_t target_stat_scsi_transport_show_attr_dev_name(
 }
 DEV_STAT_SCSI_TRANSPORT_ATTR_RO(dev_name);
 
+static ssize_t target_stat_scsi_transport_show_attr_proto_id(
+	struct se_port_stat_grps *pgrps, char *page)
+{
+	struct se_lun *lun = container_of(pgrps, struct se_lun, port_stat_grps);
+	struct se_port *sep;
+	struct se_portal_group *tpg;
+	ssize_t ret;
+
+	spin_lock(&lun->lun_sep_lock);
+	sep = lun->lun_sep;
+	if (!sep) {
+		spin_unlock(&lun->lun_sep_lock);
+		return -ENODEV;
+	}
+	tpg = sep->sep_tpg;
+	ret = snprintf(page, PAGE_SIZE, "%u\n",
+		       tpg->se_tpg_tfo->get_fabric_proto_ident(tpg));
+	spin_unlock(&lun->lun_sep_lock);
+	return ret;
+}
+DEV_STAT_SCSI_TRANSPORT_ATTR_RO(proto_id);
+
 CONFIGFS_EATTR_OPS(target_stat_scsi_transport, se_port_stat_grps,
 		scsi_transport_group);
 
@@ -1020,6 +1044,7 @@ static struct configfs_attribute *target_stat_scsi_transport_attrs[] = {
 	&target_stat_scsi_transport_device.attr,
 	&target_stat_scsi_transport_indx.attr,
 	&target_stat_scsi_transport_dev_name.attr,
+	&target_stat_scsi_transport_proto_id.attr,
 	NULL,
 };
 

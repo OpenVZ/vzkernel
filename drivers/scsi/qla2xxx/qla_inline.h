@@ -1,6 +1,6 @@
 /*
  * QLogic Fibre Channel HBA Driver
- * Copyright (c)  2003-2013 QLogic Corporation
+ * Copyright (c)  2003-2014 QLogic Corporation
  *
  * See LICENSE.qla2xxx for copyright and licensing details.
  */
@@ -59,7 +59,7 @@ qla2x00_poll(struct rsp_que *rsp)
 	unsigned long flags;
 	struct qla_hw_data *ha = rsp->hw;
 	local_irq_save(flags);
-	if (IS_QLA82XX(ha))
+	if (IS_P3P_TYPE(ha))
 		qla82xx_poll(0, rsp);
 	else
 		ha->isp_ops->intr_handler(0, rsp);
@@ -83,11 +83,11 @@ static inline void
 host_to_adap(uint8_t *src, uint8_t *dst, uint32_t bsize)
 {
 	uint32_t *isrc = (uint32_t *) src;
-	uint32_t *odest = (uint32_t *) dst;
+	__le32 *odest = (__le32 *) dst;
 	uint32_t iter = bsize >> 2;
 
-	for (; iter ; iter--)
-		*odest++ = cpu_to_le32(*isrc++);
+	for ( ; iter--; isrc++)
+		*odest++ = cpu_to_le32(*isrc);
 }
 
 static inline void
@@ -207,6 +207,36 @@ qla2x00_reset_active(scsi_qla_host_t *vha)
 }
 
 static inline srb_t *
+qla2xxx_get_qpair_sp(struct qla_qpair *qpair, fc_port_t *fcport, gfp_t flag)
+{
+	srb_t *sp = NULL;
+	uint8_t bail;
+
+	QLA_QPAIR_MARK_BUSY(qpair, bail);
+	if (unlikely(bail))
+		return NULL;
+
+	sp = mempool_alloc(qpair->srb_mempool, flag);
+	if (!sp)
+		goto done;
+
+	memset(sp, 0, sizeof(*sp));
+	sp->fcport = fcport;
+	sp->iocbs = 1;
+done:
+	if (!sp)
+		QLA_QPAIR_MARK_NOT_BUSY(qpair);
+	return sp;
+}
+
+static inline void
+qla2xxx_rel_qpair_sp(struct qla_qpair *qpair, srb_t *sp)
+{
+	mempool_free(sp, qpair->srb_mempool);
+	QLA_QPAIR_MARK_NOT_BUSY(qpair);
+}
+
+static inline srb_t *
 qla2x00_get_sp(scsi_qla_host_t *vha, fc_port_t *fcport, gfp_t flag)
 {
 	srb_t *sp = NULL;
@@ -261,25 +291,6 @@ qla2x00_gid_list_size(struct qla_hw_data *ha)
 }
 
 static inline void
-qla2x00_do_host_ramp_up(scsi_qla_host_t *vha)
-{
-	if (vha->hw->cfg_lun_q_depth >= ql2xmaxqdepth)
-		return;
-
-	/* Wait at least HOST_QUEUE_RAMPDOWN_INTERVAL before ramping up */
-	if (time_before(jiffies, (vha->hw->host_last_rampdown_time +
-	    HOST_QUEUE_RAMPDOWN_INTERVAL)))
-		return;
-
-	/* Wait at least HOST_QUEUE_RAMPUP_INTERVAL between each ramp up */
-	if (time_before(jiffies, (vha->hw->host_last_rampup_time +
-	    HOST_QUEUE_RAMPUP_INTERVAL)))
-		return;
-
-	set_bit(HOST_RAMP_UP_QUEUE_DEPTH, &vha->dpc_flags);
-}
-
-static inline void
 qla2x00_handle_mbx_completion(struct qla_hw_data *ha, int status)
 {
 	if (test_bit(MBX_INTR_WAIT, &ha->mbx_cmd_flags) &&
@@ -288,4 +299,12 @@ qla2x00_handle_mbx_completion(struct qla_hw_data *ha, int status)
 		clear_bit(MBX_INTR_WAIT, &ha->mbx_cmd_flags);
 		complete(&ha->mbx_intr_comp);
 	}
+}
+
+static inline void
+qla2x00_set_retry_delay_timestamp(fc_port_t *fcport, uint16_t retry_delay)
+{
+	if (retry_delay)
+		fcport->retry_delay_timestamp = jiffies +
+		    (retry_delay * HZ / 10);
 }

@@ -11,11 +11,13 @@
 
 #define DMA_ERROR_CODE		(~(dma_addr_t) 0x0)
 
-extern struct dma_map_ops s390_dma_ops;
+extern struct dma_map_ops s390_pci_dma_ops;
 
 static inline struct dma_map_ops *get_dma_ops(struct device *dev)
 {
-	return &s390_dma_ops;
+	if (dev && dev->device_rh->dma_ops)
+		return dev->device_rh->dma_ops;
+	return &dma_noop_ops;
 }
 
 extern int dma_set_mask(struct device *dev, u64 mask);

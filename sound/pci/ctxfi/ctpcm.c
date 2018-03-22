@@ -217,7 +217,8 @@ static int ct_pcm_playback_prepare(struct snd_pcm_substream *substream)
 		err = atc->pcm_playback_prepare(atc, apcm);
 
 	if (err < 0) {
-		printk(KERN_ERR "ctxfi: Preparing pcm playback failed!!!\n");
+		dev_err(atc->card->dev,
+			"Preparing pcm playback failed!!!\n");
 		return err;
 	}
 
@@ -324,7 +325,8 @@ static int ct_pcm_capture_prepare(struct snd_pcm_substream *substream)
 
 	err = atc->pcm_capture_prepare(atc, apcm);
 	if (err < 0) {
-		printk(KERN_ERR "ctxfi: Preparing pcm capture failed!!!\n");
+		dev_err(atc->card->dev,
+			"Preparing pcm capture failed!!!\n");
 		return err;
 	}
 
@@ -370,7 +372,7 @@ ct_pcm_capture_pointer(struct snd_pcm_substream *substream)
 }
 
 /* PCM operators for playback */
-static struct snd_pcm_ops ct_pcm_playback_ops = {
+static const struct snd_pcm_ops ct_pcm_playback_ops = {
 	.open	 	= ct_pcm_playback_open,
 	.close		= ct_pcm_playback_close,
 	.ioctl		= snd_pcm_lib_ioctl,
@@ -383,7 +385,7 @@ static struct snd_pcm_ops ct_pcm_playback_ops = {
 };
 
 /* PCM operators for capture */
-static struct snd_pcm_ops ct_pcm_capture_ops = {
+static const struct snd_pcm_ops ct_pcm_capture_ops = {
 	.open	 	= ct_pcm_capture_open,
 	.close		= ct_pcm_capture_close,
 	.ioctl		= snd_pcm_lib_ioctl,
@@ -435,7 +437,8 @@ int ct_alsa_pcm_create(struct ct_atc *atc,
 	err = snd_pcm_new(atc->card, "ctxfi", device,
 			  playback_count, capture_count, &pcm);
 	if (err < 0) {
-		printk(KERN_ERR "ctxfi: snd_pcm_new failed!! Err=%d\n", err);
+		dev_err(atc->card->dev, "snd_pcm_new failed!! Err=%d\n",
+			err);
 		return err;
 	}
 

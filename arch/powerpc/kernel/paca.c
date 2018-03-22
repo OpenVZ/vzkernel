@@ -34,10 +34,10 @@ extern unsigned long __toc_start;
  */
 struct lppaca lppaca[] = {
 	[0 ... (NR_LPPACAS-1)] = {
-		.desc = 0xd397d781,	/* "LpPa" */
-		.size = sizeof(struct lppaca),
+		.desc = cpu_to_be32(0xd397d781),	/* "LpPa" */
+		.size = cpu_to_be16(sizeof(struct lppaca)),
 		.fpregs_in_use = 1,
-		.slb_count = 64,
+		.slb_count = cpu_to_be16(64),
 		.vmxregs_in_use = 0,
 		.page_ins = 0,
 	},
@@ -46,7 +46,7 @@ struct lppaca lppaca[] = {
 static struct lppaca *extra_lppacas;
 static long __initdata lppaca_size;
 
-static void allocate_lppacas(int nr_cpus, unsigned long limit)
+static void __init allocate_lppacas(int nr_cpus, unsigned long limit)
 {
 	if (nr_cpus <= NR_LPPACAS)
 		return;
@@ -57,7 +57,7 @@ static void allocate_lppacas(int nr_cpus, unsigned long limit)
 						 PAGE_SIZE, limit));
 }
 
-static struct lppaca *new_lppaca(int cpu)
+static struct lppaca * __init new_lppaca(int cpu)
 {
 	struct lppaca *lp;
 
@@ -70,7 +70,7 @@ static struct lppaca *new_lppaca(int cpu)
 	return lp;
 }
 
-static void free_lppacas(void)
+static void __init free_lppacas(void)
 {
 	long new_size = 0, nr;
 
@@ -98,13 +98,32 @@ static inline void free_lppacas(void) { }
 /*
  * 3 persistent SLBs are registered here.  The buffer will be zero
  * initially, hence will all be invaild until we actually write them.
+ *
+ * If you make the number of persistent SLB entries dynamic, please also
+ * update PR KVM to flush and restore them accordingly.
  */
-struct slb_shadow slb_shadow[] __cacheline_aligned = {
-	[0 ... (NR_CPUS-1)] = {
-		.persistent = SLB_NUM_BOLTED,
-		.buffer_length = sizeof(struct slb_shadow),
-	},
-};
+static struct slb_shadow *slb_shadow;
+
+static void __init allocate_slb_shadows(int nr_cpus, int limit)
+{
+	int size = PAGE_ALIGN(sizeof(struct slb_shadow) * nr_cpus);
+	slb_shadow = __va(memblock_alloc_base(size, PAGE_SIZE, limit));
+	memset(slb_shadow, 0, size);
+}
+
+static struct slb_shadow * __init init_slb_shadow(int cpu)
+{
+	struct slb_shadow *s = &slb_shadow[cpu];
+
+	s->persistent = cpu_to_be32(SLB_NUM_BOLTED);
+	s->buffer_length = cpu_to_be32(sizeof(*s));
+
+	return s;
+}
+
+#else /* CONFIG_PPC_STD_MMU_64 */
+
+static void __init allocate_slb_shadows(int nr_cpus, int limit) { }
 
 #endif /* CONFIG_PPC_STD_MMU_64 */
 
@@ -119,6 +138,15 @@ struct slb_shadow slb_shadow[] __cacheline_aligned = {
  */
 struct paca_struct *paca;
 EXPORT_SYMBOL(paca);
+
+/*
+ * Auiliary structure that can be used to basically add fields to the
+ * paca without changing its size (for kABI purposes). Upstream code should
+ * have these fields directly in the paca.
+ * paca->exslb[EX_DAR] is a pointer to paca_aux (it's unused by SLB
+ * exception handlers).
+ */
+static struct paca_aux_struct * __initdata paca_aux;
 
 void __init initialise_paca(struct paca_struct *new_paca, int cpu)
 {
@@ -136,13 +164,15 @@ void __init initialise_paca(struct paca_struct *new_paca, int cpu)
 	new_paca->paca_index = cpu;
 	new_paca->kernel_toc = kernel_toc;
 	new_paca->kernelbase = (unsigned long) _stext;
-	new_paca->kernel_msr = MSR_KERNEL;
+	/* Only set MSR:IR/DR when MMU is initialized */
+	new_paca->kernel_msr = MSR_KERNEL & ~(MSR_IR | MSR_DR);
 	new_paca->hw_cpu_id = 0xffff;
 	new_paca->kexec_state = KEXEC_STATE_NONE;
 	new_paca->__current = &init_task;
 	new_paca->data_offset = 0xfeeeeeeeeeeeeeeeULL;
 #ifdef CONFIG_PPC_STD_MMU_64
-	new_paca->slb_shadow_ptr = &slb_shadow[cpu];
+	new_paca->slb_shadow_ptr = init_slb_shadow(cpu);
+	new_paca->exslb[EX_DAR/8] = (u64)&paca_aux[cpu];
 #endif /* CONFIG_PPC_STD_MMU_64 */
 }
 
@@ -168,6 +198,7 @@ void setup_paca(struct paca_struct *new_paca)
 }
 
 static int __initdata paca_size;
+static int __initdata paca_aux_size;
 
 void __init allocate_pacas(void)
 {
@@ -185,10 +216,17 @@ void __init allocate_pacas(void)
 	paca = __va(memblock_alloc_base(paca_size, PAGE_SIZE, limit));
 	memset(paca, 0, paca_size);
 
+	paca_aux_size = PAGE_ALIGN(sizeof(struct paca_aux_struct) * nr_cpu_ids);
+
+	paca_aux = __va(memblock_alloc_base(paca_aux_size, PAGE_SIZE, limit));
+	memset(paca_aux, 0, paca_aux_size);
+
 	printk(KERN_DEBUG "Allocated %u bytes for %d pacas at %p\n",
-		paca_size, nr_cpu_ids, paca);
+		paca_size + paca_aux_size, nr_cpu_ids, paca);
 
 	allocate_lppacas(nr_cpu_ids, limit);
+
+	allocate_slb_shadows(nr_cpu_ids, limit);
 
 	/* Can't use for_each_*_cpu, as they aren't functional yet */
 	for (cpu = 0; cpu < nr_cpu_ids; cpu++)
@@ -198,18 +236,22 @@ void __init allocate_pacas(void)
 void __init free_unused_pacas(void)
 {
 	int new_size;
+	int new_aux_size;
 
 	new_size = PAGE_ALIGN(sizeof(struct paca_struct) * nr_cpu_ids);
+	new_aux_size = PAGE_ALIGN(sizeof(struct paca_aux_struct) * nr_cpu_ids);
 
 	if (new_size >= paca_size)
 		return;
 
 	memblock_free(__pa(paca) + new_size, paca_size - new_size);
+	memblock_free(__pa(paca_aux) + new_aux_size, paca_aux_size - new_aux_size);
 
 	printk(KERN_DEBUG "Freed %u bytes for unused pacas\n",
 		paca_size - new_size);
 
 	paca_size = new_size;
+	paca_aux_size = new_aux_size;
 
 	free_lppacas();
 }
