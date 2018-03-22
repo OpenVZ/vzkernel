@@ -554,6 +554,8 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	if (!ve->ve_ns || ve->ve_ns->pid_ns != pid_ns)
 		return;
 
+	wait_khelpers();
+
 	down_write(&ve->op_sem);
 	/*
 	 * Here the VE changes its state into "not running".
