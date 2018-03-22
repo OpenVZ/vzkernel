@@ -37,6 +37,7 @@
 #include <linux/pci.h>
 #include <linux/acpi.h>
 #include <linux/slab.h>
+#include <linux/interrupt.h>
 #include <acpi/acpi_bus.h>
 #include <acpi/acpi_drivers.h>
 
@@ -372,6 +373,23 @@ static struct acpi_prt_entry *acpi_pci_irq_lookup(struct pci_dev *dev, int pin)
 	return NULL;
 }
 
+static inline bool acpi_pci_irq_valid(struct pci_dev *dev, u8 pin)
+{
+#ifdef CONFIG_X86
+	/*
+	 * On x86 irq line 0xff means "unknown" or "no connection"
+	 * (PCI 3.0, Section 6.2.4, footnote on page 223).
+	 */
+	if (dev->irq == 0xff) {
+		dev->irq = IRQ_NOTCONNECTED;
+		dev_warn(&dev->dev, "PCI INT %c: not connected\n",
+			 pin_name(pin));
+		return false;
+	}
+#endif
+	return true;
+}
+
 int acpi_pci_irq_enable(struct pci_dev *dev)
 {
 	struct acpi_prt_entry *entry;
@@ -416,12 +434,16 @@ int acpi_pci_irq_enable(struct pci_dev *dev)
 	} else
 		gsi = -1;
 
-	/*
-	 * No IRQ known to the ACPI subsystem - maybe the BIOS / 
-	 * driver reported one, then use it. Exit in any case.
-	 */
 	if (gsi < 0) {
 		u32 dev_gsi;
+
+		/*
+		 * No IRQ known to the ACPI subsystem - maybe the BIOS /
+		 * driver reported one, then use it. Exit in any case.
+		 */
+		if (!acpi_pci_irq_valid(dev, pin))
+			return 0;
+
 		/* Interrupt Line values above 0xF are forbidden */
 		if (dev->irq > 0 && (dev->irq <= 0xF) &&
 		    (acpi_isa_irq_to_gsi(dev->irq, &dev_gsi) == 0)) {
