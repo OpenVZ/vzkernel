@@ -72,10 +72,10 @@ struct subprocess_info {
 };
 
 extern int
-call_usermodehelper_by(struct kthread_worker *worker,
-			char *path, char **argv, char **envp, int wait,
+call_usermodehelper_by(char *path, char **argv, char **envp, int wait,
 			int (*init)(struct subprocess_info *info, struct cred *new),
-			void (*cleanup)(struct subprocess_info *), void *data);
+			void (*cleanup)(struct subprocess_info *), void *data,
+			struct ve_struct *ve);
 extern int
 call_usermodehelper(char *path, char **argv, char **envp, int wait);
 
