@@ -1838,7 +1838,7 @@ void *sock_kmalloc(struct sock *sk, int size, gfp_t priority)
 		 * might sleep.
 		 */
 		atomic_add(size, &sk->sk_omem_alloc);
-		mem = kmalloc(size, priority);
+		mem = kvmalloc_check(size, priority);
 		if (mem)
 			return mem;
 		atomic_sub(size, &sk->sk_omem_alloc);
@@ -1857,9 +1857,9 @@ static inline void __sock_kfree_s(struct sock *sk, void *mem, int size,
 	if (WARN_ON_ONCE(!mem))
 		return;
 	if (nullify)
-		kzfree(mem);
-	else
-		kfree(mem);
+		memset(mem, 0, size);
+
+	kvfree(mem);
 	atomic_sub(size, &sk->sk_omem_alloc);
 }
 
