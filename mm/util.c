@@ -414,6 +414,20 @@ void *kvmalloc_node(size_t size, gfp_t flags, int node)
 }
 EXPORT_SYMBOL(kvmalloc_node);
 
+/*
+ * Sometimes a function which allocates high order pages is called with
+ * different flags while kvmalloc() should be called with at least GFP_KERNEL.
+ * This function uses kvmalloc() when possible depending on flags provided.
+ */
+void *kvmalloc_check(size_t size, gfp_t flags)
+{
+	if ((flags & GFP_KERNEL) == GFP_KERNEL)
+		return kvmalloc(size, flags);
+	else
+		return kmalloc(size, flags);
+}
+EXPORT_SYMBOL(kvmalloc_check);
+
 void kvfree(const void *addr)
 {
 	if (is_vmalloc_addr(addr))
