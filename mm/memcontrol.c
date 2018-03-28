@@ -2441,6 +2441,27 @@ void memcg_kmem_uncharge(struct page *page, int order)
 }
 #endif /* !CONFIG_SLOB */
 
+int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
+			     unsigned long nr_pages)
+{
+	int ret = 0;
+
+	ret = try_charge(memcg, gfp, nr_pages);
+	if (!ret)
+		page_counter_charge(&memcg->kmem, nr_pages);
+
+	return ret;
+}
+
+void memcg_uncharge_kmem(struct mem_cgroup *memcg, unsigned long nr_pages)
+{
+	page_counter_uncharge(&memcg->kmem, nr_pages);
+	page_counter_uncharge(&memcg->memory, nr_pages);
+	if (do_swap_account)
+		page_counter_uncharge(&memcg->memsw, nr_pages);
+}
+
+
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 
 /*
