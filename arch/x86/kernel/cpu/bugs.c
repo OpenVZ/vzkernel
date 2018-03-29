@@ -426,8 +426,10 @@ ssize_t cpu_show_meltdown(struct device *dev,
 {
 	if (boot_cpu_data.x86_vendor == X86_VENDOR_AMD)
 		return sprintf(buf, "Not affected\n");
+#ifdef CONFIG_KAISER
 	if (kaiser_enabled)
 		return sprintf(buf, "Mitigation: PTI\n");
+#endif
 	return sprintf(buf, "Vulnerable\n");
 }
 
