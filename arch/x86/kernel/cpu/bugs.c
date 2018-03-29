@@ -1236,9 +1236,10 @@ static ssize_t cpu_show_common(struct device *dev, struct device_attribute *attr
 
 	switch (bug) {
 	case X86_BUG_CPU_MELTDOWN:
+#ifdef CONFIG_PAGE_TABLE_ISOLATION
 		if (kaiser_enabled)
 			return sprintf(buf, "Mitigation: PTI\n");
-
+#endif
 		break;
 
 	case X86_BUG_SPECTRE_V1:
