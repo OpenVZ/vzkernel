@@ -78,4 +78,12 @@ static inline bool proc_ns_inode(struct inode *inode) { return false; }
 
 #endif /* CONFIG_PROC_FS */
 
+struct vfsmount;
+int open_related_ns(struct vfsmount *mnt, struct proc_ns *ns,
+		    const struct proc_ns_operations *relative_ns_ops,
+		    void *(*get_ns)(void *ns,
+		    const struct proc_ns_operations *ns_ops));
+
+int open_net_ns_fd(struct net *net);
+
 #endif /* _LINUX_PROC_NS_H */
