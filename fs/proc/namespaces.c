@@ -130,7 +130,7 @@ static struct dentry *proc_ns_get_dentry(struct super_block *sb,
 	return __proc_ns_get_dentry(sb, ns, ns_ops);
 }
 
-static int open_related_ns(struct vfsmount *mnt, struct proc_ns *ns,
+int open_related_ns(struct vfsmount *mnt, struct proc_ns *ns,
 		const struct proc_ns_operations *relative_ns_ops,
 		void *(*get_ns)(void *ns,
 			const struct proc_ns_operations *ns_ops)) {
