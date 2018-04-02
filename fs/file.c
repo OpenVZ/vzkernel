@@ -211,8 +211,7 @@ static int expand_fdtable(struct files_struct *files, int nr, bool shrink)
 	if (unlikely(shrink)) {
 		int i;
 		i = find_last_bit(cur_fdt->open_fds, cur_fdt->max_fds);
-		i = fdtable_align(i);
-		if (i == cur_fdt->max_fds) {
+		if (i >= new_fdt->max_fds) {
 			__free_fdtable(new_fdt);
 			return 1;
 		}
