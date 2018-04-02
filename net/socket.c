@@ -67,6 +67,7 @@
 #include <linux/rcupdate.h>
 #include <linux/netdevice.h>
 #include <linux/proc_fs.h>
+#include <linux/proc_ns.h>
 #include <linux/seq_file.h>
 #include <linux/mutex.h>
 #include <linux/if_bridge.h>
@@ -1077,6 +1078,29 @@ static long sock_do_ioctl(struct net *net, struct socket *sock,
  *	what to do with it - that's up to the protocol still.
  */
 
+static void *get_net_ns(void *ns, const struct proc_ns_operations *ns_ops)
+{
+	struct net *net = ns;
+	return get_net(net);
+}
+
+int open_net_ns_fd(struct net *net)
+{
+	struct proc_ns ns = { .ns = net, .ns_ops = &netns_operations, };
+	struct vfsmount *proc_mnt;
+	int ret;
+
+	proc_mnt = mntget(task_active_pid_ns(current)->proc_mnt);
+	if (IS_ERR(proc_mnt))
+		return PTR_ERR(proc_mnt);
+
+	ret = open_related_ns(proc_mnt, &ns, ns.ns_ops, get_net_ns);
+	mntput(proc_mnt);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(open_net_ns_fd);
+
 static long sock_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 {
 	struct socket *sock;
@@ -1143,6 +1167,13 @@ static long sock_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 			if (dlci_ioctl_hook)
 				err = dlci_ioctl_hook(cmd, argp);
 			mutex_unlock(&dlci_ioctl_mutex);
+			break;
+		case SIOCGSKNS:
+			err = -EPERM;
+			if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+				break;
+
+			err = open_net_ns_fd(net);
 			break;
 		default:
 			err = sock_do_ioctl(net, sock, cmd, arg);
@@ -3297,6 +3328,7 @@ static int compat_sock_ioctl_trans(struct file *file, struct socket *sock,
 	case SIOCSIFVLAN:
 	case SIOCADDDLCI:
 	case SIOCDELDLCI:
+	case SIOCGSKNS:
 		return sock_ioctl(file, cmd, arg);
 
 	case SIOCGIFFLAGS:
