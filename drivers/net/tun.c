@@ -70,6 +70,7 @@
 #include <net/rtnetlink.h>
 #include <net/sock.h>
 #include <linux/skb_array.h>
+#include <linux/proc_ns.h>
 
 #include <asm/uaccess.h>
 
@@ -2224,7 +2225,7 @@ static long __tun_chr_ioctl(struct file *file, unsigned int cmd,
 	int ret;
 
 	if (cmd == TUNSETIFF || cmd == TUNSETQUEUE || cmd == TUNSETACCTID ||
-			_IOC_TYPE(cmd) == 0x89) {
+	    (_IOC_TYPE(cmd) == 0x89 && cmd != SIOCGSKNS)) {
 		if (copy_from_user(&ifr, argp, ifreq_len))
 			return -EFAULT;
 	} else {
@@ -2274,6 +2275,14 @@ static long __tun_chr_ioctl(struct file *file, unsigned int cmd,
 
 		ret = 0;
 		tfile->ifindex = ifindex;
+		goto unlock;
+	}
+	if (cmd == SIOCGSKNS) {
+		ret = -EPERM;
+		if (!ns_capable(tfile->net->user_ns, CAP_NET_ADMIN))
+			goto unlock;
+
+		ret = open_net_ns_fd(tfile->net);
 		goto unlock;
 	}
 
