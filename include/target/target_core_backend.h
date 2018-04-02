@@ -145,6 +145,6 @@ int	se_dev_set_block_size(struct se_device *, u32);
 
 sector_t target_to_linux_sector(struct se_device *dev, sector_t lb);
 bool target_configure_unmap_from_queue(struct se_dev_attrib *attrib,
-				       struct request_queue *q, int block_size);
+				       struct request_queue *q);
 
 #endif /* TARGET_CORE_BACKEND_H */
