@@ -4,7 +4,7 @@ PATCHLEVEL = 14
 SUBLEVEL = 7
 EXTRAVERSION =
 NAME = Petit Gorille
-# VZVERSION = ovz.1.4
+# VZVERSION = ovz.1.8
 VZVERSION = ovz.custom
 
 ifeq ($(VZVERSION), ovz.custom)
