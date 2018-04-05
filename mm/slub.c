@@ -3589,6 +3589,21 @@ static void free_partial(struct kmem_cache *s, struct kmem_cache_node *n)
 	spin_unlock_irq(&n->list_lock);
 }
 
+bool __kmem_cache_empty(struct kmem_cache *s)
+{
+	int node;
+
+	for_each_online_node(node) {
+		struct kmem_cache_node *n = get_node(s, node);
+
+		if (!n)
+			continue;
+		if (n->nr_partial || slabs_node(s, node))
+			return false;
+	}
+	return true;
+}
+
 /*
  * Release all resources used by a slab cache.
  */
