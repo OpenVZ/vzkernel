@@ -727,6 +727,20 @@ endmenu
 
 menu "Dump support"
 
+config KEXEC_AUTO_RESERVE
+	bool "automatically reserve memory for kexec kernel"
+	depends on KEXEC
+	default y
+	---help---
+	  Automatically reserve memory for a kexec kernel, so that you don't
+	  need to specify numbers for the "crashkernel=X@Y" boot option,
+	  instead you can use "crashkernel=auto". This option works for
+	  systems that have at least 4 GiB memory. Then 128 MiB plus a small
+	  amount of additional memory that grows linearly with the 1st kernel
+	  memory size is reserved. When "crashkernel=auto" is used for
+	  systems with less than 4 GiB memory, no crashkernel memory will be
+	  reserved.
+
 config CRASH_DUMP
 	bool "kernel crash dumps"
 	depends on SMP

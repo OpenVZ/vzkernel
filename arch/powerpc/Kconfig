@@ -581,6 +581,17 @@ config RELOCATABLE_TEST
 	  loaded at, which tends to be non-zero and therefore test the
 	  relocation code.
 
+config KEXEC_AUTO_RESERVE
+	bool "automatically reserve memory for kexec kernel"
+	depends on KEXEC
+	default y
+	---help---
+	  Automatically reserve memory for a kexec kernel, so that you don't
+	  need to specify numbers for the "crashkernel=X@Y" boot option,
+	  instead you can use "crashkernel=auto". To make this work, you need
+	  to have more than 2G/8G memory. On PPC, 128M or 256M is reserved, on
+	  PPC64 1/32 of your physical memory, but it will not exceed 4G.
+
 config CRASH_DUMP
 	bool "Build a dump capture kernel"
 	depends on PPC64 || 6xx || FSL_BOOKE || (44x && !SMP)

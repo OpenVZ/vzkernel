@@ -56,6 +56,20 @@ typedef void (*crash_shutdown_t)(void);
 
 #ifdef CONFIG_KEXEC_CORE
 
+#ifdef CONFIG_KEXEC_AUTO_RESERVE
+
+#define KEXEC_AUTO_THRESHOLD (1ULL<<31) /* 2G */
+
+extern
+unsigned long long __init arch_default_crash_base(void);
+#define arch_default_crash_base arch_default_crash_base
+
+extern
+unsigned long long __init arch_default_crash_size(unsigned long long);
+#define arch_default_crash_size arch_default_crash_size
+
+#endif
+
 /*
  * This function is responsible for capturing register states if coming
  * via panic or invoking dump using sysrq-trigger.
