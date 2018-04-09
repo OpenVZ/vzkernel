@@ -64,6 +64,7 @@
 #include <linux/atomic.h>		/* This gets us atomic counters.  */
 #include <linux/skbuff.h>	/* We need sk_buff_head. */
 #include <linux/workqueue.h>	/* We need tq_struct.	 */
+#include <linux/flex_array.h>	/* We need flex_array.   */
 #include <linux/sctp.h>		/* We need sctp* header structs.  */
 #include <net/sctp/auth.h>	/* We need auth specific structs */
 #include <net/ip.h>		/* For inet_skb_parm */
@@ -396,10 +397,17 @@ typedef struct sctp_sender_hb_info {
  *
  *  This is the structure we use to track both our outbound and inbound
  *  SSN, or Stream Sequence Numbers.
+ *
+ *  As the total count of input or output streams can be up to (2^16 - 1)
+ *  of each type, it is possible to occupy a fifth order of memory for
+ *  only one type of streams. As allocation can happen in a softirq
+ *  contex with GFP_ATOMIC flag set and we actually do not need the memory
+ *  to be physically contiguous, for performance reasons we use flex_array
+ *  which allocates memory on a per-page basis.
  */
 
 struct sctp_stream {
-	__u16 *ssn;
+	struct flex_array *ssn;
 	unsigned int len;
 };
 
@@ -408,30 +416,32 @@ struct sctp_ssnmap {
 	struct sctp_stream out;
 };
 
-struct sctp_ssnmap *sctp_ssnmap_new(__u16 in, __u16 out,
-				    gfp_t gfp);
+struct sctp_ssnmap *sctp_ssnmap_new(__u16 in, __u16 out, gfp_t gfp);
 void sctp_ssnmap_free(struct sctp_ssnmap *map);
 void sctp_ssnmap_clear(struct sctp_ssnmap *map);
 
 /* What is the current SSN number for this stream? */
 static inline __u16 sctp_ssn_peek(struct sctp_stream *stream, __u16 id)
 {
-	return stream->ssn[id];
+	__u16 *ssnp = flex_array_get(stream->ssn, id);
+	return *ssnp;
 }
 
 /* Return the next SSN number for this stream.	*/
 static inline __u16 sctp_ssn_next(struct sctp_stream *stream, __u16 id)
 {
-	return stream->ssn[id]++;
+	__u16 *ssnp = flex_array_get(stream->ssn, id);
+	return (*ssnp)++;
 }
 
 /* Skip over this ssn and all below. */
-static inline void sctp_ssn_skip(struct sctp_stream *stream, __u16 id, 
+static inline void sctp_ssn_skip(struct sctp_stream *stream, __u16 id,
 				 __u16 ssn)
 {
-	stream->ssn[id] = ssn+1;
+	__u16 *ssnp = flex_array_get(stream->ssn, id);
+	*ssnp = ssn + 1;
 }
-              
+
 /*
  * Pointers to address related SCTP functions.
  * (i.e. things that depend on the address family.)
