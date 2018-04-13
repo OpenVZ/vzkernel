@@ -770,6 +770,15 @@ void ext4_es_cache_extent(struct inode *inode, ext4_lblk_t lblk,
 }
 
 /*
+ * For pure statistics count, use a large batch size to make sure that
+ * it does percpu update as much as possible.
+ */
+static inline void ext4_es_stats_inc(struct percpu_counter *fbc)
+{
+	__percpu_counter_add(fbc, 1, (1 << 30));
+}
+
+/*
  * ext4_es_lookup_extent() looks up an extent in extent status tree.
  *
  * ext4_es_lookup_extent is called by ext4_map_blocks/ext4_da_map_blocks.
@@ -823,9 +832,9 @@ out:
 		es->es_lblk = es1->es_lblk;
 		es->es_len = es1->es_len;
 		es->es_pblk = es1->es_pblk;
-		stats->es_stats_cache_hits++;
+		ext4_es_stats_inc(&stats->es_stats_cache_hits);
 	} else {
-		stats->es_stats_cache_misses++;
+		ext4_es_stats_inc(&stats->es_stats_cache_misses);
 	}
 
 	read_unlock(&EXT4_I(inode)->i_es_lock);
@@ -1122,9 +1131,9 @@ static int ext4_es_seq_shrinker_info_show(struct seq_file *seq, void *v)
 	seq_printf(seq, "stats:\n  %lld objects\n  %lld reclaimable objects\n",
 		   percpu_counter_sum_positive(&es_stats->es_stats_all_cnt),
 		   percpu_counter_sum_positive(&es_stats->es_stats_shk_cnt));
-	seq_printf(seq, "  %lu/%lu cache hits/misses\n",
-		   es_stats->es_stats_cache_hits,
-		   es_stats->es_stats_cache_misses);
+	seq_printf(seq, "  %lld/%lld cache hits/misses\n",
+		   percpu_counter_sum_positive(&es_stats->es_stats_cache_hits),
+		   percpu_counter_sum_positive(&es_stats->es_stats_cache_misses));
 	if (inode_cnt)
 		seq_printf(seq, "  %d inodes on list\n", inode_cnt);
 
@@ -1188,8 +1197,6 @@ int ext4_es_register_shrinker(struct ext4_sb_info *sbi)
 	sbi->s_es_nr_inode = 0;
 	spin_lock_init(&sbi->s_es_lock);
 	sbi->s_es_stats.es_stats_shrunk = 0;
-	sbi->s_es_stats.es_stats_cache_hits = 0;
-	sbi->s_es_stats.es_stats_cache_misses = 0;
 	sbi->s_es_stats.es_stats_scan_time = 0;
 	sbi->s_es_stats.es_stats_max_scan_time = 0;
 	err = percpu_counter_init(&sbi->s_es_stats.es_stats_all_cnt, 0, GFP_KERNEL);
@@ -1199,19 +1206,30 @@ int ext4_es_register_shrinker(struct ext4_sb_info *sbi)
 	if (err)
 		goto err1;
 
+	err = percpu_counter_init(&sbi->s_es_stats.es_stats_cache_hits, 0, GFP_KERNEL);
+	if (err)
+		goto err2;
+
+	err = percpu_counter_init(&sbi->s_es_stats.es_stats_cache_misses, 0, GFP_KERNEL);
+	if (err)
+		goto err3;
+
 	sbi->s_es_shrinker.scan_objects = ext4_es_scan;
 	sbi->s_es_shrinker.count_objects = ext4_es_count;
 	sbi->s_es_shrinker.seeks = DEFAULT_SEEKS;
 	err = register_shrinker(&sbi->s_es_shrinker);
 	if (err)
-		goto err2;
+		goto err4;
 
 	if (sbi->s_proc)
 		proc_create_data("es_shrinker_info", S_IRUGO, sbi->s_proc,
 				 &ext4_es_seq_shrinker_info_fops, sbi);
 
 	return 0;
-
+err4:
+	percpu_counter_destroy(&sbi->s_es_stats.es_stats_cache_misses);
+err3:
+	percpu_counter_destroy(&sbi->s_es_stats.es_stats_cache_hits);
 err2:
 	percpu_counter_destroy(&sbi->s_es_stats.es_stats_shk_cnt);
 err1:
@@ -1225,6 +1243,8 @@ void ext4_es_unregister_shrinker(struct ext4_sb_info *sbi)
 		remove_proc_entry("es_shrinker_info", sbi->s_proc);
 	percpu_counter_destroy(&sbi->s_es_stats.es_stats_all_cnt);
 	percpu_counter_destroy(&sbi->s_es_stats.es_stats_shk_cnt);
+	percpu_counter_destroy(&sbi->s_es_stats.es_stats_cache_hits);
+	percpu_counter_destroy(&sbi->s_es_stats.es_stats_cache_misses);
 	unregister_shrinker(&sbi->s_es_shrinker);
 }
 
