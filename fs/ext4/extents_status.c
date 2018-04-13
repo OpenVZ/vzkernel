@@ -998,6 +998,14 @@ retry:
 			spin_unlock(&sbi->s_es_lock);
 			goto out;
 		}
+		/*
+		 * Another shrinker can remove a bunch of extents in parallel,
+		 * we don't have to iterate more than the current number of
+		 * inodes in the list.
+		 */
+		if (nr_to_walk > sbi->s_es_nr_inode)
+			nr_to_walk = sbi->s_es_nr_inode;
+
 		ei = list_first_entry(&sbi->s_es_list, struct ext4_inode_info,
 				      i_es_list);
 		/* Move the inode to the tail */
