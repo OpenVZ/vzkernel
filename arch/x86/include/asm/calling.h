@@ -192,3 +192,17 @@ For 32-bit we have the following conventions - kernel is built with
 	.macro icebp
 	.byte 0xf1
 	.endm
+
+.macro UNWIND_END_OF_STACK
+	417:
+	.pushsection __unwind_end_of_stack, "a"
+		.quad 417b
+	.popsection
+.endm
+
+.macro UNWIND_UNSAFE_STACK
+	417:
+	.pushsection __unwind_unsafe_stack, "a"
+		.quad 417b
+	.popsection
+.endm

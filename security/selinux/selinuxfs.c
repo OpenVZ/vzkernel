@@ -44,7 +44,11 @@
 /* Policy capability filenames */
 static char *policycap_names[] = {
 	"network_peer_controls",
-	"open_perms"
+	"open_perms",
+	"extended_socket_class",
+	"always_check_network",
+	"cgroup_seclabel",
+	"nnp_nosuid_transition"
 };
 
 unsigned int selinux_checkreqprot = CONFIG_SECURITY_SELINUX_CHECKREQPROT_VALUE;
@@ -181,6 +185,8 @@ static ssize_t sel_write_enforce(struct file *file, const char __user *buf,
 			avc_ss_reset(0);
 		selnl_notify_setenforce(selinux_enforcing);
 		selinux_status_update_setenforce(selinux_enforcing);
+		if (!selinux_enforcing)
+			call_lsm_notifier(LSM_POLICY_CHANGE, NULL);
 	}
 	length = count;
 out:
@@ -1268,7 +1274,7 @@ static int sel_make_bools(void)
 			goto out;
 
 		isec->sid = sid;
-		isec->initialized = 1;
+		isec->initialized = LABEL_INITIALIZED;
 		inode->i_fop = &sel_bool_ops;
 		inode->i_ino = i|SEL_BOOL_INO_OFFSET;
 		d_add(dentry, inode);
@@ -1830,7 +1836,7 @@ static int sel_fill_super(struct super_block *sb, void *data, int silent)
 	isec = (struct inode_security_struct *)inode->i_security;
 	isec->sid = SECINITSID_DEVNULL;
 	isec->sclass = SECCLASS_CHR_FILE;
-	isec->initialized = 1;
+	isec->initialized = LABEL_INITIALIZED;
 
 	init_special_inode(inode, S_IFCHR | S_IRUGO | S_IWUGO, MKDEV(MEM_MAJOR, 3));
 	d_add(dentry, inode);
@@ -1889,7 +1895,6 @@ static struct file_system_type sel_fs_type = {
 };
 
 struct vfsmount *selinuxfs_mount;
-static struct kobject *selinuxfs_kobj;
 
 static int __init init_sel_fs(void)
 {
@@ -1898,13 +1903,13 @@ static int __init init_sel_fs(void)
 	if (!selinux_enabled)
 		return 0;
 
-	selinuxfs_kobj = kobject_create_and_add("selinux", fs_kobj);
-	if (!selinuxfs_kobj)
-		return -ENOMEM;
+	err = sysfs_create_mount_point(fs_kobj, "selinux");
+	if (err)
+		return err;
 
 	err = register_filesystem(&sel_fs_type);
 	if (err) {
-		kobject_put(selinuxfs_kobj);
+		sysfs_remove_mount_point(fs_kobj, "selinux");
 		return err;
 	}
 
@@ -1923,7 +1928,7 @@ __initcall(init_sel_fs);
 #ifdef CONFIG_SECURITY_SELINUX_DISABLE
 void exit_sel_fs(void)
 {
-	kobject_put(selinuxfs_kobj);
+	sysfs_remove_mount_point(fs_kobj, "selinux");
 	kern_unmount(selinuxfs_mount);
 	unregister_filesystem(&sel_fs_type);
 }

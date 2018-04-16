@@ -347,6 +347,8 @@ struct inode_operations {
 	int (*mknod) (struct inode *,struct dentry *,umode_t,dev_t);
 	int (*rename) (struct inode *, struct dentry *,
 			struct inode *, struct dentry *);
+	int (*rename2) (struct inode *, struct dentry *,
+			struct inode *, struct dentry *, unsigned int);
 	int (*readlink) (struct dentry *, char __user *,int);
         void * (*follow_link) (struct dentry *, struct nameidata *);
         void (*put_link) (struct dentry *, struct nameidata *, void *);
@@ -359,9 +361,9 @@ struct inode_operations {
 	ssize_t (*listxattr) (struct dentry *, char *, size_t);
 	int (*removexattr) (struct dentry *, const char *);
 	void (*update_time)(struct inode *, struct timespec *, int);
-	int (*atomic_open)(struct inode *, struct dentry *,
-				struct file *, unsigned open_flag,
-				umode_t create_mode, int *opened);
+	int (*atomic_open)(struct inode *, struct dentry *, struct file *,
+	    		unsigned open_flag, umode_t create_mode, int *opened);
+	int (*dentry_open)(struct dentry *, struct file *, const struct cred *);
 };
 
 Again, all methods are called without any locks being held, unless
@@ -413,6 +415,20 @@ otherwise noted.
 
   rename: called by the rename(2) system call to rename the object to
 	have the parent and name given by the second inode and dentry.
+
+  rename2: this has an additional flags argument compared to rename.
+	If no flags are supported by the filesystem then this method
+	need not be implemented.  If some flags are supported then the
+	filesystem must return -EINVAL for any unsupported or unknown
+	flags.  Currently the following flags are implemented:
+	(1) RENAME_NOREPLACE: this flag indicates that if the target
+	of the rename exists the rename should fail with -EEXIST
+	instead of replacing the target.  The VFS already checks for
+	existence, so for local filesystems the RENAME_NOREPLACE
+	implementation is equivalent to plain rename.
+	(2) RENAME_EXCHANGE: exchange source and target.  Both must
+	exist; this is checked by the VFS.  Unlike plain rename,
+	source and target may be of different type.
 
   readlink: called by the readlink(2) system call. Only required if
 	you want to support reading symbolic links
@@ -468,9 +484,11 @@ otherwise noted.
   	method the filesystem can look up, possibly create and open the file in
   	one atomic operation.  If it cannot perform this (e.g. the file type
   	turned out to be wrong) it may signal this by returning 1 instead of
-  	usual 0 or -ve .  This method is only called if the last
-  	component is negative or needs lookup.  Cached positive dentries are
-  	still handled by f_op->open().
+	usual 0 or -ve .  This method is only called if the last component is
+	negative or needs lookup.  Cached positive dentries are still handled by
+	f_op->open().  If the file was created, the FILE_CREATED flag should be
+	set in "opened".  In case of O_EXCL the method must only succeed if the
+	file didn't exist and hence FILE_CREATED shall always be set on success.
 
 The Address Space Object
 ========================
@@ -571,8 +589,6 @@ struct address_space_operations {
 	void (*freepage)(struct page *);
 	ssize_t (*direct_IO)(int, struct kiocb *, const struct iovec *iov,
 			loff_t offset, unsigned long nr_segs);
-	struct page* (*get_xip_page)(struct address_space *, sector_t,
-			int);
 	/* migrate the contents of a page to the specified target */
 	int (*migratepage) (struct page *, struct page *);
 	int (*launder_page) (struct page *);
@@ -681,6 +697,12 @@ struct address_space_operations {
   	but instead uses bmap to find out where the blocks in the file
   	are and uses those addresses directly.
 
+  dentry_open: *WARNING: probably going away soon, do not use!* This is an
+	alternative to f_op->open(), the difference is that this method may open
+	a file not necessarily originating from the same filesystem as the one
+	i_op->open() was called on.  It may be useful for stacking filesystems
+	which want to allow native I/O directly on underlying files.
+
 
   invalidatepage: If a page has PagePrivate set, then invalidatepage
         will be called when part or all of the page is to be removed
@@ -725,11 +747,6 @@ struct address_space_operations {
         direct_IO - that is IO requests which bypass the page cache
         and transfer data directly between the storage and the
         application's address space.
-
-  get_xip_page: called by the VM to translate a block number to a page.
-	The page is valid until the corresponding filesystem is unmounted.
-	Filesystems that want to use execute-in-place (XIP) need to implement
-	it.  An example implementation can be found in fs/ext2/xip.c.
 
   migrate_page:  This is used to compact the physical memory usage.
         If the VM wants to relocate a page (maybe off a memory card
@@ -798,7 +815,7 @@ struct file_operations {
 	int (*flock) (struct file *, int, struct file_lock *);
 	ssize_t (*splice_write)(struct pipe_inode_info *, struct file *, size_t, unsigned int);
 	ssize_t (*splice_read)(struct file *, struct pipe_inode_info *, size_t, unsigned int);
-	int (*setlease)(struct file *, long arg, struct file_lock **);
+	int (*setlease)(struct file *, long arg, struct file_lock **, void **);
 	long (*fallocate)(struct file *, int mode, loff_t offset, loff_t len);
 };
 
@@ -901,17 +918,17 @@ defined:
 struct dentry_operations {
 	int (*d_revalidate)(struct dentry *, unsigned int);
 	int (*d_weak_revalidate)(struct dentry *, unsigned int);
-	int (*d_hash)(const struct dentry *, const struct inode *,
-			struct qstr *);
-	int (*d_compare)(const struct dentry *, const struct inode *,
-			const struct dentry *, const struct inode *,
+	int (*d_hash)(const struct dentry *, struct qstr *);
+	int (*d_compare)(const struct dentry *, const struct dentry *,
 			unsigned int, const char *, const struct qstr *);
 	int (*d_delete)(const struct dentry *);
 	void (*d_release)(struct dentry *);
 	void (*d_iput)(struct dentry *, struct inode *);
 	char *(*d_dname)(struct dentry *, char *, int);
 	struct vfsmount *(*d_automount)(struct path *);
-	int (*d_manage)(struct dentry *, bool);
+	int (*d_manage)(const struct path *, bool);
+	struct dentry *(*d_real)(struct dentry *, const struct inode *,
+				 unsigned int);
 };
 
   d_revalidate: called when the VFS needs to revalidate a dentry. This
@@ -949,25 +966,24 @@ struct dentry_operations {
 
   d_hash: called when the VFS adds a dentry to the hash table. The first
 	dentry passed to d_hash is the parent directory that the name is
-	to be hashed into. The inode is the dentry's inode.
+	to be hashed into.
 
 	Same locking and synchronisation rules as d_compare regarding
 	what is safe to dereference etc.
 
   d_compare: called to compare a dentry name with a given name. The first
 	dentry is the parent of the dentry to be compared, the second is
-	the parent's inode, then the dentry and inode (may be NULL) of the
-	child dentry. len and name string are properties of the dentry to be
-	compared. qstr is the name to compare it with.
+	the child dentry. len and name string are properties of the dentry
+	to be compared. qstr is the name to compare it with.
 
 	Must be constant and idempotent, and should not take locks if
-	possible, and should not or store into the dentry or inodes.
-	Should not dereference pointers outside the dentry or inodes without
+	possible, and should not or store into the dentry.
+	Should not dereference pointers outside the dentry without
 	lots of care (eg.  d_parent, d_inode, d_name should not be used).
 
 	However, our vfsmount is pinned, and RCU held, so the dentries and
 	inodes won't disappear, neither will our sb or filesystem module.
-	->i_sb and ->d_sb may be used.
+	->d_sb may be used.
 
 	It is a tricky calling convention because it needs to be called under
 	"rcu-walk", ie. without any locks or references on things.
@@ -1029,10 +1045,29 @@ struct dentry_operations {
 	If the 'rcu_walk' parameter is true, then the caller is doing a
 	pathwalk in RCU-walk mode.  Sleeping is not permitted in this mode,
 	and the caller can be asked to leave it and call again by returning
-	-ECHILD.
+	-ECHILD.  -EISDIR may also be returned to tell pathwalk to
+	ignore d_automount or any mounts.
 
 	This function is only used if DCACHE_MANAGE_TRANSIT is set on the
 	dentry being transited from.
+
+  d_real: overlay/union type filesystems implement this method to return one of
+	the underlying dentries hidden by the overlay.  It is used in three
+	different modes:
+
+	Called from open it may need to copy-up the file depending on the
+	supplied open flags.  This mode is selected with a non-zero flags
+	argument.  In this mode the d_real method can return an error.
+
+	Called from file_dentry() it returns the real dentry matching the inode
+	argument.  The real dentry may be from a lower layer already copied up,
+	but still referenced from the file.  This mode is selected with a
+	non-NULL inode argument.  This will always succeed.
+
+	With NULL inode and zero flags the topmost real underlying dentry is
+	returned.  This will always succeed.
+
+	This method is never called with both non-NULL inode and non-zero flags.
 
 Example :
 

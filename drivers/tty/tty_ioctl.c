@@ -152,7 +152,7 @@ int tty_throttle_safe(struct tty_struct *tty)
 	int ret = 0;
 
 	mutex_lock(&tty->termios_mutex);
-	if (!test_bit(TTY_THROTTLED, &tty->flags)) {
+	if (!tty_throttled(tty)) {
 		if (tty->flow_change != TTY_THROTTLE_SAFE)
 			ret = 1;
 		else {
@@ -183,7 +183,7 @@ int tty_unthrottle_safe(struct tty_struct *tty)
 	int ret = 0;
 
 	mutex_lock(&tty->termios_mutex);
-	if (test_bit(TTY_THROTTLED, &tty->flags)) {
+	if (tty_throttled(tty)) {
 		if (tty->flow_change != TTY_UNTHROTTLE_SAFE)
 			ret = 1;
 		else {
@@ -1201,6 +1201,9 @@ int n_tty_ioctl_helper(struct tty_struct *tty, struct file *file,
 		}
 		return 0;
 	case TCFLSH:
+		retval = tty_check_change(tty);
+		if (retval)
+			return retval;
 		return __tty_perform_flush(tty, arg);
 	default:
 		/* Try the mode commands */

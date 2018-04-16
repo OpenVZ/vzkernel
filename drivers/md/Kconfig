@@ -176,8 +176,13 @@ config MD_FAULTY
 
 source "drivers/md/bcache/Kconfig"
 
+config BLK_DEV_DM_BUILTIN
+	boolean
+
 config BLK_DEV_DM
 	tristate "Device mapper support"
+	select BLK_DEV_DM_BUILTIN
+	select DAX
 	---help---
 	  Device-mapper is a low level volume manager.  It works by allowing
 	  people to specify mappings for ranges of logical sectors.  Various
@@ -190,6 +195,17 @@ config BLK_DEV_DM
 	  called dm-mod.
 
 	  If unsure, say N.
+
+config DM_MQ_DEFAULT
+	bool "request-based DM: use blk-mq I/O path by default"
+	depends on BLK_DEV_DM
+	---help---
+	  This option enables the blk-mq based I/O path for request-based
+	  DM devices by default.  With the option the dm_mod.use_blk_mq
+	  module/boot option defaults to Y, without it to N, but it can
+	  still be overriden either way.
+
+	  If unsure say N.
 
 config DM_DEBUG
 	boolean "Device mapper debugging support"
@@ -206,6 +222,24 @@ config DM_BUFIO
 	 This interface allows you to do buffered I/O on a device and acts
 	 as a cache, holding recently-read blocks in memory and performing
 	 delayed writes.
+
+config DM_DEBUG_BLOCK_MANAGER_LOCKING
+       boolean "Block manager locking"
+       depends on DM_BUFIO
+       ---help---
+	 Block manager locking can catch various metadata corruption issues.
+
+	 If unsure, say N.
+
+config DM_DEBUG_BLOCK_STACK_TRACING
+       boolean "Keep stack trace of persistent data block lock holders"
+       depends on STACKTRACE_SUPPORT && DM_DEBUG_BLOCK_MANAGER_LOCKING
+       select STACKTRACE
+       ---help---
+	 Enable this for messages that may help debug problems with the
+	 block manager locking used by thin provisioning and caching.
+
+	 If unsure, say N.
 
 config DM_BIO_PRISON
        tristate
@@ -226,9 +260,8 @@ config DM_CRYPT
 	  transparently encrypts the data on it. You'll need to activate
 	  the ciphers you're going to use in the cryptoapi configuration.
 
-	  Information on how to use dm-crypt can be found on
-
-	  <http://www.saout.de/misc/dm-crypt/>
+	  For further information on dm-crypt and userspace tools see:
+	  <http://code.google.com/p/cryptsetup/wiki/DMCrypt>
 
 	  To compile this code as a module, choose M here: the module will
 	  be called dm-crypt.
@@ -238,6 +271,7 @@ config DM_CRYPT
 config DM_SNAPSHOT
        tristate "Snapshot target"
        depends on BLK_DEV_DM
+       select DM_BUFIO
        ---help---
          Allow volume managers to take writable snapshots of a device.
 
@@ -248,16 +282,6 @@ config DM_THIN_PROVISIONING
        select DM_BIO_PRISON
        ---help---
          Provides thin provisioning and snapshots that share a data store.
-
-config DM_DEBUG_BLOCK_STACK_TRACING
-	boolean "Keep stack trace of thin provisioning block lock holders"
-	depends on STACKTRACE_SUPPORT && DM_THIN_PROVISIONING
-	select STACKTRACE
-	---help---
-	  Enable this for messages that may help debug problems with the
-	  block manager locking used by thin provisioning.
-
-	  If unsure, say N.
 
 config DM_CACHE
        tristate "Cache target (EXPERIMENTAL)"
@@ -272,23 +296,28 @@ config DM_CACHE
          algorithms used to select which blocks are promoted, demoted,
          cleaned etc.  It supports writeback and writethrough modes.
 
-config DM_CACHE_MQ
-       tristate "MQ Cache Policy (EXPERIMENTAL)"
+config DM_CACHE_SMQ
+       tristate "Stochastic MQ Cache Policy (EXPERIMENTAL)"
        depends on DM_CACHE
        default y
        ---help---
-         A cache policy that uses a multiqueue ordered by recent hit
-         count to select which blocks should be promoted and demoted.
+         A cache policy that uses a multiqueue ordered by recent hits
+         to select which blocks should be promoted and demoted.
          This is meant to be a general purpose policy.  It prioritises
-         reads over writes.
+         reads over writes.  This SMQ policy (vs MQ) offers the promise
+         of less memory utilization, improved performance and increased
+         adaptability in the face of changing workloads.
 
-config DM_CACHE_CLEANER
-       tristate "Cleaner Cache Policy (EXPERIMENTAL)"
-       depends on DM_CACHE
-       default y
+config DM_ERA
+       tristate "Era target (EXPERIMENTAL)"
+       depends on BLK_DEV_DM
+       default n
+       select DM_PERSISTENT_DATA
+       select DM_BIO_PRISON
        ---help---
-         A simple cache policy that writes back all data to the
-         origin.  Used when decommissioning a dm-cache.
+         dm-era tracks which parts of a block device are written to
+         over time.  Useful for maintaining cache coherency when using
+         vendor snapshots.
 
 config DM_MIRROR
        tristate "Mirror target"
@@ -297,9 +326,21 @@ config DM_MIRROR
          Allow volume managers to mirror logical volumes, also
          needed for live data migration tools such as 'pvmove'.
 
+config DM_LOG_USERSPACE
+	tristate "Mirror userspace logging"
+	depends on DM_MIRROR && NET
+	select CONNECTOR
+	---help---
+	  The userspace logging module provides a mechanism for
+	  relaying the dm-dirty-log API to userspace.  Log designs
+	  which are more suited to userspace implementation (e.g.
+	  shared storage logs) or experimental logs can be implemented
+	  by leveraging this framework.
+
 config DM_RAID
        tristate "RAID 1/4/5/6/10 target"
        depends on BLK_DEV_DM
+       select MD_RAID0
        select MD_RAID1
        select MD_RAID10
        select MD_RAID456
@@ -322,17 +363,6 @@ config DM_RAID
 	 drives contains two independent redundancy syndromes.  Like
 	 RAID-5, RAID-6 distributes the syndromes across the drives
 	 in one of the available parity distribution methods.
-
-config DM_LOG_USERSPACE
-	tristate "Mirror userspace logging"
-	depends on DM_MIRROR && NET
-	select CONNECTOR
-	---help---
-	  The userspace logging module provides a mechanism for
-	  relaying the dm-dirty-log API to userspace.  Log designs
-	  which are more suited to userspace implementation (e.g.
-	  shared storage logs) or experimental logs can be implemented
-	  by leveraging this framework.
 
 config DM_ZERO
 	tristate "Zero target"
@@ -409,6 +439,20 @@ config DM_VERITY
 
 	  To compile this code as a module, choose M here: the module will
 	  be called dm-verity.
+
+	  If unsure, say N.
+
+config DM_SWITCH
+	tristate "Switch target support (EXPERIMENTAL)"
+	depends on BLK_DEV_DM
+	---help---
+	  This device-mapper target creates a device that supports an arbitrary
+	  mapping of fixed-size regions of I/O across a fixed set of paths.
+	  The path used for any specific region can be switched dynamically
+	  by sending the target a message.
+
+	  To compile this code as a module, choose M here: the module will
+	  be called dm-switch.
 
 	  If unsure, say N.
 

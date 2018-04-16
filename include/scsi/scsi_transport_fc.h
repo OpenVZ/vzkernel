@@ -130,6 +130,12 @@ enum fc_vport_state {
 #define FC_PORTSPEED_4GBIT		8
 #define FC_PORTSPEED_8GBIT		0x10
 #define FC_PORTSPEED_16GBIT		0x20
+#define FC_PORTSPEED_32GBIT		0x40
+#define FC_PORTSPEED_20GBIT		0x80
+#define FC_PORTSPEED_40GBIT		0x100
+#define FC_PORTSPEED_50GBIT		0x200
+#define FC_PORTSPEED_100GBIT		0x400
+#define FC_PORTSPEED_25GBIT		0x800
 #define FC_PORTSPEED_NOT_NEGOTIATED	(1 << 15) /* Speed not established */
 
 /*
@@ -153,6 +159,7 @@ enum fc_tgtid_binding_type  {
 #define FC_PORT_ROLE_FCP_TARGET			0x01
 #define FC_PORT_ROLE_FCP_INITIATOR		0x02
 #define FC_PORT_ROLE_IP_PORT			0x04
+#define FC_PORT_ROLE_FCP_DUMMY_INITIATOR	0x08
 
 /* The following are for compatibility */
 #define FC_RPORT_ROLE_UNKNOWN			FC_PORT_ROLE_UNKNOWN

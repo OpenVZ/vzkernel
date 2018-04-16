@@ -94,6 +94,8 @@ extern void __online_page_set_limits(struct page *page);
 extern void __online_page_increment_counters(struct page *page);
 extern void __online_page_free(struct page *page);
 
+extern int try_online_node(int nid);
+
 #ifdef CONFIG_MEMORY_HOTREMOVE
 extern bool is_pageblock_removable_nolock(struct page *page);
 extern int arch_remove_memory(u64 start, u64 size);
@@ -185,14 +187,11 @@ extern void put_page_bootmem(struct page *page);
 extern void get_page_bootmem(unsigned long ingo, struct page *page,
 			     unsigned long type);
 
-/*
- * Lock for memory hotplug guarantees 1) all callbacks for memory hotplug
- * notifier will be called under this. 2) offline/online/add/remove memory
- * will not run simultaneously.
- */
+void get_online_mems(void);
+void put_online_mems(void);
 
-void lock_memory_hotplug(void);
-void unlock_memory_hotplug(void);
+void mem_hotplug_begin(void);
+void mem_hotplug_done(void);
 
 #else /* ! CONFIG_MEMORY_HOTPLUG */
 /*
@@ -225,8 +224,16 @@ static inline void register_page_bootmem_info_node(struct pglist_data *pgdat)
 {
 }
 
-static inline void lock_memory_hotplug(void) {}
-static inline void unlock_memory_hotplug(void) {}
+static inline int try_online_node(int nid)
+{
+	return 0;
+}
+
+static inline void get_online_mems(void) {}
+static inline void put_online_mems(void) {}
+
+static inline void mem_hotplug_begin(void) {}
+static inline void mem_hotplug_done(void) {}
 
 #endif /* ! CONFIG_MEMORY_HOTPLUG */
 
@@ -234,6 +241,8 @@ static inline void unlock_memory_hotplug(void) {}
 
 extern int is_mem_section_removable(unsigned long pfn, unsigned long nr_pages);
 extern void try_offline_node(int nid);
+extern int offline_pages(unsigned long start_pfn, unsigned long nr_pages);
+extern void remove_memory(int nid, u64 start, u64 size);
 
 #else
 static inline int is_mem_section_removable(unsigned long pfn,
@@ -243,19 +252,30 @@ static inline int is_mem_section_removable(unsigned long pfn,
 }
 
 static inline void try_offline_node(int nid) {}
+
+static inline int offline_pages(unsigned long start_pfn, unsigned long nr_pages)
+{
+	return -EINVAL;
+}
+
+static inline void remove_memory(int nid, u64 start, u64 size) {}
 #endif /* CONFIG_MEMORY_HOTREMOVE */
 
-extern int mem_online_node(int nid);
+extern int walk_memory_range(unsigned long start_pfn, unsigned long end_pfn,
+		void *arg, int (*func)(struct memory_block *, void *));
 extern int add_memory(int nid, u64 start, u64 size);
-extern int arch_add_memory(int nid, u64 start, u64 size);
+extern int zone_for_memory(int nid, u64 start, u64 size, int zone_default,
+		bool for_device);
+extern int arch_add_memory(int nid, u64 start, u64 size, bool for_device);
 extern int offline_pages(unsigned long start_pfn, unsigned long nr_pages);
-extern int offline_memory_block(struct memory_block *mem);
 extern bool is_memblock_offlined(struct memory_block *mem);
-extern int remove_memory(int nid, u64 start, u64 size);
-extern int sparse_add_one_section(struct zone *zone, unsigned long start_pfn,
-								int nr_pages);
-extern void sparse_remove_one_section(struct zone *zone, struct mem_section *ms);
+extern void remove_memory(int nid, u64 start, u64 size);
+extern int sparse_add_one_section(struct zone *zone, unsigned long start_pfn);
+extern void sparse_remove_one_section(struct zone *zone, struct mem_section *ms,
+		unsigned long map_offset);
 extern struct page *sparse_decode_mem_map(unsigned long coded_mem_map,
 					  unsigned long pnum);
+int add_pages(int nid, unsigned long start,
+	      unsigned long size, bool for_device);
 
 #endif /* __LINUX_MEMORY_HOTPLUG_H */

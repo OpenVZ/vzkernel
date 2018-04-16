@@ -25,12 +25,12 @@
 #include <linux/netfilter/ipset/ip_set.h>
 #include <linux/netfilter/ipset/ip_set_bitmap.h>
 
-#define REVISION_MIN	0
-#define REVISION_MAX	1	/* Counter support added */
+#define IPSET_TYPE_REV_MIN	0
+#define IPSET_TYPE_REV_MAX	1	/* Counter support added */
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>");
-IP_SET_MODULE_DESC("bitmap:ip", REVISION_MIN, REVISION_MAX);
+IP_SET_MODULE_DESC("bitmap:ip", IPSET_TYPE_REV_MIN, IPSET_TYPE_REV_MAX);
 MODULE_ALIAS("ip_set_bitmap:ip");
 
 #define MTYPE		bitmap_ip
@@ -261,7 +261,8 @@ init_map_ip(struct ip_set *set, struct bitmap_ip *map,
 }
 
 static int
-bitmap_ip_create(struct ip_set *set, struct nlattr *tb[], u32 flags)
+bitmap_ip_create(struct net *net, struct ip_set *set, struct nlattr *tb[],
+		 u32 flags)
 {
 	struct bitmap_ip *map;
 	u32 first_ip, last_ip, hosts, cadt_flags = 0;
@@ -401,8 +402,8 @@ static struct ip_set_type bitmap_ip_type __read_mostly = {
 	.features	= IPSET_TYPE_IP,
 	.dimension	= IPSET_DIM_ONE,
 	.family		= NFPROTO_IPV4,
-	.revision_min	= REVISION_MIN,
-	.revision_max	= REVISION_MAX,
+	.revision_min	= IPSET_TYPE_REV_MIN,
+	.revision_max	= IPSET_TYPE_REV_MAX,
 	.create		= bitmap_ip_create,
 	.create_policy	= {
 		[IPSET_ATTR_IP]		= { .type = NLA_NESTED },

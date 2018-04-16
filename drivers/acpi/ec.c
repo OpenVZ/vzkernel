@@ -983,6 +983,14 @@ static struct dmi_system_id __initdata ec_dmi_table[] = {
 	ec_enlarge_storm_threshold, "CLEVO hardware", {
 	DMI_MATCH(DMI_SYS_VENDOR, "CLEVO Co."),
 	DMI_MATCH(DMI_PRODUCT_NAME, "M720T/M730T"),}, NULL},
+	{
+	ec_skip_dsdt_scan, "HP Folio 13", {
+	DMI_MATCH(DMI_SYS_VENDOR, "Hewlett-Packard"),
+	DMI_MATCH(DMI_PRODUCT_NAME, "HP Folio 13"),}, NULL},
+	{
+	ec_validate_ecdt, "ASUS hardware", {
+	DMI_MATCH(DMI_SYS_VENDOR, "ASUSTek Computer Inc."),
+	DMI_MATCH(DMI_PRODUCT_NAME, "L4R"),}, NULL},
 	{},
 };
 
@@ -1045,10 +1053,8 @@ int __init acpi_ec_ecdt_probe(void)
 		* which needs it, has fake EC._INI method, so use it as flag.
 		* Keep boot_ec struct as it will be needed soon.
 		*/
-		acpi_handle dummy;
 		if (!dmi_name_in_vendors("ASUS") ||
-		    ACPI_FAILURE(acpi_get_handle(boot_ec->handle, "_INI",
-							&dummy)))
+		    !acpi_has_method(boot_ec->handle, "_INI"))
 			return -ENODEV;
 	}
 install:

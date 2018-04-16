@@ -1,0 +1,135 @@
+= Speculation Control (Spectre variant 2) =
+
+== How to detect if the CPU supports Speculation Control ==
+
+When the first CPU boots or after a microcode update, if the CPU has
+speculation control capabilities these lines are printed:
+
+	FEATURE SPEC_CTRL Present
+	FEATURE IBPB_SUPPORT Present
+
+If speculation control is missing these lines are printed:
+
+	FEATURE SPEC_CTRL Not Present
+	FEATURE IBPB_SUPPORT Not Present
+
+Some CPUs only have IBPB_SUPPORT in which case this will be printed:
+
+	FEATURE SPEC_CTRL Not Present
+	FEATURE IBPB_SUPPORT Present
+
+Some CPUs can only disable IBP but have no IBRS/IBPB support in which case
+these lines are printed and a special use_ibp_disable mode is
+used.
+
+	FEATURE SPEC_CTRL Present (Implicit)
+	FEATURE IBPB_SUPPORT Present (Implicit)
+
+== How to tune Speculation Control ==
+
+The current spectre_v2 mitigation status can be determined by reading
+the following file:
+
+  /sys/devices/system/cpu/vulnerabilities/spectre_v2
+
+That file provides a basic status -- "Vulnerable" or "Mitigation" --
+along with a short description of the mitigation in use (or lack
+thereof).
+
+Speculation control may be tuned from the kernel command line with the
+spectre_v2= parameter.  For the available options, see
+Documentation/kernel-parameters.txt.
+
+It may also be tuned from debugfs.  There are two main control knobs:
+
+  /sys/kernel/debug/x86/retp_enabled
+  /sys/kernel/debug/x86/ibrs_enabled
+
+There is also a read-only informational debugfs entry:
+
+  /sys/kernel/debug/x86/ibpb_enabled (read-only)
+
+If both of the above microcode features aren't present, ibrs_enabled and
+ibpb_enabled are both set to 0, and ibrs_enabled cannot be changed.
+
+If both of the above features are present, the ibrs_enabled and
+ibpb_enabled show the current kernel usage of the respective feature.
+
+If, on an AMD processor, IBPB_SUPPORT is present, but SPEC_CTRL is not
+present, ibrs_enabled will be read-only at 0, and ibpb_enabled will be
+either 0 or 1, dependent on whether retpolines are enabled.
+
+When IBRS is enabled, it means IBP (Indirect Branch Prediction)
+restricted speculation and it slows down the CPU significantly,
+particularly on pre-Skylake CPUs.  This is why pre-Skylake CPUs default
+to using retpolines instead of IBRS.
+
+retp_enabled 0: Disabled
+
+retp_enabled 1: Retpolines are enabled in the kernel, which replace all
+		indirect jumps and indirect calls with a special
+		instruction sequence which avoids the use of IBP.
+
+		This is the default mode on all CPUs except for Intel
+		Skylake+ and AMD 10h/12h.
+
+		This mitigation doesn't directly depend on any microcode
+		features.  However, it's only considered a partial
+		solution without the IBPB_SUPPORT microcode feature
+		which adds user-to-user and guest-to-guest protection
+		across context switches.
+
+ibrs_enabled 0: Disabled
+
+ibrs_enabled 1: IBRS enabled in kernel mode.
+
+		Kernel is protected from userland and guest
+                mode. Userland is not protected from guest mode. User
+                mode isn't protected from other user mode running in a
+                sibling hyperthread.
+
+		This is the default mode on Skylake and newer CPUs.  It
+		cannot be used with retp_enabled 1.
+
+		requires SPEC_CTRL present
+
+ibrs_enabled 2: IBRS enabled in user mode and kernel mode. Only guest
+	        can disable IBRS.
+
+		Kernel and usermode are both protected. This protects
+		userland from hyperthreading effects and from guest
+		mode too.
+
+		This option cannot be used with retp_enabled 1
+
+		This is the default mode on AMD 10h and AMD 12h
+		families, which have the ability to completely disable
+		the indirect branch predictor.  They don't actually have
+		IBRS or IBPB, but the effect is the same.
+
+		requires SPEC_CTRL present
+
+ibrs_enabled 3: IBRS enabled in user mode.
+
+		Userland is protected from guest mode and from
+		hyperthreading effects.  This option can *only* be used
+		in combination with retp_enabled 1, with retpolines
+		protecting the kernel and IBRS protecting userland.
+
+		requires SPEC_CTRL present
+
+ibpb_enabled 0: Disabled
+
+ibpb_enabled 1: IBPB IBP barrier is used to flush the IBP across mm
+                switches (if next task has not enough credentials to
+                read the memory of the prev task by other means) and
+                across guest mode switches. This protects user and
+                guest mode against user and guest mode.
+
+		This doesn't protect against hyperthreading and
+                simultaneous multithreading effects.
+
+		This option is read-only.  It is automatically selected
+		when retp_enabled is 1 or ibrs_enabled is 1, 2, or 3.
+
+		requires IBPB_SUPPORT present

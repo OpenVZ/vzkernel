@@ -30,6 +30,10 @@ const char *ftrace_print_symbols_seq(struct trace_seq *p, unsigned long val,
 				     const struct trace_print_flags *symbol_array);
 
 #if BITS_PER_LONG == 32
+const char *ftrace_print_flags_seq_u64(struct trace_seq *p, const char *delim,
+		unsigned long long flags,
+		const struct trace_print_flags_u64 *flag_array);
+
 const char *ftrace_print_symbols_seq_u64(struct trace_seq *p,
 					 unsigned long long val,
 					 const struct trace_print_flags_u64
@@ -38,6 +42,10 @@ const char *ftrace_print_symbols_seq_u64(struct trace_seq *p,
 
 const char *ftrace_print_hex_seq(struct trace_seq *p,
 				 const unsigned char *buf, int len);
+
+const char *ftrace_print_array_seq(struct trace_seq *p,
+				   const void *buf, int buf_len,
+				   size_t el_size);
 
 struct trace_iterator;
 struct trace_event;
@@ -78,6 +86,11 @@ struct trace_iterator {
 	/* trace_seq for __print_flags() and __print_symbolic() etc. */
 	struct trace_seq	tmp_seq;
 
+	cpumask_var_t		started;
+
+	/* it's true when current open file is snapshot */
+	bool			snapshot;
+
 	/* The below is zeroed out in pipe_read */
 	struct trace_seq	seq;
 	struct trace_entry	*ent;
@@ -90,10 +103,7 @@ struct trace_iterator {
 	loff_t			pos;
 	long			idx;
 
-	cpumask_var_t		started;
-
-	/* it's true when current open file is snapshot */
-	bool			snapshot;
+	/* All new field here will be zeroed out in pipe_read */
 };
 
 enum trace_iter_flags {
@@ -131,6 +141,17 @@ enum print_line_t {
 	TRACE_TYPE_NO_CONSUME	= 3	/* Handled but ask to not consume */
 };
 
+/*
+ * Several functions return TRACE_TYPE_PARTIAL_LINE if the trace_seq
+ * overflowed, and TRACE_TYPE_HANDLED otherwise. This helper function
+ * simplifies those functions and keeps them in sync.
+ */
+static inline enum print_line_t trace_handle_return(struct trace_seq *s)
+{
+	return trace_seq_has_overflowed(s) ?
+		TRACE_TYPE_PARTIAL_LINE : TRACE_TYPE_HANDLED;
+}
+
 void tracing_generic_entry_update(struct trace_entry *entry,
 				  unsigned long flags,
 				  int pc);
@@ -159,6 +180,8 @@ void trace_current_buffer_discard_commit(struct ring_buffer *buffer,
 					 struct ring_buffer_event *event);
 
 void tracing_record_cmdline(struct task_struct *tsk);
+
+int ftrace_output_call(struct trace_iterator *iter, char *name, char *fmt, ...);
 
 struct event_filter;
 
@@ -321,18 +344,16 @@ enum {
 	FILTER_DYN_STRING,
 	FILTER_PTR_STRING,
 	FILTER_TRACE_FN,
+	FILTER_COMM,
+	FILTER_CPU,
 };
-
-#define EVENT_STORAGE_SIZE 128
-extern struct mutex event_storage_mutex;
-extern char event_storage[EVENT_STORAGE_SIZE];
 
 extern int trace_event_raw_init(struct ftrace_event_call *call);
 extern int trace_define_field(struct ftrace_event_call *call, const char *type,
 			      const char *name, int offset, int size,
 			      int is_signed, int filter_type);
 extern int trace_add_event_call(struct ftrace_event_call *call);
-extern void trace_remove_event_call(struct ftrace_event_call *call);
+extern int trace_remove_event_call(struct ftrace_event_call *call);
 
 #define is_signed_type(type)	(((type)(-1)) < (type)1)
 
@@ -370,7 +391,7 @@ extern int  ftrace_profile_set_filter(struct perf_event *event, int event_id,
 				     char *filter_str);
 extern void ftrace_profile_free_filter(struct perf_event *event);
 extern void *perf_trace_buf_prepare(int size, unsigned short type,
-				    struct pt_regs *regs, int *rctxp);
+				    struct pt_regs **regs, int *rctxp);
 
 static inline void
 perf_trace_buf_submit(void *raw_data, int size, int rctx, u64 addr,

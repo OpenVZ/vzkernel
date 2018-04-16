@@ -194,7 +194,7 @@ lec_send(struct atm_vcc *vcc, struct sk_buff *skb)
 static void lec_tx_timeout(struct net_device *dev)
 {
 	pr_info("%s\n", dev->name);
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 	netif_wake_queue(dev);
 }
 
@@ -324,7 +324,7 @@ static netdev_tx_t lec_start_xmit(struct sk_buff *skb,
 out:
 	if (entry)
 		lec_arp_put(entry);
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 	return NETDEV_TX_OK;
 }
 
@@ -563,7 +563,7 @@ static const struct net_device_ops lec_netdev_ops = {
 	.ndo_open		= lec_open,
 	.ndo_stop		= lec_close,
 	.ndo_start_xmit		= lec_start_xmit,
-	.ndo_change_mtu		= lec_change_mtu,
+	.ndo_change_mtu_rh74	= lec_change_mtu,
 	.ndo_tx_timeout		= lec_tx_timeout,
 	.ndo_set_rx_mode	= lec_set_multicast_list,
 };

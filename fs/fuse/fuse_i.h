@@ -22,6 +22,7 @@
 #include <linux/rbtree.h>
 #include <linux/poll.h>
 #include <linux/workqueue.h>
+#include <linux/pid_namespace.h>
 
 /** Max number of pages that can be used in a single read request */
 #define FUSE_MAX_PAGES_PER_REQ 32
@@ -115,6 +116,8 @@ struct fuse_inode {
 enum {
 	/** Advise readdirplus  */
 	FUSE_I_ADVISE_RDPLUS,
+	/** An operation changing file size is in progress  */
+	FUSE_I_SIZE_UNSTABLE,
 };
 
 struct fuse_conn;
@@ -376,6 +379,8 @@ struct fuse_conn {
 	/** Refcount */
 	atomic_t count;
 
+	struct rcu_head rcu;
+
 	/** The user id for this mount */
 	kuid_t user_id;
 
@@ -384,6 +389,9 @@ struct fuse_conn {
 
 	/** The fuse mount flags for this mount */
 	unsigned flags;
+
+	/** The pid namespace for this mount */
+	struct pid_namespace *pid_ns;
 
 	/** Maximum read size */
 	unsigned max_read;
@@ -532,6 +540,9 @@ struct fuse_conn {
 	/** Is fallocate not implemented by fs? */
 	unsigned no_fallocate:1;
 
+	/** Is rename with flags implemented by fs? */
+	unsigned no_rename2:1;
+
 	/** Use enhanced/automatic page cache invalidation. */
 	unsigned auto_inval_data:1;
 
@@ -543,6 +554,9 @@ struct fuse_conn {
 
 	/** Does the filesystem support asynchronous direct-IO submission? */
 	unsigned async_dio:1;
+
+	/** Is lseek not implemented by fs? */
+	unsigned no_lseek:1;
 
 	/** The number of requests waiting for completion */
 	atomic_t num_waiting;

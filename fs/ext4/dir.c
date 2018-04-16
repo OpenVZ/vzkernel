@@ -34,7 +34,7 @@ static int ext4_dx_readdir(struct file *filp,
 
 /**
  * Check if the given dir-inode refers to an htree-indexed directory
- * (or a directory which chould potentially get coverted to use htree
+ * (or a directory which could potentially get converted to use htree
  * indexing).
  *
  * Return 1 if it is a dx dir, 0 if not
@@ -617,6 +617,31 @@ static int ext4_release_dir(struct inode *inode, struct file *filp)
 {
 	if (filp->private_data)
 		ext4_htree_free_dir_info(filp->private_data);
+
+	return 0;
+}
+
+int ext4_check_all_de(struct inode *dir, struct buffer_head *bh, void *buf,
+		      int buf_size)
+{
+	struct ext4_dir_entry_2 *de;
+	int nlen, rlen;
+	unsigned int offset = 0;
+	char *top;
+
+	de = (struct ext4_dir_entry_2 *)buf;
+	top = buf + buf_size;
+	while ((char *) de < top) {
+		if (ext4_check_dir_entry(dir, NULL, de, bh,
+					 buf, buf_size, offset))
+			return -EIO;
+		nlen = EXT4_DIR_REC_LEN(de->name_len);
+		rlen = ext4_rec_len_from_disk(de->rec_len, buf_size);
+		de = (struct ext4_dir_entry_2 *)((char *)de + rlen);
+		offset += rlen;
+	}
+	if ((char *) de > top)
+		return -EIO;
 
 	return 0;
 }

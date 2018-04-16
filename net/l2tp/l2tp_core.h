@@ -157,13 +157,22 @@ struct l2tp_tunnel_cfg {
 #endif
 	u16			local_udp_port;
 	u16			peer_udp_port;
-	unsigned int		use_udp_checksums:1;
+	unsigned int		use_udp_checksums:1,
+				udp6_zero_tx_checksums:1,
+				udp6_zero_rx_checksums:1;
 };
 
 struct l2tp_tunnel {
 	int			magic;		/* Should be L2TP_TUNNEL_MAGIC */
+
+	unsigned long		dead;
+
 	struct rcu_head rcu;
 	rwlock_t		hlist_lock;	/* protect session_hlist */
+	bool			acpt_newsess;	/* Indicates whether this
+						 * tunnel accepts new sessions.
+						 * Protected by hlist_lock.
+						 */
 	struct hlist_head	session_hlist[L2TP_HASH_SIZE];
 						/* hashed list of sessions,
 						 * hashed by id */
@@ -189,6 +198,9 @@ struct l2tp_tunnel {
 	struct sock		*sock;		/* Parent socket */
 	int			fd;		/* Parent fd, if tunnel socket
 						 * was created by userspace */
+#if IS_ENABLED(CONFIG_IPV6)
+	bool			v4mapped;
+#endif
 
 	struct work_struct	del_work;
 
@@ -232,6 +244,9 @@ out:
 
 extern struct sock *l2tp_tunnel_sock_lookup(struct l2tp_tunnel *tunnel);
 extern void l2tp_tunnel_sock_put(struct sock *sk);
+struct l2tp_session *l2tp_session_get(struct net *net,
+				      struct l2tp_tunnel *tunnel,
+				      u32 session_id, bool do_ref);
 extern struct l2tp_session *l2tp_session_find(struct net *net, struct l2tp_tunnel *tunnel, u32 session_id);
 extern struct l2tp_session *l2tp_session_find_nth(struct l2tp_tunnel *tunnel, int nth);
 extern struct l2tp_session *l2tp_session_find_by_ifname(struct net *net, char *ifname);
@@ -240,7 +255,7 @@ extern struct l2tp_tunnel *l2tp_tunnel_find_nth(struct net *net, int nth);
 
 extern int l2tp_tunnel_create(struct net *net, int fd, int version, u32 tunnel_id, u32 peer_tunnel_id, struct l2tp_tunnel_cfg *cfg, struct l2tp_tunnel **tunnelp);
 extern void l2tp_tunnel_closeall(struct l2tp_tunnel *tunnel);
-extern int l2tp_tunnel_delete(struct l2tp_tunnel *tunnel);
+extern void l2tp_tunnel_delete(struct l2tp_tunnel *tunnel);
 extern struct l2tp_session *l2tp_session_create(int priv_size, struct l2tp_tunnel *tunnel, u32 session_id, u32 peer_session_id, struct l2tp_session_cfg *cfg);
 extern void __l2tp_session_unhash(struct l2tp_session *session);
 extern int l2tp_session_delete(struct l2tp_session *session);
@@ -253,6 +268,7 @@ extern int l2tp_xmit_skb(struct l2tp_session *session, struct sk_buff *skb, int 
 
 extern int l2tp_nl_register_ops(enum l2tp_pwtype pw_type, const struct l2tp_nl_cmd_ops *ops);
 extern void l2tp_nl_unregister_ops(enum l2tp_pwtype pw_type);
+int l2tp_ioctl(struct sock *sk, int cmd, unsigned long arg);
 
 /* Session reference counts. Incremented when code obtains a reference
  * to a session.

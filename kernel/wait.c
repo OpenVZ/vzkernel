@@ -9,6 +9,7 @@
 #include <linux/mm.h>
 #include <linux/wait.h>
 #include <linux/hash.h>
+#include <linux/kthread.h>
 
 void __init_waitqueue_head(wait_queue_head_t *q, const char *name, struct lock_class_key *key)
 {
@@ -170,7 +171,92 @@ int autoremove_wake_function(wait_queue_t *wait, unsigned mode, int sync, void *
 }
 EXPORT_SYMBOL(autoremove_wake_function);
 
+static inline bool is_kthread_should_stop(void)
+{
+	return (current->flags & PF_KTHREAD) && kthread_should_stop();
+}
+
+/*
+ * DEFINE_WAIT_FUNC(wait, woken_wake_func);
+ *
+ * add_wait_queue(&wq, &wait);
+ * for (;;) {
+ *     if (condition)
+ *         break;
+ *
+ *     p->state = mode;				condition = true;
+ *     smp_mb(); // A				smp_wmb(); // C
+ *     if (!wait->flags & WQ_FLAG_WOKEN)	wait->flags |= WQ_FLAG_WOKEN;
+ *         schedule()				try_to_wake_up();
+ *     p->state = TASK_RUNNING;		    ~~~~~~~~~~~~~~~~~~
+ *     wait->flags &= ~WQ_FLAG_WOKEN;		condition = true;
+ *     smp_mb() // B				smp_wmb(); // C
+ *						wait->flags |= WQ_FLAG_WOKEN;
+ * }
+ * remove_wait_queue(&wq, &wait);
+ *
+ */
+long wait_woken(wait_queue_t *wait, unsigned mode, long timeout)
+{
+	set_current_state(mode); /* A */
+	/*
+	 * The above implies an smp_mb(), which matches with the smp_wmb() from
+	 * woken_wake_function() such that if we observe WQ_FLAG_WOKEN we must
+	 * also observe all state before the wakeup.
+	 */
+	if (!(wait->flags & WQ_FLAG_WOKEN) && !is_kthread_should_stop())
+		timeout = schedule_timeout(timeout);
+	__set_current_state(TASK_RUNNING);
+
+	/*
+	 * The below implies an smp_mb(), it too pairs with the smp_wmb() from
+	 * woken_wake_function() such that we must either observe the wait
+	 * condition being true _OR_ WQ_FLAG_WOKEN such that we will not miss
+	 * an event.
+	 */
+	set_mb(wait->flags, wait->flags & ~WQ_FLAG_WOKEN); /* B */
+
+	return timeout;
+}
+EXPORT_SYMBOL(wait_woken);
+
+int woken_wake_function(wait_queue_t *wait, unsigned mode, int sync, void *key)
+{
+	/*
+	 * Although this function is called under waitqueue lock, LOCK
+	 * doesn't imply write barrier and the users expects write
+	 * barrier semantics on wakeup functions.  The following
+	 * smp_wmb() is equivalent to smp_wmb() in try_to_wake_up()
+	 * and is paired with set_mb() in wait_woken().
+	 */
+	smp_wmb(); /* C */
+	wait->flags |= WQ_FLAG_WOKEN;
+
+	return default_wake_function(wait, mode, sync, key);
+}
+EXPORT_SYMBOL(woken_wake_function);
+
+/*
+ * RH: the original wake_bit_function() is retained for possible 3rd-party
+ * users of DEFINE_WAIT_BIT before commit
+ * "sched: Allow wait_on_bit_action() functions to support a timeout"
+ */
 int wake_bit_function(wait_queue_t *wait, unsigned mode, int sync, void *arg)
+{
+	struct wait_bit_key_deprecated *key = arg;
+	struct wait_bit_queue_deprecated *wait_bit
+		= container_of(wait, struct wait_bit_queue_deprecated, wait);
+
+	if (wait_bit->key.flags != key->flags ||
+			wait_bit->key.bit_nr != key->bit_nr ||
+			test_bit(key->bit_nr, key->flags))
+		return 0;
+	else
+		return autoremove_wake_function(wait, mode, sync, key);
+}
+EXPORT_SYMBOL(wake_bit_function);
+
+int wake_bit_function_rh(wait_queue_t *wait, unsigned mode, int sync, void *arg)
 {
 	struct wait_bit_key *key = arg;
 	struct wait_bit_queue *wait_bit
@@ -183,7 +269,7 @@ int wake_bit_function(wait_queue_t *wait, unsigned mode, int sync, void *arg)
 	else
 		return autoremove_wake_function(wait, mode, sync, key);
 }
-EXPORT_SYMBOL(wake_bit_function);
+EXPORT_SYMBOL(wake_bit_function_rh);
 
 /*
  * To allow interruptible waiting and asynchronous (i.e. nonblocking)
@@ -192,14 +278,14 @@ EXPORT_SYMBOL(wake_bit_function);
  */
 int __sched
 __wait_on_bit(wait_queue_head_t *wq, struct wait_bit_queue *q,
-			int (*action)(void *), unsigned mode)
+	      wait_bit_action_f *action, unsigned mode)
 {
 	int ret = 0;
 
 	do {
 		prepare_to_wait(wq, &q->wait, mode);
 		if (test_bit(q->key.bit_nr, q->key.flags))
-			ret = (*action)(q->key.flags);
+			ret = (*action)(&q->key, mode);
 	} while (test_bit(q->key.bit_nr, q->key.flags) && !ret);
 	finish_wait(wq, &q->wait);
 	return ret;
@@ -207,7 +293,7 @@ __wait_on_bit(wait_queue_head_t *wq, struct wait_bit_queue *q,
 EXPORT_SYMBOL(__wait_on_bit);
 
 int __sched out_of_line_wait_on_bit(void *word, int bit,
-					int (*action)(void *), unsigned mode)
+				    wait_bit_action_f *action, unsigned mode)
 {
 	wait_queue_head_t *wq = bit_waitqueue(word, bit);
 	DEFINE_WAIT_BIT(wait, word, bit);
@@ -216,9 +302,21 @@ int __sched out_of_line_wait_on_bit(void *word, int bit,
 }
 EXPORT_SYMBOL(out_of_line_wait_on_bit);
 
+int __sched out_of_line_wait_on_bit_timeout(
+	void *word, int bit, wait_bit_action_f *action,
+	unsigned mode, unsigned long timeout)
+{
+	wait_queue_head_t *wq = bit_waitqueue(word, bit);
+	DEFINE_WAIT_BIT(wait, word, bit);
+
+	wait.key.timeout = jiffies + timeout;
+	return __wait_on_bit(wq, &wait, action, mode);
+}
+EXPORT_SYMBOL_GPL(out_of_line_wait_on_bit_timeout);
+
 int __sched
 __wait_on_bit_lock(wait_queue_head_t *wq, struct wait_bit_queue *q,
-			int (*action)(void *), unsigned mode)
+			wait_bit_action_f *action, unsigned mode)
 {
 	do {
 		int ret;
@@ -226,7 +324,7 @@ __wait_on_bit_lock(wait_queue_head_t *wq, struct wait_bit_queue *q,
 		prepare_to_wait_exclusive(wq, &q->wait, mode);
 		if (!test_bit(q->key.bit_nr, q->key.flags))
 			continue;
-		ret = action(q->key.flags);
+		ret = action(&q->key, mode);
 		if (!ret)
 			continue;
 		abort_exclusive_wait(wq, &q->wait, mode, &q->key);
@@ -238,7 +336,7 @@ __wait_on_bit_lock(wait_queue_head_t *wq, struct wait_bit_queue *q,
 EXPORT_SYMBOL(__wait_on_bit_lock);
 
 int __sched out_of_line_wait_on_bit_lock(void *word, int bit,
-					int (*action)(void *), unsigned mode)
+					 wait_bit_action_f *action, unsigned mode)
 {
 	wait_queue_head_t *wq = bit_waitqueue(word, bit);
 	DEFINE_WAIT_BIT(wait, word, bit);
@@ -281,9 +379,141 @@ EXPORT_SYMBOL(wake_up_bit);
 wait_queue_head_t *bit_waitqueue(void *word, int bit)
 {
 	const int shift = BITS_PER_LONG == 32 ? 5 : 6;
-	const struct zone *zone = page_zone(virt_to_page(word));
+	struct page *page = is_vmalloc_addr(word) ?
+		vmalloc_to_page(word) : virt_to_page(word);
+	const struct zone *zone = page_zone(page);
 	unsigned long val = (unsigned long)word << shift | bit;
 
 	return &zone->wait_table[hash_long(val, zone->wait_table_bits)];
 }
 EXPORT_SYMBOL(bit_waitqueue);
+
+/*
+ * Manipulate the atomic_t address to produce a better bit waitqueue table hash
+ * index (we're keying off bit -1, but that would produce a horrible hash
+ * value).
+ */
+static inline wait_queue_head_t *atomic_t_waitqueue(atomic_t *p)
+{
+	if (BITS_PER_LONG == 64) {
+		unsigned long q = (unsigned long)p;
+		return bit_waitqueue((void *)(q & ~1), q & 1);
+	}
+	return bit_waitqueue(p, 0);
+}
+
+static int wake_atomic_t_function(wait_queue_t *wait, unsigned mode, int sync,
+				  void *arg)
+{
+	struct wait_bit_key *key = arg;
+	struct wait_bit_queue *wait_bit
+		= container_of(wait, struct wait_bit_queue, wait);
+	atomic_t *val = key->flags;
+
+	if (wait_bit->key.flags != key->flags ||
+	    wait_bit->key.bit_nr != key->bit_nr ||
+	    atomic_read(val) != 0)
+		return 0;
+	return autoremove_wake_function(wait, mode, sync, key);
+}
+
+/*
+ * To allow interruptible waiting and asynchronous (i.e. nonblocking) waiting,
+ * the actions of __wait_on_atomic_t() are permitted return codes.  Nonzero
+ * return codes halt waiting and return.
+ */
+static __sched
+int __wait_on_atomic_t(wait_queue_head_t *wq, struct wait_bit_queue *q,
+		       int (*action)(atomic_t *), unsigned mode)
+{
+	atomic_t *val;
+	int ret = 0;
+
+	do {
+		prepare_to_wait(wq, &q->wait, mode);
+		val = q->key.flags;
+		if (atomic_read(val) == 0)
+			break;
+		ret = (*action)(val);
+	} while (!ret && atomic_read(val) != 0);
+	finish_wait(wq, &q->wait);
+	return ret;
+}
+
+#define DEFINE_WAIT_ATOMIC_T(name, p)					\
+	struct wait_bit_queue name = {					\
+		.key = __WAIT_ATOMIC_T_KEY_INITIALIZER(p),		\
+		.wait	= {						\
+			.private	= current,			\
+			.func		= wake_atomic_t_function,	\
+			.task_list	=				\
+				LIST_HEAD_INIT((name).wait.task_list),	\
+		},							\
+	}
+
+__sched int out_of_line_wait_on_atomic_t(atomic_t *p, int (*action)(atomic_t *),
+					 unsigned mode)
+{
+	wait_queue_head_t *wq = atomic_t_waitqueue(p);
+	DEFINE_WAIT_ATOMIC_T(wait, p);
+
+	return __wait_on_atomic_t(wq, &wait, action, mode);
+}
+EXPORT_SYMBOL(out_of_line_wait_on_atomic_t);
+
+/**
+ * wake_up_atomic_t - Wake up a waiter on a atomic_t
+ * @p: The atomic_t being waited on, a kernel virtual address
+ *
+ * Wake up anyone waiting for the atomic_t to go to zero.
+ *
+ * Abuse the bit-waker function and its waitqueue hash table set (the atomic_t
+ * check is done by the waiter's wake function, not the by the waker itself).
+ */
+void wake_up_atomic_t(atomic_t *p)
+{
+	__wake_up_bit(atomic_t_waitqueue(p), p, WAIT_ATOMIC_T_BIT_NR);
+}
+EXPORT_SYMBOL(wake_up_atomic_t);
+
+__sched int bit_wait(struct wait_bit_key *word, int mode)
+{
+	schedule();
+	if (signal_pending_state(mode, current))
+		return -EINTR;
+	return 0;
+}
+EXPORT_SYMBOL(bit_wait);
+
+__sched int bit_wait_io(struct wait_bit_key *word, int mode)
+{
+	io_schedule();
+	if (signal_pending_state(mode, current))
+		return -EINTR;
+	return 0;
+}
+EXPORT_SYMBOL(bit_wait_io);
+
+__sched int bit_wait_timeout(struct wait_bit_key *word, int mode)
+{
+	unsigned long now = ACCESS_ONCE(jiffies);
+	if (time_after_eq(now, word->timeout))
+		return -EAGAIN;
+	schedule_timeout(word->timeout - now);
+	if (signal_pending_state(mode, current))
+		return -EINTR;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(bit_wait_timeout);
+
+__sched int bit_wait_io_timeout(struct wait_bit_key *word, int mode)
+{
+	unsigned long now = ACCESS_ONCE(jiffies);
+	if (time_after_eq(now, word->timeout))
+		return -EAGAIN;
+	io_schedule_timeout(word->timeout - now);
+	if (signal_pending_state(mode, current))
+		return -EINTR;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(bit_wait_io_timeout);

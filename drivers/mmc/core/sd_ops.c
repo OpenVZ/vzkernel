@@ -27,8 +27,8 @@ int mmc_app_cmd(struct mmc_host *host, struct mmc_card *card)
 	int err;
 	struct mmc_command cmd = {0};
 
-	BUG_ON(!host);
-	BUG_ON(card && (card->host != host));
+	if (WARN_ON(card && card->host != host))
+		return -EINVAL;
 
 	cmd.opcode = MMC_APP_CMD;
 
@@ -72,8 +72,8 @@ int mmc_wait_for_app_cmd(struct mmc_host *host, struct mmc_card *card,
 
 	int i, err;
 
-	BUG_ON(!cmd);
-	BUG_ON(retries < 0);
+	if (retries < 0)
+		retries = MMC_CMD_RETRIES;
 
 	err = -EIO;
 
@@ -120,11 +120,7 @@ EXPORT_SYMBOL(mmc_wait_for_app_cmd);
 
 int mmc_app_set_bus_width(struct mmc_card *card, int width)
 {
-	int err;
 	struct mmc_command cmd = {0};
-
-	BUG_ON(!card);
-	BUG_ON(!card->host);
 
 	cmd.opcode = SD_APP_SET_BUS_WIDTH;
 	cmd.flags = MMC_RSP_R1 | MMC_CMD_AC;
@@ -140,19 +136,13 @@ int mmc_app_set_bus_width(struct mmc_card *card, int width)
 		return -EINVAL;
 	}
 
-	err = mmc_wait_for_app_cmd(card->host, card, &cmd, MMC_CMD_RETRIES);
-	if (err)
-		return err;
-
-	return 0;
+	return mmc_wait_for_app_cmd(card->host, card, &cmd, MMC_CMD_RETRIES);
 }
 
 int mmc_send_app_op_cond(struct mmc_host *host, u32 ocr, u32 *rocr)
 {
 	struct mmc_command cmd = {0};
 	int i, err = 0;
-
-	BUG_ON(!host);
 
 	cmd.opcode = SD_APP_OP_COND;
 	if (mmc_host_is_spi(host))
@@ -183,6 +173,9 @@ int mmc_send_app_op_cond(struct mmc_host *host, u32 ocr, u32 *rocr)
 
 		mmc_delay(10);
 	}
+
+	if (!i)
+		pr_err("%s: card never left busy state\n", mmc_hostname(host));
 
 	if (rocr && !mmc_host_is_spi(host))
 		*rocr = cmd.resp[0];
@@ -226,9 +219,6 @@ int mmc_send_relative_addr(struct mmc_host *host, unsigned int *rca)
 	int err;
 	struct mmc_command cmd = {0};
 
-	BUG_ON(!host);
-	BUG_ON(!rca);
-
 	cmd.opcode = SD_SEND_RELATIVE_ADDR;
 	cmd.arg = 0;
 	cmd.flags = MMC_RSP_R6 | MMC_CMD_BCR;
@@ -250,10 +240,6 @@ int mmc_app_send_scr(struct mmc_card *card, u32 *scr)
 	struct mmc_data data = {0};
 	struct scatterlist sg;
 	void *data_buf;
-
-	BUG_ON(!card);
-	BUG_ON(!card->host);
-	BUG_ON(!scr);
 
 	/* NOTE: caller guarantees scr is heap-allocated */
 
@@ -309,9 +295,6 @@ int mmc_sd_switch(struct mmc_card *card, int mode, int group,
 	struct mmc_data data = {0};
 	struct scatterlist sg;
 
-	BUG_ON(!card);
-	BUG_ON(!card->host);
-
 	/* NOTE: caller guarantees resp is heap-allocated */
 
 	mode = !!mode;
@@ -353,10 +336,6 @@ int mmc_app_sd_status(struct mmc_card *card, void *ssr)
 	struct mmc_command cmd = {0};
 	struct mmc_data data = {0};
 	struct scatterlist sg;
-
-	BUG_ON(!card);
-	BUG_ON(!card->host);
-	BUG_ON(!ssr);
 
 	/* NOTE: caller guarantees ssr is heap-allocated */
 

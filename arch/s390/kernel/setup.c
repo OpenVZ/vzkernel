@@ -47,7 +47,6 @@
 #include <linux/compat.h>
 
 #include <asm/ipl.h>
-#include <asm/uaccess.h>
 #include <asm/facility.h>
 #include <asm/smp.h>
 #include <asm/mmu_context.h>
@@ -62,19 +61,8 @@
 #include <asm/diag.h>
 #include <asm/os_info.h>
 #include <asm/sclp.h>
+#include <asm/alternative.h>
 #include "entry.h"
-
-long psw_kernel_bits	= PSW_DEFAULT_KEY | PSW_MASK_BASE | PSW_ASC_PRIMARY |
-			  PSW_MASK_EA | PSW_MASK_BA;
-long psw_user_bits	= PSW_MASK_DAT | PSW_MASK_IO | PSW_MASK_EXT |
-			  PSW_DEFAULT_KEY | PSW_MASK_BASE | PSW_MASK_MCHECK |
-			  PSW_MASK_PSTATE | PSW_ASC_HOME;
-
-/*
- * User copy operations.
- */
-struct uaccess_ops uaccess;
-EXPORT_SYMBOL(uaccess);
 
 /*
  * Machine setup..
@@ -91,6 +79,7 @@ EXPORT_SYMBOL(console_irq);
 unsigned long elf_hwcap = 0;
 char elf_platform[ELF_PLATFORM_SIZE];
 
+unsigned long int_hwcap = 0;
 struct mem_chunk __initdata memory_chunk[MEMORY_CHUNKS];
 
 int __initdata memory_end_set;
@@ -300,43 +289,6 @@ static int __init parse_vmalloc(char *arg)
 }
 early_param("vmalloc", parse_vmalloc);
 
-unsigned int s390_user_mode = PRIMARY_SPACE_MODE;
-EXPORT_SYMBOL_GPL(s390_user_mode);
-
-static void __init set_user_mode_primary(void)
-{
-	psw_kernel_bits = (psw_kernel_bits & ~PSW_MASK_ASC) | PSW_ASC_HOME;
-	psw_user_bits = (psw_user_bits & ~PSW_MASK_ASC) | PSW_ASC_PRIMARY;
-#ifdef CONFIG_COMPAT
-	psw32_user_bits =
-		(psw32_user_bits & ~PSW32_MASK_ASC) | PSW32_ASC_PRIMARY;
-#endif
-	uaccess = MACHINE_HAS_MVCOS ? uaccess_mvcos_switch : uaccess_pt;
-}
-
-static int __init early_parse_user_mode(char *p)
-{
-	if (p && strcmp(p, "primary") == 0)
-		s390_user_mode = PRIMARY_SPACE_MODE;
-	else if (!p || strcmp(p, "home") == 0)
-		s390_user_mode = HOME_SPACE_MODE;
-	else
-		return 1;
-	return 0;
-}
-early_param("user_mode", early_parse_user_mode);
-
-static void __init setup_addressing_mode(void)
-{
-	if (s390_user_mode != PRIMARY_SPACE_MODE)
-		return;
-	set_user_mode_primary();
-	if (MACHINE_HAS_MVCOS)
-		pr_info("Address spaces switched, mvcos available\n");
-	else
-		pr_info("Address spaces switched, mvcos not available\n");
-}
-
 void *restart_stack __attribute__((__section__(".data")));
 
 static void __init setup_lowcore(void)
@@ -348,24 +300,24 @@ static void __init setup_lowcore(void)
 	 */
 	BUILD_BUG_ON(sizeof(struct _lowcore) != LC_PAGES * 4096);
 	lc = __alloc_bootmem_low(LC_PAGES * PAGE_SIZE, LC_PAGES * PAGE_SIZE, 0);
-	lc->restart_psw.mask = psw_kernel_bits;
+	lc->restart_psw.mask = PSW_KERNEL_BITS;
 	lc->restart_psw.addr =
 		PSW_ADDR_AMODE | (unsigned long) restart_int_handler;
-	lc->external_new_psw.mask = psw_kernel_bits |
+	lc->external_new_psw.mask = PSW_KERNEL_BITS |
 		PSW_MASK_DAT | PSW_MASK_MCHECK;
 	lc->external_new_psw.addr =
 		PSW_ADDR_AMODE | (unsigned long) ext_int_handler;
-	lc->svc_new_psw.mask = psw_kernel_bits |
+	lc->svc_new_psw.mask = PSW_KERNEL_BITS |
 		PSW_MASK_DAT | PSW_MASK_IO | PSW_MASK_EXT | PSW_MASK_MCHECK;
 	lc->svc_new_psw.addr = PSW_ADDR_AMODE | (unsigned long) system_call;
-	lc->program_new_psw.mask = psw_kernel_bits |
+	lc->program_new_psw.mask = PSW_KERNEL_BITS |
 		PSW_MASK_DAT | PSW_MASK_MCHECK;
 	lc->program_new_psw.addr =
 		PSW_ADDR_AMODE | (unsigned long) pgm_check_handler;
-	lc->mcck_new_psw.mask = psw_kernel_bits;
+	lc->mcck_new_psw.mask = PSW_KERNEL_BITS;
 	lc->mcck_new_psw.addr =
 		PSW_ADDR_AMODE | (unsigned long) mcck_int_handler;
-	lc->io_new_psw.mask = psw_kernel_bits |
+	lc->io_new_psw.mask = PSW_KERNEL_BITS |
 		PSW_MASK_DAT | PSW_MASK_MCHECK;
 	lc->io_new_psw.addr = PSW_ADDR_AMODE | (unsigned long) io_int_handler;
 	lc->clock_comparator = -1ULL;
@@ -379,6 +331,9 @@ static void __init setup_lowcore(void)
 		+ PAGE_SIZE - STACK_FRAME_OVERHEAD - sizeof(struct pt_regs);
 	lc->current_task = (unsigned long) init_thread_union.thread_info.task;
 	lc->thread_info = (unsigned long) &init_thread_union;
+#ifdef CONFIG_64BIT
+	lc->lpp = LPP_MAGIC;
+#endif
 	lc->machine_flags = S390_lowcore.machine_flags;
 	lc->stfl_fac_list = S390_lowcore.stfl_fac_list;
 	memcpy(lc->stfle_fac_list, S390_lowcore.stfle_fac_list,
@@ -391,6 +346,15 @@ static void __init setup_lowcore(void)
 		__ctl_set_bit(14, 29);
 	}
 #else
+	if (MACHINE_HAS_VX || MACHINE_HAS_GS) {
+		unsigned long bits, size;
+
+		bits = MACHINE_HAS_GS ? 11 : 10;
+		size = 1UL << bits;
+		lc->mcesad = (__u64) __alloc_bootmem_low(size, size, 0);
+		if (MACHINE_HAS_GS)
+			lc->mcesad |= bits;
+	}
 	lc->vdso_per_cpu_data = (unsigned long) &lc->paste[0];
 #endif
 	lc->sync_enter_timer = S390_lowcore.sync_enter_timer;
@@ -422,6 +386,10 @@ static void __init setup_lowcore(void)
 	mem_assign_absolute(S390_lowcore.restart_data, lc->restart_data);
 	mem_assign_absolute(S390_lowcore.restart_source, lc->restart_source);
 	mem_assign_absolute(S390_lowcore.restart_psw, lc->restart_psw);
+
+#ifdef CONFIG_SMP
+	lc->spinlock_lockval = arch_spin_lockval(0);
+#endif
 
 	set_prefix((u32)(unsigned long) lc);
 	lowcore_ptr[0] = lc;
@@ -506,8 +474,9 @@ static void __init setup_memory_end(void)
 
 
 #ifdef CONFIG_ZFCPDUMP
-	if (ipl_info.type == IPL_TYPE_FCP_DUMP && !OLDMEM_BASE) {
-		memory_end = ZFCPDUMP_HSA_SIZE;
+	if (ipl_info.type == IPL_TYPE_FCP_DUMP &&
+	    !OLDMEM_BASE && sclp_get_hsa_size()) {
+		memory_end = sclp_get_hsa_size();
 		memory_end_set = 1;
 	}
 #endif
@@ -621,7 +590,7 @@ static unsigned long __init find_crash_base(unsigned long crash_size,
 		crash_base = (chunk->addr + chunk->size) - crash_size;
 		if (crash_base < crash_size)
 			continue;
-		if (crash_base < ZFCPDUMP_HSA_SIZE_MAX)
+		if (crash_base < sclp_get_hsa_size())
 			continue;
 		if (crash_base < (unsigned long) INITRD_START + INITRD_SIZE)
 			continue;
@@ -964,7 +933,24 @@ static void __init setup_hwcaps(void)
 	 */
 	if (test_facility(50) && test_facility(73))
 		elf_hwcap |= HWCAP_S390_TE;
+
+	/*
+	 * Vector extension HWCAP_S390_VXRS is bit 11.
+	 */
+	if (test_facility(129)) {
+		elf_hwcap |= HWCAP_S390_VXRS;
+		if (test_facility(134))
+			elf_hwcap |= HWCAP_S390_VXRS_EXT;
+		if (test_facility(135))
+			elf_hwcap |= HWCAP_S390_VXRS_BCD;
+	}
 #endif
+
+	/*
+	 * Guarded storage support HWCAP_S390_GS is bit 12.
+	 */
+	if (MACHINE_HAS_GS)
+		elf_hwcap |= HWCAP_S390_GS;
 
 	get_cpu_id(&cpu_id);
 	switch (cpu_id.machine) {
@@ -998,9 +984,19 @@ static void __init setup_hwcaps(void)
 		strcpy(elf_platform, "z196");
 		break;
 	case 0x2827:
+	case 0x2828:
 		strcpy(elf_platform, "zEC12");
 		break;
+	case 0x2964:
+		strcpy(elf_platform, "z13");
+		break;
 	}
+
+	/*
+	 * Virtualization support HWCAP_INT_SIE is bit 0.
+	 */
+	if (sclp_has_sief2())
+		int_hwcap |= HWCAP_INT_SIE;
 }
 
 /*
@@ -1046,24 +1042,19 @@ void __init setup_arch(char **cmdline_p)
 	init_mm.end_data = (unsigned long) &_edata;
 	init_mm.brk = (unsigned long) &_end;
 
-	if (MACHINE_HAS_MVCOS)
-		memcpy(&uaccess, &uaccess_mvcos, sizeof(uaccess));
-	else
-		memcpy(&uaccess, &uaccess_std, sizeof(uaccess));
-
 	parse_early_param();
 	detect_memory_layout(memory_chunk, memory_end);
 	os_info_init();
 	setup_ipl();
 	reserve_oldmem();
 	setup_memory_end();
-	setup_addressing_mode();
 	reserve_crashkernel();
 	setup_memory();
 	setup_resources();
 	setup_vmcoreinfo();
 	setup_lowcore();
 
+	smp_fill_possible_mask();
         cpu_init();
 	s390_init_cpu_topology();
 
@@ -1080,6 +1071,8 @@ void __init setup_arch(char **cmdline_p)
         /* Setup default console */
 	conmode_default();
 	set_preferred_console();
+
+	apply_alternative_instructions();
 
 	/* Setup zfcpdump support */
 	setup_zfcpdump();

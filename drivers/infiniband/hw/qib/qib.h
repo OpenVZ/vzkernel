@@ -1,7 +1,7 @@
 #ifndef _QIB_KERNEL_H
 #define _QIB_KERNEL_H
 /*
- * Copyright (c) 2012 Intel Corporation.  All rights reserved.
+ * Copyright (c) 2012 - 2017 Intel Corporation.  All rights reserved.
  * Copyright (c) 2006 - 2012 QLogic Corporation. All rights reserved.
  * Copyright (c) 2003, 2004, 2005, 2006 PathScale, Inc. All rights reserved.
  *
@@ -51,6 +51,9 @@
 #include <linux/completion.h>
 #include <linux/kref.h>
 #include <linux/sched.h>
+#include <linux/kthread.h>
+#include <rdma/ib_hdrs.h>
+#include <rdma/rdma_vt.h>
 
 #include "qib_common.h"
 #include "qib_verbs.h"
@@ -88,7 +91,6 @@ struct qlogic_ib_stats {
 
 extern struct qlogic_ib_stats qib_stats;
 extern const struct pci_error_handlers qib_pci_err_handler;
-extern struct pci_driver qib_driver;
 
 #define QIB_CHIP_SWVERSION QIB_CHIP_VERS_MAJ
 /*
@@ -114,6 +116,11 @@ struct qib_eep_log_mask {
 /*
  * Below contains all data related to a single context (formerly called port).
  */
+
+#ifdef CONFIG_DEBUG_FS
+struct qib_opcode_stats_perctx;
+#endif
+
 struct qib_ctxtdata {
 	void **rcvegrbuf;
 	dma_addr_t *rcvegrbuf_phys;
@@ -154,6 +161,8 @@ struct qib_ctxtdata {
 	 */
 	/* instead of calculating it */
 	unsigned ctxt;
+	/* local node of context */
+	int node_id;
 	/* non-zero if ctxt is being shared. */
 	u16 subctxt_cnt;
 	/* non-zero if ctxt is being shared. */
@@ -222,15 +231,15 @@ struct qib_ctxtdata {
 	u8 redirect_seq_cnt;
 	/* ctxt rcvhdrq head offset */
 	u32 head;
-	u32 pkt_count;
-	/* lookaside fields */
-	struct qib_qp *lookaside_qp;
-	u32 lookaside_qpn;
 	/* QPs waiting for context processing */
 	struct list_head qp_wait_list;
+#ifdef CONFIG_DEBUG_FS
+	/* verbs stats per CTX */
+	struct qib_opcode_stats_perctx *opstats;
+#endif
 };
 
-struct qib_sge_state;
+struct rvt_sge_state;
 
 struct qib_sdma_txreq {
 	int                 flags;
@@ -248,14 +257,14 @@ struct qib_sdma_desc {
 
 struct qib_verbs_txreq {
 	struct qib_sdma_txreq   txreq;
-	struct qib_qp           *qp;
-	struct qib_swqe         *wqe;
+	struct rvt_qp           *qp;
+	struct rvt_swqe         *wqe;
 	u32                     dwords;
 	u16                     hdr_dwords;
 	u16                     hdr_inx;
 	struct qib_pio_header	*align_buf;
-	struct qib_mregion	*mr;
-	struct qib_sge_state    *ss;
+	struct rvt_mregion	*mr;
+	struct rvt_sge_state    *ss;
 };
 
 #define QIB_SDMA_TXREQ_F_USELARGEBUF  0x1
@@ -428,9 +437,19 @@ struct qib_verbs_txreq {
 #define ACTIVITY_TIMER 5
 
 #define MAX_NAME_SIZE 64
+
+#ifdef CONFIG_INFINIBAND_QIB_DCA
+struct qib_irq_notify;
+#endif
+
 struct qib_msix_entry {
-	struct msix_entry msix;
+	int irq;
 	void *arg;
+#ifdef CONFIG_INFINIBAND_QIB_DCA
+	int dca;
+	int rcv;
+	struct qib_irq_notify *notifier;
+#endif
 	char name[MAX_NAME_SIZE];
 	cpumask_var_t mask;
 };
@@ -555,11 +574,13 @@ struct qib_pportdata {
 	/* read/write using lock */
 	spinlock_t            sdma_lock ____cacheline_aligned_in_smp;
 	struct list_head      sdma_activelist;
+	struct list_head      sdma_userpending;
 	u64                   sdma_descq_added;
 	u64                   sdma_descq_removed;
 	u16                   sdma_descq_tail;
 	u16                   sdma_descq_head;
 	u8                    sdma_generation;
+	u8                    sdma_intrequest;
 
 	struct tasklet_struct sdma_sw_clean_up_task
 		____cacheline_aligned_in_smp;
@@ -828,6 +849,9 @@ struct qib_devdata {
 		struct qib_ctxtdata *);
 	void (*f_writescratch)(struct qib_devdata *, u32);
 	int (*f_tempsense_rd)(struct qib_devdata *, int regnum);
+#ifdef CONFIG_INFINIBAND_QIB_DCA
+	int (*f_notify_dca)(struct qib_devdata *, unsigned long event);
+#endif
 
 	char *boardname; /* human readable board info */
 
@@ -843,8 +867,10 @@ struct qib_devdata {
 	/* last buffer for user use */
 	u32 lastctxt_piobuf;
 
-	/* saturating counter of (non-port-specific) device interrupts */
-	u32 int_counter;
+	/* reset value */
+	u64 z_int_counter;
+	/* percpu intcounter */
+	u64 __percpu *int_counter;
 
 	/* pio bufs allocated per ctxt */
 	u32 pbufsctxt;
@@ -1055,12 +1081,6 @@ struct qib_devdata {
 	/* control high-level access to EEPROM */
 	struct mutex eep_lock;
 	uint64_t traffic_wds;
-	/* active time is kept in seconds, but logged in hours */
-	atomic_t active_time;
-	/* Below are nominal shadow of EEPROM, new since last EEPROM update */
-	uint8_t eep_st_errs[QIB_EEP_LOG_CNT];
-	uint8_t eep_st_new_errs[QIB_EEP_LOG_CNT];
-	uint16_t eep_hrs;
 	/*
 	 * masks for which bits of errs, hwerrs that cause
 	 * each of the counters to increment.
@@ -1075,6 +1095,8 @@ struct qib_devdata {
 	u16 psxmitwait_check_rate;
 	/* high volume overflow errors defered to tasklet */
 	struct tasklet_struct error_tasklet;
+
+	int assigned_node_id; /* NUMA node closest to HCA */
 };
 
 /* hol_state values */
@@ -1113,6 +1135,7 @@ extern unsigned long *qib_cpulist;
 
 extern unsigned qib_wc_pat;
 extern unsigned qib_cc_table_size;
+
 int qib_init(struct qib_devdata *, int);
 int init_chip_wc_pat(struct qib_devdata *dd, u32);
 int qib_enable_wc(struct qib_devdata *dd);
@@ -1154,8 +1177,8 @@ int qib_create_rcvhdrq(struct qib_devdata *, struct qib_ctxtdata *);
 int qib_setup_eagerbufs(struct qib_ctxtdata *);
 void qib_set_ctxtcnt(struct qib_devdata *);
 int qib_create_ctxts(struct qib_devdata *dd);
-struct qib_ctxtdata *qib_create_ctxtdata(struct qib_pportdata *, u32);
-void qib_init_pportdata(struct qib_pportdata *, struct qib_devdata *, u8, u8);
+struct qib_ctxtdata *qib_create_ctxtdata(struct qib_pportdata *, u32, int);
+int qib_init_pportdata(struct qib_pportdata *, struct qib_devdata *, u8, u8);
 void qib_free_ctxtdata(struct qib_devdata *, struct qib_ctxtdata *);
 
 u32 qib_kreceive(struct qib_ctxtdata *, u32 *, u32 *);
@@ -1278,8 +1301,7 @@ int qib_twsi_blk_rd(struct qib_devdata *dd, int dev, int addr, void *buffer,
 int qib_twsi_blk_wr(struct qib_devdata *dd, int dev, int addr,
 		    const void *buffer, int len);
 void qib_get_eeprom_info(struct qib_devdata *);
-int qib_update_eeprom_log(struct qib_devdata *dd);
-void qib_inc_eeprom_err(struct qib_devdata *dd, u32 eidx, u32 incr);
+#define qib_inc_eeprom_err(dd, eidx, incr)
 void qib_dump_lookup_output_queue(struct qib_devdata *);
 void qib_force_pio_avail_update(struct qib_devdata *);
 void qib_clear_symerror_on_linkup(unsigned long opaque);
@@ -1298,7 +1320,9 @@ int qib_setup_sdma(struct qib_pportdata *);
 void qib_teardown_sdma(struct qib_pportdata *);
 void __qib_sdma_intr(struct qib_pportdata *);
 void qib_sdma_intr(struct qib_pportdata *);
-int qib_sdma_verbs_send(struct qib_pportdata *, struct qib_sge_state *,
+void qib_user_sdma_send_desc(struct qib_pportdata *dd,
+			struct list_head *pktlist);
+int qib_sdma_verbs_send(struct qib_pportdata *, struct rvt_sge_state *,
 			u32, struct qib_verbs_txreq *);
 /* ppd->sdma_lock should be locked before calling this. */
 int qib_sdma_make_progress(struct qib_pportdata *dd);
@@ -1320,7 +1344,7 @@ static inline int __qib_sdma_running(struct qib_pportdata *ppd)
 	return ppd->sdma_state.current_state == qib_sdma_state_s99_running;
 }
 int qib_sdma_running(struct qib_pportdata *);
-
+void dump_sdma_state(struct qib_pportdata *ppd);
 void __qib_sdma_process_event(struct qib_pportdata *, enum qib_sdma_events);
 void qib_sdma_process_event(struct qib_pportdata *, enum qib_sdma_events);
 
@@ -1411,13 +1435,17 @@ int qib_pcie_init(struct pci_dev *, const struct pci_device_id *);
 int qib_pcie_ddinit(struct qib_devdata *, struct pci_dev *,
 		    const struct pci_device_id *);
 void qib_pcie_ddcleanup(struct qib_devdata *);
-int qib_pcie_params(struct qib_devdata *, u32, u32 *, struct qib_msix_entry *);
+int qib_pcie_params(struct qib_devdata *dd, u32 minw, u32 *nent);
 int qib_reinit_intr(struct qib_devdata *);
-void qib_enable_intx(struct pci_dev *);
+void qib_enable_intx(struct qib_devdata *dd);
 void qib_nomsi(struct qib_devdata *);
 void qib_nomsix(struct qib_devdata *);
 void qib_pcie_getcmd(struct qib_devdata *, u16 *, u8 *, u8 *);
 void qib_pcie_reenable(struct qib_devdata *, u16, u8, u8);
+/* interrupts for device */
+u64 qib_int_counter(struct qib_devdata *);
+/* interrupt for all devices */
+u64 qib_sps_ints(void);
 
 /*
  * dma_addr wrappers - all 0's invalid for hw
@@ -1425,16 +1453,21 @@ void qib_pcie_reenable(struct qib_devdata *, u16, u8, u8);
 dma_addr_t qib_map_page(struct pci_dev *, struct page *, unsigned long,
 			  size_t, int);
 const char *qib_get_unit_name(int unit);
+const char *qib_get_card_name(struct rvt_dev_info *rdi);
+struct pci_dev *qib_get_pci_dev(struct rvt_dev_info *rdi);
 
 /*
  * Flush write combining store buffers (if present) and perform a write
  * barrier.
  */
+static inline void qib_flush_wc(void)
+{
 #if defined(CONFIG_X86_64)
-#define qib_flush_wc() asm volatile("sfence" : : : "memory")
+	asm volatile("sfence" : : : "memory");
 #else
-#define qib_flush_wc() wmb() /* no reorder around wc flush */
+	wmb(); /* no reorder around wc flush */
 #endif
+}
 
 /* global module parameter variables */
 extern unsigned qib_ibmtu;
@@ -1445,6 +1478,7 @@ extern unsigned qib_n_krcv_queues;
 extern unsigned qib_sdma_fetch_arb;
 extern unsigned qib_compat_ddr_negotiate;
 extern int qib_special_trigger;
+extern unsigned qib_numa_aware;
 
 extern struct mutex qib_mutex;
 
@@ -1474,27 +1508,23 @@ extern struct mutex qib_mutex;
  * first to avoid possible serial port delays from printk.
  */
 #define qib_early_err(dev, fmt, ...) \
-	do { \
-		dev_err(dev, fmt, ##__VA_ARGS__); \
-	} while (0)
+	dev_err(dev, fmt, ##__VA_ARGS__)
 
 #define qib_dev_err(dd, fmt, ...) \
-	do { \
-		dev_err(&(dd)->pcidev->dev, "%s: " fmt, \
-			qib_get_unit_name((dd)->unit), ##__VA_ARGS__); \
-	} while (0)
+	dev_err(&(dd)->pcidev->dev, "%s: " fmt, \
+		qib_get_unit_name((dd)->unit), ##__VA_ARGS__)
+
+#define qib_dev_warn(dd, fmt, ...) \
+	dev_warn(&(dd)->pcidev->dev, "%s: " fmt, \
+		qib_get_unit_name((dd)->unit), ##__VA_ARGS__)
 
 #define qib_dev_porterr(dd, port, fmt, ...) \
-	do { \
-		dev_err(&(dd)->pcidev->dev, "%s: IB%u:%u " fmt, \
-			qib_get_unit_name((dd)->unit), (dd)->unit, (port), \
-			##__VA_ARGS__); \
-	} while (0)
+	dev_err(&(dd)->pcidev->dev, "%s: IB%u:%u " fmt, \
+		qib_get_unit_name((dd)->unit), (dd)->unit, (port), \
+		##__VA_ARGS__)
 
 #define qib_devinfo(pcidev, fmt, ...) \
-	do { \
-		dev_info(&(pcidev)->dev, fmt, ##__VA_ARGS__); \
-	} while (0)
+	dev_info(&(pcidev)->dev, fmt, ##__VA_ARGS__)
 
 /*
  * this is used for formatting hw error messages...
@@ -1511,4 +1541,14 @@ struct qib_hwerror_msgs {
 void qib_format_hwerrors(u64 hwerrs,
 			 const struct qib_hwerror_msgs *hwerrmsgs,
 			 size_t nhwerrmsgs, char *msg, size_t lmsg);
+
+void qib_stop_send_queue(struct rvt_qp *qp);
+void qib_quiesce_qp(struct rvt_qp *qp);
+void qib_flush_qp_waiters(struct rvt_qp *qp);
+int qib_mtu_to_path_mtu(u32 mtu);
+u32 qib_mtu_from_qp(struct rvt_dev_info *rdi, struct rvt_qp *qp, u32 pmtu);
+void qib_notify_error_qp(struct rvt_qp *qp);
+int qib_get_pmtu_from_attr(struct rvt_dev_info *rdi, struct rvt_qp *qp,
+			   struct ib_qp_attr *attr);
+
 #endif                          /* _QIB_KERNEL_H */

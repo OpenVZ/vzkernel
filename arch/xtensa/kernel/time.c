@@ -32,9 +32,9 @@ unsigned long ccount_per_jiffy;		/* per 1/HZ */
 unsigned long nsec_per_ccount;		/* nsec per ccount increment */
 #endif
 
-static cycle_t ccount_read(struct clocksource *cs)
+static u64 ccount_read(struct clocksource *cs)
 {
-	return (cycle_t)get_ccount();
+	return (u64)get_ccount();
 }
 
 static struct clocksource ccount_clocksource = {

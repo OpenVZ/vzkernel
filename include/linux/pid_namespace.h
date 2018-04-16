@@ -18,7 +18,7 @@ struct pidmap {
 #define BITS_PER_PAGE_MASK	(BITS_PER_PAGE-1)
 #define PIDMAP_ENTRIES		((PID_MAX_LIMIT+BITS_PER_PAGE-1)/BITS_PER_PAGE)
 
-struct bsd_acct_struct;
+struct fs_pin;
 
 struct pid_namespace {
 	struct kref kref;
@@ -34,7 +34,8 @@ struct pid_namespace {
 	struct dentry *proc_self;
 #endif
 #ifdef CONFIG_BSD_PROCESS_ACCT
-	struct bsd_acct_struct *bacct;
+	RH_KABI_REPLACE(struct bsd_acct_struct *bacct,
+			struct fs_pin *bacct)
 #endif
 	struct user_namespace *user_ns;
 	struct work_struct proc_work;
@@ -42,6 +43,8 @@ struct pid_namespace {
 	int hide_pid;
 	int reboot;	/* group exit code if this pidns was rebooted */
 	unsigned int proc_inum;
+	RH_KABI_EXTEND(struct rcu_head rcu)
+	RH_KABI_EXTEND(struct ucounts *ucounts)
 };
 
 extern struct pid_namespace init_pid_ns;

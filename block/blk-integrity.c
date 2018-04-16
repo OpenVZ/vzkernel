@@ -403,7 +403,8 @@ int blk_integrity_register(struct gendisk *disk, struct blk_integrity *template)
 		kobject_uevent(&bi->kobj, KOBJ_ADD);
 
 		bi->flags |= INTEGRITY_FLAG_READ | INTEGRITY_FLAG_WRITE;
-		bi->sector_size = queue_logical_block_size(disk->queue);
+		if (!template || !template->sector_size)
+			bi->sector_size = queue_logical_block_size(disk->queue);
 		disk->integrity = bi;
 	} else
 		bi = disk->integrity;
@@ -417,6 +418,8 @@ int blk_integrity_register(struct gendisk *disk, struct blk_integrity *template)
 		bi->set_tag_fn = template->set_tag_fn;
 		bi->get_tag_fn = template->get_tag_fn;
 		bi->tag_size = template->tag_size;
+		if (template->sector_size)
+			bi->sector_size = template->sector_size;
 	} else
 		bi->name = bi_unsupported_name;
 

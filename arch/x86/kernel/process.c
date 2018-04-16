@@ -28,6 +28,7 @@
 #include <asm/fpu-internal.h>
 #include <asm/debugreg.h>
 #include <asm/nmi.h>
+#include <asm/mce.h>
 
 /*
  * per-CPU TSS segments. Threads are completely 'soft' on Linux,
@@ -36,7 +37,7 @@
  * section. Since TSS's are completely CPU-local, we want them
  * on exact cacheline boundaries, to eliminate cacheline ping-pong.
  */
-DEFINE_PER_CPU_SHARED_ALIGNED(struct tss_struct, init_tss) = INIT_TSS;
+DEFINE_PER_CPU_PAGE_ALIGNED_USER_MAPPED(struct tss_struct, init_tss) = INIT_TSS;
 
 #ifdef CONFIG_X86_64
 static DEFINE_PER_CPU(unsigned char, is_idle);
@@ -93,6 +94,7 @@ void arch_task_cache_init(void)
         	kmem_cache_create("task_xstate", xstate_size,
 				  __alignof__(union thread_xstate),
 				  SLAB_PANIC | SLAB_NOTRACK, NULL);
+	setup_xstate_comp();
 }
 
 /*
@@ -279,6 +281,7 @@ void exit_idle(void)
 
 void arch_cpu_idle_enter(void)
 {
+	tsc_verify_tsc_adjust();
 	local_touch_nmi();
 	enter_idle();
 }
@@ -307,7 +310,7 @@ void arch_cpu_idle(void)
 /*
  * We use this if we don't have any better idle routine..
  */
-void default_idle(void)
+void __cpuidle default_idle(void)
 {
 	trace_cpu_idle_rcuidle(1, smp_processor_id());
 	safe_halt();
@@ -327,6 +330,7 @@ bool xen_set_default_idle(void)
 	return ret;
 }
 #endif
+
 void stop_this_cpu(void *dummy)
 {
 	local_irq_disable();
@@ -335,9 +339,27 @@ void stop_this_cpu(void *dummy)
 	 */
 	set_cpu_online(smp_processor_id(), false);
 	disable_local_APIC();
+	mcheck_cpu_clear(this_cpu_ptr(&cpu_info));
 
-	for (;;)
-		halt();
+	/*
+	 * Use wbinvd on processors that support SME. This provides support
+	 * for performing a successful kexec when going from SME inactive
+	 * to SME active (or vice-versa). The cache must be cleared so that
+	 * if there are entries with the same physical address, both with and
+	 * without the encryption bit, they don't race each other when flushed
+	 * and potentially end up with the wrong entry being committed to
+	 * memory.
+	 */
+	if (boot_cpu_has(X86_FEATURE_SME))
+		native_wbinvd();
+	for (;;) {
+		/*
+		 * Use native_halt() so that memory contents don't change
+		 * (stack usage and variables) after possibly issuing the
+		 * native_wbinvd() above.
+		 */
+		native_halt();
+	}
 }
 
 bool amd_e400_c1e_detected;
@@ -391,14 +413,14 @@ static void amd_e400_idle(void)
 		 * The switch back from broadcast mode needs to be
 		 * called with interrupts disabled.
 		 */
-		 local_irq_disable();
-		 clockevents_notify(CLOCK_EVT_NOTIFY_BROADCAST_EXIT, &cpu);
-		 local_irq_enable();
+		local_irq_disable();
+		clockevents_notify(CLOCK_EVT_NOTIFY_BROADCAST_EXIT, &cpu);
+		local_irq_enable();
 	} else
 		default_idle();
 }
 
-void __cpuinit select_idle_routine(const struct cpuinfo_x86 *c)
+void select_idle_routine(const struct cpuinfo_x86 *c)
 {
 #ifdef CONFIG_SMP
 	if (boot_option_idle_override == IDLE_POLL && smp_num_siblings > 1)
@@ -465,7 +487,6 @@ unsigned long arch_align_stack(unsigned long sp)
 
 unsigned long arch_randomize_brk(struct mm_struct *mm)
 {
-	unsigned long range_end = mm->brk + 0x02000000;
-	return randomize_range(mm->brk, range_end, 0) ? : mm->brk;
+	return randomize_page(mm->brk, 0x02000000);
 }
 

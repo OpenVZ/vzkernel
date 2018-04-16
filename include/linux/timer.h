@@ -151,6 +151,8 @@ static inline void init_timer_on_stack_key(struct timer_list *timer,
 
 #define setup_timer(timer, fn, data)					\
 	__setup_timer((timer), (fn), (data), 0)
+#define setup_deferrable_timer(timer, fn, data)				\
+	__setup_timer((timer), (fn), (data), TIMER_DEFERRABLE)
 #define setup_timer_on_stack(timer, fn, data)				\
 	__setup_timer_on_stack((timer), (fn), (data), 0)
 #define setup_deferrable_timer_on_stack(timer, fn, data)		\
@@ -186,13 +188,6 @@ extern void set_timer_slack(struct timer_list *time, int slack_hz);
  * in the timer wheel:
  */
 #define NEXT_TIMER_MAX_DELTA	((1UL << 30) - 1)
-
-/*
- * Return when the next timer-wheel timeout occurs (in absolute jiffies),
- * locks the timer base and does the comparison against the given
- * jiffie.
- */
-extern unsigned long get_next_timer_interrupt(unsigned long now);
 
 /*
  * Timer-statistics info:

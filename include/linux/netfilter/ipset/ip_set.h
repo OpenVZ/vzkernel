@@ -147,7 +147,8 @@ struct ip_set_type {
 	u8 revision_min, revision_max;
 
 	/* Create set */
-	int (*create)(struct ip_set *set, struct nlattr *tb[], u32 flags);
+	int (*create)(struct net *net, struct ip_set *set,
+		      struct nlattr *tb[], u32 flags);
 
 	/* Attribute policies */
 	const struct nla_policy create_policy[IPSET_ATTR_CREATE_MAX + 1];
@@ -169,6 +170,10 @@ struct ip_set {
 	rwlock_t lock;
 	/* References to the set */
 	u32 ref;
+	/* References to the set for netlink events like dump,
+	 * ref can be swapped out by ip_set_swap
+	 */
+	u32 ref_netlink;
 	/* The core set type */
 	struct ip_set_type *type;
 	/* The type variant doing the real job */
@@ -232,9 +237,11 @@ static inline bool
 ip_set_put_counter(struct sk_buff *skb, struct ip_set_counter *counter)
 {
 	return nla_put_net64(skb, IPSET_ATTR_BYTES,
-			     cpu_to_be64(ip_set_get_bytes(counter))) ||
+			     cpu_to_be64(ip_set_get_bytes(counter)),
+			     IPSET_ATTR_PAD) ||
 	       nla_put_net64(skb, IPSET_ATTR_PACKETS,
-			     cpu_to_be64(ip_set_get_packets(counter)));
+			     cpu_to_be64(ip_set_get_packets(counter)),
+			     IPSET_ATTR_PAD);
 }
 
 static inline void
@@ -248,12 +255,12 @@ ip_set_init_counter(struct ip_set_counter *counter,
 }
 
 /* register and unregister set references */
-extern ip_set_id_t ip_set_get_byname(const char *name, struct ip_set **set);
-extern void ip_set_put_byindex(ip_set_id_t index);
-extern const char *ip_set_name_byindex(ip_set_id_t index);
-extern ip_set_id_t ip_set_nfnl_get(const char *name);
-extern ip_set_id_t ip_set_nfnl_get_byindex(ip_set_id_t index);
-extern void ip_set_nfnl_put(ip_set_id_t index);
+extern ip_set_id_t ip_set_get_byname(struct net *net,
+				     const char *name, struct ip_set **set);
+extern void ip_set_put_byindex(struct net *net, ip_set_id_t index);
+extern const char *ip_set_name_byindex(struct net *net, ip_set_id_t index);
+extern ip_set_id_t ip_set_nfnl_get_byindex(struct net *net, ip_set_id_t index);
+extern void ip_set_nfnl_put(struct net *net, ip_set_id_t index);
 
 /* API for iptables set match, and SET target */
 
@@ -338,7 +345,7 @@ static inline int nla_put_ipaddr4(struct sk_buff *skb, int type, __be32 ipaddr)
 
 	if (!__nested)
 		return -EMSGSIZE;
-	ret = nla_put_net32(skb, IPSET_ATTR_IPADDR_IPV4, ipaddr);
+	ret = nla_put_in_addr(skb, IPSET_ATTR_IPADDR_IPV4, ipaddr);
 	if (!ret)
 		ipset_nest_end(skb, __nested);
 	return ret;
@@ -352,8 +359,7 @@ static inline int nla_put_ipaddr6(struct sk_buff *skb, int type,
 
 	if (!__nested)
 		return -EMSGSIZE;
-	ret = nla_put(skb, IPSET_ATTR_IPADDR_IPV6,
-		      sizeof(struct in6_addr), ipaddrptr);
+	ret = nla_put_in6_addr(skb, IPSET_ATTR_IPADDR_IPV6, ipaddrptr);
 	if (!ret)
 		ipset_nest_end(skb, __nested);
 	return ret;
@@ -395,5 +401,8 @@ bitmap_bytes(u32 a, u32 b)
 #define IP_SET_INIT_UEXT(map)				\
 	{ .bytes = ULLONG_MAX, .packets = ULLONG_MAX,	\
 	  .timeout = (map)->timeout }
+
+#define IPSET_CONCAT(a, b)		a##b
+#define IPSET_TOKEN(a, b)		IPSET_CONCAT(a, b)
 
 #endif /*_IP_SET_H */
