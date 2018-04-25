@@ -686,6 +686,35 @@ static ssize_t target_stat_tgt_port_hs_in_cmds_show(struct config_item *item,
 	return ret;
 }
 
+#define DEV_STAT_TGT_PORT_STATS_SHOW_SIMPLE(_name, _value)		\
+static ssize_t  target_stat_tgt_port_##_name##_show(			\
+	struct config_item *item, char *page)				\
+{									\
+	struct se_lun *lun = to_stat_port(item);			\
+	struct se_device *dev;						\
+	ssize_t ret = -ENODEV;						\
+									\
+	rcu_read_lock();						\
+	dev = rcu_dereference(lun->lun_se_dev);				\
+	if (dev) {							\
+		ret = snprintf(page, PAGE_SIZE, "%lu\n",		\
+			atomic_long_read(&lun->lun_stats._value));	\
+	}								\
+	rcu_read_unlock();						\
+	return ret;							\
+}
+
+DEV_STAT_TGT_PORT_STATS_SHOW_SIMPLE(read_bytes, tx_data_octets);
+DEV_STAT_TGT_PORT_STATS_SHOW_SIMPLE(write_bytes, rx_data_octets);
+DEV_STAT_TGT_PORT_STATS_SHOW_SIMPLE(read_cmds, read_cmds);
+DEV_STAT_TGT_PORT_STATS_SHOW_SIMPLE(write_cmds, write_cmds);
+DEV_STAT_TGT_PORT_STATS_SHOW_SIMPLE(bidi_cmds, bidi_cmds);
+DEV_STAT_TGT_PORT_STATS_SHOW_SIMPLE(read_errors, read_errors);
+DEV_STAT_TGT_PORT_STATS_SHOW_SIMPLE(write_errors, write_errors);
+DEV_STAT_TGT_PORT_STATS_SHOW_SIMPLE(bidi_errors, bidi_errors);
+DEV_STAT_TGT_PORT_STATS_SHOW_SIMPLE(aborts, aborts);
+DEV_STAT_TGT_PORT_STATS_SHOW_SIMPLE(queue_cmds, queue_cmds);
+
 CONFIGFS_ATTR_RO(target_stat_tgt_port_, inst);
 CONFIGFS_ATTR_RO(target_stat_tgt_port_, dev);
 CONFIGFS_ATTR_RO(target_stat_tgt_port_, indx);
@@ -695,6 +724,17 @@ CONFIGFS_ATTR_RO(target_stat_tgt_port_, in_cmds);
 CONFIGFS_ATTR_RO(target_stat_tgt_port_, write_mbytes);
 CONFIGFS_ATTR_RO(target_stat_tgt_port_, read_mbytes);
 CONFIGFS_ATTR_RO(target_stat_tgt_port_, hs_in_cmds);
+
+CONFIGFS_ATTR_RO(target_stat_tgt_port_, read_bytes);
+CONFIGFS_ATTR_RO(target_stat_tgt_port_, write_bytes);
+CONFIGFS_ATTR_RO(target_stat_tgt_port_, read_cmds);
+CONFIGFS_ATTR_RO(target_stat_tgt_port_, write_cmds);
+CONFIGFS_ATTR_RO(target_stat_tgt_port_, bidi_cmds);
+CONFIGFS_ATTR_RO(target_stat_tgt_port_, read_errors);
+CONFIGFS_ATTR_RO(target_stat_tgt_port_, write_errors);
+CONFIGFS_ATTR_RO(target_stat_tgt_port_, bidi_errors);
+CONFIGFS_ATTR_RO(target_stat_tgt_port_, aborts);
+CONFIGFS_ATTR_RO(target_stat_tgt_port_, queue_cmds);
 
 static struct configfs_attribute *target_stat_scsi_tgt_port_attrs[] = {
 	&target_stat_tgt_port_attr_inst,
@@ -706,6 +746,17 @@ static struct configfs_attribute *target_stat_scsi_tgt_port_attrs[] = {
 	&target_stat_tgt_port_attr_write_mbytes,
 	&target_stat_tgt_port_attr_read_mbytes,
 	&target_stat_tgt_port_attr_hs_in_cmds,
+
+	&target_stat_tgt_port_attr_read_bytes,
+	&target_stat_tgt_port_attr_write_bytes,
+	&target_stat_tgt_port_attr_read_cmds,
+	&target_stat_tgt_port_attr_write_cmds,
+	&target_stat_tgt_port_attr_bidi_cmds,
+	&target_stat_tgt_port_attr_read_errors,
+	&target_stat_tgt_port_attr_write_errors,
+	&target_stat_tgt_port_attr_bidi_errors,
+	&target_stat_tgt_port_attr_aborts,
+	&target_stat_tgt_port_attr_queue_cmds,
 	NULL,
 };
 
