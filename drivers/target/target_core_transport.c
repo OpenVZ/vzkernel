@@ -678,6 +678,9 @@ static void transport_lun_remove_cmd(struct se_cmd *cmd)
 	if (!lun)
 		return;
 
+	if (cmd->se_cmd_flags & SCF_SE_LUN_CMD)
+		atomic_long_dec(&cmd->se_lun->lun_stats.queue_cmds);
+
 	if (cmpxchg(&cmd->lun_ref_active, true, false))
 		percpu_ref_put(&lun->lun_ref);
 }
@@ -707,6 +710,19 @@ int transport_cmd_finish_abort(struct se_cmd *cmd, int remove)
 static void target_complete_failure_work(struct work_struct *work)
 {
 	struct se_cmd *cmd = container_of(work, struct se_cmd, work);
+
+	switch (cmd->data_direction) {
+	case DMA_FROM_DEVICE:
+		atomic_long_inc(&cmd->se_lun->lun_stats.read_errors);
+		break;
+	case DMA_TO_DEVICE:
+		(cmd->se_cmd_flags & SCF_BIDI) ?
+			atomic_long_inc(&cmd->se_lun->lun_stats.bidi_errors) :
+			atomic_long_inc(&cmd->se_lun->lun_stats.write_errors);
+		break;
+	default:
+		break;
+	}
 
 	transport_generic_request_failure(cmd,
 			TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE);
@@ -2275,6 +2291,9 @@ queue_rsp:
 
 		atomic_long_add(cmd->data_length,
 				&cmd->se_lun->lun_stats.tx_data_octets);
+
+		atomic_long_inc(&cmd->se_lun->lun_stats.read_cmds);
+
 		/*
 		 * Perform READ_STRIP of PI using software emulation when
 		 * backend had PI enabled, if the transport will not be
@@ -2299,6 +2318,11 @@ queue_rsp:
 	case DMA_TO_DEVICE:
 		atomic_long_add(cmd->data_length,
 				&cmd->se_lun->lun_stats.rx_data_octets);
+
+		(cmd->se_cmd_flags & SCF_BIDI) ?
+			atomic_long_inc(&cmd->se_lun->lun_stats.bidi_cmds) :
+			atomic_long_inc(&cmd->se_lun->lun_stats.write_cmds);
+
 		/*
 		 * Check if we need to send READ payload for BIDI-COMMAND
 		 */
