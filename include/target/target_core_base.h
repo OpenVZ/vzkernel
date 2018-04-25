@@ -710,6 +710,14 @@ struct scsi_port_stats {
 	atomic_long_t	cmd_pdus;
 	atomic_long_t	tx_data_octets;
 	atomic_long_t	rx_data_octets;
+	atomic_long_t	write_cmds;
+	atomic_long_t	read_cmds;
+	atomic_long_t	bidi_cmds;
+	atomic_long_t	write_errors;
+	atomic_long_t	read_errors;
+	atomic_long_t	bidi_errors;
+	atomic_long_t	queue_cmds;
+	atomic_long_t	aborts;
 };
 
 struct se_lun {
