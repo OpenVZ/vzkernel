@@ -187,6 +187,9 @@ void core_tmr_abort_task(
 		cancel_work_sync(&se_cmd->work);
 		transport_wait_for_tasks(se_cmd);
 
+		if (se_cmd->se_cmd_flags & SCF_SE_LUN_CMD)
+			atomic_long_inc(&se_cmd->se_lun->lun_stats.aborts);
+
 		transport_cmd_finish_abort(se_cmd, true);
 		target_put_sess_cmd(se_cmd);
 
