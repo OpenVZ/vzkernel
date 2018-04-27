@@ -6307,6 +6307,19 @@ static void mem_cgroup_invalidate_reclaim_iterators(struct mem_cgroup *memcg)
 		mem_cgroup_iter_invalidate(root_mem_cgroup);
 }
 
+static void mem_cgroup_free_all(struct mem_cgroup *memcg)
+{
+	int nr_retries = 5;
+
+	lru_add_drain_all();
+
+	while (nr_retries && page_counter_read(&memcg->memory))
+		if (!try_to_free_mem_cgroup_pages(memcg, -1UL, GFP_KERNEL, 0))
+			nr_retries--;
+
+	lru_add_drain();
+}
+
 static void mem_cgroup_css_offline(struct cgroup *cont)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
@@ -6336,6 +6349,7 @@ static void mem_cgroup_css_offline(struct cgroup *cont)
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
+	mem_cgroup_free_all(memcg);
 	mem_cgroup_reparent_charges(memcg);
 
 	vmpressure_cleanup(&memcg->vmpressure);
