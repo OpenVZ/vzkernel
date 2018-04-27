@@ -239,14 +239,14 @@ void cs_log_io_times(struct pcs_int_request * ireq, struct pcs_msg * resp, unsig
 	/* Ugly. Need to move fc ref to get rid of pcs_cluster_core */
 	struct fuse_conn * fc = container_of(ireq->cc, struct pcs_fuse_cluster, cc)->fc;
 	struct pcs_cs_iohdr * h = (struct pcs_cs_iohdr *)msg_inline_head(resp);
-	int reqt = h->hdr.type != PCS_CS_SYNC_RESP ? ireq->iochunk.direction : PCS_REQ_T_SYNC;
+	int reqt = h->hdr.type != PCS_CS_SYNC_RESP ? ireq->iochunk.cmd : PCS_REQ_T_SYNC;
 
 	fuse_stat_account(fc, reqt, ktime_sub(ktime_get(), ireq->ts_sent));
 	if (fc->ktrace && fc->ktrace_level >= LOG_TRACE) {
 		int n = 1;
 		struct fuse_trace_hdr * t;
 
-		if (h->hdr.type != PCS_CS_READ_RESP) {
+		if (h->hdr.type != PCS_CS_READ_RESP && h->hdr.type != PCS_CS_FIEMAP_RESP) {
 			struct pcs_cs_sync_resp * srec;
 
 			for (srec = (struct pcs_cs_sync_resp*)(h + 1);
@@ -277,7 +277,7 @@ void cs_log_io_times(struct pcs_int_request * ireq, struct pcs_msg * resp, unsig
 			ch->ts_io = h->sync.ts_io;
 			ch++;
 
-			if (h->hdr.type != PCS_CS_READ_RESP) {
+			if (h->hdr.type != PCS_CS_READ_RESP && h->hdr.type != PCS_CS_FIEMAP_RESP) {
 				struct pcs_cs_sync_resp * srec;
 
 				for (srec = (struct pcs_cs_sync_resp*)(h + 1);
@@ -326,8 +326,9 @@ static void cs_response_done(struct pcs_msg *msg)
 
 		pcs_map_verify_sync_state(ireq->dentry, ireq, msg);
 	} else {
-		TRACE(XID_FMT " IO error %d %lu : %llu:%u+%u\n", XID_ARGS(ireq->iochunk.hbuf.hdr.xid), msg->error.value, msg->error.remote ? (unsigned long)msg->error.offender.val : 0UL,
-		      (unsigned long long)ireq->iochunk.chunk, (unsigned)ireq->iochunk.offset, ireq->iochunk.size);
+		TRACE(XID_FMT " IO error %d %lu : %llu:%u+%u\n", XID_ARGS(ireq->iochunk.hbuf.hdr.xid),
+		      msg->error.value, msg->error.remote ? (unsigned long)msg->error.offender.val : 0UL,
+		      (unsigned long long)ireq->iochunk.chunk, (unsigned)ireq->iochunk.offset, (unsigned)ireq->iochunk.size);
 	}
 
 	pcs_copy_error_cond(&ireq->error, &msg->error);
@@ -355,7 +356,7 @@ static void cs_get_read_response_iter(struct pcs_msg *msg, int offset, struct io
 			pcs_api_iorequest_t *ar = parent->apireq.req;
 
 			/* Read directly to memory given by user */
-			BUG_ON(ireq->iochunk.direction != PCS_REQ_T_READ);
+			BUG_ON(ireq->iochunk.cmd != PCS_REQ_T_READ && ireq->iochunk.cmd != PCS_REQ_T_FIEMAP);
 
 			offset -= (unsigned int)sizeof(struct pcs_cs_iohdr);
 			ar->get_iter(ar->datasource, ireq->iochunk.dio_offset, it);
@@ -387,7 +388,7 @@ static struct pcs_msg *cs_get_hdr(struct pcs_rpc *ep, struct pcs_rpc_hdr *h)
 	if (!RPC_IS_RESPONSE(h->type))
 		return NULL;
 
-	if (h->type != PCS_CS_READ_RESP)
+	if (h->type != PCS_CS_READ_RESP && h->type != PCS_CS_FIEMAP_RESP)
 		return NULL;
 
 	/* The goal is to avoid allocation new msg and reuse one inlined in ireq */
@@ -397,7 +398,7 @@ static struct pcs_msg *cs_get_hdr(struct pcs_rpc *ep, struct pcs_rpc_hdr *h)
 		return NULL;
 
 	req_h = (struct pcs_rpc_hdr *)msg_inline_head(msg);
-	if (req_h->type != PCS_CS_READ_REQ)
+	if (req_h->type != (h->type & ~PCS_RPC_DIRECTION))
 		return NULL;
 
 	resp = pcs_rpc_alloc_input_msg(ep, sizeof(struct pcs_cs_iohdr));
@@ -430,7 +431,7 @@ static void cs_get_data(struct pcs_msg *msg, int offset, struct iov_iter *it)
 		if (parent->type == PCS_IREQ_API) {
 			pcs_api_iorequest_t *ar = parent->apireq.req;
 
-			BUG_ON(ireq->iochunk.direction != PCS_REQ_T_WRITE);
+			BUG_ON(ireq->iochunk.cmd != PCS_REQ_T_WRITE);
 
 			offset -= (unsigned int)sizeof(struct pcs_cs_iohdr);
 			ar->get_iter(ar->datasource, ireq->iochunk.dio_offset, it);
@@ -466,14 +467,32 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 	msg->private2 = ireq;
 
 	ioh = &ireq->iochunk.hbuf;
-	ioh->hdr.len = sizeof(struct pcs_cs_iohdr) +
-		(ireq->iochunk.direction ? ireq->iochunk.size : 0);
-	ioh->hdr.type = ireq->iochunk.direction ? PCS_CS_WRITE_REQ : PCS_CS_READ_REQ;
+	ioh->hdr.len = sizeof(struct pcs_cs_iohdr);
+	switch (ireq->iochunk.cmd) {
+	case PCS_REQ_T_READ:
+		ioh->hdr.type = PCS_CS_READ_REQ;
+		break;
+	case PCS_REQ_T_WRITE:
+		ioh->hdr.type = PCS_CS_WRITE_REQ;
+		ioh->hdr.len += ireq->iochunk.size;
+		break;
+	case PCS_REQ_T_WRITE_HOLE:
+		ioh->hdr.type = PCS_CS_WRITE_HOLE_REQ;
+		break;
+	case PCS_REQ_T_WRITE_ZERO:
+		ioh->hdr.type = PCS_CS_WRITE_ZERO_REQ;
+		break;
+	case PCS_REQ_T_FIEMAP:
+		ioh->hdr.type = PCS_CS_FIEMAP_REQ;
+		break;
+	}
 	pcs_rpc_get_new_xid(&cc_from_cs(cs)->eng, &ioh->hdr.xid);
 	ioh->offset = ireq->iochunk.offset;
 	ioh->size = ireq->iochunk.size;
 	ioh->iocontext = (u32)ireq->dentry->fileinfo.attr.id;
 	ioh->_reserved = 0;
+	if (ireq->iochunk.cmd == PCS_REQ_T_FIEMAP)
+		ioh->fiemap_count = PCS_FIEMAP_CHUNK_COUNT;
 	memset(&ioh->sync, 0, sizeof(ioh->sync));
 
 	if (ireq->flags & IREQ_F_SEQ)
@@ -492,7 +511,7 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 	 */
 	BUG_ON(ireq->iochunk.map->state & PCS_MAP_DEAD);
 	ioh->map_version = csl->version;
-	if (ireq->iochunk.direction)
+	if (pcs_req_direction(ireq->iochunk.cmd))
 		msg->timeout = csl->write_timeout;
 	else
 		msg->timeout = csl->read_timeout;
@@ -504,7 +523,7 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 	      msg, ireq,
 	      (unsigned long long)ireq->iochunk.chunk,
 	      (unsigned)ireq->iochunk.offset,
-	      ireq->iochunk.size);
+	      (unsigned)ireq->iochunk.size);
 
 /* TODO reanable ratelimiting */
 #if 0
@@ -596,7 +615,7 @@ static void cs_keep_waiting(struct pcs_rpc *ep, struct pcs_msg *req, struct pcs_
 				who->cwr_state = 1;
 		}
 		cs_update_io_latency(who, lat);
-		if (ireq && ireq->type == PCS_IREQ_IOCHUNK && ireq->iochunk.direction == 0) {
+		if (ireq && ireq->type == PCS_IREQ_IOCHUNK && !pcs_req_direction(ireq->iochunk.cmd)) {
 			/* Force CS reselection */
 			pcs_map_force_reselect(who);
 
