@@ -87,7 +87,7 @@ void ireq_handle_hole(struct pcs_int_request *ireq)
 	pcs_api_iorequest_t * ar = ireq->completion_data.parent->apireq.req;
 
 	BUG_ON(ireq->type != PCS_IREQ_IOCHUNK);
-	BUG_ON(ireq->iochunk.direction);
+	BUG_ON(pcs_req_direction(ireq->iochunk.cmd));
 
 	len = ireq->iochunk.size;
 	offset = 0;
