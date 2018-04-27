@@ -1033,27 +1033,25 @@ void fuse_stat_account(struct fuse_conn * fc, int op, ktime_t val)
 		cpu = get_cpu();
 		histp = per_cpu_ptr(tr->prometheus_hist, cpu);
 		if (histp && *histp) {
-			struct kfuse_stat_rec * buckets = (*histp)->buckets[op];
-			struct kfuse_stat_rec * bucket;
+			struct kfuse_stat_rec * rec = (*histp)->metrics + op;
+			int bucket;
 			unsigned long long lat = ktime_to_ns(val)/1000;
 
 			if (lat < 1000)
-				bucket = buckets + (lat/100);
+				bucket = (lat/100);
 			else if (lat < 10000)
-				bucket = buckets + 9*1 + (lat/1000);
+				bucket = 9*1 + (lat/1000);
 			else if (lat < 100000)
-				bucket = buckets + 9*2 + (lat/10000);
+				bucket = 9*2 + (lat/10000);
 			else if (lat < 1000000)
-				bucket = buckets + 9*3 + (lat/100000);
+				bucket = 9*3 + (lat/100000);
 			else if (lat < 10000000)
-				bucket = buckets + 9*4 + (lat/1000000);
+				bucket = 9*4 + (lat/1000000);
 			else
-				bucket = buckets + 9*5;
+				bucket = 9*5 + 1;
 
-			bucket->value += lat;
-			bucket->count++;
-			buckets[KFUSE_PROM_MAX].value += lat;
-			buckets[KFUSE_PROM_MAX].count++;
+			rec->buckets[bucket]++;
+			rec->sum += lat;
 		}
 		put_cpu();
 	}
@@ -1088,10 +1086,10 @@ static ssize_t prometheus_file_read(struct file *filp,
 	struct kfuse_histogram * hist;
 	int cpu;
 
-	if (*ppos >= KFUSE_PROM_MAX*KFUSE_OP_MAX*sizeof(struct kfuse_stat_rec))
+	if (*ppos >= sizeof(struct kfuse_histogram))
 		return 0;
-	if (*ppos + count > KFUSE_PROM_MAX*KFUSE_OP_MAX*sizeof(struct kfuse_stat_rec))
-		count = KFUSE_PROM_MAX*KFUSE_OP_MAX*sizeof(struct kfuse_stat_rec) - *ppos;
+	if (*ppos + count > sizeof(struct kfuse_histogram))
+		count = sizeof(struct kfuse_histogram) - *ppos;
 
 	hist = (void*)get_zeroed_page(GFP_KERNEL);
 	if (!hist)
@@ -1107,10 +1105,10 @@ static ssize_t prometheus_file_read(struct file *filp,
 		if (histp && *histp) {
 			int i, k;
 			for (i = 0; i < KFUSE_OP_MAX; i++) {
-				for (k = 0; k < KFUSE_PROM_MAX + 1; k++) {
-					hist->buckets[i][k].value += (*histp)->buckets[i][k].value;
-					hist->buckets[i][k].count += (*histp)->buckets[i][k].count;
+				for (k = 0; k < KFUSE_PROM_MAX; k++) {
+					hist->metrics[i].buckets[k] += (*histp)->metrics[i].buckets[k];
 				}
+				hist->metrics[i].sum += (*histp)->metrics[i].sum;
 			}
 		}
 	}
