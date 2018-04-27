@@ -28,6 +28,7 @@ struct pcs_fuse_exec_ctx {
 		/* Fuck mem economy, make it simple for testing purpose
 		   TODO: IMPLEMENT  fuse_req iterator similar to bvec one */
 		struct bio_vec inline_bvec[FUSE_MAX_MAX_PAGES];
+		struct kvec kv;
 	} io;
 	struct {
 		unsigned		retry_cnt;
@@ -108,7 +109,7 @@ int pcs_cc_init(struct pcs_cluster_core *cc, struct workqueue_struct *wq,
 		const char *cluster_name, struct pcs_cluster_core_attr *attr);
 void pcs_cc_fini(struct pcs_cluster_core *cc);
 
-void pcs_fuse_prep_io(struct pcs_fuse_req *r, unsigned short type, off_t offset, size_t size);
+void pcs_fuse_prep_io(struct pcs_fuse_req *r, unsigned short type, off_t offset, size_t size, u64 aux);
 void pcs_fuse_prep_fallocate(struct pcs_fuse_req *r);
 int fuse_pcs_csconn_send(struct fuse_conn *fc, struct pcs_rpc *ep, int flags);
 
