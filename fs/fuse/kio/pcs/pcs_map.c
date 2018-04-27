@@ -374,7 +374,7 @@ unsigned long map_gc(struct pcs_map_set *maps)
 
 static inline int is_dirtying(struct pcs_map_entry * map, struct pcs_int_request *ireq)
 {
-	if (!ireq->iochunk.direction)
+	if (!pcs_req_direction(ireq->iochunk.cmd))
 		return 0;
 
 	/* Was not dirty? */
@@ -1235,7 +1235,7 @@ static void map_replicating(struct pcs_int_request *ireq)
 	struct pcs_cs_list * csl = ireq->iochunk.csl;
 	int read_idx = READ_ONCE(csl->read_index);
 
-	BUG_ON(ireq->iochunk.direction);
+	BUG_ON(pcs_req_direction(ireq->iochunk.cmd));
 
 	if (csl == NULL || csl->map == NULL)
 		return;
@@ -1269,7 +1269,7 @@ static void map_read_error(struct pcs_int_request *ireq)
 	struct pcs_cs_list * csl = ireq->iochunk.csl;
 	struct pcs_cs * cs;
 
-	BUG_ON(ireq->iochunk.direction);
+	BUG_ON(pcs_req_direction(ireq->iochunk.cmd));
 
 	if (csl == NULL || csl->map == NULL || (csl->map->state & PCS_MAP_ERROR))
 		return;
@@ -1324,9 +1324,13 @@ static void pcs_cs_deaccount(struct pcs_int_request *ireq, struct pcs_cs * cs, i
 	unsigned int cost;
 
 	spin_lock(&cs->lock);
-	if (ireq->type == PCS_IREQ_IOCHUNK)
-		cost = (ireq->flags & IREQ_F_RND_WEIGHT) ? 512*1024 : cong_roundup(ireq->iochunk.size);
-	else
+	if (ireq->type == PCS_IREQ_IOCHUNK) {
+		if (ireq->iochunk.cmd == PCS_REQ_T_WRITE_HOLE ||
+		    ireq->iochunk.cmd == PCS_REQ_T_WRITE_ZERO)
+			cost = PCS_CS_HOLE_WEIGHT;
+		else
+			cost = (ireq->flags & IREQ_F_RND_WEIGHT) ? 512*1024 : cong_roundup(ireq->iochunk.size);
+	} else
 		cost = PCS_CS_FLUSH_WEIGHT;
 
 	if (!error) {
@@ -1512,7 +1516,7 @@ void pcs_deaccount_ireq(struct pcs_int_request *ireq, pcs_error_t * err)
 		}
 	}
 
-	if (ireq->type == PCS_IREQ_FLUSH || (ireq->iochunk.direction && !(ireq->flags & IREQ_F_MAPPED))) {
+	if (ireq->type == PCS_IREQ_FLUSH || (pcs_req_direction(ireq->iochunk.cmd) && !(ireq->flags & IREQ_F_MAPPED))) {
 		int i;
 		int requeue = 0;
 
@@ -1574,7 +1578,7 @@ void map_notify_soft_error(struct pcs_int_request *ireq)
 
 	err = ireq->error;
 
-	if (!ireq->iochunk.direction &&
+	if (!pcs_req_direction(ireq->iochunk.cmd) &&
 	    pcs_if_error(&err) &&
 	    err.remote &&
 	    err.value != PCS_ERR_CSD_STALE_MAP &&
@@ -1768,7 +1772,7 @@ pcs_ireq_split(struct pcs_int_request *ireq, unsigned int iochunk, int noalign)
 	if (sreq->iochunk.map)
 		__pcs_map_get(sreq->iochunk.map);
 	sreq->iochunk.flow = pcs_flow_get(ireq->iochunk.flow);
-	sreq->iochunk.direction = ireq->iochunk.direction;
+	sreq->iochunk.cmd = ireq->iochunk.cmd;
 	sreq->iochunk.role = ireq->iochunk.role;
 	sreq->iochunk.cs_index = ireq->iochunk.cs_index;
 	sreq->iochunk.chunk = ireq->iochunk.chunk;
@@ -1885,7 +1889,7 @@ static int pcs_cslist_submit_read(struct pcs_int_request *ireq, struct pcs_cs_li
 		struct pcs_int_request * sreq = ireq;
 		unsigned int weight;
 
-		if (ireq->iochunk.size > iochunk) {
+		if (ireq->iochunk.size > iochunk && ireq->iochunk.cmd == PCS_REQ_T_WRITE) {
 			sreq = pcs_ireq_split(ireq, iochunk, 0);
 
 			if (sreq == NULL) {
@@ -2008,7 +2012,9 @@ restart:
 
 		sreq->flags &= ~(IREQ_F_RND_WEIGHT | IREQ_F_SEQ);
 		BUG_ON(sreq->flags & IREQ_F_SEQ_READ);
-		if (pcs_flow_sequential(sreq->iochunk.flow)) {
+		if (ireq->iochunk.cmd != PCS_REQ_T_WRITE) {
+			weight = PCS_CS_HOLE_WEIGHT;
+		} else if (pcs_flow_sequential(sreq->iochunk.flow)) {
 			weight = cong_roundup(sreq->iochunk.size);
 			sreq->flags |= IREQ_F_SEQ;
 		} else if (!(get_io_tweaks(ireq->cc) & PCS_TWEAK_USE_FLOW_WEIGHT) ||
@@ -2137,7 +2143,7 @@ int pcs_cslist_submit(struct pcs_int_request *ireq, struct pcs_cs_list *csl, int
 
 	if (ireq->type == PCS_IREQ_FLUSH) {
 		return pcs_cslist_submit_flush(ireq, csl, requeue);
-	} else if (!ireq->iochunk.direction) {
+	} else if (!pcs_req_direction(ireq->iochunk.cmd)) {
 		return pcs_cslist_submit_read(ireq, csl, requeue);
 	} else if (ireq->flags & IREQ_F_MAPPED) {
 		BUG();
@@ -2166,7 +2172,7 @@ void map_submit(struct pcs_map_entry * m, struct pcs_int_request *ireq, int requ
 	BUG_ON(pcs_if_error(&ireq->error));
 
 
-	direction = (ireq->type != PCS_IREQ_FLUSH ? ireq->iochunk.direction : 1);
+	direction = (ireq->type != PCS_IREQ_FLUSH ? pcs_req_direction(ireq->iochunk.cmd) : 1);
 
 	do {
 		struct pcs_cs_list *csl = NULL;
