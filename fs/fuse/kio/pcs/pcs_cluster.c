@@ -169,18 +169,19 @@ static noinline void __pcs_cc_process_ireq_rw(struct pcs_int_request *ireq)
 
 static void pcs_cc_process_ireq_ioreq(struct pcs_int_request *ireq)
 {
-
 	if (ireq->apireq.req->type == PCS_REQ_T_SYNC) {
 		map_inject_flush_req(ireq);
 		return;
 	}
 	if (ireq->apireq.req->type != PCS_REQ_T_READ &&
-	    ireq->apireq.req->type != PCS_REQ_T_WRITE) {
+	    ireq->apireq.req->type != PCS_REQ_T_WRITE &&
+	    ireq->apireq.req->type != PCS_REQ_T_WRITE_HOLE &&
+	    ireq->apireq.req->type != PCS_REQ_T_WRITE_ZERO) {
 		pcs_set_local_error(&ireq->error, PCS_ERR_PROTOCOL);
 		ireq_complete(ireq);
+		return;
 	}
 	return __pcs_cc_process_ireq_rw(ireq);
-
 }
 
 static void ireq_process_(struct pcs_int_request *ireq)
