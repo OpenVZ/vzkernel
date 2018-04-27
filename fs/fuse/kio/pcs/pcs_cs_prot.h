@@ -4,6 +4,7 @@
 #include "pcs_rpc_prot.h"
 
 #define PCS_CS_FLUSH_WEIGHT	(128*1024)
+#define PCS_CS_HOLE_WEIGHT	(4096)
 
 struct pcs_cs_sync_data
 {
@@ -34,6 +35,17 @@ struct pcs_cs_sync_resp {
 	struct pcs_cs_sync_data	sync;
 } __attribute__((aligned(8)));
 
+struct pcs_cs_fiemap_rec
+{
+	u32	offset;
+	u32	size;
+	u32	flags;
+#define PCS_CS_FIEMAP_FL_OVFL	1
+#define PCS_CS_FIEMAP_FL_ZERO	2
+#define PCS_CS_FIEMAP_FL_CACHE	4
+	u32	_reserved;
+} __attribute__((aligned(8)));
+
 struct pcs_cs_iohdr {
 	struct pcs_rpc_hdr	hdr;
 
@@ -42,7 +54,11 @@ struct pcs_cs_iohdr {
 	u64			offset;
 	u32			size;
 	u32			iocontext;
-	u64			_reserved;	/* For future extensions */
+	union {
+		u64			_reserved;	/* For future extensions */
+		u64			hole_mask;	/* Used only in REPLICATEX responces */
+		u32			fiemap_count;	/* Used only in FIEMAP request, limit on number of extents to return */
+	};
 	struct pcs_cs_sync_data	sync;		/* Filled in all requests and responses */
 	struct pcs_cs_sync_resp sync_resp[0];	/* Used only in response to write/sync */
 } __attribute__((aligned(8)));
@@ -73,6 +89,18 @@ struct pcs_cs_cong_notification {
 } __attribute__((aligned(8)));
 
 #define PCS_CS_CONG_NOTIFY	(PCS_RPC_CS_CLIENT_BASE + 10)
+
+#define PCS_CS_WRITE_ZERO_REQ	(PCS_RPC_CS_CLIENT_BASE + 12)
+#define PCS_CS_WRITE_ZERO_RESP	(PCS_CS_WRITE_ZERO_REQ|PCS_RPC_DIRECTION)
+
+#define PCS_CS_WRITE_HOLE_REQ	(PCS_RPC_CS_CLIENT_BASE + 14)
+#define PCS_CS_WRITE_HOLE_RESP	(PCS_CS_WRITE_HOLE_REQ|PCS_RPC_DIRECTION)
+
+#define PCS_CS_REPLICATEX_REQ	(PCS_RPC_CS_CLIENT_BASE + 16)
+#define PCS_CS_REPLICATEX_RESP	(PCS_CS_REPLICATEX_REQ|PCS_RPC_DIRECTION)
+
+#define PCS_CS_FIEMAP_REQ	(PCS_RPC_CS_CLIENT_BASE + 18)
+#define PCS_CS_FIEMAP_RESP	(PCS_CS_FIEMAP_REQ|PCS_RPC_DIRECTION)
 
 ////////////////////////////////////////////
 //// from pcs_mds_cs_prot.h

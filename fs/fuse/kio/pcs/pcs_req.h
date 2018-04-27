@@ -90,13 +90,12 @@ struct pcs_int_request
 		struct {
 			struct pcs_map_entry	*map;
 			//// Temproraly disable flow
-			 struct pcs_flow_node	*flow;
-			////struct pcs_splice_buf	*splice_rbuf;
-			u8			direction;
+			struct pcs_flow_node	*flow;
+			u8			cmd;
 			u8			role;
 			short			cs_index;
-			unsigned int		size;
-			unsigned int		dio_offset;
+			u64			size;
+			u64			dio_offset;
 			u64			chunk;
 			u64			offset;
 			struct pcs_cs_list	*csl;
