@@ -73,6 +73,17 @@ static void on_write_done(struct pcs_fuse_req *r, off_t pos, size_t size)
 	request_end(pfc->fc, &r->req);
 }
 
+static void on_fallocate_done(struct pcs_fuse_req *r, off_t pos, size_t size)
+{
+	struct pcs_fuse_cluster *pfc = cl_from_req(r);
+
+	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
+	fuse_stat_account(pfc->fc, KFUSE_OP_FALLOCATE, ktime_sub(ktime_get(), r->exec.ireq.ts));
+	inode_dio_end(r->req.io_inode);
+
+	request_end(pfc->fc, &r->req);
+}
+
 static void req_get_iter(void *data, unsigned int offset, struct iov_iter *it)
 {
 	struct pcs_fuse_req *r = data;
@@ -134,6 +145,11 @@ static void prepare_io_(struct pcs_fuse_req *r, unsigned short type, off_t offse
 		BUG_ON(r->req.in.argbvec && r->req.in.argpages);
 		set_io_buff(r, offset, size, r->req.in.argbvec, 0);
 		break;
+	case PCS_REQ_T_WRITE_ZERO:
+	case PCS_REQ_T_WRITE_HOLE:
+		r->exec.io.req.pos = offset;
+		r->exec.io.req.size = size;
+		break;
 	}
 
 	r->exec.io.req.type = type;
@@ -176,6 +192,10 @@ static void ioreq_complete(pcs_api_iorequest_t *ioreq)
 	case PCS_REQ_T_SYNC:
 		on_sync_done(r);
 		break;
+	case PCS_REQ_T_WRITE_HOLE:
+	case PCS_REQ_T_WRITE_ZERO:
+		on_fallocate_done(r, ioreq->pos, ioreq->size);
+		break;
 	default:
 		BUG();
 	}
@@ -185,4 +205,30 @@ static void ioreq_complete(pcs_api_iorequest_t *ioreq)
 void pcs_fuse_prep_io(struct pcs_fuse_req *r, unsigned short type, off_t offset, size_t size)
 {
 	prepare_io_(r, type, offset, size, ioreq_complete);
+}
+
+static void falloc_req_complete(struct pcs_int_request *ireq)
+{
+	struct pcs_fuse_req * r = ireq->completion_data.priv;
+	struct pcs_fuse_cluster *pfc = cl_from_req(r);
+
+	BUG_ON(ireq->type != PCS_IREQ_NOOP);
+
+	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
+	fuse_stat_account(pfc->fc, KFUSE_OP_FALLOCATE, ktime_sub(ktime_get(), ireq->ts));
+	inode_dio_end(r->req.io_inode);
+
+	request_end(pfc->fc, &r->req);
+}
+
+void pcs_fuse_prep_fallocate(struct pcs_fuse_req *r)
+{
+	struct pcs_int_request *ireq = &r->exec.ireq;
+
+	ireq->type = PCS_IREQ_NOOP;
+	ireq->ts = ktime_get();
+	ireq->complete_cb = falloc_req_complete;
+	ireq->completion_data.parent = 0;
+	ireq->completion_data.ctx = r;
+	ireq->completion_data.priv = r;
 }
