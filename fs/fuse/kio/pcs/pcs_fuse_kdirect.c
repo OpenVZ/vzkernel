@@ -748,7 +748,7 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
 			}
 			size = di->fileinfo.attr.size - in->offset;
 		}
-		pcs_fuse_prep_io(r, PCS_REQ_T_READ, in->offset, size);
+		pcs_fuse_prep_io(r, PCS_REQ_T_READ, in->offset, size, 0);
 	} else if (r->req.in.h.opcode == FUSE_WRITE) {
 		struct fuse_write_in *in = &r->req.misc.write.in;
 
@@ -756,7 +756,26 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
 			wait_grow(r, di, in->offset + in->size);
 			ret = 1;
 		}
-		pcs_fuse_prep_io(r, PCS_REQ_T_WRITE, in->offset, in->size);
+		pcs_fuse_prep_io(r, PCS_REQ_T_WRITE, in->offset, in->size, 0);
+	} else if (r->req.in.h.opcode == FUSE_IOCTL) {
+		size_t size;
+		struct fiemap const *in = r->req.in.args[1].value;
+		struct fiemap *out = r->req.out.args[1].value;
+
+		*out = *in;
+		out->fm_mapped_extents = 0;
+
+		size = in->fm_length;
+		if (in->fm_start + size > di->fileinfo.attr.size) {
+			if (in->fm_start >= di->fileinfo.attr.size) {
+				spin_unlock(&di->lock);
+				return -1;
+			}
+			size = di->fileinfo.attr.size - in->fm_start;
+		}
+		pcs_fuse_prep_io(r, PCS_REQ_T_FIEMAP, in->fm_start, in->fm_extent_count*sizeof(struct fiemap_extent),
+				 in->fm_extent_count);
+		r->exec.io.req.size = size;
 	} else {
 		struct fuse_fallocate_in const *in = r->req.in.args[0].value;
 
@@ -766,9 +785,9 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
 		}
 
 		if (in->mode & FALLOC_FL_PUNCH_HOLE)
-			pcs_fuse_prep_io(r, PCS_REQ_T_WRITE_HOLE, in->offset, in->length);
+			pcs_fuse_prep_io(r, PCS_REQ_T_WRITE_HOLE, in->offset, in->length, 0);
 		else if (in->mode & FALLOC_FL_ZERO_RANGE)
-			pcs_fuse_prep_io(r, PCS_REQ_T_WRITE_ZERO, in->offset, in->length);
+			pcs_fuse_prep_io(r, PCS_REQ_T_WRITE_ZERO, in->offset, in->length, 0);
 		else {
 			if (ret) {
 				pcs_fuse_prep_fallocate(r);
@@ -846,8 +865,24 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, 
 		break;
 	}
 	case FUSE_FSYNC:
-		pcs_fuse_prep_io(r, PCS_REQ_T_SYNC, 0, 0);
+		pcs_fuse_prep_io(r, PCS_REQ_T_SYNC, 0, 0, 0);
 		goto submit;
+	case FUSE_IOCTL: {
+		int ret;
+
+		if (pfc->fc->no_fiemap) {
+			r->req.out.h.error = -EOPNOTSUPP;
+			goto error;
+		}
+
+		ret = pcs_fuse_prep_rw(r);
+		if (!ret)
+			goto submit;
+		if (ret > 0)
+			/* Pended, nothing to do. */
+			return;
+		break;
+	}
 	}
 	r->req.out.h.error = 0;
 error:
@@ -926,6 +961,7 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 {
 	struct pcs_fuse_cluster *pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
 	struct fuse_inode *fi = get_fuse_inode(req->io_inode);
+
 	if (!fc->initialized || fc->conn_error)
 		return 1;
 
@@ -946,16 +982,16 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 		spin_unlock(&fc->lock);
 		return 1;
 	}
+
+	if (!fi || !fi->private)
+		return 1;
+
 	switch (req->in.h.opcode) {
 	case FUSE_SETATTR: {
 		struct pcs_fuse_req *r = pcs_req_from_fuse(req);
 		struct fuse_setattr_in *inarg = (void*) req->in.args[0].value;
 		struct pcs_dentry_info *di;
 		int shrink = 0;
-
-		/* Skip speciall inodes */
-		if (!fi->private)
-			return 1;
 
 		if (!(inarg->valid & FATTR_SIZE))
 			return 1;
@@ -986,15 +1022,18 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 	case FUSE_WRITE:
 	case FUSE_FSYNC:
 	case FUSE_FALLOCATE:
-		fi = get_fuse_inode(req->io_inode);
-		if (!fi->private)
+		break;
+	case FUSE_IOCTL: {
+		struct fuse_ioctl_in const * inarg = req->in.args[0].value;
+
+		if (inarg->cmd != FS_IOC_FIEMAP)
 			return 1;
 
 		break;
+	}
 	default:
 		return 1;
 	}
-
 
 	__clear_bit(FR_BACKGROUND, &req->flags);
 	__clear_bit(FR_PENDING, &req->flags);
