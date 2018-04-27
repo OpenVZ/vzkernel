@@ -58,9 +58,6 @@ static void process_pcs_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 		fc->conn_error = 1;
 		goto out;
 	}
-	/* TODO: Not yet implemented PSBM-80365 */
-	fc->no_fiemap = 1;
-	fc->no_fallocate = 1;
 
 	fc->kio.ctx = pfc;
 	printk("FUSE: kio_pcs: cl: " CLUSTER_ID_FMT ", clientid: " NODE_FMT "\n",
@@ -694,7 +691,7 @@ static void wait_grow(struct pcs_fuse_req *r, struct pcs_dentry_info *di, unsign
 {
 	assert_spin_locked(&di->lock);
 	BUG_ON(r->exec.size.waiting);
-	BUG_ON(r->req.in.h.opcode != FUSE_WRITE);
+	BUG_ON(r->req.in.h.opcode != FUSE_WRITE && r->req.in.h.opcode != FUSE_FALLOCATE);
 
 	TRACE("insert ino:%ld->required:%lld r(%p)->required:%lld\n", r->req.io_inode->i_ino,
 	      di->size.required, r, required);
@@ -705,6 +702,7 @@ static void wait_grow(struct pcs_fuse_req *r, struct pcs_dentry_info *di, unsign
 	if (!di->size.required)
 		queue_work(pcs_wq, &di->size.work);
 }
+
 static void wait_shrink(struct pcs_fuse_req *r, struct pcs_dentry_info *di)
 {
 	assert_spin_locked(&di->lock);
@@ -751,7 +749,7 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
 			size = di->fileinfo.attr.size - in->offset;
 		}
 		pcs_fuse_prep_io(r, PCS_REQ_T_READ, in->offset, size);
-	} else {
+	} else if (r->req.in.h.opcode == FUSE_WRITE) {
 		struct fuse_write_in *in = &r->req.misc.write.in;
 
 		if (in->offset + in->size > di->fileinfo.attr.size) {
@@ -759,7 +757,26 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
 			ret = 1;
 		}
 		pcs_fuse_prep_io(r, PCS_REQ_T_WRITE, in->offset, in->size);
+	} else {
+		struct fuse_fallocate_in const *in = r->req.in.args[0].value;
 
+		if (in->offset + in->length > di->fileinfo.attr.size) {
+			wait_grow(r, di, in->offset + in->length);
+			ret = 1;
+		}
+
+		if (in->mode & FALLOC_FL_PUNCH_HOLE)
+			pcs_fuse_prep_io(r, PCS_REQ_T_WRITE_HOLE, in->offset, in->length);
+		else if (in->mode & FALLOC_FL_ZERO_RANGE)
+			pcs_fuse_prep_io(r, PCS_REQ_T_WRITE_ZERO, in->offset, in->length);
+		else {
+			if (ret) {
+				pcs_fuse_prep_fallocate(r);
+			} else {
+				spin_unlock(&di->lock);
+				return -1;
+			}
+		}
 	}
 	inode_dio_begin(r->req.io_inode);
 	spin_unlock(&di->lock);
@@ -796,15 +813,49 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, 
 			return;
 		break;
 	}
+	case FUSE_FALLOCATE: {
+		int ret;
+		struct fuse_fallocate_in *inarg = (void*) req->in.args[0].value;
+
+		if (pfc->fc->no_fallocate) {
+			r->req.out.h.error = -EOPNOTSUPP;
+			goto error;
+		}
+
+		if (inarg->offset >= di->fileinfo.attr.size)
+			inarg->mode &= ~FALLOC_FL_ZERO_RANGE;
+
+		if (inarg->mode & FALLOC_FL_KEEP_SIZE) {
+			if (inarg->offset + inarg->length > di->fileinfo.attr.size)
+				inarg->length = di->fileinfo.attr.size - inarg->offset;
+		}
+
+		if (inarg->mode & (FALLOC_FL_ZERO_RANGE|FALLOC_FL_PUNCH_HOLE)) {
+			if ((inarg->offset & (PAGE_SIZE - 1)) || (inarg->length & (PAGE_SIZE - 1))) {
+				r->req.out.h.error = -EINVAL;
+				goto error;
+			}
+		}
+
+		ret = pcs_fuse_prep_rw(r);
+		if (!ret)
+			goto submit;
+		if (ret > 0)
+			/* Pended, nothing to do. */
+			return;
+		break;
+	}
 	case FUSE_FSYNC:
 		pcs_fuse_prep_io(r, PCS_REQ_T_SYNC, 0, 0);
 		goto submit;
 	}
 	r->req.out.h.error = 0;
+error:
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
 
 	request_end(pfc->fc, &r->req);
 	return;
+
 submit:
 	if (async)
 		pcs_cc_submit(ireq->cc, ireq);
@@ -934,6 +985,7 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 	case FUSE_READ:
 	case FUSE_WRITE:
 	case FUSE_FSYNC:
+	case FUSE_FALLOCATE:
 		fi = get_fuse_inode(req->io_inode);
 		if (!fi->private)
 			return 1;
