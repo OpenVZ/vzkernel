@@ -933,6 +933,7 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 	}
 	case FUSE_READ:
 	case FUSE_WRITE:
+	case FUSE_FSYNC:
 		fi = get_fuse_inode(req->io_inode);
 		if (!fi->private)
 			return 1;
