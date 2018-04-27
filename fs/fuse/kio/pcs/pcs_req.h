@@ -150,6 +150,7 @@ struct pcs_int_request
 		struct {
 			pcs_api_iorequest_t *	req;		/* Client request */
 			unsigned int		dio_offset;	/* MBZ */
+			u64			aux;
 			void*			h;		/* API handle */
 		} apireq;
 
