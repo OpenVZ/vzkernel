@@ -102,6 +102,7 @@ int pcs_cc_init(struct pcs_cluster_core *cc, struct workqueue_struct *wq,
 void pcs_cc_fini(struct pcs_cluster_core *cc);
 
 void pcs_fuse_prep_io(struct pcs_fuse_req *r, unsigned short type, off_t offset, size_t size);
+void pcs_fuse_prep_fallocate(struct pcs_fuse_req *r);
 int fuse_pcs_csconn_send(struct fuse_conn *fc, struct pcs_rpc *ep, int flags);
 
 
