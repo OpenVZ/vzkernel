@@ -138,7 +138,7 @@ static noinline void __pcs_cc_process_ireq_rw(struct pcs_int_request *ireq)
 		sreq->type = PCS_IREQ_IOCHUNK;
 		sreq->iochunk.map = NULL;
 		sreq->iochunk.flow = pcs_flow_get(fl);
-		sreq->iochunk.direction = ireq->apireq.req->type;
+		sreq->iochunk.cmd = ireq->apireq.req->type;
 		sreq->iochunk.cs_index = 0;
 		sreq->iochunk.chunk = chunk;
 		sreq->iochunk.offset = rpos % di->fileinfo.sys.chunk_size;
