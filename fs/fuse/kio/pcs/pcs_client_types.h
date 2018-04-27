@@ -110,7 +110,22 @@ enum {
 	PCS_REQ_T_READ = 0,
 	PCS_REQ_T_WRITE = 1,
 	PCS_REQ_T_SYNC = 2,
+	PCS_REQ_T_WRITE_HOLE = 3,
+	PCS_REQ_T_WRITE_ZERO = 4,
+	PCS_REQ_T_FIEMAP = 5,
+	PCS_REQ_T_MAX = 6,
 };
+
+static inline int pcs_req_direction(int reqno)
+{
+	switch (reqno) {
+	case PCS_REQ_T_READ:
+	case PCS_REQ_T_FIEMAP:
+		return 0;
+	default:
+		return 1;
+	}
+}
 
 /* Request flags */
 #define PCS_REQ_F_ERROR		2
