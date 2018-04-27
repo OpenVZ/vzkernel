@@ -395,9 +395,6 @@ static unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 	struct shrinker *shrinker;
 	unsigned long freed = 0;
 
-	if (memcg && !memcg_kmem_is_active(memcg))
-		return 0;
-
 	if (unlikely(test_tsk_thread_flag(current, TIF_MEMDIE)))
 		return 0;
 
