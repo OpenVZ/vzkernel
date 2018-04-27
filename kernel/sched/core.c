@@ -9376,6 +9376,9 @@ static inline int tg_has_rt_tasks(struct task_group *tg)
 	struct cgroup * cg = tg->css.cgroup;
 	int ret = 0;
 
+	if (task_group_is_autogroup(tg))
+                return 0;
+
 	cgroup_iter_start(cg, &it);
 	while (!ret && (task = cgroup_iter_next(cg, &it)))
 		ret |= rt_task(task);
