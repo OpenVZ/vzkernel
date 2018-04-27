@@ -25,6 +25,9 @@ struct pcs_map_entry;
 
 #define PCS_CS_BLACKLIST_TIMER	(10*HZ)
 
+#define PCS_FIEMAP_BUFSIZE     (128*1024)
+#define PCS_FIEMAP_CHUNK_COUNT (PCS_FIEMAP_BUFSIZE/sizeof(struct pcs_cs_fiemap_rec))
+
 enum {
 	CS_SF_LOCAL,
 	CS_SF_LOCAL_SOCK,
