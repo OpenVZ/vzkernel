@@ -84,11 +84,37 @@ static void on_fallocate_done(struct pcs_fuse_req *r, off_t pos, size_t size)
 	request_end(pfc->fc, &r->req);
 }
 
+static void on_fiemap_done(struct pcs_fuse_req *r)
+{
+	struct pcs_fuse_cluster *pfc = cl_from_req(r);
+
+	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
+
+	inode_dio_end(r->req.io_inode);
+	request_end(pfc->fc, &r->req);
+}
+
 static void req_get_iter(void *data, unsigned int offset, struct iov_iter *it)
 {
 	struct pcs_fuse_req *r = data;
 
 	iov_iter_init_bvec(it, r->exec.io.bvec, r->exec.io.num_bvecs, r->exec.io.req.size, 0);
+	iov_iter_advance(it, offset);
+}
+
+static void req_fiemap_get_iter(void *data, unsigned int offset, struct iov_iter *it)
+{
+	struct pcs_fuse_req * r = data;
+	struct pcs_int_request *ireq = &r->exec.ireq;
+
+	if (offset < sizeof(struct fiemap)) {
+		iov_iter_init_plain(it, (char *)r->req.out.args[1].value,
+				    sizeof(struct fiemap), 0);
+	} else {
+		offset -= sizeof(struct fiemap);
+		iov_iter_init_bvec(it, r->exec.io.bvec, r->exec.io.num_bvecs,
+				   ireq->apireq.aux*sizeof(struct fiemap_extent), 0);
+	}
 	iov_iter_advance(it, offset);
 }
 
@@ -126,7 +152,7 @@ static inline void set_io_buff(struct pcs_fuse_req *r, off_t offset, size_t size
 	r->exec.io.req.size = size;
 }
 
-static void prepare_io_(struct pcs_fuse_req *r, unsigned short type, off_t offset, size_t size,
+static void prepare_io_(struct pcs_fuse_req *r, unsigned short type, off_t offset, size_t size, u64 aux,
 		       void (*complete)(struct _pcs_api_iorequest_t *))
 {
 	/* Use inline request structure */
@@ -150,6 +176,9 @@ static void prepare_io_(struct pcs_fuse_req *r, unsigned short type, off_t offse
 		r->exec.io.req.pos = offset;
 		r->exec.io.req.size = size;
 		break;
+	case PCS_REQ_T_FIEMAP:
+		set_io_buff(r, offset, size, 0, 0);
+		break;
 	}
 
 	r->exec.io.req.type = type;
@@ -157,10 +186,14 @@ static void prepare_io_(struct pcs_fuse_req *r, unsigned short type, off_t offse
 	r->exec.io.req.get_iter = req_get_iter;
 	r->exec.io.req.complete = complete;
 
+	if (type == PCS_REQ_T_FIEMAP)
+		r->exec.io.req.get_iter = req_fiemap_get_iter;
+
 	/* Initialize internal request structure */
 	ireq->type = PCS_IREQ_API;
 	ireq->ts = ktime_get();
 	ireq->apireq.req = &r->exec.io.req;
+	ireq->apireq.aux = aux;
 	ireq->complete_cb = intreq_complete;
 	ireq->completion_data.parent = 0;
 	ireq->completion_data.ctx = r;
@@ -196,15 +229,18 @@ static void ioreq_complete(pcs_api_iorequest_t *ioreq)
 	case PCS_REQ_T_WRITE_ZERO:
 		on_fallocate_done(r, ioreq->pos, ioreq->size);
 		break;
+	case PCS_REQ_T_FIEMAP:
+		on_fiemap_done(r);
+		break;
 	default:
 		BUG();
 	}
 
 }
 
-void pcs_fuse_prep_io(struct pcs_fuse_req *r, unsigned short type, off_t offset, size_t size)
+void pcs_fuse_prep_io(struct pcs_fuse_req *r, unsigned short type, off_t offset, size_t size, u64 aux)
 {
-	prepare_io_(r, type, offset, size, ioreq_complete);
+	prepare_io_(r, type, offset, size, aux, ioreq_complete);
 }
 
 static void falloc_req_complete(struct pcs_int_request *ireq)
