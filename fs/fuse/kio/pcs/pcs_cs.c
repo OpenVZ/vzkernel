@@ -234,21 +234,15 @@ again:
 	return cs;
 }
 
-static void (*io_times_logger_cb)(struct pcs_int_request *ireq, struct pcs_msg *resp, u32 max_iolat, void *ctx) = NULL;
-static void *io_times_logger_ctx = NULL;
-
-void cs_set_io_times_logger(void (*logger)(struct pcs_int_request *ireq, struct pcs_msg *resp, u32 max_iolat, void *ctx), void *ctx)
-{
-	io_times_logger_cb = logger;
-	io_times_logger_ctx = ctx;
-}
-
 void cs_log_io_times(struct pcs_int_request * ireq, struct pcs_msg * resp, unsigned int max_iolat)
 {
 	/* Ugly. Need to move fc ref to get rid of pcs_cluster_core */
 	struct fuse_conn * fc = container_of(ireq->cc, struct pcs_fuse_cluster, cc)->fc;
+	struct pcs_cs_iohdr * h = (struct pcs_cs_iohdr *)msg_inline_head(resp);
+	int reqt = h->hdr.type != PCS_CS_SYNC_RESP ? ireq->iochunk.direction : PCS_REQ_T_SYNC;
+
+	fuse_stat_account(fc, reqt, ktime_sub(ktime_get(), ireq->ts_sent));
 	if (fc->ktrace && fc->ktrace_level >= LOG_TRACE) {
-		struct pcs_cs_iohdr * h = (struct pcs_cs_iohdr *)msg_inline_head(resp);
 		int n = 1;
 		struct fuse_trace_hdr * t;
 
