@@ -2204,17 +2204,23 @@ void map_submit(struct pcs_map_entry * m, struct pcs_int_request *ireq, int requ
 			BUG_ON(ireq->iochunk.chunk != map_chunk_start(m));
 			BUG_ON(ireq->iochunk.offset != pos - ireq->iochunk.chunk);
 			if (ireq->iochunk.size > len) {
-				struct pcs_int_request * sreq;
+				if (ireq->iochunk.cmd == PCS_REQ_T_FIEMAP) {
+					pcs_api_iorequest_t * ar = ireq->completion_data.parent->apireq.req;
+					ireq->iochunk.size = len;
+					ar->size = ireq->iochunk.size;
+				} else {
+					struct pcs_int_request * sreq;
 
-				sreq = pcs_ireq_split(ireq, len, 0);
-				if (ireq->iochunk.map) {
-					pcs_map_put(ireq->iochunk.map);
-					ireq->iochunk.map = NULL;
+					sreq = pcs_ireq_split(ireq, len, 0);
+					if (ireq->iochunk.map) {
+						pcs_map_put(ireq->iochunk.map);
+						ireq->iochunk.map = NULL;
+					}
+					ireq->iochunk.chunk = map_chunk_end(m);
+					ireq->iochunk.offset = 0;
+					pcs_cc_submit(ireq->dentry->cluster, ireq);
+					ireq = sreq;
 				}
-				ireq->iochunk.chunk = map_chunk_end(m);
-				ireq->iochunk.offset = 0;
-				pcs_cc_submit(ireq->dentry->cluster, ireq);
-				ireq = sreq;
 			}
 		}
 
@@ -2549,7 +2555,7 @@ static int commit_sync_info(struct pcs_int_request *req,
 	update_net_latency(csl, resp->rpc->peer_id, &h->sync, lat);
 	max_iolat = h->sync.ts_io;
 
-	if (h->hdr.type != PCS_CS_READ_RESP) {
+	if (h->hdr.type != PCS_CS_READ_RESP && h->hdr.type != PCS_CS_FIEMAP_RESP) {
 		struct pcs_cs_sync_resp * srec;
 		lat = h->sync.ts_net;
 		for (srec = (struct pcs_cs_sync_resp*)(h + 1);
