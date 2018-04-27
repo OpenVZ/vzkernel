@@ -3585,6 +3585,7 @@ static int fuse_request_fiemap(struct inode *inode, u32 cur_max,
 	if (!ap.pages)
 		return -ENOMEM;
 
+	ap.args.io_inode = inode;
 	ap.args.opcode = FUSE_IOCTL;
 	ap.args.nodeid = get_node_id(inode);
 
