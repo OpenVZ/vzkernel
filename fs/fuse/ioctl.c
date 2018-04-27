@@ -8,6 +8,7 @@
 #include <linux/uio.h>
 #include <linux/compat.h>
 #include <linux/fileattr.h>
+#include <linux/fiemap.h>
 
 static ssize_t fuse_send_ioctl(struct fuse_mount *fm, struct fuse_args *args,
 			       struct fuse_ioctl_out *outarg)
@@ -371,6 +372,9 @@ long fuse_file_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 long fuse_file_compat_ioctl(struct file *file, unsigned int cmd,
 			    unsigned long arg)
 {
+	/* Paradoxically, this is how FS_IOC_FIEMAP actually supported in compat mode */
+	if (cmd == FS_IOC_FIEMAP)
+		return -ENOIOCTLCMD;
 	return fuse_ioctl_common(file, cmd, arg, FUSE_IOCTL_COMPAT);
 }
 
