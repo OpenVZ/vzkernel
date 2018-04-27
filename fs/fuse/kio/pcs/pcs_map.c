@@ -2694,6 +2694,7 @@ void process_flush_req(struct pcs_int_request *ireq)
 	return;
 
 done:
+	spin_unlock(&m->lock);
 	if (pcs_if_error(&ireq->error)) {
 		TRACE("oops, delete me %d", ireq->error.value);
 		pcs_clear_error(&ireq->error);
