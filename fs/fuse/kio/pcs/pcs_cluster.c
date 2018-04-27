@@ -3,6 +3,7 @@
 #include <linux/kthread.h>
 #include <linux/types.h>
 #include <linux/rbtree.h>
+#include <linux/highmem.h>
 
 #include "pcs_types.h"
 #include "pcs_sock_io.h"
@@ -15,6 +16,8 @@
 #include "log.h"
 
 #include "../../fuse_i.h"
+
+void pcs_cc_process_ireq_chunk(struct pcs_int_request *ireq);
 
 static inline int is_file_inline(struct pcs_dentry_info *di)
 {
@@ -73,6 +76,192 @@ void pcs_sreq_complete(struct pcs_int_request *sreq)
 		pcs_flow_put(sreq->iochunk.flow, &cluster->maps.ftab);
 
 	ireq_destroy(sreq);
+}
+
+struct fiemap_iterator
+{
+	struct pcs_int_request 	*orig_ireq;
+	wait_queue_head_t	wq;
+	char			*buffer;
+	unsigned int		fiemap_max;
+	u32			*mapped;
+
+	struct pcs_int_request	ireq;
+	pcs_api_iorequest_t	apireq;
+};
+
+static void fiemap_iter_done(struct pcs_int_request * ireq)
+{
+	struct fiemap_iterator * fiter = container_of(ireq, struct fiemap_iterator, ireq);
+
+	wake_up(&fiter->wq);
+}
+
+static void fiemap_get_iter(void * datasource, unsigned int offset, struct iov_iter *it)
+{
+	struct fiemap_iterator * iter = datasource;
+
+	BUG_ON(offset >= PCS_FIEMAP_BUFSIZE);
+	iov_iter_init_plain(it, iter->buffer, PCS_FIEMAP_BUFSIZE, 0);
+	iov_iter_advance(it, offset);
+}
+
+static void xfer_fiemap_extents(struct fiemap_iterator * iter, u64 pos, char * buffer, unsigned int count)
+{
+	struct pcs_cs_fiemap_rec * r = (struct pcs_cs_fiemap_rec *)buffer;
+
+	BUG_ON(count % sizeof(struct pcs_cs_fiemap_rec));
+	count /= sizeof(struct pcs_cs_fiemap_rec);
+
+	if (r[count - 1].flags & PCS_CS_FIEMAP_FL_OVFL) {
+		/* Adjust next scan pos in case of overflow, overwriting size */
+		u64 end = iter->apireq.pos + r[count - 1].offset + r[count - 1].size;
+		if (end < pos + iter->apireq.size) {
+			u64 adjusted_size = end - pos;
+			if (adjusted_size < iter->apireq.size)
+				iter->apireq.size = adjusted_size;
+		}
+	}
+
+	if (iter->fiemap_max == 0) {
+		*iter->mapped += count;
+	} else {
+		int i;
+
+		for (i = 0; i < count; i++) {
+			struct fiemap_extent e;
+			struct iov_iter it;
+			void * buf;
+			size_t len;
+
+			if (*iter->mapped >= iter->fiemap_max)
+				return;
+
+			memset(&e, 0, sizeof(e));
+			e.fe_logical = e.fe_physical = iter->apireq.pos + r[i].offset;
+			e.fe_length = r[i].size;
+			if (r[i].flags & PCS_CS_FIEMAP_FL_ZERO)
+				e.fe_flags |= FIEMAP_EXTENT_UNWRITTEN;
+			if (r[i].flags & PCS_CS_FIEMAP_FL_CACHE)
+				e.fe_flags |= FIEMAP_EXTENT_DELALLOC;
+
+			iter->orig_ireq->apireq.req->get_iter(iter->orig_ireq->apireq.req->datasource,
+							      offsetof(struct fiemap, fm_extents) +
+							      *iter->mapped * sizeof(struct fiemap_extent),
+							      &it);
+			iov_iter_truncate(&it, sizeof(e));
+
+			iov_iter_kmap_atomic(&it, &buf, &len);
+			memcpy(buf, &e, len);
+			kunmap_atomic(buf);
+			if (len != sizeof(e)) {
+				size_t fraglen;
+				iov_iter_advance(&it, len);
+				iov_iter_kmap_atomic(&it, &buf, &fraglen);
+				BUG_ON(len + fraglen != sizeof(e));
+				memcpy(buf, (char*)&e + len, fraglen);
+				kunmap_atomic(buf);
+			}
+			(*iter->mapped)++;
+		}
+	}
+}
+
+static int fiemap_worker(void * arg)
+{
+	struct pcs_int_request * orig_ireq = arg;
+	struct pcs_dentry_info * di;
+	struct fiemap_iterator * fiter;
+	struct iov_iter it;
+	u64 pos, end;
+
+	fiter = kmalloc(sizeof(struct fiemap_iterator), GFP_KERNEL);
+	if (fiter == NULL) {
+		pcs_set_local_error(&orig_ireq->error, PCS_ERR_NOMEM);
+		ireq_complete(orig_ireq);
+		return 0;
+	}
+
+	fiter->orig_ireq = orig_ireq;
+	init_waitqueue_head(&fiter->wq);
+	di = orig_ireq->dentry;
+	ireq_init(di, &fiter->ireq);
+	fiter->ireq.type = PCS_IREQ_API;
+	fiter->ireq.apireq.req = &fiter->apireq;
+	fiter->ireq.completion_data.parent = NULL;
+	fiter->ireq.complete_cb = fiemap_iter_done;
+	fiter->apireq.datasource = fiter;
+	fiter->apireq.get_iter = fiemap_get_iter;
+	fiter->apireq.complete = NULL;
+	fiter->buffer = kvmalloc(PCS_FIEMAP_BUFSIZE, GFP_KERNEL);
+	if (fiter->buffer == NULL) {
+		pcs_set_local_error(&orig_ireq->error, PCS_ERR_NOMEM);
+		ireq_complete(orig_ireq);
+		kfree(fiter);
+		return 0;
+	}
+	fiter->fiemap_max = orig_ireq->apireq.aux;
+	orig_ireq->apireq.req->get_iter(orig_ireq->apireq.req->datasource, 0, &it);
+	fiter->mapped = &((struct fiemap*)it.data)->fm_mapped_extents;
+
+	pos = fiter->orig_ireq->apireq.req->pos;
+	end = pos + fiter->orig_ireq->apireq.req->size;
+	while (pos < end) {
+		struct pcs_int_request * sreq;
+
+		if (fiter->fiemap_max && *fiter->mapped >= fiter->fiemap_max)
+			break;
+
+		fiter->apireq.pos = pos;
+		fiter->apireq.size = end - pos;
+		fiter->ireq.ts = ktime_get();
+
+		sreq = ireq_alloc(di);
+		if (!sreq) {
+			pcs_set_local_error(&orig_ireq->error, PCS_ERR_NOMEM);
+			goto out;
+		}
+
+		atomic_set(&fiter->ireq.iocount, 0);
+
+		sreq->dentry = di;
+		sreq->type = PCS_IREQ_IOCHUNK;
+		sreq->iochunk.map = NULL;
+		sreq->iochunk.flow = pcs_flow_record(&di->mapping.ftab, 0, pos, end-pos, &di->cluster->maps.ftab);
+		sreq->iochunk.cmd = PCS_REQ_T_FIEMAP;
+		sreq->iochunk.cs_index = 0;
+		sreq->iochunk.chunk = pos;
+		sreq->iochunk.offset = 0;
+		sreq->iochunk.dio_offset = 0;
+		sreq->iochunk.size = end - pos;
+		sreq->iochunk.csl = NULL;
+		sreq->iochunk.banned_cs.val = 0;
+		sreq->iochunk.msg.destructor = NULL;
+		sreq->iochunk.msg.rpc = NULL;
+
+		pcs_sreq_attach(sreq, &fiter->ireq);
+		sreq->complete_cb = pcs_sreq_complete;
+
+		pcs_cc_process_ireq_chunk(sreq);
+
+		wait_event(fiter->wq, atomic_read(&fiter->ireq.iocount) == 0);
+
+		if (pcs_if_error(&fiter->ireq.error)) {
+			fiter->orig_ireq->error = fiter->ireq.error;
+			goto out;
+		}
+
+		if (fiter->ireq.apireq.aux)
+			xfer_fiemap_extents(fiter, pos, fiter->buffer, fiter->ireq.apireq.aux);
+
+		pos += fiter->apireq.size;
+	}
+
+out:
+	kvfree(fiter->buffer);
+	kfree(fiter);
+	ireq_complete(orig_ireq);
+	return 0;
 }
 
 void pcs_cc_process_ireq_chunk(struct pcs_int_request *ireq)
@@ -167,12 +356,30 @@ static noinline void __pcs_cc_process_ireq_rw(struct pcs_int_request *ireq)
 		ireq_complete(ireq);
 }
 
+static void process_ireq_fiemap(struct pcs_int_request * ireq)
+{
+	struct task_struct * tsk;
+
+	tsk = kthread_run(fiemap_worker, ireq, "fiemap-worker");
+
+	if (IS_ERR(tsk)) {
+		pcs_set_local_error(&ireq->error, PCS_ERR_NOMEM);
+		ireq_complete(ireq);
+	}
+}
+
 static void pcs_cc_process_ireq_ioreq(struct pcs_int_request *ireq)
 {
 	if (ireq->apireq.req->type == PCS_REQ_T_SYNC) {
 		map_inject_flush_req(ireq);
 		return;
 	}
+
+	if (ireq->apireq.req->type == PCS_REQ_T_FIEMAP) {
+		process_ireq_fiemap(ireq);
+		return;
+	}
+
 	if (ireq->apireq.req->type != PCS_REQ_T_READ &&
 	    ireq->apireq.req->type != PCS_REQ_T_WRITE &&
 	    ireq->apireq.req->type != PCS_REQ_T_WRITE_HOLE &&

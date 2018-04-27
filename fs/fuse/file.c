@@ -3803,6 +3803,7 @@ static int fuse_request_fiemap(struct inode *inode, u32 cur_max,
 	if (IS_ERR(req))
 		return PTR_ERR(req);
 
+	req->io_inode = inode;
 	req->in.h.opcode = FUSE_IOCTL;
 	req->in.h.nodeid = get_node_id(inode);
 

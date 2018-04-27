@@ -89,6 +89,12 @@ void ireq_handle_hole(struct pcs_int_request *ireq)
 	BUG_ON(ireq->type != PCS_IREQ_IOCHUNK);
 	BUG_ON(pcs_req_direction(ireq->iochunk.cmd));
 
+	if (ireq->iochunk.cmd == PCS_REQ_T_FIEMAP) {
+		ireq->completion_data.parent->apireq.aux = 0;
+		ireq_complete(ireq);
+		return;
+	}
+
 	len = ireq->iochunk.size;
 	offset = 0;
 	iov_iter_init_bad(&it);
