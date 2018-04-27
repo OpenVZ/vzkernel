@@ -317,12 +317,15 @@ void pcs_cs_update_stat(struct pcs_cs *cs, u32 iolat, u32 netlat, int op_type)
 static void cs_response_done(struct pcs_msg *msg)
 {
 	struct pcs_int_request *ireq = ireq_from_msg(msg);
+	unsigned int resp_size = 0;
 
 	if (!pcs_if_error(&msg->error)) {
 		struct pcs_cs_iohdr *h = (struct pcs_cs_iohdr *)msg_inline_head(msg->response);
 
 		if (h->sync.misc & PCS_CS_IO_CACHED)
 			ireq->flags |= IREQ_F_CACHED;
+
+		resp_size = h->hdr.len - sizeof(struct pcs_cs_iohdr);
 
 		pcs_map_verify_sync_state(ireq->dentry, ireq, msg);
 	} else {
@@ -335,6 +338,10 @@ static void cs_response_done(struct pcs_msg *msg)
 	if (msg->rpc) {
 		pcs_rpc_put(msg->rpc);
 		msg->rpc = NULL;
+	}
+	if (ireq->type == PCS_IREQ_IOCHUNK && ireq->iochunk.cmd == PCS_REQ_T_FIEMAP) {
+		ireq->completion_data.parent->apireq.aux = resp_size;
+		ireq->completion_data.parent->apireq.req->pos = ireq->iochunk.chunk;
 	}
 	ireq_complete(ireq);
 }
@@ -360,7 +367,7 @@ static void cs_get_read_response_iter(struct pcs_msg *msg, int offset, struct io
 
 			offset -= (unsigned int)sizeof(struct pcs_cs_iohdr);
 			ar->get_iter(ar->datasource, ireq->iochunk.dio_offset, it);
-			iov_iter_truncate(it, ireq->iochunk.size);
+			iov_iter_truncate(it, msg->size - sizeof(struct pcs_cs_iohdr));
 			iov_iter_advance(it, offset);
 
 			TRACE("return msg:%p->size:%d off:%d it_len:%ld\n\n", msg, msg->size, offset, iov_iter_count(it));
@@ -384,6 +391,7 @@ static struct pcs_msg *cs_get_hdr(struct pcs_rpc *ep, struct pcs_rpc_hdr *h)
 {
 	struct pcs_msg *msg, *resp;
 	struct pcs_rpc_hdr *req_h;
+	struct pcs_int_request *ireq;
 
 	if (!RPC_IS_RESPONSE(h->type))
 		return NULL;
@@ -399,6 +407,18 @@ static struct pcs_msg *cs_get_hdr(struct pcs_rpc *ep, struct pcs_rpc_hdr *h)
 
 	req_h = (struct pcs_rpc_hdr *)msg_inline_head(msg);
 	if (req_h->type != (h->type & ~PCS_RPC_DIRECTION))
+		return NULL;
+
+	ireq = msg->private2;
+	if (ireq->type != PCS_IREQ_IOCHUNK)
+		return NULL;
+	if (ireq->iochunk.cmd == PCS_REQ_T_READ) {
+		if (ireq->iochunk.size + sizeof(struct pcs_cs_iohdr) != msg->size)
+			return NULL;
+	} else if (ireq->iochunk.cmd == PCS_REQ_T_FIEMAP) {
+		if (PCS_FIEMAP_BUFSIZE + sizeof(struct pcs_cs_iohdr) < msg->size)
+			return NULL;
+	} else
 		return NULL;
 
 	resp = pcs_rpc_alloc_input_msg(ep, sizeof(struct pcs_cs_iohdr));
