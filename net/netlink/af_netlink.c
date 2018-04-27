@@ -1526,7 +1526,7 @@ static int netlink_setsockopt(struct socket *sock, int level, int optname,
 		return -EFAULT;
 
 	switch (optname) {
-	case NETLINK_REPAIR:
+	case NETLINK_REPAIR2:
 		if (val)
 			nlk->flags |= NETLINK_F_REPAIR;
 		else
