@@ -413,10 +413,10 @@ static struct pcs_msg *cs_get_hdr(struct pcs_rpc *ep, struct pcs_rpc_hdr *h)
 	if (ireq->type != PCS_IREQ_IOCHUNK)
 		return NULL;
 	if (ireq->iochunk.cmd == PCS_REQ_T_READ) {
-		if (ireq->iochunk.size + sizeof(struct pcs_cs_iohdr) != msg->size)
+		if (ireq->iochunk.size + sizeof(struct pcs_cs_iohdr) != h->len)
 			return NULL;
 	} else if (ireq->iochunk.cmd == PCS_REQ_T_FIEMAP) {
-		if (PCS_FIEMAP_BUFSIZE + sizeof(struct pcs_cs_iohdr) < msg->size)
+		if (PCS_FIEMAP_BUFSIZE + sizeof(struct pcs_cs_iohdr) < h->len)
 			return NULL;
 	} else
 		return NULL;
