@@ -831,6 +831,61 @@ int se_dev_set_emulate_fua_read(struct se_device *dev, int flag)
 }
 EXPORT_SYMBOL(se_dev_set_emulate_fua_read);
 
+ssize_t se_dev_blkio_cgroup_show(struct se_device *dev, char *page)
+{
+	int rb;
+
+	read_lock(&dev->dev_attrib_lock);
+	if (dev->dev_attrib.blk_css) {
+		rb = cgroup_path(dev->dev_attrib.blk_css->cgroup,
+						page, PAGE_SIZE - 1);
+		if (rb < 0)
+			goto out;
+		if (rb == 0)
+			rb = strlen(page);
+		page[rb] = '\n';
+		page[rb + 1] = 0;
+		rb++;
+	} else
+		rb = 0;
+out:
+	read_unlock(&dev->dev_attrib_lock);
+
+	return rb;
+}
+EXPORT_SYMBOL(se_dev_blkio_cgroup_show);
+
+ssize_t se_dev_blkio_cgroup_store(struct se_device *dev,
+		const char *page, size_t count)
+{
+	struct cgroup_subsys_state *css, *pcss;
+	int ret;
+	u32 val;
+
+	ret = kstrtou32(page, 0, &val);
+	if (ret < 0)
+		return ret;
+
+	if (val > 1)
+		return -EINVAL;
+	if (val == 1)
+		css = task_get_css(current, blkio_subsys_id);
+	else
+		css = NULL;
+
+	write_lock(&dev->dev_attrib_lock);
+	pcss = dev->dev_attrib.blk_css;
+	dev->dev_attrib.blk_css = css;
+	write_unlock(&dev->dev_attrib_lock);
+
+	if (pcss)
+		css_put(pcss);
+
+	return count;
+}
+EXPORT_SYMBOL(se_dev_blkio_cgroup_store);
+
+
 int se_dev_set_emulate_write_cache(struct se_device *dev, int flag)
 {
 	if (flag != 0 && flag != 1) {
@@ -1507,6 +1562,7 @@ struct se_device *target_alloc_device(struct se_hba *hba, const char *name)
 	INIT_LIST_HEAD(&dev->state_list);
 	INIT_LIST_HEAD(&dev->qf_cmd_list);
 	INIT_LIST_HEAD(&dev->g_dev_node);
+	rwlock_init(&dev->dev_attrib_lock);
 	spin_lock_init(&dev->execute_task_lock);
 	spin_lock_init(&dev->delayed_cmd_lock);
 	spin_lock_init(&dev->dev_reservation_lock);
@@ -1555,6 +1611,7 @@ struct se_device *target_alloc_device(struct se_hba *hba, const char *name)
 	dev->dev_attrib.unmap_zeroes_data =
 				DA_UNMAP_ZEROES_DATA_DEFAULT;
 	dev->dev_attrib.max_write_same_len = DA_MAX_WRITE_SAME_LEN;
+	dev->dev_attrib.blk_css = NULL;
 
 	xcopy_lun = &dev->xcopy_lun;
 	xcopy_lun->lun_se_dev = dev;
@@ -1727,6 +1784,10 @@ void target_free_device(struct se_device *dev)
 
 	if (dev->transport->free_prot)
 		dev->transport->free_prot(dev);
+
+	if (dev->dev_attrib.blk_css)
+		css_put(dev->dev_attrib.blk_css);
+	dev->dev_attrib.blk_css = NULL;
 
 	dev->transport->free_device(dev);
 }

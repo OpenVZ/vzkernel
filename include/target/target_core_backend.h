@@ -143,6 +143,10 @@ int	se_dev_set_max_sectors(struct se_device *, u32);
 int	se_dev_set_optimal_sectors(struct se_device *, u32);
 int	se_dev_set_block_size(struct se_device *, u32);
 
+ssize_t se_dev_blkio_cgroup_show(struct se_device *dev, char *page);
+ssize_t se_dev_blkio_cgroup_store(struct se_device *dev,
+		const char *page, size_t count);
+
 sector_t target_to_linux_sector(struct se_device *dev, sector_t lb);
 bool target_configure_unmap_from_queue(struct se_dev_attrib *attrib,
 				       struct request_queue *q);

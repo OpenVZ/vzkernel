@@ -35,6 +35,7 @@
 #include <linux/genhd.h>
 #include <linux/file.h>
 #include <linux/module.h>
+#include <linux/cgroup.h>
 #include <scsi/scsi.h>
 #include <scsi/scsi_host.h>
 #include <asm/unaligned.h>
@@ -680,6 +681,7 @@ iblock_execute_rw(struct se_cmd *cmd, struct scatterlist *sgl, u32 sgl_nents,
 	unsigned bio_cnt;
 	int rw = 0;
 	int i;
+	struct cgroup_subsys_state *blk_css = NULL;
 
 	if (data_direction == DMA_TO_DEVICE) {
 		struct iblock_dev *ib_dev = IBLOCK_DEV(dev);
@@ -713,9 +715,17 @@ iblock_execute_rw(struct se_cmd *cmd, struct scatterlist *sgl, u32 sgl_nents,
 		return 0;
 	}
 
+	read_lock(&dev->dev_attrib_lock);
+	blk_css = dev->dev_attrib.blk_css;
+	if (blk_css)
+		css_get(blk_css);
+	read_unlock(&dev->dev_attrib_lock);
+
 	bio = iblock_get_bio(cmd, block_lba, sgl_nents);
 	if (!bio)
 		goto fail_free_ibr;
+	if (blk_css)
+		bio_associate_blkcg(bio, blk_css);
 
 	bio_start = bio;
 	bio_list_init(&list);
@@ -740,6 +750,8 @@ iblock_execute_rw(struct se_cmd *cmd, struct scatterlist *sgl, u32 sgl_nents,
 			bio = iblock_get_bio(cmd, block_lba, sg_num);
 			if (!bio)
 				goto fail_put_bios;
+			if (blk_css)
+				bio_associate_blkcg(bio, blk_css);
 
 			atomic_inc(&ibr->pending);
 			bio_list_add(&list, bio);
@@ -759,12 +771,18 @@ iblock_execute_rw(struct se_cmd *cmd, struct scatterlist *sgl, u32 sgl_nents,
 
 	iblock_submit_bios(&list, rw);
 	iblock_complete_cmd(cmd);
+
+	if (blk_css)
+		css_put(blk_css);
+
 	return 0;
 
 fail_put_bios:
 	while ((bio = bio_list_pop(&list)))
 		bio_put(bio);
 fail_free_ibr:
+	if (blk_css)
+		css_put(blk_css);
 	kfree(ibr);
 fail:
 	return TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
@@ -842,6 +860,25 @@ static bool iblock_get_write_cache(struct se_device *dev)
 }
 
 DEF_TB_DEFAULT_ATTRIBS(iblock);
+static ssize_t iblock_dev_show_attr_blkio_cgroup(
+       struct se_dev_attrib *da,
+       char *page)
+{
+       return se_dev_blkio_cgroup_show(da->da_dev, page);
+}
+
+static ssize_t iblock_dev_store_attr_blkio_cgroup(
+       struct se_dev_attrib *da,
+       const char *page,
+       size_t count)
+{
+       return se_dev_blkio_cgroup_store(da->da_dev, page, count);
+}
+
+static struct target_backend_dev_attrib_attribute iblock_dev_attrib_blkio_cgroup =
+		__CONFIGFS_EATTR(blkio_cgroup, S_IRUGO | S_IWUSR,
+		iblock_dev_show_attr_blkio_cgroup,
+		iblock_dev_store_attr_blkio_cgroup);
 
 static struct configfs_attribute *iblock_backend_dev_attrs[] = {
 	&iblock_dev_attrib_emulate_model_alias.attr,
@@ -874,6 +911,7 @@ static struct configfs_attribute *iblock_backend_dev_attrs[] = {
 	&iblock_dev_attrib_unmap_granularity_alignment.attr,
 	&iblock_dev_attrib_unmap_zeroes_data.attr,
 	&iblock_dev_attrib_max_write_same_len.attr,
+	&iblock_dev_attrib_blkio_cgroup.attr,
 	NULL,
 };
 
