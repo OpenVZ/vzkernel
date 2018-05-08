@@ -1036,6 +1036,62 @@ static ssize_t block_size_store(struct config_item *item,
 	return count;
 }
 
+static ssize_t blkio_cgroup_show(struct config_item *item, char *page)
+{
+	struct se_dev_attrib *da = to_attrib(item);
+	struct se_device *dev = da->da_dev;
+	int rb;
+
+	read_lock(&dev->dev_attrib_lock);
+	if (dev->dev_attrib.blk_css) {
+		rb = cgroup_path(dev->dev_attrib.blk_css->cgroup,
+				page, PAGE_SIZE - 1);
+		if (rb < 0)
+			goto out;
+		if (rb == 0)
+			rb = strlen(page);
+		page[rb] = '\n';
+		page[rb + 1] = 0;
+		rb++;
+	} else
+		rb = 0;
+out:
+	read_unlock(&dev->dev_attrib_lock);
+
+	return rb;
+}
+
+static ssize_t blkio_cgroup_store(struct config_item *item,
+		const char *page, size_t count)
+{
+	struct se_dev_attrib *da = to_attrib(item);
+	struct se_device *dev = da->da_dev;
+	struct cgroup_subsys_state *css, *pcss;
+	int ret;
+	u32 val;
+
+	ret = kstrtou32(page, 0, &val);
+	if (ret < 0)
+		return ret;
+
+	if (val > 1)
+		return -EINVAL;
+	if (val == 1)
+		css = task_get_css(current, blkio_subsys_id);
+	else
+		css = NULL;
+
+	write_lock(&dev->dev_attrib_lock);
+	pcss = dev->dev_attrib.blk_css;
+	dev->dev_attrib.blk_css = css;
+	write_unlock(&dev->dev_attrib_lock);
+
+	if (pcss)
+		css_put(pcss);
+
+	return count;
+}
+
 static ssize_t alua_support_show(struct config_item *item, char *page)
 {
 	struct se_dev_attrib *da = to_attrib(item);
@@ -1086,6 +1142,7 @@ CONFIGFS_ATTR(, unmap_granularity);
 CONFIGFS_ATTR(, unmap_granularity_alignment);
 CONFIGFS_ATTR(, unmap_zeroes_data);
 CONFIGFS_ATTR(, max_write_same_len);
+CONFIGFS_ATTR(, blkio_cgroup);
 CONFIGFS_ATTR_RO(, alua_support);
 CONFIGFS_ATTR_RO(, pgr_support);
 
@@ -1127,6 +1184,7 @@ struct configfs_attribute *sbc_attrib_attrs[] = {
 	&attr_unmap_granularity_alignment,
 	&attr_unmap_zeroes_data,
 	&attr_max_write_same_len,
+	&attr_blkio_cgroup,
 	&attr_alua_support,
 	&attr_pgr_support,
 	NULL,
