@@ -700,6 +700,7 @@ struct se_dev_attrib {
 	u32		max_bytes_per_io;
 	struct se_device *da_dev;
 	struct config_group da_group;
+	struct cgroup_subsys_state *blk_css;
 };
 
 struct se_port_stat_grps {
@@ -812,6 +813,7 @@ struct se_device {
 	atomic_t		dev_ordered_sync;
 	atomic_t		dev_qf_count;
 	u32			export_count;
+	rwlock_t		dev_attrib_lock;
 	spinlock_t		delayed_cmd_lock;
 	spinlock_t		execute_task_lock;
 	spinlock_t		dev_reservation_lock;
