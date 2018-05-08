@@ -13,6 +13,7 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/notifier.h>
+#include <linux/ratelimit.h>
 #include <linux/reboot.h>
 #include <linux/ve.h>
 #include <asm/uaccess.h>
@@ -61,6 +62,35 @@ void set_cpuid_faulting(bool enable)
 }
 EXPORT_SYMBOL(set_cpuid_faulting);
 
+static void cpuid_override_info(struct cpuid_override_table  *t)
+{
+	char buf[128];
+	size_t pos;
+
+	if (!t) {
+		pr_info_ratelimited("cpuid_override: flushed\n");
+		return;
+	}
+
+	rcu_read_lock();
+	for (pos = 0; pos < t->size; pos++) {
+		struct cpuid_override_entry *e = &t->entries[pos];
+		if (e->has_count) {
+			snprintf(buf, sizeof(buf),
+				 "cpuid_override: 0x%08x 0x%08x: "
+				 "0x%08x 0x%08x 0x%08x 0x%08x",
+				 e->op, e->count, e->eax, e->ebx, e->ecx, e->edx);
+		} else {
+			snprintf(buf, sizeof(buf),
+				 "cpuid_override: 0x%08x: "
+				 "0x%08x 0x%08x 0x%08x 0x%08x",
+				 e->op, e->eax, e->ebx, e->ecx, e->edx);
+		}
+		pr_info_ratelimited("%s\n", buf);
+	}
+	rcu_read_unlock();
+}
+
 static void cpuid_override_update(struct cpuid_override_table *new_table)
 {
 	struct cpuid_override_table *old_table;
@@ -69,6 +99,8 @@ static void cpuid_override_update(struct cpuid_override_table *new_table)
 	old_table = rcu_access_pointer(cpuid_override);
 	rcu_assign_pointer(cpuid_override, new_table);
 	spin_unlock(&cpuid_override_lock);
+
+	cpuid_override_info(new_table);
 
 	if (old_table)
 		kfree_rcu(old_table, rcu_head);
