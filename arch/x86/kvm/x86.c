@@ -134,6 +134,10 @@ module_param(vector_hashing, bool, S_IRUGO);
 
 static bool __read_mostly backwards_tsc_observed = false;
 
+bool __read_mostly enable_vmware_backdoor = false;
+module_param(enable_vmware_backdoor, bool, S_IRUGO);
+EXPORT_SYMBOL_GPL(enable_vmware_backdoor);
+
 #define KVM_NR_SHARED_MSRS 16
 
 struct kvm_shared_msrs_global {
