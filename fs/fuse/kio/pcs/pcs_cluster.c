@@ -393,7 +393,18 @@ static void pcs_cc_process_ireq_ioreq(struct pcs_int_request *ireq)
 
 static void ireq_process_(struct pcs_int_request *ireq)
 {
+	struct fuse_conn * fc = container_of(ireq->cc, struct pcs_fuse_cluster, cc)->fc;
+
+
 	TRACE("enter " DENTRY_FMT " type=%u\n", DENTRY_ARGS(ireq->dentry), ireq->type);
+
+	/* If fuse connection is dead we shoud fail all requests in flight */
+	if (unlikely(!fc->initialized || fc->conn_error)) {
+		ireq->flags |= IREQ_F_FATAL;
+		pcs_set_local_error(&ireq->error, PCS_ERR_UNAVAIL);
+		ireq_complete(ireq);
+		return;
+	}
 
 	switch (ireq->type) {
 	case PCS_IREQ_NOOP:
