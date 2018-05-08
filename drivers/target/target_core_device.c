@@ -774,6 +774,7 @@ struct se_device *target_alloc_device(struct se_hba *hba, const char *name)
 	INIT_LIST_HEAD(&dev->delayed_cmd_list);
 	INIT_LIST_HEAD(&dev->state_list);
 	INIT_LIST_HEAD(&dev->qf_cmd_list);
+	rwlock_init(&dev->dev_attrib_lock);
 	spin_lock_init(&dev->execute_task_lock);
 	spin_lock_init(&dev->delayed_cmd_lock);
 	spin_lock_init(&dev->dev_reservation_lock);
@@ -822,6 +823,7 @@ struct se_device *target_alloc_device(struct se_hba *hba, const char *name)
 	dev->dev_attrib.unmap_zeroes_data =
 				DA_UNMAP_ZEROES_DATA_DEFAULT;
 	dev->dev_attrib.max_write_same_len = DA_MAX_WRITE_SAME_LEN;
+	dev->dev_attrib.blk_css = NULL;
 
 	xcopy_lun = &dev->xcopy_lun;
 	rcu_assign_pointer(xcopy_lun->lun_se_dev, dev);
@@ -1056,6 +1058,10 @@ void target_free_device(struct se_device *dev)
 
 	if (dev->transport->free_prot)
 		dev->transport->free_prot(dev);
+
+	if (dev->dev_attrib.blk_css)
+		css_put(dev->dev_attrib.blk_css);
+	dev->dev_attrib.blk_css = NULL;
 
 	dev->transport->free_device(dev);
 }
