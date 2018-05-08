@@ -1235,6 +1235,14 @@ static void init_vmcb(struct vcpu_svm *svm)
 	set_exception_intercept(svm, MC_VECTOR);
 	set_exception_intercept(svm, AC_VECTOR);
 	set_exception_intercept(svm, DB_VECTOR);
+	/*
+	 * Guest access to VMware backdoor ports could legitimately
+	 * trigger #GP because of TSS I/O permission bitmap.
+	 * We intercept those #GP and allow access to them anyway
+	 * as VMware does.
+	 */
+	if (enable_vmware_backdoor)
+		set_exception_intercept(svm, GP_VECTOR);
 
 	set_intercept(svm, INTERCEPT_INTR);
 	set_intercept(svm, INTERCEPT_NMI);
@@ -2255,6 +2263,23 @@ static void svm_fpu_activate(struct kvm_vcpu *vcpu)
 static int nm_interception(struct vcpu_svm *svm)
 {
 	svm_fpu_activate(&svm->vcpu);
+	return 1;
+}
+
+static int gp_interception(struct vcpu_svm *svm)
+{
+	struct kvm_vcpu *vcpu = &svm->vcpu;
+	u32 error_code = svm->vmcb->control.exit_info_1;
+	int er;
+
+	WARN_ON_ONCE(!enable_vmware_backdoor);
+
+	er = emulate_instruction(vcpu,
+		EMULTYPE_VMWARE | EMULTYPE_NO_UD_ON_FAIL);
+	if (er == EMULATE_USER_EXIT)
+		return 0;
+	else if (er != EMULATE_DONE)
+		kvm_queue_exception_e(vcpu, GP_VECTOR, error_code);
 	return 1;
 }
 
@@ -4169,6 +4194,7 @@ static int (*const svm_exit_handlers[])(struct vcpu_svm *svm) = {
 	[SVM_EXIT_EXCP_BASE + NM_VECTOR]	= nm_interception,
 	[SVM_EXIT_EXCP_BASE + MC_VECTOR]	= mc_interception,
 	[SVM_EXIT_EXCP_BASE + AC_VECTOR]	= ac_interception,
+	[SVM_EXIT_EXCP_BASE + GP_VECTOR]	= gp_interception,
 	[SVM_EXIT_INTR]				= intr_interception,
 	[SVM_EXIT_NMI]				= nmi_interception,
 	[SVM_EXIT_SMI]				= nop_on_interception,
