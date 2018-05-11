@@ -2193,6 +2193,14 @@ static int netlink_setsockopt(struct socket *sock, int level, int optname,
 
 	switch (optname) {
 	case NETLINK_REPAIR:
+		/* Hide the command handler unless "criu" process
+		 * resumes a Container
+		 */
+		if (likely(!get_exec_env()->is_pseudosuper ||
+			   strcmp(current->comm, "criu")))
+			return -ENOPROTOOPT;
+		/* fall through */
+	case NETLINK_REPAIR2:
 		if (val)
 			nlk->flags |= NETLINK_F_REPAIR;
 		else

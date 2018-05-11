@@ -111,7 +111,10 @@ struct nlmsgerr {
 #define NETLINK_LISTEN_ALL_NSID		8
 #define NETLINK_LIST_MEMBERSHIPS	9
 #define NETLINK_CAP_ACK			10
+
+/* intersects with mainstream NETLINK_EXT_ACK */
 #define NETLINK_REPAIR			11
+#define NETLINK_REPAIR2			127
 
 struct nl_pktinfo {
 	__u32	group;
