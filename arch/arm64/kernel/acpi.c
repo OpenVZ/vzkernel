@@ -40,7 +40,7 @@ int acpi_pci_disabled = 1;	/* skip ACPI PCI scan and IRQ initialization */
 EXPORT_SYMBOL(acpi_pci_disabled);
 
 static bool param_acpi_off __initdata;
-static bool param_acpi_on __initdata;
+static bool param_acpi_on __initdata = true;
 static bool param_acpi_force __initdata;
 
 static int __init parse_acpi(char *arg)
