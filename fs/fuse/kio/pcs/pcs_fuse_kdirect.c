@@ -48,7 +48,7 @@ static void process_pcs_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 		fc->conn_error = 1;
 		goto out;
 	}
-	pfc = kmalloc(sizeof(*pfc), GFP_NOIO);
+	pfc = kvmalloc(sizeof(*pfc), GFP_KERNEL);
 	if (!pfc) {
 		fc->conn_error = 1;
 		goto out;
