@@ -178,12 +178,9 @@ int nfsd_reply_cache_init(void)
 	if (!drc_slab)
 		goto out_nomem;
 
-	drc_hashtbl = kcalloc(hashsize, sizeof(*drc_hashtbl), GFP_KERNEL);
-	if (!drc_hashtbl) {
-		drc_hashtbl = vzalloc(hashsize * sizeof(*drc_hashtbl));
-		if (!drc_hashtbl)
-			goto out_nomem;
-	}
+	drc_hashtbl = kvzalloc(hashsize * sizeof(*drc_hashtbl), GFP_KERNEL);
+	if (!drc_hashtbl)
+		goto out_nomem;
 
 	for (i = 0; i < hashsize; i++) {
 		INIT_LIST_HEAD(&drc_hashtbl[i].lru_head);
