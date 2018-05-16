@@ -507,7 +507,8 @@ EXPORT_SYMBOL_GPL(fuse_unregister_kio);
 static struct fuse_kio_ops *fuse_kio_get(struct fuse_conn *fc, char *name)
 {
 	struct fuse_kio_ops *ops;
-
+	bool once = true;
+again:
 	mutex_lock(&fuse_mutex);
 	list_for_each_entry(ops, &fuse_kios_list, list) {
 		if (!strncmp(name, ops->name, FUSE_KIO_NAME) &&
@@ -518,6 +519,11 @@ static struct fuse_kio_ops *fuse_kio_get(struct fuse_conn *fc, char *name)
 		}
 	}
 	mutex_unlock(&fuse_mutex);
+	if (once) {
+		once = false;
+		request_module("fuse_kio_%s", name);
+		goto again;
+	}
 	return NULL;
 }
 
