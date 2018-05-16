@@ -547,5 +547,5 @@ int pcs_cluster_init(struct pcs_fuse_cluster *pfc, struct workqueue_struct *wq,
 void pcs_cluster_fini(struct pcs_fuse_cluster *pfc)
 {
 	pcs_cc_fini(&pfc->cc);
-	kfree(pfc);
+	kvfree(pfc);
 }
