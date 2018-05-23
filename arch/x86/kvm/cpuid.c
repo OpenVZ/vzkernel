@@ -73,10 +73,8 @@ u64 kvm_supported_xcr0(void)
 #define KVM_CPUID_BIT_AVX512_4VNNIW     2
 #define KVM_CPUID_BIT_AVX512_4FMAPS     3
 #define KVM_CPUID_BIT_SPEC_CTRL		26
-#define KVM_CPUID_BIT_STIBP		27
-
-/* CPUID[eax=0x80000008].ebx */
-#define KVM_CPUID_BIT_IBPB_SUPPORT	12
+#define KVM_CPUID_BIT_INTEL_STIBP	27
+#define KVM_CPUID_BIT_SSBD		31
 
 #define KF(x) bit(KVM_CPUID_BIT_##x)
 
@@ -388,11 +386,11 @@ static inline int __do_cpuid_ent(struct kvm_cpuid_entry2 *entry, u32 function,
 	/* cpuid 7.0.edx*/
 	const u32 kvm_cpuid_7_0_edx_x86_features =
 		KF(AVX512_4VNNIW) | KF(AVX512_4FMAPS) |
-		KF(SPEC_CTRL) | KF(STIBP);
+		KF(SPEC_CTRL) | KF(INTEL_STIBP) | KF(SSBD);
 
 	/* cpuid 0x80000008.ebx */
-	const u32 kvm_cpuid_80000008_ebx_x86_features =
-		KF(IBPB_SUPPORT);
+	const u32 kvm_cpuid_8000_0008_ebx_x86_features =
+		F(IBPB) | F(IBRS) | F(STIBP);
 
 	/* all calls to cpuid_count() should be made on the same cpu */
 	get_cpu();
@@ -474,7 +472,7 @@ static inline int __do_cpuid_ent(struct kvm_cpuid_entry2 *entry, u32 function,
 			entry->ecx &= kvm_cpuid_7_0_ecx_x86_features;
 			cpuid_mask(&entry->ecx, CPUID_7_ECX);
 			entry->edx &= kvm_cpuid_7_0_edx_x86_features;
-			entry->edx &= get_scattered_cpuid_leaf(7, 0, CPUID_EDX);
+			cpuid_mask(&entry->edx, CPUID_7_EDX);
 		} else {
 			entry->ebx = 0;
 			entry->ecx = 0;
@@ -624,8 +622,8 @@ static inline int __do_cpuid_ent(struct kvm_cpuid_entry2 *entry, u32 function,
 		if (!g_phys_as)
 			g_phys_as = phys_as;
 		entry->eax = g_phys_as | (virt_as << 8);
-		entry->ebx &= kvm_cpuid_80000008_ebx_x86_features;
-		entry->ebx &= get_scattered_cpuid_leaf(0x80000008, 0, CPUID_EBX);
+		entry->ebx &= kvm_cpuid_8000_0008_ebx_x86_features;
+		cpuid_mask(&entry->ebx, CPUID_8000_0008_EBX);
 		entry->edx = 0;
 		break;
 	}

@@ -9,6 +9,10 @@
 
 #include <asm/tlb.h>
 
+#ifdef CONFIG_X86
+#include <asm/spec_ctrl.h>
+#endif
+
 #include <trace/events/power.h>
 
 #include "../sched/sched.h"
@@ -50,9 +54,19 @@ static noinline int __cpuidle cpu_idle_poll(void)
 	trace_cpu_idle_rcuidle(0, smp_processor_id());
 	local_irq_enable();
 	stop_critical_timings();
+
+#ifdef CONFIG_X86
+	spec_ctrl_ibrs_off();
+#endif
+
 	while (!tif_need_resched() &&
 		(cpu_idle_force_poll || tick_check_broadcast_expired()))
 		cpu_relax();
+
+#ifdef CONFIG_X86
+	spec_ctrl_ibrs_on();
+#endif
+
 	start_critical_timings();
 	trace_cpu_idle_rcuidle(PWR_EVENT_EXIT, smp_processor_id());
 	rcu_idle_exit();

@@ -199,11 +199,10 @@
 
 #define X86_FEATURE_RETPOLINE_AMD (7*32+13) /* AMD Retpoline mitigation for Spectre variant 2 */
 #define X86_FEATURE_INTEL_PT	( 7*32+15) /* Intel Processor Trace */
-#define X86_FEATURE_AVX512_4VNNIW (7*32+16) /* AVX-512 Neural Network Instructions */
-#define X86_FEATURE_AVX512_4FMAPS (7*32+17) /* AVX-512 Multiply Accumulation Single precision */
-#define X86_FEATURE_SPEC_CTRL	( 7*32+19) /* Control Speculation Control */
-#define X86_FEATURE_IBPB_SUPPORT (7*32+20) /* Indirect Branch Prediction Barrier Support */
+
 #define X86_FEATURE_IBP_DISABLE ( 7*32+21) /* Old AMD Indirect Branch Predictor Disable */
+#define X86_FEATURE_SPEC_STORE_BYPASS_DISABLE	(7*32+23) /* "" Disable Speculative Store Bypass. */
+#define X86_FEATURE_AMD_SSBD			(7*32+24) /* "" AMD SSBD implementation */
 
 /* Virtualization flags: Linux defined, word 8 */
 #define X86_FEATURE_TPR_SHADOW  (8*32+ 0) /* Intel TPR Shadow */
@@ -258,6 +257,14 @@
 #define X86_FEATURE_CQM_MBM_TOTAL (12*32+ 1) /* LLC Total MBM monitoring */
 #define X86_FEATURE_CQM_MBM_LOCAL (12*32+ 2) /* LLC Local MBM monitoring */
 
+/* AMD-defined CPU features, CPUID level 0x80000008 (EBX), word 13 */
+#define X86_FEATURE_CLZERO              (13*32+ 0) /* CLZERO instruction */
+#define X86_FEATURE_IRPERF              (13*32+ 1) /* Instructions Retired Count */
+#define X86_FEATURE_XSAVEERPTR          (13*32+ 2) /* Always save/restore FP error pointers */
+#define X86_FEATURE_IBPB		(13*32+12) /* Indirect Branch Prediction Barrier */
+#define X86_FEATURE_IBRS		(13*32+14) /* Indirect Branch Restricted Speculation */
+#define X86_FEATURE_STIBP		(13*32+15) /* Single Thread Indirect Branch Predictors */
+
 /* AMD-defined CPU features, CPUID level 0x80000007 (ebx), word 17 */
 #define X86_FEATURE_OVERFLOW_RECOV (17*32+0) /* MCA overflow recovery support */
 #define X86_FEATURE_SUCCOR	(17*32+1) /* Uncorrectable error containment and recovery */
@@ -291,16 +298,25 @@
 #define X86_FEATURE_AVX512VBMI	(16*32+ 1) /* AVX512 Vector Bit Manipulation instructions*/
 #define X86_FEATURE_AVX512_VPOPCNTDQ (16*32+14) /* POPCNT for vectors of DW/QW */
 
+/* Intel-defined CPU features, CPUID level 0x00000007:0 (EDX), word 18 */
+#define X86_FEATURE_AVX512_4VNNIW	(18*32+ 2) /* AVX-512 Neural Network Instructions */
+#define X86_FEATURE_AVX512_4FMAPS	(18*32+ 3) /* AVX-512 Multiply Accumulation Single precision */
+#define X86_FEATURE_SPEC_CTRL		(18*32+26) /* Speculation Control (IBRS + IBPB) */
+#define X86_FEATURE_INTEL_STIBP		(18*32+27) /* Single Thread Indirect Branch Predictors */
+#define X86_FEATURE_ARCH_CAPABILITIES	(18*32+29) /* IA32_ARCH_CAPABILITIES MSR (Intel) */
+#define X86_FEATURE_SSBD		(18*32+31) /* Speculative Store Bypass Disable */
+
 /*
  * BUG word(s)
  */
-#define X86_BUG(x)		(NCAPINTS*32 + (x))
+#define X86_BUG(x)			(NCAPINTS*32 + (x))
 
-#define X86_BUG_F00F		X86_BUG(0) /* Intel F00F */
-#define X86_BUG_FDIV		X86_BUG(1) /* FPU FDIV */
-#define X86_BUG_COMA		X86_BUG(2) /* Cyrix 6x86 coma */
-#define X86_BUG_AMD_TLB_MMATCH	X86_BUG(3) /* AMD Erratum 383 */
-#define X86_BUG_AMD_APIC_C1E	X86_BUG(4) /* AMD Erratum 400 */
+#define X86_BUG_F00F			X86_BUG(0) /* Intel F00F */
+#define X86_BUG_FDIV			X86_BUG(1) /* FPU FDIV */
+#define X86_BUG_COMA			X86_BUG(2) /* Cyrix 6x86 coma */
+#define X86_BUG_AMD_TLB_MMATCH		X86_BUG(3) /* AMD Erratum 383 */
+#define X86_BUG_AMD_APIC_C1E		X86_BUG(4) /* AMD Erratum 400 */
+#define X86_BUG_SPEC_STORE_BYPASS	X86_BUG(17) /* CPU is affected by speculative store bypass attack */
 
 #if defined(__KERNEL__) && !defined(__ASSEMBLY__)
 
@@ -327,6 +343,7 @@ enum cpuid_leafs
 	CPUID_8000_000A_EDX,
 	CPUID_7_ECX,
 	CPUID_8000_0007_EBX,
+	CPUID_7_EDX,
 };
 
 extern const char * const x86_cap_flags[NCAPINTS*32];
@@ -391,6 +408,8 @@ extern const char * const x86_power_flags[32];
 	set_cpu_cap(&boot_cpu_data, bit);	\
 	set_bit(bit, (unsigned long *)cpu_caps_set);	\
 } while (0)
+
+#define setup_force_cpu_bug(bit) setup_force_cpu_cap(bit)
 
 #define cpu_has_fpu		boot_cpu_has(X86_FEATURE_FPU)
 #define cpu_has_de		boot_cpu_has(X86_FEATURE_DE)
