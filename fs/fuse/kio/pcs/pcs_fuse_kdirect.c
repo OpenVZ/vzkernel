@@ -843,16 +843,16 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, 
 		if (inarg->offset >= di->fileinfo.attr.size)
 			inarg->mode &= ~FALLOC_FL_ZERO_RANGE;
 
-		if (inarg->mode & FALLOC_FL_KEEP_SIZE) {
-			if (inarg->offset + inarg->length > di->fileinfo.attr.size)
-				inarg->length = di->fileinfo.attr.size - inarg->offset;
-		}
-
 		if (inarg->mode & (FALLOC_FL_ZERO_RANGE|FALLOC_FL_PUNCH_HOLE)) {
 			if ((inarg->offset & (PAGE_SIZE - 1)) || (inarg->length & (PAGE_SIZE - 1))) {
 				r->req.out.h.error = -EINVAL;
 				goto error;
 			}
+		}
+
+		if (inarg->mode & FALLOC_FL_KEEP_SIZE) {
+			if (inarg->offset + inarg->length > di->fileinfo.attr.size)
+				inarg->length = di->fileinfo.attr.size - inarg->offset;
 		}
 
 		ret = pcs_fuse_prep_rw(r);
