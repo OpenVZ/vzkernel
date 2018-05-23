@@ -141,15 +141,14 @@ void kpcs_conn_abort(struct fuse_conn *fc)
 }
 
 static int kpcs_probe(struct fuse_conn *fc, char *name)
-
 {
-	printk("%s TODO IMPLEMENT check fuse_conn args here!\n", __FUNCTION__);
-	if (!strncmp(name, kio_pcs_ops.name, FUSE_KIO_NAME))
+	if (IS_PSTORAGE(fc->sb))
 		return 1;
 
+	pr_err("FUSE: kio_pcs: kdirect is only available for"
+	       "pstorage/vstorage fuse mount\n");
 	return 0;
 }
-
 
 static int fuse_pcs_getfileinfo(struct fuse_conn *fc, struct file *file,
 				struct pcs_mds_fileinfo *info)
@@ -1292,7 +1291,7 @@ err:
 static struct fuse_kio_ops kio_pcs_ops = {
 	.name		= "pcs",
 	.owner		= THIS_MODULE,
-	.probe		= kpcs_probe, /*TODO: check sb->dev name */
+	.probe		= kpcs_probe,
 
 	.conn_init	= kpcs_conn_init,
 	.conn_fini	= kpcs_conn_fini,
