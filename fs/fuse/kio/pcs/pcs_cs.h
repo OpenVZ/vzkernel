@@ -36,7 +36,6 @@ enum {
 	CS_SF_FAILED,
 	CS_SF_BLACKLISTED,
 	CS_SF_ACTIVE,
-	CS_SF_CONGESTED,
 };
 
 struct pcs_cs {
@@ -66,14 +65,13 @@ struct pcs_cs {
 	struct list_head	cong_queue;
 	int			cong_queue_len;
 	struct list_head	active_list;
-	int			active_list_len;
 
 	pcs_cs_io_prio_t	io_prio;
 	pcs_cs_net_prio_t	net_prio;
 	u8			mds_flags;
 	abs_time_t		io_prio_stamp;
 
-	struct list_head		flow_lru;
+	struct list_head	flow_lru;
 	int			nflows;
 
 	unsigned long		state;
@@ -104,24 +102,20 @@ static inline void pcs_cs_init_cong_queue(struct pcs_cs *cs)
 {
 	INIT_LIST_HEAD(&cs->cong_queue);
 	cs->cong_queue_len = 0;
-	clear_bit(CS_SF_CONGESTED, &cs->state);
 }
 
 static inline void pcs_cs_init_active_list(struct pcs_cs *cs)
 {
 	INIT_LIST_HEAD(&cs->active_list);
-	cs->active_list_len = 0;
 }
 
-static inline void pcs_cs_flush_cong_queue(struct pcs_cs *cs)
+static inline void pcs_cs_activate_cong_queue(struct pcs_cs *cs)
 {
 	assert_spin_locked(&cs->lock);
-	list_splice_tail(&cs->cong_queue, &cs->active_list);
-	cs->active_list_len += cs->cong_queue_len;
-	pcs_cs_init_cong_queue(cs);
+	list_splice_tail_init(&cs->cong_queue, &cs->active_list);
 }
 
-void pcs_cs_cong_enqueue(struct pcs_int_request *ireq, struct pcs_cs *cs);
+int pcs_cs_cong_enqueue_cond(struct pcs_int_request *ireq, struct pcs_cs *cs);
 
 #define PCS_CS_HASH_SIZE 1024
 
@@ -132,6 +126,7 @@ struct pcs_cs_set {
 	struct delayed_work	bl_work;
 	unsigned int		ncs;
 	spinlock_t		lock;
+	atomic64_t		csl_serno_gen;
 };
 
 void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq);

@@ -911,8 +911,8 @@ struct pcs_cs_list* cslist_alloc( struct pcs_cs_set *css, struct pcs_cs_info *re
 	atomic_set(&cs_list->refcnt, 1);
 	atomic_set(&cs_list->seq_read_in_flight, 0);
 	cs_list->read_index = -1;
-	cs_list->cong_index = -1 ;
 	cs_list->flags = 0;
+	cs_list->serno = atomic64_inc_return(&css->csl_serno_gen);
 	cs_list->blacklist = 0;
 	cs_list->read_timeout = (read_tout * HZ) / 1000;
 	cs_list->write_timeout = (write_tout * HZ) / 1000;
@@ -1380,7 +1380,7 @@ static void pcs_cs_deaccount(struct pcs_int_request *ireq, struct pcs_cs * cs, i
 	spin_unlock(&cs->lock);
 }
 
-static void pcs_cs_wakeup(struct pcs_cs * cs, int requeue)
+static void pcs_cs_wakeup(struct pcs_cs * cs)
 {
 	struct pcs_int_request * sreq;
 	struct pcs_map_entry * map;
@@ -1393,10 +1393,31 @@ static void pcs_cs_wakeup(struct pcs_cs * cs, int requeue)
 			break;
 		}
 		sreq = list_first_entry(&cs->active_list, struct pcs_int_request, list);
-		BUG_ON(!cs->active_list_len);
 		list_del_init(&sreq->list);
-		cs->active_list_len--;
+		cs->cong_queue_len--;
 		spin_unlock(&cs->lock);
+
+		if (sreq->type == PCS_IREQ_TOKEN) {
+			struct pcs_int_request * parent = sreq->token.parent;
+			int do_execute = 0;
+
+			if (parent == NULL) {
+				ireq_destroy(sreq);
+				continue;
+			}
+
+			spin_lock(&parent->completion_data.child_lock);
+			if (sreq->token.parent) {
+				parent->tok_reserved |= (1ULL << sreq->token.cs_index);
+				list_del(&sreq->token.tok_link);
+				do_execute = list_empty(&parent->tok_list);
+			}
+			spin_unlock(&parent->completion_data.child_lock);
+			ireq_destroy(sreq);
+			if (!do_execute)
+				continue;
+			sreq = parent;
+		}
 
 		if (sreq->type != PCS_IREQ_FLUSH) {
 			map = pcs_find_get_map(sreq->dentry, sreq->iochunk.chunk +
@@ -1412,7 +1433,7 @@ static void pcs_cs_wakeup(struct pcs_cs * cs, int requeue)
 							 preq->apireq.req->pos, preq->apireq.req->size,
 							 &sreq->cc->maps.ftab);
 				}
-				map_submit(map, sreq, requeue);
+				map_submit(map, sreq);
 			} else {
 				map_queue_on_limit(sreq);
 			}
@@ -1422,58 +1443,33 @@ static void pcs_cs_wakeup(struct pcs_cs * cs, int requeue)
 				pcs_clear_error(&sreq->error);
 				ireq_complete(sreq);
 			} else
-				map_submit(map, sreq, requeue);
+				map_submit(map, sreq);
 		}
 	}
 }
 
 static int __pcs_cs_still_congested(struct pcs_cs * cs)
 {
+	if (!list_empty(&cs->active_list))
+		list_splice_tail_init(&cs->active_list, &cs->cong_queue);
 
-	assert_spin_locked(&cs->lock);
-
-	if (!list_empty(&cs->active_list)) {
-		BUG_ON(!cs->active_list_len);
-		list_splice_tail(&cs->active_list, &cs->cong_queue);
-		cs->cong_queue_len += cs->active_list_len;
-		set_bit(CS_SF_CONGESTED, &cs->state);
-		pcs_cs_init_active_list(cs);
-	} else if (list_empty(&cs->cong_queue)) {
+	if (list_empty(&cs->cong_queue)) {
 		BUG_ON(cs->cong_queue_len);
-		BUG_ON(test_bit(CS_SF_CONGESTED, &cs->state));
 		return 0;
-	} else {
-		BUG_ON(cs->active_list_len);
 	}
 
-	if (cs->in_flight >= cs->eff_cwnd)
-		return 0;
-
-	/* Exceptional situation: CS is not congested, but still has congestion queue.
-	 * This can happen f.e. when CS was congested with reads and has some writes in queue,
-	 * then all reads are complete, but writes cannot be sent because of congestion
-	 * on another CSes in chain. This is absolutely normal, we just should queue
-	 * not on this CS, but on actualle congested CSes. With current algorithm of preventing
-	 * reordering, we did a mistake and queued on node which used to be congested.
-	 * Solution for now is to retry sending with flag "requeue" set, it will requeue
-	 * requests on another nodes. It is difficult to say how frequently this happens,
-	 * so we spit out message. If we will have lots of them in logs, we have to select
-	 * different solution.
-	 */
-
-	TRACE("CS#" NODE_FMT " is free, but still has queue", NODE_ARGS(cs->id));
-	pcs_cs_flush_cong_queue(cs);
-
-	return 1;
+	return cs->in_flight < cs->eff_cwnd;
 }
+
 static int pcs_cs_still_congested(struct pcs_cs * cs)
 {
-	int ret;
+	int res;
 
 	spin_lock(&cs->lock);
-	ret = __pcs_cs_still_congested(cs);
+	res = __pcs_cs_still_congested(cs);
 	spin_unlock(&cs->lock);
-	return ret;
+
+	return res;
 }
 
 void pcs_deaccount_ireq(struct pcs_int_request *ireq, pcs_error_t * err)
@@ -1518,7 +1514,7 @@ void pcs_deaccount_ireq(struct pcs_int_request *ireq, pcs_error_t * err)
 
 	if (ireq->type == PCS_IREQ_FLUSH || (pcs_req_direction(ireq->iochunk.cmd) && !(ireq->flags & IREQ_F_MAPPED))) {
 		int i;
-		int requeue = 0;
+		int requeue;
 
 		for (i = csl->nsrv - 1; i >= 0; i--) {
 			if (!match_id || csl->cs[i].cslink.cs->id.val == match_id)
@@ -1538,14 +1534,14 @@ void pcs_deaccount_ireq(struct pcs_int_request *ireq, pcs_error_t * err)
 
 		do {
 			for (i = csl->nsrv - 1; i >= 0; i--)
-				pcs_cs_wakeup(csl->cs[i].cslink.cs, requeue);
+				pcs_cs_wakeup(csl->cs[i].cslink.cs);
 
 			requeue = 0;
 			for (i = csl->nsrv - 1; i >= 0; i--)
-				requeue += pcs_cs_still_congested(csl->cs[i].cslink.cs);
+				requeue |= pcs_cs_still_congested(csl->cs[i].cslink.cs);
 		} while (requeue);
 	} else {
-		int requeue = 0;
+		int requeue;
 		struct pcs_cs * rcs = csl->cs[ireq->iochunk.cs_index].cslink.cs;
 
 		if (ireq->flags & IREQ_F_SEQ_READ) {
@@ -1557,7 +1553,7 @@ void pcs_deaccount_ireq(struct pcs_int_request *ireq, pcs_error_t * err)
 		pcs_cs_deaccount(ireq, rcs, error);
 
 		do {
-			pcs_cs_wakeup(rcs, requeue);
+			pcs_cs_wakeup(rcs);
 
 			requeue = pcs_cs_still_congested(rcs);
 		} while (requeue);
@@ -1771,6 +1767,10 @@ pcs_ireq_split(struct pcs_int_request *ireq, unsigned int iochunk, int noalign)
 	sreq->iochunk.map = ireq->iochunk.map;
 	if (sreq->iochunk.map)
 		__pcs_map_get(sreq->iochunk.map);
+	INIT_LIST_HEAD(&sreq->tok_list);
+	BUG_ON(!list_empty(&ireq->tok_list));
+	sreq->tok_reserved = ireq->tok_reserved;
+	sreq->tok_serno = ireq->tok_serno;
 	sreq->iochunk.flow = pcs_flow_get(ireq->iochunk.flow);
 	sreq->iochunk.cmd = ireq->iochunk.cmd;
 	sreq->iochunk.role = ireq->iochunk.role;
@@ -1803,7 +1803,7 @@ pcs_ireq_split(struct pcs_int_request *ireq, unsigned int iochunk, int noalign)
 	return sreq;
 }
 
-static int pcs_cslist_submit_read(struct pcs_int_request *ireq, struct pcs_cs_list * csl, int requeue)
+static int pcs_cslist_submit_read(struct pcs_int_request *ireq, struct pcs_cs_list * csl)
 {
 	struct pcs_cluster_core *cc = ireq->cc;
 	struct pcs_cs * cs;
@@ -1872,9 +1872,8 @@ static int pcs_cslist_submit_read(struct pcs_int_request *ireq, struct pcs_cs_li
 	spin_unlock(&cs->lock);
 
 	if (allot < 0) {
-		pcs_cs_cong_enqueue(ireq, cs);
-
-		return 0;
+		if (pcs_cs_cong_enqueue_cond(ireq, cs))
+			return 0;
 	}
 
 	if (allot < ireq->dentry->cluster->cfg.curr.lmss)
@@ -1924,77 +1923,131 @@ static int pcs_cslist_submit_read(struct pcs_int_request *ireq, struct pcs_cs_li
 			return 0;
 
 		if (allot < 0) {
-			pcs_cs_cong_enqueue(ireq, cs);
-			return 0;
+			if (pcs_cs_cong_enqueue_cond(ireq, cs))
+				return 0;
 		}
 	}
 }
 
-static int pcs_cslist_submit_write(struct pcs_int_request *ireq, struct pcs_cs_list * csl, int requeue)
+static int ireq_queue_tokens(struct pcs_int_request * ireq, struct pcs_cs_list * csl)
+{
+       int i;
+       int queued = 0;
+       struct list_head drop;
+       struct pcs_int_request * toks[csl->nsrv];
+
+       INIT_LIST_HEAD(&drop);
+
+       for (i = 0; i < csl->nsrv; i++) {
+               struct pcs_int_request * ntok;
+
+	       /* ireq is private; no need to lock tok_* fields */
+
+               if (ireq->tok_reserved & (1ULL << i)) {
+		       toks[i] = NULL;
+                       continue;
+	       }
+
+               ntok = ireq_alloc(ireq->dentry);
+               BUG_ON(!ntok);
+               ntok->type = PCS_IREQ_TOKEN;
+               ntok->token.parent = ireq;
+               ntok->token.cs_index = i;
+	       toks[i] = ntok;
+       }
+
+       /* Publish tokens in CS queues */
+       spin_lock(&ireq->completion_data.child_lock);
+       for (i = 0; i < csl->nsrv; i++) {
+	       if (toks[i]) {
+		       struct pcs_cs * cs = csl->cs[i].cslink.cs;
+		       if (pcs_cs_cong_enqueue_cond(toks[i], cs)) {
+			       list_add(&toks[i]->token.tok_link, &ireq->tok_list);
+			       toks[i] = NULL;
+			       queued = 1;
+		       } else {
+			       list_add(&toks[i]->token.tok_link, &drop);
+		       }
+	       }
+       }
+       spin_unlock(&ireq->completion_data.child_lock);
+
+       while (!list_empty(&drop)) {
+	       struct pcs_int_request * tok = list_first_entry(&drop, struct pcs_int_request, token.tok_link);
+	       list_del(&tok->token.tok_link);
+	       ireq_destroy(tok);
+       }
+       return queued;
+}
+
+void ireq_drop_tokens(struct pcs_int_request * ireq)
+{
+	assert_spin_locked(&ireq->completion_data.child_lock);
+
+	while (!list_empty(&ireq->tok_list)) {
+		struct pcs_int_request * tok = list_first_entry(&ireq->tok_list, struct pcs_int_request, token.tok_link);
+		tok->token.parent = NULL;
+		list_del(&tok->token.tok_link);
+        }
+}
+
+static int pcs_cslist_submit_write(struct pcs_int_request *ireq, struct pcs_cs_list * csl)
 {
 	struct pcs_cs * cs;
 	unsigned int iochunk;
 	int i;
-	int congested_idx;
-	int max_excess;
 	int allot;
+	struct pcs_cs * congested_cs = NULL;
+	u64 congested = 0;
 
 	ireq->iochunk.cs_index = 0;
 	iochunk = ireq->dentry->cluster->cfg.curr.lmss;
 
 restart:
-	congested_idx = -1;
-	max_excess = 0;
 	allot = ireq->iochunk.size;
+	if (csl->serno != ireq->tok_serno)
+		ireq->tok_reserved = 0;
+	BUG_ON(!list_empty(&ireq->tok_list));
 
 	for (i = 0; i < csl->nsrv; i++) {
-		int cs_allot;
-
 		cs = csl->cs[i].cslink.cs;
 		if (cs_is_blacklisted(cs)) {
 			map_remote_error(ireq->iochunk.map, cs->blacklist_reason, cs->id.val);
 			TRACE("Write to " MAP_FMT " blocked by blacklist error %d, CS" NODE_FMT,
 			      MAP_ARGS(ireq->iochunk.map), cs->blacklist_reason, NODE_ARGS(cs->id));
+			spin_lock(&ireq->completion_data.child_lock);
+			ireq_drop_tokens(ireq);
+			spin_unlock(&ireq->completion_data.child_lock);
 			return -1;
 		}
 		spin_lock(&cs->lock);
 		cs_cwnd_use_or_lose(cs);
-		cs_allot = cs->eff_cwnd - cs->in_flight;
 		spin_unlock(&cs->lock);
 
-		if (cs_allot < 0) {
-			cs_allot = -cs_allot;
-			if (cs_allot > max_excess) {
-				congested_idx = i;
-				max_excess = cs_allot;
-			}
-		} else {
-			if (cs_allot < allot)
-				allot = cs_allot;
-		}
+		if (cs->in_flight > cs->eff_cwnd && !(ireq->tok_reserved & (1ULL << i))) {
+			congested_cs = cs;
+			congested |= (1ULL << i);
+		} else
+			ireq->tok_reserved |= (1ULL << i);
 
 		if (!(test_bit(CS_SF_LOCAL, &cs->state)))
 			iochunk = ireq->dentry->cluster->cfg.curr.wmss;
 	}
 
-	if (congested_idx >= 0) {
-		int cur_cong_idx = READ_ONCE(csl->cong_index);
-
-
-		if (cur_cong_idx >= 0 && !requeue &&
-		    (READ_ONCE(csl->cs[cur_cong_idx].cslink.cs->cong_queue_len) ||
-		     READ_ONCE(csl->cs[cur_cong_idx].cslink.cs->active_list_len)))
-			congested_idx = cur_cong_idx;
-		else
-			WRITE_ONCE(csl->cong_index, congested_idx);
-
-		pcs_cs_cong_enqueue(ireq, csl->cs[congested_idx].cslink.cs);
-		return 0;
-	}
-	WRITE_ONCE(csl->cong_index, -1);
-
 	if (allot < ireq->dentry->cluster->cfg.curr.lmss)
 		allot = ireq->dentry->cluster->cfg.curr.lmss;
+
+	if (congested) {
+		int queued;
+
+		ireq->tok_serno = csl->serno;
+		if (congested & (congested - 1))
+			queued = ireq_queue_tokens(ireq, csl);
+		else
+			queued = pcs_cs_cong_enqueue_cond(ireq, congested_cs);
+		if (queued)
+			return 0;
+	}
 
 	for (;;) {
 		struct pcs_int_request * sreq = ireq;
@@ -2048,60 +2101,54 @@ restart:
 	}
 }
 
-static int pcs_cslist_submit_flush(struct pcs_int_request *ireq, struct pcs_cs_list * csl, int requeue)
+static int pcs_cslist_submit_flush(struct pcs_int_request *ireq, struct pcs_cs_list * csl)
 {
 	struct pcs_cs * cs;
 	int i;
-	int congested_idx;
-	int max_excess;
 	int allot = PCS_CS_FLUSH_WEIGHT;
 	struct pcs_msg * msg;
 	struct pcs_cs_iohdr * ioh;
+	u64 congested = 0;
+	struct pcs_cs * congested_cs = NULL;
 
-	congested_idx = -1;
-	max_excess = 0;
+	if (csl->serno != ireq->tok_serno)
+		ireq->tok_reserved = 0;
+	BUG_ON(!list_empty(&ireq->tok_list));
 
 	for (i = 0; i < csl->nsrv; i++) {
-		int cs_allot;
-
 		cs = csl->cs[i].cslink.cs;
 
 		if (cs_is_blacklisted(cs)) {
 			map_remote_error(ireq->flushreq.map, cs->blacklist_reason, cs->id.val);
 			TRACE("Flush to " MAP_FMT " blocked by blacklist error %d, CS" NODE_FMT,
 			      MAP_ARGS(ireq->flushreq.map), cs->blacklist_reason, NODE_ARGS(cs->id));
+			spin_lock(&ireq->completion_data.child_lock);
+			ireq_drop_tokens(ireq);
+			spin_unlock(&ireq->completion_data.child_lock);
 			return -1;
 		}
 
 		spin_lock(&cs->lock);
 		cs_cwnd_use_or_lose(cs);
-		cs_allot = cs->eff_cwnd - cs->in_flight;
 		spin_unlock(&cs->lock);
-
-		if (cs_allot < 0) {
-			cs_allot = -cs_allot;
-			if (cs_allot > max_excess) {
-				congested_idx = i;
-				max_excess = cs_allot;
-			}
-		}
+		if (cs->in_flight > cs->eff_cwnd && !(ireq->tok_reserved & (1ULL << i))) {
+			congested_cs = cs;
+			congested |= (1ULL << i);
+		} else
+			ireq->tok_reserved |= (1ULL << i);
 	}
 
-	if (congested_idx >= 0) {
-		int cur_cong_idx = READ_ONCE(csl->cong_index);
+	if (congested) {
+		int queued;
 
-		if (cur_cong_idx >= 0 && !requeue &&
-		    (READ_ONCE(csl->cs[cur_cong_idx].cslink.cs->cong_queue_len) ||
-		     READ_ONCE(csl->cs[cur_cong_idx].cslink.cs->active_list_len)))
-			congested_idx = cur_cong_idx;
+		ireq->tok_serno = csl->serno;
+		if (congested & (congested - 1))
+			queued = ireq_queue_tokens(ireq, csl);
 		else
-			WRITE_ONCE(csl->cong_index, congested_idx);
-
-		pcs_cs_cong_enqueue(ireq, csl->cs[congested_idx].cslink.cs);
-		return 0;
+			queued = pcs_cs_cong_enqueue_cond(ireq, congested_cs);
+		if (queued)
+			return 0;
 	}
-
-	WRITE_ONCE(csl->cong_index, -1);
 
 	for (i = 0; i < csl->nsrv; i++) {
 		cs = csl->cs[i].cslink.cs;
@@ -2137,25 +2184,25 @@ static int pcs_cslist_submit_flush(struct pcs_int_request *ireq, struct pcs_cs_l
 
 
 
-int pcs_cslist_submit(struct pcs_int_request *ireq, struct pcs_cs_list *csl, int requeue)
+int pcs_cslist_submit(struct pcs_int_request *ireq, struct pcs_cs_list *csl)
 {
 	BUG_ON(!atomic_read(&csl->refcnt));
 
 	if (ireq->type == PCS_IREQ_FLUSH) {
-		return pcs_cslist_submit_flush(ireq, csl, requeue);
+		return pcs_cslist_submit_flush(ireq, csl);
 	} else if (!pcs_req_direction(ireq->iochunk.cmd)) {
-		return pcs_cslist_submit_read(ireq, csl, requeue);
+		return pcs_cslist_submit_read(ireq, csl);
 	} else if (ireq->flags & IREQ_F_MAPPED) {
 		BUG();
 		return -EIO;
 	} else {
-		return pcs_cslist_submit_write(ireq, csl, requeue);
+		return pcs_cslist_submit_write(ireq, csl);
 	}
 	BUG();
 	return -EIO;
 }
 
-void map_submit(struct pcs_map_entry * m, struct pcs_int_request *ireq, int requeue)
+void map_submit(struct pcs_map_entry * m, struct pcs_int_request *ireq)
 {
 	int direction;
 	int done;
@@ -2235,7 +2282,7 @@ void map_submit(struct pcs_map_entry * m, struct pcs_int_request *ireq, int requ
 		if (direction && ireq->type != PCS_IREQ_FLUSH)
 			ireq->dentry->local_mtime = get_real_time_ms();
 
-		done = !pcs_cslist_submit(ireq, csl, requeue);
+		done = !pcs_cslist_submit(ireq, csl);
 		cslist_put(csl);
 	} while (!done);
 }
@@ -2690,7 +2737,7 @@ void process_flush_req(struct pcs_int_request *ireq)
 		goto done;
 	}
 	spin_unlock(&m->lock);
-	map_submit(m, ireq, 0);
+	map_submit(m, ireq);
 	return;
 
 done:
@@ -2888,6 +2935,8 @@ static int prepare_map_flush_ireq(struct pcs_map_entry *m, struct pcs_int_reques
 	}
 	prepare_map_flush_msg(m, sreq, msg);
 	sreq->type = PCS_IREQ_FLUSH;
+	INIT_LIST_HEAD(&sreq->tok_list);
+	sreq->tok_reserved = 0;
 	sreq->ts = ktime_get();
 	sreq->completion_data.parent = NULL;
 	sreq->flushreq.map = m;
@@ -2922,7 +2971,7 @@ static void sync_timer_work(struct work_struct *w)
 		map_sync_work_add(m, HZ);
 	} else {
 		if (sreq)
-			map_submit(m, sreq, 0);
+			map_submit(m, sreq);
 	}
 	/* Counter part from map_sync_work_add */
 	pcs_map_put(m);
