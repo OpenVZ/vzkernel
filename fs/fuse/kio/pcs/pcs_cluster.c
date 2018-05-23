@@ -18,6 +18,7 @@
 #include "../../fuse_i.h"
 
 void pcs_cc_process_ireq_chunk(struct pcs_int_request *ireq);
+static void ireq_process_(struct pcs_int_request *ireq);
 
 static inline int is_file_inline(struct pcs_dentry_info *di)
 {
@@ -226,6 +227,9 @@ static int fiemap_worker(void * arg)
 
 		sreq->dentry = di;
 		sreq->type = PCS_IREQ_IOCHUNK;
+		INIT_LIST_HEAD(&sreq->tok_list);
+		sreq->tok_reserved = 0;
+		sreq->tok_serno = 0;
 		sreq->iochunk.map = NULL;
 		sreq->iochunk.flow = pcs_flow_record(&di->mapping.ftab, 0, pos, end-pos, &di->cluster->maps.ftab);
 		sreq->iochunk.cmd = PCS_REQ_T_FIEMAP;
@@ -280,7 +284,7 @@ void pcs_cc_process_ireq_chunk(struct pcs_int_request *ireq)
 		pcs_map_put(ireq->iochunk.map);
 	ireq->iochunk.map = map;
 
-	map_submit(map, ireq, 0);
+	map_submit(map, ireq);
 }
 
 /* TODO Remove noinline in production */
@@ -325,6 +329,9 @@ static noinline void __pcs_cc_process_ireq_rw(struct pcs_int_request *ireq)
 
 		sreq->dentry = di;
 		sreq->type = PCS_IREQ_IOCHUNK;
+		INIT_LIST_HEAD(&sreq->tok_list);
+		sreq->tok_reserved = 0;
+		sreq->tok_serno = 0;
 		sreq->iochunk.map = NULL;
 		sreq->iochunk.flow = pcs_flow_get(fl);
 		sreq->iochunk.cmd = ireq->apireq.req->type;
@@ -391,6 +398,25 @@ static void pcs_cc_process_ireq_ioreq(struct pcs_int_request *ireq)
 	return __pcs_cc_process_ireq_rw(ireq);
 }
 
+static void process_ireq_token(struct pcs_int_request * ireq)
+{
+	struct pcs_int_request * parent = ireq->token.parent;
+
+        if (parent) {
+		int do_execute = 0;
+
+		spin_lock(&parent->completion_data.child_lock);
+		if (ireq->token.parent) {
+			ireq_drop_tokens(parent);
+			do_execute = 1;
+		}
+		spin_unlock(&parent->completion_data.child_lock);
+		if (do_execute)
+			ireq_process_(parent);
+        }
+        ireq_destroy(ireq);
+}
+
 static void ireq_process_(struct pcs_int_request *ireq)
 {
 	struct fuse_conn * fc = container_of(ireq->cc, struct pcs_fuse_cluster, cc)->fc;
@@ -424,6 +450,9 @@ static void ireq_process_(struct pcs_int_request *ireq)
 		break;
 	case PCS_IREQ_CUSTOM:
 		ireq->custom.action(ireq);
+		break;
+	case PCS_IREQ_TOKEN:
+		process_ireq_token(ireq);
 		break;
 	default:
 		BUG();
