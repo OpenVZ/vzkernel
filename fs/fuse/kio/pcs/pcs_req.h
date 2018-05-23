@@ -28,6 +28,8 @@ enum
 	PCS_IREQ_CUSTOM = 16,	/* generic request */
 	PCS_IREQ_WRAID	= 17,	/* compound raid6 write request */
 	PCS_IREQ_RRAID	= 18,	/* compound raid6 read request */
+	PCS_IREQ_GETMAP = 19,   /* get mapping for kdirect mode */
+	PCS_IREQ_TOKEN  = 20,   /* dummy token to allocate congestion window */
 	PCS_IREQ_KAPI	= 65	/* IO request from kernel API */
 };
 
@@ -86,6 +88,13 @@ struct pcs_int_request
 	*/
 	struct work_struct worker;
 
+	/* The following tok_* fields are sequenced by completion_data.child_lock
+	 * NOTE: cs->lock can be taken under this lock.
+	 */
+	struct list_head	tok_list;
+	u64                     tok_reserved;
+	u64                     tok_serno;
+
 	union {
 		struct {
 			struct pcs_map_entry	*map;
@@ -111,6 +120,12 @@ struct pcs_int_request
 			struct pcs_cs_list	*csl;
 			struct pcs_msg		*msg;
 		} flushreq;
+
+		struct {
+			struct pcs_int_request  *parent;
+			struct list_head	tok_link;
+			int			cs_index;
+		} token;
 
 		struct {
 			u64			offset;
