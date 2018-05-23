@@ -715,11 +715,11 @@ iblock_execute_rw(struct se_cmd *cmd, struct scatterlist *sgl, u32 sgl_nents,
 		return 0;
 	}
 
-	read_lock(&dev->dev_attrib_lock);
-	blk_css = dev->dev_attrib.blk_css;
+	read_lock(&dev->dev_param_lock);
+	blk_css = dev->dev_param.blk_css;
 	if (blk_css)
 		css_get(blk_css);
-	read_unlock(&dev->dev_attrib_lock);
+	read_unlock(&dev->dev_param_lock);
 
 	bio = iblock_get_bio(cmd, block_lba, sgl_nents);
 	if (!bio)
@@ -860,22 +860,23 @@ static bool iblock_get_write_cache(struct se_device *dev)
 }
 
 DEF_TB_DEFAULT_ATTRIBS(iblock);
+
 static ssize_t iblock_dev_show_attr_blkio_cgroup(
-       struct se_dev_attrib *da,
+       struct se_dev_param *da,
        char *page)
 {
        return se_dev_blkio_cgroup_show(da->da_dev, page);
 }
 
 static ssize_t iblock_dev_store_attr_blkio_cgroup(
-       struct se_dev_attrib *da,
+       struct se_dev_param *da,
        const char *page,
        size_t count)
 {
        return se_dev_blkio_cgroup_store(da->da_dev, page, count);
 }
 
-static struct target_backend_dev_attrib_attribute iblock_dev_attrib_blkio_cgroup =
+static struct target_backend_dev_param_attribute iblock_dev_attrib_blkio_cgroup =
 		__CONFIGFS_EATTR(blkio_cgroup, S_IRUGO | S_IWUSR,
 		iblock_dev_show_attr_blkio_cgroup,
 		iblock_dev_store_attr_blkio_cgroup);
@@ -911,6 +912,9 @@ static struct configfs_attribute *iblock_backend_dev_attrs[] = {
 	&iblock_dev_attrib_unmap_granularity_alignment.attr,
 	&iblock_dev_attrib_unmap_zeroes_data.attr,
 	&iblock_dev_attrib_max_write_same_len.attr,
+	NULL,
+};
+static struct configfs_attribute *iblock_backend_dev_param[] = {
 	&iblock_dev_attrib_blkio_cgroup.attr,
 	NULL,
 };
@@ -943,6 +947,7 @@ static int __init iblock_module_init(void)
 
 	target_core_setup_sub_cits(&iblock_template);
 	tbc->tb_dev_attrib_cit.ct_attrs = iblock_backend_dev_attrs;
+	tbc->tb_dev_param_cit.ct_attrs = iblock_backend_dev_param;
 
 	return transport_subsystem_register(&iblock_template);
 }

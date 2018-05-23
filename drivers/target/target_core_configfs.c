@@ -598,6 +598,20 @@ TB_CIT_SETUP(dev_attrib, &target_core_dev_attrib_ops, NULL, NULL);
 
 /* End functions for struct config_item_type tb_dev_attrib_cit */
 
+/* Start functions for struct config_item_type tb_dev_param_cit */
+
+CONFIGFS_EATTR_STRUCT(target_core_dev_param, se_dev_param);
+CONFIGFS_EATTR_OPS(target_core_dev_param, se_dev_param, da_group);
+
+static struct configfs_item_operations target_core_dev_param_ops = {
+	.show_attribute		= target_core_dev_param_attr_show,
+	.store_attribute	= target_core_dev_param_attr_store,
+};
+
+TB_CIT_SETUP(dev_param, &target_core_dev_param_ops, NULL, NULL);
+
+/* End functions for struct config_item_type tb_dev_param_cit */
+
 /*  Start functions for struct config_item_type tb_dev_wwn_cit */
 
 CONFIGFS_EATTR_STRUCT(target_core_dev_wwn, t10_wwn);
@@ -2655,7 +2669,7 @@ static struct config_group *target_core_make_subdev(
 
 	dev_cg = &dev->dev_group;
 
-	dev_cg->default_groups = kmalloc(sizeof(struct config_group *) * 6,
+	dev_cg->default_groups = kmalloc(sizeof(struct config_group *) * 7,
 			GFP_KERNEL);
 	if (!dev_cg->default_groups)
 		goto out_free_device;
@@ -2663,6 +2677,8 @@ static struct config_group *target_core_make_subdev(
 	config_group_init_type_name(dev_cg, name, &t->tb_cits.tb_dev_cit);
 	config_group_init_type_name(&dev->dev_attrib.da_group, "attrib",
 			&t->tb_cits.tb_dev_attrib_cit);
+	config_group_init_type_name(&dev->dev_param.da_group, "param",
+			&t->tb_cits.tb_dev_param_cit);
 	config_group_init_type_name(&dev->dev_pr_group, "pr",
 			&t->tb_cits.tb_dev_pr_cit);
 	config_group_init_type_name(&dev->t10_wwn.t10_wwn_group, "wwn",
@@ -2677,7 +2693,8 @@ static struct config_group *target_core_make_subdev(
 	dev_cg->default_groups[2] = &dev->t10_wwn.t10_wwn_group;
 	dev_cg->default_groups[3] = &dev->t10_alua.alua_tg_pt_gps_group;
 	dev_cg->default_groups[4] = &dev->dev_stat_grps.stat_group;
-	dev_cg->default_groups[5] = NULL;
+	dev_cg->default_groups[5] = &dev->dev_param.da_group;
+	dev_cg->default_groups[6] = NULL;
 	/*
 	 * Add core/$HBA/$DEV/alua/default_tg_pt_gp
 	 */
@@ -2968,6 +2985,7 @@ void target_core_setup_sub_cits(struct se_subsystem_api *sa)
 {
 	target_core_setup_dev_cit(sa);
 	target_core_setup_dev_attrib_cit(sa);
+	target_core_setup_dev_param_cit(sa);
 	target_core_setup_dev_pr_cit(sa);
 	target_core_setup_dev_wwn_cit(sa);
 	target_core_setup_dev_alua_tg_pt_gps_cit(sa);

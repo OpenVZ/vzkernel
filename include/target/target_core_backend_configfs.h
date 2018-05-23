@@ -38,6 +38,7 @@ DEF_TB_DEV_ATTRIB_STORE(_backend, _name);
 #define DEF_TB_DEV_ATTRIB_RO(_backend, name)				\
 DEF_TB_DEV_ATTRIB_SHOW(_backend, name);
 
+CONFIGFS_EATTR_STRUCT(target_backend_dev_param, se_dev_param);
 CONFIGFS_EATTR_STRUCT(target_backend_dev_attrib, se_dev_attrib);
 #define TB_DEV_ATTR(_backend, _name, _mode)				\
 static struct target_backend_dev_attrib_attribute _backend##_dev_attrib_##_name = \
