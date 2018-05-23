@@ -85,13 +85,13 @@ struct pcs_cs_list
 	atomic_t		refcnt;
 	atomic_t		seq_read_in_flight;
 	int			read_index;		/* volatile read hint */
-	int			cong_index;		/* volatile cong hint */
 	unsigned long		blacklist;		/* Atomic bit field */
 	abs_time_t		blacklist_expires;	/* volatile blacklist stamp */
 	abs_time_t		select_stamp;		/* volatile read hint stamp */
 	/* members below are immutable accross cslist life time */
 #define CSL_FL_HAS_LOCAL	1
 	unsigned int		flags;
+	u64                     serno;
 	int			read_timeout;
 	int			write_timeout;
 	int			nsrv;
@@ -165,7 +165,7 @@ void pcs_mapping_truncate(struct pcs_int_request *ireq, u64 old_size);
 void process_ireq_truncate(struct pcs_int_request *ireq);
 
 struct pcs_map_entry * pcs_find_get_map(struct pcs_dentry_info * de, u64 chunk);
-void map_submit(struct pcs_map_entry * m, struct pcs_int_request *ireq, int requeue);
+void map_submit(struct pcs_map_entry * m, struct pcs_int_request *ireq);
 void map_notify_iochunk_error(struct pcs_int_request *ireq);
 void map_notify_soft_error(struct pcs_int_request *ireq);
 void __pcs_map_put(struct pcs_map_entry *m);
@@ -182,7 +182,7 @@ void pcs_map_verify_sync_state(struct pcs_dentry_info * de, struct pcs_int_reque
 void map_inject_flush_req(struct pcs_int_request *ireq);
 void process_flush_req(struct pcs_int_request *ireq);
 int map_check_limit(struct pcs_map_entry * map, struct pcs_int_request *ireq);
-int pcs_cslist_submit(struct pcs_int_request *ireq, struct pcs_cs_list *csl, int requeue);
+int pcs_cslist_submit(struct pcs_int_request *ireq, struct pcs_cs_list *csl);
 struct pcs_int_request * pcs_ireq_split(struct pcs_int_request *ireq, unsigned int iochunk, int noalign);
 int  fuse_map_resolve(struct pcs_map_entry * m, int direction);
 struct pcs_ioc_getmap;
@@ -190,6 +190,7 @@ void pcs_map_complete(struct pcs_map_entry *m, struct pcs_ioc_getmap *omap);
 int pcs_map_encode_req(struct pcs_map_entry*m, struct pcs_ioc_getmap *map, int direction);
 void map_truncate_tail(struct pcs_mapping *mapping, u64 offset);
 unsigned long pcs_map_shrink_scan(struct shrinker *,  struct shrink_control *sc);
+void ireq_drop_tokens(struct pcs_int_request * ireq);
 
 #define MAP_FMT	"(%p) 0x%lld s:%x" DENTRY_FMT
 #define MAP_ARGS(m) (m), (long long)(m)->index,	 (m)->state, DENTRY_ARGS(pcs_dentry_from_map((m)))
