@@ -312,6 +312,7 @@ static void pcs_sockio_send(struct pcs_sockio *sio)
 					unsigned long timeout = msg->start_time + sio->send_timeout;
 					if (time_is_before_jiffies(timeout))
 						sio_abort(sio, PCS_ERR_WRITE_TIMEOUT);
+					return;
 				}
 				sio_abort(sio, PCS_ERR_NET_ABORT);
 				return;
