@@ -864,8 +864,10 @@ out:
 		 * in __tcache_page_tree_delete() fails, and
 		 * we have to repeat the cycle.
 		 */
-		if (!page)
+		if (!page) {
+			rcu_read_lock();
 			goto repeat;
+		}
 	}
 
 	return page;
