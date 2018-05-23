@@ -3880,7 +3880,6 @@ static int ploop_truncate(struct ploop_device * plo, unsigned long arg)
 	return err;
 }
 
-#define FUSE_SUPER_MAGIC 0x65735546
 #define IS_PSTORAGE(sb) (sb->s_magic == FUSE_SUPER_MAGIC && \
 			 (!strcmp(sb->s_subtype, "pstorage") || \
 			  !strcmp(sb->s_subtype, "vstorage")))
