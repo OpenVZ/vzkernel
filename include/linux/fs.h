@@ -1624,6 +1624,11 @@ struct super_block {
 	struct list_lru		s_inode_lru ____cacheline_aligned_in_smp;
 };
 
+#define IS_PSTORAGE(sb) ((sb)->s_magic == FUSE_SUPER_MAGIC && \
+			 (sb)->s_subtype && \
+			 (!strcmp((sb)->s_subtype, "pstorage") || \
+			  !strcmp((sb)->s_subtype, "vstorage")))
+
 extern const unsigned super_block_wrapper_version;
 struct super_block_wrapper {
 	struct super_block sb;
