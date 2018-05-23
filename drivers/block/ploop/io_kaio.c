@@ -17,9 +17,6 @@
 
 #include <linux/ploop/ploop.h>
 
-/* from fs/inode/fuse.c */
-#define FUSE_SUPER_MAGIC 0x65735546
-
 #define KAIO_PREALLOC (128 * 1024 * 1024) /* 128 MB */
 
 #define KAIO_MAX_PAGES_PER_REQ 32	  /* 128 KB */
