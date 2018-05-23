@@ -694,8 +694,8 @@ void pcs_cs_notify_error(struct pcs_cluster_core *cc, pcs_error_t *err)
 	if (cs == NULL)
 		return;
 
+	list_splice_tail_init(&cs->active_list, &queue);
 	list_splice_tail_init(&cs->cong_queue, &queue);
-	clear_bit(CS_SF_CONGESTED, &cs->state);
 	cs->cong_queue_len = 0;
 	cs_blacklist(cs, err->value, "notify error");
 	spin_unlock(&cs->lock);
@@ -710,9 +710,7 @@ static void pcs_cs_isolate(struct pcs_cs *cs, struct list_head *dispose)
 
 	list_splice_tail_init(&cs->active_list, dispose);
 	list_splice_tail_init(&cs->cong_queue, dispose);
-	cs->active_list_len = 0;
 	cs->cong_queue_len = 0;
-	clear_bit(CS_SF_CONGESTED, &cs->state);
 
 	cs->is_dead = 1;
 	spin_lock(&cs->css->lock);
@@ -920,7 +918,7 @@ void cs_decrement_in_flight(struct pcs_cs *cs, unsigned int to_dec)
 
 	if (cs->in_flight < cs->eff_cwnd) {
 		cs->cwr_state = 0;
-		pcs_cs_flush_cong_queue(cs);
+		pcs_cs_activate_cong_queue(cs);
 	}
 	if (cs->in_flight == 0)
 		cs->idle_stamp = jiffies;
@@ -1066,6 +1064,7 @@ void pcs_csset_init(struct pcs_cs_set *css)
 	INIT_DELAYED_WORK(&css->bl_work, bl_timer_work);
 	css->ncs = 0;
 	spin_lock_init(&css->lock);
+	atomic64_set(&css->csl_serno_gen, 0);
 }
 
 void pcs_csset_fini(struct pcs_cs_set *css)
@@ -1146,14 +1145,18 @@ void pcs_cs_set_stat_up(struct pcs_cs_set *set)
 	pcs_cs_for_each_entry(set, do_update_stat, 0);
 }
 
-void pcs_cs_cong_enqueue(struct pcs_int_request *ireq, struct pcs_cs *cs)
+int pcs_cs_cong_enqueue_cond(struct pcs_int_request *ireq, struct pcs_cs *cs)
 {
+	int queued = 0;
+
 	spin_lock(&cs->lock);
-	if (test_bit(CS_SF_CONGESTED, &cs->state))
-		test_bit(CS_SF_CONGESTED, &cs->state);
-	list_add_tail(&ireq->list, &cs->cong_queue);
-	cs->cong_queue_len++;
-	if (!ireq->qdepth)
-		ireq->qdepth = cs->cong_queue_len + cs->active_list_len;
+	if (cs->in_flight >= cs->eff_cwnd) {
+		list_add_tail(&ireq->list, &cs->cong_queue);
+		cs->cong_queue_len++;
+		if (!ireq->qdepth)
+			ireq->qdepth = cs->cong_queue_len;
+		queued = 1;
+	}
 	spin_unlock(&cs->lock);
+	return queued;
 }
