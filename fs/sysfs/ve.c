@@ -76,8 +76,6 @@ static ssize_t sysfs_perms_write(struct cgroup *cgrp,
 	char *page;
 	ssize_t ret, len;
 
-	ve = ve_is_super(ve) ? NULL : ve;
-
 	page = (unsigned char *)__get_free_page(GFP_KERNEL);
 	if (!page)
 		return -ENOMEM;
