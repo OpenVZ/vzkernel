@@ -142,12 +142,7 @@ void kpcs_conn_abort(struct fuse_conn *fc)
 
 static int kpcs_probe(struct fuse_conn *fc, char *name)
 {
-	if (IS_PSTORAGE(fc->sb))
-		return 1;
-
-	pr_err("FUSE: kio_pcs: kdirect is only available for"
-	       "pstorage/vstorage fuse mount\n");
-	return 0;
+	return 1;
 }
 
 static int fuse_pcs_getfileinfo(struct fuse_conn *fc, struct file *file,
