@@ -497,7 +497,7 @@ drop:
 
 struct pcs_msg * rpc_get_hdr(struct pcs_sockio * sio)
 {
-	struct pcs_rpc * ep = (struct pcs_rpc *)sio->parent;
+	struct pcs_rpc * ep = sio->parent;
 	struct pcs_rpc_hdr * h = (struct pcs_rpc_hdr*)sio_inline_buffer(sio);
 	struct pcs_msg * msg;
 	void (*next_input)(struct pcs_msg *);
