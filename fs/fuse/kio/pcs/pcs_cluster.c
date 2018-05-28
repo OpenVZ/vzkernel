@@ -514,9 +514,12 @@ fatal:
 
 static int ireq_check_redo_(struct pcs_int_request *ireq)
 {
+	struct fuse_conn *fc = container_of(ireq->cc, struct pcs_fuse_cluster, cc)->fc;
 	pcs_error_t *err = &ireq->error;
 
 	if (ireq->flags & IREQ_F_FATAL)
+		return 0;
+	if (!fc->connected || fc->conn_error)
 		return 0;
 
 	if (ireq->completion_data.parent &&
