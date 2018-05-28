@@ -181,14 +181,14 @@ void rpc_abort(struct pcs_rpc * ep, int fatal, int error)
 
 	if (ep->conn) {
 		struct pcs_ioconn * ioconn = ep->conn;
-		struct pcs_sockio * conn = sio_from_ioconn(ioconn);
+		struct pcs_sockio * sio = sio_from_ioconn(ioconn);
 
 		ep->conn = NULL;
 		if (ep->gc)
 			list_lru_del(&ep->gc->lru, &ep->lru_link);
 
-		conn->parent = NULL;
-		pcs_sock_error(conn, error);
+		sio->parent = NULL;
+		pcs_sock_error(sio, error);
 	}
 
 	if (ep->state == PCS_RPC_UNCONN) {
