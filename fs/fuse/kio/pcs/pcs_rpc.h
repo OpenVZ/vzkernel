@@ -63,8 +63,6 @@ struct pcs_rpc
 	struct rpc_gc_class	*gc;
 	struct pcs_rpc_engine	*eng;		/* Reference to eng, where this peer is assigned to */
 
-	void			*parent;
-
 	unsigned int		state;
 	unsigned int		flags;
 #define PCS_RPC_F_HASHED		1
