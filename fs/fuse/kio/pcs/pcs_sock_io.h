@@ -125,7 +125,7 @@ struct pcs_sockio
 	struct list_head	write_queue;
 	int			write_queue_len;
 	spinlock_t		q_lock;
-	void			*parent;
+	struct pcs_rpc		*parent;
 
 	pcs_error_t		error;
 	int			send_timeout;
