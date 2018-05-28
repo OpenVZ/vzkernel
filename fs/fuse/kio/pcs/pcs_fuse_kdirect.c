@@ -150,11 +150,7 @@ void kpcs_conn_abort(struct fuse_conn *fc)
 static int kpcs_probe(struct fuse_conn *fc, char *name)
 
 {
-	printk("%s TODO IMPLEMENT check fuse_conn args here!\n", __FUNCTION__);
-	if (!strncmp(name, kio_pcs_ops.name, FUSE_KIO_NAME))
-		return 1;
-
-	return 0;
+	return 1;
 }
 
 
