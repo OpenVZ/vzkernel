@@ -822,7 +822,8 @@ static void node_tag_clear(struct radix_tree_root *root,
 	}
 
 	/* clear the root's tag bit */
-	if (root_tag_get(root, tag))
+	*prev = root_tag_get(root, tag);
+	if (*prev)
 		root_tag_clear(root, tag);
 }
 
@@ -846,7 +847,7 @@ void *radix_tree_tag_clear(struct radix_tree_root *root,
 	struct radix_tree_node *node, *parent;
 	unsigned long maxindex;
 	int uninitialized_var(offset);
-	int prev;
+	int prev = 0;
 	int right_prev = radix_tree_tag_get(root, index, tag);
 
 	radix_tree_load_root(root, &node, &maxindex);
@@ -854,27 +855,21 @@ void *radix_tree_tag_clear(struct radix_tree_root *root,
 		return NULL;
 
 	parent = NULL;
-	/* make sure 'prev' is filled even if 'node' or 'parent' == NULL */
-	prev = root_tag_get(root, tag);
-
 	while (radix_tree_is_internal_node(node)) {
 		parent = entry_to_node(node);
 		offset = radix_tree_descend(parent, &node, index);
 	}
 
-	if (node)
+	if (node) {
 		node_tag_clear(root, parent, tag, offset, &prev);
-	else {
+
 		if (prev)
-			root_tag_clear(root, tag);
+			prev_tag_set(root, tag);
+		else
+			prev_tag_clear(root, tag);
+
+		BUG_ON(!prev != !right_prev);
 	}
-
-	if (prev)
-		prev_tag_set(root, tag);
-	else
-		prev_tag_clear(root, tag);
-
-	BUG_ON(!prev != !right_prev);
 
 	return node;
 }
