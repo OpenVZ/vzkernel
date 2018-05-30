@@ -3010,9 +3010,10 @@ restart:
 			if (IS_ROOT(dentry) &&
 			   (dentry->d_name.len != 1 ||
 			    dentry->d_name.name[0] != '/')) {
-				WARN(1, "Root dentry has weird name <%.*s>\n",
+				WARN(1, "Root dentry has weird name <%.*s> fs=%s\n",
 				     (int) dentry->d_name.len,
-				     dentry->d_name.name);
+				     dentry->d_name.name,
+				     dentry->d_sb->s_type->name);
 			}
 			if (!error)
 				error = is_mounted(vfsmnt) ? 1 : 2;
