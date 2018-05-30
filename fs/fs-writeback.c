@@ -597,6 +597,8 @@ __writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
 	struct user_beancounter *ub;
 	int ret;
 
+#if 0
+	/* FIXME later */
 	rcu_read_lock();
 	ub = rcu_dereference(inode->i_mapping->dirtied_ub);
 	if (!ub || !get_beancounter_rcu(ub))
@@ -606,6 +608,8 @@ __writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
 	ub = set_exec_ub(ub);
 	ret = __do_writeback_single_inode(inode, wbc);
 	put_beancounter(set_exec_ub(ub));
+#endif
+	ret = __do_writeback_single_inode(inode, wbc);
 
 	return ret;
 }
@@ -1495,6 +1499,8 @@ static void wait_sb_inodes_wblist(struct super_block *sb, struct user_beancounte
 			spin_lock_irq(&sb->s_inode_wblist_lock);
 			continue;
 		}
+#if 0
+		/* FIXME later */
 		if (ub && (mapping->dirtied_ub != ub) &&
 		    ((inode->i_state & I_DIRTY) == I_DIRTY_PAGES)) {
 			spin_unlock(&inode->i_lock);
@@ -1502,6 +1508,7 @@ static void wait_sb_inodes_wblist(struct super_block *sb, struct user_beancounte
 			spin_lock_irq(&sb->s_inode_wblist_lock);
 			continue;
 		}
+#endif
 
 		__iget(inode);
 		spin_unlock(&inode->i_lock);
@@ -1574,11 +1581,14 @@ static void wait_sb_inodes(struct super_block *sb, struct user_beancounter *ub)
 			spin_unlock(&inode->i_lock);
 			continue;
 		}
+#if 0
+		/* FIXME later */
 		if (ub && (mapping->dirtied_ub != ub) &&
 		    ((inode->i_state & I_DIRTY) == I_DIRTY_PAGES)) {
 			spin_unlock(&inode->i_lock);
 			continue;
 		}
+#endif
 
 		__iget(inode);
 		spin_unlock(&inode->i_lock);

@@ -35,6 +35,8 @@ void ub_io_account_dirty(struct address_space *mapping)
 {
 	struct user_beancounter *ub = mapping->dirtied_ub;
 
+	return; /* FIXME */
+
 	WARN_ON_ONCE(!radix_tree_tagged(&mapping->page_tree,
 				PAGECACHE_TAG_DIRTY));
 
@@ -49,6 +51,8 @@ void ub_io_account_clean(struct address_space *mapping)
 {
 	struct user_beancounter *ub = mapping->dirtied_ub;
 	size_t bytes = PAGE_SIZE;
+
+	return; /* FIXME */
 
 	if (unlikely(!ub)) {
 		WARN_ON_ONCE(1);
@@ -75,6 +79,8 @@ void ub_io_account_cancel(struct address_space *mapping)
 {
 	struct user_beancounter *ub = mapping->dirtied_ub;
 
+	return; /* FIXME */
+
 	if (unlikely(!ub)) {
 		WARN_ON_ONCE(1);
 		return;
@@ -96,6 +102,8 @@ void ub_io_writeback_inc(struct address_space *mapping)
 {
 	struct user_beancounter *ub = mapping->dirtied_ub;
 
+	return; /* FIXME */
+
 	WARN_ON_ONCE(!radix_tree_tagged(&mapping->page_tree,
 				PAGECACHE_TAG_WRITEBACK));
 
@@ -108,6 +116,8 @@ void ub_io_writeback_inc(struct address_space *mapping)
 void ub_io_writeback_dec(struct address_space *mapping)
 {
 	struct user_beancounter *ub = mapping->dirtied_ub;
+
+	return; /* FIXME */
 
 	if (unlikely(!ub)) {
 		WARN_ON_ONCE(1);
@@ -145,6 +155,8 @@ bool ub_over_bground_thresh(void)
 	struct user_beancounter *ub;
 	bool ret = false;
 
+	return false; /* FIXME */
+
 	rcu_read_lock();
 	for_each_beancounter(ub) {
 		if (ub == get_ub0())
@@ -163,6 +175,8 @@ int ub_dirty_limits(unsigned long *pbackground,
 {
 	int dirty_ratio;
 	unsigned long available_memory;
+
+	return 0; /* FIXME */
 
 	*pdirty = *pbackground = LONG_MAX;
 
