@@ -57,6 +57,16 @@ static void process_pcs_init_reply(struct fuse_conn *fc, struct fuse_args *args,
 		fc->conn_error = 1;
 		goto out;
 	}
+
+	if (info->version.major != PCS_FAST_PATH_VERSION.major ||
+	    info->version.minor != PCS_FAST_PATH_VERSION.minor) {
+		pr_err("kio_pcs: version missmatch: must be %u.%u\n",
+			PCS_FAST_PATH_VERSION.major,
+			PCS_FAST_PATH_VERSION.minor);
+		fc->conn_error = 1;
+		goto out;
+	}
+
 	pfc = kvmalloc(sizeof(*pfc), GFP_KERNEL);
 	if (!pfc) {
 		fc->conn_error = 1;
@@ -109,11 +119,14 @@ int kpcs_conn_init(struct fuse_conn *fc)
 	inarg = &ia->ioctl.in;
 	outarg = &ia->ioctl.out;
 	inarg->cmd = PCS_IOC_INIT_KDIRECT;
+	info->version = PCS_FAST_PATH_VERSION;
 
 	ia->ap.args.opcode = FUSE_IOCTL;
-	ia->ap.args.in_numargs = 1;
+	ia->ap.args.in_numargs = 2;
 	ia->ap.args.in_args[0].size = sizeof(*inarg);
 	ia->ap.args.in_args[0].value = inarg;
+	ia->ap.args.in_args[1].size = sizeof(*info);
+	ia->ap.args.in_args[1].value = info;
 	ia->ap.args.out_numargs = 2;
 	ia->ap.args.out_args[0].size = sizeof(*outarg);
 	ia->ap.args.out_args[0].value = outarg;
