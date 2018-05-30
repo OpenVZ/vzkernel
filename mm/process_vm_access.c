@@ -54,6 +54,7 @@ static int process_vm_rw_pages(struct page **pages,
 			set_page_dirty_lock(page);
 		} else {
 			copied = iov_iter_copy_to_user(page, iter, offset, copy);
+			iov_iter_advance(iter, copied);
 		}
 		len -= copied;
 		if (copied < copy && iov_iter_count(iter))
