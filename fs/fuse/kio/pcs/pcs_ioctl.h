@@ -10,6 +10,8 @@
 #include "pcs_map.h"
 #include "pcs_rpc.h"
 
+#define PCS_FAST_PATH_VERSION ((PCS_FAST_PATH_VERSION_T){1, 0})
+
 #define PCS_FUSE_INO_SPECIAL_ ((unsigned long long)-0x1000)
 
 struct pcs_client_lease_info
@@ -35,6 +37,7 @@ struct pcs_ioc_init_kdirect
 {
 	PCS_NODE_ID_T node_id;
 	PCS_CLUSTER_ID_T cluster_id;
+	PCS_FAST_PATH_VERSION_T version;
 };
 
 struct pcs_ioc_fileinfo
