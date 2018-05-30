@@ -2469,11 +2469,15 @@ void locks_remove_file(struct file *filp)
 			 * the list.
 			 */
 			WARN(!IS_FLOCK(fl),
-				"leftover lock: dev=%u:%u ino=%lu type=%hhd flags=0x%x start=%lld end=%lld\n",
+				"leftover lock: dev=%u:%u ino=%lu type=%hhd flags=0x%x start=%lld end=%lld "
+				"owner=%p counter=%d pid=%u ops=%p lmops=%p blocked=%d\n",
 				MAJOR(inode->i_sb->s_dev),
 				MINOR(inode->i_sb->s_dev), inode->i_ino,
 				fl->fl_type, fl->fl_flags,
-				fl->fl_start, fl->fl_end);
+				fl->fl_start, fl->fl_end,
+				fl->fl_owner, fl->fl_owner ? fl->fl_owner->count.counter : 0,
+				fl->fl_pid, fl->fl_ops, fl->fl_lmops,
+				!list_empty(&fl->fl_block));
 
 			locks_delete_lock(before, &dispose);
 			continue;
