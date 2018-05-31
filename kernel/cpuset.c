@@ -976,8 +976,19 @@ static void update_cpumasks_hier(struct cpuset *cs, struct cpumask *new_cpus,
 		if (is_in_v2_mode() && cpumask_empty(new_cpus))
 			cpumask_copy(new_cpus, parent->effective_cpus);
 
-		/* skip the whole subtree if the cpumask remains the same. */
-		if (cpumask_equal(new_cpus, cp->effective_cpus)) {
+		/*
+		 * Skip the whole subtree if the cpumask remains the same
+		 * or existing cpumask is empty, for example:
+		 * - cpuset/machine.slice has zero cpumask before first CT start
+		 * - we create cpuset/machine.slice/$CTID cpuset cgroup
+		 *   (with zero cpumask)
+		 * - we set non-zero cpumask to cpuset/machine.slice
+		 *   (otherwise we can't configure cpuset for CT)
+		 * - and now we don't want to change empty cpumask for
+		 *   cpuset/machine.slice/$CTID
+		 */
+		if (cpumask_equal(new_cpus, cp->effective_cpus) ||
+		    cpumask_empty(cp->cpus_allowed)) {
 			pos_cgrp = cgroup_rightmost_descendant(pos_cgrp);
 			continue;
 		}
