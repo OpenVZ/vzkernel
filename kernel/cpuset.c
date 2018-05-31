@@ -1312,8 +1312,13 @@ static void update_nodemasks_hier(struct cpuset *cs, nodemask_t *new_mems,
 		if (nodes_empty(*new_mems))
 			*new_mems = parent->effective_mems;
 
-		/* skip the whole subtree if @cp have some CPU */
-		if (!nodes_empty(cp->mems_allowed)) {
+		/*
+		 * If current mems_allowed are empty - no tasks are there and
+		 * userspace have to configure cpuset::mems explicitely before
+		 * attaching tasks to this cgroup, so skip further settings
+		 * propagation.
+		 */
+		if (nodes_empty(cp->mems_allowed)) {
 			pos_cgrp = cgroup_rightmost_descendant(pos_cgrp);
 			continue;
 		}
