@@ -725,6 +725,7 @@ static int bm_fill_super(struct super_block * sb, void * data, int silent)
 	}
 
 	sb->s_op = &s_ops;
+	sb->s_fs_info = ve;
 
 	bm_data->enabled = 1;
 	get_ve(ve);
