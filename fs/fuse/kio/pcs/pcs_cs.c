@@ -1059,6 +1059,18 @@ void pcs_csset_init(struct pcs_cs_set *css)
 	atomic64_set(&css->csl_serno_gen, 0);
 }
 
+static void pcs_cs_wait_unused(struct pcs_cs *cs)
+{
+	assert_spin_locked(&cs->lock);
+	cs->use_count++;
+	while (cs->use_count != 1) {
+		spin_unlock(&cs->lock);
+		schedule_timeout(1);
+		spin_lock(&cs->lock);
+	}
+	cs->use_count--;
+}
+
 void pcs_csset_fini(struct pcs_cs_set *css)
 {
 	unsigned int i;
@@ -1082,6 +1094,7 @@ void pcs_csset_fini(struct pcs_cs_set *css)
 				continue;
 			}
 			rcu_read_unlock();
+			pcs_cs_wait_unused(cs);
 			pcs_cs_isolate(cs, &to_resubmit);
 			spin_unlock(&cs->lock);
 			pcs_cs_destroy(cs);
