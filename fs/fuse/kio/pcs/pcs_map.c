@@ -696,12 +696,14 @@ static void map_remote_error(struct pcs_map_entry *m , int error, u64 offender)
 
 void pcs_map_notify_addr_change(struct pcs_cs * cs)
 {
+	struct pcs_cs_list *cs_list, *prev_cs_list = NULL;
 	struct pcs_cs_link * csl;
 	assert_spin_locked(&cs->lock);
 
+	cs->use_count++; /* Prohibit to isolate cs */
+
 	rcu_read_lock();
 	list_for_each_entry(csl, &cs->map_list, link) {
-		struct pcs_cs_list *cs_list;
 		struct pcs_map_entry *m;
 
 		if (csl->addr_serno == cs->addr_serno)
@@ -710,6 +712,18 @@ void pcs_map_notify_addr_change(struct pcs_cs * cs)
 		m = rcu_dereference(cs_list->map);
 		if (!m)
 			continue;
+		/*
+		 * Get cs_list to prevent its destruction and unlinking from cs.
+		 * Thus, csl stays on the place in the list. New elements may be
+		 * added to head of cs->map_list, so our caller must care, they
+		 * will contain correct rpc addr.
+		 */
+		cslist_get(cs_list);
+		spin_unlock(&cs->lock);
+
+		if (prev_cs_list)
+			cslist_put(prev_cs_list);
+		prev_cs_list = cs_list;
 
 		spin_lock(&m->lock);
 		if ((m->state & PCS_MAP_DEAD) || m->cs_list != cs_list)
@@ -724,8 +738,17 @@ void pcs_map_notify_addr_change(struct pcs_cs * cs)
 		map_remote_error_nolock(m, PCS_ERR_CSD_STALE_MAP, cs->id.val);
 unlock:
 		spin_unlock(&m->lock);
+		spin_lock(&cs->lock);
+	}
+
+	if (prev_cs_list) {
+		spin_unlock(&cs->lock);
+		cslist_put(prev_cs_list);
+		spin_lock(&cs->lock);
 	}
 	rcu_read_unlock();
+	cs->use_count--;
+	BUG_ON(cs->is_dead);
 }
 
 noinline static void pcs_ireq_queue_fail(struct list_head *queue, int error)
