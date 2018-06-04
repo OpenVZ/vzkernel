@@ -89,7 +89,7 @@ struct pcs_cs *pcs_cs_alloc(struct pcs_cs_set *css,
 	cs->nflows = 0;
 
 	cs->state = 0;
-	cs->is_probing = 0;
+	cs->use_count = 0;
 	cs->is_dead = 0;
 	INIT_LIST_HEAD(&cs->bl_link);
 
@@ -967,7 +967,7 @@ static void cs_probe_done(struct pcs_msg *msg)
 			TRACE("probe error %d", msg->error.value);
 			cs_blacklist(cs, msg->error.value, "probe");
 		}
-		cs->is_probing = 0;
+		cs->use_count--;
 	}
 	spin_unlock(&cs->lock);
 	pcs_free_msg(msg);
@@ -1025,7 +1025,7 @@ static void bl_timer_work(struct work_struct *w)
 		spin_lock(&cs->lock);
 		BUG_ON(cs->is_dead);
 		list_move(&cs->bl_link, &to_blacklist);
-		if (cs->is_probing) {
+		if (cs->use_count) {
 			spin_unlock(&cs->lock);
 			continue;
 		}
@@ -1035,14 +1035,14 @@ static void bl_timer_work(struct work_struct *w)
 			pcs_cs_destroy(cs);
 			continue;
 		}
-		cs->is_probing = 1;
+		cs->use_count++;
 		spin_unlock(&cs->lock);
 		msg = cs_prep_probe(cs);
 		if (msg)
 			pcs_rpc_call(cs->rpc, msg);
 		spin_lock(&cs->lock);
 		if (!msg)
-			cs->is_probing = 0;
+			cs->use_count--;
 		spin_unlock(&cs->lock);
 	}
 	spin_lock(&css->lock);
