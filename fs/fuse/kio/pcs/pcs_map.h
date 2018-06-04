@@ -81,7 +81,8 @@ struct pcs_cs_record
 
 struct pcs_cs_list
 {
-	struct pcs_map_entry	*map;
+	struct pcs_map_entry __rcu *map;		/* Currently modified under
+							   ::map->lock */
 	atomic_t		refcnt;
 	atomic_t		seq_read_in_flight;
 	int			read_index;		/* volatile read hint */
