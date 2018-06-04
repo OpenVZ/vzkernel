@@ -193,11 +193,14 @@ again:
 			if (pcs_netaddr_cmp(&cs->addr, addr)) {
 				cs->addr = *addr;
 				cs->addr_serno++;
-				if (!(flags & CS_FL_INACTIVE))
-					pcs_map_notify_addr_change(cs);
+
 				TRACE("Port change CS" NODE_FMT " seq=%d", NODE_ARGS(*id), cs->addr_serno);
 				pcs_rpc_set_address(cs->rpc, addr);
 
+				if (!(flags & CS_FL_INACTIVE)) {
+					pcs_map_notify_addr_change(cs);
+					cs_whitelist(cs, "addr update");
+				}
 			}
 		}
 		/* TODO: (flags & PCS_RPC_F_LOCAL) should be checker here */
