@@ -1078,7 +1078,7 @@ int fuse_dev_release(struct inode *inode, struct file *file);
 
 bool fuse_write_update_size(struct inode *inode, loff_t pos);
 
-int fuse_flush_mtime(struct file *file, bool nofail);
+int fuse_flush_mtime(struct file *file, struct fuse_file *ff, bool nofail);
 
 int fuse_do_setattr(struct inode *inode, struct iattr *attr,
 		    struct file *file);
