@@ -239,10 +239,7 @@ EXPORT_SYMBOL(free_inode_nonrcu);
 void __destroy_inode(struct inode *inode)
 {
 	BUG_ON(inode_has_buffers(inode));
-#if 0
-	/* FIXME: we trigger this bug, need to move further now */
 	BUG_ON(inode->i_data.dirtied_ub);
-#endif
 	security_inode_free(inode);
 	fsnotify_inode_delete(inode);
 	if (!inode->i_nlink) {
