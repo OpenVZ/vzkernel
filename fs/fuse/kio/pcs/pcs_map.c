@@ -699,8 +699,6 @@ void pcs_map_notify_addr_change(struct pcs_cs * cs)
 	struct pcs_cs_link * csl;
 	assert_spin_locked(&cs->lock);
 
-	cs_whitelist(cs, "addr update");
-
 	rcu_read_lock();
 	list_for_each_entry(csl, &cs->map_list, link) {
 		struct pcs_cs_list *cs_list;
