@@ -1293,18 +1293,6 @@ int vtty_open_master(envid_t veid, int idx)
 
 	tty = vtty_lookup(vttym_driver, NULL, idx);
 	if (!tty) {
-		/*
-		 * FIXME: Previously we've been testing
-		 * for TTY_CLOSING bit which is not longer
-		 * here. Review and handle.
-		 */
-		/*
-		 * The previous connection is about to
-		 * be closed so drop it from the map and
-		 * allocate a new one.
-		 */
-		if (tty)
-			vtty_map_clear(tty);
 		tty = tty_init_dev(vttys_driver, idx);
 		if (IS_ERR(tty))
 			goto err_install;
@@ -1321,10 +1309,6 @@ int vtty_open_master(envid_t veid, int idx)
 	}
 
 	vtty_drop_context();
-
-	/* FIXME: code will be dropped anyway
-	 * WARN_ON(!test_bit(TTY_LDISC, &tty->flags));
-	 */
 
 	/*
 	 * We're the master peer so increment
