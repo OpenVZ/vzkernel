@@ -1310,6 +1310,7 @@ int vtty_open_master(envid_t veid, int idx)
 			goto err_install;
 		tty->count--;
 		tty_unlock(tty);
+		tty_set_lock_subclass(tty);
 		tty = tty->link;
 	}
 
