@@ -458,7 +458,7 @@ static int fuse_release(struct inode *inode, struct file *file)
 
 	if (test_bit(FUSE_I_MTIME_UPDATED,
 		     &get_fuse_inode(inode)->state))
-		fuse_flush_mtime(file, true);
+		fuse_flush_mtime(file, ff, true);
 
 	fuse_release_common(file, FUSE_RELEASE);
 
@@ -731,7 +731,7 @@ int fuse_fsync_common(struct file *file, loff_t start, loff_t end,
 
 	if (!datasync && test_bit(FUSE_I_MTIME_UPDATED,
 				  &get_fuse_inode(inode)->state)) {
-		err = fuse_flush_mtime(file, false);
+		err = fuse_flush_mtime(file, isdir ? NULL : ff, false);
 		if (err)
 			goto out;
 	}
