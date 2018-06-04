@@ -1134,7 +1134,7 @@ void pcs_rpc_set_peer_id(struct pcs_rpc * ep, PCS_NODE_ID_T * id, u8 role)
 
 int pcs_rpc_set_address(struct pcs_rpc * ep, PCS_NET_ADDR_T * addr)
 {
-	BUG_ON(ep->state != PCS_RPC_UNCONN);
+//	BUG_ON(ep->state != PCS_RPC_UNCONN);
 
 	ep->addr = *addr;
 	return 0;
