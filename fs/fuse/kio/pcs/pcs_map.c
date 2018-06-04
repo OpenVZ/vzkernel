@@ -33,6 +33,16 @@
 */
 #define MAP_BATCH 16
 
+static struct pcs_cs_list *cs_link_to_cs_list(struct pcs_cs_link *csl)
+{
+	struct pcs_cs_record *cs_rec;
+	struct pcs_cs_list *cs_list;
+
+	cs_rec = container_of(csl, struct pcs_cs_record, cslink);
+	cs_list = container_of(cs_rec - csl->index, struct pcs_cs_list, cs[0]);
+	return cs_list;
+}
+
 static void pcs_ireq_queue_fail(struct list_head *queue, int error);
 
 abs_time_t get_real_time_ms(void)
@@ -557,12 +567,10 @@ static void map_recalc_maps(struct pcs_cs * cs)
 	assert_spin_locked(&cs->lock);
 
 	list_for_each_entry(csl, &cs->map_list, link) {
-		struct pcs_cs_record * cs_rec;
-		struct pcs_cs_list * cs_list;
+		struct pcs_cs_list *cs_list;
 		int read_idx;
 
-		cs_rec = container_of(csl, struct pcs_cs_record, cslink);
-		cs_list = container_of(cs_rec - csl->index, struct pcs_cs_list, cs[0]);
+		cs_list = cs_link_to_cs_list(csl);
 		read_idx = READ_ONCE(cs_list->read_index);
 
 		if (read_idx >= 0 && (!cs_is_blacklisted(cs) ||
@@ -577,12 +585,10 @@ void pcs_map_force_reselect(struct pcs_cs * cs)
 	assert_spin_locked(&cs->lock);
 
 	list_for_each_entry(csl, &cs->map_list, link) {
-		struct pcs_cs_record * cs_rec;
-		struct pcs_cs_list * cs_list;
+		struct pcs_cs_list *cs_list;
 		int read_idx;
 
-		cs_rec = container_of(csl, struct pcs_cs_record, cslink);
-		cs_list = container_of(cs_rec - csl->index, struct pcs_cs_list, cs[0]);
+		cs_list = cs_link_to_cs_list(csl);
 		read_idx = READ_ONCE(cs_list->read_index);
 
 		if (read_idx >= 0 && cs_list->cs[read_idx].cslink.cs == cs)
@@ -613,11 +619,9 @@ static int urgent_whitelist(struct pcs_cs * cs)
 	assert_spin_locked(&cs->lock);
 
 	list_for_each_entry(csl, &cs->map_list, link) {
-		struct pcs_cs_record * cs_rec;
-		struct pcs_cs_list * cs_list;
+		struct pcs_cs_list *cs_list;
 
-		cs_rec = container_of(csl, struct pcs_cs_record, cslink);
-		cs_list = container_of(cs_rec - csl->index, struct pcs_cs_list, cs[0]);
+		cs_list = cs_link_to_cs_list(csl);
 
 		if (cs_list->map == NULL)
 			continue;
@@ -701,16 +705,12 @@ void pcs_map_notify_addr_change(struct pcs_cs * cs)
 	cs_whitelist(cs, "addr update");
 
 	list_for_each_entry(csl, &cs->map_list, link) {
-		struct pcs_cs_record * cs_rec;
-		struct pcs_cs_list * cs_list;
-		struct pcs_map_entry * m;
-
-		cs_rec = container_of(csl, struct pcs_cs_record, cslink);
-		cs_list = container_of(cs_rec - csl->index, struct pcs_cs_list, cs[0]);
+		struct pcs_cs_list *cs_list;
+		struct pcs_map_entry *m;
 
 		if (csl->addr_serno == cs->addr_serno)
 			continue;
-
+		cs_list = cs_link_to_cs_list(csl);
 		if ((m = cs_list->map) == NULL)
 			continue;
 
