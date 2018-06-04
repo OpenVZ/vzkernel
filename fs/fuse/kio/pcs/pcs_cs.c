@@ -728,7 +728,7 @@ static void pcs_cs_isolate(struct pcs_cs *cs, struct list_head *dispose)
 		struct pcs_cs_link *csl = list_first_entry(&cs->map_list,
 							       struct pcs_cs_link,
 							       link);
-		csl->cs = NULL;
+		rcu_assign_pointer(csl->cs, NULL);
 		cs->nmaps--;
 		list_del_init(&csl->link);
 	}
