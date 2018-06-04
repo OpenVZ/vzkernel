@@ -1966,6 +1966,7 @@ static int ireq_queue_tokens(struct pcs_int_request * ireq, struct pcs_cs_list *
 			       toks[i] = NULL;
 			       queued = 1;
 		       } else {
+			       ireq->tok_reserved |= (1ULL << i);
 			       list_add(&toks[i]->token.tok_link, &drop);
 		       }
 	       }
