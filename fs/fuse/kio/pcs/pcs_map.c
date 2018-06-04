@@ -60,20 +60,23 @@ static void cslist_destroy(struct pcs_cs_list * csl)
 	TRACE("csl:%p csl->map:%p refcnt:%d\n", csl, csl->map, atomic_read(&csl->refcnt));
 	BUG_ON(csl->map);
 
+	rcu_read_lock();
 	for (i = 0; i < csl->nsrv; i++) {
 		struct pcs_cs_link * cslink = &csl->cs[i].cslink;
+		struct pcs_cs __rcu *cs = rcu_dereference(cslink->cs);
 
 		/* Possible after error inside cslist_alloc() */
-		if (!cslink->cs)
+		if (!cs)
 			continue;
 
-		spin_lock(&cslink->cs->lock);
+		spin_lock(&cs->lock);
 		if (!list_empty(&cslink->link)) {
 			list_del_init(&cslink->link);
-			cslink->cs->nmaps--;
+			cs->nmaps--;
 		}
 		spin_unlock(&cslink->cs->lock);
 	}
+	rcu_read_unlock();
 	kfree(csl);
 }
 
@@ -948,7 +951,7 @@ struct pcs_cs_list* cslist_alloc( struct pcs_cs_set *css, struct pcs_cs_info *re
 		assert_spin_locked(&cs->lock);
 		BUG_ON(cs->is_dead);
 
-		cslink->cs = cs;
+		rcu_assign_pointer(cslink->cs, cs);
 		cslink->addr_serno = cs->addr_serno;
 
 		cs->io_prio = cs_list->cs[i].info.io_prio;
