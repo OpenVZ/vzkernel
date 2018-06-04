@@ -26,7 +26,7 @@ struct pcs_int_request;
 
 struct pcs_cs_link
 {
-	struct pcs_cs	* cs;
+	struct pcs_cs __rcu *cs;
 	int		index;
 	int		addr_serno;
 	struct list_head	link;  /* Link in list of maps routed via cs,
