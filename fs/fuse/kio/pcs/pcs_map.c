@@ -97,7 +97,7 @@ static void map_drop_cslist(struct pcs_map_entry * m)
 	if (m->cs_list == NULL)
 		return;
 
-	m->cs_list->map = NULL;
+	rcu_assign_pointer(m->cs_list->map, NULL);
 	/* Barrier here is only for sanity checks in cslist_destroy() */
 	smp_mb__before_atomic_dec();
 	cslist_put(m->cs_list);
@@ -616,6 +616,7 @@ static int urgent_whitelist(struct pcs_cs * cs)
 
 		cs_list = cs_link_to_cs_list(csl);
 
+		/* FIXME: do we need rcu here? */
 		if (cs_list->map == NULL)
 			continue;
 
@@ -697,6 +698,7 @@ void pcs_map_notify_addr_change(struct pcs_cs * cs)
 
 	cs_whitelist(cs, "addr update");
 
+	rcu_read_lock();
 	list_for_each_entry(csl, &cs->map_list, link) {
 		struct pcs_cs_list *cs_list;
 		struct pcs_map_entry *m;
@@ -704,7 +706,8 @@ void pcs_map_notify_addr_change(struct pcs_cs * cs)
 		if (csl->addr_serno == cs->addr_serno)
 			continue;
 		cs_list = cs_link_to_cs_list(csl);
-		if ((m = cs_list->map) == NULL)
+		m = rcu_dereference(cs_list->map);
+		if (!m)
 			continue;
 
 		spin_lock(&m->lock);
@@ -718,10 +721,10 @@ void pcs_map_notify_addr_change(struct pcs_cs * cs)
 		      MAP_ARGS(m), NODE_ARGS(cs->id));
 
 		map_remote_error_nolock(m, PCS_ERR_CSD_STALE_MAP, cs->id.val);
-	unlock:
+unlock:
 		spin_unlock(&m->lock);
-
 	}
+	rcu_read_unlock();
 }
 
 noinline static void pcs_ireq_queue_fail(struct list_head *queue, int error)
@@ -1045,7 +1048,7 @@ void pcs_map_complete(struct pcs_map_entry *m, struct pcs_ioc_getmap *omap)
 			transfer_sync_data(cs_list, m->cs_list);
 			map_drop_cslist(m);
 		}
-		cs_list->map = m;
+		rcu_assign_pointer(cs_list->map, m);
 		cs_list->version = m->version;
 		m->cs_list = cs_list;
 		cs_list = NULL;
