@@ -1690,7 +1690,7 @@ static void fuse_setattr_fill(struct fuse_conn *fc, struct fuse_req *req,
 /*
  * Flush inode->i_mtime to the server
  */
-int fuse_flush_mtime(struct file *file, bool nofail)
+int fuse_flush_mtime(struct file *file, struct fuse_file *ff, bool nofail)
 {
 	struct inode *inode = file->f_mapping->host;
 	struct fuse_inode *fi = get_fuse_inode(inode);
@@ -1715,6 +1715,10 @@ int fuse_flush_mtime(struct file *file, bool nofail)
 	inarg.mtime = inode->i_mtime.tv_sec;
 	inarg.mtimensec = inode->i_mtime.tv_nsec;
 
+	if (ff) {
+		inarg.valid |= FATTR_FH;
+		inarg.fh = ff->fh;
+	}
 	fuse_setattr_fill(fc, req, inode, &inarg, &outarg);
 	fuse_request_send(fc, req);
 	err = req->out.h.error;
