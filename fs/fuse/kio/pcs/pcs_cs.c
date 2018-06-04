@@ -741,13 +741,6 @@ static void pcs_cs_isolate(struct pcs_cs *cs, struct list_head *dispose)
 	BUG_ON(cs->nflows);
 }
 
-static void cs_free_callback(struct rcu_head *head)
-{
-	struct pcs_cs *cs = container_of(head, struct pcs_cs, rcu);
-
-	kfree(cs);
-}
-
 static void pcs_cs_destroy(struct pcs_cs *cs)
 {
 	BUG_ON(!list_empty(&cs->active_list));
@@ -758,9 +751,8 @@ static void pcs_cs_destroy(struct pcs_cs *cs)
 		pcs_rpc_close(cs->rpc);
 		cs->rpc = NULL;
 	}
-	call_rcu(&cs->rcu, cs_free_callback);
+	kfree_rcu(cs, rcu);
 }
-
 
 void cs_aborting(struct pcs_rpc *ep, int error)
 {
