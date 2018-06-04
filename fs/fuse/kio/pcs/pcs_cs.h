@@ -76,8 +76,8 @@ struct pcs_cs {
 
 	unsigned long		state;
 	int			blacklist_reason;
+	unsigned int		use_count; /* Protects cs against isolation */
 	struct list_head	bl_link;
-	unsigned		is_probing:1;
 	unsigned		is_dead:1;
 
 
