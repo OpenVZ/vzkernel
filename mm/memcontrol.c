@@ -6988,12 +6988,8 @@ static int __mem_cgroup_try_charge(struct page *page, struct mm_struct *mm,
 			goto out;
 	}
 
-	if (PageTransHuge(page)) {
+	if (PageTransHuge(page))
 		nr_pages <<= compound_order(page);
-		if (!PageAnon(page)) {
-			pr_warn_once("page->flags %lx page %p head %p", page->flags, page, compound_head(page));
-		}
-	}
 
 	if (do_swap_account && PageSwapCache(page))
 		memcg = try_get_mem_cgroup_from_page(page);
