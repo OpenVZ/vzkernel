@@ -56,6 +56,8 @@ struct lock_class_key {
 };
 
 extern struct lock_class_key __lockdep_no_validate__;
+extern char *__lockdep_no_validate_name;
+
 
 #define LOCKSTAT_POINTS		4
 
@@ -298,7 +300,9 @@ extern void lockdep_init_map(struct lockdep_map *lock, const char *name,
 				 (lock)->dep_map.key, sub)
 
 #define lockdep_set_novalidate_class(lock) \
-	lockdep_set_class(lock, &__lockdep_no_validate__)
+	lockdep_init_map(&(lock)->dep_map, \
+			__lockdep_no_validate_name, &__lockdep_no_validate__, 0)
+
 /*
  * Compare locking classes
  */
