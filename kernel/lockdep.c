@@ -3007,6 +3007,9 @@ EXPORT_SYMBOL_GPL(lockdep_init_map);
 struct lock_class_key __lockdep_no_validate__;
 EXPORT_SYMBOL_GPL(__lockdep_no_validate__);
 
+char *__lockdep_no_validate_name = "&__lockdep_no_validate__";
+EXPORT_SYMBOL_GPL(__lockdep_no_validate_name);
+
 static int
 print_lock_nested_lock_not_held(struct task_struct *curr,
 				struct held_lock *hlock,
