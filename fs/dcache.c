@@ -883,6 +883,7 @@ static void shrink_dentry_list(struct list_head *list)
 
 		inode = dentry->d_inode;
 		if (inode && unlikely(!spin_trylock(&inode->i_lock))) {
+			d_shrink_add(dentry, list);
 			spin_unlock(&dentry->d_lock);
 			if (parent)
 				spin_unlock(&parent->d_lock);
