@@ -1260,12 +1260,14 @@ void map_notify_iochunk_error(struct pcs_int_request * sreq)
 static void map_replicating(struct pcs_int_request *ireq)
 {
 	struct pcs_cs_list * csl = ireq->iochunk.csl;
-	int read_idx = READ_ONCE(csl->read_index);
+	int read_idx;
 
 	BUG_ON(pcs_req_direction(ireq->iochunk.cmd));
 
 	if (csl == NULL || csl->map == NULL)
 		return;
+
+	read_idx = READ_ONCE(csl->read_index);
 
 	TRACE("reading unfinished replica %lx %d", csl->blacklist, read_idx);
 
