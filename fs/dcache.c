@@ -874,6 +874,8 @@ static void shrink_dentry_list(struct list_head *list)
 		if (unlikely(dentry->d_flags & DCACHE_DENTRY_KILLED)) {
 			bool can_free = dentry->d_flags & DCACHE_MAY_FREE;
 			spin_unlock(&dentry->d_lock);
+			if (parent)
+				spin_unlock(&parent->d_lock);
 			if (can_free)
 				dentry_free(dentry);
 			continue;
