@@ -74,7 +74,7 @@ static void cslist_destroy(struct pcs_cs_list * csl)
 			list_del_init(&cslink->link);
 			cs->nmaps--;
 		}
-		spin_unlock(&cslink->cs->lock);
+		spin_unlock(&cs->lock);
 	}
 	rcu_read_unlock();
 	kfree(csl);
