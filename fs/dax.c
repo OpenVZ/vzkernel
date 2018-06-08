@@ -881,10 +881,8 @@ int dax_writeback_mapping_range(struct address_space *mapping,
 
 			ret = dax_writeback_one(bdev, dax_dev, mapping,
 					indices[i], pvec.pages[i]);
-			if (ret < 0) {
-				put_dax(dax_dev);
+			if (ret < 0)
 				goto out;
-			}
 		}
 		start_index = indices[pvec.nr - 1] + 1;
 	}
