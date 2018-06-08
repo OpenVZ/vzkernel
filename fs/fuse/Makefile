@@ -2,6 +2,10 @@
 # Makefile for the FUSE filesystem.
 #
 
+ifdef CONFIG_FUSE_KIO_DEBUG
+	CFLAGS := -O0
+endif
+
 obj-$(CONFIG_FUSE_FS) += fuse.o
 obj-$(CONFIG_CUSE) += cuse.o
 
