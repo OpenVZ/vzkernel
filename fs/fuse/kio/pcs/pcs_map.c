@@ -1162,16 +1162,15 @@ out_ignore:
 /* Atomically schedule map resolve and push ireq to wait completion */
 static void pcs_map_queue_resolve(struct pcs_map_entry * m, struct pcs_int_request *ireq, int direction)
 {
+	LIST_HEAD(l);
+	int ret;
 
 	DTRACE("enter m: " MAP_FMT ", ireq:%p dir:%d \n", MAP_ARGS(m), ireq,   direction);
 
 	spin_lock(&m->lock);
 	/* This should not happen unless aio_dio/fsync vs truncate race */
 	if (m->state & PCS_MAP_DEAD) {
-		struct list_head l;
-
 		spin_unlock(&m->lock);
-		INIT_LIST_HEAD(&l);
 		list_add(&ireq->list, &l);
 		pcs_ireq_queue_fail(&l, PCS_ERR_NET_ABORT);
 		return;
@@ -1195,7 +1194,16 @@ static void pcs_map_queue_resolve(struct pcs_map_entry * m, struct pcs_int_reque
 	spin_unlock(&m->lock);
 	/// TODO: THINK!!!!
 	/// May be it is reasonable to schedule fuse_map_resolve from work_queue?
-	fuse_map_resolve(m, direction);
+	ret = fuse_map_resolve(m, direction);
+	if (ret) {
+		TRACE("map error: %d for " MAP_FMT "\n", ret, MAP_ARGS(m));
+		spin_lock(&m->lock);
+		pcs_map_truncate(m, &l);
+		map_del_lru(m);
+		spin_unlock(&m->lock);
+		pcs_ireq_queue_fail(&l, PCS_ERR_NOMEM);
+		pcs_map_put(m);
+	}
 }
 
 /* If version on m is not already advanced, we must notify MDS about the error.
