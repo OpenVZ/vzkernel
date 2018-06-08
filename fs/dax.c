@@ -883,7 +883,6 @@ int dax_writeback_mapping_range(struct address_space *mapping,
 					indices[i], pvec.pages[i]);
 			if (ret < 0) {
 				mapping_set_error(mapping, ret);
-				put_dax(dax_dev);
 				goto out;
 			}
 		}
