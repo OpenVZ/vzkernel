@@ -564,14 +564,17 @@ static void map_recalc_maps(struct pcs_cs * cs)
 
 	list_for_each_entry(csl, &cs->map_list, link) {
 		struct pcs_cs_list *cs_list;
+		struct pcs_cs *cur_cs;
 		int read_idx;
 
 		cs_list = cs_link_to_cs_list(csl);
 		read_idx = READ_ONCE(cs_list->read_index);
 
-		if (read_idx >= 0 && (!cs_is_blacklisted(cs) ||
-				      cs_list->cs[read_idx].cslink.cs == cs))
-		    WRITE_ONCE(cs_list->read_index, -1);
+		if (read_idx < 0)
+			continue;
+		cur_cs = rcu_access_pointer(cs_list->cs[read_idx].cslink.cs);
+		if (!cs_is_blacklisted(cs) || cur_cs == cs)
+			WRITE_ONCE(cs_list->read_index, -1);
 	}
 }
 
@@ -582,12 +585,16 @@ void pcs_map_force_reselect(struct pcs_cs * cs)
 
 	list_for_each_entry(csl, &cs->map_list, link) {
 		struct pcs_cs_list *cs_list;
+		struct pcs_cs *cur_cs;
 		int read_idx;
 
 		cs_list = cs_link_to_cs_list(csl);
 		read_idx = READ_ONCE(cs_list->read_index);
 
-		if (read_idx >= 0 && cs_list->cs[read_idx].cslink.cs == cs)
+		if (read_idx < 0)
+			continue;
+		cur_cs = rcu_access_pointer(cs_list->cs[read_idx].cslink.cs);
+		if (cur_cs == cs)
 			WRITE_ONCE(cs_list->read_index, -1);
 	}
 }
@@ -929,6 +936,7 @@ struct pcs_cs_list* cslist_alloc( struct pcs_cs_set *css, struct pcs_cs_info *re
 				     int read_tout, int write_tout, int error_clear)
 {
 	struct pcs_cs_list * cs_list = NULL;
+	struct pcs_cs * cs;
 	int i;
 
 	cs_list = kzalloc(sizeof(struct pcs_cs_list) + cs_cnt * sizeof(struct pcs_cs_record), GFP_NOFS);
@@ -947,7 +955,7 @@ struct pcs_cs_list* cslist_alloc( struct pcs_cs_set *css, struct pcs_cs_info *re
 	for (i = 0; i < cs_cnt; i++) {
 		cs_list->cs[i].info = rec[i];
 		memset(&cs_list->cs[i].sync, 0, sizeof(cs_list->cs[i].sync));
-		cs_list->cs[i].cslink.cs = NULL;
+		RCU_INIT_POINTER(cs_list->cs[i].cslink.cs, NULL);
 		INIT_LIST_HEAD(&cs_list->cs[i].cslink.link);
 		cs_list->cs[i].cslink.index = i;
 	}
@@ -955,7 +963,6 @@ struct pcs_cs_list* cslist_alloc( struct pcs_cs_set *css, struct pcs_cs_info *re
 
 	for (i = 0; i < cs_cnt; i++) {
 		struct pcs_cs_link * cslink = &cs_list->cs[i].cslink;
-		struct pcs_cs * cs;
 
 		if (cs_list->cs[i].info.flags & CS_FL_REPLICATING) {
 			__set_bit(i, &cs_list->blacklist);
@@ -1002,7 +1009,8 @@ struct pcs_cs_list* cslist_alloc( struct pcs_cs_set *css, struct pcs_cs_info *re
 	}
 
 	for (i = cs_cnt - 1; i >= 0; i--) {
-		struct pcs_cs * cs = cs_list->cs[i].cslink.cs;
+		cs = rcu_dereference_protected(cs_list->cs[i].cslink.cs,
+					       atomic_read(&cs_list->refcnt) > 0);
 		spin_lock(&cs->lock);
 		if (cs_is_blacklisted(cs) && !(test_bit(CS_SF_INACTIVE, &cs->state))) {
 			if (error_clear)
