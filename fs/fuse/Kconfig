@@ -45,3 +45,9 @@ config FUSE_KIO_PCS
 	depends on FUSE_FS
 	help
 	  This FUSE extension allows to forward io requests directly to PCS
+
+config FUSE_KIO_DEBUG
+	bool "Disable optimization for fuse kdirect PCS"
+	depends on DEBUG_KERNEL && FUSE_FS
+	help
+	  Say Y if you want to disable optimization for fuse and fuse_kio_pcs modules.
