@@ -1577,16 +1577,25 @@ void pcs_deaccount_ireq(struct pcs_int_request *ireq, pcs_error_t * err)
 			pcs_cs_deaccount(ireq, csl->cs[i].cslink.cs, 0);
 		}
 
-		do {
+		for (;;) {
 			for (i = csl->nsrv - 1; i >= 0; i--)
 				pcs_cs_wakeup(csl->cs[i].cslink.cs);
 
 			requeue = 0;
 			for (i = csl->nsrv - 1; i >= 0; i--)
 				requeue |= pcs_cs_still_congested(csl->cs[i].cslink.cs);
-		} while (requeue);
+
+			if (!requeue)
+				break;
+
+			for (i = csl->nsrv - 1; i >= 0; i--) {
+				struct pcs_cs * cs = csl->cs[i].cslink.cs;
+				spin_lock(&cs->lock);
+				pcs_cs_activate_cong_queue(cs);
+				spin_unlock(&cs->lock);
+			}
+		};
 	} else {
-		int requeue;
 		struct pcs_cs * rcs = csl->cs[ireq->iochunk.cs_index].cslink.cs;
 
 		if (ireq->flags & IREQ_F_SEQ_READ) {
@@ -1597,11 +1606,16 @@ void pcs_deaccount_ireq(struct pcs_int_request *ireq, pcs_error_t * err)
 
 		pcs_cs_deaccount(ireq, rcs, error);
 
-		do {
+		for (;;) {
 			pcs_cs_wakeup(rcs);
 
-			requeue = pcs_cs_still_congested(rcs);
-		} while (requeue);
+			if (!pcs_cs_still_congested(rcs))
+				break;
+
+			spin_lock(&rcs->lock);
+			pcs_cs_activate_cong_queue(rcs);
+			spin_unlock(&rcs->lock);
+		};
 	}
 	*csl_p = NULL;
 	cslist_put(csl);
