@@ -486,11 +486,8 @@ static void ireq_on_error_(struct pcs_int_request *ireq)
 	case PCS_ERR_LEASE_EXPIRED:
 	case PCS_ERR_INTEGRITY_FAIL: {
 		/* TODO:  tag ireq->dentry with EIO here */
-		goto fatal;
 	}
 	case PCS_ERR_CSD_LACKING:
-		goto fatal;
-		break;
 	case PCS_ERR_INV_PARAMS:
 	case PCS_ERR_NOT_FOUND:
 	case PCS_ERR_NON_EMPTY_DIR:
@@ -498,9 +495,9 @@ static void ireq_on_error_(struct pcs_int_request *ireq)
 	case PCS_ERR_IS_DIR:
 	case PCS_ERR_NO_STORAGE:
 	case PCS_ERR_UNAVAIL:
-fatal:
-		printk(KERN_INFO "%s fatal error:%d nodeid:%llu", __func__,
-		       ireq->error.value, ireq->dentry->inode->nodeid);
+		pr_info("%s fatal error:%d ireq->type:%d nodeid:%llu",
+			__func__, ireq->error.value, ireq->type,
+			ireq->dentry->inode->nodeid);
 		ireq->flags |= IREQ_F_FATAL;
 		break;
 	case PCS_ERR_LEASE_CONFLICT:
@@ -508,7 +505,6 @@ fatal:
 		break;
 	default:
 		break;
-		;
 	}
 }
 
