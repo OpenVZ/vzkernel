@@ -8278,6 +8278,12 @@ M:	David Rowe <david@rowetel.com>
 S:	Odd Fixes
 F:	drivers/staging/echo/
 
+ERRSEQ ERROR TRACKING INFRASTRUCTURE
+M:	Jeff Layton <jlayton@poochiereds.net>
+S:	Maintained
+F:	lib/errseq.c
+F:	include/linux/errseq.h
+
 STAGING - ET131X NETWORK DRIVER
 M:	Mark Einon <mark.einon@gmail.com>
 S:	Odd Fixes
