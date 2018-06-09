@@ -262,19 +262,10 @@ static int journal_finish_inode_data_buffers(journal_t *journal,
 	list_for_each_entry(jinode, &commit_transaction->t_inode_list, i_list) {
 		set_bit(__JI_COMMIT_RUNNING, &jinode->i_flags);
 		spin_unlock(&journal->j_list_lock);
-		err = filemap_fdatawait(jinode->i_vfs_inode->i_mapping);
-		if (err) {
-			/*
-			 * Because AS_EIO is cleared by
-			 * filemap_fdatawait_range(), set it again so
-			 * that user process can get -EIO from fsync().
-			 */
-			set_bit(AS_EIO,
-				&jinode->i_vfs_inode->i_mapping->flags);
-
-			if (!ret)
-				ret = err;
-		}
+		err = filemap_fdatawait_keep_errors(
+				jinode->i_vfs_inode->i_mapping);
+		if (!ret)
+			ret = err;
 		spin_lock(&journal->j_list_lock);
 		clear_bit(__JI_COMMIT_RUNNING, &jinode->i_flags);
 		smp_mb__after_clear_bit();
