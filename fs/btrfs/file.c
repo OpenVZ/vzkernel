@@ -1969,7 +1969,7 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	struct btrfs_trans_handle *trans;
 	struct btrfs_log_ctx ctx;
-	int ret = 0;
+	int ret = 0, err;
 	bool full_sync = 0;
 	u64 len;
 
@@ -1988,7 +1988,7 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
 	 */
 	ret = start_ordered_ops(inode, start, end);
 	if (ret)
-		return ret;
+		goto out;
 
 	mutex_lock(&inode->i_mutex);
 	atomic_inc(&root->log_batch);
@@ -2093,10 +2093,10 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
 		 * An ordered extent might have started before and completed
 		 * already with io errors, in which case the inode was not
 		 * updated and we end up here. So check the inode's mapping
-		 * flags for any errors that might have happened while doing
-		 * writeback of file data.
+		 * for any errors that might have happened since we last
+		 * checked called fsync.
 		 */
-		ret = filemap_check_errors(inode->i_mapping);
+		ret = filemap_check_wb_err(inode->i_mapping, file->f_wb_err);
 		mutex_unlock(&inode->i_mutex);
 		goto out;
 	}
@@ -2185,6 +2185,9 @@ int btrfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
 		ret = btrfs_end_transaction(trans, root);
 	}
 out:
+	err = file_check_and_advance_wb_err(file);
+	if (!ret)
+		ret = err;
 	return ret > 0 ? -EIO : ret;
 }
 
