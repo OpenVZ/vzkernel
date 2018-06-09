@@ -192,6 +192,7 @@ struct file *alloc_file(struct path *path, fmode_t mode,
 	file->f_path = *path;
 	file->f_inode = path->dentry->d_inode;
 	file->f_mapping = path->dentry->d_inode->i_mapping;
+	file->f_wb_err = filemap_sample_wb_err(file->f_mapping);
 	file->f_mode = mode;
 	file->f_op = fop;
 	if ((mode & (FMODE_READ | FMODE_WRITE)) == FMODE_READ)
