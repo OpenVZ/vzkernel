@@ -13,8 +13,8 @@ RHEL_RELEASE = 862
 RHEL_DRM_VERSION = 4
 RHEL_DRM_PATCHLEVEL = 14
 RHEL_DRM_SUBLEVEL = 0
-# VZVERSION = ovz.60.2
-VZVERSION = ovz.custom
+# VZVERSION = ovz.60.3
+VZVERSION = finist
 
 ifeq ($(VZVERSION), ovz.custom)
   GIT_DIR := .git
