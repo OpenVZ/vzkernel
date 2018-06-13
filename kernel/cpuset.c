@@ -1033,7 +1033,7 @@ static int __update_cpumask(struct cpuset *cs,
 {
 	struct cpuset *trialcs;
 	struct ptr_heap heap;
-	int retval;
+	int retval = 0;
 
 	/* top_cpuset.cpus_allowed tracks cpu_online_mask; it's read-only */
 	if (cs == &top_cpuset)
@@ -1068,8 +1068,6 @@ static int __update_cpumask(struct cpuset *cs,
 	update_cpumasks_hier(cs, trialcs->cpus_allowed, &heap);
 
 	heap_free(&heap);
-
-	retval = 0;
 done:
 	free_trial_cpuset(trialcs);
 	return retval;
