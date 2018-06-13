@@ -725,7 +725,6 @@ static int bm_fill_super(struct super_block * sb, void * data, int silent)
 	}
 
 	sb->s_op = &s_ops;
-	sb->s_fs_info = ve;
 
 	bm_data->enabled = 1;
 	get_ve(ve);
@@ -736,12 +735,11 @@ static int bm_fill_super(struct super_block * sb, void * data, int silent)
 static struct dentry *bm_mount(struct file_system_type *fs_type,
 	int flags, const char *dev_name, void *data)
 {
-	struct pid_namespace *ns = task_active_pid_ns(current);
-
 	if (!current_user_ns_initial() && !capable(CAP_SYS_ADMIN))
 		return ERR_PTR(-EPERM);
-	return mount_ns(fs_type, flags, get_exec_env(), ns, ns->user_ns,
-			bm_fill_super);
+
+	return mount_ns(fs_type, flags, get_exec_env(), get_exec_env(),
+			current_user_ns(), bm_fill_super);
 }
 
 static struct linux_binfmt misc_format = {
