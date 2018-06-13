@@ -31,6 +31,7 @@
 #include <linux/kernel.h>
 #include <linux/moduleloader.h>
 #include <linux/bug.h>
+#include <asm/alternative.h>
 
 #if 0
 #define DEBUGP printk
@@ -50,7 +51,7 @@ void *module_alloc(unsigned long size)
 	if (PAGE_ALIGN(size) > MODULES_LEN)
 		return NULL;
 	return __vmalloc_node_range(size, 1, MODULES_VADDR, MODULES_END,
-				    GFP_KERNEL, PAGE_KERNEL, -1,
+				    GFP_KERNEL, PAGE_KERNEL_EXEC, NUMA_NO_NODE,
 				    __builtin_return_address(0));
 }
 #endif
@@ -440,6 +441,18 @@ int module_finalize(const Elf_Ehdr *hdr,
 		    const Elf_Shdr *sechdrs,
 		    struct module *me)
 {
+	const Elf_Shdr *s;
+	char *secstrings = (void *)hdr + sechdrs[hdr->e_shstrndx].sh_offset;
+
+	for (s = sechdrs; s < sechdrs + hdr->e_shnum; s++) {
+		if (!strcmp(".altinstructions", secstrings + s->sh_name)) {
+			/* patch .altinstructions */
+			void *aseg = (void *)s->sh_addr;
+
+			apply_alternatives(aseg, aseg + s->sh_size);
+		}
+	}
+
 	vfree(me->arch.syminfo);
 	me->arch.syminfo = NULL;
 	return 0;

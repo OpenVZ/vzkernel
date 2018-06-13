@@ -27,6 +27,44 @@ config MMU
 	bool
 	default y
 
+config ARCH_MMAP_RND_BITS_MAX
+	# On Book3S 64 and Book3E, the default virtual address space for
+	# 64-bit processes is 2^46 (64TB). As a maximum, allow
+	# randomisation to consume up to 16T of address space (2^44),
+	# which should ensure a reasonable gap between bottom-up and
+	# top-down allocations for applications that consume "normal"
+	# amounts of address space. Book3S 64 only supports 64K
+	# and 4K page sizes, while Book3E supports only 4K page sizes .
+	default 28 if 64BIT && PPC_64K_PAGES # 28 = 44 (16T) - 16 (64K)
+	default 32 if 64BIT		     # 32 = 44 (16T) - 12 (4K)
+	#
+	# For 32-bit, use the compat values, as they're the same.
+	default ARCH_MMAP_RND_COMPAT_BITS_MAX
+
+config ARCH_MMAP_RND_BITS_MIN
+	# Allow randomisation to consume up to 1GB of address space (2^30).
+	default 14 if 64BIT && PPC_64K_PAGES	# 14 = 30 (1GB) - 16 (64K)
+	default 18 if 64BIT			# 18 = 30 (1GB) - 12 (4K)
+	#
+	# For 32-bit, use the compat values, as they're the same.
+	default ARCH_MMAP_RND_COMPAT_BITS_MIN
+
+config ARCH_MMAP_RND_COMPAT_BITS_MAX
+	# Total virtual address space for 32-bit processes is 2^31 (2GB).
+	# Allow randomisation to consume up to 512MB of address space (2^29).
+	default 11 if PPC_256K_PAGES	# 11 = 29 (512MB) - 18 (256K)
+	default 13 if PPC_64K_PAGES	# 13 = 29 (512MB) - 16 (64K)
+	default 15 if PPC_16K_PAGES 	# 15 = 29 (512MB) - 14 (16K)
+	default 17			# 17 = 29 (512MB) - 12 (4K)
+
+config ARCH_MMAP_RND_COMPAT_BITS_MIN
+	# Total virtual address space for 32-bit processes is 2^31 (2GB).
+	# Allow randomisation to consume up to 8MB of address space (2^23).
+	default 5 if PPC_256K_PAGES	#  5 = 23 (8MB) - 18 (256K)
+	default 7 if PPC_64K_PAGES	#  7 = 23 (8MB) - 16 (64K)
+	default 9 if PPC_16K_PAGES	#  9 = 23 (8MB) - 14 (16K)
+	default 11			# 11 = 23 (8MB) - 12 (4K)
+
 config HAVE_SETUP_PER_CPU_AREA
 	def_bool PPC64
 
@@ -82,13 +120,20 @@ config GENERIC_HWEIGHT
 	bool
 	default y
 
+config ARCH_HAS_DMA_SET_COHERENT_MASK
+        bool
+
 config PPC
 	bool
 	default y
+	select ARCH_MIGHT_HAVE_PC_PARPORT
 	select BINFMT_ELF
+	select ARCH_HAS_ELF_RANDOMIZE
 	select OF
 	select OF_EARLY_FLATTREE
 	select HAVE_FTRACE_MCOUNT_RECORD
+	select HAVE_ARCH_MMAP_RND_BITS
+	select HAVE_ARCH_MMAP_RND_COMPAT_BITS	if COMPAT
 	select HAVE_DYNAMIC_FTRACE
 	select HAVE_FUNCTION_TRACER
 	select HAVE_FUNCTION_GRAPH_TRACER
@@ -97,14 +142,13 @@ config PPC
 	select VIRT_TO_BUS if !PPC64
 	select HAVE_IDE
 	select HAVE_IOREMAP_PROT
-	select HAVE_EFFICIENT_UNALIGNED_ACCESS
+	select HAVE_EFFICIENT_UNALIGNED_ACCESS if !CPU_LITTLE_ENDIAN
 	select HAVE_KPROBES
 	select HAVE_ARCH_KGDB
 	select HAVE_KRETPROBES
 	select HAVE_ARCH_TRACEHOOK
 	select HAVE_MEMBLOCK
 	select HAVE_MEMBLOCK_NODE_MAP
-	select HAVE_DMA_ATTRS
 	select HAVE_DMA_API_DEBUG
 	select USE_GENERIC_SMP_HELPERS if SMP
 	select HAVE_OPROFILE
@@ -112,6 +156,8 @@ config PPC
 	select GENERIC_ATOMIC64 if PPC32
 	select ARCH_HAS_ATOMIC64_DEC_IF_POSITIVE
 	select HAVE_PERF_EVENTS
+	select HAVE_PERF_REGS
+	select HAVE_PERF_USER_STACK_DUMP
 	select HAVE_REGS_AND_STACK_ACCESS_API
 	select HAVE_HW_BREAKPOINT if PERF_EVENTS && PPC_BOOK3S_64
 	select HAVE_GENERIC_HARDIRQS
@@ -123,13 +169,15 @@ config PPC
 	select IRQ_FORCED_THREADING
 	select HAVE_RCU_TABLE_FREE if SMP
 	select HAVE_SYSCALL_TRACEPOINTS
-	select HAVE_BPF_JIT if PPC64
+	select HAVE_BPF_JIT if (PPC64 && CPU_BIG_ENDIAN)
 	select HAVE_ARCH_JUMP_LABEL
 	select ARCH_HAVE_NMI_SAFE_CMPXCHG
 	select GENERIC_SMP_IDLE_THREAD
 	select GENERIC_CMOS_UPDATE
 	select GENERIC_TIME_VSYSCALL_OLD
 	select GENERIC_CLOCKEVENTS
+	select GENERIC_CLOCKEVENTS_BROADCAST if SMP
+	select ARCH_HAS_TICK_BROADCAST if GENERIC_CLOCKEVENTS_BROADCAST
 	select GENERIC_STRNCPY_FROM_USER
 	select GENERIC_STRNLEN_USER
 	select HAVE_MOD_ARCH_SPECIFIC
@@ -138,10 +186,23 @@ config PPC
 	select ARCH_USE_BUILTIN_BSWAP
 	select OLD_SIGSUSPEND
 	select OLD_SIGACTION if PPC32
+	select HAVE_IRQ_EXIT_ON_IRQ_STACK
+	select ARCH_USE_CMPXCHG_LOCKREF if PPC64
+	select ARCH_HAS_DMA_SET_COHERENT_MASK
+	select HAVE_ARCH_SECCOMP_FILTER
+	select HAVE_PERF_EVENTS_NMI if PPC64
+	select GENERIC_CPU_VULNERABILITIES	if PPC_BOOK3S_64
+
+config GENERIC_CSUM
+	def_bool n
 
 config EARLY_PRINTK
 	bool
 	default y
+
+config PANIC_TIMEOUT
+	int
+	default 180
 
 config COMPAT
 	bool
@@ -298,7 +359,7 @@ config HUGETLB_PAGE_SIZE_VARIABLE
 
 config MATH_EMULATION
 	bool "Math emulation"
-	depends on 4xx || 8xx || E200 || PPC_MPC832x || E500
+	depends on 4xx || 8xx || PPC_MPC832x || BOOKE
 	---help---
 	  Some PowerPC chips designed for embedded applications do not have
 	  a floating-point unit and therefore do not implement the
@@ -307,10 +368,16 @@ config MATH_EMULATION
 	  unit, which will allow programs that use floating-point
 	  instructions to run.
 
+	  This is also useful to emulate missing (optional) instructions
+	  such as fsqrt on cores that do have an FPU but do not implement
+	  them (such as Freescale BookE).
+
 config PPC_TRANSACTIONAL_MEM
        bool "Transactional Memory support for POWERPC"
        depends on PPC_BOOK3S_64
        depends on SMP
+       select ALTIVEC
+       select VSX
        default n
        ---help---
          Support user-mode Transactional Memory on POWERPC.
@@ -341,7 +408,7 @@ config SWIOTLB
 
 config HOTPLUG_CPU
 	bool "Support for enabling/disabling CPUs"
-	depends on SMP && HOTPLUG && (PPC_PSERIES || \
+	depends on SMP && (PPC_PSERIES || \
 	PPC_PMAC || PPC_POWERNV || (PPC_85xx && !PPC_E500MC))
 	---help---
 	  Say Y here to be able to disable and re-enable individual
@@ -362,9 +429,16 @@ config ARCH_HAS_WALK_MEMORY
 config ARCH_ENABLE_MEMORY_HOTREMOVE
 	def_bool y
 
+config PPC64_SUPPORTS_MEMORY_FAILURE
+	bool "Add support for memory hwpoison"
+	depends on PPC_BOOK3S_64
+	default "y" if PPC_POWERNV
+	select ARCH_SUPPORTS_MEMORY_FAILURE
+
 config KEXEC
 	bool "kexec system call"
 	depends on (PPC_BOOK3S || FSL_BOOKE || (44x && !SMP))
+	select KEXEC_CORE
 	help
 	  kexec is a system call that implements the ability to shutdown your
 	  current kernel, and to start another kernel.  It is like a reboot
@@ -379,23 +453,36 @@ config KEXEC
 	  support.  As of this writing the exact hardware interface is
 	  strongly in flux, so no good recommendation can be made.
 
+config KEXEC_AUTO_RESERVE
+	bool "automatically reserve memory for kexec kernel"
+	depends on KEXEC
+	default y
+	---help---
+	  Automatically reserve memory for a kexec kernel, so that you don't
+	  need to specify numbers for the "crashkernel=X@Y" boot option,
+	  instead you can use "crashkernel=auto". To make this work, you need
+	  to have more than 2G/8G memory. On PPC, 128M or 256M is reserved, on
+	  PPC64 1/32 of your physical memory, but it will not exceed 4G.
+
 config CRASH_DUMP
-	bool "Build a kdump crash kernel"
+	bool "Build a dump capture kernel"
 	depends on PPC64 || 6xx || FSL_BOOKE || (44x && !SMP)
 	select RELOCATABLE if PPC64 || 44x
 	select DYNAMIC_MEMSTART if FSL_BOOKE
 	help
-	  Build a kernel suitable for use as a kdump capture kernel.
+	  Build a kernel suitable for use as a dump capture kernel.
 	  The same kernel binary can be used as production kernel and dump
 	  capture kernel.
 
 config FA_DUMP
 	bool "Firmware-assisted dump"
-	depends on PPC64 && PPC_RTAS && CRASH_DUMP
+	depends on PPC64 && PPC_RTAS
+	select CRASH_CORE
+	select CRASH_DUMP
 	help
 	  A robust mechanism to get reliable kernel crash dump with
 	  assistance from firmware. This approach does not use kexec,
-	  instead firmware assists in booting the kdump kernel
+	  instead firmware assists in booting the capture kernel
 	  while preserving memory contents. Firmware-assisted dump
 	  is meant to be a kdump replacement offering robustness and
 	  speed not possible without system firmware assistance.
@@ -421,6 +508,14 @@ config NODES_SHIFT
 	default "8" if PPC64
 	default "4"
 	depends on NEED_MULTIPLE_NODES
+
+config USE_PERCPU_NUMA_NODE_ID
+	def_bool y
+	depends on NUMA
+
+config HAVE_MEMORYLESS_NODES
+	def_bool y
+	depends on NUMA
 
 config ARCH_SELECT_MEMORY_MODEL
 	def_bool y
@@ -561,6 +656,10 @@ config PPC_SUBPAGE_PROT
 	  to set access permissions (read/write, readonly, or no access)
 	  on the 4k subpages of each 64k page.
 
+config PPC_COPRO_BASE
+	bool
+	default n
+
 config SCHED_SMT
 	bool "SMT (Hyperthreading) scheduler support"
 	depends on PPC64 && SMP
@@ -572,7 +671,7 @@ config SCHED_SMT
 config PPC_DENORMALISATION
 	bool "PowerPC denormalisation exception handling"
 	depends on PPC_BOOK3S_64
-	default "n"
+	default "y" if PPC_POWERNV
 	---help---
 	  Add support for handling denormalisation of single precision
 	  values.  Useful for bare metal only.  If unsure say Y here.
@@ -589,6 +688,15 @@ config CMDLINE
 	  pass arguments to the kernel. For these platforms, you can supply
 	  some command-line options at build time by entering them here.  In
 	  most cases you will need to specify the root device here.
+
+config CMDLINE_FORCE
+	bool "Always use the default kernel command string"
+	depends on CMDLINE_BOOL
+	help
+	  Always use the default kernel command string, even if the boot
+	  loader passes other arguments to the kernel.
+	  This is useful if you cannot or don't want to change the
+	  command-line options your boot loader passes to the kernel.
 
 config EXTRA_TARGETS
 	string "Additional default image types"
@@ -734,7 +842,6 @@ config PCI
 	default y if !40x && !CPM2 && !8xx && !PPC_83xx \
 		&& !PPC_85xx && !PPC_86xx && !GAMECUBE_COMMON
 	default PCI_QSPAN if !4xx && !CPM2 && 8xx
-	select ARCH_SUPPORTS_MSI
 	select GENERIC_PCI_IOMAP
 	help
 	  Find out whether your system includes a PCI bus. PCI is the name of
@@ -762,13 +869,9 @@ config PCI_8260
 	select PPC_INDIRECT_PCI
 	default y
 
-source "drivers/pci/pcie/Kconfig"
-
 source "drivers/pci/Kconfig"
 
 source "drivers/pcmcia/Kconfig"
-
-source "drivers/pci/hotplug/Kconfig"
 
 config HAS_RAPIDIO
 	bool
@@ -986,6 +1089,7 @@ config RELOCATABLE
 	  must live at a different physical address than the primary
 	  kernel.
 
+# This value must have zeroes in the bottom 60 bits otherwise lots will break
 config PAGE_OFFSET
 	hex
 	default "0xc000000000000000"
@@ -996,6 +1100,9 @@ config PHYSICAL_START
 	hex
 	default "0x00000000"
 endif
+
+config	ARCH_RANDOM
+	def_bool n
 
 source "net/Kconfig"
 
@@ -1010,11 +1117,6 @@ source "lib/Kconfig"
 source "arch/powerpc/Kconfig.debug"
 
 source "security/Kconfig"
-
-config KEYS_COMPAT
-	bool
-	depends on COMPAT && KEYS
-	default y
 
 source "crypto/Kconfig"
 

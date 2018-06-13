@@ -897,7 +897,7 @@ static const struct net_device_ops ethoc_netdev_ops = {
 	.ndo_set_config = ethoc_config,
 	.ndo_set_mac_address = ethoc_set_mac_address,
 	.ndo_set_rx_mode = ethoc_set_multicast_list,
-	.ndo_change_mtu = ethoc_change_mtu,
+	.ndo_change_mtu_rh74 = ethoc_change_mtu,
 	.ndo_tx_timeout = ethoc_tx_timeout,
 	.ndo_start_xmit = ethoc_start_xmit,
 };

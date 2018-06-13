@@ -13,16 +13,21 @@
 #include <linux/gfp.h>
 #include <linux/slab.h>
 #include <linux/percpu.h>
+#include <linux/acpi.h>
+#include <linux/tick.h>
 
 #include "base.h"
 
-struct bus_type cpu_subsys = {
-	.name = "cpu",
-	.dev_name = "cpu",
-};
-EXPORT_SYMBOL_GPL(cpu_subsys);
-
 static DEFINE_PER_CPU(struct device *, cpu_sys_devices);
+
+static int cpu_subsys_match(struct device *dev, struct device_driver *drv)
+{
+	/* ACPI style match is the only one that may succeed. */
+	if (acpi_driver_match_device(dev, drv))
+		return 1;
+
+	return 0;
+}
 
 #ifdef CONFIG_HOTPLUG_CPU
 static void change_cpu_under_node(struct cpu *cpu,
@@ -34,68 +39,39 @@ static void change_cpu_under_node(struct cpu *cpu,
 	cpu->node_id = to_nid;
 }
 
-static ssize_t show_online(struct device *dev,
-			   struct device_attribute *attr,
-			   char *buf)
+static int __ref cpu_subsys_online(struct device *dev)
 {
 	struct cpu *cpu = container_of(dev, struct cpu, dev);
-
-	return sprintf(buf, "%u\n", !!cpu_online(cpu->dev.id));
-}
-
-static ssize_t __ref store_online(struct device *dev,
-				  struct device_attribute *attr,
-				  const char *buf, size_t count)
-{
-	struct cpu *cpu = container_of(dev, struct cpu, dev);
-	int cpuid = cpu->dev.id;
+	int cpuid = dev->id;
 	int from_nid, to_nid;
-	ssize_t ret;
+	int ret;
 
-	cpu_hotplug_driver_lock();
-	switch (buf[0]) {
-	case '0':
-		ret = cpu_down(cpuid);
-		if (!ret)
-			kobject_uevent(&dev->kobj, KOBJ_OFFLINE);
-		break;
-	case '1':
-		from_nid = cpu_to_node(cpuid);
-		ret = cpu_up(cpuid);
+	from_nid = cpu_to_node(cpuid);
+	if (from_nid == NUMA_NO_NODE)
+		return -ENODEV;
 
-		/*
-		 * When hot adding memory to memoryless node and enabling a cpu
-		 * on the node, node number of the cpu may internally change.
-		 */
-		to_nid = cpu_to_node(cpuid);
-		if (from_nid != to_nid)
-			change_cpu_under_node(cpu, from_nid, to_nid);
+	ret = cpu_up(cpuid);
+	/*
+	 * When hot adding memory to memoryless node and enabling a cpu
+	 * on the node, node number of the cpu may internally change.
+	 */
+	to_nid = cpu_to_node(cpuid);
+	if (from_nid != to_nid)
+		change_cpu_under_node(cpu, from_nid, to_nid);
 
-		if (!ret)
-			kobject_uevent(&dev->kobj, KOBJ_ONLINE);
-		break;
-	default:
-		ret = -EINVAL;
-	}
-	cpu_hotplug_driver_unlock();
-
-	if (ret >= 0)
-		ret = count;
 	return ret;
 }
-static DEVICE_ATTR(online, 0644, show_online, store_online);
 
-static void __cpuinit register_cpu_control(struct cpu *cpu)
+static int cpu_subsys_offline(struct device *dev)
 {
-	device_create_file(&cpu->dev, &dev_attr_online);
+	return cpu_down(dev->id);
 }
+
 void unregister_cpu(struct cpu *cpu)
 {
 	int logical_cpu = cpu->dev.id;
 
 	unregister_cpu_under_node(logical_cpu, cpu_to_node(logical_cpu));
-
-	device_remove_file(&cpu->dev, &dev_attr_online);
 
 	device_unregister(&cpu->dev);
 	per_cpu(cpu_sys_devices, logical_cpu) = NULL;
@@ -108,7 +84,17 @@ static ssize_t cpu_probe_store(struct device *dev,
 			       const char *buf,
 			       size_t count)
 {
-	return arch_cpu_probe(buf, count);
+	ssize_t cnt;
+	int ret;
+
+	ret = lock_device_hotplug_sysfs();
+	if (ret)
+		return ret;
+
+	cnt = arch_cpu_probe(buf, count);
+
+	unlock_device_hotplug();
+	return cnt;
 }
 
 static ssize_t cpu_release_store(struct device *dev,
@@ -116,18 +102,35 @@ static ssize_t cpu_release_store(struct device *dev,
 				 const char *buf,
 				 size_t count)
 {
-	return arch_cpu_release(buf, count);
+	ssize_t cnt;
+	int ret;
+
+	ret = lock_device_hotplug_sysfs();
+	if (ret)
+		return ret;
+
+	cnt = arch_cpu_release(buf, count);
+
+	unlock_device_hotplug();
+	return cnt;
 }
 
 static DEVICE_ATTR(probe, S_IWUSR, NULL, cpu_probe_store);
 static DEVICE_ATTR(release, S_IWUSR, NULL, cpu_release_store);
 #endif /* CONFIG_ARCH_CPU_PROBE_RELEASE */
 
-#else /* ... !CONFIG_HOTPLUG_CPU */
-static inline void register_cpu_control(struct cpu *cpu)
-{
-}
 #endif /* CONFIG_HOTPLUG_CPU */
+
+struct bus_type cpu_subsys = {
+	.name = "cpu",
+	.dev_name = "cpu",
+	.match = cpu_subsys_match,
+#ifdef CONFIG_HOTPLUG_CPU
+	.online = cpu_subsys_online,
+	.offline = cpu_subsys_offline,
+#endif
+};
+EXPORT_SYMBOL_GPL(cpu_subsys);
 
 #ifdef CONFIG_KEXEC
 #include <linux/kexec.h>
@@ -241,6 +244,34 @@ static ssize_t print_cpus_offline(struct device *dev,
 }
 static DEVICE_ATTR(offline, 0444, print_cpus_offline, NULL);
 
+static ssize_t print_cpus_isolated(struct device *dev,
+				  struct device_attribute *attr, char *buf)
+{
+	int n = 0, len = PAGE_SIZE-2;
+
+	n = cpulist_scnprintf(buf, len, cpu_isolated_map);
+
+	buf[n++] = '\n';
+	buf[n] = '\0';
+	return n;
+}
+static DEVICE_ATTR(isolated, 0444, print_cpus_isolated, NULL);
+
+#ifdef CONFIG_NO_HZ_FULL
+static ssize_t print_cpus_nohz_full(struct device *dev,
+				  struct device_attribute *attr, char *buf)
+{
+	int n = 0, len = PAGE_SIZE-2;
+
+	n = cpulist_scnprintf(buf, len, tick_nohz_full_mask);
+
+	buf[n++] = '\n';
+	buf[n] = '\0';
+	return n;
+}
+static DEVICE_ATTR(nohz_full, 0444, print_cpus_nohz_full, NULL);
+#endif
+
 static void cpu_device_release(struct device *dev)
 {
 	/*
@@ -268,7 +299,7 @@ static void cpu_device_release(struct device *dev)
  *
  * Initialize and register the CPU device.
  */
-int __cpuinit register_cpu(struct cpu *cpu, int num)
+int register_cpu(struct cpu *cpu, int num)
 {
 	int error;
 
@@ -277,12 +308,12 @@ int __cpuinit register_cpu(struct cpu *cpu, int num)
 	cpu->dev.id = num;
 	cpu->dev.bus = &cpu_subsys;
 	cpu->dev.release = cpu_device_release;
+	cpu->dev.offline_disabled = !cpu->hotpluggable;
+	cpu->dev.offline = !cpu_online(num);
 #ifdef CONFIG_ARCH_HAS_CPU_AUTOPROBE
 	cpu->dev.bus->uevent = arch_cpu_uevent;
 #endif
 	error = device_register(&cpu->dev);
-	if (!error && cpu->hotpluggable)
-		register_cpu_control(cpu);
 	if (!error)
 		per_cpu(cpu_sys_devices, num) = &cpu->dev;
 	if (!error)
@@ -321,6 +352,10 @@ static struct attribute *cpu_root_attrs[] = {
 	&cpu_attrs[2].attr.attr,
 	&dev_attr_kernel_max.attr,
 	&dev_attr_offline.attr,
+	&dev_attr_isolated.attr,
+#ifdef CONFIG_NO_HZ_FULL
+	&dev_attr_nohz_full.attr,
+#endif
 #ifdef CONFIG_ARCH_HAS_CPU_AUTOPROBE
 	&dev_attr_modalias.attr,
 #endif
@@ -359,10 +394,66 @@ static void __init cpu_dev_register_generic(void)
 #endif
 }
 
+#ifdef CONFIG_GENERIC_CPU_VULNERABILITIES
+
+ssize_t __weak cpu_show_meltdown(struct device *dev,
+				 struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "Not affected\n");
+}
+
+ssize_t __weak cpu_show_spectre_v1(struct device *dev,
+				   struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "Not affected\n");
+}
+
+ssize_t __weak cpu_show_spectre_v2(struct device *dev,
+				   struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "Not affected\n");
+}
+
+ssize_t __weak cpu_show_spec_store_bypass(struct device *dev,
+					  struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "Not affected\n");
+}
+
+static DEVICE_ATTR(meltdown, 0400, cpu_show_meltdown, NULL);
+static DEVICE_ATTR(spectre_v1, 0400, cpu_show_spectre_v1, NULL);
+static DEVICE_ATTR(spectre_v2, 0400, cpu_show_spectre_v2, NULL);
+static DEVICE_ATTR(spec_store_bypass, 0400, cpu_show_spec_store_bypass, NULL);
+
+static struct attribute *cpu_root_vulnerabilities_attrs[] = {
+	&dev_attr_meltdown.attr,
+	&dev_attr_spectre_v1.attr,
+	&dev_attr_spectre_v2.attr,
+	&dev_attr_spec_store_bypass.attr,
+	NULL
+};
+
+static const struct attribute_group cpu_root_vulnerabilities_group = {
+	.name  = "vulnerabilities",
+	.attrs = cpu_root_vulnerabilities_attrs,
+};
+
+static void __init cpu_register_vulnerabilities(void)
+{
+	if (sysfs_create_group(&cpu_subsys.dev_root->kobj,
+			       &cpu_root_vulnerabilities_group))
+		pr_err("Unable to register CPU vulnerabilities\n");
+}
+
+#else
+static inline void cpu_register_vulnerabilities(void) { }
+#endif
+
 void __init cpu_dev_init(void)
 {
 	if (subsys_system_register(&cpu_subsys, cpu_root_attr_groups))
 		panic("Failed to register CPU subsystem");
 
 	cpu_dev_register_generic();
+	cpu_register_vulnerabilities();
 }

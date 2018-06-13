@@ -175,7 +175,8 @@ struct ap_device_id {
 	kernel_ulong_t driver_info;
 };
 
-#define AP_DEVICE_ID_MATCH_DEVICE_TYPE		0x01
+#define AP_DEVICE_ID_MATCH_CARD_TYPE		0x01
+#define AP_DEVICE_ID_MATCH_QUEUE_TYPE		0x02
 
 /* s390 css bus devices (subchannels) */
 struct css_device_id {
@@ -215,6 +216,14 @@ struct serio_device_id {
 	__u8 extra;
 	__u8 id;
 	__u8 proto;
+};
+
+struct hda_device_id {
+	__u32 vendor_id;
+	__u32 rev_id;
+	__u8 api_version;
+	const char *name;
+	unsigned long driver_data;
 };
 
 /*
@@ -398,7 +407,7 @@ struct virtio_device_id {
  * For Hyper-V devices we use the device guid as the id.
  */
 struct hv_vmbus_device_id {
-	__u8 guid[16];
+	uuid_le guid;
 	kernel_ulong_t driver_data;	/* Data private to the driver */
 };
 
@@ -456,7 +465,8 @@ enum dmi_field {
 };
 
 struct dmi_strmatch {
-	unsigned char slot;
+	unsigned char slot:7;
+	unsigned char exact_match:1;
 	char substr[79];
 };
 
@@ -474,7 +484,8 @@ struct dmi_system_id {
  */
 #define dmi_device_id dmi_system_id
 
-#define DMI_MATCH(a, b)	{ a, b }
+#define DMI_MATCH(a, b)	{ .slot = a, .substr = b }
+#define DMI_EXACT_MATCH(a, b)	{ .slot = a, .substr = b, .exact_match = 1 }
 
 #define PLATFORM_NAME_SIZE	20
 #define PLATFORM_MODULE_PREFIX	"platform:"
@@ -545,6 +556,11 @@ struct amba_id {
  * See documentation of "x86_match_cpu" for details.
  */
 
+/*
+ * MODULE_DEVICE_TABLE expects this struct to be called x86cpu_device_id.
+ * Although gcc seems to ignore this error, clang fails without this define.
+ */
+#define x86cpu_device_id x86_cpu_id
 struct x86_cpu_id {
 	__u16 vendor;
 	__u16 family;
@@ -571,10 +587,28 @@ struct ipack_device_id {
 
 #define MEI_CL_MODULE_PREFIX "mei:"
 #define MEI_CL_NAME_SIZE 32
+#define MEI_CL_VERSION_ANY 0xff
 
+/**
+ * struct mei_cl_device_id - MEI client device identifier
+ * @name: helper name
+ * @uuid: client uuid
+ * @version: client protocol version
+ * @driver_info: information used by the driver.
+ *
+ * identifies mei client device by uuid and name
+ */
 struct mei_cl_device_id {
 	char name[MEI_CL_NAME_SIZE];
+	uuid_le uuid;
+	__u8    version;
 	kernel_ulong_t driver_info;
+};
+
+struct ulpi_device_id {
+	__u16 vendor;
+	__u16 product;
+	kernel_ulong_t driver_data;
 };
 
 #endif /* LINUX_MOD_DEVICETABLE_H */

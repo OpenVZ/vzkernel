@@ -66,7 +66,7 @@
 #include "probe_roms.h"
 
 #define MAJ 1
-#define MIN 1
+#define MIN 2
 #define BUILD 0
 #define DRV_VERSION __stringify(MAJ) "." __stringify(MIN) "." \
 	__stringify(BUILD)
@@ -75,7 +75,7 @@ MODULE_VERSION(DRV_VERSION);
 
 static struct scsi_transport_template *isci_transport_template;
 
-static DEFINE_PCI_DEVICE_TABLE(isci_id_table) = {
+static const struct pci_device_id isci_id_table[] = {
 	{ PCI_VDEVICE(INTEL, 0x1D61),},
 	{ PCI_VDEVICE(INTEL, 0x1D63),},
 	{ PCI_VDEVICE(INTEL, 0x1D65),},
@@ -258,8 +258,6 @@ static int isci_register_sas_ha(struct isci_host *isci_host)
 	sas_ha->sas_port = sas_ports;
 	sas_ha->num_phys = SCI_MAX_PHYS;
 
-	sas_ha->lldd_queue_size = ISCI_CAN_QUEUE_VAL;
-	sas_ha->lldd_max_execute_num = 1;
 	sas_ha->strict_wide_ports = 1;
 
 	sas_register_ha(sas_ha);
@@ -274,11 +272,10 @@ static void isci_unregister(struct isci_host *isci_host)
 	if (!isci_host)
 		return;
 
+	shost = to_shost(isci_host);
 	sas_unregister_ha(&isci_host->sas_ha);
 
-	shost = to_shost(isci_host);
 	sas_remove_host(shost);
-	scsi_remove_host(shost);
 	scsi_host_put(shost);
 }
 
@@ -356,7 +353,7 @@ static int isci_setup_interrupts(struct pci_dev *pdev)
 	for (i = 0; i < num_msix; i++)
 		pci_info->msix_entries[i].entry = i;
 
-	err = pci_enable_msix(pdev, pci_info->msix_entries, num_msix);
+	err = pci_enable_msix_exact(pdev, pci_info->msix_entries, num_msix);
 	if (err)
 		goto intx;
 

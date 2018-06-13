@@ -641,8 +641,8 @@ dasd_diag_init(void)
 	}
 	ASCEBC(dasd_diag_discipline.ebcname, 4);
 
-	service_subclass_irq_register();
-	register_external_interrupt(0x2603, dasd_ext_handler);
+	irq_subclass_register(IRQ_SUBCLASS_SERVICE_SIGNAL);
+	register_external_irq(EXT_IRQ_CP_SERVICE, dasd_ext_handler);
 	dasd_diag_discipline_pointer = &dasd_diag_discipline;
 	return 0;
 }
@@ -650,8 +650,8 @@ dasd_diag_init(void)
 static void __exit
 dasd_diag_cleanup(void)
 {
-	unregister_external_interrupt(0x2603, dasd_ext_handler);
-	service_subclass_irq_unregister();
+	unregister_external_irq(EXT_IRQ_CP_SERVICE, dasd_ext_handler);
+	irq_subclass_unregister(IRQ_SUBCLASS_SERVICE_SIGNAL);
 	dasd_diag_discipline_pointer = NULL;
 }
 

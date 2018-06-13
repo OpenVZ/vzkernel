@@ -21,6 +21,8 @@
 
 #include <linux/hid.h>
 #include <linux/hid-sensor-ids.h>
+#include <linux/iio/iio.h>
+#include <linux/iio/trigger.h>
 
 /**
  * struct hid_sensor_hub_attribute_info - Attribute info
@@ -138,25 +140,28 @@ int sensor_hub_input_attr_get_raw_value(struct hid_sensor_hub_device *hsdev,
 * sensor_hub_set_feature() - Feature set request
 * @report_id:	Report id to look for
 * @field_index:	Field index inside a report
-* @value:	Value to set
+* @buffer_size: size of the buffer
+* @buffer:	buffer to use in the feature set
 *
 * Used to set a field in feature report. For example this can set polling
 * interval, sensitivity, activate/deactivate state.
 */
 int sensor_hub_set_feature(struct hid_sensor_hub_device *hsdev, u32 report_id,
-			u32 field_index, s32 value);
+			   u32 field_index, int buffer_size, void *buffer);
 
 /**
 * sensor_hub_get_feature() - Feature get request
 * @report_id:	Report id to look for
 * @field_index:	Field index inside a report
-* @value:	Place holder for return value
+* @buffer_size:	size of the buffer
+* @buffer:	buffer to copy output
 *
 * Used to get a field in feature report. For example this can get polling
-* interval, sensitivity, activate/deactivate state.
+* interval, sensitivity, activate/deactivate state. On success it returns
+* number of bytes copied to buffer. On failure, it returns value < 0.
 */
 int sensor_hub_get_feature(struct hid_sensor_hub_device *hsdev, u32 report_id,
-			u32 field_index, s32 *value);
+			   u32 field_index, int buffer_size, void *buffer);
 
 /* hid-sensor-attributes */
 
@@ -165,11 +170,18 @@ struct hid_sensor_common {
 	struct hid_sensor_hub_device *hsdev;
 	struct platform_device *pdev;
 	unsigned usage_id;
-	bool data_ready;
+	atomic_t data_ready;
+	atomic_t user_requested_state;
+	int poll_interval;
+	int raw_hystersis;
+	int latency_ms;
+	struct iio_trigger *trigger;
 	struct hid_sensor_hub_attribute_info poll;
 	struct hid_sensor_hub_attribute_info report_state;
 	struct hid_sensor_hub_attribute_info power_state;
 	struct hid_sensor_hub_attribute_info sensitivity;
+	struct hid_sensor_hub_attribute_info report_latency;
+	struct work_struct work;
 };
 
 /*Convert from hid unit expo to regular exponent*/
@@ -194,5 +206,11 @@ int hid_sensor_write_samp_freq_value(struct hid_sensor_common *st,
 					int val1, int val2);
 int hid_sensor_read_samp_freq_value(struct hid_sensor_common *st,
 					int *val1, int *val2);
+
+s32 hid_sensor_read_poll_value(struct hid_sensor_common *st);
+
+bool hid_sensor_batch_mode_supported(struct hid_sensor_common *st);
+int hid_sensor_set_report_latency(struct hid_sensor_common *st, int latency);
+int hid_sensor_get_report_latency(struct hid_sensor_common *st);
 
 #endif

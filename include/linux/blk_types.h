@@ -29,6 +29,25 @@ struct bio_vec {
 };
 
 /*
+ * RHEL7 auxillary shadow structure used to extend 'struct bio' without
+ * breaking RHEL kABI -- bio_init_aux() must be used to set bio->bio_aux
+ */
+struct bio_aux {
+	unsigned long	bi_flags;
+	atomic_t	__bi_remaining;
+
+	/*
+	 * IMPORTANT: adding any new members to this struct will require a more
+	 * comprehensive audit (e.g. all bio_init() callers checked to see if
+	 * they'll need to make use of the new bio_aux member(s) you're adding).
+	 */
+};
+
+#define BIO_AUX_CHAIN	0	/* chained bio, ->bi_remaining in effect */
+
+#define bio_aux_flagged(bio, flag)	((bio)->bio_aux && (bio)->bio_aux->bi_flags & (1 << (flag)))
+
+/*
  * main unit of I/O for the block layer and lower layers (ie drivers and
  * stacking drivers)
  */
@@ -86,6 +105,13 @@ struct bio {
 
 	struct bio_set		*bi_pool;
 
+	/* FOR RH USE ONLY
+	 *
+	 * The following padding has been replaced to allow extending
+	 * the structure, using struct bio_aux, while preserving ABI.
+	 */
+	RH_KABI_REPLACE(void *rh_reserved1, struct bio_aux *bio_aux)
+
 	/*
 	 * We can inline a number of vecs at the end of the bio, to avoid
 	 * double allocations for a small number of bio_vecs. This member
@@ -100,8 +126,6 @@ struct bio {
  * bio flags
  */
 #define BIO_UPTODATE	0	/* ok after I/O completion */
-#define BIO_RW_BLOCK	1	/* RW_AHEAD set, and read/write would block */
-#define BIO_EOF		2	/* out-out-bounds error */
 #define BIO_SEG_VALID	3	/* bi_phys_segments valid */
 #define BIO_CLONED	4	/* doesn't own data */
 #define BIO_BOUNCED	5	/* bio is a bounce bio */
@@ -178,19 +202,27 @@ enum rq_flag_bits {
 	__REQ_MIXED_MERGE,	/* merge of different types, fail separately */
 	__REQ_KERNEL, 		/* direct IO to kernel pages */
 	__REQ_PM,		/* runtime pm request */
+	__REQ_END,		/* OBSOLETE */
+	__REQ_HASHED,		/* on IO scheduler merge hash */
+	__REQ_MQ_INFLIGHT,	/* track inflight for MQ */
+#ifdef __GENKSYMS__
+	__REQ_NO_TIMEOUT,	/* requests may never expire */
+#else
+	__REQ_STATS,
+#endif
 	__REQ_NR_BITS,		/* stops here */
 };
 
-#define REQ_WRITE		(1 << __REQ_WRITE)
-#define REQ_FAILFAST_DEV	(1 << __REQ_FAILFAST_DEV)
-#define REQ_FAILFAST_TRANSPORT	(1 << __REQ_FAILFAST_TRANSPORT)
-#define REQ_FAILFAST_DRIVER	(1 << __REQ_FAILFAST_DRIVER)
-#define REQ_SYNC		(1 << __REQ_SYNC)
-#define REQ_META		(1 << __REQ_META)
-#define REQ_PRIO		(1 << __REQ_PRIO)
-#define REQ_DISCARD		(1 << __REQ_DISCARD)
-#define REQ_WRITE_SAME		(1 << __REQ_WRITE_SAME)
-#define REQ_NOIDLE		(1 << __REQ_NOIDLE)
+#define REQ_WRITE		(1ULL << __REQ_WRITE)
+#define REQ_FAILFAST_DEV	(1ULL << __REQ_FAILFAST_DEV)
+#define REQ_FAILFAST_TRANSPORT	(1ULL << __REQ_FAILFAST_TRANSPORT)
+#define REQ_FAILFAST_DRIVER	(1ULL << __REQ_FAILFAST_DRIVER)
+#define REQ_SYNC		(1ULL << __REQ_SYNC)
+#define REQ_META		(1ULL << __REQ_META)
+#define REQ_PRIO		(1ULL << __REQ_PRIO)
+#define REQ_DISCARD		(1ULL << __REQ_DISCARD)
+#define REQ_WRITE_SAME		(1ULL << __REQ_WRITE_SAME)
+#define REQ_NOIDLE		(1ULL << __REQ_NOIDLE)
 
 #define REQ_FAILFAST_MASK \
 	(REQ_FAILFAST_DEV | REQ_FAILFAST_TRANSPORT | REQ_FAILFAST_DRIVER)
@@ -204,30 +236,99 @@ enum rq_flag_bits {
 
 /* This mask is used for both bio and request merge checking */
 #define REQ_NOMERGE_FLAGS \
-	(REQ_NOMERGE | REQ_STARTED | REQ_SOFTBARRIER | REQ_FLUSH | REQ_FUA)
+	(REQ_NOMERGE | REQ_STARTED | REQ_SOFTBARRIER | REQ_FLUSH | REQ_FUA | REQ_FLUSH_SEQ)
 
-#define REQ_RAHEAD		(1 << __REQ_RAHEAD)
-#define REQ_THROTTLED		(1 << __REQ_THROTTLED)
+#define REQ_RAHEAD		(1ULL << __REQ_RAHEAD)
+#define REQ_THROTTLED		(1ULL << __REQ_THROTTLED)
 
-#define REQ_SORTED		(1 << __REQ_SORTED)
-#define REQ_SOFTBARRIER		(1 << __REQ_SOFTBARRIER)
-#define REQ_FUA			(1 << __REQ_FUA)
-#define REQ_NOMERGE		(1 << __REQ_NOMERGE)
-#define REQ_STARTED		(1 << __REQ_STARTED)
-#define REQ_DONTPREP		(1 << __REQ_DONTPREP)
-#define REQ_QUEUED		(1 << __REQ_QUEUED)
-#define REQ_ELVPRIV		(1 << __REQ_ELVPRIV)
-#define REQ_FAILED		(1 << __REQ_FAILED)
-#define REQ_QUIET		(1 << __REQ_QUIET)
-#define REQ_PREEMPT		(1 << __REQ_PREEMPT)
-#define REQ_ALLOCED		(1 << __REQ_ALLOCED)
-#define REQ_COPY_USER		(1 << __REQ_COPY_USER)
-#define REQ_FLUSH		(1 << __REQ_FLUSH)
-#define REQ_FLUSH_SEQ		(1 << __REQ_FLUSH_SEQ)
-#define REQ_IO_STAT		(1 << __REQ_IO_STAT)
-#define REQ_MIXED_MERGE		(1 << __REQ_MIXED_MERGE)
-#define REQ_SECURE		(1 << __REQ_SECURE)
-#define REQ_KERNEL		(1 << __REQ_KERNEL)
-#define REQ_PM			(1 << __REQ_PM)
+#define REQ_SORTED		(1ULL << __REQ_SORTED)
+#define REQ_SOFTBARRIER		(1ULL << __REQ_SOFTBARRIER)
+#define REQ_FUA			(1ULL << __REQ_FUA)
+#define REQ_NOMERGE		(1ULL << __REQ_NOMERGE)
+#define REQ_STARTED		(1ULL << __REQ_STARTED)
+#define REQ_DONTPREP		(1ULL << __REQ_DONTPREP)
+#define REQ_QUEUED		(1ULL << __REQ_QUEUED)
+#define REQ_ELVPRIV		(1ULL << __REQ_ELVPRIV)
+#define REQ_FAILED		(1ULL << __REQ_FAILED)
+#define REQ_QUIET		(1ULL << __REQ_QUIET)
+#define REQ_PREEMPT		(1ULL << __REQ_PREEMPT)
+#define REQ_ALLOCED		(1ULL << __REQ_ALLOCED)
+#define REQ_COPY_USER		(1ULL << __REQ_COPY_USER)
+#define REQ_FLUSH		(1ULL << __REQ_FLUSH)
+#define REQ_FLUSH_SEQ		(1ULL << __REQ_FLUSH_SEQ)
+#define REQ_IO_STAT		(1ULL << __REQ_IO_STAT)
+#define REQ_MIXED_MERGE		(1ULL << __REQ_MIXED_MERGE)
+#define REQ_SECURE		(1ULL << __REQ_SECURE)
+#define REQ_KERNEL		(1ULL << __REQ_KERNEL)
+#define REQ_PM			(1ULL << __REQ_PM)
+#define REQ_HASHED		(1ULL << __REQ_HASHED)
+#define REQ_MQ_INFLIGHT		(1ULL << __REQ_MQ_INFLIGHT)
+/* IO stats tracking on */
+#define REQ_STATS		(1ULL << __REQ_STATS)
+
+enum req_op {
+	REQ_OP_READ,
+	REQ_OP_WRITE		= REQ_WRITE,
+	REQ_OP_DISCARD		= REQ_DISCARD,
+	REQ_OP_WRITE_SAME	= REQ_WRITE_SAME,
+};
+
+/*
+ * tmp cpmpat. Users used to set the write bit for all non reads, but
+ * we will be dropping the bitmap use for ops. Support both until
+ * the end of the patchset.
+ */
+static inline int op_from_rq_bits(u64 flags)
+{
+	if (flags & REQ_OP_DISCARD)
+		return REQ_OP_DISCARD;
+	else if (flags & REQ_OP_WRITE_SAME)
+		return REQ_OP_WRITE_SAME;
+	else if (flags & REQ_OP_WRITE)
+		return REQ_OP_WRITE;
+	else
+		return REQ_OP_READ;
+}
+
+/**
+ * blk_path_error - returns true if error may be path related
+ * @error: status the request was completed with
+ *
+ * Description:
+ *     This classifies block error status into non-retryable errors and ones
+ *     that may be successful if retried on a failover path.
+ *
+ * Return:
+ *     %false - retrying failover path will not help
+ *     %true  - may succeed if retried
+ */
+static inline bool blk_path_error(int error)
+{
+	switch (error) {
+	case -EBADE:
+	case -EOPNOTSUPP:
+	case -ENOSPC:
+	case -EREMOTEIO:
+	case -ENODATA:
+	case -EILSEQ:
+		return false;
+	}
+
+	/* Anything else could be a path failure, so should be retried */
+	return true;
+}
+
+struct blk_issue_stat {
+	u64 time;
+};
+
+struct blk_rq_stat {
+	s64 mean;
+	u64 min;
+	u64 max;
+	s32 nr_samples;
+	s32 nr_batch;
+	u64 batch;
+};
 
 #endif /* __LINUX_BLK_TYPES_H */

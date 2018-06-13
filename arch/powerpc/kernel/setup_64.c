@@ -36,6 +36,9 @@
 #include <linux/lockdep.h>
 #include <linux/memblock.h>
 #include <linux/hugetlb.h>
+#include <linux/memory.h>
+#include <linux/nmi.h>
+#include <linux/debugfs.h>
 
 #include <asm/io.h>
 #include <asm/kdump.h>
@@ -67,16 +70,13 @@
 #include <asm/kvm_ppc.h>
 #include <asm/hugetlb.h>
 
-#include "setup.h"
-
 #ifdef DEBUG
 #define DBG(fmt...) udbg_printf(fmt)
 #else
 #define DBG(fmt...)
 #endif
 
-int boot_cpuid = 0;
-int __initdata spinning_secondaries;
+int spinning_secondaries;
 u64 ppc64_pft_size;
 
 /* Pick defaults since we might want to patch instructions
@@ -118,13 +118,13 @@ static void check_smt_enabled(void)
 		else if (!strcmp(smt_enabled_cmdline, "off"))
 			smt_enabled_at_boot = 0;
 		else {
-			long smt;
+			int smt;
 			int rc;
 
-			rc = strict_strtol(smt_enabled_cmdline, 10, &smt);
+			rc = kstrtoint(smt_enabled_cmdline, 10, &smt);
 			if (!rc)
 				smt_enabled_at_boot =
-					min(threads_per_core, (int)smt);
+					min(threads_per_core, smt);
 		}
 	} else {
 		dn = of_find_node_by_path("/options");
@@ -163,6 +163,19 @@ static void fixup_boot_paca(void)
 	get_paca()->cpu_start = 1;
 	/* Allow percpu accesses to work until we setup percpu data */
 	get_paca()->data_offset = 0;
+}
+
+static void cpu_ready_for_interrupts(void)
+{
+	/* Set IR and DR in PACA MSR */
+	get_paca()->kernel_msr = MSR_KERNEL;
+
+	/* Enable AIL if supported */
+	if (cpu_has_feature(CPU_FTR_HVMODE) &&
+	    cpu_has_feature(CPU_FTR_ARCH_207S)) {
+		unsigned long lpcr = mfspr(SPRN_LPCR);
+		mtspr(SPRN_LPCR, lpcr | LPCR_AIL_3);
+	}
 }
 
 /*
@@ -230,6 +243,16 @@ void __init early_setup(unsigned long dt_ptr)
 	early_init_mmu();
 
 	/*
+	 * At this point, we can let interrupts switch to virtual mode
+	 * (the MMU has been setup), so adjust the MSR in the PACA to
+	 * have IR and DR set and enable AIL if it exists
+	 */
+	cpu_ready_for_interrupts();
+
+	/* Reserve large chunks of memory for use by CMA for KVM */
+	kvm_cma_reserve();
+
+	/*
 	 * Reserve any gigantic pages requested on the command line.
 	 * memblock needs to have been initialized by the time this is
 	 * called since this will reserve memory.
@@ -247,6 +270,13 @@ void early_setup_secondary(void)
 
 	/* Initialize the hash table or TLB handling */
 	early_init_mmu_secondary();
+
+	/*
+	 * At this point, we can let interrupts switch to virtual mode
+	 * (the MMU has been setup), so adjust the MSR in the PACA to
+	 * have IR and DR set.
+	 */
+	cpu_ready_for_interrupts();
 }
 
 #endif /* CONFIG_SMP */
@@ -267,7 +297,7 @@ void smp_release_cpus(void)
 
 	ptr  = (unsigned long *)((unsigned long)&__secondary_hold_spinloop
 			- PHYSICAL_START);
-	*ptr = __pa(generic_secondary_smp_init);
+	*ptr = ppc_function_entry(generic_secondary_smp_init);
 
 	/* And wait a bit for them to catch up */
 	for (i = 0; i < 100000; i++) {
@@ -305,14 +335,14 @@ static void __init initialize_cache_info(void)
 		 * d-cache and i-cache sizes... -Peter
 		 */
 		if (num_cpus == 1) {
-			const u32 *sizep, *lsizep;
+			const __be32 *sizep, *lsizep;
 			u32 size, lsize;
 
 			size = 0;
 			lsize = cur_cpu_spec->dcache_bsize;
 			sizep = of_get_property(np, "d-cache-size", NULL);
 			if (sizep != NULL)
-				size = *sizep;
+				size = be32_to_cpu(*sizep);
 			lsizep = of_get_property(np, "d-cache-block-size",
 						 NULL);
 			/* fallback if block size missing */
@@ -321,8 +351,8 @@ static void __init initialize_cache_info(void)
 							 "d-cache-line-size",
 							 NULL);
 			if (lsizep != NULL)
-				lsize = *lsizep;
-			if (sizep == 0 || lsizep == 0)
+				lsize = be32_to_cpu(*lsizep);
+			if (sizep == NULL || lsizep == NULL)
 				DBG("Argh, can't find dcache properties ! "
 				    "sizep: %p, lsizep: %p\n", sizep, lsizep);
 
@@ -335,7 +365,7 @@ static void __init initialize_cache_info(void)
 			lsize = cur_cpu_spec->icache_bsize;
 			sizep = of_get_property(np, "i-cache-size", NULL);
 			if (sizep != NULL)
-				size = *sizep;
+				size = be32_to_cpu(*sizep);
 			lsizep = of_get_property(np, "i-cache-block-size",
 						 NULL);
 			if (lsizep == NULL)
@@ -343,8 +373,8 @@ static void __init initialize_cache_info(void)
 							 "i-cache-line-size",
 							 NULL);
 			if (lsizep != NULL)
-				lsize = *lsizep;
-			if (sizep == 0 || lsizep == 0)
+				lsize = be32_to_cpu(*lsizep);
+			if (sizep == NULL || lsizep == NULL)
 				DBG("Argh, can't find icache properties ! "
 				    "sizep: %p, lsizep: %p\n", sizep, lsizep);
 
@@ -529,7 +559,8 @@ static void __init exc_lvl_early_init(void)
 
 /*
  * Stack space used when we detect a bad kernel stack pointer, and
- * early in SMP boots before relocation is enabled.
+ * early in SMP boots before relocation is enabled. Exclusive emergency
+ * stack for machine checks.
  */
 static void __init emergency_stack_init(void)
 {
@@ -552,6 +583,13 @@ static void __init emergency_stack_init(void)
 		sp  = memblock_alloc_base(THREAD_SIZE, THREAD_SIZE, limit);
 		sp += THREAD_SIZE;
 		paca[i].emergency_sp = __va(sp);
+
+#ifdef CONFIG_PPC_BOOK3S_64
+		/* emergency stack for machine check exception handling. */
+		sp  = memblock_alloc_base(THREAD_SIZE, THREAD_SIZE, limit);
+		sp += THREAD_SIZE;
+		paca[i].mc_emergency_sp = __va(sp);
+#endif
 	}
 }
 
@@ -573,9 +611,6 @@ void __init setup_arch(char **cmdline_p)
 	dcache_bsize = ppc64_caches.dline_size;
 	icache_bsize = ppc64_caches.iline_size;
 
-	/* reboot on panic */
-	panic_timeout = 180;
-
 	if (ppc_md.panic)
 		setup_panic();
 
@@ -585,6 +620,9 @@ void __init setup_arch(char **cmdline_p)
 	init_mm.brk = klimit;
 #ifdef CONFIG_PPC_64K_PAGES
 	init_mm.context.pte_frag = NULL;
+#endif
+#ifdef CONFIG_SPAPR_TCE_IOMMU
+	mm_iommu_init(&init_mm.context);
 #endif
 	irqstack_early_init();
 	exc_lvl_early_init();
@@ -608,8 +646,6 @@ void __init setup_arch(char **cmdline_p)
 
 	/* Initialize the MMU context management stuff */
 	mmu_context_init();
-
-	kvm_linear_init();
 
 	/* Interrupt code needs to be 64K-aligned */
 	if ((unsigned long)_stext & 0xffff)
@@ -700,9 +736,163 @@ void __init setup_per_cpu_areas(void)
 }
 #endif
 
+#ifdef CONFIG_MEMORY_HOTPLUG_SPARSE
+unsigned long memory_block_size_bytes(void)
+{
+	if (ppc_md.memory_block_size)
+		return ppc_md.memory_block_size();
 
-#ifdef CONFIG_PPC_INDIRECT_IO
+	return MIN_MEMORY_BLOCK_SIZE;
+}
+#endif
+
+#if defined(CONFIG_PPC_INDIRECT_PIO) || defined(CONFIG_PPC_INDIRECT_MMIO)
 struct ppc_pci_io ppc_pci_io;
 EXPORT_SYMBOL(ppc_pci_io);
-#endif /* CONFIG_PPC_INDIRECT_IO */
+#endif
 
+#ifdef CONFIG_HARDLOCKUP_DETECTOR
+u64 hw_nmi_get_sample_period(int watchdog_thresh)
+{
+	return ppc_proc_freq * watchdog_thresh;
+}
+
+/*
+ * The hardlockup detector breaks PMU event based branches and is likely
+ * to get false positives in KVM guests, so disable it by default.
+ */
+static int __init disable_hardlockup_detector(void)
+{
+	hardlockup_detector_disable();
+
+	return 0;
+}
+early_initcall(disable_hardlockup_detector);
+#endif
+
+#ifdef CONFIG_PPC_BOOK3S_64
+static enum l1d_flush_type enabled_flush_types;
+#define MAX_L1D_SIZE (64 * 1024)
+static char l1d_flush_fallback_area[2 * MAX_L1D_SIZE] __page_aligned_bss;
+static bool no_rfi_flush;
+bool rfi_flush;
+
+static int __init handle_no_rfi_flush(char *p)
+{
+	pr_info("rfi-flush: disabled on command line.");
+	no_rfi_flush = true;
+	return 0;
+}
+early_param("no_rfi_flush", handle_no_rfi_flush);
+
+/*
+ * The RFI flush is not KPTI, but because users will see doco that says to use
+ * nopti we hijack that option here to also disable the RFI flush.
+ */
+static int __init handle_no_pti(char *p)
+{
+	pr_info("rfi-flush: disabling due to 'nopti' on command line.\n");
+	handle_no_rfi_flush(NULL);
+	return 0;
+}
+early_param("nopti", handle_no_pti);
+
+static void do_nothing(void *unused)
+{
+	/*
+	 * We don't need to do the flush explicitly, just enter+exit kernel is
+	 * sufficient, the RFI exit handlers will do the right thing.
+	 */
+}
+
+void rfi_flush_enable(bool enable)
+{
+	if (rfi_flush == enable)
+		return;
+
+	if (enable) {
+		do_rfi_flush_fixups(enabled_flush_types);
+		on_each_cpu(do_nothing, NULL, 1);
+	} else
+		do_rfi_flush_fixups(L1D_FLUSH_NONE);
+
+	rfi_flush = enable;
+}
+
+void __init setup_rfi_flush(enum l1d_flush_type types, bool enable)
+{
+	if (types & L1D_FLUSH_FALLBACK) {
+		int cpu;
+		u64 l1d_size = ppc64_caches.dsize;
+
+		pr_info("rfi-flush: Using fallback displacement flush\n");
+
+		/*
+		 * We allocate 2x L1d size for the dummy area, to
+		 * catch possible hardware prefetch runoff.
+		 *
+		 * We can't use memblock_alloc here because bootmem has
+		 * been initialized, and the bootmem APIs don't work well
+		 * with an upper limit we need, so we allocate it statically
+		 * from BSS. The biggest L1d supported by this kernel is
+		 * 64kB (POWER8), so 128kB is reserved above.
+		 */
+
+		WARN_ON(l1d_size > MAX_L1D_SIZE);
+
+		for_each_possible_cpu(cpu) {
+			struct paca_aux_struct *paca_aux = paca_aux_of(cpu);
+			paca_aux->rfi_flush_fallback_area = l1d_flush_fallback_area;
+			paca_aux->l1d_flush_size = l1d_size;
+		}
+	}
+
+	if (types & L1D_FLUSH_ORI)
+		pr_info("rfi-flush: Using ori type flush\n");
+
+	if (types & L1D_FLUSH_MTTRIG)
+		pr_info("rfi-flush: Using mttrig type flush\n");
+
+	enabled_flush_types = types;
+
+	if (!no_rfi_flush)
+		rfi_flush_enable(enable);
+}
+
+#ifdef CONFIG_DEBUG_FS
+static int rfi_flush_set(void *data, u64 val)
+{
+	if (val == 1)
+		rfi_flush_enable(true);
+	else if (val == 0)
+		rfi_flush_enable(false);
+	else
+		return -EINVAL;
+
+	return 0;
+}
+
+static int rfi_flush_get(void *data, u64 *val)
+{
+	*val = rfi_flush ? 1 : 0;
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(fops_rfi_flush, rfi_flush_get, rfi_flush_set, "%llu\n");
+
+static __init int rfi_flush_debugfs_init(void)
+{
+	debugfs_create_file("rfi_flush", 0600, powerpc_debugfs_root, NULL, &fops_rfi_flush);
+	return 0;
+}
+device_initcall(rfi_flush_debugfs_init);
+#endif
+
+ssize_t cpu_show_meltdown(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	if (rfi_flush)
+		return sprintf(buf, "Mitigation: RFI Flush\n");
+
+	return sprintf(buf, "Vulnerable\n");
+}
+#endif /* CONFIG_PPC_BOOK3S_64 */

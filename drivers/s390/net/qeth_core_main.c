@@ -20,11 +20,16 @@
 #include <linux/kthread.h>
 #include <linux/slab.h>
 #include <net/iucv/af_iucv.h>
+#include <net/dsfield.h>
 
 #include <asm/ebcdic.h>
+#include <asm/chpid.h>
 #include <asm/io.h>
 #include <asm/sysinfo.h>
 #include <asm/compat.h>
+#include <asm/diag.h>
+#include <asm/cio.h>
+#include <asm/ccwdev.h>
 
 #include "qeth_core.h"
 
@@ -68,7 +73,8 @@ static void qeth_clear_output_buffer(struct qeth_qdio_out_q *queue,
 		enum qeth_qdio_buffer_states newbufstate);
 static int qeth_init_qdio_out_buf(struct qeth_qdio_out_q *, int);
 
-static struct workqueue_struct *qeth_wq;
+struct workqueue_struct *qeth_wq;
+EXPORT_SYMBOL_GPL(qeth_wq);
 
 static void qeth_close_dev_handler(struct work_struct *work)
 {
@@ -615,6 +621,14 @@ static struct qeth_ipa_cmd *qeth_check_ipa_data(struct qeth_card *card,
 					card->info.hwtrap = 2;
 				qeth_schedule_recovery(card);
 				return NULL;
+			case IPA_CMD_SETBRIDGEPORT_IQD:
+			case IPA_CMD_SETBRIDGEPORT_OSA:
+			case IPA_CMD_ADDRESS_CHANGE_NOTIF:
+				if (card->discipline->control_event_handler
+								(card, cmd))
+					return cmd;
+				else
+					return NULL;
 			case IPA_CMD_MODCCID:
 				return cmd;
 			case IPA_CMD_REGISTER_LOCAL_ADDR:
@@ -1282,8 +1296,10 @@ static void qeth_free_qdio_buffers(struct qeth_card *card)
 
 	qeth_free_cq(card);
 	cancel_delayed_work_sync(&card->buffer_reclaim_work);
-	for (j = 0; j < QDIO_MAX_BUFFERS_PER_Q; ++j)
-		dev_kfree_skb_any(card->qdio.in_q->bufs[j].rx_skb);
+	for (j = 0; j < QDIO_MAX_BUFFERS_PER_Q; ++j) {
+		if (card->qdio.in_q->bufs[j].rx_skb)
+			dev_kfree_skb_any(card->qdio.in_q->bufs[j].rx_skb);
+	}
 	kfree(card->qdio.in_q);
 	card->qdio.in_q = NULL;
 	/* inbound buffer pool */
@@ -1334,16 +1350,7 @@ static void qeth_set_multiple_write_queues(struct qeth_card *card)
 static void qeth_update_from_chp_desc(struct qeth_card *card)
 {
 	struct ccw_device *ccwdev;
-	struct channelPath_dsc {
-		u8 flags;
-		u8 lsn;
-		u8 desc;
-		u8 chpid;
-		u8 swla;
-		u8 zeroes;
-		u8 chla;
-		u8 chpp;
-	} *chp_dsc;
+	struct channel_path_desc *chp_dsc;
 
 	QETH_DBF_TEXT(SETUP, 2, "chp_desc");
 
@@ -1650,7 +1657,6 @@ int qeth_qdio_clear_card(struct qeth_card *card, int use_halt)
 				QDIO_FLAG_CLEANUP_USING_CLEAR);
 		if (rc)
 			QETH_CARD_TEXT_(card, 3, "1err%d", rc);
-		qdio_free(CARD_DDEV(card));
 		atomic_set(&card->qdio.state, QETH_QDIO_ALLOCATED);
 		break;
 	case QETH_QDIO_CLEANING:
@@ -1729,14 +1735,14 @@ static void qeth_configure_blkt_default(struct qeth_card *card, char *prcd)
 	QETH_DBF_TEXT(SETUP, 2, "cfgblkt");
 
 	if (prcd[74] == 0xF0 && prcd[75] == 0xF0 &&
-	    (prcd[76] == 0xF5 || prcd[76] == 0xF6)) {
-		card->info.blkt.time_total = 250;
-		card->info.blkt.inter_packet = 5;
-		card->info.blkt.inter_packet_jumbo = 15;
-	} else {
+	    prcd[76] >= 0xF1 && prcd[76] <= 0xF4) {
 		card->info.blkt.time_total = 0;
 		card->info.blkt.inter_packet = 0;
 		card->info.blkt.inter_packet_jumbo = 0;
+	} else {
+		card->info.blkt.time_total = 250;
+		card->info.blkt.inter_packet = 5;
+		card->info.blkt.inter_packet_jumbo = 15;
 	}
 }
 
@@ -2198,11 +2204,11 @@ static inline int qeth_get_initial_mtu_for_card(struct qeth_card *card)
 		case QETH_LINK_TYPE_LANE_TR:
 			return 2000;
 		default:
-			return 1492;
+			return card->options.layer2 ? 1500 : 1492;
 		}
 	case QETH_CARD_TYPE_OSM:
 	case QETH_CARD_TYPE_OSX:
-		return 1492;
+		return card->options.layer2 ? 1500 : 1492;
 	default:
 		return 1500;
 	}
@@ -2275,9 +2281,10 @@ static int qeth_ulp_enable_cb(struct qeth_card *card, struct qeth_reply *reply,
 		card->info.max_mtu = mtu;
 		card->qdio.in_buf_size = mtu + 2 * PAGE_SIZE;
 	} else {
-		card->info.initial_mtu = qeth_get_initial_mtu_for_card(card);
 		card->info.max_mtu = *(__u16 *)QETH_ULP_ENABLE_RESP_MAX_MTU(
 			iob->data);
+		card->info.initial_mtu = min(card->info.max_mtu,
+					qeth_get_initial_mtu_for_card(card));
 		card->qdio.in_buf_size = QETH_IN_BUF_SIZE_DEFAULT;
 	}
 
@@ -2594,6 +2601,7 @@ static int qeth_mpc_initialize(struct qeth_card *card)
 	return 0;
 out_qdio:
 	qeth_qdio_clear_card(card, card->info.type != QETH_CARD_TYPE_IQD);
+	qdio_free(CARD_DDEV(card));
 	return rc;
 }
 
@@ -3033,6 +3041,45 @@ int qeth_query_ipassists(struct qeth_card *card, enum qeth_prot_versions prot)
 }
 EXPORT_SYMBOL_GPL(qeth_query_ipassists);
 
+static int qeth_query_switch_attributes_cb(struct qeth_card *card,
+				struct qeth_reply *reply, unsigned long data)
+{
+	struct qeth_ipa_cmd *cmd;
+	struct qeth_switch_info *sw_info;
+	struct qeth_query_switch_attributes *attrs;
+
+	QETH_CARD_TEXT(card, 2, "qswiatcb");
+	cmd = (struct qeth_ipa_cmd *) data;
+	sw_info = (struct qeth_switch_info *)reply->param;
+	if (cmd->data.setadapterparms.hdr.return_code == 0) {
+		attrs = &cmd->data.setadapterparms.data.query_switch_attributes;
+		sw_info->capabilities = attrs->capabilities;
+		sw_info->settings = attrs->settings;
+		QETH_CARD_TEXT_(card, 2, "%04x%04x", sw_info->capabilities,
+							sw_info->settings);
+	}
+	qeth_default_setadapterparms_cb(card, reply, (unsigned long) cmd);
+
+	return 0;
+}
+
+int qeth_query_switch_attributes(struct qeth_card *card,
+				 struct qeth_switch_info *sw_info)
+{
+	struct qeth_cmd_buffer *iob;
+
+	QETH_CARD_TEXT(card, 2, "qswiattr");
+	if (!qeth_adp_supported(card, IPA_SETADP_QUERY_SWITCH_ATTRIBUTES))
+		return -EOPNOTSUPP;
+	if (!netif_carrier_ok(card->dev))
+		return -ENOMEDIUM;
+	iob = qeth_get_adapter_cmd(card, IPA_SETADP_QUERY_SWITCH_ATTRIBUTES,
+				sizeof(struct qeth_ipacmd_setadpparms_hdr));
+	return qeth_send_ipa_cmd(card, iob,
+				qeth_query_switch_attributes_cb, sw_info);
+}
+EXPORT_SYMBOL_GPL(qeth_query_switch_attributes);
+
 static int qeth_query_setdiagass_cb(struct qeth_card *card,
 		struct qeth_reply *reply, unsigned long data)
 {
@@ -3383,7 +3430,7 @@ static void qeth_flush_buffers(struct qeth_qdio_out_q *queue, int index,
 		}
 	}
 
-	queue->card->dev->trans_start = jiffies;
+	netif_trans_update(queue->card->dev);
 	if (queue->card->options.performance_stats) {
 		queue->card->perf_stats.outbound_do_qdio_cnt++;
 		queue->card->perf_stats.outbound_do_qdio_start_time =
@@ -3530,7 +3577,8 @@ static void qeth_qdio_cq_handler(struct qeth_card *card,
 		int e;
 
 		e = 0;
-		while (buffer->element[e].addr) {
+		while ((e < QDIO_MAX_ELEMENTS_PER_BUFFER) &&
+		       buffer->element[e].addr) {
 			unsigned long phys_aob_addr;
 
 			phys_aob_addr = (unsigned long) buffer->element[e].addr;
@@ -3659,42 +3707,65 @@ void qeth_qdio_output_handler(struct ccw_device *ccwdev,
 }
 EXPORT_SYMBOL_GPL(qeth_qdio_output_handler);
 
+/* We cannot use outbound queue 3 for unicast packets on HiperSockets */
+static inline int qeth_cut_iqd_prio(struct qeth_card *card, int queue_num)
+{
+	if ((card->info.type == QETH_CARD_TYPE_IQD) && (queue_num == 3))
+		return 2;
+	return queue_num;
+}
+
+/**
+ * Note: Function assumes that we have 4 outbound queues.
+ */
 int qeth_get_priority_queue(struct qeth_card *card, struct sk_buff *skb,
 			int ipv, int cast_type)
 {
-	if (!ipv && (card->info.type == QETH_CARD_TYPE_OSD ||
-		     card->info.type == QETH_CARD_TYPE_OSX))
-		return card->qdio.default_out_queue;
-	switch (card->qdio.no_out_queues) {
-	case 4:
-		if (cast_type && card->info.is_multicast_different)
-			return card->info.is_multicast_different &
-				(card->qdio.no_out_queues - 1);
-		if (card->qdio.do_prio_queueing && (ipv == 4)) {
-			const u8 tos = ip_hdr(skb)->tos;
+	__be16 *tci;
+	u8 tos;
 
-			if (card->qdio.do_prio_queueing ==
-				QETH_PRIO_Q_ING_TOS) {
-				if (tos & IP_TOS_NOTIMPORTANT)
-					return 3;
-				if (tos & IP_TOS_HIGHRELIABILITY)
-					return 2;
-				if (tos & IP_TOS_HIGHTHROUGHPUT)
-					return 1;
-				if (tos & IP_TOS_LOWDELAY)
-					return 0;
-			}
-			if (card->qdio.do_prio_queueing ==
-				QETH_PRIO_Q_ING_PREC)
-				return 3 - (tos >> 6);
-		} else if (card->qdio.do_prio_queueing && (ipv == 6)) {
-			/* TODO: IPv6!!! */
+	if (cast_type && card->info.is_multicast_different)
+		return card->info.is_multicast_different &
+			(card->qdio.no_out_queues - 1);
+
+	switch (card->qdio.do_prio_queueing) {
+	case QETH_PRIO_Q_ING_TOS:
+	case QETH_PRIO_Q_ING_PREC:
+		switch (ipv) {
+		case 4:
+			tos = ipv4_get_dsfield(ip_hdr(skb));
+			break;
+		case 6:
+			tos = ipv6_get_dsfield(ipv6_hdr(skb));
+			break;
+		default:
+			return card->qdio.default_out_queue;
 		}
-		return card->qdio.default_out_queue;
-	case 1: /* fallthrough for single-out-queue 1920-device */
+		if (card->qdio.do_prio_queueing == QETH_PRIO_Q_ING_PREC)
+			return qeth_cut_iqd_prio(card, ~tos >> 6 & 3);
+		if (tos & IPTOS_MINCOST)
+			return qeth_cut_iqd_prio(card, 3);
+		if (tos & IPTOS_RELIABILITY)
+			return 2;
+		if (tos & IPTOS_THROUGHPUT)
+			return 1;
+		if (tos & IPTOS_LOWDELAY)
+			return 0;
+		break;
+	case QETH_PRIO_Q_ING_SKB:
+		if (skb->priority > 5)
+			return 0;
+		return qeth_cut_iqd_prio(card, ~skb->priority >> 1 & 3);
+	case QETH_PRIO_Q_ING_VLAN:
+		tci = &((struct ethhdr *)skb->data)->h_proto;
+		if (*tci == ETH_P_8021Q)
+			return qeth_cut_iqd_prio(card, ~*(tci + 1) >>
+			(VLAN_PRIO_SHIFT + 1) & 3);
+		break;
 	default:
-		return card->qdio.default_out_queue;
+		break;
 	}
+	return card->qdio.default_out_queue;
 }
 EXPORT_SYMBOL_GPL(qeth_get_priority_queue);
 
@@ -3709,7 +3780,7 @@ int qeth_get_elements_for_frags(struct sk_buff *skb)
 		data = (char *)page_to_phys(skb_frag_page(frag)) +
 			frag->page_offset;
 		length = frag->size;
-		e = PFN_UP((unsigned long)data + length - 1) -
+		e = PFN_UP((unsigned long)data + length) -
 			PFN_DOWN((unsigned long)data);
 		elements += e;
 	}
@@ -3718,11 +3789,11 @@ int qeth_get_elements_for_frags(struct sk_buff *skb)
 EXPORT_SYMBOL_GPL(qeth_get_elements_for_frags);
 
 int qeth_get_elements_no(struct qeth_card *card,
-		     struct sk_buff *skb, int elems)
+		     struct sk_buff *skb, int elems, int data_offset)
 {
 	int dlen = skb->len - skb->data_len;
-	int elements_needed = PFN_UP((unsigned long)skb->data + dlen - 1) -
-		PFN_DOWN((unsigned long)skb->data);
+	int elements_needed = PFN_UP((unsigned long)skb->data + dlen) -
+		PFN_DOWN((unsigned long)skb->data + data_offset);
 
 	elements_needed += qeth_get_elements_for_frags(skb);
 
@@ -4448,7 +4519,7 @@ int qeth_snmp_command(struct qeth_card *card, char __user *udata)
 	struct qeth_cmd_buffer *iob;
 	struct qeth_ipa_cmd *cmd;
 	struct qeth_snmp_ureq *ureq;
-	int req_len;
+	unsigned int req_len;
 	struct qeth_arp_query_info qinfo = {0, };
 	int rc = 0;
 
@@ -4464,6 +4535,10 @@ int qeth_snmp_command(struct qeth_card *card, char __user *udata)
 	/* skip 4 bytes (data_len struct member) to get req_len */
 	if (copy_from_user(&req_len, udata + sizeof(int), sizeof(int)))
 		return -EFAULT;
+	if (req_len > (QETH_BUFSIZE - IPA_PDU_HEADER_SIZE -
+		       sizeof(struct qeth_ipacmd_hdr) -
+		       sizeof(struct qeth_ipacmd_setadpparms_hdr)))
+		return -EINVAL;
 	ureq = memdup_user(udata, req_len + sizeof(struct qeth_snmp_ureq_hdr));
 	if (IS_ERR(ureq)) {
 		QETH_CARD_TEXT(card, 2, "snmpnome");
@@ -4594,6 +4669,100 @@ out:
 	return rc;
 }
 EXPORT_SYMBOL_GPL(qeth_query_oat_command);
+
+int qeth_query_card_info_cb(struct qeth_card *card,
+			struct qeth_reply *reply, unsigned long data)
+{
+	struct qeth_ipa_cmd *cmd;
+	struct qeth_query_card_info *card_info;
+	struct carrier_info *carrier_info;
+
+	QETH_CARD_TEXT(card, 2, "qcrdincb");
+	carrier_info = (struct carrier_info *)reply->param;
+	cmd = (struct qeth_ipa_cmd *)data;
+	card_info = &cmd->data.setadapterparms.data.card_info;
+	if (cmd->data.setadapterparms.hdr.return_code == 0) {
+		carrier_info->card_type = card_info->card_type;
+		carrier_info->port_mode = card_info->port_mode;
+		carrier_info->port_speed = card_info->port_speed;
+	}
+
+	qeth_default_setadapterparms_cb(card, reply, (unsigned long) cmd);
+	return 0;
+}
+
+int qeth_query_card_info(struct qeth_card *card,
+				struct carrier_info *carrier_info)
+{
+	struct qeth_cmd_buffer *iob;
+
+	QETH_CARD_TEXT(card, 2, "qcrdinfo");
+	if (!qeth_adp_supported(card, IPA_SETADP_QUERY_CARD_INFO))
+		return -EOPNOTSUPP;
+	iob = qeth_get_adapter_cmd(card, IPA_SETADP_QUERY_CARD_INFO,
+		sizeof(struct qeth_ipacmd_setadpparms_hdr));
+	return qeth_send_ipa_cmd(card, iob, qeth_query_card_info_cb,
+					(void *)carrier_info);
+}
+EXPORT_SYMBOL_GPL(qeth_query_card_info);
+
+/**
+ * qeth_vm_request_mac() - Request a hypervisor-managed MAC address
+ * @card: pointer to a qeth_card
+ *
+ * Returns
+ *	0, if a MAC address has been set for the card's netdevice
+ *	a return code, for various error conditions
+ */
+int qeth_vm_request_mac(struct qeth_card *card)
+{
+	struct diag26c_mac_resp *response;
+	struct diag26c_mac_req *request;
+	struct ccw_dev_id id;
+	int rc;
+
+	QETH_DBF_TEXT(SETUP, 2, "vmreqmac");
+
+	if (!card->dev)
+		return -ENODEV;
+
+	request = kzalloc(sizeof(*request), GFP_KERNEL | GFP_DMA);
+	response = kzalloc(sizeof(*response), GFP_KERNEL | GFP_DMA);
+	if (!request || !response) {
+		rc = -ENOMEM;
+		goto out;
+	}
+
+	ccw_device_get_id(CARD_DDEV(card), &id);
+	request->resp_buf_len = sizeof(*response);
+	request->resp_version = DIAG26C_VERSION2;
+	request->op_code = DIAG26C_GET_MAC;
+	request->devno = id.devno;
+
+	rc = diag26c(request, response, DIAG26C_MAC_SERVICES);
+	if (rc)
+		goto out;
+
+	if (request->resp_buf_len < sizeof(*response) ||
+	    response->version != request->resp_version) {
+		rc = -EIO;
+		QETH_DBF_TEXT(SETUP, 2, "badresp");
+		QETH_DBF_HEX(SETUP, 2, &request->resp_buf_len,
+			     sizeof(request->resp_buf_len));
+	} else if (!is_valid_ether_addr(response->mac)) {
+		rc = -EINVAL;
+		QETH_DBF_TEXT(SETUP, 2, "badmac");
+		QETH_DBF_HEX(SETUP, 2, response->mac, ETH_ALEN);
+	} else {
+		ether_addr_copy(card->dev->dev_addr, response->mac);
+	}
+
+out:
+	kfree(response);
+	kfree(request);
+	return rc;
+}
+EXPORT_SYMBOL_GPL(qeth_vm_request_mac);
 
 static inline int qeth_get_qdio_q_format(struct qeth_card *card)
 {
@@ -4808,13 +4977,11 @@ static void qeth_core_free_card(struct qeth_card *card)
 void qeth_trace_features(struct qeth_card *card)
 {
 	QETH_CARD_TEXT(card, 2, "features");
-	QETH_CARD_TEXT_(card, 2, "%x", card->options.ipa4.supported_funcs);
-	QETH_CARD_TEXT_(card, 2, "%x", card->options.ipa4.enabled_funcs);
-	QETH_CARD_TEXT_(card, 2, "%x", card->options.ipa6.supported_funcs);
-	QETH_CARD_TEXT_(card, 2, "%x", card->options.ipa6.enabled_funcs);
-	QETH_CARD_TEXT_(card, 2, "%x", card->options.adp.supported_funcs);
-	QETH_CARD_TEXT_(card, 2, "%x", card->options.adp.enabled_funcs);
-	QETH_CARD_TEXT_(card, 2, "%x", card->info.diagass_support);
+	QETH_CARD_HEX(card, 2, &card->options.ipa4, sizeof(card->options.ipa4));
+	QETH_CARD_HEX(card, 2, &card->options.ipa6, sizeof(card->options.ipa6));
+	QETH_CARD_HEX(card, 2, &card->options.adp, sizeof(card->options.adp));
+	QETH_CARD_HEX(card, 2, &card->info.diagass_support,
+		      sizeof(card->info.diagass_support));
 }
 EXPORT_SYMBOL_GPL(qeth_trace_features);
 
@@ -4855,9 +5022,11 @@ retry:
 	if (retries < 3)
 		QETH_DBF_MESSAGE(2, "%s Retrying to do IDX activates.\n",
 			dev_name(&card->gdev->dev));
+	rc = qeth_qdio_clear_card(card, card->info.type != QETH_CARD_TYPE_IQD);
 	ccw_device_set_offline(CARD_DDEV(card));
 	ccw_device_set_offline(CARD_WDEV(card));
 	ccw_device_set_offline(CARD_RDEV(card));
+	qdio_free(CARD_DDEV(card));
 	rc = ccw_device_set_online(CARD_RDEV(card));
 	if (rc)
 		goto retriable;
@@ -4867,7 +5036,6 @@ retry:
 	rc = ccw_device_set_online(CARD_DDEV(card));
 	if (rc)
 		goto retriable;
-	rc = qeth_qdio_clear_card(card, card->info.type != QETH_CARD_TYPE_IQD);
 retriable:
 	if (rc == -ERESTARTSYS) {
 		QETH_DBF_TEXT(SETUP, 2, "break1");
@@ -4912,7 +5080,9 @@ retriable:
 	}
 
 	card->options.ipa4.supported_funcs = 0;
+	card->options.ipa6.supported_funcs = 0;
 	card->options.adp.supported_funcs = 0;
+	card->options.sbp.supported_funcs = 0;
 	card->info.diagass_support = 0;
 	qeth_query_ipassists(card, QETH_PROT_IPV4);
 	if (qeth_is_supported(card, IPA_SETADAPTERPARMS))
@@ -5079,6 +5249,102 @@ no_mem:
 }
 EXPORT_SYMBOL_GPL(qeth_core_get_next_skb);
 
+static int qeth_setassparms_cb(struct qeth_card *card,
+			       struct qeth_reply *reply, unsigned long data)
+{
+	struct qeth_ipa_cmd *cmd;
+
+	QETH_CARD_TEXT(card, 4, "defadpcb");
+
+	cmd = (struct qeth_ipa_cmd *) data;
+	if (cmd->hdr.return_code == 0) {
+		cmd->hdr.return_code = cmd->data.setassparms.hdr.return_code;
+		if (cmd->hdr.prot_version == QETH_PROT_IPV4)
+			card->options.ipa4.enabled_funcs = cmd->hdr.ipa_enabled;
+		if (cmd->hdr.prot_version == QETH_PROT_IPV6)
+			card->options.ipa6.enabled_funcs = cmd->hdr.ipa_enabled;
+	}
+	if (cmd->data.setassparms.hdr.assist_no == IPA_INBOUND_CHECKSUM &&
+	    cmd->data.setassparms.hdr.command_code == IPA_CMD_ASS_START) {
+		card->info.csum_mask = cmd->data.setassparms.data.flags_32bit;
+		QETH_CARD_TEXT_(card, 3, "csum:%d", card->info.csum_mask);
+	}
+	if (cmd->data.setassparms.hdr.assist_no == IPA_OUTBOUND_CHECKSUM &&
+	    cmd->data.setassparms.hdr.command_code == IPA_CMD_ASS_START) {
+		card->info.tx_csum_mask =
+			cmd->data.setassparms.data.flags_32bit;
+		QETH_CARD_TEXT_(card, 3, "tcsu:%d", card->info.tx_csum_mask);
+	}
+
+	return 0;
+}
+
+static struct qeth_cmd_buffer *qeth_get_setassparms_cmd(struct qeth_card *card,
+						  enum qeth_ipa_funcs ipa_func,
+						  __u16 cmd_code, __u16 len,
+						  enum qeth_prot_versions prot)
+{
+	struct qeth_cmd_buffer *iob;
+	struct qeth_ipa_cmd *cmd;
+
+	QETH_CARD_TEXT(card, 4, "getasscm");
+	iob = qeth_get_ipacmd_buffer(card, IPA_CMD_SETASSPARMS, prot);
+
+	if (iob) {
+		cmd = (struct qeth_ipa_cmd *)(iob->data+IPA_PDU_HEADER_SIZE);
+		cmd->data.setassparms.hdr.assist_no = ipa_func;
+		cmd->data.setassparms.hdr.length = 8 + len;
+		cmd->data.setassparms.hdr.command_code = cmd_code;
+		cmd->data.setassparms.hdr.return_code = 0;
+		cmd->data.setassparms.hdr.seq_no = 0;
+	}
+
+	return iob;
+}
+
+int qeth_send_setassparms(struct qeth_card *card,
+			  struct qeth_cmd_buffer *iob, __u16 len, long data,
+			  int (*reply_cb)(struct qeth_card *,
+					  struct qeth_reply *, unsigned long),
+			  void *reply_param)
+{
+	int rc;
+	struct qeth_ipa_cmd *cmd;
+
+	QETH_CARD_TEXT(card, 4, "sendassp");
+
+	cmd = (struct qeth_ipa_cmd *)(iob->data+IPA_PDU_HEADER_SIZE);
+	if (len <= sizeof(__u32))
+		cmd->data.setassparms.data.flags_32bit = (__u32) data;
+	else   /* (len > sizeof(__u32)) */
+		memcpy(&cmd->data.setassparms.data, (void *) data, len);
+
+	rc = qeth_send_ipa_cmd(card, iob, reply_cb, reply_param);
+	return rc;
+}
+EXPORT_SYMBOL_GPL(qeth_send_setassparms);
+
+int qeth_send_simple_setassparms(struct qeth_card *card,
+				 enum qeth_ipa_funcs ipa_func,
+				 __u16 cmd_code, long data)
+{
+	int rc;
+	int length = 0;
+	struct qeth_cmd_buffer *iob;
+
+	QETH_CARD_TEXT(card, 4, "simassp4");
+	if (data)
+		length = sizeof(__u32);
+	iob = qeth_get_setassparms_cmd(card, ipa_func, cmd_code,
+				       length, QETH_PROT_IPV4);
+	if (!iob)
+		return -ENOMEM;
+	rc = qeth_send_setassparms(card, iob, length, data,
+				   qeth_setassparms_cb, NULL);
+	return rc;
+}
+EXPORT_SYMBOL_GPL(qeth_send_simple_setassparms);
+
 static void qeth_unregister_dbf_views(void)
 {
 	int x;
@@ -5165,10 +5431,12 @@ void qeth_core_free_discipline(struct qeth_card *card)
 	card->discipline = NULL;
 }
 
-static const struct device_type qeth_generic_devtype = {
+const struct device_type qeth_generic_devtype = {
 	.name = "qeth_generic",
 	.groups = qeth_generic_attr_groups,
 };
+EXPORT_SYMBOL_GPL(qeth_generic_devtype);
+
 static const struct device_type qeth_osn_devtype = {
 	.name = "qeth_osn",
 	.groups = qeth_osn_attr_groups,
@@ -5294,23 +5562,22 @@ static int qeth_core_probe_device(struct ccwgroup_device *gdev)
 		goto err_card;
 	}
 
-	if (card->info.type == QETH_CARD_TYPE_OSN)
-		gdev->dev.type = &qeth_osn_devtype;
-	else
-		gdev->dev.type = &qeth_generic_devtype;
-
 	switch (card->info.type) {
 	case QETH_CARD_TYPE_OSN:
 	case QETH_CARD_TYPE_OSM:
 		rc = qeth_core_load_discipline(card, QETH_DISCIPLINE_LAYER2);
 		if (rc)
 			goto err_card;
+
+		gdev->dev.type = (card->info.type != QETH_CARD_TYPE_OSN)
+					? card->discipline->devtype
+					: &qeth_osn_devtype;
 		rc = card->discipline->setup(card->gdev);
 		if (rc)
 			goto err_disc;
-	case QETH_CARD_TYPE_OSD:
-	case QETH_CARD_TYPE_OSX:
+		break;
 	default:
+		gdev->dev.type = &qeth_generic_devtype;
 		break;
 	}
 
@@ -5366,8 +5633,10 @@ static int qeth_core_set_online(struct ccwgroup_device *gdev)
 		if (rc)
 			goto err;
 		rc = card->discipline->setup(card->gdev);
-		if (rc)
+		if (rc) {
+			qeth_core_free_discipline(card);
 			goto err;
+		}
 	}
 	rc = card->discipline->set_online(gdev);
 err:
@@ -5599,11 +5868,67 @@ void qeth_core_get_drvinfo(struct net_device *dev,
 }
 EXPORT_SYMBOL_GPL(qeth_core_get_drvinfo);
 
+/* Helper function to fill 'advertizing' and 'supported' which are the same. */
+/* Autoneg and full-duplex are supported and advertized uncondionally.	     */
+/* Always advertize and support all speeds up to specified, and only one     */
+/* specified port type.							     */
+static void qeth_set_ecmd_adv_sup(struct ethtool_cmd *ecmd,
+				int maxspeed, int porttype)
+{
+	int port_sup, port_adv, spd_sup, spd_adv;
+
+	switch (porttype) {
+	case PORT_TP:
+		port_sup = SUPPORTED_TP;
+		port_adv = ADVERTISED_TP;
+		break;
+	case PORT_FIBRE:
+		port_sup = SUPPORTED_FIBRE;
+		port_adv = ADVERTISED_FIBRE;
+		break;
+	default:
+		port_sup = SUPPORTED_TP;
+		port_adv = ADVERTISED_TP;
+		WARN_ON_ONCE(1);
+	}
+
+	/* "Fallthrough" case'es ordered from high to low result in setting  */
+	/* flags cumulatively, starting from the specified speed and down to */
+	/* the lowest possible.						     */
+	spd_sup = 0;
+	spd_adv = 0;
+	switch (maxspeed) {
+	case SPEED_10000:
+		spd_sup |= SUPPORTED_10000baseT_Full;
+		spd_adv |= ADVERTISED_10000baseT_Full;
+	case SPEED_1000:
+		spd_sup |= SUPPORTED_1000baseT_Half | SUPPORTED_1000baseT_Full;
+		spd_adv |= ADVERTISED_1000baseT_Half |
+						ADVERTISED_1000baseT_Full;
+	case SPEED_100:
+		spd_sup |= SUPPORTED_100baseT_Half | SUPPORTED_100baseT_Full;
+		spd_adv |= ADVERTISED_100baseT_Half | ADVERTISED_100baseT_Full;
+	case SPEED_10:
+		spd_sup |= SUPPORTED_10baseT_Half | SUPPORTED_10baseT_Full;
+		spd_adv |= ADVERTISED_10baseT_Half | ADVERTISED_10baseT_Full;
+	break;
+	default:
+		spd_sup = SUPPORTED_10baseT_Half | SUPPORTED_10baseT_Full;
+		spd_adv = ADVERTISED_10baseT_Half | ADVERTISED_10baseT_Full;
+		WARN_ON_ONCE(1);
+	}
+	ecmd->advertising = ADVERTISED_Autoneg | port_adv | spd_adv;
+	ecmd->supported = SUPPORTED_Autoneg | port_sup | spd_sup;
+}
+
 int qeth_core_ethtool_get_settings(struct net_device *netdev,
 					struct ethtool_cmd *ecmd)
 {
 	struct qeth_card *card = netdev->ml_priv;
 	enum qeth_link_types link_type;
+	struct carrier_info carrier_info;
+	u32 speed;
+	int rc;
 
 	if ((card->info.type == QETH_CARD_TYPE_IQD) || (card->info.guestlan))
 		link_type = QETH_LINK_TYPE_10GBIT_ETH;
@@ -5611,83 +5936,173 @@ int qeth_core_ethtool_get_settings(struct net_device *netdev,
 		link_type = card->info.link_type;
 
 	ecmd->transceiver = XCVR_INTERNAL;
-	ecmd->supported = SUPPORTED_Autoneg;
-	ecmd->advertising = ADVERTISED_Autoneg;
 	ecmd->duplex = DUPLEX_FULL;
 	ecmd->autoneg = AUTONEG_ENABLE;
 
 	switch (link_type) {
 	case QETH_LINK_TYPE_FAST_ETH:
 	case QETH_LINK_TYPE_LANE_ETH100:
-		ecmd->supported |= SUPPORTED_10baseT_Half |
-					SUPPORTED_10baseT_Full |
-					SUPPORTED_100baseT_Half |
-					SUPPORTED_100baseT_Full |
-					SUPPORTED_TP;
-		ecmd->advertising |= ADVERTISED_10baseT_Half |
-					ADVERTISED_10baseT_Full |
-					ADVERTISED_100baseT_Half |
-					ADVERTISED_100baseT_Full |
-					ADVERTISED_TP;
-		ecmd->speed = SPEED_100;
+		qeth_set_ecmd_adv_sup(ecmd, SPEED_100, PORT_TP);
+		speed = SPEED_100;
 		ecmd->port = PORT_TP;
 		break;
 
 	case QETH_LINK_TYPE_GBIT_ETH:
 	case QETH_LINK_TYPE_LANE_ETH1000:
-		ecmd->supported |= SUPPORTED_10baseT_Half |
-					SUPPORTED_10baseT_Full |
-					SUPPORTED_100baseT_Half |
-					SUPPORTED_100baseT_Full |
-					SUPPORTED_1000baseT_Half |
-					SUPPORTED_1000baseT_Full |
-					SUPPORTED_FIBRE;
-		ecmd->advertising |= ADVERTISED_10baseT_Half |
-					ADVERTISED_10baseT_Full |
-					ADVERTISED_100baseT_Half |
-					ADVERTISED_100baseT_Full |
-					ADVERTISED_1000baseT_Half |
-					ADVERTISED_1000baseT_Full |
-					ADVERTISED_FIBRE;
-		ecmd->speed = SPEED_1000;
+		qeth_set_ecmd_adv_sup(ecmd, SPEED_1000, PORT_FIBRE);
+		speed = SPEED_1000;
 		ecmd->port = PORT_FIBRE;
 		break;
 
 	case QETH_LINK_TYPE_10GBIT_ETH:
-		ecmd->supported |= SUPPORTED_10baseT_Half |
-					SUPPORTED_10baseT_Full |
-					SUPPORTED_100baseT_Half |
-					SUPPORTED_100baseT_Full |
-					SUPPORTED_1000baseT_Half |
-					SUPPORTED_1000baseT_Full |
-					SUPPORTED_10000baseT_Full |
-					SUPPORTED_FIBRE;
-		ecmd->advertising |= ADVERTISED_10baseT_Half |
-					ADVERTISED_10baseT_Full |
-					ADVERTISED_100baseT_Half |
-					ADVERTISED_100baseT_Full |
-					ADVERTISED_1000baseT_Half |
-					ADVERTISED_1000baseT_Full |
-					ADVERTISED_10000baseT_Full |
-					ADVERTISED_FIBRE;
-		ecmd->speed = SPEED_10000;
+		qeth_set_ecmd_adv_sup(ecmd, SPEED_10000, PORT_FIBRE);
+		speed = SPEED_10000;
 		ecmd->port = PORT_FIBRE;
 		break;
 
 	default:
-		ecmd->supported |= SUPPORTED_10baseT_Half |
-					SUPPORTED_10baseT_Full |
-					SUPPORTED_TP;
-		ecmd->advertising |= ADVERTISED_10baseT_Half |
-					ADVERTISED_10baseT_Full |
-					ADVERTISED_TP;
-		ecmd->speed = SPEED_10;
+		qeth_set_ecmd_adv_sup(ecmd, SPEED_10, PORT_TP);
+		speed = SPEED_10;
 		ecmd->port = PORT_TP;
 	}
+	ethtool_cmd_speed_set(ecmd, speed);
+
+	/* Check if we can obtain more accurate information.	 */
+	/* If QUERY_CARD_INFO command is not supported or fails, */
+	/* just return the heuristics that was filled above.	 */
+	if ((card->state != CARD_STATE_SOFTSETUP) &&
+	    (card->state != CARD_STATE_UP))
+		return -ENODEV;
+	rc = qeth_query_card_info(card, &carrier_info);
+	if (rc == -EOPNOTSUPP) /* for old hardware, return heuristic */
+		return 0;
+	if (rc) /* report error from the hardware operation */
+		return rc;
+	/* on success, fill in the information got from the hardware */
+
+	netdev_dbg(netdev,
+	"card info: card_type=0x%02x, port_mode=0x%04x, port_speed=0x%08x\n",
+			carrier_info.card_type,
+			carrier_info.port_mode,
+			carrier_info.port_speed);
+
+	/* Update attributes for which we've obtained more authoritative */
+	/* information, leave the rest the way they where filled above.  */
+	switch (carrier_info.card_type) {
+	case CARD_INFO_TYPE_1G_COPPER_A:
+	case CARD_INFO_TYPE_1G_COPPER_B:
+		qeth_set_ecmd_adv_sup(ecmd, SPEED_1000, PORT_TP);
+		ecmd->port = PORT_TP;
+		break;
+	case CARD_INFO_TYPE_1G_FIBRE_A:
+	case CARD_INFO_TYPE_1G_FIBRE_B:
+		qeth_set_ecmd_adv_sup(ecmd, SPEED_1000, PORT_FIBRE);
+		ecmd->port = PORT_FIBRE;
+		break;
+	case CARD_INFO_TYPE_10G_FIBRE_A:
+	case CARD_INFO_TYPE_10G_FIBRE_B:
+		qeth_set_ecmd_adv_sup(ecmd, SPEED_10000, PORT_FIBRE);
+		ecmd->port = PORT_FIBRE;
+		break;
+	}
+
+	switch (carrier_info.port_mode) {
+	case CARD_INFO_PORTM_FULLDUPLEX:
+		ecmd->duplex = DUPLEX_FULL;
+		break;
+	case CARD_INFO_PORTM_HALFDUPLEX:
+		ecmd->duplex = DUPLEX_HALF;
+		break;
+	}
+
+	switch (carrier_info.port_speed) {
+	case CARD_INFO_PORTS_10M:
+		speed = SPEED_10;
+		break;
+	case CARD_INFO_PORTS_100M:
+		speed = SPEED_100;
+		break;
+	case CARD_INFO_PORTS_1G:
+		speed = SPEED_1000;
+		break;
+	case CARD_INFO_PORTS_10G:
+		speed = SPEED_10000;
+		break;
+	}
+	ethtool_cmd_speed_set(ecmd, speed);
 
 	return 0;
 }
 EXPORT_SYMBOL_GPL(qeth_core_ethtool_get_settings);
+
+static int qeth_send_checksum_command(struct qeth_card *card)
+{
+	int rc;
+
+	rc = qeth_send_simple_setassparms(card, IPA_INBOUND_CHECKSUM,
+					  IPA_CMD_ASS_START, 0);
+	if (rc) {
+		dev_warn(&card->gdev->dev, "Starting HW checksumming for %s "
+			"failed, using SW checksumming\n",
+			QETH_CARD_IFNAME(card));
+		return rc;
+	}
+	rc = qeth_send_simple_setassparms(card, IPA_INBOUND_CHECKSUM,
+					  IPA_CMD_ASS_ENABLE,
+					  card->info.csum_mask);
+	if (rc) {
+		dev_warn(&card->gdev->dev, "Enabling HW checksumming for %s "
+			"failed, using SW checksumming\n",
+			QETH_CARD_IFNAME(card));
+		return rc;
+	}
+	return 0;
+}
+
+int qeth_set_rx_csum(struct qeth_card *card, int on)
+{
+	int rc;
+
+	if (on) {
+		rc = qeth_send_checksum_command(card);
+		if (rc)
+			return -EIO;
+		dev_info(&card->gdev->dev,
+			"HW Checksumming (inbound) enabled\n");
+	} else {
+		rc = qeth_send_simple_setassparms(card,
+			IPA_INBOUND_CHECKSUM, IPA_CMD_ASS_STOP, 0);
+		if (rc)
+			return -EIO;
+	}
+	return 0;
+}
+EXPORT_SYMBOL_GPL(qeth_set_rx_csum);
+
+int qeth_start_ipa_tx_checksum(struct qeth_card *card)
+{
+	int rc = 0;
+
+	if (!qeth_is_supported(card, IPA_OUTBOUND_CHECKSUM))
+		return rc;
+	rc = qeth_send_simple_setassparms(card, IPA_OUTBOUND_CHECKSUM,
+					  IPA_CMD_ASS_START, 0);
+	if (rc)
+		goto err_out;
+	rc = qeth_send_simple_setassparms(card, IPA_OUTBOUND_CHECKSUM,
+					  IPA_CMD_ASS_ENABLE,
+					  card->info.tx_csum_mask);
+	if (rc)
+		goto err_out;
+
+	dev_info(&card->gdev->dev, "HW TX Checksumming enabled\n");
+	return rc;
+err_out:
+	dev_warn(&card->gdev->dev, "Enabling HW TX checksumming for %s "
+		"failed, using SW TX checksumming\n", QETH_CARD_IFNAME(card));
+	return rc;
+}
+EXPORT_SYMBOL_GPL(qeth_start_ipa_tx_checksum);
 
 static int __init qeth_core_init(void)
 {

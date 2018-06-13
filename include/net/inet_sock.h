@@ -71,13 +71,15 @@ struct ip_options_data {
 
 struct inet_request_sock {
 	struct request_sock	req;
-#if IS_ENABLED(CONFIG_IPV6)
-	u16			inet6_rsk_offset;
-#endif
-	__be16			loc_port;
-	__be32			loc_addr;
-	__be32			rmt_addr;
-	__be16			rmt_port;
+#define ir_loc_addr		req.__req_common.skc_rcv_saddr
+#define ir_rmt_addr		req.__req_common.skc_daddr
+#define ir_num			req.__req_common.skc_num
+#define ir_rmt_port		req.__req_common.skc_dport
+#define ir_v6_rmt_addr		req.__req_common.skc_v6_daddr
+#define ir_v6_loc_addr		req.__req_common.skc_v6_rcv_saddr
+#define ir_iif			req.__req_common.skc_bound_dev_if
+#define ireq_family		req.__req_common.skc_family
+
 	kmemcheck_bitfield_begin(flags);
 	u16			snd_wscale : 4,
 				rcv_wscale : 4,
@@ -88,7 +90,10 @@ struct inet_request_sock {
 				acked	   : 1,
 				no_srccheck: 1;
 	kmemcheck_bitfield_end(flags);
-	struct ip_options_rcu	*opt;
+	union {
+		struct ip_options_rcu	*opt;
+		struct sk_buff		*pktopts;
+	};
 };
 
 static inline struct inet_request_sock *inet_rsk(const struct request_sock *sk)
@@ -104,6 +109,9 @@ struct inet_cork {
 	int			length; /* Total length of all frames */
 	struct dst_entry	*dst;
 	u8			tx_flags;
+	__u8			ttl;
+	__s16			tos;
+	char			priority;
 };
 
 struct inet_cork_full {
@@ -144,10 +152,8 @@ struct inet_sock {
 	/* Socket demultiplex comparisons on incoming packets. */
 #define inet_daddr		sk.__sk_common.skc_daddr
 #define inet_rcv_saddr		sk.__sk_common.skc_rcv_saddr
-#define inet_addrpair		sk.__sk_common.skc_addrpair
 #define inet_dport		sk.__sk_common.skc_dport
 #define inet_num		sk.__sk_common.skc_num
-#define inet_portpair		sk.__sk_common.skc_portpair
 
 	__be32			inet_saddr;
 	__s16			uc_ttl;
@@ -169,7 +175,9 @@ struct inet_sock {
 				transparent:1,
 				mc_all:1,
 				nodefrag:1;
+	__u8			bind_address_no_port:1;
 	__u8			rcv_tos;
+	__u8			convert_csum;
 	int			uc_index;
 	int			mc_index;
 	__be32			mc_addr;
@@ -200,32 +208,18 @@ static inline void inet_sk_copy_descendant(struct sock *sk_to,
 }
 #endif
 
-extern int inet_sk_rebuild_header(struct sock *sk);
+int inet_sk_rebuild_header(struct sock *sk);
 
-extern u32 inet_ehash_secret;
-extern u32 ipv6_hash_secret;
-extern void build_ehash_secret(void);
-
-static inline unsigned int inet_ehashfn(struct net *net,
-					const __be32 laddr, const __u16 lport,
-					const __be32 faddr, const __be16 fport)
+static inline unsigned int __inet_ehashfn(const __be32 laddr,
+					  const __u16 lport,
+					  const __be32 faddr,
+					  const __be16 fport,
+					  u32 initval)
 {
 	return jhash_3words((__force __u32) laddr,
 			    (__force __u32) faddr,
 			    ((__u32) lport) << 16 | (__force __u32)fport,
-			    inet_ehash_secret + net_hash_mix(net));
-}
-
-static inline int inet_sk_ehashfn(const struct sock *sk)
-{
-	const struct inet_sock *inet = inet_sk(sk);
-	const __be32 laddr = inet->inet_rcv_saddr;
-	const __u16 lport = inet->inet_num;
-	const __be32 faddr = inet->inet_daddr;
-	const __be16 fport = inet->inet_dport;
-	struct net *net = sock_net(sk);
-
-	return inet_ehashfn(net, laddr, lport, faddr, fport);
+			    initval);
 }
 
 static inline struct request_sock *inet_reqsk_alloc(struct request_sock_ops *ops)
@@ -248,6 +242,22 @@ static inline __u8 inet_sk_flowi_flags(const struct sock *sk)
 	if (inet_sk(sk)->transparent || inet_sk(sk)->hdrincl)
 		flags |= FLOWI_FLAG_ANYSRC;
 	return flags;
+}
+
+static inline void inet_inc_convert_csum(struct sock *sk)
+{
+	inet_sk(sk)->convert_csum++;
+}
+
+static inline void inet_dec_convert_csum(struct sock *sk)
+{
+	if (inet_sk(sk)->convert_csum > 0)
+		inet_sk(sk)->convert_csum--;
+}
+
+static inline bool inet_get_convert_csum(struct sock *sk)
+{
+	return !!inet_sk(sk)->convert_csum;
 }
 
 #endif	/* _INET_SOCK_H */

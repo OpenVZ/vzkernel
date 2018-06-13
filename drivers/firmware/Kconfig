@@ -107,6 +107,9 @@ config DMI_SYSFS
 	  under /sys/firmware/dmi when this option is enabled and
 	  loaded.
 
+config DMI_SCAN_MACHINE_NON_EFI_FALLBACK
+	bool
+
 config ISCSI_IBFT_FIND
 	bool "iSCSI Boot Firmware Table Attributes"
 	depends on X86
@@ -127,6 +130,25 @@ config ISCSI_IBFT
 	  Boot Firmware Table (iBFT) via sysfs to userspace. If you wish to
 	  detect iSCSI boot parameters dynamically during system boot, say Y.
 	  Otherwise, say N.
+
+config FW_CFG_SYSFS
+	tristate "QEMU fw_cfg device support in sysfs"
+	depends on SYSFS && (ARM || ARM64 || PPC_PMAC || SPARC || X86)
+	default n
+	help
+	  Say Y or M here to enable the exporting of the QEMU firmware
+	  configuration (fw_cfg) file entries via sysfs. Entries are
+	  found under /sys/firmware/fw_cfg when this option is enabled
+	  and loaded.
+
+config FW_CFG_SYSFS_CMDLINE
+	bool "QEMU fw_cfg device parameter parsing"
+	depends on FW_CFG_SYSFS
+	help
+	  Allow the qemu_fw_cfg device to be initialized via the kernel
+	  command line or using a module parameter.
+	  WARNING: Using incorrect parameters (base address in particular)
+	  may crash your system.
 
 source "drivers/firmware/google/Kconfig"
 source "drivers/firmware/efi/Kconfig"

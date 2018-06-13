@@ -203,7 +203,7 @@ good_area:
 	 * fault.
 	 */
 
-	fault = handle_mm_fault(mm, vma, address,
+	fault = handle_mm_fault(vma, address,
 			flags | ((acc_type & VM_WRITE) ? FAULT_FLAG_WRITE : 0));
 
 	if ((fault & VM_FAULT_RETRY) && fatal_signal_pending(current))

@@ -184,7 +184,7 @@ static inline int srcu_read_lock_held(struct srcu_struct *sp)
  * lockdep_is_held() calls.
  */
 #define srcu_dereference_check(p, sp, c) \
-	__rcu_dereference_check((p), srcu_read_lock_held(sp) || (c), __rcu)
+	__rcu_dereference_check((p), (c) || srcu_read_lock_held(sp), __rcu)
 
 /**
  * srcu_dereference - fetch SRCU-protected pointer for later dereferencing
@@ -278,6 +278,20 @@ static inline void srcu_read_unlock_raw(struct srcu_struct *sp, int idx)
 	local_irq_save(flags);
 	__srcu_read_unlock(sp, idx);
 	local_irq_restore(flags);
+}
+
+/**
+ * smp_mb__after_srcu_read_unlock - ensure full ordering after srcu_read_unlock
+ *
+ * Converts the preceding srcu_read_unlock into a two-way memory barrier.
+ *
+ * Call this after srcu_read_unlock, to guarantee that all memory operations
+ * that occur after smp_mb__after_srcu_read_unlock will appear to happen after
+ * the preceding srcu_read_unlock.
+ */
+static inline void smp_mb__after_srcu_read_unlock(void)
+{
+	/* __srcu_read_unlock has smp_mb() internally so nothing to do here. */
 }
 
 #endif

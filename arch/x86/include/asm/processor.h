@@ -13,7 +13,7 @@ struct mm_struct;
 #include <asm/types.h>
 #include <asm/sigcontext.h>
 #include <asm/current.h>
-#include <asm/cpufeature.h>
+#include <asm/cpufeatures.h>
 #include <asm/page.h>
 #include <asm/pgtable_types.h>
 #include <asm/percpu.h>
@@ -23,13 +23,15 @@ struct mm_struct;
 #include <asm/special_insns.h>
 
 #include <linux/personality.h>
-#include <linux/cpumask.h>
 #include <linux/cache.h>
 #include <linux/threads.h>
 #include <linux/math64.h>
-#include <linux/init.h>
 #include <linux/err.h>
 #include <linux/irqflags.h>
+#include <linux/mem_encrypt.h>
+#include <linux/magic.h>
+
+#include <linux/rh_kabi.h>
 
 /*
  * We handle most unaligned accesses in hardware.  On the other hand
@@ -73,6 +75,16 @@ extern u16 __read_mostly tlb_lld_4k[NR_INFO];
 extern u16 __read_mostly tlb_lld_2m[NR_INFO];
 extern u16 __read_mostly tlb_lld_4m[NR_INFO];
 extern s8  __read_mostly tlb_flushall_shift;
+
+/* this struct is NEVER under kabi restrictions */
+struct rh_cpuinfo_x86 {
+	/* Cache QoS architectural values: */
+	int			x86_cache_max_rmid;
+	int			x86_cache_occ_scale;
+	/* Logical processor id: */
+	u16			logical_proc_id;
+	unsigned		initialized : 1;
+};
 
 /*
  *  CPU type and hardware bug flags. Kept separately for each CPU.
@@ -124,11 +136,22 @@ struct cpuinfo_x86 {
 	/* Core id: */
 	u16			cpu_core_id;
 	/* Compute unit id */
-	u8			compute_unit_id;
+	RH_KABI_REPLACE(u8 compute_unit_id, __u8 cu_id)
 	/* Index into per_cpu list: */
 	u16			cpu_index;
 	u32			microcode;
 } __attribute__((__aligned__(SMP_CACHE_BYTES)));
+
+struct cpuid_regs {
+	u32 eax, ebx, ecx, edx;
+};
+
+enum cpuid_regs_idx {
+	CPUID_EAX = 0,
+	CPUID_EBX,
+	CPUID_ECX,
+	CPUID_EDX,
+};
 
 #define X86_VENDOR_INTEL	0
 #define X86_VENDOR_CYRIX	1
@@ -145,15 +168,18 @@ struct cpuinfo_x86 {
  * capabilities of CPUs
  */
 extern struct cpuinfo_x86	boot_cpu_data;
+extern struct rh_cpuinfo_x86	rh_boot_cpu_data;
 extern struct cpuinfo_x86	new_cpu_data;
 
 extern struct tss_struct	doublefault_tss;
-extern __u32			cpu_caps_cleared[NCAPINTS];
-extern __u32			cpu_caps_set[NCAPINTS];
+extern __u32			cpu_caps_cleared[NCAPINTS + NBUGINTS];
+extern __u32			cpu_caps_set[NCAPINTS + NBUGINTS];
 
 #ifdef CONFIG_SMP
 DECLARE_PER_CPU_SHARED_ALIGNED(struct cpuinfo_x86, cpu_info);
+DECLARE_PER_CPU_SHARED_ALIGNED(struct rh_cpuinfo_x86, rh_cpu_info);
 #define cpu_data(cpu)		per_cpu(cpu_info, cpu)
+#define rh_cpu_data(cpu)	per_cpu(rh_cpu_info, cpu)
 #else
 #define cpu_info		boot_cpu_data
 #define cpu_data(cpu)		boot_cpu_data
@@ -171,12 +197,16 @@ extern void identify_secondary_cpu(struct cpuinfo_x86 *);
 extern void print_cpu_info(struct cpuinfo_x86 *);
 void print_cpu_msr(struct cpuinfo_x86 *);
 extern void init_scattered_cpuid_features(struct cpuinfo_x86 *c);
+extern u32 get_scattered_cpuid_leaf(unsigned int level,
+				    unsigned int sub_leaf,
+				    enum cpuid_regs_idx reg);
 extern unsigned int init_intel_cacheinfo(struct cpuinfo_x86 *c);
 extern void init_amd_cacheinfo(struct cpuinfo_x86 *c);
 
 extern void detect_extended_topology(struct cpuinfo_x86 *c);
 extern void detect_ht(struct cpuinfo_x86 *c);
 
+extern int get_cpu_cache_id(int cpu, int level);
 #ifdef CONFIG_X86_32
 extern int have_cpuid_p(void);
 #else
@@ -198,9 +228,17 @@ static inline void native_cpuid(unsigned int *eax, unsigned int *ebx,
 	    : "memory");
 }
 
-static inline void load_cr3(pgd_t *pgdir)
+/*
+ * Friendlier CR3 helpers.
+ */
+static inline unsigned long read_cr3_pa(void)
 {
-	write_cr3(__pa(pgdir));
+	return read_cr3() & CR3_ADDR_MASK;
+}
+
+static inline unsigned long native_read_cr3_pa(void)
+{
+	return native_read_cr3() & CR3_ADDR_MASK;
 }
 
 #ifdef CONFIG_X86_32
@@ -278,11 +316,30 @@ struct tss_struct {
 	/*
 	 * .. and then another 0x100 bytes for the emergency kernel stack:
 	 */
+	RH_KABI_FILL_HOLE(unsigned long stack_canary)
 	unsigned long		stack[64];
 
-} ____cacheline_aligned;
+	/*
+	 *
+	 * The Intel SDM says (Volume 3, 7.2.1):
+	 *
+	 *  Avoid placing a page boundary in the part of the TSS that the
+	 *  processor reads during a task switch (the first 104 bytes). The
+	 *  processor may not correctly perform address translations if a
+	 *  boundary occurs in this area. During a task switch, the processor
+	 *  reads and writes into the first 104 bytes of each TSS (using
+	 *  contiguous physical addresses beginning with the physical address
+	 *  of the first byte of the TSS). So, after TSS access begins, if
+	 *  part of the 104 bytes is not physically contiguous, the processor
+	 *  will access incorrect information without generating a page-fault
+	 *  exception.
+	 *
+	 * There are also a lot of errata involving the TSS spanning a page
+	 * boundary.  Assert that we're not doing that.
+	 */
+} __attribute__((__aligned__(PAGE_SIZE)));
 
-DECLARE_PER_CPU_SHARED_ALIGNED(struct tss_struct, init_tss);
+DECLARE_PER_CPU_PAGE_ALIGNED_USER_MAPPED(struct tss_struct, init_tss);
 
 /*
  * Save the original ist values for checking stack pointers during debugging
@@ -369,16 +426,55 @@ struct ymmh_struct {
 	u32 ymmh_space[64];
 };
 
+struct lwp_struct {
+	u64 lwpcb_addr;
+	u32 flags;
+	u32 buf_head_offset;
+	u64 buf_base;
+	u32 buf_size;
+	u32 filters;
+	u64 saved_event_record[4];
+	u32 event_counter[16];
+};
+
+struct bndreg {
+	u64 lower_bound;
+	u64 upper_bound;
+} __packed;
+
+struct bndcsr {
+	u64 bndcfgu;
+	u64 bndstatus;
+} __packed;
+
+/*
+ * State component 9: 32-bit PKRU register.  The state is
+ * 8 bytes long but only 4 bytes is used currently.
+ */
+struct pkru_state {
+	u32				pkru;
+	u32				pad;
+} __packed;
+
 struct xsave_hdr_struct {
 	u64 xstate_bv;
+#ifdef __GENKSYMS__
 	u64 reserved1[2];
 	u64 reserved2[5];
+#else
+	u64 xcomp_bv;
+	u64 reserved[6];
+
+#endif
 } __attribute__((packed));
 
 struct xsave_struct {
 	struct i387_fxsave_struct i387;
 	struct xsave_hdr_struct xsave_hdr;
 	struct ymmh_struct ymmh;
+	RH_KABI_EXTEND(struct lwp_struct lwp)
+	RH_KABI_EXTEND(struct bndreg bndreg[4])
+	RH_KABI_EXTEND(struct bndcsr bndcsr)
 	/* new processor state extensions will go here */
 } __attribute__ ((packed, aligned (64)));
 
@@ -557,8 +653,13 @@ static inline void set_in_cr4(unsigned long mask)
 	unsigned long cr4;
 
 	mmu_cr4_features |= mask;
-	if (trampoline_cr4_features)
-		*trampoline_cr4_features = mmu_cr4_features;
+	if (trampoline_cr4_features) {
+		/*
+		 * Mask off features that don't work outside long mode (just
+		 * PCIDE for now).
+		 */
+		*trampoline_cr4_features = mmu_cr4_features & ~X86_CR4_PCIDE;
+	}
 	cr4 = read_cr4();
 	cr4 |= mask;
 	write_cr4(cr4);
@@ -688,29 +789,6 @@ static inline void sync_core(void)
 		     : "0" (1)
 		     : "ebx", "ecx", "edx", "memory");
 #endif
-}
-
-static inline void __monitor(const void *eax, unsigned long ecx,
-			     unsigned long edx)
-{
-	/* "monitor %eax, %ecx, %edx;" */
-	asm volatile(".byte 0x0f, 0x01, 0xc8;"
-		     :: "a" (eax), "c" (ecx), "d"(edx));
-}
-
-static inline void __mwait(unsigned long eax, unsigned long ecx)
-{
-	/* "mwait %eax, %ecx;" */
-	asm volatile(".byte 0x0f, 0x01, 0xc9;"
-		     :: "a" (eax), "c" (ecx));
-}
-
-static inline void __sti_mwait(unsigned long eax, unsigned long ecx)
-{
-	trace_hardirqs_on();
-	/* "mwait %eax, %ecx;" */
-	asm volatile("sti; .byte 0x0f, 0x01, 0xc9;"
-		     :: "a" (eax), "c" (ecx));
 }
 
 extern void select_idle_routine(const struct cpuinfo_x86 *c);
@@ -902,7 +980,8 @@ extern unsigned long thread_saved_pc(struct task_struct *tsk);
 }
 
 #define INIT_TSS  { \
-	.x86_tss.sp0 = (unsigned long)&init_stack + sizeof(init_stack) \
+	.x86_tss.sp0 = (unsigned long)&init_stack + sizeof(init_stack), \
+	.stack_canary		= STACK_END_MAGIC, \
 }
 
 /*
@@ -939,35 +1018,39 @@ extern void start_thread(struct pt_regs *regs, unsigned long new_ip,
 extern int get_tsc_mode(unsigned long adr);
 extern int set_tsc_mode(unsigned int val);
 
+/* Register/unregister a process' MPX related resource */
+#define MPX_ENABLE_MANAGEMENT()	mpx_enable_management()
+#define MPX_DISABLE_MANAGEMENT()	mpx_disable_management()
+
+#ifdef CONFIG_X86_INTEL_MPX
+extern int mpx_enable_management(void);
+extern int mpx_disable_management(void);
+#else
+static inline int mpx_enable_management(void)
+{
+	return -EINVAL;
+}
+static inline int mpx_disable_management(void)
+{
+	return -EINVAL;
+}
+#endif /* CONFIG_X86_INTEL_MPX */
+
 extern u16 amd_get_nb_id(int cpu);
 
-struct aperfmperf {
-	u64 aperf, mperf;
-};
-
-static inline void get_aperfmperf(struct aperfmperf *am)
+static inline uint32_t hypervisor_cpuid_base(const char *sig, uint32_t leaves)
 {
-	WARN_ON_ONCE(!boot_cpu_has(X86_FEATURE_APERFMPERF));
+	uint32_t base, eax, signature[3];
 
-	rdmsrl(MSR_IA32_APERF, am->aperf);
-	rdmsrl(MSR_IA32_MPERF, am->mperf);
-}
+	for (base = 0x40000000; base < 0x40010000; base += 0x100) {
+		cpuid(base, &eax, &signature[0], &signature[1], &signature[2]);
 
-#define APERFMPERF_SHIFT 10
+		if (!memcmp(sig, signature, 12) &&
+		    (leaves == 0 || ((eax - base) >= leaves)))
+			return base;
+	}
 
-static inline
-unsigned long calc_aperfmperf_ratio(struct aperfmperf *old,
-				    struct aperfmperf *new)
-{
-	u64 aperf = new->aperf - old->aperf;
-	u64 mperf = new->mperf - old->mperf;
-	unsigned long ratio = aperf;
-
-	mperf >>= APERFMPERF_SHIFT;
-	if (mperf)
-		ratio = div64_u64(aperf, mperf);
-
-	return ratio;
+	return 0;
 }
 
 extern unsigned long arch_align_stack(unsigned long sp);

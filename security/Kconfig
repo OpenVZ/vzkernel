@@ -48,6 +48,25 @@ config SECURITY_NETWORK
 	  implement socket and networking access controls.
 	  If you are unsure how to answer this question, answer N.
 
+config SECURITY_INFINIBAND
+	bool "Infiniband Security Hooks"
+	depends on SECURITY && INFINIBAND
+	help
+	  This enables the Infiniband security hooks.
+	  If enabled, a security module can use these hooks to
+	  implement Infiniband access controls.
+	  If you are unsure how to answer this question, answer N.
+
+config KAISER
+	bool "Remove the kernel mapping in user mode"
+	depends on X86_64 && SMP && STOP_MACHINE
+	help
+	  This feature reduces the number of hardware side channels by
+	  ensuring that the majority of kernel addresses are not mapped
+	  into userspace.
+
+	  See Documentation/x86/kaiser.txt for more details.
+
 config SECURITY_NETWORK_XFRM
 	bool "XFRM (IPSec) Networking Security Hooks"
 	depends on XFRM && SECURITY_NETWORK
@@ -69,6 +88,14 @@ config SECURITY_PATH
 	  If enabled, a security module can use these hooks to
 	  implement pathname based access controls.
 	  If you are unsure how to answer this question, answer N.
+
+config SECURITY_SECURELEVEL
+        bool "Securelevel kernel restriction interface"
+	depends on SECURITY
+	help
+	  This enables support for adding a set of additional kernel security
+	  restrictions at runtime. See Documentation/security/securelevel.txt
+	  for further information.
 
 config INTEL_TXT
 	bool "Enable Intel(R) Trusted Execution Technology (Intel(R) TXT)"

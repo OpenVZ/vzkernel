@@ -27,20 +27,21 @@ static inline u8 __mpcifc(u64 req, struct zpci_fib *fib, u8 *status)
 	return cc;
 }
 
-int s390pci_mod_fc(u64 req, struct zpci_fib *fib)
+u8 zpci_mod_fc(u64 req, struct zpci_fib *fib, u8 *status)
 {
-	u8 cc, status;
+	u8 cc;
 
 	do {
-		cc = __mpcifc(req, fib, &status);
+		cc = __mpcifc(req, fib, status);
 		if (cc == 2)
 			msleep(ZPCI_INSN_BUSY_DELAY);
 	} while (cc == 2);
 
 	if (cc)
 		printk_once(KERN_ERR "%s: error cc: %d  status: %d\n",
-			     __func__, cc, status);
-	return (cc) ? -EIO : 0;
+			     __func__, cc, *status);
+
+	return cc;
 }
 
 /* Refresh PCI Translations */
@@ -61,7 +62,7 @@ static inline u8 __rpcit(u64 fn, u64 addr, u64 range, u8 *status)
 	return cc;
 }
 
-int s390pci_refresh_trans(u64 fn, u64 addr, u64 range)
+int zpci_refresh_trans(u64 fn, u64 addr, u64 range)
 {
 	u8 cc, status;
 
@@ -78,7 +79,7 @@ int s390pci_refresh_trans(u64 fn, u64 addr, u64 range)
 }
 
 /* Set Interruption Controls */
-void set_irq_ctrl(u16 ctl, char *unused, u8 isc)
+void zpci_set_irq_ctrl(u16 ctl, char *unused, u8 isc)
 {
 	asm volatile (
 		"	.insn	rsy,0xeb00000000d1,%[ctl],%[isc],%[u]\n"
@@ -109,7 +110,7 @@ static inline int __pcilg(u64 *data, u64 req, u64 offset, u8 *status)
 	return cc;
 }
 
-int s390pci_load(u64 *data, u64 req, u64 offset)
+int zpci_load(u64 *data, u64 req, u64 offset)
 {
 	u8 status;
 	int cc;
@@ -125,7 +126,7 @@ int s390pci_load(u64 *data, u64 req, u64 offset)
 			    __func__, cc, status, req, offset);
 	return (cc > 0) ? -EIO : cc;
 }
-EXPORT_SYMBOL_GPL(s390pci_load);
+EXPORT_SYMBOL_GPL(zpci_load);
 
 /* PCI Store */
 static inline int __pcistg(u64 data, u64 req, u64 offset, u8 *status)
@@ -147,7 +148,7 @@ static inline int __pcistg(u64 data, u64 req, u64 offset, u8 *status)
 	return cc;
 }
 
-int s390pci_store(u64 data, u64 req, u64 offset)
+int zpci_store(u64 data, u64 req, u64 offset)
 {
 	u8 status;
 	int cc;
@@ -163,7 +164,7 @@ int s390pci_store(u64 data, u64 req, u64 offset)
 			__func__, cc, status, req, offset);
 	return (cc > 0) ? -EIO : cc;
 }
-EXPORT_SYMBOL_GPL(s390pci_store);
+EXPORT_SYMBOL_GPL(zpci_store);
 
 /* PCI Store Block */
 static inline int __pcistb(const u64 *data, u64 req, u64 offset, u8 *status)
@@ -183,7 +184,7 @@ static inline int __pcistb(const u64 *data, u64 req, u64 offset, u8 *status)
 	return cc;
 }
 
-int s390pci_store_block(const u64 *data, u64 req, u64 offset)
+int zpci_store_block(const u64 *data, u64 req, u64 offset)
 {
 	u8 status;
 	int cc;
@@ -199,4 +200,4 @@ int s390pci_store_block(const u64 *data, u64 req, u64 offset)
 			    __func__, cc, status, req, offset);
 	return (cc > 0) ? -EIO : cc;
 }
-EXPORT_SYMBOL_GPL(s390pci_store_block);
+EXPORT_SYMBOL_GPL(zpci_store_block);

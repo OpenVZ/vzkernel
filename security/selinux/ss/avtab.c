@@ -437,6 +437,18 @@ int avtab_read_item(struct avtab *a, void *fp, struct policydb *pol,
 		return -EINVAL;
 	}
 
+	/* !!! RHEL7 SPECIFIC CODE !!!
+	 * RHEL7 currently supports a policydb version greater than what is
+	 * required to support xperms, but we don't want to support/backport
+	 * the xperm functionality so if we see a policy with xperms (very
+	 * unlikely, not our defaults) print an error and run away */
+	if (key.specified & AVTAB_XPERMS) {
+		printk(KERN_ERR "SELinux:  avtab:  this kernel does not "
+				"support extended permissions rules and one "
+				"was specified\n");
+		return -EINVAL;
+	}
+
 	rc = next_entry(buf32, fp, sizeof(u32));
 	if (rc) {
 		printk(KERN_ERR "SELinux: avtab: truncated entry\n");

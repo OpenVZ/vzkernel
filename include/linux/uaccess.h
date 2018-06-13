@@ -2,6 +2,9 @@
 #define __LINUX_UACCESS_H__
 
 #include <linux/preempt.h>
+#ifndef __GENKSYMS__
+#include <linux/sched.h>
+#endif
 #include <asm/uaccess.h>
 
 /*

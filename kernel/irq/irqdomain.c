@@ -96,12 +96,7 @@ void irq_domain_remove(struct irq_domain *domain)
 		 */
 		break;
 	case IRQ_DOMAIN_MAP_TREE:
-		/*
-		 * radix_tree_delete() takes care of destroying the root
-		 * node when all entries are removed. Shout if there are
-		 * any mappings left.
-		 */
-		WARN_ON(domain->revmap_data.tree.height);
+		WARN_ON(!radix_tree_empty(&domain->revmap_data.tree));
 		break;
 	case IRQ_DOMAIN_MAP_LINEAR:
 		kfree(domain->revmap_data.linear.revmap);

@@ -370,7 +370,7 @@ static int lapbeth_device_event(struct notifier_block *this,
 				unsigned long event, void *ptr)
 {
 	struct lapbethdev *lapbeth;
-	struct net_device *dev = ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 
 	if (dev_net(dev) != &init_net)
 		return NOTIFY_DONE;
@@ -419,7 +419,7 @@ static int __init lapbeth_init_driver(void)
 {
 	dev_add_pack(&lapbeth_packet_type);
 
-	register_netdevice_notifier(&lapbeth_dev_notifier);
+	register_netdevice_notifier_rh(&lapbeth_dev_notifier);
 
 	printk(banner);
 
@@ -433,7 +433,7 @@ static void __exit lapbeth_cleanup_driver(void)
 	struct list_head *entry, *tmp;
 
 	dev_remove_pack(&lapbeth_packet_type);
-	unregister_netdevice_notifier(&lapbeth_dev_notifier);
+	unregister_netdevice_notifier_rh(&lapbeth_dev_notifier);
 
 	rtnl_lock();
 	list_for_each_safe(entry, tmp, &lapbeth_devices) {

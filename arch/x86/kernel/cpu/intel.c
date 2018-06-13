@@ -1,4 +1,3 @@
-#include <linux/init.h>
 #include <linux/kernel.h>
 
 #include <linux/string.h>
@@ -9,11 +8,14 @@
 #include <linux/module.h>
 #include <linux/uaccess.h>
 
-#include <asm/processor.h>
+#include <asm/cpufeature.h>
 #include <asm/pgtable.h>
 #include <asm/msr.h>
 #include <asm/bugs.h>
 #include <asm/cpu.h>
+#include <asm/intel-family.h>
+#include <asm/hwcap2.h>
+#include <asm/elf.h>
 
 #ifdef CONFIG_X86_64
 #include <linux/topology.h>
@@ -26,7 +28,82 @@
 #include <asm/apic.h>
 #endif
 
-static void __cpuinit early_init_intel(struct cpuinfo_x86 *c)
+/*
+ * Just in case our CPU detection goes bad, or you have a weird system,
+ * allow a way to override the automatic disabling of MPX.
+ */
+static int forcempx;
+
+static int __init forcempx_setup(char *__unused)
+{
+	forcempx = 1;
+
+	return 1;
+}
+__setup("intel-skd-046-workaround=disable", forcempx_setup);
+
+void check_mpx_erratum(struct cpuinfo_x86 *c)
+{
+	if (forcempx)
+		return;
+	/*
+	 * Turn off the MPX feature on CPUs where SMEP is not
+	 * available or disabled.
+	 *
+	 * Works around Intel Erratum SKD046: "Branch Instructions
+	 * May Initialize MPX Bound Registers Incorrectly".
+	 *
+	 * This might falsely disable MPX on systems without
+	 * SMEP, like Atom processors without SMEP.  But there
+	 * is no such hardware known at the moment.
+	 */
+	if (cpu_has(c, X86_FEATURE_MPX) && !cpu_has(c, X86_FEATURE_SMEP)) {
+		setup_clear_cpu_cap(X86_FEATURE_MPX);
+		pr_warn("x86/mpx: Disabling MPX since SMEP not present\n");
+	}
+}
+
+static bool ring3mwait_disabled __read_mostly;
+
+static int __init ring3mwait_disable(char *__unused)
+{
+	ring3mwait_disabled = true;
+	return 0;
+}
+__setup("ring3mwait=disable", ring3mwait_disable);
+
+static void probe_xeon_phi_r3mwait(struct cpuinfo_x86 *c)
+{
+	/*
+	 * Ring 3 MONITOR/MWAIT feature cannot be detected without
+	 * cpu model and family comparison.
+	 */
+	if (c->x86 != 6)
+		return;
+	switch (c->x86_model) {
+	case INTEL_FAM6_XEON_PHI_KNL:
+	case INTEL_FAM6_XEON_PHI_KNM:
+		break;
+	default:
+		return;
+	}
+
+	if (ring3mwait_disabled) {
+		msr_clear_bit(MSR_MISC_FEATURE_ENABLES,
+			      MSR_MISC_FEATURE_ENABLES_RING3MWAIT_BIT);
+		return;
+	}
+
+	msr_set_bit(MSR_MISC_FEATURE_ENABLES,
+		    MSR_MISC_FEATURE_ENABLES_RING3MWAIT_BIT);
+
+	set_cpu_cap(c, X86_FEATURE_RING3MWAIT);
+
+	if (c == &boot_cpu_data)
+		ELF_HWCAP2 |= HWCAP2_RING3MWAIT;
+}
+
+static void early_init_intel(struct cpuinfo_x86 *c)
 {
 	u64 misc_enable;
 
@@ -93,7 +170,7 @@ static void __cpuinit early_init_intel(struct cpuinfo_x86 *c)
 		set_cpu_cap(c, X86_FEATURE_CONSTANT_TSC);
 		set_cpu_cap(c, X86_FEATURE_NONSTOP_TSC);
 		if (!check_tsc_unstable())
-			sched_clock_stable = 1;
+			set_sched_clock_stable();
 	}
 
 	/* Penwell and Cloverview have the TSC which doesn't sleep on S3 */
@@ -154,6 +231,21 @@ static void __cpuinit early_init_intel(struct cpuinfo_x86 *c)
 			setup_clear_cpu_cap(X86_FEATURE_ERMS);
 		}
 	}
+
+	if (c->cpuid_level >= 0x00000001) {
+		u32 eax, ebx, ecx, edx;
+
+		cpuid(0x00000001, &eax, &ebx, &ecx, &edx);
+		/*
+		 * If HTT (EDX[28]) is set EBX[16:23] contain the number of
+		 * apicids which are reserved per package. Store the resulting
+		 * shift value for the package management code.
+		 */
+		if (edx & (1U << 28))
+			c->x86_coreid_bits = get_count_order((ebx >> 16) & 0xff);
+	}
+
+	check_mpx_erratum(c);
 }
 
 #ifdef CONFIG_X86_32
@@ -163,7 +255,7 @@ static void __cpuinit early_init_intel(struct cpuinfo_x86 *c)
  *	This is called before we do cpu ident work
  */
 
-int __cpuinit ppro_with_ram_bug(void)
+int ppro_with_ram_bug(void)
 {
 	/* Uses data from early_cpu_detect now */
 	if (boot_cpu_data.x86_vendor == X86_VENDOR_INTEL &&
@@ -176,7 +268,7 @@ int __cpuinit ppro_with_ram_bug(void)
 	return 0;
 }
 
-static void __cpuinit intel_smp_check(struct cpuinfo_x86 *c)
+static void intel_smp_check(struct cpuinfo_x86 *c)
 {
 	/* calling is from identify_secondary_cpu() ? */
 	if (!c->cpu_index)
@@ -196,7 +288,7 @@ static void __cpuinit intel_smp_check(struct cpuinfo_x86 *c)
 	}
 }
 
-static void __cpuinit intel_workarounds(struct cpuinfo_x86 *c)
+static void intel_workarounds(struct cpuinfo_x86 *c)
 {
 	unsigned long lo, hi;
 
@@ -275,12 +367,12 @@ static void __cpuinit intel_workarounds(struct cpuinfo_x86 *c)
 	intel_smp_check(c);
 }
 #else
-static void __cpuinit intel_workarounds(struct cpuinfo_x86 *c)
+static void intel_workarounds(struct cpuinfo_x86 *c)
 {
 }
 #endif
 
-static void __cpuinit srat_detect_node(struct cpuinfo_x86 *c)
+static void srat_detect_node(struct cpuinfo_x86 *c)
 {
 #ifdef CONFIG_NUMA
 	unsigned node;
@@ -300,7 +392,7 @@ static void __cpuinit srat_detect_node(struct cpuinfo_x86 *c)
 /*
  * find out the number of processor cores on the die
  */
-static int __cpuinit intel_num_cpu_cores(struct cpuinfo_x86 *c)
+static int intel_num_cpu_cores(struct cpuinfo_x86 *c)
 {
 	unsigned int eax, ebx, ecx, edx;
 
@@ -315,7 +407,7 @@ static int __cpuinit intel_num_cpu_cores(struct cpuinfo_x86 *c)
 		return 1;
 }
 
-static void __cpuinit detect_vmx_virtcap(struct cpuinfo_x86 *c)
+static void detect_vmx_virtcap(struct cpuinfo_x86 *c)
 {
 	/* Intel VMX MSR indicated features */
 #define X86_VMX_FEATURE_PROC_CTLS_TPR_SHADOW	0x00200000
@@ -353,7 +445,7 @@ static void __cpuinit detect_vmx_virtcap(struct cpuinfo_x86 *c)
 	}
 }
 
-static void __cpuinit init_intel(struct cpuinfo_x86 *c)
+static void init_intel(struct cpuinfo_x86 *c)
 {
 	unsigned int l2 = 0;
 
@@ -387,7 +479,8 @@ static void __cpuinit init_intel(struct cpuinfo_x86 *c)
 			set_cpu_cap(c, X86_FEATURE_PEBS);
 	}
 
-	if (c->x86 == 6 && c->x86_model == 29 && cpu_has_clflush)
+	if (c->x86 == 6 && cpu_has_clflush &&
+	    (c->x86_model == 29 || c->x86_model == 46 || c->x86_model == 47))
 		set_cpu_cap(c, X86_FEATURE_CLFLUSH_MONITOR);
 
 #ifdef CONFIG_X86_64
@@ -461,18 +554,18 @@ static void __cpuinit init_intel(struct cpuinfo_x86 *c)
 
 		rdmsrl(MSR_IA32_ENERGY_PERF_BIAS, epb);
 		if ((epb & 0xF) == ENERGY_PERF_BIAS_PERFORMANCE) {
-			printk_once(KERN_WARNING "ENERGY_PERF_BIAS:"
-				" Set to 'normal', was 'performance'\n"
-				"ENERGY_PERF_BIAS: View and update with"
-				" x86_energy_perf_policy(8)\n");
+			pr_warn_once("ENERGY_PERF_BIAS: Set to 'normal', was 'performance'\n");
+			pr_warn_once("ENERGY_PERF_BIAS: View and update with x86_energy_perf_policy(8)\n");
 			epb = (epb & ~0xF) | ENERGY_PERF_BIAS_NORMAL;
 			wrmsrl(MSR_IA32_ENERGY_PERF_BIAS, epb);
 		}
 	}
+
+	probe_xeon_phi_r3mwait(c);
 }
 
 #ifdef CONFIG_X86_32
-static unsigned int __cpuinit intel_size_cache(struct cpuinfo_x86 *c, unsigned int size)
+static unsigned int intel_size_cache(struct cpuinfo_x86 *c, unsigned int size)
 {
 	/*
 	 * Intel PIII Tualatin. This comes in two flavours.
@@ -506,7 +599,7 @@ static unsigned int __cpuinit intel_size_cache(struct cpuinfo_x86 *c, unsigned i
 
 #define STLB_4K		0x41
 
-static const struct _tlb_table intel_tlb_table[] __cpuinitconst = {
+static const struct _tlb_table intel_tlb_table[] = {
 	{ 0x01, TLB_INST_4K,		32,	" TLB_INST 4 KByte pages, 4-way set associative" },
 	{ 0x02, TLB_INST_4M,		2,	" TLB_INST 4 MByte pages, full associative" },
 	{ 0x03, TLB_DATA_4K,		64,	" TLB_DATA 4 KByte pages, 4-way set associative" },
@@ -536,7 +629,7 @@ static const struct _tlb_table intel_tlb_table[] __cpuinitconst = {
 	{ 0x00, 0, 0 }
 };
 
-static void __cpuinit intel_tlb_lookup(const unsigned char desc)
+static void intel_tlb_lookup(const unsigned char desc)
 {
 	unsigned char k;
 	if (desc == 0)
@@ -605,7 +698,7 @@ static void __cpuinit intel_tlb_lookup(const unsigned char desc)
 	}
 }
 
-static void __cpuinit intel_tlb_flushall_shift_set(struct cpuinfo_x86 *c)
+static void intel_tlb_flushall_shift_set(struct cpuinfo_x86 *c)
 {
 	switch ((c->x86 << 8) + c->x86_model) {
 	case 0x60f: /* original 65 nm celeron/pentium/core2/xeon, "Merom"/"Conroe" */
@@ -614,27 +707,23 @@ static void __cpuinit intel_tlb_flushall_shift_set(struct cpuinfo_x86 *c)
 	case 0x61d: /* six-core 45 nm xeon "Dunnington" */
 		tlb_flushall_shift = -1;
 		break;
+	case 0x63a: /* Ivybridge */
+		tlb_flushall_shift = 2;
+		break;
 	case 0x61a: /* 45 nm nehalem, "Bloomfield" */
 	case 0x61e: /* 45 nm nehalem, "Lynnfield" */
 	case 0x625: /* 32 nm nehalem, "Clarkdale" */
 	case 0x62c: /* 32 nm nehalem, "Gulftown" */
 	case 0x62e: /* 45 nm nehalem-ex, "Beckton" */
 	case 0x62f: /* 32 nm Xeon E7 */
-		tlb_flushall_shift = 6;
-		break;
 	case 0x62a: /* SandyBridge */
 	case 0x62d: /* SandyBridge, "Romely-EP" */
-		tlb_flushall_shift = 5;
-		break;
-	case 0x63a: /* Ivybridge */
-		tlb_flushall_shift = 1;
-		break;
 	default:
 		tlb_flushall_shift = 6;
 	}
 }
 
-static void __cpuinit intel_detect_tlb(struct cpuinfo_x86 *c)
+static void intel_detect_tlb(struct cpuinfo_x86 *c)
 {
 	int i, j, n;
 	unsigned int regs[4];
@@ -661,7 +750,7 @@ static void __cpuinit intel_detect_tlb(struct cpuinfo_x86 *c)
 	intel_tlb_flushall_shift_set(c);
 }
 
-static const struct cpu_dev __cpuinitconst intel_cpu_dev = {
+static const struct cpu_dev intel_cpu_dev = {
 	.c_vendor	= "Intel",
 	.c_ident	= { "GenuineIntel" },
 #ifdef CONFIG_X86_32

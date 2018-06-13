@@ -120,6 +120,7 @@ static char *dump_type_str(enum dump_type type)
  * Must be in data section since the bss section
  * is not cleared when these are accessed.
  */
+static u8 ipl_ssid __attribute__((__section__(".data"))) = 0;
 static u16 ipl_devno __attribute__((__section__(".data"))) = 0;
 u32 ipl_flags __attribute__((__section__(".data"))) = 0;
 
@@ -182,24 +183,48 @@ EXPORT_SYMBOL_GPL(diag308);
 
 /* SYSFS */
 
-#define DEFINE_IPL_ATTR_RO(_prefix, _name, _format, _value)		\
+#define IPL_ATTR_SHOW_FN(_prefix, _name, _format, args...)		\
 static ssize_t sys_##_prefix##_##_name##_show(struct kobject *kobj,	\
 		struct kobj_attribute *attr,				\
 		char *page)						\
 {									\
-	return sprintf(page, _format, _value);				\
-}									\
+	return snprintf(page, PAGE_SIZE, _format, ##args);		\
+}
+
+#define IPL_ATTR_CCW_STORE_FN(_prefix, _name, _ipl_blk)			\
+static ssize_t sys_##_prefix##_##_name##_store(struct kobject *kobj,	\
+		struct kobj_attribute *attr,				\
+		const char *buf, size_t len)				\
+{									\
+	unsigned long long ssid, devno;					\
+									\
+	if (sscanf(buf, "0.%llx.%llx\n", &ssid, &devno) != 2)		\
+		return -EINVAL;						\
+									\
+	if (ssid > __MAX_SSID || devno > __MAX_SUBCHANNEL)		\
+		return -EINVAL;						\
+									\
+	_ipl_blk.ssid = ssid;						\
+	_ipl_blk.devno = devno;						\
+	return len;							\
+}
+
+#define DEFINE_IPL_CCW_ATTR_RW(_prefix, _name, _ipl_blk)		\
+IPL_ATTR_SHOW_FN(_prefix, _name, "0.%x.%04x\n",				\
+		 _ipl_blk.ssid, _ipl_blk.devno);			\
+IPL_ATTR_CCW_STORE_FN(_prefix, _name, _ipl_blk);			\
 static struct kobj_attribute sys_##_prefix##_##_name##_attr =		\
-	__ATTR(_name, S_IRUGO, sys_##_prefix##_##_name##_show, NULL);
+	__ATTR(_name, (S_IRUGO | S_IWUSR),				\
+	       sys_##_prefix##_##_name##_show,				\
+	       sys_##_prefix##_##_name##_store)				\
+
+#define DEFINE_IPL_ATTR_RO(_prefix, _name, _format, _value)		\
+IPL_ATTR_SHOW_FN(_prefix, _name, _format, _value)			\
+static struct kobj_attribute sys_##_prefix##_##_name##_attr =		\
+	__ATTR(_name, S_IRUGO, sys_##_prefix##_##_name##_show, NULL)
 
 #define DEFINE_IPL_ATTR_RW(_prefix, _name, _fmt_out, _fmt_in, _value)	\
-static ssize_t sys_##_prefix##_##_name##_show(struct kobject *kobj,	\
-		struct kobj_attribute *attr,				\
-		char *page)						\
-{									\
-	return sprintf(page, _fmt_out,					\
-			(unsigned long long) _value);			\
-}									\
+IPL_ATTR_SHOW_FN(_prefix, _name, _fmt_out, (unsigned long long) _value)	\
 static ssize_t sys_##_prefix##_##_name##_store(struct kobject *kobj,	\
 		struct kobj_attribute *attr,				\
 		const char *buf, size_t len)				\
@@ -213,15 +238,10 @@ static ssize_t sys_##_prefix##_##_name##_store(struct kobject *kobj,	\
 static struct kobj_attribute sys_##_prefix##_##_name##_attr =		\
 	__ATTR(_name,(S_IRUGO | S_IWUSR),				\
 			sys_##_prefix##_##_name##_show,			\
-			sys_##_prefix##_##_name##_store);
+			sys_##_prefix##_##_name##_store)
 
 #define DEFINE_IPL_ATTR_STR_RW(_prefix, _name, _fmt_out, _fmt_in, _value)\
-static ssize_t sys_##_prefix##_##_name##_show(struct kobject *kobj,	\
-		struct kobj_attribute *attr,				\
-		char *page)						\
-{									\
-	return sprintf(page, _fmt_out, _value);				\
-}									\
+IPL_ATTR_SHOW_FN(_prefix, _name, _fmt_out, _value)			\
 static ssize_t sys_##_prefix##_##_name##_store(struct kobject *kobj,	\
 		struct kobj_attribute *attr,				\
 		const char *buf, size_t len)				\
@@ -233,7 +253,7 @@ static ssize_t sys_##_prefix##_##_name##_store(struct kobject *kobj,	\
 static struct kobj_attribute sys_##_prefix##_##_name##_attr =		\
 	__ATTR(_name,(S_IRUGO | S_IWUSR),				\
 			sys_##_prefix##_##_name##_show,			\
-			sys_##_prefix##_##_name##_store);
+			sys_##_prefix##_##_name##_store)
 
 static void make_attrs_ro(struct attribute **attrs)
 {
@@ -396,7 +416,7 @@ static ssize_t sys_ipl_device_show(struct kobject *kobj,
 
 	switch (ipl_info.type) {
 	case IPL_TYPE_CCW:
-		return sprintf(page, "0.0.%04x\n", ipl_devno);
+		return sprintf(page, "0.%x.%04x\n", ipl_ssid, ipl_devno);
 	case IPL_TYPE_FCP:
 	case IPL_TYPE_FCP_DUMP:
 		return sprintf(page, "0.0.%04x\n", ipl->ipl_info.fcp.devno);
@@ -415,15 +435,9 @@ static ssize_t ipl_parameter_read(struct file *filp, struct kobject *kobj,
 	return memory_read_from_buffer(buf, count, &off, IPL_PARMBLOCK_START,
 					IPL_PARMBLOCK_SIZE);
 }
-
-static struct bin_attribute ipl_parameter_attr = {
-	.attr = {
-		.name = "binary_parameter",
-		.mode = S_IRUGO,
-	},
-	.size = PAGE_SIZE,
-	.read = &ipl_parameter_read,
-};
+static struct bin_attribute ipl_parameter_attr =
+	__BIN_ATTR(binary_parameter, S_IRUGO, ipl_parameter_read, NULL,
+		   PAGE_SIZE);
 
 static ssize_t ipl_scp_data_read(struct file *filp, struct kobject *kobj,
 				 struct bin_attribute *attr, char *buf,
@@ -434,14 +448,13 @@ static ssize_t ipl_scp_data_read(struct file *filp, struct kobject *kobj,
 
 	return memory_read_from_buffer(buf, count, &off, scp_data, size);
 }
+static struct bin_attribute ipl_scp_data_attr =
+	__BIN_ATTR(scp_data, S_IRUGO, ipl_scp_data_read, NULL, PAGE_SIZE);
 
-static struct bin_attribute ipl_scp_data_attr = {
-	.attr = {
-		.name = "scp_data",
-		.mode = S_IRUGO,
-	},
-	.size = PAGE_SIZE,
-	.read = ipl_scp_data_read,
+static struct bin_attribute *ipl_fcp_bin_attrs[] = {
+	&ipl_parameter_attr,
+	&ipl_scp_data_attr,
+	NULL,
 };
 
 /* FCP ipl device attributes */
@@ -467,6 +480,7 @@ static struct attribute *ipl_fcp_attrs[] = {
 
 static struct attribute_group ipl_fcp_attr_group = {
 	.attrs = ipl_fcp_attrs,
+	.bin_attrs = ipl_fcp_bin_attrs,
 };
 
 /* CCW ipl device attributes */
@@ -539,30 +553,9 @@ static struct attribute_group ipl_unknown_attr_group = {
 
 static struct kset *ipl_kset;
 
-static int __init ipl_register_fcp_files(void)
-{
-	int rc;
-
-	rc = sysfs_create_group(&ipl_kset->kobj, &ipl_fcp_attr_group);
-	if (rc)
-		goto out;
-	rc = sysfs_create_bin_file(&ipl_kset->kobj, &ipl_parameter_attr);
-	if (rc)
-		goto out_ipl_parm;
-	rc = sysfs_create_bin_file(&ipl_kset->kobj, &ipl_scp_data_attr);
-	if (!rc)
-		goto out;
-
-	sysfs_remove_bin_file(&ipl_kset->kobj, &ipl_parameter_attr);
-
-out_ipl_parm:
-	sysfs_remove_group(&ipl_kset->kobj, &ipl_fcp_attr_group);
-out:
-	return rc;
-}
-
 static void __ipl_run(void *unused)
 {
+	__bpon();
 	diag308(DIAG308_IPL, NULL);
 	if (MACHINE_IS_VM)
 		__cpcmd("IPL", NULL, 0, NULL);
@@ -595,7 +588,7 @@ static int __init ipl_init(void)
 		break;
 	case IPL_TYPE_FCP:
 	case IPL_TYPE_FCP_DUMP:
-		rc = ipl_register_fcp_files();
+		rc = sysfs_create_group(&ipl_kset->kobj, &ipl_fcp_attr_group);
 		break;
 	case IPL_TYPE_NSS:
 		rc = sysfs_create_group(&ipl_kset->kobj, &ipl_nss_attr_group);
@@ -743,15 +736,13 @@ static ssize_t reipl_fcp_scpdata_write(struct file *filp, struct kobject *kobj,
 
 	return count;
 }
+static struct bin_attribute sys_reipl_fcp_scp_data_attr =
+	__BIN_ATTR(scp_data, (S_IRUGO | S_IWUSR), reipl_fcp_scpdata_read,
+		   reipl_fcp_scpdata_write, PAGE_SIZE);
 
-static struct bin_attribute sys_reipl_fcp_scp_data_attr = {
-	.attr = {
-		.name = "scp_data",
-		.mode = S_IRUGO | S_IWUSR,
-	},
-	.size = PAGE_SIZE,
-	.read = reipl_fcp_scpdata_read,
-	.write = reipl_fcp_scpdata_write,
+static struct bin_attribute *reipl_fcp_bin_attrs[] = {
+	&sys_reipl_fcp_scp_data_attr,
+	NULL,
 };
 
 DEFINE_IPL_ATTR_RW(reipl_fcp, wwpn, "0x%016llx\n", "%llx\n",
@@ -776,12 +767,11 @@ static struct attribute *reipl_fcp_attrs[] = {
 
 static struct attribute_group reipl_fcp_attr_group = {
 	.attrs = reipl_fcp_attrs,
+	.bin_attrs = reipl_fcp_bin_attrs,
 };
 
 /* CCW reipl device attributes */
-
-DEFINE_IPL_ATTR_RW(reipl_ccw, device, "0.0.%04llx\n", "0.0.%llx\n",
-	reipl_block_ccw->ipl_info.ccw.devno);
+DEFINE_IPL_CCW_ATTR_RW(reipl_ccw, device, reipl_block_ccw->ipl_info.ccw);
 
 static void reipl_get_ascii_loadparm(char *loadparm,
 				     struct ipl_parameter_block *ibp)
@@ -1066,8 +1056,8 @@ static void __reipl_run(void *unused)
 
 	switch (reipl_method) {
 	case REIPL_METHOD_CCW_CIO:
+		devid.ssid  = reipl_block_ccw->ipl_info.ccw.ssid;
 		devid.devno = reipl_block_ccw->ipl_info.ccw.devno;
-		devid.ssid  = 0;
 		reipl_ccw_dev(&devid);
 		break;
 	case REIPL_METHOD_CCW_VM:
@@ -1203,6 +1193,7 @@ static int __init reipl_ccw_init(void)
 
 	reipl_block_ccw_init(reipl_block_ccw);
 	if (ipl_info.type == IPL_TYPE_CCW) {
+		reipl_block_ccw->ipl_info.ccw.ssid = ipl_ssid;
 		reipl_block_ccw->ipl_info.ccw.devno = ipl_devno;
 		reipl_block_ccw_fill_parms(reipl_block_ccw);
 	}
@@ -1237,15 +1228,6 @@ static int __init reipl_fcp_init(void)
 
 	rc = sysfs_create_group(&reipl_fcp_kset->kobj, &reipl_fcp_attr_group);
 	if (rc) {
-		kset_unregister(reipl_fcp_kset);
-		free_page((unsigned long) reipl_block_fcp);
-		return rc;
-	}
-
-	rc = sysfs_create_bin_file(&reipl_fcp_kset->kobj,
-				   &sys_reipl_fcp_scp_data_attr);
-	if (rc) {
-		sysfs_remove_group(&reipl_fcp_kset->kobj, &reipl_fcp_attr_group);
 		kset_unregister(reipl_fcp_kset);
 		free_page((unsigned long) reipl_block_fcp);
 		return rc;
@@ -1349,9 +1331,7 @@ static struct attribute_group dump_fcp_attr_group = {
 };
 
 /* CCW dump device attributes */
-
-DEFINE_IPL_ATTR_RW(dump_ccw, device, "0.0.%04llx\n", "0.0.%llx\n",
-		   dump_block_ccw->ipl_info.ccw.devno);
+DEFINE_IPL_CCW_ATTR_RW(dump_ccw, device, dump_block_ccw->ipl_info.ccw);
 
 static struct attribute *dump_ccw_attrs[] = {
 	&sys_dump_ccw_device_attr.attr,
@@ -1431,8 +1411,8 @@ static void __dump_run(void *unused)
 
 	switch (dump_method) {
 	case DUMP_METHOD_CCW_CIO:
+		devid.ssid  = dump_block_ccw->ipl_info.ccw.ssid;
 		devid.devno = dump_block_ccw->ipl_info.ccw.devno;
-		devid.ssid  = 0;
 		reipl_ccw_dev(&devid);
 		break;
 	case DUMP_METHOD_CCW_VM:
@@ -1687,9 +1667,7 @@ static ssize_t on_reboot_store(struct kobject *kobj,
 {
 	return set_trigger(buf, &on_reboot_trigger, len);
 }
-
-static struct kobj_attribute on_reboot_attr =
-	__ATTR(on_reboot, 0644, on_reboot_show, on_reboot_store);
+static struct kobj_attribute on_reboot_attr = __ATTR_RW(on_reboot);
 
 static void do_machine_restart(char *__unused)
 {
@@ -1715,9 +1693,7 @@ static ssize_t on_panic_store(struct kobject *kobj,
 {
 	return set_trigger(buf, &on_panic_trigger, len);
 }
-
-static struct kobj_attribute on_panic_attr =
-	__ATTR(on_panic, 0644, on_panic_show, on_panic_store);
+static struct kobj_attribute on_panic_attr = __ATTR_RW(on_panic);
 
 static void do_panic(void)
 {
@@ -1743,9 +1719,7 @@ static ssize_t on_restart_store(struct kobject *kobj,
 {
 	return set_trigger(buf, &on_restart_trigger, len);
 }
-
-static struct kobj_attribute on_restart_attr =
-	__ATTR(on_restart, 0644, on_restart_show, on_restart_store);
+static struct kobj_attribute on_restart_attr = __ATTR_RW(on_restart);
 
 static void __do_restart(void *ignore)
 {
@@ -1782,10 +1756,7 @@ static ssize_t on_halt_store(struct kobject *kobj,
 {
 	return set_trigger(buf, &on_halt_trigger, len);
 }
-
-static struct kobj_attribute on_halt_attr =
-	__ATTR(on_halt, 0644, on_halt_show, on_halt_store);
-
+static struct kobj_attribute on_halt_attr = __ATTR_RW(on_halt);
 
 static void do_machine_halt(void)
 {
@@ -1811,10 +1782,7 @@ static ssize_t on_poff_store(struct kobject *kobj,
 {
 	return set_trigger(buf, &on_poff_trigger, len);
 }
-
-static struct kobj_attribute on_poff_attr =
-	__ATTR(on_poff, 0644, on_poff_show, on_poff_store);
-
+static struct kobj_attribute on_poff_attr = __ATTR_RW(on_poff);
 
 static void do_machine_power_off(void)
 {
@@ -1824,26 +1792,27 @@ static void do_machine_power_off(void)
 }
 void (*_machine_power_off)(void) = do_machine_power_off;
 
+static struct attribute *shutdown_action_attrs[] = {
+	&on_restart_attr.attr,
+	&on_reboot_attr.attr,
+	&on_panic_attr.attr,
+	&on_halt_attr.attr,
+	&on_poff_attr.attr,
+	NULL,
+};
+
+static struct attribute_group shutdown_action_attr_group = {
+	.attrs = shutdown_action_attrs,
+};
+
 static void __init shutdown_triggers_init(void)
 {
 	shutdown_actions_kset = kset_create_and_add("shutdown_actions", NULL,
 						    firmware_kobj);
 	if (!shutdown_actions_kset)
 		goto fail;
-	if (sysfs_create_file(&shutdown_actions_kset->kobj,
-			      &on_reboot_attr.attr))
-		goto fail;
-	if (sysfs_create_file(&shutdown_actions_kset->kobj,
-			      &on_panic_attr.attr))
-		goto fail;
-	if (sysfs_create_file(&shutdown_actions_kset->kobj,
-			      &on_halt_attr.attr))
-		goto fail;
-	if (sysfs_create_file(&shutdown_actions_kset->kobj,
-			      &on_poff_attr.attr))
-		goto fail;
-	if (sysfs_create_file(&shutdown_actions_kset->kobj,
-			      &on_restart_attr.attr))
+	if (sysfs_create_group(&shutdown_actions_kset->kobj,
+			       &shutdown_action_attr_group))
 		goto fail;
 	return;
 fail:
@@ -1947,14 +1916,14 @@ void __init setup_ipl(void)
 	ipl_info.type = get_ipl_type();
 	switch (ipl_info.type) {
 	case IPL_TYPE_CCW:
+		ipl_info.data.ccw.dev_id.ssid = ipl_ssid;
 		ipl_info.data.ccw.dev_id.devno = ipl_devno;
-		ipl_info.data.ccw.dev_id.ssid = 0;
 		break;
 	case IPL_TYPE_FCP:
 	case IPL_TYPE_FCP_DUMP:
+		ipl_info.data.fcp.dev_id.ssid = 0;
 		ipl_info.data.fcp.dev_id.devno =
 			IPL_PARMBLOCK_START->ipl_info.fcp.devno;
-		ipl_info.data.fcp.dev_id.ssid = 0;
 		ipl_info.data.fcp.wwpn = IPL_PARMBLOCK_START->ipl_info.fcp.wwpn;
 		ipl_info.data.fcp.lun = IPL_PARMBLOCK_START->ipl_info.fcp.lun;
 		break;
@@ -1986,6 +1955,7 @@ void __init ipl_save_parameters(void)
 	if (cio_get_iplinfo(&iplinfo))
 		return;
 
+	ipl_ssid = iplinfo.ssid;
 	ipl_devno = iplinfo.devno;
 	ipl_flags |= IPL_DEVNO_VALID;
 	if (!iplinfo.is_qdio)
@@ -2032,7 +2002,8 @@ static void do_reset_calls(void)
 
 u32 dump_prefix_page;
 
-void s390_reset_system(void (*func)(void *), void *data)
+void s390_reset_system(void (*fn_pre)(void),
+		       void (*fn_post)(void *), void *data)
 {
 	struct _lowcore *lc;
 
@@ -2051,19 +2022,23 @@ void s390_reset_system(void (*func)(void *), void *data)
 	__ctl_clear_bit(0,28);
 
 	/* Set new machine check handler */
-	S390_lowcore.mcck_new_psw.mask = psw_kernel_bits | PSW_MASK_DAT;
+	S390_lowcore.mcck_new_psw.mask = PSW_KERNEL_BITS | PSW_MASK_DAT;
 	S390_lowcore.mcck_new_psw.addr =
 		PSW_ADDR_AMODE | (unsigned long) s390_base_mcck_handler;
 
 	/* Set new program check handler */
-	S390_lowcore.program_new_psw.mask = psw_kernel_bits | PSW_MASK_DAT;
+	S390_lowcore.program_new_psw.mask = PSW_KERNEL_BITS | PSW_MASK_DAT;
 	S390_lowcore.program_new_psw.addr =
 		PSW_ADDR_AMODE | (unsigned long) s390_base_pgm_handler;
 
 	/* Store status at absolute zero */
 	store_status();
 
+	/* Call function before reset */
+	if (fn_pre)
+		fn_pre();
 	do_reset_calls();
-	if (func)
-		func(data);
+	/* Call function after reset */
+	if (fn_post)
+		fn_post(data);
 }

@@ -323,8 +323,8 @@ static int __init efifb_setup(char *options)
 			if (!*this_opt) continue;
 
 			for (i = 0; i < M_UNKNOWN; i++) {
-				if (!strcmp(this_opt, dmi_list[i].optname) &&
-				    dmi_list[i].base != 0) {
+				if (dmi_list[i].base != 0 &&
+				    !strcmp(this_opt, dmi_list[i].optname)) {
 					screen_info.lfb_base = dmi_list[i].base;
 					screen_info.lfb_linelength = dmi_list[i].stride;
 					screen_info.lfb_width = dmi_list[i].width;
@@ -369,6 +369,20 @@ static int __init efifb_setup(char *options)
 	return 0;
 }
 
+static inline bool fb_base_is_valid(void)
+{
+	if (screen_info.lfb_base)
+		return true;
+
+	if (!(screen_info.capabilities & VIDEO_CAPABILITY_64BIT_BASE))
+		return false;
+
+	if (screen_info.ext_lfb_base)
+		return true;
+
+	return false;
+}
+
 static int __init efifb_probe(struct platform_device *dev)
 {
 	struct fb_info *info;
@@ -381,7 +395,7 @@ static int __init efifb_probe(struct platform_device *dev)
 		screen_info.lfb_depth = 32;
 	if (!screen_info.pages)
 		screen_info.pages = 1;
-	if (!screen_info.lfb_base) {
+	if (!fb_base_is_valid()) {
 		printk(KERN_DEBUG "efifb: invalid framebuffer address\n");
 		return -ENODEV;
 	}
@@ -400,6 +414,14 @@ static int __init efifb_probe(struct platform_device *dev)
 	}
 
 	efifb_fix.smem_start = screen_info.lfb_base;
+
+	if (screen_info.capabilities & VIDEO_CAPABILITY_64BIT_BASE) {
+		u64 ext_lfb_base;
+
+		ext_lfb_base = (u64)(unsigned long)screen_info.ext_lfb_base << 32;
+		efifb_fix.smem_start |= ext_lfb_base;
+	}
+
 	efifb_defined.bits_per_pixel = screen_info.lfb_depth;
 	efifb_defined.xres = screen_info.lfb_width;
 	efifb_defined.yres = screen_info.lfb_height;

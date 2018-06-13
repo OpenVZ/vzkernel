@@ -320,6 +320,18 @@
 311	64	process_vm_writev	sys_process_vm_writev
 312	common	kcmp			sys_kcmp
 313	common	finit_module		sys_finit_module
+314	common  sched_setattr		sys_sched_setattr
+315	common  sched_getattr		sys_sched_getattr
+316	common	renameat2		sys_renameat2
+317	common	seccomp			sys_seccomp
+318	common	getrandom		sys_getrandom
+319	common	memfd_create		sys_memfd_create
+320	common	kexec_file_load		sys_kexec_file_load
+323	common	userfaultfd		sys_userfaultfd
+326	common	copy_file_range		sys_copy_file_range
+329	common	pkey_mprotect		sys_pkey_mprotect
+330	common	pkey_alloc		sys_pkey_alloc
+331	common	pkey_free		sys_pkey_free
 
 #
 # x32-specific system call numbers start at 512 to avoid cache impact

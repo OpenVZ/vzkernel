@@ -83,7 +83,8 @@ int __init ima_init(void)
 		ima_used_chip = 1;
 
 	if (!ima_used_chip)
-		pr_info("IMA: No TPM chip found, activating TPM-bypass!\n");
+		pr_info("IMA: No TPM chip found, activating TPM-bypass! (rc=%d)\n",
+			rc);
 
 	rc = ima_init_crypto();
 	if (rc)
