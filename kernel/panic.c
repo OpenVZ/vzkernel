@@ -400,7 +400,7 @@ const struct taint_flag taint_flags[TAINT_FLAGS_COUNT] = {
 	[ TAINT_RESERVED28 ]		= { '?', '-', false },
 	[ TAINT_RESERVED29 ]		= { '?', '-', false },
 	[ TAINT_RESERVED30 ]		= { '?', '-', false },
-	[ TAINT_RESERVED31 ]		= { '?', '-', false },
+	[ TAINT_UNPRIVILEGED_BPF ]	= { 'u', ' ', false },
 };
 
 /**

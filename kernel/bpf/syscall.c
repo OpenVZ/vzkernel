@@ -24,6 +24,7 @@
 #include <linux/ctype.h>
 #include <linux/nospec.h>
 #include <linux/audit.h>
+#include <linux/init.h>
 #include <uapi/linux/btf.h>
 #include <linux/pgtable.h>
 #include <linux/bpf_lsm.h>
@@ -49,6 +50,26 @@ static DEFINE_IDR(map_idr);
 static DEFINE_SPINLOCK(map_idr_lock);
 static DEFINE_IDR(link_idr);
 static DEFINE_SPINLOCK(link_idr_lock);
+
+/* RHEL-only: default to 1 */
+int sysctl_unprivileged_bpf_disabled __read_mostly = 1;
+
+static int __init unprivileged_bpf_setup(char *str)
+{
+	unsigned long disabled;
+	if (!kstrtoul(str, 0, &disabled))
+		sysctl_unprivileged_bpf_disabled = !!disabled;
+
+	if (!sysctl_unprivileged_bpf_disabled) {
+		pr_warn("Unprivileged BPF has been enabled "
+			"(unprivileged_bpf_disabled=0 has been supplied "
+			"in boot parameters), tainting the kernel");
+		add_taint(TAINT_UNPRIVILEGED_BPF, LOCKDEP_STILL_OK);
+	}
+
+	return 1;
+}
+__setup("unprivileged_bpf_disabled=", unprivileged_bpf_setup);
 
 int sysctl_unprivileged_bpf_disabled __read_mostly =
 	IS_BUILTIN(CONFIG_BPF_UNPRIV_DEFAULT_OFF) ? 2 : 0;

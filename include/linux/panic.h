@@ -89,7 +89,7 @@ static inline void set_arch_panic_timeout(int timeout, int arch_default_timeout)
 #define TAINT_RESERVED28		28
 #define TAINT_RESERVED29		29
 #define TAINT_RESERVED30		30
-#define TAINT_RESERVED31		31
+#define TAINT_UNPRIVILEGED_BPF		31
 /* End of Red Hat-specific taint flags */
 #define TAINT_FLAGS_COUNT		32
 #define TAINT_FLAGS_MAX			((1UL << TAINT_FLAGS_COUNT) - 1)
