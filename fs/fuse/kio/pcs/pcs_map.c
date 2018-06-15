@@ -1515,8 +1515,7 @@ static void pcs_cs_wakeup(struct pcs_cs * cs)
 
 static int __pcs_cs_still_congested(struct pcs_cs * cs)
 {
-	if (!list_empty(&cs->active_list))
-		list_splice_tail_init(&cs->active_list, &cs->cong_queue);
+	list_splice_tail_init(&cs->active_list, &cs->cong_queue);
 
 	if (list_empty(&cs->cong_queue)) {
 		BUG_ON(cs->cong_queue_len);
