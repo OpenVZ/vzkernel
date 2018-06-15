@@ -80,7 +80,7 @@ static inline const char *pcs_role_to_str(u8 role)
 		"TEST", "CN", "CS", "MDS", "TOOL", "SVC"
 	};
 
-	if (role > PCS_NODE_ROLES_)
+	if (role >= PCS_NODE_ROLES_)
 		return "Unknown";
 	return roles_str[role];
 }
