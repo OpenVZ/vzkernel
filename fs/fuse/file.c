@@ -1074,6 +1074,7 @@ void fuse_release_ff(struct inode *inode, struct fuse_file *ff)
 		}
 	}
 }
+EXPORT_SYMBOL_GPL(fuse_release_ff);
 
 static void fuse_readpages_end(struct fuse_conn *fc, struct fuse_args *args,
 			       int err)
@@ -2054,7 +2055,7 @@ static void fuse_writepage_end(struct fuse_conn *fc, struct fuse_args *args,
 	fuse_writepage_free(wpa);
 }
 
-static struct fuse_file *__fuse_write_file_get(struct fuse_conn *fc,
+struct fuse_file *__fuse_write_file_get(struct fuse_conn *fc,
 					       struct fuse_inode *fi)
 {
 	struct fuse_file *ff = NULL;
@@ -2069,6 +2070,7 @@ static struct fuse_file *__fuse_write_file_get(struct fuse_conn *fc,
 
 	return ff;
 }
+EXPORT_SYMBOL_GPL(__fuse_write_file_get);
 
 static struct fuse_file *fuse_write_file_get(struct fuse_conn *fc,
 					     struct fuse_inode *fi)
