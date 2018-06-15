@@ -267,6 +267,60 @@ void map_truncate_tail(struct pcs_mapping * mapping, u64 offset)
 	pcs_ireq_queue_fail(&dispose, PCS_ERR_NET_ABORT);
 }
 
+void pcs_cs_truncate_maps(struct pcs_cs *cs)
+{
+	struct pcs_cs_list *cs_list;
+	struct pcs_cs_link *cs_link;
+	struct pcs_map_entry *m;
+	LIST_HEAD(map_list);
+	bool once = true;
+
+	cs->use_count++;
+again:
+	lockdep_assert_held(&cs->lock);
+
+	while (!list_empty(&cs->map_list)) {
+		cs_link = list_first_entry(&cs->map_list,
+					   struct pcs_cs_link, link);
+		list_move(&cs_link->link, &map_list);
+
+		cs_list = cs_link_to_cs_list(cs_link);
+		cslist_get(cs_list);
+		spin_unlock(&cs->lock);
+
+		rcu_read_lock();
+		m = rcu_dereference(cs_list->map);
+		if (!m)
+			goto skip;
+		spin_lock(&m->lock);
+		if (!list_empty(&m->queue)) {
+			WARN(once, "Not empty map queue\n");
+			once = false;
+		} else if (!(m->state & PCS_MAP_DEAD)) {
+			pcs_map_truncate(m, NULL);
+			map_del_lru(m);
+		}
+		spin_unlock(&m->lock);
+skip:
+		rcu_read_unlock();
+		/*
+		 * cs_link will be removed from map_list
+		 * on the final cslist_put(). Maybe now.
+		 */
+		cslist_put(cs_list);
+		spin_lock(&cs->lock);
+	}
+
+	list_splice(&map_list, &cs->map_list);
+	if (!list_empty(&cs->map_list)) {
+		spin_unlock(&cs->lock);
+		schedule_timeout_uninterruptible(HZ);
+		spin_lock(&cs->lock);
+		goto again;
+	}
+	cs->use_count--;
+}
+
 void pcs_mapping_invalidate(struct pcs_mapping * mapping)
 {
 	pcs_mapping_dump(mapping);
