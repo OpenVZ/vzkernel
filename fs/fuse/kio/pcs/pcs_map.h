@@ -240,7 +240,6 @@ static inline bool pcs_map_get_locked(struct pcs_map_entry *m)
 	BUG_ON(atomic_read(&m->__refcnt) < 0);
 
 	if (m->state & PCS_MAP_DEAD) {
-		spin_unlock(&m->lock);
 		return 0;
 	}
 
