@@ -1143,6 +1143,7 @@ void fuse_release_ff(struct inode *inode, struct fuse_file *ff)
 		}
 	}
 }
+EXPORT_SYMBOL_GPL(fuse_release_ff);
 
 static void fuse_readpages_end(struct fuse_conn *fc, struct fuse_req *req)
 {
@@ -2003,8 +2004,7 @@ static void fuse_writepage_end(struct fuse_conn *fc, struct fuse_req *req)
 	fuse_writepage_free(fc, req);
 }
 
-static struct fuse_file *fuse_write_file(struct fuse_conn *fc,
-					 struct fuse_inode *fi)
+struct fuse_file *fuse_write_file(struct fuse_conn *fc, struct fuse_inode *fi)
 {
 	struct fuse_file *ff = NULL;
 
@@ -2017,6 +2017,7 @@ static struct fuse_file *fuse_write_file(struct fuse_conn *fc,
 
 	return ff;
 }
+EXPORT_SYMBOL_GPL(fuse_write_file);
 
 static int tree_insert(struct rb_root *root, struct fuse_req *ins_req)
 {
