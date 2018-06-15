@@ -4088,7 +4088,7 @@ static void cnic_cm_free_mem(struct cnic_dev *dev)
 {
 	struct cnic_local *cp = dev->cnic_priv;
 
-	kfree(cp->csk_tbl);
+	kvfree(cp->csk_tbl);
 	cp->csk_tbl = NULL;
 	cnic_free_id_tbl(&cp->csk_port_tbl);
 }
@@ -4098,7 +4098,7 @@ static int cnic_cm_alloc_mem(struct cnic_dev *dev)
 	struct cnic_local *cp = dev->cnic_priv;
 	u32 port_id;
 
-	cp->csk_tbl = kzalloc(sizeof(struct cnic_sock) * MAX_CM_SK_TBL_SZ,
+	cp->csk_tbl = kvzalloc(sizeof(struct cnic_sock) * MAX_CM_SK_TBL_SZ,
 			      GFP_KERNEL);
 	if (!cp->csk_tbl)
 		return -ENOMEM;
