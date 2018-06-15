@@ -2210,8 +2210,6 @@ void fuse_abort_conn(struct fuse_conn *fc)
 			list_splice_init(&fpq->processing, &to_end2);
 			spin_unlock(&fpq->lock);
 		}
-		if (fc->kio.op)
-			fc->kio.op->conn_abort(fc);
 
 		fc->max_background = UINT_MAX;
 		for_each_online_cpu(cpu)
@@ -2233,6 +2231,9 @@ void fuse_abort_conn(struct fuse_conn *fc)
 			request_end(fc, req);
 		}
 		end_requests(fc, &to_end2);
+
+		if (fc->kio.op)
+			fc->kio.op->conn_abort(fc);
 	} else {
 		spin_unlock(&fc->lock);
 	}

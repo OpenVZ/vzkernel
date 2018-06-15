@@ -148,9 +148,11 @@ void kpcs_conn_abort(struct fuse_conn *fc)
 	if (!fc->kio.ctx)
 		return;
 
-	//pcs_cluster_fini((struct pcs_fuse_cluster *) fc->kio.ctx);
-	printk("%s TODO: implement this method\n", __FUNCTION__);
-
+	/* TODO: This is just a crunch, Conn cleanup requires sane locking */
+	kpcs_conn_fini(fc);
+	spin_lock(&fc->lock);
+	fc->kio.ctx = NULL;
+	spin_unlock(&fc->lock);
 }
 
 static int kpcs_probe(struct fuse_conn *fc, char *name)
@@ -1001,15 +1003,6 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 	BUG_ON(!list_empty(&req->list));
 
 	TRACE(" Enter req:%p op:%d end:%p bg:%d lk:%d\n", req, req->in.h.opcode, req->end, bg, lk);
-
-	/* TODO: This is just a crunch, Conn cleanup requires sane locking */
-	if (req->in.h.opcode == FUSE_DESTROY) {
-		kpcs_conn_fini(fc);
-		spin_lock(&fc->lock);
-		fc->kio.ctx = NULL;
-		spin_unlock(&fc->lock);
-		return 1;
-	}
 
 	if (!fi || !fi->private)
 		return 1;
