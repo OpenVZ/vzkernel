@@ -1101,6 +1101,7 @@ void fuse_release_ff(struct inode *inode, struct fuse_file *ff)
 		}
 	}
 }
+EXPORT_SYMBOL_GPL(fuse_release_ff);
 
 static void fuse_readpages_end(struct fuse_conn *fc, struct fuse_req *req)
 {
@@ -2051,13 +2052,14 @@ static struct fuse_file *__fuse_write_file_get(struct fuse_conn *fc,
 	return ff;
 }
 
-static struct fuse_file *fuse_write_file_get(struct fuse_conn *fc,
-					     struct fuse_inode *fi)
+struct fuse_file *fuse_write_file_get(struct fuse_conn *fc,
+				      struct fuse_inode *fi)
 {
 	struct fuse_file *ff = __fuse_write_file_get(fc, fi);
 	WARN_ON(!ff);
 	return ff;
 }
+EXPORT_SYMBOL_GPL(fuse_write_file_get);
 
 int fuse_write_inode(struct inode *inode, struct writeback_control *wbc)
 {
