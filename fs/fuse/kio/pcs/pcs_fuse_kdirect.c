@@ -588,6 +588,7 @@ void ireq_destroy(struct pcs_int_request *ireq)
 static int submit_size_grow(struct inode *inode, unsigned long long size)
 {
 	struct fuse_conn *fc = get_fuse_conn(inode);
+	struct fuse_file *ff;
 	struct fuse_setattr_in inarg;
 	struct fuse_attr_out outarg;
 	struct fuse_req *req;
@@ -610,6 +611,11 @@ static int submit_size_grow(struct inode *inode, unsigned long long size)
 	inarg.valid |= FATTR_SIZE;
 	inarg.size = size;
 
+	ff = fuse_write_file(fc, get_fuse_inode(inode));
+	if (ff) {
+		inarg.valid |= FATTR_FH;
+		inarg.fh = ff->fh;
+	}
 	req->io_inode = inode;
 	req->in.h.opcode = FUSE_SETATTR;
 	req->in.h.nodeid = get_node_id(inode);
@@ -621,7 +627,9 @@ static int submit_size_grow(struct inode *inode, unsigned long long size)
 	req->out.args[0].value = &outarg;
 
 	fuse_request_send(fc, req);
+
 	err = req->out.h.error;
+	fuse_release_ff(inode, ff);
 	fuse_put_request(fc, req);
 
 	return err;
