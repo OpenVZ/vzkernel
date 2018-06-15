@@ -1127,50 +1127,6 @@ DEF_TPG_PARAM(OFMarker);
 DEF_TPG_PARAM(IFMarkInt);
 DEF_TPG_PARAM(OFMarkInt);
 
-static ssize_t iscsi_tpg_param_BlkioCgroup_show(struct config_item *item,
-		char *page)
-{
-	struct se_portal_group *se_tpg = param_to_tpg(item);
-	struct iscsi_portal_group *tpg = container_of(se_tpg,
-			struct iscsi_portal_group, tpg_se_tpg);
-	ssize_t rb;
-
-	if (iscsit_get_tpg(tpg) < 0)
-		return -EINVAL;
-
-	rb = iscsit_ta_tpg_show_blkcg(tpg, page);
-	iscsit_put_tpg(tpg);
-	return rb;
-}
-
-static ssize_t iscsi_tpg_param_BlkioCgroup_store(struct config_item *item,
-		const char *page, size_t count)
-{
-	struct se_portal_group *se_tpg = param_to_tpg(item);
-	struct iscsi_portal_group *tpg = container_of(se_tpg,
-			struct iscsi_portal_group, tpg_se_tpg);
-	u32 val;
-	int ret;
-
-	if (iscsit_get_tpg(tpg) < 0)
-		return -EINVAL;
-
-	ret = kstrtou32(page, 0, &val);
-	if (ret)
-		goto out;
-	ret = iscsit_ta_tpg_set_blkcg(tpg, val);
-	if (ret < 0)
-		goto out;
-
-	iscsit_put_tpg(tpg);
-	return count;
-out:
-	iscsit_put_tpg(tpg);
-	return ret;
-}
-
-CONFIGFS_ATTR(iscsi_tpg_param_, BlkioCgroup);
-
 static struct configfs_attribute *lio_target_tpg_param_attrs[] = {
 	&iscsi_tpg_param_attr_AuthMethod,
 	&iscsi_tpg_param_attr_HeaderDigest,
@@ -1193,7 +1149,6 @@ static struct configfs_attribute *lio_target_tpg_param_attrs[] = {
 	&iscsi_tpg_param_attr_OFMarker,
 	&iscsi_tpg_param_attr_IFMarkInt,
 	&iscsi_tpg_param_attr_OFMarkInt,
-	&iscsi_tpg_param_attr_BlkioCgroup,
 	NULL,
 };
 

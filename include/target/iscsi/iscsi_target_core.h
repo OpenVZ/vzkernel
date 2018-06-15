@@ -831,8 +831,6 @@ struct iscsi_portal_group {
 	struct iscsi_tiqn	*tpg_tiqn;
 	struct list_head	tpg_gnp_list;
 	struct list_head	tpg_list;
-
-	struct cgroup_subsys_state *blk_css;
 } ____cacheline_aligned;
 
 struct iscsi_wwn_stat_grps {

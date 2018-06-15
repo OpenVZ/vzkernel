@@ -5929,7 +5929,6 @@ int cgroup_kernel_attach(struct cgroup *cgrp, struct task_struct *tsk)
 	mutex_unlock(&cgroup_mutex);
 	return ret;
 }
-EXPORT_SYMBOL_GPL(cgroup_kernel_attach);
 
 void cgroup_kernel_close(struct cgroup *cgrp)
 {
