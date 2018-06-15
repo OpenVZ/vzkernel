@@ -620,9 +620,13 @@ static void cs_keep_waiting(struct pcs_rpc *ep, struct pcs_msg *req, struct pcs_
 	who = lookup_and_lock_cs(cs->css, &h->xid.origin);
 	if (who) {
 		struct pcs_int_request *ireq = req->private2;
-		abs_time_t lat = ktime_to_ms(ktime_sub(ktime_get(), ireq->ts_sent));
-		if (ireq)
+		abs_time_t lat = 0; /* GCC bug */
+		if (ireq) {
+			lat = ktime_to_ms(ktime_sub(ktime_get(), ireq->ts_sent));
+			cs_update_io_latency(who, lat);
+
 			ireq->wait_origin = h->xid.origin;
+		}
 
 		if (!who->cwr_state) {
 			DTRACE("Congestion window on CS" NODE_FMT " reducing %d/%d/%d", NODE_ARGS(h->xid.origin),
@@ -637,7 +641,7 @@ static void cs_keep_waiting(struct pcs_rpc *ep, struct pcs_msg *req, struct pcs_
 			if (who->in_flight >= who->eff_cwnd)
 				who->cwr_state = 1;
 		}
-		cs_update_io_latency(who, lat);
+
 		if (ireq && ireq->type == PCS_IREQ_IOCHUNK && !pcs_req_direction(ireq->iochunk.cmd)) {
 			/* Force CS reselection */
 			pcs_map_force_reselect(who);
