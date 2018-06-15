@@ -646,6 +646,7 @@ static void fuse_size_grow_work(struct work_struct *w)
 	struct inode *inode = &di->inode->inode;
 	struct pcs_int_request* ireq, *next;
 	unsigned long long size = 0;
+	int err;
 	LIST_HEAD(to_submit);
 
 	spin_lock(&di->lock);
@@ -665,7 +666,19 @@ static void fuse_size_grow_work(struct work_struct *w)
 	}
 	di->size.required = size;
 	spin_unlock(&di->lock);
-	submit_size_grow(inode, size);
+
+	err = submit_size_grow(inode, size);
+	if (err) {
+		LIST_HEAD(to_fail);
+
+		spin_lock(&di->lock);
+		di->size.required = 0;
+		list_splice_tail_init(&di->size.grow_queue, &to_fail);
+		spin_unlock(&di->lock);
+
+		pcs_ireq_queue_fail(&to_fail, err);
+		return;
+	}
 
 	spin_lock(&di->lock);
 	BUG_ON(di->size.shrink);
