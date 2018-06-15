@@ -1117,4 +1117,8 @@ void fuse_stat_account(struct fuse_conn * fc, int op, ktime_t val);
 int fuse_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 		__u64 start, __u64 len);
 
+struct fuse_file *fuse_write_file_get(struct fuse_conn *fc, struct fuse_inode *fi);
+
+void fuse_release_ff(struct inode *inode, struct fuse_file *ff);
+
 #endif /* _FS_FUSE_I_H */
