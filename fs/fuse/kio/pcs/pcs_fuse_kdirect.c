@@ -609,9 +609,11 @@ void ireq_destroy(struct pcs_int_request *ireq)
 static int submit_size_grow(struct inode *inode, unsigned long long size)
 {
 	struct fuse_conn *fc = get_fuse_conn(inode);
+	struct fuse_file *ff;
 	struct fuse_setattr_in inarg;
 	struct fuse_attr_out outarg;
 	FUSE_ARGS(args);
+	int err;
 
 	/* Caller comes here w/o i_mutex, but vfs_truncate is blocked
 	   at inode_dio_wait() see fuse_set_nowrite
@@ -626,6 +628,11 @@ static int submit_size_grow(struct inode *inode, unsigned long long size)
 	inarg.valid |= FATTR_SIZE;
 	inarg.size = size;
 
+	ff = __fuse_write_file_get(fc, get_fuse_inode(inode));
+	if (ff) {
+		inarg.valid |= FATTR_FH;
+		inarg.fh = ff->fh;
+	}
 	args.io_inode = inode;
 	args.opcode = FUSE_SETATTR;
 	args.nodeid = get_node_id(inode);
@@ -636,7 +643,10 @@ static int submit_size_grow(struct inode *inode, unsigned long long size)
 	args.out_args[0].size = sizeof(outarg);
 	args.out_args[0].value = &outarg;
 
-	return fuse_simple_request(fc, &args);
+	err = fuse_simple_request(fc, &args);
+	fuse_release_ff(inode, ff);
+
+	return err;
 
 }
 
