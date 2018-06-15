@@ -332,4 +332,6 @@ void ireq_handle_hole(struct pcs_int_request *ireq);
 
 void pcs_process_ireq(struct pcs_int_request *ireq);
 
+void pcs_ireq_queue_fail(struct list_head *queue, int error);
+
 #endif /* _PCS_REQ_H_ */
