@@ -36,8 +36,6 @@ static struct pcs_cs_list *cs_link_to_cs_list(struct pcs_cs_link *csl)
 	return cs_list;
 }
 
-static void pcs_ireq_queue_fail(struct list_head *queue, int error);
-
 abs_time_t get_real_time_ms(void)
 {
 	struct timespec tv = current_kernel_time();
@@ -151,7 +149,6 @@ static void pcs_map_reset(struct pcs_map_entry * m)
 {
 	m->state &= ~(PCS_MAP_READABLE|PCS_MAP_WRITEABLE);
 }
-static void pcs_ireq_queue_fail(struct list_head *queue, int error);
 static void map_sync_work_add(struct pcs_map_entry *m, unsigned long timeout);
 static void map_sync_work_del(struct pcs_map_entry *m);
 
@@ -756,37 +753,6 @@ unlock:
 	rcu_read_unlock();
 	cs->use_count--;
 	BUG_ON(cs->is_dead);
-}
-
-noinline static void pcs_ireq_queue_fail(struct list_head *queue, int error)
-{
-	while (!list_empty(queue)) {
-		struct pcs_int_request *ireq = list_first_entry(queue, struct pcs_int_request, list);
-
-		list_del_init(&ireq->list);
-
-		pcs_set_local_error(&ireq->error, error);
-
-		if (ireq->type == PCS_IREQ_TRUNCATE) {
-			ireq_on_error(ireq);
-
-			if (!(ireq->flags & IREQ_F_FATAL)) {
-				if (ireq_is_timed_out(ireq)) {
-					pcs_log(LOG_ERR, "timeout while truncate(%d) request on \"" DENTRY_FMT "\" last err=%u",
-						ireq->type, DENTRY_ARGS(ireq->dentry), ireq->error.value);
-					BUG();
-				}
-				pcs_clear_error(&ireq->error);
-
-				TRACE("requeue truncate(%d) %llu@" DENTRY_FMT "\n", ireq->type,
-				      (unsigned long long)ireq->truncreq.offset, DENTRY_ARGS(ireq->dentry));
-
-				ireq_delay(ireq);
-				continue;
-			}
-		}
-		ireq_complete(ireq);
-	}
 }
 
 void transfer_sync_data(struct pcs_cs_list * new_cs_list, struct pcs_cs_list * old_cs_list)
