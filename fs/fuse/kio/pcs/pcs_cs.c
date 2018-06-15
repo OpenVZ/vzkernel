@@ -726,15 +726,7 @@ static void pcs_cs_isolate(struct pcs_cs *cs, struct list_head *dispose)
 		cancel_delayed_work(&cs->css->bl_work);
 	spin_unlock(&cs->css->lock);
 
-	while (!list_empty(&cs->map_list)) {
-		struct pcs_cs_link *csl = list_first_entry(&cs->map_list,
-							       struct pcs_cs_link,
-							       link);
-		rcu_assign_pointer(csl->cs, NULL);
-		cs->nmaps--;
-		list_del_init(&csl->link);
-	}
-
+	pcs_cs_truncate_maps(cs);
 
 	BUG_ON(cs->nmaps);
 
