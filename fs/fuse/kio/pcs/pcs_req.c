@@ -121,3 +121,34 @@ void ireq_handle_hole(struct pcs_int_request *ireq)
 
 	ireq_complete(ireq);
 }
+
+noinline void pcs_ireq_queue_fail(struct list_head *queue, int error)
+{
+	while (!list_empty(queue)) {
+		struct pcs_int_request *ireq = list_first_entry(queue, struct pcs_int_request, list);
+
+		list_del_init(&ireq->list);
+
+		pcs_set_local_error(&ireq->error, error);
+
+		if (ireq->type == PCS_IREQ_TRUNCATE) {
+			ireq_on_error(ireq);
+
+			if (!(ireq->flags & IREQ_F_FATAL)) {
+				if (ireq_is_timed_out(ireq)) {
+					pcs_log(LOG_ERR, "timeout while truncate(%d) request on \"" DENTRY_FMT "\" last err=%u",
+						ireq->type, DENTRY_ARGS(ireq->dentry), ireq->error.value);
+					BUG();
+				}
+				pcs_clear_error(&ireq->error);
+
+				TRACE("requeue truncate(%d) %llu@" DENTRY_FMT "\n", ireq->type,
+				      (unsigned long long)ireq->truncreq.offset, DENTRY_ARGS(ireq->dentry));
+
+				ireq_delay(ireq);
+				continue;
+			}
+		}
+		ireq_complete(ireq);
+	}
+}
