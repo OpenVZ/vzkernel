@@ -620,7 +620,7 @@ static void cs_keep_waiting(struct pcs_rpc *ep, struct pcs_msg *req, struct pcs_
 	who = lookup_and_lock_cs(cs->css, &h->xid.origin);
 	if (who) {
 		struct pcs_int_request *ireq = req->private2;
-		abs_time_t lat;
+		abs_time_t lat = 0; /* GCC bug */
 		if (ireq) {
 			lat = ktime_to_ms(ktime_sub(ktime_get(), ireq->ts_sent));
 			cs_update_io_latency(who, lat);
