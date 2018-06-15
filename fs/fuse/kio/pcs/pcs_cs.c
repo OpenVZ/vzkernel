@@ -727,8 +727,7 @@ static void pcs_cs_isolate(struct pcs_cs *cs, struct list_head *dispose)
 
 	cs->is_dead = 1;
 	spin_lock(&cs->css->lock);
-	if (!hlist_unhashed(&cs->hlist))
-		hlist_del_rcu(&cs->hlist);
+	hlist_del_rcu(&cs->hlist);
 	list_del(&cs->lru_link);
 	list_del(&cs->bl_link);
 	cs->css->ncs--;
@@ -1096,7 +1095,6 @@ void pcs_csset_fini(struct pcs_cs_set *css)
 
 			rcu_read_lock();
 			cs = hlist_entry(css->ht[i].first, struct pcs_cs, hlist);
-			hlist_del_init_rcu(&cs->hlist);
 			spin_unlock(&css->lock);
 
 			spin_lock(&cs->lock);
