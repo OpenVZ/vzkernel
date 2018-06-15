@@ -190,6 +190,7 @@ struct pcs_ioc_getmap;
 void pcs_map_complete(struct pcs_map_entry *m, struct pcs_ioc_getmap *omap);
 int pcs_map_encode_req(struct pcs_map_entry*m, struct pcs_ioc_getmap *map, int direction);
 void map_truncate_tail(struct pcs_mapping *mapping, u64 offset);
+void pcs_cs_truncate_maps(struct pcs_cs *cs);
 unsigned long pcs_map_shrink_scan(struct shrinker *,  struct shrink_control *sc);
 void ireq_drop_tokens(struct pcs_int_request * ireq);
 
