@@ -431,6 +431,8 @@ static int fuse_open(struct inode *inode, struct file *file)
 	return fuse_open_common(inode, file, false);
 }
 
+static void fuse_sync_writes(struct inode *inode);
+
 static int fuse_release(struct inode *inode, struct file *file)
 {
 	struct fuse_file *ff = file->private_data;
@@ -480,6 +482,16 @@ static int fuse_release(struct inode *inode, struct file *file)
 		atomic_dec(&fi->num_openers);
 	} else if (fc->close_wait)
 		wait_event(fi->page_waitq, refcount_read(&ff->count) == 1);
+
+	if (fc->kio.op) {
+		/*
+		 * Flush pending requests before FUSE_RELEASE makes userspace
+		 * to drop the lease of the file. Otherwise, they never finish.
+		 */
+		inode_lock(inode);
+		fuse_sync_writes(inode);
+		inode_unlock(inode);
+	}
 
 	fuse_release_common(file, false);
 
