@@ -695,6 +695,12 @@ static void __exit nf_conntrack_standalone_fini(void)
 {
 	nf_conntrack_cleanup_start();
 	unregister_pernet_subsys(&nf_conntrack_net_ops);
+
+	/*
+	 * Make sure on the next module load we will not use dangling
+	 * pointers.
+	 */
+	memset(&init_net.ct, 0, sizeof(init_net.ct));
 	nf_conntrack_cleanup_end();
 }
 
