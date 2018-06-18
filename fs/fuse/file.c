@@ -2053,7 +2053,7 @@ static int fuse_writepage_locked(struct page *page,
 	struct fuse_req *req;
 	struct page *tmp_page;
 	struct fuse_file *ff;
-	int err = 0;
+	int error = -ENOMEM;
 
 	if (fuse_page_is_writeback(inode, page->index)) {
 		if (wbc->sync_mode != WB_SYNC_ALL) {
@@ -2072,6 +2072,7 @@ static int fuse_writepage_locked(struct page *page,
 		if (test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
 			if (ff_pp)
 				*ff_pp = ff;
+			error = 0;
 			goto dummy_end_page_wb;
 		}
 
@@ -2091,6 +2092,7 @@ static int fuse_writepage_locked(struct page *page,
 	if (!tmp_page)
 		goto err_free;
 
+	error = -EIO;
 	req->ff = fuse_write_file(fc, fi);
 	if (!req->ff)
 		goto err_nofile;
@@ -2128,18 +2130,20 @@ err_nofile:
 err_free:
 	fuse_request_free(fc, req);
 err:
+	mapping_set_error(page->mapping, error);
 	end_page_writeback(page);
-	return -ENOMEM;
+	return error;
 
 dummy_end_page_wb_err:
 	printk("FUSE: page under fwb dirtied on dead file\n");
-	err = -EIO;
+	error = -EIO;
+	mapping_set_error(page->mapping, error);
 	/* fall through ... */
 dummy_end_page_wb:
 	if (test_set_page_writeback(page))
 		BUG();
 	end_page_writeback(page);
-	return err;
+	return error;
 }
 
 static int fuse_writepage(struct page *page, struct writeback_control *wbc)
