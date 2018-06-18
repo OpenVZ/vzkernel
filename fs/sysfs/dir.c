@@ -1005,7 +1005,7 @@ static struct sysfs_dirent *sysfs_dir_pos(struct sysfs_dirent *parent_sd,
 
 static struct sysfs_dirent *sysfs_next_entry(struct sysfs_dirent *cur)
 {
-	struct rb_node *node = rb_next(&cur->s_rb);
+	struct rb_node *node = cur ? rb_next(&cur->s_rb) : NULL;
 
 	return node ? to_sysfs_dirent(node) : NULL;
 }
