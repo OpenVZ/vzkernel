@@ -687,7 +687,6 @@ static struct t10_pr_registration *__core_scsi3_alloc_registration(
 	spin_lock(&dev->se_port_lock);
 	list_for_each_entry_safe(port, port_tmp, &dev->dev_sep_list, sep_list) {
 		atomic_inc_mb(&port->sep_tg_pt_ref_cnt);
-		spin_unlock(&dev->se_port_lock);
 
 		spin_lock_bh(&port->sep_alua_lock);
 		list_for_each_entry(deve_tmp, &port->sep_alua_list,
@@ -759,7 +758,6 @@ static struct t10_pr_registration *__core_scsi3_alloc_registration(
 		}
 		spin_unlock_bh(&port->sep_alua_lock);
 
-		spin_lock(&dev->se_port_lock);
 		atomic_dec_mb(&port->sep_tg_pt_ref_cnt);
 	}
 	spin_unlock(&dev->se_port_lock);
@@ -841,7 +839,9 @@ int core_scsi3_alloc_aptpl_registration(
 	 */
 	pr_reg->pr_res_holder = res_holder;
 
+	spin_lock(&pr_tmpl->aptpl_reg_lock);
 	list_add_tail(&pr_reg->pr_reg_aptpl_list, &pr_tmpl->aptpl_reg_list);
+	spin_unlock(&pr_tmpl->aptpl_reg_lock);
 	pr_debug("SPC-3 PR APTPL Successfully added registration%s from"
 			" metadata\n", (res_holder) ? "+reservation" : "");
 	return 0;
@@ -919,7 +919,6 @@ static int __core_scsi3_check_aptpl_registration(
 			pr_reg->pr_reg_tg_pt_lun = lun;
 
 			list_del(&pr_reg->pr_reg_aptpl_list);
-			spin_unlock(&pr_tmpl->aptpl_reg_lock);
 			/*
 			 * At this point all of the pointers in *pr_reg will
 			 * be setup, so go ahead and add the registration.
@@ -937,7 +936,6 @@ static int __core_scsi3_check_aptpl_registration(
 			 * Reenable pr_aptpl_active to accept new metadata
 			 * updates once the SCSI device is active again..
 			 */
-			spin_lock(&pr_tmpl->aptpl_reg_lock);
 			pr_tmpl->pr_aptpl_active = 1;
 		}
 	}
@@ -1223,7 +1221,6 @@ static void __core_scsi3_free_registration(
 {
 	struct target_core_fabric_ops *tfo =
 			pr_reg->pr_reg_nacl->se_tpg->se_tpg_tfo;
-	struct t10_reservation *pr_tmpl = &dev->t10_pr;
 	char i_buf[PR_REG_ISID_ID_LEN];
 
 	memset(i_buf, 0, PR_REG_ISID_ID_LEN);
@@ -1246,11 +1243,9 @@ static void __core_scsi3_free_registration(
 	 * count back to zero, and we release *pr_reg.
 	 */
 	while (atomic_read(&pr_reg->pr_res_holders) != 0) {
-		spin_unlock(&pr_tmpl->registration_lock);
 		pr_debug("SPC-3 PR [%s] waiting for pr_res_holders\n",
 				tfo->get_fabric_name());
 		cpu_relax();
-		spin_lock(&pr_tmpl->registration_lock);
 	}
 
 	pr_debug("SPC-3 PR [%s] Service Action: UNREGISTER Initiator"
@@ -3933,7 +3928,6 @@ core_scsi3_pri_read_full_status(struct se_cmd *cmd)
 		add_desc_len = 0;
 
 		atomic_inc_mb(&pr_reg->pr_res_holders);
-		spin_unlock(&pr_tmpl->registration_lock);
 		/*
 		 * Determine expected length of $FABRIC_MOD specific
 		 * TransportID full status descriptor..
@@ -3944,7 +3938,6 @@ core_scsi3_pri_read_full_status(struct se_cmd *cmd)
 		if ((exp_desc_len + add_len) > cmd->data_length) {
 			pr_warn("SPC-3 PRIN READ_FULL_STATUS ran"
 				" out of buffer: %d\n", cmd->data_length);
-			spin_lock(&pr_tmpl->registration_lock);
 			atomic_dec_mb(&pr_reg->pr_res_holders);
 			break;
 		}
@@ -4011,7 +4004,6 @@ core_scsi3_pri_read_full_status(struct se_cmd *cmd)
 		desc_len = se_tpg->se_tpg_tfo->tpg_get_pr_transport_id(se_tpg,
 				se_nacl, pr_reg, &format_code, &buf[off+4]);
 
-		spin_lock(&pr_tmpl->registration_lock);
 		atomic_dec_mb(&pr_reg->pr_res_holders);
 		/*
 		 * Set the ADDITIONAL DESCRIPTOR LENGTH
