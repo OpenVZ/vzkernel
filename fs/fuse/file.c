@@ -460,6 +460,16 @@ static int fuse_release(struct inode *inode, struct file *file)
 		     &get_fuse_inode(inode)->state))
 		fuse_flush_mtime(file, ff, true);
 
+	if (ff->fc->kio.op) {
+		/*
+		 * Flush pending requests before FUSE_RELEASE makes userspace
+		 * to drop the lease of the file. Otherwise, they never finish.
+		 */
+		mutex_lock(&inode->i_mutex);
+		fuse_sync_writes(inode);
+		mutex_unlock(&inode->i_mutex);
+	}
+
 	fuse_release_common(file, FUSE_RELEASE);
 
 	/* return value is ignored by VFS */
