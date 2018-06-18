@@ -1433,6 +1433,10 @@ int pci_add_dynid(struct pci_driver *drv,
 		  unsigned long driver_data);
 const struct pci_device_id *pci_match_id(const struct pci_device_id *ids,
 					 struct pci_dev *dev);
+/* Reserved for Internal Red Hat use only */
+const struct pci_device_id *pci_hw_vendor_status(
+						const struct pci_device_id *ids,
+						struct pci_dev *dev);
 int pci_scan_bridge(struct pci_bus *bus, struct pci_dev *dev, int max,
 		    int pass);
 

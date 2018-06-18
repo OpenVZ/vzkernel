@@ -19,6 +19,7 @@
 #include <linux/kexec.h>
 #include <linux/of_device.h>
 #include <linux/acpi.h>
+#include <linux/kernel.h>
 #include <linux/dma-map-ops.h>
 #include "pci.h"
 #include "pcie/portdrv.h"
@@ -280,6 +281,34 @@ static struct attribute *pci_drv_attrs[] = {
 	NULL,
 };
 ATTRIBUTE_GROUPS(pci_drv);
+
+/**
+ * pci_hw_vendor_status - Tell if a PCI device is supported by the HW vendor
+ * @ids: array of PCI device id structures to search in
+ * @dev: the PCI device structure to match against
+ *
+ * Used by a driver to check whether this device is in its list of unsupported
+ * devices.  Returns the matching pci_device_id structure or %NULL if there is
+ * no match.
+ *
+ * Reserved for Internal Red Hat use only.
+ */
+const struct pci_device_id *pci_hw_vendor_status(
+						const struct pci_device_id *ids,
+						struct pci_dev *dev)
+{
+	char devinfo[64];
+	const struct pci_device_id *ret = pci_match_id(ids, dev);
+
+	if (ret) {
+		snprintf(devinfo, sizeof(devinfo), "%s %s",
+			 dev_driver_string(&dev->dev), dev_name(&dev->dev));
+		mark_hardware_deprecated(devinfo);
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL(pci_hw_vendor_status);
 
 struct drv_dev_and_id {
 	struct pci_driver *drv;
