@@ -28,6 +28,7 @@ static void fuse_fput_routine(struct work_struct *);
 static DECLARE_WORK(fuse_fput_work, fuse_fput_routine);
 
 static const struct file_operations fuse_direct_io_file_operations;
+static void fuse_sync_writes(struct inode *inode);
 
 static void fuse_account_request(struct fuse_conn *fc, size_t count)
 {
@@ -485,6 +486,14 @@ static int fuse_release(struct inode *inode, struct file *file)
 	} else if (ff->fc->close_wait)
 		wait_event(fi->page_waitq, atomic_read(&ff->count) == 1);
 
+	if (ff->fc->kio.op) {
+		/*
+		 * Flush pending requests before FUSE_RELEASE makes userspace
+		 * to drop the lease of the file. Otherwise, they never finish.
+		 */
+		mutex_lock(&inode->i_mutex);
+		fuse_sync_writes(inode);
+		mutex_unlock(&inode->i_mutex);
 	}
 	fuse_release_common(file, false);
 
