@@ -703,7 +703,7 @@ int fuse_fsync_common(struct file *file, loff_t start, loff_t end,
 	 * wait for all outstanding writes, before sending the FSYNC
 	 * request.
 	 */
-	err = filemap_write_and_wait_range(inode->i_mapping, start, end);
+	err = file_write_and_wait_range(file, start, end);
 	if (err)
 		goto out;
 
@@ -712,7 +712,7 @@ int fuse_fsync_common(struct file *file, loff_t start, loff_t end,
 	/* Due to implementation of fuse writeback filemap_write_and_wait_range()
 	 * does not catch errors. We have to do this directly after fuse_sync_writes()
 	 */
-	err = filemap_check_errors(file->f_mapping);
+	err = file_check_and_advance_wb_err(file);
 	if (err)
 		goto out;
 
