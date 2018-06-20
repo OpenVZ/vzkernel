@@ -594,8 +594,10 @@ static int may_reroute(struct pcs_cs_list *csl, PCS_NODE_ID_T cs_id)
 	int legit = 0;
 
 	for (i = csl->nsrv - 1; i >= 0; i--) {
-		struct pcs_cs *cs = csl->cs[i].cslink.cs;
+		struct pcs_cs *cs;
 
+		cs = rcu_dereference_protected(csl->cs[i].cslink.cs,
+					       atomic_read(&csl->refcnt) > 0);
 		if (cs->id.val == cs_id.val)
 			continue;
 		if (test_bit(CS_SF_FAILED, &cs->state))
