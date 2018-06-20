@@ -1339,7 +1339,8 @@ static void map_read_error(struct pcs_int_request *ireq)
 	if (csl == NULL || csl->map == NULL || (csl->map->state & PCS_MAP_ERROR))
 		return;
 
-	cs = csl->cs[ireq->iochunk.cs_index].cslink.cs;
+	cs = rcu_dereference_protected(csl->cs[ireq->iochunk.cs_index].cslink.cs,
+				       atomic_read(&csl->refcnt) > 0);
 
 	if (ireq->flags & IREQ_F_MAPPED) {
 		cs_blacklist_unlocked(cs, ireq->error.value, "error on directly mapped CS");
