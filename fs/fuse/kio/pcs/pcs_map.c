@@ -2308,7 +2308,7 @@ void map_submit(struct pcs_map_entry * m, struct pcs_int_request *ireq)
 		struct pcs_cs_list *csl = NULL;
 
 		spin_lock(&m->lock);
-		if (ireq->type == PCS_IREQ_IOCHUNK) {
+		if (ireq->type == PCS_IREQ_IOCHUNK && !(ireq->flags & IREQ_F_MAPPED)) {
 			ireq->iochunk.hbuf.map_version = m->version;
 			ireq->iochunk.hbuf.uid = ireq->iochunk.map->id;
 		}
