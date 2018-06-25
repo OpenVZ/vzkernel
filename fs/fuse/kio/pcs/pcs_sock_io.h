@@ -126,6 +126,7 @@ struct pcs_sockio
 	u32			retrans;
 
 	struct pcs_msg		*current_msg;
+#define PCS_TRASH_MSG ((void *)~0UL)
 	u32			current_msg_size;
 	int			read_offset;
 	int			write_offset;
