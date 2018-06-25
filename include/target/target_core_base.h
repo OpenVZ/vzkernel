@@ -700,7 +700,12 @@ struct se_dev_attrib {
 	u32		max_bytes_per_io;
 	struct se_device *da_dev;
 	struct config_group da_group;
+};
+
+struct se_dev_param {
 	struct cgroup_subsys_state *blk_css;
+	struct se_device *da_dev;
+	struct config_group da_group;
 };
 
 struct se_port_stat_grps {
@@ -813,7 +818,7 @@ struct se_device {
 	atomic_t		dev_ordered_sync;
 	atomic_t		dev_qf_count;
 	u32			export_count;
-	rwlock_t		dev_attrib_lock;
+	rwlock_t		dev_param_lock;
 	spinlock_t		delayed_cmd_lock;
 	spinlock_t		execute_task_lock;
 	spinlock_t		dev_reservation_lock;
@@ -846,6 +851,7 @@ struct se_device {
 	/* T10 SPC-2 + SPC-3 Reservations */
 	struct t10_reservation	t10_pr;
 	struct se_dev_attrib	dev_attrib;
+	struct se_dev_param	dev_param;
 	struct config_group	dev_action_group;
 	struct config_group	dev_group;
 	struct config_group	dev_pr_group;
