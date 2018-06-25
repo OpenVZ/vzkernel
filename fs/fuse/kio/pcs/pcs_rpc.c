@@ -495,7 +495,7 @@ drop:
 	pcs_free_msg(msg);
 }
 
-struct pcs_msg * rpc_get_hdr(struct pcs_sockio * sio)
+struct pcs_msg *rpc_get_hdr(struct pcs_sockio * sio, u32 *msg_size)
 {
 	struct pcs_rpc * ep = sio->parent;
 	struct pcs_rpc_hdr * h = (struct pcs_rpc_hdr*)sio_inline_buffer(sio);
@@ -517,7 +517,7 @@ struct pcs_msg * rpc_get_hdr(struct pcs_sockio * sio)
 		if (ep->ops->get_hdr) {
 			msg = ep->ops->get_hdr(ep, h);
 			if (msg)
-				return msg;
+				goto found;
 		}
 		next_input = rpc_work_input;
 		break;
@@ -536,8 +536,9 @@ struct pcs_msg * rpc_get_hdr(struct pcs_sockio * sio)
 
 	memcpy(msg->_inline_buffer, h, sizeof(struct pcs_rpc_hdr));
 	msg->done = next_input;
-	msg->size = h->len;
 	msg->private = NULL;
+found:
+	*msg_size = msg->size = h->len;
 	return msg;
 }
 
