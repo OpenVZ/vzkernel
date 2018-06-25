@@ -155,6 +155,7 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 	struct iov_iter *it = &sio->read_iter;
 	struct pcs_rpc *ep = sio->parent;
 	int count = 0;
+	u32 msg_size;
 	unsigned long loop_timeout = jiffies + PCS_SIO_SLICE;
 
 	(void)ep;
@@ -184,7 +185,7 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 				if(sio->hdr_ptr != sio->hdr_max)
 					return;
 
-				msg = sio->get_msg(sio);
+				msg = sio->get_msg(sio, &msg_size);
 				if (msg == NULL) {
 					if (sio->hdr_ptr < sio->hdr_max)
 						continue;
@@ -196,6 +197,7 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 				sio->read_offset = sio->hdr_ptr;
 				sio->hdr_ptr = 0;
 				sio->current_msg = msg;
+				sio->current_msg_size = msg_size;
 				msg->get_iter(msg, sio->read_offset, it);
 				TRACE(PEER_FMT" msg:%p read_off:%d iov_size:%ld\n", PEER_ARGS(ep), msg, sio->read_offset,
 				      iov_iter_count(it));
@@ -208,8 +210,9 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 			}
 		} else { /* Continue recevining message */
 			msg = sio->current_msg;
+			msg_size = sio->current_msg_size;;
 
-			while (sio->read_offset < msg->size) {
+			while (sio->read_offset < msg_size) {
 				void *buf;
 				size_t len;
 				struct page *page;
@@ -219,14 +222,14 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 					msg->get_iter(msg, sio->read_offset, it);
 
 				TRACE(PEER_FMT" msg:%p->size:%d off:%d it_count:%ld\n",
-				      PEER_ARGS(ep), msg, msg->size, sio->read_offset,
+				      PEER_ARGS(ep), msg, msg_size, sio->read_offset,
 				      iov_iter_count(it));
 
-				BUG_ON(iov_iter_count(it) > msg->size - sio->read_offset);
+				BUG_ON(iov_iter_count(it) > msg_size - sio->read_offset);
 
 				page = iov_iter_kmap(it, &buf, &len);
-				if (len > msg->size - sio->read_offset)
-					len = msg->size - sio->read_offset;
+				if (len > msg_size - sio->read_offset)
+					len = msg_size - sio->read_offset;
 				n = do_sock_recv(conn->socket, buf, len);
 				if (page)
 					kunmap(page);
