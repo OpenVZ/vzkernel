@@ -112,6 +112,24 @@ void pcs_sock_error(struct pcs_sockio * sio, int error)
 	sio_abort(sio, error);
 }
 
+static char trash_buf[PAGE_SIZE];
+static struct kvec trash_kv = { .iov_base = trash_buf, .iov_len = sizeof(trash_buf) };
+
+static void rcv_get_iter(struct pcs_msg *msg, int read_off, struct iov_iter *it,
+			 unsigned int direction)
+{
+	if (likely(msg != PCS_TRASH_MSG))
+		msg->get_iter(msg, read_off, it, direction);
+	else
+		iov_iter_kvec(it, direction, &trash_kv, 1, trash_kv.iov_len);
+}
+
+static void rcv_msg_done(struct pcs_msg *msg)
+{
+	if (likely(msg != PCS_TRASH_MSG))
+		msg->done(msg);
+}
+
 struct kernel_sendmsg_context
 {
 	struct socket *sock;
@@ -230,7 +248,7 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 				sio->hdr_ptr = 0;
 				sio->current_msg = msg;
 				sio->current_msg_size = msg_size;
-				msg->get_iter(msg, sio->read_offset, it, READ);
+				rcv_get_iter(msg, sio->read_offset, it, READ);
 				TRACE(PEER_FMT" msg:%p read_off:%d iov_size:%ld\n", PEER_ARGS(ep), msg, sio->read_offset,
 				      iov_iter_count(it));
 			} else {
@@ -247,13 +265,14 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 			while (sio->read_offset < msg_size) {
 				if (!iov_iter_count(it))
 					/* Current iter is exhausted, init new one */
-					msg->get_iter(msg, sio->read_offset, it, READ);
+					rcv_get_iter(msg, sio->read_offset, it, READ);
 
 				TRACE(PEER_FMT" msg:%p->size:%d off:%d it_count:%ld\n",
 				      PEER_ARGS(ep), msg, msg_size, sio->read_offset,
 				      iov_iter_count(it));
 
-				BUG_ON(iov_iter_count(it) > msg_size - sio->read_offset);
+				if (msg != PCS_TRASH_MSG)
+					BUG_ON(iov_iter_count(it) > msg_size - sio->read_offset);
 
 				n = iov_iter_for_each_range(it, min(iov_iter_single_seg_count(it),
 							(size_t)(msg_size - sio->read_offset)), do_sock_recv_callback,
@@ -270,7 +289,7 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 			}
 			sio->current_msg = NULL;
 			iov_iter_kvec(&sio->read_iter, READ, NULL, 0, 0);
-			msg->done(msg);
+			rcv_msg_done(msg);
 			if (++count >= PCS_SIO_PREEMPT_LIMIT ||
 			    time_is_before_jiffies(loop_timeout)) {
 				sio->flags |= PCS_SOCK_F_POOLIN;
@@ -629,6 +648,9 @@ struct pcs_msg * pcs_alloc_output_msg(int datalen)
 
 void pcs_free_msg(struct pcs_msg * msg)
 {
+	if (msg == PCS_TRASH_MSG)
+		return;
+
 	pcs_msg_io_fini(msg);
 
 	if (msg->destructor)
