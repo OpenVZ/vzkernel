@@ -528,6 +528,11 @@ struct pcs_msg *rpc_get_hdr(struct pcs_sockio * sio, u32 *msg_size)
 
 	}
 
+	if (h->len > PAGE_SIZE) {
+		pcs_log(0, "Received too big msg  %u\n", h->len);
+		return PCS_TRASH_MSG;
+	}
+
 	msg = pcs_rpc_alloc_input_msg(ep, h->len);
 	if (!msg) {
 		pcs_sock_throttle(sio);
