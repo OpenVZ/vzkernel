@@ -558,16 +558,10 @@ void pcs_rpc_connect(struct pcs_rpc * ep)
 	if (ep->state != PCS_RPC_UNCONN)
 		return;
 
-	if (ep->flags & PCS_RPC_F_LOCAL) {
-		/* TODO, local path is temprorally disabled */
-		BUG_ON(1);
-	} else {
-		TRACE("Connecting to node " NODE_FMT "\n", NODE_ARGS(ep->peer_id));
+	TRACE("Connecting to node " NODE_FMT "\n", NODE_ARGS(ep->peer_id));
 
-
-		BUG_ON(!ep->ops->connect);
-		ep->ops->connect(ep);
-	}
+	BUG_ON(!ep->ops->connect);
+	ep->ops->connect(ep);
 }
 
 /* Send notification, which does not require waiting for response from peer.
