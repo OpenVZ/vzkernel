@@ -203,7 +203,10 @@ again:
 				}
 			}
 		}
-		/* TODO: (flags & PCS_RPC_F_LOCAL) should be checker here */
+		if (flags & CS_FL_LOCAL_SOCK)
+			cs->rpc->flags |= PCS_RPC_F_LOCAL;
+		else
+			cs->rpc->flags &= ~PCS_RPC_F_LOCAL;
 		return cs;
 	}
 	BUG_ON(addr == NULL);
@@ -220,8 +223,10 @@ again:
 	pcs_rpc_set_peer_id(cs->rpc, id, PCS_NODE_ROLE_CS);
 	pcs_rpc_set_address(cs->rpc, addr);
 
-
-	/* TODO: Init PCS_RPC_F_LOCAL if available here */
+	if (flags & CS_FL_LOCAL_SOCK)
+		cs->rpc->flags |= PCS_RPC_F_LOCAL;
+	else
+		cs->rpc->flags &= ~PCS_RPC_F_LOCAL;
 
 	spin_lock(&cs->lock);
 	spin_lock(&csset->lock);
