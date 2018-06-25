@@ -126,12 +126,13 @@ struct pcs_sockio
 	u32			retrans;
 
 	struct pcs_msg		*current_msg;
+	u32			current_msg_size;
 	int			read_offset;
 	int			write_offset;
 	struct iov_iter		read_iter;
 	struct iov_iter		write_iter;
 	struct mutex		mutex;
-	struct pcs_msg *	(*get_msg)(struct pcs_sockio *);
+	struct pcs_msg *	(*get_msg)(struct pcs_sockio *, u32 *);
 	/* eof() handler could be called twice: once on graceful socket shutdown and from sio_abort() */
 	void			(*eof)(struct pcs_sockio *);
 	void			(*write_wakeup)(struct pcs_sockio *);
