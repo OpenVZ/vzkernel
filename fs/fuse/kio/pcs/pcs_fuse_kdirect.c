@@ -559,6 +559,9 @@ int fuse_pcs_csconn_send(struct fuse_conn *fc, struct pcs_rpc *ep, int flags)
 	memcpy(&csconn->address, &ep->addr, sizeof(ep->addr));
 	csconn->flags = flags;
 
+	if (ep->flags & PCS_RPC_F_LOCAL)
+		csconn->address.type = PCS_ADDRTYPE_UNIX;
+
 	req->in.h.opcode = FUSE_IOCTL;
 	req->in.numargs = 2;
 	req->in.args[0].size = sizeof(*inarg);
