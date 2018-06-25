@@ -727,11 +727,11 @@ iblock_execute_rw(struct se_cmd *cmd, struct scatterlist *sgl, u32 sgl_nents,
 		return 0;
 	}
 
-	read_lock(&dev->dev_attrib_lock);
-	blk_css = dev->dev_attrib.blk_css;
+	read_lock(&dev->dev_param_lock);
+	blk_css = dev->dev_param.blk_css;
 	if (blk_css)
 		css_get(blk_css);
-	read_unlock(&dev->dev_attrib_lock);
+	read_unlock(&dev->dev_param_lock);
 
 	bio = iblock_get_bio(cmd, block_lba, sgl_nents);
 	if (!bio)
@@ -891,6 +891,7 @@ static const struct target_backend_ops iblock_ops = {
 	.get_io_opt		= iblock_get_io_opt,
 	.get_write_cache	= iblock_get_write_cache,
 	.tb_dev_attrib_attrs	= sbc_attrib_attrs,
+	.tb_dev_param_attrs	= sbc_param_attrs,
 };
 
 static int __init iblock_module_init(void)
