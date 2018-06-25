@@ -332,9 +332,12 @@ static void cs_response_done(struct pcs_msg *msg)
 
 		pcs_map_verify_sync_state(ireq->dentry, ireq, msg);
 	} else {
-		TRACE(XID_FMT " IO error %d %lu : %llu:%u+%u\n", XID_ARGS(ireq->iochunk.hbuf.hdr.xid),
-		      msg->error.value, msg->error.remote ? (unsigned long)msg->error.offender.val : 0UL,
-		      (unsigned long long)ireq->iochunk.chunk, (unsigned)ireq->iochunk.offset, (unsigned)ireq->iochunk.size);
+		TRACE(XID_FMT " IO error %d %lu, ireq:%p : %llu:%u+%u\n",
+		      XID_ARGS(ireq->iochunk.hbuf.hdr.xid), msg->error.value,
+		      msg->error.remote ? (unsigned long)msg->error.offender.val : 0UL,
+		      ireq, (unsigned long long)ireq->iochunk.chunk,
+		      (unsigned)ireq->iochunk.offset,
+		      (unsigned)ireq->iochunk.size);
 	}
 
 	pcs_copy_error_cond(&ireq->error, &msg->error);
@@ -542,11 +545,14 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 	ireq->wait_origin.val = 0;
 
 
-	DTRACE(XID_FMT " About to send msg:%p, ireq:%p :  %llu:%u+%u\n", XID_ARGS(ireq->iochunk.hbuf.hdr.xid),
-	      msg, ireq,
-	      (unsigned long long)ireq->iochunk.chunk,
-	      (unsigned)ireq->iochunk.offset,
-	      (unsigned)ireq->iochunk.size);
+	DTRACE(XID_FMT " About to send msg:%p, ireq:%p, cmd:%u,"
+		" id:"CUID_FMT" v:"VER_FMT" - %llu:%u+%u\n",
+		XID_ARGS(ireq->iochunk.hbuf.hdr.xid), msg, ireq,
+		ireq->iochunk.cmd, CUID_ARGS(ioh->uid),
+		VER_ARGS(ioh->map_version),
+		(unsigned long long)ireq->iochunk.chunk,
+		(unsigned)ireq->iochunk.offset,
+		(unsigned)ireq->iochunk.size);
 
 /* TODO reanable ratelimiting */
 #if 0
