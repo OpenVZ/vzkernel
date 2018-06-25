@@ -519,18 +519,21 @@ static void map_sync_work_add(struct pcs_map_entry *m, unsigned long timeout)
 
 	assert_spin_locked(&m->lock);
 
-	if (!timer_pending(&m->sync_work.timer))
+	if (WARN_ON_ONCE(m->state & PCS_MAP_DEAD))
+		return;
+	/*
+	 * Note, that work func takes m->lock on all paths,
+	 * so it can't put map before we get it below.
+	 */
+	if (!mod_delayed_work(cc->wq, &m->sync_work, timeout))
 		__pcs_map_get(m);
-	mod_delayed_work(cc->wq, &m->sync_work, timeout);
 }
 static void map_sync_work_del(struct pcs_map_entry *m)
 {
 	assert_spin_locked(&m->lock);
 
-	if (!timer_pending(&m->sync_work.timer))
-		return;
-	cancel_delayed_work(&m->sync_work);
-	pcs_map_put_locked(m);
+	if (cancel_delayed_work(&m->sync_work))
+		pcs_map_put_locked(m);
 }
 static void sync_timer_work(struct work_struct *w);
 
@@ -3049,7 +3052,8 @@ static void sync_timer_work(struct work_struct *w)
 	err = prepare_map_flush_ireq(m, &sreq);
 	if (err) {
 		spin_lock(&m->lock);
-		map_sync_work_add(m, HZ);
+		if (!(m->state & PCS_MAP_DEAD))
+			map_sync_work_add(m, HZ);
 		spin_unlock(&m->lock);
 	} else {
 		if (sreq)
