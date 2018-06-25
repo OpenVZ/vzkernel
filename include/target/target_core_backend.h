@@ -52,6 +52,7 @@ struct target_backend_ops {
 
 	struct configfs_attribute **tb_dev_attrib_attrs;
 	struct configfs_attribute **tb_dev_action_attrs;
+	struct configfs_attribute **tb_dev_param_attrs;
 };
 
 struct sbc_ops {
@@ -91,6 +92,7 @@ int	transport_set_vpd_ident_type(struct t10_vpd *, unsigned char *);
 int	transport_set_vpd_ident(struct t10_vpd *, unsigned char *);
 
 extern struct configfs_attribute *sbc_attrib_attrs[];
+extern struct configfs_attribute *sbc_param_attrs[];
 extern struct configfs_attribute *passthrough_attrib_attrs[];
 
 /* core helpers also used by command snooping in pscsi */
