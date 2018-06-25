@@ -105,6 +105,37 @@ void pcs_sock_error(struct pcs_sockio * sio, int error)
 	sio_abort(sio, error);
 }
 
+static char trash_buf[PAGE_SIZE];
+
+static void rcv_get_iter(struct pcs_msg *msg, int read_off, struct iov_iter *it)
+{
+	if (likely(msg != PCS_TRASH_MSG))
+		msg->get_iter(msg, read_off, it);
+}
+
+static struct page *rcv_iov_iter_kmap(struct pcs_msg *msg, struct iov_iter *it,
+				      void **buf, size_t *len)
+{
+	if (unlikely(msg == PCS_TRASH_MSG)) {
+		*buf = trash_buf;
+		*len = sizeof(trash_buf);
+		return NULL;
+	}
+
+	return iov_iter_kmap(it, buf, len);
+}
+
+static void rcv_iov_iter_advance(struct pcs_msg *msg, struct iov_iter *it, int n)
+{
+	if (likely(msg != PCS_TRASH_MSG))
+		iov_iter_advance(it, n);
+}
+
+static void rcv_msg_done(struct pcs_msg *msg)
+{
+	if (likely(msg != PCS_TRASH_MSG))
+		msg->done(msg);
+}
 static int do_send_one_seg(struct socket *sock, struct iov_iter *it, bool more)
 {
 	int ret;
@@ -198,7 +229,7 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 				sio->hdr_ptr = 0;
 				sio->current_msg = msg;
 				sio->current_msg_size = msg_size;
-				msg->get_iter(msg, sio->read_offset, it);
+				rcv_get_iter(msg, sio->read_offset, it);
 				TRACE(PEER_FMT" msg:%p read_off:%d iov_size:%ld\n", PEER_ARGS(ep), msg, sio->read_offset,
 				      iov_iter_count(it));
 			} else {
@@ -219,15 +250,16 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 
 				if (!iov_iter_count(it))
 					/* Current iter is exhausted, init new one */
-					msg->get_iter(msg, sio->read_offset, it);
+					rcv_get_iter(msg, sio->read_offset, it);
 
 				TRACE(PEER_FMT" msg:%p->size:%d off:%d it_count:%ld\n",
 				      PEER_ARGS(ep), msg, msg_size, sio->read_offset,
 				      iov_iter_count(it));
 
-				BUG_ON(iov_iter_count(it) > msg_size - sio->read_offset);
+				if (msg != PCS_TRASH_MSG)
+					BUG_ON(iov_iter_count(it) > msg_size - sio->read_offset);
 
-				page = iov_iter_kmap(it, &buf, &len);
+				page = rcv_iov_iter_kmap(msg, it, &buf, &len);
 				if (len > msg_size - sio->read_offset)
 					len = msg_size - sio->read_offset;
 				n = do_sock_recv(conn->socket, buf, len);
@@ -236,7 +268,7 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 
 				if (n > 0) {
 					sio->read_offset += n;
-					iov_iter_advance(it, n);
+					rcv_iov_iter_advance(msg, it, n);
 				} else {
 					if (n == -EAGAIN || n == 0)
 						return;
@@ -246,7 +278,7 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 			}
 			sio->current_msg = NULL;
 			iov_iter_init_bad(&sio->read_iter);
-			msg->done(msg);
+			rcv_msg_done(msg);
 			if (++count >= PCS_SIO_PREEMPT_LIMIT ||
 			    time_is_before_jiffies(loop_timeout)) {
 				sio->flags |= PCS_SOCK_F_POOLIN;
@@ -602,6 +634,9 @@ struct pcs_msg * pcs_alloc_output_msg(int datalen)
 
 void pcs_free_msg(struct pcs_msg * msg)
 {
+	if (msg == PCS_TRASH_MSG)
+		return;
+
 	pcs_msg_io_fini(msg);
 
 	if (msg->destructor)
