@@ -456,6 +456,12 @@ static inline struct se_dev_attrib *to_attrib(struct config_item *item)
 			da_group);
 }
 
+static inline struct se_dev_param *to_param(struct config_item *item)
+{
+	return container_of(to_config_group(item), struct se_dev_param,
+			da_group);
+}
+
 /* Start functions for struct config_item_type tb_dev_attrib_cit */
 #define DEF_CONFIGFS_ATTRIB_SHOW(_name)					\
 static ssize_t _name##_show(struct config_item *item, char *page)	\
@@ -1038,13 +1044,14 @@ static ssize_t block_size_store(struct config_item *item,
 
 static ssize_t blkio_cgroup_show(struct config_item *item, char *page)
 {
-	struct se_dev_attrib *da = to_attrib(item);
+	struct se_dev_param *da = to_param(item);
 	struct se_device *dev = da->da_dev;
 	int rb;
 
-	read_lock(&dev->dev_attrib_lock);
-	if (dev->dev_attrib.blk_css) {
-		rb = cgroup_path(dev->dev_attrib.blk_css->cgroup,
+	printk("%s:%d: %p\n", __func__, __LINE__, dev);
+	read_lock(&dev->dev_param_lock);
+	if (dev->dev_param.blk_css) {
+		rb = cgroup_path(dev->dev_param.blk_css->cgroup,
 				page, PAGE_SIZE - 1);
 		if (rb < 0)
 			goto out;
@@ -1056,7 +1063,7 @@ static ssize_t blkio_cgroup_show(struct config_item *item, char *page)
 	} else
 		rb = 0;
 out:
-	read_unlock(&dev->dev_attrib_lock);
+	read_unlock(&dev->dev_param_lock);
 
 	return rb;
 }
@@ -1064,7 +1071,7 @@ out:
 static ssize_t blkio_cgroup_store(struct config_item *item,
 		const char *page, size_t count)
 {
-	struct se_dev_attrib *da = to_attrib(item);
+	struct se_dev_param *da = to_param(item);
 	struct se_device *dev = da->da_dev;
 	struct cgroup_subsys_state *css, *pcss;
 	int ret;
@@ -1081,10 +1088,10 @@ static ssize_t blkio_cgroup_store(struct config_item *item,
 	else
 		css = NULL;
 
-	write_lock(&dev->dev_attrib_lock);
-	pcss = dev->dev_attrib.blk_css;
-	dev->dev_attrib.blk_css = css;
-	write_unlock(&dev->dev_attrib_lock);
+	write_lock(&dev->dev_param_lock);
+	pcss = dev->dev_param.blk_css;
+	dev->dev_param.blk_css = css;
+	write_unlock(&dev->dev_param_lock);
 
 	if (pcss)
 		css_put(pcss);
@@ -1184,13 +1191,17 @@ struct configfs_attribute *sbc_attrib_attrs[] = {
 	&attr_unmap_granularity_alignment,
 	&attr_unmap_zeroes_data,
 	&attr_max_write_same_len,
-	&attr_blkio_cgroup,
 	&attr_alua_support,
 	&attr_pgr_support,
 	NULL,
 };
 EXPORT_SYMBOL(sbc_attrib_attrs);
 
+struct configfs_attribute *sbc_param_attrs[] = {
+	&attr_blkio_cgroup,
+	NULL,
+};
+EXPORT_SYMBOL(sbc_param_attrs);
 /*
  * Minimal dev_attrib attributes for devices passing through CDBs.
  * In this case we only provide a few read-only attributes for
@@ -1209,6 +1220,7 @@ EXPORT_SYMBOL(passthrough_attrib_attrs);
 
 TB_CIT_SETUP_DRV(dev_attrib, NULL, NULL);
 TB_CIT_SETUP_DRV(dev_action, NULL, NULL);
+TB_CIT_SETUP_DRV(dev_param, NULL, NULL);
 
 /* End functions for struct config_item_type tb_dev_attrib_cit */
 
@@ -2985,6 +2997,10 @@ static struct config_group *target_core_make_subdev(
 			&tb->tb_dev_attrib_cit);
 	configfs_add_default_group(&dev->dev_attrib.da_group, &dev->dev_group);
 
+	config_group_init_type_name(&dev->dev_param.da_group, "param",
+			&tb->tb_dev_param_cit);
+	configfs_add_default_group(&dev->dev_param.da_group, &dev->dev_group);
+
 	config_group_init_type_name(&dev->dev_pr_group, "pr",
 			&tb->tb_dev_pr_cit);
 	configfs_add_default_group(&dev->dev_pr_group, &dev->dev_group);
@@ -3243,6 +3259,7 @@ void target_setup_backend_cits(struct target_backend *tb)
 	target_core_setup_dev_cit(tb);
 	target_core_setup_dev_action_cit(tb);
 	target_core_setup_dev_attrib_cit(tb);
+	target_core_setup_dev_param_cit(tb);
 	target_core_setup_dev_pr_cit(tb);
 	target_core_setup_dev_wwn_cit(tb);
 	target_core_setup_dev_alua_tg_pt_gps_cit(tb);
