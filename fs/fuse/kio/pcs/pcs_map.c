@@ -3048,7 +3048,9 @@ static void sync_timer_work(struct work_struct *w)
 
 	err = prepare_map_flush_ireq(m, &sreq);
 	if (err) {
+		spin_lock(&m->lock);
 		map_sync_work_add(m, HZ);
+		spin_unlock(&m->lock);
 	} else {
 		if (sreq)
 			map_submit(m, sreq);
