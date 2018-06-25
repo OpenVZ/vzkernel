@@ -490,6 +490,8 @@ static int fuse_release(struct inode *inode, struct file *file)
 		/*
 		 * Flush pending requests before FUSE_RELEASE makes userspace
 		 * to drop the lease of the file. Otherwise, they never finish.
+		 * Keep in mind, that in kio case fuse_sync_writes() currently
+		 * waits all type of requests (not only write).
 		 */
 		mutex_lock(&inode->i_mutex);
 		fuse_sync_writes(inode);
