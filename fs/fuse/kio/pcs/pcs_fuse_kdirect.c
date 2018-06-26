@@ -771,6 +771,17 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
 	spin_lock(&di->lock);
 	/* Deffer all requests if shrink requested to prevent livelock */
 	if (di->size.shrink) {
+		struct inode *inode = &di->inode->inode;
+		struct fuse_conn *fc = get_fuse_conn(inode);
+
+		if (r->req.in.h.opcode == FUSE_WRITE ||
+				r->req.in.h.opcode == FUSE_FALLOCATE) {
+			WARN_ON(1);
+			pr_info("fi->writectr: %d, mutex: %d, fc->lock: %d\n",
+					fi->writectr < 0, mutex_is_locked(&inode->i_mutex),
+					spin_is_locked(&fc->lock));
+		}
+
 		wait_shrink(r, di);
 		spin_unlock(&di->lock);
 		return 1;
