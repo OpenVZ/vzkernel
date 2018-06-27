@@ -678,9 +678,18 @@ static void fuse_size_grow_work(struct work_struct *w)
 			size = r->exec.size.required;
 	}
 	di->size.required = size;
+	if (di->fileinfo.attr.size > size) {
+		pr_info("attr.size: %llu, grow_size: %llu, grow_queue: %d\n",
+			di->fileinfo.attr.size, size, list_empty(&di->size.grow_queue));
+		spin_unlock(&di->lock);
+		WARN_ON(1);
+		err = PCS_ERR_IO;
+		goto fail;
+	}
 	spin_unlock(&di->lock);
 
 	err = submit_size_grow(inode, size);
+fail:
 	if (err) {
 		LIST_HEAD(to_fail);
 
