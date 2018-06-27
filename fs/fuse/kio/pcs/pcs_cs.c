@@ -491,6 +491,7 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 	struct pcs_msg *msg = &ireq->iochunk.msg;
 	struct pcs_cs_iohdr *ioh;
 	struct pcs_cs_list *csl = ireq->iochunk.csl;
+	struct pcs_map_entry *map = ireq->iochunk.map; /* ireq keeps reference to map */
 
 	msg->private = cs;
 
@@ -535,12 +536,14 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 	msg->done = cs_sent;
 	msg->get_iter = cs_get_data;
 
-	/* TODO
-	 * Theoretically at this moment this map may already becomes dead
-	 * what should I do then?
-	 * This may happens only in case of aio/dio vs	truncate race
-	 */
-	BUG_ON(ireq->iochunk.map->state & PCS_MAP_DEAD);
+	if ((map->state & PCS_MAP_DEAD) || (map->cs_list != csl)) {
+		ireq->error.value = PCS_ERR_CSD_STALE_MAP;
+		ireq->error.remote = 1;
+		ireq->error.offender = csl->cs[0].info.id;
+		ireq_complete(ireq);
+		return;
+	}
+
 	ioh->map_version = csl->version;
 	if (pcs_req_direction(ireq->iochunk.cmd))
 		msg->timeout = csl->write_timeout;
