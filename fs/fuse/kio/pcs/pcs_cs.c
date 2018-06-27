@@ -545,6 +545,10 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 	}
 
 	ioh->map_version = csl->version;
+	/* vstorage never changes once allocated chunk id, so we can copy it
+	 * directly from map.
+	 */
+	ioh->uid = map->id;
 	if (pcs_req_direction(ireq->iochunk.cmd))
 		msg->timeout = csl->write_timeout;
 	else
