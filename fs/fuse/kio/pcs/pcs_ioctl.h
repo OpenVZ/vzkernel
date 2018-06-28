@@ -10,7 +10,7 @@
 #include "pcs_map.h"
 #include "pcs_rpc.h"
 
-#define PCS_FAST_PATH_VERSION ((PCS_FAST_PATH_VERSION_T){1, 0})
+#define PCS_FAST_PATH_VERSION ((PCS_FAST_PATH_VERSION_T){1, 1})
 
 #define PCS_FUSE_INO_SPECIAL_ ((unsigned long long)-0x1000)
 
