@@ -934,6 +934,7 @@ static void kpcs_setattr_end(struct fuse_conn *fc, struct fuse_req *req)
 {
 	struct pcs_fuse_req *r = pcs_req_from_fuse(req);
 	struct fuse_inode *fi = get_fuse_inode(req->io_inode);
+	struct fuse_setattr_in *inarg = (void*) req->in.args[0].value;
 	struct fuse_attr_out *outarg = (void*) req->out.args[0].value;
 	struct pcs_dentry_info *di = fi->private;
 
@@ -944,8 +945,14 @@ static void kpcs_setattr_end(struct fuse_conn *fc, struct fuse_req *req)
 	TRACE("update size: ino:%lu old_sz:%lld new:%lld\n",req->io_inode->i_ino,
 	      di->fileinfo.attr.size, outarg->attr.size);
 
-	if (!req->out.h.error)
+	if (!req->out.h.error) {
 		di->fileinfo.attr.size = outarg->attr.size;
+		if (outarg->attr.size != inarg->size) {
+			pr_err("kio: failed to set requested size: %llu %llu\n",
+				outarg->attr.size, inarg->size);
+			req->out.h.error = -EIO;
+		}
+	}
 	spin_unlock(&di->lock);
 	if(r->end)
 		r->end(fc, req);
