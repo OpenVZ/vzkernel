@@ -21,7 +21,7 @@ static struct file_system_type autofs_fs_type = {
 	.name		= "autofs",
 	.mount		= autofs_mount,
 	.kill_sb	= autofs4_kill_sb,
-	.fs_flags	= FS_VIRTUALIZED,
+	.fs_flags	= FS_VIRTUALIZED | FS_USERNS_MOUNT,
 };
 MODULE_ALIAS_FS("autofs");
 
