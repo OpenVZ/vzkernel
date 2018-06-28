@@ -896,6 +896,7 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, 
 		break;
 	}
 	case FUSE_FSYNC:
+	case FUSE_FLUSH:
 		pcs_fuse_prep_io(r, PCS_REQ_T_SYNC, 0, 0, 0);
 		goto submit;
 	case FUSE_IOCTL: {
@@ -1052,6 +1053,7 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 	case FUSE_READ:
 	case FUSE_WRITE:
 	case FUSE_FSYNC:
+	case FUSE_FLUSH:
 	case FUSE_FALLOCATE:
 		break;
 	case FUSE_IOCTL: {
