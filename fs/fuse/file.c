@@ -673,6 +673,7 @@ static int fuse_flush(struct file *file, fl_owner_t id)
 	inarg.fh = ff->fh;
 	inarg.lock_owner = fuse_lock_owner_id(fm->fc, id);
 	args.opcode = FUSE_FLUSH;
+	args.io_inode = inode;
 	args.nodeid = get_node_id(inode);
 	args.in_numargs = 1;
 	args.in_args[0].size = sizeof(inarg);
