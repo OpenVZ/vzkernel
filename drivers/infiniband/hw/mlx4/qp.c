@@ -1167,7 +1167,8 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 		}
 
 		if (mlx4_buf_alloc(dev->dev, qp->buf_size, qp->buf_size,
-				   &qp->buf)) {
+				   &qp->buf, __GFP_NOWARN | __GFP_NORETRY |
+				   GFP_KERNEL)) {
 			memcpy(&init_attr->cap, &backup_cap,
 			       sizeof(backup_cap));
 			err = set_kernel_sq_size(dev, &init_attr->cap, qp_type,
@@ -1176,7 +1177,8 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 				goto err_db;
 
 			if (mlx4_buf_alloc(dev->dev, qp->buf_size,
-					   PAGE_SIZE * 2, &qp->buf)) {
+					   PAGE_SIZE * 2, &qp->buf,
+					   GFP_KERNEL)) {
 				err = -ENOMEM;
 				goto err_db;
 			}
