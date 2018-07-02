@@ -371,6 +371,7 @@ static void fuse_prepare_release(struct fuse_inode *fi, struct fuse_file *ff,
 		rb_erase(&ff->polled_node, &fc->polled_files);
 	spin_unlock(&fc->lock);
 
+	wake_up(&fc->blocked_waitq);
 	wake_up_interruptible_all(&ff->poll_wait);
 
 	ra->inarg.fh = ff->fh;
@@ -2355,7 +2356,7 @@ static inline bool fuse_blocked_for_wb(struct inode *inode)
 {
 	struct fuse_conn *fc = get_fuse_conn(inode);
 	struct fuse_inode *fi = get_fuse_inode(inode);
-	bool blocked = true;
+	bool blocked = false;
 
 	if (!fc->blocked)
 		return false;
@@ -2364,8 +2365,8 @@ static inline bool fuse_blocked_for_wb(struct inode *inode)
 	if (!list_empty(&fi->rw_files)) {
 		struct fuse_file *ff = list_entry(fi->rw_files.next,
 						  struct fuse_file, rw_entry);
-		if (test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state))
-			blocked = false;
+		if (!test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state))
+			blocked = true;
 	}
 	spin_unlock(&fi->lock);
 
