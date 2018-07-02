@@ -576,7 +576,7 @@ out:
 }
 
 static int mlx4_buf_direct_alloc(struct mlx4_dev *dev, int size,
-				 struct mlx4_buf *buf)
+				 struct mlx4_buf *buf, gfp_t gfp)
 {
 	dma_addr_t t;
 
@@ -585,7 +585,7 @@ static int mlx4_buf_direct_alloc(struct mlx4_dev *dev, int size,
 	buf->page_shift   = get_order(size) + PAGE_SHIFT;
 	buf->direct.buf   =
 		dma_zalloc_coherent(&dev->persist->pdev->dev,
-				    size, &t, GFP_KERNEL);
+				    size, &t, gfp);
 	if (!buf->direct.buf)
 		return -ENOMEM;
 
@@ -605,10 +605,10 @@ static int mlx4_buf_direct_alloc(struct mlx4_dev *dev, int size,
  *  multiple pages, so we don't require too much contiguous memory.
  */
 int mlx4_buf_alloc(struct mlx4_dev *dev, int size, int max_direct,
-		   struct mlx4_buf *buf)
+		   struct mlx4_buf *buf, gfp_t gfp)
 {
 	if (size <= max_direct) {
-		return mlx4_buf_direct_alloc(dev, size, buf);
+		return mlx4_buf_direct_alloc(dev, size, buf, gfp);
 	} else {
 		dma_addr_t t;
 		int i;
@@ -625,7 +625,7 @@ int mlx4_buf_alloc(struct mlx4_dev *dev, int size, int max_direct,
 		for (i = 0; i < buf->nbufs; ++i) {
 			buf->page_list[i].buf =
 				dma_zalloc_coherent(&dev->persist->pdev->dev,
-						    PAGE_SIZE, &t, GFP_KERNEL);
+						    PAGE_SIZE, &t, gfp);
 			if (!buf->page_list[i].buf)
 				goto err_free;
 
@@ -783,7 +783,7 @@ int mlx4_alloc_hwq_res(struct mlx4_dev *dev, struct mlx4_hwq_resources *wqres,
 
 	*wqres->db.db = 0;
 
-	err = mlx4_buf_direct_alloc(dev, size, &wqres->buf);
+	err = mlx4_buf_direct_alloc(dev, size, &wqres->buf, GFP_KERNEL);
 	if (err)
 		goto err_db;
 
