@@ -281,6 +281,10 @@ struct swap_info_struct {
 	RH_KABI_EXTEND(struct work_struct discard_work) /* discard worker */
 	RH_KABI_EXTEND(struct swap_cluster_list discard_clusters) /* discard clusters list */
 	RH_KABI_EXTEND(struct percpu_cluster __percpu *percpu_cluster) /* per cpu's swap location */
+	spinlock_t cont_lock;		/*
+					 * protect swap count continuation page
+					 * list.
+					 */
 };
 
 /* linux/mm/workingset.c */
