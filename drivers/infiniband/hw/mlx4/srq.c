@@ -141,7 +141,7 @@ struct ib_srq *mlx4_ib_create_srq(struct ib_pd *pd,
 		*srq->db.db = 0;
 
 		if (mlx4_buf_alloc(dev->dev, buf_size, PAGE_SIZE * 2,
-				   &srq->buf)) {
+				   &srq->buf, GFP_KERNEL)) {
 			err = -ENOMEM;
 			goto err_db;
 		}
