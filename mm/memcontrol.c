@@ -4010,7 +4010,6 @@ static void mem_cgroup_force_empty_list(struct mem_cgroup *memcg,
  */
 static void mem_cgroup_reparent_charges(struct mem_cgroup *memcg)
 {
-	int nr_retries = MEM_CGROUP_RECLAIM_RETRIES;
 	int node, zid;
 
 	do {
@@ -4031,11 +4030,6 @@ static void mem_cgroup_reparent_charges(struct mem_cgroup *memcg)
 		memcg_oom_recover(memcg);
 		cond_resched();
 
-		if (WARN(!--nr_retries, "memory %ld > kmem %ld\n",
-				page_counter_read(&memcg->memory),
-				page_counter_read(&memcg->kmem)))
-			break;
-
 		/*
 		 * Kernel memory may not necessarily be trackable to a specific
 		 * process. So they are not migrated, and therefore we can't
@@ -4050,8 +4044,6 @@ static void mem_cgroup_reparent_charges(struct mem_cgroup *memcg)
 		 */
 	} while (page_counter_read(&memcg->memory) -
 		 page_counter_read(&memcg->kmem) > 0);
-
-	WARN_ON(!nr_retries);
 }
 
 /*
