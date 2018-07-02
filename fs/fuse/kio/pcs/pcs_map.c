@@ -2551,7 +2551,7 @@ static int commit_cs_record(struct pcs_map_entry * m, struct pcs_cs_record * rec
 		 *
 		 * The request is restarted with new map.
 		 */
-		pcs_log(LOG_ERR, MAP_FMT " integrity seq mismatch CS" NODE_FMT " %d != %d, %d",
+		TRACE(MAP_FMT " integrity seq mismatch CS" NODE_FMT " %d != %d, %d",
 			MAP_ARGS(m),
 			NODE_ARGS(rec->info.id),
 			rec->info.integrity_seq, sync->integrity_seq, srec->dirty_integrity);
@@ -2605,14 +2605,14 @@ static int commit_one_record(struct pcs_map_entry * m, PCS_NODE_ID_T cs_id,
 	if (m->cs_list == NULL)
 		return 0;
 
-	pcs_log(LOG_DEBUG5, "sync ["NODE_FMT",%u,%u,%u,%u]", NODE_ARGS(cs_id),
+	TRACE("sync ["NODE_FMT",%u,%u,%u,%u]", NODE_ARGS(cs_id),
 	      sync->integrity_seq, sync->sync_epoch, sync->sync_dirty, sync->sync_current);
 
 	for (i = 0; i < m->cs_list->nsrv; i++) {
 		if (m->cs_list->cs[i].info.id.val == cs_id.val) {
 			err = commit_cs_record(m, &m->cs_list->cs[i], sync, lat, op_type);
 
-			pcs_log(LOG_DEBUG5, "commited ["NODE_FMT",%u/%u,%u/%u,%u/%u]", NODE_ARGS(cs_id),
+			TRACE("commited ["NODE_FMT",%u/%u,%u/%u,%u/%u]", NODE_ARGS(cs_id),
 			      m->cs_list->cs[i].info.integrity_seq,
 			      m->cs_list->cs[i].sync.dirty_integrity,
 			      m->cs_list->cs[i].sync.dirty_epoch,
@@ -2716,7 +2716,7 @@ void pcs_map_verify_sync_state(struct pcs_dentry_info *di, struct pcs_int_reques
 		return;
 	}
 	if (commit_sync_info(ireq, m, ireq->iochunk.csl, resp)) {
-		pcs_log(LOG_ERR, MAP_FMT " sync integrity error: map retry follows", MAP_ARGS(m));
+		TRACE(MAP_FMT " sync integrity error: map retry follows", MAP_ARGS(m));
 
 		msg->error.value = PCS_ERR_CSD_STALE_MAP;
 		msg->error.remote = 1;
@@ -2753,7 +2753,7 @@ void sync_done(struct pcs_msg * msg)
 	}
 
 	if (commit_sync_info(sreq, m, sreq->flushreq.csl, resp)) {
-		pcs_log(LOG_ERR, MAP_FMT " sync integrity error: sync retry follows", MAP_ARGS(m));
+		TRACE(MAP_FMT " sync integrity error: sync retry follows", MAP_ARGS(m));
 
 		sreq->error.remote = 1;
 		sreq->error.value = PCS_ERR_CSD_STALE_MAP;
@@ -2779,13 +2779,13 @@ static int sync_is_finished(struct pcs_msg * msg, struct pcs_map_entry * m)
 	     srec++) {
 		int i;
 
-		pcs_log(LOG_DEBUG5, "Checking cs="NODE_FMT" sync=[%d,%d,%d,%d]", NODE_ARGS(srec->cs_id), srec->sync.integrity_seq,
+		TRACE("Checking cs="NODE_FMT" sync=[%d,%d,%d,%d]", NODE_ARGS(srec->cs_id), srec->sync.integrity_seq,
 		      srec->sync.sync_epoch,
 		      srec->sync.sync_dirty, srec->sync.sync_current);
 
 		for (i = 0; i < m->cs_list->nsrv; i++) {
 			if (m->cs_list->cs[i].info.id.val == srec->cs_id.val) {
-				pcs_log(LOG_DEBUG5, "Checking against sync=[%d,%d,%d,%d,%d]",
+				TRACE("Checking against sync=[%d,%d,%d,%d,%d]",
 				      m->cs_list->cs[i].sync.dirty_integrity,
 				      m->cs_list->cs[i].sync.dirty_epoch,
 				      m->cs_list->cs[i].sync.dirty_seq,
