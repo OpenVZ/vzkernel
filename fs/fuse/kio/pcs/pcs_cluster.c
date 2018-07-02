@@ -495,9 +495,9 @@ static void ireq_on_error_(struct pcs_int_request *ireq)
 	case PCS_ERR_IS_DIR:
 	case PCS_ERR_NO_STORAGE:
 	case PCS_ERR_UNAVAIL:
-		pr_info("%s fatal error:%d ireq->type:%d nodeid:%llu",
-			__func__, ireq->error.value, ireq->type,
-			ireq->dentry->inode->nodeid);
+		TRACE("fatal error:%d ireq->type:%d nodeid:%llu\n",
+		      ireq->error.value, ireq->type,
+		      ireq->dentry->inode->nodeid);
 		ireq->flags |= IREQ_F_FATAL;
 		break;
 	case PCS_ERR_LEASE_CONFLICT:
