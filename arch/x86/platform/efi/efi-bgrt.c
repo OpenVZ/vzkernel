@@ -18,6 +18,7 @@
 #include <linux/acpi.h>
 #include <linux/efi.h>
 #include <linux/efi-bgrt.h>
+#include <linux/io.h>
 
 struct acpi_table_bgrt *bgrt_tab;
 void *__initdata bgrt_image;
