@@ -488,6 +488,8 @@ static void ireq_on_error_(struct pcs_int_request *ireq)
 		/* TODO:  tag ireq->dentry with EIO here */
 	}
 	case PCS_ERR_CSD_LACKING:
+		/* To be completely equivalent to user space we should add option fail_on_nospace here */
+		break;
 	case PCS_ERR_INV_PARAMS:
 	case PCS_ERR_NOT_FOUND:
 	case PCS_ERR_NON_EMPTY_DIR:
