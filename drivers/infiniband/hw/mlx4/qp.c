@@ -1074,7 +1074,7 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 		}
 
 		if (mlx4_buf_alloc(dev->dev, qp->buf_size,  PAGE_SIZE * 2,
-				   &qp->buf)) {
+				   &qp->buf, GFP_KERNEL)) {
 			err = -ENOMEM;
 			goto err_db;
 		}
