@@ -511,7 +511,12 @@ retry:
 		hlist_for_each_entry(old, &type->fs_supers, s_instances) {
 			if (!test(old, data))
 				continue;
-			if (user_ns != old->s_user_ns) {
+			/* PSBM-86208: we mount secondary ploop on host for
+			 * resize functionality so allow mount in init userns
+			 * if fs already mounted in non-init userns
+			 */
+			if (user_ns != old->s_user_ns &&
+			    user_ns != &init_user_ns) {
 				spin_unlock(&sb_lock);
 				if (s) {
 					up_write(&s->s_umount);
