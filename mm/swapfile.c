@@ -2487,6 +2487,7 @@ static struct swap_info_struct *alloc_swap_info(void)
 	p->flags = SWP_USED;
 	spin_unlock(&swap_lock);
 	spin_lock_init(&p->lock);
+	spin_lock_init(&p->cont_lock);
 
 	return p;
 }
@@ -3188,6 +3189,7 @@ int add_swap_count_continuation(swp_entry_t entry, gfp_t gfp_mask)
 	head = vmalloc_to_page(si->swap_map + offset);
 	offset &= ~PAGE_MASK;
 
+	spin_lock(&si->cont_lock);
 	/*
 	 * Page allocation does not initialize the page's lru field,
 	 * but it does always reset its private field.
@@ -3207,7 +3209,7 @@ int add_swap_count_continuation(swp_entry_t entry, gfp_t gfp_mask)
 		 * a continuation page, free our allocation and use this one.
 		 */
 		if (!(count & COUNT_CONTINUED))
-			goto out;
+			goto out_unlock_cont;
 
 		map = kmap_atomic(list_page) + offset;
 		count = *map;
@@ -3218,11 +3220,13 @@ int add_swap_count_continuation(swp_entry_t entry, gfp_t gfp_mask)
 		 * free our allocation and use this one.
 		 */
 		if ((count & ~COUNT_CONTINUED) != SWAP_CONT_MAX)
-			goto out;
+			goto out_unlock_cont;
 	}
 
 	list_add_tail(&page->lru, &head->lru);
 	page = NULL;			/* now it's attached, don't free it */
+out_unlock_cont:
+	spin_unlock(&si->cont_lock);
 out:
 	unlock_cluster(ci);
 	spin_unlock(&si->lock);
@@ -3247,6 +3251,7 @@ static bool swap_count_continued(struct swap_info_struct *si,
 	struct page *head;
 	struct page *page;
 	unsigned char *map;
+	bool ret;
 
 	head = vmalloc_to_page(si->swap_map + offset);
 	if (page_private(head) != SWP_CONTINUED) {
@@ -3254,6 +3259,7 @@ static bool swap_count_continued(struct swap_info_struct *si,
 		return false;		/* need to add count continuation */
 	}
 
+	spin_lock(&si->cont_lock);
 	offset &= ~PAGE_MASK;
 	page = list_entry(head->lru.next, struct page, lru);
 	map = kmap_atomic(page) + offset;
@@ -3274,8 +3280,10 @@ static bool swap_count_continued(struct swap_info_struct *si,
 		if (*map == SWAP_CONT_MAX) {
 			kunmap_atomic(map);
 			page = list_entry(page->lru.next, struct page, lru);
-			if (page == head)
-				return false;	/* add count continuation */
+			if (page == head) {
+				ret = false;	/* add count continuation */
+				goto out;
+			}
 			map = kmap_atomic(page) + offset;
 init_map:		*map = 0;		/* we didn't zero the page */
 		}
@@ -3288,7 +3296,7 @@ init_map:		*map = 0;		/* we didn't zero the page */
 			kunmap_atomic(map);
 			page = list_entry(page->lru.prev, struct page, lru);
 		}
-		return true;			/* incremented */
+		ret = true;			/* incremented */
 
 	} else {				/* decrementing */
 		/*
@@ -3314,8 +3322,11 @@ init_map:		*map = 0;		/* we didn't zero the page */
 			kunmap_atomic(map);
 			page = list_entry(page->lru.prev, struct page, lru);
 		}
-		return count == COUNT_CONTINUED;
+		ret = count == COUNT_CONTINUED;
 	}
+out:
+	spin_unlock(&si->cont_lock);
+	return ret;
 }
 
 /*
