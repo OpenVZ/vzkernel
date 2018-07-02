@@ -18,6 +18,7 @@
 #include <linux/acpi.h>
 #include <linux/efi.h>
 #include <linux/efi-bgrt.h>
+#include <linux/io.h>
 
 struct acpi_table_bgrt *bgrt_tab;
 void *__initdata bgrt_image;
@@ -67,14 +68,14 @@ void __init efi_bgrt_init(void)
 		return;
 	}
 
-	image = ioremap(bgrt_tab->image_address, sizeof(bmp_header));
+	image = memremap(bgrt_tab->image_address, sizeof(bmp_header), MEMREMAP_WB);
 	if (!image) {
 		pr_notice("Ignoring BGRT: failed to map image header memory\n");
 		return;
 	}
 
 	memcpy(&bmp_header, image, sizeof(bmp_header));
-	iounmap(image);
+	memunmap(image);
 	if (bmp_header.id != 0x4d42) {
 		pr_notice("Ignoring BGRT: Incorrect BMP magic number 0x%x (expected 0x4d42)\n",
 			bmp_header.id);
@@ -89,7 +90,7 @@ void __init efi_bgrt_init(void)
 		return;
 	}
 
-	image = ioremap(bgrt_tab->image_address, bmp_header.size);
+	image = memremap(bgrt_tab->image_address, bmp_header.size, MEMREMAP_WB);
 	if (!image) {
 		pr_notice("Ignoring BGRT: failed to map image memory\n");
 		kfree(bgrt_image);
@@ -98,5 +99,5 @@ void __init efi_bgrt_init(void)
 	}
 
 	memcpy(bgrt_image, image, bgrt_image_size);
-	iounmap(image);
+	memunmap(image);
 }
