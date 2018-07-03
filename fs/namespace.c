@@ -1070,12 +1070,36 @@ struct vfsmount *
 vfs_submount(const struct dentry *mountpoint, struct file_system_type *type,
 	     const char *name, void *data)
 {
+#if 0
 	/* Until it is worked out how to pass the user namespace
 	 * through from the parent mount to the submount don't support
 	 * unprivileged mounts with submounts.
 	 */
+	/* Simple NFS mount inside a Container brings us here, so if we want to
+	 * enable NFS inside a Container (read - in non-init userns), we have
+	 * to omit the check.
+	 *  SyS_mount
+	 *   do_mount
+	 *    vfs_kern_mount
+	 *     mount_fs
+	 *      nfs_fs_mount
+	 *       nfs4_try_mount
+	 *        nfs_follow_remote_path
+	 *         mount_subtree
+	 *	    vfs_path_lookup
+	 *	     do_path_lookup
+	 *	      filename_lookup
+	 *	       path_lookupat
+	 *	        lookup_slow
+	 *	         follow_managed
+	 *	          nfs_d_automount
+	 *	           nfs4_submount
+	 *		    nfs_do_submount
+	 *		     vfs_submount
+	 */
 	if (mountpoint->d_sb->s_user_ns != &init_user_ns)
 		return ERR_PTR(-EPERM);
+#endif
 
 	return vfs_kern_mount(type, MS_SUBMOUNT, name, data);
 }
