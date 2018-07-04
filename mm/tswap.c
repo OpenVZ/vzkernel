@@ -183,6 +183,11 @@ retry:
 		goto out;
 	}
 
+	if (!__swp_swapcount(entry) && swap_slot_cache_enabled) {
+		err = -ENOENT;
+		goto out;
+	}
+
 	err = swapcache_prepare(entry);
 	if (err == -EEXIST) {
 		cond_resched();
