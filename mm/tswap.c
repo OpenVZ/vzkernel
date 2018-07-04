@@ -16,6 +16,7 @@
 #include <linux/radix-tree.h>
 #include <linux/list.h>
 #include <linux/swap.h>
+#include <linux/swap_slots.h>
 #include <linux/swapops.h>
 #include <linux/pagemap.h>
 #include <linux/shrinker.h>
@@ -247,7 +248,7 @@ static unsigned long tswap_shrink_scan(struct shrinker *shrink,
 
 		if (!lru->nr_items)
 			break;
-		
+
 		page = list_first_entry(&lru->list, struct page, lru);
 		/* lock the page to avoid interference with
 		 * other reclaiming threads */
