@@ -8,12 +8,7 @@ struct fuse_conn;
 /* Try to follows pcs/client/fused structure style */
 struct pcs_fuse_exec_ctx {
 	struct pcs_int_request	ireq;
-	/* The file size control block */
-	struct {
-		unsigned long long	required;
-		unsigned char		granted;
-		unsigned char		waiting;
-	} size;
+	unsigned long long	size_required;
 	struct {
 		pcs_api_iorequest_t	req;
 		struct bio_vec		*bvec;
