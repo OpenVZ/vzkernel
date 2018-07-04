@@ -283,8 +283,9 @@ static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct ino
 	/* di.id.name.len   = id->name.len; */
 
 	spin_lock_init(&di->lock);
-	INIT_LIST_HEAD(&di->size.grow_queue);
-	INIT_LIST_HEAD(&di->size.shrink_queue);
+	INIT_LIST_HEAD(&di->size.queue);
+	di->size.required = 0;
+	di->size.op = PCS_SIZE_INACTION;
 	INIT_WORK(&di->size.work, fuse_size_grow_work);
 
 	pcs_mapping_init(&pfc->cc, &di->mapping);
@@ -341,8 +342,7 @@ void kpcs_inode_release(struct fuse_inode *fi)
 	if(!di)
 		return;
 
-	BUG_ON(!list_empty(&di->size.grow_queue));
-	BUG_ON(!list_empty(&di->size.shrink_queue));
+	BUG_ON(!list_empty(&di->size.queue));
 	pcs_mapping_invalidate(&di->mapping);
 	pcs_mapping_deinit(&di->mapping);
 	/* TODO: properly destroy dentry info here!! */
@@ -658,92 +658,88 @@ static void fuse_size_grow_work(struct work_struct *w)
 	struct pcs_dentry_info* di = container_of(w, struct pcs_dentry_info, size.work);
 	struct inode *inode = &di->inode->inode;
 	struct pcs_int_request* ireq, *next;
-	unsigned long long size = 0;
+	unsigned long long size;
 	int err;
-	LIST_HEAD(to_submit);
+	LIST_HEAD(pending_reqs);
 
 	spin_lock(&di->lock);
-	BUG_ON(di->size.shrink);
-	if (di->size.required) {
+	BUG_ON(di->size.op != PCS_SIZE_INACTION);
+
+	size = di->size.required;
+	if (!size) {
+		BUG_ON(!list_empty(&di->size.queue));
 		spin_unlock(&di->lock);
+		TRACE("No more pending writes\n");
 		return;
 	}
-	list_for_each_entry(ireq, &di->size.grow_queue, list) {
-		struct pcs_fuse_req *r = container_of(ireq, struct pcs_fuse_req, exec.ireq);
+	BUG_ON(di->fileinfo.attr.size >= size);
 
-		TRACE("ino:%ld r(%p)->size:%lld	 required:%lld\n",inode->i_ino, r, r->exec.size.required, size);
-
-		BUG_ON(!r->exec.size.required);
-		if (size < r->exec.size.required)
-			size = r->exec.size.required;
-	}
-	di->size.required = size;
+	list_splice_tail_init(&di->size.queue, &pending_reqs);
+	di->size.op = PCS_SIZE_GROW;
 	spin_unlock(&di->lock);
 
 	err = submit_size_grow(inode, size);
 	if (err) {
-		LIST_HEAD(to_fail);
-
 		spin_lock(&di->lock);
+		di->size.op = PCS_SIZE_INACTION;
+		list_splice_tail_init(&di->size.queue, &pending_reqs);
 		di->size.required = 0;
-		list_splice_tail_init(&di->size.grow_queue, &to_fail);
 		spin_unlock(&di->lock);
 
-		pcs_ireq_queue_fail(&to_fail, err);
+		pcs_ireq_queue_fail(&pending_reqs, err);
 		return;
 	}
 
 	spin_lock(&di->lock);
-	BUG_ON(di->size.shrink);
-	BUG_ON(di->size.required != size);
-	list_for_each_entry_safe(ireq, next, &di->size.grow_queue, list) {
+	BUG_ON(di->size.required < size);
+	di->size.op = PCS_SIZE_INACTION;
+
+	list_for_each_entry_safe(ireq, next, &di->size.queue, list) {
 		struct pcs_fuse_req *r = container_of(ireq, struct pcs_fuse_req, exec.ireq);
 
-		BUG_ON(!r->exec.size.required);
-		BUG_ON(!r->exec.size.waiting);
-		BUG_ON(r->exec.size.granted);
-		if (size >= r->exec.size.required) {
-			TRACE("resubmit ino:%ld r(%p)->size:%lld  required:%lld\n",inode->i_ino, r, r->exec.size.required, size);
-
-			r->exec.size.waiting = 0;
-			r->exec.size.granted = 1;
-			list_move(&ireq->list, &to_submit);
+		BUG_ON(!r->exec.size_required);
+		if (size >= r->exec.size_required) {
+			TRACE("resubmit ino:%ld r(%p)->size:%lld required:%lld\n",
+				inode->i_ino, r, r->exec.size_required, size);
+			list_move(&ireq->list, &pending_reqs);
 		}
 	}
-	di->size.required = 0;
-	if (!list_empty(&di->size.grow_queue))
-		queue_work(pcs_wq, &di->size.work);
+
+	if (list_empty(&di->size.queue))
+		di->size.required = 0;
 	spin_unlock(&di->lock);
 
-	pcs_cc_requeue(di->cluster, &to_submit);
+	pcs_cc_requeue(di->cluster, &pending_reqs);
 }
 
 static void wait_grow(struct pcs_fuse_req *r, struct pcs_dentry_info *di, unsigned long long required)
 {
 	assert_spin_locked(&di->lock);
-	BUG_ON(r->exec.size.waiting);
+	BUG_ON(r->exec.size_required);
 	BUG_ON(r->req.in.h.opcode != FUSE_WRITE && r->req.in.h.opcode != FUSE_FALLOCATE);
+	BUG_ON(di->size.op != PCS_SIZE_INACTION && di->size.op != PCS_SIZE_GROW);
 
 	TRACE("insert ino:%ld->required:%lld r(%p)->required:%lld\n", r->req.io_inode->i_ino,
 	      di->size.required, r, required);
-	r->exec.size.required = required;
-	r->exec.size.waiting = 1;
-	list_add_tail(&r->exec.ireq.list, &di->size.grow_queue);
+	r->exec.size_required = required;
 
-	if (!di->size.required)
+	if (list_empty(&di->size.queue))
 		queue_work(pcs_wq, &di->size.work);
+
+	list_add_tail(&r->exec.ireq.list, &di->size.queue);
+
+	di->size.required = max(di->size.required, required);
 }
 
 static void wait_shrink(struct pcs_fuse_req *r, struct pcs_dentry_info *di)
 {
 	assert_spin_locked(&di->lock);
-	BUG_ON(r->exec.size.waiting);
+	BUG_ON(r->exec.size_required);
 	/* Writes already blocked via fuse_set_nowrite */
 	BUG_ON(r->req.in.h.opcode != FUSE_READ);
 
 	TRACE("insert ino:%ld r:%p\n", r->req.io_inode->i_ino, r);
-	r->exec.size.waiting = 1;
-	list_add_tail(&r->exec.ireq.list, &di->size.shrink_queue);
+	list_add_tail(&r->exec.ireq.list, &di->size.queue);
 }
 
 /*
@@ -761,7 +757,7 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
 
 	spin_lock(&di->lock);
 	/* Deffer all requests if shrink requested to prevent livelock */
-	if (di->size.shrink) {
+	if (di->size.op == PCS_SIZE_SHRINK) {
 		wait_shrink(r, di);
 		spin_unlock(&di->lock);
 		return 1;
@@ -968,25 +964,22 @@ static void _pcs_shrink_end(struct fuse_conn *fc, struct fuse_req *req)
 	kpcs_setattr_end(fc, req);
 
 	spin_lock(&di->lock);
-	BUG_ON(!di->size.shrink);
+	BUG_ON(di->size.op != PCS_SIZE_SHRINK);
 	BUG_ON(di->size.required);
-	BUG_ON(!list_empty(&di->size.grow_queue));
 
-	list_splice_init(&di->size.shrink_queue, &dispose);
-	di->size.shrink = 0;
+	list_splice_init(&di->size.queue, &dispose);
+	di->size.op = PCS_SIZE_INACTION;
 	spin_unlock(&di->lock);
 
 	while (!list_empty(&dispose)) {
 		struct pcs_int_request* ireq = list_first_entry(&dispose, struct pcs_int_request, list);
 		struct pcs_fuse_req *r = container_of(ireq, struct pcs_fuse_req, exec.ireq);
 
-		BUG_ON(!r->exec.size.waiting);
-		BUG_ON(r->exec.size.granted);
+		BUG_ON(r->exec.size_required);
 		BUG_ON(r->req.in.h.opcode != FUSE_READ);
 
 		TRACE("resubmit %p\n", &r->req);
 		list_del_init(&ireq->list);
-		r->exec.size.waiting = 0;
 		pcs_fuse_submit(pfc, &r->req, 1);
 	}
 }
@@ -1030,7 +1023,6 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 		struct pcs_fuse_req *r = pcs_req_from_fuse(req);
 		struct fuse_setattr_in *inarg = (void*) req->in.args[0].value;
 		struct pcs_dentry_info *di;
-		int shrink = 0;
 
 		if (!(inarg->valid & FATTR_SIZE))
 			return 1;
@@ -1038,12 +1030,12 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 		di = pcs_inode_from_fuse(fi);
 		spin_lock(&di->lock);
 		if (inarg->size < di->fileinfo.attr.size) {
-			BUG_ON(di->size.shrink);
-			di->size.shrink = shrink = 1;
+			BUG_ON(di->size.op != PCS_SIZE_INACTION);
+			di->size.op = PCS_SIZE_SHRINK;
 		}
 		spin_unlock(&di->lock);
 		r->end = req->end;
-		if (shrink) {
+		if (di->size.op == PCS_SIZE_SHRINK) {
 			BUG_ON(!mutex_is_locked(&req->io_inode->i_mutex));
 			/* wait for aio reads in flight */
 			inode_dio_wait(req->io_inode);
