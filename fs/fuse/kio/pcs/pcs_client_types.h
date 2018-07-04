@@ -46,6 +46,13 @@ struct pcs_mapping {
 	struct pcs_flow_table	ftab;
 };
 
+
+typedef enum {
+	PCS_SIZE_INACTION,
+	PCS_SIZE_GROW,
+	PCS_SIZE_SHRINK,
+} size_op_t;
+
 struct fuse_inode;
 struct pcs_dentry_info {
 	struct pcs_dentry_id	id;
@@ -56,10 +63,9 @@ struct pcs_dentry_info {
 	spinlock_t		lock;
 	struct {
 		struct work_struct	work;
-		unsigned long long	shrink;
+		struct list_head	queue;
 		unsigned long long	required;
-		struct list_head	grow_queue;
-		struct list_head	shrink_queue;
+		size_op_t op;
 	} size;
 	struct fuse_inode	*inode;
 };
