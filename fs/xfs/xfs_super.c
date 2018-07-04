@@ -1753,7 +1753,7 @@ static struct file_system_type xfs_fs_type = {
 	.fs_flags		= FS_REQUIRES_DEV | FS_HAS_RM_XQUOTA |
 				  FS_HAS_INVALIDATE_RANGE | FS_HAS_DIO_IODONE2 |
 				  FS_HAS_NEXTDQBLK | FS_HAS_WBLIST |
-				  FS_VIRTUALIZED,
+				  FS_USERNS_MOUNT | FS_VIRTUALIZED,
 };
 MODULE_ALIAS_FS("xfs");
 
