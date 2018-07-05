@@ -648,7 +648,7 @@ static struct srpt_ioctx **srpt_alloc_ioctx_ring(struct srpt_device *sdev,
 	WARN_ON(ioctx_size != sizeof(struct srpt_recv_ioctx)
 		&& ioctx_size != sizeof(struct srpt_send_ioctx));
 
-	ring = kmalloc(ring_size * sizeof(ring[0]), GFP_KERNEL);
+	ring = vmalloc(ring_size * sizeof(ring[0]));
 	if (!ring)
 		goto out;
 	for (i = 0; i < ring_size; ++i) {
@@ -679,7 +679,7 @@ static void srpt_free_ioctx_ring(struct srpt_ioctx **ioctx_ring,
 
 	for (i = 0; i < ring_size; ++i)
 		srpt_free_ioctx(sdev, ioctx_ring[i], dma_size, dir);
-	kfree(ioctx_ring);
+	vfree(ioctx_ring);
 }
 
 /**
