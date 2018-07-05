@@ -1315,7 +1315,7 @@ static inline int fixup_user_fault(struct task_struct *tsk,
 extern unsigned long vma_address(struct page *page, struct vm_area_struct *vma);
 extern int access_process_vm(struct task_struct *tsk, unsigned long addr, void *buf, int len, int write);
 extern int access_remote_vm(struct mm_struct *mm, unsigned long addr,
-		void *buf, int len, int write);
+		void *buf, int len, unsigned int gup_flags);
 
 long __get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
 		      unsigned long start, unsigned long nr_pages,
@@ -1325,6 +1325,11 @@ long get_user_pages_remote(struct task_struct *tsk, struct mm_struct *mm,
 			    unsigned long start, unsigned long nr_pages,
 			    int write, int force, struct page **pages,
 			    struct vm_area_struct **vmas);
+long get_user_pages_remote_flags(struct task_struct *tsk, struct mm_struct *mm,
+				 unsigned long start, unsigned long nr_pages,
+				 int write, int force, struct page **pages,
+				 struct vm_area_struct **vmas,
+				 unsigned int gup_flags);
 long get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
 		    unsigned long start, unsigned long nr_pages,
 		    int write, int force, struct page **pages,
