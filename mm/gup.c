@@ -496,7 +496,8 @@ long __get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
 
 		if (!vma ||
 		    (vma->vm_flags & (VM_IO | VM_PFNMAP)) ||
-		    !(vm_flags & vma->vm_flags))
+		    !(vm_flags & vma->vm_flags) ||
+		    ((gup_flags & FOLL_ANON) && !vma_is_anonymous(vma)))
 			return i ? : -EFAULT;
 
 		if (gup_flags & FOLL_ANON && !vma_is_anonymous(vma))
