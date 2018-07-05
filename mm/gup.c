@@ -890,6 +890,21 @@ long get_user_pages_remote(struct task_struct *tsk, struct mm_struct *mm,
 EXPORT_SYMBOL(get_user_pages_remote);
 
 /*
+ * Same as get_user_pages_remote() but can be used to pass additional flags
+ * to __get_user_pages().
+ */
+long get_user_pages_remote_flags(struct task_struct *tsk, struct mm_struct *mm,
+		unsigned long start, unsigned long nr_pages,
+		int write, int force, struct page **pages,
+		struct vm_area_struct **vmas, unsigned int gup_flags)
+{
+	return __get_user_pages_locked(tsk, mm, start, nr_pages, write, force,
+				       pages, vmas, NULL, false,
+				       gup_flags | FOLL_TOUCH | FOLL_REMOTE);
+}
+EXPORT_SYMBOL(get_user_pages_remote_flags);
+
+/*
  * This is the same as get_user_pages_remote() for the time
  * being.
  */
