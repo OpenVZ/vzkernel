@@ -1384,11 +1384,12 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 	fc->writeback_cache = d.writeback_cache;
 
 	if (fc->kdirect_io) {
-		fc->kio.op = fuse_kio_get(fc, d.kio_name);
-		if (!fc->kio.op) {
-			err = -EINVAL;
+		err = -EINVAL;
+		if (!fc->writeback_cache)
 			goto err_dev_free;
-		}
+		fc->kio.op = fuse_kio_get(fc, d.kio_name);
+		if (!fc->kio.op)
+			goto err_dev_free;
 	}
 
 	/* Used by get_root_inode() */
