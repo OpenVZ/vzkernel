@@ -97,6 +97,16 @@
 struct exception_table_entry {
 	int insn, fixup;
 };
+
+/*
+ * Special exception table used for memcpy_mcsafe()
+ */
+struct mc_exception_table_entry {
+	int insn, fixup, handler;
+};
+extern int mc_fixup_exception(struct pt_regs *regs, int trapnr);
+extern bool ex_has_fault_handler(unsigned long ip);
+
 /* This is not the generic standard exception_table_entry format */
 #define ARCH_HAS_SORT_EXTABLE
 #define ARCH_HAS_SEARCH_EXTABLE
@@ -163,10 +173,11 @@ __typeof__(__builtin_choose_expr(sizeof(x) > sizeof(0UL), 0ULL, 0UL))
 ({									\
 	int __ret_gu;							\
 	register __inttype(*(ptr)) __val_gu asm("%edx");		\
+	register void *__sp asm(_ASM_SP);				\
 	__chk_user_ptr(ptr);						\
 	might_fault();							\
-	asm volatile("call __get_user_%P3"				\
-		     : "=a" (__ret_gu), "=r" (__val_gu)			\
+	asm volatile("call __get_user_%P4"				\
+		     : "=a" (__ret_gu), "=r" (__val_gu), "+r" (__sp)	\
 		     : "0" (ptr), "i" (sizeof(*(ptr))));		\
 	(x) = (__typeof__(*(ptr))) __val_gu;				\
 	__ret_gu;							\
@@ -521,6 +532,98 @@ extern __must_check long strnlen_user(const char __user *str, long n);
 
 unsigned long __must_check clear_user(void __user *mem, unsigned long len);
 unsigned long __must_check __clear_user(void __user *mem, unsigned long len);
+
+extern void __cmpxchg_wrong_size(void)
+	__compiletime_error("Bad argument size for cmpxchg");
+
+#define __user_atomic_cmpxchg_inatomic(uval, ptr, old, new, size)	\
+({									\
+	int __ret = 0;							\
+	__typeof__(ptr) __uval = (uval);				\
+	__typeof__(*(ptr)) __old = (old);				\
+	__typeof__(*(ptr)) __new = (new);				\
+	switch (size) {							\
+	case 1:								\
+	{								\
+		asm volatile("\t" ASM_STAC "\n"				\
+			"1:\t" LOCK_PREFIX "cmpxchgb %4, %2\n"		\
+			"2:\t" ASM_CLAC "\n"				\
+			"\t.section .fixup, \"ax\"\n"			\
+			"3:\tmov     %3, %0\n"				\
+			"\tjmp     2b\n"				\
+			"\t.previous\n"					\
+			_ASM_EXTABLE(1b, 3b)				\
+			: "+r" (__ret), "=a" (__old), "+m" (*(ptr))	\
+			: "i" (-EFAULT), "q" (__new), "1" (__old)	\
+			: "memory"					\
+		);							\
+		break;							\
+	}								\
+	case 2:								\
+	{								\
+		asm volatile("\t" ASM_STAC "\n"				\
+			"1:\t" LOCK_PREFIX "cmpxchgw %4, %2\n"		\
+			"2:\t" ASM_CLAC "\n"				\
+			"\t.section .fixup, \"ax\"\n"			\
+			"3:\tmov     %3, %0\n"				\
+			"\tjmp     2b\n"				\
+			"\t.previous\n"					\
+			_ASM_EXTABLE(1b, 3b)				\
+			: "+r" (__ret), "=a" (__old), "+m" (*(ptr))	\
+			: "i" (-EFAULT), "r" (__new), "1" (__old)	\
+			: "memory"					\
+		);							\
+		break;							\
+	}								\
+	case 4:								\
+	{								\
+		asm volatile("\t" ASM_STAC "\n"				\
+			"1:\t" LOCK_PREFIX "cmpxchgl %4, %2\n"		\
+			"2:\t" ASM_CLAC "\n"				\
+			"\t.section .fixup, \"ax\"\n"			\
+			"3:\tmov     %3, %0\n"				\
+			"\tjmp     2b\n"				\
+			"\t.previous\n"					\
+			_ASM_EXTABLE(1b, 3b)				\
+			: "+r" (__ret), "=a" (__old), "+m" (*(ptr))	\
+			: "i" (-EFAULT), "r" (__new), "1" (__old)	\
+			: "memory"					\
+		);							\
+		break;							\
+	}								\
+	case 8:								\
+	{								\
+		if (!IS_ENABLED(CONFIG_X86_64))				\
+			__cmpxchg_wrong_size();				\
+									\
+		asm volatile("\t" ASM_STAC "\n"				\
+			"1:\t" LOCK_PREFIX "cmpxchgq %4, %2\n"		\
+			"2:\t" ASM_CLAC "\n"				\
+			"\t.section .fixup, \"ax\"\n"			\
+			"3:\tmov     %3, %0\n"				\
+			"\tjmp     2b\n"				\
+			"\t.previous\n"					\
+			_ASM_EXTABLE(1b, 3b)				\
+			: "+r" (__ret), "=a" (__old), "+m" (*(ptr))	\
+			: "i" (-EFAULT), "r" (__new), "1" (__old)	\
+			: "memory"					\
+		);							\
+		break;							\
+	}								\
+	default:							\
+		__cmpxchg_wrong_size();					\
+	}								\
+	*__uval = __old;						\
+	__ret;								\
+})
+
+#define user_atomic_cmpxchg_inatomic(uval, ptr, old, new)		\
+({									\
+	access_ok(VERIFY_WRITE, (ptr), sizeof(*(ptr))) ?		\
+		__user_atomic_cmpxchg_inatomic((uval), (ptr),		\
+				(old), (new), sizeof(*(ptr))) :		\
+		-EFAULT;						\
+})
 
 /*
  * movsl can be slow when source and dest are not both 8-byte aligned

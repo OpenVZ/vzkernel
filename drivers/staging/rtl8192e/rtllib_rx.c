@@ -1311,7 +1311,6 @@ static int rtllib_rx_InfraAdhoc(struct rtllib_device *ieee, struct sk_buff *skb,
 		ieee->LinkDetectInfo.NumRecvDataInPeriod++;
 		ieee->LinkDetectInfo.NumRxOkInPeriod++;
 	}
-	dev->last_rx = jiffies;
 
 	/* Data frame - extract src/dst addresses */
 	rtllib_rx_extract_addr(ieee, hdr, dst, src, bssid);

@@ -531,8 +531,6 @@ int vcc_recvmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	struct sk_buff *skb;
 	int copied, error = -EINVAL;
 
-	msg->msg_namelen = 0;
-
 	if (sock->state != SS_CONNECTED)
 		return -ENOTCONN;
 
@@ -556,7 +554,7 @@ int vcc_recvmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		msg->msg_flags |= MSG_TRUNC;
 	}
 
-	error = skb_copy_datagram_iovec(skb, 0, msg->msg_iov, copied);
+	error = skb_copy_datagram_msg(skb, 0, msg, copied);
 	if (error)
 		return error;
 	sock_recv_ts_and_drops(msg, sk, skb);

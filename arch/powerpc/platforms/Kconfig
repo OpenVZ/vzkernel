@@ -73,11 +73,6 @@ config PPC_SMP_MUXED_IPI
 	  cpu.	This will enable the generic code to multiplex the 4
 	  messages on to one ipi.
 
-config PPC_UDBG_BEAT
-	bool "BEAT based debug console"
-	depends on PPC_CELLEB
-	default n
-
 config IPIC
 	bool
 	default n
@@ -164,6 +159,11 @@ config IBMEBUS
 	help
 	  Bus device driver for GX bus based adapters.
 
+config EEH
+	bool
+	depends on (PPC_POWERNV || PPC_PSERIES) && PCI
+	default y
+
 config PPC_MPC106
 	bool
 	default n
@@ -176,53 +176,17 @@ config PPC_P7_NAP
 	bool
 	default n
 
-config PPC_INDIRECT_IO
+config PPC_INDIRECT_PIO
 	bool
 	select GENERIC_IOMAP
 
-config PPC_INDIRECT_PIO
-	bool
-	select PPC_INDIRECT_IO
-
 config PPC_INDIRECT_MMIO
 	bool
-	select PPC_INDIRECT_IO
 
 config PPC_IO_WORKAROUNDS
 	bool
 
 source "drivers/cpufreq/Kconfig"
-
-menu "CPU Frequency drivers"
-	depends on CPU_FREQ
-
-config CPU_FREQ_PMAC
-	bool "Support for Apple PowerBooks"
-	depends on ADB_PMU && PPC32
-	select CPU_FREQ_TABLE
-	help
-	  This adds support for frequency switching on Apple PowerBooks,
-	  this currently includes some models of iBook & Titanium
-	  PowerBook.
-
-config CPU_FREQ_PMAC64
-	bool "Support for some Apple G5s"
-	depends on PPC_PMAC && PPC64
-	select CPU_FREQ_TABLE
-	help
-	  This adds support for frequency switching on Apple iMac G5,
-	  and some of the more recent desktop G5 machines as well.
-
-config PPC_PASEMI_CPUFREQ
-	bool "Support for PA Semi PWRficient"
-	depends on PPC_PASEMI
-	default y
-	select CPU_FREQ_TABLE
-	help
-	  This adds the support for frequency switching on PA Semi
-	  PWRficient processors.
-
-endmenu
 
 menu "CPUIdle driver"
 
@@ -323,6 +287,7 @@ config CPM2
 config AXON_RAM
 	tristate "Axon DDR2 memory device driver"
 	depends on PPC_IBM_CELL_BLADE && BLOCK
+	select DAX
 	default m
 	help
 	  It registers one block device per Axon's DDR2 memory bank found

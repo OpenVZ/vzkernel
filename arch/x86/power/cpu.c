@@ -12,6 +12,7 @@
 #include <linux/export.h>
 #include <linux/smp.h>
 #include <linux/perf_event.h>
+#include <linux/tboot.h>
 
 #include <asm/pgtable.h>
 #include <asm/proto.h>
@@ -23,6 +24,7 @@
 #include <asm/debugreg.h>
 #include <asm/fpu-internal.h> /* pcntxt_mask */
 #include <asm/cpu.h>
+#include <asm/mmu_context.h>
 
 #ifdef CONFIG_X86_32
 unsigned long saved_context_ebx;
@@ -165,7 +167,7 @@ static void fix_processor_context(void)
  *		by __save_processor_state()
  *	@ctxt - structure to load the registers contents from
  */
-static void __restore_processor_state(struct saved_context *ctxt)
+static void notrace __restore_processor_state(struct saved_context *ctxt)
 {
 	if (ctxt->misc_enable_saved)
 		wrmsrl(MSR_IA32_MISC_ENABLE, ctxt->misc_enable);
@@ -182,7 +184,6 @@ static void __restore_processor_state(struct saved_context *ctxt)
 	write_cr8(ctxt->cr8);
 	write_cr4(ctxt->cr4);
 #endif
-	write_cr3(ctxt->cr3);
 	write_cr2(ctxt->cr2);
 	write_cr0(ctxt->cr0);
 
@@ -225,6 +226,12 @@ static void __restore_processor_state(struct saved_context *ctxt)
 #endif
 
 	/*
+	 * __load_cr3 requires kernel %gs to be initialized to be able
+	 * to access per-cpu areas.
+	 */
+	__load_cr3(ctxt->cr3);
+
+	/*
 	 * restore XCR0 for xsave capable cpu's.
 	 */
 	if (cpu_has_xsave)
@@ -236,15 +243,45 @@ static void __restore_processor_state(struct saved_context *ctxt)
 	x86_platform.restore_sched_clock_state();
 	mtrr_bp_restore();
 	perf_restore_debug_store();
+	spec_ctrl_cpu_init();
 }
 
 /* Needed by apm.c */
-void restore_processor_state(void)
+void notrace restore_processor_state(void)
 {
 	__restore_processor_state(&saved_context);
 }
 #ifdef CONFIG_X86_32
 EXPORT_SYMBOL(restore_processor_state);
+#endif
+
+#if defined(CONFIG_HIBERNATION) && defined(CONFIG_HOTPLUG_CPU)
+static void resume_play_dead(void)
+{
+	play_dead_common();
+	tboot_shutdown(TB_SHUTDOWN_WFS);
+	hlt_play_dead();
+}
+
+int hibernate_resume_nonboot_cpu_disable(void)
+{
+	void (*play_dead)(void) = smp_ops.play_dead;
+	int ret;
+
+	/*
+	 * Ensure that MONITOR/MWAIT will not be used in the "play dead" loop
+	 * during hibernate image restoration, because it is likely that the
+	 * monitored address will be actually written to at that time and then
+	 * the "dead" CPU will attempt to execute instructions again, but the
+	 * address in its instruction pointer may not be possible to resolve
+	 * any more at that point (the page tables used by it previously may
+	 * have been overwritten by hibernate image data).
+	 */
+	smp_ops.play_dead = resume_play_dead;
+	ret = disable_nonboot_cpus();
+	smp_ops.play_dead = play_dead;
+	return ret;
+}
 #endif
 
 /*

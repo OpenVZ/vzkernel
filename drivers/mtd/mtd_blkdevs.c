@@ -113,7 +113,7 @@ static int do_blktrans_request(struct mtd_blktrans_ops *tr,
 				return -EIO;
 		return 0;
 	default:
-		printk(KERN_NOTICE "Unknown request %u\n", rq_data_dir(req));
+		printk(KERN_NOTICE "Unknown request %llu\n", rq_data_dir(req));
 		return -EIO;
 	}
 }
@@ -413,6 +413,7 @@ int add_mtd_blktrans_dev(struct mtd_blktrans_dev *new)
 	blk_queue_logical_block_size(new->rq, tr->blksize);
 
 	queue_flag_set_unlocked(QUEUE_FLAG_NONROT, new->rq);
+	queue_flag_clear_unlocked(QUEUE_FLAG_ADD_RANDOM, new->rq);
 
 	if (tr->discard) {
 		queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, new->rq);

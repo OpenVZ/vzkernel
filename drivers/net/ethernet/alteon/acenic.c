@@ -132,7 +132,7 @@
 #define PCI_DEVICE_ID_SGI_ACENIC	0x0009
 #endif
 
-static DEFINE_PCI_DEVICE_TABLE(acenic_pci_tbl) = {
+static const struct pci_device_id acenic_pci_tbl[] = {
 	{ PCI_VENDOR_ID_ALTEON, PCI_DEVICE_ID_ALTEON_ACENIC_FIBRE,
 	  PCI_ANY_ID, PCI_ANY_ID, PCI_CLASS_NETWORK_ETHERNET << 8, 0xffff00, },
 	{ PCI_VENDOR_ID_ALTEON, PCI_DEVICE_ID_ALTEON_ACENIC_COPPER,
@@ -2443,9 +2443,9 @@ restart:
 		flagsize = (skb->len << 16) | (BD_FLG_END);
 		if (skb->ip_summed == CHECKSUM_PARTIAL)
 			flagsize |= BD_FLG_TCP_UDP_SUM;
-		if (vlan_tx_tag_present(skb)) {
+		if (skb_vlan_tag_present(skb)) {
 			flagsize |= BD_FLG_VLAN_TAG;
-			vlan_tag = vlan_tx_tag_get(skb);
+			vlan_tag = skb_vlan_tag_get(skb);
 		}
 		desc = ap->tx_ring + idx;
 		idx = (idx + 1) % ACE_TX_RING_ENTRIES(ap);
@@ -2464,9 +2464,9 @@ restart:
 		flagsize = (skb_headlen(skb) << 16);
 		if (skb->ip_summed == CHECKSUM_PARTIAL)
 			flagsize |= BD_FLG_TCP_UDP_SUM;
-		if (vlan_tx_tag_present(skb)) {
+		if (skb_vlan_tag_present(skb)) {
 			flagsize |= BD_FLG_VLAN_TAG;
-			vlan_tag = vlan_tx_tag_get(skb);
+			vlan_tag = skb_vlan_tag_get(skb);
 		}
 
 		ace_load_tx_bd(ap, ap->tx_ring + idx, mapping, flagsize, vlan_tag);

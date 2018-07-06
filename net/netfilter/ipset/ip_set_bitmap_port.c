@@ -20,12 +20,12 @@
 #include <linux/netfilter/ipset/ip_set_bitmap.h>
 #include <linux/netfilter/ipset/ip_set_getport.h>
 
-#define REVISION_MIN	0
-#define REVISION_MAX	1	/* Counter support added */
+#define IPSET_TYPE_REV_MIN	0
+#define IPSET_TYPE_REV_MAX	1	/* Counter support added */
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>");
-IP_SET_MODULE_DESC("bitmap:port", REVISION_MIN, REVISION_MAX);
+IP_SET_MODULE_DESC("bitmap:port", IPSET_TYPE_REV_MIN, IPSET_TYPE_REV_MAX);
 MODULE_ALIAS("ip_set_bitmap:port");
 
 #define MTYPE		bitmap_port
@@ -248,7 +248,8 @@ init_map_port(struct ip_set *set, struct bitmap_port *map,
 }
 
 static int
-bitmap_port_create(struct ip_set *set, struct nlattr *tb[], u32 flags)
+bitmap_port_create(struct net *net, struct ip_set *set, struct nlattr *tb[],
+		   u32 flags)
 {
 	struct bitmap_port *map;
 	u16 first_port, last_port;
@@ -333,8 +334,8 @@ static struct ip_set_type bitmap_port_type = {
 	.features	= IPSET_TYPE_PORT,
 	.dimension	= IPSET_DIM_ONE,
 	.family		= NFPROTO_UNSPEC,
-	.revision_min	= REVISION_MIN,
-	.revision_max	= REVISION_MAX,
+	.revision_min	= IPSET_TYPE_REV_MIN,
+	.revision_max	= IPSET_TYPE_REV_MAX,
 	.create		= bitmap_port_create,
 	.create_policy	= {
 		[IPSET_ATTR_PORT]	= { .type = NLA_U16 },

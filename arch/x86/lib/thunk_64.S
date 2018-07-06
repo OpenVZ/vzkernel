@@ -12,14 +12,34 @@
 	/* rdi:	arg1 ... normal C conventions. rax is saved/restored. */
 	.macro THUNK name, func, put_ret_addr_in_rdi=0
 	.globl \name
+	.type \name, @function
 \name:
 	CFI_STARTPROC
+	pushq %rbp
+	movq %rsp, %rbp
 
-	/* this one pushes 9 elems, the next one would be %rIP */
-	SAVE_ARGS
+	pushq_cfi %rdi
+	CFI_REL_OFFSET rdi, 0
+	pushq_cfi %rsi
+	CFI_REL_OFFSET rsi, 0
+	pushq_cfi %rdx
+	CFI_REL_OFFSET rdx, 0
+	pushq_cfi %rcx
+	CFI_REL_OFFSET rcx, 0
+	pushq_cfi %rax
+	CFI_REL_OFFSET rax, 0
+	pushq_cfi %r8
+	CFI_REL_OFFSET r8, 0
+	pushq_cfi %r9
+	CFI_REL_OFFSET r9, 0
+	pushq_cfi %r10
+	CFI_REL_OFFSET r10, 0
+	pushq_cfi %r11
+	CFI_REL_OFFSET r11, 0
 
 	.if \put_ret_addr_in_rdi
-	movq_cfi_restore 9*8, rdi
+	/* 8(%rbp) is return addr on stack */
+	movq 8(%rbp), %rdi
 	.endif
 
 	call \func
@@ -36,10 +56,30 @@
 	THUNK lockdep_sys_exit_thunk,lockdep_sys_exit
 #endif
 
-	/* SAVE_ARGS below is used only for the .cfi directives it contains. */
+#if defined(CONFIG_TRACE_IRQFLAGS) \
+ || defined(CONFIG_DEBUG_LOCK_ALLOC)
 	CFI_STARTPROC
-	SAVE_ARGS
+	CFI_ADJUST_CFA_OFFSET 9*8
 restore:
-	RESTORE_ARGS
+	popq_cfi %r11
+	CFI_RESTORE r11
+	popq_cfi %r10
+	CFI_RESTORE r10
+	popq_cfi %r9
+	CFI_RESTORE r9
+	popq_cfi %r8
+	CFI_RESTORE r8
+	popq_cfi %rax
+	CFI_RESTORE rax
+	popq_cfi %rcx
+	CFI_RESTORE rcx
+	popq_cfi %rdx
+	CFI_RESTORE rdx
+	popq_cfi %rsi
+	CFI_RESTORE rsi
+	popq_cfi %rdi
+	CFI_RESTORE rdi
+	popq %rbp
 	ret
 	CFI_ENDPROC
+#endif

@@ -724,8 +724,9 @@ ath6kl_add_bss_if_needed(struct ath6kl_vif *vif,
 			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
 				   "added bss %pM to cfg80211\n", bssid);
 		kfree(ie);
-	} else
+	} else {
 		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "cfg80211 already has a bss\n");
+	}
 
 	return bss;
 }
@@ -790,7 +791,7 @@ void ath6kl_cfg80211_connect_event(struct ath6kl_vif *vif, u16 channel,
 	if (nw_type & ADHOC_NETWORK) {
 		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "ad-hoc %s selected\n",
 			   nw_type & ADHOC_CREATOR ? "creator" : "joiner");
-		cfg80211_ibss_joined(vif->ndev, bssid, GFP_KERNEL);
+		cfg80211_ibss_joined(vif->ndev, bssid, chan, GFP_KERNEL);
 		cfg80211_put_bss(ar->wiphy, bss);
 		return;
 	}
@@ -861,13 +862,9 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 	}
 
 	if (vif->nw_type & ADHOC_NETWORK) {
-		if (vif->wdev.iftype != NL80211_IFTYPE_ADHOC) {
+		if (vif->wdev.iftype != NL80211_IFTYPE_ADHOC)
 			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
 				   "%s: ath6k not in ibss mode\n", __func__);
-			return;
-		}
-		memset(bssid, 0, ETH_ALEN);
-		cfg80211_ibss_joined(vif->ndev, bssid, GFP_KERNEL);
 		return;
 	}
 
@@ -974,7 +971,6 @@ static int ath6kl_set_probed_ssids(struct ath6kl *ar,
 					  ssid_list[i].flag,
 					  ssid_list[i].ssid.ssid_len,
 					  ssid_list[i].ssid.ssid);
-
 	}
 
 	/* Make sure no old entries are left behind */
@@ -1109,7 +1105,9 @@ void ath6kl_cfg80211_ch_switch_notify(struct ath6kl_vif *vif, int freq,
 				(mode == WMI_11G_HT20) ?
 					NL80211_CHAN_HT20 : NL80211_CHAN_NO_HT);
 
+	mutex_lock(&vif->wdev.mtx);
 	cfg80211_ch_switch_notify(vif->ndev, &chandef);
+	mutex_unlock(&vif->wdev.mtx);
 }
 
 static int ath6kl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *ndev,
@@ -1761,7 +1759,7 @@ static bool is_rate_ht40(s32 rate, u8 *mcs, bool *sgi)
 }
 
 static int ath6kl_get_station(struct wiphy *wiphy, struct net_device *dev,
-			      u8 *mac, struct station_info *sinfo)
+			      const u8 *mac, struct station_info *sinfo)
 {
 	struct ath6kl *ar = ath6kl_priv(dev);
 	struct ath6kl_vif *vif = netdev_priv(dev);
@@ -1899,7 +1897,6 @@ static int ath6kl_wow_usr(struct ath6kl *ar, struct ath6kl_vif *vif,
 
 	/* Configure the patterns that we received from the user. */
 	for (i = 0; i < wow->n_patterns; i++) {
-
 		/*
 		 * Convert given nl80211 specific mask value to equivalent
 		 * driver specific mask value and send it to the chip along
@@ -2852,8 +2849,9 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	if (p.prwise_crypto_type == 0) {
 		p.prwise_crypto_type = NONE_CRYPT;
 		ath6kl_set_cipher(vif, 0, true);
-	} else if (info->crypto.n_ciphers_pairwise == 1)
+	} else if (info->crypto.n_ciphers_pairwise == 1) {
 		ath6kl_set_cipher(vif, info->crypto.ciphers_pairwise[0], true);
+	}
 
 	switch (info->crypto.cipher_group) {
 	case WLAN_CIPHER_SUITE_WEP40:
@@ -2899,7 +2897,6 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	}
 
 	if (info->inactivity_timeout) {
-
 		inactivity_timeout = info->inactivity_timeout;
 
 		if (ar->hw.flags & ATH6KL_HW_AP_INACTIVITY_MINS)
@@ -2977,7 +2974,7 @@ static int ath6kl_stop_ap(struct wiphy *wiphy, struct net_device *dev)
 static const u8 bcast_addr[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
 static int ath6kl_del_station(struct wiphy *wiphy, struct net_device *dev,
-			      u8 *mac)
+			      const u8 *mac)
 {
 	struct ath6kl *ar = ath6kl_priv(dev);
 	struct ath6kl_vif *vif = netdev_priv(dev);
@@ -2988,7 +2985,8 @@ static int ath6kl_del_station(struct wiphy *wiphy, struct net_device *dev,
 }
 
 static int ath6kl_change_station(struct wiphy *wiphy, struct net_device *dev,
-				 u8 *mac, struct station_parameters *params)
+				 const u8 *mac,
+				 struct station_parameters *params)
 {
 	struct ath6kl *ar = ath6kl_priv(dev);
 	struct ath6kl_vif *vif = netdev_priv(dev);
@@ -3169,15 +3167,29 @@ static bool ath6kl_is_p2p_go_ssid(const u8 *buf, size_t len)
 }
 
 static int ath6kl_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
-			  struct ieee80211_channel *chan, bool offchan,
-			  unsigned int wait, const u8 *buf, size_t len,
-			  bool no_cck, bool dont_wait_for_ack, u64 *cookie)
+			  struct cfg80211_mgmt_tx_params *params, u64 *cookie)
 {
 	struct ath6kl_vif *vif = ath6kl_vif_from_wdev(wdev);
 	struct ath6kl *ar = ath6kl_priv(vif->ndev);
-	u32 id;
+	struct ieee80211_channel *chan = params->chan;
+	const u8 *buf = params->buf;
+	size_t len = params->len;
+	unsigned int wait = params->wait;
+	bool no_cck = params->no_cck;
+	u32 id, freq;
 	const struct ieee80211_mgmt *mgmt;
 	bool more_data, queued;
+
+	/* default to the current channel, but use the one specified as argument
+	 * if any
+	 */
+	freq = vif->ch_hint;
+	if (chan)
+		freq = chan->center_freq;
+
+	/* never send freq zero to the firmware */
+	if (WARN_ON(freq == 0))
+		return -EINVAL;
 
 	mgmt = (const struct ieee80211_mgmt *) buf;
 	if (vif->nw_type == AP_NETWORK && test_bit(CONNECTED, &vif->flags) &&
@@ -3188,8 +3200,7 @@ static int ath6kl_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 		 * command to allow the target to fill in the generic IEs.
 		 */
 		*cookie = 0; /* TX status not supported */
-		return ath6kl_send_go_probe_resp(vif, buf, len,
-						 chan->center_freq);
+		return ath6kl_send_go_probe_resp(vif, buf, len, freq);
 	}
 
 	id = vif->send_action_id++;
@@ -3205,17 +3216,14 @@ static int ath6kl_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 
 	/* AP mode Power saving processing */
 	if (vif->nw_type == AP_NETWORK) {
-		queued = ath6kl_mgmt_powersave_ap(vif,
-					id, chan->center_freq,
-					wait, buf,
-					len, &more_data, no_cck);
+		queued = ath6kl_mgmt_powersave_ap(vif, id, freq, wait, buf, len,
+						  &more_data, no_cck);
 		if (queued)
 			return 0;
 	}
 
-	return ath6kl_wmi_send_mgmt_cmd(ar->wmi, vif->fw_vif_idx, id,
-					chan->center_freq, wait,
-					buf, len, no_cck);
+	return ath6kl_wmi_send_mgmt_cmd(ar->wmi, vif->fw_vif_idx, id, freq,
+					wait, buf, len, no_cck);
 }
 
 static void ath6kl_mgmt_frame_register(struct wiphy *wiphy,
@@ -3244,6 +3252,15 @@ static int ath6kl_cfg80211_sscan_start(struct wiphy *wiphy,
 	struct ath6kl_vif *vif = netdev_priv(dev);
 	u16 interval;
 	int ret, rssi_thold;
+	int n_match_sets = request->n_match_sets;
+
+	/*
+	 * If there's a matchset w/o an SSID, then assume it's just for
+	 * the RSSI (nothing else is currently supported) and ignore it.
+	 * The device only supports a global RSSI filter that we set below.
+	 */
+	if (n_match_sets == 1 && !request->match_sets[0].ssid.ssid_len)
+		n_match_sets = 0;
 
 	if (ar->state != ATH6KL_STATE_ON)
 		return -EIO;
@@ -3256,11 +3273,11 @@ static int ath6kl_cfg80211_sscan_start(struct wiphy *wiphy,
 	ret = ath6kl_set_probed_ssids(ar, vif, request->ssids,
 				      request->n_ssids,
 				      request->match_sets,
-				      request->n_match_sets);
+				      n_match_sets);
 	if (ret < 0)
 		return ret;
 
-	if (!request->n_match_sets) {
+	if (!n_match_sets) {
 		ret = ath6kl_wmi_bssfilter_cmd(ar->wmi, vif->fw_vif_idx,
 					       ALL_BSS_FILTER, 0);
 		if (ret < 0)
@@ -3274,12 +3291,12 @@ static int ath6kl_cfg80211_sscan_start(struct wiphy *wiphy,
 
 	if (test_bit(ATH6KL_FW_CAPABILITY_RSSI_SCAN_THOLD,
 		     ar->fw_capabilities)) {
-		if (request->rssi_thold <= NL80211_SCAN_RSSI_THOLD_OFF)
+		if (request->min_rssi_thold <= NL80211_SCAN_RSSI_THOLD_OFF)
 			rssi_thold = 0;
-		else if (request->rssi_thold < -127)
+		else if (request->min_rssi_thold < -127)
 			rssi_thold = -127;
 		else
-			rssi_thold = request->rssi_thold;
+			rssi_thold = request->min_rssi_thold;
 
 		ret = ath6kl_wmi_set_rssi_filter_cmd(ar->wmi, vif->fw_vif_idx,
 						     rssi_thold);
@@ -3679,6 +3696,20 @@ err:
 	return NULL;
 }
 
+#ifdef CONFIG_PM
+static const struct wiphy_wowlan_support ath6kl_wowlan_support = {
+	.flags = WIPHY_WOWLAN_MAGIC_PKT |
+		 WIPHY_WOWLAN_DISCONNECT |
+		 WIPHY_WOWLAN_GTK_REKEY_FAILURE  |
+		 WIPHY_WOWLAN_SUPPORTS_GTK_REKEY |
+		 WIPHY_WOWLAN_EAP_IDENTITY_REQ   |
+		 WIPHY_WOWLAN_4WAY_HANDSHAKE,
+	.n_patterns = WOW_MAX_FILTERS_PER_LIST,
+	.pattern_min_len = 1,
+	.pattern_max_len = WOW_PATTERN_SIZE,
+};
+#endif
+
 int ath6kl_cfg80211_init(struct ath6kl *ar)
 {
 	struct wiphy *wiphy = ar->wiphy;
@@ -3772,15 +3803,7 @@ int ath6kl_cfg80211_init(struct ath6kl *ar)
 	wiphy->n_cipher_suites = ARRAY_SIZE(cipher_suites);
 
 #ifdef CONFIG_PM
-	wiphy->wowlan.flags = WIPHY_WOWLAN_MAGIC_PKT |
-			      WIPHY_WOWLAN_DISCONNECT |
-			      WIPHY_WOWLAN_GTK_REKEY_FAILURE  |
-			      WIPHY_WOWLAN_SUPPORTS_GTK_REKEY |
-			      WIPHY_WOWLAN_EAP_IDENTITY_REQ   |
-			      WIPHY_WOWLAN_4WAY_HANDSHAKE;
-	wiphy->wowlan.n_patterns = WOW_MAX_FILTERS_PER_LIST;
-	wiphy->wowlan.pattern_min_len = 1;
-	wiphy->wowlan.pattern_max_len = WOW_PATTERN_SIZE;
+	wiphy->wowlan = &ath6kl_wowlan_support;
 #endif
 
 	wiphy->max_sched_scan_ssids = MAX_PROBED_SSIDS;

@@ -46,6 +46,8 @@ extern struct dentry *arch_debugfs_dir;
 extern const struct file_operations debugfs_file_operations;
 extern const struct inode_operations debugfs_link_operations;
 
+struct dentry *debugfs_lookup(const char *name, struct dentry *parent);
+
 struct dentry *debugfs_create_file(const char *name, umode_t mode,
 				   struct dentry *parent, void *data,
 				   const struct file_operations *fops);
@@ -79,6 +81,8 @@ struct dentry *debugfs_create_x64(const char *name, umode_t mode,
 				  struct dentry *parent, u64 *value);
 struct dentry *debugfs_create_size_t(const char *name, umode_t mode,
 				     struct dentry *parent, size_t *value);
+struct dentry *debugfs_create_atomic_t(const char *name, umode_t mode,
+				     struct dentry *parent, atomic_t *value);
 struct dentry *debugfs_create_bool(const char *name, umode_t mode,
 				  struct dentry *parent, u32 *value);
 
@@ -97,17 +101,34 @@ struct dentry *debugfs_create_u32_array(const char *name, umode_t mode,
 					struct dentry *parent,
 					u32 *array, u32 elements);
 
+struct dentry *debugfs_create_devm_seqfile(struct device *dev, const char *name,
+					   struct dentry *parent,
+					   int (*read_fn)(struct seq_file *s,
+							  void *data));
+
 bool debugfs_initialized(void);
+
+ssize_t debugfs_read_file_bool(struct file *file, char __user *user_buf,
+			       size_t count, loff_t *ppos);
+
+ssize_t debugfs_write_file_bool(struct file *file, const char __user *user_buf,
+				size_t count, loff_t *ppos);
 
 #else
 
 #include <linux/err.h>
 
-/* 
+/*
  * We do not return NULL from these functions if CONFIG_DEBUG_FS is not enabled
  * so users have a chance to detect if there was a real error or not.  We don't
  * want to duplicate the design decision mistakes of procfs and devfs again.
  */
+
+static inline struct dentry *debugfs_lookup(const char *name,
+					    struct dentry *parent)
+{
+	return ERR_PTR(-ENODEV);
+}
 
 static inline struct dentry *debugfs_create_file(const char *name, umode_t mode,
 					struct dentry *parent, void *data,
@@ -228,6 +249,29 @@ static inline struct dentry *debugfs_create_u32_array(const char *name, umode_t 
 					u32 *array, u32 elements)
 {
 	return ERR_PTR(-ENODEV);
+}
+
+static inline struct dentry *debugfs_create_devm_seqfile(struct device *dev,
+							 const char *name,
+							 struct dentry *parent,
+					   int (*read_fn)(struct seq_file *s,
+							  void *data))
+{
+	return ERR_PTR(-ENODEV);
+}
+
+static inline ssize_t debugfs_read_file_bool(struct file *file,
+					     char __user *user_buf,
+					     size_t count, loff_t *ppos)
+{
+	return -ENODEV;
+}
+
+static inline ssize_t debugfs_write_file_bool(struct file *file,
+					      const char __user *user_buf,
+					      size_t count, loff_t *ppos)
+{
+	return -ENODEV;
 }
 
 #endif

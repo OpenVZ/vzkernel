@@ -21,6 +21,7 @@
 #include <linux/path.h>
 #include <linux/key.h>
 #include <linux/skbuff.h>
+#include <rdma/ib_verbs.h>
 
 struct lsm_network_audit {
 	int netif;
@@ -40,6 +41,16 @@ struct lsm_network_audit {
 	} fam;
 };
 
+struct lsm_ibpkey_audit {
+	u64	subnet_prefix;
+	u16	pkey;
+};
+
+struct lsm_ibendport_audit {
+	char	dev_name[IB_DEVICE_NAME_MAX];
+	u8	port;
+};
+
 /* Auxiliary data to use in generating the audit record. */
 struct common_audit_data {
 	char type;
@@ -53,6 +64,9 @@ struct common_audit_data {
 #define LSM_AUDIT_DATA_KMOD	8
 #define LSM_AUDIT_DATA_INODE	9
 #define LSM_AUDIT_DATA_DENTRY	10
+#define LSM_AUDIT_DATA_FILE	11
+#define LSM_AUDIT_DATA_IBPKEY	13
+#define LSM_AUDIT_DATA_IBENDPORT 14
 	union 	{
 		struct path path;
 		struct dentry *dentry;
@@ -68,6 +82,9 @@ struct common_audit_data {
 		} key_struct;
 #endif
 		char *kmod_name;
+		struct file *file;
+		struct lsm_ibpkey_audit *ibpkey;
+		struct lsm_ibendport_audit *ibendport;
 	} u;
 	/* this union contains LSM specific data */
 	union {

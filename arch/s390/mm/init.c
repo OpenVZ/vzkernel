@@ -39,10 +39,11 @@
 #include <asm/ctl_reg.h>
 #include <asm/sclp.h>
 
-pgd_t swapper_pg_dir[PTRS_PER_PGD] __attribute__((__aligned__(PAGE_SIZE)));
+pgd_t swapper_pg_dir[PTRS_PER_PGD] __section(.bss..swapper_pg_dir);
 
 unsigned long empty_zero_page, zero_page_mask;
 EXPORT_SYMBOL(empty_zero_page);
+EXPORT_SYMBOL(zero_page_mask);
 
 static void __init setup_zero_pages(void)
 {
@@ -69,13 +70,17 @@ static void __init setup_zero_pages(void)
 		order = 2;
 		break;
 	case 0x2827:	/* zEC12 */
-	default:
+	case 0x2828:	/* zEC12 */
 		order = 5;
+		break;
+	case 0x2964:	/* z13 */
+	default:
+		order = 7;
 		break;
 	}
 	/* Limit number of empty zero pages for small memory sizes */
-	if (order > 2 && totalram_pages <= 16384)
-		order = 2;
+	while (order > 2 && (totalram_pages >> 10) < (1UL << order))
+		order--;
 
 	empty_zero_page = __get_free_pages(GFP_KERNEL | __GFP_ZERO, order);
 	if (!empty_zero_page)
@@ -112,7 +117,8 @@ void __init paging_init(void)
 	asce_bits = _ASCE_TABLE_LENGTH;
 	pgd_type = _SEGMENT_ENTRY_EMPTY;
 #endif
-	S390_lowcore.kernel_asce = (__pa(init_mm.pgd) & PAGE_MASK) | asce_bits;
+	init_mm.context.asce = (__pa(init_mm.pgd) & PAGE_MASK) | asce_bits;
+	S390_lowcore.kernel_asce = init_mm.context.asce;
 	clear_table((unsigned long *) init_mm.pgd, pgd_type,
 		    sizeof(unsigned long)*2048);
 	vmem_map_init();
@@ -166,6 +172,9 @@ void __init mem_init(void)
 
 void free_initmem(void)
 {
+	__set_memory((unsigned long) _sinittext,
+		     (_einittext - _sinittext) >> PAGE_SHIFT,
+		     SET_MEMORY_RW | SET_MEMORY_NX);
 	free_initmem_default(0);
 }
 
@@ -177,7 +186,13 @@ void __init free_initrd_mem(unsigned long start, unsigned long end)
 #endif
 
 #ifdef CONFIG_MEMORY_HOTPLUG
-int arch_add_memory(int nid, u64 start, u64 size)
+int add_pages(int nid, unsigned long start,
+	      unsigned long size, bool for_device)
+{
+	return -EINVAL;
+}
+
+int arch_add_memory(int nid, u64 start, u64 size, bool for_device)
 {
 	unsigned long zone_start_pfn, zone_end_pfn, nr_pages;
 	unsigned long start_pfn = PFN_DOWN(start);

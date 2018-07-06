@@ -353,3 +353,37 @@ SYSCALL(sys_process_vm_writev,sys_process_vm_writev,compat_sys_process_vm_writev
 SYSCALL(sys_ni_syscall,sys_s390_runtime_instr,sys_s390_runtime_instr_wrapper)
 SYSCALL(sys_kcmp,sys_kcmp,sys_kcmp_wrapper)
 SYSCALL(sys_finit_module,sys_finit_module,sys_finit_module_wrapper)
+SYSCALL(sys_sched_setattr,sys_sched_setattr,sys_sched_setattr_wrapper) /* 345 */
+SYSCALL(sys_sched_getattr,sys_sched_getattr,sys_sched_getattr_wrapper)
+NI_SYSCALL					/* 347 sys_renameat2 */
+SYSCALL(sys_seccomp,sys_seccomp,sys_seccomp_wrapper)
+SYSCALL(sys_getrandom,sys_getrandom,sys_getrandom_wrapper)
+SYSCALL(sys_memfd_create,sys_memfd_create,sys_memfd_create_wrapper) /* 350 */
+NI_SYSCALL					/* 351 sys_bpf */
+SYSCALL(sys_ni_syscall,sys_s390_pci_mmio_write,sys_s390_pci_mmio_write_wrapper)
+SYSCALL(sys_ni_syscall,sys_s390_pci_mmio_read,sys_s390_pci_mmio_read_wrapper)
+NI_SYSCALL					/* 354 sys_execveat */
+NI_SYSCALL					/* 355 sys_userfaultfd */
+NI_SYSCALL					/* 356 sys_membarrier */
+NI_SYSCALL					/* 357 sys_recvmmsg */
+NI_SYSCALL					/* 358 sys_sendmmsg */
+SYSCALL(sys_socket,sys_socket,sys_socket)
+NI_SYSCALL					/* 360 sys_socketpair */
+SYSCALL(sys_bind,sys_bind,sys_bind_wrapper)
+SYSCALL(sys_connect,sys_connect,sys_connect_wrapper)
+NI_SYSCALL					/* 363 sys_listen */
+NI_SYSCALL					/* 364 sys_accept4 */
+SYSCALL(sys_getsockopt,compat_sys_getsockopt,sys_getsockopt_wrapper)	/* 365 */
+SYSCALL(sys_setsockopt,compat_sys_setsockopt,sys_setsockopt_wrapper)
+NI_SYSCALL					/* 367 sys_getsockname */
+NI_SYSCALL					/* 368 sys_getpeername */
+SYSCALL(sys_sendto,sys_sendto,sys_sendto_wrapper)
+SYSCALL(sys_sendmsg,sys_sendmsg,sys_sendmsg_wrapper)	/* 370 */
+SYSCALL(sys_recvfrom,sys_recvfrom,sys_recvfrom_wrapper)
+SYSCALL(sys_recvmsg,sys_recvmsg,sys_recvmsg_wrapper)
+SYSCALL(sys_shutdown,sys_shutdown,sys_shutdown)
+NI_SYSCALL					/* 374 sys_mlock2 */
+SYSCALL(sys_copy_file_range,sys_copy_file_range,sys_copy_file_range_wrapper) /* 375 */
+NI_SYSCALL
+NI_SYSCALL
+SYSCALL(sys_s390_guarded_storage,sys_s390_guarded_storage,sys_s390_guarded_storage_wrapper) /* 378 */
