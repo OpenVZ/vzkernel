@@ -321,33 +321,27 @@ out:
 		u64 size;
 
 		inode_lock(inode);
-
 		spin_lock(&fi->lock);
-		atomic_inc(&fi->num_openers);
 
-		if (atomic_read(&fi->num_openers) == 1) {
+		if (atomic_inc_return(&fi->num_openers) == 1) {
 			fi->i_size_unstable = 1;
 			spin_unlock(&fi->lock);
 			err = fuse_getattr_size(inode, file, &size);
-			if (err) {
-				spin_lock(&fi->lock);
-				atomic_dec(&fi->num_openers);
-				fi->i_size_unstable = 0;
-				spin_unlock(&fi->lock);
-
-				inode_unlock(inode);
-				fuse_release_common(file, FUSE_RELEASE);
-				return err;
-			}
-
 			spin_lock(&fi->lock);
-			i_size_write(inode, size);
 			fi->i_size_unstable = 0;
-			spin_unlock(&fi->lock);
-		} else
-			spin_unlock(&fi->lock);
+			if (err)
+				atomic_dec(&fi->num_openers);
+			else
+				i_size_write(inode, size);
+		}
 
+		spin_unlock(&fi->lock);
 		inode_unlock(inode);
+
+		if (err) {
+			fuse_release_common(file, false);
+			return err;
+		}
 	}
 
 	return err;
