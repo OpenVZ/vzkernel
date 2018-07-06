@@ -296,18 +296,8 @@ static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct ino
 	      fi->nodeid, di->fileinfo.sys.chunk_size,
 	      di->fileinfo.sys.stripe_depth, di->fileinfo.sys.strip_width);
 
-	mutex_lock(&inode->i_mutex);
-	/* Some one already initialized it under us ? */
-	if (fi->private) {
-		mutex_unlock(&inode->i_mutex);
-		pcs_mapping_invalidate(&di->mapping);
-		pcs_mapping_deinit(&di->mapping);
-		kfree(di);
-		return 0;
-	}
 	ret = fuse_pcs_kdirect_claim_op(fc, file, true);
 	if (ret) {
-		mutex_unlock(&inode->i_mutex);
 		pcs_mapping_invalidate(&di->mapping);
 		pcs_mapping_deinit(&di->mapping);
 		kfree(di);
@@ -315,21 +305,31 @@ static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct ino
 	}
 	/* TODO: Propper initialization of dentry should be here!!! */
 	fi->private = di;
-	mutex_unlock(&inode->i_mutex);
 	return 0;
 }
 
 int kpcs_file_open(struct fuse_conn *fc, struct file *file, struct inode *inode)
 {
 	struct fuse_inode *fi = get_fuse_inode(inode);
+	struct pcs_dentry_info *di = fi->private;
+	struct pcs_mds_fileinfo info;
+	int ret;
 
 	if (!S_ISREG(inode->i_mode))
 		return 0;
 	if (fi->nodeid - FUSE_ROOT_ID >= PCS_FUSE_INO_SPECIAL_)
 		return 0;
-	/* Already initialized */
-	if (fi->private) {
+
+	lockdep_assert_held(&inode->i_mutex);
+	/* Already initialized. Update file size etc */
+	if (di) {
 		/*TODO: propper refcount for claim_cnt should be here */
+		ret = fuse_pcs_getfileinfo(fc, file, &info);
+		if (ret)
+			return ret;
+		spin_lock(&di->lock);
+		pcs_set_fileinfo(di, &info);
+		spin_unlock(&di->lock);
 		return 0;
 	}
 	return kpcs_do_file_open(fc, file, inode);
