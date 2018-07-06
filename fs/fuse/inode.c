@@ -1365,11 +1365,12 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 	fc->max_read = max_t(unsigned, 4096, d.max_read);
 	fc->writeback_cache = d.writeback_cache;
 	if (fc->flags & FUSE_KDIRECT_IO) {
-		fc->kio.op = fuse_kio_get(fc, d.kio_name);
-		if (!fc->kio.op) {
-			err = -EINVAL;
+		err = -EINVAL;
+		if (!fc->writeback_cache)
 			goto err_dev_free;
-		}
+		fc->kio.op = fuse_kio_get(fc, d.kio_name);
+		if (!fc->kio.op)
+			goto err_dev_free;
 	}
 	/* Used by get_root_inode() */
 	sb->s_fs_info = fc;
