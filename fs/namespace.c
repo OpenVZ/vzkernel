@@ -250,8 +250,8 @@ static struct mount *alloc_vfsmnt(const char *name)
 		INIT_HLIST_NODE(&mnt->mnt_mp_list);
 		INIT_LIST_HEAD(&mnt->mnt_umounting);
 		init_fs_pin(&mnt->mnt_umount, drop_mountpoint);
+		ve_mount_nr_inc(mnt);
 	}
-	ve_mount_nr_inc(mnt);
 	return mnt;
 
 #ifdef CONFIG_SMP
