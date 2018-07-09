@@ -2560,7 +2560,8 @@ static int commit_cs_record(struct pcs_map_entry * m, struct pcs_cs_record * rec
 
 	BUG_ON(srec->dirty_integrity && srec->dirty_integrity != sync->integrity_seq);
 
-	dirtify = (op_type == PCS_CS_WRITE_SYNC_RESP || op_type == PCS_CS_WRITE_RESP);
+	dirtify = (op_type == PCS_CS_WRITE_SYNC_RESP || op_type == PCS_CS_WRITE_RESP ||
+		   op_type == PCS_CS_WRITE_HOLE_RESP || op_type == PCS_CS_WRITE_ZERO_RESP);
 	/* The following looks scary, could be more clear.
 	 * The goal is to update sync seq numbers:
 	 *
