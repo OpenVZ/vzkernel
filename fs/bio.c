@@ -39,8 +39,6 @@
 #define BIO_INLINE_VECS		4
 
 static mempool_t *bio_split_pool __read_mostly;
-static struct bio_set *bio_pair2_bio1_set __read_mostly;
-static struct bio_set *bio_pair2_bio2_set __read_mostly;
 
 /*
  * if you change this list, also change bvec_alloc or things will
@@ -1965,68 +1963,6 @@ struct bio_pair *bio_split(struct bio *bi, int first_sectors)
 }
 EXPORT_SYMBOL(bio_split);
 
-void bio_pair2_release(struct bio_pair2 *bp)
-{
-	if (atomic_dec_and_test(&bp->cnt)) {
-		struct bio *master = bp->master_bio;
-
-		bio_endio(master, bp->error);
-		bio_put(&bp->__bio);
-	}
-}
-EXPORT_SYMBOL(bio_pair2_release);
-
-static void bio_pair2_end(struct bio *bi, int err)
-{
-	struct bio_pair2 *bp = bi->bi_private;
-
-	if (err)
-		bp->error = err;
-
-	if (bi == bp->bio2)
-		bio_put(bi);
-	bio_pair2_release(bp);
-}
-
-/*
- * split one bio into two
- */
-struct bio_pair2 *bio_split2(struct bio *bi, int first_sectors)
-{
-	struct bio_pair2 *bp;
-	struct bio *bio1;
-
-	trace_block_split(bdev_get_queue(bi->bi_bdev), bi,
-				bi->bi_sector + first_sectors);
-
-	bio1 = bio_clone_bioset(bi, GFP_NOIO, bio_pair2_bio1_set);
-	if (!bio1)
-		return NULL;
-
-	bp = container_of(bio1, struct bio_pair2, __bio);
-	bp->bio1 = bio1;
-
-	bp->bio2 = bio_clone_bioset(bi, GFP_NOIO, bio_pair2_bio2_set);
-	if (!bp->bio2) {
-		bio_put(bio1);
-		return NULL;
-	}
-
-	atomic_set(&bp->cnt, 3);
-	bp->error = 0;
-
-	bio_trim(bp->bio1, 0, first_sectors);
-	bio_trim(bp->bio2, bio_sectors(bp->bio1),
-			(bio_sectors(bi) - bio_sectors(bp->bio1)));
-
-	bp->master_bio = bi;
-	bp->bio1->bi_end_io  = bp->bio2->bi_end_io  = bio_pair2_end;
-	bp->bio1->bi_private = bp->bio2->bi_private = bp;
-
-	return bp;
-}
-EXPORT_SYMBOL(bio_split2);
-
 /**
  * bio_trim - trim a bio
  * @bio:	bio to trim
@@ -2315,15 +2251,6 @@ static int __init init_bio(void)
 						     sizeof(struct bio_pair));
 	if (!bio_split_pool)
 		panic("bio: can't create split pool\n");
-
-	/* for supporting bio_split2 */
-	bio_pair2_bio1_set = bioset_create(BIO_POOL_SIZE,
-					   offsetof(struct bio_pair2, __bio));
-	if (!bio_pair2_bio1_set)
-		panic("bio: can't allocate bios for bio_pair2\n");
-	bio_pair2_bio2_set = bioset_create(BIO_POOL_SIZE, 0);
-	if (!bio_pair2_bio2_set)
-		panic("bio: can't allocate bios for bio_pair2\n");
 
 	return 0;
 }

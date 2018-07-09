@@ -200,23 +200,6 @@ struct bio_integrity_payload {
 #endif /* CONFIG_BLK_DEV_INTEGRITY */
 
 /*
- * A bio_pair2 is used when we need to split a bio. This can be used for
- * splitting any bios, but only for addressing some corner cases, such as
- * some unusual MD queues with variable max_hw_sectors limit, like linear,
- * faulty and multipath MD.
- *
- * bio1 points to the embedded __bio for saving one allocation.
- */
-struct bio_pair2 {
-	struct bio			*master_bio, *bio1, *bio2;
-	atomic_t			cnt;
-	int				error;
-	struct bio			__bio;
-};
-extern struct bio_pair2 *bio_split2(struct bio *bi, int first_sectors);
-extern void bio_pair2_release(struct bio_pair2 *dbio);
-
-/*
  * A bio_pair is used when we need to split a bio.
  * This can only happen for a bio that refers to just one
  * page of data, and in the unusual situation when the
