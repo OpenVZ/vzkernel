@@ -140,7 +140,7 @@ int pcs_cc_init(struct pcs_cluster_core *cc, struct workqueue_struct *wq,
 	pcs_rpc_init_gc(&cc->eng, 1024);
 	if (attr) {
 		pcs_rpc_set_cluster_id(&cc->eng, &attr->cluster);
-		pcs_rpc_set_host_id(&cc->eng, &attr->node);
+		pcs_rpc_set_local_id(&cc->eng, &attr->node);
 		if (attr->abort_timeout_ms)
 			pcs_cc_set_abort_timeout(cc, attr->abort_timeout_ms);
 	}
