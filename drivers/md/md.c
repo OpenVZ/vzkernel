@@ -5493,8 +5493,6 @@ int md_run(struct mddev *mddev)
 		mddev->queue->backing_dev_info.congested_data = mddev;
 		mddev->queue->backing_dev_info.congested_fn = md_congested;
 		blk_queue_merge_bvec(mddev->queue, md_mergeable_bvec);
-
-		mddev->queue->can_split_bio = 1;
 	}
 	if (pers->sync_request) {
 		if (mddev->kobj.sd &&

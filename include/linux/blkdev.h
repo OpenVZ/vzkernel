@@ -571,9 +571,6 @@ struct request_queue {
 	 * is for avoiding IO hang in blk_mq_queue_reinit_notify().
 	 */
 	RH_KABI_EXTEND(unsigned int         tail_queue:1)
-
-	/* This flag is set if the driver can split bio */
-	RH_KABI_EXTEND(unsigned int         can_split_bio:1)
 #ifdef CONFIG_BLK_DEBUG_FS
 	RH_KABI_EXTEND(struct dentry		*debugfs_dir)
 	RH_KABI_EXTEND(struct dentry		*sched_debugfs_dir)

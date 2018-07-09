@@ -174,21 +174,6 @@ static bool faulty_make_request(struct mddev *mddev, struct bio *bio)
 {
 	struct faulty_conf *conf = mddev->private;
 	int failit = 0;
-	unsigned int max_sectors = blk_queue_get_max_sectors(mddev->queue,
-			bio->bi_rw);
-
-	if (bio_sectors(bio) > max_sectors) {
-		struct bio_pair2 *bp = bio_split2(bio, max_sectors);
-		if (!bp) {
-			bio_io_error(bio);
-			return true;
-		}
-
-		faulty_make_request(mddev, bp->bio1);
-		faulty_make_request(mddev, bp->bio2);
-		bio_pair2_release(bp);
-		return true;
-	}
 
 	if (bio_data_dir(bio) == WRITE) {
 		/* write request */
