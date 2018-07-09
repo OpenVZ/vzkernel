@@ -941,9 +941,15 @@ void pcs_rpc_call(struct pcs_rpc * ep, struct pcs_msg * msg)
 
 	pcs_rpc_queue(ep, clone);
 }
+
 /* TODO: This pace may not scale well, in fact xid should be unique only
-   across RPC so it may be reasonable to make it percpu
-*/
+ * across RPC so it may be reasonable to make it percpu
+ *
+ * Nope. The comment above is wrong. Not deleted just to ensure this question
+ * is not reraised in future. XIDs are unique per client, not per rpc endpoint.
+ * The reason that messages go through a path in the cluster. And we must ensure
+ * messages with the same xid do not meet at some node in the path.
+ */
 void pcs_rpc_get_new_xid(struct pcs_rpc_engine *eng, PCS_XID_T *xid)
 {
 	xid->origin = eng->local_id;
@@ -1224,6 +1230,12 @@ void pcs_rpc_engine_fini(struct pcs_rpc_engine * eng)
 		BUG_ON(list_lru_count(&eng->gc[i].lru));
 		list_lru_destroy(&eng->gc[i].lru);
 	}
+}
+
+void pcs_rpc_set_local_id(struct pcs_rpc_engine *eng, PCS_NODE_ID_T *id)
+{
+	eng->local_id = *id;
+	eng->flags |= PCS_KNOWN_MYID;
 }
 
 void pcs_rpc_set_host_id(struct pcs_rpc_engine *eng, PCS_NODE_ID_T *host_id)

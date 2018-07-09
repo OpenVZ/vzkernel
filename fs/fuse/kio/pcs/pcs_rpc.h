@@ -207,6 +207,7 @@ void pcs_rpc_engine_fini(struct pcs_rpc_engine * eng);
 void pcs_rpc_init_gc(struct pcs_rpc_engine * eng, unsigned int limit);
 void pcs_rpc_get_new_xid(struct pcs_rpc_engine *eng, PCS_XID_T *xid);
 
+void pcs_rpc_set_local_id(struct pcs_rpc_engine *eng, PCS_NODE_ID_T *id);
 void pcs_rpc_set_cluster_id(struct pcs_rpc_engine * eng, PCS_CLUSTER_ID_T * id);
 void pcs_rpc_set_host_id(struct pcs_rpc_engine *eng, PCS_NODE_ID_T *host_id);
 
