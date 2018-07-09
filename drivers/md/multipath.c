@@ -111,24 +111,9 @@ static bool multipath_make_request(struct mddev *mddev, struct bio * bio)
 	struct mpconf *conf = mddev->private;
 	struct multipath_bh * mp_bh;
 	struct multipath_info *multipath;
-	unsigned int max_sectors = blk_queue_get_max_sectors(mddev->queue,
-			bio->bi_rw);
 
 	if (unlikely(bio->bi_rw & REQ_FLUSH)) {
 		md_flush_request(mddev, bio);
-		return true;
-	}
-
-	if (bio_sectors(bio) > max_sectors) {
-		struct bio_pair2 *bp = bio_split2(bio, max_sectors);
-		if (!bp) {
-			bio_io_error(bio);
-			return true;
-		}
-
-		multipath_make_request(mddev, bp->bio1);
-		multipath_make_request(mddev, bp->bio2);
-		bio_pair2_release(bp);
 		return true;
 	}
 

@@ -2032,8 +2032,7 @@ generic_make_request_checks(struct bio *bio)
 	}
 
 	if (likely(bio_is_rw(bio) &&
-		   (nr_sectors > queue_max_hw_sectors(q)) &&
-		   !q->can_split_bio)) {
+		   nr_sectors > queue_max_hw_sectors(q))) {
 		printk(KERN_ERR "bio too big device %s (%u > %u)\n",
 		       bdevname(bio->bi_bdev, b),
 		       bio_sectors(bio),
