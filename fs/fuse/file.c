@@ -3477,7 +3477,10 @@ static ssize_t fuse_direct_IO_bvec(int rw, struct kiocb *iocb,
 	int i;
 
 	/* TODO: File extension is not yet implemented */
-	BUG_ON(offset + bvec_length(bvec, bvec_len) > i_size);
+	if (offset + bvec_length(bvec, bvec_len) > i_size) {
+		WARN_ONCE(1, "fuse: file extension is not implemented yet\n");
+		return -EINVAL;
+	}
 
 	if (nmax > FUSE_MAX_PAGES_PER_REQ << PAGE_SHIFT)
 		nmax = FUSE_MAX_PAGES_PER_REQ << PAGE_SHIFT;
