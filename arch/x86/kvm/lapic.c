@@ -2187,7 +2187,7 @@ int kvm_get_apic_interrupt(struct kvm_vcpu *vcpu)
 	 */
 
 	apic_clear_irr(vector, apic);
-	if (0 /* test_bit(vector, vcpu_to_synic(vcpu)->auto_eoi_bitmap) */) {
+	if (test_bit(vector, vcpu_to_synic(vcpu)->auto_eoi_bitmap)) {
 		/*
 		 * For auto-EOI interrupts, there might be another pending
 		 * interrupt above PPR, so check whether to raise another
