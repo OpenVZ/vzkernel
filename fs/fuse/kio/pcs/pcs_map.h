@@ -237,12 +237,12 @@ static inline void pcs_map_put_locked(struct pcs_map_entry *m)
 
 static inline bool pcs_map_get_locked(struct pcs_map_entry *m)
 {
-	TRACE( MAP_FMT " refcnt:%d\n", MAP_ARGS(m), atomic_read(&m->__refcnt));
 	BUG_ON(atomic_read(&m->__refcnt) < 0);
 
-	if (m->state & PCS_MAP_DEAD) {
+	if (m->state & PCS_MAP_DEAD)
 		return 0;
-	}
+
+	TRACE( MAP_FMT " refcnt:%d\n", MAP_ARGS(m), atomic_read(&m->__refcnt));
 
 	if (atomic_inc_return(&m->__refcnt) == 1)
 		map_del_lru(m);
