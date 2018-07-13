@@ -717,7 +717,7 @@ static int fuse_create_open(struct inode *dir, struct dentry *entry,
 
 		inode_lock(inode);
 		spin_lock(&fi->lock);
-		need_open = (atomic_inc_return(&fi->num_openers) == 1);
+		need_open = (++fi->num_openers == 1);
 		spin_unlock(&fi->lock);
 
 		if (need_open && fm->fc->kio.op && fm->fc->kio.op->file_open) {
