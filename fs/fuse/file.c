@@ -322,7 +322,7 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 
 		spin_lock(&fi->lock);
 
-		if (atomic_inc_return(&fi->num_openers) == 1) {
+		if (++fi->num_openers == 1) {
 			fi->i_size_unstable = 1;
 			spin_unlock(&fi->lock);
 			err = fuse_getattr_size(inode, file, &size);
@@ -333,7 +333,7 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 			spin_lock(&fi->lock);
 			fi->i_size_unstable = 0;
 			if (err)
-				atomic_dec(&fi->num_openers);
+				fi->num_openers--;
 			else
 				i_size_write(inode, size);
 		}
@@ -468,15 +468,10 @@ static int fuse_release(struct inode *inode, struct file *file)
 		else
 			wait_event(fi->page_waitq, atomic_read(&ff->count) == 1);
 
-		/* Wait for threads just released ff to leave their critical sections.
-		 * Taking spinlock is the first thing fuse_release_common does, so that
-		 * this is unneseccary, but it is still good to emphasize right here,
-		 * that we need this.
-		 */
-		spin_unlock_wait(&fi->lock);
-
+		spin_lock(&fi->lock);
 		/* since now we can trust userspace attr.size */
-		atomic_dec(&fi->num_openers);
+		fi->num_openers--;
+		spin_unlock(&fi->lock);
 	} else if (ff->fc->close_wait)
 		wait_event(fi->page_waitq, atomic_read(&ff->count) == 1);
 
