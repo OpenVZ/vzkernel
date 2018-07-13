@@ -2945,6 +2945,28 @@ bypass:
 	return -EINTR;
 
 done_restock:
+
+	/*
+	 * Cancel charge in case if cgroup was offlined while we were here,
+	 * otherwise we can get a pending user memory charge to an offline
+	 * cgroup, which might race with reparanting in mem_cgroup_css_offline()
+	 * and result in hang.
+	 *
+	 * Note, no need to issue an explicit barrier here, because a
+	 * successful charge implies full memory barrier.
+	 */
+	if (unlikely(memcg->is_offline)) {
+		page_counter_uncharge(&memcg->memory, batch);
+		if (do_swap_account)
+			page_counter_uncharge(&memcg->memsw, batch);
+		if (cache_charge)
+			page_counter_uncharge(&memcg->cache, nr_pages);
+		if (kmem_charge)
+			page_counter_uncharge(&memcg->kmem, nr_pages);
+
+		goto bypass;
+	}
+
 	if (batch > nr_pages)
 		refill_stock(memcg, batch - nr_pages);
 done:
