@@ -137,7 +137,7 @@ struct fuse_inode {
 	spinlock_t lock;
 
 	/** Mostly to detect very first open */
-	atomic_t num_openers;
+	int num_openers;
 
 	/** Even though num_openers>0, trust server i_size */
 	int i_size_unstable;
