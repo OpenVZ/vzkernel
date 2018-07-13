@@ -1065,8 +1065,8 @@ void pcs_map_complete(struct pcs_map_entry *m, struct pcs_ioc_getmap *omap)
 
 	spin_lock(&m->lock);
 
-	TRACE(" recv m: " MAP_FMT " resp{ st:%d, err:%d, v:" VER_FMT "}\n",
-	       MAP_ARGS(m), omap->state, omap->error.value, VER_ARGS(omap->version));
+	TRACE(" recv m:%p, state:%x resp{ st:%d, err:%d, v:" VER_FMT "}\n",
+	      m, m->state, omap->state, omap->error.value, VER_ARGS(omap->version));
 
 	if (pcs_if_error(&omap->error))
 		goto error;
@@ -1075,6 +1075,7 @@ void pcs_map_complete(struct pcs_map_entry *m, struct pcs_ioc_getmap *omap)
 		spin_unlock(&m->lock);
 		goto out_ignore;
 	}
+	TRACE("dentry: "DENTRY_FMT, DENTRY_ARGS(pcs_dentry_from_map(m)));
 
 	error_sensed = m->state & PCS_MAP_ERROR;
 
@@ -1203,7 +1204,7 @@ static void pcs_map_queue_resolve(struct pcs_map_entry * m, struct pcs_int_reque
 	LIST_HEAD(l);
 	int ret;
 
-	DTRACE("enter m: " MAP_FMT ", ireq:%p dir:%d \n", MAP_ARGS(m), ireq,   direction);
+	DTRACE("enter m:%p, state:%x, ireq:%p dir:%d \n", m, m->state, ireq, direction);
 
 	spin_lock(&m->lock);
 	/* This should not happen unless aio_dio/fsync vs truncate race */
@@ -1213,6 +1214,7 @@ static void pcs_map_queue_resolve(struct pcs_map_entry * m, struct pcs_int_reque
 		pcs_ireq_queue_fail(&l, PCS_ERR_NET_ABORT);
 		return;
 	}
+	DTRACE("dentry: "DENTRY_FMT, DENTRY_ARGS(pcs_dentry_from_map(m)));
 	DTRACE("%p {%p %p}\n",ireq,  ireq->list.next, ireq->list.prev);
 	BUG_ON(!list_empty(&ireq->list));
 
