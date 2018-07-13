@@ -2572,7 +2572,7 @@ static inline int ve_mount_allowed(void)
 {
 	struct ve_struct *ve = get_exec_env();
 
-	return ve_is_super(ve) ||
+	return ve_is_super(ve) || ve->is_pseudosuper ||
 		atomic_read(&ve->mnt_nr) < (int)sysctl_ve_mount_nr;
 }
 
