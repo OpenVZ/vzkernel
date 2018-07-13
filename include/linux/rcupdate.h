@@ -547,13 +547,13 @@ static inline void rcu_preempt_sleep_check(void)
 
 #define __rcu_access_pointer(p, space) \
 	({ \
-		typeof(*p) *_________p1 = (typeof(*p)*__force )ACCESS_ONCE(p); \
+		typeof(*p) *_________p1 = (typeof(*p)*__force )READ_ONCE(p); \
 		rcu_dereference_sparse(p, space); \
 		((typeof(*p) __force __kernel *)(_________p1)); \
 	})
 #define __rcu_dereference_check(p, c, space) \
 	({ \
-		typeof(*p) *_________p1 = (typeof(*p)*__force )ACCESS_ONCE(p); \
+		typeof(*p) *_________p1 = (typeof(*p)*__force )READ_ONCE(p); \
 		rcu_lockdep_assert(c, "suspicious rcu_dereference_check()" \
 				      " usage"); \
 		rcu_dereference_sparse(p, space); \
@@ -570,13 +570,13 @@ static inline void rcu_preempt_sleep_check(void)
 
 #define __rcu_access_index(p, space) \
 	({ \
-		typeof(p) _________p1 = ACCESS_ONCE(p); \
+		typeof(p) _________p1 = READ_ONCE(p); \
 		rcu_dereference_sparse(p, space); \
 		(_________p1); \
 	})
 #define __rcu_dereference_index_check(p, c) \
 	({ \
-		typeof(p) _________p1 = ACCESS_ONCE(p); \
+		typeof(p) _________p1 = READ_ONCE(p); \
 		rcu_lockdep_assert(c, \
 				   "suspicious rcu_dereference_index_check()" \
 				   " usage"); \
@@ -594,7 +594,7 @@ static inline void rcu_preempt_sleep_check(void)
  * @p: The pointer to read
  *
  * Return the value of the specified RCU-protected pointer, but omit the
- * smp_read_barrier_depends() and keep the ACCESS_ONCE().  This is useful
+ * smp_read_barrier_depends() and keep the READ_ONCE().  This is useful
  * when the value of this pointer is accessed, but the pointer is not
  * dereferenced, for example, when testing an RCU-protected pointer against
  * NULL.  Although rcu_access_pointer() may also be used in cases where
@@ -683,7 +683,7 @@ static inline void rcu_preempt_sleep_check(void)
  * @p: The index to read
  *
  * Return the value of the specified RCU-protected index, but omit the
- * smp_read_barrier_depends() and keep the ACCESS_ONCE().  This is useful
+ * smp_read_barrier_depends() and keep the READ_ONCE().  This is useful
  * when the value of this index is accessed, but the index is not
  * dereferenced, for example, when testing an RCU-protected index against
  * -1.  Although rcu_access_index() may also be used in cases where
@@ -719,7 +719,7 @@ static inline void rcu_preempt_sleep_check(void)
  * @c: The conditions under which the dereference will take place
  *
  * Return the value of the specified RCU-protected pointer, but omit
- * both the smp_read_barrier_depends() and the ACCESS_ONCE().  This
+ * both the smp_read_barrier_depends() and the READ_ONCE().  This
  * is useful in cases where update-side locks prevent the value of the
  * pointer from changing.  Please note that this primitive does -not-
  * prevent the compiler from repeating this reference or combining it
