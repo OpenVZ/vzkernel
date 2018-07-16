@@ -16,6 +16,7 @@ struct mnt_namespace {
 	u64 event;
 	RH_KABI_EXTEND(unsigned int	mounts) /* # of mounts in the namespace */
 	RH_KABI_EXTEND(unsigned int	pending_mounts)
+	struct list_head	mntns_list;
 };
 
 struct mnt_pcp {
