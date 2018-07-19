@@ -26,6 +26,7 @@
 #include "pcs_rpc.h"
 #include "pcs_cluster.h"
 #include "log.h"
+#include "fuse_ktrace.h"
 
 static void timer_work(struct work_struct *w);
 static int rpc_gc_classify(struct pcs_rpc * ep);
@@ -163,8 +164,8 @@ void rpc_abort(struct pcs_rpc * ep, int fatal, int error)
 	while (!list_empty(&ep->pending_queue)) {
 		struct pcs_msg * msg = list_first_entry(&ep->pending_queue, struct pcs_msg, list);
 		list_move_tail(&msg->list, &failed_list);
-		TRACE("aborted msg to " PEER_FMT ", tmo=%d, err=%d, %ld", PEER_ARGS(ep),
-		      msg->timeout, error, (long)(msg->start_time + msg->timeout - jiffies));
+		FUSE_KTRACE(cc_from_rpc(ep->eng)->fc, "aborted msg to " PEER_FMT ", tmo=%d, err=%d, %ld", PEER_ARGS(ep),
+			    msg->timeout, error, (long)(msg->start_time + msg->timeout - jiffies));
 		pcs_msg_del_calendar(msg);
 		msg->stage = PCS_MSG_STAGE_NONE;
 	}
@@ -172,8 +173,8 @@ void rpc_abort(struct pcs_rpc * ep, int fatal, int error)
 		while (!list_empty(&ep->state_queue)) {
 			struct pcs_msg * msg = list_first_entry(&ep->state_queue, struct pcs_msg, list);
 			list_move_tail(&msg->list, &failed_list);
-			TRACE("aborted unsent msg to " PEER_FMT ", tmo=%d, err=%d", PEER_ARGS(ep),
-			      msg->timeout, error);
+			FUSE_KTRACE(cc_from_rpc(ep->eng)->fc, "aborted unsent msg to " PEER_FMT ", tmo=%d, err=%d", PEER_ARGS(ep),
+				    msg->timeout, error);
 			pcs_msg_del_calendar(msg);
 			msg->stage = PCS_MSG_STAGE_NONE;
 		}
@@ -432,7 +433,7 @@ static void handle_keep_waiting(struct pcs_rpc * ep, struct pcs_msg * msg)
 	if (h->hdr.len < sizeof(struct pcs_rpc_keep_waiting))
 		return;
 
-	TRACE("Received keep wait from " NODE_FMT " for request " XID_FMT,
+	FUSE_KTRACE(cc_from_rpc(ep->eng)->fc, "Received keep wait from " NODE_FMT " for request " XID_FMT,
 	      NODE_ARGS(h->hdr.xid.origin), XID_ARGS(h->xid));
 
 	req = pcs_rpc_lookup_xid(ep, &h->xid);
@@ -507,7 +508,7 @@ struct pcs_msg *rpc_get_hdr(struct pcs_sockio * sio, u32 *msg_size)
 
 	/* Fatal stream format error */
 	if (h->len < sizeof(struct pcs_rpc_hdr) || h->len > ep->params.max_msg_size) {
-		pcs_log(0, "Bad message header %u %u\n", h->len, h->type);
+		FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR, "Bad message header %u %u\n", h->len, h->type);
 		return NULL;
 	}
 
@@ -522,14 +523,12 @@ struct pcs_msg *rpc_get_hdr(struct pcs_sockio * sio, u32 *msg_size)
 		next_input = rpc_work_input;
 		break;
 	default:
-		pcs_log(0, "Received msg in bad state %u\n", ep->state);
-		BUG();
+		FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR, "Received msg in bad state %u\n", ep->state);
 		return NULL;
-
 	}
 
 	if (h->len > PAGE_SIZE) {
-		pcs_log(0, "Received too big msg  %u\n", h->len);
+		FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR, "Received too big msg  %u\n", h->len);
 		return PCS_TRASH_MSG;
 	}
 
@@ -653,7 +652,7 @@ static void calendar_work(struct work_struct *w)
 		struct pcs_rpc_hdr * h = (struct pcs_rpc_hdr *)msg_inline_head(msg);
 
 		(void)h;
-		TRACE("killing msg to " PEER_FMT " type=%u xid=" XID_FMT " stage=%d tmo=%d exp=%ld rem=%ld\n",
+		FUSE_KTRACE(cc->fc, "killing msg to " PEER_FMT " type=%u xid=" XID_FMT " stage=%d tmo=%d exp=%ld rem=%ld\n",
 		      PEER_ARGS(msg->rpc), h->type, XID_ARGS(h->xid),
 		      msg->stage, msg->timeout,
 		      (long)(msg->start_time + msg->timeout - jiffies),
@@ -693,8 +692,8 @@ static void calendar_work(struct work_struct *w)
 		count++;
 	}
 	if (count)
-		printk("%s %d messages to "PEER_FMT" destroyed\n", __FUNCTION__,
-		       count, PEER_ARGS(ep));
+		trace_printk("%s %d messages to "PEER_FMT" destroyed\n", __FUNCTION__,
+			     count, PEER_ARGS(ep));
 
 	for (i=0; i < RPC_MAX_CALENDAR-1; i++) {
 		kill_slot = (ep->kill_arrow  + i) & (RPC_MAX_CALENDAR - 1);
@@ -969,18 +968,18 @@ static int rpc_check_memlimit(struct pcs_rpc * ep)
 		 * However, if this happens we must do something.
 		 */
 		if (eng->msg_allocated > eng->mem_limit) {
-			pcs_log(LOG_ERR, "Hard memory limit exceeded");
+			FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR, "Hard memory limit exceeded");
 			return 1;
 		}
 		if (ep->peer_role == PCS_NODE_ROLE_CN) {
 			/* CN contributes 3 (repl.norm) times of memory pressure on cluster */
 			if (3 * ep->accounted * eng->accounted_rpcs >= eng->msg_allocated) {
-				TRACE("Soft memory limit exceeded " PEER_FMT, PEER_ARGS(ep));
+				FUSE_KTRACE(cc_from_rpc(eng)->fc, "Soft memory limit exceeded " PEER_FMT, PEER_ARGS(ep));
 				return 1;
 			}
 		} else {
 			if (ep->accounted * eng->accounted_rpcs >= eng->msg_allocated) {
-				TRACE("Soft memory limit exceeded " PEER_FMT, PEER_ARGS(ep));
+				FUSE_KTRACE(cc_from_rpc(eng)->fc, "Soft memory limit exceeded " PEER_FMT, PEER_ARGS(ep));
 				return 1;
 			}
 		}
@@ -1169,7 +1168,7 @@ static void timer_work(struct work_struct *w)
 	case PCS_RPC_WORK: {
 		int err = list_empty(&ep->pending_queue) ? PCS_ERR_RESPONSE_TIMEOUT : PCS_ERR_WRITE_TIMEOUT;
 
-		TRACE("rpc timer expired, killing connection to " PEER_FMT ", %d",
+		FUSE_KTRACE(cc_from_rpc(ep->eng)->fc, "rpc timer expired, killing connection to " PEER_FMT ", %d",
 		      PEER_ARGS(ep), err);
 		rpc_abort(ep, 0, err);
 		break;
@@ -1189,7 +1188,6 @@ static void connstat_work(struct work_struct *w)
 	struct pcs_rpc_engine * eng = container_of(w, struct pcs_rpc_engine, stat_work.work);
 	struct pcs_cluster_core *cc = cc_from_rpc(eng);
 
-	pcs_log(LOG_INFO, "TODO send connstat-s\n");
 	(void)eng;
 	/* account_connstat(eng); */
 	mod_delayed_work(cc->wq, &eng->stat_work, PCS_MSG_MAX_CALENDAR * HZ);
@@ -1299,7 +1297,7 @@ void rpc_connect_done(struct pcs_rpc *ep, struct socket *sock)
 	ep->retries++;
 
 	if (ep->state != PCS_RPC_CONNECT) {
-		pcs_log(LOG_ERR, "Invalid state: %u", ep->state);
+		FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR, "Invalid state: %u", ep->state);
 		BUG();
 	}
 
