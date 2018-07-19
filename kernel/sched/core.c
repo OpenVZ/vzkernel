@@ -2949,7 +2949,7 @@ calc_load(unsigned long load, unsigned long exp, unsigned long active)
 #ifdef CONFIG_VE
 static LIST_HEAD(ve_root_list);
 
-static void calc_load_ve(void)
+void calc_load_ve(void)
 {
 	unsigned long nr_unint, nr_active;
 	struct task_group *tg;
@@ -2990,9 +2990,7 @@ static void calc_load_ve(void)
 	CALC_LOAD(kstat_glob.nr_unint_avg[2], EXP_15, nr_unint);
 	write_seqcount_end(&kstat_glob.nr_unint_avg_seq);
 }
-#else
-#define calc_load_ve()	do { } while (0)
-#endif
+#endif /* CONFIG_VE */
 
 #ifdef CONFIG_NO_HZ_COMMON
 /*
