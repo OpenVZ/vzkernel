@@ -22,6 +22,7 @@
 #include <linux/filter.h>
 #include <linux/compat.h>
 #include <linux/security.h>
+#include <linux/audit.h>
 #include <linux/export.h>
 
 #include <net/scm.h>
@@ -71,6 +72,8 @@ int get_compat_msghdr(struct msghdr *kmsg, struct compat_msghdr __user *umsg)
 	    __get_user(kmsg->msg_controllen, &umsg->msg_controllen) ||
 	    __get_user(kmsg->msg_flags, &umsg->msg_flags))
 		return -EFAULT;
+	if (kmsg->msg_namelen > sizeof(struct sockaddr_storage))
+		kmsg->msg_namelen = sizeof(struct sockaddr_storage);
 	kmsg->msg_name = compat_ptr(tmp1);
 	kmsg->msg_iov = compat_ptr(tmp2);
 	kmsg->msg_control = compat_ptr(tmp3);
@@ -83,7 +86,7 @@ int verify_compat_iovec(struct msghdr *kern_msg, struct iovec *kern_iov,
 {
 	int tot_len;
 
-	if (kern_msg->msg_namelen) {
+	if (kern_msg->msg_name && kern_msg->msg_namelen) {
 		if (mode == VERIFY_READ) {
 			int err = move_addr_to_kernel(kern_msg->msg_name,
 						      kern_msg->msg_namelen,
@@ -92,8 +95,10 @@ int verify_compat_iovec(struct msghdr *kern_msg, struct iovec *kern_iov,
 				return err;
 		}
 		kern_msg->msg_name = kern_address;
-	} else
+	} else {
 		kern_msg->msg_name = NULL;
+		kern_msg->msg_namelen = 0;
+	}
 
 	tot_len = iov_from_user_compat_to_kern(kern_iov,
 					  (struct compat_iovec __user *)kern_msg->msg_iov,
@@ -799,14 +804,24 @@ asmlinkage long compat_sys_recvmmsg(int fd, struct compat_mmsghdr __user *mmsg,
 
 asmlinkage long compat_sys_socketcall(int call, u32 __user *args)
 {
-	int ret;
-	u32 a[6];
+	u32 a[AUDITSC_ARGS];
+	unsigned int len;
 	u32 a0, a1;
+	int ret;
 
 	if (call < SYS_SOCKET || call > SYS_SENDMMSG)
 		return -EINVAL;
-	if (copy_from_user(a, args, nas[call]))
+	len = nas[call];
+	if (len > sizeof(a))
+		return -EINVAL;
+
+	if (copy_from_user(a, args, len))
 		return -EFAULT;
+
+	ret = audit_socketcall_compat(len / sizeof(a[0]), a);
+	if (ret)
+		return ret;
+
 	a0 = a[0];
 	a1 = a[1];
 

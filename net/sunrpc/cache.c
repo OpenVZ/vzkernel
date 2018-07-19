@@ -40,20 +40,17 @@
 static bool cache_defer_req(struct cache_req *req, struct cache_head *item);
 static void cache_revisit_request(struct cache_head *item);
 
-static void cache_init(struct cache_head *h)
+static void cache_init(struct cache_head *h, struct cache_detail *detail)
 {
 	time_t now = seconds_since_boot();
 	h->next = NULL;
 	h->flags = 0;
 	kref_init(&h->ref);
 	h->expiry_time = now + CACHE_NEW_EXPIRY;
+	if (now <= detail->flush_time)
+		/* ensure it isn't already expired */
+		now = detail->flush_time + 1;
 	h->last_refresh = now;
-}
-
-static inline int cache_is_expired(struct cache_detail *detail, struct cache_head *h)
-{
-	return  (h->expiry_time < seconds_since_boot()) ||
-		(detail->flush_time > h->last_refresh);
 }
 
 struct cache_head *sunrpc_cache_lookup(struct cache_detail *detail,
@@ -87,7 +84,7 @@ struct cache_head *sunrpc_cache_lookup(struct cache_detail *detail,
 	 * we might get lose if we need to
 	 * cache_put it soon.
 	 */
-	cache_init(new);
+	cache_init(new, detail);
 	detail->init(new, key);
 
 	write_lock(&detail->hash_lock);
@@ -124,10 +121,15 @@ EXPORT_SYMBOL_GPL(sunrpc_cache_lookup);
 
 static void cache_dequeue(struct cache_detail *detail, struct cache_head *ch);
 
-static void cache_fresh_locked(struct cache_head *head, time_t expiry)
+static void cache_fresh_locked(struct cache_head *head, time_t expiry,
+			       struct cache_detail *detail)
 {
+	time_t now = seconds_since_boot();
+	if (now <= detail->flush_time)
+		/* ensure it isn't immediately treated as expired */
+		now = detail->flush_time + 1;
 	head->expiry_time = expiry;
-	head->last_refresh = seconds_since_boot();
+	head->last_refresh = now;
 	smp_wmb(); /* paired with smp_rmb() in cache_is_valid() */
 	set_bit(CACHE_VALID, &head->flags);
 }
@@ -158,7 +160,7 @@ struct cache_head *sunrpc_cache_update(struct cache_detail *detail,
 				set_bit(CACHE_NEGATIVE, &old->flags);
 			else
 				detail->update(old, new);
-			cache_fresh_locked(old, new->expiry_time);
+			cache_fresh_locked(old, new->expiry_time, detail);
 			write_unlock(&detail->hash_lock);
 			cache_fresh_unlocked(old, detail);
 			return old;
@@ -171,7 +173,7 @@ struct cache_head *sunrpc_cache_update(struct cache_detail *detail,
 		cache_put(old, detail);
 		return NULL;
 	}
-	cache_init(tmp);
+	cache_init(tmp, detail);
 	detail->init(tmp, old);
 	head = &detail->hash_table[hash];
 
@@ -184,8 +186,8 @@ struct cache_head *sunrpc_cache_update(struct cache_detail *detail,
 	*head = tmp;
 	detail->entries++;
 	cache_get(tmp);
-	cache_fresh_locked(tmp, new->expiry_time);
-	cache_fresh_locked(old, 0);
+	cache_fresh_locked(tmp, new->expiry_time, detail);
+	cache_fresh_locked(old, 0, detail);
 	write_unlock(&detail->hash_lock);
 	cache_fresh_unlocked(tmp, detail);
 	cache_fresh_unlocked(old, detail);
@@ -201,7 +203,7 @@ static int cache_make_upcall(struct cache_detail *cd, struct cache_head *h)
 	return sunrpc_cache_pipe_upcall(cd, h);
 }
 
-static inline int cache_is_valid(struct cache_detail *detail, struct cache_head *h)
+static inline int cache_is_valid(struct cache_head *h)
 {
 	if (!test_bit(CACHE_VALID, &h->flags))
 		return -EAGAIN;
@@ -227,16 +229,16 @@ static int try_to_negate_entry(struct cache_detail *detail, struct cache_head *h
 	int rv;
 
 	write_lock(&detail->hash_lock);
-	rv = cache_is_valid(detail, h);
-	if (rv != -EAGAIN) {
-		write_unlock(&detail->hash_lock);
-		return rv;
+	rv = cache_is_valid(h);
+	if (rv == -EAGAIN) {
+		set_bit(CACHE_NEGATIVE, &h->flags);
+		cache_fresh_locked(h, seconds_since_boot()+CACHE_NEW_EXPIRY,
+				   detail);
+		rv = -ENOENT;
 	}
-	set_bit(CACHE_NEGATIVE, &h->flags);
-	cache_fresh_locked(h, seconds_since_boot()+CACHE_NEW_EXPIRY);
 	write_unlock(&detail->hash_lock);
 	cache_fresh_unlocked(h, detail);
-	return -ENOENT;
+	return rv;
 }
 
 /*
@@ -260,7 +262,7 @@ int cache_check(struct cache_detail *detail,
 	long refresh_age, age;
 
 	/* First decide return status as best we can */
-	rv = cache_is_valid(detail, h);
+	rv = cache_is_valid(h);
 
 	/* now see if we want to start an upcall */
 	refresh_age = (h->expiry_time - h->last_refresh);
@@ -269,19 +271,17 @@ int cache_check(struct cache_detail *detail,
 	if (rqstp == NULL) {
 		if (rv == -EAGAIN)
 			rv = -ENOENT;
-	} else if (rv == -EAGAIN || age > refresh_age/2) {
+	} else if (rv == -EAGAIN ||
+		   (h->expiry_time != 0 && age > refresh_age/2)) {
 		dprintk("RPC:       Want update, refage=%ld, age=%ld\n",
 				refresh_age, age);
 		if (!test_and_set_bit(CACHE_PENDING, &h->flags)) {
 			switch (cache_make_upcall(detail, h)) {
 			case -EINVAL:
-				clear_bit(CACHE_PENDING, &h->flags);
-				cache_revisit_request(h);
 				rv = try_to_negate_entry(detail, h);
 				break;
 			case -EAGAIN:
-				clear_bit(CACHE_PENDING, &h->flags);
-				cache_revisit_request(h);
+				cache_fresh_unlocked(h, detail);
 				break;
 			}
 		}
@@ -293,7 +293,7 @@ int cache_check(struct cache_detail *detail,
 			 * Request was not deferred; handle it as best
 			 * we can ourselves:
 			 */
-			rv = cache_is_valid(detail, h);
+			rv = cache_is_valid(h);
 			if (rv == -EAGAIN)
 				rv = -ETIMEDOUT;
 		}
@@ -310,7 +310,7 @@ EXPORT_SYMBOL_GPL(cache_check);
  * a current pointer into that list and into the table
  * for that entry.
  *
- * Each time clean_cache is called it finds the next non-empty entry
+ * Each time cache_clean is called it finds the next non-empty entry
  * in the current table and walks the list in that entry
  * looking for entries that can be removed.
  *
@@ -433,6 +433,7 @@ static int cache_clean(void)
 		struct cache_head *ch, **cp;
 		struct cache_detail *d;
 
+		gmb();
 		write_lock(&current_detail->hash_lock);
 
 		/* Ok, now to clean this strand */
@@ -457,9 +458,8 @@ static int cache_clean(void)
 			current_index ++;
 		spin_unlock(&cache_list_lock);
 		if (ch) {
-			if (test_and_clear_bit(CACHE_PENDING, &ch->flags))
-				cache_dequeue(current_detail, ch);
-			cache_revisit_request(ch);
+			set_bit(CACHE_CLEANED, &ch->flags);
+			cache_fresh_unlocked(ch, d);
 			cache_put(ch, d);
 		}
 	} else
@@ -501,10 +501,13 @@ EXPORT_SYMBOL_GPL(cache_flush);
 
 void cache_purge(struct cache_detail *detail)
 {
-	detail->flush_time = LONG_MAX;
+	time_t now = seconds_since_boot();
+	if (detail->flush_time >= now)
+		now = detail->flush_time + 1;
+	/* 'now' is the maximum value any 'last_refresh' can have */
+	detail->flush_time = now;
 	detail->nextcheck = seconds_since_boot();
 	cache_flush();
-	detail->flush_time = 1;
 }
 EXPORT_SYMBOL_GPL(cache_purge);
 
@@ -629,7 +632,7 @@ static void cache_limit_defers(void)
 
 	/* Consider removing either the first or the last */
 	if (cache_defer_cnt > DFR_MAX) {
-		if (net_random() & 1)
+		if (prandom_u32() & 1)
 			discard = list_entry(cache_defer_list.next,
 					     struct cache_deferred_req, recent);
 		else
@@ -930,7 +933,7 @@ static unsigned int cache_poll(struct file *filp, poll_table *wait,
 	poll_wait(filp, &queue_wait, wait);
 
 	/* alway allow write */
-	mask = POLL_OUT | POLLWRNORM;
+	mask = POLLOUT | POLLWRNORM;
 
 	if (!rp)
 		return mask;
@@ -1036,23 +1039,32 @@ static int cache_release(struct inode *inode, struct file *filp,
 
 static void cache_dequeue(struct cache_detail *detail, struct cache_head *ch)
 {
-	struct cache_queue *cq;
+	struct cache_queue *cq, *tmp;
+	struct cache_request *cr;
+	struct list_head dequeued;
+
+	INIT_LIST_HEAD(&dequeued);
 	spin_lock(&queue_lock);
-	list_for_each_entry(cq, &detail->queue, list)
+	list_for_each_entry_safe(cq, tmp, &detail->queue, list)
 		if (!cq->reader) {
-			struct cache_request *cr = container_of(cq, struct cache_request, q);
+			cr = container_of(cq, struct cache_request, q);
 			if (cr->item != ch)
 				continue;
+			if (test_bit(CACHE_PENDING, &ch->flags))
+				/* Lost a race and it is pending again */
+				break;
 			if (cr->readers != 0)
 				continue;
-			list_del(&cr->q.list);
-			spin_unlock(&queue_lock);
-			cache_put(cr->item, detail);
-			kfree(cr->buf);
-			kfree(cr);
-			return;
+			list_move(&cr->q.list, &dequeued);
 		}
 	spin_unlock(&queue_lock);
+	while (!list_empty(&dequeued)) {
+		cr = list_entry(dequeued.next, struct cache_request, q.list);
+		list_del(&cr->q.list);
+		cache_put(cr->item, detail);
+		kfree(cr->buf);
+		kfree(cr);
+	}
 }
 
 /*
@@ -1166,6 +1178,7 @@ int sunrpc_cache_pipe_upcall(struct cache_detail *detail, struct cache_head *h)
 
 	char *buf;
 	struct cache_request *crq;
+	int ret = 0;
 
 	if (!detail->cache_request)
 		return -EINVAL;
@@ -1174,6 +1187,9 @@ int sunrpc_cache_pipe_upcall(struct cache_detail *detail, struct cache_head *h)
 		warn_no_listener(detail);
 		return -EINVAL;
 	}
+	if (test_bit(CACHE_CLEANED, &h->flags))
+		/* Too late to make an upcall */
+		return -EAGAIN;
 
 	buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
 	if (!buf)
@@ -1186,15 +1202,23 @@ int sunrpc_cache_pipe_upcall(struct cache_detail *detail, struct cache_head *h)
 	}
 
 	crq->q.reader = 0;
-	crq->item = cache_get(h);
 	crq->buf = buf;
 	crq->len = 0;
 	crq->readers = 0;
 	spin_lock(&queue_lock);
-	list_add_tail(&crq->q.list, &detail->queue);
+	if (test_bit(CACHE_PENDING, &h->flags)) {
+		crq->item = cache_get(h);
+		list_add_tail(&crq->q.list, &detail->queue);
+	} else
+		/* Lost a race, no longer PENDING, so don't enqueue */
+		ret = -EAGAIN;
 	spin_unlock(&queue_lock);
 	wake_up(&queue_wait);
-	return 0;
+	if (ret == -EAGAIN) {
+		kfree(buf);
+		kfree(crq);
+	}
+	return ret;
 }
 EXPORT_SYMBOL_GPL(sunrpc_cache_pipe_upcall);
 
@@ -1221,7 +1245,7 @@ int qword_get(char **bpp, char *dest, int bufsize)
 	if (bp[0] == '\\' && bp[1] == 'x') {
 		/* HEX STRING */
 		bp += 2;
-		while (len < bufsize) {
+		while (len < bufsize - 1) {
 			int h, l;
 
 			h = hex_to_bin(bp[0]);
@@ -1273,18 +1297,13 @@ EXPORT_SYMBOL_GPL(qword_get);
  * get a header, then pass each real item in the cache
  */
 
-struct handle {
-	struct cache_detail *cd;
-};
-
-static void *c_start(struct seq_file *m, loff_t *pos)
+void *cache_seq_start(struct seq_file *m, loff_t *pos)
 	__acquires(cd->hash_lock)
 {
 	loff_t n = *pos;
 	unsigned int hash, entry;
 	struct cache_head *ch;
-	struct cache_detail *cd = ((struct handle*)m->private)->cd;
-
+	struct cache_detail *cd = m->private;
 
 	read_lock(&cd->hash_lock);
 	if (!n--)
@@ -1306,12 +1325,13 @@ static void *c_start(struct seq_file *m, loff_t *pos)
 	*pos = n+1;
 	return cd->hash_table[hash];
 }
+EXPORT_SYMBOL_GPL(cache_seq_start);
 
-static void *c_next(struct seq_file *m, void *p, loff_t *pos)
+void *cache_seq_next(struct seq_file *m, void *p, loff_t *pos)
 {
 	struct cache_head *ch = p;
 	int hash = (*pos >> 32);
-	struct cache_detail *cd = ((struct handle*)m->private)->cd;
+	struct cache_detail *cd = m->private;
 
 	if (p == SEQ_START_TOKEN)
 		hash = 0;
@@ -1333,18 +1353,20 @@ static void *c_next(struct seq_file *m, void *p, loff_t *pos)
 	++*pos;
 	return cd->hash_table[hash];
 }
+EXPORT_SYMBOL_GPL(cache_seq_next);
 
-static void c_stop(struct seq_file *m, void *p)
+void cache_seq_stop(struct seq_file *m, void *p)
 	__releases(cd->hash_lock)
 {
-	struct cache_detail *cd = ((struct handle*)m->private)->cd;
+	struct cache_detail *cd = m->private;
 	read_unlock(&cd->hash_lock);
 }
+EXPORT_SYMBOL_GPL(cache_seq_stop);
 
 static int c_show(struct seq_file *m, void *p)
 {
 	struct cache_head *cp = p;
-	struct cache_detail *cd = ((struct handle*)m->private)->cd;
+	struct cache_detail *cd = m->private;
 
 	if (p == SEQ_START_TOKEN)
 		return cd->cache_show(m, cd, NULL);
@@ -1352,7 +1374,7 @@ static int c_show(struct seq_file *m, void *p)
 	ifdebug(CACHE)
 		seq_printf(m, "# expiry=%ld refcnt=%d flags=%lx\n",
 			   convert_to_wallclock(cp->expiry_time),
-			   atomic_read(&cp->ref.refcount), cp->flags);
+			   kref_read(&cp->ref), cp->flags);
 	cache_get(cp);
 	if (cache_check(cd, cp, NULL))
 		/* cache_check does a cache_put on failure */
@@ -1367,33 +1389,36 @@ static int c_show(struct seq_file *m, void *p)
 }
 
 static const struct seq_operations cache_content_op = {
-	.start	= c_start,
-	.next	= c_next,
-	.stop	= c_stop,
+	.start	= cache_seq_start,
+	.next	= cache_seq_next,
+	.stop	= cache_seq_stop,
 	.show	= c_show,
 };
 
 static int content_open(struct inode *inode, struct file *file,
 			struct cache_detail *cd)
 {
-	struct handle *han;
+	struct seq_file *seq;
+	int err;
 
 	if (!cd || !try_module_get(cd->owner))
 		return -EACCES;
-	han = __seq_open_private(file, &cache_content_op, sizeof(*han));
-	if (han == NULL) {
+
+	err = seq_open(file, &cache_content_op);
+	if (err) {
 		module_put(cd->owner);
-		return -ENOMEM;
+		return err;
 	}
 
-	han->cd = cd;
+	seq = file->private_data;
+	seq->private = cd;
 	return 0;
 }
 
 static int content_release(struct inode *inode, struct file *file,
 		struct cache_detail *cd)
 {
-	int ret = seq_release_private(inode, file);
+	int ret = seq_release(inode, file);
 	module_put(cd->owner);
 	return ret;
 }
@@ -1440,6 +1465,7 @@ static ssize_t write_flush(struct file *file, const char __user *buf,
 {
 	char tbuf[20];
 	char *bp, *ep;
+	time_t then, now;
 
 	if (*ppos || count > sizeof(tbuf)-1)
 		return -EINVAL;
@@ -1451,8 +1477,22 @@ static ssize_t write_flush(struct file *file, const char __user *buf,
 		return -EINVAL;
 
 	bp = tbuf;
-	cd->flush_time = get_expiry(&bp);
-	cd->nextcheck = seconds_since_boot();
+	then = get_expiry(&bp);
+	now = seconds_since_boot();
+	cd->nextcheck = now;
+	/* Can only set flush_time to 1 second beyond "now", or
+	 * possibly 1 second beyond flushtime.  This is because
+	 * flush_time never goes backwards so it mustn't get too far
+	 * ahead of time.
+	 */
+	if (then >= now) {
+		/* Want to flush everything, so behave like cache_purge() */
+		if (cd->flush_time >= now)
+			now = cd->flush_time + 1;
+		then = now;
+	}
+
+	cd->flush_time = then;
 	cache_flush();
 
 	*ppos += count;
@@ -1812,19 +1852,11 @@ int sunrpc_cache_register_pipefs(struct dentry *parent,
 				 const char *name, umode_t umode,
 				 struct cache_detail *cd)
 {
-	struct qstr q;
-	struct dentry *dir;
-	int ret = 0;
-
-	q.name = name;
-	q.len = strlen(name);
-	q.hash = full_name_hash(q.name, q.len);
-	dir = rpc_create_cache_dir(parent, &q, umode, cd);
-	if (!IS_ERR(dir))
-		cd->u.pipefs.dir = dir;
-	else
-		ret = PTR_ERR(dir);
-	return ret;
+	struct dentry *dir = rpc_create_cache_dir(parent, name, umode, cd);
+	if (IS_ERR(dir))
+		return PTR_ERR(dir);
+	cd->u.pipefs.dir = dir;
+	return 0;
 }
 EXPORT_SYMBOL_GPL(sunrpc_cache_register_pipefs);
 

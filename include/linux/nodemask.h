@@ -1,6 +1,14 @@
 #ifndef __LINUX_NODEMASK_H
 #define __LINUX_NODEMASK_H
 
+/**
+ * nodemask_pr_args - printf args to output a nodemask
+ * @maskp: nodemask to be printed
+ *
+ * Can be used to provide arguments for '%*pb[l]' when printing a nodemask.
+ */
+#define nodemask_pr_args(maskp)		MAX_NUMNODES, (maskp)->bits
+
 /*
  * Nodemasks provide a bitmap suitable for representing the
  * set of Node's in a system, one bit position per Node number.
@@ -421,7 +429,15 @@ static inline int num_node_state(enum node_states state)
 	for_each_node_mask((__node), node_states[__state])
 
 #define first_online_node	first_node(node_states[N_ONLINE])
-#define next_online_node(nid)	next_node((nid), node_states[N_ONLINE])
+#define first_memory_node	first_node(node_states[N_MEMORY])
+static inline int next_online_node(int nid)
+{
+	return next_node(nid, node_states[N_ONLINE]);
+}
+static inline int next_memory_node(int nid)
+{
+	return next_node(nid, node_states[N_MEMORY]);
+}
 
 extern int nr_node_ids;
 extern int nr_online_nodes;
@@ -462,6 +478,7 @@ static inline int num_node_state(enum node_states state)
 	for ( (node) = 0; (node) == 0; (node) = 1)
 
 #define first_online_node	0
+#define first_memory_node	0
 #define next_online_node(nid)	(MAX_NUMNODES)
 #define nr_node_ids		1
 #define nr_online_nodes		1

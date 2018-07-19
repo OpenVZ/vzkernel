@@ -31,7 +31,6 @@
  * SOFTWARE.
  */
 
-#include <linux/sched.h>
 #include <linux/spinlock.h>
 
 #include "ipath_verbs.h"
@@ -353,8 +352,8 @@ again:
 		if (wqe->length == 0)
 			break;
 		if (unlikely(!ipath_rkey_ok(qp, &qp->r_sge, wqe->length,
-					    wqe->wr.wr.rdma.remote_addr,
-					    wqe->wr.wr.rdma.rkey,
+					    wqe->rdma_wr.remote_addr,
+					    wqe->rdma_wr.rkey,
 					    IB_ACCESS_REMOTE_WRITE)))
 			goto acc_err;
 		break;
@@ -363,8 +362,8 @@ again:
 		if (unlikely(!(qp->qp_access_flags & IB_ACCESS_REMOTE_READ)))
 			goto inv_err;
 		if (unlikely(!ipath_rkey_ok(qp, &sqp->s_sge, wqe->length,
-					    wqe->wr.wr.rdma.remote_addr,
-					    wqe->wr.wr.rdma.rkey,
+					    wqe->rdma_wr.remote_addr,
+					    wqe->rdma_wr.rkey,
 					    IB_ACCESS_REMOTE_READ)))
 			goto acc_err;
 		qp->r_sge.sge = wqe->sg_list[0];
@@ -377,18 +376,18 @@ again:
 		if (unlikely(!(qp->qp_access_flags & IB_ACCESS_REMOTE_ATOMIC)))
 			goto inv_err;
 		if (unlikely(!ipath_rkey_ok(qp, &qp->r_sge, sizeof(u64),
-					    wqe->wr.wr.atomic.remote_addr,
-					    wqe->wr.wr.atomic.rkey,
+					    wqe->atomic_wr.remote_addr,
+					    wqe->atomic_wr.rkey,
 					    IB_ACCESS_REMOTE_ATOMIC)))
 			goto acc_err;
 		/* Perform atomic OP and save result. */
 		maddr = (atomic64_t *) qp->r_sge.sge.vaddr;
-		sdata = wqe->wr.wr.atomic.compare_add;
+		sdata = wqe->atomic_wr.compare_add;
 		*(u64 *) sqp->s_sge.sge.vaddr =
 			(wqe->wr.opcode == IB_WR_ATOMIC_FETCH_AND_ADD) ?
 			(u64) atomic64_add_return(sdata, maddr) - sdata :
 			(u64) cmpxchg((u64 *) qp->r_sge.sge.vaddr,
-				      sdata, wqe->wr.wr.atomic.swap);
+				      sdata, wqe->atomic_wr.swap);
 		goto send_comp;
 
 	default:
@@ -438,7 +437,7 @@ again:
 	wc.byte_len = wqe->length;
 	wc.qp = &qp->ibqp;
 	wc.src_qp = qp->remote_qpn;
-	wc.slid = qp->remote_ah_attr.dlid;
+	wc.slid = rdma_ah_get_path_bits(&qp->remote_ah_attr);
 	wc.sl = qp->remote_ah_attr.sl;
 	wc.port_num = 1;
 	/* Signal completion event if the solicited bit is set. */
@@ -617,10 +616,10 @@ void ipath_make_ruc_header(struct ipath_ibdev *dev, struct ipath_qp *qp,
 	}
 	lrh0 |= qp->remote_ah_attr.sl << 4;
 	qp->s_hdr.lrh[0] = cpu_to_be16(lrh0);
-	qp->s_hdr.lrh[1] = cpu_to_be16(qp->remote_ah_attr.dlid);
+	qp->s_hdr.lrh[1] = cpu_to_be16(rdma_ah_get_dlid(&qp->remote_ah_attr));
 	qp->s_hdr.lrh[2] = cpu_to_be16(qp->s_hdrwords + nwords + SIZE_OF_CRC);
 	qp->s_hdr.lrh[3] = cpu_to_be16(dev->dd->ipath_lid |
-				       qp->remote_ah_attr.src_path_bits);
+				       rdma_ah_get_path_bits(&qp->remote_ah_attr));
 	bth0 |= ipath_get_pkey(dev->dd, qp->s_pkey_index);
 	bth0 |= extra_bytes << 20;
 	ohdr->bth[0] = cpu_to_be32(bth0 | (1 << 22));
@@ -645,7 +644,7 @@ void ipath_do_send(unsigned long data)
 
 	if ((qp->ibqp.qp_type == IB_QPT_RC ||
 	     qp->ibqp.qp_type == IB_QPT_UC) &&
-	    qp->remote_ah_attr.dlid == dev->dd->ipath_lid) {
+	    rdma_ah_get_dlid(&qp->remote_ah_attr) == dev->dd->ipath_lid) {
 		ipath_ruc_loopback(qp);
 		goto bail;
 	}

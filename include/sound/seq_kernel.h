@@ -70,7 +70,6 @@ struct snd_seq_port_callback {
 	int (*unuse)(void *private_data, struct snd_seq_port_subscribe *info);
 	int (*event_input)(struct snd_seq_event *ev, int direct, void *private_data, int atomic, int hop);
 	void (*private_free)(void *private_data);
-	unsigned int callback_all;	/* call subscribe callbacks at each connection/disconnection */
 	/*...*/
 };
 
@@ -106,11 +105,11 @@ int snd_seq_event_port_attach(int client, struct snd_seq_port_callback *pcbp,
 int snd_seq_event_port_detach(int client, int port);
 
 #ifdef CONFIG_MODULES
-void snd_seq_autoload_lock(void);
-void snd_seq_autoload_unlock(void);
+void snd_seq_autoload_init(void);
+void snd_seq_autoload_exit(void);
 #else
-#define snd_seq_autoload_lock()
-#define snd_seq_autoload_unlock()
+#define snd_seq_autoload_init()
+#define snd_seq_autoload_exit()
 #endif
 
 #endif /* __SOUND_SEQ_KERNEL_H */

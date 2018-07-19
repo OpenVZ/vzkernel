@@ -8,7 +8,7 @@
 #include <linux/errno.h>
 #include <linux/lockdep.h>
 #include <asm/alternative.h>
-#include <asm/cpufeature.h>
+#include <asm/cpufeatures.h>
 #include <asm/page.h>
 
 /*
@@ -232,10 +232,14 @@ __copy_to_user_inatomic(void __user *dst, const void *src, unsigned size)
 extern long __copy_user_nocache(void *dst, const void __user *src,
 				unsigned size, int zerorest);
 
+extern long __copy_user_flushcache(void *dst, const void __user *src, unsigned size);
+extern void memcpy_page_flushcache(char *to, struct page *page, size_t offset,
+			   size_t len);
+
 static inline int
 __copy_from_user_nocache(void *dst, const void __user *src, unsigned size)
 {
-	might_sleep();
+	might_fault();
 	return __copy_user_nocache(dst, src, size, 1);
 }
 
@@ -244,6 +248,12 @@ __copy_from_user_inatomic_nocache(void *dst, const void __user *src,
 				  unsigned size)
 {
 	return __copy_user_nocache(dst, src, size, 0);
+}
+
+static inline int
+__copy_from_user_flushcache(void *dst, const void __user *src, unsigned size)
+{
+	return __copy_user_flushcache(dst, src, size);
 }
 
 unsigned long

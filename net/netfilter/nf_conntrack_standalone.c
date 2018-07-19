@@ -47,20 +47,22 @@ EXPORT_SYMBOL_GPL(print_tuple);
 
 struct ct_iter_state {
 	struct seq_net_private p;
+	struct hlist_nulls_head *hash;
+	unsigned int htable_size;
 	unsigned int bucket;
 	u_int64_t time_now;
 };
 
 static struct hlist_nulls_node *ct_get_first(struct seq_file *seq)
 {
-	struct net *net = seq_file_net(seq);
 	struct ct_iter_state *st = seq->private;
 	struct hlist_nulls_node *n;
 
 	for (st->bucket = 0;
-	     st->bucket < net->ct.htable_size;
+	     st->bucket < st->htable_size;
 	     st->bucket++) {
-		n = rcu_dereference(hlist_nulls_first_rcu(&net->ct.hash[st->bucket]));
+		n = rcu_dereference(
+			hlist_nulls_first_rcu(&st->hash[st->bucket]));
 		if (!is_a_nulls(n))
 			return n;
 	}
@@ -70,18 +72,16 @@ static struct hlist_nulls_node *ct_get_first(struct seq_file *seq)
 static struct hlist_nulls_node *ct_get_next(struct seq_file *seq,
 				      struct hlist_nulls_node *head)
 {
-	struct net *net = seq_file_net(seq);
 	struct ct_iter_state *st = seq->private;
 
 	head = rcu_dereference(hlist_nulls_next_rcu(head));
 	while (is_a_nulls(head)) {
 		if (likely(get_nulls_value(head) == st->bucket)) {
-			if (++st->bucket >= net->ct.htable_size)
+			if (++st->bucket >= st->htable_size)
 				return NULL;
 		}
 		head = rcu_dereference(
-				hlist_nulls_first_rcu(
-					&net->ct.hash[st->bucket]));
+			hlist_nulls_first_rcu(&st->hash[st->bucket]));
 	}
 	return head;
 }
@@ -101,8 +101,10 @@ static void *ct_seq_start(struct seq_file *seq, loff_t *pos)
 {
 	struct ct_iter_state *st = seq->private;
 
-	st->time_now = ktime_to_ns(ktime_get_real());
+	st->time_now = ktime_get_real_ns();
 	rcu_read_lock();
+
+	nf_conntrack_get_ht(st->p.net, &st->hash, &st->htable_size);
 	return ct_get_idx(seq, *pos);
 }
 
@@ -138,6 +140,35 @@ static int ct_show_secctx(struct seq_file *s, const struct nf_conn *ct)
 static inline int ct_show_secctx(struct seq_file *s, const struct nf_conn *ct)
 {
 	return 0;
+}
+#endif
+
+#ifdef CONFIG_NF_CONNTRACK_ZONES
+static void ct_show_zone(struct seq_file *s, const struct nf_conn *ct,
+			 int dir)
+{
+	const struct nf_conntrack_zone *zone = nf_ct_zone(ct);
+
+	if (zone->dir != dir)
+		return;
+	switch (zone->dir) {
+	case NF_CT_DEFAULT_ZONE_DIR:
+		seq_printf(s, "zone=%u ", zone->id);
+		break;
+	case NF_CT_ZONE_DIR_ORIG:
+		seq_printf(s, "zone-orig=%u ", zone->id);
+		break;
+	case NF_CT_ZONE_DIR_REPL:
+		seq_printf(s, "zone-reply=%u ", zone->id);
+		break;
+	default:
+		break;
+	}
+}
+#else
+static inline void ct_show_zone(struct seq_file *s, const struct nf_conn *ct,
+				int dir)
+{
 }
 #endif
 
@@ -206,6 +237,8 @@ static int ct_seq_show(struct seq_file *s, void *v)
 			l3proto, l4proto))
 		goto release;
 
+	ct_show_zone(s, ct, NF_CT_ZONE_DIR_ORIG);
+
 	if (seq_print_acct(s, ct, IP_CT_DIR_ORIGINAL))
 		goto release;
 
@@ -216,6 +249,8 @@ static int ct_seq_show(struct seq_file *s, void *v)
 	if (print_tuple(s, &ct->tuplehash[IP_CT_DIR_REPLY].tuple,
 			l3proto, l4proto))
 		goto release;
+
+	ct_show_zone(s, ct, NF_CT_ZONE_DIR_REPL);
 
 	if (seq_print_acct(s, ct, IP_CT_DIR_REPLY))
 		goto release;
@@ -232,10 +267,7 @@ static int ct_seq_show(struct seq_file *s, void *v)
 	if (ct_show_secctx(s, ct))
 		goto release;
 
-#ifdef CONFIG_NF_CONNTRACK_ZONES
-	if (seq_printf(s, "zone=%u ", nf_ct_zone(ct)))
-		goto release;
-#endif
+	ct_show_zone(s, ct, NF_CT_DEFAULT_ZONE_DIR);
 
 	if (ct_show_delta_time(s, ct))
 		goto release;
@@ -408,7 +440,7 @@ static int log_invalid_proto_max = 255;
 
 static struct ctl_table_header *nf_ct_netfilter_header;
 
-static ctl_table nf_ct_sysctl_table[] = {
+static struct ctl_table nf_ct_sysctl_table[] = {
 	{
 		.procname	= "nf_conntrack_max",
 		.data		= &nf_conntrack_max,
@@ -458,7 +490,7 @@ static ctl_table nf_ct_sysctl_table[] = {
 
 #define NET_NF_CONNTRACK_MAX 2089
 
-static ctl_table nf_ct_netfilter_table[] = {
+static struct ctl_table nf_ct_netfilter_table[] = {
 	{
 		.procname	= "nf_conntrack_max",
 		.data		= &nf_conntrack_max,

@@ -211,8 +211,9 @@ struct log {
 };
 
 /*
- * The logbuf_lock protects kmsg buffer, indices, counters. It is also
- * used in interesting ways to provide interlocking in console_unlock();
+ * The logbuf_lock protects kmsg buffer, indices, counters.  This can be taken
+ * within the scheduler's rq lock. It must be released before calling
+ * console_unlock() or anything else that might wake up a process.
  */
 static DEFINE_RAW_SPINLOCK(logbuf_lock);
 
@@ -255,8 +256,17 @@ static char __log_buf[__LOG_BUF_LEN] __aligned(LOG_ALIGN);
 static char *log_buf = __log_buf;
 static u32 log_buf_len = __LOG_BUF_LEN;
 
-/* cpu currently holding logbuf_lock */
-static volatile unsigned int logbuf_cpu = UINT_MAX;
+/* Return log buffer address */
+char *log_buf_addr_get(void)
+{
+	return log_buf;
+}
+
+/* Return log buffer size */
+u32 log_buf_len_get(void)
+{
+	return log_buf_len;
+}
 
 /* human readable text of the record */
 static char *log_text(const struct log *msg)
@@ -708,7 +718,7 @@ const struct file_operations kmsg_fops = {
 	.release = devkmsg_release,
 };
 
-#ifdef CONFIG_KEXEC
+#ifdef CONFIG_CRASH_CORE
 /*
  * This appends the listed symbols to /proc/vmcoreinfo
  *
@@ -717,7 +727,7 @@ const struct file_operations kmsg_fops = {
  * symbols are specifically used so that utilities can access and extract the
  * dmesg log from a vmcore file after a crash.
  */
-void log_buf_kexec_setup(void)
+void log_buf_vmcoreinfo_setup(void)
 {
 	VMCOREINFO_SYMBOL(log_buf);
 	VMCOREINFO_SYMBOL(log_buf_len);
@@ -1129,7 +1139,7 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 int do_syslog(int type, char __user *buf, int len, bool from_file)
 {
 	bool clear = false;
-	static int saved_console_loglevel = -1;
+	static int saved_console_loglevel = LOGLEVEL_DEFAULT;
 	int error;
 
 	error = check_syslog_permissions(type, from_file);
@@ -1186,15 +1196,15 @@ int do_syslog(int type, char __user *buf, int len, bool from_file)
 		break;
 	/* Disable logging to console */
 	case SYSLOG_ACTION_CONSOLE_OFF:
-		if (saved_console_loglevel == -1)
+		if (saved_console_loglevel == LOGLEVEL_DEFAULT)
 			saved_console_loglevel = console_loglevel;
 		console_loglevel = minimum_console_loglevel;
 		break;
 	/* Enable logging to console */
 	case SYSLOG_ACTION_CONSOLE_ON:
-		if (saved_console_loglevel != -1) {
+		if (saved_console_loglevel != LOGLEVEL_DEFAULT) {
 			console_loglevel = saved_console_loglevel;
-			saved_console_loglevel = -1;
+			saved_console_loglevel = LOGLEVEL_DEFAULT;
 		}
 		break;
 	/* Set level of messages printed to console */
@@ -1206,7 +1216,7 @@ int do_syslog(int type, char __user *buf, int len, bool from_file)
 			len = minimum_console_loglevel;
 		console_loglevel = len;
 		/* Implicitly re-enable logging to console */
-		saved_console_loglevel = -1;
+		saved_console_loglevel = LOGLEVEL_DEFAULT;
 		error = 0;
 		break;
 	/* Number of chars in the log buffer */
@@ -1313,7 +1323,10 @@ static void zap_locks(void)
 	sema_init(&console_sem, 1);
 }
 
-/* Check if we have any console registered that can be called early in boot. */
+/*
+ * Check if we have any console that is capable of printing while cpu is
+ * booting or shutting down. Requires console_sem.
+ */
 static int have_callable_console(void)
 {
 	struct console *con;
@@ -1328,10 +1341,9 @@ static int have_callable_console(void)
 /*
  * Can we actually use the console at this time on this cpu?
  *
- * Console drivers may assume that per-cpu resources have
- * been allocated. So unless they're explicitly marked as
- * being able to cope (CON_ANYTIME) don't call them until
- * this CPU is officially up.
+ * Console drivers may assume that per-cpu resources have been allocated. So
+ * unless they're explicitly marked as being able to cope (CON_ANYTIME) don't
+ * call them until this CPU is officially up.
  */
 static inline int can_use_console(unsigned int cpu)
 {
@@ -1343,36 +1355,24 @@ static inline int can_use_console(unsigned int cpu)
  * messages from a 'printk'. Return true (and with the
  * console_lock held, and 'console_locked' set) if it
  * is successful, false otherwise.
- *
- * This gets called with the 'logbuf_lock' spinlock held and
- * interrupts disabled. It should return with 'lockbuf_lock'
- * released but interrupts still disabled.
  */
-static int console_trylock_for_printk(unsigned int cpu)
-	__releases(&logbuf_lock)
+static int console_trylock_for_printk(void)
 {
-	int retval = 0, wake = 0;
+	unsigned int cpu = smp_processor_id();
 
-	if (console_trylock()) {
-		retval = 1;
-
-		/*
-		 * If we can't use the console, we need to release
-		 * the console semaphore by hand to avoid flushing
-		 * the buffer. We need to hold the console semaphore
-		 * in order to do this test safely.
-		 */
-		if (!can_use_console(cpu)) {
-			console_locked = 0;
-			wake = 1;
-			retval = 0;
-		}
-	}
-	logbuf_cpu = UINT_MAX;
-	if (wake)
+	if (!console_trylock())
+		return 0;
+	/*
+	 * If we can't use the console, we need to release the console
+	 * semaphore by hand to avoid flushing the buffer. We need to hold the
+	 * console semaphore in order to do this test safely.
+	 */
+	if (!can_use_console(cpu)) {
+		console_locked = 0;
 		up(&console_sem);
-	raw_spin_unlock(&logbuf_lock);
-	return retval;
+		return 0;
+	}
+	return 1;
 }
 
 int printk_delay_msec __read_mostly;
@@ -1500,11 +1500,19 @@ asmlinkage int vprintk_emit(int facility, int level,
 	static int recursion_bug;
 	static char textbuf[LOG_LINE_MAX];
 	char *text = textbuf;
-	size_t text_len;
+	size_t text_len = 0;
 	enum log_flags lflags = 0;
 	unsigned long flags;
 	int this_cpu;
 	int printed_len = 0;
+	bool in_sched = false;
+	/* cpu currently holding logbuf_lock in this function */
+	static volatile unsigned int logbuf_cpu = UINT_MAX;
+
+	if (level == LOGLEVEL_SCHED) {
+		level = LOGLEVEL_DEFAULT;
+		in_sched = true;
+	}
 
 	boot_delay_msec(level);
 	printk_delay();
@@ -1526,7 +1534,8 @@ asmlinkage int vprintk_emit(int facility, int level,
 		 */
 		if (!oops_in_progress && !lockdep_recursing(current)) {
 			recursion_bug = 1;
-			goto out_restore_irqs;
+			local_irq_restore(flags);
+			return 0;
 		}
 		zap_locks();
 	}
@@ -1566,8 +1575,9 @@ asmlinkage int vprintk_emit(int facility, int level,
 			const char *end_of_header = printk_skip_level(text);
 			switch (kern_level) {
 			case '0' ... '7':
-				if (level == -1)
+				if (level == LOGLEVEL_DEFAULT)
 					level = kern_level - '0';
+				/* fallthrough */
 			case 'd':	/* KERN_DEFAULT */
 				lflags |= LOG_PREFIX;
 			case 'c':	/* KERN_CONT */
@@ -1578,7 +1588,7 @@ asmlinkage int vprintk_emit(int facility, int level,
 		}
 	}
 
-	if (level == -1)
+	if (level == LOGLEVEL_DEFAULT)
 		level = default_message_loglevel;
 
 	if (dict)
@@ -1617,20 +1627,32 @@ asmlinkage int vprintk_emit(int facility, int level,
 	}
 	printed_len += text_len;
 
-	/*
-	 * Try to acquire and then immediately release the console semaphore.
-	 * The release will print out buffers and wake up /dev/kmsg and syslog()
-	 * users.
-	 *
-	 * The console_trylock_for_printk() function will release 'logbuf_lock'
-	 * regardless of whether it actually gets the console semaphore or not.
-	 */
-	if (console_trylock_for_printk(this_cpu))
-		console_unlock();
-
+	logbuf_cpu = UINT_MAX;
+	raw_spin_unlock(&logbuf_lock);
 	lockdep_on();
-out_restore_irqs:
 	local_irq_restore(flags);
+
+	/* If called from the scheduler, we can not call up(). */
+
+	if (!in_sched) {
+		lockdep_off();
+		/*
+		 * Disable preemption to avoid being preempted while holding
+		 * console_sem which would prevent anyone from printing to
+		 * console
+		 */
+		preempt_disable();
+
+		/*
+		 * Try to acquire and then immediately release the console
+		 * semaphore.  The release will print out buffers and wake up
+		 * /dev/kmsg and syslog() users.
+		 */
+		if (console_trylock_for_printk())
+			console_unlock();
+		preempt_enable();
+		lockdep_on();
+	}
 
 	return printed_len;
 }
@@ -1638,7 +1660,7 @@ EXPORT_SYMBOL(vprintk_emit);
 
 asmlinkage int vprintk(const char *fmt, va_list args)
 {
-	return vprintk_emit(0, -1, NULL, 0, fmt, args);
+	return vprintk_emit(0, LOGLEVEL_DEFAULT, NULL, 0, fmt, args);
 }
 EXPORT_SYMBOL(vprintk);
 
@@ -1656,6 +1678,30 @@ asmlinkage int printk_emit(int facility, int level,
 	return r;
 }
 EXPORT_SYMBOL(printk_emit);
+
+int vprintk_default(const char *fmt, va_list args)
+{
+	int r;
+
+#ifdef CONFIG_KGDB_KDB
+	if (unlikely(kdb_trap_printk)) {
+		r = vkdb_printf(fmt, args);
+		return r;
+	}
+#endif
+	r = vprintk_emit(0, LOGLEVEL_DEFAULT, NULL, 0, fmt, args);
+
+	return r;
+}
+EXPORT_SYMBOL_GPL(vprintk_default);
+
+/*
+ * This allows printk to be diverted to another function per cpu.
+ * This is useful for calling printk functions from within NMI
+ * without worrying about race conditions that can lock up the
+ * box.
+ */
+DEFINE_PER_CPU(printk_func_t, printk_func) = vprintk_default;
 
 /**
  * printk - print a kernel message
@@ -1680,19 +1726,21 @@ EXPORT_SYMBOL(printk_emit);
  */
 asmlinkage int printk(const char *fmt, ...)
 {
+	printk_func_t vprintk_func;
 	va_list args;
 	int r;
 
-#ifdef CONFIG_KGDB_KDB
-	if (unlikely(kdb_trap_printk)) {
-		va_start(args, fmt);
-		r = vkdb_printf(fmt, args);
-		va_end(args);
-		return r;
-	}
-#endif
 	va_start(args, fmt);
-	r = vprintk_emit(0, -1, NULL, 0, fmt, args);
+
+	/*
+	 * If a caller overrides the per_cpu printk_func, then it needs
+	 * to disable preemption when calling printk(). Otherwise
+	 * the printk_func should be set to the default. No need to
+	 * disable preemption here.
+	 */
+	vprintk_func = this_cpu_read(printk_func);
+	r = vprintk_func(fmt, args);
+
 	va_end(args);
 
 	return r;
@@ -1921,7 +1969,7 @@ void resume_console(void)
  * called when a new CPU comes online (or fails to come up), and ensures
  * that any such output gets printed.
  */
-static int __cpuinit console_cpu_notify(struct notifier_block *self,
+static int console_cpu_notify(struct notifier_block *self,
 	unsigned long action, void *hcpu)
 {
 	switch (action) {
@@ -2034,6 +2082,7 @@ void console_unlock(void)
 	unsigned long flags;
 	bool wake_klogd = false;
 	bool retry;
+	unsigned cnt;
 
 	if (console_suspended) {
 		up(&console_sem);
@@ -2045,6 +2094,7 @@ void console_unlock(void)
 	/* flush buffered message fragment immediately to console */
 	console_cont_flush(text, sizeof(text));
 again:
+	cnt = 5;
 	for (;;) {
 		struct log *msg;
 		size_t len;
@@ -2065,6 +2115,9 @@ again:
 skip:
 		if (console_seq == log_next_seq)
 			break;
+
+		if (--cnt == 0)
+			break;	/* Someone else printk's like crazy */
 
 		msg = log_from_idx(console_idx);
 		if (msg->flags & LOG_NOCONS) {
@@ -2121,6 +2174,26 @@ skip:
 	if (retry && console_trylock())
 		goto again;
 
+	if (cnt == 0) {
+		/*
+		 * Other CPU(s) printk like crazy, filling log_buf[].
+		 * Try to get rid of the "honor" of servicing their data:
+		 * give time for _them_ to get console_sem and start working.
+		 */
+		cnt = 9999;
+		while (--cnt != 0) {
+			cpu_relax();
+			if (console_seq == log_next_seq) {
+				/* Good, other CPU entered "for(;;)" loop */
+				goto out;
+			}
+		}
+		/* No one seems to be willing to take it... */
+		if (console_trylock())
+			goto again; /* we took it */
+		/* Nope, someone else holds console_sem! Good */
+	}
+out:
 	if (wake_klogd)
 		wake_up_klogd();
 }
@@ -2241,6 +2314,13 @@ void register_console(struct console *newcon)
 	int i;
 	unsigned long flags;
 	struct console *bcon = NULL;
+
+	if (console_drivers)
+		for_each_console(bcon)
+			if (WARN(bcon == newcon,
+					"console '%s%d' already registered\n",
+					bcon->name, bcon->index))
+				return;
 
 	/*
 	 * before we register a new CON_BOOT console, make sure we don't
@@ -2449,21 +2529,20 @@ late_initcall(printk_late_init);
 /*
  * Delayed printk version, for scheduler-internal messages:
  */
-#define PRINTK_BUF_SIZE		512
 
 #define PRINTK_PENDING_WAKEUP	0x01
-#define PRINTK_PENDING_SCHED	0x02
+#define PRINTK_PENDING_OUTPUT	0x02
 
 static DEFINE_PER_CPU(int, printk_pending);
-static DEFINE_PER_CPU(char [PRINTK_BUF_SIZE], printk_sched_buf);
 
 static void wake_up_klogd_work_func(struct irq_work *irq_work)
 {
 	int pending = __this_cpu_xchg(printk_pending, 0);
 
-	if (pending & PRINTK_PENDING_SCHED) {
-		char *buf = __get_cpu_var(printk_sched_buf);
-		printk(KERN_WARNING "[sched_delayed] %s", buf);
+	if (pending & PRINTK_PENDING_OUTPUT) {
+		/* if trylock fails, someone else is doing the printing */
+		if (console_trylock())
+			console_unlock();
 	}
 
 	if (pending & PRINTK_PENDING_WAKEUP)
@@ -2485,23 +2564,19 @@ void wake_up_klogd(void)
 	preempt_enable();
 }
 
-int printk_sched(const char *fmt, ...)
+int printk_deferred(const char *fmt, ...)
 {
-	unsigned long flags;
 	va_list args;
-	char *buf;
 	int r;
 
-	local_irq_save(flags);
-	buf = __get_cpu_var(printk_sched_buf);
-
+	preempt_disable();
 	va_start(args, fmt);
-	r = vsnprintf(buf, PRINTK_BUF_SIZE, fmt, args);
+	r = vprintk_emit(0, LOGLEVEL_SCHED, NULL, 0, fmt, args);
 	va_end(args);
 
-	__this_cpu_or(printk_pending, PRINTK_PENDING_SCHED);
+	__this_cpu_or(printk_pending, PRINTK_PENDING_OUTPUT);
 	irq_work_queue(&__get_cpu_var(wake_up_klogd_work));
-	local_irq_restore(flags);
+	preempt_enable();
 
 	return r;
 }
@@ -2892,9 +2967,11 @@ void __init dump_stack_set_arch_desc(const char *fmt, ...)
  */
 void dump_stack_print_info(const char *log_lvl)
 {
-	printk("%sCPU: %d PID: %d Comm: %.20s %s %s %.*s\n",
+	printk("%sCPU: %d PID: %d Comm: %.20s %s%s %s %.*s\n",
 	       log_lvl, raw_smp_processor_id(), current->pid, current->comm,
-	       print_tainted(), init_utsname()->release,
+	       kexec_crash_loaded() ? "Kdump: loaded " : "",
+	       print_tainted(),
+	       init_utsname()->release,
 	       (int)strcspn(init_utsname()->version, " "),
 	       init_utsname()->version);
 

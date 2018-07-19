@@ -28,6 +28,8 @@
 #include <asm/fpu-internal.h>
 #include <asm/debugreg.h>
 #include <asm/nmi.h>
+#include <asm/mce.h>
+#include <asm/spec_ctrl.h>
 
 /*
  * per-CPU TSS segments. Threads are completely 'soft' on Linux,
@@ -36,7 +38,7 @@
  * section. Since TSS's are completely CPU-local, we want them
  * on exact cacheline boundaries, to eliminate cacheline ping-pong.
  */
-DEFINE_PER_CPU_SHARED_ALIGNED(struct tss_struct, init_tss) = INIT_TSS;
+DEFINE_PER_CPU_PAGE_ALIGNED_USER_MAPPED(struct tss_struct, init_tss) = INIT_TSS;
 
 #ifdef CONFIG_X86_64
 static DEFINE_PER_CPU(unsigned char, is_idle);
@@ -93,6 +95,7 @@ void arch_task_cache_init(void)
         	kmem_cache_create("task_xstate", xstate_size,
 				  __alignof__(union thread_xstate),
 				  SLAB_PANIC | SLAB_NOTRACK, NULL);
+	setup_xstate_comp();
 }
 
 /*
@@ -194,6 +197,151 @@ int set_tsc_mode(unsigned int val)
 	return 0;
 }
 
+#ifdef CONFIG_SMP
+
+struct ssb_state {
+	struct ssb_state	*shared_state;
+	raw_spinlock_t		lock;
+	unsigned int		disable_state;
+	unsigned long		local_state;
+};
+
+#define LSTATE_SSB	0
+
+static DEFINE_PER_CPU(struct ssb_state, ssb_state);
+
+void speculative_store_bypass_ht_init(void)
+{
+	struct ssb_state *st = this_cpu_ptr(&ssb_state);
+	unsigned int this_cpu = smp_processor_id();
+	unsigned int cpu;
+
+	st->local_state = 0;
+
+	/*
+	 * Shared state setup happens once on the first bringup
+	 * of the CPU. It's not destroyed on CPU hotunplug.
+	 */
+	if (st->shared_state)
+		return;
+
+	raw_spin_lock_init(&st->lock);
+
+	/*
+	 * Go over HT siblings and check whether one of them has set up the
+	 * shared state pointer already.
+	 */
+	for_each_cpu(cpu, topology_sibling_cpumask(this_cpu)) {
+		if (cpu == this_cpu)
+			continue;
+
+		if (!per_cpu(ssb_state, cpu).shared_state)
+			continue;
+
+		/* Link it to the state of the sibling: */
+		st->shared_state = per_cpu(ssb_state, cpu).shared_state;
+		return;
+	}
+
+	/*
+	 * First HT sibling to come up on the core.  Link shared state of
+	 * the first HT sibling to itself. The siblings on the same core
+	 * which come up later will see the shared state pointer and link
+	 * themself to the state of this CPU.
+	 */
+	st->shared_state = st;
+}
+
+/*
+ * Logic is: First HT sibling enables SSBD for both siblings in the core
+ * and last sibling to disable it, disables it for the whole core. This how
+ * MSR_SPEC_CTRL works in "hardware":
+ *
+ *  CORE_SPEC_CTRL = THREAD0_SPEC_CTRL | THREAD1_SPEC_CTRL
+ */
+static __always_inline void amd_set_core_ssb_state(unsigned long tifn)
+{
+	struct ssb_state *st = this_cpu_ptr(&ssb_state);
+	u64 msr = x86_amd_ls_cfg_base;
+
+	if (!static_cpu_has(X86_FEATURE_ZEN)) {
+		msr |= ssbd_tif_to_amd_ls_cfg(tifn);
+		wrmsrl(MSR_AMD64_LS_CFG, msr);
+		return;
+	}
+
+	if (tifn & _TIF_SSBD) {
+		/*
+		 * Since this can race with prctl(), block reentry on the
+		 * same CPU.
+		 */
+		if (__test_and_set_bit(LSTATE_SSB, &st->local_state))
+			return;
+
+		msr |= x86_amd_ls_cfg_ssbd_mask;
+
+		raw_spin_lock(&st->shared_state->lock);
+		/* First sibling enables SSBD: */
+		if (!st->shared_state->disable_state)
+			wrmsrl(MSR_AMD64_LS_CFG, msr);
+		st->shared_state->disable_state++;
+		raw_spin_unlock(&st->shared_state->lock);
+	} else {
+		if (!__test_and_clear_bit(LSTATE_SSB, &st->local_state))
+			return;
+
+		raw_spin_lock(&st->shared_state->lock);
+		st->shared_state->disable_state--;
+		if (!st->shared_state->disable_state)
+			wrmsrl(MSR_AMD64_LS_CFG, msr);
+		raw_spin_unlock(&st->shared_state->lock);
+	}
+}
+#else
+static __always_inline void amd_set_core_ssb_state(unsigned long tifn)
+{
+	u64 msr = x86_amd_ls_cfg_base | ssbd_tif_to_amd_ls_cfg(tifn);
+
+	wrmsrl(MSR_AMD64_LS_CFG, msr);
+}
+#endif
+
+static __always_inline void amd_set_ssb_virt_state(unsigned long tifn)
+{
+	/*
+	 * SSBD has the same definition in SPEC_CTRL and VIRT_SPEC_CTRL,
+	 * so ssbd_tif_to_spec_ctrl() just works.
+	 */
+	wrmsrl(MSR_AMD64_VIRT_SPEC_CTRL, ssbd_tif_to_spec_ctrl(tifn));
+}
+
+static __always_inline void intel_set_ssb_state(unsigned long tifn)
+{
+	spec_ctrl_set_ssbd(ssbd_tif_to_spec_ctrl(tifn));
+	wrmsrl(MSR_IA32_SPEC_CTRL, this_cpu_read(spec_ctrl_pcp.entry64));
+}
+
+static __always_inline void __speculative_store_bypass_update(unsigned long tifn)
+{
+	if (!static_key_false(&ssbd_userset_key))
+		return;	/* Don't do anything if not user settable */
+
+	if (static_cpu_has(X86_FEATURE_VIRT_SSBD))
+		amd_set_ssb_virt_state(tifn);
+	else if (static_cpu_has(X86_FEATURE_LS_CFG_SSBD))
+		amd_set_core_ssb_state(tifn);
+	else
+		intel_set_ssb_state(tifn);
+}
+
+void speculative_store_bypass_update(unsigned long tif)
+{
+	preempt_disable();
+	__speculative_store_bypass_update(tif);
+	preempt_enable();
+}
+EXPORT_SYMBOL_GPL(speculative_store_bypass_update);
+
 void __switch_to_xtra(struct task_struct *prev_p, struct task_struct *next_p,
 		      struct tss_struct *tss)
 {
@@ -236,6 +384,10 @@ void __switch_to_xtra(struct task_struct *prev_p, struct task_struct *next_p,
 		memset(tss->io_bitmap, 0xff, prev->io_bitmap_max);
 	}
 	propagate_user_return_notify(prev_p, next_p);
+
+	if (test_tsk_thread_flag(prev_p, TIF_SSBD) ^
+	    test_tsk_thread_flag(next_p, TIF_SSBD))
+		__speculative_store_bypass_update(task_thread_info(next_p)->flags);
 }
 
 /*
@@ -279,6 +431,7 @@ void exit_idle(void)
 
 void arch_cpu_idle_enter(void)
 {
+	tsc_verify_tsc_adjust();
 	local_touch_nmi();
 	enter_idle();
 }
@@ -298,16 +451,19 @@ void arch_cpu_idle_dead(void)
  */
 void arch_cpu_idle(void)
 {
-	if (cpuidle_idle_call())
+	if (cpuidle_idle_call()) {
+		/* The cpuidle call failed, fallback to a simpler idle */
+		spec_ctrl_ibrs_off();
 		x86_idle();
-	else
+		spec_ctrl_ibrs_on();
+	} else
 		local_irq_enable();
 }
 
 /*
  * We use this if we don't have any better idle routine..
  */
-void default_idle(void)
+void __cpuidle default_idle(void)
 {
 	trace_cpu_idle_rcuidle(1, smp_processor_id());
 	safe_halt();
@@ -327,6 +483,7 @@ bool xen_set_default_idle(void)
 	return ret;
 }
 #endif
+
 void stop_this_cpu(void *dummy)
 {
 	local_irq_disable();
@@ -335,9 +492,27 @@ void stop_this_cpu(void *dummy)
 	 */
 	set_cpu_online(smp_processor_id(), false);
 	disable_local_APIC();
+	mcheck_cpu_clear(this_cpu_ptr(&cpu_info));
 
-	for (;;)
-		halt();
+	/*
+	 * Use wbinvd on processors that support SME. This provides support
+	 * for performing a successful kexec when going from SME inactive
+	 * to SME active (or vice-versa). The cache must be cleared so that
+	 * if there are entries with the same physical address, both with and
+	 * without the encryption bit, they don't race each other when flushed
+	 * and potentially end up with the wrong entry being committed to
+	 * memory.
+	 */
+	if (boot_cpu_has(X86_FEATURE_SME))
+		native_wbinvd();
+	for (;;) {
+		/*
+		 * Use native_halt() so that memory contents don't change
+		 * (stack usage and variables) after possibly issuing the
+		 * native_wbinvd() above.
+		 */
+		native_halt();
+	}
 }
 
 bool amd_e400_c1e_detected;
@@ -391,14 +566,14 @@ static void amd_e400_idle(void)
 		 * The switch back from broadcast mode needs to be
 		 * called with interrupts disabled.
 		 */
-		 local_irq_disable();
-		 clockevents_notify(CLOCK_EVT_NOTIFY_BROADCAST_EXIT, &cpu);
-		 local_irq_enable();
+		local_irq_disable();
+		clockevents_notify(CLOCK_EVT_NOTIFY_BROADCAST_EXIT, &cpu);
+		local_irq_enable();
 	} else
 		default_idle();
 }
 
-void __cpuinit select_idle_routine(const struct cpuinfo_x86 *c)
+void select_idle_routine(const struct cpuinfo_x86 *c)
 {
 #ifdef CONFIG_SMP
 	if (boot_option_idle_override == IDLE_POLL && smp_num_siblings > 1)
@@ -465,7 +640,6 @@ unsigned long arch_align_stack(unsigned long sp)
 
 unsigned long arch_randomize_brk(struct mm_struct *mm)
 {
-	unsigned long range_end = mm->brk + 0x02000000;
-	return randomize_range(mm->brk, range_end, 0) ? : mm->brk;
+	return randomize_page(mm->brk, 0x02000000);
 }
 

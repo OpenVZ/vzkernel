@@ -11,6 +11,7 @@
 #include <asm/uaccess.h>
 #include <asm/desc.h>
 #include <asm/ftrace.h>
+#include <asm/asm.h>
 
 #ifdef CONFIG_FUNCTION_TRACER
 /* mcount and __fentry__ are defined in assembly */
@@ -36,6 +37,8 @@ EXPORT_SYMBOL(copy_user_enhanced_fast_string);
 EXPORT_SYMBOL(__copy_user_nocache);
 EXPORT_SYMBOL(_copy_from_user);
 EXPORT_SYMBOL(_copy_to_user);
+
+EXPORT_SYMBOL_GPL(memcpy_mcsafe_unrolled);
 
 EXPORT_SYMBOL(copy_page);
 EXPORT_SYMBOL(clear_page);
@@ -63,6 +66,29 @@ EXPORT_SYMBOL(memmove);
 EXPORT_SYMBOL(phys_base);
 #endif
 EXPORT_SYMBOL(empty_zero_page);
+EXPORT_SYMBOL(init_level4_pgt);
 #ifndef CONFIG_PARAVIRT
 EXPORT_SYMBOL(native_load_gs_index);
+#endif
+
+#define EXPORT_THUNK(reg)						\
+	extern void __x86_indirect_thunk_ ## reg(void);			\
+	EXPORT_SYMBOL(__x86_indirect_thunk_ ## reg)
+
+#ifdef CONFIG_RETPOLINE
+EXPORT_THUNK(rax);
+EXPORT_THUNK(rbx);
+EXPORT_THUNK(rcx);
+EXPORT_THUNK(rdx);
+EXPORT_THUNK(rsi);
+EXPORT_THUNK(rdi);
+EXPORT_THUNK(rbp);
+EXPORT_THUNK(r8);
+EXPORT_THUNK(r9);
+EXPORT_THUNK(r10);
+EXPORT_THUNK(r11);
+EXPORT_THUNK(r12);
+EXPORT_THUNK(r13);
+EXPORT_THUNK(r14);
+EXPORT_THUNK(r15);
 #endif

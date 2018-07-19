@@ -10,27 +10,13 @@
 
 #include <linux/types.h>
 #include <linux/scatterlist.h>
+#include <linux/kernel.h>
 
 struct scsi_cmnd;
 
-/*
- * The maximum number of SG segments that we will put inside a
- * scatterlist (unless chaining is used). Should ideally fit inside a
- * single page, to avoid a higher order allocation.  We could define this
- * to SG_MAX_SINGLE_ALLOC to pack correctly at the highest order.  The
- * minimum value is 32
- */
-#define SCSI_MAX_SG_SEGMENTS	128
-
-/*
- * Like SCSI_MAX_SG_SEGMENTS, but for archs that have sg chaining. This limit
- * is totally arbitrary, a setting of 2048 will get you at least 8mb ios.
- */
-#ifdef ARCH_HAS_SG_CHAIN
-#define SCSI_MAX_SG_CHAIN_SEGMENTS	2048
-#else
-#define SCSI_MAX_SG_CHAIN_SEGMENTS	SCSI_MAX_SG_SEGMENTS
-#endif
+enum scsi_timeouts {
+	SCSI_DEFAULT_EH_TIMEOUT		= 10 * HZ,
+};
 
 /*
  * DIX-capable adapters effectively support infinite chaining for the
@@ -123,8 +109,10 @@ struct scsi_cmnd;
 #define MOVE_MEDIUM           0xa5
 #define EXCHANGE_MEDIUM       0xa6
 #define READ_12               0xa8
+#define SERVICE_ACTION_OUT_12 0xa9
 #define WRITE_12              0xaa
-#define READ_MEDIA_SERIAL_NUMBER 0xab
+#define READ_MEDIA_SERIAL_NUMBER 0xab /* Obsolete with SPC-2 */
+#define SERVICE_ACTION_IN_12  0xab
 #define WRITE_VERIFY_12       0xae
 #define VERIFY_12	      0xaf
 #define SEARCH_HIGH_12        0xb0
@@ -139,16 +127,20 @@ struct scsi_cmnd;
 #define ACCESS_CONTROL_IN     0x86
 #define ACCESS_CONTROL_OUT    0x87
 #define READ_16               0x88
+#define COMPARE_AND_WRITE     0x89
 #define WRITE_16              0x8a
 #define READ_ATTRIBUTE        0x8c
 #define WRITE_ATTRIBUTE	      0x8d
 #define VERIFY_16	      0x8f
 #define SYNCHRONIZE_CACHE_16  0x91
 #define WRITE_SAME_16	      0x93
-#define SERVICE_ACTION_IN     0x9e
+#define SERVICE_ACTION_BIDIRECTIONAL 0x9d
+#define SERVICE_ACTION_IN_16  0x9e
+#define SERVICE_ACTION_OUT_16 0x9f
 /* values for service action in */
 #define	SAI_READ_CAPACITY_16  0x10
 #define SAI_GET_LBA_STATUS    0x12
+#define SAI_REPORT_REFERRALS  0x13
 /* values for VARIABLE_LENGTH_CMD service action codes
  * see spc4r17 Section D.3.5, table D.7 and D.8 */
 #define VLC_SA_RECEIVE_CREDENTIAL 0x1800
@@ -158,8 +150,8 @@ struct scsi_cmnd;
 #define MI_REPORT_ALIASES     0x0b
 #define MI_REPORT_SUPPORTED_OPERATION_CODES 0x0c
 #define MI_REPORT_SUPPORTED_TASK_MANAGEMENT_FUNCTIONS 0x0d
-#define MI_REPORT_PRIORITY   0x0e
-#define MI_REPORT_TIMESTAMP  0x0f
+#define MI_REPORT_PRIORITY    0x0e
+#define MI_REPORT_TIMESTAMP   0x0f
 #define MI_MANAGEMENT_PROTOCOL_IN 0x10
 /* value for MI_REPORT_TARGET_PGS ext header */
 #define MI_EXT_HDR_PARAM_FMT  0x20
@@ -183,6 +175,9 @@ struct scsi_cmnd;
 /* Values for T10/04-262r7 */
 #define	ATA_16		      0x85	/* 16-byte pass-thru */
 #define	ATA_12		      0xa1	/* 12-byte pass-thru */
+
+/* Vendor specific CDBs start here */
+#define VENDOR_SPECIFIC_CDB 0xc0
 
 /*
  *	SCSI command lengths
@@ -325,6 +320,7 @@ static inline int scsi_status_is_good(int status)
 #define TYPE_ENCLOSURE      0x0d    /* Enclosure Services Device */
 #define TYPE_RBC	    0x0e
 #define TYPE_OSD            0x11
+#define TYPE_WLUN           0x1e    /* well-known logical unit */
 #define TYPE_NO_LUN         0x7f
 
 /* SCSI protocols; these are taken from SPC-3 section 7.5 */
@@ -452,6 +448,8 @@ static inline int scsi_is_wlun(unsigned int lun)
 				 * other paths */
 #define DID_NEXUS_FAILURE 0x11  /* Permanent nexus failure, retry on other
 				 * paths might yield different results */
+#define DID_ALLOC_FAILURE 0x12  /* Space allocation on the device failed */
+#define DID_MEDIUM_ERROR  0x13  /* Medium error */
 #define DRIVER_OK       0x00	/* Driver status                           */
 
 /*
@@ -481,7 +479,6 @@ static inline int scsi_is_wlun(unsigned int lun)
 #define TIMEOUT_ERROR   0x2007
 #define SCSI_RETURN_NOT_HANDLED   0x2008
 #define FAST_IO_FAIL	0x2009
-#define TARGET_ERROR    0x200A
 
 /*
  * Midlevel queue return values.

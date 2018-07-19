@@ -1,0 +1,77 @@
+#
+# This Makefile generates the following header files needed to support qrwlock:
+#  1) include/generated/qrwlock.h (from rwlock.h)
+#  2) include/generated/qrwlock_types.h (from rwlock_types.h)
+#  3) include/generated/qrwlock_api_smp.h (from rwlock_api_smp.h)
+#  4) kernel/qrwlock_gen.c (from spinlock.c)
+#  5) lib/qrwlock_debug.c (from spinlock_debug.c)
+#
+
+qrwlock_h = include/generated/qrwlock.h
+qrwlock_types_h = include/generated/qrwlock_types.h
+qrwlock_api_smp_h = include/generated/qrwlock_api_smp.h
+qrwlock_gen_c = kernel/qrwlock_gen.c
+qrwlock_debug_c = lib/qrwlock_debug.c
+
+qlock_files = $(qrwlock_h) $(qrwlock_api_smp_h) $(qrwlock_types_h) \
+	      $(qrwlock_gen_c) $(qrwlock_debug_c)
+
+define filechk_qrwlock.h
+	(set -e;					\
+	 echo "#include <asm/qrwlock.h>";		\
+	 sed -e "/__LINUX_SPINLOCK_H/,+2d"		\
+	     -e "s/RW/QRW/"				\
+	     -e "s/rwlock/qrwlock/g"			\
+	     -e "s/read/qread/g;s/write/qwrite/g" )
+endef
+
+define filechk_qrwlock_types.h
+	(set -e;					\
+	 echo "#include <asm-generic/qrwlock_types.h>";	\
+	 sed -e "s/RWLOCK/QRWLOCK/;s/RW_LOCK/QRW_LOCK/"	\
+	     -e "s/rwlock/qrwlock/g" )
+endef
+
+define filechk_qrwlock_api_smp.h
+	(set -e;					\
+	 sed -e "/__LINUX_SPINLOCK_API_SMP_H/,+2d"	\
+	     -e "s/RWLOCK/QRWLOCK/"			\
+	     -e "s/rwlock_t/qrwlock_t/g"		\
+	     -e "s/read_/qread_/g;s/write_/qwrite_/g" )
+endef
+
+dol := $$
+
+define filechk_qrwlock_gen.c
+	(set -e;					\
+	 sed -e "/BEGIN_SPINLOCK/,/END_SPINLOCK/d"	\
+	     -e '/#ifdef CONFIG_DEBUG_LOCK/,$(dol)d'	\
+	     -e "/raw_spinlock/d"			\
+	     -e "s/read/qread/g;s/write/qwrite/g"	\
+	     -e "s/rwlock/qrwlock/" )
+endef
+
+define filechk_qrwlock_debug.c
+	(set -e;					\
+	 echo "#ifdef CONFIG_QUEUED_RWLOCKS";		\
+	 sed -e "/BEGIN_SPINLOCK/,/END_SPINLOCK/d"	\
+	     -e "/raw_spin/,/EXPORT.*raw_spin/d"	\
+	     -e "s/RW/QRW/g;s/rwlock/qrwlock/g"		\
+	     -e "s/read_/qread_/g;s/write_/qwrite_/g";	\
+	 echo "#endif" )
+endef
+
+$(qrwlock_h): include/linux/rwlock.h FORCE
+	$(call filechk,qrwlock.h)
+
+$(qrwlock_types_h): include/linux/rwlock_types.h FORCE
+	$(call filechk,qrwlock_types.h)
+
+$(qrwlock_api_smp_h): include/linux/rwlock_api_smp.h FORCE
+	$(call filechk,qrwlock_api_smp.h)
+
+$(qrwlock_gen_c): kernel/spinlock.c FORCE
+	$(call filechk,qrwlock_gen.c)
+
+$(qrwlock_debug_c): lib/spinlock_debug.c FORCE
+	$(call filechk,qrwlock_debug.c)

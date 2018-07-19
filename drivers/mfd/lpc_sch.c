@@ -73,7 +73,7 @@ static struct mfd_cell wdt_sch_cell = {
 	.resources = &wdt_sch_resource,
 };
 
-static DEFINE_PCI_DEVICE_TABLE(lpc_sch_ids) = {
+static const struct pci_device_id lpc_sch_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_SCH_LPC) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_ITC_LPC) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_CENTERTON_ILB) },

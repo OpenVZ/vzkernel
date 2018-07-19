@@ -45,6 +45,16 @@ config STMP_DEVICE
 config PERCPU_RWSEM
 	boolean
 
+config ARCH_USE_CMPXCHG_LOCKREF
+	bool
+
+config CMPXCHG_LOCKREF
+	def_bool y if ARCH_USE_CMPXCHG_LOCKREF
+	depends on SMP
+	depends on !GENERIC_LOCKBREAK
+	depends on !DEBUG_SPINLOCK
+	depends on !DEBUG_LOCK_ALLOC
+
 config CRC_CCITT
 	tristate "CRC-CCITT functions"
 	help
@@ -63,6 +73,8 @@ config CRC16
 
 config CRC_T10DIF
 	tristate "CRC calculation for the T10 Data Integrity Field"
+	select CRYPTO
+	select CRYPTO_CRCT10DIF
 	help
 	  This option is only needed if a module that's not in the
 	  kernel tree needs to calculate CRC checks for use with the
@@ -174,9 +186,22 @@ config AUDIT_GENERIC
 	depends on AUDIT && !AUDIT_ARCH
 	default y
 
+config RANDOM32_SELFTEST
+	bool "PRNG perform self test on init"
+	default n
+	help
+	  This option enables the 32 bit PRNG library functions to perform a
+	  self test on initialization.
+
 #
 # compression support is select'ed if needed
 #
+config 842_COMPRESS
+	tristate
+
+config 842_DECOMPRESS
+	tristate
+
 config ZLIB_INFLATE
 	tristate
 
@@ -294,6 +319,40 @@ config TEXTSEARCH_FSM
 config BTREE
 	boolean
 
+config INTERVAL_TREE
+	boolean
+	help
+	  Simple, embeddable, interval-tree. Can find the start of an
+	  overlapping range in log(n) time and then iterate over all
+	  overlapping nodes. The algorithm is implemented as an
+	  augmented rbtree.
+
+	  See:
+
+		Documentation/rbtree.txt
+
+	  for more information.
+
+config GENERIC_PAGE_TABLE
+	bool
+
+config RADIX_TREE_MULTIORDER
+	bool
+
+config ASSOCIATIVE_ARRAY
+	bool
+	help
+	  Generic associative array.  Can be searched and iterated over whilst
+	  it is being modified.  It is also reasonably quick to search and
+	  modify.  The algorithms are non-recursive, and the trees are highly
+	  capacious.
+
+	  See:
+
+		Documentation/assoc_array.txt
+
+	  for more information.
+
 config HAS_IOMEM
 	boolean
 	depends on !NO_IOMEM
@@ -309,6 +368,11 @@ config HAS_DMA
 	boolean
 	depends on !NO_DMA
 	default y
+
+config DMA_VIRT_OPS
+	bool
+	depends on HAS_DMA && (!64BIT || ARCH_DMA_ADDR_T_64BIT)
+	default n
 
 config CHECK_SIGNATURE
 	bool
@@ -376,6 +440,11 @@ config DDR
 	  information. This data is useful for drivers handling
 	  DDR SDRAM controllers.
 
+config IRQ_POLL
+	bool "IRQ polling library"
+	help
+	  Helper library to poll interrupt mitigation using polling.
+
 config MPILIB
 	tristate
 	select CLZ_TAB
@@ -406,5 +475,27 @@ config OID_REGISTRY
 
 config UCS2_STRING
         tristate
+
+config SG_POOL
+	def_bool n
+	help
+	 Provides a helper to allocate chained scatterlists. This should be
+	 selected by a driver or an API which whishes to allocate chained
+	 scatterlist.
+
+config ARCH_HAS_PMEM_API
+	bool
+
+config ARCH_HAS_UACCESS_FLUSHCACHE
+	bool
+
+config ARCH_HAS_MMIO_FLUSH
+	bool
+
+config PARMAN
+	tristate
+
+config SBITMAP
+	bool
 
 endmenu

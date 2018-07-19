@@ -63,6 +63,21 @@ config DEFAULT_IOSCHED
 	default "cfq" if DEFAULT_CFQ
 	default "noop" if DEFAULT_NOOP
 
+config MQ_IOSCHED_DEADLINE
+	tristate "MQ deadline I/O scheduler"
+	default y
+	---help---
+	  MQ version of the deadline IO scheduler.
+
+config MQ_IOSCHED_KYBER
+	tristate "Kyber I/O scheduler"
+	default y
+	---help---
+	  The Kyber I/O scheduler is a low-overhead scheduler suitable for
+	  multiqueue and other fast devices. Given target latencies for reads and
+	  synchronous writes, it will self-tune queue depths to achieve that
+	  goal.
+
 endmenu
 
 endif

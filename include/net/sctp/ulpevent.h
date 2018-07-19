@@ -55,15 +55,15 @@
  */
 struct sctp_ulpevent {
 	struct sctp_association *asoc;
-	__u16 stream;
-	__u16 ssn;
-	__u16 flags;
+	struct sctp_chunk *chunk;
+	unsigned int rmem_len;
 	__u32 ppid;
 	__u32 tsn;
 	__u32 cumtsn;
-	int msg_flags;
-	int iif;
-	unsigned int rmem_len;
+	__u16 stream;
+	__u16 ssn;
+	__u16 flags;
+	__u16 msg_flags;
 };
 
 /* Retrieve the skb this event sits inside of. */
@@ -136,7 +136,12 @@ struct sctp_ulpevent *sctp_ulpevent_make_sender_dry_event(
 	const struct sctp_association *asoc, gfp_t gfp);
 
 void sctp_ulpevent_read_sndrcvinfo(const struct sctp_ulpevent *event,
-	struct msghdr *);
+				   struct msghdr *);
+void sctp_ulpevent_read_rcvinfo(const struct sctp_ulpevent *event,
+				struct msghdr *);
+void sctp_ulpevent_read_nxtinfo(const struct sctp_ulpevent *event,
+				struct msghdr *, struct sock *sk);
+
 __u16 sctp_ulpevent_get_notification_type(const struct sctp_ulpevent *event);
 
 /* Is this event type enabled? */
@@ -162,10 +167,3 @@ static inline int sctp_ulpevent_is_enabled(const struct sctp_ulpevent *event,
 }
 
 #endif /* __sctp_ulpevent_h__ */
-
-
-
-
-
-
-

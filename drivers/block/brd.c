@@ -19,6 +19,10 @@
 #include <linux/radix-tree.h>
 #include <linux/fs.h>
 #include <linux/slab.h>
+#ifdef CONFIG_BLK_DEV_RAM_DAX
+#include <linux/pfn_t.h>
+#include <linux/dax.h>
+#endif
 
 #include <asm/uaccess.h>
 
@@ -38,6 +42,9 @@ struct brd_device {
 
 	struct request_queue	*brd_queue;
 	struct gendisk		*brd_disk;
+#ifdef CONFIG_BLK_DEV_RAM_DAX
+	struct dax_device	*dax_dev;
+#endif
 	struct list_head	brd_list;
 
 	/*
@@ -97,13 +104,13 @@ static struct page *brd_insert_page(struct brd_device *brd, sector_t sector)
 	 * Must use NOIO because we don't want to recurse back into the
 	 * block or filesystem layers from page reclaim.
 	 *
-	 * Cannot support XIP and highmem, because our ->direct_access
-	 * routine for XIP must return memory that is always addressable.
-	 * If XIP was reworked to use pfns and kmap throughout, this
+	 * Cannot support DAX and highmem, because our ->direct_access
+	 * routine for DAX must return memory that is always addressable.
+	 * If DAX was reworked to use pfns and kmap throughout, this
 	 * restriction might be able to be lifted.
 	 */
 	gfp_flags = GFP_NOIO | __GFP_ZERO;
-#ifndef CONFIG_BLK_DEV_XIP
+#ifndef CONFIG_BLK_DEV_RAM_DAX
 	gfp_flags |= __GFP_HIGHMEM;
 #endif
 	page = alloc_page(gfp_flags);
@@ -200,11 +207,11 @@ static int copy_to_brd_setup(struct brd_device *brd, sector_t sector, size_t n)
 
 	copy = min_t(size_t, n, PAGE_SIZE - offset);
 	if (!brd_insert_page(brd, sector))
-		return -ENOMEM;
+		return -ENOSPC;
 	if (copy < n) {
 		sector += copy >> SECTOR_SHIFT;
 		if (!brd_insert_page(brd, sector))
-			return -ENOMEM;
+			return -ENOSPC;
 	}
 	return 0;
 }
@@ -360,27 +367,43 @@ out:
 	bio_endio(bio, err);
 }
 
-#ifdef CONFIG_BLK_DEV_XIP
-static int brd_direct_access(struct block_device *bdev, sector_t sector,
-			void **kaddr, unsigned long *pfn)
+static int brd_rw_page(struct block_device *bdev, sector_t sector,
+		       struct page *page, int rw)
 {
 	struct brd_device *brd = bdev->bd_disk->private_data;
+	int err = brd_do_bvec(brd, page, PAGE_CACHE_SIZE, 0, rw, sector);
+	page_endio(page, rw & WRITE, err);
+	return err;
+}
+
+#ifdef CONFIG_BLK_DEV_RAM_DAX
+static long __brd_direct_access(struct brd_device *brd, pgoff_t pgoff,
+		long nr_pages, void **kaddr, pfn_t *pfn)
+{
 	struct page *page;
 
 	if (!brd)
 		return -ENODEV;
-	if (sector & (PAGE_SECTORS-1))
-		return -EINVAL;
-	if (sector + PAGE_SECTORS > get_capacity(bdev->bd_disk))
-		return -ERANGE;
-	page = brd_insert_page(brd, sector);
+	page = brd_insert_page(brd, PFN_PHYS(pgoff) / 512);
 	if (!page)
-		return -ENOMEM;
+		return -ENOSPC;
 	*kaddr = page_address(page);
-	*pfn = page_to_pfn(page);
+	*pfn = page_to_pfn_t(page);
 
-	return 0;
+	return 1;
 }
+
+static long brd_dax_direct_access(struct dax_device *dax_dev,
+		pgoff_t pgoff, long nr_pages, void **kaddr, pfn_t *pfn)
+{
+	struct brd_device *brd = dax_get_private(dax_dev);
+
+	return __brd_direct_access(brd, pgoff, nr_pages, kaddr, pfn);
+}
+
+static const struct dax_operations brd_dax_ops = {
+	.direct_access = brd_dax_direct_access,
+};
 #endif
 
 static int brd_ioctl(struct block_device *bdev, fmode_t mode,
@@ -419,10 +442,8 @@ static int brd_ioctl(struct block_device *bdev, fmode_t mode,
 
 static const struct block_device_operations brd_fops = {
 	.owner =		THIS_MODULE,
+	.rw_page =		brd_rw_page,
 	.ioctl =		brd_ioctl,
-#ifdef CONFIG_BLK_DEV_XIP
-	.direct_access =	brd_direct_access,
-#endif
 };
 
 /*
@@ -482,7 +503,6 @@ static struct brd_device *brd_alloc(int i)
 	brd->brd_queue->limits.max_discard_sectors = UINT_MAX;
 	brd->brd_queue->limits.discard_zeroes_data = 1;
 	queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, brd->brd_queue);
-
 	disk = brd->brd_disk = alloc_disk(1 << part_shift);
 	if (!disk)
 		goto out_free_queue;
@@ -495,8 +515,21 @@ static struct brd_device *brd_alloc(int i)
 	sprintf(disk->disk_name, "ram%d", i);
 	set_capacity(disk, rd_size * 2);
 
+#ifdef CONFIG_BLK_DEV_RAM_DAX
+	queue_flag_set_unlocked(QUEUE_FLAG_DAX, brd->brd_queue);
+	brd->dax_dev = alloc_dax(brd, disk->disk_name, &brd_dax_ops);
+	if (!brd->dax_dev)
+		goto out_free_inode;
+#endif
+
+
 	return brd;
 
+#ifdef CONFIG_BLK_DEV_RAM_DAX
+out_free_inode:
+	kill_dax(brd->dax_dev);
+	put_dax(brd->dax_dev);
+#endif
 out_free_queue:
 	blk_cleanup_queue(brd->brd_queue);
 out_free_dev:
@@ -534,6 +567,10 @@ out:
 static void brd_del_one(struct brd_device *brd)
 {
 	list_del(&brd->brd_list);
+#ifdef CONFIG_BLK_DEV_RAM_DAX
+	kill_dax(brd->dax_dev);
+	put_dax(brd->dax_dev);
+#endif
 	del_gendisk(brd->brd_disk);
 	brd_free(brd);
 }

@@ -16,12 +16,15 @@
 #include <linux/ftrace.h>
 #include <linux/uaccess.h>
 #include <linux/smp.h>
+#include <linux/magic.h>
 #include <asm/io_apic.h>
 #include <asm/idle.h>
 #include <asm/apic.h>
 
 DEFINE_PER_CPU_SHARED_ALIGNED(irq_cpustat_t, irq_stat);
 EXPORT_PER_CPU_SYMBOL(irq_stat);
+
+DEFINE_PER_CPU_SHARED_ALIGNED(rh_irq_cpustat_t, rh_irq_stat);
 
 DEFINE_PER_CPU(struct pt_regs *, irq_regs);
 EXPORT_PER_CPU_SYMBOL(irq_regs);
@@ -43,6 +46,9 @@ static inline void stack_overflow_check(struct pt_regs *regs)
 	u64 irq_stack_top, irq_stack_bottom;
 	u64 estack_top, estack_bottom;
 	u64 curbase = (u64)task_stack_page(current);
+
+	if (WARN_ON(__this_cpu_read(init_tss.stack_canary) != STACK_END_MAGIC))
+		__this_cpu_write(init_tss.stack_canary, STACK_END_MAGIC);
 
 	if (user_mode_vm(regs))
 		return;

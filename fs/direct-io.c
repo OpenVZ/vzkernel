@@ -46,6 +46,12 @@
 #define DIO_PAGES	64
 
 /*
+ * Flags for dio_complete()
+ */
+#define DIO_COMPLETE_ASYNC		0x01	/* This is async IO */
+#define DIO_COMPLETE_INVALIDATE		0x02	/* Can invalidate pages */
+
+/*
  * This code generally works in units of "dio_blocks".  A dio_block is
  * somewhere between the hard sector size and the filesystem block size.  it
  * is determined on a per-invocation basis.   When talking to the filesystem
@@ -127,6 +133,7 @@ struct dio {
 	spinlock_t bio_lock;		/* protects BIO fields below */
 	int page_errors;		/* errno from get_user_pages() */
 	int is_async;			/* is IO async ? */
+	bool defer_completion;		/* defer AIO completion to workqueue? */
 	int io_error;			/* IO error in completion path */
 	unsigned long refcount;		/* direct_io_worker() and bios */
 	struct bio *bio_list;		/* singly linked via bi_private */
@@ -141,7 +148,10 @@ struct dio {
 	 * allocation time.  Don't add new fields after pages[] unless you
 	 * wish that they not be zeroed.
 	 */
-	struct page *pages[DIO_PAGES];	/* page buffer */
+	union {
+		struct page *pages[DIO_PAGES];	/* page buffer */
+		struct work_struct complete_work;/* deferred AIO completion */
+	};
 } ____cacheline_aligned_in_smp;
 
 static struct kmem_cache *dio_cache __read_mostly;
@@ -217,22 +227,62 @@ static inline struct page *dio_get_page(struct dio *dio,
 	return dio->pages[sdio->head++];
 }
 
+static void dio_iodone_helper(struct dio *dio, loff_t offset,
+			      ssize_t transferred, ssize_t ret, bool is_async)
+{
+	if (dio->end_io && dio->result) {
+		dio->end_io(dio->iocb, offset, transferred,
+			    dio->private, ret, is_async);
+	} else {
+		if (!(dio->flags & DIO_SKIP_DIO_COUNT))
+			inode_dio_end(dio->inode);
+		if (is_async)
+			aio_complete(dio->iocb, ret, 0);
+	}
+}
+
+static void dio_iodone2_helper(struct dio *dio, loff_t offset,
+			       ssize_t transferred, ssize_t ret, bool is_async)
+{
+	if (dio->end_io && dio->result)
+		dio->end_io(dio->iocb, offset,
+				transferred, dio->private, ret, is_async);
+
+	if (!(dio->flags & DIO_SKIP_DIO_COUNT))
+		inode_dio_end(dio->inode);
+
+	if (is_async) {
+		if (dio->rw & WRITE) {
+			int err;
+
+			err = generic_write_sync(dio->iocb->ki_filp, offset,
+						 transferred);
+			if (err < 0 && ret > 0)
+				ret = err;
+		}
+
+		aio_complete(dio->iocb, ret, 0);
+	}
+}
+
 /**
  * dio_complete() - called when all DIO BIO I/O has been completed
  * @offset: the byte offset in the file of the completed operation
  *
- * This releases locks as dictated by the locking type, lets interested parties
- * know that a DIO operation has completed, and calculates the resulting return
- * code for the operation.
+ * This drops i_dio_count, lets interested parties know that a DIO operation
+ * has completed, and calculates the resulting return code for the operation.
  *
  * It lets the filesystem know if it registered an interest earlier via
  * get_block.  Pass the private field of the map buffer_head so that
  * filesystems can use it to hold additional state between get_block calls and
  * dio_complete.
  */
-static ssize_t dio_complete(struct dio *dio, loff_t offset, ssize_t ret, bool is_async)
+static ssize_t dio_complete(struct dio *dio, loff_t offset, ssize_t ret,
+		unsigned int flags)
 {
 	ssize_t transferred = 0;
+	int err;
+	bool is_async = false;
 
 	/*
 	 * AIO submission can race with bio completion to get here while
@@ -258,19 +308,52 @@ static ssize_t dio_complete(struct dio *dio, loff_t offset, ssize_t ret, bool is
 	if (ret == 0)
 		ret = transferred;
 
-	if (dio->end_io && dio->result) {
-		dio->end_io(dio->iocb, offset, transferred,
-			    dio->private, ret, is_async);
-	} else {
-		inode_dio_done(dio->inode);
-		if (is_async)
-			aio_complete(dio->iocb, ret, 0);
+	/*
+	 * Try again to invalidate clean pages which might have been cached by
+	 * non-direct readahead, or faulted in by get_user_pages() if the source
+	 * of the write was an mmap'ed region of the file we're writing.  Either
+	 * one is a pretty crazy thing to do, so we don't support it 100%.  If
+	 * this invalidation fails, tough, the write still worked...
+	 */
+	if (flags & DIO_COMPLETE_INVALIDATE &&
+	    ret > 0 && dio->rw & WRITE &&
+	    dio->inode->i_mapping->nrpages) {
+		err = invalidate_inode_pages2_range(dio->inode->i_mapping,
+					offset >> PAGE_SHIFT,
+					(offset + ret - 1) >> PAGE_SHIFT);
+		WARN_ON_ONCE(err);
 	}
 
+	/*
+	 * Red Hat only: we have to support two calling conventions for
+	 * dio_iodone_t functions:
+	 * 1) the original, where the routine will call aio_complete and
+	 * 2) the new calling convention, where that is done in the
+	 *    generic code.
+	 * Differentiate between the two cases using an inode flag that
+	 * gets populated for all in-tree file systems.
+	 */
+	if (flags & DIO_COMPLETE_ASYNC)
+		is_async = true;
+	if (dio->inode->i_sb->s_type->fs_flags & FS_HAS_DIO_IODONE2)
+		dio_iodone2_helper(dio, offset, transferred, ret, is_async);
+	else
+		dio_iodone_helper(dio, offset, transferred, ret, is_async);
+
+	kmem_cache_free(dio_cache, dio);
 	return ret;
 }
 
+static void dio_aio_complete_work(struct work_struct *work)
+{
+	struct dio *dio = container_of(work, struct dio, complete_work);
+
+	dio_complete(dio, dio->iocb->ki_pos, 0,
+		     DIO_COMPLETE_ASYNC | DIO_COMPLETE_INVALIDATE);
+}
+
 static int dio_bio_complete(struct dio *dio, struct bio *bio);
+
 /*
  * Asynchronous IO callback. 
  */
@@ -279,6 +362,7 @@ static void dio_bio_end_aio(struct bio *bio, int error)
 	struct dio *dio = bio->bi_private;
 	unsigned long remaining;
 	unsigned long flags;
+	bool defer_completion = false;
 
 	/* cleanup the bio */
 	dio_bio_complete(dio, bio);
@@ -290,8 +374,28 @@ static void dio_bio_end_aio(struct bio *bio, int error)
 	spin_unlock_irqrestore(&dio->bio_lock, flags);
 
 	if (remaining == 0) {
-		dio_complete(dio, dio->iocb->ki_pos, 0, true);
-		kmem_cache_free(dio_cache, dio);
+		/*
+		 * Defer completion when defer_completion is set or
+		 * when the inode has pages mapped and this is AIO write.
+		 * We need to invalidate those pages because there is a
+		 * chance they contain stale data in the case buffered IO
+		 * went in between AIO submission and completion into the
+		 * same region.
+		 */
+		if (dio->result && (dio->inode->i_sb->s_type->fs_flags &
+				    FS_HAS_DIO_IODONE2)) {
+			defer_completion = dio->defer_completion ||
+					   (dio->rw & WRITE &&
+					    dio->inode->i_mapping->nrpages);
+		}
+		if (defer_completion) {
+			INIT_WORK(&dio->complete_work, dio_aio_complete_work);
+			queue_work(dio->inode->i_sb->s_dio_done_wq,
+				   &dio->complete_work);
+		} else {
+			dio_complete(dio, dio->iocb->ki_pos, 0,
+				     DIO_COMPLETE_ASYNC);
+		}
 	}
 }
 
@@ -511,6 +615,46 @@ static inline int dio_bio_reap(struct dio *dio, struct dio_submit *sdio)
 }
 
 /*
+ * Create workqueue for deferred direct IO completions. We allocate the
+ * workqueue when it's first needed. This avoids creating workqueue for
+ * filesystems that don't need it and also allows us to create the workqueue
+ * late enough so the we can include s_id in the name of the workqueue.
+ */
+static int sb_init_dio_done_wq(struct super_block *sb)
+{
+	struct workqueue_struct *wq = alloc_workqueue("dio/%s",
+						      WQ_MEM_RECLAIM, 0,
+						      sb->s_id);
+	if (!wq)
+		return -ENOMEM;
+	/*
+	 * This has to be atomic as more DIOs can race to create the workqueue
+	 */
+	cmpxchg(&sb->s_dio_done_wq, NULL, wq);
+	/* Someone created workqueue before us? Free ours... */
+	if (wq != sb->s_dio_done_wq)
+		destroy_workqueue(wq);
+	return 0;
+}
+
+static int dio_set_defer_completion(struct dio *dio)
+{
+	struct super_block *sb = dio->inode->i_sb;
+
+	/*
+	 * If we get here, the file system had better understand the
+	 * new iodone calling convention.
+	 */
+	WARN_ON(!(dio->inode->i_sb->s_type->fs_flags & FS_HAS_DIO_IODONE2));
+	if (dio->defer_completion)
+		return 0;
+	dio->defer_completion = true;
+	if (!sb->s_dio_done_wq)
+		return sb_init_dio_done_wq(sb);
+	return 0;
+}
+
+/*
  * Call into the fs to map some more disk blocks.  We record the current number
  * of available blocks at sdio->blocks_available.  These are in units of the
  * fs blocksize, (1 << inode->i_blkbits).
@@ -559,11 +703,11 @@ static int get_more_blocks(struct dio *dio, struct dio_submit *sdio,
 		map_bh->b_size = fs_count << i_blkbits;
 
 		/*
-		 * For writes inside i_size on a DIO_SKIP_HOLES filesystem we
-		 * forbid block creations: only overwrites are permitted.
-		 * We will return early to the caller once we see an
-		 * unmapped buffer head returned, and the caller will fall
-		 * back to buffered I/O.
+		 * For writes that could fill holes inside i_size on a
+		 * DIO_SKIP_HOLES filesystem we forbid block creations: only
+		 * overwrites are permitted. We will return early to the caller
+		 * once we see an unmapped buffer head returned, and the caller
+		 * will fall back to buffered I/O.
 		 *
 		 * Otherwise the decision is left to the get_blocks method,
 		 * which may decide to handle it or also return an unmapped
@@ -571,8 +715,8 @@ static int get_more_blocks(struct dio *dio, struct dio_submit *sdio,
 		 */
 		create = dio->rw & WRITE;
 		if (dio->flags & DIO_SKIP_HOLES) {
-			if (sdio->block_in_file < (i_size_read(dio->inode) >>
-							sdio->blkbits))
+			if (fs_startblk <= ((i_size_read(dio->inode) - 1) >>
+							i_blkbits))
 				create = 0;
 		}
 
@@ -581,6 +725,9 @@ static int get_more_blocks(struct dio *dio, struct dio_submit *sdio,
 
 		/* Store for completion */
 		dio->private = map_bh->b_private;
+
+		if (ret == 0 && buffer_defer_completion(map_bh))
+			ret = dio_set_defer_completion(dio);
 	}
 	return ret;
 }
@@ -1128,24 +1275,68 @@ do_blockdev_direct_IO(int rw, struct kiocb *iocb, struct inode *inode,
 		}
 	}
 
-	/*
-	 * Will be decremented at I/O completion time.
-	 */
-	atomic_inc(&inode->i_dio_count);
+	/* Once we sampled i_size check for reads beyond EOF */
+	dio->i_size = i_size_read(inode);
+	if (rw == READ && offset >= dio->i_size) {
+		if (dio->flags & DIO_LOCKING)
+			mutex_unlock(&inode->i_mutex);
+		kmem_cache_free(dio_cache, dio);
+		retval = 0;
+		goto out;
+	}
 
 	/*
-	 * For file extending writes updating i_size before data
-	 * writeouts complete can expose uninitialized blocks. So
-	 * even for AIO, we need to wait for i/o to complete before
-	 * returning in this case.
+	 * For file extending writes updating i_size before data writeouts
+	 * complete can expose uninitialized blocks in dumb filesystems.
+	 * In that case we need to wait for I/O completion even if asked
+	 * for an asynchronous write.
 	 */
-	dio->is_async = !is_sync_kiocb(iocb) && !((rw & WRITE) &&
-		(end > i_size_read(inode)));
-
-	retval = 0;
+	if (is_sync_kiocb(iocb))
+		dio->is_async = false;
+	else if (!(dio->flags & DIO_ASYNC_EXTEND) &&
+            (rw & WRITE) && end > i_size_read(inode))
+		dio->is_async = false;
+	else
+		dio->is_async = true;
 
 	dio->inode = inode;
 	dio->rw = rw;
+
+	/*
+	 * For AIO O_(D)SYNC writes we need to defer completions to a workqueue
+	 * so that we can call ->fsync.
+	 */
+	if ((dio->inode->i_sb->s_type->fs_flags & FS_HAS_DIO_IODONE2) &&
+	    dio->is_async && (rw & WRITE)) {
+		retval = 0;
+		if ((iocb->ki_filp->f_flags & O_DSYNC) ||
+		    IS_SYNC(iocb->ki_filp->f_mapping->host))
+			retval = dio_set_defer_completion(dio);
+		else if (!dio->inode->i_sb->s_dio_done_wq) {
+			/*
+			 * In case of AIO write racing with buffered read we
+			 * need to defer completion. We can't decide this now,
+			 * however the workqueue needs to be initialized here.
+			 */
+			retval = sb_init_dio_done_wq(dio->inode->i_sb);
+		}
+		if (retval) {
+			/*
+			 * We grab i_mutex only for reads so we don't have
+			 * to release it here
+			 */
+			kmem_cache_free(dio_cache, dio);
+			goto out;
+		}
+	}
+
+	/*
+	 * Will be decremented at I/O completion time.
+	 */
+	if (!(dio->flags & DIO_SKIP_DIO_COUNT))
+		inode_dio_begin(inode);
+
+	retval = 0;
 	sdio.blkbits = blkbits;
 	sdio.blkfactor = i_blkbits - blkbits;
 	sdio.block_in_file = offset >> blkbits;
@@ -1157,7 +1348,6 @@ do_blockdev_direct_IO(int rw, struct kiocb *iocb, struct inode *inode,
 	sdio.next_block_for_io = -1;
 
 	dio->iocb = iocb;
-	dio->i_size = i_size_read(inode);
 
 	spin_lock_init(&dio->bio_lock);
 	dio->refcount = 1;
@@ -1268,8 +1458,8 @@ do_blockdev_direct_IO(int rw, struct kiocb *iocb, struct inode *inode,
 		dio_await_completion(dio);
 
 	if (drop_refcount(dio) == 0) {
-		retval = dio_complete(dio, offset, retval, false);
-		kmem_cache_free(dio_cache, dio);
+		retval = dio_complete(dio, offset, retval,
+				      DIO_COMPLETE_INVALIDATE);
 	} else
 		BUG_ON(retval != -EIOCBQUEUED);
 

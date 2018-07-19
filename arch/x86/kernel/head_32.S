@@ -19,9 +19,10 @@
 #include <asm/setup.h>
 #include <asm/processor-flags.h>
 #include <asm/msr-index.h>
-#include <asm/cpufeature.h>
+#include <asm/cpufeatures.h>
 #include <asm/percpu.h>
 #include <asm/nops.h>
+#include <asm/bootparam.h>
 
 /* Physical address */
 #define pa(X) ((X) - __PAGE_OFFSET)
@@ -86,11 +87,11 @@ RESERVE_BRK(pagetables, INIT_MAP_SIZE)
  */
 __HEAD
 ENTRY(startup_32)
-	movl pa(stack_start),%ecx
+	movl pa(initial_stack),%ecx
 	
 	/* test KEEP_SEGMENTS flag to see if the bootloader is asking
 		us to not reload segments */
-	testb $(1<<6), BP_loadflags(%esi)
+	testb $KEEP_SEGMENTS, BP_loadflags(%esi)
 	jnz 2f
 
 /*
@@ -144,7 +145,7 @@ ENTRY(startup_32)
 	movl %eax, pa(olpc_ofw_pgd)
 #endif
 
-#ifdef CONFIG_MICROCODE_EARLY
+#ifdef CONFIG_MICROCODE
 	/* Early load ucode on BSP. */
 	call load_ucode_bsp
 #endif
@@ -278,7 +279,7 @@ num_subarch_entries = (. - subarch_entries) / 4
  * start_secondary().
  */
 ENTRY(start_cpu0)
-	movl stack_start, %ecx
+	movl initial_stack, %ecx
 	movl %ecx, %esp
 	jmp  *(initial_code)
 ENDPROC(start_cpu0)
@@ -292,7 +293,6 @@ ENDPROC(start_cpu0)
  * If cpu hotplug is not supported then this code can go in init section
  * which will be freed later
  */
-__CPUINIT
 ENTRY(startup_32_smp)
 	cld
 	movl $(__BOOT_DS),%eax
@@ -300,15 +300,14 @@ ENTRY(startup_32_smp)
 	movl %eax,%es
 	movl %eax,%fs
 	movl %eax,%gs
-	movl pa(stack_start),%ecx
+	movl pa(initial_stack),%ecx
 	movl %eax,%ss
 	leal -__PAGE_OFFSET(%ecx),%esp
 
-#ifdef CONFIG_MICROCODE_EARLY
+#ifdef CONFIG_MICROCODE
 	/* Early load ucode on AP. */
 	call load_ucode_ap
 #endif
-
 
 default_entry:
 #define CR0_STATE	(X86_CR0_PE | X86_CR0_MP | X86_CR0_ET | \
@@ -499,21 +498,22 @@ check_x87:
 __INIT
 setup_once:
 	/*
-	 * Set up a idt with 256 entries pointing to ignore_int,
-	 * interrupt gates. It doesn't actually load idt - that needs
-	 * to be done on each CPU. Interrupts are enabled elsewhere,
-	 * when we can be relatively sure everything is ok.
+	 * Set up a idt with 256 interrupt gates that push zero if there
+	 * is no error code and then jump to early_idt_handler_common.
+	 * It doesn't actually load the idt - that needs to be done on
+	 * each CPU. Interrupts are enabled elsewhere, when we can be
+	 * relatively sure everything is ok.
 	 */
 
 	movl $idt_table,%edi
-	movl $early_idt_handlers,%eax
+	movl $early_idt_handler_array,%eax
 	movl $NUM_EXCEPTION_VECTORS,%ecx
 1:
 	movl %eax,(%edi)
 	movl %eax,4(%edi)
 	/* interrupt gate, dpl=0, present */
 	movl $(0x8E000000 + __KERNEL_CS),2(%edi)
-	addl $9,%eax
+	addl $EARLY_IDT_HANDLER_SIZE,%eax
 	addl $8,%edi
 	loop 1b
 
@@ -545,27 +545,33 @@ setup_once:
 	andl $0,setup_once_ref	/* Once is enough, thanks */
 	ret
 
-ENTRY(early_idt_handlers)
+ENTRY(early_idt_handler_array)
 	# 36(%esp) %eflags
 	# 32(%esp) %cs
 	# 28(%esp) %eip
 	# 24(%rsp) error code
 	i = 0
 	.rept NUM_EXCEPTION_VECTORS
-	.if (EXCEPTION_ERRCODE_MASK >> i) & 1
-	ASM_NOP2
-	.else
+	.ifeq (EXCEPTION_ERRCODE_MASK >> i) & 1
 	pushl $0		# Dummy error code, to make stack frame uniform
 	.endif
 	pushl $i		# 20(%esp) Vector number
-	jmp early_idt_handler
+	jmp early_idt_handler_common
 	i = i + 1
+	.fill early_idt_handler_array + i*EARLY_IDT_HANDLER_SIZE - ., 1, 0xcc
 	.endr
-ENDPROC(early_idt_handlers)
+ENDPROC(early_idt_handler_array)
 	
-	/* This is global to keep gas from relaxing the jumps */
-ENTRY(early_idt_handler)
+early_idt_handler_common:
+	/*
+	 * The stack is the hardware frame, an error code or zero, and the
+	 * vector number.
+	 */
 	cld
+
+	cmpl $2,(%esp)		# X86_TRAP_NMI
+	je is_nmi		# Ignore NMI
+
 	cmpl $2,%ss:early_recursion_flag
 	je hlt_loop
 	incl %ss:early_recursion_flag
@@ -616,10 +622,11 @@ ex_entry:
 	pop %edx
 	pop %ecx
 	pop %eax
-	addl $8,%esp		/* drop vector number and error code */
 	decl %ss:early_recursion_flag
+is_nmi:
+	addl $8,%esp		/* drop vector number and error code */
 	iret
-ENDPROC(early_idt_handler)
+ENDPROC(early_idt_handler_common)
 
 /* This is the default interrupt "handler" :-) */
 	ALIGN
@@ -715,7 +722,7 @@ ENTRY(initial_page_table)
 
 .data
 .balign 4
-ENTRY(stack_start)
+ENTRY(initial_stack)
 	.long init_thread_union+THREAD_SIZE
 
 __INITRODATA

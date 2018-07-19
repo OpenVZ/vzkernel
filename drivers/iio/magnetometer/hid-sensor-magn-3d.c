@@ -209,9 +209,8 @@ static int magn_3d_proc_event(struct hid_sensor_hub_device *hsdev,
 	struct iio_dev *indio_dev = platform_get_drvdata(priv);
 	struct magn_3d_state *magn_state = iio_priv(indio_dev);
 
-	dev_dbg(&indio_dev->dev, "magn_3d_proc_event [%d]\n",
-				magn_state->common_attributes.data_ready);
-	if (magn_state->common_attributes.data_ready)
+	dev_dbg(&indio_dev->dev, "magn_3d_proc_event\n");
+	if (atomic_read(&magn_state->common_attributes.data_ready))
 		hid_sensor_push_data(indio_dev,
 				(u8 *)magn_state->magn_val,
 				sizeof(magn_state->magn_val));
@@ -334,7 +333,7 @@ static int hid_magn_3d_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to initialize trigger buffer\n");
 		goto error_free_dev_mem;
 	}
-	magn_state->common_attributes.data_ready = false;
+	atomic_set(&magn_state->common_attributes.data_ready, 0);
 	ret = hid_sensor_setup_trigger(indio_dev, name,
 					&magn_state->common_attributes);
 	if (ret < 0) {
@@ -363,7 +362,7 @@ static int hid_magn_3d_probe(struct platform_device *pdev)
 error_iio_unreg:
 	iio_device_unregister(indio_dev);
 error_remove_trigger:
-	hid_sensor_remove_trigger(indio_dev);
+	hid_sensor_remove_trigger(&magn_state->common_attributes);
 error_unreg_buffer_funcs:
 	iio_triggered_buffer_cleanup(indio_dev);
 error_free_dev_mem:
@@ -379,10 +378,11 @@ static int hid_magn_3d_remove(struct platform_device *pdev)
 {
 	struct hid_sensor_hub_device *hsdev = pdev->dev.platform_data;
 	struct iio_dev *indio_dev = platform_get_drvdata(pdev);
+	struct magn_3d_state *magn_state = iio_priv(indio_dev);
 
 	sensor_hub_remove_callback(hsdev, HID_USAGE_SENSOR_COMPASS_3D);
 	iio_device_unregister(indio_dev);
-	hid_sensor_remove_trigger(indio_dev);
+	hid_sensor_remove_trigger(&magn_state->common_attributes);
 	iio_triggered_buffer_cleanup(indio_dev);
 	kfree(indio_dev->channels);
 	iio_device_free(indio_dev);

@@ -24,9 +24,22 @@ static int	total_ref_count;
 static int perf_trace_event_perm(struct ftrace_event_call *tp_event,
 				 struct perf_event *p_event)
 {
+
+	/*
+	 * We checked and allowed to create parent,
+	 * allow children without checking.
+	 */
+	if (p_event->parent)
+		return 0;
+
+	/*
+	 * It's ok to check current process (owner) permissions in here,
+	 * because code below is called only via perf_event_open syscall.
+	 */
+
 	/* The ftrace function trace is allowed only for root. */
 	if (ftrace_event_is_function(tp_event) &&
-	    perf_paranoid_kernel() && !capable(CAP_SYS_ADMIN))
+	    perf_paranoid_tracepoint_raw() && !capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
 	/* No tracing, just counting, so no obvious leak */
@@ -227,7 +240,7 @@ void perf_trace_del(struct perf_event *p_event, int flags)
 }
 
 __kprobes void *perf_trace_buf_prepare(int size, unsigned short type,
-				       struct pt_regs *regs, int *rctxp)
+				       struct pt_regs **regs, int *rctxp)
 {
 	struct trace_entry *entry;
 	unsigned long flags;
@@ -242,6 +255,8 @@ __kprobes void *perf_trace_buf_prepare(int size, unsigned short type,
 	if (*rctxp < 0)
 		return NULL;
 
+	if (regs)
+		*regs = this_cpu_ptr(&__perf_regs[*rctxp]);
 	raw_data = this_cpu_ptr(perf_trace_buf[*rctxp]);
 
 	/* zero the dead bytes from align to not leak stack to user */
@@ -271,6 +286,7 @@ perf_ftrace_function_call(unsigned long ip, unsigned long parent_ip,
 
 	BUILD_BUG_ON(ENTRY_SIZE > PERF_MAX_TRACE_SIZE);
 
+	memset(&regs, 0, sizeof(regs));
 	perf_fetch_caller_regs(&regs);
 
 	entry = perf_trace_buf_prepare(ENTRY_SIZE, TRACE_FN, NULL, &rctx);

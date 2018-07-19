@@ -9,11 +9,9 @@ typedef struct {
 	spinlock_t list_lock;
 	struct list_head pgtable_list;
 	struct list_head gmap_list;
-	unsigned long asce_bits;
+	unsigned long RH_KABI_RENAME(asce_bits, asce);
 	unsigned long asce_limit;
 	unsigned long vdso_base;
-	/* Cloned contexts will be created with extended page tables. */
-	unsigned int alloc_pgste:1;
 	/* The mmu context has extended page tables. */
 	unsigned int has_pgste:1;
 } mm_context_t;

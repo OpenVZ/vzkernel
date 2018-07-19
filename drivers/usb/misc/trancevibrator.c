@@ -21,7 +21,6 @@
 /* Standard include files */
 #include <linux/kernel.h>
 #include <linux/errno.h>
-#include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/usb.h>
@@ -96,8 +95,7 @@ static int tv_probe(struct usb_interface *interface,
 	int retval;
 
 	dev = kzalloc(sizeof(struct trancevibrator), GFP_KERNEL);
-	if (dev == NULL) {
-		dev_err(&interface->dev, "Out of memory\n");
+	if (!dev) {
 		retval = -ENOMEM;
 		goto error;
 	}

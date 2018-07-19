@@ -18,6 +18,7 @@
 #include <linux/stat.h>
 #include <linux/sched.h>
 #include <linux/capability.h>
+#include <linux/compiler.h>
 
 #define KERNEL_ATTR_RO(_name) \
 static struct kobj_attribute _name##_attr = __ATTR_RO(_name)
@@ -86,7 +87,7 @@ static ssize_t profiling_store(struct kobject *kobj,
 KERNEL_ATTR_RW(profiling);
 #endif
 
-#ifdef CONFIG_KEXEC
+#ifdef CONFIG_KEXEC_CORE
 static ssize_t kexec_loaded_show(struct kobject *kobj,
 				 struct kobj_attribute *attr, char *buf)
 {
@@ -97,7 +98,7 @@ KERNEL_ATTR_RO(kexec_loaded);
 static ssize_t kexec_crash_loaded_show(struct kobject *kobj,
 				       struct kobj_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%d\n", !!kexec_crash_image);
+	return sprintf(buf, "%d\n", kexec_crash_loaded());
 }
 KERNEL_ATTR_RO(kexec_crash_loaded);
 
@@ -113,13 +114,17 @@ static ssize_t kexec_crash_size_store(struct kobject *kobj,
 	unsigned long cnt;
 	int ret;
 
-	if (strict_strtoul(buf, 0, &cnt))
+	if (kstrtoul(buf, 0, &cnt))
 		return -EINVAL;
 
 	ret = crash_shrink_memory(cnt);
 	return ret < 0 ? ret : count;
 }
 KERNEL_ATTR_RW(kexec_crash_size);
+
+#endif /* CONFIG_KEXEC_CORE */
+
+#ifdef CONFIG_CRASH_CORE
 
 static ssize_t vmcoreinfo_show(struct kobject *kobj,
 			       struct kobj_attribute *attr, char *buf)
@@ -130,7 +135,7 @@ static ssize_t vmcoreinfo_show(struct kobject *kobj,
 }
 KERNEL_ATTR_RO(vmcoreinfo);
 
-#endif /* CONFIG_KEXEC */
+#endif /* CONFIG_CRASH_CORE */
 
 /* whether file capabilities are enabled */
 static ssize_t fscaps_show(struct kobject *kobj,
@@ -160,8 +165,8 @@ KERNEL_ATTR_RW(rcu_expedited);
 /*
  * Make /sys/kernel/notes give the raw contents of our kernel .notes section.
  */
-extern const void __start_notes __attribute__((weak));
-extern const void __stop_notes __attribute__((weak));
+extern const void __start_notes __weak;
+extern const void __stop_notes __weak;
 #define	notes_size (&__stop_notes - &__start_notes)
 
 static ssize_t notes_read(struct file *filp, struct kobject *kobj,
@@ -190,10 +195,12 @@ static struct attribute * kernel_attrs[] = {
 #ifdef CONFIG_PROFILING
 	&profiling_attr.attr,
 #endif
-#ifdef CONFIG_KEXEC
+#ifdef CONFIG_KEXEC_CORE
 	&kexec_loaded_attr.attr,
 	&kexec_crash_loaded_attr.attr,
 	&kexec_crash_size_attr.attr,
+#endif
+#ifdef CONFIG_CRASH_CORE
 	&vmcoreinfo_attr.attr,
 #endif
 	&rcu_expedited_attr.attr,

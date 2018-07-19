@@ -71,7 +71,7 @@ static struct clock_event_device ckevt_puv3_osmr0 = {
 	.set_mode	= puv3_osmr0_set_mode,
 };
 
-static cycle_t puv3_read_oscr(struct clocksource *cs)
+static u64 puv3_read_oscr(struct clocksource *cs)
 {
 	return readl(OST_OSCR);
 }

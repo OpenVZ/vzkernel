@@ -12,6 +12,11 @@ config CLOCKSOURCE_WATCHDOG
 config ARCH_CLOCKSOURCE_DATA
 	bool
 
+# Clocksources require validation of the clocksource against the last
+# cycle update - x86/TSC misfeature
+config CLOCKSOURCE_VALIDATE_LAST_CYCLE
+	bool
+
 # Timekeeping vsyscall support
 config GENERIC_TIME_VSYSCALL
 	bool
@@ -105,7 +110,6 @@ config NO_HZ_FULL
 	select RCU_USER_QS
 	select RCU_NOCB_CPU
 	select VIRT_CPU_ACCOUNTING_GEN
-	select CONTEXT_TRACKING_FORCE
 	select IRQ_WORK
 	help
 	 Adaptively try to shutdown the tick whenever possible, even when

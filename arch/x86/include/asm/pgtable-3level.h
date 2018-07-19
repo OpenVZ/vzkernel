@@ -26,6 +26,7 @@
  */
 static inline void native_set_pte(pte_t *ptep, pte_t pte)
 {
+	mm_track_pte(ptep);
 	ptep->pte_high = pte.pte_high;
 	smp_wmb();
 	ptep->pte_low = pte.pte_low;
@@ -87,16 +88,19 @@ static inline pmd_t pmd_read_atomic(pmd_t *pmdp)
 
 static inline void native_set_pte_atomic(pte_t *ptep, pte_t pte)
 {
+	mm_track_pte(ptep);
 	set_64bit((unsigned long long *)(ptep), native_pte_val(pte));
 }
 
 static inline void native_set_pmd(pmd_t *pmdp, pmd_t pmd)
 {
+	mm_track_pmd(pmdp);
 	set_64bit((unsigned long long *)(pmdp), native_pmd_val(pmd));
 }
 
 static inline void native_set_pud(pud_t *pudp, pud_t pud)
 {
+	mm_track_pud(pudp);
 	set_64bit((unsigned long long *)(pudp), native_pud_val(pud));
 }
 
@@ -108,6 +112,7 @@ static inline void native_set_pud(pud_t *pudp, pud_t pud)
 static inline void native_pte_clear(struct mm_struct *mm, unsigned long addr,
 				    pte_t *ptep)
 {
+	mm_track_pte(ptep);
 	ptep->pte_low = 0;
 	smp_wmb();
 	ptep->pte_high = 0;
@@ -116,13 +121,23 @@ static inline void native_pte_clear(struct mm_struct *mm, unsigned long addr,
 static inline void native_pmd_clear(pmd_t *pmd)
 {
 	u32 *tmp = (u32 *)pmd;
+
+	mm_track_pmd(pmd);
+
 	*tmp = 0;
 	smp_wmb();
 	*(tmp + 1) = 0;
 }
 
+#ifndef CONFIG_SMP
+static inline void native_pud_clear(pud_t *pudp)
+{
+}
+#endif
+
 static inline void pud_clear(pud_t *pudp)
 {
+	mm_track_pud(pudp);
 	set_pud(pudp, __pud(0));
 
 	/*
@@ -141,6 +156,8 @@ static inline void pud_clear(pud_t *pudp)
 static inline pte_t native_ptep_get_and_clear(pte_t *ptep)
 {
 	pte_t res;
+
+	mm_track_pte(ptep);
 
 	/* xchg acts as a barrier before the setting of the high bits */
 	res.pte_low = xchg(&ptep->pte_low, 0);
@@ -165,6 +182,8 @@ static inline pmd_t native_pmdp_get_and_clear(pmd_t *pmdp)
 {
 	union split_pmd res, *orig = (union split_pmd *)pmdp;
 
+	mm_track_pmd(pmdp);
+
 	/* xchg acts as a barrier before setting of the high bits */
 	res.pmd_low = xchg(&orig->pmd_low, 0);
 	res.pmd_high = orig->pmd_high;
@@ -176,9 +195,36 @@ static inline pmd_t native_pmdp_get_and_clear(pmd_t *pmdp)
 #define native_pmdp_get_and_clear(xp) native_local_pmdp_get_and_clear(xp)
 #endif
 
+#ifdef CONFIG_SMP
+union split_pud {
+	struct {
+		u32 pud_low;
+		u32 pud_high;
+	};
+	pud_t pud;
+};
+
+static inline pud_t native_pudp_get_and_clear(pud_t *pudp)
+{
+	union split_pud res, *orig = (union split_pud *)pudp;
+
+	/* xchg acts as a barrier before setting of the high bits */
+	res.pud_low = xchg(&orig->pud_low, 0);
+	res.pud_high = orig->pud_high;
+	orig->pud_high = 0;
+
+	return res.pud;
+}
+#else
+#define native_pudp_get_and_clear(xp) native_local_pudp_get_and_clear(xp)
+#endif
+
 /*
  * Bits 0, 6 and 7 are taken in the low part of the pte,
  * put the 32 bits of offset into the high part.
+ *
+ * For soft-dirty tracking 11 bit is taken from
+ * the low part of pte as well.
  */
 #define pte_to_pgoff(pte) ((pte).pte_high)
 #define pgoff_to_pte(off)						\

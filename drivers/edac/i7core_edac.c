@@ -394,7 +394,7 @@ static const struct pci_id_table pci_dev_table[] = {
 /*
  *	pci_device_id	table for which devices we are looking for
  */
-static DEFINE_PCI_DEVICE_TABLE(i7core_pci_tbl) = {
+static const struct pci_device_id i7core_pci_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_X58_HUB_MGMT)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_LYNNFIELD_QPI_LINK0)},
 	{0,}			/* 0 terminated list. */
@@ -1911,6 +1911,7 @@ static int i7core_mce_check_error(struct notifier_block *nb, unsigned long val,
 
 static struct notifier_block i7_mce_dec = {
 	.notifier_call	= i7core_mce_check_error,
+	.priority	= MCE_PRIO_EDAC,
 };
 
 struct memdev_dmi_entry {

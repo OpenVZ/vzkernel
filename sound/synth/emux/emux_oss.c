@@ -23,10 +23,8 @@
  */
 
 
-#ifdef CONFIG_SND_SEQUENCER_OSS
-
 #include <linux/export.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <sound/core.h>
 #include "emux_voice.h"
 #include <sound/asoundef.h>
@@ -513,5 +511,3 @@ fake_event(struct snd_emux *emu, struct snd_emux_port *port, int ch, int param, 
 	ev.data.control.value = val;
 	snd_emux_event_input(&ev, 0, port, atomic, hop);
 }
-
-#endif /* CONFIG_SND_SEQUENCER_OSS */

@@ -4,6 +4,7 @@ config IOMMU_API
 
 menuconfig IOMMU_SUPPORT
 	bool "IOMMU Hardware Support"
+	depends on MMU
 	default y
 	---help---
 	  Say Y here if you want to compile device drivers for IO Memory
@@ -12,6 +13,9 @@ menuconfig IOMMU_SUPPORT
 	  system.
 
 if IOMMU_SUPPORT
+
+config IOMMU_IOVA
+	tristate
 
 config OF_IOMMU
        def_bool y
@@ -42,6 +46,7 @@ config AMD_IOMMU
 	select PCI_PRI
 	select PCI_PASID
 	select IOMMU_API
+	select IOMMU_IOVA
 	depends on X86_64 && PCI && ACPI && X86_IO_APIC
 	---help---
 	  With this option you can enable support for AMD IOMMU hardware in
@@ -54,19 +59,9 @@ config AMD_IOMMU
 	  your BIOS for an option to enable it or if you have an IVRS ACPI
 	  table.
 
-config AMD_IOMMU_STATS
-	bool "Export AMD IOMMU statistics to debugfs"
-	depends on AMD_IOMMU
-	select DEBUG_FS
-	---help---
-	  This option enables code in the AMD IOMMU driver to collect various
-	  statistics about whats happening in the driver and exports that
-	  information to userspace via debugfs.
-	  If unsure, say N.
-
 config AMD_IOMMU_V2
 	tristate "AMD IOMMU Version 2 driver"
-	depends on AMD_IOMMU && PROFILING
+	depends on AMD_IOMMU
 	select MMU_NOTIFIER
 	---help---
 	  This option enables support for the AMD IOMMUv2 features of the IOMMU
@@ -81,6 +76,7 @@ config INTEL_IOMMU
 	bool "Support for Intel IOMMU using DMA Remapping Devices"
 	depends on PCI_MSI && ACPI && (X86 || IA64_GENERIC)
 	select IOMMU_API
+	select IOMMU_IOVA
 	select DMAR_TABLE
 	help
 	  DMA remapping (DMAR) devices support enables independent address
@@ -260,5 +256,13 @@ config SHMOBILE_IOMMU_L1SIZE
 	default 512 if SHMOBILE_IOMMU_ADDRSIZE_128MB
 	default 256 if SHMOBILE_IOMMU_ADDRSIZE_64MB
 	default 128 if SHMOBILE_IOMMU_ADDRSIZE_32MB
+
+config SPAPR_TCE_IOMMU
+	bool "sPAPR TCE IOMMU Support"
+	depends on PPC_POWERNV || PPC_PSERIES
+	select IOMMU_API
+	help
+	  Enables bits of IOMMU API required by VFIO. The iommu_ops
+	  is not implemented as it is not necessary for VFIO.
 
 endif # IOMMU_SUPPORT

@@ -823,7 +823,7 @@ static const struct net_device_ops dnet_netdev_ops = {
 	.ndo_do_ioctl		= dnet_ioctl,
 	.ndo_set_mac_address	= eth_mac_addr,
 	.ndo_validate_addr	= eth_validate_addr,
-	.ndo_change_mtu		= eth_change_mtu,
+	.ndo_change_mtu_rh74	= eth_change_mtu,
 };
 
 static int dnet_probe(struct platform_device *pdev)

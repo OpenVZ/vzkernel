@@ -6,12 +6,12 @@
 
 #include <asm/alternative.h>
 #include <asm/cpufeature.h>
-#include <asm/processor.h>
 #include <asm/apicdef.h>
 #include <linux/atomic.h>
 #include <asm/fixmap.h>
 #include <asm/mpspec.h>
 #include <asm/msr.h>
+#include <asm/idle.h>
 
 #define ARCH_APICTIMER_STOPS_ON_C3	1
 
@@ -21,6 +21,11 @@
 #define APIC_QUIET   0
 #define APIC_VERBOSE 1
 #define APIC_DEBUG   2
+
+/* Macros for apic_extnmi which controls external NMI masking */
+#define APIC_EXTNMI_BSP		0 /* Default */
+#define APIC_EXTNMI_ALL		1
+#define APIC_EXTNMI_NONE	2
 
 /*
  * Define the default level of output to be very little
@@ -506,8 +511,6 @@ static inline unsigned default_get_apic_id(unsigned long x)
 #define DEFAULT_TRAMPOLINE_PHYS_HIGH		0x469
 
 #ifdef CONFIG_X86_64
-extern int default_acpi_madt_oem_check(char *, char *);
-
 extern void apic_send_IPI_self(int vector);
 
 DECLARE_PER_CPU(int, x2apic_extra_bits);
@@ -562,6 +565,8 @@ static inline int default_apic_id_valid(int apicid)
 {
 	return (apicid < 255);
 }
+
+extern int default_acpi_madt_oem_check(char *, char *);
 
 extern void default_setup_apic_routing(void);
 
@@ -687,5 +692,38 @@ extern int default_check_phys_apicid_present(int phys_apicid);
 #endif
 
 #endif /* CONFIG_X86_LOCAL_APIC */
+extern void irq_enter(void);
+extern void irq_exit(void);
+
+static inline void entering_irq(void)
+{
+	irq_enter();
+	exit_idle();
+}
+
+static inline void entering_ack_irq(void)
+{
+	entering_irq();
+	ack_APIC_irq();
+}
+
+static inline void ipi_entering_ack_irq(void)
+{
+	irq_enter();
+	ack_APIC_irq();
+}
+
+static inline void exiting_irq(void)
+{
+	irq_exit();
+}
+
+static inline void exiting_ack_irq(void)
+{
+	ack_APIC_irq();
+	irq_exit();
+}
+
+extern void ioapic_zap_locks(void);
 
 #endif /* _ASM_X86_APIC_H */

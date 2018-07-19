@@ -96,6 +96,12 @@ static inline void put_binfmt(struct linux_binfmt * fmt)
 	module_put(fmt->module);
 }
 
+bool path_noexec(const struct path *path)
+{
+	return (path->mnt->mnt_flags & MNT_NOEXEC) ||
+	       (path->mnt->mnt_sb->s_iflags & SB_I_NOEXEC);
+}
+
 /*
  * Note that a shared library must be both readable and executable due to
  * security reasons.
@@ -110,13 +116,14 @@ SYSCALL_DEFINE1(uselib, const char __user *, library)
 	static const struct open_flags uselib_flags = {
 		.open_flag = O_LARGEFILE | O_RDONLY | __FMODE_EXEC,
 		.acc_mode = MAY_READ | MAY_EXEC | MAY_OPEN,
-		.intent = LOOKUP_OPEN
+		.intent = LOOKUP_OPEN,
+		.lookup_flags = LOOKUP_FOLLOW,
 	};
 
 	if (IS_ERR(tmp))
 		goto out;
 
-	file = do_filp_open(AT_FDCWD, tmp, &uselib_flags, LOOKUP_FOLLOW);
+	file = do_filp_open(AT_FDCWD, tmp, &uselib_flags);
 	putname(tmp);
 	error = PTR_ERR(file);
 	if (IS_ERR(file))
@@ -127,7 +134,7 @@ SYSCALL_DEFINE1(uselib, const char __user *, library)
 		goto exit;
 
 	error = -EACCES;
-	if (file->f_path.mnt->mnt_flags & MNT_NOEXEC)
+	if (path_noexec(&file->f_path))
 		goto exit;
 
 	fsnotify_open(file);
@@ -189,8 +196,12 @@ static struct page *get_arg_page(struct linux_binprm *bprm, unsigned long pos,
 			return NULL;
 	}
 #endif
-	ret = get_user_pages(current, bprm->mm, pos,
-			1, write, 1, &page, NULL);
+	/*
+	 * We are doing an exec().  'current' is the process
+	 * doing the exec and bprm->mm is the new process's mm.
+	 */
+	ret = get_user_pages_remote(current, bprm->mm, pos, 1, write,
+			1, &page, NULL);
 	if (ret <= 0)
 		return NULL;
 
@@ -265,7 +276,7 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 	BUILD_BUG_ON(VM_STACK_FLAGS & VM_STACK_INCOMPLETE_SETUP);
 	vma->vm_end = STACK_TOP_MAX;
 	vma->vm_start = vma->vm_end - PAGE_SIZE;
-	vma->vm_flags = VM_STACK_FLAGS | VM_STACK_INCOMPLETE_SETUP;
+	vma->vm_flags = VM_SOFTDIRTY | VM_STACK_FLAGS | VM_STACK_INCOMPLETE_SETUP;
 	vma->vm_page_prot = vm_get_page_prot(vma->vm_flags);
 	INIT_LIST_HEAD(&vma->anon_vma_chain);
 
@@ -274,6 +285,7 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 		goto err;
 
 	mm->stack_vm = mm->total_vm = 1;
+	arch_bprm_mm_init(mm, vma);
 	up_write(&mm->mmap_sem);
 	bprm->p = vma->vm_end - sizeof(void *);
 	return 0;
@@ -607,7 +619,7 @@ static int shift_arg_pages(struct vm_area_struct *vma, unsigned long shift)
 		return -ENOMEM;
 
 	lru_add_drain();
-	tlb_gather_mmu(&tlb, mm, 0);
+	tlb_gather_mmu(&tlb, mm, old_start, old_end);
 	if (new_end > old_start) {
 		/*
 		 * when the old and new regions overlap clear from new_end.
@@ -624,7 +636,7 @@ static int shift_arg_pages(struct vm_area_struct *vma, unsigned long shift)
 		free_pgd_range(&tlb, old_start, old_end, new_end,
 			vma->vm_next ? vma->vm_next->vm_start : USER_PGTABLES_CEILING);
 	}
-	tlb_finish_mmu(&tlb, new_end, old_end);
+	tlb_finish_mmu(&tlb, old_start, old_end);
 
 	/*
 	 * Shrink the vma to just the new range.  Always succeeds.
@@ -748,18 +760,18 @@ EXPORT_SYMBOL(setup_arg_pages);
 
 #endif /* CONFIG_MMU */
 
-struct file *open_exec(const char *name)
+static struct file *do_open_exec(struct filename *name)
 {
 	struct file *file;
 	int err;
-	struct filename tmp = { .name = name };
 	static const struct open_flags open_exec_flags = {
 		.open_flag = O_LARGEFILE | O_RDONLY | __FMODE_EXEC,
 		.acc_mode = MAY_EXEC | MAY_OPEN,
-		.intent = LOOKUP_OPEN
+		.intent = LOOKUP_OPEN,
+		.lookup_flags = LOOKUP_FOLLOW,
 	};
 
-	file = do_filp_open(AT_FDCWD, &tmp, &open_exec_flags, LOOKUP_FOLLOW);
+	file = do_filp_open(AT_FDCWD, name, &open_exec_flags);
 	if (IS_ERR(file))
 		goto out;
 
@@ -767,7 +779,7 @@ struct file *open_exec(const char *name)
 	if (!S_ISREG(file_inode(file)->i_mode))
 		goto exit;
 
-	if (file->f_path.mnt->mnt_flags & MNT_NOEXEC)
+	if (path_noexec(&file->f_path))
 		goto exit;
 
 	fsnotify_open(file);
@@ -782,6 +794,18 @@ out:
 exit:
 	fput(file);
 	return ERR_PTR(err);
+}
+
+struct file *open_exec(const char *name)
+{
+	struct filename *filename = getname_kernel(name);
+	struct file *f = ERR_CAST(filename);
+
+	if (!IS_ERR(filename)) {
+		f = do_open_exec(filename);
+		putname(filename);
+	}
+	return f;
 }
 EXPORT_SYMBOL(open_exec);
 
@@ -908,11 +932,11 @@ static int de_thread(struct task_struct *tsk)
 		sig->notify_count = -1;	/* for exit_notify() */
 		for (;;) {
 			threadgroup_change_begin(tsk);
-			write_lock_irq(&tasklist_lock);
+			tasklist_write_lock_irq();
 			if (likely(leader->exit_state))
 				break;
 			__set_current_state(TASK_KILLABLE);
-			write_unlock_irq(&tasklist_lock);
+			qwrite_unlock_irq(&tasklist_lock);
 			threadgroup_change_end(tsk);
 			schedule();
 			if (unlikely(__fatal_signal_pending(tsk)))
@@ -930,6 +954,7 @@ static int de_thread(struct task_struct *tsk)
 		 * also take its birthdate (always earlier than our own).
 		 */
 		tsk->start_time = leader->start_time;
+		tsk->real_start_time = leader->real_start_time;
 
 		BUG_ON(!same_thread_group(leader, tsk));
 		BUG_ON(has_group_leader_pid(tsk));
@@ -945,9 +970,8 @@ static int de_thread(struct task_struct *tsk)
 		 * Note: The old leader also uses this pid until release_task
 		 *       is called.  Odd but simple and correct.
 		 */
-		detach_pid(tsk, PIDTYPE_PID);
 		tsk->pid = leader->pid;
-		attach_pid(tsk, PIDTYPE_PID,  task_pid(leader));
+		change_pid(tsk, PIDTYPE_PID, task_pid(leader));
 		transfer_pid(leader, tsk, PIDTYPE_PGID);
 		transfer_pid(leader, tsk, PIDTYPE_SID);
 
@@ -970,7 +994,7 @@ static int de_thread(struct task_struct *tsk)
 		 */
 		if (unlikely(leader->ptrace))
 			__wake_up_parent(leader, leader->parent);
-		write_unlock_irq(&tasklist_lock);
+		qwrite_unlock_irq(&tasklist_lock);
 		threadgroup_change_end(tsk);
 
 		release_task(leader);
@@ -1000,11 +1024,11 @@ no_thread_group:
 		memcpy(newsighand->action, oldsighand->action,
 		       sizeof(newsighand->action));
 
-		write_lock_irq(&tasklist_lock);
+		tasklist_write_lock_irq();
 		spin_lock(&oldsighand->siglock);
 		rcu_assign_pointer(tsk->sighand, newsighand);
 		spin_unlock(&oldsighand->siglock);
-		write_unlock_irq(&tasklist_lock);
+		qwrite_unlock_irq(&tasklist_lock);
 
 		__cleanup_sighand(oldsighand);
 	}
@@ -1014,10 +1038,10 @@ no_thread_group:
 
 killed:
 	/* protects against exit_notify() and __exit_signal() */
-	read_lock(&tasklist_lock);
+	qread_lock(&tasklist_lock);
 	sig->group_exit_task = NULL;
 	sig->notify_count = 0;
-	read_unlock(&tasklist_lock);
+	qread_unlock(&tasklist_lock);
 	return -EAGAIN;
 }
 
@@ -1036,13 +1060,13 @@ EXPORT_SYMBOL_GPL(get_task_comm);
  * so that a new one can be started
  */
 
-void set_task_comm(struct task_struct *tsk, char *buf)
+void __set_task_comm(struct task_struct *tsk, char *buf, bool exec)
 {
 	task_lock(tsk);
 	trace_task_rename(tsk, buf);
 	strlcpy(tsk->comm, buf, sizeof(tsk->comm));
 	task_unlock(tsk);
-	perf_event_comm(tsk);
+	perf_event_comm(tsk, exec);
 }
 
 static void filename_to_taskname(char *tcomm, const char *fn, unsigned int len)
@@ -1072,6 +1096,11 @@ int flush_old_exec(struct linux_binprm * bprm)
 	if (retval)
 		goto out;
 
+	/*
+	 * Must be called _before_ exec_mmap() as bprm->mm is
+	 * not visibile until then. This also enables the update
+	 * to be lockless.
+	 */
 	set_mm_exe_file(bprm->mm, bprm->file);
 
 	filename_to_taskname(bprm->tcomm, bprm->filename, sizeof(bprm->tcomm));
@@ -1117,7 +1146,8 @@ void setup_new_exec(struct linux_binprm * bprm)
 	else
 		set_dumpable(current->mm, suid_dumpable);
 
-	set_task_comm(current, bprm->tcomm);
+	perf_event_exec();
+	__set_task_comm(current, bprm->tcomm, true);
 
 	/* Set the new mm task size. We have to do that late because it may
 	 * depend on TIF_32BIT which is only updated in flush_thread() on
@@ -1164,7 +1194,7 @@ int prepare_bprm_creds(struct linux_binprm *bprm)
 	return -ENOMEM;
 }
 
-void free_bprm(struct linux_binprm *bprm)
+static void free_bprm(struct linux_binprm *bprm)
 {
 	free_arg_pages(bprm);
 	if (bprm->cred) {
@@ -1217,10 +1247,57 @@ void install_exec_creds(struct linux_binprm *bprm)
 }
 EXPORT_SYMBOL(install_exec_creds);
 
+static void bprm_fill_uid(struct linux_binprm *bprm)
+{
+	struct inode *inode;
+	unsigned int mode;
+	kuid_t uid;
+	kgid_t gid;
+
+	/* clear any previous set[ug]id data from a previous binary */
+	bprm->cred->euid = current_euid();
+	bprm->cred->egid = current_egid();
+
+	if (!mnt_may_suid(bprm->file->f_path.mnt))
+		return;
+
+	if (task_no_new_privs(current))
+		return;
+
+	inode = file_inode(bprm->file);
+	mode = READ_ONCE(inode->i_mode);
+	if (!(mode & (S_ISUID|S_ISGID)))
+		return;
+
+	/* Be careful if suid/sgid is set */
+	mutex_lock(&inode->i_mutex);
+
+	/* reload atomically mode/uid/gid now that lock held */
+	mode = inode->i_mode;
+	uid = inode->i_uid;
+	gid = inode->i_gid;
+	mutex_unlock(&inode->i_mutex);
+
+	/* We ignore suid/sgid if there are no mappings for them in the ns */
+	if (!kuid_has_mapping(bprm->cred->user_ns, uid) ||
+		 !kgid_has_mapping(bprm->cred->user_ns, gid))
+		return;
+
+	if (mode & S_ISUID) {
+		bprm->per_clear |= PER_CLEAR_ON_SETID;
+		bprm->cred->euid = uid;
+	}
+
+	if ((mode & (S_ISGID | S_IXGRP)) == (S_ISGID | S_IXGRP)) {
+		bprm->per_clear |= PER_CLEAR_ON_SETID;
+		bprm->cred->egid = gid;
+	}
+}
+
 /*
  * determine how safe it is to execute the proposed program
  * - the caller must hold ->cred_guard_mutex to protect against
- *   PTRACE_ATTACH
+ *   PTRACE_ATTACH or seccomp thread-sync
  */
 static int check_unsafe_exec(struct linux_binprm *bprm)
 {
@@ -1239,7 +1316,7 @@ static int check_unsafe_exec(struct linux_binprm *bprm)
 	 * This isn't strictly necessary, but it makes it harder for LSMs to
 	 * mess up.
 	 */
-	if (current->no_new_privs)
+	if (task_no_new_privs(current))
 		bprm->unsafe |= LSM_UNSAFE_NO_NEW_PRIVS;
 
 	n_fs = 1;
@@ -1281,31 +1358,7 @@ int prepare_binprm(struct linux_binprm *bprm)
 	if (bprm->file->f_op == NULL)
 		return -EACCES;
 
-	/* clear any previous set[ug]id data from a previous binary */
-	bprm->cred->euid = current_euid();
-	bprm->cred->egid = current_egid();
-
-	if (!(bprm->file->f_path.mnt->mnt_flags & MNT_NOSUID) &&
-	    !current->no_new_privs &&
-	    kuid_has_mapping(bprm->cred->user_ns, inode->i_uid) &&
-	    kgid_has_mapping(bprm->cred->user_ns, inode->i_gid)) {
-		/* Set-uid? */
-		if (mode & S_ISUID) {
-			bprm->per_clear |= PER_CLEAR_ON_SETID;
-			bprm->cred->euid = inode->i_uid;
-		}
-
-		/* Set-gid? */
-		/*
-		 * If setgid is set but no group execute bit then this
-		 * is a candidate for mandatory locking, not a setgid
-		 * executable.
-		 */
-		if ((mode & (S_ISGID | S_IXGRP)) == (S_ISGID | S_IXGRP)) {
-			bprm->per_clear |= PER_CLEAR_ON_SETID;
-			bprm->cred->egid = inode->i_gid;
-		}
-	}
+	bprm_fill_uid(bprm);
 
 	/* fill in binprm security blob */
 	retval = security_bprm_set_creds(bprm);
@@ -1381,10 +1434,6 @@ int search_binary_handler(struct linux_binprm *bprm)
 	if (retval)
 		return retval;
 
-	retval = audit_bprm(bprm);
-	if (retval)
-		return retval;
-
 	/* Need to fetch pid before load_binary changes it */
 	old_pid = current->pid;
 	rcu_read_lock();
@@ -1405,6 +1454,7 @@ int search_binary_handler(struct linux_binprm *bprm)
 			retval = fn(bprm);
 			bprm->recursion_depth = depth;
 			if (retval >= 0) {
+				audit_bprm(bprm);
 				if (depth == 0) {
 					trace_sched_process_exec(current, old_pid, bprm);
 					ptrace_event(PTRACE_EVENT_EXEC, old_vpid);
@@ -1454,7 +1504,7 @@ EXPORT_SYMBOL(search_binary_handler);
 /*
  * sys_execve() executes a new program.
  */
-static int do_execve_common(const char *filename,
+static int do_execve_common(struct filename *filename,
 				struct user_arg_ptr argv,
 				struct user_arg_ptr envp)
 {
@@ -1464,6 +1514,9 @@ static int do_execve_common(const char *filename,
 	bool clear_in_exec;
 	int retval;
 	const struct cred *cred = current_cred();
+
+	if (IS_ERR(filename))
+		return PTR_ERR(filename);
 
 	/*
 	 * We move the actual failure in case of RLIMIT_NPROC excess from
@@ -1500,7 +1553,7 @@ static int do_execve_common(const char *filename,
 	clear_in_exec = retval;
 	current->in_execve = 1;
 
-	file = open_exec(filename);
+	file = do_open_exec(filename);
 	retval = PTR_ERR(file);
 	if (IS_ERR(file))
 		goto out_unmark;
@@ -1508,8 +1561,7 @@ static int do_execve_common(const char *filename,
 	sched_exec();
 
 	bprm->file = file;
-	bprm->filename = filename;
-	bprm->interp = filename;
+	bprm->filename = bprm->interp = filename->name;
 
 	retval = bprm_mm_init(bprm);
 	if (retval)
@@ -1548,7 +1600,9 @@ static int do_execve_common(const char *filename,
 	current->fs->in_exec = 0;
 	current->in_execve = 0;
 	acct_update_integrals(current);
+	task_numa_free(current);
 	free_bprm(bprm);
+	putname(filename);
 	if (displaced)
 		put_files_struct(displaced);
 	return retval;
@@ -1577,10 +1631,11 @@ out_files:
 	if (displaced)
 		reset_files_struct(displaced);
 out_ret:
+	putname(filename);
 	return retval;
 }
 
-int do_execve(const char *filename,
+int do_execve(struct filename *filename,
 	const char __user *const __user *__argv,
 	const char __user *const __user *__envp)
 {
@@ -1590,7 +1645,7 @@ int do_execve(const char *filename,
 }
 
 #ifdef CONFIG_COMPAT
-static int compat_do_execve(const char *filename,
+static int compat_do_execve(struct filename *filename,
 	const compat_uptr_t __user *__argv,
 	const compat_uptr_t __user *__envp)
 {
@@ -1669,6 +1724,12 @@ int __get_dumpable(unsigned long mm_flags)
 	return (ret > SUID_DUMP_USER) ? SUID_DUMP_ROOT : ret;
 }
 
+/*
+ * This returns the actual value of the suid_dumpable flag. For things
+ * that are using this for checking for privilege transitions, it must
+ * test against SUID_DUMP_USER rather than treating it as a boolean
+ * value.
+ */
 int get_dumpable(struct mm_struct *mm)
 {
 	return __get_dumpable(mm->flags);
@@ -1679,25 +1740,13 @@ SYSCALL_DEFINE3(execve,
 		const char __user *const __user *, argv,
 		const char __user *const __user *, envp)
 {
-	struct filename *path = getname(filename);
-	int error = PTR_ERR(path);
-	if (!IS_ERR(path)) {
-		error = do_execve(path->name, argv, envp);
-		putname(path);
-	}
-	return error;
+	return do_execve(getname(filename), argv, envp);
 }
 #ifdef CONFIG_COMPAT
 asmlinkage long compat_sys_execve(const char __user * filename,
 	const compat_uptr_t __user * argv,
 	const compat_uptr_t __user * envp)
 {
-	struct filename *path = getname(filename);
-	int error = PTR_ERR(path);
-	if (!IS_ERR(path)) {
-		error = compat_do_execve(path->name, argv, envp);
-		putname(path);
-	}
-	return error;
+	return compat_do_execve(getname(filename), argv, envp);
 }
 #endif

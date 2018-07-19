@@ -176,7 +176,7 @@ vmci_transport_notify_pkt_poll_in(struct sock *sk,
 		 * queue. Ask for notifications when there is something to
 		 * read.
 		 */
-		if (sk->sk_state == SS_CONNECTED)
+		if (sk->sk_state == TCP_ESTABLISHED)
 			vsock_block_update_write_window(sk);
 		*data_ready_now = false;
 	}
@@ -221,6 +221,7 @@ vmci_transport_notify_pkt_recv_init(
 		PKT_FIELD(vsk, write_notify_min_window) = target + 1;
 		if (PKT_FIELD(vsk, write_notify_window) <
 		    PKT_FIELD(vsk, write_notify_min_window)) {
+			gmb();
 			/* If the current window is smaller than the new
 			 * minimal window size, we need to reevaluate whether
 			 * we need to notify the sender. If the number of ready

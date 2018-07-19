@@ -25,10 +25,9 @@
 #include <asm/uaccess.h>
 #include <asm/firmware.h>
 #include <linux/sort.h>
+#include <asm/setup.h>
 
-#include "setup.h"
-
-LIST_HEAD(module_bug_list);
+static LIST_HEAD(module_bug_list);
 
 static const Elf_Shdr *find_section(const Elf_Ehdr *hdr,
 				    const Elf_Shdr *sechdrs,

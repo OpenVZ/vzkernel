@@ -122,7 +122,8 @@ struct wacom {
 		u8 hlv;       /* status led brightness button pressed (1..127) */
 		u8 img_lum;   /* OLED matrix display brightness */
 	} led;
-	struct power_supply battery;
+	struct power_supply *battery;
+	struct power_supply_desc battery_desc;
 };
 
 static inline void wacom_schedule_work(struct wacom_wac *wacom_wac)

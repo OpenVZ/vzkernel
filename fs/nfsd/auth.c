@@ -1,7 +1,6 @@
 /* Copyright (C) 1995, 1996 Olaf Kirch <okir@monad.swb.de> */
 
 #include <linux/sched.h>
-#include <linux/user_namespace.h>
 #include "nfsd.h"
 #include "auth.h"
 
@@ -30,7 +29,7 @@ int nfsd_setuser(struct svc_rqst *rqstp, struct svc_export *exp)
 	validate_process_creds();
 
 	/* discard any old override before preparing the new set */
-	revert_creds(get_cred(current->real_cred));
+	revert_creds(get_cred(current_real_cred()));
 	new = prepare_creds();
 	if (!new)
 		return -ENOMEM;
@@ -61,7 +60,11 @@ int nfsd_setuser(struct svc_rqst *rqstp, struct svc_export *exp)
 				GROUP_AT(gi, i) = exp->ex_anon_gid;
 			else
 				GROUP_AT(gi, i) = GROUP_AT(rqgi, i);
+
 		}
+
+        /* Each thread allocates its own gi, no race */
+        groups_sort(gi);
 	} else {
 		gi = get_group_info(rqgi);
 	}

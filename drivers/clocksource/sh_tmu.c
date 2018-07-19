@@ -219,7 +219,7 @@ static struct sh_tmu_priv *cs_to_sh_tmu(struct clocksource *cs)
 	return container_of(cs, struct sh_tmu_priv, cs);
 }
 
-static cycle_t sh_tmu_clocksource_read(struct clocksource *cs)
+static u64 sh_tmu_clocksource_read(struct clocksource *cs)
 {
 	struct sh_tmu_priv *p = cs_to_sh_tmu(cs);
 

@@ -79,3 +79,30 @@ int diag210(struct diag210 *addr)
 	return ccode;
 }
 EXPORT_SYMBOL(diag210);
+
+/*
+ * Diagnose 26C: Access Certain System Information
+ */
+static inline int __diag26c(void *req, void *resp, enum diag26c_sc subcode)
+{
+	register unsigned long _req asm("2") = (addr_t) req;
+	register unsigned long _resp asm("3") = (addr_t) resp;
+	register unsigned long _subcode asm("4") = subcode;
+	register unsigned long _rc asm("5") = -EOPNOTSUPP;
+
+	asm volatile(
+		"	sam31\n"
+		"	diag	%[rx],%[ry],0x26c\n"
+		"0:	sam64\n"
+		EX_TABLE(0b,0b)
+		: "+d" (_rc)
+		: [rx] "d" (_req), "d" (_resp), [ry] "d" (_subcode)
+		: "cc", "memory");
+	return _rc;
+}
+
+int diag26c(void *req, void *resp, enum diag26c_sc subcode)
+{
+	return __diag26c(req, resp, subcode);
+}
+EXPORT_SYMBOL(diag26c);
