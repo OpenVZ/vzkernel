@@ -1164,7 +1164,10 @@ struct dentry *mount_bdev(struct file_system_type *fs_type,
 #ifdef CONFIG_VE
 		void *data_orig = data;
 		struct ve_struct *ve = get_exec_env();
+#endif
 
+		s->s_mode = mode;
+#ifdef CONFIG_VE
 		if (!ve_is_super(ve)) {
 			error = ve_devmnt_process(ve, bdev->bd_dev, &data, 0);
 			if (error) {
@@ -1173,7 +1176,6 @@ struct dentry *mount_bdev(struct file_system_type *fs_type,
 			}
 		}
 #endif
-		s->s_mode = mode;
 		strlcpy(s->s_id, bdevname(bdev, b), sizeof(s->s_id));
 		sb_set_blocksize(s, block_size(bdev));
 		error = fill_super(s, data, flags & MS_SILENT ? 1 : 0);
