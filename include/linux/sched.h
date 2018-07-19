@@ -186,6 +186,13 @@ extern atomic_t nr_dead;
 extern unsigned long nr_zombie;
 
 extern bool calc_global_load(unsigned long ticks);
+
+#ifdef CONFIG_VE
+extern void calc_load_ve(void);
+#else
+#define calc_load_ve()	do { } while (0)
+#endif
+
 extern void update_cpu_load_nohz(void);
 
 extern unsigned long get_parent_ip(unsigned long addr);
