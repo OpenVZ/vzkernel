@@ -27,6 +27,10 @@
 #include "fuse_ktrace.h"
 #include "fuse_prometheus.h"
 
+unsigned int pcs_loglevel = LOG_TRACE;
+module_param(pcs_loglevel, uint, 0644);
+MODULE_PARM_DESC(pcs_loglevel, "Trace level");
+
 static int fuse_ktrace_setup(struct fuse_conn * fc);
 static int fuse_ktrace_remove(struct fuse_conn *fc);
 
