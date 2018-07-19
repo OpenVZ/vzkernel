@@ -2151,8 +2151,11 @@ EXPORT_SYMBOL(hardpps);
  */
 void xtime_update(unsigned long ticks)
 {
+	bool calc_ve;
 	write_seqlock(&jiffies_lock);
-	do_timer(ticks);
+	calc_ve = do_timer(ticks);
 	write_sequnlock(&jiffies_lock);
+	if (calc_ve)
+		calc_load_ve();
 	update_wall_time();
 }

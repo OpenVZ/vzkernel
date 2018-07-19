@@ -2951,10 +2951,16 @@ static LIST_HEAD(ve_root_list);
 
 void calc_load_ve(void)
 {
+	static DEFINE_SPINLOCK(load_ve_lock);
 	unsigned long nr_unint, nr_active;
 	struct task_group *tg;
 	int i;
 
+	/*
+	 * This is called without jiffies_lock, and here we protect
+	 * against very rare parallel execution on two or more cpus.
+	 */
+	spin_lock(&load_ve_lock);
 	rcu_read_lock();
 	list_for_each_entry_rcu(tg, &ve_root_list, ve_root_list) {
 		nr_active = 0;
@@ -2979,16 +2985,13 @@ void calc_load_ve(void)
 	rcu_read_unlock();
 
 	nr_unint = nr_uninterruptible() * FIXED_1;
-	/*
-	 * This is called from do_timer() only, which can't be excuted
-	 * in parallel on two or more cpus. So, we have to protect
-	 * the below modifications from readers only.
-	 */
+
 	write_seqcount_begin(&kstat_glob.nr_unint_avg_seq);
 	CALC_LOAD(kstat_glob.nr_unint_avg[0], EXP_1, nr_unint);
 	CALC_LOAD(kstat_glob.nr_unint_avg[1], EXP_5, nr_unint);
 	CALC_LOAD(kstat_glob.nr_unint_avg[2], EXP_15, nr_unint);
 	write_seqcount_end(&kstat_glob.nr_unint_avg_seq);
+	spin_unlock(&load_ve_lock);
 }
 #endif /* CONFIG_VE */
 
@@ -3254,8 +3257,6 @@ bool calc_global_load(unsigned long ticks)
 	avenrun[2] = calc_load(avenrun[2], EXP_15, active);
 
 	calc_load_update += LOAD_FREQ;
-
-	calc_load_ve();
 
 	/*
 	 * In case we idled for multiple LOAD_FREQ intervals, catch up in bulk.
