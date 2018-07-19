@@ -525,7 +525,7 @@ struct pcs_sockio * pcs_sockio_init(struct socket *sock,
 	sio->write_offset = 0;
 	sio->hdr_max = hdr_max;
 	sio->hdr_ptr = 0;
-	sio->flags = PCS_SOCK_F_CORK;
+	sio->flags = sock->sk->sk_family != AF_UNIX ? PCS_SOCK_F_CORK : 0;
 	sio->retrans = 0;
 
 	//// TODO:dmonakhov init ioconn here
