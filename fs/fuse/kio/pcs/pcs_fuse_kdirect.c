@@ -849,9 +849,7 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, 
 	switch (r->req.in.h.opcode) {
 	case FUSE_WRITE:
 	case FUSE_READ: {
-		int ret;
-
-		ret = pcs_fuse_prep_rw(r);
+		int ret;		ret = pcs_fuse_prep_rw(r);
 		if (!ret)
 			goto submit;
 		if (ret > 0)
@@ -1097,6 +1095,7 @@ static void fuse_trace_free(struct fuse_ktrace *tr)
 		}
 		free_percpu(tr->prometheus_hist);
 	}
+	free_percpu(tr->buf);
 	debugfs_remove(tr->dir);
 	kfree(tr);
 }
@@ -1303,6 +1302,8 @@ static int fuse_ktrace_setup(struct fuse_conn * fc)
 		tr->prometheus_hist = hist;
 	}
 
+	tr->buf = __alloc_percpu(KTRACE_LOG_BUF_SIZE, 16);
+
 	atomic_set(&tr->refcnt, 1);
 
 	ret = -EBUSY;
@@ -1320,6 +1321,33 @@ err:
 	return ret;
 }
 
+void __kfuse_trace(struct fuse_conn * fc, unsigned long ip, const char * fmt, ...)
+{
+	struct fuse_ktrace * tr;
+        va_list va;
+	int cpu;
+
+	cpu = get_cpu();
+	tr = fc->ktrace;
+	if (tr) {
+		u8 * buf = per_cpu_ptr(tr->buf, cpu);
+		struct fuse_trace_hdr * t;
+		int len;
+
+		va_start(va, fmt);
+		len = vsnprintf(buf, KTRACE_LOG_BUF_SIZE, fmt, va);
+		va_end(va);
+		t = fuse_trace_prepare(tr, FUSE_KTRACE_STRING, len + 1);
+		if (t)
+			memcpy(t + 1, buf, len + 1);
+		FUSE_TRACE_COMMIT(tr);
+		if (ip)
+			__trace_puts(ip, buf, len);
+		else
+			pr_debug("%s", buf);
+	}
+	put_cpu();
+}
 
 static struct fuse_kio_ops kio_pcs_ops = {
 	.name		= "pcs",
