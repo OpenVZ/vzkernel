@@ -63,13 +63,19 @@ int tick_is_oneshot_available(void)
 static void tick_periodic(int cpu)
 {
 	if (tick_do_timer_cpu == cpu) {
+		bool calc_ve;
+
 		write_seqlock(&jiffies_lock);
 
 		/* Keep track of the next tick event */
 		tick_next_period = ktime_add(tick_next_period, tick_period);
 
-		do_timer(1);
+		calc_ve = do_timer(1);
 		write_sequnlock(&jiffies_lock);
+
+		if (calc_ve)
+			calc_load_ve();
+
 		update_wall_time();
 	}
 
