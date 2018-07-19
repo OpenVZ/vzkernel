@@ -38,10 +38,6 @@ void pcs_sreq_complete(struct pcs_int_request *sreq)
 			 * and, most likely, resubmit request.
 			 */
 			if (ireq_check_redo(sreq)) {
-				if (ireq_is_timed_out(sreq)) {
-					DTRACE("timeout while IO request on \"" DENTRY_FMT "\" last_err=%u",
-						DENTRY_ARGS(sreq->dentry), sreq->error.value);
-				}
 				if (sreq->type != PCS_IREQ_CUSTOM) {
 					map_notify_soft_error(sreq);
 
@@ -567,6 +563,7 @@ int pcs_cluster_init(struct pcs_fuse_cluster *pfc, struct workqueue_struct *wq,
 	/* core init */
 	if (pcs_cc_init(&pfc->cc, wq, NULL, &attr))
 		return -1;
+	pfc->cc.fc = fc;
 	pfc->cc.op.ireq_process	   = ireq_process_;
 	pfc->cc.op.ireq_on_error   = ireq_on_error_;
 	pfc->cc.op.ireq_check_redo = ireq_check_redo_;
