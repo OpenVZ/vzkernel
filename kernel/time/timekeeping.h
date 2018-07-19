@@ -15,7 +15,7 @@ extern void timekeeping_warp_clock(void);
 extern int timekeeping_suspend(void);
 extern void timekeeping_resume(void);
 
-extern void do_timer(unsigned long ticks);
+extern bool do_timer(unsigned long ticks);
 extern void update_wall_time(void);
 
 extern seqlock_t jiffies_lock;
