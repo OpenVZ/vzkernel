@@ -310,16 +310,6 @@ static inline int ireq_check_redo(struct pcs_int_request *ireq)
 	return 1;
 }
 
-static inline int ireq_is_timed_out(struct pcs_int_request *ireq)
-{
-	int timed_out;
-	timed_out = ireq->cc->cfg.curr.abort_timeout &&
-		ireq->create_ts + ireq->cc->cfg.curr.abort_timeout < jiffies;
-	if (timed_out && ireq->cc->abort_callback)
-		return ireq->cc->abort_callback(ireq->cc, ireq);
-	return timed_out;
-}
-
 struct pcs_int_request * __ireq_alloc(void);
 struct pcs_int_request *ireq_alloc(struct pcs_dentry_info *di);
 struct pcs_int_request *ireq_alloc_by_cluster(struct pcs_cluster_core *cc);

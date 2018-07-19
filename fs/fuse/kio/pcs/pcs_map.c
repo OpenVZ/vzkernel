@@ -14,7 +14,9 @@
 #include "pcs_map.h"
 #include "pcs_cs.h"
 #include "pcs_ioctl.h"
+#include "pcs_cluster.h"
 #include "log.h"
+#include "fuse_ktrace.h"
 
 /*  Lock order
    ->map->lock	: Motivated by truncate
@@ -456,13 +458,7 @@ static void map_queue_on_limit(struct pcs_int_request *ireq)
 {
 	struct pcs_map_set * maps = &ireq->dentry->cluster->maps;
 
-	TRACE("queueing due to dirty limit\n");
-
-	if (ireq_is_timed_out(ireq)) {
-		pcs_log(LOG_ERR, "timeout while map get on \"" DENTRY_FMT "\" last_err=%u",
-			DENTRY_ARGS(ireq->dentry), ireq->error.value);
-		BUG();
-	}
+	FUSE_KTRACE(ireq->cc->fc, "queueing due to dirty limit");
 
 	if (ireq->type == PCS_IREQ_IOCHUNK && ireq->iochunk.map) {
 		pcs_map_put(ireq->iochunk.map);
@@ -698,7 +694,7 @@ void cs_blacklist(struct pcs_cs * cs, int error, char * reason)
 		spin_lock(&cs->css->lock);
 		set_bit(CS_SF_BLACKLISTED, &cs->state);
 		cs->blacklist_reason = error;
-		TRACE("Blacklisting CS" NODE_FMT " by %s, err=%d", NODE_ARGS(cs->id), reason, error);
+		FUSE_KTRACE(cc_from_csset(cs->css)->fc, "Blacklisting CS" NODE_FMT " by %s, err=%d", NODE_ARGS(cs->id), reason, error);
 		if (list_empty(&cs->css->bl_list)) {
 			struct pcs_cluster_core *cc = cc_from_csset(cs->css);
 
@@ -723,7 +719,7 @@ void cs_whitelist(struct pcs_cs * cs, char * reason)
 
 	if (cs_is_blacklisted(cs)) {
 		clear_bit(CS_SF_BLACKLISTED, &cs->state);
-		TRACE("Whitelisting CS" NODE_FMT " by %s", NODE_ARGS(cs->id), reason);
+		FUSE_KTRACE(cc_from_csset(cs->css)->fc, "Whitelisting CS" NODE_FMT " by %s", NODE_ARGS(cs->id), reason);
 
 		map_recalc_maps(cs);
 
@@ -793,7 +789,7 @@ void pcs_map_notify_addr_change(struct pcs_cs * cs)
 		if (m->state & (PCS_MAP_ERROR|PCS_MAP_RESOLVING|PCS_MAP_NEW))
 			goto unlock;
 
-		TRACE(MAP_FMT " invalidating due to address change of CS#"NODE_FMT,
+		FUSE_KTRACE(cc_from_csset(cs->css)->fc, MAP_FMT " invalidating due to address change of CS#"NODE_FMT,
 		      MAP_ARGS(m), NODE_ARGS(cs->id));
 
 		map_remote_error_nolock(m, PCS_ERR_CSD_STALE_MAP, cs->id.val);
@@ -869,7 +865,7 @@ static void evaluate_dirty_status(struct pcs_map_entry * m)
 					atomic_inc(&m->maps->dirty_count);
 				}
 			} else {
-				TRACE(MAP_FMT " integrity seq advanced on CS#"NODE_FMT,
+				FUSE_KTRACE(cc_from_maps(m->maps)->fc, MAP_FMT " integrity seq advanced on CS#"NODE_FMT,
 				      MAP_ARGS(m), NODE_ARGS(rec->info.id));
 
 				rec->sync.dirty_integrity = 0;
@@ -882,9 +878,9 @@ static void evaluate_dirty_status(struct pcs_map_entry * m)
 
 	if (!(m->flags & PCS_MAP_DIRTY)) {
 		map_sync_work_del(m);
-		pcs_log(LOG_DEBUG5, "map %p is clean", m);
+		FUSE_KLOG(cc_from_maps(m->maps)->fc, LOG_DEBUG5, "map %p is clean", m);
 	} else {
-		pcs_log(LOG_DEBUG5, "map %p is dirty", m);
+		FUSE_KLOG(cc_from_maps(m->maps)->fc, LOG_DEBUG5, "map %p is dirty", m);
 		if (!timer_pending(&m->sync_work.timer) && !(m->flags & PCS_MAP_FLUSHING))
 			map_sync_work_add(m, pcs_sync_timeout(cc_from_map(m)));
 	}
@@ -1147,19 +1143,20 @@ void pcs_map_complete(struct pcs_map_entry *m, struct pcs_ioc_getmap *omap)
 
 	evaluate_dirty_status(m);
 #ifdef __PCS_DEBUG
-	if (1) {
+	/* The output is too ugly and it is unnecessary. The information is in user space log */
+	if (0) {
 		int i;
 		TRACE(MAP_FMT " -> " CUID_FMT " psize=%u %d node map { ",
 			MAP_ARGS(m), CUID_ARGS(m->id),
 		      m->chunk_psize, m->cs_list ? m->cs_list->nsrv : 0);
 		if (m->cs_list) {
 			for (i = 0; i < m->cs_list->nsrv; i++)
-				printk( NODE_FMT ":%x:%u ",
+				trace_printk( NODE_FMT ":%x:%u ",
 				       NODE_ARGS(m->cs_list->cs[i].info.id),
 				       m->cs_list->cs[i].info.flags,
 				       CS_FL_ROLE_GET(m->cs_list->cs[i].info.flags));
 		}
-		printk("}\n");
+		trace_puts("}\n");
 	}
 #endif
 	m->error_tstamp = 0;
@@ -1264,7 +1261,7 @@ static void map_notify_error(struct pcs_map_entry * m, struct pcs_int_request * 
 			for (i = 0; i < csl->nsrv; i++) {
 				if (csl->cs[i].info.id.val == sreq->error.offender.val) {
 					if (csl->cs[i].cslink.cs->addr_serno != csl->cs[i].cslink.addr_serno) {
-						TRACE("error for CS"NODE_FMT " has been suppressed", NODE_ARGS(sreq->error.offender));
+						FUSE_KTRACE(cc_from_maps(m->maps)->fc, "error for CS"NODE_FMT " has been suppressed", NODE_ARGS(sreq->error.offender));
 						suppress_error = 1;
 					}
 					break;
@@ -1310,7 +1307,7 @@ static void map_replicating(struct pcs_int_request *ireq)
 
 	read_idx = READ_ONCE(csl->read_index);
 
-	TRACE("reading unfinished replica %lx %d", csl->blacklist, read_idx);
+	FUSE_KTRACE(ireq->cc->fc, "reading unfinished replica %lx %d", csl->blacklist, read_idx);
 
 	if (ireq->iochunk.cs_index != read_idx)
 		return;
@@ -1319,7 +1316,7 @@ static void map_replicating(struct pcs_int_request *ireq)
 
 	if (!ireq->error.remote ||
 	    csl->cs[read_idx].cslink.cs->id.val != ireq->error.offender.val) {
-		TRACE("wrong cs id " NODE_FMT " " NODE_FMT, NODE_ARGS(csl->cs[read_idx].cslink.cs->id), NODE_ARGS(ireq->error.offender));
+		FUSE_KTRACE(ireq->cc->fc, "wrong cs id " NODE_FMT " " NODE_FMT, NODE_ARGS(csl->cs[read_idx].cslink.cs->id), NODE_ARGS(ireq->error.offender));
 		return;
 	}
 
@@ -1360,7 +1357,7 @@ static void map_read_error(struct pcs_int_request *ireq)
 
 	/* If this CS is already blacklisted, select another CS, we have spare ones */
 	if (cs_is_blacklisted(cs)) {
-		TRACE("Skipping CS" NODE_FMT, NODE_ARGS(cs->id));
+		FUSE_KTRACE(ireq->cc->fc, "Skipping CS" NODE_FMT, NODE_ARGS(cs->id));
 		WRITE_ONCE(csl->read_index, -1);
 		pcs_clear_error(&ireq->error);
 		return;
@@ -1418,7 +1415,7 @@ static void pcs_cs_deaccount(struct pcs_int_request *ireq, struct pcs_cs * cs, i
 			else if (cs->last_latency > iolat_cutoff*2)
 				clamp = PCS_CS_INIT_CWND/2;
 
-			TRACE("IO latency on CS" NODE_FMT " is %u, cwnd %u, clamp %u", NODE_ARGS(cs->id), cs->last_latency, cs->cwnd, clamp);
+			FUSE_KTRACE(cc_from_csset(cs->css)->fc, "IO latency on CS" NODE_FMT " is %u, cwnd %u, clamp %u", NODE_ARGS(cs->id), cs->last_latency, cs->cwnd, clamp);
 
 			if (cs->cwnd > clamp)
 				cs->cwnd = clamp;
@@ -1434,7 +1431,7 @@ static void pcs_cs_deaccount(struct pcs_int_request *ireq, struct pcs_cs * cs, i
 				cwnd = PCS_CS_MAX_CWND;
 			if (cwnd != cs->cwnd) {
 				cs->cwnd = cwnd;
-				DTRACE("Congestion window on CS" NODE_FMT " UP %u", NODE_ARGS(cs->id), cwnd);
+				FUSE_KDTRACE(cc_from_csset(cs->css)->fc, "Congestion window on CS" NODE_FMT " UP %u", NODE_ARGS(cs->id), cwnd);
 			}
 		}
 		cs->eff_cwnd = cs->cwnd;
@@ -1444,7 +1441,7 @@ static void pcs_cs_deaccount(struct pcs_int_request *ireq, struct pcs_cs * cs, i
 		 * window to minimum to allow one request in flight. It will come back to normal
 		 * as soon as CS is probed for aliveness.
 		 */
-		TRACE("Congestion window on CS" NODE_FMT " is closed (%u)", NODE_ARGS(cs->id), cs->cwnd);
+		FUSE_KTRACE(cc_from_csset(cs->css)->fc, "Congestion window on CS" NODE_FMT " is closed (%u)", NODE_ARGS(cs->id), cs->cwnd);
 		cs->eff_cwnd = 1;
 	}
 	cs_decrement_in_flight(cs, cost);
@@ -1744,7 +1741,7 @@ next_pass:
 		if (test_bit(i, &csl->blacklist)) {
 			if (jiffies < READ_ONCE(csl->blacklist_expires))
 				continue;
-			TRACE("expire replication blacklist");
+			FUSE_KTRACE(cc_from_csset(cs->css)->fc, "expire replication blacklist");
 			clear_bit(i, &csl->blacklist);
 		}
 
@@ -1934,7 +1931,7 @@ static int pcs_cslist_submit_read(struct pcs_int_request *ireq, struct pcs_cs_li
 			cs = csl->cs[0].cslink.cs;
 			map_remote_error(ireq->iochunk.map, cs->blacklist_reason, cs->id.val);
 
-			TRACE("Read from " MAP_FMT " blocked by blacklist error %d, CS" NODE_FMT,
+			FUSE_KTRACE(ireq->cc->fc, "Read from " MAP_FMT " blocked by blacklist error %d, CS" NODE_FMT,
 			      MAP_ARGS(ireq->iochunk.map), cs->blacklist_reason, NODE_ARGS(cs->id));
 			return -1;
 		}
@@ -1942,7 +1939,7 @@ static int pcs_cslist_submit_read(struct pcs_int_request *ireq, struct pcs_cs_li
 		WRITE_ONCE(csl->read_index, i);
 		WRITE_ONCE(csl->select_stamp, jiffies);
 
-		TRACE("Selected read map " MAP_FMT " to CS" NODE_FMT "; is_seq=%d\n", MAP_ARGS(ireq->iochunk.map),
+		FUSE_KTRACE(ireq->cc->fc, "Selected read map " MAP_FMT " to CS" NODE_FMT "; is_seq=%d\n", MAP_ARGS(ireq->iochunk.map),
 		      NODE_ARGS(csl->cs[i].cslink.cs->id), is_seq);
 		pcs_flow_bind_cs(ireq->iochunk.flow, csl->cs[i].cslink.cs);
 	}
@@ -2098,7 +2095,7 @@ restart:
 		cs = csl->cs[i].cslink.cs;
 		if (cs_is_blacklisted(cs)) {
 			map_remote_error(ireq->iochunk.map, cs->blacklist_reason, cs->id.val);
-			TRACE("Write to " MAP_FMT " blocked by blacklist error %d, CS" NODE_FMT,
+			FUSE_KTRACE(cc_from_csset(cs->css)->fc, "Write to " MAP_FMT " blocked by blacklist error %d, CS" NODE_FMT,
 			      MAP_ARGS(ireq->iochunk.map), cs->blacklist_reason, NODE_ARGS(cs->id));
 			spin_lock(&ireq->completion_data.child_lock);
 			ireq_drop_tokens(ireq);
@@ -2205,7 +2202,7 @@ static int pcs_cslist_submit_flush(struct pcs_int_request *ireq, struct pcs_cs_l
 
 		if (cs_is_blacklisted(cs)) {
 			map_remote_error(ireq->flushreq.map, cs->blacklist_reason, cs->id.val);
-			TRACE("Flush to " MAP_FMT " blocked by blacklist error %d, CS" NODE_FMT,
+			FUSE_KTRACE(cc_from_csset(cs->css)->fc, "Flush to " MAP_FMT " blocked by blacklist error %d, CS" NODE_FMT,
 			      MAP_ARGS(ireq->flushreq.map), cs->blacklist_reason, NODE_ARGS(cs->id));
 			spin_lock(&ireq->completion_data.child_lock);
 			ireq_drop_tokens(ireq);
@@ -2294,15 +2291,7 @@ void map_submit(struct pcs_map_entry * m, struct pcs_int_request *ireq)
 
 	DTRACE("enter m: " MAP_FMT ", ireq:%p \n", MAP_ARGS(m),	 ireq);
 	BUG_ON(ireq->type != PCS_IREQ_IOCHUNK && ireq->type != PCS_IREQ_FLUSH);
-
-	if (ireq_is_timed_out(ireq)) {
-		pcs_log(LOG_ERR, "timeout while getting map \"" MAP_FMT "\", last err=%d",
-			MAP_ARGS(m), ireq->error.value);
-		BUG();
-	}
-
 	BUG_ON(pcs_if_error(&ireq->error));
-
 
 	direction = (ireq->type != PCS_IREQ_FLUSH ? pcs_req_direction(ireq->iochunk.cmd) : 1);
 
@@ -2409,7 +2398,7 @@ void process_ireq_truncate(struct pcs_int_request *ireq)
 
 	m = pcs_find_get_map(di, ireq->truncreq.offset - 1);
 
-	TRACE("process TRUNCATE %llu@" DENTRY_FMT " %x",
+	FUSE_KTRACE(ireq->cc->fc, "process TRUNCATE %llu@" DENTRY_FMT " %x",
 	      (unsigned long long)ireq->truncreq.offset, DENTRY_ARGS(di), m ? m->state : -1);
 
 	if (m == NULL) {
@@ -2438,7 +2427,7 @@ void process_ireq_truncate(struct pcs_int_request *ireq)
 		    (PCS_MAP_NEW|PCS_MAP_READABLE)) {
 
 			spin_unlock(&m->lock);
-			pcs_log(LOG_INFO, "map " MAP_FMT " unexpectedly converted to hole", MAP_ARGS(m));
+			FUSE_KLOG(cc_from_maps(m->maps)->fc, LOG_INFO, "map " MAP_FMT " unexpectedly converted to hole", MAP_ARGS(m));
 			map_truncate_tail(&di->mapping, end);
 			ireq_complete(ireq);
 			return;
@@ -2458,7 +2447,7 @@ void process_ireq_truncate(struct pcs_int_request *ireq)
 				return;
 			}
 
-			TRACE("map " MAP_FMT " is not updated yet", MAP_ARGS(m));
+			FUSE_KTRACE(ireq->cc->fc, "map " MAP_FMT " is not updated yet", MAP_ARGS(m));
 			map_remote_error_nolock(m, PCS_ERR_CSD_STALE_MAP, m->cs_list ? m->cs_list->cs[0].info.id.val : 0);
 
 		}
@@ -2500,7 +2489,7 @@ noinline void pcs_mapping_truncate(struct pcs_int_request *ireq, u64 old_size)
 	m = pcs_find_get_map(di, offset - 1);
 
 	if (m) {
-		TRACE("mapping truncate %llu->%llu " DENTRY_FMT " %x", (unsigned long long)old_size,
+		FUSE_KTRACE(ireq->cc->fc, "mapping truncate %llu->%llu " DENTRY_FMT " %x", (unsigned long long)old_size,
 		      (unsigned long long)new_size, DENTRY_ARGS(ireq->dentry), m ? m->state : -1);
 	}
 	if (m && map_chunk_end(m) == offset) {
@@ -2553,7 +2542,7 @@ static int commit_cs_record(struct pcs_map_entry * m, struct pcs_cs_record * rec
 		 *
 		 * The request is restarted with new map.
 		 */
-		TRACE(MAP_FMT " integrity seq mismatch CS" NODE_FMT " %d != %d, %d",
+		FUSE_KTRACE(cc_from_maps(m->maps)->fc, MAP_FMT " integrity seq mismatch CS" NODE_FMT " %d != %d, %d",
 			MAP_ARGS(m),
 			NODE_ARGS(rec->info.id),
 			rec->info.integrity_seq, sync->integrity_seq, srec->dirty_integrity);
@@ -2608,14 +2597,14 @@ static int commit_one_record(struct pcs_map_entry * m, PCS_NODE_ID_T cs_id,
 	if (m->cs_list == NULL)
 		return 0;
 
-	TRACE("sync ["NODE_FMT",%u,%u,%u,%u]", NODE_ARGS(cs_id),
+	FUSE_KDTRACE(cc_from_maps(m->maps)->fc, "sync ["NODE_FMT",%u,%u,%u,%u]", NODE_ARGS(cs_id),
 	      sync->integrity_seq, sync->sync_epoch, sync->sync_dirty, sync->sync_current);
 
 	for (i = 0; i < m->cs_list->nsrv; i++) {
 		if (m->cs_list->cs[i].info.id.val == cs_id.val) {
 			err = commit_cs_record(m, &m->cs_list->cs[i], sync, lat, op_type);
 
-			TRACE("commited ["NODE_FMT",%u/%u,%u/%u,%u/%u]", NODE_ARGS(cs_id),
+			FUSE_KDTRACE(cc_from_maps(m->maps)->fc, "commited ["NODE_FMT",%u/%u,%u/%u,%u/%u]", NODE_ARGS(cs_id),
 			      m->cs_list->cs[i].info.integrity_seq,
 			      m->cs_list->cs[i].sync.dirty_integrity,
 			      m->cs_list->cs[i].sync.dirty_epoch,
@@ -2719,7 +2708,7 @@ void pcs_map_verify_sync_state(struct pcs_dentry_info *di, struct pcs_int_reques
 		return;
 	}
 	if (commit_sync_info(ireq, m, ireq->iochunk.csl, resp)) {
-		TRACE(MAP_FMT " sync integrity error: map retry follows", MAP_ARGS(m));
+		FUSE_KTRACE(cc_from_maps(m->maps)->fc, MAP_FMT " sync integrity error: map retry follows", MAP_ARGS(m));
 
 		msg->error.value = PCS_ERR_CSD_STALE_MAP;
 		msg->error.remote = 1;
@@ -2756,7 +2745,7 @@ void sync_done(struct pcs_msg * msg)
 	}
 
 	if (commit_sync_info(sreq, m, sreq->flushreq.csl, resp)) {
-		TRACE(MAP_FMT " sync integrity error: sync retry follows", MAP_ARGS(m));
+		FUSE_KTRACE(cc_from_maps(m->maps)->fc, MAP_FMT " sync integrity error: sync retry follows", MAP_ARGS(m));
 
 		sreq->error.remote = 1;
 		sreq->error.value = PCS_ERR_CSD_STALE_MAP;
@@ -2782,13 +2771,13 @@ static int sync_is_finished(struct pcs_msg * msg, struct pcs_map_entry * m)
 	     srec++) {
 		int i;
 
-		TRACE("Checking cs="NODE_FMT" sync=[%d,%d,%d,%d]", NODE_ARGS(srec->cs_id), srec->sync.integrity_seq,
+		FUSE_KDTRACE(cc_from_maps(m->maps)->fc, "Checking cs="NODE_FMT" sync=[%d,%d,%d,%d]", NODE_ARGS(srec->cs_id), srec->sync.integrity_seq,
 		      srec->sync.sync_epoch,
 		      srec->sync.sync_dirty, srec->sync.sync_current);
 
 		for (i = 0; i < m->cs_list->nsrv; i++) {
 			if (m->cs_list->cs[i].info.id.val == srec->cs_id.val) {
-				TRACE("Checking against sync=[%d,%d,%d,%d,%d]",
+				FUSE_KDTRACE(cc_from_maps(m->maps)->fc, "Checking against sync=[%d,%d,%d,%d,%d]",
 				      m->cs_list->cs[i].sync.dirty_integrity,
 				      m->cs_list->cs[i].sync.dirty_epoch,
 				      m->cs_list->cs[i].sync.dirty_seq,
@@ -2813,12 +2802,12 @@ void process_flush_req(struct pcs_int_request *ireq)
 	if (m->state & PCS_MAP_DEAD)
 		goto done;
 
-	TRACE("process FLUSH " MAP_FMT, MAP_ARGS(m));
+	FUSE_KTRACE(ireq->cc->fc, "process FLUSH " MAP_FMT, MAP_ARGS(m));
 
 	if (!(m->flags & PCS_MAP_DIRTY))
 		goto done;
 	if (sync_is_finished(ireq->flushreq.msg, m)) {
-		TRACE("finished");
+		FUSE_KTRACE(ireq->cc->fc, "finished");
 		goto done;
 	}
 	spin_unlock(&m->lock);
@@ -2828,7 +2817,7 @@ void process_flush_req(struct pcs_int_request *ireq)
 done:
 	spin_unlock(&m->lock);
 	if (pcs_if_error(&ireq->error)) {
-		TRACE("oops, delete me %d", ireq->error.value);
+		FUSE_KTRACE(ireq->cc->fc, "oops, delete me %d", ireq->error.value);
 		pcs_clear_error(&ireq->error);
 	}
 	ireq_complete(ireq);
@@ -2853,7 +2842,7 @@ static void pcs_flushreq_complete(struct pcs_int_request * sreq)
 
 	if (!pcs_if_error(&sreq->error)) {
 		if (sync_is_finished(sreq->flushreq.msg, m)) {
-			TRACE("finished");
+			FUSE_KTRACE(ireq->cc->fc, "finished");
 			goto done_dirty;
 		}
 		sreq->error.value = PCS_ERR_CSD_STALE_MAP;
@@ -2863,12 +2852,7 @@ static void pcs_flushreq_complete(struct pcs_int_request * sreq)
 
 	if (ireq && !pcs_if_error(&ireq->error)) {
 		if (ireq_check_redo(sreq)) {
-			if (ireq_is_timed_out(sreq)) {
-				pcs_log(LOG_ERR, "timeout while flush request on \"" DENTRY_FMT "\" last_err=%u",
-					DENTRY_ARGS(sreq->dentry), sreq->error.value);
-				BUG();
-			}
-			TRACE("restart after flush error %d", sreq->error.value);
+			FUSE_KTRACE(ireq->cc->fc, "restart after flush error %d", sreq->error.value);
 			if (map_version_compare(&ioh->map_version, &m->version) < 0)
 				sreq->flags &= ~IREQ_F_ONCE;
 			spin_unlock(&m->lock);
@@ -2884,7 +2868,7 @@ static void pcs_flushreq_complete(struct pcs_int_request * sreq)
 				ireq_delay(sreq);
 			return;
 		}
-		TRACE("flush error %d", sreq->error.value);
+		FUSE_KTRACE(ireq->cc->fc, "flush error %d", sreq->error.value);
 		pcs_copy_error(&ireq->error, &sreq->error);
 		notify_error = 1;
 	}
@@ -2951,7 +2935,7 @@ static void prepare_map_flush_msg(struct pcs_map_entry * m, struct pcs_int_reque
 				arr->sync.ts_net = 0;
 				arr->sync._reserved = 0;
 				ioh->hdr.len += sizeof(struct pcs_cs_sync_resp);
-				pcs_log(LOG_DEBUG5, "fill sync "NODE_FMT" [%d,%d,%d,%d]", NODE_ARGS(arr->cs_id),
+				FUSE_KLOG(cc_from_maps(m->maps)->fc, LOG_DEBUG5, "fill sync "NODE_FMT" [%d,%d,%d,%d]", NODE_ARGS(arr->cs_id),
 					arr->sync.integrity_seq, arr->sync.sync_epoch,
 					arr->sync.sync_dirty, arr->sync.sync_current);
 				arr++;
@@ -3028,7 +3012,7 @@ static int prepare_map_flush_ireq(struct pcs_map_entry *m, struct pcs_int_reques
 	sreq->flushreq.csl = NULL;
 	sreq->complete_cb = pcs_flushreq_complete;
 	sreq->flushreq.msg = msg;
-	TRACE("timed FLUSH " MAP_FMT, MAP_ARGS(m));
+	FUSE_KTRACE(sreq->cc->fc, "timed FLUSH " MAP_FMT, MAP_ARGS(m));
 	m->flags |= PCS_MAP_FLUSHING;
 	__pcs_map_get(m);
 	spin_unlock(&m->lock);
@@ -3084,7 +3068,7 @@ void map_inject_flush_req(struct pcs_int_request *ireq)
 
 	if (di->fileinfo.sys.map_type != PCS_MAP_PLAIN ||
 	    di->fileinfo.sys.stripe_depth != 1) {
-		pcs_log(LOG_ERR, "bad map_type");
+		FUSE_KLOG(ireq->cc->fc, LOG_ERR, "bad map_type");
 		pcs_set_local_error(&ireq->error, PCS_ERR_PROTOCOL);
 		ireq_complete(ireq);
 		return;
