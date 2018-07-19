@@ -194,7 +194,7 @@ again:
 				cs->addr = *addr;
 				cs->addr_serno++;
 
-				TRACE("Port change CS" NODE_FMT " seq=%d", NODE_ARGS(*id), cs->addr_serno);
+				FUSE_KTRACE(cc_from_csset(csset)->fc, "Port change CS" NODE_FMT " seq=%d", NODE_ARGS(*id), cs->addr_serno);
 				pcs_rpc_set_address(cs->rpc, addr);
 
 				if (!(flags & CS_FL_INACTIVE)) {
@@ -337,7 +337,7 @@ static void cs_response_done(struct pcs_msg *msg)
 
 		pcs_map_verify_sync_state(ireq->dentry, ireq, msg);
 	} else {
-		TRACE(XID_FMT " IO error %d %lu, ireq:%p : %llu:%u+%u\n",
+		FUSE_KTRACE(ireq->cc->fc, XID_FMT " IO error %d %lu, ireq:%p : %llu:%u+%u",
 		      XID_ARGS(ireq->iochunk.hbuf.hdr.xid), msg->error.value,
 		      msg->error.remote ? (unsigned long)msg->error.offender.val : 0UL,
 		      ireq, (unsigned long long)ireq->iochunk.chunk,
@@ -580,7 +580,7 @@ static void handle_congestion(struct pcs_cs *cs, struct pcs_rpc_hdr *h)
 {
 	struct pcs_cs *who;
 
-	TRACE("Received congestion notification from CS" NODE_FMT, NODE_ARGS(h->xid.origin));
+	FUSE_KTRACE(cc_from_csset(cs->css)->fc, "Received congestion notification from CS" NODE_FMT, NODE_ARGS(h->xid.origin));
 
 	if (cs->id.val == h->xid.origin.val) {
 		who = cs;
@@ -649,8 +649,8 @@ static void cs_keep_waiting(struct pcs_rpc *ep, struct pcs_msg *req, struct pcs_
 		}
 
 		if (!who->cwr_state) {
-			DTRACE("Congestion window on CS" NODE_FMT " reducing %d/%d/%d", NODE_ARGS(h->xid.origin),
-			       who->in_flight, who->eff_cwnd, who->cwnd);
+			FUSE_KDTRACE(cc_from_csset(cs->css)->fc, "Congestion window on CS" NODE_FMT " reducing %d/%d/%d", NODE_ARGS(h->xid.origin),
+				     who->in_flight, who->eff_cwnd, who->cwnd);
 			if (who->in_flight < who->cwnd)
 				who->cwnd = who->in_flight;
 			who->cwnd /= 2;
@@ -671,9 +671,9 @@ static void cs_keep_waiting(struct pcs_rpc *ep, struct pcs_msg *req, struct pcs_
 			 */
 			if (ireq->iochunk.banned_cs.val == 0 && lat >= PCS_MAX_READ_IO_LATENCY*1000
 			    && may_reroute(ireq->iochunk.csl, h->xid.origin)) {
-				TRACE("Canceling read on CS" NODE_FMT, NODE_ARGS(h->xid.origin));
 				ireq->iochunk.banned_cs = h->xid.origin;
 				spin_unlock(&who->lock);
+				FUSE_KTRACE(ireq->cc->fc, "Canceling read on CS" NODE_FMT, NODE_ARGS(h->xid.origin));
 				pcs_rpc_cancel_request(req);
 				return;
 			}
@@ -694,7 +694,7 @@ static int cs_input(struct pcs_rpc *ep, struct pcs_msg *msg)
 		msg->done(msg);
 		return 0;
 	default:
-		pcs_log(0, "Unsupported message type %u\n", h->type);
+		FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR, "Unsupported message type %u\n", h->type);
 		return PCS_ERR_PROTOCOL;
 	}
 }
@@ -913,7 +913,7 @@ void cs_increment_in_flight(struct pcs_cs *cs, unsigned int to_add)
 	if (cs->in_flight > cs->in_flight_hwm) {
 		cs->in_flight_hwm = cs->in_flight;
 		cs->in_flight_hwm_stamp = jiffies;
-		DTRACE("HWM on CS" NODE_FMT " is %u\n", NODE_ARGS(cs->id), cs->in_flight);
+		FUSE_KDTRACE(cc_from_csset(cs->css)->fc, "HWM on CS" NODE_FMT " is %u", NODE_ARGS(cs->id), cs->in_flight);
 	}
 	spin_unlock(&cs->lock);
 }
@@ -950,8 +950,8 @@ void cs_cwnd_use_or_lose(struct pcs_cs *cs)
 			if (cwnd < PCS_CS_INIT_CWND)
 				cwnd = PCS_CS_INIT_CWND;
 
-			TRACE("Congestion window on CS#" NODE_FMT " was not used, shrink %u -> %u", NODE_ARGS(cs->id),
-			      cs->cwnd, cwnd);
+			FUSE_KTRACE(cc_from_csset(cs->css)->fc, "Congestion window on CS#" NODE_FMT " was not used, shrink %u -> %u", NODE_ARGS(cs->id),
+				    cs->cwnd, cwnd);
 			cs->cwnd = cwnd;
 			if (cs->eff_cwnd > cwnd)
 				cs->eff_cwnd = cwnd;
@@ -972,7 +972,7 @@ static void cs_probe_done(struct pcs_msg *msg)
 		if (!pcs_if_error(&msg->error)) {
 			cs_whitelist(cs, "probe");
 		} else {
-			TRACE("probe error %d", msg->error.value);
+			FUSE_KTRACE(cc_from_csset(css)->fc, "probe error %d", msg->error.value);
 			cs_blacklist(cs, msg->error.value, "probe");
 		}
 		cs->use_count--;

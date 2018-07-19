@@ -9,7 +9,9 @@
 #include "pcs_sock_io.h"
 #include "pcs_rpc.h"
 #include "pcs_req.h"
+#include "pcs_cluster.h"
 #include "log.h"
+#include "fuse_ktrace.h"
 
 static void ireq_timer_handler(unsigned long arg)
 {
@@ -135,14 +137,9 @@ noinline void pcs_ireq_queue_fail(struct list_head *queue, int error)
 			ireq_on_error(ireq);
 
 			if (!(ireq->flags & IREQ_F_FATAL)) {
-				if (ireq_is_timed_out(ireq)) {
-					pcs_log(LOG_ERR, "timeout while truncate(%d) request on \"" DENTRY_FMT "\" last err=%u",
-						ireq->type, DENTRY_ARGS(ireq->dentry), ireq->error.value);
-					BUG();
-				}
 				pcs_clear_error(&ireq->error);
 
-				TRACE("requeue truncate(%d) %llu@" DENTRY_FMT "\n", ireq->type,
+				FUSE_KTRACE(ireq->cc->fc, "requeue truncate(%d) %llu@" DENTRY_FMT "\n", ireq->type,
 				      (unsigned long long)ireq->truncreq.offset, DENTRY_ARGS(ireq->dentry));
 
 				ireq_delay(ireq);
