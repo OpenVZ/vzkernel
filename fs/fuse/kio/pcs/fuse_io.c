@@ -14,6 +14,7 @@
 #include "pcs_cluster.h"
 #include "log.h"
 #include "fuse_prometheus.h"
+#include "fuse_ktrace.h"
 
 #include "../../fuse_i.h"
 
@@ -159,6 +160,7 @@ static void prepare_io_(struct pcs_fuse_req *r, unsigned short type, off_t offse
 	struct pcs_int_request *ireq = &r->exec.ireq;
 
 	TRACE("INIT r(%p) ireq:%p {%ld, %ld}\n", r, ireq, offset, size);
+	FUSE_KDTRACE(ireq->cc->fc, "req %d {%p} " DENTRY_FMT " %ld+%ld", type, ireq, DENTRY_ARGS(ireq->dentry), offset, size);
 
 	/* Initialize IO request */
 	switch (type)
