@@ -52,6 +52,7 @@ struct tick_sched *tick_get_tick_sched(int cpu)
 static void tick_do_update_jiffies64(ktime_t now)
 {
 	unsigned long ticks = 0;
+	bool calc_ve = false;
 	ktime_t delta;
 
 	/*
@@ -80,7 +81,7 @@ static void tick_do_update_jiffies64(ktime_t now)
 			last_jiffies_update = ktime_add_ns(last_jiffies_update,
 							   incr * ticks);
 		}
-		do_timer(++ticks);
+		calc_ve = do_timer(++ticks);
 
 		/* Keep the tick_next_period variable up to date */
 		tick_next_period = ktime_add(last_jiffies_update, tick_period);
@@ -89,6 +90,8 @@ static void tick_do_update_jiffies64(ktime_t now)
 		return;
 	}
 	write_sequnlock(&jiffies_lock);
+	if (calc_ve)
+		calc_load_ve();
 	update_wall_time();
 }
 
