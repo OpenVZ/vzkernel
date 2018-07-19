@@ -2000,14 +2000,14 @@ static ssize_t target_dev_enable_store(struct config_item *item,
 	return count;
 }
 
-static ssize_t target_dev_user_helper_show(struct config_item *item, char *page)
+static ssize_t target_dev_alua_user_helper_show(struct config_item *item, char *page)
 {
 	struct se_device *dev = to_device(item);
 
 	return core_alua_show_user_helper(dev, page);
 }
 
-static ssize_t target_dev_user_helper_store(struct config_item *item,
+static ssize_t target_dev_alua_user_helper_store(struct config_item *item,
 		const char *page, size_t count)
 {
 	struct se_device *dev = to_device(item);
@@ -2286,7 +2286,7 @@ CONFIGFS_ATTR(target_dev_, udev_path);
 CONFIGFS_ATTR(target_dev_, enable);
 CONFIGFS_ATTR(target_dev_, alua_lu_gp);
 CONFIGFS_ATTR(target_dev_, lba_map);
-CONFIGFS_ATTR(target_dev_, user_helper);
+CONFIGFS_ATTR(target_dev_, alua_user_helper);
 
 static struct configfs_attribute *target_core_dev_attrs[] = {
 	&target_dev_attr_info,
@@ -2296,7 +2296,7 @@ static struct configfs_attribute *target_core_dev_attrs[] = {
 	&target_dev_attr_enable,
 	&target_dev_attr_alua_lu_gp,
 	&target_dev_attr_lba_map,
-	&target_dev_attr_user_helper,
+	&target_dev_attr_alua_user_helper,
 	NULL,
 };
 
