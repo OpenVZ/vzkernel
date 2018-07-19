@@ -4,6 +4,8 @@
 #include "fuse_ktrace_prot.h"
 #include <linux/relay.h>
 
+#define KTRACE_LOG_BUF_SIZE	256
+
 struct fuse_ktrace
 {
 	atomic_t				refcnt;
@@ -12,6 +14,7 @@ struct fuse_ktrace
 	unsigned long __percpu			*ovfl;
 	struct dentry				*prometheus_dentry;
 	struct kfuse_histogram * __percpu	*prometheus_hist;
+	u8 * __percpu				buf;
 };
 
 static inline void * fuse_trace_prepare(struct fuse_ktrace * tr, int type, int len)
@@ -41,5 +44,11 @@ static inline void * fuse_trace_prepare(struct fuse_ktrace * tr, int type, int l
 
 #define FUSE_TRACE_PREPARE(tr, type, len) fuse_trace_prepare((tr), (type), (len))
 #define FUSE_TRACE_COMMIT(tr)       preempt_enable()
+
+void __kfuse_trace(struct fuse_conn * fc, unsigned long ip, const char * fmt, ...);
+
+#define FUSE_KTRACE(fc, fmt, args...) do { struct fuse_conn * __fc = (fc); if (__fc->ktrace_level >= LOG_TRACE) __kfuse_trace(__fc, _THIS_IP_, "%s: " fmt, __FUNCTION__, ## args); } while (0)
+#define FUSE_KDTRACE(fc, fmt, args...) do { struct fuse_conn * __fc = (fc); if (__fc->ktrace_level >= LOG_DTRACE) __kfuse_trace(__fc, _THIS_IP_, "%s: " fmt, __FUNCTION__, ## args); } while (0)
+#define FUSE_KLOG(fc, level, fmt, args...) do { struct fuse_conn * __fc = (fc); if (__fc->ktrace_level >= (level)) __kfuse_trace(__fc, 0, "%s: " fmt, __FUNCTION__, ## args); } while (0)
 
 #endif /* _FUSE_KTRACE_H_ */
