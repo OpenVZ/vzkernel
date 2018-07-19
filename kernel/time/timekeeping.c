@@ -2005,10 +2005,10 @@ struct timespec64 get_monotonic_coarse64(void)
 /*
  * Must hold jiffies_lock
  */
-void do_timer(unsigned long ticks)
+bool do_timer(unsigned long ticks)
 {
 	jiffies_64 += ticks;
-	calc_global_load(ticks);
+	return calc_global_load(ticks);
 }
 
 /**
