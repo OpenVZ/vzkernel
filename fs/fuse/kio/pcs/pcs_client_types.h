@@ -164,11 +164,8 @@ typedef struct _pcs_api_csconnreq_t {
 
 #define PCS_FILE_ID_FMT       "[%08llx]"
 #define PCS_FILE_ID_ARGS(id)  (unsigned long long)(id)
-#define DENTRY_NAME_FMT       "%*.*s"
-#define DENTRY_FMT            PCS_FILE_ID_FMT "/" DENTRY_NAME_FMT
-#define DENTRY_NAME_ARGS(n)   (n).len, (n).len, (n).data
-#define DENTRY_ID_ARGS(id)    PCS_FILE_ID_ARGS((id).parent), DENTRY_NAME_ARGS((id).name)
-#define DENTRY_ARGS(de)	      DENTRY_ID_ARGS(((struct pcs_dentry_info *)(de))->id)
+#define DENTRY_FMT            PCS_FILE_ID_FMT "/" PCS_FILE_ID_FMT
+#define DENTRY_ARGS(de)	      PCS_FILE_ID_ARGS((de)->id.parent), PCS_FILE_ID_ARGS((de)->fileinfo.attr.id)
 
 #define DENTRY_SIZE(de)       ((de)->fileinfo.attr.size)
 #define DENTRY_CHUNK_SIZE(de) ((de)->fileinfo.sys.chunk_size)
