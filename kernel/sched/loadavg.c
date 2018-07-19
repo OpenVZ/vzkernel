@@ -347,14 +347,14 @@ static inline void calc_global_nohz(void) { }
  *
  * Called from the global timer code.
  */
-void calc_global_load(unsigned long ticks)
+bool calc_global_load(unsigned long ticks)
 {
 	unsigned long sample_window;
 	long active, delta;
 
 	sample_window = READ_ONCE(calc_load_update);
 	if (time_before(jiffies, sample_window + 10))
-		return;
+		return false;
 
 	/*
 	 * Fold the 'old' NO_HZ-delta to include all NO_HZ CPUs.
@@ -377,6 +377,7 @@ void calc_global_load(unsigned long ticks)
 	 * catch up in bulk.
 	 */
 	calc_global_nohz();
+	return true;
 }
 
 /*
