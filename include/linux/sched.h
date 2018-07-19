@@ -185,7 +185,7 @@ extern unsigned long nr_active_cpu(void);
 extern atomic_t nr_dead;
 extern unsigned long nr_zombie;
 
-extern void calc_global_load(unsigned long ticks);
+extern bool calc_global_load(unsigned long ticks);
 extern void update_cpu_load_nohz(void);
 
 extern unsigned long get_parent_ip(unsigned long addr);
