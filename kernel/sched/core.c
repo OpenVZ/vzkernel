@@ -3234,12 +3234,12 @@ static inline void calc_global_nohz(void) { }
  * calc_load - update the avenrun load estimates 10 ticks after the
  * CPUs have updated calc_load_tasks.
  */
-void calc_global_load(unsigned long ticks)
+bool calc_global_load(unsigned long ticks)
 {
 	long active, delta;
 
 	if (time_before(jiffies, calc_load_update + 10))
-		return;
+		return false;
 
 	/*
 	 * Fold the 'old' idle-delta to include all NO_HZ cpus.
@@ -3263,6 +3263,7 @@ void calc_global_load(unsigned long ticks)
 	 * In case we idled for multiple LOAD_FREQ intervals, catch up in bulk.
 	 */
 	calc_global_nohz();
+	return true;
 }
 
 /*
