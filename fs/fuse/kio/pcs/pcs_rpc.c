@@ -557,7 +557,7 @@ void pcs_rpc_connect(struct pcs_rpc * ep)
 	if (ep->state != PCS_RPC_UNCONN)
 		return;
 
-	TRACE("Connecting to node " NODE_FMT "\n", NODE_ARGS(ep->peer_id));
+	FUSE_KTRACE(cc_from_rpc(ep->eng)->fc, "Connecting to node " NODE_FMT "\n", NODE_ARGS(ep->peer_id));
 
 	BUG_ON(!ep->ops->connect);
 	ep->ops->connect(ep);

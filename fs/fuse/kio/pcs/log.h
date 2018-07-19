@@ -21,6 +21,8 @@
 
 #define LOG_DTRACE LOG_DEBUG4
 
+extern unsigned int pcs_loglevel;
+
 #define __PCS_DEBUG__ 1
 #define __PCS_DTRACE__ 1
 
@@ -29,12 +31,12 @@
 #define TRACE(fmt, ...) do {} while (0)
 #define DTRACE(fmt, ...) do {} while (0)
 #else
-#define TRACE(fmt, args...)	trace_printk("%d: " fmt "\n", __LINE__, ## args)
+#define TRACE(fmt, args...)	if (pcs_loglevel >= LOG_TRACE) trace_printk("%d: " fmt "\n", __LINE__, ## args)
 
 #ifndef __PCS_DTRACE__
 #define DTRACE(fmt, ...) do {} while (0)
 #else
-#define DTRACE(fmt, args...)	trace_printk("%d: " fmt "\n", __LINE__, ## args)
+#define DTRACE(fmt, args...)	if (pcs_loglevel >= LOG_DTRACE) trace_printk("%d: " fmt "\n", __LINE__, ## args)
 #endif /* __PCS_DTRACE__ */
 #endif /* __PCS_DEBUG__ */
 #endif /* __PCSLOG_H__ */
