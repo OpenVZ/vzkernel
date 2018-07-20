@@ -35,6 +35,10 @@
 #include <asm/sys_ia32.h>
 #include <asm/smap.h>
 
+#ifdef CONFIG_VE
+# include <linux/ve.h>
+#endif
+
 void sigaction_compat_abi(struct k_sigaction *act, struct k_sigaction *oact)
 {
 	/* Don't leak in-kernel non-uapi flags to user-space */
@@ -273,6 +277,55 @@ badframe:
 	return 0;
 }
 
+#ifdef CONFIG_VE
+extern int force_personality32;
+
+static void ve_set_personality_ia32(struct pt_regs *regs)
+{
+#ifdef CONFIG_IA32_EMULATION
+	if (ve_is_super(current->task_ve) ||
+	    test_thread_flag(TIF_IA32))
+		return;
+
+	/*
+	 * TIF_IA32 flag is used by the kernel to figure out
+	 * the task address space at least but more importantly
+	 * in compat_alloc_user_space when an application is
+	 * doing syscalls like io_submit and etc. So when
+	 * we restore such process via rt_sigreturn syscall
+	 * from inside of native mode with int80 gate help
+	 * we have to restore the TIF_IA32 and ia32_compat
+	 * at least.
+	 *
+	 * NOTE 1: this applies to applications running inside
+	 * VE only. The vanilla kernel already throwing off
+	 * old_rsp symbol but the patch is too big to merge
+	 * inside.
+	 *
+	 * NOTE 2: this is pretty valid to call int80 on
+	 * regular x86-64 bit application with rt_sigreturn
+	 * as syscall number, but it's rather an exception
+	 * than common practice (except CRIU of course).
+	 */
+	if (regs->cs == __USER32_CS) {
+		/*
+		 * It's close to set_personality_ia32
+		 * but we don't want to change orig_ax.
+		 */
+		set_thread_flag(TIF_ADDR32);
+		set_thread_flag(TIF_IA32);
+		clear_thread_flag(TIF_X32);
+		if (current->mm)
+			current->mm->context.ia32_compat = TIF_IA32;
+		current->personality |= force_personality32;
+		current_thread_info()->status |= TS_COMPAT;
+	}
+#endif
+}
+#else
+static void ve_set_personality_ia32(struct pt_regs *regs) { }
+#endif
+
 asmlinkage long sys32_rt_sigreturn(void)
 {
 	struct pt_regs *regs = current_pt_regs();
@@ -291,6 +344,8 @@ asmlinkage long sys32_rt_sigreturn(void)
 
 	if (ia32_restore_sigcontext(regs, &frame->uc.uc_mcontext, &ax))
 		goto badframe;
+
+	ve_set_personality_ia32(regs);
 
 	if (compat_restore_altstack(&frame->uc.uc_stack))
 		goto badframe;
