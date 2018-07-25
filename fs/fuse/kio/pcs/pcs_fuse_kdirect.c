@@ -460,6 +460,7 @@ int fuse_map_resolve(struct pcs_map_entry *m, int direction)
 	reply_work->ctx2 = map_ioc;
 	ia->ioctl.ctx = reply_work;
 	ia->ap.args.end = pcs_fuse_reply_handle;
+	ia->ap.args.nonblocking = true;
 
 	err = fuse_simple_background(fc, &ia->ap.args, GFP_NOIO);
 	if (err)
@@ -590,6 +591,7 @@ int fuse_pcs_csconn_send(struct fuse_conn *fc, struct pcs_rpc *ep, int flags)
 	ia->ioctl.ctx = reply_work;
 
 	ia->ap.args.end = process_pcs_csconn_reply;
+	ia->ap.args.nonblocking = true;
 	err = fuse_simple_background(fc, &ia->ap.args, GFP_NOIO);
 	if (err)
 		process_pcs_csconn_reply(fc, &ia->ap.args, err);
