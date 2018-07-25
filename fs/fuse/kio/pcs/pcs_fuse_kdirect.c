@@ -210,8 +210,8 @@ static int fuse_pcs_getfileinfo(struct fuse_conn *fc, struct file *file,
 
 	err = fuse_simple_request(fc, &ia.ap.args);
 	if (err || outarg->result) {
-		printk("%s:%d h.err:%d result:%d\n", __FUNCTION__, __LINE__,
-		       err, outarg->result);
+		TRACE("%s:%d h.err:%d result:%d\n", __FUNCTION__, __LINE__,
+		      err, outarg->result);
 		err = err ? : outarg->result;
 		return err;
 	} else
@@ -251,8 +251,8 @@ static int fuse_pcs_kdirect_claim_op(struct fuse_conn *fc, struct file *file,
 	ia.ap.args.out_args[0].value = outarg;
 	err = fuse_simple_request(fc, &ia.ap.args);
 	if (err || outarg->result) {
-		printk("%s:%d h.err:%d result:%d\n", __FUNCTION__, __LINE__,
-		       err, outarg->result);
+		TRACE("%s:%d h.err:%d result:%d\n", __FUNCTION__, __LINE__,
+		      err, outarg->result);
 		err = err ? : outarg->result;
 	}
 
@@ -270,7 +270,7 @@ static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct ino
 
 	ret = fuse_pcs_getfileinfo(fc, file, &info);
 	if (ret)
-		return ret;
+		return ret == -EOPNOTSUPP ? 0 : ret;
 
 	if (info.sys.map_type != PCS_MAP_PLAIN) {
 		TRACE("Unsupported map_type:%x, ignore\n", info.sys.map_type);
@@ -305,7 +305,8 @@ static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct ino
 		pcs_mapping_invalidate(&di->mapping);
 		pcs_mapping_deinit(&di->mapping);
 		kfree(di);
-		return ret;
+		/* Claim error means we cannot claim, just that */
+		return 0;
 	}
 	/* TODO: Propper initialization of dentry should be here!!! */
 	fi->private = di;
