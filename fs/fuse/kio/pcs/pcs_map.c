@@ -2842,7 +2842,7 @@ static void pcs_flushreq_complete(struct pcs_int_request * sreq)
 
 	if (!pcs_if_error(&sreq->error)) {
 		if (sync_is_finished(sreq->flushreq.msg, m)) {
-			FUSE_KTRACE(ireq->cc->fc, "finished");
+			FUSE_KTRACE(sreq->cc->fc, "finished");
 			goto done_dirty;
 		}
 		sreq->error.value = PCS_ERR_CSD_STALE_MAP;
@@ -2852,7 +2852,7 @@ static void pcs_flushreq_complete(struct pcs_int_request * sreq)
 
 	if (ireq && !pcs_if_error(&ireq->error)) {
 		if (ireq_check_redo(sreq)) {
-			FUSE_KTRACE(ireq->cc->fc, "restart after flush error %d", sreq->error.value);
+			FUSE_KTRACE(sreq->cc->fc, "restart after flush error %d", sreq->error.value);
 			if (map_version_compare(&ioh->map_version, &m->version) < 0)
 				sreq->flags &= ~IREQ_F_ONCE;
 			spin_unlock(&m->lock);
@@ -2868,7 +2868,7 @@ static void pcs_flushreq_complete(struct pcs_int_request * sreq)
 				ireq_delay(sreq);
 			return;
 		}
-		FUSE_KTRACE(ireq->cc->fc, "flush error %d", sreq->error.value);
+		FUSE_KTRACE(sreq->cc->fc, "flush error %d", sreq->error.value);
 		pcs_copy_error(&ireq->error, &sreq->error);
 		notify_error = 1;
 	}
