@@ -273,8 +273,12 @@ static void flush_bg_queue(struct fuse_conn *fc, struct fuse_iqueue *fiq)
 		struct fuse_req *req;
 
 		req = list_first_entry(&fc->bg_queue, struct fuse_req, list);
-		list_del(&req->list);
+		list_del_init(&req->list);
 		fc->active_background++;
+
+		if (fc->kio.op && !fc->kio.op->req_send(fc, req, true, true))
+			continue;
+
 		spin_lock(&fiq->lock);
 		req->in.h.unique = fuse_get_unique(fiq);
 		queue_request_and_unlock(fiq, req);
@@ -606,9 +610,6 @@ static int fuse_request_queue_background(struct fuse_req *req)
 	int ret = -ENOTCONN;
 
 	WARN_ON(!test_bit(FR_BACKGROUND, &req->flags));
-
-	if (fc->kio.op && !fc->kio.op->req_send(fc, req, true, false))
-		return 0;
 
 	if (!test_bit(FR_WAITING, &req->flags)) {
 		__set_bit(FR_WAITING, &req->flags);
