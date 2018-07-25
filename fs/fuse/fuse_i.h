@@ -307,6 +307,7 @@ struct fuse_io_priv {
  * FR_SENT:		request is in userspace, waiting for an answer
  * FR_FINISHED:		request is finished
  * FR_PRIVATE:		request is on private list
+ * FR_NONBLOCKING:	non-blocking request (only needed for KIO)
  */
 enum fuse_req_flag {
 	FR_ISREPLY,
@@ -320,6 +321,7 @@ enum fuse_req_flag {
 	FR_SENT,
 	FR_FINISHED,
 	FR_PRIVATE,
+	FR_NONBLOCKING,
 };
 
 /**
@@ -942,6 +944,8 @@ void fuse_request_free(struct fuse_conn *fc, struct fuse_req *req);
 struct fuse_req *fuse_get_req(struct fuse_conn *fc, unsigned npages);
 struct fuse_req *fuse_get_req_for_background(struct fuse_conn *fc,
 					     unsigned npages);
+struct fuse_req *fuse_get_nonblock_req_for_background(struct fuse_conn *fc,
+						      unsigned npages);
 
 /*
  * Increment reference count on request
