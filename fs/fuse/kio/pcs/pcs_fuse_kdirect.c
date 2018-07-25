@@ -706,18 +706,29 @@ static int submit_size_grow(struct inode *inode, unsigned long long size)
 
 }
 
+static void truncate_complete(struct pcs_int_request *treq)
+{
+	if (pcs_if_error(&treq->error)) {
+		TRACE("truncate offs: %llu error: %d \n",
+		      treq->truncreq.offset, treq->error.value);
+	}
+	pcs_cc_requeue(treq->cc, &treq->truncreq.waiters);
+	ireq_destroy(treq);
+}
+
 static void fuse_size_grow_work(struct work_struct *w)
 {
 	struct pcs_dentry_info* di = container_of(w, struct pcs_dentry_info, size.work);
 	struct inode *inode = &di->inode->inode;
-	struct pcs_int_request* ireq, *next;
-	unsigned long long size;
+	struct pcs_int_request *ireq, *next, *treq;
+	u64 size, old_size;
 	int err;
 	LIST_HEAD(pending_reqs);
 
 	spin_lock(&di->lock);
 	BUG_ON(di->size.op != PCS_SIZE_INACTION);
 
+	old_size = DENTRY_SIZE(di);
 	size = di->size.required;
 	if (!size) {
 		BUG_ON(!list_empty(&di->size.queue));
@@ -725,7 +736,7 @@ static void fuse_size_grow_work(struct work_struct *w)
 		TRACE("No more pending writes\n");
 		return;
 	}
-	BUG_ON(di->fileinfo.attr.size >= size);
+	BUG_ON(old_size >= size);
 
 	list_splice_tail_init(&di->size.queue, &pending_reqs);
 	di->size.op = PCS_SIZE_GROW;
@@ -762,7 +773,18 @@ static void fuse_size_grow_work(struct work_struct *w)
 		di->size.required = 0;
 	spin_unlock(&di->lock);
 
-	pcs_cc_requeue(di->cluster, &pending_reqs);
+	treq = ireq_alloc(di);
+	if (!treq) {
+		TRACE("Can't allocate treq\n");
+		pcs_cc_requeue(di->cluster, &pending_reqs);
+		return;
+	}
+	/* Drop old mapping from cache */
+	treq->type = PCS_IREQ_TRUNCATE;
+	treq->complete_cb = truncate_complete;
+	INIT_LIST_HEAD(&treq->truncreq.waiters);
+	list_splice(&pending_reqs, &treq->truncreq.waiters);
+	pcs_mapping_truncate(treq, old_size);
 }
 
 static void wait_grow(struct pcs_fuse_req *r, struct pcs_dentry_info *di, unsigned long long required)
