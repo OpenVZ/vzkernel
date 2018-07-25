@@ -853,7 +853,7 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, 
 	switch (r->req.in.h.opcode) {
 	case FUSE_WRITE:
 	case FUSE_READ: {
-		int ret;		ret = pcs_fuse_prep_rw(r);
+		int ret = pcs_fuse_prep_rw(r);
 		if (!ret)
 			goto submit;
 		if (ret > 0)
