@@ -233,6 +233,21 @@ struct fuse_req *fuse_get_req_for_background(struct fuse_conn *fc,
 }
 EXPORT_SYMBOL_GPL(fuse_get_req_for_background);
 
+struct fuse_req *fuse_get_nonblock_req_for_background(struct fuse_conn *fc,
+						      unsigned npages)
+{
+	struct fuse_req *req = __fuse_get_req(fc, npages, false);
+	if (IS_ERR(req))
+		return req;
+
+	__set_bit(FR_BACKGROUND, &req->flags);
+	__set_bit(FR_NONBLOCKING, &req->flags);
+
+	return req;
+}
+
+EXPORT_SYMBOL_GPL(fuse_get_nonblock_req_for_background);
+
 /*
  * Return request in fuse_file->reserved_req.  However that may
  * currently be in use.  If that is the case, wait for it to become
@@ -610,10 +625,20 @@ bool fuse_request_queue_background(struct fuse_conn *fc, struct fuse_req *req)
 			set_bdi_congested(&fc->bdi, BLK_RW_SYNC);
 			set_bdi_congested(&fc->bdi, BLK_RW_ASYNC);
 		}
+		if (test_bit(FR_NONBLOCKING, &req->flags)) {
+			fc->active_background++;
+			spin_lock(&fiq->waitq.lock);
+			req->in.h.unique = fuse_get_unique(fiq);
+			queue_request(fiq, req);
+			spin_unlock(&fiq->waitq.lock);
+			queued = true;
+			goto unlock;
+		}
 		list_add_tail(&req->list, &fc->bg_queue);
 		flush_bg_queue(fc, fiq);
 		queued = true;
 	}
+unlock:
 	spin_unlock(&fc->bg_lock);
 
 	return queued;
