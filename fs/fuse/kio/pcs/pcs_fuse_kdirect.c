@@ -411,13 +411,12 @@ int fuse_map_resolve(struct pcs_map_entry *m, int direction)
 		kfree(map_ioc);
 		return -ENOMEM;
 	}
-	req = fuse_get_req_for_background(fc, 0);
+	req = fuse_get_nonblock_req_for_background(fc, 0);
 	if (IS_ERR(req)) {
 		kfree(map_ioc);
 		kfree(reply_work);
 		return PTR_ERR(req);
 	}
-
 
 	memset(&req->misc.ioctl, 0, sizeof(req->misc.ioctl));
 	inarg = &req->misc.ioctl.in;
@@ -543,7 +542,7 @@ int fuse_pcs_csconn_send(struct fuse_conn *fc, struct pcs_rpc *ep, int flags)
 		return -ENOMEM;
 	}
 
-	req = fuse_get_req_for_background(fc, 0);
+	req = fuse_get_nonblock_req_for_background(fc, 0);
 	if (IS_ERR(req)) {
 		kfree(csconn);
 		kfree(reply_work);
