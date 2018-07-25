@@ -505,6 +505,8 @@ static void fuse_args_to_req(struct fuse_req *req, struct fuse_args *args)
 		req->in.h.total_extlen = args->in_args[args->ext_idx].size / 8;
 	if (args->end)
 		__set_bit(FR_ASYNC, &req->flags);
+	if (args->nonblocking)
+		__set_bit(FR_NONBLOCKING, &req->flags);
 }
 
 ssize_t fuse_simple_check_request(struct fuse_mount *fm, struct fuse_args *args,
@@ -626,10 +628,21 @@ static int fuse_request_queue_background(struct fuse_req *req)
 			set_bdi_congested(fm->sb->s_bdi, BLK_RW_SYNC);
 			set_bdi_congested(fm->sb->s_bdi, BLK_RW_ASYNC);
 		}
+
+		if (test_bit(FR_NONBLOCKING, &req->flags)) {
+			fc->active_background++;
+			spin_lock(&fiq->lock);
+			req->in.h.unique = fuse_get_unique(fiq);
+			queue_request_and_unlock(fiq, req);
+			ret = 0;
+			goto unlock;
+		}
+
 		list_add_tail(&req->list, &fc->bg_queue);
 		flush_bg_queue(fc, fiq);
 		ret = 0;
 	}
+unlock:
 	spin_unlock(&fc->bg_lock);
 
 	return ret;
