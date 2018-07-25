@@ -1068,11 +1068,28 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 		return 1;
 	}
 
-	__clear_bit(FR_BACKGROUND, &req->flags);
-	__clear_bit(FR_PENDING, &req->flags);
 	/* request_end below will do fuse_put_request() */
 	if (!bg)
 		atomic_inc(&req->count);
+	else if (!lk) {
+		spin_lock(&fc->bg_lock);
+		if (fc->num_background + 1 >= fc->max_background ||
+		    !fc->connected) {
+			spin_unlock(&fc->bg_lock);
+			return 1;
+		}
+		fc->num_background++;
+		fc->active_background++;
+
+		if (fc->num_background == fc->congestion_threshold &&
+		    fc->bdi_initialized) {
+			set_bdi_congested(&fc->bdi, BLK_RW_SYNC);
+			set_bdi_congested(&fc->bdi, BLK_RW_ASYNC);
+		}
+		spin_unlock(&fc->bg_lock);
+	}
+	__clear_bit(FR_PENDING, &req->flags);
+
 	pcs_fuse_submit(pfc, req, lk);
 	if (!bg)
 		wait_event(req->waitq, test_bit(FR_FINISHED, &req->flags));
