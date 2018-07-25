@@ -131,6 +131,7 @@ struct pcs_int_request
 			u64			offset;
 			int			phase;
 			PCS_MAP_VERSION_T	version;
+			struct list_head	waiters;
 		} truncreq;
 
 		struct {
