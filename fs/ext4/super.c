@@ -2191,6 +2191,35 @@ int ext4_alloc_flex_bg_array(struct super_block *sb, ext4_group_t ngroup)
 	return 0;
 }
 
+/*
+ * Allocate the top-level s_group_desc array for the specified number
+ * of groups. As the memory is allocated before the journaling is started
+ * we can safely use kvmalloc() with GFP_KERNEL flag here.
+ */
+int ext4_alloc_group_desc_bh_array(struct super_block *sb, ext4_group_t ngroup)
+{
+	struct ext4_sb_info *sbi = EXT4_SB(sb);
+	unsigned long num_desc = DIV_ROUND_UP(ngroup,  EXT4_DESC_PER_BLOCK(sb));
+	struct buffer_head **n_group_desc;
+
+	if (num_desc <= sbi->s_gdb_count)
+		return 0;
+
+	n_group_desc = kvmalloc(num_desc * sizeof(struct buffer_head *),
+				GFP_KERNEL);
+	if (!n_group_desc) {
+		ext4_warning(sb, "not enough memory for %lu groups", num_desc);
+		return -ENOMEM;
+	}
+
+	memcpy(n_group_desc, sbi->s_group_desc,
+	       sbi->s_gdb_count * sizeof(struct buffer_head *));
+	kvfree(sbi->s_group_desc);
+
+	sbi->s_group_desc = n_group_desc;
+	return 0;
+}
+
 static int ext4_fill_flex_info(struct super_block *sb)
 {
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
