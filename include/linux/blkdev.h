@@ -200,6 +200,7 @@ struct request {
 #endif
 
 	unsigned short ioprio;
+	struct user_beancounter *req_ub;
 
 	void *special;		/* opaque pointer available for LLD use */
 	char *buffer;		/* kaddr of the current segment if available */
