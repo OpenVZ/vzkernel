@@ -35,6 +35,7 @@
 #include <linux/hash.h>
 #include <linux/uaccess.h>
 #include <linux/pm_runtime.h>
+#include <bc/beancounter.h>
 
 #include <trace/events/block.h>
 
@@ -711,6 +712,17 @@ void elv_drain_elevator(struct request_queue *q)
 
 void __elv_add_request(struct request_queue *q, struct request *rq, int where)
 {
+#ifdef CONFIG_BEANCOUNTERS
+	struct user_beancounter *ub = NULL;
+	if (rq->req_ub) {
+		/*
+		 * Request can be already freed at the end of func,
+		 * so get beancounter.
+		 */
+		get_beancounter(rq->req_ub);
+		ub = set_exec_ub(rq->req_ub);
+	}
+#endif
 	trace_block_rq_insert(q, rq);
 
 	blk_pm_add_request(q, rq);
@@ -787,6 +799,12 @@ void __elv_add_request(struct request_queue *q, struct request *rq, int where)
 		       __func__, where);
 		BUG();
 	}
+#ifdef CONFIG_BEANCOUNTERS
+	if (ub) {
+		ub = set_exec_ub(ub);
+		put_beancounter(ub);
+	}
+#endif
 }
 EXPORT_SYMBOL(__elv_add_request);
 
