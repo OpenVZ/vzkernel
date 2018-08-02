@@ -616,6 +616,8 @@ struct ploop_request
 	/* if the engine starts operation on particular io, let's finish
 	 * the operation on the same io (see io.ops->post_submit) */
 	struct ploop_io	       *eng_io;
+
+	struct user_beancounter *preq_ub;
 };
 
 static inline struct ploop_delta * ploop_top_delta(struct ploop_device * plo)
