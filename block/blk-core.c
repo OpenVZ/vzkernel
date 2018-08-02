@@ -1033,6 +1033,12 @@ EXPORT_SYMBOL(blk_get_queue);
 
 static inline void blk_free_request(struct request_list *rl, struct request *rq)
 {
+#ifdef CONFIG_BEANCOUNTERS
+	if (rq->req_ub) {
+		put_beancounter(rq->req_ub);
+		rq->req_ub = NULL;
+	}
+#endif
 	if (rq->cmd_flags & REQ_ELVPRIV) {
 		elv_put_request(rl->q, rq);
 		if (rq->elv.icq)
@@ -1177,6 +1183,20 @@ static bool blk_rq_should_init_elevator(struct bio *bio)
 }
 
 /**
+ * blk_rq_set_ub - associate a request with a user beancounter
+ * @rq: request of interest
+ *
+ * Store current exec_ub in @rq so later we can use it while adding the request
+ * to elevator.
+ */
+static inline void blk_rq_set_ub(struct request *rq)
+{
+#ifdef CONFIG_BEANCOUNTERS
+	rq->req_ub = get_beancounter(get_exec_ub());
+#endif
+}
+
+/**
  * __get_request - get a free request
  * @rl: request list to allocate from
  * @rw_flags: RW and SYNC flags
@@ -1280,6 +1300,7 @@ static struct request *__get_request(struct request_list *rl, int rw_flags,
 
 	blk_rq_init(q, rq);
 	blk_rq_set_rl(rq, rl);
+	blk_rq_set_ub(rq);
 	rq->cmd_flags = rw_flags | REQ_ALLOCED;
 	if (flags & BLK_MQ_REQ_PREEMPT)
 		rq->cmd_flags |= REQ_PREEMPT;
