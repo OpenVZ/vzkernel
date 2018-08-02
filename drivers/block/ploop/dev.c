@@ -22,6 +22,7 @@
 
 #include <trace/events/block.h>
 
+#include <bc/beancounter.h>
 #include <linux/ploop/ploop.h>
 #include "ploop_events.h"
 #include "freeblks.h"
@@ -241,6 +242,10 @@ void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list)
 			put_io_context_active(preq->ioc);
 			preq->ioc = NULL;
 		}
+#ifdef CONFIG_BEANCOUNTERS
+		put_beancounter(preq->preq_ub);
+		preq->preq_ub = NULL;
+#endif
 
 		BUG_ON (test_bit(PLOOP_REQ_ZERO, &preq->state));
 		ploop_test_and_clear_blockable(plo, preq);
@@ -561,6 +566,14 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 	} else {
 		preq->ioc = NULL;
 	}
+
+#ifdef CONFIG_BEANCOUNTERS
+	/* Proper exec_ub is set by __writeback_single_inode().
+	 * preq->ioc->ioc_ub does not fit here because we may be in "kworker"
+	 * and preq->ioc is a link to current->io_context.
+	 */
+	preq->preq_ub = get_beancounter(get_exec_ub());
+#endif
 
 	if (unlikely(bio->bi_rw & REQ_SYNC))
 		__set_bit(PLOOP_REQ_SYNC, &preq->state);
@@ -1324,6 +1337,7 @@ static void ploop_complete_request(struct ploop_request * preq)
 	struct ploop_device * plo = preq->plo;
 	int nr_completed = 0;
 	struct io_context *ioc;
+	struct user_beancounter *ub;
 
 	trace_complete_request(preq);
 
@@ -1417,6 +1431,10 @@ static void ploop_complete_request(struct ploop_request * preq)
 
 	ioc = preq->ioc;
 	preq->ioc = NULL;
+#ifdef CONFIG_BEANCOUNTERS
+	ub = preq->preq_ub;
+	preq->preq_ub = NULL;
+#endif
 
 	plo->active_reqs--;
 
@@ -1451,6 +1469,9 @@ static void ploop_complete_request(struct ploop_request * preq)
 		atomic_dec(&ioc->nr_tasks);
 		put_io_context_active(ioc);
 	}
+#ifdef CONFIG_BEANCOUNTERS
+	put_beancounter(ub);
+#endif
 }
 
 void ploop_fail_request(struct ploop_request * preq, int err)
@@ -1670,6 +1691,7 @@ void ploop_queue_zero_request(struct ploop_device *plo,
 	preq->error = 0;
 	preq->tstamp = jiffies;
 	preq->iblock = 0;
+	preq->preq_ub = get_beancounter(get_exec_ub());
 
 	if (test_bit(PLOOP_REQ_RELOC_S, &orig_preq->state)) {
 		if (orig_preq->dst_iblock == ~0U)
@@ -2513,7 +2535,7 @@ static void ploop_req_state_process(struct ploop_request * preq)
 	struct io_context * saved_ioc = NULL;
 	int release_ioc = 0;
 #ifdef CONFIG_BEANCOUNTERS
-	struct user_beancounter * uninitialized_var(saved_ub);
+	struct user_beancounter *saved_ub;
 #endif
 
 	trace_req_state_process(preq);
@@ -2521,12 +2543,13 @@ static void ploop_req_state_process(struct ploop_request * preq)
 	if (preq->ioc) {
 		saved_ioc = current->io_context;
 		current->io_context = preq->ioc;
-#ifdef CONFIG_BEANCOUNTERS
-		saved_ub = set_exec_ub(preq->ioc->ioc_ub);
-#endif
 		atomic_long_inc(&preq->ioc->refcount);
 		release_ioc = 1;
 	}
+#ifdef CONFIG_BEANCOUNTERS
+	get_beancounter(preq->preq_ub);
+	saved_ub = set_exec_ub(preq->preq_ub);
+#endif
 
 	if (preq->eng_state != PLOOP_E_COMPLETE &&
 	    test_bit(PLOOP_REQ_SYNC, &preq->state))
@@ -2586,6 +2609,10 @@ restart:
 			preq->eng_state = PLOOP_E_COMPLETE;
 			preq->error = -EOPNOTSUPP;
 			ploop_complete_io_state(preq);
+#ifdef CONFIG_BEANCOUNTERS
+			saved_ub = set_exec_ub(saved_ub);
+			put_beancounter(saved_ub);
+#endif
 			return;
 		}
 
@@ -2861,11 +2888,12 @@ out:
 	if (release_ioc) {
 		struct io_context * ioc = current->io_context;
 		current->io_context = saved_ioc;
-#ifdef CONFIG_BEANCOUNTERS
-		set_exec_ub(saved_ub);
-#endif
 		put_io_context(ioc);
 	}
+#ifdef CONFIG_BEANCOUNTERS
+	saved_ub = set_exec_ub(saved_ub);
+	put_beancounter(saved_ub);
+#endif
 }
 
 static void ploop_wait(struct ploop_device * plo, int once, struct blk_plug *plug)
@@ -3372,6 +3400,7 @@ void ploop_quiesce(struct ploop_device * plo)
 	preq->state = (1 << PLOOP_REQ_SYNC) | (1 << PLOOP_REQ_BARRIER);
 	preq->error = 0;
 	preq->tstamp = jiffies;
+	preq->preq_ub = get_beancounter(get_exec_ub());
 
 	init_completion(&qcomp);
 	init_completion(&plo->relax_comp);
@@ -3669,6 +3698,7 @@ static void ploop_merge_process(struct ploop_device * plo)
 		preq->tstamp = jiffies;
 		preq->iblock = 0;
 		preq->prealloc_size = 0;
+		preq->preq_ub = get_beancounter(get_exec_ub());
 
 		atomic_inc(&plo->maintenance_cnt);
 
@@ -4292,6 +4322,7 @@ static void ploop_relocate(struct ploop_device * plo, int grow_stage)
 	preq->tstamp = jiffies;
 	preq->iblock = (reloc_type == PLOOP_REQ_RELOC_A) ? 0 : plo->grow_start;
 	preq->prealloc_size = 0;
+	preq->preq_ub = get_beancounter(get_exec_ub());
 
 	atomic_inc(&plo->maintenance_cnt);
 
@@ -4617,6 +4648,7 @@ static void ploop_relocblks_process(struct ploop_device *plo)
 		preq->tstamp = jiffies;
 		preq->iblock = 0;
 		preq->prealloc_size = 0;
+		preq->preq_ub = get_beancounter(get_exec_ub());
 
 		atomic_inc(&plo->maintenance_cnt);
 
