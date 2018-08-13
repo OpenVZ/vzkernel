@@ -6336,7 +6336,8 @@ static void mem_cgroup_free_all(struct mem_cgroup *memcg)
 	lru_add_drain_all();
 
 	while (nr_retries && page_counter_read(&memcg->memory))
-		if (!try_to_free_mem_cgroup_pages(memcg, -1UL, GFP_KERNEL, 0))
+		if (!try_to_free_mem_cgroup_pages(memcg, -1UL, GFP_KERNEL,
+						MEM_CGROUP_RECLAIM_NOSWAP))
 			nr_retries--;
 
 	lru_add_drain();
