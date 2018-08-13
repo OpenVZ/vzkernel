@@ -31,6 +31,30 @@ unsigned int pcs_loglevel = LOG_TRACE;
 module_param(pcs_loglevel, uint, 0644);
 MODULE_PARM_DESC(pcs_loglevel, "Trace level");
 
+#ifdef CONFIG_DEBUG_KERNEL
+static int set_sockio_fail_percent(const char *val, struct kernel_param *kp)
+{
+	unsigned *p;
+	int rv;
+
+	rv = param_set_uint(val, kp);
+	if (rv)
+		return rv;
+
+	p = (unsigned *)kp->arg;
+	if (*p > 100)
+		*p = 100;
+
+	return 0;
+}
+
+u32 sockio_fail_percent;
+module_param_call(sockio_fail_percent, set_sockio_fail_percent,
+		  param_get_uint, &sockio_fail_percent, 0644);
+__MODULE_PARM_TYPE(sockio_fail_percent, "uint");
+MODULE_PARM_DESC(sockio_fail_percent, "Sock io failing rate in percents");
+#endif
+
 static int fuse_ktrace_setup(struct fuse_conn * fc);
 static int fuse_ktrace_remove(struct fuse_conn *fc);
 
