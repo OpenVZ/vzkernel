@@ -565,7 +565,7 @@ static ssize_t target_stat_tgt_port_##_name##_show(			\
 {									\
 	ssize_t size = -ENODEV;						\
 	struct se_device *dev;						\
-	struct se_lun *lun = to_stat_port(item);			\
+	struct se_lun *lun = to_stat_tgt_port(item);			\
 									\
 	rcu_read_lock();						\
 	dev = rcu_dereference(lun->lun_se_dev);				\
@@ -582,7 +582,7 @@ static ssize_t target_stat_tgt_port_##_name##_store(			\
 	struct config_item *item, const char *page, size_t size)	\
 {									\
 	struct se_device *dev;						\
-	struct se_lun *lun = to_stat_port(item);			\
+	struct se_lun *lun = to_stat_tgt_port(item);			\
 	struct scsi_port_stats_hist *old, *new;				\
 	ssize_t ret;							\
 									\
@@ -915,7 +915,7 @@ static ssize_t target_stat_tgt_port_hs_in_cmds_show(struct config_item *item,
 static ssize_t  target_stat_tgt_port_##_name##_show(			\
 	struct config_item *item, char *page)				\
 {									\
-	struct se_lun *lun = to_stat_port(item);			\
+	struct se_lun *lun = to_stat_tgt_port(item);			\
 	struct se_device *dev;						\
 	ssize_t ret = -ENODEV;						\
 									\
