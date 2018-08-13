@@ -50,7 +50,42 @@ struct pids_cgroup {
 	 */
 	atomic64_t			counter;
 	int64_t				limit;
+#ifdef CONFIG_BEANCOUNTERS
+	/* beancounter-related stats */
+	atomic_long_t pids_failcnt;
+#endif /* CONFIG_BEANCOUNTERS */
 };
+
+#ifdef CONFIG_BEANCOUNTERS
+static inline
+struct pids_cgroup *pids_cgroup_from_css(struct cgroup_subsys_state *s)
+{
+	return container_of(s, struct pids_cgroup, css);
+}
+
+struct pids_cgroup *pids_cgroup_from_cont(struct cgroup *cont)
+{
+	return pids_cgroup_from_css(
+			cgroup_subsys_state(cont, pids_subsys_id));
+}
+
+#include <bc/beancounter.h>
+void pids_cgroup_sync_beancounter(struct pids_cgroup *pids,
+				  struct user_beancounter *ub)
+{
+	unsigned long lim;
+	volatile struct ubparm *p;
+
+	p = &ub->ub_parms[UB_NUMPROC];
+	p->held = p->maxheld = (unsigned long)atomic64_read(&pids->counter);
+	p->failcnt = atomic_long_read(&pids->pids_failcnt);
+
+	lim = pids->limit;
+	lim = lim >= PIDS_MAX ? UB_MAXVALUE :
+		min_t(unsigned long, lim, UB_MAXVALUE);
+	p->barrier = p->limit = lim;
+}
+#endif /* CONFIG_BEANCOUNTERS */
 
 static struct pids_cgroup *css_pids(struct cgroup_subsys_state *css)
 {
@@ -164,6 +199,9 @@ revert:
 	for (q = pids; q != p; q = parent_pids(q))
 		pids_cancel(q, num);
 	pids_cancel(p, num);
+#ifdef CONFIG_BEANCOUNTERS
+	atomic_long_inc(&pids->pids_failcnt);
+#endif /* CONFIG_BEANCOUNTERS */
 
 	return -EAGAIN;
 }
