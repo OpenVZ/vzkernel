@@ -133,6 +133,8 @@ struct pcs_map_entry
 	struct list_head	queue;
 };
 
+extern struct kmem_cache *pcs_map_cachep;
+
 static inline u64 map_chunk_start(struct pcs_map_entry *m)
 {
 	return m->index << m->mapping->chunk_size_bits;
