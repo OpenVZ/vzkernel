@@ -28,6 +28,8 @@
 */
 #define MAP_BATCH 16
 
+struct kmem_cache *pcs_map_cachep;
+
 static struct pcs_cs_list *cs_link_to_cs_list(struct pcs_cs_link *csl)
 {
 	struct pcs_cs_record *cs_rec;
@@ -557,7 +559,7 @@ again:
 		/* No direct throttler here */
 		break;
 	}
-	m = kzalloc(sizeof(struct pcs_map_entry), GFP_NOIO);
+	m = kmem_cache_zalloc(pcs_map_cachep, GFP_NOIO);
 	if (!m)
 		return NULL;
 
