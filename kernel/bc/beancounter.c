@@ -89,6 +89,7 @@ static struct vfsmount *ub_bound_cgroup_mnt[NR_UB_BOUND_CGROUPS];
 
 #define mem_cgroup_mnt		(ub_bound_cgroup_mnt[UB_MEM_CGROUP])
 #define blkio_cgroup_mnt	(ub_bound_cgroup_mnt[UB_BLKIO_CGROUP])
+#define pids_cgroup_mnt		(ub_bound_cgroup_mnt[UB_PIDS_CGROUP])
 
 static void __ub_set_css(struct user_beancounter *ub, int idx,
 			 struct cgroup_subsys_state *css)
@@ -154,6 +155,12 @@ static void ub_set_blkio_css(struct user_beancounter *ub,
 	__ub_set_css(ub, UB_BLKIO_CGROUP, css);
 }
 
+static void ub_set_pids_css(struct user_beancounter *ub,
+			     struct cgroup_subsys_state *css)
+{
+	__ub_set_css(ub, UB_PIDS_CGROUP, css);
+}
+
 /*
  * Used to attach a task to a beancounter in the legacy API.
  */
@@ -199,6 +206,8 @@ extern void mem_cgroup_get_nr_pages(struct mem_cgroup *memcg, int nid,
 				    unsigned long *pages);
 extern unsigned long mem_cgroup_total_pages(struct mem_cgroup *memcg,
 					    bool swap);
+extern void pids_cgroup_sync_beancounter(struct pids_cgroup *pids,
+					 struct user_beancounter *ub);
 
 /*
  * Update memcg limits according to beancounter configuration.
@@ -213,6 +222,18 @@ int ub_update_memcg(struct user_beancounter *ub)
 					   ub);
 	css_put(css);
 	return ret;
+}
+
+/*
+ * Synchronize pids cgroup stats with beancounter.
+ */
+void ub_sync_pids(struct user_beancounter *ub)
+{
+	struct cgroup_subsys_state *css;
+
+	css = ub_get_pids_css(ub);
+	pids_cgroup_sync_beancounter(pids_cgroup_from_cont(css->cgroup), ub);
+	css_put(css);
 }
 
 /*
@@ -646,6 +667,10 @@ static int ub_cgroup_write(struct cgroup *cg, struct cftype *cft,
 		ub_set_blkio_css(ub, cgroup_subsys_state(bound_cg,
 					blkio_subsys_id));
 		break;
+	case UB_PIDS_CGROUP:
+		ub_set_pids_css(ub, cgroup_subsys_state(bound_cg,
+					pids_subsys_id));
+		break;
 	}
 
 	cgroup_kernel_close(bound_cg);
@@ -664,6 +689,13 @@ static struct cftype ub_cgroup_files[] = {
 		.name = "blkio",
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.private = UB_BLKIO_CGROUP,
+		.write_string = ub_cgroup_write,
+		.read = ub_cgroup_read,
+	},
+	{
+		.name = "pids",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.private = UB_PIDS_CGROUP,
 		.write_string = ub_cgroup_write,
 		.read = ub_cgroup_read,
 	},
@@ -1171,6 +1203,7 @@ void __init ub_init_late(void)
 {
 	ub_set_mem_css(&ub0, task_subsys_state_check(&init_task,  mem_cgroup_subsys_id, true));
 	ub_set_blkio_css(&ub0, task_subsys_state_check(&init_task, blkio_subsys_id, true));
+	ub_set_pids_css(&ub0, task_subsys_state_check(&init_task, pids_subsys_id, true));
 
 	register_sysctl_table(ub_sysctl_root);
 }
@@ -1182,6 +1215,9 @@ int __init ub_init_cgroup(void)
 	};
 	struct cgroup_sb_opts mem_opts = {
 		.subsys_mask    = (1ul << mem_cgroup_subsys_id),
+	};
+	struct cgroup_sb_opts pids_opts = {
+		.subsys_mask    = (1ul << pids_subsys_id),
 	};
 	struct cgroup_sb_opts ub_opts = {
 		.subsys_mask	= (1ul << ub_subsys_id),
@@ -1196,6 +1232,11 @@ int __init ub_init_cgroup(void)
 	if (IS_ERR(mem_cgroup_mnt))
 		panic("Failed to mount memory cgroup: %ld\n",
 		      PTR_ERR(mem_cgroup_mnt));
+
+	pids_cgroup_mnt = cgroup_kernel_mount(&pids_opts);
+	if (IS_ERR(pids_cgroup_mnt))
+		panic("Failed to mount pids cgroup: %ld\n",
+		      PTR_ERR(pids_cgroup_mnt));
 
 	ub_cgroup_mnt = cgroup_kernel_mount(&ub_opts);
 	if (IS_ERR(ub_cgroup_mnt))
