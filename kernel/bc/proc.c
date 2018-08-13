@@ -71,6 +71,7 @@ static void __show_resources(struct seq_file *f, struct user_beancounter *ub,
 	int i, precharge[UB_RESOURCES];
 
 	ub_sync_memcg(ub);
+	ub_sync_pids(ub);
 	ub_precharge_snapshot(ub, precharge);
 
 	for (i = 0; i < UB_RESOURCES_COMPAT; i++)
@@ -180,6 +181,7 @@ static int ub_show(struct seq_file *f, void *v)
 	struct user_beancounter *ub = v;
 
 	ub_sync_memcg(ub);
+	ub_sync_pids(ub);
 	ub_precharge_snapshot(ub, precharge);
 
 	for (i = 0; i < UB_RESOURCES_COMPAT; i++)
