@@ -28,6 +28,8 @@
 */
 #define MAP_BATCH 16
 
+struct kmem_cache *pcs_map_cachep;
+
 static struct pcs_cs_list *cs_link_to_cs_list(struct pcs_cs_link *csl)
 {
 	struct pcs_cs_record *cs_rec;
@@ -116,7 +118,7 @@ static void pcs_map_callback(struct rcu_head *head)
 	BUG_ON(!(m->state & PCS_MAP_DEAD));
 	BUG_ON(m->cs_list);
 
-	kfree(m);
+	kmem_cache_free(pcs_map_cachep, m);
 }
 
 static void __pcs_map_free(struct pcs_map_entry *m)
@@ -557,12 +559,12 @@ again:
 		/* No direct throttler here */
 		break;
 	}
-	m = kzalloc(sizeof(struct pcs_map_entry), GFP_NOIO);
+	m = kmem_cache_zalloc(pcs_map_cachep, GFP_NOIO);
 	if (!m)
 		return NULL;
 
 	if (radix_tree_preload(GFP_NOIO)) {
-		kfree(m);
+		kmem_cache_free(pcs_map_cachep, m);
 		return NULL;
 	}
 
@@ -594,7 +596,7 @@ again:
 		m->mapping->nrmaps--;
 		spin_unlock(&di->mapping.map_lock);
 		radix_tree_preload_end();
-		kfree(m);
+		kmem_cache_free(pcs_map_cachep, m);
 		goto again;
 	}
 	spin_unlock(&di->mapping.map_lock);
