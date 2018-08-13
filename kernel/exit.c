@@ -214,7 +214,6 @@ repeat:
 	qwrite_unlock_irq(&tasklist_lock);
 	cgroup_pids_release(p);
 	release_thread(p);
-	ub_task_uncharge(get_task_ub(p));
 	call_rcu(&p->rcu, delayed_put_task_struct);
 
 	p = leader;
