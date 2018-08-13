@@ -82,6 +82,7 @@ struct ub_percpu_struct {
 enum {
 	UB_MEM_CGROUP,
 	UB_BLKIO_CGROUP,
+	UB_PIDS_CGROUP,
 	NR_UB_BOUND_CGROUPS,
 };
 
@@ -143,6 +144,12 @@ static inline struct cgroup_subsys_state *
 ub_get_blkio_css(struct user_beancounter *ub)
 {
 	return __ub_get_css(ub, UB_BLKIO_CGROUP);
+}
+
+static inline struct cgroup_subsys_state *
+ub_get_pids_css(struct user_beancounter *ub)
+{
+	return __ub_get_css(ub, UB_PIDS_CGROUP);
 }
 
 static inline int ub_barrier_hit(struct user_beancounter *ub, int resource)
@@ -287,6 +294,9 @@ extern void uncharge_warn(struct user_beancounter *ub, const char *resource,
 extern int ub_update_memcg(struct user_beancounter *ub);
 extern void ub_sync_memcg(struct user_beancounter *ub);
 extern unsigned long ub_total_pages(struct user_beancounter *ub, bool swap);
+
+extern void ub_sync_pids(struct user_beancounter *ub);
+extern struct pids_cgroup *pids_cgroup_from_cont(struct cgroup *cont);
 
 extern const char *ub_rnames[];
 /*
