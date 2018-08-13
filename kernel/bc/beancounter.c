@@ -76,7 +76,6 @@ const char *ub_rnames[] = {
 /* default maximum perpcu resources precharge */
 int ub_resource_precharge[UB_RESOURCES] = {
 	[UB_PRIVVMPAGES]= 256,
-	[UB_NUMPROC]	= 4,
 	[UB_NUMSIGINFO]	= 4,
 	[UB_NUMFILE]	= 8,
 };
@@ -1091,7 +1090,6 @@ void __init ub_init_early(void)
 	memset(&current->task_bc, 0, sizeof(struct task_beancounter));
 	(void)set_exec_ub(ub);
 	current->task_bc.task_ub = get_beancounter(ub);
-	__charge_beancounter_locked(ub, UB_NUMPROC, 1, UB_FORCE);
 	init_mm.mm_ub = get_beancounter(ub);
 
 	list_add(&ub->ub_list, &ub_list_head);
