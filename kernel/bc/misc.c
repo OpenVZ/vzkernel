@@ -22,16 +22,6 @@
  * Task staff
  */
 
-int ub_task_charge(struct user_beancounter *ub)
-{
-	return charge_beancounter_fast(ub, UB_NUMPROC, 1, UB_HARD);
-}
-
-void ub_task_uncharge(struct user_beancounter *ub)
-{
-	uncharge_beancounter_fast(ub, UB_NUMPROC, 1);
-}
-
 void ub_task_get(struct user_beancounter *ub, struct task_struct *task)
 {
 	struct task_beancounter *new_bc = &task->task_bc;
