@@ -1400,11 +1400,18 @@ static int __init kpcs_mod_init(void)
 					    0, SLAB_MEM_SPREAD, NULL);
 	if (!pcs_ireq_cachep)
 		goto free_fuse_cache;
-	pcs_wq = alloc_workqueue("pcs_cluster", WQ_MEM_RECLAIM, 0);
-	if (!pcs_wq)
+
+	pcs_map_cachep = kmem_cache_create("pcs_map",
+					    sizeof(struct pcs_map_entry),
+					    0, SLAB_RECLAIM_ACCOUNT|SLAB_ACCOUNT, NULL);
+	if (!pcs_map_cachep)
 		goto free_ireq_cache;
 
-	if(fuse_register_kio(&kio_pcs_ops))
+	pcs_wq = alloc_workqueue("pcs_cluster", WQ_MEM_RECLAIM, 0);
+	if (!pcs_wq)
+		goto free_map_cache;
+
+	if (fuse_register_kio(&kio_pcs_ops))
 		goto free_wq;
 
 	fuse_trace_root = debugfs_create_dir("fuse", NULL);
@@ -1415,6 +1422,8 @@ static int __init kpcs_mod_init(void)
 	return 0;
 free_wq:
 	destroy_workqueue(pcs_wq);
+free_map_cache:
+	kmem_cache_destroy(pcs_map_cachep);
 free_ireq_cache:
 	kmem_cache_destroy(pcs_ireq_cachep);
 free_fuse_cache:
@@ -1429,6 +1438,7 @@ static void __exit kpcs_mod_exit(void)
 
 	fuse_unregister_kio(&kio_pcs_ops);
 	destroy_workqueue(pcs_wq);
+	kmem_cache_destroy(pcs_map_cachep);
 	kmem_cache_destroy(pcs_ireq_cachep);
 	kmem_cache_destroy(pcs_fuse_req_cachep);
 }
