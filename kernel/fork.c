@@ -1394,12 +1394,9 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 		goto fork_out;
 
 	retval = -ENOMEM;
-	if (ub_task_charge(get_exec_ub()))
-		goto fork_out;
-
 	p = dup_task_struct(current, node);
 	if (!p)
-		goto bad_fork_uncharge;
+		goto fork_out;
 
 	ub_task_get(get_exec_ub(), p);
 
@@ -1771,8 +1768,6 @@ bad_fork_cleanup_count:
 bad_fork_free:
 	ub_task_put(p);
 	free_task(p);
-bad_fork_uncharge:
-	ub_task_uncharge(get_exec_ub());
 fork_out:
 	return ERR_PTR(retval);
 }
