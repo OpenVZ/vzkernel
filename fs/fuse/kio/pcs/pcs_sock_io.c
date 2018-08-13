@@ -136,14 +136,35 @@ static void rcv_msg_done(struct pcs_msg *msg)
 	if (likely(msg != PCS_TRASH_MSG))
 		msg->done(msg);
 }
+
+#ifdef CONFIG_DEBUG_KERNEL
+static bool pcs_should_fail_sock_io(void)
+{
+	extern u32 sockio_fail_percent;
+
+	if (sockio_fail_percent <= prandom_u32() % 100)
+		return false;
+
+	return true;
+}
+#else
+static bool pcs_should_fail_sock_io(void)
+{
+	return false;
+}
+#endif
+
 static int do_send_one_seg(struct socket *sock, struct iov_iter *it, bool more)
 {
-	int ret;
+	int ret = -EIO;
 	size_t offset, len;
 	struct page *page;
 	int flags = (MSG_DONTWAIT | MSG_NOSIGNAL) | (more ? MSG_MORE : MSG_EOR);
 
 	DTRACE("sock(%p)  len:%ld, more:%d\n", sock, iov_iter_count(it), more);
+
+	if (pcs_should_fail_sock_io())
+		goto out;
 
 	page = iov_iter_get_page(it, &offset, &len);
 	if (!page) {
@@ -162,6 +183,7 @@ static int do_send_one_seg(struct socket *sock, struct iov_iter *it, bool more)
 		put_page(page);
 	}
 
+out:
 	DTRACE("sock(%p) len:%ld, more:%d ret:%d\n", sock, iov_iter_count(it), more, ret);
 	return ret;
 }
@@ -171,10 +193,13 @@ static int do_sock_recv(struct socket *sock, void *buf, size_t len)
 
 	struct kvec iov = {buf, len};
 	struct msghdr msg = { .msg_flags = MSG_DONTWAIT | MSG_NOSIGNAL };
-	int ret;
+	int ret = -EIO;
+
+	if (pcs_should_fail_sock_io())
+		goto out;
 
 	ret =  kernel_recvmsg(sock, &msg, &iov, 1, len, msg.msg_flags);
-
+out:
 	TRACE("RET: "PEER_FMT" len:%ld ret:%d\n", PEER_ARGS(sock_to_rpc(sock->sk)),
 	      len, ret);
 	return ret;
