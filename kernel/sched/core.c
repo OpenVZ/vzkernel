@@ -6569,7 +6569,7 @@ static struct ctl_table sd_ctl_root[] = {
 static struct ctl_table *sd_alloc_ctl_entry(int n)
 {
 	struct ctl_table *entry =
-		kcalloc(n, sizeof(struct ctl_table), GFP_KERNEL);
+		kvzalloc(n * sizeof(struct ctl_table), GFP_KERNEL);
 
 	return entry;
 }
@@ -6591,7 +6591,7 @@ static void sd_free_ctl_entry(struct ctl_table **tablep)
 			kfree(entry->procname);
 	}
 
-	kfree(*tablep);
+	kvfree(*tablep);
 	*tablep = NULL;
 }
 
