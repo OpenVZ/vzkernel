@@ -486,6 +486,9 @@ static inline int bc_verify_held(struct user_beancounter *ub)
 	ub->ub_parms[UB_DGRAMRCVBUF].held = 0;
 	ub->ub_parms[UB_NUMOTHERSOCK].held = 0;
 
+	/* accounted by pid cgroup */
+	ub->ub_parms[UB_NUMPROC].held = 0;
+
 	clean = 1;
 	for (i = 0; i < UB_RESOURCES; i++)
 		clean &= verify_res(ub, ub_rnames[i], ub->ub_parms[i].held);
