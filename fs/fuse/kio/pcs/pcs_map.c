@@ -118,7 +118,7 @@ static void pcs_map_callback(struct rcu_head *head)
 	BUG_ON(!(m->state & PCS_MAP_DEAD));
 	BUG_ON(m->cs_list);
 
-	kfree(m);
+	kmem_cache_free(pcs_map_cachep, m);
 }
 
 static void __pcs_map_free(struct pcs_map_entry *m)
@@ -564,7 +564,7 @@ again:
 		return NULL;
 
 	if (radix_tree_preload(GFP_NOIO)) {
-		kfree(m);
+		kmem_cache_free(pcs_map_cachep, m);
 		return NULL;
 	}
 
@@ -596,7 +596,7 @@ again:
 		m->mapping->nrmaps--;
 		spin_unlock(&di->mapping.map_lock);
 		radix_tree_preload_end();
-		kfree(m);
+		kmem_cache_free(pcs_map_cachep, m);
 		goto again;
 	}
 	spin_unlock(&di->mapping.map_lock);
