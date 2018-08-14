@@ -891,8 +891,6 @@ int pcs_map_encode_req(struct pcs_map_entry*m, struct pcs_ioc_getmap *map, int d
 	int i;
 
 	spin_lock(&m->lock);
-	BUG_ON(map_chunk_start(m) > m->res_offset);
-	BUG_ON(map_chunk_end(m) < m->res_offset);
 	/*
 	 * Someone truncate mapping while IO is in progress
 	 * aio_dio vs truncate race ?
@@ -902,6 +900,8 @@ int pcs_map_encode_req(struct pcs_map_entry*m, struct pcs_ioc_getmap *map, int d
 		pcs_map_put(m);
 		return 1;
 	}
+	BUG_ON(map_chunk_start(m) > m->res_offset);
+	BUG_ON(map_chunk_end(m) < m->res_offset);
 
 	map->uid = m->id;
 	map->version = m->version;
