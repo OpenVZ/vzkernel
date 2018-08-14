@@ -526,6 +526,8 @@ static void ub_cgroup_css_free(struct cgroup *cg)
 	struct user_beancounter *ub = cgroup_ub(cg);
 	int i;
 
+	free_css_id(&ub_subsys, &ub->css);
+
 	for (i = 0; i < NR_UB_BOUND_CGROUPS; i++)
 		__ub_set_css(ub, i, NULL);
 
