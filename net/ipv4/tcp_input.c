@@ -4591,7 +4591,7 @@ queue_and_out:
 out_of_window:
 		tcp_enter_quickack_mode(sk);
 		inet_csk_schedule_ack(sk);
-drop:
+/* drop: */
 		tcp_drop(sk, skb);
 		return;
 
