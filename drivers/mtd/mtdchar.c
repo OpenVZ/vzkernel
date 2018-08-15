@@ -35,6 +35,7 @@
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/partitions.h>
 #include <linux/mtd/map.h>
+#include <linux/nospec.h>
 
 #include <asm/uaccess.h>
 
@@ -658,6 +659,7 @@ static int mtdchar_ioctl(struct file *file, u_int cmd, u_long arg)
 
 		if (ur_idx >= mtd->numeraseregions)
 			return -EINVAL;
+		ur_idx = array_index_nospec(ur_idx, mtd->numeraseregions);
 
 		kr = &(mtd->eraseregions[ur_idx]);
 

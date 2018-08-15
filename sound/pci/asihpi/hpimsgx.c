@@ -1,7 +1,7 @@
 /******************************************************************************
 
     AudioScience HPI driver
-    Copyright (C) 1997-2011  AudioScience Inc. <support@audioscience.com>
+    Copyright (C) 1997-2014  AudioScience Inc. <support@audioscience.com>
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of version 2 of the GNU General Public License as
@@ -21,6 +21,7 @@ Extended Message Function With Response Caching
 (C) Copyright AudioScience Inc. 2002
 *****************************************************************************/
 #define SOURCEFILE_NAME "hpimsgx.c"
+#include <linux/nospec.h>
 #include "hpi_internal.h"
 #include "hpi_version.h"
 #include "hpimsginit.h"
@@ -35,6 +36,7 @@ static struct pci_device_id asihpi_pci_tbl[] = {
 static struct hpios_spinlock msgx_lock;
 
 static hpi_handler_func *hpi_entry_points[HPI_MAX_ADAPTERS];
+static int logging_enabled = 1;
 
 static hpi_handler_func *hpi_lookup_entry_point_function(const struct hpi_pci
 	*pci_info)
@@ -270,6 +272,8 @@ static void outstream_message(struct hpi_message *phm,
 			HPI_ERROR_INVALID_OBJ_INDEX);
 		return;
 	}
+	phm->obj_index = array_index_nospec(phm->obj_index,
+				aDAPTER_INFO[phm->adapter_index].num_outstreams);
 
 	switch (phm->function) {
 	case HPI_OSTREAM_OPEN:
@@ -292,6 +296,8 @@ static void instream_message(struct hpi_message *phm,
 			HPI_ERROR_INVALID_OBJ_INDEX);
 		return;
 	}
+	phm->obj_index = array_index_nospec(phm->obj_index,
+				aDAPTER_INFO[phm->adapter_index].num_instreams);
 
 	switch (phm->function) {
 	case HPI_ISTREAM_OPEN:
@@ -312,7 +318,9 @@ static void instream_message(struct hpi_message *phm,
 void hpi_send_recv_ex(struct hpi_message *phm, struct hpi_response *phr,
 	void *h_owner)
 {
-	HPI_DEBUG_MESSAGE(DEBUG, phm);
+
+	if (logging_enabled)
+		HPI_DEBUG_MESSAGE(DEBUG, phm);
 
 	if (phm->type != HPI_TYPE_REQUEST) {
 		hpi_init_response(phr, phm->object, phm->function,
@@ -326,6 +334,8 @@ void hpi_send_recv_ex(struct hpi_message *phm, struct hpi_response *phr,
 			HPI_ERROR_BAD_ADAPTER_NUMBER);
 		return;
 	}
+	phm->adapter_index = array_index_nospec(phm->adapter_index,
+						HPI_MAX_ADAPTERS);
 
 	switch (phm->object) {
 	case HPI_OBJ_SUBSYSTEM:
@@ -352,8 +362,14 @@ void hpi_send_recv_ex(struct hpi_message *phm, struct hpi_response *phr,
 		hw_entry_point(phm, phr);
 		break;
 	}
-	HPI_DEBUG_RESPONSE(phr);
 
+	if (logging_enabled)
+		HPI_DEBUG_RESPONSE(phr);
+
+	if (phr->error >= HPI_ERROR_DSP_COMMUNICATION) {
+		hpi_debug_level_set(HPI_DEBUG_LEVEL_ERROR);
+		logging_enabled = 0;
+	}
 }
 
 static void adapter_open(struct hpi_message *phm, struct hpi_response *phr)

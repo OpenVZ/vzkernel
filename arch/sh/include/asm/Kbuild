@@ -14,6 +14,7 @@ generic-y += irq_regs.h
 generic-y += kvm_para.h
 generic-y += local.h
 generic-y += local64.h
+generic-y += mm-arch-hooks.h
 generic-y += param.h
 generic-y += parport.h
 generic-y += percpu.h

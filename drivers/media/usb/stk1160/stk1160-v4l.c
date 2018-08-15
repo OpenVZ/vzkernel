@@ -297,11 +297,14 @@ static int vidioc_querycap(struct file *file,
 static int vidioc_enum_fmt_vid_cap(struct file *file, void  *priv,
 		struct v4l2_fmtdesc *f)
 {
+	u32 index;
+
 	if (f->index != 0)
 		return -EINVAL;
+	index = 0; /* nospec */
 
-	strlcpy(f->description, format[f->index].name, sizeof(f->description));
-	f->pixelformat = format[f->index].fourcc;
+	strlcpy(f->description, format[index].name, sizeof(f->description));
+	f->pixelformat = format[index].fourcc;
 	return 0;
 }
 

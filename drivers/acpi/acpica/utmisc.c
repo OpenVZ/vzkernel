@@ -66,9 +66,9 @@ u8 acpi_ut_is_pci_root_bridge(char *id)
 	 * Check if this is a PCI root bridge.
 	 * ACPI 3.0+: check for a PCI Express root also.
 	 */
-	if (!(ACPI_STRCMP(id,
-			  PCI_ROOT_HID_STRING)) ||
-	    !(ACPI_STRCMP(id, PCI_EXPRESS_ROOT_HID_STRING))) {
+	if (!(strcmp(id,
+		     PCI_ROOT_HID_STRING)) ||
+	    !(strcmp(id, PCI_EXPRESS_ROOT_HID_STRING))) {
 		return (TRUE);
 	}
 
@@ -382,10 +382,12 @@ acpi_ut_display_init_pathname(u8 type,
 
 	switch (type) {
 	case ACPI_TYPE_METHOD:
+
 		acpi_os_printf("Executing  ");
 		break;
 
 	default:
+
 		acpi_os_printf("Initializing ");
 		break;
 	}

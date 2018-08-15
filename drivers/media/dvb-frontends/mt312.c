@@ -31,11 +31,14 @@
 #include <linux/module.h>
 #include <linux/string.h>
 #include <linux/slab.h>
+#include <linux/nospec.h>
 
 #include "dvb_frontend.h"
 #include "mt312_priv.h"
 #include "mt312.h"
 
+/* Max transfer size done by I2C transfer functions */
+#define MAX_XFER_SIZE  64
 
 struct mt312_state {
 	struct i2c_adapter *i2c;
@@ -96,8 +99,14 @@ static int mt312_write(struct mt312_state *state, const enum mt312_reg_addr reg,
 		       const u8 *src, const size_t count)
 {
 	int ret;
-	u8 buf[count + 1];
+	u8 buf[MAX_XFER_SIZE];
 	struct i2c_msg msg;
+
+	if (1 + count > sizeof(buf)) {
+		printk(KERN_WARNING
+		       "mt312: write: len=%zd is too big!\n", count);
+		return -EINVAL;
+	}
 
 	if (debug) {
 		int i;
@@ -372,7 +381,7 @@ static int mt312_send_master_cmd(struct dvb_frontend *fe,
 	return 0;
 }
 
-static int mt312_send_burst(struct dvb_frontend *fe, const fe_sec_mini_cmd_t c)
+static int mt312_send_burst(struct dvb_frontend *fe, fe_sec_mini_cmd_t c)
 {
 	struct mt312_state *state = fe->demodulator_priv;
 	const u8 mini_tab[2] = { 0x02, 0x03 };
@@ -382,6 +391,7 @@ static int mt312_send_burst(struct dvb_frontend *fe, const fe_sec_mini_cmd_t c)
 
 	if (c > SEC_MINI_B)
 		return -EINVAL;
+	c = array_index_nospec(c, SEC_MINI_B + 1);
 
 	ret = mt312_readreg(state, DISEQC_MODE, &diseqc_mode);
 	if (ret < 0)
@@ -395,7 +405,7 @@ static int mt312_send_burst(struct dvb_frontend *fe, const fe_sec_mini_cmd_t c)
 	return 0;
 }
 
-static int mt312_set_tone(struct dvb_frontend *fe, const fe_sec_tone_mode_t t)
+static int mt312_set_tone(struct dvb_frontend *fe, fe_sec_tone_mode_t t)
 {
 	struct mt312_state *state = fe->demodulator_priv;
 	const u8 tone_tab[2] = { 0x01, 0x00 };
@@ -405,6 +415,7 @@ static int mt312_set_tone(struct dvb_frontend *fe, const fe_sec_tone_mode_t t)
 
 	if (t > SEC_TONE_OFF)
 		return -EINVAL;
+	t = array_index_nospec(t, SEC_TONE_OFF + 1);
 
 	ret = mt312_readreg(state, DISEQC_MODE, &diseqc_mode);
 	if (ret < 0)
@@ -418,7 +429,7 @@ static int mt312_set_tone(struct dvb_frontend *fe, const fe_sec_tone_mode_t t)
 	return 0;
 }
 
-static int mt312_set_voltage(struct dvb_frontend *fe, const fe_sec_voltage_t v)
+static int mt312_set_voltage(struct dvb_frontend *fe, fe_sec_voltage_t v)
 {
 	struct mt312_state *state = fe->demodulator_priv;
 	const u8 volt_tab[3] = { 0x00, 0x40, 0x00 };
@@ -426,6 +437,7 @@ static int mt312_set_voltage(struct dvb_frontend *fe, const fe_sec_voltage_t v)
 
 	if (v > SEC_VOLTAGE_OFF)
 		return -EINVAL;
+	v = array_index_nospec(v, SEC_VOLTAGE_OFF + 1);
 
 	val = volt_tab[v];
 	if (state->config->voltage_inverted)

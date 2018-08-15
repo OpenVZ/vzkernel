@@ -68,14 +68,6 @@
  * are handled as text/data or they can be discarded (which
  * often happens at runtime)
  */
-#ifdef CONFIG_HOTPLUG
-#define DEV_KEEP(sec)    *(.dev##sec)
-#define DEV_DISCARD(sec)
-#else
-#define DEV_KEEP(sec)
-#define DEV_DISCARD(sec) *(.dev##sec)
-#endif
-
 #ifdef CONFIG_HOTPLUG_CPU
 #define CPU_KEEP(sec)    *(.cpu##sec)
 #define CPU_DISCARD(sec)
@@ -171,6 +163,15 @@
 #define CLK_OF_TABLES()
 #endif
 
+#ifdef CONFIG_OF_IOMMU
+#define IOMMU_OF_TABLES() . = ALIGN(8);				\
+			  VMLINUX_SYMBOL(__iommu_of_table) = .;	\
+			  *(__iommu_of_table)			\
+			  *(__iommu_of_table_end)
+#else
+#define IOMMU_OF_TABLES()
+#endif
+
 #define KERNEL_DTB()							\
 	STRUCT_ALIGN();							\
 	VMLINUX_SYMBOL(__dtb_start) = .;				\
@@ -182,8 +183,6 @@
 	*(.data)							\
 	*(.ref.data)							\
 	*(.data..shared_aligned) /* percpu related */			\
-	DEV_KEEP(init.data)						\
-	DEV_KEEP(exit.data)						\
 	CPU_KEEP(init.data)						\
 	CPU_KEEP(exit.data)						\
 	MEM_KEEP(init.data)						\
@@ -229,7 +228,9 @@
 
 #define INIT_TASK_DATA(align)						\
 	. = ALIGN(align);						\
-	*(.data..init_task)
+	VMLINUX_SYMBOL(__start_init_task) = .;				\
+	*(.data..init_task)						\
+	VMLINUX_SYMBOL(__end_init_task) = .;
 
 /*
  * Read only Data
@@ -252,6 +253,9 @@
 	}								\
 									\
 	BUG_TABLE							\
+									\
+	UNWIND_END_OF_STACK_TABLE					\
+	UNWIND_UNSAFE_STACK_TABLE					\
 									\
 	/* PCI quirks */						\
 	.pci_fixup        : AT(ADDR(.pci_fixup) - LOAD_OFFSET) {	\
@@ -276,6 +280,9 @@
 		VMLINUX_SYMBOL(__start_pci_fixups_suspend) = .;		\
 		*(.pci_fixup_suspend)					\
 		VMLINUX_SYMBOL(__end_pci_fixups_suspend) = .;		\
+		VMLINUX_SYMBOL(__start_pci_fixups_suspend_late) = .;	\
+		*(.pci_fixup_suspend_late)				\
+		VMLINUX_SYMBOL(__end_pci_fixups_suspend_late) = .;	\
 	}								\
 									\
 	/* Built-in firmware blobs */					\
@@ -372,8 +379,6 @@
 	/* __*init sections */						\
 	__init_rodata : AT(ADDR(__init_rodata) - LOAD_OFFSET) {		\
 		*(.ref.rodata)						\
-		DEV_KEEP(init.rodata)					\
-		DEV_KEEP(exit.rodata)					\
 		CPU_KEEP(init.rodata)					\
 		CPU_KEEP(exit.rodata)					\
 		MEM_KEEP(init.rodata)					\
@@ -416,8 +421,6 @@
 		*(.text.hot)						\
 		*(.text)						\
 		*(.ref.text)						\
-	DEV_KEEP(init.text)						\
-	DEV_KEEP(exit.text)						\
 	CPU_KEEP(init.text)						\
 	CPU_KEEP(exit.text)						\
 	MEM_KEEP(init.text)						\
@@ -440,6 +443,12 @@
 		VMLINUX_SYMBOL(__lock_text_start) = .;			\
 		*(.spinlock.text)					\
 		VMLINUX_SYMBOL(__lock_text_end) = .;
+
+#define CPUIDLE_TEXT							\
+		ALIGN_FUNCTION();					\
+		VMLINUX_SYMBOL(__cpuidle_text_start) = .;		\
+		*(.cpuidle.text)					\
+		VMLINUX_SYMBOL(__cpuidle_text_end) = .;
 
 #define KPROBES_TEXT							\
 		ALIGN_FUNCTION();					\
@@ -483,6 +492,17 @@
 	}
 
 /*
+ * MC Exception table
+ */
+#define MC_EXCEPTION_TABLE(align)						\
+	. = ALIGN(align);						\
+	__mc_table : AT(ADDR(__mc_table) - LOAD_OFFSET) {		\
+		VMLINUX_SYMBOL(__start___mc_table) = .;			\
+		*(__mc_table)						\
+		VMLINUX_SYMBOL(__stop___mc_table) = .;			\
+	}
+
+/*
  * Init task
  */
 #define INIT_TASK_DATA_SECTION(align)					\
@@ -495,6 +515,7 @@
 #define KERNEL_CTORS()	. = ALIGN(8);			   \
 			VMLINUX_SYMBOL(__ctors_start) = .; \
 			*(.ctors)			   \
+			*(.init_array)			   \
 			VMLINUX_SYMBOL(__ctors_end) = .;
 #else
 #define KERNEL_CTORS()
@@ -503,7 +524,6 @@
 /* init and exit section handling */
 #define INIT_DATA							\
 	*(.init.data)							\
-	DEV_DISCARD(init.data)						\
 	CPU_DISCARD(init.data)						\
 	MEM_DISCARD(init.data)						\
 	KERNEL_CTORS()							\
@@ -511,24 +531,21 @@
 	*(.init.rodata)							\
 	FTRACE_EVENTS()							\
 	TRACE_SYSCALLS()						\
-	DEV_DISCARD(init.rodata)					\
 	CPU_DISCARD(init.rodata)					\
 	MEM_DISCARD(init.rodata)					\
 	CLK_OF_TABLES()							\
 	CLKSRC_OF_TABLES()						\
+	IOMMU_OF_TABLES()						\
 	KERNEL_DTB()							\
 	IRQCHIP_OF_MATCH_TABLE()
 
 #define INIT_TEXT							\
 	*(.init.text)							\
-	DEV_DISCARD(init.text)						\
 	CPU_DISCARD(init.text)						\
 	MEM_DISCARD(init.text)
 
 #define EXIT_DATA							\
 	*(.exit.data)							\
-	DEV_DISCARD(exit.data)						\
-	DEV_DISCARD(exit.rodata)					\
 	CPU_DISCARD(exit.data)						\
 	CPU_DISCARD(exit.rodata)					\
 	MEM_DISCARD(exit.data)						\
@@ -536,7 +553,6 @@
 
 #define EXIT_TEXT							\
 	*(.exit.text)							\
-	DEV_DISCARD(exit.text)						\
 	CPU_DISCARD(exit.text)						\
 	MEM_DISCARD(exit.text)
 
@@ -622,6 +638,26 @@
 	}
 #else
 #define BUG_TABLE
+#endif
+
+#ifdef CONFIG_X86_64
+#define UNWIND_END_OF_STACK_TABLE					\
+	. = ALIGN(8);							\
+	__unwind_end_of_stack : AT(ADDR(__unwind_end_of_stack) - LOAD_OFFSET) {\
+		VMLINUX_SYMBOL(__start___unwind_end_of_stack) = .;	\
+		*(__unwind_end_of_stack)				\
+		VMLINUX_SYMBOL(__stop___unwind_end_of_stack) = .;	\
+	}
+#define UNWIND_UNSAFE_STACK_TABLE					\
+	. = ALIGN(8);							\
+	__unwind_unsafe_stack : AT(ADDR(__unwind_unsafe_stack) - LOAD_OFFSET) {\
+		VMLINUX_SYMBOL(__start___unwind_unsafe_stack) = .;	\
+		*(__unwind_unsafe_stack)				\
+		VMLINUX_SYMBOL(__stop___unwind_unsafe_stack) = .;	\
+	}
+#else
+#define UNWIND_END_OF_STACK_TABLE
+#define UNWIND_UNSAFE_STACK_TABLE
 #endif
 
 #ifdef CONFIG_PM_TRACE
@@ -720,6 +756,13 @@
 #define PERCPU_INPUT(cacheline)						\
 	VMLINUX_SYMBOL(__per_cpu_start) = .;				\
 	*(.data..percpu..first)						\
+	. = ALIGN(PAGE_SIZE);						\
+	VMLINUX_SYMBOL(__per_cpu_user_mapped_start) = .;		\
+	*(.data..percpu..user_mapped..page_aligned)			\
+	. = ALIGN(cacheline);						\
+	*(.data..percpu..user_mapped)					\
+	*(.data..percpu..user_mapped..shared_aligned)			\
+	VMLINUX_SYMBOL(__per_cpu_user_mapped_end) = .;			\
 	. = ALIGN(PAGE_SIZE);						\
 	*(.data..percpu..page_aligned)					\
 	. = ALIGN(cacheline);						\

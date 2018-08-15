@@ -331,7 +331,8 @@ static int tx4939_netdev_event(struct notifier_block *this,
 			       unsigned long event,
 			       void *ptr)
 {
-	struct net_device *dev = ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
+
 	if (event == NETDEV_CHANGE && netif_carrier_ok(dev)) {
 		__u64 bit = 0;
 		if (dev->irq == TXX9_IRQ_BASE + TX4939_IR_ETH(0))
@@ -361,7 +362,7 @@ void __init tx4939_ethaddr_init(unsigned char *addr0, unsigned char *addr1)
 		txx9_ethaddr_init(TXX9_IRQ_BASE + TX4939_IR_ETH(0), addr0);
 	if (addr1 && (pcfg & TX4939_PCFG_ET1MODE))
 		txx9_ethaddr_init(TXX9_IRQ_BASE + TX4939_IR_ETH(1), addr1);
-	register_netdevice_notifier(&tx4939_netdev_notifier);
+	register_netdevice_notifier_rh(&tx4939_netdev_notifier);
 }
 #else
 void __init tx4939_ethaddr_init(unsigned char *addr0, unsigned char *addr1)

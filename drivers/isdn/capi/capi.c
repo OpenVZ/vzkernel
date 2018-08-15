@@ -35,6 +35,7 @@
 #include <linux/init.h>
 #include <linux/device.h>
 #include <linux/moduleparam.h>
+#include <linux/nospec.h>
 #include <linux/isdn/capiutil.h>
 #include <linux/isdn/capicmd.h>
 
@@ -265,6 +266,7 @@ static struct capiminor *capiminor_get(unsigned int minor)
 	struct capiminor *mp;
 
 	spin_lock(&capiminors_lock);
+	minor = array_index_nospec(minor, capi_ttyminors);
 	mp = capiminors[minor];
 	if (mp)
 		tty_port_get(&mp->port);
@@ -1082,7 +1084,7 @@ static int capinc_tty_put_char(struct tty_struct *tty, unsigned char ch)
 	skb = mp->outskb;
 	if (skb) {
 		if (skb_tailroom(skb) > 0) {
-			*(skb_put(skb, 1)) = ch;
+			*(u8 *)skb_put(skb, 1) = ch;
 			goto unlock_out;
 		}
 		mp->outskb = NULL;
@@ -1094,7 +1096,7 @@ static int capinc_tty_put_char(struct tty_struct *tty, unsigned char ch)
 	skb = alloc_skb(CAPI_DATA_B3_REQ_LEN + CAPI_MAX_BLKSIZE, GFP_ATOMIC);
 	if (skb) {
 		skb_reserve(skb, CAPI_DATA_B3_REQ_LEN);
-		*(skb_put(skb, 1)) = ch;
+		*(u8 *)skb_put(skb, 1) = ch;
 		mp->outskb = skb;
 	} else {
 		printk(KERN_ERR "capinc_put_char: char %u lost\n", ch);

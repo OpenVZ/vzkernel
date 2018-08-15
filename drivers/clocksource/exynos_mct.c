@@ -162,7 +162,7 @@ static void exynos4_mct_frc_start(u32 hi, u32 lo)
 	exynos4_mct_write(reg, EXYNOS4_MCT_G_TCON);
 }
 
-static cycle_t exynos4_frc_read(struct clocksource *cs)
+static u64 exynos4_frc_read(struct clocksource *cs)
 {
 	unsigned int lo, hi;
 	u32 hi2 = __raw_readl(reg_base + EXYNOS4_MCT_G_CNT_U);
@@ -173,7 +173,7 @@ static cycle_t exynos4_frc_read(struct clocksource *cs)
 		hi2 = __raw_readl(reg_base + EXYNOS4_MCT_G_CNT_U);
 	} while (hi != hi2);
 
-	return ((cycle_t)hi << 32) | lo;
+	return ((u64)hi << 32) | lo;
 }
 
 static void exynos4_frc_resume(struct clocksource *cs)
@@ -213,7 +213,7 @@ static void exynos4_mct_comp0_start(enum clock_event_mode mode,
 				    unsigned long cycles)
 {
 	unsigned int tcon;
-	cycle_t comp_cycle;
+	u64 comp_cycle;
 
 	tcon = __raw_readl(reg_base + EXYNOS4_MCT_G_TCON);
 
@@ -412,7 +412,7 @@ static struct irqaction mct_tick1_event_irq = {
 	.handler	= exynos4_mct_tick_isr,
 };
 
-static int __cpuinit exynos4_local_timer_setup(struct clock_event_device *evt)
+static int exynos4_local_timer_setup(struct clock_event_device *evt)
 {
 	struct mct_clock_event_device *mevt;
 	unsigned int cpu = smp_processor_id();
@@ -465,7 +465,7 @@ static void exynos4_local_timer_stop(struct clock_event_device *evt)
 		disable_percpu_irq(mct_irqs[MCT_L0_IRQ]);
 }
 
-static struct local_timer_ops exynos4_mct_tick_ops __cpuinitdata = {
+static struct local_timer_ops exynos4_mct_tick_ops = {
 	.setup	= exynos4_local_timer_setup,
 	.stop	= exynos4_local_timer_stop,
 };

@@ -31,6 +31,7 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/hid-roccat.h>
+#include <linux/nospec.h>
 #include "hid-ids.h"
 #include "hid-roccat-common.h"
 #include "hid-roccat-kone.h"
@@ -39,8 +40,11 @@ static uint profile_numbers[5] = {0, 1, 2, 3, 4};
 
 static void kone_profile_activated(struct kone_device *kone, uint new_profile)
 {
+	int idx;
+
 	kone->actual_profile = new_profile;
-	kone->actual_dpi = kone->profiles[new_profile - 1].startup_dpi;
+	idx = array_index_nospec(new_profile - 1, 5);
+	kone->actual_dpi = kone->profiles[idx].startup_dpi;
 }
 
 static void kone_profile_report(struct kone_device *kone, uint new_profile)

@@ -23,6 +23,7 @@
 #include <linux/netdevice.h>
 #include <linux/ethtool.h>
 #include <linux/slab.h>
+#include <linux/nospec.h>
 
 #include "atl1e.h"
 
@@ -282,9 +283,10 @@ static int atl1e_set_eeprom(struct net_device *netdev,
 	if (((eeprom->offset + eeprom->len) & 3)) {
 		/* need read/modify/write of last changed EEPROM word */
 		/* only the first byte of the word is being modified */
+		int idx = array_index_nospec(last_dword - first_dword,
+					     AT_EEPROM_LEN);
 
-		if (!atl1e_read_eeprom(hw, last_dword * 4,
-				&(eeprom_buff[last_dword - first_dword]))) {
+		if (!atl1e_read_eeprom(hw, last_dword * 4, &(eeprom_buff[idx]))) {
 			ret_val = -EIO;
 			goto out;
 		}
@@ -316,10 +318,6 @@ static void atl1e_get_drvinfo(struct net_device *netdev,
 	strlcpy(drvinfo->fw_version, "L1e", sizeof(drvinfo->fw_version));
 	strlcpy(drvinfo->bus_info, pci_name(adapter->pdev),
 		sizeof(drvinfo->bus_info));
-	drvinfo->n_stats = 0;
-	drvinfo->testinfo_len = 0;
-	drvinfo->regdump_len = atl1e_get_regs_len(netdev);
-	drvinfo->eedump_len = atl1e_get_eeprom_len(netdev);
 }
 
 static void atl1e_get_wol(struct net_device *netdev,

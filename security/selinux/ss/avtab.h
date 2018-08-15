@@ -35,6 +35,13 @@ struct avtab_key {
 #define AVTAB_MEMBER		0x0020
 #define AVTAB_CHANGE		0x0040
 #define AVTAB_TYPE		(AVTAB_TRANSITION | AVTAB_MEMBER | AVTAB_CHANGE)
+/* extended permissions - NOT SUPPORTED ON RHEL7 */
+#define AVTAB_XPERMS_ALLOWED	0x0100
+#define AVTAB_XPERMS_AUDITALLOW	0x0200
+#define AVTAB_XPERMS_DONTAUDIT	0x0400
+#define AVTAB_XPERMS		(AVTAB_XPERMS_ALLOWED | \
+				AVTAB_XPERMS_AUDITALLOW | \
+				AVTAB_XPERMS_DONTAUDIT)
 #define AVTAB_ENABLED_OLD   0x80000000 /* reserved for used in cond_avtab */
 #define AVTAB_ENABLED		0x8000 /* reserved for used in cond_avtab */
 	u16 specified;	/* what field is specified */

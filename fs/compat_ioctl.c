@@ -57,9 +57,10 @@
 #include <linux/i2c-dev.h>
 #include <linux/atalk.h>
 #include <linux/gfp.h>
+#include <linux/nospec.h>
 
 #include <net/bluetooth/bluetooth.h>
-#include <net/bluetooth/hci.h>
+#include <net/bluetooth/hci_sock.h>
 #include <net/bluetooth/rfcomm.h>
 
 #include <linux/capi.h>
@@ -1530,14 +1531,14 @@ static int compat_ioctl_check_table(unsigned int xcmd)
 	i = ((xcmd >> 16) * max) >> 16;
 
 	/* do linear search up first, until greater or equal */
-	while (ioctl_pointer[i] < xcmd && i < max)
+	while (ioctl_pointer[array_index_nospec(i, max + 1)] < xcmd && i < max)
 		i++;
 
 	/* then do linear search down */
-	while (ioctl_pointer[i] > xcmd && i > 0)
+	while (ioctl_pointer[array_index_nospec(i, max + 1)] > xcmd && i > 0)
 		i--;
 
-	return ioctl_pointer[i] == xcmd;
+	return ioctl_pointer[array_index_nospec(i, max + 1)] == xcmd;
 }
 
 asmlinkage long compat_sys_ioctl(unsigned int fd, unsigned int cmd,
@@ -1577,6 +1578,10 @@ asmlinkage long compat_sys_ioctl(unsigned int fd, unsigned int cmd,
 		error = ioctl_preallocate(f.file, compat_ptr(arg));
 		goto out_fput;
 #endif
+
+	case FICLONE:
+	case FICLONERANGE:
+		goto do_ioctl;
 
 	case FIBMAP:
 	case FIGETBSZ:

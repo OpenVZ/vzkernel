@@ -22,6 +22,7 @@
  * Contact Information:
  * wlanfae <wlanfae@realtek.com>
 ******************************************************************************/
+#include <linux/nospec.h>
 #include "rtl_core.h"
 #include "r8192E_phy.h"
 #include "r8192E_phyreg.h"
@@ -89,6 +90,7 @@ void set_swcam(struct net_device *dev, u8 EntryNo, u8 KeyIndex, u16 KeyType,
 		 "%d,KeyType is %d,is_mesh is %d\n", __func__, EntryNo,
 		 KeyIndex, KeyType, is_mesh);
 	if (!is_mesh) {
+		EntryNo = array_index_nospec(EntryNo, TOTAL_CAM_ENTRY);
 		ieee->swcamtable[EntryNo].bused = true;
 		ieee->swcamtable[EntryNo].key_index = KeyIndex;
 		ieee->swcamtable[EntryNo].key_type = KeyType;

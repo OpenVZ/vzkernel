@@ -54,6 +54,7 @@
 #include <linux/delay.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
+#include <linux/nospec.h>
 #include <linux/can.h>
 #include <linux/can/skb.h>
 
@@ -197,6 +198,7 @@ static void slc_bump(struct slcan *sl)
 
 	can_skb_reserve(skb);
 	can_skb_prv(skb)->ifindex = sl->dev->ifindex;
+	can_skb_prv(skb)->skbcnt = 0;
 
 	memcpy(skb_put(skb, sizeof(struct can_frame)),
 	       &cf, sizeof(struct can_frame));
@@ -286,11 +288,13 @@ static void slcan_write_wakeup(struct tty_struct *tty)
 	if (!sl || sl->magic != SLCAN_MAGIC || !netif_running(sl->dev))
 		return;
 
+	spin_lock(&sl->lock);
 	if (sl->xleft <= 0)  {
 		/* Now serial buffer is almost free & we can start
 		 * transmission of another packet */
 		sl->dev->stats.tx_packets++;
 		clear_bit(TTY_DO_WRITE_WAKEUP, &tty->flags);
+		spin_unlock(&sl->lock);
 		netif_wake_queue(sl->dev);
 		return;
 	}
@@ -298,6 +302,7 @@ static void slcan_write_wakeup(struct tty_struct *tty)
 	actual = tty->ops->write(tty, sl->xhead, sl->xleft);
 	sl->xleft -= actual;
 	sl->xhead += actual;
+	spin_unlock(&sl->lock);
 }
 
 /* Send a can_frame to a TTY queue. */
@@ -367,8 +372,8 @@ static int slc_open(struct net_device *dev)
 /* Hook the destructor so we can free slcan devs at the right point in time */
 static void slc_free_netdev(struct net_device *dev)
 {
-	int i = dev->base_addr;
-	free_netdev(dev);
+	int i = array_index_nospec(dev->base_addr, maxdev);
+
 	slcan_devs[i] = NULL;
 }
 
@@ -381,7 +386,8 @@ static const struct net_device_ops slc_netdev_ops = {
 static void slc_setup(struct net_device *dev)
 {
 	dev->netdev_ops		= &slc_netdev_ops;
-	dev->destructor		= slc_free_netdev;
+	dev->extended->needs_free_netdev	= true;
+	dev->extended->priv_destructor	= slc_free_netdev;
 
 	dev->hard_header_len	= 0;
 	dev->addr_len		= 0;
@@ -701,8 +707,6 @@ static void __exit slcan_exit(void)
 		if (sl->tty) {
 			printk(KERN_ERR "%s: tty discipline still running\n",
 			       dev->name);
-			/* Intentionally leak the control block. */
-			dev->destructor = NULL;
 		}
 
 		unregister_netdev(dev);

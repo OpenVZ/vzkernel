@@ -4,6 +4,7 @@
 #include <linux/user.h>
 #include <linux/regset.h>
 #include <linux/syscalls.h>
+#include <linux/nospec.h>
 
 #include <asm/uaccess.h>
 #include <asm/desc.h>
@@ -31,7 +32,9 @@ static void set_tls_desc(struct task_struct *p, int idx,
 			 const struct user_desc *info, int n)
 {
 	struct thread_struct *t = &p->thread;
-	struct desc_struct *desc = &t->tls_array[idx - GDT_ENTRY_TLS_MIN];
+	int array_idx = array_index_nospec(idx - GDT_ENTRY_TLS_MIN,
+					   GDT_ENTRY_TLS_ENTRIES);
+	struct desc_struct *desc = &t->tls_array[array_idx];
 	int cpu;
 
 	/*
@@ -122,6 +125,7 @@ int do_get_thread_area(struct task_struct *p, int idx,
 		       struct user_desc __user *u_info)
 {
 	struct user_desc info;
+	int array_idx;
 
 	if (idx == -1 && get_user(idx, &u_info->entry_number))
 		return -EFAULT;
@@ -129,8 +133,9 @@ int do_get_thread_area(struct task_struct *p, int idx,
 	if (idx < GDT_ENTRY_TLS_MIN || idx > GDT_ENTRY_TLS_MAX)
 		return -EINVAL;
 
-	fill_user_desc(&info, idx,
-		       &p->thread.tls_array[idx - GDT_ENTRY_TLS_MIN]);
+	array_idx = array_index_nospec(idx - GDT_ENTRY_TLS_MIN,
+				       GDT_ENTRY_TLS_ENTRIES);
+	fill_user_desc(&info, idx, &p->thread.tls_array[array_idx]);
 
 	if (copy_to_user(u_info, &info, sizeof(info)))
 		return -EFAULT;

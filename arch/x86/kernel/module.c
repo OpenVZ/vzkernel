@@ -28,9 +28,11 @@
 #include <linux/mm.h>
 #include <linux/gfp.h>
 #include <linux/jump_label.h>
+#include <linux/random.h>
 
 #include <asm/page.h>
 #include <asm/pgtable.h>
+#include <asm/setup.h>
 
 #if 0
 #define DEBUGP(fmt, ...)				\
@@ -43,13 +45,44 @@ do {							\
 } while (0)
 #endif
 
+#ifdef CONFIG_RANDOMIZE_BASE
+static unsigned long module_load_offset;
+
+/* Mutex protects the module_load_offset. */
+static DEFINE_MUTEX(module_kaslr_mutex);
+
+static unsigned long int get_module_load_offset(void)
+{
+	if (kaslr_enabled()) {
+		mutex_lock(&module_kaslr_mutex);
+		/*
+		 * Calculate the module_load_offset the first time this
+		 * code is called. Once calculated it stays the same until
+		 * reboot.
+		 */
+		if (module_load_offset == 0)
+			module_load_offset =
+				(get_random_int() % 1024 + 1) * PAGE_SIZE;
+		mutex_unlock(&module_kaslr_mutex);
+	}
+	return module_load_offset;
+}
+#else
+static unsigned long int get_module_load_offset(void)
+{
+	return 0;
+}
+#endif
+
 void *module_alloc(unsigned long size)
 {
 	if (PAGE_ALIGN(size) > MODULES_LEN)
 		return NULL;
-	return __vmalloc_node_range(size, 1, MODULES_VADDR, MODULES_END,
-				GFP_KERNEL | __GFP_HIGHMEM, PAGE_KERNEL_EXEC,
-				-1, __builtin_return_address(0));
+	return __vmalloc_node_range(size, 1,
+				    MODULES_VADDR + get_module_load_offset(),
+				    MODULES_END, GFP_KERNEL | __GFP_HIGHMEM,
+				    PAGE_KERNEL_EXEC, NUMA_NO_NODE,
+				    __builtin_return_address(0));
 }
 
 #ifdef CONFIG_X86_32
@@ -104,10 +137,17 @@ int apply_relocate_add(Elf64_Shdr *sechdrs,
 	Elf64_Sym *sym;
 	void *loc;
 	u64 val;
+	bool rhel70 = check_module_rhelversion(me, "7.0");
+	bool warned = false;
 
 	DEBUGP("Applying relocate section %u to %u\n",
 	       relsec, sechdrs[relsec].sh_info);
+
 	for (i = 0; i < sechdrs[relsec].sh_size / sizeof(*rel); i++) {
+		Elf64_Sym kstack_sym;
+		bool apply_kstack_fixup = false;
+		const char *symname;
+
 		/* This is where to make the change */
 		loc = (void *)sechdrs[sechdrs[relsec].sh_info].sh_addr
 			+ rel[i].r_offset;
@@ -116,10 +156,36 @@ int apply_relocate_add(Elf64_Shdr *sechdrs,
 		   undefined symbols have been resolved.  */
 		sym = (Elf64_Sym *)sechdrs[symindex].sh_addr
 			+ ELF64_R_SYM(rel[i].r_info);
+		symname = strtab + sym->st_name;
 
-		DEBUGP("type %d st_value %Lx r_addend %Lx loc %Lx\n",
-		       (int)ELF64_R_TYPE(rel[i].r_info),
+		DEBUGP("symname %s type %d st_value %Lx r_addend %Lx loc %Lx\n",
+		       symname, (int)ELF64_R_TYPE(rel[i].r_info),
 		       sym->st_value, rel[i].r_addend, (u64)loc);
+
+		if (rhel70 && !strcmp(symname, "kernel_stack")) {
+			if (!warned)
+				printk(KERN_INFO "%s: applying kernel_stack fix up\n",
+					me->name);
+			apply_kstack_fixup = true;
+			warned = true;
+		}
+
+		/* kernel_stack is referenced to access current_thread_info in
+		 * a variety of places... if we're loading a module which
+		 * expects an 8K stack, fix up the symbol reference to look
+		 * at a second copy. Nobody should be using this symbol for
+		 * any other purpose.
+		 */
+		if (apply_kstack_fixup) {
+			const struct kernel_symbol *ksym2;
+			ksym2 = find_symbol("__kernel_stack_70__",
+					    NULL, NULL, true, true);
+			if (!IS_ERR(ksym2)) {
+				kstack_sym.st_value = ksym2->value;
+				sym = &kstack_sym;
+			} else
+				return PTR_ERR(ksym2) ?: -ENOEXEC;
+		}
 
 		val = sym->st_value + rel[i].r_addend;
 
@@ -127,19 +193,27 @@ int apply_relocate_add(Elf64_Shdr *sechdrs,
 		case R_X86_64_NONE:
 			break;
 		case R_X86_64_64:
+			if (*(u64 *)loc != 0)
+				goto invalid_relocation;
 			*(u64 *)loc = val;
 			break;
 		case R_X86_64_32:
+			if (*(u32 *)loc != 0)
+				goto invalid_relocation;
 			*(u32 *)loc = val;
 			if (val != *(u32 *)loc)
 				goto overflow;
 			break;
 		case R_X86_64_32S:
+			if (*(s32 *)loc != 0)
+				goto invalid_relocation;
 			*(s32 *)loc = val;
 			if ((s64)val != *(s32 *)loc)
 				goto overflow;
 			break;
 		case R_X86_64_PC32:
+			if (*(u32 *)loc != 0)
+				goto invalid_relocation;
 			val -= (u64)loc;
 			*(u32 *)loc = val;
 #if 0
@@ -154,6 +228,11 @@ int apply_relocate_add(Elf64_Shdr *sechdrs,
 		}
 	}
 	return 0;
+
+invalid_relocation:
+	pr_err("x86/modules: Skipping invalid relocation target, existing value is nonzero for type %d, loc %p, val %Lx\n",
+	       (int)ELF64_R_TYPE(rel[i].r_info), loc, val);
+	return -ENOEXEC;
 
 overflow:
 	pr_err("overflow in relocation type %d val %Lx\n",

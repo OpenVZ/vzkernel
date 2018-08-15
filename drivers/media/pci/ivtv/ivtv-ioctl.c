@@ -37,6 +37,7 @@
 #include <media/v4l2-chip-ident.h>
 #include <media/v4l2-event.h>
 #include <linux/dvb/audio.h>
+#include <linux/nospec.h>
 
 u16 ivtv_service2vbi(int type)
 {
@@ -1051,6 +1052,7 @@ static int ivtv_s_output(struct file *file, void *fh, unsigned int outp)
 
 	if (outp >= itv->card->nof_outputs)
 		return -EINVAL;
+	outp = array_index_nospec(outp, itv->card->nof_outputs);
 
 	if (outp == itv->active_output) {
 		IVTV_DEBUG_INFO("Output unchanged\n");

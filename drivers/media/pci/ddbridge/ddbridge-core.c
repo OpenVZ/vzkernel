@@ -34,6 +34,7 @@
 #include <linux/i2c.h>
 #include <linux/swab.h>
 #include <linux/vmalloc.h>
+#include <linux/nospec.h>
 #include "ddbridge.h"
 
 #include "ddbridge-regs.h"
@@ -1432,7 +1433,7 @@ static int ddb_major;
 
 static int ddb_open(struct inode *inode, struct file *file)
 {
-	struct ddb *dev = ddbs[iminor(inode)];
+	struct ddb *dev = ddbs[array_index_nospec(iminor(inode), 32)];
 
 	file->private_data = dev;
 	return 0;

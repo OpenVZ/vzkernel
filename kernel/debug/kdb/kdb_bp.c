@@ -17,6 +17,7 @@
 #include <linux/smp.h>
 #include <linux/sched.h>
 #include <linux/interrupt.h>
+#include <linux/nospec.h>
 #include "kdb_private.h"
 
 /*
@@ -414,6 +415,7 @@ static int kdb_bc(int argc, const char **argv)
 		 * assume that the breakpoint number is desired.
 		 */
 		if (addr < KDB_MAXBPT) {
+			addr = array_index_nospec(addr, KDB_MAXBPT);
 			bp = &kdb_breakpoints[addr];
 			lowbp = highbp = addr;
 			highbp++;

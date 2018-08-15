@@ -113,6 +113,26 @@ static u32 convert_to_vtf_format(int size, int exp, int val1, int val2)
 	return value;
 }
 
+s32 hid_sensor_read_poll_value(struct hid_sensor_common *st)
+{
+	s32 value = 0;
+	int ret;
+
+	ret = sensor_hub_get_feature(st->hsdev,
+				     st->poll.report_id,
+				     st->poll.index, sizeof(value), &value);
+
+	if (ret < 0 || value < 0) {
+		return -EINVAL;
+	} else {
+		if (st->poll.units == HID_USAGE_SENSOR_UNITS_SECOND)
+			value = value * 1000;
+	}
+
+	return value;
+}
+EXPORT_SYMBOL(hid_sensor_read_poll_value);
+
 int hid_sensor_read_samp_freq_value(struct hid_sensor_common *st,
 				int *val1, int *val2)
 {
@@ -120,8 +140,8 @@ int hid_sensor_read_samp_freq_value(struct hid_sensor_common *st,
 	int ret;
 
 	ret = sensor_hub_get_feature(st->hsdev,
-		st->poll.report_id,
-		st->poll.index, &value);
+				     st->poll.report_id,
+				     st->poll.index, sizeof(value), &value);
 	if (ret < 0 || value < 0) {
 		*val1 = *val2 = 0;
 		return -EINVAL;
@@ -158,13 +178,20 @@ int hid_sensor_write_samp_freq_value(struct hid_sensor_common *st,
 		else
 			value = 0;
 	}
-	ret = sensor_hub_set_feature(st->hsdev,
-		st->poll.report_id,
-		st->poll.index, value);
+	ret = sensor_hub_set_feature(st->hsdev, st->poll.report_id,
+				     st->poll.index, sizeof(value), &value);
 	if (ret < 0 || value < 0)
 		ret = -EINVAL;
 
-	return ret;
+	ret = sensor_hub_get_feature(st->hsdev,
+				     st->poll.report_id,
+				     st->poll.index, sizeof(value), &value);
+	if (ret < 0 || value < 0)
+		return -EINVAL;
+
+	st->poll_interval = value;
+
+	return 0;
 }
 EXPORT_SYMBOL(hid_sensor_write_samp_freq_value);
 
@@ -175,8 +202,9 @@ int hid_sensor_read_raw_hyst_value(struct hid_sensor_common *st,
 	int ret;
 
 	ret = sensor_hub_get_feature(st->hsdev,
-		st->sensitivity.report_id,
-		st->sensitivity.index, &value);
+				     st->sensitivity.report_id,
+				     st->sensitivity.index, sizeof(value),
+				     &value);
 	if (ret < 0 || value < 0) {
 		*val1 = *val2 = 0;
 		return -EINVAL;
@@ -199,25 +227,92 @@ int hid_sensor_write_raw_hyst_value(struct hid_sensor_common *st,
 	value = convert_to_vtf_format(st->sensitivity.size,
 				st->sensitivity.unit_expo,
 				val1, val2);
-	ret = sensor_hub_set_feature(st->hsdev,
-		st->sensitivity.report_id,
-		st->sensitivity.index, value);
+	ret = sensor_hub_set_feature(st->hsdev, st->sensitivity.report_id,
+				     st->sensitivity.index, sizeof(value),
+				     &value);
 	if (ret < 0 || value < 0)
 		ret = -EINVAL;
 
-	return ret;
+	ret = sensor_hub_get_feature(st->hsdev,
+				     st->sensitivity.report_id,
+				     st->sensitivity.index, sizeof(value),
+				     &value);
+	if (ret < 0 || value < 0)
+		return -EINVAL;
+
+	st->raw_hystersis = value;
+
+	return 0;
 }
 EXPORT_SYMBOL(hid_sensor_write_raw_hyst_value);
+
+int hid_sensor_get_reporting_interval(struct hid_sensor_hub_device *hsdev,
+					u32 usage_id,
+					struct hid_sensor_common *st)
+{
+	sensor_hub_input_get_attribute_info(hsdev,
+					HID_FEATURE_REPORT, usage_id,
+					HID_USAGE_SENSOR_PROP_REPORT_INTERVAL,
+					&st->poll);
+	/* Default unit of measure is milliseconds */
+	if (st->poll.units == 0)
+		st->poll.units = HID_USAGE_SENSOR_UNITS_MILLISECOND;
+
+	st->poll_interval = -1;
+
+	return 0;
+
+}
+
+static void hid_sensor_get_report_latency_info(struct hid_sensor_hub_device *hsdev,
+					       u32 usage_id,
+					       struct hid_sensor_common *st)
+{
+	sensor_hub_input_get_attribute_info(hsdev, HID_FEATURE_REPORT,
+					    usage_id,
+					    HID_USAGE_SENSOR_PROP_REPORT_LATENCY,
+					    &st->report_latency);
+
+	hid_dbg(hsdev->hdev, "Report latency attributes: %x:%x\n",
+		st->report_latency.index, st->report_latency.report_id);
+}
+
+int hid_sensor_get_report_latency(struct hid_sensor_common *st)
+{
+	int ret;
+	int value;
+
+	ret = sensor_hub_get_feature(st->hsdev, st->report_latency.report_id,
+				     st->report_latency.index, sizeof(value),
+				     &value);
+	if (ret < 0)
+		return ret;
+
+	return value;
+}
+EXPORT_SYMBOL(hid_sensor_get_report_latency);
+
+int hid_sensor_set_report_latency(struct hid_sensor_common *st, int latency_ms)
+{
+	return sensor_hub_set_feature(st->hsdev, st->report_latency.report_id,
+				      st->report_latency.index,
+				      sizeof(latency_ms), &latency_ms);
+}
+EXPORT_SYMBOL(hid_sensor_set_report_latency);
+
+bool hid_sensor_batch_mode_supported(struct hid_sensor_common *st)
+{
+	return st->report_latency.index > 0 && st->report_latency.report_id > 0;
+}
+EXPORT_SYMBOL(hid_sensor_batch_mode_supported);
 
 int hid_sensor_parse_common_attributes(struct hid_sensor_hub_device *hsdev,
 					u32 usage_id,
 					struct hid_sensor_common *st)
 {
 
-	sensor_hub_input_get_attribute_info(hsdev,
-					HID_FEATURE_REPORT, usage_id,
-					HID_USAGE_SENSOR_PROP_REPORT_INTERVAL,
-					&st->poll);
+
+	hid_sensor_get_reporting_interval(hsdev, usage_id, st);
 
 	sensor_hub_input_get_attribute_info(hsdev,
 					HID_FEATURE_REPORT, usage_id,
@@ -229,10 +324,13 @@ int hid_sensor_parse_common_attributes(struct hid_sensor_hub_device *hsdev,
 					HID_USAGE_SENSOR_PROY_POWER_STATE,
 					&st->power_state);
 
+	st->raw_hystersis = -1;
+
 	sensor_hub_input_get_attribute_info(hsdev,
 			HID_FEATURE_REPORT, usage_id,
 			HID_USAGE_SENSOR_PROP_SENSITIVITY_ABS,
 			 &st->sensitivity);
+	hid_sensor_get_report_latency_info(hsdev, usage_id, st);
 
 	hid_dbg(hsdev->hdev, "common attributes: %x:%x, %x:%x, %x:%x %x:%x\n",
 			st->poll.index, st->poll.report_id,

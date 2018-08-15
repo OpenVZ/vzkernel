@@ -187,9 +187,8 @@ static int als_proc_event(struct hid_sensor_hub_device *hsdev,
 	struct iio_dev *indio_dev = platform_get_drvdata(priv);
 	struct als_state *als_state = iio_priv(indio_dev);
 
-	dev_dbg(&indio_dev->dev, "als_proc_event [%d]\n",
-				als_state->common_attributes.data_ready);
-	if (als_state->common_attributes.data_ready)
+	dev_dbg(&indio_dev->dev, "als_proc_event\n");
+	if (atomic_read(&als_state->common_attributes.data_ready))
 		hid_sensor_push_data(indio_dev,
 				(u8 *)&als_state->illum,
 				sizeof(als_state->illum));
@@ -299,7 +298,7 @@ static int hid_als_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to initialize trigger buffer\n");
 		goto error_free_dev_mem;
 	}
-	als_state->common_attributes.data_ready = false;
+	atomic_set(&als_state->common_attributes.data_ready, 0);
 	ret = hid_sensor_setup_trigger(indio_dev, name,
 				&als_state->common_attributes);
 	if (ret < 0) {
@@ -328,7 +327,7 @@ static int hid_als_probe(struct platform_device *pdev)
 error_iio_unreg:
 	iio_device_unregister(indio_dev);
 error_remove_trigger:
-	hid_sensor_remove_trigger(indio_dev);
+	hid_sensor_remove_trigger(&als_state->common_attributes);
 error_unreg_buffer_funcs:
 	iio_triggered_buffer_cleanup(indio_dev);
 error_free_dev_mem:
@@ -344,10 +343,11 @@ static int hid_als_remove(struct platform_device *pdev)
 {
 	struct hid_sensor_hub_device *hsdev = pdev->dev.platform_data;
 	struct iio_dev *indio_dev = platform_get_drvdata(pdev);
+	struct als_state *als_state = iio_priv(indio_dev);
 
 	sensor_hub_remove_callback(hsdev, HID_USAGE_SENSOR_ALS);
 	iio_device_unregister(indio_dev);
-	hid_sensor_remove_trigger(indio_dev);
+	hid_sensor_remove_trigger(&als_state->common_attributes);
 	iio_triggered_buffer_cleanup(indio_dev);
 	kfree(indio_dev->channels);
 	iio_device_free(indio_dev);

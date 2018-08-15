@@ -28,6 +28,7 @@
 #include <linux/sched.h>
 #include <linux/hid-roccat.h>
 #include <linux/module.h>
+#include <linux/nospec.h>
 
 #define ROCCAT_FIRST_MINOR 0
 #define ROCCAT_MAX_DEVICES 8
@@ -161,6 +162,7 @@ static int roccat_open(struct inode *inode, struct file *file)
 
 	mutex_lock(&devices_lock);
 
+	minor = array_index_nospec(minor, ROCCAT_MAX_DEVICES);
 	device = devices[minor];
 
 	if (!device) {

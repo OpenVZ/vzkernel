@@ -81,7 +81,7 @@ static void ri_tasklet(unsigned long dev)
 	while ((skb = __skb_dequeue(&dp->tq)) != NULL) {
 		u32 from = G_TC_FROM(skb->tc_verd);
 
-		skb->tc_verd = 0;
+		skb_reset_tc(skb);
 		skb->tc_verd = SET_TC_NCLS(skb->tc_verd);
 
 		u64_stats_update_begin(&dp->tsync);
@@ -105,7 +105,7 @@ static void ri_tasklet(unsigned long dev)
 		if (from & AT_EGRESS) {
 			dev_queue_xmit(skb);
 		} else if (from & AT_INGRESS) {
-			skb_pull(skb, skb->dev->hard_header_len);
+			skb_pull(skb, skb->mac_len);
 			netif_receive_skb(skb);
 		} else
 			BUG();
@@ -129,30 +129,28 @@ resched:
 
 }
 
-static struct rtnl_link_stats64 *ifb_stats64(struct net_device *dev,
-					     struct rtnl_link_stats64 *stats)
+static void ifb_stats64(struct net_device *dev,
+			struct rtnl_link_stats64 *stats)
 {
 	struct ifb_private *dp = netdev_priv(dev);
 	unsigned int start;
 
 	do {
-		start = u64_stats_fetch_begin_bh(&dp->rsync);
+		start = u64_stats_fetch_begin_irq(&dp->rsync);
 		stats->rx_packets = dp->rx_packets;
 		stats->rx_bytes = dp->rx_bytes;
-	} while (u64_stats_fetch_retry_bh(&dp->rsync, start));
+	} while (u64_stats_fetch_retry_irq(&dp->rsync, start));
 
 	do {
-		start = u64_stats_fetch_begin_bh(&dp->tsync);
+		start = u64_stats_fetch_begin_irq(&dp->tsync);
 
 		stats->tx_packets = dp->tx_packets;
 		stats->tx_bytes = dp->tx_bytes;
 
-	} while (u64_stats_fetch_retry_bh(&dp->tsync, start));
+	} while (u64_stats_fetch_retry_irq(&dp->tsync, start));
 
 	stats->rx_dropped = dev->stats.rx_dropped;
 	stats->tx_dropped = dev->stats.tx_dropped;
-
-	return stats;
 }
 
 
@@ -172,7 +170,6 @@ static const struct net_device_ops ifb_netdev_ops = {
 static void ifb_setup(struct net_device *dev)
 {
 	/* Initialize the device structure. */
-	dev->destructor = free_netdev;
 	dev->netdev_ops = &ifb_netdev_ops;
 
 	/* Fill in device structure with ethernet-generic values. */
@@ -184,21 +181,25 @@ static void ifb_setup(struct net_device *dev)
 
 	dev->flags |= IFF_NOARP;
 	dev->flags &= ~IFF_MULTICAST;
-	dev->priv_flags &= ~(IFF_XMIT_DST_RELEASE | IFF_TX_SKB_SHARING);
+	dev->priv_flags &= ~IFF_TX_SKB_SHARING;
+	netif_keep_dst(dev);
 	eth_hw_addr_random(dev);
+	dev->extended->needs_free_netdev = true;
+
+	dev->extended->min_mtu = 0;
+	dev->extended->max_mtu = 0;
 }
 
 static netdev_tx_t ifb_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct ifb_private *dp = netdev_priv(dev);
-	u32 from = G_TC_FROM(skb->tc_verd);
 
 	u64_stats_update_begin(&dp->rsync);
 	dp->rx_packets++;
 	dp->rx_bytes += skb->len;
 	u64_stats_update_end(&dp->rsync);
 
-	if (!(from & (AT_INGRESS|AT_EGRESS)) || !skb->skb_iif) {
+	if (G_TC_FROM(skb->tc_verd) == AT_STACK || !skb->skb_iif) {
 		dev_kfree_skb(skb);
 		dev->stats.rx_dropped++;
 		return NETDEV_TX_OK;
@@ -291,11 +292,17 @@ static int __init ifb_init_module(void)
 
 	rtnl_lock();
 	err = __rtnl_link_register(&ifb_link_ops);
+	if (err < 0)
+		goto out;
 
-	for (i = 0; i < numifbs && !err; i++)
+	for (i = 0; i < numifbs && !err; i++) {
 		err = ifb_init_one(i);
+		cond_resched();
+	}
 	if (err)
 		__rtnl_link_unregister(&ifb_link_ops);
+
+out:
 	rtnl_unlock();
 
 	return err;

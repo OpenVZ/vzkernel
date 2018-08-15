@@ -64,6 +64,7 @@
 #include <linux/crc32.h>
 #include <linux/mutex.h>
 #include <linux/sched.h>
+#include <linux/nospec.h>
 
 #include "dvb_demux.h"
 #include "dvb_net.h"
@@ -1232,7 +1233,7 @@ static const struct net_device_ops dvb_netdev_ops = {
 	.ndo_start_xmit		= dvb_net_tx,
 	.ndo_set_rx_mode	= dvb_net_set_multicast_list,
 	.ndo_set_mac_address    = dvb_net_set_mac,
-	.ndo_change_mtu		= eth_change_mtu,
+	.ndo_change_mtu_rh74	= eth_change_mtu,
 	.ndo_validate_addr	= eth_validate_addr,
 };
 
@@ -1383,14 +1384,21 @@ static int dvb_net_do_ioctl(struct file *file,
 		struct net_device *netdev;
 		struct dvb_net_priv *priv_data;
 		struct dvb_net_if *dvbnetif = parg;
+		u16 if_num;
 
-		if (dvbnetif->if_num >= DVB_NET_DEVICES_MAX ||
-		    !dvbnet->state[dvbnetif->if_num]) {
+		if (dvbnetif->if_num >= DVB_NET_DEVICES_MAX) {
+			ret = -EINVAL;
+			goto ioctl_error;
+		}
+		if_num = array_index_nospec(dvbnetif->if_num,
+					    DVB_NET_DEVICES_MAX);
+
+		if (!dvbnet->state[if_num]) {
 			ret = -EINVAL;
 			goto ioctl_error;
 		}
 
-		netdev = dvbnet->device[dvbnetif->if_num];
+		netdev = dvbnet->device[if_num];
 
 		priv_data = netdev_priv(netdev);
 		dvbnetif->pid=priv_data->pid;
@@ -1399,15 +1407,19 @@ static int dvb_net_do_ioctl(struct file *file,
 	}
 	case NET_REMOVE_IF:
 	{
+		unsigned long arg = (unsigned long)parg;
+
 		if (!capable(CAP_SYS_ADMIN)) {
 			ret = -EPERM;
 			goto ioctl_error;
 		}
-		if ((unsigned long) parg >= DVB_NET_DEVICES_MAX) {
+		if (arg >= DVB_NET_DEVICES_MAX) {
 			ret = -EINVAL;
 			goto ioctl_error;
 		}
-		ret = dvb_net_remove_if(dvbnet, (unsigned long) parg);
+		arg = array_index_nospec(arg, DVB_NET_DEVICES_MAX);
+
+		ret = dvb_net_remove_if(dvbnet, arg);
 		if (!ret)
 			module_put(dvbdev->adapter->module);
 		break;
@@ -1443,14 +1455,21 @@ static int dvb_net_do_ioctl(struct file *file,
 		struct net_device *netdev;
 		struct dvb_net_priv *priv_data;
 		struct __dvb_net_if_old *dvbnetif = parg;
+		u16 if_num;
 
-		if (dvbnetif->if_num >= DVB_NET_DEVICES_MAX ||
-		    !dvbnet->state[dvbnetif->if_num]) {
+		if (dvbnetif->if_num >= DVB_NET_DEVICES_MAX) {
+			ret = -EINVAL;
+			goto ioctl_error;
+		}
+		if_num = array_index_nospec(dvbnetif->if_num,
+					    DVB_NET_DEVICES_MAX);
+
+		if (!dvbnet->state[if_num]) {
 			ret = -EINVAL;
 			goto ioctl_error;
 		}
 
-		netdev = dvbnet->device[dvbnetif->if_num];
+		netdev = dvbnet->device[if_num];
 
 		priv_data = netdev_priv(netdev);
 		dvbnetif->pid=priv_data->pid;

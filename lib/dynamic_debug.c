@@ -578,7 +578,7 @@ int __dynamic_dev_dbg(struct _ddebug *descriptor,
 	} else {
 		char buf[PREFIX_SIZE];
 
-		res = dev_printk_emit(7, dev, "%s%s %s: %pV",
+		res = dev_printk_emit(LOGLEVEL_DEBUG, dev, "%s%s %s: %pV",
 				      dynamic_emit_prefix(descriptor, buf),
 				      dev_driver_string(dev), dev_name(dev),
 				      &vaf);
@@ -610,7 +610,7 @@ int __dynamic_netdev_dbg(struct _ddebug *descriptor,
 	if (dev && dev->dev.parent) {
 		char buf[PREFIX_SIZE];
 
-		res = dev_printk_emit(7, dev->dev.parent,
+		res = dev_printk_emit(LOGLEVEL_DEBUG, dev->dev.parent,
 				      "%s%s %s %s: %pV",
 				      dynamic_emit_prefix(descriptor, buf),
 				      dev_driver_string(dev->dev.parent),

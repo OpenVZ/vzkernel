@@ -19,6 +19,7 @@
  */
 
 #include <linux/export.h>
+#include <linux/nospec.h>
 #include <net/xfrm.h>
 
 u32 xfrm_replay_seqhi(struct xfrm_state *x, __be32 net_seq)
@@ -61,9 +62,9 @@ static void xfrm_replay_notify(struct xfrm_state *x, int event)
 
 	switch (event) {
 	case XFRM_REPLAY_UPDATE:
-		if (x->replay_maxdiff &&
-		    (x->replay.seq - x->preplay.seq < x->replay_maxdiff) &&
-		    (x->replay.oseq - x->preplay.oseq < x->replay_maxdiff)) {
+		if (!x->replay_maxdiff ||
+		    ((x->replay.seq - x->preplay.seq < x->replay_maxdiff) &&
+		    (x->replay.oseq - x->preplay.oseq < x->replay_maxdiff))) {
 			if (x->xflags & XFRM_TIME_DEFER)
 				event = XFRM_REPLAY_TIMEOUT;
 			else
@@ -99,6 +100,7 @@ static int xfrm_replay_overflow(struct xfrm_state *x, struct sk_buff *skb)
 
 	if (x->type->flags & XFRM_TYPE_REPLAY_PROT) {
 		XFRM_SKB_CB(skb)->seq.output.low = ++x->replay.oseq;
+		XFRM_SKB_CB(skb)->seq.output.hi = 0;
 		if (unlikely(x->replay.oseq == 0)) {
 			x->replay.oseq--;
 			xfrm_audit_state_replay_overflow(x, skb);
@@ -129,8 +131,7 @@ static int xfrm_replay_check(struct xfrm_state *x,
 		return 0;
 
 	diff = x->replay.seq - seq;
-	if (diff >= min_t(unsigned int, x->props.replay_window,
-			  sizeof(x->replay.bitmap) * 8)) {
+	if (diff >= x->props.replay_window) {
 		x->stats.replay_window++;
 		goto err;
 	}
@@ -178,6 +179,7 @@ static int xfrm_replay_overflow_bmp(struct xfrm_state *x, struct sk_buff *skb)
 
 	if (x->type->flags & XFRM_TYPE_REPLAY_PROT) {
 		XFRM_SKB_CB(skb)->seq.output.low = ++replay_esn->oseq;
+		XFRM_SKB_CB(skb)->seq.output.hi = 0;
 		if (unlikely(replay_esn->oseq == 0)) {
 			replay_esn->oseq--;
 			xfrm_audit_state_replay_overflow(x, skb);
@@ -222,7 +224,8 @@ static int xfrm_replay_check_bmp(struct xfrm_state *x,
 	else
 		bitnr = replay_esn->replay_window - (diff - pos);
 
-	nr = bitnr >> 5;
+	nr = array_index_nospec(bitnr >> 5,
+				xfrm_replay_state_esn_len(replay_esn));
 	bitnr = bitnr & 0x1F;
 	if (replay_esn->bmp[nr] & (1U << bitnr))
 		goto err_replay;
@@ -276,7 +279,8 @@ static void xfrm_replay_advance_bmp(struct xfrm_state *x, __be32 net_seq)
 			bitnr = replay_esn->replay_window - (diff - pos);
 	}
 
-	nr = bitnr >> 5;
+	nr = array_index_nospec(bitnr >> 5,
+				xfrm_replay_state_esn_len(replay_esn));
 	bitnr = bitnr & 0x1F;
 	replay_esn->bmp[nr] |= (1U << bitnr);
 
@@ -302,9 +306,10 @@ static void xfrm_replay_notify_bmp(struct xfrm_state *x, int event)
 
 	switch (event) {
 	case XFRM_REPLAY_UPDATE:
-		if (x->replay_maxdiff &&
-		    (replay_esn->seq - preplay_esn->seq < x->replay_maxdiff) &&
-		    (replay_esn->oseq - preplay_esn->oseq < x->replay_maxdiff)) {
+		if (!x->replay_maxdiff ||
+		    ((replay_esn->seq - preplay_esn->seq < x->replay_maxdiff) &&
+		    (replay_esn->oseq - preplay_esn->oseq
+		     < x->replay_maxdiff))) {
 			if (x->xflags & XFRM_TIME_DEFER)
 				event = XFRM_REPLAY_TIMEOUT;
 			else
@@ -353,27 +358,29 @@ static void xfrm_replay_notify_esn(struct xfrm_state *x, int event)
 
 	switch (event) {
 	case XFRM_REPLAY_UPDATE:
-		if (!x->replay_maxdiff)
-			break;
-
-		if (replay_esn->seq_hi == preplay_esn->seq_hi)
-			seq_diff = replay_esn->seq - preplay_esn->seq;
-		else
-			seq_diff = ~preplay_esn->seq + replay_esn->seq + 1;
-
-		if (replay_esn->oseq_hi == preplay_esn->oseq_hi)
-			oseq_diff = replay_esn->oseq - preplay_esn->oseq;
-		else
-			oseq_diff = ~preplay_esn->oseq + replay_esn->oseq + 1;
-
-		if (seq_diff < x->replay_maxdiff &&
-		    oseq_diff < x->replay_maxdiff) {
-
-			if (x->xflags & XFRM_TIME_DEFER)
-				event = XFRM_REPLAY_TIMEOUT;
+		if (x->replay_maxdiff) {
+			if (replay_esn->seq_hi == preplay_esn->seq_hi)
+				seq_diff = replay_esn->seq - preplay_esn->seq;
 			else
-				return;
+				seq_diff = ~preplay_esn->seq + replay_esn->seq
+					   + 1;
+
+			if (replay_esn->oseq_hi == preplay_esn->oseq_hi)
+				oseq_diff = replay_esn->oseq
+					    - preplay_esn->oseq;
+			else
+				oseq_diff = ~preplay_esn->oseq
+					    + replay_esn->oseq + 1;
+
+			if (seq_diff >= x->replay_maxdiff ||
+			    oseq_diff >= x->replay_maxdiff)
+				break;
 		}
+
+		if (x->xflags & XFRM_TIME_DEFER)
+			event = XFRM_REPLAY_TIMEOUT;
+		else
+			return;
 
 		break;
 
@@ -472,7 +479,8 @@ static int xfrm_replay_check_esn(struct xfrm_state *x,
 	else
 		bitnr = replay_esn->replay_window - (diff - pos);
 
-	nr = bitnr >> 5;
+	nr = array_index_nospec(bitnr >> 5,
+				xfrm_replay_state_esn_len(replay_esn));
 	bitnr = bitnr & 0x1F;
 	if (replay_esn->bmp[nr] & (1U << bitnr))
 		goto err_replay;
@@ -546,7 +554,8 @@ static void xfrm_replay_advance_esn(struct xfrm_state *x, __be32 net_seq)
 			bitnr = replay_esn->replay_window - (diff - pos);
 	}
 
-	nr = bitnr >> 5;
+	nr = array_index_nospec(bitnr >> 5,
+				xfrm_replay_state_esn_len(replay_esn));
 	bitnr = bitnr & 0x1F;
 	replay_esn->bmp[nr] |= (1U << bitnr);
 
