@@ -114,6 +114,8 @@ struct ve_struct {
 	int			netns_max_nr;
 	atomic_t		netif_avail_nr;
 	int			netif_max_nr;
+	atomic_t		arp_neigh_nr;
+	atomic_t		nd_neigh_nr;
 	atomic_t		mnt_nr;	/* number of present VE mounts */
 #ifdef CONFIG_COREDUMP
 	char 			core_pattern[CORENAME_MAX_SIZE];
