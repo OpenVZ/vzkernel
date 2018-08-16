@@ -84,6 +84,8 @@ struct ve_struct ve0 = {
 	.netns_max_nr		= INT_MAX,
 	.netif_avail_nr		= ATOMIC_INIT(INT_MAX),
 	.netif_max_nr		= INT_MAX,
+	.arp_neigh_nr		= ATOMIC_INIT(0),
+	.nd_neigh_nr		= ATOMIC_INIT(0),
 };
 EXPORT_SYMBOL(ve0);
 
@@ -690,6 +692,8 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 	atomic_set(&ve->netif_avail_nr, NETIF_MAX_NR_DEFAULT);
 	ve->netif_max_nr = NETIF_MAX_NR_DEFAULT;
 
+	atomic_set(&ve->arp_neigh_nr, 0);
+	atomic_set(&ve->nd_neigh_nr, 0);
 do_init:
 	init_rwsem(&ve->op_sem);
 	INIT_LIST_HEAD(&ve->devices);
