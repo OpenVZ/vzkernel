@@ -164,7 +164,7 @@ bool neigh_remove_one(struct neighbour *ndel, struct neigh_table *tbl)
 	return false;
 }
 
-static int neigh_forced_gc(struct neigh_table *tbl)
+static int neigh_forced_gc(struct neigh_table *tbl, struct ve_struct *ve)
 {
 	int shrunk = 0;
 	int i;
@@ -182,12 +182,14 @@ static int neigh_forced_gc(struct neigh_table *tbl)
 		np = &nht->hash_buckets[i];
 		while ((n = rcu_dereference_protected(*np,
 					lockdep_is_held(&tbl->lock))) != NULL) {
+			bool same_ve = (dev_net(n->dev)->owner_ve == ve);
 			/* Neighbour record may be discarded if:
 			 * - nobody refers to it.
 			 * - it is not permanent
 			 */
 			if (neigh_del(n, NUD_PERMANENT, np, tbl)) {
-				shrunk = 1;
+				if (same_ve)
+					shrunk = 1;
 				continue;
 			}
 			np = &n->next;
@@ -302,18 +304,40 @@ int neigh_ifdown(struct neigh_table *tbl, struct net_device *dev)
 }
 EXPORT_SYMBOL(neigh_ifdown);
 
+static inline atomic_t *get_perve_tbl_entries_counter(struct neigh_table *tbl,
+							struct ve_struct *ve)
+{
+	switch (tbl->family) {
+	case AF_INET:
+		return &ve->arp_neigh_nr;
+	case AF_INET6:
+		return &ve->nd_neigh_nr;
+	}
+	return NULL;
+}
+
 static struct neighbour *neigh_alloc(struct neigh_table *tbl, struct net_device *dev)
 {
 	struct neighbour *n = NULL;
 	unsigned long now = jiffies;
-	int entries;
+	int entries, glob_entries;
+	atomic_t *cnt;
+	struct ve_struct *ve = dev_net(dev)->owner_ve;
 
-	entries = atomic_inc_return(&tbl->entries) - 1;
+	/* If per-VE counter of neighbour entries exist
+	 * it will be limited by tbl->gc_thresh3
+	 * and according global counter (tbl->entries) become unlimited.
+	 */
+
+	glob_entries = atomic_inc_return(&tbl->entries) - 1;
+	cnt = get_perve_tbl_entries_counter(tbl, ve);
+	entries = cnt ? atomic_inc_return(cnt) - 1 : glob_entries;
+
 	n = ERR_PTR(-ENOBUFS);
 	if (entries >= tbl->gc_thresh3 ||
-	    (entries >= tbl->gc_thresh2 &&
+	    (glob_entries >= tbl->gc_thresh2 &&
 	     time_after(now, tbl->last_flush + 5 * HZ))) {
-		if (!neigh_forced_gc(tbl) &&
+		if (!neigh_forced_gc(tbl, ve) &&
 		    entries >= tbl->gc_thresh3)
 			goto out_entries;
 	}
@@ -343,6 +367,8 @@ out_nomem:
 	n = ERR_PTR(-ENOMEM);
 out_entries:
 	atomic_dec(&tbl->entries);
+	if (cnt)
+		atomic_dec(cnt);
 	goto out;
 }
 
@@ -735,6 +761,8 @@ static inline void neigh_parms_put(struct neigh_parms *parms)
 void neigh_destroy(struct neighbour *neigh)
 {
 	struct net_device *dev = neigh->dev;
+	struct ve_struct *ve = dev_net(dev)->owner_ve;
+	atomic_t *cnt = get_perve_tbl_entries_counter(neigh->tbl, ve);
 
 	NEIGH_CACHE_STAT_INC(neigh->tbl, destroys);
 
@@ -762,6 +790,8 @@ void neigh_destroy(struct neighbour *neigh)
 
 	neigh_dbg(2, "neigh %p is destroyed\n", neigh);
 
+	if (cnt)
+		 atomic_dec(cnt);
 	atomic_dec(&neigh->tbl->entries);
 	kfree_rcu(neigh, rcu);
 }
