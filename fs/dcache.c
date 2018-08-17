@@ -871,7 +871,6 @@ static void shrink_dentry_list(struct list_head *list)
 			spin_unlock(&dentry->d_lock);
 			if (parent)
 				spin_unlock(&parent->d_lock);
-			rcu_read_unlock();
 			continue;
 		}
 
