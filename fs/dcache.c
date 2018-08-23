@@ -873,8 +873,6 @@ static void shrink_dentry_list(struct list_head *list)
 	while (!list_empty(list)) {
 		struct inode *inode;
 
-		cond_resched();
-
 		dentry = list_entry(list->prev, struct dentry, d_lru);
 		spin_lock(&dentry->d_lock);
 		parent = lock_parent(dentry);
@@ -1502,6 +1500,7 @@ void shrink_dcache_parent(struct dentry *parent)
 			break;
 
 		shrink_dentry_list(&data.dispose);
+		cond_resched();
 	}
 }
 EXPORT_SYMBOL(shrink_dcache_parent);
@@ -1584,6 +1583,8 @@ int d_invalidate(struct dentry *dentry)
 
 		if (!data.mountpoint && !data.select.found)
 			return 0;
+
+		cond_resched();
 	}
 }
 EXPORT_SYMBOL(d_invalidate);
