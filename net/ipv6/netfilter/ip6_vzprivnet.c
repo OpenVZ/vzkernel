@@ -796,7 +796,7 @@ static char sample_ipv6[42];
 static ssize_t classify6_write(struct file * file, const char __user *buf,
 			    size_t count, loff_t *ppos)
 {
-	int len;
+	size_t len;
 	char *tmp;
 
 	len = count;
