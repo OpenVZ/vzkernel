@@ -529,6 +529,7 @@ struct pcs_msg *rpc_get_hdr(struct pcs_sockio * sio, u32 *msg_size)
 
 	if (h->len > PAGE_SIZE) {
 		FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR, "Received too big msg  %u\n", h->len);
+		*msg_size = h->len;
 		return PCS_TRASH_MSG;
 	}
 
