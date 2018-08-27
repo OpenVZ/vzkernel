@@ -208,7 +208,7 @@ void pcs_mapping_open(struct pcs_mapping * mapping)
 
 void pcs_mapping_dump(struct pcs_mapping * mapping)
 {
-	struct pcs_dentry_info *di = pcs_dentry_from_mapping(mapping);
+	struct pcs_dentry_info *di __maybe_unused = pcs_dentry_from_mapping(mapping);
 	unsigned long pos = 0;
 	struct pcs_map_entry *maps[MAP_BATCH];
 	int nr_maps, total = 0;
