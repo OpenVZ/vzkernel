@@ -36,9 +36,7 @@ static void sio_msg_sent(struct pcs_msg * msg)
 
 void sio_push(struct pcs_sockio * sio)
 {
-	struct pcs_rpc *ep = sio->parent;
-
-	TRACE(PEER_FMT" flush \n", PEER_ARGS(ep));
+	TRACE(PEER_FMT" flush \n", PEER_ARGS(sio->parent));
 	if (sio->flags & PCS_SOCK_F_CORK) {
 		int optval = 1;
 		int ret;
@@ -516,7 +514,7 @@ static void pcs_sk_data_ready(struct sock *sk)
 
 	TRACE(PEER_FMT" data ready\n", PEER_ARGS(ep));
 
-	pcs_rpc_kick_queue(sio->parent);
+	pcs_rpc_kick_queue(ep);
 }
 static void pcs_sk_write_space(struct sock *sk)
 {
@@ -525,7 +523,7 @@ static void pcs_sk_write_space(struct sock *sk)
 
 	TRACE(PEER_FMT" queue \n", PEER_ARGS(ep));
 
-	pcs_rpc_kick_queue(sio->parent);
+	pcs_rpc_kick_queue(ep);
 
 }
 
