@@ -2535,7 +2535,7 @@ static void ploop_req_state_process(struct ploop_request * preq)
 	struct io_context * saved_ioc = NULL;
 	int release_ioc = 0;
 #ifdef CONFIG_BEANCOUNTERS
-	struct user_beancounter *saved_ub;
+	struct user_beancounter *saved_ub = NULL;
 #endif
 
 	trace_req_state_process(preq);
@@ -2547,8 +2547,13 @@ static void ploop_req_state_process(struct ploop_request * preq)
 		release_ioc = 1;
 	}
 #ifdef CONFIG_BEANCOUNTERS
-	get_beancounter(preq->preq_ub);
-	saved_ub = set_exec_ub(preq->preq_ub);
+	WARN_ONCE(!preq->preq_ub,
+		  "preq_ub=NULL state=0x%lx eng_state=0x%lx error=0x%x\n",
+		  preq->state, preq->eng_state, preq->error);
+	if (preq->preq_ub) {
+		get_beancounter(preq->preq_ub);
+		saved_ub = set_exec_ub(preq->preq_ub);
+	}
 #endif
 
 	if (preq->eng_state != PLOOP_E_COMPLETE &&
@@ -2610,8 +2615,10 @@ restart:
 			preq->error = -EOPNOTSUPP;
 			ploop_complete_io_state(preq);
 #ifdef CONFIG_BEANCOUNTERS
-			saved_ub = set_exec_ub(saved_ub);
-			put_beancounter(saved_ub);
+			if (saved_ub) {
+				saved_ub = set_exec_ub(saved_ub);
+				put_beancounter(saved_ub);
+			}
 #endif
 			return;
 		}
@@ -2891,8 +2898,10 @@ out:
 		put_io_context(ioc);
 	}
 #ifdef CONFIG_BEANCOUNTERS
-	saved_ub = set_exec_ub(saved_ub);
-	put_beancounter(saved_ub);
+	if (saved_ub) {
+		saved_ub = set_exec_ub(saved_ub);
+		put_beancounter(saved_ub);
+	}
 #endif
 }
 
