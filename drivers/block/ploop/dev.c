@@ -1691,6 +1691,7 @@ void ploop_queue_zero_request(struct ploop_device *plo,
 	preq->error = 0;
 	preq->tstamp = jiffies;
 	preq->iblock = 0;
+	preq->preq_ub = get_beancounter(get_exec_ub());
 
 	if (test_bit(PLOOP_REQ_RELOC_S, &orig_preq->state)) {
 		if (orig_preq->dst_iblock == ~0U)
