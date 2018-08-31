@@ -811,6 +811,9 @@ static void check_stack_usage(void)
 static inline void check_stack_usage(void) {}
 #endif
 
+void update_maxlat(struct kstat_lat_snap_struct *alloc_lat,
+				u64 lat, unsigned long time);
+
 void kstat_add_dying(struct task_struct *tsk)
 {
 #ifdef CONFIG_VE
@@ -818,8 +821,18 @@ void kstat_add_dying(struct task_struct *tsk)
 
 	spin_lock_irq(&tsk->sighand->siglock);
 	for (i = 0; i < KSTAT_ALLOCSTAT_NR; i++) {
+		int j;
+
 		tsk->signal->alloc_lat[i].totlat += tsk->alloc_lat[i].totlat;
 		tsk->signal->alloc_lat[i].count += tsk->alloc_lat[i].count;
+		for (j = 0; j < 2; j++) {
+			if (time_after(tsk->signal->alloc_lat[i].time[j],
+					tsk->alloc_lat[i].time[0])) {
+				update_maxlat(&tsk->alloc_lat[i],
+					tsk->signal->alloc_lat[i].maxlat[j],
+					tsk->signal->alloc_lat[i].time[j]);
+			}
+		}
 	}
 	spin_unlock_irq(&tsk->sighand->siglock);
 #endif
