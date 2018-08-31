@@ -9,6 +9,7 @@
 #ifndef __VZSTAT_H__
 #define __VZSTAT_H__
 
+#include <linux/jiffies.h>
 #include <linux/mmzone.h>
 #include <linux/kstat.h>
 
@@ -63,6 +64,20 @@ extern void KSTAT_PERF_ADD(struct kstat_perf_pcpu_struct *ptr, u64 real_time,
 	start = ktime_to_ns(ktime_get()) - start;	\
 	sleep_time = current->se.statistics->sum_sleep_runtime - sleep_time; \
 	KSTAT_PERF_ADD(&kstat_glob.name, start, start - sleep_time);
+
+#define KSTAT_ALLOC_MAX_LAT_PERIOD (120*HZ)
+
+static inline u64 get_max_lat(struct kstat_lat_snap_struct *snap)
+{
+	int i;
+	u64 max = 0;
+
+	for (i = 0; i < 2; i++) {
+		if (time_before(jiffies, snap->time[i] + KSTAT_ALLOC_MAX_LAT_PERIOD))
+			max = max > snap->maxlat[i] ? max : snap->maxlat[i];
+	}
+	return max;
+}
 
 extern void KSTAT_LAT_PCPU_ADD(struct kstat_lat_pcpu_struct *p, u64 dur);
 extern void KSTAT_LAT_PCPU_UPDATE(struct kstat_lat_pcpu_struct *p);
