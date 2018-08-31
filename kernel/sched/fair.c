@@ -888,6 +888,9 @@ static inline void update_sched_lat(struct task_struct *t, u64 now)
 	if (ve_wstamp && now > ve_wstamp) {
 		KSTAT_LAT_PCPU_ADD(&kstat_glob.sched_lat, now - ve_wstamp);
 		KSTAT_LAT_PCPU_ADD(&t->task_ve->sched_lat_ve, now - ve_wstamp);
+		t->alloc_lat[KSTAT_SCHED].totlat += now - ve_wstamp;
+		t->alloc_lat[KSTAT_SCHED].count++;
+		update_maxlat(&t->alloc_lat[KSTAT_SCHED], now - ve_wstamp, now);
 	}
 #endif
 }

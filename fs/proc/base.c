@@ -603,12 +603,17 @@ static const char *alloc_descr[] = {
 	"allocatomic:",
 	"alloc:",
 	"allocmp:",
+	"scheduling:",
 };
 static const int alloc_types[] = {
 	KSTAT_ALLOCSTAT_ATOMIC,
 	KSTAT_ALLOCSTAT_LOW,
 	KSTAT_ALLOCSTAT_LOW_MP,
+	KSTAT_SCHED,
 };
+
+extern struct static_key sched_schedstats;
+# define schedstat_enabled()		static_key_false(&sched_schedstats)
 
 static int proc_tid_vz_lat(struct seq_file *m, struct pid_namespace *ns,
 			struct pid *pid, struct task_struct *task)
@@ -618,9 +623,13 @@ static int proc_tid_vz_lat(struct seq_file *m, struct pid_namespace *ns,
 	seq_printf(m, "%-12s %20s %20s %20s\n",
 			"Type", "Total_lat", "Calls", "Max (2min)");
 
-	for (i = 0; i < ARRAY_SIZE(alloc_types); i++)
+	for (i = 0; i < ARRAY_SIZE(alloc_types); i++) {
+		if (alloc_types[i] == KSTAT_SCHED && !schedstat_enabled())
+			continue;
 		lastlat_seq_show(m, alloc_descr[i],
 				&task->alloc_lat[alloc_types[i]]);
+	}
+
 	return 0;
 }
 
@@ -660,15 +669,20 @@ static int proc_tgid_vz_lat(struct seq_file *m, struct pid_namespace *ns,
 				maxlats[i] = maxlat;
 
 		}
+
 		unlock_task_sighand(task, &flags);
 	}
 
 	seq_printf(m, "%-12s %20s %20s %20s\n",
 			"Type", "Total_lat", "Calls", "Max (2min)");
 
-	for (i = 0; i < ARRAY_SIZE(alloc_types); i++)
+	for (i = 0; i < ARRAY_SIZE(alloc_types); i++) {
+		if (alloc_types[i] == KSTAT_SCHED && !schedstat_enabled())
+			continue;
+
 		seq_printf(m, "%-12s %20Lu %20Lu %20Lu\n", alloc_descr[i],
 			lat[i], count[i], maxlats[i]);
+	}
 
 	return 0;
 }
