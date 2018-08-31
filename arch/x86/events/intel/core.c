@@ -4165,6 +4165,8 @@ __init int intel_pmu_init(void)
 			x86_pmu.lbr.nr = 0;
 	}
 
+	if (x86_pmu.lbr.nr)
+		pr_cont("%d-deep LBR, ", x86_pmu.lbr.nr);
 	/*
 	 * Access extra MSR may cause #GP under certain circumstances.
 	 * E.g. KVM doesn't support offcore event
