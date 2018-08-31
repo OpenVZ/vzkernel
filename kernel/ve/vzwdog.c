@@ -78,12 +78,12 @@ static void update_max_alloc_latency(void)
 
 	for (i = 0; i < KSTAT_ALLOCSTAT_NR; i++)
 		max_alloc_lat[i] = max(max_alloc_lat[i],
-				kstat_glob.alloc_lat[i].last.maxlat);
+				kstat_glob.alloc_lat[i].last.maxlat[0]);
 }
 
 static void update_max_schedule_latency(void)
 {
-	max_sched_lat = max(max_sched_lat, kstat_glob.sched_lat.last.maxlat);
+	max_sched_lat = max(max_sched_lat, kstat_glob.sched_lat.last.maxlat[0]);
 }
 
 static void update_max_latencies(void)
@@ -118,7 +118,7 @@ static void show_alloc_latency(void)
 
 		p = &kstat_glob.alloc_lat[i];
 		spin_lock_irq(&kstat_glb_lock);
-		maxlat = p->last.maxlat;
+		maxlat = p->last.maxlat[0];
 		avg0 = p->avg[0];
 		avg1 = p->avg[1];
 		avg2 = p->avg[2];
@@ -143,7 +143,7 @@ static void show_schedule_latency(void)
 
 	p = &kstat_glob.sched_lat;
 	spin_lock_irq(&kstat_glb_lock);
-	maxlat = p->last.maxlat;
+	maxlat = p->last.maxlat[0];
 	totlat = p->last.totlat;
 	count = p->last.count;
 	avg0 = p->avg[0];
