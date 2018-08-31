@@ -163,7 +163,7 @@ static void lastlat_seq_show(struct seq_file *m,
 		struct kstat_lat_snap_struct *snap)
 {
 	seq_printf(m, "%-11s %20Lu %20Lu %20lu\n", name,
-			snap->maxlat, snap->totlat, snap->count);
+			snap->maxlat[0], snap->totlat, snap->count);
 }
 
 static void avglat_seq_show(struct seq_file *m,
