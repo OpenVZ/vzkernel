@@ -946,7 +946,6 @@ static void intel_pmu_lbr_init_core(struct x86_pmu_lbr *lbr)
 	 * SW branch filter usage:
 	 * - compensate for lack of HW filter
 	 */
-	pr_cont("4-deep LBR, ");
 }
 
 /* nehalem/westmere */
@@ -967,7 +966,6 @@ static void intel_pmu_lbr_init_nhm(struct x86_pmu_lbr *lbr)
 	 *   That requires LBR_FAR but that means far
 	 *   jmp need to be filtered out
 	 */
-	pr_cont("16-deep LBR, ");
 }
 
 /* sandy bridge */
@@ -987,7 +985,6 @@ static void intel_pmu_lbr_init_snb(struct x86_pmu_lbr *lbr)
 	 *   That requires LBR_FAR but that means far
 	 *   jmp need to be filtered out
 	 */
-	pr_cont("16-deep LBR, ");
 }
 
 /* haswell */
@@ -1019,7 +1016,6 @@ static void intel_pmu_lbr_init_skl(struct x86_pmu_lbr *lbr)
 	 *   That requires LBR_FAR but that means far
 	 *   jmp need to be filtered out
 	 */
-	pr_cont("32-deep LBR, ");
 }
 
 /* atom */
@@ -1034,7 +1030,6 @@ static void intel_pmu_lbr_init_atom(struct x86_pmu_lbr *lbr)
 	 * SW branch filter usage:
 	 * - compensate for lack of HW filter
 	 */
-	pr_cont("8-deep LBR, ");
 }
 
 /* slm */
