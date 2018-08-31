@@ -30,8 +30,9 @@ struct kstat_perf_pcpu_struct {
 };
 
 struct kstat_lat_snap_struct {
-	u64 maxlat, totlat;
+	u64 maxlat[2], totlat;
 	unsigned long count;
+	unsigned long time[2];
 };
 
 struct kstat_lat_pcpu_snap_struct {
