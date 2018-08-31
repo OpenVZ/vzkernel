@@ -87,11 +87,11 @@ void KSTAT_LAT_PCPU_UPDATE(struct kstat_lat_pcpu_struct *p)
 
 		p->last.count += snap.count;
 		p->last.totlat += snap.totlat;
-		if (p->last.maxlat < snap.maxlat)
-			p->last.maxlat = snap.maxlat;
+		if (p->last.maxlat[0] < snap.maxlat)
+			p->last.maxlat[0] = snap.maxlat;
 	}
 
-	m = (p->last.maxlat > p->max_snap ? p->last.maxlat : p->max_snap);
+	m = (p->last.maxlat[0] > p->max_snap ? p->last.maxlat[0] : p->max_snap);
 	CALC_LOAD(p->avg[0], EXP_1, m);
 	CALC_LOAD(p->avg[1], EXP_5, m);
 	CALC_LOAD(p->avg[2], EXP_15, m);
