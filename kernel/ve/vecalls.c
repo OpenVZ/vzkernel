@@ -293,7 +293,7 @@ static int vestat_seq_show(struct seq_file *m, void *v)
 				(unsigned long long)strv_time,
 				(unsigned long long)uptime_cycles,
 				(unsigned long long)used,
-				(unsigned long long)ve->sched_lat_ve.last.maxlat,
+				(unsigned long long)ve->sched_lat_ve.last.maxlat[0],
 				(unsigned long long)ve->sched_lat_ve.last.totlat,
 				ve->sched_lat_ve.last.count);
 	return 0;
