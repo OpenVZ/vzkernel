@@ -80,6 +80,7 @@
 #include <linux/audit.h>
 #include <linux/poll.h>
 #include <linux/nsproxy.h>
+#include <linux/vzstat.h>
 #include <linux/oom.h>
 #include <linux/elf.h>
 #include <linux/pid_namespace.h>
@@ -595,8 +596,8 @@ static void lastlat_seq_show(struct seq_file *m,
 		const char *name,
 		struct kstat_lat_snap_struct *snap)
 {
-	seq_printf(m, "%-12s %20Lu %20lu\n", name,
-			snap->totlat, snap->count);
+	seq_printf(m, "%-12s %20Lu %20lu %20Lu\n", name,
+			snap->totlat, snap->count, get_max_lat(snap));
 }
 static const char *alloc_descr[] = {
 	"allocatomic:",
@@ -614,8 +615,8 @@ static int proc_tid_vz_lat(struct seq_file *m, struct pid_namespace *ns,
 {
 	int i;
 
-	seq_printf(m, "%-12s %20s %20s\n",
-			"Type", "Total_lat", "Calls");
+	seq_printf(m, "%-12s %20s %20s %20s\n",
+			"Type", "Total_lat", "Calls", "Max (2min)");
 
 	for (i = 0; i < ARRAY_SIZE(alloc_types); i++)
 		lastlat_seq_show(m, alloc_descr[i],
@@ -630,33 +631,44 @@ static int proc_tgid_vz_lat(struct seq_file *m, struct pid_namespace *ns,
 	unsigned long flags;
 	u64 lat[ARRAY_SIZE(alloc_types)];
 	u64 count[ARRAY_SIZE(alloc_types)];
+	u64 maxlats[ARRAY_SIZE(alloc_types)];
 
 	for (i = 0; i < ARRAY_SIZE(alloc_types); i++) {
 		lat[i] = task->alloc_lat[alloc_types[i]].totlat;
 		count[i] = task->alloc_lat[alloc_types[i]].count;
+		maxlats[i] = get_max_lat(&task->alloc_lat[alloc_types[i]]);
 	}
 
 	if (lock_task_sighand(task, &flags)) {
 		struct task_struct *t = task;
+		u64 maxlat;
+
 		while_each_thread(task, t) {
 			for (i = 0; i < ARRAY_SIZE(alloc_types); i++) {
 				lat[i] += t->alloc_lat[alloc_types[i]].totlat;
 				count[i] += t->alloc_lat[alloc_types[i]].count;
+				maxlat = get_max_lat(&t->alloc_lat[alloc_types[i]]);
+				if (maxlats[i] < maxlat)
+					maxlats[i] = maxlat;
 			}
 		}
 		for (i = 0; i < ARRAY_SIZE(alloc_types); i++) {
 			lat[i] += t->signal->alloc_lat[alloc_types[i]].totlat;
 			count[i] += t->signal->alloc_lat[alloc_types[i]].count;
+			maxlat = get_max_lat(&t->signal->alloc_lat[alloc_types[i]]);
+			if (maxlats[i] < maxlat)
+				maxlats[i] = maxlat;
+
 		}
 		unlock_task_sighand(task, &flags);
 	}
 
-	seq_printf(m, "%-12s %20s %20s\n",
-			"Type", "Total_lat", "Calls");
+	seq_printf(m, "%-12s %20s %20s %20s\n",
+			"Type", "Total_lat", "Calls", "Max (2min)");
 
 	for (i = 0; i < ARRAY_SIZE(alloc_types); i++)
-		seq_printf(m, "%-12s %20Lu %20Lu\n", alloc_descr[i],
-			lat[i], count[i]);
+		seq_printf(m, "%-12s %20Lu %20Lu %20Lu\n", alloc_descr[i],
+			lat[i], count[i], maxlats[i]);
 
 	return 0;
 }
