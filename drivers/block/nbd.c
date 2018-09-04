@@ -779,6 +779,9 @@ static int __nbd_ioctl(struct block_device *bdev, struct nbd_device *nbd,
 	case NBD_SET_SOCK:
 		return nbd_add_socket(nbd, bdev, arg);
 	case NBD_SET_BLKSIZE:
+		if (!arg || !is_power_of_2(arg) || arg < 512 ||
+	            arg > PAGE_SIZE)
+			return -EINVAL;
 		nbd_size_set(nbd, bdev, arg,
 			     div_s64(nbd->bytesize, arg));
 		return 0;
