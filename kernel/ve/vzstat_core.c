@@ -69,8 +69,9 @@ void KSTAT_LAT_PCPU_UPDATE(struct kstat_lat_pcpu_struct *p)
 	unsigned i, cpu;
 	seqcount_t *seq;
 	u64 m;
+	u64 maxlat = 0, totlat = 0;
+	unsigned long count = 0;
 
-	memset(&p->last, 0, sizeof(p->last));
 	for_each_online_cpu(cpu) {
 		cur = per_cpu_ptr(p->cur, cpu);
 		seq = per_cpu_ptr(&kstat_pcpu_seq, cpu);
@@ -85,17 +86,21 @@ void KSTAT_LAT_PCPU_UPDATE(struct kstat_lat_pcpu_struct *p)
 		 */
 		cur->maxlat = 0;
 
-		p->last.count += snap.count;
-		p->last.totlat += snap.totlat;
-		if (p->last.maxlat[0] < snap.maxlat)
-			p->last.maxlat[0] = snap.maxlat;
+		count += snap.count;
+		totlat += snap.totlat;
+		if (maxlat < snap.maxlat)
+			maxlat = snap.maxlat;
 	}
 
-	m = (p->last.maxlat[0] > p->max_snap ? p->last.maxlat[0] : p->max_snap);
+	m = (maxlat > p->max_snap ? maxlat : p->max_snap);
 	CALC_LOAD(p->avg[0], EXP_1, m);
 	CALC_LOAD(p->avg[1], EXP_5, m);
 	CALC_LOAD(p->avg[2], EXP_15, m);
 	/* reset max_snap to calculate it correctly next time */
 	p->max_snap = 0;
+
+	p->last.count = count;
+	p->last.totlat = totlat;
+	update_maxlat(&p->last, maxlat, jiffies);
 }
 EXPORT_SYMBOL(KSTAT_LAT_PCPU_UPDATE);
