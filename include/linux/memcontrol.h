@@ -644,6 +644,8 @@ static __always_inline struct mem_cgroup *mem_cgroup_from_kmem(void *ptr)
 extern int memcg_expand_shrinker_maps(int new_id);
 extern void memcg_set_shrinker_bit(struct mem_cgroup *memcg,
 				   int nid, int shrinker_id);
+
+extern struct memcg_shrinker_map *memcg_nid_shrinker_map(struct mem_cgroup *memcg, int nid);
 #else
 #define for_each_memcg_cache_index(_idx)	\
 	for (; NULL; )
