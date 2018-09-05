@@ -197,6 +197,7 @@ struct pcs_cluster_core
 	struct list_head	completion_queue;/* Internal queue for ireqs to complete */
 	struct work_struct	main_job;
 	struct work_struct	completion_job;
+	struct work_struct	fiemap_work;
 
 	struct pcs_cs_set	css;		/* Table of all CSs */
 	struct pcs_map_set	maps;		/* Global map data */
