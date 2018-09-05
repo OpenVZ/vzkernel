@@ -560,6 +560,9 @@ retry:
 		deactivate_locked_super(s);
 		s = ERR_PTR(err);
 	}
+
+	s->s_dentry_lru.shrinker_id = s->s_shrink.id;
+	s->s_inode_lru.shrinker_id = s->s_shrink.id;
 	return s;
 }
 
