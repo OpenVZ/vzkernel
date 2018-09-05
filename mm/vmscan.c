@@ -519,7 +519,7 @@ static unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 	if (unlikely(test_tsk_thread_flag(current, TIF_MEMDIE)))
 		return 0;
 
-	if (memcg && !mem_cgroup_is_root(memcg))
+	if (!mem_cgroup_is_root(memcg))
 		return shrink_slab_memcg(gfp_mask, nid, memcg, priority);
 
 	if (!down_read_trylock(&shrinker_rwsem)) {
@@ -541,9 +541,6 @@ static unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 			.for_drop_caches = for_drop_caches,
 		};
 
-		if (!!memcg != !!(shrinker->flags & SHRINKER_MEMCG_AWARE))
-			continue;
-
 		if (!(shrinker->flags & SHRINKER_NUMA_AWARE))
 			sc.nid = 0;
 
@@ -561,9 +558,10 @@ void drop_slab_node(int nid)
 	unsigned long freed;
 
 	do {
-		struct mem_cgroup *memcg = NULL;
+		struct mem_cgroup *memcg;
 
 		freed = 0;
+		memcg = mem_cgroup_iter(NULL, NULL, NULL);
 		do {
 			freed += shrink_slab(GFP_KERNEL, nid, memcg,
 					     0, true);
@@ -2525,7 +2523,7 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 				zone_lru_pages += lru_pages;
 			}
 
-			if (memcg && is_classzone) {
+			if (is_classzone) {
 				shrink_slab(slab_gfp, zone_to_nid(zone),
 					    memcg, sc->priority, false);
 				if (reclaim_state) {
@@ -2552,10 +2550,6 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 				break;
 			}
 		} while ((memcg = mem_cgroup_iter(root, memcg, &reclaim)));
-
-		if (global_reclaim(sc) && is_classzone)
-			shrink_slab(slab_gfp, zone_to_nid(zone), NULL,
-				    sc->priority, false);
 
 		if (global_reclaim(sc)) {
 			/*
