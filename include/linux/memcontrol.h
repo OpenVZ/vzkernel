@@ -488,12 +488,19 @@ static inline void sock_release_memcg(struct sock *sk)
 }
 #endif /* CONFIG_INET && CONFIG_MEMCG_KMEM */
 
+extern struct mem_cgroup *root_mem_cgroup;
+
 #ifdef CONFIG_MEMCG_KMEM
 extern struct static_key memcg_kmem_enabled_key;
 
 extern int memcg_nr_cache_ids;
 extern void memcg_get_cache_ids(void);
 extern void memcg_put_cache_ids(void);
+
+static inline bool mem_cgroup_is_root(struct mem_cgroup *memcg)
+{
+	return (memcg == root_mem_cgroup);
+}
 
 static inline void memcg_stop_kmem_account(void)
 {
@@ -640,6 +647,11 @@ extern void memcg_set_shrinker_bit(struct mem_cgroup *memcg,
 #else
 #define for_each_memcg_cache_index(_idx)	\
 	for (; NULL; )
+
+static inline bool mem_cgroup_is_root(struct mem_cgroup *memcg)
+{
+	return true;
+}
 
 static inline bool memcg_kmem_enabled(void)
 {
