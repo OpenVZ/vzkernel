@@ -543,6 +543,10 @@ int __list_lru_init(struct list_lru *lru, bool memcg_aware,
 
 	memcg_get_cache_ids();
 
+#ifdef CONFIG_MEMCG_KMEM
+	lru->shrinker_id = -1;
+#endif
+
 	lru->node = kzalloc(size, GFP_KERNEL);
 	if (!lru->node)
 		goto out;
@@ -583,6 +587,9 @@ void list_lru_destroy(struct list_lru *lru)
 	kfree(lru->node);
 	lru->node = NULL;
 
+#ifdef CONFIG_MEMCG_KMEM
+	lru->shrinker_id = -1;
+#endif
 	memcg_put_cache_ids();
 }
 EXPORT_SYMBOL_GPL(list_lru_destroy);
