@@ -842,6 +842,12 @@ void memcg_set_shrinker_bit(struct mem_cgroup *memcg, int nid, int shrinker_id)
 		rcu_read_unlock();
 	}
 }
+
+struct memcg_shrinker_map *memcg_nid_shrinker_map(struct mem_cgroup *memcg, int nid)
+{
+	return rcu_dereference_protected(memcg->info.nodeinfo[nid]->shrinker_map,
+					 true /* shrinker_rwsem */);
+}
 #else
 static void disarm_kmem_keys(struct mem_cgroup *memcg)
 {
