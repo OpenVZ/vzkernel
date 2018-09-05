@@ -2944,6 +2944,7 @@ calc_load(unsigned long load, unsigned long exp, unsigned long active)
 
 #ifdef CONFIG_VE
 static LIST_HEAD(ve_root_list);
+static DEFINE_SPINLOCK(load_ve_lock);
 
 void calc_load_ve(void)
 {
@@ -2957,8 +2958,7 @@ void calc_load_ve(void)
 	 * against very rare parallel execution on two or more cpus.
 	 */
 	spin_lock(&load_ve_lock);
-	rcu_read_lock();
-	list_for_each_entry_rcu(tg, &ve_root_list, ve_root_list) {
+	list_for_each_entry(tg, &ve_root_list, ve_root_list) {
 		nr_active = 0;
 		for_each_possible_cpu(i) {
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -2978,7 +2978,6 @@ void calc_load_ve(void)
 		tg->avenrun[1] = calc_load(tg->avenrun[1], EXP_5, nr_active);
 		tg->avenrun[2] = calc_load(tg->avenrun[2], EXP_15, nr_active);
 	}
-	rcu_read_unlock();
 
 	nr_unint = nr_uninterruptible() * FIXED_1;
 
@@ -9180,12 +9179,23 @@ void link_ve_root_cpu_cgroup(struct cgroup *cgrp)
 	struct task_group *tg = cgroup_tg(cgrp);
 	unsigned long flags;
 
-	spin_lock_irqsave(&task_group_lock, flags);
+	spin_lock_irqsave(&load_ve_lock, flags);
 	BUG_ON(!(cgrp->subsys[cpu_cgroup_subsys_id]->flags & CSS_ONLINE));
-	list_add_rcu(&tg->ve_root_list, &ve_root_list);
-	spin_unlock_irqrestore(&task_group_lock, flags);
+	if (list_empty(&tg->ve_root_list))
+		list_add(&tg->ve_root_list, &ve_root_list);
+	spin_unlock_irqrestore(&load_ve_lock, flags);
 }
-#endif
+
+void unlink_ve_root_cpu_cgroup(struct cgroup *cgrp)
+{
+	struct task_group *tg = cgroup_tg(cgrp);
+	unsigned long flags;
+
+	spin_lock_irqsave(&load_ve_lock, flags);
+	list_del_init(&tg->ve_root_list);
+	spin_unlock_irqrestore(&load_ve_lock, flags);
+}
+#endif /* CONFIG_VE */
 
 static void free_sched_group(struct task_group *tg)
 {
@@ -9788,13 +9798,8 @@ static void cpu_cgroup_css_free(struct cgroup *cgrp)
 static void cpu_cgroup_css_offline(struct cgroup *cgrp)
 {
 	struct task_group *tg = cgroup_tg(cgrp);
-#ifdef CONFIG_VE
-	unsigned long flags;
 
-	spin_lock_irqsave(&task_group_lock, flags);
-	list_del_rcu(&tg->ve_root_list);
-	spin_unlock_irqrestore(&task_group_lock, flags);
-#endif
+	unlink_ve_root_cpu_cgroup(cgrp);
 	sched_offline_group(tg);
 }
 
