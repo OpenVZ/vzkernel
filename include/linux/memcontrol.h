@@ -46,6 +46,15 @@ struct mem_cgroup_reclaim_cookie {
 };
 
 /*
+ * Bitmap of shrinker::id corresponding to memcg-aware shrinkers,
+ * which have elements charged to this memcg.
+ */
+struct memcg_shrinker_map {
+	struct rcu_head rcu;
+	unsigned long map[0];
+};
+
+/*
  * Reclaim flags for mem_cgroup_hierarchical_reclaim
  */
 #define MEM_CGROUP_RECLAIM_NOSWAP_BIT	0x0
@@ -625,6 +634,7 @@ static __always_inline struct mem_cgroup *mem_cgroup_from_kmem(void *ptr)
 		return NULL;
 	return __mem_cgroup_from_kmem(ptr);
 }
+extern int memcg_expand_shrinker_maps(int new_id);
 #else
 #define for_each_memcg_cache_index(_idx)	\
 	for (; NULL; )
