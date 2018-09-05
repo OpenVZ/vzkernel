@@ -164,42 +164,11 @@ static void xfer_fiemap_extents(struct fiemap_iterator * iter, u64 pos, char * b
 	}
 }
 
-static int fiemap_worker(void * arg)
+static void fiemap_process_one(struct fiemap_iterator *fiter)
 {
-	struct pcs_int_request * orig_ireq = arg;
-	struct pcs_dentry_info * di;
-	struct fiemap_iterator * fiter;
-	struct iov_iter it;
+	struct pcs_int_request *orig_ireq = fiter->orig_ireq;
+	struct pcs_dentry_info *di = orig_ireq->dentry;
 	u64 pos, end;
-
-	fiter = kmalloc(sizeof(struct fiemap_iterator), GFP_KERNEL);
-	if (fiter == NULL) {
-		pcs_set_local_error(&orig_ireq->error, PCS_ERR_NOMEM);
-		ireq_complete(orig_ireq);
-		return 0;
-	}
-
-	fiter->orig_ireq = orig_ireq;
-	init_waitqueue_head(&fiter->wq);
-	di = orig_ireq->dentry;
-	ireq_init(di, &fiter->ireq);
-	fiter->ireq.type = PCS_IREQ_API;
-	fiter->ireq.apireq.req = &fiter->apireq;
-	fiter->ireq.completion_data.parent = NULL;
-	fiter->ireq.complete_cb = fiemap_iter_done;
-	fiter->apireq.datasource = fiter;
-	fiter->apireq.get_iter = fiemap_get_iter;
-	fiter->apireq.complete = NULL;
-	fiter->buffer = kvmalloc(PCS_FIEMAP_BUFSIZE, GFP_KERNEL);
-	if (fiter->buffer == NULL) {
-		pcs_set_local_error(&orig_ireq->error, PCS_ERR_NOMEM);
-		ireq_complete(orig_ireq);
-		kfree(fiter);
-		return 0;
-	}
-	fiter->fiemap_max = orig_ireq->apireq.aux;
-	orig_ireq->apireq.req->get_iter(orig_ireq->apireq.req->datasource, 0, &it);
-	fiter->mapped = &((struct fiemap*)it.data)->fm_mapped_extents;
 
 	pos = fiter->orig_ireq->apireq.req->pos;
 	end = pos + fiter->orig_ireq->apireq.req->size;
@@ -256,11 +225,50 @@ static int fiemap_worker(void * arg)
 
 		pos += fiter->apireq.size;
 	}
-
 out:
 	kvfree(fiter->buffer);
 	kfree(fiter);
 	ireq_complete(orig_ireq);
+}
+
+static int fiemap_worker(void * arg)
+{
+	struct pcs_int_request * orig_ireq = arg;
+	struct pcs_dentry_info * di;
+	struct fiemap_iterator * fiter;
+	struct iov_iter it;
+
+	fiter = kmalloc(sizeof(struct fiemap_iterator), GFP_KERNEL);
+	if (fiter == NULL) {
+		pcs_set_local_error(&orig_ireq->error, PCS_ERR_NOMEM);
+		ireq_complete(orig_ireq);
+		return 0;
+	}
+
+	fiter->orig_ireq = orig_ireq;
+	init_waitqueue_head(&fiter->wq);
+	di = orig_ireq->dentry;
+	ireq_init(di, &fiter->ireq);
+	fiter->ireq.type = PCS_IREQ_API;
+	fiter->ireq.apireq.req = &fiter->apireq;
+	fiter->ireq.completion_data.parent = NULL;
+	fiter->ireq.complete_cb = fiemap_iter_done;
+	fiter->apireq.datasource = fiter;
+	fiter->apireq.get_iter = fiemap_get_iter;
+	fiter->apireq.complete = NULL;
+	fiter->buffer = kvmalloc(PCS_FIEMAP_BUFSIZE, GFP_KERNEL);
+	if (fiter->buffer == NULL) {
+		pcs_set_local_error(&orig_ireq->error, PCS_ERR_NOMEM);
+		ireq_complete(orig_ireq);
+		kfree(fiter);
+		return 0;
+	}
+	fiter->fiemap_max = orig_ireq->apireq.aux;
+	orig_ireq->apireq.req->get_iter(orig_ireq->apireq.req->datasource, 0, &it);
+	fiter->mapped = &((struct fiemap*)it.data)->fm_mapped_extents;
+
+	fiemap_process_one(fiter);
+
 	return 0;
 }
 
