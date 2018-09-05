@@ -232,9 +232,8 @@ out:
 	ireq_complete(orig_ireq);
 }
 
-static int fiemap_worker(void * arg)
+static void process_ireq_fiemap(struct pcs_int_request *orig_ireq)
 {
-	struct pcs_int_request * orig_ireq = arg;
 	struct pcs_dentry_info * di;
 	struct fiemap_iterator * fiter;
 	struct iov_iter *it;
@@ -243,7 +242,7 @@ static int fiemap_worker(void * arg)
 	if (fiter == NULL) {
 		pcs_set_local_error(&orig_ireq->error, PCS_ERR_NOMEM);
 		ireq_complete(orig_ireq);
-		return 0;
+		return;
 	}
 	it = &fiter->it;
 
@@ -263,15 +262,13 @@ static int fiemap_worker(void * arg)
 		pcs_set_local_error(&orig_ireq->error, PCS_ERR_NOMEM);
 		ireq_complete(orig_ireq);
 		kfree(fiter);
-		return 0;
+		return;
 	}
 	fiter->fiemap_max = orig_ireq->apireq.aux;
 	orig_ireq->apireq.req->get_iter(orig_ireq->apireq.req->datasource, 0, it);
 	fiter->mapped = &((struct fiemap*)it->data)->fm_mapped_extents;
 
 	fiemap_process_one(fiter);
-
-	return 0;
 }
 
 void pcs_cc_process_ireq_chunk(struct pcs_int_request *ireq)
@@ -367,18 +364,6 @@ static noinline void __pcs_cc_process_ireq_rw(struct pcs_int_request *ireq)
 	pcs_flow_put(fl, &di->cluster->maps.ftab);
 	if (atomic_dec_and_test(&ireq->iocount))
 		ireq_complete(ireq);
-}
-
-static void process_ireq_fiemap(struct pcs_int_request * ireq)
-{
-	struct task_struct * tsk;
-
-	tsk = kthread_run(fiemap_worker, ireq, "fiemap-worker");
-
-	if (IS_ERR(tsk)) {
-		pcs_set_local_error(&ireq->error, PCS_ERR_NOMEM);
-		ireq_complete(ireq);
-	}
 }
 
 static void pcs_cc_process_ireq_ioreq(struct pcs_int_request *ireq)
