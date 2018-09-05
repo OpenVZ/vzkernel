@@ -172,9 +172,15 @@ static int register_memcg_shrinker(struct shrinker *shrinker)
 	id = idr_alloc(&shrinker_idr, shrinker, 0, 0, GFP_KERNEL);
 	if (id < 0)
 		goto unlock;
+	if (id >= shrinker_nr_max) {
+		if (memcg_expand_shrinker_maps(id)) {
+			idr_remove(&shrinker_idr, id);
+			goto unlock;
+		}
 
-	if (id >= shrinker_nr_max)
 		shrinker_nr_max = id + 1;
+	}
+
 	shrinker->id = id;
 	ret = 0;
 unlock:
