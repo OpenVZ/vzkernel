@@ -46,6 +46,8 @@ int pcs_cluster_init(struct pcs_fuse_cluster *c, struct workqueue_struct *,
 		     PCS_NODE_ID_T *id);
 void pcs_cluster_fini(struct pcs_fuse_cluster *c);
 
+extern void fiemap_work_func(struct work_struct *w);
+
 static inline struct pcs_fuse_req *pcs_fuse_req_from_work(struct pcs_fuse_exec_ctx *ctx)
 {
 	return container_of(ctx, struct pcs_fuse_req, exec);
