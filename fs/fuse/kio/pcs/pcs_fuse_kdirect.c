@@ -871,6 +871,7 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, 
 	struct fuse_inode *fi = get_fuse_inode(args->io_inode);
 	struct pcs_dentry_info *di = pcs_inode_from_fuse(fi);
 	struct pcs_int_request* ireq;
+	int ret;
 
 	BUG_ON(!di);
 	BUG_ON(req->cache != pcs_fuse_req_cachep);
@@ -883,17 +884,15 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, 
 
 	switch (r->req.in.h.opcode) {
 	case FUSE_WRITE:
-	case FUSE_READ: {
-		int ret = pcs_fuse_prep_rw(r);
+	case FUSE_READ:
+		ret = pcs_fuse_prep_rw(r);
 		if (!ret)
 			goto submit;
 		if (ret > 0)
 			/* Pended, nothing to do. */
 			return;
 		break;
-	}
 	case FUSE_FALLOCATE: {
-		int ret;
 		struct fuse_fallocate_in *inarg = (void*) args->in_args[0].value;
 
 		if (pfc->fc->no_fallocate) {
@@ -928,9 +927,7 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, 
 	case FUSE_FLUSH:
 		pcs_fuse_prep_io(r, PCS_REQ_T_SYNC, 0, 0, 0);
 		goto submit;
-	case FUSE_IOCTL: {
-		int ret;
-
+	case FUSE_IOCTL:
 		if (pfc->fc->no_fiemap) {
 			r->req.out.h.error = -EOPNOTSUPP;
 			goto error;
@@ -943,7 +940,6 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, 
 			/* Pended, nothing to do. */
 			return;
 		break;
-	}
 	}
 	r->req.out.h.error = 0;
 error:
