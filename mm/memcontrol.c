@@ -5876,7 +5876,7 @@ static void memcg_deactivate_kmem(struct mem_cgroup *memcg)
 	list_splice(&memcg->kmemcg_sharers, &parent->kmemcg_sharers);
 	list_add(&memcg->kmemcg_sharers, &parent->kmemcg_sharers);
 
-	memcg_drain_all_list_lrus(kmemcg_id, parent->kmemcg_id);
+	memcg_drain_all_list_lrus(kmemcg_id, parent);
 
 	memcg_free_cache_id(kmemcg_id);
 
