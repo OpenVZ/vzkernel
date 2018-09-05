@@ -207,8 +207,6 @@ static void fiemap_process_one(struct fiemap_iterator *fiter)
 			goto out;
 		}
 
-		atomic_set(&fiter->ireq.iocount, 0);
-
 		sreq->dentry = di;
 		sreq->type = PCS_IREQ_IOCHUNK;
 		INIT_LIST_HEAD(&sreq->tok_list);
@@ -272,6 +270,7 @@ static void process_ireq_fiemap(struct pcs_int_request *orig_ireq)
 		kfree(fiter);
 		return;
 	}
+	atomic_set(&fiter->ireq.iocount, 0);
 	fiter->fiemap_max = orig_ireq->apireq.aux;
 	orig_ireq->apireq.req->get_iter(orig_ireq->apireq.req->datasource, 0, it);
 	fiter->mapped = &((struct fiemap*)it->data)->fm_mapped_extents;
