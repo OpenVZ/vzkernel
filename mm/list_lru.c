@@ -29,6 +29,11 @@ static void list_lru_unregister(struct list_lru *lru)
 	list_del(&lru->list);
 	mutex_unlock(&list_lrus_mutex);
 }
+
+static int lru_shrinker_id(struct list_lru *lru)
+{
+	return lru->shrinker_id;
+}
 #else
 static void list_lru_register(struct list_lru *lru)
 {
@@ -36,6 +41,11 @@ static void list_lru_register(struct list_lru *lru)
 
 static void list_lru_unregister(struct list_lru *lru)
 {
+}
+
+static int lru_shrinker_id(struct list_lru *lru)
+{
+	return -1;
 }
 #endif /* CONFIG_MEMCG_KMEM */
 
@@ -113,13 +123,18 @@ bool list_lru_add(struct list_lru *lru, struct list_head *item)
 {
 	int nid = page_to_nid(virt_to_page(item));
 	struct list_lru_node *nlru = &lru->node[nid];
+	struct mem_cgroup *memcg;
 	struct list_lru_one *l;
 
 	spin_lock(&nlru->lock);
-	l = list_lru_from_kmem(nlru, item, NULL);
+	l = list_lru_from_kmem(nlru, item, &memcg);
 	if (list_empty(item)) {
 		list_add_tail(item, &l->list);
-		l->nr_items++;
+		/* Set shrinker bit if the first element was added */
+		if (!l->nr_items++)
+			memcg_set_shrinker_bit(memcg, nid,
+					       lru_shrinker_id(lru));
+
 		spin_unlock(&nlru->lock);
 		return true;
 	}
@@ -496,6 +511,7 @@ static void memcg_drain_list_lru_node(struct list_lru *lru, int nid,
 	struct list_lru_node *nlru = &lru->node[nid];
 	int dst_idx = memcg_cache_id(dst_memcg);
 	struct list_lru_one *src, *dst;
+	bool set;
 
 	/*
 	 * Since list_lru_{add,del} may be called under an IRQ-safe lock,
@@ -507,8 +523,12 @@ static void memcg_drain_list_lru_node(struct list_lru *lru, int nid,
 	dst = list_lru_from_memcg_idx(nlru, dst_idx);
 
 	list_splice_init(&src->list, &dst->list);
+	set = (!dst->nr_items && src->nr_items);
 	dst->nr_items += src->nr_items;
+	if (set)
+		memcg_set_shrinker_bit(dst_memcg, nid, lru_shrinker_id(lru));
 	src->nr_items = 0;
+
 
 	spin_unlock_irq(&nlru->lock);
 }
