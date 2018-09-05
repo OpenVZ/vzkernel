@@ -128,6 +128,7 @@ int pcs_cc_init(struct pcs_cluster_core *cc, struct workqueue_struct *wq,
 	INIT_LIST_HEAD(&cc->completion_queue); /* completion queue only for sanity */
 	INIT_WORK(&cc->main_job, cc_workqueue_handler);
 	INIT_WORK(&cc->completion_job, cc_completion_handler);
+	INIT_WORK(&cc->fiemap_work, fiemap_work_func);
 	cc->wq = wq;
 
 	pcs_csset_init(&cc->css);
