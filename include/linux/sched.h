@@ -3467,6 +3467,9 @@ void cpufreq_set_update_util_data(int cpu, struct update_util_data *data);
 #ifdef CONFIG_VE
 struct cgroup;
 extern void link_ve_root_cpu_cgroup(struct cgroup *);
-#endif
+void unlink_ve_root_cpu_cgroup(struct cgroup *cgrp);
+#else /* CONFIG_VE */
+void unlink_ve_root_cpu_cgroup(struct cgroup *cgrp) { }
+#endif /* CONFIG_VE */
 
 #endif
