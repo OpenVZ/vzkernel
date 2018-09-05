@@ -70,7 +70,7 @@ struct cgroup_subsys mem_cgroup_subsys __read_mostly;
 EXPORT_SYMBOL(mem_cgroup_subsys);
 
 #define MEM_CGROUP_RECLAIM_RETRIES	5
-static struct mem_cgroup *root_mem_cgroup __read_mostly;
+struct mem_cgroup *root_mem_cgroup __read_mostly;
 
 #ifdef CONFIG_MEMCG_SWAP
 /* Turned on only when memory cgroup is enabled && really_do_swap_account = 1 */
@@ -564,11 +564,6 @@ struct cgroup_subsys_state *vmpressure_to_css(struct vmpressure *vmpr)
 struct vmpressure *css_to_vmpressure(struct cgroup_subsys_state *css)
 {
 	return &mem_cgroup_from_css(css)->vmpressure;
-}
-
-static inline bool mem_cgroup_is_root(struct mem_cgroup *memcg)
-{
-	return (memcg == root_mem_cgroup);
 }
 
 /* Writing them here to avoid exposing memcg's inner layout */
