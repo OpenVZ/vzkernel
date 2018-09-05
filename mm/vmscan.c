@@ -352,8 +352,8 @@ static unsigned long do_shrink_slab(struct shrink_control *shrinkctl,
 					  : SHRINK_BATCH;
 
 	max_pass = shrinker->count_objects(shrinker, shrinkctl);
-	if (max_pass == 0)
-		return 0;
+	if (max_pass == 0 || max_pass == SHRINK_EMPTY)
+		return max_pass;
 
 	/*
 	 * copy the current shrinker scan count into a local variable
@@ -466,6 +466,8 @@ static unsigned long shrink_slab_memcg(gfp_t gfp_mask, int nid,
 		}
 
 		ret = do_shrink_slab(&sc, shrinker, priority);
+		if (ret == SHRINK_EMPTY)
+			ret = 0;
 		freed += ret;
 
 		if (rwsem_is_contended(&shrinker_rwsem)) {
@@ -515,6 +517,7 @@ static unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 {
 	struct shrinker *shrinker;
 	unsigned long freed = 0;
+	int ret;
 
 	if (unlikely(test_tsk_thread_flag(current, TIF_MEMDIE)))
 		return 0;
@@ -544,7 +547,10 @@ static unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 		if (!(shrinker->flags & SHRINKER_NUMA_AWARE))
 			sc.nid = 0;
 
-		freed += do_shrink_slab(&sc, shrinker, priority);
+		ret = do_shrink_slab(&sc, shrinker, priority);
+		if (ret == SHRINK_EMPTY)
+			ret = 0;
+		freed += ret;
 	}
 
 	up_read(&shrinker_rwsem);
