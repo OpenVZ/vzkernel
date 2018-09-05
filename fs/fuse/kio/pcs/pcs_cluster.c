@@ -85,6 +85,7 @@ struct fiemap_iterator
 
 	struct pcs_int_request	ireq;
 	pcs_api_iorequest_t	apireq;
+	struct iov_iter		it;
 };
 
 static void fiemap_iter_done(struct pcs_int_request * ireq)
@@ -236,7 +237,7 @@ static int fiemap_worker(void * arg)
 	struct pcs_int_request * orig_ireq = arg;
 	struct pcs_dentry_info * di;
 	struct fiemap_iterator * fiter;
-	struct iov_iter it;
+	struct iov_iter *it;
 
 	fiter = kmalloc(sizeof(struct fiemap_iterator), GFP_KERNEL);
 	if (fiter == NULL) {
@@ -244,6 +245,7 @@ static int fiemap_worker(void * arg)
 		ireq_complete(orig_ireq);
 		return 0;
 	}
+	it = &fiter->it;
 
 	fiter->orig_ireq = orig_ireq;
 	init_waitqueue_head(&fiter->wq);
@@ -264,8 +266,8 @@ static int fiemap_worker(void * arg)
 		return 0;
 	}
 	fiter->fiemap_max = orig_ireq->apireq.aux;
-	orig_ireq->apireq.req->get_iter(orig_ireq->apireq.req->datasource, 0, &it);
-	fiter->mapped = &((struct fiemap*)it.data)->fm_mapped_extents;
+	orig_ireq->apireq.req->get_iter(orig_ireq->apireq.req->datasource, 0, it);
+	fiter->mapped = &((struct fiemap*)it->data)->fm_mapped_extents;
 
 	fiemap_process_one(fiter);
 
