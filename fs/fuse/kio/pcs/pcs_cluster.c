@@ -77,6 +77,7 @@ void pcs_sreq_complete(struct pcs_int_request *sreq)
 
 struct fiemap_iterator
 {
+	struct list_head	list;
 	struct pcs_int_request 	*orig_ireq;
 	wait_queue_head_t	wq;
 	char			*buffer;
@@ -87,6 +88,23 @@ struct fiemap_iterator
 	pcs_api_iorequest_t	apireq;
 	struct iov_iter		it;
 };
+
+static DEFINE_SPINLOCK(fiter_lock);
+static LIST_HEAD(fiter_list);
+
+static void queue_fiter_work(struct fiemap_iterator *fiter)
+{
+	struct pcs_cluster_core *cc = fiter->orig_ireq->cc;
+	bool was_empty;
+
+	spin_lock(&fiter_lock);
+	was_empty = list_empty(&fiter_list);
+	list_add_tail(&fiter->list, &fiter_list);
+	spin_unlock(&fiter_lock);
+
+	if (was_empty)
+		queue_work(cc->wq, &cc->fiemap_work);
+}
 
 static void fiemap_iter_done(struct pcs_int_request * ireq)
 {
@@ -238,6 +256,24 @@ out:
 	ireq_complete(orig_ireq);
 }
 
+void fiemap_work_func(struct work_struct *w)
+{
+	struct fiemap_iterator *fiter;
+
+	spin_lock(&fiter_lock);
+	while (!list_empty(&fiter_list)) {
+		fiter = list_first_entry(&fiter_list,
+					 struct fiemap_iterator, list);
+		list_del_init(&fiter->list);
+		spin_unlock(&fiter_lock);
+
+		fiemap_process_one(fiter);
+
+		spin_lock(&fiter_lock);
+	}
+	spin_unlock(&fiter_lock);
+}
+
 static void process_ireq_fiemap(struct pcs_int_request *orig_ireq)
 {
 	struct pcs_dentry_info * di;
@@ -279,7 +315,7 @@ static void process_ireq_fiemap(struct pcs_int_request *orig_ireq)
 	fiter->apireq.size = 0;
 	fiter->apireq.pos = orig_ireq->apireq.req->pos;
 
-	fiemap_process_one(fiter);
+	queue_fiter_work(fiter);
 }
 
 void pcs_cc_process_ireq_chunk(struct pcs_int_request *ireq)
