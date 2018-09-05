@@ -169,13 +169,31 @@ static void fiemap_process_one(struct fiemap_iterator *fiter)
 {
 	struct pcs_int_request *orig_ireq = fiter->orig_ireq;
 	struct pcs_dentry_info *di = orig_ireq->dentry;
+	struct pcs_int_request *sreq;
 	u64 pos, end;
 
-	pos = fiter->orig_ireq->apireq.req->pos;
-	end = pos + fiter->orig_ireq->apireq.req->size;
-	while (pos < end) {
-		struct pcs_int_request * sreq;
+	pos = fiter->apireq.pos;
+	end = orig_ireq->apireq.req->pos + orig_ireq->apireq.req->size;
 
+	while (1) {
+		/*
+		 * We reuse zeroed fiter->apireq.size to detect first
+		 * iteration of the fiter. In this case we do not have
+		 * completed extents and just skip this business.
+		 */
+		if (fiter->apireq.size != 0) {
+			if (pcs_if_error(&fiter->ireq.error)) {
+				fiter->orig_ireq->error = fiter->ireq.error;
+				goto out;
+			}
+			if (fiter->ireq.apireq.aux)
+				xfer_fiemap_extents(fiter, pos, fiter->buffer,
+						    fiter->ireq.apireq.aux);
+			pos += fiter->apireq.size;
+		}
+
+		if (pos >= end)
+			goto out;
 		if (fiter->fiemap_max && *fiter->mapped >= fiter->fiemap_max)
 			break;
 
@@ -215,16 +233,6 @@ static void fiemap_process_one(struct fiemap_iterator *fiter)
 		pcs_cc_process_ireq_chunk(sreq);
 
 		wait_event(fiter->wq, atomic_read(&fiter->ireq.iocount) == 0);
-
-		if (pcs_if_error(&fiter->ireq.error)) {
-			fiter->orig_ireq->error = fiter->ireq.error;
-			goto out;
-		}
-
-		if (fiter->ireq.apireq.aux)
-			xfer_fiemap_extents(fiter, pos, fiter->buffer, fiter->ireq.apireq.aux);
-
-		pos += fiter->apireq.size;
 	}
 out:
 	kvfree(fiter->buffer);
@@ -267,6 +275,10 @@ static void process_ireq_fiemap(struct pcs_int_request *orig_ireq)
 	fiter->fiemap_max = orig_ireq->apireq.aux;
 	orig_ireq->apireq.req->get_iter(orig_ireq->apireq.req->datasource, 0, it);
 	fiter->mapped = &((struct fiemap*)it->data)->fm_mapped_extents;
+
+	/* fiemap_process_one() uses this 0 to detect first iteration */
+	fiter->apireq.size = 0;
+	fiter->apireq.pos = orig_ireq->apireq.req->pos;
 
 	fiemap_process_one(fiter);
 }
