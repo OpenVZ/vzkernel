@@ -110,7 +110,7 @@ static void fiemap_iter_done(struct pcs_int_request * ireq)
 {
 	struct fiemap_iterator * fiter = container_of(ireq, struct fiemap_iterator, ireq);
 
-	wake_up(&fiter->wq);
+	queue_fiter_work(fiter);
 }
 
 static void fiemap_get_iter(void * datasource, unsigned int offset, struct iov_iter *it)
@@ -193,63 +193,60 @@ static void fiemap_process_one(struct fiemap_iterator *fiter)
 	pos = fiter->apireq.pos;
 	end = orig_ireq->apireq.req->pos + orig_ireq->apireq.req->size;
 
-	while (1) {
-		/*
-		 * We reuse zeroed fiter->apireq.size to detect first
-		 * iteration of the fiter. In this case we do not have
-		 * completed extents and just skip this business.
-		 */
-		if (fiter->apireq.size != 0) {
-			if (pcs_if_error(&fiter->ireq.error)) {
-				fiter->orig_ireq->error = fiter->ireq.error;
-				goto out;
-			}
-			if (fiter->ireq.apireq.aux)
-				xfer_fiemap_extents(fiter, pos, fiter->buffer,
-						    fiter->ireq.apireq.aux);
-			pos += fiter->apireq.size;
-		}
-
-		if (pos >= end)
-			goto out;
-		if (fiter->fiemap_max && *fiter->mapped >= fiter->fiemap_max)
-			break;
-
-		fiter->apireq.pos = pos;
-		fiter->apireq.size = end - pos;
-		fiter->ireq.ts = ktime_get();
-
-		sreq = ireq_alloc(di);
-		if (!sreq) {
-			pcs_set_local_error(&orig_ireq->error, PCS_ERR_NOMEM);
+	/*
+	 * We reuse zeroed fiter->apireq.size to detect first
+	 * iteration of the fiter. In this case we do not have
+	 * completed extents and just skip this business.
+	 */
+	if (fiter->apireq.size != 0) {
+		/* Xfer previous chunk and advance pos */
+		if (pcs_if_error(&fiter->ireq.error)) {
+			fiter->orig_ireq->error = fiter->ireq.error;
 			goto out;
 		}
-
-		sreq->dentry = di;
-		sreq->type = PCS_IREQ_IOCHUNK;
-		INIT_LIST_HEAD(&sreq->tok_list);
-		sreq->tok_reserved = 0;
-		sreq->tok_serno = 0;
-		sreq->iochunk.map = NULL;
-		sreq->iochunk.flow = pcs_flow_record(&di->mapping.ftab, 0, pos, end-pos, &di->cluster->maps.ftab);
-		sreq->iochunk.cmd = PCS_REQ_T_FIEMAP;
-		sreq->iochunk.cs_index = 0;
-		sreq->iochunk.chunk = pos;
-		sreq->iochunk.offset = 0;
-		sreq->iochunk.dio_offset = 0;
-		sreq->iochunk.size = end - pos;
-		sreq->iochunk.csl = NULL;
-		sreq->iochunk.banned_cs.val = 0;
-		sreq->iochunk.msg.destructor = NULL;
-		sreq->iochunk.msg.rpc = NULL;
-
-		pcs_sreq_attach(sreq, &fiter->ireq);
-		sreq->complete_cb = pcs_sreq_complete;
-
-		pcs_cc_process_ireq_chunk(sreq);
-
-		wait_event(fiter->wq, atomic_read(&fiter->ireq.iocount) == 0);
+		if (fiter->ireq.apireq.aux)
+			xfer_fiemap_extents(fiter, pos, fiter->buffer,
+					    fiter->ireq.apireq.aux);
+		pos += fiter->apireq.size;
 	}
+
+	if (pos >= end)
+		goto out;
+	if (fiter->fiemap_max && *fiter->mapped >= fiter->fiemap_max)
+		goto out;
+
+	/* Queue next chunk */
+	fiter->apireq.pos = pos;
+	fiter->apireq.size = end - pos;
+	fiter->ireq.ts = ktime_get();
+
+	sreq = ireq_alloc(di);
+	if (!sreq) {
+		pcs_set_local_error(&orig_ireq->error, PCS_ERR_NOMEM);
+		goto out;
+	}
+	sreq->dentry = di;
+	sreq->type = PCS_IREQ_IOCHUNK;
+	INIT_LIST_HEAD(&sreq->tok_list);
+	sreq->tok_reserved = 0;
+	sreq->tok_serno = 0;
+	sreq->iochunk.map = NULL;
+	sreq->iochunk.flow = pcs_flow_record(&di->mapping.ftab, 0, pos, end-pos, &di->cluster->maps.ftab);
+	sreq->iochunk.cmd = PCS_REQ_T_FIEMAP;
+	sreq->iochunk.cs_index = 0;
+	sreq->iochunk.chunk = pos;
+	sreq->iochunk.offset = 0;
+	sreq->iochunk.dio_offset = 0;
+	sreq->iochunk.size = end - pos;
+	sreq->iochunk.csl = NULL;
+	sreq->iochunk.banned_cs.val = 0;
+	sreq->iochunk.msg.destructor = NULL;
+	sreq->iochunk.msg.rpc = NULL;
+
+	pcs_sreq_attach(sreq, &fiter->ireq);
+	sreq->complete_cb = pcs_sreq_complete;
+	pcs_cc_process_ireq_chunk(sreq);
+	return;
 out:
 	kvfree(fiter->buffer);
 	kfree(fiter);
