@@ -31,6 +31,9 @@
 #include <linux/nsproxy.h>
 #include <linux/notifier.h>
 
+#include <uapi/linux/vzcalluser.h>
+#include <linux/ve.h>
+
 #include "netns.h"
 #include "sunrpc.h"
 
@@ -1457,6 +1460,10 @@ rpc_mount(struct file_system_type *fs_type,
 		int flags, const char *dev_name, void *data)
 {
 	struct net *net = current->nsproxy->net_ns;
+
+	if (!(get_exec_env()->features & VE_FEATURE_NFSD))
+		return ERR_PTR(-ENODEV);
+
 	return mount_ns(fs_type, flags, data, net, net->user_ns, rpc_fill_super);
 }
 
