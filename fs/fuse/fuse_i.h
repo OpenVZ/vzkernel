@@ -288,9 +288,6 @@ struct fuse_req {
 	/** refcount */
 	atomic_t count;
 
-	/** Unique ID for the interrupt request */
-	u64 intr_unique;
-
 	/* Request flags, updated with test/set/clear_bit() */
 	unsigned long flags;
 
