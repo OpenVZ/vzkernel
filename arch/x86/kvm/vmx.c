@@ -245,7 +245,8 @@ static int vmx_setup_l1d_flush(enum vmx_l1d_flush_state l1tf)
 
 	if (l1tf != VMENTER_L1D_FLUSH_NEVER && !vmx_l1d_flush_pages &&
 	    !boot_cpu_has(X86_FEATURE_FLUSH_L1D)) {
-		page = alloc_pages(GFP_KERNEL, L1D_CACHE_ORDER);
+		page = alloc_pages(GFP_KERNEL | __GFP_ORDER_NOWARN,
+				   L1D_CACHE_ORDER);
 		if (!page)
 			return -ENOMEM;
 		vmx_l1d_flush_pages = page_address(page);
