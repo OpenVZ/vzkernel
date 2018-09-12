@@ -153,7 +153,7 @@ void mempool_destroy(mempool_t *pool)
 		void *element = remove_element(pool, GFP_KERNEL);
 		pool->free(element, pool->pool_data);
 	}
-	kfree(pool->elements);
+	kvfree(pool->elements);
 	kfree(pool);
 }
 EXPORT_SYMBOL(mempool_destroy);
@@ -188,8 +188,8 @@ mempool_t *mempool_create_node(int min_nr, mempool_alloc_t *alloc_fn,
 	pool = kmalloc_node(sizeof(*pool), gfp_mask | __GFP_ZERO, node_id);
 	if (!pool)
 		return NULL;
-	pool->elements = kmalloc_node(min_nr * sizeof(void *),
-				      gfp_mask, node_id);
+	pool->elements = kvmalloc_node(min_nr * sizeof(void *),
+				       gfp_mask, node_id);
 	if (!pool->elements) {
 		kfree(pool);
 		return NULL;
@@ -239,6 +239,7 @@ int mempool_resize(mempool_t *pool, int new_min_nr, gfp_t gfp_mask)
 	void *element;
 	void **new_elements;
 	unsigned long flags;
+	void *old_elements = NULL;
 
 	BUG_ON(new_min_nr <= 0);
 
@@ -256,7 +257,7 @@ int mempool_resize(mempool_t *pool, int new_min_nr, gfp_t gfp_mask)
 	spin_unlock_irqrestore(&pool->lock, flags);
 
 	/* Grow the pool */
-	new_elements = kmalloc(new_min_nr * sizeof(*new_elements), gfp_mask);
+	new_elements = kvmalloc(new_min_nr * sizeof(*new_elements), gfp_mask);
 	if (!new_elements)
 		return -ENOMEM;
 
@@ -264,12 +265,12 @@ int mempool_resize(mempool_t *pool, int new_min_nr, gfp_t gfp_mask)
 	if (unlikely(new_min_nr <= pool->min_nr)) {
 		/* Raced, other resize will do our work */
 		spin_unlock_irqrestore(&pool->lock, flags);
-		kfree(new_elements);
+		kvfree(new_elements);
 		goto out;
 	}
 	memcpy(new_elements, pool->elements,
 			pool->curr_nr * sizeof(*new_elements));
-	kfree(pool->elements);
+	old_elements = pool->elements;
 	pool->elements = new_elements;
 	pool->min_nr = new_min_nr;
 
@@ -290,6 +291,7 @@ int mempool_resize(mempool_t *pool, int new_min_nr, gfp_t gfp_mask)
 out_unlock:
 	spin_unlock_irqrestore(&pool->lock, flags);
 out:
+	kvfree(old_elements);
 	return 0;
 }
 EXPORT_SYMBOL(mempool_resize);
