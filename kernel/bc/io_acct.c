@@ -313,7 +313,8 @@ static int bc_ioacct_notify(struct vnotifier_block *self,
 	bout >>= 10;
 	bin >>= 10;
 
-	vm_events = ((unsigned long *)arg) + NR_VM_ZONE_STAT_ITEMS;
+	vm_events = ((unsigned long *)arg) + NR_VM_ZONE_STAT_ITEMS +
+		NR_VM_WRITEBACK_STAT_ITEMS;
 	vm_events[PGPGOUT] = (unsigned long)bout;
 	vm_events[PGPGIN] = (unsigned long)bin;
 	return NOTIFY_OK;
