@@ -229,7 +229,14 @@ out:
 
 static int bc_fill_vmstat(struct user_beancounter *ub, unsigned long *stat)
 {
-	/* FIXME: show swapin/swapout? */
+	struct cgroup_subsys_state *css;
+
+	if (ub == get_ub0())
+		return NOTIFY_OK;
+
+	css = ub_get_mem_css(ub);
+	mem_cgroup_fill_vmstat(mem_cgroup_from_cont(css->cgroup), stat);
+	css_put(css);
 	return NOTIFY_OK;
 }
 
