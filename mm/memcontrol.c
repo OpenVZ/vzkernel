@@ -1172,6 +1172,56 @@ static void mem_cgroup_inc_failcnt(struct mem_cgroup *memcg,
 
 	if (do_swap_account && margin < nr_pages)
 		atomic_long_inc(&memcg->swap_failcnt);
+
+}
+
+static unsigned long mem_cgroup_nr_lru_pages(struct mem_cgroup *memcg,
+			unsigned int lru_mask);
+
+void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg, unsigned long *stats)
+{
+	int cpu, i;
+	unsigned long limit = READ_ONCE(memcg->memory.limit);
+	unsigned long memory = page_counter_read(&memcg->memory);
+	unsigned long *zone_stats = stats;
+	unsigned long *vm_stats = stats + NR_VM_ZONE_STAT_ITEMS +
+	        NR_VM_WRITEBACK_STAT_ITEMS;
+
+
+
+	zone_stats[NR_FREE_PAGES] = memory > limit ? 0 : limit- memory;
+	for (i = LRU_BASE; i < NR_LRU_LISTS; i++)
+		zone_stats[NR_LRU_BASE + i] = mem_cgroup_nr_lru_pages(memcg, BIT(i));
+
+	zone_stats[NR_ANON_PAGES] = zone_stats[NR_ACTIVE_ANON] +
+		zone_stats[NR_INACTIVE_ANON];
+	zone_stats[NR_FILE_PAGES] = zone_stats[NR_ACTIVE_FILE] +
+		zone_stats[NR_INACTIVE_FILE];
+	/*file dirty, wrb should be taken from ub*/
+	zone_stats[NR_SLAB_RECLAIMABLE] = mem_cgroup_read_stat2_fast(memcg,
+						MEM_CGROUP_STAT_SLAB_RECLAIMABLE);
+
+
+
+	for_each_possible_cpu(cpu) {
+		zone_stats[NR_FILE_MAPPED] += per_cpu(
+			memcg->stat->count[MEM_CGROUP_STAT_FILE_MAPPED], cpu);
+		zone_stats[NR_SLAB_UNRECLAIMABLE] += per_cpu(
+			memcg->stat->count[MEM_CGROUP_STAT_SLAB_UNRECLAIMABLE], cpu);
+		zone_stats[NR_SHMEM] += per_cpu(
+			memcg->stat->count[MEM_CGROUP_STAT_SHMEM], cpu);
+
+#ifdef CONFIG_VM_EVENT_COUNTERS
+		vm_stats[PSWPIN] += per_cpu(
+			memcg->stat->events[MEM_CGROUP_EVENTS_PSWPIN], cpu);
+		vm_stats[PSWPOUT] += per_cpu(
+			memcg->stat->events[MEM_CGROUP_EVENTS_PSWPOUT], cpu);
+		vm_stats[PGFAULT] += per_cpu(
+			memcg->stat->events[MEM_CGROUP_EVENTS_PGFAULT], cpu);
+		vm_stats[PGMAJFAULT] += per_cpu(
+			memcg->stat->events[MEM_CGROUP_EVENTS_PGMAJFAULT], cpu);
+#endif
+	}
 }
 
 static unsigned long mem_cgroup_read_events(struct mem_cgroup *memcg,
