@@ -540,16 +540,10 @@ struct pcs_sockio * pcs_sockio_init(struct socket *sock,
 		return NULL;
 
 	INIT_LIST_HEAD(&sio->write_queue);
-	sio->write_queue_len = 0;
-	sio->current_msg = NULL;
 	iov_iter_init_bad(&sio->read_iter);
 	iov_iter_init_bad(&sio->write_iter);
-	sio->read_offset = 0;
-	sio->write_offset = 0;
 	sio->hdr_max = hdr_max;
-	sio->hdr_ptr = 0;
 	sio->flags = sock->sk->sk_family != AF_UNIX ? PCS_SOCK_F_CORK : 0;
-	sio->retrans = 0;
 
 	//// TODO:dmonakhov init ioconn here
 	INIT_LIST_HEAD(&sio->ioconn.list);
@@ -578,9 +572,6 @@ struct pcs_sockio * pcs_sockio_init(struct socket *sock,
 	write_unlock_bh(&sock->sk->sk_callback_lock);
 
 	pcs_clear_error(&sio->error);
-	sio->get_msg = NULL;
-	sio->eof = NULL;
-	sio->write_wakeup = NULL;
 	return sio;
 }
 
