@@ -1004,7 +1004,9 @@ static int dio_open(struct ploop_io * io)
 		io->fsync_thread = kthread_create(dio_fsync_thread,
 						  io, "ploop_fsync%d",
 						  delta->plo->index);
-		if (io->fsync_thread == NULL) {
+		if (IS_ERR(io->fsync_thread)) {
+			err = PTR_ERR(io->fsync_thread);
+			io->fsync_thread = NULL;
 			io->files.em_tree = NULL;
 			ploop_dio_close(io, 0);
 			goto out;
@@ -1731,9 +1733,11 @@ static int dio_prepare_merge(struct ploop_io * io, struct ploop_snapdata *sd)
 		io->fsync_thread = kthread_create(dio_fsync_thread,
 						  io, "ploop_fsync%d",
 						  io->plo->index);
-		if (io->fsync_thread == NULL) {
+		if (IS_ERR(io->fsync_thread)) {
+			err = PTR_ERR(io->fsync_thread);
+			io->fsync_thread = NULL;
 			fput(file);
-			return -ENOMEM;
+			return err;
 		}
 		wake_up_process(io->fsync_thread);
 	}
