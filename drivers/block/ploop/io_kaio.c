@@ -801,9 +801,11 @@ static int kaio_open(struct ploop_io * io)
 		io->fsync_thread = kthread_create(kaio_fsync_thread,
 						  io, "ploop_fsync%d",
 						  delta->plo->index);
-		if (io->fsync_thread == NULL) {
+		if (IS_ERR(io->fsync_thread)) {
+			err = PTR_ERR(io->fsync_thread);
+			io->fsync_thread = NULL;
 			ploop_kaio_close(io->files.mapping, 0);
-			return -ENOMEM;
+			return err;
 		}
 
 		wake_up_process(io->fsync_thread);
@@ -899,8 +901,9 @@ static int kaio_prepare_merge(struct ploop_io * io, struct ploop_snapdata *sd)
 	io->fsync_thread = kthread_create(kaio_fsync_thread,
 					  io, "ploop_fsync%d",
 					  io->plo->index);
-	if (io->fsync_thread == NULL) {
-		err = -ENOMEM;
+	if (IS_ERR(io->fsync_thread)) {
+		err = PTR_ERR(io->fsync_thread);
+		io->fsync_thread = NULL;
 		goto prep_merge_done;
 	}
 
