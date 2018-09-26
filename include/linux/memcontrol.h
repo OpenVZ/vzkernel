@@ -215,6 +215,8 @@ static inline void mem_cgroup_dec_page_stat(struct page *page,
 	mem_cgroup_update_page_stat(page, idx, -1);
 }
 
+void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg, unsigned long *stats);
+
 unsigned long mem_cgroup_soft_limit_reclaim(struct zone *zone, int order,
 						gfp_t gfp_mask,
 						unsigned long *total_scanned);
@@ -435,6 +437,11 @@ static inline void mem_cgroup_inc_page_stat(struct page *page,
 
 static inline void mem_cgroup_dec_page_stat(struct page *page,
 					    enum mem_cgroup_page_stat_item idx)
+{
+}
+
+static inline void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg,
+					unsigned long *stats)
 {
 }
 
