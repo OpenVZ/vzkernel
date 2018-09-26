@@ -1291,12 +1291,6 @@ static const struct file_operations proc_zoneinfo_file_operations = {
 	.release	= seq_release,
 };
 
-enum writeback_stat_item {
-	NR_DIRTY_THRESHOLD,
-	NR_DIRTY_BG_THRESHOLD,
-	NR_VM_WRITEBACK_STAT_ITEMS,
-};
-
 static void *vmstat_start(struct seq_file *m, loff_t *pos)
 {
 	unsigned long *v;
