@@ -202,11 +202,6 @@ typedef struct __pre_aligned(8) _PCS_MAP_VERSION_T {
 	PCS_CHUNK_GENID_T	chunk;
 } PCS_MAP_VERSION_T;
 
-static inline void map_version_init(PCS_MAP_VERSION_T * v)
-{
-	memset(v, 0, sizeof(*v));
-}
-
 /* Returns negative value if v1 is older than v2, positive if v1 is newer than v2, 0 if they are equal */
 static inline int map_version_compare(PCS_MAP_VERSION_T const* v1, PCS_MAP_VERSION_T const* v2)
 {
