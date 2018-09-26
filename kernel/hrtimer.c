@@ -1225,6 +1225,10 @@ static void __run_hrtimer(struct hrtimer_cpu_base *cpu_base,
 	 * Because we run timers from hardirq context, there is no chance
 	 * they get migrated to another cpu, therefore its safe to unlock
 	 * the timer base.
+	 *
+	 * Note: Because we dropped the cpu_base->lock above,
+	 * hrtimer_start_range_ns() can have popped in and enqueued the timer
+	 * for us already
 	 */
 	raw_spin_unlock(&cpu_base->lock);
 	trace_hrtimer_expire_entry(timer, now);
