@@ -568,20 +568,11 @@ again:
 		return NULL;
 	}
 
-	m->mapping = NULL;
-	m->maps = NULL;
 	m->res_offset = offset;
-	m->chunk_psize = 0;
 	m->index = idx;
 
-	map_version_init(&m->version);
-	m->id = 0;		/* For logging only, it is not used before map is completed */
 	m->state = PCS_MAP_NEW;
-	m->flags = 0;
 	atomic_set(&m->__refcnt, 1);
-	m->mds_flags = 0;
-	m->cs_list = NULL;
-	m->error_tstamp = 0;
 	m->mapping = &di->mapping;
 	INIT_DELAYED_WORK(&m->sync_work, sync_timer_work);
 	INIT_LIST_HEAD(&m->queue);
