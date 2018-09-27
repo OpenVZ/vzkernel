@@ -22,6 +22,12 @@ enum
 	PCS_RPC_DESTROY	= 8		/* Destruction in progress */
 };
 
+enum {
+	RPC_AFFINITY_NONE   = 0,
+	RPC_AFFINITY_RETENT = 1,
+	RPC_AFFINITY_SPREAD = 2,
+};
+
 struct pcs_rpc_params
 {
 	unsigned int	alloc_hdr_size;
