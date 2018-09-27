@@ -18,6 +18,7 @@
 #include <net/sock.h>
 #include <linux/net.h>
 #include <linux/kthread.h>
+#include <linux/module.h>
 #include <linux/types.h>
 
 
@@ -27,6 +28,11 @@
 #include "pcs_cluster.h"
 #include "log.h"
 #include "fuse_ktrace.h"
+
+
+static unsigned int rpc_affinity_mode = RPC_AFFINITY_RETENT;
+module_param(rpc_affinity_mode, uint, 0644);
+MODULE_PARM_DESC(rpc_affinity_mode, "RPC affinity mode");
 
 static void timer_work(struct work_struct *w);
 static int rpc_gc_classify(struct pcs_rpc * ep);
@@ -619,19 +625,58 @@ void pcs_rpc_kick_queue(struct pcs_rpc * ep)
 	queue_work_on(ep->cpu, cc->wq, &ep->work);
 }
 
+static int pcs_rpc_cpu_next(void)
+{
+	static atomic_t cpu_affinity_num = ATOMIC_INIT(-1);
+
+	int old, new;
+
+	do {
+		old = atomic_read(&cpu_affinity_num);
+		new = cpumask_next(old, cpu_online_mask);
+		if (new >= nr_cpu_ids)
+			new = cpumask_first(cpu_online_mask);
+
+	} while (atomic_cmpxchg(&cpu_affinity_num, old, new) != old);
+
+	return new;
+}
+
+static void pcs_rpc_affinity(struct pcs_rpc *ep, bool was_idle)
+{
+	switch(rpc_affinity_mode) {
+		case RPC_AFFINITY_NONE:
+			if (unlikely(ep->cpu != WORK_CPU_UNBOUND)) {
+				ep->cpu = WORK_CPU_UNBOUND;
+			}
+			break;
+		case RPC_AFFINITY_RETENT:
+			/* Naive socket-to-cpu binding approach */
+			if (time_is_before_jiffies(ep->cpu_stamp) && was_idle) {
+				ep->cpu_stamp = jiffies + PCS_RPC_CPU_SLICE;
+				ep->cpu = smp_processor_id();
+			}
+			break;
+		case RPC_AFFINITY_SPREAD:
+			if (time_is_before_jiffies(ep->cpu_stamp) && was_idle) {
+				ep->cpu_stamp = jiffies + PCS_RPC_CPU_SLICE;
+				ep->cpu = pcs_rpc_cpu_next();
+			}
+			break;
+		default:
+			pr_err("Unknown affninity mode: %u\n", rpc_affinity_mode);
+	}
+}
+
 void pcs_rpc_queue(struct pcs_rpc * ep, struct pcs_msg * msg)
 {
-	int was_idle;
+	bool was_idle;
 
 	spin_lock(&ep->q_lock);
 	was_idle = list_empty(&ep->input_queue);
 	list_add_tail(&msg->list, &ep->input_queue);
 
-	/* Naive socket-to-cpu binding approach */
-	if (time_is_before_jiffies(ep->cpu_stamp) && was_idle) {
-		ep->cpu_stamp = jiffies + PCS_RPC_CPU_SLICE;
-		ep->cpu = smp_processor_id();
-	}
+	pcs_rpc_affinity(ep, was_idle);
 	spin_unlock(&ep->q_lock);
 
 	if (was_idle)
@@ -743,6 +788,7 @@ static void update_xmit_timeout(struct pcs_rpc *ep)
 	mod_delayed_work(cc->wq, &ep->timer_work, timeout);
 
 }
+
 static void rpc_queue_work(struct work_struct *w)
 {
 	LIST_HEAD(input_q);
