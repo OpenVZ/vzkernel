@@ -30,6 +30,8 @@ struct security_class_mapping secclass_map[] = {
 	    "setrlimit", "rlimitinh", "dyntransition", "setcurrent",
 	    "execmem", "execstack", "execheap", "setkeycreate",
 	    "setsockcreate", NULL } },
+	{ "process2",
+	  { "nnp_transition", "nosuid_transition", NULL } },
 	{ "system",
 	  { "ipc_info", "syslog_read", "syslog_mod",
 	    "syslog_console", "module_request", NULL } },
@@ -151,5 +153,9 @@ struct security_class_mapping secclass_map[] = {
 	{ "kernel_service", { "use_as_override", "create_files_as", NULL } },
 	{ "tun_socket",
 	  { COMMON_SOCK_PERMS, "attach_queue", NULL } },
+	{ "infiniband_pkey",
+	  { "access", NULL } },
+	{ "infiniband_endport",
+	  { "manage_subnet", NULL } },
 	{ NULL }
   };

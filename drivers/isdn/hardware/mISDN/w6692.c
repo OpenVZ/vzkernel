@@ -27,6 +27,7 @@
 #include <linux/delay.h>
 #include <linux/mISDNhw.h>
 #include <linux/slab.h>
+#include <linux/nospec.h>
 #include "w6692.h"
 
 #define W6692_REV	"2.0"
@@ -1008,12 +1009,14 @@ static int
 open_bchannel(struct w6692_hw *card, struct channel_req *rq)
 {
 	struct bchannel *bch;
+	unsigned char idx;
 
 	if (rq->adr.channel == 0 || rq->adr.channel > 2)
 		return -EINVAL;
 	if (rq->protocol == ISDN_P_NONE)
 		return -EINVAL;
-	bch = &card->bc[rq->adr.channel - 1].bch;
+	idx = array_index_nospec(rq->adr.channel - 1, 2);
+	bch = &card->bc[idx].bch;
 	if (test_and_set_bit(FLG_OPEN, &bch->Flags))
 		return -EBUSY; /* b-channel can be only open once */
 	bch->ch.protocol = rq->protocol;

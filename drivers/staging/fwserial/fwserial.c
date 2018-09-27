@@ -27,6 +27,7 @@
 #include <linux/ratelimit.h>
 #include <linux/bug.h>
 #include <linux/uaccess.h>
+#include <linux/nospec.h>
 
 #include "fwserial.h"
 
@@ -895,6 +896,7 @@ struct fwtty_port *fwtty_port_get(unsigned index)
 
 	if (index >= MAX_TOTAL_PORTS)
 		return NULL;
+	index = array_index_nospec(index, MAX_TOTAL_PORTS);
 
 	mutex_lock(&port_table_lock);
 	port = port_table[index];

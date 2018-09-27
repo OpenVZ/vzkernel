@@ -14,6 +14,7 @@ enum {
 
 #ifdef CONFIG_MEMCG
 #include <linux/bit_spinlock.h>
+#include <linux/page_ext.h>
 
 /*
  * Page Cgroup can be considered as an extended mem_map.
@@ -25,6 +26,9 @@ enum {
 struct page_cgroup {
 	unsigned long flags;
 	struct mem_cgroup *mem_cgroup;
+#ifdef CONFIG_PAGE_EXTENSION
+	struct page_ext ext;
+#endif
 };
 
 void __meminit pgdat_page_cgroup_init(struct pglist_data *pgdat);

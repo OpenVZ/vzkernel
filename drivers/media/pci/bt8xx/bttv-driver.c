@@ -46,6 +46,7 @@
 #include <linux/sched.h>
 #include <linux/interrupt.h>
 #include <linux/kdev_t.h>
+#include <linux/nospec.h>
 #include "bttvp.h"
 #include <media/v4l2-common.h>
 #include <media/v4l2-ioctl.h>
@@ -971,6 +972,7 @@ video_mux(struct bttv *btv, unsigned int input)
 
 	if (input >= bttv_tvcards[btv->c.type].video_inputs)
 		return -EINVAL;
+	input = array_index_nospec(input, bttv_tvcards[btv->c.type].video_inputs);
 
 	/* needed by RemoteVideo MX */
 	mask2 = bttv_tvcards[btv->c.type].gpiomask2;
@@ -2153,6 +2155,7 @@ verify_window_lock(struct bttv_fh *fh, struct v4l2_window *win,
 		win->w.height = 32;
 	if (win->clipcount > 2048)
 		win->clipcount = 2048;
+	win->clipcount = array_index_nospec(win->clipcount, 2049);
 
 	win->chromakey = 0;
 	win->global_alpha = 0;

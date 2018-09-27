@@ -542,7 +542,7 @@ ltq_etop_tx(struct sk_buff *skb, struct net_device *dev)
 	byte_offset = CPHYSADDR(skb->data) % 16;
 	ch->skb[ch->dma.desc] = skb;
 
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 
 	spin_lock_irqsave(&priv->lock, flags);
 	desc->addr = ((unsigned int) dma_map_single(NULL, skb->data, len,
@@ -621,7 +621,8 @@ ltq_etop_set_multicast_list(struct net_device *dev)
 }
 
 static u16
-ltq_etop_select_queue(struct net_device *dev, struct sk_buff *skb)
+ltq_etop_select_queue(struct net_device *dev, struct sk_buff *skb,
+		      void *accel_priv, select_queue_fallback_t fallback)
 {
 	/* we are currently only using the first queue */
 	return 0;
@@ -680,7 +681,7 @@ ltq_etop_tx_timeout(struct net_device *dev)
 	err = ltq_etop_hw_init(dev);
 	if (err)
 		goto err_hw;
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 	netif_wake_queue(dev);
 	return;
 

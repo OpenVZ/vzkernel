@@ -53,6 +53,7 @@
 #include <linux/interrupt.h>
 #include <linux/input.h>
 #include <linux/spinlock.h>
+#include <linux/nospec.h>
 
 #include "dvb_ca_en50221.h"
 
@@ -1418,10 +1419,14 @@ static struct v4l2_input knc1_inputs[KNC1_INPUTS] = {
 
 static int vidioc_enum_input(struct file *file, void *fh, struct v4l2_input *i)
 {
+	u32 index;
+
 	dprintk(1, "VIDIOC_ENUMINPUT %d\n", i->index);
 	if (i->index >= KNC1_INPUTS)
 		return -EINVAL;
-	memcpy(i, &knc1_inputs[i->index], sizeof(struct v4l2_input));
+	index = array_index_nospec(i->index, KNC1_INPUTS);
+
+	memcpy(i, &knc1_inputs[index], sizeof(struct v4l2_input));
 	return 0;
 }
 

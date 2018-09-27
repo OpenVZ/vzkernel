@@ -27,6 +27,7 @@
 #include <linux/device.h>
 #include <linux/mutex.h>
 #include <linux/rcupdate.h>
+#include <linux/nospec.h>
 #include "input-compat.h"
 
 MODULE_AUTHOR("Vojtech Pavlik <vojtech@suse.cz>");
@@ -229,7 +230,9 @@ static int input_handle_abs_event(struct input_dev *dev,
 	if (!is_mt_event) {
 		pold = &dev->absinfo[code].value;
 	} else if (mt) {
-		pold = &mt->slots[mt->slot].abs[code - ABS_MT_FIRST];
+		unsigned int idx = array_index_nospec(code - ABS_MT_FIRST,
+						ABS_MT_LAST - ABS_MT_FIRST + 1);
+		pold = &mt->slots[mt->slot].abs[idx];
 	} else {
 		/*
 		 * Bypass filtering for multi-touch events when
@@ -305,8 +308,10 @@ static int input_get_disposition(struct input_dev *dev,
 		break;
 
 	case EV_ABS:
-		if (is_event_supported(code, dev->absbit, ABS_MAX))
+		if (is_event_supported(code, dev->absbit, ABS_MAX)) {
+			code = array_index_nospec(code, ABS_MAX + 1);
 			disposition = input_handle_abs_event(dev, code, &value);
+		}
 
 		break;
 
@@ -341,9 +346,13 @@ static int input_get_disposition(struct input_dev *dev,
 		break;
 
 	case EV_REP:
-		if (code <= REP_MAX && value >= 0 && dev->rep[code] != value) {
-			dev->rep[code] = value;
-			disposition = INPUT_PASS_TO_ALL;
+		if (code <= REP_MAX && value >= 0) {
+			code = array_index_nospec(code, REP_MAX + 1);
+
+			if (dev->rep[code] != value) {
+				dev->rep[code] = value;
+				disposition = INPUT_PASS_TO_ALL;
+			}
 		}
 		break;
 
@@ -496,7 +505,8 @@ void input_set_abs_params(struct input_dev *dev, unsigned int axis,
 	absinfo->fuzz = fuzz;
 	absinfo->flat = flat;
 
-	dev->absbit[BIT_WORD(axis)] |= BIT_MASK(axis);
+	__set_bit(EV_ABS, dev->evbit);
+	__set_bit(axis, dev->absbit);
 }
 EXPORT_SYMBOL(input_set_abs_params);
 
@@ -813,6 +823,7 @@ static int input_default_setkeycode(struct input_dev *dev,
 
 	if (index >= dev->keycodemax)
 		return -EINVAL;
+	index = array_index_nospec(index, dev->keycodemax);
 
 	if (dev->keycodesize < sizeof(ke->keycode) &&
 			(ke->keycode >> (dev->keycodesize * 8)))
@@ -1504,6 +1515,7 @@ static void input_dev_release(struct device *device)
 	input_mt_destroy_slots(dev);
 	kfree(dev->absinfo);
 	kfree(dev->vals);
+	kfree(dev->dev.device_rh);
 	kfree(dev);
 
 	module_put(THIS_MODULE);

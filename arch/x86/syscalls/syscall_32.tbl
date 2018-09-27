@@ -357,3 +357,13 @@
 348	i386	process_vm_writev	sys_process_vm_writev		compat_sys_process_vm_writev
 349	i386	kcmp			sys_kcmp
 350	i386	finit_module		sys_finit_module
+351	i386	sched_setattr		sys_sched_setattr
+352	i386	sched_getattr		sys_sched_getattr
+354	i386	seccomp			sys_seccomp
+355	i386	getrandom		sys_getrandom
+356	i386	memfd_create		sys_memfd_create
+374	i386	userfaultfd		sys_userfaultfd
+377	i386	copy_file_range		sys_copy_file_range
+380	i386	pkey_mprotect		sys_pkey_mprotect
+381	i386	pkey_alloc		sys_pkey_alloc
+382	i386	pkey_free		sys_pkey_free

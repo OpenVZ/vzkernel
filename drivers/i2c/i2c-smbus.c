@@ -13,11 +13,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- * MA 02110-1301 USA.
  */
 
 #include <linux/kernel.h>
@@ -46,6 +41,7 @@ static int smbus_do_alert(struct device *dev, void *addrp)
 {
 	struct i2c_client *client = i2c_verify_client(dev);
 	struct alert_data *data = addrp;
+	struct i2c_driver *driver;
 
 	if (!client || client->addr != data->addr)
 		return 0;
@@ -54,12 +50,13 @@ static int smbus_do_alert(struct device *dev, void *addrp)
 
 	/*
 	 * Drivers should either disable alerts, or provide at least
-	 * a minimal handler.  Lock so client->driver won't change.
+	 * a minimal handler.  Lock so the driver won't change.
 	 */
 	device_lock(dev);
-	if (client->driver) {
-		if (client->driver->alert)
-			client->driver->alert(client, data->flag);
+	if (client->dev.driver) {
+		driver = to_i2c_driver(client->dev.driver);
+		if (driver->alert)
+			driver->alert(client, data->flag);
 		else
 			dev_warn(&client->dev, "no driver alert()!\n");
 	} else

@@ -32,6 +32,7 @@
 #include <linux/mm.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
+#include <linux/nospec.h>
 
 #include <media/v4l2-common.h>
 #include <media/v4l2-ioctl.h>
@@ -1047,6 +1048,8 @@ int cx231xx_enum_input(struct file *file, void *priv,
 	n = i->index;
 	if (n >= MAX_CX231XX_INPUT)
 		return -EINVAL;
+	n = array_index_nospec(n, MAX_CX231XX_INPUT);
+
 	if (0 == INPUT(n)->type)
 		return -EINVAL;
 
@@ -1099,6 +1102,8 @@ int cx231xx_s_input(struct file *file, void *priv, unsigned int i)
 
 	if (i >= MAX_CX231XX_INPUT)
 		return -EINVAL;
+	i = array_index_nospec(i, MAX_CX231XX_INPUT);
+
 	if (0 == INPUT(i)->type)
 		return -EINVAL;
 
@@ -1667,11 +1672,14 @@ int cx231xx_querycap(struct file *file, void *priv,
 static int vidioc_enum_fmt_vid_cap(struct file *file, void *priv,
 				   struct v4l2_fmtdesc *f)
 {
+	u32 index;
+
 	if (unlikely(f->index >= ARRAY_SIZE(format)))
 		return -EINVAL;
+	index = array_index_nospec(f->index, ARRAY_SIZE(format));
 
-	strlcpy(f->description, format[f->index].name, sizeof(f->description));
-	f->pixelformat = format[f->index].fourcc;
+	strlcpy(f->description, format[index].name, sizeof(f->description));
+	f->pixelformat = format[index].fourcc;
 
 	return 0;
 }

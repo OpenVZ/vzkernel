@@ -15,6 +15,7 @@
 #include <linux/sched.h>
 #include <linux/kdb.h>
 #include <linux/nmi.h>
+#include <linux/nospec.h>
 #include "kdb_private.h"
 
 
@@ -178,6 +179,7 @@ kdb_bt(int argc, const char **argv)
 				kdb_printf("no process for cpu %ld\n", cpu);
 				return 0;
 			}
+			cpu = array_index_nospec(cpu, num_possible_cpus());
 			sprintf(buf, "btt 0x%p\n", KDB_TSK(cpu));
 			kdb_parse(buf);
 			return 0;

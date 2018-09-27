@@ -26,6 +26,7 @@
 #include <linux/skbuff.h>
 #include <linux/in.h>
 #include <linux/tcp.h>
+#include <linux/nospec.h>
 
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_core.h>
@@ -143,13 +144,14 @@ static int destroy_sibling_or_exp(struct net *net, struct nf_conn *ct,
 				  const struct nf_conntrack_tuple *t)
 {
 	const struct nf_conntrack_tuple_hash *h;
+	const struct nf_conntrack_zone *zone;
 	struct nf_conntrack_expect *exp;
 	struct nf_conn *sibling;
-	u16 zone = nf_ct_zone(ct);
 
 	pr_debug("trying to timeout ct or exp for tuple ");
 	nf_ct_dump_tuple(t);
 
+	zone = nf_ct_zone(ct);
 	h = nf_conntrack_find_get(net, zone, t);
 	if (h)  {
 		sibling = nf_ct_tuplehash_to_ctrack(h);
@@ -556,7 +558,8 @@ conntrack_pptp_help(struct sk_buff *skb, unsigned int protoff,
 
 	reqlen = datalen;
 	msg = ntohs(ctlh->messageType);
-	if (msg > 0 && msg <= PPTP_MSG_MAX && reqlen < pptp_msg_size[msg])
+	if (msg > 0 && msg <= PPTP_MSG_MAX &&
+	    reqlen < pptp_msg_size[array_index_nospec(msg, PPTP_MSG_MAX)])
 		return NF_ACCEPT;
 	if (reqlen > sizeof(*pptpReq))
 		reqlen = sizeof(*pptpReq);

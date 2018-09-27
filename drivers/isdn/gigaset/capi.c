@@ -19,6 +19,7 @@
 #include <linux/isdn/capicmd.h>
 #include <linux/isdn/capiutil.h>
 #include <linux/export.h>
+#include <linux/nospec.h>
 
 /* missing from kernelcapi.h */
 #define CapiNcpiNotSupportedByProtocol	0x0001
@@ -1998,7 +1999,7 @@ static void do_data_b3_req(struct gigaset_capi_ctr *iif,
 		send_conf(iif, ap, skb, CapiIllContrPlciNcci);
 		return;
 	}
-	bcs = &cs->bcs[channel - 1];
+	bcs = &cs->bcs[array_index_nospec(channel - 1, cs->channels)];
 	if (msglen != CAPI_DATA_B3_REQ_LEN && msglen != CAPI_DATA_B3_REQ_LEN64)
 		dev_notice(cs->dev, "%s: unexpected length %d\n",
 			   "DATA_B3_REQ", msglen);

@@ -5,6 +5,7 @@
 #include <media/v4l2-event.h>
 #include <media/v4l2-ctrls.h>
 #include <linux/module.h>
+#include <linux/nospec.h>
 
 static int max_memory = 32;
 
@@ -521,11 +522,15 @@ static int vidioc_s_fbuf(struct file *file, void *fh, const struct v4l2_framebuf
 
 static int vidioc_enum_fmt_vid_cap(struct file *file, void *fh, struct v4l2_fmtdesc *f)
 {
+	u32 index;
+
 	if (f->index >= NUM_FORMATS)
 		return -EINVAL;
-	strlcpy((char *)f->description, formats[f->index].name,
+	index = array_index_nospec(f->index, NUM_FORMATS);
+
+	strlcpy((char *)f->description, formats[index].name,
 			sizeof(f->description));
-	f->pixelformat = formats[f->index].pixelformat;
+	f->pixelformat = formats[index].pixelformat;
 	return 0;
 }
 

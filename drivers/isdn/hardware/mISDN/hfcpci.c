@@ -48,6 +48,7 @@
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/delay.h>
+#include <linux/nospec.h>
 #include <linux/mISDNhw.h>
 #include <linux/slab.h>
 
@@ -1941,12 +1942,14 @@ static int
 open_bchannel(struct hfc_pci *hc, struct channel_req *rq)
 {
 	struct bchannel		*bch;
+	unsigned char		idx;
 
 	if (rq->adr.channel == 0 || rq->adr.channel > 2)
 		return -EINVAL;
 	if (rq->protocol == ISDN_P_NONE)
 		return -EINVAL;
-	bch = &hc->bch[rq->adr.channel - 1];
+	idx = array_index_nospec(rq->adr.channel - 1, 2);
+	bch = &hc->bch[idx];
 	if (test_and_set_bit(FLG_OPEN, &bch->Flags))
 		return -EBUSY; /* b-channel can be only open once */
 	bch->ch.protocol = rq->protocol;
@@ -2295,8 +2298,8 @@ _hfcpci_softirq(struct device *dev, void *arg)
 static void
 hfcpci_softirq(void *arg)
 {
-	(void) driver_for_each_device(&hfc_driver.driver, NULL, arg,
-				      _hfcpci_softirq);
+	WARN_ON_ONCE(driver_for_each_device(&hfc_driver.driver, NULL, arg,
+				      _hfcpci_softirq) != 0);
 
 	/* if next event would be in the past ... */
 	if ((s32)(hfc_jiffies + tics - jiffies) <= 0)

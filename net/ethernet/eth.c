@@ -52,13 +52,21 @@
 #include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/if_ether.h>
+#ifndef __GENKSYMS__
+#include <linux/of_net.h>
+#include <linux/pci.h>
+#endif
 #include <net/dst.h>
 #include <net/arp.h>
 #include <net/sock.h>
 #include <net/ipv6.h>
 #include <net/ip.h>
 #include <net/dsa.h>
+#include <net/flow_dissector.h>
 #include <asm/uaccess.h>
+#ifndef __GENKSYMS__
+#include <net/pkt_sched.h>
+#endif
 
 __setup("ether=", netdev_boot_setup);
 
@@ -79,7 +87,7 @@ int eth_header(struct sk_buff *skb, struct net_device *dev,
 	       unsigned short type,
 	       const void *daddr, const void *saddr, unsigned int len)
 {
-	struct ethhdr *eth = (struct ethhdr *)skb_push(skb, ETH_HLEN);
+	struct ethhdr *eth = skb_push(skb, ETH_HLEN);
 
 	if (type != ETH_P_802_3 && type != ETH_P_802_2)
 		eth->h_proto = htons(type);
@@ -146,6 +154,34 @@ int eth_rebuild_header(struct sk_buff *skb)
 EXPORT_SYMBOL(eth_rebuild_header);
 
 /**
+ * eth_get_headlen - determine the the length of header for an ethernet frame
+ * @data: pointer to start of frame
+ * @len: total length of frame
+ *
+ * Make a best effort attempt to pull the length for all of the headers for
+ * a given frame in a linear buffer.
+ */
+u32 eth_get_headlen(void *data, unsigned int len)
+{
+	const unsigned int flags = FLOW_DISSECTOR_F_PARSE_1ST_FRAG;
+	const struct ethhdr *eth = (const struct ethhdr *)data;
+	struct flow_keys keys;
+
+	/* this should never happen, but better safe than sorry */
+	if (len < sizeof(*eth))
+		return len;
+
+	/* parse any remaining L2/L3 headers, check for L4 */
+	if (!skb_flow_dissect_flow_keys_buf(&keys, data, eth->h_proto,
+					    sizeof(*eth), len, flags))
+		return max_t(u32, keys.control.thoff, sizeof(*eth));
+
+	/* parse for any L4 headers */
+	return min_t(u32, __skb_get_poff(NULL, data, &keys, len), len);
+}
+EXPORT_SYMBOL(eth_get_headlen);
+
+/**
  * eth_type_trans - determine the packet's protocol ID.
  * @skb: received socket data
  * @dev: receiving network device
@@ -190,12 +226,10 @@ __be16 eth_type_trans(struct sk_buff *skb, struct net_device *dev)
 	 * variants has been configured on the receiving interface,
 	 * and if so, set skb->protocol without looking at the packet.
 	 */
-	if (netdev_uses_dsa_tags(dev))
-		return htons(ETH_P_DSA);
-	if (netdev_uses_trailer_tags(dev))
-		return htons(ETH_P_TRAILER);
+	if (unlikely(netdev_uses_dsa(dev)))
+		return htons(ETH_P_XDSA);
 
-	if (ntohs(eth->h_proto) >= ETH_P_802_3_MIN)
+	if (likely(eth_proto_is_802_3(eth->h_proto)))
 		return eth->h_proto;
 
 	/*
@@ -204,7 +238,7 @@ __be16 eth_type_trans(struct sk_buff *skb, struct net_device *dev)
 	 *      layer. We look for FFFF which isn't a used 802.2 SSAP/DSAP. This
 	 *      won't work for fault tolerant netware but does for the rest.
 	 */
-	if (skb->len >= 2 && *(unsigned short *)(skb->data) == 0xFFFF)
+	if (unlikely(skb->len >= 2 && *(unsigned short *)(skb->data) == 0xFFFF))
 		return htons(ETH_P_802_3);
 
 	/*
@@ -333,7 +367,12 @@ EXPORT_SYMBOL(eth_mac_addr);
  */
 int eth_change_mtu(struct net_device *dev, int new_mtu)
 {
-	if (new_mtu < 68 || new_mtu > ETH_DATA_LEN)
+	/* RHEL - For newer drivers show deprecation warning and for older
+	 * ones preserve old behavior.
+	 */
+	if (get_ndo_ext(dev->netdev_ops, ndo_change_mtu))
+		netdev_warn(dev, "%s is deprecated\n", __func__);
+	else if (new_mtu < 68 || new_mtu > ETH_DATA_LEN)
 		return -EINVAL;
 	dev->mtu = new_mtu;
 	return 0;
@@ -357,11 +396,22 @@ const struct header_ops eth_header_ops ____cacheline_aligned = {
 	.cache_update	= eth_header_cache_update,
 };
 
+/*
+ * RHEL: The macros ether_setup and alloc_etherdev_mqs need to be undefined
+ * here. For details, please see their definition in include/linux/netdevice.h
+ * and include/linux/etherdevice.h
+ */
+#undef ether_setup
+#undef alloc_etherdev_mqs
+
 /**
  * ether_setup - setup Ethernet network device
  * @dev: network device
  *
  * Fill in the fields of the device structure with Ethernet-generic values.
+ *
+ * RHEL: This function is preserved for existing binary modules compiled
+ * against RHEL-7.4 and older.
  */
 void ether_setup(struct net_device *dev)
 {
@@ -370,7 +420,7 @@ void ether_setup(struct net_device *dev)
 	dev->hard_header_len 	= ETH_HLEN;
 	dev->mtu		= ETH_DATA_LEN;
 	dev->addr_len		= ETH_ALEN;
-	dev->tx_queue_len	= 1000;	/* Ethernet wants good queues */
+	dev->tx_queue_len	= DEFAULT_TX_QUEUE_LEN;
 	dev->flags		= IFF_BROADCAST|IFF_MULTICAST;
 	dev->priv_flags		|= IFF_TX_SKB_SHARING;
 
@@ -380,7 +430,23 @@ void ether_setup(struct net_device *dev)
 EXPORT_SYMBOL(ether_setup);
 
 /**
- * alloc_etherdev_mqs - Allocates and sets up an Ethernet device
+ * ether_setup_rh - setup Ethernet network device
+ * @dev: network device
+ *
+ * Fill in the fields of the device structure with Ethernet-generic values.
+ *
+ * RHEL: This variant also initializes .min_mtu & .max_mtu
+ */
+void ether_setup_rh(struct net_device *dev)
+{
+	ether_setup(dev);
+	dev->extended->min_mtu	= ETH_MIN_MTU;
+	dev->extended->max_mtu	= ETH_DATA_LEN;
+}
+EXPORT_SYMBOL(ether_setup_rh);
+
+/**
+ * alloc_etherdev_mqs_rh - Allocates and sets up an Ethernet device
  * @sizeof_priv: Size of additional driver-private structure to be allocated
  *	for this Ethernet device
  * @txqs: The number of TX queues this device has.
@@ -392,8 +458,23 @@ EXPORT_SYMBOL(ether_setup);
  * Constructs a new net device, complete with a private data area of
  * size (sizeof_priv).  A 32-byte (not bit) alignment is enforced for
  * this private data area.
+ *
+ * RHEL: This function uses ether_setup_rh() that also initializes
+ * .{min,max}_mtu members to their default values.
  */
 
+struct net_device *alloc_etherdev_mqs_rh(int sizeof_priv, unsigned int txqs,
+					 unsigned int rxqs)
+{
+	return alloc_netdev_mqs(sizeof_priv, "eth%d", ether_setup_rh, txqs,
+				rxqs);
+}
+EXPORT_SYMBOL(alloc_etherdev_mqs_rh);
+
+/*
+ * RHEL: This function is preserved for existing binary modules compiled
+ * against RHEL-7.4 and older.
+ */
 struct net_device *alloc_etherdev_mqs(int sizeof_priv, unsigned int txqs,
 				      unsigned int rxqs)
 {
@@ -425,3 +506,125 @@ ssize_t sysfs_format_mac(char *buf, const unsigned char *addr, int len)
 	return (ssize_t)l;
 }
 EXPORT_SYMBOL(sysfs_format_mac);
+
+struct sk_buff **eth_gro_receive(struct sk_buff **head,
+				 struct sk_buff *skb)
+{
+	struct sk_buff *p, **pp = NULL;
+	struct ethhdr *eh, *eh2;
+	unsigned int hlen, off_eth;
+	const struct packet_offload *ptype;
+	__be16 type;
+	int flush = 1;
+
+	off_eth = skb_gro_offset(skb);
+	hlen = off_eth + sizeof(*eh);
+	eh = skb_gro_header_fast(skb, off_eth);
+	if (skb_gro_header_hard(skb, hlen)) {
+		eh = skb_gro_header_slow(skb, hlen, off_eth);
+		if (unlikely(!eh))
+			goto out;
+	}
+
+	flush = 0;
+
+	for (p = *head; p; p = p->next) {
+		if (!NAPI_GRO_CB(p)->same_flow)
+			continue;
+
+		eh2 = (struct ethhdr *)(p->data + off_eth);
+		if (compare_ether_header(eh, eh2)) {
+			NAPI_GRO_CB(p)->same_flow = 0;
+			continue;
+		}
+	}
+
+	type = eh->h_proto;
+
+	rcu_read_lock();
+	ptype = gro_find_receive_by_type(type);
+	if (ptype == NULL) {
+		flush = 1;
+		goto out_unlock;
+	}
+
+	skb_gro_pull(skb, sizeof(*eh));
+	skb_gro_postpull_rcsum(skb, eh, sizeof(*eh));
+	pp = call_gro_receive(ptype->callbacks.gro_receive, head, skb);
+
+out_unlock:
+	rcu_read_unlock();
+out:
+	NAPI_GRO_CB(skb)->flush |= flush;
+
+	return pp;
+}
+EXPORT_SYMBOL(eth_gro_receive);
+
+int eth_gro_complete(struct sk_buff *skb, int nhoff)
+{
+	struct ethhdr *eh = (struct ethhdr *)(skb->data + nhoff);
+	__be16 type = eh->h_proto;
+	struct packet_offload *ptype;
+	int err = -ENOSYS;
+
+	if (skb->encapsulation)
+		skb_set_inner_mac_header(skb, nhoff);
+
+	rcu_read_lock();
+	ptype = gro_find_complete_by_type(type);
+	if (ptype != NULL)
+		err = ptype->callbacks.gro_complete(skb, nhoff +
+						    sizeof(struct ethhdr));
+
+	rcu_read_unlock();
+	return err;
+}
+EXPORT_SYMBOL(eth_gro_complete);
+
+static struct packet_offload eth_packet_offload __read_mostly = {
+	.type = cpu_to_be16(ETH_P_TEB),
+	.priority = 10,
+	.callbacks = {
+		.gro_receive = eth_gro_receive,
+		.gro_complete = eth_gro_complete,
+	},
+};
+
+static int __init eth_offload_init(void)
+{
+	dev_add_offload(&eth_packet_offload);
+
+	return 0;
+}
+
+fs_initcall(eth_offload_init);
+
+unsigned char * __weak arch_get_platform_mac_address(void)
+{
+	return NULL;
+}
+
+int eth_platform_get_mac_address(struct device *dev, u8 *mac_addr)
+{
+	const unsigned char *addr;
+	struct device_node *dp;
+
+	if (dev_is_pci(dev))
+		dp = pci_device_to_OF_node(to_pci_dev(dev));
+	else
+		dp = dev->of_node;
+
+	addr = NULL;
+	if (dp)
+		addr = of_get_mac_address(dp);
+	if (!addr)
+		addr = arch_get_platform_mac_address();
+
+	if (!addr)
+		return -ENODEV;
+
+	ether_addr_copy(mac_addr, addr);
+	return 0;
+}
+EXPORT_SYMBOL(eth_platform_get_mac_address);

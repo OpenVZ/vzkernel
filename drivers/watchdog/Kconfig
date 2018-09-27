@@ -45,6 +45,13 @@ config WATCHDOG_NOWAYOUT
 	  get killed. If you say Y here, the watchdog cannot be stopped once
 	  it has been started.
 
+config WATCHDOG_SYSFS
+	bool "Read different watchdog information through sysfs"
+	default n
+	help
+	  Say Y here if you want to enable watchdog device status read through
+	  sysfs attributes.
+
 #
 # General Watchdog drivers
 #
@@ -619,7 +626,8 @@ config ITCO_WDT
 	tristate "Intel TCO Timer/Watchdog"
 	depends on (X86 || IA64) && PCI
 	select WATCHDOG_CORE
-	select LPC_ICH
+	select LPC_ICH if !EXPERT
+	select I2C_I801 if !EXPERT
 	---help---
 	  Hardware driver for the intel TCO timer based watchdog devices.
 	  These drivers are included in the Intel 82801 I/O Controller
@@ -961,6 +969,21 @@ config SBC_EPX_C3_WATCHDOG
 	  To compile this driver as a module, choose M here: the
 	  module will be called sbc_epx_c3.
 
+config INTEL_MEI_WDT
+	tristate "Intel MEI iAMT Watchdog"
+	depends on INTEL_MEI && X86
+	select WATCHDOG_CORE
+	---help---
+	  A device driver for the Intel MEI iAMT watchdog.
+
+	  The Intel AMT Watchdog is an OS Health (Hang/Crash) watchdog.
+	  Whenever the OS hangs or crashes, iAMT will send an event
+	  to any subscriber to this event. The watchdog doesn't reset the
+	  the platform.
+
+	  To compile this driver as a module, choose M here:
+	  the module will be called mei_wdt.
+
 # M32R Architecture
 
 # M68K Architecture
@@ -1185,14 +1208,17 @@ config WATCHDOG_RTAS
 
 # S390 Architecture
 
-config ZVM_WATCHDOG
-	tristate "z/VM Watchdog Timer"
+config DIAG288_WATCHDOG
+	tristate "System z diag288 Watchdog"
 	depends on S390
+	select WATCHDOG_CORE
 	help
 	  IBM s/390 and zSeries machines running under z/VM 5.1 or later
 	  provide a virtual watchdog timer to their guest that cause a
 	  user define Control Program command to be executed after a
 	  timeout.
+	  LPAR provides a very similar interface. This driver handles
+	  both.
 
 	  To compile this driver as a module, choose M here. The module
 	  will be called vmwatchdog.

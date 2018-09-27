@@ -37,6 +37,7 @@
 #include <asm/page.h>
 #include <linux/uaccess.h>
 #include <linux/ktime.h>
+#include <linux/nospec.h>
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-fh.h>
@@ -1429,11 +1430,13 @@ static int vidioc_querybuf(struct file *file, void *priv,
 {
 	struct gspca_dev *gspca_dev = video_drvdata(file);
 	struct gspca_frame *frame;
+	u32 index;
 
 	if (v4l2_buf->index >= gspca_dev->nframes)
 		return -EINVAL;
+	index = array_index_nospec(v4l2_buf->index, gspca_dev->nframes);
 
-	frame = &gspca_dev->frame[v4l2_buf->index];
+	frame = &gspca_dev->frame[index];
 	memcpy(v4l2_buf, &frame->v4l2_buf, sizeof *v4l2_buf);
 	return 0;
 }

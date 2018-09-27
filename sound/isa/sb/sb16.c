@@ -62,7 +62,7 @@ MODULE_SUPPORTED_DEVICE("{{Creative Labs,SB AWE 32},"
 #define SNDRV_DEBUG_IRQ
 #endif
 
-#if defined(SNDRV_SBAWE) && (defined(CONFIG_SND_SEQUENCER) || (defined(MODULE) && defined(CONFIG_SND_SEQUENCER_MODULE)))
+#if defined(SNDRV_SBAWE) && IS_ENABLED(CONFIG_SND_SEQUENCER)
 #define SNDRV_SBAWE_EMU8000
 #endif
 
@@ -373,7 +373,7 @@ static int snd_sb16_probe(struct snd_card *card, int dev)
 	if (! is_isapnp_selected(dev) && (err = snd_sb16dsp_configure(chip)) < 0)
 		return err;
 
-	if ((err = snd_sb16dsp_pcm(chip, 0, &chip->pcm)) < 0)
+	if ((err = snd_sb16dsp_pcm(chip, 0)) < 0)
 		return err;
 
 	strcpy(card->driver,

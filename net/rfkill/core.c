@@ -35,6 +35,7 @@
 #include <linux/poll.h>
 #include <linux/fs.h>
 #include <linux/slab.h>
+#include <linux/nospec.h>
 
 #include "rfkill.h"
 
@@ -1143,6 +1144,7 @@ static ssize_t rfkill_fop_write(struct file *file, const char __user *buf,
 {
 	struct rfkill *rfkill;
 	struct rfkill_event ev;
+	u8 type;
 
 	/* we don't need the 'hard' variable but accept it */
 	if (count < RFKILL_EVENT_SIZE_V1 - 1)
@@ -1162,6 +1164,7 @@ static ssize_t rfkill_fop_write(struct file *file, const char __user *buf,
 
 	if (ev.type >= NUM_RFKILL_TYPES)
 		return -EINVAL;
+	type = array_index_nospec(ev.type, NUM_RFKILL_TYPES);
 
 	mutex_lock(&rfkill_global_mutex);
 
@@ -1171,7 +1174,7 @@ static ssize_t rfkill_fop_write(struct file *file, const char __user *buf,
 			for (i = 0; i < NUM_RFKILL_TYPES; i++)
 				rfkill_global_states[i].cur = ev.soft;
 		} else {
-			rfkill_global_states[ev.type].cur = ev.soft;
+			rfkill_global_states[type].cur = ev.soft;
 		}
 	}
 

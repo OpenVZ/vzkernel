@@ -90,10 +90,20 @@ config CHROMEOS_LAPTOP
 	  If you have a supported Chromebook, choose Y or M here.
 	  The module will be called chromeos_laptop.
 
+config DELL_SMBIOS
+	tristate "Dell SMBIOS Support"
+	depends on DCDBAS
+	default n
+	---help---
+	This module provides common functions for kernel modules using
+	Dell SMBIOS.
+
+	If you have a Dell laptop, say Y or M here.
+
 config DELL_LAPTOP
 	tristate "Dell Laptop Extras"
 	depends on X86
-	depends on DCDBAS
+	depends on DELL_SMBIOS
 	depends on BACKLIGHT_CLASS_DEVICE
 	depends on RFKILL || RFKILL = n
 	depends on SERIO_I8042
@@ -109,6 +119,7 @@ config DELL_WMI
 	tristate "Dell WMI extras"
 	depends on ACPI_WMI
 	depends on INPUT
+	depends on DELL_SMBIOS
 	select INPUT_SPARSEKMAP
 	---help---
 	  Say Y here if you want to support WMI-based hotkeys on Dell laptops.
@@ -127,6 +138,32 @@ config DELL_WMI_AIO
 
 	  To compile this driver as a module, choose M here: the module will
 	  be called dell-wmi-aio.
+
+config DELL_SMO8800
+	tristate "Dell Latitude freefall driver (ACPI SMO88XX)"
+	depends on ACPI
+	---help---
+	  Say Y here if you want to support SMO88XX freefall devices
+	  on Dell Latitude laptops.
+
+	  To compile this driver as a module, choose M here: the module will
+	  be called dell-smo8800.
+
+config DELL_RBTN
+	tristate "Dell Airplane Mode Switch driver"
+	depends on ACPI
+	depends on INPUT
+	depends on RFKILL
+	---help---
+	  Say Y here if you want to support Dell Airplane Mode Switch ACPI
+	  device on Dell laptops. Sometimes it has names: DELLABCE or DELRBTN.
+	  This driver register rfkill device or input hotkey device depending
+	  on hardware type (hw switch slider or keyboard toggle button). For
+	  rfkill devices it receive HW switch events and set correct hard
+	  rfkill state.
+
+	  To compile this driver as a module, choose M here: the module will
+	  be called dell-rbtn.
 
 
 config FUJITSU_LAPTOP
@@ -206,6 +243,17 @@ config HP_ACCEL
 
 	  To compile this driver as a module, choose M here: the module will
 	  be called hp_accel.
+
+config HP_WIRELESS
+	tristate "HP WIRELESS"
+	depends on ACPI
+	depends on INPUT
+	help
+	 This driver provides supports for new HP wireless button for Windows 8.
+	 On such systems the driver should load automatically (via ACPI alias).
+
+	 To compile this driver as a module, choose M here: the module will
+	 be called hp-wireless.
 
 config HP_WMI
 	tristate "HP WMI extras"
@@ -585,6 +633,7 @@ config TOPSTAR_LAPTOP
 config ACPI_TOSHIBA
 	tristate "Toshiba Laptop Extras"
 	depends on ACPI
+	depends on ACPI_VIDEO || ACPI_VIDEO = n
 	depends on ACPI_WMI
 	select LEDS_CLASS
 	select NEW_LEDS
@@ -642,6 +691,30 @@ config ACPI_CMPC
 	  Support for Intel Classmate PC ACPI devices, including some
 	  keys as input device, backlight device, tablet and accelerometer
 	  devices.
+
+config INTEL_HID_EVENT
+	tristate "INTEL HID Event"
+	depends on ACPI
+	depends on INPUT
+	select INPUT_SPARSEKMAP
+	help
+	  This driver provides support for the Intel HID Event hotkey interface.
+	  Some laptops require this driver for hotkey support.
+
+	  To compile this driver as a module, choose M here: the module will
+	  be called intel_hid.
+
+config INTEL_VBTN
+	tristate "INTEL VIRTUAL BUTTON"
+	depends on ACPI
+	depends on INPUT
+	select INPUT_SPARSEKMAP
+	help
+	  This driver provides support for the Intel Virtual Button interface.
+	  Some laptops require this driver for power button support.
+
+	  To compile this driver as a module, choose M here: the module will
+	  be called intel_vbtn.
 
 config INTEL_SCU_IPC
 	bool "Intel SCU IPC Support"

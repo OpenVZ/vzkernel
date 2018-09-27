@@ -90,7 +90,7 @@ static __kprobes bool trace_probe_is_on_module(struct trace_probe *tp)
 }
 
 static int register_probe_event(struct trace_probe *tp);
-static void unregister_probe_event(struct trace_probe *tp);
+static int unregister_probe_event(struct trace_probe *tp);
 
 static DEFINE_MUTEX(probe_lock);
 static LIST_HEAD(probe_list);
@@ -98,6 +98,185 @@ static LIST_HEAD(probe_list);
 static int kprobe_dispatcher(struct kprobe *kp, struct pt_regs *regs);
 static int kretprobe_dispatcher(struct kretprobe_instance *ri,
 				struct pt_regs *regs);
+
+/* Memory fetching by symbol */
+struct symbol_cache {
+	char		*symbol;
+	long		offset;
+	unsigned long	addr;
+};
+
+unsigned long update_symbol_cache(struct symbol_cache *sc)
+{
+	sc->addr = (unsigned long)kallsyms_lookup_name(sc->symbol);
+
+	if (sc->addr)
+		sc->addr += sc->offset;
+
+	return sc->addr;
+}
+
+void free_symbol_cache(struct symbol_cache *sc)
+{
+	kfree(sc->symbol);
+	kfree(sc);
+}
+
+struct symbol_cache *alloc_symbol_cache(const char *sym, long offset)
+{
+	struct symbol_cache *sc;
+
+	if (!sym || strlen(sym) == 0)
+		return NULL;
+
+	sc = kzalloc(sizeof(struct symbol_cache), GFP_KERNEL);
+	if (!sc)
+		return NULL;
+
+	sc->symbol = kstrdup(sym, GFP_KERNEL);
+	if (!sc->symbol) {
+		kfree(sc);
+		return NULL;
+	}
+	sc->offset = offset;
+	update_symbol_cache(sc);
+
+	return sc;
+}
+
+/*
+ * Kprobes-specific fetch functions
+ */
+#define DEFINE_FETCH_stack(type)					\
+static __kprobes void FETCH_FUNC_NAME(stack, type)(struct pt_regs *regs,\
+					  void *offset, void *dest)	\
+{									\
+	*(type *)dest = (type)regs_get_kernel_stack_nth(regs,		\
+				(unsigned int)((unsigned long)offset));	\
+}
+DEFINE_BASIC_FETCH_FUNCS(stack)
+/* No string on the stack entry */
+#define fetch_stack_string	NULL
+#define fetch_stack_string_size	NULL
+
+#define DEFINE_FETCH_memory(type)					\
+static __kprobes void FETCH_FUNC_NAME(memory, type)(struct pt_regs *regs,\
+					  void *addr, void *dest)	\
+{									\
+	type retval;							\
+	if (probe_kernel_address(addr, retval))				\
+		*(type *)dest = 0;					\
+	else								\
+		*(type *)dest = retval;					\
+}
+DEFINE_BASIC_FETCH_FUNCS(memory)
+/*
+ * Fetch a null-terminated string. Caller MUST set *(u32 *)dest with max
+ * length and relative data location.
+ */
+static __kprobes void FETCH_FUNC_NAME(memory, string)(struct pt_regs *regs,
+						      void *addr, void *dest)
+{
+	long ret;
+	int maxlen = get_rloc_len(*(u32 *)dest);
+	u8 *dst = get_rloc_data(dest);
+	u8 *src = addr;
+	mm_segment_t old_fs = get_fs();
+
+	if (!maxlen)
+		return;
+
+	/*
+	 * Try to get string again, since the string can be changed while
+	 * probing.
+	 */
+	set_fs(KERNEL_DS);
+	pagefault_disable();
+
+	do
+		ret = __copy_from_user_inatomic(dst++, src++, 1);
+	while (dst[-1] && ret == 0 && src - (u8 *)addr < maxlen);
+
+	dst[-1] = '\0';
+	pagefault_enable();
+	set_fs(old_fs);
+
+	if (ret < 0) {	/* Failed to fetch string */
+		((u8 *)get_rloc_data(dest))[0] = '\0';
+		*(u32 *)dest = make_data_rloc(0, get_rloc_offs(*(u32 *)dest));
+	} else {
+		*(u32 *)dest = make_data_rloc(src - (u8 *)addr,
+					      get_rloc_offs(*(u32 *)dest));
+	}
+}
+
+/* Return the length of string -- including null terminal byte */
+static __kprobes void FETCH_FUNC_NAME(memory, string_size)(struct pt_regs *regs,
+							void *addr, void *dest)
+{
+	mm_segment_t old_fs;
+	int ret, len = 0;
+	u8 c;
+
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+	pagefault_disable();
+
+	do {
+		ret = __copy_from_user_inatomic(&c, (u8 *)addr + len, 1);
+		len++;
+	} while (c && ret == 0 && len < MAX_STRING_SIZE);
+
+	pagefault_enable();
+	set_fs(old_fs);
+
+	if (ret < 0)	/* Failed to check the length */
+		*(u32 *)dest = 0;
+	else
+		*(u32 *)dest = len;
+}
+
+#define DEFINE_FETCH_symbol(type)					\
+__kprobes void FETCH_FUNC_NAME(symbol, type)(struct pt_regs *regs,	\
+					  void *data, void *dest)	\
+{									\
+	struct symbol_cache *sc = data;					\
+	if (sc->addr)							\
+		fetch_memory_##type(regs, (void *)sc->addr, dest);	\
+	else								\
+		*(type *)dest = 0;					\
+}
+DEFINE_BASIC_FETCH_FUNCS(symbol)
+DEFINE_FETCH_symbol(string)
+DEFINE_FETCH_symbol(string_size)
+
+/* kprobes don't support file_offset fetch methods */
+#define fetch_file_offset_u8		NULL
+#define fetch_file_offset_u16		NULL
+#define fetch_file_offset_u32		NULL
+#define fetch_file_offset_u64		NULL
+#define fetch_file_offset_string	NULL
+#define fetch_file_offset_string_size	NULL
+
+/* Fetch type information table */
+const struct fetch_type kprobes_fetch_type_table[] = {
+	/* Special types */
+	[FETCH_TYPE_STRING] = __ASSIGN_FETCH_TYPE("string", string, string,
+					sizeof(u32), 1, "__data_loc char[]"),
+	[FETCH_TYPE_STRSIZE] = __ASSIGN_FETCH_TYPE("string_size", u32,
+					string_size, sizeof(u32), 0, "u32"),
+	/* Basic types */
+	ASSIGN_FETCH_TYPE(u8,  u8,  0),
+	ASSIGN_FETCH_TYPE(u16, u16, 0),
+	ASSIGN_FETCH_TYPE(u32, u32, 0),
+	ASSIGN_FETCH_TYPE(u64, u64, 0),
+	ASSIGN_FETCH_TYPE(s8,  u8,  1),
+	ASSIGN_FETCH_TYPE(s16, u16, 1),
+	ASSIGN_FETCH_TYPE(s32, u32, 1),
+	ASSIGN_FETCH_TYPE(s64, u64, 1),
+
+	ASSIGN_FETCH_TYPE_END
+};
 
 /*
  * Allocate new trace_probe and initialize it (including kprobes).
@@ -281,6 +460,8 @@ trace_probe_file_index(struct trace_probe *tp, struct ftrace_event_file *file)
 static int
 disable_trace_probe(struct trace_probe *tp, struct ftrace_event_file *file)
 {
+	struct ftrace_event_file **old = NULL;
+	int wait = 0;
 	int ret = 0;
 
 	mutex_lock(&probe_enable_lock);
@@ -314,10 +495,7 @@ disable_trace_probe(struct trace_probe *tp, struct ftrace_event_file *file)
 		}
 
 		rcu_assign_pointer(tp->files, new);
-
-		/* Make sure the probe is done with old files */
-		synchronize_sched();
-		kfree(old);
+		wait = 1;
 	} else
 		tp->flags &= ~TP_FLAG_PROFILE;
 
@@ -326,10 +504,24 @@ disable_trace_probe(struct trace_probe *tp, struct ftrace_event_file *file)
 			disable_kretprobe(&tp->rp);
 		else
 			disable_kprobe(&tp->rp.kp);
+		wait = 1;
 	}
 
  out_unlock:
 	mutex_unlock(&probe_enable_lock);
+
+	if (wait) {
+		/*
+		 * Synchronize with kprobe_trace_func/kretprobe_trace_func
+		 * to ensure disabled (all running handlers are finished).
+		 * This is not only for kfree(), but also the caller,
+		 * trace_remove_event_call() supposes it for releasing
+		 * event_call related objects, which will be accessed in
+		 * the kprobe_trace_func/kretprobe_trace_func.
+		 */
+		synchronize_sched();
+		kfree(old);	/* Ignored if link == NULL */
+	}
 
 	return ret;
 }
@@ -398,9 +590,12 @@ static int unregister_trace_probe(struct trace_probe *tp)
 	if (trace_probe_is_enabled(tp))
 		return -EBUSY;
 
+	/* Will fail if probe is being used by ftrace or perf */
+	if (unregister_probe_event(tp))
+		return -EBUSY;
+
 	__unregister_trace_probe(tp);
 	list_del(&tp->list);
-	unregister_probe_event(tp);
 
 	return 0;
 }
@@ -560,29 +755,17 @@ static int create_trace_probe(int argc, char **argv)
 		pr_info("Probe point is not specified.\n");
 		return -EINVAL;
 	}
-	if (isdigit(argv[1][0])) {
-		if (is_return) {
-			pr_info("Return probe point must be a symbol.\n");
-			return -EINVAL;
-		}
-		/* an address specified */
-		ret = kstrtoul(&argv[1][0], 0, (unsigned long *)&addr);
-		if (ret) {
-			pr_info("Failed to parse address.\n");
-			return ret;
-		}
-	} else {
+
+	/* try to parse an address. if that fails, try to read the
+	 * input as a symbol. */
+	if (kstrtoul(argv[1], 0, (unsigned long *)&addr)) {
 		/* a symbol specified */
 		symbol = argv[1];
 		/* TODO: support .init module functions */
 		ret = traceprobe_split_symbol_offset(symbol, &offset);
 		if (ret) {
-			pr_info("Failed to parse symbol.\n");
+			pr_info("Failed to parse either an address or a symbol.\n");
 			return ret;
-		}
-		if (offset && is_return) {
-			pr_info("Return probe must be used without offset.\n");
-			return -EINVAL;
 		}
 	}
 	argc -= 2; argv += 2;
@@ -679,7 +862,9 @@ static int release_all_trace_probes(void)
 	/* TODO: Use batch unregistration */
 	while (!list_empty(&probe_list)) {
 		tp = list_entry(probe_list.next, struct trace_probe, list);
-		unregister_trace_probe(tp);
+		ret = unregister_trace_probe(tp);
+		if (ret)
+			goto end;
 		free_trace_probe(tp);
 	}
 
@@ -1165,7 +1350,7 @@ kprobe_perf_func(struct trace_probe *tp, struct pt_regs *regs)
 		     "profile buffer not large enough"))
 		return;
 
-	entry = perf_trace_buf_prepare(size, call->event.type, regs, &rctx);
+	entry = perf_trace_buf_prepare(size, call->event.type, NULL, &rctx);
 	if (!entry)
 		return;
 
@@ -1197,7 +1382,7 @@ kretprobe_perf_func(struct trace_probe *tp, struct kretprobe_instance *ri,
 		     "profile buffer not large enough"))
 		return;
 
-	entry = perf_trace_buf_prepare(size, call->event.type, regs, &rctx);
+	entry = perf_trace_buf_prepare(size, call->event.type, NULL, &rctx);
 	if (!entry)
 		return;
 
@@ -1312,11 +1497,15 @@ static int register_probe_event(struct trace_probe *tp)
 	return ret;
 }
 
-static void unregister_probe_event(struct trace_probe *tp)
+static int unregister_probe_event(struct trace_probe *tp)
 {
+	int ret;
+
 	/* tp->event is unregistered in trace_remove_event_call() */
-	trace_remove_event_call(&tp->call);
-	kfree(tp->call.print_fmt);
+	ret = trace_remove_event_call(&tp->call);
+	if (!ret)
+		kfree(tp->call.print_fmt);
+	return ret;
 }
 
 /* Make a debugfs interface for controlling probe points */

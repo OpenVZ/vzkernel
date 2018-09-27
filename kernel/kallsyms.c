@@ -23,6 +23,7 @@
 #include <linux/mm.h>
 #include <linux/ctype.h>
 #include <linux/slab.h>
+#include <linux/compiler.h>
 
 #include <asm/sections.h>
 
@@ -36,8 +37,8 @@
  * These will be re-linked against their real values
  * during the second link stage.
  */
-extern const unsigned long kallsyms_addresses[] __attribute__((weak));
-extern const u8 kallsyms_names[] __attribute__((weak));
+extern const unsigned long kallsyms_addresses[] __weak;
+extern const u8 kallsyms_names[] __weak;
 
 /*
  * Tell the compiler that the count isn't in the small data section if the arch
@@ -46,10 +47,10 @@ extern const u8 kallsyms_names[] __attribute__((weak));
 extern const unsigned long kallsyms_num_syms
 __attribute__((weak, section(".rodata")));
 
-extern const u8 kallsyms_token_table[] __attribute__((weak));
-extern const u16 kallsyms_token_index[] __attribute__((weak));
+extern const u8 kallsyms_token_table[] __weak;
+extern const u16 kallsyms_token_index[] __weak;
 
-extern const unsigned long kallsyms_markers[] __attribute__((weak));
+extern const unsigned long kallsyms_markers[] __weak;
 
 static inline int is_kernel_inittext(unsigned long addr)
 {
@@ -452,6 +453,7 @@ struct kallsym_iter {
 	char name[KSYM_NAME_LEN];
 	char module_name[MODULE_NAME_LEN];
 	int exported;
+	int show_value;
 };
 
 static int get_ksymbol_mod(struct kallsym_iter *iter)
@@ -524,13 +526,22 @@ static void s_stop(struct seq_file *m, void *p)
 {
 }
 
+#ifndef CONFIG_64BIT
+# define KALLSYM_FMT "%08lx"
+#else
+# define KALLSYM_FMT "%016lx"
+#endif
+
 static int s_show(struct seq_file *m, void *p)
 {
+	unsigned long value;
 	struct kallsym_iter *iter = m->private;
 
 	/* Some debugging symbols have no name.  Ignore them. */
 	if (!iter->name[0])
 		return 0;
+
+	value = iter->show_value ? iter->value : 0;
 
 	if (iter->module_name[0]) {
 		char type;
@@ -541,10 +552,10 @@ static int s_show(struct seq_file *m, void *p)
 		 */
 		type = iter->exported ? toupper(iter->type) :
 					tolower(iter->type);
-		seq_printf(m, "%pK %c %s\t[%s]\n", (void *)iter->value,
+		seq_printf(m, KALLSYM_FMT " %c %s\t[%s]\n", value,
 			   type, iter->name, iter->module_name);
 	} else
-		seq_printf(m, "%pK %c %s\n", (void *)iter->value,
+		seq_printf(m, KALLSYM_FMT " %c %s\n", value,
 			   iter->type, iter->name);
 	return 0;
 }
@@ -556,6 +567,40 @@ static const struct seq_operations kallsyms_op = {
 	.show = s_show
 };
 
+static inline int kallsyms_for_perf(void)
+{
+#ifdef CONFIG_PERF_EVENTS
+	extern int sysctl_perf_event_paranoid;
+	if (sysctl_perf_event_paranoid <= 1)
+		return 1;
+#endif
+	return 0;
+}
+
+/*
+ * We show kallsyms information even to normal users if we've enabled
+ * kernel profiling and are explicitly not paranoid (so kptr_restrict
+ * is clear, and sysctl_perf_event_paranoid isn't set).
+ *
+ * Otherwise, require CAP_SYSLOG (assuming kptr_restrict isn't set to
+ * block even that).
+ */
+static int kallsyms_show_value(void)
+{
+	switch (kptr_restrict) {
+	case 0:
+		if (kallsyms_for_perf())
+			return 1;
+	/* fallthrough */
+	case 1:
+		if (has_capability_noaudit(current, CAP_SYSLOG))
+			return 1;
+	/* fallthrough */
+	default:
+		return 0;
+	}
+}
+
 static int kallsyms_open(struct inode *inode, struct file *file)
 {
 	/*
@@ -564,19 +609,13 @@ static int kallsyms_open(struct inode *inode, struct file *file)
 	 * using get_symbol_offset for every symbol.
 	 */
 	struct kallsym_iter *iter;
-	int ret;
-
-	iter = kmalloc(sizeof(*iter), GFP_KERNEL);
+	iter = __seq_open_private(file, &kallsyms_op, sizeof(*iter));
 	if (!iter)
 		return -ENOMEM;
 	reset_iter(iter, 0);
 
-	ret = seq_open(file, &kallsyms_op);
-	if (ret == 0)
-		((struct seq_file *)file->private_data)->private = iter;
-	else
-		kfree(iter);
-	return ret;
+	iter->show_value = kallsyms_show_value();
+	return 0;
 }
 
 #ifdef	CONFIG_KGDB_KDB

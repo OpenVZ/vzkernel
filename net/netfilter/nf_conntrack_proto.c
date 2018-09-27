@@ -22,6 +22,7 @@
 #include <linux/notifier.h>
 #include <linux/kernel.h>
 #include <linux/netdevice.h>
+#include <linux/nospec.h>
 
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_l3proto.h>
@@ -68,8 +69,10 @@ nf_ct_unregister_sysctl(struct ctl_table_header **header,
 struct nf_conntrack_l4proto *
 __nf_ct_l4proto_find(u_int16_t l3proto, u_int8_t l4proto)
 {
-	if (unlikely(l3proto >= AF_MAX || nf_ct_protos[l3proto] == NULL))
+	if (unlikely(l3proto >= AF_MAX ||
+	    nf_ct_protos[array_index_nospec(l3proto, AF_MAX)] == NULL))
 		return &nf_conntrack_l4proto_generic;
+	l3proto = array_index_nospec(l3proto, AF_MAX);
 
 	return rcu_dereference(nf_ct_protos[l3proto][l4proto]);
 }
@@ -281,7 +284,7 @@ void nf_ct_l3proto_pernet_unregister(struct net *net,
 	nf_ct_l3proto_unregister_sysctl(net, proto);
 
 	/* Remove all contrack entries for this protocol */
-	nf_ct_iterate_cleanup(net, kill_l3proto, proto);
+	nf_ct_iterate_cleanup(net, kill_l3proto, proto, 0, 0);
 }
 EXPORT_SYMBOL_GPL(nf_ct_l3proto_pernet_unregister);
 
@@ -364,15 +367,15 @@ void nf_ct_l4proto_unregister_sysctl(struct net *net,
 
 /* FIXME: Allow NULL functions and sub in pointers to generic for
    them. --RR */
-int nf_ct_l4proto_register(struct nf_conntrack_l4proto *l4proto)
+int nf_ct_l4proto_register_one(struct nf_conntrack_l4proto *l4proto)
 {
 	int ret = 0;
 
 	if (l4proto->l3proto >= PF_MAX)
 		return -EBUSY;
 
-	if ((l4proto->to_nlattr && !l4proto->nlattr_size)
-		|| (l4proto->tuple_to_nlattr && !l4proto->nlattr_tuple_size))
+	if ((l4proto->to_nlattr && !l4proto->nlattr_size) ||
+	    (l4proto->tuple_to_nlattr && !l4proto->nlattr_tuple_size))
 		return -EINVAL;
 
 	mutex_lock(&nf_ct_proto_mutex);
@@ -390,7 +393,8 @@ int nf_ct_l4proto_register(struct nf_conntrack_l4proto *l4proto)
 		}
 
 		for (i = 0; i < MAX_NF_CT_PROTO; i++)
-			RCU_INIT_POINTER(proto_array[i], &nf_conntrack_l4proto_generic);
+			RCU_INIT_POINTER(proto_array[i],
+					 &nf_conntrack_l4proto_generic);
 
 		/* Before making proto_array visible to lockless readers,
 		 * we must make sure its content is committed to memory.
@@ -418,10 +422,10 @@ out_unlock:
 	mutex_unlock(&nf_ct_proto_mutex);
 	return ret;
 }
-EXPORT_SYMBOL_GPL(nf_ct_l4proto_register);
+EXPORT_SYMBOL_GPL(nf_ct_l4proto_register_one);
 
-int nf_ct_l4proto_pernet_register(struct net *net,
-				  struct nf_conntrack_l4proto *l4proto)
+int nf_ct_l4proto_pernet_register_one(struct net *net,
+				      struct nf_conntrack_l4proto *l4proto)
 {
 	int ret = 0;
 	struct nf_proto_net *pn = NULL;
@@ -444,9 +448,9 @@ int nf_ct_l4proto_pernet_register(struct net *net,
 out:
 	return ret;
 }
-EXPORT_SYMBOL_GPL(nf_ct_l4proto_pernet_register);
+EXPORT_SYMBOL_GPL(nf_ct_l4proto_pernet_register_one);
 
-void nf_ct_l4proto_unregister(struct nf_conntrack_l4proto *l4proto)
+void nf_ct_l4proto_unregister_one(struct nf_conntrack_l4proto *l4proto)
 {
 	BUG_ON(l4proto->l3proto >= PF_MAX);
 
@@ -461,10 +465,10 @@ void nf_ct_l4proto_unregister(struct nf_conntrack_l4proto *l4proto)
 
 	synchronize_rcu();
 }
-EXPORT_SYMBOL_GPL(nf_ct_l4proto_unregister);
+EXPORT_SYMBOL_GPL(nf_ct_l4proto_unregister_one);
 
-void nf_ct_l4proto_pernet_unregister(struct net *net,
-				     struct nf_conntrack_l4proto *l4proto)
+void nf_ct_l4proto_pernet_unregister_one(struct net *net,
+					 struct nf_conntrack_l4proto *l4proto)
 {
 	struct nf_proto_net *pn = NULL;
 
@@ -476,7 +480,67 @@ void nf_ct_l4proto_pernet_unregister(struct net *net,
 	nf_ct_l4proto_unregister_sysctl(net, pn, l4proto);
 
 	/* Remove all contrack entries for this protocol */
-	nf_ct_iterate_cleanup(net, kill_l4proto, l4proto);
+	nf_ct_iterate_cleanup(net, kill_l4proto, l4proto, 0, 0);
+}
+EXPORT_SYMBOL_GPL(nf_ct_l4proto_pernet_unregister_one);
+
+int nf_ct_l4proto_register(struct nf_conntrack_l4proto *l4proto[],
+			   unsigned int num_proto)
+{
+	int ret = -EINVAL, ver;
+	unsigned int i;
+
+	for (i = 0; i < num_proto; i++) {
+		ret = nf_ct_l4proto_register_one(l4proto[i]);
+		if (ret < 0)
+			break;
+	}
+	if (i != num_proto) {
+		ver = l4proto[i]->l3proto == PF_INET6 ? 6 : 4;
+		pr_err("nf_conntrack_ipv%d: can't register %s%d proto.\n",
+		       ver, l4proto[i]->name, ver);
+		nf_ct_l4proto_unregister(l4proto, i);
+	}
+	return ret;
+}
+EXPORT_SYMBOL_GPL(nf_ct_l4proto_register);
+
+int nf_ct_l4proto_pernet_register(struct net *net,
+				  struct nf_conntrack_l4proto *l4proto[],
+				  unsigned int num_proto)
+{
+	int ret = -EINVAL;
+	unsigned int i;
+
+	for (i = 0; i < num_proto; i++) {
+		ret = nf_ct_l4proto_pernet_register_one(net, l4proto[i]);
+		if (ret < 0)
+			break;
+	}
+	if (i != num_proto) {
+		pr_err("nf_conntrack_%s%d: pernet registration failed\n",
+		       l4proto[i]->name,
+		       l4proto[i]->l3proto == PF_INET6 ? 6 : 4);
+		nf_ct_l4proto_pernet_unregister(net, l4proto, i);
+	}
+	return ret;
+}
+EXPORT_SYMBOL_GPL(nf_ct_l4proto_pernet_register);
+
+void nf_ct_l4proto_unregister(struct nf_conntrack_l4proto *l4proto[],
+			      unsigned int num_proto)
+{
+	while (num_proto-- != 0)
+		nf_ct_l4proto_unregister_one(l4proto[num_proto]);
+}
+EXPORT_SYMBOL_GPL(nf_ct_l4proto_unregister);
+
+void nf_ct_l4proto_pernet_unregister(struct net *net,
+				     struct nf_conntrack_l4proto *l4proto[],
+				     unsigned int num_proto)
+{
+	while (num_proto-- != 0)
+		nf_ct_l4proto_pernet_unregister_one(net, l4proto[num_proto]);
 }
 EXPORT_SYMBOL_GPL(nf_ct_l4proto_pernet_unregister);
 

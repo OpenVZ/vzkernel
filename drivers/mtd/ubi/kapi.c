@@ -25,6 +25,7 @@
 #include <linux/slab.h>
 #include <linux/namei.h>
 #include <linux/fs.h>
+#include <linux/nospec.h>
 #include <asm/div64.h>
 #include "ubi.h"
 
@@ -151,6 +152,7 @@ struct ubi_volume_desc *ubi_open_volume(int ubi_num, int vol_id, int mode)
 		err = -EINVAL;
 		goto out_put_ubi;
 	}
+	vol_id = array_index_nospec(vol_id, ubi->vtbl_slots);
 
 	desc = kmalloc(sizeof(struct ubi_volume_desc), GFP_KERNEL);
 	if (!desc) {
@@ -639,6 +641,7 @@ int ubi_leb_map(struct ubi_volume_desc *desc, int lnum)
 
 	if (lnum < 0 || lnum >= vol->reserved_pebs)
 		return -EINVAL;
+	lnum = array_index_nospec(lnum, vol->reserved_pebs);
 
 	if (vol->upd_marker)
 		return -EBADF;
@@ -674,6 +677,7 @@ int ubi_is_mapped(struct ubi_volume_desc *desc, int lnum)
 
 	if (lnum < 0 || lnum >= vol->reserved_pebs)
 		return -EINVAL;
+	lnum = array_index_nospec(lnum, vol->reserved_pebs);
 
 	if (vol->upd_marker)
 		return -EBADF;

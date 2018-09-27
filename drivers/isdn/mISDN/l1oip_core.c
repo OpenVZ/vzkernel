@@ -234,6 +234,7 @@
 #include <linux/workqueue.h>
 #include <linux/kthread.h>
 #include <linux/slab.h>
+#include <linux/nospec.h>
 #include <net/sock.h>
 #include "core.h"
 #include "l1oip.h"
@@ -1032,6 +1033,7 @@ open_bchannel(struct l1oip *hc, struct dchannel *dch, struct channel_req *rq)
 	if (rq->protocol == ISDN_P_NONE)
 		return -EINVAL;
 	ch = rq->adr.channel; /* BRI: 1=B1 2=B2  PRI: 1..15,17.. */
+	ch = array_index_nospec(ch, MISDN_MAX_CHANNEL);
 	bch = hc->chan[ch].bch;
 	if (!bch) {
 		printk(KERN_ERR "%s:internal error ch %d has no bch\n",

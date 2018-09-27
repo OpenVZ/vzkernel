@@ -28,6 +28,7 @@
 #include <asm/pgtable.h>
 #include <asm/nmi.h>
 #include <asm/switch_to.h>
+#include <asm/facility.h>
 #include <asm/sclp.h>
 #include "kvm-s390.h"
 #include "gaccess.h"
@@ -48,6 +49,8 @@ struct kvm_stats_debugfs_item debugfs_entries[] = {
 	{ "exit_instruction", VCPU_STAT(exit_instruction) },
 	{ "exit_program_interruption", VCPU_STAT(exit_program_interruption) },
 	{ "exit_instr_and_program_int", VCPU_STAT(exit_instr_and_program) },
+	{ "halt_successful_poll", VCPU_STAT(halt_successful_poll) },
+	{ "halt_attempted_poll", VCPU_STAT(halt_attempted_poll) },
 	{ "instruction_lctlg", VCPU_STAT(instruction_lctlg) },
 	{ "instruction_lctl", VCPU_STAT(instruction_lctl) },
 	{ "deliver_emergency_signal", VCPU_STAT(deliver_emergency_signal) },
@@ -59,6 +62,7 @@ struct kvm_stats_debugfs_item debugfs_entries[] = {
 	{ "deliver_restart_signal", VCPU_STAT(deliver_restart_signal) },
 	{ "deliver_program_interruption", VCPU_STAT(deliver_program_int) },
 	{ "exit_wait_state", VCPU_STAT(exit_wait_state) },
+	{ "instruction_pfmf", VCPU_STAT(instruction_pfmf) },
 	{ "instruction_stidp", VCPU_STAT(instruction_stidp) },
 	{ "instruction_spx", VCPU_STAT(instruction_spx) },
 	{ "instruction_stpx", VCPU_STAT(instruction_stpx) },
@@ -83,26 +87,38 @@ struct kvm_stats_debugfs_item debugfs_entries[] = {
 	{ NULL }
 };
 
-static unsigned long long *facilities;
+unsigned long *vfacilities;
+static struct gmap_notifier gmap_notifier;
+
+/* test availability of vfacility */
+static inline int test_vfacility(unsigned long nr)
+{
+	return __test_facility(nr, (void *) vfacilities);
+}
 
 /* Section: not file related */
-int kvm_arch_hardware_enable(void *garbage)
+int kvm_arch_hardware_enable(void)
 {
 	/* every s390 is virtualization enabled ;-) */
 	return 0;
 }
 
-void kvm_arch_hardware_disable(void *garbage)
+void kvm_arch_hardware_disable(void)
 {
 }
 
+static void kvm_gmap_notifier(struct gmap *gmap, unsigned long address);
+
 int kvm_arch_hardware_setup(void)
 {
+	gmap_notifier.notifier_call = kvm_gmap_notifier;
+	gmap_register_ipte_notifier(&gmap_notifier);
 	return 0;
 }
 
 void kvm_arch_hardware_unsetup(void)
 {
+	gmap_unregister_ipte_notifier(&gmap_notifier);
 }
 
 void kvm_arch_check_processor_compat(void *rtn)
@@ -127,7 +143,7 @@ long kvm_arch_dev_ioctl(struct file *filp,
 	return -EINVAL;
 }
 
-int kvm_dev_ioctl_check_extension(long ext)
+int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 {
 	int r;
 
@@ -143,6 +159,7 @@ int kvm_dev_ioctl_check_extension(long ext)
 	case KVM_CAP_ENABLE_CAP:
 	case KVM_CAP_S390_CSS_SUPPORT:
 	case KVM_CAP_IOEVENTFD:
+	case KVM_CAP_ENABLE_CAP_VM:
 		r = 1;
 		break;
 	case KVM_CAP_NR_VCPUS:
@@ -171,6 +188,21 @@ int kvm_vm_ioctl_get_dirty_log(struct kvm *kvm,
 	return 0;
 }
 
+static int kvm_vm_ioctl_enable_cap(struct kvm *kvm, struct kvm_enable_cap *cap)
+{
+	int r;
+
+	if (cap->flags)
+		return -EINVAL;
+
+	switch (cap->cap) {
+	default:
+		r = -EINVAL;
+		break;
+	}
+	return r;
+}
+
 long kvm_arch_vm_ioctl(struct file *filp,
 		       unsigned int ioctl, unsigned long arg)
 {
@@ -186,6 +218,14 @@ long kvm_arch_vm_ioctl(struct file *filp,
 		if (copy_from_user(&s390int, argp, sizeof(s390int)))
 			break;
 		r = kvm_s390_inject_vm(kvm, &s390int);
+		break;
+	}
+	case KVM_ENABLE_CAP: {
+		struct kvm_enable_cap cap;
+		r = -EFAULT;
+		if (copy_from_user(&cap, argp, sizeof(cap)))
+			break;
+		r = kvm_vm_ioctl_enable_cap(kvm, &cap);
 		break;
 	}
 	default:
@@ -239,6 +279,7 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 		kvm->arch.gmap = gmap_alloc(current->mm);
 		if (!kvm->arch.gmap)
 			goto out_nogmap;
+		kvm->arch.gmap->private = kvm;
 	}
 
 	kvm->arch.css_support = 0;
@@ -250,6 +291,16 @@ out_nodbf:
 	free_page((unsigned long)(kvm->arch.sca));
 out_err:
 	return rc;
+}
+
+bool kvm_arch_has_vcpu_debugfs(void)
+{
+	return false;
+}
+
+int kvm_arch_create_vcpu_debugfs(struct kvm_vcpu *vcpu)
+{
+	return 0;
 }
 
 void kvm_arch_vcpu_destroy(struct kvm_vcpu *vcpu)
@@ -270,7 +321,7 @@ void kvm_arch_vcpu_destroy(struct kvm_vcpu *vcpu)
 
 	free_page((unsigned long)(vcpu->arch.sie_block));
 	kvm_vcpu_uninit(vcpu);
-	kfree(vcpu);
+	kmem_cache_free(kvm_vcpu_cache, vcpu);
 }
 
 static void kvm_free_vcpus(struct kvm *kvm)
@@ -309,6 +360,7 @@ int kvm_arch_vcpu_init(struct kvm_vcpu *vcpu)
 		vcpu->arch.gmap = gmap_alloc(current->mm);
 		if (!vcpu->arch.gmap)
 			return -ENOMEM;
+		vcpu->arch.gmap->private = vcpu->kvm;
 		return 0;
 	}
 
@@ -325,12 +377,17 @@ void kvm_arch_vcpu_uninit(struct kvm_vcpu *vcpu)
 	/* Nothing todo */
 }
 
+void kvm_arch_sched_in(struct kvm_vcpu *vcpu, int cpu)
+{
+}
+
 void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 {
-	save_fp_regs(&vcpu->arch.host_fpregs);
+	save_fp_ctl(&vcpu->arch.host_fpregs.fpc);
+	save_fp_regs(vcpu->arch.host_fpregs.fprs);
 	save_access_regs(vcpu->arch.host_acrs);
-	vcpu->arch.guest_fpregs.fpc &= FPC_VALID_MASK;
-	restore_fp_regs(&vcpu->arch.guest_fpregs);
+	restore_fp_ctl(&vcpu->arch.guest_fpregs.fpc);
+	restore_fp_regs(vcpu->arch.guest_fpregs.fprs);
 	restore_access_regs(vcpu->run->s.regs.acrs);
 	gmap_enable(vcpu->arch.gmap);
 	atomic_set_mask(CPUSTAT_RUNNING, &vcpu->arch.sie_block->cpuflags);
@@ -340,9 +397,11 @@ void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
 {
 	atomic_clear_mask(CPUSTAT_RUNNING, &vcpu->arch.sie_block->cpuflags);
 	gmap_disable(vcpu->arch.gmap);
-	save_fp_regs(&vcpu->arch.guest_fpregs);
+	save_fp_ctl(&vcpu->arch.guest_fpregs.fpc);
+	save_fp_regs(vcpu->arch.guest_fpregs.fprs);
 	save_access_regs(vcpu->run->s.regs.acrs);
-	restore_fp_regs(&vcpu->arch.host_fpregs);
+	restore_fp_ctl(&vcpu->arch.host_fpregs.fpc);
+	restore_fp_regs(vcpu->arch.host_fpregs.fprs);
 	restore_access_regs(vcpu->arch.host_acrs);
 }
 
@@ -364,19 +423,22 @@ static void kvm_s390_vcpu_initial_reset(struct kvm_vcpu *vcpu)
 	atomic_set_mask(CPUSTAT_STOPPED, &vcpu->arch.sie_block->cpuflags);
 }
 
-int kvm_arch_vcpu_postcreate(struct kvm_vcpu *vcpu)
+void kvm_arch_vcpu_postcreate(struct kvm_vcpu *vcpu)
 {
-	return 0;
 }
 
 int kvm_arch_vcpu_setup(struct kvm_vcpu *vcpu)
 {
 	atomic_set(&vcpu->arch.sie_block->cpuflags, CPUSTAT_ZARCH |
 						    CPUSTAT_SM |
-						    CPUSTAT_STOPPED);
+						    CPUSTAT_STOPPED |
+						    CPUSTAT_GED);
 	vcpu->arch.sie_block->ecb   = 6;
-	vcpu->arch.sie_block->eca   = 0xC1002001U;
-	vcpu->arch.sie_block->fac   = (int) (long) facilities;
+	vcpu->arch.sie_block->ecb2  = 8;
+	vcpu->arch.sie_block->eca   = 0xC1002000U;
+	if (sclp_has_siif())
+		vcpu->arch.sie_block->eca |= 1;
+	vcpu->arch.sie_block->fac   = (int) (long) vfacilities;
 	hrtimer_init(&vcpu->arch.ckc_timer, CLOCK_REALTIME, HRTIMER_MODE_ABS);
 	tasklet_init(&vcpu->arch.tasklet, kvm_s390_tasklet,
 		     (unsigned long) vcpu);
@@ -397,7 +459,7 @@ struct kvm_vcpu *kvm_arch_vcpu_create(struct kvm *kvm,
 
 	rc = -ENOMEM;
 
-	vcpu = kzalloc(sizeof(struct kvm_vcpu), GFP_KERNEL);
+	vcpu = kmem_cache_zalloc(kvm_vcpu_cache, GFP_KERNEL);
 	if (!vcpu)
 		goto out;
 
@@ -427,7 +489,7 @@ struct kvm_vcpu *kvm_arch_vcpu_create(struct kvm *kvm,
 	vcpu->arch.local_int.float_int = &kvm->arch.float_int;
 	spin_lock(&kvm->arch.float_int.lock);
 	kvm->arch.float_int.local_int[id] = &vcpu->arch.local_int;
-	init_waitqueue_head(&vcpu->arch.local_int.wq);
+	vcpu->arch.local_int.wq = &vcpu->wq;
 	vcpu->arch.local_int.cpuflags = &vcpu->arch.sie_block->cpuflags;
 	spin_unlock(&kvm->arch.float_int.lock);
 
@@ -442,7 +504,7 @@ struct kvm_vcpu *kvm_arch_vcpu_create(struct kvm *kvm,
 out_free_sie_block:
 	free_page((unsigned long)(vcpu->arch.sie_block));
 out_free_cpu:
-	kfree(vcpu);
+	kmem_cache_free(kvm_vcpu_cache, vcpu);
 out:
 	return ERR_PTR(rc);
 }
@@ -452,6 +514,50 @@ int kvm_arch_vcpu_runnable(struct kvm_vcpu *vcpu)
 	/* kvm common code refers to this, but never calls it */
 	BUG();
 	return 0;
+}
+
+void s390_vcpu_block(struct kvm_vcpu *vcpu)
+{
+	atomic_set_mask(PROG_BLOCK_SIE, &vcpu->arch.sie_block->prog20);
+}
+
+void s390_vcpu_unblock(struct kvm_vcpu *vcpu)
+{
+	atomic_clear_mask(PROG_BLOCK_SIE, &vcpu->arch.sie_block->prog20);
+}
+
+/*
+ * Kick a guest cpu out of SIE and wait until SIE is not running.
+ * If the CPU is not running (e.g. waiting as idle) the function will
+ * return immediately. */
+void exit_sie(struct kvm_vcpu *vcpu)
+{
+	atomic_set_mask(CPUSTAT_STOP_INT, &vcpu->arch.sie_block->cpuflags);
+	while (vcpu->arch.sie_block->prog0c & PROG_IN_SIE)
+		cpu_relax();
+}
+
+/* Kick a guest cpu out of SIE and prevent SIE-reentry */
+void exit_sie_sync(struct kvm_vcpu *vcpu)
+{
+	s390_vcpu_block(vcpu);
+	exit_sie(vcpu);
+}
+
+static void kvm_gmap_notifier(struct gmap *gmap, unsigned long address)
+{
+	int i;
+	struct kvm *kvm = gmap->private;
+	struct kvm_vcpu *vcpu;
+
+	kvm_for_each_vcpu(i, vcpu, kvm) {
+		/* match against both prefix pages */
+		if (vcpu->arch.sie_block->prefix == (address & ~0x1000UL)) {
+			VCPU_EVENT(vcpu, 2, "gmap notifier for %lx", address);
+			kvm_make_request(KVM_REQ_MMU_RELOAD, vcpu);
+			exit_sie_sync(vcpu);
+		}
+	}
 }
 
 int kvm_arch_vcpu_should_kick(struct kvm_vcpu *vcpu)
@@ -556,9 +662,12 @@ int kvm_arch_vcpu_ioctl_get_sregs(struct kvm_vcpu *vcpu,
 
 int kvm_arch_vcpu_ioctl_set_fpu(struct kvm_vcpu *vcpu, struct kvm_fpu *fpu)
 {
+	if (test_fp_ctl(fpu->fpc))
+		return -EINVAL;
 	memcpy(&vcpu->arch.guest_fpregs.fprs, &fpu->fprs, sizeof(fpu->fprs));
-	vcpu->arch.guest_fpregs.fpc = fpu->fpc & FPC_VALID_MASK;
-	restore_fp_regs(&vcpu->arch.guest_fpregs);
+	vcpu->arch.guest_fpregs.fpc = fpu->fpc;
+	restore_fp_ctl(&vcpu->arch.guest_fpregs.fpc);
+	restore_fp_regs(vcpu->arch.guest_fpregs.fprs);
 	return 0;
 }
 
@@ -606,6 +715,27 @@ int kvm_arch_vcpu_ioctl_set_mpstate(struct kvm_vcpu *vcpu,
 	return -EINVAL; /* not implemented yet */
 }
 
+static int kvm_s390_handle_requests(struct kvm_vcpu *vcpu)
+{
+	/*
+	 * We use MMU_RELOAD just to re-arm the ipte notifier for the
+	 * guest prefix page. gmap_ipte_notify will wait on the ptl lock.
+	 * This ensures that the ipte instruction for this request has
+	 * already finished. We might race against a second unmapper that
+	 * wants to set the blocking bit. Lets just retry the request loop.
+	 */
+	while (kvm_check_request(KVM_REQ_MMU_RELOAD, vcpu)) {
+		int rc;
+		rc = gmap_ipte_notify(vcpu->arch.gmap,
+				      vcpu->arch.sie_block->prefix,
+				      PAGE_SIZE * 2);
+		if (rc)
+			return rc;
+		s390_vcpu_unblock(vcpu);
+	}
+	return 0;
+}
+
 static int __vcpu_run(struct kvm_vcpu *vcpu)
 {
 	int rc;
@@ -621,16 +751,33 @@ static int __vcpu_run(struct kvm_vcpu *vcpu)
 	if (!kvm_is_ucontrol(vcpu->kvm))
 		kvm_s390_deliver_pending_interrupts(vcpu);
 
+	rc = kvm_s390_handle_requests(vcpu);
+	if (rc)
+		return rc;
+
 	vcpu->arch.sie_block->icptcode = 0;
-	preempt_disable();
-	kvm_guest_enter();
-	preempt_enable();
 	VCPU_EVENT(vcpu, 6, "entering sie flags %x",
 		   atomic_read(&vcpu->arch.sie_block->cpuflags));
 	trace_kvm_s390_sie_enter(vcpu,
 				 atomic_read(&vcpu->arch.sie_block->cpuflags));
+
+	/*
+	 * As PF_VCPU will be used in fault handler, between guest_enter
+	 * and guest_exit should be no uaccess.
+	 */
+	preempt_disable();
+	kvm_guest_enter();
+	preempt_enable();
 	rc = sie64a(vcpu->arch.sie_block, vcpu->run->s.regs.gprs);
-	if (rc) {
+	kvm_guest_exit();
+
+	VCPU_EVENT(vcpu, 6, "exit sie icptcode %d",
+		   vcpu->arch.sie_block->icptcode);
+	trace_kvm_s390_sie_exit(vcpu, vcpu->arch.sie_block->icptcode);
+
+	if (rc > 0)
+		rc = 0;
+	if (rc < 0) {
 		if (kvm_is_ucontrol(vcpu->kvm)) {
 			rc = SIE_INTERCEPT_UCONTROL;
 		} else {
@@ -639,10 +786,6 @@ static int __vcpu_run(struct kvm_vcpu *vcpu)
 			rc = kvm_s390_inject_program_int(vcpu, PGM_ADDRESSING);
 		}
 	}
-	VCPU_EVENT(vcpu, 6, "exit sie icptcode %d",
-		   vcpu->arch.sie_block->icptcode);
-	trace_kvm_s390_sie_exit(vcpu, vcpu->arch.sie_block->icptcode);
-	kvm_guest_exit();
 
 	memcpy(&vcpu->run->s.regs.gprs[14], &vcpu->arch.sie_block->gg14, 16);
 	return rc;
@@ -780,7 +923,8 @@ int kvm_s390_vcpu_store_status(struct kvm_vcpu *vcpu, unsigned long addr)
 	 * copying in vcpu load/put. Lets update our copies before we save
 	 * it into the save area
 	 */
-	save_fp_regs(&vcpu->arch.guest_fpregs);
+	save_fp_ctl(&vcpu->arch.guest_fpregs.fpc);
+	save_fp_regs(vcpu->arch.guest_fpregs.fprs);
 	save_access_regs(vcpu->run->s.regs.acrs);
 
 	if (__guestcopy(vcpu, addr + offsetof(struct save_area, fp_regs),
@@ -964,20 +1108,25 @@ int kvm_arch_vcpu_fault(struct kvm_vcpu *vcpu, struct vm_fault *vmf)
 	return VM_FAULT_SIGBUS;
 }
 
-void kvm_arch_free_memslot(struct kvm_memory_slot *free,
+void kvm_arch_free_memslot(struct kvm *kvm, struct kvm_memory_slot *free,
 			   struct kvm_memory_slot *dont)
 {
 }
 
-int kvm_arch_create_memslot(struct kvm_memory_slot *slot, unsigned long npages)
+int kvm_arch_create_memslot(struct kvm *kvm, struct kvm_memory_slot *slot,
+			    unsigned long npages)
 {
 	return 0;
+}
+
+void kvm_arch_memslots_updated(struct kvm *kvm, struct kvm_memslots *slots)
+{
 }
 
 /* Section: memory related */
 int kvm_arch_prepare_memory_region(struct kvm *kvm,
 				   struct kvm_memory_slot *memslot,
-				   struct kvm_userspace_memory_region *mem,
+				   const struct kvm_userspace_memory_region *mem,
 				   enum kvm_mr_change change)
 {
 	/* A few sanity checks. We can have memory slots which have to be
@@ -995,8 +1144,9 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 }
 
 void kvm_arch_commit_memory_region(struct kvm *kvm,
-				struct kvm_userspace_memory_region *mem,
+				const struct kvm_userspace_memory_region *mem,
 				const struct kvm_memory_slot *old,
+				const struct kvm_memory_slot *new,
 				enum kvm_mr_change change)
 {
 	int rc;
@@ -1031,6 +1181,12 @@ void kvm_arch_flush_shadow_memslot(struct kvm *kvm,
 static int __init kvm_s390_init(void)
 {
 	int ret;
+
+	if (!sclp_has_sief2()) {
+		pr_info("SIE not available\n");
+		return -ENODEV;
+	}
+
 	ret = kvm_init(NULL, sizeof(struct kvm_vcpu), 0, THIS_MODULE);
 	if (ret)
 		return ret;
@@ -1040,20 +1196,20 @@ static int __init kvm_s390_init(void)
 	 * to hold the maximum amount of facilities. On the other hand, we
 	 * only set facilities that are known to work in KVM.
 	 */
-	facilities = (unsigned long long *) get_zeroed_page(GFP_KERNEL|GFP_DMA);
-	if (!facilities) {
+	vfacilities = (unsigned long *) get_zeroed_page(GFP_KERNEL|GFP_DMA);
+	if (!vfacilities) {
 		kvm_exit();
 		return -ENOMEM;
 	}
-	memcpy(facilities, S390_lowcore.stfle_fac_list, 16);
-	facilities[0] &= 0xff00fff3f47c0000ULL;
-	facilities[1] &= 0x001c000000000000ULL;
+	memcpy(vfacilities, S390_lowcore.stfle_fac_list, 16);
+	vfacilities[0] &= 0xff82fff3f47c0000UL;
+	vfacilities[1] &= 0x001c000000000000UL;
 	return 0;
 }
 
 static void __exit kvm_s390_exit(void)
 {
-	free_page((unsigned long) facilities);
+	free_page((unsigned long) vfacilities);
 	kvm_exit();
 }
 

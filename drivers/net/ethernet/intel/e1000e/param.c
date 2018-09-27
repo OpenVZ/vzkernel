@@ -1,30 +1,23 @@
-/*******************************************************************************
-
-  Intel PRO/1000 Linux driver
-  Copyright(c) 1999 - 2013 Intel Corporation.
-
-  This program is free software; you can redistribute it and/or modify it
-  under the terms and conditions of the GNU General Public License,
-  version 2, as published by the Free Software Foundation.
-
-  This program is distributed in the hope it will be useful, but WITHOUT
-  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-  more details.
-
-  You should have received a copy of the GNU General Public License along with
-  this program; if not, write to the Free Software Foundation, Inc.,
-  51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
-
-  The full GNU General Public License is included in this distribution in
-  the file called "COPYING".
-
-  Contact Information:
-  Linux NICS <linux.nics@intel.com>
-  e1000-devel Mailing List <e1000-devel@lists.sourceforge.net>
-  Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
-
-*******************************************************************************/
+/* Intel PRO/1000 Linux driver
+ * Copyright(c) 1999 - 2015 Intel Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * The full GNU General Public License is included in this distribution in
+ * the file called "COPYING".
+ *
+ * Contact Information:
+ * Linux NICS <linux.nics@intel.com>
+ * e1000-devel Mailing List <e1000-devel@lists.sourceforge.net>
+ * Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
+ */
 
 #include <linux/netdevice.h>
 #include <linux/module.h>
@@ -80,17 +73,25 @@ E1000_PARAM(TxAbsIntDelay, "Transmit Absolute Interrupt Delay");
 /* Receive Interrupt Delay in units of 1.024 microseconds
  * hardware will likely hang if you set this to anything but zero.
  *
+ * Burst variant is used as default if device has FLAG2_DMA_BURST.
+ *
  * Valid Range: 0-65535
  */
 E1000_PARAM(RxIntDelay, "Receive Interrupt Delay");
+#define DEFAULT_RDTR	0
+#define BURST_RDTR	0x20
 #define MAX_RXDELAY 0xFFFF
 #define MIN_RXDELAY 0
 
 /* Receive Absolute Interrupt Delay in units of 1.024 microseconds
  *
+ * Burst variant is used as default if device has FLAG2_DMA_BURST.
+ *
  * Valid Range: 0-65535
  */
 E1000_PARAM(RxAbsIntDelay, "Receive Absolute Interrupt Delay");
+#define DEFAULT_RADV	8
+#define BURST_RADV	0x20
 #define MAX_RXABSDELAY 0xFFFF
 #define MIN_RXABSDELAY 0
 
@@ -304,6 +305,9 @@ void e1000e_check_options(struct e1000_adapter *adapter)
 					 .max = MAX_RXDELAY } }
 		};
 
+		if (adapter->flags2 & FLAG2_DMA_BURST)
+			opt.def = BURST_RDTR;
+
 		if (num_RxIntDelay > bd) {
 			adapter->rx_int_delay = RxIntDelay[bd];
 			e1000_validate_option(&adapter->rx_int_delay, &opt,
@@ -314,7 +318,7 @@ void e1000e_check_options(struct e1000_adapter *adapter)
 	}
 	/* Receive Absolute Interrupt Delay */
 	{
-		static const struct e1000_option opt = {
+		static struct e1000_option opt = {
 			.type = range_option,
 			.name = "Receive Absolute Interrupt Delay",
 			.err  = "using default of "
@@ -323,6 +327,9 @@ void e1000e_check_options(struct e1000_adapter *adapter)
 			.arg  = { .r = { .min = MIN_RXABSDELAY,
 					 .max = MAX_RXABSDELAY } }
 		};
+
+		if (adapter->flags2 & FLAG2_DMA_BURST)
+			opt.def = BURST_RADV;
 
 		if (num_RxAbsIntDelay > bd) {
 			adapter->rx_abs_int_delay = RxAbsIntDelay[bd];
@@ -381,6 +388,12 @@ void e1000e_check_options(struct e1000_adapter *adapter)
 				 "%s set to dynamic mode\n", opt.name);
 			adapter->itr = 20000;
 			break;
+		case 2:
+			dev_info(&adapter->pdev->dev,
+				 "%s Invalid mode - setting default\n",
+				 opt.name);
+			adapter->itr_setting = opt.def;
+			/* fall-through */
 		case 3:
 			dev_info(&adapter->pdev->dev,
 				 "%s set to dynamic conservative mode\n",

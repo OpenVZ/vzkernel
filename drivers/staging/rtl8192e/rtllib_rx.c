@@ -40,6 +40,7 @@
 #include <linux/etherdevice.h>
 #include <linux/uaccess.h>
 #include <linux/ctype.h>
+#include <linux/nospec.h>
 
 #include "rtllib.h"
 #include "dot11d.h"
@@ -1019,6 +1020,7 @@ static int rtllib_rx_get_crypt(struct rtllib_device *ieee, struct sk_buff *skb,
 		if (skb->len >= hdrlen + 3)
 			idx = skb->data[hdrlen + 3] >> 6;
 
+		idx = array_index_nospec(idx, NUM_WEP_KEYS);
 		*crypt = ieee->crypt_info.crypt[idx];
 		/* allow NULL decrypt to indicate an station specific override
 		 * for default encryption */
@@ -1311,7 +1313,6 @@ static int rtllib_rx_InfraAdhoc(struct rtllib_device *ieee, struct sk_buff *skb,
 		ieee->LinkDetectInfo.NumRecvDataInPeriod++;
 		ieee->LinkDetectInfo.NumRxOkInPeriod++;
 	}
-	dev->last_rx = jiffies;
 
 	/* Data frame - extract src/dst addresses */
 	rtllib_rx_extract_addr(ieee, hdr, dst, src, bssid);

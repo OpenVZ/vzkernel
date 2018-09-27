@@ -8,6 +8,8 @@
 #ifndef _ASM_S390_DIAG_H
 #define _ASM_S390_DIAG_H
 
+#include <linux/if_ether.h>
+
 /*
  * Diagnose 10: Release page range
  */
@@ -48,5 +50,30 @@ struct diag210 {
 } __attribute__((packed, aligned(4)));
 
 extern int diag210(struct diag210 *addr);
+
+enum diag26c_sc {
+	DIAG26C_MAC_SERVICES = 0x00000030
+};
+
+enum diag26c_version {
+	DIAG26C_VERSION2 = 0x00000002	/* z/VM 5.4.0 */
+};
+
+#define DIAG26C_GET_MAC	0x0000
+struct diag26c_mac_req {
+	u32	resp_buf_len;
+	u32	resp_version;
+	u16	op_code;
+	u16	devno;
+	u8	res[4];
+};
+
+struct diag26c_mac_resp {
+	u32	version;
+	u8	mac[ETH_ALEN];
+	u8	res[2];
+} __aligned(8);
+
+int diag26c(void *req, void *resp, enum diag26c_sc subcode);
 
 #endif /* _ASM_S390_DIAG_H */

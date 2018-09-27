@@ -59,6 +59,7 @@
 #include <linux/freezer.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
+#include <linux/nospec.h>
 #include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_ioctl.h>
 #include <scsi/scsi.h>
@@ -712,6 +713,9 @@ static int pkt_generic_packet(struct pktcdvd_device *pd, struct packet_command *
 
 	rq = blk_get_request(q, (cgc->data_direction == CGC_DATA_WRITE) ?
 			     WRITE : READ, __GFP_WAIT);
+	if (IS_ERR(rq))
+		return PTR_ERR(rq);
+	blk_rq_set_block_pc(rq);
 
 	if (cgc->buflen) {
 		if (blk_rq_map_kern(q, rq, cgc->buffer, cgc->buflen, __GFP_WAIT))
@@ -722,7 +726,6 @@ static int pkt_generic_packet(struct pktcdvd_device *pd, struct packet_command *
 	memcpy(rq->cmd, cgc->cmd, CDROM_PACKET_SIZE);
 
 	rq->timeout = 60*HZ;
-	rq->cmd_type = REQ_TYPE_BLOCK_PC;
 	if (cgc->quiet)
 		rq->cmd_flags |= REQ_QUIET;
 
@@ -2271,6 +2274,8 @@ static struct pktcdvd_device *pkt_find_dev_from_minor(unsigned int dev_minor)
 {
 	if (dev_minor >= MAX_WRITERS)
 		return NULL;
+	dev_minor = array_index_nospec(dev_minor, MAX_WRITERS);
+
 	return pkt_devs[dev_minor];
 }
 

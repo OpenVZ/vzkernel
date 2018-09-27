@@ -75,20 +75,37 @@ static int walk_pud_range(pgd_t *pgd, unsigned long addr, unsigned long end,
 	pud_t *pud;
 	unsigned long next;
 	int err = 0;
+	struct vm_area_struct *vma = find_vma(walk->mm, addr);
 
 	pud = pud_offset(pgd, addr);
 	do {
+ again:
 		next = pud_addr_end(addr, end);
-		if (pud_none_or_clear_bad(pud)) {
+		if (pud_none(*pud) || !vma) {
 			if (walk->pte_hole)
 				err = walk->pte_hole(addr, next, walk);
 			if (err)
 				break;
 			continue;
 		}
-		if (walk->pud_entry)
-			err = walk->pud_entry(pud, addr, next, walk);
-		if (!err && (walk->pmd_entry || walk->pte_entry))
+
+		if (walk->pud_entry) {
+			spinlock_t *ptl;
+
+			if (pud_trans_huge_lock(pud, vma, &ptl) == 1) {
+				err = walk->pud_entry(pud, addr, next, walk);
+				spin_unlock(ptl);
+				if (err)
+					break;
+				continue;
+			}
+		}
+
+		split_huge_page_pud(vma, addr, pud);
+		if (pud_none(*pud))
+			goto again;
+
+		if (walk->pmd_entry || walk->pte_entry)
 			err = walk_pmd_range(pud, addr, next, walk);
 		if (err)
 			break;
@@ -242,7 +259,7 @@ int walk_page_range(unsigned long addr, unsigned long end,
 		if (err)
 			break;
 		pgd++;
-	} while (addr = next, addr != end);
+	} while (addr = next, addr < end);
 
 	return err;
 }

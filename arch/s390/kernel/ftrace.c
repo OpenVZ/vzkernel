@@ -16,8 +16,6 @@
 #include <trace/syscall.h>
 #include <asm/asm-offsets.h>
 
-#ifdef CONFIG_DYNAMIC_FTRACE
-
 void ftrace_disable_code(void);
 void ftrace_enable_insn(void);
 
@@ -106,6 +104,13 @@ asm(
 
 #endif /* CONFIG_64BIT */
 
+#ifdef CONFIG_64BIT
+int ftrace_modify_call(struct dyn_ftrace *rec, unsigned long old_addr,
+		       unsigned long addr)
+{
+	return 0;
+}
+#endif
 
 int ftrace_make_nop(struct module *mod, struct dyn_ftrace *rec,
 		    unsigned long addr)
@@ -135,8 +140,6 @@ int __init ftrace_dyn_arch_init(void *data)
 	return 0;
 }
 
-#endif /* CONFIG_DYNAMIC_FTRACE */
-
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
 /*
  * Hook the return address and push it in the stack of return addresses
@@ -150,20 +153,19 @@ unsigned long __kprobes prepare_ftrace_return(unsigned long parent,
 	if (unlikely(atomic_read(&current->tracing_graph_pause)))
 		goto out;
 	ip = (ip & PSW_ADDR_INSN) - MCOUNT_INSN_SIZE;
-	if (ftrace_push_return_trace(parent, ip, &trace.depth, 0) == -EBUSY)
-		goto out;
 	trace.func = ip;
+	trace.depth = current->curr_ret_stack + 1;
 	/* Only trace if the calling function expects to. */
-	if (!ftrace_graph_entry(&trace)) {
-		current->curr_ret_stack--;
+	if (!ftrace_graph_entry(&trace))
 		goto out;
-	}
+	if (ftrace_push_return_trace(parent, ip, &trace.depth, 0,
+				     NULL) == -EBUSY)
+		goto out;
 	parent = (unsigned long) return_to_handler;
 out:
 	return parent;
 }
 
-#ifdef CONFIG_DYNAMIC_FTRACE
 /*
  * Patch the kernel code at ftrace_graph_caller location. The instruction
  * there is branch relative and save to prepare_ftrace_return. To disable
@@ -171,6 +173,29 @@ out:
  * directly after the instructions. To enable the call we calculate
  * the original offset to prepare_ftrace_return and put it back.
  */
+
+#ifdef CONFIG_64BIT
+
+int ftrace_enable_ftrace_graph_caller(void)
+{
+	static unsigned short offset = 0x0002;
+
+	return probe_kernel_write((void *) ftrace_graph_caller + 2,
+				  &offset, sizeof(offset));
+}
+
+int ftrace_disable_ftrace_graph_caller(void)
+{
+	unsigned short offset;
+
+	offset = ((void *) &ftrace_graph_caller_end -
+		  (void *) ftrace_graph_caller) / 2;
+	return probe_kernel_write((void *) ftrace_graph_caller + 2,
+				  &offset, sizeof(offset));
+}
+
+#else /* CONFIG_64BIT */
+
 int ftrace_enable_ftrace_graph_caller(void)
 {
 	unsigned short offset;
@@ -189,5 +214,5 @@ int ftrace_disable_ftrace_graph_caller(void)
 				  &offset, sizeof(offset));
 }
 
-#endif /* CONFIG_DYNAMIC_FTRACE */
+#endif /* CONFIG_64BIT */
 #endif /* CONFIG_FUNCTION_GRAPH_TRACER */

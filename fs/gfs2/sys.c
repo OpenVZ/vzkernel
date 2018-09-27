@@ -406,6 +406,9 @@ int gfs2_recover_set(struct gfs2_sbd *sdp, unsigned jid)
 	struct gfs2_jdesc *jd;
 	int rv;
 
+	/* Wait for our primary journal to be initialized */
+	wait_for_completion(&sdp->sd_journal_ready);
+
 	spin_lock(&sdp->sd_jindex_spin);
 	rv = -EBUSY;
 	if (sdp->sd_jdesc->jd_jid == jid)
@@ -587,7 +590,6 @@ TUNE_ATTR(max_readahead, 0);
 TUNE_ATTR(complain_secs, 0);
 TUNE_ATTR(statfs_slow, 0);
 TUNE_ATTR(new_files_jdata, 0);
-TUNE_ATTR(quota_simul_sync, 1);
 TUNE_ATTR(statfs_quantum, 1);
 TUNE_ATTR_3(quota_scale, quota_scale_show, quota_scale_store);
 
@@ -597,7 +599,6 @@ static struct attribute *tune_attrs[] = {
 	&tune_attr_max_readahead.attr,
 	&tune_attr_complain_secs.attr,
 	&tune_attr_statfs_slow.attr,
-	&tune_attr_quota_simul_sync.attr,
 	&tune_attr_statfs_quantum.attr,
 	&tune_attr_quota_scale.attr,
 	&tune_attr_new_files_jdata.attr,

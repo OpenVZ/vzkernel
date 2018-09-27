@@ -6,6 +6,7 @@
  * Copyright (C) 2001 Networks Associates Technology, Inc <ssmalley@nai.com>
  * Copyright (C) 2001 James Morris <jmorris@intercode.com.au>
  * Copyright (C) 2001 Silicon Graphics, Inc. (Trust Technology Group)
+ * Copyright (C) 2016 Mellanox Techonologies
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -26,6 +27,8 @@
 #include <linux/capability.h>
 #include <linux/slab.h>
 #include <linux/err.h>
+#include <linux/string.h>
+#include <linux/mm.h>
 
 struct linux_binprm;
 struct cred;
@@ -60,10 +63,17 @@ struct mm_struct;
 #define SECURITY_CAP_NOAUDIT 0
 #define SECURITY_CAP_AUDIT 1
 
+/* LSM Agnostic defines for sb_set_mnt_opts */
+#define SECURITY_LSM_NATIVE_LABELS	1
+
 struct ctl_table;
 struct audit_krule;
 struct user_namespace;
 struct timezone;
+
+enum lsm_event {
+	LSM_POLICY_CHANGE,
+};
 
 /*
  * These functions are in security/capability.c and are used
@@ -86,6 +96,8 @@ extern int cap_inode_setxattr(struct dentry *dentry, const char *name,
 extern int cap_inode_removexattr(struct dentry *dentry, const char *name);
 extern int cap_inode_need_killpriv(struct dentry *dentry);
 extern int cap_inode_killpriv(struct dentry *dentry);
+extern int cap_inode_getsecurity(struct inode *inode, const char *name,
+				 void **buffer, bool alloc);
 extern int cap_mmap_addr(unsigned long addr);
 extern int cap_mmap_file(struct file *file, unsigned long reqprot,
 			 unsigned long prot, unsigned long flags);
@@ -163,6 +175,10 @@ struct security_mnt_opts {
 	int *mnt_opts_flags;
 	int num_mnt_opts;
 };
+
+int call_lsm_notifier(enum lsm_event event, void *data);
+int register_lsm_notifier(struct notifier_block *nb);
+int unregister_lsm_notifier(struct notifier_block *nb);
 
 static inline void security_init_mnt_opts(struct security_mnt_opts *opts)
 {
@@ -306,6 +322,25 @@ static inline void security_free_mnt_opts(struct security_mnt_opts *opts)
  *	Parse a string of security data filling in the opts structure
  *	@options string containing all mount options known by the LSM
  *	@opts binary data structure usable by the LSM
+ * @dentry_init_security:
+ *	Compute a context for a dentry as the inode is not yet available
+ *	since NFSv4 has no label backed by an EA anyway.
+ *	@dentry dentry to use in calculating the context.
+ *	@mode mode used to determine resource type.
+ *	@name name of the last path component used to create file
+ *	@ctx pointer to place the pointer to the resulting context in.
+ *	@ctxlen point to place the length of the resulting context.
+ * @dentry_create_files_as:
+ *	Compute a context for a dentry as the inode is not yet available
+ *	and set that context in passed in creds so that new files are
+ *	created using that context. Context is calculated using the
+ *	passed in creds and not the creds of the caller.
+ *	@dentry dentry to use in calculating the context.
+ *	@mode mode used to determine resource type.
+ *	@name name of the last path component used to create file
+ *	@old creds which should be used for context calculation
+ *	@new creds to modify
+ *
  *
  * Security hooks for inode operations.
  *
@@ -549,6 +584,23 @@ static inline void security_free_mnt_opts(struct security_mnt_opts *opts)
  *	@inode contains a pointer to the inode.
  *	@secid contains a pointer to the location where result will be saved.
  *	In case of failure, @secid will be set to zero.
+ * @inode_copy_up:
+ *	A file is about to be copied up from lower layer to upper layer of
+ *	overlay filesystem. Security module can prepare a set of new creds
+ *	and modify as need be and return new creds. Caller will switch to
+ *	new creds temporarily to create new file and release newly allocated
+ *	creds.
+ *	@src indicates the union dentry of file that is being copied up.
+ *	@new pointer to pointer to return newly allocated creds.
+ *	Returns 0 on success or a negative error code on error.
+ * @inode_copy_up_xattr:
+ *	Filter the xattrs being copied up when a unioned file is copied
+ *	up from a lower layer to the union/overlay layer.
+ *	@name indicates the name of the xattr.
+ *	Returns 0 to accept the xattr, 1 to discard the xattr, -EOPNOTSUPP if
+ *	security module does not know about attribute or a negative error code
+ *	to abort the copy up. Note that the caller is responsible for reading
+ *	and writing the xattrs as this hook is merely a filter.
  *
  * Security hooks for file operations
  *
@@ -1016,6 +1068,20 @@ static inline void security_free_mnt_opts(struct security_mnt_opts *opts)
  *	This hook sets the packet's owning sock.
  *	@skb is the packet.
  *	@sk the sock which owns the packet.
+ * Security hooks for Infiniband
+ *
+ * @ib_pkey_access:
+ *	Check permission to access a pkey when modifing a QP.
+ *	@subnet_prefix the subnet prefix of the port being used.
+ *	@pkey the pkey to be accessed.
+ *	@sec pointer to a security structure.
+ * @ib_alloc_security:
+ *	Allocate a security structure for Infiniband objects.
+ *	@sec pointer to a security structure pointer.
+ *	Returns 0 on success, non-zero on failure
+ * @ib_free_security:
+ *	Deallocate an Infiniband security structure.
+ *	@sec contains the security structure to be freed.
  *
  * Security hooks for XFRM operations.
  *
@@ -1313,6 +1379,13 @@ static inline void security_free_mnt_opts(struct security_mnt_opts *opts)
  *	@pages contains the number of pages.
  *	Return 0 if permission is granted.
  *
+ * @ismaclabel:
+ *	Check if the extended attribute specified by @name
+ *	represents a MAC label. Returns 1 if name is a MAC
+ *	attribute otherwise returns 0.
+ *	@name full extended attribute name to check against
+ *	LSM as a MAC label.
+ *
  * @secid_to_secctx:
  *	Convert secid to security context.  If secdata is NULL the length of
  *	the result will be returned in seclen, but no secdata will be returned.
@@ -1361,6 +1434,10 @@ static inline void security_free_mnt_opts(struct security_mnt_opts *opts)
  *	Deallocate the LSM audit rule structure previously allocated by
  *	audit_rule_init.
  *	@rule contains the allocated rule
+ *
+ * @inode_invalidate_secctx:
+ *	Notify the security module that it must revalidate the security context
+ *	of an inode.
  *
  * @inode_notifysecctx:
  *	Notify the security module of what the security context of an inode
@@ -1439,10 +1516,22 @@ struct security_operations {
 	int (*sb_pivotroot) (struct path *old_path,
 			     struct path *new_path);
 	int (*sb_set_mnt_opts) (struct super_block *sb,
-				struct security_mnt_opts *opts);
+				struct security_mnt_opts *opts,
+				unsigned long kern_flags,
+				unsigned long *set_kern_flags);
 	int (*sb_clone_mnt_opts) (const struct super_block *oldsb,
-				   struct super_block *newsb);
+				   struct super_block *newsb,
+				   unsigned long kern_flags,
+				   unsigned long *set_kern_flags);
 	int (*sb_parse_opts_str) (char *options, struct security_mnt_opts *opts);
+	int (*dentry_init_security) (struct dentry *dentry, int mode,
+					struct qstr *name, void **ctx,
+					u32 *ctxlen);
+	int (*dentry_create_files_as)(struct dentry *dentry, int mode,
+					struct qstr *name,
+					const struct cred *old,
+					struct cred *new);
+
 
 #ifdef CONFIG_SECURITY_PATH
 	int (*path_unlink) (struct path *dir, struct dentry *dentry);
@@ -1494,10 +1583,12 @@ struct security_operations {
 	int (*inode_removexattr) (struct dentry *dentry, const char *name);
 	int (*inode_need_killpriv) (struct dentry *dentry);
 	int (*inode_killpriv) (struct dentry *dentry);
-	int (*inode_getsecurity) (const struct inode *inode, const char *name, void **buffer, bool alloc);
+	int (*inode_getsecurity) (struct inode *inode, const char *name, void **buffer, bool alloc);
 	int (*inode_setsecurity) (struct inode *inode, const char *name, const void *value, size_t size, int flags);
 	int (*inode_listsecurity) (struct inode *inode, char *buffer, size_t buffer_size);
-	void (*inode_getsecid) (const struct inode *inode, u32 *secid);
+	void (*inode_getsecid) (struct inode *inode, u32 *secid);
+	int (*inode_copy_up)(struct dentry *src, struct cred **new);
+	int (*inode_copy_up_xattr)(const char *name);
 
 	int (*file_permission) (struct file *file, int mask);
 	int (*file_alloc_security) (struct file *file);
@@ -1590,10 +1681,12 @@ struct security_operations {
 
 	int (*getprocattr) (struct task_struct *p, char *name, char **value);
 	int (*setprocattr) (struct task_struct *p, char *name, void *value, size_t size);
+	int (*ismaclabel) (const char *name);
 	int (*secid_to_secctx) (u32 secid, char **secdata, u32 *seclen);
 	int (*secctx_to_secid) (const char *secdata, u32 seclen, u32 *secid);
 	void (*release_secctx) (char *secdata, u32 seclen);
 
+	void (*inode_invalidate_secctx)(struct inode *inode);
 	int (*inode_notifysecctx)(struct inode *inode, void *ctx, u32 ctxlen);
 	int (*inode_setsecctx)(struct dentry *dentry, void *ctx, u32 ctxlen);
 	int (*inode_getsecctx)(struct inode *inode, void **ctx, u32 *ctxlen);
@@ -1644,6 +1737,14 @@ struct security_operations {
 	int (*tun_dev_open) (void *security);
 	void (*skb_owned_by) (struct sk_buff *skb, struct sock *sk);
 #endif	/* CONFIG_SECURITY_NETWORK */
+
+#ifdef CONFIG_SECURITY_INFINIBAND
+	int (*ib_pkey_access)(void *sec, u64 subnet_prefix, u16 pkey);
+	int (*ib_endport_manage_subnet)(void *sec, const char *dev_name,
+					u8 port_num);
+	int (*ib_alloc_security)(void **sec);
+	void (*ib_free_security)(void *sec);
+#endif	/* CONFIG_SECURITY_INFINIBAND */
 
 #ifdef CONFIG_SECURITY_NETWORK_XFRM
 	int (*xfrm_policy_alloc_security) (struct xfrm_sec_ctx **ctxp,
@@ -1725,10 +1826,22 @@ int security_sb_mount(const char *dev_name, struct path *path,
 		      const char *type, unsigned long flags, void *data);
 int security_sb_umount(struct vfsmount *mnt, int flags);
 int security_sb_pivotroot(struct path *old_path, struct path *new_path);
-int security_sb_set_mnt_opts(struct super_block *sb, struct security_mnt_opts *opts);
+int security_sb_set_mnt_opts(struct super_block *sb,
+				struct security_mnt_opts *opts,
+				unsigned long kern_flags,
+				unsigned long *set_kern_flags);
 int security_sb_clone_mnt_opts(const struct super_block *oldsb,
-				struct super_block *newsb);
+				struct super_block *newsb,
+				unsigned long kern_flags,
+				unsigned long *set_kern_flags);
 int security_sb_parse_opts_str(char *options, struct security_mnt_opts *opts);
+int security_dentry_init_security(struct dentry *dentry, int mode,
+					struct qstr *name, void **ctx,
+					u32 *ctxlen);
+int security_dentry_create_files_as(struct dentry *dentry, int mode,
+					struct qstr *name,
+					const struct cred *old,
+					struct cred *new);
 
 int security_inode_alloc(struct inode *inode);
 void security_inode_free(struct inode *inode);
@@ -1748,7 +1861,8 @@ int security_inode_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 int security_inode_rmdir(struct inode *dir, struct dentry *dentry);
 int security_inode_mknod(struct inode *dir, struct dentry *dentry, umode_t mode, dev_t dev);
 int security_inode_rename(struct inode *old_dir, struct dentry *old_dentry,
-			  struct inode *new_dir, struct dentry *new_dentry);
+			  struct inode *new_dir, struct dentry *new_dentry,
+			  unsigned int flags);
 int security_inode_readlink(struct dentry *dentry);
 int security_inode_follow_link(struct dentry *dentry, struct nameidata *nd);
 int security_inode_permission(struct inode *inode, int mask);
@@ -1763,10 +1877,12 @@ int security_inode_listxattr(struct dentry *dentry);
 int security_inode_removexattr(struct dentry *dentry, const char *name);
 int security_inode_need_killpriv(struct dentry *dentry);
 int security_inode_killpriv(struct dentry *dentry);
-int security_inode_getsecurity(const struct inode *inode, const char *name, void **buffer, bool alloc);
+int security_inode_getsecurity(struct inode *inode, const char *name, void **buffer, bool alloc);
 int security_inode_setsecurity(struct inode *inode, const char *name, const void *value, size_t size, int flags);
 int security_inode_listsecurity(struct inode *inode, char *buffer, size_t buffer_size);
-void security_inode_getsecid(const struct inode *inode, u32 *secid);
+void security_inode_getsecid(struct inode *inode, u32 *secid);
+int security_inode_copy_up(struct dentry *src, struct cred **new);
+int security_inode_copy_up_xattr(const char *name);
 int security_file_permission(struct file *file, int mask);
 int security_file_alloc(struct file *file);
 void security_file_free(struct file *file);
@@ -1840,16 +1956,33 @@ void security_d_instantiate(struct dentry *dentry, struct inode *inode);
 int security_getprocattr(struct task_struct *p, char *name, char **value);
 int security_setprocattr(struct task_struct *p, char *name, void *value, size_t size);
 int security_netlink_send(struct sock *sk, struct sk_buff *skb);
+int security_ismaclabel(const char *name);
 int security_secid_to_secctx(u32 secid, char **secdata, u32 *seclen);
 int security_secctx_to_secid(const char *secdata, u32 seclen, u32 *secid);
 void security_release_secctx(char *secdata, u32 seclen);
 
+void security_inode_invalidate_secctx(struct inode *inode);
 int security_inode_notifysecctx(struct inode *inode, void *ctx, u32 ctxlen);
 int security_inode_setsecctx(struct dentry *dentry, void *ctx, u32 ctxlen);
 int security_inode_getsecctx(struct inode *inode, void **ctx, u32 *ctxlen);
 #else /* CONFIG_SECURITY */
 struct security_mnt_opts {
 };
+
+static inline int call_lsm_notifier(enum lsm_event event, void *data)
+{
+	return 0;
+}
+
+static inline int register_lsm_notifier(struct notifier_block *nb)
+{
+	return 0;
+}
+
+static inline  int unregister_lsm_notifier(struct notifier_block *nb)
+{
+	return 0;
+}
 
 static inline void security_init_mnt_opts(struct security_mnt_opts *opts)
 {
@@ -2011,13 +2144,17 @@ static inline int security_sb_pivotroot(struct path *old_path,
 }
 
 static inline int security_sb_set_mnt_opts(struct super_block *sb,
-					   struct security_mnt_opts *opts)
+					   struct security_mnt_opts *opts,
+					   unsigned long kern_flags,
+					   unsigned long *set_kern_flags)
 {
 	return 0;
 }
 
 static inline int security_sb_clone_mnt_opts(const struct super_block *oldsb,
-					      struct super_block *newsb)
+					      struct super_block *newsb,
+					      unsigned long kern_flags,
+					      unsigned long *set_kern_flags)
 {
 	return 0;
 }
@@ -2034,6 +2171,24 @@ static inline int security_inode_alloc(struct inode *inode)
 
 static inline void security_inode_free(struct inode *inode)
 { }
+
+static inline int security_dentry_init_security(struct dentry *dentry,
+						 int mode,
+						 struct qstr *name,
+						 void **ctx,
+						 u32 *ctxlen)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int security_dentry_create_files_as(struct dentry *dentry,
+						  int mode, struct qstr *name,
+						  const struct cred *old,
+						  struct cred *new)
+{
+	return 0;
+}
+
 
 static inline int security_inode_init_security(struct inode *inode,
 						struct inode *dir,
@@ -2103,7 +2258,8 @@ static inline int security_inode_mknod(struct inode *dir,
 static inline int security_inode_rename(struct inode *old_dir,
 					 struct dentry *old_dentry,
 					 struct inode *new_dir,
-					 struct dentry *new_dentry)
+					 struct dentry *new_dentry,
+					 unsigned int flags)
 {
 	return 0;
 }
@@ -2173,9 +2329,9 @@ static inline int security_inode_killpriv(struct dentry *dentry)
 	return cap_inode_killpriv(dentry);
 }
 
-static inline int security_inode_getsecurity(const struct inode *inode, const char *name, void **buffer, bool alloc)
+static inline int security_inode_getsecurity(struct inode *inode, const char *name, void **buffer, bool alloc)
 {
-	return -EOPNOTSUPP;
+	return cap_inode_getsecurity(inode, name, buffer, alloc);
 }
 
 static inline int security_inode_setsecurity(struct inode *inode, const char *name, const void *value, size_t size, int flags)
@@ -2188,9 +2344,19 @@ static inline int security_inode_listsecurity(struct inode *inode, char *buffer,
 	return 0;
 }
 
-static inline void security_inode_getsecid(const struct inode *inode, u32 *secid)
+static inline void security_inode_getsecid(struct inode *inode, u32 *secid)
 {
 	*secid = 0;
+}
+
+static inline int security_inode_copy_up(struct dentry *src, struct cred **new)
+{
+	return 0;
+}
+
+static inline int security_inode_copy_up_xattr(const char *name)
+{
+	return -EOPNOTSUPP;
 }
 
 static inline int security_file_permission(struct file *file, int mask)
@@ -2520,6 +2686,11 @@ static inline int security_netlink_send(struct sock *sk, struct sk_buff *skb)
 	return cap_netlink_send(sk, skb);
 }
 
+static inline int security_ismaclabel(const char *name)
+{
+	return 0;
+}
+
 static inline int security_secid_to_secctx(u32 secid, char **secdata, u32 *seclen)
 {
 	return -EOPNOTSUPP;
@@ -2533,6 +2704,10 @@ static inline int security_secctx_to_secid(const char *secdata,
 }
 
 static inline void security_release_secctx(char *secdata, u32 seclen)
+{
+}
+
+static inline void security_inode_invalidate_secctx(struct inode *inode)
 {
 }
 
@@ -2795,6 +2970,32 @@ static inline void security_skb_owned_by(struct sk_buff *skb, struct sock *sk)
 
 #endif	/* CONFIG_SECURITY_NETWORK */
 
+#ifdef CONFIG_SECURITY_INFINIBAND
+int security_ib_pkey_access(void *sec, u64 subnet_prefix, u16 pkey);
+int security_ib_endport_manage_subnet(void *sec, const char *name, u8 port_num);
+int security_ib_alloc_security(void **sec);
+void security_ib_free_security(void *sec);
+#else	/* CONFIG_SECURITY_INFINIBAND */
+static inline int security_ib_pkey_access(void *sec, u64 subnet_prefix, u16 pkey)
+{
+	return 0;
+}
+
+static inline int security_ib_endport_manage_subnet(void *sec, const char *dev_name, u8 port_num)
+{
+	return 0;
+}
+
+static inline int security_ib_alloc_security(void **sec)
+{
+	return 0;
+}
+
+static inline void security_ib_free_security(void *sec)
+{
+}
+#endif	/* CONFIG_SECURITY_INFINIBAND */
+
 #ifdef CONFIG_SECURITY_NETWORK_XFRM
 
 int security_xfrm_policy_alloc(struct xfrm_sec_ctx **ctxp, struct xfrm_user_sec_ctx *sec_ctx);
@@ -2889,7 +3090,8 @@ int security_path_symlink(struct path *dir, struct dentry *dentry,
 int security_path_link(struct dentry *old_dentry, struct path *new_dir,
 		       struct dentry *new_dentry);
 int security_path_rename(struct path *old_dir, struct dentry *old_dentry,
-			 struct path *new_dir, struct dentry *new_dentry);
+			 struct path *new_dir, struct dentry *new_dentry,
+			 unsigned int flags);
 int security_path_chmod(struct path *path, umode_t mode);
 int security_path_chown(struct path *path, kuid_t uid, kgid_t gid);
 int security_path_chroot(struct path *path);
@@ -2937,7 +3139,8 @@ static inline int security_path_link(struct dentry *old_dentry,
 static inline int security_path_rename(struct path *old_dir,
 				       struct dentry *old_dentry,
 				       struct path *new_dir,
-				       struct dentry *new_dentry)
+				       struct dentry *new_dentry,
+				       unsigned int flags)
 {
 	return 0;
 }
@@ -3028,6 +3231,14 @@ static inline void security_audit_rule_free(void *lsmrule)
 
 #endif /* CONFIG_SECURITY */
 #endif /* CONFIG_AUDIT */
+
+#ifdef CONFIG_SECURITY_SECURELEVEL
+extern int get_securelevel(void);
+extern int set_securelevel(int new_securelevel);
+#else
+static inline int get_securelevel(void) { return 0; }
+static inline int set_securelevel(int new_securelevel) { return 0; }
+#endif /* CONFIG_SECURELEVEL */
 
 #ifdef CONFIG_SECURITYFS
 

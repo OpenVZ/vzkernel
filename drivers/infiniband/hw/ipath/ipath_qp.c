@@ -32,7 +32,6 @@
  */
 
 #include <linux/err.h>
-#include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 
@@ -463,12 +462,12 @@ int ipath_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	new_state = attr_mask & IB_QP_STATE ? attr->qp_state : cur_state;
 
 	if (!ib_modify_qp_is_ok(cur_state, new_state, ibqp->qp_type,
-				attr_mask))
+				attr_mask, IB_LINK_LAYER_UNSPECIFIED))
 		goto inval;
 
 	if (attr_mask & IB_QP_AV) {
-		if (attr->ah_attr.dlid == 0 ||
-		    attr->ah_attr.dlid >= IPATH_MULTICAST_LID_BASE)
+		if (rdma_ah_get_dlid(&attr->ah_attr) == 0 ||
+		    rdma_ah_get_dlid(&attr->ah_attr) >= IPATH_MULTICAST_LID_BASE)
 			goto inval;
 
 		if ((attr->ah_attr.ah_flags & IB_AH_GRH) &&
@@ -1027,7 +1026,7 @@ int ipath_init_qp_table(struct ipath_ibdev *idev, int size)
 	idev->qp_table.last = 1;	/* QPN 0 and 1 are special. */
 	idev->qp_table.max = size;
 	idev->qp_table.nmaps = 1;
-	idev->qp_table.table = kzalloc(size * sizeof(*idev->qp_table.table),
+	idev->qp_table.table = kcalloc(size, sizeof(*idev->qp_table.table),
 				       GFP_KERNEL);
 	if (idev->qp_table.table == NULL) {
 		ret = -ENOMEM;
