@@ -1613,6 +1613,8 @@ int split_vma(struct mm_struct *mm, struct vm_area_struct *vma,
 		region->vm_pgoff = new->vm_pgoff += npages;
 	}
 
+	new->vm_private_data2 = NULL;
+
 	if (new->vm_ops && new->vm_ops->open)
 		new->vm_ops->open(new);
 
