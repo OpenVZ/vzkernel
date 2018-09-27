@@ -34,6 +34,10 @@ static unsigned int rpc_affinity_mode = RPC_AFFINITY_RETENT;
 module_param(rpc_affinity_mode, uint, 0644);
 MODULE_PARM_DESC(rpc_affinity_mode, "RPC affinity mode");
 
+static unsigned long rpc_cpu_time_slice = PCS_RPC_CPU_SLICE;
+module_param(rpc_cpu_time_slice, ulong, 0644);
+MODULE_PARM_DESC(rpc_cpu_time_slice, "Time slice for RPC rebinding");
+
 static void timer_work(struct work_struct *w);
 static int rpc_gc_classify(struct pcs_rpc * ep);
 
@@ -653,13 +657,13 @@ static void pcs_rpc_affinity(struct pcs_rpc *ep, bool was_idle)
 		case RPC_AFFINITY_RETENT:
 			/* Naive socket-to-cpu binding approach */
 			if (time_is_before_jiffies(ep->cpu_stamp) && was_idle) {
-				ep->cpu_stamp = jiffies + PCS_RPC_CPU_SLICE;
+				ep->cpu_stamp = jiffies + rpc_cpu_time_slice;
 				ep->cpu = smp_processor_id();
 			}
 			break;
 		case RPC_AFFINITY_SPREAD:
 			if (time_is_before_jiffies(ep->cpu_stamp) && was_idle) {
-				ep->cpu_stamp = jiffies + PCS_RPC_CPU_SLICE;
+				ep->cpu_stamp = jiffies + rpc_cpu_time_slice;
 				ep->cpu = pcs_rpc_cpu_next();
 			}
 			break;
