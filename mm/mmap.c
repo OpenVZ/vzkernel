@@ -2706,6 +2706,8 @@ static int __split_vma(struct mm_struct * mm, struct vm_area_struct * vma,
 		new->vm_pgoff += ((addr - vma->vm_start) >> PAGE_SHIFT);
 	}
 
+	new->vm_private_data2 = NULL;
+
 	pol = mpol_dup(vma_policy(vma));
 	if (IS_ERR(pol)) {
 		err = PTR_ERR(pol);
@@ -3260,6 +3262,7 @@ struct vm_area_struct *copy_vma(struct vm_area_struct **vmap,
 			new_vma->vm_start = addr;
 			new_vma->vm_end = addr + len;
 			new_vma->vm_pgoff = pgoff;
+			new_vma->vm_private_data2 = NULL;
 			pol = mpol_dup(vma_policy(vma));
 			if (IS_ERR(pol))
 				goto out_free_vma;
