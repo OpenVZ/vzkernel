@@ -241,7 +241,7 @@ static void ib_device_release(struct device *device)
 	ib_security_release_port_pkey_list(dev);
 	kfree(dev->port_pkey_list);
 	kfree(dev->port_immutable);
-	kfree(dev);
+	kvfree(dev);
 }
 
 static int ib_device_uevent(struct device *device,
@@ -280,7 +280,7 @@ struct ib_device *ib_alloc_device(size_t size)
 	if (WARN_ON(size < sizeof(struct ib_device)))
 		return NULL;
 
-	device = kzalloc(size, GFP_KERNEL);
+	device = kvzalloc(size, GFP_KERNEL);
 	if (!device)
 		return NULL;
 
