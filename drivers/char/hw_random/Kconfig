@@ -290,6 +290,19 @@ config HW_RANDOM_PSERIES
 
 	  If unsure, say Y.
 
+config HW_RANDOM_POWERNV
+	tristate "PowerNV Random Number Generator support"
+	depends on HW_RANDOM && PPC_POWERNV
+	default HW_RANDOM
+	---help---
+	  This is the driver for Random Number Generator hardware found
+	  in POWER7+ and above machines for PowerNV platform.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called powernv-rng.
+
+	  If unsure, say Y.
+
 config HW_RANDOM_EXYNOS
 	tristate "EXYNOS HW random number generator support"
 	depends on HW_RANDOM && HAS_IOMEM && HAVE_CLK
@@ -302,15 +315,16 @@ config HW_RANDOM_EXYNOS
 
 	  If unsure, say Y.
 
-config HW_RANDOM_TPM
-	tristate "TPM HW Random Number Generator support"
-	depends on HW_RANDOM && TCG_TPM
+config HW_RANDOM_S390
+	tristate "S390 True Random Number Generator support"
+	depends on S390
 	default HW_RANDOM
 	---help---
-	  This driver provides kernel-side support for the Random Number
-	  Generator in the Trusted Platform Module
+	  This driver provides kernel-side support for the True
+	  Random Number Generator available as CPACF extension
+	  on modern s390 hardware platforms.
 
 	  To compile this driver as a module, choose M here: the
-	  module will be called tpm-rng.
+	  module will be called s390-trng.
 
 	  If unsure, say Y.

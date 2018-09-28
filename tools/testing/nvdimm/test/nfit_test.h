@@ -1,0 +1,153 @@
+/*
+ * Copyright(c) 2013-2015 Intel Corporation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ */
+#ifndef __NFIT_TEST_H__
+#define __NFIT_TEST_H__
+#include <linux/list.h>
+#include <linux/ioport.h>
+#include <linux/spinlock_types.h>
+
+struct nfit_test_request {
+	struct list_head list;
+	struct resource res;
+};
+
+struct nfit_test_resource {
+	struct list_head requests;
+	struct list_head list;
+	struct resource res;
+	struct device *dev;
+	spinlock_t lock;
+	int req_count;
+	void *buf;
+};
+
+#define ND_TRANSLATE_SPA_STATUS_INVALID_SPA  2
+
+/* nfit commands */
+enum nfit_cmd_num {
+	NFIT_CMD_TRANSLATE_SPA = 5,
+	NFIT_CMD_ARS_INJECT_SET = 7,
+	NFIT_CMD_ARS_INJECT_CLEAR = 8,
+	NFIT_CMD_ARS_INJECT_GET = 9,
+};
+
+struct nd_cmd_translate_spa {
+	__u64 spa;
+	__u32 status;
+	__u8  flags;
+	__u8  _reserved[3];
+	__u64 translate_length;
+	__u32 num_nvdimms;
+	struct nd_nvdimm_device {
+		__u32 nfit_device_handle;
+		__u32 _reserved;
+		__u64 dpa;
+	} __packed devices[0];
+
+} __packed;
+
+struct nd_cmd_ars_err_inj {
+	__u64 err_inj_spa_range_base;
+	__u64 err_inj_spa_range_length;
+	__u8  err_inj_options;
+	__u32 status;
+} __packed;
+
+struct nd_cmd_ars_err_inj_clr {
+	__u64 err_inj_clr_spa_range_base;
+	__u64 err_inj_clr_spa_range_length;
+	__u32 status;
+} __packed;
+
+struct nd_cmd_ars_err_inj_stat {
+	__u32 status;
+	__u32 inj_err_rec_count;
+	struct nd_error_stat_query_record {
+		__u64 err_inj_stat_spa_range_base;
+		__u64 err_inj_stat_spa_range_length;
+	} __packed record[0];
+} __packed;
+
+#define ND_INTEL_SMART 1
+#define ND_INTEL_SMART_THRESHOLD 2
+
+#define ND_INTEL_SMART_HEALTH_VALID             (1 << 0)
+#define ND_INTEL_SMART_SPARES_VALID             (1 << 1)
+#define ND_INTEL_SMART_USED_VALID               (1 << 2)
+#define ND_INTEL_SMART_MTEMP_VALID              (1 << 3)
+#define ND_INTEL_SMART_CTEMP_VALID              (1 << 4)
+#define ND_INTEL_SMART_SHUTDOWN_COUNT_VALID     (1 << 5)
+#define ND_INTEL_SMART_AIT_STATUS_VALID         (1 << 6)
+#define ND_INTEL_SMART_PTEMP_VALID              (1 << 7)
+#define ND_INTEL_SMART_ALARM_VALID              (1 << 9)
+#define ND_INTEL_SMART_SHUTDOWN_VALID           (1 << 10)
+#define ND_INTEL_SMART_VENDOR_VALID             (1 << 11)
+#define ND_INTEL_SMART_SPARE_TRIP               (1 << 0)
+#define ND_INTEL_SMART_TEMP_TRIP                (1 << 1)
+#define ND_INTEL_SMART_CTEMP_TRIP               (1 << 2)
+#define ND_INTEL_SMART_NON_CRITICAL_HEALTH      (1 << 0)
+#define ND_INTEL_SMART_CRITICAL_HEALTH          (1 << 1)
+#define ND_INTEL_SMART_FATAL_HEALTH             (1 << 2)
+
+struct nd_intel_smart {
+	__u32 status;
+	union {
+		struct {
+			__u32 flags;
+			__u8 reserved0[4];
+			__u8 health;
+			__u8 spares;
+			__u8 life_used;
+			__u8 alarm_flags;
+			__u16 media_temperature;
+			__u16 ctrl_temperature;
+			__u32 shutdown_count;
+			__u8 ait_status;
+			__u16 pmic_temperature;
+			__u8 reserved1[8];
+			__u8 shutdown_state;
+			__u32 vendor_size;
+			__u8 vendor_data[92];
+		} __packed;
+		__u8 data[128];
+	};
+} __packed;
+
+struct nd_intel_smart_threshold {
+	__u32 status;
+	union {
+		struct {
+			__u16 alarm_control;
+			__u8 spares;
+			__u16 media_temperature;
+			__u16 ctrl_temperature;
+			__u8 reserved[1];
+		} __packed;
+		__u8 data[8];
+	};
+} __packed;
+
+union acpi_object;
+typedef void *acpi_handle;
+
+typedef struct nfit_test_resource *(*nfit_test_lookup_fn)(resource_size_t);
+typedef union acpi_object *(*nfit_test_evaluate_dsm_fn)(acpi_handle handle,
+		const u8 *uuid, u64 rev, u64 func, union acpi_object *argv4);
+void __iomem *__wrap_ioremap_nocache(resource_size_t offset,
+		unsigned long size);
+void __wrap_iounmap(volatile void __iomem *addr);
+void nfit_test_setup(nfit_test_lookup_fn lookup,
+		nfit_test_evaluate_dsm_fn evaluate);
+void nfit_test_teardown(void);
+struct nfit_test_resource *get_nfit_res(resource_size_t resource);
+#endif

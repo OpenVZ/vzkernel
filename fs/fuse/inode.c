@@ -20,6 +20,7 @@
 #include <linux/random.h>
 #include <linux/sched.h>
 #include <linux/exportfs.h>
+#include <linux/pid_namespace.h>
 
 MODULE_AUTHOR("Miklos Szeredi <miklos@szeredi.hu>");
 MODULE_DESCRIPTION("Filesystem in Userspace");
@@ -123,7 +124,7 @@ static void fuse_destroy_inode(struct inode *inode)
 
 static void fuse_evict_inode(struct inode *inode)
 {
-	truncate_inode_pages(&inode->i_data, 0);
+	truncate_inode_pages_final(&inode->i_data);
 	clear_inode(inode);
 	if (inode->i_sb->s_flags & MS_ACTIVE) {
 		struct fuse_conn *fc = get_fuse_conn(inode);
@@ -201,7 +202,8 @@ void fuse_change_attributes(struct inode *inode, struct fuse_attr *attr,
 	struct timespec old_mtime;
 
 	spin_lock(&fc->lock);
-	if (attr_version != 0 && fi->attr_version > attr_version) {
+	if ((attr_version != 0 && fi->attr_version > attr_version) ||
+	    test_bit(FUSE_I_SIZE_UNSTABLE, &fi->state)) {
 		spin_unlock(&fc->lock);
 		return;
 	}
@@ -217,7 +219,7 @@ void fuse_change_attributes(struct inode *inode, struct fuse_attr *attr,
 		bool inval = false;
 
 		if (oldsize != attr->size) {
-			truncate_pagecache(inode, oldsize, attr->size);
+			truncate_pagecache(inode, attr->size);
 			inval = true;
 		} else if (fc->auto_inval_data) {
 			struct timespec new_mtime = {
@@ -587,6 +589,7 @@ void fuse_conn_init(struct fuse_conn *fc)
 	fc->initialized = 0;
 	fc->attr_version = 1;
 	get_random_bytes(&fc->scramble_key, sizeof(fc->scramble_key));
+	fc->pid_ns = get_pid_ns(task_active_pid_ns(current));
 }
 EXPORT_SYMBOL_GPL(fuse_conn_init);
 
@@ -596,6 +599,7 @@ void fuse_conn_put(struct fuse_conn *fc)
 		if (fc->destroy_req)
 			fuse_request_free(fc->destroy_req);
 		mutex_destroy(&fc->inst_mutex);
+		put_pid_ns(fc->pid_ns);
 		fc->release(fc);
 	}
 }
@@ -919,7 +923,7 @@ static void fuse_send_init(struct fuse_conn *fc, struct fuse_req *req)
 
 static void fuse_free_conn(struct fuse_conn *fc)
 {
-	kfree(fc);
+	kfree_rcu(fc, rcu);
 }
 
 static int fuse_bdi_init(struct fuse_conn *fc, struct super_block *sb)
@@ -929,7 +933,7 @@ static int fuse_bdi_init(struct fuse_conn *fc, struct super_block *sb)
 	fc->bdi.name = "fuse";
 	fc->bdi.ra_pages = (VM_MAX_READAHEAD * 1024) / PAGE_CACHE_SIZE;
 	/* fuse does it's own writeback accounting */
-	fc->bdi.capabilities = BDI_CAP_NO_ACCT_WB;
+	fc->bdi.capabilities = BDI_CAP_NO_ACCT_WB | BDI_CAP_STRICTLIMIT;
 
 	err = bdi_init(&fc->bdi);
 	if (err)
@@ -1227,7 +1231,6 @@ static void fuse_fs_cleanup(void)
 }
 
 static struct kobject *fuse_kobj;
-static struct kobject *connections_kobj;
 
 static int fuse_sysfs_init(void)
 {
@@ -1239,11 +1242,9 @@ static int fuse_sysfs_init(void)
 		goto out_err;
 	}
 
-	connections_kobj = kobject_create_and_add("connections", fuse_kobj);
-	if (!connections_kobj) {
-		err = -ENOMEM;
+	err = sysfs_create_mount_point(fuse_kobj, "connections");
+	if (err)
 		goto out_fuse_unregister;
-	}
 
 	return 0;
 
@@ -1255,7 +1256,7 @@ static int fuse_sysfs_init(void)
 
 static void fuse_sysfs_cleanup(void)
 {
-	kobject_put(connections_kobj);
+	sysfs_remove_mount_point(fuse_kobj, "connections");
 	kobject_put(fuse_kobj);
 }
 

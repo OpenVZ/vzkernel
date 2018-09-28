@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  * <linux/usb/audio.h> -- USB Audio definitions.
  *
@@ -26,6 +27,7 @@
 /* bInterfaceProtocol values to denote the version of the standard used */
 #define UAC_VERSION_1			0x00
 #define UAC_VERSION_2			0x20
+#define UAC_VERSION_3			0x30
 
 /* A.2 Audio Interface Subclass Codes */
 #define USB_SUBCLASS_AUDIOCONTROL	0x01
@@ -333,7 +335,7 @@ struct uac_processing_unit_descriptor {
 	__u8 bDescriptorType;
 	__u8 bDescriptorSubtype;
 	__u8 bUnitID;
-	__u16 wProcessType;
+	__le16 wProcessType;
 	__u8 bNrInPins;
 	__u8 baSourceID[];
 } __attribute__ ((packed));
@@ -491,8 +493,8 @@ struct uac_format_type_ii_ext_descriptor {
 	__u8 bDescriptorType;
 	__u8 bDescriptorSubtype;
 	__u8 bFormatType;
-	__u16 wMaxBitRate;
-	__u16 wSamplesPerFrame;
+	__le16 wMaxBitRate;
+	__le16 wSamplesPerFrame;
 	__u8 bHeaderLength;
 	__u8 bSideBandProtocol;
 } __attribute__((packed));

@@ -4,12 +4,14 @@
  * This file is released under the GPL.
  */
 
+#include "dm.h"
 #include <linux/device-mapper.h>
 
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/blkdev.h>
 #include <linux/bio.h>
+#include <linux/dax.h>
 #include <linux/slab.h>
 #include <linux/log2.h>
 
@@ -74,13 +76,15 @@ static int get_stripe(struct dm_target *ti, struct stripe_c *sc,
 {
 	unsigned long long start;
 	char dummy;
+	int ret;
 
 	if (sscanf(argv[1], "%llu%c", &start, &dummy) != 1)
 		return -EINVAL;
 
-	if (dm_get_device(ti, argv[0], dm_table_get_mode(ti->table),
-			  &sc->stripe[stripe].dev))
-		return -ENXIO;
+	ret = dm_get_device(ti, argv[0], dm_table_get_mode(ti->table),
+			    &sc->stripe[stripe].dev);
+	if (ret)
+		return ret;
 
 	sc->stripe[stripe].physical_start = start;
 
@@ -158,8 +162,10 @@ static int stripe_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		sc->stripes_shift = __ffs(stripes);
 
 	r = dm_set_target_max_io_len(ti, chunk_size);
-	if (r)
+	if (r) {
+		kfree(sc);
 		return r;
+	}
 
 	ti->num_flush_bios = stripes;
 	ti->num_discard_bios = stripes;
@@ -300,6 +306,27 @@ static int stripe_map(struct dm_target *ti, struct bio *bio)
 	return DM_MAPIO_REMAPPED;
 }
 
+static long stripe_dax_direct_access(struct dm_target *ti, pgoff_t pgoff,
+		long nr_pages, void **kaddr, pfn_t *pfn)
+{
+	sector_t dev_sector, sector = pgoff * PAGE_SECTORS;
+	struct stripe_c *sc = ti->private;
+	struct dax_device *dax_dev;
+	struct block_device *bdev;
+	uint32_t stripe;
+	long ret;
+
+	stripe_map_sector(sc, sector, &stripe, &dev_sector);
+	dev_sector += sc->stripe[stripe].physical_start;
+	dax_dev = sc->stripe[stripe].dev->dax_dev;
+	bdev = sc->stripe[stripe].dev->bdev;
+
+	ret = bdev_dax_pgoff(bdev, dev_sector, nr_pages * PAGE_SIZE, &pgoff);
+	if (ret)
+		return ret;
+	return dax_direct_access(dax_dev, pgoff, nr_pages, kaddr, pfn);
+}
+
 /*
  * Stripe status:
  *
@@ -428,7 +455,7 @@ static int stripe_merge(struct dm_target *ti, struct bvec_merge_data *bvm,
 
 static struct target_type stripe_target = {
 	.name   = "striped",
-	.version = {1, 5, 1},
+	.version = {1, 6, 0},
 	.module = THIS_MODULE,
 	.ctr    = stripe_ctr,
 	.dtr    = stripe_dtr,
@@ -438,6 +465,7 @@ static struct target_type stripe_target = {
 	.iterate_devices = stripe_iterate_devices,
 	.io_hints = stripe_io_hints,
 	.merge  = stripe_merge,
+	.direct_access = stripe_dax_direct_access,
 };
 
 int __init dm_stripe_init(void)

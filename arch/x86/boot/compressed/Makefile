@@ -3,15 +3,30 @@
 #
 # create a compressed vmlinux image from the original vmlinux
 #
+# vmlinuz is:
+#	decompression code (*.o)
+#	asm globals (piggy.S), including:
+#		vmlinux.bin.(gz|bz2|lzma|...)
+#
+# vmlinux.bin is:
+#	vmlinux stripped of debugging and comments
+# vmlinux.bin.all is:
+#	vmlinux.bin + vmlinux.relocs
+# vmlinux.bin.(gz|bz2|lzma|...) is:
+#	(see scripts/Makefile.lib size_append)
+#	compressed vmlinux.bin.all + u32 size of vmlinux.bin.all
+
+OBJECT_FILES_NON_STANDARD	:= y
 
 targets := vmlinux vmlinux.bin vmlinux.bin.gz vmlinux.bin.bz2 vmlinux.bin.lzma vmlinux.bin.xz vmlinux.bin.lzo
 
 KBUILD_CFLAGS := -m$(BITS) -D__KERNEL__ $(LINUX_INCLUDE) -O2
-KBUILD_CFLAGS += -fno-strict-aliasing -fPIC
+KBUILD_CFLAGS += -fno-strict-aliasing $(call cc-option, -fPIE, -fPIC)
 KBUILD_CFLAGS += -DDISABLE_BRANCH_PROFILING
 cflags-$(CONFIG_X86_32) := -march=i386
 cflags-$(CONFIG_X86_64) := -mcmodel=small
 KBUILD_CFLAGS += $(cflags-y)
+KBUILD_CFLAGS += -mno-mmx -mno-sse
 KBUILD_CFLAGS += $(call cc-option,-ffreestanding)
 KBUILD_CFLAGS += $(call cc-option,-fno-stack-protector)
 
@@ -19,22 +34,70 @@ KBUILD_AFLAGS  := $(KBUILD_CFLAGS) -D__ASSEMBLY__
 GCOV_PROFILE := n
 
 LDFLAGS := -m elf_$(UTS_MACHINE)
+# Compressed kernel should be built as PIE since it may be loaded at any
+# address by the bootloader.
+ifeq ($(CONFIG_X86_32),y)
+LDFLAGS += $(call ld-option, -pie) $(call ld-option, --no-dynamic-linker)
+else
+# To build 64-bit compressed kernel as PIE, we disable relocation
+# overflow check to avoid relocation overflow error with a new linker
+# command-line option, -z noreloc-overflow.
+LDFLAGS += $(shell $(LD) --help 2>&1 | grep -q "\-z noreloc-overflow" \
+	&& echo "-z noreloc-overflow -pie --no-dynamic-linker")
+endif
 LDFLAGS_vmlinux := -T
 
 hostprogs-y	:= mkpiggy
 HOST_EXTRACFLAGS += -I$(srctree)/tools/include
 
-VMLINUX_OBJS = $(obj)/vmlinux.lds $(obj)/head_$(BITS).o $(obj)/misc.o \
-	$(obj)/string.o $(obj)/cmdline.o $(obj)/early_serial_console.o \
-	$(obj)/piggy.o
+sed-voffset := -e 's/^\([0-9a-fA-F]*\) [ABCDGRSTVW] \(_text\|__bss_start\|_end\)$$/\#define VO_\2 _AC(0x\1,UL)/p'
+
+quiet_cmd_voffset = VOFFSET $@
+      cmd_voffset = $(NM) $< | sed -n $(sed-voffset) > $@
+
+targets += ../voffset.h
+
+$(obj)/../voffset.h: vmlinux FORCE
+	$(call if_changed,voffset)
+
+$(obj)/misc.o: $(obj)/../voffset.h
+
+vmlinux-objs-y := $(obj)/vmlinux.lds $(obj)/head_$(BITS).o $(obj)/misc.o \
+	$(obj)/string.o $(obj)/cmdline.o $(obj)/error.o \
+	$(obj)/piggy.o $(obj)/cpuflags.o
+
+vmlinux-objs-$(CONFIG_EARLY_PRINTK) += $(obj)/early_serial_console.o
+vmlinux-objs-$(CONFIG_RANDOMIZE_BASE) += $(obj)/kaslr.o
+ifdef CONFIG_X86_64
+	vmlinux-objs-$(CONFIG_RANDOMIZE_BASE) += $(obj)/pagetable.o
+endif
 
 $(obj)/eboot.o: KBUILD_CFLAGS += -fshort-wchar -mno-red-zone
 
-ifeq ($(CONFIG_EFI_STUB), y)
-	VMLINUX_OBJS += $(obj)/eboot.o $(obj)/efi_stub_$(BITS).o
+vmlinux-objs-$(CONFIG_EFI_STUB) += $(obj)/eboot.o $(obj)/efi_stub_$(BITS).o
+ifeq ($(CONFIG_EFI_MIXED), y)
+vmlinux-objs-$(CONFIG_EFI_MIXED) += $(obj)/efi_thunk_$(BITS).o
 endif
 
-$(obj)/vmlinux: $(VMLINUX_OBJS) FORCE
+# The compressed kernel is built with -fPIC/-fPIE so that a boot loader
+# can place it anywhere in memory and it will still run. However, since
+# it is executed as-is without any ELF relocation processing performed
+# (and has already had all relocation sections stripped from the binary),
+# none of the code can use data relocations (e.g. static assignments of
+# pointer values), since they will be meaningless at runtime. This check
+# will refuse to link the vmlinux if any of these relocations are found.
+quiet_cmd_check_data_rel = DATAREL $@
+define cmd_check_data_rel
+	for obj in $(filter %.o,$^); do \
+		readelf -S $$obj | grep -qF .rel.local && { \
+			echo "error: $$obj has data relocations!" >&2; \
+			exit 1; \
+		} || true; \
+	done
+endef
+
+$(obj)/vmlinux: $(vmlinux-objs-y) FORCE
+	$(call if_changed,check_data_rel)
 	$(call if_changed,ld)
 	@:
 
@@ -42,7 +105,7 @@ OBJCOPYFLAGS_vmlinux.bin :=  -R .comment -S
 $(obj)/vmlinux.bin: vmlinux FORCE
 	$(call if_changed,objcopy)
 
-targets += $(patsubst $(obj)/%,%,$(VMLINUX_OBJS)) vmlinux.bin.all vmlinux.relocs
+targets += $(patsubst $(obj)/%,%,$(vmlinux-objs-y)) vmlinux.bin.all vmlinux.relocs
 
 CMD_RELOCS = arch/x86/tools/relocs
 quiet_cmd_relocs = RELOCS  $@

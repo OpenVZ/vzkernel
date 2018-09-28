@@ -38,18 +38,11 @@ extern struct rw_semaphore trace_event_sem;
 #define MAX_MEMHEX_BYTES	8
 #define HEX_CHARS		(MAX_MEMHEX_BYTES*2 + 1)
 
-#define SEQ_PUT_FIELD_RET(s, x)				\
-do {							\
-	if (!trace_seq_putmem(s, &(x), sizeof(x)))	\
-		return TRACE_TYPE_PARTIAL_LINE;		\
-} while (0)
+#define SEQ_PUT_FIELD(s, x)				\
+	trace_seq_putmem(s, &(x), sizeof(x))
 
-#define SEQ_PUT_HEX_FIELD_RET(s, x)			\
-do {							\
-	BUILD_BUG_ON(sizeof(x) > MAX_MEMHEX_BYTES);	\
-	if (!trace_seq_putmem_hex(s, &(x), sizeof(x)))	\
-		return TRACE_TYPE_PARTIAL_LINE;		\
-} while (0)
+#define SEQ_PUT_HEX_FIELD(s, x)				\
+	trace_seq_putmem_hex(s, &(x), sizeof(x))
 
 #endif
 

@@ -28,8 +28,6 @@ source "drivers/staging/et131x/Kconfig"
 
 source "drivers/staging/slicoss/Kconfig"
 
-source "drivers/staging/usbip/Kconfig"
-
 source "drivers/staging/winbond/Kconfig"
 
 source "drivers/staging/wlan-ng/Kconfig"
@@ -71,10 +69,6 @@ source "drivers/staging/vt6656/Kconfig"
 source "drivers/staging/sep/Kconfig"
 
 source "drivers/staging/iio/Kconfig"
-
-source "drivers/staging/zsmalloc/Kconfig"
-
-source "drivers/staging/zram/Kconfig"
 
 source "drivers/staging/wlags49_h2/Kconfig"
 
@@ -139,5 +133,7 @@ source "drivers/staging/goldfish/Kconfig"
 source "drivers/staging/netlogic/Kconfig"
 
 source "drivers/staging/dwc2/Kconfig"
+
+source "drivers/staging/unisys/Kconfig"
 
 endif # STAGING

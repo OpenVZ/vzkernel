@@ -34,11 +34,17 @@
  *  675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+#include <linux/ipmi.h>
+
 /*
  * This is defined by the state machines themselves, it is an opaque
  * data type for them to use.
  */
 struct si_sm_data;
+
+enum si_type {
+	SI_TYPE_INVALID, SI_KCS, SI_SMIC, SI_BT
+};
 
 /*
  * The structure for doing I/O in the state machine.  The state
@@ -46,8 +52,8 @@ struct si_sm_data;
  * this interface.
  */
 struct si_sm_io {
-	unsigned char (*inputb)(struct si_sm_io *io, unsigned int offset);
-	void (*outputb)(struct si_sm_io *io,
+	unsigned char (*inputb)(const struct si_sm_io *io, unsigned int offset);
+	void (*outputb)(const struct si_sm_io *io,
 			unsigned int  offset,
 			unsigned char b);
 
@@ -61,6 +67,23 @@ struct si_sm_io {
 	int  regshift;
 	int addr_type;
 	long addr_data;
+	enum ipmi_addr_src addr_source; /* ACPI, PCI, SMBIOS, hardcode, etc. */
+	void (*addr_source_cleanup)(struct si_sm_io *io);
+	void *addr_source_data;
+	union ipmi_smi_info_union addr_info;
+
+	int (*io_setup)(struct si_sm_io *info);
+	void (*io_cleanup)(struct si_sm_io *info);
+	unsigned int io_size;
+
+	int irq;
+	int (*irq_setup)(struct si_sm_io *io);
+	void *irq_handler_data;
+	void (*irq_cleanup)(struct si_sm_io *io);
+
+	u8 slave_addr;
+	enum si_type si_type;
+	struct device *dev;
 };
 
 /* Results of SMI events. */
@@ -135,7 +158,7 @@ struct si_sm_handlers {
 };
 
 /* Current state machines that we can use. */
-extern struct si_sm_handlers kcs_smi_handlers;
-extern struct si_sm_handlers smic_smi_handlers;
-extern struct si_sm_handlers bt_smi_handlers;
+extern const struct si_sm_handlers kcs_smi_handlers;
+extern const struct si_sm_handlers smic_smi_handlers;
+extern const struct si_sm_handlers bt_smi_handlers;
 
