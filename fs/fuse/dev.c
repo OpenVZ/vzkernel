@@ -1379,8 +1379,8 @@ static ssize_t fuse_dev_do_read(struct fuse_dev *fud, struct file *file,
 	}
 	list_move_tail(&req->list, &fpq->processing[fuse_req_hash(req)]);
 	__fuse_get_request(req);
-	spin_unlock(&fpq->lock);
 	set_bit(FR_SENT, &req->flags);
+	spin_unlock(&fpq->lock);
 	/* matches barrier in request_wait_answer() */
 	smp_mb__after_atomic();
 	if (test_bit(FR_INTERRUPTED, &req->flags))
