@@ -553,18 +553,6 @@ static void fuse_umount_begin(struct super_block *sb)
 		fuse_abort_conn(fc);
 }
 
-static void fuse_send_destroy(struct fuse_mount *fm)
-{
-	if (fm->fc->conn_init) {
-		FUSE_ARGS(args);
-
-		args.opcode = FUSE_DESTROY;
-		args.force = true;
-		args.nocreds = true;
-		fuse_simple_request(fm, &args);
-	}
-}
-
 int fuse_register_kio(struct fuse_kio_ops *ops)
 {
 	mutex_lock(&fuse_mutex);
@@ -1992,8 +1980,10 @@ void fuse_conn_destroy(struct fuse_mount *fm)
 {
 	struct fuse_conn *fc = fm->fc;
 
-	if (fc->destroy)
-		fuse_send_destroy(fm);
+	if (fc->kio.op) { /* At this point all pending kio must be completed. */
+		fc->kio.op->conn_fini(fc);
+		fc->kio.ctx = NULL;
+	}
 
 	fuse_abort_conn(fc);
 	fuse_wait_aborted(fc);
