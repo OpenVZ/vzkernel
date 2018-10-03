@@ -488,19 +488,6 @@ static void fuse_umount_begin(struct super_block *sb)
 	fuse_abort_conn(get_fuse_conn_super(sb), false);
 }
 
-static void fuse_send_destroy(struct fuse_conn *fc)
-{
-	struct fuse_req *req = fc->destroy_req;
-	if (req && fc->conn_init) {
-		fc->destroy_req = NULL;
-		req->in.h.opcode = FUSE_DESTROY;
-		__set_bit(FR_FORCE, &req->flags);
-		__clear_bit(FR_BACKGROUND, &req->flags);
-		fuse_request_send(fc, req);
-		fuse_put_request(fc, req);
-	}
-}
-
 int fuse_register_kio(struct fuse_kio_ops *ops)
 {
 	mutex_lock(&fuse_mutex);
@@ -556,6 +543,11 @@ static void fuse_kdirect_put(struct fuse_conn *fc)
 static void fuse_put_super(struct super_block *sb)
 {
 	struct fuse_conn *fc = get_fuse_conn_super(sb);
+
+	if (fc->kio.op) { /* At this point all pending kio must be completed. */
+		fc->kio.op->conn_fini(fc);
+		fc->kio.ctx = NULL;
+	}
 
 	mutex_lock(&fuse_mutex);
 	list_del(&fc->entry);
@@ -1493,8 +1485,6 @@ static void fuse_sb_destroy(struct super_block *sb)
 	struct fuse_conn *fc = get_fuse_conn_super(sb);
 
 	if (fc) {
-		fuse_send_destroy(fc);
-
 		fuse_abort_conn(fc, false);
 		fuse_wait_aborted(fc);
 
