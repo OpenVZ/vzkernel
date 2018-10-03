@@ -1113,7 +1113,8 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 
 	pcs_fuse_submit(pfc, req, lk);
 	if (!bg)
-		wait_event(req->waitq, test_bit(FR_FINISHED, &req->flags));
+		wait_event(req->waitq,
+			   test_bit(FR_FINISHED, &req->flags) && !req->end);
 
 	return 0;
 }
