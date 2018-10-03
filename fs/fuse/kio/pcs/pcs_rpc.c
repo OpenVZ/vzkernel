@@ -1257,23 +1257,28 @@ void pcs_rpc_engine_init(struct pcs_rpc_engine * eng, u8 role)
 
 }
 
+static void pcs_rpc_fini_verify(struct hlist_head *rpc_list)
+{
+	while (!hlist_empty(rpc_list)) {
+		struct pcs_rpc * ep =
+			hlist_entry(rpc_list->first, struct pcs_rpc, link);
+
+		pr_warn("rpc connection isn't closed ep: %p (flags: %u, "
+			"state: %u, refcnt: %u)\n", ep, ep->flags, ep->state,
+			atomic_read(&ep->refcnt));
+		WARN_ON(!(ep->flags & PCS_RPC_F_DEAD));
+		WARN_ON(atomic_read(&ep->refcnt) <= 0);
+	}
+}
+
 void pcs_rpc_engine_fini(struct pcs_rpc_engine * eng)
 {
 	unsigned int i;
 
-	for (i = 0; i < PCS_RPC_HASH_SIZE; i++) {
-		while (!hlist_empty(&eng->ht[i])) {
-			struct pcs_rpc * ep = hlist_entry(eng->ht[i].first, struct pcs_rpc, link);
+	for (i = 0; i < PCS_RPC_HASH_SIZE; i++)
+		pcs_rpc_fini_verify(&eng->ht[i]);
 
-			pcs_rpc_close(ep);
-		}
-	}
-
-	while (!hlist_empty(&eng->unhashed)) {
-		struct pcs_rpc * ep = hlist_entry(eng->unhashed.first, struct pcs_rpc, link);
-
-		pcs_rpc_close(ep);
-	}
+	pcs_rpc_fini_verify(&eng->unhashed);
 
 	for (i = 0; i < RPC_GC_MAX_CLASS; i++) {
 		BUG_ON(list_lru_count(&eng->gc[i].lru));
