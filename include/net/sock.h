@@ -1170,9 +1170,19 @@ static inline void sk_refcnt_debug_release(const struct sock *sk)
 
 #if defined(CONFIG_MEMCG_KMEM) && defined(CONFIG_NET)
 extern struct static_key memcg_socket_limit_enabled;
+static inline struct cg_proto *parent_cg_proto(struct proto *proto,
+					       struct cg_proto *cg_proto)
+{
+	return proto->proto_cgroup(parent_mem_cgroup(cg_proto->memcg));
+}
 #define mem_cgroup_sockets_enabled static_key_false(&memcg_socket_limit_enabled)
 #else
 #define mem_cgroup_sockets_enabled 0
+static inline struct cg_proto *parent_cg_proto(struct proto *proto,
+					       struct cg_proto *cg_proto)
+{
+	return NULL;
+}
 #endif
 
 static inline bool sk_stream_memory_free(const struct sock *sk)
