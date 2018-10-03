@@ -428,16 +428,19 @@ static void flush_bg_queue(struct fuse_conn *fc, struct fuse_iqueue *fiq)
 void request_end(struct fuse_conn *fc, struct fuse_req *req)
 {
 	struct fuse_iqueue *fiq = req->fiq;
+	bool bg;
 
 	if (test_and_set_bit(FR_FINISHED, &req->flags))
 		return;
+
+	bg = test_bit(FR_BACKGROUND, &req->flags);
 
 	spin_lock(&fiq->waitq.lock);
 	list_del_init(&req->intr_entry);
 	spin_unlock(&fiq->waitq.lock);
 	WARN_ON(test_bit(FR_PENDING, &req->flags));
 	WARN_ON(test_bit(FR_SENT, &req->flags));
-	if (test_bit(FR_BACKGROUND, &req->flags)) {
+	if (bg) {
 		spin_lock(&fc->lock);
 		clear_bit(FR_BACKGROUND, &req->flags);
 		if (fc->num_background == fc->max_background) {
@@ -464,8 +467,11 @@ void request_end(struct fuse_conn *fc, struct fuse_req *req)
 		flush_bg_queue(fc, fiq);
 		spin_unlock(&fc->lock);
 	}
-	if (req->end)
+	if (req->end) {
 		req->end(fc, req);
+		if (!bg)
+			req->end = NULL;
+	}
 	wake_up(&req->waitq);
 	fuse_put_request(fc, req);
 }
@@ -494,7 +500,7 @@ static void request_wait_answer(struct fuse_conn *fc, struct fuse_req *req)
 	if (!fc->no_interrupt) {
 		/* Any signal may interrupt this */
 		err = wait_event_interruptible(req->waitq,
-					test_bit(FR_FINISHED, &req->flags));
+				test_bit(FR_FINISHED, &req->flags) && !req->end);
 		if (!err)
 			return;
 
@@ -508,8 +514,7 @@ static void request_wait_answer(struct fuse_conn *fc, struct fuse_req *req)
 	if (!test_bit(FR_FORCE, &req->flags)) {
 		/* Only fatal signals may interrupt this */
 		err = wait_event_killable(req->waitq,
-					test_bit(FR_FINISHED, &req->flags));
-
+				test_bit(FR_FINISHED, &req->flags) && !req->end);
 		if (!err)
 			return;
 
