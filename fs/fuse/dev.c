@@ -289,9 +289,12 @@ static void flush_bg_queue(struct fuse_conn *fc, struct fuse_iqueue *fiq)
 void fuse_request_end(struct fuse_conn *fc, struct fuse_req *req)
 {
 	struct fuse_iqueue *fiq = req->args->fiq;
+	bool bg;
 
 	if (test_and_set_bit(FR_FINISHED, &req->flags))
 		goto put_request;
+
+	bg = test_bit(FR_BACKGROUND, &req->flags);
 
 	/*
 	 * test_and_set_bit() implies smp_mb() between bit
@@ -305,7 +308,7 @@ void fuse_request_end(struct fuse_conn *fc, struct fuse_req *req)
 	}
 	WARN_ON(test_bit(FR_PENDING, &req->flags));
 	WARN_ON(test_bit(FR_SENT, &req->flags));
-	if (test_bit(FR_BACKGROUND, &req->flags)) {
+	if (bg) {
 		spin_lock(&fc->bg_lock);
 		clear_bit(FR_BACKGROUND, &req->flags);
 		if (fc->num_background == fc->max_background) {
@@ -332,8 +335,11 @@ void fuse_request_end(struct fuse_conn *fc, struct fuse_req *req)
 		spin_unlock(&fc->bg_lock);
 	}
 
-	if (test_bit(FR_ASYNC, &req->flags))
+	if (test_bit(FR_ASYNC, &req->flags)) {
 		req->args->end(fc, req->args, req->out.h.error);
+		if (!bg)
+			req->args->end = NULL;
+	}
 	/* Wake up waiter sleeping in request_wait_answer() */
 	wake_up(&req->waitq);
 put_request:
@@ -377,7 +383,7 @@ static void request_wait_answer(struct fuse_conn *fc, struct fuse_req *req)
 	if (!fc->no_interrupt) {
 		/* Any signal may interrupt this */
 		err = wait_event_interruptible(req->waitq,
-					test_bit(FR_FINISHED, &req->flags));
+				test_bit(FR_FINISHED, &req->flags) && !req->args->end);
 		if (!err)
 			return;
 
@@ -391,7 +397,7 @@ static void request_wait_answer(struct fuse_conn *fc, struct fuse_req *req)
 	if (!test_bit(FR_FORCE, &req->flags)) {
 		/* Only fatal signals may interrupt this */
 		err = wait_event_killable(req->waitq,
-					test_bit(FR_FINISHED, &req->flags));
+				test_bit(FR_FINISHED, &req->flags) && !req->args->end);
 		if (!err)
 			return;
 
