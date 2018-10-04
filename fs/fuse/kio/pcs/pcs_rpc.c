@@ -30,7 +30,7 @@
 #include "fuse_ktrace.h"
 
 
-static unsigned int rpc_affinity_mode = RPC_AFFINITY_SPREAD;
+static unsigned int rpc_affinity_mode = RPC_AFFINITY_RETENT;
 module_param(rpc_affinity_mode, uint, 0644);
 MODULE_PARM_DESC(rpc_affinity_mode, "RPC affinity mode");
 
