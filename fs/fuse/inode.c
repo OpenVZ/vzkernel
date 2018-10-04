@@ -434,8 +434,10 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 		list_for_each_entry(fud, &fc->devices, entry) {
 			struct fuse_pqueue *fpq = &fud->pq;
 			struct fuse_iqueue *fiq = fud->fiq;
+			int i;
 			spin_lock(&fpq->lock);
-			fuse_kill_requests(fc, inode, &fpq->processing);
+			for (i = 0; i < FUSE_PQ_HASH_SIZE; i++)
+				fuse_kill_requests(fc, inode, &fpq->processing[i]);
 			fuse_kill_requests(fc, inode, &fiq->pending);
 			fuse_kill_requests(fc, inode, &fpq->io);
 			spin_unlock(&fpq->lock);
@@ -782,9 +784,12 @@ static void fuse_iqueue_init(struct fuse_iqueue *fiq)
 
 static void fuse_pqueue_init(struct fuse_pqueue *fpq)
 {
+	int i;
+
 	memset(fpq, 0, sizeof(struct fuse_pqueue));
 	spin_lock_init(&fpq->lock);
-	INIT_LIST_HEAD(&fpq->processing);
+	for (i = 0; i < FUSE_PQ_HASH_SIZE; i++)
+		INIT_LIST_HEAD(&fpq->processing[i]);
 	INIT_LIST_HEAD(&fpq->io);
 	fpq->connected = 1;
 }
