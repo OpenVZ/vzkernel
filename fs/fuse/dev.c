@@ -403,7 +403,7 @@ static void flush_bg_queue(struct fuse_conn *fc, struct fuse_iqueue *fiq)
 	       !list_empty(&fc->bg_queue)) {
 		struct fuse_req *req;
 
-		req = list_entry(fc->bg_queue.next, struct fuse_req, list);
+		req = list_first_entry(&fc->bg_queue, struct fuse_req, list);
 		list_del_init(&req->list);
 		fc->active_background++;
 
