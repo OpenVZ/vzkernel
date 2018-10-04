@@ -1132,12 +1132,11 @@ __releases(fiq->waitq.lock)
 	int err;
 
 	list_del_init(&req->intr_entry);
-	req->intr_unique = (req->in.h.unique | FUSE_INT_REQ_BIT);
 	memset(&ih, 0, sizeof(ih));
 	memset(&arg, 0, sizeof(arg));
 	ih.len = reqsize;
 	ih.opcode = FUSE_INTERRUPT;
-	ih.unique = req->intr_unique;
+	ih.unique = (req->in.h.unique | FUSE_INT_REQ_BIT);
 	arg.unique = req->in.h.unique;
 
 	spin_unlock(&fiq->waitq.lock);
@@ -1909,8 +1908,10 @@ static struct fuse_req *request_find(struct fuse_pqueue *fpq, u64 unique)
 {
 	struct fuse_req *req;
 
+	unique &= ~FUSE_INT_REQ_BIT;
+
 	list_for_each_entry(req, &fpq->processing, list) {
-		if (req->in.h.unique == unique || req->intr_unique == unique)
+		if (req->in.h.unique == unique)
 			return req;
 	}
 	return NULL;
@@ -1988,8 +1989,8 @@ static ssize_t fuse_dev_do_write(struct fuse_dev *fud,
 	if (!req)
 		goto err_unlock_pq;
 
-	/* Is it an interrupt reply? */
-	if (req->intr_unique == oh.unique) {
+	/* Is it an interrupt reply ID? */
+	if (oh.unique & FUSE_INT_REQ_BIT) {
 		spin_unlock(&fpq->lock);
 
 		err = -EINVAL;
