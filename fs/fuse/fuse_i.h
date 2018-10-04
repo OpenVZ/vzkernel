@@ -467,6 +467,8 @@ struct fuse_iqueue {
 	struct fasync_struct *fasync;
 };
 
+#define FUSE_PQ_HASH_SIZE 256
+
 struct fuse_pqueue {
 	/** Connection established */
 	unsigned connected;
@@ -474,11 +476,11 @@ struct fuse_pqueue {
 	/** Lock protecting accessess to  members of this structure */
 	spinlock_t lock;
 
-	/** The list of requests being processed */
-	struct list_head processing;
-
 	/** The list of requests under I/O */
 	struct list_head io;
+
+	/** The lists of requests being processed */
+	struct list_head processing[FUSE_PQ_HASH_SIZE];
 };
 
 /**

@@ -21,6 +21,7 @@
 #include <linux/splice.h>
 #include <linux/aio.h>
 #include <linux/sched.h>
+#include <linux/hashtable.h>
 
 MODULE_ALIAS_MISCDEV(FUSE_MINOR);
 MODULE_ALIAS("devname:fuse");
@@ -351,6 +352,20 @@ static u64 fuse_get_unique(struct fuse_iqueue *fiq)
 {
 	fiq->reqctr += FUSE_REQ_ID_STEP;
 	return fiq->reqctr;
+}
+
+static unsigned int __fuse_req_hash(u64 unique)
+{
+	unique &= ~FUSE_INT_REQ_BIT;
+
+	/* Borrowed from hash_add() */
+	return hash_min(unique,
+			HASH_BITS(((struct fuse_pqueue *)0)->processing));
+}
+
+static unsigned int fuse_req_hash(struct fuse_req *req)
+{
+	return __fuse_req_hash(req->in.h.unique);
 }
 
 static void queue_request(struct fuse_iqueue *fiq, struct fuse_req *req)
@@ -1362,7 +1377,7 @@ static ssize_t fuse_dev_do_read(struct fuse_dev *fud, struct file *file,
 		err = reqsize;
 		goto out_end;
 	}
-	list_move_tail(&req->list, &fpq->processing);
+	list_move_tail(&req->list, &fpq->processing[fuse_req_hash(req)]);
 	spin_unlock(&fpq->lock);
 	set_bit(FR_SENT, &req->flags);
 	/* matches barrier in request_wait_answer() */
@@ -1907,10 +1922,12 @@ static int fuse_notify(struct fuse_conn *fc, enum fuse_notify_code code,
 static struct fuse_req *request_find(struct fuse_pqueue *fpq, u64 unique)
 {
 	struct fuse_req *req;
+	unsigned int hash;
 
 	unique &= ~FUSE_INT_REQ_BIT;
+	hash = __fuse_req_hash(unique);
 
-	list_for_each_entry(req, &fpq->processing, list) {
+	list_for_each_entry(req, &fpq->processing[hash], list) {
 		if (req->in.h.unique == unique)
 			return req;
 	}
@@ -2232,6 +2249,7 @@ void fuse_abort_conn(struct fuse_conn *fc)
 		struct fuse_req *req, *next;
 		LIST_HEAD(to_end1);
 		LIST_HEAD(to_end2);
+		int i;
 
 		fc->connected = 0;
 		fc->blocked = 0;
@@ -2251,7 +2269,9 @@ void fuse_abort_conn(struct fuse_conn *fc)
 				}
 				spin_unlock(&req->waitq.lock);
 			}
-			list_splice_init(&fpq->processing, &to_end2);
+			for (i = 0; i < FUSE_PQ_HASH_SIZE; i++)
+				list_splice_tail_init(&fpq->processing[i],
+						      &to_end2);
 			spin_unlock(&fpq->lock);
 		}
 		if (fc->kio.op)
@@ -2290,9 +2310,13 @@ int fuse_dev_release(struct inode *inode, struct file *file)
 	if (fud) {
 		struct fuse_conn *fc = fud->fc;
 		struct fuse_pqueue *fpq = &fud->pq;
+		LIST_HEAD(to_end);
+		int i;
 
 		WARN_ON(!list_empty(&fpq->io));
-		end_requests(fc, &fpq->processing);
+		for (i = 0; i < FUSE_PQ_HASH_SIZE; i++)
+			list_splice_init(&fpq->processing[i], &to_end);
+		end_requests(fc, &to_end);
 		/* Are we the last open device? */
 		if (atomic_dec_and_test(&fc->dev_count)) {
 			WARN_ON(fud->fiq->fasync != NULL);
