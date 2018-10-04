@@ -437,8 +437,8 @@ static unsigned long shrink_slab_memcg(gfp_t gfp_mask, int nid,
 			struct mem_cgroup *memcg, int priority)
 {
 	struct memcg_shrinker_map *map;
-	unsigned long freed = 0;
-	int ret, i;
+	unsigned long ret, freed = 0;
+	int i;
 
 	if (!memcg_kmem_enabled())
 		return 0;
@@ -537,9 +537,8 @@ static unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 				 int priority,
 				 bool for_drop_caches)
 {
+	unsigned long ret, freed = 0;
 	struct shrinker *shrinker;
-	unsigned long freed = 0;
-	int ret;
 
 	if (unlikely(test_tsk_thread_flag(current, TIF_MEMDIE)))
 		return 0;
