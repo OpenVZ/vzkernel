@@ -1367,7 +1367,7 @@ cifs_destroy_mids(void)
 	kmem_cache_destroy(cifs_mid_cachep);
 }
 
-static void __exit
+static void
 cifs_unregister_fo_extends(void)
 {
 	unregister_fo_extend(&cifs_dir_ops);
