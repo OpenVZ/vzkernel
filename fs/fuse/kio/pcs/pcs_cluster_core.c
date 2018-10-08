@@ -51,6 +51,7 @@ static int pcs_mapset_init(struct pcs_map_set *maps)
 	maps->shrinker.count_objects = pcs_map_shrink_count;
 	maps->shrinker.scan_objects  = pcs_map_shrink_scan;
 	maps->shrinker.seeks = DEFAULT_SEEKS;
+	maps->shrinker.batch = 0;	/* use default reclaim batch size */
 	maps->shrinker.flags = SHRINKER_NUMA_AWARE;
 	register_shrinker(&maps->shrinker);
 
