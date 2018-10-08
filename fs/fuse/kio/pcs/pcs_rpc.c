@@ -1268,6 +1268,7 @@ static void pcs_rpc_fini_verify(struct hlist_head *rpc_list)
 			atomic_read(&ep->refcnt));
 		WARN_ON(!(ep->flags & PCS_RPC_F_DEAD));
 		WARN_ON(atomic_read(&ep->refcnt) <= 0);
+		schedule_timeout(5 * HZ);
 	}
 }
 
