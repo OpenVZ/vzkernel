@@ -621,7 +621,7 @@ static const struct file_operations fops_kaiser_enabled = {
 
 static int __init create_kpti_enabled(void)
 {
-	if (!xen_pv_domain() && !sme_active())
+	if (!is_xen_pv_domain() && !sme_active())
 		debugfs_create_file("pti_enabled", S_IRUSR | S_IWUSR,
 				    arch_debugfs_dir, NULL, &fops_kaiser_enabled);
 	return 0;
