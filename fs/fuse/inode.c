@@ -120,8 +120,8 @@ static void fuse_free_inode(struct inode *inode)
 #endif
 
 	/* TODO: Probably kio context should be released inside fuse forget */
-	if (fc->kio.op && fc->kio.op->inode_release)
-		fc->kio.op->inode_release(fi);
+	if (fc->kio.cached_op && fc->kio.cached_op->inode_release)
+		fc->kio.cached_op->inode_release(fi);
 
 	kmem_cache_free(fuse_inode_cachep, fi);
 }
@@ -593,8 +593,8 @@ static void fuse_kio_put(struct fuse_kio_ops *ops)
 
 static void fuse_kdirect_put(struct fuse_conn *fc)
 {
-	if (fc->kio.op)
-		fuse_kio_put(fc->kio.op);
+	if (fc->kio.cached_op)
+		fuse_kio_put(fc->kio.cached_op);
 }
 
 static void convert_fuse_statfs(struct kstatfs *stbuf, struct fuse_kstatfs *attr)
@@ -936,8 +936,8 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 			seq_printf(m, ",blksize=%lu", sb->s_blocksize);
 		if (fc->writeback_cache)
 			seq_puts(m, ",writeback_enable");
-		if (fc->kio.op)
-			seq_printf(m, ",kdirect=%s", fc->kio.op->name);
+		if (fc->kio.cached_op)
+			seq_printf(m, ",kdirect=%s", fc->kio.cached_op->name);
 	}
 #ifdef CONFIG_FUSE_DAX
 	if (fc->dax)
@@ -1377,8 +1377,8 @@ static void process_init_reply(struct fuse_mount *fm, struct fuse_args *args,
 		fc->max_write = max_t(unsigned, 4096, fc->max_write);
 		fc->conn_init = 1;
 
-		if (fc->kio.op) {
-			if (!fc->kio.op->conn_init(fc)) {
+		if (fc->kio.cached_op) {
+			if (!fc->kio.cached_op->conn_init(fc)) {
 				kfree(ia);
 				return;
 			}
@@ -1765,8 +1765,8 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *ctx)
 		if (!fc->writeback_cache)
 			goto err_dev_free;
 
-		fc->kio.op = fuse_kio_get(fc, ctx->kio_name);
-		if (!fc->kio.op)
+		fc->kio.cached_op = fuse_kio_get(fc, ctx->kio_name);
+		if (!fc->kio.cached_op)
 			goto err_dev_free;
 	}
 
