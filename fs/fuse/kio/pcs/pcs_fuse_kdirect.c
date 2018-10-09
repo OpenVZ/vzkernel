@@ -134,6 +134,8 @@ static void process_pcs_init_reply(struct fuse_conn *fc, struct fuse_args *args,
 		kvfree(pfc);
 	}
 out:
+	if (fc->conn_error)
+		pr_err("Failed to initialize fuse kio\n");
 	kfree(ia);
 	kfree(info);
 	/*  We are called from	process_init_reply before connection
