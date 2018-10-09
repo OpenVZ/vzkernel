@@ -70,18 +70,18 @@ static void process_pcs_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 	struct fuse_ioctl_out *arg = &req->misc.ioctl.out;
 	struct	pcs_ioc_init_kdirect *info = req->out.args[1].value;
 
-	if (req->out.h.error || arg->result) {
+	if ((req->out.h.error == -EPROTONOSUPPORT && !arg->result) ||
+	    info->version.major != PCS_FAST_PATH_VERSION.major ||
+	    info->version.minor != PCS_FAST_PATH_VERSION.minor) {
+		pr_err("kio_pcs: version missmatch: must be %u.%u. "
+		       "Fallback to plain fuse\n",
+		       PCS_FAST_PATH_VERSION.major,
+		       PCS_FAST_PATH_VERSION.minor);
+		fc->flags &= ~FUSE_KDIRECT_IO;
+		goto out;
+	} else if (req->out.h.error || arg->result) {
 		printk("Fail to initialize has_kdirect {%d,%d}\n",
 		       req->out.h.error, arg->result);
-		fc->conn_error = 1;
-		goto out;
-	}
-
-	if (info->version.major != PCS_FAST_PATH_VERSION.major ||
-	    info->version.minor != PCS_FAST_PATH_VERSION.minor) {
-		pr_err("kio_pcs: version missmatch: must be %u.%u\n",
-			PCS_FAST_PATH_VERSION.major,
-			PCS_FAST_PATH_VERSION.minor);
 		fc->conn_error = 1;
 		goto out;
 	}
