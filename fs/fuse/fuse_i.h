@@ -937,6 +937,7 @@ struct fuse_conn {
 	/** Kdirect io operations */
 	struct {
 		struct fuse_kio_ops *op;
+		struct fuse_kio_ops *cached_op;
 		void *ctx;
 	} kio;
 
