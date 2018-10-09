@@ -1312,6 +1312,7 @@ static size_t fuse_send_unmap(struct fuse_req *req, struct fuse_io_priv *io,
 	req->in.numargs = 1;
 	req->in.args[0].size = sizeof(struct fuse_fallocate_in);
 	req->in.args[0].value = inarg;
+	req->io_inode = file_inode(file);
 
 	fuse_account_request(fc, count);
 
