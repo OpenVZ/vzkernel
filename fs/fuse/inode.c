@@ -498,7 +498,6 @@ again:
 	list_for_each_entry(ops, &fuse_kios_list, list) {
 		if (!strncmp(name, ops->name, FUSE_KIO_NAME) &&
 		    ops->probe(fc, name) && try_module_get(ops->owner)) {
-			__module_get(THIS_MODULE);
 			mutex_unlock(&fuse_mutex);
 			return ops;
 		}
@@ -515,7 +514,6 @@ again:
 static void fuse_kio_put(struct fuse_kio_ops *ops)
 {
 	module_put(ops->owner);
-	module_put(THIS_MODULE);
 }
 
 static void fuse_kdirect_put(struct fuse_conn *fc)
