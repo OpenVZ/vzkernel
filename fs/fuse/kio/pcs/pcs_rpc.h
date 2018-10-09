@@ -140,6 +140,7 @@ struct pcs_rpc
 
 struct pcs_rpc_engine
 {
+	spinlock_t		lock;
 	struct hlist_head	ht[PCS_RPC_HASH_SIZE];
 	struct hlist_head	unhashed;
 	unsigned int		nrpcs;
