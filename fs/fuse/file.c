@@ -111,7 +111,7 @@ static void fuse_file_list_del(struct fuse_file *ff)
 void fuse_file_free(struct fuse_file *ff)
 {
 	fuse_file_list_del(ff);
-	fuse_request_free(ff->fc, ff->reserved_req);
+	fuse_request_free(ff->reserved_req);
 	kfree(ff);
 }
 
@@ -2126,7 +2126,7 @@ err_nofile:
 	printk("FUSE: page dirtied on dead file\n");
 	__free_page(tmp_page);
 err_free:
-	fuse_request_free(fc, req);
+	fuse_request_free(req);
 err:
 	mapping_set_error(page->mapping, error);
 	end_page_writeback(page);
