@@ -111,7 +111,7 @@ static void fuse_file_list_del(struct fuse_file *ff)
 void fuse_file_free(struct fuse_file *ff)
 {
 	fuse_file_list_del(ff);
-	fuse_request_free(ff->fc, ff->reserved_req);
+	fuse_request_free(ff->reserved_req);
 	kfree(ff);
 }
 
@@ -2132,7 +2132,7 @@ static int fuse_writepage_locked(struct page *page)
 err_nofile:
 	__free_page(tmp_page);
 err_free:
-	fuse_request_free(fc, req);
+	fuse_request_free(req);
 err:
 	mapping_set_error(page->mapping, error);
 	end_page_writeback(page);
@@ -2241,7 +2241,7 @@ static bool fuse_writepage_in_flight(struct fuse_req *new_req,
 		dec_zone_page_state(new_req->pages[0], NR_WRITEBACK_TEMP);
 		bdi_writeout_inc(bdi);
 		fuse_writepage_free(fc, new_req);
-		fuse_request_free(fc, new_req);
+		fuse_request_free(new_req);
 	}
 
 	return true;
