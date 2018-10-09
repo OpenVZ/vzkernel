@@ -574,7 +574,6 @@ struct fuse_kio_ops {
 
 	/* Request handling hooks */
 	struct fuse_req *(*req_alloc)(struct fuse_conn *fc, gfp_t flags);
-	void (*req_free)(struct fuse_conn *fc, struct fuse_req *req);
 	int (*req_send)(struct fuse_conn *fc, struct fuse_req *req, bool bg,
 			bool locked);
 

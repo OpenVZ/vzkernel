@@ -69,17 +69,9 @@ static struct fuse_req *fuse_request_alloc(struct fuse_conn *fc, gfp_t flags)
 	return fuse_generic_request_alloc(fuse_req_cachep, flags);
 }
 
-static void fuse_generic_request_free(struct fuse_req *req)
+static void fuse_request_free(struct fuse_req *req)
 {
 	kmem_cache_free(req->cache, req);
-}
-
-static void fuse_request_free(struct fuse_conn *fc, struct fuse_req *req)
-{
-	if (fc->kio.op && fc->kio.op->req_free)
-		fc->kio.op->req_free(fc, req);
-
-	fuse_generic_request_free(req);
 }
 
 static void __fuse_get_request(struct fuse_req *req)
@@ -190,7 +182,7 @@ void fuse_put_request(struct fuse_conn *fc, struct fuse_req *req)
 			fuse_drop_waiting(fc);
 		}
 
-		fuse_request_free(fc, req);
+		fuse_request_free(req);
 	}
 }
 EXPORT_SYMBOL_GPL(fuse_put_request);
