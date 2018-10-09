@@ -1034,9 +1034,6 @@ static void pcs_kio_setattr_handle(struct fuse_inode *fi, struct fuse_req *req)
 	struct fuse_setattr_in *inarg = (void*) req->in.args[0].value;
 	struct pcs_dentry_info *di;
 
-	if (!(inarg->valid & FATTR_SIZE))
-		return;
-
 	BUG_ON(!fi);
 
 	di = pcs_inode_from_fuse(fi);
@@ -1062,7 +1059,7 @@ static void pcs_kio_setattr_handle(struct fuse_inode *fi, struct fuse_req *req)
 		req->end = _pcs_grow_end;
 }
 
-static int pcs_kio_classify_req(struct fuse_conn *fc, struct fuse_req *req)
+static int pcs_kio_classify_req(struct fuse_conn *fc, struct fuse_req *req, bool lk)
 {
 	struct fuse_inode *fi = get_fuse_inode(req->io_inode);
 
@@ -1073,12 +1070,20 @@ static int pcs_kio_classify_req(struct fuse_conn *fc, struct fuse_req *req)
 	case FUSE_FLUSH:
 	case FUSE_FALLOCATE:
 		break;
-	case FUSE_SETATTR:
+	case FUSE_SETATTR: {
+		struct fuse_setattr_in const *inarg = req->in.args[0].value;
+
 		if (unlikely(!fi || !fi->private))
 			goto fail;
-
+		if (!(inarg->valid & FATTR_SIZE))
+			return 1;
+		if (lk)
+			spin_unlock(&fc->bg_lock);
 		pcs_kio_setattr_handle(fi, req);
+		if (lk)
+			spin_lock(&fc->bg_lock);
 		return 1;
+	}
 	case FUSE_IOCTL: {
 		struct fuse_ioctl_in const *inarg = req->in.args[0].value;
 
@@ -1118,14 +1123,18 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 
 	TRACE(" Enter req:%p op:%d end:%p bg:%d lk:%d\n", req, req->in.h.opcode, req->end, bg, lk);
 
-	ret = pcs_kio_classify_req(fc, req);
+	ret = pcs_kio_classify_req(fc, req, lk);
 	if (ret) {
 		if (ret < 0) {
 			if (!bg)
 				atomic_inc(&req->count);
 			__clear_bit(FR_PENDING, &req->flags);
 			req->out.h.error = ret;
+			if (lk)
+				spin_unlock(&fc->bg_lock);
 			request_end(fc, req);
+			if (lk)
+				spin_lock(&fc->bg_lock);
 			return 0;
 		}
 		return 1;
