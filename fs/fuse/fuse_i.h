@@ -528,7 +528,6 @@ struct fuse_kio_ops {
 	/* Request handling hooks */
 	struct fuse_req *(*req_alloc)(struct fuse_conn *fc, unsigned nrpages,
 				      gfp_t flags);
-	void (*req_free)(struct fuse_conn *fc, struct fuse_req *req);
 	int (*req_send)(struct fuse_conn *fc, struct fuse_req *req, bool bg,
 			bool locked);
 
@@ -935,7 +934,7 @@ struct fuse_req *fuse_request_alloc_nofs(struct fuse_conn *fc, unsigned npages);
 /**
  * Free a request
  */
-void fuse_request_free(struct fuse_conn *fc, struct fuse_req *req);
+void fuse_request_free(struct fuse_req *req);
 
 /**
  * Get a request, may fail with -ENOMEM,
