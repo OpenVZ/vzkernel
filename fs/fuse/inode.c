@@ -822,7 +822,7 @@ void fuse_conn_put(struct fuse_conn *fc)
 {
 	if (atomic_dec_and_test(&fc->count)) {
 		if (fc->destroy_req)
-			fuse_request_free(fc, fc->destroy_req);
+			fuse_request_free(fc->destroy_req);
 		mutex_destroy(&fc->inst_mutex);
 		put_pid_ns(fc->pid_ns);
 		fc->release(fc);
@@ -1382,7 +1382,7 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
  err_unlock:
 	mutex_unlock(&fuse_mutex);
  err_free_init_req:
-	fuse_request_free(fc, init_req);
+	fuse_request_free(init_req);
  err_put_root:
 	dput(root_dentry);
  err_put_io:
