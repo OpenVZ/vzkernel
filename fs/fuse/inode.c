@@ -132,8 +132,8 @@ static void fuse_destroy_inode(struct inode *inode)
 	kfree(fi->forget);
 
 	/* TODO: Probably kio context should be released inside fuse forget */
-	if (fc->kio.op && fc->kio.op->inode_release)
-		fc->kio.op->inode_release(fi);
+	if (fc->kio.cached_op && fc->kio.cached_op->inode_release)
+		fc->kio.cached_op->inode_release(fi);
 
 	call_rcu(&inode->i_rcu, fuse_i_callback);
 }
@@ -518,8 +518,8 @@ static void fuse_kio_put(struct fuse_kio_ops *ops)
 
 static void fuse_kdirect_put(struct fuse_conn *fc)
 {
-	if (fc->kio.op)
-		fuse_kio_put(fc->kio.op);
+	if (fc->kio.cached_op)
+		fuse_kio_put(fc->kio.cached_op);
 }
 
 static void fuse_put_super(struct super_block *sb)
@@ -761,8 +761,8 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 		seq_printf(m, ",blksize=%lu", sb->s_blocksize);
 	if (fc->writeback_cache)
 		seq_puts(m, ",writeback_enable");
-	if (fc->kio.op)
-		seq_printf(m, ",kdirect=%s", fc->kio.op->name);
+	if (fc->kio.cached_op)
+		seq_printf(m, ",kdirect=%s", fc->kio.cached_op->name);
 	return 0;
 }
 
@@ -1128,8 +1128,8 @@ static void process_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 		fc->max_write = max_t(unsigned, 4096, fc->max_write);
 		fc->conn_init = 1;
 
-		if (fc->kio.op) {
-			if (!fc->kio.op->conn_init(fc))
+		if (fc->kio.cached_op) {
+			if (!fc->kio.cached_op->conn_init(fc))
 				return;
 			fc->conn_error = 1;
 		}
@@ -1355,8 +1355,8 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 		err = -EINVAL;
 		if (!fc->writeback_cache)
 			goto err_dev_free;
-		fc->kio.op = fuse_kio_get(fc, d.kio_name);
-		if (!fc->kio.op)
+		fc->kio.cached_op = fuse_kio_get(fc, d.kio_name);
+		if (!fc->kio.cached_op)
 			goto err_dev_free;
 	}
 	/* Used by get_root_inode() */
