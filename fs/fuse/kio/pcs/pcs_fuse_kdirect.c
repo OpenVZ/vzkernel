@@ -1098,8 +1098,6 @@ static int pcs_kio_classify_req(struct fuse_conn *fc, struct fuse_req *req)
 
 fail:
 	WARN_ONCE(1, "Fuse kio: req cannot be processed w/o inode\n");
-	req->out.h.error = -EINVAL;
-	request_end(fc, req);
 	return -EINVAL;
 }
 
@@ -1121,8 +1119,17 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 	TRACE(" Enter req:%p op:%d end:%p bg:%d lk:%d\n", req, req->in.h.opcode, req->end, bg, lk);
 
 	ret = pcs_kio_classify_req(fc, req);
-	if (ret)
-		return ret < 0 ? 0 : 1;
+	if (ret) {
+		if (ret < 0) {
+			if (!bg)
+				atomic_inc(&req->count);
+			__clear_bit(FR_PENDING, &req->flags);
+			req->out.h.error = ret;
+			request_end(fc, req);
+			return 0;
+		}
+		return 1;
+	}
 
 	/* request_end below will do fuse_put_request() */
 	if (!bg)
