@@ -1306,9 +1306,7 @@ static size_t fuse_send_unmap(struct fuse_req *req, struct fuse_io_priv *io,
 	inarg->fh = ff->fh;
 	inarg->offset = pos;
 	inarg->length = count;
-	inarg->mode = FALLOC_FL_KEEP_SIZE |
-		      FALLOC_FL_PUNCH_HOLE |
-		      FALLOC_FL_ZERO_RANGE;
+	inarg->mode = FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE;
 	req->in.h.opcode = FUSE_FALLOCATE;
 	req->in.h.nodeid = ff->nodeid;
 	req->in.numargs = 1;
