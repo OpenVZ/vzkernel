@@ -86,6 +86,12 @@ static void process_pcs_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 		goto out;
 	}
 
+	/*
+	 * It looks like all potential tasks, which can dereference
+	 * fc->kio.op, are waiting for fuse_set_initialized().
+	 */
+	fc->kio.op = fc->kio.cached_op;
+
 	pfc = kvmalloc(sizeof(*pfc), GFP_KERNEL);
 	if (!pfc) {
 		fc->conn_error = 1;
