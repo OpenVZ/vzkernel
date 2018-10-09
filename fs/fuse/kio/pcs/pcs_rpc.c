@@ -54,17 +54,22 @@ pcs_rpc_lookup(struct pcs_rpc_engine * eng, PCS_NODE_ID_T * id)
 {
 	struct pcs_rpc * ep;
 
+	spin_lock(&eng->lock);
 	hlist_for_each_entry(ep, &eng->ht[rpc_hash(id)], link) {
-		if (memcmp(&ep->peer_id, id, sizeof(ep->peer_id)) == 0)
-			return pcs_rpc_get(ep);
+		if (memcmp(&ep->peer_id, id, sizeof(ep->peer_id)) == 0) {
+			pcs_rpc_get(ep);
+			break;
+		}
 	}
-	return NULL;
+	spin_unlock(&eng->lock);
+	return ep;
 }
 static void rpc_add_hash(struct pcs_rpc * ep) __attribute__ ((unused));
 static void rpc_del_hash(struct pcs_rpc * ep) __attribute__ ((unused));
 
 static void rpc_add_hash(struct pcs_rpc * ep)
 {
+	spin_lock(&ep->eng->lock);
 	if (!hlist_unhashed(&ep->link))
 		hlist_del(&ep->link);
 
@@ -74,14 +79,17 @@ static void rpc_add_hash(struct pcs_rpc * ep)
 	}
 
 	hlist_add_head(&ep->link, &ep->eng->ht[rpc_hash(&ep->peer_id)]);
+	spin_unlock(&ep->eng->lock);
 }
 
 static void rpc_del_hash(struct pcs_rpc * ep)
 {
 	if (ep->flags & PCS_RPC_F_HASHED) {
 		ep->flags &= ~PCS_RPC_F_HASHED;
+		spin_lock(&ep->eng->lock);
 		hlist_del(&ep->link);
 		hlist_add_head(&ep->link, &ep->eng->unhashed);
+		spin_unlock(&ep->eng->lock);
 		pcs_rpc_put(ep);
 	}
 }
@@ -248,9 +256,6 @@ void pcs_rpc_close(struct pcs_rpc * ep)
 
 void pcs_rpc_attach_new_ep(struct pcs_rpc * ep, struct pcs_rpc_engine * eng)
 {
-	eng->nrpcs++;
-	hlist_add_head(&ep->link, &eng->unhashed);
-	ep->eng = eng;
 	ep->state = PCS_RPC_UNCONN;
 	ep->flags = 0;
 	atomic_set(&ep->refcnt, 1);
@@ -278,15 +283,22 @@ void pcs_rpc_attach_new_ep(struct pcs_rpc * ep, struct pcs_rpc_engine * eng)
 	if (eng->max_gc_index)
 		ep->gc = &eng->gc[0];
 
+	spin_lock(&eng->lock);
+	eng->nrpcs++;
+	hlist_add_head(&ep->link, &eng->unhashed);
+	ep->eng = eng;
+
 	if (!timer_pending(&eng->stat_work.timer)) {
 		struct pcs_cluster_core *cc = cc_from_rpc(eng);
 
 		mod_delayed_work(cc->wq, &eng->stat_work, PCS_MSG_MAX_CALENDAR * HZ);
 	}
+	spin_unlock(&eng->lock);
 }
 
 void pcs_rpc_destroy(struct pcs_rpc * ep)
 {
+	bool flush;
 	BUG_ON(ep->state != PCS_RPC_DESTROY);
 	BUG_ON(ep->flags & PCS_RPC_F_HASHED);
 	BUG_ON(!(ep->flags & PCS_RPC_F_DEAD));
@@ -299,11 +311,18 @@ void pcs_rpc_destroy(struct pcs_rpc * ep)
 	/* ep->sun = NULL; */
 	if (ep->gc)
 		list_lru_del(&ep->gc->lru, &ep->lru_link);
+	/*
+	 * This function is called after last reference to ep is dropped,
+	 * so we may avoid taking ep->mutex here.
+	 */
+	spin_lock(&ep->eng->lock);
 	hlist_del(&ep->link);
-	ep->eng->nrpcs--;
+	flush = !(--ep->eng->nrpcs);
+	spin_unlock(&ep->eng->lock);
+
 	cancel_delayed_work_sync(&ep->calendar_work);
-	if (ep->eng->nrpcs == 0)
-		cancel_delayed_work_sync(&ep->eng->stat_work);
+	if (flush)
+		flush_delayed_work(&ep->eng->stat_work);
 
 	memset(ep, 0xFF, sizeof(*ep));
 	kfree(ep);
@@ -1241,7 +1260,11 @@ static void connstat_work(struct work_struct *w)
 
 	(void)eng;
 	/* account_connstat(eng); */
-	mod_delayed_work(cc->wq, &eng->stat_work, PCS_MSG_MAX_CALENDAR * HZ);
+	spin_lock(&eng->lock);
+	if (eng->nrpcs)
+		mod_delayed_work(cc->wq, &eng->stat_work,
+				 PCS_MSG_MAX_CALENDAR * HZ);
+	spin_unlock(&eng->lock);
 }
 
 
@@ -1253,12 +1276,14 @@ void pcs_rpc_engine_init(struct pcs_rpc_engine * eng, u8 role)
 	for (i = 0; i < RPC_GC_MAX_CLASS; i++)
 		list_lru_init(&eng->gc[i].lru);
 
+	spin_lock_init(&eng->lock);
 	INIT_DELAYED_WORK(&eng->stat_work, connstat_work);
 
 }
 
-static void pcs_rpc_fini_verify(struct hlist_head *rpc_list)
+static void pcs_rpc_fini_verify(struct pcs_rpc_engine *eng, struct hlist_head *rpc_list)
 {
+	spin_lock(&eng->lock);
 	while (!hlist_empty(rpc_list)) {
 		struct pcs_rpc * ep =
 			hlist_entry(rpc_list->first, struct pcs_rpc, link);
@@ -1268,18 +1293,24 @@ static void pcs_rpc_fini_verify(struct hlist_head *rpc_list)
 			atomic_read(&ep->refcnt));
 		WARN_ON(!(ep->flags & PCS_RPC_F_DEAD));
 		WARN_ON(atomic_read(&ep->refcnt) <= 0);
+		spin_unlock(&eng->lock);
 		schedule_timeout(5 * HZ);
+		spin_lock(&eng->lock);
 	}
+	spin_unlock(&eng->lock);
 }
 
 void pcs_rpc_engine_fini(struct pcs_rpc_engine * eng)
 {
 	unsigned int i;
 
-	for (i = 0; i < PCS_RPC_HASH_SIZE; i++)
-		pcs_rpc_fini_verify(&eng->ht[i]);
+	if (cancel_delayed_work_sync(&eng->stat_work))
+		pr_err("fuse kio: stat_work was actually canceled\n");
 
-	pcs_rpc_fini_verify(&eng->unhashed);
+	for (i = 0; i < PCS_RPC_HASH_SIZE; i++)
+		pcs_rpc_fini_verify(eng, &eng->ht[i]);
+
+	pcs_rpc_fini_verify(eng, &eng->unhashed);
 
 	for (i = 0; i < RPC_GC_MAX_CLASS; i++) {
 		BUG_ON(list_lru_count(&eng->gc[i].lru));
