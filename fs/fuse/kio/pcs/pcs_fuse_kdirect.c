@@ -1028,6 +1028,68 @@ static void _pcs_grow_end(struct fuse_conn *fc, struct fuse_req *req)
 	kpcs_setattr_end(fc, req);
 }
 
+static void pcs_kio_setattr_handle(struct fuse_req *req)
+{
+	struct fuse_inode *fi = get_fuse_inode(req->io_inode);
+	struct pcs_fuse_req *r = pcs_req_from_fuse(req);
+	struct fuse_setattr_in *inarg = (void*) req->in.args[0].value;
+	struct pcs_dentry_info *di;
+
+	if (!(inarg->valid & FATTR_SIZE))
+		return;
+
+	BUG_ON(!fi);
+
+	di = pcs_inode_from_fuse(fi);
+	spin_lock(&di->lock);
+	if (inarg->size < di->fileinfo.attr.size) {
+		BUG_ON(di->size.op != PCS_SIZE_INACTION);
+		di->size.op = PCS_SIZE_SHRINK;
+	}
+	spin_unlock(&di->lock);
+
+	r->end = req->end;
+	if (di->size.op == PCS_SIZE_SHRINK) {
+		BUG_ON(!mutex_is_locked(&req->io_inode->i_mutex));
+		/* wait for aio reads in flight */
+		inode_dio_wait(req->io_inode);
+		/*
+		 * Writebackcache was flushed already so it is safe to
+		 * drop pcs_mapping
+		 */
+		pcs_map_invalidate_tail(&di->mapping, inarg->size);
+		req->end = _pcs_shrink_end;
+	} else
+		req->end = _pcs_grow_end;
+}
+
+static int pcs_kio_classify_req(struct fuse_conn *fc, struct fuse_req *req)
+{
+	switch (req->in.h.opcode) {
+	case FUSE_READ:
+	case FUSE_WRITE:
+	case FUSE_FSYNC:
+	case FUSE_FLUSH:
+	case FUSE_FALLOCATE:
+		break;
+	case FUSE_SETATTR:
+		pcs_kio_setattr_handle(req);
+		return 1;
+	case FUSE_IOCTL: {
+		struct fuse_ioctl_in const *inarg = req->in.args[0].value;
+
+		if (inarg->cmd != FS_IOC_FIEMAP)
+			return 1;
+
+		break;
+	}
+	default:
+		return 1;
+	}
+
+	return 0;
+}
+
 static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bool lk)
 {
 	struct pcs_fuse_cluster *pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
@@ -1048,54 +1110,8 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 	if (!fi || !fi->private)
 		return 1;
 
-	switch (req->in.h.opcode) {
-	case FUSE_SETATTR: {
-		struct pcs_fuse_req *r = pcs_req_from_fuse(req);
-		struct fuse_setattr_in *inarg = (void*) req->in.args[0].value;
-		struct pcs_dentry_info *di;
-
-		if (!(inarg->valid & FATTR_SIZE))
-			return 1;
-
-		di = pcs_inode_from_fuse(fi);
-		spin_lock(&di->lock);
-		if (inarg->size < di->fileinfo.attr.size) {
-			BUG_ON(di->size.op != PCS_SIZE_INACTION);
-			di->size.op = PCS_SIZE_SHRINK;
-		}
-		spin_unlock(&di->lock);
-		r->end = req->end;
-		if (di->size.op == PCS_SIZE_SHRINK) {
-			BUG_ON(!mutex_is_locked(&req->io_inode->i_mutex));
-			/* wait for aio reads in flight */
-			inode_dio_wait(req->io_inode);
-			/*
-			 * Writebackcache was flushed already so it is safe to
-			 * drop pcs_mapping
-			 */
-			pcs_map_invalidate_tail(&di->mapping, inarg->size);
-			req->end = _pcs_shrink_end;
-		} else
-			req->end = _pcs_grow_end;
+	if (pcs_kio_classify_req(fc, req))
 		return 1;
-	}
-	case FUSE_READ:
-	case FUSE_WRITE:
-	case FUSE_FSYNC:
-	case FUSE_FLUSH:
-	case FUSE_FALLOCATE:
-		break;
-	case FUSE_IOCTL: {
-		struct fuse_ioctl_in const * inarg = req->in.args[0].value;
-
-		if (inarg->cmd != FS_IOC_FIEMAP)
-			return 1;
-
-		break;
-	}
-	default:
-		return 1;
-	}
 
 	/* request_end below will do fuse_put_request() */
 	if (!bg)
