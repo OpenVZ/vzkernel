@@ -86,12 +86,6 @@ static void process_pcs_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 		goto out;
 	}
 
-	/*
-	 * It looks like all potential tasks, which can dereference
-	 * fc->kio.op, are waiting for fuse_set_initialized().
-	 */
-	fc->kio.op = fc->kio.cached_op;
-
 	pfc = kvmalloc(sizeof(*pfc), GFP_KERNEL);
 	if (!pfc) {
 		fc->conn_error = 1;
@@ -100,16 +94,36 @@ static void process_pcs_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 
 	if (pcs_cluster_init(pfc, pcs_wq, fc, &info->cluster_id, &info->node_id)) {
 		fc->conn_error = 1;
+		kvfree(pfc);
 		goto out;
 	}
-
-	fc->kio.ctx = pfc;
-	printk("FUSE: kio_pcs: cl: " CLUSTER_ID_FMT ", clientid: " NODE_FMT "\n",
-	       CLUSTER_ID_ARGS(info->cluster_id), NODE_ARGS(info->node_id));
 
 	fuse_ktrace_setup(fc);
 	fc->ktrace_level = LOG_TRACE;
 
+	printk("FUSE: kio_pcs: cl: " CLUSTER_ID_FMT ", clientid: " NODE_FMT "\n",
+	       CLUSTER_ID_ARGS(info->cluster_id), NODE_ARGS(info->node_id));
+
+	spin_lock(&fc->lock);
+	if (fc->initialized) {
+		/* Parallel abort */
+		fc->conn_error = 1;
+	} else {
+		/*
+		 * It looks like all potential tasks, which can dereference
+		 * fc->kio.op, are waiting for fuse_set_initialized().
+		 */
+		fc->kio.op = fc->kio.cached_op;
+		fc->kio.ctx = pfc;
+		pfc = NULL;
+	}
+	spin_unlock(&fc->lock);
+
+	if (pfc) {
+		fuse_ktrace_remove(fc);
+		pcs_cluster_fini(pfc);
+		kvfree(pfc);
+	}
 out:
 	kfree(info);
 	/*  We are called from	process_init_reply before connection
