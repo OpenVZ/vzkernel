@@ -115,21 +115,13 @@ struct fuse_req *fuse_request_alloc_nofs(struct fuse_conn *fc, unsigned npages)
 	return __fuse_request_alloc(fc, npages, GFP_NOFS);
 }
 
-void fuse_generic_request_free(struct fuse_req *req)
+void fuse_request_free(struct fuse_req *req)
 {
 	if (req->pages != req->inline_pages) {
 		kfree(req->pages);
 		kfree(req->page_descs);
 	}
 	kmem_cache_free(req->cache, req);
-}
-
-void fuse_request_free(struct fuse_conn *fc, struct fuse_req *req)
-{
-	if (fc->kio.op && fc->kio.op->req_free)
-		return fc->kio.op->req_free(fc, req);
-
-	return fuse_generic_request_free(req);
 }
 
 void __fuse_get_request(struct fuse_req *req)
@@ -349,7 +341,7 @@ void fuse_put_request(struct fuse_conn *fc, struct fuse_req *req)
 		if (req->stolen_file)
 			put_reserved_req(fc, req);
 		else
-			fuse_request_free(fc, req);
+			fuse_request_free(req);
 	}
 }
 EXPORT_SYMBOL_GPL(fuse_put_request);
