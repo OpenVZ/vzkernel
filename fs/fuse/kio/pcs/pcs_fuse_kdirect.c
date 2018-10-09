@@ -1037,10 +1037,9 @@ static void _pcs_grow_end(struct fuse_conn *fc, struct fuse_args *args, int erro
 	kpcs_setattr_end(fc, args, error);
 }
 
-static void pcs_kio_setattr_handle(struct fuse_req *req)
+static void pcs_kio_setattr_handle(struct fuse_inode *fi, struct fuse_req *req)
 {
 	struct fuse_args *args = req->args;
-	struct fuse_inode *fi = get_fuse_inode(args->io_inode);
 	struct pcs_fuse_req *r = pcs_req_from_fuse(req);
 	struct fuse_setattr_in *inarg = (void*) args->in_args[0].value;
 	struct pcs_dentry_info *di;
@@ -1077,6 +1076,7 @@ static void pcs_kio_setattr_handle(struct fuse_req *req)
 static int pcs_kio_classify_req(struct fuse_conn *fc, struct fuse_req *req)
 {
 	struct fuse_args *args = req->args;
+	struct fuse_inode *fi = get_fuse_inode(args->io_inode);
 
 	switch (req->in.h.opcode) {
 	case FUSE_READ:
@@ -1086,7 +1086,10 @@ static int pcs_kio_classify_req(struct fuse_conn *fc, struct fuse_req *req)
 	case FUSE_FALLOCATE:
 		break;
 	case FUSE_SETATTR:
-		pcs_kio_setattr_handle(req);
+		if (unlikely(!fi || !fi->private))
+			goto fail;
+
+		pcs_kio_setattr_handle(fi, req);
 		return 1;
 	case FUSE_IOCTL: {
 		struct fuse_ioctl_in const *inarg = args->in_args[0].value;
@@ -1100,13 +1103,22 @@ static int pcs_kio_classify_req(struct fuse_conn *fc, struct fuse_req *req)
 		return 1;
 	}
 
+	if (unlikely(!fi || !fi->private))
+		goto fail;
+
 	return 0;
+
+fail:
+	WARN_ONCE(1, "Fuse kio: req cannot be processed w/o inode\n");
+	req->out.h.error = -EINVAL;
+	fuse_request_end(fc, req);
+	return -EINVAL;
 }
 
 static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bool lk)
 {
 	struct pcs_fuse_cluster *pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
-	struct fuse_inode *fi = get_fuse_inode(req->args->io_inode);
+	int ret;
 
 	if (!fc->initialized || fc->conn_error)
 		return 1;
@@ -1120,11 +1132,9 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 
 	TRACE(" Enter req:%p op:%d end:%p bg:%d lk:%d\n", req, req->in.h.opcode, req->args->end, bg, lk);
 
-	if (!fi || !fi->private)
-		return 1;
-
-	if (pcs_kio_classify_req(fc, req))
-		return 1;
+	ret = pcs_kio_classify_req(fc, req);
+	if (ret)
+		return ret < 0 ? 0 : 1;
 
 	/* request_end below will do fuse_put_request() */
 	if (!bg)
