@@ -936,7 +936,7 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 			seq_printf(m, ",blksize=%lu", sb->s_blocksize);
 		if (fc->writeback_cache)
 			seq_puts(m, ",writeback_enable");
-		if (fc->kdirect_io)
+		if (fc->kio.op)
 			seq_printf(m, ",kdirect=%s", fc->kio.op->name);
 	}
 #ifdef CONFIG_FUSE_DAX
