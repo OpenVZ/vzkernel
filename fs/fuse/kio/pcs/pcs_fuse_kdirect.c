@@ -66,6 +66,8 @@ static void process_pcs_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 	printk("FUSE: kio_pcs: cl: " CLUSTER_ID_FMT ", clientid: " NODE_FMT "\n",
 	       CLUSTER_ID_ARGS(info->cluster_id), NODE_ARGS(info->node_id));
 out:
+	if (fc->conn_error)
+		pr_err("Failed to initialize fuse kio\n");
 	kfree(info);
 	/*  We are called from	process_init_reply before connection
 	 * was not initalized yet. Do it now. */
