@@ -45,7 +45,7 @@ extern int bnx2x_num_queues;
 #define BNX2X_FREE(x) \
 	do { \
 		if (x) { \
-			kfree((void *)x); \
+			kvfree((void *)x); \
 			x = NULL; \
 		} \
 	} while (0)
