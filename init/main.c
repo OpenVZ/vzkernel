@@ -555,6 +555,8 @@ asmlinkage void __init start_kernel(void)
 	vfs_caches_init_early();
 	sort_main_extable();
 	trap_init();
+
+	kasan_disable_current();
 	mm_init();
 
 	/*
@@ -630,6 +632,7 @@ asmlinkage void __init start_kernel(void)
 	}
 #endif
 	page_cgroup_init();
+
 	kmemleak_init();
 	debug_objects_mem_init();
 	setup_per_cpu_pageset();
@@ -652,7 +655,9 @@ asmlinkage void __init start_kernel(void)
 	key_init();
 	security_init();
 	dbg_late_init();
+
 	vfs_caches_init();
+
 	signals_init();
 	/* rootfs populating might need page-writeback */
 	page_writeback_init();
@@ -679,6 +684,7 @@ asmlinkage void __init start_kernel(void)
 
 	/* Do the rest non-__init'ed, we're now alive */
 	rest_init();
+	kasan_enable_current();
 }
 
 /* Call all constructor functions linked into the kernel. */
