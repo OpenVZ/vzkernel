@@ -4566,9 +4566,8 @@ static int bnx2x_alloc_fp_mem_at(struct bnx2x *bp, int index)
 			   "allocating tx memory of fp %d cos %d\n",
 			   index, cos);
 
-			txdata->tx_buf_ring = kcalloc(NUM_TX_BD,
-						      sizeof(struct sw_tx_bd),
-						      GFP_KERNEL);
+			txdata->tx_buf_ring = kvzalloc(sizeof(struct sw_tx_bd) * NUM_TX_BD,
+						       GFP_KERNEL);
 			if (!txdata->tx_buf_ring)
 				goto alloc_mem_err;
 			txdata->tx_desc_ring = BNX2X_PCI_ALLOC(&txdata->tx_desc_mapping,
@@ -4582,7 +4581,7 @@ static int bnx2x_alloc_fp_mem_at(struct bnx2x *bp, int index)
 	if (!skip_rx_queue(bp, index)) {
 		/* fastpath rx rings: rx_buf rx_desc rx_comp */
 		bnx2x_fp(bp, index, rx_buf_ring) =
-			kcalloc(NUM_RX_BD, sizeof(struct sw_rx_bd), GFP_KERNEL);
+			kvzalloc(sizeof(struct sw_rx_bd) * NUM_RX_BD, GFP_KERNEL);
 		if (!bnx2x_fp(bp, index, rx_buf_ring))
 			goto alloc_mem_err;
 		bnx2x_fp(bp, index, rx_desc_ring) =
@@ -4600,8 +4599,8 @@ static int bnx2x_alloc_fp_mem_at(struct bnx2x *bp, int index)
 
 		/* SGE ring */
 		bnx2x_fp(bp, index, rx_page_ring) =
-			kcalloc(NUM_RX_SGE, sizeof(struct sw_rx_page),
-				GFP_KERNEL);
+			kvzalloc(sizeof(struct sw_rx_page) * NUM_RX_SGE,
+				 GFP_KERNEL);
 		if (!bnx2x_fp(bp, index, rx_page_ring))
 			goto alloc_mem_err;
 		bnx2x_fp(bp, index, rx_sge_ring) =
