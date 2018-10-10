@@ -52,22 +52,26 @@ extern int bnx2x_num_queues;
 
 #define BNX2X_PCI_ALLOC(y, size)					\
 ({									\
-	void *x = dma_zalloc_coherent(&bp->pdev->dev, size, y, GFP_KERNEL); \
+	void *x = dma_zalloc_coherent(&bp->pdev->dev, size, y,		\
+				      GFP_KERNEL | __GFP_ORDER_NOWARN);	\
 	if (x)								\
 		DP(NETIF_MSG_HW,					\
 		   "BNX2X_PCI_ALLOC: Physical %Lx Virtual %p\n",	\
 		   (unsigned long long)(*y), x);			\
+	WARN_ON(!x);							\
 	x;								\
 })
 #define BNX2X_PCI_FALLOC(y, size)					\
 ({									\
-	void *x = dma_alloc_coherent(&bp->pdev->dev, size, y, GFP_KERNEL); \
+	void *x = dma_alloc_coherent(&bp->pdev->dev, size, y,		\
+				     GFP_KERNEL | __GFP_ORDER_NOWARN);	\
 	if (x) {							\
 		memset(x, 0xff, size);					\
 		DP(NETIF_MSG_HW,					\
 		   "BNX2X_PCI_FALLOC: Physical %Lx Virtual %p\n",	\
 		   (unsigned long long)(*y), x);			\
 	}								\
+	WARN_ON(!x);							\
 	x;								\
 })
 
