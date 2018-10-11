@@ -1085,8 +1085,10 @@ static int pcs_kio_classify_req(struct fuse_conn *fc, struct fuse_req *req, bool
 	case FUSE_SETATTR: {
 		struct fuse_setattr_in const *inarg = args->in_args[0].value;
 
-		if (unlikely(!fi || !fi->private))
+		if (unlikely(!fi))
 			goto fail;
+		if (!fi->private)
+			return 1;
 		if (!(inarg->valid & FATTR_SIZE))
 			return 1;
 		if (lk)
@@ -1108,8 +1110,10 @@ static int pcs_kio_classify_req(struct fuse_conn *fc, struct fuse_req *req, bool
 		return 1;
 	}
 
-	if (unlikely(!fi || !fi->private))
+	if (unlikely(!fi))
 		goto fail;
+	if (!fi->private)
+		return 1;
 
 	return 0;
 
