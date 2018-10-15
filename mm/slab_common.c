@@ -421,6 +421,7 @@ static void do_kmem_cache_release(struct list_head *release,
 void memcg_create_kmem_cache(struct mem_cgroup *memcg,
 			     struct kmem_cache *root_cache)
 {
+	static u64 serial_nr_cursor = 0;
 	static char memcg_name_buf[NAME_MAX + 1]; /* protected by slab_mutex */
 	struct memcg_cache_array *arr;
 	struct kmem_cache *s = NULL;
@@ -453,8 +454,14 @@ void memcg_create_kmem_cache(struct mem_cgroup *memcg,
 	strlcpy(memcg_name_buf, cgroup_name(mem_cgroup_css(memcg)->cgroup),
 		NAME_MAX + 1);
 	rcu_read_unlock();
-	cache_name = kasprintf(GFP_KERNEL, "%s(%d:%s)", root_cache->name,
-			       idx, memcg_name_buf);
+
+	/*
+	 * Monotonically increasing serial number in the name guarantees
+	 * kmem_cache name uniqueness even if a mem cgroup goes offline,
+	 * releases kmemcg_id and new mem cgroup gets same kmemcg_id.
+	 */
+	cache_name = kasprintf(GFP_KERNEL, "%s(%llu:%s)", root_cache->name,
+			       serial_nr_cursor++, memcg_name_buf);
 	if (!cache_name)
 		goto out_unlock;
 
