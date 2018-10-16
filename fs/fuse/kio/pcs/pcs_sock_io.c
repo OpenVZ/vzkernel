@@ -555,18 +555,18 @@ struct pcs_sockio * pcs_sockio_init(struct socket *sock,
 	sio->ioconn.orig.error_report = sk->sk_error_report;
 	//sio->ioconn.orig_state_change = sk->sk_state_change;
 
+	//sock->sk->sk_state_change = pcs_state_chage;
+
+	sk->sk_sndtimeo = PCS_SIO_TIMEOUT;
+	sk->sk_allocation = GFP_NOFS;
+	sio->send_timeout = PCS_SIO_TIMEOUT;
+	sio->ioconn.socket = sock;
+	sio->ioconn.destruct = pcs_sock_ioconn_destruct;
+
 	sk->sk_user_data = sio;
 	sk->sk_data_ready = pcs_sk_data_ready;
 	sk->sk_write_space = pcs_sk_write_space;
 	sk->sk_error_report = pcs_sk_error_report;
-	sk->sk_allocation = GFP_NOFS;
-
-	//sock->sk->sk_state_change = pcs_state_chage;
-
-	sk->sk_sndtimeo = PCS_SIO_TIMEOUT;
-	sio->send_timeout = PCS_SIO_TIMEOUT;
-	sio->ioconn.socket = sock;
-	sio->ioconn.destruct = pcs_sock_ioconn_destruct;
 	write_unlock_bh(&sock->sk->sk_callback_lock);
 
 	pcs_clear_error(&sio->error);
