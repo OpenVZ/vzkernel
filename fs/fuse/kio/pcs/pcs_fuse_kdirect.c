@@ -61,6 +61,7 @@ static int fuse_ktrace_remove(struct fuse_conn *fc);
 static struct kmem_cache *pcs_fuse_req_cachep;
 static struct kmem_cache *pcs_ireq_cachep;
 static struct workqueue_struct *pcs_wq;
+struct workqueue_struct *pcs_cleanup_wq;
 static struct fuse_kio_ops kio_pcs_ops;
 static struct dentry *fuse_trace_root;
 
@@ -1494,8 +1495,12 @@ static int __init kpcs_mod_init(void)
 	if (!pcs_wq)
 		goto free_map_cache;
 
-	if (fuse_register_kio(&kio_pcs_ops))
+	pcs_cleanup_wq = alloc_workqueue("pcs_cleanup_wq", WQ_MEM_RECLAIM, 0);
+	if (!pcs_cleanup_wq)
 		goto free_wq;
+
+	if (fuse_register_kio(&kio_pcs_ops))
+		goto free_cleanup_wq;
 
 	fuse_trace_root = debugfs_create_dir("fuse", NULL);
 
@@ -1503,6 +1508,8 @@ static int __init kpcs_mod_init(void)
 	       pcs_fuse_req_cachep, pcs_ireq_cachep, pcs_wq);
 
 	return 0;
+free_cleanup_wq:
+	destroy_workqueue(pcs_cleanup_wq);
 free_wq:
 	destroy_workqueue(pcs_wq);
 free_map_cache:
@@ -1520,6 +1527,7 @@ static void __exit kpcs_mod_exit(void)
 		debugfs_remove(fuse_trace_root);
 
 	fuse_unregister_kio(&kio_pcs_ops);
+	destroy_workqueue(pcs_cleanup_wq);
 	destroy_workqueue(pcs_wq);
 	kmem_cache_destroy(pcs_map_cachep);
 	kmem_cache_destroy(pcs_ireq_cachep);
