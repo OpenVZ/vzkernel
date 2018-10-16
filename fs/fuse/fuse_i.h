@@ -150,6 +150,9 @@ enum {
 	FUSE_I_SIZE_UNSTABLE,
 	/** i_mtime has been updated locally; a flush to userspace needed */
 	FUSE_I_MTIME_UPDATED,
+
+	/** kdirect open try has already made */
+	FUSE_I_KIO_OPEN_TRY_MADE,
 };
 
 struct fuse_conn;
