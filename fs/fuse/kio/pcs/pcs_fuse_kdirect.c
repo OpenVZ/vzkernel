@@ -73,7 +73,7 @@ static void process_pcs_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 	if ((req->out.h.error == -EPROTONOSUPPORT && !arg->result) ||
 	    info->version.major != PCS_FAST_PATH_VERSION.major ||
 	    info->version.minor != PCS_FAST_PATH_VERSION.minor) {
-		pr_err("kio_pcs: version missmatch: must be %u.%u. "
+		pr_err("kio_pcs: version mismatch: must be %u.%u. "
 		       "Fallback to plain fuse\n",
 		       PCS_FAST_PATH_VERSION.major,
 		       PCS_FAST_PATH_VERSION.minor);
