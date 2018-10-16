@@ -173,7 +173,7 @@ static inline int netaddr_cmp(PCS_NET_ADDR_T const *addr1, PCS_NET_ADDR_T const 
 	return memcmp(addr1->address, addr2->address, sz);
 }
 
-int pcs_netaddr_cmp(PCS_NET_ADDR_T const *addr1, PCS_NET_ADDR_T const *addr2)
+static int pcs_netaddr_cmp(PCS_NET_ADDR_T const *addr1, PCS_NET_ADDR_T const *addr2)
 {
 	return netaddr_cmp(addr1, addr2, 0);
 }
@@ -190,16 +190,25 @@ again:
 		 * After current connect fails, reconnect will be done to new address
 		 */
 		if (addr) {
-			if (pcs_netaddr_cmp(&cs->addr, addr)) {
-				cs->addr = *addr;
-				cs->addr_serno++;
+			if (addr->type != PCS_ADDRTYPE_NONE) {
+				if (pcs_netaddr_cmp(&cs->addr, addr)) {
+					cs->addr = *addr;
+					cs->addr_serno++;
 
-				FUSE_KTRACE(cc_from_csset(csset)->fc, "Port change CS" NODE_FMT " seq=%d", NODE_ARGS(*id), cs->addr_serno);
-				pcs_rpc_set_address(cs->rpc, addr);
+					FUSE_KTRACE(cc_from_csset(csset)->fc,
+						    "Port change CS" NODE_FMT " seq=%d",
+						    NODE_ARGS(*id), cs->addr_serno);
+					pcs_rpc_set_address(cs->rpc, addr);
 
-				if (!(flags & CS_FL_INACTIVE)) {
-					pcs_map_notify_addr_change(cs);
-					cs_whitelist(cs, "addr update");
+					if (!(flags & CS_FL_INACTIVE)) {
+						pcs_map_notify_addr_change(cs);
+						cs_whitelist(cs, "addr update");
+					}
+				}
+			} else {
+				if (WARN_ON_ONCE(!(flags & CS_FL_INACTIVE))) {
+					spin_unlock(&cs->lock);
+					return NULL;
 				}
 			}
 		}
