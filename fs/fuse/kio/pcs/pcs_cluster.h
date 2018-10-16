@@ -41,6 +41,8 @@ struct pcs_fuse_work {
 	void *ctx2;
 };
 
+extern struct workqueue_struct *pcs_cleanup_wq;
+
 int pcs_cluster_init(struct pcs_fuse_cluster *c, struct workqueue_struct *,
 		     struct fuse_conn *fc, PCS_CLUSTER_ID_T *cl_id,
 		     PCS_NODE_ID_T *id);
