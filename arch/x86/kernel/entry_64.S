@@ -1646,6 +1646,8 @@ ENTRY(nmi)
 	 * other IST entries.
 	 */
 
+	ASM_CLAC
+
 	/* Use %rsi as out temp variable throughout */
 	pushq_cfi %rsi
 	CFI_REL_OFFSET rsi, 0
