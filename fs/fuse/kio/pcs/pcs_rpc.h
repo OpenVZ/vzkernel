@@ -126,9 +126,7 @@ struct pcs_rpc
 #define RPC_MAX_CALENDAR	PCS_MSG_MAX_CALENDAR
 	struct hlist_head	kill_calendar[RPC_MAX_CALENDAR];
 
-	void *			private;
-
-	void *			private2;
+	struct pcs_cs *		private;
 };
 
 struct pcs_rpc_engine
