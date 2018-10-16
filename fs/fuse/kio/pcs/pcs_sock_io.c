@@ -212,7 +212,6 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 	u32 msg_size;
 	unsigned long loop_timeout = jiffies + PCS_SIO_SLICE;
 
-	(void)ep;
 	TRACE("ENTER:" PEER_FMT " sio:%p cur_msg:%p\n", PEER_ARGS(ep), sio, sio->current_msg);
 
 	while(!test_bit(PCS_IOCONN_BF_DEAD, &conn->flags)) {
@@ -316,14 +315,13 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 
 static void pcs_sockio_send(struct pcs_sockio *sio)
 {
+	struct pcs_rpc *ep __maybe_unused = sio->parent;
 	struct pcs_ioconn* conn = &sio->ioconn;
 	struct iov_iter *it = &sio->write_iter;
 	unsigned long loop_timeout = jiffies + PCS_SIO_SLICE;
 	struct pcs_msg * msg;
 	int done = 0;
 	int count = 0;
-	struct pcs_rpc *ep = sio->parent;
-	(void)ep;
 
 	while (!list_empty(&sio->write_queue)) {
 		msg = list_first_entry(&sio->write_queue, struct pcs_msg, list);
