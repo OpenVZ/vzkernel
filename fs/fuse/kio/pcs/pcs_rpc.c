@@ -296,7 +296,7 @@ void pcs_rpc_attach_new_ep(struct pcs_rpc * ep, struct pcs_rpc_engine * eng)
 	spin_unlock(&eng->lock);
 }
 
-void pcs_rpc_destroy(struct pcs_rpc * ep)
+static void pcs_rpc_destroy(struct pcs_rpc *ep)
 {
 	bool flush;
 	BUG_ON(ep->state != PCS_RPC_DESTROY);
@@ -326,6 +326,28 @@ void pcs_rpc_destroy(struct pcs_rpc * ep)
 
 	memset(ep, 0xFF, sizeof(*ep));
 	kfree(ep);
+}
+
+static LLIST_HEAD(rpc_cleanup_list);
+
+static void rpc_cleanup_func(struct work_struct *work)
+{
+	struct llist_node *list = llist_del_all(&rpc_cleanup_list);
+	struct pcs_rpc *rpc, *tmp;
+
+	if (unlikely(!list))
+		return;
+
+	llist_for_each_entry_safe(rpc, tmp, list, cleanup_node)
+		pcs_rpc_destroy(rpc);
+}
+
+static DECLARE_WORK(rpc_cleanup_work, rpc_cleanup_func);
+
+void __pcs_rpc_put(struct pcs_rpc *ep)
+{
+	if (llist_add(&ep->cleanup_node, &rpc_cleanup_list))
+		queue_work(pcs_cleanup_wq, &rpc_cleanup_work);
 }
 
 static void rpc_eof_cb(struct pcs_sockio * sio)
