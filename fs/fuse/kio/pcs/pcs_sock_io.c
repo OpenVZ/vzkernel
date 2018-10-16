@@ -4,6 +4,7 @@
 #include <linux/kthread.h>
 #include <linux/types.h>
 #include <linux/highmem.h>
+#include <linux/file.h>
 
 #include "pcs_types.h"
 #include "pcs_sock_io.h"
@@ -51,11 +52,8 @@ void sio_push(struct pcs_sockio * sio)
 static void pcs_restore_sockets(struct pcs_ioconn *ioconn);
 void pcs_ioconn_unregister(struct pcs_ioconn *ioconn)
 {
-	if (!test_bit(PCS_IOCONN_BF_DEAD, &ioconn->flags)) {
+	if (!test_bit(PCS_IOCONN_BF_DEAD, &ioconn->flags))
 		set_bit(PCS_IOCONN_BF_DEAD, &ioconn->flags);
-		pcs_restore_sockets(ioconn);
-	}
-
 }
 
 void pcs_ioconn_close(struct pcs_ioconn *ioconn)
@@ -465,7 +463,11 @@ void pcs_sock_ioconn_destruct(struct pcs_ioconn *ioconn)
 	BUG_ON(!list_empty(&sio->write_queue));
 	BUG_ON(sio->write_queue_len);
 
-	pcs_ioconn_close(ioconn);
+	if (ioconn->socket) {
+		pcs_restore_sockets(ioconn);
+		fput(ioconn->socket->file);
+		ioconn->socket = NULL;
+	}
 
 	memset(sio, 0xFF, sizeof(*sio));
 	kfree(sio);
