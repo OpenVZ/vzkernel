@@ -154,6 +154,9 @@ enum {
 	FUSE_I_INIT_RDPLUS,
 	/** An operation changing file size is in progress  */
 	FUSE_I_SIZE_UNSTABLE,
+
+	/** kdirect open try has already made */
+	FUSE_I_KIO_OPEN_TRY_MADE,
 };
 
 struct fuse_conn;
