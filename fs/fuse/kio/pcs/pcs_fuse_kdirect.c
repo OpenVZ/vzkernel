@@ -359,7 +359,7 @@ int kpcs_file_open(struct fuse_conn *fc, struct file *file, struct inode *inode)
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	struct pcs_dentry_info *di = fi->private;
 	struct pcs_mds_fileinfo info;
-	int ret;
+	int ret = 0;
 
 	if (!S_ISREG(inode->i_mode))
 		return 0;
@@ -378,7 +378,14 @@ int kpcs_file_open(struct fuse_conn *fc, struct file *file, struct inode *inode)
 		spin_unlock(&di->lock);
 		return 0;
 	}
-	return kpcs_do_file_open(fc, file, inode);
+
+	if (!test_bit(FUSE_I_KIO_OPEN_TRY_MADE, &fi->state)) {
+		ret = kpcs_do_file_open(fc, file, inode);
+		if (!ret)
+			set_bit(FUSE_I_KIO_OPEN_TRY_MADE, &fi->state);
+	}
+
+	return ret;
 }
 
 void kpcs_inode_release(struct fuse_inode *fi)
