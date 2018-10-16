@@ -11,12 +11,6 @@
 #include "log.h"
 
 
-static inline struct pcs_rpc * sock_to_rpc(struct sock *sk)
-{
-
-	return ((struct pcs_sockio *)sk->sk_user_data)->parent;
-}
-
 static void sio_msg_sent(struct pcs_msg * msg)
 {
 	msg->stage = PCS_MSG_STAGE_SENT;
@@ -191,6 +185,7 @@ static int do_sock_recv(struct socket *sock, void *buf, size_t len)
 
 	struct kvec iov = {buf, len};
 	struct msghdr msg = { .msg_flags = MSG_DONTWAIT | MSG_NOSIGNAL };
+	struct pcs_sockio __maybe_unused *sio;
 	int ret = -EIO;
 
 	if (pcs_should_fail_sock_io())
@@ -198,8 +193,17 @@ static int do_sock_recv(struct socket *sock, void *buf, size_t len)
 
 	ret =  kernel_recvmsg(sock, &msg, &iov, 1, len, msg.msg_flags);
 out:
-	TRACE("RET: "PEER_FMT" len:%ld ret:%d\n", PEER_ARGS(sock_to_rpc(sock->sk)),
-	      len, ret);
+
+#ifdef CONFIG_FUSE_KIO_DEBUG
+	rcu_read_lock();
+	sio = rcu_dereference_sk_user_data(sock->sk);
+	if (sio) {
+		TRACE("RET: "PEER_FMT" len:%ld ret:%d\n", PEER_ARGS(sio->parent),
+		      len, ret);
+	}
+	rcu_read_unlock();
+#endif /* CONFIG_FUSE_KIO_DEBUG */
+
 	return ret;
 }
 
@@ -469,7 +473,7 @@ static void pcs_restore_sockets(struct pcs_ioconn *ioconn)
 	sk = ioconn->socket->sk;
 
 	write_lock_bh(&sk->sk_callback_lock);
-	sk->sk_user_data =    ioconn->orig.user_data;
+	rcu_assign_sk_user_data(sk, ioconn->orig.user_data);
 	sk->sk_data_ready =   ioconn->orig.data_ready;
 	sk->sk_write_space =  ioconn->orig.write_space;
 	sk->sk_error_report = ioconn->orig.error_report;
@@ -478,6 +482,14 @@ static void pcs_restore_sockets(struct pcs_ioconn *ioconn)
 
 	sk->sk_sndtimeo = MAX_SCHEDULE_TIMEOUT;
 	sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
+}
+
+static void sio_destroy_rcu(struct rcu_head *head)
+{
+	struct pcs_sockio *sio = container_of(head, struct pcs_sockio, rcu);
+
+	memset(sio, 0xFF, sizeof(*sio));
+	kfree(sio);
 }
 
 void pcs_sock_ioconn_destruct(struct pcs_ioconn *ioconn)
@@ -490,20 +502,24 @@ void pcs_sock_ioconn_destruct(struct pcs_ioconn *ioconn)
 
 	pcs_ioconn_close(ioconn);
 
-	memset(sio, 0xFF, sizeof(*sio));
-	kfree(sio);
+	/* Wait pending socket callbacks, e.g., sk_data_ready() */
+	call_rcu(&sio->rcu, sio_destroy_rcu);
 }
 
 static void pcs_sk_kick_queue(struct sock *sk)
 {
 	struct pcs_sockio *sio;
 
-	sio = sk->sk_user_data;;
+	smp_rmb(); /* Pairs with smp_wmb() in pcs_sockio_init() */
+
+	rcu_read_lock();
+	sio = rcu_dereference_sk_user_data(sk);
 	if (sio) {
 		struct pcs_rpc *ep = sio->parent;
 		TRACE(PEER_FMT" queue\n", PEER_ARGS(ep));
 		pcs_rpc_kick_queue(ep);
 	}
+	rcu_read_unlock();
 }
 
 static void pcs_sk_data_ready(struct sock *sk, int count)
@@ -518,14 +534,24 @@ static void pcs_sk_write_space(struct sock *sk)
 /* TODO this call back does not look correct, sane locking/error handling is required */
 static void pcs_sk_error_report(struct sock *sk)
 {
-	struct pcs_sockio * sio = sio_from_ioconn(sk->sk_user_data);
+	struct pcs_sockio *sio;
 
-	if (test_bit(PCS_IOCONN_BF_DEAD, &sio->ioconn.flags) ||
-		test_bit(PCS_IOCONN_BF_ERROR, &sio->ioconn.flags))
-		return;
+	smp_rmb(); /* Pairs with smp_wmb() in pcs_sockio_init() */
 
-	set_bit(PCS_IOCONN_BF_ERROR, &sio->ioconn.flags);
-	pcs_rpc_kick_queue(sio->parent);
+	rcu_read_lock();
+	sio = rcu_dereference_sk_user_data(sk);
+	if (sio) {
+		struct pcs_rpc *ep = sio->parent;
+
+		if (test_bit(PCS_IOCONN_BF_DEAD, &sio->ioconn.flags) ||
+		    test_bit(PCS_IOCONN_BF_ERROR, &sio->ioconn.flags))
+			goto unlock;
+
+		set_bit(PCS_IOCONN_BF_ERROR, &sio->ioconn.flags);
+		pcs_rpc_kick_queue(ep);
+	}
+unlock:
+	rcu_read_unlock();
 }
 
 struct pcs_sockio * pcs_sockio_init(struct socket *sock,
@@ -549,7 +575,13 @@ struct pcs_sockio * pcs_sockio_init(struct socket *sock,
 	sk = sock->sk;
 	write_lock_bh(&sk->sk_callback_lock);
 
-	/* Backup original callbaks */
+	/*
+	 * Backup original callbaks.
+	 * TCP and unix sockets do not have sk_user_data set.
+	 * So we avoid taking sk_callback_lock in callbacks,
+	 * since this seems to be able to result in performance.
+	 */
+	WARN_ON_ONCE(sk->sk_user_data);
 	sio->ioconn.orig.user_data = sk->sk_user_data;
 	sio->ioconn.orig.data_ready = sk->sk_data_ready;
 	sio->ioconn.orig.write_space = sk->sk_write_space;
@@ -564,7 +596,8 @@ struct pcs_sockio * pcs_sockio_init(struct socket *sock,
 	sio->ioconn.socket = sock;
 	sio->ioconn.destruct = pcs_sock_ioconn_destruct;
 
-	sk->sk_user_data = sio;
+	rcu_assign_sk_user_data(sk, sio);
+	smp_wmb(); /* Pairs with smp_rmb() in callbacks */
 	sk->sk_data_ready = pcs_sk_data_ready;
 	sk->sk_write_space = pcs_sk_write_space;
 	sk->sk_error_report = pcs_sk_error_report;
