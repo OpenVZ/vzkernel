@@ -208,6 +208,8 @@ void rpc_abort(struct pcs_rpc * ep, int fatal, int error)
 
 		sio->eof = NULL;
 		pcs_sock_error(sio, error);
+		if (ioconn->destruct)
+			ioconn->destruct(ioconn);
 	}
 
 	if (ep->state == PCS_RPC_UNCONN) {
