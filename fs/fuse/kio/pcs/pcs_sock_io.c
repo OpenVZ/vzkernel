@@ -485,7 +485,9 @@ static void pcs_restore_sockets(struct pcs_ioconn *ioconn)
 static void sio_destroy_rcu(struct rcu_head *head)
 {
 	struct pcs_sockio *sio = container_of(head, struct pcs_sockio, rcu);
+	struct pcs_rpc *ep = sio->parent;
 
+	pcs_rpc_put(ep);
 	memset(sio, 0xFF, sizeof(*sio));
 	kfree(sio);
 }
