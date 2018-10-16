@@ -206,7 +206,7 @@ void rpc_abort(struct pcs_rpc * ep, int fatal, int error)
 		if (ep->gc)
 			list_lru_del(&ep->gc->lru, &ep->lru_link);
 
-		sio->parent = NULL;
+		sio->eof = NULL;
 		pcs_sock_error(sio, error);
 	}
 
@@ -332,7 +332,7 @@ static void rpc_eof_cb(struct pcs_sockio * sio)
 {
 	struct pcs_rpc * ep = sio->parent;
 
-	if (ep == NULL)
+	if (WARN_ON_ONCE(ep == NULL))
 		return;
 
 	/* Dead socket is finally closed, we could already open another one.
@@ -532,7 +532,7 @@ struct pcs_msg *rpc_get_hdr(struct pcs_sockio * sio, u32 *msg_size)
 	struct pcs_msg * msg;
 	void (*next_input)(struct pcs_msg *);
 
-	if (ep == NULL)
+	if (WARN_ON_ONCE(ep == NULL))
 		return NULL;
 
 	/* Fatal stream format error */
