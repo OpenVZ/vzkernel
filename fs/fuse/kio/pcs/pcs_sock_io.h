@@ -137,6 +137,7 @@ struct pcs_sockio
 	/* eof() handler could be called twice: once on graceful socket shutdown and from sio_abort() */
 	void			(*eof)(struct pcs_sockio *);
 	void			(*write_wakeup)(struct pcs_sockio *);
+	struct rcu_head		rcu;
 
 	char			_inline_buffer[0];
 };
