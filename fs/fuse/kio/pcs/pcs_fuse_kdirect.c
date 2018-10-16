@@ -294,7 +294,7 @@ static int fuse_pcs_kdirect_claim_op(struct fuse_conn *fc, struct file *file,
 	if (err || outarg->result) {
 		TRACE("%s:%d h.err:%d result:%d\n", __FUNCTION__, __LINE__,
 		      err, outarg->result);
-		err = err ? : outarg->result;
+		err = -EOPNOTSUPP;
 	}
 
 	return err;
@@ -347,7 +347,7 @@ static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct ino
 		pcs_mapping_deinit(&di->mapping);
 		kfree(di);
 		/* Claim error means we cannot claim, just that */
-		return 0;
+		return (ret == -EOPNOTSUPP ? 0: ret);
 	}
 	/* TODO: Propper initialization of dentry should be here!!! */
 	fi->private = di;
