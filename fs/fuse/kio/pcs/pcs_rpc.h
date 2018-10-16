@@ -125,6 +125,7 @@ struct pcs_rpc
 	unsigned		kill_arrow;
 #define RPC_MAX_CALENDAR	PCS_MSG_MAX_CALENDAR
 	struct hlist_head	kill_calendar[RPC_MAX_CALENDAR];
+	struct llist_node	cleanup_node;
 
 	struct pcs_cs *		private;
 };
@@ -197,13 +198,13 @@ static inline struct pcs_rpc * pcs_rpc_get(struct pcs_rpc * p)
 	return p;
 }
 
-void pcs_rpc_destroy(struct pcs_rpc * p);
+extern void __pcs_rpc_put(struct pcs_rpc *ep);
 
 static inline void pcs_rpc_put(struct pcs_rpc * p)
 {
 	BUG_ON(atomic_read(&p->refcnt) <=0);
 	if (atomic_dec_and_test(&p->refcnt))
-		pcs_rpc_destroy(p);
+		__pcs_rpc_put(p);
 }
 
 /* Function provided by rpc engine */
