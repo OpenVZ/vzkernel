@@ -188,6 +188,9 @@ enum {
 	FUSE_I_SIZE_UNSTABLE,
 	/* Bad inode */
 	FUSE_I_BAD,
+
+	/** kdirect open try has already made */
+	FUSE_I_KIO_OPEN_TRY_MADE,
 };
 
 struct fuse_conn;
