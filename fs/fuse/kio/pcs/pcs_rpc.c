@@ -38,6 +38,8 @@ static unsigned long rpc_cpu_time_slice = PCS_RPC_CPU_SLICE;
 module_param(rpc_cpu_time_slice, ulong, 0644);
 MODULE_PARM_DESC(rpc_cpu_time_slice, "Time slice for RPC rebinding");
 
+DECLARE_WAIT_QUEUE_HEAD(pcs_waitq);
+
 static void timer_work(struct work_struct *w);
 static int rpc_gc_classify(struct pcs_rpc * ep);
 
@@ -300,7 +302,7 @@ void pcs_rpc_attach_new_ep(struct pcs_rpc * ep, struct pcs_rpc_engine * eng)
 
 static void pcs_rpc_destroy(struct pcs_rpc *ep)
 {
-	bool flush;
+	bool last_ep;
 	BUG_ON(ep->state != PCS_RPC_DESTROY);
 	BUG_ON(ep->flags & PCS_RPC_F_HASHED);
 	BUG_ON(!(ep->flags & PCS_RPC_F_DEAD));
@@ -308,6 +310,8 @@ static void pcs_rpc_destroy(struct pcs_rpc *ep)
 	BUG_ON(!list_empty(&ep->state_queue));
 	BUG_ON(!list_empty(&ep->pending_queue));
 	BUG_ON(timer_pending(&ep->timer_work.timer));
+
+	cancel_delayed_work_sync(&ep->calendar_work);
 
 	/* pcs_free(ep->sun); */
 	/* ep->sun = NULL; */
@@ -319,12 +323,11 @@ static void pcs_rpc_destroy(struct pcs_rpc *ep)
 	 */
 	spin_lock(&ep->eng->lock);
 	hlist_del(&ep->link);
-	flush = !(--ep->eng->nrpcs);
+	last_ep = (!--ep->eng->nrpcs);
 	spin_unlock(&ep->eng->lock);
 
-	cancel_delayed_work_sync(&ep->calendar_work);
-	if (flush)
-		flush_delayed_work(&ep->eng->stat_work);
+	if (last_ep)
+		wake_up_all(&pcs_waitq);
 
 	memset(ep, 0xFF, sizeof(*ep));
 	kfree(ep);
@@ -1308,18 +1311,13 @@ void pcs_rpc_engine_init(struct pcs_rpc_engine * eng, u8 role)
 static void pcs_rpc_fini_verify(struct pcs_rpc_engine *eng, struct hlist_head *rpc_list)
 {
 	spin_lock(&eng->lock);
-	while (!hlist_empty(rpc_list)) {
+	if (!hlist_empty(rpc_list)) {
 		struct pcs_rpc * ep =
 			hlist_entry(rpc_list->first, struct pcs_rpc, link);
 
-		pr_warn("rpc connection isn't closed ep: %p (flags: %u, "
+		WARN(1, "rpc connection isn't closed ep: %p (flags: %u, "
 			"state: %u, refcnt: %u)\n", ep, ep->flags, ep->state,
 			atomic_read(&ep->refcnt));
-		WARN_ON(!(ep->flags & PCS_RPC_F_DEAD));
-		WARN_ON(atomic_read(&ep->refcnt) <= 0);
-		spin_unlock(&eng->lock);
-		schedule_timeout(5 * HZ);
-		spin_lock(&eng->lock);
 	}
 	spin_unlock(&eng->lock);
 }
@@ -1328,8 +1326,9 @@ void pcs_rpc_engine_fini(struct pcs_rpc_engine * eng)
 {
 	unsigned int i;
 
-	if (cancel_delayed_work_sync(&eng->stat_work))
-		pr_err("fuse kio: stat_work was actually canceled\n");
+	wait_event(pcs_waitq, (eng->nrpcs == 0));
+
+	cancel_delayed_work_sync(&eng->stat_work);
 
 	for (i = 0; i < PCS_RPC_HASH_SIZE; i++)
 		pcs_rpc_fini_verify(eng, &eng->ht[i]);
@@ -1419,7 +1418,7 @@ void rpc_connect_done(struct pcs_rpc *ep, struct socket *sock)
 		BUG();
 
 	ep->conn = &sio->ioconn;
-	sio->parent = ep;
+	sio->parent = pcs_rpc_get(ep);
 	sio->get_msg = rpc_get_hdr;
 	sio->eof = rpc_eof_cb;
 	//pcs_ioconn_register(ep->conn);
