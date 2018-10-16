@@ -494,24 +494,25 @@ void pcs_sock_ioconn_destruct(struct pcs_ioconn *ioconn)
 	kfree(sio);
 }
 
+static void pcs_sk_kick_queue(struct sock *sk)
+{
+	struct pcs_sockio *sio;
+
+	sio = sk->sk_user_data;;
+	if (sio) {
+		struct pcs_rpc *ep = sio->parent;
+		TRACE(PEER_FMT" queue\n", PEER_ARGS(ep));
+		pcs_rpc_kick_queue(ep);
+	}
+}
+
 static void pcs_sk_data_ready(struct sock *sk, int count)
 {
-	struct pcs_sockio *sio = sk->sk_user_data;
-	struct pcs_rpc *ep = sio->parent;
-
-	TRACE(PEER_FMT" queue count:%d \n", PEER_ARGS(ep), count);
-
-	pcs_rpc_kick_queue(ep);
+	pcs_sk_kick_queue(sk);
 }
 static void pcs_sk_write_space(struct sock *sk)
 {
-	struct pcs_sockio *sio = sk->sk_user_data;
-	struct pcs_rpc *ep = sio->parent;
-
-	TRACE(PEER_FMT" queue \n", PEER_ARGS(ep));
-
-	pcs_rpc_kick_queue(ep);
-
+	pcs_sk_kick_queue(sk);
 }
 
 /* TODO this call back does not look correct, sane locking/error handling is required */
