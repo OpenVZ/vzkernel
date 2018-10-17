@@ -5632,6 +5632,7 @@ static int sysfs_slab_add(struct kmem_cache *s)
 	s->kobj.kset = cache_kset(s);
 	err = kobject_init_and_add(&s->kobj, &slab_ktype, NULL, name);
 	if (err) {
+		kobject_put(&s->kobj);
 		return err;
 	}
 
