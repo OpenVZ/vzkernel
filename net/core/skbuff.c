@@ -4453,6 +4453,10 @@ EXPORT_SYMBOL_GPL(skb_gso_transport_seglen);
 /*
  * skb_gso_size_check - check the skb size, considering GSO_BY_FRAGS
  *
+ * @seg_len: The segmented length (from skb_gso_*_seglen). In the
+ *           GSO_BY_FRAGS case this will be [header sizes + GSO_BY_FRAGS].
+ * @max_len: The maximum permissible length.
+ *
  * There are a couple of instances where we have a GSO skb, and we
  * want to determine what size it would be after it is segmented.
  *
@@ -4461,11 +4465,6 @@ EXPORT_SYMBOL_GPL(skb_gso_transport_seglen);
  * - L2+L3+L4+payload size (e.g. sanity check before passing to driver)
  *
  * This is a helper to do that correctly considering GSO_BY_FRAGS.
- *
- * @seg_len: The segmented length (from skb_gso_*_seglen). In the
- *           GSO_BY_FRAGS case this will be [header sizes + GSO_BY_FRAGS].
- *
- * @max_len: The maximum permissible length.
  *
  * Returns true if the segmented length <= max length.
  */
