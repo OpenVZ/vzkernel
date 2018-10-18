@@ -639,6 +639,13 @@ static void pcs_rpc_send(struct pcs_rpc * ep, struct pcs_msg * msg, bool requeue
 
 	TRACE("ENTER ep:%p state:%d msg:%p\n", ep, ep->state, msg);
 
+	if (ep->state == PCS_RPC_ABORT || ep->state == PCS_RPC_DESTROY) {
+		pcs_set_rpc_error(&msg->error, PCS_ERR_NET_ABORT, ep);
+		pcs_msg_del_calendar(msg);
+		msg->done(msg);
+		return;
+	}
+
 	if (!requeue) {
 		msg->rpc = pcs_rpc_get(ep);
 		if (msg->timeout) {
@@ -658,13 +665,6 @@ static void pcs_rpc_send(struct pcs_rpc * ep, struct pcs_msg * msg, bool requeue
 			pcs_msg_del_calendar(msg);
 			msg->done(msg);
 		}
-		return;
-	}
-
-	if (ep->state == PCS_RPC_ABORT || ep->state == PCS_RPC_DESTROY) {
-		pcs_set_rpc_error(&msg->error, PCS_ERR_NET_ABORT, ep);
-		pcs_msg_del_calendar(msg);
-		msg->done(msg);
 		return;
 	}
 
