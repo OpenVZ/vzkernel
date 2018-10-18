@@ -1109,9 +1109,6 @@ again:
 	spin_lock_irq(&pni->lock);
 	nr_isolated = __tcache_lru_isolate(pni, pages, nr_to_isolate);
 
-	if (!nr_isolated)
-		goto unlock;
-
 	if (!RB_EMPTY_NODE(rbn) || !list_empty(&pni->lru)) {
 		spin_lock(&ni->lock);
 		if (!RB_EMPTY_NODE(rbn))
@@ -1123,7 +1120,7 @@ again:
 		update_ni_rb_first(ni);
 		spin_unlock(&ni->lock);
 	}
-unlock:
+
 	spin_unlock_irq(&pni->lock);
 	tcache_put_pool(pni->pool);
 out:
