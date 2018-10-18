@@ -1083,7 +1083,10 @@ static int rpc_check_memlimit(struct pcs_rpc * ep)
 
 void pcs_rpc_deaccount_msg(struct pcs_msg * msg)
 {
-	struct pcs_rpc * ep = msg->rpc;
+	struct pcs_rpc *ep = msg->rpc;
+
+	if (WARN_ON_ONCE(!ep))
+		return;
 
 	msg->rpc = NULL;
 	ep->eng->msg_count--;
