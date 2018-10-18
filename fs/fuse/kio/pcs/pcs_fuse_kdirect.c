@@ -911,7 +911,7 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
 	return ret;
 }
 
-static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, int async)
+static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, bool async, bool lk)
 {
 	struct pcs_fuse_req *r = pcs_req_from_fuse(req);
 	struct fuse_args *args = req->args;
@@ -992,7 +992,11 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, 
 error:
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
 
+	if (lk)
+		spin_unlock(&pfc->fc->bg_lock);
 	fuse_request_end(pfc->fc, &r->req);
+	if (lk)
+		spin_lock(&pfc->fc->bg_lock);
 	return;
 
 submit:
@@ -1058,7 +1062,7 @@ static void _pcs_shrink_end(struct fuse_conn *fc, struct fuse_args *args, int er
 
 		TRACE("resubmit %p\n", &r->req);
 		list_del_init(&ireq->list);
-		pcs_fuse_submit(pfc, &r->req, 1);
+		pcs_fuse_submit(pfc, &r->req, true, false);
 	}
 }
 
@@ -1207,7 +1211,7 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 	}
 	__clear_bit(FR_PENDING, &req->flags);
 
-	pcs_fuse_submit(pfc, req, lk);
+	pcs_fuse_submit(pfc, req, lk, lk);
 	if (!bg)
 		wait_event(req->waitq,
 			   test_bit(FR_FINISHED, &req->flags) && !req->args->end);
