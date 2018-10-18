@@ -169,12 +169,15 @@ static int __blk_cbt_set(struct cbt_info  *cbt, blkcnt_t block,
 		unsigned long len = min_t(unsigned long, BITS_PER_PAGE - off,
 					  count);
 		int ret;
+		unsigned long flags;
 
 		page = CBT_PAGE(cbt, idx);
 		if (page) {
+			local_irq_save(flags);
 			spin_lock_page(page);
 			set_bits(page_address(page), off, len, set);
 			unlock_page(page);
+			local_irq_restore(flags);
 			count -= len;
 			block += len;
 			continue;
