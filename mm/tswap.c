@@ -35,7 +35,7 @@ struct tswap_lru {
 static struct tswap_lru *tswap_lru_node;
 
 /* Enable/disable tswap backend (set at boot time) */
-static bool tswap_enabled __read_mostly = true;
+bool tswap_enabled __read_mostly = true;
 module_param_named(enabled, tswap_enabled, bool, 0444);
 
 /* Enable/disable populating the cache */
@@ -126,7 +126,7 @@ static struct page *tswap_delete_page(swp_entry_t entry, struct page *expected)
 	return page;
 }
 
-static unsigned long tswap_shrink_count(struct shrinker *shrink,
+unsigned long tswap_shrink_count(struct shrinker *shrink,
 					struct shrink_control *sc)
 {
 	return tswap_lru_node[sc->nid].nr_items;
@@ -236,7 +236,7 @@ out:
 	return err;
 }
 
-static unsigned long tswap_shrink_scan(struct shrinker *shrink,
+unsigned long tswap_shrink_scan(struct shrinker *shrink,
 				       struct shrink_control *sc)
 {
 	struct tswap_lru *lru = &tswap_lru_node[sc->nid];
