@@ -389,6 +389,62 @@ unsigned long reclaim_clean_pages_from_list(struct zone *zone,
 enum ttu_flags;
 struct tlbflush_unmap_batch;
 
+#ifdef CONFIG_TCACHE
+unsigned long tswap_shrink_scan(struct shrinker *shrinker,
+				struct shrink_control *sc);
+unsigned long tswap_shrink_count(struct shrinker *shrink,
+				struct shrink_control *sc);
+
+static inline unsigned long tswap_shrink(struct shrink_control *sc)
+{
+	unsigned long ret;
+	extern bool tswap_enabled;
+
+	if (!READ_ONCE(tswap_enabled))
+		return 0;
+
+	ret = tswap_shrink_count(NULL, sc);
+	if (!ret)
+		return ret;
+
+	ret = tswap_shrink_scan(NULL, sc);
+	if (ret == SHRINK_STOP)
+		ret = 0;
+	return ret;
+}
+#else
+static inline tswap_shrink(struct shrink_control *sc)
+{ return 0; }
+#endif
+
+#ifdef CONFIG_TSWAP
+unsigned long tcache_shrink_scan(struct shrinker *shrinker,
+			struct shrink_control *sc);
+unsigned long tcache_shrink_count(struct shrinker *shrink,
+				struct shrink_control *sc);
+
+static inline unsigned long tcache_shrink(struct shrink_control *sc)
+{
+	unsigned long ret;
+	extern bool tcache_enabled;
+
+	if (!READ_ONCE(tcache_enabled))
+		return 0;
+
+	ret = tcache_shrink_count(NULL, sc);
+	if (!ret)
+		return ret;
+
+	ret = tcache_shrink_scan(NULL, sc);
+	if (ret == SHRINK_STOP)
+		ret = 0;
+	return ret;
+}
+#else
+static inline unsigned long tcache_shrink(struct shrink_control *sc)
+{ return 0; }
+#endif
+
 #ifdef CONFIG_ARCH_WANT_BATCHED_UNMAP_TLB_FLUSH
 void try_to_unmap_flush(void);
 void try_to_unmap_flush_dirty(void);
