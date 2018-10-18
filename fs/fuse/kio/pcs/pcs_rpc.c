@@ -854,7 +854,6 @@ static void rpc_queue_work(struct work_struct *w)
 	struct pcs_rpc *ep = pcs_rpc_from_work(w);
 	int repeat;
 
-	pcs_rpc_get(ep);
 again:
 	spin_lock(&ep->q_lock);
 	list_splice_tail_init(&ep->input_queue, &input_q);
@@ -900,8 +899,6 @@ again:
 	mutex_unlock(&ep->mutex);
 	if (repeat)
 		goto again;
-	pcs_rpc_put(ep);
-
 }
 
 struct pcs_rpc * pcs_rpc_alloc_ep(void)
