@@ -236,7 +236,7 @@ out:
 	return err;
 }
 
-static unsigned long tswap_shrink_scan(struct shrinker *shrink,
+unsigned long tswap_shrink_scan(struct shrinker *shrink,
 				       struct shrink_control *sc)
 {
 	struct tswap_lru *lru = &tswap_lru_node[sc->nid];
