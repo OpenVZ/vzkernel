@@ -312,6 +312,7 @@ static void pcs_rpc_destroy(struct pcs_rpc *ep)
 	BUG_ON(timer_pending(&ep->timer_work.timer));
 
 	cancel_delayed_work_sync(&ep->calendar_work);
+	flush_work(&ep->work);
 
 	/* pcs_free(ep->sun); */
 	/* ep->sun = NULL; */
