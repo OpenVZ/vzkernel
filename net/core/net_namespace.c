@@ -392,8 +392,10 @@ struct net *copy_net_ns(unsigned long flags,
 	if (!ucounts)
 		return ERR_PTR(-ENOSPC);
 
-	if (atomic_dec_if_positive(&ve->netns_avail_nr) < 0)
+	if (atomic_dec_if_positive(&ve->netns_avail_nr) < 0) {
+		dec_net_namespaces(ucounts);
 		return ERR_PTR(-ENOMEM);
+	}
 
 	net = net_alloc();
 	if (!net) {
