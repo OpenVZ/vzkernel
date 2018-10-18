@@ -229,13 +229,16 @@ static void blk_cbt_add(struct request_queue *q, blkcnt_t start, blkcnt_t len)
 		goto out_rcu;
 	}
 	ex = this_cpu_ptr(cbt->cache);
+	local_irq_disable();
 	if (ex->start + ex->len == start) {
 		ex->len += len;
+		local_irq_enable();
 		goto out_rcu;
 	}
 	old = *ex;
 	ex->start = start;
 	ex->len = len;
+	local_irq_enable();
 
 	if (likely(old.len))
 		__blk_cbt_set(cbt, old.start, old.len, 1, 1, NULL, NULL);
