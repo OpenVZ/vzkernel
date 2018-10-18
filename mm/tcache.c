@@ -319,7 +319,8 @@ static void tcache_lru_del(struct tcache_pool *pool, struct page *page,
 		spin_lock(&ni->lock);
 		if (!RB_EMPTY_NODE(&pni->reclaim_node))
 			rb_erase(&pni->reclaim_node, &ni->reclaim_tree);
-		__tcache_insert_reclaim_node(ni, pni);
+		if (!list_empty(&pni->lru))
+			__tcache_insert_reclaim_node(ni, pni);
 		update_ni_rb_first(ni);
 		spin_unlock(&ni->lock);
 	}
