@@ -2801,6 +2801,37 @@ static bool all_unreclaimable(struct zonelist *zonelist,
 	return true;
 }
 
+static void shrink_tcrutches(struct scan_control *scan_ctrl)
+{
+	int nid;
+	unsigned long shrunk;
+	nodemask_t *nodemask = scan_ctrl->nodemask ? : &node_online_map;
+
+	do {
+		shrunk = 0;
+
+		for_each_node_mask(nid, *nodemask) {
+			struct shrink_control sc = {
+				.gfp_mask = scan_ctrl->gfp_mask,
+				.nid = nid,
+				.memcg = NULL,
+				.nr_to_scan = scan_ctrl->nr_to_reclaim -
+					      scan_ctrl->nr_reclaimed,
+			};
+			shrunk = tcache_shrink(&sc);
+			scan_ctrl->nr_reclaimed += shrunk;
+			if (!shrunk)
+				shrunk += tswap_shrink(&sc);
+			/*
+			 * We scan all nodes even if we reclaim more than
+			 * nr_to_reclaim, we want to make similar memory
+			 * pressure on all nodes and not to trash only the
+			 * first one and stop.
+			 */
+		}
+	} while (shrunk && scan_ctrl->nr_reclaimed < scan_ctrl->nr_to_reclaim);
+}
+
 /*
  * This is the main entry point to direct page reclaim.
  *
@@ -2831,8 +2862,12 @@ retry:
 	{KSTAT_PERF_ENTER(ttfp);
 	delayacct_freepages_start();
 
-	if (global_reclaim(sc))
+	if (global_reclaim(sc)) {
 		count_vm_event(ALLOCSTALL);
+		shrink_tcrutches(sc);
+		if (sc->nr_reclaimed >= sc->nr_to_reclaim)
+			goto out;
+	}
 
 	do {
 		vmpressure_prio(sc->gfp_mask, sc->target_mem_cgroup,
@@ -3466,6 +3501,12 @@ static unsigned long balance_pgdat(pg_data_t *pgdat, int order,
 		 */
 		if (sc.priority < DEF_PRIORITY - 2)
 			sc.may_writepage = 1;
+
+		shrink_tcrutches(&sc);
+		if (sc.nr_reclaimed >= sc.nr_to_reclaim &&
+			pgdat_balanced(pgdat, order, *classzone_idx))
+			goto out;
+
 
 		/*
 		 * Now scan the zone in the dma->highmem direction, stopping
