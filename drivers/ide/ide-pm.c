@@ -58,9 +58,8 @@ int generic_ide_resume(struct device *dev)
 	}
 
 	memset(&rqpm, 0, sizeof(rqpm));
-	rq = blk_get_request(drive->queue, READ, __GFP_WAIT);
+	rq = blk_get_request_flags(drive->queue, READ, BLK_MQ_REQ_PREEMPT);
 	rq->cmd_type = REQ_TYPE_PM_RESUME;
-	rq->cmd_flags |= REQ_PREEMPT;
 	rq->special = &rqpm;
 	rqpm.pm_step = IDE_PM_START_RESUME;
 	rqpm.pm_state = PM_EVENT_ON;

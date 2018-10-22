@@ -36,16 +36,21 @@ static void icq_free_icq_rcu(struct rcu_head *head)
 	kmem_cache_free(icq->__rcu_icq_cache, icq);
 }
 
-/* Exit an icq. Called with both ioc and q locked. */
+/*
+ * Exit an icq. Called with both ioc and q locked for sq, only ioc locked for
+ * mq.
+ */
 static void ioc_exit_icq(struct io_cq *icq)
 {
-	struct elevator_type *et = icq->q->elevator->type;
+	struct elevator_type_aux *aux = icq->q->elevator->aux;
 
 	if (icq->flags & ICQ_EXITED)
 		return;
 
-	if (et->ops.elevator_exit_icq_fn)
-		et->ops.elevator_exit_icq_fn(icq);
+	if (aux->uses_mq && aux->ops.mq.exit_icq)
+		aux->ops.mq.exit_icq(icq);
+	else if (!aux->uses_mq && aux->ops.sq.elevator_exit_icq_fn)
+		aux->ops.sq.elevator_exit_icq_fn(icq);
 
 	icq->flags |= ICQ_EXITED;
 }
@@ -164,6 +169,7 @@ EXPORT_SYMBOL(put_io_context);
  */
 void put_io_context_active(struct io_context *ioc)
 {
+	struct elevator_type *et;
 	unsigned long flags;
 	struct io_cq *icq;
 
@@ -182,13 +188,19 @@ retry:
 	hlist_for_each_entry(icq, &ioc->icq_list, ioc_node) {
 		if (icq->flags & ICQ_EXITED)
 			continue;
-		if (spin_trylock(icq->q->queue_lock)) {
+
+		et = icq->q->elevator->type;
+		if (icq->q->elevator->aux->uses_mq) {
 			ioc_exit_icq(icq);
-			spin_unlock(icq->q->queue_lock);
 		} else {
-			spin_unlock_irqrestore(&ioc->lock, flags);
-			cpu_relax();
-			goto retry;
+			if (spin_trylock(icq->q->queue_lock)) {
+				ioc_exit_icq(icq);
+				spin_unlock(icq->q->queue_lock);
+			} else {
+				spin_unlock_irqrestore(&ioc->lock, flags);
+				cpu_relax();
+				goto retry;
+			}
 		}
 	}
 	spin_unlock_irqrestore(&ioc->lock, flags);
@@ -358,6 +370,7 @@ struct io_cq *ioc_create_icq(struct io_context *ioc, struct request_queue *q,
 			     gfp_t gfp_mask)
 {
 	struct elevator_type *et = q->elevator->type;
+	struct elevator_type_aux *aux = q->elevator->aux;
 	struct io_cq *icq;
 
 	/* allocate stuff */
@@ -366,7 +379,7 @@ struct io_cq *ioc_create_icq(struct io_context *ioc, struct request_queue *q,
 	if (!icq)
 		return NULL;
 
-	if (radix_tree_preload(gfp_mask) < 0) {
+	if (radix_tree_maybe_preload(gfp_mask) < 0) {
 		kmem_cache_free(et->icq_cache, icq);
 		return NULL;
 	}
@@ -383,8 +396,10 @@ struct io_cq *ioc_create_icq(struct io_context *ioc, struct request_queue *q,
 	if (likely(!radix_tree_insert(&ioc->icq_tree, q->id, icq))) {
 		hlist_add_head(&icq->ioc_node, &ioc->icq_list);
 		list_add(&icq->q_node, &q->icq_list);
-		if (et->ops.elevator_init_icq_fn)
-			et->ops.elevator_init_icq_fn(icq);
+		if (aux->uses_mq && aux->ops.mq.init_icq)
+			aux->ops.mq.init_icq(icq);
+		else if (!aux->uses_mq && aux->ops.sq.elevator_init_icq_fn)
+			aux->ops.sq.elevator_init_icq_fn(icq);
 	} else {
 		kmem_cache_free(et->icq_cache, icq);
 		icq = ioc_lookup_icq(ioc, q);

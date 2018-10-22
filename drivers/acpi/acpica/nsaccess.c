@@ -102,7 +102,7 @@ acpi_status acpi_ns_root_initialize(void)
 
 		/* _OSI is optional for now, will be permanent later */
 
-		if (!ACPI_STRCMP(init_val->name, "_OSI")
+		if (!strcmp(init_val->name, "_OSI")
 		    && !acpi_gbl_create_osi_method) {
 			continue;
 		}
@@ -151,6 +151,7 @@ acpi_status acpi_ns_root_initialize(void)
 			 */
 			switch (init_val->type) {
 			case ACPI_TYPE_METHOD:
+
 				obj_desc->method.param_count =
 				    (u8) ACPI_TO_INTEGER(val);
 				obj_desc->common.flags |= AOPOBJ_DATA_VALID;
@@ -179,7 +180,7 @@ acpi_status acpi_ns_root_initialize(void)
 
 				/* Build an object around the static string */
 
-				obj_desc->string.length = (u32)ACPI_STRLEN(val);
+				obj_desc->string.length = (u32)strlen(val);
 				obj_desc->string.pointer = val;
 				obj_desc->common.flags |= AOPOBJ_STATIC_POINTER;
 				break;
@@ -202,7 +203,7 @@ acpi_status acpi_ns_root_initialize(void)
 
 				/* Special case for ACPI Global Lock */
 
-				if (ACPI_STRCMP(init_val->name, "_GL_") == 0) {
+				if (strcmp(init_val->name, "_GL_") == 0) {
 					acpi_gbl_global_lock_mutex = obj_desc;
 
 					/* Create additional counting semaphore for global lock */
