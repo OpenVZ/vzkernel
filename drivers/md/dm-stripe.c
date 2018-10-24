@@ -369,7 +369,7 @@ static int stripe_dax_memcpy_toiovecend(struct dm_target *ti, pgoff_t pgoff,
 #else
 #define stripe_dax_direct_access NULL
 #define stripe_dax_memcpy_fromiovecend NULL
-#define stripe_dax_memcpy_fromiovecend NULL
+#define stripe_dax_memcpy_toiovecend NULL
 #endif
 
 /*
