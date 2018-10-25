@@ -672,7 +672,7 @@ static void bio_complete(struct search *s)
 		unsigned long duration = jiffies - s->start_time;
 
 		cpu = part_stat_lock();
-		part_round_stats(cpu, &s->d->disk->part0);
+		part_round_stats(s->d->disk->queue, cpu, &s->d->disk->part0);
 		part_stat_add(cpu, &s->d->disk->part0, ticks[rw], duration);
 		part_stat_unlock();
 
