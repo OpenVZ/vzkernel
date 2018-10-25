@@ -887,13 +887,13 @@ EXPORT_SYMBOL_GPL(nf_conntrack_tuple_taken);
 
 /* There's a small race here where we may free a just-assured
    connection.  Too bad: we're in trouble anyway. */
-static noinline int early_drop(struct net *net, unsigned int _hash)
+static noinline int early_drop(struct net *net, unsigned int hash)
 {
 	/* Use oldest entry, which is roughly LRU */
 	struct nf_conntrack_tuple_hash *h;
 	struct nf_conn *tmp;
 	struct hlist_nulls_node *n;
-	unsigned int i, hash, sequence;
+	unsigned int i, bucket, sequence;
 	struct nf_conn *ct = NULL;
 	spinlock_t *lockp;
 	bool ret = false;
@@ -904,14 +904,18 @@ static noinline int early_drop(struct net *net, unsigned int _hash)
 restart:
 	sequence = read_seqcount_begin(&nf_conntrack_generation);
 	for (; i < NF_CT_EVICTION_RANGE; i++) {
-		hash = scale_hash(_hash++);
-		lockp = &nf_conntrack_locks[hash % CONNTRACK_LOCKS];
+		if (!i)
+			bucket = scale_hash(hash++);
+		else
+			bucket = (bucket + 1) % nf_conntrack_htable_size;
+
+		lockp = &nf_conntrack_locks[bucket % CONNTRACK_LOCKS];
 		spin_lock(lockp);
 		if (read_seqcount_retry(&nf_conntrack_generation, sequence)) {
 			spin_unlock(lockp);
 			goto restart;
 		}
-		hlist_nulls_for_each_entry_rcu(h, n, &nf_conntrack_hash[hash],
+		hlist_nulls_for_each_entry_rcu(h, n, &nf_conntrack_hash[bucket],
 					       hnnode) {
 			tmp = nf_ct_tuplehash_to_ctrack(h);
 
