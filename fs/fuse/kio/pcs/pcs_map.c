@@ -2494,11 +2494,12 @@ noinline void pcs_mapping_truncate(struct pcs_int_request *ireq, u64 old_size)
 
 	if (m == NULL)
 		queue = 1;
-
-	spin_lock(&m->lock);
-	if (valid_for_truncate(m, ireq))
-		queue = 1;
-	spin_unlock(&m->lock);
+	else {
+		spin_lock(&m->lock);
+		if (valid_for_truncate(m, ireq))
+			queue = 1;
+		spin_unlock(&m->lock);
+	}
 
 	if (queue) {
 		if (m) {
