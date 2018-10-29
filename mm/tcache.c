@@ -177,7 +177,7 @@ static struct tcache_nodeinfo *tcache_nodeinfo;
  */
 
 /* Enable/disable tcache backend (set at boot time) */
-static bool tcache_enabled __read_mostly = true;
+bool tcache_enabled __read_mostly = true;
 module_param_named(enabled, tcache_enabled, bool, 0444);
 
 /* Enable/disable populating the cache */
@@ -1196,7 +1196,7 @@ static struct page *tcache_alloc_page(struct tcache_pool *pool)
 	return page;
 }
 
-static unsigned long tcache_shrink_count(struct shrinker *shrink,
+unsigned long tcache_shrink_count(struct shrinker *shrink,
 					 struct shrink_control *sc)
 {
 	atomic_long_t *nr_pages = &tcache_nodeinfo[sc->nid].nr_pages;
