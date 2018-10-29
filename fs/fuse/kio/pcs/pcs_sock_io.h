@@ -231,9 +231,4 @@ struct bufqueue;
 */
 struct pcs_msg* bufqueue_as_pcs_output_msg(struct bufqueue *bq, u32 size);
 
-
-void pcs_ioconn_unregister(struct pcs_ioconn *ioconn);
-void pcs_ioconn_close(struct pcs_ioconn *ioconn);
-
-
 #endif /* _PCS_SOCK_IO_H_ */
