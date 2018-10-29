@@ -387,10 +387,22 @@ struct tlbflush_unmap_batch;
 #ifdef CONFIG_TCACHE
 unsigned long tswap_shrink_scan(struct shrinker *shrinker,
 				struct shrink_control *sc);
+unsigned long tswap_shrink_count(struct shrinker *shrink,
+				struct shrink_control *sc);
 
 static inline unsigned long tswap_shrink(struct shrink_control *sc)
 {
-	unsigned long ret = tswap_shrink_scan(NULL, sc);
+	unsigned long ret;
+	extern bool tswap_enabled;
+
+	if (!READ_ONCE(tswap_enabled))
+		return 0;
+
+	ret = tswap_shrink_count(NULL, sc);
+	if (!ret)
+		return ret;
+
+	ret = tswap_shrink_scan(NULL, sc);
 	if (ret == SHRINK_STOP)
 		ret = 0;
 	return ret;
@@ -403,10 +415,22 @@ static inline tswap_shrink(struct shrink_control *sc)
 #ifdef CONFIG_TSWAP
 unsigned long tcache_shrink_scan(struct shrinker *shrinker,
 			struct shrink_control *sc);
+unsigned long tcache_shrink_count(struct shrinker *shrink,
+				struct shrink_control *sc);
 
 static inline unsigned long tcache_shrink(struct shrink_control *sc)
 {
-	unsigned long ret = tcache_shrink_scan(NULL, sc);
+	unsigned long ret;
+	extern bool tcache_enabled;
+
+	if (!READ_ONCE(tcache_enabled))
+		return 0;
+
+	ret = tcache_shrink_count(NULL, sc);
+	if (!ret)
+		return ret;
+
+	ret = tcache_shrink_scan(NULL, sc);
 	if (ret == SHRINK_STOP)
 		ret = 0;
 	return ret;
