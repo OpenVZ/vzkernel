@@ -361,7 +361,7 @@ cached_submit(struct ploop_io *io, iblock_t iblk, struct ploop_request * preq,
 
 	pos = (loff_t)iblk << (plo->cluster_log + 9);
 	end_pos = pos + clu_siz;
-	used_pos = (io->alloc_head - 1) << (io->plo->cluster_log + 9);
+	used_pos = (loff_t)(io->alloc_head - 1) << (io->plo->cluster_log + 9);
 
 	file_start_write(io->files.file);
 
