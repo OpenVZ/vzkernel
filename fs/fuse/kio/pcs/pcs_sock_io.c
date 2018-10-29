@@ -42,13 +42,13 @@ void sio_push(struct pcs_sockio * sio)
 //// caseB: kernelspace want to close socket and have to somehow
 ////	    notify about this to userspace (NEW API REQUIRED)
 static void pcs_restore_sockets(struct pcs_ioconn *ioconn);
-void pcs_ioconn_unregister(struct pcs_ioconn *ioconn)
+static void pcs_ioconn_unregister(struct pcs_ioconn *ioconn)
 {
 	if (!test_bit(PCS_IOCONN_BF_DEAD, &ioconn->flags))
 		set_bit(PCS_IOCONN_BF_DEAD, &ioconn->flags);
 }
 
-void pcs_ioconn_close(struct pcs_ioconn *ioconn)
+static void pcs_ioconn_close(struct pcs_ioconn *ioconn)
 {
 	kernel_sock_shutdown(ioconn->socket, SHUT_RDWR);
 }
