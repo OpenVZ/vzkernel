@@ -29,6 +29,7 @@ config CUSE
 config FUSE_KIO_NOOP
 	tristate "Enable kdirect noop io engine"
 	depends on FUSE_FS
+	default n
 	help
 	  This FUSE extension allows to handle io requests directly inside kernel
 
@@ -37,6 +38,7 @@ config FUSE_KIO_NOOP
 config FUSE_KIO_NULLIO
 	tristate "Enable kdirect null io io engine"
 	depends on FUSE_FS
+	default n
 	help
 	  This FUSE extension allows to handle io requests directly inside kernel
 
