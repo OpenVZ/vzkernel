@@ -717,6 +717,8 @@ static int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
 			break;
 		case OPT_KIO_NAME: {
 			char *name;
+			if (!ve_is_super(get_exec_env()))
+				return 0;
 			name = match_strdup(&args[0]);
 			if (!name)
 				return 0;
