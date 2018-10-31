@@ -2354,12 +2354,16 @@ void map_submit(struct pcs_map_entry * m, struct pcs_int_request *ireq)
 
 static int valid_for_truncate(struct pcs_map_entry * m, struct pcs_int_request *ireq)
 {
+	spin_lock(&m->lock);
+
 	/* This weird test means that map is valid, but points to a hole. In this case
 	 * truncate is noop.
 	 */
 	if ((m->state & (PCS_MAP_ERROR|PCS_MAP_RESOLVING|PCS_MAP_NEW|PCS_MAP_READABLE)) ==
-	    (PCS_MAP_NEW|PCS_MAP_READABLE))
+	    (PCS_MAP_NEW|PCS_MAP_READABLE)) {
+		spin_unlock(&m->lock);
 		return 1;
+	}
 
 	/* If we already have valid map, remember its version
 	 * and switch to the next phase: invalidation and requesting
@@ -2371,6 +2375,8 @@ static int valid_for_truncate(struct pcs_map_entry * m, struct pcs_int_request *
 		ireq->truncreq.version = m->version;
 	}
 	/* Otherwise lookup valid map first. */
+	spin_unlock(&m->lock);
+
 	return 0;
 }
 
@@ -2495,10 +2501,8 @@ noinline void pcs_mapping_truncate(struct pcs_int_request *ireq, u64 old_size)
 	if (m == NULL)
 		queue = 1;
 	else {
-		spin_lock(&m->lock);
 		if (!valid_for_truncate(m, ireq))
 			queue = 1;
-		spin_unlock(&m->lock);
 	}
 
 	if (queue) {
