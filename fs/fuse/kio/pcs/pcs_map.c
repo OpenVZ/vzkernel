@@ -2291,7 +2291,6 @@ void map_submit(struct pcs_map_entry * m, struct pcs_int_request *ireq)
 	int direction;
 	int done;
 
-	DTRACE("enter m: " MAP_FMT ", ireq:%p \n", MAP_ARGS(m),	 ireq);
 	BUG_ON(ireq->type != PCS_IREQ_IOCHUNK && ireq->type != PCS_IREQ_FLUSH);
 	BUG_ON(pcs_if_error(&ireq->error));
 
@@ -2310,6 +2309,8 @@ void map_submit(struct pcs_map_entry * m, struct pcs_int_request *ireq)
 			pcs_map_queue_resolve(m, ireq, direction);
 			return;
 		}
+		DTRACE("enter m: " MAP_FMT ", ireq:%p \n", MAP_ARGS(m),	 ireq);
+
 		csl = m->cs_list;
 		if (csl)
 			cslist_get(csl);
