@@ -82,7 +82,7 @@ static int debug = -1;	/* defaults above */
 module_param(debug, int, 0);
 MODULE_PARM_DESC(debug, "Debug level (0=none,...,16=all)");
 
-static DEFINE_PCI_DEVICE_TABLE(skge_id_table) = {
+static const struct pci_device_id skge_id_table[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_3COM, 0x1700) },	  /* 3Com 3C940 */
 	{ PCI_DEVICE(PCI_VENDOR_ID_3COM, 0x80EB) },	  /* 3Com 3C940B */
 #ifdef CONFIG_SKGE_GENESIS
@@ -3706,7 +3706,7 @@ static const struct file_operations skge_debug_fops = {
 static int skge_device_event(struct notifier_block *unused,
 			     unsigned long event, void *ptr)
 {
-	struct net_device *dev = ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct skge_port *skge;
 	struct dentry *d;
 
@@ -3766,13 +3766,13 @@ static __init void skge_debug_init(void)
 	}
 
 	skge_debug = ent;
-	register_netdevice_notifier(&skge_notifier);
+	register_netdevice_notifier_rh(&skge_notifier);
 }
 
 static __exit void skge_debug_cleanup(void)
 {
 	if (skge_debug) {
-		unregister_netdevice_notifier(&skge_notifier);
+		unregister_netdevice_notifier_rh(&skge_notifier);
 		debugfs_remove(skge_debug);
 		skge_debug = NULL;
 	}
@@ -3790,7 +3790,7 @@ static const struct net_device_ops skge_netdev_ops = {
 	.ndo_do_ioctl		= skge_ioctl,
 	.ndo_get_stats		= skge_get_stats,
 	.ndo_tx_timeout		= skge_tx_timeout,
-	.ndo_change_mtu		= skge_change_mtu,
+	.ndo_change_mtu_rh74	= skge_change_mtu,
 	.ndo_validate_addr	= eth_validate_addr,
 	.ndo_set_rx_mode	= skge_set_multicast,
 	.ndo_set_mac_address	= skge_set_mac_address,

@@ -106,9 +106,9 @@ define_one_ro(physical_package_id);
 define_id_show_func(core_id);
 define_one_ro(core_id);
 
-define_siblings_show_func(thread_cpumask);
-define_one_ro_named(thread_siblings, show_thread_cpumask);
-define_one_ro_named(thread_siblings_list, show_thread_cpumask_list);
+define_siblings_show_func(sibling_cpumask);
+define_one_ro_named(thread_siblings, show_sibling_cpumask);
+define_one_ro_named(thread_siblings_list, show_sibling_cpumask_list);
 
 define_siblings_show_func(core_cpumask);
 define_one_ro_named(core_siblings, show_core_cpumask);
@@ -120,6 +120,14 @@ define_one_ro(book_id);
 define_siblings_show_func(book_cpumask);
 define_one_ro_named(book_siblings, show_book_cpumask);
 define_one_ro_named(book_siblings_list, show_book_cpumask_list);
+#endif
+
+#ifdef CONFIG_SCHED_DRAWER
+define_id_show_func(drawer_id);
+define_one_ro(drawer_id);
+define_siblings_show_func(drawer_cpumask);
+define_one_ro_named(drawer_siblings, show_drawer_cpumask);
+define_one_ro_named(drawer_siblings_list, show_drawer_cpumask_list);
 #endif
 
 static struct attribute *default_attrs[] = {
@@ -134,6 +142,11 @@ static struct attribute *default_attrs[] = {
 	&dev_attr_book_siblings.attr,
 	&dev_attr_book_siblings_list.attr,
 #endif
+#ifdef CONFIG_SCHED_DRAWER
+	&dev_attr_drawer_id.attr,
+	&dev_attr_drawer_siblings.attr,
+	&dev_attr_drawer_siblings_list.attr,
+#endif
 	NULL
 };
 
@@ -143,22 +156,22 @@ static struct attribute_group topology_attr_group = {
 };
 
 /* Add/Remove cpu_topology interface for CPU device */
-static int __cpuinit topology_add_dev(unsigned int cpu)
+static int topology_add_dev(unsigned int cpu)
 {
 	struct device *dev = get_cpu_device(cpu);
 
 	return sysfs_create_group(&dev->kobj, &topology_attr_group);
 }
 
-static void __cpuinit topology_remove_dev(unsigned int cpu)
+static void topology_remove_dev(unsigned int cpu)
 {
 	struct device *dev = get_cpu_device(cpu);
 
 	sysfs_remove_group(&dev->kobj, &topology_attr_group);
 }
 
-static int __cpuinit topology_cpu_callback(struct notifier_block *nfb,
-					   unsigned long action, void *hcpu)
+static int topology_cpu_callback(struct notifier_block *nfb,
+				 unsigned long action, void *hcpu)
 {
 	unsigned int cpu = (unsigned long)hcpu;
 	int rc = 0;
@@ -178,19 +191,23 @@ static int __cpuinit topology_cpu_callback(struct notifier_block *nfb,
 	return notifier_from_errno(rc);
 }
 
-static int __cpuinit topology_sysfs_init(void)
+static int topology_sysfs_init(void)
 {
 	int cpu;
-	int rc;
+	int rc = 0;
+
+	cpu_notifier_register_begin();
 
 	for_each_online_cpu(cpu) {
 		rc = topology_add_dev(cpu);
 		if (rc)
-			return rc;
+			goto out;
 	}
-	hotcpu_notifier(topology_cpu_callback, 0);
+	__hotcpu_notifier(topology_cpu_callback, 0);
 
-	return 0;
+out:
+	cpu_notifier_register_done();
+	return rc;
 }
 
 device_initcall(topology_sysfs_init);

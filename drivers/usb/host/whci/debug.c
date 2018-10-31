@@ -1,19 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Wireless Host Controller (WHC) debug.
  *
  * Copyright (C) 2008 Cambridge Silicon Radio Ltd.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License version
- * 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <linux/slab.h>
 #include <linux/kernel.h>
@@ -86,17 +75,14 @@ static void qset_print(struct seq_file *s, struct whc_qset *qset)
 static int di_print(struct seq_file *s, void *p)
 {
 	struct whc *whc = s->private;
-	char buf[72];
 	int d;
 
 	for (d = 0; d < whc->n_devices; d++) {
 		struct di_buf_entry *di = &whc->di_buf[d];
 
-		bitmap_scnprintf(buf, sizeof(buf),
-				 (unsigned long *)di->availability_info, UWB_NUM_MAS);
-
 		seq_printf(s, "DI[%d]\n", d);
-		seq_printf(s, "  availability: %s\n", buf);
+		seq_printf(s, "  availability: %*pb\n",
+			   UWB_NUM_MAS, (unsigned long *)di->availability_info);
 		seq_printf(s, "  %c%c key idx: %d dev addr: %d\n",
 			   (di->addr_sec_info & WHC_DI_SECURE) ? 'S' : ' ',
 			   (di->addr_sec_info & WHC_DI_DISABLE) ? 'D' : ' ',

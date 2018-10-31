@@ -1329,7 +1329,7 @@ static int internal_modify_qp(struct ib_qp *ibqp,
 	qp_new_state = attr_mask & IB_QP_STATE ? attr->qp_state : qp_cur_state;
 	if (!smi_reset2init &&
 	    !ib_modify_qp_is_ok(qp_cur_state, qp_new_state, ibqp->qp_type,
-				attr_mask)) {
+				attr_mask, IB_LINK_LAYER_UNSPECIFIED)) {
 		ret = -EINVAL;
 		ehca_err(ibqp->device,
 			 "Invalid qp transition new_state=%x cur_state=%x "
@@ -1484,9 +1484,9 @@ static int internal_modify_qp(struct ib_qp *ibqp,
 		update_mask |= EHCA_BMASK_SET(MQPCB_MASK_QKEY, 1);
 	}
 	if (attr_mask & IB_QP_AV) {
-		mqpcb->dlid = attr->ah_attr.dlid;
+		mqpcb->dlid = rdma_ah_get_dlid(&attr->ah_attr);
 		update_mask |= EHCA_BMASK_SET(MQPCB_MASK_DLID, 1);
-		mqpcb->source_path_bits = attr->ah_attr.src_path_bits;
+		mqpcb->source_path_bits = rdma_ah_get_path_bits(&attr->ah_attr);
 		update_mask |= EHCA_BMASK_SET(MQPCB_MASK_SOURCE_PATH_BITS, 1);
 		mqpcb->service_level = attr->ah_attr.sl;
 		update_mask |= EHCA_BMASK_SET(MQPCB_MASK_SERVICE_LEVEL, 1);
@@ -1588,8 +1588,8 @@ static int internal_modify_qp(struct ib_qp *ibqp,
 		mqpcb->alt_p_key_idx = attr->alt_pkey_index;
 
 		mqpcb->timeout_al = attr->alt_timeout;
-		mqpcb->dlid_al = attr->alt_ah_attr.dlid;
-		mqpcb->source_path_bits_al = attr->alt_ah_attr.src_path_bits;
+		mqpcb->dlid_al = rdma_ah_get_dlid(&attr->alt_ah_attr);
+		mqpcb->source_path_bits_al = rdma_ah_get_path_bits(&attr->alt_ah_attr);
 		mqpcb->service_level_al = attr->alt_ah_attr.sl;
 
 		if (ehca_calc_ipd(shca, mqpcb->alt_phys_port,
@@ -1982,8 +1982,8 @@ int ehca_query_qp(struct ib_qp *qp,
 	}
 
 	qp_attr->ah_attr.static_rate = qpcb->max_static_rate;
-	qp_attr->ah_attr.dlid = qpcb->dlid;
-	qp_attr->ah_attr.src_path_bits = qpcb->source_path_bits;
+	rdma_ah_set_dlid(&qp_attr->ah_attr, qpcb->dlid);
+	rdma_ah_set_path_bits(&qp_attr->ah_attr, qpcb->source_path_bits);
 	qp_attr->ah_attr.port_num = qp_attr->port_num;
 
 	/* primary GRH */
@@ -2003,8 +2003,8 @@ int ehca_query_qp(struct ib_qp *qp,
 	}
 
 	qp_attr->alt_ah_attr.static_rate = qpcb->max_static_rate_al;
-	qp_attr->alt_ah_attr.dlid = qpcb->dlid_al;
-	qp_attr->alt_ah_attr.src_path_bits = qpcb->source_path_bits_al;
+	rdma_ah_set_dlid(&qp_attr->alt_ah_attr, qpcb->dlid_al);
+	rdma_ah_set_path_bits(&qp_attr->alt_ah_attr, qpcb->source_path_bits_al);
 
 	/* alternate GRH */
 	qp_attr->alt_ah_attr.grh.traffic_class = qpcb->traffic_class_al;

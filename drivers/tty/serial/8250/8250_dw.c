@@ -55,9 +55,30 @@
 
 struct dw8250_data {
 	int		last_lcr;
+	int		last_mcr;
 	int		line;
 	struct clk	*clk;
+	struct clk		*pclk;
 };
+
+#define BYT_PRV_CLK			0x800
+#define BYT_PRV_CLK_EN			(1 << 0)
+#define BYT_PRV_CLK_M_VAL_SHIFT		1
+#define BYT_PRV_CLK_N_VAL_SHIFT		16
+#define BYT_PRV_CLK_UPDATE		(1 << 31)
+
+static inline int dw8250_modify_msr(struct uart_port *p, int offset, int value)
+{
+	struct dw8250_data *d = p->private_data;
+
+	/* If reading MSR, report CTS asserted when auto-CTS/RTS enabled */
+	if (offset == UART_MSR && d->last_mcr & UART_MCR_AFE) {
+		value |= UART_MSR_CTS;
+		value &= ~UART_MSR_DCTS;
+	}
+
+	return value;
+}
 
 static void dw8250_serial_out(struct uart_port *p, int offset, int value)
 {
@@ -66,15 +87,17 @@ static void dw8250_serial_out(struct uart_port *p, int offset, int value)
 	if (offset == UART_LCR)
 		d->last_lcr = value;
 
-	offset <<= p->regshift;
-	writeb(value, p->membase + offset);
+	if (offset == UART_MCR)
+		d->last_mcr = value;
+
+	writeb(value, p->membase + (offset << p->regshift));
 }
 
 static unsigned int dw8250_serial_in(struct uart_port *p, int offset)
 {
-	offset <<= p->regshift;
+	unsigned int value = readb(p->membase + (offset << p->regshift));
 
-	return readb(p->membase + offset);
+	return dw8250_modify_msr(p, offset, value);
 }
 
 static void dw8250_serial_out32(struct uart_port *p, int offset, int value)
@@ -84,15 +107,17 @@ static void dw8250_serial_out32(struct uart_port *p, int offset, int value)
 	if (offset == UART_LCR)
 		d->last_lcr = value;
 
-	offset <<= p->regshift;
-	writel(value, p->membase + offset);
+	if (offset == UART_MCR)
+		d->last_mcr = value;
+
+	writel(value, p->membase + (offset << p->regshift));
 }
 
 static unsigned int dw8250_serial_in32(struct uart_port *p, int offset)
 {
-	offset <<= p->regshift;
+	unsigned int value = readl(p->membase + (offset << p->regshift));
 
-	return readl(p->membase + offset);
+	return dw8250_modify_msr(p, offset, value);
 }
 
 static int dw8250_handle_irq(struct uart_port *p)
@@ -123,6 +148,32 @@ dw8250_do_pm(struct uart_port *port, unsigned int state, unsigned int old)
 
 	if (state)
 		pm_runtime_put_sync_suspend(port->dev);
+}
+
+static void dw8250_set_termios(struct uart_port *p, struct ktermios *termios,
+			       struct ktermios *old)
+{
+	unsigned int baud = tty_termios_baud_rate(termios);
+	struct dw8250_data *d = p->private_data;
+	unsigned int rate;
+	int ret;
+
+	if (IS_ERR(d->clk) || !old)
+		goto out;
+
+	/* Not requesting clock rates below 1.8432Mhz */
+	if (baud < 115200)
+		baud = 115200;
+
+	clk_disable_unprepare(d->clk);
+	rate = clk_round_rate(d->clk, baud * 16);
+	ret = clk_set_rate(d->clk, rate);
+	clk_prepare_enable(d->clk);
+
+	if (!ret)
+		p->uartclk = rate;
+out:
+	serial8250_do_set_termios(p, termios, old);
 }
 
 static int dw8250_probe_of(struct uart_port *p)
@@ -165,20 +216,12 @@ static int dw8250_probe_of(struct uart_port *p)
 #ifdef CONFIG_ACPI
 static int dw8250_probe_acpi(struct uart_8250_port *up)
 {
-	const struct acpi_device_id *id;
 	struct uart_port *p = &up->port;
-
-	id = acpi_match_device(p->dev->driver->acpi_match_table, p->dev);
-	if (!id)
-		return -ENODEV;
 
 	p->iotype = UPIO_MEM32;
 	p->serial_in = dw8250_serial_in32;
 	p->serial_out = dw8250_serial_out32;
 	p->regshift = 2;
-
-	if (!p->uartclk)
-		p->uartclk = (unsigned int)id->driver_data;
 
 	up->dma = devm_kzalloc(p->dev, sizeof(*up->dma), GFP_KERNEL);
 	if (!up->dma)
@@ -186,6 +229,8 @@ static int dw8250_probe_acpi(struct uart_8250_port *up)
 
 	up->dma->rxconf.src_maxburst = p->fifosize / 4;
 	up->dma->txconf.dst_maxburst = p->fifosize / 4;
+
+	up->port.set_termios = dw8250_set_termios;
 
 	return 0;
 }
@@ -259,10 +304,25 @@ static int dw8250_probe(struct platform_device *pdev)
 	if (!data)
 		return -ENOMEM;
 
-	data->clk = devm_clk_get(&pdev->dev, NULL);
+	data->clk = devm_clk_get(&pdev->dev, "baudclk");
+	if (IS_ERR(data->clk))
+		data->clk = devm_clk_get(&pdev->dev, NULL);
 	if (!IS_ERR(data->clk)) {
-		clk_prepare_enable(data->clk);
-		uart.port.uartclk = clk_get_rate(data->clk);
+		err = clk_prepare_enable(data->clk);
+		if (err)
+			dev_warn(&pdev->dev, "could not enable optional baudclk: %d\n",
+				 err);
+		else
+			uart.port.uartclk = clk_get_rate(data->clk);
+	}
+
+	data->pclk = devm_clk_get(&pdev->dev, "apb_pclk");
+	if (!IS_ERR(data->pclk)) {
+		err = clk_prepare_enable(data->pclk);
+		if (err) {
+			dev_err(&pdev->dev, "could not enable apb_pclk\n");
+			return err;
+		}
 	}
 
 	uart.port.iotype = UPIO_MEM;
@@ -304,6 +364,9 @@ static int dw8250_remove(struct platform_device *pdev)
 
 	serial8250_unregister_port(data->line);
 
+	if (!IS_ERR(data->pclk))
+		clk_disable_unprepare(data->pclk);
+
 	if (!IS_ERR(data->clk))
 		clk_disable_unprepare(data->clk);
 
@@ -341,12 +404,18 @@ static int dw8250_runtime_suspend(struct device *dev)
 	if (!IS_ERR(data->clk))
 		clk_disable_unprepare(data->clk);
 
+	if (!IS_ERR(data->pclk))
+		clk_disable_unprepare(data->pclk);
+
 	return 0;
 }
 
 static int dw8250_runtime_resume(struct device *dev)
 {
 	struct dw8250_data *data = dev_get_drvdata(dev);
+
+	if (!IS_ERR(data->pclk))
+		clk_prepare_enable(data->pclk);
 
 	if (!IS_ERR(data->clk))
 		clk_prepare_enable(data->clk);
@@ -370,6 +439,8 @@ static const struct acpi_device_id dw8250_acpi_match[] = {
 	{ "INT33C4", 0 },
 	{ "INT33C5", 0 },
 	{ "80860F0A", 0 },
+	{ "AMD0020", 0 },
+	{ "AMDI0020", 0 },
 	{ },
 };
 MODULE_DEVICE_TABLE(acpi, dw8250_acpi_match);
