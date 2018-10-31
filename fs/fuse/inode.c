@@ -696,19 +696,19 @@ static int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
 
 		case OPT_WBCACHE:
 			if (!ve_is_super(get_exec_env()) && !fuse_ve_odirect)
-				return -EPERM;
+				return 0;
 			d->writeback_cache = 1;
 			break;
 
 		case OPT_ODIRECT:
 			if (!ve_is_super(get_exec_env()) && !fuse_ve_odirect)
-				return -EPERM;
+				return 0;
 			d->flags |= FUSE_ODIRECT;
 			break;
 
 		case OPT_UMOUNT_WAIT:
 			if (!ve_is_super(get_exec_env()) && !fuse_ve_odirect)
-				return -EPERM;
+				return 0;
 			d->flags |= FUSE_UMOUNT_WAIT;
 			break;
 
@@ -719,7 +719,7 @@ static int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev,
 			char *name;
 			name = match_strdup(&args[0]);
 			if (!name)
-				return 1;
+				return 0;
 
 			strncpy(d->kio_name, name, FUSE_KIO_NAME);
 			d->flags |= FUSE_KDIRECT_IO;
