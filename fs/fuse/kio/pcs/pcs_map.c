@@ -2462,7 +2462,6 @@ noinline void pcs_mapping_truncate(struct pcs_int_request *ireq, u64 old_size)
 	u64 new_size = DENTRY_SIZE(di);
 	u64 offset;
 	struct pcs_map_entry * m = NULL;
-	int queue = 0;
 
 	di->local_mtime = get_real_time_ms();
 
@@ -2487,38 +2486,21 @@ noinline void pcs_mapping_truncate(struct pcs_int_request *ireq, u64 old_size)
 
 	m = pcs_find_get_map(di, offset - 1);
 
-	if (m) {
-		FUSE_KTRACE(ireq->cc->fc, "mapping truncate %llu->%llu " DENTRY_FMT " %x", (unsigned long long)old_size,
-		      (unsigned long long)new_size, DENTRY_ARGS(ireq->dentry), m ? m->state : -1);
-	}
-	if (m && map_chunk_end(m) == offset) {
-		map_truncate_tail(&di->mapping, offset);
-		ireq_complete(ireq);
-		pcs_map_put(m);
+	FUSE_KTRACE(ireq->cc->fc, "mapping truncate %llu->%llu " DENTRY_FMT " %x", (unsigned long long)old_size,
+	      (unsigned long long)new_size, DENTRY_ARGS(ireq->dentry), m ? m->state : -1);
+
+	if (m == NULL) {
+		map_queue_on_limit(ireq);
 		return;
 	}
 
-
-	if (m == NULL)
-		queue = 1;
-	else {
-		if (!valid_for_truncate(m, ireq))
-			queue = 1;
-	}
-
-	if (queue) {
-		if (m) {
-			pcs_map_queue_resolve(m, ireq, 1);
-		} else {
-			map_queue_on_limit(ireq);
-		}
-	} else {
+	if (map_chunk_end(m) == offset || valid_for_truncate(m, ireq)) {
 		map_truncate_tail(&di->mapping, map_chunk_end(m));
 		ireq_complete(ireq);
-	}
+	} else
+		pcs_map_queue_resolve(m, ireq, 1);
 
-	if (m)
-		pcs_map_put(m);
+	pcs_map_put(m);
 }
 
 static int commit_cs_record(struct pcs_map_entry * m, struct pcs_cs_record * rec,
