@@ -836,6 +836,8 @@ static int fuse_parse_param(struct fs_context *fc, struct fs_parameter *param)
 		break;
 
 	case OPT_KIO_NAME: {
+		if (!ve_is_super(get_exec_env()))
+			return -EPERM;
 		if (param->size > FUSE_KIO_NAME)
 			return -EINVAL;
 
