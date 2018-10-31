@@ -2481,13 +2481,12 @@ noinline void pcs_mapping_truncate(struct pcs_int_request *ireq, u64 old_size)
 	ireq->truncreq.offset = offset;
 	ireq->truncreq.phase = 0;
 
+	map_truncate_tail(&di->mapping, offset);
+
 	if (offset == 0) {
-		map_truncate_tail(&di->mapping, offset);
 		ireq_complete(ireq);
 		return;
 	}
-
-	map_truncate_tail(&di->mapping, offset + 1);
 
 	m = pcs_find_get_map(di, offset - 1);
 
