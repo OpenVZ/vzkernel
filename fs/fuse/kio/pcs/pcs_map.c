@@ -2367,6 +2367,7 @@ static int valid_for_truncate(struct pcs_map_entry * m, struct pcs_int_request *
 	 */
 	if (!(m->state & (PCS_MAP_ERROR|PCS_MAP_RESOLVING|PCS_MAP_NEW))) {
 		map_remote_error_nolock(m, PCS_ERR_CSD_STALE_MAP, m->cs_list ? m->cs_list->cs[0].info.id.val : 0);
+		ireq->truncreq.phase = 1;
 		ireq->truncreq.version = m->version;
 	}
 	/* Otherwise lookup valid map first. */
