@@ -237,8 +237,7 @@ void pcs_mapping_dump(struct pcs_mapping * mapping)
 
 void map_truncate_tail(struct pcs_mapping * mapping, u64 offset)
 {
-
-	unsigned long pos = offset >> mapping->chunk_size_bits;
+	unsigned long pos = DIV_ROUND_UP(offset, 1 << mapping->chunk_size_bits);
 	struct pcs_map_entry *maps[MAP_BATCH];
 	int nr_maps;
 	LIST_HEAD(dispose);
