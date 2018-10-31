@@ -2405,45 +2405,34 @@ void process_ireq_truncate(struct pcs_int_request *ireq)
 		return;
 	}
 	end = map_chunk_end(m);
-	if (end <= ireq->truncreq.offset) {
-		map_truncate_tail(&di->mapping, end);
-		ireq_complete(ireq);
-		return;
-	}
+	if (end <= ireq->truncreq.offset)
+		goto truncate_tail;
 
 	if (ireq->truncreq.phase == 0) {
-		if (valid_for_truncate(m, ireq)) {
-			map_truncate_tail(&di->mapping, end);
-			ireq_complete(ireq);
-			return;
-		}
+		if (valid_for_truncate(m, ireq))
+			goto truncate_tail;
 	} else {
 		/* We already had some valid map. Must get new one. */
-
-
 		spin_lock(&m->lock);
 		if ((m->state & (PCS_MAP_ERROR|PCS_MAP_RESOLVING|PCS_MAP_NEW|PCS_MAP_READABLE)) ==
 		    (PCS_MAP_NEW|PCS_MAP_READABLE)) {
 
 			spin_unlock(&m->lock);
 			FUSE_KLOG(cc_from_maps(m->maps)->fc, LOG_INFO, "map " MAP_FMT " unexpectedly converted to hole", MAP_ARGS(m));
-			map_truncate_tail(&di->mapping, end);
-			ireq_complete(ireq);
-			return;
+			goto truncate_tail;
 		}
 
 		if (m->state & PCS_MAP_RESOLVING) {
 			list_add_tail(&ireq->list, &m->queue);
 			spin_unlock(&m->lock);
+			pcs_map_put(m);
 			return;
 		}
 
 		if (!(m->state & (PCS_MAP_ERROR|PCS_MAP_NEW))) {
 			if (map_version_compare(&m->version, &ireq->truncreq.version) > 0) {
 				spin_unlock(&m->lock);
-				map_truncate_tail(&di->mapping, end);
-				ireq_complete(ireq);
-				return;
+				goto truncate_tail;
 			}
 
 			FUSE_KTRACE(ireq->cc->fc, "map " MAP_FMT " is not updated yet", MAP_ARGS(m));
@@ -2453,6 +2442,14 @@ void process_ireq_truncate(struct pcs_int_request *ireq)
 		spin_unlock(&m->lock);
 	}
 	pcs_map_queue_resolve(m, ireq, 1);
+	pcs_map_put(m);
+	return;
+
+truncate_tail:
+       map_truncate_tail(&di->mapping, end);
+       ireq_complete(ireq);
+       pcs_map_put(m);
+       return;
 }
 
 
