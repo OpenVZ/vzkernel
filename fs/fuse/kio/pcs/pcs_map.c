@@ -2494,6 +2494,7 @@ noinline void pcs_mapping_truncate(struct pcs_int_request *ireq, u64 old_size)
 	if (m && map_chunk_end(m) == offset) {
 		map_truncate_tail(&di->mapping, offset);
 		ireq_complete(ireq);
+		pcs_map_put(m);
 		return;
 	}
 
