@@ -1192,6 +1192,9 @@ static void pcs_map_queue_resolve(struct pcs_map_entry * m, struct pcs_int_reque
 	/* This should not happen unless aio_dio/fsync vs truncate race */
 	if (m->state & PCS_MAP_DEAD) {
 		spin_unlock(&m->lock);
+
+		/* If this happens, it's assumed this is a bug that needs to be fixed */
+		WARN_ON_ONCE(1);
 		list_add(&ireq->list, &l);
 		pcs_ireq_queue_fail(&l, PCS_ERR_NET_ABORT);
 		return;
@@ -2289,12 +2292,13 @@ void map_submit(struct pcs_map_entry * m, struct pcs_int_request *ireq)
 
 	do {
 		struct pcs_cs_list *csl = NULL;
+		u64 map_start, map_end;
 
 		spin_lock(&m->lock);
 		if (ireq->type == PCS_IREQ_IOCHUNK && !(ireq->flags & IREQ_F_MAPPED))
 			ireq->iochunk.hbuf.map_version = m->version;
 
-		if (!(m->state & (1 << direction))) {
+		if (!(m->state & (1 << direction)) || m->state & PCS_MAP_DEAD) {
 			spin_unlock(&m->lock);
 			pcs_map_queue_resolve(m, ireq, direction);
 			return;
@@ -2302,18 +2306,21 @@ void map_submit(struct pcs_map_entry * m, struct pcs_int_request *ireq)
 		csl = m->cs_list;
 		if (csl)
 			cslist_get(csl);
+
+		map_start = map_chunk_start(m);
+		map_end = map_chunk_end(m);
 		spin_unlock(&m->lock);
 
 		if (ireq->type != PCS_IREQ_FLUSH && !(ireq->flags & IREQ_F_MAPPED)) {
 			u64 pos = ireq->iochunk.chunk + ireq->iochunk.offset;
-			u64 len = map_chunk_end(m) - pos;
+			u64 len = map_end - pos;
 
 			/*
 			 * For non variable chunks all alligment should be done
 			 * inside pcs_cc_process_ireq_ioreq();
 			 */
-			BUG_ON(pos < map_chunk_start(m));
-			BUG_ON(ireq->iochunk.chunk != map_chunk_start(m));
+			BUG_ON(pos < map_start);
+			BUG_ON(ireq->iochunk.chunk != map_start);
 			BUG_ON(ireq->iochunk.offset != pos - ireq->iochunk.chunk);
 			if (ireq->iochunk.size > len) {
 				if (ireq->iochunk.cmd == PCS_REQ_T_FIEMAP) {
@@ -2328,7 +2335,7 @@ void map_submit(struct pcs_map_entry * m, struct pcs_int_request *ireq)
 						pcs_map_put(ireq->iochunk.map);
 						ireq->iochunk.map = NULL;
 					}
-					ireq->iochunk.chunk = map_chunk_end(m);
+					ireq->iochunk.chunk = map_end;
 					ireq->iochunk.offset = 0;
 					pcs_cc_submit(ireq->dentry->cluster, ireq);
 					ireq = sreq;
