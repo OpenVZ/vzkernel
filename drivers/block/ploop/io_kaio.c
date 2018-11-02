@@ -312,7 +312,7 @@ static int preprocess_discard_req(struct file *file, struct ploop_request *preq,
 						off, off_align - off))
 			return -1;
 
-		size -= (off_align - off);
+		size = size < (off_align - off) ? 0 : size - (off_align - off);
 		off = off_align;
 	}
 
