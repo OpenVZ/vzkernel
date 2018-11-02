@@ -290,7 +290,11 @@ static void preq_set_sync_bit(struct ploop_request * preq)
 
 static struct rb_root *req_entry_tree(struct ploop_device *plo, unsigned rw)
 {
-	return plo->entry_tree + !!(rw & WRITE);
+	if (rw & REQ_DISCARD)
+		return plo->entry_tree + 2;
+	else if (rw & REQ_WRITE)
+		return plo->entry_tree + 1;
+	return plo->entry_tree + 0;
 }
 
 static void overlap_forward(struct ploop_device * plo,
@@ -5336,7 +5340,7 @@ static struct ploop_device *__ploop_dev_alloc(int index)
 	plo->freeze_timer.function = freeze_timeout;
 	plo->freeze_timer.data = (unsigned long)plo;
 	INIT_LIST_HEAD(&plo->entry_queue);
-	plo->entry_tree[0] = plo->entry_tree[1] = RB_ROOT;
+	plo->entry_tree[0] = plo->entry_tree[1] = plo->entry_tree[2] = RB_ROOT;
 	plo->lockout_tree = RB_ROOT;
 	plo->lockout_pb_tree = RB_ROOT;
 	INIT_LIST_HEAD(&plo->ready_queue);
