@@ -288,6 +288,11 @@ static void preq_set_sync_bit(struct ploop_request * preq)
 	}
 }
 
+static struct rb_root *req_entry_tree(struct ploop_device *plo, unsigned rw)
+{
+	return plo->entry_tree + !!(rw & WRITE);
+}
+
 static void overlap_forward(struct ploop_device * plo,
 			    struct ploop_request * preq,
 			    struct ploop_request * preq1,
@@ -303,7 +308,7 @@ static void overlap_forward(struct ploop_device * plo,
 		if (test_bit(PLOOP_REQ_SYNC, &preq1->state))
 			preq_set_sync_bit(preq);
 		merge_rw_flags_to_req(preq1->req_rw, preq);
-		rb_erase(&preq1->lockout_link, &plo->entry_tree[preq1->req_rw & WRITE]);
+		rb_erase(&preq1->lockout_link, req_entry_tree(plo, preq1->req_rw));
 		preq_unlink(preq1, drop_list);
 		plo->st.coal_mforw++;
 	}
@@ -312,7 +317,7 @@ static void overlap_forward(struct ploop_device * plo,
 		preq1 = rb_entry(n, struct ploop_request, lockout_link);
 		if (preq->req_sector + preq->req_size <= preq1->req_sector)
 			break;
-		rb_erase(n, &plo->entry_tree[preq->req_rw & WRITE]);
+		rb_erase(n, req_entry_tree(plo, preq->req_rw));
 		__clear_bit(PLOOP_REQ_SORTED, &preq1->state);
 		plo->st.coal_oforw++;
 	}
@@ -334,7 +339,7 @@ static void overlap_backward(struct ploop_device * plo,
 		if (test_bit(PLOOP_REQ_SYNC, &preq1->state))
 			preq_set_sync_bit(preq);
 		merge_rw_flags_to_req(preq1->req_rw, preq);
-		rb_erase(&preq1->lockout_link, &plo->entry_tree[preq->req_rw & WRITE]);
+		rb_erase(&preq1->lockout_link, req_entry_tree(plo, preq->req_rw));
 		preq_unlink(preq1, drop_list);
 		plo->st.coal_mback++;
 	}
@@ -343,7 +348,7 @@ static void overlap_backward(struct ploop_device * plo,
 		preq1 = rb_entry(n, struct ploop_request, lockout_link);
 		if (preq1->req_sector + preq1->req_size <= preq->req_sector)
 			break;
-		rb_erase(n, &plo->entry_tree[preq->req_rw & WRITE]);
+		rb_erase(n, req_entry_tree(plo, preq->req_rw));
 		__clear_bit(PLOOP_REQ_SORTED, &preq1->state);
 		plo->st.coal_oback++;
 	}
@@ -437,7 +442,7 @@ insert_entry_tree(struct ploop_device * plo, struct ploop_request * preq0,
 	struct ploop_request * clash;
 	struct rb_node * n;
 
-	clash = tree_insert(&plo->entry_tree[preq0->req_rw & WRITE], preq0);
+	clash = tree_insert(req_entry_tree(plo, preq0->req_rw), preq0);
 	if (!clash)
 		return 0;
 
@@ -979,10 +984,10 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 	/* Try to merge before checking for fastpath. Maybe, this
 	 * is not wise.
 	 */
-	if (!RB_EMPTY_ROOT(&plo->entry_tree[bio->bi_rw & WRITE]) &&
+	if (!RB_EMPTY_ROOT(req_entry_tree(plo, bio->bi_rw)) &&
 	    bio->bi_size) {
 		struct ploop_request * preq;
-		struct rb_node * n = plo->entry_tree[bio->bi_rw & WRITE].rb_node;
+		struct rb_node * n = req_entry_tree(plo, bio->bi_rw)->rb_node;
 		u32 bio_cluster = bio->bi_sector >> plo->cluster_log;
 
 		while (n) {
@@ -3106,7 +3111,7 @@ static int ploop_thread(void * data)
 			}
 
 			if (test_bit(PLOOP_REQ_SORTED, &preq->state)) {
-				rb_erase(&preq->lockout_link, &plo->entry_tree[preq->req_rw & WRITE]);
+				rb_erase(&preq->lockout_link, req_entry_tree(plo, preq->req_rw));
 				__clear_bit(PLOOP_REQ_SORTED, &preq->state);
 			}
 			preq->eng_state = PLOOP_E_ENTRY;
