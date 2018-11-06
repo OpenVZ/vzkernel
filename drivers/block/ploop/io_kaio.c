@@ -858,7 +858,12 @@ kaio_sync_write(struct ploop_io * io, struct page * page, unsigned int len,
 
 static int kaio_alloc_sync(struct ploop_io * io, loff_t pos, loff_t len)
 {
-	return __kaio_truncate(io, io->files.file, pos + len);
+	int err = __kaio_truncate(io, io->files.file, pos + len);
+
+	if (!err)
+		io->alloc_head = (pos + len) >> (io->plo->cluster_log + 9);
+
+	return err;
 }
 
 static int kaio_open(struct ploop_io * io)
