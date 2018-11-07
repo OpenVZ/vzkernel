@@ -2,6 +2,7 @@
 #define _ASM_X86_STRING_64_H
 
 #ifdef __KERNEL__
+#include <linux/jump_label.h>
 
 /* Written 2002 by Andi Kleen */
 
@@ -62,6 +63,40 @@ size_t strlen(const char *s);
 char *strcpy(char *dest, const char *src);
 char *strcat(char *dest, const char *src);
 int strcmp(const char *cs, const char *ct);
+
+#define __HAVE_ARCH_MEMCPY_MCSAFE 1
+extern struct static_key mcsafe_key;
+__must_check int memcpy_mcsafe_unrolled(void *dst, const void *src, size_t cnt);
+/**
+ * memcpy_mcsafe - copy memory with indication if a machine check happened
+ *
+ * @dst:	destination address
+ * @src:	source address
+ * @cnt:	number of bytes to copy
+ *
+ * Low level memory copy function that catches machine checks
+ * We only call into the "safe" function on systems that can
+ * actually do machine check recovery. Everyone else can just
+ * use memcpy().
+ *
+ * Return 0 for success, -EFAULT for fail
+ */
+static __always_inline __must_check int
+memcpy_mcsafe(void *dst, const void *src, size_t cnt)
+{
+#ifdef CONFIG_X86_MCE
+	if (static_key_false(&mcsafe_key))
+		return memcpy_mcsafe_unrolled(dst, src, cnt);
+	else
+#endif
+		memcpy(dst, src, cnt);
+	return 0;
+}
+
+#ifdef CONFIG_ARCH_HAS_UACCESS_FLUSHCACHE
+#define __HAVE_ARCH_MEMCPY_FLUSHCACHE 1
+void memcpy_flushcache(void *dst, const void *src, size_t cnt);
+#endif
 
 #endif /* __KERNEL__ */
 

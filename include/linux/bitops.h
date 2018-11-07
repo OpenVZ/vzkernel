@@ -4,11 +4,25 @@
 
 #ifdef	__KERNEL__
 #define BIT(nr)			(1UL << (nr))
+#define BIT_ULL(nr)		(1ULL << (nr))
 #define BIT_MASK(nr)		(1UL << ((nr) % BITS_PER_LONG))
 #define BIT_WORD(nr)		((nr) / BITS_PER_LONG)
+#define BIT_ULL_MASK(nr)	(1ULL << ((nr) % BITS_PER_LONG_LONG))
+#define BIT_ULL_WORD(nr)	((nr) / BITS_PER_LONG_LONG)
 #define BITS_PER_BYTE		8
 #define BITS_TO_LONGS(nr)	DIV_ROUND_UP(nr, BITS_PER_BYTE * sizeof(long))
 #endif
+
+/*
+ * Create a contiguous bitmask starting at bit position @l and ending at
+ * position @h. For example
+ * GENMASK_ULL(39, 21) gives us the 64bit vector 0x000000ffffe00000.
+ */
+#define GENMASK(h, l) \
+	(((~0UL) << (l)) & (~0UL >> (BITS_PER_LONG - 1 - (h))))
+
+#define GENMASK_ULL(h, l) \
+	(((~0ULL) << (l)) & (~0ULL >> (BITS_PER_LONG_LONG - 1 - (h))))
 
 extern unsigned int __sw_hweight8(unsigned int w);
 extern unsigned int __sw_hweight16(unsigned int w);
@@ -20,6 +34,26 @@ extern unsigned long __sw_hweight64(__u64 w);
  * scope
  */
 #include <asm/bitops.h>
+
+/*
+ * Provide __deprecated wrappers for the new interface, avoid flag day changes.
+ * We need the ugly external functions to break header recursion hell.
+ */
+#ifndef smp_mb__before_clear_bit
+static inline void __deprecated smp_mb__before_clear_bit(void)
+{
+	extern void __smp_mb__before_atomic(void);
+	__smp_mb__before_atomic();
+}
+#endif
+
+#ifndef smp_mb__after_clear_bit
+static inline void __deprecated smp_mb__after_clear_bit(void)
+{
+	extern void __smp_mb__after_atomic(void);
+	__smp_mb__after_atomic();
+}
+#endif
 
 #define for_each_set_bit(bit, addr, size) \
 	for ((bit) = find_first_bit((addr), (size));		\
@@ -157,6 +191,17 @@ static inline __s32 sign_extend32(__u32 value, int index)
 	return (__s32)(value << shift) >> shift;
 }
 
+/**
+ * sign_extend64 - sign extend a 64-bit value using specified bit as sign-bit
+ * @value: value to sign extend
+ * @index: 0 based bit index (0<=index<64) to sign bit
+ */
+static inline __s64 sign_extend64(__u64 value, int index)
+{
+	__u8 shift = 63 - index;
+	return (__s64)(value << shift) >> shift;
+}
+
 static inline unsigned fls_long(unsigned long l)
 {
 	if (sizeof(l) == 4)
@@ -183,7 +228,64 @@ static inline unsigned long __ffs64(u64 word)
 	return __ffs((unsigned long)word);
 }
 
+/*
+ * clear_bit32 - Clear a bit in memory for u32 array
+ * @nr: Bit to clear
+ * @addr: u32 * address of bitmap
+ *
+ * Same as clear_bit, but avoids needing casts for u32 arrays.
+ */
+
+static __always_inline void clear_bit32(long nr, volatile u32 *addr)
+{
+	clear_bit(nr, (volatile unsigned long *)addr);
+}
+
+/*
+ * set_bit32 - Set a bit in memory for u32 array
+ * @nr: Bit to clear
+ * @addr: u32 * address of bitmap
+ *
+ * Same as set_bit, but avoids needing casts for u32 arrays.
+ */
+
+static __always_inline void set_bit32(long nr, volatile u32 *addr)
+{
+	set_bit(nr, (volatile unsigned long *)addr);
+}
+
 #ifdef __KERNEL__
+
+#ifndef set_mask_bits
+#define set_mask_bits(ptr, _mask, _bits)	\
+({								\
+	const typeof(*ptr) mask = (_mask), bits = (_bits);	\
+	typeof(*ptr) old, new;					\
+								\
+	do {							\
+		old = ACCESS_ONCE(*ptr);			\
+		new = (old & ~mask) | bits;			\
+	} while (cmpxchg(ptr, old, new) != old);		\
+								\
+	new;							\
+})
+#endif
+
+#ifndef bit_clear_unless
+#define bit_clear_unless(ptr, _clear, _test)	\
+({								\
+	const typeof(*ptr) clear = (_clear), test = (_test);	\
+	typeof(*ptr) old, new;					\
+								\
+	do {							\
+		old = ACCESS_ONCE(*ptr);			\
+		new = old & ~clear;				\
+	} while (!(old & test) &&				\
+		 cmpxchg(ptr, old, new) != old);		\
+								\
+	!(old & test);						\
+})
+#endif
 
 #ifndef find_last_bit
 /**

@@ -161,6 +161,7 @@ struct disk_part_tbl {
 };
 
 struct disk_events;
+struct badblocks;
 
 struct gendisk {
 	/* major, first_minor and minors are input parameters only,
@@ -200,6 +201,7 @@ struct gendisk {
 	struct blk_integrity *integrity;
 #endif
 	int node_id;
+	RH_KABI_EXTEND(struct badblocks *bb)
 };
 
 static inline struct gendisk *part_to_disk(struct hd_struct *part)
@@ -417,6 +419,7 @@ extern void part_round_stats(int cpu, struct hd_struct *part);
 
 /* block/genhd.c */
 extern void add_disk(struct gendisk *disk);
+extern void add_disk_no_queue_reg(struct gendisk *disk);
 extern void del_gendisk(struct gendisk *gp);
 extern struct gendisk *get_gendisk(dev_t dev, int *partno);
 extern struct block_device *bdget_disk(struct gendisk *disk, int partno);

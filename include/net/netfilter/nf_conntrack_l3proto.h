@@ -14,6 +14,7 @@
 #include <linux/netlink.h>
 #include <net/netlink.h>
 #include <linux/seq_file.h>
+#include <linux/nospec.h>
 #include <net/netfilter/nf_conntrack.h>
 
 struct nf_conntrack_l3proto {
@@ -77,17 +78,17 @@ struct nf_conntrack_l3proto {
 extern struct nf_conntrack_l3proto __rcu *nf_ct_l3protos[AF_MAX];
 
 /* Protocol pernet registration. */
-extern int nf_ct_l3proto_pernet_register(struct net *net,
-					 struct nf_conntrack_l3proto *proto);
-extern void nf_ct_l3proto_pernet_unregister(struct net *net,
-					    struct nf_conntrack_l3proto *proto);
+int nf_ct_l3proto_pernet_register(struct net *net,
+				  struct nf_conntrack_l3proto *proto);
+void nf_ct_l3proto_pernet_unregister(struct net *net,
+				     struct nf_conntrack_l3proto *proto);
 
 /* Protocol global registration. */
-extern int nf_ct_l3proto_register(struct nf_conntrack_l3proto *proto);
-extern void nf_ct_l3proto_unregister(struct nf_conntrack_l3proto *proto);
+int nf_ct_l3proto_register(struct nf_conntrack_l3proto *proto);
+void nf_ct_l3proto_unregister(struct nf_conntrack_l3proto *proto);
 
-extern struct nf_conntrack_l3proto *nf_ct_l3proto_find_get(u_int16_t l3proto);
-extern void nf_ct_l3proto_put(struct nf_conntrack_l3proto *p);
+struct nf_conntrack_l3proto *nf_ct_l3proto_find_get(u_int16_t l3proto);
+void nf_ct_l3proto_put(struct nf_conntrack_l3proto *p);
 
 /* Existing built-in protocols */
 extern struct nf_conntrack_l3proto nf_conntrack_l3proto_generic;
@@ -97,6 +98,8 @@ __nf_ct_l3proto_find(u_int16_t l3proto)
 {
 	if (unlikely(l3proto >= AF_MAX))
 		return &nf_conntrack_l3proto_generic;
+	l3proto = array_index_nospec(l3proto, AF_MAX);
+
 	return rcu_dereference(nf_ct_l3protos[l3proto]);
 }
 

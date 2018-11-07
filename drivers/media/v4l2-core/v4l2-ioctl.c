@@ -17,6 +17,7 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/version.h>
+#include <linux/nospec.h>
 
 #include <linux/videodev2.h>
 
@@ -162,6 +163,12 @@ static const char *v4l2_memory_names[] = {
 
 #define prt_names(a, arr) (((unsigned)(a)) < ARRAY_SIZE(arr) ? arr[a] : "unknown")
 
+#define prt_names_nospec(a, arr)					\
+({									\
+	typeof(a) _idx = array_index_nospec(a, ARRAY_SIZE(arr));	\
+	(((unsigned)(a)) < ARRAY_SIZE(arr) ? arr[_idx] : "unknown");	\
+})
+
 /* ------------------------------------------------------------------ */
 /* debug help functions                                               */
 
@@ -227,7 +234,7 @@ static void v4l_print_fmtdesc(const void *arg, bool write_only)
 	const struct v4l2_fmtdesc *p = arg;
 
 	pr_cont("index=%u, type=%s, flags=0x%x, pixelformat=%c%c%c%c, description='%.*s'\n",
-		p->index, prt_names(p->type, v4l2_type_names),
+		p->index, prt_names_nospec(p->type, v4l2_type_names),
 		p->flags, (p->pixelformat & 0xff),
 		(p->pixelformat >>  8) & 0xff,
 		(p->pixelformat >> 16) & 0xff,
@@ -245,7 +252,7 @@ static void v4l_print_format(const void *arg, bool write_only)
 	const struct v4l2_window *win;
 	unsigned i;
 
-	pr_cont("type=%s", prt_names(p->type, v4l2_type_names));
+	pr_cont("type=%s", prt_names_nospec(p->type, v4l2_type_names));
 	switch (p->type) {
 	case V4L2_BUF_TYPE_VIDEO_CAPTURE:
 	case V4L2_BUF_TYPE_VIDEO_OUTPUT:
@@ -258,7 +265,7 @@ static void v4l_print_format(const void *arg, bool write_only)
 			(pix->pixelformat >>  8) & 0xff,
 			(pix->pixelformat >> 16) & 0xff,
 			(pix->pixelformat >> 24) & 0xff,
-			prt_names(pix->field, v4l2_field_names),
+			prt_names_nospec(pix->field, v4l2_field_names),
 			pix->bytesperline, pix->sizeimage,
 			pix->colorspace);
 		break;
@@ -273,7 +280,7 @@ static void v4l_print_format(const void *arg, bool write_only)
 			(mp->pixelformat >>  8) & 0xff,
 			(mp->pixelformat >> 16) & 0xff,
 			(mp->pixelformat >> 24) & 0xff,
-			prt_names(mp->field, v4l2_field_names),
+			prt_names_nospec(mp->field, v4l2_field_names),
 			mp->colorspace, mp->num_planes);
 		for (i = 0; i < mp->num_planes; i++)
 			printk(KERN_DEBUG "plane %u: bytesperline=%u sizeimage=%u\n", i,
@@ -288,7 +295,7 @@ static void v4l_print_format(const void *arg, bool write_only)
 		 * pointer. */
 		pr_cont(", wxh=%dx%d, x,y=%d,%d, field=%s, chromakey=0x%08x, clipcount=%u, clips=%p, bitmap=%p, global_alpha=0x%02x\n",
 			win->w.width, win->w.height, win->w.left, win->w.top,
-			prt_names(win->field, v4l2_field_names),
+			prt_names_nospec(win->field, v4l2_field_names),
 			win->chromakey, win->clipcount, win->clips,
 			win->bitmap, win->global_alpha);
 		break;
@@ -338,7 +345,7 @@ static void v4l_print_framebuffer(const void *arg, bool write_only)
 
 static void v4l_print_buftype(const void *arg, bool write_only)
 {
-	pr_cont("type=%s\n", prt_names(*(u32 *)arg, v4l2_type_names));
+	pr_cont("type=%s\n", prt_names_nospec(*(u32 *)arg, v4l2_type_names));
 }
 
 static void v4l_print_modulator(const void *arg, bool write_only)
@@ -411,8 +418,8 @@ static void v4l_print_requestbuffers(const void *arg, bool write_only)
 
 	pr_cont("count=%d, type=%s, memory=%s\n",
 		p->count,
-		prt_names(p->type, v4l2_type_names),
-		prt_names(p->memory, v4l2_memory_names));
+		prt_names_nospec(p->type, v4l2_type_names),
+		prt_names_nospec(p->memory, v4l2_memory_names));
 }
 
 static void v4l_print_buffer(const void *arg, bool write_only)
@@ -429,9 +436,9 @@ static void v4l_print_buffer(const void *arg, bool write_only)
 			(int)(p->timestamp.tv_sec % 60),
 			(long)p->timestamp.tv_usec,
 			p->index,
-			prt_names(p->type, v4l2_type_names),
-			p->flags, prt_names(p->field, v4l2_field_names),
-			p->sequence, prt_names(p->memory, v4l2_memory_names));
+			prt_names_nospec(p->type, v4l2_type_names),
+			p->flags, prt_names_nospec(p->field, v4l2_field_names),
+			p->sequence, prt_names_nospec(p->memory, v4l2_memory_names));
 
 	if (V4L2_TYPE_IS_MULTIPLANAR(p->type) && p->m.planes) {
 		pr_cont("\n");
@@ -459,7 +466,7 @@ static void v4l_print_exportbuffer(const void *arg, bool write_only)
 	const struct v4l2_exportbuffer *p = arg;
 
 	pr_cont("fd=%d, type=%s, index=%u, plane=%u, flags=0x%08x\n",
-		p->fd, prt_names(p->type, v4l2_type_names),
+		p->fd, prt_names_nospec(p->type, v4l2_type_names),
 		p->index, p->plane, p->flags);
 }
 
@@ -469,7 +476,7 @@ static void v4l_print_create_buffers(const void *arg, bool write_only)
 
 	pr_cont("index=%d, count=%d, memory=%s, ",
 			p->index, p->count,
-			prt_names(p->memory, v4l2_memory_names));
+			prt_names_nospec(p->memory, v4l2_memory_names));
 	v4l_print_format(&p->format, write_only);
 }
 
@@ -477,7 +484,7 @@ static void v4l_print_streamparm(const void *arg, bool write_only)
 {
 	const struct v4l2_streamparm *p = arg;
 
-	pr_cont("type=%s", prt_names(p->type, v4l2_type_names));
+	pr_cont("type=%s", prt_names_nospec(p->type, v4l2_type_names));
 
 	if (p->type == V4L2_BUF_TYPE_VIDEO_CAPTURE ||
 	    p->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
@@ -552,7 +559,7 @@ static void v4l_print_cropcap(const void *arg, bool write_only)
 	pr_cont("type=%s, bounds wxh=%dx%d, x,y=%d,%d, "
 		"defrect wxh=%dx%d, x,y=%d,%d\n, "
 		"pixelaspect %d/%d\n",
-		prt_names(p->type, v4l2_type_names),
+		prt_names_nospec(p->type, v4l2_type_names),
 		p->bounds.width, p->bounds.height,
 		p->bounds.left, p->bounds.top,
 		p->defrect.width, p->defrect.height,
@@ -565,7 +572,7 @@ static void v4l_print_crop(const void *arg, bool write_only)
 	const struct v4l2_crop *p = arg;
 
 	pr_cont("type=%s, wxh=%dx%d, x,y=%d,%d\n",
-		prt_names(p->type, v4l2_type_names),
+		prt_names_nospec(p->type, v4l2_type_names),
 		p->c.width, p->c.height,
 		p->c.left, p->c.top);
 }
@@ -575,7 +582,7 @@ static void v4l_print_selection(const void *arg, bool write_only)
 	const struct v4l2_selection *p = arg;
 
 	pr_cont("type=%s, target=%d, flags=0x%x, wxh=%dx%d, x,y=%d,%d\n",
-		prt_names(p->type, v4l2_type_names),
+		prt_names_nospec(p->type, v4l2_type_names),
 		p->target, p->flags,
 		p->r.width, p->r.height, p->r.left, p->r.top);
 }
@@ -792,7 +799,7 @@ static void v4l_print_event(const void *arg, bool write_only)
 	switch (p->type) {
 	case V4L2_EVENT_VSYNC:
 		printk(KERN_DEBUG "field=%s\n",
-			prt_names(p->u.vsync.field, v4l2_field_names));
+			prt_names_nospec(p->u.vsync.field, v4l2_field_names));
 		break;
 	case V4L2_EVENT_CTRL:
 		c = &p->u.ctrl;
@@ -828,7 +835,7 @@ static void v4l_print_sliced_vbi_cap(const void *arg, bool write_only)
 	int i;
 
 	pr_cont("type=%s, service_set=0x%08x\n",
-			prt_names(p->type, v4l2_type_names), p->service_set);
+			prt_names_nospec(p->type, v4l2_type_names), p->service_set);
 	for (i = 0; i < 24; i++)
 		printk(KERN_DEBUG "line[%02u]=0x%04x, 0x%04x\n", i,
 				p->service_lines[0][i],

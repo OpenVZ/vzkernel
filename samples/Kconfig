@@ -63,4 +63,10 @@ config SAMPLE_RPMSG_CLIENT
 	  to communicate with an AMP-configured remote processor over
 	  the rpmsg bus.
 
+config SAMPLE_LIVEPATCH
+	tristate "Build live patching samples -- loadable modules only"
+	depends on LIVEPATCH && m
+	help
+	  Build sample live patch demonstrations.
+
 endif # SAMPLES

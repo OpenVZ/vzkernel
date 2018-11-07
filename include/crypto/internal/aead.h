@@ -25,6 +25,12 @@ struct crypto_aead_spawn {
 
 extern const struct crypto_type crypto_nivaead_type;
 
+static inline struct aead_request *aead_request_cast(
+	struct crypto_async_request *req)
+{
+	return container_of(req, struct aead_request, base);
+}
+
 static inline void crypto_set_aead_spawn(
 	struct crypto_aead_spawn *spawn, struct crypto_instance *inst)
 {
@@ -76,6 +82,12 @@ static inline void aead_givcrypt_complete(struct aead_givcrypt_request *req,
 					  int err)
 {
 	aead_request_complete(&req->areq, err);
+}
+
+static inline void crypto_aead_set_reqsize(struct crypto_aead *aead,
+					   unsigned int reqsize)
+{
+	crypto_aead_crt(aead)->reqsize = reqsize;
 }
 
 #endif	/* _CRYPTO_INTERNAL_AEAD_H */

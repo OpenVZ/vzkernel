@@ -23,6 +23,7 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/hid-roccat.h>
+#include <linux/nospec.h>
 #include "hid-ids.h"
 #include "hid-roccat-common.h"
 #include "hid-roccat-pyra.h"
@@ -35,8 +36,10 @@ static struct class *pyra_class;
 static void profile_activated(struct pyra_device *pyra,
 		unsigned int new_profile)
 {
+	int idx;
 	pyra->actual_profile = new_profile;
-	pyra->actual_cpi = pyra->profile_settings[pyra->actual_profile].y_cpi;
+	idx = array_index_nospec(pyra->actual_profile, 5);
+	pyra->actual_cpi = pyra->profile_settings[idx].y_cpi;
 }
 
 static int pyra_send_control(struct usb_device *usb_dev, int value,

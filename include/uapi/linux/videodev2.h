@@ -103,6 +103,7 @@ enum v4l2_field {
 	V4L2_FIELD_INTERLACED_BT = 9, /* both fields interlaced, top field
 					 first and the bottom field is
 					 transmitted first */
+	V4L2_FIELD_MAX = V4L2_FIELD_INTERLACED_BT,
 };
 #define V4L2_FIELD_HAS_TOP(field)	\
 	((field) == V4L2_FIELD_TOP 	||\

@@ -14,15 +14,13 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 // #define	DEBUG			// error path messages, extra info
 // #define	VERBOSE			// more; success messages
 
 #include <linux/module.h>
-#include <linux/init.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/ethtool.h>
@@ -31,6 +29,7 @@
 #include <linux/usb.h>
 #include <linux/usb/usbnet.h>
 #include <linux/gfp.h>
+#include <linux/nospec.h>
 
 
 /*
@@ -86,6 +85,10 @@ static int genelink_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 	u32			size;
 	u32			count;
 
+	/* This check is no longer done by usbnet */
+	if (skb->len < dev->net->hard_header_len)
+		return 0;
+
 	header = (struct gl_header *) skb->data;
 
 	// get the packet count of the received skb
@@ -113,6 +116,7 @@ static int genelink_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 				   size);
 			return 0;
 		}
+		size = array_index_nospec(size, GL_MAX_PACKET_LEN + 1);
 
 		// allocate the skb for the individual packet
 		gl_skb = alloc_skb(size, GFP_ATOMIC);

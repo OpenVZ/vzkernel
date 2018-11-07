@@ -76,6 +76,7 @@
 #include <linux/firmware.h>
 #include <linux/device.h>
 #include <linux/slab.h>
+#include <linux/nospec.h>
 
 #include <linux/io.h>
 #include <linux/uaccess.h>
@@ -1496,7 +1497,7 @@ static void cy_shutdown(struct cyclades_port *info, struct tty_struct *tty)
 static int cy_open(struct tty_struct *tty, struct file *filp)
 {
 	struct cyclades_port *info;
-	unsigned int i, line = tty->index;
+	unsigned int i, line = tty->index, idx;
 	int retval;
 
 	for (i = 0; i < NR_CARDS; i++)
@@ -1505,7 +1506,11 @@ static int cy_open(struct tty_struct *tty, struct file *filp)
 			break;
 	if (i >= NR_CARDS)
 		return -ENODEV;
-	info = &cy_card[i].ports[line - cy_card[i].first_line];
+	i = array_index_nospec(i, NR_CARDS);
+
+	idx = array_index_nospec(line - cy_card[i].first_line,
+				 cy_card[i].nports);
+	info = &cy_card[i].ports[idx];
 	if (info->line < 0)
 		return -ENODEV;
 
@@ -1575,15 +1580,6 @@ static int cy_open(struct tty_struct *tty, struct file *filp)
 	printk(KERN_DEBUG "cyc:cy_open (%d): incrementing count to %d\n",
 		current->pid, info->port.count);
 #endif
-
-	/*
-	 * If the port is the middle of closing, bail out now
-	 */
-	if (tty_hung_up_p(filp) || (info->port.flags & ASYNC_CLOSING)) {
-		wait_event_interruptible_tty(tty, info->port.close_wait,
-				!(info->port.flags & ASYNC_CLOSING));
-		return (info->port.flags & ASYNC_HUP_NOTIFY) ? -EAGAIN: -ERESTARTSYS;
-	}
 
 	/*
 	 * Start up serial port

@@ -10,7 +10,6 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/kconfig.h>
 #include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/slab.h>
@@ -19,6 +18,7 @@
 #include <linux/usb.h>
 #include <linux/mutex.h>
 #include <linux/workqueue.h>
+#include <linux/nospec.h>
 
 #include <linux/videodev2.h>
 #include <linux/v4l2-dv-timings.h>
@@ -752,6 +752,7 @@ static int vidioc_enum_input(struct file *file, void *_fh, struct v4l2_input *i)
 	n = i->index;
 	if (n >= HDPVR_VIDEO_INPUTS)
 		return -EINVAL;
+	n = array_index_nospec(n, HDPVR_VIDEO_INPUTS);
 
 	i->type = V4L2_INPUT_TYPE_CAMERA;
 

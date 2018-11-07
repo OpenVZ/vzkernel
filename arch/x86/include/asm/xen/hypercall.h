@@ -38,11 +38,13 @@
 #include <linux/errno.h>
 #include <linux/string.h>
 #include <linux/types.h>
+#include <linux/nospec.h>
 
 #include <trace/events/xen.h>
 
 #include <asm/page.h>
 #include <asm/pgtable.h>
+#include <asm/nospec-branch.h>
 
 #include <xen/interface/xen.h>
 #include <xen/interface/sched.h>
@@ -110,9 +112,10 @@ extern struct { char _entry[32]; } hypercall_page[];
 	register unsigned long __arg2 asm(__HYPERCALL_ARG2REG) = __arg2; \
 	register unsigned long __arg3 asm(__HYPERCALL_ARG3REG) = __arg3; \
 	register unsigned long __arg4 asm(__HYPERCALL_ARG4REG) = __arg4; \
-	register unsigned long __arg5 asm(__HYPERCALL_ARG5REG) = __arg5;
+	register unsigned long __arg5 asm(__HYPERCALL_ARG5REG) = __arg5; \
+	register void *__sp asm(_ASM_SP);
 
-#define __HYPERCALL_0PARAM	"=r" (__res)
+#define __HYPERCALL_0PARAM	"=r" (__res), "+r" (__sp)
 #define __HYPERCALL_1PARAM	__HYPERCALL_0PARAM, "+r" (__arg1)
 #define __HYPERCALL_2PARAM	__HYPERCALL_1PARAM, "+r" (__arg2)
 #define __HYPERCALL_3PARAM	__HYPERCALL_2PARAM, "+r" (__arg3)
@@ -204,6 +207,8 @@ extern struct { char _entry[32]; } hypercall_page[];
 	(type)__res;							\
 })
 
+#define HYPERCALL_ENTRIES (4096/32)
+
 static inline long
 privcmd_call(unsigned call,
 	     unsigned long a1, unsigned long a2,
@@ -213,9 +218,13 @@ privcmd_call(unsigned call,
 	__HYPERCALL_DECLS;
 	__HYPERCALL_5ARG(a1, a2, a3, a4, a5);
 
-	asm volatile("call *%[call]"
+	if (call >= HYPERCALL_ENTRIES)
+		return -EINVAL;
+	call = array_index_nospec(call, HYPERCALL_ENTRIES);
+
+	asm volatile(CALL_NOSPEC
 		     : __HYPERCALL_5PARAM
-		     : [call] "a" (&hypercall_page[call])
+		     : [thunk_target] "a" (&hypercall_page[call])
 		     : __HYPERCALL_CLOBBER5);
 
 	return (long)__res;

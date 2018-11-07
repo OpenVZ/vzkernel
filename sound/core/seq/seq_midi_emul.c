@@ -33,6 +33,7 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/module.h>
+#include <linux/nospec.h>
 #include <sound/core.h>
 #include <sound/seq_kernel.h>
 #include <sound/seq_midi_emul.h>
@@ -87,9 +88,10 @@ snd_midi_process_event(struct snd_midi_op *ops,
 	struct snd_midi_channel *chan;
 	void *drv;
 	int dest_channel = 0;
+	u8 note;
 
 	if (ev == NULL || chanset == NULL) {
-		snd_printd("ev or chanbase NULL (snd_midi_process_event)\n");
+		pr_debug("ALSA: seq_midi_emul: ev or chanbase NULL (snd_midi_process_event)\n");
 		return;
 	}
 	if (chanset->channels == NULL)
@@ -98,7 +100,7 @@ snd_midi_process_event(struct snd_midi_op *ops,
 	if (snd_seq_ev_is_channel_type(ev)) {
 		dest_channel = ev->data.note.channel;
 		if (dest_channel >= chanset->max_channels) {
-			snd_printd("dest channel is %d, max is %d\n",
+			pr_debug("ALSA: seq_midi_emul: dest channel is %d, max is %d\n",
 				   dest_channel, chanset->max_channels);
 			return;
 		}
@@ -124,25 +126,26 @@ snd_midi_process_event(struct snd_midi_op *ops,
 			return;
 	}
 
+	note = array_index_nospec(ev->data.note.note, 128);
 	switch (ev->type) {
 	case SNDRV_SEQ_EVENT_NOTEON:
-		if (chan->note[ev->data.note.note] & SNDRV_MIDI_NOTE_ON) {
+		if (chan->note[note] & SNDRV_MIDI_NOTE_ON) {
 			if (ops->note_off)
-				ops->note_off(drv, ev->data.note.note, 0, chan);
+				ops->note_off(drv, note, 0, chan);
 		}
-		chan->note[ev->data.note.note] = SNDRV_MIDI_NOTE_ON;
+		chan->note[note] = SNDRV_MIDI_NOTE_ON;
 		if (ops->note_on)
-			ops->note_on(drv, ev->data.note.note, ev->data.note.velocity, chan);
+			ops->note_on(drv, note, ev->data.note.velocity, chan);
 		break;
 	case SNDRV_SEQ_EVENT_NOTEOFF:
-		if (! (chan->note[ev->data.note.note] & SNDRV_MIDI_NOTE_ON))
+		if (! (chan->note[note] & SNDRV_MIDI_NOTE_ON))
 			break;
 		if (ops->note_off)
-			note_off(ops, drv, chan, ev->data.note.note, ev->data.note.velocity);
+			note_off(ops, drv, chan, note, ev->data.note.velocity);
 		break;
 	case SNDRV_SEQ_EVENT_KEYPRESS:
 		if (ops->key_press)
-			ops->key_press(drv, ev->data.note.note, ev->data.note.velocity, chan);
+			ops->key_press(drv, note, ev->data.note.velocity, chan);
 		break;
 	case SNDRV_SEQ_EVENT_CONTROLLER:
 		do_control(ops, drv, chanset, chan,
@@ -165,7 +168,9 @@ snd_midi_process_event(struct snd_midi_op *ops,
 		/* Best guess is that this is any of the 14 bit controller values */
 		if (ev->data.control.param < 32) {
 			/* set low part first */
-			chan->control[ev->data.control.param + 32] =
+			unsigned int idx = array_index_nospec(ev->data.control.param + 32,
+							      128);
+			chan->control[idx] =
 				ev->data.control.value & 0x7f;
 			do_control(ops, drv, chanset, chan,
 				   ev->data.control.param,
@@ -232,10 +237,11 @@ snd_midi_process_event(struct snd_midi_op *ops,
 	case SNDRV_SEQ_EVENT_ECHO:
 	not_yet:
 	default:
-		/*snd_printd("Unimplemented event %d\n", ev->type);*/
+		/*pr_debug("ALSA: seq_midi_emul: Unimplemented event %d\n", ev->type);*/
 		break;
 	}
 }
+EXPORT_SYMBOL(snd_midi_process_event);
 
 
 /*
@@ -268,6 +274,10 @@ do_control(struct snd_midi_op *ops, void *drv, struct snd_midi_channel_set *chse
 	   struct snd_midi_channel *chan, int control, int value)
 {
 	int  i;
+
+	if (control >= ARRAY_SIZE(chan->control))
+		return;
+	control = array_index_nospec(control, ARRAY_SIZE(chan->control));
 
 	/* Switches */
 	if ((control >=64 && control <=69) || (control >= 80 && control <= 83)) {
@@ -406,6 +416,7 @@ snd_midi_channel_set_clear(struct snd_midi_channel_set *chset)
 			chan->drum_channel = 0;
 	}
 }
+EXPORT_SYMBOL(snd_midi_channel_set_clear);
 
 /*
  * Process a rpn message.
@@ -698,6 +709,7 @@ struct snd_midi_channel_set *snd_midi_channel_alloc_set(int n)
 	}
 	return chset;
 }
+EXPORT_SYMBOL(snd_midi_channel_alloc_set);
 
 /*
  * Reset the midi controllers on a particular channel to default values.
@@ -721,6 +733,7 @@ void snd_midi_channel_free_set(struct snd_midi_channel_set *chset)
 	kfree(chset->channels);
 	kfree(chset);
 }
+EXPORT_SYMBOL(snd_midi_channel_free_set);
 
 static int __init alsa_seq_midi_emul_init(void)
 {
@@ -733,8 +746,3 @@ static void __exit alsa_seq_midi_emul_exit(void)
 
 module_init(alsa_seq_midi_emul_init)
 module_exit(alsa_seq_midi_emul_exit)
-
-EXPORT_SYMBOL(snd_midi_process_event);
-EXPORT_SYMBOL(snd_midi_channel_set_clear);
-EXPORT_SYMBOL(snd_midi_channel_alloc_set);
-EXPORT_SYMBOL(snd_midi_channel_free_set);

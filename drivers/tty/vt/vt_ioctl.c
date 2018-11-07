@@ -27,6 +27,7 @@
 #include <linux/signal.h>
 #include <linux/suspend.h>
 #include <linux/timex.h>
+#include <linux/nospec.h>
 
 #include <asm/io.h>
 #include <asm/uaccess.h>
@@ -708,10 +709,14 @@ int vt_ioctl(struct tty_struct *tty,
 			ret = vc_allocate(vsa.console);
 			if (ret == 0) {
 				struct vc_data *nvc;
+				unsigned int console;
+
 				/* This is safe providing we don't drop the
 				   console sem between vc_allocate and
 				   finishing referencing nvc */
-				nvc = vc_cons[vsa.console].d;
+				console = array_index_nospec(vsa.console,
+							     MAX_NR_CONSOLES);
+				nvc = vc_cons[console].d;
 				nvc->vt_mode = vsa.mode;
 				nvc->vt_mode.frsig = 0;
 				put_pid(nvc->vt_pid);

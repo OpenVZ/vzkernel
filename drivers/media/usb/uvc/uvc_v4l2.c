@@ -23,6 +23,7 @@
 #include <linux/mm.h>
 #include <linux/wait.h>
 #include <linux/atomic.h>
+#include <linux/nospec.h>
 
 #include <media/v4l2-common.h>
 #include <media/v4l2-ctrls.h>
@@ -720,6 +721,7 @@ static long uvc_v4l2_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 			}
 			pin = iterm->id;
 		} else if (index < selector->bNrInPins) {
+			index = array_index_nospec(index, selector->bNrInPins);
 			pin = selector->baSourceID[index];
 			list_for_each_entry(iterm, &chain->entities, chain) {
 				if (!UVC_ENTITY_IS_ITERM(iterm))
@@ -797,12 +799,13 @@ static long uvc_v4l2_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 		if (fmt->type != stream->type ||
 		    fmt->index >= stream->nformats)
 			return -EINVAL;
+		index = array_index_nospec(fmt->index, stream->nformats);
 
 		memset(fmt, 0, sizeof(*fmt));
 		fmt->index = index;
 		fmt->type = type;
 
-		format = &stream->format[fmt->index];
+		format = &stream->format[index];
 		fmt->flags = 0;
 		if (format->flags & UVC_FMT_FLAG_COMPRESSED)
 			fmt->flags |= V4L2_FMT_FLAG_COMPRESSED;
@@ -840,6 +843,7 @@ static long uvc_v4l2_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 		struct uvc_format *format = NULL;
 		struct uvc_frame *frame;
 		int i;
+		u32 index;
 
 		/* Look for the given pixel format */
 		for (i = 0; i < stream->nformats; i++) {
@@ -854,8 +858,9 @@ static long uvc_v4l2_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 
 		if (fsize->index >= format->nframes)
 			return -EINVAL;
+		index = array_index_nospec(fsize->index, format->nframes);
 
-		frame = &format->frame[fsize->index];
+		frame = &format->frame[index];
 		fsize->type = V4L2_FRMSIZE_TYPE_DISCRETE;
 		fsize->discrete.width = frame->wWidth;
 		fsize->discrete.height = frame->wHeight;
@@ -892,12 +897,16 @@ static long uvc_v4l2_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 			return -EINVAL;
 
 		if (frame->bFrameIntervalType) {
+			u32 index;
+
 			if (fival->index >= frame->bFrameIntervalType)
 				return -EINVAL;
+			index = array_index_nospec(fival->index,
+						   frame->bFrameIntervalType);
 
 			fival->type = V4L2_FRMIVAL_TYPE_DISCRETE;
 			fival->discrete.numerator =
-				frame->dwFrameInterval[fival->index];
+				frame->dwFrameInterval[index];
 			fival->discrete.denominator = 10000000;
 			uvc_simplify_fraction(&fival->discrete.numerator,
 				&fival->discrete.denominator, 8, 333);

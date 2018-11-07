@@ -30,6 +30,7 @@
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/slab.h>
+#include <linux/nospec.h>
 
 #include <linux/usb.h>
 #include <linux/mm.h>
@@ -111,9 +112,14 @@ void stk1160_select_input(struct stk1160 *dev)
 		route = SAA7115_COMPOSITE0;
 
 	if (dev->ctl_input < ARRAY_SIZE(gctrl)) {
+		unsigned int ctl_input;
+
+		ctl_input = array_index_nospec(dev->ctl_input,
+					       ARRAY_SIZE(gctrl));
+
 		v4l2_device_call_all(&dev->v4l2_dev, 0, video, s_routing,
 				route, 0, 0);
-		stk1160_write_reg(dev, STK1160_GCTRL, gctrl[dev->ctl_input]);
+		stk1160_write_reg(dev, STK1160_GCTRL, gctrl[ctl_input]);
 	}
 }
 

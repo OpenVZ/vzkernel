@@ -1,0 +1,2 @@
+# XXX there's no statx syscall in RHEL7
+#libperf-y += statx.o

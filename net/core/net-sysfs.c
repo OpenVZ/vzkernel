@@ -12,6 +12,7 @@
 #include <linux/capability.h>
 #include <linux/kernel.h>
 #include <linux/netdevice.h>
+#include <net/switchdev.h>
 #include <linux/if_arp.h>
 #include <linux/slab.h>
 #include <linux/nsproxy.h>
@@ -29,7 +30,6 @@
 static const char fmt_hex[] = "%#x\n";
 static const char fmt_long_hex[] = "%#lx\n";
 static const char fmt_dec[] = "%d\n";
-static const char fmt_udec[] = "%u\n";
 static const char fmt_ulong[] = "%lu\n";
 static const char fmt_u64[] = "%llu\n";
 
@@ -60,12 +60,19 @@ static ssize_t format_##field(const struct net_device *net, char *buf)	\
 {									\
 	return sprintf(buf, format_string, net->field);			\
 }									\
-static ssize_t show_##field(struct device *dev,				\
+static ssize_t field##_show(struct device *dev,				\
 			    struct device_attribute *attr, char *buf)	\
 {									\
 	return netdev_show(dev, attr, buf, format_##field);		\
-}
+}									\
 
+#define NETDEVICE_SHOW_RO(field, format_string)				\
+NETDEVICE_SHOW(field, format_string);					\
+static DEVICE_ATTR_RO(field)
+
+#define NETDEVICE_SHOW_RW(field, format_string)				\
+NETDEVICE_SHOW(field, format_string);					\
+static DEVICE_ATTR_RW(field)
 
 /* use same locking and permission rules as SIF* ioctl's */
 static ssize_t netdev_store(struct device *dev, struct device_attribute *attr,
@@ -96,16 +103,25 @@ static ssize_t netdev_store(struct device *dev, struct device_attribute *attr,
 	return ret;
 }
 
-NETDEVICE_SHOW(dev_id, fmt_hex);
-NETDEVICE_SHOW(addr_assign_type, fmt_dec);
-NETDEVICE_SHOW(addr_len, fmt_dec);
-NETDEVICE_SHOW(iflink, fmt_dec);
-NETDEVICE_SHOW(ifindex, fmt_dec);
-NETDEVICE_SHOW(type, fmt_dec);
-NETDEVICE_SHOW(link_mode, fmt_dec);
+NETDEVICE_SHOW_RO(dev_id, fmt_hex);
+NETDEVICE_SHOW_RO(dev_port, fmt_dec);
+NETDEVICE_SHOW_RO(addr_assign_type, fmt_dec);
+NETDEVICE_SHOW_RO(addr_len, fmt_dec);
+NETDEVICE_SHOW_RO(ifindex, fmt_dec);
+NETDEVICE_SHOW_RO(type, fmt_dec);
+NETDEVICE_SHOW_RO(link_mode, fmt_dec);
+
+static ssize_t iflink_show(struct device *dev, struct device_attribute *attr,
+			   char *buf)
+{
+	struct net_device *ndev = to_net_dev(dev);
+
+	return sprintf(buf, fmt_dec, dev_get_iflink(ndev));
+}
+static DEVICE_ATTR_RO(iflink);
 
 /* use same locking rules as GIFHWADDR ioctl's */
-static ssize_t show_address(struct device *dev, struct device_attribute *attr,
+static ssize_t address_show(struct device *dev, struct device_attribute *attr,
 			    char *buf)
 {
 	struct net_device *net = to_net_dev(dev);
@@ -117,15 +133,17 @@ static ssize_t show_address(struct device *dev, struct device_attribute *attr,
 	read_unlock(&dev_base_lock);
 	return ret;
 }
+static DEVICE_ATTR_RO(address);
 
-static ssize_t show_broadcast(struct device *dev,
-			    struct device_attribute *attr, char *buf)
+static ssize_t broadcast_show(struct device *dev,
+			      struct device_attribute *attr, char *buf)
 {
 	struct net_device *net = to_net_dev(dev);
 	if (dev_isalive(net))
 		return sysfs_format_mac(buf, net->broadcast, net->addr_len);
 	return -EINVAL;
 }
+static DEVICE_ATTR_RO(broadcast);
 
 static int change_carrier(struct net_device *net, unsigned long new_carrier)
 {
@@ -134,13 +152,13 @@ static int change_carrier(struct net_device *net, unsigned long new_carrier)
 	return dev_change_carrier(net, (bool) new_carrier);
 }
 
-static ssize_t store_carrier(struct device *dev, struct device_attribute *attr,
-			 const char *buf, size_t len)
+static ssize_t carrier_store(struct device *dev, struct device_attribute *attr,
+			     const char *buf, size_t len)
 {
 	return netdev_store(dev, attr, buf, len, change_carrier);
 }
 
-static ssize_t show_carrier(struct device *dev,
+static ssize_t carrier_show(struct device *dev,
 			    struct device_attribute *attr, char *buf)
 {
 	struct net_device *netdev = to_net_dev(dev);
@@ -149,8 +167,9 @@ static ssize_t show_carrier(struct device *dev,
 	}
 	return -EINVAL;
 }
+static DEVICE_ATTR_RW(carrier);
 
-static ssize_t show_speed(struct device *dev,
+static ssize_t speed_show(struct device *dev,
 			  struct device_attribute *attr, char *buf)
 {
 	struct net_device *netdev = to_net_dev(dev);
@@ -160,15 +179,17 @@ static ssize_t show_speed(struct device *dev,
 		return restart_syscall();
 
 	if (netif_running(netdev)) {
-		struct ethtool_cmd cmd;
-		if (!__ethtool_get_settings(netdev, &cmd))
-			ret = sprintf(buf, fmt_udec, ethtool_cmd_speed(&cmd));
+		struct ethtool_link_ksettings cmd;
+
+		if (!__ethtool_get_link_ksettings(netdev, &cmd))
+			ret = sprintf(buf, fmt_dec, cmd.base.speed);
 	}
 	rtnl_unlock();
 	return ret;
 }
+static DEVICE_ATTR_RO(speed);
 
-static ssize_t show_duplex(struct device *dev,
+static ssize_t duplex_show(struct device *dev,
 			   struct device_attribute *attr, char *buf)
 {
 	struct net_device *netdev = to_net_dev(dev);
@@ -178,10 +199,12 @@ static ssize_t show_duplex(struct device *dev,
 		return restart_syscall();
 
 	if (netif_running(netdev)) {
-		struct ethtool_cmd cmd;
-		if (!__ethtool_get_settings(netdev, &cmd)) {
+		struct ethtool_link_ksettings cmd;
+
+		if (!__ethtool_get_link_ksettings(netdev, &cmd)) {
 			const char *duplex;
-			switch (cmd.duplex) {
+
+			switch (cmd.base.duplex) {
 			case DUPLEX_HALF:
 				duplex = "half";
 				break;
@@ -198,8 +221,9 @@ static ssize_t show_duplex(struct device *dev,
 	rtnl_unlock();
 	return ret;
 }
+static DEVICE_ATTR_RO(duplex);
 
-static ssize_t show_dormant(struct device *dev,
+static ssize_t dormant_show(struct device *dev,
 			    struct device_attribute *attr, char *buf)
 {
 	struct net_device *netdev = to_net_dev(dev);
@@ -209,6 +233,7 @@ static ssize_t show_dormant(struct device *dev,
 
 	return -EINVAL;
 }
+static DEVICE_ATTR_RO(dormant);
 
 static const char *const operstates[] = {
 	"unknown",
@@ -220,7 +245,7 @@ static const char *const operstates[] = {
 	"up"
 };
 
-static ssize_t show_operstate(struct device *dev,
+static ssize_t operstate_show(struct device *dev,
 			      struct device_attribute *attr, char *buf)
 {
 	const struct net_device *netdev = to_net_dev(dev);
@@ -237,43 +262,64 @@ static ssize_t show_operstate(struct device *dev,
 
 	return sprintf(buf, "%s\n", operstates[operstate]);
 }
+static DEVICE_ATTR_RO(operstate);
+
+static ssize_t carrier_changes_show(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf)
+{
+	struct net_device *netdev = to_net_dev(dev);
+	return sprintf(buf, fmt_dec,
+		       atomic_read(&netdev->carrier_changes));
+}
+static DEVICE_ATTR_RO(carrier_changes);
 
 /* read-write attributes */
-NETDEVICE_SHOW(mtu, fmt_dec);
 
 static int change_mtu(struct net_device *net, unsigned long new_mtu)
 {
 	return dev_set_mtu(net, (int) new_mtu);
 }
 
-static ssize_t store_mtu(struct device *dev, struct device_attribute *attr,
+static ssize_t mtu_store(struct device *dev, struct device_attribute *attr,
 			 const char *buf, size_t len)
 {
 	return netdev_store(dev, attr, buf, len, change_mtu);
 }
-
-NETDEVICE_SHOW(flags, fmt_hex);
+NETDEVICE_SHOW_RW(mtu, fmt_dec);
 
 static int change_flags(struct net_device *net, unsigned long new_flags)
 {
 	return dev_change_flags(net, (unsigned int) new_flags);
 }
 
-static ssize_t store_flags(struct device *dev, struct device_attribute *attr,
+static ssize_t flags_store(struct device *dev, struct device_attribute *attr,
 			   const char *buf, size_t len)
 {
 	return netdev_store(dev, attr, buf, len, change_flags);
 }
+NETDEVICE_SHOW_RW(flags, fmt_hex);
 
-NETDEVICE_SHOW(tx_queue_len, fmt_ulong);
-
-static int change_tx_queue_len(struct net_device *net, unsigned long new_len)
+static int change_tx_queue_len(struct net_device *dev, unsigned long new_len)
 {
-	net->tx_queue_len = new_len;
+	int res, orig_len = dev->tx_queue_len;
+
+	if (new_len != orig_len) {
+		dev->tx_queue_len = new_len;
+		res = call_netdevice_notifiers(NETDEV_CHANGE_TX_QUEUE_LEN, dev);
+		res = notifier_to_errno(res);
+		if (res) {
+			netdev_err(dev,
+				   "refused to change device tx_queue_len\n");
+			dev->tx_queue_len = orig_len;
+			return -EFAULT;
+		}
+	}
+
 	return 0;
 }
 
-static ssize_t store_tx_queue_len(struct device *dev,
+static ssize_t tx_queue_len_store(struct device *dev,
 				  struct device_attribute *attr,
 				  const char *buf, size_t len)
 {
@@ -282,8 +328,26 @@ static ssize_t store_tx_queue_len(struct device *dev,
 
 	return netdev_store(dev, attr, buf, len, change_tx_queue_len);
 }
+NETDEVICE_SHOW_RW(tx_queue_len, fmt_ulong);
 
-static ssize_t store_ifalias(struct device *dev, struct device_attribute *attr,
+static int change_gro_flush_timeout(struct net_device *dev, unsigned long val)
+{
+	dev->gro_flush_timeout = val;
+	return 0;
+}
+
+static ssize_t gro_flush_timeout_store(struct device *dev,
+				  struct device_attribute *attr,
+				  const char *buf, size_t len)
+{
+	if (!capable(CAP_NET_ADMIN))
+		return -EPERM;
+
+	return netdev_store(dev, attr, buf, len, change_gro_flush_timeout);
+}
+NETDEVICE_SHOW_RW(gro_flush_timeout, fmt_ulong);
+
+static ssize_t ifalias_store(struct device *dev, struct device_attribute *attr,
 			     const char *buf, size_t len)
 {
 	struct net_device *netdev = to_net_dev(dev);
@@ -306,7 +370,7 @@ static ssize_t store_ifalias(struct device *dev, struct device_attribute *attr,
 	return ret < 0 ? ret : len;
 }
 
-static ssize_t show_ifalias(struct device *dev,
+static ssize_t ifalias_show(struct device *dev,
 			    struct device_attribute *attr, char *buf)
 {
 	const struct net_device *netdev = to_net_dev(dev);
@@ -319,8 +383,7 @@ static ssize_t show_ifalias(struct device *dev,
 	rtnl_unlock();
 	return ret;
 }
-
-NETDEVICE_SHOW(group, fmt_dec);
+static DEVICE_ATTR_RW(ifalias);
 
 static int change_group(struct net_device *net, unsigned long new_group)
 {
@@ -328,35 +391,128 @@ static int change_group(struct net_device *net, unsigned long new_group)
 	return 0;
 }
 
-static ssize_t store_group(struct device *dev, struct device_attribute *attr,
-			 const char *buf, size_t len)
+static ssize_t group_store(struct device *dev, struct device_attribute *attr,
+			   const char *buf, size_t len)
 {
 	return netdev_store(dev, attr, buf, len, change_group);
 }
+NETDEVICE_SHOW(group, fmt_dec);
+static DEVICE_ATTR(netdev_group, S_IRUGO | S_IWUSR, group_show, group_store);
 
-static struct device_attribute net_class_attributes[] = {
-	__ATTR(addr_assign_type, S_IRUGO, show_addr_assign_type, NULL),
-	__ATTR(addr_len, S_IRUGO, show_addr_len, NULL),
-	__ATTR(dev_id, S_IRUGO, show_dev_id, NULL),
-	__ATTR(ifalias, S_IRUGO | S_IWUSR, show_ifalias, store_ifalias),
-	__ATTR(iflink, S_IRUGO, show_iflink, NULL),
-	__ATTR(ifindex, S_IRUGO, show_ifindex, NULL),
-	__ATTR(type, S_IRUGO, show_type, NULL),
-	__ATTR(link_mode, S_IRUGO, show_link_mode, NULL),
-	__ATTR(address, S_IRUGO, show_address, NULL),
-	__ATTR(broadcast, S_IRUGO, show_broadcast, NULL),
-	__ATTR(carrier, S_IRUGO | S_IWUSR, show_carrier, store_carrier),
-	__ATTR(speed, S_IRUGO, show_speed, NULL),
-	__ATTR(duplex, S_IRUGO, show_duplex, NULL),
-	__ATTR(dormant, S_IRUGO, show_dormant, NULL),
-	__ATTR(operstate, S_IRUGO, show_operstate, NULL),
-	__ATTR(mtu, S_IRUGO | S_IWUSR, show_mtu, store_mtu),
-	__ATTR(flags, S_IRUGO | S_IWUSR, show_flags, store_flags),
-	__ATTR(tx_queue_len, S_IRUGO | S_IWUSR, show_tx_queue_len,
-	       store_tx_queue_len),
-	__ATTR(netdev_group, S_IRUGO | S_IWUSR, show_group, store_group),
-	{}
+static int change_proto_down(struct net_device *dev, unsigned long proto_down)
+{
+	return dev_change_proto_down(dev, (bool) proto_down);
+}
+
+static ssize_t proto_down_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t len)
+{
+	return netdev_store(dev, attr, buf, len, change_proto_down);
+}
+NETDEVICE_SHOW_RW(proto_down, fmt_dec);
+
+static ssize_t phys_port_id_show(struct device *dev,
+				 struct device_attribute *attr, char *buf)
+{
+	struct net_device *netdev = to_net_dev(dev);
+	ssize_t ret = -EINVAL;
+
+	if (!rtnl_trylock())
+		return restart_syscall();
+
+	if (dev_isalive(netdev)) {
+		struct netdev_phys_item_id ppid;
+
+		ret = dev_get_phys_port_id(netdev, &ppid);
+		if (!ret)
+			ret = sprintf(buf, "%*phN\n", ppid.id_len, ppid.id);
+	}
+	rtnl_unlock();
+
+	return ret;
+}
+static DEVICE_ATTR_RO(phys_port_id);
+
+static ssize_t phys_port_name_show(struct device *dev,
+				   struct device_attribute *attr, char *buf)
+{
+	struct net_device *netdev = to_net_dev(dev);
+	ssize_t ret = -EINVAL;
+
+	if (!rtnl_trylock())
+		return restart_syscall();
+
+	if (dev_isalive(netdev)) {
+		char name[IFNAMSIZ];
+
+		ret = dev_get_phys_port_name(netdev, name, sizeof(name));
+		if (!ret)
+			ret = sprintf(buf, "%s\n", name);
+	}
+	rtnl_unlock();
+
+	return ret;
+}
+static DEVICE_ATTR_RO(phys_port_name);
+
+static ssize_t phys_switch_id_show(struct device *dev,
+				   struct device_attribute *attr, char *buf)
+{
+	struct net_device *netdev = to_net_dev(dev);
+	ssize_t ret = -EINVAL;
+
+	if (!rtnl_trylock())
+		return restart_syscall();
+
+	if (dev_isalive(netdev)) {
+		struct switchdev_attr attr = {
+			.orig_dev = netdev,
+			.id = SWITCHDEV_ATTR_ID_PORT_PARENT_ID,
+			.flags = SWITCHDEV_F_NO_RECURSE,
+		};
+
+		ret = switchdev_port_attr_get(netdev, &attr);
+		if (!ret)
+			ret = sprintf(buf, "%*phN\n", attr.u.ppid.id_len,
+				      attr.u.ppid.id);
+	}
+	rtnl_unlock();
+
+	return ret;
+}
+static DEVICE_ATTR_RO(phys_switch_id);
+
+static struct attribute *net_class_attrs[] = {
+	&dev_attr_netdev_group.attr,
+	&dev_attr_type.attr,
+	&dev_attr_dev_id.attr,
+	&dev_attr_dev_port.attr,
+	&dev_attr_iflink.attr,
+	&dev_attr_ifindex.attr,
+	&dev_attr_addr_assign_type.attr,
+	&dev_attr_addr_len.attr,
+	&dev_attr_link_mode.attr,
+	&dev_attr_address.attr,
+	&dev_attr_broadcast.attr,
+	&dev_attr_speed.attr,
+	&dev_attr_duplex.attr,
+	&dev_attr_dormant.attr,
+	&dev_attr_operstate.attr,
+	&dev_attr_carrier_changes.attr,
+	&dev_attr_ifalias.attr,
+	&dev_attr_carrier.attr,
+	&dev_attr_mtu.attr,
+	&dev_attr_flags.attr,
+	&dev_attr_tx_queue_len.attr,
+	&dev_attr_gro_flush_timeout.attr,
+	&dev_attr_phys_port_id.attr,
+	&dev_attr_phys_port_name.attr,
+	&dev_attr_phys_switch_id.attr,
+	&dev_attr_proto_down.attr,
+	NULL,
 };
+ATTRIBUTE_GROUPS(net_class);
 
 /* Show a given an attribute in the statistics group */
 static ssize_t netstat_show(const struct device *d,
@@ -382,13 +538,13 @@ static ssize_t netstat_show(const struct device *d,
 
 /* generate a read-only statistics attribute */
 #define NETSTAT_ENTRY(name)						\
-static ssize_t show_##name(struct device *d,				\
+static ssize_t name##_show(struct device *d,				\
 			   struct device_attribute *attr, char *buf) 	\
 {									\
 	return netstat_show(d, attr, buf,				\
 			    offsetof(struct rtnl_link_stats64, name));	\
 }									\
-static DEVICE_ATTR(name, S_IRUGO, show_##name, NULL)
+static DEVICE_ATTR_RO(name)
 
 NETSTAT_ENTRY(rx_packets);
 NETSTAT_ENTRY(tx_packets);
@@ -413,6 +569,7 @@ NETSTAT_ENTRY(tx_heartbeat_errors);
 NETSTAT_ENTRY(tx_window_errors);
 NETSTAT_ENTRY(rx_compressed);
 NETSTAT_ENTRY(tx_compressed);
+NETSTAT_ENTRY(rx_nohandler);
 
 static struct attribute *netstat_attrs[] = {
 	&dev_attr_rx_packets.attr,
@@ -438,6 +595,7 @@ static struct attribute *netstat_attrs[] = {
 	&dev_attr_tx_window_errors.attr,
 	&dev_attr_rx_compressed.attr,
 	&dev_attr_tx_compressed.attr,
+	&dev_attr_rx_nohandler.attr,
 	NULL
 };
 
@@ -457,6 +615,9 @@ static struct attribute_group wireless_group = {
 	.attrs = wireless_attrs,
 };
 #endif
+
+#else /* CONFIG_SYSFS */
+#define net_class_groups	NULL
 #endif /* CONFIG_SYSFS */
 
 #ifdef CONFIG_RPS
@@ -637,8 +798,8 @@ static ssize_t store_rps_dev_flow_table_cnt(struct netdev_rx_queue *queue,
 		while ((mask | (mask >> 1)) != mask)
 			mask |= (mask >> 1);
 		/* On 64 bit arches, must check mask fits in table->mask (u32),
-		 * and on 32bit arches, must check RPS_DEV_FLOW_TABLE_SIZE(mask + 1)
-		 * doesnt overflow.
+		 * and on 32bit arches, must check
+		 * RPS_DEV_FLOW_TABLE_SIZE(mask + 1) doesn't overflow.
 		 */
 #if BITS_PER_LONG > 32
 		if (mask > (unsigned long)(u32)mask)
@@ -709,10 +870,23 @@ static void rx_queue_release(struct kobject *kobj)
 	dev_put(queue->dev);
 }
 
+static const void *rx_queue_namespace(struct kobject *kobj)
+{
+	struct netdev_rx_queue *queue = to_rx_queue(kobj);
+	struct device *dev = &queue->dev->dev;
+	const void *ns = NULL;
+
+	if (dev->class && dev->class->ns_type)
+		ns = dev->class->namespace(dev);
+
+	return ns;
+}
+
 static struct kobj_type rx_queue_ktype = {
 	.sysfs_ops = &rx_queue_sysfs_ops,
 	.release = rx_queue_release,
 	.default_attrs = rx_queue_default_attrs,
+	.namespace = rx_queue_namespace
 };
 
 static int rx_queue_add_kobject(struct net_device *net, int index)
@@ -818,6 +992,57 @@ static ssize_t show_trans_timeout(struct netdev_queue *queue,
 
 	return sprintf(buf, "%lu", trans_timeout);
 }
+
+#ifdef CONFIG_XPS
+static unsigned int get_netdev_queue_index(struct netdev_queue *queue)
+{
+	struct net_device *dev = queue->dev;
+	unsigned int i;
+
+	i = queue - dev->_tx;
+	BUG_ON(i >= dev->num_tx_queues);
+
+	return i;
+}
+
+static ssize_t show_tx_maxrate(struct netdev_queue *queue,
+			       struct netdev_queue_attribute *attribute,
+			       char *buf)
+{
+	return sprintf(buf, "%lu\n", queue->tx_maxrate);
+}
+
+static ssize_t set_tx_maxrate(struct netdev_queue *queue,
+			      struct netdev_queue_attribute *attribute,
+			      const char *buf, size_t len)
+{
+	struct net_device *dev = queue->dev;
+	int err, index = get_netdev_queue_index(queue);
+	u32 rate = 0;
+
+	err = kstrtou32(buf, 10, &rate);
+	if (err < 0)
+		return err;
+
+	if (!rtnl_trylock())
+		return restart_syscall();
+
+	err = -EOPNOTSUPP;
+	if (get_ndo_ext(dev->netdev_ops, ndo_set_tx_maxrate))
+		err = get_ndo_ext(dev->netdev_ops, ndo_set_tx_maxrate)(dev, index, rate);
+
+	rtnl_unlock();
+	if (!err) {
+		queue->tx_maxrate = rate;
+		return len;
+	}
+	return err;
+}
+
+static struct netdev_queue_attribute queue_tx_maxrate =
+	__ATTR(tx_maxrate, S_IRUGO | S_IWUSR,
+	       show_tx_maxrate, set_tx_maxrate);
+#endif
 
 static struct netdev_queue_attribute queue_trans_timeout =
 	__ATTR(tx_timeout, S_IRUGO, show_trans_timeout, NULL);
@@ -933,21 +1158,6 @@ static struct attribute_group dql_group = {
 #endif /* CONFIG_BQL */
 
 #ifdef CONFIG_XPS
-static inline unsigned int get_netdev_queue_index(struct netdev_queue *queue)
-{
-	struct net_device *dev = queue->dev;
-	int i;
-
-	for (i = 0; i < dev->num_tx_queues; i++)
-		if (queue == &dev->_tx[i])
-			break;
-
-	BUG_ON(i >= dev->num_tx_queues);
-
-	return i;
-}
-
-
 static ssize_t show_xps_map(struct netdev_queue *queue,
 			    struct netdev_queue_attribute *attribute, char *buf)
 {
@@ -1031,6 +1241,7 @@ static struct attribute *netdev_queue_default_attrs[] = {
 	&queue_trans_timeout.attr,
 #ifdef CONFIG_XPS
 	&xps_cpus_attribute.attr,
+	&queue_tx_maxrate.attr,
 #endif
 	NULL
 };
@@ -1043,10 +1254,23 @@ static void netdev_queue_release(struct kobject *kobj)
 	dev_put(queue->dev);
 }
 
+static const void *netdev_queue_namespace(struct kobject *kobj)
+{
+	struct netdev_queue *queue = to_netdev_queue(kobj);
+	struct device *dev = &queue->dev->dev;
+	const void *ns = NULL;
+
+	if (dev->class && dev->class->ns_type)
+		ns = dev->class->namespace(dev);
+
+	return ns;
+}
+
 static struct kobj_type netdev_queue_ktype = {
 	.sysfs_ops = &netdev_queue_sysfs_ops,
 	.release = netdev_queue_release,
 	.default_attrs = netdev_queue_default_attrs,
+	.namespace = netdev_queue_namespace,
 };
 
 static int netdev_queue_add_kobject(struct net_device *net, int index)
@@ -1157,6 +1381,13 @@ static void remove_queue_kobjects(struct net_device *net)
 #endif
 }
 
+static bool net_current_may_mount(void)
+{
+	struct net *net = current->nsproxy->net_ns;
+
+	return ns_capable(net->user_ns, CAP_SYS_ADMIN);
+}
+
 static void *net_grab_current_ns(void)
 {
 	struct net *ns = current->nsproxy->net_ns;
@@ -1179,6 +1410,7 @@ static const void *net_netlink_ns(struct sock *sk)
 
 struct kobj_ns_type_operations net_ns_type_operations = {
 	.type = KOBJ_NS_TYPE_NET,
+	.current_may_mount = net_current_may_mount,
 	.grab_current_ns = net_grab_current_ns,
 	.netlink_ns = net_netlink_ns,
 	.initial_ns = net_initial_ns,
@@ -1216,7 +1448,7 @@ static void netdev_release(struct device *d)
 	BUG_ON(dev->reg_state != NETREG_RELEASED);
 
 	kfree(dev->ifalias);
-	kfree((char *)dev - dev->padded);
+	netdev_freemem(dev);
 }
 
 static const void *net_namespace(struct device *d)
@@ -1229,9 +1461,7 @@ static const void *net_namespace(struct device *d)
 static struct class net_class = {
 	.name = "net",
 	.dev_release = netdev_release,
-#ifdef CONFIG_SYSFS
-	.dev_attrs = net_class_attributes,
-#endif /* CONFIG_SYSFS */
+	.dev_groups = net_class_groups,
 	.dev_uevent = netdev_uevent,
 	.ns_type = &net_ns_type_operations,
 	.namespace = net_namespace,
@@ -1299,17 +1529,19 @@ int netdev_register_kobject(struct net_device *net)
 	return error;
 }
 
-int netdev_class_create_file(struct class_attribute *class_attr)
+int netdev_class_create_file_ns(struct class_attribute *class_attr,
+				const void *ns)
 {
-	return class_create_file(&net_class, class_attr);
+	return class_create_file_ns(&net_class, class_attr, ns);
 }
-EXPORT_SYMBOL(netdev_class_create_file);
+EXPORT_SYMBOL(netdev_class_create_file_ns);
 
-void netdev_class_remove_file(struct class_attribute *class_attr)
+void netdev_class_remove_file_ns(struct class_attribute *class_attr,
+				 const void *ns)
 {
-	class_remove_file(&net_class, class_attr);
+	class_remove_file_ns(&net_class, class_attr, ns);
 }
-EXPORT_SYMBOL(netdev_class_remove_file);
+EXPORT_SYMBOL(netdev_class_remove_file_ns);
 
 int netdev_kobject_init(void)
 {

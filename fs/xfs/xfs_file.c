@@ -17,29 +17,33 @@
  */
 #include "xfs.h"
 #include "xfs_fs.h"
-#include "xfs_log.h"
-#include "xfs_sb.h"
-#include "xfs_ag.h"
-#include "xfs_trans.h"
+#include "xfs_shared.h"
+#include "xfs_format.h"
+#include "xfs_log_format.h"
+#include "xfs_trans_resv.h"
 #include "xfs_mount.h"
-#include "xfs_bmap_btree.h"
-#include "xfs_alloc.h"
-#include "xfs_dinode.h"
+#include "xfs_da_format.h"
+#include "xfs_da_btree.h"
 #include "xfs_inode.h"
+#include "xfs_trans.h"
 #include "xfs_inode_item.h"
 #include "xfs_bmap.h"
+#include "xfs_bmap_util.h"
 #include "xfs_error.h"
-#include "xfs_vnodeops.h"
-#include "xfs_da_btree.h"
-#include "xfs_dir2_format.h"
+#include "xfs_dir2.h"
 #include "xfs_dir2_priv.h"
 #include "xfs_ioctl.h"
 #include "xfs_trace.h"
+#include "xfs_log.h"
+#include "xfs_icache.h"
+#include "xfs_pnfs.h"
+#include "xfs_iomap.h"
 
 #include <linux/aio.h>
 #include <linux/dcache.h>
 #include <linux/falloc.h>
 #include <linux/pagevec.h>
+#include <linux/splice.h>
 
 static const struct vm_operations_struct xfs_file_vm_ops;
 
@@ -78,52 +82,51 @@ xfs_rw_ilock_demote(
 }
 
 /*
- *	xfs_iozero
- *
- *	xfs_iozero clears the specified range of buffer supplied,
- *	and marks all the affected blocks as valid and modified.  If
- *	an affected block is not allocated, it will be allocated.  If
- *	an affected block is not completely overwritten, and is not
- *	valid before the operation, it will be read from disk before
- *	being partially zeroed.
+ * Clear the specified ranges to zero through either the pagecache or DAX.
+ * Holes and unwritten extents will be left as-is as they already are zeroed.
  */
 int
-xfs_iozero(
-	struct xfs_inode	*ip,	/* inode			*/
-	loff_t			pos,	/* offset in file		*/
-	size_t			count)	/* size of data to zero		*/
+xfs_zero_range(
+	struct xfs_inode	*ip,
+	xfs_off_t		pos,
+	xfs_off_t		count,
+	bool			*did_zero)
 {
-	struct page		*page;
-	struct address_space	*mapping;
-	int			status;
+	return iomap_zero_range(VFS_I(ip), pos, count, did_zero, &xfs_iomap_ops);
+}
 
-	mapping = VFS_I(ip)->i_mapping;
-	do {
-		unsigned offset, bytes;
-		void *fsdata;
+int
+xfs_update_prealloc_flags(
+	struct xfs_inode	*ip,
+	enum xfs_prealloc_flags	flags)
+{
+	struct xfs_trans	*tp;
+	int			error;
 
-		offset = (pos & (PAGE_CACHE_SIZE -1)); /* Within page */
-		bytes = PAGE_CACHE_SIZE - offset;
-		if (bytes > count)
-			bytes = count;
+	error = xfs_trans_alloc(ip->i_mount, &M_RES(ip->i_mount)->tr_writeid,
+			0, 0, 0, &tp);
+	if (error)
+		return error;
 
-		status = pagecache_write_begin(NULL, mapping, pos, bytes,
-					AOP_FLAG_UNINTERRUPTIBLE,
-					&page, &fsdata);
-		if (status)
-			break;
+	xfs_ilock(ip, XFS_ILOCK_EXCL);
+	xfs_trans_ijoin(tp, ip, XFS_ILOCK_EXCL);
 
-		zero_user(page, offset, bytes);
+	if (!(flags & XFS_PREALLOC_INVISIBLE)) {
+		VFS_I(ip)->i_mode &= ~S_ISUID;
+		if (VFS_I(ip)->i_mode & S_IXGRP)
+			VFS_I(ip)->i_mode &= ~S_ISGID;
+		xfs_trans_ichgtime(tp, ip, XFS_ICHGTIME_MOD | XFS_ICHGTIME_CHG);
+	}
 
-		status = pagecache_write_end(NULL, mapping, pos, bytes, bytes,
-					page, fsdata);
-		WARN_ON(status <= 0); /* can't return less than zero! */
-		pos += bytes;
-		count -= bytes;
-		status = 0;
-	} while (count);
+	if (flags & XFS_PREALLOC_SET)
+		ip->i_d.di_flags |= XFS_DIFLAG_PREALLOC;
+	if (flags & XFS_PREALLOC_CLEAR)
+		ip->i_d.di_flags &= ~XFS_DIFLAG_PREALLOC;
 
-	return (-status);
+	xfs_trans_log_inode(tp, ip, XFS_ILOG_CORE);
+	if (flags & XFS_PREALLOC_SYNC)
+		xfs_trans_set_sync(tp);
+	return xfs_trans_commit(tp);
 }
 
 /*
@@ -176,7 +179,7 @@ xfs_file_fsync(
 		return error;
 
 	if (XFS_FORCED_SHUTDOWN(mp))
-		return -XFS_ERROR(EIO);
+		return -EIO;
 
 	xfs_iflags_clear(ip, XFS_ITRUNCATED);
 
@@ -195,19 +198,30 @@ xfs_file_fsync(
 	}
 
 	/*
-	 * All metadata updates are logged, which means that we just have
-	 * to flush the log up to the latest LSN that touched the inode.
+	 * All metadata updates are logged, which means that we just have to
+	 * flush the log up to the latest LSN that touched the inode. If we have
+	 * concurrent fsync/fdatasync() calls, we need them to all block on the
+	 * log force before we clear the ili_fsync_fields field. This ensures
+	 * that we don't get a racing sync operation that does not wait for the
+	 * metadata to hit the journal before returning. If we race with
+	 * clearing the ili_fsync_fields, then all that will happen is the log
+	 * force will do nothing as the lsn will already be on disk. We can't
+	 * race with setting ili_fsync_fields because that is done under
+	 * XFS_ILOCK_EXCL, and that can't happen because we hold the lock shared
+	 * until after the ili_fsync_fields is cleared.
 	 */
 	xfs_ilock(ip, XFS_ILOCK_SHARED);
 	if (xfs_ipincount(ip)) {
 		if (!datasync ||
-		    (ip->i_itemp->ili_fields & ~XFS_ILOG_TIMESTAMP))
+		    (ip->i_itemp->ili_fsync_fields & ~XFS_ILOG_TIMESTAMP))
 			lsn = ip->i_itemp->ili_last_lsn;
 	}
-	xfs_iunlock(ip, XFS_ILOCK_SHARED);
 
-	if (lsn)
+	if (lsn) {
 		error = _xfs_log_force_lsn(mp, lsn, XFS_LOG_SYNC, &log_flushed);
+		ip->i_itemp->ili_fsync_fields = 0;
+	}
+	xfs_iunlock(ip, XFS_ILOCK_SHARED);
 
 	/*
 	 * If we only have a single device, and the log force about was
@@ -222,7 +236,127 @@ xfs_file_fsync(
 	    !log_flushed)
 		xfs_blkdev_issue_flush(mp->m_ddev_targp);
 
-	return -error;
+	return error;
+}
+
+STATIC ssize_t
+xfs_file_dio_aio_read(
+	struct kiocb		*iocb,
+	const struct iovec	*iovp,
+	unsigned long		nr_segs,
+	loff_t			pos)
+{
+	struct address_space	*mapping = iocb->ki_filp->f_mapping;
+	struct inode		*inode = mapping->host;
+	struct xfs_inode	*ip = XFS_I(inode);
+	loff_t			isize = i_size_read(inode);
+	size_t			size = 0;
+	struct xfs_buftarg	*target;
+	ssize_t			ret = 0;
+	loff_t			end;
+
+
+	ret = generic_segment_checks(iovp, &nr_segs, &size, VERIFY_WRITE);
+	if (ret < 0)
+		return ret;
+	end = iocb->ki_pos + size - 1;
+
+	trace_xfs_file_direct_read(ip, size, iocb->ki_pos);
+
+	if (!size)
+		return 0; /* skip atime */
+
+	if (XFS_IS_REALTIME_INODE(ip))
+		target = ip->i_mount->m_rtdev_targp;
+	else
+		target = ip->i_mount->m_ddev_targp;
+
+	/* DIO must be aligned to device logical sector size */
+	if ((pos | size) & target->bt_logical_sectormask) {
+		if (pos == isize)
+			return 0;
+		return -EINVAL;
+	}
+
+	file_accessed(iocb->ki_filp);
+
+	xfs_rw_ilock(ip, XFS_IOLOCK_SHARED);
+	if (mapping->nrpages) {
+		ret = filemap_write_and_wait_range(mapping, iocb->ki_pos, end);
+		if (ret)
+			goto out_unlock;
+
+		/*
+		 * Invalidate whole pages. This can return an error if we fail
+		 * to invalidate a page, but this should never happen on XFS.
+		 * Warn if it does fail.
+		 */
+		ret = invalidate_inode_pages2_range(mapping,
+				iocb->ki_pos >> PAGE_SHIFT, end >> PAGE_SHIFT);
+		WARN_ON_ONCE(ret);
+		ret = 0;
+	}
+	ret = __blockdev_direct_IO(READ, iocb, inode, target->bt_bdev,
+			iovp, pos, nr_segs, xfs_get_blocks_direct, NULL, NULL, 0);
+	if (ret > 0) {
+		iocb->ki_pos = pos + ret;
+	}
+
+out_unlock:
+	xfs_rw_iunlock(ip, XFS_IOLOCK_SHARED);
+	return ret;
+}
+
+static noinline ssize_t
+xfs_file_dax_read(
+	struct kiocb		*iocb,
+	const struct iovec	*iovp,
+	unsigned long		nr_segs,
+	loff_t			pos)
+{
+	struct xfs_inode	*ip = XFS_I(iocb->ki_filp->f_mapping->host);
+	size_t			size = 0;
+	ssize_t			ret = 0;
+
+	ret = generic_segment_checks(iovp, &nr_segs, &size, VERIFY_WRITE);
+	if (ret < 0)
+		return ret;
+
+	trace_xfs_file_dax_read(ip, size, iocb->ki_pos);
+
+	if (!size)
+		return 0; /* skip atime */
+
+	xfs_rw_ilock(ip, XFS_IOLOCK_SHARED);
+	ret = dax_iomap_rw(READ, iocb, iovp, nr_segs, pos,
+			   size, &xfs_iomap_ops);
+	xfs_rw_iunlock(ip, XFS_IOLOCK_SHARED);
+
+	file_accessed(iocb->ki_filp);
+	return ret;
+}
+
+STATIC ssize_t
+xfs_file_buffered_aio_read(
+	struct kiocb		*iocb,
+	const struct iovec	*iovp,
+	unsigned long		nr_segs,
+	loff_t			pos)
+{
+	struct xfs_inode	*ip = XFS_I(file_inode(iocb->ki_filp));
+	size_t			size = 0;
+	ssize_t			ret;
+
+	ret = generic_segment_checks(iovp, &nr_segs, &size, VERIFY_WRITE);
+	if (ret < 0)
+		return ret;
+
+	trace_xfs_file_buffered_read(ip, size, iocb->ki_pos);
+	xfs_rw_ilock(ip, XFS_IOLOCK_SHARED);
+	ret = generic_file_aio_read(iocb, iovp, nr_segs, pos);
+	xfs_rw_iunlock(ip, XFS_IOLOCK_SHARED);
+
+	return ret;
 }
 
 STATIC ssize_t
@@ -234,82 +368,26 @@ xfs_file_aio_read(
 {
 	struct file		*file = iocb->ki_filp;
 	struct inode		*inode = file->f_mapping->host;
-	struct xfs_inode	*ip = XFS_I(inode);
+	struct xfs_inode	*ip = XFS_I(file_inode(iocb->ki_filp));
 	struct xfs_mount	*mp = ip->i_mount;
-	size_t			size = 0;
-	ssize_t			ret = 0;
-	int			ioflags = 0;
-	xfs_fsize_t		n;
+	size_t			ret = 0;
 
-	XFS_STATS_INC(xs_read_calls);
+	XFS_STATS_INC(mp, xs_read_calls);
 
 	BUG_ON(iocb->ki_pos != pos);
-
-	if (unlikely(file->f_flags & O_DIRECT))
-		ioflags |= IO_ISDIRECT;
-	if (file->f_mode & FMODE_NOCMTIME)
-		ioflags |= IO_INVIS;
-
-	ret = generic_segment_checks(iovp, &nr_segs, &size, VERIFY_WRITE);
-	if (ret < 0)
-		return ret;
-
-	if (unlikely(ioflags & IO_ISDIRECT)) {
-		xfs_buftarg_t	*target =
-			XFS_IS_REALTIME_INODE(ip) ?
-				mp->m_rtdev_targp : mp->m_ddev_targp;
-		if ((pos & target->bt_smask) || (size & target->bt_smask)) {
-			if (pos == i_size_read(inode))
-				return 0;
-			return -XFS_ERROR(EINVAL);
-		}
-	}
-
-	n = mp->m_super->s_maxbytes - pos;
-	if (n <= 0 || size == 0)
-		return 0;
-
-	if (n < size)
-		size = n;
 
 	if (XFS_FORCED_SHUTDOWN(mp))
 		return -EIO;
 
-	/*
-	 * Locking is a bit tricky here. If we take an exclusive lock
-	 * for direct IO, we effectively serialise all new concurrent
-	 * read IO to this file and block it behind IO that is currently in
-	 * progress because IO in progress holds the IO lock shared. We only
-	 * need to hold the lock exclusive to blow away the page cache, so
-	 * only take lock exclusively if the page cache needs invalidation.
-	 * This allows the normal direct IO case of no page cache pages to
-	 * proceeed concurrently without serialisation.
-	 */
-	xfs_rw_ilock(ip, XFS_IOLOCK_SHARED);
-	if ((ioflags & IO_ISDIRECT) && inode->i_mapping->nrpages) {
-		xfs_rw_iunlock(ip, XFS_IOLOCK_SHARED);
-		xfs_rw_ilock(ip, XFS_IOLOCK_EXCL);
+	if (IS_DAX(inode))
+		ret = xfs_file_dax_read(iocb, iovp, nr_segs, pos);
+	else if (file->f_flags & O_DIRECT)
+		ret = xfs_file_dio_aio_read(iocb, iovp, nr_segs, pos);
+	else
+		ret = xfs_file_buffered_aio_read(iocb, iovp, nr_segs, pos);
 
-		if (inode->i_mapping->nrpages) {
-			ret = -filemap_write_and_wait_range(
-							VFS_I(ip)->i_mapping,
-							pos, -1);
-			if (ret) {
-				xfs_rw_iunlock(ip, XFS_IOLOCK_EXCL);
-				return ret;
-			}
-			truncate_pagecache_range(VFS_I(ip), pos, -1);
-		}
-		xfs_rw_ilock_demote(ip, XFS_IOLOCK_EXCL);
-	}
-
-	trace_xfs_file_read(ip, size, pos, ioflags);
-
-	ret = generic_file_aio_read(iocb, iovp, nr_segs, pos);
 	if (ret > 0)
-		XFS_STATS_ADD(xs_read_bytes, ret);
-
-	xfs_rw_iunlock(ip, XFS_IOLOCK_SHARED);
+		XFS_STATS_ADD(ip->i_mount, xs_read_bytes, ret);
 	return ret;
 }
 
@@ -322,36 +400,59 @@ xfs_file_splice_read(
 	unsigned int		flags)
 {
 	struct xfs_inode	*ip = XFS_I(infilp->f_mapping->host);
-	int			ioflags = 0;
 	ssize_t			ret;
 
-	XFS_STATS_INC(xs_read_calls);
-
-	if (infilp->f_mode & FMODE_NOCMTIME)
-		ioflags |= IO_INVIS;
+	XFS_STATS_INC(ip->i_mount, xs_read_calls);
 
 	if (XFS_FORCED_SHUTDOWN(ip->i_mount))
 		return -EIO;
 
+	trace_xfs_file_splice_read(ip, count, *ppos);
+
+	/*
+	 * DAX inodes cannot ues the page cache for splice, so we have to push
+	 * them through the VFS IO path. This means it goes through
+	 * ->read_iter, which for us takes the XFS_IOLOCK_SHARED. Hence we
+	 * cannot lock the splice operation at this level for DAX inodes.
+	 */
+	if (IS_DAX(VFS_I(ip))) {
+		ret = default_file_splice_read(infilp, ppos, pipe, count,
+					       flags);
+		goto out;
+	}
+
 	xfs_rw_ilock(ip, XFS_IOLOCK_SHARED);
-
-	trace_xfs_file_splice_read(ip, count, *ppos, ioflags);
-
 	ret = generic_file_splice_read(infilp, ppos, pipe, count, flags);
-	if (ret > 0)
-		XFS_STATS_ADD(xs_read_bytes, ret);
-
 	xfs_rw_iunlock(ip, XFS_IOLOCK_SHARED);
+out:
+	if (ret > 0)
+		XFS_STATS_ADD(ip->i_mount, xs_read_bytes, ret);
+	return ret;
+}
+
+static ssize_t
+xfs_file_splice_write_actor(
+	struct pipe_inode_info	*pipe,
+	struct splice_desc	*sd)
+{
+	struct file		*out = sd->u.file;
+	ssize_t ret;
+
+	ret = file_remove_privs(out);
+	if (!ret) {
+		file_update_time(out);
+		ret = splice_from_pipe_feed(pipe, sd, pipe_to_file);
+	}
+
 	return ret;
 }
 
 /*
- * xfs_file_splice_write() does not use xfs_rw_ilock() because
- * generic_file_splice_write() takes the i_mutex itself. This, in theory,
- * couuld cause lock inversions between the aio_write path and the splice path
- * if someone is doing concurrent splice(2) based writes and write(2) based
- * writes to the same inode. The only real way to fix this is to re-implement
- * the generic code here with correct locking orders.
+ * xfs_file_splice_write() does not use the generic file splice write path
+ * because that takes the i_mutex, causing lock inversions with the IOLOCK.
+ * Instead, we call splice_write_to_file() directly with our own actor that does
+ * not take the i_mutex. This allows us to use the xfs_rw_ilock() functions like
+ * the rest of the code and hence avoid lock inversions and deadlocks.
  */
 STATIC ssize_t
 xfs_file_splice_write(
@@ -363,68 +464,32 @@ xfs_file_splice_write(
 {
 	struct inode		*inode = outfilp->f_mapping->host;
 	struct xfs_inode	*ip = XFS_I(inode);
-	int			ioflags = 0;
 	ssize_t			ret;
 
-	XFS_STATS_INC(xs_write_calls);
+	/*
+	 * For dax, we need to avoid the page cache.  Locking and stats will
+	 * be handled in xfs_file_dio_aio_write().
+	 */
+	if (IS_DAX(inode))
+		return default_file_splice_write(pipe, outfilp, ppos, count,
+				flags);
 
-	if (outfilp->f_mode & FMODE_NOCMTIME)
-		ioflags |= IO_INVIS;
+	XFS_STATS_INC(ip->i_mount, xs_write_calls);
 
 	if (XFS_FORCED_SHUTDOWN(ip->i_mount))
 		return -EIO;
 
-	xfs_ilock(ip, XFS_IOLOCK_EXCL);
+	xfs_rw_ilock(ip, XFS_IOLOCK_EXCL);
 
-	trace_xfs_file_splice_write(ip, count, *ppos, ioflags);
+	trace_xfs_file_splice_write(ip, count, *ppos);
 
-	ret = generic_file_splice_write(pipe, outfilp, ppos, count, flags);
+	ret = splice_write_to_file(pipe, outfilp, ppos, count, flags,
+					xfs_file_splice_write_actor);
 	if (ret > 0)
-		XFS_STATS_ADD(xs_write_bytes, ret);
+		XFS_STATS_ADD(ip->i_mount, xs_write_bytes, ret);
 
-	xfs_iunlock(ip, XFS_IOLOCK_EXCL);
+	xfs_rw_iunlock(ip, XFS_IOLOCK_EXCL);
 	return ret;
-}
-
-/*
- * This routine is called to handle zeroing any space in the last block of the
- * file that is beyond the EOF.  We do this since the size is being increased
- * without writing anything to that block and we don't want to read the
- * garbage on the disk.
- */
-STATIC int				/* error (positive) */
-xfs_zero_last_block(
-	struct xfs_inode	*ip,
-	xfs_fsize_t		offset,
-	xfs_fsize_t		isize)
-{
-	struct xfs_mount	*mp = ip->i_mount;
-	xfs_fileoff_t		last_fsb = XFS_B_TO_FSBT(mp, isize);
-	int			zero_offset = XFS_B_FSB_OFFSET(mp, isize);
-	int			zero_len;
-	int			nimaps = 1;
-	int			error = 0;
-	struct xfs_bmbt_irec	imap;
-
-	xfs_ilock(ip, XFS_ILOCK_EXCL);
-	error = xfs_bmapi_read(ip, last_fsb, 1, &imap, &nimaps, 0);
-	xfs_iunlock(ip, XFS_ILOCK_EXCL);
-	if (error)
-		return error;
-
-	ASSERT(nimaps > 0);
-
-	/*
-	 * If the block underlying isize is just a hole, then there
-	 * is nothing to zero.
-	 */
-	if (imap.br_startblock == HOLESTARTBLOCK)
-		return 0;
-
-	zero_len = mp->m_sb.sb_blocksize - zero_offset;
-	if (isize + zero_len > offset)
-		zero_len = offset - isize;
-	return xfs_iozero(ip, isize, zero_len);
 }
 
 /*
@@ -442,93 +507,14 @@ int					/* error (positive) */
 xfs_zero_eof(
 	struct xfs_inode	*ip,
 	xfs_off_t		offset,		/* starting I/O offset */
-	xfs_fsize_t		isize)		/* current inode size */
+	xfs_fsize_t		isize,		/* current inode size */
+	bool			*did_zeroing)
 {
-	struct xfs_mount	*mp = ip->i_mount;
-	xfs_fileoff_t		start_zero_fsb;
-	xfs_fileoff_t		end_zero_fsb;
-	xfs_fileoff_t		zero_count_fsb;
-	xfs_fileoff_t		last_fsb;
-	xfs_fileoff_t		zero_off;
-	xfs_fsize_t		zero_len;
-	int			nimaps;
-	int			error = 0;
-	struct xfs_bmbt_irec	imap;
-
 	ASSERT(xfs_isilocked(ip, XFS_IOLOCK_EXCL));
 	ASSERT(offset > isize);
 
-	/*
-	 * First handle zeroing the block on which isize resides.
-	 *
-	 * We only zero a part of that block so it is handled specially.
-	 */
-	if (XFS_B_FSB_OFFSET(mp, isize) != 0) {
-		error = xfs_zero_last_block(ip, offset, isize);
-		if (error)
-			return error;
-	}
-
-	/*
-	 * Calculate the range between the new size and the old where blocks
-	 * needing to be zeroed may exist.
-	 *
-	 * To get the block where the last byte in the file currently resides,
-	 * we need to subtract one from the size and truncate back to a block
-	 * boundary.  We subtract 1 in case the size is exactly on a block
-	 * boundary.
-	 */
-	last_fsb = isize ? XFS_B_TO_FSBT(mp, isize - 1) : (xfs_fileoff_t)-1;
-	start_zero_fsb = XFS_B_TO_FSB(mp, (xfs_ufsize_t)isize);
-	end_zero_fsb = XFS_B_TO_FSBT(mp, offset - 1);
-	ASSERT((xfs_sfiloff_t)last_fsb < (xfs_sfiloff_t)start_zero_fsb);
-	if (last_fsb == end_zero_fsb) {
-		/*
-		 * The size was only incremented on its last block.
-		 * We took care of that above, so just return.
-		 */
-		return 0;
-	}
-
-	ASSERT(start_zero_fsb <= end_zero_fsb);
-	while (start_zero_fsb <= end_zero_fsb) {
-		nimaps = 1;
-		zero_count_fsb = end_zero_fsb - start_zero_fsb + 1;
-
-		xfs_ilock(ip, XFS_ILOCK_EXCL);
-		error = xfs_bmapi_read(ip, start_zero_fsb, zero_count_fsb,
-					  &imap, &nimaps, 0);
-		xfs_iunlock(ip, XFS_ILOCK_EXCL);
-		if (error)
-			return error;
-
-		ASSERT(nimaps > 0);
-
-		if (imap.br_state == XFS_EXT_UNWRITTEN ||
-		    imap.br_startblock == HOLESTARTBLOCK) {
-			start_zero_fsb = imap.br_startoff + imap.br_blockcount;
-			ASSERT(start_zero_fsb <= (end_zero_fsb + 1));
-			continue;
-		}
-
-		/*
-		 * There are blocks we need to zero.
-		 */
-		zero_off = XFS_FSB_TO_B(mp, start_zero_fsb);
-		zero_len = XFS_FSB_TO_B(mp, imap.br_blockcount);
-
-		if ((zero_off + zero_len) > offset)
-			zero_len = offset - zero_off;
-
-		error = xfs_iozero(ip, zero_off, zero_len);
-		if (error)
-			return error;
-
-		start_zero_fsb = imap.br_startoff + imap.br_blockcount;
-		ASSERT(start_zero_fsb <= (end_zero_fsb + 1));
-	}
-
-	return 0;
+	trace_xfs_zero_eof(ip, isize, offset - isize);
+	return xfs_zero_range(ip, isize, offset - isize, did_zeroing);
 }
 
 /*
@@ -548,30 +534,68 @@ xfs_file_aio_write_checks(
 	struct inode		*inode = file->f_mapping->host;
 	struct xfs_inode	*ip = XFS_I(inode);
 	int			error = 0;
+	unsigned long		flags;
+	bool			drained_dio = false;
 
 restart:
 	error = generic_write_checks(file, pos, count, S_ISBLK(inode->i_mode));
 	if (error)
 		return error;
 
+	error = xfs_break_layouts(inode, iolock, true);
+	if (error)
+		return error;
+
+	/* For changing security info in file_remove_privs() we need i_mutex */
+	if (*iolock == XFS_IOLOCK_SHARED && !IS_NOSEC(inode)) {
+		xfs_rw_iunlock(ip, *iolock);
+		*iolock = XFS_IOLOCK_EXCL;
+		xfs_rw_ilock(ip, *iolock);
+		goto restart;
+	}
 	/*
 	 * If the offset is beyond the size of the file, we need to zero any
 	 * blocks that fall between the existing EOF and the start of this
 	 * write.  If zeroing is needed and we are currently holding the
 	 * iolock shared, we need to update it to exclusive which implies
 	 * having to redo all checks before.
+	 *
+	 * We need to serialise against EOF updates that occur in IO
+	 * completions here. We want to make sure that nobody is changing the
+	 * size while we do this check until we have placed an IO barrier (i.e.
+	 * hold the XFS_IOLOCK_EXCL) that prevents new IO from being dispatched.
+	 * The spinlock effectively forms a memory barrier once we have the
+	 * XFS_IOLOCK_EXCL so we are guaranteed to see the latest EOF value
+	 * and hence be able to correctly determine if we need to run zeroing.
 	 */
+	spin_lock_irqsave(&ip->i_size_lock, flags);
 	if (*pos > i_size_read(inode)) {
-		if (*iolock == XFS_IOLOCK_SHARED) {
-			xfs_rw_iunlock(ip, *iolock);
-			*iolock = XFS_IOLOCK_EXCL;
-			xfs_rw_ilock(ip, *iolock);
+		bool	zero = false;
+
+		spin_unlock_irqrestore(&ip->i_size_lock, flags);
+		if (!drained_dio) {
+			if (*iolock == XFS_IOLOCK_SHARED) {
+				xfs_rw_iunlock(ip, *iolock);
+				*iolock = XFS_IOLOCK_EXCL;
+				xfs_rw_ilock(ip, *iolock);
+			}
+			/*
+			 * We now have an IO submission barrier in place, but
+			 * AIO can do EOF updates during IO completion and hence
+			 * we now need to wait for all of them to drain. Non-AIO
+			 * DIO will have drained before we are given the
+			 * XFS_IOLOCK_EXCL, and so for most cases this wait is a
+			 * no-op.
+			 */
+			inode_dio_wait(inode);
+			drained_dio = true;
 			goto restart;
 		}
-		error = -xfs_zero_eof(ip, *pos, i_size_read(inode));
+		error = xfs_zero_eof(ip, *pos, i_size_read(inode), &zero);
 		if (error)
 			return error;
-	}
+	} else
+		spin_unlock_irqrestore(&ip->i_size_lock, flags);
 
 	/*
 	 * Updating the timestamps will grab the ilock again from
@@ -590,7 +614,9 @@ restart:
 	 * setgid bits if the process is not being run by root.  This keeps
 	 * people from modifying setuid and setgid binaries.
 	 */
-	return file_remove_suid(file);
+	if (!IS_NOSEC(inode))
+		return file_remove_privs(file);
+	return 0;
 }
 
 /*
@@ -635,54 +661,56 @@ xfs_file_dio_aio_write(
 	size_t			count = ocount;
 	int			unaligned_io = 0;
 	int			iolock;
+	loff_t			end;
 	struct xfs_buftarg	*target = XFS_IS_REALTIME_INODE(ip) ?
 					mp->m_rtdev_targp : mp->m_ddev_targp;
 
-	if ((pos & target->bt_smask) || (count & target->bt_smask))
-		return -XFS_ERROR(EINVAL);
+	/* DIO must be aligned to device logical sector size */
+	if ((pos | count) & target->bt_logical_sectormask)
+		return -EINVAL;
 
-	if ((pos & mp->m_blockmask) || ((pos + count) & mp->m_blockmask))
+	/*
+	 * Don't take the exclusive iolock here unless the I/O is unaligned to
+	 * the file system block size.  We don't need to consider the EOF
+	 * extension case here because xfs_file_aio_write_checks() will relock
+	 * the inode as necessary for EOF zeroing cases and fill out the new
+	 * inode size as appropriate.
+	 */
+	if ((iocb->ki_pos & mp->m_blockmask) ||
+	    ((iocb->ki_pos + count) & mp->m_blockmask)) {
 		unaligned_io = 1;
-
-	/*
-	 * We don't need to take an exclusive lock unless there page cache needs
-	 * to be invalidated or unaligned IO is being executed. We don't need to
-	 * consider the EOF extension case here because
-	 * xfs_file_aio_write_checks() will relock the inode as necessary for
-	 * EOF zeroing cases and fill out the new inode size as appropriate.
-	 */
-	if (unaligned_io || mapping->nrpages)
 		iolock = XFS_IOLOCK_EXCL;
-	else
+	} else {
 		iolock = XFS_IOLOCK_SHARED;
-	xfs_rw_ilock(ip, iolock);
-
-	/*
-	 * Recheck if there are cached pages that need invalidate after we got
-	 * the iolock to protect against other threads adding new pages while
-	 * we were waiting for the iolock.
-	 */
-	if (mapping->nrpages && iolock == XFS_IOLOCK_SHARED) {
-		xfs_rw_iunlock(ip, iolock);
-		iolock = XFS_IOLOCK_EXCL;
-		xfs_rw_ilock(ip, iolock);
 	}
+
+	xfs_rw_ilock(ip, iolock);
 
 	ret = xfs_file_aio_write_checks(file, &pos, &count, &iolock);
 	if (ret)
 		goto out;
+	end = pos + count - 1;
 
 	if (mapping->nrpages) {
-		ret = -filemap_write_and_wait_range(VFS_I(ip)->i_mapping,
-						    pos, -1);
+		ret = filemap_write_and_wait_range(mapping, pos, end);
 		if (ret)
 			goto out;
-		truncate_pagecache_range(VFS_I(ip), pos, -1);
+
+		/*
+		 * Invalidate whole pages. This can return an error if we fail
+		 * to invalidate a page, but this should never happen on XFS.
+		 * Warn if it does fail.
+		 */
+		ret = invalidate_inode_pages2_range(mapping,
+				pos >> PAGE_SHIFT, end >> PAGE_SHIFT);
+		WARN_ON_ONCE(ret);
+		ret = 0;
 	}
 
 	/*
 	 * If we are doing unaligned IO, wait for all other IO to drain,
-	 * otherwise demote the lock if we had to flush cached pages
+	 * otherwise demote the lock if we had to take the exclusive lock
+	 * for other reasons in xfs_file_aio_write_checks.
 	 */
 	if (unaligned_io)
 		inode_dio_wait(inode);
@@ -691,16 +719,73 @@ xfs_file_dio_aio_write(
 		iolock = XFS_IOLOCK_SHARED;
 	}
 
-	trace_xfs_file_direct_write(ip, count, iocb->ki_pos, 0);
-	ret = generic_file_direct_write(iocb, iovp,
-			&nr_segs, pos, &iocb->ki_pos, count, ocount);
+	trace_xfs_file_direct_write(ip, count, iocb->ki_pos);
+
+	if (count != ocount)
+		nr_segs = iov_shorten((struct iovec *)iovp, nr_segs, count);
+
+	ret = __blockdev_direct_IO(WRITE, iocb, inode, target->bt_bdev, iovp,
+			pos, nr_segs, xfs_get_blocks_direct, xfs_end_io_direct_write,
+			NULL, DIO_ASYNC_EXTEND);
+
+	/* see generic_file_direct_write() for why this is necessary */
+	if (mapping->nrpages) {
+		invalidate_inode_pages2_range(mapping,
+					      pos >> PAGE_CACHE_SHIFT,
+					      end >> PAGE_CACHE_SHIFT);
+	}
+
+	if (ret > 0) {
+		pos += ret;
+		iocb->ki_pos = pos;
+	}
 
 out:
 	xfs_rw_iunlock(ip, iolock);
 
-	/* No fallback to buffered IO on errors for XFS. */
+	/*
+	 * No fallback to buffered IO on errors for XFS, direct IO will either
+	 * complete fully or fail.
+	 */
 	ASSERT(ret < 0 || ret == count);
 	return ret;
+}
+
+static noinline ssize_t
+xfs_file_dax_write(
+	struct kiocb		*iocb,
+	const struct iovec	*iovp,
+	unsigned long		nr_segs,
+	loff_t			pos,
+	size_t			ocount)
+{
+	struct file		*file = iocb->ki_filp;
+	struct inode		*inode = iocb->ki_filp->f_mapping->host;
+	struct xfs_inode	*ip = XFS_I(inode);
+	size_t			count = ocount;
+	int			iolock = XFS_IOLOCK_EXCL;
+	ssize_t			ret, error = 0;
+
+	xfs_rw_ilock(ip, iolock);
+	ret = xfs_file_aio_write_checks(file, &pos, &count, &iolock);
+	if (ret)
+		goto out;
+
+	/* checks above may have moved pos for O_APPEND, keep iocb in sync */
+	iocb->ki_pos = pos;
+
+	trace_xfs_file_dax_write(ip, count, pos);
+
+	ret = dax_iomap_rw(WRITE, iocb, iovp, nr_segs, pos,
+			   count, &xfs_iomap_ops);
+	if (ret > 0 && iocb->ki_pos > i_size_read(inode)) {
+		i_size_write(inode, iocb->ki_pos);
+		error = xfs_setfilesize(ip, pos, ret);
+	}
+
+out:
+	xfs_rw_iunlock(ip, iolock);
+	return error ? error : ret;
 }
 
 STATIC ssize_t
@@ -717,9 +802,11 @@ xfs_file_buffered_aio_write(
 	struct xfs_inode	*ip = XFS_I(inode);
 	ssize_t			ret;
 	int			enospc = 0;
-	int			iolock = XFS_IOLOCK_EXCL;
+	int			iolock;
 	size_t			count = ocount;
 
+write_retry:
+	iolock = XFS_IOLOCK_EXCL;
 	xfs_rw_ilock(ip, iolock);
 
 	ret = xfs_file_aio_write_checks(file, &pos, &count, &iolock);
@@ -729,25 +816,41 @@ xfs_file_buffered_aio_write(
 	/* We can write back this queue in page reclaim */
 	current->backing_dev_info = mapping->backing_dev_info;
 
-write_retry:
-	trace_xfs_file_buffered_write(ip, count, iocb->ki_pos, 0);
-	ret = generic_file_buffered_write(iocb, iovp, nr_segs,
-			pos, &iocb->ki_pos, count, 0);
+	trace_xfs_file_buffered_write(ip, count, iocb->ki_pos);
+	ret = iomap_file_buffered_write(iocb, iovp, nr_segs,
+			pos, &iocb->ki_pos, count, &xfs_iomap_ops);
 
 	/*
-	 * If we just got an ENOSPC, try to write back all dirty inodes to
-	 * convert delalloc space to free up some of the excess reserved
-	 * metadata space.
+	 * If we hit a space limit, try to free up some lingering preallocated
+	 * space before returning an error. In the case of ENOSPC, first try to
+	 * write back all dirty inodes to free up some of the excess reserved
+	 * metadata space. This reduces the chances that the eofblocks scan
+	 * waits on dirty mappings. Since xfs_flush_inodes() is serialized, this
+	 * also behaves as a filter to prevent too many eofblocks scans from
+	 * running at the same time.
 	 */
-	if (ret == -ENOSPC && !enospc) {
+	if (ret == -EDQUOT && !enospc) {
+		xfs_rw_iunlock(ip, iolock);
+		enospc = xfs_inode_free_quota_eofblocks(ip);
+		if (enospc)
+			goto write_retry;
+		iolock = 0;
+	} else if (ret == -ENOSPC && !enospc) {
+		struct xfs_eofblocks eofb = {0};
+
 		enospc = 1;
 		xfs_flush_inodes(ip->i_mount);
+
+		xfs_rw_iunlock(ip, iolock);
+		eofb.eof_flags = XFS_EOF_FLAGS_SYNC;
+		xfs_icache_free_eofblocks(ip->i_mount, &eofb);
 		goto write_retry;
 	}
 
 	current->backing_dev_info = NULL;
 out:
-	xfs_rw_iunlock(ip, iolock);
+	if (iolock)
+		xfs_rw_iunlock(ip, iolock);
 	return ret;
 }
 
@@ -765,7 +868,7 @@ xfs_file_aio_write(
 	ssize_t			ret;
 	size_t			ocount = 0;
 
-	XFS_STATS_INC(xs_write_calls);
+	XFS_STATS_INC(ip->i_mount, xs_write_calls);
 
 	BUG_ON(iocb->ki_pos != pos);
 
@@ -781,7 +884,9 @@ xfs_file_aio_write(
 		goto out;
 	}
 
-	if (unlikely(file->f_flags & O_DIRECT))
+	if (IS_DAX(inode))
+		ret = xfs_file_dax_write(iocb, iovp, nr_segs, pos, ocount);
+	else if ((file->f_flags & O_DIRECT))
 		ret = xfs_file_dio_aio_write(iocb, iovp, nr_segs, pos, ocount);
 	else
 		ret = xfs_file_buffered_aio_write(iocb, iovp, nr_segs, pos,
@@ -790,7 +895,7 @@ xfs_file_aio_write(
 	if (ret > 0) {
 		ssize_t err;
 
-		XFS_STATS_ADD(xs_write_bytes, ret);
+		XFS_STATS_ADD(ip->i_mount, xs_write_bytes, ret);
 
 		/* Handle various SYNC-type writes */
 		err = generic_write_sync(file, pos, ret);
@@ -804,44 +909,82 @@ out:
 
 STATIC long
 xfs_file_fallocate(
-	struct file	*file,
-	int		mode,
-	loff_t		offset,
-	loff_t		len)
+	struct file		*file,
+	int			mode,
+	loff_t			offset,
+	loff_t			len)
 {
-	struct inode	*inode = file_inode(file);
-	long		error;
-	loff_t		new_size = 0;
-	xfs_flock64_t	bf;
-	xfs_inode_t	*ip = XFS_I(inode);
-	int		cmd = XFS_IOC_RESVSP;
-	int		attr_flags = XFS_ATTR_NOLOCK;
+	struct inode		*inode = file_inode(file);
+	struct xfs_inode	*ip = XFS_I(inode);
+	long			error;
+	enum xfs_prealloc_flags	flags = 0;
+	uint			iolock = XFS_IOLOCK_EXCL;
+	loff_t			new_size = 0;
 
-	if (mode & ~(FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE))
+	if (!S_ISREG(inode->i_mode))
+		return -EINVAL;
+	if (mode & ~(FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE |
+		     FALLOC_FL_COLLAPSE_RANGE | FALLOC_FL_ZERO_RANGE))
 		return -EOPNOTSUPP;
 
-	bf.l_whence = 0;
-	bf.l_start = offset;
-	bf.l_len = len;
+	xfs_ilock(ip, iolock);
+	error = xfs_break_layouts(inode, &iolock, false);
+	if (error)
+		goto out_unlock;
 
-	xfs_ilock(ip, XFS_IOLOCK_EXCL);
+	xfs_ilock(ip, XFS_MMAPLOCK_EXCL);
+	iolock |= XFS_MMAPLOCK_EXCL;
 
-	if (mode & FALLOC_FL_PUNCH_HOLE)
-		cmd = XFS_IOC_UNRESVSP;
+	if (mode & FALLOC_FL_PUNCH_HOLE) {
+		error = xfs_free_file_space(ip, offset, len);
+		if (error)
+			goto out_unlock;
+	} else if (mode & FALLOC_FL_COLLAPSE_RANGE) {
+		unsigned blksize_mask = (1 << inode->i_blkbits) - 1;
 
-	/* check the new inode size is valid before allocating */
-	if (!(mode & FALLOC_FL_KEEP_SIZE) &&
-	    offset + len > i_size_read(inode)) {
-		new_size = offset + len;
-		error = inode_newsize_ok(inode, new_size);
+		if (offset & blksize_mask || len & blksize_mask) {
+			error = -EINVAL;
+			goto out_unlock;
+		}
+
+		/*
+		 * There is no need to overlap collapse range with EOF,
+		 * in which case it is effectively a truncate operation
+		 */
+		if (offset + len >= i_size_read(inode)) {
+			error = -EINVAL;
+			goto out_unlock;
+		}
+
+		new_size = i_size_read(inode) - len;
+
+		error = xfs_collapse_file_space(ip, offset, len);
+		if (error)
+			goto out_unlock;
+	} else {
+		flags |= XFS_PREALLOC_SET;
+
+		if (!(mode & FALLOC_FL_KEEP_SIZE) &&
+		    offset + len > i_size_read(inode)) {
+			new_size = offset + len;
+			error = inode_newsize_ok(inode, new_size);
+			if (error)
+				goto out_unlock;
+		}
+
+		if (mode & FALLOC_FL_ZERO_RANGE)
+			error = xfs_zero_file_space(ip, offset, len);
+		else
+			error = xfs_alloc_file_space(ip, offset, len,
+						     XFS_BMAPI_PREALLOC);
 		if (error)
 			goto out_unlock;
 	}
 
 	if (file->f_flags & O_DSYNC)
-		attr_flags |= XFS_ATTR_SYNC;
+		flags |= XFS_PREALLOC_SYNC;
 
-	error = -xfs_change_file_space(ip, cmd, &bf, 0, attr_flags);
+	error = xfs_update_prealloc_flags(ip, flags);
 	if (error)
 		goto out_unlock;
 
@@ -851,11 +994,11 @@ xfs_file_fallocate(
 
 		iattr.ia_valid = ATTR_SIZE;
 		iattr.ia_size = new_size;
-		error = -xfs_setattr_size(ip, &iattr, XFS_ATTR_NOLOCK);
+		error = xfs_vn_setattr_size(file_dentry(file), &iattr);
 	}
 
 out_unlock:
-	xfs_iunlock(ip, XFS_IOLOCK_EXCL);
+	xfs_iunlock(ip, iolock);
 	return error;
 }
 
@@ -889,9 +1032,9 @@ xfs_dir_open(
 	 * If there are any blocks, read-ahead block 0 as we're almost
 	 * certain to have the next operation be a read there.
 	 */
-	mode = xfs_ilock_map_shared(ip);
+	mode = xfs_ilock_data_map_shared(ip);
 	if (ip->i_d.di_nextents > 0)
-		xfs_dir3_data_readahead(NULL, ip, 0, -1);
+		xfs_dir3_data_readahead(ip, 0, -1);
 	xfs_iunlock(ip, mode);
 	return 0;
 }
@@ -901,7 +1044,7 @@ xfs_file_release(
 	struct inode	*inode,
 	struct file	*filp)
 {
-	return -xfs_release(XFS_I(inode));
+	return xfs_release(XFS_I(inode));
 }
 
 STATIC int
@@ -912,7 +1055,6 @@ xfs_file_readdir(
 {
 	struct inode	*inode = file_inode(filp);
 	xfs_inode_t	*ip = XFS_I(inode);
-	int		error;
 	size_t		bufsize;
 
 	/*
@@ -929,485 +1071,201 @@ xfs_file_readdir(
 	 */
 	bufsize = (size_t)min_t(loff_t, 32768, ip->i_d.di_size);
 
-	error = xfs_readdir(ip, dirent, bufsize,
+	return xfs_readdir(ip, dirent, bufsize,
 				(xfs_off_t *)&filp->f_pos, filldir);
-	if (error)
-		return -error;
-	return 0;
-}
-
-STATIC int
-xfs_file_mmap(
-	struct file	*filp,
-	struct vm_area_struct *vma)
-{
-	vma->vm_ops = &xfs_file_vm_ops;
-
-	file_accessed(filp);
-	return 0;
-}
-
-/*
- * mmap()d file has taken write protection fault and is being made
- * writable. We can set the page state up correctly for a writable
- * page, which means we can do correct delalloc accounting (ENOSPC
- * checking!) and unwritten extent mapping.
- */
-STATIC int
-xfs_vm_page_mkwrite(
-	struct vm_area_struct	*vma,
-	struct vm_fault		*vmf)
-{
-	return block_page_mkwrite(vma, vmf, xfs_get_blocks);
-}
-
-/*
- * This type is designed to indicate the type of offset we would like
- * to search from page cache for either xfs_seek_data() or xfs_seek_hole().
- */
-enum {
-	HOLE_OFF = 0,
-	DATA_OFF,
-};
-
-/*
- * Lookup the desired type of offset from the given page.
- *
- * On success, return true and the offset argument will point to the
- * start of the region that was found.  Otherwise this function will
- * return false and keep the offset argument unchanged.
- */
-STATIC bool
-xfs_lookup_buffer_offset(
-	struct page		*page,
-	loff_t			*offset,
-	unsigned int		type)
-{
-	loff_t			lastoff = page_offset(page);
-	bool			found = false;
-	struct buffer_head	*bh, *head;
-
-	bh = head = page_buffers(page);
-	do {
-		/*
-		 * Unwritten extents that have data in the page
-		 * cache covering them can be identified by the
-		 * BH_Unwritten state flag.  Pages with multiple
-		 * buffers might have a mix of holes, data and
-		 * unwritten extents - any buffer with valid
-		 * data in it should have BH_Uptodate flag set
-		 * on it.
-		 */
-		if (buffer_unwritten(bh) ||
-		    buffer_uptodate(bh)) {
-			if (type == DATA_OFF)
-				found = true;
-		} else {
-			if (type == HOLE_OFF)
-				found = true;
-		}
-
-		if (found) {
-			*offset = lastoff;
-			break;
-		}
-		lastoff += bh->b_size;
-	} while ((bh = bh->b_this_page) != head);
-
-	return found;
-}
-
-/*
- * This routine is called to find out and return a data or hole offset
- * from the page cache for unwritten extents according to the desired
- * type for xfs_seek_data() or xfs_seek_hole().
- *
- * The argument offset is used to tell where we start to search from the
- * page cache.  Map is used to figure out the end points of the range to
- * lookup pages.
- *
- * Return true if the desired type of offset was found, and the argument
- * offset is filled with that address.  Otherwise, return false and keep
- * offset unchanged.
- */
-STATIC bool
-xfs_find_get_desired_pgoff(
-	struct inode		*inode,
-	struct xfs_bmbt_irec	*map,
-	unsigned int		type,
-	loff_t			*offset)
-{
-	struct xfs_inode	*ip = XFS_I(inode);
-	struct xfs_mount	*mp = ip->i_mount;
-	struct pagevec		pvec;
-	pgoff_t			index;
-	pgoff_t			end;
-	loff_t			endoff;
-	loff_t			startoff = *offset;
-	loff_t			lastoff = startoff;
-	bool			found = false;
-
-	pagevec_init(&pvec, 0);
-
-	index = startoff >> PAGE_CACHE_SHIFT;
-	endoff = XFS_FSB_TO_B(mp, map->br_startoff + map->br_blockcount);
-	end = endoff >> PAGE_CACHE_SHIFT;
-	do {
-		int		want;
-		unsigned	nr_pages;
-		unsigned int	i;
-
-		want = min_t(pgoff_t, end - index, PAGEVEC_SIZE);
-		nr_pages = pagevec_lookup(&pvec, inode->i_mapping, index,
-					  want);
-		/*
-		 * No page mapped into given range.  If we are searching holes
-		 * and if this is the first time we got into the loop, it means
-		 * that the given offset is landed in a hole, return it.
-		 *
-		 * If we have already stepped through some block buffers to find
-		 * holes but they all contains data.  In this case, the last
-		 * offset is already updated and pointed to the end of the last
-		 * mapped page, if it does not reach the endpoint to search,
-		 * that means there should be a hole between them.
-		 */
-		if (nr_pages == 0) {
-			/* Data search found nothing */
-			if (type == DATA_OFF)
-				break;
-
-			ASSERT(type == HOLE_OFF);
-			if (lastoff == startoff || lastoff < endoff) {
-				found = true;
-				*offset = lastoff;
-			}
-			break;
-		}
-
-		/*
-		 * At lease we found one page.  If this is the first time we
-		 * step into the loop, and if the first page index offset is
-		 * greater than the given search offset, a hole was found.
-		 */
-		if (type == HOLE_OFF && lastoff == startoff &&
-		    lastoff < page_offset(pvec.pages[0])) {
-			found = true;
-			break;
-		}
-
-		for (i = 0; i < nr_pages; i++) {
-			struct page	*page = pvec.pages[i];
-			loff_t		b_offset;
-
-			/*
-			 * At this point, the page may be truncated or
-			 * invalidated (changing page->mapping to NULL),
-			 * or even swizzled back from swapper_space to tmpfs
-			 * file mapping. However, page->index will not change
-			 * because we have a reference on the page.
-			 *
-			 * Searching done if the page index is out of range.
-			 * If the current offset is not reaches the end of
-			 * the specified search range, there should be a hole
-			 * between them.
-			 */
-			if (page->index > end) {
-				if (type == HOLE_OFF && lastoff < endoff) {
-					*offset = lastoff;
-					found = true;
-				}
-				goto out;
-			}
-
-			lock_page(page);
-			/*
-			 * Page truncated or invalidated(page->mapping == NULL).
-			 * We can freely skip it and proceed to check the next
-			 * page.
-			 */
-			if (unlikely(page->mapping != inode->i_mapping)) {
-				unlock_page(page);
-				continue;
-			}
-
-			if (!page_has_buffers(page)) {
-				unlock_page(page);
-				continue;
-			}
-
-			found = xfs_lookup_buffer_offset(page, &b_offset, type);
-			if (found) {
-				/*
-				 * The found offset may be less than the start
-				 * point to search if this is the first time to
-				 * come here.
-				 */
-				*offset = max_t(loff_t, startoff, b_offset);
-				unlock_page(page);
-				goto out;
-			}
-
-			/*
-			 * We either searching data but nothing was found, or
-			 * searching hole but found a data buffer.  In either
-			 * case, probably the next page contains the desired
-			 * things, update the last offset to it so.
-			 */
-			lastoff = page_offset(page) + PAGE_SIZE;
-			unlock_page(page);
-		}
-
-		/*
-		 * The number of returned pages less than our desired, search
-		 * done.  In this case, nothing was found for searching data,
-		 * but we found a hole behind the last offset.
-		 */
-		if (nr_pages < want) {
-			if (type == HOLE_OFF) {
-				*offset = lastoff;
-				found = true;
-			}
-			break;
-		}
-
-		index = pvec.pages[i - 1]->index + 1;
-		pagevec_release(&pvec);
-	} while (index <= end);
-
-out:
-	pagevec_release(&pvec);
-	return found;
-}
-
-STATIC loff_t
-xfs_seek_data(
-	struct file		*file,
-	loff_t			start)
-{
-	struct inode		*inode = file->f_mapping->host;
-	struct xfs_inode	*ip = XFS_I(inode);
-	struct xfs_mount	*mp = ip->i_mount;
-	loff_t			uninitialized_var(offset);
-	xfs_fsize_t		isize;
-	xfs_fileoff_t		fsbno;
-	xfs_filblks_t		end;
-	uint			lock;
-	int			error;
-
-	lock = xfs_ilock_map_shared(ip);
-
-	isize = i_size_read(inode);
-	if (start >= isize) {
-		error = ENXIO;
-		goto out_unlock;
-	}
-
-	/*
-	 * Try to read extents from the first block indicated
-	 * by fsbno to the end block of the file.
-	 */
-	fsbno = XFS_B_TO_FSBT(mp, start);
-	end = XFS_B_TO_FSB(mp, isize);
-	for (;;) {
-		struct xfs_bmbt_irec	map[2];
-		int			nmap = 2;
-		unsigned int		i;
-
-		error = xfs_bmapi_read(ip, fsbno, end - fsbno, map, &nmap,
-				       XFS_BMAPI_ENTIRE);
-		if (error)
-			goto out_unlock;
-
-		/* No extents at given offset, must be beyond EOF */
-		if (nmap == 0) {
-			error = ENXIO;
-			goto out_unlock;
-		}
-
-		for (i = 0; i < nmap; i++) {
-			offset = max_t(loff_t, start,
-				       XFS_FSB_TO_B(mp, map[i].br_startoff));
-
-			/* Landed in a data extent */
-			if (map[i].br_startblock == DELAYSTARTBLOCK ||
-			    (map[i].br_state == XFS_EXT_NORM &&
-			     !isnullstartblock(map[i].br_startblock)))
-				goto out;
-
-			/*
-			 * Landed in an unwritten extent, try to search data
-			 * from page cache.
-			 */
-			if (map[i].br_state == XFS_EXT_UNWRITTEN) {
-				if (xfs_find_get_desired_pgoff(inode, &map[i],
-							DATA_OFF, &offset))
-					goto out;
-			}
-		}
-
-		/*
-		 * map[0] is hole or its an unwritten extent but
-		 * without data in page cache.  Probably means that
-		 * we are reading after EOF if nothing in map[1].
-		 */
-		if (nmap == 1) {
-			error = ENXIO;
-			goto out_unlock;
-		}
-
-		ASSERT(i > 1);
-
-		/*
-		 * Nothing was found, proceed to the next round of search
-		 * if reading offset not beyond or hit EOF.
-		 */
-		fsbno = map[i - 1].br_startoff + map[i - 1].br_blockcount;
-		start = XFS_FSB_TO_B(mp, fsbno);
-		if (start >= isize) {
-			error = ENXIO;
-			goto out_unlock;
-		}
-	}
-
-out:
-	if (offset != file->f_pos)
-		file->f_pos = offset;
-
-out_unlock:
-	xfs_iunlock_map_shared(ip, lock);
-
-	if (error)
-		return -error;
-	return offset;
-}
-
-STATIC loff_t
-xfs_seek_hole(
-	struct file		*file,
-	loff_t			start)
-{
-	struct inode		*inode = file->f_mapping->host;
-	struct xfs_inode	*ip = XFS_I(inode);
-	struct xfs_mount	*mp = ip->i_mount;
-	loff_t			uninitialized_var(offset);
-	xfs_fsize_t		isize;
-	xfs_fileoff_t		fsbno;
-	xfs_filblks_t		end;
-	uint			lock;
-	int			error;
-
-	if (XFS_FORCED_SHUTDOWN(mp))
-		return -XFS_ERROR(EIO);
-
-	lock = xfs_ilock_map_shared(ip);
-
-	isize = i_size_read(inode);
-	if (start >= isize) {
-		error = ENXIO;
-		goto out_unlock;
-	}
-
-	fsbno = XFS_B_TO_FSBT(mp, start);
-	end = XFS_B_TO_FSB(mp, isize);
-
-	for (;;) {
-		struct xfs_bmbt_irec	map[2];
-		int			nmap = 2;
-		unsigned int		i;
-
-		error = xfs_bmapi_read(ip, fsbno, end - fsbno, map, &nmap,
-				       XFS_BMAPI_ENTIRE);
-		if (error)
-			goto out_unlock;
-
-		/* No extents at given offset, must be beyond EOF */
-		if (nmap == 0) {
-			error = ENXIO;
-			goto out_unlock;
-		}
-
-		for (i = 0; i < nmap; i++) {
-			offset = max_t(loff_t, start,
-				       XFS_FSB_TO_B(mp, map[i].br_startoff));
-
-			/* Landed in a hole */
-			if (map[i].br_startblock == HOLESTARTBLOCK)
-				goto out;
-
-			/*
-			 * Landed in an unwritten extent, try to search hole
-			 * from page cache.
-			 */
-			if (map[i].br_state == XFS_EXT_UNWRITTEN) {
-				if (xfs_find_get_desired_pgoff(inode, &map[i],
-							HOLE_OFF, &offset))
-					goto out;
-			}
-		}
-
-		/*
-		 * map[0] contains data or its unwritten but contains
-		 * data in page cache, probably means that we are
-		 * reading after EOF.  We should fix offset to point
-		 * to the end of the file(i.e., there is an implicit
-		 * hole at the end of any file).
-		 */
-		if (nmap == 1) {
-			offset = isize;
-			break;
-		}
-
-		ASSERT(i > 1);
-
-		/*
-		 * Both mappings contains data, proceed to the next round of
-		 * search if the current reading offset not beyond or hit EOF.
-		 */
-		fsbno = map[i - 1].br_startoff + map[i - 1].br_blockcount;
-		start = XFS_FSB_TO_B(mp, fsbno);
-		if (start >= isize) {
-			offset = isize;
-			break;
-		}
-	}
-
-out:
-	/*
-	 * At this point, we must have found a hole.  However, the returned
-	 * offset may be bigger than the file size as it may be aligned to
-	 * page boundary for unwritten extents, we need to deal with this
-	 * situation in particular.
-	 */
-	offset = min_t(loff_t, offset, isize);
-	if (offset != file->f_pos)
-		file->f_pos = offset;
-
-out_unlock:
-	xfs_iunlock_map_shared(ip, lock);
-
-	if (error)
-		return -error;
-	return offset;
 }
 
 STATIC loff_t
 xfs_file_llseek(
 	struct file	*file,
 	loff_t		offset,
-	int		origin)
+	int		whence)
 {
-	switch (origin) {
-	case SEEK_END:
-	case SEEK_CUR:
-	case SEEK_SET:
-		return generic_file_llseek(file, offset, origin);
-	case SEEK_DATA:
-		return xfs_seek_data(file, offset);
-	case SEEK_HOLE:
-		return xfs_seek_hole(file, offset);
+	struct inode		*inode = file->f_mapping->host;
+
+	if (XFS_FORCED_SHUTDOWN(XFS_I(inode)->i_mount))
+		return -EIO;
+
+	switch (whence) {
 	default:
-		return -EINVAL;
+		return generic_file_llseek(file, offset, whence);
+	case SEEK_HOLE:
+		offset = iomap_seek_hole(inode, offset, &xfs_iomap_ops);
+		break;
+	case SEEK_DATA:
+		offset = iomap_seek_data(inode, offset, &xfs_iomap_ops);
+		break;
 	}
+
+	if (offset < 0)
+		return offset;
+	return vfs_setpos(file, offset, inode->i_sb->s_maxbytes);
+}
+
+/*
+ * Locking for serialisation of IO during page faults. This results in a lock
+ * ordering of:
+ *
+ * mmap_sem (MM)
+ *   sb_start_pagefault(vfs, freeze)
+ *     i_mmaplock (XFS - truncate serialisation)
+ *       page_lock (MM)
+ *         i_lock (XFS - extent map serialisation)
+ */
+
+/*
+ * mmap()d file has taken write protection fault and is being made writable. We
+ * can set the page state up correctly for a writable page, which means we can
+ * do correct delalloc accounting (ENOSPC checking!) and unwritten extent
+ * mapping.
+ */
+STATIC int
+xfs_filemap_page_mkwrite(
+	struct vm_area_struct	*vma,
+	struct vm_fault		*vmf)
+{
+	struct inode		*inode = file_inode(vma->vm_file);
+	int			ret;
+
+	trace_xfs_filemap_page_mkwrite(XFS_I(inode));
+
+	sb_start_pagefault(inode->i_sb);
+	file_update_time(vma->vm_file);
+	xfs_ilock(XFS_I(inode), XFS_MMAPLOCK_SHARED);
+
+	if (IS_DAX(inode)) {
+		ret = dax_iomap_fault(vmf, PE_SIZE_PTE, &xfs_iomap_ops);
+	} else {
+		ret = iomap_page_mkwrite(vma, vmf, &xfs_iomap_ops);
+		ret = block_page_mkwrite_return(ret);
+	}
+
+	xfs_iunlock(XFS_I(inode), XFS_MMAPLOCK_SHARED);
+	sb_end_pagefault(inode->i_sb);
+
+	return ret;
+}
+
+STATIC int
+xfs_filemap_fault(
+	struct vm_area_struct	*vma,
+	struct vm_fault		*vmf)
+{
+	struct inode		*inode = file_inode(vma->vm_file);
+	int			ret;
+
+	trace_xfs_filemap_fault(XFS_I(inode));
+
+	/* DAX can shortcut the normal fault path on write faults! */
+	if ((vmf->flags & FAULT_FLAG_WRITE) && IS_DAX(inode))
+		return xfs_filemap_page_mkwrite(vma, vmf);
+
+	xfs_ilock(XFS_I(inode), XFS_MMAPLOCK_SHARED);
+	if (IS_DAX(inode)) {
+		/*
+		 * we do not want to trigger unwritten extent conversion on read
+		 * faults - that is unnecessary overhead and would also require
+		 * changes to xfs_get_blocks_direct() to map unwritten extent
+		 * ioend for conversion on read-only mappings.
+		 */
+		ret = dax_iomap_fault(vmf, PE_SIZE_PTE, &xfs_iomap_ops);
+	} else
+		ret = filemap_fault(vma, vmf);
+	xfs_iunlock(XFS_I(inode), XFS_MMAPLOCK_SHARED);
+
+	return ret;
+}
+
+/*
+ * Similar to xfs_filemap_fault(), the DAX fault path can call into here on
+ * both read and write faults. Hence we need to handle both cases. There is no
+ * ->huge_mkwrite callout for huge pages, so we have a single function here to
+ * handle both cases here. @flags carries the information on the type of fault
+ * occuring.
+ */
+STATIC int
+xfs_filemap_huge_fault(
+	struct vm_fault		*vmf,
+	enum page_entry_size	pe_size)
+{
+	struct inode		*inode = file_inode(vmf->vma->vm_file);
+	struct xfs_inode	*ip = XFS_I(inode);
+	int			ret;
+
+	if (!IS_DAX(inode))
+		return VM_FAULT_FALLBACK;
+
+	trace_xfs_filemap_huge_fault(ip);
+
+	if (vmf->flags & FAULT_FLAG_WRITE) {
+		sb_start_pagefault(inode->i_sb);
+		file_update_time(vmf->vma->vm_file);
+	}
+
+	xfs_ilock(XFS_I(inode), XFS_MMAPLOCK_SHARED);
+	ret = dax_iomap_fault(vmf, pe_size, &xfs_iomap_ops);
+	xfs_iunlock(XFS_I(inode), XFS_MMAPLOCK_SHARED);
+
+	if (vmf->flags & FAULT_FLAG_WRITE)
+		sb_end_pagefault(inode->i_sb);
+
+	return ret;
+}
+
+/*
+ * pfn_mkwrite was originally inteneded to ensure we capture time stamp
+ * updates on write faults. In reality, it's need to serialise against
+ * truncate similar to page_mkwrite. Hence we cycle the XFS_MMAPLOCK_SHARED
+ * to ensure we serialise the fault barrier in place.
+ */
+static int
+xfs_filemap_pfn_mkwrite(
+	struct vm_area_struct	*vma,
+	struct vm_fault		*vmf)
+{
+
+	struct inode		*inode = file_inode(vma->vm_file);
+	struct xfs_inode	*ip = XFS_I(inode);
+	int			ret = VM_FAULT_NOPAGE;
+	loff_t			size;
+
+	trace_xfs_filemap_pfn_mkwrite(ip);
+
+	sb_start_pagefault(inode->i_sb);
+	file_update_time(vma->vm_file);
+
+	/* check if the faulting page hasn't raced with truncate */
+	xfs_ilock(ip, XFS_MMAPLOCK_SHARED);
+	size = (i_size_read(inode) + PAGE_SIZE - 1) >> PAGE_SHIFT;
+	if (vmf->pgoff >= size)
+		ret = VM_FAULT_SIGBUS;
+	else if (IS_DAX(inode))
+		ret = dax_pfn_mkwrite(vma, vmf);
+	xfs_iunlock(ip, XFS_MMAPLOCK_SHARED);
+	sb_end_pagefault(inode->i_sb);
+	return ret;
+
+}
+
+static const struct vm_operations_struct xfs_file_vm_ops = {
+	.fault		= xfs_filemap_fault,
+	.huge_fault	= xfs_filemap_huge_fault,
+	.page_mkwrite	= xfs_filemap_page_mkwrite,
+	.remap_pages	= generic_file_remap_pages,
+	.pfn_mkwrite	= xfs_filemap_pfn_mkwrite,
+};
+
+STATIC int
+xfs_file_mmap(
+	struct file	*filp,
+	struct vm_area_struct *vma)
+{
+	file_accessed(filp);
+	vma->vm_ops = &xfs_file_vm_ops;
+	if (IS_DAX(file_inode(filp)))
+		vma->vm_flags |= VM_MIXEDMAP | VM_HUGEPAGE;
+	vma->vm_flags2 |= VM_PFN_MKWRITE | VM_HUGE_FAULT;
+	return 0;
 }
 
 const struct file_operations xfs_file_operations = {
@@ -1426,6 +1284,7 @@ const struct file_operations xfs_file_operations = {
 	.open		= xfs_file_open,
 	.release	= xfs_file_release,
 	.fsync		= xfs_file_fsync,
+	.get_unmapped_area = thp_get_unmapped_area,
 	.fallocate	= xfs_file_fallocate,
 };
 
@@ -1439,10 +1298,4 @@ const struct file_operations xfs_dir_file_operations = {
 	.compat_ioctl	= xfs_file_compat_ioctl,
 #endif
 	.fsync		= xfs_dir_fsync,
-};
-
-static const struct vm_operations_struct xfs_file_vm_ops = {
-	.fault		= filemap_fault,
-	.page_mkwrite	= xfs_vm_page_mkwrite,
-	.remap_pages	= generic_file_remap_pages,
 };

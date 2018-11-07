@@ -332,7 +332,7 @@ static void aarp_expire_timeout(unsigned long unused)
 static int aarp_device_event(struct notifier_block *this, unsigned long event,
 			     void *ptr)
 {
-	struct net_device *dev = ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	int ct;
 
 	if (!net_eq(dev_net(dev), &init_net))
@@ -886,7 +886,7 @@ void __init aarp_proto_init(void)
 	setup_timer(&aarp_timer, aarp_expire_timeout, 0);
 	aarp_timer.expires  = jiffies + sysctl_aarp_expiry_time;
 	add_timer(&aarp_timer);
-	register_netdevice_notifier(&aarp_notifier);
+	register_netdevice_notifier_rh(&aarp_notifier);
 }
 
 /* Remove the AARP entries associated with a device. */
@@ -1058,7 +1058,7 @@ const struct file_operations atalk_seq_arp_fops = {
 void aarp_cleanup_module(void)
 {
 	del_timer_sync(&aarp_timer);
-	unregister_netdevice_notifier(&aarp_notifier);
+	unregister_netdevice_notifier_rh(&aarp_notifier);
 	unregister_snap_client(aarp_dl);
 	aarp_purge();
 }

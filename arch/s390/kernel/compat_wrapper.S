@@ -146,7 +146,7 @@ ENTRY(compat_sys_times_wrapper)
 	jg	compat_sys_times	# branch to system call
 
 ENTRY(sys32_brk_wrapper)
-	llgtr	%r2,%r2			# unsigned long
+	llgfr	%r2,%r2			# unsigned long
 	jg	sys_brk			# branch to system call
 
 ENTRY(sys32_setgid16_wrapper)
@@ -1412,3 +1412,115 @@ ENTRY(sys_finit_module_wrapper)
 	llgtr	%r3,%r3			# const char __user *
 	lgfr	%r4,%r4			# int
 	jg	sys_finit_module
+
+ENTRY(sys_sched_setattr_wrapper)
+	lgfr	%r2,%r2			# pid_t
+	llgtr	%r3,%r3			# struct sched_attr __user *
+	jg	sys_sched_setattr
+
+ENTRY(sys_sched_getattr_wrapper)
+	lgfr	%r2,%r2			# pid_t
+	llgtr	%r3,%r3			# const char __user *
+	llgfr	%r4,%r4			# unsigned int
+	jg	sys_sched_getattr
+
+ENTRY(sys_s390_pci_mmio_write_wrapper)
+	llgfr   %r2,%r2                 # unsigned long
+	llgtr   %r3,%r3                 # void __user *
+	llgfr   %r4,%r4                 # size_t
+	jg      sys_s390_pci_mmio_write
+
+ENTRY(sys_s390_pci_mmio_read_wrapper)
+	llgfr   %r2,%r2                 # unsigned long
+	llgtr   %r3,%r3                 # void __user *
+	llgfr   %r4,%r4                 # size_t
+	jg      sys_s390_pci_mmio_read
+
+ENTRY(sys_copy_file_range_wrapper)
+	lgfr    %r2,%r2         # int
+	llgtr   %r3,%r3         # loff_t *
+	lgfr    %r4,%r4         # int
+	llgtr   %r5,%r5         # loff_t *
+	llgfr   %r6,%r6         # size_t
+	llgfr   %r7,%r7         # unsigned int
+	jg  sys_copy_file_range
+
+ENTRY(sys_seccomp_wrapper)
+	llgfr	%r2,%r2		# unsigned int
+	llgfr	%r3,%r3		# unsigned int
+	llgtr	%r4,%r4		# const char __user *
+	jg	sys_seccomp
+
+ENTRY(sys_getrandom_wrapper)
+	llgtr	%r2,%r2		# void __user *
+	llgfr	%r3,%r3		# size_t
+	llgfr	%r4,%r4		# unsigned int
+	jg	sys_getrandom
+
+ENTRY(sys_s390_guarded_storage_wrapper)
+	lgfr	%r2,%r2		# int
+	llgtr	%r3,%r3		# struct gs_cb *
+	jg	sys_s390_guarded_storage
+
+ENTRY(sys_memfd_create_wrapper)
+	llgtr	%r2,%r2		# const char __user *
+	llgfr	%r3,%r3		# unsigned int
+	jg	sys_memfd_create
+
+ENTRY(sys_bind_wrapper)
+	lgfr	%r2,%r2		# int
+	llgtr	%r3,%r3		# struct sockaddr *
+	lgfr	%r4,%r4		# int
+	jg	sys_bind
+
+ENTRY(sys_connect_wrapper)
+	lgfr	%r2,%r2		# int
+	llgtr	%r3,%r3		# struct sockaddr *
+	lgfr	%r4,%r4		# int
+	jg	sys_connect
+
+ENTRY(sys_getsockopt_wrapper)
+	lgfr	%r2,%r2		# int
+	lgfr	%r3,%r3		# int
+	lgfr	%r4,%r4		# int
+	llgtr	%r5,%r5		# const void *
+	llgtr	%r6,%r6		# socklen_t *
+	jg	compat_sys_getsockopt
+
+ENTRY(sys_setsockopt_wrapper)
+	lgfr	%r2,%r2		# int
+	lgfr	%r3,%r3		# int
+	lgfr	%r4,%r4		# int
+	llgtr	%r5,%r5		# const void *
+	llgfr	%r6,%r6		# socklen_t
+	jg	compat_sys_setsockopt
+
+ENTRY(sys_sendto_wrapper)
+	lgfr	%r2,%r2		# int
+	llgtr	%r3,%r3		# void *
+	llgfr	%r4,%r4		# size_t
+	llgfr	%r5,%r5		# unsigned int
+	llgtr	%r6,%r6		# struct sockaddr *
+	lgfr	%r7,%r7		# int
+	jg	sys_sendto
+
+ENTRY(sys_sendmsg_wrapper)
+	lgfr	%r2,%r2		# int
+	llgtr	%r3,%r3		# const struct msghdr *
+	lgfr	%r4,%r4		# int
+	jg	compat_sys_sendmsg
+
+ENTRY(sys_recvfrom_wrapper)
+	lgfr	%r2,%r2		# int
+	llgtr	%r3,%r3		# void *
+	llgfr	%r4,%r4		# size_t
+	llgfr	%r5,%r5		# unsigned int
+	llgtr	%r6,%r6		# struct sockaddr *
+	llgtr	%r7,%r7		# int *
+	jg	compat_sys_recvfrom
+
+ENTRY(sys_recvmsg_wrapper)
+	lgfr	%r2,%r2		# int
+	llgtr	%r3,%r3		# const struct msghdr *
+	llgfr	%r4,%r4		# unsigned int
+	jg	compat_sys_recvmsg

@@ -280,7 +280,30 @@
 #define __NR_s390_runtime_instr 342
 #define __NR_kcmp		343
 #define __NR_finit_module	344
-#define NR_syscalls 345
+#define __NR_sched_setattr 345
+#define __NR_sched_getattr 346
+/* Number 347 is reserved for sys_renameat2 */
+#define __NR_seccomp		348
+#define __NR_getrandom		349
+#define __NR_memfd_create	350
+/* Number 351 is reserved for sys_bpf */
+#define __NR_s390_pci_mmio_write	352
+#define __NR_s390_pci_mmio_read		353
+#define __NR_socket		359
+#define __NR_bind		361
+#define __NR_connect		362
+#define __NR_getsockopt		365
+#define __NR_setsockopt		366
+#define __NR_sendto		369
+#define __NR_sendmsg		370
+#define __NR_recvfrom		371
+#define __NR_recvmsg		372
+#define __NR_shutdown		373
+#define __NR_copy_file_range	375
+/* Number 376 is reserved for sys_preadv2 */
+/* Number 377 is reserved for sys_pwritev2 */
+#define __NR_s390_guarded_storage	378
+#define NR_syscalls 379
 
 /* 
  * There are some system calls that are not present on 64 bit, some

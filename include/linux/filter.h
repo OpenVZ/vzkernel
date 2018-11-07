@@ -7,6 +7,9 @@
 #include <linux/atomic.h>
 #include <linux/compat.h>
 #include <uapi/linux/filter.h>
+#ifndef __GENKSYMS__
+#include <net/sch_generic.h>
+#endif
 
 #ifdef CONFIG_COMPAT
 /*
@@ -20,6 +23,12 @@ struct compat_sock_fprog {
 
 struct sk_buff;
 struct sock;
+struct bpf_prog_aux;
+
+struct bpf_prog
+{
+	struct bpf_prog_aux	*aux;	/* Auxiliary fields */
+};
 
 struct sk_filter
 {
@@ -31,12 +40,31 @@ struct sk_filter
 	struct sock_filter     	insns[0];
 };
 
+struct xdp_buff {
+	void *data;
+	void *data_end;
+	void *data_hard_start;
+};
+
+/* compute the linear packet data range [data, data_end) which
+ * will be accessed by cls_bpf and act_bpf programs
+ */
 static inline unsigned int sk_filter_len(const struct sk_filter *fp)
 {
 	return fp->len * sizeof(struct sock_filter) + sizeof(*fp);
 }
 
-extern int sk_filter(struct sock *sk, struct sk_buff *skb);
+static inline void bpf_compute_data_end(struct sk_buff *skb)
+{
+	return;
+}
+
+int sk_filter_trim_cap(struct sock *sk, struct sk_buff *skb, unsigned int cap);
+static inline int sk_filter(struct sock *sk, struct sk_buff *skb)
+{
+	return sk_filter_trim_cap(sk, skb, 1);
+}
+
 extern unsigned int sk_run_filter(const struct sk_buff *skb,
 				  const struct sock_filter *filter);
 extern int sk_unattached_filter_create(struct sk_filter **pfp,
@@ -47,6 +75,17 @@ extern int sk_detach_filter(struct sock *sk);
 extern int sk_chk_filter(struct sock_filter *filter, unsigned int flen);
 extern int sk_get_filter(struct sock *sk, struct sock_filter __user *filter, unsigned len);
 extern void sk_decode_filter(struct sock_filter *filt, struct sock_filter *to);
+
+static inline u32 bpf_prog_run_xdp(const struct bpf_prog *prog,
+				   struct xdp_buff *xdp)
+{
+	return 0;
+}
+
+static inline void bpf_warn_invalid_xdp_action(u32 act)
+{
+	return;
+}
 
 #ifdef CONFIG_BPF_JIT
 #include <stdarg.h>
@@ -75,6 +114,11 @@ static inline void bpf_jit_free(struct sk_filter *fp)
 }
 #define SK_RUN_FILTER(FILTER, SKB) sk_run_filter(SKB, FILTER->insns)
 #endif
+
+static inline int bpf_tell_extensions(void)
+{
+	return SKF_AD_MAX;
+}
 
 enum {
 	BPF_S_RET_K = 1,

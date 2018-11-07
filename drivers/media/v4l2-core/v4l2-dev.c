@@ -25,6 +25,7 @@
 #include <linux/init.h>
 #include <linux/kmod.h>
 #include <linux/slab.h>
+#include <linux/nospec.h>
 #include <asm/uaccess.h>
 
 #include <media/v4l2-common.h>
@@ -249,6 +250,8 @@ int v4l2_prio_change(struct v4l2_prio_state *global, enum v4l2_priority *local,
 		return -EINVAL;
 	if (*local == new)
 		return 0;
+
+	new = array_index_nospec(new, 4);
 
 	atomic_inc(&global->prios[new]);
 	if (prio_is_valid(*local))

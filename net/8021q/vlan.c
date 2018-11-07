@@ -98,13 +98,13 @@ void unregister_vlan_dev(struct net_device *dev, struct list_head *head)
 		vlan_gvrp_request_leave(dev);
 
 	vlan_group_set_device(grp, vlan->vlan_proto, vlan_id, NULL);
+
+	netdev_upper_dev_unlink(real_dev, dev);
 	/* Because unregister_netdevice_queue() makes sure at least one rcu
 	 * grace period is respected before device freeing,
 	 * we dont need to call synchronize_net() here.
 	 */
 	unregister_netdevice_queue(dev, head);
-
-	netdev_upper_dev_unlink(real_dev, dev);
 
 	if (grp->nr_vlan_devs == 0) {
 		vlan_mvrp_uninit_applicant(real_dev);
@@ -169,13 +169,13 @@ int register_vlan_dev(struct net_device *dev)
 	if (err < 0)
 		goto out_uninit_mvrp;
 
-	err = netdev_upper_dev_link(real_dev, dev);
-	if (err)
-		goto out_uninit_mvrp;
-
 	err = register_netdevice(dev);
 	if (err < 0)
-		goto out_upper_dev_unlink;
+		goto out_uninit_mvrp;
+
+	err = netdev_upper_dev_link(real_dev, dev);
+	if (err)
+		goto out_unregister_netdev;
 
 	/* Account for reference in struct vlan_dev_priv */
 	dev_hold(real_dev);
@@ -191,8 +191,8 @@ int register_vlan_dev(struct net_device *dev)
 
 	return 0;
 
-out_upper_dev_unlink:
-	netdev_upper_dev_unlink(real_dev, dev);
+out_unregister_netdev:
+	unregister_netdevice(dev);
 out_uninit_mvrp:
 	if (grp->nr_vlan_devs == 0)
 		vlan_mvrp_uninit_applicant(real_dev);
@@ -210,6 +210,7 @@ out_vid_del:
 static int register_vlan_device(struct net_device *real_dev, u16 vlan_id)
 {
 	struct net_device *new_dev;
+	struct vlan_dev_priv *vlan;
 	struct net *net = dev_net(real_dev);
 	struct vlan_net *vn = net_generic(net, vlan_net_id);
 	char name[IFNAMSIZ];
@@ -260,11 +261,12 @@ static int register_vlan_device(struct net_device *real_dev, u16 vlan_id)
 	new_dev->mtu = real_dev->mtu;
 	new_dev->priv_flags |= (real_dev->priv_flags & IFF_UNICAST_FLT);
 
-	vlan_dev_priv(new_dev)->vlan_proto = htons(ETH_P_8021Q);
-	vlan_dev_priv(new_dev)->vlan_id = vlan_id;
-	vlan_dev_priv(new_dev)->real_dev = real_dev;
-	vlan_dev_priv(new_dev)->dent = NULL;
-	vlan_dev_priv(new_dev)->flags = VLAN_FLAG_REORDER_HDR;
+	vlan = vlan_dev_priv(new_dev);
+	vlan->vlan_proto = htons(ETH_P_8021Q);
+	vlan->vlan_id = vlan_id;
+	vlan->real_dev = real_dev;
+	vlan->dent = NULL;
+	vlan->flags = VLAN_FLAG_REORDER_HDR;
 
 	new_dev->rtnl_link_ops = &vlan_link_ops;
 	err = register_vlan_dev(new_dev);
@@ -287,6 +289,10 @@ static void vlan_sync_address(struct net_device *dev,
 	if (ether_addr_equal(vlan->real_dev_addr, dev->dev_addr))
 		return;
 
+	/* vlan continues to inherit address of lower device */
+	if (vlan_dev_inherit_address(vlandev, dev))
+		goto out;
+
 	/* vlan address was different from the old address and is equal to
 	 * the new address */
 	if (!ether_addr_equal(vlandev->dev_addr, vlan->real_dev_addr) &&
@@ -299,6 +305,7 @@ static void vlan_sync_address(struct net_device *dev,
 	    !ether_addr_equal(vlandev->dev_addr, dev->dev_addr))
 		dev_uc_add(dev, vlandev->dev_addr);
 
+out:
 	memcpy(vlan->real_dev_addr, dev->dev_addr, ETH_ALEN);
 }
 
@@ -341,7 +348,7 @@ static void __vlan_device_event(struct net_device *dev, unsigned long event)
 static int vlan_device_event(struct notifier_block *unused, unsigned long event,
 			     void *ptr)
 {
-	struct net_device *dev = ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct vlan_group *grp;
 	struct vlan_info *vlan_info;
 	int i, flgs;
@@ -422,7 +429,7 @@ static int vlan_device_event(struct notifier_block *unused, unsigned long event,
 	case NETDEV_UP:
 		/* Put all VLANs for this dev in the up state too.  */
 		vlan_group_for_each_dev(grp, i, vlandev) {
-			flgs = vlandev->flags;
+			flgs = dev_get_flags(vlandev);
 			if (flgs & IFF_UP)
 				continue;
 
@@ -459,6 +466,7 @@ static int vlan_device_event(struct notifier_block *unused, unsigned long event,
 
 	case NETDEV_NOTIFY_PEERS:
 	case NETDEV_BONDING_FAILOVER:
+	case NETDEV_RESEND_IGMP:
 		/* Propagate to vlan devices */
 		vlan_group_for_each_dev(grp, i, vlandev)
 			call_netdevice_notifiers(event, vlandev);
@@ -596,6 +604,92 @@ out:
 	return err;
 }
 
+static struct sk_buff **vlan_gro_receive(struct sk_buff **head,
+					 struct sk_buff *skb)
+{
+	struct sk_buff *p, **pp = NULL;
+	struct vlan_hdr *vhdr;
+	unsigned int hlen, off_vlan;
+	const struct packet_offload *ptype;
+	__be16 type;
+	int flush = 1;
+
+	off_vlan = skb_gro_offset(skb);
+	hlen = off_vlan + sizeof(*vhdr);
+	vhdr = skb_gro_header_fast(skb, off_vlan);
+	if (skb_gro_header_hard(skb, hlen)) {
+		vhdr = skb_gro_header_slow(skb, hlen, off_vlan);
+		if (unlikely(!vhdr))
+			goto out;
+	}
+
+	type = vhdr->h_vlan_encapsulated_proto;
+
+	rcu_read_lock();
+	ptype = gro_find_receive_by_type(type);
+	if (!ptype)
+		goto out_unlock;
+
+	flush = 0;
+
+	for (p = *head; p; p = p->next) {
+		struct vlan_hdr *vhdr2;
+
+		if (!NAPI_GRO_CB(p)->same_flow)
+			continue;
+
+		vhdr2 = (struct vlan_hdr *)(p->data + off_vlan);
+		if (compare_vlan_header(vhdr, vhdr2))
+			NAPI_GRO_CB(p)->same_flow = 0;
+	}
+
+	skb_gro_pull(skb, sizeof(*vhdr));
+	skb_gro_postpull_rcsum(skb, vhdr, sizeof(*vhdr));
+	pp = call_gro_receive(ptype->callbacks.gro_receive, head, skb);
+
+out_unlock:
+	rcu_read_unlock();
+out:
+	NAPI_GRO_CB(skb)->flush |= flush;
+
+	return pp;
+}
+
+static int vlan_gro_complete(struct sk_buff *skb, int nhoff)
+{
+	struct vlan_hdr *vhdr = (struct vlan_hdr *)(skb->data + nhoff);
+	__be16 type = vhdr->h_vlan_encapsulated_proto;
+	struct packet_offload *ptype;
+	int err = -ENOENT;
+
+	rcu_read_lock();
+	ptype = gro_find_complete_by_type(type);
+	if (ptype)
+		err = ptype->callbacks.gro_complete(skb, nhoff + sizeof(*vhdr));
+
+	rcu_read_unlock();
+	return err;
+}
+
+static struct packet_offload vlan_packet_offloads[] __read_mostly = {
+	{
+		.type = cpu_to_be16(ETH_P_8021Q),
+		.priority = 10,
+		.callbacks = {
+			.gro_receive = vlan_gro_receive,
+			.gro_complete = vlan_gro_complete,
+		},
+	},
+	{
+		.type = cpu_to_be16(ETH_P_8021AD),
+		.priority = 10,
+		.callbacks = {
+			.gro_receive = vlan_gro_receive,
+			.gro_complete = vlan_gro_complete,
+		},
+	},
+};
+
 static int __net_init vlan_init_net(struct net *net)
 {
 	struct vlan_net *vn = net_generic(net, vlan_net_id);
@@ -623,6 +717,7 @@ static struct pernet_operations vlan_net_ops = {
 static int __init vlan_proto_init(void)
 {
 	int err;
+	unsigned int i;
 
 	pr_info("%s v%s\n", vlan_fullname, vlan_version);
 
@@ -630,7 +725,7 @@ static int __init vlan_proto_init(void)
 	if (err < 0)
 		goto err0;
 
-	err = register_netdevice_notifier(&vlan_notifier_block);
+	err = register_netdevice_notifier_rh(&vlan_notifier_block);
 	if (err < 0)
 		goto err2;
 
@@ -646,6 +741,9 @@ static int __init vlan_proto_init(void)
 	if (err < 0)
 		goto err5;
 
+	for (i = 0; i < ARRAY_SIZE(vlan_packet_offloads); i++)
+		dev_add_offload(&vlan_packet_offloads[i]);
+
 	vlan_ioctl_set(vlan_ioctl_handler);
 	return 0;
 
@@ -654,7 +752,7 @@ err5:
 err4:
 	vlan_gvrp_uninit();
 err3:
-	unregister_netdevice_notifier(&vlan_notifier_block);
+	unregister_netdevice_notifier_rh(&vlan_notifier_block);
 err2:
 	unregister_pernet_subsys(&vlan_net_ops);
 err0:
@@ -663,10 +761,16 @@ err0:
 
 static void __exit vlan_cleanup_module(void)
 {
+	unsigned int i;
+
 	vlan_ioctl_set(NULL);
+
+	for (i = 0; i < ARRAY_SIZE(vlan_packet_offloads); i++)
+		dev_remove_offload(&vlan_packet_offloads[i]);
+
 	vlan_netlink_fini();
 
-	unregister_netdevice_notifier(&vlan_notifier_block);
+	unregister_netdevice_notifier_rh(&vlan_notifier_block);
 
 	unregister_pernet_subsys(&vlan_net_ops);
 	rcu_barrier(); /* Wait for completion of call_rcu()'s */

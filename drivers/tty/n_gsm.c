@@ -62,6 +62,7 @@
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/gsmmux.h>
+#include <linux/nospec.h>
 
 static int debug;
 module_param(debug, int, 0600);
@@ -1651,6 +1652,8 @@ static struct gsm_dlci *gsm_dlci_alloc(struct gsm_mux *gsm, int addr)
 		dlci->data = gsm_dlci_data;
 	else
 		dlci->data = gsm_dlci_command;
+
+	addr = array_index_nospec(addr, NUM_DLCI);
 	gsm->dlci[addr] = dlci;
 	return dlci;
 }
@@ -2663,7 +2666,7 @@ static int gsm_mux_net_start_xmit(struct sk_buff *skb,
 	STATS(net).tx_bytes += skb->len;
 	gsm_dlci_data_kick(dlci);
 	/* And tell the kernel when the last transmit started. */
-	net->trans_start = jiffies;
+	netif_trans_update(net);
 	muxnet_put(mux_net);
 	return NETDEV_TX_OK;
 }
@@ -2727,7 +2730,7 @@ static void gsm_mux_net_init(struct net_device *net)
 		.ndo_start_xmit		= gsm_mux_net_start_xmit,
 		.ndo_tx_timeout		= gsm_mux_net_tx_timeout,
 		.ndo_get_stats		= gsm_mux_net_get_stats,
-		.ndo_change_mtu		= gsm_change_mtu,
+		.ndo_change_mtu_rh74	= gsm_change_mtu,
 	};
 
 	net->netdev_ops = &gsm_netdev_ops;
@@ -2896,11 +2899,15 @@ static int gsmtty_install(struct tty_driver *driver, struct tty_struct *tty)
 
 	if (mux >= MAX_MUX)
 		return -ENXIO;
+	mux = array_index_nospec(mux, MAX_MUX);
+
 	/* FIXME: we need to lock gsm_mux for lifetimes of ttys eventually */
 	if (gsm_mux[mux] == NULL)
 		return -EUNATCH;
 	if (line == 0 || line > 61)	/* 62/63 reserved */
 		return -ECHRNG;
+	line = array_index_nospec(line, 62);
+
 	gsm = gsm_mux[mux];
 	if (gsm->dead)
 		return -EL2HLT;
