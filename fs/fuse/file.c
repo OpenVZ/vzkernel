@@ -1271,13 +1271,17 @@ static ssize_t fuse_send_write(struct fuse_io_args *ia, loff_t pos,
 {
 	struct kiocb *iocb = ia->io->iocb;
 	struct file *file = iocb->ki_filp;
+	struct inode *inode = file_inode(file);
 	struct fuse_file *ff = file->private_data;
 	struct fuse_mount *fm = ff->fm;
 	struct fuse_write_in *inarg = &ia->write.in;
 	ssize_t err;
 
+	WARN_ON_ONCE(!inode_is_locked(inode));
+
 	fuse_write_args_fill(ia, ff, file_inode(file), pos, count);
 	inarg->flags = fuse_write_flags(iocb);
+
 	if (owner != NULL) {
 		inarg->write_flags |= FUSE_WRITE_LOCKOWNER;
 		inarg->lock_owner = fuse_lock_owner_id(fm->fc, owner);
