@@ -1299,9 +1299,12 @@ static size_t fuse_send_unmap(struct fuse_req *req, struct fuse_io_priv *io,
 		loff_t pos, size_t count, fl_owner_t owner)
 {
 	struct file *file = io->file;
+	struct inode *inode = file_inode(file);
 	struct fuse_file *ff = file->private_data;
 	struct fuse_conn *fc = ff->fc;
 	struct fuse_fallocate_in *inarg = &req->misc.fallocate.in;
+
+	WARN_ON_ONCE(!mutex_is_locked(&inode->i_mutex));
 
 	inarg->fh = ff->fh;
 	inarg->offset = pos;
@@ -1312,7 +1315,7 @@ static size_t fuse_send_unmap(struct fuse_req *req, struct fuse_io_priv *io,
 	req->in.numargs = 1;
 	req->in.args[0].size = sizeof(struct fuse_fallocate_in);
 	req->in.args[0].value = inarg;
-	req->io_inode = file_inode(file);
+	req->io_inode = inode;
 
 	fuse_account_request(fc, count);
 
