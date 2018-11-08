@@ -1183,9 +1183,12 @@ static size_t fuse_send_write(struct fuse_req *req, struct fuse_io_priv *io,
 {
 	struct kiocb *iocb = io->iocb;
 	struct file *file = iocb->ki_filp;
+	struct inode *inode = file_inode(file);
 	struct fuse_file *ff = file->private_data;
 	struct fuse_conn *fc = ff->fc;
 	struct fuse_write_in *inarg = &req->misc.write.in;
+
+	WARN_ON_ONCE(!inode_is_locked(inode));
 
 	fuse_write_fill(req, ff, file_inode(file), pos, count);
 	inarg->flags = file->f_flags;
