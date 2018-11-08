@@ -944,6 +944,8 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, 
 			inarg->mode &= ~FALLOC_FL_ZERO_RANGE;
 
 		if (inarg->mode & (FALLOC_FL_ZERO_RANGE|FALLOC_FL_PUNCH_HOLE)) {
+			WARN_ON_ONCE(!mutex_is_locked(&fi->inode.i_mutex));
+
 			if ((inarg->offset & (PAGE_SIZE - 1)) || (inarg->length & (PAGE_SIZE - 1))) {
 				r->req.out.h.error = -EINVAL;
 				goto error;
