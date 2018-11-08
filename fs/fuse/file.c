@@ -1330,11 +1330,14 @@ static size_t fuse_send_write(struct fuse_req *req, struct fuse_io_priv *io,
 			      loff_t pos, size_t count, fl_owner_t owner)
 {
 	struct file *file = io->file;
+	struct inode *inode = file_inode(file);
 	struct fuse_file *ff = file->private_data;
 	struct fuse_conn *fc = ff->fc;
 	struct fuse_write_in *inarg = &req->misc.write.in;
 
-	fuse_write_fill(req, ff, file_inode(file), pos, count);
+	WARN_ON_ONCE(!mutex_is_locked(&inode->i_mutex));
+
+	fuse_write_fill(req, ff, inode, pos, count);
 	fuse_account_request(fc, count);
 	inarg->flags = file->f_flags;
 	if (owner != NULL) {
