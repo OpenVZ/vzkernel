@@ -4414,7 +4414,7 @@ waitagain:
 	 * entries, go back to wait for more entries.
 	 */
 	if (sret == -EBUSY) {
-		if ((loops % 10000) == 0) {
+		if ((++loops % 10000) == 0) {
 			WARN_ON(1);
 			printk("%ldk loops in tracing_read_pipe\n", loops / 1000);
 			printk("trace_empty(iter): %d\n", trace_empty(iter));
