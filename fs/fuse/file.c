@@ -256,7 +256,8 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 	return err;
 }
 
-static void fuse_prepare_release(struct fuse_file *ff, int flags, int opcode)
+static void fuse_prepare_release(struct fuse_inode *fi, struct fuse_file *ff,
+				 int flags, int opcode)
 {
 	struct fuse_conn *fc = ff->fc;
 	struct fuse_req *req = ff->reserved_req;
@@ -281,6 +282,7 @@ static void fuse_prepare_release(struct fuse_file *ff, int flags, int opcode)
 
 void fuse_release_common(struct file *file, bool isdir)
 {
+	struct fuse_inode *fi = get_fuse_inode(file_inode(file));
 	struct fuse_file *ff;
 	struct fuse_req *req;
 	int opcode = isdir ? FUSE_RELEASEDIR : FUSE_RELEASE;
@@ -290,7 +292,7 @@ void fuse_release_common(struct file *file, bool isdir)
 		return;
 
 	req = ff->reserved_req;
-	fuse_prepare_release(ff, file->f_flags, opcode);
+	fuse_prepare_release(fi, ff, file->f_flags, opcode);
 
 	if (ff->flock) {
 		struct fuse_release_in *inarg = &req->misc.release.in;
@@ -333,10 +335,10 @@ static int fuse_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-void fuse_sync_release(struct fuse_file *ff, int flags)
+void fuse_sync_release(struct fuse_inode *fi, struct fuse_file *ff, int flags)
 {
 	WARN_ON(atomic_read(&ff->count) > 1);
-	fuse_prepare_release(ff, flags, FUSE_RELEASE);
+	fuse_prepare_release(fi, ff, flags, FUSE_RELEASE);
 	__set_bit(FR_FORCE, &ff->reserved_req->flags);
 	__clear_bit(FR_BACKGROUND, &ff->reserved_req->flags);
 	fuse_request_send(ff->fc, ff->reserved_req);
