@@ -96,7 +96,7 @@ struct fuse_inode {
 	/** Version of last attribute change */
 	u64 attr_version;
 
-	/** Files usable in writepage.  Protected by fc->lock */
+	/** Files usable in writepage.  Protected by fi->lock */
 	struct list_head write_files;
 
 	/** Writepages pending on truncate or fsync */
@@ -114,6 +114,9 @@ struct fuse_inode {
 
 	/** Miscellaneous bits describing inode state */
 	unsigned long state;
+
+	/** Lock to protect write related fields */
+	spinlock_t lock;
 };
 
 /** FUSE inode state bits */
