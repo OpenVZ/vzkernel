@@ -19,7 +19,7 @@ void KSTAT_PERF_ADD(struct kstat_perf_pcpu_struct *ptr, u64 real_time, u64 cpu_t
 	cur->wall_tottime += real_time;
 	if (cur->cpu_maxdur < cpu_time)
 		cur->cpu_maxdur = cpu_time;
-	cur->cpu_tottime += real_time;
+	cur->cpu_tottime += cpu_time;
 	write_seqcount_end(&cur->lock);
 	put_cpu_ptr(cur);
 }
