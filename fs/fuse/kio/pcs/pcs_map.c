@@ -2460,13 +2460,18 @@ truncate_tail:
        return;
 }
 
-
-noinline void pcs_mapping_truncate(struct pcs_int_request *ireq, u64 old_size)
+/*
+ * Taking into account that user-client does proper map invalidation at resize,
+ * we don't need to completely copy the functionality of pcs_mapping_truncate().
+ * Instead, it's enough to drop no longer used maps and set STALE_MAP error to
+ * the last map. Then the next io will trigger call to user space and because
+ * user space already has good map with newer version it will return it
+ * immediately and kernel/user will be in sync again.
+ */
+noinline void pcs_mapping_truncate(struct pcs_dentry_info *di, u64 old_size)
 {
-	struct pcs_dentry_info *di = ireq->dentry;
-	u64 new_size = DENTRY_SIZE(di);
-	u64 offset;
-	struct pcs_map_entry * m = NULL;
+	u64 new_size = DENTRY_SIZE(di), offset;
+	struct pcs_map_entry *m;
 
 	di->local_mtime = get_real_time_ms();
 
@@ -2478,32 +2483,42 @@ noinline void pcs_mapping_truncate(struct pcs_int_request *ireq, u64 old_size)
 	else
 		offset = new_size;
 
-	ireq->truncreq.offset = offset;
-	ireq->truncreq.phase = 0;
-
 	map_truncate_tail(&di->mapping, offset);
 
-	if (offset == 0) {
-		ireq_complete(ireq);
+	if (offset == 0)
 		return;
-	}
 
 	m = pcs_find_get_map(di, offset - 1);
 
-	FUSE_KTRACE(ireq->cc->fc, "mapping truncate %llu->%llu " DENTRY_FMT " %x", (unsigned long long)old_size,
-	      (unsigned long long)new_size, DENTRY_ARGS(ireq->dentry), m ? m->state : -1);
+	FUSE_KTRACE(di->cluster->fc, "mapping truncate %llu->%llu " DENTRY_FMT " %x",
+		(unsigned long long)old_size, (unsigned long long)new_size,
+		DENTRY_ARGS(di), m ? m->state : -1);
 
 	if (m == NULL) {
-		map_queue_on_limit(ireq);
+		struct pcs_map_set *maps = &di->cluster->maps;
+		map_gc(maps);
 		return;
 	}
 
-	if (map_chunk_end(m) == offset || valid_for_truncate(m, ireq)) {
-		map_truncate_tail(&di->mapping, map_chunk_end(m));
-		ireq_complete(ireq);
-	} else
-		pcs_map_queue_resolve(m, ireq, 1);
+	if (offset == map_chunk_end(m))
+		goto truncate_tail;
 
+	spin_lock(&m->lock);
+	if ((m->state & (PCS_MAP_ERROR|PCS_MAP_RESOLVING|PCS_MAP_NEW|PCS_MAP_READABLE)) ==
+	    (PCS_MAP_NEW|PCS_MAP_READABLE)) {
+		spin_unlock(&m->lock);
+		goto truncate_tail;
+	}
+
+	if (!(m->state & (PCS_MAP_ERROR|PCS_MAP_RESOLVING|PCS_MAP_NEW)))
+		map_remote_error_nolock(m, PCS_ERR_CSD_STALE_MAP,
+					m->cs_list ? m->cs_list->cs[0].info.id.val : 0);
+	spin_unlock(&m->lock);
+	pcs_map_put(m);
+	return;
+
+truncate_tail:
+	map_truncate_tail(&di->mapping, map_chunk_end(m));
 	pcs_map_put(m);
 }
 
