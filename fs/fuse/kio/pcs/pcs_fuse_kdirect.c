@@ -995,25 +995,25 @@ static void kpcs_setattr_end(struct fuse_conn *fc, struct fuse_args *args, int e
 	struct fuse_inode *fi = get_fuse_inode(args->io_inode);
 	struct fuse_setattr_in *inarg = (void*) args->in_args[0].value;
 	struct fuse_attr_out *outarg = (void*) args->out_args[0].value;
-	struct pcs_dentry_info *di = fi->private;
+	struct pcs_dentry_info *di = pcs_inode_from_fuse(fi);
 
 	BUG_ON(req->in.h.opcode != FUSE_SETATTR);
-	BUG_ON(!di);
-	di = pcs_inode_from_fuse(fi);
-	spin_lock(&di->lock);
 	TRACE("update size: ino:%lu old_sz:%lld new:%lld\n",
-	      args->io_inode->i_ino, di->fileinfo.attr.size,
-	      outarg->attr.size);
+	      args->io_inode->i_ino, di->fileinfo.attr.size, outarg->attr.size);
 
-	if (!error) {
-		di->fileinfo.attr.size = outarg->attr.size;
-		if (outarg->attr.size != inarg->size) {
-			pr_err("kio: failed to set requested size: %llu %llu\n",
-				outarg->attr.size, inarg->size);
-			error = args->req->out.h.error = -EIO;
-		}
-	}
+	if (error)
+		goto fail;
+
+	spin_lock(&di->lock);
+	di->fileinfo.attr.size = outarg->attr.size;
 	spin_unlock(&di->lock);
+
+	if (outarg->attr.size != inarg->size) {
+		pr_err("kio: failed to set requested size: %llu %llu\n",
+			outarg->attr.size, inarg->size);
+		error = req->out.h.error = -EIO;
+	}
+fail:
 	if(r->end)
 		r->end(fc, args, error);
 }
