@@ -263,11 +263,4 @@ static inline struct pcs_map_entry *pcs_map_get(struct pcs_map_entry *m)
 
 	return m;
 }
-
-static inline void pcs_map_invalidate_tail(struct pcs_mapping * mapping, u64 offset)
-{
-	unsigned long index = offset >> mapping->chunk_size_bits;
-
-	map_truncate_tail(mapping, index << mapping->chunk_size_bits);
-}
 #endif /* _PCS_MAP_H_ */
