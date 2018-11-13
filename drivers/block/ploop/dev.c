@@ -2581,13 +2581,11 @@ static void ploop_req_state_process(struct ploop_request * preq)
 	/* trick: preq->prealloc_size is actually new pos of eof */
 	if (unlikely(preq->prealloc_size && !preq->error)) {
 		struct ploop_io *io = &ploop_top_delta(plo)->io;
-		int log = preq->plo->cluster_log + 9;
 
 		BUG_ON(preq != io->prealloc_preq);
 		io->prealloc_preq = NULL;
 
-		io->prealloced_size = preq->prealloc_size -
-				      ((loff_t)io->alloc_head << log);
+		io->prealloced_size = preq->prealloc_size;
 		preq->prealloc_size = 0; /* only for sanity */
 	}
 
@@ -3919,6 +3917,7 @@ static int ploop_truncate(struct ploop_device * plo, unsigned long arg)
 
 	err = delta->ops->truncate(delta, file, ctl.alloc_head);
 	if (!err)
+		/* See comment in dio_release_prealloced */
 		delta->io.prealloced_size = 0;
 
 	ploop_relax(plo);
@@ -4832,6 +4831,7 @@ truncate:
 		err = delta->ops->truncate(delta, NULL,
 					   ploop_fb_get_first_lost_iblk(plo->fbd));
 		if (!err) {
+			/* See comment in dio_release_prealloced */
 			delta->io.prealloced_size = 0;
 			ctl.alloc_head = ploop_fb_get_lost_range_len(plo->fbd);
 			err = copy_to_user((void*)arg, &ctl, sizeof(ctl));
