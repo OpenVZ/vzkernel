@@ -164,7 +164,7 @@ void pcs_mapping_init(struct pcs_cluster_core *cc, struct pcs_mapping * mapping)
 void pcs_mapping_open(struct pcs_mapping * mapping);
 void pcs_mapping_invalidate(struct pcs_mapping * mapping);
 void pcs_mapping_deinit(struct pcs_mapping * mapping);
-void pcs_mapping_truncate(struct pcs_int_request *ireq, u64 old_size);
+void pcs_mapping_truncate(struct pcs_dentry_info *di, u64 old_size);
 void process_ireq_truncate(struct pcs_int_request *ireq);
 
 struct pcs_map_entry * pcs_find_get_map(struct pcs_dentry_info * de, u64 chunk);
