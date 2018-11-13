@@ -1002,17 +1002,29 @@ struct pcs_cs_list* cslist_alloc( struct pcs_cs_set *css, struct pcs_cs_info *re
 		if (cs->mds_flags & CS_FL_LOCAL) {
 			set_bit(CS_SF_LOCAL, &cs->state);
 			cs_list->flags |= CSL_FL_HAS_LOCAL;
-		}
+		} else if (test_bit(CS_SF_LOCAL, &cs->state))
+			clear_bit(CS_SF_LOCAL, &cs->state);
+
 		if (cs->mds_flags & CS_FL_LOCAL_SOCK)
 			set_bit(CS_SF_LOCAL_SOCK, &cs->state);
+		else if (test_bit(CS_SF_LOCAL_SOCK, &cs->state))
+			clear_bit(CS_SF_LOCAL_SOCK, &cs->state);
+
 		if (cs->mds_flags & CS_FL_INACTIVE) {
 			set_bit(CS_SF_INACTIVE, &cs->state);
 			cs_blacklist(cs, PCS_ERR_NET_ABORT, "mds hint");
-		}
+		} else if (test_bit(CS_SF_INACTIVE, &cs->state))
+			clear_bit(CS_SF_INACTIVE, &cs->state);
+
 		if (cs->mds_flags & CS_FL_REPLICATING)
 			set_bit(CS_SF_REPLICATING, &cs->state);
+		else if (test_bit(CS_SF_REPLICATING, &cs->state))
+			clear_bit(CS_SF_REPLICATING, &cs->state);
+
 		if (cs->mds_flags & CS_FL_FAILED)
 			set_bit(CS_SF_FAILED, &cs->state);
+		else if (test_bit(CS_SF_FAILED, &cs->state))
+			clear_bit(CS_SF_FAILED, &cs->state);
 
 		list_add(&cslink->link, &cs->map_list);
 		cs->nmaps++;
