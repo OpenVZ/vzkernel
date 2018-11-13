@@ -549,6 +549,7 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 	iblock_t iblk;
 	int log = preq->plo->cluster_log + 9;
 	loff_t clu_siz = 1 << log;
+	loff_t end_pos = (loff_t)io->alloc_head << (io->plo->cluster_log + 9);
 
 	if (delta->flags & PLOOP_FMT_RDONLY) {
 		PLOOP_FAIL_REQUEST(preq, -EBADF);
@@ -567,7 +568,7 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 
 	BUG_ON(preq->prealloc_size);
 
-	if (unlikely(io->prealloced_size < clu_siz)) {
+	if (unlikely(io->prealloced_size < end_pos + clu_siz)) {
 		if (!io->prealloc_preq) {
 			loff_t pos = (((loff_t)(iblk + 1)  << log) |
 				      (KAIO_PREALLOC - 1)) + 1;
@@ -588,7 +589,6 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 		}
 	}
 
-	io->prealloced_size -= clu_siz;
 	io->alloc_head++;
 
 	preq->iblock = iblk;
@@ -600,18 +600,18 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 static int kaio_release_prealloced(struct ploop_io * io)
 {
 	int ret;
+	loff_t end_pos = (loff_t)io->alloc_head << (io->plo->cluster_log + 9);
 
-	if (!io->prealloced_size)
+	if (io->prealloced_size <= end_pos)
 		return 0;
 
 	ret = kaio_truncate(io, io->files.file, io->alloc_head);
 	if (ret)
 		printk("Can't release %llu prealloced bytes: "
 		       "truncate to %llu failed (%d)\n",
-		       io->prealloced_size,
-		       (loff_t)io->alloc_head << (io->plo->cluster_log + 9),
-		       ret);
+		       io->prealloced_size - end_pos, end_pos, ret);
 	else
+		/* See comment in dio_release_prealloced */
 		io->prealloced_size = 0;
 
 	return ret;

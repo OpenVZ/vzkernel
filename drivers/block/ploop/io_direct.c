@@ -366,7 +366,7 @@ cached_submit(struct ploop_io *io, iblock_t iblk, struct ploop_request * preq,
 	file_start_write(io->files.file);
 
 	if (use_prealloc && end_pos > used_pos && may_fallocate) {
-		if (unlikely(io->prealloced_size < clu_siz)) {
+		if (unlikely(io->prealloced_size < used_pos + clu_siz)) {
 			loff_t prealloc = end_pos;
 			if (prealloc > PLOOP_MAX_PREALLOC(plo))
 				prealloc = PLOOP_MAX_PREALLOC(plo);
@@ -387,10 +387,8 @@ try_again:
 			if (err)
 				goto end_write;
 
-			io->prealloced_size = prealloc;
+			io->prealloced_size = pos + prealloc;
 		}
-
-		io->prealloced_size -= clu_siz;
 	}
 
 	if (may_fallocate) {
@@ -901,18 +899,26 @@ static int dio_truncate(struct ploop_io *, struct file *, __u32);
 static int dio_release_prealloced(struct ploop_io * io)
 {
 	int ret;
+	loff_t end_pos = (loff_t)io->alloc_head << (io->plo->cluster_log + 9);
 
-	if (!io->prealloced_size)
+	if (io->prealloced_size <= end_pos)
 		return 0;
 
 	ret = dio_truncate(io, io->files.file, io->alloc_head);
 	if (ret)
 		printk("Can't release %llu prealloced bytes: "
 		       "truncate to %llu failed (%d)\n",
-		       io->prealloced_size,
-		       (loff_t)io->alloc_head << (io->plo->cluster_log + 9),
-		       ret);
+		       io->prealloced_size - end_pos, end_pos, ret);
 	else
+		/*
+		 * We've changed semantics here: If preallocated region exists
+		 * io->prealloced_size is set to it's end offset, else it is
+		 * set to zero. If prealloced_size is <= end_pos we act as if
+		 * nothing is preallocated, these will work both for explicitly
+		 * truncated region and for implicitly truncated when
+		 * io->alloc_head goes beyond or equal to the
+		 * io->prealloced_size.
+		 */
 		io->prealloced_size = 0;
 
 	return ret;
