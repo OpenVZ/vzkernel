@@ -109,6 +109,24 @@ struct kaio_req {
 	struct bio_vec	      bvecs[0];
 };
 
+static void check_standby_mode(long res, struct ploop_device *plo) {
+	struct request_queue *q = plo->queue;
+	int prev;
+
+	/* move to standby if delta lease was stolen */
+	if (res != -EBUSY) {
+		return;
+	}
+
+	spin_lock_irq(q->queue_lock);
+	prev = queue_flag_test_and_set(QUEUE_FLAG_STANDBY, q);
+	spin_unlock_irq(q->queue_lock);
+
+	if (!prev)
+		printk("ploop%d was switched into "
+		       "the standby mode\n", plo->index);
+}
+
 static void kaio_rw_aio_complete(u64 data, long res)
 {
 	struct ploop_request * preq = (struct ploop_request *)data;
@@ -126,22 +144,8 @@ static void kaio_rw_aio_complete(u64 data, long res)
 			printk(" bio=%p: bi_sector=%ld bi_size=%d\n",
 			       b, b->bi_sector, b->bi_size);
 
-		if (res == -EBUSY) { /* a delta lease was stolen */
-			struct request_queue *q = preq->plo->queue;
-			int prev;
-
-			spin_lock_irq(q->queue_lock);
-			prev = queue_flag_test_and_set(QUEUE_FLAG_STANDBY, q);
-			spin_unlock_irq(q->queue_lock);
-
-			if (!prev)
-				printk("ploop%d was switched into "
-					"the standby mode\n", preq->plo->index);
-
-			ploop_req_set_error(preq, res);
-		} else {
-			PLOOP_REQ_SET_ERROR(preq, res);
-		}
+		check_standby_mode(res, preq->plo);
+		PLOOP_REQ_SET_ERROR(preq, res);
 	}
 
 	kaio_complete_io_request(preq);
