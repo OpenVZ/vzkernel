@@ -113,8 +113,8 @@ static void check_standby_mode(long res, struct ploop_device *plo) {
 	struct request_queue *q = plo->queue;
 	int prev;
 
-	/* move to standby if delta lease was stolen */
-	if (res != -EBUSY) {
+	/* move to standby if delta lease was stolen or mount is gone */
+	if (res != -EBUSY && res != -ENOTCONN) {
 		return;
 	}
 
