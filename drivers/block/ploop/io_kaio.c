@@ -524,6 +524,7 @@ static int kaio_fsync_thread(void * data)
 				       "on ploop%d)\n",
 				       err, io->files.inode->i_ino,
 				       io2level(io), plo->index);
+				check_standby_mode(err, plo);
 				PLOOP_REQ_SET_ERROR(preq, -EIO);
 			} else if (preq->req_rw & REQ_FLUSH) {
 				BUG_ON(!preq->req_size);
