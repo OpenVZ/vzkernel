@@ -995,7 +995,7 @@ static const char *fbcon_startup(void)
 			if (!softback_buf) {
 				softback_buf =
 				    (unsigned long)
-				    kmalloc(fbcon_softback_size,
+				    kvmalloc(fbcon_softback_size,
 					    GFP_KERNEL);
 				if (!softback_buf) {
 					fbcon_softback_size = 0;
@@ -1004,7 +1004,7 @@ static const char *fbcon_startup(void)
 			}
 		} else {
 			if (softback_buf) {
-				kfree((void *) softback_buf);
+				kvfree((void *) softback_buf);
 				softback_buf = 0;
 				softback_top = 0;
 			}
@@ -3567,7 +3567,7 @@ static void fbcon_exit(void)
 	if (fbcon_has_exited)
 		return;
 
-	kfree((void *)softback_buf);
+	kvfree((void *)softback_buf);
 	softback_buf = 0UL;
 
 	for (i = 0; i < FB_MAX; i++) {
