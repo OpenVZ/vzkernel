@@ -161,6 +161,7 @@ static inline int netaddr_cmp(PCS_NET_ADDR_T const *addr1, PCS_NET_ADDR_T const 
 
 	switch (addr1->type) {
 	case PCS_ADDRTYPE_IP:
+	case PCS_ADDRTYPE_RDMA:
 		sz = sizeof(struct in_addr);
 		break;
 	case PCS_ADDRTYPE_IP6:
