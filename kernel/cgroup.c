@@ -4148,11 +4148,14 @@ static void css_dput_fn(struct work_struct *work)
 	cgroup_dput(css->cgroup);
 }
 
+extern void memcg_css_release_check_kmem(struct cgroup_subsys_state *css);
+
 static void css_release(struct percpu_ref *ref)
 {
 	struct cgroup_subsys_state *css =
 		container_of(ref, struct cgroup_subsys_state, refcnt);
 
+	memcg_css_release_check_kmem(css);
 	queue_work(cgroup_destroy_wq, &css->dput_work);
 }
 
