@@ -2971,6 +2971,23 @@ static int memcg_cpu_hotplug_callback(struct notifier_block *nb,
 	return NOTIFY_OK;
 }
 
+void memcg_css_release_check_kmem(struct cgroup_subsys_state *css)
+{
+	struct mem_cgroup *memcg;
+	unsigned long kmem_counter;
+	struct cgroup *cgrp = css->cgroup;
+
+	if (cgrp->subsys[mem_cgroup_subsys_id] == NULL)
+		return;
+
+	memcg = mem_cgroup_from_cont(css->cgroup);
+	kmem_counter = page_counter_read(&memcg->kmem);
+	WARN_ONCE(kmem_counter,
+		  "Last put on memcg %p kmem=%lu css->flags=%#lx",
+		  memcg, kmem_counter, css->flags);
+}
+EXPORT_SYMBOL(memcg_css_release_check_kmem);
+
 /**
  * mem_cgroup_try_charge - try charging a memcg
  * @memcg: memcg to charge
@@ -3148,8 +3165,10 @@ done_restock:
 			page_counter_uncharge(&memcg->memsw, batch);
 		if (cache_charge)
 			page_counter_uncharge(&memcg->cache, nr_pages);
-		if (kmem_charge)
+		if (kmem_charge) {
+			WARN_ON_ONCE(1);
 			page_counter_uncharge(&memcg->kmem, nr_pages);
+		}
 
 		goto bypass;
 	}
