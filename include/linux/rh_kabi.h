@@ -80,6 +80,18 @@
  *   corrupt memory.  Instead, by changing the symbol checksum, such modules
  *   won't be loaded by the kernel.  This macro should only be used as a
  *   last resort when all other KABI workarounds have failed.
+ * RH_KABI_EXCLUDE
+ *   Exclude the element from checksum generation.  Any such element is
+ *   considered not to be part of the kABI whitelist and may be changed at
+ *   will.  Note however that it's the responsibility of the developer
+ *   changing the element to ensure 3rd party drivers using this element
+ *   won't panic, for example by not allowing them to be loaded.  That can
+ *   be achieved by changing another, non-whitelisted symbol they use,
+ *   either by nature of the change or by using RH_KABI_FORCE_CHANGE.
+ *
+ *   Also note that any change to the element must preserve its size. Change
+ *   of the size is not allowed and would constitute a silent kABI breakage.
+ *   Beware that the RH_KABI_EXCLUDE macro does not do any size checks.
  *
  * NOTE
  *   Don't use ';' after these macros as it messes up the kABI checker by
@@ -100,6 +112,7 @@
 # define _RH_KABI_DEPRECATE_FN(_type, _orig, _args...)	_type (*_orig)(_args)
 # define _RH_KABI_REPLACE(_orig, _new)		_orig
 # define _RH_KABI_REPLACE_UNSAFE(_orig, _new)	_orig
+# define _RH_KABI_EXCLUDE(_elem)
 
 #else
 
@@ -137,6 +150,8 @@
 	}
 # define _RH_KABI_REPLACE_UNSAFE(_orig, _new)	_new
 
+# define _RH_KABI_EXCLUDE(_elem)		_elem
+
 #endif /* __GENKSYMS__ */
 
 /* semicolon added wrappers for the RH_KABI_REPLACE macros */
@@ -168,5 +183,7 @@
  * code.
  */
 # define _RH_KABI_RESERVE(n)		unsigned long rh_reserved##n
+
+#define RH_KABI_EXCLUDE(_elem)		_RH_KABI_EXCLUDE(_elem);
 
 #endif /* _LINUX_RH_KABI_H */
