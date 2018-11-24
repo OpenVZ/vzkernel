@@ -78,7 +78,7 @@ void ireq_delay(struct pcs_int_request *ireq)
 	default:
 		ireq->last_delay = PCS_ERROR_DELAY;
 	}
-	mod_timer(&ireq->timer, ireq->last_delay);
+	mod_timer(&ireq->timer, jiffies + ireq->last_delay);
 }
 
 void ireq_handle_hole(struct pcs_int_request *ireq)
