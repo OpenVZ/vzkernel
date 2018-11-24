@@ -425,8 +425,10 @@ static void fuse_complete_map_work(struct work_struct *w)
 
 	BUG_ON(!m);
 	BUG_ON(!omap);
-	pcs_copy_error_cond(&omap->error, &work->status);
-	if (omap->cs_cnt > MAX_CS_CNT) {
+
+	if (pcs_if_error(&work->status)) {
+		pcs_copy_error(&omap->error, &work->status);
+	} else if (omap->cs_cnt > MAX_CS_CNT) {
 		printk("Corrupted cs_cnt from userspace");
 		pcs_set_local_error(&omap->error, PCS_ERR_PROTOCOL);
 	}
