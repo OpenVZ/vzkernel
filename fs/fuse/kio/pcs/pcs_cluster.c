@@ -83,7 +83,9 @@ struct fiemap_iterator
 	char			*buffer;
 	unsigned int		fiemap_max;
 	u32			*mapped;
+	int			first_iter;
 
+	u64			pos;
 	struct pcs_int_request	ireq;
 	pcs_api_iorequest_t	apireq;
 	struct iov_iter		it;
@@ -190,15 +192,12 @@ static void fiemap_process_one(struct fiemap_iterator *fiter)
 	struct pcs_int_request *sreq;
 	u64 pos, end;
 
-	pos = fiter->apireq.pos;
+	pos = fiter->pos;
 	end = orig_ireq->apireq.req->pos + orig_ireq->apireq.req->size;
 
-	/*
-	 * We reuse zeroed fiter->apireq.size to detect first
-	 * iteration of the fiter. In this case we do not have
-	 * completed extents and just skip this business.
-	 */
-	if (fiter->apireq.size != 0) {
+	if (fiter->first_iter) {
+		fiter->first_iter = 0;
+	} else {
 		/* Xfer previous chunk and advance pos */
 		if (pcs_if_error(&fiter->ireq.error)) {
 			fiter->orig_ireq->error = fiter->ireq.error;
@@ -208,6 +207,7 @@ static void fiemap_process_one(struct fiemap_iterator *fiter)
 			xfer_fiemap_extents(fiter, pos, fiter->buffer,
 					    fiter->ireq.apireq.aux);
 		pos += fiter->apireq.size;
+		fiter->pos = pos;
 	}
 
 	if (pos >= end)
@@ -234,10 +234,12 @@ static void fiemap_process_one(struct fiemap_iterator *fiter)
 	sreq->iochunk.flow = pcs_flow_record(&di->mapping.ftab, 0, pos, end-pos, &di->cluster->maps.ftab);
 	sreq->iochunk.cmd = PCS_REQ_T_FIEMAP;
 	sreq->iochunk.cs_index = 0;
-	sreq->iochunk.chunk = pos;
-	sreq->iochunk.offset = 0;
+	sreq->iochunk.chunk = round_down(pos, DENTRY_CHUNK_SIZE(di));
+	sreq->iochunk.offset = pos - sreq->iochunk.chunk;
 	sreq->iochunk.dio_offset = 0;
 	sreq->iochunk.size = end - pos;
+	if (sreq->iochunk.offset + sreq->iochunk.size > DENTRY_CHUNK_SIZE(di))
+		fiter->apireq.size = sreq->iochunk.size = DENTRY_CHUNK_SIZE(di) - sreq->iochunk.offset;
 	sreq->iochunk.csl = NULL;
 	sreq->iochunk.banned_cs.val = 0;
 	sreq->iochunk.msg.destructor = NULL;
@@ -308,9 +310,8 @@ static void process_ireq_fiemap(struct pcs_int_request *orig_ireq)
 	orig_ireq->apireq.req->get_iter(orig_ireq->apireq.req->datasource, 0, it);
 	fiter->mapped = &((struct fiemap*)it->data)->fm_mapped_extents;
 
-	/* fiemap_process_one() uses this 0 to detect first iteration */
-	fiter->apireq.size = 0;
-	fiter->apireq.pos = orig_ireq->apireq.req->pos;
+	fiter->first_iter = 1;
+	fiter->pos = orig_ireq->apireq.req->pos;
 
 	queue_fiter_work(fiter);
 }
