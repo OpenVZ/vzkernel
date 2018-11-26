@@ -1259,6 +1259,14 @@ nfsd4_umh_cltrack_init(struct net *net)
 	struct nfsd_net *nn = net_generic(net, nfsd_net_id);
 	char *grace_start = nfsd4_cltrack_grace_start(nn->boot_time);
 
+	if (!net_eq(net, get_exec_env()->ve_netns)) {
+		pr_warn("NFSD: attempt to initialize umh client tracking "
+			"in Container %s netns %u ignored.\n",
+			get_exec_env()->ve_name, net->proc_inum);
+		kfree(grace_start);
+		return -EINVAL;
+	}
+
 	ret = nfsd4_umh_cltrack_upcall("init", NULL, grace_start, NULL);
 	kfree(grace_start);
 	return ret;
