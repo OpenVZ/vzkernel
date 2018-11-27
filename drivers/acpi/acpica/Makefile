@@ -83,6 +83,7 @@ acpi-$(ACPI_FUTURE_USAGE) += hwtimer.o
 acpi-y +=		\
 	nsaccess.o	\
 	nsalloc.o	\
+	nsarguments.o	\
 	nsconvert.o	\
 	nsdump.o	\
 	nseval.o	\
@@ -134,9 +135,11 @@ acpi-y +=		\
 acpi-$(ACPI_FUTURE_USAGE) += rsdump.o rsdumpinfo.o
 
 acpi-y +=		\
+	tbdata.o	\
 	tbfadt.o	\
 	tbfind.o	\
 	tbinstal.o	\
+	tbprint.o	\
 	tbutils.o	\
 	tbxface.o	\
 	tbxfload.o	\
@@ -145,13 +148,17 @@ acpi-y +=		\
 acpi-y +=		\
 	utaddress.o	\
 	utalloc.o	\
+	utascii.o	\
+	utbuffer.o	\
 	utcopy.o	\
 	utexcep.o	\
 	utdebug.o	\
 	utdecode.o	\
 	utdelete.o	\
+	uterror.o	\
 	uteval.o	\
 	utglobal.o	\
+	uthex.o		\
 	utids.o		\
 	utinit.o	\
 	utlock.o	\
@@ -165,10 +172,15 @@ acpi-y +=		\
 	utresrc.o	\
 	utstate.o	\
 	utstring.o	\
+	utstrtoul64.o	\
 	utxface.o	\
 	utxfinit.o	\
 	utxferror.o	\
 	utxfmutex.o
 
-acpi-$(ACPI_FUTURE_USAGE) += uttrack.o utcache.o
+acpi-$(ACPI_FUTURE_USAGE) +=	\
+	utcache.o		\
+	utprint.o		\
+	uttrack.o		\
+	utuuid.o
 

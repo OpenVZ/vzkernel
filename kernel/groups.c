@@ -6,6 +6,7 @@
 #include <linux/slab.h>
 #include <linux/security.h>
 #include <linux/syscalls.h>
+#include <linux/user_namespace.h>
 #include <asm/uaccess.h>
 
 /* init to 2 - one for init_task, one to ensure it is never freed */
@@ -103,8 +104,23 @@ static int groups_from_user(struct group_info *group_info,
 }
 
 /* a simple Shell sort */
-static void groups_sort(struct group_info *group_info)
+void groups_sort(struct group_info *group_info)
 {
+	/** Hello, dear friend,
+ 	 *  It seems that you are attempting to change groups_sort. If not, you
+ 	 *  can ignore this message.
+ 	 *
+ 	 *  There's a bug in 3.10 series in which two nfsd threads may race
+ 	 *  and cause corruptions in auth.unix.gid (RHBZ#1516978). Upstream, it
+ 	 *  was fixed by moving groups_sort outside set_groups. In RHEL7, the
+ 	 *  backport is partial, not removing the call to groups_sort from
+ 	 *  set_groups in order to prevent behavior changes. This is possible
+ 	 *  because shellsort is a NOP in case the groups are already ordered.
+ 	 *
+ 	 *  When changing set_groups, you need to make sure that either
+ 	 *  groups_sort is still a NOP or that you can safely remove the call
+ 	 *  to groups_sort from set_groups. Tests can be found in the bugzilla.
+ 	 */
 	int base, max, stride;
 	int gidsetsize = group_info->ngroups;
 
@@ -130,6 +146,7 @@ static void groups_sort(struct group_info *group_info)
 		stride /= 3;
 	}
 }
+EXPORT_SYMBOL(groups_sort);
 
 /* a simple bsearch */
 int groups_search(const struct group_info *group_info, kgid_t grp)
@@ -223,6 +240,14 @@ out:
 	return i;
 }
 
+bool may_setgroups(void)
+{
+	struct user_namespace *user_ns = current_user_ns();
+
+	return ns_capable(user_ns, CAP_SETGID) &&
+		userns_may_setgroups(user_ns);
+}
+
 /*
  *	SMP: Our groups are copy-on-write. We can set them safely
  *	without another task interfering.
@@ -233,7 +258,7 @@ SYSCALL_DEFINE2(setgroups, int, gidsetsize, gid_t __user *, grouplist)
 	struct group_info *group_info;
 	int retval;
 
-	if (!nsown_capable(CAP_SETGID))
+	if (!may_setgroups())
 		return -EPERM;
 	if ((unsigned)gidsetsize > NGROUPS_MAX)
 		return -EINVAL;
@@ -247,6 +272,7 @@ SYSCALL_DEFINE2(setgroups, int, gidsetsize, gid_t __user *, grouplist)
 		return retval;
 	}
 
+	groups_sort(group_info);
 	retval = set_current_groups(group_info);
 	put_group_info(group_info);
 

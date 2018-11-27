@@ -3,6 +3,7 @@
 #include <linux/major.h>
 #include <linux/list.h>
 #include <linux/types.h>
+#include <linux/device.h>
 
 /*
  *	These allocations are managed by device@lanana.org. If you use an
@@ -23,6 +24,7 @@
 #define TEMP_MINOR		131	/* Temperature Sensor */
 #define RTC_MINOR		135
 #define EFI_RTC_MINOR		136	/* EFI Time services */
+#define VHCI_MINOR		137
 #define SUN_OPENPROM_MINOR	139
 #define DMAPI_MINOR		140	/* DMAPI */
 #define NVRAM_MINOR		144
@@ -30,6 +32,7 @@
 #define STORE_QUEUE_MINOR	155
 #define I2O_MINOR		166
 #define MICROCODE_MINOR		184
+#define VFIO_MINOR		196
 #define TUN_MINOR		200
 #define MWAVE_MINOR		219	/* ACP/Mwave Modem */
 #define MPT_MINOR		220
@@ -45,6 +48,7 @@
 #define MAPPER_CTRL_MINOR	236
 #define LOOP_CTRL_MINOR		237
 #define VHOST_NET_MINOR		238
+#define UHID_MINOR		239
 #define MISC_DYNAMIC_MINOR	255
 
 struct device;
@@ -62,6 +66,13 @@ struct miscdevice  {
 
 extern int misc_register(struct miscdevice * misc);
 extern int misc_deregister(struct miscdevice *misc);
+
+/*
+ * Helper macro for drivers that don't do anything special in module init / exit
+ * call. This helps in eleminating of boilerplate code.
+ */
+#define module_misc_device(__misc_device) \
+	module_driver(__misc_device, misc_register, misc_deregister)
 
 #define MODULE_ALIAS_MISCDEV(minor)				\
 	MODULE_ALIAS("char-major-" __stringify(MISC_MAJOR)	\

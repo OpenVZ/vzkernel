@@ -13,6 +13,8 @@
 
 struct super_block;
 struct file_system_type;
+struct iomap;
+struct iomap_ops;
 struct linux_binprm;
 struct path;
 struct mount;
@@ -37,6 +39,13 @@ static inline int __sync_blockdev(struct block_device *bdev, int wait)
 #endif
 
 /*
+ * buffer.c
+ */
+extern void guard_bio_eod(int rw, struct bio *bio);
+extern int __block_write_begin_int(struct page *page, loff_t pos, unsigned len,
+		get_block_t *get_block, struct iomap *iomap);
+
+/*
  * char_dev.c
  */
 extern void __init chrdev_init(void);
@@ -44,22 +53,22 @@ extern void __init chrdev_init(void);
 /*
  * namei.c
  */
-extern int __inode_permission(struct inode *, int);
+extern int user_path_mountpoint_at(int, const char __user *, unsigned int, struct path *);
+extern int vfs_path_lookup(struct dentry *, struct vfsmount *,
+			   const char *, unsigned int, struct path *);
 
 /*
  * namespace.c
  */
-extern int copy_mount_options(const void __user *, unsigned long *);
-extern int copy_mount_string(const void __user *, char **);
+extern void *copy_mount_options(const void __user *);
+extern char *copy_mount_string(const void __user *);
 
-extern struct vfsmount *lookup_mnt(struct path *);
+extern struct vfsmount *lookup_mnt(const struct path *);
 extern int finish_automount(struct vfsmount *, struct path *);
 
 extern int sb_prepare_remount_readonly(struct super_block *);
 
 extern void __init mnt_init(void);
-
-extern struct lglock vfsmount_lock;
 
 extern int __mnt_want_write(struct vfsmount *);
 extern int __mnt_want_write_file(struct file *);
@@ -74,9 +83,6 @@ extern void chroot_fs_refs(const struct path *, const struct path *);
 /*
  * file_table.c
  */
-extern void file_sb_list_add(struct file *f, struct super_block *sb);
-extern void file_sb_list_del(struct file *f);
-extern void mark_files_ro(struct super_block *);
 extern struct file *get_empty_filp(void);
 
 /*
@@ -96,11 +102,12 @@ struct open_flags {
 	umode_t mode;
 	int acc_mode;
 	int intent;
+	int lookup_flags;
 };
 extern struct file *do_filp_open(int dfd, struct filename *pathname,
-		const struct open_flags *op, int flags);
+		const struct open_flags *op);
 extern struct file *do_file_open_root(struct dentry *, struct vfsmount *,
-		const char *, const struct open_flags *, int lookup_flags);
+		const char *, const struct open_flags *);
 
 extern long do_handle_open(int mountdirfd,
 			   struct file_handle __user *ufh, int open_flag);
@@ -109,13 +116,21 @@ extern int open_check_o_direct(struct file *f);
 /*
  * inode.c
  */
-extern spinlock_t inode_sb_list_lock;
 extern void inode_add_lru(struct inode *inode);
+
+extern bool __atime_needs_update(const struct path *, struct inode *, bool);
+static inline bool atime_needs_update_rcu(const struct path *path,
+					  struct inode *inode)
+{
+	return __atime_needs_update(path, inode, true);
+}
+
+extern bool atime_needs_update_rcu(const struct path *, struct inode *);
 
 /*
  * fs-writeback.c
  */
-extern void inode_wb_list_del(struct inode *inode);
+extern void inode_io_list_del(struct inode *inode);
 
 extern int get_nr_dirty_inodes(void);
 extern void evict_inodes(struct super_block *);
@@ -125,19 +140,29 @@ extern int invalidate_inodes(struct super_block *, bool);
  * dcache.c
  */
 extern struct dentry *__d_alloc(struct super_block *, const struct qstr *);
+extern int d_set_mounted(struct dentry *dentry);
 
 /*
  * read_write.c
  */
-extern ssize_t __kernel_write(struct file *, const char *, size_t, loff_t *);
-
-/*
- * splice.c
- */
-extern long do_splice_direct(struct file *in, loff_t *ppos, struct file *out,
-		loff_t *opos, size_t len, unsigned int flags);
 
 /*
  * pipe.c
  */
 extern const struct file_operations pipefifo_fops;
+
+/*
+ * iomap support:
+ */
+typedef loff_t (*iomap_actor_t)(struct inode *inode, loff_t pos, loff_t len,
+		void *data, struct iomap *iomap);
+
+loff_t iomap_apply(struct inode *inode, loff_t pos, loff_t length,
+		unsigned flags, const struct iomap_ops *ops, void *data,
+		iomap_actor_t actor);
+
+/*
+ * fs_pin.c
+ */
+extern void group_pin_kill(struct hlist_head *p);
+extern void mnt_pin_kill(struct mount *m);

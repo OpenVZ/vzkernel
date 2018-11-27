@@ -11,6 +11,7 @@
 
 #include <uapi/linux/mdio.h>
 
+struct mii_bus;
 
 static inline bool mdio_phy_id_is_c45(int phy_id)
 {
@@ -71,6 +72,10 @@ extern void mdio45_ethtool_gset_npage(const struct mdio_if_info *mdio,
 				      struct ethtool_cmd *ecmd,
 				      u32 npage_adv, u32 npage_lpa);
 extern void
+mdio45_ethtool_ksettings_get_npage(const struct mdio_if_info *mdio,
+				   struct ethtool_link_ksettings *cmd,
+				   u32 npage_adv, u32 npage_lpa);
+extern void
 mdio45_ethtool_spauseparam_an(const struct mdio_if_info *mdio,
 			      const struct ethtool_pauseparam *ecmd);
 
@@ -88,6 +93,23 @@ static inline void mdio45_ethtool_gset(const struct mdio_if_info *mdio,
 				       struct ethtool_cmd *ecmd)
 {
 	mdio45_ethtool_gset_npage(mdio, ecmd, 0, 0);
+}
+
+/**
+ * mdio45_ethtool_ksettings_get - get settings for ETHTOOL_GLINKSETTINGS
+ * @mdio: MDIO interface
+ * @cmd: Ethtool request structure
+ *
+ * Since the CSRs for auto-negotiation using next pages are not fully
+ * standardised, this function does not attempt to decode them.  Use
+ * mdio45_ethtool_ksettings_get_npage() to specify advertisement bits
+ * from next pages.
+ */
+static inline void
+mdio45_ethtool_ksettings_get(const struct mdio_if_info *mdio,
+			     struct ethtool_link_ksettings *cmd)
+{
+	mdio45_ethtool_ksettings_get_npage(mdio, cmd, 0, 0);
 }
 
 extern int mdio_mii_ioctl(const struct mdio_if_info *mdio,
@@ -175,5 +197,10 @@ static inline u16 ethtool_adv_to_mmd_eee_adv_t(u32 adv)
 
 	return reg;
 }
+
+int mdiobus_read(struct mii_bus *bus, int addr, u32 regnum);
+int mdiobus_read_nested(struct mii_bus *bus, int addr, u32 regnum);
+int mdiobus_write(struct mii_bus *bus, int addr, u32 regnum, u16 val);
+int mdiobus_write_nested(struct mii_bus *bus, int addr, u32 regnum, u16 val);
 
 #endif /* __LINUX_MDIO_H__ */

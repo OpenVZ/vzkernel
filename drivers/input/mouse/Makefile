@@ -34,3 +34,6 @@ psmouse-$(CONFIG_MOUSE_PS2_SENTELIC)	+= sentelic.o
 psmouse-$(CONFIG_MOUSE_PS2_TRACKPOINT)	+= trackpoint.o
 psmouse-$(CONFIG_MOUSE_PS2_TOUCHKIT)	+= touchkit_ps2.o
 psmouse-$(CONFIG_MOUSE_PS2_CYPRESS)	+= cypress_ps2.o
+psmouse-$(CONFIG_MOUSE_PS2_VMMOUSE)	+= vmmouse.o
+
+psmouse-$(CONFIG_MOUSE_PS2_SMBUS)	+= psmouse-smbus.o

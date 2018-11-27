@@ -6,6 +6,20 @@
 #include <linux/cache.h>
 #include <linux/types.h>
 
+/* External interruption codes */
+#define EXT_IRQ_INTERRUPT_KEY	0x0040
+#define EXT_IRQ_CLK_COMP	0x1004
+#define EXT_IRQ_CPU_TIMER	0x1005
+#define EXT_IRQ_WARNING_TRACK	0x1007
+#define EXT_IRQ_MALFUNC_ALERT	0x1200
+#define EXT_IRQ_EMERGENCY_SIG	0x1201
+#define EXT_IRQ_EXTERNAL_CALL	0x1202
+#define EXT_IRQ_TIMING_ALERT	0x1406
+#define EXT_IRQ_MEASURE_ALERT	0x1407
+#define EXT_IRQ_SERVICE_SIG	0x2401
+#define EXT_IRQ_CP_SERVICE	0x2603
+#define EXT_IRQ_IUCV		0x4000
+
 enum interruption_main_class {
 	EXTERNAL_INTERRUPT,
 	IO_INTERRUPT,
@@ -44,6 +58,10 @@ enum interruption_class {
 	IRQIO_VIR,
 	NMI_NMI,
 	CPU_RST,
+#ifndef __GENKSYMS__
+	IRQIO_VAI,
+	IRQEXT_FTP,
+#endif
 	NR_ARCH_IRQS
 };
 
@@ -65,12 +83,16 @@ struct ext_code {
 
 typedef void (*ext_int_handler_t)(struct ext_code, unsigned int, unsigned long);
 
-int register_external_interrupt(u16 code, ext_int_handler_t handler);
-int unregister_external_interrupt(u16 code, ext_int_handler_t handler);
-void service_subclass_irq_register(void);
-void service_subclass_irq_unregister(void);
-void measurement_alert_subclass_register(void);
-void measurement_alert_subclass_unregister(void);
+int register_external_irq(u16 code, ext_int_handler_t handler);
+int unregister_external_irq(u16 code, ext_int_handler_t handler);
+
+enum irq_subclass {
+	IRQ_SUBCLASS_MEASUREMENT_ALERT = 5,
+	IRQ_SUBCLASS_SERVICE_SIGNAL = 9,
+};
+
+void irq_subclass_register(enum irq_subclass subclass);
+void irq_subclass_unregister(enum irq_subclass subclass);
 
 #ifdef CONFIG_LOCKDEP
 #  define disable_irq_nosync_lockdep(irq)	disable_irq_nosync(irq)

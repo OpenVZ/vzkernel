@@ -18,28 +18,13 @@
 #include <net/netfilter/nf_conntrack_ecache.h>
 #include <net/netfilter/nf_conntrack_labels.h>
 
-static unsigned int label_bits(const struct nf_conn_labels *l)
-{
-	unsigned int longs = l->words;
-	return longs * BITS_PER_LONG;
-}
-
-bool nf_connlabel_match(const struct nf_conn *ct, u16 bit)
-{
-	struct nf_conn_labels *labels = nf_ct_labels_find(ct);
-
-	if (!labels)
-		return false;
-
-	return bit < label_bits(labels) && test_bit(bit, labels->bits);
-}
-EXPORT_SYMBOL_GPL(nf_connlabel_match);
+static spinlock_t nf_connlabels_lock;
 
 int nf_connlabel_set(struct nf_conn *ct, u16 bit)
 {
 	struct nf_conn_labels *labels = nf_ct_labels_find(ct);
 
-	if (!labels || bit >= label_bits(labels))
+	if (!labels)
 		return -ENOSPC;
 
 	if (test_bit(bit, labels->bits))
@@ -52,7 +37,6 @@ int nf_connlabel_set(struct nf_conn *ct, u16 bit)
 }
 EXPORT_SYMBOL_GPL(nf_connlabel_set);
 
-#if IS_ENABLED(CONFIG_NF_CT_NETLINK)
 static void replace_u32(u32 *address, u32 mask, u32 new)
 {
 	u32 old, tmp;
@@ -75,7 +59,7 @@ int nf_connlabels_replace(struct nf_conn *ct,
 	if (!labels)
 		return -ENOSPC;
 
-	size = labels->words * sizeof(long);
+	size = sizeof(labels->bits);
 	if (size < (words32 * sizeof(u32)))
 		words32 = size / sizeof(u32);
 
@@ -93,7 +77,27 @@ int nf_connlabels_replace(struct nf_conn *ct,
 	return 0;
 }
 EXPORT_SYMBOL_GPL(nf_connlabels_replace);
-#endif
+
+int nf_connlabels_get(struct net *net, unsigned int bits)
+{
+	if (BIT_WORD(bits) >= NF_CT_LABELS_MAX_SIZE / sizeof(long))
+		return -ERANGE;
+
+	spin_lock(&nf_connlabels_lock);
+	net->ct.labels_used++;
+	spin_unlock(&nf_connlabels_lock);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(nf_connlabels_get);
+
+void nf_connlabels_put(struct net *net)
+{
+	spin_lock(&nf_connlabels_lock);
+	net->ct.labels_used--;
+	spin_unlock(&nf_connlabels_lock);
+}
+EXPORT_SYMBOL_GPL(nf_connlabels_put);
 
 static struct nf_ct_ext_type labels_extend __read_mostly = {
 	.len    = sizeof(struct nf_conn_labels),
@@ -103,6 +107,9 @@ static struct nf_ct_ext_type labels_extend __read_mostly = {
 
 int nf_conntrack_labels_init(void)
 {
+	BUILD_BUG_ON(NF_CT_LABELS_MAX_SIZE / sizeof(long) >= U8_MAX);
+
+	spin_lock_init(&nf_connlabels_lock);
 	return nf_ct_extend_register(&labels_extend);
 }
 

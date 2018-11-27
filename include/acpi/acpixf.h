@@ -46,7 +46,7 @@
 
 /* Current ACPICA subsystem version in YYYYMMDD format */
 
-#define ACPI_CA_VERSION                 0x20130328
+#define ACPI_CA_VERSION                 0x20130517
 
 #include <acpi/acconfig.h>
 #include <acpi/actypes.h>
@@ -62,6 +62,7 @@ extern u32 acpi_current_gpe_count;
 extern struct acpi_table_fadt acpi_gbl_FADT;
 extern u8 acpi_gbl_system_awake_and_running;
 extern u8 acpi_gbl_reduced_hardware;	/* ACPI 5.0 */
+extern u8 acpi_gbl_osi_data;
 
 /* Runtime configuration of debug print levels */
 
@@ -70,16 +71,21 @@ extern u32 acpi_dbg_layer;
 
 /* ACPICA runtime options */
 
-extern u8 acpi_gbl_enable_interpreter_slack;
 extern u8 acpi_gbl_all_methods_serialized;
+extern u8 acpi_gbl_copy_dsdt_locally;
 extern u8 acpi_gbl_create_osi_method;
-extern u8 acpi_gbl_use_default_register_widths;
+extern u8 acpi_gbl_disable_auto_repair;
+extern u8 acpi_gbl_disable_ssdt_table_load;
+extern u8 acpi_gbl_do_not_use_xsdt;
+extern u8 acpi_gbl_verify_table_checksum;
 extern acpi_name acpi_gbl_trace_method_name;
 extern u32 acpi_gbl_trace_flags;
-extern bool acpi_gbl_enable_aml_debug_object;
-extern u8 acpi_gbl_copy_dsdt_locally;
+extern u8 acpi_gbl_enable_aml_debug_object;
+extern u8 acpi_gbl_enable_interpreter_slack;
+extern acpi_name acpi_gbl_trace_method_name;
 extern u8 acpi_gbl_truncate_io_addresses;
-extern u8 acpi_gbl_disable_auto_repair;
+extern u8 acpi_gbl_use_default_register_widths;
+extern u8 acpi_gbl_disable_ssdt_table_install;
 
 /*
  * Hardware-reduced prototypes. All interfaces that use these macros will
@@ -88,13 +94,13 @@ extern u8 acpi_gbl_disable_auto_repair;
  */
 #if (!ACPI_REDUCED_HARDWARE)
 #define ACPI_HW_DEPENDENT_RETURN_STATUS(prototype) \
-	prototype;
+	ACPI_EXTERNAL_RETURN_STATUS(prototype)
 
 #define ACPI_HW_DEPENDENT_RETURN_OK(prototype) \
-	prototype;
+	ACPI_EXTERNAL_RETURN_OK(prototype)
 
 #define ACPI_HW_DEPENDENT_RETURN_VOID(prototype) \
-	prototype;
+	ACPI_EXTERNAL_RETURN_VOID(prototype)
 
 #else
 #define ACPI_HW_DEPENDENT_RETURN_STATUS(prototype) \
@@ -108,21 +114,49 @@ extern u8 acpi_gbl_disable_auto_repair;
 
 #endif				/* !ACPI_REDUCED_HARDWARE */
 
+/* ACPICA prototypes */
+
+#ifndef ACPI_EXTERNAL_RETURN_STATUS
+#define ACPI_EXTERNAL_RETURN_STATUS(prototype) \
+	prototype;
+#endif
+
+#ifndef ACPI_EXTERNAL_RETURN_OK
+#define ACPI_EXTERNAL_RETURN_OK(prototype) \
+	prototype;
+#endif
+
+#ifndef ACPI_EXTERNAL_RETURN_VOID
+#define ACPI_EXTERNAL_RETURN_VOID(prototype) \
+	prototype;
+#endif
+
+#ifndef ACPI_EXTERNAL_RETURN_UINT32
+#define ACPI_EXTERNAL_RETURN_UINT32(prototype) \
+	prototype;
+#endif
+
+#ifndef ACPI_EXTERNAL_RETURN_PTR
+#define ACPI_EXTERNAL_RETURN_PTR(prototype) \
+	prototype;
+#endif
+
 extern u32 acpi_rsdt_forced;
 /*
  * Initialization
  */
-acpi_status
-acpi_initialize_tables(struct acpi_table_desc *initial_storage,
-		       u32 initial_table_count, u8 allow_resize);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_initialize_tables(struct acpi_table_desc
+						   *initial_storage,
+						   u32 initial_table_count,
+						   u8 allow_resize))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status __init acpi_initialize_subsystem(void))
 
-acpi_status __init acpi_initialize_subsystem(void);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status acpi_enable_subsystem(u32 flags))
 
-acpi_status acpi_enable_subsystem(u32 flags);
-
-acpi_status acpi_initialize_objects(u32 flags);
-
-acpi_status acpi_terminate(void);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status __init
+			    acpi_initialize_objects(u32 flags))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status __init acpi_terminate(void))
 
 /*
  * Miscellaneous global interfaces
@@ -130,155 +164,192 @@ acpi_status acpi_terminate(void);
 ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status acpi_enable(void))
 ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status acpi_disable(void))
 #ifdef ACPI_FUTURE_USAGE
-acpi_status acpi_subsystem_status(void);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status acpi_subsystem_status(void))
 #endif
 
 #ifdef ACPI_FUTURE_USAGE
-acpi_status acpi_get_system_info(struct acpi_buffer *ret_buffer);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_get_system_info(struct acpi_buffer
+						 *ret_buffer))
 #endif
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_get_statistics(struct acpi_statistics *stats))
+ACPI_EXTERNAL_RETURN_PTR(const char
+			  *acpi_format_exception(acpi_status exception))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status acpi_purge_cached_objects(void))
 
-const char *acpi_format_exception(acpi_status exception);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_install_interface(acpi_string interface_name))
 
-acpi_status acpi_purge_cached_objects(void);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_remove_interface(acpi_string interface_name))
 
-acpi_status acpi_install_interface(acpi_string interface_name);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_update_interfaces(u8 action))
 
-acpi_status acpi_remove_interface(acpi_string interface_name);
-
-u32
-acpi_check_address_range(acpi_adr_space_type space_id,
-			 acpi_physical_address address,
-			 acpi_size length, u8 warn);
-
-acpi_status
-acpi_decode_pld_buffer(u8 *in_buffer,
-		       acpi_size length, struct acpi_pld_info **return_buffer);
-
-/*
- * ACPI Memory management
- */
-void *acpi_allocate(u32 size);
-
-void *acpi_callocate(u32 size);
-
-void acpi_free(void *address);
+ACPI_EXTERNAL_RETURN_UINT32(u32
+			    acpi_check_address_range(acpi_adr_space_type
+						     space_id,
+						     acpi_physical_address
+						     address, acpi_size length,
+						     u8 warn))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_decode_pld_buffer(u8 *in_buffer,
+						    acpi_size length,
+						    struct acpi_pld_info
+						    **return_buffer))
 
 /*
  * ACPI table load/unload interfaces
  */
-acpi_status acpi_load_table(struct acpi_table_header *table);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status __init
+			    acpi_install_table(acpi_physical_address address,
+					       u8 physical))
 
-acpi_status acpi_unload_parent_table(acpi_handle object);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_load_table(struct acpi_table_header *table))
 
-acpi_status acpi_load_tables(void);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_unload_parent_table(acpi_handle object))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status __init acpi_load_tables(void))
 
 /*
  * ACPI table manipulation interfaces
  */
-acpi_status acpi_reallocate_root_table(void);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status acpi_reallocate_root_table(void))
 
-acpi_status acpi_find_root_pointer(acpi_size *rsdp_address);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_find_root_pointer(acpi_size * rsdp_address))
 
-acpi_status acpi_unload_table_id(acpi_owner_id id);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status acpi_unload_table_id(acpi_owner_id id))
 
-acpi_status
-acpi_get_table_header(acpi_string signature,
-		      u32 instance, struct acpi_table_header *out_table_header);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_get_table_header(acpi_string signature,
+						  u32 instance,
+						  struct acpi_table_header
+						  *out_table_header))
 
-acpi_status
-acpi_get_table_with_size(acpi_string signature,
-	       u32 instance, struct acpi_table_header **out_table,
-	       acpi_size *tbl_size);
-acpi_status
-acpi_get_table(acpi_string signature,
-	       u32 instance, struct acpi_table_header **out_table);
-
-acpi_status
-acpi_get_table_by_index(u32 table_index, struct acpi_table_header **out_table);
-
-acpi_status
-acpi_install_table_handler(acpi_table_handler handler, void *context);
-
-acpi_status acpi_remove_table_handler(acpi_table_handler handler);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_get_table_with_size(acpi_string signature,
+						     u32 instance,
+						     struct acpi_table_header
+						     **out_table,
+						     acpi_size *tbl_size))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_get_table(acpi_string signature, u32 instance,
+					    struct acpi_table_header
+					    **out_table))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_get_table_by_index(u32 table_index,
+						     struct acpi_table_header
+						     **out_table))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_install_table_handler(acpi_table_handler
+							handler, void *context))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_remove_table_handler(acpi_table_handler
+						       handler))
 
 /*
  * Namespace and name interfaces
  */
-acpi_status
-acpi_walk_namespace(acpi_object_type type,
-		    acpi_handle start_object,
-		    u32 max_depth,
-		    acpi_walk_callback pre_order_visit,
-		    acpi_walk_callback post_order_visit,
-		    void *context, void **return_value);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_walk_namespace(acpi_object_type type,
+						acpi_handle start_object,
+						u32 max_depth,
+						acpi_walk_callback
+						pre_order_visit,
+						acpi_walk_callback
+						post_order_visit,
+						void *context,
+						void **return_value))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_get_devices(const char *HID,
+					      acpi_walk_callback user_function,
+					      void *context,
+					      void **return_value))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_get_name(acpi_handle object, u32 name_type,
+					   struct acpi_buffer *ret_path_ptr))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_get_handle(acpi_handle parent,
+					     acpi_string pathname,
+					     acpi_handle * ret_handle))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_attach_data(acpi_handle object,
+					      acpi_object_handler handler,
+					      void *data))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_detach_data(acpi_handle object,
+					      acpi_object_handler handler))
 
-acpi_status
-acpi_get_devices(const char *HID,
-		 acpi_walk_callback user_function,
-		 void *context, void **return_value);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_get_data_full(acpi_handle object,
+						acpi_object_handler handler,
+						void **data,
+						void (*callback)(void *)))
 
-acpi_status
-acpi_get_name(acpi_handle object,
-	      u32 name_type, struct acpi_buffer *ret_path_ptr);
-
-acpi_status
-acpi_get_handle(acpi_handle parent,
-		acpi_string pathname, acpi_handle * ret_handle);
-
-acpi_status
-acpi_attach_data(acpi_handle object, acpi_object_handler handler, void *data);
-
-acpi_status acpi_detach_data(acpi_handle object, acpi_object_handler handler);
-
-acpi_status
-acpi_get_data(acpi_handle object, acpi_object_handler handler, void **data);
-
-acpi_status
-acpi_debug_trace(char *name, u32 debug_level, u32 debug_layer, u32 flags);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_get_data(acpi_handle object,
+					   acpi_object_handler handler,
+					   void **data))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_debug_trace(char *name, u32 debug_level,
+					      u32 debug_layer, u32 flags))
 
 /*
  * Object manipulation and enumeration
  */
-acpi_status
-acpi_evaluate_object(acpi_handle object,
-		     acpi_string pathname,
-		     struct acpi_object_list *parameter_objects,
-		     struct acpi_buffer *return_object_buffer);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_evaluate_object(acpi_handle object,
+						 acpi_string pathname,
+						 struct acpi_object_list
+						 *parameter_objects,
+						 struct acpi_buffer
+						 *return_object_buffer))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_evaluate_object_typed(acpi_handle object,
+							acpi_string pathname,
+							struct acpi_object_list
+							*external_params,
+							struct acpi_buffer
+							*return_buffer,
+							acpi_object_type
+							return_type))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_get_object_info(acpi_handle object,
+						  struct acpi_device_info
+						  **return_buffer))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status acpi_install_method(u8 *buffer))
 
-acpi_status
-acpi_evaluate_object_typed(acpi_handle object,
-			   acpi_string pathname,
-			   struct acpi_object_list *external_params,
-			   struct acpi_buffer *return_buffer,
-			   acpi_object_type return_type);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_get_next_object(acpi_object_type type,
+						 acpi_handle parent,
+						 acpi_handle child,
+						 acpi_handle * out_handle))
 
-acpi_status
-acpi_get_object_info(acpi_handle object,
-		     struct acpi_device_info **return_buffer);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_get_type(acpi_handle object,
+					  acpi_object_type * out_type))
 
-acpi_status acpi_install_method(u8 *buffer);
 
-acpi_status
-acpi_get_next_object(acpi_object_type type,
-		     acpi_handle parent,
-		     acpi_handle child, acpi_handle * out_handle);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_get_id(acpi_handle object,
+					acpi_owner_id * out_type))
 
-acpi_status acpi_get_type(acpi_handle object, acpi_object_type * out_type);
-
-acpi_status acpi_get_id(acpi_handle object, acpi_owner_id * out_type);
-
-acpi_status acpi_get_parent(acpi_handle object, acpi_handle * out_handle);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_get_parent(acpi_handle object,
+					    acpi_handle * out_handle))
 
 /*
  * Handler interfaces
  */
-acpi_status
-acpi_install_initialization_handler(acpi_init_handler handler, u32 function);
-
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_install_initialization_handler
+			    (acpi_init_handler handler, u32 function))
 ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status
 				acpi_install_global_event_handler
 				(acpi_gbl_event_handler handler, void *context))
-
 ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status
 				 acpi_install_fixed_event_handler(u32
 								  acpi_event,
@@ -303,30 +374,42 @@ ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status
 							 u32 gpe_number,
 							 acpi_gpe_handler
 							 address))
-acpi_status acpi_install_notify_handler(acpi_handle device, u32 handler_type,
-					acpi_notify_handler handler,
-					void *context);
-
-acpi_status
-acpi_remove_notify_handler(acpi_handle device,
-			   u32 handler_type, acpi_notify_handler handler);
-
-acpi_status
-acpi_install_address_space_handler(acpi_handle device,
-				   acpi_adr_space_type space_id,
-				   acpi_adr_space_handler handler,
-				   acpi_adr_space_setup setup, void *context);
-
-acpi_status
-acpi_remove_address_space_handler(acpi_handle device,
-				  acpi_adr_space_type space_id,
-				  acpi_adr_space_handler handler);
-
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_install_notify_handler(acpi_handle device,
+							 u32 handler_type,
+							 acpi_notify_handler
+							 handler,
+							 void *context))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_remove_notify_handler(acpi_handle device,
+							u32 handler_type,
+							acpi_notify_handler
+							handler))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_install_address_space_handler(acpi_handle
+								device,
+								acpi_adr_space_type
+								space_id,
+								acpi_adr_space_handler
+								handler,
+								acpi_adr_space_setup
+								setup,
+								void *context))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_remove_address_space_handler(acpi_handle
+							       device,
+							       acpi_adr_space_type
+							       space_id,
+							       acpi_adr_space_handler
+							       handler))
 #ifdef ACPI_FUTURE_USAGE
-acpi_status acpi_install_exception_handler(acpi_exception_handler handler);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_install_exception_handler
+			     (acpi_exception_handler handler))
 #endif
-
-acpi_status acpi_install_interface_handler(acpi_interface_handler handler);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_install_interface_handler
+			     (acpi_interface_handler handler))
 
 /*
  * Global Lock interfaces
@@ -340,10 +423,14 @@ ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status
 /*
  * Interfaces to AML mutex objects
  */
-acpi_status
-acpi_acquire_mutex(acpi_handle handle, acpi_string pathname, u16 timeout);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_acquire_mutex(acpi_handle handle,
+					       acpi_string pathname,
+					       u16 timeout))
 
-acpi_status acpi_release_mutex(acpi_handle handle, acpi_string pathname);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_release_mutex(acpi_handle handle,
+					       acpi_string pathname))
 
 /*
  * Fixed Event interfaces
@@ -386,6 +473,10 @@ ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status
 						u32 gpe_number))
 
 ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status
+				acpi_mask_gpe(acpi_handle gpe_device,
+					      u32 gpe_number, u8 is_masked))
+
+ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status
 				acpi_setup_gpe_for_wake(acpi_handle
 							parent_device,
 							acpi_handle gpe_device,
@@ -425,57 +516,69 @@ typedef
 acpi_status(*acpi_walk_resource_callback) (struct acpi_resource * resource,
 					   void *context);
 
-acpi_status
-acpi_get_vendor_resource(acpi_handle device,
-			 char *name,
-			 struct acpi_vendor_uuid *uuid,
-			 struct acpi_buffer *ret_buffer);
-
-acpi_status
-acpi_get_current_resources(acpi_handle device, struct acpi_buffer *ret_buffer);
-
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_get_vendor_resource(acpi_handle device,
+						     char *name,
+						     struct acpi_vendor_uuid
+						     *uuid,
+						     struct acpi_buffer
+						     *ret_buffer))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_get_current_resources(acpi_handle device,
+							struct acpi_buffer
+							*ret_buffer))
 #ifdef ACPI_FUTURE_USAGE
-acpi_status
-acpi_get_possible_resources(acpi_handle device, struct acpi_buffer *ret_buffer);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_get_possible_resources(acpi_handle device,
+							 struct acpi_buffer
+							 *ret_buffer))
 #endif
-
-acpi_status
-acpi_get_event_resources(acpi_handle device_handle,
-			 struct acpi_buffer *ret_buffer);
-
-acpi_status
-acpi_walk_resource_buffer(struct acpi_buffer *buffer,
-			  acpi_walk_resource_callback user_function,
-			  void *context);
-
-acpi_status
-acpi_walk_resources(acpi_handle device,
-		    char *name,
-		    acpi_walk_resource_callback user_function, void *context);
-
-acpi_status
-acpi_set_current_resources(acpi_handle device, struct acpi_buffer *in_buffer);
-
-acpi_status
-acpi_get_irq_routing_table(acpi_handle device, struct acpi_buffer *ret_buffer);
-
-acpi_status
-acpi_resource_to_address64(struct acpi_resource *resource,
-			   struct acpi_resource_address64 *out);
-
-acpi_status
-acpi_buffer_to_resource(u8 *aml_buffer,
-			u16 aml_buffer_length,
-			struct acpi_resource **resource_ptr);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_get_event_resources(acpi_handle device_handle,
+						      struct acpi_buffer
+						      *ret_buffer))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_walk_resource_buffer(struct acpi_buffer
+						       *buffer,
+						       acpi_walk_resource_callback
+						       user_function,
+						       void *context))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_walk_resources(acpi_handle device, char *name,
+						 acpi_walk_resource_callback
+						 user_function, void *context))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_set_current_resources(acpi_handle device,
+							struct acpi_buffer
+							*in_buffer))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_get_irq_routing_table(acpi_handle device,
+							struct acpi_buffer
+							*ret_buffer))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_resource_to_address64(struct acpi_resource
+							*resource,
+							struct
+							acpi_resource_address64
+							*out))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			     acpi_buffer_to_resource(u8 *aml_buffer,
+						     u16 aml_buffer_length,
+						     struct acpi_resource
+						     **resource_ptr))
 
 /*
  * Hardware (ACPI device) interfaces
  */
-acpi_status acpi_reset(void);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status acpi_reset(void))
 
-acpi_status acpi_read(u64 *value, struct acpi_generic_address *reg);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_read(u64 *value,
+				      struct acpi_generic_address *reg))
 
-acpi_status acpi_write(u64 value, struct acpi_generic_address *reg);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_write(u64 value,
+				       struct acpi_generic_address *reg))
 
 ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status
 				acpi_read_bit_register(u32 register_id,
@@ -488,18 +591,18 @@ ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status
 /*
  * Sleep/Wake interfaces
  */
-acpi_status
-acpi_get_sleep_type_data(u8 sleep_state, u8 * slp_typ_a, u8 * slp_typ_b);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_get_sleep_type_data(u8 sleep_state,
+						     u8 *slp_typ_a,
+						     u8 *slp_typ_b))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_enter_sleep_state_prep(u8 sleep_state))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status acpi_enter_sleep_state(u8 sleep_state))
+ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status acpi_enter_sleep_state_s4bios(void))
 
-acpi_status acpi_enter_sleep_state_prep(u8 sleep_state);
-
-acpi_status asmlinkage acpi_enter_sleep_state(u8 sleep_state);
-
-ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status asmlinkage acpi_enter_sleep_state_s4bios(void))
-
-acpi_status acpi_leave_sleep_state_prep(u8 sleep_state);
-
-acpi_status acpi_leave_sleep_state(u8 sleep_state);
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status
+			    acpi_leave_sleep_state_prep(u8 sleep_state))
+ACPI_EXTERNAL_RETURN_STATUS(acpi_status acpi_leave_sleep_state(u8 sleep_state))
 
 ACPI_HW_DEPENDENT_RETURN_STATUS(acpi_status
 				acpi_set_firmware_waking_vector(u32
@@ -573,5 +676,22 @@ acpi_debug_print_raw(u32 requested_debug_level,
 		     u32 component_id,
 		     const char *format, ...) ACPI_PRINTF_LIKE(6);
 #endif
+
+/*
+ * Application prototypes
+ *
+ * All interfaces used by application will be configured
+ * out of the ACPICA build unless the ACPI_APPLICATION
+ * flag is defined.
+ */
+#ifdef ACPI_APPLICATION
+#define ACPI_APP_DEPENDENT_RETURN_VOID(prototype) \
+	prototype;
+
+#else
+#define ACPI_APP_DEPENDENT_RETURN_VOID(prototype) \
+	static ACPI_INLINE prototype {return;}
+
+#endif				/* ACPI_APPLICATION */
 
 #endif				/* __ACXFACE_H__ */

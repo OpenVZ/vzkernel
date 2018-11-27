@@ -385,8 +385,11 @@ static int snd_line6_pcm_free(struct snd_device *device)
 */
 static void pcm_disconnect_substream(struct snd_pcm_substream *substream)
 {
-	if (substream->runtime && snd_pcm_running(substream))
+	if (substream->runtime && snd_pcm_running(substream)) {
+		snd_pcm_stream_lock_irq(substream);
 		snd_pcm_stop(substream, SNDRV_PCM_STATE_DISCONNECTED);
+		snd_pcm_stream_unlock_irq(substream);
+	}
 }
 
 /*
@@ -492,8 +495,6 @@ int line6_init_pcm(struct usb_line6 *line6,
 	err = snd_device_new(line6->card, SNDRV_DEV_PCM, line6, &pcm_ops);
 	if (err < 0)
 		return err;
-
-	snd_card_set_dev(line6->card, line6->ifcdev);
 
 	err = snd_line6_new_pcm(line6pcm);
 	if (err < 0)
