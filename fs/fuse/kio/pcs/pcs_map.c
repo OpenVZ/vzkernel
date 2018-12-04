@@ -2959,20 +2959,24 @@ static void prepare_map_flush_msg(struct pcs_map_entry * m, struct pcs_int_reque
 	msg->done = sync_done;
 }
 
-static bool valid_for_flush(struct pcs_map_entry *m)
+static bool valid_for_flush(struct pcs_map_entry *m, bool timer_sync)
 {
-	if (m->state & PCS_MAP_DEAD)
-		return false;
+	if (timer_sync) {
+		if (m->state & PCS_MAP_DEAD)
+			return false;
 
+		if (m->flags & PCS_MAP_FLUSHING)
+			return false;
+	}
 	if (!(m->flags & PCS_MAP_DIRTY))
-		return false;
-	if (m->flags & PCS_MAP_FLUSHING)
 		return false;
 
 	return true;
 }
 
-static int prepare_map_flush_ireq(struct pcs_map_entry *m, struct pcs_int_request **sreqp)
+static int prepare_map_flush_ireq(struct pcs_map_entry *m,
+				  struct pcs_int_request **sreqp,
+				  bool timer_sync)
 {
 	struct pcs_dentry_info *de;
 	struct pcs_cs_list *cslist;
@@ -2980,7 +2984,7 @@ static int prepare_map_flush_ireq(struct pcs_map_entry *m, struct pcs_int_reques
 	struct pcs_msg * msg;
 
 	spin_lock(&m->lock);
-	if (!valid_for_flush(m)) {
+	if (!valid_for_flush(m, timer_sync)) {
 		spin_unlock(&m->lock);
 		return 0;
 	}
@@ -3010,7 +3014,7 @@ static int prepare_map_flush_ireq(struct pcs_map_entry *m, struct pcs_int_reques
 	/* All resources allocated, we need to recheck maps state again */
 	spin_lock(&m->lock);
 	cslist_put(cslist);
-	if (!valid_for_flush(m) || m->cs_list != cslist) {
+	if (!valid_for_flush(m, timer_sync) || m->cs_list != cslist) {
 		spin_unlock(&m->lock);
 		return 0;
 	}
@@ -3025,7 +3029,8 @@ static int prepare_map_flush_ireq(struct pcs_map_entry *m, struct pcs_int_reques
 	sreq->complete_cb = pcs_flushreq_complete;
 	sreq->flushreq.msg = msg;
 	FUSE_KTRACE(sreq->cc->fc, "timed FLUSH " MAP_FMT, MAP_ARGS(m));
-	m->flags |= PCS_MAP_FLUSHING;
+	if (timer_sync)
+		m->flags |= PCS_MAP_FLUSHING;
 	__pcs_map_get(m);
 	spin_unlock(&m->lock);
 	*sreqp	= sreq;
@@ -3047,7 +3052,7 @@ static void sync_timer_work(struct work_struct *w)
 	struct pcs_int_request * sreq = NULL;
 	int err;
 
-	err = prepare_map_flush_ireq(m, &sreq);
+	err = prepare_map_flush_ireq(m, &sreq, true);
 	if (err) {
 		spin_lock(&m->lock);
 		if (!(m->state & PCS_MAP_DEAD))
@@ -3125,7 +3130,7 @@ void map_inject_flush_req(struct pcs_int_request *ireq)
 				break;
 			if (!maps[i])
 				continue;
-			err = prepare_map_flush_ireq(maps[i], &sreq);
+			err = prepare_map_flush_ireq(maps[i], &sreq, false);
 			pcs_map_put(maps[i]);
 			if (err) {
 				pcs_set_local_error(&ireq->error, PCS_ERR_NOMEM);
