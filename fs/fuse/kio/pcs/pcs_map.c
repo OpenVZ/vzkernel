@@ -2983,6 +2983,7 @@ static int prepare_map_flush_ireq(struct pcs_map_entry *m,
 	struct pcs_int_request *sreq;
 	struct pcs_msg * msg;
 
+retry:
 	spin_lock(&m->lock);
 	if (!valid_for_flush(m, timer_sync)) {
 		spin_unlock(&m->lock);
@@ -2998,7 +2999,6 @@ static int prepare_map_flush_ireq(struct pcs_map_entry *m,
 
 	cslist = m->cs_list;
 	cslist_get(cslist);
-	/* TODO: Need to grab reference to de? */
 	de = pcs_dentry_from_map(m);
 	spin_unlock(&m->lock);
 
@@ -3014,7 +3014,13 @@ static int prepare_map_flush_ireq(struct pcs_map_entry *m,
 	/* All resources allocated, we need to recheck maps state again */
 	spin_lock(&m->lock);
 	cslist_put(cslist);
-	if (!valid_for_flush(m, timer_sync) || m->cs_list != cslist) {
+	if (unlikely(m->cs_list != cslist)) {
+		spin_unlock(&m->lock);
+		pcs_free_msg(msg);
+		ireq_destroy(sreq);
+		goto retry;
+	}
+	if (!valid_for_flush(m, timer_sync)) {
 		spin_unlock(&m->lock);
 		pcs_free_msg(msg);
 		ireq_destroy(sreq);
