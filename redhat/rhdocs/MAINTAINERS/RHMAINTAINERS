@@ -426,6 +426,20 @@ S:	Maintained
 F:	Documentation/filesystems/ceph.txt
 F:	fs/ceph/
 
+CEPH COMMON CODE (LIBCEPH)
+M:	Ilya Dryomov <idryomov@redhat.com>
+S:	Maintained
+F:	net/ceph/
+F:	include/linux/ceph/
+F:	include/linux/crush/
+
+CEPH DISTRIBUTED FILE SYSTEM CLIENT (CEPH)
+M:	"Yan, Zheng" <zyan@redhat.com>
+M:	Ilya Dryomov <idryomov@redhat.com>
+S:	Maintained
+F:	Documentation/filesystems/ceph.txt
+F:	fs/ceph/
+
 CIFS FILESYSTEM
 L:	kernel-patches@redhat.com
 S:	Maintained
@@ -440,6 +454,11 @@ CISCO FCOE HBA (fnic)
 M:	Chris Leech <cleech@redhat.com>
 S:	Maintained
 F:	drivers/scsi/fnic/
+
+CONFIGFS
+M:	Bob Peterson <rpeterso@redhat.com>
+F:	fs/configfs/
+F:	include/linux/configfs.h
 
 CONTROL GROUP (CGROUP)
 M:	Waiman Long <longman@redhat.com>
@@ -466,6 +485,12 @@ M:	Prarit Bhargava <prarit@redhat.com>
 M:	David Arcari <darcari@redhat.com>
 S:	Maintained
 F:	drivers/cpuidle/
+
+CRAMFS FILESYSTEM
+M:	Eric Sandeen <sandeen@redhat.com>
+S:	Maintained
+F:	Documentation/filesystems/cramfs.txt
+F:	fs/cramfs/
 
 DEVICE DIRECT ACCESS
 M:	Jeff Moyer <jmoyer@redhat.com>
@@ -501,6 +526,11 @@ Disk Array driver for HP Smart Array SAS controllers (hpsa)
 M:	Tomas Henzl <thenzl@redhat.com>
 S:	Maintained
 F:	drivers/scsi/hpsa*
+
+DISTRIBUTED LOCK MANAGER (DLM)
+M:	David Teigland <teigland@redhat.com>
+S:	Maintained
+F:	fs/dlm/
 
 DMA MAPPING SUPPORT
 M:	Jerry Snitselaar <jsnitsel@redhat.com>
@@ -539,6 +569,12 @@ F:	include/linux/platform_data/mdio-gpio.h
 F:	include/trace/events/mdio.h
 F:	include/uapi/linux/mdio.h
 F:	include/uapi/linux/mii.h
+
+EXT4 FILE SYSTEM
+M:	Lukas Czerner <lczerner@redhat.com>
+S:	Maintained
+F:	Documentation/filesystems/ext4/ext4.rst
+F:	fs/ext4/
 
 FCOE (libfc, libfcoe)
 M:	Chris Leech <cleech@redhat.com>
@@ -587,6 +623,14 @@ Fusion MPT SAS Host driver (mptsas)
 M:	Tomas Henzl <thenzl@redhat.com>
 S:	Maintained
 F:	drivers/message/fusion/
+
+GFS2 FILE SYSTEM
+M:	Bob Peterson <rpeterso@redhat.com>
+M:	Andreas Gruenbacher <agruenba@redhat.com>
+S:	Maintained
+F:	Documentation/filesystems/gfs2*.txt
+F:	fs/gfs2/
+F:	include/uapi/linux/gfs2_ondisk.h
 
 HID CORE LAYER
 M:	Benjamin Tissoires <benjamin.tissoires@redhat.com>
@@ -699,6 +743,12 @@ M:	Chris Leech <cleech@redhat.com>
 S:	Maintained
 F:	drivers/scsi/*iscsi*
 F:	include/scsi/*iscsi*
+
+JOURNALLING LAYER FOR BLOCK DEVICES (JBD2)
+M:	Lukas Czerner <lczerner@redhat.com>
+S:	Maintained
+F:	fs/jbd2/
+F:	include/linux/jbd2.h
 
 KERNEL VIRTUAL MACHINE (KVM)
 M:	Paolo Bonzini <pbonzini@redhat.com>
@@ -1170,6 +1220,13 @@ F:	drivers/firmware/psci*.c
 F:	include/linux/psci.h
 F:	include/uapi/linux/psci.h
 
+PSTORE PERSISTENT STORAGE
+M:	Lenny Szubowicz <lszubowi@redhat.com>
+M:	Al Stone <ahs3@redhat.com>
+S:	Maintained
+F:	Documentation/ABI/testing/pstore
+F:	fs/pstore/
+
 PTP HARDWARE CLOCK SUPPORT
 M:	Jiri Benc <jbenc@redhat.com>
 M:	Prarit Bhargava <prarit@redhat.com>
@@ -1182,6 +1239,13 @@ PTP KVM
 M:	Marcelo Tosatti <mtosatti@redhat.com>
 S:	Maintained
 F:	drivers/ptp/ptp_kvm.c
+
+RADOS BLOCK DEVICE (RBD)
+M:	Ilya Dryomov <idryomov@redhat.com>
+S:	Maintained
+F:	Documentation/ABI/testing/sysfs-bus-rbd
+F:	drivers/block/rbd.c
+F:	drivers/block/rbd_types.h
 
 RADOS BLOCK DEVICE (RBD)
 M:	Ilya Dryomov <idryomov@redhat.com>
@@ -1291,6 +1355,12 @@ SOFTWARE RAID (Multiple Disks, MD) SUPPORT
 M:	Nigel Croxon <ncroxon@redhat.com>
 S:	Maintained
 F:	drivers/md/
+
+SQUASHFS FILE SYSTEM
+M:	Abhijith Das <adas@redhat.com>
+S:	Maintained
+F:	Documentation/filesystems/squashfs.txt
+F:	fs/squashfs/
 
 SUN REMOTE PROCEDURE CALL (sunrpc)
 L:	kernel-patches@redhat.com
@@ -1507,6 +1577,13 @@ F:	include/net/page_pool.h
 F:	net/core/page_pool.c
 F:	net/core/sock_map.c
 N:	xdp
+
+XFS FILESYSTEM
+M:	Brian Foster <bfoster@redhat.com>
+M:	Carlos Maiolino <cmaiolin@redhat.com>
+S:	Maintained
+F:	Documentation/filesystems/xfs.txt
+F:	fs/xfs/
 
 ZBUD COMPRESSED PAGE ALLOCATOR
 M:	kernel-patches@redhat.com
