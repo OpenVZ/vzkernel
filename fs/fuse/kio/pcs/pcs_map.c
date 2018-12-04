@@ -2951,6 +2951,8 @@ static int prepare_map_flush_ireq(struct pcs_map_entry *m, struct pcs_int_reques
 	cslist_put(cslist);
 	if (!valid_for_flush(m) || m->cs_list != cslist) {
 		spin_unlock(&m->lock);
+		pcs_free_msg(msg);
+		ireq_destroy(sreq);
 		return 0;
 	}
 	prepare_map_flush_msg(m, sreq, msg);
