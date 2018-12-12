@@ -398,10 +398,17 @@ unsigned long tswap_shrink_count(struct shrinker *shrink,
 static inline unsigned long tswap_shrink(struct shrink_control *sc)
 {
 	unsigned long ret;
-	extern bool tswap_enabled;
+	extern struct static_key tswap_inited;
 
-	if (!READ_ONCE(tswap_enabled))
+	if (!static_key_false(&tswap_inited))
 		return 0;
+
+	/* Pairs with smp_wmb() in tswap_init().
+	 *
+	 * Guarantees that if see tswap_inited == true, then
+	 * tswap_lru_node is already properly initialized.
+	 */
+	smp_rmb();
 
 	ret = tswap_shrink_count(NULL, sc);
 	if (!ret)
@@ -426,10 +433,17 @@ unsigned long tcache_shrink_count(struct shrinker *shrink,
 static inline unsigned long tcache_shrink(struct shrink_control *sc)
 {
 	unsigned long ret;
-	extern bool tcache_enabled;
+	extern struct static_key tcache_inited;
 
-	if (!READ_ONCE(tcache_enabled))
+	if (!static_key_false(&tcache_inited))
 		return 0;
+
+	/* Pairs with smp_wmb() in tcache_init().
+	 *
+	 * Guarantees that if see tcache_inited == true, then
+	 * tcache_nodeinfo is already properly initialized.
+	 */
+	smp_rmb();
 
 	ret = tcache_shrink_count(NULL, sc);
 	if (!ret)
