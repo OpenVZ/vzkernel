@@ -37,6 +37,8 @@ static struct tswap_lru *tswap_lru_node;
 /* Enable/disable tswap backend (set at boot time) */
 bool tswap_enabled __read_mostly = true;
 module_param_named(enabled, tswap_enabled, bool, 0444);
+/* To avoid shrink attempt before tswap is inited */
+struct static_key tswap_inited = STATIC_KEY_INIT_FALSE;
 
 /* Enable/disable populating the cache */
 static bool tswap_active __read_mostly = true;
@@ -433,6 +435,10 @@ static int __init tswap_init(void)
 	frontswap_tmem_exclusive_gets(true);
 
 	old_ops = frontswap_register_ops(&tswap_frontswap_ops);
+
+	/* pairs with smp_rmb() in tswap_shrink() */
+	smp_wmb();
+	static_key_slow_inc(&tswap_inited);
 	pr_info("tswap loaded\n");
 	if (old_ops)
 		pr_warn("tswap: frontswap_ops %p overridden\n", old_ops);
