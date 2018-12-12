@@ -1261,7 +1261,7 @@ static inline void memcg_memory_allocated_add(struct cg_proto *prot,
 	struct page_counter *counter;
 
 	memcg_charge_kmem_nofail(prot->memcg, amt);
-	if (page_counter_try_charge(prot->memory_allocated, amt, &counter))
+	if (!page_counter_try_charge(prot->memory_allocated, amt, &counter))
 		return;
 
 	page_counter_charge(prot->memory_allocated, amt);
