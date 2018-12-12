@@ -40,18 +40,14 @@ static long kmapset_cmp(struct kmapset_map *map_a, struct kmapset_map *map_b)
 	if (map_a->size != map_b->size)
 		return map_a->size - map_b->size;
 
-	link_a = hlist_entry(map_a->links.first,
-			struct kmapset_link, map_link);
 	link_b = hlist_entry(map_b->links.first,
 			struct kmapset_link, map_link);
-	while (&link_a->map_link) {
+	hlist_for_each_entry(link_a, &map_a->links, map_link) {
 		if (link_a->key != link_b->key)
 			return (long)link_a->key - (long)link_b->key;
 		if (link_a->value != link_b->value)
 			return link_a->value - link_b->value;
-		link_a = list_entry(link_a->map_link.next,
-				struct kmapset_link, map_link);
-		link_b = list_entry(link_b->map_link.next,
+		link_b = hlist_entry(link_b->map_link.next,
 				struct kmapset_link, map_link);
 	}
 
