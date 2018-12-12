@@ -179,6 +179,8 @@ static struct tcache_nodeinfo *tcache_nodeinfo;
 /* Enable/disable tcache backend (set at boot time) */
 bool tcache_enabled __read_mostly = true;
 module_param_named(enabled, tcache_enabled, bool, 0444);
+/* To avoid shrink attempt before tcache is inited */
+struct static_key tcache_inited = STATIC_KEY_INIT_FALSE;
 
 /* Enable/disable populating the cache */
 static bool tcache_active __read_mostly = true;
@@ -1460,6 +1462,9 @@ static int __init tcache_init(void)
 	if (err)
 		goto out_unregister_shrinker;
 
+	/* pairs with smp_rmb() in tcache_shrink() */
+	smp_wmb();
+	static_key_slow_inc(&tcache_inited);
 	pr_info("tcache loaded\n");
 	return 0;
 
