@@ -1302,6 +1302,9 @@ static ssize_t vhost_net_aio_write(struct kiocb *iocb,
 	if (len < 0)
 		return -EINVAL;
 
+	if (len < sizeof(struct vhost_msg))
+		return -EINVAL;
+
 	return vhost_chr_write_iter(dev, from);
 }
 
