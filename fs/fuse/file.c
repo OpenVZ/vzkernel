@@ -710,7 +710,8 @@ int fuse_fsync_common(struct file *file, loff_t start, loff_t end,
 	if (err)
 		goto out;
 
-	fuse_sync_writes(inode);
+	if (!RB_EMPTY_ROOT(&get_fuse_inode(inode)->writepages))
+		fuse_sync_writes(inode);
 
 	/* Due to implementation of fuse writeback filemap_write_and_wait_range()
 	 * does not catch errors. We have to do this directly after fuse_sync_writes()
