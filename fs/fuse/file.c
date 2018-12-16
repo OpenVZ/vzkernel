@@ -683,7 +683,8 @@ int fuse_fsync_common(struct file *file, loff_t start, loff_t end,
 	if (err)
 		goto out;
 
-	fuse_sync_writes(inode);
+	if (!list_empty(&get_fuse_inode(inode)->writepages))
+		fuse_sync_writes(inode);
 
 	/*
 	 * Due to implementation of fuse writeback
