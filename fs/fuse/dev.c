@@ -540,6 +540,8 @@ static void request_wait_answer(struct fuse_conn *fc, struct fuse_req *req)
 			spin_unlock(&fiq->waitq.lock);
 			__fuse_put_request(req);
 			req->out.h.error = -EINTR;
+			if (req->end)
+				req->end(fc, req);
 			return;
 		}
 		spin_unlock(&fiq->waitq.lock);
@@ -549,7 +551,7 @@ static void request_wait_answer(struct fuse_conn *fc, struct fuse_req *req)
 	 * Either request is already in userspace, or it was forced.
 	 * Wait it out.
 	 */
-	wait_event(req->waitq, test_bit(FR_FINISHED, &req->flags));
+	wait_event(req->waitq, test_bit(FR_FINISHED, &req->flags) && !req->end);
 }
 
 static void __fuse_request_send(struct fuse_conn *fc, struct fuse_req *req,
