@@ -566,9 +566,13 @@ static void __fuse_request_send(struct fuse_conn *fc, struct fuse_req *req,
 	if (!fiq->connected) {
 		spin_unlock(&fiq->waitq.lock);
 		req->out.h.error = -ENOTCONN;
+		if (req->end)
+			req->end(fc, req);
 	} else if (ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
 		spin_unlock(&fiq->waitq.lock);
 		req->out.h.error = -EIO;
+		if (req->end)
+			req->end(fc, req);
 	} else {
 		req->in.h.unique = fuse_get_unique(fiq);
 		queue_request(fiq, req);
