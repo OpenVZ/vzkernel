@@ -3632,7 +3632,8 @@ retry:
 	}
 
 	__alloc_collect_stats(gfp_mask, order, page, start);
-	trace_mm_page_alloc(page, order, gfp_mask, migratetype);
+	trace_mm_page_alloc(page, order, gfp_mask, migratetype,
+			jiffies_to_usecs(jiffies - start));
 
 out:
 	/*
