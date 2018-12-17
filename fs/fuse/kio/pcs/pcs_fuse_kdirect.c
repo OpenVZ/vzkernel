@@ -992,8 +992,9 @@ static void kpcs_setattr_end(struct fuse_conn *fc, struct fuse_req *req)
 	u64 old_size;
 
 	BUG_ON(req->in.h.opcode != FUSE_SETATTR);
-	TRACE("update size: ino:%lu old_sz:%lld new:%lld\n",
-	      req->io_inode->i_ino, di->fileinfo.attr.size, outarg->attr.size);
+	TRACE("update size: ino:%lu old_sz:%lld new:%lld, error: %d\n",
+	      req->io_inode->i_ino, di->fileinfo.attr.size, outarg->attr.size,
+	      req->out.h.error);
 
 	if (req->out.h.error)
 		goto fail;
