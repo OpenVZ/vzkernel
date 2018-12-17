@@ -1361,16 +1361,22 @@ int
 bc_svc_process(struct svc_serv *serv, struct rpc_rqst *req,
 	       struct svc_rqst *rqstp)
 {
+	struct net 	*net = req->rq_xprt->xprt_net;
 	struct kvec	*argv = &rqstp->rq_arg.head[0];
 	struct kvec	*resv = &rqstp->rq_res.head[0];
 	struct rpc_task *task;
+	struct svc_xprt *s_xprt;
 	int proc_error;
 	int error;
 
 	dprintk("svc: %s(%p)\n", __func__, req);
 
+	s_xprt = req->rq_xprt->ops->bc_get_xprt(serv, net);
+	if (!s_xprt)
+		goto proc_error;
+
 	/* Build the svc_rqst used by the common processing routine */
-	rqstp->rq_xprt = serv->sv_bc_xprt;
+	rqstp->rq_xprt = s_xprt;
 	rqstp->rq_xid = req->rq_xid;
 	rqstp->rq_prot = req->rq_xprt->prot;
 	rqstp->rq_server = serv;
@@ -1410,13 +1416,11 @@ bc_svc_process(struct svc_serv *serv, struct rpc_rqst *req,
 
 	/* Parse and execute the bc call */
 	proc_error = svc_process_common(rqstp, argv, resv);
+	svc_xprt_put(rqstp->rq_xprt);
 
 	atomic_inc(&req->rq_xprt->bc_free_slots);
-	if (!proc_error) {
-		/* Processing error: drop the request */
-		xprt_free_bc_request(req);
-		return 0;
-	}
+	if (!proc_error)
+		goto proc_error;
 
 	/* Finally, send the reply synchronously */
 	memcpy(&req->rq_snd_buf, &rqstp->rq_res, sizeof(req->rq_snd_buf));
@@ -1433,6 +1437,12 @@ bc_svc_process(struct svc_serv *serv, struct rpc_rqst *req,
 out:
 	dprintk("svc: %s(), error=%d\n", __func__, error);
 	return error;
+
+proc_error:
+	/* Processing error: drop the request */
+	xprt_free_bc_request(req);
+	error = -EINVAL;
+	goto out;
 }
 EXPORT_SYMBOL_GPL(bc_svc_process);
 #endif /* CONFIG_SUNRPC_BACKCHANNEL */

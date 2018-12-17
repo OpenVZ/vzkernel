@@ -1412,6 +1412,12 @@ static int xs_tcp_bc_up(struct svc_serv *serv, struct net *net)
 	return 0;
 }
 
+static struct svc_xprt *xs_tcp_bc_get_xprt(struct svc_serv *serv,
+					   struct net *net)
+{
+	return svc_find_xprt(serv, "tcp-bc", net, AF_UNSPEC, 0);
+}
+
 static size_t xs_tcp_bc_maxpayload(struct rpc_xprt *xprt)
 {
 	return PAGE_SIZE;
@@ -2722,6 +2728,7 @@ static struct rpc_xprt_ops xs_tcp_ops = {
 #ifdef CONFIG_SUNRPC_BACKCHANNEL
 	.bc_setup		= xprt_setup_bc,
 	.bc_up			= xs_tcp_bc_up,
+	.bc_get_xprt		= xs_tcp_bc_get_xprt,
 	.bc_maxpayload		= xs_tcp_bc_maxpayload,
 	.bc_free_rqst		= xprt_free_bc_rqst,
 	.bc_destroy		= xprt_destroy_bc,

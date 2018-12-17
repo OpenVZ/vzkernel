@@ -178,6 +178,11 @@ int xprt_rdma_bc_up(struct svc_serv *serv, struct net *net)
 	return 0;
 }
 
+struct svc_xprt *xprt_rdma_bc_get_xprt(struct svc_serv *serv, struct net *net)
+{
+	return svc_find_xprt(serv, "rdma-bc", net, AF_UNSPEC, 0);
+}
+
 /**
  * xprt_rdma_bc_maxpayload - Return maximum backchannel message size
  * @xprt: transport
