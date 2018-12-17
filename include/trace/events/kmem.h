@@ -194,15 +194,16 @@ TRACE_EVENT(mm_page_free_batched,
 TRACE_EVENT(mm_page_alloc,
 
 	TP_PROTO(struct page *page, unsigned int order,
-			gfp_t gfp_flags, int migratetype),
+			gfp_t gfp_flags, int migratetype, unsigned int time),
 
-	TP_ARGS(page, order, gfp_flags, migratetype),
+	TP_ARGS(page, order, gfp_flags, migratetype, time),
 
 	TP_STRUCT__entry(
 		__field(	struct page *,	page		)
 		__field(	unsigned int,	order		)
 		__field(	gfp_t,		gfp_flags	)
 		__field(	int,		migratetype	)
+		__field(	unsigned int,	time		)
 	),
 
 	TP_fast_assign(
@@ -210,14 +211,16 @@ TRACE_EVENT(mm_page_alloc,
 		__entry->order		= order;
 		__entry->gfp_flags	= gfp_flags;
 		__entry->migratetype	= migratetype;
+		__entry->time		= time;
 	),
 
-	TP_printk("page=%p pfn=%lu order=%d migratetype=%d gfp_flags=%s",
+	TP_printk("page=%p pfn=%lu order=%d migratetype=%d gfp_flags=%s lat=%d",
 		__entry->page,
 		__entry->page ? page_to_pfn(__entry->page) : 0,
 		__entry->order,
 		__entry->migratetype,
-		show_gfp_flags(__entry->gfp_flags))
+		show_gfp_flags(__entry->gfp_flags),
+		__entry->time)
 );
 
 DECLARE_EVENT_CLASS(mm_page,
