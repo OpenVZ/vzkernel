@@ -1306,7 +1306,7 @@ int i40e_setup_tx_descriptors(struct i40e_ring *tx_ring)
 	/* warn if we are about to overwrite the pointer */
 	WARN_ON(tx_ring->tx_bi);
 	bi_size = sizeof(struct i40e_tx_buffer) * tx_ring->count;
-	tx_ring->tx_bi = kzalloc(bi_size, GFP_KERNEL);
+	tx_ring->tx_bi = kzalloc(bi_size, GFP_KERNEL | __GFP_ORDER_NOWARN);
 	if (!tx_ring->tx_bi)
 		goto err;
 
