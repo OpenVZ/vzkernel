@@ -44,8 +44,6 @@ struct ext_entry_struct
 
 struct veip_struct
 {
-	struct list_head	src_lh;
-	struct list_head	dst_lh;
 	struct list_head	ip_lh;
 	struct list_head	list;
 	struct list_head	ext_lh;
