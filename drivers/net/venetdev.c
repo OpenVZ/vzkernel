@@ -89,10 +89,6 @@ int veip_put(struct veip_struct *veip)
 {
 	if (!list_empty(&veip->ip_lh))
 		return 0;
-	if (!list_empty(&veip->src_lh))
-		return 0;
-	if (!list_empty(&veip->dst_lh))
-		return 0;
 
 	list_del(&veip->list);
 	call_rcu(&veip->rcu, veip_free);
@@ -223,8 +219,6 @@ struct veip_struct *veip_findcreate(envid_t veid)
 		return NULL;
 	memset(ptr, 0, sizeof(struct veip_struct));
 	INIT_LIST_HEAD(&ptr->ip_lh);
-	INIT_LIST_HEAD(&ptr->src_lh);
-	INIT_LIST_HEAD(&ptr->dst_lh);
 	INIT_LIST_HEAD(&ptr->ext_lh);
 	ptr->veid = veid;
 	list_add(&ptr->list, &veip_lh);
