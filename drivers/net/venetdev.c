@@ -87,8 +87,10 @@ static void veip_free(struct rcu_head *rcu)
 
 int veip_put(struct veip_struct *veip)
 {
-	if (!list_empty(&veip->ip_lh))
+	if (!list_empty(&veip->ip_lh)) {
+		WARN_ONCE(1, "Leaking veip structure 0x%p", veip);
 		return 0;
+	}
 
 	list_del(&veip->list);
 	call_rcu(&veip->rcu, veip_free);
@@ -283,14 +285,12 @@ static int veip_entry_add(struct ve_struct *ve, struct ve_addr_struct *addr)
 	if (entry == NULL)
 		return -ENOMEM;
 
+	spin_lock(&veip_lock);
 	if (ve->veip == NULL) {
-		/* This can happen if we load venet AFTER ve was started */
-	       	err = veip_start(ve);
-		if (err < 0)
-			goto out;
+		err = -ENODEV;
+		goto out_unlock;
 	}
 
-	spin_lock(&veip_lock);
 	found = venet_entry_lookup(addr);
 	if (found != NULL) {
 		err = veip_entry_conflict(found, ve);
@@ -303,9 +303,9 @@ static int veip_entry_add(struct ve_struct *ve, struct ve_addr_struct *addr)
 
 	err = 0;
 	entry = NULL;
+
 out_unlock:
 	spin_unlock(&veip_lock);
-out:
 	if (entry != NULL)
 		kfree(entry);
 
