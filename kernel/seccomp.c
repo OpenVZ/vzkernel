@@ -658,6 +658,10 @@ void secure_computing_strict(int this_syscall)
 {
 	int mode = current->seccomp.mode;
 
+	if (config_enabled(CONFIG_CHECKPOINT_RESTORE) &&
+	    unlikely(current->ptrace & PT_SUSPEND_SECCOMP))
+		return 0;
+
 	if (mode == 0)
 		return;
 	else if (mode == SECCOMP_MODE_STRICT)
@@ -672,9 +676,6 @@ static u32 __seccomp_filter(int this_syscall, struct pt_regs *regs)
 	u32 filter_ret, action;
 	int data;
 
-	if (config_enabled(CONFIG_CHECKPOINT_RESTORE) &&
-	    unlikely(current->ptrace & PT_SUSPEND_SECCOMP))
-		return 0;
 	/*
 	 * Make sure that any changes to mode from another thread have
 	 * been seen after TIF_SECCOMP was seen.
