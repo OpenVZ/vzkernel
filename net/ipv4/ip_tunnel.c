@@ -101,6 +101,10 @@ struct ip_tunnel *ip_tunnel_lookup(struct ip_tunnel_net *itn,
 	struct ip_tunnel *t, *cand = NULL;
 	struct hlist_head *head;
 
+#ifdef CONFIG_VE
+	if (!itn) /* no VE_FEATURE_IPGRE */
+		return NULL;
+#endif
 	hash = ip_tunnel_hash(key, remote);
 	head = &itn->tunnels[hash];
 
