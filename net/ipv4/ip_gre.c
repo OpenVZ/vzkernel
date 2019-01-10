@@ -49,6 +49,8 @@
 #include <net/gre.h>
 #include <net/dst_metadata.h>
 
+#include <uapi/linux/vzcalluser.h>
+
 /*
    Problems & solutions
    --------------------
@@ -785,12 +787,20 @@ static const struct gre_protocol ipgre_protocol = {
 
 static int __net_init ipgre_init_net(struct net *net)
 {
+#ifdef CONFIG_VE
+	if (!(net->owner_ve->features & VE_FEATURE_IPGRE))
+		return net_assign_generic(net, ipgre_net_id, NULL);
+#endif
 	return ip_tunnel_init_net(net, ipgre_net_id, &ipgre_link_ops, NULL);
 }
 
 static void __net_exit ipgre_exit_net(struct net *net)
 {
 	struct ip_tunnel_net *itn = net_generic(net, ipgre_net_id);
+#ifdef CONFIG_VE
+	if (!itn) /* no VE_FEATURE_IPGRE */
+		return;
+#endif
 	ip_tunnel_delete_net(itn, &ipgre_link_ops);
 }
 
@@ -982,6 +992,11 @@ static int ipgre_newlink(struct net *src_net, struct net_device *dev,
 	struct ip_tunnel_parm p;
 	struct ip_tunnel_encap ipencap;
 	int err;
+
+#ifdef CONFIG_VE
+	if (!(dev_net(dev)->owner_ve->features & VE_FEATURE_IPGRE))
+		return -EACCES;
+#endif
 
 	if (ipgre_netlink_encap_parms(data, &ipencap)) {
 		struct ip_tunnel *t = netdev_priv(dev);
@@ -1206,12 +1221,20 @@ EXPORT_SYMBOL_GPL(gretap_fb_dev_create);
 
 static int __net_init ipgre_tap_init_net(struct net *net)
 {
+#ifdef CONFIG_VE
+	if (!(net->owner_ve->features & VE_FEATURE_IPGRE))
+		return net_assign_generic(net, gre_tap_net_id, NULL);
+#endif
 	return ip_tunnel_init_net(net, gre_tap_net_id, &ipgre_tap_ops, "gretap0");
 }
 
 static void __net_exit ipgre_tap_exit_net(struct net *net)
 {
 	struct ip_tunnel_net *itn = net_generic(net, gre_tap_net_id);
+#ifdef CONFIG_VE
+	if (!itn) /* no VE_FEATURE_IPGRE */
+		return;
+#endif
 	ip_tunnel_delete_net(itn, &ipgre_tap_ops);
 }
 
