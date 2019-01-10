@@ -31,7 +31,7 @@ unsigned int pcs_loglevel = LOG_TRACE;
 module_param(pcs_loglevel, uint, 0644);
 MODULE_PARM_DESC(pcs_loglevel, "Trace level");
 
-unsigned int debugfs_tracing;
+unsigned int debugfs_tracing = DEBUGFS_TRACE;
 module_param(debugfs_tracing, uint, 0644);
 MODULE_PARM_DESC(debugfs_tracing, "Enable/Disbale debugfs tracing");
 
