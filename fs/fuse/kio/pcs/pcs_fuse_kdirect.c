@@ -31,6 +31,10 @@ unsigned int pcs_loglevel = LOG_TRACE;
 module_param(pcs_loglevel, uint, 0644);
 MODULE_PARM_DESC(pcs_loglevel, "Trace level");
 
+unsigned int debugfs_tracing;
+module_param(debugfs_tracing, uint, 0644);
+MODULE_PARM_DESC(debugfs_tracing, "Enable/Disbale debugfs tracing");
+
 #ifdef CONFIG_DEBUG_KERNEL
 static int set_sockio_fail_percent(const char *val, struct kernel_param *kp)
 {
@@ -1480,10 +1484,12 @@ void __kfuse_trace(struct fuse_conn * fc, unsigned long ip, const char * fmt, ..
 		if (t)
 			memcpy(t + 1, buf, len + 1);
 		FUSE_TRACE_COMMIT(tr);
-		if (ip)
-			__trace_puts(ip, buf, len);
-		else
-			pr_debug("%s\n", buf);
+		if (unlikely(debugfs_tracing)) {
+			if (ip)
+				__trace_puts(ip, buf, len);
+			else
+				pr_debug("%s\n", buf);
+		}
 	}
 	put_cpu();
 }
