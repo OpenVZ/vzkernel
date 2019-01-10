@@ -156,6 +156,7 @@ int kpcs_conn_init(struct fuse_conn *fc)
 	}
 
 	__set_bit(FR_BACKGROUND, &req->flags);
+	__set_bit(FR_KIO_INTERNAL, &req->flags);
 	memset(&req->misc.ioctl, 0, sizeof(req->misc.ioctl));
 	/* filehandle and nodeid are null, but this is OK */
 	inarg = &req->misc.ioctl.in;
@@ -218,6 +219,7 @@ static int fuse_pcs_getfileinfo(struct fuse_conn *fc, struct file *file,
 	if (IS_ERR(req))
 		return PTR_ERR(req);
 
+	__set_bit(FR_KIO_INTERNAL, &req->flags);
 	memset(&req->misc.ioctl, 0, sizeof(req->misc.ioctl));
 	inarg = &req->misc.ioctl.in;
 	outarg = &req->misc.ioctl.out;
@@ -269,6 +271,7 @@ static int fuse_pcs_kdirect_claim_op(struct fuse_conn *fc, struct file *file,
 	if (IS_ERR(req))
 		return PTR_ERR(req);
 
+	__set_bit(FR_KIO_INTERNAL, &req->flags);
 	memset(&req->misc.ioctl, 0, sizeof(req->misc.ioctl));
 	inarg = &req->misc.ioctl.in;
 	outarg = &req->misc.ioctl.out;
@@ -470,6 +473,7 @@ int fuse_map_resolve(struct pcs_map_entry *m, int direction)
 		return PTR_ERR(req);
 	}
 
+	__set_bit(FR_KIO_INTERNAL, &req->flags);
 	memset(&req->misc.ioctl, 0, sizeof(req->misc.ioctl));
 	inarg = &req->misc.ioctl.in;
 	outarg = &req->misc.ioctl.out;
@@ -601,6 +605,7 @@ int fuse_pcs_csconn_send(struct fuse_conn *fc, struct pcs_rpc *ep, int flags)
 		return PTR_ERR(req);
 	}
 
+	__set_bit(FR_KIO_INTERNAL, &req->flags);
 	memset(&req->misc.ioctl, 0, sizeof(req->misc.ioctl));
 	inarg = &req->misc.ioctl.in;
 	outarg = &req->misc.ioctl.out;
@@ -1084,6 +1089,9 @@ static int pcs_kio_classify_req(struct fuse_conn *fc, struct fuse_req *req, bool
 {
 	struct fuse_inode *fi = get_fuse_inode(req->io_inode);
 
+	if (test_bit(FR_KIO_INTERNAL, &req->flags))
+		return 1;
+
 	switch (req->in.h.opcode) {
 	case FUSE_READ:
 	case FUSE_WRITE:
@@ -1110,9 +1118,22 @@ static int pcs_kio_classify_req(struct fuse_conn *fc, struct fuse_req *req, bool
 	case FUSE_IOCTL: {
 		struct fuse_ioctl_in const *inarg = req->in.args[0].value;
 
-		if (inarg->cmd != FS_IOC_FIEMAP)
-			return 1;
-
+		switch (inarg->cmd) {
+			case FS_IOC_FIEMAP:
+				break;
+			case PCS_IOC_NOCSUMONREAD:
+			case PCS_IOC_NOWRITEDELAY:
+				return -EOPNOTSUPP;
+			case PCS_IOC_INIT_KDIRECT:
+			case PCS_IOC_CSCONN:
+			case PCS_IOC_GETFILEINFO:
+			case PCS_IOC_KDIRECT_CLAIM:
+			case PCS_IOC_KDIRECT_RELEASE:
+			case PCS_IOC_GETMAP:
+				return -EPERM;
+			default:
+				return 1;
+		}
 		break;
 	}
 	default:
