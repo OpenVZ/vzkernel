@@ -24,6 +24,10 @@ struct pcs_cs_sync_data
  */
 #define PCS_CS_IO_CACHED	(1ULL<<63)	/* Resp: result is read from cache or written ahead to journal */
 #define PCS_CS_IO_SEQ		(1ULL<<62)	/* Req: request is part of sequential flow */
+#define PCS_CS_IO_SYNC		(1ULL<<60)	/* Req: Write operations will be performed synchronously.
+						 *	This means that at the req completion time, the output
+						 *	data will be transferred to disk.
+						 */
 
 #define PCS_CS_RESET_TS_RECV(sdata, ts)	do { (sdata)->misc = ((u64)ts & 0xFFFFFFFFFFFFFULL); } while (0)
 #define PCS_CS_SET_TS_RECV(sdata, ts)	do { (sdata)->misc = ((sdata)->misc & ~0xFFFFFFFFFFFFFULL) | ((u64)ts & 0xFFFFFFFFFFFFFULL); } while (0)
