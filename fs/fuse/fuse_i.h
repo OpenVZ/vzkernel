@@ -311,6 +311,7 @@ struct fuse_io_priv {
  * FR_FINISHED:		request is finished
  * FR_PRIVATE:		request is on private list
  * FR_NONBLOCKING:	non-blocking request (only needed for KIO)
+ * FR_KIO_INTERNAL:	request initiated by KIO
  */
 enum fuse_req_flag {
 	FR_ISREPLY,
@@ -325,6 +326,7 @@ enum fuse_req_flag {
 	FR_FINISHED,
 	FR_PRIVATE,
 	FR_NONBLOCKING,
+	FR_KIO_INTERNAL,
 };
 
 /**
