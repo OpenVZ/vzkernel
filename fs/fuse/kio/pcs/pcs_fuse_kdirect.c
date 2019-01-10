@@ -1483,7 +1483,7 @@ void __kfuse_trace(struct fuse_conn * fc, unsigned long ip, const char * fmt, ..
 		if (ip)
 			__trace_puts(ip, buf, len);
 		else
-			pr_debug("%s", buf);
+			pr_debug("%s\n", buf);
 	}
 	put_cpu();
 }
