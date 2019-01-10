@@ -958,7 +958,7 @@ static struct file_operations proc_stat_ops = {
 	.open    = stat_seq_open,
 	.read    = seq_read,
 	.llseek  = seq_lseek,
-	.release = seq_release,
+	.release = single_release,
 };
 
 static char sample_ip[16];
@@ -1037,7 +1037,7 @@ static struct file_operations proc_classify_ops = {
 	.open    = classify_seq_open,
 	.read    = seq_read,
 	.llseek  = seq_lseek,
-	.release = seq_release,
+	.release = single_release,
 	.write	 = classify_write,
 };
 
