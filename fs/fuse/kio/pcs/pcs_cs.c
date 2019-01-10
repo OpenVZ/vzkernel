@@ -515,7 +515,8 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 		ioh->hdr.type = PCS_CS_READ_REQ;
 		break;
 	case PCS_REQ_T_WRITE:
-		ioh->hdr.type = PCS_CS_WRITE_REQ;
+		ioh->hdr.type = (ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE) ?
+				PCS_CS_WRITE_SYNC_REQ : PCS_CS_WRITE_REQ;
 		ioh->hdr.len += ireq->iochunk.size;
 		break;
 	case PCS_REQ_T_WRITE_HOLE:
