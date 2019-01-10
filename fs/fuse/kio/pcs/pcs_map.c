@@ -1947,7 +1947,7 @@ static int pcs_cslist_submit_read(struct pcs_int_request *ireq, struct pcs_cs_li
 		WRITE_ONCE(csl->read_index, i);
 		WRITE_ONCE(csl->select_stamp, jiffies);
 
-		FUSE_KTRACE(ireq->cc->fc, "Selected read map " MAP_FMT " to CS" NODE_FMT "; is_seq=%d\n", MAP_ARGS(ireq->iochunk.map),
+		FUSE_KTRACE(ireq->cc->fc, "Selected read map " MAP_FMT " to CS" NODE_FMT "; is_seq=%d", MAP_ARGS(ireq->iochunk.map),
 		      NODE_ARGS(csl->cs[i].cslink.cs->id), is_seq);
 		pcs_flow_bind_cs(ireq->iochunk.flow, csl->cs[i].cslink.cs);
 	}
