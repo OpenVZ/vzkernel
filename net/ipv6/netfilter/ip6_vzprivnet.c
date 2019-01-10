@@ -856,7 +856,7 @@ static struct file_operations proc_classify6_ops = {
 	.open    = classify6_seq_open,
 	.read    = seq_read,
 	.llseek  = seq_lseek,
-	.release = seq_release,
+	.release = single_release,
 	.write	 = classify6_write,
 };
 
