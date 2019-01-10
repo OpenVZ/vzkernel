@@ -304,6 +304,7 @@ struct fuse_args {
 	bool may_block:1;
 	bool is_ext:1;
 	bool nonblocking:1;
+	bool kio_internal:1;
 	struct fuse_in_arg in_args[3];
 	struct fuse_arg out_args[3];
 	void (*end)(struct fuse_mount *fm, struct fuse_args *args, int error);
@@ -376,6 +377,7 @@ struct fuse_io_priv {
  * FR_PRIVATE:		request is on private list
  * FR_ASYNC:		request is asynchronous
  * FR_NONBLOCKING:	non-blocking request (only needed for KIO)
+ * FR_KIO_INTERNAL:	request initiated by KIO
  */
 enum fuse_req_flag {
 	FR_ISREPLY,
@@ -391,6 +393,7 @@ enum fuse_req_flag {
 	FR_PRIVATE,
 	FR_ASYNC,
 	FR_NONBLOCKING,
+	FR_KIO_INTERNAL,
 };
 
 /**
