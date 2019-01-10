@@ -708,7 +708,7 @@ static int cs_input(struct pcs_rpc *ep, struct pcs_msg *msg)
 		msg->done(msg);
 		return 0;
 	default:
-		FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR, "Unsupported message type %u\n", h->type);
+		FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR, "Unsupported message type %u", h->type);
 		return PCS_ERR_PROTOCOL;
 	}
 }
