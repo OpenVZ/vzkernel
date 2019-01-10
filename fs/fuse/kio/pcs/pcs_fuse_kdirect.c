@@ -166,6 +166,7 @@ int kpcs_conn_init(struct fuse_conn *fc)
 		return -ENOMEM;
 	}
 
+	ia->ap.args.kio_internal = true;
 	/* filehandle and nodeid are null, but this is OK */
 	inarg = &ia->ioctl.in;
 	outarg = &ia->ioctl.out;
@@ -230,6 +231,7 @@ static int fuse_pcs_getfileinfo(struct fuse_conn *fc, struct file *file,
 	struct pcs_ioc_fileinfo ioc_info = {};
 	int err = 0;
 
+	ia.ap.args.kio_internal = true;
 	inarg = &ia.ioctl.in;
 	outarg = &ia.ioctl.out;
 
@@ -271,6 +273,7 @@ static int fuse_pcs_kdirect_claim_op(struct fuse_conn *fc, struct file *file,
 	struct fuse_ioctl_out *outarg;
 	int err = 0;
 
+	ia.ap.args.kio_internal = true;
 	inarg = &ia.ioctl.in;
 	outarg = &ia.ioctl.out;
 
@@ -474,7 +477,7 @@ int fuse_map_resolve(struct pcs_map_entry *m, int direction)
 		return -ENOMEM;
 	}
 
-
+	ia->ap.args.kio_internal = true;
 	inarg = &ia->ioctl.in;
 	outarg = &ia->ioctl.out;
 	inarg->cmd = PCS_IOC_GETMAP;
@@ -611,6 +614,7 @@ int fuse_pcs_csconn_send(struct fuse_conn *fc, struct pcs_rpc *ep, int flags)
 		return -ENOMEM;
 	}
 
+	ia->ap.args.kio_internal = true;
 	inarg = &ia->ioctl.in;
 	outarg = &ia->ioctl.out;
 
@@ -1095,6 +1099,9 @@ static int pcs_kio_classify_req(struct fuse_conn *fc, struct fuse_req *req, bool
 	struct fuse_args *args = req->args;
 	struct fuse_inode *fi = get_fuse_inode(args->io_inode);
 
+	if (test_bit(FR_KIO_INTERNAL, &req->flags))
+		return 1;
+
 	switch (req->in.h.opcode) {
 	case FUSE_READ:
 	case FUSE_WRITE:
@@ -1121,9 +1128,22 @@ static int pcs_kio_classify_req(struct fuse_conn *fc, struct fuse_req *req, bool
 	case FUSE_IOCTL: {
 		struct fuse_ioctl_in const *inarg = args->in_args[0].value;
 
-		if (inarg->cmd != FS_IOC_FIEMAP)
-			return 1;
-
+		switch (inarg->cmd) {
+			case FS_IOC_FIEMAP:
+				break;
+			case PCS_IOC_NOCSUMONREAD:
+			case PCS_IOC_NOWRITEDELAY:
+				return -EOPNOTSUPP;
+			case PCS_IOC_INIT_KDIRECT:
+			case PCS_IOC_CSCONN:
+			case PCS_IOC_GETFILEINFO:
+			case PCS_IOC_KDIRECT_CLAIM:
+			case PCS_IOC_KDIRECT_RELEASE:
+			case PCS_IOC_GETMAP:
+				return -EPERM;
+			default:
+				return 1;
+		}
 		break;
 	}
 	default:
