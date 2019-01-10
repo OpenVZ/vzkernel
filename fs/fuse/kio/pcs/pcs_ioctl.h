@@ -78,6 +78,11 @@ struct pcs_ioc_csconn
 #define PCS_IOC_CS_REOPEN	(PCS_IOC_CS_OPEN|PCS_IOC_CS_CLOSE)
 };
 
+#define PCS_IOC_NOCSUMONREAD	_IOW('V',3,u32)
+# define PCS_IOC_NOCSUMONREAD_DATA	1
+# define PCS_IOC_NOCSUMONREAD_METADATA	2
+#define PCS_IOC_NOWRITEDELAY	_IOW('V',4,u32)
+
 #define PCS_IOC_INIT_KDIRECT	_IOR('V',32, struct pcs_ioc_init_kdirect)
 #define PCS_IOC_CSCONN		_IOR('V',33, struct pcs_ioc_csconn)
 #define PCS_IOC_GETFILEINFO	_IOR('V',34, struct pcs_ioc_fileinfo)
