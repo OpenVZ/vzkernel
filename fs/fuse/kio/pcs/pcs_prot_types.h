@@ -417,6 +417,9 @@ enum
 	/* Don't cache content on the client */
 	PCS_FATTR_NO_CLNT_CACHE = 0x10000000,
 
+	/* Disable delayed writes for files in the directory */
+	PCS_FATTR_IMMEDIATE_WRITE = 0x40000000,
+
 	/* The following attributes are being inherited from the parent directory */
 	PCS_FATTR_INHERITABLE_MASK = 0xff000000,
 };
