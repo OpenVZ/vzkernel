@@ -59,6 +59,8 @@
 #include <net/netns/generic.h>
 #include <net/dst_metadata.h>
 
+#include <uapi/linux/vzcalluser.h>
+
 MODULE_AUTHOR("Ville Nuorvala");
 MODULE_DESCRIPTION("IPv6 tunneling device");
 MODULE_LICENSE("GPL");
@@ -145,6 +147,11 @@ ip6_tnl_lookup(struct net *net, const struct in6_addr *remote, const struct in6_
 	struct ip6_tnl *t;
 	struct ip6_tnl_net *ip6n = net_generic(net, ip6_tnl_net_id);
 	struct in6_addr any;
+
+#if CONFIG_VE
+	if (!ip6n) /* no VE_FEATURE_IPIP */
+		return NULL;
+#endif
 
 	for_each_ip6_tunnel_rcu(ip6n->tnls_r_l[hash]) {
 		if (ipv6_addr_equal(local, &t->parms.laddr) &&
@@ -1846,6 +1853,11 @@ static int ip6_tnl_newlink(struct net *src_net, struct net_device *dev,
 	struct ip6_tnl *nt, *t;
 	int err;
 
+#ifdef CONFIG_VE
+	if (net_generic(dev_net(dev), ip6_tnl_net_id) == NULL)
+		return -EACCES;
+#endif
+
 	nt = netdev_priv(dev);
 	ip6_tnl_netlink_parms(data, &nt->parms);
 
@@ -2002,6 +2014,11 @@ static void __net_exit ip6_tnl_destroy_tunnels(struct net *net)
 	struct ip6_tnl *t;
 	LIST_HEAD(list);
 
+#ifdef CONFIG_VE
+	if (!ip6n) /* no VE_FEATURE_IPIP */
+		return;
+#endif
+
 	for_each_netdev_safe(net, dev, aux)
 		if (dev->rtnl_link_ops == &ip6_link_ops)
 			unregister_netdevice_queue(dev, &list);
@@ -2026,6 +2043,11 @@ static int __net_init ip6_tnl_init_net(struct net *net)
 	struct ip6_tnl_net *ip6n = net_generic(net, ip6_tnl_net_id);
 	struct ip6_tnl *t = NULL;
 	int err;
+
+#ifdef CONFIG_VE
+	if (!(net->owner_ve->features & VE_FEATURE_IPIP))
+		return net_assign_generic(net, ip6_tnl_net_id, NULL);
+#endif
 
 	ip6n->tnls[0] = ip6n->tnls_wc;
 	ip6n->tnls[1] = ip6n->tnls_r_l;
