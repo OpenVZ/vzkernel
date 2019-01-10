@@ -565,7 +565,7 @@ struct pcs_msg *rpc_get_hdr(struct pcs_sockio * sio, u32 *msg_size)
 
 	/* Fatal stream format error */
 	if (h->len < sizeof(struct pcs_rpc_hdr) || h->len > ep->params.max_msg_size) {
-		FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR, "Bad message header %u %u\n", h->len, h->type);
+		FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR, "Bad message header %u %u", h->len, h->type);
 		return NULL;
 	}
 
@@ -580,12 +580,12 @@ struct pcs_msg *rpc_get_hdr(struct pcs_sockio * sio, u32 *msg_size)
 		next_input = rpc_work_input;
 		break;
 	default:
-		FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR, "Received msg in bad state %u\n", ep->state);
+		FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR, "Received msg in bad state %u", ep->state);
 		return NULL;
 	}
 
 	if (h->len > PAGE_SIZE) {
-		FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR, "Received too big msg  %u\n", h->len);
+		FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR, "Received too big msg  %u", h->len);
 		*msg_size = h->len;
 		return PCS_TRASH_MSG;
 	}
@@ -615,7 +615,7 @@ void pcs_rpc_connect(struct pcs_rpc * ep)
 	if (ep->state != PCS_RPC_UNCONN)
 		return;
 
-	FUSE_KTRACE(cc_from_rpc(ep->eng)->fc, "Connecting to node " NODE_FMT "\n", NODE_ARGS(ep->peer_id));
+	FUSE_KTRACE(cc_from_rpc(ep->eng)->fc, "Connecting to node " NODE_FMT, NODE_ARGS(ep->peer_id));
 
 	BUG_ON(!ep->ops->connect);
 	ep->ops->connect(ep);
@@ -749,7 +749,7 @@ static void calendar_work(struct work_struct *w)
 		struct pcs_rpc_hdr * h = (struct pcs_rpc_hdr *)msg_inline_head(msg);
 
 		(void)h;
-		FUSE_KTRACE(cc->fc, "killing msg to " PEER_FMT " type=%u xid=" XID_FMT " stage=%d tmo=%d exp=%ld rem=%ld\n",
+		FUSE_KTRACE(cc->fc, "killing msg to " PEER_FMT " type=%u xid=" XID_FMT " stage=%d tmo=%d exp=%ld rem=%ld",
 		      PEER_ARGS(msg->rpc), h->type, XID_ARGS(h->xid),
 		      msg->stage, msg->timeout,
 		      (long)(msg->start_time + msg->timeout - jiffies),
