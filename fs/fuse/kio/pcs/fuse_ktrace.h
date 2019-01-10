@@ -4,6 +4,12 @@
 #include "fuse_ktrace_prot.h"
 #include <linux/relay.h>
 
+#ifdef CONFIG_FUSE_KIO_DEBUG
+#define DEBUGFS_TRACE 1
+#else
+#define DEBUGFS_TRACE 0
+#endif /* CONFIG_FUSE_KIO_DEBUG */
+
 #define KTRACE_LOG_BUF_SIZE	256
 
 struct fuse_ktrace
