@@ -1175,7 +1175,8 @@ void pcs_map_complete(struct pcs_map_entry *m, struct pcs_ioc_getmap *omap)
 	return;
 
 error:
-	TRACE(" map error: %d for " MAP_FMT "\n", error.value, MAP_ARGS(m));
+	TRACE("map error: %d, m:%p, index:%lu, state:%x\n", error.value, m,
+		m->index, m->state);
 	BUG_ON(!pcs_if_error(&error));
 
 	m->state &= ~PCS_MAP_RESOLVING;
