@@ -524,6 +524,8 @@ static void fuse_args_to_req(struct fuse_req *req, struct fuse_args *args)
 		__set_bit(FR_ASYNC, &req->flags);
 	if (args->nonblocking)
 		__set_bit(FR_NONBLOCKING, &req->flags);
+	if (args->kio_internal)
+		__set_bit(FR_KIO_INTERNAL, &req->flags);
 }
 
 ssize_t fuse_simple_check_request(struct fuse_mount *fm, struct fuse_args *args,
