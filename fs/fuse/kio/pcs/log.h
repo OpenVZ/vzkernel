@@ -22,12 +22,8 @@
 #define LOG_DTRACE LOG_DEBUG4
 
 extern unsigned int pcs_loglevel;
+extern unsigned int debugfs_tracing;
 
-#ifdef CONFIG_FUSE_KIO_DEBUG
-#define TRACE(fmt, args...)	if (pcs_loglevel >= LOG_TRACE) trace_printk("%d: " fmt "\n", __LINE__, ## args)
-#define DTRACE(fmt, args...)	if (pcs_loglevel >= LOG_DTRACE) trace_printk("%d: " fmt "\n", __LINE__, ## args)
-#else
-#define TRACE(fmt, ...) do {} while (0)
-#define DTRACE(fmt, ...) do {} while (0)
-#endif /* CONFIG_FUSE_KIO_DEBUG */
+#define TRACE(fmt, args...)	if (unlikely(debugfs_tracing && pcs_loglevel >= LOG_TRACE)) trace_printk("%d: " fmt "\n", __LINE__, ## args)
+#define DTRACE(fmt, args...)	if (unlikely(debugfs_tracing && pcs_loglevel >= LOG_DTRACE)) trace_printk("%d: " fmt "\n", __LINE__, ## args)
 #endif /* __PCSLOG_H__ */
