@@ -541,6 +541,9 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 	if (ireq->flags & IREQ_F_SEQ)
 		ioh->sync.misc = PCS_CS_IO_SEQ;
 
+	if (ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE)
+		ioh->sync.misc |= PCS_CS_IO_SYNC;
+
 	msg->size = ioh->hdr.len;
 	msg->rpc = NULL;
 	pcs_clear_error(&msg->error);
