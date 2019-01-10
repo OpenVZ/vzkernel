@@ -139,7 +139,7 @@ noinline void pcs_ireq_queue_fail(struct list_head *queue, int error)
 			if (!(ireq->flags & IREQ_F_FATAL)) {
 				pcs_clear_error(&ireq->error);
 
-				FUSE_KTRACE(ireq->cc->fc, "requeue truncate(%d) %llu@" DENTRY_FMT "\n", ireq->type,
+				FUSE_KTRACE(ireq->cc->fc, "requeue truncate(%d) %llu@" DENTRY_FMT, ireq->type,
 				      (unsigned long long)ireq->truncreq.offset, DENTRY_ARGS(ireq->dentry));
 
 				ireq_delay(ireq);
