@@ -660,7 +660,7 @@ void secure_computing_strict(int this_syscall)
 
 	if (config_enabled(CONFIG_CHECKPOINT_RESTORE) &&
 	    unlikely(current->ptrace & PT_SUSPEND_SECCOMP))
-		return 0;
+		return;
 
 	if (mode == 0)
 		return;
@@ -767,6 +767,10 @@ int __secure_computing(void)
 	int mode = current->seccomp.mode;
 	struct pt_regs *regs = task_pt_regs(current);
 	int this_syscall = syscall_get_nr(current, regs);
+
+	if (config_enabled(CONFIG_CHECKPOINT_RESTORE) &&
+	    unlikely(current->ptrace & PT_SUSPEND_SECCOMP))
+		return 0;
 
 	switch (mode) {
 	case SECCOMP_MODE_STRICT:
