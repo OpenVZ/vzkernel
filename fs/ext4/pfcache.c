@@ -702,8 +702,12 @@ static int ext4_xattr_trusted_csum_set(struct dentry *dentry, const char *name,
 	if (strcmp(name, ""))
 		return -ENODATA;
 
+	/*
+	 * Silently drop "trusted.pfcache" xattr, useful for the case when
+	 * a file with csum is copied to non-pfcache-enabled fs.
+	 */
 	if (!test_opt2(inode->i_sb, PFCACHE_CSUM))
-		return -EOPNOTSUPP;
+		return 0;
 
 	if (!capable(CAP_SYS_ADMIN))
 		return -EPERM;
