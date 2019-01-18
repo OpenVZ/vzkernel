@@ -4256,6 +4256,17 @@ void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
 					MEM_CGROUP_STAT_SLAB_UNRECLAIMABLE);
 	mi->cached = mem_cgroup_recursive_stat2(memcg, MEM_CGROUP_STAT_CACHE);
 	mi->shmem = mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_SHMEM);
+
+	/*
+	 * The way of calculating 'available' memory repeats behavior of
+	 * si_mem_available(), except 'WMARK_LOW' and 'totalreserve_pages'
+	 * are not taken into account. These values reflect reservation of
+	 * physycal memory and they are not relevant for CT.
+	 */
+	mi->available = mi->si->freeram;
+	mi->available += mi->pages[LRU_ACTIVE_FILE] +
+			 mi->pages[LRU_INACTIVE_FILE];
+	mi->available += mi->slab_reclaimable;
 }
 
 int mem_cgroup_enough_memory(struct mem_cgroup *memcg, long pages)
