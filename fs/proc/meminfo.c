@@ -31,6 +31,7 @@ static int meminfo_proc_show_mi(struct seq_file *m, struct meminfo *mi)
 	seq_printf(m,
 		"MemTotal:       %8lu kB\n"
 		"MemFree:        %8lu kB\n"
+		"MemAvailable:   %8lu kB\n"
 		"Cached:         %8lu kB\n"
 		"Buffers:        %8lu kB\n"
 		"Active:         %8lu kB\n"
@@ -53,6 +54,7 @@ static int meminfo_proc_show_mi(struct seq_file *m, struct meminfo *mi)
 		,
 		K(mi->si->totalram),
 		K(mi->si->freeram),
+		K(mi->available),
 		K(mi->cached),
 		K(0L),
 		K(mi->pages[LRU_ACTIVE_ANON]   + mi->pages[LRU_ACTIVE_FILE]),
