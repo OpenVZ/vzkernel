@@ -52,6 +52,7 @@ struct meminfo {
 	unsigned long pages[NR_LRU_LISTS];
 	unsigned long cached, dirty_pages, writeback_pages, locked, shmem;
 	unsigned long slab_reclaimable, slab_unreclaimable;
+	unsigned long available;
 };
 
 struct seq_file;
