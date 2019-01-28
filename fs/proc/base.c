@@ -1723,6 +1723,26 @@ static const struct file_operations proc_pid_set_comm_operations = {
 	.release	= single_release,
 };
 
+#if CONFIG_VE
+#include "../mount.h"
+
+static inline int path_in_ve(struct path *path)
+{
+	struct ve_struct *ve = get_exec_env();
+
+	if (ve_is_super(ve) ||
+	    (real_mount(path->mnt)->ve_owner == ve))
+		return 0;
+	else
+		return -EINVAL;
+}
+#else
+static inline int path_in_ve(struct path * path)
+{
+	return 0;
+}
+#endif
+
 static int proc_exe_link(struct dentry *dentry, struct path *exe_path)
 {
 	struct task_struct *task;
@@ -1734,10 +1754,15 @@ static int proc_exe_link(struct dentry *dentry, struct path *exe_path)
 	exe_file = get_task_exe_file(task);
 	put_task_struct(task);
 	if (exe_file) {
-		*exe_path = exe_file->f_path;
-		path_get(&exe_file->f_path);
+		int result;
+
+		result = path_in_ve(&exe_file->f_path);
+		if (result == 0) {
+			*exe_path = exe_file->f_path;
+			path_get(&exe_file->f_path);
+		}
 		fput(exe_file);
-		return 0;
+		return result;
 	} else
 		return -ENOENT;
 }
