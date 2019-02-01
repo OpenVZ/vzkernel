@@ -1001,6 +1001,7 @@ err_inode:
 	iput(inode);
 	return err;
 }
+EXPORT_SYMBOL(create_pipe_files);
 
 static int __do_pipe_flags(int *fd, struct file **files, int flags)
 {
