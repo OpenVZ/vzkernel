@@ -68,6 +68,8 @@ struct pcs_dentry_info {
 		size_op_t op;
 	} size;
 	struct fuse_inode	*inode;
+	struct list_head	kq;
+	spinlock_t		kq_lock;
 };
 
 static inline void pcs_clear_fileinfo(struct pcs_dentry_info *i)
