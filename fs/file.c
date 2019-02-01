@@ -952,6 +952,7 @@ out_unlock:
 	spin_unlock(&files->file_lock);
 	return err;
 }
+EXPORT_SYMBOL(replace_fd);
 
 SYSCALL_DEFINE3(dup3, unsigned int, oldfd, unsigned int, newfd, int, flags)
 {
