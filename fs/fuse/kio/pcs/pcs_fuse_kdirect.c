@@ -345,6 +345,8 @@ static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct ino
 	pcs_set_fileinfo(di, &info);
 	di->cluster = &pfc->cc;
 	di->inode = fi;
+	INIT_LIST_HEAD(&di->kq);
+	spin_lock_init(&di->kq_lock);
 	TRACE("init id:%llu chunk_size:%d stripe_depth:%d strip_width:%d\n",
 	      fi->nodeid, di->fileinfo.sys.chunk_size,
 	      di->fileinfo.sys.stripe_depth, di->fileinfo.sys.strip_width);
@@ -987,6 +989,10 @@ error:
 	return;
 
 submit:
+	spin_lock(&di->kq_lock);
+	list_add_tail(&req->list, &di->kq);
+	spin_unlock(&di->kq_lock);
+
 	if (async)
 		pcs_cc_submit(ireq->cc, ireq);
 	else
@@ -1494,6 +1500,26 @@ void __kfuse_trace(struct fuse_conn * fc, unsigned long ip, const char * fmt, ..
 	put_cpu();
 }
 
+static void kpcs_kill_requests(struct fuse_conn *fc, struct inode *inode)
+{
+	struct fuse_file *ff;
+
+	assert_spin_locked(&fc->lock);
+
+	list_for_each_entry(ff, &fc->conn_files, fl) {
+		struct pcs_dentry_info *di;
+
+		if (!ff->ff_dentry)
+			continue;
+
+		di = get_pcs_inode(ff->ff_dentry->d_inode);
+
+		spin_lock(&di->kq_lock);
+		fuse_kill_requests(fc, inode, &di->kq);
+		spin_unlock(&di->kq_lock);
+	}
+}
+
 static struct fuse_kio_ops kio_pcs_ops = {
 	.name		= "pcs",
 	.owner		= THIS_MODULE,
@@ -1506,6 +1532,7 @@ static struct fuse_kio_ops kio_pcs_ops = {
 	.req_send	= kpcs_req_send,
 	.file_open	= kpcs_file_open,
 	.inode_release	= kpcs_inode_release,
+	.kill_requests	= kpcs_kill_requests,
 };
 
 
