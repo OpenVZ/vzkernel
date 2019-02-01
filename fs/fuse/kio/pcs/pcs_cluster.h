@@ -78,6 +78,13 @@ static inline struct pcs_dentry_info *pcs_inode_from_fuse(struct fuse_inode *fi)
 	return (struct pcs_dentry_info *)fi->private;
 }
 
+static inline struct pcs_dentry_info *get_pcs_inode(struct inode *inode)
+{
+	struct fuse_inode *fi = get_fuse_inode(inode);
+
+	return pcs_inode_from_fuse(fi);
+}
+
 static inline struct pcs_fuse_cluster *cl_from_req(struct pcs_fuse_req *r)
 {
 	return pcs_cluster_from_cc(r->exec.ireq.cc);
