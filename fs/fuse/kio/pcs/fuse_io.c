@@ -205,6 +205,7 @@ static void prepare_io_(struct pcs_fuse_req *r, unsigned short type, off_t offse
 static void ioreq_complete(pcs_api_iorequest_t *ioreq)
 {
 	struct pcs_fuse_req *r = ioreq->datasource;
+	struct pcs_dentry_info *di = get_pcs_inode(r->req.io_inode);
 
 	BUG_ON(ioreq != &r->exec.io.req);
 
@@ -216,6 +217,10 @@ static void ioreq_complete(pcs_api_iorequest_t *ioreq)
 	} else {
 		r->req.out.h.error = 0;
 	}
+
+	spin_lock(&di->kq_lock);
+	list_del_init(&r->req.list);
+	spin_unlock(&di->kq_lock);
 
 	switch (ioreq->type) {
 	case PCS_REQ_T_READ:
