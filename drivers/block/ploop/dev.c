@@ -593,7 +593,7 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 
 	__TRACE("A %p %u\n", preq, preq->req_cluster);
 
-	if (unlikely(preq->state & (1 << PLOOP_REQ_DISCARD)))
+	if (unlikely(bio->bi_rw & REQ_DISCARD))
 		plo->bio_discard_qlen--;
 	else
 		plo->bio_qlen--;
