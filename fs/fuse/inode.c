@@ -369,8 +369,8 @@ int fuse_reverse_inval_inode(struct super_block *sb, u64 nodeid,
 	return 0;
 }
 
-static void fuse_kill_requests(struct fuse_conn *fc, struct inode *inode,
-			       struct list_head *req_list)
+void fuse_kill_requests(struct fuse_conn *fc, struct inode *inode,
+			struct list_head *req_list)
 {
 	struct fuse_req *req;
 
@@ -393,6 +393,7 @@ static void fuse_kill_requests(struct fuse_conn *fc, struct inode *inode,
 			req->num_pages = 0;
 		}
 }
+EXPORT_SYMBOL_GPL(fuse_kill_requests);
 
 int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 {
@@ -442,6 +443,9 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 		}
 		fuse_kill_requests(fc, inode, &fc->main_iq.pending);
 		fuse_kill_requests(fc, inode, &fc->bg_queue);
+		if (fc->kio.op && fc->kio.op->kill_requests)
+			fc->kio.op->kill_requests(fc, inode);
+
 		wake_up(&fi->page_waitq); /* readpage[s] can wait on fuse wb */
 		spin_unlock(&fc->lock);
 
