@@ -587,6 +587,7 @@ struct fuse_kio_ops {
 	int  (*file_open)(struct fuse_conn *fc, struct file *file,
 			  struct inode *inode);
 	void (*inode_release)(struct fuse_inode *fi);
+	void (*kill_requests)(struct fuse_conn *fc, struct inode *inode);
 
 };
 int fuse_register_kio(struct fuse_kio_ops *ops);
@@ -1243,6 +1244,9 @@ int fuse_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 struct fuse_file *__fuse_write_file_get(struct fuse_conn *fc,
 					       struct fuse_inode *fi);
 void fuse_release_ff(struct inode *inode, struct fuse_file *ff);
+
+void fuse_kill_requests(struct fuse_conn *fc, struct inode *inode,
+			struct list_head *req_list);
 
 /* readdir.c */
 int fuse_readdir(struct file *file, struct dir_context *ctx);
