@@ -908,6 +908,7 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, 
 	struct fuse_args *args = req->args;
 	struct fuse_inode *fi = get_fuse_inode(args->io_inode);
 	struct pcs_dentry_info *di = pcs_inode_from_fuse(fi);
+	struct fuse_file *req_ff = fuse_get_req_ff(req);
 	struct pcs_int_request* ireq;
 	int ret;
 
@@ -996,6 +997,11 @@ error:
 
 submit:
 	spin_lock(&di->kq_lock);
+	if (req_ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &req_ff->ff_state)) {
+		spin_unlock(&di->kq_lock);
+		req->out.h.error = -EIO;
+		goto error;
+	}
 	list_add_tail(&req->list, &di->kq);
 	spin_unlock(&di->kq_lock);
 
