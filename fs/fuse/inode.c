@@ -444,6 +444,10 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 			fuse_kill_requests(fc, inode, &fiq->pending);
 			fuse_kill_requests(fc, inode, &fpq->io);
 			spin_unlock(&fpq->lock);
+
+			spin_lock(&fiq->waitq.lock);
+			fuse_kill_requests(fc, inode, &fiq->pending);
+			spin_unlock(&fiq->waitq.lock);
 		}
 		fuse_kill_requests(fc, inode, &fc->main_iq.pending);
 		spin_lock(&fc->bg_lock);
