@@ -990,6 +990,11 @@ error:
 
 submit:
 	spin_lock(&di->kq_lock);
+	if (req->ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &req->ff->ff_state)) {
+		spin_unlock(&di->kq_lock);
+		req->out.h.error = -EIO;
+		goto error;
+	}
 	list_add_tail(&req->list, &di->kq);
 	spin_unlock(&di->kq_lock);
 
