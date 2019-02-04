@@ -4784,10 +4784,11 @@ static int ploop_relocblks_ioc(struct ploop_device *plo, unsigned long arg)
 
 	/*
 	 * before relocation start, freeblks engine could provide only
-	 * free blocks
+	 * free blocks. However delta.io.alloc_head can legaly increased
+	 * in maintenance mode due to processing of interleaving WRITEs.
 	 */
-	BUG_ON (delta->io.alloc_head > ploop_fb_get_alloc_head(plo->fbd) &&
-		n_free);
+	WARN_ON (delta->io.alloc_head > ploop_fb_get_alloc_head(plo->fbd) &&
+		 n_free);
 	ploop_fb_relocation_start(plo->fbd, ctl.n_scanned);
 
 	if (!n_free || !ctl.n_extents)
@@ -4825,9 +4826,8 @@ already:
 	/* time to truncate */
 	ploop_quiesce(plo);
 truncate:
-	if (ploop_fb_get_lost_range_len(plo->fbd) != 0) {
-		BUG_ON (delta->io.alloc_head >
-			ploop_fb_get_alloc_head(plo->fbd));
+	if ((ploop_fb_get_lost_range_len(plo->fbd) != 0) &&
+	    (delta->io.alloc_head == ploop_fb_get_alloc_head(plo->fbd))) {
 		err = delta->ops->truncate(delta, NULL,
 					   ploop_fb_get_first_lost_iblk(plo->fbd));
 		if (!err) {
