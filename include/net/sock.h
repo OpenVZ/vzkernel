@@ -2228,11 +2228,6 @@ static inline struct page_frag *sk_page_frag(struct sock *sk)
 
 extern bool sk_page_frag_refill(struct sock *sk, struct page_frag *pfrag);
 
-bool sk_ns_capable(const struct sock *sk,
-		   struct user_namespace *user_ns, int cap);
-bool sk_capable(const struct sock *sk, int cap);
-bool sk_net_capable(const struct sock *sk, int cap);
-
 /*
  *	Default write policy as shown to user space via poll/select/SIGIO
  */
