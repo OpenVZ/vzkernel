@@ -53,7 +53,7 @@ static char *sb_writers_name[SB_FREEZE_LEVELS] = {
 	"sb_internal",
 };
 
-static bool dcache_is_low(struct mem_cgroup *memcg)
+bool dcache_is_low(struct mem_cgroup *memcg)
 {
 	unsigned long anon, file, dcache;
 	int vfs_cache_min_ratio = READ_ONCE(sysctl_vfs_cache_min_ratio);
@@ -71,6 +71,7 @@ static bool dcache_is_low(struct mem_cgroup *memcg)
 	return dcache / vfs_cache_min_ratio <
 			(anon + file + dcache) / 100;
 }
+EXPORT_SYMBOL(dcache_is_low);
 
 /*
  * One thing we have to be careful of with a per-sb shrinker is that we don't
