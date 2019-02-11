@@ -99,7 +99,7 @@ void *dma_generic_alloc_coherent(struct device *dev, size_t size,
 
 	dma_mask = dma_alloc_coherent_mask(dev, flag);
 
-	flag |= __GFP_ZERO;
+	flag |= __GFP_ZERO | __GFP_ORDER_NOWARN;
 again:
 	page = NULL;
 	/* CMA can be used only in the context which permits sleeping */
