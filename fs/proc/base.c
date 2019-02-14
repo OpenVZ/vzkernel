@@ -1748,6 +1748,17 @@ static int proc_exe_link(struct dentry *dentry, struct path *exe_path)
 	task = get_proc_task(dentry->d_inode);
 	if (!task)
 		return -ENOENT;
+
+	if (!ve_is_super(get_exec_env())) {
+		task_lock(task);
+		if (task->mm && task->mm->vps_dumpable == VD_VE_ENTER_TASK) {
+			task_unlock(task);
+			put_task_struct(task);
+			return -EPERM;
+		}
+		task_unlock(task);
+	}
+
 	exe_file = get_task_exe_file(task);
 	put_task_struct(task);
 	if (exe_file) {
