@@ -259,6 +259,8 @@ enum
 	PCS_MAP_LS = PCS_MAP_COMBINED, /* Log structured storage */
 };
 
+#define PCS_JUMBO_CHUNK_FLAG (1 << 28) /* Chunks size > 4G */
+
 /* Max inline file size */
 #define PCS_MAX_INLINE_SIZE 0x100000 /* 1Mb */
 
