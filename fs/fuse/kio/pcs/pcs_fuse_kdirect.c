@@ -329,6 +329,12 @@ static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct ino
 		return 0;
 	}
 
+	if (info.sys.chunk_size_hi) {
+		TRACE("Unsupported chunk_size_hi:%x\n", info.sys.chunk_size_hi);
+		pr_warn_once("kio: fpath doesn't support jumbo chunks\n");
+		return 0;
+	}
+
 	di = kzalloc(sizeof(*di), GFP_KERNEL);
 	if (!di)
 		return -ENOMEM;
