@@ -3474,7 +3474,8 @@ static __always_inline void warn_high_order(int order, gfp_t gfp_mask)
 	if (static_key_false(&warn_high_order_key)) {
 		int tmp_warn_order = smp_load_acquire(&warn_order);
 
-		if (order >= tmp_warn_order && !(gfp_mask & __GFP_NOWARN))
+		if (order >= tmp_warn_order &&
+		    !(gfp_mask & (__GFP_NOWARN|__GFP_ORDER_NOWARN)))
 			WARN(atomic_dec_if_positive(&warn_count) >= 0,
 				"order %d >= %d, gfp 0x%x\n",
 				order, tmp_warn_order, gfp_mask);
