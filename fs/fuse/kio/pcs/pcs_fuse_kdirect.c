@@ -323,6 +323,9 @@ static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct ino
 
 	if (info.sys.map_type != PCS_MAP_PLAIN) {
 		TRACE("Unsupported map_type:%x, ignore\n", info.sys.map_type);
+
+		if (info.sys.map_type & PCS_JUMBO_CHUNK_FLAG)
+			pr_warn_once("kio: fpath doesn't support jumbo chunks\n");
 		return 0;
 	}
 
