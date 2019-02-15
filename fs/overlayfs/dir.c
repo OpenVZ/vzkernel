@@ -377,7 +377,7 @@ static int ovl_posix_acl_create(struct inode *dir, umode_t *mode,
 
 	clone = posix_acl_dup(p);
 	ret = posix_acl_create(&clone, GFP_NOFS, mode);
-	if (ret)
+	if (ret < 0)
 		goto err_release;
 
 	if (ret == 0)
