@@ -694,20 +694,6 @@ out:
 	PLOOP_FAIL_REQUEST(preq, err);
 }
 
-static struct extent_map * dio_fallocate(struct ploop_io *io, u32 iblk, int nr)
-{
-	struct extent_map * em;
-	mutex_lock(&io->files.inode->i_mutex);
-	em = map_extent_get_block(io,
-				  io->files.mapping,
-				  (sector_t)iblk << io->plo->cluster_log,
-				  1 << io->plo->cluster_log,
-				  1, mapping_gfp_mask(io->files.mapping));
-	mutex_unlock(&io->files.inode->i_mutex);
-	return em;
-}
-
-
 static void
 dio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 		 struct bio_list * sbl, unsigned int size)
@@ -719,37 +705,6 @@ dio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 
 	if (!(io->files.file->f_mode & FMODE_WRITE)) {
 		PLOOP_FAIL_REQUEST(preq, -EBADF);
-		return;
-	}
-
-	/* io->fallocate is not a "posix" fallocate()!
-	 *
-	 * We require backing fs gave us _uninitialized_ blocks,
-	 * otherwise it does not make sense to go that way.
-	 *
-	 * IMPORTANT: file _grows_ and dio_submit_alloc() cannot
-	 * complete requests until i_size is commited to disk.
-	 * Read this as: no hope to do this in a non-suboptimal way,
-	 * linux updates i_size synchronously even when O_DIRECT AIO
-	 * is requested. Even in PCSS we have to update i_size synchronously.
-	 * Obviously, we will expand file by larger pieces
-	 * and take some measures to avoid initialization of the blocks
-	 * and the same time leakage of uninitizlized data
-	 * to user of our device.
-	 */
-	if (io->files.em_tree->_get_extent) {
-		struct extent_map * em;
-
-		em = dio_fallocate(io, iblk, 1);
-		if (unlikely(IS_ERR(em))) {
-			PLOOP_FAIL_REQUEST(preq, PTR_ERR(em));
-			return;
-		}
-
-		preq->iblock = iblk;
-		preq->eng_state = PLOOP_E_DATA_WBI;
-
-		dio_submit_pad(io, preq, sbl, size, em);
 		return;
 	}
 
@@ -1005,7 +960,7 @@ static int dio_open(struct ploop_io * io)
 		goto out;
 	}
 
-	if (!(delta->flags & PLOOP_FMT_RDONLY) && !io->files.em_tree->_get_extent) {
+	if (!(delta->flags & PLOOP_FMT_RDONLY)) {
 		io->fsync_thread = kthread_create(dio_fsync_thread,
 						  io, "ploop_fsync%d",
 						  delta->plo->index);
@@ -1734,18 +1689,16 @@ static int dio_prepare_merge(struct ploop_io * io, struct ploop_snapdata *sd)
 	}
 	mutex_unlock(&io->files.inode->i_mutex);
 
-	if (!io->files.em_tree->_get_extent) {
-		io->fsync_thread = kthread_create(dio_fsync_thread,
-						  io, "ploop_fsync%d",
-						  io->plo->index);
-		if (IS_ERR(io->fsync_thread)) {
-			err = PTR_ERR(io->fsync_thread);
-			io->fsync_thread = NULL;
-			fput(file);
-			return err;
-		}
-		wake_up_process(io->fsync_thread);
+	io->fsync_thread = kthread_create(dio_fsync_thread,
+					  io, "ploop_fsync%d",
+					  io->plo->index);
+	if (IS_ERR(io->fsync_thread)) {
+		err = PTR_ERR(io->fsync_thread);
+		io->fsync_thread = NULL;
+		fput(file);
+		return err;
 	}
+	wake_up_process(io->fsync_thread);
 
 	sd->file = file;
 	return 0;
