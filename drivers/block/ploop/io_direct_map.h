@@ -17,9 +17,6 @@ struct extent_map_tree
 	unsigned int map_size; /* # entries in map */
 	rwlock_t lock;
 	struct address_space * mapping;
-	int (*_get_extent)(struct inode *inode, sector_t isec,
-			   unsigned int nr, sector_t *start,
-			   sector_t *psec, int creat);
 };
 
 struct extent_map
@@ -51,10 +48,6 @@ struct extent_map *extent_lookup(struct extent_map_tree *tree,
 				 sector_t start);
 void ploop_extent_put(struct extent_map *em);
 
-struct extent_map *map_extent_get_block(struct ploop_io *io,
-					struct address_space *mapping,
-					sector_t start, sector_t len, int create,
-					gfp_t gfp_mask);
 void trim_extent_mappings(struct ploop_device *plo,
 			  struct extent_map_tree *tree, sector_t start);
 
