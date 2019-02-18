@@ -54,7 +54,7 @@ void ploop_extent_put(struct extent_map *em);
 struct extent_map *map_extent_get_block(struct ploop_io *io,
 					struct address_space *mapping,
 					sector_t start, sector_t len, int create,
-					gfp_t gfp_mask, get_block_t get_block);
+					gfp_t gfp_mask);
 void trim_extent_mappings(struct ploop_device *plo,
 			  struct extent_map_tree *tree, sector_t start);
 
