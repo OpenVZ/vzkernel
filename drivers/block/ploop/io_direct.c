@@ -702,8 +702,7 @@ static struct extent_map * dio_fallocate(struct ploop_io *io, u32 iblk, int nr)
 				  io->files.mapping,
 				  (sector_t)iblk << io->plo->cluster_log,
 				  1 << io->plo->cluster_log,
-				  1, mapping_gfp_mask(io->files.mapping),
-				  NULL);
+				  1, mapping_gfp_mask(io->files.mapping));
 	mutex_unlock(&io->files.inode->i_mutex);
 	return em;
 }
