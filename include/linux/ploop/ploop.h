@@ -40,7 +40,6 @@ enum {
 	PLOOP_S_RUNNING,	/* Device is active */
 	PLOOP_S_ATTENTION,	/* Device is processing a barrier, everything
 				 * is queued to be totally serialized */
-	PLOOP_S_WAIT_PROCESS,	/* Main thread is waiting for requests */
 	PLOOP_S_EXITING,	/* Exiting */
 	PLOOP_S_ABORT,		/* Device is aborted due to unrecoverable
 				 * error. Reads are still allowed. */
