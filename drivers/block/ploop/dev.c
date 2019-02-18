@@ -126,11 +126,10 @@ static void mitigation_timeout(unsigned long data)
 		return;
 
 	spin_lock_irq(&plo->lock);
-	if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state) &&
+	if (waitqueue_active(&plo->waitq) &&
 	    (!list_empty(&plo->entry_queue) ||
 	     ((plo->bio_head || !bio_list_empty(&plo->bio_discard_list)) &&
-	      !list_empty(&plo->free_list))) &&
-	      waitqueue_active(&plo->waitq))
+	      !list_empty(&plo->free_list))))
 		wake_up_interruptible(&plo->waitq);
 	spin_unlock_irq(&plo->lock);
 }
@@ -258,8 +257,7 @@ void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list)
 	plo->free_qlen += drop_qlen;
 	if (waitqueue_active(&plo->req_waitq))
 		wake_up(&plo->req_waitq);
-	else if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state) &&
-		waitqueue_active(&plo->waitq) &&
+	else if (waitqueue_active(&plo->waitq) &&
 		(plo->bio_head || !bio_list_empty(&plo->bio_discard_list)))
 		wake_up_interruptible(&plo->waitq);
 
@@ -649,7 +647,6 @@ DEFINE_BIO_CB(ploop_fast_end_io)
 	plo->bio_total--;
 
 	if (plo->active_reqs == 0 &&
-	    test_bit(PLOOP_S_WAIT_PROCESS, &plo->state) &&
 	    waitqueue_active(&plo->waitq) &&
 	    (test_bit(PLOOP_S_EXITING, &plo->state) ||
 	     !list_empty(&plo->entry_queue)))
@@ -823,7 +820,6 @@ static void ploop_unplug(struct blk_plug_cb *cb, bool from_schedule)
 
 	if ((!list_empty(&plo->entry_queue) ||
 	     (plo->bio_head && !list_empty(&plo->free_list))) &&
-	    test_bit(PLOOP_S_WAIT_PROCESS, &plo->state) &&
 	    waitqueue_active(&plo->waitq))
 		wake_up_interruptible(&plo->waitq);
 	spin_unlock_irq(&plo->lock);
@@ -1071,7 +1067,7 @@ queued:
 	 * But try to mitigate wakeups, delaying wakeup for some short
 	 * time.
 	 */
-	if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state)) {
+	if (waitqueue_active(&plo->waitq)) {
 		/* Synchronous requests are not batched. */
 		if (plo->entry_qlen > plo->tune.batch_entry_qlen ||
 			(bio->bi_rw & (REQ_FLUSH|REQ_FUA)) ||
@@ -1455,8 +1451,7 @@ static void ploop_complete_request(struct ploop_request * preq)
 		plo->free_qlen++;
 		if (waitqueue_active(&plo->req_waitq))
 			wake_up(&plo->req_waitq);
-		else if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state) &&
-			 waitqueue_active(&plo->waitq) &&
+		else if (waitqueue_active(&plo->waitq) &&
 			 (plo->bio_head ||
 			  !bio_list_empty(&plo->bio_discard_list)))
 			wake_up_interruptible(&plo->waitq);
@@ -1531,8 +1526,7 @@ void ploop_complete_io_state(struct ploop_request * preq)
 		set_bit(PLOOP_S_ABORT, &plo->state);
 
 	list_add_tail(&preq->list, &plo->ready_queue);
-	if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state) &&
-	    waitqueue_active(&plo->waitq))
+	if (waitqueue_active(&plo->waitq))
 		wake_up_interruptible(&plo->waitq);
 	spin_unlock_irqrestore(&plo->lock, flags);
 }
@@ -2947,7 +2941,6 @@ static void ploop_wait(struct ploop_device * plo, int once, struct blk_plug *plu
 		if (kthread_should_stop() && !plo->active_reqs)
 			break;
 
-		set_bit(PLOOP_S_WAIT_PROCESS, &plo->state);
 		if (kthread_should_stop())
 			set_bit(PLOOP_S_EXITING, &plo->state);
 		once = 0;
@@ -2956,7 +2949,6 @@ static void ploop_wait(struct ploop_device * plo, int once, struct blk_plug *plu
 		schedule();
 		blk_start_plug(plug);
 		spin_lock_irq(&plo->lock);
-		clear_bit(PLOOP_S_WAIT_PROCESS, &plo->state);
 	}
 	finish_wait(&plo->waitq, &_wait);
 }
@@ -3426,7 +3418,7 @@ void ploop_quiesce(struct ploop_device * plo)
 	ploop_entry_add(plo, preq);
 	plo->barrier_reqs++;
 
-	if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
+	if (waitqueue_active(&plo->waitq))
 		wake_up_interruptible(&plo->waitq);
 	spin_unlock_irq(&plo->lock);
 
@@ -3720,7 +3712,7 @@ static void ploop_merge_process(struct ploop_device * plo)
 
 		ploop_entry_add(plo, preq);
 
-		if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
+		if (waitqueue_active(&plo->waitq))
 			wake_up_interruptible(&plo->waitq);
 	}
 
@@ -4345,7 +4337,7 @@ static void ploop_relocate(struct ploop_device * plo, int grow_stage)
 
 	ploop_entry_add(plo, preq);
 
-	if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
+	if (waitqueue_active(&plo->waitq))
 		wake_up_interruptible(&plo->waitq);
 
 	if (atomic_dec_and_test(&plo->maintenance_cnt))
@@ -4671,7 +4663,7 @@ static void ploop_relocblks_process(struct ploop_device *plo)
 
 		ploop_entry_add(plo, preq);
 
-		if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
+		if (waitqueue_active(&plo->waitq))
 			wake_up_interruptible(&plo->waitq);
 	}
 
