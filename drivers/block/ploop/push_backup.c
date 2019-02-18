@@ -753,7 +753,7 @@ unsigned long ploop_pb_stop(struct ploop_pushbackup_desc *pbd, bool do_merge)
 		spin_lock_irq(&plo->lock);
 		list_splice_init(&drop_list, plo->ready_queue.prev);
 		return_bios_back_to_plo(plo, &pbd->bio_pending_list);
-		if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
+		if (waitqueue_active(&plo->waitq))
 			wake_up_interruptible(&plo->waitq);
 		spin_unlock_irq(&plo->lock);
 	}
@@ -980,7 +980,7 @@ void ploop_pb_put_reported(struct ploop_pushbackup_desc *pbd,
 
 		spin_lock_irq(&plo->lock);
 		list_splice(&ready_list, plo->ready_queue.prev);
-		if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
+		if (waitqueue_active(&plo->waitq))
 			wake_up_interruptible(&plo->waitq);
 		spin_unlock_irq(&plo->lock);
 	}

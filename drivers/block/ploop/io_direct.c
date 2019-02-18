@@ -795,7 +795,7 @@ static int dio_fsync_thread(void * data)
 		}
 		plo->st.bio_fsync++;
 
-		if (test_bit(PLOOP_S_WAIT_PROCESS, &plo->state))
+		if (waitqueue_active(&plo->waitq))
 			wake_up_interruptible(&plo->waitq);
 	}
 	spin_unlock_irq(&plo->lock);
