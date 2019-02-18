@@ -368,20 +368,4 @@ struct ploop_track_extent
 #define PLOOP_EVENT_STOPPED	2
 #define PLOOP_EVENT_ENOSPC	3
 
-#ifdef __KERNEL__
-
-#define PLOOP_INTERNAL_MAGIC	0x284cd32c
-struct ploop_xops
-{
-	__u32		magic;
-
-	int		(*get_extent)(struct inode *inode, sector_t isec,
-				      unsigned int nr, sector_t *start,
-				      sector_t *psec, int creat);
-};
-
-#define PLOOP_IOC_INTERNAL	_IOR(PLOOPCTLTYPE, 15, struct ploop_xops)
-
-#endif
-
 #endif /* __PLOOP_IF_H__ */

@@ -11,7 +11,6 @@
 #include <linux/module.h>
 #include <linux/spinlock.h>
 #include <linux/version.h>
-#include <linux/fs.h>
 #include <linux/buffer_head.h>
 #include <linux/interrupt.h>
 #include <linux/slab.h>
@@ -121,19 +120,6 @@ out_unlock:
 
 	spin_unlock(&ploop_mappings_lock);
 
-	if (strcmp(mapping->host->i_sb->s_type->name, "pcss") == 0) {
-		struct ploop_xops xops;
-		if (file->f_op->unlocked_ioctl) {
-			mm_segment_t fs = get_fs();
-
-			set_fs(KERNEL_DS);
-			xops.magic = 0;
-			err = file->f_op->unlocked_ioctl(file, PLOOP_IOC_INTERNAL, (long)&xops);
-			set_fs(fs);
-			if (err == 0 && xops.magic == PLOOP_INTERNAL_MAGIC)
-				pm->extent_root._get_extent = xops.get_extent;
-		}
-	}
 	return &pm->extent_root;
 }
 
@@ -584,67 +570,6 @@ static int remove_extent_mapping(struct extent_map_tree *tree, struct extent_map
 	return ret;
 }
 
-static struct extent_map *__map_extent_get_extent(struct extent_map_tree *tree,
-						  struct address_space *mapping,
-						  sector_t start, sector_t len, int create,
-						  gfp_t gfp_mask)
-{
-	struct inode *inode = mapping->host;
-	struct extent_map *em;
-	sector_t nstart, result;
-	int ret;
-
-again:
-	em = lookup_extent_mapping(tree, start, len);
-	if (em) {
-		if (em->start <= start && em->end >= start + len)
-			return em;
-
-		/*
-		 * we may have found an extent that starts after the
-		 * requested range.  Double check and alter the length
-		 * appropriately
-		 */
-		if (em->start > start) {
-			len = em->start - start;
-		} else if (!create) {
-			return em;
-		}
-		ploop_extent_put(em);
-	}
-	BUG_ON(gfp_mask & GFP_ATOMIC);
-
-	em = ploop_alloc_extent_map(gfp_mask);
-	if (!em)
-		return ERR_PTR(-ENOMEM);
-
-	/*
-	 * FIXME if there are errors later on, we end up exposing stale
-	 * data on disk while filling holes.
-	 *
-	 * _XXX_ Danger! len is reduced above, therefore _get_extent
-	 * does not allocate all that we need. It works only with pcss
-	 * and only when cluster size <= pcss block size and allocation
-	 * is aligned. If we relax those conditions, the code must be fixed.
-	 */
-	ret = tree->_get_extent(inode, start, len, &nstart, &result, create);
-	if (ret < 0) {
-		ploop_extent_put(em);
-		return ERR_PTR(ret);
-	}
-
-	em->start = nstart;
-	em->end = nstart + ret;
-	em->block_start = result;
-
-	ret = add_extent_mapping(tree, em);
-	if (ret == -EEXIST) {
-		ploop_extent_put(em);
-		goto again;
-	}
-	return em;
-}
-
 static struct extent_map *__map_extent_bmap(struct ploop_io *io,
 				       struct address_space *mapping,
 				       sector_t start, sector_t len, gfp_t gfp_mask)
@@ -749,11 +674,6 @@ static struct extent_map *__map_extent(struct ploop_io *io,
 				       sector_t start, sector_t len, int create,
 				       gfp_t gfp_mask)
 {
-	struct extent_map_tree *tree = io->files.em_tree;
-
-	if (tree->_get_extent)
-		return __map_extent_get_extent(tree, mapping, start, len, create,
-					       gfp_mask);
 	if (create)
 		/* create flag not supported by bmap implementation */
 		return ERR_PTR(-EINVAL);
@@ -761,10 +681,10 @@ static struct extent_map *__map_extent(struct ploop_io *io,
 	return __map_extent_bmap(io, mapping, start,len, gfp_mask);
 }
 
-struct extent_map *map_extent_get_block(struct ploop_io *io,
-					struct address_space *mapping,
-					sector_t start, sector_t len, int create,
-					gfp_t gfp_mask)
+static struct extent_map *map_extent_get_block(struct ploop_io *io,
+					       struct address_space *mapping,
+					       sector_t start, sector_t len,
+					       int create, gfp_t gfp_mask)
 {
 	struct extent_map *em;
 	sector_t last;
