@@ -2043,12 +2043,15 @@ static unsigned long shrink_list(enum lru_list lru, unsigned long nr_to_scan,
 				 struct scan_control *sc)
 {
 	if (is_active_lru(lru)) {
-		if (inactive_list_is_low(lruvec, is_file_lru(lru), memcg, true))
+		if (sc->may_thrash && inactive_list_is_low(lruvec,
+					is_file_lru(lru), memcg, true))
 			shrink_active_list(nr_to_scan, lruvec, sc, lru);
 		return 0;
 	}
-
-	return shrink_inactive_list(nr_to_scan, lruvec, sc, lru);
+	if (sc->may_thrash || !inactive_list_is_low(lruvec, is_file_lru(lru),
+							memcg, false))
+		return shrink_inactive_list(nr_to_scan, lruvec, sc, lru);
+	return 0;
 }
 
 #ifdef CONFIG_MEMCG
