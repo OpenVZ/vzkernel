@@ -148,16 +148,26 @@ int ext4_relink_pfcache(struct super_block *sb, char *new_root, bool new_sb)
 	spin_lock(&sb->s_inode_list_lock);
 
 	list_for_each_entry(inode, &sb->s_inodes, i_sb_list) {
-		if (inode->i_state & (I_FREEING|I_CLEAR|I_WILL_FREE|I_NEW))
+		spin_lock(&inode->i_lock);
+		if (inode->i_state & (I_FREEING|I_CLEAR|I_WILL_FREE|I_NEW)) {
+			spin_unlock(&inode->i_lock);
 			continue;
-		if (!S_ISREG(inode->i_mode) && !S_ISDIR(inode->i_mode))
+		}
+		if (!S_ISREG(inode->i_mode) && !S_ISDIR(inode->i_mode)) {
+			spin_unlock(&inode->i_lock);
 			continue;
+		}
 		if (!ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM)) {
-			if (!reload_csum)
+			if (!reload_csum) {
+				spin_unlock(&inode->i_lock);
 				continue;
-		} else if (!(EXT4_I(inode)->i_data_csum_end < 0))
+			}
+		} else if (!(EXT4_I(inode)->i_data_csum_end < 0)) {
+			spin_unlock(&inode->i_lock);
 			continue;
+		}
 		__iget(inode);
+		spin_unlock(&inode->i_lock);
 		spin_unlock(&sb->s_inode_list_lock);
 		iput(old_inode);
 		old_inode = inode;
@@ -365,7 +375,17 @@ long ext4_dump_pfcache(struct super_block *sb,
 			pagefault_enable();
 		} else {
 			pagefault_enable();
+			spin_lock(&inode->i_lock);
+			if (inode->i_state & (I_FREEING|I_WILL_FREE|I_NEW)) {
+				/*
+				 * The inode could be scheduled to be freed
+				 * while we were dumping it, so skip it.
+				 */
+				spin_unlock(&inode->i_lock);
+				continue;
+			}
 			__iget(inode);
+			spin_unlock(&inode->i_lock);
 			spin_unlock(&sb->s_inode_list_lock);
 			iput(old_inode);
 			old_inode = inode;
@@ -389,7 +409,18 @@ next:
 		}
 		if (++lock_batch > MAX_LOCK_BATCH || need_resched() ||
 				spin_needbreak(&sb->s_inode_list_lock)) {
+			spin_lock(&inode->i_lock);
+			if (inode->i_state & (I_FREEING|I_WILL_FREE|I_NEW)) {
+				/*
+				 * The inode could be scheduled to be freed
+				 * while we were dumping it, so we cannot iget
+				 * it and resched, chose another inode.
+				 */
+				spin_unlock(&inode->i_lock);
+				continue;
+			}
 			__iget(inode);
+			spin_unlock(&inode->i_lock);
 			spin_unlock(&sb->s_inode_list_lock);
 			iput(old_inode);
 			old_inode = inode;
