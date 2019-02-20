@@ -4819,7 +4819,7 @@ already:
 	ploop_quiesce(plo);
 truncate:
 	if ((ploop_fb_get_lost_range_len(plo->fbd) != 0) &&
-	    (delta->io.alloc_head = ploop_fb_get_alloc_head(plo->fbd))) {
+	    (delta->io.alloc_head == ploop_fb_get_alloc_head(plo->fbd))) {
 		err = delta->ops->truncate(delta, NULL,
 					   ploop_fb_get_first_lost_iblk(plo->fbd));
 		if (!err) {
