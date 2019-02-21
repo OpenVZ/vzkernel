@@ -5022,7 +5022,7 @@ void mem_cgroup_sync_beancounter(struct mem_cgroup *memcg,
 	//todo: check odd code - counting in bytes instead of pages. wtf???
 	k->held = page_counter_read(&memcg->kmem) << PAGE_SHIFT;
 	k->maxheld = memcg->kmem.watermark << PAGE_SHIFT;
-	k->failcnt = memcg->kmem.failcnt << PAGE_SHIFT;
+	k->failcnt = memcg->kmem.failcnt;
 	lim = memcg->kmem.limit << PAGE_SHIFT;
 	lim = lim >= (PAGE_COUNTER_MAX << PAGE_SHIFT) ? UB_MAXVALUE :
 		min_t(unsigned long long, lim, UB_MAXVALUE);
