@@ -671,31 +671,27 @@ again:
 
 static struct extent_map *__map_extent(struct ploop_io *io,
 				       struct address_space *mapping,
-				       sector_t start, sector_t len, int create,
+				       sector_t start, sector_t len,
 				       gfp_t gfp_mask)
 {
-	if (create)
-		/* create flag not supported by bmap implementation */
-		return ERR_PTR(-EINVAL);
-
 	return __map_extent_bmap(io, mapping, start,len, gfp_mask);
 }
 
 static struct extent_map *map_extent_get_block(struct ploop_io *io,
 					       struct address_space *mapping,
 					       sector_t start, sector_t len,
-					       int create, gfp_t gfp_mask)
+					       gfp_t gfp_mask)
 {
 	struct extent_map *em;
 	sector_t last;
 	sector_t map_ahead_len = 0;
 
-	em = __map_extent(io, mapping, start, len, create, gfp_mask);
+	em = __map_extent(io, mapping, start, len, gfp_mask);
 
 	/*
 	 * if we're doing a write or we found a large extent, return it
 	 */
-	if (IS_ERR(em) || !em || create || start + len < em->end) {
+	if (IS_ERR(em) || start + len < em->end) {
 		return em;
 	}
 
@@ -711,7 +707,7 @@ static struct extent_map *map_extent_get_block(struct ploop_io *io,
 
 		last = em->end;
 		ploop_extent_put(em);
-		em = __map_extent(io, mapping, last, len, create, gfp_mask);
+		em = __map_extent(io, mapping, last, len, gfp_mask);
 		if (IS_ERR(em) || !em)
 			break;
 		map_ahead_len += em->end - last;
@@ -723,7 +719,7 @@ static struct extent_map *map_extent_get_block(struct ploop_io *io,
 	    start + len > em->end) {
 		if (em && !IS_ERR(em))
 			ploop_extent_put(em);
-		em = __map_extent(io, mapping, start, len, create, gfp_mask);
+		em = __map_extent(io, mapping, start, len, gfp_mask);
 	}
 	return em;
 }
@@ -735,7 +731,7 @@ struct extent_map *extent_lookup_create(struct ploop_io *io,
 	struct extent_map_tree *tree = io->files.em_tree;
 
 	return map_extent_get_block(io, tree->mapping,
-				    start, len, 0, mapping_gfp_mask(tree->mapping));
+				    start, len, mapping_gfp_mask(tree->mapping));
 }
 
 static int drop_extent_map(struct extent_map_tree *tree)
