@@ -250,7 +250,7 @@ static void i40iw_destroy_cqp(struct i40iw_device *iwdev, bool free_hwcqp)
 	kfree(cqp->scratch_array);
 	iwdev->cqp.scratch_array = NULL;
 
-	kfree(cqp->cqp_requests);
+	kvfree(cqp->cqp_requests);
 	cqp->cqp_requests = NULL;
 }
 
@@ -565,12 +565,12 @@ static enum i40iw_status_code i40iw_create_cqp(struct i40iw_device *iwdev)
 	u16 maj_err, min_err;
 	int i;
 
-	cqp->cqp_requests = kcalloc(sqsize, sizeof(*cqp->cqp_requests), GFP_KERNEL);
+	cqp->cqp_requests = kvzalloc(sqsize * sizeof(*cqp->cqp_requests), GFP_KERNEL);
 	if (!cqp->cqp_requests)
 		return I40IW_ERR_NO_MEMORY;
 	cqp->scratch_array = kcalloc(sqsize, sizeof(*cqp->scratch_array), GFP_KERNEL);
 	if (!cqp->scratch_array) {
-		kfree(cqp->cqp_requests);
+		kvfree(cqp->cqp_requests);
 		return I40IW_ERR_NO_MEMORY;
 	}
 	dev->cqp = &cqp->sc_cqp;
