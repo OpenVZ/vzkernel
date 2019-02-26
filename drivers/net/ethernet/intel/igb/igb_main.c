@@ -5274,7 +5274,7 @@ static void igb_watchdog_task(struct work_struct *work)
 	u32 link;
 	int i;
 	u32 connsw;
-	u16 phy_data, retry_count = 20;
+	u16 phy_data, retry_count = 50;
 
 	link = igb_has_link(adapter);
 
@@ -5364,9 +5364,11 @@ retry_read_status:
 				    retry_count) {
 					msleep(100);
 					retry_count--;
+					WARN_ONCE(retry_count < 30,
+						  "igb timeout exceed 2 seconds");
 					goto retry_read_status;
 				} else if (!retry_count) {
-					dev_err(&adapter->pdev->dev, "exceed max 2 second\n");
+					dev_err(&adapter->pdev->dev, "exceed max 5 second\n");
 				}
 			} else {
 				dev_err(&adapter->pdev->dev, "read 1000Base-T Status Reg\n");
