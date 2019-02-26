@@ -106,7 +106,7 @@ static inline gfp_t dma_alloc_coherent_gfp_flags(struct device *dev, gfp_t gfp)
 	if (dma_mask <= DMA_BIT_MASK(32) && !(gfp & GFP_DMA))
 		gfp |= GFP_DMA32;
 #endif
-       return gfp;
+       return gfp | __GFP_ORDER_NOWARN;
 }
 
 #endif
