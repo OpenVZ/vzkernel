@@ -65,10 +65,6 @@ struct memcg_shrinker_map {
 #define MEM_CGROUP_RECLAIM_KMEM		(1 << MEM_CGROUP_RECLAIM_KMEM_BIT)
 
 #ifdef CONFIG_MEMCG
-
-#define MEM_CGROUP_ID_SHIFT	16
-#define MEM_CGROUP_ID_MAX	USHRT_MAX
-
 int mem_cgroup_try_charge(struct page *page, struct mm_struct *mm,
 			  gfp_t gfp_mask, struct mem_cgroup **memcgp);
 int mem_cgroup_try_charge_cache(struct page *page, struct mm_struct *mm,
@@ -96,9 +92,6 @@ extern struct mem_cgroup *get_mem_cgroup_from_mm(struct mm_struct *mm);
 
 extern struct mem_cgroup *parent_mem_cgroup(struct mem_cgroup *memcg);
 extern struct mem_cgroup *mem_cgroup_from_cont(struct cgroup *cont);
-
-unsigned short mem_cgroup_id(struct mem_cgroup *memcg);
-struct mem_cgroup *mem_cgroup_from_id(unsigned short id);
 
 static inline
 bool mm_match_cgroup(const struct mm_struct *mm, const struct mem_cgroup *memcg)
@@ -178,21 +171,20 @@ static inline void mem_cgroup_put(struct mem_cgroup *memcg)
 	css_put(mem_cgroup_css(memcg));
 }
 
-struct mem_cgroup *__mem_cgroup_begin_update_page_stat(struct page *page, bool *locked,
+void __mem_cgroup_begin_update_page_stat(struct page *page, bool *locked,
 					 unsigned long *flags);
 
 extern atomic_t memcg_moving;
 
-static inline struct mem_cgroup *mem_cgroup_begin_update_page_stat(struct page *page,
+static inline void mem_cgroup_begin_update_page_stat(struct page *page,
 					bool *locked, unsigned long *flags)
 {
 	if (mem_cgroup_disabled())
-		return NULL;
+		return;
 	rcu_read_lock();
 	*locked = false;
 	if (atomic_read(&memcg_moving))
-		return __mem_cgroup_begin_update_page_stat(page, locked, flags);
-	return NULL;
+		__mem_cgroup_begin_update_page_stat(page, locked, flags);
 }
 
 void __mem_cgroup_end_update_page_stat(struct page *page,
@@ -225,9 +217,6 @@ static inline void mem_cgroup_dec_page_stat(struct page *page,
 
 void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg, unsigned long *stats);
 
-unsigned long memcg_ws_activates(struct mem_cgroup *memcg);
-void memcg_inc_ws_activate(struct mem_cgroup *memcg);
-
 unsigned long mem_cgroup_soft_limit_reclaim(struct zone *zone, int order,
 						gfp_t gfp_mask,
 						unsigned long *total_scanned);
@@ -249,28 +238,7 @@ bool mem_cgroup_bad_page_check(struct page *page);
 void mem_cgroup_print_bad_page(struct page *page);
 #endif
 #else /* CONFIG_MEMCG */
-
-#define MEM_CGROUP_ID_SHIFT	0
-#define MEM_CGROUP_ID_MAX	0
-
 struct mem_cgroup;
-
-static inline bool mem_cgroup_disabled(void)
-{
-	return true;
-}
-
-static inline unsigned short mem_cgroup_id(struct mem_cgroup *memcg)
-{
-	return 0;
-}
-
-static inline struct mem_cgroup *mem_cgroup_from_id(unsigned short id)
-{
-	WARN_ON_ONCE(id);
-	/* XXX: This should always return root_mem_cgroup */
-	return NULL;
-}
 
 static inline int mem_cgroup_try_charge(struct page *page, struct mm_struct *mm,
 					gfp_t gfp_mask,
@@ -371,11 +339,9 @@ static inline void mem_cgroup_iter_break(struct mem_cgroup *root,
 {
 }
 
-static inline struct mem_cgroup *mem_cgroup_from_id(unsigned short id)
+static inline bool mem_cgroup_disabled(void)
 {
-	WARN_ON_ONCE(id);
-	/* XXX: This should always return root_mem_cgroup */
-	return NULL;
+	return true;
 }
 
 static inline void mem_cgroup_get(struct mem_cgroup *memcg)
@@ -478,13 +444,6 @@ static inline void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg,
 					unsigned long *stats)
 {
 }
-
-static inline unsigned long memcg_ws_activates(struct mem_cgroup *memcg)
-{
-	return 0;
-}
-
-static inline void memcg_inc_ws_activate(struct mem_cgroup *memcg) { }
 
 static inline
 unsigned long mem_cgroup_soft_limit_reclaim(struct zone *zone, int order,
