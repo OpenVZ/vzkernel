@@ -3491,13 +3491,14 @@ void update_maxlat(struct kstat_lat_snap_struct *alloc_lat,
 }
 
 static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
-		struct page *page, u64 time)
+		struct page *page, u64 time, u64 current_clock)
 {
 #ifdef CONFIG_VE
 	unsigned long flags;
+	u64 delta;
 	int ind, cpu;
 
-	time = jiffies_to_usecs(jiffies - time) * 1000;
+	delta = current_clock - time;
 	if (!(gfp_mask & __GFP_WAIT)) {
 		if (in_task())
 			ind = KSTAT_ALLOCSTAT_ATOMIC;
@@ -3512,12 +3513,12 @@ static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
 
 	local_irq_save(flags);
 	cpu = smp_processor_id();
-	KSTAT_LAT_PCPU_ADD(&kstat_glob.alloc_lat[ind], time);
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.alloc_lat[ind], delta);
 
 	if (in_task()) {
-		current->alloc_lat[ind].totlat += time;
+		current->alloc_lat[ind].totlat += delta;
 		current->alloc_lat[ind].count++;
-		update_maxlat(&current->alloc_lat[ind], time, jiffies);
+		update_maxlat(&current->alloc_lat[ind], delta, current_clock);
 	}
 
 	if (!page)
@@ -3572,7 +3573,7 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 	int migratetype = gfpflags_to_migratetype(gfp_mask);
 	unsigned int cpuset_mems_cookie;
 	int alloc_flags = ALLOC_WMARK_LOW|ALLOC_CPUSET|ALLOC_FAIR;
-	cycles_t start;
+	u64 start, current_clock;
 
 	gfp_mask &= gfp_allowed_mask;
 
@@ -3610,7 +3611,7 @@ retry_cpuset:
 		alloc_flags |= ALLOC_CMA;
 #endif
 retry:
-	start = jiffies;
+	start = sched_clock();
 	/* First allocation attempt */
 	page = get_page_from_freelist(gfp_mask|__GFP_HARDWALL, nodemask, order,
 			zonelist, high_zoneidx, alloc_flags,
@@ -3643,9 +3644,10 @@ retry:
 				preferred_zone, migratetype);
 	}
 
-	__alloc_collect_stats(gfp_mask, order, page, start);
+	current_clock = sched_clock();
+	__alloc_collect_stats(gfp_mask, order, page, start, current_clock);
 	trace_mm_page_alloc(page, order, gfp_mask, migratetype,
-			jiffies_to_usecs(jiffies - start));
+			(current_clock - start));
 
 out:
 	/*
