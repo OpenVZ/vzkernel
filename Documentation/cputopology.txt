@@ -20,17 +20,23 @@ to /proc/cpuinfo.
 	identifier (rather than the kernel's).	The actual value is
 	architecture and platform dependent.
 
-4) /sys/devices/system/cpu/cpuX/topology/thread_siblings:
+4) /sys/devices/system/cpu/cpuX/topology/drawer_id:
+
+	the drawer ID of cpuX. Typically it is the hardware platform's
+	identifier (rather than the kernel's).	The actual value is
+	architecture and platform dependent.
+
+5) /sys/devices/system/cpu/cpuX/topology/thread_siblings:
 
 	internel kernel map of cpuX's hardware threads within the same
 	core as cpuX
 
-5) /sys/devices/system/cpu/cpuX/topology/core_siblings:
+6) /sys/devices/system/cpu/cpuX/topology/core_siblings:
 
 	internal kernel map of cpuX's hardware threads within the same
 	physical_package_id.
 
-6) /sys/devices/system/cpu/cpuX/topology/book_siblings:
+7) /sys/devices/system/cpu/cpuX/topology/book_siblings:
 
 	internal kernel map of cpuX's hardware threads within the same
 	book_id.
@@ -44,9 +50,11 @@ these macros in include/asm-XXX/topology.h:
 #define topology_physical_package_id(cpu)
 #define topology_core_id(cpu)
 #define topology_book_id(cpu)
-#define topology_thread_cpumask(cpu)
+#define topology_drawer_id(cpu)
+#define topology_sibling_cpumask(cpu)
 #define topology_core_cpumask(cpu)
 #define topology_book_cpumask(cpu)
+#define topology_drawer_cpumask(cpu)
 
 The type of **_id is int.
 The type of siblings is (const) struct cpumask *.
@@ -61,6 +69,8 @@ not defined by include/asm-XXX/topology.h:
 
 For architectures that don't support books (CONFIG_SCHED_BOOK) there are no
 default definitions for topology_book_id() and topology_book_cpumask().
+For architectures that don't support drawes (CONFIG_SCHED_DRAWER) there are
+no default definitions for topology_drawer_id() and topology_drawer_cpumask().
 
 Additionally, CPU topology information is provided under
 /sys/devices/system/cpu and includes these files.  The internal

@@ -135,6 +135,37 @@ struct ipmi_smi_handlers {
 	void (*dec_usecount)(void *send_info);
 };
 
+/*
+ * shadow struct of ipmi_smi_handlers to manage new fields backported
+ * from upstream.
+ *
+ * *** NOTE: This struct is not kabi protected. ***
+ */
+struct ipmi_shadow_smi_handlers {
+
+	/* Copy of pointer to caller's handlers for sanity checking.
+	 */
+	struct ipmi_smi_handlers *handlers;
+
+	/* Add new fields below this line
+	 * ----------------------------------------------------------
+	 */
+
+	/* Called by the upper layer when some user requires that the
+	   interface watch for events, received messages, watchdog
+	   pretimeouts, or not.  Used by the SMI to know if it should
+	   watch for these.  This may be NULL if the SMI does not
+	   implement it. */
+	void (*set_need_watch)(void *send_info, int enable);
+
+	/*
+	 * Called when flushing all pending messages.
+	 */
+	void (*flush_messages)(void *send_info);
+};
+
+struct ipmi_shadow_smi_handlers *ipmi_get_shadow_smi_handlers(void);
+
 struct ipmi_device_id {
 	unsigned char device_id;
 	unsigned char device_revision;
@@ -151,27 +182,27 @@ struct ipmi_device_id {
 #define ipmi_version_major(v) ((v)->ipmi_version & 0xf)
 #define ipmi_version_minor(v) ((v)->ipmi_version >> 4)
 
-/* Take a pointer to a raw data buffer and a length and extract device
-   id information from it.  The first byte of data must point to the
-   netfn << 2, the data should be of the format:
-      netfn << 2, cmd, completion code, data
-   as normally comes from a device interface. */
-static inline int ipmi_demangle_device_id(const unsigned char *data,
+/* Take a pointer to an IPMI response and extract device id information from
+ * it. @netfn is in the IPMI_NETFN_ format, so may need to be shifted from
+ * a SI response.
+ */
+static inline int ipmi_demangle_device_id(uint8_t netfn, uint8_t cmd,
+					  const unsigned char *data,
 					  unsigned int data_len,
 					  struct ipmi_device_id *id)
 {
-	if (data_len < 9)
+	if (data_len < 7)
 		return -EINVAL;
-	if (data[0] != IPMI_NETFN_APP_RESPONSE << 2 ||
-	    data[1] != IPMI_GET_DEVICE_ID_CMD)
+	if (netfn != IPMI_NETFN_APP_RESPONSE || cmd != IPMI_GET_DEVICE_ID_CMD)
 		/* Strange, didn't get the response we expected. */
 		return -EINVAL;
-	if (data[2] != 0)
+	if (data[0] != 0)
 		/* That's odd, it shouldn't be able to fail. */
 		return -EINVAL;
 
-	data += 3;
-	data_len -= 3;
+	data++;
+	data_len--;
+
 	id->device_id = data[0];
 	id->device_revision = data[1];
 	id->firmware_revision_1 = data[2];
@@ -232,11 +263,13 @@ static inline void ipmi_free_smi_msg(struct ipmi_smi_msg *msg)
 	msg->done(msg);
 }
 
+#ifdef CONFIG_IPMI_PROC_INTERFACE
 /* Allow the lower layer to add things to the proc filesystem
    directory for this interface.  Note that the entry will
    automatically be dstroyed when the interface is destroyed. */
 int ipmi_smi_add_proc_entry(ipmi_smi_t smi, char *name,
 			    const struct file_operations *proc_ops,
 			    void *data);
+#endif
 
 #endif /* __LINUX_IPMI_SMI_H */

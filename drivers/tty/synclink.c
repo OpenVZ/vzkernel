@@ -3052,7 +3052,7 @@ static void mgsl_set_termios(struct tty_struct *tty, struct ktermios *old_termio
 	    tty->termios.c_cflag & CBAUD) {
 		info->serial_signals |= SerialSignal_DTR;
  		if (!(tty->termios.c_cflag & CRTSCTS) || 
- 		    !test_bit(TTY_THROTTLED, &tty->flags)) {
+ 		    !tty_throttled(tty)) {
 			info->serial_signals |= SerialSignal_RTS;
  		}
 		spin_lock_irqsave(&info->irq_spinlock,flags);
@@ -3267,7 +3267,6 @@ static int block_til_ready(struct tty_struct *tty, struct file * filp,
 	DECLARE_WAITQUEUE(wait, current);
 	int		retval;
 	bool		do_clocal = false;
-	bool		extra_count = false;
 	unsigned long	flags;
 	int		dcd;
 	struct tty_port *port = &info->port;
@@ -3300,10 +3299,7 @@ static int block_til_ready(struct tty_struct *tty, struct file * filp,
 			 __FILE__,__LINE__, tty->driver->name, port->count );
 
 	spin_lock_irqsave(&info->irq_spinlock, flags);
-	if (!tty_hung_up_p(filp)) {
-		extra_count = true;
-		port->count--;
-	}
+	port->count--;
 	spin_unlock_irqrestore(&info->irq_spinlock, flags);
 	port->blocked_open++;
 	
@@ -3318,12 +3314,11 @@ static int block_til_ready(struct tty_struct *tty, struct file * filp,
 					-EAGAIN : -ERESTARTSYS;
 			break;
 		}
-		
+
 		dcd = tty_port_carrier_raised(&info->port);
-		
- 		if (!(port->flags & ASYNC_CLOSING) && (do_clocal || dcd))
- 			break;
-			
+		if (do_clocal || dcd)
+			break;
+
 		if (signal_pending(current)) {
 			retval = -ERESTARTSYS;
 			break;
@@ -3342,7 +3337,7 @@ static int block_til_ready(struct tty_struct *tty, struct file * filp,
 	remove_wait_queue(&port->open_wait, &wait);
 	
 	/* FIXME: Racy on hangup during close wait */
-	if (extra_count)
+	if (!tty_hung_up_p(filp))
 		port->count++;
 	port->blocked_open--;
 	
@@ -3402,15 +3397,6 @@ static int mgsl_open(struct tty_struct *tty, struct file * filp)
 		printk("%s(%d):mgsl_open(%s), old ref count = %d\n",
 			 __FILE__,__LINE__,tty->driver->name, info->port.count);
 
-	/* If port is closing, signal caller to try again */
-	if (tty_hung_up_p(filp) || info->port.flags & ASYNC_CLOSING){
-		if (info->port.flags & ASYNC_CLOSING)
-			interruptible_sleep_on(&info->port.close_wait);
-		retval = ((info->port.flags & ASYNC_HUP_NOTIFY) ?
-			-EAGAIN : -ERESTARTSYS);
-		goto cleanup;
-	}
-	
 	info->port.low_latency = (info->port.flags & ASYNC_LOW_LATENCY) ? 1 : 0;
 
 	spin_lock_irqsave(&info->netlock, flags);
@@ -7726,7 +7712,7 @@ static netdev_tx_t hdlcdev_xmit(struct sk_buff *skb,
 	dev_kfree_skb(skb);
 
 	/* save start time for transmit timeout detection */
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 
 	/* start hardware transmitter if necessary */
 	spin_lock_irqsave(&info->irq_spinlock,flags);
@@ -7781,7 +7767,7 @@ static int hdlcdev_open(struct net_device *dev)
 	mgsl_program_hw(info);
 
 	/* enable network layer transmit */
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 	netif_start_queue(dev);
 
 	/* inform generic HDLC layer of current DCD status */
@@ -7999,7 +7985,7 @@ static void hdlcdev_rx(struct mgsl_struct *info, char *buf, int size)
 static const struct net_device_ops hdlcdev_ops = {
 	.ndo_open       = hdlcdev_open,
 	.ndo_stop       = hdlcdev_close,
-	.ndo_change_mtu = hdlc_change_mtu,
+	.ndo_change_mtu_rh74 = hdlc_change_mtu,
 	.ndo_start_xmit = hdlc_start_xmit,
 	.ndo_do_ioctl   = hdlcdev_ioctl,
 	.ndo_tx_timeout = hdlcdev_tx_timeout,
