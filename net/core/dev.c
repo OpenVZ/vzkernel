@@ -7728,8 +7728,13 @@ int register_netdevice(struct net_device *dev)
 		goto out;
 
 	ret = -ENOMEM;
-	if (atomic_dec_if_positive(&net->owner_ve->netif_avail_nr) < 0)
+	if (atomic_dec_if_positive(&net->owner_ve->netif_avail_nr) < 0) {
+		ve_pr_warn_ratelimited(VE_LOG_BOTH,
+			"CT%s: hits max number of network devices, "
+			"increase ve::netif_max_nr parameter\n" ,
+			net->owner_ve->ve_name);
 		goto out;
+	}
 
 	spin_lock_init(&dev->addr_list_lock);
 	netdev_set_addr_lockdep_class(dev);
@@ -8506,8 +8511,13 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
 	}
 
 	err = -ENOMEM;
-	if (atomic_dec_if_positive(&net->owner_ve->netif_avail_nr) < 0)
+	if (atomic_dec_if_positive(&net->owner_ve->netif_avail_nr) < 0) {
+		ve_pr_warn_ratelimited(VE_LOG_BOTH,
+			"CT%s: hits max number of network devices, "
+			"increase ve::netif_max_nr parameter\n" ,
+			net->owner_ve->ve_name);
 		goto out;
+	}
 	atomic_inc(&dev_net(dev)->owner_ve->netif_avail_nr);
 
 	/*
