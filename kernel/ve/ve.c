@@ -1307,7 +1307,12 @@ static u64 ve_read_u64(struct cgroup *cg, struct cftype *cft)
 		return atomic_read(&cgroup_ve(cg)->netns_avail_nr);
 	else if (cft->private == VE_CF_NETIF_MAX_NR)
 		return cgroup_ve(cg)->netif_max_nr;
-	else if (cft->private == VE_CF_NETIF_NR)
+	return 0;
+}
+
+static s64 ve_read_s64(struct cgroup *cg, struct cftype *cft)
+{
+	if (cft->private == VE_CF_NETIF_NR)
 		return atomic_read(&cgroup_ve(cg)->netif_avail_nr);
 	return 0;
 }
@@ -1598,12 +1603,12 @@ static struct cftype ve_cftypes[] = {
 		.name			= "netif_max_nr",
 		.flags			= CFTYPE_NOT_ON_ROOT,
 		.read_u64		= ve_read_u64,
-		.write_u64		= ve_write_u64,
+		.write_u64		= ve_write_running_u64,
 		.private		= VE_CF_NETIF_MAX_NR,
 	},
 	{
 		.name			= "netif_avail_nr",
-		.read_u64		= ve_read_u64,
+		.read_s64		= ve_read_s64,
 		.private		= VE_CF_NETIF_NR,
 	},
 	{
