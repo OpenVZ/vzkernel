@@ -6296,6 +6296,7 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	size_t size;
 	int id;
 	int i, ret;
+	int node;
 
 	size = sizeof(struct mem_cgroup);
 	size += nr_node_ids * sizeof(struct mem_cgroup_per_node *);
@@ -6316,6 +6317,10 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	if (!memcg->stat)
 		goto out_free;
 
+	for_each_node(node)
+		if (alloc_mem_cgroup_per_zone_info(memcg, node))
+			goto out_free;
+
 	for (i = 0; i < MEM_CGROUP_STAT2_NSTATS; i++) {
 		ret = percpu_counter_init(&memcg->stat2.counters[i], 0, GFP_KERNEL);
 		if (ret)
@@ -6332,6 +6337,9 @@ out_pcpu_free:
 
 	free_percpu(memcg->stat);
 out_free:
+	for_each_node(node)
+		free_mem_cgroup_per_zone_info(memcg, node);
+
 	if (memcg->id > 0) {
 		idr_remove(&mem_cgroup_idr, memcg->id);
 		synchronize_rcu();
@@ -6423,15 +6431,10 @@ mem_cgroup_css_alloc(struct cgroup *cont)
 {
 	struct mem_cgroup *memcg;
 	long error = -ENOMEM;
-	int node;
 
 	memcg = mem_cgroup_alloc();
 	if (!memcg)
 		return ERR_PTR(error);
-
-	for_each_node(node)
-		if (alloc_mem_cgroup_per_zone_info(memcg, node))
-			goto free_out;
 
 	/* root ? */
 	if (cont->parent == NULL) {
@@ -6458,10 +6461,6 @@ mem_cgroup_css_alloc(struct cgroup *cont)
 #endif
 
 	return &memcg->css;
-
-free_out:
-	__mem_cgroup_free(memcg);
-	return ERR_PTR(error);
 }
 
 static int
