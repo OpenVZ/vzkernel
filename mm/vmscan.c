@@ -268,7 +268,7 @@ bool zone_reclaimable(struct zone *zone)
 	return zone->pages_scanned < zone_reclaimable_pages(zone) * 6;
 }
 
-static unsigned long get_lru_size(struct lruvec *lruvec, enum lru_list lru)
+unsigned long lruvec_lru_size(struct lruvec *lruvec, enum lru_list lru)
 {
 	if (!mem_cgroup_disabled())
 		return mem_cgroup_get_lru_size(lruvec, lru);
@@ -2004,7 +2004,9 @@ static void shrink_active_list(unsigned long nr_to_scan,
 static int inactive_list_is_low(struct lruvec *lruvec, bool file,
 				struct mem_cgroup *memcg, bool actual_reclaim)
 {
+	enum lru_list active_lru = file * LRU_FILE + LRU_ACTIVE;
 	struct zone *zone = lruvec_zone(lruvec);
+	enum lru_list inactive_lru = file * LRU_FILE;
 	unsigned long inactive_ratio;
 	unsigned long inactive;
 	unsigned long active;
@@ -2018,15 +2020,15 @@ static int inactive_list_is_low(struct lruvec *lruvec, bool file,
 	if (!file && !total_swap_pages)
 		return false;
 
-	inactive = get_lru_size(lruvec, file * LRU_FILE);
-	active = get_lru_size(lruvec, file * LRU_FILE + LRU_ACTIVE);
+	inactive = lruvec_lru_size(lruvec, inactive_lru);
+	active = lruvec_lru_size(lruvec, active_lru);
 
 	if (memcg)
-		refaults = zone->refaults; /* we don't support per-cgroup workingset */
+		refaults = memcg_ws_activates(memcg);
         else
 		refaults = zone_page_state(zone, WORKINGSET_ACTIVATE);
 
-	if (file && actual_reclaim && zone->refaults != refaults) {
+	if (file && actual_reclaim && lruvec->refaults != refaults) {
 		inactive_ratio = 0;
 	} else {
 		gb = (inactive + active) >> (30 - PAGE_SHIFT);
@@ -2039,12 +2041,12 @@ static int inactive_list_is_low(struct lruvec *lruvec, bool file,
 }
 
 static unsigned long shrink_list(enum lru_list lru, unsigned long nr_to_scan,
-				 struct lruvec *lruvec, struct scan_control *sc)
+				 struct lruvec *lruvec, struct mem_cgroup *memcg,
+				 struct scan_control *sc)
 {
 	if (is_active_lru(lru)) {
 		if (sc->may_thrash &&
-		    inactive_list_is_low(lruvec, is_file_lru(lru),
-					 sc->target_mem_cgroup, true))
+		    inactive_list_is_low(lruvec, is_file_lru(lru), memcg, true))
 			shrink_active_list(nr_to_scan, lruvec, sc, lru);
 		return 0;
 	}
@@ -2075,12 +2077,12 @@ static void zone_update_force_scan(struct zone *zone)
 		struct lruvec *lruvec = mem_cgroup_zone_lruvec(zone, memcg);
 		unsigned long size;
 
-		size = max(get_lru_size(lruvec, LRU_ACTIVE_FILE),
-			   get_lru_size(lruvec, LRU_INACTIVE_FILE));
+		size = max(lruvec_lru_size(lruvec, LRU_ACTIVE_FILE),
+			   lruvec_lru_size(lruvec, LRU_INACTIVE_FILE));
 		if (get_nr_swap_pages() > 0)
 			size = max3(size,
-				    get_lru_size(lruvec, LRU_ACTIVE_ANON),
-				    get_lru_size(lruvec, LRU_INACTIVE_ANON));
+				    lruvec_lru_size(lruvec, LRU_ACTIVE_ANON),
+				    lruvec_lru_size(lruvec, LRU_INACTIVE_ANON));
 
 		if (size && size >> DEF_PRIORITY == 0)
 			tiny++;
@@ -2178,10 +2180,10 @@ static void get_scan_count(struct lruvec *lruvec, struct mem_cgroup *memcg,
 		goto out;
 	}
 
-	anon  = get_lru_size(lruvec, LRU_ACTIVE_ANON) +
-		get_lru_size(lruvec, LRU_INACTIVE_ANON);
-	file  = get_lru_size(lruvec, LRU_ACTIVE_FILE) +
-		get_lru_size(lruvec, LRU_INACTIVE_FILE);
+	anon  = lruvec_lru_size(lruvec, LRU_ACTIVE_ANON) +
+		lruvec_lru_size(lruvec, LRU_INACTIVE_ANON);
+	file  = lruvec_lru_size(lruvec, LRU_ACTIVE_FILE) +
+		lruvec_lru_size(lruvec, LRU_INACTIVE_FILE);
 
 	/*
 	 * Prevent the reclaimer from falling into the cache trap: as
@@ -2208,8 +2210,8 @@ static void get_scan_count(struct lruvec *lruvec, struct mem_cgroup *memcg,
 	 * There is enough inactive page cache, do not reclaim
 	 * anything from the anonymous working set right now.
 	 */
-	if (!inactive_list_is_low(lruvec, true, sc->target_mem_cgroup, false) &&
-	    get_lru_size(lruvec, LRU_INACTIVE_FILE) >> sc->priority > 0) {
+	if (!inactive_list_is_low(lruvec, true, memcg, false) &&
+	    lruvec_lru_size(lruvec, LRU_INACTIVE_FILE) >> sc->priority) {
 		scan_balance = SCAN_FILE;
 		goto out;
 	}
@@ -2267,7 +2269,7 @@ out:
 		unsigned long size;
 		unsigned long scan;
 
-		size = get_lru_size(lruvec, lru);
+		size = lruvec_lru_size(lruvec, lru);
 		scan = size >> sc->priority;
 
 		if (!scan && force_scan)
@@ -2368,7 +2370,7 @@ static void shrink_zone_memcg(struct zone *zone, struct mem_cgroup *memcg,
 				nr[lru] -= nr_to_scan;
 
 				nr_reclaimed += shrink_list(lru, nr_to_scan,
-							    lruvec, sc);
+							lruvec, memcg, sc);
 			}
 		}
 
@@ -2433,7 +2435,7 @@ static void shrink_zone_memcg(struct zone *zone, struct mem_cgroup *memcg,
 	 * Even if we did not try to evict anon pages at all, we want to
 	 * rebalance the anon lru active/inactive ratio.
 	 */
-	if (inactive_list_is_low(lruvec, false, sc->target_mem_cgroup, true))
+	if (inactive_list_is_low(lruvec, false, memcg, true))
 		shrink_active_list(SWAP_CLUSTER_MAX, lruvec,
 				   sc, LRU_ACTIVE_ANON);
 
@@ -2788,6 +2790,25 @@ static bool shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
 	return aborted_reclaim;
 }
 
+static void snapshot_refaults(struct mem_cgroup *root_memcg, struct zone *zone)
+{
+	struct mem_cgroup *memcg;
+
+	memcg = mem_cgroup_iter(root_memcg, NULL, NULL);
+	do {
+		unsigned long refaults;
+		struct lruvec *lruvec;
+
+		if (memcg)
+			refaults = memcg_ws_activates(memcg);
+		else
+			refaults = zone_page_state(zone, WORKINGSET_ACTIVATE);
+
+               lruvec = mem_cgroup_zone_lruvec(zone, memcg);
+               lruvec->refaults = refaults;
+       } while ((memcg = mem_cgroup_iter(root_memcg, memcg, NULL)));
+}
+
 /* All zones in zonelist are unreclaimable? */
 static bool all_unreclaimable(struct zonelist *zonelist,
 		struct scan_control *sc)
@@ -2912,10 +2933,9 @@ retry:
 	} while (--sc->priority >= 0 && !aborted_reclaim);
 
 out:
-	if (!sc->target_mem_cgroup)
-		for_each_zone_zonelist_nodemask(zone, z, zonelist,
+	for_each_zone_zonelist_nodemask(zone, z, zonelist,
 					gfp_zone(sc->gfp_mask), sc->nodemask)
-			zone->refaults = zone_page_state(zone, WORKINGSET_ACTIVATE);
+		snapshot_refaults(sc->target_mem_cgroup, zone);
 
 	delayacct_freepages_end();
 	KSTAT_PERF_LEAVE(ttfp);}
@@ -3211,8 +3231,7 @@ static void age_active_anon(struct zone *zone, struct scan_control *sc)
 	do {
 		struct lruvec *lruvec = mem_cgroup_zone_lruvec(zone, memcg);
 
-		if (inactive_list_is_low(lruvec, false,
-					sc->target_mem_cgroup, true))
+		if (inactive_list_is_low(lruvec, false,	memcg, true))
 			shrink_active_list(SWAP_CLUSTER_MAX, lruvec,
 					   sc, LRU_ACTIVE_ANON);
 
@@ -3610,7 +3629,7 @@ out:
 		if (!populated_zone(zone))
 			continue;
 
-		zone->refaults = zone_page_state(zone, WORKINGSET_ACTIVATE);
+		snapshot_refaults(NULL, zone);
 	}
 
 	/*
