@@ -113,6 +113,7 @@ enum mem_cgroup_stat2_index {
 	MEM_CGROUP_STAT_CACHE,		/* # of pages charged as cache */
 	MEM_CGROUP_STAT_RSS,		/* # of pages charged as anon rss */
 	MEM_CGROUP_STAT_SLAB_RECLAIMABLE, /* # of reclaimable slab pages */
+	MEM_CGROUP_STAT_WS_ACTIVATE,
 	MEM_CGROUP_STAT2_NSTATS,
 };
 
@@ -128,6 +129,7 @@ static const char * const mem_cgroup_stat2_names[] = {
 	"cache",
 	"rss",
 	"slab_reclaimable",
+	"workingset_activate",
 };
 
 enum mem_cgroup_events_index {
@@ -173,10 +175,7 @@ enum mem_cgroup_events_target {
 #define SOFTLIMIT_EVENTS_TARGET 1024
 #define NUMAINFO_EVENTS_TARGET	1024
 
-#define MEM_CGROUP_ID_MAX	USHRT_MAX
-
 static void mem_cgroup_id_put(struct mem_cgroup *memcg);
-static unsigned short mem_cgroup_id(struct mem_cgroup *memcg);
 
 struct mem_cgroup_stat_cpu {
 	long count[MEM_CGROUP_STAT_NSTATS];
@@ -1138,6 +1137,16 @@ static inline unsigned long
 mem_cgroup_read_stat2(struct mem_cgroup *memcg, enum mem_cgroup_stat2_index idx)
 {
 	return percpu_counter_sum_positive(&memcg->stat2.counters[idx]);
+}
+
+unsigned long memcg_ws_activates(struct mem_cgroup *memcg)
+{
+	return percpu_counter_read_positive(&memcg->stat2.counters[MEM_CGROUP_STAT_WS_ACTIVATE]);
+}
+
+void memcg_inc_ws_activate(struct mem_cgroup *memcg)
+{
+	percpu_counter_inc(&memcg->stat2.counters[MEM_CGROUP_STAT_WS_ACTIVATE]);
 }
 
 static void mem_cgroup_update_swap_max(struct mem_cgroup *memcg)
@@ -2272,7 +2281,7 @@ done:
 			pr_cont(" %s:%luKB", mem_cgroup_stat_names[i],
 				K(mem_cgroup_read_stat(iter, i)));
 		}
-		for (i = 0; i < MEM_CGROUP_STAT2_NSTATS; i++) {
+		for (i = 0; i < MEM_CGROUP_STAT_WS_ACTIVATE; i++) {
 			pr_cont(" %s:%luKB", mem_cgroup_stat2_names[i],
 				K(mem_cgroup_read_stat2(iter, i)));
 		}
@@ -2722,7 +2731,7 @@ cleanup:
  * account and taking the move_lock in the slowpath.
  */
 
-void __mem_cgroup_begin_update_page_stat(struct page *page,
+struct mem_cgroup *__mem_cgroup_begin_update_page_stat(struct page *page,
 				bool *locked, unsigned long *flags)
 {
 	struct mem_cgroup *memcg;
@@ -2732,7 +2741,7 @@ void __mem_cgroup_begin_update_page_stat(struct page *page,
 again:
 	memcg = pc->mem_cgroup;
 	if (unlikely(!memcg || !PageCgroupUsed(pc)))
-		return;
+		return NULL;
 	/*
 	 * If this memory cgroup is not under account moving, we don't
 	 * need to take move_lock_mem_cgroup(). Because we already hold
@@ -2740,7 +2749,7 @@ again:
 	 * rcu_read_unlock() if mem_cgroup_stolen() == true.
 	 */
 	if (!mem_cgroup_stolen(memcg))
-		return;
+		return NULL;
 
 	move_lock_mem_cgroup(memcg, flags);
 	if (memcg != pc->mem_cgroup || !PageCgroupUsed(pc)) {
@@ -2748,6 +2757,7 @@ again:
 		goto again;
 	}
 	*locked = true;
+	return memcg;
 }
 
 void __mem_cgroup_end_update_page_stat(struct page *page, unsigned long *flags)
@@ -5482,10 +5492,12 @@ static int memcg_stat_show(struct cgroup *cont, struct cftype *cft,
 		seq_printf(m, "%s %lu\n", mem_cgroup_stat_names[i],
 			   mem_cgroup_read_stat(memcg, i) * PAGE_SIZE);
 	}
-	for (i = 0; i < MEM_CGROUP_STAT2_NSTATS; i++) {
+	for (i = 0; i < MEM_CGROUP_STAT_WS_ACTIVATE; i++) {
 		seq_printf(m, "%s %lu\n", mem_cgroup_stat2_names[i],
 			   mem_cgroup_read_stat2(memcg, i) * PAGE_SIZE);
 	}
+	seq_printf(m, "%s %lu\n", mem_cgroup_stat2_names[i],
+		mem_cgroup_read_stat2(memcg, i));
 
 	for (i = 0; i < MEM_CGROUP_EVENTS_NSTATS; i++)
 		seq_printf(m, "%s %lu\n", mem_cgroup_events_names[i],
@@ -6251,8 +6263,10 @@ static DEFINE_IDR(mem_cgroup_idr);
 
 static DEFINE_MUTEX(mem_cgroup_idr_lock);
 
-static unsigned short mem_cgroup_id(struct mem_cgroup *memcg)
+unsigned short mem_cgroup_id(struct mem_cgroup *memcg)
 {
+	if (mem_cgroup_disabled())
+		return 0;
 	return memcg->id;
 }
 
