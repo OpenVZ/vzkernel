@@ -105,9 +105,6 @@ struct scan_control {
 	/* Reclaim only slab */
 	bool slab_only;
 
-	/* anon vs. file LRUs scanning "ratio" */
-	int swappiness;
-
 	/*
 	 * The memory cgroup that hit its limit and as a result is the
 	 * primary target of this reclaim invocation.
@@ -2132,9 +2129,12 @@ enum scan_balance {
  * nr[0] = anon inactive pages to scan; nr[1] = anon active pages to scan
  * nr[2] = file inactive pages to scan; nr[3] = file active pages to scan
  */
-static void get_scan_count(struct lruvec *lruvec, struct scan_control *sc,
-			   unsigned long *nr, unsigned long *lru_pages)
+
+static void get_scan_count(struct lruvec *lruvec, struct mem_cgroup *memcg,
+			   struct scan_control *sc, unsigned long *nr,
+			   unsigned long *lru_pages)
 {
+	int swappiness = mem_cgroup_swappiness(memcg);
 	struct zone_reclaim_stat *reclaim_stat = &lruvec->reclaim_stat;
 	u64 fraction[2];
 	u64 denominator = 0;	/* gcc */
@@ -2176,7 +2176,7 @@ static void get_scan_count(struct lruvec *lruvec, struct scan_control *sc,
 	 * using the memory controller's swap limit feature would be
 	 * too expensive.
 	 */
-	if (!global_reclaim(sc) && !sc->swappiness) {
+	if (!global_reclaim(sc) && !swappiness) {
 		scan_balance = SCAN_FILE;
 		goto out;
 	}
@@ -2186,7 +2186,7 @@ static void get_scan_count(struct lruvec *lruvec, struct scan_control *sc,
 	 * system is close to OOM, scan both anon and file equally
 	 * (unless the swappiness setting disagrees with swapping).
 	 */
-	if (!sc->priority && sc->swappiness) {
+	if (!sc->priority && swappiness) {
 		scan_balance = SCAN_EQUAL;
 		goto out;
 	}
@@ -2233,7 +2233,7 @@ static void get_scan_count(struct lruvec *lruvec, struct scan_control *sc,
 	 * With swappiness at 100, anonymous and file have the same priority.
 	 * This scanning priority is essentially the inverse of IO cost.
 	 */
-	anon_prio = sc->swappiness;
+	anon_prio = swappiness;
 	file_prio = 200 - anon_prio;
 
 	/*
@@ -2318,9 +2318,10 @@ out:
 /*
  * This is a basic per-zone page freer.  Used by both kswapd and direct reclaim.
  */
-static void shrink_lruvec(struct lruvec *lruvec, struct scan_control *sc,
-			  unsigned long *lru_pages)
+static void shrink_zone_memcg(struct zone *zone, struct mem_cgroup *memcg,
+			      struct scan_control *sc, unsigned long *lru_pages)
 {
+	struct lruvec *lruvec = mem_cgroup_zone_lruvec(zone, memcg);
 	unsigned long nr[NR_LRU_LISTS];
 	unsigned long targets[NR_LRU_LISTS];
 	unsigned long nr_to_scan;
@@ -2330,7 +2331,7 @@ static void shrink_lruvec(struct lruvec *lruvec, struct scan_control *sc,
 	struct blk_plug plug;
 	bool scan_adjusted;
 
-	get_scan_count(lruvec, sc, nr, lru_pages);
+	get_scan_count(lruvec, memcg, sc, nr, lru_pages);
 
 	/* Record the original scan target for proportional adjustments later */
 	memcpy(targets, nr, sizeof(nr));
@@ -2537,7 +2538,6 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 		memcg = mem_cgroup_iter(root, NULL, &reclaim);
 		do {
 			unsigned long lru_pages, scanned;
-			struct lruvec *lruvec;
 
 			if (!sc->may_thrash && mem_cgroup_low(root, memcg))
 				continue;
@@ -2545,9 +2545,7 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 			scanned = sc->nr_scanned;
 
 			if (!slab_only) {
-				lruvec = mem_cgroup_zone_lruvec(zone, memcg);
-				sc->swappiness = mem_cgroup_swappiness(memcg);
-				shrink_lruvec(lruvec, sc, &lru_pages);
+				shrink_zone_memcg(zone, memcg, sc, &lru_pages);
 				zone_lru_pages += lru_pages;
 			}
 
@@ -3112,11 +3110,9 @@ unsigned long mem_cgroup_shrink_node_zone(struct mem_cgroup *memcg,
 		.may_swap = !noswap,
 		.order = 0,
 		.priority = 0,
-		.swappiness = mem_cgroup_swappiness(memcg),
 		.target_mem_cgroup = memcg,
 		.stat = &stat,
 	};
-	struct lruvec *lruvec = mem_cgroup_zone_lruvec(zone, memcg);
 	unsigned long lru_pages;
 
 	sc.gfp_mask = (gfp_mask & GFP_RECLAIM_MASK) |
@@ -3133,7 +3129,7 @@ unsigned long mem_cgroup_shrink_node_zone(struct mem_cgroup *memcg,
 	 * will pick up pages from other mem cgroup's as well. We hack
 	 * the priority and make it zero.
 	 */
-	shrink_lruvec(lruvec, &sc, &lru_pages);
+	shrink_zone_memcg(zone, memcg, &sc, &lru_pages);
 
 	trace_mm_vmscan_memcg_softlimit_reclaim_end(sc.nr_reclaimed);
 
