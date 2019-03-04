@@ -1003,6 +1003,13 @@ int tcp_sendpage(struct sock *sk, struct page *page, int offset,
 		return sock_no_sendpage(sk->sk_socket, page, offset, size,
 					flags);
 
+	if (PageSlab(page)) {
+		WARN_ONCE(true, "sendpage should not handle Slab objects,"
+				" please fix callers\n");
+		return sock_no_sendpage(sk->sk_socket, page, offset, size,
+					flags);
+	}
+
 	lock_sock(sk);
 	res = do_tcp_sendpages(sk, page, offset, size, flags);
 	release_sock(sk);
