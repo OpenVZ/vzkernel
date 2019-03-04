@@ -7,6 +7,7 @@
 #include <linux/memcontrol.h>
 #include <linux/writeback.h>
 #include <linux/pagemap.h>
+#include <linux/page_cgroup.h>
 #include <linux/atomic.h>
 #include <linux/module.h>
 #include <linux/swap.h>
@@ -153,7 +154,8 @@
  */
 
 #define EVICTION_SHIFT	(RADIX_TREE_EXCEPTIONAL_ENTRY + \
-			 ZONES_SHIFT + NODES_SHIFT)
+			 ZONES_SHIFT + NODES_SHIFT +	\
+			 MEM_CGROUP_ID_SHIFT)
 #define EVICTION_MASK	(~0UL >> EVICTION_SHIFT)
 
 /*
@@ -166,9 +168,10 @@
  */
 static unsigned int bucket_order __read_mostly;
 
-static void *pack_shadow(unsigned long eviction, struct zone *zone)
+static void *pack_shadow(int memcgid, struct zone *zone, unsigned long eviction)
 {
 	eviction >>= bucket_order;
+	eviction = (eviction << MEM_CGROUP_ID_SHIFT) | memcgid;
 	eviction = (eviction << NODES_SHIFT) | zone_to_nid(zone);
 	eviction = (eviction << ZONES_SHIFT) | zone_idx(zone);
 	eviction = (eviction << RADIX_TREE_EXCEPTIONAL_SHIFT);
@@ -176,18 +179,21 @@ static void *pack_shadow(unsigned long eviction, struct zone *zone)
 	return (void *)(eviction | RADIX_TREE_EXCEPTIONAL_ENTRY);
 }
 
-static void unpack_shadow(void *shadow, struct zone **zonep,
+static void unpack_shadow(void *shadow, int *memcgidp, struct zone **zonep,
 			  unsigned long *evictionp)
 {
 	unsigned long entry = (unsigned long)shadow;
-	int zid, nid;
+	int memcgid, nid, zid;
 
 	entry >>= RADIX_TREE_EXCEPTIONAL_SHIFT;
 	zid = entry & ((1UL << ZONES_SHIFT) - 1);
 	entry >>= ZONES_SHIFT;
 	nid = entry & ((1UL << NODES_SHIFT) - 1);
 	entry >>= NODES_SHIFT;
+	memcgid = entry & ((1UL << MEM_CGROUP_ID_SHIFT) - 1);
+	entry >>= MEM_CGROUP_ID_SHIFT;
 
+	*memcgidp = memcgid;
 	*zonep = NODE_DATA(nid)->node_zones + zid;
 	*evictionp = entry << bucket_order;
 }
@@ -202,11 +208,25 @@ static void unpack_shadow(void *shadow, struct zone **zonep,
  */
 void *workingset_eviction(struct address_space *mapping, struct page *page)
 {
+	struct mem_cgroup *memcg;
 	struct zone *zone = page_zone(page);
+	struct page_cgroup *pc;
 	unsigned long eviction;
+	struct lruvec *lruvec;
 
-	eviction = atomic_long_inc_return(&zone->inactive_age);
-	return pack_shadow(eviction, zone);
+	/* Page is fully exclusive and pins page->mem_cgroup */
+	VM_BUG_ON_PAGE(PageLRU(page), page);
+	VM_BUG_ON_PAGE(page_count(page), page);
+	VM_BUG_ON_PAGE(!PageLocked(page), page);
+
+	pc = lookup_page_cgroup(page);
+	if (PageCgroupUsed(pc))
+		memcg = pc->mem_cgroup;
+	else
+		memcg = root_mem_cgroup;
+	lruvec = mem_cgroup_zone_lruvec(zone, memcg);
+	eviction = atomic_long_inc_return(&lruvec->inactive_age);
+	return pack_shadow(mem_cgroup_id(memcg), zone, eviction);
 }
 
 /**
@@ -221,13 +241,42 @@ void *workingset_eviction(struct address_space *mapping, struct page *page)
 bool workingset_refault(void *shadow)
 {
 	unsigned long refault_distance;
+	unsigned long active_file;
+	struct mem_cgroup *memcg;
 	unsigned long eviction;
+	struct lruvec *lruvec;
 	unsigned long refault;
 	struct zone *zone;
+	int memcgid;
 
-	unpack_shadow(shadow, &zone, &eviction);
+	unpack_shadow(shadow, &memcgid, &zone, &eviction);
 
-	refault = atomic_long_read(&zone->inactive_age);
+	rcu_read_lock();
+	/*
+	 * Look up the memcg associated with the stored ID. It might
+	 * have been deleted since the page's eviction.
+	 *
+	 * Note that in rare events the ID could have been recycled
+	 * for a new cgroup that refaults a shared page. This is
+	 * impossible to tell from the available data. However, this
+	 * should be a rare and limited disturbance, and activations
+	 * are always speculative anyway. Ultimately, it's the aging
+	 * algorithm's job to shake out the minimum access frequency
+	 * for the active cache.
+	 *
+	 * XXX: On !CONFIG_MEMCG, this will always return NULL; it
+	 * would be better if the root_mem_cgroup existed in all
+	 * configurations instead.
+	 */
+	memcg = mem_cgroup_from_id(memcgid);
+	if (!mem_cgroup_disabled() && !memcg) {
+		rcu_read_unlock();
+		return false;
+	}
+	lruvec = mem_cgroup_zone_lruvec(zone, memcg);
+	refault = atomic_long_read(&lruvec->inactive_age);
+	active_file = lruvec_lru_size(lruvec, LRU_ACTIVE_FILE);
+	rcu_read_unlock();
 
 	/*
 	 * The unsigned subtraction here gives an accurate distance
@@ -249,7 +298,8 @@ bool workingset_refault(void *shadow)
 
 	inc_zone_state(zone, WORKINGSET_REFAULT);
 
-	if (refault_distance <= zone_page_state(zone, NR_ACTIVE_FILE)) {
+	if (refault_distance <= active_file) {
+		memcg_inc_ws_activate(memcg);
 		inc_zone_state(zone, WORKINGSET_ACTIVATE);
 		return true;
 	}
@@ -262,7 +312,28 @@ bool workingset_refault(void *shadow)
  */
 void workingset_activation(struct page *page)
 {
-	atomic_long_inc(&page_zone(page)->inactive_age);
+	struct mem_cgroup *memcg;
+	struct lruvec *lruvec;
+	bool locked;
+	unsigned long flags;
+
+	/*
+	 * Filter non-memcg pages here, e.g. unmap can call
+	 * mark_page_accessed() on VDSO pages.
+	 *
+	 * XXX: See workingset_refault() - this should return
+	 * root_mem_cgroup even for !CONFIG_MEMCG.
+	 */
+	if (!mem_cgroup_disabled())
+		return;
+
+	memcg = mem_cgroup_begin_update_page_stat(page, &locked, &flags);
+	if (!memcg)
+		return;
+
+	lruvec = mem_cgroup_zone_lruvec(page_zone(page), memcg);
+	atomic_long_inc(&lruvec->inactive_age);
+	mem_cgroup_end_update_page_stat(page, &locked, &flags);
 }
 
 /*
