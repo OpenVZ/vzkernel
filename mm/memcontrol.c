@@ -6437,10 +6437,6 @@ mem_cgroup_css_alloc(struct cgroup *cont)
 #endif
 
 	return &memcg->css;
-
-free_out:
-	__mem_cgroup_free(memcg);
-	return ERR_PTR(error);
 }
 
 static int
