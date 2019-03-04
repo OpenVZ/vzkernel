@@ -138,6 +138,9 @@ extern void mem_cgroup_note_oom_kill(struct mem_cgroup *memcg,
 extern void mem_cgroup_print_oom_info(struct mem_cgroup *memcg,
 					struct task_struct *p);
 
+unsigned long mem_cgroup_node_nr_lru_pages(struct mem_cgroup *memcg,
+					   int nid, unsigned int lru_mask);
+
 static inline void mem_cgroup_oom_enable(void)
 {
 	WARN_ON(current->memcg_oom.may_oom);
@@ -422,6 +425,13 @@ mem_cgroup_oom_context(struct mem_cgroup *memcg)
 }
 
 static inline unsigned long mem_cgroup_overdraft(struct mem_cgroup *memcg)
+{
+	return 0;
+}
+
+static inline unsigned long
+mem_cgroup_node_nr_lru_pages(struct mem_cgroup *memcg,
+			     int nid, unsigned int lru_mask)
 {
 	return 0;
 }
