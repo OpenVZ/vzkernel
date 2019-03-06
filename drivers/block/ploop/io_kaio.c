@@ -1078,10 +1078,7 @@ static void kaio_unplug(struct ploop_io * io)
 static void kaio_queue_settings(struct ploop_io * io, struct request_queue * q)
 {
 	blk_set_stacking_limits(&q->limits);
-	blk_queue_max_write_same_sectors(q, 0);
-
-	q->limits.discard_alignment = PAGE_SIZE;
-	q->limits.discard_granularity = PAGE_SIZE;
+	ploop_set_discard_limits(io->plo);
 }
 
 static void kaio_issue_flush(struct ploop_io * io, struct ploop_request *preq)
