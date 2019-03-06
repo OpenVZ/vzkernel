@@ -2162,7 +2162,8 @@ int try_to_unuse(unsigned int type, bool frontswap,
 		swap_map = &si->swap_map[i];
 		entry = swp_entry(type, i);
 		page = read_swap_cache_async(entry,
-					GFP_HIGHUSER_MOVABLE, NULL, 0, false);
+					GFP_HIGHUSER_MOVABLE, NULL, 0, false,
+					false);
 		if (!page) {
 			/*
 			 * Either swap_duplicate() failed because entry
