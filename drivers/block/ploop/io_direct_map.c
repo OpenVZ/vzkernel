@@ -13,6 +13,7 @@
 #include <linux/version.h>
 #include <linux/buffer_head.h>
 #include <linux/interrupt.h>
+#include <linux/falloc.h>
 #include <linux/slab.h>
 
 #include <linux/ploop/ploop_if.h>
@@ -570,6 +571,59 @@ static int remove_extent_mapping(struct extent_map_tree *tree, struct extent_map
 	return ret;
 }
 
+static int fallocate_cluster(struct ploop_io *io, struct inode *inode,
+			     loff_t start_off, loff_t len, bool align)
+{
+	struct ploop_device *plo = io->plo;
+	struct file *file = io->files.file;
+	unsigned int clu_sz = cluster_size_in_bytes(plo);
+	struct fiemap_extent_info fieinfo;
+	struct fiemap_extent fi_extent;
+	loff_t start_clu = round_down(start_off, clu_sz);
+	int ret;
+
+	if (start_clu + clu_sz >= i_size_read(inode))
+		return -EINVAL;
+
+	if (test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state)) {
+		pr_err("a hole in image file detected (i_size=%llu off=%llu)",
+		       i_size_read(inode), start_off);
+		return -EINVAL;
+	}
+
+	fieinfo.fi_extents_start = &fi_extent;
+	fieinfo.fi_extents_max = 1;
+	fieinfo.fi_flags = 0;
+	fieinfo.fi_extents_mapped = 0;
+	fi_extent.fe_flags = 0;
+
+	if (!align)
+		goto not_align;
+
+	ret = inode->i_op->fiemap(inode, &fieinfo, start_clu, clu_sz);
+	if (ret)
+		goto out;
+
+	if (fieinfo.fi_extents_mapped == 0) {
+		start_off = start_clu;
+		len = clu_sz;
+	} else {
+not_align:
+		fi_extent.fe_flags = 0;
+		ret = inode->i_op->fiemap(inode, &fieinfo, start_off, len);
+		if (ret)
+			goto out;
+		if (fieinfo.fi_extents_mapped != 0) {
+			WARN_ON_ONCE(fi_extent.fe_logical <= start_off);
+			len = fi_extent.fe_logical - start_off;
+		}
+	}
+
+	ret = file->f_op->fallocate(file, FALLOC_FL_KEEP_SIZE, start_off, len);
+out:
+	return ret;
+}
+
 static struct extent_map *__map_extent_bmap(struct ploop_io *io,
 				       struct address_space *mapping,
 				       sector_t start, sector_t len, gfp_t gfp_mask)
@@ -581,9 +635,11 @@ static struct extent_map *__map_extent_bmap(struct ploop_io *io,
 	struct fiemap_extent_info fieinfo;
 	struct fiemap_extent fi_extent;
 	mm_segment_t old_fs;
+	bool align_to_clu;
 	int ret;
 
 again:
+	align_to_clu = true;
 	em = lookup_extent_mapping(tree, start, len);
 	if (em) {
 		/*
@@ -593,6 +649,7 @@ again:
 		 */
 		if (em->start > start) {
 			len = em->start - start;
+			align_to_clu = false;
 		} else {
 			return em;
 		}
@@ -644,13 +701,11 @@ again:
 	}
 
 	if (fieinfo.fi_extents_mapped != 1) {
-		if (start_off < i_size_read(inode))
-			ploop_msg_once(io->plo, "a hole in image file detected"
-				       " (mapped=%d i_size=%llu off=%llu)",
-				       fieinfo.fi_extents_mapped,
-				       i_size_read(inode), start_off);
 		ploop_extent_put(em);
-		return ERR_PTR(-EINVAL);
+		ret = fallocate_cluster(io, inode, start_off, len, align_to_clu);
+		if (!ret)
+			goto again;
+		return ERR_PTR(ret);
 	}
 
 	em->start = fi_extent.fe_logical >> 9;
