@@ -272,7 +272,7 @@ static ssize_t pstat_store(struct kobject * kobj, struct attribute * attr,
 
 static u32 show_block_size(struct ploop_device * plo)
 {
-	return 1 << plo->cluster_log;
+	return cluster_size_in_sec(plo);
 }
 
 static u32 show_fmt_version(struct ploop_device * plo)
