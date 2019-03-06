@@ -731,13 +731,6 @@ static inline unsigned int block_vecs(struct ploop_device * plo)
 	return 1 << (plo->cluster_log + 9 - PAGE_SHIFT);
 }
 
-static int whole_block(struct ploop_device * plo, struct ploop_request *preq)
-{
-	if (preq->req_size != (1<<plo->cluster_log))
-		return 0;
-	return !(preq->req_sector & ((1<<plo->cluster_log) - 1));
-}
-
 static struct bio *
 preallocate_bio(struct bio * orig_bio, struct ploop_device * plo)
 {
