@@ -48,8 +48,8 @@ struct extent_map *extent_lookup(struct extent_map_tree *tree,
 				 sector_t start);
 void ploop_extent_put(struct extent_map *em);
 
-void trim_extent_mappings(struct ploop_device *plo,
-			  struct extent_map_tree *tree, sector_t start);
+void trim_extent_mappings(struct ploop_device *plo, struct extent_map_tree *tree,
+			  sector_t start, sector_t len);
 
 int ploop_dio_close(struct ploop_io * io, int rdonly);
 struct extent_map_tree * ploop_dio_open(struct ploop_io * io, int rdonly);
@@ -58,5 +58,14 @@ int ploop_dio_upgrade(struct ploop_io * io);
 
 int __init ploop_extent_map_init(void);
 void ploop_extent_map_exit(void);
+
+static inline void trim_extent_mappings_tail(struct ploop_device *plo,
+					     struct extent_map_tree *tree,
+					     sector_t start)
+{
+	sector_t len = ((sector_t)(-1ULL)) - start;
+
+	trim_extent_mappings(plo, tree, start, len);
+}
 
 #endif
