@@ -631,6 +631,11 @@ static inline struct ploop_delta * map_top_delta(struct ploop_map * map)
 	return list_first_entry(&map->delta_list, struct ploop_delta, list);
 }
 
+static inline unsigned int cluster_size_in_bytes(struct ploop_device *plo)
+{
+	return 1 << (plo->cluster_log + 9);
+}
+
 void ploop_complete_io_state(struct ploop_request * preq);
 void ploop_fail_request(struct ploop_request * preq, int err);
 void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list);
