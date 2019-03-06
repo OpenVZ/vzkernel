@@ -1538,7 +1538,7 @@ static int fill_bio(struct ploop_device *plo, struct bio * bio, cluster_t blk)
 		bio->bi_io_vec[bio->bi_vcnt].bv_len = PAGE_SIZE;
 	}
 	bio->bi_sector = blk << plo->cluster_log;
-	bio->bi_size = (1 << (plo->cluster_log + 9));
+	bio->bi_size = cluster_size_in_bytes(plo);
 	return 0;
 }
 
@@ -1997,7 +1997,7 @@ static void fill_zero_bio(struct ploop_device *plo, struct bio * bio)
 		bio->bi_io_vec[bio->bi_vcnt].bv_len = PAGE_SIZE;
 	}
 	bio->bi_sector = 0;
-	bio->bi_size = (1 << (plo->cluster_log + 9));
+	bio->bi_size = cluster_size_in_bytes(plo);
 }
 
 /*
