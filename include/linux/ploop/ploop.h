@@ -636,6 +636,11 @@ static inline unsigned int cluster_size_in_bytes(struct ploop_device *plo)
 	return 1 << (plo->cluster_log + 9);
 }
 
+static inline unsigned int cluster_size_in_sec(struct ploop_device *plo)
+{
+	return 1 << (plo->cluster_log);
+}
+
 void ploop_complete_io_state(struct ploop_request * preq);
 void ploop_fail_request(struct ploop_request * preq, int err);
 void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list);
@@ -841,9 +846,9 @@ static inline int ploop_map_log(struct ploop_device *plo)
 
 static inline bool whole_block(struct ploop_device * plo, struct ploop_request *preq)
 {
-	if (preq->req_size != (1<<plo->cluster_log))
+	if (preq->req_size != cluster_size_in_sec(plo))
 		return 0;
-	return !(preq->req_sector & ((1<<plo->cluster_log) - 1));
+	return !(preq->req_sector & (cluster_size_in_sec(plo) - 1));
 }
 
 struct map_node;
