@@ -382,7 +382,7 @@ struct ploop_device
 	int			bio_qlen;
 	int			bio_total;
 
-	struct rb_root		entry_tree[3];
+	struct rb_root		entry_tree[2];
 
 	struct list_head	ready_queue;
 
