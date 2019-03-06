@@ -445,7 +445,7 @@ static int kaio_resubmit(struct ploop_request * preq)
 			struct bio_list tbl;
 			tbl.head = tbl.tail = preq->aux_bio;
 			kaio_submit(&delta->io, preq, preq->req_rw, &tbl,
-				    preq->iblock, 1<<preq->plo->cluster_log);
+				    preq->iblock, cluster_size_in_sec(preq->plo));
 		} else {
 			kaio_submit(&delta->io, preq, preq->req_rw, &preq->bl,
 				    preq->iblock, preq->req_size);
