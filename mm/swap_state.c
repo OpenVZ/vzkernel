@@ -359,7 +359,7 @@ struct page * lookup_swap_cache(swp_entry_t entry, struct vm_area_struct *vma,
 
 struct page *__read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
 			struct vm_area_struct *vma, unsigned long addr,
-			bool *new_page_allocated)
+			bool *new_page_allocated, bool activate)
 {
 	struct page *found_page, *new_page = NULL;
 	struct address_space *swapper_space = swap_address_space(entry);
@@ -441,7 +441,9 @@ struct page *__read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
 			/*
 			 * Initiate read into locked page and return.
 			 */
-			lru_cache_add_anon(new_page);
+			if (activate)
+				SetPageActive(new_page);
+			lru_cache_add(new_page);
 			*new_page_allocated = true;
 			return new_page;
 		}
@@ -467,11 +469,12 @@ struct page *__read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
  * the swap entry is no longer in use.
  */
 struct page *read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
-			struct vm_area_struct *vma, unsigned long addr)
+			struct vm_area_struct *vma, unsigned long addr,
+			bool activate)
 {
 	bool page_was_allocated;
 	struct page *retpage = __read_swap_cache_async(entry, gfp_mask,
-			vma, addr, &page_was_allocated);
+			vma, addr, &page_was_allocated, activate);
 
 	if (page_was_allocated)
 		swap_readpage(retpage);
@@ -587,7 +590,7 @@ struct page *swapin_readahead(swp_entry_t entry, gfp_t gfp_mask,
 		/* Ok, do the async read-ahead now */
 		page = __read_swap_cache_async(
 			swp_entry(swp_type(entry), offset),
-			gfp_mask, vma, addr, &page_allocated);
+			gfp_mask, vma, addr, &page_allocated, offset == entry_offset);
 		if (!page)
 			continue;
 		if (page_allocated) {
@@ -603,7 +606,7 @@ struct page *swapin_readahead(swp_entry_t entry, gfp_t gfp_mask,
 
 	lru_add_drain();	/* Push any new pages onto the LRU now */
 skip:
-	return read_swap_cache_async(entry, gfp_mask, vma, addr);
+	return read_swap_cache_async(entry, gfp_mask, vma, addr, true);
 }
 
 int init_swap_address_space(unsigned int type, unsigned long nr_pages)
@@ -752,7 +755,8 @@ struct page *do_swap_page_readahead(swp_entry_t fentry, gfp_t gfp_mask,
 		if (unlikely(non_swap_entry(entry)))
 			continue;
 		page = __read_swap_cache_async(entry, gfp_mask, vma,
-					       address, &page_allocated);
+					       address, &page_allocated,
+					       i == swap_ra->offset);
 		if (!page)
 			continue;
 		if (page_allocated) {
@@ -767,7 +771,7 @@ struct page *do_swap_page_readahead(swp_entry_t fentry, gfp_t gfp_mask,
 	blk_finish_plug(&plug);
 	lru_add_drain();
 skip:
-	return read_swap_cache_async(fentry, gfp_mask, vma, address);
+	return read_swap_cache_async(fentry, gfp_mask, vma, address, true);
 }
 
 #ifdef CONFIG_SYSFS
