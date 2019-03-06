@@ -74,6 +74,7 @@ raw_open(struct ploop_delta * delta)
 static int
 raw_refresh(struct ploop_delta * delta)
 {
+	unsigned int cluster_log = delta->plo->cluster_log;
 	loff_t pos;
 
 	pos = delta->io.ops->i_size_read(&delta->io);
@@ -81,15 +82,15 @@ raw_refresh(struct ploop_delta * delta)
 		printk("raw delta is not aligned (%llu bytes)\n", pos);
 		return -EINVAL;
 	}
-	if ((pos >> (delta->plo->cluster_log + 9)) < delta->io.alloc_head) {
+	if ((pos >> (cluster_log + 9)) < delta->io.alloc_head) {
 		printk("raw delta was corrupted "
 		       "(old_size=%u new_size=%llu iblocks)\n",
 		       delta->io.alloc_head,
-		       pos >> (delta->plo->cluster_log + 9));
+		       pos >> (cluster_log + 9));
 		return -EINVAL;
 	}
 
-	delta->io.alloc_head = pos >> (delta->plo->cluster_log + 9);
+	delta->io.alloc_head = pos >> (cluster_log + 9);
 	return 0;
 }
 
