@@ -84,6 +84,29 @@ static int cached_submit(struct ploop_io *io, iblock_t iblk,
 	      struct ploop_request * preq,
 	      struct bio_list * sbl, unsigned int size, bool use_prealloc);
 
+static int dio_discard(struct ploop_io *io, struct ploop_request *preq, sector_t sec)
+{
+	struct ploop_device *plo = io->plo;
+	struct file *file = io->files.file;
+	int err;
+
+	if (!dio_may_fallocate(io)) {
+		preq->eng_state = PLOOP_E_COMPLETE;
+		preq->error = -EOPNOTSUPP;
+		return 0;
+	}
+
+	if (io->files.em_tree)
+		trim_extent_mappings(plo, io->files.em_tree,
+				     sec, cluster_size_in_sec(plo));
+
+	err = file->f_op->fallocate(file,
+				    FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,
+				    sec << 9,
+				    cluster_size_in_bytes(plo));
+	return err;
+}
+
 static void
 dio_submit(struct ploop_io *io, struct ploop_request *preq,
 	   unsigned long rw,
@@ -124,6 +147,17 @@ dio_submit(struct ploop_io *io, struct ploop_request *preq,
 	sec = sbl->head->bi_sector;
 	sec = ((sector_t)iblk << plo->cluster_log) | (sec & ((1<<plo->cluster_log) - 1));
 
+	ploop_prepare_io_request(preq);
+	if (rw & REQ_WRITE)
+		ploop_prepare_tracker(preq, sec);
+
+	if (rw & REQ_DISCARD) {
+		err = dio_discard(io, preq, sec);
+		if (err < 0)
+			goto out;
+		goto complete;
+	}
+
 	em = extent_lookup_create(io, sec, size);
 	if (IS_ERR(em))
 		goto out_em_err;
@@ -149,10 +183,6 @@ dio_submit(struct ploop_io *io, struct ploop_request *preq,
 
 		goto write_unint;
 	}
-
-	ploop_prepare_io_request(preq);
-	if (rw & REQ_WRITE)
-		ploop_prepare_tracker(preq, sec);
 
 	bw.cur = sbl->head;
 	bw.idx = 0;
@@ -240,7 +270,7 @@ flush_bio:
 		ploop_acc_ff_out(plo, rw2 | b->bi_rw);
 		submit_bio(rw2, b);
 	}
-
+complete:
 	ploop_complete_io_request(preq);
 	return;
 
@@ -1000,7 +1030,6 @@ dio_init(struct ploop_io * io)
 	init_timer(&io->fsync_timer);
 	io->fsync_timer.function = fsync_timeout;
 	io->fsync_timer.data = (unsigned long)io;
-	set_bit(PLOOP_S_NO_FALLOC_DISCARD, &io->plo->state);
 
 	return 0;
 }
