@@ -751,13 +751,13 @@ static int drop_extent_map(struct extent_map_tree *tree)
 	return 0;
 }
 
-void trim_extent_mappings(struct ploop_device *plo,
-			  struct extent_map_tree *tree, sector_t start)
+void trim_extent_mappings(struct ploop_device *plo, struct extent_map_tree *tree,
+			  sector_t start, sector_t len)
 {
 	struct extent_map *em;
 
 	spin_lock_irq(&plo->lock);
-	while ((em = lookup_extent_mapping(tree, start, ((sector_t)(-1ULL)) - start))) {
+	while ((em = lookup_extent_mapping(tree, start, len)) != NULL) {
 		remove_extent_mapping(tree, em);
 		WARN_ON(atomic_read(&em->refs) != 2);
 		/* once for us */
