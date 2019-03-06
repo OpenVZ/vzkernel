@@ -851,6 +851,17 @@ static inline bool whole_block(struct ploop_device * plo, struct ploop_request *
 	return !(preq->req_sector & (cluster_size_in_sec(plo) - 1));
 }
 
+static inline void ploop_set_discard_limits(struct ploop_device *plo)
+{
+	struct request_queue *q = plo->queue;
+	/*
+	 * In PLOOP_FMT_PLOOP1 format, neighbouring virtual clusters
+	 * are not neighbours on backed device, so we expect block
+	 * subsystem splits discards in single-cluster requests.
+	 */
+	q->limits.discard_granularity = cluster_size_in_bytes(plo);
+	q->limits.max_discard_sectors = (1 << plo->cluster_log);
+}
 struct map_node;
 
 int ploop_fastmap(struct ploop_map * map, cluster_t block, iblock_t *result);
