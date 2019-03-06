@@ -3978,9 +3978,9 @@ static int ploop_bd_full(struct backing_dev_info *bdi, long long nr, int root)
 
 static int ploop_start(struct ploop_device * plo, struct block_device *bdev)
 {
-	int err;
 	struct ploop_delta * top_delta, * delta;
-	int i;
+	struct request_queue *q = plo->queue;
+	int i, err;
 
 	if (test_bit(PLOOP_S_RUNNING, &plo->state))
 		return -EBUSY;
@@ -4018,22 +4018,22 @@ static int ploop_start(struct ploop_device * plo, struct block_device *bdev)
 	/* Deltas are ready. Enable block device. */
 	set_device_ro(bdev, (top_delta->flags & PLOOP_FMT_RDONLY) != 0);
 
-	blk_queue_make_request(plo->queue, ploop_make_request);
-	plo->queue->queuedata = plo;
-	plo->queue->backing_dev_info.congested_fn = ploop_congested;
-	plo->queue->backing_dev_info.congested_fn2 = ploop_congested2;
-	plo->queue->backing_dev_info.bd_full_fn = ploop_bd_full;
-	plo->queue->backing_dev_info.congested_data = plo;
+	blk_queue_make_request(q, ploop_make_request);
+	q->queuedata = plo;
+	q->backing_dev_info.congested_fn = ploop_congested;
+	q->backing_dev_info.congested_fn2 = ploop_congested2;
+	q->backing_dev_info.bd_full_fn = ploop_bd_full;
+	q->backing_dev_info.congested_data = plo;
 
-	blk_queue_merge_bvec(plo->queue, ploop_merge_bvec);
-	blk_queue_flush(plo->queue, REQ_FLUSH);
+	blk_queue_merge_bvec(q, ploop_merge_bvec);
+	blk_queue_flush(q, REQ_FLUSH);
 
 	if (top_delta->io.ops->queue_settings)
-		top_delta->io.ops->queue_settings(&top_delta->io, plo->queue);
+		top_delta->io.ops->queue_settings(&top_delta->io, q);
 
-	blk_queue_max_discard_sectors(plo->queue, INT_MAX);
-	queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, plo->queue);
-	queue_flag_clear_unlocked(QUEUE_FLAG_STANDBY, plo->queue);
+	blk_queue_max_discard_sectors(q, INT_MAX);
+	queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, q);
+	queue_flag_clear_unlocked(QUEUE_FLAG_STANDBY, q);
 
 	set_capacity(plo->disk, plo->bd_size);
 	bd_set_size(bdev, (loff_t)plo->bd_size << 9);
