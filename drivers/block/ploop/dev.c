@@ -2525,6 +2525,18 @@ error:
 	PLOOP_REQ_FAIL_IMMEDIATE(preq, err);
 }
 
+static bool ploop_can_issue_discard(struct ploop_device *plo,
+				    struct ploop_request *preq)
+{
+	if (test_bit(PLOOP_REQ_DISCARD, &preq->state))
+		return true;
+
+	if (test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state))
+		return false;
+
+	return whole_block(plo, preq);
+}
+
 static void ploop_req_state_process(struct ploop_request * preq)
 {
 	struct ploop_device * plo = preq->plo;
@@ -2604,8 +2616,7 @@ restart:
 		}
 
 		if ((preq->req_rw & REQ_DISCARD) &&
-		    !test_bit(PLOOP_REQ_DISCARD, &preq->state) &&
-		    test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state)) {
+		    !ploop_can_issue_discard(plo, preq)) {
 			preq->eng_state = PLOOP_E_COMPLETE;
 			preq->error = -EOPNOTSUPP;
 			ploop_complete_io_state(preq);
