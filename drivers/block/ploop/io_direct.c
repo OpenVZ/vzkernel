@@ -46,6 +46,12 @@ atomic_long_t ploop_io_images_size = ATOMIC_LONG_INIT(0);
  * Holes in image file are not allowed.
  */
 
+static bool dio_may_fallocate(struct ploop_io *io)
+{
+	return io->files.file->f_op->fallocate &&
+	       io->files.flags & EXT4_EXTENTS_FL;
+}
+
 static inline sector_t
 dio_isec_to_phys(struct extent_map * em, sector_t isec)
 {
@@ -354,8 +360,7 @@ cached_submit(struct ploop_io *io, iblock_t iblk, struct ploop_request * preq,
 	struct bio_iter biter;
 	loff_t new_size;
 	loff_t used_pos;
-	bool may_fallocate = io->files.file->f_op->fallocate &&
-		io->files.flags & EXT4_EXTENTS_FL;
+	bool may_fallocate = dio_may_fallocate(io);
 
 	trace_cached_submit(preq);
 
