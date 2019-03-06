@@ -85,10 +85,11 @@ static int cached_submit(struct ploop_io *io, iblock_t iblk,
 	      struct bio_list * sbl, unsigned int size, bool use_prealloc);
 
 static void
-dio_submit(struct ploop_io *io, struct ploop_request * preq,
+dio_submit(struct ploop_io *io, struct ploop_request *preq,
 	   unsigned long rw,
 	   struct bio_list *sbl, iblock_t iblk, unsigned int size)
 {
+	struct ploop_device *plo = io->plo;
 	struct bio_list bl;
 	struct bio * bio = NULL;
 	struct extent_map * em;
@@ -121,15 +122,15 @@ dio_submit(struct ploop_io *io, struct ploop_request * preq,
 	}
 
 	sec = sbl->head->bi_sector;
-	sec = ((sector_t)iblk << preq->plo->cluster_log) | (sec & ((1<<preq->plo->cluster_log) - 1));
+	sec = ((sector_t)iblk << plo->cluster_log) | (sec & ((1<<plo->cluster_log) - 1));
 
 	em = extent_lookup_create(io, sec, size);
 	if (IS_ERR(em))
 		goto out_em_err;
 
 	if (write && em->uninit) {
-		sector_t end = (sector_t)(iblk + 1) << preq->plo->cluster_log;
-		sec = (sector_t)iblk << preq->plo->cluster_log;
+		sector_t end = (sector_t)(iblk + 1) << plo->cluster_log;
+		sec = (sector_t)iblk << plo->cluster_log;
 
 		if (em->start <= sec)
 			sec = em->end;
@@ -236,7 +237,7 @@ flush_bio:
 		b->bi_private = preq;
 		b->bi_end_io = dio_endio_async;
 
-		ploop_acc_ff_out(preq->plo, rw2 | b->bi_rw);
+		ploop_acc_ff_out(plo, rw2 | b->bi_rw);
 		submit_bio(rw2, b);
 	}
 
@@ -249,9 +250,9 @@ enomem:
 	goto out;
 
 write_unint:
-	spin_lock_irq(&preq->plo->lock);
+	spin_lock_irq(&plo->lock);
 	ploop_add_lockout(preq, 0);
-	spin_unlock_irq(&preq->plo->lock);
+	spin_unlock_irq(&plo->lock);
 
 	err = cached_submit(io, iblk, preq, sbl, size, false);
 	goto out;
@@ -259,7 +260,7 @@ write_unint:
 write_unint_fail:
 	ploop_extent_put(em);
 	err = -EIO;
-	ploop_msg_once(io->plo, "A part of cluster is in uninitialized extent.");
+	ploop_msg_once(plo, "A part of cluster is in uninitialized extent.");
 	goto out;
 
 out_em_err:
