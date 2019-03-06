@@ -356,7 +356,7 @@ cached_submit(struct ploop_io *io, iblock_t iblk, struct ploop_request * preq,
 	struct ploop_device * plo = preq->plo;
 	int err = 0;
 	loff_t pos, end_pos, start, end;
-	loff_t clu_siz = 1 << (plo->cluster_log + 9);
+	loff_t clu_siz = cluster_size_in_bytes(plo);
 	struct bio_iter biter;
 	loff_t new_size;
 	loff_t used_pos;
@@ -498,7 +498,7 @@ dio_post_submit(struct ploop_io *io, struct ploop_request * preq)
 {
 	struct ploop_device *plo = preq->plo;
 	sector_t sec = (sector_t)preq->iblock << preq->plo->cluster_log;
-	loff_t clu_siz = 1 << (preq->plo->cluster_log + 9);
+	loff_t clu_siz = cluster_size_in_bytes(preq->plo);
 	int force_sync = preq->req_rw & REQ_FUA;
 	int err;
 
