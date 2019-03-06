@@ -661,9 +661,10 @@ static struct ploop_delta *
 ploop_fast_lookup(struct ploop_device * plo, sector_t sec,
 		  unsigned long rw, sector_t * isec)
 {
+	unsigned int cluster_log = plo->cluster_log;
 	struct ploop_delta * top_delta, * delta;
 	int level;
-	cluster_t bio_cluster = sec >> plo->cluster_log;
+	cluster_t bio_cluster = sec >> cluster_log;
 	iblock_t iblk;
 
 	level = ploop_fastmap(&plo->map, bio_cluster, &iblk);
@@ -687,8 +688,8 @@ ploop_fast_lookup(struct ploop_device * plo, sector_t sec,
 		delta = find_delta(plo, level);
 	}
 	if (delta) {
-		*isec = ((sector_t)iblk << plo->cluster_log) +
-			(sec & ((1 << plo->cluster_log) - 1));
+		*isec = ((sector_t)iblk << cluster_log) +
+			(sec & ((1 << cluster_log) - 1));
 	}
 	return delta;
 }
@@ -847,6 +848,7 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct bio * nbio;
 	struct ploop_device * plo = q->queuedata;
+	unsigned int cluster_log = plo->cluster_log;
 	unsigned long rw = bio_data_dir(bio);
 	struct hd_struct *part;
 	int cpu;
@@ -895,11 +897,11 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 	 * not depending on any alignment constraints. So be it.
 	 */
 	if (!(bio->bi_rw & REQ_DISCARD) && bio->bi_size &&
-	    (bio->bi_sector >> plo->cluster_log) !=
-	    ((bio->bi_sector + (bio->bi_size >> 9) - 1) >> plo->cluster_log)) {
+	    (bio->bi_sector >> cluster_log) !=
+	    ((bio->bi_sector + (bio->bi_size >> 9) - 1) >> cluster_log)) {
 		struct bio_pair *bp;
-		unsigned int first_sectors = (1<<plo->cluster_log)
-			- (bio->bi_sector & ((1<<plo->cluster_log) - 1));
+		unsigned int first_sectors = (1<<cluster_log)
+			- (bio->bi_sector & ((1<<cluster_log) - 1));
 
 		plo->st.bio_splits++;
 
@@ -981,7 +983,7 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 	    bio->bi_size) {
 		struct ploop_request * preq;
 		struct rb_node * n = req_entry_tree(plo, bio->bi_rw)->rb_node;
-		u32 bio_cluster = bio->bi_sector >> plo->cluster_log;
+		u32 bio_cluster = bio->bi_sector >> cluster_log;
 
 		while (n) {
 			preq = rb_entry(n, struct ploop_request, lockout_link);
@@ -1103,6 +1105,7 @@ ploop_merge_bvec(struct request_queue *q, struct bvec_merge_data *bm_data,
 		 struct bio_vec *bvec)
 {
 	struct ploop_device *plo = q->queuedata;
+	unsigned int cluster_log = plo->cluster_log;
 	struct ploop_delta * delta;
 	sector_t sec;
 	sector_t isector;
@@ -1122,8 +1125,8 @@ ploop_merge_bvec(struct request_queue *q, struct bvec_merge_data *bm_data,
 
 	len >>= 9;
 
-	if ((sec >> plo->cluster_log) != 
-	    ((sec + len - 1) >> plo->cluster_log)) {
+	if ((sec >> cluster_log) !=
+	    ((sec + len - 1) >> cluster_log)) {
 		plo->st.merge_neg_cluster++;
 		return 0;
 	}
