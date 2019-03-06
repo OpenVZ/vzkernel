@@ -77,7 +77,7 @@ raw_refresh(struct ploop_delta * delta)
 	loff_t pos;
 
 	pos = delta->io.ops->i_size_read(&delta->io);
-	if (pos & ((1 << (delta->plo->cluster_log + 9)) - 1)) {
+	if (pos & (cluster_size_in_bytes(delta->plo) - 1)) {
 		printk("raw delta is not aligned (%llu bytes)\n", pos);
 		return -EINVAL;
 	}
