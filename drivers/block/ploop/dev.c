@@ -288,9 +288,7 @@ static void preq_set_sync_bit(struct ploop_request * preq)
 
 static struct rb_root *req_entry_tree(struct ploop_device *plo, unsigned rw)
 {
-	if (rw & REQ_DISCARD)
-		return plo->entry_tree + 2;
-	else if (rw & REQ_WRITE)
+	if (rw & REQ_WRITE)
 		return plo->entry_tree + 1;
 	return plo->entry_tree + 0;
 }
@@ -597,7 +595,7 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 		plo->bio_qlen--;
 	ploop_entry_add(plo, preq);
 
-	if (bio->bi_size && !(preq->state & (1 << PLOOP_REQ_DISCARD)))
+	if (bio->bi_size && !(bio->bi_rw & REQ_DISCARD))
 		insert_entry_tree(plo, preq, drop_list);
 
 	trace_bio_queue(preq);
@@ -5329,7 +5327,7 @@ static struct ploop_device *__ploop_dev_alloc(int index)
 	plo->freeze_timer.function = freeze_timeout;
 	plo->freeze_timer.data = (unsigned long)plo;
 	INIT_LIST_HEAD(&plo->entry_queue);
-	plo->entry_tree[0] = plo->entry_tree[1] = plo->entry_tree[2] = RB_ROOT;
+	plo->entry_tree[0] = plo->entry_tree[1] = RB_ROOT;
 	plo->lockout_tree = RB_ROOT;
 	plo->lockout_pb_tree = RB_ROOT;
 	INIT_LIST_HEAD(&plo->ready_queue);
