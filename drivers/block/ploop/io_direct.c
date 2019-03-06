@@ -398,7 +398,7 @@ try_again:
 
 	if (may_fallocate) {
 		sector_t sec = (sector_t)iblk << preq->plo->cluster_log;
-		sector_t len = 1 << preq->plo->cluster_log;
+		sector_t len = cluster_size_in_sec(preq->plo);
 		struct extent_map * em = extent_lookup_create(io, sec, len);
 
 		if (unlikely(IS_ERR(em))) {
@@ -551,7 +551,7 @@ dio_submit_pad(struct ploop_io *io, struct ploop_request * preq,
 
 	/* sec..end_sec is the range which we are going to write */
 	sec = (sector_t)preq->iblock << preq->plo->cluster_log;
-	end_sec = sec + (1 << preq->plo->cluster_log);
+	end_sec = sec + cluster_size_in_sec(preq->plo);
 
 	/* start..end is data that we have. The rest must be zero padded. */
 	start = sec + (sbl->head->bi_sector & ((1<<preq->plo->cluster_log) - 1));
