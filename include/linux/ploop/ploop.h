@@ -834,6 +834,13 @@ static inline int ploop_map_log(struct ploop_device *plo)
 	return -1;
 }
 
+static inline bool whole_block(struct ploop_device * plo, struct ploop_request *preq)
+{
+	if (preq->req_size != (1<<plo->cluster_log))
+		return 0;
+	return !(preq->req_sector & ((1<<plo->cluster_log) - 1));
+}
+
 struct map_node;
 
 int ploop_fastmap(struct ploop_map * map, cluster_t block, iblock_t *result);
