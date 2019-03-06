@@ -4026,10 +4026,10 @@ static int ploop_start(struct ploop_device * plo, struct block_device *bdev)
 	blk_queue_merge_bvec(q, ploop_merge_bvec);
 	blk_queue_flush(q, REQ_FLUSH);
 
-	if (top_delta->io.ops->queue_settings)
-		top_delta->io.ops->queue_settings(&top_delta->io, q);
+	top_delta->io.ops->queue_settings(&top_delta->io, q);
+	/* REQ_WRITE_SAME is not supported */
+	blk_queue_max_write_same_sectors(q, 0);
 
-	blk_queue_max_discard_sectors(q, INT_MAX);
 	queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, q);
 	queue_flag_clear_unlocked(QUEUE_FLAG_STANDBY, q);
 
