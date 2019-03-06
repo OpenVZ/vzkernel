@@ -554,7 +554,7 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 	iblock_t iblk;
 	int log = preq->plo->cluster_log + 9;
 	loff_t clu_siz = 1 << log;
-	loff_t end_pos = (loff_t)io->alloc_head << (io->plo->cluster_log + 9);
+	loff_t end_pos = (loff_t)io->alloc_head << log;
 
 	if (delta->flags & PLOOP_FMT_RDONLY) {
 		PLOOP_FAIL_REQUEST(preq, -EBADF);
