@@ -211,6 +211,7 @@ TRACE_EVENT(mm_page_alloc,
 		__entry->order		= order;
 		__entry->gfp_flags	= gfp_flags;
 		__entry->migratetype	= migratetype;
+		__entry->time		= time;
 	),
 
 	TP_printk("page=%p pfn=%lu order=%d migratetype=%d gfp_flags=%s lat=%d",
