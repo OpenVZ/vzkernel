@@ -3464,14 +3464,13 @@ void update_maxlat(struct kstat_lat_snap_struct *alloc_lat,
 }
 
 static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
-		struct page *page, u64 time)
+		struct page *page, u64 time, u64 current_clock)
 {
 #ifdef CONFIG_VE
 	unsigned long flags;
-	u64 current_clock, delta;
+	u64 delta;
 	int ind, cpu;
 
-	current_clock = sched_clock();
 	delta = current_clock - time;
 	if (!(gfp_mask & __GFP_WAIT)) {
 		if (in_task())
@@ -3547,7 +3546,7 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 	int migratetype = allocflags_to_migratetype(gfp_mask);
 	unsigned int cpuset_mems_cookie;
 	int alloc_flags = ALLOC_WMARK_LOW|ALLOC_CPUSET|ALLOC_FAIR;
-	u64 start;
+	u64 start, current_clock;
 
 	gfp_mask &= gfp_allowed_mask;
 
@@ -3618,9 +3617,10 @@ retry:
 				preferred_zone, migratetype);
 	}
 
-	__alloc_collect_stats(gfp_mask, order, page, start);
+	current_clock = sched_clock();
+	__alloc_collect_stats(gfp_mask, order, page, start, current_clock);
 	trace_mm_page_alloc(page, order, gfp_mask, migratetype,
-			jiffies_to_usecs(jiffies - start));
+			(current_clock - start));
 
 out:
 	/*
