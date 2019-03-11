@@ -194,7 +194,7 @@ TRACE_EVENT(mm_page_free_batched,
 TRACE_EVENT(mm_page_alloc,
 
 	TP_PROTO(struct page *page, unsigned int order,
-			gfp_t gfp_flags, int migratetype, unsigned int time),
+			gfp_t gfp_flags, int migratetype, u64 time),
 
 	TP_ARGS(page, order, gfp_flags, migratetype, time),
 
@@ -203,7 +203,7 @@ TRACE_EVENT(mm_page_alloc,
 		__field(	unsigned int,	order		)
 		__field(	gfp_t,		gfp_flags	)
 		__field(	int,		migratetype	)
-		__field(	unsigned int,	time		)
+		__field(	u64,		time		)
 	),
 
 	TP_fast_assign(
