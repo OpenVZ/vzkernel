@@ -1407,6 +1407,9 @@ SYSCALL_DEFINE6(mbind, unsigned long, start, unsigned long, len,
 	int err;
 	unsigned short mode_flags;
 
+	if (!ve_is_super(get_exec_env()))
+		return -ENOSYS;
+
 	mode_flags = mode & MPOL_MODE_FLAGS;
 	mode &= ~MPOL_MODE_FLAGS;
 	if (mode >= MPOL_MAX)
@@ -1427,6 +1430,9 @@ SYSCALL_DEFINE3(set_mempolicy, int, mode, unsigned long __user *, nmask,
 	int err;
 	nodemask_t nodes;
 	unsigned short flags;
+
+	if (!ve_is_super(get_exec_env()))
+		return -ENOSYS;
 
 	flags = mode & MPOL_MODE_FLAGS;
 	mode &= ~MPOL_MODE_FLAGS;
@@ -1452,6 +1458,9 @@ SYSCALL_DEFINE4(migrate_pages, pid_t, pid, unsigned long, maxnode,
 	nodemask_t *old;
 	nodemask_t *new;
 	NODEMASK_SCRATCH(scratch);
+
+	if (!ve_is_super(get_exec_env()))
+		return -ENOSYS;
 
 	if (!scratch)
 		return -ENOMEM;
@@ -1543,6 +1552,9 @@ SYSCALL_DEFINE5(get_mempolicy, int __user *, policy,
 	int err;
 	int uninitialized_var(pval);
 	nodemask_t nodes;
+
+	if (!ve_is_super(get_exec_env()))
+		return -ENOSYS;
 
 	if (nmask != NULL && maxnode < MAX_NUMNODES)
 		return -EINVAL;
