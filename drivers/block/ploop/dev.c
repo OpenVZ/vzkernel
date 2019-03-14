@@ -2174,6 +2174,14 @@ void ploop_add_req_to_fsync_queue(struct ploop_request * preq)
 }
 
 static void
+complete_unsupported_discard_req(struct ploop_request * preq)
+{
+	preq->eng_state = PLOOP_E_COMPLETE;
+	preq->error = -EOPNOTSUPP;
+	ploop_complete_io_state(preq);
+}
+
+static void
 ploop_entry_request(struct ploop_request * preq)
 {
 	struct ploop_device * plo       = preq->plo;
@@ -2482,6 +2490,12 @@ delta_io:
 						      &sbl, iblk, cluster_size_in_sec(plo));
 			}
 		} else {
+			if (unlikely(preq->req_rw & REQ_DISCARD)) {
+				/* Skip repeated discard */
+				complete_unsupported_discard_req(preq);
+				return;
+			}
+
 			if (!whole_block(plo, preq) && map_index_fault(preq) == 0) {
 					__TRACE("f %p %u\n", preq, preq->req_cluster);
 					return;
@@ -2617,9 +2631,7 @@ restart:
 
 		if ((preq->req_rw & REQ_DISCARD) &&
 		    !ploop_can_issue_discard(plo, preq)) {
-			preq->eng_state = PLOOP_E_COMPLETE;
-			preq->error = -EOPNOTSUPP;
-			ploop_complete_io_state(preq);
+			complete_unsupported_discard_req(preq);
 #ifdef CONFIG_BEANCOUNTERS
 			if (saved_ub) {
 				saved_ub = set_exec_ub(saved_ub);
