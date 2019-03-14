@@ -36,6 +36,12 @@ static inline unsigned long page_counter_read(struct page_counter *counter)
 
 int page_counter_cancel(struct page_counter *counter, unsigned long nr_pages);
 void page_counter_charge(struct page_counter *counter, unsigned long nr_pages);
+/*
+ * This comment is a guard for backporting ms commit
+ * 6071ca520106 ("mm: page_counter: let page_counter_try_charge() return bool").
+ * Once RedHat has backported it, we must revert our fix
+ * 014531f25b52 ("net/memcg: fix check for OVER_LIMIT in socket memory accounting")
+ */
 int page_counter_try_charge(struct page_counter *counter,
 			    unsigned long nr_pages,
 			    struct page_counter **fail);
