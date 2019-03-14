@@ -105,8 +105,9 @@ static int create_file(const char *name, umode_t mode,
 static ssize_t driver_stats_read(struct file *file, char __user *buf,
 				 size_t count, loff_t *ppos)
 {
+	qib_stats.sps_ints = qib_sps_ints();
 	return simple_read_from_buffer(buf, count, ppos, &qib_stats,
-				       sizeof qib_stats);
+				       sizeof(qib_stats));
 }
 
 /*
@@ -133,7 +134,7 @@ static ssize_t driver_names_read(struct file *file, char __user *buf,
 				 size_t count, loff_t *ppos)
 {
 	return simple_read_from_buffer(buf, count, ppos, qib_statnames,
-		sizeof qib_statnames - 1); /* no null */
+		sizeof(qib_statnames) - 1); /* no null */
 }
 
 static const struct file_operations driver_ops[] = {
@@ -328,26 +329,12 @@ static ssize_t flash_write(struct file *file, const char __user *buf,
 
 	pos = *ppos;
 
-	if (pos != 0) {
-		ret = -EINVAL;
-		goto bail;
-	}
+	if (pos != 0 || count != sizeof(struct qib_flash))
+		return -EINVAL;
 
-	if (count != sizeof(struct qib_flash)) {
-		ret = -EINVAL;
-		goto bail;
-	}
-
-	tmp = kmalloc(count, GFP_KERNEL);
-	if (!tmp) {
-		ret = -ENOMEM;
-		goto bail;
-	}
-
-	if (copy_from_user(tmp, buf, count)) {
-		ret = -EFAULT;
-		goto bail_tmp;
-	}
+	tmp = memdup_user(buf, count);
+	if (IS_ERR(tmp))
+		return PTR_ERR(tmp);
 
 	dd = private2dd(file);
 	if (qib_eeprom_write(dd, pos, tmp, count)) {
@@ -361,8 +348,6 @@ static ssize_t flash_write(struct file *file, const char __user *buf,
 
 bail_tmp:
 	kfree(tmp);
-
-bail:
 	return ret;
 }
 
@@ -379,7 +364,7 @@ static int add_cntr_files(struct super_block *sb, struct qib_devdata *dd)
 	int ret, i;
 
 	/* create the per-unit directory */
-	snprintf(unit, sizeof unit, "%u", dd->unit);
+	snprintf(unit, sizeof(unit), "%u", dd->unit);
 	ret = create_file(unit, S_IFDIR|S_IRUGO|S_IXUGO, sb->s_root, &dir,
 			  &simple_dir_operations, dd);
 	if (ret) {
@@ -455,14 +440,14 @@ static int remove_file(struct dentry *parent, char *name)
 	}
 
 	spin_lock(&tmp->d_lock);
-	if (!(d_unhashed(tmp) && tmp->d_inode)) {
-		dget_dlock(tmp);
+	if (!d_unhashed(tmp) && tmp->d_inode) {
 		__d_drop(tmp);
 		spin_unlock(&tmp->d_lock);
 		simple_unlink(parent->d_inode, tmp);
 	} else {
 		spin_unlock(&tmp->d_lock);
 	}
+	dput(tmp);
 
 	ret = 0;
 bail:
@@ -482,7 +467,7 @@ static int remove_device_files(struct super_block *sb,
 
 	root = dget(sb->s_root);
 	mutex_lock(&root->d_inode->i_mutex);
-	snprintf(unit, sizeof unit, "%u", dd->unit);
+	snprintf(unit, sizeof(unit), "%u", dd->unit);
 	dir = lookup_one_len(unit, root, strlen(unit));
 
 	if (IS_ERR(dir)) {
@@ -491,6 +476,7 @@ static int remove_device_files(struct super_block *sb,
 		goto bail;
 	}
 
+	mutex_lock(&dir->d_inode->i_mutex);
 	remove_file(dir, "counters");
 	remove_file(dir, "counter_names");
 	remove_file(dir, "portcounter_names");
@@ -505,8 +491,10 @@ static int remove_device_files(struct super_block *sb,
 		}
 	}
 	remove_file(dir, "flash");
-	d_delete(dir);
+	mutex_unlock(&dir->d_inode->i_mutex);
 	ret = simple_rmdir(root->d_inode, dir);
+	d_delete(dir);
+	dput(dir);
 
 bail:
 	mutex_unlock(&root->d_inode->i_mutex);
@@ -557,6 +545,7 @@ static struct dentry *qibfs_mount(struct file_system_type *fs_type, int flags,
 			const char *dev_name, void *data)
 {
 	struct dentry *ret;
+
 	ret = mount_single(fs_type, flags, data, qibfs_fill_super);
 	if (!IS_ERR(ret))
 		qib_super = ret->d_sb;

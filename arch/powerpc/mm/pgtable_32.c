@@ -121,7 +121,10 @@ pgtable_t pte_alloc_one(struct mm_struct *mm, unsigned long address)
 	ptepage = alloc_pages(flags, 0);
 	if (!ptepage)
 		return NULL;
-	pgtable_page_ctor(ptepage);
+	if (!pgtable_page_ctor(ptepage)) {
+		__free_page(ptepage);
+		return NULL;
+	}
 	return ptepage;
 }
 
@@ -179,7 +182,7 @@ __ioremap_caller(phys_addr_t addr, unsigned long size, unsigned long flags,
 
 	/* Make sure we have the base flags */
 	if ((flags & _PAGE_PRESENT) == 0)
-		flags |= PAGE_KERNEL;
+		flags |= pgprot_val(PAGE_KERNEL);
 
 	/* Non-cacheable page cannot be coherent */
 	if (flags & _PAGE_NO_CACHE)
@@ -296,6 +299,7 @@ int map_page(unsigned long va, phys_addr_t pa, int flags)
 		set_pte_at(&init_mm, va, pg, pfn_pte(pa >> PAGE_SHIFT,
 						     __pgprot(flags)));
 	}
+	smp_wmb();
 	return err;
 }
 
@@ -313,7 +317,7 @@ void __init __mapin_ram_chunk(unsigned long offset, unsigned long top)
 	p = memstart_addr + s;
 	for (; s < top; s += PAGE_SIZE) {
 		ktext = ((char *) v >= _stext && (char *) v < etext);
-		f = ktext ? PAGE_KERNEL_TEXT : PAGE_KERNEL;
+		f = ktext ? pgprot_val(PAGE_KERNEL_TEXT) : pgprot_val(PAGE_KERNEL);
 		map_page(v, p, f);
 #ifdef CONFIG_PPC_STD_MMU_32
 		if (ktext)
@@ -426,7 +430,7 @@ static int change_page_attr(struct page *page, int numpages, pgprot_t prot)
 }
 
 
-void kernel_map_pages(struct page *page, int numpages, int enable)
+void __kernel_map_pages(struct page *page, int numpages, int enable)
 {
 	if (PageHighMem(page))
 		return;

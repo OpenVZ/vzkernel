@@ -263,6 +263,7 @@ static void bcm_can_tx(struct bcm_op *op)
 
 	can_skb_reserve(skb);
 	can_skb_prv(skb)->ifindex = dev->ifindex;
+	can_skb_prv(skb)->skbcnt = 0;
 
 	memcpy(skb_put(skb, CFSIZ), cf, CFSIZ);
 
@@ -441,7 +442,7 @@ static void bcm_rx_update_and_send(struct bcm_op *op,
 	/* mark as used and throttled by default */
 	lastdata->can_dlc |= (RX_RECV|RX_THR);
 
-	/* throtteling mode inactive ? */
+	/* throttling mode inactive ? */
 	if (!op->kt_ival2.tv64) {
 		/* send RX_CHANGED to the user immediately */
 		bcm_rx_changed(op, lastdata);
@@ -452,7 +453,7 @@ static void bcm_rx_update_and_send(struct bcm_op *op,
 	if (hrtimer_active(&op->thrtimer))
 		return;
 
-	/* first receiption with enabled throttling mode */
+	/* first reception with enabled throttling mode */
 	if (!op->kt_lastmsg.tv64)
 		goto rx_changed_settime;
 
@@ -480,7 +481,7 @@ static void bcm_rx_cmp_to_index(struct bcm_op *op, unsigned int index,
 				const struct can_frame *rxdata)
 {
 	/*
-	 * no one uses the MSBs of can_dlc for comparation,
+	 * no one uses the MSBs of can_dlc for comparison,
 	 * so we use it here to detect the first time of reception
 	 */
 
@@ -510,7 +511,7 @@ static void bcm_rx_cmp_to_index(struct bcm_op *op, unsigned int index,
 }
 
 /*
- * bcm_rx_starttimer - enable timeout monitoring for CAN frame receiption
+ * bcm_rx_starttimer - enable timeout monitoring for CAN frame reception
  */
 static void bcm_rx_starttimer(struct bcm_op *op)
 {
@@ -539,7 +540,7 @@ static void bcm_rx_timeout_tsklet(unsigned long data)
 }
 
 /*
- * bcm_rx_timeout_handler - when the (cyclic) CAN frame receiption timed out
+ * bcm_rx_timeout_handler - when the (cyclic) CAN frame reception timed out
  */
 static enum hrtimer_restart bcm_rx_timeout_handler(struct hrtimer *hrtimer)
 {
@@ -627,7 +628,7 @@ static enum hrtimer_restart bcm_rx_thr_handler(struct hrtimer *hrtimer)
 }
 
 /*
- * bcm_rx_handler - handle a CAN frame receiption
+ * bcm_rx_handler - handle a CAN frame reception
  */
 static void bcm_rx_handler(struct sk_buff *skb, void *data)
 {
@@ -858,8 +859,7 @@ static int bcm_tx_setup(struct bcm_msg_head *msg_head, struct msghdr *msg,
 
 		/* update can_frames content */
 		for (i = 0; i < msg_head->nframes; i++) {
-			err = memcpy_fromiovec((u8 *)&op->frames[i],
-					       msg->msg_iov, CFSIZ);
+			err = memcpy_from_msg((u8 *)&op->frames[i], msg, CFSIZ);
 
 			if (op->frames[i].can_dlc > 8)
 				err = -EINVAL;
@@ -894,8 +894,7 @@ static int bcm_tx_setup(struct bcm_msg_head *msg_head, struct msghdr *msg,
 			op->frames = &op->sframe;
 
 		for (i = 0; i < msg_head->nframes; i++) {
-			err = memcpy_fromiovec((u8 *)&op->frames[i],
-					       msg->msg_iov, CFSIZ);
+			err = memcpy_from_msg((u8 *)&op->frames[i], msg, CFSIZ);
 
 			if (op->frames[i].can_dlc > 8)
 				err = -EINVAL;
@@ -1024,9 +1023,8 @@ static int bcm_rx_setup(struct bcm_msg_head *msg_head, struct msghdr *msg,
 
 		if (msg_head->nframes) {
 			/* update can_frames content */
-			err = memcpy_fromiovec((u8 *)op->frames,
-					       msg->msg_iov,
-					       msg_head->nframes * CFSIZ);
+			err = memcpy_from_msg((u8 *)op->frames, msg,
+					      msg_head->nframes * CFSIZ);
 			if (err < 0)
 				return err;
 
@@ -1072,8 +1070,8 @@ static int bcm_rx_setup(struct bcm_msg_head *msg_head, struct msghdr *msg,
 		}
 
 		if (msg_head->nframes) {
-			err = memcpy_fromiovec((u8 *)op->frames, msg->msg_iov,
-					       msg_head->nframes * CFSIZ);
+			err = memcpy_from_msg((u8 *)op->frames, msg,
+					      msg_head->nframes * CFSIZ);
 			if (err < 0) {
 				if (op->frames != &op->sframe)
 					kfree(op->frames);
@@ -1209,7 +1207,7 @@ static int bcm_tx_send(struct msghdr *msg, int ifindex, struct sock *sk)
 
 	can_skb_reserve(skb);
 
-	err = memcpy_fromiovec(skb_put(skb, CFSIZ), msg->msg_iov, CFSIZ);
+	err = memcpy_from_msg(skb_put(skb, CFSIZ), msg, CFSIZ);
 	if (err < 0) {
 		kfree_skb(skb);
 		return err;
@@ -1222,6 +1220,7 @@ static int bcm_tx_send(struct msghdr *msg, int ifindex, struct sock *sk)
 	}
 
 	can_skb_prv(skb)->ifindex = dev->ifindex;
+	can_skb_prv(skb)->skbcnt = 0;
 	skb->dev = dev;
 	skb->sk  = sk;
 	err = can_send(skb, 1); /* send with loopback */
@@ -1286,7 +1285,7 @@ static int bcm_sendmsg(struct kiocb *iocb, struct socket *sock,
 
 	/* read message head information */
 
-	ret = memcpy_fromiovec((u8 *)&msg_head, msg->msg_iov, MHSIZ);
+	ret = memcpy_from_msg((u8 *)&msg_head, msg, MHSIZ);
 	if (ret < 0)
 		return ret;
 
@@ -1350,9 +1349,9 @@ static int bcm_sendmsg(struct kiocb *iocb, struct socket *sock,
  * notification handler for netdevice status changes
  */
 static int bcm_notifier(struct notifier_block *nb, unsigned long msg,
-			void *data)
+			void *ptr)
 {
-	struct net_device *dev = (struct net_device *)data;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct bcm_sock *bo = container_of(nb, struct bcm_sock, notifier);
 	struct sock *sk = &bo->sk;
 	struct bcm_op *op;
@@ -1419,7 +1418,7 @@ static int bcm_init(struct sock *sk)
 	/* set notifier */
 	bo->notifier.notifier_call = bcm_notifier;
 
-	register_netdevice_notifier(&bo->notifier);
+	register_netdevice_notifier_rh(&bo->notifier);
 
 	return 0;
 }
@@ -1440,7 +1439,7 @@ static int bcm_release(struct socket *sock)
 
 	/* remove bcm_ops, timer, rx_unregister(), etc. */
 
-	unregister_netdevice_notifier(&bo->notifier);
+	unregister_netdevice_notifier_rh(&bo->notifier);
 
 	lock_sock(sk);
 

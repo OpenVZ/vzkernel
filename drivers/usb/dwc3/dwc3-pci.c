@@ -41,6 +41,8 @@
 #include <linux/slab.h>
 #include <linux/pci.h>
 #include <linux/platform_device.h>
+#include <linux/gpio/consumer.h>
+#include <linux/acpi.h>
 
 #include <linux/usb/otg.h>
 #include <linux/usb/nop-usb-xceiv.h>
@@ -48,6 +50,18 @@
 /* FIXME define these in <linux/pci_ids.h> */
 #define PCI_VENDOR_ID_SYNOPSYS		0x16c3
 #define PCI_DEVICE_ID_SYNOPSYS_HAPSUSB3	0xabcd
+#define PCI_DEVICE_ID_INTEL_BYT		0x0f37
+#define PCI_DEVICE_ID_INTEL_MRFLD	0x119e
+#define PCI_DEVICE_ID_INTEL_KBP			0xa2b0
+
+static const struct acpi_gpio_params reset_gpios = { 0, 0, false };
+static const struct acpi_gpio_params cs_gpios = { 1, 0, false };
+
+static const struct acpi_gpio_mapping acpi_dwc3_byt_gpios[] = {
+	{ "reset-gpios", &reset_gpios, 1 },
+	{ "cs-gpios", &cs_gpios, 1 },
+	{ },
+};
 
 struct dwc3_pci {
 	struct device		*dev;
@@ -95,6 +109,30 @@ static int dwc3_pci_register_phys(struct dwc3_pci *glue)
 	ret = platform_device_add(glue->usb3_phy);
 	if (ret)
 		goto err3;
+
+	if (pdev->vendor == PCI_VENDOR_ID_INTEL &&
+	    pdev->device == PCI_DEVICE_ID_INTEL_BYT) {
+		struct gpio_desc *gpio;
+
+		acpi_dev_add_driver_gpios(ACPI_COMPANION(&pdev->dev),
+					  acpi_dwc3_byt_gpios);
+
+		/* These GPIOs will turn on the USB2 PHY */
+		gpio = gpiod_get(&pdev->dev, "cs");
+		if (!IS_ERR(gpio)) {
+			gpiod_direction_output(gpio, 0);
+			gpiod_set_value_cansleep(gpio, 1);
+			gpiod_put(gpio);
+		}
+
+		gpio = gpiod_get(&pdev->dev, "reset");
+		if (!IS_ERR(gpio)) {
+			gpiod_direction_output(gpio, 0);
+			gpiod_set_value_cansleep(gpio, 1);
+			gpiod_put(gpio);
+			usleep_range(10000, 11000);
+		}
+	}
 
 	return 0;
 
@@ -196,6 +234,7 @@ static void dwc3_pci_remove(struct pci_dev *pci)
 {
 	struct dwc3_pci	*glue = pci_get_drvdata(pci);
 
+	acpi_dev_remove_driver_gpios(ACPI_COMPANION(&pci->dev));
 	platform_device_unregister(glue->dwc3);
 	platform_device_unregister(glue->usb2_phy);
 	platform_device_unregister(glue->usb3_phy);
@@ -203,11 +242,14 @@ static void dwc3_pci_remove(struct pci_dev *pci)
 	pci_disable_device(pci);
 }
 
-static DEFINE_PCI_DEVICE_TABLE(dwc3_pci_id_table) = {
+static const struct pci_device_id dwc3_pci_id_table[] = {
 	{
 		PCI_DEVICE(PCI_VENDOR_ID_SYNOPSYS,
 				PCI_DEVICE_ID_SYNOPSYS_HAPSUSB3),
 	},
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_BYT), },
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_MRFLD), },
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_KBP), },
 	{  }	/* Terminating Entry */
 };
 MODULE_DEVICE_TABLE(pci, dwc3_pci_id_table);

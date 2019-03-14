@@ -36,7 +36,7 @@
 #define ETRAX_WD_CNT		((2*ETRAX_WD_HZ)/HZ + 1)
 
 /* Register the continuos readonly timer available in FS and ARTPEC-3.  */
-static cycle_t read_cont_rotime(struct clocksource *cs)
+static u64 read_cont_rotime(struct clocksource *cs)
 {
 	return (u32)REG_RD(timer, regi_timer0, r_time);
 }

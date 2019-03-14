@@ -32,6 +32,11 @@
 static struct kmem_cache *bip_slab;
 static struct workqueue_struct *kintegrityd_wq;
 
+void blk_flush_integrity(void)
+{
+	flush_workqueue(kintegrityd_wq);
+}
+
 /**
  * bio_integrity_alloc - Allocate integrity payload and attach it to bio
  * @bio:	bio to attach integrity metadata to
@@ -51,7 +56,7 @@ struct bio_integrity_payload *bio_integrity_alloc(struct bio *bio,
 	unsigned long idx = BIO_POOL_NONE;
 	unsigned inline_vecs;
 
-	if (!bs) {
+	if (!bs || !bs->bio_integrity_pool) {
 		bip = kmalloc(sizeof(struct bio_integrity_payload) +
 			      sizeof(struct bio_vec) * nr_vecs, gfp_mask);
 		inline_vecs = nr_vecs;
@@ -100,7 +105,7 @@ void bio_integrity_free(struct bio *bio)
 	if (bip->bip_owns_buf)
 		kfree(bip->bip_buf);
 
-	if (bs) {
+	if (bs && bs->bio_integrity_pool) {
 		if (bip->bip_slab != BIO_POOL_NONE)
 			bvec_free(bs->bvec_integrity_pool, bip->bip_vec,
 				  bip->bip_slab);
@@ -113,6 +118,14 @@ void bio_integrity_free(struct bio *bio)
 	bio->bi_integrity = NULL;
 }
 EXPORT_SYMBOL(bio_integrity_free);
+
+static inline unsigned int bip_integrity_vecs(struct bio_integrity_payload *bip)
+{
+	if (bip->bip_slab == BIO_POOL_NONE)
+		return BIP_INLINE_VECS;
+
+	return bvec_nr_vecs(bip->bip_slab);
+}
 
 /**
  * bio_integrity_add_page - Attach integrity metadata
@@ -129,7 +142,7 @@ int bio_integrity_add_page(struct bio *bio, struct page *page,
 	struct bio_integrity_payload *bip = bio->bi_integrity;
 	struct bio_vec *iv;
 
-	if (bip->bip_vcnt >= bvec_nr_vecs(bip->bip_slab)) {
+	if (bip->bip_vcnt >= bip_integrity_vecs(bip)) {
 		printk(KERN_ERR "%s: bip_vec full\n", __func__);
 		return 0;
 	}
@@ -734,7 +747,7 @@ void bioset_integrity_free(struct bio_set *bs)
 		mempool_destroy(bs->bio_integrity_pool);
 
 	if (bs->bvec_integrity_pool)
-		mempool_destroy(bs->bio_integrity_pool);
+		mempool_destroy(bs->bvec_integrity_pool);
 }
 EXPORT_SYMBOL(bioset_integrity_free);
 

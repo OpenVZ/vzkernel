@@ -133,7 +133,8 @@ acpi_ds_get_predicate_value(struct acpi_walk_state *walk_state,
 	 * Result of predicate evaluation must be an Integer
 	 * object. Implicitly convert the argument if necessary.
 	 */
-	status = acpi_ex_convert_to_integer(obj_desc, &local_obj_desc, 16);
+	status = acpi_ex_convert_to_integer(obj_desc, &local_obj_desc,
+					    ACPI_STRTOUL_BASE16);
 	if (ACPI_FAILURE(status)) {
 		goto cleanup;
 	}
@@ -327,6 +328,7 @@ acpi_ds_exec_begin_op(struct acpi_walk_state *walk_state,
 		break;
 
 	default:
+
 		break;
 	}
 
@@ -488,7 +490,6 @@ acpi_status acpi_ds_exec_end_op(struct acpi_walk_state *walk_state)
 			break;
 
 		case AML_TYPE_METHOD_CALL:
-
 			/*
 			 * If the method is referenced from within a package
 			 * declaration, it is not a invocation of the method, just
@@ -582,7 +583,6 @@ acpi_status acpi_ds_exec_end_op(struct acpi_walk_state *walk_state)
 
 			switch (op->common.parent->common.aml_opcode) {
 			case AML_NAME_OP:
-
 				/*
 				 * Put the Node on the object stack (Contains the ACPI Name
 				 * of this object)

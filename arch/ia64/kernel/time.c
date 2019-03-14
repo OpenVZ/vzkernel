@@ -32,7 +32,7 @@
 
 #include "fsyscall_gtod_data.h"
 
-static cycle_t itc_get_cycles(struct clocksource *cs);
+static u64 itc_get_cycles(struct clocksource *cs);
 
 struct fsyscall_gtod_data_t fsyscall_gtod_data;
 
@@ -352,7 +352,7 @@ void ia64_init_itm(void)
 	}
 }
 
-static cycle_t itc_get_cycles(struct clocksource *cs)
+static u64 itc_get_cycles(struct clocksource *cs)
 {
 	unsigned long lcycle, now, ret;
 

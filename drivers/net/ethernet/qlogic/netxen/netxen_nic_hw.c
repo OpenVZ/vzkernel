@@ -14,9 +14,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston,
- * MA  02111-1307, USA.
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  *
  * The full GNU General Public License is included in this distribution
  * in the file called "COPYING".
@@ -536,10 +534,10 @@ static void netxen_p2_nic_set_multi(struct net_device *netdev)
 {
 	struct netxen_adapter *adapter = netdev_priv(netdev);
 	struct netdev_hw_addr *ha;
-	u8 null_addr[6];
+	u8 null_addr[ETH_ALEN];
 	int i;
 
-	memset(null_addr, 0, 6);
+	eth_zero_addr(null_addr);
 
 	if (netdev->flags & IFF_PROMISC) {
 
@@ -648,7 +646,7 @@ nx_p3_sre_macaddr_change(struct netxen_adapter *adapter, u8 *addr, unsigned op)
 
 	mac_req = (nx_mac_req_t *)&req.words[0];
 	mac_req->op = op;
-	memcpy(mac_req->mac_addr, addr, 6);
+	memcpy(mac_req->mac_addr, addr, ETH_ALEN);
 
 	return netxen_send_cmd_descs(adapter, (struct cmd_desc_type0 *)&req, 1);
 }
@@ -663,7 +661,7 @@ static int nx_p3_nic_add_mac(struct netxen_adapter *adapter,
 	list_for_each(head, del_list) {
 		cur = list_entry(head, nx_mac_list_t, list);
 
-		if (memcmp(addr, cur->mac_addr, ETH_ALEN) == 0) {
+		if (ether_addr_equal(addr, cur->mac_addr)) {
 			list_move_tail(head, &adapter->mac_list);
 			return 0;
 		}
@@ -924,7 +922,7 @@ int netxen_config_ipaddr(struct netxen_adapter *adapter, __be32 ip, int cmd)
 
 	rv = netxen_send_cmd_descs(adapter, (struct cmd_desc_type0 *)&req, 1);
 	if (rv != 0) {
-		printk(KERN_ERR "%s: could not notify %s IP 0x%x reuqest\n",
+		printk(KERN_ERR "%s: could not notify %s IP 0x%x request\n",
 				adapter->netdev->name,
 				(cmd == NX_IP_UP) ? "Add" : "Remove", ip);
 	}
@@ -989,19 +987,7 @@ int netxen_send_lro_cleanup(struct netxen_adapter *adapter)
 int netxen_nic_change_mtu(struct net_device *netdev, int mtu)
 {
 	struct netxen_adapter *adapter = netdev_priv(netdev);
-	int max_mtu;
 	int rc = 0;
-
-	if (NX_IS_REVISION_P3(adapter->ahw.revision_id))
-		max_mtu = P3_MAX_MTU;
-	else
-		max_mtu = P2_MAX_MTU;
-
-	if (mtu > max_mtu) {
-		printk(KERN_ERR "%s: mtu > %d bytes unsupported\n",
-				netdev->name, max_mtu);
-		return -EINVAL;
-	}
 
 	if (adapter->set_mtu)
 		rc = adapter->set_mtu(adapter, mtu);
@@ -1017,20 +1003,24 @@ static int netxen_get_flash_block(struct netxen_adapter *adapter, int base,
 {
 	int i, v, addr;
 	__le32 *ptr32;
+	int ret;
 
 	addr = base;
 	ptr32 = buf;
 	for (i = 0; i < size / sizeof(u32); i++) {
-		if (netxen_rom_fast_read(adapter, addr, &v) == -1)
-			return -1;
+		ret = netxen_rom_fast_read(adapter, addr, &v);
+		if (ret)
+			return ret;
+
 		*ptr32 = cpu_to_le32(v);
 		ptr32++;
 		addr += sizeof(u32);
 	}
 	if ((char *)buf + size > (char *)ptr32) {
 		__le32 local;
-		if (netxen_rom_fast_read(adapter, addr, &v) == -1)
-			return -1;
+		ret = netxen_rom_fast_read(adapter, addr, &v);
+		if (ret)
+			return ret;
 		local = cpu_to_le32(v);
 		memcpy(ptr32, &local, (char *)buf + size - (char *)ptr32);
 	}
@@ -1942,7 +1932,7 @@ void netxen_nic_set_link_parameters(struct netxen_adapter *adapter)
 				if (adapter->phy_read &&
 				    adapter->phy_read(adapter,
 						      NETXEN_NIU_GB_MII_MGMT_ADDR_AUTONEG,
-						      &autoneg) != 0)
+						      &autoneg) == 0)
 					adapter->link_autoneg = autoneg;
 			} else
 				goto link_down;
@@ -2334,7 +2324,7 @@ netxen_md_rdqueue(struct netxen_adapter *adapter,
 				 loop_cnt++) {
 		NX_WR_DUMP_REG(select_addr, adapter->ahw.pci_base0, queue_id);
 		read_addr = queueEntry->read_addr;
-		for (k = 0; k < read_cnt; k--) {
+		for (k = 0; k < read_cnt; k++) {
 			NX_RD_DUMP_REG(read_addr, adapter->ahw.pci_base0,
 							&read_value);
 			*data_buff++ = read_value;

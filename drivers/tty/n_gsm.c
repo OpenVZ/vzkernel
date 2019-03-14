@@ -2663,7 +2663,7 @@ static int gsm_mux_net_start_xmit(struct sk_buff *skb,
 	STATS(net).tx_bytes += skb->len;
 	gsm_dlci_data_kick(dlci);
 	/* And tell the kernel when the last transmit started. */
-	net->trans_start = jiffies;
+	netif_trans_update(net);
 	muxnet_put(mux_net);
 	return NETDEV_TX_OK;
 }
@@ -2727,7 +2727,7 @@ static void gsm_mux_net_init(struct net_device *net)
 		.ndo_start_xmit		= gsm_mux_net_start_xmit,
 		.ndo_tx_timeout		= gsm_mux_net_tx_timeout,
 		.ndo_get_stats		= gsm_mux_net_get_stats,
-		.ndo_change_mtu		= gsm_change_mtu,
+		.ndo_change_mtu_rh74	= gsm_change_mtu,
 	};
 
 	net->netdev_ops = &gsm_netdev_ops;

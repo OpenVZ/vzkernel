@@ -17,6 +17,7 @@
 #include <linux/types.h>
 #include <linux/list.h>
 #include <linux/errno.h>
+#include <linux/capability.h>
 #include <net/netlink.h>
 #include <net/sock.h>
 
@@ -48,7 +49,7 @@ nfnl_userspace_cthelper(struct sk_buff *skb, unsigned int protoff,
 	if (helper == NULL)
 		return NF_DROP;
 
-	/* This is an user-space helper not yet configured, skip. */
+	/* This is a user-space helper not yet configured, skip. */
 	if ((helper->flags &
 	    (NF_CT_HELPER_F_USERSPACE | NF_CT_HELPER_F_CONFIGURED)) ==
 	     NF_CT_HELPER_F_USERSPACE)
@@ -67,9 +68,12 @@ static int
 nfnl_cthelper_parse_tuple(struct nf_conntrack_tuple *tuple,
 			  const struct nlattr *attr)
 {
+	int err;
 	struct nlattr *tb[NFCTH_TUPLE_MAX+1];
 
-	nla_parse_nested(tb, NFCTH_TUPLE_MAX, attr, nfnl_cthelper_tuple_pol);
+	err = nla_parse_nested(tb, NFCTH_TUPLE_MAX, attr, nfnl_cthelper_tuple_pol);
+	if (err < 0)
+		return err;
 
 	if (!tb[NFCTH_TUPLE_L3PROTONUM] || !tb[NFCTH_TUPLE_L4PROTONUM])
 		return -EINVAL;
@@ -83,7 +87,7 @@ nfnl_cthelper_parse_tuple(struct nf_conntrack_tuple *tuple,
 static int
 nfnl_cthelper_from_nlattr(struct nlattr *attr, struct nf_conn *ct)
 {
-	const struct nf_conn_help *help = nfct_help(ct);
+	struct nf_conn_help *help = nfct_help(ct);
 
 	if (attr == NULL)
 		return -EINVAL;
@@ -91,7 +95,7 @@ nfnl_cthelper_from_nlattr(struct nlattr *attr, struct nf_conn *ct)
 	if (help->helper->data_len == 0)
 		return -EINVAL;
 
-	memcpy(&help->data, nla_data(attr), help->helper->data_len);
+	memcpy(help->data, nla_data(attr), help->helper->data_len);
 	return 0;
 }
 
@@ -121,9 +125,12 @@ static int
 nfnl_cthelper_expect_policy(struct nf_conntrack_expect_policy *expect_policy,
 			    const struct nlattr *attr)
 {
+	int err;
 	struct nlattr *tb[NFCTH_POLICY_MAX+1];
 
-	nla_parse_nested(tb, NFCTH_POLICY_MAX, attr, nfnl_cthelper_expect_pol);
+	err = nla_parse_nested(tb, NFCTH_POLICY_MAX, attr, nfnl_cthelper_expect_pol);
+	if (err < 0)
+		return err;
 
 	if (!tb[NFCTH_POLICY_NAME] ||
 	    !tb[NFCTH_POLICY_EXPECT_MAX] ||
@@ -153,8 +160,10 @@ nfnl_cthelper_parse_expect_policy(struct nf_conntrack_helper *helper,
 	struct nf_conntrack_expect_policy *expect_policy;
 	struct nlattr *tb[NFCTH_POLICY_SET_MAX+1];
 
-	nla_parse_nested(tb, NFCTH_POLICY_SET_MAX, attr,
-					nfnl_cthelper_expect_policy_set);
+	ret = nla_parse_nested(tb, NFCTH_POLICY_SET_MAX, attr,
+			       nfnl_cthelper_expect_policy_set);
+	if (ret < 0)
+		return ret;
 
 	if (!tb[NFCTH_POLICY_SET_NUM])
 		return -EINVAL;
@@ -283,6 +292,9 @@ nfnl_cthelper_new(struct sock *nfnl, struct sk_buff *skb,
 	struct nf_conntrack_helper *cur, *helper = NULL;
 	struct nf_conntrack_tuple tuple;
 	int ret = 0, i;
+
+	if (!capable(CAP_NET_ADMIN))
+		return -EPERM;
 
 	if (!tb[NFCTH_NAME] || !tb[NFCTH_TUPLE])
 		return -EINVAL;
@@ -498,6 +510,9 @@ nfnl_cthelper_get(struct sock *nfnl, struct sk_buff *skb,
 	struct nf_conntrack_tuple tuple;
 	bool tuple_set = false;
 
+	if (!capable(CAP_NET_ADMIN))
+		return -EPERM;
+
 	if (nlh->nlmsg_flags & NLM_F_DUMP) {
 		struct netlink_dump_control c = {
 			.dump = nfnl_cthelper_dump_table,
@@ -569,6 +584,9 @@ nfnl_cthelper_del(struct sock *nfnl, struct sk_buff *skb,
 	struct nf_conntrack_tuple tuple;
 	bool tuple_set = false, found = false;
 	int i, j = 0, ret;
+
+	if (!capable(CAP_NET_ADMIN))
+		return -EPERM;
 
 	if (tb[NFCTH_NAME])
 		helper_name = nla_data(tb[NFCTH_NAME]);

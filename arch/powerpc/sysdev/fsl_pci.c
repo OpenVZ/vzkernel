@@ -41,7 +41,7 @@ static void quirk_fsl_pcie_header(struct pci_dev *dev)
 	u8 hdr_type;
 
 	/* if we aren't a PCIe don't bother */
-	if (!pci_find_capability(dev, PCI_CAP_ID_EXP))
+	if (!pci_is_pcie(dev))
 		return;
 
 	/* if we aren't in host mode don't bother */
@@ -64,7 +64,7 @@ static int fsl_pcie_check_link(struct pci_controller *hose)
 	if (hose->indirect_type & PPC_INDIRECT_TYPE_FSL_CFG_REG_LINK) {
 		if (hose->ops->read == fsl_indirect_read_config) {
 			struct pci_bus bus;
-			bus.number = 0;
+			bus.number = hose->first_busno;
 			bus.sysdata = hose;
 			bus.ops = hose->ops;
 			indirect_read_config(&bus, 0, PCIE_LTSSM, 4, &val);
@@ -107,6 +107,18 @@ static struct pci_ops fsl_indirect_pcie_ops =
 
 #define MAX_PHYS_ADDR_BITS	40
 static u64 pci64_dma_offset = 1ull << MAX_PHYS_ADDR_BITS;
+
+#ifdef CONFIG_SWIOTLB
+static void setup_swiotlb_ops(struct pci_controller *hose)
+{
+	if (ppc_swiotlb_enable) {
+		hose->controller_ops.dma_dev_setup = pci_dma_dev_setup_swiotlb;
+		set_pci_dma_ops(&swiotlb_dma_ops);
+	}
+}
+#else
+static inline void setup_swiotlb_ops(struct pci_controller *hose) {}
+#endif
 
 static int fsl_pci_dma_set_mask(struct device *dev, u64 dma_mask)
 {
@@ -541,6 +553,9 @@ int __init fsl_add_bridge(struct platform_device *pdev, int is_primary)
 
 	/* Setup PEX window registers */
 	setup_pci_atmu(hose);
+
+	/* Set up controller operations */
+	setup_swiotlb_ops(hose);
 
 	return 0;
 

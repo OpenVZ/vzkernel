@@ -69,8 +69,8 @@ static bool buffer_is_rgrp(const struct gfs2_bufdata *bd)
 static void maybe_release_space(struct gfs2_bufdata *bd)
 {
 	struct gfs2_glock *gl = bd->bd_gl;
-	struct gfs2_sbd *sdp = gl->gl_sbd;
-	struct gfs2_rgrpd *rgd = gl->gl_object;
+	struct gfs2_sbd *sdp = gl->gl_name.ln_sbd;
+	struct gfs2_rgrpd *rgd = gfs2_glock2rgrp(gl);
 	unsigned int index = bd->bd_bh->b_blocknr - gl->gl_name.ln_number;
 	struct gfs2_bitmap *bi = rgd->rd_bits + index;
 
@@ -82,6 +82,7 @@ static void maybe_release_space(struct gfs2_bufdata *bd)
 	       bd->bd_bh->b_data + bi->bi_offset, bi->bi_len);
 	clear_bit(GBF_FULL, &bi->bi_flags);
 	rgd->rd_free_clone = rgd->rd_free;
+	rgd->rd_extfail_pt = rgd->rd_free;
 }
 
 /**
@@ -209,7 +210,9 @@ static void gfs2_end_log_write(struct bio *bio, int error)
 
 	if (error) {
 		sdp->sd_log_error = error;
-		fs_err(sdp, "Error %d writing to log\n", error);
+		fs_err(sdp, "Error %d writing to journal, jid=%u\n", error,
+		       sdp->sd_jdesc->jd_jid);
+		wake_up(&sdp->sd_logd_waitq);
 	}
 
 	bio_for_each_segment_all(bvec, bio, i) {
@@ -474,44 +477,40 @@ static void gfs2_before_commit(struct gfs2_sbd *sdp, unsigned int limit,
 	gfs2_log_unlock(sdp);
 }
 
-static void buf_lo_before_commit(struct gfs2_sbd *sdp)
+static void buf_lo_before_commit(struct gfs2_sbd *sdp, struct gfs2_trans *tr)
 {
 	unsigned int limit = buf_limit(sdp); /* 503 for 4k blocks */
-
-	gfs2_before_commit(sdp, limit, sdp->sd_log_num_buf,
-			   &sdp->sd_log_le_buf, 0);
+	unsigned int nbuf;
+	if (tr == NULL)
+		return;
+	nbuf = tr->tr_num_buf_new - tr->tr_num_buf_rm;
+	gfs2_before_commit(sdp, limit, nbuf, &tr->tr_buf, 0);
 }
 
 static void buf_lo_after_commit(struct gfs2_sbd *sdp, struct gfs2_trans *tr)
 {
-	struct list_head *head = &sdp->sd_log_le_buf;
+	struct list_head *head;
 	struct gfs2_bufdata *bd;
 
-	if (tr == NULL) {
-		gfs2_assert(sdp, list_empty(head));
+	if (tr == NULL)
 		return;
-	}
 
+	head = &tr->tr_buf;
 	while (!list_empty(head)) {
 		bd = list_entry(head->next, struct gfs2_bufdata, bd_list);
 		list_del_init(&bd->bd_list);
-		sdp->sd_log_num_buf--;
-
 		gfs2_unpin(sdp, bd->bd_bh, tr);
 	}
-	gfs2_assert_warn(sdp, !sdp->sd_log_num_buf);
 }
 
 static void buf_lo_before_scan(struct gfs2_jdesc *jd,
 			       struct gfs2_log_header_host *head, int pass)
 {
-	struct gfs2_sbd *sdp = GFS2_SB(jd->jd_inode);
-
 	if (pass != 0)
 		return;
 
-	sdp->sd_found_blocks = 0;
-	sdp->sd_replayed_blocks = 0;
+	jd->jd_found_blocks = 0;
+	jd->jd_replayed_blocks = 0;
 }
 
 static int buf_lo_scan_elements(struct gfs2_jdesc *jd, unsigned int start,
@@ -529,14 +528,14 @@ static int buf_lo_scan_elements(struct gfs2_jdesc *jd, unsigned int start,
 	if (pass != 1 || be32_to_cpu(ld->ld_type) != GFS2_LOG_DESC_METADATA)
 		return 0;
 
-	gfs2_replay_incr_blk(sdp, &start);
+	gfs2_replay_incr_blk(jd, &start);
 
-	for (; blks; gfs2_replay_incr_blk(sdp, &start), blks--) {
+	for (; blks; gfs2_replay_incr_blk(jd, &start), blks--) {
 		blkno = be64_to_cpu(*ptr++);
 
-		sdp->sd_found_blocks++;
+		jd->jd_found_blocks++;
 
-		if (gfs2_revoke_check(sdp, blkno, start))
+		if (gfs2_revoke_check(jd, blkno, start))
 			continue;
 
 		error = gfs2_replay_read_block(jd, start, &bh_log);
@@ -557,7 +556,7 @@ static int buf_lo_scan_elements(struct gfs2_jdesc *jd, unsigned int start,
 		if (error)
 			break;
 
-		sdp->sd_replayed_blocks++;
+		jd->jd_replayed_blocks++;
 	}
 
 	return error;
@@ -578,10 +577,10 @@ static void buf_lo_after_scan(struct gfs2_jdesc *jd, int error, int pass)
 	gfs2_meta_sync(ip->i_gl);
 
 	fs_info(sdp, "jid=%u: Replayed %u of %u blocks\n",
-	        jd->jd_jid, sdp->sd_replayed_blocks, sdp->sd_found_blocks);
+	        jd->jd_jid, jd->jd_replayed_blocks, jd->jd_found_blocks);
 }
 
-static void revoke_lo_before_commit(struct gfs2_sbd *sdp)
+static void revoke_lo_before_commit(struct gfs2_sbd *sdp, struct gfs2_trans *tr)
 {
 	struct gfs2_meta_header *mh;
 	unsigned int offset;
@@ -590,6 +589,7 @@ static void revoke_lo_before_commit(struct gfs2_sbd *sdp)
 	struct page *page;
 	unsigned int length;
 
+	gfs2_write_revokes(sdp);
 	if (!sdp->sd_log_num_revoke)
 		return;
 
@@ -639,13 +639,11 @@ static void revoke_lo_after_commit(struct gfs2_sbd *sdp, struct gfs2_trans *tr)
 static void revoke_lo_before_scan(struct gfs2_jdesc *jd,
 				  struct gfs2_log_header_host *head, int pass)
 {
-	struct gfs2_sbd *sdp = GFS2_SB(jd->jd_inode);
-
 	if (pass != 0)
 		return;
 
-	sdp->sd_found_revokes = 0;
-	sdp->sd_replay_tail = head->lh_tail;
+	jd->jd_found_revokes = 0;
+	jd->jd_replay_tail = head->lh_tail;
 }
 
 static int revoke_lo_scan_elements(struct gfs2_jdesc *jd, unsigned int start,
@@ -666,7 +664,7 @@ static int revoke_lo_scan_elements(struct gfs2_jdesc *jd, unsigned int start,
 
 	offset = sizeof(struct gfs2_log_descriptor);
 
-	for (; blks; gfs2_replay_incr_blk(sdp, &start), blks--) {
+	for (; blks; gfs2_replay_incr_blk(jd, &start), blks--) {
 		error = gfs2_replay_read_block(jd, start, &bh);
 		if (error)
 			return error;
@@ -677,13 +675,13 @@ static int revoke_lo_scan_elements(struct gfs2_jdesc *jd, unsigned int start,
 		while (offset + sizeof(u64) <= sdp->sd_sb.sb_bsize) {
 			blkno = be64_to_cpu(*(__be64 *)(bh->b_data + offset));
 
-			error = gfs2_revoke_add(sdp, blkno, start);
+			error = gfs2_revoke_add(jd, blkno, start);
 			if (error < 0) {
 				brelse(bh);
 				return error;
 			}
 			else if (error)
-				sdp->sd_found_revokes++;
+				jd->jd_found_revokes++;
 
 			if (!--revokes)
 				break;
@@ -703,16 +701,16 @@ static void revoke_lo_after_scan(struct gfs2_jdesc *jd, int error, int pass)
 	struct gfs2_sbd *sdp = GFS2_SB(jd->jd_inode);
 
 	if (error) {
-		gfs2_revoke_clean(sdp);
+		gfs2_revoke_clean(jd);
 		return;
 	}
 	if (pass != 1)
 		return;
 
 	fs_info(sdp, "jid=%u: Found %u revoke tags\n",
-	        jd->jd_jid, sdp->sd_found_revokes);
+	        jd->jd_jid, jd->jd_found_revokes);
 
-	gfs2_revoke_clean(sdp);
+	gfs2_revoke_clean(jd);
 }
 
 /**
@@ -720,12 +718,14 @@ static void revoke_lo_after_scan(struct gfs2_jdesc *jd, int error, int pass)
  *
  */
 
-static void databuf_lo_before_commit(struct gfs2_sbd *sdp)
+static void databuf_lo_before_commit(struct gfs2_sbd *sdp, struct gfs2_trans *tr)
 {
-	unsigned int limit = buf_limit(sdp) / 2;
-
-	gfs2_before_commit(sdp, limit, sdp->sd_log_num_databuf,
-			   &sdp->sd_log_le_databuf, 1);
+	unsigned int limit = databuf_limit(sdp);
+	unsigned int nbuf;
+	if (tr == NULL)
+		return;
+	nbuf = tr->tr_num_databuf_new - tr->tr_num_databuf_rm;
+	gfs2_before_commit(sdp, limit, nbuf, &tr->tr_databuf, 1);
 }
 
 static int databuf_lo_scan_elements(struct gfs2_jdesc *jd, unsigned int start,
@@ -733,7 +733,6 @@ static int databuf_lo_scan_elements(struct gfs2_jdesc *jd, unsigned int start,
 				    __be64 *ptr, int pass)
 {
 	struct gfs2_inode *ip = GFS2_I(jd->jd_inode);
-	struct gfs2_sbd *sdp = GFS2_SB(jd->jd_inode);
 	struct gfs2_glock *gl = ip->i_gl;
 	unsigned int blks = be32_to_cpu(ld->ld_data1);
 	struct buffer_head *bh_log, *bh_ip;
@@ -744,14 +743,14 @@ static int databuf_lo_scan_elements(struct gfs2_jdesc *jd, unsigned int start,
 	if (pass != 1 || be32_to_cpu(ld->ld_type) != GFS2_LOG_DESC_JDATA)
 		return 0;
 
-	gfs2_replay_incr_blk(sdp, &start);
-	for (; blks; gfs2_replay_incr_blk(sdp, &start), blks--) {
+	gfs2_replay_incr_blk(jd, &start);
+	for (; blks; gfs2_replay_incr_blk(jd, &start), blks--) {
 		blkno = be64_to_cpu(*ptr++);
 		esc = be64_to_cpu(*ptr++);
 
-		sdp->sd_found_blocks++;
+		jd->jd_found_blocks++;
 
-		if (gfs2_revoke_check(sdp, blkno, start))
+		if (gfs2_revoke_check(jd, blkno, start))
 			continue;
 
 		error = gfs2_replay_read_block(jd, start, &bh_log);
@@ -771,7 +770,7 @@ static int databuf_lo_scan_elements(struct gfs2_jdesc *jd, unsigned int start,
 		brelse(bh_log);
 		brelse(bh_ip);
 
-		sdp->sd_replayed_blocks++;
+		jd->jd_replayed_blocks++;
 	}
 
 	return error;
@@ -795,26 +794,23 @@ static void databuf_lo_after_scan(struct gfs2_jdesc *jd, int error, int pass)
 	gfs2_meta_sync(ip->i_gl);
 
 	fs_info(sdp, "jid=%u: Replayed %u of %u data blocks\n",
-		jd->jd_jid, sdp->sd_replayed_blocks, sdp->sd_found_blocks);
+		jd->jd_jid, jd->jd_replayed_blocks, jd->jd_found_blocks);
 }
 
 static void databuf_lo_after_commit(struct gfs2_sbd *sdp, struct gfs2_trans *tr)
 {
-	struct list_head *head = &sdp->sd_log_le_databuf;
+	struct list_head *head;
 	struct gfs2_bufdata *bd;
 
-	if (tr == NULL) {
-		gfs2_assert(sdp, list_empty(head));
+	if (tr == NULL)
 		return;
-	}
 
+	head = &tr->tr_databuf;
 	while (!list_empty(head)) {
 		bd = list_entry(head->next, struct gfs2_bufdata, bd_list);
 		list_del_init(&bd->bd_list);
-		sdp->sd_log_num_databuf--;
 		gfs2_unpin(sdp, bd->bd_bh, tr);
 	}
-	gfs2_assert_warn(sdp, !sdp->sd_log_num_databuf);
 }
 
 

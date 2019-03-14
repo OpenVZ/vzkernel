@@ -66,9 +66,7 @@ void sas_unregister_ports(struct sas_ha_struct *sas_ha);
 
 enum blk_eh_timer_return sas_scsi_timed_out(struct scsi_cmnd *);
 
-int  sas_init_queue(struct sas_ha_struct *sas_ha);
 int  sas_init_events(struct sas_ha_struct *sas_ha);
-void sas_shutdown_queue(struct sas_ha_struct *sas_ha);
 void sas_disable_revalidation(struct sas_ha_struct *ha);
 void sas_enable_revalidation(struct sas_ha_struct *ha);
 void __sas_drain_work(struct sas_ha_struct *ha);
@@ -100,6 +98,7 @@ int sas_try_ata_reset(struct asd_sas_phy *phy);
 void sas_hae_reset(struct work_struct *work);
 
 void sas_free_device(struct kref *kref);
+void sas_destruct_devices(struct asd_sas_port *port);
 
 #ifdef CONFIG_SCSI_SAS_HOST_SMP
 extern int sas_smp_host_handler(struct Scsi_Host *shost, struct request *req,

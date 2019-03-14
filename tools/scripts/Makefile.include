@@ -32,13 +32,27 @@ EXTRA_WARNINGS += -Wold-style-definition
 EXTRA_WARNINGS += -Wpacked
 EXTRA_WARNINGS += -Wredundant-decls
 EXTRA_WARNINGS += -Wshadow
-EXTRA_WARNINGS += -Wstrict-aliasing=3
 EXTRA_WARNINGS += -Wstrict-prototypes
 EXTRA_WARNINGS += -Wswitch-default
 EXTRA_WARNINGS += -Wswitch-enum
 EXTRA_WARNINGS += -Wundef
 EXTRA_WARNINGS += -Wwrite-strings
 EXTRA_WARNINGS += -Wformat
+
+CC_NO_CLANG := $(shell $(CC) -dM -E -x c /dev/null | grep -Fq "__clang__"; echo $$?)
+
+ifeq ($(CC_NO_CLANG), 1)
+EXTRA_WARNINGS += -Wstrict-aliasing=3
+endif
+
+# Hack to avoid type-punned warnings on old systems such as RHEL5:
+# We should be changing CFLAGS and checking gcc version, but this
+# will do for now and keep the above -Wstrict-aliasing=3 in place
+# in newer systems.
+# Needed for the __raw_cmpxchg in tools/arch/x86/include/asm/cmpxchg.h
+ifneq ($(filter 3.%,$(MAKE_VERSION)),)  # make-3
+EXTRA_WARNINGS += -fno-strict-aliasing
+endif
 
 ifneq ($(findstring $(MAKEFLAGS), w),w)
 PRINT_DIR = --no-print-directory
@@ -59,21 +73,26 @@ QUIET_SUBDIR0  = +$(MAKE) $(COMMAND_O) -C # space to separate -C and subdir
 QUIET_SUBDIR1  =
 
 ifneq ($(findstring $(MAKEFLAGS),s),s)
-ifndef V
-	QUIET_CC       = @echo '   ' CC $@;
-	QUIET_AR       = @echo '   ' AR $@;
-	QUIET_LINK     = @echo '   ' LINK $@;
-	QUIET_MKDIR    = @echo '   ' MKDIR $@;
-	QUIET_GEN      = @echo '   ' GEN $@;
+  ifneq ($(V),1)
+	QUIET_CC       = @echo '  CC       '$@;
+	QUIET_CC_FPIC  = @echo '  CC FPIC  '$@;
+	QUIET_AR       = @echo '  AR       '$@;
+	QUIET_LINK     = @echo '  LINK     '$@;
+	QUIET_MKDIR    = @echo '  MKDIR    '$@;
+	QUIET_GEN      = @echo '  GEN      '$@;
 	QUIET_SUBDIR0  = +@subdir=
-	QUIET_SUBDIR1  = ;$(NO_SUBDIR) echo '   ' SUBDIR $$subdir; \
+	QUIET_SUBDIR1  = ;$(NO_SUBDIR) \
+			  echo '  SUBDIR   '$$subdir; \
 			 $(MAKE) $(PRINT_DIR) -C $$subdir
-	QUIET_FLEX     = @echo '   ' FLEX $@;
-	QUIET_BISON    = @echo '   ' BISON $@;
+	QUIET_FLEX     = @echo '  FLEX     '$@;
+	QUIET_BISON    = @echo '  BISON    '$@;
 
 	descend = \
-		+@echo '   ' DESCEND $(1); \
+		+@echo	       '  DESCEND  '$(1); \
 		mkdir -p $(OUTPUT)$(1) && \
 		$(MAKE) $(COMMAND_O) subdir=$(if $(subdir),$(subdir)/$(1),$(1)) $(PRINT_DIR) -C $(1) $(2)
-endif
+
+	QUIET_CLEAN    = @printf '  CLEAN    %s\n' $1;
+	QUIET_INSTALL  = @printf '  INSTALL  %s\n' $1;
+  endif
 endif

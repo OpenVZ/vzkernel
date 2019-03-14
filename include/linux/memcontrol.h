@@ -124,6 +124,25 @@ extern void mem_cgroup_print_oom_info(struct mem_cgroup *memcg,
 extern void mem_cgroup_replace_page_cache(struct page *oldpage,
 					struct page *newpage);
 
+static inline void mem_cgroup_oom_enable(void)
+{
+	WARN_ON(current->memcg_oom.may_oom);
+	current->memcg_oom.may_oom = 1;
+}
+
+static inline void mem_cgroup_oom_disable(void)
+{
+	WARN_ON(!current->memcg_oom.may_oom);
+	current->memcg_oom.may_oom = 0;
+}
+
+static inline bool task_in_memcg_oom(struct task_struct *p)
+{
+	return p->memcg_oom.memcg;
+}
+
+bool mem_cgroup_oom_synchronize(bool wait);
+
 #ifdef CONFIG_MEMCG_SWAP
 extern int do_swap_account;
 #endif
@@ -347,6 +366,24 @@ static inline void mem_cgroup_end_update_page_stat(struct page *page,
 {
 }
 
+static inline void mem_cgroup_oom_enable(void)
+{
+}
+
+static inline void mem_cgroup_oom_disable(void)
+{
+}
+
+static inline bool task_in_memcg_oom(struct task_struct *p)
+{
+	return false;
+}
+
+static inline bool mem_cgroup_oom_synchronize(bool wait)
+{
+	return false;
+}
+
 static inline void mem_cgroup_inc_page_stat(struct page *page,
 					    enum mem_cgroup_page_stat_item idx)
 {
@@ -447,10 +484,11 @@ void __memcg_kmem_commit_charge(struct page *page,
 void __memcg_kmem_uncharge_pages(struct page *page, int order);
 
 int memcg_cache_id(struct mem_cgroup *memcg);
-int memcg_register_cache(struct mem_cgroup *memcg, struct kmem_cache *s,
-			 struct kmem_cache *root_cache);
-void memcg_release_cache(struct kmem_cache *cachep);
-void memcg_cache_list_add(struct mem_cgroup *memcg, struct kmem_cache *cachep);
+int memcg_alloc_cache_params(struct mem_cgroup *memcg, struct kmem_cache *s,
+			     struct kmem_cache *root_cache);
+void memcg_free_cache_params(struct kmem_cache *s);
+void memcg_register_cache(struct kmem_cache *s);
+void memcg_unregister_cache(struct kmem_cache *s);
 
 int memcg_update_cache_size(struct kmem_cache *s, int num_groups);
 void memcg_update_array_size(int num_groups);
@@ -459,7 +497,7 @@ struct kmem_cache *
 __memcg_kmem_get_cache(struct kmem_cache *cachep, gfp_t gfp);
 
 void mem_cgroup_destroy_cache(struct kmem_cache *cachep);
-void kmem_cache_destroy_memcg_children(struct kmem_cache *s);
+int __kmem_cache_destroy_memcg_children(struct kmem_cache *s);
 
 /**
  * memcg_kmem_newpage_charge: verify if a new kmem allocation is allowed.
@@ -482,9 +520,8 @@ memcg_kmem_newpage_charge(gfp_t gfp, struct mem_cgroup **memcg, int order)
 	/*
 	 * __GFP_NOFAIL allocations will move on even if charging is not
 	 * possible. Therefore we don't even try, and have this allocation
-	 * unaccounted. We could in theory charge it with
-	 * res_counter_charge_nofail, but we hope those allocations are rare,
-	 * and won't be worth the trouble.
+	 * unaccounted. We could in theory charge it forcibly, but we hope
+	 * those allocations are rare, and won't be worth the trouble.
 	 */
 	if (!(gfp & __GFP_KMEMCG) || (gfp & __GFP_NOFAIL))
 		return true;
@@ -590,19 +627,21 @@ static inline int memcg_cache_id(struct mem_cgroup *memcg)
 	return -1;
 }
 
-static inline int
-memcg_register_cache(struct mem_cgroup *memcg, struct kmem_cache *s,
-		     struct kmem_cache *root_cache)
+static inline int memcg_alloc_cache_params(struct mem_cgroup *memcg,
+		struct kmem_cache *s, struct kmem_cache *root_cache)
 {
 	return 0;
 }
 
-static inline void memcg_release_cache(struct kmem_cache *cachep)
+static inline void memcg_free_cache_params(struct kmem_cache *s)
 {
 }
 
-static inline void memcg_cache_list_add(struct mem_cgroup *memcg,
-					struct kmem_cache *s)
+static inline void memcg_register_cache(struct kmem_cache *s)
+{
+}
+
+static inline void memcg_unregister_cache(struct kmem_cache *s)
 {
 }
 
@@ -610,10 +649,6 @@ static inline struct kmem_cache *
 memcg_kmem_get_cache(struct kmem_cache *cachep, gfp_t gfp)
 {
 	return cachep;
-}
-
-static inline void kmem_cache_destroy_memcg_children(struct kmem_cache *s)
-{
 }
 #endif /* CONFIG_MEMCG_KMEM */
 #endif /* _LINUX_MEMCONTROL_H */

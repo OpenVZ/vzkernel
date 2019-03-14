@@ -19,8 +19,7 @@
  *   the GNU Lesser General Public License for more details.
  *
  *   You should have received a copy of the GNU Lesser General Public License
- *   along with this library; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ *   along with this library; if not, see <http://www.gnu.org/licenses/>.
  */
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -209,10 +208,10 @@ no_match:
  */
 static void dns_resolver_describe(const struct key *key, struct seq_file *m)
 {
-	int err = key->type_data.x[0];
-
 	seq_puts(m, key->description);
-	if (key_is_instantiated(key)) {
+	if (key_is_positive(key)) {
+		int err = key->type_data.x[0];
+
 		if (err)
 			seq_printf(m, ": %d", err);
 		else

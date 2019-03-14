@@ -384,7 +384,7 @@ struct fb_tile_ops {
 #endif /* CONFIG_FB_TILEBLITTING */
 
 /* FBINFO_* = fb_info.flags bit flags */
-#define FBINFO_MODULE		0x0001	/* Low-level driver is a module */
+#define FBINFO_DEFAULT		0
 #define FBINFO_HWACCEL_DISABLED	0x0002
 	/* When FBINFO_HWACCEL_DISABLED is set:
 	 *  Hardware acceleration is turned off.  Software implementations
@@ -514,14 +514,6 @@ static inline struct apertures_struct *alloc_apertures(unsigned int max_num) {
 	return a;
 }
 
-#ifdef MODULE
-#define FBINFO_DEFAULT	FBINFO_MODULE
-#else
-#define FBINFO_DEFAULT	0
-#endif
-
-// This will go away
-#define FBINFO_FLAG_MODULE	FBINFO_MODULE
 #define FBINFO_FLAG_DEFAULT	FBINFO_DEFAULT
 
 /* This will go away
@@ -613,8 +605,8 @@ extern ssize_t fb_sys_write(struct fb_info *info, const char __user *buf,
 extern int register_framebuffer(struct fb_info *fb_info);
 extern int unregister_framebuffer(struct fb_info *fb_info);
 extern int unlink_framebuffer(struct fb_info *fb_info);
-extern void remove_conflicting_framebuffers(struct apertures_struct *a,
-				const char *name, bool primary);
+extern int remove_conflicting_framebuffers(struct apertures_struct *a,
+					   const char *name, bool primary);
 extern int fb_prepare_logo(struct fb_info *fb_info, int rotate);
 extern int fb_show_logo(struct fb_info *fb_info, int rotate);
 extern char* fb_get_buffer_offset(struct fb_info *info, struct fb_pixmap *buf, u32 size);
@@ -624,7 +616,7 @@ extern void fb_pad_aligned_buffer(u8 *dst, u32 d_pitch, u8 *src, u32 s_pitch, u3
 extern void fb_set_suspend(struct fb_info *info, int state);
 extern int fb_get_color_depth(struct fb_var_screeninfo *var,
 			      struct fb_fix_screeninfo *fix);
-extern int fb_get_options(char *name, char **option);
+extern int fb_get_options(const char *name, char **option);
 extern int fb_new_modelist(struct fb_info *info);
 
 extern struct fb_info *registered_fb[FB_MAX];

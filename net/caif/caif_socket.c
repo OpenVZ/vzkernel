@@ -286,8 +286,6 @@ static int caif_seqpkt_recvmsg(struct kiocb *iocb, struct socket *sock,
 	if (m->msg_flags&MSG_OOB)
 		goto read_error;
 
-	m->msg_namelen = 0;
-
 	skb = skb_recv_datagram(sk, flags, 0 , &ret);
 	if (!skb)
 		goto read_error;
@@ -334,6 +332,10 @@ static long caif_stream_data_wait(struct sock *sk, long timeo)
 		release_sock(sk);
 		timeo = schedule_timeout(timeo);
 		lock_sock(sk);
+
+		if (sock_flag(sk, SOCK_DEAD))
+			break;
+
 		clear_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
 	}
 
@@ -361,8 +363,6 @@ static int caif_stream_recvmsg(struct kiocb *iocb, struct socket *sock,
 	if (flags&MSG_OOB)
 		goto out;
 
-	msg->msg_namelen = 0;
-
 	/*
 	 * Lock the socket to prevent queue disordering
 	 * while sleeps in memcpy_tomsg
@@ -380,6 +380,10 @@ static int caif_stream_recvmsg(struct kiocb *iocb, struct socket *sock,
 		struct sk_buff *skb;
 
 		lock_sock(sk);
+		if (sock_flag(sk, SOCK_DEAD)) {
+			err = -ECONNRESET;
+			goto unlock;
+		}
 		skb = skb_dequeue(&sk->sk_receive_queue);
 		caif_check_flow_release(sk);
 
@@ -572,7 +576,7 @@ static int caif_seqpkt_sendmsg(struct kiocb *kiocb, struct socket *sock,
 
 	skb_reserve(skb, cf_sk->headroom);
 
-	ret = memcpy_fromiovec(skb_put(skb, len), msg->msg_iov, len);
+	ret = memcpy_from_msg(skb_put(skb, len), msg, len);
 
 	if (ret)
 		goto err;
@@ -647,7 +651,7 @@ static int caif_stream_sendmsg(struct kiocb *kiocb, struct socket *sock,
 		 */
 		size = min_t(int, size, skb_tailroom(skb));
 
-		err = memcpy_fromiovec(skb_put(skb, size), msg->msg_iov, size);
+		err = memcpy_from_msg(skb_put(skb, size), msg, size);
 		if (err) {
 			kfree_skb(skb);
 			goto out_err;

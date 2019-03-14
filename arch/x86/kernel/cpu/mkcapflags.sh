@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Generate the x86_cap_flags[] array from include/asm/cpufeature.h
+# Generate the x86_cap_flags[] array from include/asm/cpufeatures.h
 #
 
 IN=$1
@@ -10,8 +10,8 @@ TABS="$(printf '\t\t\t\t\t')"
 trap 'rm "$OUT"' EXIT
 
 (
-	echo "#ifndef _ASM_X86_CPUFEATURE_H"
-	echo "#include <asm/cpufeature.h>"
+	echo "#ifndef _ASM_X86_CPUFEATURES_H"
+	echo "#include <asm/cpufeatures.h>"
 	echo "#endif"
 	echo ""
 	echo "const char * const x86_cap_flags[NCAPINTS*32] = {"

@@ -11,7 +11,9 @@
 #include <linux/cpu.h>
 #include <linux/pm.h>
 #include <linux/io.h>
+#include <linux/kaiser.h>
 
+#include <asm/cpufeature.h>
 #include <asm/fixmap.h>
 #include <asm/hpet.h>
 #include <asm/time.h>
@@ -76,6 +78,8 @@ static inline void hpet_set_mapping(void)
 	hpet_virt_address = ioremap_nocache(hpet_address, HPET_MMAP_SIZE);
 #ifdef CONFIG_X86_64
 	__set_fixmap(VSYSCALL_HPET, hpet_address, PAGE_KERNEL_VVAR_NOCACHE);
+	kaiser_add_mapping(__fix_to_virt(VSYSCALL_HPET), PAGE_SIZE,
+			   __PAGE_KERNEL_VVAR_NOCACHE | _PAGE_GLOBAL);
 #endif
 }
 
@@ -88,7 +92,7 @@ static inline void hpet_clear_mapping(void)
 /*
  * HPET command line enable / disable
  */
-static int boot_hpet_disable;
+int boot_hpet_disable;
 int hpet_force_user;
 static int hpet_verbose;
 
@@ -479,7 +483,7 @@ static int hpet_msi_next_event(unsigned long delta,
 static int hpet_setup_msi_irq(unsigned int irq)
 {
 	if (x86_msi.setup_hpet_msi(irq, hpet_blockid)) {
-		destroy_irq(irq);
+		irq_free_hwirq(irq);
 		return -EINVAL;
 	}
 	return 0;
@@ -487,9 +491,8 @@ static int hpet_setup_msi_irq(unsigned int irq)
 
 static int hpet_assign_irq(struct hpet_dev *dev)
 {
-	unsigned int irq;
+	unsigned int irq = irq_alloc_hwirq(-1);
 
-	irq = create_irq_nr(0, -1);
 	if (!irq)
 		return -EINVAL;
 
@@ -740,10 +743,104 @@ static int hpet_cpuhp_notify(struct notifier_block *n,
 /*
  * Clock source related code
  */
-static cycle_t read_hpet(struct clocksource *cs)
+#if defined(CONFIG_SMP) && defined(CONFIG_64BIT)
+/*
+ * Reading the HPET counter is a very slow operation. If a large number of
+ * CPUs are trying to access the HPET counter simultaneously, it can cause
+ * massive delay and slow down system performance dramatically. This may
+ * happen when HPET is the default clock source instead of TSC. For a
+ * really large system with hundreds of CPUs, the slowdown may be so
+ * severe that it may actually crash the system because of a NMI watchdog
+ * soft lockup, for example.
+ *
+ * If multiple CPUs are trying to access the HPET counter at the same time,
+ * we don't actually need to read the counter multiple times. Instead, the
+ * other CPUs can use the counter value read by the first CPU in the group.
+ *
+ * This special feature is only enabled on x86-64 systems. It is unlikely
+ * that 32-bit x86 systems will have enough CPUs to require this feature
+ * with its associated locking overhead. And we also need 64-bit atomic
+ * read.
+ *
+ * The lock and the hpet value are stored together and can be read in a
+ * single atomic 64-bit read. It is explicitly assumed that arch_spinlock_t
+ * is 32 bits in size.
+ */
+union hpet_lock {
+	struct {
+		arch_spinlock_t lock;
+		u32 value;
+	};
+	u64 lockval;
+};
+
+static union hpet_lock hpet __cacheline_aligned = {
+	{ .lock = __ARCH_SPIN_LOCK_UNLOCKED, },
+};
+
+static u64 read_hpet(struct clocksource *cs)
 {
-	return (cycle_t)hpet_readl(HPET_COUNTER);
+	unsigned long flags;
+	union hpet_lock old, new;
+
+	BUILD_BUG_ON(sizeof(union hpet_lock) != 8);
+
+	/*
+	 * Read HPET directly if in NMI.
+	 */
+	if (in_nmi())
+		return (u64)hpet_readl(HPET_COUNTER);
+
+	/*
+	 * Read the current state of the lock and HPET value atomically.
+	 */
+	old.lockval = READ_ONCE(hpet.lockval);
+
+	if (arch_spin_is_locked(&old.lock))
+		goto contended;
+
+	local_irq_save(flags);
+	if (arch_spin_trylock(&hpet.lock)) {
+		new.value = hpet_readl(HPET_COUNTER);
+		/*
+		 * Use WRITE_ONCE() to prevent store tearing.
+		 */
+		WRITE_ONCE(hpet.value, new.value);
+		arch_spin_unlock(&hpet.lock);
+		local_irq_restore(flags);
+		return (u64)new.value;
+	}
+	local_irq_restore(flags);
+
+contended:
+	/*
+	 * Contended case
+	 * --------------
+	 * Wait until the HPET value change or the lock is free to indicate
+	 * its value is up-to-date.
+	 *
+	 * It is possible that old.value has already contained the latest
+	 * HPET value while the lock holder was in the process of releasing
+	 * the lock. Checking for lock state change will enable us to return
+	 * the value immediately instead of waiting for the next HPET reader
+	 * to come along.
+	 */
+	do {
+		cpu_relax();
+		new.lockval = READ_ONCE(hpet.lockval);
+	} while ((new.value == old.value) && arch_spin_is_locked(&new.lock));
+
+	return (u64)new.value;
 }
+#else
+/*
+ * For UP or 32-bit.
+ */
+static u64 read_hpet(struct clocksource *cs)
+{
+	return (u64)hpet_readl(HPET_COUNTER);
+}
+#endif
 
 static struct clocksource clocksource_hpet = {
 	.name		= "hpet",
@@ -760,14 +857,14 @@ static struct clocksource clocksource_hpet = {
 static int hpet_clocksource_register(void)
 {
 	u64 start, now;
-	cycle_t t1;
+	u64 t1;
 
 	/* Start the counter */
 	hpet_restart_counter();
 
 	/* Verify whether hpet counter works */
 	t1 = hpet_readl(HPET_COUNTER);
-	rdtscll(start);
+	start = rdtsc();
 
 	/*
 	 * We don't know the TSC frequency yet, but waiting for
@@ -777,7 +874,7 @@ static int hpet_clocksource_register(void)
 	 */
 	do {
 		rep_nop();
-		rdtscll(now);
+		now = rdtsc();
 	} while ((now - start) < 200000UL);
 
 	if (t1 == hpet_readl(HPET_COUNTER)) {
@@ -943,12 +1040,14 @@ static __init int hpet_late_init(void)
 	if (boot_cpu_has(X86_FEATURE_ARAT))
 		return 0;
 
+	cpu_notifier_register_begin();
 	for_each_online_cpu(cpu) {
 		hpet_cpuhp_notify(NULL, CPU_ONLINE, (void *)(long)cpu);
 	}
 
 	/* This notifier should be called after workqueue is ready */
-	hotcpu_notifier(hpet_cpuhp_notify, -20);
+	__hotcpu_notifier(hpet_cpuhp_notify, -20);
+	cpu_notifier_register_done();
 
 	return 0;
 }

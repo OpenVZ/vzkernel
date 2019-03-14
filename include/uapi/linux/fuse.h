@@ -93,6 +93,17 @@
  *
  * 7.22
  *  - add FUSE_ASYNC_DIO
+ *
+ * 7.23
+ *  - add FUSE_WRITEBACK_CACHE
+ *  - add time_gran to fuse_init_out
+ *  - add reserved space to fuse_init_out
+ *  - add FATTR_CTIME
+ *  - add ctime and ctimensec to fuse_setattr_in
+ *  - add FUSE_RENAME2 request
+ *
+ *  7.24
+ *  - add FUSE_LSEEK for SEEK_HOLE and SEEK_DATA support
  */
 
 #ifndef _LINUX_FUSE_H
@@ -343,6 +354,8 @@ enum fuse_opcode {
 	FUSE_BATCH_FORGET  = 42,
 	FUSE_FALLOCATE     = 43,
 	FUSE_READDIRPLUS   = 44,
+	FUSE_RENAME2       = 45,
+	FUSE_LSEEK         = 46,
 
 	/* CUSE specific operations */
 	CUSE_INIT          = 4096,
@@ -419,6 +432,12 @@ struct fuse_mkdir_in {
 
 struct fuse_rename_in {
 	uint64_t	newdir;
+};
+
+struct fuse_rename2_in {
+	uint64_t	newdir;
+	uint32_t	flags;
+	uint32_t	padding;
 };
 
 struct fuse_link_in {
@@ -727,6 +746,17 @@ struct fuse_notify_retrieve_in {
 	uint32_t	dummy2;
 	uint64_t	dummy3;
 	uint64_t	dummy4;
+};
+
+struct fuse_lseek_in {
+	uint64_t	fh;
+	uint64_t	offset;
+	uint32_t	whence;
+	uint32_t	padding;
+};
+
+struct fuse_lseek_out {
+	uint64_t	offset;
 };
 
 #endif /* _LINUX_FUSE_H */

@@ -59,7 +59,7 @@
 #include <linux/gfp.h>
 
 #include <net/bluetooth/bluetooth.h>
-#include <net/bluetooth/hci.h>
+#include <net/bluetooth/hci_sock.h>
 #include <net/bluetooth/rfcomm.h>
 
 #include <linux/capi.h>
@@ -1577,6 +1577,10 @@ asmlinkage long compat_sys_ioctl(unsigned int fd, unsigned int cmd,
 		error = ioctl_preallocate(f.file, compat_ptr(arg));
 		goto out_fput;
 #endif
+
+	case FICLONE:
+	case FICLONERANGE:
+		goto do_ioctl;
 
 	case FIBMAP:
 	case FIGETBSZ:

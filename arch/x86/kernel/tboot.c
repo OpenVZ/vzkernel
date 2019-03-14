@@ -131,6 +131,7 @@ static int map_tboot_page(unsigned long vaddr, unsigned long pfn,
 	pud = pud_alloc(&tboot_mm, pgd, vaddr);
 	if (!pud)
 		return -1;
+	pgd->pgd &= ~_PAGE_NX;
 	pmd = pmd_alloc(&tboot_mm, pud, vaddr);
 	if (!pmd)
 		return -1;
@@ -319,8 +320,8 @@ static int tboot_wait_for_aps(int num_aps)
 	return !(atomic_read((atomic_t *)&tboot->num_in_wfs) == num_aps);
 }
 
-static int __cpuinit tboot_cpu_callback(struct notifier_block *nfb,
-			unsigned long action, void *hcpu)
+static int tboot_cpu_callback(struct notifier_block *nfb, unsigned long action,
+			      void *hcpu)
 {
 	switch (action) {
 	case CPU_DYING:
@@ -333,7 +334,7 @@ static int __cpuinit tboot_cpu_callback(struct notifier_block *nfb,
 	return NOTIFY_OK;
 }
 
-static struct notifier_block tboot_cpu_notifier __cpuinitdata =
+static struct notifier_block tboot_cpu_notifier =
 {
 	.notifier_call = tboot_cpu_callback,
 };

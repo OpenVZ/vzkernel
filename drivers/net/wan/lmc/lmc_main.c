@@ -77,7 +77,7 @@
 
 static int LMC_PKT_BUF_SZ = 1542;
 
-static DEFINE_PCI_DEVICE_TABLE(lmc_pci_tbl) = {
+static const struct pci_device_id lmc_pci_tbl[] = {
 	{ PCI_VENDOR_ID_DEC, PCI_DEVICE_ID_DEC_TULIP_FAST,
 	  PCI_VENDOR_ID_LMC, PCI_ANY_ID },
 	{ PCI_VENDOR_ID_DEC, PCI_DEVICE_ID_DEC_TULIP_FAST,
@@ -2120,7 +2120,7 @@ static void lmc_driver_timeout(struct net_device *dev)
     sc->lmc_device->stats.tx_errors++;
     sc->extra_stats.tx_ProcTimeout++; /* -baz */
 
-    dev->trans_start = jiffies; /* prevent tx timeout */
+    netif_trans_update(dev); /* prevent tx timeout */
 
 bug_out:
 
