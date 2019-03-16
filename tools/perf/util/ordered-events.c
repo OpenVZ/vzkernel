@@ -269,6 +269,8 @@ int ordered_events__flush(struct ordered_events *oe, enum oe_flush how)
 		"FINAL",
 		"ROUND",
 		"HALF ",
+		"TOP  ",
+		"TIME ",
 	};
 	int err;
 	bool show_progress = false;
