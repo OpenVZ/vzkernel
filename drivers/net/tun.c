@@ -2945,6 +2945,7 @@ static long __tun_chr_ioctl(struct file *file, unsigned int cmd,
 
 	tun_debug(KERN_INFO, tun, "tun_chr_ioctl cmd %u\n", cmd);
 
+	net = dev_net(tun->dev);
 	ret = 0;
 	switch (cmd) {
 	case TUNGETIFF:
@@ -3160,6 +3161,13 @@ static long __tun_chr_ioctl(struct file *file, unsigned int cmd,
 
 	case TUNSETFILTEREBPF:
 		ret = tun_set_ebpf(tun, &tun->filter_prog, argp);
+		break;
+
+	case TUNGETDEVNETNS:
+		ret = -EPERM;
+		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+			goto unlock;
+		ret = open_related_ns(&net->ns, get_net_ns);
 		break;
 
 	default:
