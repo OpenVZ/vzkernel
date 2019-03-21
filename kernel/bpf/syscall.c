@@ -32,6 +32,7 @@
 #include <linux/ctype.h>
 #include <linux/btf.h>
 #include <linux/nospec.h>
+#include <linux/init.h>
 
 #define IS_FD_ARRAY(map) ((map)->map_type == BPF_MAP_TYPE_PROG_ARRAY || \
 			   (map)->map_type == BPF_MAP_TYPE_PERF_EVENT_ARRAY || \
@@ -48,7 +49,25 @@ static DEFINE_SPINLOCK(prog_idr_lock);
 static DEFINE_IDR(map_idr);
 static DEFINE_SPINLOCK(map_idr_lock);
 
-int sysctl_unprivileged_bpf_disabled __read_mostly;
+/* RHEL-only: default to 1 */
+int sysctl_unprivileged_bpf_disabled __read_mostly = 1;
+
+static int __init unprivileged_bpf_setup(char *str)
+{
+	unsigned long disabled;
+	if (!kstrtoul(str, 0, &disabled))
+		sysctl_unprivileged_bpf_disabled = !!disabled;
+
+	if (!sysctl_unprivileged_bpf_disabled) {
+		pr_warn("Unprivileged BPF has been enabled "
+			"(unprivileged_bpf_disabled=0 has been supplied "
+			"in boot parameters), tainting the kernel");
+		add_taint(TAINT_UNPRIVILEGED_BPF, LOCKDEP_STILL_OK);
+	}
+
+	return 1;
+}
+__setup("unprivileged_bpf_disabled=", unprivileged_bpf_setup);
 
 static const struct bpf_map_ops * const bpf_map_types[] = {
 #define BPF_PROG_TYPE(_id, _ops)
@@ -2269,10 +2288,16 @@ out:
 SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, size)
 {
 	union bpf_attr attr = {};
+	static int marked;
 	int err;
 
 	if (sysctl_unprivileged_bpf_disabled && !capable(CAP_SYS_ADMIN))
 		return -EPERM;
+
+	if (!marked) {
+		mark_tech_preview("eBPF syscall", NULL);
+		marked = true;
+	}
 
 	err = bpf_check_uarg_tail_zero(uattr, sizeof(attr), size);
 	if (err)

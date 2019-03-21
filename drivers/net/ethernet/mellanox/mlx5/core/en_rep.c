@@ -797,7 +797,7 @@ static int mlx5e_rep_setup_tc_block(struct net_device *dev,
 	switch (f->command) {
 	case TC_BLOCK_BIND:
 		return tcf_block_cb_register(f->block, mlx5e_rep_setup_tc_cb,
-					     priv, priv);
+					     priv, priv, f->extack);
 	case TC_BLOCK_UNBIND:
 		tcf_block_cb_unregister(f->block, mlx5e_rep_setup_tc_cb, priv);
 		return 0;
@@ -896,6 +896,9 @@ static void
 mlx5e_rep_get_stats(struct net_device *dev, struct rtnl_link_stats64 *stats)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
+
+	/* update HW stats in background for next time */
+	queue_delayed_work(priv->wq, &priv->update_stats_work, 0);
 
 	memcpy(stats, &priv->stats.vf_vport, sizeof(*stats));
 }

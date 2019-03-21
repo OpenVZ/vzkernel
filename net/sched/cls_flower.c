@@ -51,6 +51,7 @@ struct fl_flow_key {
 	struct flow_dissector_key_mpls mpls;
 	struct flow_dissector_key_tcp tcp;
 	struct flow_dissector_key_ip ip;
+	struct flow_dissector_key_ip enc_ip;
 } __aligned(BITS_PER_LONG / 8); /* Ensure that we can do comparisons as longs. */
 
 struct fl_flow_mask_range {
@@ -87,6 +88,7 @@ struct cls_fl_filter {
 	struct list_head list;
 	u32 handle;
 	u32 flags;
+	unsigned int in_hw_count;
 	struct rcu_work rwork;
 	struct net_device *hw_dev;
 };
@@ -289,6 +291,7 @@ static int fl_hw_replace_filter(struct tcf_proto *tp,
 		fl_hw_destroy_filter(tp, f, NULL);
 		return err;
 	} else if (err > 0) {
+		f->in_hw_count = err;
 		tcf_block_offload_inc(block, &f->flags);
 	}
 
@@ -447,6 +450,10 @@ static const struct nla_policy fl_policy[TCA_FLOWER_MAX + 1] = {
 	[TCA_FLOWER_KEY_IP_TOS_MASK]	= { .type = NLA_U8 },
 	[TCA_FLOWER_KEY_IP_TTL]		= { .type = NLA_U8 },
 	[TCA_FLOWER_KEY_IP_TTL_MASK]	= { .type = NLA_U8 },
+	[TCA_FLOWER_KEY_ENC_IP_TOS]     = { .type = NLA_U8 },
+	[TCA_FLOWER_KEY_ENC_IP_TOS_MASK] = { .type = NLA_U8 },
+	[TCA_FLOWER_KEY_ENC_IP_TTL]      = { .type = NLA_U8 },
+	[TCA_FLOWER_KEY_ENC_IP_TTL_MASK] = { .type = NLA_U8 },
 };
 
 static void fl_set_key_val(struct nlattr **tb,
@@ -551,17 +558,17 @@ static int fl_set_key_flags(struct nlattr **tb,
 	return 0;
 }
 
-static void fl_set_key_ip(struct nlattr **tb,
+static void fl_set_key_ip(struct nlattr **tb, bool encap,
 			  struct flow_dissector_key_ip *key,
 			  struct flow_dissector_key_ip *mask)
 {
-		fl_set_key_val(tb, &key->tos, TCA_FLOWER_KEY_IP_TOS,
-			       &mask->tos, TCA_FLOWER_KEY_IP_TOS_MASK,
-			       sizeof(key->tos));
+	int tos_key = encap ? TCA_FLOWER_KEY_ENC_IP_TOS : TCA_FLOWER_KEY_IP_TOS;
+	int ttl_key = encap ? TCA_FLOWER_KEY_ENC_IP_TTL : TCA_FLOWER_KEY_IP_TTL;
+	int tos_mask = encap ? TCA_FLOWER_KEY_ENC_IP_TOS_MASK : TCA_FLOWER_KEY_IP_TOS_MASK;
+	int ttl_mask = encap ? TCA_FLOWER_KEY_ENC_IP_TTL_MASK : TCA_FLOWER_KEY_IP_TTL_MASK;
 
-		fl_set_key_val(tb, &key->ttl, TCA_FLOWER_KEY_IP_TTL,
-			       &mask->ttl, TCA_FLOWER_KEY_IP_TTL_MASK,
-			       sizeof(key->ttl));
+	fl_set_key_val(tb, &key->tos, tos_key, &mask->tos, tos_mask, sizeof(key->tos));
+	fl_set_key_val(tb, &key->ttl, ttl_key, &mask->ttl, ttl_mask, sizeof(key->ttl));
 }
 
 static int fl_set_key(struct net *net, struct nlattr **tb,
@@ -607,7 +614,7 @@ static int fl_set_key(struct net *net, struct nlattr **tb,
 		fl_set_key_val(tb, &key->basic.ip_proto, TCA_FLOWER_KEY_IP_PROTO,
 			       &mask->basic.ip_proto, TCA_FLOWER_UNSPEC,
 			       sizeof(key->basic.ip_proto));
-		fl_set_key_ip(tb, &key->ip, &mask->ip);
+		fl_set_key_ip(tb, false, &key->ip, &mask->ip);
 	}
 
 	if (tb[TCA_FLOWER_KEY_IPV4_SRC] || tb[TCA_FLOWER_KEY_IPV4_DST]) {
@@ -742,6 +749,8 @@ static int fl_set_key(struct net *net, struct nlattr **tb,
 		       &mask->enc_tp.dst, TCA_FLOWER_KEY_ENC_UDP_DST_PORT_MASK,
 		       sizeof(key->enc_tp.dst));
 
+	fl_set_key_ip(tb, true, &key->enc_ip, &mask->enc_ip);
+
 	if (tb[TCA_FLOWER_KEY_FLAGS])
 		ret = fl_set_key_flags(tb, &key->control.flags, &mask->control.flags);
 
@@ -832,6 +841,8 @@ static void fl_init_dissector(struct fl_flow_mask *mask)
 			   enc_control);
 	FL_KEY_SET_IF_MASKED(&mask->key, keys, cnt,
 			     FLOW_DISSECTOR_KEY_ENC_PORTS, enc_tp);
+	FL_KEY_SET_IF_MASKED(&mask->key, keys, cnt,
+			     FLOW_DISSECTOR_KEY_ENC_IP, enc_ip);
 
 	skb_flow_dissector_init(&mask->dissector, keys, cnt);
 }
@@ -1087,6 +1098,47 @@ skip:
 	}
 }
 
+static int fl_reoffload(struct tcf_proto *tp, bool add, tc_setup_cb_t *cb,
+			void *cb_priv, struct netlink_ext_ack *extack)
+{
+	struct cls_fl_head *head = rtnl_dereference(tp->root);
+	struct tc_cls_flower_offload cls_flower = {};
+	struct tcf_block *block = tp->chain->block;
+	struct fl_flow_mask *mask;
+	struct cls_fl_filter *f;
+	int err;
+
+	list_for_each_entry(mask, &head->masks, list) {
+		list_for_each_entry(f, &mask->filters, list) {
+			if (tc_skip_hw(f->flags))
+				continue;
+
+			tc_cls_common_offload_init(&cls_flower.common, tp,
+						   f->flags, extack);
+			cls_flower.command = add ?
+				TC_CLSFLOWER_REPLACE : TC_CLSFLOWER_DESTROY;
+			cls_flower.cookie = (unsigned long)f;
+			cls_flower.dissector = &mask->dissector;
+			cls_flower.mask = &mask->key;
+			cls_flower.key = &f->mkey;
+			cls_flower.exts = &f->exts;
+			cls_flower.classid = f->res.classid;
+
+			err = cb(TC_SETUP_CLSFLOWER, &cls_flower, cb_priv);
+			if (err) {
+				if (add && tc_skip_sw(f->flags))
+					return err;
+				continue;
+			}
+
+			tc_cls_offload_cnt_update(block, &f->in_hw_count,
+						  &f->flags, add);
+		}
+	}
+
+	return 0;
+}
+
 static int fl_dump_key_val(struct sk_buff *skb,
 			   void *val, int val_type,
 			   void *mask, int mask_type, int len)
@@ -1141,14 +1193,17 @@ static int fl_dump_key_mpls(struct sk_buff *skb,
 	return 0;
 }
 
-static int fl_dump_key_ip(struct sk_buff *skb,
+static int fl_dump_key_ip(struct sk_buff *skb, bool encap,
 			  struct flow_dissector_key_ip *key,
 			  struct flow_dissector_key_ip *mask)
 {
-	if (fl_dump_key_val(skb, &key->tos, TCA_FLOWER_KEY_IP_TOS, &mask->tos,
-			    TCA_FLOWER_KEY_IP_TOS_MASK, sizeof(key->tos)) ||
-	    fl_dump_key_val(skb, &key->ttl, TCA_FLOWER_KEY_IP_TTL, &mask->ttl,
-			    TCA_FLOWER_KEY_IP_TTL_MASK, sizeof(key->ttl)))
+	int tos_key = encap ? TCA_FLOWER_KEY_ENC_IP_TOS : TCA_FLOWER_KEY_IP_TOS;
+	int ttl_key = encap ? TCA_FLOWER_KEY_ENC_IP_TTL : TCA_FLOWER_KEY_IP_TTL;
+	int tos_mask = encap ? TCA_FLOWER_KEY_ENC_IP_TOS_MASK : TCA_FLOWER_KEY_IP_TOS_MASK;
+	int ttl_mask = encap ? TCA_FLOWER_KEY_ENC_IP_TTL_MASK : TCA_FLOWER_KEY_IP_TTL_MASK;
+
+	if (fl_dump_key_val(skb, &key->tos, tos_key, &mask->tos, tos_mask, sizeof(key->tos)) ||
+	    fl_dump_key_val(skb, &key->ttl, ttl_key, &mask->ttl, ttl_mask, sizeof(key->ttl)))
 		return -1;
 
 	return 0;
@@ -1272,7 +1327,7 @@ static int fl_dump(struct net *net, struct tcf_proto *tp, void *fh,
 	    (fl_dump_key_val(skb, &key->basic.ip_proto, TCA_FLOWER_KEY_IP_PROTO,
 			    &mask->basic.ip_proto, TCA_FLOWER_UNSPEC,
 			    sizeof(key->basic.ip_proto)) ||
-	    fl_dump_key_ip(skb, &key->ip, &mask->ip)))
+	    fl_dump_key_ip(skb, false, &key->ip, &mask->ip)))
 		goto nla_put_failure;
 
 	if (key->control.addr_type == FLOW_DISSECTOR_KEY_IPV4_ADDRS &&
@@ -1397,7 +1452,8 @@ static int fl_dump(struct net *net, struct tcf_proto *tp, void *fh,
 			    TCA_FLOWER_KEY_ENC_UDP_DST_PORT,
 			    &mask->enc_tp.dst,
 			    TCA_FLOWER_KEY_ENC_UDP_DST_PORT_MASK,
-			    sizeof(key->enc_tp.dst)))
+			    sizeof(key->enc_tp.dst)) ||
+	    fl_dump_key_ip(skb, true, &key->enc_ip, &mask->enc_ip))
 		goto nla_put_failure;
 
 	if (fl_dump_key_flags(skb, key->control.flags, mask->control.flags))
@@ -1438,6 +1494,7 @@ static struct tcf_proto_ops cls_fl_ops __read_mostly = {
 	.change		= fl_change,
 	.delete		= fl_delete,
 	.walk		= fl_walk,
+	.reoffload	= fl_reoffload,
 	.dump		= fl_dump,
 	.bind_class	= fl_bind_class,
 	.owner		= THIS_MODULE,

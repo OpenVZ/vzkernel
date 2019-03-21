@@ -53,6 +53,8 @@
 #include <uapi/linux/pkt_cls.h>
 #include <linux/hashtable.h>
 
+#include <linux/rh_kabi.h>
+
 struct netpoll_info;
 struct device;
 struct phy_device;
@@ -524,6 +526,32 @@ static inline void napi_synchronize(const struct napi_struct *n)
 		barrier();
 }
 
+/**
+ *	napi_if_scheduled_mark_missed - if napi is running, set the
+ *	NAPIF_STATE_MISSED
+ *	@n: NAPI context
+ *
+ * If napi is running, set the NAPIF_STATE_MISSED, and return true if
+ * NAPI is scheduled.
+ **/
+static inline bool napi_if_scheduled_mark_missed(struct napi_struct *n)
+{
+	unsigned long val, new;
+
+	do {
+		val = READ_ONCE(n->state);
+		if (val & NAPIF_STATE_DISABLE)
+			return true;
+
+		if (!(val & NAPIF_STATE_SCHED))
+			return false;
+
+		new = val | NAPIF_STATE_MISSED;
+	} while (cmpxchg(&n->state, val, new) != val);
+
+	return true;
+}
+
 enum netdev_queue_state_t {
 	__QUEUE_STATE_DRV_XOFF,
 	__QUEUE_STATE_STACK_XOFF,
@@ -697,7 +725,7 @@ struct netdev_rx_queue {
 #endif
 	struct kobject			kobj;
 	struct net_device		*dev;
-	struct xdp_rxq_info		xdp_rxq;
+	RH_KABI_EXCLUDE(struct xdp_rxq_info	xdp_rxq)
 } ____cacheline_aligned_in_smp;
 
 /*
@@ -807,11 +835,8 @@ enum bpf_netdev_command {
 	 */
 	XDP_SETUP_PROG,
 	XDP_SETUP_PROG_HW,
-	/* Check if a bpf program is set on the device.  The callee should
-	 * set @prog_attached to one of XDP_ATTACHED_* values, note that "true"
-	 * is equivalent to XDP_ATTACHED_DRV.
-	 */
 	XDP_QUERY_PROG,
+	XDP_QUERY_PROG_HW,
 	/* BPF program for offload callbacks, invoked at program load time. */
 	BPF_OFFLOAD_VERIFIER_PREP,
 	BPF_OFFLOAD_TRANSLATE,
@@ -835,9 +860,8 @@ struct netdev_bpf {
 			struct bpf_prog *prog;
 			struct netlink_ext_ack *extack;
 		};
-		/* XDP_QUERY_PROG */
+		/* XDP_QUERY_PROG, XDP_QUERY_PROG_HW */
 		struct {
-			u8 prog_attached;
 			u32 prog_id;
 			/* flags with which program was installed */
 			u32 prog_flags;
@@ -1383,13 +1407,13 @@ struct net_device_ops {
 						       struct sk_buff *skb);
 	void			(*ndo_set_rx_headroom)(struct net_device *dev,
 						       int needed_headroom);
-	int			(*ndo_bpf)(struct net_device *dev,
-					   struct netdev_bpf *bpf);
-	int			(*ndo_xdp_xmit)(struct net_device *dev, int n,
+	RH_KABI_EXCLUDE(int	(*ndo_bpf)(struct net_device *dev,
+					   struct netdev_bpf *bpf))
+	RH_KABI_EXCLUDE(int	(*ndo_xdp_xmit)(struct net_device *dev, int n,
 						struct xdp_frame **xdp,
-						u32 flags);
-	int			(*ndo_xsk_async_xmit)(struct net_device *dev,
-						      u32 queue_id);
+						u32 flags))
+	RH_KABI_EXCLUDE(int	(*ndo_xsk_async_xmit)(struct net_device *dev,
+						      u32 queue_id))
 };
 
 /**
@@ -1875,7 +1899,11 @@ struct net_device {
 	unsigned int		num_rx_queues;
 	unsigned int		real_num_rx_queues;
 
-	struct bpf_prog __rcu	*xdp_prog;
+	/* RHEL: while xdp_prog is explicitly removed from the kABI
+	 * whitelist, one semantics must be preserved: comparison of
+	 * xdp_prog to NULL denotes whether a XDP program is loaded or not.
+	 */
+	RH_KABI_EXCLUDE(struct bpf_prog __rcu	*xdp_prog)
 	unsigned long		gro_flush_timeout;
 	rx_handler_func_t __rcu	*rx_handler;
 	void __rcu		*rx_handler_data;
@@ -2418,6 +2446,13 @@ int unregister_netdevice_notifier(struct notifier_block *nb);
 struct netdev_notifier_info {
 	struct net_device	*dev;
 	struct netlink_ext_ack	*extack;
+};
+
+struct netdev_notifier_info_ext {
+	struct netdev_notifier_info info; /* must be first */
+	union {
+		u32 mtu;
+	} ext;
 };
 
 struct netdev_notifier_change_info {
@@ -3435,8 +3470,8 @@ struct sk_buff *dev_hard_start_xmit(struct sk_buff *skb, struct net_device *dev,
 typedef int (*bpf_op_t)(struct net_device *dev, struct netdev_bpf *bpf);
 int dev_change_xdp_fd(struct net_device *dev, struct netlink_ext_ack *extack,
 		      int fd, u32 flags);
-void __dev_xdp_query(struct net_device *dev, bpf_op_t xdp_op,
-		     struct netdev_bpf *xdp);
+u32 __dev_xdp_query(struct net_device *dev, bpf_op_t xdp_op,
+		    enum bpf_netdev_command cmd);
 
 int __dev_forward_skb(struct net_device *dev, struct sk_buff *skb);
 int dev_forward_skb(struct net_device *dev, struct sk_buff *skb);

@@ -50,7 +50,7 @@
 #include "en_rep.h"
 #include "en_tc.h"
 #include "eswitch.h"
-#include "vxlan.h"
+#include "lib/vxlan.h"
 #include "fs_core.h"
 #include "en/port.h"
 
@@ -1032,10 +1032,8 @@ void mlx5e_tc_update_neigh_used_value(struct mlx5e_neigh_hash_entry *nhe)
 		 * dst ip pair
 		 */
 		n = neigh_lookup(tbl, &m_neigh->dst_ip, m_neigh->dev);
-		if (!n) {
-			WARN(1, "The neighbour already freed\n");
+		if (!n)
 			return;
-		}
 
 		neigh_event_send(n, NULL);
 		neigh_release(n);
@@ -1135,7 +1133,7 @@ static int parse_tunnel_attr(struct mlx5e_priv *priv,
 		if (memchr_inv(&mask->dst, 0xff, sizeof(mask->dst)))
 			goto vxlan_match_offload_err;
 
-		if (mlx5e_vxlan_lookup_port(up_priv, be16_to_cpu(key->dst)) &&
+		if (mlx5_vxlan_lookup_port(up_priv->mdev->vxlan, be16_to_cpu(key->dst)) &&
 		    MLX5_CAP_ESW(priv->mdev, vxlan_encap_decap))
 			parse_vxlan_attr(spec, f);
 		else {
@@ -1213,6 +1211,26 @@ vxlan_match_offload_err:
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, ethertype, ETH_P_IPV6);
 	}
 
+	if (dissector_uses_key(f->dissector, FLOW_DISSECTOR_KEY_ENC_IP)) {
+		struct flow_dissector_key_ip *key =
+			skb_flow_dissector_target(f->dissector,
+						  FLOW_DISSECTOR_KEY_ENC_IP,
+						  f->key);
+		struct flow_dissector_key_ip *mask =
+			skb_flow_dissector_target(f->dissector,
+						  FLOW_DISSECTOR_KEY_ENC_IP,
+						  f->mask);
+
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, ip_ecn, mask->tos & 0x3);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, ip_ecn, key->tos & 0x3);
+
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, ip_dscp, mask->tos >> 2);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, ip_dscp, key->tos  >> 2);
+
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, ttl_hoplimit, mask->ttl);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, ttl_hoplimit, key->ttl);
+	}
+
 	/* Enforce DMAC when offloading incoming tunneled flows.
 	 * Flow counters require a match on the DMAC.
 	 */
@@ -1256,7 +1274,8 @@ static int __parse_cls_flower(struct mlx5e_priv *priv,
 	      BIT(FLOW_DISSECTOR_KEY_ENC_PORTS)	|
 	      BIT(FLOW_DISSECTOR_KEY_ENC_CONTROL) |
 	      BIT(FLOW_DISSECTOR_KEY_TCP) |
-	      BIT(FLOW_DISSECTOR_KEY_IP))) {
+	      BIT(FLOW_DISSECTOR_KEY_IP)  |
+	      BIT(FLOW_DISSECTOR_KEY_ENC_IP))) {
 		netdev_warn(priv->netdev, "Unsupported key used: 0x%x\n",
 			    f->dissector->used_keys);
 		return -EOPNOTSUPP;
@@ -1339,6 +1358,9 @@ static int __parse_cls_flower(struct mlx5e_priv *priv,
 
 			*match_level = MLX5_MATCH_L2;
 		}
+	} else {
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, svlan_tag, 1);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, cvlan_tag, 1);
 	}
 
 	if (dissector_uses_key(f->dissector, FLOW_DISSECTOR_KEY_BASIC)) {
@@ -1975,8 +1997,8 @@ static bool same_hw_devs(struct mlx5e_priv *priv, struct mlx5e_priv *peer_priv)
 	fmdev = priv->mdev;
 	pmdev = peer_priv->mdev;
 
-	mlx5_query_nic_vport_system_image_guid(fmdev, &fsystem_guid);
-	mlx5_query_nic_vport_system_image_guid(pmdev, &psystem_guid);
+	fsystem_guid = mlx5_query_nic_system_image_guid(fmdev);
+	psystem_guid = mlx5_query_nic_system_image_guid(pmdev);
 
 	return (fsystem_guid == psystem_guid);
 }
@@ -2082,7 +2104,7 @@ static int mlx5e_route_lookup_ipv4(struct mlx5e_priv *priv,
 				   struct net_device **out_dev,
 				   struct flowi4 *fl4,
 				   struct neighbour **out_n,
-				   int *out_ttl)
+				   u8 *out_ttl)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	struct mlx5e_rep_priv *uplink_rpriv;
@@ -2106,7 +2128,8 @@ static int mlx5e_route_lookup_ipv4(struct mlx5e_priv *priv,
 	else
 		*out_dev = rt->dst.dev;
 
-	*out_ttl = ip4_dst_hoplimit(&rt->dst);
+	if (!(*out_ttl))
+		*out_ttl = ip4_dst_hoplimit(&rt->dst);
 	n = dst_neigh_lookup(&rt->dst, &fl4->daddr);
 	ip_rt_put(rt);
 	if (!n)
@@ -2135,7 +2158,7 @@ static int mlx5e_route_lookup_ipv6(struct mlx5e_priv *priv,
 				   struct net_device **out_dev,
 				   struct flowi6 *fl6,
 				   struct neighbour **out_n,
-				   int *out_ttl)
+				   u8 *out_ttl)
 {
 	struct neighbour *n = NULL;
 	struct dst_entry *dst;
@@ -2150,7 +2173,8 @@ static int mlx5e_route_lookup_ipv6(struct mlx5e_priv *priv,
 	if (ret < 0)
 		return ret;
 
-	*out_ttl = ip6_dst_hoplimit(dst);
+	if (!(*out_ttl))
+		*out_ttl = ip6_dst_hoplimit(dst);
 
 	uplink_rpriv = mlx5_eswitch_get_uplink_priv(esw, REP_ETH);
 	/* if the egress device isn't on the same HW e-switch, we use the uplink */
@@ -2174,7 +2198,7 @@ static int mlx5e_route_lookup_ipv6(struct mlx5e_priv *priv,
 static void gen_vxlan_header_ipv4(struct net_device *out_dev,
 				  char buf[], int encap_size,
 				  unsigned char h_dest[ETH_ALEN],
-				  int ttl,
+				  u8 tos, u8 ttl,
 				  __be32 daddr,
 				  __be32 saddr,
 				  __be16 udp_dst_port,
@@ -2194,6 +2218,7 @@ static void gen_vxlan_header_ipv4(struct net_device *out_dev,
 	ip->daddr = daddr;
 	ip->saddr = saddr;
 
+	ip->tos = tos;
 	ip->ttl = ttl;
 	ip->protocol = IPPROTO_UDP;
 	ip->version = 0x4;
@@ -2207,7 +2232,7 @@ static void gen_vxlan_header_ipv4(struct net_device *out_dev,
 static void gen_vxlan_header_ipv6(struct net_device *out_dev,
 				  char buf[], int encap_size,
 				  unsigned char h_dest[ETH_ALEN],
-				  int ttl,
+				  u8 tos, u8 ttl,
 				  struct in6_addr *daddr,
 				  struct in6_addr *saddr,
 				  __be16 udp_dst_port,
@@ -2224,7 +2249,7 @@ static void gen_vxlan_header_ipv6(struct net_device *out_dev,
 	ether_addr_copy(eth->h_source, out_dev->dev_addr);
 	eth->h_proto = htons(ETH_P_IPV6);
 
-	ip6_flow_hdr(ip6h, 0, 0);
+	ip6_flow_hdr(ip6h, tos, 0);
 	/* the HW fills up ipv6 payload len */
 	ip6h->nexthdr     = IPPROTO_UDP;
 	ip6h->hop_limit   = ttl;
@@ -2246,9 +2271,9 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 	struct net_device *out_dev;
 	struct neighbour *n = NULL;
 	struct flowi4 fl4 = {};
+	u8 nud_state, tos, ttl;
 	char *encap_header;
-	int ttl, err;
-	u8 nud_state;
+	int err;
 
 	if (max_encap_size < ipv4_encap_size) {
 		mlx5_core_warn(priv->mdev, "encap size %d too big, max supported is %d\n",
@@ -2269,6 +2294,10 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 		err = -EOPNOTSUPP;
 		goto free_encap;
 	}
+
+	tos = tun_key->tos;
+	ttl = tun_key->ttl;
+
 	fl4.flowi4_tos = tun_key->tos;
 	fl4.daddr = tun_key->u.ipv4.dst;
 	fl4.saddr = tun_key->u.ipv4.src;
@@ -2303,7 +2332,7 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 	switch (e->tunnel_type) {
 	case MLX5_HEADER_TYPE_VXLAN:
 		gen_vxlan_header_ipv4(out_dev, encap_header,
-				      ipv4_encap_size, e->h_dest, ttl,
+				      ipv4_encap_size, e->h_dest, tos, ttl,
 				      fl4.daddr,
 				      fl4.saddr, tun_key->tp_dst,
 				      tunnel_id_to_key32(tun_key->tun_id));
@@ -2351,9 +2380,9 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 	struct net_device *out_dev;
 	struct neighbour *n = NULL;
 	struct flowi6 fl6 = {};
+	u8 nud_state, tos, ttl;
 	char *encap_header;
-	int err, ttl = 0;
-	u8 nud_state;
+	int err;
 
 	if (max_encap_size < ipv6_encap_size) {
 		mlx5_core_warn(priv->mdev, "encap size %d too big, max supported is %d\n",
@@ -2374,6 +2403,9 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 		err = -EOPNOTSUPP;
 		goto free_encap;
 	}
+
+	tos = tun_key->tos;
+	ttl = tun_key->ttl;
 
 	fl6.flowlabel = ip6_make_flowinfo(RT_TOS(tun_key->tos), tun_key->label);
 	fl6.daddr = tun_key->u.ipv6.dst;
@@ -2409,7 +2441,7 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 	switch (e->tunnel_type) {
 	case MLX5_HEADER_TYPE_VXLAN:
 		gen_vxlan_header_ipv6(out_dev, encap_header,
-				      ipv6_encap_size, e->h_dest, ttl,
+				      ipv6_encap_size, e->h_dest, tos, ttl,
 				      &fl6.daddr,
 				      &fl6.saddr, tun_key->tp_dst,
 				      tunnel_id_to_key32(tun_key->tun_id));
@@ -2479,7 +2511,7 @@ vxlan_encap_offload_err:
 		return -EOPNOTSUPP;
 	}
 
-	if (mlx5e_vxlan_lookup_port(up_priv, be16_to_cpu(key->tp_dst)) &&
+	if (mlx5_vxlan_lookup_port(up_priv->mdev->vxlan, be16_to_cpu(key->tp_dst)) &&
 	    MLX5_CAP_ESW(priv->mdev, vxlan_encap_decap)) {
 		tunnel_type = MLX5_HEADER_TYPE_VXLAN;
 	} else {
@@ -2840,14 +2872,71 @@ int mlx5e_stats_flower(struct mlx5e_priv *priv,
 	return 0;
 }
 
+static void mlx5e_tc_hairpin_update_dead_peer(struct mlx5e_priv *priv,
+					      struct mlx5e_priv *peer_priv)
+{
+	struct mlx5_core_dev *peer_mdev = peer_priv->mdev;
+	struct mlx5e_hairpin_entry *hpe;
+	u16 peer_vhca_id;
+	int bkt;
+
+	if (!same_hw_devs(priv, peer_priv))
+		return;
+
+	peer_vhca_id = MLX5_CAP_GEN(peer_mdev, vhca_id);
+
+	hash_for_each(priv->fs.tc.hairpin_tbl, bkt, hpe, hairpin_hlist) {
+		if (hpe->peer_vhca_id == peer_vhca_id)
+			hpe->hp->pair->peer_gone = true;
+	}
+}
+
+static int mlx5e_tc_netdev_event(struct notifier_block *this,
+				 unsigned long event, void *ptr)
+{
+	struct net_device *ndev = netdev_notifier_info_to_dev(ptr);
+	struct mlx5e_flow_steering *fs;
+	struct mlx5e_priv *peer_priv;
+	struct mlx5e_tc_table *tc;
+	struct mlx5e_priv *priv;
+
+	if (ndev->netdev_ops != &mlx5e_netdev_ops ||
+	    event != NETDEV_UNREGISTER ||
+	    ndev->reg_state == NETREG_REGISTERED)
+		return NOTIFY_DONE;
+
+	tc = container_of(this, struct mlx5e_tc_table, netdevice_nb);
+	fs = container_of(tc, struct mlx5e_flow_steering, tc);
+	priv = container_of(fs, struct mlx5e_priv, fs);
+	peer_priv = netdev_priv(ndev);
+	if (priv == peer_priv ||
+	    !(priv->netdev->features & NETIF_F_HW_TC))
+		return NOTIFY_DONE;
+
+	mlx5e_tc_hairpin_update_dead_peer(priv, peer_priv);
+
+	return NOTIFY_DONE;
+}
+
 int mlx5e_tc_nic_init(struct mlx5e_priv *priv)
 {
 	struct mlx5e_tc_table *tc = &priv->fs.tc;
+	int err;
 
 	hash_init(tc->mod_hdr_tbl);
 	hash_init(tc->hairpin_tbl);
 
-	return rhashtable_init(&tc->ht, &tc_ht_params);
+	err = rhashtable_init(&tc->ht, &tc_ht_params);
+	if (err)
+		return err;
+
+	tc->netdevice_nb.notifier_call = mlx5e_tc_netdev_event;
+	if (register_netdevice_notifier(&tc->netdevice_nb)) {
+		tc->netdevice_nb.notifier_call = NULL;
+		mlx5_core_warn(priv->mdev, "Failed to register netdev notifier\n");
+	}
+
+	return err;
 }
 
 static void _mlx5e_tc_del_flow(void *ptr, void *arg)
@@ -2862,6 +2951,9 @@ static void _mlx5e_tc_del_flow(void *ptr, void *arg)
 void mlx5e_tc_nic_cleanup(struct mlx5e_priv *priv)
 {
 	struct mlx5e_tc_table *tc = &priv->fs.tc;
+
+	if (tc->netdevice_nb.notifier_call)
+		unregister_netdevice_notifier(&tc->netdevice_nb);
 
 	rhashtable_free_and_destroy(&tc->ht, _mlx5e_tc_del_flow, NULL);
 

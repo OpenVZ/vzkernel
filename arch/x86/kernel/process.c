@@ -39,6 +39,7 @@
 #include <asm/desc.h>
 #include <asm/prctl.h>
 #include <asm/spec-ctrl.h>
+#include <asm/spec_ctrl.h>
 
 /*
  * per-CPU TSS segments. Threads are completely 'soft' on Linux,
@@ -402,6 +403,8 @@ static __always_inline void intel_set_ssb_state(unsigned long tifn)
 	u64 msr = x86_spec_ctrl_base | ssbd_tif_to_spec_ctrl(tifn);
 
 	wrmsrl(MSR_IA32_SPEC_CTRL, msr);
+	if (static_cpu_has(X86_FEATURE_SPEC_CTRL_ENTRY))
+		spec_ctrl_set_ssbd(ssbd_tif_to_spec_ctrl(tifn));
 }
 
 static __always_inline void __speculative_store_bypass_update(unsigned long tifn)

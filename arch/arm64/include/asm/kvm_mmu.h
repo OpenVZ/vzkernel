@@ -169,8 +169,12 @@ phys_addr_t kvm_get_idmap_vector(void);
 int kvm_mmu_init(void);
 void kvm_clear_hyp_idmap(void);
 
-#define	kvm_set_pte(ptep, pte)		set_pte(ptep, pte)
-#define	kvm_set_pmd(pmdp, pmd)		set_pmd(pmdp, pmd)
+#define kvm_mk_pmd(ptep)					\
+	__pmd(__phys_to_pmd_val(__pa(ptep)) | PMD_TYPE_TABLE)
+#define kvm_mk_pud(pmdp)					\
+	__pud(__phys_to_pud_val(__pa(pmdp)) | PMD_TYPE_TABLE)
+#define kvm_mk_pgd(pudp)					\
+	__pgd(__phys_to_pgd_val(__pa(pudp)) | PUD_TYPE_TABLE)
 
 static inline pte_t kvm_s2pte_mkwrite(pte_t pte)
 {

@@ -6108,18 +6108,6 @@ skip_spare:
 	if (!idlest)
 		return NULL;
 
-	/*
-	 * When comparing groups across NUMA domains, it's possible for the
-	 * local domain to be very lightly loaded relative to the remote
-	 * domains but "imbalance" skews the comparison making remote CPUs
-	 * look much more favourable. When considering cross-domain, add
-	 * imbalance to the runnable load on the remote node and consider
-	 * staying local.
-	 */
-	if ((sd->flags & SD_NUMA) &&
-	    min_runnable_load + imbalance >= this_runnable_load)
-		return NULL;
-
 	if (min_runnable_load > (this_runnable_load + imbalance))
 		return NULL;
 
@@ -6237,6 +6225,7 @@ static inline int find_idlest_cpu(struct sched_domain *sd, struct task_struct *p
 }
 
 #ifdef CONFIG_SCHED_SMT
+DEFINE_STATIC_KEY_FALSE(sched_smt_present);
 
 static inline void set_idle_cores(int cpu, int val)
 {
@@ -10016,7 +10005,8 @@ static inline bool vruntime_normalized(struct task_struct *p)
 	 * - A task which has been woken up by try_to_wake_up() and
 	 *   waiting for actually being woken up by sched_ttwu_pending().
 	 */
-	if (!se->sum_exec_runtime || p->state == TASK_WAKING)
+	if (!se->sum_exec_runtime ||
+	    (p->state == TASK_WAKING && p->sched_remote_wakeup))
 		return true;
 
 	return false;

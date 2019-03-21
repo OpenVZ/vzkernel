@@ -357,8 +357,8 @@ struct mlx5_frag_buf {
 struct mlx5_frag_buf_ctrl {
 	struct mlx5_frag_buf	frag_buf;
 	u32			sz_m1;
-	u32			frag_sz_m1;
-	u32			strides_offset;
+	u16			frag_sz_m1;
+	u16			strides_offset;
 	u8			log_sz;
 	u8			log_stride;
 	u8			log_frag_strides;
@@ -812,6 +812,8 @@ struct mlx5_clock {
 	struct mlx5_pps            pps_info;
 };
 
+struct mlx5_vxlan;
+
 struct mlx5_core_dev {
 	struct pci_dev	       *pdev;
 	/* sync pci state */
@@ -829,6 +831,7 @@ struct mlx5_core_dev {
 		u32 fpga[MLX5_ST_SZ_DW(fpga_cap)];
 		u32 qcam[MLX5_ST_SZ_DW(qcam_reg)];
 	} caps;
+	u64			sys_image_guid;
 	phys_addr_t		iseg_base;
 	struct mlx5_init_seg __iomem *iseg;
 	enum mlx5_device_state	state;
@@ -843,6 +846,7 @@ struct mlx5_core_dev {
 	atomic_t		num_qps;
 	u32			issi;
 	struct mlx5e_resources  mlx5e_res;
+	struct mlx5_vxlan       *vxlan;
 	struct {
 		struct mlx5_rsvd_gids	reserved_gids;
 		u32			roce_en;
@@ -985,7 +989,7 @@ static inline u32 mlx5_base_mkey(const u32 key)
 }
 
 static inline void mlx5_fill_fbc_offset(u8 log_stride, u8 log_sz,
-					u32 strides_offset,
+					u16 strides_offset,
 					struct mlx5_frag_buf_ctrl *fbc)
 {
 	fbc->log_stride = log_stride;
@@ -1042,7 +1046,7 @@ int mlx5_cmd_free_uar(struct mlx5_core_dev *dev, u32 uarn);
 void mlx5_health_cleanup(struct mlx5_core_dev *dev);
 int mlx5_health_init(struct mlx5_core_dev *dev);
 void mlx5_start_health_poll(struct mlx5_core_dev *dev);
-void mlx5_stop_health_poll(struct mlx5_core_dev *dev);
+void mlx5_stop_health_poll(struct mlx5_core_dev *dev, bool disable_health);
 void mlx5_drain_health_wq(struct mlx5_core_dev *dev);
 void mlx5_trigger_health_work(struct mlx5_core_dev *dev);
 void mlx5_drain_health_recovery(struct mlx5_core_dev *dev);

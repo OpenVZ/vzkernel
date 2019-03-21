@@ -38,6 +38,7 @@
 #include <asm/export.h>
 #include <asm/frame.h>
 #include <asm/nospec-branch.h>
+#include <asm/spec_ctrl.h>
 #include <linux/err.h>
 
 #include "calling.h"
@@ -92,7 +93,7 @@ END(native_usergs_sysret64)
 .endm
 
 .macro TRACE_IRQS_IRETQ_DEBUG
-	bt	$9, EFLAGS(%rsp)		/* interrupts off? */
+	btl	$9, EFLAGS(%rsp)		/* interrupts off? */
 	jnc	1f
 	TRACE_IRQS_ON_DEBUG
 1:
@@ -228,6 +229,7 @@ ENTRY(entry_SYSCALL_64)
 GLOBAL(entry_SYSCALL_64_after_hwframe)
 	pushq	%rax				/* pt_regs->orig_ax */
 
+	IBRS_ENTRY
 	PUSH_AND_CLEAR_REGS rax=$-ENOSYS
 
 	TRACE_IRQS_OFF
@@ -313,6 +315,7 @@ GLOBAL(entry_SYSCALL_64_after_hwframe)
 syscall_return_via_sysret:
 	/* rcx and r11 are already restored (see code above) */
 	UNWIND_HINT_EMPTY
+	IBRS_EXIT
 	POP_REGS pop_rdi=0 skip_r11rcx=1
 
 	/*
@@ -408,6 +411,7 @@ ENTRY(ret_from_fork)
 
 1:
 	/* kernel thread */
+	UNWIND_HINT_EMPTY
 	movq	%r12, %rdi
 	CALL_NOSPEC %rbx
 	/*
@@ -578,6 +582,7 @@ ENTRY(interrupt_entry)
 
 	/* Need to switch before accessing the thread stack. */
 	SWITCH_TO_KERNEL_CR3 scratch_reg=%rdi
+	IBRS_ENTRY
 	movq	%rsp, %rdi
 	movq	PER_CPU_VAR(cpu_current_top_of_stack), %rsp
 
@@ -664,6 +669,7 @@ GLOBAL(swapgs_restore_regs_and_return_to_usermode)
 	ud2
 1:
 #endif
+	IBRS_EXIT_CLOBBER
 	POP_REGS pop_rdi=0
 
 	/*
@@ -701,7 +707,7 @@ retint_kernel:
 #ifdef CONFIG_PREEMPT
 	/* Interrupts are off */
 	/* Check if we need preemption */
-	bt	$9, EFLAGS(%rsp)		/* were interrupts off? */
+	btl	$9, EFLAGS(%rsp)		/* were interrupts off? */
 	jnc	1f
 0:	cmpl	$0, PER_CPU_VAR(__preempt_count)
 	jnz	1f
@@ -1187,7 +1193,7 @@ ENTRY(paranoid_entry)
 
 1:
 	SAVE_AND_SWITCH_TO_KERNEL_CR3 scratch_reg=%rax save_reg=%r14
-
+	IBRS_ENTRY_SAVE_AND_CLOBBER  save_reg=%r13d
 	ret
 END(paranoid_entry)
 
@@ -1207,6 +1213,7 @@ ENTRY(paranoid_exit)
 	UNWIND_HINT_REGS
 	DISABLE_INTERRUPTS(CLBR_ANY)
 	TRACE_IRQS_OFF_DEBUG
+	IBRS_EXIT_RESTORE_CLOBBER save_reg=%r13d
 	testl	%ebx, %ebx			/* swapgs needed? */
 	jnz	.Lparanoid_exit_no_swapgs
 	TRACE_IRQS_IRETQ
@@ -1238,6 +1245,7 @@ ENTRY(error_entry)
 	SWAPGS
 	/* We have user CR3.  Change to kernel CR3. */
 	SWITCH_TO_KERNEL_CR3 scratch_reg=%rax
+	IBRS_ENTRY_CLOBBER
 
 .Lerror_entry_from_usermode_after_swapgs:
 	/* Put us onto the real thread stack. */
@@ -1284,6 +1292,7 @@ ENTRY(error_entry)
 	 */
 	SWAPGS
 	SWITCH_TO_KERNEL_CR3 scratch_reg=%rax
+	IBRS_ENTRY
 	jmp .Lerror_entry_done
 
 .Lbstep_iret:
@@ -1298,6 +1307,7 @@ ENTRY(error_entry)
 	 */
 	SWAPGS
 	SWITCH_TO_KERNEL_CR3 scratch_reg=%rax
+	IBRS_ENTRY
 
 	/*
 	 * Pretend that the exception came from user mode: set up pt_regs
@@ -1400,6 +1410,7 @@ ENTRY(nmi)
 	UNWIND_HINT_IRET_REGS
 	pushq   $-1		/* pt_regs->orig_ax */
 	PUSH_AND_CLEAR_REGS rdx=(%rdx)
+	IBRS_ENTRY_CLOBBER
 	ENCODE_FRAME_POINTER
 
 	/*
@@ -1625,6 +1636,7 @@ end_repeat_nmi:
 	movq	$-1, %rsi
 	call	do_nmi
 
+	IBRS_EXIT_RESTORE_CLOBBER save_reg=%r13d
 	RESTORE_CR3 scratch_reg=%r15 save_reg=%r14
 
 	testl	%ebx, %ebx			/* swapgs needed? */

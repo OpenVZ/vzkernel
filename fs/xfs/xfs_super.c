@@ -65,11 +65,10 @@ enum {
 	Opt_logbufs, Opt_logbsize, Opt_logdev, Opt_rtdev, Opt_biosize,
 	Opt_wsync, Opt_noalign, Opt_swalloc, Opt_sunit, Opt_swidth, Opt_nouuid,
 	Opt_mtpt, Opt_grpid, Opt_nogrpid, Opt_bsdgroups, Opt_sysvgroups,
-	Opt_allocsize, Opt_norecovery, Opt_barrier, Opt_nobarrier,
-	Opt_inode64, Opt_inode32, Opt_ikeep, Opt_noikeep,
-	Opt_largeio, Opt_nolargeio, Opt_attr2, Opt_noattr2, Opt_filestreams,
-	Opt_quota, Opt_noquota, Opt_usrquota, Opt_grpquota, Opt_prjquota,
-	Opt_uquota, Opt_gquota, Opt_pquota,
+	Opt_allocsize, Opt_norecovery, Opt_inode64, Opt_inode32, Opt_ikeep,
+	Opt_noikeep, Opt_largeio, Opt_nolargeio, Opt_attr2, Opt_noattr2,
+	Opt_filestreams, Opt_quota, Opt_noquota, Opt_usrquota, Opt_grpquota,
+	Opt_prjquota, Opt_uquota, Opt_gquota, Opt_pquota,
 	Opt_uqnoenforce, Opt_gqnoenforce, Opt_pqnoenforce, Opt_qnoenforce,
 	Opt_discard, Opt_nodiscard, Opt_dax, Opt_err,
 };
@@ -118,14 +117,7 @@ static const match_table_t tokens = {
 	{Opt_qnoenforce, "qnoenforce"},	/* same as uqnoenforce */
 	{Opt_discard,	"discard"},	/* Discard unused blocks */
 	{Opt_nodiscard,	"nodiscard"},	/* Do not discard unused blocks */
-
 	{Opt_dax,	"dax"},		/* Enable direct access to bdev pages */
-
-	/* Deprecated mount options scheduled for removal */
-	{Opt_barrier,	"barrier"},	/* use writer barriers for log write and
-					 * unwritten extent conversion */
-	{Opt_nobarrier,	"nobarrier"},	/* .. disable */
-
 	{Opt_err,	NULL},
 };
 
@@ -209,7 +201,6 @@ xfs_parseargs(
 	 * Set some default flags that could be cleared by the mount option
 	 * parsing.
 	 */
-	mp->m_flags |= XFS_MOUNT_BARRIER;
 	mp->m_flags |= XFS_MOUNT_COMPAT_IOSIZE;
 
 	/*
@@ -362,14 +353,6 @@ xfs_parseargs(
 			mp->m_flags |= XFS_MOUNT_DAX;
 			break;
 #endif
-		case Opt_barrier:
-			xfs_warn(mp, "%s option is deprecated, ignoring.", p);
-			mp->m_flags |= XFS_MOUNT_BARRIER;
-			break;
-		case Opt_nobarrier:
-			xfs_warn(mp, "%s option is deprecated, ignoring.", p);
-			mp->m_flags &= ~XFS_MOUNT_BARRIER;
-			break;
 		default:
 			xfs_warn(mp, "unknown mount option [%s].", p);
 			return -EINVAL;
@@ -487,7 +470,6 @@ xfs_showargs(
 	static struct proc_xfs_info xfs_info_unset[] = {
 		/* the few simple ones we can get from the mount struct */
 		{ XFS_MOUNT_COMPAT_IOSIZE,	",largeio" },
-		{ XFS_MOUNT_BARRIER,		",nobarrier" },
 		{ XFS_MOUNT_SMALL_INUMS,	",inode64" },
 		{ 0, NULL }
 	};
@@ -1278,14 +1260,6 @@ xfs_fs_remount(
 
 		token = match_token(p, tokens, args);
 		switch (token) {
-		case Opt_barrier:
-			xfs_warn(mp, "%s option is deprecated, ignoring.", p);
-			mp->m_flags |= XFS_MOUNT_BARRIER;
-			break;
-		case Opt_nobarrier:
-			xfs_warn(mp, "%s option is deprecated, ignoring.", p);
-			mp->m_flags &= ~XFS_MOUNT_BARRIER;
-			break;
 		case Opt_inode64:
 			mp->m_flags &= ~XFS_MOUNT_SMALL_INUMS;
 			mp->m_maxagi = xfs_set_inode_alloc(mp, sbp->sb_agcount);
@@ -1690,6 +1664,7 @@ xfs_fs_fill_super(
 
 	if (mp->m_flags & XFS_MOUNT_DAX) {
 		bool rtdev_is_dax = false, datadev_is_dax;
+		static bool printed = false;
 
 		xfs_warn(mp,
 		"DAX enabled. Warning: EXPERIMENTAL, use at your own risk");
@@ -1709,6 +1684,10 @@ xfs_fs_fill_super(
 		"DAX and reflink cannot be used together!");
 			error = -EINVAL;
 			goto out_filestream_unmount;
+		}
+		if (!printed) {
+			mark_tech_preview("xfs direct access (dax)", NULL);
+			printed = true;
 		}
 	}
 
@@ -1860,7 +1839,7 @@ MODULE_ALIAS_FS("xfs");
 STATIC int __init
 xfs_init_zones(void)
 {
-	if (bioset_init(&xfs_ioend_bioset, 4 * MAX_BUF_PER_PAGE,
+	if (bioset_init(&xfs_ioend_bioset, 4 * (PAGE_SIZE / SECTOR_SIZE),
 			offsetof(struct xfs_ioend, io_inline_bio),
 			BIOSET_NEED_BVECS))
 		goto out;
@@ -1886,7 +1865,7 @@ xfs_init_zones(void)
 	if (!xfs_da_state_zone)
 		goto out_destroy_btree_cur_zone;
 
-	xfs_ifork_zone = kmem_zone_init(sizeof(xfs_ifork_t), "xfs_ifork");
+	xfs_ifork_zone = kmem_zone_init(sizeof(struct xfs_ifork), "xfs_ifork");
 	if (!xfs_ifork_zone)
 		goto out_destroy_da_state_zone;
 

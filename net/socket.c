@@ -408,7 +408,7 @@ struct file *sock_alloc_file(struct socket *sock, int flags, const char *dname)
 
 	d_instantiate(path.dentry, SOCK_INODE(sock));
 
-	file = alloc_file(&path, FMODE_READ | FMODE_WRITE,
+	file = alloc_file(&path, O_RDWR | (flags & O_NONBLOCK),
 		  &socket_file_ops);
 	if (IS_ERR(file)) {
 		/* drop dentry, keep inode for a bit */
@@ -420,7 +420,6 @@ struct file *sock_alloc_file(struct socket *sock, int flags, const char *dname)
 	}
 
 	sock->file = file;
-	file->f_flags = O_RDWR | (flags & O_NONBLOCK);
 	file->private_data = sock;
 	return file;
 }
@@ -2690,8 +2689,7 @@ EXPORT_SYMBOL(sock_unregister);
 
 bool sock_is_registered(int family)
 {
-	return family < NPROTO &&
-		rcu_access_pointer(net_families[array_index_nospec(family, NPROTO)]);
+	return family < NPROTO && rcu_access_pointer(net_families[family]);
 }
 
 static int __init sock_init(void)

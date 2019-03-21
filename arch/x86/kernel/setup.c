@@ -117,6 +117,7 @@
 #include <asm/microcode.h>
 #include <asm/kaslr.h>
 #include <asm/unwind.h>
+#include <asm/intel-family.h>
 
 /*
  * max_low_pfn_mapped: highest direct mapped pfn under 4GB
@@ -785,7 +786,145 @@ static void __init trim_low_memory_range(void)
 {
 	memblock_reserve(0, ALIGN(reserve_low, PAGE_SIZE));
 }
-	
+
+static bool valid_amd_processor(__u8 family, const char *model_id)
+{
+	bool valid = false;
+	int len;
+
+	switch(family) {
+	case 0x15:
+		valid = true;
+		break;
+
+	case 0x17:
+		len = strlen("AMD EPYC 7");
+		if (!strncmp(model_id, "AMD EPYC 7", len)) {
+			len += 3;
+			/*
+			 * AMD EPYC 7xx1 == NAPLES
+			 */
+			if (strlen(model_id) >= len) {
+				if (model_id[len-1] == '1')
+					valid = true;
+			}
+		}
+		break;
+
+	default:
+		break;
+	}
+
+	return valid;
+}
+
+static bool valid_intel_processor(__u8 family, __u8 model, __u8 stepping)
+{
+	bool valid;
+
+	if (family != 6)
+		return false;
+
+	switch(model) {
+	case INTEL_FAM6_ATOM_DENVERTON:
+	case INTEL_FAM6_ATOM_GEMINI_LAKE:
+
+	case INTEL_FAM6_BROADWELL_CORE:
+	case INTEL_FAM6_BROADWELL_GT3E:
+	case INTEL_FAM6_BROADWELL_X:
+	case INTEL_FAM6_BROADWELL_XEON_D:
+
+	case INTEL_FAM6_HASWELL_CORE:
+	case INTEL_FAM6_HASWELL_GT3E:
+	case INTEL_FAM6_HASWELL_ULT:
+	case INTEL_FAM6_HASWELL_X:
+		valid = true;
+		break;
+
+	case INTEL_FAM6_KABYLAKE_DESKTOP:
+		valid = (stepping <= 10);
+		break;
+
+	case INTEL_FAM6_KABYLAKE_MOBILE:
+		valid = (stepping <= 11);
+		break;
+
+	case INTEL_FAM6_SKYLAKE_MOBILE:
+	case INTEL_FAM6_SKYLAKE_DESKTOP:
+		/* stepping > 4 is Cascade Lake and is not supported */
+		valid = (stepping <= 4);
+		break;
+
+	case INTEL_FAM6_SKYLAKE_X:
+		valid = (stepping <= 5);
+		break;
+
+	default:
+		valid = false;
+		break;
+	}
+
+	return valid;
+}
+
+static void rh_check_supported(void)
+{
+	bool guest;
+
+	guest = (x86_hyper_type != X86_HYPER_NATIVE || boot_cpu_has(X86_FEATURE_HYPERVISOR));
+
+	/* RHEL supports single cpu on guests only */
+	if (((boot_cpu_data.x86_max_cores * smp_num_siblings) == 1) &&
+	    !guest && is_kdump_kernel()) {
+		pr_crit("Detected single cpu native boot.\n");
+		pr_crit("Important:  In Red Hat Enterprise Linux 8, single threaded, single CPU 64-bit physical systems are unsupported by Red Hat. Please contact your Red Hat support representative for a list of certified and supported systems.");
+	}
+
+	/*
+	 * If the RHEL kernel does not support this hardware, the kernel will
+	 * attempt to boot, but no support is provided for this hardware
+	 */
+	switch (boot_cpu_data.x86_vendor) {
+	case X86_VENDOR_AMD:
+		if (!valid_amd_processor(boot_cpu_data.x86,
+					 boot_cpu_data.x86_model_id)) {
+			pr_crit("Detected CPU family %xh model %d\n",
+				boot_cpu_data.x86,
+				boot_cpu_data.x86_model);
+			mark_hardware_unsupported("AMD Processor");
+		}
+		break;
+
+	case X86_VENDOR_INTEL:
+		if (!valid_intel_processor(boot_cpu_data.x86,
+					   boot_cpu_data.x86_model,
+					   boot_cpu_data.x86_stepping)) {
+			pr_crit("Detected CPU family %d model %d stepping %d\n",
+				boot_cpu_data.x86,
+				boot_cpu_data.x86_model,
+				boot_cpu_data.x86_stepping);
+			mark_hardware_unsupported("Intel Processor");
+		}
+		break;
+
+	default:
+		pr_crit("Detected processor %s %s\n",
+			boot_cpu_data.x86_vendor_id,
+			boot_cpu_data.x86_model_id);
+		mark_hardware_unsupported("Processor");
+		break;
+	}
+
+	/*
+	 * Due to the complexity of x86 lapic & ioapic enumeration, and PCI IRQ
+	 * routing, ACPI is required for x86.  acpi=off is a valid debug kernel
+	 * parameter, so just print out a loud warning in case something
+	 * goes wrong (which is most of the time).
+	 */
+	if (acpi_disabled && !guest)
+		pr_crit("ACPI has been disabled or is not available on this hardware.  This may result in a single cpu boot, incorrect PCI IRQ routing, or boot failure.\n");
+}
+
 /*
  * Dump out kernel offset information on panic.
  */
@@ -822,6 +961,12 @@ void __init setup_arch(char **cmdline_p)
 {
 	memblock_reserve(__pa_symbol(_text),
 			 (unsigned long)__bss_stop - (unsigned long)_text);
+
+	/*
+	 * Make sure page 0 is always reserved because on systems with
+	 * L1TF its contents can be leaked to user processes.
+	 */
+	memblock_reserve(0, PAGE_SIZE);
 
 	early_reserve_initrd();
 
@@ -990,11 +1135,6 @@ void __init setup_arch(char **cmdline_p)
 #endif
 		setup_clear_cpu_cap(X86_FEATURE_APIC);
 	}
-
-#ifdef CONFIG_PCI
-	if (pci_early_dump_regs)
-		early_dump_pci_devices();
-#endif
 
 	e820__reserve_setup_data();
 	e820__finish_early_params();
@@ -1280,6 +1420,8 @@ void __init setup_arch(char **cmdline_p)
 	if (efi_enabled(EFI_BOOT))
 		efi_apply_memmap_quirks();
 #endif
+
+	rh_check_supported();
 
 	unwind_init();
 }

@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#! /usr/libexec/platform-python
 #
 # top-like utility for displaying kvm statistics
 #

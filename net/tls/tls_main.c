@@ -720,6 +720,7 @@ static int __init tls_register(void)
 #endif
 	tcp_register_ulp(&tcp_tls_ulp_ops);
 
+	mark_tech_preview("kTLS", THIS_MODULE);
 	return 0;
 }
 

@@ -61,8 +61,7 @@ struct kvm_arch {
 	u64    vmid_gen;
 	u32    vmid;
 
-	/* 1-level 2nd stage table and lock */
-	spinlock_t pgd_lock;
+	/* 1-level 2nd stage table, protected by kvm->mmu_lock */
 	pgd_t *pgd;
 
 	/* VTTBR value associated with above pgd and vmid */
@@ -352,7 +351,6 @@ int kvm_arm_get_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg);
 int kvm_arm_set_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg);
 
 #define KVM_ARCH_WANT_MMU_NOTIFIER
-int kvm_unmap_hva(struct kvm *kvm, unsigned long hva);
 int kvm_unmap_hva_range(struct kvm *kvm,
 			unsigned long start, unsigned long end);
 void kvm_set_spte_hva(struct kvm *kvm, unsigned long hva, pte_t pte);
@@ -380,14 +378,19 @@ int kvm_perf_teardown(void);
 
 struct kvm_vcpu *kvm_mpidr_to_vcpu(struct kvm *kvm, unsigned long mpidr);
 
-void __kvm_set_tpidr_el2(u64 tpidr_el2);
 DECLARE_PER_CPU(kvm_cpu_context_t, kvm_host_cpu_state);
 
 static inline void __cpu_init_hyp_mode(phys_addr_t pgd_ptr,
 				       unsigned long hyp_stack_ptr,
 				       unsigned long vector_ptr)
 {
-	u64 tpidr_el2;
+	/*
+	 * Calculate the raw per-cpu offset without a translation from the
+	 * kernel's mapping to the linear mapping, and store it in tpidr_el2
+	 * so that we can use adr_l to access per-cpu variables in EL2.
+	 */
+	u64 tpidr_el2 = ((u64)this_cpu_ptr(&kvm_host_cpu_state) -
+			 (u64)kvm_ksym_ref(kvm_host_cpu_state));
 
 	/*
 	 * Call initialization code, and switch to the full blown HYP code.
@@ -396,17 +399,7 @@ static inline void __cpu_init_hyp_mode(phys_addr_t pgd_ptr,
 	 * cpus_have_const_cap() wrapper.
 	 */
 	BUG_ON(!static_branch_likely(&arm64_const_caps_ready));
-	__kvm_call_hyp((void *)pgd_ptr, hyp_stack_ptr, vector_ptr);
-
-	/*
-	 * Calculate the raw per-cpu offset without a translation from the
-	 * kernel's mapping to the linear mapping, and store it in tpidr_el2
-	 * so that we can use adr_l to access per-cpu variables in EL2.
-	 */
-	tpidr_el2 = (u64)this_cpu_ptr(&kvm_host_cpu_state)
-		- (u64)kvm_ksym_ref(kvm_host_cpu_state);
-
-	kvm_call_hyp(__kvm_set_tpidr_el2, tpidr_el2);
+	__kvm_call_hyp((void *)pgd_ptr, hyp_stack_ptr, vector_ptr, tpidr_el2);
 }
 
 static inline bool kvm_arch_check_sve_has_vhe(void)

@@ -1551,6 +1551,15 @@ static bool acpi_device_enumeration_by_parent(struct acpi_device *device)
 	     fwnode_property_present(&device->fwnode, "baud")))
 		return true;
 
+	/*
+	 * Firmware on some arm64 X-Gene platforms will make the UART
+	 * device appear as both a UART and a slave of that UART. Just
+	 * bail out here for X-Gene UARTs.
+	 */
+	if (IS_ENABLED(CONFIG_ARM64) &&
+	    !strcmp(acpi_device_hid(device), "APMC0D08"))
+		return false;
+
 	INIT_LIST_HEAD(&resource_list);
 	acpi_dev_get_resources(device, &resource_list,
 			       acpi_check_serial_bus_slave,

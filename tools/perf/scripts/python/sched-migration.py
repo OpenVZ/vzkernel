@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#! /usr/libexec/platform-python
 #
 # Cpu task migration overview toy
 #

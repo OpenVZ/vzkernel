@@ -19,6 +19,7 @@
 #define pr_fmt(fmt)    "iommu: " fmt
 
 #include <linux/device.h>
+#include <linux/dmi.h>
 #include <linux/kernel.h>
 #include <linux/bug.h>
 #include <linux/types.h>
@@ -1976,3 +1977,24 @@ int iommu_fwspec_add_ids(struct device *dev, u32 *ids, int num_ids)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(iommu_fwspec_add_ids);
+
+#ifdef CONFIG_ARM64
+static int __init iommu_quirks(void)
+{
+	const char *vendor, *name;
+
+	vendor = dmi_get_system_info(DMI_SYS_VENDOR);
+	name = dmi_get_system_info(DMI_PRODUCT_NAME);
+
+	if (vendor &&
+	    (strncmp(vendor, "GIGABYTE", 8) == 0 && name &&
+	     (strncmp(name, "R120", 4) == 0 ||
+	      strncmp(name, "R270", 4) == 0))) {
+		pr_warn("Gigabyte %s detected, force iommu passthrough mode", name);
+		iommu_def_domain_type = IOMMU_DOMAIN_IDENTITY;
+	}
+
+	return 0;
+}
+arch_initcall(iommu_quirks);
+#endif
