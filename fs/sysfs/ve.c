@@ -111,7 +111,7 @@ static int sysfs_perms_open(struct inode *inode, struct file *file)
 	ret = seq_open(file, &sysfs_perms_sops);
 	if (!ret) {
 		m = file->private_data;
-		m->private = ve_is_super(ve) ? NULL : ve;
+		m->private = ve;
 	}
 	return ret;
 }
