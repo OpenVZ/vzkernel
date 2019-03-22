@@ -2181,6 +2181,21 @@ complete_unsupported_discard_req(struct ploop_request * preq)
 	ploop_complete_io_state(preq);
 }
 
+static bool ploop_can_issue_discard(struct ploop_device *plo,
+				    struct ploop_request *preq)
+{
+	if (test_bit(PLOOP_REQ_DISCARD, &preq->state))
+		return true;
+
+	if (test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state))
+		return false;
+
+	if (!list_is_singular(&plo->map.delta_list))
+		return false;
+
+	return whole_block(plo, preq);
+}
+
 static void
 ploop_entry_request(struct ploop_request * preq)
 {
@@ -2191,6 +2206,12 @@ ploop_entry_request(struct ploop_request * preq)
 	int level;
 	int err;
 	iblock_t iblk;
+
+	if ((preq->req_rw & REQ_DISCARD) &&
+	    !ploop_can_issue_discard(plo, preq)) {
+		complete_unsupported_discard_req(preq);
+		return;
+	}
 
 	if (!preq_is_special(preq)) {
 		/* Control request */
@@ -2539,21 +2560,6 @@ error:
 	PLOOP_REQ_FAIL_IMMEDIATE(preq, err);
 }
 
-static bool ploop_can_issue_discard(struct ploop_device *plo,
-				    struct ploop_request *preq)
-{
-	if (test_bit(PLOOP_REQ_DISCARD, &preq->state))
-		return true;
-
-	if (test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state))
-		return false;
-
-	if (!list_is_singular(&plo->map.delta_list))
-		return false;
-
-	return whole_block(plo, preq);
-}
-
 static void ploop_req_state_process(struct ploop_request * preq)
 {
 	struct ploop_device * plo = preq->plo;
@@ -2630,18 +2636,6 @@ restart:
 		     test_bit(PLOOP_S_ABORT, &plo->state))) {
 			PLOOP_REQ_FAIL_IMMEDIATE(preq, preq->error ? : -EIO);
 			break;
-		}
-
-		if ((preq->req_rw & REQ_DISCARD) &&
-		    !ploop_can_issue_discard(plo, preq)) {
-			complete_unsupported_discard_req(preq);
-#ifdef CONFIG_BEANCOUNTERS
-			if (saved_ub) {
-				saved_ub = set_exec_ub(saved_ub);
-				put_beancounter(saved_ub);
-			}
-#endif
-			return;
 		}
 
 		ploop_entry_request(preq);
