@@ -2565,7 +2565,6 @@ static void ploop_req_state_process(struct ploop_request * preq)
 	struct ploop_device * plo = preq->plo;
 	struct ploop_delta * top_delta;
 	struct io_context * saved_ioc = NULL;
-	int release_ioc = 0;
 #ifdef CONFIG_BEANCOUNTERS
 	struct user_beancounter *saved_ub = NULL;
 #endif
@@ -2576,7 +2575,6 @@ static void ploop_req_state_process(struct ploop_request * preq)
 		saved_ioc = current->io_context;
 		current->io_context = preq->ioc;
 		atomic_long_inc(&preq->ioc->refcount);
-		release_ioc = 1;
 	}
 #ifdef CONFIG_BEANCOUNTERS
 	WARN_ONCE(!preq->preq_ub,
@@ -2908,7 +2906,7 @@ restart:
 		BUG();
 	}
 out:
-	if (release_ioc) {
+	if (saved_ioc) {
 		struct io_context * ioc = current->io_context;
 		current->io_context = saved_ioc;
 		put_io_context(ioc);
