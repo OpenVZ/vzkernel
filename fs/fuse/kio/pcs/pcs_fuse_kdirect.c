@@ -127,7 +127,6 @@ static void process_pcs_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 	if (pfc) {
 		fuse_ktrace_remove(fc);
 		pcs_cluster_fini(pfc);
-		kvfree(pfc);
 	}
 out:
 	if (fc->conn_error)
