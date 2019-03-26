@@ -85,14 +85,21 @@ int sk_filter_trim_cap(struct sock *sk, struct sk_buff *skb, unsigned int cap)
 {
 	int err;
 	struct sk_filter *filter;
+	static unsigned int fail_counter = 0;
 
 	/*
 	 * If the skb was allocated from pfmemalloc reserves, only
 	 * allow SOCK_MEMALLOC sockets to use it as this socket is
 	 * helping free memory
 	 */
-	if (skb_pfmemalloc(skb) && !sock_flag(sk, SOCK_MEMALLOC))
+	if (skb_pfmemalloc(skb) && !sock_flag(sk, SOCK_MEMALLOC)) {
+		fail_counter++;
+		printk_ratelimited(KERN_WARNING
+				   "warning: skb dropped (%u total) due to "
+				   "use of pfmemalloc reserves.\n",
+				   fail_counter);
 		return -ENOMEM;
+	}
 
 	err = security_sock_rcv_skb(sk, skb);
 	if (err)
