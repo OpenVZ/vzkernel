@@ -23,6 +23,7 @@ struct ploop1_private
 	u64		bd_size;
 	u32		alloc_head;
 	sector_t	l1_off;
+	u32		nr_bat_entries;
 };
 
 static unsigned int data_off_in_clusters(struct ploop_delta *delta)
@@ -78,6 +79,11 @@ static int ploop1_stop(struct ploop_delta * delta)
 	struct ploop_pvd_header *vh;
 	struct ploop1_private * ph = delta->priv;
 
+	if (delta->holes_bitmap) {
+		kvfree(delta->holes_bitmap);
+		delta->holes_bitmap = NULL;
+	}
+
 	if ((delta->flags & PLOOP_FMT_RDONLY) ||
 	    test_bit(PLOOP_S_ABORT, &delta->plo->state))
 		return 0;
@@ -113,6 +119,70 @@ static int
 ploop1_compose(struct ploop_delta * delta, int nchunks, struct ploop_ctl_chunk * pc)
 {
 	return ploop_io_init(delta, nchunks, pc);
+}
+
+static int populate_holes_bitmap(struct ploop_delta *delta,
+				 struct ploop1_private *ph)
+{
+	unsigned int block, nr_blocks, size, off;
+	struct page *page;
+	sector_t sec;
+	u32 *index;
+	int i, ret;
+
+	if (test_bit(PLOOP_S_NO_FALLOC_DISCARD, &delta->plo->state))
+		return 0;
+
+	/* To do: add discard alignment for v1 */
+	if (delta->plo->fmt_version != PLOOP_FMT_V2)
+		return 0;
+
+	ret = -ENOMEM;
+	page = alloc_page(GFP_KERNEL);
+	if (!page)
+		return ret;
+
+	nr_blocks = ph->nr_bat_entries;
+	/* Bits to bytes */
+	size = DIV_ROUND_UP(nr_blocks, 8);
+
+	delta->holes_bitmap = kvmalloc(size, GFP_KERNEL);
+	if (!delta->holes_bitmap)
+		goto put_page;
+	memset(delta->holes_bitmap, 0xff, size);
+	for (i = nr_blocks; i < size * 8; i++)
+		clear_bit(i, delta->holes_bitmap);
+
+	block = 0;
+	while (block < nr_blocks) {
+		if (!ploop1_map_index(delta, block, &sec)) {
+			WARN_ONCE(1, "Can't map block\n");
+			goto put_page;
+		}
+		ret = delta->io.ops->sync_read(&delta->io, page,
+					       4096, 0, sec);
+		if (ret)
+			goto put_page;
+
+		off = block ? 0 : PLOOP_MAP_OFFSET;
+
+		index = page_address(page);
+		for (i = off; i < INDEX_PER_PAGE && block + i - off < nr_blocks; i++) {
+			if (index[i] != 0) {
+				clear_bit((index[i] >> ploop_map_log(delta->plo)) -
+					  data_off_in_clusters(delta),
+					  delta->holes_bitmap);
+			}
+		}
+
+		block += (block ? INDEX_PER_PAGE : INDEX_PER_PAGE - PLOOP_MAP_OFFSET);
+	}
+
+	ret = 0;
+
+put_page:
+	put_page(page);
+	return ret;
 }
 
 static int
@@ -157,6 +227,7 @@ ploop1_open(struct ploop_delta * delta)
 		goto out_err;
 
 	ph->l1_off = le32_to_cpu(vh->m_FirstBlockOffset);
+	ph->nr_bat_entries = le32_to_cpu(vh->m_Size);
 
 	err = -EBUSY;
 	if (pvd_header_is_disk_in_use(vh))
@@ -237,12 +308,37 @@ static void
 ploop1_allocate(struct ploop_delta * delta, struct ploop_request * preq,
 		struct bio_list * sbl, unsigned int size)
 {
-	if (delta->io.alloc_head >=
+	struct ploop1_private * ph = delta->priv;
+	cluster_t cluster = 0;
+	int ret;
+
+	if (delta->holes_bitmap) {
+		unsigned nr_clusters = ph->nr_bat_entries;
+
+		cluster = find_first_bit(delta->holes_bitmap, nr_clusters);
+		if (cluster >= nr_clusters) {
+			PLOOP_FAIL_REQUEST(preq, -ENOSPC);
+			return;
+		}
+		cluster += data_off_in_clusters(delta);
+	} else if (delta->io.alloc_head >=
 			(delta->max_delta_size >> delta->cluster_log)) {
 		PLOOP_FAIL_REQUEST(preq, -E2BIG);
 		return;
 	}
-	ploop_submit_alloc(delta, preq, sbl, size, 0);
+
+	ret = ploop_submit_alloc(delta, preq, sbl, size, cluster);
+
+	if (ret == 1 && cluster) {
+		/* Success. Mark cluster as occupied */
+		cluster -= data_off_in_clusters(delta);
+		clear_bit(cluster, delta->holes_bitmap);
+		/*
+		 * FIXME: but what about failing requests,
+		 * which return success? Should we add
+		 * a handler in ploop_complete_request()?
+		 */
+	}
 }
 
 /* Call this when data write is complete */
@@ -261,6 +357,10 @@ ploop1_allocate_complete(struct ploop_delta * delta, struct ploop_request * preq
 static void
 ploop1_destroy(struct ploop_delta * delta)
 {
+	if (delta->holes_bitmap) {
+		kvfree(delta->holes_bitmap);
+		delta->holes_bitmap = NULL;
+	}
 	ploop_io_destroy(&delta->io);
 	ploop1_destroy_priv(delta);
 }
@@ -268,7 +368,14 @@ ploop1_destroy(struct ploop_delta * delta)
 static int
 ploop1_start(struct ploop_delta * delta)
 {
-	return 0;
+	struct ploop1_private *ph = delta->priv;
+	struct ploop_device *plo = delta->plo;
+
+	if (!list_is_singular(&plo->map.delta_list))
+		return 0;
+
+	return populate_holes_bitmap(delta, ph);
+
 //	return delta->io.ops->start(&delta->io);
 }
 
@@ -372,6 +479,12 @@ ploop1_complete_snapshot(struct ploop_delta * delta, struct ploop_snapdata * sd)
 	if (err)
 		goto out;
 
+	if (delta->holes_bitmap) {
+		/* New top_delta will be added ahead @delta */
+		kvfree(delta->holes_bitmap);
+		delta->holes_bitmap = NULL;
+	}
+
 	delta->flags |= PLOOP_FMT_RDONLY;
 	return 0;
 
@@ -446,6 +559,16 @@ ploop1_start_merge(struct ploop_delta * delta, struct ploop_snapdata * sd)
 	return delta->io.ops->sync(&delta->io);
 }
 
+static int
+ploop1_complete_merge(struct ploop_delta *delta)
+{
+	struct ploop1_private *ph = delta->priv;
+
+	if (delta->level != 0)
+		return 0;
+	return populate_holes_bitmap(delta, ph);
+}
+
 static int ploop1_truncate(struct ploop_delta * delta, struct file * file,
 			   __u32 alloc_head)
 {
@@ -463,6 +586,43 @@ static int ploop1_truncate(struct ploop_delta * delta, struct file * file,
 	return delta->io.ops->truncate(&delta->io,
 				       file ? file : delta->io.files.file,
 				       alloc_head);
+}
+
+static int expand_holes_bitmap(struct ploop_delta *delta, unsigned int old_nr,
+							  unsigned int nr)
+{
+	unsigned int i, size, old_size;
+	void *holes_bitmap;
+
+	if (!delta->holes_bitmap)
+		return 0;
+
+	old_size = DIV_ROUND_UP(old_nr, 8);
+	size = DIV_ROUND_UP(nr, 8);
+
+	if (WARN_ON(old_size > size))
+		return -EINVAL;
+
+	holes_bitmap = kvmalloc(size, GFP_KERNEL);
+	if (!holes_bitmap) {
+		pr_err("Can't allocate holes_bitmap\n");
+		return -ENOMEM;
+	}
+
+	memcpy(holes_bitmap, delta->holes_bitmap, old_size);
+	kvfree(delta->holes_bitmap);
+
+	/* Fill last old byte */
+	for (i = old_nr; i < old_size * 8; i++)
+		__set_bit(i - 1, holes_bitmap);
+	/* Fill all new bytes */
+	memset(holes_bitmap + old_size, 0xff, size - old_size);
+	/* Clear alignment bytes */
+	for (i = nr; i < size * 8; i++)
+		clear_bit(i, holes_bitmap);
+
+	delta->holes_bitmap = holes_bitmap;
+	return 0;
 }
 
 static int
@@ -522,6 +682,7 @@ static int ploop1_complete_grow(struct ploop_delta * delta, u64 new_size)
 {
 	struct ploop_pvd_header *vh;
 	struct ploop1_private * ph = delta->priv;
+	unsigned int nr_bat_entries;
 	int err;
 	u32 vh_bsize; /* block size in sectors */
 
@@ -551,6 +712,11 @@ static int ploop1_complete_grow(struct ploop_delta * delta, u64 new_size)
 	vh->m_Cylinders        = cpu_to_le32(vh->m_Cylinders);
 	vh->m_Size             = cpu_to_le32(vh->m_Size);
 	vh->m_FirstBlockOffset = cpu_to_le32(vh->m_FirstBlockOffset);
+	nr_bat_entries = le32_to_cpu(vh->m_Size);
+
+	err = expand_holes_bitmap(delta, ph->nr_bat_entries, nr_bat_entries);
+	if (err)
+		return err;
 
 	/* keep hdr in ph->dyn_page and in map_node in sync */
 	ploop_update_map_hdr(&delta->plo->map, (u8 *)vh, sizeof(*vh));
@@ -565,8 +731,33 @@ static int ploop1_complete_grow(struct ploop_delta * delta, u64 new_size)
 
 	ph->bd_size = new_size;
 	ph->l1_off = le32_to_cpu(vh->m_FirstBlockOffset);
+	ph->nr_bat_entries = nr_bat_entries;
 
 	return 0;
+}
+
+static void ploop1_add_free_blk(struct ploop_delta *delta, struct ploop_request *preq)
+{
+	struct map_node *m = preq->map;
+	cluster_t cluster;
+	map_index_t blk;
+	u32 idx;
+
+	if (!delta->holes_bitmap)
+		return;
+
+	idx = (preq->req_cluster + PLOOP_MAP_OFFSET) & (INDEX_PER_PAGE - 1);
+	blk = ((map_index_t *)page_address(m->page))[idx];
+
+	/* Reapeted discard? */
+	if (!blk)
+		return;
+
+	cluster = blk >> ploop_map_log(delta->plo);
+	cluster -= data_off_in_clusters(delta);
+
+	WARN_ON_ONCE(test_bit(cluster, delta->holes_bitmap));
+	set_bit(cluster, delta->holes_bitmap);
 }
 
 static struct ploop_delta_ops ploop1_delta_ops =
@@ -593,9 +784,11 @@ static struct ploop_delta_ops ploop1_delta_ops =
 	.complete_snapshot =	ploop1_complete_snapshot,
 	.fmt_prepare_merge =	ploop1_prepare_merge,
 	.start_merge	=	ploop1_start_merge,
+	.complete_merge =	ploop1_complete_merge,
 	.truncate	=	ploop1_truncate,
 	.prepare_grow	=	ploop1_prepare_grow,
 	.complete_grow	=	ploop1_complete_grow,
+	.add_free_blk	=	ploop1_add_free_blk,
 };
 
 static int __init pfmt_ploop1_mod_init(void)
