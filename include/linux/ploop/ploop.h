@@ -159,7 +159,7 @@ struct ploop_io_ops
 	void	(*submit)(struct ploop_io *, struct ploop_request *,
 			  unsigned long rw,
 			  struct bio_list *sbl, iblock_t iblk, unsigned int size);
-	void	(*submit_alloc)(struct ploop_io *, struct ploop_request *,
+	int	(*submit_alloc)(struct ploop_io *, struct ploop_request *,
 				struct bio_list *sbl, unsigned int size);
 	void	(*post_submit)(struct ploop_io *, struct ploop_request *);
 
