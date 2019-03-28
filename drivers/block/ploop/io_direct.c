@@ -730,7 +730,7 @@ out:
 	PLOOP_FAIL_REQUEST(preq, err);
 }
 
-static void
+static int
 dio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 		 struct bio_list * sbl, unsigned int size)
 {
@@ -741,7 +741,7 @@ dio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 
 	if (!(io->files.file->f_mode & FMODE_WRITE)) {
 		PLOOP_FAIL_REQUEST(preq, -EBADF);
-		return;
+		return -1;
 	}
 
 	err = cached_submit(io, iblk, preq, sbl, size, true);
@@ -749,8 +749,10 @@ dio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 		if (err == -ENOSPC)
 			io->alloc_head--;
 		PLOOP_FAIL_REQUEST(preq, err);
+		return -1;
 	}
 	preq->eng_state = PLOOP_E_DATA_WBI;
+	return 1;
 }
 
 /* When backing fs does not export any method to allocate new blocks
