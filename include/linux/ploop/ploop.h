@@ -287,6 +287,7 @@ struct ploop_delta_ops
 	int		(*truncate)(struct ploop_delta *, struct file *, __u32 alloc_head);
 	int		(*prepare_grow)(struct ploop_delta *, u64 *new_size, int *reloc);
 	int		(*complete_grow)(struct ploop_delta *, u64 new_size);
+	void		(*add_free_blk)(struct ploop_delta *, struct ploop_request *);
 };
 
 /* Virtual image. */
@@ -309,6 +310,8 @@ struct ploop_delta
 	struct kobject		kobj;
 
 	u64			max_delta_size; /* in sectors */
+
+	void			*holes_bitmap;
 };
 
 struct ploop_tunable
