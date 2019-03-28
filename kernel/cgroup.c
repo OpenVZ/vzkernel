@@ -1862,7 +1862,9 @@ EXPORT_SYMBOL_GPL(cgroup_path);
 
 int cgroup_path_ve(const struct cgroup *cgrp, char *buf, int buflen)
 {
-	return __cgroup_path(cgrp, buf, buflen, !ve_is_super(get_exec_env()));
+	struct ve_struct *ve = get_exec_env();
+
+	return __cgroup_path(cgrp, buf, buflen, !ve_is_super(ve) && !ve->is_pseudosuper);
 }
 
 /*
