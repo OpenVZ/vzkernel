@@ -3764,18 +3764,25 @@ static void ploop_update_fmt_version(struct ploop_device * plo)
 	}
 }
 
-static void ploop_merge_cleanup(struct ploop_device * plo,
-				struct ploop_map * map,
-				struct ploop_delta * delta, int err)
+static void ploop_merge_complete(struct ploop_device * plo,
+				 struct ploop_map * map,
+				 struct ploop_delta * delta, int err)
 {
+	struct ploop_delta *top_delta;
+
 	ploop_quiesce(plo);
 	mutex_lock(&plo->sysfs_mutex);
 	list_del(&delta->list);
 
 	if (err)
 		list_add(&delta->list, &plo->map.delta_list);
-	else
+	else {
+		top_delta = ploop_top_delta(plo);
+		if (top_delta->ops->complete_merge)
+			/* FIXME: How should we handle error here? */
+			top_delta->ops->complete_merge(top_delta);
 		ploop_update_fmt_version(plo);
+	}
 
 	plo->trans_map = NULL;
 	plo->maintenance_type = PLOOP_MNTN_OFF;
@@ -3901,7 +3908,7 @@ already:
 		err = -EIO;
 	}
 
-	ploop_merge_cleanup(plo, map, delta, err);
+	ploop_merge_complete(plo, map, delta, err);
 
 	if (!err) {
 		kobject_del(&delta->kobj);
