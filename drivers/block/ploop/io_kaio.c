@@ -548,20 +548,11 @@ static int kaio_fsync_thread(void * data)
 
 static int
 kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
-		 struct bio_list * sbl, unsigned int size)
+		 struct bio_list * sbl, unsigned int size, iblock_t iblk)
 {
-	struct ploop_delta *delta = container_of(io, struct ploop_delta, io);
-	iblock_t iblk;
 	int log = preq->plo->cluster_log + 9;
 	loff_t clu_siz = 1 << log;
 	loff_t end_pos = (loff_t)io->alloc_head << log;
-
-	if (delta->flags & PLOOP_FMT_RDONLY) {
-		PLOOP_FAIL_REQUEST(preq, -EBADF);
-		return -1;
-	}
-
-	iblk = io->alloc_head;
 
 	if (unlikely(preq->req_rw & REQ_FLUSH)) {
 		spin_lock_irq(&io->plo->lock);
@@ -593,8 +584,6 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 			return 0;
 		}
 	}
-
-	io->alloc_head++;
 
 	preq->iblock = iblk;
 	preq->eng_state = PLOOP_E_DATA_WBI;

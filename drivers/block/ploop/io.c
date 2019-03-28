@@ -11,6 +11,7 @@
 
 #include <linux/ploop/ploop.h>
 #include <linux/ploop/ploop_if.h>
+#include "ploop_events.h"
 
 /* Generic IO routines. */
 
@@ -148,3 +149,41 @@ void ploop_io_report_fn(struct file * file, char * msg)
 		free_page((unsigned long)path);
 }
 EXPORT_SYMBOL(ploop_io_report_fn);
+
+int ploop_submit_alloc(struct ploop_delta *delta, struct ploop_request *preq,
+		       struct bio_list *sbl, unsigned int size, iblock_t iblk)
+{
+	struct ploop_io *io = &delta->io;
+	bool advanced = false;
+	int ret;
+
+	trace_submit_alloc(preq);
+
+	if (!(io->files.file->f_mode & FMODE_WRITE) ||
+	    (delta->flags & PLOOP_FMT_RDONLY)) {
+		PLOOP_FAIL_REQUEST(preq, -EBADF);
+		return -1;
+	}
+
+	if (!iblk)
+		iblk = io->alloc_head;
+	if (iblk == io->alloc_head) {
+		/*
+		 * Note, even if not zero iblk was passed as parameter,
+		 * alloc_head also must be incremented.
+		 */
+		io->alloc_head++;
+		advanced = true;
+	}
+
+	ret = io->ops->submit_alloc(io, preq, sbl, size, iblk);
+
+	/* FIXME: why original code handles only ENOSPC? */
+	if ((ret == 0 || ret == -ENOSPC) && advanced)
+		io->alloc_head--;
+
+	WARN_ON(iblk > io->alloc_head);
+
+	return ret;
+}
+EXPORT_SYMBOL(ploop_submit_alloc);
