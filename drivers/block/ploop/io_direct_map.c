@@ -703,7 +703,18 @@ again:
 	}
 
 	if (fieinfo.fi_extents_mapped != 1) {
+		struct ploop_device *plo = io->plo;
 		ploop_extent_put(em);
+		/*
+		 * In case of io_direct we may support discards
+		 * in multi-delta case, since all allocated blocks
+		 * are added to extent tree. But we follow generic
+		 * way, and encode discarded blocks by zeroing
+		 * their indexes in maps (ploop1).
+		 */
+		if (!test_bit(PLOOP_MAP_IDENTICAL, &plo->map.flags))
+			return ERR_PTR(-ENOENT);
+
 		ret = fallocate_cluster(io, inode, start_off, len, align_to_clu);
 		if (!ret)
 			goto again;
