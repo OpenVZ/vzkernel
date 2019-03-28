@@ -25,6 +25,13 @@ struct ploop1_private
 	sector_t	l1_off;
 };
 
+static unsigned int data_off_in_clusters(struct ploop_delta *delta)
+{
+	struct ploop1_private *ph = delta->priv;
+
+	return (ph->l1_off >> delta->cluster_log);
+}
+
 int ploop1_map_index(struct ploop_delta * delta, unsigned long block, sector_t *sec)
 {
 	struct ploop1_private * ph = delta->priv;
