@@ -250,6 +250,11 @@ ploop1_allocate(struct ploop_delta * delta, struct ploop_request * preq,
 static void
 ploop1_allocate_complete(struct ploop_delta * delta, struct ploop_request * preq)
 {
+	if ((preq->req_rw & REQ_DISCARD) &&
+	    !test_bit(PLOOP_REQ_DISCARD, &preq->state)) {
+		preq->iblock = 0;
+	}
+
 	ploop_index_update(preq);
 }
 
