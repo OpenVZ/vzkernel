@@ -944,6 +944,9 @@ void ploop_index_update(struct ploop_request * preq)
 
 	copy_index_for_wb(page, m, top_delta->level);
 
+	if (!preq->iblock)
+		top_delta->ops->add_free_blk(top_delta, preq);
+
 	((map_index_t*)page_address(page))[idx] = preq->iblock << ploop_map_log(plo);
 
 	get_page(page);
@@ -1186,6 +1189,9 @@ static void map_wb_complete(struct map_node * m, int err)
 			get_page(page);
 			preq->sinfo.wi.tpage = page;
 			idx = (preq->req_cluster + PLOOP_MAP_OFFSET) & (INDEX_PER_PAGE - 1);
+
+			if (!preq->iblock)
+				top_delta->ops->add_free_blk(top_delta, preq);
 
 			((map_index_t*)page_address(page))[idx] = preq->iblock << ploop_map_log(plo);
 
