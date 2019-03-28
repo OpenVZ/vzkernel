@@ -4550,6 +4550,8 @@ static int ploop_freeblks_ioc(struct ploop_device *plo, unsigned long arg)
 	int i;
 	int rc = 0;
 
+	return -EINVAL;
+
 	if (list_empty(&plo->map.delta_list))
 		return -ENOENT;
 
@@ -4633,6 +4635,8 @@ static int ploop_fbget_ioc(struct ploop_device *plo, unsigned long arg)
 	struct ploop_freeblks_ctl ctl;
 	int rc = 0;
 
+	return -EINVAL;
+
 	if (list_empty(&plo->map.delta_list))
 		return -ENOENT;
 
@@ -4656,6 +4660,8 @@ static int ploop_fbget_ioc(struct ploop_device *plo, unsigned long arg)
 static int ploop_fbfilter_ioc(struct ploop_device *plo, unsigned long arg)
 {
 	int rc = 0;
+
+	return -EINVAL;
 
 	if (plo->maintenance_type != PLOOP_MNTN_DISCARD ||
 	    !test_bit(PLOOP_S_DISCARD_LOADED, &plo->state))
@@ -4744,6 +4750,8 @@ static void ploop_discard_restart(struct ploop_device *plo, int err)
 
 static int ploop_fbdrop_ioc(struct ploop_device *plo)
 {
+	return -EINVAL;
+
 	if (list_empty(&plo->map.delta_list))
 		return -ENOENT;
 
@@ -4769,6 +4777,8 @@ static int ploop_relocblks_ioc(struct ploop_device *plo, unsigned long arg)
 	int i;
 	int err = 0;
 	int n_free;
+
+	return -EINVAL;
 
 	if (list_empty(&plo->map.delta_list))
 		return -ENOENT;
