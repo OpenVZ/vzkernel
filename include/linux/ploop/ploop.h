@@ -160,7 +160,7 @@ struct ploop_io_ops
 			  unsigned long rw,
 			  struct bio_list *sbl, iblock_t iblk, unsigned int size);
 	int	(*submit_alloc)(struct ploop_io *, struct ploop_request *,
-				struct bio_list *sbl, unsigned int size);
+				struct bio_list *, unsigned int, iblock_t);
 	void	(*post_submit)(struct ploop_io *, struct ploop_request *);
 
 	int	(*disable_merge)(struct ploop_io * io, sector_t isector, unsigned int len);
@@ -888,7 +888,8 @@ void ploop_index_wb_complete(struct ploop_request * preq);
 int __init ploop_map_init(void);
 void ploop_map_exit(void);
 void ploop_add_req_to_fsync_queue(struct ploop_request * preq);
-
+int ploop_submit_alloc(struct ploop_delta *delta, struct ploop_request *preq,
+		       struct bio_list *sbl, unsigned int size, iblock_t iblk);
 
 void ploop_quiesce(struct ploop_device * plo);
 void ploop_relax(struct ploop_device * plo);
