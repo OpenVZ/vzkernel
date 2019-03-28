@@ -12,12 +12,10 @@
 
 #include <linux/ploop/ploop.h>
 #include "ploop1_image.h"
+#include "map.h"
 
 /* The implementaion of ploop1 (PVD) delta format, defined in ploop1_fmt.h
  */
-
-#define INDEX_PER_PAGE	     (PAGE_SIZE  / 4)
-#define INDEX_PER_PAGE_SHIFT (PAGE_SHIFT - 2)
 
 struct ploop1_private
 {
