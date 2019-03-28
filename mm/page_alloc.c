@@ -3603,6 +3603,14 @@ retry_cpuset:
 	first_zones_zonelist(zonelist, high_zoneidx,
 				nodemask ? : &cpuset_current_mems_allowed,
 				&preferred_zone);
+
+	/*
+	 * No zone within cpuset_current_mems_allowed nodemask?
+	 * Fallback to default nodemask.
+	 */
+	if (!preferred_zone && !nodemask)
+		first_zones_zonelist(zonelist, high_zoneidx,
+				nodemask, &preferred_zone);
 	if (!preferred_zone)
 		goto out;
 
