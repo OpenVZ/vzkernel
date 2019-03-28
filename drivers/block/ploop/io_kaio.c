@@ -546,7 +546,7 @@ static int kaio_fsync_thread(void * data)
 	return 0;
 }
 
-static void
+static int
 kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 		 struct bio_list * sbl, unsigned int size)
 {
@@ -558,7 +558,7 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 
 	if (delta->flags & PLOOP_FMT_RDONLY) {
 		PLOOP_FAIL_REQUEST(preq, -EBADF);
-		return;
+		return -1;
 	}
 
 	iblk = io->alloc_head;
@@ -568,7 +568,7 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 		kaio_queue_fsync_req(preq);
 		io->plo->st.bio_syncwait++;
 		spin_unlock_irq(&io->plo->lock);
-		return;
+		return 0;
 	}
 
 	BUG_ON(preq->prealloc_size);
@@ -586,11 +586,11 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 			kaio_queue_trunc_req(preq);
 			io->plo->st.bio_syncwait++;
 			spin_unlock_irq(&io->plo->lock);
-			return;
+			return 0;
 		} else { /* we're not first */
 			list_add_tail(&preq->list,
 				      &io->prealloc_preq->delay_list);
-			return;
+			return 0;
 		}
 	}
 
@@ -600,6 +600,7 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 	preq->eng_state = PLOOP_E_DATA_WBI;
 
 	kaio_sbl_submit(io->files.file, preq, REQ_WRITE, sbl, iblk, size);
+	return 1;
 }
 
 static int kaio_release_prealloced(struct ploop_io * io)
