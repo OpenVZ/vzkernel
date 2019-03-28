@@ -4305,7 +4305,14 @@ static int ploop_index_update_ioc(struct ploop_device *plo, unsigned long arg)
 	struct reloc_map *map;
 	int i;
 
-	if (list_empty(&plo->map.delta_list))
+	/*
+	 * Currently this is used by userspace for relocation
+	 * of start blocks before expanding BAT of !top delta.
+	 * In case of someone wants to do that on a singular
+	 * list, he should expand holes bitmap too.
+	 */
+	if (list_empty(&plo->map.delta_list) ||
+	    list_is_singular(&plo->map.delta_list))
 		return -ENOENT;
 
 	if (copy_from_user(&ctl, (void*)arg,
