@@ -1512,11 +1512,16 @@ static void kpcs_kill_requests(struct fuse_conn *fc, struct inode *inode)
 
 	list_for_each_entry(ff, &fc->conn_files, fl) {
 		struct pcs_dentry_info *di;
+		struct fuse_inode *fi;
 
 		if (!ff->ff_dentry)
 			continue;
 
-		di = get_pcs_inode(ff->ff_dentry->d_inode);
+		fi = get_fuse_inode(ff->ff_dentry->d_inode);
+		if (!fi->private)
+			continue;
+
+		di = pcs_inode_from_fuse(fi);
 
 		spin_lock(&di->kq_lock);
 		fuse_kill_requests(fc, inode, &di->kq);
