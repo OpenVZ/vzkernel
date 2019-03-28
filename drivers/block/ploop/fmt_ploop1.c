@@ -235,7 +235,7 @@ ploop1_allocate(struct ploop_delta * delta, struct ploop_request * preq,
 		PLOOP_FAIL_REQUEST(preq, -E2BIG);
 		return;
 	}
-	delta->io.ops->submit_alloc(&delta->io, preq, sbl, size);
+	ploop_submit_alloc(delta, preq, sbl, size, 0);
 }
 
 /* Call this when data write is complete */
