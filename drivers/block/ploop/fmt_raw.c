@@ -98,7 +98,7 @@ static void
 raw_allocate(struct ploop_delta * delta, struct ploop_request * preq,
 		struct bio_list * sbl, unsigned int size)
 {
-	delta->io.ops->submit_alloc(&delta->io, preq, sbl, size);
+	ploop_submit_alloc(delta, preq, sbl, size, 0);
 }
 
 int raw_map_index(struct ploop_delta * delta, unsigned long index, sector_t *sec)
