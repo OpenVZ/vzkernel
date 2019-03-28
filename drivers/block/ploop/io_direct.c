@@ -389,21 +389,29 @@ cached_submit(struct ploop_io *io, iblock_t iblk, struct ploop_request * preq,
 	loff_t pos, end_pos, start, end;
 	loff_t clu_siz = cluster_size_in_bytes(plo);
 	struct bio_iter biter;
-	loff_t new_size;
+	loff_t new_size, prealloc;
 	loff_t used_pos;
 	bool may_fallocate = dio_may_fallocate(io);
+	bool reusing, once = true;
 
 	trace_cached_submit(preq);
 
 	pos = (loff_t)iblk << (plo->cluster_log + 9);
 	end_pos = pos + clu_siz;
 	used_pos = (loff_t)(io->alloc_head - 1) << (io->plo->cluster_log + 9);
+	reusing = (end_pos <= used_pos);
 
 	file_start_write(io->files.file);
 
-	if (use_prealloc && end_pos > used_pos && may_fallocate) {
+	if (reusing) {
+		/* Reusing a hole */
+		prealloc = clu_siz;
+		goto try_again;
+	}
+
+	if (use_prealloc && (end_pos > used_pos) && may_fallocate) {
 		if (unlikely(io->prealloced_size < used_pos + clu_siz)) {
-			loff_t prealloc = end_pos;
+			prealloc = end_pos;
 			if (prealloc > PLOOP_MAX_PREALLOC(plo))
 				prealloc = PLOOP_MAX_PREALLOC(plo);
 try_again:
@@ -423,7 +431,8 @@ try_again:
 			if (err)
 				goto end_write;
 
-			io->prealloced_size = pos + prealloc;
+			if (io->prealloced_size < pos + prealloc)
+				io->prealloced_size = pos + prealloc;
 		}
 	}
 
@@ -434,6 +443,16 @@ try_again:
 
 		if (unlikely(IS_ERR(em))) {
 			err = PTR_ERR(em);
+			if (err == -ENOENT && once) {
+				/*
+				 * Boundary cluster: temporary crutch
+				 * before io->alloc_head is reworked
+				 * to not be incremented in caller.
+				 */
+				once = false;
+				prealloc = clu_siz;
+				goto try_again;
+			}
 			goto end_write;
 		}
 
