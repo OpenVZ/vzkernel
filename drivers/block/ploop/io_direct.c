@@ -1921,7 +1921,7 @@ static struct ploop_io_ops ploop_io_ops_direct =
 	.stop		=	dio_stop,
 	.prepare_snapshot =	dio_prepare_snapshot,
 	.complete_snapshot =	dio_complete_snapshot,
-	.prepare_merge  =	dio_prepare_merge,
+	.io_prepare_merge =	dio_prepare_merge,
 	.start_merge	=	dio_start_merge,
 	.truncate	=	dio_truncate,
 
