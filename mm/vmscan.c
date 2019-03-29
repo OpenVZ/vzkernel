@@ -2223,9 +2223,11 @@ static void get_scan_count(struct lruvec *lruvec, struct mem_cgroup *memcg,
 	/*
 	 * There is enough inactive page cache, do not reclaim
 	 * anything from the anonymous working set right now.
+	 * We don't decrease the required level of inactive page cache
+	 * with sc->priority decrease.
 	 */
 	if (!inactive_file_low &&
-	    lruvec_lru_size(lruvec, LRU_INACTIVE_FILE) >> sc->priority) {
+	    lruvec_lru_size(lruvec, LRU_INACTIVE_FILE) >> (DEF_PRIORITY - 2)) {
 		scan_balance = SCAN_FILE;
 		goto out;
 	}
@@ -2277,7 +2279,7 @@ static void get_scan_count(struct lruvec *lruvec, struct mem_cgroup *memcg,
 	fraction[1] = fp;
 	denominator = ap + fp + 1;
 out:
-	sc->has_inactive = !inactive_file_low ||
+	sc->has_inactive = (!inactive_file_low && (scan_balance == SCAN_FILE)) ||
 		((scan_balance != SCAN_FILE) && !inactive_anon_low);
 	*lru_pages = 0;
 	for_each_evictable_lru(lru) {
@@ -2591,7 +2593,8 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 			}
 		} while ((memcg = mem_cgroup_iter(root, memcg, &reclaim)));
 
-		if (!sc->has_inactive && !sc->may_shrink_active) {
+		if ((!sc->has_inactive || !sc->nr_reclaimed)
+		    && !sc->may_shrink_active) {
 			sc->may_shrink_active = 1;
 			retry = true;
 			continue;
