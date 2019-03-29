@@ -393,11 +393,6 @@ ploop1_prepare_merge(struct ploop_delta * delta, struct ploop_snapdata * sd)
 			 (delta->io.plo->cluster_log + 9);
 	delta->io.alloc_head = ph->alloc_head;
 
-	err = delta->io.ops->prepare_merge(&delta->io, sd);
-	if (err)
-		return err;
-
-	delta->flags &= ~PLOOP_FMT_RDONLY;
 	return 0;
 }
 
@@ -582,7 +577,7 @@ static struct ploop_delta_ops ploop1_delta_ops =
 	.sync		=	ploop1_sync,
 	.prepare_snapshot =	ploop1_prepare_snapshot,
 	.complete_snapshot =	ploop1_complete_snapshot,
-	.prepare_merge	=	ploop1_prepare_merge,
+	.fmt_prepare_merge =	ploop1_prepare_merge,
 	.start_merge	=	ploop1_start_merge,
 	.truncate	=	ploop1_truncate,
 	.prepare_grow	=	ploop1_prepare_grow,
