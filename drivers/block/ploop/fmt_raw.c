@@ -183,19 +183,6 @@ out:
 }
 
 static int
-raw_prepare_merge(struct ploop_delta * delta, struct ploop_snapdata * sd)
-{
-	int err;
-
-	err = delta->io.ops->prepare_merge(&delta->io, sd);
-	if (err)
-		return err;
-
-	delta->flags &= ~PLOOP_FMT_RDONLY;
-	return 0;
-}
-
-static int
 raw_start_merge(struct ploop_delta * delta, struct ploop_snapdata * sd)
 {
 	int err;
@@ -248,7 +235,6 @@ static struct ploop_delta_ops raw_delta_ops =
 	.refresh	=	raw_refresh,
 	.prepare_snapshot =	raw_prepare_snapshot,
 	.complete_snapshot =	raw_complete_snapshot,
-	.prepare_merge	=	raw_prepare_merge,
 	.start_merge	=	raw_start_merge,
 	.prepare_grow	=	raw_prepare_grow,
 };

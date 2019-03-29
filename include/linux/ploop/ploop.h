@@ -191,7 +191,7 @@ struct ploop_io_ops
 	int	(*stop)(struct ploop_io * io);
 	int	(*prepare_snapshot)(struct ploop_io *, struct ploop_snapdata *);
 	int	(*complete_snapshot)(struct ploop_io *, struct ploop_snapdata *);
-	int	(*prepare_merge)(struct ploop_io *, struct ploop_snapdata *);
+	int	(*io_prepare_merge)(struct ploop_io *, struct ploop_snapdata *);
 	int	(*start_merge)(struct ploop_io *, struct ploop_snapdata *);
 	int	(*truncate)(struct ploop_io *, struct file *, __u32 alloc_head);
 	void	(*queue_settings)(struct ploop_io *, struct request_queue *q);
@@ -281,7 +281,7 @@ struct ploop_delta_ops
 	int		(*sync)(struct ploop_delta *);
 	int		(*prepare_snapshot)(struct ploop_delta *, struct ploop_snapdata *);
 	int		(*complete_snapshot)(struct ploop_delta *, struct ploop_snapdata *);
-	int		(*prepare_merge)(struct ploop_delta *, struct ploop_snapdata *);
+	int		(*fmt_prepare_merge)(struct ploop_delta *, struct ploop_snapdata *);
 	int		(*start_merge)(struct ploop_delta *, struct ploop_snapdata *);
 	int		(*truncate)(struct ploop_delta *, struct file *, __u32 alloc_head);
 	int		(*prepare_grow)(struct ploop_delta *, u64 *new_size, int *reloc);
