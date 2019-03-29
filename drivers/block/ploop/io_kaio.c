@@ -1144,7 +1144,7 @@ static struct ploop_io_ops ploop_io_ops_kaio =
 	.stop		=	kaio_stop,
 	.prepare_snapshot =	kaio_prepare_snapshot,
 	.complete_snapshot =	kaio_complete_snapshot,
-	.prepare_merge	=	kaio_prepare_merge,
+	.io_prepare_merge =	kaio_prepare_merge,
 	.start_merge	=	kaio_start_merge,
 	.truncate	=	kaio_truncate,
 
