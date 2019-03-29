@@ -3782,6 +3782,11 @@ static void ploop_merge_cleanup(struct ploop_device * plo,
 	ploop_relax(plo);
 }
 
+/*
+ * Calls format and io callbacks. Should not be called
+ * in quiesce state, since it may enter quiesce state
+ * itself (in fmt_prepare_merge callback).
+ */
 static int ploop_prepare_merge(struct ploop_delta *next,
 			       struct ploop_snapdata *sd)
 {
