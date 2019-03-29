@@ -2008,7 +2008,9 @@ static void shrink_active_list(unsigned long nr_to_scan,
 static int inactive_list_is_low(struct lruvec *lruvec, bool file,
 				struct mem_cgroup *memcg, bool actual_reclaim)
 {
+	enum lru_list active_lru = file * LRU_FILE + LRU_ACTIVE;
 	struct zone *zone = lruvec_zone(lruvec);
+	enum lru_list inactive_lru = file * LRU_FILE;
 	unsigned long inactive_ratio;
 	unsigned long inactive;
 	unsigned long active;
@@ -2022,8 +2024,8 @@ static int inactive_list_is_low(struct lruvec *lruvec, bool file,
 	if (!file && !total_swap_pages)
 		return false;
 
-	inactive = lruvec_lru_size(lruvec, LRU_INACTIVE_FILE);
-	active = lruvec_lru_size(lruvec, LRU_ACTIVE_FILE);
+	inactive = lruvec_lru_size(lruvec, inactive_lru);
+	active = lruvec_lru_size(lruvec, active_lru);
 
 	if (memcg)
 		refaults = memcg_ws_activates(memcg);
