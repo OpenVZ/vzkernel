@@ -379,6 +379,7 @@ ploop1_prepare_merge(struct ploop_delta * delta, struct ploop_snapdata * sd)
 	int err;
 	struct ploop_pvd_header *vh;
 	struct ploop1_private * ph = delta->priv;
+	struct ploop_device *plo = delta->plo;
 
 	vh = (struct ploop_pvd_header *)page_address(ph->dyn_page);
 
@@ -389,9 +390,12 @@ ploop1_prepare_merge(struct ploop_delta * delta, struct ploop_snapdata * sd)
 	if (pvd_header_is_disk_in_use(vh))
 		return -EBUSY;
 
+	/* Close race with submit_alloc */
+	ploop_quiesce(plo);
 	ph->alloc_head = delta->io.ops->i_size_read(&delta->io) >>
 			 (delta->io.plo->cluster_log + 9);
 	delta->io.alloc_head = ph->alloc_head;
+	ploop_relax(plo);
 
 	return 0;
 }
