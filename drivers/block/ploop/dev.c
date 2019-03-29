@@ -3440,6 +3440,7 @@ void ploop_quiesce(struct ploop_device * plo)
 	wait_for_completion(&qcomp);
 	plo->quiesce_comp = NULL;
 }
+EXPORT_SYMBOL(ploop_quiesce);
 
 void ploop_relax(struct ploop_device * plo)
 {
@@ -3449,6 +3450,7 @@ void ploop_relax(struct ploop_device * plo)
 	complete(&plo->relax_comp);
 	wait_for_completion(&plo->relaxed_comp);
 }
+EXPORT_SYMBOL(ploop_relax);
 
 /* search disk for first partition bdev with mounted fs and freeze it */
 static struct super_block *find_and_freeze_bdev(struct ploop_device *plo,
@@ -3782,6 +3784,11 @@ static void ploop_merge_cleanup(struct ploop_device * plo,
 	ploop_relax(plo);
 }
 
+/*
+ * Calls format and io callbacks. Should not be called
+ * in quiesce state, since it may enter quiesce state
+ * itself (in fmt_prepare_merge callback).
+ */
 static int ploop_prepare_merge(struct ploop_delta *next,
 			       struct ploop_snapdata *sd)
 {
