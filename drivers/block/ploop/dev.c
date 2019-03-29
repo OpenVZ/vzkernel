@@ -3782,6 +3782,27 @@ static void ploop_merge_cleanup(struct ploop_device * plo,
 	ploop_relax(plo);
 }
 
+static int ploop_prepare_merge(struct ploop_delta *next,
+			       struct ploop_snapdata *sd)
+{
+	int ret;
+
+	if (next->ops->fmt_prepare_merge) {
+		/* Format callback */
+		ret = next->ops->fmt_prepare_merge(next, sd);
+		if (ret)
+			return ret;
+	}
+
+	/* io callback */
+	ret = next->io.ops->io_prepare_merge(&next->io, sd);
+	if (ret)
+		return ret;
+
+	next->flags &= ~PLOOP_FMT_RDONLY;
+	return 0;
+}
+
 static int ploop_merge(struct ploop_device * plo)
 {
 	int err;
@@ -3813,7 +3834,7 @@ static int ploop_merge(struct ploop_device * plo)
 
 	next = list_entry(delta->list.next, struct ploop_delta, list);
 
-	err = next->ops->prepare_merge(next, &sd);
+	err = ploop_prepare_merge(next, &sd);
 	if (err) {
 		printk(KERN_WARNING "prepare_merge for ploop%d failed (%d)\n",
 		       plo->index, err);
