@@ -620,8 +620,6 @@ not_align:
 	}
 
 	ret = file->f_op->fallocate(file, FALLOC_FL_KEEP_SIZE, start_off, len);
-	if (!ret)
-		ret = io->ops->sync(io);
 out:
 	return ret;
 }
