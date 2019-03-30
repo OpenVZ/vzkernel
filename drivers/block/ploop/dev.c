@@ -2461,10 +2461,7 @@ delta_io:
 					spin_unlock_irq(&plo->lock);
 				}
 				preq->iblock = iblk;
-				if (!(preq->req_rw & REQ_DISCARD))
-					preq->eng_state = PLOOP_E_COMPLETE;
-				else
-					preq->eng_state = PLOOP_E_DATA_WBI;
+				preq->eng_state = PLOOP_E_COMPLETE;
 				__TRACE("T %p %u\n", preq, preq->req_cluster);
 				plo->st.bio_out++;
 				delta->io.ops->submit(&delta->io, preq, preq->req_rw,
