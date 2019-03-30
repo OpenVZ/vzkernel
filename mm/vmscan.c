@@ -2594,7 +2594,8 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 		} while ((memcg = mem_cgroup_iter(root, memcg, &reclaim)));
 
 		if ((!sc->has_inactive || !sc->nr_reclaimed)
-		    && !sc->may_shrink_active) {
+		    && !sc->may_shrink_active
+		    && (sc->nr_reclaimed < sc->nr_to_reclaim)) {
 			sc->may_shrink_active = 1;
 			retry = true;
 			continue;
