@@ -286,7 +286,6 @@ struct ocrdma_dev {
 
 	struct list_head entry;
 	int id;
-	u64 *stag_arr;
 	u8 sl; /* service level */
 	bool pfc_state;
 	atomic_t update_sl;
