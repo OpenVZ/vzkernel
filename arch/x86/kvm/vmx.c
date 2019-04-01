@@ -6099,7 +6099,7 @@ static int handle_triple_fault(struct kvm_vcpu *vcpu)
 static int handle_io(struct kvm_vcpu *vcpu)
 {
 	unsigned long exit_qualification;
-	int size, in, string;
+	int size, in, string, ret;
 	unsigned port;
 
 	exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
@@ -6113,9 +6113,14 @@ static int handle_io(struct kvm_vcpu *vcpu)
 
 	port = exit_qualification >> 16;
 	size = (exit_qualification & 7) + 1;
-	skip_emulated_instruction(vcpu);
 
-	return kvm_fast_pio_out(vcpu, size, port);
+	ret = kvm_skip_emulated_instruction(vcpu);
+
+	/*
+	 * TODO: we might be squashing a KVM_GUESTDBG_SINGLESTEP-triggered
+	 * KVM_EXIT_DEBUG here.
+	 */
+	return kvm_fast_pio_out(vcpu, size, port) && ret;
 }
 
 static void
@@ -6213,6 +6218,7 @@ static int handle_cr(struct kvm_vcpu *vcpu)
 	int cr;
 	int reg;
 	int err;
+	int ret;
 
 	exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
 	cr = exit_qualification & 15;
@@ -6224,25 +6230,27 @@ static int handle_cr(struct kvm_vcpu *vcpu)
 		switch (cr) {
 		case 0:
 			err = handle_set_cr0(vcpu, val);
-			kvm_complete_insn_gp(vcpu, err);
-			return 1;
+			return kvm_complete_insn_gp(vcpu, err);
 		case 3:
 			err = kvm_set_cr3(vcpu, val);
-			kvm_complete_insn_gp(vcpu, err);
-			return 1;
+			return kvm_complete_insn_gp(vcpu, err);
 		case 4:
 			err = handle_set_cr4(vcpu, val);
-			kvm_complete_insn_gp(vcpu, err);
-			return 1;
+			return kvm_complete_insn_gp(vcpu, err);
 		case 8: {
 				u8 cr8_prev = kvm_get_cr8(vcpu);
 				u8 cr8 = (u8)val;
 				err = kvm_set_cr8(vcpu, cr8);
-				kvm_complete_insn_gp(vcpu, err);
+				ret = kvm_complete_insn_gp(vcpu, err);
 				if (lapic_in_kernel(vcpu))
-					return 1;
+					return ret;
 				if (cr8_prev <= cr8)
-					return 1;
+					return ret;
+				/*
+				 * TODO: we might be squashing a
+				 * KVM_GUESTDBG_SINGLESTEP-triggered
+				 * KVM_EXIT_DEBUG here.
+				 */
 				vcpu->run->exit_reason = KVM_EXIT_SET_TPR;
 				return 0;
 			}
@@ -6252,22 +6260,19 @@ static int handle_cr(struct kvm_vcpu *vcpu)
 		handle_clts(vcpu);
 		trace_kvm_cr_write(0, kvm_read_cr0(vcpu));
 		vmx_fpu_activate(vcpu);
-		skip_emulated_instruction(vcpu);
-		return 1;
+		return kvm_skip_emulated_instruction(vcpu);
 	case 1: /*mov from cr*/
 		switch (cr) {
 		case 3:
 			val = kvm_read_cr3(vcpu);
 			kvm_register_write(vcpu, reg, val);
 			trace_kvm_cr_read(cr, val);
-			skip_emulated_instruction(vcpu);
-			return 1;
+			return kvm_skip_emulated_instruction(vcpu);
 		case 8:
 			val = kvm_get_cr8(vcpu);
 			kvm_register_write(vcpu, reg, val);
 			trace_kvm_cr_read(cr, val);
-			skip_emulated_instruction(vcpu);
-			return 1;
+			return kvm_skip_emulated_instruction(vcpu);
 		}
 		break;
 	case 3: /* lmsw */
@@ -6275,8 +6280,7 @@ static int handle_cr(struct kvm_vcpu *vcpu)
 		trace_kvm_cr_write(0, (kvm_read_cr0(vcpu) & ~0xful) | val);
 		kvm_lmsw(vcpu, val);
 
-		skip_emulated_instruction(vcpu);
-		return 1;
+		return kvm_skip_emulated_instruction(vcpu);
 	default:
 		break;
 	}
@@ -6347,8 +6351,7 @@ static int handle_dr(struct kvm_vcpu *vcpu)
 		if (kvm_set_dr(vcpu, dr, kvm_register_readl(vcpu, reg)))
 			return 1;
 
-	skip_emulated_instruction(vcpu);
-	return 1;
+	return kvm_skip_emulated_instruction(vcpu);
 }
 
 static u64 vmx_get_dr6(struct kvm_vcpu *vcpu)
@@ -6401,8 +6404,7 @@ static int handle_rdmsr(struct kvm_vcpu *vcpu)
 	/* FIXME: handling of bits 32:63 of rax, rdx */
 	vcpu->arch.regs[VCPU_REGS_RAX] = msr_info.data & -1u;
 	vcpu->arch.regs[VCPU_REGS_RDX] = (msr_info.data >> 32) & -1u;
-	skip_emulated_instruction(vcpu);
-	return 1;
+	return kvm_skip_emulated_instruction(vcpu);
 }
 
 static int handle_wrmsr(struct kvm_vcpu *vcpu)
@@ -6422,8 +6424,7 @@ static int handle_wrmsr(struct kvm_vcpu *vcpu)
 	}
 
 	trace_kvm_msr_write(ecx, data);
-	skip_emulated_instruction(vcpu);
-	return 1;
+	return kvm_skip_emulated_instruction(vcpu);
 }
 
 static int handle_tpr_below_threshold(struct kvm_vcpu *vcpu)
@@ -6467,8 +6468,7 @@ static int handle_invlpg(struct kvm_vcpu *vcpu)
 	unsigned long exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
 
 	kvm_mmu_invlpg(vcpu, exit_qualification);
-	skip_emulated_instruction(vcpu);
-	return 1;
+	return kvm_skip_emulated_instruction(vcpu);
 }
 
 static int handle_rdpmc(struct kvm_vcpu *vcpu)
@@ -6476,15 +6476,12 @@ static int handle_rdpmc(struct kvm_vcpu *vcpu)
 	int err;
 
 	err = kvm_rdpmc(vcpu);
-	kvm_complete_insn_gp(vcpu, err);
-
-	return 1;
+	return kvm_complete_insn_gp(vcpu, err);
 }
 
 static int handle_wbinvd(struct kvm_vcpu *vcpu)
 {
-	kvm_emulate_wbinvd(vcpu);
-	return 1;
+	return kvm_emulate_wbinvd(vcpu);
 }
 
 static int handle_xsetbv(struct kvm_vcpu *vcpu)
@@ -6493,7 +6490,7 @@ static int handle_xsetbv(struct kvm_vcpu *vcpu)
 	u32 index = kvm_register_read(vcpu, VCPU_REGS_RCX);
 
 	if (kvm_set_xcr(vcpu, index, new_bv) == 0)
-		skip_emulated_instruction(vcpu);
+		return kvm_skip_emulated_instruction(vcpu);
 	return 1;
 }
 
@@ -6513,8 +6510,7 @@ static int handle_apic_access(struct kvm_vcpu *vcpu)
 		if ((access_type == TYPE_LINEAR_APIC_INST_WRITE) &&
 		    (offset == APIC_EOI)) {
 			kvm_lapic_set_eoi(vcpu);
-			skip_emulated_instruction(vcpu);
-			return 1;
+			return kvm_skip_emulated_instruction(vcpu);
 		}
 	}
 	return emulate_instruction(vcpu, 0) == EMULATE_DONE;
@@ -6661,8 +6657,8 @@ static int handle_ept_misconfig(struct kvm_vcpu *vcpu)
 	gpa = vmcs_read64(GUEST_PHYSICAL_ADDRESS);
 	if (!is_guest_mode(vcpu) &&
 	    !kvm_io_bus_write(vcpu->kvm, KVM_FAST_MMIO_BUS, gpa, 0, NULL)) {
-		skip_emulated_instruction(vcpu);
 		trace_kvm_fast_mmio(gpa);
+		skip_emulated_instruction(vcpu);
 		return 1;
 	}
 
@@ -6968,15 +6964,12 @@ static int handle_pause(struct kvm_vcpu *vcpu)
 		grow_ple_window(vcpu);
 
 	kvm_vcpu_on_spin(vcpu);
-	skip_emulated_instruction(vcpu);
-
-	return 1;
+	return kvm_skip_emulated_instruction(vcpu);
 }
 
 static int handle_nop(struct kvm_vcpu *vcpu)
 {
-	skip_emulated_instruction(vcpu);
-	return 1;
+	return kvm_skip_emulated_instruction(vcpu);
 }
 
 static int handle_mwait(struct kvm_vcpu *vcpu)
@@ -7200,22 +7193,19 @@ static int nested_vmx_check_vmptr(struct kvm_vcpu *vcpu, int exit_reason,
 		 */
 		if (!PAGE_ALIGNED(vmptr) || (vmptr >> maxphyaddr)) {
 			nested_vmx_failInvalid(vcpu);
-			skip_emulated_instruction(vcpu);
-			return 1;
+			return kvm_skip_emulated_instruction(vcpu);
 		}
 
 		page = nested_get_page(vcpu, vmptr);
 		if (page == NULL) {
 			nested_vmx_failInvalid(vcpu);
-			skip_emulated_instruction(vcpu);
-			return 1;
+			return kvm_skip_emulated_instruction(vcpu);
 		}
 		if (*(u32 *)kmap(page) != VMCS12_REVISION) {
 			kunmap(page);
 			nested_release_page_clean(page);
 			nested_vmx_failInvalid(vcpu);
-			skip_emulated_instruction(vcpu);
-			return 1;
+			return kvm_skip_emulated_instruction(vcpu);
 		}
 		kunmap(page);
 		nested_release_page_clean(page);
@@ -7225,30 +7215,26 @@ static int nested_vmx_check_vmptr(struct kvm_vcpu *vcpu, int exit_reason,
 		if (!PAGE_ALIGNED(vmptr) || (vmptr >> maxphyaddr)) {
 			nested_vmx_failValid(vcpu,
 					     VMXERR_VMCLEAR_INVALID_ADDRESS);
-			skip_emulated_instruction(vcpu);
-			return 1;
+			return kvm_skip_emulated_instruction(vcpu);
 		}
 
 		if (vmptr == vmx->nested.vmxon_ptr) {
 			nested_vmx_failValid(vcpu,
 					     VMXERR_VMCLEAR_VMXON_POINTER);
-			skip_emulated_instruction(vcpu);
-			return 1;
+			return kvm_skip_emulated_instruction(vcpu);
 		}
 		break;
 	case EXIT_REASON_VMPTRLD:
 		if (!PAGE_ALIGNED(vmptr) || (vmptr >> maxphyaddr)) {
 			nested_vmx_failValid(vcpu,
 					     VMXERR_VMPTRLD_INVALID_ADDRESS);
-			skip_emulated_instruction(vcpu);
-			return 1;
+			return kvm_skip_emulated_instruction(vcpu);
 		}
 
 		if (vmptr == vmx->nested.vmxon_ptr) {
 			nested_vmx_failValid(vcpu,
 					     VMXERR_VMPTRLD_VMXON_POINTER);
-			skip_emulated_instruction(vcpu);
-			return 1;
+			return kvm_skip_emulated_instruction(vcpu);
 		}
 		break;
 	default:
@@ -7305,8 +7291,7 @@ static int handle_vmon(struct kvm_vcpu *vcpu)
 
 	if (vmx->nested.vmxon) {
 		nested_vmx_failValid(vcpu, VMXERR_VMXON_IN_VMX_ROOT_OPERATION);
-		skip_emulated_instruction(vcpu);
-		return 1;
+		return kvm_skip_emulated_instruction(vcpu);
 	}
 
 	if ((vmx->msr_ia32_feature_control & VMXON_NEEDED_FEATURES)
@@ -7343,8 +7328,7 @@ static int handle_vmon(struct kvm_vcpu *vcpu)
 	vmx->nested.vmxon = true;
 
 	nested_vmx_succeed(vcpu);
-	skip_emulated_instruction(vcpu);
-	return 1;
+	return kvm_skip_emulated_instruction(vcpu);
 
 out_shadow_vmcs:
 	kfree(vmx->nested.cached_vmcs12);
@@ -7470,8 +7454,7 @@ static int handle_vmoff(struct kvm_vcpu *vcpu)
 		return 1;
 	free_nested(vcpu);
 	nested_vmx_succeed(vcpu);
-	skip_emulated_instruction(vcpu);
-	return 1;
+	return kvm_skip_emulated_instruction(vcpu);
 }
 
 /* Emulate the VMCLEAR instruction */
@@ -7495,8 +7478,7 @@ static int handle_vmclear(struct kvm_vcpu *vcpu)
 			&zero, sizeof(zero));
 
 	nested_vmx_succeed(vcpu);
-	skip_emulated_instruction(vcpu);
-	return 1;
+	return kvm_skip_emulated_instruction(vcpu);
 }
 
 static int nested_vmx_run(struct kvm_vcpu *vcpu, bool launch);
@@ -7691,18 +7673,15 @@ static int handle_vmread(struct kvm_vcpu *vcpu)
 	if (!nested_vmx_check_permission(vcpu))
 		return 1;
 
-	if (!nested_vmx_check_vmcs12(vcpu)) {
-		skip_emulated_instruction(vcpu);
-		return 1;
-	}
+	if (!nested_vmx_check_vmcs12(vcpu))
+		return kvm_skip_emulated_instruction(vcpu);
 
 	/* Decode instruction info and find the field to read */
 	field = kvm_register_readl(vcpu, (((vmx_instruction_info) >> 28) & 0xf));
 	/* Read the field, zero-extended to a u64 field_value */
 	if (vmcs12_read_any(vcpu, field, &field_value) < 0) {
 		nested_vmx_failValid(vcpu, VMXERR_UNSUPPORTED_VMCS_COMPONENT);
-		skip_emulated_instruction(vcpu);
-		return 1;
+		return kvm_skip_emulated_instruction(vcpu);
 	}
 	/*
 	 * Now copy part of this value to register or memory, as requested.
@@ -7722,8 +7701,7 @@ static int handle_vmread(struct kvm_vcpu *vcpu)
 	}
 
 	nested_vmx_succeed(vcpu);
-	skip_emulated_instruction(vcpu);
-	return 1;
+	return kvm_skip_emulated_instruction(vcpu);
 }
 
 
@@ -7745,10 +7723,8 @@ static int handle_vmwrite(struct kvm_vcpu *vcpu)
 	if (!nested_vmx_check_permission(vcpu))
 		return 1;
 
-	if (!nested_vmx_check_vmcs12(vcpu)) {
-		skip_emulated_instruction(vcpu);
-		return 1;
-	}
+	if (!nested_vmx_check_vmcs12(vcpu))
+		return kvm_skip_emulated_instruction(vcpu);
 
 	if (vmx_instruction_info & (1u << 10))
 		field_value = kvm_register_readl(vcpu,
@@ -7769,19 +7745,16 @@ static int handle_vmwrite(struct kvm_vcpu *vcpu)
 	if (vmcs_field_readonly(field)) {
 		nested_vmx_failValid(vcpu,
 			VMXERR_VMWRITE_READ_ONLY_VMCS_COMPONENT);
-		skip_emulated_instruction(vcpu);
-		return 1;
+		return kvm_skip_emulated_instruction(vcpu);
 	}
 
 	if (vmcs12_write_any(vcpu, field, field_value) < 0) {
 		nested_vmx_failValid(vcpu, VMXERR_UNSUPPORTED_VMCS_COMPONENT);
-		skip_emulated_instruction(vcpu);
-		return 1;
+		return kvm_skip_emulated_instruction(vcpu);
 	}
 
 	nested_vmx_succeed(vcpu);
-	skip_emulated_instruction(vcpu);
-	return 1;
+	return kvm_skip_emulated_instruction(vcpu);
 }
 
 static void set_current_vmptr(struct vcpu_vmx *vmx, gpa_t vmptr)
@@ -7814,8 +7787,7 @@ static int handle_vmptrld(struct kvm_vcpu *vcpu)
 		page = nested_get_page(vcpu, vmptr);
 		if (page == NULL) {
 			nested_vmx_failInvalid(vcpu);
-			skip_emulated_instruction(vcpu);
-			return 1;
+			return kvm_skip_emulated_instruction(vcpu);
 		}
 		new_vmcs12 = kmap(page);
 		if (new_vmcs12->revision_id != VMCS12_REVISION) {
@@ -7823,8 +7795,7 @@ static int handle_vmptrld(struct kvm_vcpu *vcpu)
 			nested_release_page_clean(page);
 			nested_vmx_failValid(vcpu,
 				VMXERR_VMPTRLD_INCORRECT_VMCS_REVISION_ID);
-			skip_emulated_instruction(vcpu);
-			return 1;
+			return kvm_skip_emulated_instruction(vcpu);
 		}
 
 		nested_release_vmcs12(vcpu);
@@ -7841,8 +7812,7 @@ static int handle_vmptrld(struct kvm_vcpu *vcpu)
 	}
 
 	nested_vmx_succeed(vcpu);
-	skip_emulated_instruction(vcpu);
-	return 1;
+	return kvm_skip_emulated_instruction(vcpu);
 }
 
 /* Emulate the VMPTRST instruction */
@@ -7867,8 +7837,7 @@ static int handle_vmptrst(struct kvm_vcpu *vcpu)
 		return 1;
 	}
 	nested_vmx_succeed(vcpu);
-	skip_emulated_instruction(vcpu);
-	return 1;
+	return kvm_skip_emulated_instruction(vcpu);
 }
 
 /* Emulate the INVEPT instruction */
@@ -7906,8 +7875,7 @@ static int handle_invept(struct kvm_vcpu *vcpu)
 	if (type >= 32 || !(types & (1 << type))) {
 		nested_vmx_failValid(vcpu,
 				VMXERR_INVALID_OPERAND_TO_INVEPT_INVVPID);
-		skip_emulated_instruction(vcpu);
-		return 1;
+		return kvm_skip_emulated_instruction(vcpu);
 	}
 
 	/* According to the Intel VMX instruction reference, the memory
@@ -7937,8 +7905,7 @@ static int handle_invept(struct kvm_vcpu *vcpu)
 		break;
 	}
 
-	skip_emulated_instruction(vcpu);
-	return 1;
+	return kvm_skip_emulated_instruction(vcpu);
 }
 
 static int handle_invvpid(struct kvm_vcpu *vcpu)
@@ -7972,8 +7939,7 @@ static int handle_invvpid(struct kvm_vcpu *vcpu)
 	if (type >= 32 || !(types & (1 << type))) {
 		nested_vmx_failValid(vcpu,
 			VMXERR_INVALID_OPERAND_TO_INVEPT_INVVPID);
-		skip_emulated_instruction(vcpu);
-		return 1;
+		return kvm_skip_emulated_instruction(vcpu);
 	}
 
 	/* according to the intel vmx instruction reference, the memory
@@ -7989,8 +7955,7 @@ static int handle_invvpid(struct kvm_vcpu *vcpu)
 	if (operand.vpid >> 16) {
 		nested_vmx_failValid(vcpu,
 			VMXERR_INVALID_OPERAND_TO_INVEPT_INVVPID);
-		skip_emulated_instruction(vcpu);
-		return 1;
+		return kvm_skip_emulated_instruction(vcpu);
 	}
 
 	switch (type) {
@@ -7998,8 +7963,7 @@ static int handle_invvpid(struct kvm_vcpu *vcpu)
 		if (is_noncanonical_address(operand.gla)) {
 			nested_vmx_failValid(vcpu,
 				VMXERR_INVALID_OPERAND_TO_INVEPT_INVVPID);
-			skip_emulated_instruction(vcpu);
-			return 1;
+			return kvm_skip_emulated_instruction(vcpu);
 		}
 		/* fall through */
 	case VMX_VPID_EXTENT_SINGLE_CONTEXT:
@@ -8007,23 +7971,20 @@ static int handle_invvpid(struct kvm_vcpu *vcpu)
 		if (!operand.vpid) {
 			nested_vmx_failValid(vcpu,
 				VMXERR_INVALID_OPERAND_TO_INVEPT_INVVPID);
-			skip_emulated_instruction(vcpu);
-			return 1;
+			return kvm_skip_emulated_instruction(vcpu);
 		}
 		break;
 	case VMX_VPID_EXTENT_ALL_CONTEXT:
 		break;
 	default:
 		WARN_ON_ONCE(1);
-		skip_emulated_instruction(vcpu);
-		return 1;
+		return kvm_skip_emulated_instruction(vcpu);
 	}
 
 	__vmx_flush_tlb(vcpu, vmx->nested.vpid02);
 	nested_vmx_succeed(vcpu);
 
-	skip_emulated_instruction(vcpu);
-	return 1;
+	return kvm_skip_emulated_instruction(vcpu);
 }
 
 static int handle_pml_full(struct kvm_vcpu *vcpu)
@@ -11172,8 +11133,7 @@ static int nested_vmx_run(struct kvm_vcpu *vcpu, bool launch)
 	return 1;
 
 out:
-	skip_emulated_instruction(vcpu);
-	return 1;
+	return kvm_skip_emulated_instruction(vcpu);
 }
 
 /*
