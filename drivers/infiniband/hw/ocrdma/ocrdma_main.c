@@ -262,10 +262,6 @@ static int ocrdma_alloc_resources(struct ocrdma_dev *dev)
 			goto alloc_err;
 	}
 
-	dev->stag_arr = kcalloc(OCRDMA_MAX_STAG, sizeof(u64), GFP_KERNEL);
-	if (dev->stag_arr == NULL)
-		goto alloc_err;
-
 	ocrdma_alloc_pd_pool(dev);
 
 	if (!ocrdma_alloc_stats_resources(dev)) {
@@ -284,7 +280,6 @@ alloc_err:
 static void ocrdma_free_resources(struct ocrdma_dev *dev)
 {
 	ocrdma_release_stats_resources(dev);
-	kfree(dev->stag_arr);
 	kfree(dev->qp_tbl);
 	kfree(dev->cq_tbl);
 }
