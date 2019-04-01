@@ -914,7 +914,7 @@ void kvm_cpuid(struct kvm_vcpu *vcpu, u32 *eax, u32 *ebx, u32 *ecx, u32 *edx)
 }
 EXPORT_SYMBOL_GPL(kvm_cpuid);
 
-void kvm_emulate_cpuid(struct kvm_vcpu *vcpu)
+int kvm_emulate_cpuid(struct kvm_vcpu *vcpu)
 {
 	u32 function, eax, ebx, ecx, edx;
 
@@ -926,5 +926,6 @@ void kvm_emulate_cpuid(struct kvm_vcpu *vcpu)
 	kvm_register_write(vcpu, VCPU_REGS_RCX, ecx);
 	kvm_register_write(vcpu, VCPU_REGS_RDX, edx);
 	kvm_x86_ops->skip_emulated_instruction(vcpu);
+	return 1;
 }
 EXPORT_SYMBOL_GPL(kvm_emulate_cpuid);
