@@ -24,14 +24,8 @@ struct ploop1_private
 	u32		alloc_head;
 	sector_t	l1_off;
 	u32		nr_bat_entries;
+	u32		nr_clusters_in_bitmap;
 };
-
-static unsigned int data_off_in_clusters(struct ploop_delta *delta)
-{
-	struct ploop1_private *ph = delta->priv;
-
-	return (ph->l1_off >> delta->cluster_log);
-}
 
 int ploop1_map_index(struct ploop_delta * delta, unsigned long block, sector_t *sec)
 {
@@ -124,7 +118,7 @@ ploop1_compose(struct ploop_delta * delta, int nchunks, struct ploop_ctl_chunk *
 static int populate_holes_bitmap(struct ploop_delta *delta,
 				 struct ploop1_private *ph)
 {
-	unsigned int block, nr_blocks, size, off;
+	unsigned int block, nr_blocks, size, off, md_off;
 	struct page *page;
 	sector_t sec;
 	u32 *index;
@@ -142,15 +136,28 @@ static int populate_holes_bitmap(struct ploop_delta *delta,
 	if (!page)
 		return ret;
 
-	nr_blocks = ph->nr_bat_entries;
+	/*
+	 * Holes bitmap is map of clusters from start of file to maximum
+	 * cluster, which may be refered by BAT.
+	 * Absolute offset is useful for grow operation. Also it allows
+	 * to handle failing allocation requests, which ends after grow.
+	 */
+	md_off = (ph->l1_off >> delta->cluster_log);
+	nr_blocks = md_off + ph->nr_bat_entries;
+
 	/* Bits to bytes */
 	size = DIV_ROUND_UP(nr_blocks, 8);
 
 	delta->holes_bitmap = kvmalloc(size, GFP_KERNEL);
 	if (!delta->holes_bitmap)
 		goto put_page;
+	ph->nr_clusters_in_bitmap = nr_blocks;
 	memset(delta->holes_bitmap, 0xff, size);
+	/* Tail clusters are not available for allocation */
 	for (i = nr_blocks; i < size * 8; i++)
+		clear_bit(i, delta->holes_bitmap);
+	/* Header and BAT cluster are not available too */
+	for (i = 0; i < md_off; i++)
 		clear_bit(i, delta->holes_bitmap);
 
 	block = 0;
@@ -169,8 +176,7 @@ static int populate_holes_bitmap(struct ploop_delta *delta,
 		index = page_address(page);
 		for (i = off; i < INDEX_PER_PAGE && block + i - off < nr_blocks; i++) {
 			if (index[i] != 0) {
-				clear_bit((index[i] >> ploop_map_log(delta->plo)) -
-					  data_off_in_clusters(delta),
+				clear_bit((index[i] >> ploop_map_log(delta->plo)),
 					  delta->holes_bitmap);
 			}
 		}
@@ -309,20 +315,20 @@ ploop1_allocate(struct ploop_delta * delta, struct ploop_request * preq,
 		struct bio_list * sbl, unsigned int size)
 {
 	struct ploop1_private * ph = delta->priv;
+	unsigned int max_size;
 	cluster_t cluster = 0;
 	int ret;
 
 	if (delta->holes_bitmap) {
-		unsigned nr_clusters = ph->nr_bat_entries;
+		unsigned nr_clusters = ph->nr_clusters_in_bitmap;
 
 		cluster = find_first_bit(delta->holes_bitmap, nr_clusters);
-		if (cluster >= nr_clusters) {
-			PLOOP_FAIL_REQUEST(preq, -ENOSPC);
-			return;
-		}
-		cluster += data_off_in_clusters(delta);
-	} else if (delta->io.alloc_head >=
-			(delta->max_delta_size >> delta->cluster_log)) {
+		if (cluster >= nr_clusters)
+			cluster = 0; /* grow in process? */
+	}
+
+	max_size = (delta->max_delta_size >> delta->cluster_log);
+	if (!cluster && delta->io.alloc_head >= max_size) {
 		PLOOP_FAIL_REQUEST(preq, -E2BIG);
 		return;
 	}
@@ -331,7 +337,6 @@ ploop1_allocate(struct ploop_delta * delta, struct ploop_request * preq,
 
 	if (ret == 1 && cluster) {
 		/* Success. Mark cluster as occupied */
-		cluster -= data_off_in_clusters(delta);
 		clear_bit(cluster, delta->holes_bitmap);
 		/*
 		 * FIXME: but what about failing requests,
@@ -588,14 +593,19 @@ static int ploop1_truncate(struct ploop_delta * delta, struct file * file,
 				       alloc_head);
 }
 
-static int expand_holes_bitmap(struct ploop_delta *delta, unsigned int old_nr,
-							  unsigned int nr)
+static int expand_holes_bitmap(struct ploop_delta *delta,
+			       struct ploop_pvd_header *vh,
+			       unsigned int old_nr)
 {
-	unsigned int i, size, old_size;
+	unsigned int i, nr, md_off, size, old_size;
+	unsigned int log = delta->cluster_log;
 	void *holes_bitmap;
 
 	if (!delta->holes_bitmap)
 		return 0;
+
+	md_off = vh->m_FirstBlockOffset >> log;
+	nr = md_off + vh->m_Size;
 
 	old_size = DIV_ROUND_UP(old_nr, 8);
 	size = DIV_ROUND_UP(nr, 8);
@@ -612,11 +622,20 @@ static int expand_holes_bitmap(struct ploop_delta *delta, unsigned int old_nr,
 	memcpy(holes_bitmap, delta->holes_bitmap, old_size);
 	kvfree(delta->holes_bitmap);
 
-	/* Fill last old byte */
+	/* Tail bits of old bitmap */
 	for (i = old_nr; i < old_size * 8; i++)
-		__set_bit(i - 1, holes_bitmap);
+		set_bit(i, holes_bitmap);
+	/* Header and BAT are not available for allocation */
+	for (i = 0; i < md_off; i++)
+		clear_bit(i, holes_bitmap);
 	/* Fill all new bytes */
 	memset(holes_bitmap + old_size, 0xff, size - old_size);
+	/*
+	 * But clear clusters above old bitmap,
+	 * which were allocated during grow.
+	 */
+	for (i = old_nr; i < delta->io.alloc_head && i < nr; i++)
+		clear_bit(i, holes_bitmap);
 	/* Clear alignment bytes */
 	for (i = nr; i < size * 8; i++)
 		clear_bit(i, holes_bitmap);
@@ -635,7 +654,7 @@ ploop1_prepare_grow(struct ploop_delta * delta, u64 *new_size, int *reloc)
 	int n_present;     /* # cluster-blocks in L2-table (existent now) */
 	int n_needed;      /* # cluster-blocks in L2-table (for new_size) */
 	int n_alloced = 0; /* # cluster-blocks we can alloc right now */
-	int err;
+	int i, err;
 	iblock_t a_h = delta->io.alloc_head;
 	int	 log = delta->io.plo->cluster_log;
 
@@ -673,6 +692,13 @@ ploop1_prepare_grow(struct ploop_delta * delta, u64 *new_size, int *reloc)
 		/* Feeling irresistable infatuation to relocate ... */
 		delta->io.plo->grow_start = n_present;
 		delta->io.plo->grow_end = n_needed - n_alloced - 1;
+
+		/* Does not use rellocated data clusters during grow. */
+		if (delta->holes_bitmap) {
+			i = delta->io.plo->grow_start;
+			while (i <= delta->io.plo->grow_end)
+				clear_bit(i++, delta->holes_bitmap);
+		}
 	}
 
 	return 0;
@@ -680,9 +706,9 @@ ploop1_prepare_grow(struct ploop_delta * delta, u64 *new_size, int *reloc)
 
 static int ploop1_complete_grow(struct ploop_delta * delta, u64 new_size)
 {
+	unsigned int log = delta->cluster_log;
 	struct ploop_pvd_header *vh;
 	struct ploop1_private * ph = delta->priv;
-	unsigned int nr_bat_entries;
 	int err;
 	u32 vh_bsize; /* block size in sectors */
 
@@ -705,6 +731,11 @@ static int ploop1_complete_grow(struct ploop_delta * delta, u64 new_size)
 
 	generate_pvd_header(vh, new_size, vh_bsize, delta->plo->fmt_version);
 
+	err = expand_holes_bitmap(delta, vh,
+				  (ph->l1_off >> log) + ph->nr_bat_entries);
+	if (err)
+		return err;
+
 	vh->m_Type             = cpu_to_le32(vh->m_Type);
 	cpu_to_le_SizeInSectors(vh, delta->plo->fmt_version);
 	vh->m_Sectors          = cpu_to_le32(vh->m_Sectors);
@@ -712,11 +743,6 @@ static int ploop1_complete_grow(struct ploop_delta * delta, u64 new_size)
 	vh->m_Cylinders        = cpu_to_le32(vh->m_Cylinders);
 	vh->m_Size             = cpu_to_le32(vh->m_Size);
 	vh->m_FirstBlockOffset = cpu_to_le32(vh->m_FirstBlockOffset);
-	nr_bat_entries = le32_to_cpu(vh->m_Size);
-
-	err = expand_holes_bitmap(delta, ph->nr_bat_entries, nr_bat_entries);
-	if (err)
-		return err;
 
 	/* keep hdr in ph->dyn_page and in map_node in sync */
 	ploop_update_map_hdr(&delta->plo->map, (u8 *)vh, sizeof(*vh));
@@ -731,7 +757,8 @@ static int ploop1_complete_grow(struct ploop_delta * delta, u64 new_size)
 
 	ph->bd_size = new_size;
 	ph->l1_off = le32_to_cpu(vh->m_FirstBlockOffset);
-	ph->nr_bat_entries = nr_bat_entries;
+	ph->nr_bat_entries = le32_to_cpu(vh->m_Size);
+	ph->nr_clusters_in_bitmap = (ph->l1_off >> log) + ph->nr_bat_entries;
 
 	return 0;
 }
@@ -754,7 +781,6 @@ static void ploop1_add_free_blk(struct ploop_delta *delta, struct ploop_request 
 		return;
 
 	cluster = blk >> ploop_map_log(delta->plo);
-	cluster -= data_off_in_clusters(delta);
 
 	WARN_ON_ONCE(test_bit(cluster, delta->holes_bitmap));
 	set_bit(cluster, delta->holes_bitmap);
