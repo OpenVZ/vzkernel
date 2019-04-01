@@ -3534,9 +3534,7 @@ static int rdpmc_interception(struct vcpu_svm *svm)
 		return emulate_on_interception(svm);
 
 	err = kvm_rdpmc(&svm->vcpu);
-	kvm_complete_insn_gp(&svm->vcpu, err);
-
-	return 1;
+	return kvm_complete_insn_gp(&svm->vcpu, err);
 }
 
 static bool check_selective_cr0_intercepted(struct vcpu_svm *svm,
@@ -3630,9 +3628,7 @@ static int cr_interception(struct vcpu_svm *svm)
 		}
 		kvm_register_write(&svm->vcpu, reg, val);
 	}
-	kvm_complete_insn_gp(&svm->vcpu, err);
-
-	return 1;
+	return kvm_complete_insn_gp(&svm->vcpu, err);
 }
 
 static int dr_interception(struct vcpu_svm *svm)
