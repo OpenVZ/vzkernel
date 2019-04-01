@@ -461,12 +461,14 @@ void kvm_requeue_exception(struct kvm_vcpu *vcpu, unsigned nr)
 }
 EXPORT_SYMBOL_GPL(kvm_requeue_exception);
 
-void kvm_complete_insn_gp(struct kvm_vcpu *vcpu, int err)
+int kvm_complete_insn_gp(struct kvm_vcpu *vcpu, int err)
 {
 	if (err)
 		kvm_inject_gp(vcpu, 0);
 	else
-		kvm_x86_ops->skip_emulated_instruction(vcpu);
+		return kvm_skip_emulated_instruction(vcpu);
+
+	return 1;
 }
 EXPORT_SYMBOL_GPL(kvm_complete_insn_gp);
 
@@ -5142,8 +5144,8 @@ int kvm_emulate_wbinvd_noskip(struct kvm_vcpu *vcpu)
 
 int kvm_emulate_wbinvd(struct kvm_vcpu *vcpu)
 {
-	kvm_x86_ops->skip_emulated_instruction(vcpu);
-	return kvm_emulate_wbinvd_noskip(vcpu);
+	kvm_emulate_wbinvd_noskip(vcpu);
+	return kvm_skip_emulated_instruction(vcpu);
 }
 EXPORT_SYMBOL_GPL(kvm_emulate_wbinvd);
 
@@ -5767,6 +5769,27 @@ static void kvm_vcpu_do_singlestep(struct kvm_vcpu *vcpu, int *r)
 	}
 }
 
+int kvm_skip_emulated_instruction(struct kvm_vcpu *vcpu)
+{
+	unsigned long rflags = kvm_x86_ops->get_rflags(vcpu);
+	int r = EMULATE_DONE;
+
+	kvm_x86_ops->skip_emulated_instruction(vcpu);
+
+	/*
+	 * rflags is the old, "raw" value of the flags.  The new value has
+	 * not been saved yet.
+	 *
+	 * This is correct even for TF set by the guest, because "the
+	 * processor will not generate this exception after the instruction
+	 * that sets the TF flag".
+	 */
+	if (unlikely(rflags & X86_EFLAGS_TF))
+		kvm_vcpu_do_singlestep(vcpu, &r);
+	return r == EMULATE_DONE;
+}
+EXPORT_SYMBOL_GPL(kvm_skip_emulated_instruction);
+
 static bool kvm_vcpu_check_breakpoint(struct kvm_vcpu *vcpu, int *r)
 {
 	if (unlikely(vcpu->guest_debug & KVM_GUESTDBG_USE_HW_BP) &&
@@ -6322,8 +6345,12 @@ EXPORT_SYMBOL_GPL(kvm_vcpu_halt);
 
 int kvm_emulate_halt(struct kvm_vcpu *vcpu)
 {
-	kvm_x86_ops->skip_emulated_instruction(vcpu);
-	return kvm_vcpu_halt(vcpu);
+	int ret = kvm_skip_emulated_instruction(vcpu);
+	/*
+	 * TODO: we might be squashing a GUESTDBG_SINGLESTEP-triggered
+	 * KVM_EXIT_DEBUG here.
+	 */
+	return kvm_vcpu_halt(vcpu) && ret;
 }
 EXPORT_SYMBOL_GPL(kvm_emulate_halt);
 
@@ -6381,9 +6408,9 @@ void kvm_vcpu_deactivate_apicv(struct kvm_vcpu *vcpu)
 int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 {
 	unsigned long nr, a0, a1, a2, a3, ret;
-	int op_64_bit, r = 1;
+	int op_64_bit, r;
 
-	kvm_x86_ops->skip_emulated_instruction(vcpu);
+	r = kvm_skip_emulated_instruction(vcpu);
 
 	if (kvm_hv_hypercall_enabled(vcpu->kvm))
 		return kvm_hv_hypercall(vcpu);
