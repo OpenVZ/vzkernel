@@ -182,7 +182,7 @@ int ploop_submit_alloc(struct ploop_delta *delta, struct ploop_request *preq,
 	if ((ret == 0 || ret == -ENOSPC) && advanced)
 		io->alloc_head--;
 
-	WARN_ON(iblk > io->alloc_head);
+	WARN_ON_ONCE(iblk > io->alloc_head);
 
 	return ret;
 }
