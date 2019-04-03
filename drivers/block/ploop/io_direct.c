@@ -732,14 +732,24 @@ out:
 
 static int
 dio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
-		 struct bio_list * sbl, unsigned int size, iblock_t iblk)
+		 struct bio_list * sbl, unsigned int size)
 {
 	int err;
+	iblock_t iblk = io->alloc_head++;
+
+	trace_submit_alloc(preq);
+
+	if (!(io->files.file->f_mode & FMODE_WRITE)) {
+		PLOOP_FAIL_REQUEST(preq, -EBADF);
+		return -1;
+	}
 
 	err = cached_submit(io, iblk, preq, sbl, size, true);
 	if (err) {
+		if (err == -ENOSPC)
+			io->alloc_head--;
 		PLOOP_FAIL_REQUEST(preq, err);
-		return err;
+		return -1;
 	}
 	preq->eng_state = PLOOP_E_DATA_WBI;
 	return 1;
