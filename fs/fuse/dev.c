@@ -340,8 +340,9 @@ void fuse_request_end(struct fuse_conn *fc, struct fuse_req *req)
 		if (!bg)
 			req->args->end = NULL;
 	}
-	/* Wake up waiter sleeping in request_wait_answer() */
-	wake_up(&req->waitq);
+	if (!bg)
+		/* Wake up waiter sleeping in request_wait_answer() */
+		wake_up(&req->waitq);
 put_request:
 	fuse_put_request(fc, req);
 }
