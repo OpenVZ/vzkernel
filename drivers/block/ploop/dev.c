@@ -2173,18 +2173,6 @@ void ploop_add_req_to_fsync_queue(struct ploop_request * preq)
 	spin_unlock_irq(&plo->lock);
 }
 
-static bool ploop_can_issue_discard(struct ploop_device *plo,
-				    struct ploop_request *preq)
-{
-	if (test_bit(PLOOP_REQ_DISCARD, &preq->state))
-		return true;
-
-	if (test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state))
-		return false;
-
-	return whole_block(plo, preq);
-}
-
 static void
 ploop_entry_request(struct ploop_request * preq)
 {
@@ -2197,7 +2185,8 @@ ploop_entry_request(struct ploop_request * preq)
 	iblock_t iblk;
 
 	if ((preq->req_rw & REQ_DISCARD) &&
-	    !ploop_can_issue_discard(plo, preq)) {
+	    !test_bit(PLOOP_REQ_DISCARD, &preq->state) &&
+	    test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state)) {
 		preq->eng_state = PLOOP_E_COMPLETE;
 		preq->error = -EOPNOTSUPP;
 		ploop_complete_io_state(preq);
