@@ -2173,14 +2173,6 @@ void ploop_add_req_to_fsync_queue(struct ploop_request * preq)
 	spin_unlock_irq(&plo->lock);
 }
 
-static void
-complete_unsupported_discard_req(struct ploop_request * preq)
-{
-	preq->eng_state = PLOOP_E_COMPLETE;
-	preq->error = -EOPNOTSUPP;
-	ploop_complete_io_state(preq);
-}
-
 static bool ploop_can_issue_discard(struct ploop_device *plo,
 				    struct ploop_request *preq)
 {
@@ -2206,7 +2198,9 @@ ploop_entry_request(struct ploop_request * preq)
 
 	if ((preq->req_rw & REQ_DISCARD) &&
 	    !ploop_can_issue_discard(plo, preq)) {
-		complete_unsupported_discard_req(preq);
+		preq->eng_state = PLOOP_E_COMPLETE;
+		preq->error = -EOPNOTSUPP;
+		ploop_complete_io_state(preq);
 		return;
 	}
 
@@ -2508,12 +2502,6 @@ delta_io:
 						      &sbl, iblk, cluster_size_in_sec(plo));
 			}
 		} else {
-			if (unlikely(preq->req_rw & REQ_DISCARD)) {
-				/* Skip repeated discard */
-				complete_unsupported_discard_req(preq);
-				return;
-			}
-
 			if (!whole_block(plo, preq) && map_index_fault(preq) == 0) {
 					__TRACE("f %p %u\n", preq, preq->req_cluster);
 					return;
