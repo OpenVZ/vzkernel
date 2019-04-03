@@ -487,7 +487,8 @@ void request_end(struct fuse_conn *fc, struct fuse_req *req)
 		if (!bg)
 			req->end = NULL;
 	}
-	wake_up(&req->waitq);
+	if (!bg)
+		wake_up(&req->waitq);
 put_request:
 	fuse_put_request(fc, req);
 }
