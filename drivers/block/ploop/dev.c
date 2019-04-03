@@ -531,7 +531,7 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 
 	if (test_bit(PLOOP_S_DISCARD, &plo->state) &&
 	    unlikely(bio->bi_rw & REQ_DISCARD)) {
-		int clu_size = cluster_size_in_sec(plo);
+		int clu_size = 1 << plo->cluster_log;
 		int i = (clu_size - 1) & bio->bi_sector;
 		int err = 0;
 
@@ -1736,7 +1736,7 @@ ploop_reloc_sched_read(struct ploop_request *preq, iblock_t iblk)
 	preq->eng_state = PLOOP_E_RELOC_DATA_READ;
 	sbl.head = sbl.tail = preq->aux_bio;
 	delta->io.ops->submit(&delta->io, preq, READ_SYNC,
-			      &sbl, iblk, cluster_size_in_sec(plo));
+			      &sbl, iblk, 1<<plo->cluster_log);
 }
 
 /*
@@ -1793,7 +1793,7 @@ ploop_reuse_free_block(struct ploop_request *preq)
 		sbl.head = sbl.tail = preq->aux_bio;
 
 		top_delta->io.ops->submit(&top_delta->io, preq, preq->req_rw,
-				      &sbl, preq->iblock, cluster_size_in_sec(plo));
+				      &sbl, preq->iblock, 1<<plo->cluster_log);
 	}
 
 	return 0;
@@ -2040,7 +2040,7 @@ ploop_entry_nullify_req(struct ploop_request *preq)
 	}
 
 	top_delta->io.ops->submit(&top_delta->io, preq, preq->req_rw,
-				  &sbl, preq->iblock, cluster_size_in_sec(plo));
+				  &sbl, preq->iblock, 1<<plo->cluster_log);
 	return 0;
 }
 
@@ -2380,7 +2380,7 @@ restart:
 		preq->eng_state = PLOOP_E_TRANS_DELTA_READ;
 		sbl.head = sbl.tail = preq->aux_bio;
 		delta->io.ops->submit(&delta->io, preq, READ_SYNC,
-				      &sbl, iblk, cluster_size_in_sec(plo));
+				      &sbl, iblk, 1<<plo->cluster_log);
 		plo->st.bio_trans_copy++;
 		return;
 	}
@@ -2487,7 +2487,7 @@ delta_io:
 				preq->eng_state = PLOOP_E_DELTA_READ;
 				sbl.head = sbl.tail = preq->aux_bio;
 				delta->io.ops->submit(&delta->io, preq, READ_SYNC,
-						      &sbl, iblk, cluster_size_in_sec(plo));
+						      &sbl, iblk, 1<<plo->cluster_log);
 			}
 		} else {
 			if (!whole_block(plo, preq) && map_index_fault(preq) == 0) {
@@ -2699,7 +2699,7 @@ restart:
 			sbl.head = sbl.tail = preq->aux_bio;
 			top_delta = ploop_top_delta(plo);
 			top_delta->ops->allocate(top_delta, preq,
-						 &sbl, cluster_size_in_sec(plo));
+						 &sbl, 1<<plo->cluster_log);
 		}
 		break;
 	}
@@ -2736,7 +2736,7 @@ restart:
 
 			sbl.head = sbl.tail = preq->aux_bio;
 			top_delta->io.ops->submit(&top_delta->io, preq, preq->req_rw,
-						  &sbl, preq->iblock, cluster_size_in_sec(plo));
+						  &sbl, preq->iblock, 1<<plo->cluster_log);
 		}
 		break;
 	}
@@ -2752,7 +2752,7 @@ restart:
 		plo->st.bio_out++;
 		top_delta->io.ops->submit(&top_delta->io, preq, preq->req_rw,
 					  &sbl, preq->iblock,
-					  cluster_size_in_sec(plo));
+					  1<<plo->cluster_log);
 		break;
 	}
 	case PLOOP_E_RELOC_DATA_READ:
@@ -2780,10 +2780,10 @@ restart:
 			top_delta->io.ops->submit(&top_delta->io, preq,
 						  preq->req_rw, &sbl,
 						  preq->iblock,
-						  cluster_size_in_sec(plo));
+						  1<<plo->cluster_log);
 		} else {
 			top_delta->ops->allocate(top_delta, preq, &sbl,
-						 cluster_size_in_sec(plo));
+						 1<<plo->cluster_log);
 		}
 		break;
 	}
@@ -2837,14 +2837,13 @@ restart:
 			 * we can be here only if merge is in progress and
 			 * merge can't happen concurrently with ballooning
 			 */
-			top_delta->ops->allocate(top_delta, preq, &sbl,
-						 cluster_size_in_sec(plo));
+			top_delta->ops->allocate(top_delta, preq, &sbl, 1<<plo->cluster_log);
 			plo->st.bio_trans_alloc++;
 		} else {
 			preq->eng_state = PLOOP_E_COMPLETE;
 			preq->iblock = iblk;
 			top_delta->io.ops->submit(&top_delta->io, preq, preq->req_rw,
-						  &sbl, iblk, cluster_size_in_sec(plo));
+						  &sbl, iblk, 1<<plo->cluster_log);
 		}
 		break;
 	}
