@@ -2190,9 +2190,6 @@ static bool ploop_can_issue_discard(struct ploop_device *plo,
 	if (test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state))
 		return false;
 
-	if (!list_is_singular(&plo->map.delta_list))
-		return false;
-
 	return whole_block(plo, preq);
 }
 
