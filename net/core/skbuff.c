@@ -156,14 +156,16 @@ static void *__kmalloc_reserve(size_t size, gfp_t flags, int node,
 {
 	void *obj;
 	bool ret_pfmemalloc = false;
+	gfp_t alloc_flags = flags;
 
 	/*
 	 * Try a regular allocation, when that fails and we're not entitled
 	 * to the reserves, fail.
 	 */
-	obj = kmalloc_node_track_caller(size,
-					flags | __GFP_NOMEMALLOC | __GFP_NOWARN,
-					node);
+	if (gfp_pfmemalloc_allowed(flags))
+		alloc_flags |= __GFP_NOMEMALLOC | __GFP_NOWARN;
+
+	obj = kmalloc_node_track_caller(size, alloc_flags, node);
 	if (obj || !(gfp_pfmemalloc_allowed(flags)))
 		goto out;
 
