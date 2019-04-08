@@ -305,7 +305,11 @@ static int cn_init_ve(void *data)
 
 	dev = &ve->cn->cdev;
 
-	net = ve_net_lock(ve);
+	/*
+	 * This is a hook, hooks are called under a single lock, so ve_ns will
+	 * not disappear, so rcu_read_lock()/unlock is not needed here.
+	 */
+	net = rcu_dereference_check(ve->ve_ns, 1)->net_ns;
 
 	err = -EIO;
 	dev->nls = netlink_kernel_create(net, NETLINK_CONNECTOR, &cfg);
@@ -331,7 +335,6 @@ static int cn_init_ve(void *data)
 		goto remove_proc;
 
 net_unlock:
-	ve_net_unlock(ve);
 	return err;
 
 remove_proc:
@@ -356,9 +359,13 @@ static void cn_fini_ve(void *data)
 
 	cn_proc_fini_ve(ve);
 
-	net = ve_net_lock(ve);
+	/*
+	 * This is a hook called on ve stop, ve->ve_ns will be destroyed
+	 * later in the same thread, parallel ve stop is impossible,
+	 * so rcu_read_lock()/unlock is not needed here.
+	 */
+	net = rcu_dereference_check(ve->ve_ns, 1)->net_ns;
 	remove_proc_entry("connector", net->proc_net);
-	ve_net_unlock(ve);
 
 	cn_queue_free_dev(dev->cbdev);
 	netlink_kernel_release(dev->nls);
