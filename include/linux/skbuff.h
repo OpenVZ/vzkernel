@@ -2592,6 +2592,21 @@ void napi_consume_skb(struct sk_buff *skb, int budget);
 void __kfree_skb_flush(void);
 void __kfree_skb_defer(struct sk_buff *skb);
 
+#ifdef CONFIG_NET
+extern struct static_key memalloc_socks;
+static inline int sk_memalloc_socks(void)
+{
+	return static_key_false(&memalloc_socks);
+}
+#else
+
+static inline int sk_memalloc_socks(void)
+{
+	return 0;
+}
+
+#endif
+
 /**
  * __dev_alloc_pages - allocate page for network Rx
  * @gfp_mask: allocation priority. Set __GFP_NOMEMALLOC if not for network Rx
@@ -2612,7 +2627,9 @@ static inline struct page *__dev_alloc_pages(gfp_t gfp_mask,
 	 * 4.  __GFP_MEMALLOC is ignored if __GFP_NOMEMALLOC is set due to
 	 *     code in gfp_to_alloc_flags that should be enforcing this.
 	 */
-	gfp_mask |= __GFP_COLD | __GFP_COMP | __GFP_MEMALLOC;
+	gfp_mask |= __GFP_COLD | __GFP_COMP;
+	if (sk_memalloc_socks())
+		gfp_mask |= __GFP_MEMALLOC;
 
 	return alloc_pages_node(NUMA_NO_NODE, gfp_mask, order);
 }
@@ -2658,7 +2675,7 @@ static inline struct page *__skb_alloc_pages(gfp_t gfp_mask,
 
 	gfp_mask |= __GFP_COLD;
 
-	if (!(gfp_mask & __GFP_NOMEMALLOC))
+	if (sk_memalloc_socks() && !(gfp_mask & __GFP_NOMEMALLOC))
 		gfp_mask |= __GFP_MEMALLOC;
 
 	page = alloc_pages_node(NUMA_NO_NODE, gfp_mask, order);
