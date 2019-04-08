@@ -1292,7 +1292,6 @@ struct tty_driver *vtty_driver(dev_t dev, int *index)
 void vtty_release_init(struct tty_struct *tty, struct tty_struct *o_tty)
 {
 	int pty_master, tty_closing, o_tty_closing;
-	lockdep_assert_held(&tty_mutex);
 
 	if (tty->driver != vttym_driver &&
 	    tty->driver != vttys_driver)
