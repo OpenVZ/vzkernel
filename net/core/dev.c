@@ -1171,9 +1171,12 @@ static bool ve_dev_can_rename(struct net_device *dev)
 	struct net *net;
 	bool can;
 
-	net = ve_net_lock(dev_net(dev)->owner_ve);
+	/*
+	 * rcu_read_lock()/unlock won't help here anyway:
+	 * "can" value can change right after rcu lock is dropped.
+	 */
+	net = rcu_dereference_check(dev_net(dev)->owner_ve->ve_ns, 1)->net_ns;
 	can = !net || net == dev_net(dev);
-	ve_net_unlock(dev_net(dev)->owner_ve);
 	return can;
 }
 
