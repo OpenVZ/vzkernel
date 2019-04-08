@@ -136,17 +136,6 @@ static inline struct ve_struct *css_to_ve(struct cgroup_subsys_state *css)
 
 extern struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id);
 
-static inline struct net *ve_net_lock(struct ve_struct *ve)
-{
-	rcu_read_lock();
-	return rcu_dereference(ve->ve_ns)->net_ns;
-}
-
-static inline void ve_net_unlock(struct ve_struct *ve)
-{
-	rcu_read_unlock();
-}
-
 #define ve_feature_set(ve, f)			\
 	!!((ve)->features & VE_FEATURE_##f)
 
