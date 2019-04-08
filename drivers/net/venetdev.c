@@ -736,15 +736,18 @@ static int venet_newlink(struct net *src_net,
 	struct net *net;
 	int err = 0;
 
-	net = ve_net_lock(ve);
+	/*
+	 * src_net is references by caller => won't die, src_net->owner_ve is
+	 * also referenced on assignment => ve won't die =>
+	 * rcu_read_lock()/unlock not needed here.
+	 */
+	net = rcu_dereference_check(ve->ve_ns, 1)->net_ns;
 	if (!net)
-		err = -EBUSY;
-	else if (src_net != net)
+		return -EBUSY;
+
+	if (src_net != net)
 		/* Don't create venet-s in sub net namespaces */
-		err = -ENOSYS;
-	ve_net_unlock(ve);
-	if (err)
-		return err;
+		return -ENOSYS;
 
 	if (ve->veip)
 		return -EEXIST;
