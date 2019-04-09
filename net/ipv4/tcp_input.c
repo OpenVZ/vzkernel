@@ -4496,7 +4496,7 @@ int tcp_send_rcvq(struct sock *sk, struct msghdr *msg, size_t size)
 	if (tcp_try_rmem_schedule(sk, skb, skb->truesize))
 		goto err_free;
 
-	err = skb_copy_datagram_from_iter(skb, 0, &msg->msg_iter, size);
+	err = skb_copy_datagram_from_iovec(skb, 0, msg->msg_iov, 0, size);
 	if (err)
 		goto err_free;
 
