@@ -4571,7 +4571,7 @@ static int ploop_freeblks_ioc(struct ploop_device *plo, unsigned long arg)
 	int i;
 	int rc = 0;
 
-	return -EINVAL;
+	return 0;
 
 	if (list_empty(&plo->map.delta_list))
 		return -ENOENT;
