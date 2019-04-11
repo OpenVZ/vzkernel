@@ -59,6 +59,7 @@ static long root_threshold __read_mostly = 2L * 1024 * 1024; /* 2GB in KB */
 static long user_threshold __read_mostly = 4L * 1024 * 1024; /* 4GB in KB */
 
 static int large_disk_support __read_mostly = 1; /* true */
+static int native_discard_support __read_mostly = 1;
 
 static struct rb_root ploop_devices_tree = RB_ROOT;
 static DEFINE_MUTEX(ploop_devices_mutex);
@@ -2184,6 +2185,9 @@ complete_unsupported_discard_req(struct ploop_request * preq)
 static bool ploop_can_issue_discard(struct ploop_device *plo,
 				    struct ploop_request *preq)
 {
+	if (!native_discard_support)
+		return false;
+
 	if (test_bit(PLOOP_REQ_DISCARD, &preq->state))
 		return true;
 
@@ -5641,6 +5645,8 @@ module_param(user_threshold, long, 0644);
 MODULE_PARM_DESC(user_threshold, "Disk space reserved for user (in kilobytes)");
 module_param(large_disk_support, int, 0444);
 MODULE_PARM_DESC(ploop_large_disk_support, "Support of large disks (>2TB)");
+module_param(native_discard_support, int, 0644);
+MODULE_PARM_DESC(native_discard_support, "Native discard support");
 
 static int __init ploop_mod_init(void)
 {
