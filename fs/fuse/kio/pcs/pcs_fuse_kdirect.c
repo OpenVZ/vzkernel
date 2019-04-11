@@ -31,6 +31,10 @@ unsigned int pcs_loglevel = LOG_TRACE;
 module_param(pcs_loglevel, uint, 0644);
 MODULE_PARM_DESC(pcs_loglevel, "Trace level");
 
+u64 fast_path_version;
+module_param(fast_path_version, ullong, 0444);
+MODULE_PARM_DESC(fast_path_version, "Fast path protocol version");
+
 unsigned int debugfs_tracing = DEBUGFS_TRACE;
 module_param(debugfs_tracing, uint, 0644);
 MODULE_PARM_DESC(debugfs_tracing, "Enable/Disbale debugfs tracing");
@@ -1574,6 +1578,8 @@ static int __init kpcs_mod_init(void)
 	pcs_cleanup_wq = alloc_workqueue("pcs_cleanup_wq", WQ_MEM_RECLAIM, 0);
 	if (!pcs_cleanup_wq)
 		goto free_wq;
+
+	fast_path_version = PCS_FAST_PATH_VERSION.full;
 
 	if (fuse_register_kio(&kio_pcs_ops))
 		goto free_cleanup_wq;
