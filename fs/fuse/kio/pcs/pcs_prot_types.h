@@ -73,9 +73,12 @@ typedef u64 PCS_CHUNK_UID_T;
 typedef u64 PCS_LEASE_GEN_T;
 typedef u32 PCS_POLICY_GEN_T;
 
-typedef struct {
-	u32 major;
-	u32 minor;
+typedef union {
+	struct {
+		u32 major;
+		u32 minor;
+	};
+	u64 full;
 } PCS_FAST_PATH_VERSION_T;
 
 /*
