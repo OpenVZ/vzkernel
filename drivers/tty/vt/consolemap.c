@@ -553,7 +553,7 @@ int con_set_unimap(struct vc_data *vc, ushort ct, struct unipair __user *list)
 	struct uni_pagedir *p, *q;
 	struct unipair *unilist, *plist;
 
-	unilist = kmalloc_array(ct, sizeof(struct unipair), GFP_KERNEL);
+	unilist = kvmalloc_array(ct, sizeof(struct unipair), GFP_KERNEL);
 	if (!unilist)
 		return -ENOMEM;
 
@@ -663,7 +663,7 @@ int con_set_unimap(struct vc_data *vc, ushort ct, struct unipair __user *list)
 
 out_unlock:
 	console_unlock();
-	kfree(unilist);
+	kvfree(unilist);
 	return err;
 }
 
@@ -765,7 +765,7 @@ int con_get_unimap(struct vc_data *vc, ushort ct, ushort __user *uct, struct uni
 	struct uni_pagedir *p;
 	struct unipair *unilist, *plist;
 
-	unilist = kmalloc_array(ct, sizeof(struct unipair), GFP_KERNEL);
+	unilist = kvmalloc_array(ct, sizeof(struct unipair), GFP_KERNEL);
 	if (!unilist)
 		return -ENOMEM;
 
@@ -795,7 +795,7 @@ int con_get_unimap(struct vc_data *vc, ushort ct, ushort __user *uct, struct uni
 		__put_user(plist->fontpos, &list->fontpos);
 	}
 	__put_user(ect, uct);
-	kfree(unilist);
+	kvfree(unilist);
 	return ((ect <= ct) ? 0 : -ENOMEM);
 }
 
