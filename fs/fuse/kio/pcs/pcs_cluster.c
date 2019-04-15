@@ -364,9 +364,9 @@ static noinline void __pcs_cc_process_ireq_rw(struct pcs_int_request *ireq)
 		unsigned int len;
 		u64 rpos, chunk, end_pos;
 
-		rpos = map_file_to_chunk(pos, di->fileinfo.sys.chunk_size, di->fileinfo.sys.stripe_depth, di->fileinfo.sys.strip_width);
+		rpos = map_file_to_chunk(pos, di->fileinfo.sys.chunk_size_lo, di->fileinfo.sys.stripe_depth, di->fileinfo.sys.strip_width);
 
-		chunk = rpos & ~((u64)di->fileinfo.sys.chunk_size - 1);
+		chunk = rpos & ~((u64)di->fileinfo.sys.chunk_size_lo - 1);
 		end_pos = ((rpos / di->fileinfo.sys.strip_width) + 1) * (u64)di->fileinfo.sys.strip_width;
 
 		sreq = ireq_alloc(di);
@@ -385,9 +385,9 @@ static noinline void __pcs_cc_process_ireq_rw(struct pcs_int_request *ireq)
 		sreq->iochunk.cmd = ireq->apireq.req->type;
 		sreq->iochunk.cs_index = 0;
 		sreq->iochunk.chunk = chunk;
-		sreq->iochunk.offset = rpos % di->fileinfo.sys.chunk_size;
+		sreq->iochunk.offset = rpos % di->fileinfo.sys.chunk_size_lo;
 		sreq->iochunk.dio_offset = dio_offset;
-		len = di->fileinfo.sys.chunk_size - sreq->iochunk.offset;
+		len = di->fileinfo.sys.chunk_size_lo - sreq->iochunk.offset;
 		if (len > sz)
 			len = sz;
 		if (rpos + len > end_pos)
