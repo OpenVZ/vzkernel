@@ -159,7 +159,6 @@ int pcs_cc_init(struct pcs_cluster_core *cc, struct workqueue_struct *wq,
 	cc->cfg.curr = cc->cfg.def;
 	cc->cfg.sn = PCS_CONFIG_SEQ_ANY;
 
-	cc->io_locality = 0;
 	cc->io_tweaks = 0;
 	cc->netlat_cutoff = PCS_MAX_NETWORK_LATENCY*1000;
 	cc->iolat_cutoff = PCS_MAX_IO_LATENCY*1000;
