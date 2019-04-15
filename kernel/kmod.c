@@ -373,6 +373,10 @@ static inline int module_payload_iptable_allowed(const char *module)
 	if (!strncmp("nft-expr-", module, 9))
 		return nft_expr_allowed(module + 9);
 
+	/* The rest of nfct-helper- modules */
+	if (!strncmp("nfct-helper-", module, 12))
+		return mask_ipt_allow(permitted, VE_IP_CONNTRACK);
+
 	return -1;
 }
 
