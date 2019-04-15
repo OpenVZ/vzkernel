@@ -223,7 +223,6 @@ struct pcs_cluster_core
 		int			in_progress;
 	} cfg;
 
-	int			io_locality;
 	int			io_tweaks;
 	int			iolat_cutoff;
 	int			netlat_cutoff;
