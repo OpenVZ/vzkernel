@@ -351,7 +351,7 @@ static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct ino
 	INIT_LIST_HEAD(&di->kq);
 	spin_lock_init(&di->kq_lock);
 	TRACE("init id:%llu chunk_size:%d stripe_depth:%d strip_width:%d\n",
-	      fi->nodeid, di->fileinfo.sys.chunk_size,
+	      fi->nodeid, di->fileinfo.sys.chunk_size_lo,
 	      di->fileinfo.sys.stripe_depth, di->fileinfo.sys.strip_width);
 
 	ret = fuse_pcs_kdirect_claim_op(fc, file, true);
