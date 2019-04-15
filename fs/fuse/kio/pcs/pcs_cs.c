@@ -62,6 +62,7 @@ struct pcs_cs *pcs_cs_alloc(struct pcs_cs_set *css,
 	cs->in_flight = 0;
 	cs->cwnd = PCS_CS_INIT_CWND;
 	cs->eff_cwnd = PCS_CS_INIT_CWND;
+	cs->ssthresh = PCS_CS_INIT_CWND;
 	cs->cwr_state = 0;
 	atomic_set(&cs->latency_avg, 0);
 	cs->net_latency_avg = 0;
@@ -607,6 +608,10 @@ static void handle_congestion(struct pcs_cs *cs, struct pcs_rpc_hdr *h)
 		 * to half of min(in_flight, cwnd) and enter congestion reduction state,
 		 * where we ignore further congestion notifications until window is reduced
 		 */
+		if (who->cwnd >= PCS_CS_INIT_CWND)
+			who->ssthresh = who->cwnd;
+		else
+			who->ssthresh = PCS_CS_INIT_CWND;
 		if (who->in_flight < who->cwnd)
 			who->cwnd = who->in_flight;
 		who->cwnd /= 2;
@@ -663,8 +668,12 @@ static void cs_keep_waiting(struct pcs_rpc *ep, struct pcs_msg *req, struct pcs_
 		}
 
 		if (!who->cwr_state) {
-			FUSE_KDTRACE(cc_from_csset(cs->css)->fc, "Congestion window on CS" NODE_FMT " reducing %d/%d/%d", NODE_ARGS(h->xid.origin),
-				     who->in_flight, who->eff_cwnd, who->cwnd);
+			FUSE_KTRACE(cc_from_csset(cs->css)->fc, "Congestion window on CS" NODE_FMT " reducing %d/%d/%d", NODE_ARGS(h->xid.origin),
+				    who->in_flight, who->eff_cwnd, who->cwnd);
+			if (who->cwnd >= PCS_CS_INIT_CWND)
+				who->ssthresh = who->cwnd;
+			else
+				who->ssthresh = PCS_CS_INIT_CWND;
 			if (who->in_flight < who->cwnd)
 				who->cwnd = who->in_flight;
 			who->cwnd /= 2;
@@ -903,9 +912,14 @@ unsigned int cs_get_avg_in_flight(struct pcs_cs *cs)
 				cs->in_flight_avg >>= interval;
 			}
 			if (cs->cwnd > PCS_CS_INIT_CWND) {
-				cs->cwnd = PCS_CS_INIT_CWND;
-				if (cs->eff_cwnd > PCS_CS_INIT_CWND)
-					cs->eff_cwnd = PCS_CS_INIT_CWND;
+				unsigned int cwnd = PCS_CS_INIT_CWND;
+				TRACE("Congestion window on CS#" NODE_FMT " was not used, shrink %u -> %u", NODE_ARGS(cs->id),
+					cs->cwnd, cwnd);
+				if (cs->cwnd > cs->ssthresh)
+					cs->ssthresh = cs->cwnd;
+				cs->cwnd = cwnd;
+				if (cs->eff_cwnd > cwnd)
+					cs->eff_cwnd = cwnd;
 			}
 		}
 	}
@@ -966,6 +980,8 @@ void cs_cwnd_use_or_lose(struct pcs_cs *cs)
 
 			FUSE_KTRACE(cc_from_csset(cs->css)->fc, "Congestion window on CS#" NODE_FMT " was not used, shrink %u -> %u", NODE_ARGS(cs->id),
 				    cs->cwnd, cwnd);
+			if (cs->cwnd > cs->ssthresh)
+				cs->ssthresh = cs->cwnd;
 			cs->cwnd = cwnd;
 			if (cs->eff_cwnd > cwnd)
 				cs->eff_cwnd = cwnd;
