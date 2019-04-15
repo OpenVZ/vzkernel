@@ -107,15 +107,17 @@ struct __pre_aligned(8) pcs_mds_fattr
 };
 
 struct __pre_aligned(8) pcs_mds_sys_info {
-	u32	map_type;     /* reserved for RAID */
-	u32	chunk_size;   /* global constant */
+	u8	map_type;     /* reserved for RAID */
+	u8	reserved[2];
+	u8	chunk_size_hi; /* chunk size (hi bits) */
+	u32	chunk_size_lo; /* chunk size (lo bits) */
 	u8	stripe_depth; /* for RAID6/RS  */
 	u8	redundancy;   /* number of checksums for RAID6/RS */
 	u8	tolerance;    /* write-tolerance (how much lost replicas we can tolerate still allowing writing) */
-	u8	reserved8;
+	u8	reserved2;
 	u32	strip_width;  /* length of strip for RAID6/RS */
 	u32	lease_tout;   /* lease expiration timeout (in milliseconds) */
-	u32	reserved;
+	u32	reserved3;
 } __aligned(8);
 
 #define PCS_CHUNK_SIZE_MIN 4096u
