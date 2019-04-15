@@ -284,7 +284,7 @@ static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct ino
 	di->cluster = &pfc->cc;
 	di->inode = fi;
 	TRACE("init id:%llu chunk_size:%d stripe_depth:%d strip_width:%d\n",
-	      fi->nodeid, di->fileinfo.sys.chunk_size,
+	      fi->nodeid, di->fileinfo.sys.chunk_size_lo,
 	      di->fileinfo.sys.stripe_depth, di->fileinfo.sys.strip_width);
 
 	mutex_lock(&inode->i_mutex);
