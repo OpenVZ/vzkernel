@@ -315,8 +315,10 @@ ploop1_allocate(struct ploop_delta * delta, struct ploop_request * preq,
 		struct bio_list * sbl, unsigned int size)
 {
 	struct ploop1_private * ph = delta->priv;
-	unsigned int max_size;
+	unsigned int log = delta->cluster_log;
+	struct ploop_device *plo = delta->plo;
 	cluster_t cluster = 0;
+	u64 max_size;
 	int ret;
 
 	if (delta->holes_bitmap) {
@@ -327,7 +329,13 @@ ploop1_allocate(struct ploop_delta * delta, struct ploop_request * preq,
 			cluster = 0; /* grow in process? */
 	}
 
-	max_size = (delta->max_delta_size >> delta->cluster_log);
+	max_size = delta->max_delta_size;
+	if (plo->maintenance_type == PLOOP_MNTN_GROW) {
+		/* Even in case of resize, alloc_head can't grow endlessly */
+		max_size = min(plo->grow_new_size >> 9, max_size);
+	}
+	max_size = max_size >> log;
+
 	if (!cluster && delta->io.alloc_head >= max_size) {
 		PLOOP_FAIL_REQUEST(preq, -E2BIG);
 		return;
