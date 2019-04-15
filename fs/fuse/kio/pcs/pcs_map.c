@@ -1392,7 +1392,7 @@ static int worth_to_grow(struct pcs_int_request *ireq, struct pcs_cs * cs)
 	if (ireq->type == PCS_IREQ_FLUSH)
 		return 0;
 
-	return ktime_to_ms(ktime_sub(ktime_get(), ireq->ts_sent)) + cc_from_csset(cs->css)->netlat_cutoff;
+	return ktime_to_ms(ktime_sub(ktime_get(), ireq->ts_sent)) < cc_from_csset(cs->css)->netlat_cutoff;
 }
 
 static void pcs_cs_deaccount(struct pcs_int_request *ireq, struct pcs_cs * cs, int error)
