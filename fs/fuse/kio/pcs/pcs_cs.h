@@ -52,6 +52,7 @@ struct pcs_cs {
 	unsigned int		in_flight;
 	unsigned int		eff_cwnd;
 	unsigned int		cwnd;
+	unsigned int            ssthresh;
 	int			cwr_state;
 	atomic_t		latency_avg;
 	unsigned int		net_latency_avg;
