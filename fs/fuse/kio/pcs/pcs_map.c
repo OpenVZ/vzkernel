@@ -12,6 +12,7 @@
 #include <linux/rbtree.h>
 #include <linux/highmem.h>
 #include <linux/log2.h>
+#include <linux/module.h>
 
 #include "pcs_types.h"
 #include "pcs_sock_io.h"
@@ -36,6 +37,10 @@
 #define MAP_BATCH 16
 
 struct kmem_cache *pcs_map_cachep;
+
+unsigned int cs_io_locality = 0;
+module_param(cs_io_locality, uint, 0644);
+MODULE_PARM_DESC(cs_io_locality, "CS IO locality");
 
 static struct pcs_cs_list *cs_link_to_cs_list(struct pcs_cs_link *csl)
 {
@@ -1712,7 +1717,7 @@ static int get_io_locality(struct pcs_cluster_core *cc)
 {
 	int io_locality;
 
-	io_locality = cc->io_locality;
+	io_locality = cs_io_locality;
 	if (io_locality == 0)
 		io_locality = cc->cfg.curr.io_locality;
 
