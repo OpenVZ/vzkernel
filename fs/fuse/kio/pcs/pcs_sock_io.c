@@ -415,6 +415,8 @@ int pcs_sockio_delayed_seg(struct pcs_sockio *sio)
 
 void pcs_sock_sendmsg(struct pcs_sockio * sio, struct pcs_msg *msg)
 {
+	int was_idle = list_empty(&sio->write_queue);
+
 	DTRACE("sio(%p) msg:%p\n", sio, msg);
 
 	if (pcs_if_error(&sio->error)) {
@@ -432,6 +434,10 @@ void pcs_sock_sendmsg(struct pcs_sockio * sio, struct pcs_msg *msg)
 	if (!(sio->flags & PCS_SOCK_F_POOLOUT))
 		sio->flags |= PCS_SOCK_F_POOLOUT;
 
+	if (was_idle) {
+		sio->flags &= ~PCS_SOCK_F_POOLOUT;
+		pcs_sockio_send(sio);
+	}
 }
 
 /* Try to cancel message send. If it is impossible, because message is in the middle
