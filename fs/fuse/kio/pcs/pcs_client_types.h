@@ -87,9 +87,9 @@ static inline void pcs_set_fileinfo(struct pcs_dentry_info *i, const struct pcs_
 
 	if (mi->sys.stripe_depth == 0) {
 		mi->sys.stripe_depth = 1;
-		mi->sys.strip_width = mi->sys.chunk_size;
+		mi->sys.strip_width = mi->sys.chunk_size_lo;
 	}
-	i->mapping.chunk_size_bits = ilog2(mi->sys.chunk_size);
+	i->mapping.chunk_size_bits = ilog2(mi->sys.chunk_size_lo);
 
 }
 
@@ -170,7 +170,7 @@ typedef struct _pcs_api_csconnreq_t {
 #define DENTRY_ARGS(de)	      PCS_FILE_ID_ARGS((de)->id.parent), PCS_FILE_ID_ARGS((de)->fileinfo.attr.id)
 
 #define DENTRY_SIZE(de)       ((de)->fileinfo.attr.size)
-#define DENTRY_CHUNK_SIZE(de) ((de)->fileinfo.sys.chunk_size)
+#define DENTRY_CHUNK_SIZE(de) ((de)->fileinfo.sys.chunk_size_lo)
 #define DENTRY_CHUNK_SIZE_BITS(de) ((de)->mapping.chunk_size_bits)
 
 void pcs_mapset_limit(struct pcs_map_set *maps, int limit);
