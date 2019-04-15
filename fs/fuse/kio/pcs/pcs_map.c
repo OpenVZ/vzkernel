@@ -1422,6 +1422,11 @@ static void pcs_cs_deaccount(struct pcs_int_request *ireq, struct pcs_cs * cs, i
 		if (cs->last_latency > iolat_cutoff && ireq->type != PCS_IREQ_FLUSH) {
 			unsigned int clamp;
 
+			if (cs->cwnd >= PCS_CS_INIT_CWND)
+				cs->ssthresh = cs->cwnd;
+			else
+				cs->ssthresh = PCS_CS_INIT_CWND;
+
 			clamp = PCS_CS_INIT_CWND;
 			if (cs->last_latency > iolat_cutoff*8)
 				clamp = PCS_CS_INIT_CWND/8;
@@ -1437,7 +1442,7 @@ static void pcs_cs_deaccount(struct pcs_int_request *ireq, struct pcs_cs * cs, i
 		} else if (cs->in_flight >= cs->cwnd && !cs->cwr_state && worth_to_grow(ireq, cs)) {
 			unsigned int cwnd;
 
-			if (cs->cwnd < PCS_CS_INIT_CWND)
+			if (cs->cwnd <= cs->ssthresh)
 				cwnd = cs->cwnd + cost;
 			else
 				cwnd = cs->cwnd + 0x100000000ULL/cs->cwnd;
