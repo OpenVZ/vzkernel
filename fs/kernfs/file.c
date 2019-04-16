@@ -860,8 +860,8 @@ repeat:
 		iput(inode);
 	}
 
-	mutex_unlock(&kernfs_mutex);
 	kernfs_put(kn);
+	mutex_unlock(&kernfs_mutex);
 	goto repeat;
 }
 
