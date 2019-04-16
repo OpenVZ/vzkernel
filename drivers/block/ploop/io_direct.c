@@ -401,13 +401,13 @@ cached_submit(struct ploop_io *io, iblock_t iblk, struct ploop_request * preq,
 	used_pos = (loff_t)(io->alloc_head - 1) << (io->plo->cluster_log + 9);
 	reusing = (end_pos <= used_pos);
 
+	file_start_write(io->files.file);
+
 	if (reusing) {
 		/* Reusing a hole */
 		prealloc = clu_siz;
 		goto try_again;
 	}
-
-	file_start_write(io->files.file);
 
 	if (use_prealloc && (end_pos > used_pos) && may_fallocate) {
 		if (unlikely(io->prealloced_size < used_pos + clu_siz)) {
