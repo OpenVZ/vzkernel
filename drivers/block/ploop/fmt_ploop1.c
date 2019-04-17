@@ -574,6 +574,25 @@ ploop1_complete_merge(struct ploop_delta *delta)
 	return populate_holes_bitmap(delta, ph);
 }
 
+static int
+ploop1_replace_delta(struct ploop_delta *delta)
+{
+	struct ploop1_private *ph = delta->priv;
+	struct ploop_device *plo = delta->plo;
+
+	if (delta->level != 0)
+		return 0;
+
+	/*
+	 * @delta is not linked, but old delta is still in list.
+	 * So, we check whether old delta is only element there.
+	 */
+	if (!list_is_singular(&plo->map.delta_list))
+		return 0;
+
+	return populate_holes_bitmap(delta, ph);
+}
+
 static int ploop1_truncate(struct ploop_delta * delta, struct file * file,
 			   __u32 alloc_head)
 {
@@ -811,6 +830,7 @@ static struct ploop_delta_ops ploop1_delta_ops =
 	.fmt_prepare_merge =	ploop1_prepare_merge,
 	.start_merge	=	ploop1_start_merge,
 	.complete_merge =	ploop1_complete_merge,
+	.replace_delta 	=	ploop1_replace_delta,
 	.truncate	=	ploop1_truncate,
 	.prepare_grow	=	ploop1_prepare_grow,
 	.complete_grow	=	ploop1_complete_grow,
