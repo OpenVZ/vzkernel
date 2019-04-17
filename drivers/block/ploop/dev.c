@@ -3382,11 +3382,18 @@ static int ploop_replace_delta(struct ploop_device * plo, unsigned long arg)
 
 	err = KOBJECT_ADD(&delta->kobj, kobject_get(&plo->kobj),
 			  "%d", delta->level);
+	/* _put below is a pair for _get for OLD delta */
 	kobject_put(&plo->kobj);
 
 	if (err < 0) {
 		kobject_put(&plo->kobj);
 		goto out_close;
+	}
+
+	if (delta->ops->replace_delta) {
+		err = delta->ops->replace_delta(delta);
+		if (err)
+			goto out_kobj_del;
 	}
 
 	ploop_quiesce(plo);
@@ -3404,6 +3411,9 @@ static int ploop_replace_delta(struct ploop_device * plo, unsigned long arg)
 	kobject_put(&old_delta->kobj);
 	return 0;
 
+out_kobj_del:
+	kobject_del(&delta->kobj);
+	kobject_put(&plo->kobj);
 out_close:
 	delta->ops->stop(delta);
 out_destroy:
