@@ -512,9 +512,11 @@ static void active_cacheline_inc_overlap(phys_addr_t cln)
 	 * debug_dma_assert_idle() as the cacheline may be marked idle
 	 * prematurely.
 	 */
-	WARN_ONCE(overlap > ACTIVE_CACHELINE_MAX_OVERLAP,
-		  "DMA-API: exceeded %d overlapping mappings of cacheline %pa\n",
-		  ACTIVE_CACHELINE_MAX_OVERLAP, &cln);
+	if (overlap > ACTIVE_CACHELINE_MAX_OVERLAP)
+		printk_once(KERN_WARNING
+			    "DMA-API: exceeded %d "
+			    "overlapping mappings of cacheline %pa\n",
+			    ACTIVE_CACHELINE_MAX_OVERLAP, &cln);
 }
 
 static int active_cacheline_dec_overlap(phys_addr_t cln)
