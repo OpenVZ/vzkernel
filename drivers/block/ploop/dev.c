@@ -3399,6 +3399,7 @@ static int ploop_replace_delta(struct ploop_device * plo, unsigned long arg)
 	ploop_quiesce(plo);
 	ploop_map_destroy(&plo->map);
 	list_replace_init(&old_delta->list, &delta->list);
+	clear_bit(PLOOP_S_ABORT, &plo->state);
 
 	spin_lock_irq(plo->queue->queue_lock);
 	queue_flag_clear(QUEUE_FLAG_STANDBY, plo->queue);
