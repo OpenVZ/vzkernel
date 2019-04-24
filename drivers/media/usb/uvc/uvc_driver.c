@@ -32,6 +32,7 @@
 #define DRIVER_DESC		"USB Video Class driver"
 
 unsigned int uvc_clock_param = CLOCK_MONOTONIC;
+unsigned int uvc_hw_timestamps_param;
 unsigned int uvc_no_drop_param;
 static unsigned int uvc_quirks_param = -1;
 unsigned int uvc_trace_param;
@@ -2033,6 +2034,8 @@ static int uvc_clock_param_set(const char *val, struct kernel_param *kp)
 module_param_call(clock, uvc_clock_param_set, uvc_clock_param_get,
 		  &uvc_clock_param, S_IRUGO|S_IWUSR);
 MODULE_PARM_DESC(clock, "Video buffers timestamp clock");
+module_param_named(hwtimestamps, uvc_hw_timestamps_param, uint, S_IRUGO|S_IWUSR);
+MODULE_PARM_DESC(hwtimestamps, "Use hardware timestamps");
 module_param_named(nodrop, uvc_no_drop_param, uint, S_IRUGO|S_IWUSR);
 MODULE_PARM_DESC(nodrop, "Don't drop incomplete frames");
 module_param_named(quirks, uvc_quirks_param, uint, S_IRUGO|S_IWUSR);
@@ -2421,7 +2424,8 @@ static struct usb_device_id uvc_ids[] = {
 	  .driver_info		= UVC_QUIRK_PROBE_MINMAX
 				| UVC_QUIRK_IGNORE_SELECTOR_UNIT },
 	/* Generic USB Video Class */
-	{ USB_INTERFACE_INFO(USB_CLASS_VIDEO, 1, 0) },
+	{ USB_INTERFACE_INFO(USB_CLASS_VIDEO, 1, UVC_PC_PROTOCOL_UNDEFINED) },
+	{ USB_INTERFACE_INFO(USB_CLASS_VIDEO, 1, UVC_PC_PROTOCOL_15) },
 	{}
 };
 

@@ -248,10 +248,10 @@ int v4l2_chip_match_i2c_client(struct i2c_client *c, const struct v4l2_dbg_match
 
 	switch (match->type) {
 	case V4L2_CHIP_MATCH_I2C_DRIVER:
-		if (c->driver == NULL || c->driver->driver.name == NULL)
+		if (c->dev.driver == NULL || c->dev.driver->name == NULL)
 			return 0;
-		len = strlen(c->driver->driver.name);
-		return len && !strncmp(c->driver->driver.name, match->name, len);
+		len = strlen(c->dev.driver->name);
+		return len && !strncmp(c->dev.driver->name, match->name, len);
 	case V4L2_CHIP_MATCH_I2C_ADDR:
 		return c->addr == match->addr;
 	case V4L2_CHIP_MATCH_SUBDEV:
@@ -290,13 +290,13 @@ void v4l2_i2c_subdev_init(struct v4l2_subdev *sd, struct i2c_client *client,
 	v4l2_subdev_init(sd, ops);
 	sd->flags |= V4L2_SUBDEV_FL_IS_I2C;
 	/* the owner is the same as the i2c_client's driver owner */
-	sd->owner = client->driver->driver.owner;
+	sd->owner = client->dev.driver->owner;
 	/* i2c_client and v4l2_subdev point to one another */
 	v4l2_set_subdevdata(sd, client);
 	i2c_set_clientdata(client, sd);
 	/* initialize name */
 	snprintf(sd->name, sizeof(sd->name), "%s %d-%04x",
-		client->driver->driver.name, i2c_adapter_id(client->adapter),
+		client->dev.driver->name, i2c_adapter_id(client->adapter),
 		client->addr);
 }
 EXPORT_SYMBOL_GPL(v4l2_i2c_subdev_init);
@@ -329,11 +329,11 @@ struct v4l2_subdev *v4l2_i2c_new_subdev_board(struct v4l2_device *v4l2_dev,
 	   loaded. This delay-load mechanism doesn't work if other drivers
 	   want to use the i2c device, so explicitly loading the module
 	   is the best alternative. */
-	if (client == NULL || client->driver == NULL)
+	if (client == NULL || client->dev.driver == NULL)
 		goto error;
 
 	/* Lock the module so we can safely get the v4l2_subdev pointer */
-	if (!try_module_get(client->driver->driver.owner))
+	if (!try_module_get(client->dev.driver->owner))
 		goto error;
 	sd = i2c_get_clientdata(client);
 
@@ -342,7 +342,7 @@ struct v4l2_subdev *v4l2_i2c_new_subdev_board(struct v4l2_device *v4l2_dev,
 	if (v4l2_device_register_subdev(v4l2_dev, sd))
 		sd = NULL;
 	/* Decrease the module use count to match the first try_module_get. */
-	module_put(client->driver->driver.owner);
+	module_put(client->dev.driver->owner);
 
 error:
 	/* If we have a client but no subdev, then something went wrong and

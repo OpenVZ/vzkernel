@@ -225,6 +225,18 @@ extern void rcu_idle_exit(void);
 extern void rcu_irq_enter(void);
 extern void rcu_irq_exit(void);
 
+#ifdef CONFIG_RCU_STALL_COMMON
+void rcu_sysrq_start(void);
+void rcu_sysrq_end(void);
+#else /* #ifdef CONFIG_RCU_STALL_COMMON */
+static inline void rcu_sysrq_start(void)
+{
+}
+static inline void rcu_sysrq_end(void)
+{
+}
+#endif /* #else #ifdef CONFIG_RCU_STALL_COMMON */
+
 #ifdef CONFIG_RCU_USER_QS
 extern void rcu_user_enter(void);
 extern void rcu_user_exit(void);
@@ -240,6 +252,14 @@ static inline void rcu_user_hooks_switch(struct task_struct *prev,
 #endif /* CONFIG_RCU_USER_QS */
 
 extern void exit_rcu(void);
+
+#ifdef CONFIG_RCU_NOCB_CPU
+void rcu_init_nohz(void);
+#else /* #ifdef CONFIG_RCU_NOCB_CPU */
+static inline void rcu_init_nohz(void)
+{
+}
+#endif /* #else #ifdef CONFIG_RCU_NOCB_CPU */
 
 /**
  * RCU_NONIDLE - Indicate idle-loop code that needs RCU readers
@@ -265,6 +285,10 @@ extern void exit_rcu(void);
 		do { a; } while (0); \
 		rcu_irq_exit(); \
 	} while (0)
+
+#if defined(CONFIG_DEBUG_LOCK_ALLOC) || defined(CONFIG_RCU_TRACE) || defined(CONFIG_SMP)
+extern bool __rcu_is_watching(void);
+#endif /* #if defined(CONFIG_DEBUG_LOCK_ALLOC) || defined(CONFIG_RCU_TRACE) || defined(CONFIG_SMP) */
 
 /*
  * Infrastructure to implement the synchronize_() primitives in
@@ -301,10 +325,6 @@ static inline void destroy_rcu_head_on_stack(struct rcu_head *head)
 {
 }
 #endif	/* #else !CONFIG_DEBUG_OBJECTS_RCU_HEAD */
-
-#if defined(CONFIG_DEBUG_LOCK_ALLOC) || defined(CONFIG_SMP)
-extern int rcu_is_cpu_idle(void);
-#endif /* #if defined(CONFIG_DEBUG_LOCK_ALLOC) || defined(CONFIG_SMP) */
 
 #if defined(CONFIG_HOTPLUG_CPU) && defined(CONFIG_PROVE_RCU)
 bool rcu_lockdep_current_cpu_online(void);
@@ -356,7 +376,7 @@ static inline int rcu_read_lock_held(void)
 {
 	if (!debug_lockdep_rcu_enabled())
 		return 1;
-	if (rcu_is_cpu_idle())
+	if (!rcu_is_watching())
 		return 0;
 	if (!rcu_lockdep_current_cpu_online())
 		return 0;
@@ -407,7 +427,7 @@ static inline int rcu_read_lock_sched_held(void)
 
 	if (!debug_lockdep_rcu_enabled())
 		return 1;
-	if (rcu_is_cpu_idle())
+	if (!rcu_is_watching())
 		return 0;
 	if (!rcu_lockdep_current_cpu_online())
 		return 0;
@@ -559,6 +579,20 @@ static inline void rcu_preempt_sleep_check(void)
 		(p) = (typeof(*v) __force space *)(v); \
 	} while (0)
 
+/**
+ * lockless_dereference() - safely load a pointer for later dereference
+ * @p: The pointer to load
+ *
+ * Similar to rcu_dereference(), but for situations where the pointed-to
+ * object's lifetime is managed by something other than RCU.  That
+ * "something other" might be reference counting or simple immortality.
+ */
+#define lockless_dereference(p) \
+({ \
+	typeof(p) _________p1 = ACCESS_ONCE(p); \
+	smp_read_barrier_depends(); /* Dependency order vs. p above. */ \
+	(_________p1); \
+})
 
 /**
  * rcu_access_pointer() - fetch RCU pointer with no dereferencing
@@ -615,7 +649,7 @@ static inline void rcu_preempt_sleep_check(void)
  * annotated as __rcu.
  */
 #define rcu_dereference_check(p, c) \
-	__rcu_dereference_check((p), rcu_read_lock_held() || (c), __rcu)
+	__rcu_dereference_check((p), (c) || rcu_read_lock_held(), __rcu)
 
 /**
  * rcu_dereference_bh_check() - rcu_dereference_bh with debug checking
@@ -625,7 +659,7 @@ static inline void rcu_preempt_sleep_check(void)
  * This is the RCU-bh counterpart to rcu_dereference_check().
  */
 #define rcu_dereference_bh_check(p, c) \
-	__rcu_dereference_check((p), rcu_read_lock_bh_held() || (c), __rcu)
+	__rcu_dereference_check((p), (c) || rcu_read_lock_bh_held(), __rcu)
 
 /**
  * rcu_dereference_sched_check() - rcu_dereference_sched with debug checking
@@ -635,7 +669,7 @@ static inline void rcu_preempt_sleep_check(void)
  * This is the RCU-sched counterpart to rcu_dereference_check().
  */
 #define rcu_dereference_sched_check(p, c) \
-	__rcu_dereference_check((p), rcu_read_lock_sched_held() || (c), \
+	__rcu_dereference_check((p), (c) || rcu_read_lock_sched_held(), \
 				__rcu)
 
 #define rcu_dereference_raw(p) rcu_dereference_check(p, 1) /*@@@ needed? @@@*/
@@ -730,6 +764,28 @@ static inline void rcu_preempt_sleep_check(void)
 #define rcu_dereference_sched(p) rcu_dereference_sched_check(p, 0)
 
 /**
+ * rcu_pointer_handoff() - Hand off a pointer from RCU to other mechanism
+ * @p: The pointer to hand off
+ *
+ * This is simply an identity function, but it documents where a pointer
+ * is handed off from RCU to some other synchronization mechanism, for
+ * example, reference counting or locking.  In C11, it would map to
+ * kill_dependency().  It could be used as follows:
+ *
+ *	rcu_read_lock();
+ *	p = rcu_dereference(gp);
+ *	long_lived = is_long_lived(p);
+ *	if (long_lived) {
+ *		if (!atomic_inc_not_zero(p->refcnt))
+ *			long_lived = false;
+ *		else
+ *			p = rcu_pointer_handoff(p);
+ *	}
+ *	rcu_read_unlock();
+ */
+#define rcu_pointer_handoff(p) (p)
+
+/**
  * rcu_read_lock() - mark the beginning of an RCU read-side critical section
  *
  * When synchronize_rcu() is invoked on one CPU while other CPUs
@@ -776,7 +832,7 @@ static inline void rcu_read_lock(void)
 	__rcu_read_lock();
 	__acquire(RCU);
 	rcu_lock_acquire(&rcu_lock_map);
-	rcu_lockdep_assert(!rcu_is_cpu_idle(),
+	rcu_lockdep_assert(rcu_is_watching(),
 			   "rcu_read_lock() used illegally while idle");
 }
 
@@ -797,7 +853,7 @@ static inline void rcu_read_lock(void)
  */
 static inline void rcu_read_unlock(void)
 {
-	rcu_lockdep_assert(!rcu_is_cpu_idle(),
+	rcu_lockdep_assert(rcu_is_watching(),
 			   "rcu_read_unlock() used illegally while idle");
 	rcu_lock_release(&rcu_lock_map);
 	__release(RCU);
@@ -826,7 +882,7 @@ static inline void rcu_read_lock_bh(void)
 	local_bh_disable();
 	__acquire(RCU_BH);
 	rcu_lock_acquire(&rcu_bh_lock_map);
-	rcu_lockdep_assert(!rcu_is_cpu_idle(),
+	rcu_lockdep_assert(rcu_is_watching(),
 			   "rcu_read_lock_bh() used illegally while idle");
 }
 
@@ -837,7 +893,7 @@ static inline void rcu_read_lock_bh(void)
  */
 static inline void rcu_read_unlock_bh(void)
 {
-	rcu_lockdep_assert(!rcu_is_cpu_idle(),
+	rcu_lockdep_assert(rcu_is_watching(),
 			   "rcu_read_unlock_bh() used illegally while idle");
 	rcu_lock_release(&rcu_bh_lock_map);
 	__release(RCU_BH);
@@ -862,7 +918,7 @@ static inline void rcu_read_lock_sched(void)
 	preempt_disable();
 	__acquire(RCU_SCHED);
 	rcu_lock_acquire(&rcu_sched_lock_map);
-	rcu_lockdep_assert(!rcu_is_cpu_idle(),
+	rcu_lockdep_assert(rcu_is_watching(),
 			   "rcu_read_lock_sched() used illegally while idle");
 }
 
@@ -880,7 +936,7 @@ static inline notrace void rcu_read_lock_sched_notrace(void)
  */
 static inline void rcu_read_unlock_sched(void)
 {
-	rcu_lockdep_assert(!rcu_is_cpu_idle(),
+	rcu_lockdep_assert(rcu_is_watching(),
 			   "rcu_read_unlock_sched() used illegally while idle");
 	rcu_lock_release(&rcu_sched_lock_map);
 	__release(RCU_SCHED);

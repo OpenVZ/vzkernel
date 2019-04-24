@@ -31,7 +31,7 @@ irqreturn_t lis3l02dq_data_rdy_trig_poll(int irq, void *private)
 	struct lis3l02dq_state *st = iio_priv(indio_dev);
 
 	if (st->trigger_on) {
-		iio_trigger_poll(st->trig, iio_get_time_ns());
+		iio_trigger_poll(st->trig);
 		return IRQ_HANDLED;
 	} else
 		return IRQ_WAKE_THREAD;
@@ -397,11 +397,11 @@ int lis3l02dq_configure_buffer(struct iio_dev *indio_dev)
 	int ret;
 	struct iio_buffer *buffer;
 
-	buffer = iio_kfifo_allocate(indio_dev);
+	buffer = iio_kfifo_allocate();
 	if (!buffer)
 		return -ENOMEM;
 
-	indio_dev->buffer = buffer;
+	iio_device_attach_buffer(indio_dev, buffer);
 
 	buffer->scan_timestamp = true;
 	indio_dev->setup_ops = &lis3l02dq_buffer_setup_ops;

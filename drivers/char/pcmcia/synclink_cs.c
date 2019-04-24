@@ -2509,15 +2509,6 @@ static int mgslpc_open(struct tty_struct *tty, struct file * filp)
 		printk("%s(%d):mgslpc_open(%s), old ref count = %d\n",
 			 __FILE__, __LINE__, tty->driver->name, port->count);
 
-	/* If port is closing, signal caller to try again */
-	if (tty_hung_up_p(filp) || port->flags & ASYNC_CLOSING){
-		if (port->flags & ASYNC_CLOSING)
-			interruptible_sleep_on(&port->close_wait);
-		retval = ((port->flags & ASYNC_HUP_NOTIFY) ?
-			-EAGAIN : -ERESTARTSYS);
-		goto cleanup;
-	}
-
 	port->low_latency = (port->flags & ASYNC_LOW_LATENCY) ? 1 : 0;
 
 	spin_lock_irqsave(&info->netlock, flags);
@@ -3985,7 +3976,7 @@ static netdev_tx_t hdlcdev_xmit(struct sk_buff *skb,
 	dev_kfree_skb(skb);
 
 	/* save start time for transmit timeout detection */
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 
 	/* start hardware transmitter if necessary */
 	spin_lock_irqsave(&info->lock, flags);
@@ -4048,7 +4039,7 @@ static int hdlcdev_open(struct net_device *dev)
 	tty_kref_put(tty);
 
 	/* enable network layer transmit */
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 	netif_start_queue(dev);
 
 	/* inform generic HDLC layer of current DCD status */

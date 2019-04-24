@@ -45,6 +45,7 @@ config THERMAL_DEFAULT_GOV_FAIR_SHARE
 config THERMAL_DEFAULT_GOV_USER_SPACE
 	bool "user_space"
 	select THERMAL_GOV_USER_SPACE
+	select ACPI_THERMAL_REL
 	help
 	  Select this if you want to let the user space manage the
 	  lpatform thermals.
@@ -69,7 +70,6 @@ config THERMAL_GOV_USER_SPACE
 config CPU_THERMAL
 	bool "generic cpu cooling support"
 	depends on CPU_FREQ
-	select CPU_FREQ_TABLE
 	help
 	  This implements the generic cpu cooling mechanism through frequency
 	  reduction. An ACPI version of this already exists
@@ -168,5 +168,26 @@ config INTEL_POWERCLAMP
 	  Enable this to enable Intel PowerClamp idle injection driver. This
 	  enforce idle time which results in more package C-state residency. The
 	  user interface is exposed via generic thermal framework.
+
+config INT340X_THERMAL
+	tristate "ACPI INT340X thermal drivers"
+	depends on X86 && ACPI
+	help
+	  Newer laptops and tablets that use ACPI may have thermal sensors and
+	  other devices with thermal control capabilities outside the core
+	  CPU/SOC, for thermal safety reasons.
+	  They are exposed for the OS to use via the INT3400 ACPI device object
+	  as the master, and INT3401~INT340B ACPI device objects as the slaves.
+	  Enable this to expose the temperature information and cooling ability
+	  from these objects to userspace via the normal thermal framework.
+	  This means that a wide range of applications and GUI widgets can show
+	  the information to the user or use this information for making
+	  decisions. For example, the Intel Thermal Daemon can use this
+	  information to allow the user to select his laptop to run without
+	  turning on the fans.
+
+config ACPI_THERMAL_REL
+	tristate
+	depends on ACPI
 
 endif

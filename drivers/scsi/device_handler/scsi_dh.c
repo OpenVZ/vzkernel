@@ -28,6 +28,7 @@
 
 static DEFINE_SPINLOCK(list_lock);
 static LIST_HEAD(scsi_dh_list);
+static LIST_HEAD(scsi_dh_aux_list);
 
 static struct scsi_device_handler *get_device_handler(const char *name)
 {
@@ -43,6 +44,23 @@ static struct scsi_device_handler *get_device_handler(const char *name)
 	spin_unlock(&list_lock);
 	return found;
 }
+
+struct scsi_device_handler_aux *
+scsi_get_device_handler_aux(struct scsi_device_handler *scsi_dh)
+{
+	struct scsi_device_handler_aux *tmp, *found = NULL;
+
+	spin_lock(&list_lock);
+	list_for_each_entry(tmp, &scsi_dh_aux_list, list) {
+		if (tmp->scsi_dh == scsi_dh) {
+			found = tmp;
+			break;
+		}
+	}
+	spin_unlock(&list_lock);
+	return found;
+}
+EXPORT_SYMBOL_GPL(scsi_get_device_handler_aux);
 
 /*
  * device_handler_match_function - Match a device handler to a device
@@ -102,23 +120,34 @@ static int scsi_dh_handler_attach(struct scsi_device *sdev,
 
 	if (sdev->scsi_dh_data) {
 		if (sdev->scsi_dh_data->scsi_dh != scsi_dh)
-			err = -EBUSY;
-		else
-			kref_get(&sdev->scsi_dh_data->kref);
-	} else if (scsi_dh->attach) {
-		err = scsi_dh->attach(sdev);
-		if (!err) {
-			kref_init(&sdev->scsi_dh_data->kref);
-			sdev->scsi_dh_data->sdev = sdev;
-		}
+			return -EBUSY;
+
+		kref_get(&sdev->scsi_dh_data->kref);
+		return 0;
 	}
+
+	if (!try_module_get(scsi_dh->module))
+		return -EINVAL;
+
+	err = scsi_dh->attach(sdev);
+	if (err) {
+		module_put(scsi_dh->module);
+		return err;
+	}
+
+	kref_init(&sdev->scsi_dh_data->kref);
+	sdev->scsi_dh_data->sdev = sdev;
 	return err;
 }
 
 static void __detach_handler (struct kref *kref)
 {
-	struct scsi_dh_data *scsi_dh_data = container_of(kref, struct scsi_dh_data, kref);
-	scsi_dh_data->scsi_dh->detach(scsi_dh_data->sdev);
+	struct scsi_dh_data *scsi_dh_data =
+		container_of(kref, struct scsi_dh_data, kref);
+	struct scsi_device_handler *scsi_dh = scsi_dh_data->scsi_dh;
+
+	scsi_dh->detach(scsi_dh_data->sdev);
+	module_put(scsi_dh->module);
 }
 
 /*
@@ -141,7 +170,7 @@ static void scsi_dh_handler_detach(struct scsi_device *sdev,
 	if (!scsi_dh)
 		scsi_dh = sdev->scsi_dh_data->scsi_dh;
 
-	if (scsi_dh && scsi_dh->detach)
+	if (scsi_dh)
 		kref_put(&sdev->scsi_dh_data->kref, __detach_handler);
 }
 
@@ -324,13 +353,28 @@ static int scsi_dh_notifier_remove(struct device *dev, void *data)
  *
  * Returns 0 on success, -EBUSY if handler already registered.
  */
-int scsi_register_device_handler(struct scsi_device_handler *scsi_dh)
+int scsi_register_device_handler(struct scsi_device_handler *scsi_dh,
+				 struct scsi_device_handler_aux *scsi_dh_aux_src,
+				 size_t scsi_dh_aux_src_size)
 {
+	struct scsi_device_handler_aux *scsi_dh_aux = NULL;
 
 	if (get_device_handler(scsi_dh->name))
 		return -EBUSY;
 
+	if (!scsi_dh->attach || !scsi_dh->detach)
+		return -EINVAL;
+
 	spin_lock(&list_lock);
+	if (scsi_dh_aux_src) {
+		scsi_dh_aux = kzalloc(sizeof(struct scsi_device_handler_aux), GFP_KERNEL);
+		if (!scsi_dh_aux)
+			return -ENOMEM;
+
+		memcpy(scsi_dh_aux, scsi_dh_aux_src, scsi_dh_aux_src_size);
+		scsi_dh_aux->scsi_dh = scsi_dh;
+		list_add(&scsi_dh_aux->list, &scsi_dh_aux_list);
+	}
 	list_add(&scsi_dh->list, &scsi_dh_list);
 	spin_unlock(&list_lock);
 
@@ -350,6 +394,7 @@ EXPORT_SYMBOL_GPL(scsi_register_device_handler);
  */
 int scsi_unregister_device_handler(struct scsi_device_handler *scsi_dh)
 {
+	struct scsi_device_handler_aux *scsi_dh_aux;
 
 	if (!get_device_handler(scsi_dh->name))
 		return -ENODEV;
@@ -357,8 +402,15 @@ int scsi_unregister_device_handler(struct scsi_device_handler *scsi_dh)
 	bus_for_each_dev(&scsi_bus_type, NULL, scsi_dh,
 			 scsi_dh_notifier_remove);
 
+	scsi_dh_aux = scsi_get_device_handler_aux(scsi_dh);
+
 	spin_lock(&list_lock);
 	list_del(&scsi_dh->list);
+	if (scsi_dh_aux) {
+		list_del(&scsi_dh_aux->list);
+		scsi_dh_aux->scsi_dh = NULL;
+		kfree(scsi_dh_aux);
+	}
 	spin_unlock(&list_lock);
 	printk(KERN_INFO "%s: device handler unregistered\n", scsi_dh->name);
 
@@ -381,44 +433,39 @@ EXPORT_SYMBOL_GPL(scsi_unregister_device_handler);
  */
 int scsi_dh_activate(struct request_queue *q, activate_complete fn, void *data)
 {
-	int err = 0;
-	unsigned long flags;
 	struct scsi_device *sdev;
 	struct scsi_device_handler *scsi_dh = NULL;
-	struct device *dev = NULL;
+	int err = SCSI_DH_NOSYS;
 
-	spin_lock_irqsave(q->queue_lock, flags);
-	sdev = q->queuedata;
+	sdev = scsi_device_from_queue(q);
 	if (!sdev) {
-		spin_unlock_irqrestore(q->queue_lock, flags);
-		err = SCSI_DH_NOSYS;
 		if (fn)
 			fn(data, err);
 		return err;
 	}
 
-	if (sdev->scsi_dh_data)
-		scsi_dh = sdev->scsi_dh_data->scsi_dh;
-	dev = get_device(&sdev->sdev_gendev);
-	if (!scsi_dh || !dev ||
-	    sdev->sdev_state == SDEV_CANCEL ||
+	if (!sdev->scsi_dh_data)
+		goto out_fn;
+	scsi_dh = sdev->scsi_dh_data->scsi_dh;
+	if (sdev->sdev_state == SDEV_CANCEL ||
 	    sdev->sdev_state == SDEV_DEL)
-		err = SCSI_DH_NOSYS;
-	if (sdev->sdev_state == SDEV_OFFLINE)
-		err = SCSI_DH_DEV_OFFLINED;
-	spin_unlock_irqrestore(q->queue_lock, flags);
+		goto out_fn;
 
-	if (err) {
-		if (fn)
-			fn(data, err);
-		goto out;
-	}
+	err = SCSI_DH_DEV_OFFLINED;
+	if (sdev->sdev_state == SDEV_OFFLINE)
+		goto out_fn;
 
 	if (scsi_dh->activate)
 		err = scsi_dh->activate(sdev, fn, data);
-out:
-	put_device(dev);
+
+out_put_device:
+	put_device(&sdev->sdev_gendev);
 	return err;
+
+out_fn:
+	if (fn)
+		fn(data, err);
+	goto out_put_device;
 }
 EXPORT_SYMBOL_GPL(scsi_dh_activate);
 
@@ -434,22 +481,18 @@ EXPORT_SYMBOL_GPL(scsi_dh_activate);
  */
 int scsi_dh_set_params(struct request_queue *q, const char *params)
 {
-	int err = -SCSI_DH_NOSYS;
-	unsigned long flags;
 	struct scsi_device *sdev;
 	struct scsi_device_handler *scsi_dh = NULL;
+	int err = -SCSI_DH_NOSYS;
 
-	spin_lock_irqsave(q->queue_lock, flags);
-	sdev = q->queuedata;
-	if (sdev && sdev->scsi_dh_data)
-		scsi_dh = sdev->scsi_dh_data->scsi_dh;
-	if (scsi_dh && scsi_dh->set_params && get_device(&sdev->sdev_gendev))
-		err = 0;
-	spin_unlock_irqrestore(q->queue_lock, flags);
-
-	if (err)
+	sdev = scsi_device_from_queue(q);
+	if (!sdev)
 		return err;
-	err = scsi_dh->set_params(sdev, params);
+
+	if (sdev->scsi_dh_data)
+		scsi_dh = sdev->scsi_dh_data->scsi_dh;
+	if (scsi_dh && scsi_dh->set_params)
+		err = scsi_dh->set_params(sdev, params);
 	put_device(&sdev->sdev_gendev);
 	return err;
 }
@@ -474,25 +517,23 @@ EXPORT_SYMBOL_GPL(scsi_dh_handler_exist);
  */
 int scsi_dh_attach(struct request_queue *q, const char *name)
 {
-	unsigned long flags;
 	struct scsi_device *sdev;
 	struct scsi_device_handler *scsi_dh;
 	int err = 0;
 
+	sdev = scsi_device_from_queue(q);
+	if (!sdev)
+		return -ENODEV;
+
 	scsi_dh = get_device_handler(name);
-	if (!scsi_dh)
-		return -EINVAL;
-
-	spin_lock_irqsave(q->queue_lock, flags);
-	sdev = q->queuedata;
-	if (!sdev || !get_device(&sdev->sdev_gendev))
-		err = -ENODEV;
-	spin_unlock_irqrestore(q->queue_lock, flags);
-
-	if (!err) {
-		err = scsi_dh_handler_attach(sdev, scsi_dh);
+	if (!scsi_dh) {
 		put_device(&sdev->sdev_gendev);
+		return -EINVAL;
 	}
+
+	err = scsi_dh_handler_attach(sdev, scsi_dh);
+	put_device(&sdev->sdev_gendev);
+
 	return err;
 }
 EXPORT_SYMBOL_GPL(scsi_dh_attach);
@@ -508,16 +549,10 @@ EXPORT_SYMBOL_GPL(scsi_dh_attach);
  */
 void scsi_dh_detach(struct request_queue *q)
 {
-	unsigned long flags;
 	struct scsi_device *sdev;
 	struct scsi_device_handler *scsi_dh = NULL;
 
-	spin_lock_irqsave(q->queue_lock, flags);
-	sdev = q->queuedata;
-	if (!sdev || !get_device(&sdev->sdev_gendev))
-		sdev = NULL;
-	spin_unlock_irqrestore(q->queue_lock, flags);
-
+	sdev = scsi_device_from_queue(q);
 	if (!sdev)
 		return;
 
@@ -540,22 +575,15 @@ EXPORT_SYMBOL_GPL(scsi_dh_detach);
  */
 const char *scsi_dh_attached_handler_name(struct request_queue *q, gfp_t gfp)
 {
-	unsigned long flags;
 	struct scsi_device *sdev;
 	const char *handler_name = NULL;
 
-	spin_lock_irqsave(q->queue_lock, flags);
-	sdev = q->queuedata;
-	if (!sdev || !get_device(&sdev->sdev_gendev))
-		sdev = NULL;
-	spin_unlock_irqrestore(q->queue_lock, flags);
-
+	sdev = scsi_device_from_queue(q);
 	if (!sdev)
 		return NULL;
 
 	if (sdev->scsi_dh_data)
 		handler_name = kstrdup(sdev->scsi_dh_data->scsi_dh->name, gfp);
-
 	put_device(&sdev->sdev_gendev);
 	return handler_name;
 }

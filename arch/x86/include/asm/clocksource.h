@@ -9,6 +9,7 @@
 #define VCLOCK_TSC  1  /* vDSO should use vread_tsc.	*/
 #define VCLOCK_HPET 2  /* vDSO should use vread_hpet.	*/
 #define VCLOCK_PVCLOCK 3 /* vDSO should use vread_pvclock. */
+#define VCLOCK_HVCLOCK	4	/* vDSO should use vread_hvclock.	*/
 
 struct arch_clocksource_data {
 	int vclock_mode;

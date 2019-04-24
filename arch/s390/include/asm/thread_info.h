@@ -77,33 +77,44 @@ static inline struct thread_info *current_thread_info(void)
 /*
  * thread information flags bit numbers
  */
-#define TIF_SYSCALL		0	/* inside a system call */
-#define TIF_NOTIFY_RESUME	1	/* callback before returning to user */
-#define TIF_SIGPENDING		2	/* signal pending */
-#define TIF_NEED_RESCHED	3	/* rescheduling necessary */
+#define TIF_NOTIFY_RESUME	0	/* callback before returning to user */
+#define TIF_SIGPENDING		1	/* signal pending */
+#define TIF_NEED_RESCHED	2	/* rescheduling necessary */
+#define TIF_UPROBE		3	/* breakpointed or single-stepping */
+#define TIF_GUARDED_STORAGE	4	/* load guarded storage control block */
+#define TIF_ASCE		5	/* primary asce needs fixup / uaccess */
 #define TIF_PER_TRAP		6	/* deliver sigtrap on return to user */
 #define TIF_MCCK_PENDING	7	/* machine check handling is pending */
 #define TIF_SYSCALL_TRACE	8	/* syscall trace active */
 #define TIF_SYSCALL_AUDIT	9	/* syscall auditing active */
 #define TIF_SECCOMP		10	/* secure computing */
 #define TIF_SYSCALL_TRACEPOINT	11	/* syscall tracepoint instrumentation */
+#define TIF_SYSCALL		12	/* inside a system call */
+#define TIF_ISOLATE_BP		13	/* Run process with isolated BP */
+#define TIF_ISOLATE_BP_GUEST	14	/* Run KVM guests with isolated BP */
 #define TIF_31BIT		17	/* 32bit process */
 #define TIF_MEMDIE		18	/* is terminating due to OOM killer */
 #define TIF_RESTORE_SIGMASK	19	/* restore signal mask in do_signal() */
 #define TIF_SINGLE_STEP		20	/* This task is single stepped */
+#define TIF_UPROBE_SINGLESTEP	21	/* This task is uprobe single stepped */
 
 #define _TIF_SYSCALL		(1<<TIF_SYSCALL)
+#define _TIF_ISOLATE_BP		(1<<TIF_ISOLATE_BP)
+#define _TIF_ISOLATE_BP_GUEST	(1<<TIF_ISOLATE_BP_GUEST)
 #define _TIF_NOTIFY_RESUME	(1<<TIF_NOTIFY_RESUME)
 #define _TIF_SIGPENDING		(1<<TIF_SIGPENDING)
 #define _TIF_NEED_RESCHED	(1<<TIF_NEED_RESCHED)
+#define _TIF_ASCE		(1<<TIF_ASCE)
 #define _TIF_PER_TRAP		(1<<TIF_PER_TRAP)
 #define _TIF_MCCK_PENDING	(1<<TIF_MCCK_PENDING)
 #define _TIF_SYSCALL_TRACE	(1<<TIF_SYSCALL_TRACE)
 #define _TIF_SYSCALL_AUDIT	(1<<TIF_SYSCALL_AUDIT)
 #define _TIF_SECCOMP		(1<<TIF_SECCOMP)
 #define _TIF_SYSCALL_TRACEPOINT	(1<<TIF_SYSCALL_TRACEPOINT)
+#define _TIF_UPROBE		(1<<TIF_UPROBE)
 #define _TIF_31BIT		(1<<TIF_31BIT)
 #define _TIF_SINGLE_STEP	(1<<TIF_SINGLE_STEP)
+#define _TIF_GUARDED_STORAGE	(1<<TIF_GUARDED_STORAGE)
 
 #ifdef CONFIG_64BIT
 #define is_32bit_task()		(test_thread_flag(TIF_31BIT))

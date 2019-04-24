@@ -14,6 +14,9 @@
 #else
 #define __IGNORE_time
 #endif
+#define __IGNORE_pkey_mprotect
+#define __IGNORE_pkey_alloc
+#define __IGNORE_pkey_free
 
 /* Ignore NUMA system calls. Not wired up on s390. */
 #define __IGNORE_mbind
@@ -25,6 +28,9 @@
 /* Ignore system calls that are also reachable via sys_socket */
 #define __IGNORE_recvmmsg
 #define __IGNORE_sendmmsg
+
+/* Ignore bpf syscall */
+#define __IGNORE_bpf
 
 #define __ARCH_WANT_OLD_READDIR
 #define __ARCH_WANT_SYS_ALARM
