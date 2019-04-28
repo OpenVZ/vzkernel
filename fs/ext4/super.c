@@ -117,6 +117,9 @@ MODULE_ALIAS("ext3");
 #define IS_EXT3_SB(sb) (0)
 #endif
 
+ushort ext4_force_discard_on_ploop = 1;
+module_param_named(force_discard_on_ploop, ext4_force_discard_on_ploop, ushort, 0644);
+
 static int ext4_verify_csum_type(struct super_block *sb,
 				 struct ext4_super_block *es)
 {
@@ -3974,7 +3977,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		set_opt(sb, ERRORS_RO);
 	if (def_mount_opts & EXT4_DEFM_BLOCK_VALIDITY)
 		set_opt(sb, BLOCK_VALIDITY);
-	if (def_mount_opts & EXT4_DEFM_DISCARD || is_ploop(sb))
+	if (def_mount_opts & EXT4_DEFM_DISCARD || (is_ploop(sb) && ext4_force_discard_on_ploop))
 		set_opt(sb, DISCARD);
 
 	sbi->s_resuid = make_kuid(&init_user_ns, le16_to_cpu(es->s_def_resuid));
