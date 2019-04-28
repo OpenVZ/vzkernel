@@ -552,7 +552,8 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 {
 	int log = preq->plo->cluster_log + 9;
 	loff_t clu_siz = 1 << log;
-	loff_t end_pos = (loff_t)io->alloc_head << log;
+	loff_t end_pos = (loff_t)(iblk + 1) << log;
+	loff_t isize;
 
 	if (unlikely(preq->req_rw & REQ_FLUSH)) {
 		spin_lock_irq(&io->plo->lock);
@@ -565,6 +566,18 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 	BUG_ON(preq->prealloc_size);
 
 	if (unlikely(io->prealloced_size < end_pos + clu_siz)) {
+		isize = i_size_read(io->files.inode);
+		/*
+		 * FIXME: We never initialize io->prealloced_size,
+		 * and it can be 0 here. The below actualizes it.
+		 * This should be reworked in a more natural way.
+		 */
+		if (unlikely(io->prealloced_size < isize)) {
+			io->prealloced_size = isize;
+			if (io->prealloced_size >= end_pos + clu_siz)
+				goto submit;
+		}
+
 		if (!io->prealloc_preq) {
 			loff_t pos = (((loff_t)(iblk + 1)  << log) |
 				      (KAIO_PREALLOC - 1)) + 1;
@@ -584,7 +597,7 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 			return 0;
 		}
 	}
-
+submit:
 	preq->iblock = iblk;
 	preq->eng_state = PLOOP_E_DATA_WBI;
 
