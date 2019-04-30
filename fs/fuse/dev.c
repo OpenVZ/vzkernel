@@ -631,8 +631,7 @@ static int fuse_request_queue_background(struct fuse_req *req)
 	}
 	__set_bit(FR_ISREPLY, &req->flags);
 	spin_lock(&fc->bg_lock);
-	if (req->args->page_cache && ff &&
-	    test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
+	if (ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
 		BUG_ON(req->in.h.opcode != FUSE_READ);
 		ret = -EIO;
 	} else if (likely(fc->connected)) {
