@@ -576,8 +576,6 @@ struct ploop_request
 		} wi;
 	} sinfo;
 
-	u64			verf;
-
 	/* List of requests blocked until completion of this request. */
 	struct list_head	delay_list;
 
