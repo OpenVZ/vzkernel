@@ -619,7 +619,9 @@ bool fuse_request_queue_background(struct fuse_conn *fc, struct fuse_req *req)
 	}
 	__set_bit(FR_ISREPLY, &req->flags);
 	spin_lock(&fc->bg_lock);
-	if (likely(fc->connected)) {
+	if (unlikely(test_bit(FUSE_S_FAIL_IMMEDIATELY, &req->ff->ff_state)))
+		req->out.h.error = -EIO;
+	else if (likely(fc->connected)) {
 		fc->num_background++;
 		if (fc->num_background == fc->max_background)
 			fc->blocked = 1;
@@ -654,7 +656,8 @@ void fuse_request_send_background(struct fuse_conn *fc, struct fuse_req *req)
 		return;
 
 	if (!fuse_request_queue_background(fc, req)) {
-		req->out.h.error = -ENOTCONN;
+		if (!req->out.h.error)
+			req->out.h.error = -ENOTCONN;
 		req->end(fc, req);
 		fuse_put_request(fc, req);
 	}
