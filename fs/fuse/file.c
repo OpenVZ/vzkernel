@@ -1941,6 +1941,7 @@ __acquires(fc->lock)
 	loff_t size = i_size_read(req->inode);
 	struct fuse_write_in *inarg = &req->misc.write.in;
 	__u64 data_size = req->num_pages * PAGE_CACHE_SIZE;
+	bool queued;
 
 	if (!fc->connected ||
 	    test_bit(FUSE_S_FAIL_IMMEDIATELY, &req->ff->ff_state))
@@ -1957,7 +1958,8 @@ __acquires(fc->lock)
 
 	req->in.args[1].size = inarg->size;
 	fi->writectr++;
-	fuse_request_send_background_nocheck(fc, req);
+	queued = fuse_request_queue_background(fc, req);
+	WARN_ON(!queued);
 	return;
 
  out_free:

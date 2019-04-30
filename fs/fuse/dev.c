@@ -598,69 +598,70 @@ void fuse_request_send(struct fuse_conn *fc, struct fuse_req *req)
 }
 EXPORT_SYMBOL_GPL(fuse_request_send);
 
-/*
- * Called under fc->lock
- *
- * fc->connected must have been checked previously
- */
-void fuse_request_send_background_nocheck(struct fuse_conn *fc,
-					  struct fuse_req *req)
+bool fuse_request_queue_background(struct fuse_conn *fc, struct fuse_req *req)
 {
 	struct fuse_iqueue *fiq = req->fiq;
+	bool queued = false;
 
-	BUG_ON(!test_bit(FR_BACKGROUND, &req->flags));
-
+	WARN_ON(!test_bit(FR_BACKGROUND, &req->flags));
 	if (!test_bit(FR_WAITING, &req->flags)) {
 		__set_bit(FR_WAITING, &req->flags);
 		atomic_inc(&fc->num_waiting);
 	}
 	__set_bit(FR_ISREPLY, &req->flags);
 	spin_lock(&fc->bg_lock);
-	fc->num_background++;
-	if (fc->num_background == fc->max_background)
-		fc->blocked = 1;
-	if (fc->num_background == fc->congestion_threshold &&
-	    fc->bdi_initialized) {
-		set_bdi_congested(&fc->bdi, BLK_RW_SYNC);
-		set_bdi_congested(&fc->bdi, BLK_RW_ASYNC);
-	}
+	if (likely(fc->connected)) {
+		fc->num_background++;
+		if (fc->num_background == fc->max_background)
+			fc->blocked = 1;
+		if (fc->num_background == fc->congestion_threshold && fc->sb) {
+			set_bdi_congested(fc->sb->s_bdi, BLK_RW_SYNC);
+			set_bdi_congested(fc->sb->s_bdi, BLK_RW_ASYNC);
+		}
 
-	if (test_bit(FR_NONBLOCKING, &req->flags)) {
-		fc->active_background++;
-		spin_lock(&fiq->waitq.lock);
-		req->in.h.unique = fuse_get_unique(fiq);
-		queue_request(fiq, req);
-		spin_unlock(&fiq->waitq.lock);
-		goto unlock;
-	}
+		if (test_bit(FR_NONBLOCKING, &req->flags)) {
+			fc->active_background++;
+			spin_lock(&fiq->waitq.lock);
+			req->in.h.unique = fuse_get_unique(fiq);
+			queue_request(fiq, req);
+			spin_unlock(&fiq->waitq.lock);
+			queued = true;
+			goto unlock;
+		}
 
-	list_add_tail(&req->list, &fc->bg_queue);
-	flush_bg_queue(fc, fiq);
+		list_add_tail(&req->list, &fc->bg_queue);
+		flush_bg_queue(fc, fiq);
+		queued = true;
+        }
 unlock:
 	spin_unlock(&fc->bg_lock);
+	return queued;
 }
 
 void fuse_request_send_background(struct fuse_conn *fc, struct fuse_req *req)
 {
-	BUG_ON(!req->end);
+	bool fail;
+	WARN_ON(!req->end);
 
 	if (fc->kio.op && !fc->kio.op->req_send(fc, req, true, false))
 		return;
 
 	spin_lock(&fc->lock);
-	if (req->page_cache && req->ff &&
-	    test_bit(FUSE_S_FAIL_IMMEDIATELY, &req->ff->ff_state)) {
+	fail = (req->page_cache && req->ff &&
+		test_bit(FUSE_S_FAIL_IMMEDIATELY, &req->ff->ff_state));
+	spin_unlock(&fc->lock);
+
+	if (fail) {
+		/* FIXME */
 		BUG_ON(req->in.h.opcode != FUSE_READ);
 		req->out.h.error = -EIO;
 		__clear_bit(FR_BACKGROUND, &req->flags);
 		__clear_bit(FR_PENDING, &req->flags);
-		spin_unlock(&fc->lock);
 		request_end(fc, req);
-	} else if (fc->connected) {
-		fuse_request_send_background_nocheck(fc, req);
-		spin_unlock(&fc->lock);
-	} else {
-		spin_unlock(&fc->lock);
+		return;
+	}
+
+	if (!fuse_request_queue_background(fc, req)) {
 		req->out.h.error = -ENOTCONN;
 		req->end(fc, req);
 		fuse_put_request(fc, req);
