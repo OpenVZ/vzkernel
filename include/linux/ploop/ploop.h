@@ -518,9 +518,6 @@ enum
 	PLOOP_E_DATA_WBI,	/* Data writeback is in progress and index
 				 * is not updated.
 				 */
-	PLOOP_E_ZERO_INDEX,	/* Zeroing index of free block; original request
-				   can use .submit on completion */
-	PLOOP_E_DELTA_ZERO_INDEX,/* the same but for PLOOP_E_DELTA_READ */
 	PLOOP_E_FSYNC_PENDED,   /* INDEX_WB needs io->ops->sync() to proceed */
 };
 

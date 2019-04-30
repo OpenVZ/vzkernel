@@ -2296,58 +2296,6 @@ restart:
 					 &sbl, cluster_size_in_sec(plo));
 		break;
 	}
-	case PLOOP_E_ZERO_INDEX:
-	{
-		preq->eng_state = PLOOP_E_DATA_WBI;
-		top_delta = ploop_top_delta(plo);
-		plo->st.bio_out++;
-		if (whole_block(plo, preq)) {
-			top_delta->io.ops->submit(&top_delta->io, preq, preq->req_rw,
-						  &preq->bl, preq->iblock,
-						  preq->req_size);
-		} else {
-			struct bio_list sbl;
-			struct bio * b;
-			int i;
-
-			if (!preq->aux_bio)
-				preq->aux_bio = bio_alloc(GFP_NOFS, block_vecs(plo));
-
-			if (!preq->aux_bio ||
-			    fill_bio(plo, preq->aux_bio, preq->req_cluster)) {
-				PLOOP_REQ_FAIL_IMMEDIATE(preq, -ENOMEM);
-				break;
-			}
-
-			for (i = 0; i < preq->aux_bio->bi_vcnt; i++)
-				memset(page_address(preq->aux_bio->bi_io_vec[i].bv_page),
-				       0, PAGE_SIZE);
-
-			bio_list_for_each(b, &preq->bl) {
-				bio_bcopy(preq->aux_bio, b, plo);
-			}
-
-			sbl.head = sbl.tail = preq->aux_bio;
-			top_delta->io.ops->submit(&top_delta->io, preq, preq->req_rw,
-						  &sbl, preq->iblock, cluster_size_in_sec(plo));
-		}
-		break;
-	}
-	case PLOOP_E_DELTA_ZERO_INDEX:
-	{
-		struct bio_list sbl;
-
-		BUG_ON (preq->aux_bio == NULL);
-
-		preq->eng_state = PLOOP_E_DATA_WBI;
-		sbl.head = sbl.tail = preq->aux_bio;
-		top_delta = ploop_top_delta(plo);
-		plo->st.bio_out++;
-		top_delta->io.ops->submit(&top_delta->io, preq, preq->req_rw,
-					  &sbl, preq->iblock,
-					  cluster_size_in_sec(plo));
-		break;
-	}
 	case PLOOP_E_RELOC_DATA_READ:
 	{
 		struct bio_list sbl;
