@@ -2023,7 +2023,7 @@ unsigned long mem_cgroup_overdraft(struct mem_cgroup *memcg)
 
 	guarantee = ACCESS_ONCE(memcg->oom_guarantee);
 	usage = page_counter_read(&memcg->memsw);
-	return div64_u64(1000 * usage, guarantee + 1);
+	return usage > guarantee ? (usage - guarantee) : 0;
 }
 
 unsigned long mem_cgroup_total_pages(struct mem_cgroup *memcg, bool swap)
