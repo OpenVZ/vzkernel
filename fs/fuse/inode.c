@@ -146,6 +146,7 @@ static void fuse_evict_inode(struct inode *inode)
 	if (inode->i_sb->s_flags & MS_ACTIVE) {
 		struct fuse_conn *fc = get_fuse_conn(inode);
 		struct fuse_inode *fi = get_fuse_inode(inode);
+
 		fuse_queue_forget(fc, fi->forget, fi->nodeid, fi->nlookup);
 		fi->forget = NULL;
 	}
@@ -341,9 +342,9 @@ struct inode *fuse_iget(struct super_block *sb, u64 nodeid,
 	}
 
 	fi = get_fuse_inode(inode);
-	spin_lock(&fc->lock);
+	spin_lock(&fi->lock);
 	fi->nlookup++;
-	spin_unlock(&fc->lock);
+	spin_unlock(&fi->lock);
 	fuse_change_attributes(inode, attr, attr_valid, attr_version);
 
 	return inode;
