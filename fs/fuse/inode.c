@@ -114,6 +114,7 @@ static struct inode *fuse_alloc_inode(struct super_block *sb)
 	fi->writepages = RB_ROOT;
 	init_waitqueue_head(&fi->page_waitq);
 	mutex_init(&fi->mutex);
+	spin_lock_init(&fi->lock);
 	fi->forget = fuse_alloc_forget();
 	if (!fi->forget) {
 		kmem_cache_free(fuse_inode_cachep, inode);
@@ -185,6 +186,8 @@ void fuse_change_attributes_common(struct inode *inode, struct fuse_attr *attr,
 	struct fuse_conn *fc = get_fuse_conn(inode);
 	struct fuse_inode *fi = get_fuse_inode(inode);
 
+	lockdep_assert_held(&fi->lock);
+
 	fi->attr_version = atomic64_inc_return(&fc->attr_version);
 	fi->i_time = attr_valid;
 	WRITE_ONCE(fi->inval_mask, 0);
@@ -231,10 +234,10 @@ void fuse_change_attributes(struct inode *inode, struct fuse_attr *attr,
 	loff_t oldsize;
 	struct timespec old_mtime;
 
-	spin_lock(&fc->lock);
+	spin_lock(&fi->lock);
 	if ((attr_version != 0 && fi->attr_version > attr_version) ||
 	    test_bit(FUSE_I_SIZE_UNSTABLE, &fi->state)) {
-		spin_unlock(&fc->lock);
+		spin_unlock(&fi->lock);
 		return;
 	}
 
@@ -250,7 +253,7 @@ void fuse_change_attributes(struct inode *inode, struct fuse_attr *attr,
 	if (!is_wb || !S_ISREG(inode->i_mode) ||
 	    !fi->num_openers || fi->i_size_unstable)
 		i_size_write(inode, attr->size);
-	spin_unlock(&fc->lock);
+	spin_unlock(&fi->lock);
 
 	if (!is_wb && S_ISREG(inode->i_mode)) {
 		bool inval = false;
@@ -445,11 +448,11 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 		return -ENOENT;
 
 	fi = get_fuse_inode(inode);
-	spin_lock(&fc->lock);
+	spin_lock(&fi->lock);
 	list_for_each_entry(ff, &fi->rw_files, rw_entry) {
 		set_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state);
 	}
-	spin_unlock(&fc->lock);
+	spin_unlock(&fi->lock);
 
 	/* let them see FUSE_S_FAIL_IMMEDIATELY */
 	wake_up_all(&fc->blocked_waitq);
