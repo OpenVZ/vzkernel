@@ -654,7 +654,6 @@ void fuse_request_send_background(struct fuse_conn *fc, struct fuse_req *req)
 		req->out.h.error = -EIO;
 		__clear_bit(FR_BACKGROUND, &req->flags);
 		__clear_bit(FR_PENDING, &req->flags);
-		list_del_init(&req->list);
 		spin_unlock(&fc->lock);
 		request_end(fc, req);
 	} else if (fc->connected) {
