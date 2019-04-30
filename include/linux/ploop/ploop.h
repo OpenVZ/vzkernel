@@ -491,7 +491,6 @@ enum
 	PLOOP_REQ_RELOC_A,	/* 'A' stands for allocate() */
 	PLOOP_REQ_RELOC_S,	/* Obsolete: 'S' stands for submit() */
 	PLOOP_REQ_RELOC_N,	/* 'N' stands for "nullify" */
-	PLOOP_REQ_ZERO,		/* Obsolete */
 	PLOOP_REQ_DISCARD,	/* Obsolete */
 	PLOOP_REQ_RSYNC,
 	PLOOP_REQ_KAIO_FSYNC,	/*force image fsync by KAIO module */
@@ -507,7 +506,6 @@ enum
 #define PLOOP_REQ_RELOC_S_FL (1 << PLOOP_REQ_RELOC_S) /* Obsolete */
 #define PLOOP_REQ_RELOC_N_FL (1 << PLOOP_REQ_RELOC_N)
 #define PLOOP_REQ_DISCARD_FL (1 << PLOOP_REQ_DISCARD)	/* Obsolete */
-#define PLOOP_REQ_ZERO_FL (1 << PLOOP_REQ_ZERO)		/* Obsolete */
 
 enum
 {
