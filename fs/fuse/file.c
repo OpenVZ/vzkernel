@@ -1877,8 +1877,6 @@ __acquires(fi->lock)
 	int err;
 
 	fi->writectr++;
-	if (test_bit(FUSE_S_FAIL_IMMEDIATELY, &wpa->ia.ff->ff_state))
-		goto out_free;
 	if (inarg->offset + data_size <= size) {
 		inarg->size = data_size;
 	} else if (inarg->offset < size) {
