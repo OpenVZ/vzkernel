@@ -447,7 +447,9 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 			spin_unlock(&fiq->waitq.lock);
 		}
 		fuse_kill_requests(fc, inode, &fc->main_iq.pending);
+		spin_lock(&fc->bg_lock);
 		fuse_kill_requests(fc, inode, &fc->bg_queue);
+		spin_unlock(&fc->bg_lock);
 		if (fc->kio.op && fc->kio.op->kill_requests)
 			fc->kio.op->kill_requests(fc, inode);
 
@@ -796,6 +798,7 @@ int fuse_conn_init(struct fuse_conn *fc)
 	int cpu;
 	memset(fc, 0, sizeof(*fc));
 	spin_lock_init(&fc->lock);
+	spin_lock_init(&fc->bg_lock);
 	mutex_init(&fc->inst_mutex);
 	init_rwsem(&fc->killsb);
 	atomic_set(&fc->count, 1);
@@ -1053,6 +1056,7 @@ static void process_init_limits(struct fuse_conn *fc, struct fuse_init_out *arg)
 	sanitize_global_limit(&max_user_bgreq);
 	sanitize_global_limit(&max_user_congthresh);
 
+	spin_lock(&fc->bg_lock);
 	if (arg->max_background) {
 		fc->max_background = arg->max_background;
 
@@ -1066,6 +1070,7 @@ static void process_init_limits(struct fuse_conn *fc, struct fuse_init_out *arg)
 		    fc->congestion_threshold > max_user_congthresh)
 			fc->congestion_threshold = max_user_congthresh;
 	}
+	spin_unlock(&fc->bg_lock);
 }
 
 static void process_init_reply(struct fuse_conn *fc, struct fuse_req *req)

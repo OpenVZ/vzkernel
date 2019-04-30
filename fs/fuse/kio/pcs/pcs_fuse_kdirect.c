@@ -994,10 +994,10 @@ error:
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
 
 	if (lk)
-		spin_unlock(&pfc->fc->lock);
+		spin_unlock(&pfc->fc->bg_lock);
 	request_end(pfc->fc, &r->req);
 	if (lk)
-		spin_lock(&pfc->fc->lock);
+		spin_lock(&pfc->fc->bg_lock);
 	return;
 
 submit:
@@ -1136,10 +1136,10 @@ static int pcs_kio_classify_req(struct fuse_conn *fc, struct fuse_req *req, bool
 		if (!(inarg->valid & FATTR_SIZE))
 			return 1;
 		if (lk)
-			spin_unlock(&fc->lock);
+			spin_unlock(&fc->bg_lock);
 		pcs_kio_setattr_handle(fi, req);
 		if (lk)
-			spin_lock(&fc->lock);
+			spin_lock(&fc->bg_lock);
 		return 1;
 	}
 	case FUSE_IOCTL: {
@@ -1204,10 +1204,10 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 			__clear_bit(FR_PENDING, &req->flags);
 			req->out.h.error = ret;
 			if (lk)
-				spin_unlock(&fc->lock);
+				spin_unlock(&fc->bg_lock);
 			request_end(fc, req);
 			if (lk)
-				spin_lock(&fc->lock);
+				spin_lock(&fc->bg_lock);
 			return 0;
 		}
 		return 1;
@@ -1217,10 +1217,10 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 	if (!bg)
 		atomic_inc(&req->count);
 	else if (!lk) {
-		spin_lock(&fc->lock);
+		spin_lock(&fc->bg_lock);
 		if (fc->num_background + 1 >= fc->max_background ||
 		    !fc->connected) {
-			spin_unlock(&fc->lock);
+			spin_unlock(&fc->bg_lock);
 			return 1;
 		}
 		fc->num_background++;
@@ -1231,7 +1231,7 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 			set_bdi_congested(&fc->bdi, BLK_RW_SYNC);
 			set_bdi_congested(&fc->bdi, BLK_RW_ASYNC);
 		}
-		spin_unlock(&fc->lock);
+		spin_unlock(&fc->bg_lock);
 	}
 	__clear_bit(FR_PENDING, &req->flags);
 
