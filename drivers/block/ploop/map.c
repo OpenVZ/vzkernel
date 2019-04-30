@@ -913,14 +913,6 @@ void ploop_index_update(struct ploop_request * preq)
 		}
 	}
 
-	BUG_ON (test_bit(PLOOP_REQ_ZERO, &preq->state) && preq->iblock);
-	if (test_bit(PLOOP_REQ_ZERO, &preq->state) && !blk) {
-		printk("Either map_node is corrupted or bug in "
-		       "ploop-balloon (%u)\n", preq->req_cluster);
-		PLOOP_REQ_SET_ERROR(preq, -EIO);
-		goto corrupted;
-	}
-
 	if (blk == preq->iblock && top_delta->level == old_level)
 		goto out;
 
@@ -967,7 +959,6 @@ void ploop_index_update(struct ploop_request * preq)
 
 enomem:
 	PLOOP_REQ_SET_ERROR(preq, -ENOMEM);
-corrupted:
 	set_bit(PLOOP_S_ABORT, &plo->state);
 out:
 	preq->eng_state = PLOOP_E_COMPLETE;
@@ -1087,20 +1078,12 @@ static void map_wb_complete(struct map_node * m, int err)
 				struct ploop_request *pr = preq;
 				int do_levels_update = 0;
 
-				if (unlikely(test_bit(PLOOP_REQ_ZERO, &preq->state))) {
-					BUG_ON (list_empty(&preq->delay_list));
-					pr = list_first_entry(&preq->delay_list,
-							      struct ploop_request,
-							      list);
-				}
-
 				if (m->levels &&  m->levels[idx] != top_delta->level) {
 					spin_lock_irq(&plo->lock);
 					do_levels_update = 1;
 				}
 
-				if (unlikely(test_bit(PLOOP_REQ_RELOC_A, &preq->state) ||
-					     test_bit(PLOOP_REQ_ZERO, &preq->state)))
+				if (unlikely(test_bit(PLOOP_REQ_RELOC_A, &preq->state)))
 					map_idx_swap(m, idx, &pr->iblock,
 						     ploop_map_log(plo));
 				else
