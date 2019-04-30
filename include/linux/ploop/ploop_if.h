@@ -234,14 +234,14 @@ enum {
 	PLOOP_MNTN_SNAPSHOT, /* bdev is freezed due to snapshot */
 
 	PLOOP_MNTN_TRACK,    /* tracking is in progress */
-	PLOOP_MNTN_DISCARD,  /* ready to handle discard requests */
+	PLOOP_MNTN_DISCARD,  /* Obsolete: ready to handle discard requests */
 
 	PLOOP_MNTN_NOFAST = 256,
 	/* all types below requires fast-path disabled ! */
 
 	PLOOP_MNTN_MERGE,    /* merge is in progress */
 	PLOOP_MNTN_GROW,     /* grow is in progress */
-	PLOOP_MNTN_RELOC,    /* relocation is in progress */
+	PLOOP_MNTN_RELOC,    /* Obsolete: relocation is in progress */
 	PLOOP_MNTN_PUSH_BACKUP, /* push backup is in progress */
 };
 
@@ -317,32 +317,32 @@ struct ploop_track_extent
 /* Increase size of block device */
 #define PLOOP_IOC_GROW		_IOW(PLOOPCTLTYPE, 17, struct ploop_ctl)
 
-/* Inquire current state of free block extents */
+/* Obsolete: Inquire current state of free block extents */
 #define PLOOP_IOC_FBGET		_IOW(PLOOPCTLTYPE, 18, struct ploop_freeblks_ctl)
 
 /* Start balloning or inquire maintenance_type or flush stale BALLON state */
 #define PLOOP_IOC_BALLOON	_IOW(PLOOPCTLTYPE, 19, struct ploop_balloon_ctl)
 
-/* Load free blocks to ploop */
+/* Obsolete: Load free blocks to ploop */
 #define PLOOP_IOC_FREEBLKS      _IOW(PLOOPCTLTYPE, 20, struct ploop_freeblks_ctl)
 
-/* Load blocks to relocate and initiate relocation process */
+/* Obsolete: Load blocks to relocate and initiate relocation process */
 #define PLOOP_IOC_RELOCBLKS     _IOW(PLOOPCTLTYPE, 21, struct ploop_relocblks_ctl)
 
 /* Search ploop_device global tree for first unused minor number */
 #define PLOOP_IOC_GETDEVICE    _IOW(PLOOPCTLTYPE, 22, struct ploop_getdevice_ctl)
 
-/* Start handling discard requests */
+/* Obsolete: Start handling discard requests */
 #define PLOOP_IOC_DISCARD_INIT _IO(PLOOPCTLTYPE, 23)
-/* Stop handling discard requests */
+/* Obsolete: Stop handling discard requests */
 #define PLOOP_IOC_DISCARD_FINI _IO(PLOOPCTLTYPE, 24)
-/* Wait a discard request */
+/* Obsolete: Wait a discard request */
 #define PLOOP_IOC_DISCARD_WAIT _IO(PLOOPCTLTYPE, 25)
 
-/* Drop current state of free block extents */
+/* Obsolete: Drop current state of free block extents */
 #define PLOOP_IOC_FBDROP	_IO(PLOOPCTLTYPE, 26)
 
-/* Filter extents with sizes less than arg */
+/* Obsolete: Filter extents with sizes less than arg */
 #define PLOOP_IOC_FBFILTER	_IOR(PLOOPCTLTYPE, 27, unsigned long)
 
 /* Set maximum size for the top delta . */
