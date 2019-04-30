@@ -42,7 +42,6 @@
 			{ 1 << PLOOP_REQ_TRANS,		"T"},	\
 			{ 1 << PLOOP_REQ_MERGE,		"M"},	\
 			{ 1 << PLOOP_REQ_RELOC_A,	"RA"},	\
-			{ 1 << PLOOP_REQ_RELOC_S,	"RS"},	\
 			{ 1 << PLOOP_REQ_RELOC_N,	"RN"})
 
 #define PREQ_FORMAT "preq=0x%p cluster=0x%x iblock=0x%x size=0x%x eng_state=0x%lx state=%s rw=%s"

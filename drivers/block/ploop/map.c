@@ -894,8 +894,6 @@ void ploop_index_update(struct ploop_request * preq)
 	map_index_t blk;
 	int old_level;
 	struct page * page;
-	unsigned long state = READ_ONCE(preq->state);
-	int do_fsync_if_delayed = 0;
 
 	/* No way back, we are going to initiate index write. */
 
@@ -948,13 +946,7 @@ void ploop_index_update(struct ploop_request * preq)
 	   will do the FLUSH */
 	preq->req_rw &= ~REQ_FLUSH;
 
-	/* Relocate requires consistent index update */
-	if (state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL)) {
-		preq->req_index_update_rw |= (REQ_FLUSH | REQ_FUA);
-		do_fsync_if_delayed = 1;
-	}
-
-	ploop_index_wb_proceed_or_delay(preq, do_fsync_if_delayed);
+	ploop_index_wb_proceed_or_delay(preq, 0);
 	return;
 
 enomem:
@@ -1017,22 +1009,8 @@ static void map_wb_complete_post_process(struct ploop_map *map,
 {
 	struct ploop_device *plo       = map->plo;
 
-	if (likely(err ||
-		   (!test_bit(PLOOP_REQ_RELOC_A, &preq->state) &&
-		    !test_bit(PLOOP_REQ_RELOC_S, &preq->state)))) {
-
+	if (likely(err || !test_bit(PLOOP_REQ_RELOC_A, &preq->state))) {
 		requeue_req(preq, PLOOP_E_COMPLETE);
-		return;
-	}
-
-	if (test_bit(PLOOP_REQ_RELOC_S, &preq->state)) {
-		spin_lock_irq(&plo->lock);
-		del_lockout(preq);
-		map_release(preq->map);
-		preq->map = NULL;
-		spin_unlock_irq(&plo->lock);
-
-		requeue_req(preq, PLOOP_E_RELOC_COMPLETE);
 		return;
 	}
 
@@ -1158,7 +1136,7 @@ static void map_wb_complete(struct map_node * m, int err)
 
 			state = READ_ONCE(preq->state);
 			/* Relocate requires consistent index update */
-			if (state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL)) {
+			if (state & PLOOP_REQ_RELOC_A_FL) {
 				rw |= (REQ_FLUSH | REQ_FUA);
 				do_fsync_if_delayed = 1;
 			}

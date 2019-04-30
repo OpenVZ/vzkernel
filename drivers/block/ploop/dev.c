@@ -1291,7 +1291,6 @@ static void ploop_complete_request(struct ploop_request * preq)
 	WARN_ON(!preq->error && test_bit(PLOOP_REQ_ISSUE_FLUSH, &preq->state));
 
 	if (test_bit(PLOOP_REQ_RELOC_A, &preq->state) ||
-	    test_bit(PLOOP_REQ_RELOC_S, &preq->state) ||
 	    test_bit(PLOOP_REQ_RELOC_N, &preq->state)) {
 		if (preq->error)
 			set_bit(PLOOP_S_ABORT, &plo->state);
@@ -1769,7 +1768,6 @@ static inline bool preq_is_special(struct ploop_request * preq)
 
 	return state & (PLOOP_REQ_MERGE_FL |
 			PLOOP_REQ_RELOC_A_FL |
-			PLOOP_REQ_RELOC_S_FL |
 			PLOOP_REQ_RELOC_N_FL);
 }
 
@@ -1867,8 +1865,7 @@ ploop_entry_request(struct ploop_request * preq)
 		preq->req_rw |= REQ_SYNC;
 
 restart:
-	if (test_bit(PLOOP_REQ_RELOC_A, &preq->state) ||
-		   test_bit(PLOOP_REQ_RELOC_S, &preq->state)) {
+	if (test_bit(PLOOP_REQ_RELOC_A, &preq->state)) {
 		err = ploop_entry_reloc_req(preq, &iblk);
 		if (err)
 			goto error;
@@ -2058,8 +2055,7 @@ delta_io:
 		if (delta) {
 			if (delta == top_delta) {
 				/* Block exists in top delta. Good. */
-				if (plo->maintenance_type == PLOOP_MNTN_GROW ||
-				    plo->maintenance_type == PLOOP_MNTN_RELOC) {
+				if (plo->maintenance_type == PLOOP_MNTN_GROW) {
 					spin_lock_irq(&plo->lock);
 					ploop_add_lockout(preq, 0);
 					spin_unlock_irq(&plo->lock);
@@ -2245,36 +2241,7 @@ restart:
 		ploop_entry_request(preq);
 		break;
 
-	case PLOOP_E_RELOC_COMPLETE:
-		BUG_ON (!test_bit(PLOOP_REQ_RELOC_S, &preq->state));
-		if (!preq->error) {
-			spin_lock_irq(&plo->lock);
-			if (!list_empty(&preq->delay_list)) {
-				struct ploop_request *pr;
-				pr = list_entry(preq->delay_list.next,
-						struct ploop_request, list);
-				list_splice_init(&preq->delay_list,
-						 plo->ready_queue.prev);
-			}
-			spin_unlock_irq(&plo->lock);
-			preq->req_cluster = ~0U;
-			preq->src_iblock  = ~0U; /* redundant */
-			preq->dst_cluster = ~0U; /* redundant */
-			preq->dst_iblock  = ~0U; /* redundant */
-			preq->eng_state = PLOOP_E_ENTRY;
-			goto restart;
-		}
-		/* drop down to PLOOP_E_COMPLETE case ... */
 	case PLOOP_E_COMPLETE:
-		if (unlikely(test_bit(PLOOP_REQ_RELOC_S, &preq->state) &&
-			     preq->error)) {
-			printk("RELOC_S completed with err %d"
-			       " (%u %u %u %u %u)\n",
-			       preq->error, preq->req_cluster, preq->iblock,
-			       preq->src_iblock, preq->dst_cluster,
-			       preq->dst_iblock);
-		}
-
 		if (!preq->error &&
 		    test_bit(PLOOP_REQ_TRANS, &preq->state)) {
 			u32 iblk;
@@ -2396,21 +2363,8 @@ restart:
 		top_delta = ploop_top_delta(plo);
 		sbl.head = sbl.tail = preq->aux_bio;
 
-		/* Relocated data write required sync before BAT update
-		 * this will happen inside index_update */
-
-		if (test_bit(PLOOP_REQ_RELOC_S, &preq->state)) {
-			preq->eng_state = PLOOP_E_DATA_WBI;
-			plo->st.bio_out++;
-			preq->iblock = preq->dst_iblock;
-			top_delta->io.ops->submit(&top_delta->io, preq,
-						  preq->req_rw, &sbl,
-						  preq->iblock,
-						  cluster_size_in_sec(plo));
-		} else {
-			top_delta->ops->allocate(top_delta, preq, &sbl,
-						 cluster_size_in_sec(plo));
-		}
+		top_delta->ops->allocate(top_delta, preq, &sbl,
+					 cluster_size_in_sec(plo));
 		break;
 	}
 	case PLOOP_E_RELOC_NULLIFY:
