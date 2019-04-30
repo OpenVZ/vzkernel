@@ -791,9 +791,6 @@ process_discard_bio_queue(struct ploop_device * plo, struct list_head *drop_list
 		if (tmp == NULL)
 			break;
 
-		/* If PLOOP_S_DISCARD isn't set, ploop_bio_queue
-		 * will complete it with a proper error.
-		 */
 		ploop_bio_queue(plo, tmp, drop_list, 0);
 	}
 }
@@ -1773,8 +1770,7 @@ static inline bool preq_is_special(struct ploop_request * preq)
 	return state & (PLOOP_REQ_MERGE_FL |
 			PLOOP_REQ_RELOC_A_FL |
 			PLOOP_REQ_RELOC_S_FL |
-			PLOOP_REQ_RELOC_N_FL |
-			PLOOP_REQ_DISCARD_FL);
+			PLOOP_REQ_RELOC_N_FL);
 }
 
 void ploop_add_req_to_fsync_queue(struct ploop_request * preq)
@@ -1804,9 +1800,6 @@ static bool ploop_can_issue_discard(struct ploop_device *plo,
 {
 	if (!native_discard_support)
 		return false;
-
-	if (test_bit(PLOOP_REQ_DISCARD, &preq->state))
-		return true;
 
 	if (test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state))
 		return false;
@@ -2718,11 +2711,6 @@ static int ploop_thread(void * data)
 
 			plo->active_reqs++;
 			ploop_entry_qlen_dec(preq);
-
-			if (test_bit(PLOOP_REQ_DISCARD, &preq->state)) {
-				BUG_ON(plo->maintenance_type != PLOOP_MNTN_DISCARD);
-				atomic_inc(&plo->maintenance_cnt);
-			}
 
 			if (test_bit(PLOOP_REQ_SORTED, &preq->state)) {
 				rb_erase(&preq->lockout_link, req_entry_tree(plo, preq->req_rw));
