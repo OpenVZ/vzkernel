@@ -619,7 +619,7 @@ bool fuse_request_queue_background(struct fuse_conn *fc, struct fuse_req *req)
 	}
 	__set_bit(FR_ISREPLY, &req->flags);
 	spin_lock(&fc->bg_lock);
-	if (unlikely(test_bit(FUSE_S_FAIL_IMMEDIATELY, &req->ff->ff_state)))
+	if (req->ff && unlikely(test_bit(FUSE_S_FAIL_IMMEDIATELY, &req->ff->ff_state)))
 		req->out.h.error = -EIO;
 	else if (likely(fc->connected)) {
 		fc->num_background++;
