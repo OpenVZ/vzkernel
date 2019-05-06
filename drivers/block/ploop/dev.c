@@ -1164,7 +1164,7 @@ static int ploop_congested(void *data, int bits)
 	int ret = 0;
 
 	top_delta = ploop_top_delta(plo);
-	if (top_delta->io.ops->congested)
+	if (top_delta && top_delta->io.ops->congested)
 		ret |= top_delta->io.ops->congested(&top_delta->io, bits);
 
 	return ret;
