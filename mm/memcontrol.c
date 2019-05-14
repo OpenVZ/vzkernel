@@ -6345,6 +6345,8 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 
 	mem_cgroup_remove_from_trees(memcg);
 
+	mem_cgroup_id_put(memcg);
+
 	for_each_node(node)
 		free_mem_cgroup_per_zone_info(memcg, node);
 
@@ -6573,8 +6575,6 @@ static void mem_cgroup_css_offline(struct cgroup *cont)
 	 * no longer iterate over it.
 	 */
 	release_oom_context(&memcg->oom_ctx);
-
-	mem_cgroup_id_put(memcg);
 }
 
 static void mem_cgroup_css_free(struct cgroup *cont)
