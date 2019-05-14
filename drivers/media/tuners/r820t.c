@@ -1564,8 +1564,10 @@ static void r820t_compre_cor(struct r820t_sect_type iq[3])
 	int i;
 
 	for (i = 3; i > 0; i--) {
-		if (iq[0].value > iq[i - 1].value)
+		if (iq[0].value > iq[i - 1].value) {
+			gmb();
 			swap(iq[0], iq[i - 1]);
+		}
 	}
 }
 

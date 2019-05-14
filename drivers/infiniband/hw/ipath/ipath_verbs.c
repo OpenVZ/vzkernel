@@ -374,7 +374,7 @@ static int ipath_post_one_send(struct ipath_qp *qp, struct ib_send_wr *wr)
 		    wr->opcode != IB_WR_SEND_WITH_IMM)
 			goto bail_inval;
 		/* Check UD destination address PD */
-		if (qp->ibqp.pd != wr->wr.ud.ah->pd)
+		if (qp->ibqp.pd != ud_wr(wr)->ah->pd)
 			goto bail_inval;
 	} else if ((unsigned) wr->opcode > IB_WR_ATOMIC_FETCH_AND_ADD)
 		goto bail_inval;
@@ -395,7 +395,20 @@ static int ipath_post_one_send(struct ipath_qp *qp, struct ib_send_wr *wr)
 	}
 
 	wqe = get_swqe_ptr(qp, qp->s_head);
-	wqe->wr = *wr;
+
+	if (qp->ibqp.qp_type != IB_QPT_UC &&
+	    qp->ibqp.qp_type != IB_QPT_RC)
+		memcpy(&wqe->ud_wr, ud_wr(wr), sizeof(wqe->ud_wr));
+	else if (wr->opcode == IB_WR_RDMA_WRITE_WITH_IMM ||
+		 wr->opcode == IB_WR_RDMA_WRITE ||
+		 wr->opcode == IB_WR_RDMA_READ)
+		memcpy(&wqe->rdma_wr, rdma_wr(wr), sizeof(wqe->rdma_wr));
+	else if (wr->opcode == IB_WR_ATOMIC_CMP_AND_SWP ||
+		 wr->opcode == IB_WR_ATOMIC_FETCH_AND_ADD)
+		memcpy(&wqe->atomic_wr, atomic_wr(wr), sizeof(wqe->atomic_wr));
+	else
+		memcpy(&wqe->wr, wr, sizeof(wqe->wr));
+
 	wqe->length = 0;
 	if (wr->num_sge) {
 		acc = wr->opcode >= IB_WR_RDMA_READ ?
@@ -1495,10 +1508,13 @@ bail:
 	return 0;
 }
 
-static int ipath_query_device(struct ib_device *ibdev,
-			      struct ib_device_attr *props)
+static int ipath_query_device(struct ib_device *ibdev, struct ib_device_attr *props,
+			      struct ib_udata *uhw)
 {
 	struct ipath_ibdev *dev = to_idev(ibdev);
+
+	if (uhw->inlen || uhw->outlen)
+		return -EINVAL;
 
 	memset(props, 0, sizeof(*props));
 
@@ -1518,6 +1534,7 @@ static int ipath_query_device(struct ib_device *ibdev,
 	props->max_qp = ib_ipath_max_qps;
 	props->max_qp_wr = ib_ipath_max_qp_wrs;
 	props->max_sge = ib_ipath_max_sges;
+	props->max_sge_rd = ib_ipath_max_sges;
 	props->max_cq = ib_ipath_max_cqs;
 	props->max_ah = ib_ipath_max_ahs;
 	props->max_cqe = ib_ipath_max_cqes;
@@ -1760,22 +1777,27 @@ static int ipath_dealloc_pd(struct ib_pd *ibpd)
  * This may be called from interrupt context.
  */
 static struct ib_ah *ipath_create_ah(struct ib_pd *pd,
-				     struct ib_ah_attr *ah_attr)
+				     struct rdma_ah_attr *ah_attr,
+				     struct ib_udata *udata)
+
 {
 	struct ipath_ah *ah;
 	struct ib_ah *ret;
 	struct ipath_ibdev *dev = to_idev(pd->device);
 	unsigned long flags;
+	u16 dlid;
+
+	dlid = rdma_ah_get_dlid(ah_attr);
 
 	/* A multicast address requires a GRH (see ch. 8.4.1). */
-	if (ah_attr->dlid >= IPATH_MULTICAST_LID_BASE &&
-	    ah_attr->dlid != IPATH_PERMISSIVE_LID &&
+	if (dlid >= IPATH_MULTICAST_LID_BASE &&
+	    dlid != IPATH_PERMISSIVE_LID &&
 	    !(ah_attr->ah_flags & IB_AH_GRH)) {
 		ret = ERR_PTR(-EINVAL);
 		goto bail;
 	}
 
-	if (ah_attr->dlid == 0) {
+	if (dlid == 0) {
 		ret = ERR_PTR(-EINVAL);
 		goto bail;
 	}
@@ -1834,7 +1856,7 @@ static int ipath_destroy_ah(struct ib_ah *ibah)
 	return 0;
 }
 
-static int ipath_query_ah(struct ib_ah *ibah, struct ib_ah_attr *ah_attr)
+static int ipath_query_ah(struct ib_ah *ibah, struct rdma_ah_attr *ah_attr)
 {
 	struct ipath_ah *ah = to_iah(ibah);
 
@@ -1952,9 +1974,8 @@ static int enable_timer(struct ipath_devdata *dd)
 				 dd->ipath_gpio_mask);
 	}
 
-	init_timer(&dd->verbs_timer);
-	dd->verbs_timer.function = __verbs_timer;
-	dd->verbs_timer.data = (unsigned long)dd;
+	setup_timer(&dd->verbs_timer, __verbs_timer, (unsigned long)dd);
+
 	dd->verbs_timer.expires = jiffies + 1;
 	add_timer(&dd->verbs_timer);
 
@@ -1976,6 +1997,24 @@ static int disable_timer(struct ipath_devdata *dd)
 	}
 
 	del_timer_sync(&dd->verbs_timer);
+
+	return 0;
+}
+
+static int ipath_port_immutable(struct ib_device *ibdev, u8 port_num,
+			        struct ib_port_immutable *immutable)
+{
+	struct ib_port_attr attr;
+	int err;
+
+	err = ipath_query_port(ibdev, port_num, &attr);
+	if (err)
+		return err;
+
+	immutable->pkey_tbl_len = attr.pkey_tbl_len;
+	immutable->gid_tbl_len = attr.gid_tbl_len;
+	immutable->core_cap_flags = RDMA_CORE_PORT_IBA_IB;
+	immutable->max_mad_size = IB_MGMT_MAD_SIZE;
 
 	return 0;
 }
@@ -2003,8 +2042,8 @@ int ipath_register_ib_device(struct ipath_devdata *dd)
 	dev = &idev->ibdev;
 
 	if (dd->ipath_sdma_descq_cnt) {
-		tx = kmalloc(dd->ipath_sdma_descq_cnt * sizeof *tx,
-			     GFP_KERNEL);
+		tx = kmalloc_array(dd->ipath_sdma_descq_cnt, sizeof *tx,
+				   GFP_KERNEL);
 		if (tx == NULL) {
 			ret = -ENOMEM;
 			goto err_tx;
@@ -2023,9 +2062,9 @@ int ipath_register_ib_device(struct ipath_devdata *dd)
 
 	spin_lock_init(&idev->qp_table.lock);
 	spin_lock_init(&idev->lk_table.lock);
-	idev->sm_lid = __constant_be16_to_cpu(IB_LID_PERMISSIVE);
+	idev->sm_lid = be16_to_cpu(IB_LID_PERMISSIVE);
 	/* Set the prefix to the default value (see ch. 4.1.1) */
-	idev->gid_prefix = __constant_cpu_to_be64(0xfe80000000000000ULL);
+	idev->gid_prefix = cpu_to_be64(0xfe80000000000000ULL);
 
 	ret = ipath_init_qp_table(idev, ib_ipath_qp_table_size);
 	if (ret)
@@ -2037,7 +2076,7 @@ int ipath_register_ib_device(struct ipath_devdata *dd)
 	 * the LKEY).  The remaining bits act as a generation number or tag.
 	 */
 	idev->lk_table.max = 1 << ib_ipath_lkey_table_size;
-	idev->lk_table.table = kzalloc(idev->lk_table.max *
+	idev->lk_table.table = kcalloc(idev->lk_table.max,
 				       sizeof(*idev->lk_table.table),
 				       GFP_KERNEL);
 	if (idev->lk_table.table == NULL) {
@@ -2136,7 +2175,7 @@ int ipath_register_ib_device(struct ipath_devdata *dd)
 	dev->node_type = RDMA_NODE_IB_CA;
 	dev->phys_port_cnt = 1;
 	dev->num_comp_vectors = 1;
-	dev->dma_device = &dd->pcidev->dev;
+	dev->dev.parent = &dd->pcidev->dev;
 	dev->query_device = ipath_query_device;
 	dev->modify_device = ipath_modify_device;
 	dev->query_port = ipath_query_port;
@@ -2167,7 +2206,6 @@ int ipath_register_ib_device(struct ipath_devdata *dd)
 	dev->poll_cq = ipath_poll_cq;
 	dev->req_notify_cq = ipath_req_notify_cq;
 	dev->get_dma_mr = ipath_get_dma_mr;
-	dev->reg_phys_mr = ipath_reg_phys_mr;
 	dev->reg_user_mr = ipath_reg_user_mr;
 	dev->dereg_mr = ipath_dereg_mr;
 	dev->alloc_fmr = ipath_alloc_fmr;
@@ -2179,6 +2217,7 @@ int ipath_register_ib_device(struct ipath_devdata *dd)
 	dev->process_mad = ipath_process_mad;
 	dev->mmap = ipath_mmap;
 	dev->dma_ops = &ipath_dma_mapping_ops;
+	dev->get_port_immutable = ipath_port_immutable;
 
 	snprintf(dev->node_desc, sizeof(dev->node_desc),
 		 IPATH_IDSTR " %s", init_utsname()->nodename);
