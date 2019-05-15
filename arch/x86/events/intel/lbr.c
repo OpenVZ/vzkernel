@@ -1143,32 +1143,32 @@ static void __intel_pmu_lbr_fill(struct x86_pmu_lbr *lbr, u8 family, u8 model)
 	case INTEL_FAM6_WESTMERE_EX:
 		intel_pmu_lbr_init_nhm(lbr);
 		break;
-	case INTEL_FAM6_ATOM_PINEVIEW:
-	case INTEL_FAM6_ATOM_LINCROFT:
-	case INTEL_FAM6_ATOM_PENWELL:
-	case INTEL_FAM6_ATOM_CLOVERVIEW:
-	case INTEL_FAM6_ATOM_CEDARVIEW:
+	case INTEL_FAM6_ATOM_BONNELL:
+	case INTEL_FAM6_ATOM_BONNELL_MID:
+	case INTEL_FAM6_ATOM_SALTWELL_MID:
+	case INTEL_FAM6_ATOM_SALTWELL_TABLET:
+	case INTEL_FAM6_ATOM_SALTWELL:
 		/*
 		 * only models starting at stepping 10 seems
 		 * to have an operational LBR which can freeze
 		 * on PMU interrupt
 		 */
 		if (apply_tweaks &&
-		    boot_cpu_data.x86_model == INTEL_FAM6_ATOM_PINEVIEW &&
+		    boot_cpu_data.x86_model == INTEL_FAM6_ATOM_BONNELL &&
 		    boot_cpu_data.x86_mask < 10) {
 			pr_cont("LBR disabled due to erratum");
 			return;
 		}
 		intel_pmu_lbr_init_atom(lbr);
 		break;
-	case INTEL_FAM6_ATOM_SILVERMONT1:
-	case INTEL_FAM6_ATOM_SILVERMONT2:
+	case INTEL_FAM6_ATOM_SILVERMONT:
+	case INTEL_FAM6_ATOM_SILVERMONT_X:
 	case INTEL_FAM6_ATOM_AIRMONT:
 		intel_pmu_lbr_init_slm(lbr);
 		break;
 	case INTEL_FAM6_ATOM_GOLDMONT:
-	case INTEL_FAM6_ATOM_DENVERTON:
-	case INTEL_FAM6_ATOM_GEMINI_LAKE:
+	case INTEL_FAM6_ATOM_GOLDMONT_X:
+	case INTEL_FAM6_ATOM_GOLDMONT_PLUS:
 		lbr->pt_coexist = true;
 	case INTEL_FAM6_SKYLAKE_MOBILE:
 	case INTEL_FAM6_SKYLAKE_DESKTOP:
@@ -1196,7 +1196,7 @@ static void __intel_pmu_lbr_fill(struct x86_pmu_lbr *lbr, u8 family, u8 model)
 		 * OpenVZ kernel doesn't have Goldmont Plus CPU PMU support
 		 */
 		if (apply_tweaks &&
-		    boot_cpu_data.x86_model == INTEL_FAM6_ATOM_GEMINI_LAKE)
+		    boot_cpu_data.x86_model == INTEL_FAM6_ATOM_GOLDMONT_PLUS)
 			return;
 		intel_pmu_lbr_init_hsw(lbr);
 		break;
