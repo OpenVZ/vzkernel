@@ -1146,6 +1146,9 @@ unsigned long memcg_ws_activates(struct mem_cgroup *memcg)
 
 void memcg_inc_ws_activate(struct mem_cgroup *memcg)
 {
+	if (mem_cgroup_disabled())
+		return;
+
 	percpu_counter_inc(&memcg->stat2.counters[MEM_CGROUP_STAT_WS_ACTIVATE]);
 }
 
