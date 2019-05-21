@@ -818,6 +818,17 @@ static void wait_shrink(struct pcs_fuse_req *r, struct pcs_dentry_info *di)
 	list_add_tail(&r->exec.ireq.list, &di->size.queue);
 }
 
+static void _pcs_ff_free_end(struct fuse_conn *fc, struct fuse_req *req)
+{
+	struct pcs_fuse_req *r = pcs_req_from_fuse(req);
+
+	BUG_ON(!req->ff);
+	fuse_release_ff(req->inode, req->ff);
+
+	if (r->end)
+		r->end(fc, req);
+}
+
 static bool kqueue_insert(struct pcs_dentry_info *di, struct fuse_file *ff,
 			  struct fuse_req *req)
 {
@@ -847,6 +858,11 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 	spin_lock(&di->lock);
 	/* Deffer all requests if shrink requested to prevent livelock */
 	if (di->size.op == PCS_SIZE_SHRINK) {
+		if (ff && !r->req.ff) {
+			r->end = r->req.end;
+			r->req.ff = fuse_file_get(ff);
+			r->req.end = _pcs_ff_free_end;
+		}
 		wait_shrink(r, di);
 		ret = 1;
 		goto out;
