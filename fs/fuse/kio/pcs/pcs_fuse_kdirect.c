@@ -352,6 +352,8 @@ static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct ino
 	di->size.required = 0;
 	di->size.op = PCS_SIZE_INACTION;
 	INIT_WORK(&di->size.work, fuse_size_grow_work);
+	spin_lock_init(&di->stat.lock);
+	di->stat.created_ts = jiffies;
 
 	pcs_mapping_init(&pfc->cc, &di->mapping);
 	pcs_set_fileinfo(di, &info);

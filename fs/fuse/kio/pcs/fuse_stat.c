@@ -77,13 +77,119 @@ static inline unsigned long long fuse_val_cnt_events(struct fuse_val_cnt const* 
 {
 	return c->curr.events + c->glob.events;
 }
+static inline unsigned long long fuse_val_cnt_min(struct fuse_val_cnt const* c)
+{
+	return min(c->curr.val_min, c->glob.val_min);
+}
+
+static inline unsigned long long fuse_val_cnt_max(struct fuse_val_cnt const* c)
+{
+	return max(c->curr.val_max, c->glob.val_max);
+}
 
 #define EVT_RATE(s)   fuse_evt_rate(&(s), STAT_TIMER_PERIOD)
 #define VAL_RATE(s)   fuse_val_rate(&(s), STAT_TIMER_PERIOD)
 #define VAL_AVER(s)   fuse_val_aver(&(s))
 #define CNT_TOTAL(c)  fuse_val_cnt_total(&(c))
 #define CNT_EVENTS(c) fuse_val_cnt_events(&(c))
+#define CNT_MIN(c)    fuse_val_cnt_min(&(c))
+#define CNT_MAX(c)    fuse_val_cnt_max(&(c))
 
+
+static void fuse_fstat_up_itr(struct fuse_file *ff, struct pcs_dentry_info *di,
+			      void *ctx)
+{
+	struct fuse_io_cnt *fstat = &di->stat;
+
+	spin_lock(&fstat->lock);
+	fuse_val_cnt_up(&fstat->io.read_bytes);
+	fuse_val_cnt_up(&fstat->io.write_bytes);
+	fuse_val_cnt_up(&fstat->io.flush_cnt);
+	spin_unlock(&fstat->lock);
+}
+
+static void pcs_fuse_stat_files_up(struct pcs_cluster_core *cc)
+{
+	struct fuse_conn *fc = container_of(cc, struct pcs_fuse_cluster, cc)->fc;
+	if (fc) {
+		spin_lock(&fc->lock);
+		pcs_kio_file_list(fc, fuse_fstat_up_itr, NULL);
+		spin_unlock(&fc->lock);
+	}
+}
+
+static void fuse_kio_fstat_itr(struct fuse_file *ff, struct pcs_dentry_info *di,
+			       void *ctx)
+{
+	struct fuse_io_cnt *fstat = &di->stat;
+	struct seq_file *m = ctx;
+	umode_t mode = di->inode->inode.i_mode;
+	abs_time_t now = jiffies;
+	struct pcs_fuse_io_stat io_stat;
+
+	seq_printf(m, "%s%s %7u/%-7llu %-7u %-4u ",
+		   mode & S_IRUGO ? "r": "", mode & S_IWUGO ? "w": "",
+		   atomic_read(&ff->count), (now - fstat->created_ts) / 1000, 0, 0);
+
+	spin_lock(&fstat->lock);
+	io_stat = fstat->io;
+	spin_unlock(&fstat->lock);
+
+	seq_printf(m, "%-6llu %-10llu %-13llu ", EVT_RATE(io_stat.read_bytes.last),
+		   VAL_RATE(io_stat.read_bytes.last), CNT_TOTAL(io_stat.read_bytes));
+	seq_printf(m, "%-6llu %-10llu %-13llu ", EVT_RATE(io_stat.write_bytes.last),
+		   VAL_RATE(io_stat.write_bytes.last), CNT_TOTAL(io_stat.write_bytes));
+	seq_printf(m, "%-6llu %-7llu ", EVT_RATE(io_stat.flush_cnt.last),
+		   CNT_TOTAL(io_stat.flush_cnt));
+	seq_printf(m, "%-6llu %-6llu %-6llu ", CNT_MIN(io_stat.read_bytes),
+		   VAL_AVER(io_stat.read_bytes.glob), CNT_MAX(io_stat.read_bytes));
+	seq_printf(m, "%-6llu %-6llu %-6llu ", CNT_MIN(io_stat.write_bytes),
+		   VAL_AVER(io_stat.write_bytes.glob), CNT_MAX(io_stat.write_bytes));
+	seq_dentry(m, ff->ff_dentry, "");
+	seq_putc(m, '\n');
+}
+
+static int pcs_fuse_fstat_show(struct seq_file *m, void *v)
+{
+	struct inode *inode = m->private;
+	struct pcs_fuse_stat *stat;
+	struct fuse_conn *fc;
+
+	if (!inode)
+		return 0;
+
+	mutex_lock(&fuse_mutex);
+	stat = inode->i_private;
+	if (!stat) {
+		mutex_unlock(&fuse_mutex);
+		return 0;
+	}
+
+	seq_printf(m, "# rw open/age inactive handles rd/sec rbytes/sec rtotal        wr/sec wbytes/sec wtotal      sync/sec stotal  rmin   ravg   rmax   wmin   wavg   wmax   path\n");
+
+	fc = container_of(stat, struct pcs_fuse_cluster, cc.stat)->fc;
+	if (fc) {
+		spin_lock(&fc->lock);
+		pcs_kio_file_list(fc, fuse_kio_fstat_itr, m);
+		spin_unlock(&fc->lock);
+	}
+	mutex_unlock(&fuse_mutex);
+
+	return 0;
+}
+
+static int pcs_fuse_fstat_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, pcs_fuse_fstat_show, inode);
+}
+
+static const struct file_operations pcs_fuse_fstat_ops = {
+	.owner   = THIS_MODULE,
+	.open    = pcs_fuse_fstat_open,
+	.read    = seq_read,
+	.llseek	 = seq_lseek,
+	.release = single_release,
+};
 
 static void fuse_kio_stat_req_itr(struct fuse_file *ff, struct fuse_req *req,
 				  void *ctx)
@@ -214,16 +320,23 @@ void pcs_fuse_stat_io_count(struct pcs_int_request *ireq, struct pcs_msg *resp)
 {
 	struct pcs_cluster_core *cc = ireq->cc;
 	struct pcs_fuse_stat *stat = &cc->stat;
+	struct fuse_io_cnt *fstat = &ireq->dentry->stat;
 	struct pcs_cs_iohdr *h = (struct pcs_cs_iohdr *)msg_inline_head(resp);
 	struct fuse_val_cnt *se = req_stat_entry(&stat->io, h->hdr.type);
 	u64 size = h->hdr.type != PCS_CS_SYNC_RESP ? ireq->iochunk.size : 0;
 
-	if (unlikely(!se))
-		return;
+	if (likely(se)) {
+		spin_lock(&stat->lock);
+		fuse_val_stat_update(&se->curr, size);
+		spin_unlock(&stat->lock);
+	}
 
-	spin_lock(&stat->lock);
-	fuse_val_stat_update(&se->curr, size);
-	spin_unlock(&stat->lock);
+	se = req_stat_entry(&fstat->io, h->hdr.type);
+	if (likely(se)) {
+		spin_lock(&fstat->lock);
+		fuse_val_stat_update(&se->curr, size);
+		spin_unlock(&fstat->lock);
+	}
 }
 
 static void pcs_fuse_stat_work(struct work_struct *w)
@@ -237,6 +350,8 @@ static void pcs_fuse_stat_work(struct work_struct *w)
 	fuse_val_cnt_up(&stat->io.write_bytes);
 	fuse_val_cnt_up(&stat->io.flush_cnt);
 	spin_unlock(&stat->lock);
+
+	pcs_fuse_stat_files_up(cc);
 
 	mod_delayed_work(cc->wq, &cc->stat.work, STAT_TIMER_PERIOD * HZ);
 }
@@ -317,6 +432,10 @@ void pcs_fuse_stat_init(struct pcs_fuse_stat *stat)
 	stat->requests = fuse_kio_add_dentry(stat->kio_stat, fc, "requests",
 					     S_IFREG | S_IRUSR, 1, NULL,
 					     &pcs_fuse_requests_ops, stat);
+
+	stat->fstat = fuse_kio_add_dentry(stat->kio_stat, fc, "fstat",
+					  S_IFREG | S_IRUSR, 1, NULL,
+					  &pcs_fuse_fstat_ops, stat);
 out:
 	mutex_unlock(&fuse_mutex);
 }
@@ -332,6 +451,8 @@ void pcs_fuse_stat_fini(struct pcs_fuse_stat *stat)
 			fuse_kio_rm_dentry(stat->iostat);
 		if (stat->requests)
 			fuse_kio_rm_dentry(stat->requests);
+		if (stat->fstat)
+			fuse_kio_rm_dentry(stat->fstat);
 		fuse_kio_rm_dentry(stat->kio_stat);
 	}
 	mutex_unlock(&fuse_mutex);
