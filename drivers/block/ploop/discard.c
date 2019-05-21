@@ -17,7 +17,8 @@ int ploop_discard_init_ioc(struct ploop_device *plo)
 	struct ploop_freeblks_desc *fbd;
 	struct ploop_delta *delta = ploop_top_delta(plo);
 
-	return -EINVAL;
+	if (!test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state))
+		return -EINVAL;
 
 	if (delta == NULL)
 		return -EINVAL;
@@ -54,7 +55,8 @@ int ploop_discard_fini_ioc(struct ploop_device *plo)
 	struct ploop_request *preq, *tmp;
 	LIST_HEAD(drop_list);
 
-	return -EINVAL;
+	if (!test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state))
+		return -EINVAL;
 
 	if (!test_and_clear_bit(PLOOP_S_DISCARD, &plo->state))
 		return 0;
@@ -94,7 +96,8 @@ int ploop_discard_wait_ioc(struct ploop_device *plo)
 {
 	int err;
 
-	return -EINVAL;
+	if (!test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state))
+		return -EINVAL;
 
 	if (!test_bit(PLOOP_S_DISCARD, &plo->state))
 		return 0;
