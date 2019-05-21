@@ -244,6 +244,8 @@ void ploop_preq_drop(struct ploop_device * plo, struct list_head *drop_list)
 		put_beancounter(preq->preq_ub);
 		preq->preq_ub = NULL;
 #endif
+
+		BUG_ON (test_bit(PLOOP_REQ_ZERO, &preq->state));
 		ploop_test_and_clear_blockable(plo, preq);
 		drop_qlen++;
 	}
@@ -1774,7 +1776,8 @@ static inline bool preq_is_special(struct ploop_request * preq)
 			PLOOP_REQ_RELOC_A_FL |
 			PLOOP_REQ_RELOC_S_FL |
 			PLOOP_REQ_RELOC_N_FL |
-			PLOOP_REQ_DISCARD_FL);
+			PLOOP_REQ_DISCARD_FL |
+			PLOOP_REQ_ZERO_FL);
 }
 
 void ploop_add_req_to_fsync_queue(struct ploop_request * preq)
