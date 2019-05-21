@@ -250,6 +250,7 @@ bool workingset_refault(void *shadow)
 	unsigned long refault;
 	struct zone *zone;
 	int memcgid;
+	bool ret = false;
 
 	unpack_shadow(shadow, &memcgid, &zone, &eviction);
 
@@ -278,7 +279,6 @@ bool workingset_refault(void *shadow)
 	lruvec = mem_cgroup_zone_lruvec(zone, memcg);
 	refault = atomic_long_read(&lruvec->inactive_age);
 	active_file = lruvec_lru_size(lruvec, LRU_ACTIVE_FILE);
-	rcu_read_unlock();
 
 	/*
 	 * The unsigned subtraction here gives an accurate distance
@@ -303,9 +303,10 @@ bool workingset_refault(void *shadow)
 	if (refault_distance <= active_file) {
 		memcg_inc_ws_activate(memcg);
 		inc_zone_state(zone, WORKINGSET_ACTIVATE);
-		return true;
+		ret = true;
 	}
-	return false;
+	rcu_read_unlock();
+	return ret;
 }
 
 /**
