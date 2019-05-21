@@ -96,6 +96,7 @@ struct pcs_cs {
 		struct pcs_perf_rate_cnt read_ops_rate;
 		struct pcs_perf_rate_cnt write_ops_rate;
 		struct pcs_perf_rate_cnt sync_ops_rate;
+		spinlock_t lock;
 	} stat;
 };
 
@@ -161,14 +162,13 @@ void pcs_cs_update_stat(struct pcs_cs *cs, u32 iolat, u32 netlat, int op_type);
 
 static inline void pcs_cs_stat_up(struct pcs_cs *cs)
 {
-#if 0
-	/* TODO: temproraly disable perf counters */
+	spin_lock(&cs->stat.lock);
 	pcs_perfcounter_stat_up(&cs->stat.iolat);
 	pcs_perfcounter_stat_up(&cs->stat.netlat);
 	pcs_perfcounter_up_rate(&cs->stat.write_ops_rate);
 	pcs_perfcounter_up_rate(&cs->stat.read_ops_rate);
 	pcs_perfcounter_up_rate(&cs->stat.sync_ops_rate);
-#endif
+	spin_unlock(&cs->stat.lock);
 }
 
 static inline bool cs_is_blacklisted(struct pcs_cs *cs)
