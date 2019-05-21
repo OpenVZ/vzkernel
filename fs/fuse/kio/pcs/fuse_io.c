@@ -253,9 +253,14 @@ void pcs_fuse_prep_io(struct pcs_fuse_req *r, unsigned short type, off_t offset,
 static void falloc_req_complete(struct pcs_int_request *ireq)
 {
 	struct pcs_fuse_req * r = ireq->completion_data.priv;
+	struct pcs_dentry_info *di = get_pcs_inode(r->req.io_inode);
 	struct pcs_fuse_cluster *pfc = cl_from_req(r);
 
 	BUG_ON(ireq->type != PCS_IREQ_NOOP);
+
+	spin_lock(&di->kq_lock);
+	list_del_init(&r->req.list);
+	spin_unlock(&di->kq_lock);
 
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
 	fuse_stat_account(pfc->fc, KFUSE_OP_FALLOCATE, ktime_sub(ktime_get(), ireq->ts));
