@@ -1576,7 +1576,7 @@ struct sock *sk_clone_lock(const struct sock *sk, const gfp_t priority)
 		 */
 		atomic_set(&newsk->sk_wmem_alloc, 1);
 		atomic_set(&newsk->sk_omem_alloc, 0);
-		skb_queue_head_init(&newsk->sk_receive_queue);
+		skb_queue_head_init_class(&newsk->sk_receive_queue, newsk->sk_prot->lockdep_class);
 		skb_queue_head_init(&newsk->sk_write_queue);
 
 		rwlock_init(&newsk->sk_callback_lock);
@@ -2432,7 +2432,7 @@ EXPORT_SYMBOL(sk_stop_timer);
 
 void sock_init_data(struct socket *sock, struct sock *sk)
 {
-	skb_queue_head_init(&sk->sk_receive_queue);
+	skb_queue_head_init_class(&sk->sk_receive_queue, sk->sk_prot->lockdep_class);
 	skb_queue_head_init(&sk->sk_write_queue);
 	skb_queue_head_init(&sk->sk_error_queue);
 
