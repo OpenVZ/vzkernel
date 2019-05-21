@@ -105,11 +105,12 @@ void fuse_file_free(struct fuse_file *ff)
 	kfree(ff);
 }
 
-static struct fuse_file *fuse_file_get(struct fuse_file *ff)
+struct fuse_file *fuse_file_get(struct fuse_file *ff)
 {
 	refcount_inc(&ff->count);
 	return ff;
 }
+EXPORT_SYMBOL_GPL(fuse_file_get);
 
 static void fuse_release_end(struct fuse_mount *fm, struct fuse_args *args,
 			     int error)
