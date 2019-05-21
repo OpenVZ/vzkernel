@@ -10525,7 +10525,13 @@ int cpu_cgroup_proc_stat(struct cgroup *cgrp, struct cftype *cft,
 	unsigned long tg_nr_forks = 0;
 
 	getboottime(&boottime);
-	jif = boottime.tv_sec + tg->start_time.tv_sec;
+
+	/*
+	 * In VE0 we always show host's boottime and in VEX we show real CT
+	 * start time, even across CT migrations, as we rely on userspace to
+	 * set real_start_timespec for us on resume.
+	 */
+	jif = boottime.tv_sec + get_exec_env()->real_start_timespec.tv_sec;
 
 	for_each_possible_cpu(i) {
 		cpu_cgroup_update_stat(cgrp, i);
