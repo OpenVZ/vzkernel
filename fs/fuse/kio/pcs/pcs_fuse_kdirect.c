@@ -945,7 +945,7 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
 	ireq = &r->exec.ireq;
 	ireq_init(di, ireq);
 
-	switch (r->req.in.h.opcode) {
+	switch (req->in.h.opcode) {
 	case FUSE_WRITE:
 	case FUSE_READ:
 		ret = pcs_fuse_prep_rw(r, ff);
@@ -962,7 +962,7 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
 		struct fuse_fallocate_in *inarg = (void*) req->in.args[0].value;
 
 		if (pfc->fc->no_fallocate) {
-			r->req.out.h.error = -EOPNOTSUPP;
+			req->out.h.error = -EOPNOTSUPP;
 			goto error;
 		}
 
@@ -975,7 +975,7 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
 		WARN_ON_ONCE(!mutex_is_locked(&fi->inode.i_mutex));
 		if (inarg->mode & (FALLOC_FL_ZERO_RANGE|FALLOC_FL_PUNCH_HOLE)) {
 			if ((inarg->offset & (PAGE_SIZE - 1)) || (inarg->length & (PAGE_SIZE - 1))) {
-				r->req.out.h.error = -EINVAL;
+				req->out.h.error = -EINVAL;
 				goto error;
 			}
 		}
@@ -1002,7 +1002,7 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
 		goto submit;
 	case FUSE_IOCTL:
 		if (pfc->fc->no_fiemap) {
-			r->req.out.h.error = -EOPNOTSUPP;
+			req->out.h.error = -EOPNOTSUPP;
 			goto error;
 		}
 
@@ -1017,13 +1017,13 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
 		}
 		break;
 	}
-	r->req.out.h.error = 0;
+	req->out.h.error = 0;
 error:
-	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
+	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", req, req->in.h.opcode, req->out.h.error);
 
 	if (lk)
 		spin_unlock(&pfc->fc->bg_lock);
-	request_end(pfc->fc, &r->req);
+	request_end(pfc->fc, req);
 	if (lk)
 		spin_lock(&pfc->fc->bg_lock);
 	return;
