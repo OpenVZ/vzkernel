@@ -486,6 +486,7 @@ enum
 	PLOOP_REQ_TRANS,
 	PLOOP_REQ_MERGE,
 	PLOOP_REQ_RELOC_A,	/* 'A' stands for allocate() */
+	PLOOP_REQ_RELOC_S,	/* Obsolete: 'S' stands for submit() */
 	PLOOP_REQ_RELOC_N,	/* 'N' stands for "nullify" */
 	PLOOP_REQ_RSYNC,
 	PLOOP_REQ_KAIO_FSYNC,	/*force image fsync by KAIO module */
@@ -498,12 +499,14 @@ enum
 
 #define PLOOP_REQ_MERGE_FL (1 << PLOOP_REQ_MERGE)
 #define PLOOP_REQ_RELOC_A_FL (1 << PLOOP_REQ_RELOC_A)
+#define PLOOP_REQ_RELOC_S_FL (1 << PLOOP_REQ_RELOC_S) /* Obsolete */
 #define PLOOP_REQ_RELOC_N_FL (1 << PLOOP_REQ_RELOC_N)
 
 enum
 {
 	PLOOP_E_ENTRY,		/* Not yet processed */
 	PLOOP_E_COMPLETE,	/* Complete. Maybe, with an error */
+	PLOOP_E_RELOC_COMPLETE,	/* Reloc complete. Maybe, with an error */
 	PLOOP_E_INDEX_READ,	/* Reading an index page */
 	PLOOP_E_TRANS_INDEX_READ,/* Reading a trans index page */
 	PLOOP_E_DELTA_READ,	/* Write request reads data from previos delta */
@@ -562,7 +565,15 @@ struct ploop_request
 
 	iblock_t		iblock;
 
-	unsigned long		ppb_state;
+	/* relocation info */
+	union {
+		struct {
+			iblock_t      src_iblock;
+			iblock_t      dst_iblock;
+		};
+		unsigned long	      ppb_state;
+	};
+	cluster_t		dst_cluster;
 	struct rb_node		reloc_link;
 
 	/* State specific information */
