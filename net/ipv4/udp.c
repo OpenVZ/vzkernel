@@ -2405,6 +2405,8 @@ unsigned int udp_poll(struct file *file, struct socket *sock, poll_table *wait)
 }
 EXPORT_SYMBOL(udp_poll);
 
+static struct lock_class_key udp_sk_class;
+
 struct proto udp_prot = {
 	.name		   = "UDP",
 	.owner		   = THIS_MODULE,
@@ -2441,6 +2443,7 @@ struct proto udp_prot = {
 	.destroy_cgroup		= udp_destroy_cgroup,
 	.proto_cgroup		= udp_proto_cgroup,
 #endif
+	.lockdep_class		= &udp_sk_class,
 };
 EXPORT_SYMBOL(udp_prot);
 
