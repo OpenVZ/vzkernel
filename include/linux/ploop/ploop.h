@@ -53,8 +53,8 @@ enum {
 				 * consumed by userspace yet */
 	PLOOP_S_CONGESTED,	/* Too many bios submitted to us */
 	PLOOP_S_NO_FALLOC_DISCARD, /* FIXME: Remove this: Unable to handle discard requests by fallocate */
-	PLOOP_S_DISCARD,	/* Obsolete: ploop is ready to handle discard request */
-	PLOOP_S_DISCARD_LOADED,	/* Obsolete: A discard request was handled and
+	PLOOP_S_DISCARD,	/* ploop is ready to handle discard request */
+	PLOOP_S_DISCARD_LOADED,	/* A discard request was handled and
 				   free blocks loaded */
 	PLOOP_S_LOCKED,	        /* ploop is locked by userspace
 				   (for minor mgmt only) */
@@ -471,6 +471,7 @@ struct ploop_device
 	struct ploop_stats	st;
 	char                    cookie[PLOOP_COOKIE_SIZE];
 
+	struct ploop_freeblks_desc *fbd;
 	struct ploop_pushbackup_desc *pbd;
 	struct block_device *dm_crypt_bdev;
 
@@ -489,10 +490,10 @@ enum
 	PLOOP_REQ_TRANS,
 	PLOOP_REQ_MERGE,
 	PLOOP_REQ_RELOC_A,	/* 'A' stands for allocate() */
-	PLOOP_REQ_RELOC_S,	/* Obsolete: 'S' stands for submit() */
+	PLOOP_REQ_RELOC_S,	/* 'S' stands for submit() */
 	PLOOP_REQ_RELOC_N,	/* 'N' stands for "nullify" */
-	PLOOP_REQ_ZERO,		/* Obsolete */
-	PLOOP_REQ_DISCARD,	/* Obsolete */
+	PLOOP_REQ_ZERO,
+	PLOOP_REQ_DISCARD,
 	PLOOP_REQ_RSYNC,
 	PLOOP_REQ_KAIO_FSYNC,	/*force image fsync by KAIO module */
 	PLOOP_REQ_POST_SUBMIT, /* preq needs post_submit processing */
@@ -504,10 +505,10 @@ enum
 
 #define PLOOP_REQ_MERGE_FL (1 << PLOOP_REQ_MERGE)
 #define PLOOP_REQ_RELOC_A_FL (1 << PLOOP_REQ_RELOC_A)
-#define PLOOP_REQ_RELOC_S_FL (1 << PLOOP_REQ_RELOC_S) /* Obsolete */
+#define PLOOP_REQ_RELOC_S_FL (1 << PLOOP_REQ_RELOC_S)
 #define PLOOP_REQ_RELOC_N_FL (1 << PLOOP_REQ_RELOC_N)
-#define PLOOP_REQ_DISCARD_FL (1 << PLOOP_REQ_DISCARD)	/* Obsolete */
-#define PLOOP_REQ_ZERO_FL (1 << PLOOP_REQ_ZERO)		/* Obsolete */
+#define PLOOP_REQ_DISCARD_FL (1 << PLOOP_REQ_DISCARD)
+#define PLOOP_REQ_ZERO_FL (1 << PLOOP_REQ_ZERO)
 
 enum
 {
@@ -923,6 +924,8 @@ void ploop_format_put(struct ploop_delta_ops * ops);
 extern struct kobj_type ploop_delta_ktype;
 void ploop_sysfs_init(struct ploop_device * plo);
 void ploop_sysfs_uninit(struct ploop_device * plo);
+
+void ploop_queue_zero_request(struct ploop_device *plo, struct ploop_request *orig_preq, cluster_t clu);
 
 int ploop_maintenance_wait(struct ploop_device * plo);
 

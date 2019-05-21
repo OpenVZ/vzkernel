@@ -25,6 +25,8 @@
 #include <bc/beancounter.h>
 #include <linux/ploop/ploop.h>
 #include "ploop_events.h"
+#include "freeblks.h"
+#include "discard.h"
 #include "push_backup.h"
 
 /* Structures and terms:
@@ -526,7 +528,42 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 	    ploop_pb_check_and_clear_bit(plo->pbd, preq->req_cluster))
 		ploop_set_blockable(plo, preq);
 
-	preq->bl.head = preq->bl.tail = bio;
+	if (test_bit(PLOOP_S_DISCARD, &plo->state) &&
+	    unlikely(bio->bi_rw & REQ_DISCARD)) {
+		int clu_size = cluster_size_in_sec(plo);
+		int i = (clu_size - 1) & bio->bi_sector;
+		int err = 0;
+
+		if (i) {
+			preq->req_cluster++;
+			if (preq->req_size >= clu_size)
+				preq->req_size -= clu_size - i;
+		}
+
+		if (preq->req_size < clu_size ||
+		    (err = ploop_discard_add_bio(plo->fbd, bio))) {
+			if (test_bit(BIO_BDEV_REUSED, &bio->bi_flags)) {
+				struct io_context *ioc;
+				ioc = (struct io_context *)(bio->bi_bdev);
+				atomic_dec(&ioc->nr_tasks);
+				put_io_context_active(ioc);
+
+				bio->bi_bdev = plo->bdev;
+				clear_bit(BIO_BDEV_REUSED, &bio->bi_flags);
+			}
+			BIO_ENDIO(plo->queue, bio, err);
+			list_add(&preq->list, &plo->free_list);
+			plo->free_qlen++;
+			plo->bio_discard_qlen--;
+			plo->bio_total--;
+			return;
+		}
+
+		preq->state = (1 << PLOOP_REQ_SYNC) | (1 << PLOOP_REQ_DISCARD);
+		preq->dst_iblock = 0;
+		preq->bl.head = preq->bl.tail = NULL;
+	} else
+		preq->bl.head = preq->bl.tail = bio;
 
 	if (test_bit(BIO_BDEV_REUSED, &bio->bi_flags)) {
 		    preq->ioc = (struct io_context *)(bio->bi_bdev);
@@ -786,8 +823,14 @@ static void ploop_unplug(struct blk_plug_cb *cb, bool from_schedule)
 static void
 process_discard_bio_queue(struct ploop_device * plo, struct list_head *drop_list)
 {
+	bool discard = test_bit(PLOOP_S_DISCARD, &plo->state);
+
 	while (!list_empty(&plo->free_list)) {
 		struct bio *tmp;
+
+		/* Only one discard bio can be handled concurrently */
+		if (discard && ploop_discard_is_inprogress(plo->fbd))
+			return;
 
 		tmp = bio_list_pop(&plo->bio_discard_list);
 		if (tmp == NULL)
@@ -1273,6 +1316,22 @@ static void del_pb_lockout(struct ploop_request *preq)
 	__del_lockout(preq, true);
 }
 
+static void ploop_discard_wakeup(struct ploop_request *preq, int err)
+{
+	struct ploop_device *plo = preq->plo;
+
+	if (err || !ploop_fb_get_n_free(plo->fbd)) {
+		/* Only one discard request is processed */
+		ploop_fb_reinit(plo->fbd, err);
+	} else
+		set_bit(PLOOP_S_DISCARD_LOADED, &plo->state);
+
+	if (atomic_dec_and_test(&plo->maintenance_cnt))
+		if (test_bit(PLOOP_S_DISCARD_LOADED, &plo->state) ||
+		    !test_bit(PLOOP_S_DISCARD, &plo->state))
+			complete(&plo->maintenance_comp);
+}
+
 static void ploop_complete_request(struct ploop_request * preq)
 {
 	struct ploop_device * plo = preq->plo;
@@ -1334,7 +1393,8 @@ static void ploop_complete_request(struct ploop_request * preq)
 
 		if (atomic_dec_and_test(&plo->maintenance_cnt))
 			complete(&plo->maintenance_comp);
-	}
+	} else if (test_bit(PLOOP_REQ_DISCARD, &preq->state))
+		ploop_discard_wakeup(preq, preq->error);
 
 	if (preq->aux_bio) {
 		int i;
@@ -1378,15 +1438,19 @@ static void ploop_complete_request(struct ploop_request * preq)
 
 	plo->active_reqs--;
 
-	ploop_uncongest(plo);
-	list_add(&preq->list, &plo->free_list);
-	plo->free_qlen++;
-	if (waitqueue_active(&plo->req_waitq))
-		wake_up(&plo->req_waitq);
-	else if (waitqueue_active(&plo->waitq) &&
-		 (plo->bio_head ||
-		  !bio_list_empty(&plo->bio_discard_list)))
-		wake_up_interruptible(&plo->waitq);
+	if (unlikely(test_bit(PLOOP_REQ_ZERO, &preq->state))) {
+		ploop_fb_put_zero_request(plo->fbd, preq);
+	} else {
+		ploop_uncongest(plo);
+		list_add(&preq->list, &plo->free_list);
+		plo->free_qlen++;
+		if (waitqueue_active(&plo->req_waitq))
+			wake_up(&plo->req_waitq);
+		else if (waitqueue_active(&plo->waitq) &&
+			 (plo->bio_head ||
+			  !bio_list_empty(&plo->bio_discard_list)))
+			wake_up_interruptible(&plo->waitq);
+	}
 	plo->bio_total -= nr_completed;
 
 	if (plo->tune.congestion_detection &&
@@ -1606,6 +1670,44 @@ drop_map:
 	return 1;
 }
 
+void ploop_queue_zero_request(struct ploop_device *plo,
+			      struct ploop_request *orig_preq, cluster_t clu)
+{
+	struct ploop_request * preq;
+
+	spin_lock_irq(&plo->lock);
+
+	preq = ploop_fb_get_zero_request(plo->fbd);
+	preq->bl.tail = preq->bl.head = NULL;
+	preq->req_cluster = clu;
+	preq->req_size = 0;
+	preq->req_rw = WRITE_SYNC;
+	preq->eng_state = PLOOP_E_ENTRY;
+	preq->state = (1 << PLOOP_REQ_ZERO);
+	if (test_bit(PLOOP_REQ_SYNC, &orig_preq->state))
+		preq->state |= (1 << PLOOP_REQ_SYNC);
+	preq->error = 0;
+	preq->tstamp = jiffies;
+	preq->iblock = 0;
+	preq->preq_ub = get_beancounter(get_exec_ub());
+
+	if (test_bit(PLOOP_REQ_RELOC_S, &orig_preq->state)) {
+		if (orig_preq->dst_iblock == ~0U)
+			orig_preq->eng_state = PLOOP_E_RELOC_COMPLETE;
+	} else {
+		orig_preq->eng_state = orig_preq->iblock ?
+			PLOOP_E_DELTA_ZERO_INDEX : PLOOP_E_ZERO_INDEX;
+	}
+	orig_preq->iblock = 0;
+	INIT_LIST_HEAD(&preq->delay_list);
+	list_add_tail(&orig_preq->list, &preq->delay_list);
+
+	list_add(&preq->list, &plo->ready_queue);
+	plo->active_reqs++;
+
+	spin_unlock_irq(&plo->lock);
+}
+
 static void
 ploop_reloc_sched_read(struct ploop_request *preq, iblock_t iblk)
 {
@@ -1637,6 +1739,100 @@ ploop_reloc_sched_read(struct ploop_request *preq, iblock_t iblk)
 	sbl.head = sbl.tail = preq->aux_bio;
 	delta->io.ops->submit(&delta->io, preq, READ_SYNC,
 			      &sbl, iblk, cluster_size_in_sec(plo));
+}
+
+/*
+ * Returns 0 if and only if a free block was successfully reused
+ */
+static int
+ploop_reuse_free_block(struct ploop_request *preq)
+{
+	struct ploop_device *plo       = preq->plo;
+	struct ploop_delta  *top_delta = ploop_top_delta(plo);
+	iblock_t  iblk;
+	cluster_t clu;
+	int	  rc;
+	unsigned long pin_state;
+
+	if (plo->maintenance_type != PLOOP_MNTN_FBLOADED &&
+	    plo->maintenance_type != PLOOP_MNTN_RELOC)
+		return -1;
+
+	rc = ploop_fb_get_free_block(plo->fbd, &clu, &iblk);
+
+	/* simple case - no free blocks left */
+	if (rc < 0)
+		return rc;
+
+	/* a free block to reuse requires zeroing index */
+	if (rc > 0) {
+		ploop_queue_zero_request(plo, preq, clu);
+		return 0;
+	}
+
+	/* 'rc == 0' - use iblk as a lost block */
+	pin_state = preq->iblock ? PLOOP_E_DELTA_ZERO_INDEX :
+				   PLOOP_E_ZERO_INDEX;
+	preq->iblock = iblk;
+
+	/* pin preq to some reloc request processing iblk ? */
+	if (ploop_fb_check_reloc_req(plo->fbd, preq, pin_state))
+		return 0;
+
+	/* iblk is a lost block and nobody is relocating it now */
+	preq->eng_state = PLOOP_E_DATA_WBI;
+	__TRACE("T2 %p %u\n", preq, preq->req_cluster);
+	plo->st.bio_out++;
+
+	if (pin_state == PLOOP_E_ZERO_INDEX) {
+		top_delta->io.ops->submit(&top_delta->io, preq, preq->req_rw,
+					  &preq->bl, preq->iblock,
+					  preq->req_size);
+	} else { /* PLOOP_E_DELTA_READ */
+		struct bio_list sbl;
+
+		BUG_ON (preq->aux_bio == NULL);
+		sbl.head = sbl.tail = preq->aux_bio;
+
+		top_delta->io.ops->submit(&top_delta->io, preq, preq->req_rw,
+				      &sbl, preq->iblock, cluster_size_in_sec(plo));
+	}
+
+	return 0;
+}
+
+/*
+ * Returns 0 if and only if zero preq was successfully processed
+ */
+static int
+ploop_entry_zero_req(struct ploop_request *preq)
+{
+	struct ploop_device *plo       = preq->plo;
+	struct ploop_delta  *top_delta = ploop_top_delta(plo);
+	int	 level;
+	iblock_t iblk = 0;
+	int	 err;
+
+	err = ploop_find_map(&plo->map, preq);
+	if (err) {
+		if (err == 1) {
+			__TRACE("m %p %u\n", preq, *clu);
+			return 0;
+		}
+		return err;
+	}
+
+	level = map_get_index(preq, preq->req_cluster, &iblk);
+	if (level != top_delta->level) {
+		printk("Can't zero index on wrong level=%d "
+		       "(top_level=%d req_cluster=%u iblk=%u/%u)\n",
+		       level, top_delta->level, preq->req_cluster,
+		       iblk, preq->iblock);
+		return -EIO;
+	}
+
+	ploop_index_update(preq);
+	return 0;
 }
 
 #define MAP_MAX_IND(preq) min(map_get_mn_end(preq->map),	\
@@ -1699,12 +1895,96 @@ ploop_entry_reloc_a_req(struct ploop_request *preq, iblock_t *iblk)
 	return 0;
 }
 
+/*
+ * Returns 0 if and only if RELOC_S preq was successfully processed.
+ *
+ * Sets preq->req_cluster to the block we're going to relocate.
+ * Returning 0, always set *iblk to a meaningful value: either
+ * zero (if no more blocks to relocate or block to relocate is free
+ *	 (and zero-index op is scheduled) or map is being read)
+ * or iblock that preq->req_cluster points to.
+ */
+static int
+ploop_entry_reloc_s_req(struct ploop_request *preq, iblock_t *iblk)
+{
+	struct ploop_device *plo       = preq->plo;
+	struct ploop_delta  *top_delta = ploop_top_delta(plo);
+
+	cluster_t from_clu, to_clu;
+	iblock_t from_iblk, to_iblk;
+	u32 free;
+	int level;
+	int err;
+
+	*iblk = 0;
+
+	if (preq->req_cluster == ~0U) {
+		cluster_t zero_cluster;
+
+		BUG_ON (preq->error);
+		err = ploop_fb_get_reloc_block(plo->fbd, &from_clu, &from_iblk,
+					       &to_clu, &to_iblk, &free);
+		if (err < 0) {
+			preq->eng_state = PLOOP_E_COMPLETE;
+			ploop_complete_request(preq);
+			return 0;
+		}
+
+		preq->req_cluster = from_clu;
+		preq->src_iblock  = from_iblk;
+		ploop_fb_add_reloc_req(plo->fbd, preq);
+
+		if (free) {
+			preq->dst_iblock  = ~0U;
+			preq->dst_cluster = ~0U;
+			zero_cluster = preq->req_cluster;
+		} else {
+			preq->dst_iblock  = to_iblk;
+			preq->dst_cluster = to_clu;
+			zero_cluster = preq->dst_cluster;
+		}
+
+		ploop_queue_zero_request(plo, preq, zero_cluster);
+		return 0;
+	}
+
+	err = ploop_find_map(&plo->map, preq);
+	if (err) {
+		if (err == 1) {
+			__TRACE("m %p %u\n", preq, *clu);
+			return 0;
+		}
+		return err;
+	}
+	BUG_ON (preq->map == NULL);
+
+	level = map_get_index(preq, preq->req_cluster, iblk);
+	if (level != top_delta->level) {
+		printk("Can't relocate block on wrong level=%d "
+		       "(top_level=%d req_cluster=%u iblk=%u/%u)\n",
+		       level, top_delta->level, preq->req_cluster,
+		       *iblk, preq->iblock);
+		return -EIO;
+	}
+	if (preq->src_iblock != *iblk) {
+		printk("Can't relocate block due to wrong mapping: "
+		       "req_cluster=%u should point to iblk=%u while "
+		       "map_get_index() calculated iblk=%u\n",
+		       preq->req_cluster, preq->src_iblock, *iblk);
+		return -EIO;
+	}
+
+	return 0;
+}
+
 /* dummy wrapper around ploop_entry_reloc_[a|s]_req() */
 static int
 ploop_entry_reloc_req(struct ploop_request *preq, iblock_t *iblk)
 {
 	if (test_bit(PLOOP_REQ_RELOC_A, &preq->state))
 		return ploop_entry_reloc_a_req(preq, iblk);
+	else if (test_bit(PLOOP_REQ_RELOC_S, &preq->state))
+		return ploop_entry_reloc_s_req(preq, iblk);
 	else
 		BUG();
 }
@@ -1763,6 +2043,106 @@ ploop_entry_nullify_req(struct ploop_request *preq)
 
 	top_delta->io.ops->submit(&top_delta->io, preq, preq->req_rw,
 				  &sbl, preq->iblock, cluster_size_in_sec(plo));
+	return 0;
+}
+
+static int discard_get_index(struct ploop_request *preq)
+{
+	struct ploop_device *plo       = preq->plo;
+	struct ploop_delta  *top_delta = ploop_top_delta(plo);
+	int	 level;
+	int	 err;
+
+	preq->iblock = 0;
+
+	err = ploop_find_map(&plo->map, preq);
+	if (err)
+		return err;
+
+	level = map_get_index(preq, preq->req_cluster, &preq->iblock);
+	if (level != top_delta->level)
+		preq->iblock = 0;
+
+	if (preq->map) {
+		spin_lock_irq(&plo->lock);
+		map_release(preq->map);
+		preq->map = NULL;
+		spin_unlock_irq(&plo->lock);
+	}
+
+	return 0;
+}
+
+static int ploop_entry_discard_req(struct ploop_request *preq)
+{
+	int err = 0;
+	struct ploop_device * plo = preq->plo;
+	unsigned int len = 0;
+	cluster_t last_clu;
+
+	if (!test_bit(PLOOP_S_DISCARD, &plo->state)) {
+		err = -EOPNOTSUPP;
+		goto err;
+	}
+
+	BUG_ON(plo->maintenance_type != PLOOP_MNTN_DISCARD);
+
+	last_clu = (preq->req_sector + preq->req_size) >> plo->cluster_log;
+
+	for (; preq->req_cluster < last_clu; preq->req_cluster++) {
+		len = preq->req_cluster - preq->dst_cluster;
+
+		err = discard_get_index(preq);
+		if (err) {
+			if (err == 1)
+				return 0;
+			goto err;
+		}
+
+		if (preq->dst_iblock &&
+		    (!preq->iblock || preq->dst_iblock + len != preq->iblock)) {
+			err = ploop_fb_add_free_extent(plo->fbd,
+							preq->dst_cluster,
+							preq->dst_iblock, len);
+			preq->dst_iblock = 0;
+			if (err) {
+				if (err == -EINVAL) {
+					printk("ploop_entry_discard_req1: "
+					       "(%lu %u; %u %u; %u %u)\n",
+					       preq->req_sector, preq->req_size,
+					       preq->req_cluster, preq->iblock,
+					       preq->dst_cluster, preq->dst_iblock);
+					WARN_ONCE(1, "add_free_extent failed\n");
+				}
+				goto err;
+			}
+		}
+
+		if (!preq->dst_iblock && preq->iblock) {
+			preq->dst_cluster = preq->req_cluster;
+			preq->dst_iblock = preq->iblock;
+		}
+	}
+
+	if (preq->dst_iblock) {
+		len = preq->req_cluster - preq->dst_cluster;
+		err = ploop_fb_add_free_extent(plo->fbd, preq->dst_cluster,
+						preq->dst_iblock, len);
+		if (err == -EINVAL) {
+			printk("ploop_entry_discard_req2: "
+			       "(%lu %u; %u %u; %u %u)\n",
+			       preq->req_sector, preq->req_size,
+			       preq->req_cluster, preq->iblock,
+			       preq->dst_cluster, preq->dst_iblock);
+			WARN_ONCE(1, "add_free_extent failed\n");
+		}
+	}
+
+err:
+	preq->error = err;
+	preq->eng_state = PLOOP_E_COMPLETE;
+	ploop_complete_request(preq);
+
 	return 0;
 }
 
@@ -1877,7 +2257,17 @@ ploop_entry_request(struct ploop_request * preq)
 		preq->req_rw |= REQ_SYNC;
 
 restart:
-	if (test_bit(PLOOP_REQ_RELOC_A, &preq->state) ||
+	if (test_bit(PLOOP_REQ_DISCARD, &preq->state)) {
+		err = ploop_entry_discard_req(preq);
+		if (err)
+			goto error;
+		return;
+	} else if (test_bit(PLOOP_REQ_ZERO, &preq->state)) {
+		err = ploop_entry_zero_req(preq);
+		if (err)
+			goto error;
+		return;
+	} else if (test_bit(PLOOP_REQ_RELOC_A, &preq->state) ||
 		   test_bit(PLOOP_REQ_RELOC_S, &preq->state)) {
 		err = ploop_entry_reloc_req(preq, &iblk);
 		if (err)
@@ -2099,9 +2489,10 @@ delta_io:
 				ploop_add_lockout(preq, 0);
 				spin_unlock_irq(&plo->lock);
 
-				top_delta->ops->allocate(top_delta,
-							 preq, &preq->bl,
-							 preq->req_size);
+				if (likely(ploop_reuse_free_block(preq)))
+					top_delta->ops->allocate(top_delta,
+								 preq, &preq->bl,
+								 preq->req_size);
 			} else {
 				struct bio_list sbl;
 
@@ -2161,11 +2552,13 @@ delta_io:
 			spin_unlock_irq(&plo->lock);
 
 			/* Block does not exist. */
-			__TRACE("K %p %u\n", preq, preq->req_cluster);
-			plo->st.bio_alloc++;
-			top_delta->ops->allocate(top_delta, preq,
-						 &preq->bl,
-						 preq->req_size);
+			if (likely(ploop_reuse_free_block(preq))) {
+				__TRACE("K %p %u\n", preq, preq->req_cluster);
+				plo->st.bio_alloc++;
+				top_delta->ops->allocate(top_delta, preq,
+							 &preq->bl,
+							 preq->req_size);
+			}
 		}
 	}
 	return;
@@ -2258,6 +2651,8 @@ restart:
 	case PLOOP_E_RELOC_COMPLETE:
 		BUG_ON (!test_bit(PLOOP_REQ_RELOC_S, &preq->state));
 		if (!preq->error) {
+			ploop_fb_relocate_req_completed(plo->fbd);
+			ploop_fb_del_reloc_req(plo->fbd, preq);
 			spin_lock_irq(&plo->lock);
 			if (!list_empty(&preq->delay_list)) {
 				struct ploop_request *pr;
@@ -2283,6 +2678,7 @@ restart:
 			       preq->error, preq->req_cluster, preq->iblock,
 			       preq->src_iblock, preq->dst_cluster,
 			       preq->dst_iblock);
+			ploop_fb_del_reloc_req(plo->fbd, preq);
 		}
 
 		if (!preq->error &&
@@ -2332,11 +2728,13 @@ restart:
 	}
 	case PLOOP_E_DELTA_COPIED:
 	{
-		struct bio_list sbl;
-		sbl.head = sbl.tail = preq->aux_bio;
-		top_delta = ploop_top_delta(plo);
-		top_delta->ops->allocate(top_delta, preq,
-					 &sbl, cluster_size_in_sec(plo));
+		if (likely(ploop_reuse_free_block(preq))) {
+			struct bio_list sbl;
+			sbl.head = sbl.tail = preq->aux_bio;
+			top_delta = ploop_top_delta(plo);
+			top_delta->ops->allocate(top_delta, preq,
+						 &sbl, cluster_size_in_sec(plo));
+		}
 		break;
 	}
 	case PLOOP_E_ZERO_INDEX:
@@ -2551,7 +2949,8 @@ static void ploop_wait(struct ploop_device * plo, int once, struct blk_plug *plu
 			     !plo->active_reqs))
 				break;
 		} else if (plo->bio_head ||
-			   !bio_list_empty(&plo->bio_discard_list)) {
+			   (!bio_list_empty(&plo->bio_discard_list) &&
+			    !ploop_discard_is_inprogress(plo->fbd))) {
 			/* ready_queue and entry_queue are empty, but
 			 * bio list not. Obviously, we'd like to process
 			 * bio_list instead of sleeping */
@@ -3901,6 +4300,8 @@ static int ploop_clear(struct ploop_device * plo, struct block_device * bdev)
 		return -EBUSY;
 	}
 
+	clear_bit(PLOOP_S_DISCARD_LOADED, &plo->state);
+	clear_bit(PLOOP_S_DISCARD, &plo->state);
 	clear_bit(PLOOP_S_NULLIFY, &plo->state);
 
 	destroy_deltas(plo, &plo->map);
@@ -3913,6 +4314,7 @@ static int ploop_clear(struct ploop_device * plo, struct block_device * bdev)
 		kfree(map);
 	}
 
+	ploop_fb_fini(plo->fbd, 0);
 	ploop_pb_fini(plo->pbd);
 
 	plo->maintenance_type = PLOOP_MNTN_OFF;
@@ -4153,6 +4555,357 @@ static int ploop_balloon_ioc(struct ploop_device *plo, unsigned long arg)
 	ctl.mntn_type = plo->maintenance_type;
 
 	return copy_to_user((void*)arg, &ctl, sizeof(ctl));
+}
+
+static int ploop_freeblks_ioc(struct ploop_device *plo, unsigned long arg)
+{
+	struct ploop_delta *delta;
+	struct ploop_freeblks_ctl ctl;
+	struct ploop_freeblks_ctl_extent __user *extents;
+	struct ploop_freeblks_desc *fbd;
+	int i;
+	int rc = 0;
+
+	return 0;
+
+	if (list_empty(&plo->map.delta_list))
+		return -ENOENT;
+
+	if (plo->maintenance_type == PLOOP_MNTN_OFF)
+		return -EINVAL;
+	if (plo->maintenance_type != PLOOP_MNTN_BALLOON)
+		return -EBUSY;
+	BUG_ON (plo->fbd);
+
+	if (copy_from_user(&ctl, (void*)arg, sizeof(ctl)))
+		return -EFAULT;
+
+	delta = ploop_top_delta(plo);
+	if (delta->level != ctl.level) {
+		rc = -EINVAL;
+		goto exit;
+	}
+
+	fbd = ploop_fb_init(plo);
+	if (!fbd) {
+		rc = -ENOMEM;
+		goto exit;
+	}
+
+	extents = (void __user *)(arg + sizeof(ctl));
+
+	for (i = 0; i < ctl.n_extents; i++) {
+		struct ploop_freeblks_ctl_extent extent;
+
+		if (copy_from_user(&extent, &extents[i],
+					sizeof(extent))) {
+			rc = -EFAULT;
+			ploop_fb_fini(fbd, rc);
+			goto exit;
+		}
+
+		rc = ploop_fb_add_free_extent(fbd, extent.clu,
+					extent.iblk, extent.len);
+		if (rc) {
+			if (rc == -EINVAL) {
+				printk("ploop_freeblks_ioc: n=%d\n", ctl.n_extents);
+				for (i = 0; i < ctl.n_extents; i++) {
+					if (copy_from_user(&extent, &extents[i],
+							   sizeof(extent))) {
+						printk("copy failed: i=%d\n", i);
+						break;
+					}
+					printk("ploop_freeblks_ioc: i=%d: %u %u %u\n",
+					       i, extent.clu, extent.iblk, extent.len);
+				}
+				WARN_ONCE(1, "add_free_extent failed\n");
+			}
+			ploop_fb_fini(fbd, rc);
+			goto exit;
+		}
+	}
+
+	ploop_quiesce(plo);
+
+	ctl.alloc_head = delta->io.alloc_head;
+	if (copy_to_user((void*)arg, &ctl, sizeof(ctl))) {
+		rc = -EFAULT;
+		ploop_fb_fini(fbd, rc);
+	} else {
+		iblock_t a_h = delta->io.alloc_head;
+		/* make fbd visible to ploop engine */
+		plo->fbd = fbd;
+		plo->maintenance_type = PLOOP_MNTN_FBLOADED;
+		BUG_ON (a_h != ctl.alloc_head); /* quiesce sanity */
+		ploop_fb_lost_range_init(fbd, a_h);
+		ploop_fb_set_freezed_level(fbd, delta->level);
+	}
+
+	ploop_relax(plo);
+exit:
+	return rc;
+}
+
+static int ploop_fbget_ioc(struct ploop_device *plo, unsigned long arg)
+{
+	struct ploop_freeblks_ctl ctl;
+	int rc = 0;
+
+	return -EINVAL;
+
+	if (list_empty(&plo->map.delta_list))
+		return -ENOENT;
+
+	if (plo->maintenance_type == PLOOP_MNTN_DISCARD) {
+		if (!test_bit(PLOOP_S_DISCARD_LOADED, &plo->state))
+			return -EINVAL;
+	} else if (plo->maintenance_type != PLOOP_MNTN_FBLOADED)
+		return -EINVAL;
+	BUG_ON (!plo->fbd);
+
+	if (copy_from_user(&ctl, (void*)arg, sizeof(ctl)))
+		return -EFAULT;
+
+	ploop_quiesce(plo);
+	rc = ploop_fb_copy_freeblks_to_user(plo->fbd, (void*)arg, &ctl);
+	ploop_relax(plo);
+
+	return rc;
+}
+
+static int ploop_fbfilter_ioc(struct ploop_device *plo, unsigned long arg)
+{
+	int rc = 0;
+
+	return -EINVAL;
+
+	if (plo->maintenance_type != PLOOP_MNTN_DISCARD ||
+	    !test_bit(PLOOP_S_DISCARD_LOADED, &plo->state))
+		return -EINVAL;
+
+	BUG_ON (!plo->fbd);
+
+	ploop_quiesce(plo);
+	rc = ploop_fb_filter_freeblks(plo->fbd, arg);
+	ploop_relax(plo);
+
+	return rc;
+}
+
+static void ploop_relocblks_process(struct ploop_device *plo)
+{
+	int num_reqs;
+	struct ploop_request *preq;
+
+	num_reqs = plo->tune.fsync_max;
+	if (num_reqs > plo->tune.max_requests/2)
+		num_reqs = plo->tune.max_requests/2;
+	if (num_reqs < 1)
+		num_reqs = 1;
+
+	spin_lock_irq(&plo->lock);
+
+	atomic_set(&plo->maintenance_cnt, 1);
+
+	init_completion(&plo->maintenance_comp);
+
+	for (; num_reqs; num_reqs--) {
+		preq = ploop_alloc_request(plo);
+
+		preq->bl.tail = preq->bl.head = NULL;
+		preq->req_cluster = ~0U; /* uninitialized */
+		preq->req_size = 0;
+		preq->req_rw = WRITE_SYNC;
+		preq->eng_state = PLOOP_E_ENTRY;
+		preq->state = (1 << PLOOP_REQ_SYNC) | (1 << PLOOP_REQ_RELOC_S);
+		preq->error = 0;
+		preq->tstamp = jiffies;
+		preq->iblock = 0;
+		preq->prealloc_size = 0;
+		preq->preq_ub = get_beancounter(get_exec_ub());
+
+		atomic_inc(&plo->maintenance_cnt);
+
+		ploop_entry_add(plo, preq);
+
+		if (waitqueue_active(&plo->waitq))
+			wake_up_interruptible(&plo->waitq);
+	}
+
+	if (atomic_dec_and_test(&plo->maintenance_cnt))
+		complete(&plo->maintenance_comp);
+
+	spin_unlock_irq(&plo->lock);
+}
+
+static int release_fbd(struct ploop_device *plo, int err)
+{
+	clear_bit(PLOOP_S_DISCARD, &plo->state);
+
+	ploop_quiesce(plo);
+	ploop_fb_fini(plo->fbd, err);
+	plo->maintenance_type = PLOOP_MNTN_OFF;
+	ploop_relax(plo);
+
+	return err;
+}
+
+static void ploop_discard_restart(struct ploop_device *plo, int err)
+{
+	if (!err && test_bit(PLOOP_S_DISCARD, &plo->state)) {
+		ploop_fb_reinit(plo->fbd, 0);
+		atomic_set(&plo->maintenance_cnt, 0);
+		init_completion(&plo->maintenance_comp);
+		plo->maintenance_type = PLOOP_MNTN_DISCARD;
+	} else {
+		clear_bit(PLOOP_S_DISCARD, &plo->state);
+		ploop_fb_fini(plo->fbd, err);
+		plo->maintenance_type = PLOOP_MNTN_OFF;
+	}
+}
+
+static int ploop_fbdrop_ioc(struct ploop_device *plo)
+{
+	return -EINVAL;
+
+	if (list_empty(&plo->map.delta_list))
+		return -ENOENT;
+
+	if (plo->maintenance_type == PLOOP_MNTN_DISCARD) {
+		if (!test_bit(PLOOP_S_DISCARD_LOADED, &plo->state))
+			return -EINVAL;
+	} else if (plo->maintenance_type != PLOOP_MNTN_FBLOADED)
+		return -EINVAL;
+	BUG_ON (!plo->fbd);
+
+	ploop_quiesce(plo);
+	ploop_discard_restart(plo, 0);
+	ploop_relax(plo);
+
+	return 0;
+}
+
+static int ploop_relocblks_ioc(struct ploop_device *plo, unsigned long arg)
+{
+	struct ploop_delta *delta = ploop_top_delta(plo);
+	struct ploop_relocblks_ctl ctl;
+	struct ploop_freeblks_desc *fbd = plo->fbd;
+	int i;
+	int err = 0;
+	int n_free;
+
+	return -EINVAL;
+
+	if (list_empty(&plo->map.delta_list))
+		return -ENOENT;
+
+	if (!fbd || (plo->maintenance_type != PLOOP_MNTN_FBLOADED &&
+		     plo->maintenance_type != PLOOP_MNTN_RELOC))
+		return -EINVAL;
+
+	BUG_ON(test_bit(PLOOP_S_DISCARD_LOADED, &plo->state));
+
+	if (copy_from_user(&ctl, (void*)arg, sizeof(ctl)))
+		return -EFAULT;
+
+	if (delta->level != ctl.level ||
+	    ploop_fb_get_freezed_level(plo->fbd) != ctl.level ||
+	    ploop_fb_get_alloc_head(plo->fbd) != ctl.alloc_head) {
+		return -EINVAL;
+	}
+
+	if (plo->maintenance_type == PLOOP_MNTN_RELOC)
+		goto already;
+
+	if (ctl.n_extents) {
+		struct ploop_relocblks_ctl_extent __user *extents;
+
+		extents = (void __user *)(arg + sizeof(ctl));
+
+		for (i = 0; i < ctl.n_extents; i++) {
+			struct ploop_relocblks_ctl_extent extent;
+
+			if (copy_from_user(&extent, &extents[i],
+						sizeof(extent)))
+				return release_fbd(plo, -EFAULT);
+
+			/* this extent is also present in freemap */
+			err = ploop_fb_add_reloc_extent(fbd, extent.clu,
+					extent.iblk, extent.len, extent.free);
+			if (err)
+				return release_fbd(plo, err);
+		}
+	}
+
+	ploop_quiesce(plo);
+
+	/* alloc_head must never decrease */
+	BUG_ON (delta->io.alloc_head < ploop_fb_get_alloc_head(plo->fbd));
+	n_free = ploop_fb_get_n_free(plo->fbd);
+
+	/*
+	 * before relocation start, freeblks engine could provide only
+	 * free blocks. However delta.io.alloc_head can legaly increased
+	 * in maintenance mode due to processing of interleaving WRITEs.
+	 */
+	WARN_ON (delta->io.alloc_head > ploop_fb_get_alloc_head(plo->fbd) &&
+		 n_free);
+	ploop_fb_relocation_start(plo->fbd, ctl.n_scanned);
+
+	if (!n_free || !ctl.n_extents)
+		goto truncate;
+
+	plo->maintenance_type = PLOOP_MNTN_RELOC;
+
+	ploop_relax(plo);
+
+	ploop_relocblks_process(plo);
+already:
+	err = ploop_maintenance_wait(plo);
+	if (err)
+		return err;
+
+	BUG_ON(atomic_read(&plo->maintenance_cnt));
+
+	if (plo->maintenance_type != PLOOP_MNTN_RELOC)
+		return -EALREADY;
+
+	fbd = plo->fbd;
+	BUG_ON (!fbd);
+
+	if (test_bit(PLOOP_S_ABORT, &plo->state)) {
+		clear_bit(PLOOP_S_DISCARD,&plo->state);
+
+		ploop_fb_fini(plo->fbd, -EIO);
+		plo->maintenance_type = PLOOP_MNTN_OFF;
+		return -EIO;
+	}
+
+	if (ploop_fb_get_n_relocated(fbd) != ploop_fb_get_n_relocating(fbd))
+		return release_fbd(plo, -EIO);
+
+	/* time to truncate */
+	ploop_quiesce(plo);
+truncate:
+	if ((ploop_fb_get_lost_range_len(plo->fbd) != 0) &&
+	    (delta->io.alloc_head == ploop_fb_get_alloc_head(plo->fbd))) {
+		err = delta->ops->truncate(delta, NULL,
+					   ploop_fb_get_first_lost_iblk(plo->fbd));
+		if (!err) {
+			/* See comment in dio_release_prealloced */
+			delta->io.prealloced_size = 0;
+			ctl.alloc_head = ploop_fb_get_lost_range_len(plo->fbd);
+			err = copy_to_user((void*)arg, &ctl, sizeof(ctl));
+		}
+	} else {
+		ctl.alloc_head = 0;
+		err = copy_to_user((void*)arg, &ctl, sizeof(ctl));
+	}
+
+	ploop_discard_restart(plo, err);
+
+	ploop_relax(plo);
+	return err;
 }
 
 static int ploop_getdevice_ioc(unsigned long arg)
@@ -4514,10 +5267,34 @@ static int ploop_ioctl(struct block_device *bdev, fmode_t fmode, unsigned int cm
 	case PLOOP_IOC_BALLOON:
 		err = ploop_balloon_ioc(plo, arg);
 		break;
+	case PLOOP_IOC_FREEBLKS:
+		err = ploop_freeblks_ioc(plo, arg);
+		break;
+	case PLOOP_IOC_FBGET:
+		err = ploop_fbget_ioc(plo, arg);
+		break;
+	case PLOOP_IOC_FBFILTER:
+		err = ploop_fbfilter_ioc(plo, arg);
+		break;
+	case PLOOP_IOC_FBDROP:
+		err = ploop_fbdrop_ioc(plo);
+		break;
+	case PLOOP_IOC_RELOCBLKS:
+		err = ploop_relocblks_ioc(plo, arg);
+		break;
 	case PLOOP_IOC_GETDEVICE:
 		err = ploop_getdevice_ioc(arg);
 		break;
 
+	case PLOOP_IOC_DISCARD_INIT:
+		err = ploop_discard_init_ioc(plo);
+		break;
+	case PLOOP_IOC_DISCARD_FINI:
+		err = ploop_discard_fini_ioc(plo);
+		break;
+	case PLOOP_IOC_DISCARD_WAIT:
+		err = ploop_discard_wait_ioc(plo);
+		break;
 	case PLOOP_IOC_MAX_DELTA_SIZE:
 		err = ploop_set_max_delta_size(plo, arg);
 		break;
@@ -4661,6 +5438,7 @@ static void ploop_dev_del(struct ploop_device *plo)
 	blk_cleanup_queue(plo->queue);
 	put_disk(plo->disk);
 	rb_erase(&plo->link, &ploop_devices_tree);
+	ploop_fb_fini(plo->fbd, 0);
 	kobject_put(&plo->kobj);
 }
 
