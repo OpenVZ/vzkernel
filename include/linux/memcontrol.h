@@ -181,21 +181,21 @@ static inline void mem_cgroup_put(struct mem_cgroup *memcg)
 	css_put(mem_cgroup_css(memcg));
 }
 
-struct mem_cgroup *__mem_cgroup_begin_update_page_stat(struct page *page, bool *locked,
+void __mem_cgroup_begin_update_page_stat(struct page *page, bool *locked,
 					 unsigned long *flags);
 
 extern atomic_t memcg_moving;
 
-static inline struct mem_cgroup *mem_cgroup_begin_update_page_stat(struct page *page,
+static inline void mem_cgroup_begin_update_page_stat(struct page *page,
 					bool *locked, unsigned long *flags)
 {
 	if (mem_cgroup_disabled())
-		return NULL;
+		return;
+
 	rcu_read_lock();
 	*locked = false;
 	if (atomic_read(&memcg_moving))
-		return __mem_cgroup_begin_update_page_stat(page, locked, flags);
-	return NULL;
+		__mem_cgroup_begin_update_page_stat(page, locked, flags);
 }
 
 void __mem_cgroup_end_update_page_stat(struct page *page,
