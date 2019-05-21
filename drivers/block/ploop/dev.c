@@ -2185,11 +2185,11 @@ complete_unsupported_discard_req(struct ploop_request * preq)
 static bool ploop_can_issue_discard(struct ploop_device *plo,
 				    struct ploop_request *preq)
 {
-	if (!native_discard_support)
-		return false;
-
 	if (test_bit(PLOOP_REQ_DISCARD, &preq->state))
 		return true;
+
+	if (!native_discard_support)
+		return false;
 
 	if (test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state))
 		return false;
@@ -4582,7 +4582,8 @@ static int ploop_freeblks_ioc(struct ploop_device *plo, unsigned long arg)
 	int i;
 	int rc = 0;
 
-	return 0;
+	if (!test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state))
+		return -EINVAL;
 
 	if (list_empty(&plo->map.delta_list))
 		return -ENOENT;
@@ -4667,7 +4668,8 @@ static int ploop_fbget_ioc(struct ploop_device *plo, unsigned long arg)
 	struct ploop_freeblks_ctl ctl;
 	int rc = 0;
 
-	return -EINVAL;
+	if (!test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state))
+		return -EINVAL;
 
 	if (list_empty(&plo->map.delta_list))
 		return -ENOENT;
@@ -4693,7 +4695,8 @@ static int ploop_fbfilter_ioc(struct ploop_device *plo, unsigned long arg)
 {
 	int rc = 0;
 
-	return -EINVAL;
+	if (!test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state))
+		return -EINVAL;
 
 	if (plo->maintenance_type != PLOOP_MNTN_DISCARD ||
 	    !test_bit(PLOOP_S_DISCARD_LOADED, &plo->state))
@@ -4782,7 +4785,8 @@ static void ploop_discard_restart(struct ploop_device *plo, int err)
 
 static int ploop_fbdrop_ioc(struct ploop_device *plo)
 {
-	return -EINVAL;
+	if (!test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state))
+		return -EINVAL;
 
 	if (list_empty(&plo->map.delta_list))
 		return -ENOENT;
@@ -4810,7 +4814,8 @@ static int ploop_relocblks_ioc(struct ploop_device *plo, unsigned long arg)
 	int err = 0;
 	int n_free;
 
-	return -EINVAL;
+	if (!test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state))
+		return -EINVAL;
 
 	if (list_empty(&plo->map.delta_list))
 		return -ENOENT;
