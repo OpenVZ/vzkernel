@@ -269,7 +269,7 @@ static void flush_bg_queue(struct fuse_conn *fc, struct fuse_iqueue *fiq)
 		list_del_init(&req->list);
 		fc->active_background++;
 
-		if (fc->kio.op && !fc->kio.op->req_send(fc, req, true, true))
+		if (fc->kio.op && !fc->kio.op->req_send(fc, req, NULL, true, true))
 			continue;
 
 		spin_lock(&fiq->lock);
@@ -430,7 +430,7 @@ static void __fuse_request_send(struct fuse_conn *fc, struct fuse_req *req,
 
 	BUG_ON(test_bit(FR_BACKGROUND, &req->flags));
 
-	if (fc->kio.op && !fc->kio.op->req_send(fc, req, false, false))
+	if (fc->kio.op && !fc->kio.op->req_send(fc, req, ff, false, false))
 		return;
 
 	spin_lock(&fiq->lock);
