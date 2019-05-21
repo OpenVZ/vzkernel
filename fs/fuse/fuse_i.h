@@ -1419,6 +1419,7 @@ int fuse_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 
 struct fuse_file *__fuse_write_file_get(struct fuse_conn *fc,
 					       struct fuse_inode *fi);
+struct fuse_file *fuse_file_get(struct fuse_file *ff);
 void fuse_release_ff(struct inode *inode, struct fuse_file *ff);
 
 void fuse_kill_requests(struct fuse_conn *fc, struct inode *inode,
