@@ -818,6 +818,19 @@ static void wait_shrink(struct pcs_fuse_req *r, struct pcs_dentry_info *di)
 	list_add_tail(&r->exec.ireq.list, &di->size.queue);
 }
 
+static bool kqueue_insert(struct pcs_dentry_info *di, struct fuse_file *ff,
+			  struct fuse_req *req)
+{
+	spin_lock(&di->kq_lock);
+	if (ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
+		spin_unlock(&di->kq_lock);
+		return false;
+	}
+	list_add_tail(&req->list, &di->kq);
+	spin_unlock(&di->kq_lock);
+	return true;
+}
+
 /*
  * Check i size boundary and deffer request if necessary
  * Ret code
@@ -825,7 +838,7 @@ static void wait_shrink(struct pcs_fuse_req *r, struct pcs_dentry_info *di)
  * -1: should fail request
  * 1: request placed to pended queue
 */
-static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
+static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 {
 	struct fuse_inode *fi = get_fuse_inode(r->req.io_inode);
 	struct pcs_dentry_info *di = pcs_inode_from_fuse(fi);
@@ -835,8 +848,8 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
 	/* Deffer all requests if shrink requested to prevent livelock */
 	if (di->size.op == PCS_SIZE_SHRINK) {
 		wait_shrink(r, di);
-		spin_unlock(&di->lock);
-		return 1;
+		ret = 1;
+		goto out;
 	}
 	if (r->req.in.h.opcode == FUSE_READ) {
 		size_t size;
@@ -846,8 +859,8 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
 		if (in->offset + in->size > di->fileinfo.attr.size) {
 			if (in->offset >= di->fileinfo.attr.size) {
 				r->req.out.args[0].size = 0;
-				spin_unlock(&di->lock);
-				return -1;
+				ret = -EPERM;
+				goto out;
 			}
 			size = di->fileinfo.attr.size - in->offset;
 		}
@@ -856,6 +869,10 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
 		struct fuse_write_in *in = &r->req.misc.write.in;
 
 		if (in->offset + in->size > di->fileinfo.attr.size) {
+			if (!kqueue_insert(di, ff, &r->req)) {
+				ret = -EIO;
+				goto out;
+			}
 			wait_grow(r, di, in->offset + in->size);
 			ret = 1;
 		}
@@ -871,8 +888,8 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
 		size = in->fm_length;
 		if (in->fm_start + size > di->fileinfo.attr.size) {
 			if (in->fm_start >= di->fileinfo.attr.size) {
-				spin_unlock(&di->lock);
-				return -1;
+				ret = -EPERM;
+				goto out;
 			}
 			size = di->fileinfo.attr.size - in->fm_start;
 		}
@@ -883,6 +900,10 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
 		struct fuse_fallocate_in const *in = r->req.in.args[0].value;
 
 		if (in->offset + in->length > di->fileinfo.attr.size) {
+			if (!kqueue_insert(di, ff, &r->req)) {
+				ret = -EIO;
+				goto out;
+			}
 			wait_grow(r, di, in->offset + in->length);
 			ret = 1;
 		}
@@ -895,14 +916,14 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
 			if (ret) {
 				pcs_fuse_prep_fallocate(r);
 			} else {
-				spin_unlock(&di->lock);
-				return -1;
+				ret = -EPERM;
+				goto out;
 			}
 		}
 	}
 	inode_dio_begin(r->req.io_inode);
+out:
 	spin_unlock(&di->lock);
-
 	return ret;
 }
 
@@ -927,12 +948,15 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
 	switch (r->req.in.h.opcode) {
 	case FUSE_WRITE:
 	case FUSE_READ:
-		ret = pcs_fuse_prep_rw(r);
-		if (!ret)
+		ret = pcs_fuse_prep_rw(r, ff);
+		if (likely(!ret))
 			goto submit;
 		if (ret > 0)
-			/* Pended, nothing to do. */
-			return;
+			return; /* Pended, nothing to do. */
+		if (ret != -EPERM) {
+			req->out.h.error = ret;
+			goto error;
+		}
 		break;
 	case FUSE_FALLOCATE: {
 		struct fuse_fallocate_in *inarg = (void*) req->in.args[0].value;
@@ -961,12 +985,15 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
 				inarg->length = di->fileinfo.attr.size - inarg->offset;
 		}
 
-		ret = pcs_fuse_prep_rw(r);
-		if (!ret)
+		ret = pcs_fuse_prep_rw(r, ff);
+		if (likely(!ret))
 			goto submit;
 		if (ret > 0)
-			/* Pended, nothing to do. */
-			return;
+			return; /* Pended, nothing to do. */
+		if (ret != -EPERM) {
+			req->out.h.error = ret;
+			goto error;
+		}
 		break;
 	}
 	case FUSE_FSYNC:
@@ -979,12 +1006,15 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
 			goto error;
 		}
 
-		ret = pcs_fuse_prep_rw(r);
-		if (!ret)
+		ret = pcs_fuse_prep_rw(r, ff);
+		if (likely(!ret))
 			goto submit;
 		if (ret > 0)
-			/* Pended, nothing to do. */
-			return;
+			return; /* Pended, nothing to do. */
+		if (ret != -EPERM) {
+			req->out.h.error = ret;
+			goto error;
+		}
 		break;
 	}
 	r->req.out.h.error = 0;
@@ -999,14 +1029,10 @@ error:
 	return;
 
 submit:
-	spin_lock(&di->kq_lock);
-	if (ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
-		spin_unlock(&di->kq_lock);
+	if (!kqueue_insert(di, ff, req)) {
 		req->out.h.error = -EIO;
 		goto error;
 	}
-	list_add_tail(&req->list, &di->kq);
-	spin_unlock(&di->kq_lock);
 
 	if (async)
 		pcs_cc_submit(ireq->cc, ireq);
@@ -1074,7 +1100,7 @@ static void _pcs_shrink_end(struct fuse_conn *fc, struct fuse_req *req)
 
 		TRACE("resubmit %p\n", &r->req);
 		list_del_init(&ireq->list);
-		pcs_fuse_submit(pfc, &r->req, NULL, true, false);
+		pcs_fuse_submit(pfc, &r->req, r->req.ff, true, false);
 	}
 }
 
