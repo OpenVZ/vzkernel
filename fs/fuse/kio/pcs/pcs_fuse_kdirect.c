@@ -906,7 +906,8 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
 	return ret;
 }
 
-static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req, bool async, bool lk)
+static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
+			    struct fuse_file *ff, bool async, bool lk)
 {
 	struct pcs_fuse_req *r = pcs_req_from_fuse(req);
 	struct fuse_inode *fi = get_fuse_inode(req->io_inode);
@@ -999,7 +1000,7 @@ error:
 
 submit:
 	spin_lock(&di->kq_lock);
-	if (req->ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &req->ff->ff_state)) {
+	if (ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
 		spin_unlock(&di->kq_lock);
 		req->out.h.error = -EIO;
 		goto error;
@@ -1073,7 +1074,7 @@ static void _pcs_shrink_end(struct fuse_conn *fc, struct fuse_req *req)
 
 		TRACE("resubmit %p\n", &r->req);
 		list_del_init(&ireq->list);
-		pcs_fuse_submit(pfc, &r->req, true, false);
+		pcs_fuse_submit(pfc, &r->req, NULL, true, false);
 	}
 }
 
@@ -1176,7 +1177,8 @@ fail:
 	return -EINVAL;
 }
 
-static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bool lk)
+static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req,
+			 struct fuse_file *ff, bool bg, bool lk)
 {
 	struct pcs_fuse_cluster *pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
 	int ret;
@@ -1232,7 +1234,7 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req, bool bg, bo
 	}
 	__clear_bit(FR_PENDING, &req->flags);
 
-	pcs_fuse_submit(pfc, req, lk, lk);
+	pcs_fuse_submit(pfc, req, ff ? : req->ff, lk, lk);
 	if (!bg)
 		wait_event(req->waitq,
 			   test_bit(FR_FINISHED, &req->flags) && !req->end);
