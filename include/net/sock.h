@@ -1098,6 +1098,7 @@ struct proto {
 	void			(*destroy_cgroup)(struct mem_cgroup *memcg);
 	struct cg_proto		*(*proto_cgroup)(struct mem_cgroup *memcg);
 #endif
+	struct lock_class_key	*lockdep_class;
 };
 
 /*
