@@ -120,6 +120,7 @@ struct fuse_file *fuse_file_get(struct fuse_file *ff)
 	atomic_inc(&ff->count);
 	return ff;
 }
+EXPORT_SYMBOL_GPL(fuse_file_get);
 
 static void fuse_release_async(struct work_struct *work)
 {
