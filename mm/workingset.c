@@ -315,10 +315,16 @@ bool workingset_refault(void *shadow)
  */
 void workingset_activation(struct page *page)
 {
-	struct mem_cgroup *memcg;
+	struct mem_cgroup *memcg = NULL;
+	struct page_cgroup *pc;
 	struct lruvec *lruvec;
 	bool locked;
 	unsigned long flags;
+
+	mem_cgroup_begin_update_page_stat(page, &locked, &flags);
+	pc = lookup_page_cgroup(page);
+	if (likely(PageCgroupUsed(pc)))
+		memcg = pc->mem_cgroup;
 
 	/*
 	 * Filter non-memcg pages here, e.g. unmap can call
@@ -327,15 +333,12 @@ void workingset_activation(struct page *page)
 	 * XXX: See workingset_refault() - this should return
 	 * root_mem_cgroup even for !CONFIG_MEMCG.
 	 */
-	if (!mem_cgroup_disabled())
-		return;
-
-	memcg = mem_cgroup_begin_update_page_stat(page, &locked, &flags);
-	if (!memcg)
-		return;
+	if (!mem_cgroup_disabled() && !memcg)
+		goto out;
 
 	lruvec = mem_cgroup_zone_lruvec(page_zone(page), memcg);
 	atomic_long_inc(&lruvec->inactive_age);
+out:
 	mem_cgroup_end_update_page_stat(page, &locked, &flags);
 }
 
