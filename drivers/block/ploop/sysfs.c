@@ -484,6 +484,17 @@ static u32 show_freeze_state(struct ploop_device * plo)
 	return plo->freeze_state;
 }
 
+static u32 show_discard_mode(struct ploop_device *plo)
+{
+	/*
+	 * 0 - discard disabled (not implemented)
+	 * 1 - maintaince mode-based discard
+	 * 2 - hole-based discard
+	 * 3 - move-tail-block discard (not implemented)
+	 */
+	return test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state) ? 1 : 2;
+}
+
 #define _TUNE_U32(_name)				\
 static u32 show_##_name(struct ploop_device * plo)	\
 {							\
@@ -571,6 +582,7 @@ static struct attribute *state_attributes[] = {
 	_A(blockable_reqs),
 	_A(blocked_bios),
 	_A(freeze_state),
+	_A(discard_mode),
 	NULL
 };
 
