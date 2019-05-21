@@ -2707,7 +2707,7 @@ cleanup:
  * account and taking the move_lock in the slowpath.
  */
 
-struct mem_cgroup *__mem_cgroup_begin_update_page_stat(struct page *page,
+void __mem_cgroup_begin_update_page_stat(struct page *page,
 				bool *locked, unsigned long *flags)
 {
 	struct mem_cgroup *memcg;
@@ -2717,7 +2717,8 @@ struct mem_cgroup *__mem_cgroup_begin_update_page_stat(struct page *page,
 again:
 	memcg = pc->mem_cgroup;
 	if (unlikely(!memcg || !PageCgroupUsed(pc)))
-		return NULL;
+		return;
+
 	/*
 	 * If this memory cgroup is not under account moving, we don't
 	 * need to take move_lock_mem_cgroup(). Because we already hold
@@ -2725,7 +2726,7 @@ again:
 	 * rcu_read_unlock() if mem_cgroup_stolen() == true.
 	 */
 	if (!mem_cgroup_stolen(memcg))
-		return NULL;
+		return;
 
 	move_lock_mem_cgroup(memcg, flags);
 	if (memcg != pc->mem_cgroup || !PageCgroupUsed(pc)) {
@@ -2733,7 +2734,7 @@ again:
 		goto again;
 	}
 	*locked = true;
-	return memcg;
+	return;
 }
 
 void __mem_cgroup_end_update_page_stat(struct page *page, unsigned long *flags)
