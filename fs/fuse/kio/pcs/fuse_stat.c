@@ -7,44 +7,6 @@
 
 extern struct super_block *fuse_control_sb;
 
-static u64 lat_oreder_list[] = {
-	[LAT_ORDER1] = 20 * USEC_PER_MSEC,
-	[LAT_ORDER2] = 50 * USEC_PER_MSEC,
-	[LAT_ORDER3] = 100 * USEC_PER_MSEC,
-	[LAT_ORDER4] = 200 * USEC_PER_MSEC,
-	[LAT_ORDER5] = 500 * USEC_PER_MSEC,
-};
-
-
-static void fuse_latency_update(struct fuse_lat_stat *s, u64 lat)
-{
-	int i;
-
-	s->count++;
-
-	for (i = LAT_ORDER1; i <= LAT_ORDER5; i++) {
-		if (likely(lat <= lat_oreder_list[i])) {
-			s->lat[i]++;
-			return;
-		}
-	}
-	s->lat[LAT_ORDER_OTHER]++;
-	return;
-}
-
-static inline void fuse_latency_count(struct fuse_lat_cnt *c, u64 val)
-{
-	fuse_latency_update(&c->curr, val);
-	fuse_latency_update(&c->glob, val);
-}
-
-static inline void fuse_latency_cnt_up(struct fuse_lat_cnt *c)
-{
-	BUILD_BUG_ON(sizeof(c->last) != sizeof(c->curr));
-
-	memcpy(&c->last, &c->curr, sizeof(c->last));
-	memset(&c->curr, 0, sizeof(c->curr));
-}
 
 static const char *fuse_kio_op_name(unsigned opcode)
 {
@@ -134,142 +96,12 @@ static inline unsigned long long fuse_val_cnt_max(struct fuse_val_cnt const* c)
 #define CNT_MAX(c)    fuse_val_cnt_max(&(c))
 
 
-#define MAX_PERCENT 100
-static int latency_npercl_format(struct fuse_lat_stat *s, u8 percl, char *buf,
-				 size_t sz)
-{
-	u64 cnt = s->count, nper;
-	int i;
-
-	BUG_ON(percl > MAX_PERCENT);
-
-	if (!cnt)
-		return 0;
-
-	nper = cnt * (MAX_PERCENT - percl);
-	if (s->lat[LAT_ORDER_OTHER] * MAX_PERCENT >= nper)
-		return scnprintf(buf, sz, "%u%% > %llums", MAX_PERCENT - percl,
-				 lat_oreder_list[LAT_ORDER_OTHER - 1] / 1000);
-
-	for(i = LAT_ORDER_OTHER - 1; i >= 0; i--) {
-		if (s->lat[i] * MAX_PERCENT >= nper)
-			return scnprintf(buf, sz, "%u%% <= %llums", percl,
-					 lat_oreder_list[i] / 1000);
-	}
-	BUG();
-	return 0;
-}
-
-#define LAT_LINE_MAX 27
-static void latency_percl_print(struct fuse_lat_stat *s, struct seq_file *m)
-{
-	int n, icnt = LAT_LINE_MAX;
-	char buf[LAT_LINE_MAX];
-
-	seq_printf(m, "(");
-	n = latency_npercl_format(s, 95, buf, sizeof(buf) - 1);
-	if (n) {
-		seq_printf(m,"%.*s, ", n, buf);
-		icnt -= n;
-		icnt -= 2;
-	}
-	n = latency_npercl_format(s, 99, buf, sizeof(buf) - 1);
-	if (n) {
-		seq_printf(m, "%.*s", n, buf);
-		icnt -= n;
-	}
-
-	WARN_ON(icnt < 0);
-	seq_printf(m, ")%*s", max(icnt, 0), "");
-}
-
-static void fuse_kio_fstat_lat_itr(struct fuse_file *ff,
-				   struct pcs_dentry_info *di, void *ctx)
-{
-	struct seq_file *m = ctx;
-	struct fuse_io_cnt *fstat = &di->stat;
-	umode_t mode = di->inode->inode.i_mode;
-	abs_time_t now = jiffies;
-	struct fuse_lat_cnt io_lat;
-	struct fuse_lat_cnt net_lat;
-	struct fuse_lat_cnt pending_lat;
-
-	seq_printf(m, "%s%s %7u/%-7llu %-5u",
-		   mode & S_IRUGO ? "r": "", mode & S_IWUGO ? "w": "",
-		   atomic_read(&ff->count), (now - di->stat.created_ts) / 1000, 0);
-
-	spin_lock(&fstat->lock);
-	io_lat = fstat->io_lat;
-	net_lat = fstat->net_lat;
-	pending_lat = fstat->pending_lat;
-	spin_unlock(&fstat->lock);
-
-	latency_percl_print(&net_lat.last, m);
-	latency_percl_print(&net_lat.glob, m);
-
-	latency_percl_print(&io_lat.last, m);
-	latency_percl_print(&io_lat.glob, m);
-
-	latency_percl_print(&pending_lat.last, m);
-	latency_percl_print(&pending_lat.glob, m);
-
-	seq_dentry(m, ff->ff_dentry, "");
-	seq_putc(m, '\n');
-}
-
-static int pcs_fuse_fstat_lat_show(struct seq_file *m, void *v)
-{
-	struct inode *inode = m->private;
-	struct pcs_fuse_stat *stat;
-	struct fuse_conn *fc;
-
-	if (!inode)
-		return 0;
-
-	mutex_lock(&fuse_mutex);
-	stat = inode->i_private;
-	if (!stat) {
-		mutex_unlock(&fuse_mutex);
-		return 0;
-	}
-
-	seq_printf(m, "# rw open/age inactive  net_lat\t\t\t     net_lat_global\t\t  io_lat\t\t       io_lat_global\t\t    plat\t\t\t plat_global\t\t      path\n");
-
-	fc = container_of(stat, struct pcs_fuse_cluster, cc.stat)->fc;
-	if (fc) {
-		spin_lock(&fc->lock);
-		pcs_kio_file_list(fc, fuse_kio_fstat_lat_itr, m);
-		spin_unlock(&fc->lock);
-	}
-	mutex_unlock(&fuse_mutex);
-
-
-	return 0;
-}
-
-static int pcs_fuse_fstat_lat_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, pcs_fuse_fstat_lat_show, inode);
-}
-
-static const struct file_operations pcs_fuse_fstat_lat_ops = {
-	.owner   = THIS_MODULE,
-	.open    = pcs_fuse_fstat_lat_open,
-	.read    = seq_read,
-	.llseek	 = seq_lseek,
-	.release = single_release,
-};
-
 static void fuse_fstat_up_itr(struct fuse_file *ff, struct pcs_dentry_info *di,
 			      void *ctx)
 {
 	struct fuse_io_cnt *fstat = &di->stat;
 
 	spin_lock(&fstat->lock);
-	fuse_latency_cnt_up(&fstat->io_lat);
-	fuse_latency_cnt_up(&fstat->net_lat);
-	fuse_latency_cnt_up(&fstat->pending_lat);
-
 	fuse_val_cnt_up(&fstat->io.read_bytes);
 	fuse_val_cnt_up(&fstat->io.write_bytes);
 	fuse_val_cnt_up(&fstat->io.flush_cnt);
@@ -484,8 +316,7 @@ struct fuse_val_cnt *req_stat_entry(struct pcs_fuse_io_stat *io, u32 type)
 	return NULL;
 }
 
-void pcs_fuse_stat_io_count(struct pcs_int_request *ireq, struct pcs_msg *resp,
-			    u32 io_lat, u32 net_lat)
+void pcs_fuse_stat_io_count(struct pcs_int_request *ireq, struct pcs_msg *resp)
 {
 	struct pcs_cluster_core *cc = ireq->cc;
 	struct pcs_fuse_stat *stat = &cc->stat;
@@ -502,13 +333,7 @@ void pcs_fuse_stat_io_count(struct pcs_int_request *ireq, struct pcs_msg *resp,
 
 	se = req_stat_entry(&fstat->io, h->hdr.type);
 	if (likely(se)) {
-		u32 pending_lat = ktime_to_us(ktime_sub(ireq->ts_sent, ireq->ts));
-
 		spin_lock(&fstat->lock);
-		fuse_latency_count(&fstat->pending_lat, pending_lat);
-		fuse_latency_count(&fstat->io_lat, io_lat);
-		fuse_latency_count(&fstat->net_lat, net_lat);
-
 		fuse_val_stat_update(&se->curr, size);
 		spin_unlock(&fstat->lock);
 	}
@@ -611,10 +436,6 @@ void pcs_fuse_stat_init(struct pcs_fuse_stat *stat)
 	stat->fstat = fuse_kio_add_dentry(stat->kio_stat, fc, "fstat",
 					  S_IFREG | S_IRUSR, 1, NULL,
 					  &pcs_fuse_fstat_ops, stat);
-
-	stat->fstat_lat = fuse_kio_add_dentry(stat->kio_stat, fc, "fstat_lat",
-					      S_IFREG | S_IRUSR, 1, NULL,
-					      &pcs_fuse_fstat_lat_ops, stat);
 out:
 	mutex_unlock(&fuse_mutex);
 }
@@ -632,8 +453,6 @@ void pcs_fuse_stat_fini(struct pcs_fuse_stat *stat)
 			fuse_kio_rm_dentry(stat->requests);
 		if (stat->fstat)
 			fuse_kio_rm_dentry(stat->fstat);
-		if (stat->fstat_lat)
-			fuse_kio_rm_dentry(stat->fstat_lat);
 		fuse_kio_rm_dentry(stat->kio_stat);
 	}
 	mutex_unlock(&fuse_mutex);
