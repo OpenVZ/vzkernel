@@ -297,6 +297,11 @@ static void intel_pmu_refresh(struct kvm_vcpu *vcpu)
 	pmu->version = 0;
 	pmu->reserved_bits = 0xffffffff00200000ull;
 
+	entry = kvm_find_cpuid_entry(vcpu, 1, 0);
+	if (entry)
+		intel_pmu_lbr_fill(&pmu->lbr,
+			x86_family(entry->eax), x86_model(entry->eax));
+
 	entry = kvm_find_cpuid_entry(vcpu, 0xa, 0);
 	if (!entry)
 		return;
@@ -332,11 +337,6 @@ static void intel_pmu_refresh(struct kvm_vcpu *vcpu)
 	    (boot_cpu_has(X86_FEATURE_HLE) || boot_cpu_has(X86_FEATURE_RTM)) &&
 	    (entry->ebx & (X86_FEATURE_HLE|X86_FEATURE_RTM)))
 		pmu->reserved_bits ^= HSW_IN_TX|HSW_IN_TX_CHECKPOINTED;
-
-	entry = kvm_find_cpuid_entry(vcpu, 1, 0);
-	if (entry)
-		intel_pmu_lbr_fill(&pmu->lbr,
-			x86_family(entry->eax), x86_model(entry->eax));
 }
 
 static void intel_pmu_init(struct kvm_vcpu *vcpu)
