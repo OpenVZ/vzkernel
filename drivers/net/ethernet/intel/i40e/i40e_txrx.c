@@ -3564,6 +3564,23 @@ static int i40e_xmit_xdp_ring(struct xdp_frame *xdpf,
 	return I40E_XDP_TX;
 }
 
+
+static int i40e_skb_linearize(struct sk_buff *skb)
+{
+	int eat = (skb->tail + skb->data_len) - skb->end;
+
+	/* workaround to avoid allocation without __GFP_ORDER_NOWARN inside
+	 * __pskb_pull_tail()
+	 */
+	if (eat > 0 || skb_cloned(skb)) {
+		if (pskb_expand_head(skb, 0, eat > 0 ? eat : 0,
+				     GFP_ATOMIC | __GFP_ORDER_NOWARN))
+			return -ENOMEM;
+	}
+
+	return __skb_linearize(skb);
+}
+
 /**
  * i40e_xmit_frame_ring - Sends buffer on Tx ring
  * @skb:     send buffer
@@ -3592,7 +3609,7 @@ static netdev_tx_t i40e_xmit_frame_ring(struct sk_buff *skb,
 
 	count = i40e_xmit_descriptor_count(skb);
 	if (i40e_chk_linearize(skb, count)) {
-		if (__skb_linearize(skb)) {
+		if (i40e_skb_linearize(skb)) {
 			dev_kfree_skb_any(skb);
 			return NETDEV_TX_OK;
 		}
