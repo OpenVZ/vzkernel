@@ -18,8 +18,7 @@
  * This is non-NULL when the single instance of the control filesystem
  * exists.  Protected by fuse_mutex
  */
-struct super_block *fuse_control_sb;
-EXPORT_SYMBOL_GPL(fuse_control_sb);
+static struct super_block *fuse_control_sb;
 
 static struct fuse_conn *fuse_ctl_file_conn_get(struct file *file)
 {
