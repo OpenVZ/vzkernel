@@ -77,7 +77,6 @@ struct pcs_cs *pcs_cs_alloc(struct pcs_cs_set *css,
 	}
 	cs->rpc->private = cs;
 	INIT_LIST_HEAD(&cs->map_list);
-	spin_lock_init(&cs->stat.lock);
 	return cs;
 }
 
@@ -297,7 +296,6 @@ void cs_log_io_times(struct pcs_int_request * ireq, struct pcs_msg * resp, unsig
 
 void pcs_cs_update_stat(struct pcs_cs *cs, u32 iolat, u32 netlat, int op_type)
 {
-	spin_lock(&cs->stat.lock);
 	pcs_perfcounter_stat_update(&cs->stat.iolat, iolat);
 	pcs_perfcounter_stat_update(&cs->stat.netlat, netlat);
 	switch (op_type) {
@@ -312,7 +310,6 @@ void pcs_cs_update_stat(struct pcs_cs *cs, u32 iolat, u32 netlat, int op_type)
 		cs->stat.sync_ops_rate.total++;
 		break;
 	}
-	spin_unlock(&cs->stat.lock);
 }
 
 static void cs_response_done(struct pcs_msg *msg)
