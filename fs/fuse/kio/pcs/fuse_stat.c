@@ -133,71 +133,6 @@ static inline unsigned long long fuse_val_cnt_max(struct fuse_val_cnt const* c)
 #define CNT_MIN(c)    fuse_val_cnt_min(&(c))
 #define CNT_MAX(c)    fuse_val_cnt_max(&(c))
 
-static int do_show_cs_stats(struct pcs_cs *cs, void *ctx)
-{
-	struct seq_file *m = ctx;
-	int rpc_state = cs->rpc ? cs->rpc->state : PCS_RPC_UNCONN;
-	unsigned int in_flight_avg = 0; /* TODO */
-	struct pcs_perf_stat_cnt iolat, netlat;
-	struct pcs_perf_rate_cnt read_ops_rate, write_ops_rate, sync_ops_rate;
-
-	spin_lock(&cs->stat.lock);
-	iolat = cs->stat.iolat;
-	netlat = cs->stat.netlat;
-	read_ops_rate = cs->stat.read_ops_rate;
-	write_ops_rate = cs->stat.write_ops_rate;
-	sync_ops_rate = cs->stat.sync_ops_rate;
-	spin_unlock(&cs->stat.lock);
-
-	seq_printf(m, "%-10llu %d=%-8s %-10llu %-10llu %-10llu %-12llu %-12llu %-12llu %-12llu %-10u\n",
-		NODE_ARGS(cs->id), rpc_state, pcs_rpc_state_name(rpc_state),
-		read_ops_rate.rate / STAT_TIMER_PERIOD,
-		write_ops_rate.rate / STAT_TIMER_PERIOD,
-		sync_ops_rate.rate / STAT_TIMER_PERIOD,
-		netlat.avg, pcs_perfcounter_stat_max(&netlat),
-		iolat.avg, pcs_perfcounter_stat_max(&iolat),
-		in_flight_avg);
-	return 0;
-}
-
-static int pcs_fuse_cs_stats_show(struct seq_file *m, void *v)
-{
-	struct inode *inode = m->private;
-	struct pcs_cluster_core *cc;
-	struct pcs_fuse_stat *stat;
-
-	if (!inode)
-		return 0;
-
-	mutex_lock(&fuse_mutex);
-	stat = inode->i_private;
-	if (!stat) {
-		mutex_unlock(&fuse_mutex);
-		return 0;
-	}
-
-	seq_printf(m, "# csid     rpc        rd_ops     wr_ops     sync_ops   net_lat_avg  net_lat_max  io_lat_avg   io_lat_max   avg_in_flight\n");
-
-	cc = container_of(stat, struct pcs_cluster_core, stat);
-	pcs_cs_for_each_entry(&cc->css, do_show_cs_stats, m);
-
-	mutex_unlock(&fuse_mutex);
-
-	return 0;
-}
-
-static int pcs_fuse_cs_stats_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, pcs_fuse_cs_stats_show, inode);
-}
-
-static const struct file_operations pcs_fuse_cs_stats_ops = {
-	.owner   = THIS_MODULE,
-	.open    = pcs_fuse_cs_stats_open,
-	.read    = seq_read,
-	.llseek	 = seq_lseek,
-	.release = single_release,
-};
 
 #define MAX_PERCENT 100
 static int latency_npercl_format(struct fuse_lat_stat *s, u8 percl, char *buf,
@@ -593,8 +528,6 @@ static void pcs_fuse_stat_work(struct work_struct *w)
 
 	pcs_fuse_stat_files_up(cc);
 
-	pcs_cs_set_stat_up(&cc->css);
-
 	mod_delayed_work(cc->wq, &cc->stat.work, STAT_TIMER_PERIOD * HZ);
 }
 
@@ -682,10 +615,6 @@ void pcs_fuse_stat_init(struct pcs_fuse_stat *stat)
 	stat->fstat_lat = fuse_kio_add_dentry(stat->kio_stat, fc, "fstat_lat",
 					      S_IFREG | S_IRUSR, 1, NULL,
 					      &pcs_fuse_fstat_lat_ops, stat);
-
-	stat->cs_stats = fuse_kio_add_dentry(stat->kio_stat, fc, "cs_stats",
-					     S_IFREG | S_IRUSR, 1, NULL,
-					     &pcs_fuse_cs_stats_ops, stat);
 out:
 	mutex_unlock(&fuse_mutex);
 }
@@ -705,8 +634,6 @@ void pcs_fuse_stat_fini(struct pcs_fuse_stat *stat)
 			fuse_kio_rm_dentry(stat->fstat);
 		if (stat->fstat_lat)
 			fuse_kio_rm_dentry(stat->fstat_lat);
-		if (stat->cs_stats)
-			fuse_kio_rm_dentry(stat->cs_stats);
 		fuse_kio_rm_dentry(stat->kio_stat);
 	}
 	mutex_unlock(&fuse_mutex);
