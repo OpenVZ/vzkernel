@@ -909,17 +909,6 @@ unsigned int cs_get_avg_in_flight(struct pcs_cs *cs)
 	return cs->in_flight_avg;
 }
 
-unsigned int cs_get_avg_in_flight_lock(struct pcs_cs *cs)
-{
-	unsigned int in_flight_avg;
-
-	spin_lock(&cs->lock);
-	in_flight_avg = cs_get_avg_in_flight(cs);
-	spin_unlock(&cs->lock);
-
-	return in_flight_avg;
-}
-
 void cs_increment_in_flight(struct pcs_cs *cs, unsigned int to_add)
 {
 	unsigned int avg;

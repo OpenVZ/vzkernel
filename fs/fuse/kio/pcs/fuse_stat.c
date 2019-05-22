@@ -137,7 +137,7 @@ static int do_show_cs_stats(struct pcs_cs *cs, void *ctx)
 {
 	struct seq_file *m = ctx;
 	int rpc_state = cs->rpc ? cs->rpc->state : PCS_RPC_UNCONN;
-	unsigned int in_flight_avg = cs_get_avg_in_flight_lock(cs);
+	unsigned int in_flight_avg = 0; /* TODO */
 	struct pcs_perf_stat_cnt iolat, netlat;
 	struct pcs_perf_rate_cnt read_ops_rate, write_ops_rate, sync_ops_rate;
 

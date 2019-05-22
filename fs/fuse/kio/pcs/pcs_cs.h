@@ -146,7 +146,6 @@ void cs_increment_in_flight(struct pcs_cs *cs, unsigned int to_add);
 void cs_decrement_in_flight(struct pcs_cs *cs, unsigned int to_dec);
 void cs_cwnd_use_or_lose(struct pcs_cs *cs);
 unsigned int cs_get_avg_in_flight(struct pcs_cs *cs);
-unsigned int cs_get_avg_in_flight_lock(struct pcs_cs *cs);
 
 void pcs_csset_init(struct pcs_cs_set *css);
 void pcs_csset_fini(struct pcs_cs_set *css);
