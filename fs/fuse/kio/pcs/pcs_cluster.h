@@ -18,7 +18,7 @@ struct pcs_fuse_exec_ctx {
 		struct bio_vec inline_bvec[FUSE_MAX_PAGES_PER_REQ];
 	} io;
 	struct {
-		atomic_t		retry_cnt;
+		unsigned		retry_cnt;
 		pcs_error_t		last_err;
 	} ctl;
 };
@@ -28,16 +28,6 @@ struct pcs_fuse_req {
 	void (*end)(struct fuse_conn *, struct fuse_req *);
 	struct pcs_fuse_exec_ctx exec;	/* Zero initialized context */
 };
-
-static inline void ireq_retry_inc(struct pcs_int_request *ireq)
-{
-	if (likely(!ireq->completion_data.parent && ireq->completion_data.priv)) {
-		struct pcs_fuse_req *r = ireq->completion_data.priv;
-		atomic_inc(&r->exec.ctl.retry_cnt);
-		return;
-	}
-	WARN_ON_ONCE(1);
-}
 
 struct pcs_fuse_cluster {
 	struct pcs_cluster_core cc;
