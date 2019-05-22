@@ -3,9 +3,6 @@
 
 #define STAT_TIMER_PERIOD 5
 
-struct pcs_msg;
-struct pcs_int_request;
-
 struct fuse_val_stat {
 	u64 events;
 	u64 val_total;
@@ -33,14 +30,6 @@ struct pcs_fuse_stat {
 	struct dentry *kio_stat;
 	struct dentry *iostat;
 	struct dentry *requests;
-	struct dentry *fstat;
-};
-
-struct fuse_io_cnt {
-	struct pcs_fuse_io_stat io;
-
-	abs_time_t created_ts;
-	spinlock_t lock;
 };
 
 void pcs_fuse_stat_init(struct pcs_fuse_stat *stat);
