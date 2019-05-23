@@ -4535,6 +4535,22 @@ static int ploop_balloon_ioc(struct ploop_device *plo, unsigned long arg)
 		return -EINVAL;
 
 	switch (plo->maintenance_type) {
+	case PLOOP_MNTN_DISCARD:
+		if (!test_bit(PLOOP_S_DISCARD_LOADED, &plo->state))
+			break;
+
+		ploop_quiesce(plo);
+		clear_bit(PLOOP_S_DISCARD_LOADED, &plo->state);
+		plo->maintenance_type = PLOOP_MNTN_FBLOADED;
+		ploop_fb_lost_range_init(plo->fbd, delta->io.alloc_head);
+		ploop_relax(plo);
+		/* fall through */
+	case PLOOP_MNTN_FBLOADED:
+	case PLOOP_MNTN_RELOC:
+		BUG_ON (!plo->fbd);
+		ctl.alloc_head = ploop_fb_get_alloc_head(plo->fbd);
+		ctl.level      = ploop_fb_get_freezed_level(plo->fbd);
+		break;
 	case PLOOP_MNTN_OFF:
 		if (ctl.inflate) {
 			if (delta->ops->id != PLOOP_FMT_PLOOP1)
