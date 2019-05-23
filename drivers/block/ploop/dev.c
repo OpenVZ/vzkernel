@@ -4534,6 +4534,35 @@ static int ploop_balloon_ioc(struct ploop_device *plo, unsigned long arg)
 	if (ctl.inflate && ctl.keep_intact)
 		return -EINVAL;
 
+	/*
+	 * Userspace may use this IOC to get current maintaince mode
+	 * without changing it, or to change it. The ctl.keep_intact
+	 * modifier is used to differ, what the userspace wants.
+	 *
+	 * The problem was that:
+	 * 1)userspace sometimes passes the modifier set to 1, when
+	 *   the state *must* be changed;
+	 * 2)kernel completely ignores the modifier in case of device
+	 *   is in PLOOP_MNTN_DISCARD, PLOOP_MNTN_FBLOADED, PLOOP_MNTN_RELOC
+	 *   or PLOOP_MNTN_OFF mode.
+	 *
+	 * So, the harmless R/O command "ploop-balloon state <dev>"
+	 * made in parallel with "pcompact" switches the device in
+	 * unexpected maintaince mode, and "pcompact" lose its logic
+	 * and hangs.
+	 *
+	 * It's not possible to fix the problem in one of userspace
+	 * or kernel, since both of them suck. So, we introduce new
+	 * PLOOP_KEEP_INTACK_ALWAYS for newer pcompact to never change
+	 * current state and to fix the problem. Userspace will use
+	 * it. Old kernel and new userspace will work OK together,
+	 * since there is boolean !0 comparison in the kernel.
+	 *
+	 * Old code may be seen at least in ploop 7.0.140.2.
+	 */
+	if (ctl.keep_intact == PLOOP_KEEP_INTACK_ALWAYS)
+		goto mntn_type;
+
 	switch (plo->maintenance_type) {
 	case PLOOP_MNTN_DISCARD:
 		if (!test_bit(PLOOP_S_DISCARD_LOADED, &plo->state))
@@ -4568,6 +4597,8 @@ static int ploop_balloon_ioc(struct ploop_device *plo, unsigned long arg)
 			ploop_relax(plo);
 		}
 	}
+
+mntn_type:
 	ctl.mntn_type = plo->maintenance_type;
 
 	return copy_to_user((void*)arg, &ctl, sizeof(ctl));
