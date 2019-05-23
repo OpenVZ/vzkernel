@@ -245,6 +245,9 @@ enum {
 	PLOOP_MNTN_PUSH_BACKUP, /* push backup is in progress */
 };
 
+#define PLOOP_KEEP_INTACK_OLD		1
+#define PLOOP_KEEP_INTACK_ALWAYS	2
+
 /*
  * This define should be in sync with enum above.
  * NB: PLOOP_MNTN_TRACK is handled separately because
