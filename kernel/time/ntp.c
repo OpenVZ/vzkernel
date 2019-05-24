@@ -17,6 +17,8 @@
 #include <linux/module.h>
 #include <linux/rtc.h>
 
+#include <uapi/linux/vzcalluser.h>
+
 #include "tick-internal.h"
 #include "ntp_internal.h"
 
@@ -642,11 +644,12 @@ int ntp_validate_timex(struct timex *txc)
 		if (!(txc->modes & ADJ_OFFSET_SINGLESHOT))
 			return -EINVAL;
 		if (!(txc->modes & ADJ_OFFSET_READONLY) &&
-		    !capable(CAP_SYS_TIME))
+		    !feature_capable(VE_FEATURE_TIME, CAP_SYS_TIME))
 			return -EPERM;
 	} else {
 		/* In order to modify anything, you gotta be super-user! */
-		 if (txc->modes && !capable(CAP_SYS_TIME))
+		 if (txc->modes &&
+		     !feature_capable(VE_FEATURE_TIME, CAP_SYS_TIME))
 			return -EPERM;
 		/*
 		 * if the quartz is off by more than 10% then
@@ -658,7 +661,8 @@ int ntp_validate_timex(struct timex *txc)
 			return -EINVAL;
 	}
 
-	if ((txc->modes & ADJ_SETOFFSET) && (!capable(CAP_SYS_TIME)))
+	if ((txc->modes & ADJ_SETOFFSET) &&
+	    (!feature_capable(VE_FEATURE_TIME, CAP_SYS_TIME)))
 		return -EPERM;
 
 	return 0;
