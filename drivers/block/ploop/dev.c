@@ -2459,7 +2459,8 @@ delta_io:
 			if (delta == top_delta) {
 				/* Block exists in top delta. Good. */
 				if (plo->maintenance_type == PLOOP_MNTN_GROW ||
-				    plo->maintenance_type == PLOOP_MNTN_RELOC) {
+				    plo->maintenance_type == PLOOP_MNTN_RELOC ||
+				    preq->req_rw & REQ_DISCARD) {
 					spin_lock_irq(&plo->lock);
 					ploop_add_lockout(preq, 0);
 					spin_unlock_irq(&plo->lock);
