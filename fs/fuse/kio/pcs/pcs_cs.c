@@ -59,35 +59,17 @@ struct pcs_cs *pcs_cs_alloc(struct pcs_cs_set *css,
 	INIT_LIST_HEAD(&cs->lru_link);
 	spin_lock_init(&cs->lock);
 	cs->css = css;
-	cs->in_flight = 0;
 	cs->cwnd = PCS_CS_INIT_CWND;
 	cs->eff_cwnd = PCS_CS_INIT_CWND;
 	cs->ssthresh = PCS_CS_INIT_CWND;
-	cs->cwr_state = 0;
-	atomic_set(&cs->latency_avg, 0);
-	cs->net_latency_avg = 0;
-	cs->last_latency = 0;
-	cs->latency_stamp = 0;
-	cs->net_latency_stamp = 0;
-	cs->idle_stamp = 0;
-	cs->in_flight_hwm = 0;
-	cs->in_flight_hwm_stamp = 0;
+
 	pcs_cs_init_cong_queue(cs);
 	pcs_cs_init_active_list(cs);
 
 	cs->io_prio = -1;
-	cs->mds_flags = 0;
-	cs->io_prio_stamp = 0;
 
 	INIT_LIST_HEAD(&cs->flow_lru);
-	cs->nflows = 0;
-
-	cs->state = 0;
-	cs->use_count = 0;
-	cs->is_dead = 0;
 	INIT_LIST_HEAD(&cs->bl_link);
-
-	cs->addr_serno = 0;
 
 	cs->rpc = pcs_rpc_create(&cc->eng, &cn_rpc_params, &cn_rpc_ops);
 	if (cs->rpc == NULL) {
@@ -95,9 +77,7 @@ struct pcs_cs *pcs_cs_alloc(struct pcs_cs_set *css,
 		return NULL;
 	}
 	cs->rpc->private = cs;
-	cs->nmaps = 0;
 	INIT_LIST_HEAD(&cs->map_list);
-	memset(&cs->stat, 0, sizeof(cs->stat));
 	return cs;
 }
 
