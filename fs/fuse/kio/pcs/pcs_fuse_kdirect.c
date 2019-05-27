@@ -954,7 +954,7 @@ out:
 }
 
 static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
-			    struct fuse_file *ff, bool async, bool lk)
+			    struct fuse_file *ff)
 {
 	struct pcs_fuse_req *r = pcs_req_from_fuse(req);
 	struct fuse_args *args = req->args;
@@ -1048,11 +1048,7 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
 error:
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", req, req->in.h.opcode, req->out.h.error);
 
-	if (lk)
-		spin_unlock(&pfc->fc->bg_lock);
 	fuse_request_end(pfc->fc, req);
-	if (lk)
-		spin_lock(&pfc->fc->bg_lock);
 	return;
 
 submit:
@@ -1060,11 +1056,7 @@ submit:
 		req->out.h.error = -EIO;
 		goto error;
 	}
-
-	if (async)
-		pcs_cc_submit(ireq->cc, ireq);
-	else
-		ireq_process(ireq);
+	ireq_process(ireq);
 }
 
 static void kpcs_setattr_end(struct fuse_conn *fc, struct fuse_args *args, int error)
@@ -1128,7 +1120,7 @@ static void _pcs_shrink_end(struct fuse_conn *fc, struct fuse_args *args, int er
 
 		TRACE("resubmit %p\n", &r->req);
 		list_del_init(&ireq->list);
-		pcs_fuse_submit(pfc, &r->req, fuse_get_req_ff(&r->req), true, false);
+		pcs_fuse_submit(pfc, &r->req, fuse_get_req_ff(&r->req));
 	}
 }
 
@@ -1244,63 +1236,46 @@ static int kpcs_req_classify(struct fuse_conn* fc, struct fuse_req *req,
 		return 1;
 
 	BUG_ON(!pfc);
+	DTRACE("Classify req:%p op:%d end:%p bg:%d lk:%d\n", req, req->in.h.opcode,
+							  req->args->end, bg, lk);
+	ret = pcs_kio_classify_req(fc, req, lk);
+	if (likely(!ret))
+		return 0;
+
+	if (ret < 0) {
+		if (!bg)
+			refcount_inc(&req->count);
+		__clear_bit(FR_PENDING, &req->flags);
+		req->out.h.error = ret;
+		if (lk)
+			spin_unlock(&fc->bg_lock);
+		fuse_request_end(fc, req);
+		if (lk)
+			spin_lock(&fc->bg_lock);
+		return ret;
+	}
+	return 1;
+}
+
+static void kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req,
+			  struct fuse_file *ff, bool bg)
+{
+	struct pcs_fuse_cluster *pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
+
 	/* At this point request can not belongs to any list
 	 * so we can avoid grab fc->lock here at all.
 	 */
 	BUG_ON(!list_empty(&req->list));
 
-	DTRACE("Classify req:%p op:%d end:%p bg:%d lk:%d\n", req, req->in.h.opcode,
-							  req->args->end, bg, lk);
-	ret = pcs_kio_classify_req(fc, req, lk);
-	if (ret) {
-		if (ret < 0) {
-			if (!bg)
-				refcount_inc(&req->count);
-			__clear_bit(FR_PENDING, &req->flags);
-			req->out.h.error = ret;
-			if (lk)
-				spin_unlock(&fc->bg_lock);
-			fuse_request_end(fc, req);
-			if (lk)
-				spin_lock(&fc->bg_lock);
-			return ret;
-		}
-		return 1;
-	}
-
-	if (!lk) {
-		spin_lock(&fc->bg_lock);
-		if (fc->num_background + 1 >= fc->max_background ||
-		    !fc->connected) {
-			spin_unlock(&fc->bg_lock);
-			return 1;
-		}
-		fc->num_background++;
-		fc->active_background++;
-
-		if (fc->num_background == fc->congestion_threshold && fc->sb) {
-			set_bdi_congested(fc->sb->s_bdi, BLK_RW_SYNC);
-			set_bdi_congested(fc->sb->s_bdi, BLK_RW_ASYNC);
-		}
-		spin_unlock(&fc->bg_lock);
-	}
-       return 0;
-}
-
-static void kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req,
-			  struct fuse_file *ff, bool bg, bool lk)
-{
-	struct pcs_fuse_cluster *pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
-
-	TRACE("Send req:%p op:%d end:%p bg:%d lk:%d\n",
-			req, req->in.h.opcode, req->args->end, bg, lk);
+	TRACE("Send req:%p op:%d end:%p bg:%d\n",
+		req, req->in.h.opcode, req->args->end, bg);
 
 	/* request_end below will do fuse_put_request() */
 	if (!bg)
 		refcount_inc(&req->count);
 	__clear_bit(FR_PENDING, &req->flags);
 
-	pcs_fuse_submit(pfc, req, ff ? : fuse_get_req_ff(req), lk, lk);
+	pcs_fuse_submit(pfc, req, ff ? : fuse_get_req_ff(req));
 	if (!bg)
 		wait_event(req->waitq,
 			   test_bit(FR_FINISHED, &req->flags) && !req->args->end);
