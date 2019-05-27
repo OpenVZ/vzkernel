@@ -1219,8 +1219,8 @@ fail:
 	return -EINVAL;
 }
 
-static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req,
-			 struct fuse_file *ff, bool bg, bool lk)
+static int kpcs_req_classify(struct fuse_conn* fc, struct fuse_req *req,
+			     bool bg, bool lk)
 {
 	struct pcs_fuse_cluster *pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
 	int ret;
@@ -1229,14 +1229,13 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req,
 		return 1;
 
 	BUG_ON(!pfc);
-	/* HYPOTHESIS #1
-	 * IFAIU at this point request can not belongs to any list
-	 * so I cant avoid grab fc->lock here at all
+	/* At this point request can not belongs to any list
+	 * so we can avoid grab fc->lock here at all.
 	 */
 	BUG_ON(!list_empty(&req->list));
 
-	TRACE(" Enter req:%p op:%d end:%p bg:%d lk:%d\n", req, req->in.h.opcode, req->end, bg, lk);
-
+	DTRACE("Classify req:%p op:%d end:%p bg:%d lk:%d\n", req, req->in.h.opcode,
+							  req->end, bg, lk);
 	ret = pcs_kio_classify_req(fc, req, lk);
 	if (ret) {
 		if (ret < 0) {
@@ -1249,15 +1248,12 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req,
 			request_end(fc, req);
 			if (lk)
 				spin_lock(&fc->bg_lock);
-			return 0;
+			return ret;
 		}
 		return 1;
 	}
 
-	/* request_end below will do fuse_put_request() */
-	if (!bg)
-		atomic_inc(&req->count);
-	else if (!lk) {
+	if (!lk) {
 		spin_lock(&fc->bg_lock);
 		if (fc->num_background + 1 >= fc->max_background ||
 		    !fc->connected) {
@@ -1274,14 +1270,27 @@ static int kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req,
 		}
 		spin_unlock(&fc->bg_lock);
 	}
+       return 0;
+}
+
+static void kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req,
+			  struct fuse_file *ff, bool bg, bool lk)
+{
+       struct pcs_fuse_cluster *pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
+
+       TRACE("Send req:%p op:%d end:%p bg:%d lk:%d\n",
+               req, req->in.h.opcode, req->end, bg, lk);
+
+       /* request_end below will do fuse_put_request() */
+       if (!bg)
+               atomic_inc(&req->count);
 	__clear_bit(FR_PENDING, &req->flags);
 
 	pcs_fuse_submit(pfc, req, ff ? : req->ff, lk, lk);
 	if (!bg)
 		wait_event(req->waitq,
 			   test_bit(FR_FINISHED, &req->flags) && !req->end);
-
-	return 0;
+	return;
 }
 
 static void fuse_trace_free(struct fuse_ktrace *tr)
@@ -1592,6 +1601,7 @@ static struct fuse_kio_ops kio_pcs_ops = {
 	.conn_fini	= kpcs_conn_fini,
 	.conn_abort	= kpcs_conn_abort,
 	.req_alloc	= kpcs_req_alloc,
+	.req_classify	= kpcs_req_classify,
 	.req_send	= kpcs_req_send,
 	.file_open	= kpcs_file_open,
 	.inode_release	= kpcs_inode_release,
