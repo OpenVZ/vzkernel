@@ -536,7 +536,7 @@ struct fuse_kio_ops {
 	int (*req_classify)(struct fuse_conn *fc, struct fuse_req *req, bool bg,
 			    bool locked);
 	void (*req_send)(struct fuse_conn *fc, struct fuse_req *req,
-			 struct fuse_file *ff, bool bg, bool locked);
+			 struct fuse_file *ff, bool bg);
 
 	/* Inode scope hooks */
 	int  (*file_open)(struct fuse_conn *fc, struct file *file,
