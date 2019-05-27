@@ -276,9 +276,14 @@ static void flush_bg_queue(struct fuse_conn *fc, struct fuse_iqueue *fiq)
 		list_del_init(&req->list);
 		fc->active_background++;
 
-		if (fc->kio.op && !fc->kio.op->req_send(fc, req, NULL, true, true))
-			continue;
-
+		if (fc->kio.op) {
+			int ret = fc->kio.op->req_classify(req, true, true);
+			if (likely(!ret)) {
+				fc->kio.op->req_send(fc, req, NULL, true, true);
+				continue;
+			} else if (ret < 0)
+				continue;
+		}
 		spin_lock(&fiq->lock);
 		req->in.h.unique = fuse_get_unique(fiq);
 		queue_request_and_unlock(fiq, req);
@@ -442,8 +447,13 @@ static void __fuse_request_send(struct fuse_req *req, struct fuse_file *ff)
 
 	BUG_ON(test_bit(FR_BACKGROUND, &req->flags));
 
-	if (fc->kio.op && !fc->kio.op->req_send(req, ff, false, false))
-		return;
+	if (fc->kio.op) {
+		int ret = fc->kio.op->req_classify(req, false, false);
+		if (likely(!ret))
+			return fc->kio.op->req_send(req, ff, false, false);
+		else if (ret < 0)
+			return;
+	}
 
 	spin_lock(&fiq->lock);
 	if (!fiq->connected) {
