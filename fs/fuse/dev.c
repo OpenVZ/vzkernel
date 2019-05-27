@@ -407,9 +407,14 @@ static void flush_bg_queue(struct fuse_conn *fc, struct fuse_iqueue *fiq)
 		list_del_init(&req->list);
 		fc->active_background++;
 
-		if (fc->kio.op && !fc->kio.op->req_send(fc, req, NULL, true, true))
-			continue;
-
+		if (fc->kio.op) {
+			int ret = fc->kio.op->req_classify(fc, req, true, true);
+			if (likely(!ret)) {
+				fc->kio.op->req_send(fc, req, NULL, true, true);
+				continue;
+			} else if (ret < 0)
+				continue;
+		}
 		spin_lock(&fiq->waitq.lock);
 		req->in.h.unique = fuse_get_unique(fiq);
 		queue_request(fiq, req);
@@ -561,8 +566,13 @@ static void __fuse_request_send(struct fuse_conn *fc, struct fuse_req *req,
 
 	BUG_ON(test_bit(FR_BACKGROUND, &req->flags));
 
-	if (fc->kio.op && !fc->kio.op->req_send(fc, req, ff, false, false))
-		return;
+	if (fc->kio.op) {
+		int ret = fc->kio.op->req_classify(fc, req, false, false);
+		if (likely(!ret))
+			return fc->kio.op->req_send(fc, req, ff, false, false);
+		else if (ret < 0)
+			return;
+	}
 
 	spin_lock(&fiq->waitq.lock);
 	if (!fiq->connected) {
@@ -653,8 +663,13 @@ void fuse_request_send_background(struct fuse_conn *fc, struct fuse_req *req)
 {
 	WARN_ON(!req->end);
 
-	if (fc->kio.op && !fc->kio.op->req_send(fc, req, NULL, true, false))
-		return;
+	if (fc->kio.op) {
+		int ret = fc->kio.op->req_classify(fc, req, true, false);
+		if (likely(!ret))
+			return fc->kio.op->req_send(fc, req, NULL, true, false);
+		else if (ret < 0)
+			return;
+	}
 
 	if (!fuse_request_queue_background(fc, req)) {
 		if (!req->out.h.error)
