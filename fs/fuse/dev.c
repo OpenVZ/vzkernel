@@ -261,9 +261,11 @@ void fuse_queue_forget(struct fuse_conn *fc, struct fuse_forget_link *forget,
 
 static void flush_bg_queue(struct fuse_conn *fc, struct fuse_iqueue *fiq)
 {
+	struct fuse_req *req, *next;
+	LIST_HEAD(kio_reqs);
+
 	while (fc->active_background < fc->max_background &&
 	       !list_empty(&fc->bg_queue)) {
-		struct fuse_req *req;
 
 		req = list_first_entry(&fc->bg_queue, struct fuse_req, list);
 		list_del_init(&req->list);
@@ -272,7 +274,7 @@ static void flush_bg_queue(struct fuse_conn *fc, struct fuse_iqueue *fiq)
 		if (fc->kio.op) {
 			int ret = fc->kio.op->req_classify(fc, req, true, true);
 			if (likely(!ret)) {
-				fc->kio.op->req_send(fc, req, NULL, true, true);
+				list_add_tail(&req->list, &kio_reqs);
 				continue;
 			} else if (ret < 0)
 				continue;
@@ -281,6 +283,13 @@ static void flush_bg_queue(struct fuse_conn *fc, struct fuse_iqueue *fiq)
 		req->in.h.unique = fuse_get_unique(fiq);
 		queue_request_and_unlock(fiq, req);
 	}
+
+	spin_unlock(&fc->bg_lock);
+	list_for_each_entry_safe(req, next, &kio_reqs, list) {
+		list_del_init(&req->list);
+		fc->kio.op->req_send(fc, req, NULL, true);
+	}
+	spin_lock(&fc->bg_lock);
 }
 
 /*
@@ -438,7 +447,7 @@ static void __fuse_request_send(struct fuse_conn *fc, struct fuse_req *req,
 	if (fc->kio.op) {
 		int ret = fc->kio.op->req_classify(fc, req, false, false);
 		if (likely(!ret))
-			return fc->kio.op->req_send(fc, req, ff, false, false);
+			return fc->kio.op->req_send(fc, req, ff, false);
 		else if (ret < 0)
 			return;
 	}
