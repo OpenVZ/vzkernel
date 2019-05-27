@@ -609,8 +609,7 @@ struct fuse_kio_ops {
 	/* Request handling hooks */
 	struct fuse_req *(*req_alloc)(struct fuse_mount *fm, gfp_t flags);
 	int (*req_classify)(struct fuse_req *req, bool bg, bool locked);
-	void (*req_send)(struct fuse_req *req, struct fuse_file *ff, bool bg,
-			 bool locked);
+	void (*req_send)(struct fuse_req *req, struct fuse_file *ff, bool bg);
 
 	/* Inode scope hooks */
 	int  (*file_open)(struct file *file, struct inode *inode);
