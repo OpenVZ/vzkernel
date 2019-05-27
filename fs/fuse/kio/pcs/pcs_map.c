@@ -1397,7 +1397,7 @@ static int worth_to_grow(struct pcs_int_request *ireq, struct pcs_cs * cs)
 	if (ireq->type == PCS_IREQ_FLUSH)
 		return 0;
 
-	return ktime_to_ms(ktime_sub(ktime_get(), ireq->ts_sent)) < cc_from_csset(cs->css)->netlat_cutoff;
+	return ktime_to_us(ktime_sub(ktime_get(), ireq->ts_sent)) < cc_from_csset(cs->css)->netlat_cutoff;
 }
 
 static void pcs_cs_deaccount(struct pcs_int_request *ireq, struct pcs_cs * cs, int error)
@@ -2669,7 +2669,7 @@ static inline u32 calc_latency(ktime_t start)
 	ktime_t now = ktime_get();
 
 	if (ktime_compare(now, start) > 0) {
-		u64 elapsed = ktime_to_ms(ktime_sub(now, start));
+		u64 elapsed = ktime_to_us(ktime_sub(now, start));
 		return elapsed > ~0U ? ~0U : elapsed;
 	} else {
 		return 0;

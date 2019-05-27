@@ -661,7 +661,7 @@ static void cs_keep_waiting(struct pcs_rpc *ep, struct pcs_msg *req, struct pcs_
 		struct pcs_int_request *ireq = req->private2;
 		abs_time_t lat = 0; /* GCC bug */
 		if (ireq) {
-			lat = ktime_to_ms(ktime_sub(ktime_get(), ireq->ts_sent));
+			lat = ktime_to_us(ktime_sub(ktime_get(), ireq->ts_sent));
 			cs_update_io_latency(who, lat);
 
 			ireq->wait_origin = h->xid.origin;
