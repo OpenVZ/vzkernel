@@ -322,9 +322,12 @@ void workingset_activation(struct page *page)
 	unsigned long flags;
 
 	mem_cgroup_begin_update_page_stat(page, &locked, &flags);
-	pc = lookup_page_cgroup(page);
-	if (likely(PageCgroupUsed(pc)))
-		memcg = pc->mem_cgroup;
+	if (!mem_cgroup_disabled()) {
+		pc = lookup_page_cgroup(page);
+		if (likely(PageCgroupUsed(pc)))
+			memcg = pc->mem_cgroup;
+	}
+	/* else memcg == NULL (set above) */
 
 	/*
 	 * Filter non-memcg pages here, e.g. unmap can call
