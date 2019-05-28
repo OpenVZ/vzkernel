@@ -288,8 +288,8 @@ static int mlx5e_rq_alloc_mpwqe_info(struct mlx5e_rq *rq,
 	int mtt_alloc = mtt_sz + MLX5_UMR_ALIGN - 1;
 	int i;
 
-	rq->mpwqe.info = kzalloc_node(wq_sz * sizeof(*rq->mpwqe.info),
-				      GFP_KERNEL, cpu_to_node(c->cpu));
+	rq->mpwqe.info = kvzalloc_node(wq_sz * sizeof(*rq->mpwqe.info),
+				       GFP_KERNEL, cpu_to_node(c->cpu));
 	if (!rq->mpwqe.info)
 		goto err_out;
 
@@ -323,7 +323,7 @@ err_unmap_mtts:
 	}
 	kfree(rq->mpwqe.mtt_no_align);
 err_free_wqe_info:
-	kfree(rq->mpwqe.info);
+	kvfree(rq->mpwqe.info);
 
 err_out:
 	return -ENOMEM;
@@ -342,7 +342,7 @@ static void mlx5e_rq_free_mpwqe_info(struct mlx5e_rq *rq)
 				 PCI_DMA_TODEVICE);
 	}
 	kfree(rq->mpwqe.mtt_no_align);
-	kfree(rq->mpwqe.info);
+	kvfree(rq->mpwqe.info);
 }
 
 static int mlx5e_create_umr_mkey(struct mlx5_core_dev *mdev,
@@ -819,14 +819,14 @@ static void mlx5e_close_rq(struct mlx5e_rq *rq)
 
 static void mlx5e_free_xdpsq_db(struct mlx5e_xdpsq *sq)
 {
-	kfree(sq->db.di);
+	kvfree(sq->db.di);
 }
 
 static int mlx5e_alloc_xdpsq_db(struct mlx5e_xdpsq *sq, int numa)
 {
 	int wq_sz = mlx5_wq_cyc_get_size(&sq->wq);
 
-	sq->db.di = kzalloc_node(sizeof(*sq->db.di) * wq_sz,
+	sq->db.di = kvzalloc_node(sizeof(*sq->db.di) * wq_sz,
 				     GFP_KERNEL, numa);
 	if (!sq->db.di) {
 		mlx5e_free_xdpsq_db(sq);
@@ -877,15 +877,15 @@ static void mlx5e_free_xdpsq(struct mlx5e_xdpsq *sq)
 
 static void mlx5e_free_icosq_db(struct mlx5e_icosq *sq)
 {
-	kfree(sq->db.ico_wqe);
+	kvfree(sq->db.ico_wqe);
 }
 
 static int mlx5e_alloc_icosq_db(struct mlx5e_icosq *sq, int numa)
 {
 	u8 wq_sz = mlx5_wq_cyc_get_size(&sq->wq);
 
-	sq->db.ico_wqe = kzalloc_node(sizeof(*sq->db.ico_wqe) * wq_sz,
-				      GFP_KERNEL, numa);
+	sq->db.ico_wqe = kvzalloc_node(sizeof(*sq->db.ico_wqe) * wq_sz,
+				       GFP_KERNEL, numa);
 	if (!sq->db.ico_wqe)
 		return -ENOMEM;
 
@@ -932,8 +932,8 @@ static void mlx5e_free_icosq(struct mlx5e_icosq *sq)
 
 static void mlx5e_free_txqsq_db(struct mlx5e_txqsq *sq)
 {
-	kfree(sq->db.wqe_info);
-	kfree(sq->db.dma_fifo);
+	kvfree(sq->db.wqe_info);
+	kvfree(sq->db.dma_fifo);
 }
 
 static int mlx5e_alloc_txqsq_db(struct mlx5e_txqsq *sq, int numa)
@@ -941,10 +941,10 @@ static int mlx5e_alloc_txqsq_db(struct mlx5e_txqsq *sq, int numa)
 	int wq_sz = mlx5_wq_cyc_get_size(&sq->wq);
 	int df_sz = wq_sz * MLX5_SEND_WQEBB_NUM_DS;
 
-	sq->db.dma_fifo = kzalloc_node(df_sz * sizeof(*sq->db.dma_fifo),
-					   GFP_KERNEL, numa);
-	sq->db.wqe_info = kzalloc_node(wq_sz * sizeof(*sq->db.wqe_info),
-					   GFP_KERNEL, numa);
+	sq->db.dma_fifo = kvzalloc_node(df_sz * sizeof(*sq->db.dma_fifo),
+					GFP_KERNEL, numa);
+	sq->db.wqe_info = kvzalloc_node(wq_sz * sizeof(*sq->db.wqe_info),
+					GFP_KERNEL, numa);
 	if (!sq->db.dma_fifo || !sq->db.wqe_info) {
 		mlx5e_free_txqsq_db(sq);
 		return -ENOMEM;
@@ -1617,7 +1617,7 @@ static int mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 	int err;
 	int eqn;
 
-	c = kzalloc_node(sizeof(*c), GFP_KERNEL, cpu_to_node(cpu));
+	c = kvzalloc_node(sizeof(*c), GFP_KERNEL, cpu_to_node(cpu));
 	if (!c)
 		return -ENOMEM;
 
@@ -1705,7 +1705,7 @@ err_close_icosq_cq:
 
 err_napi_del:
 	netif_napi_del(&c->napi);
-	kfree(c);
+	kvfree(c);
 
 	return err;
 }
@@ -1744,7 +1744,7 @@ static void mlx5e_close_channel(struct mlx5e_channel *c)
 	mlx5e_close_cq(&c->icosq.cq);
 	netif_napi_del(&c->napi);
 
-	kfree(c);
+	kvfree(c);
 }
 
 static void mlx5e_build_rq_param(struct mlx5e_priv *priv,
@@ -1919,7 +1919,7 @@ int mlx5e_open_channels(struct mlx5e_priv *priv,
 	chs->num = chs->params.num_channels;
 
 	chs->c = kcalloc(chs->num, sizeof(struct mlx5e_channel *), GFP_KERNEL);
-	cparam = kzalloc(sizeof(struct mlx5e_channel_param), GFP_KERNEL);
+	cparam = kvzalloc(sizeof(struct mlx5e_channel_param), GFP_KERNEL);
 	if (!chs->c || !cparam)
 		goto err_free;
 
@@ -1930,7 +1930,7 @@ int mlx5e_open_channels(struct mlx5e_priv *priv,
 			goto err_close_channels;
 	}
 
-	kfree(cparam);
+	kvfree(cparam);
 	return 0;
 
 err_close_channels:
@@ -1939,7 +1939,7 @@ err_close_channels:
 
 err_free:
 	kfree(chs->c);
-	kfree(cparam);
+	kvfree(cparam);
 	chs->num = 0;
 	return err;
 }
