@@ -1938,12 +1938,9 @@ __acquires(fi->lock)
 	args->force = true;
 	args->nocreds = true;
 
-	err = fuse_simple_background(fm, args, GFP_ATOMIC);
-	if (err == -ENOMEM) {
-		spin_unlock(&fi->lock);
-		err = fuse_simple_background(fm, args, GFP_NOFS | __GFP_NOFAIL);
-		spin_lock(&fi->lock);
-	}
+	spin_unlock(&fi->lock);
+	err = fuse_simple_background(fm, args, GFP_NOFS | __GFP_NOFAIL);
+	spin_lock(&fi->lock);
 
 	/* Fails on broken connection only */
 	if (unlikely(err))
