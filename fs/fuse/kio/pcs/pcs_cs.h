@@ -91,11 +91,12 @@ struct pcs_cs {
 	struct list_head	map_list;
 
 	struct {
-		struct pcs_perf_stat_cnt iolat;
-		struct pcs_perf_stat_cnt netlat;
-		struct pcs_perf_rate_cnt read_ops_rate;
-		struct pcs_perf_rate_cnt write_ops_rate;
-		struct pcs_perf_rate_cnt sync_ops_rate;
+		struct fuse_lat_stat __percpu *iolat;
+		struct fuse_lat_stat __percpu *netlat;
+		struct pcs_perf_rate_cnt __percpu *read_ops_rate;
+		struct pcs_perf_rate_cnt __percpu *write_ops_rate;
+		struct pcs_perf_rate_cnt __percpu *sync_ops_rate;
+		seqlock_t seqlock;
 	} stat;
 };
 
@@ -161,14 +162,21 @@ void pcs_cs_update_stat(struct pcs_cs *cs, u32 iolat, u32 netlat, int op_type);
 
 static inline void pcs_cs_stat_up(struct pcs_cs *cs)
 {
-#if 0
-	/* TODO: temproraly disable perf counters */
-	pcs_perfcounter_stat_up(&cs->stat.iolat);
-	pcs_perfcounter_stat_up(&cs->stat.netlat);
-	pcs_perfcounter_up_rate(&cs->stat.write_ops_rate);
-	pcs_perfcounter_up_rate(&cs->stat.read_ops_rate);
-	pcs_perfcounter_up_rate(&cs->stat.sync_ops_rate);
-#endif
+	int cpu;
+
+	write_seqlock(&cs->stat.seqlock);
+	for_each_possible_cpu(cpu) {
+		struct pcs_perf_rate_cnt *rate;
+			rate = per_cpu_ptr(cs->stat.write_ops_rate, cpu);
+			pcs_perfcounter_up_rate(rate);
+
+			rate = per_cpu_ptr(cs->stat.read_ops_rate, cpu);
+			pcs_perfcounter_up_rate(rate);
+
+			rate = per_cpu_ptr(cs->stat.sync_ops_rate, cpu);
+			pcs_perfcounter_up_rate(rate);
+	}
+	write_sequnlock(&cs->stat.seqlock);
 }
 
 static inline bool cs_is_blacklisted(struct pcs_cs *cs)

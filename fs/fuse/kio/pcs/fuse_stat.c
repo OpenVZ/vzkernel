@@ -44,7 +44,7 @@ static inline void fuse_val_stat_update(struct fuse_val_stat *s, u64 val)
 	preempt_enable();
 }
 
-static inline void fuse_latency_update(struct fuse_lat_stat *s, u64 val)
+void fuse_latency_update(struct fuse_lat_stat *s, u64 val)
 {
 	int i;
 
