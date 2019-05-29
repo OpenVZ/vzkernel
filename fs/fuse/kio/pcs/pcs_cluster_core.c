@@ -151,6 +151,8 @@ int pcs_cc_init(struct pcs_cluster_core *cc, struct workqueue_struct *wq,
 	 * pcs_srandomdev(&cc->rng);
 	 */
 
+	pcs_fuse_stat_init(&cc->stat);
+
 	memset(&cc->cfg,   0, sizeof(cc->cfg));
 	memset(&cc->op,	   0, sizeof(cc->op));
 
@@ -176,6 +178,7 @@ void pcs_cc_fini(struct pcs_cluster_core *cc)
 	pcs_csset_fini(&cc->css);
 	pcs_mapset_fini(&cc->maps);
 	pcs_rpc_engine_fini(&cc->eng);
+	pcs_fuse_stat_fini(&cc->stat);
 
 	BUG_ON(!list_empty(&cc->completion_queue));
 	BUG_ON(!list_empty(&cc->work_queue));
