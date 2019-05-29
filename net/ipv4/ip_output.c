@@ -993,9 +993,10 @@ alloc_new_skb:
 				alloclen += rt->dst.trailer_len;
 
 			if (transhdrlen) {
-				skb = sock_alloc_send_skb(sk,
+				skb = sock_alloc_send_skb_flags(sk,
 						alloclen + hh_len + 15,
-						(flags & MSG_DONTWAIT), &err);
+						(flags & MSG_DONTWAIT), &err,
+						__GFP_ORDER_NOWARN);
 			} else {
 				skb = NULL;
 				if (atomic_read(&sk->sk_wmem_alloc) <=
