@@ -2881,6 +2881,7 @@ static void pcs_flushreq_complete(struct pcs_int_request * sreq)
 				sreq->flags &= ~IREQ_F_ONCE;
 			spin_unlock(&m->lock);
 
+			ireq_retry_inc(ireq);
 			map_notify_error(m, sreq, &ioh->map_version, sreq->flushreq.csl);
 			pcs_deaccount_ireq(sreq, &sreq->error);
 			pcs_clear_error(&sreq->error);
