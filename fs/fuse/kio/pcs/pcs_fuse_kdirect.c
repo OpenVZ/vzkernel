@@ -1563,6 +1563,33 @@ void pcs_kio_file_list(struct fuse_conn *fc, kio_file_itr kfile_cb, void *ctx)
 	}
 }
 
+struct kreq_list_ctx {
+	kio_req_itr cb;
+	void *ctx;
+};
+
+static void kpcs_req_list_itr(struct fuse_file *ff, struct pcs_dentry_info *di,
+			      void *ctx)
+{
+	struct fuse_req *req;
+	struct kreq_list_ctx *kreq_ctx = ctx;
+
+	spin_lock(&di->kq_lock);
+	list_for_each_entry(req, &di->kq, list) {
+		kreq_ctx->cb(ff, req, kreq_ctx->ctx);
+	}
+	spin_unlock(&di->kq_lock);
+}
+
+void pcs_kio_req_list(struct fuse_conn *fc, kio_req_itr kreq_cb, void *ctx)
+{
+	struct kreq_list_ctx kreq_ctx = {
+		.cb = kreq_cb,
+		.ctx = ctx,
+	};
+	pcs_kio_file_list(fc, kpcs_req_list_itr, &kreq_ctx);
+}
+
 static void kpcs_kill_lreq_itr(struct fuse_file *ff, struct pcs_dentry_info *di,
 			       void *ctx)
 {
