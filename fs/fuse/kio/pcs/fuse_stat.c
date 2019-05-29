@@ -36,6 +36,25 @@ static inline void fuse_val_stat_update(struct fuse_val_stat *s, u64 val)
 	preempt_enable();
 }
 
+static const char *fuse_kio_op_name(unsigned opcode)
+{
+	switch (opcode) {
+		case FUSE_READ:
+			return "READ";
+		case FUSE_WRITE:
+			return "WRITE";
+		case FUSE_FSYNC:
+			return "FSYNC";
+		case FUSE_FLUSH:
+			return "FLUSH";
+		case FUSE_FALLOCATE:
+			return "FALLOCATE";
+		default:
+			break;
+	}
+	return "UNKNOWN";
+}
+
 static inline unsigned long long fuse_evt_rate(struct fuse_val_stat const *s, unsigned period)
 {
 	return DIV_ROUND_UP(s->events, period);
@@ -128,6 +147,61 @@ static void fuse_iostat_up(struct pcs_fuse_io_stat_sync *iostat)
 	fuse_val_stat_sum(&iostat->glob.flush_cnt, &lstat.flush_cnt);
 	spin_unlock(&iostat->lock);
 }
+
+static void fuse_kio_stat_req_itr(struct fuse_file *ff, struct fuse_req *req,
+				  void *ctx)
+{
+	struct seq_file *m = ctx;
+	struct pcs_fuse_req *r = pcs_req_from_fuse(req);
+	struct pcs_int_request *ireq = &r->exec.ireq;
+
+	seq_printf(m, "%-16s ", fuse_kio_op_name(req->in.h.opcode));
+	seq_printf(m, "%-8llu %-8llu ", ktime_to_ms(ktime_sub(ktime_get(), ireq->ts)), req->in.h.unique);
+	seq_printf(m, "%5u/%-5u %-5u ", 0, atomic_read(&r->exec.ctl.retry_cnt), r->exec.ctl.last_err.value);
+	seq_printf(m, "%-16s ", pcs_strerror(r->exec.ctl.last_err.value));
+	seq_dentry(m, ff->ff_dentry, "");
+	seq_putc(m, '\n');
+}
+
+static int pcs_fuse_requests_show(struct seq_file *m, void *v)
+{
+	struct inode *inode = m->private;
+	struct pcs_fuse_stat *stat;
+	struct fuse_conn *fc;
+
+	if (!inode)
+		return 0;
+
+	mutex_lock(&fuse_mutex);
+	stat = inode->i_private;
+	if (!stat)
+		goto out;
+
+	seq_printf(m, "# type duration(msec)     id      stage/retry  errno status           path\n");
+
+	fc = container_of(stat, struct pcs_fuse_cluster, cc.stat)->fc;
+	if (fc) {
+		spin_lock(&fc->lock);
+		pcs_kio_req_list(fc, fuse_kio_stat_req_itr, m);
+		spin_unlock(&fc->lock);
+	}
+out:
+	mutex_unlock(&fuse_mutex);
+	return 0;
+}
+
+static int pcs_fuse_requests_open(struct inode *inode, struct file *file)
+{
+       return single_open(file, pcs_fuse_requests_show, inode);
+}
+
+static const struct file_operations pcs_fuse_requests_ops = {
+       .owner   = THIS_MODULE,
+       .open    = pcs_fuse_requests_open,
+       .read    = seq_read,
+       .llseek  = seq_lseek,
+       .release = single_release,
+};
 
 static int pcs_fuse_iostat_show(struct seq_file *m, void *v)
 {
@@ -328,6 +402,9 @@ void pcs_fuse_stat_init(struct pcs_fuse_stat *stat)
 	stat->iostat = fuse_kio_add_dentry(stat->kio_stat, fc, "iostat",
 					   S_IFREG | S_IRUSR, 1, NULL,
 					   &pcs_fuse_iostat_ops, stat);
+	stat->requests = fuse_kio_add_dentry(stat->kio_stat, fc, "requests",
+					     S_IFREG | S_IRUSR, 1, NULL,
+					     &pcs_fuse_requests_ops, stat);
 	mutex_unlock(&fuse_mutex);
 	return;
 
@@ -346,6 +423,8 @@ void pcs_fuse_stat_fini(struct pcs_fuse_stat *stat)
 	if (fuse_control_sb) {
 		if (stat->iostat)
 			fuse_kio_rm_dentry(stat->iostat);
+		if (stat->requests)
+			fuse_kio_rm_dentry(stat->requests);
 		fuse_kio_rm_dentry(stat->kio_stat);
 	}
 	mutex_unlock(&fuse_mutex);
