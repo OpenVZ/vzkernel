@@ -1726,6 +1726,8 @@ __acquires(fi->lock)
 	__u64 data_size = req->num_pages * PAGE_SIZE;
 	bool queued;
 
+	fi->writectr++;
+
 	if (inarg->offset + data_size <= size) {
 		inarg->size = data_size;
 	} else if (inarg->offset < size) {
@@ -1736,15 +1738,18 @@ __acquires(fi->lock)
 	}
 
 	req->in.args[1].size = inarg->size;
+	spin_unlock(&fi->lock);
+
 	queued = fuse_request_queue_background(fc, req);
+	spin_lock(&fi->lock);
 	/* Fails on broken connection only */
 	if (unlikely(!queued))
 		goto out_free;
 
-	fi->writectr++;
 	return;
 
  out_free:
+	fi->writectr--;
 	fuse_writepage_finish(fc, req);
 	spin_unlock(&fi->lock);
 	fuse_writepage_free(fc, req);
