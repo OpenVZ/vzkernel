@@ -349,7 +349,11 @@ static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct ino
 	di->size.required = 0;
 	di->size.op = PCS_SIZE_INACTION;
 	INIT_WORK(&di->size.work, fuse_size_grow_work);
-
+	di->stat.created_ts = jiffies;
+	if (pcs_fuse_io_stat_alloc(&di->stat.io)) {
+		kfree(di);
+		return -ENOMEM;
+	}
 	pcs_mapping_init(&pfc->cc, &di->mapping);
 	pcs_set_fileinfo(di, &info);
 	di->cluster = &pfc->cc;
@@ -418,6 +422,7 @@ void kpcs_inode_release(struct fuse_inode *fi)
 	pcs_mapping_invalidate(&di->mapping);
 	pcs_mapping_deinit(&di->mapping);
 	/* TODO: properly destroy dentry info here!! */
+	pcs_fuse_io_stat_free(&di->stat.io);
 	kfree(di);
 }
 
