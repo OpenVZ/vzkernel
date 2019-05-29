@@ -1630,6 +1630,11 @@ extern struct sk_buff		*sock_alloc_send_skb(struct sock *sk,
 						     unsigned long size,
 						     int noblock,
 						     int *errcode);
+extern struct sk_buff		*sock_alloc_send_skb_flags(struct sock *sk,
+							   unsigned long size,
+							   int noblock,
+							   int *errcode,
+							   gfp_t extra_flags);
 extern struct sk_buff		*sock_alloc_send_pskb(struct sock *sk,
 						      unsigned long header_len,
 						      unsigned long data_len,
