@@ -2711,7 +2711,7 @@ static int commit_sync_info(struct pcs_int_request *req,
 				max_iolat = srec->sync.ts_io;
 		}
 	}
-	pcs_fuse_stat_io_count(req, resp);
+	pcs_fuse_stat_io_count(req, resp, max_iolat, lat - max_iolat);
 	cs_log_io_times(req, resp, max_iolat);
 
 	evaluate_dirty_status(m);
