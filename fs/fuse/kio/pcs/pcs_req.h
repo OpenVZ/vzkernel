@@ -9,6 +9,7 @@
 #include "pcs_rpc.h"
 #include "pcs_cs.h"
 #include "fuse_stat.h"
+#include "../../fuse_i.h"
 
 ///////////////////////////
 
@@ -326,5 +327,9 @@ void ireq_handle_hole(struct pcs_int_request *ireq);
 void pcs_process_ireq(struct pcs_int_request *ireq);
 
 void pcs_ireq_queue_fail(struct list_head *queue, int error);
+
+typedef void (*kio_file_itr)(struct fuse_file *ff, struct pcs_dentry_info *di,
+			     void *ctx);
+void pcs_kio_file_list(struct fuse_conn *fc, kio_file_itr kfile_cb, void *ctx);
 
 #endif /* _PCS_REQ_H_ */
