@@ -26,7 +26,7 @@ struct pcs_fuse_exec_ctx {
 		struct kvec kv;
 	} io;
 	struct {
-		unsigned		retry_cnt;
+		atomic_t		retry_cnt;
 		pcs_error_t		last_err;
 	} ctl;
 };
@@ -36,6 +36,16 @@ struct pcs_fuse_req {
 	void (*end)(struct fuse_conn *fc, struct fuse_args *args, int error);
 	struct pcs_fuse_exec_ctx exec;	/* Zero initialized context */
 };
+
+static inline void ireq_retry_inc(struct pcs_int_request *ireq)
+{
+	if (likely(!ireq->completion_data.parent && ireq->completion_data.priv)) {
+		struct pcs_fuse_req *r = ireq->completion_data.priv;
+		atomic_inc(&r->exec.ctl.retry_cnt);
+		return;
+	}
+	WARN_ON_ONCE(1);
+}
 
 struct pcs_fuse_cluster {
 	struct pcs_cluster_core cc;
