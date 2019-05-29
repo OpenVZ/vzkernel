@@ -1214,7 +1214,9 @@ int pcs_cs_for_each_entry(struct pcs_cs_set *set, int (*cb)(struct pcs_cs *cs, v
 	spin_lock(&set->lock);
 	for (i = 0; i < PCS_CS_HASH_SIZE; i++) {
 		hlist_for_each_entry_safe(cs, node, &set->ht[i], hlist) {
+			rcu_read_lock();
 			rc = cb(cs, arg);
+			rcu_read_unlock();
 			if (rc < 0) {
 				spin_lock(&set->lock);
 				return rc;
