@@ -46,6 +46,50 @@ struct pcs_rpc_ops cn_rpc_ops = {
 	.connect		= cs_connect,
 };
 
+static int pcs_cs_percpu_stat_alloc(struct pcs_cs *cs)
+{
+	seqlock_init(&cs->stat.seqlock);
+	cs->stat.iolat = alloc_percpu(struct fuse_lat_stat);
+	if (!cs->stat.iolat)
+		return -ENOMEM;
+
+	cs->stat.netlat = alloc_percpu(struct fuse_lat_stat);
+	if (!cs->stat.netlat)
+		goto fail1;
+
+	cs->stat.read_ops_rate = alloc_percpu(struct pcs_perf_rate_cnt);
+	if (!cs->stat.read_ops_rate)
+		goto fail2;
+
+	cs->stat.write_ops_rate = alloc_percpu(struct pcs_perf_rate_cnt);
+	if (!cs->stat.write_ops_rate)
+		goto fail3;
+
+	cs->stat.sync_ops_rate = alloc_percpu(struct pcs_perf_rate_cnt);
+	if (!cs->stat.sync_ops_rate)
+		goto fail4;
+
+	return 0;
+fail4:
+	free_percpu(cs->stat.write_ops_rate);
+fail3:
+	free_percpu(cs->stat.read_ops_rate);
+fail2:
+	free_percpu(cs->stat.netlat);
+fail1:
+	free_percpu(cs->stat.iolat);
+	return -ENOMEM;
+}
+
+static void pcs_cs_percpu_stat_free(struct pcs_cs *cs)
+{
+	free_percpu(cs->stat.sync_ops_rate);
+	free_percpu(cs->stat.write_ops_rate);
+	free_percpu(cs->stat.read_ops_rate);
+	free_percpu(cs->stat.netlat);
+	free_percpu(cs->stat.iolat);
+}
+
 struct pcs_cs *pcs_cs_alloc(struct pcs_cs_set *css,
 			     struct pcs_cluster_core *cc)
 {
@@ -71,8 +115,13 @@ struct pcs_cs *pcs_cs_alloc(struct pcs_cs_set *css,
 	INIT_LIST_HEAD(&cs->flow_lru);
 	INIT_LIST_HEAD(&cs->bl_link);
 
+	if (pcs_cs_percpu_stat_alloc(cs)) {
+	    kfree(cs);
+	    return NULL;
+	}
 	cs->rpc = pcs_rpc_create(&cc->eng, &cn_rpc_params, &cn_rpc_ops);
 	if (cs->rpc == NULL) {
+		pcs_cs_percpu_stat_free(cs);
 		kfree(cs);
 		return NULL;
 	}
@@ -297,20 +346,24 @@ void cs_log_io_times(struct pcs_int_request * ireq, struct pcs_msg * resp, unsig
 
 void pcs_cs_update_stat(struct pcs_cs *cs, u32 iolat, u32 netlat, int op_type)
 {
-	pcs_perfcounter_stat_update(&cs->stat.iolat, iolat);
-	pcs_perfcounter_stat_update(&cs->stat.netlat, netlat);
+	write_seqlock(&cs->stat.seqlock);
+	preempt_disable();
+	fuse_latency_update(cs->stat.iolat, iolat);
+	fuse_latency_update(cs->stat.netlat, netlat);
 	switch (op_type) {
 	case PCS_CS_WRITE_SYNC_RESP:
 	case PCS_CS_WRITE_RESP:
-		cs->stat.write_ops_rate.total++;
+		this_cpu_inc(cs->stat.write_ops_rate->total);
 		break;
 	case PCS_CS_READ_RESP:
-		cs->stat.read_ops_rate.total++;
+		this_cpu_inc(cs->stat.read_ops_rate->total);
 		break;
 	case PCS_CS_SYNC_RESP:
-		cs->stat.sync_ops_rate.total++;
+		this_cpu_inc(cs->stat.sync_ops_rate->total);
 		break;
 	}
+	preempt_enable();
+	write_sequnlock(&cs->stat.seqlock);
 }
 
 static void cs_response_done(struct pcs_msg *msg)
@@ -762,6 +815,13 @@ static void pcs_cs_isolate(struct pcs_cs *cs, struct list_head *dispose)
 	BUG_ON(cs->nflows);
 }
 
+static void cs_destroy_rcu(struct rcu_head *head)
+{
+	struct pcs_cs *cs = container_of(head, struct pcs_cs, rcu);
+	pcs_cs_percpu_stat_free(cs);
+	kfree(cs);
+}
+
 static void pcs_cs_destroy(struct pcs_cs *cs)
 {
 	BUG_ON(!list_empty(&cs->active_list));
@@ -772,7 +832,7 @@ static void pcs_cs_destroy(struct pcs_cs *cs)
 		pcs_rpc_close(cs->rpc);
 		cs->rpc = NULL;
 	}
-	kfree_rcu(cs, rcu);
+	call_rcu(&cs->rcu, cs_destroy_rcu);
 }
 
 void cs_aborting(struct pcs_rpc *ep, int error)
