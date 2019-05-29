@@ -38,6 +38,7 @@ void pcs_sreq_complete(struct pcs_int_request *sreq)
 			 * and, most likely, resubmit request.
 			 */
 			if (ireq_check_redo(sreq)) {
+				ireq_retry_inc(ireq);
 				if (sreq->type != PCS_IREQ_CUSTOM) {
 					map_notify_soft_error(sreq);
 
