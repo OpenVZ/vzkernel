@@ -7,6 +7,14 @@
 
 extern struct super_block *fuse_control_sb;
 
+static u64 lat_oreder_list[] = {
+	[LAT_ORDER1] = 20 * USEC_PER_MSEC,
+	[LAT_ORDER2] = 50 * USEC_PER_MSEC,
+	[LAT_ORDER3] = 100 * USEC_PER_MSEC,
+	[LAT_ORDER4] = 200 * USEC_PER_MSEC,
+	[LAT_ORDER5] = 500 * USEC_PER_MSEC,
+};
+
 #define CURR_IDX(__iostat) atomic_read(&(__iostat)->idx)
 #define LAST_IDX(__iostat) !CURR_IDX(__iostat)
 
@@ -34,6 +42,35 @@ static inline void fuse_val_stat_update(struct fuse_val_stat *s, u64 val)
 	this_cpu_add(s->val_total, val);
 	this_cpu_inc(s->events);
 	preempt_enable();
+}
+
+static inline void fuse_latency_update(struct fuse_lat_stat *s, u64 val)
+{
+	int i;
+
+	this_cpu_inc(s->count);
+	for (i = LAT_ORDER1; i <= LAT_ORDER5; i++) {
+		if (likely(val <= lat_oreder_list[i])) {
+			this_cpu_inc(s->lat[i]);
+			return;
+		}
+	}
+	this_cpu_inc(s->lat[LAT_ORDER_OTHER]);
+}
+
+static inline void fuse_latency_count(struct pcs_fuse_io_lat_sync *lat,
+				      u32 pending_lat, u32 io_lat, u32 net_lat)
+{
+	struct pcs_fuse_io_lat *curr;
+
+	write_seqlock(&lat->seqlock);
+	preempt_disable();
+	curr = lat->CURR(lat);
+	fuse_latency_update(&curr->pending_lat, pending_lat);
+	fuse_latency_update(&curr->io_lat, io_lat);
+	fuse_latency_update(&curr->net_lat, net_lat);
+	preempt_enable();
+	write_sequnlock(&lat->seqlock);
 }
 
 static const char *fuse_kio_op_name(unsigned opcode)
@@ -148,11 +185,68 @@ static void fuse_iostat_up(struct pcs_fuse_io_stat_sync *iostat)
 	spin_unlock(&iostat->lock);
 }
 
+static inline void fuse_iolat_sum(struct fuse_lat_stat *s,
+				  struct fuse_lat_stat *add)
+{
+	if (!add->count)
+		return;
+
+	if (!s->count)
+		*s = *add;
+	else {
+		int i;
+		for (i = LAT_ORDER1; i <= LAT_ORDER_OTHER; i++)
+			s->lat[i] += add->lat[i];
+		s->count += add->count;
+	}
+}
+
+static void lat_period_read(struct pcs_fuse_io_lat __percpu *in,
+			    struct pcs_fuse_io_lat *out)
+{
+	int cpu;
+	bool inited = false;
+
+	for_each_possible_cpu(cpu) {
+		struct pcs_fuse_io_lat *stat = per_cpu_ptr(in, cpu);
+		if (inited) {
+			fuse_iolat_sum(&out->io_lat, &stat->io_lat);
+			fuse_iolat_sum(&out->net_lat, &stat->net_lat);
+			fuse_iolat_sum(&out->pending_lat, &stat->pending_lat);
+		} else {
+			*out = *stat;
+			inited = true;
+		}
+	}
+}
+
+static void fuse_fstat_lat_up(struct pcs_fuse_io_lat_sync *lat)
+{
+	struct pcs_fuse_io_lat lstat;
+	int cpu;
+
+	spin_lock(&lat->lock);
+	for_each_possible_cpu(cpu) {
+		struct pcs_fuse_io_lat *last = per_cpu_ptr(lat->LAST(lat), cpu);
+		memset(last, 0, sizeof(*last));
+	}
+	STAT_SWITCH(lat);
+	STAT_SEQ_READ_BARRIER(lat);
+
+	lat_period_read(lat->LAST(lat), &lstat);
+
+	fuse_iolat_sum(&lat->glob.io_lat, &lstat.io_lat);
+	fuse_iolat_sum(&lat->glob.net_lat, &lstat.net_lat);
+	fuse_iolat_sum(&lat->glob.pending_lat, &lstat.pending_lat);
+	spin_unlock(&lat->lock);
+}
+
 static void fuse_fstat_up_itr(struct fuse_file *ff, struct pcs_dentry_info *di,
 			      void *ctx)
 {
 	struct fuse_io_cnt *fstat = &di->stat;
 	fuse_iostat_up(&fstat->io);
+	fuse_fstat_lat_up(&fstat->lat);
 }
 
 static void fuse_stat_files_up(struct pcs_cluster_core *cc)
@@ -164,6 +258,126 @@ static void fuse_stat_files_up(struct pcs_cluster_core *cc)
 		spin_unlock(&fc->lock);
 	}
 }
+
+#define MAX_PERCENT 100
+static int latency_npercl_format(struct fuse_lat_stat *s, u8 percl, char *buf,
+				 size_t sz)
+{
+	u64 cnt = s->count, nper;
+	int i;
+
+	BUG_ON(percl > MAX_PERCENT);
+
+	if (!cnt)
+		return 0;
+
+	nper = cnt * (MAX_PERCENT - percl);
+	if (s->lat[LAT_ORDER_OTHER] * MAX_PERCENT >= nper)
+		return scnprintf(buf, sz, "%u%% > %llu", MAX_PERCENT - percl,
+				 lat_oreder_list[LAT_ORDER_OTHER - 1] / 1000);
+
+	for(i = LAT_ORDER_OTHER - 1; i >= 0; i--) {
+		if (s->lat[i] * MAX_PERCENT >= nper)
+			return scnprintf(buf, sz, "%u%% <= %llu", percl,
+					 lat_oreder_list[i] / 1000);
+	}
+	BUG();
+	return 0;
+}
+
+#define LAT_LINE_MAX 23
+static void latency_percl_print(struct fuse_lat_stat *s, struct seq_file *m)
+{
+	int n, icnt = LAT_LINE_MAX;
+	char buf[LAT_LINE_MAX];
+
+	seq_printf(m, "(");
+	n = latency_npercl_format(s, 95, buf, sizeof(buf) - 1);
+	if (n) {
+		seq_printf(m,"%.*s, ", n, buf);
+		icnt -= n;
+		icnt -= 2;
+	}
+	n = latency_npercl_format(s, 99, buf, sizeof(buf) - 1);
+	if (n) {
+		seq_printf(m, "%.*s", n, buf);
+		icnt -= n;
+	}
+
+	WARN_ON(icnt < 0);
+	seq_printf(m, ")%*s", max(icnt, 0), "");
+}
+
+static void fuse_kio_fstat_lat_itr(struct fuse_file *ff,
+				   struct pcs_dentry_info *di, void *ctx)
+{
+	struct seq_file *m = ctx;
+	struct pcs_fuse_io_lat_sync *lat = &di->stat.lat;
+	umode_t mode = di->inode->inode.i_mode;
+	abs_time_t now = jiffies;
+	struct pcs_fuse_io_lat lstat, gstat;
+
+	seq_printf(m, "%s%s %6u/%-6llu %-7u",
+		   mode & S_IRUGO ? "r": "", mode & S_IWUGO ? "w": "",
+		   atomic_read(&ff->count), (now - di->stat.created_ts) / 1000, 0);
+
+	spin_lock(&lat->lock);
+	lat_period_read(lat->LAST(lat), &lstat);
+	gstat = lat->glob;
+	spin_unlock(&lat->lock);
+
+	latency_percl_print(&lstat.net_lat, m);
+	latency_percl_print(&gstat.net_lat, m);
+
+	latency_percl_print(&lstat.io_lat, m);
+	latency_percl_print(&gstat.io_lat, m);
+
+	latency_percl_print(&lstat.pending_lat, m);
+	latency_percl_print(&gstat.pending_lat, m);
+
+	seq_dentry(m, ff->ff_dentry, "");
+	seq_putc(m, '\n');
+}
+
+static int pcs_fuse_fstat_lat_show(struct seq_file *m, void *v)
+{
+	struct inode *inode = m->private;
+	struct pcs_fuse_stat *stat;
+	struct fuse_conn *fc;
+
+	if (!inode)
+		return 0;
+
+	mutex_lock(&fuse_mutex);
+	stat = inode->i_private;
+	if (!stat)
+		goto out;
+
+	seq_printf(m, "# rw open/age inactive  net_lat\t\t\t net_lat_global\t\t  io_lat\t\t   io_lat_global\t    plat\t\t     plat_global\t      path\n");
+
+	fc = container_of(stat, struct pcs_fuse_cluster, cc.stat)->fc;
+	if (fc) {
+		spin_lock(&fc->lock);
+		pcs_kio_file_list(fc, fuse_kio_fstat_lat_itr, m);
+		spin_unlock(&fc->lock);
+	}
+out:
+	mutex_unlock(&fuse_mutex);
+	return 0;
+}
+
+static int pcs_fuse_fstat_lat_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, pcs_fuse_fstat_lat_show, inode);
+}
+
+static const struct file_operations pcs_fuse_fstat_lat_ops = {
+	.owner   = THIS_MODULE,
+	.open    = pcs_fuse_fstat_lat_open,
+	.read    = seq_read,
+	.llseek	 = seq_lseek,
+	.release = single_release,
+};
 
 static void fuse_kio_fstat_itr(struct fuse_file *ff, struct pcs_dentry_info *di,
 			       void *ctx)
@@ -375,15 +589,19 @@ static void fuse_iostat_count(struct pcs_fuse_io_stat_sync *iostat,
 	write_sequnlock(&iostat->seqlock);
 }
 
-void pcs_fuse_stat_io_count(struct pcs_int_request *ireq, struct pcs_msg *resp)
+void pcs_fuse_stat_io_count(struct pcs_int_request *ireq, struct pcs_msg *resp,
+			    u32 io_lat, u32 net_lat)
 {
 	struct pcs_fuse_stat *stat = &ireq->cc->stat;
 	struct fuse_io_cnt *fstat = &ireq->dentry->stat;
 	struct pcs_cs_iohdr *h = (struct pcs_cs_iohdr *)msg_inline_head(resp);
 	u64 size = h->hdr.type != PCS_CS_SYNC_RESP ? ireq->iochunk.size : 0;
+	u32 pending_lat = ktime_to_us(ktime_sub(ireq->ts_sent, ireq->ts));
 
 	fuse_iostat_count(&stat->io, size, h->hdr.type);
 	fuse_iostat_count(&fstat->io, size, h->hdr.type);
+
+	fuse_latency_count(&fstat->lat, pending_lat, io_lat, net_lat);
 }
 
 static void pcs_fuse_stat_work(struct work_struct *w)
@@ -438,6 +656,33 @@ static void fuse_kio_rm_dentry(struct dentry *dentry)
 	d_inode(dentry)->i_private = NULL;
 	d_drop(dentry);
 	dput(dentry);
+}
+
+int pcs_fuse_fstat_alloc(struct pcs_fuse_io_lat_sync *lat)
+{
+	atomic_set(&lat->idx, 0);
+	lat->CURR(lat) = alloc_percpu(struct pcs_fuse_io_lat);
+	if (!lat->CURR(lat))
+		return -ENOMEM;
+
+	lat->LAST(lat) = alloc_percpu(struct pcs_fuse_io_lat);
+	if (!lat->LAST(lat))
+		goto fail;
+
+	memset(&lat->glob, 0, sizeof(lat->glob));
+
+	seqlock_init(&lat->seqlock);
+	spin_lock_init(&lat->lock);
+	return 0;
+fail:
+	free_percpu(lat->CURR(lat));
+	return -ENOMEM;
+}
+
+void pcs_fuse_fstat_free(struct pcs_fuse_io_lat_sync *lat)
+{
+	free_percpu(lat->LAST(lat));
+	free_percpu(lat->CURR(lat));
 }
 
 int pcs_fuse_io_stat_alloc(struct pcs_fuse_io_stat_sync *iostat)
@@ -501,7 +746,9 @@ void pcs_fuse_stat_init(struct pcs_fuse_stat *stat)
 	stat->fstat = fuse_kio_add_dentry(stat->kio_stat, fc, "fstat",
 					  S_IFREG | S_IRUSR, 1, NULL,
 					  &pcs_fuse_fstat_ops, stat);
-
+	stat->fstat_lat = fuse_kio_add_dentry(stat->kio_stat, fc, "fstat_lat",
+					      S_IFREG | S_IRUSR, 1, NULL,
+					      &pcs_fuse_fstat_lat_ops, stat);
 	mutex_unlock(&fuse_mutex);
 	return;
 
@@ -524,6 +771,8 @@ void pcs_fuse_stat_fini(struct pcs_fuse_stat *stat)
 			fuse_kio_rm_dentry(stat->requests);
 		if (stat->fstat)
 			fuse_kio_rm_dentry(stat->fstat);
+		if (stat->fstat_lat)
+			fuse_kio_rm_dentry(stat->fstat_lat);
 		fuse_kio_rm_dentry(stat->kio_stat);
 	}
 	mutex_unlock(&fuse_mutex);
