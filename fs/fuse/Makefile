@@ -25,6 +25,7 @@ fuse_kio_pcs-objs := kio/pcs/pcs_fuse_kdirect.o \
 	kio/pcs/pcs_cluster.o \
 	kio/pcs/pcs_cluster_core.o \
 	kio/pcs/pcs_cs.o \
-	kio/pcs/fuse_io.o
+	kio/pcs/fuse_io.o \
+	kio/pcs/fuse_stat.o
 
 virtiofs-y := virtio_fs.o
