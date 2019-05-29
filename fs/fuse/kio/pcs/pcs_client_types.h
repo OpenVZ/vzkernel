@@ -4,6 +4,7 @@
 #include "pcs_prot_types.h"
 #include "pcs_mds_prot.h"
 #include "pcs_flow_detect.h"
+#include "fuse_stat.h"
 
 /* Values of lease. It is value, not bitmask. */
 #define PCS_LEASE_NONE		0
@@ -70,6 +71,8 @@ struct pcs_dentry_info {
 	struct fuse_inode	*inode;
 	struct list_head	kq;
 	spinlock_t		kq_lock;
+
+	struct fuse_io_cnt stat;
 };
 
 static inline void pcs_clear_fileinfo(struct pcs_dentry_info *i)
