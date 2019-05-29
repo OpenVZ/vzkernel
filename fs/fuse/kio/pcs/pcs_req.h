@@ -8,6 +8,7 @@
 #include "pcs_cs_prot.h"
 #include "pcs_rpc.h"
 #include "pcs_cs.h"
+#include "fuse_stat.h"
 
 ///////////////////////////
 
@@ -207,6 +208,7 @@ struct pcs_cluster_core
 ////	struct pcs_ratelimit	rlim;		/* Rate limiter */
 ////	struct pcs_rng		rng;
 	/* <SKIP */
+	struct pcs_fuse_stat	stat;
 
 	struct {
 		struct pcs_clnt_config	def;
