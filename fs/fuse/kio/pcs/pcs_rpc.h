@@ -292,4 +292,6 @@ static inline struct pcs_rpc *pcs_rpc_from_work(struct work_struct *wr)
 	return container_of(wr, struct pcs_rpc, work);
 }
 
+const char* pcs_rpc_state_name(unsigned state);
+
 #endif /* _PCS_RPC_H_ */
