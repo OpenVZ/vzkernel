@@ -354,6 +354,12 @@ static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct ino
 		kfree(di);
 		return -ENOMEM;
 	}
+	if (pcs_fuse_fstat_alloc(&di->stat.lat)) {
+		pcs_fuse_io_stat_free(&di->stat.io);
+		kfree(di);
+		return -ENOMEM;
+	}
+
 	pcs_mapping_init(&pfc->cc, &di->mapping);
 	pcs_set_fileinfo(di, &info);
 	di->cluster = &pfc->cc;
@@ -422,6 +428,7 @@ void kpcs_inode_release(struct fuse_inode *fi)
 	pcs_mapping_invalidate(&di->mapping);
 	pcs_mapping_deinit(&di->mapping);
 	/* TODO: properly destroy dentry info here!! */
+	pcs_fuse_fstat_free(&di->stat.lat);
 	pcs_fuse_io_stat_free(&di->stat.io);
 	kfree(di);
 }
