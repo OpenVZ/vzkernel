@@ -331,5 +331,8 @@ void pcs_ireq_queue_fail(struct list_head *queue, int error);
 typedef void (*kio_file_itr)(struct fuse_file *ff, struct pcs_dentry_info *di,
 			     void *ctx);
 void pcs_kio_file_list(struct fuse_conn *fc, kio_file_itr kfile_cb, void *ctx);
+typedef void (*kio_req_itr)(struct fuse_file *ff, struct fuse_req *req,
+			    void *ctx);
+void pcs_kio_req_list(struct fuse_conn *fc, kio_req_itr kreq_cb, void *ctx);
 
 #endif /* _PCS_REQ_H_ */
