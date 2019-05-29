@@ -40,6 +40,7 @@ struct pcs_fuse_stat {
 
 	struct dentry *kio_stat;
 	struct dentry *iostat;
+	struct dentry *requests;
 };
 
 void pcs_fuse_stat_init(struct pcs_fuse_stat *stat);
