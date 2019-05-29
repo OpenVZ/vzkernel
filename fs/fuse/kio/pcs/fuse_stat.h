@@ -79,6 +79,7 @@ void pcs_fuse_stat_fini(struct pcs_fuse_stat *stat);
 
 void pcs_fuse_stat_io_count(struct pcs_int_request *ireq, struct pcs_msg *resp,
 			    u32 io_lat, u32 net_lat);
+void fuse_latency_update(struct fuse_lat_stat *s, u64 val);
 
 int pcs_fuse_io_stat_alloc(struct pcs_fuse_io_stat_sync *iostat);
 void pcs_fuse_io_stat_free(struct pcs_fuse_io_stat_sync *iostat);
