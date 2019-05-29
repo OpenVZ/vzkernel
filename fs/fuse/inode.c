@@ -30,6 +30,7 @@ static struct kmem_cache *fuse_inode_cachep;
 static LIST_HEAD(fuse_kios_list);
 struct list_head fuse_conn_list;
 DEFINE_MUTEX(fuse_mutex);
+EXPORT_SYMBOL_GPL(fuse_mutex);
 
 static int fuse_ve_odirect;
 
