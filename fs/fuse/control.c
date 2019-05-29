@@ -574,6 +574,8 @@ int fuse_ctl_add_conn(struct fuse_conn *fc)
 	if (!parent)
 		goto err;
 
+	fc->conn_ctl = parent;
+
 	if (!fuse_ctl_add_dentry(parent, fc, "waiting", S_IFREG | 0400, 1,
 				 NULL, &fuse_ctl_waiting_ops) ||
 	    !fuse_ctl_add_dentry(parent, fc, "abort", S_IFREG | 0200, 1,
