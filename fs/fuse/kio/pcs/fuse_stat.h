@@ -34,6 +34,12 @@ struct pcs_fuse_stat {
 	struct dentry *kio_stat;
 	struct dentry *iostat;
 	struct dentry *requests;
+	struct dentry *fstat;
+};
+
+struct fuse_io_cnt {
+	struct pcs_fuse_io_stat_sync io;
+	abs_time_t created_ts;
 };
 
 void pcs_fuse_stat_init(struct pcs_fuse_stat *stat);
