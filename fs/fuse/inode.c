@@ -30,6 +30,7 @@ MODULE_LICENSE("GPL");
 static struct kmem_cache *fuse_inode_cachep;
 struct list_head fuse_conn_list;
 DEFINE_MUTEX(fuse_mutex);
+EXPORT_SYMBOL_GPL(fuse_mutex);
 
 static int set_global_limit(const char *val, struct kernel_param *kp);
 
