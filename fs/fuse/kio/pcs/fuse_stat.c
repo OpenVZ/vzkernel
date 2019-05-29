@@ -308,6 +308,87 @@ static void latency_percl_print(struct fuse_lat_stat *s, struct seq_file *m)
 	seq_printf(m, ")%*s", max(icnt, 0), "");
 }
 
+static int do_show_cs_stats(struct pcs_cs *cs, void *ctx)
+{
+	struct seq_file *m = ctx;
+	int rpc_state = cs->rpc ? cs->rpc->state : PCS_RPC_UNCONN;
+	unsigned int in_flight_avg = cs->in_flight_avg;
+	struct fuse_lat_stat iolat = {}, netlat = {};
+	struct pcs_perf_rate_cnt read_ops_rate = {}, write_ops_rate = {},
+				 sync_ops_rate = {};
+	unsigned seq;
+
+	do {
+		int cpu;
+
+		seq = read_seqbegin(&cs->stat.seqlock);
+		for_each_possible_cpu(cpu) {
+			struct fuse_lat_stat *pcpu_iolat, *pcpu_netlat;
+			struct pcs_perf_rate_cnt *pcpu_read_rate,
+						 *pcpu_write_rate,
+						 *pcpu_sync_rate;
+
+			pcpu_iolat = per_cpu_ptr(cs->stat.iolat, cpu);
+			pcpu_netlat = per_cpu_ptr(cs->stat.netlat, cpu);
+			pcpu_read_rate = per_cpu_ptr(cs->stat.read_ops_rate, cpu);
+			pcpu_write_rate = per_cpu_ptr(cs->stat.write_ops_rate, cpu);
+			pcpu_sync_rate = per_cpu_ptr(cs->stat.sync_ops_rate, cpu);
+
+			fuse_iolat_sum(&iolat, pcpu_iolat);
+			fuse_iolat_sum(&netlat, pcpu_netlat);
+			pcs_cs_stat_rate_sum(&read_ops_rate, pcpu_read_rate);
+			pcs_cs_stat_rate_sum(&write_ops_rate, pcpu_write_rate);
+			pcs_cs_stat_rate_sum(&sync_ops_rate, pcpu_sync_rate);
+		}
+	} while (read_seqretry(&cs->stat.seqlock, seq));
+
+	seq_printf(m, "%-10llu %d=%-8s %-10llu %-10llu %-11llu",
+		NODE_ARGS(cs->id), rpc_state, pcs_rpc_state_name(rpc_state),
+		read_ops_rate.rate / STAT_TIMER_PERIOD,
+		write_ops_rate.rate / STAT_TIMER_PERIOD,
+		sync_ops_rate.rate / STAT_TIMER_PERIOD);
+	latency_percl_print(&iolat, m);
+	latency_percl_print(&netlat, m);
+	seq_printf(m, "%-10u\n", in_flight_avg);
+	return 0;
+}
+
+static int pcs_fuse_cs_stats_show(struct seq_file *m, void *v)
+{
+	struct inode *inode = m->private;
+	struct pcs_cluster_core *cc;
+	struct pcs_fuse_stat *stat;
+
+	if (!inode)
+		return 0;
+
+	mutex_lock(&fuse_mutex);
+	stat = inode->i_private;
+	if (!stat)
+		goto out;
+
+	seq_printf(m, "# csid     rpc        rd_ops     wr_ops     sync_ops   net_lat\t\t\tio_lat\t\t\t avg_in_flight\n");
+
+	cc = container_of(stat, struct pcs_cluster_core, stat);
+	pcs_cs_for_each_entry(&cc->css, do_show_cs_stats, m);
+out:
+	mutex_unlock(&fuse_mutex);
+	return 0;
+}
+
+static int pcs_fuse_cs_stats_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, pcs_fuse_cs_stats_show, inode);
+}
+
+static const struct file_operations pcs_fuse_cs_stats_ops = {
+	.owner   = THIS_MODULE,
+	.open    = pcs_fuse_cs_stats_open,
+	.read    = seq_read,
+	.llseek	 = seq_lseek,
+	.release = single_release,
+};
+
 static void fuse_kio_fstat_lat_itr(struct fuse_file *ff,
 				   struct pcs_dentry_info *di, void *ctx)
 {
@@ -612,6 +693,7 @@ static void pcs_fuse_stat_work(struct work_struct *w)
 
 	fuse_iostat_up(&stat->io);
 	fuse_stat_files_up(cc);
+	pcs_cs_set_stat_up(&cc->css);
 
 	mod_delayed_work(cc->wq, &cc->stat.work, STAT_TIMER_PERIOD * HZ);
 }
@@ -749,6 +831,9 @@ void pcs_fuse_stat_init(struct pcs_fuse_stat *stat)
 	stat->fstat_lat = fuse_kio_add_dentry(stat->kio_stat, fc, "fstat_lat",
 					      S_IFREG | S_IRUSR, 1, NULL,
 					      &pcs_fuse_fstat_lat_ops, stat);
+	stat->cs_stats = fuse_kio_add_dentry(stat->kio_stat, fc, "cs_stats",
+					     S_IFREG | S_IRUSR, 1, NULL,
+					     &pcs_fuse_cs_stats_ops, stat);
 	mutex_unlock(&fuse_mutex);
 	return;
 
@@ -773,6 +858,8 @@ void pcs_fuse_stat_fini(struct pcs_fuse_stat *stat)
 			fuse_kio_rm_dentry(stat->fstat);
 		if (stat->fstat_lat)
 			fuse_kio_rm_dentry(stat->fstat_lat);
+		if (stat->cs_stats)
+			fuse_kio_rm_dentry(stat->cs_stats);
 		fuse_kio_rm_dentry(stat->kio_stat);
 	}
 	mutex_unlock(&fuse_mutex);
