@@ -798,6 +798,7 @@ struct fuse_conn {
 
 	int ktrace_level;
 	struct fuse_ktrace * ktrace;
+	struct dentry *conn_ctl;
 };
 
 static inline struct fuse_conn *get_fuse_conn_super(struct super_block *sb)
