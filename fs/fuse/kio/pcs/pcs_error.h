@@ -91,8 +91,89 @@ typedef enum {
 	PCS_ERR_MAX		= PCS_ERR_UNKNOWN
 } pcs_err_t;
 
+static const char *const prot_err_list[] = {
+	[0]				= "Success",
+
+	[PCS_ERR_NOMEM]			= "Out of memory",
+	[PCS_ERR_PROTOCOL]		= "Fatal protocol error",
+	[PCS_ERR_AUTH]			= "Authentication failure due to wrong credentials",
+	[PCS_ERR_NET]			= "Misc network error",
+	[PCS_ERR_NOSPACE]		= "No space/quota exceeded while local file io",
+	[PCS_ERR_IO]			= "Misc error while local file io",
+	[PCS_ERR_LOST_LOCK]		= "CN did not get response from MDS for lease update.",
+
+	[PCS_ERR_NOT_FOUND]		= "Requested object not found",
+	[PCS_ERR_INTERRUPTED]		= "The operation was interrupted, should be retried",
+	[PCS_ERR_NET_ABORT]		= "Message dropped due to abort of network connection",
+	[PCS_ERR_CONNECT_TIMEOUT]	= "Failed connect()",
+	[PCS_ERR_AUTH_TIMEOUT]		= "Authentication failure due to timeout",
+	[PCS_ERR_RESPONSE_TIMEOUT]	= "Peer did not respond or did not hold deadline",
+	[PCS_ERR_WRITE_TIMEOUT]		= "Socket write() failed, peer is stuck or network is broken",
+
+	[PCS_ERR_CANCEL_REQUEST]	= "Request was canceled by user",
+	[PCS_ERR_CANCEL_IO]		= "IO request was canceled",
+
+	[PCS_ERR_LEASE_REQUIRED]	= "Lease required",
+	[PCS_ERR_LEASE_EXPIRED]		= "Lease is expired",
+	[PCS_ERR_LEASE_CONFLICT]	= "Lease request conflicts with another lease",
+	[PCS_ERR_INV_PATH]              = "The path is invalid",
+	[PCS_ERR_NOT_DIR]		= "Attempt to read non-directory",
+	[PCS_ERR_IS_DIR]		= "Attempt to access directory (resize/io)",
+	[PCS_ERR_NON_EMPTY_DIR]		= "Attempt to rename/delete non empty directory",
+	[PCS_ERR_ZERO_CHUNK]		= "The requested chunk was not written yet and contains zero data",
+	[PCS_ERR_INVALID]		= "Object is invalid",
+	[PCS_ERR_INV_PARAMS]		= "Invalid parameters",
+	[PCS_ERR_NO_ID]			= "Request from the client without ID",
+	[PCS_ERR_INVALID_ID]		= "The client or server ID is invalid or banned",
+	[PCS_ERR_NORES]			= "Not enough resources (too many requests)",
+	[PCS_ERR_UNAVAIL]		= "Service unavailable",
+	[PCS_ERR_BAD_CLUSTER]		= "Bad cluster ID",
+	[PCS_ERR_READONLY]		= "Invalid operation on read-only object",
+	[PCS_ERR_PERM]			= "Permission denied",
+	[PCS_ERR_UNSUPPORTED]		= "Operation is not supported",
+
+	[PCS_ERR_TEMP_UNAVAIL]		= "The resource is temporarily unavailable",
+	[PCS_ERR_INTEGRITY]		= "Not enough alive replicas available",
+	[PCS_ERR_INTEGRITY_FAIL]	= "Fatal MDS integrity error",
+
+	[PCS_ERR_NO_STORAGE]		= "The number of chunk servers in cluster is less than the required number of replicas",
+	[PCS_ERR_NOT_ALLOWED]		= "Operation is not allowed due to licensing limitations",
+	[PCS_ERR_CFG_VERSION]		= "Configuration version mismatch",
+	[PCS_ERR_CLNT_VERSION]		= "Client version is incompatible with server version (outdated)",
+	[PCS_ERR_EXISTS]		= "Specified object already exists",
+	[PCS_ERR_EPOCH_MISMATCH]	= "Object epoch mismatch due to concurrent update",
+	[PCS_ERR_NO_DIR]		= "Name directory does not exists",
+	[PCS_ERR_DIR_INST_VER]		= "Name directory instance version mismatch",
+	[PCS_ERR_CONTEXT_LOST]		= "Operation context is lost on server restart",
+
+	[PCS_ERR_CSD_STALE_MAP]		= "Old map (or no map) at CS",
+	[PCS_ERR_CSD_RO_MAP]		= "Write request with read-only map",
+	[PCS_ERR_CSD_WR_IN_PROGR]	= "Read only map is rejected due to write requests being processed",
+	[PCS_ERR_CSD_REPLICATING]	= "Attempt to read from unfinished replica",
+	[PCS_ERR_CANCEL_KEEPWAIT]	= "IO request was canceled and redirected to another CS",
+	[PCS_ERR_CSD_STALLED_REPL]	= "Replication stalled",
+	[PCS_ERR_CSD_LACKING]		= "Not enough CS servers available",
+	[PCS_ERR_CSD_DROPPED]		= "The CS server was dropped by administrator",
+	[PCS_ERR_MDS_NOT_MASTER]	= "The target MDS is not current master",
+	[PCS_ERR_MDS_EXIST]		= "The MDS with such id already exist in cluster",
+	[PCS_ERR_MDS_RM_TOOMANY]	= "Removing this MDS will make the cluster unusable",
+	[PCS_ERR_LICENSE_LIMIT]		= "Operation can't be completed due to license limitations",
+	[PCS_ERR_NO_LICENSE]		= "No loaded license",
+
+	[PCS_ERR_SSL_CERTIFICATE_REVOKED]   = "Certificate revoked",
+	[PCS_ERR_SSL_CERTIFICATE_EXPIRED]   = "Certificate expired",
+	[PCS_ERR_SSL_UNKNOWN_CA]            = "The certificate could not be matched with a known, trusted CA",
+	[PCS_ERR_PEER_CERTIFICATE_REJECTED] = "The peer certificate has failed the verification",
+};
+
 /* Get long description of the error */
-const char *pcs_strerror(pcs_err_t errnum);
+static __inline const char *pcs_strerror(pcs_err_t errnum)
+{
+	if ((int)errnum < 0 || errnum >= ARRAY_SIZE(prot_err_list))
+		return "Unknown error";
+
+	return prot_err_list[errnum];
+}
 
 /* Get short mnemonic */
 const char *pcs_errname(pcs_err_t errnum);
