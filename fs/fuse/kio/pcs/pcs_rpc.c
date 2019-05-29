@@ -1434,3 +1434,26 @@ void rpc_connect_done(struct pcs_rpc *ep, struct socket *sock)
 	mutex_unlock(&ep->mutex);
 
 }
+
+static const char *s_rpc_state_names[] = {
+	[PCS_RPC_UNCONN]	= "UNCONN",	/* Not connected */
+	[PCS_RPC_CONNECT]	= "CONNECT",	/* Connect in progress */
+	[PCS_RPC_AUTH]		= "AUTH",	/* Connected. Auth request sent. */
+	[PCS_RPC_AUTHWAIT]	= "AUTHWAIT",	/* Accepted. Waiting for auth request from peer. */
+	[PCS_RPC_APPWAIT] 	= "APPWAIT",	/* Auth complete, client is notified */
+	[PCS_RPC_WORK]		= "WORK",	/* Established */
+	[PCS_RPC_HOLDDOWN] 	= "HOLDDOWN",	/* Not connected. Connect must not be reinitiated. */
+	[PCS_RPC_ABORT]		= "ABORT",	/* Aborted. Not reconnected automatically. */
+	[PCS_RPC_DESTROY]	= "DESTROY"	/* Destruction in progress */
+};
+
+const char *pcs_rpc_state_name(unsigned state)
+{
+	const char *name;
+	if (state >=  ARRAY_SIZE(s_rpc_state_names))
+		return "Invalid";
+	name = s_rpc_state_names[state];
+	if (!name)
+		return "Invalid";
+	return name;
+}
