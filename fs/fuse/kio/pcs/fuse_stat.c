@@ -148,6 +148,96 @@ static void fuse_iostat_up(struct pcs_fuse_io_stat_sync *iostat)
 	spin_unlock(&iostat->lock);
 }
 
+static void fuse_fstat_up_itr(struct fuse_file *ff, struct pcs_dentry_info *di,
+			      void *ctx)
+{
+	struct fuse_io_cnt *fstat = &di->stat;
+	fuse_iostat_up(&fstat->io);
+}
+
+static void fuse_stat_files_up(struct pcs_cluster_core *cc)
+{
+	struct fuse_conn *fc = container_of(cc, struct pcs_fuse_cluster, cc)->fc;
+	if (fc) {
+		spin_lock(&fc->lock);
+		pcs_kio_file_list(fc, fuse_fstat_up_itr, NULL);
+		spin_unlock(&fc->lock);
+	}
+}
+
+static void fuse_kio_fstat_itr(struct fuse_file *ff, struct pcs_dentry_info *di,
+			       void *ctx)
+{
+	struct fuse_io_cnt *fstat = &di->stat;
+	struct pcs_fuse_io_stat_sync *iostat = &fstat->io;
+	struct seq_file *m = ctx;
+	umode_t mode = di->inode->inode.i_mode;
+	abs_time_t now = jiffies;
+	struct pcs_fuse_io_stat lstat, gstat;
+
+	seq_printf(m, "%s%s %7u/%-7llu %-7u %-4u ",
+		   mode & S_IRUGO ? "r": "", mode & S_IWUGO ? "w": "",
+		   atomic_read(&ff->count), (now - fstat->created_ts) / 1000, 0, 0);
+
+	spin_lock(&iostat->lock);
+	stat_period_read(iostat->LAST(iostat), &lstat);
+	gstat = iostat->glob;
+	spin_unlock(&iostat->lock);
+
+	seq_printf(m, "%-6llu %-10llu %-13llu ", EVT_RATE(lstat.read_bytes),
+		   VAL_RATE(lstat.read_bytes), gstat.read_bytes.val_total);
+	seq_printf(m, "%-6llu %-10llu %-13llu ", EVT_RATE(lstat.write_bytes),
+		   VAL_RATE(lstat.write_bytes), gstat.write_bytes.val_total);
+	seq_printf(m, "%-6llu %-7llu ", EVT_RATE(lstat.flush_cnt),
+		   gstat.flush_cnt.val_total);
+	seq_printf(m, "%-6llu %-6llu %-6llu ", CNT_MIN(lstat.read_bytes, gstat.read_bytes),
+		   VAL_AVER(gstat.read_bytes), CNT_MAX(lstat.read_bytes, gstat.read_bytes));
+	seq_printf(m, "%-6llu %-6llu %-6llu ", CNT_MIN(lstat.write_bytes, gstat.read_bytes),
+		   VAL_AVER(gstat.write_bytes), CNT_MAX(lstat.write_bytes, gstat.read_bytes));
+	seq_dentry(m, ff->ff_dentry, "");
+	seq_putc(m, '\n');
+}
+
+static int pcs_fuse_fstat_show(struct seq_file *m, void *v)
+{
+	struct inode *inode = m->private;
+	struct pcs_fuse_stat *stat;
+	struct fuse_conn *fc;
+
+	if (!inode)
+		return 0;
+
+	mutex_lock(&fuse_mutex);
+	stat = inode->i_private;
+	if (!stat)
+		goto out;
+
+	seq_printf(m, "# rw open/age inactive handles rd/sec rbytes/sec rtotal        wr/sec wbytes/sec wtotal      sync/sec stotal  rmin   ravg   rmax   wmin   wavg   wmax   path\n");
+
+	fc = container_of(stat, struct pcs_fuse_cluster, cc.stat)->fc;
+	if (fc) {
+		spin_lock(&fc->lock);
+		pcs_kio_file_list(fc, fuse_kio_fstat_itr, m);
+		spin_unlock(&fc->lock);
+	}
+out:
+	mutex_unlock(&fuse_mutex);
+	return 0;
+}
+
+static int pcs_fuse_fstat_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, pcs_fuse_fstat_show, inode);
+}
+
+static const struct file_operations pcs_fuse_fstat_ops = {
+	.owner   = THIS_MODULE,
+	.open    = pcs_fuse_fstat_open,
+	.read    = seq_read,
+	.llseek  = seq_lseek,
+	.release = single_release,
+};
+
 static void fuse_kio_stat_req_itr(struct fuse_file *ff, struct fuse_req *req,
 				  void *ctx)
 {
@@ -288,10 +378,12 @@ static void fuse_iostat_count(struct pcs_fuse_io_stat_sync *iostat,
 void pcs_fuse_stat_io_count(struct pcs_int_request *ireq, struct pcs_msg *resp)
 {
 	struct pcs_fuse_stat *stat = &ireq->cc->stat;
+	struct fuse_io_cnt *fstat = &ireq->dentry->stat;
 	struct pcs_cs_iohdr *h = (struct pcs_cs_iohdr *)msg_inline_head(resp);
 	u64 size = h->hdr.type != PCS_CS_SYNC_RESP ? ireq->iochunk.size : 0;
 
 	fuse_iostat_count(&stat->io, size, h->hdr.type);
+	fuse_iostat_count(&fstat->io, size, h->hdr.type);
 }
 
 static void pcs_fuse_stat_work(struct work_struct *w)
@@ -301,6 +393,7 @@ static void pcs_fuse_stat_work(struct work_struct *w)
 	struct pcs_fuse_stat *stat = &cc->stat;
 
 	fuse_iostat_up(&stat->io);
+	fuse_stat_files_up(cc);
 
 	mod_delayed_work(cc->wq, &cc->stat.work, STAT_TIMER_PERIOD * HZ);
 }
@@ -405,6 +498,10 @@ void pcs_fuse_stat_init(struct pcs_fuse_stat *stat)
 	stat->requests = fuse_kio_add_dentry(stat->kio_stat, fc, "requests",
 					     S_IFREG | S_IRUSR, 1, NULL,
 					     &pcs_fuse_requests_ops, stat);
+	stat->fstat = fuse_kio_add_dentry(stat->kio_stat, fc, "fstat",
+					  S_IFREG | S_IRUSR, 1, NULL,
+					  &pcs_fuse_fstat_ops, stat);
+
 	mutex_unlock(&fuse_mutex);
 	return;
 
@@ -425,6 +522,8 @@ void pcs_fuse_stat_fini(struct pcs_fuse_stat *stat)
 			fuse_kio_rm_dentry(stat->iostat);
 		if (stat->requests)
 			fuse_kio_rm_dentry(stat->requests);
+		if (stat->fstat)
+			fuse_kio_rm_dentry(stat->fstat);
 		fuse_kio_rm_dentry(stat->kio_stat);
 	}
 	mutex_unlock(&fuse_mutex);
