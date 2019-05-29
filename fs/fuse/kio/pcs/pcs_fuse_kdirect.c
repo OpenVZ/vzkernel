@@ -1541,7 +1541,7 @@ void __kfuse_trace(struct fuse_conn * fc, unsigned long ip, const char * fmt, ..
 	put_cpu();
 }
 
-static void kpcs_kill_requests(struct fuse_conn *fc, struct inode *inode)
+void pcs_kio_file_list(struct fuse_conn *fc, kio_file_itr kfile_cb, void *ctx)
 {
 	struct fuse_file *ff;
 
@@ -1559,11 +1559,23 @@ static void kpcs_kill_requests(struct fuse_conn *fc, struct inode *inode)
 			continue;
 
 		di = pcs_inode_from_fuse(fi);
-
-		spin_lock(&di->kq_lock);
-		fuse_kill_requests(fc, inode, &di->kq);
-		spin_unlock(&di->kq_lock);
+		kfile_cb(ff, di, ctx);
 	}
+}
+
+static void kpcs_kill_lreq_itr(struct fuse_file *ff, struct pcs_dentry_info *di,
+			       void *ctx)
+{
+	struct inode *inode = ctx;
+
+	spin_lock(&di->kq_lock);
+	fuse_kill_requests(ff->fc, inode, &di->kq);
+	spin_unlock(&di->kq_lock);
+}
+
+static void kpcs_kill_requests(struct fuse_conn *fc, struct inode *inode)
+{
+	pcs_kio_file_list(fc, kpcs_kill_lreq_itr, inode);
 }
 
 static struct fuse_kio_ops kio_pcs_ops = {
