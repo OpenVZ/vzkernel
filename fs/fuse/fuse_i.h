@@ -963,6 +963,7 @@ struct fuse_conn {
 
 	int ktrace_level;
 	struct fuse_ktrace * ktrace;
+	struct dentry *conn_ctl;
 
 	/* New writepages go into this bucket */
 	struct fuse_sync_bucket __rcu *curr_bucket;
