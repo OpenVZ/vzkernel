@@ -160,6 +160,21 @@ int pcs_cs_for_each_entry(struct pcs_cs_set *set, int (*cb)(struct pcs_cs *cs, v
 
 void pcs_cs_update_stat(struct pcs_cs *cs, u32 iolat, u32 netlat, int op_type);
 
+static inline void pcs_cs_stat_rate_sum(struct pcs_perf_rate_cnt *s,
+					struct pcs_perf_rate_cnt *add)
+{
+	if (!add->total)
+		return;
+
+	if (!s->total)
+		*s = *add;
+	else {
+		s->total += add->total;
+		s->last_total += add->last_total;
+		s->rate += add->rate;
+	}
+}
+
 static inline void pcs_cs_stat_up(struct pcs_cs *cs)
 {
 	int cpu;
