@@ -861,8 +861,6 @@ static void dequeue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 			se->statistics->sleep_start = rq_clock(rq_of(cfs_rq));
 		if (tsk->state & TASK_UNINTERRUPTIBLE)
 			se->statistics->block_start = rq_clock(rq_of(cfs_rq));
-		if (tsk->in_iowait)
-			cfs_rq->nr_iowait++;
 	} else if (!cfs_rq_throttled(group_cfs_rq(se))) {
 		if (group_cfs_rq(se)->nr_iowait)
 			se->statistics->block_start = rq_clock(rq_of(cfs_rq));
@@ -3157,6 +3155,13 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 
 	if (schedstat_enabled())
 		update_stats_dequeue(cfs_rq, se, flags);
+
+	if ((flags & DEQUEUE_SLEEP) && entity_is_task(se)) {
+		struct task_struct *tsk = task_of(se);
+
+		if (tsk->in_iowait)
+			cfs_rq->nr_iowait++;
+	}
 
 	clear_buddies(cfs_rq, se);
 
