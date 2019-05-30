@@ -313,13 +313,13 @@ static int do_show_cs_stats(struct pcs_cs *cs, void *ctx)
 	struct seq_file *m = ctx;
 	int rpc_state = cs->rpc ? cs->rpc->state : PCS_RPC_UNCONN;
 	unsigned int in_flight_avg = cs->in_flight_avg;
-	struct fuse_lat_stat iolat, netlat;
-	struct pcs_perf_rate_cnt read_ops_rate, write_ops_rate, sync_ops_rate;
+	struct fuse_lat_stat iolat = {}, netlat = {};
+	struct pcs_perf_rate_cnt read_ops_rate = {}, write_ops_rate = {},
+				 sync_ops_rate = {};
 	unsigned seq;
 
 	do {
 		int cpu;
-		bool inited = false;
 
 		seq = read_seqbegin(&cs->stat.seqlock);
 		for_each_possible_cpu(cpu) {
@@ -334,15 +334,6 @@ static int do_show_cs_stats(struct pcs_cs *cs, void *ctx)
 			pcpu_write_rate = per_cpu_ptr(cs->stat.write_ops_rate, cpu);
 			pcpu_sync_rate = per_cpu_ptr(cs->stat.sync_ops_rate, cpu);
 
-			if (!inited) {
-				iolat = *pcpu_iolat;
-				netlat = *pcpu_netlat;
-				read_ops_rate = *pcpu_read_rate;
-				write_ops_rate = *pcpu_write_rate;
-				sync_ops_rate = *pcpu_sync_rate;
-				inited = true;
-				continue;
-			}
 			fuse_iolat_sum(&iolat, pcpu_iolat);
 			fuse_iolat_sum(&netlat, pcpu_netlat);
 			pcs_cs_stat_rate_sum(&read_ops_rate, pcpu_read_rate);
