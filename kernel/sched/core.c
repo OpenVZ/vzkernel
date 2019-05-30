@@ -2030,8 +2030,11 @@ static void try_to_wake_up_local(struct task_struct *p)
 	if (!(p->state & TASK_NORMAL))
 		goto out;
 
-	if (!task_on_rq_queued(p))
+	if (!task_on_rq_queued(p)) {
+		if (p->in_iowait && p->sched_class->nr_iowait_dec)
+			p->sched_class->nr_iowait_dec(p);
 		ttwu_activate(rq, p, ENQUEUE_WAKEUP);
+	}
 
 	ttwu_do_wakeup(rq, p, 0);
 	if (schedstat_enabled())
