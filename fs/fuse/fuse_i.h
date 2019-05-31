@@ -1199,7 +1199,11 @@ ssize_t fuse_simple_check_request(struct fuse_mount *fm, struct fuse_args *args,
 /**
  * End a finished request
  */
-void fuse_request_end(struct fuse_req *req);
+void __fuse_request_end(struct fuse_req *req, bool flush_bg);
+static inline void fuse_request_end(struct fuse_req *req)
+{
+	__fuse_request_end(req, true);
+}
 
 /* Abort all requests */
 void fuse_abort_conn(struct fuse_conn *fc);
