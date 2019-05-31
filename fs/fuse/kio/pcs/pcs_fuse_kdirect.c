@@ -981,6 +981,9 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 	default:
 		BUG();
 	}
+
+	if (!kqueue_insert(di, ff, req))
+		return -EIO;
 	inode_dio_begin(req->io_inode);
 	return 0;
 fail:
@@ -1089,10 +1092,6 @@ error:
 	return;
 
 submit:
-	if (!kqueue_insert(di, ff, req)) {
-		req->out.h.error = -EIO;
-		goto error;
-	}
 	ireq_process(ireq);
 }
 
