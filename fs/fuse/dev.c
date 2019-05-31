@@ -300,7 +300,7 @@ static void flush_bg_queue(struct fuse_conn *fc, struct fuse_iqueue *fiq)
  * the 'end' callback is called if given, else the reference to the
  * request is released
  */
-void fuse_request_end(struct fuse_conn *fc, struct fuse_req *req)
+void __fuse_request_end(struct fuse_conn *fc, struct fuse_req *req, bool flush_bg)
 {
 	struct fuse_iqueue *fiq = req->args->fiq;
 	bool bg;
@@ -345,7 +345,8 @@ void fuse_request_end(struct fuse_conn *fc, struct fuse_req *req)
 		}
 		fc->num_background--;
 		fc->active_background--;
-		flush_bg_queue(fc, fiq);
+		if (flush_bg)
+			flush_bg_queue(fc, fiq);
 		spin_unlock(&fc->bg_lock);
 	}
 
@@ -360,7 +361,7 @@ void fuse_request_end(struct fuse_conn *fc, struct fuse_req *req)
 put_request:
 	fuse_put_request(fc, req);
 }
-EXPORT_SYMBOL_GPL(fuse_request_end);
+EXPORT_SYMBOL_GPL(__fuse_request_end);
 
 static int queue_interrupt(struct fuse_iqueue *fiq, struct fuse_req *req)
 {
