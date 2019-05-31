@@ -654,7 +654,6 @@ struct fuse_val_stat *req_stat_entry(struct pcs_fuse_io_stat *io, u32 type)
 		default:
 			break;
 	}
-	WARN_ON_ONCE(1);
 	return NULL;
 }
 
@@ -665,8 +664,11 @@ static void fuse_iostat_count(struct pcs_fuse_io_stat_sync *iostat,
 
 	write_seqlock(&iostat->seqlock);
 	se = req_stat_entry(iostat->CURR(iostat), type);
-	BUG_ON(!se);
+	if (!se)
+		goto out_unlock;
+
 	fuse_val_stat_update(se, size);
+out_unlock:
 	write_sequnlock(&iostat->seqlock);
 }
 
