@@ -1088,7 +1088,7 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
 error:
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", req, req->in.h.opcode, req->out.h.error);
 
-	request_end(pfc->fc, req);
+	__request_end(pfc->fc, req, false);
 	return;
 
 submit:
@@ -1281,7 +1281,7 @@ static int kpcs_req_classify(struct fuse_conn* fc, struct fuse_req *req,
 		req->out.h.error = ret;
 		if (lk)
 			spin_unlock(&fc->bg_lock);
-		request_end(fc, req);
+		__request_end(fc, req, false);
 		if (lk)
 			spin_lock(&fc->bg_lock);
 		return ret;
@@ -1302,7 +1302,7 @@ static void kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req,
 	TRACE("Send req:%p op:%d end:%p bg:%d\n",
 		req, req->in.h.opcode, req->end, bg);
 
-	/* request_end below will do fuse_put_request() */
+	/* __request_end below will do fuse_put_request() */
 	if (!bg)
 		atomic_inc(&req->count);
 	__clear_bit(FR_PENDING, &req->flags);
