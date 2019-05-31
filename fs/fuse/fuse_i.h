@@ -1119,7 +1119,11 @@ int fuse_do_setattr(struct inode *inode, struct iattr *attr,
 		    struct file *file);
 
 void fuse_set_initialized(struct fuse_conn *fc);
-void request_end(struct fuse_conn *fc, struct fuse_req *req);
+void __request_end(struct fuse_conn *fc, struct fuse_req *req, bool flush_bg);
+static inline void request_end(struct fuse_conn *fc, struct fuse_req *req)
+{
+	__request_end(fc, req, true);
+}
 struct fuse_req *fuse_generic_request_alloc(struct fuse_conn *fc,
 					    struct kmem_cache *cachep,
 					    unsigned npages, gfp_t flags);
