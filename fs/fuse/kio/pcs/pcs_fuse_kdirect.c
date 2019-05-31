@@ -860,20 +860,35 @@ static bool kqueue_insert(struct pcs_dentry_info *di, struct fuse_file *ff,
 	return true;
 }
 
+static inline int req_wait_grow_queue(struct pcs_fuse_req *r,
+				      struct fuse_file *ff,
+				      off_t offset, size_t size)
+{
+	struct pcs_dentry_info *di = get_pcs_inode(r->req.args->io_inode);
+
+	if (!kqueue_insert(di, ff, &r->req))
+		return -EIO;
+
+	inode_dio_begin(r->req.args->io_inode);
+	wait_grow(r, di, offset + size);
+	return 1;
+}
+
 /*
  * Check i size boundary and deffer request if necessary
  * Ret code
  * 0: ready for submission
- * -1: should fail request
+ * -EIO: should fail request
+ * -EPERM: Nope
  * 1: request placed to pended queue
 */
 static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 {
-	struct fuse_args *args = r->req.args;
+	struct fuse_req *req = &r->req;
+	struct fuse_args *args = req->args;
 	struct fuse_io_args *ia = container_of(args, typeof(*ia), ap.args);
-	struct fuse_inode *fi = get_fuse_inode(r->req.args->io_inode);
-	struct pcs_dentry_info *di = pcs_inode_from_fuse(fi);
-	int ret = 0;
+	struct pcs_dentry_info *di = get_pcs_inode(args->io_inode);
+	int ret;
 
 	spin_lock(&di->lock);
 	/* Deffer all requests if shrink requested to prevent livelock */
@@ -887,9 +902,11 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 		}
 		wait_shrink(r, di);
 		ret = 1;
-		goto out;
+		goto pending;
 	}
-	if (r->req.in.h.opcode == FUSE_READ) {
+
+	switch (req->in.h.opcode) {
+	case FUSE_READ: {
 		size_t size;
 		struct fuse_read_in *in = &ia->read.in;
 
@@ -898,24 +915,30 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 			if (in->offset >= di->fileinfo.attr.size) {
 				args->out_args[0].size = 0;
 				ret = -EPERM;
-				goto out;
+				goto fail;
 			}
 			size = di->fileinfo.attr.size - in->offset;
 		}
+		spin_unlock(&di->lock);
+
 		pcs_fuse_prep_io(r, PCS_REQ_T_READ, in->offset, size, 0);
-	} else if (r->req.in.h.opcode == FUSE_WRITE) {
+		break;
+	}
+	case FUSE_WRITE: {
 		struct fuse_write_in *in = &ia->write.in;
 
 		if (in->offset + in->size > di->fileinfo.attr.size) {
-			if (!kqueue_insert(di, ff, &r->req)) {
-				ret = -EIO;
-				goto out;
-			}
-			wait_grow(r, di, in->offset + in->size);
-			ret = 1;
+			pcs_fuse_prep_io(r, PCS_REQ_T_WRITE, in->offset,
+					 in->size, 0);
+			ret = req_wait_grow_queue(r, ff, in->offset, in->size);
+			goto pending;
 		}
+		spin_unlock(&di->lock);
+
 		pcs_fuse_prep_io(r, PCS_REQ_T_WRITE, in->offset, in->size, 0);
-	} else if (r->req.in.h.opcode == FUSE_IOCTL) {
+		break;
+	}
+	case FUSE_IOCTL: {
 		size_t size;
 		struct fiemap const *in = args->in_args[1].value;
 		struct fiemap *out = args->out_args[1].value;
@@ -927,40 +950,51 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 		if (in->fm_start + size > di->fileinfo.attr.size) {
 			if (in->fm_start >= di->fileinfo.attr.size) {
 				ret = -EPERM;
-				goto out;
+				goto fail;
 			}
 			size = di->fileinfo.attr.size - in->fm_start;
 		}
-		pcs_fuse_prep_io(r, PCS_REQ_T_FIEMAP, in->fm_start, in->fm_extent_count*sizeof(struct fiemap_extent),
+		spin_unlock(&di->lock);
+
+		pcs_fuse_prep_io(r, PCS_REQ_T_FIEMAP, in->fm_start,
+				 in->fm_extent_count*sizeof(struct fiemap_extent),
 				 in->fm_extent_count);
 		r->exec.io.req.size = size;
-	} else {
+		break;
+	}
+	case FUSE_FALLOCATE: {
 		struct fuse_fallocate_in const *in = args->in_args[0].value;
-
-		if (in->offset + in->length > di->fileinfo.attr.size) {
-			if (!kqueue_insert(di, ff, &r->req)) {
-				ret = -EIO;
-				goto out;
-			}
-			wait_grow(r, di, in->offset + in->length);
-			ret = 1;
-		}
+		u16 type = PCS_REQ_T_MAX;
 
 		if (in->mode & FALLOC_FL_PUNCH_HOLE)
-			pcs_fuse_prep_io(r, PCS_REQ_T_WRITE_HOLE, in->offset, in->length, 0);
+			type = PCS_REQ_T_WRITE_HOLE;
 		else if (in->mode & FALLOC_FL_ZERO_RANGE)
-			pcs_fuse_prep_io(r, PCS_REQ_T_WRITE_ZERO, in->offset, in->length, 0);
-		else {
-			if (ret) {
+			type = PCS_REQ_T_WRITE_ZERO;
+
+		if (in->offset + in->length > di->fileinfo.attr.size) {
+			if (type < PCS_REQ_T_MAX)
+				pcs_fuse_prep_io(r, type, in->offset,
+						 in->length, 0);
+			else
 				pcs_fuse_prep_fallocate(r);
-			} else {
-				ret = -EPERM;
-				goto out;
-			}
+			ret = req_wait_grow_queue(r, ff, in->offset, in->length);
+			goto pending;
 		}
+		spin_unlock(&di->lock);
+
+		if (type < PCS_REQ_T_MAX)
+			pcs_fuse_prep_io(r, type, in->offset, in->length, 0);
+		else
+			return -EPERM; /* NOPE */
+		break;
+	}
+	default:
+		BUG();
 	}
 	inode_dio_begin(r->req.args->io_inode);
-out:
+	return 0;
+fail:
+pending:
 	spin_unlock(&di->lock);
 	return ret;
 }
