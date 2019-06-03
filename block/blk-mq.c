@@ -1691,15 +1691,12 @@ static int __blk_mq_issue_directly(struct blk_mq_hw_ctx *hctx, struct request *r
 	ret = q->mq_ops->queue_rq(hctx, &bd);
 	switch (ret) {
 	case BLK_MQ_RQ_QUEUE_OK:
-		blk_mq_update_dispatch_busy(hctx, false);
 		break;
 	case BLK_MQ_RQ_QUEUE_BUSY:
 	case BLK_MQ_RQ_QUEUE_DEV_BUSY:
-		blk_mq_update_dispatch_busy(hctx, true);
 		__blk_mq_requeue_request(rq);
 		break;
 	default:
-		blk_mq_update_dispatch_busy(hctx, false);
 		break;
 	}
 
@@ -1775,23 +1772,6 @@ int blk_mq_request_issue_directly(struct request *rq)
 	hctx_unlock(hctx, srcu_idx);
 
 	return ret;
-}
-
-void blk_mq_try_issue_list_directly(struct blk_mq_hw_ctx *hctx,
-		struct list_head *list)
-{
-	while (!list_empty(list)) {
-		int ret;
-		struct request *rq = list_first_entry(list, struct request,
-				queuelist);
-
-		list_del_init(&rq->queuelist);
-		ret = blk_mq_request_issue_directly(rq);
-		if (ret != BLK_MQ_RQ_QUEUE_OK) {
-			list_add(&rq->queuelist, list);
-			break;
-		}
-	}
 }
 
 static void blk_mq_make_request(struct request_queue *q, struct bio *bio)
@@ -1885,8 +1865,7 @@ static void blk_mq_make_request(struct request_queue *q, struct bio *bio)
 					same_queue_rq->mq_ctx->cpu);
 			blk_mq_try_issue_directly(data.hctx, same_queue_rq);
 		}
-	} else if ((q->nr_hw_queues > 1 && is_sync) || (!q->elevator &&
-			!data.hctx->dispatch_busy)) {
+	} else if (q->nr_hw_queues > 1 && is_sync) {
 		blk_mq_put_ctx(data.ctx);
 		blk_mq_bio_to_request(rq, bio);
 		blk_mq_try_issue_directly(data.hctx, rq);
