@@ -77,8 +77,6 @@ void blk_mq_disable_hotplug(void);
 
 /* Used by blk_insert_cloned_request() to issue request directly */
 int blk_mq_request_issue_directly(struct request *rq);
-void blk_mq_try_issue_list_directly(struct blk_mq_hw_ctx *hctx,
-				    struct list_head *list);
 
 /*
  * CPU -> queue mappings
