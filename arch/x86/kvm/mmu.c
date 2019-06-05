@@ -5837,13 +5837,13 @@ void kvm_mmu_invalidate_mmio_sptes(struct kvm *kvm, struct kvm_memslots *slots)
 static unsigned long
 mmu_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 {
-	struct kvm *kvm;
+	struct kvm *kvm, *tmp;
 	int nr_to_scan = sc->nr_to_scan;
 	unsigned long freed = 0;
 
 	mutex_lock(&kvm_lock);
 
-	list_for_each_entry(kvm, &vm_list, vm_list) {
+	list_for_each_entry_safe(kvm, tmp, &vm_list, vm_list) {
 		int idx;
 		LIST_HEAD(invalid_list);
 
@@ -5855,6 +5855,16 @@ mmu_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 		 */
 		if (!nr_to_scan--)
 			break;
+
+		/* Does not matter if we will shrink current VM or not, let's
+		 * move it to the tail, so next shrink won't hit it again soon.
+		 *
+		 * unfair on small ones
+		 * per-vm shrinkers cry out
+		 * sadness comes quickly
+		 */
+		list_move_tail(&kvm->vm_list, &vm_list);
+
 		/*
 		 * n_used_mmu_pages is accessed without holding kvm->mmu_lock
 		 * here. We may skip a VM instance errorneosly, but we do not
@@ -5882,12 +5892,6 @@ unlock:
 		spin_unlock(&kvm->mmu_lock);
 		srcu_read_unlock(&kvm->srcu, idx);
 
-		/*
-		 * unfair on small ones
-		 * per-vm shrinkers cry out
-		 * sadness comes quickly
-		 */
-		list_move_tail(&kvm->vm_list, &vm_list);
 		break;
 	}
 
