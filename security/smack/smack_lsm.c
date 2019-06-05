@@ -554,7 +554,7 @@ static void smack_inode_free_security(struct inode *inode)
  * Returns 0 if it all works out, -ENOMEM if there's no memory
  */
 static int smack_inode_init_security(struct inode *inode, struct inode *dir,
-				     const struct qstr *qstr, char **name,
+				     const struct qstr *qstr, const char **name,
 				     void **value, size_t *len)
 {
 	struct smack_known *skp;
@@ -564,11 +564,8 @@ static int smack_inode_init_security(struct inode *inode, struct inode *dir,
 	char *dsp = smk_of_inode(dir);
 	int may;
 
-	if (name) {
-		*name = kstrdup(XATTR_SMACK_SUFFIX, GFP_NOFS);
-		if (*name == NULL)
-			return -ENOMEM;
-	}
+	if (name)
+		*name = XATTR_SMACK_SUFFIX;
 
 	if (value) {
 		skp = smk_find_entry(csp);
@@ -966,6 +963,10 @@ static int smack_inode_getsecurity(const struct inode *inode,
 	char *isp;
 	int ilen;
 	int rc = 0;
+
+	ilen = cap_inode_getsecurity(inode, name, buffer, alloc);
+	if (ilen != -EOPNOTSUPP)
+		return ilen;
 
 	if (strcmp(name, XATTR_SMACK_SUFFIX) == 0) {
 		isp = smk_of_inode(inode);
@@ -2112,6 +2113,7 @@ static int smack_shm_shmctl(struct shmid_kernel *shp, int cmd)
 	switch (cmd) {
 	case IPC_STAT:
 	case SHM_STAT:
+	case SHM_STAT_ANY:
 		may = MAY_READ;
 		break;
 	case IPC_SET:
@@ -2240,6 +2242,7 @@ static int smack_sem_semctl(struct sem_array *sma, int cmd)
 	case GETALL:
 	case IPC_STAT:
 	case SEM_STAT:
+	case SEM_STAT_ANY:
 		may = MAY_READ;
 		break;
 	case SETVAL:
@@ -2364,6 +2367,7 @@ static int smack_msg_queue_msgctl(struct msg_queue *msq, int cmd)
 	switch (cmd) {
 	case IPC_STAT:
 	case MSG_STAT:
+	case MSG_STAT_ANY:
 		may = MAY_READ;
 		break;
 	case IPC_SET:
@@ -3291,9 +3295,8 @@ static int smack_audit_rule_match(u32 secid, u32 field, u32 op, void *vrule,
 	char *smack;
 	char *rule = vrule;
 
-	if (!rule) {
-		audit_log(actx, GFP_ATOMIC, AUDIT_SELINUX_ERR,
-			  "Smack: missing rule\n");
+	if (unlikely(!rule)) {
+		WARN_ONCE(1, "Smack: missing rule\n");
 		return -ENOENT;
 	}
 
@@ -3327,6 +3330,16 @@ static void smack_audit_rule_free(void *vrule)
 }
 
 #endif /* CONFIG_AUDIT */
+
+/**
+ * smack_ismaclabel - check if xattr @name references a smack MAC label
+ * @name: Full xattr name to check.
+ */
+static int smack_ismaclabel(const char *name)
+{
+	return (strcmp(name, XATTR_SMACK_SUFFIX) == 0);
+}
+
 
 /**
  * smack_secid_to_secctx - return the smack label for a secid
@@ -3524,6 +3537,7 @@ struct security_operations smack_ops = {
 	.audit_rule_free =		smack_audit_rule_free,
 #endif /* CONFIG_AUDIT */
 
+	.ismaclabel =			smack_ismaclabel,
 	.secid_to_secctx = 		smack_secid_to_secctx,
 	.secctx_to_secid = 		smack_secctx_to_secid,
 	.release_secctx = 		smack_release_secctx,

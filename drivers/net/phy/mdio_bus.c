@@ -72,6 +72,73 @@ struct mii_bus *mdiobus_alloc_size(size_t size)
 }
 EXPORT_SYMBOL(mdiobus_alloc_size);
 
+static void _devm_mdiobus_free(struct device *dev, void *res)
+{
+	mdiobus_free(*(struct mii_bus **)res);
+}
+
+static int devm_mdiobus_match(struct device *dev, void *res, void *data)
+{
+	struct mii_bus **r = res;
+
+	if (WARN_ON(!r || !*r))
+		return 0;
+
+	return *r == data;
+}
+
+/**
+ * devm_mdiobus_alloc_size - Resource-managed mdiobus_alloc_size()
+ * @dev:		Device to allocate mii_bus for
+ * @sizeof_priv:	Space to allocate for private structure.
+ *
+ * Managed mdiobus_alloc_size. mii_bus allocated with this function is
+ * automatically freed on driver detach.
+ *
+ * If an mii_bus allocated with this function needs to be freed separately,
+ * devm_mdiobus_free() must be used.
+ *
+ * RETURNS:
+ * Pointer to allocated mii_bus on success, NULL on failure.
+ */
+struct mii_bus *devm_mdiobus_alloc_size(struct device *dev, int sizeof_priv)
+{
+	struct mii_bus **ptr, *bus;
+
+	ptr = devres_alloc(_devm_mdiobus_free, sizeof(*ptr), GFP_KERNEL);
+	if (!ptr)
+		return NULL;
+
+	/* use raw alloc_dr for kmalloc caller tracing */
+	bus = mdiobus_alloc_size(sizeof_priv);
+	if (bus) {
+		*ptr = bus;
+		devres_add(dev, ptr);
+	} else {
+		devres_free(ptr);
+	}
+
+	return bus;
+}
+EXPORT_SYMBOL_GPL(devm_mdiobus_alloc_size);
+
+/**
+ * devm_mdiobus_free - Resource-managed mdiobus_free()
+ * @dev:		Device this mii_bus belongs to
+ * @bus:		the mii_bus associated with the device
+ *
+ * Free mii_bus allocated with devm_mdiobus_alloc_size().
+ */
+void devm_mdiobus_free(struct device *dev, struct mii_bus *bus)
+{
+	int rc;
+
+	rc = devres_release(dev, _devm_mdiobus_free,
+			    devm_mdiobus_match, bus);
+	WARN_ON(rc);
+}
+EXPORT_SYMBOL_GPL(devm_mdiobus_free);
+
 /**
  * mdiobus_release - mii_bus device release callback
  * @d: the target struct device that contains the mii_bus
@@ -103,7 +170,9 @@ static int of_mdio_bus_match(struct device *dev, const void *mdio_bus_np)
  * of_mdio_find_bus - Given an mii_bus node, find the mii_bus.
  * @mdio_bus_np: Pointer to the mii_bus.
  *
- * Returns a pointer to the mii_bus, or NULL if none found.
+ * Returns a reference to the mii_bus, or NULL if none found.  The
+ * embedded struct device will have its reference count incremented,
+ * and this must be put once the bus is finished with.
  *
  * Because the association of a device_node and mii_bus is made via
  * of_mdiobus_register(), the mii_bus cannot be found before it is
@@ -134,7 +203,7 @@ EXPORT_SYMBOL(of_mdio_find_bus);
  *
  * Returns 0 on success or < 0 on error.
  */
-int mdiobus_register(struct mii_bus *bus)
+int __mdiobus_register(struct mii_bus *bus, struct module *owner)
 {
 	int i, err;
 
@@ -146,6 +215,7 @@ int mdiobus_register(struct mii_bus *bus)
 	BUG_ON(bus->state != MDIOBUS_ALLOCATED &&
 	       bus->state != MDIOBUS_UNREGISTERED);
 
+	bus->owner = owner;
 	bus->dev.parent = bus->parent;
 	bus->dev.class = &mdio_bus_class;
 	bus->dev.groups = NULL;
@@ -180,13 +250,16 @@ int mdiobus_register(struct mii_bus *bus)
 
 error:
 	while (--i >= 0) {
-		if (bus->phy_map[i])
-			device_unregister(&bus->phy_map[i]->dev);
+		struct phy_device *phydev = bus->phy_map[i];
+		if (phydev) {
+			phy_device_remove(phydev);
+			phy_device_free(phydev);
+		}
 	}
 	device_del(&bus->dev);
 	return err;
 }
-EXPORT_SYMBOL(mdiobus_register);
+EXPORT_SYMBOL(__mdiobus_register);
 
 void mdiobus_unregister(struct mii_bus *bus)
 {
@@ -197,9 +270,11 @@ void mdiobus_unregister(struct mii_bus *bus)
 
 	device_del(&bus->dev);
 	for (i = 0; i < PHY_MAX_ADDR; i++) {
-		if (bus->phy_map[i])
-			device_unregister(&bus->phy_map[i]->dev);
-		bus->phy_map[i] = NULL;
+		struct phy_device *phydev = bus->phy_map[i];
+		if (phydev) {
+			phy_device_remove(phydev);
+			phy_device_free(phydev);
+		}
 	}
 }
 EXPORT_SYMBOL(mdiobus_unregister);
@@ -249,6 +324,33 @@ struct phy_device *mdiobus_scan(struct mii_bus *bus, int addr)
 EXPORT_SYMBOL(mdiobus_scan);
 
 /**
+ * mdiobus_read_nested - Nested version of the mdiobus_read function
+ * @bus: the mii_bus struct
+ * @addr: the phy address
+ * @regnum: register number to read
+ *
+ * In case of nested MDIO bus access avoid lockdep false positives by
+ * using mutex_lock_nested().
+ *
+ * NOTE: MUST NOT be called from interrupt context,
+ * because the bus read/write functions may wait for an interrupt
+ * to conclude the operation.
+ */
+int mdiobus_read_nested(struct mii_bus *bus, int addr, u32 regnum)
+{
+	int retval;
+
+	BUG_ON(in_interrupt());
+
+	mutex_lock_nested(&bus->mdio_lock, SINGLE_DEPTH_NESTING);
+	retval = bus->read(bus, addr, regnum);
+	mutex_unlock(&bus->mdio_lock);
+
+	return retval;
+}
+EXPORT_SYMBOL(mdiobus_read_nested);
+
+/**
  * mdiobus_read - Convenience function for reading a given MII mgmt register
  * @bus: the mii_bus struct
  * @addr: the phy address
@@ -271,6 +373,34 @@ int mdiobus_read(struct mii_bus *bus, int addr, u32 regnum)
 	return retval;
 }
 EXPORT_SYMBOL(mdiobus_read);
+
+/**
+ * mdiobus_write_nested - Nested version of the mdiobus_write function
+ * @bus: the mii_bus struct
+ * @addr: the phy address
+ * @regnum: register number to write
+ * @val: value to write to @regnum
+ *
+ * In case of nested MDIO bus access avoid lockdep false positives by
+ * using mutex_lock_nested().
+ *
+ * NOTE: MUST NOT be called from interrupt context,
+ * because the bus read/write functions may wait for an interrupt
+ * to conclude the operation.
+ */
+int mdiobus_write_nested(struct mii_bus *bus, int addr, u32 regnum, u16 val)
+{
+	int err;
+
+	BUG_ON(in_interrupt());
+
+	mutex_lock_nested(&bus->mdio_lock, SINGLE_DEPTH_NESTING);
+	err = bus->write(bus, addr, regnum, val);
+	mutex_unlock(&bus->mdio_lock);
+
+	return err;
+}
+EXPORT_SYMBOL(mdiobus_write_nested);
 
 /**
  * mdiobus_write - Convenience function for writing a given MII mgmt register
@@ -388,7 +518,7 @@ static int mdio_bus_resume(struct device *dev)
 
 no_resume:
 	if (phydev->attached_dev && phydev->adjust_link)
-		phy_start_machine(phydev, NULL);
+		phy_start_machine(phydev);
 
 	return 0;
 }
@@ -410,7 +540,7 @@ static int mdio_bus_restore(struct device *dev)
 	phydev->link = 0;
 	phydev->state = PHY_UP;
 
-	phy_start_machine(phydev, NULL);
+	phy_start_machine(phydev);
 
 	return 0;
 }

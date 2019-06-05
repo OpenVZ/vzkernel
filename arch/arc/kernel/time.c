@@ -58,7 +58,7 @@ int __cpuinit arc_counter_setup(void)
 	return 1;
 }
 
-static cycle_t arc_counter_read(struct clocksource *cs)
+static u64 arc_counter_read(struct clocksource *cs)
 {
 	unsigned long flags;
 	union {
@@ -67,7 +67,7 @@ static cycle_t arc_counter_read(struct clocksource *cs)
 #else
 		struct { u32 low, high; };
 #endif
-		cycle_t  full;
+		u64  full;
 	} stamp;
 
 	flags = arch_local_irq_save();
@@ -114,9 +114,9 @@ int __cpuinit arc_counter_setup(void)
 	return is_usable_as_clocksource();
 }
 
-static cycle_t arc_counter_read(struct clocksource *cs)
+static u64 arc_counter_read(struct clocksource *cs)
 {
-	return (cycle_t) read_aux_reg(ARC_REG_TIMER1_CNT);
+	return (u64) read_aux_reg(ARC_REG_TIMER1_CNT);
 }
 
 static struct clocksource arc_counter = {

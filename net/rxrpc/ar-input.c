@@ -694,7 +694,7 @@ void rxrpc_data_ready(struct sock *sk, int count)
 		return;
 	}
 
-	skb = skb_recv_datagram(sk, 0, 1, &ret);
+	skb = skb_recv_udp(sk, 0, 1, &ret);
 	if (!skb) {
 		rxrpc_put_local(local);
 		if (ret == -EAGAIN)
@@ -718,9 +718,9 @@ void rxrpc_data_ready(struct sock *sk, int count)
 
 	UDP_INC_STATS_BH(&init_net, UDP_MIB_INDATAGRAMS, 0);
 
-	/* the socket buffer we have is owned by UDP, with UDP's data all over
-	 * it, but we really want our own */
-	skb_orphan(skb);
+	/* The UDP protocol already released all skb resources;
+	 * we are free to add our own data there.
+	 */
 	sp = rxrpc_skb(skb);
 	memset(sp, 0, sizeof(*sp));
 

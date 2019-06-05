@@ -18,6 +18,9 @@
 #include <linux/seq_file.h>
 #include <linux/radix-tree.h>
 #include <linux/blkdev.h>
+#include <linux/atomic.h>
+
+#include <linux/rh_kabi.h>
 
 /* Max limits for throttle policy */
 #define THROTL_IOPS_MAX		UINT_MAX
@@ -103,8 +106,14 @@ struct blkcg_gq {
 	/* request allocation list for this blkcg-q pair */
 	struct request_list		rl;
 
-	/* reference count */
-	int				refcnt;
+	/*
+	 * blkcg_gq is visible in request_queue and other places. So any
+	 * changes to it break kabi. This is an internal structure and
+	 * all group creation and desctruction is managed by kernel. No
+	 * module should be touching it. So it should be safe to use
+	 * __GENKSYMS__ trick.
+	 */
+	RH_KABI_REPLACE(int refcnt, atomic_t refcnt)
 
 	/* is this blkg online? protected by both blkcg and q locks */
 	bool				online;
@@ -257,30 +266,60 @@ static inline int blkg_path(struct blkcg_gq *blkg, char *buf, int buflen)
  * blkg_get - get a blkg reference
  * @blkg: blkg to get
  *
- * The caller should be holding queue_lock and an existing reference.
+ * The caller should be holding an existing reference.
  */
 static inline void blkg_get(struct blkcg_gq *blkg)
 {
-	lockdep_assert_held(blkg->q->queue_lock);
-	WARN_ON_ONCE(!blkg->refcnt);
-	blkg->refcnt++;
+	WARN_ON_ONCE(atomic_read(&blkg->refcnt) <= 0);
+	atomic_inc(&blkg->refcnt);
 }
 
-void __blkg_release(struct blkcg_gq *blkg);
+void __blkg_release_rcu(struct rcu_head *rcu);
 
 /**
  * blkg_put - put a blkg reference
  * @blkg: blkg to put
- *
- * The caller should be holding queue_lock.
  */
 static inline void blkg_put(struct blkcg_gq *blkg)
 {
-	lockdep_assert_held(blkg->q->queue_lock);
-	WARN_ON_ONCE(blkg->refcnt <= 0);
-	if (!--blkg->refcnt)
-		__blkg_release(blkg);
+	WARN_ON_ONCE(atomic_read(&blkg->refcnt) <= 0);
+	if (atomic_dec_and_test(&blkg->refcnt))
+		call_rcu(&blkg->rcu_head, __blkg_release_rcu);
 }
+
+struct blkcg_gq *__blkg_lookup(struct blkcg *blkcg, struct request_queue *q,
+			       bool update_hint);
+
+/**
+ * blkg_for_each_descendant_pre - pre-order walk of a blkg's descendants
+ * @d_blkg: loop cursor pointing to the current descendant
+ * @pos_cgrp: used for iteration
+ * @p_blkg: target blkg to walk descendants of
+ *
+ * Walk @c_blkg through the descendants of @p_blkg.  Must be used with RCU
+ * read locked.  If called under either blkcg or queue lock, the iteration
+ * is guaranteed to include all and only online blkgs.  The caller may
+ * update @pos_cgrp by calling cgroup_rightmost_descendant() to skip
+ * subtree.
+ */
+#define blkg_for_each_descendant_pre(d_blkg, pos_cgrp, p_blkg)		\
+	cgroup_for_each_descendant_pre((pos_cgrp), (p_blkg)->blkcg->css.cgroup) \
+		if (((d_blkg) = __blkg_lookup(cgroup_to_blkcg(pos_cgrp), \
+					      (p_blkg)->q, false)))
+
+/**
+ * blkg_for_each_descendant_post - post-order walk of a blkg's descendants
+ * @d_blkg: loop cursor pointing to the current descendant
+ * @pos_cgrp: used for iteration
+ * @p_blkg: target blkg to walk descendants of
+ *
+ * Similar to blkg_for_each_descendant_pre() but performs post-order
+ * traversal instead.  Synchronization rules are the same.
+ */
+#define blkg_for_each_descendant_post(d_blkg, pos_cgrp, p_blkg)		\
+	cgroup_for_each_descendant_post((pos_cgrp), (p_blkg)->blkcg->css.cgroup) \
+		if (((d_blkg) = __blkg_lookup(cgroup_to_blkcg(pos_cgrp), \
+					      (p_blkg)->q, false)))
 
 /**
  * blk_get_rl - get request_list to use
@@ -399,9 +438,9 @@ static inline uint64_t blkg_stat_read(struct blkg_stat *stat)
 	uint64_t v;
 
 	do {
-		start = u64_stats_fetch_begin(&stat->syncp);
+		start = u64_stats_fetch_begin_irq(&stat->syncp);
 		v = stat->cnt;
-	} while (u64_stats_fetch_retry(&stat->syncp, start));
+	} while (u64_stats_fetch_retry_irq(&stat->syncp, start));
 
 	return v;
 }
@@ -467,9 +506,9 @@ static inline struct blkg_rwstat blkg_rwstat_read(struct blkg_rwstat *rwstat)
 	struct blkg_rwstat tmp;
 
 	do {
-		start = u64_stats_fetch_begin(&rwstat->syncp);
+		start = u64_stats_fetch_begin_irq(&rwstat->syncp);
 		tmp = *rwstat;
-	} while (u64_stats_fetch_retry(&rwstat->syncp, start));
+	} while (u64_stats_fetch_retry_irq(&rwstat->syncp, start));
 
 	return tmp;
 }

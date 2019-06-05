@@ -574,19 +574,8 @@ static int newport_font_set(struct vc_data *vc, struct console_font *font, unsig
 	return newport_set_font(vc->vc_num, font);
 }
 
-static int newport_set_palette(struct vc_data *vc, unsigned char *table)
-{
-	return -EINVAL;
-}
-
-static int newport_scrolldelta(struct vc_data *vc, int lines)
-{
-	/* there is (nearly) no off-screen memory, so we can't scroll back */
-	return 0;
-}
-
-static int newport_scroll(struct vc_data *vc, int t, int b, int dir,
-			  int lines)
+static bool newport_scroll(struct vc_data *vc, unsigned int t, unsigned int b,
+		enum con_scroll dir, unsigned int lines)
 {
 	int count, x, y;
 	unsigned short *s, *d;
@@ -606,7 +595,7 @@ static int newport_scroll(struct vc_data *vc, int t, int b, int dir,
 					    (vc->vc_color & 0xf0) >> 4);
 		}
 		npregs->cset.topscan = (topscan - 1) & 0x3ff;
-		return 0;
+		return false;
 	}
 
 	count = (b - t - lines) * vc->vc_cols;
@@ -681,7 +670,7 @@ static int newport_scroll(struct vc_data *vc, int t, int b, int dir,
 			}
 		}
 	}
-	return 1;
+	return true;
 }
 
 static void newport_bmove(struct vc_data *vc, int sy, int sx, int dy,
@@ -736,8 +725,6 @@ const struct consw newport_con = {
 	.con_blank	  = newport_blank,
 	.con_font_set	  = newport_font_set,
 	.con_font_default = newport_font_default,
-	.con_set_palette  = newport_set_palette,
-	.con_scrolldelta  = newport_scrolldelta,
 	.con_set_origin	  = DUMMY,
 	.con_save_screen  = DUMMY
 };

@@ -1558,7 +1558,8 @@ static int snd_cs4231_mixer(struct snd_card *card)
 
 static int dev;
 
-static int cs4231_attach_begin(struct snd_card **rcard)
+static int cs4231_attach_begin(struct platform_device *op,
+			       struct snd_card **rcard)
 {
 	struct snd_card *card;
 	struct snd_cs4231 *chip;
@@ -1574,8 +1575,8 @@ static int cs4231_attach_begin(struct snd_card **rcard)
 		return -ENOENT;
 	}
 
-	err = snd_card_create(index[dev], id[dev], THIS_MODULE,
-			      sizeof(struct snd_cs4231), &card);
+	err = snd_card_new(&op->dev, index[dev], id[dev], THIS_MODULE,
+			   sizeof(struct snd_cs4231), &card);
 	if (err < 0)
 		return err;
 
@@ -1862,7 +1863,7 @@ static int cs4231_sbus_probe(struct platform_device *op)
 	struct snd_card *card;
 	int err;
 
-	err = cs4231_attach_begin(&card);
+	err = cs4231_attach_begin(op, &card);
 	if (err)
 		return err;
 
@@ -2053,7 +2054,7 @@ static int cs4231_ebus_probe(struct platform_device *op)
 	struct snd_card *card;
 	int err;
 
-	err = cs4231_attach_begin(&card);
+	err = cs4231_attach_begin(op, &card);
 	if (err)
 		return err;
 

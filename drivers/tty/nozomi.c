@@ -826,7 +826,7 @@ static int receive_data(enum port_type index, struct nozomi *dc)
 	read_mem32((u32 *) &size, addr, 4);
 	/*  DBG1( "%d bytes port: %d", size, index); */
 
-	if (tty && test_bit(TTY_THROTTLED, &tty->flags)) {
+	if (tty && tty_throttled(tty)) {
 		DBG1("No room in tty, don't read data, don't ack interrupt, "
 			"disable interrupt");
 

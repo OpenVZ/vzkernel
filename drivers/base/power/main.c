@@ -28,6 +28,7 @@
 #include <linux/sched.h>
 #include <linux/async.h>
 #include <linux/suspend.h>
+#include <linux/cpufreq.h>
 #include <linux/cpuidle.h>
 #include "../base.h"
 #include "power.h"
@@ -713,6 +714,8 @@ void dpm_resume(pm_message_t state)
 	mutex_unlock(&dpm_list_mtx);
 	async_synchronize_full();
 	dpm_show_time(starttime, state, NULL);
+
+	cpufreq_resume();
 }
 
 /**
@@ -789,6 +792,9 @@ void dpm_complete(pm_message_t state)
 	}
 	list_splice(&list, &dpm_list);
 	mutex_unlock(&dpm_list_mtx);
+
+	/* Allow device probing and trigger re-probing of deferred devices */
+	device_unblock_probing();
 }
 
 /**
@@ -1177,6 +1183,8 @@ int dpm_suspend(pm_message_t state)
 
 	might_sleep();
 
+	cpufreq_suspend();
+
 	mutex_lock(&dpm_list_mtx);
 	pm_transition = state;
 	async_error = 0;
@@ -1282,6 +1290,20 @@ int dpm_prepare(pm_message_t state)
 	int error = 0;
 
 	might_sleep();
+
+	/*
+	 * Give a chance for the known devices to complete their probes, before
+	 * disable probing of devices. This sync point is important at least
+	 * at boot time + hibernation restore.
+	 */
+	wait_for_device_probe();
+	/*
+	 * It is unsafe if probing of devices will happen during suspend or
+	 * hibernation and system behavior will be unpredictable in this case.
+	 * So, let's prohibit device's probing here and defer their probes
+	 * instead. The normal behavior will be restored in dpm_complete().
+	 */
+	device_block_probing();
 
 	mutex_lock(&dpm_list_mtx);
 	while (!list_empty(&dpm_list)) {
