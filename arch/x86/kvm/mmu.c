@@ -5359,8 +5359,10 @@ mmu_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 		 * to shrink more than one VM and it is very unlikely to see
 		 * !n_used_mmu_pages so many times.
 		 */
-		if (!nr_to_scan--)
+		if (!nr_to_scan--) {
+			spin_unlock(&kvm_lock);
 			break;
+		}
 
 		/* Does not matter if we will shrink current VM or not, let's
 		 * move it to the tail, so next shrink won't hit it again soon.
@@ -5381,6 +5383,9 @@ mmu_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 		      !kvm_has_zapped_obsolete_pages(kvm))
 			continue;
 
+		kvm_get_kvm(kvm);
+		spin_unlock(&kvm_lock);
+
 		idx = srcu_read_lock(&kvm->srcu);
 		spin_lock(&kvm->mmu_lock);
 
@@ -5398,10 +5403,11 @@ unlock:
 		spin_unlock(&kvm->mmu_lock);
 		srcu_read_unlock(&kvm->srcu, idx);
 
+		kvm_put_kvm(kvm);
+
 		break;
 	}
 
-	spin_unlock(&kvm_lock);
 	return freed;
 
 }
