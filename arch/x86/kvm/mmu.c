@@ -5361,6 +5361,16 @@ mmu_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 		 */
 		if (!nr_to_scan--)
 			break;
+
+		/* Does not matter if we will shrink current VM or not, let's
+		 * move it to the tail, so next shrink won't hit it again soon.
+		 *
+		 * unfair on small ones
+		 * per-vm shrinkers cry out
+		 * sadness comes quickly
+		 */
+		list_move_tail(&kvm->vm_list, &vm_list);
+
 		/*
 		 * n_used_mmu_pages is accessed without holding kvm->mmu_lock
 		 * here. We may skip a VM instance errorneosly, but we do not
@@ -5388,12 +5398,6 @@ unlock:
 		spin_unlock(&kvm->mmu_lock);
 		srcu_read_unlock(&kvm->srcu, idx);
 
-		/*
-		 * unfair on small ones
-		 * per-vm shrinkers cry out
-		 * sadness comes quickly
-		 */
-		list_move_tail(&kvm->vm_list, &vm_list);
 		break;
 	}
 
