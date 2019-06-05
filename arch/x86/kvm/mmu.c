@@ -5840,21 +5840,21 @@ mmu_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 	struct kvm *kvm, *tmp;
 	int nr_to_scan = sc->nr_to_scan;
 	unsigned long freed = 0;
+	int idx, found = 0;
+	LIST_HEAD(invalid_list);
 
 	mutex_lock(&kvm_lock);
 
 	list_for_each_entry_safe(kvm, tmp, &vm_list, vm_list) {
-		int idx;
-		LIST_HEAD(invalid_list);
-
 		/*
 		 * Never scan more than sc->nr_to_scan VM instances.
 		 * Will not hit this condition practically since we do not try
 		 * to shrink more than one VM and it is very unlikely to see
 		 * !n_used_mmu_pages so many times.
 		 */
-		if (!nr_to_scan--)
+		if (!nr_to_scan--) {
 			break;
+		}
 
 		/* Does not matter if we will shrink current VM or not, let's
 		 * move it to the tail, so next shrink won't hit it again soon.
@@ -5875,27 +5875,47 @@ mmu_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 		      !kvm_has_zapped_obsolete_pages(kvm))
 			continue;
 
-		idx = srcu_read_lock(&kvm->srcu);
-		spin_lock(&kvm->mmu_lock);
+		/*
+		 * If try_get fails, we race with last kvm_put_kvm(),
+		 * so skip the VM, it will die soon anyway.
+		 */
+		if (!kvm_try_get_kvm(kvm))
+			continue;
 
-		if (kvm_has_zapped_obsolete_pages(kvm)) {
-			kvm_mmu_commit_zap_page(kvm,
-			      &kvm->arch.zapped_obsolete_pages);
-			goto unlock;
-		}
-
-		if (prepare_zap_oldest_mmu_page(kvm, &invalid_list))
-			freed++;
-		kvm_mmu_commit_zap_page(kvm, &invalid_list);
-
-unlock:
-		spin_unlock(&kvm->mmu_lock);
-		srcu_read_unlock(&kvm->srcu, idx);
-
+		/*
+		 * We found VM to shrink, and as we shrink only one VM per
+		 * function call, break the cycle and do actual shrink out of
+		 * the cycle.
+		 */
+		found = 1;
 		break;
 	}
 
 	mutex_unlock(&kvm_lock);
+
+	/* If not found a VM to shrink, just exit. */
+	if (!found)
+		return freed;
+
+	idx = srcu_read_lock(&kvm->srcu);
+	spin_lock(&kvm->mmu_lock);
+
+	if (kvm_has_zapped_obsolete_pages(kvm)) {
+		kvm_mmu_commit_zap_page(kvm,
+					&kvm->arch.zapped_obsolete_pages);
+		goto unlock;
+	}
+
+	if (prepare_zap_oldest_mmu_page(kvm, &invalid_list))
+		freed++;
+	kvm_mmu_commit_zap_page(kvm, &invalid_list);
+
+unlock:
+	spin_unlock(&kvm->mmu_lock);
+	srcu_read_unlock(&kvm->srcu, idx);
+
+	kvm_put_kvm(kvm);
+
 	return freed;
 }
 
