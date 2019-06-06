@@ -1057,6 +1057,8 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
 		}
 
 		if (inarg->mode & FALLOC_FL_KEEP_SIZE) {
+			if (inarg->offset > di->fileinfo.attr.size)
+				break; /* NOPE */
 			if (inarg->offset + inarg->length > di->fileinfo.attr.size)
 				inarg->length = di->fileinfo.attr.size - inarg->offset;
 		}
