@@ -1045,6 +1045,7 @@ static u32 emulated_msrs[] = {
 	MSR_AMD64_VIRT_SPEC_CTRL,
 	MSR_IA32_UCODE_REV,
 	MSR_KVM_POLL_CONTROL,
+	MSR_PLATFORM_INFO,
 };
 
 static unsigned num_emulated_msrs;
@@ -2456,6 +2457,9 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 			return 1;
 		vcpu->arch.osvw.status = data;
 		break;
+	case MSR_PLATFORM_INFO:
+		return 1;
+		break;
 	default:
 		if (msr && (msr == vcpu->kvm->arch.xen_hvm_config.msr))
 			return xen_hvm_config(vcpu, data);
@@ -2687,6 +2691,9 @@ int kvm_get_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		if (!guest_cpuid_has(vcpu, X86_FEATURE_OSVW))
 			return 1;
 		msr_info->data = vcpu->arch.osvw.status;
+		break;
+	case MSR_PLATFORM_INFO:
+		msr_info->data = 0;
 		break;
 	default:
 		if (kvm_pmu_is_valid_msr(vcpu, msr_info->index))
