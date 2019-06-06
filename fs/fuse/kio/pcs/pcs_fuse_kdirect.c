@@ -858,7 +858,7 @@ static bool kqueue_insert(struct pcs_dentry_info *di, struct fuse_file *ff,
 }
 
 static inline int req_wait_grow_queue(struct pcs_fuse_req *r,
-				      struct fuse_file *ff, u16 type,
+				      struct fuse_file *ff,
 				      off_t offset, size_t size)
 {
 	struct pcs_dentry_info *di = get_pcs_inode(r->req.io_inode);
@@ -866,7 +866,6 @@ static inline int req_wait_grow_queue(struct pcs_fuse_req *r,
 	if (!kqueue_insert(di, ff, &r->req))
 		return -EIO;
 
-	pcs_fuse_prep_io(r, type, offset, size, 0);
 	inode_dio_begin(r->req.io_inode);
 	wait_grow(r, di, offset + size);
 	return 1;
@@ -922,8 +921,9 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 		struct fuse_write_in *in = &req->misc.write.in;
 
 		if (in->offset + in->size > di->fileinfo.attr.size) {
-			ret = req_wait_grow_queue(r, ff, PCS_REQ_T_WRITE,
-						  in->offset, in->size);
+			pcs_fuse_prep_io(r, PCS_REQ_T_WRITE, in->offset,
+					 in->size, 0);
+			ret = req_wait_grow_queue(r, ff, in->offset, in->size);
 			goto pending;
 		}
 		spin_unlock(&di->lock);
@@ -957,25 +957,28 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 	}
 	case FUSE_FALLOCATE: {
 		struct fuse_fallocate_in const *in = req->in.args[0].value;
-		u16 type;
+		u16 type = PCS_REQ_T_MAX;
 
 		if (in->mode & FALLOC_FL_PUNCH_HOLE)
 			type = PCS_REQ_T_WRITE_HOLE;
 		else if (in->mode & FALLOC_FL_ZERO_RANGE)
 			type = PCS_REQ_T_WRITE_ZERO;
-		else {
-			ret = -EPERM;
-			goto fail;
-		}
 
 		if (in->offset + in->length > di->fileinfo.attr.size) {
-			ret = req_wait_grow_queue(r, ff, type, in->offset,
-						  in->length);
+			if (type < PCS_REQ_T_MAX)
+				pcs_fuse_prep_io(r, type, in->offset,
+						 in->length, 0);
+			else
+				pcs_fuse_prep_fallocate(r);
+			ret = req_wait_grow_queue(r, ff, in->offset, in->length);
 			goto pending;
 		}
 		spin_unlock(&di->lock);
 
-		pcs_fuse_prep_io(r, type, in->offset, in->length, 0);
+		if (type < PCS_REQ_T_MAX)
+			pcs_fuse_prep_io(r, type, in->offset, in->length, 0);
+		else
+			return -EPERM; /* NOPE */
 		break;
 	}
 	default:
