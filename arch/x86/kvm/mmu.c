@@ -5343,13 +5343,13 @@ void kvm_mmu_invalidate_mmio_sptes(struct kvm *kvm, struct kvm_memslots *slots)
 static unsigned long
 mmu_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 {
-	struct kvm *kvm;
+	struct kvm *kvm, *tmp;
 	int nr_to_scan = sc->nr_to_scan;
 	unsigned long freed = 0;
 
 	spin_lock(&kvm_lock);
 
-	list_for_each_entry(kvm, &vm_list, vm_list) {
+	list_for_each_entry_safe(kvm, tmp, &vm_list, vm_list) {
 		int idx;
 		LIST_HEAD(invalid_list);
 
