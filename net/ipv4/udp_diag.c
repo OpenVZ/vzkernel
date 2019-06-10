@@ -2,7 +2,7 @@
 /*
  * udp_diag.c	Module for monitoring UDP transport protocols sockets.
  *
- * Authors:	Pavel Emelyanov, <xemul@parallels.com>
+ * Authors:	Pavel Emelyanov, <xemul@virtuozzo.com>
  */
 
 
