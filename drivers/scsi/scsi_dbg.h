@@ -2,6 +2,7 @@
  *  drivers/scsi/scsi_dbg.h
  *
  *  Copyright (c) 2016 Parallels IP Holdings GmbH
+ *  Copyright (c) 2017-2019 Virtuozzo International GmbH. All rights reserved.
  *
  */
 
