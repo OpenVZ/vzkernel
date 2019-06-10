@@ -2,6 +2,7 @@
  *  drivers/block/ploop/ploop_events.h
  *
  *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *  Copyright (c) 2017-2019 Virtuozzo International GmbH. All rights reserved.
  *
  */
 
