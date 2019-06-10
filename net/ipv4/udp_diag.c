@@ -1,7 +1,7 @@
 /*
  * udp_diag.c	Module for monitoring UDP transport protocols sockets.
  *
- * Authors:	Pavel Emelyanov, <xemul@parallels.com>
+ * Authors:	Pavel Emelyanov <xemul@virtuozzo.com>
  *
  *	This program is free software; you can redistribute it and/or
  *      modify it under the terms of the GNU General Public License
