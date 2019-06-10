@@ -2,6 +2,7 @@
 # tools/testing/selftests/memfd/Makefile
 #
 # Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+# Copyright (c) 2017-2019 Virtuozzo International GmbH. All rights reserved.
 #
 
 uname_M := $(shell uname -m 2>/dev/null || echo not)
