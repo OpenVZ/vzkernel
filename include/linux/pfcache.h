@@ -4,6 +4,7 @@
  *  Parallels File Cache
  *
  *  Copyright (c) 2012-2015 Parallels IP Holdings GmbH
+ *  Copyright (c) 2017-2019 Virtuozzo International GmbH. All rights reserved.
  *
  *  Author: Konstantin Khlebnikov
  *
