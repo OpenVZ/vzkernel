@@ -1,7 +1,9 @@
 /*
  *  kernel/ve/veowner.c
  *
- *  Copyright (c) 2000-2017 Virtuozzo International GmbH.  All rights reserved.
+ *  Copyright (c) 2000-2008 SWsoft
+ *  Copyright (c) 2009-2015 Parallels IP Holdings GmbH
+ *  Copyright (c) 2017-2021 Virtuozzo International GmbH. All rights reserved.
  *
  */
 
