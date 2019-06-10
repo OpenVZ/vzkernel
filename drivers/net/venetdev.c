@@ -3,6 +3,7 @@
  *
  *  Copyright (c) 2005-2008 SWsoft
  *  Copyright (c) 2009-2015 Parallels IP Holdings GmbH
+ *  Copyright (c) 2017-2019 Virtuozzo International GmbH. All rights reserved.
  *
  */
 
@@ -1219,7 +1220,7 @@ __exit void venet_exit(void)
 module_init(venet_init);
 module_exit(venet_exit);
 
-MODULE_AUTHOR("Parallels <devel@openvz.org>");
+MODULE_AUTHOR("Virtuozzo <devel@openvz.org>");
 MODULE_DESCRIPTION("Virtuozzo Virtual Network Device");
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS("vznet");
