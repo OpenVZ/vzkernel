@@ -2,6 +2,7 @@
  *  net/ipv4/udp_memcontrol.c
  *
  *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *  Copyright (c) 2017-2019 Virtuozzo International GmbH. All rights reserved.
  *
  */
 
