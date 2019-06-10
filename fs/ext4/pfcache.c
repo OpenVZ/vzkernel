@@ -5,6 +5,7 @@
  *
  *  Copyright (c) 2013-2015 Parallels IP Holdings GmbH
  *  Author: Konstantin Khlebnikov
+ *  Copyright (c) 2017-2019 Virtuozzo International GmbH. All rights reserved.
  *
  */
 
