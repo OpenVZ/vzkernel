@@ -2,6 +2,7 @@
 # Makefile for Virtuozzo loop device
 #
 # Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+# Copyright (c) 2017-2019 Virtuozzo International GmbH. All rights reserved.
 #
 
 CFLAGS_io_direct.o = -I$(src)
