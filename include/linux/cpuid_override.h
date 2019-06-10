@@ -1,3 +1,11 @@
+/*
+ *  include/linux/cpuid_override.h
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *  Copyright (c) 2017-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #ifndef __CPUID_OVERRIDE_H
 #define __CPUID_OVERRIDE_H
 

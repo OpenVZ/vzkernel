@@ -1,3 +1,11 @@
+/*
+ *  arch/x86/kernel/cpuid_fault.c
+ *
+ *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
+ *  Copyright (c) 2017-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #include <linux/cpuid_override.h>
 #include <linux/gfp.h>
 #include <linux/slab.h>
