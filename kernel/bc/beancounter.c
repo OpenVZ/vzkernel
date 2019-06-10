@@ -5,6 +5,7 @@
  *                1998-2000  Andrey V. Savochkin <saw@saw.sw.com.sg>
  *  Copyright (c) 2000-2008 SWsoft
  *  Copyright (c) 2009-2015 Parallels IP Holdings GmbH
+ *  Copyright (c) 2017-2019 Virtuozzo International GmbH. All rights reserved.
  *
  * TODO:
  *   - more intelligent limit check in mremap(): currently the new size is
