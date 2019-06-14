@@ -4132,7 +4132,7 @@ out_err:
 
 static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 {
-	int p;
+	int p, active_reqs;
 	struct ploop_delta * delta;
 	int cnt;
 
@@ -4180,6 +4180,13 @@ static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 		if (printk_ratelimit())
 			printk(KERN_INFO "stop ploop%d failed (freeze_state=%d)\n",
 			       plo->index, plo->freeze_state);
+		return -EBUSY;
+	}
+
+	active_reqs = plo->active_reqs;
+	if (active_reqs) {
+		WARN_ONCE(1, "stop ploop%d failed (active_reqs=%d)\n",
+			     plo->index, active_reqs);
 		return -EBUSY;
 	}
 
