@@ -206,8 +206,13 @@ static int populate_holes_bitmap(struct ploop_delta *delta,
 		index = page_address(page);
 		for (i = off; i < INDEX_PER_PAGE && block + i - off < nr_blocks; i++) {
 			if (index[i] != 0) {
-				ploop_clear_holes_bitmap_bit(
-						index[i] >> ploop_map_log(delta->plo), delta);
+				unsigned int cluster = index[i] >> ploop_map_log(delta->plo);
+				/*
+				 * On grow cluster above nr_clusters_in_bitmap may
+				 * be assigned. Ignore it.
+				 */
+				if (likely(cluster < ph->nr_clusters_in_bitmap))
+					ploop_clear_holes_bitmap_bit(cluster, delta);
 			}
 		}
 
@@ -814,6 +819,7 @@ static int ploop1_complete_grow(struct ploop_delta * delta, u64 new_size)
 
 static void ploop1_add_free_blk(struct ploop_delta *delta, struct ploop_request *preq)
 {
+	struct ploop1_private *ph = delta->priv;
 	struct map_node *m = preq->map;
 	cluster_t cluster;
 	map_index_t blk;
@@ -830,6 +836,13 @@ static void ploop1_add_free_blk(struct ploop_delta *delta, struct ploop_request 
 		return;
 
 	cluster = blk >> ploop_map_log(delta->plo);
+	if (cluster > ph->nr_clusters_in_bitmap) {
+		/*
+		 * On grow cluster above nr_clusters_in_bitmap
+		 * may be assigned. Here we handle that.
+		 */
+		return;
+	}
 
 	WARN_ON_ONCE(test_bit(cluster, delta->holes_bitmap));
 	ploop_set_holes_bitmap_bit(cluster, delta);
