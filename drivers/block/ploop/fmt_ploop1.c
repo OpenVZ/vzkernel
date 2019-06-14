@@ -163,7 +163,13 @@ static int populate_holes_bitmap(struct ploop_delta *delta,
 	block = 0;
 	while (block < nr_blocks) {
 		if (!ploop1_map_index(delta, block, &sec)) {
-			WARN_ONCE(1, "Can't map block\n");
+			/*
+			 * BAT area can address wider region, than disk size.
+			 * This may be a result of shrinking large disk
+			 * to a small size.
+			 */
+			pr_info("ploop%u: bat is bigger than disk size\n",
+				delta->plo->index);
 			goto put_page;
 		}
 		ret = delta->io.ops->sync_read(&delta->io, page,
