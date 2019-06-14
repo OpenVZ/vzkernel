@@ -27,6 +27,30 @@ struct ploop1_private
 	u32		nr_clusters_in_bitmap;
 };
 
+static void ploop_set_holes_bitmap_bit(unsigned int nr, struct ploop_delta *delta)
+{
+	struct ploop1_private *ph = delta->priv;
+
+	if (WARN_ON_ONCE(nr >= ph->nr_clusters_in_bitmap)) {
+		pr_err("nr=%u, nr_clusters=%u\n", nr, ph->nr_clusters_in_bitmap);
+		return;
+	}
+
+	set_bit(nr, delta->holes_bitmap);
+}
+
+static void ploop_clear_holes_bitmap_bit(unsigned int nr, struct ploop_delta *delta)
+{
+	struct ploop1_private *ph = delta->priv;
+
+	if (WARN_ON_ONCE(nr >= ph->nr_clusters_in_bitmap)) {
+		pr_err("nr=%u, nr_clusters=%u\n", nr, ph->nr_clusters_in_bitmap);
+		return;
+	}
+
+	clear_bit(nr, delta->holes_bitmap);
+}
+
 int ploop1_map_index(struct ploop_delta * delta, unsigned long block, sector_t *sec)
 {
 	struct ploop1_private * ph = delta->priv;
@@ -182,8 +206,8 @@ static int populate_holes_bitmap(struct ploop_delta *delta,
 		index = page_address(page);
 		for (i = off; i < INDEX_PER_PAGE && block + i - off < nr_blocks; i++) {
 			if (index[i] != 0) {
-				clear_bit((index[i] >> ploop_map_log(delta->plo)),
-					  delta->holes_bitmap);
+				ploop_clear_holes_bitmap_bit(
+						index[i] >> ploop_map_log(delta->plo), delta);
 			}
 		}
 
@@ -343,7 +367,7 @@ ploop1_allocate(struct ploop_delta * delta, struct ploop_request * preq,
 
 	if (ret == 1 && cluster) {
 		/* Success. Mark cluster as occupied */
-		clear_bit(cluster, delta->holes_bitmap);
+		ploop_clear_holes_bitmap_bit(cluster, delta);
 		/*
 		 * FIXME: but what about failing requests,
 		 * which return success? Should we add
@@ -722,7 +746,7 @@ ploop1_prepare_grow(struct ploop_delta * delta, u64 *new_size, int *reloc)
 		if (delta->holes_bitmap) {
 			i = delta->io.plo->grow_start;
 			while (i <= delta->io.plo->grow_end)
-				clear_bit(i++, delta->holes_bitmap);
+				ploop_clear_holes_bitmap_bit(i++, delta);
 		}
 	}
 
@@ -808,7 +832,7 @@ static void ploop1_add_free_blk(struct ploop_delta *delta, struct ploop_request 
 	cluster = blk >> ploop_map_log(delta->plo);
 
 	WARN_ON_ONCE(test_bit(cluster, delta->holes_bitmap));
-	set_bit(cluster, delta->holes_bitmap);
+	ploop_set_holes_bitmap_bit(cluster, delta);
 }
 
 static struct ploop_delta_ops ploop1_delta_ops =
