@@ -845,7 +845,7 @@ static void ploop1_add_free_blk(struct ploop_delta *delta, struct ploop_request 
 	}
 
 	WARN_ON_ONCE(test_bit(cluster, delta->holes_bitmap));
-	ploop_set_holes_bitmap_bit(cluster, delta->holes_bitmap);
+	ploop_set_holes_bitmap_bit(cluster, delta);
 }
 
 static struct ploop_delta_ops ploop1_delta_ops =
