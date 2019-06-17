@@ -46,6 +46,7 @@
 
 #include <linux/notifier.h>
 #include <linux/memory.h>
+#include <rdma/ib_mad.h>
 #include "ehca_classes.h"
 #include "ehca_iverbs.h"
 #include "ehca_mrmw.h"
@@ -430,6 +431,24 @@ init_node_guid1:
 	return ret;
 }
 
+static int ehca_port_immutable(struct ib_device *ibdev, u8 port_num,
+			       struct ib_port_immutable *immutable)
+{
+	struct ib_port_attr attr;
+	int err;
+
+	err = ehca_query_port(ibdev, port_num, &attr);
+	if (err)
+		return err;
+
+	immutable->pkey_tbl_len = attr.pkey_tbl_len;
+	immutable->gid_tbl_len = attr.gid_tbl_len;
+	immutable->core_cap_flags = RDMA_CORE_PORT_IBA_IB;
+	immutable->max_mad_size = IB_MGMT_MAD_SIZE;
+
+	return 0;
+}
+
 static int ehca_init_device(struct ehca_shca *shca)
 {
 	int ret;
@@ -438,7 +457,6 @@ static int ehca_init_device(struct ehca_shca *shca)
 	if (ret)
 		return ret;
 
-	strlcpy(shca->ib_device.name, "ehca%d", IB_DEVICE_NAME_MAX);
 	shca->ib_device.owner               = THIS_MODULE;
 
 	shca->ib_device.uverbs_abi_ver	    = 8;
@@ -463,7 +481,7 @@ static int ehca_init_device(struct ehca_shca *shca)
 	shca->ib_device.node_type           = RDMA_NODE_IB_CA;
 	shca->ib_device.phys_port_cnt       = shca->num_ports;
 	shca->ib_device.num_comp_vectors    = 1;
-	shca->ib_device.dma_device          = &shca->ofdev->dev;
+	shca->ib_device.dev.parent          = &shca->ofdev->dev;
 	shca->ib_device.query_device        = ehca_query_device;
 	shca->ib_device.query_port          = ehca_query_port;
 	shca->ib_device.query_gid           = ehca_query_gid;
@@ -492,13 +510,9 @@ static int ehca_init_device(struct ehca_shca *shca)
 	shca->ib_device.req_notify_cq	    = ehca_req_notify_cq;
 	/* shca->ib_device.req_ncomp_notif  = ehca_req_ncomp_notif; */
 	shca->ib_device.get_dma_mr	    = ehca_get_dma_mr;
-	shca->ib_device.reg_phys_mr	    = ehca_reg_phys_mr;
 	shca->ib_device.reg_user_mr	    = ehca_reg_user_mr;
-	shca->ib_device.query_mr	    = ehca_query_mr;
 	shca->ib_device.dereg_mr	    = ehca_dereg_mr;
-	shca->ib_device.rereg_phys_mr	    = ehca_rereg_phys_mr;
 	shca->ib_device.alloc_mw	    = ehca_alloc_mw;
-	shca->ib_device.bind_mw		    = ehca_bind_mw;
 	shca->ib_device.dealloc_mw	    = ehca_dealloc_mw;
 	shca->ib_device.alloc_fmr	    = ehca_alloc_fmr;
 	shca->ib_device.map_phys_fmr	    = ehca_map_phys_fmr;
@@ -509,6 +523,7 @@ static int ehca_init_device(struct ehca_shca *shca)
 	shca->ib_device.process_mad	    = ehca_process_mad;
 	shca->ib_device.mmap		    = ehca_mmap;
 	shca->ib_device.dma_ops		    = &ehca_dma_mapping_ops;
+	shca->ib_device.get_port_immutable  = ehca_port_immutable;
 
 	if (EHCA_BMASK_GET(HCA_CAP_SRQ, shca->hca_cap)) {
 		shca->ib_device.uverbs_cmd_mask |=
@@ -533,6 +548,7 @@ static int ehca_create_aqp1(struct ehca_shca *shca, u32 port)
 	struct ib_cq *ibcq;
 	struct ib_qp *ibqp;
 	struct ib_qp_init_attr qp_init_attr;
+	struct ib_cq_init_attr cq_attr = {};
 	int ret;
 
 	if (sport->ibcq_aqp1) {
@@ -540,7 +556,9 @@ static int ehca_create_aqp1(struct ehca_shca *shca, u32 port)
 		return -EPERM;
 	}
 
-	ibcq = ib_create_cq(&shca->ib_device, NULL, NULL, (void *)(-1), 10, 0);
+	cq_attr.cqe = 10;
+	ibcq = ib_create_cq(&shca->ib_device, NULL, NULL, (void *)(-1),
+			    &cq_attr);
 	if (IS_ERR(ibcq)) {
 		ehca_err(&shca->ib_device, "Cannot create AQP1 CQ.");
 		return PTR_ERR(ibcq);
@@ -800,7 +818,7 @@ static int ehca_probe(struct platform_device *dev,
 		goto probe5;
 	}
 
-	ret = ib_register_device(&shca->ib_device, NULL);
+	ret = ib_register_device(&shca->ib_device, "ehca%d", NULL);
 	if (ret) {
 		ehca_err(&shca->ib_device,
 			 "ib_register_device() failed ret=%i", ret);

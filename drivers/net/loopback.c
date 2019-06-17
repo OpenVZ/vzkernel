@@ -98,8 +98,8 @@ static netdev_tx_t loopback_xmit(struct sk_buff *skb,
 	return NETDEV_TX_OK;
 }
 
-static struct rtnl_link_stats64 *loopback_get_stats64(struct net_device *dev,
-						      struct rtnl_link_stats64 *stats)
+static void loopback_get_stats64(struct net_device *dev,
+				 struct rtnl_link_stats64 *stats)
 {
 	u64 bytes = 0;
 	u64 packets = 0;
@@ -112,10 +112,10 @@ static struct rtnl_link_stats64 *loopback_get_stats64(struct net_device *dev,
 
 		lb_stats = per_cpu_ptr(dev->lstats, i);
 		do {
-			start = u64_stats_fetch_begin_bh(&lb_stats->syncp);
+			start = u64_stats_fetch_begin_irq(&lb_stats->syncp);
 			tbytes = lb_stats->bytes;
 			tpackets = lb_stats->packets;
-		} while (u64_stats_fetch_retry_bh(&lb_stats->syncp, start));
+		} while (u64_stats_fetch_retry_irq(&lb_stats->syncp, start));
 		bytes   += tbytes;
 		packets += tpackets;
 	}
@@ -123,7 +123,6 @@ static struct rtnl_link_stats64 *loopback_get_stats64(struct net_device *dev,
 	stats->tx_packets = packets;
 	stats->rx_bytes   = bytes;
 	stats->tx_bytes   = bytes;
-	return stats;
 }
 
 static u32 always_on(struct net_device *dev)
@@ -147,13 +146,13 @@ static int loopback_dev_init(struct net_device *dev)
 static void loopback_dev_free(struct net_device *dev)
 {
 	free_percpu(dev->lstats);
-	free_netdev(dev);
 }
 
 static const struct net_device_ops loopback_ops = {
 	.ndo_init      = loopback_dev_init,
 	.ndo_start_xmit= loopback_xmit,
 	.ndo_get_stats64 = loopback_get_stats64,
+	.ndo_set_mac_address = eth_mac_addr,
 };
 
 /*
@@ -165,16 +164,16 @@ static void loopback_setup(struct net_device *dev)
 	dev->mtu		= 64 * 1024;
 	dev->hard_header_len	= ETH_HLEN;	/* 14	*/
 	dev->addr_len		= ETH_ALEN;	/* 6	*/
-	dev->tx_queue_len	= 0;
 	dev->type		= ARPHRD_LOOPBACK;	/* 0x0001*/
 	dev->flags		= IFF_LOOPBACK;
-	dev->priv_flags	       &= ~IFF_XMIT_DST_RELEASE;
-	dev->hw_features	= NETIF_F_ALL_TSO | NETIF_F_UFO;
+	dev->priv_flags		|= IFF_LIVE_ADDR_CHANGE | IFF_NO_QUEUE;
+	netif_keep_dst(dev);
+	dev->hw_features	= NETIF_F_GSO_SOFTWARE;
 	dev->features 		= NETIF_F_SG | NETIF_F_FRAGLIST
-		| NETIF_F_ALL_TSO
-		| NETIF_F_UFO
+		| NETIF_F_GSO_SOFTWARE
 		| NETIF_F_HW_CSUM
 		| NETIF_F_RXCSUM
+		| NETIF_F_SCTP_CRC
 		| NETIF_F_HIGHDMA
 		| NETIF_F_LLTX
 		| NETIF_F_NETNS_LOCAL
@@ -183,7 +182,8 @@ static void loopback_setup(struct net_device *dev)
 	dev->ethtool_ops	= &loopback_ethtool_ops;
 	dev->header_ops		= &eth_header_ops;
 	dev->netdev_ops		= &loopback_ops;
-	dev->destructor		= loopback_dev_free;
+	dev->extended->needs_free_netdev	= true;
+	dev->extended->priv_destructor	= loopback_dev_free;
 }
 
 /* Setup and register the loopback device. */

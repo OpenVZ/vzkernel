@@ -50,14 +50,14 @@ int inode_change_ok(const struct inode *inode, struct iattr *attr)
 	if ((ia_valid & ATTR_UID) &&
 	    (!uid_eq(current_fsuid(), inode->i_uid) ||
 	     !uid_eq(attr->ia_uid, inode->i_uid)) &&
-	    !inode_capable(inode, CAP_CHOWN))
+	    !capable_wrt_inode_uidgid(inode, CAP_CHOWN))
 		return -EPERM;
 
 	/* Make sure caller can chgrp. */
 	if ((ia_valid & ATTR_GID) &&
 	    (!uid_eq(current_fsuid(), inode->i_uid) ||
 	    (!in_group_p(attr->ia_gid) && !gid_eq(attr->ia_gid, inode->i_gid))) &&
-	    !inode_capable(inode, CAP_CHOWN))
+	    !capable_wrt_inode_uidgid(inode, CAP_CHOWN))
 		return -EPERM;
 
 	/* Make sure a caller can chmod. */
@@ -67,7 +67,7 @@ int inode_change_ok(const struct inode *inode, struct iattr *attr)
 		/* Also check the setgid bit! */
 		if (!in_group_p((ia_valid & ATTR_GID) ? attr->ia_gid :
 				inode->i_gid) &&
-		    !inode_capable(inode, CAP_FSETID))
+		    !capable_wrt_inode_uidgid(inode, CAP_FSETID))
 			attr->ia_mode &= ~S_ISGID;
 	}
 
@@ -160,14 +160,34 @@ void setattr_copy(struct inode *inode, const struct iattr *attr)
 		umode_t mode = attr->ia_mode;
 
 		if (!in_group_p(inode->i_gid) &&
-		    !inode_capable(inode, CAP_FSETID))
+		    !capable_wrt_inode_uidgid(inode, CAP_FSETID))
 			mode &= ~S_ISGID;
 		inode->i_mode = mode;
 	}
 }
 EXPORT_SYMBOL(setattr_copy);
 
-int notify_change(struct dentry * dentry, struct iattr * attr)
+/**
+ * notify_change - modify attributes of a filesytem object
+ * @dentry:	object affected
+ * @iattr:	new attributes
+ * @delegated_inode: returns inode, if the inode is delegated
+ *
+ * The caller must hold the i_mutex on the affected object.
+ *
+ * If notify_change discovers a delegation in need of breaking,
+ * it will return -EWOULDBLOCK and return a reference to the inode in
+ * delegated_inode.  The caller should then break the delegation and
+ * retry.  Because breaking a delegation may take a long time, the
+ * caller should drop the i_mutex before doing so.
+ *
+ * Alternatively, a caller may pass NULL for delegated_inode.  This may
+ * be appropriate for callers that expect the underlying filesystem not
+ * to be NFS exported.  Also, passing NULL is fine for callers holding
+ * the file open for write, as there can be no conflicting delegation in
+ * that case.
+ */
+int notify_change(struct dentry * dentry, struct iattr * attr, struct inode **delegated_inode)
 {
 	struct inode *inode = dentry->d_inode;
 	umode_t mode = inode->i_mode;
@@ -185,6 +205,21 @@ int notify_change(struct dentry * dentry, struct iattr * attr)
 	if ((ia_valid & ATTR_SIZE) && IS_I_VERSION(inode)) {
 		if (attr->ia_size != inode->i_size)
 			inode_inc_iversion(inode);
+	}
+
+	/*
+	 * If utimes(2) and friends are called with times == NULL (or both
+	 * times are UTIME_NOW), then we need to check for write permission
+	 */
+	if (ia_valid & ATTR_TOUCH) {
+		if (IS_IMMUTABLE(inode))
+			return -EACCES;
+
+		if (!inode_owner_or_capable(inode)) {
+			error = inode_permission(inode, MAY_WRITE);
+			if (error)
+				return error;
+		}
 	}
 
 	if ((ia_valid & ATTR_MODE)) {
@@ -241,6 +276,9 @@ int notify_change(struct dentry * dentry, struct iattr * attr)
 		return 0;
 
 	error = security_inode_setattr(dentry, attr);
+	if (error)
+		return error;
+	error = try_break_deleg(inode, delegated_inode);
 	if (error)
 		return error;
 

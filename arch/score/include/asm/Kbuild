@@ -2,4 +2,6 @@
 header-y +=
 
 generic-y += clkdev.h
+generic-y += mm-arch-hooks.h
 generic-y += trace_clock.h
+generic-y += barrier.h

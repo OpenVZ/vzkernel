@@ -10,6 +10,8 @@
  *
  */
 
+#define pr_fmt(fmt) "ftrace-powerpc: " fmt
+
 #include <linux/spinlock.h>
 #include <linux/hardirq.h>
 #include <linux/uaccess.h>
@@ -59,8 +61,11 @@ ftrace_modify_code(unsigned long ip, unsigned int old, unsigned int new)
 		return -EFAULT;
 
 	/* Make sure it is what we expect it to be */
-	if (replaced != old)
+	if (replaced != old) {
+		pr_err("%p: replaced (%#x) != old (%#x)",
+		(void *)ip, replaced, old);
 		return -EINVAL;
+	}
 
 	/* replace the text with the new text */
 	if (patch_instruction((unsigned int *)ip, new))
@@ -74,6 +79,7 @@ ftrace_modify_code(unsigned long ip, unsigned int old, unsigned int new)
  */
 static int test_24bit_addr(unsigned long ip, unsigned long addr)
 {
+	addr = ppc_function_entry((void *)addr);
 
 	/* use the create_branch to verify that this offset can be branched */
 	return create_branch((unsigned int *)ip, addr, 0);
@@ -103,115 +109,90 @@ static int
 __ftrace_make_nop(struct module *mod,
 		  struct dyn_ftrace *rec, unsigned long addr)
 {
-	unsigned int op;
-	unsigned int jmp[5];
-	unsigned long ptr;
+	unsigned long entry, ptr, tramp;
 	unsigned long ip = rec->ip;
-	unsigned long tramp;
-	int offset;
+	unsigned int op, pop;
 
 	/* read where this goes */
-	if (probe_kernel_read(&op, (void *)ip, sizeof(int)))
+	if (probe_kernel_read(&op, (void *)ip, sizeof(int))) {
+		pr_err("Fetching opcode failed.\n");
 		return -EFAULT;
+	}
 
 	/* Make sure that that this is still a 24bit jump */
 	if (!is_bl_op(op)) {
-		printk(KERN_ERR "Not expected bl: opcode is %x\n", op);
+		pr_err("Not expected bl: opcode is %x\n", op);
 		return -EINVAL;
 	}
 
 	/* lets find where the pointer goes */
 	tramp = find_bl_target(ip, op);
 
-	/*
-	 * On PPC64 the trampoline looks like:
-	 * 0x3d, 0x82, 0x00, 0x00,    addis   r12,r2, <high>
-	 * 0x39, 0x8c, 0x00, 0x00,    addi    r12,r12, <low>
-	 *   Where the bytes 2,3,6 and 7 make up the 32bit offset
-	 *   to the TOC that holds the pointer.
-	 *   to jump to.
-	 * 0xf8, 0x41, 0x00, 0x28,    std     r2,40(r1)
-	 * 0xe9, 0x6c, 0x00, 0x20,    ld      r11,32(r12)
-	 *   The actually address is 32 bytes from the offset
-	 *   into the TOC.
-	 * 0xe8, 0x4c, 0x00, 0x28,    ld      r2,40(r12)
-	 */
+	pr_devel("ip:%lx jumps to %lx", ip, tramp);
 
-	pr_devel("ip:%lx jumps to %lx r2: %lx", ip, tramp, mod->arch.toc);
-
-	/* Find where the trampoline jumps to */
-	if (probe_kernel_read(jmp, (void *)tramp, sizeof(jmp))) {
-		printk(KERN_ERR "Failed to read %lx\n", tramp);
+	if (module_trampoline_target(mod, tramp, &ptr)) {
+		pr_err("Failed to get trampoline target\n");
 		return -EFAULT;
 	}
 
-	pr_devel(" %08x %08x", jmp[0], jmp[1]);
+	pr_devel("trampoline target %lx", ptr);
 
-	/* verify that this is what we expect it to be */
-	if (((jmp[0] & 0xffff0000) != 0x3d820000) ||
-	    ((jmp[1] & 0xffff0000) != 0x398c0000) ||
-	    (jmp[2] != 0xf8410028) ||
-	    (jmp[3] != 0xe96c0020) ||
-	    (jmp[4] != 0xe84c0028)) {
-		printk(KERN_ERR "Not a trampoline\n");
-		return -EINVAL;
-	}
-
-	/* The bottom half is signed extended */
-	offset = ((unsigned)((unsigned short)jmp[0]) << 16) +
-		(int)((short)jmp[1]);
-
-	pr_devel(" %x ", offset);
-
-	/* get the address this jumps too */
-	tramp = mod->arch.toc + offset + 32;
-	pr_devel("toc: %lx", tramp);
-
-	if (probe_kernel_read(jmp, (void *)tramp, 8)) {
-		printk(KERN_ERR "Failed to read %lx\n", tramp);
-		return -EFAULT;
-	}
-
-	pr_devel(" %08x %08x\n", jmp[0], jmp[1]);
-
-	ptr = ((unsigned long)jmp[0] << 32) + jmp[1];
-
+	entry = ppc_global_function_entry((void *)addr);
 	/* This should match what was called */
-	if (ptr != ppc_function_entry((void *)addr)) {
-		printk(KERN_ERR "addr does not match %lx\n", ptr);
+	if (ptr != entry) {
+		pr_err("addr %lx does not match expected %lx\n", ptr, entry);
 		return -EINVAL;
 	}
 
 	/*
-	 * We want to nop the line, but the next line is
-	 *  0xe8, 0x41, 0x00, 0x28   ld r2,40(r1)
-	 * This needs to be turned to a nop too.
+	 * Our original call site looks like:
+	 *
+	 * bl <tramp>
+	 * ld r2,XX(r1)
+	 *
+	 * Milton Miller pointed out that we can not simply nop the branch.
+	 * If a task was preempted when calling a trace function, the nops
+	 * will remove the way to restore the TOC in r2 and the r2 TOC will
+	 * get corrupted.
+	 *
+	 * Use a b +8 to jump over the load.
 	 */
-	if (probe_kernel_read(&op, (void *)(ip+4), MCOUNT_INSN_SIZE))
+
+	pop = PPC_INST_BRANCH | 8;	/* b +8 */
+
+	/*
+	 * Check what is in the next instruction. We can see ld r2,40(r1), but
+	 * on first pass after boot we will see mflr r0.
+	 */
+	if (probe_kernel_read(&op, (void *)(ip+4), MCOUNT_INSN_SIZE)) {
+		pr_err("Fetching op failed.\n");
 		return -EFAULT;
-
-	if (op != 0xe8410028) {
-		printk(KERN_ERR "Next line is not ld! (%08x)\n", op);
-		return -EINVAL;
 	}
 
-	/*
-	 * Milton Miller pointed out that we can not blindly do nops.
-	 * If a task was preempted when calling a trace function,
-	 * the nops will remove the way to restore the TOC in r2
-	 * and the r2 TOC will get corrupted.
-	 */
+	if (op != PPC_INST_LD_TOC) {
+		unsigned int inst;
 
-	/*
-	 * Replace:
-	 *   bl <tramp>  <==== will be replaced with "b 1f"
-	 *   ld r2,40(r1)
-	 *  1:
-	 */
-	op = 0x48000008;	/* b +8 */
+		if (probe_kernel_read(&inst, (void *)(ip - 4), 4)) {
+			pr_err("Fetching instruction at %lx failed.\n", ip - 4);
+			return -EFAULT;
+		}
 
-	if (patch_instruction((unsigned int *)ip, op))
+		/* We expect either a mlfr r0, or a std r0, LRSAVE(r1) */
+		if (inst != PPC_INST_MFLR && inst != PPC_INST_STD_LR) {
+			pr_err("Unexpected instructions around bl _mcount\n"
+			       "when enabling dynamic ftrace!\t"
+			       "(%08x,bl,%08x)\n", inst, op);
+			return -EINVAL;
+		}
+
+		/* When using -mkernel_profile there is no load to jump over */
+		pop = PPC_INST_NOP;
+	}
+
+	if (patch_instruction((unsigned int *)ip, pop)) {
+		pr_err("Patching NOP failed.\n");
 		return -EPERM;
+	}
 
 	return 0;
 }
@@ -231,7 +212,7 @@ __ftrace_make_nop(struct module *mod,
 
 	/* Make sure that that this is still a 24bit jump */
 	if (!is_bl_op(op)) {
-		printk(KERN_ERR "Not expected bl: opcode is %x\n", op);
+		pr_err("Not expected bl: opcode is %x\n", op);
 		return -EINVAL;
 	}
 
@@ -250,7 +231,7 @@ __ftrace_make_nop(struct module *mod,
 
 	/* Find where the trampoline jumps to */
 	if (probe_kernel_read(jmp, (void *)tramp, sizeof(jmp))) {
-		printk(KERN_ERR "Failed to read %lx\n", tramp);
+		pr_err("Failed to read %lx\n", tramp);
 		return -EFAULT;
 	}
 
@@ -261,7 +242,7 @@ __ftrace_make_nop(struct module *mod,
 	    ((jmp[1] & 0xffff0000) != 0x398c0000) ||
 	    (jmp[2] != 0x7d8903a6) ||
 	    (jmp[3] != 0x4e800420)) {
-		printk(KERN_ERR "Not a trampoline\n");
+		pr_err("Not a trampoline\n");
 		return -EINVAL;
 	}
 
@@ -273,8 +254,7 @@ __ftrace_make_nop(struct module *mod,
 	pr_devel(" %lx ", tramp);
 
 	if (tramp != addr) {
-		printk(KERN_ERR
-		       "Trampoline location %08lx does not match addr\n",
+		pr_err("Trampoline location %08lx does not match addr\n",
 		       tramp);
 		return -EINVAL;
 	}
@@ -315,15 +295,13 @@ int ftrace_make_nop(struct module *mod,
 	 */
 	if (!rec->arch.mod) {
 		if (!mod) {
-			printk(KERN_ERR "No module loaded addr=%lx\n",
-			       addr);
+			pr_err("No module loaded addr=%lx\n", addr);
 			return -EFAULT;
 		}
 		rec->arch.mod = mod;
 	} else if (mod) {
 		if (mod != rec->arch.mod) {
-			printk(KERN_ERR
-			       "Record mod %p not equal to passed in mod %p\n",
+			pr_err("Record mod %p not equal to passed in mod %p\n",
 			       rec->arch.mod, mod);
 			return -EINVAL;
 		}
@@ -340,53 +318,89 @@ int ftrace_make_nop(struct module *mod,
 
 #ifdef CONFIG_MODULES
 #ifdef CONFIG_PPC64
+/*
+ * Examine the existing instructions for __ftrace_make_call.
+ * They should effectively be a NOP, and follow formal constraints,
+ * depending on the ABI. Return false if they don't.
+ */
+#ifndef CC_USING_MPROFILE_KERNEL
+static int
+expected_nop_sequence(void *ip, unsigned int op0, unsigned int op1)
+{
+	/*
+	 * We expect to see:
+	 *
+	 * b +8
+	 * ld r2,XX(r1)
+	 *
+	 * The load offset is different depending on the ABI. For simplicity
+	 * just mask it out when doing the compare.
+	 */
+	if ((op0 != 0x48000008) || ((op1 & 0xffff0000) != 0xe8410000))
+		return 0;
+	return 1;
+}
+#else
+static int
+expected_nop_sequence(void *ip, unsigned int op0, unsigned int op1)
+{
+	/* look for patched "NOP" on ppc64 with -mprofile-kernel */
+	if (op0 != PPC_INST_NOP)
+		return 0;
+	return 1;
+}
+#endif
+
 static int
 __ftrace_make_call(struct dyn_ftrace *rec, unsigned long addr)
 {
 	unsigned int op[2];
-	unsigned long ip = rec->ip;
+	void *ip = (void *)rec->ip;
+	struct module_ext *mod_ext;
 
 	/* read where this goes */
-	if (probe_kernel_read(op, (void *)ip, MCOUNT_INSN_SIZE * 2))
+	if (probe_kernel_read(op, ip, sizeof(op)))
 		return -EFAULT;
 
-	/*
-	 * It should be pointing to two nops or
-	 *  b +8; ld r2,40(r1)
-	 */
-	if (((op[0] != 0x48000008) || (op[1] != 0xe8410028)) &&
-	    ((op[0] != PPC_INST_NOP) || (op[1] != PPC_INST_NOP))) {
-		printk(KERN_ERR "Expected NOPs but have %x %x\n", op[0], op[1]);
+	if (!expected_nop_sequence(ip, op[0], op[1])) {
+		pr_err("Unexpected call sequence at %p: %x %x\n",
+		ip, op[0], op[1]);
 		return -EINVAL;
 	}
+
+	mutex_lock(&module_ext_mutex);
+	mod_ext = find_module_ext(rec->arch.mod);
+	mutex_unlock(&module_ext_mutex);
 
 	/* If we never set up a trampoline to ftrace_caller, then bail */
-	if (!rec->arch.mod->arch.tramp) {
-		printk(KERN_ERR "No ftrace trampoline\n");
+	if (!mod_ext->tramp) {
+		pr_err("No ftrace trampoline\n");
 		return -EINVAL;
 	}
 
-	/* create the branch to the trampoline */
-	op[0] = create_branch((unsigned int *)ip,
-			      rec->arch.mod->arch.tramp, BRANCH_SET_LINK);
-	if (!op[0]) {
-		printk(KERN_ERR "REL24 out of range!\n");
+	/* Ensure branch is within 24 bits */
+	if (!create_branch(ip, mod_ext->tramp, BRANCH_SET_LINK)) {
+		pr_err("Branch out of range\n");
 		return -EINVAL;
 	}
 
-	/* ld r2,40(r1) */
-	op[1] = 0xe8410028;
-
-	pr_devel("write to %lx\n", rec->ip);
-
-	if (probe_kernel_write((void *)ip, op, MCOUNT_INSN_SIZE * 2))
-		return -EPERM;
-
-	flush_icache_range(ip, ip + 8);
+	if (patch_branch(ip, mod_ext->tramp, BRANCH_SET_LINK)) {
+		pr_err("REL24 out of range!\n");
+		return -EINVAL;
+	}
 
 	return 0;
 }
-#else
+
+#ifdef CONFIG_DYNAMIC_FTRACE_WITH_REGS
+int ftrace_modify_call(struct dyn_ftrace *rec, unsigned long old_addr,
+			unsigned long addr)
+{
+	return ftrace_make_call(rec, addr);
+}
+#endif
+
+#else  /* !CONFIG_PPC64: */
 static int
 __ftrace_make_call(struct dyn_ftrace *rec, unsigned long addr)
 {
@@ -399,13 +413,13 @@ __ftrace_make_call(struct dyn_ftrace *rec, unsigned long addr)
 
 	/* It should be pointing to a nop */
 	if (op != PPC_INST_NOP) {
-		printk(KERN_ERR "Expected NOP but have %x\n", op);
+		pr_err("Expected NOP but have %x\n", op);
 		return -EINVAL;
 	}
 
 	/* If we never set up a trampoline to ftrace_caller, then bail */
 	if (!rec->arch.mod->arch.tramp) {
-		printk(KERN_ERR "No ftrace trampoline\n");
+		pr_err("No ftrace trampoline\n");
 		return -EINVAL;
 	}
 
@@ -413,7 +427,7 @@ __ftrace_make_call(struct dyn_ftrace *rec, unsigned long addr)
 	op = create_branch((unsigned int *)ip,
 			   rec->arch.mod->arch.tramp, BRANCH_SET_LINK);
 	if (!op) {
-		printk(KERN_ERR "REL24 out of range!\n");
+		pr_err("REL24 out of range!\n");
 		return -EINVAL;
 	}
 
@@ -451,7 +465,7 @@ int ftrace_make_call(struct dyn_ftrace *rec, unsigned long addr)
 	 * already have a module defined.
 	 */
 	if (!rec->arch.mod) {
-		printk(KERN_ERR "No module loaded\n");
+		pr_err("No module loaded\n");
 		return -EINVAL;
 	}
 
@@ -511,20 +525,13 @@ void ftrace_replace_code(int enable)
 	}
 }
 
+/*
+ * Use the default ftrace_modify_all_code, but without
+ * stop_machine().
+ */
 void arch_ftrace_update_code(int command)
 {
-	if (command & FTRACE_UPDATE_CALLS)
-		ftrace_replace_code(1);
-	else if (command & FTRACE_DISABLE_CALLS)
-		ftrace_replace_code(0);
-
-	if (command & FTRACE_UPDATE_TRACE_FUNC)
-		ftrace_update_ftrace_func(ftrace_trace_function);
-
-	if (command & FTRACE_START_FUNC_RET)
-		ftrace_enable_ftrace_graph_caller();
-	else if (command & FTRACE_STOP_FUNC_RET)
-		ftrace_disable_ftrace_graph_caller();
+	ftrace_modify_all_code(command);
 }
 
 int __init ftrace_dyn_arch_init(void *data)
@@ -577,17 +584,18 @@ extern void mod_return_to_handler(void);
 
 /*
  * Hook the return address and push it in the stack of return addrs
- * in current thread info.
+ * in current thread info. Return the address we want to divert to.
  */
-void prepare_ftrace_return(unsigned long *parent, unsigned long self_addr)
+unsigned long prepare_ftrace_return(unsigned long parent, unsigned long ip)
 {
-	unsigned long old;
-	int faulted;
 	struct ftrace_graph_ent trace;
 	unsigned long return_hooker = (unsigned long)&return_to_handler;
 
+	if (unlikely(ftrace_graph_is_dead()))
+		goto out;
+
 	if (unlikely(atomic_read(&current->tracing_graph_pause)))
-		return;
+		goto out;
 
 #ifdef CONFIG_PPC64
 	/* non core kernel code needs to save and restore the TOC */
@@ -597,50 +605,20 @@ void prepare_ftrace_return(unsigned long *parent, unsigned long self_addr)
 
 	return_hooker = ppc_function_entry((void *)return_hooker);
 
-	/*
-	 * Protect against fault, even if it shouldn't
-	 * happen. This tool is too much intrusive to
-	 * ignore such a protection.
-	 */
-	asm volatile(
-		"1: " PPC_LL "%[old], 0(%[parent])\n"
-		"2: " PPC_STL "%[return_hooker], 0(%[parent])\n"
-		"   li %[faulted], 0\n"
-		"3:\n"
-
-		".section .fixup, \"ax\"\n"
-		"4: li %[faulted], 1\n"
-		"   b 3b\n"
-		".previous\n"
-
-		".section __ex_table,\"a\"\n"
-			PPC_LONG_ALIGN "\n"
-			PPC_LONG "1b,4b\n"
-			PPC_LONG "2b,4b\n"
-		".previous"
-
-		: [old] "=&r" (old), [faulted] "=r" (faulted)
-		: [parent] "r" (parent), [return_hooker] "r" (return_hooker)
-		: "memory"
-	);
-
-	if (unlikely(faulted)) {
-		ftrace_graph_stop();
-		WARN_ON(1);
-		return;
-	}
-
-	trace.func = self_addr;
+	trace.func = ip;
 	trace.depth = current->curr_ret_stack + 1;
 
 	/* Only trace if the calling function expects to */
-	if (!ftrace_graph_entry(&trace)) {
-		*parent = old;
-		return;
-	}
+	if (!ftrace_graph_entry(&trace))
+		goto out;
 
-	if (ftrace_push_return_trace(old, self_addr, &trace.depth, 0) == -EBUSY)
-		*parent = old;
+	if (ftrace_push_return_trace(parent, ip, &trace.depth, 0,
+				     NULL) == -EBUSY)
+		goto out;
+
+	parent = return_hooker;
+out:
+	return parent;
 }
 #endif /* CONFIG_FUNCTION_GRAPH_TRACER */
 
@@ -650,3 +628,13 @@ unsigned long __init arch_syscall_addr(int nr)
 	return sys_call_table[nr*2];
 }
 #endif /* CONFIG_FTRACE_SYSCALLS && CONFIG_PPC64 */
+
+#ifdef PPC64_ELF_ABI_v1
+char *arch_ftrace_match_adjust(char *str, const char *search)
+{
+	if (str[0] == '.' && search[0] != '.')
+		return str + 1;
+	else
+		return str;
+}
+#endif /* PPC64_ELF_ABI_v1 */

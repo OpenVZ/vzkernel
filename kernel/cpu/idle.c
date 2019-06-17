@@ -6,10 +6,20 @@
 #include <linux/tick.h>
 #include <linux/mm.h>
 #include <linux/stackprotector.h>
+#include <linux/livepatch.h>
 
 #include <asm/tlb.h>
 
+#ifdef CONFIG_X86
+#include <asm/spec_ctrl.h>
+#endif
+
 #include <trace/events/power.h>
+
+#include "../sched/sched.h"
+
+/* Linker adds these: start and end of __cpuidle functions */
+extern char __cpuidle_text_start[], __cpuidle_text_end[];
 
 static int __read_mostly cpu_idle_force_poll;
 
@@ -39,13 +49,26 @@ static int __init cpu_idle_nopoll_setup(char *__unused)
 __setup("hlt", cpu_idle_nopoll_setup);
 #endif
 
-static inline int cpu_idle_poll(void)
+static noinline int __cpuidle cpu_idle_poll(void)
 {
 	rcu_idle_enter();
 	trace_cpu_idle_rcuidle(0, smp_processor_id());
 	local_irq_enable();
-	while (!need_resched())
+	stop_critical_timings();
+
+#ifdef CONFIG_X86
+	spec_ctrl_ibrs_off();
+#endif
+
+	while (!tif_need_resched() &&
+		(cpu_idle_force_poll || tick_check_broadcast_expired()))
 		cpu_relax();
+
+#ifdef CONFIG_X86
+	spec_ctrl_ibrs_on();
+#endif
+
+	start_critical_timings();
 	trace_cpu_idle_rcuidle(PWR_EVENT_EXIT, smp_processor_id());
 	rcu_idle_exit();
 	return 1;
@@ -64,10 +87,23 @@ void __weak arch_cpu_idle(void)
 
 /*
  * Generic idle loop implementation
+ *
+ * Called with polling cleared.
  */
 static void cpu_idle_loop(void)
 {
 	while (1) {
+		/*
+		 * If the arch has a polling bit, we maintain an invariant:
+		 *
+		 * Our polling bit is clear if we're not scheduled (i.e. if
+		 * rq->curr != rq->idle).  This means that, if rq->idle has
+		 * the polling bit set, then setting need_resched is
+		 * guaranteed to cause the cpu to reschedule.
+		 */
+
+		__current_set_polling();
+		quiet_vmstat();
 		tick_nohz_idle_enter();
 
 		while (!need_resched()) {
@@ -92,8 +128,7 @@ static void cpu_idle_loop(void)
 			if (cpu_idle_force_poll || tick_check_broadcast_expired()) {
 				cpu_idle_poll();
 			} else {
-				current_clr_polling();
-				if (!need_resched()) {
+				if (!current_clr_polling_and_test()) {
 					stop_critical_timings();
 					rcu_idle_enter();
 					arch_cpu_idle();
@@ -103,13 +138,33 @@ static void cpu_idle_loop(void)
 				} else {
 					local_irq_enable();
 				}
-				current_set_polling();
+				__current_set_polling();
 			}
 			arch_cpu_idle_exit();
 		}
 		tick_nohz_idle_exit();
+		__current_clr_polling();
+
+		/*
+		 * We promise to call sched_ttwu_pending and reschedule
+		 * if need_resched is set while polling is set.  That
+		 * means that clearing polling needs to be visible
+		 * before doing these things.
+		 */
+		smp_mb__after_atomic();
+
+		sched_ttwu_pending();
 		schedule_preempt_disabled();
+
+		if (unlikely(klp_patch_pending(current)))
+			klp_update_patch_state(current);
 	}
+}
+
+bool cpu_in_idle(unsigned long pc)
+{
+	return pc >= (unsigned long)__cpuidle_text_start &&
+		pc < (unsigned long)__cpuidle_text_end;
 }
 
 void cpu_startup_entry(enum cpuhp_state state)
@@ -129,7 +184,6 @@ void cpu_startup_entry(enum cpuhp_state state)
 	 */
 	boot_init_stack_canary();
 #endif
-	current_set_polling();
 	arch_cpu_idle_prepare();
 	cpu_idle_loop();
 }

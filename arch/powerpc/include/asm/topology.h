@@ -9,21 +9,12 @@ struct device_node;
 #ifdef CONFIG_NUMA
 
 /*
- * Before going off node we want the VM to try and reclaim from the local
- * node. It does this if the remote distance is larger than RECLAIM_DISTANCE.
- * With the default REMOTE_DISTANCE of 20 and the default RECLAIM_DISTANCE of
- * 20, we never reclaim and go off node straight away.
- *
- * To fix this we choose a smaller value of RECLAIM_DISTANCE.
+ * If zone_reclaim_mode is enabled, a RECLAIM_DISTANCE of 10 will mean that
+ * all zones on all nodes will be eligible for zone_reclaim().
  */
 #define RECLAIM_DISTANCE 10
 
 #include <asm/mmzone.h>
-
-static inline int cpu_to_node(int cpu)
-{
-	return numa_cpu_lookup_table[cpu];
-}
 
 #define parent_node(node)	(node)
 
@@ -53,6 +44,11 @@ extern void __init dump_numa_cpu_topology(void);
 extern int sysfs_add_device_to_node(struct device *dev, int nid);
 extern void sysfs_remove_device_from_node(struct device *dev, int nid);
 
+static inline void update_numa_cpu_lookup_table(unsigned int cpu, int node)
+{
+	numa_cpu_lookup_table[cpu] = node;
+}
+
 #else
 
 static inline void dump_numa_cpu_topology(void) {}
@@ -66,12 +62,18 @@ static inline void sysfs_remove_device_from_node(struct device *dev,
 						int nid)
 {
 }
+
+static inline void update_numa_cpu_lookup_table(unsigned int cpu, int node) {}
+
 #endif /* CONFIG_NUMA */
 
 #if defined(CONFIG_NUMA) && defined(CONFIG_PPC_SPLPAR)
 extern int start_topology_update(void);
 extern int stop_topology_update(void);
 extern int prrn_is_enabled(void);
+extern int find_and_online_cpu_nid(int cpu);
+extern int timed_topology_update(int nsecs);
+extern void __init shared_proc_topology_init(void);
 #else
 static inline int start_topology_update(void)
 {
@@ -85,6 +87,18 @@ static inline int prrn_is_enabled(void)
 {
 	return 0;
 }
+static inline int find_and_online_cpu_nid(int cpu)
+{
+	return 0;
+}
+static inline int timed_topology_update(int nsecs)
+{
+	return 0;
+}
+
+#ifdef CONFIG_SMP
+static inline void shared_proc_topology_init(void) {}
+#endif
 #endif /* CONFIG_NUMA && CONFIG_PPC_SPLPAR */
 
 #include <asm-generic/topology.h>
@@ -96,7 +110,8 @@ static inline int prrn_is_enabled(void)
 #ifdef CONFIG_PPC64
 #include <asm/smp.h>
 
-#define topology_thread_cpumask(cpu)	(per_cpu(cpu_sibling_map, cpu))
+#define topology_physical_package_id(cpu)	(cpu_to_chip_id(cpu))
+#define topology_sibling_cpumask(cpu)	(per_cpu(cpu_sibling_map, cpu))
 #define topology_core_cpumask(cpu)	(per_cpu(cpu_core_map, cpu))
 #define topology_core_id(cpu)		(cpu_to_core_id(cpu))
 #endif

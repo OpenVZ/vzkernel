@@ -31,7 +31,6 @@
  * SOFTWARE.
  */
 
-#include <linux/sched.h>
 #include <rdma/ib_smi.h>
 
 #include "ipath_verbs.h"
@@ -51,7 +50,7 @@ static void ipath_ud_loopback(struct ipath_qp *sqp, struct ipath_swqe *swqe)
 {
 	struct ipath_ibdev *dev = to_idev(sqp->ibqp.device);
 	struct ipath_qp *qp;
-	struct ib_ah_attr *ah_attr;
+	struct rdma_ah_attr *ah_attr;
 	unsigned long flags;
 	struct ipath_rq *rq;
 	struct ipath_srq *srq;
@@ -65,7 +64,7 @@ static void ipath_ud_loopback(struct ipath_qp *sqp, struct ipath_swqe *swqe)
 	u32 rlen;
 	u32 length;
 
-	qp = ipath_lookup_qpn(&dev->qp_table, swqe->wr.wr.ud.remote_qpn);
+	qp = ipath_lookup_qpn(&dev->qp_table, swqe->ud_wr.remote_qpn);
 	if (!qp || !(ib_ipath_state_ops[qp->state] & IPATH_PROCESS_RECV_OK)) {
 		dev->n_pkt_drops++;
 		goto done;
@@ -77,8 +76,8 @@ static void ipath_ud_loopback(struct ipath_qp *sqp, struct ipath_swqe *swqe)
 	 * qkey from the QP context instead of the WR (see 10.2.5).
 	 */
 	if (unlikely(qp->ibqp.qp_num &&
-		     ((int) swqe->wr.wr.ud.remote_qkey < 0 ?
-		      sqp->qkey : swqe->wr.wr.ud.remote_qkey) != qp->qkey)) {
+		     ((int) swqe->ud_wr.remote_qkey < 0 ?
+		      sqp->qkey : swqe->ud_wr.remote_qkey) != qp->qkey)) {
 		/* XXX OK to lose a count once in a while. */
 		dev->qkey_violations++;
 		dev->n_pkt_drops++;
@@ -175,7 +174,7 @@ static void ipath_ud_loopback(struct ipath_qp *sqp, struct ipath_swqe *swqe)
 	} else
 		spin_unlock_irqrestore(&rq->lock, flags);
 
-	ah_attr = &to_iah(swqe->wr.wr.ud.ah)->attr;
+	ah_attr = &to_iah(swqe->ud_wr.ah)->attr;
 	if (ah_attr->ah_flags & IB_AH_GRH) {
 		ipath_copy_sge(&rsge, &ah_attr->grh, sizeof(struct ib_grh));
 		wc.wc_flags |= IB_WC_GRH;
@@ -217,15 +216,15 @@ static void ipath_ud_loopback(struct ipath_qp *sqp, struct ipath_swqe *swqe)
 	/* XXX do we know which pkey matched? Only needed for GSI. */
 	wc.pkey_index = 0;
 	wc.slid = dev->dd->ipath_lid |
-		(ah_attr->src_path_bits &
+		(rdma_ah_get_path_bits(ah_attr) &
 		 ((1 << dev->dd->ipath_lmc) - 1));
 	wc.sl = ah_attr->sl;
 	wc.dlid_path_bits =
-		ah_attr->dlid & ((1 << dev->dd->ipath_lmc) - 1);
+		rdma_ah_get_dlid(ah_attr) & ((1 << dev->dd->ipath_lmc) - 1);
 	wc.port_num = 1;
 	/* Signal completion event if the solicited bit is set. */
 	ipath_cq_enter(to_icq(qp->ibqp.recv_cq), &wc,
-		       swqe->wr.send_flags & IB_SEND_SOLICITED);
+		       swqe->ud_wr.wr.send_flags & IB_SEND_SOLICITED);
 drop:
 	if (atomic_dec_and_test(&qp->refcount))
 		wake_up(&qp->wait);
@@ -242,7 +241,7 @@ int ipath_make_ud_req(struct ipath_qp *qp)
 {
 	struct ipath_ibdev *dev = to_idev(qp->ibqp.device);
 	struct ipath_other_headers *ohdr;
-	struct ib_ah_attr *ah_attr;
+	struct rdma_ah_attr *ah_attr;
 	struct ipath_swqe *wqe;
 	unsigned long flags;
 	u32 nwords;
@@ -280,15 +279,15 @@ int ipath_make_ud_req(struct ipath_qp *qp)
 		next_cur = 0;
 
 	/* Construct the header. */
-	ah_attr = &to_iah(wqe->wr.wr.ud.ah)->attr;
-	if (ah_attr->dlid >= IPATH_MULTICAST_LID_BASE) {
-		if (ah_attr->dlid != IPATH_PERMISSIVE_LID)
+	ah_attr = &to_iah(wqe->ud_wr.ah)->attr;
+	if (rdma_ah_get_dlid(ah_attr) >= IPATH_MULTICAST_LID_BASE) {
+		if (rdma_ah_get_dlid(ah_attr) != IPATH_PERMISSIVE_LID)
 			dev->n_multicast_xmit++;
 		else
 			dev->n_unicast_xmit++;
 	} else {
 		dev->n_unicast_xmit++;
-		lid = ah_attr->dlid & ~((1 << dev->dd->ipath_lmc) - 1);
+		lid = rdma_ah_get_dlid(ah_attr) & ~((1 << dev->dd->ipath_lmc) - 1);
 		if (unlikely(lid == dev->dd->ipath_lid)) {
 			/*
 			 * If DMAs are in progress, we can't generate
@@ -322,7 +321,7 @@ int ipath_make_ud_req(struct ipath_qp *qp)
 	qp->s_wqe = wqe;
 	qp->s_sge.sge = wqe->sg_list[0];
 	qp->s_sge.sg_list = wqe->sg_list + 1;
-	qp->s_sge.num_sge = wqe->wr.num_sge;
+	qp->s_sge.num_sge = wqe->ud_wr.wr.num_sge;
 
 	if (ah_attr->ah_flags & IB_AH_GRH) {
 		/* Header size in 32-bit words. */
@@ -340,9 +339,9 @@ int ipath_make_ud_req(struct ipath_qp *qp)
 		lrh0 = IPATH_LRH_BTH;
 		ohdr = &qp->s_hdr.u.oth;
 	}
-	if (wqe->wr.opcode == IB_WR_SEND_WITH_IMM) {
+	if (wqe->ud_wr.wr.opcode == IB_WR_SEND_WITH_IMM) {
 		qp->s_hdrwords++;
-		ohdr->u.ud.imm_data = wqe->wr.ex.imm_data;
+		ohdr->u.ud.imm_data = wqe->ud_wr.wr.ex.imm_data;
 		bth0 = IB_OPCODE_UD_SEND_ONLY_WITH_IMMEDIATE << 24;
 	} else
 		bth0 = IB_OPCODE_UD_SEND_ONLY << 24;
@@ -350,17 +349,17 @@ int ipath_make_ud_req(struct ipath_qp *qp)
 	if (qp->ibqp.qp_type == IB_QPT_SMI)
 		lrh0 |= 0xF000;	/* Set VL (see ch. 13.5.3.1) */
 	qp->s_hdr.lrh[0] = cpu_to_be16(lrh0);
-	qp->s_hdr.lrh[1] = cpu_to_be16(ah_attr->dlid);	/* DEST LID */
+	qp->s_hdr.lrh[1] = cpu_to_be16(rdma_ah_get_dlid(ah_attr));	/* DEST LID */
 	qp->s_hdr.lrh[2] = cpu_to_be16(qp->s_hdrwords + nwords +
 					   SIZE_OF_CRC);
 	lid = dev->dd->ipath_lid;
 	if (lid) {
-		lid |= ah_attr->src_path_bits &
+		lid |= rdma_ah_get_path_bits(ah_attr) &
 			((1 << dev->dd->ipath_lmc) - 1);
 		qp->s_hdr.lrh[3] = cpu_to_be16(lid);
 	} else
 		qp->s_hdr.lrh[3] = IB_LID_PERMISSIVE;
-	if (wqe->wr.send_flags & IB_SEND_SOLICITED)
+	if (wqe->ud_wr.wr.send_flags & IB_SEND_SOLICITED)
 		bth0 |= 1 << 23;
 	bth0 |= extra_bytes << 20;
 	bth0 |= qp->ibqp.qp_type == IB_QPT_SMI ? IPATH_DEFAULT_P_KEY :
@@ -369,17 +368,17 @@ int ipath_make_ud_req(struct ipath_qp *qp)
 	/*
 	 * Use the multicast QP if the destination LID is a multicast LID.
 	 */
-	ohdr->bth[1] = ah_attr->dlid >= IPATH_MULTICAST_LID_BASE &&
-		ah_attr->dlid != IPATH_PERMISSIVE_LID ?
+	ohdr->bth[1] = rdma_ah_get_dlid(ah_attr) >= IPATH_MULTICAST_LID_BASE &&
+		rdma_ah_get_dlid(ah_attr) != IPATH_PERMISSIVE_LID ?
 		cpu_to_be32(IPATH_MULTICAST_QPN) :
-		cpu_to_be32(wqe->wr.wr.ud.remote_qpn);
+		cpu_to_be32(wqe->ud_wr.remote_qpn);
 	ohdr->bth[2] = cpu_to_be32(qp->s_next_psn++ & IPATH_PSN_MASK);
 	/*
 	 * Qkeys with the high order bit set mean use the
 	 * qkey from the QP context instead of the WR (see 10.2.5).
 	 */
-	ohdr->u.ud.deth[0] = cpu_to_be32((int)wqe->wr.wr.ud.remote_qkey < 0 ?
-					 qp->qkey : wqe->wr.wr.ud.remote_qkey);
+	ohdr->u.ud.deth[0] = cpu_to_be32((int)wqe->ud_wr.remote_qkey < 0 ?
+					 qp->qkey : wqe->ud_wr.remote_qkey);
 	ohdr->u.ud.deth[1] = cpu_to_be32(qp->ibqp.qp_num);
 
 done:

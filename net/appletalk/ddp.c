@@ -644,7 +644,7 @@ static inline void atalk_dev_down(struct net_device *dev)
 static int ddp_device_event(struct notifier_block *this, unsigned long event,
 			    void *ptr)
 {
-	struct net_device *dev = ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 
 	if (!net_eq(dev_net(dev), &init_net))
 		return NOTIFY_DONE;
@@ -1662,7 +1662,7 @@ static int atalk_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr 
 
 	SOCK_DEBUG(sk, "SK %p: Copy user data (%Zd bytes).\n", sk, len);
 
-	err = memcpy_fromiovec(skb_put(skb, len), msg->msg_iov, len);
+	err = memcpy_from_msg(skb_put(skb, len), msg, len);
 	if (err) {
 		kfree_skb(skb);
 		err = -EFAULT;
@@ -1735,7 +1735,6 @@ static int atalk_recvmsg(struct kiocb *iocb, struct socket *sock, struct msghdr 
 			 size_t size, int flags)
 {
 	struct sock *sk = sock->sk;
-	struct sockaddr_at *sat = (struct sockaddr_at *)msg->msg_name;
 	struct ddpehdr *ddp;
 	int copied = 0;
 	int offset = 0;
@@ -1764,14 +1763,13 @@ static int atalk_recvmsg(struct kiocb *iocb, struct socket *sock, struct msghdr 
 	}
 	err = skb_copy_datagram_iovec(skb, offset, msg->msg_iov, copied);
 
-	if (!err) {
-		if (sat) {
-			sat->sat_family      = AF_APPLETALK;
-			sat->sat_port        = ddp->deh_sport;
-			sat->sat_addr.s_node = ddp->deh_snode;
-			sat->sat_addr.s_net  = ddp->deh_snet;
-		}
-		msg->msg_namelen = sizeof(*sat);
+	if (!err && msg->msg_name) {
+		struct sockaddr_at *sat = msg->msg_name;
+		sat->sat_family      = AF_APPLETALK;
+		sat->sat_port        = ddp->deh_sport;
+		sat->sat_addr.s_node = ddp->deh_snode;
+		sat->sat_addr.s_net  = ddp->deh_snet;
+		msg->msg_namelen     = sizeof(*sat);
 	}
 
 	skb_free_datagram(sk, skb);	/* Free the datagram. */
@@ -1931,7 +1929,7 @@ static int __init atalk_init(void)
 	dev_add_pack(&ltalk_packet_type);
 	dev_add_pack(&ppptalk_packet_type);
 
-	register_netdevice_notifier(&ddp_notifier);
+	register_netdevice_notifier_rh(&ddp_notifier);
 	aarp_proto_init();
 	atalk_proc_init();
 	atalk_register_sysctl();
@@ -1956,7 +1954,7 @@ static void __exit atalk_exit(void)
 #endif /* CONFIG_SYSCTL */
 	atalk_proc_exit();
 	aarp_cleanup_module();	/* General aarp clean-up. */
-	unregister_netdevice_notifier(&ddp_notifier);
+	unregister_netdevice_notifier_rh(&ddp_notifier);
 	dev_remove_pack(&ltalk_packet_type);
 	dev_remove_pack(&ppptalk_packet_type);
 	unregister_snap_client(ddp_dl);

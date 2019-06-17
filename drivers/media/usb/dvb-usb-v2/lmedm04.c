@@ -1096,6 +1096,7 @@ static int dm04_lme2510_frontend_attach(struct dvb_usb_adapter *adap)
 			}
 			break;
 		}
+		/* fall through */
 	case 0x22f0:
 		st->i2c_gate = 5;
 		adap->fe[0] = dvb_attach(m88rs2000_attach,

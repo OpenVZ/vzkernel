@@ -1404,11 +1404,17 @@ enum {
 };
 #define PMCRAID_AEN_CMD_MAX (__PMCRAID_AEN_CMD_MAX - 1)
 
+static struct genl_multicast_group pmcraid_mcgrps[] = {
+	{ .name = "events", /* not really used - see ID discussion below */ },
+};
+
 static struct genl_family pmcraid_event_family = {
-	.id = GENL_ID_GENERATE,
+	.module = THIS_MODULE,
 	.name = "pmcraid",
 	.version = 1,
-	.maxattr = PMCRAID_AEN_ATTR_MAX
+	.maxattr = PMCRAID_AEN_ATTR_MAX,
+	.mcgrps = pmcraid_mcgrps,
+	.n_mcgrps = ARRAY_SIZE(pmcraid_mcgrps),
 };
 
 /**
@@ -1503,16 +1509,10 @@ static int pmcraid_notify_aen(
 	}
 
 	/* send genetlink multicast message to notify appplications */
-	result = genlmsg_end(skb, msg_header);
+	genlmsg_end(skb, msg_header);
 
-	if (result < 0) {
-		pmcraid_err("genlmsg_end failed\n");
-		nlmsg_free(skb);
-		return result;
-	}
-
-	result =
-		genlmsg_multicast(skb, 0, pmcraid_event_family.id, GFP_ATOMIC);
+	result = genlmsg_multicast(&pmcraid_event_family, skb,
+				   0, 0, GFP_ATOMIC);
 
 	/* If there are no listeners, genlmsg_multicast may return non-zero
 	 * value.
@@ -4314,6 +4314,7 @@ static struct scsi_host_template pmcraid_host_template = {
 	.this_id = -1,
 	.sg_tablesize = PMCRAID_MAX_IOADLS,
 	.max_sectors = PMCRAID_IOA_MAX_SECTORS,
+	.no_write_same = 1,
 	.cmd_per_lun = PMCRAID_MAX_CMD_PER_LUN,
 	.use_clustering = ENABLE_CLUSTERING,
 	.shost_attrs = pmcraid_host_attrs,
