@@ -2521,6 +2521,7 @@ static int __net_init tcp_sk_init(struct net *net)
 	net->ipv4.sysctl_tcp_ecn = 2;
 
 	net->ipv4_sysctl_tcp_keepalive_time = TCP_KEEPALIVE_TIME;
+	net->ipv4_sysctl_tcp_min_snd_mss = TCP_MIN_SND_MSS;
 	net->ipv4_sysctl_tcp_keepalive_probes = TCP_KEEPALIVE_PROBES;
 	net->ipv4_sysctl_tcp_keepalive_intvl = TCP_KEEPALIVE_INTVL;
 
