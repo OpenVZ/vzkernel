@@ -36,7 +36,7 @@ static inline struct cgroup_netprio_state *cgrp_netprio_state(struct cgroup *cgr
 }
 
 /*
- * Extend @dev->priomap so that it's large enough to accomodate
+ * Extend @dev->priomap so that it's large enough to accommodate
  * @target_idx.  @dev->priomap.priomap_len > @target_idx after successful
  * return.  Must be called under rtnl lock.
  */
@@ -261,7 +261,7 @@ struct cgroup_subsys net_prio_subsys = {
 static int netprio_device_event(struct notifier_block *unused,
 				unsigned long event, void *ptr)
 {
-	struct net_device *dev = ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct netprio_map *old;
 
 	/*
@@ -292,7 +292,7 @@ static int __init init_cgroup_netprio(void)
 	if (ret)
 		goto out;
 
-	register_netdevice_notifier(&netprio_device_notifier);
+	register_netdevice_notifier_rh(&netprio_device_notifier);
 
 out:
 	return ret;
@@ -303,7 +303,7 @@ static void __exit exit_cgroup_netprio(void)
 	struct netprio_map *old;
 	struct net_device *dev;
 
-	unregister_netdevice_notifier(&netprio_device_notifier);
+	unregister_netdevice_notifier_rh(&netprio_device_notifier);
 
 	cgroup_unload_subsys(&net_prio_subsys);
 

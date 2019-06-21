@@ -1,12 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Qualcomm USB Auxiliary Serial Port driver
  *
  * Copyright (C) 2008 Greg Kroah-Hartman <greg@kroah.com>
  * Copyright (C) 2010 Dan Williams <dcbw@redhat.com>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2 as
- *  published by the Free Software Foundation.
  *
  * Devices listed here usually provide a CDC ACM port on which normal modem
  * AT commands and PPP can be used.  But when that port is in-use by PPP it
@@ -16,7 +13,6 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/init.h>
 #include <linux/tty.h>
 #include <linux/module.h>
 #include <linux/usb.h>
@@ -54,7 +50,7 @@
 #define SAMSUNG_VENDOR_ID			0x04e8
 #define SAMSUNG_PRODUCT_U520			0x6640 /* SCH-U520 */
 
-static struct usb_device_id id_table[] = {
+static const struct usb_device_id id_table[] = {
 	{ USB_DEVICE_AND_INTERFACE_INFO(UTSTARCOM_VENDOR_ID, UTSTARCOM_PRODUCT_PC5740, 0xff, 0x00, 0x00) },
 	{ USB_DEVICE_AND_INTERFACE_INFO(UTSTARCOM_VENDOR_ID, UTSTARCOM_PRODUCT_PC5750, 0xff, 0x00, 0x00) },
 	{ USB_DEVICE_AND_INTERFACE_INFO(UTSTARCOM_VENDOR_ID, UTSTARCOM_PRODUCT_UM150, 0xff, 0x00, 0x00) },
@@ -88,4 +84,4 @@ static struct usb_serial_driver * const serial_drivers[] = {
 };
 
 module_usb_serial_driver(serial_drivers, id_table);
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");

@@ -16,19 +16,23 @@ struct acpi_device;
 #define ACPI_VIDEO_DISPLAY_LEGACY_PANEL   0x0110
 #define ACPI_VIDEO_DISPLAY_LEGACY_TV      0x0200
 
-#if (defined CONFIG_ACPI_VIDEO || defined CONFIG_ACPI_VIDEO_MODULE)
+#if IS_ENABLED(CONFIG_ACPI_VIDEO)
 extern int acpi_video_register(void);
 extern void acpi_video_unregister(void);
+extern void acpi_video_unregister_backlight(void);
 extern int acpi_video_get_edid(struct acpi_device *device, int type,
 			       int device_id, void **edid);
+extern bool acpi_video_verify_backlight_support(void);
 #else
 static inline int acpi_video_register(void) { return 0; }
 static inline void acpi_video_unregister(void) { return; }
+static inline void acpi_video_unregister_backlight(void) { return; }
 static inline int acpi_video_get_edid(struct acpi_device *device, int type,
 				      int device_id, void **edid)
 {
 	return -ENODEV;
 }
+static inline bool acpi_video_verify_backlight_support(void) { return false; }
 #endif
 
 #endif

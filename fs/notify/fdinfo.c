@@ -42,7 +42,7 @@ static int show_mark_fhandle(struct seq_file *m, struct inode *inode)
 {
 	struct {
 		struct file_handle handle;
-		u8 pad[64];
+		u8 pad[MAX_HANDLE_SZ];
 	} f;
 	int size, ret, i;
 
@@ -50,7 +50,7 @@ static int show_mark_fhandle(struct seq_file *m, struct inode *inode)
 	size = f.handle.handle_bytes >> 2;
 
 	ret = exportfs_encode_inode_fh(inode, (struct fid *)f.handle.f_handle, &size, 0);
-	if ((ret == 255) || (ret == -ENOSPC)) {
+	if ((ret == FILEID_INVALID) || (ret < 0)) {
 		WARN_ONCE(1, "Can't encode file handler for inotify: %d\n", ret);
 		return 0;
 	}
@@ -81,17 +81,24 @@ static int inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
 	struct inode *inode;
 	int ret = 0;
 
-	if (!(mark->flags & (FSNOTIFY_MARK_FLAG_ALIVE | FSNOTIFY_MARK_FLAG_INODE)))
+	if (!(mark->connector->flags & FSNOTIFY_OBJ_TYPE_INODE))
 		return 0;
 
 	inode_mark = container_of(mark, struct inotify_inode_mark, fsn_mark);
-	inode = igrab(mark->i.inode);
+	inode = igrab(mark->connector->inode);
 	if (inode) {
+		/*
+		 * IN_ALL_EVENTS represents all of the mask bits
+		 * that we expose to userspace.  There is at
+		 * least one bit (FS_EVENT_ON_CHILD) which is
+		 * used only internally to the kernel.
+		 */
+		u32 mask = mark->mask & IN_ALL_EVENTS;
 		ret = seq_printf(m, "inotify wd:%x ino:%lx sdev:%x "
 				 "mask:%x ignored_mask:%x ",
 				 inode_mark->wd, inode->i_ino,
 				 inode->i_sb->s_dev,
-				 mark->mask, mark->ignored_mask);
+				 mask, mark->ignored_mask);
 		ret |= show_mark_fhandle(m, inode);
 		ret |= seq_putc(m, '\n');
 		iput(inode);
@@ -115,14 +122,11 @@ static int fanotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
 	struct inode *inode;
 	int ret = 0;
 
-	if (!(mark->flags & FSNOTIFY_MARK_FLAG_ALIVE))
-		return 0;
-
 	if (mark->flags & FSNOTIFY_MARK_FLAG_IGNORED_SURV_MODIFY)
 		mflags |= FAN_MARK_IGNORED_SURV_MODIFY;
 
-	if (mark->flags & FSNOTIFY_MARK_FLAG_INODE) {
-		inode = igrab(mark->i.inode);
+	if (mark->connector->flags & FSNOTIFY_OBJ_TYPE_INODE) {
+		inode = igrab(mark->connector->inode);
 		if (!inode)
 			goto out;
 		ret = seq_printf(m, "fanotify ino:%lx sdev:%x "
@@ -132,8 +136,8 @@ static int fanotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
 		ret |= show_mark_fhandle(m, inode);
 		ret |= seq_putc(m, '\n');
 		iput(inode);
-	} else if (mark->flags & FSNOTIFY_MARK_FLAG_VFSMOUNT) {
-		struct mount *mnt = real_mount(mark->m.mnt);
+	} else if (mark->connector->flags & FSNOTIFY_OBJ_TYPE_VFSMOUNT) {
+		struct mount *mnt = real_mount(mark->connector->mnt);
 
 		ret = seq_printf(m, "fanotify mnt_id:%x mflags:%x mask:%x "
 				 "ignored_mask:%x\n", mnt->mnt_id, mflags,
@@ -165,6 +169,9 @@ int fanotify_show_fdinfo(struct seq_file *m, struct file *f)
 
 	if (group->fanotify_data.max_marks == UINT_MAX)
 		flags |= FAN_UNLIMITED_MARKS;
+
+	if (group->fanotify_data.audit)
+		flags |= FAN_ENABLE_AUDIT;
 
 	seq_printf(m, "fanotify flags:%x event-flags:%x\n",
 		   flags, group->fanotify_data.f_flags);

@@ -533,7 +533,7 @@ also have
       found.  The count in 'mismatch_cnt' is the number of sectors
       that were re-written, or (for 'check') would have been
       re-written.  As most raid levels work in units of pages rather
-      than sectors, this my be larger than the number of actual errors
+      than sectors, this may be larger than the number of actual errors
       by a factor of the number of sectors in a page.
 
    bitmap_set_bits
@@ -549,7 +549,7 @@ also have
    sync_speed_max
      This are similar to /proc/sys/dev/raid/speed_limit_{min,max}
      however they only apply to the particular array.
-     If no value has been written to these, of if the word 'system'
+     If no value has been written to these, or if the word 'system'
      is written, then the system-wide value is used.  If a value,
      in kibibytes-per-second is written, then it is used.
      When the files are read, they show the currently active value
@@ -603,7 +603,7 @@ These currently include
 
   stripe_cache_size  (currently raid5 only)
       number of entries in the stripe cache.  This is writable, but
-      there are upper and lower limits (32768, 16).  Default is 128.
+      there are upper and lower limits (32768, 17).  Default is 256.
   strip_cache_active (currently raid5 only)
       number of active entries in the stripe cache
   preread_bypass_threshold (currently raid5 only)
@@ -612,3 +612,8 @@ These currently include
       to 1.  Setting this to 0 disables bypass accounting and
       requires preread stripes to wait until all full-width stripe-
       writes are complete.  Valid values are 0 to stripe_cache_size.
+
+  journal_mode (currently raid5 only)
+      The cache mode for raid5. raid5 could include an extra disk for
+      caching. The mode can be "write-throuth" and "write-back". The
+      default is "write-through".

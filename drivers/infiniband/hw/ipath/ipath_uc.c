@@ -126,9 +126,9 @@ int ipath_make_uc_req(struct ipath_qp *qp)
 		case IB_WR_RDMA_WRITE:
 		case IB_WR_RDMA_WRITE_WITH_IMM:
 			ohdr->u.rc.reth.vaddr =
-				cpu_to_be64(wqe->wr.wr.rdma.remote_addr);
+				cpu_to_be64(wqe->rdma_wr.remote_addr);
 			ohdr->u.rc.reth.rkey =
-				cpu_to_be32(wqe->wr.wr.rdma.rkey);
+				cpu_to_be32(wqe->rdma_wr.rkey);
 			ohdr->u.rc.reth.length = cpu_to_be32(len);
 			hwords += sizeof(struct ib_reth) / 4;
 			if (len > pmtu) {
@@ -251,7 +251,7 @@ void ipath_uc_rcv(struct ipath_ibdev *dev, struct ipath_ib_header *hdr,
 	int header_in_data;
 
 	/* Validate the SLID. See Ch. 9.6.1.5 */
-	if (unlikely(be16_to_cpu(hdr->lrh[3]) != qp->remote_ah_attr.dlid))
+	if (unlikely(be16_to_cpu(hdr->lrh[3]) != rdma_ah_get_dlid(&qp->remote_ah_attr)))
 		goto done;
 
 	/* Check for GRH */
@@ -414,7 +414,7 @@ void ipath_uc_rcv(struct ipath_ibdev *dev, struct ipath_ib_header *hdr,
 		wc.status = IB_WC_SUCCESS;
 		wc.qp = &qp->ibqp;
 		wc.src_qp = qp->remote_qpn;
-		wc.slid = qp->remote_ah_attr.dlid;
+		wc.slid = rdma_ah_get_dlid(&qp->remote_ah_attr);
 		wc.sl = qp->remote_ah_attr.sl;
 		/* Signal completion event if the solicited bit is set. */
 		ipath_cq_enter(to_icq(qp->ibqp.recv_cq), &wc,
