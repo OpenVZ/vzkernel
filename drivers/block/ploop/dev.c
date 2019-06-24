@@ -636,8 +636,6 @@ DEFINE_BIO_CB(ploop_fast_end_io)
 
 	plo = orig->bi_bdev->bd_disk->private_data;
 
-	BIO_ENDIO(plo->queue, orig, err);
-
 	/* End of fast bio wakes up main process only when this could
 	 * mean exit from ATTENTION state.
 	 */
@@ -652,6 +650,8 @@ DEFINE_BIO_CB(ploop_fast_end_io)
 	     !list_empty(&plo->entry_queue)))
 		wake_up_interruptible(&plo->waitq);
 	spin_unlock_irqrestore(&plo->lock, flags);
+
+	BIO_ENDIO(plo->queue, orig, err);
 
 	bio_put(bio);
 }
