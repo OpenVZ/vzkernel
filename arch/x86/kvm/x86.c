@@ -55,6 +55,7 @@
 #include <linux/irqbypass.h>
 #include <linux/mem_encrypt.h>
 #include <trace/events/kvm.h>
+#include <linux/kvm_host.h>
 
 #define CREATE_TRACE_POINTS
 #include "trace.h"
@@ -5584,6 +5585,34 @@ int kvm_inject_realmode_interrupt(struct kvm_vcpu *vcpu, int irq, int inc_eip)
 }
 EXPORT_SYMBOL_GPL(kvm_inject_realmode_interrupt);
 
+static void printk_emulation_data(struct kvm_vcpu *vcpu, int emulation_type)
+{
+	struct x86_emulate_ctxt *ctx = &vcpu->arch.emulate_ctxt;
+	int i;
+
+	vcpu_err(vcpu, "=== emulation failure ===\n");
+
+	dump_stack();
+
+	vcpu_err(vcpu, "emulation context data (emulation_type: 0x%x)\n",
+		emulation_type);
+	vcpu_err(vcpu, "eflags: 0x%lx start_eip: 0x%lx mode: %d\n",
+		ctx->eflags, ctx->eip, ctx->mode);
+	vcpu_err(vcpu, "opcode_len: %u b: 0x%x op_bytes: %u ad_bytes: %u\n",
+		ctx->opcode_len, ctx->b, ctx->op_bytes, ctx->ad_bytes);
+	vcpu_err(vcpu, "d: 0x%llx current_eip: 0x%lx\n ", ctx->d, ctx->_eip);
+	vcpu_err(vcpu, "fetch data: data: %p ptr %p pos %p\n",
+		ctx->fetch.data, ctx->fetch.ptr, ctx->fetch.end);
+	vcpu_err(vcpu, "fetch data content: ");
+
+	for (i = 0; i < ARRAY_SIZE(ctx->fetch.data); i++) {
+		printk("0x%02x ", ctx->fetch.data[i]);
+	}
+	printk("\n");
+
+	vcpu_err(vcpu, "=== end of emulation failure ===\n");
+}
+
 static int handle_emulation_failure(struct kvm_vcpu *vcpu, int emulation_type)
 {
 	int r = EMULATE_DONE;
@@ -5599,6 +5628,7 @@ static int handle_emulation_failure(struct kvm_vcpu *vcpu, int emulation_type)
 		vcpu->run->internal.suberror = KVM_INTERNAL_ERROR_EMULATION;
 		vcpu->run->internal.ndata = 0;
 		r = EMULATE_FAIL;
+		printk_emulation_data(vcpu, emulation_type);
 	}
 
 	kvm_queue_exception(vcpu, UD_VECTOR);
