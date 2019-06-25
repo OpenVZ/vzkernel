@@ -417,6 +417,24 @@ int kpcs_file_open(struct fuse_conn *fc, struct file *file, struct inode *inode)
 	return ret;
 }
 
+static void kpcs_file_close(struct fuse_conn *fc, struct file *file,
+			    struct inode *inode)
+{
+	struct fuse_inode *fi = get_fuse_inode(inode);
+	struct pcs_dentry_info *di = fi->private;
+
+	lockdep_assert_held(&inode->i_mutex);
+
+	TRACE("file close - fi: %p, di: %p", fi, di);
+
+	if (!di)
+		return;
+
+	WARN_ON_ONCE(!list_empty(&di->size.queue));
+	WARN_ON_ONCE(!list_empty(&di->kq));
+	pcs_mapping_invalidate(&di->mapping);
+}
+
 void kpcs_inode_release(struct fuse_inode *fi)
 {
 	struct pcs_dentry_info *di = fi->private;
@@ -1664,6 +1682,7 @@ static struct fuse_kio_ops kio_pcs_ops = {
 	.req_classify	= kpcs_req_classify,
 	.req_send	= kpcs_req_send,
 	.file_open	= kpcs_file_open,
+	.file_close	= kpcs_file_close,
 	.inode_release	= kpcs_inode_release,
 	.kill_requests	= kpcs_kill_requests,
 };
