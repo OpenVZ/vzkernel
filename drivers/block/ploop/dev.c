@@ -1344,6 +1344,15 @@ static void ploop_complete_request(struct ploop_request * preq)
 
 	__TRACE("Z %p %u\n", preq, preq->req_cluster);
 
+	/*
+	 * Decrement active_reqs before BIO_IOEND() to make
+	 * a hook in ploop_stop() work properly. This is
+	 * mostly needed for debug purposes.
+	 */
+	spin_lock_irq(&plo->lock);
+	plo->active_reqs--;
+	spin_unlock_irq(&plo->lock);
+
 	while (preq->bl.head) {
 		struct bio * bio = preq->bl.head;
 		preq->bl.head = bio->bi_next;
@@ -1382,7 +1391,6 @@ static void ploop_complete_request(struct ploop_request * preq)
 
 				if (!list_empty(&preq->delay_list))
 					list_splice_init(&preq->delay_list, plo->ready_queue.prev);
-				plo->active_reqs--;
 
 				preq->eng_state = PLOOP_E_ENTRY;
 				ploop_entry_add(plo, preq);
@@ -1436,8 +1444,6 @@ static void ploop_complete_request(struct ploop_request * preq)
 	ub = preq->preq_ub;
 	preq->preq_ub = NULL;
 #endif
-
-	plo->active_reqs--;
 
 	if (unlikely(test_bit(PLOOP_REQ_ZERO, &preq->state))) {
 		ploop_fb_put_zero_request(plo->fbd, preq);
