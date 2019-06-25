@@ -541,6 +541,8 @@ struct fuse_kio_ops {
 	/* Inode scope hooks */
 	int  (*file_open)(struct fuse_conn *fc, struct file *file,
 			  struct inode *inode);
+	void (*file_close)(struct fuse_conn *fc, struct file *file,
+			   struct inode *inode);
 	void (*inode_release)(struct fuse_inode *fi);
 	void (*kill_requests)(struct fuse_conn *fc, struct inode *inode);
 
