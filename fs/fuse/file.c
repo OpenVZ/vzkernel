@@ -449,6 +449,9 @@ static int fuse_release(struct inode *inode, struct file *file)
 		 */
 		inode_lock(inode);
 		fuse_sync_writes(inode);
+
+		if (fi->num_openers == 0 && ff->fc->kio.op->file_close)
+			ff->fc->kio.op->file_close(ff->fc, file, inode);
 		inode_unlock(inode);
 	}
 
