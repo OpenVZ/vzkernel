@@ -449,9 +449,12 @@ int pcs_sock_cancel_msg(struct pcs_msg * msg)
 
 	BUG_ON(msg->sio == NULL);
 
-	if (sio->write_offset && sio->write_queue.next == &msg->list)
-		return -EBUSY;
-
+	if (sio->write_queue.next == &msg->list) {
+		if (sio->write_offset)
+			return -EBUSY;
+		else
+			iov_iter_init_bad(&sio->write_iter);
+	}
 	list_del_init(&msg->list);
 	sio->write_queue_len -= msg->size;
 	msg->stage = PCS_MSG_STAGE_SENT;
