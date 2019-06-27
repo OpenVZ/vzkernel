@@ -2593,7 +2593,9 @@ void aac_free_irq(struct aac_dev *dev)
 	int cpu;
 
 	cpu = cpumask_first(cpu_online_mask);
-	if (aac_is_src(dev)) {
+	if (dev->pdev->device == PMC_DEVICE_S6 ||
+	    dev->pdev->device == PMC_DEVICE_S7 ||
+	    dev->pdev->device == PMC_DEVICE_S8) {
 		if (dev->max_msix > 1) {
 			for (i = 0; i < dev->max_msix; i++) {
 				if (irq_set_affinity_hint(
