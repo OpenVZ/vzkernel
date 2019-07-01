@@ -138,9 +138,6 @@ static void iolimit_balance_dirty(struct iolimit *iolimit,
 	struct throttle *th = &iolimit->throttle;
 	unsigned long flags, dirty, state;
 
-	if (!th->speed)
-		return;
-
 	/* can be non-atomic on i386, but ok. this just hint. */
 	state = th->state >> PAGE_SHIFT;
 	dirty = ub_stat_get(ub, dirty_pages) + write_chunk;
@@ -154,7 +151,8 @@ static void iolimit_balance_dirty(struct iolimit *iolimit,
 
 	spin_lock_irqsave(&ub->ub_lock, flags);
 	/* precharge dirty pages */
-	throttle_charge(th, (long long)dirty << PAGE_SHIFT);
+	if (th->speed)
+		throttle_charge(th, (long long)dirty << PAGE_SHIFT);
 	spin_unlock_irqrestore(&ub->ub_lock, flags);
 }
 
