@@ -1082,7 +1082,17 @@ static void kaio_unplug(struct ploop_io * io)
 static void kaio_queue_settings(struct ploop_io * io, struct request_queue * q)
 {
 	blk_set_stacking_limits(&q->limits);
-	ploop_set_discard_limits(io->plo);
+	/*
+	 * Maintaince mode based discard splits a big bio itself,
+	 * so we do not force block layer to split it.
+	 * Also it has a limitation, that only a single bio may be
+	 * handled at the same time, so splitting makes ploop working
+	 * slow. See process_discard_bio_queue() and
+	 *
+	 * https://jira.sw.ru/browse/PSBM-95772
+	 */
+	//ploop_set_discard_limits(io->plo);
+	q->limits.max_discard_sectors = UINT_MAX >> 9;
 }
 
 static void kaio_issue_flush(struct ploop_io * io, struct ploop_request *preq)
