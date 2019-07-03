@@ -848,8 +848,10 @@ fail1:
 void pcs_fuse_stat_fini(struct pcs_fuse_stat *stat)
 {
 	mutex_lock(&fuse_mutex);
-	if (!stat->kio_stat)
+	if (!stat->kio_stat) {
+		mutex_unlock(&fuse_mutex);
 		return;
+	}
 
 	if (fuse_control_sb) {
 		if (stat->iostat)
