@@ -749,20 +749,6 @@ kaio_write_page(struct ploop_io * io, struct ploop_request * preq,
 	kaio_io_page(io, IOCB_CMD_WRITE_ITER, preq, page, sec);
 }
 
-static int
-kaio_sync_readvec(struct ploop_io * io, struct page ** pvec, unsigned int nr,
-		   sector_t sec)
-{
-	return -EINVAL;
-}
-
-static int
-kaio_sync_writevec(struct ploop_io * io, struct page ** pvec, unsigned int nr,
-		    sector_t sec)
-{
-	return -EINVAL;
-}
-
 struct kaio_comp {
 	struct completion comp;
 	atomic_t count;
@@ -1148,8 +1134,6 @@ static struct ploop_io_ops ploop_io_ops_kaio =
 	.write_page	=	kaio_write_page,
 	.sync_read	=	kaio_sync_read,
 	.sync_write	=	kaio_sync_write,
-	.sync_readvec	=	kaio_sync_readvec,
-	.sync_writevec	=	kaio_sync_writevec,
 
 	.init		=	kaio_init,
 	.destroy	=	kaio_destroy,
