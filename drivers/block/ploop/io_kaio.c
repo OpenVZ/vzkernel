@@ -1078,6 +1078,7 @@ static void kaio_queue_settings(struct ploop_io * io, struct request_queue * q)
 	 * https://jira.sw.ru/browse/PSBM-95772
 	 */
 	//ploop_set_discard_limits(io->plo);
+	q->limits.max_discard_sectors = UINT_MAX >> 9;
 }
 
 static void kaio_issue_flush(struct ploop_io * io, struct ploop_request *preq)
