@@ -1299,26 +1299,22 @@ fail:
 	return err;
 }
 
-static void
-dio_io_page(struct ploop_io * io, unsigned long rw,
-	    struct ploop_request * preq, struct page * page,
-	    sector_t sec)
+static int
+__dio_io_page(struct ploop_io *io, unsigned long rw, struct page *page,
+	    sector_t sec, bio_end_io_t *bi_end_io, void *bi_private)
 {
 	struct bio_list bl = BIO_EMPTY_LIST;
 	struct bio * bio;
 	unsigned int len;
 	struct extent_map * em;
 	sector_t nsec;
+	int nr_bios = 0;
 	int err;
 	int off;
 
 	bio = NULL;
 	em = NULL;
 	off = 0;
-
-	ploop_prepare_io_request(preq);
-	if (rw & REQ_WRITE)
-		ploop_prepare_tracker(preq, sec);
 
 	len = PAGE_SIZE;
 
@@ -1367,15 +1363,13 @@ flush_bio:
 		bl.head = b->bi_next;
 
 		b->bi_next = NULL;
-		b->bi_end_io = dio_endio_async;
-		b->bi_private = preq;
-		atomic_inc(&preq->io_count);
-		ploop_acc_ff_out(preq->plo, rw | b->bi_rw);
+		b->bi_end_io = bi_end_io;
+		b->bi_private = bi_private;
+		nr_bios++;
 		submit_bio(rw, b);
 	}
 
-	ploop_complete_io_request(preq);
-	return;
+	return nr_bios;
 
 enomem:
 	err = -ENOMEM;
@@ -1390,8 +1384,41 @@ out:
 		b->bi_next = NULL;
 		bio_put(b);
 	}
-	PLOOP_FAIL_REQUEST(preq, err);
+	return err;
 }
+
+static void
+dio_io_page(struct ploop_io * io, unsigned long rw,
+	    struct ploop_request * preq, struct page * page,
+	    sector_t sec)
+{
+	int nr_bios;
+
+	/*
+	 * The same as in dio_sync_io(). See comment there.
+	 *
+	 * ploop_prepare_io_request(preq).
+	 */
+	atomic_set(&preq->io_count, INT_MAX);
+
+	if (rw & REQ_WRITE)
+		ploop_prepare_tracker(preq, sec);
+
+	nr_bios = __dio_io_page(io, rw, page, sec, dio_endio_async, preq);
+	if (nr_bios < 0) {
+		/* Just for uniformity -- make the counter 1 */
+		ploop_prepare_io_request(preq);
+		PLOOP_FAIL_REQUEST(preq, nr_bios);
+		return;
+	}
+
+	ploop_acc_ff_out(preq->plo, rw);
+
+	/* ploop_complete_io_request(preq) */
+	if (atomic_sub_and_test(INT_MAX - nr_bios, &preq->io_count))
+                ploop_complete_io_state(preq);
+}
+
 
 static void
 dio_read_page(struct ploop_io * io, struct ploop_request * preq,
