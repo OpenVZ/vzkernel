@@ -114,7 +114,7 @@ dio_submit(struct ploop_io *io, struct ploop_request *preq,
 	   struct bio_list *sbl, iblock_t iblk, unsigned int size)
 {
 	struct ploop_device *plo = io->plo;
-	struct bio_list bl;
+	struct bio_list bl = BIO_EMPTY_LIST;
 	struct bio * bio = NULL;
 	struct extent_map * em;
 	sector_t sec, nsec;
@@ -132,9 +132,6 @@ dio_submit(struct ploop_io *io, struct ploop_request *preq,
 	}
 
 	rw &= ~(REQ_FLUSH | REQ_FUA);
-
-
-	bio_list_init(&bl);
 
 	if (iblk == PLOOP_ZERO_INDEX)
 		iblk = 0;
@@ -592,13 +589,11 @@ dio_submit_pad(struct ploop_io *io, struct ploop_request * preq,
 	       struct bio_list * sbl, unsigned int size,
 	       struct extent_map *em)
 {
-	struct bio_list bl;
+	struct bio_list bl = BIO_EMPTY_LIST;
 	struct bio * bio = NULL;
 	sector_t sec, end_sec, nsec, start, end;
 	struct bio_list_walk bw;
 	int err;
-
-	bio_list_init(&bl);
 
 	/* sec..end_sec is the range which we are going to write */
 	sec = (sector_t)preq->iblock << preq->plo->cluster_log;
@@ -1073,7 +1068,7 @@ static int
 dio_sync_io(struct ploop_io * io, int rw, struct page * page,
 	    unsigned int len, unsigned int off, sector_t sec)
 {
-	struct bio_list bl;
+	struct bio_list bl = BIO_EMPTY_LIST;
 	struct bio * bio;
 	struct dio_comp comp;
 	struct extent_map * em;
@@ -1083,7 +1078,6 @@ dio_sync_io(struct ploop_io * io, int rw, struct page * page,
 	BUG_ON(len & 511);
 	BUG_ON(off & 511);
 
-	bio_list_init(&bl);
 	bio = NULL;
 	em = NULL;
 
@@ -1194,7 +1188,7 @@ static int
 dio_sync_iovec(struct ploop_io * io, int rw, struct page ** pvec,
 	       unsigned int nr, sector_t sec)
 {
-	struct bio_list bl;
+	struct bio_list bl = BIO_EMPTY_LIST;
 	struct bio * bio;
 	struct dio_comp comp;
 	unsigned int len = PAGE_SIZE * nr;
@@ -1203,7 +1197,6 @@ dio_sync_iovec(struct ploop_io * io, int rw, struct page ** pvec,
 	int err;
 	sector_t nsec;
 
-	bio_list_init(&bl);
 	bio = NULL;
 	em = NULL;
 	off = 0;
@@ -1416,7 +1409,7 @@ dio_io_page(struct ploop_io * io, unsigned long rw,
 	    struct ploop_request * preq, struct page * page,
 	    sector_t sec)
 {
-	struct bio_list bl;
+	struct bio_list bl = BIO_EMPTY_LIST;
 	struct bio * bio;
 	unsigned int len;
 	struct extent_map * em;
@@ -1424,7 +1417,6 @@ dio_io_page(struct ploop_io * io, unsigned long rw,
 	int err;
 	int off;
 
-	bio_list_init(&bl);
 	bio = NULL;
 	em = NULL;
 	off = 0;
