@@ -111,6 +111,10 @@ out_unlock:
 	pm->extent_root.mapping = mapping;
 	pm->readers = rdonly ? 1 : -1;
 	list_add(&pm->list, &ploop_mappings);
+	/*
+	 * This protects against EXT4_IOC_MOVE_EXT:
+	 * image file extents remain on the place.
+	 */
 	mapping->host->i_flags |= S_SWAPFILE;
 	io->size_ptr = &pm->size;
 	*io->size_ptr = i_size_read(mapping->host);
