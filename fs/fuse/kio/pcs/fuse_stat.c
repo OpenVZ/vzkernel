@@ -842,6 +842,7 @@ void pcs_fuse_stat_init(struct pcs_fuse_stat *stat)
 fail2:
 	pcs_fuse_io_stat_free(&stat->io);
 fail1:
+	stat->kio_stat = NULL;
 	mutex_unlock(&fuse_mutex);
 }
 
