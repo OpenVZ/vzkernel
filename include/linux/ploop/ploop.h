@@ -179,12 +179,6 @@ struct ploop_io_ops
 	int	(*sync_write)(struct ploop_io * io, struct page * page,
 			      unsigned int len, unsigned int off, sector_t sec);
 
-
-	int	(*sync_readvec)(struct ploop_io * io, struct page ** pvec,
-				unsigned int nr, sector_t sec);
-	int	(*sync_writevec)(struct ploop_io * io, struct page ** pvec,
-				unsigned int nr, sector_t sec);
-
 	int	(*init)(struct ploop_io * io);
 	void	(*destroy)(struct ploop_io * io);
 	int	(*open)(struct ploop_io * io);
