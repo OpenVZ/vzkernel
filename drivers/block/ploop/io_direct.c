@@ -257,7 +257,6 @@ flush_bio:
 
 	while (bl.head) {
 		struct bio * b = bl.head;
-		unsigned long rw2 = rw;
 
 		bl.head = b->bi_next;
 		atomic_inc(&preq->io_count);
@@ -265,8 +264,8 @@ flush_bio:
 		b->bi_private = preq;
 		b->bi_end_io = dio_endio_async;
 
-		ploop_acc_ff_out(plo, rw2 | b->bi_rw);
-		submit_bio(rw2, b);
+		ploop_acc_ff_out(plo, rw | b->bi_rw);
+		submit_bio(rw, b);
 	}
 complete:
 	ploop_complete_io_request(preq);
