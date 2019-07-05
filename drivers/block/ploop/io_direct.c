@@ -1184,129 +1184,6 @@ dio_sync_write(struct ploop_io * io, struct page * page, unsigned int len,
 	return err;
 }
 
-static int
-dio_sync_iovec(struct ploop_io * io, int rw, struct page ** pvec,
-	       unsigned int nr, sector_t sec)
-{
-	struct bio_list bl = BIO_EMPTY_LIST;
-	struct bio * bio;
-	struct dio_comp comp;
-	unsigned int len = PAGE_SIZE * nr;
-	unsigned int off;
-	struct extent_map * em;
-	int err;
-	sector_t nsec;
-
-	bio = NULL;
-	em = NULL;
-	off = 0;
-
-	init_completion(&comp.comp);
-	atomic_set(&comp.count, 1);
-	comp.error = 0;
-
-	while (len > 0) {
-		int copy;
-
-		if (!em || sec >= em->end) {
-			if (em)
-				ploop_extent_put(em);
-			em = extent_lookup_create(io, sec, len>>9);
-			if (IS_ERR(em))
-				goto out_em_err;
-		}
-
-		nsec = dio_isec_to_phys(em, sec);
-
-		if (bio == NULL ||
-		    bio->bi_sector + (bio->bi_size>>9) != nsec) {
-flush_bio:
-			bio = bio_alloc(GFP_NOFS, 32);
-			if (bio == NULL)
-				goto enomem;
-			bio_list_add(&bl, bio);
-			bio->bi_bdev = io->files.bdev;
-			bio->bi_sector = nsec;
-		}
-
-		copy = len;
-		if (copy > ((em->end - sec) << 9))
-			copy = (em->end - sec) << 9;
-		if (off/PAGE_SIZE != (off + copy + 1)/PAGE_SIZE)
-			copy = PAGE_SIZE - (off & (PAGE_SIZE-1));
-		if (bio_add_page(bio, pvec[off/PAGE_SIZE], copy,
-				 off & (PAGE_SIZE-1) ) != copy) {
-			/* Oops. */
-			goto flush_bio;
-		}
-
-		off += copy;
-		len -= copy;
-		sec += copy >> 9;
-	}
-
-	if (em)
-		ploop_extent_put(em);
-
-	while (bl.head) {
-		struct bio * b = bl.head;
-		bl.head = b->bi_next;
-
-		b->bi_next = NULL;
-		b->bi_end_io = dio_endio_sync;
-		b->bi_private = &comp;
-		atomic_inc(&comp.count);
-		submit_bio(rw, b);
-	}
-
-	if (atomic_dec_and_test(&comp.count))
-		complete(&comp.comp);
-
-	wait_for_completion(&comp.comp);
-
-	return comp.error;
-
-
-enomem:
-	err = -ENOMEM;
-	goto out;
-
-out_em_err:
-	err = PTR_ERR(em);
-out:
-	while (bl.head) {
-		struct bio * b = bl.head;
-		bl.head = b->bi_next;
-		b->bi_next = NULL;
-		bio_put(b);
-	}
-	return err;
-}
-
-static int
-dio_sync_readvec(struct ploop_io * io, struct page ** pvec, unsigned int nr,
-		 sector_t sec)
-{
-	return dio_sync_iovec(io, READ_SYNC, pvec, nr, sec);
-}
-
-static int
-dio_sync_writevec(struct ploop_io * io, struct page ** pvec, unsigned int nr,
-		  sector_t sec)
-{
-	int err;
-
-	if (!(io->files.file->f_mode & FMODE_WRITE))
-		return -EBADF;
-
-	err = dio_sync_iovec(io, WRITE_SYNC, pvec, nr, sec);
-
-	if (sec < io->plo->track_end)
-		ploop_tracker_notify(io->plo, sec);
-
-	return err;
-}
-
 /*
  * Allocate and zero new block in file. Do it through page cache.
  * It is assumed there is no point to optimize this, it is used
@@ -1915,8 +1792,6 @@ static struct ploop_io_ops ploop_io_ops_direct =
 	.write_page	=	dio_write_page,
 	.sync_read	=	dio_sync_read,
 	.sync_write	=	dio_sync_write,
-	.sync_readvec	=	dio_sync_readvec,
-	.sync_writevec	=	dio_sync_writevec,
 
 	.init		=	dio_init,
 	.destroy	=	dio_destroy,
