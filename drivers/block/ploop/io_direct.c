@@ -1299,94 +1299,6 @@ fail:
 	return err;
 }
 
-static int
-__dio_io_page(struct ploop_io *io, unsigned long rw, struct page *page,
-	    sector_t sec, bio_end_io_t *bi_end_io, void *bi_private)
-{
-	struct bio_list bl = BIO_EMPTY_LIST;
-	struct bio * bio;
-	unsigned int len;
-	struct extent_map * em;
-	sector_t nsec;
-	int nr_bios = 0;
-	int err;
-	int off;
-
-	bio = NULL;
-	em = NULL;
-	off = 0;
-
-	len = PAGE_SIZE;
-
-	while (len > 0) {
-		int copy;
-
-		if (!em || sec >= em->end) {
-			if (em)
-				ploop_extent_put(em);
-			em = extent_lookup_create(io, sec, len>>9);
-			if (IS_ERR(em))
-				goto out_em_err;
-		}
-
-		nsec = dio_isec_to_phys(em, sec);
-
-		if (bio == NULL ||
-		    bio->bi_sector + (bio->bi_size>>9) != nsec) {
-flush_bio:
-			bio = bio_alloc(GFP_NOFS, 32);
-			if (bio == NULL)
-				goto enomem;
-			bio_list_add(&bl, bio);
-			bio->bi_bdev = io->files.bdev;
-			bio->bi_sector = nsec;
-		}
-
-		copy = len;
-		if (copy > ((em->end - sec) << 9))
-			copy = (em->end - sec) << 9;
-		if (bio_add_page(bio, page, copy, off) != copy) {
-			/* Oops. */
-			goto flush_bio;
-		}
-
-		off += copy;
-		len -= copy;
-		sec += copy >> 9;
-	}
-
-	if (em)
-		ploop_extent_put(em);
-
-	while (bl.head) {
-		struct bio * b = bl.head;
-		bl.head = b->bi_next;
-
-		b->bi_next = NULL;
-		b->bi_end_io = bi_end_io;
-		b->bi_private = bi_private;
-		nr_bios++;
-		submit_bio(rw, b);
-	}
-
-	return nr_bios;
-
-enomem:
-	err = -ENOMEM;
-	goto out;
-
-out_em_err:
-	err = PTR_ERR(em);
-out:
-	while (bl.head) {
-		struct bio * b = bl.head;
-		bl.head = b->bi_next;
-		b->bi_next = NULL;
-		bio_put(b);
-	}
-	return err;
-}
-
 static void
 dio_io_page(struct ploop_io * io, unsigned long rw,
 	    struct ploop_request * preq, struct page * page,
@@ -1404,7 +1316,9 @@ dio_io_page(struct ploop_io * io, unsigned long rw,
 	if (rw & REQ_WRITE)
 		ploop_prepare_tracker(preq, sec);
 
-	nr_bios = __dio_io_page(io, rw, page, sec, dio_endio_async, preq);
+	nr_bios = dio_make_io(io, rw, page, PAGE_SIZE, 0, sec,
+			      dio_endio_async, preq);
+
 	if (nr_bios < 0) {
 		/* Just for uniformity -- make the counter 1 */
 		ploop_prepare_io_request(preq);
