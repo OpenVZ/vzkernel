@@ -1065,25 +1065,18 @@ DEFINE_BIO_CB(dio_endio_sync)
 END_BIO_CB(dio_endio_sync)
 
 static int
-dio_sync_io(struct ploop_io * io, int rw, struct page * page,
-	    unsigned int len, unsigned int off, sector_t sec)
+dio_make_io(struct ploop_io *io, int rw, struct page *page,
+	    unsigned int len, unsigned int off, sector_t sec,
+	    bio_end_io_t *bi_end_io, void *bi_private)
 {
 	struct bio_list bl = BIO_EMPTY_LIST;
 	struct bio * bio;
-	struct dio_comp comp;
 	struct extent_map * em;
+	int nr_bios = 0, err;
 	sector_t nsec;
-	int err;
-
-	BUG_ON(len & 511);
-	BUG_ON(off & 511);
 
 	bio = NULL;
 	em = NULL;
-
-	init_completion(&comp.comp);
-	atomic_set(&comp.count, 1);
-	comp.error = 0;
 
 	while (len > 0) {
 		int copy;
@@ -1130,18 +1123,13 @@ flush_bio:
 		bl.head = b->bi_next;
 
 		b->bi_next = NULL;
-		b->bi_end_io = dio_endio_sync;
-		b->bi_private = &comp;
-		atomic_inc(&comp.count);
+		b->bi_end_io = bi_end_io;
+		b->bi_private = bi_private;
+		nr_bios++;
 		submit_bio(rw, b);
 	}
 
-	if (atomic_dec_and_test(&comp.count))
-		complete(&comp.comp);
-
-	wait_for_completion(&comp.comp);
-
-	return comp.error;
+	return nr_bios;
 
 
 enomem:
@@ -1158,6 +1146,36 @@ out:
 		bio_put(b);
 	}
 	return err;
+}
+
+static int
+dio_sync_io(struct ploop_io *io, int rw, struct page *page,
+	    unsigned int len, unsigned int off, sector_t sec)
+{
+	struct dio_comp comp;
+	int nr_bios;
+
+	BUG_ON((len & 511) || (off & 511));
+
+	/*
+	 * We set initial count to INT_MAX, so dio_endio_sync()
+	 * never makes it 0 before we've done atomic_sub_and_test().
+	 */
+	atomic_set(&comp.count, INT_MAX);
+	init_completion(&comp.comp);
+	comp.error = 0;
+
+	nr_bios = dio_make_io(io, rw, page, len, off, sec,
+			      dio_endio_sync, &comp);
+	if (nr_bios < 0)
+		return nr_bios;
+
+	if (atomic_sub_and_test(INT_MAX - nr_bios, &comp.count))
+		complete(&comp.comp);
+
+	wait_for_completion(&comp.comp);
+
+	return comp.error;
 }
 
 static int
