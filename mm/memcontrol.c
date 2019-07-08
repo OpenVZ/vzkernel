@@ -4325,14 +4325,6 @@ static void mem_cgroup_reparent_charges(struct mem_cgroup *memcg)
 		 */
 	} while ((page_counter_read(&memcg->memory) -
 		 page_counter_read(&memcg->kmem) > 0) && reparent_attempts--);
-
-	WARN_ONCE(reparent_attempts != 10,
-		  "memcg 0x%p leak suspected, performed %d iterations: "
-		  "memory=%lu, kmem=%lu",
-		  memcg,
-		  10 - reparent_attempts,
-		  page_counter_read(&memcg->memory),
-		  page_counter_read(&memcg->kmem));
 }
 
 /*
