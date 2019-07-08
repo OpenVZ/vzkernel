@@ -47,6 +47,7 @@
 #define _LINUX_TRACEHOOK_H	1
 
 #include <linux/sched.h>
+#include <linux/memcontrol.h>
 #include <linux/ptrace.h>
 #include <linux/security.h>
 #include <linux/task_work.h>
@@ -194,6 +195,8 @@ static inline void tracehook_notify_resume(struct pt_regs *regs)
 	smp_mb__after_clear_bit();
 	if (unlikely(current->task_works))
 		task_work_run();
+
+	mem_cgroup_handle_over_high();
 }
 
 #endif	/* <linux/tracehook.h> */
