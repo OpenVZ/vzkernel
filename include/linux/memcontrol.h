@@ -138,6 +138,8 @@ extern void mem_cgroup_note_oom_kill(struct mem_cgroup *memcg,
 extern void mem_cgroup_print_oom_info(struct mem_cgroup *memcg,
 					struct task_struct *p);
 
+void mem_cgroup_handle_over_high(void);
+
 unsigned long mem_cgroup_node_nr_lru_pages(struct mem_cgroup *memcg,
 					   int nid, unsigned int lru_mask);
 
