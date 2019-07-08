@@ -4991,6 +4991,11 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 		     FALLOC_FL_CONVERT_UNWRITTEN))
 		return -EOPNOTSUPP;
 
+	/* Convert-and-extend should only be used exclusively. */
+	if ((mode & FALLOC_FL_CONVERT_UNWRITTEN) &&
+	    (mode & ~FALLOC_FL_CONVERT_UNWRITTEN))
+		return -EINVAL;
+
 	/* If data is about to change we must drop csum */
 	if (ext4_test_inode_state(inode, EXT4_STATE_PFCACHE_CSUM) &&
 	    ((mode & ~FALLOC_FL_KEEP_SIZE)  || !(mode & FALLOC_FL_KEEP_SIZE)))
