@@ -55,6 +55,7 @@
 #include <linux/oom.h>
 #include <linux/virtinfo.h>
 #include <linux/migrate.h>
+#include <linux/tracehook.h>
 #include "internal.h"
 #include <net/sock.h>
 #include <net/ip.h>
@@ -314,6 +315,7 @@ struct mem_cgroup {
 
 	/* vmpressure notifications */
 	struct vmpressure vmpressure;
+	struct work_struct high_work;
 
 	/*
 	 * the counter to account for kernel memory usage.
@@ -3024,6 +3026,44 @@ static bool kmem_reclaim_is_low(struct mem_cgroup *memcg)
 	return dcache_is_low(memcg);
 }
 
+static void reclaim_high(struct mem_cgroup *memcg,
+			 unsigned int nr_pages,
+			 gfp_t gfp_mask)
+{
+	do {
+		if (page_counter_read(&memcg->memory) <= memcg->high)
+			continue;
+
+		try_to_free_mem_cgroup_pages(memcg, nr_pages, gfp_mask, 0);
+	} while ((memcg = parent_mem_cgroup(memcg)));
+}
+
+static void high_work_func(struct work_struct *work)
+{
+	struct mem_cgroup *memcg;
+
+	memcg = container_of(work, struct mem_cgroup, high_work);
+	reclaim_high(memcg, CHARGE_BATCH, GFP_KERNEL);
+}
+
+/*
+ * Scheduled by try_charge() to be executed from the userland return path
+ * and reclaims memory over the high limit.
+ */
+void mem_cgroup_handle_over_high(void)
+{
+	unsigned int nr_pages = current->memcg_nr_pages_over_high;
+	struct mem_cgroup *memcg;
+
+	if (likely(!nr_pages))
+		return;
+
+	memcg = get_mem_cgroup_from_mm(current->mm);
+	reclaim_high(memcg, nr_pages, GFP_KERNEL);
+	css_put(&memcg->css);
+	current->memcg_nr_pages_over_high = 0;
+}
+
 /**
  * mem_cgroup_try_charge - try charging a memcg
  * @memcg: memcg to charge
@@ -3223,6 +3263,28 @@ done_restock:
 	if (batch > nr_pages)
 		refill_stock(memcg, batch - nr_pages);
 done:
+	/*
+	 * If the hierarchy is above the normal consumption range, schedule
+	 * reclaim on returning to userland.  We can perform reclaim here
+	 * if __GFP_RECLAIM but let's always punt for simplicity and so that
+	 * GFP_KERNEL can consistently be used during reclaim.  @memcg is
+	 * not recorded as it most likely matches current's and won't
+	 * change in the meantime.  As high limit is checked again before
+	 * reclaim, the cost of mismatch is negligible.
+	 */
+	do {
+		if (page_counter_read(&memcg->memory) > memcg->high) {
+			/* Don't bother a random interrupted task */
+			if (in_interrupt()) {
+				schedule_work(&memcg->high_work);
+				break;
+			}
+			current->memcg_nr_pages_over_high += batch;
+			set_notify_resume(current);
+			break;
+		}
+	} while ((memcg = parent_mem_cgroup(memcg)));
+
 	return 0;
 }
 
@@ -6501,6 +6563,7 @@ mem_cgroup_css_alloc(struct cgroup *cont)
 	memcg->last_scanned_node = MAX_NUMNODES;
 	INIT_LIST_HEAD(&memcg->oom_notify);
 	memcg->move_charge_at_immigrate = 0;
+	INIT_WORK(&memcg->high_work, high_work_func);
 	mutex_init(&memcg->thresholds_lock);
 	spin_lock_init(&memcg->move_lock);
 	vmpressure_init(&memcg->vmpressure);
@@ -6691,6 +6754,8 @@ static void mem_cgroup_css_free(struct cgroup *cont)
 	 * made after offlining:
 	 */
 	mem_cgroup_reparent_charges(memcg);
+
+	cancel_work_sync(&memcg->high_work);
 
 	memcg_destroy_kmem(memcg);
 	memcg_free_shrinker_maps(memcg);
