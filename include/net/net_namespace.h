@@ -133,6 +133,9 @@ struct net {
 	struct netns_xfrm	xfrm;
 #endif
 	struct netns_ipvs	*ipvs;
+#if IS_ENABLED(CONFIG_CRYPTO_USER)
+	struct sock		*crypto_nlsk;
+#endif
 	struct sock		*diag_nlsk;
 	atomic_t		rt_genid;
 
