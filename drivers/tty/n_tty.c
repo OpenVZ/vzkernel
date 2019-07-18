@@ -1984,6 +1984,17 @@ do_it_again:
 	if (c < 0)
 		return c;
 
+	/*
+	 *	Internal serialization of reads.
+	 */
+	if (file->f_flags & O_NONBLOCK) {
+		if (!mutex_trylock(&ldata->atomic_read_lock))
+			return -EAGAIN;
+	} else {
+		if (mutex_lock_interruptible(&ldata->atomic_read_lock))
+			return -ERESTARTSYS;
+	}
+
 	down_read(&tty->termios_rwsem);
 
 	minimum = time = 0;
@@ -2003,20 +2014,6 @@ do_it_again:
 		}
 	}
 
-	/*
-	 *	Internal serialization of reads.
-	 */
-	if (file->f_flags & O_NONBLOCK) {
-		if (!mutex_trylock(&ldata->atomic_read_lock)) {
-			up_read(&tty->termios_rwsem);
-			return -EAGAIN;
-		}
-	} else {
-		if (mutex_lock_interruptible(&ldata->atomic_read_lock)) {
-			up_read(&tty->termios_rwsem);
-			return -ERESTARTSYS;
-		}
-	}
 	packet = tty->packet;
 
 	add_wait_queue(&tty->read_wait, &wait);
