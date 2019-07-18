@@ -468,7 +468,7 @@ static int fuse_release(struct inode *inode, struct file *file)
 		mutex_lock(&inode->i_mutex);
 		fuse_sync_writes(inode);
 
-		if (ff->fc->kio.op->file_close)
+		if (fi->num_openers == 0 && ff->fc->kio.op->file_close)
 			ff->fc->kio.op->file_close(ff->fc, file, inode);
 		mutex_unlock(&inode->i_mutex);
 	}
