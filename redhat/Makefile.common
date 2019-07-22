@@ -1,0 +1,140 @@
+TOPDIR:=$(shell git rev-parse --show-toplevel)
+REDHAT:=$(TOPDIR)/redhat
+include $(TOPDIR)/Makefile.rhelver
+
+RPMBUILD := $(shell if [ -x "/usr/bin/rpmbuild" ]; then echo rpmbuild; \
+                   else echo rpm; fi)
+
+MACH :=  $(shell uname -m)
+RPMKVERSION:=$(shell git show HEAD:Makefile | sed -ne '/^VERSION\ =\ /{s///;p;q}')
+RPMKPATCHLEVEL:=$(shell git show HEAD:Makefile | sed -ne '/^PATCHLEVEL\ =\ /{s///;p;q}')
+RPMKSUBLEVEL:=$(shell git show HEAD:Makefile | sed -ne '/^SUBLEVEL\ =\ /{s///;p;q}')
+RPMKEXTRAVERSION:=$(shell git show HEAD:Makefile | sed -ne '/^EXTRAVERSION\ =\ /{s///;p;q}')
+GITID:= $(shell git log --max-count=1 --pretty=format:%H)
+# marker is git tag which we base off of for exporting patches
+# Make sure marker uses RPMKPATCHLEVEL and RPMKEXTRAVERSION from the kernel
+# makefile as opposed to any adjusted version for snapshotting.
+MARKER:=v$(RPMKVERSION).$(RPMKPATCHLEVEL)$(RPMKEXTRAVERSION)
+ifneq ($(RPMKEXTRAVERSION),)
+  KEXTRAVERSION:=$(shell echo $(RPMKEXTRAVERSION) | sed -e s/-/./)
+  PREBUILD:=0$(KEXTRAVERSION).
+else
+  PREBUILD:=
+endif
+
+DIST:=.elrdy
+IS_FEDORA:=$(shell ! echo $(DIST) | grep -q fc; echo $$?)
+# If VERSION_ON_UPSTREAM is set, the versioning of the rpm package is based
+# on a branch tracking upstream. This allows for generating rpms
+# based on untagged releases.
+ifeq ("$(DIST)", ".elrdy")
+  VERSION_ON_UPSTREAM:=1
+else ifeq ("$(IS_FEDORA)", "1")
+  VERSION_ON_UPSTREAM:=1
+else
+  VERSION_ON_UPSTREAM:=0
+endif
+ifeq ($(VERSION_ON_UPSTREAM),1)
+  # In order to do a snapshot properly, we need to have a remote set up
+  # to track upstream.
+  _HAVE_UPSTREAM_REMOTE:=$(shell git remote | grep -wc linus)
+  ifeq ($(_HAVE_UPSTREAM_REMOTE),1)
+    MERGE_BASE:=$(shell git merge-base HEAD linus/master)
+    TAG:=$(shell git describe $(MERGE_BASE))
+    # a snapshot off of a tagged git is of the form [tag]-[cnt]-g[hash]
+    SNAPSHOT:=$(shell echo $(TAG) | grep -c '\-g')
+  else
+    SNAPSHOT:=0
+  endif
+else
+  SNAPSHOT:=0
+endif
+
+ifeq ($(SNAPSHOT),1)
+  # The base for generating tags is the snapshot commit
+  MARKER:=$(shell echo $(TAG) | cut -d "g" -f 2)
+  # The merge window is weird because the actual versioning hasn't
+  # been updated but we still need something that works for
+  # packaging. Fix this by bumping the patch level and marking
+  # this as rc0
+  ifeq ($(RPMKEXTRAVERSION),)
+    KEXTRAVERSION:=.rc0
+    PREBUILD:=0$(KEXTRAVERSION).
+    RPMKPATCHLEVEL:=$(shell expr $(RPMKPATCHLEVEL) + 1)
+  endif
+  # Follow the packaging guidelines to include the date + git snapshot
+  PREBUILD:=$(PREBUILD)$(shell date +%Y%m%d)git$(MARKER).
+endif
+
+
+# RPMKPATCHVERSION may get adjusted if we're snapshotting
+# during the merge window so ensure this gets set after
+# we've checked for snapshots
+KVERSION:=$(RPMKVERSION).$(RPMKPATCHLEVEL).$(RPMKSUBLEVEL)
+RPMVERSION:=$(KVERSION)
+
+BUILD:=$(RHEL_RELEASE)
+PACKAGE_NAME:=kernel
+SPECFILE:=$(PACKAGE_NAME).spec
+RPM:=$(REDHAT)/rpm
+SRPMS:=$(RPM)/SRPMS
+SOURCES:=$(RPM)/SOURCES
+TESTPATCH:=$(REDHAT)/linux-kernel-test.patch
+FILTERDIFF:=/usr/bin/filterdiff -x '*redhat/*' -x '*/.gitignore' -x '*/makefile' -x '*/Makefile'
+ARCH_LIST=aarch64 ppc64le s390x x86_64
+# Make can't match on a regex to match fc31, fc32 so add another check here
+# A unified tarball means that the tarball in the srpm contains both the
+# upstream sources and redhat patches. A non-unified tarball means that
+# the tarball is only upstream sources and the patches get applied as
+# a diff in the spec file
+ifeq ("$(DIST)", ".elrdy")
+  SINGLE_TARBALL:=0
+else ifeq ("$(IS_FEDORA)", "1")
+  SINGLE_TARBALL:=0
+else
+  SINGLE_TARBALL:=1
+endif
+
+# RELEASED_KERNEL: swaps between the pre-release secureboot keys and
+# 		   the release one, for vmlinux signing.
+#
+#	0 : pre-release (devel) secureboot keys are used for signing
+#	1 : release (RC/GA) secureboot keys are used for signing
+#
+RELEASED_KERNEL:=0
+
+STAMP_VERSION:=$(KVERSION)
+
+LOCVERFILE:=../localversion
+# create an empty localversion file if you don't want a local buildid
+ifneq ($(wildcard $(LOCVERFILE)),)
+  BUILDID:=$(shell cat $(LOCVERFILE))
+  $(info BUILDID is "$(BUILDID)". Update '$(shell dirname $(REDHAT))/localversion' to change.)
+else
+  ifeq ($(BUILDID),)
+    BUILDID:=.test
+  endif
+  $(info BUILDID is "$(BUILDID)".)
+endif
+
+PKGRELEASE:=$(PREBUILD)$(BUILD)$(DIST)$(BUILDID)
+SPECRELEASE:=$(PREBUILD)$(BUILD)%{?dist}$(BUILDID)
+
+TARFILE:=linux-$(KVERSION)-$(PKGRELEASE).tar.xz
+TARBALL:=$(REDHAT)/$(TARFILE)
+DISTRO_BUILD:=$(PREBUILD)$(shell echo $(BUILD) | sed -e 's|\(^[0-9]\{1,4\}\)\..*|\1|')
+KABI_TARFILE:=kernel-abi-whitelists-$(KVERSION)-$(DISTRO_BUILD).tar.bz2
+KABI_TARBALL:=$(REDHAT)/rpm/SOURCES/$(KABI_TARFILE)
+KABIDW_TARFILE:=kernel-kabi-dw-$(KVERSION)-$(DISTRO_BUILD).tar.bz2
+KABIDW_TARBALL:=$(REDHAT)/rpm/SOURCES/$(KABIDW_TARFILE)
+
+CHANGELOG:=$(PACKAGE_NAME).changelog-$(RHEL_MAJOR).$(RHEL_MINOR)
+CHANGELOG_PREV:=$(PACKAGE_NAME).changelog-$(RHEL_MAJOR).$(shell expr $(RHEL_MINOR) - 1)
+
+ifeq ("$(DIST)", ".elrdy")
+  RHPRODUCT:=rhel-ready
+else ifeq ("$(IS_FEDORA)", "1")
+  RHPRODUCT:=rhel-ready
+else
+  RHPRODUCT:=rhel-$(RHEL_MAJOR).$(RHEL_MINOR).0
+endif
