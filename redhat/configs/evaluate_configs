@@ -1,0 +1,528 @@
+#!/bin/bash
+#
+# The order of priority is
+#
+#	debug/arch highest (ie, this can override the remaining levels)
+#	debug/
+#	generic/arch
+#	generic/   lowest (ie, this value can be overridden by anything above)
+#
+# however, inheritance is the opposite.  That is if a CONFIG is undefined
+# the lower level's config is inherited at the higher level.
+#
+# ex) Consider CONFIG_MLX4_EN
+# which is set as
+#					     s390x
+#	arch	aarch64	ppc64le	s390x x86_64 zfcpd
+#
+#	d_a	  x	  x	  x      x     x   <<< generic/s390x/zfcpdump
+#	debug     x       x       x      x     |   <<< noop for s390/zfcpdump
+#	gen_a     m       m       m      m     m   <<< same as s390x
+#	gen       n       n       n      n     n
+#
+# where
+#	x = no file/undefined
+#	n = not set
+#	m = module
+#	y = built in
+#	c = character/string setting
+#
+# The arch-debug configs would have m, as it is inherited from gen_a.
+# All the arch configs would have m, because gen_a overrode gen.
+#
+# Obviously, the debug and gen rows will have the same setting as there
+# is one setting for all arches.
+#
+# Rules:
+# 1) If an entire arch row is majority m/y/n, then the generic/debug row should
+# be m/y/n.
+# 2) A column should not have back-to-back identical settings, ex) m followed
+# by an m.
+# 3) debug can have the same setting as gen.  The config set is described
+# in the priority file.
+# 4) make as few as files as possible.  That might sound crazy but consider the
+# example above.  gen_a has separate files which are all =m.  It is more
+# correct to have a single gen file =m.
+#
+# TODO: Inherit priority map from priority file?
+# TODO: What to do with character & string configs?
+# TODO: Can some of the syntax errors be cleaned up?  For example blank lines,
+# or comment on the same line as a config?
+#
+
+DIR=./
+
+usage()
+{
+	echo "evaluate_configs [ -b | -c | -d | -s | -f ]"
+	echo "	-b : balance level (generic, generic/arch, debug, debug/arch) CONFIGs"
+	echo "	-c : check arch CONFIGs"
+	echo "	-d : enable debug"
+	echo "	-s : check CONFIGs syntax"
+	echo "	-f : find dead CONFIGs"
+	echo ""
+	echo "See redhat/docs/editing_CONFIGS.txt for more information"
+	exit 1
+}
+
+#
+# read_file: Read a config file and return n (is not set), y (=y), m (=m),
+# c (for a character setting or a file that contains only comments), and
+# x if the file does not exist.
+#
+read_file() # $1 is the full file path
+{
+	filepath=$1
+	if test -e $filepath; then
+		egrep "# CONFIG.*is not set" $filepath >& /dev/null && echo "n" && return
+		egrep "CONFIG.*=" $filepath >& /dev/null
+		if [ $? -eq 0 ]; then
+			egrep "=y" $filepath >& /dev/null && echo "y" && return
+			egrep "=m" $filepath >& /dev/null && echo "m" && return
+			# some files may equal a number or a string
+			egrep "=*" $filepath >& /dev/null && echo "c" && echo $filepath >> $DIR/.strlist && return
+		fi
+	else
+		echo "x" # file does not exist
+		return
+	fi
+	# some files may contain only comments
+	echo "c"
+}
+
+#
+# get_arch_files: Read the value of a config for all arches.
+#
+# For example, 'get_arch_files generic CONFIG_FOO' would read
+# the generic/aarch64/CONFIG_FOO, generic/powerpc64le/CONFIG_FOO, etc.
+# and return a string like 'xynnn'.  Note that the last character
+# is the s390x/zfcpdump entry.
+#
+get_arch_files() # $1 is directory, $2 is CONFIG
+{
+	# The second s390x entry is really s390x/zfcpdump
+	for arch in "aarch64" "powerpc64le" "s390x" "x86_64" "s390x"
+	do
+		# Need to special case generic powerpc64 & powerpc64le
+		# because they have an extra "hop" between them at
+		# the arch level
+		[ "$arch" == "powerpc64le" ] && [ -e $DIR/$1/powerpc64/$2 ] && arch=powerpc64
+		val=$(read_file $DIR/$1/$arch/$2)
+		echo -n $val
+	done
+	echo ""
+}
+
+#
+# get_config_files: Read the config files and return the data
+# in a matrix.
+# ex) Consider CONFIG_MLX4_EN
+# which is set as
+#					     s390x
+#	arch	aarch64	ppc64le	s390x x86_64 zfcpd
+#
+#	d_a	  x	  x	  x      x     x   <<< generic/s390x/zfcpdump
+#	debug     x       x       x      x     |   <<< noop for s390/zfcpdump
+#	gen_a     m       m       m      m     m   <<< same as s390x
+#	gen       n       n       n      n     n
+#
+# would be returned as
+#
+#	xxxxx
+#	xxxxx
+#	mmmmm
+#	nnnnn
+#
+get_config_files() # $1 is CONFIG
+{
+	generic=$(read_file $DIR/generic/$1)
+	generic_arch=$(get_arch_files generic $1)
+	debug=$(read_file $DIR/debug/$1)
+	debug_arch=$(get_arch_files debug $1)
+	zfcpdump=$(read_file $DIR/generic/s390x/zfcpdump/$1)
+
+	# debug/arch
+	echo "${debug_arch::-1}$zfcpdump"
+	# debug, the 'x' at the end is for s390x/zfcpdump
+	echo "${debug}${debug}${debug}${debug}x"
+	# generic/arch
+	echo $generic_arch
+	# generic
+	echo $generic$generic$generic$generic$generic
+}
+
+#
+# reconstruct_file: return the CONFIG file at a specific location in
+# the matrix.  For example, (1,3) would be generic/powerpc64le.
+#
+reconstruct_file() # $1 is CONFIG, $2 a x-coordinate  $3 is the y-coordinate
+{
+	_dir=$3
+	# X-axis: "aarch64" "powerpc64le" "s390x" "x86_64" "s390x zfcpdump"
+	case $2 in
+	0)	arch="aarch64";;
+	1)	arch="powerpc64le";;
+	2)	arch="s390x";;
+	3)	arch="x86_64";;
+	4)
+		arch="s390x/zfcpdump"
+		#(4,0) is interpreted as generic/s390x/zfcpdump (4,2)
+		[ $_dir -eq 0 ] && _dir=2
+		;;
+	esac
+
+	# Y-axis: debug-arch,debug,generic-arch,generic
+	case $_dir in
+	0)
+		# Need to special case generic powerpc64 & powerpc64le
+		# because they have an extra "hop" between them at
+		# the arch level
+		[ "$arch" == "powerpc64le" ] && [ -e $DIR/debug/powerpc64/$1 ] && arch="powerpc64"
+		dir="debug/$arch";;
+	1)	dir="debug";;
+	2)
+		# Need to special case generic powerpc64 & powerpc64le
+		# because they have an extra "hop" between them at
+		# the arch level
+		[ "$arch" == "powerpc64le" ] && [ -e $DIR/generic/powerpc64/$1 ] && arch="powerpc64"
+		dir="generic/$arch";;
+	3)	dir="generic";;
+	esac
+
+	echo "$DIR/$dir/$1"
+}
+
+#
+# create_file: Create a config file
+#
+create_file() # $1 is the CONFIG, $2 is the filename, $3 is the value (m/n/x/y)
+{
+	case $3 in
+	x) rm -f $2;;
+	n) echo "# $1 is not set" > $2 ;;
+	m) echo "$1=m" > $2 ;;
+	y) echo "$1=y" > $2 ;;
+	esac
+}
+
+#
+# syntax_check: Check the syntax of a config file.  Files cannot be
+# empty, and must be one of "is not set", "=y", "=m".
+#
+syntax_check() # $1 is the config filename
+{
+	num=$(cat $1 | wc -l)
+	# 0 length is always bad (empty)
+	[ $num -eq 0 ] && echo "$1 has zero length" && return 0
+	# most files are length one, so special case it
+	if [ $num -eq 1 ]; then
+		egrep -E "^#.*is not set" $1 >& /dev/null && return 0
+		egrep -E "^CONFIG.*=" $1 >& /dev/null && return 0
+	fi
+
+	# all comments are okay.
+	numcomments=$(egrep "^#" $1 | wc -l)
+	[ $numcomments -eq $num ] && return 0
+
+	numcomments=$((numcomments + 1))
+	if [ $numcomments -eq $num ]; then
+		option=$(egrep -v "^#" $1)
+		egrep -v "^#" $1 | egrep -E "^CONFIG.*=" >& /dev/null && return 0
+	fi
+	echo "$1 is not correct"
+	cat $1
+	return 1
+}
+
+#
+# check_overrides: Do the requested arch overrides need to be set?
+#
+# On any column, if a higher level has the same option as a lower level, and is
+# separated from the lower level by 0 or more unset configs, then the higher
+# level option is not necessary.
+#
+check_overrides()
+{
+	local CONFIG=$1
+	config_data=$(get_config_files $CONFIG)
+
+	# some examples of rules
+	# - arch/generic can be a mix of y/m/n/c and generic can be xxxx
+	# - arch/generic can be all y/m/n/c and generic cannot be xxxx
+	# - arch/generic cannot be the same as generic
+	# - debug cannot be the same as arch/generic
+	# - debug cannot be the same as generic if arch/generic is the same
+	#   as generic or if arch/generic is xxxx
+	# - arch/debug cannot be the same as debug
+	# - arch/debug can be a mix of y/m/n/c and debug can be xxxx
+	# - arch/debug can be all y/m/n/c and debug cannot be xxxx
+
+	# x/y/m/n/c are valid values
+	# find the errors
+	# look at each entry in debug_arch and work "down" to generic.
+
+	echo "$config_data" | grep "c" >& /dev/null
+	[ $? -eq 0 ] && return 0
+
+	x=0
+	# All four arches must vote to remove a debug or generic entry
+	configvote=( 1 4 1 5 )
+	while [ $x -le 4 ]
+	do
+		y=0
+		old="x"
+		while [ $y -le 3 ]
+		do
+			str=$(echo "$config_data" | sed -n "$((y + 1)){p;q}")
+			new=${str:$x:1}
+
+			if [ "$old" == "x" ]; then
+				old=$new
+				oldx=$x
+				oldy=$y
+			elif [ "$old" == "$new" ]; then
+				configvote[$oldy]=$((configvote[$oldy] - 1))
+				[ "$DEBUG" ] && echo "$CONFIG: warning $old ($oldx, $oldy) and $new ($x,$y) is invalid!"
+				[ "$DEBUG" ] && echo "configvote[$oldy]=${configvote[$oldy]}"
+				[ "$DEBUG" ] && echo "$config_data"
+				if [ ${configvote[$oldy]} -eq 0 ]; then
+					# the old coordinates point to the error
+					filename=$(reconstruct_file $CONFIG $oldx $oldy)
+					[ "$DEBUG" ] && echo "file $filename deleted!"
+					rm -f $(reconstruct_file $CONFIG $oldx $oldy)
+					return 1
+				fi
+
+			elif [ "$new" != "x" ]; then
+				old=$new
+				oldx=$x
+				oldy=$y
+			fi
+			y=$((y + 1))
+		done
+		x=$((x + 1))
+	done
+
+	return 0
+}
+
+#
+# balance_check: Are the requested config files optimally set?
+#
+# On any row, if a higher level has a majority of set options that are the
+# opposite (for example, y vs n, or m vs n) of a lower level, and is only
+# separated by 0 or more rows of unset configs, then the lower level's value
+# should be set to the majority value of the higher level. (balance)
+#
+balance_check() # $1 is CONFIG, $2 is generic or debug arch string,
+		# $3 is the y-axis (ie, generic arch(2) or debug arch(0))
+{
+	local CONFIG=$1
+	local _arch=$2
+	local _yaxis=$3
+
+	# if this is a character setting then return
+	echo $_arch | grep c >& /dev/null
+	[ $? -eq 0 ] && return
+
+	[ $_yaxis -eq 0 ] && _path="debug" || _path="generic"
+
+	# are there 3 of the same character in the string?
+	for mnxy in 'm' 'n' 'y' 'x'
+	do
+		res="${_arch//[^${mnxy}]}"
+		[ ${#res} -ge 3 ] && break
+	done
+	[ "$mnxy" == 'x' ] && return
+
+	# in theory the CHECKOVERRIDES case has taken care of the
+	# possiblity of $mnxy being the same $level.  Better to
+	# be safe than sorry.
+	level=$(read_file $DIR/$_path/$CONFIG)
+	if [ "$mnxy" != "$level" ]; then
+		[ "$DEBUG" ] && echo "balancing $CONFIG"
+		[ "$DEBUG" ] && echo "$CONFIG (mnxy=$mnxy)"
+		[ "$DEBUG" ] && echo "OLD:"
+		[ "$DEBUG" ] && get_config_files $CONFIG
+		# demote level to x-arch
+		if [ $_yaxis -eq 2 ] && [ "$level" != "x" ]; then
+			level_cap=$(echo $level | tr '[:lower:]' '[:upper:]')
+		else
+			level_cap="N"
+		fi
+		_arch=$(echo $_arch | sed "s/x/$level_cap/g")
+
+		# promote and replace
+
+		# set new level
+		level=$mnxy
+		_arch=$(echo $_arch | tr "$level" 'x' | tr  '[:upper:]' '[:lower:]')
+		for x in 0 1 2 3
+		do
+			filename=$(reconstruct_file $CONFIG $x $_yaxis)
+			_arch_val="${_arch:$x:1}"
+			create_file $CONFIG $filename $_arch_val
+		done
+		filename=$(reconstruct_file $CONFIG $x $((_yaxis + 1)))
+		create_file $CONFIG $filename $level
+		# run CHECKOVERRIDES
+		check_overrides $CONFIG
+		[ "$DEBUG" ] && echo "NEW:"
+		[ "$DEBUG" ] && get_config_files $CONFIG
+	else
+		echo "$CONFIG needs to run CHECKOVERRIDES"
+		echo "  ./evaluate_configs -c $CONFIG"
+		exit 1
+	fi
+}
+
+# where am i?
+if [ ! -d "generic" ] || [ ! -d "debug" ]; then
+	echo "This script must be run in the redhat/configs directory."
+	exit 1
+fi
+
+CHECKOVERRIDES=""
+SYNTAXCHECK=""
+DEBUG=""
+BALANCECHECK=""
+FINDDEAD=""
+
+while [[ $# -gt 0 ]]
+do
+	key="$1"
+	case $key in
+	-b) BALANCECHECK="x";;
+	-c) CHECKOVERRIDES="x";;
+	-d) DEBUG="x";;
+	-s) SYNTAXCHECK="x";;
+	-f) FINDDEAD="x";;
+	-h) usage;;
+	*) break;;
+	esac
+	shift
+done
+
+if [ "$CHECKOVERRIDES" ] && [ "$1" ]; then
+	ret=1
+	while [ $ret -eq 1 ]
+	do
+		check_overrides $1
+		ret=$?
+	done
+	exit 1
+fi
+
+if [ "$CHECKOVERRIDES" ]; then
+	rm -f $DIR/.strlist
+	# only look for CONFIGs that are defined in multiple locations
+	find $DIR -name CONFIG* -exec basename {} \; | sort | uniq -c | grep -v ' 1 '|sed 's/.*CONFIG/CONFIG/' > .configlist
+	while [ $(cat .configlist | wc -l) -ne 0 ]
+	do
+		[ "$DEBUG" ] && cat .configlist | wc -l
+		CONFIG=$(head -1 .configlist)
+		ret=1
+		while [ $ret -eq 1 ]
+		do
+			check_overrides $CONFIG
+			ret=$?
+		done
+		# this has to be "exact" pattern
+		sed -i "/\<$CONFIG\>/d" .configlist
+	done
+fi
+
+if [ "$SYNTAXCHECK" ] && [ "$1" ]; then
+
+	CONFIG=$1
+
+	echo "Issues found by the syntax check are not auto-corrected.  You must make"
+	echo "manual changes and execute the syntax check again."
+	syntax_check $CONFIG
+	exit $?
+fi
+
+if [ "$SYNTAXCHECK" ]; then
+	echo "Issues found by the syntax check are not auto-corrected.  You must make"
+	echo "manual changes and execute the syntax check again."
+	find $DIR -name CONFIG_* | while read CONFIG
+	do
+		syntax_check $CONFIG
+	done
+fi
+
+if [ "$BALANCECHECK" ] && [ "$1" ]; then
+
+	CONFIG=$1
+
+	debug_arch=$(get_arch_files debug $CONFIG)
+	# trim off s390x: It is handled in CHECKOVERRIDES
+	debug_arch=$(echo ${debug_arch::-1})
+
+	balance_check $CONFIG $debug_arch 0
+
+	generic_arch=$(get_arch_files generic $CONFIG)
+	# trim off s390x: It is not needed at this level
+	generic_arch=$(echo ${generic_arch::-1})
+
+	balance_check $CONFIG $generic_arch 2
+	exit
+fi
+
+if [ "$BALANCECHECK" ]; then
+	# only look for CONFIGs that are defined in multiple locations
+	find $DIR -name CONFIG* -exec basename {} \; | sort | uniq -c | grep -v ' 1 '|sed 's/.*CONFIG/CONFIG/' > .configlist
+	while [ $(cat .configlist | wc -l) -ne 0 ]
+	do
+		[ "$DEBUG" ] && cat .configlist | wc -l
+		CONFIG=$(head -1 .configlist)
+
+		debug_arch=$(get_arch_files debug $CONFIG)
+		# trim off s390x: It is handled in CHECKOVERRIDES
+		debug_arch=$(echo ${debug_arch::-1})
+
+		balance_check $CONFIG $debug_arch 0
+
+		generic_arch=$(get_arch_files generic $CONFIG)
+		# trim off s390x: It is not needed at this level
+		generic_arch=$(echo ${generic_arch::-1})
+
+		balance_check $CONFIG $generic_arch 2
+
+		# this has to be "exact" pattern
+		sed -i "/\<$CONFIG\>/d" .configlist
+	done
+	rm -f .configlist
+fi
+
+#
+# Find configs that are requested but do not exist in the final .configs
+#
+if [ "$FINDDEAD" ]; then
+	(cd ..; make rh-configs)
+
+	awk '
+		/is not set/ {
+			split ($0, a, "#");
+			split(a[2], b);
+			print b[1] ;
+		}
+		/=/ {
+			split ($0, a, "=");
+			print a[1];
+		}
+	' *.config | sort -u > .finalconfiglist
+
+	find ./ -name CONFIG_* | sed 's!.*/!!' | sort -u > .configlist
+
+	echo "These CONFIGS defined in redhat/configs but not the final .configs have been deleted:"
+	diff -u .finalconfiglist .configlist | grep "^+CONFIG" | sed 's/^+//g' | while read FILENAME
+	do
+		echo $FILENAME
+		find ./ -name $FILENAME | xargs rm -f
+	done
+
+	rm -f .configlist .finalconfiglist
+fi
+
+exit

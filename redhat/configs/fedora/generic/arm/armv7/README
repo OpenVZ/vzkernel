@@ -1,0 +1,2 @@
+This directory contains options applicable to all armv7 target. This includes
+LPAE and non-LPAE variants.

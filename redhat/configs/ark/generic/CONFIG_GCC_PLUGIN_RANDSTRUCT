@@ -1,0 +1,3 @@
+# Enabling this option randomizes structure layout and will break kABI.
+# Do not enable this option on any tree that needs kABI.
+# CONFIG_GCC_PLUGIN_RANDSTRUCT is not set
