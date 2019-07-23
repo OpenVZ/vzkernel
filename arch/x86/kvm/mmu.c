@@ -5346,13 +5346,12 @@ mmu_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 	struct kvm *kvm, *tmp;
 	int nr_to_scan = sc->nr_to_scan;
 	unsigned long freed = 0;
+	int idx, found = 0;
+	LIST_HEAD(invalid_list);
 
 	spin_lock(&kvm_lock);
 
 	list_for_each_entry_safe(kvm, tmp, &vm_list, vm_list) {
-		int idx;
-		LIST_HEAD(invalid_list);
-
 		/*
 		 * Never scan more than sc->nr_to_scan VM instances.
 		 * Will not hit this condition practically since we do not try
@@ -5360,7 +5359,6 @@ mmu_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 		 * !n_used_mmu_pages so many times.
 		 */
 		if (!nr_to_scan--) {
-			spin_unlock(&kvm_lock);
 			break;
 		}
 
@@ -5389,29 +5387,40 @@ mmu_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 		 */
 		if (!kvm_try_get_kvm(kvm))
 			continue;
-		spin_unlock(&kvm_lock);
 
-		idx = srcu_read_lock(&kvm->srcu);
-		spin_lock(&kvm->mmu_lock);
-
-		if (kvm_has_zapped_obsolete_pages(kvm)) {
-			kvm_mmu_commit_zap_page(kvm,
-			      &kvm->arch.zapped_obsolete_pages);
-			goto unlock;
-		}
-
-		if (prepare_zap_oldest_mmu_page(kvm, &invalid_list))
-			freed++;
-		kvm_mmu_commit_zap_page(kvm, &invalid_list);
-
-unlock:
-		spin_unlock(&kvm->mmu_lock);
-		srcu_read_unlock(&kvm->srcu, idx);
-
-		kvm_put_kvm(kvm);
-
+		/*
+		 * We found VM to shrink, and as we shrink only one VM per
+		 * function call, break the cycle and do actual shrink out of
+		 * the cycle.
+		 */
+		found = 1;
 		break;
 	}
+
+	spin_unlock(&kvm_lock);
+
+	/* If not found a VM to shrink, just exit. */
+	if (!found)
+		return freed;
+
+	idx = srcu_read_lock(&kvm->srcu);
+	spin_lock(&kvm->mmu_lock);
+
+	if (kvm_has_zapped_obsolete_pages(kvm)) {
+		kvm_mmu_commit_zap_page(kvm,
+					&kvm->arch.zapped_obsolete_pages);
+		goto unlock;
+	}
+
+	if (prepare_zap_oldest_mmu_page(kvm, &invalid_list))
+		freed++;
+	kvm_mmu_commit_zap_page(kvm, &invalid_list);
+
+unlock:
+	spin_unlock(&kvm->mmu_lock);
+	srcu_read_unlock(&kvm->srcu, idx);
+
+	kvm_put_kvm(kvm);
 
 	return freed;
 
