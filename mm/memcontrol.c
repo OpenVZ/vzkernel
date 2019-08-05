@@ -4344,7 +4344,7 @@ static void mem_cgroup_reparent_charges(struct mem_cgroup *memcg)
 {
 	int node, zid;
 	/* Protection from leaked memcg->memory counter. */
-	int reparent_attempts = 99;
+	unsigned long timeout = jiffies + HZ*120;
 
 	do {
 		/* This is for making all *used* pages to be on LRU. */
@@ -4377,14 +4377,13 @@ static void mem_cgroup_reparent_charges(struct mem_cgroup *memcg)
 		 * charge before adding to the LRU.
 		 */
 	} while ((page_counter_read(&memcg->memory) -
-		 page_counter_read(&memcg->kmem) > 0) && reparent_attempts--);
+		 page_counter_read(&memcg->kmem) > 0) && time_after(jiffies, timeout));
 
 	WARN_ONCE((page_counter_read(&memcg->memory) -
 			page_counter_read(&memcg->kmem) > 0),
-		  "memcg 0x%p leak suspected, performed %d iterations: "
+		  "memcg 0x%p leak suspected: "
 		  "memory=%lu, kmem=%lu",
 		  memcg,
-		  100,
 		  page_counter_read(&memcg->memory),
 		  page_counter_read(&memcg->kmem));
 }
