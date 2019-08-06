@@ -339,7 +339,15 @@ void deactivate_locked_super(struct super_block *s)
 		cleancache_invalidate_fs(s);
 		unregister_shrinker(&s->s_shrink);
 		fs->kill_sb(s);
-
+		if (!list_empty(&s->s_inodes)) {
+			pr_err("deactivate_locked_super: busy inodes...\n");
+			spin_lock(&sb_lock);
+			if (!--s->s_count)
+				list_del_init(&s->s_list);
+			spin_unlock(&sb_lock);
+			up_write(&s->s_umount);
+			return;
+		}
 		/*
 		 * Since list_lru_destroy() may sleep, we cannot call it from
 		 * put_super(), where we hold the sb_lock. Therefore we destroy
