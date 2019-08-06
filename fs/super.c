@@ -1046,7 +1046,8 @@ void kill_anon_super(struct super_block *sb)
 {
 	dev_t dev = sb->s_dev;
 	generic_shutdown_super(sb);
-	free_anon_bdev(dev);
+	if (!list_empty(&sb->s_inodes))
+		free_anon_bdev(dev);
 }
 
 EXPORT_SYMBOL(kill_anon_super);
