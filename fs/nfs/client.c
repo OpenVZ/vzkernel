@@ -959,6 +959,9 @@ void nfs_free_server(struct nfs_server *server)
 {
 	dprintk("--> nfs_free_server()\n");
 
+	if (server->super && !list_empty(&server->super->s_inodes))
+		return;
+
 	nfs_server_remove_lists(server);
 
 	if (server->destroy != NULL)
