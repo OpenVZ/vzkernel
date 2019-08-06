@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef CAIAQ_DEVICE_H
 #define CAIAQ_DEVICE_H
 
@@ -126,6 +127,11 @@ int snd_usb_caiaq_set_audio_params (struct snd_usb_caiaqdev *cdev, int rate, int
 int snd_usb_caiaq_set_auto_msg (struct snd_usb_caiaqdev *cdev, int digital, int analog, int erp);
 int snd_usb_caiaq_send_command(struct snd_usb_caiaqdev *cdev,
 			       unsigned char command,
+			       const unsigned char *buffer,
+			       int len);
+int snd_usb_caiaq_send_command_bank(struct snd_usb_caiaqdev *cdev,
+			       unsigned char command,
+			       unsigned char bank,
 			       const unsigned char *buffer,
 			       int len);
 

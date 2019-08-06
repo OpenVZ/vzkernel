@@ -292,9 +292,9 @@ static void phonet_route_autodel(struct net_device *dev)
 
 /* notify Phonet of device events */
 static int phonet_device_notify(struct notifier_block *me, unsigned long what,
-				void *arg)
+				void *ptr)
 {
-	struct net_device *dev = arg;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 
 	switch (what) {
 	case NETDEV_REGISTER:
@@ -349,7 +349,7 @@ int __init phonet_device_init(void)
 		return err;
 
 	proc_create("pnresource", 0, init_net.proc_net, &pn_res_seq_fops);
-	register_netdevice_notifier(&phonet_device_notifier);
+	register_netdevice_notifier_rh(&phonet_device_notifier);
 	err = phonet_netlink_register();
 	if (err)
 		phonet_device_exit();
@@ -359,7 +359,7 @@ int __init phonet_device_init(void)
 void phonet_device_exit(void)
 {
 	rtnl_unregister_all(PF_PHONET);
-	unregister_netdevice_notifier(&phonet_device_notifier);
+	unregister_netdevice_notifier_rh(&phonet_device_notifier);
 	unregister_pernet_subsys(&phonet_net_ops);
 	remove_proc_entry("pnresource", init_net.proc_net);
 }

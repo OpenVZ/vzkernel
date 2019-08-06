@@ -58,10 +58,6 @@
 
 #include "compat_linux.h"
 
-u32 psw32_user_bits = PSW32_MASK_DAT | PSW32_MASK_IO | PSW32_MASK_EXT |
-		      PSW32_DEFAULT_KEY | PSW32_MASK_BASE | PSW32_MASK_MCHECK |
-		      PSW32_MASK_PSTATE | PSW32_ASC_HOME;
- 
 /* For this source file, we want overflow handling. */
 
 #undef high2lowuid
@@ -248,7 +244,7 @@ asmlinkage long sys32_setgroups16(int gidsetsize, u16 __user *grouplist)
 	struct group_info *group_info;
 	int retval;
 
-	if (!capable(CAP_SETGID))
+	if (!may_setgroups())
 		return -EPERM;
 	if ((unsigned)gidsetsize > NGROUPS_MAX)
 		return -EINVAL;
@@ -262,6 +258,7 @@ asmlinkage long sys32_setgroups16(int gidsetsize, u16 __user *grouplist)
 		return retval;
 	}
 
+	groups_sort(group_info);
 	retval = set_current_groups(group_info);
 	put_group_info(group_info);
 

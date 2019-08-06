@@ -23,25 +23,31 @@
 #include <asm/unistd.h>
 #include <asm/io.h>
 #include <asm/pvclock.h>
+#include <asm/mshyperv.h>
+#include <asm/msr.h>
 
 #define gtod (&VVAR(vsyscall_gtod_data))
 
-notrace static cycle_t vread_tsc(void)
+#ifdef CONFIG_HYPERV_TSCPAGE
+static notrace u64 vread_hvclock(int *mode)
 {
-	cycle_t ret;
-	u64 last;
+	const struct ms_hyperv_tsc_page *tsc_pg =
+		(const struct ms_hyperv_tsc_page *)
+		__fix_to_virt(HVCLOCK_TSC_PAGE);
+	u64 current_tick = hv_read_tsc_page(tsc_pg);
 
-	/*
-	 * Empirically, a fence (of type that depends on the CPU)
-	 * before rdtsc is enough to ensure that rdtsc is ordered
-	 * with respect to loads.  The various CPU manuals are unclear
-	 * as to whether rdtsc can be reordered with later loads,
-	 * but no one has ever seen it happen.
-	 */
-	rdtsc_barrier();
-	ret = (cycle_t)vget_cycles();
+	if (current_tick != U64_MAX)
+		return current_tick;
 
-	last = VVAR(vsyscall_gtod_data).clock.cycle_last;
+	*mode = VCLOCK_NONE;
+	return 0;
+}
+#endif
+
+notrace static u64 vread_tsc(void)
+{
+	u64 ret = (u64)rdtsc_ordered();
+	u64 last = VVAR(vsyscall_gtod_data).clock.cycle_last;
 
 	if (likely(ret >= last))
 		return ret;
@@ -58,7 +64,7 @@ notrace static cycle_t vread_tsc(void)
 	return last;
 }
 
-static notrace cycle_t vread_hpet(void)
+static notrace u64 vread_hpet(void)
 {
 	return readl((const void __iomem *)fix_to_virt(VSYSCALL_HPET) + HPET_COUNTER);
 }
@@ -79,49 +85,45 @@ static notrace const struct pvclock_vsyscall_time_info *get_pvti(int cpu)
 	return &pvti_base[offset];
 }
 
-static notrace cycle_t vread_pvclock(int *mode)
+static notrace u64 vread_pvclock(int *mode)
 {
-	const struct pvclock_vsyscall_time_info *pvti;
-	cycle_t ret;
+	const struct pvclock_vcpu_time_info *pvti = &get_pvti(0)->pvti;
+	u64 ret;
 	u64 last;
 	u32 version;
-	u32 migrate_count;
-	u8 flags;
-	unsigned cpu, cpu1;
-
 
 	/*
-	 * When looping to get a consistent (time-info, tsc) pair, we
-	 * also need to deal with the possibility we can switch vcpus,
-	 * so make sure we always re-fetch time-info for the current vcpu.
+	 * Note: The kernel and hypervisor must guarantee that cpu ID
+	 * number maps 1:1 to per-CPU pvclock time info.
+	 *
+	 * Because the hypervisor is entirely unaware of guest userspace
+	 * preemption, it cannot guarantee that per-CPU pvclock time
+	 * info is updated if the underlying CPU changes or that that
+	 * version is increased whenever underlying CPU changes.
+	 *
+	 * On KVM, we are guaranteed that pvti updates for any vCPU are
+	 * atomic as seen by *all* vCPUs.  This is an even stronger
+	 * guarantee than we get with a normal seqlock.
+	 *
+	 * On Xen, we don't appear to have that guarantee, but Xen still
+	 * supplies a valid seqlock using the version field.
+	 *
+	 * We only do pvclock vdso timing at all if
+	 * PVCLOCK_TSC_STABLE_BIT is set, and we interpret that bit to
+	 * mean that all vCPUs have matching pvti and that the TSC is
+	 * synced, so we can just look at vCPU 0's pvti.
 	 */
+
 	do {
-		cpu = __getcpu() & VGETCPU_CPU_MASK;
-		/* TODO: We can put vcpu id into higher bits of pvti.version.
-		 * This will save a couple of cycles by getting rid of
-		 * __getcpu() calls (Gleb).
-		 */
+		version = pvclock_read_begin(pvti);
 
-		pvti = get_pvti(cpu);
+		if (unlikely(!(pvti->flags & PVCLOCK_TSC_STABLE_BIT))) {
+			*mode = VCLOCK_NONE;
+			return 0;
+		}
 
-		migrate_count = pvti->migrate_count;
-
-		version = __pvclock_read_cycles(&pvti->pvti, &ret, &flags);
-
-		/*
-		 * Test we're still on the cpu as well as the version.
-		 * We could have been migrated just after the first
-		 * vgetcpu but before fetching the version, so we
-		 * wouldn't notice a version change.
-		 */
-		cpu1 = __getcpu() & VGETCPU_CPU_MASK;
-	} while (unlikely(cpu != cpu1 ||
-			  (pvti->pvti.version & 1) ||
-			  pvti->pvti.version != version ||
-			  pvti->migrate_count != migrate_count));
-
-	if (unlikely(!(flags & PVCLOCK_TSC_STABLE_BIT)))
-		*mode = VCLOCK_NONE;
+		ret = __pvclock_read_cycles(pvti, rdtsc_ordered());
+	} while (pvclock_read_retry(pvti, version));
 
 	/* refer to tsc.c read_tsc() comment for rationale */
 	last = VVAR(vsyscall_gtod_data).clock.cycle_last;
@@ -162,6 +164,10 @@ notrace static inline u64 vgetsns(int *mode)
 #ifdef CONFIG_PARAVIRT_CLOCK
 	else if (gtod->clock.vclock_mode == VCLOCK_PVCLOCK)
 		cycles = vread_pvclock(mode);
+#endif
+#ifdef CONFIG_HYPERV_TSCPAGE
+	else if (gtod->clock.vclock_mode == VCLOCK_HVCLOCK)
+		cycles = vread_hvclock(mode);
 #endif
 	else
 		return 0;

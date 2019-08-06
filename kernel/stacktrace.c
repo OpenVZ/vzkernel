@@ -26,8 +26,8 @@ void print_stack_trace(struct stack_trace *trace, int spaces)
 EXPORT_SYMBOL_GPL(print_stack_trace);
 
 /*
- * Architectures that do not implement save_stack_trace_tsk or
- * save_stack_trace_regs get this weak alias and a once-per-bootup warning
+ * Architectures that do not implement save_stack_trace_*()
+ * get these weak aliases and once-per-bootup warnings
  * (whenever this facility is utilized - for example by procfs):
  */
 __weak void
@@ -40,4 +40,12 @@ __weak void
 save_stack_trace_regs(struct pt_regs *regs, struct stack_trace *trace)
 {
 	WARN_ONCE(1, KERN_INFO "save_stack_trace_regs() not implemented yet.\n");
+}
+
+__weak int
+save_stack_trace_tsk_reliable(struct task_struct *tsk,
+			      struct stack_trace *trace)
+{
+	WARN_ONCE(1, KERN_INFO "save_stack_tsk_reliable() not implemented yet.\n");
+	return -ENOSYS;
 }

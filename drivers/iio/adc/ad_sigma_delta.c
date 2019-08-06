@@ -391,7 +391,7 @@ static irqreturn_t ad_sd_trigger_handler(int irq, void *p)
 		break;
 	}
 
-	iio_push_to_buffers(indio_dev, (uint8_t *)data);
+	iio_push_to_buffers(indio_dev, data);
 
 	iio_trigger_notify_done(indio_dev->trig);
 	sigma_delta->irq_dis = false;
@@ -415,7 +415,7 @@ static irqreturn_t ad_sd_data_rdy_trig_poll(int irq, void *private)
 	complete(&sigma_delta->completion);
 	disable_irq_nosync(irq);
 	sigma_delta->irq_dis = true;
-	iio_trigger_poll(sigma_delta->trig, iio_get_time_ns());
+	iio_trigger_poll(sigma_delta->trig);
 
 	return IRQ_HANDLED;
 }

@@ -15,6 +15,33 @@
 #include "trace.h"
 #include "trace_output.h"
 
+static bool kill_ftrace_graph;
+
+/**
+ * ftrace_graph_is_dead - returns true if ftrace_graph_stop() was called
+ *
+ * ftrace_graph_stop() is called when a severe error is detected in
+ * the function graph tracing. This function is called by the critical
+ * paths of function graph to keep those paths from doing any more harm.
+ */
+bool ftrace_graph_is_dead(void)
+{
+	return kill_ftrace_graph;
+}
+
+/**
+ * ftrace_graph_stop - set to permanently disable function graph tracincg
+ *
+ * In case of an error int function graph tracing, this is called
+ * to try to keep function graph tracing from causing any more harm.
+ * Usually this is pretty severe and this is called to try to at least
+ * get a warning out to the user.
+ */
+void ftrace_graph_stop(void)
+{
+	kill_ftrace_graph = true;
+}
+
 /* When set, irq functions will be ignored */
 static int ftrace_graph_skip_irqs;
 
@@ -47,7 +74,7 @@ struct fgraph_data {
 #define TRACE_GRAPH_PRINT_ABS_TIME	0x20
 #define TRACE_GRAPH_PRINT_IRQS		0x40
 
-static unsigned int max_depth;
+unsigned int fgraph_max_depth;
 
 static struct tracer_opt trace_opts[] = {
 	/* Display overruns? (for self-debug purpose) */
@@ -94,10 +121,13 @@ print_graph_duration(unsigned long long duration, struct trace_seq *s,
 /* Add a function return address to the trace stack on thread info.*/
 int
 ftrace_push_return_trace(unsigned long ret, unsigned long func, int *depth,
-			 unsigned long frame_pointer)
+			 unsigned long frame_pointer, unsigned long *retp)
 {
 	unsigned long long calltime;
 	int index;
+
+	if (unlikely(ftrace_graph_is_dead()))
+		return -EBUSY;
 
 	if (!current->ret_stack)
 		return -EBUSY;
@@ -122,7 +152,12 @@ ftrace_push_return_trace(unsigned long ret, unsigned long func, int *depth,
 	current->ret_stack[index].func = func;
 	current->ret_stack[index].calltime = calltime;
 	current->ret_stack[index].subtime = 0;
+#ifdef HAVE_FUNCTION_GRAPH_FP_TEST
 	current->ret_stack[index].fp = frame_pointer;
+#endif
+#ifdef HAVE_FUNCTION_GRAPH_RET_ADDR_PTR
+	current->ret_stack[index].retp = retp;
+#endif
 	*depth = index;
 
 	return 0;
@@ -145,7 +180,7 @@ ftrace_pop_return_trace(struct ftrace_graph_ret *trace, unsigned long *ret,
 		return;
 	}
 
-#if defined(CONFIG_HAVE_FUNCTION_GRAPH_FP_TEST) && !defined(CC_USING_FENTRY)
+#ifdef HAVE_FUNCTION_GRAPH_FP_TEST
 	/*
 	 * The arch may choose to record the frame pointer used
 	 * and check it here to make sure that it is what we expect it
@@ -197,7 +232,7 @@ unsigned long ftrace_return_to_handler(unsigned long frame_pointer)
 	/*
 	 * The trace should run after decrementing the ret counter
 	 * in case an interrupt were to come in. We don't want to
-	 * lose the interrupt if max_depth is set.
+	 * lose the interrupt if fgraph_max_depth is set.
 	 */
 	ftrace_graph_return(&trace);
 
@@ -210,6 +245,61 @@ unsigned long ftrace_return_to_handler(unsigned long frame_pointer)
 
 	return ret;
 }
+
+/**
+ * ftrace_graph_ret_addr - convert a potentially modified stack return address
+ *			   to its original value
+ *
+ * This function can be called by stack unwinding code to convert a found stack
+ * return address ('ret') to its original value, in case the function graph
+ * tracer has modified it to be 'return_to_handler'.  If the address hasn't
+ * been modified, the unchanged value of 'ret' is returned.
+ *
+ * 'idx' is a state variable which should be initialized by the caller to zero
+ * before the first call.
+ *
+ * 'retp' is a pointer to the return address on the stack.  It's ignored if
+ * the arch doesn't have HAVE_FUNCTION_GRAPH_RET_ADDR_PTR defined.
+ */
+#ifdef HAVE_FUNCTION_GRAPH_RET_ADDR_PTR
+unsigned long ftrace_graph_ret_addr(struct task_struct *task, int *idx,
+				    unsigned long ret, unsigned long *retp)
+{
+	int index = task->curr_ret_stack;
+	int i;
+
+	if (ret != (unsigned long)return_to_handler)
+		return ret;
+
+	if (index < 0)
+		return ret;
+
+	for (i = 0; i <= index; i++)
+		if (task->ret_stack[i].retp == retp)
+			return task->ret_stack[i].ret;
+
+	return ret;
+}
+#else /* !HAVE_FUNCTION_GRAPH_RET_ADDR_PTR */
+unsigned long ftrace_graph_ret_addr(struct task_struct *task, int *idx,
+				    unsigned long ret, unsigned long *retp)
+{
+	int task_idx;
+
+	if (ret != (unsigned long)return_to_handler)
+		return ret;
+
+	task_idx = task->curr_ret_stack;
+
+	if (!task->ret_stack || task_idx < *idx)
+		return ret;
+
+	task_idx -= *idx;
+	(*idx)++;
+
+	return task->ret_stack[task_idx].ret;
+}
+#endif /* HAVE_FUNCTION_GRAPH_RET_ADDR_PTR */
 
 int __trace_graph_entry(struct trace_array *tr,
 				struct ftrace_graph_ent *trace,
@@ -260,7 +350,7 @@ int trace_graph_entry(struct ftrace_graph_ent *trace)
 	/* trace it when it is-nested-in or is a function enabled. */
 	if ((!(trace->depth || ftrace_graph_addr(trace->func)) ||
 	     ftrace_graph_ignore_irqs()) ||
-	    (max_depth && trace->depth >= max_depth))
+	    (fgraph_max_depth && trace->depth >= fgraph_max_depth))
 		return 0;
 
 	local_irq_save(flags);
@@ -446,7 +536,7 @@ print_graph_proc(struct trace_seq *s, pid_t pid)
 
 	/* First spaces to align center */
 	for (i = 0; i < spaces / 2; i++) {
-		ret = trace_seq_printf(s, " ");
+		ret = trace_seq_putc(s, ' ');
 		if (!ret)
 			return TRACE_TYPE_PARTIAL_LINE;
 	}
@@ -457,7 +547,7 @@ print_graph_proc(struct trace_seq *s, pid_t pid)
 
 	/* Last spaces to align center */
 	for (i = 0; i < spaces - (spaces / 2); i++) {
-		ret = trace_seq_printf(s, " ");
+		ret = trace_seq_putc(s, ' ');
 		if (!ret)
 			return TRACE_TYPE_PARTIAL_LINE;
 	}
@@ -503,7 +593,7 @@ verif_pid(struct trace_seq *s, pid_t pid, int cpu, struct fgraph_data *data)
  ------------------------------------------
 
  */
-	ret = trace_seq_printf(s,
+	ret = trace_seq_puts(s,
 		" ------------------------------------------\n");
 	if (!ret)
 		return TRACE_TYPE_PARTIAL_LINE;
@@ -516,7 +606,7 @@ verif_pid(struct trace_seq *s, pid_t pid, int cpu, struct fgraph_data *data)
 	if (ret == TRACE_TYPE_PARTIAL_LINE)
 		return TRACE_TYPE_PARTIAL_LINE;
 
-	ret = trace_seq_printf(s, " => ");
+	ret = trace_seq_puts(s, " => ");
 	if (!ret)
 		return TRACE_TYPE_PARTIAL_LINE;
 
@@ -524,7 +614,7 @@ verif_pid(struct trace_seq *s, pid_t pid, int cpu, struct fgraph_data *data)
 	if (ret == TRACE_TYPE_PARTIAL_LINE)
 		return TRACE_TYPE_PARTIAL_LINE;
 
-	ret = trace_seq_printf(s,
+	ret = trace_seq_puts(s,
 		"\n ------------------------------------------\n\n");
 	if (!ret)
 		return TRACE_TYPE_PARTIAL_LINE;
@@ -645,7 +735,7 @@ print_graph_irq(struct trace_iterator *iter, unsigned long addr,
 			ret = print_graph_proc(s, pid);
 			if (ret == TRACE_TYPE_PARTIAL_LINE)
 				return TRACE_TYPE_PARTIAL_LINE;
-			ret = trace_seq_printf(s, " | ");
+			ret = trace_seq_puts(s, " | ");
 			if (!ret)
 				return TRACE_TYPE_PARTIAL_LINE;
 		}
@@ -657,9 +747,9 @@ print_graph_irq(struct trace_iterator *iter, unsigned long addr,
 		return ret;
 
 	if (type == TRACE_GRAPH_ENT)
-		ret = trace_seq_printf(s, "==========>");
+		ret = trace_seq_puts(s, "==========>");
 	else
-		ret = trace_seq_printf(s, "<==========");
+		ret = trace_seq_puts(s, "<==========");
 
 	if (!ret)
 		return TRACE_TYPE_PARTIAL_LINE;
@@ -668,7 +758,7 @@ print_graph_irq(struct trace_iterator *iter, unsigned long addr,
 	if (ret != TRACE_TYPE_HANDLED)
 		return ret;
 
-	ret = trace_seq_printf(s, "\n");
+	ret = trace_seq_putc(s, '\n');
 
 	if (!ret)
 		return TRACE_TYPE_PARTIAL_LINE;
@@ -705,13 +795,13 @@ trace_print_graph_duration(unsigned long long duration, struct trace_seq *s)
 		len += strlen(nsecs_str);
 	}
 
-	ret = trace_seq_printf(s, " us ");
+	ret = trace_seq_puts(s, " us ");
 	if (!ret)
 		return TRACE_TYPE_PARTIAL_LINE;
 
 	/* Print remaining spaces to fit the row's width */
 	for (i = len; i < 7; i++) {
-		ret = trace_seq_printf(s, " ");
+		ret = trace_seq_putc(s, ' ');
 		if (!ret)
 			return TRACE_TYPE_PARTIAL_LINE;
 	}
@@ -731,13 +821,13 @@ print_graph_duration(unsigned long long duration, struct trace_seq *s,
 	/* No real adata, just filling the column with spaces */
 	switch (duration) {
 	case DURATION_FILL_FULL:
-		ret = trace_seq_printf(s, "              |  ");
+		ret = trace_seq_puts(s, "              |  ");
 		return ret ? TRACE_TYPE_HANDLED : TRACE_TYPE_PARTIAL_LINE;
 	case DURATION_FILL_START:
-		ret = trace_seq_printf(s, "  ");
+		ret = trace_seq_puts(s, "  ");
 		return ret ? TRACE_TYPE_HANDLED : TRACE_TYPE_PARTIAL_LINE;
 	case DURATION_FILL_END:
-		ret = trace_seq_printf(s, " |");
+		ret = trace_seq_puts(s, " |");
 		return ret ? TRACE_TYPE_HANDLED : TRACE_TYPE_PARTIAL_LINE;
 	}
 
@@ -745,10 +835,10 @@ print_graph_duration(unsigned long long duration, struct trace_seq *s,
 	if (flags & TRACE_GRAPH_PRINT_OVERHEAD) {
 		/* Duration exceeded 100 msecs */
 		if (duration > 100000ULL)
-			ret = trace_seq_printf(s, "! ");
+			ret = trace_seq_puts(s, "! ");
 		/* Duration exceeded 10 msecs */
 		else if (duration > 10000ULL)
-			ret = trace_seq_printf(s, "+ ");
+			ret = trace_seq_puts(s, "+ ");
 	}
 
 	/*
@@ -757,7 +847,7 @@ print_graph_duration(unsigned long long duration, struct trace_seq *s,
 	 * to fill out the space.
 	 */
 	if (ret == -1)
-		ret = trace_seq_printf(s, "  ");
+		ret = trace_seq_puts(s, "  ");
 
 	/* Catching here any failure happenned above */
 	if (!ret)
@@ -767,7 +857,7 @@ print_graph_duration(unsigned long long duration, struct trace_seq *s,
 	if (ret != TRACE_TYPE_HANDLED)
 		return ret;
 
-	ret = trace_seq_printf(s, "|  ");
+	ret = trace_seq_puts(s, "|  ");
 	if (!ret)
 		return TRACE_TYPE_PARTIAL_LINE;
 
@@ -817,7 +907,7 @@ print_graph_entry_leaf(struct trace_iterator *iter,
 
 	/* Function */
 	for (i = 0; i < call->depth * TRACE_GRAPH_INDENT; i++) {
-		ret = trace_seq_printf(s, " ");
+		ret = trace_seq_putc(s, ' ');
 		if (!ret)
 			return TRACE_TYPE_PARTIAL_LINE;
 	}
@@ -858,7 +948,7 @@ print_graph_entry_nested(struct trace_iterator *iter,
 
 	/* Function */
 	for (i = 0; i < call->depth * TRACE_GRAPH_INDENT; i++) {
-		ret = trace_seq_printf(s, " ");
+		ret = trace_seq_putc(s, ' ');
 		if (!ret)
 			return TRACE_TYPE_PARTIAL_LINE;
 	}
@@ -917,7 +1007,7 @@ print_graph_prologue(struct trace_iterator *iter, struct trace_seq *s,
 		if (ret == TRACE_TYPE_PARTIAL_LINE)
 			return TRACE_TYPE_PARTIAL_LINE;
 
-		ret = trace_seq_printf(s, " | ");
+		ret = trace_seq_puts(s, " | ");
 		if (!ret)
 			return TRACE_TYPE_PARTIAL_LINE;
 	}
@@ -1117,7 +1207,7 @@ print_graph_return(struct ftrace_graph_ret *trace, struct trace_seq *s,
 
 	/* Closing brace */
 	for (i = 0; i < trace->depth * TRACE_GRAPH_INDENT; i++) {
-		ret = trace_seq_printf(s, " ");
+		ret = trace_seq_putc(s, ' ');
 		if (!ret)
 			return TRACE_TYPE_PARTIAL_LINE;
 	}
@@ -1129,7 +1219,7 @@ print_graph_return(struct ftrace_graph_ret *trace, struct trace_seq *s,
 	 * belongs to, write out the function name.
 	 */
 	if (func_match) {
-		ret = trace_seq_printf(s, "}\n");
+		ret = trace_seq_puts(s, "}\n");
 		if (!ret)
 			return TRACE_TYPE_PARTIAL_LINE;
 	} else {
@@ -1179,13 +1269,13 @@ print_graph_comment(struct trace_seq *s, struct trace_entry *ent,
 	/* Indentation */
 	if (depth > 0)
 		for (i = 0; i < (depth + 1) * TRACE_GRAPH_INDENT; i++) {
-			ret = trace_seq_printf(s, " ");
+			ret = trace_seq_putc(s, ' ');
 			if (!ret)
 				return TRACE_TYPE_PARTIAL_LINE;
 		}
 
 	/* The comment */
-	ret = trace_seq_printf(s, "/* ");
+	ret = trace_seq_puts(s, "/* ");
 	if (!ret)
 		return TRACE_TYPE_PARTIAL_LINE;
 
@@ -1216,7 +1306,7 @@ print_graph_comment(struct trace_seq *s, struct trace_entry *ent,
 		s->len--;
 	}
 
-	ret = trace_seq_printf(s, " */\n");
+	ret = trace_seq_puts(s, " */\n");
 	if (!ret)
 		return TRACE_TYPE_PARTIAL_LINE;
 
@@ -1426,7 +1516,8 @@ void graph_trace_close(struct trace_iterator *iter)
 	}
 }
 
-static int func_graph_set_flag(u32 old_flags, u32 bit, int set)
+static int
+func_graph_set_flag(struct trace_array *tr, u32 old_flags, u32 bit, int set)
 {
 	if (bit == TRACE_GRAPH_PRINT_IRQS)
 		ftrace_graph_skip_irqs = !set;
@@ -1478,7 +1569,7 @@ graph_depth_write(struct file *filp, const char __user *ubuf, size_t cnt,
 	if (ret)
 		return ret;
 
-	max_depth = val;
+	fgraph_max_depth = val;
 
 	*ppos += cnt;
 
@@ -1492,7 +1583,7 @@ graph_depth_read(struct file *filp, char __user *ubuf, size_t cnt,
 	char buf[15]; /* More than enough to hold UINT_MAX + "\n"*/
 	int n;
 
-	n = sprintf(buf, "%d\n", max_depth);
+	n = sprintf(buf, "%d\n", fgraph_max_depth);
 
 	return simple_read_from_buffer(ubuf, cnt, ppos, buf, n);
 }

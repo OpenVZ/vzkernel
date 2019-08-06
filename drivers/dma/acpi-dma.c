@@ -41,9 +41,8 @@ static int acpi_dma_parse_resource_group(const struct acpi_csrt_group *grp,
 {
 	const struct acpi_csrt_shared_info *si;
 	struct list_head resource_list;
-	struct resource_list_entry *rentry;
+	struct resource_entry *rentry;
 	resource_size_t mem = 0, irq = 0;
-	u32 vendor_id;
 	int ret;
 
 	if (grp->shared_info_length != sizeof(struct acpi_csrt_shared_info))
@@ -55,10 +54,10 @@ static int acpi_dma_parse_resource_group(const struct acpi_csrt_group *grp,
 		return 0;
 
 	list_for_each_entry(rentry, &resource_list, node) {
-		if (resource_type(&rentry->res) == IORESOURCE_MEM)
-			mem = rentry->res.start;
-		else if (resource_type(&rentry->res) == IORESOURCE_IRQ)
-			irq = rentry->res.start;
+		if (resource_type(rentry->res) == IORESOURCE_MEM)
+			mem = rentry->res->start;
+		else if (resource_type(rentry->res) == IORESOURCE_IRQ)
+			irq = rentry->res->start;
 	}
 
 	acpi_dev_free_resource_list(&resource_list);
@@ -73,9 +72,8 @@ static int acpi_dma_parse_resource_group(const struct acpi_csrt_group *grp,
 	if (si->mmio_base_low != mem || si->gsi_interrupt != irq)
 		return 0;
 
-	vendor_id = le32_to_cpu(grp->vendor_id);
 	dev_dbg(&adev->dev, "matches with %.4s%04X (rev %u)\n",
-		(char *)&vendor_id, grp->device_id, grp->revision);
+		(char *)&grp->vendor_id, grp->device_id, grp->revision);
 
 	/* Check if the request line range is available */
 	if (si->base_request_line == 0 && si->num_handshake_signals == 0)

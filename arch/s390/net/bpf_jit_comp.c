@@ -10,8 +10,10 @@
 #include <linux/if_vlan.h>
 #include <linux/filter.h>
 #include <asm/cacheflush.h>
-#include <asm/processor.h>
 #include <asm/facility.h>
+#include <asm/dis.h>
+#include <asm/facility.h>
+#include <asm/nospec-branch.h>
 
 /*
  * Conventions:
@@ -27,7 +29,6 @@
  *   %r13 = literal pool pointer
  *   0(%r15) - 63(%r15) scratch memory array with BPF_MEMWORDS
  */
-int bpf_jit_enable __read_mostly;
 
 /*
  * assembly code in arch/x86/net/bpf_jit.S
@@ -45,6 +46,8 @@ struct bpf_jit {
 	u8 *base_ip;
 	u8 *ret0_ip;
 	u8 *exit_ip;
+	u8 *r1_thunk_ip;	/* Address of expoline thunk for 'br %r1' */
+	u8 *r14_thunk_ip;	/* Address of expoline thunk for 'br %r14' */
 	unsigned int off_load_word;
 	unsigned int off_load_half;
 	unsigned int off_load_byte;
@@ -114,6 +117,18 @@ struct bpf_jit {
 ({							\
 	unsigned int __disp = (disp) & 0xfff;		\
 	EMIT6(op1 | __disp, op2);			\
+})
+
+#define EMIT6_PCREL_RILB(op, target)				\
+({								\
+	int rel = (target - jit->prg) / 2;			\
+	EMIT6(op | rel >> 16, rel & 0xffff);			\
+})
+
+#define EMIT6_PCREL_RIL(op, target)				\
+({								\
+	int rel = (target - jit->prg) / 2;			\
+	EMIT6(op | rel >> 16, rel & 0xffff);			\
 })
 
 #define EMIT6_IMM(op, imm)				\
@@ -217,8 +232,45 @@ static void bpf_jit_epilogue(struct bpf_jit *jit)
 	else if (jit->seen & SEEN_LITERAL)
 		/* lg %r13,128(%r15) */
 		EMIT6(0xe3d0f080, 0x0004);
+	if (IS_ENABLED(CC_USING_EXPOLINE) && !nospec_disable) {
+		jit->r14_thunk_ip = jit->prg;
+		/* Generate __s390_indirect_jump_r14 thunk */
+		if (test_facility(35)) {
+			/* exrl %r0,.+10 */
+			EMIT6_PCREL_RIL(0xc6000000, jit->prg + 10);
+		} else {
+			/* larl %r1,.+14 */
+			EMIT6_PCREL_RILB(0xc0100000, jit->prg + 14);
+			/* ex 0,0(%r1) */
+			EMIT4_DISP(0x44001000, 0);
+		}
+		/* j . */
+		EMIT4_PCREL(0xa7f40000, 0);
+	}
 	/* br %r14 */
 	EMIT2(0x07fe);
+
+	if (IS_ENABLED(CC_USING_EXPOLINE) && !nospec_disable &&
+	    (jit->seen & SEEN_DATAREF)) {
+		jit->r1_thunk_ip = jit->prg;
+		/* Generate __s390_indirect_jump_r1 thunk */
+		if (test_facility(35)) {
+			/* exrl %r0,.+10 */
+			EMIT6_PCREL_RIL(0xc6000000, jit->prg + 10);
+			/* j . */
+			EMIT4_PCREL(0xa7f40000, 0);
+			/* br %r1 */
+			EMIT2(0x07f1);
+		} else {
+			/* larl %r1,.+14 */
+			EMIT6_PCREL_RILB(0xc0100000, jit->prg + 14);
+			/* ex 0,S390_lowcore.br_r1_tampoline */
+			EMIT4_DISP(0x44000000, offsetof(struct _lowcore,
+							br_r1_trampoline));
+			/* j . */
+			EMIT4_PCREL(0xa7f40000, 0);
+		}
+	}
 }
 
 /*
@@ -243,7 +295,6 @@ static void bpf_jit_noleaks(struct bpf_jit *jit, struct sock_filter *filter)
 	case BPF_S_LD_W_IND:
 	case BPF_S_LD_H_IND:
 	case BPF_S_LD_B_IND:
-	case BPF_S_LDX_B_MSH:
 	case BPF_S_LD_IMM:
 	case BPF_S_LD_MEM:
 	case BPF_S_MISC_TXA:
@@ -335,14 +386,16 @@ static int bpf_jit_insn(struct bpf_jit *jit, struct sock_filter *filter,
 		EMIT4_PCREL(0xa7840000, (jit->ret0_ip - jit->prg));
 		/* lhi %r4,0 */
 		EMIT4(0xa7480000);
-		/* dr %r4,%r12 */
-		EMIT2(0x1d4c);
+		/* dlr %r4,%r12 */
+		EMIT4(0xb997004c);
 		break;
-	case BPF_S_ALU_DIV_K: /* A = reciprocal_divide(A, K) */
-		/* m %r4,<d(K)>(%r13) */
-		EMIT4_DISP(0x5c40d000, EMIT_CONST(K));
-		/* lr %r5,%r4 */
-		EMIT2(0x1854);
+	case BPF_S_ALU_DIV_K: /* A /= K */
+		if (K == 1)
+			break;
+		/* lhi %r4,0 */
+		EMIT4(0xa7480000);
+		/* dl %r4,<d(K)>(%r13) */
+		EMIT6_DISP(0xe340d000, 0x0097, EMIT_CONST(K));
 		break;
 	case BPF_S_ALU_MOD_X: /* A %= X */
 		jit->seen |= SEEN_XREG | SEEN_RET0;
@@ -352,16 +405,21 @@ static int bpf_jit_insn(struct bpf_jit *jit, struct sock_filter *filter,
 		EMIT4_PCREL(0xa7840000, (jit->ret0_ip - jit->prg));
 		/* lhi %r4,0 */
 		EMIT4(0xa7480000);
-		/* dr %r4,%r12 */
-		EMIT2(0x1d4c);
+		/* dlr %r4,%r12 */
+		EMIT4(0xb997004c);
 		/* lr %r5,%r4 */
 		EMIT2(0x1854);
 		break;
 	case BPF_S_ALU_MOD_K: /* A %= K */
+		if (K == 1) {
+			/* lhi %r5,0 */
+			EMIT4(0xa7580000);
+			break;
+		}
 		/* lhi %r4,0 */
 		EMIT4(0xa7480000);
-		/* d %r4,<d(K)>(%r13) */
-		EMIT4_DISP(0x5d40d000, EMIT_CONST(K));
+		/* dl %r4,<d(K)>(%r13) */
+		EMIT6_DISP(0xe340d000, 0x0097, EMIT_CONST(K));
 		/* lr %r5,%r4 */
 		EMIT2(0x1854);
 		break;
@@ -426,8 +484,8 @@ static int bpf_jit_insn(struct bpf_jit *jit, struct sock_filter *filter,
 		EMIT4_DISP(0x88500000, K);
 		break;
 	case BPF_S_ALU_NEG: /* A = -A */
-		/* lnr %r5,%r5 */
-		EMIT2(0x1155);
+		/* lcr %r5,%r5 */
+		EMIT2(0x1355);
 		break;
 	case BPF_S_JMP_JA: /* ip += K */
 		offset = addrs[i + K] + jit->start - jit->prg;
@@ -443,15 +501,12 @@ static int bpf_jit_insn(struct bpf_jit *jit, struct sock_filter *filter,
 		mask = 0x800000; /* je */
 kbranch:	/* Emit compare if the branch targets are different */
 		if (filter->jt != filter->jf) {
-			if (K <= 16383)
-				/* chi %r5,<K> */
-				EMIT4_IMM(0xa75e0000, K);
-			else if (test_facility(21))
+			if (test_facility(21))
 				/* clfi %r5,<K> */
 				EMIT6_IMM(0xc25f0000, K);
 			else
-				/* c %r5,<d(K)>(%r13) */
-				EMIT4_DISP(0x5950d000, EMIT_CONST(K));
+				/* cl %r5,<d(K)>(%r13) */
+				EMIT4_DISP(0x5550d000, EMIT_CONST(K));
 		}
 branch:		if (filter->jt == filter->jf) {
 			if (filter->jt == 0)
@@ -497,8 +552,8 @@ branch:		if (filter->jt == filter->jf) {
 xbranch:	/* Emit compare if the branch targets are different */
 		if (filter->jt != filter->jf) {
 			jit->seen |= SEEN_XREG;
-			/* cr %r5,%r12 */
-			EMIT2(0x195c);
+			/* clr %r5,%r12 */
+			EMIT2(0x155c);
 		}
 		goto branch;
 	case BPF_S_JMP_JSET_X: /* ip += (A & X) ? jt : jf */
@@ -529,8 +584,13 @@ call_fn:	/* lg %r1,<d(function)>(%r13) */
 		EMIT6_DISP(0xe310d000, 0x0004, offset);
 		/* l %r3,<d(K)>(%r13) */
 		EMIT4_DISP(0x5830d000, EMIT_CONST(K));
-		/* basr %r8,%r1 */
-		EMIT2(0x0d81);
+		if (IS_ENABLED(CC_USING_EXPOLINE) && !nospec_disable) {
+			/* brasl %r8,__s390_indirect_jump_r1 */
+			EMIT6_PCREL_RILB(0xc0850000, jit->r1_thunk_ip);
+		} else {
+			/* basr %r8,%r1 */
+			EMIT2(0x0d81);
+		}
 		/* jnz <ret0> */
 		EMIT4_PCREL(0xa7740000, (jit->ret0_ip - jit->prg));
 		break;
@@ -697,10 +757,10 @@ call_fn:	/* lg %r1,<d(function)>(%r13) */
 		/* icm	%r5,3,<d(type)>(%r1) */
 		EMIT4_DISP(0xbf531000, offsetof(struct net_device, type));
 		break;
-	case BPF_S_ANC_RXHASH: /* A = skb->rxhash */
-		BUILD_BUG_ON(FIELD_SIZEOF(struct sk_buff, rxhash) != 4);
-		/* l %r5,<d(rxhash)>(%r2) */
-		EMIT4_DISP(0x58502000, offsetof(struct sk_buff, rxhash));
+	case BPF_S_ANC_RXHASH: /* A = skb->hash */
+		BUILD_BUG_ON(FIELD_SIZEOF(struct sk_buff, hash) != 4);
+		/* l %r5,<d(hash)>(%r2) */
+		EMIT4_DISP(0x58502000, offsetof(struct sk_buff, hash));
 		break;
 	case BPF_S_ANC_VLAN_TAG:
 	case BPF_S_ANC_VLAN_TAG_PRESENT:

@@ -358,9 +358,9 @@ rpcc_after_update_in_progress(void)
 #ifndef CONFIG_SMP
 /* Until and unless we figure out how to get cpu cycle counters
    in sync and keep them there, we can't use the rpcc.  */
-static cycle_t read_rpcc(struct clocksource *cs)
+static u64 read_rpcc(struct clocksource *cs)
 {
-	cycle_t ret = (cycle_t)rpcc();
+	u64 ret = (u64)rpcc();
 	return ret;
 }
 

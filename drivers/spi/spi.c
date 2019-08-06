@@ -223,7 +223,7 @@ static const struct dev_pm_ops spi_pm = {
 	SET_RUNTIME_PM_OPS(
 		pm_generic_runtime_suspend,
 		pm_generic_runtime_resume,
-		pm_generic_runtime_idle
+		NULL
 	)
 };
 
@@ -955,7 +955,7 @@ static acpi_status acpi_spi_add_device(acpi_handle handle, u32 level,
 		return AE_NO_MEMORY;
 	}
 
-	ACPI_HANDLE_SET(&spi->dev, handle);
+	ACPI_COMPANION_SET(&spi->dev, adev);
 	spi->irq = -1;
 
 	INIT_LIST_HEAD(&resource_list);

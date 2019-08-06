@@ -126,6 +126,7 @@ static const match_table_t tokens = {
 struct pts_fs_info {
 	struct ida allocated_ptys;
 	struct pts_mount_opts mount_opts;
+	struct super_block *sb;
 	struct dentry *ptmx_dentry;
 };
 
@@ -140,6 +141,8 @@ static inline struct super_block *pts_sb_from_inode(struct inode *inode)
 	if (inode->i_sb->s_magic == DEVPTS_SUPER_MAGIC)
 		return inode->i_sb;
 #endif
+	if (!devpts_mnt)
+		return NULL;
 	return devpts_mnt->mnt_sb;
 }
 
@@ -351,7 +354,7 @@ static const struct super_operations devpts_sops = {
 	.show_options	= devpts_show_options,
 };
 
-static void *new_pts_fs_info(void)
+static void *new_pts_fs_info(struct super_block *sb)
 {
 	struct pts_fs_info *fsi;
 
@@ -362,6 +365,7 @@ static void *new_pts_fs_info(void)
 	ida_init(&fsi->allocated_ptys);
 	fsi->mount_opts.mode = DEVPTS_DEFAULT_MODE;
 	fsi->mount_opts.ptmxmode = DEVPTS_DEFAULT_PTMX_MODE;
+	fsi->sb = sb;
 
 	return fsi;
 }
@@ -371,13 +375,14 @@ devpts_fill_super(struct super_block *s, void *data, int silent)
 {
 	struct inode *inode;
 
+	s->s_iflags &= ~SB_I_NODEV;
 	s->s_blocksize = 1024;
 	s->s_blocksize_bits = 10;
 	s->s_magic = DEVPTS_SUPER_MAGIC;
 	s->s_op = &devpts_sops;
 	s->s_time_gran = 1;
 
-	s->s_fs_info = new_pts_fs_info();
+	s->s_fs_info = new_pts_fs_info(s);
 	if (!s->s_fs_info)
 		goto fail;
 
@@ -498,6 +503,7 @@ static void devpts_kill_sb(struct super_block *sb)
 {
 	struct pts_fs_info *fsi = DEVPTS_SB(sb);
 
+	ida_destroy(&fsi->allocated_ptys);
 	kfree(fsi);
 	kill_litter_super(sb);
 }
@@ -507,7 +513,7 @@ static struct file_system_type devpts_fs_type = {
 	.mount		= devpts_mount,
 	.kill_sb	= devpts_kill_sb,
 #ifdef CONFIG_DEVPTS_MULTIPLE_INSTANCES
-	.fs_flags	= FS_USERNS_MOUNT | FS_USERNS_DEV_MOUNT,
+	.fs_flags	= FS_USERNS_MOUNT,
 #endif
 };
 
@@ -516,12 +522,13 @@ static struct file_system_type devpts_fs_type = {
  * to the System V naming convention
  */
 
-int devpts_new_index(struct inode *ptmx_inode)
+int devpts_new_index(struct pts_fs_info *fsi)
 {
-	struct super_block *sb = pts_sb_from_inode(ptmx_inode);
-	struct pts_fs_info *fsi = DEVPTS_SB(sb);
 	int index;
 	int ida_ret;
+
+	if (!fsi)
+		return -ENODEV;
 
 retry:
 	if (!ida_pre_get(&fsi->allocated_ptys, GFP_KERNEL))
@@ -552,15 +559,36 @@ retry:
 	return index;
 }
 
-void devpts_kill_index(struct inode *ptmx_inode, int idx)
+void devpts_kill_index(struct pts_fs_info *fsi, int idx)
 {
-	struct super_block *sb = pts_sb_from_inode(ptmx_inode);
-	struct pts_fs_info *fsi = DEVPTS_SB(sb);
-
 	mutex_lock(&allocated_ptys_lock);
 	ida_remove(&fsi->allocated_ptys, idx);
 	pty_count--;
 	mutex_unlock(&allocated_ptys_lock);
+}
+
+/*
+ * pty code needs to hold extra references in case of last /dev/tty close
+ */
+struct pts_fs_info *devpts_get_ref(struct inode *ptmx_inode, struct file *file)
+{
+	struct super_block *sb;
+	struct pts_fs_info *fsi;
+
+	sb = pts_sb_from_inode(ptmx_inode);
+	if (!sb)
+		return NULL;
+	fsi = DEVPTS_SB(sb);
+	if (!fsi)
+		return NULL;
+
+	atomic_inc(&sb->s_active);
+	return fsi;
+}
+
+void devpts_put_ref(struct pts_fs_info *fsi)
+{
+	deactivate_super(fsi->sb);
 }
 
 /**
@@ -572,16 +600,22 @@ void devpts_kill_index(struct inode *ptmx_inode, int idx)
  *
  * The created inode is returned. Remove it from /dev/pts/ by devpts_pty_kill.
  */
-struct inode *devpts_pty_new(struct inode *ptmx_inode, dev_t device, int index,
+struct inode *devpts_pty_new(struct pts_fs_info *fsi, dev_t device, int index,
 		void *priv)
 {
 	struct dentry *dentry;
-	struct super_block *sb = pts_sb_from_inode(ptmx_inode);
+	struct super_block *sb;
 	struct inode *inode;
-	struct dentry *root = sb->s_root;
-	struct pts_fs_info *fsi = DEVPTS_SB(sb);
-	struct pts_mount_opts *opts = &fsi->mount_opts;
+	struct dentry *root;
+	struct pts_mount_opts *opts;
 	char s[12];
+
+	if (!fsi)
+		return ERR_PTR(-ENODEV);
+
+	sb = fsi->sb;
+	root = sb->s_root;
+	opts = &fsi->mount_opts;
 
 	inode = new_inode(sb);
 	if (!inode)
@@ -670,12 +704,16 @@ static int __init init_devpts_fs(void)
 	struct ctl_table_header *table;
 
 	if (!err) {
+		struct vfsmount *mnt;
+
 		table = register_sysctl_table(pty_root_table);
-		devpts_mnt = kern_mount(&devpts_fs_type);
-		if (IS_ERR(devpts_mnt)) {
-			err = PTR_ERR(devpts_mnt);
+		mnt = kern_mount(&devpts_fs_type);
+		if (IS_ERR(mnt)) {
+			err = PTR_ERR(mnt);
 			unregister_filesystem(&devpts_fs_type);
 			unregister_sysctl_table(table);
+		} else {
+			devpts_mnt = mnt;
 		}
 	}
 	return err;

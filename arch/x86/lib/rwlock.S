@@ -13,7 +13,7 @@
 
 ENTRY(__write_lock_failed)
 	CFI_STARTPROC
-	FRAME
+	FRAME_BEGIN
 0:	LOCK_PREFIX
 	WRITE_LOCK_ADD($RW_LOCK_BIAS) (%__lock_ptr)
 1:	rep; nop
@@ -22,14 +22,14 @@ ENTRY(__write_lock_failed)
 	LOCK_PREFIX
 	WRITE_LOCK_SUB($RW_LOCK_BIAS) (%__lock_ptr)
 	jnz	0b
-	ENDFRAME
+	FRAME_END
 	ret
 	CFI_ENDPROC
 END(__write_lock_failed)
 
 ENTRY(__read_lock_failed)
 	CFI_STARTPROC
-	FRAME
+	FRAME_BEGIN
 0:	LOCK_PREFIX
 	READ_LOCK_SIZE(inc) (%__lock_ptr)
 1:	rep; nop
@@ -38,7 +38,7 @@ ENTRY(__read_lock_failed)
 	LOCK_PREFIX
 	READ_LOCK_SIZE(dec) (%__lock_ptr)
 	js	0b
-	ENDFRAME
+	FRAME_END
 	ret
 	CFI_ENDPROC
 END(__read_lock_failed)

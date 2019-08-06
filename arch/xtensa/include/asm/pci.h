@@ -22,11 +22,6 @@
 
 extern struct pci_controller* pcibios_alloc_controller(void);
 
-static inline void pcibios_penalize_isa_irq(int irq)
-{
-	/* We don't do dynamic PCI IRQ allocation */
-}
-
 /* Assume some values. (We should revise them, if necessary) */
 
 #define PCIBIOS_MIN_IO		0x2000
@@ -59,9 +54,6 @@ int pci_mmap_page_range(struct pci_dev *pdev, struct vm_area_struct *vma,
 #define HAVE_PCI_MMAP	1
 
 #endif /* __KERNEL__ */
-
-/* Implement the pci_ DMA API in terms of the generic device dma_ one */
-#include <asm-generic/pci-dma-compat.h>
 
 /* Generic PCI */
 #include <asm-generic/pci.h>

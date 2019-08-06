@@ -1428,9 +1428,9 @@ static void xgmac_poll_controller(struct net_device *dev)
 }
 #endif
 
-static struct rtnl_link_stats64 *
+static void
 xgmac_get_stats64(struct net_device *dev,
-		       struct rtnl_link_stats64 *storage)
+		  struct rtnl_link_stats64 *storage)
 {
 	struct xgmac_priv *priv = netdev_priv(dev);
 	void __iomem *base = priv->base;
@@ -1458,7 +1458,6 @@ xgmac_get_stats64(struct net_device *dev,
 
 	writel(0, base + XGMAC_MMC_CTRL);
 	spin_unlock_bh(&priv->stats_lock);
-	return storage;
 }
 
 static int xgmac_set_mac_address(struct net_device *dev, void *p)
@@ -1501,7 +1500,7 @@ static const struct net_device_ops xgmac_netdev_ops = {
 	.ndo_open = xgmac_open,
 	.ndo_start_xmit = xgmac_xmit,
 	.ndo_stop = xgmac_stop,
-	.ndo_change_mtu = xgmac_change_mtu,
+	.ndo_change_mtu_rh74 = xgmac_change_mtu,
 	.ndo_set_rx_mode = xgmac_set_rx_mode,
 	.ndo_tx_timeout = xgmac_tx_timeout,
 	.ndo_get_stats64 = xgmac_get_stats64,
