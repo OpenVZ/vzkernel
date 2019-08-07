@@ -983,6 +983,8 @@ void nft_trace_notify(struct nft_traceinfo *info);
 #define MODULE_ALIAS_NFT_SET() \
 	MODULE_ALIAS("nft-set")
 
+#if IS_ENABLED(CONFIG_NF_TABLES)
+
 /*
  * The gencursor defines two generations, the currently active and the
  * next one. Objects contain a bitmask of 2 bits specifying the generations
@@ -1028,6 +1030,8 @@ static inline void nft_set_elem_change_active(const struct nft_set *set,
 {
 	ext->genmask ^= nft_genmask_next(read_pnet(&set->pnet));
 }
+
+#endif /* IS_ENABLED(CONFIG_NF_TABLES) */
 
 /*
  * We use a free bit in the genmask field to indicate the element
