@@ -975,6 +975,25 @@ void __meminit reserve_bootmem_region(unsigned long start, unsigned long end)
 	}
 }
 
+static void check_memcg(struct page *page)
+{
+	struct page_cgroup *pc;
+	extern int page_cgroup_inited;
+
+	if (!page_cgroup_inited)
+		return;
+
+	pc = lookup_page_cgroup(page);
+	/*
+	 * Fast unlocked return. Theoretically might have changed, have to
+	 * check again after locking.
+	 */
+	if (!pc || !PageCgroupUsed(pc))
+		return;
+
+	BUG_ON(1);
+}
+
 static bool free_pages_prepare(struct page *page, unsigned int order)
 {
 	int i;
@@ -987,6 +1006,8 @@ static bool free_pages_prepare(struct page *page, unsigned int order)
 	if (PageAnon(page))
 		page->mapping = NULL;
 	memcg_kmem_uncharge_pages(page, order);
+	check_memcg(page);
+
 	for (i = 0; i < (1 << order); i++) {
 		bad += free_pages_check(page + i);
 		if (static_key_false(&zero_free_pages))
@@ -1580,6 +1601,7 @@ static int prep_new_page(struct page *page, int order, gfp_t gfp_flags)
 	arch_alloc_page(page, order);
 	kernel_map_pages(page, 1 << order, 1);
 	kasan_alloc_pages(page, order);
+	check_memcg(page);
 
 	if (gfp_flags & __GFP_ZERO)
 		prep_zero_page(page, order, gfp_flags);
