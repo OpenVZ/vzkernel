@@ -266,7 +266,7 @@ static int __meminit page_cgroup_callback(struct notifier_block *self,
 }
 
 #endif
-
+int page_cgroup_inited;
 void __init page_cgroup_init(void)
 {
 	unsigned long pfn;
@@ -309,6 +309,7 @@ void __init page_cgroup_init(void)
 	printk(KERN_INFO "please try 'cgroup_disable=memory' option if you "
 			 "don't want memory cgroups\n");
 	invoke_page_ext_init_callbacks();
+	page_cgroup_inited = true;
 	return;
 oom:
 	printk(KERN_CRIT "try 'cgroup_disable=memory' boot option\n");
