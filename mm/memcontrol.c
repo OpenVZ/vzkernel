@@ -4378,7 +4378,7 @@ static void mem_cgroup_reparent_charges(struct mem_cgroup *memcg)
 		 * charge before adding to the LRU.
 		 */
 	} while ((page_counter_read(&memcg->memory) -
-		 page_counter_read(&memcg->kmem) > 0) && time_after(jiffies, timeout));
+		 page_counter_read(&memcg->kmem) > 0) && time_before(jiffies, timeout));
 
 	WARN_ONCE((page_counter_read(&memcg->memory) -
 			page_counter_read(&memcg->kmem) > 0),
