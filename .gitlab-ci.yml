@@ -1,0 +1,7 @@
+Test configuration:
+  stage: test
+  image: fedora
+  before_script:
+    - dnf install -y dnf-plugins-core
+    - dnf builddep -y kernel
+  script: make rh-configs
