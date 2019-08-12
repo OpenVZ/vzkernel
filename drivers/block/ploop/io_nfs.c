@@ -738,64 +738,6 @@ static const struct rpc_call_ops nfsio_read_direct_sync_ops = {
 	.rpc_release = nfsio_read_release_sync,
 };
 
-
-
-static int
-nfsio_sync_readvec(struct ploop_io * io, struct page ** pvec, unsigned int nr,
-		   sector_t sec)
-{
-	struct inode *inode = io->files.inode;
-	size_t rsize = NFS_SERVER(inode)->rsize;
-	struct nfs_pgio_header *nreq = NULL;
-	loff_t pos;
-	int i;
-	struct nfsio_comp comp;
-
-	nfsio_comp_init(&comp);
-
-	pos = (loff_t)sec << 9;
-
-	i = 0;
-	while (i < nr) {
-		int err;
-		int k;
-
-		nreq = rbio_init(pos, pvec[i], 0, PAGE_SIZE, &comp, inode);
-		if (nreq == NULL) {
-			comp.error = -ENOMEM;
-			break;
-		}
-
-		nreq->page_array.npages = rsize / PAGE_SIZE;
-		if (nreq->page_array.npages > nr - i)
-			nreq->page_array.npages = nr - i;
-		for (k = 0; k < nreq->page_array.npages; k++) {
-			nreq->page_array.pagevec[k] = pvec[i + k];
-		}
-		nreq->args.count = nreq->page_array.npages*PAGE_SIZE;
-
-		i += nreq->page_array.npages;
-		pos += nreq->page_array.npages*PAGE_SIZE;
-
-		atomic_inc(&comp.count);
-
-		err = rbio_submit(io, nreq, &nfsio_read_direct_sync_ops);
-		if (err) {
-			comp.error = err;
-			if (atomic_dec_and_test(&comp.count))
-				complete(&comp.comp);
-			break;
-		}
-	}
-
-	if (atomic_dec_and_test(&comp.count))
-		complete(&comp.comp);
-
-	wait_for_completion(&comp.comp);
-
-	return comp.error;
-}
-
 static void nfsio_write_release_sync(void *calldata)
 {
 	struct nfs_pgio_header *nreq = calldata;
@@ -1404,8 +1346,6 @@ static struct ploop_io_ops ploop_io_ops_nfs =
 	.write_page	=	nfsio_write_page,
 	.sync_read	=	nfsio_sync_read,
 	.sync_write	=	nfsio_sync_write,
-	.sync_readvec	=	nfsio_sync_readvec,
-	.sync_writevec	=	nfsio_sync_writevec,
 
 	.init		=	nfsio_init,
 	.destroy	=	nfsio_destroy,
