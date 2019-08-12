@@ -597,14 +597,8 @@ out:
 
 static int
 nfsio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
-		 struct bio_list * sbl, unsigned int size)
+		   struct bio_list * sbl, unsigned int size, iblock_t iblk)
 {
-	iblock_t iblk = io->alloc_head++;
-
-	if (!(io->files.file->f_mode & FMODE_WRITE)) {
-		PLOOP_FAIL_REQUEST(preq, -EBADF);
-		return -1;
-	}
 	preq->iblock = iblk;
 	preq->eng_state = PLOOP_E_DATA_WBI;
 
