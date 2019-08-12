@@ -22,3 +22,6 @@ pio_direct-objs := io_direct.o io_direct_map.o
 
 obj-$(CONFIG_BLK_DEV_PLOOP)	+= pio_kaio.o
 pio_kaio-objs := io_kaio.o io_kaio_map.o
+
+obj-$(CONFIG_BLK_DEV_PLOOP)	+= pio_nfs.o
+pio_nfs-objs := io_nfs.o
