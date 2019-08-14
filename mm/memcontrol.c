@@ -3233,13 +3233,13 @@ done_restock:
 	 * successful charge implies full memory barrier.
 	 */
 	if (unlikely(memcg->is_offline)) {
-		page_counter_uncharge(&memcg->memory, batch);
-		if (do_swap_account)
-			page_counter_uncharge(&memcg->memsw, batch);
 		if (kmem_charge) {
 			WARN_ON_ONCE(1);
 			page_counter_uncharge(&memcg->kmem, nr_pages);
 		}
+		page_counter_uncharge(&memcg->memory, batch);
+		if (do_swap_account)
+			page_counter_uncharge(&memcg->memsw, batch);
 
 		goto bypass;
 	}
@@ -4406,6 +4406,13 @@ static void mem_cgroup_reparent_charges(struct mem_cgroup *memcg)
 		 * charge before adding to the LRU.
 		 */
 		mem = page_counter_read(&memcg->memory);
+
+		/*
+		 * Make sure that we won't see ->memory uncharge before ->kmem uncharge,
+		 * see uncharge_batch(), memcg_uncharge_kmem(). Pairing barrier provided
+		 * by page_counter_ucharge()->page_counter_cancel()->atomic_long_sub_return().
+		 */
+		smp_rmb();
 		kmem = page_counter_read(&memcg->kmem);
 	} while ((mem - kmem > 0) && time_before(jiffies, timeout));
 
@@ -7648,12 +7655,12 @@ static void uncharge_batch(struct mem_cgroup *memcg, unsigned long pgpgout,
 	unsigned long flags;
 
 	if (!mem_cgroup_is_root(memcg)) {
+		if (nr_kmem)
+			page_counter_uncharge(&memcg->kmem, nr_kmem);
 		if (nr_mem + nr_kmem)
 			page_counter_uncharge(&memcg->memory, nr_mem + nr_kmem);
 		if (nr_memsw + nr_kmem)
 			page_counter_uncharge(&memcg->memsw, nr_memsw + nr_kmem);
-		if (nr_kmem)
-			page_counter_uncharge(&memcg->kmem, nr_kmem);
 		if (nr_file)
 			page_counter_uncharge(&memcg->cache, nr_file - nr_shmem);
 
