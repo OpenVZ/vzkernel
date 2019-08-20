@@ -659,6 +659,11 @@ static int expand_holes_bitmap(struct ploop_delta *delta,
 	if (!delta->holes_bitmap)
 		return 0;
 
+	/*
+	 * According to BUG_ON() in ploop1_prepare_grow(),
+	 * we do not support zero m_FirstBlockOffset
+	 * at least since 2013.
+	 */
 	md_off = vh->m_FirstBlockOffset >> log;
 	nr = md_off + vh->m_Size;
 
