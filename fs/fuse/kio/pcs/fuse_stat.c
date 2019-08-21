@@ -31,6 +31,12 @@ static u64 lat_oreder_list[] = {
 
 static inline void fuse_val_stat_update(struct fuse_val_stat *s, u64 val)
 {
+	/*
+	 * Sanity check. In case s == NULL, stack protector cookie is
+	 * corrupted, quite difficult to debug.
+	 */
+	BUG_ON(!s);
+
 	preempt_disable();
 	if (!__this_cpu_read(s->events)) {
 		__this_cpu_write(s->val_min, val);
@@ -48,6 +54,11 @@ void fuse_latency_update(struct fuse_lat_stat *s, u64 val)
 {
 	int i;
 
+	/*
+	 * Sanity check. In case s == NULL, stack protector cookie is
+	 * corrupted, quite difficult to debug.
+	 */
+	BUG_ON(!s);
 	this_cpu_inc(s->count);
 	for (i = LAT_ORDER1; i <= LAT_ORDER5; i++) {
 		if (likely(val <= lat_oreder_list[i])) {
