@@ -458,10 +458,8 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
 				ext4_io_submit(io);
 			continue;
 		}
-		if (buffer_new(bh)) {
+		if (buffer_new(bh))
 			clear_buffer_new(bh);
-			unmap_underlying_metadata(bh->b_bdev, bh->b_blocknr);
-		}
 		set_buffer_async_write(bh);
 	} while ((bh = bh->b_this_page) != head);
 
