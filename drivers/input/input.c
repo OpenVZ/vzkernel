@@ -496,7 +496,8 @@ void input_set_abs_params(struct input_dev *dev, unsigned int axis,
 	absinfo->fuzz = fuzz;
 	absinfo->flat = flat;
 
-	dev->absbit[BIT_WORD(axis)] |= BIT_MASK(axis);
+	__set_bit(EV_ABS, dev->evbit);
+	__set_bit(axis, dev->absbit);
 }
 EXPORT_SYMBOL(input_set_abs_params);
 
@@ -1504,6 +1505,7 @@ static void input_dev_release(struct device *device)
 	input_mt_destroy_slots(dev);
 	kfree(dev->absinfo);
 	kfree(dev->vals);
+	kfree(dev->dev.device_rh);
 	kfree(dev);
 
 	module_put(THIS_MODULE);
@@ -1703,7 +1705,7 @@ static const struct dev_pm_ops input_dev_pm_ops = {
 };
 #endif /* CONFIG_PM */
 
-static struct device_type input_dev_type = {
+static const struct device_type input_dev_type = {
 	.groups		= input_dev_attr_groups,
 	.release	= input_dev_release,
 	.uevent		= input_dev_uevent,

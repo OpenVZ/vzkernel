@@ -2,9 +2,7 @@
  * This file contains main functions related to iSCSI DataSequenceInOrder=No
  * and DataPDUInOrder=No.
  *
- \u00a9 Copyright 2007-2011 RisingTide Systems LLC.
- *
- * Licensed to the Linux Foundation under the General Public License (GPL) version 2.
+ * (c) Copyright 2007-2013 Datera, Inc.
  *
  * Author: Nicholas A. Bellinger <nab@linux-iscsi.org>
  *
@@ -22,12 +20,10 @@
 #include <linux/slab.h>
 #include <linux/random.h>
 
-#include "iscsi_target_core.h"
+#include <target/iscsi/iscsi_target_core.h>
 #include "iscsi_target_util.h"
 #include "iscsi_target_tpg.h"
 #include "iscsi_target_seq_pdu_list.h"
-
-#define OFFLOAD_BUF_SIZE	32768
 
 #ifdef DEBUG
 static void iscsit_dump_seq_list(struct iscsi_cmd *cmd)

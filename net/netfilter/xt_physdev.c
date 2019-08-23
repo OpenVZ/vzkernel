@@ -13,6 +13,7 @@
 #include <linux/netfilter_bridge.h>
 #include <linux/netfilter/xt_physdev.h>
 #include <linux/netfilter/x_tables.h>
+#include <net/netfilter/br_netfilter.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Bart De Schuymer <bdschuym@pandora.be>");
@@ -55,8 +56,7 @@ physdev_mt(const struct sk_buff *skb, struct xt_action_param *par)
 
 	/* This only makes sense in the FORWARD and POSTROUTING chains */
 	if ((info->bitmask & XT_PHYSDEV_OP_BRIDGED) &&
-	    (!!(nf_bridge->mask & BRNF_BRIDGED) ^
-	    !(info->invert & XT_PHYSDEV_OP_BRIDGED)))
+	    (!!nf_bridge->physoutdev ^ !(info->invert & XT_PHYSDEV_OP_BRIDGED)))
 		return false;
 
 	if ((info->bitmask & XT_PHYSDEV_OP_ISIN &&
@@ -87,17 +87,19 @@ static int physdev_mt_check(const struct xt_mtchk_param *par)
 {
 	const struct xt_physdev_info *info = par->matchinfo;
 
+	br_netfilter_enable();
+
 	if (!(info->bitmask & XT_PHYSDEV_OP_MASK) ||
 	    info->bitmask & ~XT_PHYSDEV_OP_MASK)
 		return -EINVAL;
-	if (info->bitmask & XT_PHYSDEV_OP_OUT &&
+	if (info->bitmask & (XT_PHYSDEV_OP_OUT | XT_PHYSDEV_OP_ISOUT) &&
 	    (!(info->bitmask & XT_PHYSDEV_OP_BRIDGED) ||
 	     info->invert & XT_PHYSDEV_OP_BRIDGED) &&
 	    par->hook_mask & ((1 << NF_INET_LOCAL_OUT) |
 	    (1 << NF_INET_FORWARD) | (1 << NF_INET_POST_ROUTING))) {
-		pr_info("using --physdev-out in the OUTPUT, FORWARD and "
-			"POSTROUTING chains for non-bridged traffic is not "
-			"supported anymore.\n");
+		pr_info("using --physdev-out and --physdev-is-out are only "
+			"supported in the FORWARD and POSTROUTING chains with "
+			"bridged traffic.\n");
 		if (par->hook_mask & (1 << NF_INET_LOCAL_OUT))
 			return -EINVAL;
 	}
