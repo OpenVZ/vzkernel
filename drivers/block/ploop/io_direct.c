@@ -344,11 +344,12 @@ static void bcopy_from_blist(struct page *page, int dst_off, /* dst */
 {
 	u8 *kdst = kmap_atomic(page);
 
+	WARN_ON_ONCE(page == ZERO_PAGE(0));
+
 	while (copy_len > 0) {
 		u8 *ksrc;
 		int copy = MIN(copy_len, biter->bv->bv_len - biter->off);
 
-		WARN_ON_ONCE(biter->bv->bv_page == ZERO_PAGE(0));
 		ksrc = kmap_atomic(biter->bv->bv_page);
 		memcpy(kdst + dst_off,
 		       ksrc + biter->bv->bv_offset + biter->off,
