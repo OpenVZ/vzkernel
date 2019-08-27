@@ -1583,7 +1583,7 @@ static void bio_bcopy(struct bio *dst, struct bio *src, struct ploop_device *plo
 		if (copy > PAGE_SIZE - poff)
 			copy = PAGE_SIZE - poff;
 
-		WARN_ON_ONCE(bv->bv_page == ZERO_PAGE(0));
+		WARN_ON_ONCE(dst->bi_io_vec[didx].bv_page == ZERO_PAGE(0));
 		ksrc = kmap_atomic(bv->bv_page);
 		memcpy(page_address(dst->bi_io_vec[didx].bv_page) + poff,
 		       ksrc + bv->bv_offset + bv_off,
