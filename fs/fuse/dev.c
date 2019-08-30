@@ -488,14 +488,14 @@ void __request_end(struct fuse_conn *fc, struct fuse_req *req, bool flush_bg)
 		if (flush_bg)
 			flush_bg_queue(fc, fiq);
 		spin_unlock(&fc->bg_lock);
-	} else {
+	}
+	if (req->end)
+		req->end(fc, req);
+
+	if (!bg) {
+		req->end = NULL;
 		/* Wake up waiter sleeping in request_wait_answer() */
 		wake_up(&req->waitq);
-	}
-	if (req->end) {
-		req->end(fc, req);
-		if (!bg)
-			req->end = NULL;
 	}
 put_request:
 	fuse_put_request(fc, req);
