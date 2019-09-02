@@ -321,6 +321,8 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 		struct fuse_inode *fi = get_fuse_inode(inode);
 		u64 size;
 
+		if (!lock_inode)
+			mutex_lock(&inode->i_mutex);
 		spin_lock(&fi->lock);
 
 		if (++fi->num_openers == 1) {
@@ -340,9 +342,9 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 		}
 
 		spin_unlock(&fi->lock);
+		if (err || !lock_inode)
+			mutex_unlock(&inode->i_mutex);
 		if (err) {
-			if (lock_inode)
-				mutex_unlock(&inode->i_mutex);
 			fuse_release_common(file, false);
 			return err;
 		}
