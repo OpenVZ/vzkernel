@@ -149,9 +149,6 @@ static int populate_holes_bitmap(struct ploop_delta *delta,
 	u32 *index;
 	int i, ret;
 
-	if (test_bit(PLOOP_S_NO_FALLOC_DISCARD, &delta->plo->state))
-		return 0;
-
 	/* To do: add discard alignment for v1 */
 	if (delta->plo->fmt_version != PLOOP_FMT_V2) {
 		set_bit(PLOOP_S_NO_FALLOC_DISCARD, &delta->plo->state);
