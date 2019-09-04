@@ -1328,9 +1328,9 @@ static int fuse_direntplus_link(struct file *file,
 		} else {
 			struct fuse_inode *fi;
 			fi = get_fuse_inode(inode);
-			spin_lock(&fc->lock);
+			spin_lock(&fi->lock);
 			fi->nlookup++;
-			spin_unlock(&fc->lock);
+			spin_unlock(&fi->lock);
 
 			fuse_change_attributes(inode, &o->attr,
 					       entry_attr_timeout(o),

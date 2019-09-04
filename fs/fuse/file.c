@@ -452,9 +452,9 @@ static int fuse_release(struct inode *inode, struct file *file)
 			/* Must remove file from write list. Otherwise it is possible this
 			 * file will get more writeback from another files rerouted via write_files
 			 */
-			spin_lock(&ff->fc->lock);
+			spin_lock(&fi->lock);
 			list_del_init(&ff->write_entry);
-			spin_unlock(&ff->fc->lock);
+			spin_unlock(&fi->lock);
 		} else
 			BUG_ON(!list_empty(&ff->write_entry));
 
@@ -471,10 +471,10 @@ static int fuse_release(struct inode *inode, struct file *file)
 		else
 			wait_event(fi->page_waitq, atomic_read(&ff->count) == 1);
 
-		spin_lock(&ff->fc->lock);
+		spin_lock(&fi->lock);
 		/* since now we can trust userspace attr.size */
 		fi->num_openers--;
-		spin_unlock(&ff->fc->lock);
+		spin_unlock(&fi->lock);
 	} else if (ff->fc->close_wait)
 		wait_event(fi->page_waitq, atomic_read(&ff->count) == 1);
 
@@ -1102,10 +1102,11 @@ void fuse_release_ff(struct inode *inode, struct fuse_file *ff)
 {
 	if (ff) {
 		if (ff->fc->close_wait) {
-			spin_lock(&ff->fc->lock);
+			struct fuse_inode *fi = get_fuse_inode(inode);
+			spin_lock(&fi->lock);
 			__fuse_file_put(ff);
-			wake_up(&get_fuse_inode(inode)->page_waitq);
-			spin_unlock(&ff->fc->lock);
+			wake_up(&fi->page_waitq);
+			spin_unlock(&fi->lock);
 		} else {
 			fuse_file_put(ff, false, false);
 		}
@@ -2285,14 +2286,14 @@ static inline bool fuse_blocked_for_wb(struct inode *inode)
 	if (!fc->blocked)
 		return false;
 
-	spin_lock(&fc->lock);
+	spin_lock(&fi->lock);
 	if (!list_empty(&fi->rw_files)) {
 		struct fuse_file *ff = list_entry(fi->rw_files.next,
 						  struct fuse_file, rw_entry);
 		if (!test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state))
 			blocked = true;
 	}
-	spin_unlock(&fc->lock);
+	spin_unlock(&fi->lock);
 
 	return blocked;
 }
@@ -3803,7 +3804,7 @@ static int fuse_request_fiemap(struct inode *inode, u32 cur_max,
 	int allocated = 0;
 
 	err = 0;
-	spin_lock(&fc->lock);
+	spin_lock(&fi->lock);
 	if (!list_empty(&fi->write_files)) {
 		struct fuse_file *ff = list_entry(fi->write_files.next, struct fuse_file, write_entry);
 		inarg.fh = ff->fh;
@@ -3813,7 +3814,7 @@ static int fuse_request_fiemap(struct inode *inode, u32 cur_max,
 	} else {
 		err = -EINVAL;
 	}
-	spin_unlock(&fc->lock);
+	spin_unlock(&fi->lock);
 	if (err)
 		return err;
 
