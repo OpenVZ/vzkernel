@@ -786,12 +786,12 @@ int kvm_arch_vcpu_should_kick(struct kvm_vcpu *vcpu);
 #ifndef __KVM_HAVE_ARCH_VM_ALLOC
 static inline struct kvm *kvm_arch_alloc_vm(void)
 {
-	return kzalloc(sizeof(struct kvm), GFP_KERNEL);
+	return kvzalloc(sizeof(struct kvm), GFP_KERNEL);
 }
 
 static inline void kvm_arch_free_vm(struct kvm *kvm)
 {
-	kfree(kvm);
+	kvfree(kvm);
 }
 #endif
 
