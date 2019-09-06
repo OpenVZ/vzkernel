@@ -369,7 +369,7 @@ static long vhost_dev_alloc_iovecs(struct vhost_dev *dev)
 
 	for (i = 0; i < dev->nvqs; ++i) {
 		dev->vqs[i]->indirect = kmalloc(sizeof *dev->vqs[i]->indirect *
-					       dev->iov_limit, GFP_KERNEL);
+					       UIO_MAXIOV, GFP_KERNEL);
 		dev->vqs[i]->log = kmalloc(sizeof *dev->vqs[i]->log *
 					   dev->iov_limit, GFP_KERNEL);
 		dev->vqs[i]->heads = kmalloc(sizeof *dev->vqs[i]->heads *
