@@ -272,6 +272,9 @@ static void net_dm_packet_trace_kfree_skb_hit(void *ignore,
 	struct sk_buff *nskb;
 	unsigned long flags;
 
+	if (!skb_mac_header_was_set(skb))
+		return;
+
 	nskb = skb_clone(skb, GFP_ATOMIC);
 	if (!nskb)
 		return;
