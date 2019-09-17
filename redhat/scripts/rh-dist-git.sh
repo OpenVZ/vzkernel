@@ -22,6 +22,7 @@ rhdistgit_zstream_flag=$8;
 package_name=$9;
 rhel_major=${10};
 rhpkg_bin=${11};
+srpm_name=${12};
 
 redhat=$(dirname $0)/..;
 topdir=$redhat/..;
@@ -54,7 +55,7 @@ $rhpkg_bin switch-branch $rhdistgit_branch || die "switching to branch $rhdistgi
 
 echo "Copying updated files"
 # copy the required files (redhat/git/files)
-$redhat/scripts/copy_files.sh "$topdir" "$tmpdir" "$package_name";
+$redhat/scripts/expand_srpm.sh "$topdir" "$tmpdir" "$package_name" "$srpm_name";
 
 echo "Uploading new tarballs"
 # upload tarballs

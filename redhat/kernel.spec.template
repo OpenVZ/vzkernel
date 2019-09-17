@@ -26,7 +26,7 @@ Summary: The Linux kernel
 %global distro_build %%DISTRO_BUILD%%
 
 # Sign the x86_64 kernel for secure boot authentication
-%ifarch x86_64 aarch64
+%ifarch x86_64 aarch64 s390x ppc64le
 %global signkernel 1
 %else
 %global signkernel 0
@@ -309,11 +309,7 @@ Summary: The Linux kernel
 # Which is a BadThing(tm).
 
 # We only build kernel-headers on the following...
-%if 0%{?fedora}
-%define nobuildarches i386
-%else
 %define nobuildarches i386 i686
-%endif
 
 %ifarch %nobuildarches
 %define with_up 0
@@ -371,6 +367,9 @@ BuildRequires: kmod, patch, bash, tar, git
 BuildRequires: bzip2, xz, findutils, gzip, m4, perl-interpreter, perl-Carp, perl-devel, perl-generators, make, diffutils, gawk
 BuildRequires: gcc, binutils, redhat-rpm-config, hmaccalc, python3-devel
 BuildRequires: net-tools, hostname, bc, bison, flex, elfutils-devel
+%if %{with_headers}
+BuildRequires: rsync
+%endif
 %if %{with_doc}
 BuildRequires: xmlto, asciidoc, python3-sphinx
 %endif
@@ -429,8 +428,10 @@ BuildRequires: kabi-dw
 %if %{signkernel}%{signmodules}
 BuildRequires: openssl openssl-devel
 %if %{signkernel}
+%ifarch x86_64 aarch64
 BuildRequires: nss-tools
 BuildRequires: pesign >= 0.10-4
+%endif
 %endif
 %endif
 
@@ -450,15 +451,47 @@ BuildRequires: asciidoc
 Source0: linux-%{rpmversion}-%{pkgrelease}.tar.xz
 
 Source11: x509.genkey
-%if %{?released_kernel}
-Source13: securebootca.cer
-Source14: secureboot.cer
-%define pesign_name redhatsecureboot301
-%else
-Source13: redhatsecurebootca2.cer
-Source14: redhatsecureboot003.cer
-%define pesign_name redhatsecureboot003
+
+# Name of the packaged file containing signing key
+%ifarch ppc64le
+%define signing_key_filename kernel-signing-ppc.cer
 %endif
+%ifarch s390x
+%define signing_key_filename kernel-signing-s390.cer
+%endif
+
+%if %{?released_kernel}
+
+Source12: securebootca.cer
+Source13: secureboot.cer
+Source14: secureboot_s390.cer
+Source15: secureboot_ppc.cer
+
+%define secureboot_ca %{SOURCE12}
+%ifarch x86_64 aarch64
+%define secureboot_key %{SOURCE13}
+%define pesign_name redhatsecureboot301
+%endif
+%ifarch s390x
+%define secureboot_key %{SOURCE14}
+%define pesign_name redhatsecureboot302
+%endif
+%ifarch ppc64le
+%define secureboot_key %{SOURCE15}
+%define pesign_name redhatsecureboot303
+%endif
+
+%else # released_kernel
+
+Source12: redhatsecurebootca2.cer
+Source13: redhatsecureboot003.cer
+
+%define secureboot_ca %{SOURCE12}
+%define secureboot_key %{SOURCE13}
+%define pesign_name redhatsecureboot003
+
+%endif # released_kernel
+
 Source16: mod-extra.list
 Source17: mod-extra.sh
 Source18: mod-sign.sh
@@ -722,6 +755,7 @@ This package provides debug information for the bpftool package.
 Summary: Kernel samples and selftests
 License: GPLv2
 Requires: binutils, bpftool, iproute-tc, nmap-ncat
+Requires: kernel-modules-internal = %{version}-%{release}
 %description selftests-internal
 Kernel sample programs and selftests.
 
@@ -1181,7 +1215,17 @@ BuildKernel() {
       cp arch/$Arch/boot/zImage.stub $RPM_BUILD_ROOT/%{image_install_path}/zImage.stub-$KernelVer || :
       cp arch/$Arch/boot/zImage.stub $RPM_BUILD_ROOT/lib/modules/$KernelVer/zImage.stub-$KernelVer || :
     fi
+
     %if %{signkernel}
+    if [ "$KernelImage" = vmlinux ]; then
+        # We can't strip and sign $KernelImage in place, because
+        # we need to preserve original vmlinux for debuginfo.
+        # Use a copy for signing.
+        $CopyKernel $KernelImage $KernelImage.tosign
+        KernelImage=$KernelImage.tosign
+        CopyKernel=cp
+    fi
+
     # Sign the image if we're using EFI
     # aarch64 kernels are gziped EFI images
     KernelExtension=${KernelImage##*.}
@@ -1190,7 +1234,21 @@ BuildKernel() {
     else
         SignImage=$KernelImage
     fi
-    %pesign -s -i $SignImage -o vmlinuz.signed -a %{SOURCE13} -c %{SOURCE14} -n %{pesign_name}
+
+    %ifarch x86_64 aarch64
+    %pesign -s -i $SignImage -o vmlinuz.signed -a %{secureboot_ca} -c %{secureboot_key} -n %{pesign_name}
+    %endif
+    %ifarch s390x ppc64le
+    if [ -x /usr/bin/rpm-sign ]; then
+	rpm-sign --key "%{pesign_name}" --lkmsign $SignImage --output vmlinuz.signed
+    elif [ $DoModules -eq 1 ]; then
+	chmod +x scripts/sign-file
+	./scripts/sign-file -p sha256 certs/signing_key.pem certs/signing_key.x509 $SignImage vmlinuz.signed
+    else
+	mv $SignImage vmlinuz.signed
+    fi
+    %endif
+
     if [ ! -s vmlinuz.signed ]; then
         echo "pesigning failed"
         exit 1
@@ -1199,7 +1257,8 @@ BuildKernel() {
     if [ "$KernelExtension" == "gz" ]; then
         gzip -f9 $SignImage
     fi
-    %endif
+    %endif # signkernel
+
     $CopyKernel $KernelImage \
                 $RPM_BUILD_ROOT/%{image_install_path}/$InstallName-$KernelVer
     chmod 755 $RPM_BUILD_ROOT/%{image_install_path}/$InstallName-$KernelVer
@@ -1402,7 +1461,6 @@ BuildKernel() {
     cp -a --parents tools/include/tools/le_byteshift.h $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
     cp -a --parents arch/x86/purgatory/purgatory.c $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
     cp -a --parents arch/x86/purgatory/stack.S $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
-    cp -a --parents arch/x86/purgatory/string.c $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
     cp -a --parents arch/x86/purgatory/setup-x86_64.S $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
     cp -a --parents arch/x86/purgatory/entry64.S $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
     cp -a --parents arch/x86/boot/string.h $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
@@ -1566,7 +1624,18 @@ BuildKernel() {
 
     # Red Hat UEFI Secure Boot CA cert, which can be used to authenticate the kernel
     mkdir -p $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer
-    install -m 0644 %{SOURCE13} $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/kernel-signing-ca.cer
+    install -m 0644 %{secureboot_ca} $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/kernel-signing-ca.cer
+    %ifarch s390x ppc64le
+    if [ $DoModules -eq 1 ]; then
+	if [ -x /usr/bin/rpm-sign ]; then
+	    install -m 0644 %{secureboot_key} $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/%{signing_key_filename}
+	else
+	    install -m 0644 certs/signing_key.x509.sign${Flav} $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/kernel-signing-ca.cer
+	    openssl x509 -in certs/signing_key.pem.sign${Flav} -outform der -out $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/%{signing_key_filename}
+	    chmod 0644 $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/%{signing_key_filename}
+	fi
+    fi
+    %endif
 
 %if %{with_ipaclones}
     MAXPROCS=$(echo %{?_smp_mflags} | sed -n 's/-j\s*\([0-9]\+\)/\1/p')
@@ -1658,15 +1727,11 @@ popd
 %endif
 
 %if %{with_selftests}
-# Unfortunately, samples/bpf/Makefile expects that the headers are installed
-# in the source tree. We installed them previously to $RPM_BUILD_ROOT/usr
-# but there's no way to tell the Makefile to take them from there.
-make headers_install
 %{make} -s ARCH=$Arch V=1 samples/bpf/
 pushd tools/testing/selftests
 # We need to install here because we need to call make with ARCH set which
 # doesn't seem possible to do in the install section.
-%{make} -s ARCH=$Arch V=1 TARGETS="bpf net" INSTALL_PATH=%{buildroot}%{_libexecdir}/kselftests install
+%{make} -s ARCH=$Arch V=1 TARGETS="bpf livepatch net" INSTALL_PATH=%{buildroot}%{_libexecdir}/kselftests install
 popd
 %endif
 
@@ -1781,26 +1846,20 @@ find $RPM_BUILD_ROOT/usr/include \
 %if %{with_cross_headers}
 HDR_ARCH_LIST='arm64 powerpc s390 x86'
 mkdir -p $RPM_BUILD_ROOT/usr/tmp-headers
-make ARCH=%{hdrarch} HDR_ARCH_LIST="$HDR_ARCH_LIST" INSTALL_HDR_PATH=$RPM_BUILD_ROOT/usr/tmp-headers headers_install_all
 
-find $RPM_BUILD_ROOT/usr/tmp-headers/include \
+for arch in $HDR_ARCH_LIST; do
+	mkdir $RPM_BUILD_ROOT/usr/tmp-headers/arch-${arch}
+	make ARCH=${arch} INSTALL_HDR_PATH=$RPM_BUILD_ROOT/usr/tmp-headers/arch-${arch} headers_install
+done
+
+find $RPM_BUILD_ROOT/usr/tmp-headers \
      \( -name .install -o -name .check -o \
         -name ..install.cmd -o -name ..check.cmd \) -delete
 
 # Copy all the architectures we care about to their respective asm directories
 for arch in $HDR_ARCH_LIST ; do
-mkdir -p $RPM_BUILD_ROOT/usr/${arch}-linux-gnu/include
-mv $RPM_BUILD_ROOT/usr/tmp-headers/include/arch-${arch}/asm $RPM_BUILD_ROOT/usr/${arch}-linux-gnu/include/
-cp -a $RPM_BUILD_ROOT/usr/tmp-headers/include/asm-generic $RPM_BUILD_ROOT/usr/${arch}-linux-gnu/include/.
-done
-
-# Remove the rest of the architectures
-rm -rf $RPM_BUILD_ROOT/usr/tmp-headers/include/arch*
-rm -rf $RPM_BUILD_ROOT/usr/tmp-headers/include/asm-*
-
-# Copy the rest of the headers over
-for arch in $HDR_ARCH_LIST ; do
-cp -a $RPM_BUILD_ROOT/usr/tmp-headers/include/* $RPM_BUILD_ROOT/usr/${arch}-linux-gnu/include/.
+	mkdir -p $RPM_BUILD_ROOT/usr/${arch}-linux-gnu/include
+	mv $RPM_BUILD_ROOT/usr/tmp-headers/arch-${arch}/include/* $RPM_BUILD_ROOT/usr/${arch}-linux-gnu/include/
 done
 
 rm -rf $RPM_BUILD_ROOT/usr/tmp-headers
@@ -1820,8 +1879,6 @@ tar xjvf %{SOURCE300} -C $INSTALL_KABI_PATH
 %{perf_make} DESTDIR=$RPM_BUILD_ROOT lib=%{_lib} install-bin install-traceevent-plugins
 # remove the 'trace' symlink.
 rm -f %{buildroot}%{_bindir}/trace
-# remove the perf-tips
-rm -rf %{buildroot}%{_docdir}/perf-tip
 
 # For both of the below, yes, this should be using a macro but right now
 # it's hard coded and we don't actually want it anyway right now.
@@ -1929,6 +1986,12 @@ pushd tools/testing/selftests/tc-testing
 find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/tc-testing/{} \;
 find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/tc-testing/{} \;
 find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/tc-testing/{} \;
+popd
+# install livepatch selftests
+pushd tools/testing/selftests/livepatch
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/livepatch/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/livepatch/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/livepatch/{} \;
 popd
 %endif
 
@@ -2135,6 +2198,7 @@ fi
 %{_mandir}/man[1-8]/perf*
 %{_sysconfdir}/bash_completion.d/perf
 %doc linux-%{KVERREL}/tools/perf/Documentation/examples.txt
+%{_docdir}/perf-tip/tips.txt
 
 %files -n python3-perf
 %{python3_sitearch}/*
@@ -2236,7 +2300,7 @@ fi
 #
 # This macro defines the %%files sections for a kernel package
 # and its devel and debuginfo packages.
-#	%%kernel_variant_files [-k vmlinux] <condition> <subpackage>
+#	%%kernel_variant_files [-k vmlinux] <condition> <subpackage> <without_modules>
 #
 %define kernel_variant_files(k:) \
 %if %{2}\
@@ -2266,6 +2330,11 @@ fi
 /lib/modules/%{KVERREL}%{?3:+%{3}}/bls.conf\
 /lib/modules/%{KVERREL}%{?3:+%{3}}/weak-updates\
 %{_datadir}/doc/kernel-keys/%{KVERREL}%{?3:+%{3}}/kernel-signing-ca.cer\
+%ifarch s390x ppc64le\
+%if 0%{!?4:1}\
+%{_datadir}/doc/kernel-keys/%{KVERREL}%{?3:+%{3}}/%{signing_key_filename} \
+%endif\
+%endif\
 %if %{1}\
 /lib/modules/%{KVERREL}%{?3:+%{3}}/vdso\
 %endif\
@@ -2296,7 +2365,7 @@ fi
 %kernel_variant_files %{_use_vdso} %{with_up}
 %kernel_variant_files %{_use_vdso} %{with_debug} debug
 %kernel_variant_files %{use_vdso} %{with_pae} lpae
-%kernel_variant_files %{_use_vdso} %{with_zfcpdump} zfcpdump
+%kernel_variant_files %{_use_vdso} %{with_zfcpdump} zfcpdump 1
 
 %define kernel_variant_ipaclones(k:) \
 %if %{1}\
