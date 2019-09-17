@@ -1995,7 +1995,8 @@ __acquires(fi->lock)
 static int tree_insert(struct rb_root *root, struct fuse_req *ins_req)
 {
 	pgoff_t idx_from = ins_req->misc.write.in.offset >> PAGE_CACHE_SHIFT;
-	pgoff_t idx_to   = idx_from + ins_req->num_pages - 1;
+	pgoff_t idx_to   = ins_req->num_pages ?
+				idx_from + ins_req->num_pages - 1 : idx_from;
 	struct rb_node **p = &root->rb_node;
 	struct rb_node  *parent = NULL;
 
@@ -2035,7 +2036,7 @@ static void fuse_writepage_end(struct fuse_conn *fc, struct fuse_req *req)
 		req->misc.write.next = next->misc.write.next;
 		next->misc.write.next = NULL;
 		next->ff = fuse_file_get(req->ff);
-		tree_insert(&fi->writepages, req);
+		tree_insert(&fi->writepages, next);
 
 		/*
 		 * Skip fuse_flush_writepages() to make it easy to crop requests
