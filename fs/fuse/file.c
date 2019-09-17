@@ -2045,7 +2045,8 @@ static struct fuse_writepage_args *fuse_insert_writeback(struct rb_root *root,
 						struct fuse_writepage_args *wpa)
 {
 	pgoff_t idx_from = wpa->ia.write.in.offset >> PAGE_SHIFT;
-	pgoff_t idx_to = idx_from + wpa->ia.ap.num_pages - 1;
+	pgoff_t idx_to = wpa->ia.ap.num_pages?
+				idx_from + wpa->ia.ap.num_pages - 1: idx_from;
 	struct rb_node **p = &root->rb_node;
 	struct rb_node  *parent = NULL;
 
