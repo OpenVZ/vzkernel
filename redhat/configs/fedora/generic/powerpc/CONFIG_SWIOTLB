@@ -1,1 +1,1 @@
-# CONFIG_SWIOTLB is not set
+CONFIG_SWIOTLB=y
