@@ -1995,7 +1995,8 @@ __acquires(fi->lock)
 static int tree_insert(struct rb_root *root, struct fuse_writepage_args *ins_wpa)
 {
 	pgoff_t idx_from = ins_wpa->ia.write.in.offset >> PAGE_SHIFT;
-	pgoff_t idx_to   = idx_from + ins_wpa->ia.ap.num_pages - 1;
+	pgoff_t idx_to   = ins_wpa->ia.ap.num_pages ?
+			   idx_from + ins_wpa->ia.ap.num_pages - 1 : idx_from;
 	struct rb_node **p = &root->rb_node;
 	struct rb_node  *parent = NULL;
 
