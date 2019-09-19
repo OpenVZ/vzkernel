@@ -121,6 +121,9 @@ Summary: The Linux kernel
 #
 # build a release kernel on rawhide
 %define with_release   %{?_with_release:      1} %{?!_with_release:      0}
+#
+# check for mismatched config options
+%define with_configchecks %{?_without_configchecks:        0} %{?!_without_configchecks:        1}
 
 # The kernel tarball/base version
 %define kversion %%KVERSION%%.%%KPATCHLEVEL%%
@@ -1103,7 +1106,11 @@ done
 %endif
 
 cp %{SOURCE42} .
-./process_configs.sh -w -n -c kernel %{rpmversion}
+OPTS=""
+%if %{with_configchecks}
+	OPTS="$OPTS -w -n -c"
+%endif
+./process_configs.sh $OPTS kernel %{rpmversion}
 
 # end of kernel config
 %endif

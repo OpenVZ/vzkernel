@@ -38,6 +38,15 @@ else
    DIST_TARGET=rhel
 endif
 
+ifeq ("$(NO_CONFIGCHECKS)","1")
+   PROCESS_CONFIGS_OPTS=
+   PROCESS_CONFIGS_CHECK_OPTS=
+   BUILDOPTS += -configchecks
+else
+   PROCESS_CONFIGS_CHECK_OPTS=-n -t -c
+   PROCESS_CONFIGS_OPTS=-n -w -c
+endif
+
 #ifeq ($(shell git diff --quiet HEAD && git describe --exact-match 2>/dev/null && echo ok),)
 BUILD_TARGET ?= --scratch $(BUILD_SCRATCH_TARGET)
 #else
@@ -140,10 +149,10 @@ rh-kabi-dw-check: rh-kabi
 
 rh-configs: rh-configs-prep
 	@cd $(REDHAT)/configs; VERSION=$(KVERSION) ./generate_all_configs.sh; \
-	./process_configs.sh -n -w -c $(PACKAGE_NAME) $(KVERSION)
+	./process_configs.sh $(PROCESS_CONFIGS_OPTS) $(PACKAGE_NAME) $(KVERSION)
 
 rh-configs-check: rh-configs-prep
-	cd $(REDHAT)/configs; ./process_configs.sh -n -t -c $(PACKAGE_NAME)
+	cd $(REDHAT)/configs; ./process_configs.sh $(PROCESS_CONFIGS_CHECK_OPTS) $(PACKAGE_NAME)
 
 rh-configs-prep: rh-clean-configs
 	cd $(REDHAT)/configs; TARGET=$(DIST_TARGET) ./build_configs.sh $(PACKAGE_NAME) $(ARCH_MACH)
