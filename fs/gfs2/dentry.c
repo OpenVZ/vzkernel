@@ -93,12 +93,6 @@ invalid_gunlock:
 	if (!had_lock)
 		gfs2_glock_dq_uninit(&d_gh);
 invalid:
-	if (inode && S_ISDIR(inode->i_mode)) {
-		if (have_submounts(dentry))
-			goto valid;
-		shrink_dcache_parent(dentry);
-	}
-	d_drop(dentry);
 	dput(parent);
 	return 0;
 
@@ -109,8 +103,7 @@ fail:
 	return 0;
 }
 
-static int gfs2_dhash(const struct dentry *dentry, const struct inode *inode,
-		struct qstr *str)
+static int gfs2_dhash(const struct dentry *dentry, struct qstr *str)
 {
 	str->hash = gfs2_disk_hash(str->name, str->len);
 	return 0;
@@ -124,7 +117,7 @@ static int gfs2_dentry_delete(const struct dentry *dentry)
 		return 0;
 
 	ginode = GFS2_I(dentry->d_inode);
-	if (!ginode->i_iopen_gh.gh_gl)
+	if (!gfs2_holder_initialized(&ginode->i_iopen_gh))
 		return 0;
 
 	if (test_bit(GLF_DEMOTE, &ginode->i_iopen_gh.gh_gl->gl_flags))

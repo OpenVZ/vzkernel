@@ -167,6 +167,7 @@ struct ucred {
 #define AF_PPPOX	24	/* PPPoX sockets		*/
 #define AF_WANPIPE	25	/* Wanpipe API Sockets */
 #define AF_LLC		26	/* Linux LLC			*/
+#define AF_IB		27	/* Native InfiniBand address	*/
 #define AF_CAN		29	/* Controller Area Network      */
 #define AF_TIPC		30	/* TIPC sockets			*/
 #define AF_BLUETOOTH	31	/* Bluetooth sockets 		*/
@@ -211,6 +212,7 @@ struct ucred {
 #define PF_PPPOX	AF_PPPOX
 #define PF_WANPIPE	AF_WANPIPE
 #define PF_LLC		AF_LLC
+#define PF_IB		AF_IB
 #define PF_CAN		AF_CAN
 #define PF_TIPC		AF_TIPC
 #define PF_BLUETOOTH	AF_BLUETOOTH
@@ -307,6 +309,12 @@ extern void cred_to_ucred(struct pid *pid, const struct cred *cred, struct ucred
 
 extern int memcpy_fromiovecend(unsigned char *kdata, const struct iovec *iov,
 			       int offset, int len);
+extern int memcpy_fromiovecend_partial_nocache(unsigned char *kdata,
+					       const struct iovec *iov,
+					       int offset, int len);
+extern int memcpy_fromiovecend_partial_flushcache(unsigned char *kdata,
+					       const struct iovec *iov,
+					       int offset, int len);
 extern int csum_partial_copy_fromiovecend(unsigned char *kdata, 
 					  struct iovec *iov, 
 					  int offset, 
@@ -315,6 +323,16 @@ extern int csum_partial_copy_fromiovecend(unsigned char *kdata,
 extern int verify_iovec(struct msghdr *m, struct iovec *iov, struct sockaddr_storage *address, int mode);
 extern int memcpy_toiovecend(const struct iovec *v, unsigned char *kdata,
 			     int offset, int len);
+extern int memcpy_toiovecend_partial(const struct iovec *v,
+				     unsigned char *kdata, int offset, int len);
+
+#ifdef CONFIG_ARCH_HAS_UACCESS_MCSAFE
+int memcpy_toiovecend_partial_mcsafe(const struct iovec *v, unsigned char *kdata,
+				     int offset, int len);
+#else
+#define memcpy_toiovecend_partial_mcsafe memcpy_toiovecend_partial
+#endif
+
 extern int move_addr_to_kernel(void __user *uaddr, int ulen, struct sockaddr_storage *kaddr);
 extern int put_cmsg(struct msghdr*, int level, int type, int len, void *data);
 

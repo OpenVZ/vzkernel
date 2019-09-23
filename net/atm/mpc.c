@@ -599,7 +599,7 @@ static netdev_tx_t mpc_send_packet(struct sk_buff *skb,
 	}
 
 non_ip:
-	return mpc->old_ops->ndo_start_xmit(skb, dev);
+	return __netdev_start_xmit(mpc->old_ops, skb, dev, false);
 }
 
 static int atm_mpoa_vcc_attach(struct atm_vcc *vcc, void __user *arg)
@@ -803,7 +803,7 @@ static int atm_mpoa_mpoad_attach(struct atm_vcc *vcc, int arg)
 		mpc_timer_refresh();
 
 		/* This lets us now how our LECs are doing */
-		err = register_netdevice_notifier(&mpoa_notifier);
+		err = register_netdevice_notifier_rh(&mpoa_notifier);
 		if (err < 0) {
 			del_timer(&mpc_timer);
 			return err;
@@ -998,13 +998,11 @@ int msg_to_mpoad(struct k_message *mesg, struct mpoa_client *mpc)
 }
 
 static int mpoa_event_listener(struct notifier_block *mpoa_notifier,
-			       unsigned long event, void *dev_ptr)
+			       unsigned long event, void *ptr)
 {
-	struct net_device *dev;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct mpoa_client *mpc;
 	struct lec_priv *priv;
-
-	dev = dev_ptr;
 
 	if (!net_eq(dev_net(dev), &init_net))
 		return NOTIFY_DONE;
@@ -1495,7 +1493,7 @@ static void __exit atm_mpoa_cleanup(void)
 	mpc_proc_clean();
 
 	del_timer(&mpc_timer);
-	unregister_netdevice_notifier(&mpoa_notifier);
+	unregister_netdevice_notifier_rh(&mpoa_notifier);
 	deregister_atm_ioctl(&atm_ioctl_ops);
 
 	mpc = mpcs;

@@ -174,11 +174,12 @@
 struct compal_data{
 	/* Fan control */
 	struct device *hwmon_dev;
+	struct power_supply_config psy_cfg;
 	int pwm_enable; /* 0:full on, 1:set by pwm1, 2:control by moterboard */
 	unsigned char curr_pwm;
 
 	/* Power supply */
-	struct power_supply psy;
+	struct power_supply *psy;
 	struct power_supply_info psy_info;
 	char bat_model_name[BAT_MODEL_NAME_LEN + 1];
 	char bat_manufacturer_name[BAT_MANUFACTURER_NAME_LEN + 1];
@@ -573,8 +574,7 @@ static int bat_get_property(struct power_supply *psy,
 				enum power_supply_property psp,
 				union power_supply_propval *val)
 {
-	struct compal_data *data;
-	data = container_of(psy, struct compal_data, psy);
+	struct compal_data *data = power_supply_get_drvdata(psy);
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
@@ -884,13 +884,16 @@ static struct dmi_system_id __initdata compal_dmi_table[] = {
 };
 MODULE_DEVICE_TABLE(dmi, compal_dmi_table);
 
+static const struct power_supply_desc psy_bat_desc = {
+	.name		= DRIVER_NAME,
+	.type		= POWER_SUPPLY_TYPE_BATTERY,
+	.properties	= compal_bat_properties,
+	.num_properties	= ARRAY_SIZE(compal_bat_properties),
+	.get_property	= bat_get_property,
+};
+
 static void initialize_power_supply_data(struct compal_data *data)
 {
-	data->psy.name = DRIVER_NAME;
-	data->psy.type = POWER_SUPPLY_TYPE_BATTERY;
-	data->psy.properties = compal_bat_properties;
-	data->psy.num_properties = ARRAY_SIZE(compal_bat_properties);
-	data->psy.get_property = bat_get_property;
 
 	ec_read_sequence(BAT_MANUFACTURER_NAME_ADDR,
 					data->bat_manufacturer_name,
@@ -1019,6 +1022,7 @@ static int compal_probe(struct platform_device *pdev)
 {
 	int err;
 	struct compal_data *data;
+	struct power_supply_config psy_cfg = {};
 
 	if (!extra_features)
 		return 0;
@@ -1047,11 +1051,22 @@ static int compal_probe(struct platform_device *pdev)
 
 	/* Power supply */
 	initialize_power_supply_data(data);
-	power_supply_register(&compal_device->dev, &data->psy);
+	psy_cfg.drv_data = data;
+	data->psy = power_supply_register(&compal_device->dev, &psy_bat_desc,
+					  &psy_cfg);
+	if (IS_ERR(data->psy)) {
+		err = PTR_ERR(data->psy);
+		goto remove;
+	}
 
 	platform_set_drvdata(pdev, data);
 
 	return 0;
+remove:
+	hwmon_device_unregister(data->hwmon_dev);
+	sysfs_remove_group(&pdev->dev.kobj, &compal_attribute_group);
+	kfree(data);
+	return err;
 }
 
 static void __exit compal_cleanup(void)
@@ -1079,7 +1094,7 @@ static int compal_remove(struct platform_device *pdev)
 
 	data = platform_get_drvdata(pdev);
 	hwmon_device_unregister(data->hwmon_dev);
-	power_supply_unregister(&data->psy);
+	power_supply_unregister(data->psy);
 
 	platform_set_drvdata(pdev, NULL);
 	kfree(data);

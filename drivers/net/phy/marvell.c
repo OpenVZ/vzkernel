@@ -48,6 +48,8 @@
 #define MII_M1011_IMASK_CLEAR		0x0000
 
 #define MII_M1011_PHY_SCR		0x10
+#define MII_M1011_PHY_SCR_MDI		0x0000
+#define MII_M1011_PHY_SCR_MDI_X		0x0020
 #define MII_M1011_PHY_SCR_AUTO_CROSS	0x0060
 
 #define MII_M1145_PHY_EXT_CR		0x14
@@ -146,6 +148,43 @@ static int marvell_config_intr(struct phy_device *phydev)
 	return err;
 }
 
+static int marvell_set_polarity(struct phy_device *phydev, int polarity)
+{
+	int reg;
+	int err;
+	int val;
+
+	/* get the current settings */
+	reg = phy_read(phydev, MII_M1011_PHY_SCR);
+	if (reg < 0)
+		return reg;
+
+	val = reg;
+	val &= ~MII_M1011_PHY_SCR_AUTO_CROSS;
+	switch (polarity) {
+	case ETH_TP_MDI:
+		val |= MII_M1011_PHY_SCR_MDI;
+		break;
+	case ETH_TP_MDI_X:
+		val |= MII_M1011_PHY_SCR_MDI_X;
+		break;
+	case ETH_TP_MDI_AUTO:
+	case ETH_TP_MDI_INVALID:
+	default:
+		val |= MII_M1011_PHY_SCR_AUTO_CROSS;
+		break;
+	}
+
+	if (val != reg) {
+		/* Set the new polarity value in the register */
+		err = phy_write(phydev, MII_M1011_PHY_SCR, val);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
 static int marvell_config_aneg(struct phy_device *phydev)
 {
 	int err;
@@ -178,8 +217,7 @@ static int marvell_config_aneg(struct phy_device *phydev)
 	if (err < 0)
 		return err;
 
-	err = phy_write(phydev, MII_M1011_PHY_SCR,
-			MII_M1011_PHY_SCR_AUTO_CROSS);
+	err = marvell_set_polarity(phydev, phydev->mdix);
 	if (err < 0)
 		return err;
 
@@ -232,10 +270,11 @@ static int marvell_of_reg_init(struct phy_device *phydev)
 	const __be32 *paddr;
 	int len, i, saved_page, current_page, page_changed, ret;
 
-	if (!phydev->dev.of_node)
+	if (!phydev->mdio_dev.of_node)
 		return 0;
 
-	paddr = of_get_property(phydev->dev.of_node, "marvell,reg-init", &len);
+	paddr = of_get_property(phydev->mdio_dev.of_node,
+				"marvell,reg-init", &len);
 	if (!paddr || len < (4 * sizeof(*paddr)))
 		return 0;
 

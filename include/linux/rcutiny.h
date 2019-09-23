@@ -31,6 +31,16 @@ static inline void rcu_init(void)
 {
 }
 
+static inline unsigned long get_state_synchronize_rcu(void)
+{
+	return 0;
+}
+
+static inline void cond_synchronize_rcu(unsigned long oldstate)
+{
+	might_sleep();
+}
+
 static inline void rcu_barrier_bh(void)
 {
 	wait_rcu_gp(call_rcu_bh);
@@ -91,9 +101,9 @@ static inline void rcu_preempt_note_context_switch(void)
 {
 }
 
-static inline int rcu_needs_cpu(int cpu, unsigned long *delta_jiffies)
+static inline int rcu_needs_cpu(int cpu, u64 *nextevt)
 {
-	*delta_jiffies = ULONG_MAX;
+	*nextevt = KTIME_MAX;
 	return 0;
 }
 
@@ -102,9 +112,9 @@ static inline int rcu_needs_cpu(int cpu, unsigned long *delta_jiffies)
 void rcu_preempt_note_context_switch(void);
 int rcu_preempt_needs_cpu(void);
 
-static inline int rcu_needs_cpu(int cpu, unsigned long *delta_jiffies)
+static inline int rcu_needs_cpu(int cpu, u64 *nextevt)
 {
-	*delta_jiffies = ULONG_MAX;
+	*nextevt = KTIME_MAX;
 	return rcu_preempt_needs_cpu();
 }
 
@@ -164,5 +174,22 @@ static inline void rcu_scheduler_starting(void)
 {
 }
 #endif /* #else #ifdef CONFIG_DEBUG_LOCK_ALLOC */
+
+#if defined(CONFIG_DEBUG_LOCK_ALLOC) || defined(CONFIG_RCU_TRACE)
+
+static inline bool rcu_is_watching(void)
+{
+	return __rcu_is_watching();
+}
+
+#else /* defined(CONFIG_DEBUG_LOCK_ALLOC) || defined(CONFIG_RCU_TRACE) */
+
+static inline bool rcu_is_watching(void)
+{
+	return true;
+}
+
+
+#endif /* #else defined(CONFIG_DEBUG_LOCK_ALLOC) || defined(CONFIG_RCU_TRACE) */
 
 #endif /* __LINUX_RCUTINY_H */

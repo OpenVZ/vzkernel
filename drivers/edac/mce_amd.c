@@ -6,10 +6,9 @@
 static struct amd_decoder_ops *fam_ops;
 
 static u8 xec_mask	 = 0xf;
-static u8 nb_err_cpumask = 0xf;
 
 static bool report_gart_errors;
-static void (*nb_bus_decoder)(int node_id, struct mce *m);
+static void (*decode_dram_ecc)(int node_id, struct mce *m);
 
 void amd_report_gart_errors(bool v)
 {
@@ -19,16 +18,16 @@ EXPORT_SYMBOL_GPL(amd_report_gart_errors);
 
 void amd_register_ecc_decoder(void (*f)(int, struct mce *))
 {
-	nb_bus_decoder = f;
+	decode_dram_ecc = f;
 }
 EXPORT_SYMBOL_GPL(amd_register_ecc_decoder);
 
 void amd_unregister_ecc_decoder(void (*f)(int, struct mce *))
 {
-	if (nb_bus_decoder) {
-		WARN_ON(nb_bus_decoder != f);
+	if (decode_dram_ecc) {
+		WARN_ON(decode_dram_ecc != f);
 
-		nb_bus_decoder = NULL;
+		decode_dram_ecc = NULL;
 	}
 }
 EXPORT_SYMBOL_GPL(amd_unregister_ecc_decoder);
@@ -79,7 +78,8 @@ static const char * const f15h_mc1_mce_desc[] = {
 	"uop queue",
 	"insn buffer",
 	"predecode buffer",
-	"fetch address FIFO"
+	"fetch address FIFO",
+	"dispatch uop queue"
 };
 
 static const char * const f15h_mc2_mce_desc[] = {
@@ -134,7 +134,256 @@ static const char * const mc5_mce_desc[] = {
 	"Physical register file AG0 port",
 	"Physical register file AG1 port",
 	"Flag register file",
-	"DE error occurred"
+	"DE error occurred",
+	"Retire status queue"
+};
+
+/* Scalable MCA error strings */
+static const char * const smca_ls_mce_desc[] = {
+	"Load queue parity",
+	"Store queue parity",
+	"Miss address buffer payload parity",
+	"L1 TLB parity",
+	"DC Tag error type 5",
+	"DC tag error type 6",
+	"DC tag error type 1",
+	"Internal error type 1",
+	"Internal error type 2",
+	"Sys Read data error thread 0",
+	"Sys read data error thread 1",
+	"DC tag error type 2",
+	"DC data error type 1 (poison comsumption)",
+	"DC data error type 2",
+	"DC data error type 3",
+	"DC tag error type 4",
+	"L2 TLB parity",
+	"PDC parity error",
+	"DC tag error type 3",
+	"DC tag error type 5",
+	"L2 fill data error",
+};
+
+static const char * const smca_if_mce_desc[] = {
+	"microtag probe port parity error",
+	"IC microtag or full tag multi-hit error",
+	"IC full tag parity",
+	"IC data array parity",
+	"Decoupling queue phys addr parity error",
+	"L0 ITLB parity error",
+	"L1 ITLB parity error",
+	"L2 ITLB parity error",
+	"BPQ snoop parity on Thread 0",
+	"BPQ snoop parity on Thread 1",
+	"L1 BTB multi-match error",
+	"L2 BTB multi-match error",
+	"L2 Cache Response Poison error",
+	"System Read Data error",
+};
+
+static const char * const smca_l2_mce_desc[] = {
+	"L2M tag multi-way-hit error",
+	"L2M tag ECC error",
+	"L2M data ECC error",
+	"HW assert",
+};
+
+static const char * const smca_de_mce_desc[] = {
+	"uop cache tag parity error",
+	"uop cache data parity error",
+	"Insn buffer parity error",
+	"uop queue parity error",
+	"Insn dispatch queue parity error",
+	"Fetch address FIFO parity",
+	"Patch RAM data parity",
+	"Patch RAM sequencer parity",
+	"uop buffer parity"
+};
+
+static const char * const smca_ex_mce_desc[] = {
+	"Watchdog timeout error",
+	"Phy register file parity",
+	"Flag register file parity",
+	"Immediate displacement register file parity",
+	"Address generator payload parity",
+	"EX payload parity",
+	"Checkpoint queue parity",
+	"Retire dispatch queue parity",
+	"Retire status queue parity error",
+	"Scheduling queue parity error",
+	"Branch buffer queue parity error",
+	"Hardware Assertion error",
+};
+
+static const char * const smca_fp_mce_desc[] = {
+	"Physical register file parity",
+	"Freelist parity error",
+	"Schedule queue parity",
+	"NSQ parity error",
+	"Retire queue parity",
+	"Status register file parity",
+	"Hardware assertion",
+};
+
+static const char * const smca_l3_mce_desc[] = {
+	"Shadow tag macro ECC error",
+	"Shadow tag macro multi-way-hit error",
+	"L3M tag ECC error",
+	"L3M tag multi-way-hit error",
+	"L3M data ECC error",
+	"XI parity, L3 fill done channel error",
+	"L3 victim queue parity",
+	"L3 HW assert",
+};
+
+static const char * const smca_cs_mce_desc[] = {
+	"Illegal request from transport layer",
+	"Address violation",
+	"Security violation",
+	"Illegal response from transport layer",
+	"Unexpected response",
+	"Parity error on incoming request or probe response data",
+	"Parity error on incoming read response data",
+	"Atomic request parity",
+	"ECC error on probe filter access",
+};
+
+static const char * const smca_cs2_mce_desc[] = {
+	"Illegal Request",
+	"Address Violation",
+	"Security Violation",
+	"Illegal Response",
+	"Unexpected Response",
+	"Request or Probe Parity Error",
+	"Read Response Parity Error",
+	"Atomic Request Parity Error",
+	"SDP read response had no match in the CS queue",
+	"Probe Filter Protocol Error",
+	"Probe Filter ECC Error",
+	"SDP read response had an unexpected RETRY error",
+	"Counter overflow error",
+	"Counter underflow error",
+};
+
+static const char * const smca_pie_mce_desc[] = {
+	"HW assert",
+	"Internal PIE register security violation",
+	"Error on GMI link",
+	"Poison data written to internal PIE register",
+	"A deferred error was detected in the DF"
+};
+
+static const char * const smca_umc_mce_desc[] = {
+	"DRAM ECC error",
+	"Data poison error on DRAM",
+	"SDP parity error",
+	"Advanced peripheral bus error",
+	"Command/address parity error",
+	"Write data CRC error",
+	"DCQ SRAM ECC error",
+	"AES SRAM ECC error",
+};
+
+static const char * const smca_pb_mce_desc[] = {
+	"Parameter Block RAM ECC error",
+};
+
+static const char * const smca_psp_mce_desc[] = {
+	"PSP RAM ECC or parity error",
+};
+
+static const char * const smca_psp2_mce_desc[] = {
+	"High SRAM ECC or parity error",
+	"Low SRAM ECC or parity error",
+	"Instruction Cache Bank 0 ECC or parity error",
+	"Instruction Cache Bank 1 ECC or parity error",
+	"Instruction Tag Ram 0 parity error",
+	"Instruction Tag Ram 1 parity error",
+	"Data Cache Bank 0 ECC or parity error",
+	"Data Cache Bank 1 ECC or parity error",
+	"Data Cache Bank 2 ECC or parity error",
+	"Data Cache Bank 3 ECC or parity error",
+	"Data Tag Bank 0 parity error",
+	"Data Tag Bank 1 parity error",
+	"Data Tag Bank 2 parity error",
+	"Data Tag Bank 3 parity error",
+	"Dirty Data Ram parity error",
+	"TLB Bank 0 parity error",
+	"TLB Bank 1 parity error",
+	"System Hub Read Buffer ECC or parity error",
+};
+
+static const char * const smca_smu_mce_desc[] = {
+	"SMU RAM ECC or parity error",
+};
+
+static const char * const smca_smu2_mce_desc[] = {
+	"High SRAM ECC or parity error",
+	"Low SRAM ECC or parity error",
+	"Data Cache Bank A ECC or parity error",
+	"Data Cache Bank B ECC or parity error",
+	"Data Tag Cache Bank A ECC or parity error",
+	"Data Tag Cache Bank B ECC or parity error",
+	"Instruction Cache Bank A ECC or parity error",
+	"Instruction Cache Bank B ECC or parity error",
+	"Instruction Tag Cache Bank A ECC or parity error",
+	"Instruction Tag Cache Bank B ECC or parity error",
+	"System Hub Read Buffer ECC or parity error",
+};
+
+static const char * const smca_mp5_mce_desc[] = {
+	"High SRAM ECC or parity error",
+	"Low SRAM ECC or parity error",
+	"Data Cache Bank A ECC or parity error",
+	"Data Cache Bank B ECC or parity error",
+	"Data Tag Cache Bank A ECC or parity error",
+	"Data Tag Cache Bank B ECC or parity error",
+	"Instruction Cache Bank A ECC or parity error",
+	"Instruction Cache Bank B ECC or parity error",
+	"Instruction Tag Cache Bank A ECC or parity error",
+	"Instruction Tag Cache Bank B ECC or parity error",
+};
+
+static const char * const smca_nbio_mce_desc[] = {
+	"ECC or Parity error",
+	"PCIE error",
+	"SDP ErrEvent error",
+	"SDP Egress Poison Error",
+	"IOHC Internal Poison Error",
+};
+
+static const char * const smca_pcie_mce_desc[] = {
+	"CCIX PER Message logging",
+	"CCIX Read Response with Status: Non-Data Error",
+	"CCIX Write Response with Status: Non-Data Error",
+	"CCIX Read Response with Status: Data Error",
+	"CCIX Non-okay write response with data error",
+};
+
+struct smca_mce_desc {
+	const char * const *descs;
+	unsigned int num_descs;
+};
+
+static struct smca_mce_desc smca_mce_descs[] = {
+	[SMCA_LS]	= { smca_ls_mce_desc,	ARRAY_SIZE(smca_ls_mce_desc)	},
+	[SMCA_IF]	= { smca_if_mce_desc,	ARRAY_SIZE(smca_if_mce_desc)	},
+	[SMCA_L2_CACHE]	= { smca_l2_mce_desc,	ARRAY_SIZE(smca_l2_mce_desc)	},
+	[SMCA_DE]	= { smca_de_mce_desc,	ARRAY_SIZE(smca_de_mce_desc)	},
+	[SMCA_EX]	= { smca_ex_mce_desc,	ARRAY_SIZE(smca_ex_mce_desc)	},
+	[SMCA_FP]	= { smca_fp_mce_desc,	ARRAY_SIZE(smca_fp_mce_desc)	},
+	[SMCA_L3_CACHE]	= { smca_l3_mce_desc,	ARRAY_SIZE(smca_l3_mce_desc)	},
+	[SMCA_CS]	= { smca_cs_mce_desc,	ARRAY_SIZE(smca_cs_mce_desc)	},
+	[SMCA_CS_V2]	= { smca_cs2_mce_desc,	ARRAY_SIZE(smca_cs2_mce_desc)	},
+	[SMCA_PIE]	= { smca_pie_mce_desc,	ARRAY_SIZE(smca_pie_mce_desc)	},
+	[SMCA_UMC]	= { smca_umc_mce_desc,	ARRAY_SIZE(smca_umc_mce_desc)	},
+	[SMCA_PB]	= { smca_pb_mce_desc,	ARRAY_SIZE(smca_pb_mce_desc)	},
+	[SMCA_PSP]	= { smca_psp_mce_desc,	ARRAY_SIZE(smca_psp_mce_desc)	},
+	[SMCA_PSP_V2]	= { smca_psp2_mce_desc,	ARRAY_SIZE(smca_psp2_mce_desc)	},
+	[SMCA_SMU]	= { smca_smu_mce_desc,	ARRAY_SIZE(smca_smu_mce_desc)	},
+	[SMCA_SMU_V2]	= { smca_smu2_mce_desc,	ARRAY_SIZE(smca_smu2_mce_desc)	},
+	[SMCA_MP5]	= { smca_mp5_mce_desc,	ARRAY_SIZE(smca_mp5_mce_desc)	},
+	[SMCA_NBIO]	= { smca_nbio_mce_desc,	ARRAY_SIZE(smca_nbio_mce_desc)	},
+	[SMCA_PCIE]	= { smca_pcie_mce_desc,	ARRAY_SIZE(smca_pcie_mce_desc)	},
 };
 
 static bool f12h_mc0_mce(u16 ec, u8 xec)
@@ -267,6 +516,12 @@ static bool f15h_mc0_mce(u16 ec, u8 xec)
 			pr_cont("System Read Data Error.\n");
 		else
 			pr_cont(" Internal error condition type %d.\n", xec);
+	} else if (INT_ERROR(ec)) {
+		if (xec <= 0x1f)
+			pr_cont("Hardware Assert.\n");
+		else
+			ret = false;
+
 	} else
 		ret = false;
 
@@ -373,7 +628,7 @@ static bool f15h_mc1_mce(u16 ec, u8 xec)
 		pr_cont("%s.\n", f15h_mc1_mce_desc[xec-4]);
 		break;
 
-	case 0x11 ... 0x14:
+	case 0x11 ... 0x15:
 		pr_cont("Decoder %s parity error.\n", f15h_mc1_mce_desc[xec-4]);
 		break;
 
@@ -397,10 +652,20 @@ static void decode_mc1_mce(struct mce *m)
 		bool k8 = (boot_cpu_data.x86 == 0xf && (m->status & BIT_64(58)));
 
 		pr_cont("during %s.\n", (k8 ? "system linefill" : "NB data read"));
+	} else if (INT_ERROR(ec)) {
+		if (xec <= 0x3f)
+			pr_cont("Hardware Assert.\n");
+		else
+			goto wrong_mc1_mce;
 	} else if (fam_ops->mc1_mce(ec, xec))
 		;
 	else
-		pr_emerg(HW_ERR "Corrupted MC1 MCE info?\n");
+		goto wrong_mc1_mce;
+
+	return;
+
+wrong_mc1_mce:
+	pr_emerg(HW_ERR "Corrupted MC1 MCE info?\n");
 }
 
 static bool k8_mc2_mce(u16 ec, u8 xec)
@@ -415,8 +680,8 @@ static bool k8_mc2_mce(u16 ec, u8 xec)
 		pr_cont(": %s error in the L2 cache tags.\n", R4_MSG(ec));
 	else if (xec == 0x0) {
 		if (TLB_ERROR(ec))
-			pr_cont(": %s error in a Page Descriptor Cache or "
-				"Guest TLB.\n", TT_MSG(ec));
+			pr_cont("%s error in a Page Descriptor Cache or Guest TLB.\n",
+				TT_MSG(ec));
 		else if (BUS_ERROR(ec))
 			pr_cont(": %s/ECC error in data read from NB: %s.\n",
 				R4_MSG(ec), PP_MSG(ec));
@@ -468,6 +733,11 @@ static bool f15h_mc2_mce(u16 ec, u8 xec)
 		default:
 			ret = false;
 		}
+	} else if (INT_ERROR(ec)) {
+		if (xec <= 0x3f)
+			pr_cont("Hardware Assert.\n");
+		else
+			ret = false;
 	}
 
 	return ret;
@@ -575,8 +845,8 @@ static void decode_mc4_mce(struct mce *m)
 
 			pr_cont("%s.\n", mc4_mce_desc[xec]);
 
-			if (nb_bus_decoder)
-				nb_bus_decoder(node_id, m);
+			if (decode_dram_ecc)
+				decode_dram_ecc(node_id, m);
 			return;
 		}
 		break;
@@ -615,6 +885,7 @@ static void decode_mc4_mce(struct mce *m)
 static void decode_mc5_mce(struct mce *m)
 {
 	struct cpuinfo_x86 *c = &boot_cpu_data;
+	u16 ec = EC(m->status);
 	u8 xec = XEC(m->status, xec_mask);
 
 	if (c->x86 == 0xf || c->x86 == 0x11)
@@ -622,9 +893,17 @@ static void decode_mc5_mce(struct mce *m)
 
 	pr_emerg(HW_ERR "MC5 Error: ");
 
+	if (INT_ERROR(ec)) {
+		if (xec <= 0x1f) {
+			pr_cont("Hardware Assert.\n");
+			return;
+		} else
+			goto wrong_mc5_mce;
+	}
+
 	if (xec == 0x0 || xec == 0xc)
 		pr_cont("%s.\n", mc5_mce_desc[xec]);
-	else if (xec < 0xd)
+	else if (xec <= 0xd)
 		pr_cont("%s parity error.\n", mc5_mce_desc[xec]);
 	else
 		goto wrong_mc5_mce;
@@ -642,6 +921,10 @@ static void decode_mc6_mce(struct mce *m)
 	pr_emerg(HW_ERR "MC6 Error: ");
 
 	switch (xec) {
+	case 0x0:
+		pr_cont("Hardware Assertion");
+		break;
+
 	case 0x1:
 		pr_cont("Free List");
 		break;
@@ -673,6 +956,46 @@ static void decode_mc6_mce(struct mce *m)
 
  wrong_mc6_mce:
 	pr_emerg(HW_ERR "Corrupted MC6 MCE info?\n");
+}
+
+/* Decode errors according to Scalable MCA specification */
+static void decode_smca_errors(struct mce *m)
+{
+	struct smca_hwid *hwid;
+	enum smca_bank_types bank_type;
+	const char *ip_name;
+	u8 xec = XEC(m->status, xec_mask);
+
+	if (m->bank >= ARRAY_SIZE(smca_banks))
+		return;
+
+	hwid = smca_banks[m->bank].hwid;
+	if (!hwid)
+		return;
+
+	bank_type = hwid->bank_type;
+	if (bank_type == SMCA_RESERVED) {
+		pr_emerg(HW_ERR "Bank %d is reserved.\n", m->bank);
+		return;
+	}
+
+	ip_name = smca_get_long_name(bank_type);
+
+	pr_emerg(HW_ERR "%s Extended Error Code: %d\n", ip_name, xec);
+
+	/* Only print the decode of valid error codes */
+	if (xec < smca_mce_descs[bank_type].num_descs &&
+			(hwid->xec_bitmap & BIT_ULL(xec))) {
+		pr_emerg(HW_ERR "%s Error: ", ip_name);
+		pr_cont("%s.\n", smca_mce_descs[bank_type].descs[xec]);
+	}
+
+	/*
+	 * amd_get_nb_id() returns the last level cache id.
+	 * The last level cache on Fam17h is 1 level below the node.
+	 */
+	if (bank_type == SMCA_UMC && xec == 0 && decode_dram_ecc)
+		decode_dram_ecc(amd_get_nb_id(m->extcpu) >> 1, m);
 }
 
 static inline void amd_decode_err_code(u16 ec)
@@ -740,6 +1063,61 @@ int amd_decode_mce(struct notifier_block *nb, unsigned long val, void *data)
 	if (amd_filter_mce(m))
 		return NOTIFY_STOP;
 
+	pr_emerg(HW_ERR "%s\n", decode_error_status(m));
+
+	pr_emerg(HW_ERR "CPU:%d (%x:%x:%x) MC%d_STATUS[%s|%s|%s|%s|%s",
+		m->extcpu,
+		c->x86, c->x86_model, c->x86_mask,
+		m->bank,
+		((m->status & MCI_STATUS_OVER)	? "Over"  : "-"),
+		((m->status & MCI_STATUS_UC)	? "UE"	  :
+		 (m->status & MCI_STATUS_DEFERRED) ? "-"  : "CE"),
+		((m->status & MCI_STATUS_MISCV)	? "MiscV" : "-"),
+		((m->status & MCI_STATUS_PCC)	? "PCC"	  : "-"),
+		((m->status & MCI_STATUS_ADDRV)	? "AddrV" : "-"));
+
+	if (c->x86 >= 0x15)
+		pr_cont("|%s|%s",
+			((m->status & MCI_STATUS_DEFERRED) ? "Deferred" : "-"),
+			((m->status & MCI_STATUS_POISON)   ? "Poison"   : "-"));
+
+	if (boot_cpu_has(X86_FEATURE_SMCA)) {
+		u32 low, high;
+		u32 addr = MSR_AMD64_SMCA_MCx_CONFIG(m->bank);
+
+		pr_cont("|%s", ((m->status & MCI_STATUS_SYNDV) ? "SyndV" : "-"));
+
+		if (!rdmsr_safe(addr, &low, &high) &&
+		    (low & MCI_CONFIG_MCAX))
+			pr_cont("|%s", ((m->status & MCI_STATUS_TCC) ? "TCC" : "-"));
+	}
+
+	/* do the two bits[14:13] together */
+	ecc = (m->status >> 45) & 0x3;
+	if (ecc)
+		pr_cont("|%sECC", ((ecc == 2) ? "C" : "U"));
+
+	pr_cont("]: 0x%016llx\n", m->status);
+
+	if (m->status & MCI_STATUS_ADDRV)
+		pr_emerg(HW_ERR "Error Addr: 0x%016llx", m->addr);
+
+	if (boot_cpu_has(X86_FEATURE_SMCA)) {
+		if (m->status & MCI_STATUS_SYNDV)
+			pr_cont(", Syndrome: 0x%016llx", m->synd);
+
+		pr_cont(", IPID: 0x%016llx", m->ipid);
+
+		pr_cont("\n");
+
+		decode_smca_errors(m);
+		goto err_code;
+	} else
+		pr_cont("\n");
+
+	if (!fam_ops)
+		goto err_code;
+
 	switch (m->bank) {
 	case 0:
 		decode_mc0_mce(m);
@@ -773,33 +1151,7 @@ int amd_decode_mce(struct notifier_block *nb, unsigned long val, void *data)
 		break;
 	}
 
-	pr_emerg(HW_ERR "Error Status: %s\n", decode_error_status(m));
-
-	pr_emerg(HW_ERR "CPU:%d (%x:%x:%x) MC%d_STATUS[%s|%s|%s|%s|%s",
-		m->extcpu,
-		c->x86, c->x86_model, c->x86_mask,
-		m->bank,
-		((m->status & MCI_STATUS_OVER)	? "Over"  : "-"),
-		((m->status & MCI_STATUS_UC)	? "UE"	  : "CE"),
-		((m->status & MCI_STATUS_MISCV)	? "MiscV" : "-"),
-		((m->status & MCI_STATUS_PCC)	? "PCC"	  : "-"),
-		((m->status & MCI_STATUS_ADDRV)	? "AddrV" : "-"));
-
-	if (c->x86 == 0x15 || c->x86 == 0x16)
-		pr_cont("|%s|%s",
-			((m->status & MCI_STATUS_DEFERRED) ? "Deferred" : "-"),
-			((m->status & MCI_STATUS_POISON)   ? "Poison"   : "-"));
-
-	/* do the two bits[14:13] together */
-	ecc = (m->status >> 45) & 0x3;
-	if (ecc)
-		pr_cont("|%sECC", ((ecc == 2) ? "C" : "U"));
-
-	pr_cont("]: 0x%016llx\n", m->status);
-
-	if (m->status & MCI_STATUS_ADDRV)
-		pr_emerg(HW_ERR "MC%d_ADDR: 0x%016llx\n", m->bank, m->addr);
-
+ err_code:
 	amd_decode_err_code(m->status & 0xffff);
 
 	return NOTIFY_STOP;
@@ -808,6 +1160,7 @@ EXPORT_SYMBOL_GPL(amd_decode_mce);
 
 static struct notifier_block amd_mce_dec_nb = {
 	.notifier_call	= amd_decode_mce,
+	.priority	= MCE_PRIO_EDAC,
 };
 
 static int __init mce_amd_init(void)
@@ -815,10 +1168,7 @@ static int __init mce_amd_init(void)
 	struct cpuinfo_x86 *c = &boot_cpu_data;
 
 	if (c->x86_vendor != X86_VENDOR_AMD)
-		return 0;
-
-	if (c->x86 < 0xf || c->x86 > 0x16)
-		return 0;
+		return -ENODEV;
 
 	fam_ops = kzalloc(sizeof(struct amd_decoder_ops), GFP_KERNEL);
 	if (!fam_ops)
@@ -850,14 +1200,14 @@ static int __init mce_amd_init(void)
 		break;
 
 	case 0x14:
-		nb_err_cpumask  = 0x3;
 		fam_ops->mc0_mce = cat_mc0_mce;
 		fam_ops->mc1_mce = cat_mc1_mce;
 		fam_ops->mc2_mce = k8_mc2_mce;
 		break;
 
 	case 0x15:
-		xec_mask = 0x1f;
+		xec_mask = c->x86_model == 0x60 ? 0x3f : 0x1f;
+
 		fam_ops->mc0_mce = f15h_mc0_mce;
 		fam_ops->mc1_mce = f15h_mc1_mce;
 		fam_ops->mc2_mce = f15h_mc2_mce;
@@ -870,10 +1220,17 @@ static int __init mce_amd_init(void)
 		fam_ops->mc2_mce = f16h_mc2_mce;
 		break;
 
+	case 0x17:
+		xec_mask = 0x3f;
+		if (!boot_cpu_has(X86_FEATURE_SMCA)) {
+			printk(KERN_WARNING "Decoding supported only on Scalable MCA processors.\n");
+			goto err_out;
+		}
+		break;
+
 	default:
 		printk(KERN_WARNING "Huh? What family is it: 0x%x?!\n", c->x86);
-		kfree(fam_ops);
-		return -EINVAL;
+		goto err_out;
 	}
 
 	pr_info("MCE: In-kernel MCE decoding enabled.\n");
@@ -881,6 +1238,11 @@ static int __init mce_amd_init(void)
 	mce_register_decode_chain(&amd_mce_dec_nb);
 
 	return 0;
+
+err_out:
+	kfree(fam_ops);
+	fam_ops = NULL;
+	return -EINVAL;
 }
 early_initcall(mce_amd_init);
 
