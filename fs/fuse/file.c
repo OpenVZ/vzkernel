@@ -1670,6 +1670,21 @@ static int fuse_get_user_pages(struct fuse_req *req, struct iov_iter *ii,
 {
 	size_t nbytes = 0;  /* # bytes already packed in req */
 
+	/* Special case for kernel I/O: can copy directly into the buffer */
+	if (segment_eq(get_fs(), KERNEL_DS)) {
+		unsigned long user_addr = fuse_get_user_addr(ii);
+		size_t frag_size = fuse_get_frag_size(ii, *nbytesp);
+
+		if (write)
+			req->in.args[1].value = (void *) user_addr;
+		else
+			req->out.args[0].value = (void *) user_addr;
+
+		iov_iter_advance(ii, frag_size);
+		*nbytesp = frag_size;
+		return 0;
+	}
+
 	while (nbytes < *nbytesp && req->num_pages < req->max_pages) {
 		unsigned npages;
 		unsigned long user_addr = fuse_get_user_addr(ii);
