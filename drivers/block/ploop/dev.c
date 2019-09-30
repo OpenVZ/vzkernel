@@ -5700,8 +5700,14 @@ static const struct file_operations proc_ploop_minor = {
 
 module_param(ploop_max, int, 0);
 MODULE_PARM_DESC(ploop_max, "Maximum number of ploop devices");
+/*
+ * Comment out ploop_major module parameter as we use both ploop_major and
+ * PLOOP_DEVICE_MAJOR interchangeably and we can't afford them to differ.
+ */
+/*
 module_param(ploop_major, int, 0);
 MODULE_PARM_DESC(ploop_major, "Major number of ploop device");
+*/
 module_param(max_map_pages, int, 0644);
 MODULE_PARM_DESC(ploop_max_map_pages, "Maximal amount of pages taken by map cache");
 module_param(root_threshold, long, 0644);
