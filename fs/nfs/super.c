@@ -2710,9 +2710,6 @@ void nfs_put_super(struct super_block *s)
 {
 	struct nfs_server *server = NFS_SB(s);
 
-	if (!list_empty(&s->s_inodes))
-		pr_err("nfs_put_super: busy inodes skip bdi_unregister\n");
-
 	bdi_unregister(&server->backing_dev_info);
 }
 EXPORT_SYMBOL_GPL(nfs_put_super);
