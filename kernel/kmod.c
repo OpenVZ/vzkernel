@@ -447,6 +447,9 @@ static const char * const ve0_allowed_mod[] = {
 	"ip_vs_sh",
 	"ip_vs_lblcr",
 	"ip_vs_lc",
+
+	/* string */
+	"ts_kmp",
 };
 
 /*
