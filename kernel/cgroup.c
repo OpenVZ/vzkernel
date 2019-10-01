@@ -60,6 +60,7 @@
 #include <linux/flex_array.h> /* used in cgroup_attach_task */
 #include <linux/kthread.h>
 #include <linux/ve.h>
+#include <linux/stacktrace.h>
 
 #include <linux/atomic.h>
 
@@ -4143,6 +4144,11 @@ static void css_dput_fn(struct work_struct *work)
 {
 	struct cgroup_subsys_state *css =
 		container_of(work, struct cgroup_subsys_state, dput_work);
+	struct css_stacks *css_stacks;
+
+	css_stacks = css->stacks;
+	if (css_stacks)
+		free_pages((unsigned long)css_stacks, 1);
 
 	percpu_ref_exit(&css->refcnt);
 	cgroup_dput(css->cgroup);
@@ -4165,6 +4171,11 @@ static void init_cgroup_css(struct cgroup_subsys_state *css,
 {
 	css->cgroup = cgrp;
 	css->flags = 0;
+	if (slab_is_available())
+		css->stacks = (struct css_stacks *)
+			__get_free_pages(GFP_KERNEL|__GFP_NOFAIL|__GFP_ZERO, 1);
+	else
+		css->stacks = 0;
 	if (cgrp == dummytop)
 		css->flags |= CSS_ROOT;
 	BUG_ON(cgrp->subsys[ss->subsys_id]);
@@ -4192,6 +4203,33 @@ static int online_css(struct cgroup_subsys *ss, struct cgroup *cgrp)
 		cgrp->subsys[ss->subsys_id]->flags |= CSS_ONLINE;
 	return ret;
 }
+
+void save_css_stack(struct cgroup_subsys_state *css)
+{
+	unsigned long entries[8];
+	unsigned int offset;
+	struct css_stacks *css_stacks;
+	struct stack_trace trace = {
+		.nr_entries = 0,
+		.entries = entries,
+		.max_entries = 8,
+		.skip = 0
+	};
+
+	css_stacks = css->stacks;
+	if (!css_stacks)
+		return;
+
+	memset(entries, 0, sizeof(entries));
+	offset = atomic_add_return(8*8, &css_stacks->offset) % (PAGE_SIZE*2);
+	if (offset == 0) {
+		offset += 8;
+		trace.max_entries = 7;
+	}
+	save_stack_trace(&trace);
+	memcpy(((char*)css_stacks)+offset, entries, trace.max_entries*8);
+}
+EXPORT_SYMBOL(save_css_stack);
 
 /* if the CSS is online, invoke ->pre_destory() on it and mark it offline */
 static void offline_css(struct cgroup_subsys *ss, struct cgroup *cgrp)
