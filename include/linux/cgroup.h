@@ -117,6 +117,13 @@ extern void cgroup_unload_subsys(struct cgroup_subsys *ss);
 
 extern int proc_cgroup_show(struct seq_file *, void *);
 
+#define CSS_IPS_COUNT 512
+/* Instruction pointer and count */
+struct css_stacks {
+	unsigned long ips[CSS_IPS_COUNT];
+	atomic_t count[CSS_IPS_COUNT];
+};
+
 /* Per-subsystem/per-cgroup state maintained by the system. */
 struct cgroup_subsys_state {
 	/*
@@ -130,6 +137,8 @@ struct cgroup_subsys_state {
 	struct percpu_ref refcnt;
 
 	unsigned long flags;
+	/* saving stacks for css get/put - debug */
+	struct css_stacks *stacks;
 	/* ID for this css, if possible */
 	struct css_id __rcu *id;
 
@@ -143,18 +152,30 @@ enum {
 	CSS_ONLINE	= (1 << 1), /* between ->css_online() and ->css_offline() */
 };
 
+
+extern struct static_key css_stacks_on;
+void __save_css_stack(struct cgroup_subsys_state *css);
+
+static __always_inline void save_css_stack(struct cgroup_subsys_state *css)
+{
+	if (static_key_false(&css_stacks_on))
+		__save_css_stack(css);
+}
+
 /*
  * Call css_get() to hold a reference on the css; it can be used
  * for a reference obtained via:
  * - an existing ref-counted reference to the css
  * - task->cgroups for a locked task
  */
-
-static inline void css_get(struct cgroup_subsys_state *css)
+static __always_inline void css_get(struct cgroup_subsys_state *css)
 {
 	/* We don't need to reference count the root state */
-	if (!(css->flags & CSS_ROOT))
+	if (!(css->flags & CSS_ROOT)) {
+		save_css_stack(css);
 		percpu_ref_get(&css->refcnt);
+	}
+
 }
 
 /*
@@ -163,11 +184,16 @@ static inline void css_get(struct cgroup_subsys_state *css)
  * the css has been destroyed.
  */
 
-static inline bool css_tryget(struct cgroup_subsys_state *css)
+static __always_inline bool css_tryget(struct cgroup_subsys_state *css)
 {
+	bool ret;
+
 	if (css->flags & CSS_ROOT)
 		return true;
-	return percpu_ref_tryget_live(&css->refcnt);
+	ret = percpu_ref_tryget_live(&css->refcnt);
+	if (ret)
+		save_css_stack(css);
+	return ret;
 }
 
 /*
@@ -175,10 +201,13 @@ static inline bool css_tryget(struct cgroup_subsys_state *css)
  * css_get() or css_tryget()
  */
 
-static inline void css_put(struct cgroup_subsys_state *css)
+static __always_inline void css_put(struct cgroup_subsys_state *css)
 {
-	if (!(css->flags & CSS_ROOT))
+	if (!(css->flags & CSS_ROOT)) {
+		save_css_stack(css);
 		percpu_ref_put(&css->refcnt);
+
+	}
 }
 
 /* bits in struct cgroup flags field */
