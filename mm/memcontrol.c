@@ -622,6 +622,7 @@ void sock_release_memcg(struct sock *sk)
 		struct mem_cgroup *memcg;
 		WARN_ON(!sk->sk_cgrp->memcg);
 		memcg = sk->sk_cgrp->memcg;
+		save_css_stack(&sk->sk_cgrp->memcg->css);
 		css_put(&sk->sk_cgrp->memcg->css);
 	}
 }
@@ -3018,9 +3019,29 @@ void memcg_css_release_check_kmem(struct cgroup_subsys_state *css)
 
 	memcg = mem_cgroup_from_cont(css->cgroup);
 	kmem_counter = page_counter_read(&memcg->kmem);
-	WARN_ONCE(kmem_counter,
-		  "Last put on memcg %p kmem=%lu css->flags=%#lx",
-		  memcg, kmem_counter, css->flags);
+	if (WARN_ONCE(kmem_counter,
+		      "Last put on memcg %p kmem=%lu css->flags=%#lx",
+		      memcg, kmem_counter, css->flags)) {
+		struct css_stacks *css_stacks;
+		int i;
+
+		css_stacks = css->stacks;
+		if (css_stacks) {
+			pr_err("css_relese: css_get/put ips\n");
+			for (i = 0; i < CSS_IPS_COUNT; i++) {
+				if (css_stacks->ips[i])
+					pr_err("\t%d, [%lx] %pS\n",
+						atomic_read(&css_stacks->count[i]),
+						css_stacks->ips[i],
+						(void *)css_stacks->ips[i]);
+				else
+					break;
+			}
+			BUG();
+		}
+
+	}
+
 }
 EXPORT_SYMBOL(memcg_css_release_check_kmem);
 
