@@ -117,6 +117,11 @@ extern void cgroup_unload_subsys(struct cgroup_subsys *ss);
 
 extern int proc_cgroup_show(struct seq_file *, void *);
 
+struct css_stacks {
+	atomic_t offset;
+	unsigned long stacks[(PAGE_SIZE*2)/8 - 1];
+};
+
 /* Per-subsystem/per-cgroup state maintained by the system. */
 struct cgroup_subsys_state {
 	/*
@@ -130,6 +135,8 @@ struct cgroup_subsys_state {
 	struct percpu_ref refcnt;
 
 	unsigned long flags;
+	/* saving stacks for css get/put - debug */
+	struct css_stacks *stacks;
 	/* ID for this css, if possible */
 	struct css_id __rcu *id;
 
@@ -149,12 +156,16 @@ enum {
  * - an existing ref-counted reference to the css
  * - task->cgroups for a locked task
  */
+void save_css_stack(struct cgroup_subsys_state *css);
 
 static inline void css_get(struct cgroup_subsys_state *css)
 {
 	/* We don't need to reference count the root state */
-	if (!(css->flags & CSS_ROOT))
+	if (!(css->flags & CSS_ROOT)) {
+		save_css_stack(css);
 		percpu_ref_get(&css->refcnt);
+	}
+
 }
 
 /*
@@ -167,6 +178,7 @@ static inline bool css_tryget(struct cgroup_subsys_state *css)
 {
 	if (css->flags & CSS_ROOT)
 		return true;
+	save_css_stack(css);
 	return percpu_ref_tryget_live(&css->refcnt);
 }
 
@@ -177,8 +189,11 @@ static inline bool css_tryget(struct cgroup_subsys_state *css)
 
 static inline void css_put(struct cgroup_subsys_state *css)
 {
-	if (!(css->flags & CSS_ROOT))
+	if (!(css->flags & CSS_ROOT)) {
+		save_css_stack(css);
 		percpu_ref_put(&css->refcnt);
+
+	}
 }
 
 /* bits in struct cgroup flags field */
