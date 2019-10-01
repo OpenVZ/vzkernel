@@ -29,6 +29,7 @@
 #include <linux/cgroup.h>
 #include <linux/cred.h>
 #include <linux/ctype.h>
+#include <linux/debugfs.h>
 #include <linux/errno.h>
 #include <linux/init_task.h>
 #include <linux/kernel.h>
@@ -60,6 +61,7 @@
 #include <linux/flex_array.h> /* used in cgroup_attach_task */
 #include <linux/kthread.h>
 #include <linux/ve.h>
+#include <linux/stacktrace.h>
 
 #include <linux/atomic.h>
 
@@ -4143,6 +4145,11 @@ static void css_dput_fn(struct work_struct *work)
 {
 	struct cgroup_subsys_state *css =
 		container_of(work, struct cgroup_subsys_state, dput_work);
+	struct css_stacks *css_stacks;
+
+	css_stacks = css->stacks;
+	if (css_stacks)
+		kfree(css_stacks);
 
 	percpu_ref_exit(&css->refcnt);
 	cgroup_dput(css->cgroup);
@@ -4159,12 +4166,65 @@ static void css_release(struct percpu_ref *ref)
 	queue_work(cgroup_destroy_wq, &css->dput_work);
 }
 
+struct static_key css_stacks_on = STATIC_KEY_INIT_FALSE;
+EXPORT_SYMBOL(css_stacks_on);
+
+#ifdef CONFIG_DEBUG_FS
+static int css_stacks_get(void *data, u64 *val)
+{
+	*val = static_key_false(&css_stacks_on);
+	return 0;
+}
+
+static int css_stacks_set(void *data, u64 val)
+{
+	if (val != 0 && val != 1)
+		return -EINVAL;
+
+	if (static_key_false(&css_stacks_on) && !val)
+		static_key_slow_dec(&css_stacks_on);
+	else if (!static_key_false(&css_stacks_on) && val)
+		static_key_slow_inc(&css_stacks_on);
+
+	return 0;
+}
+DEFINE_SIMPLE_ATTRIBUTE(css_stacks_fops,
+		css_stacks_get, css_stacks_set, "%llu\n");
+
+int setup_css_stacks_cmd = 1;
+static int __init css_stacks_debugfs(void)
+{
+	void *ret;
+
+	ret = debugfs_create_file("css_stacks",	0644, NULL, NULL,
+			&css_stacks_fops);
+	if (!ret)
+		pr_warn("Failed to create css_stacks in debugfs");
+	if (setup_css_stacks_cmd)
+		static_key_slow_inc(&css_stacks_on);
+	return 0;
+}
+late_initcall(css_stacks_debugfs);
+
+static int __init setup_css_stacks(char *str)
+{
+	setup_css_stacks_cmd = 0;
+	return 1;
+}
+__setup("no_css_stacks", setup_css_stacks);
+#endif
+
 static void init_cgroup_css(struct cgroup_subsys_state *css,
 			       struct cgroup_subsys *ss,
 			       struct cgroup *cgrp)
 {
 	css->cgroup = cgrp;
 	css->flags = 0;
+	if (static_key_false(&css_stacks_on) && slab_is_available() &&
+	    ss == &mem_cgroup_subsys)
+		css->stacks = kzalloc(sizeof(*css->stacks), GFP_KERNEL);
+	else
+		css->stacks = 0;
 	if (cgrp == dummytop)
 		css->flags |= CSS_ROOT;
 	BUG_ON(cgrp->subsys[ss->subsys_id]);
@@ -4192,6 +4252,36 @@ static int online_css(struct cgroup_subsys *ss, struct cgroup *cgrp)
 		cgrp->subsys[ss->subsys_id]->flags |= CSS_ONLINE;
 	return ret;
 }
+
+void __save_css_stack(struct cgroup_subsys_state *css)
+{
+	int i;
+	struct css_stacks *css_stacks;
+	unsigned long ip = _RET_IP_;
+
+	css_stacks = css->stacks;
+	if (!css_stacks)
+		return;
+
+	for (i = 0; i < CSS_IPS_COUNT; i++) {
+		if (css_stacks->ips[i] == 0) {
+			unsigned long old_ip;
+
+			old_ip = cmpxchg(&css_stacks->ips[i], 0, ip);
+			if (old_ip != 0 && old_ip != ip)
+				continue;
+
+			atomic_inc(&css_stacks->count[i]);
+			break;
+		}
+		if (css_stacks->ips[i] == ip) {
+			atomic_inc(&css_stacks->count[i]);
+			break;
+		}
+	}
+	WARN(i == CSS_IPS_COUNT, "css_ips overflow %p %pS\n", css, (void *)ip);
+}
+EXPORT_SYMBOL(__save_css_stack);
 
 /* if the CSS is online, invoke ->pre_destory() on it and mark it offline */
 static void offline_css(struct cgroup_subsys *ss, struct cgroup *cgrp)
