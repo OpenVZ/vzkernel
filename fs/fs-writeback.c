@@ -324,8 +324,8 @@ static int move_expired_inodes(struct list_head *delaying_queue,
 
 	while (!list_empty(delaying_queue)) {
 		inode = wb_inode(delaying_queue->prev);
-		if (work->older_than_this &&
-		    inode_dirtied_after(inode, *work->older_than_this))
+		if (older_than_this &&
+		    inode_dirtied_after(inode, *older_than_this))
 			break;
 		list_move(&inode->i_io_list, &tmp);
 		moved++;
