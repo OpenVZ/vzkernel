@@ -883,7 +883,7 @@ static void adaptive_pebs_record_size_update(void)
 	if (pebs_data_cfg & PEBS_DATACFG_XMMS)
 		sz += sizeof(struct pebs_xmm);
 	if (pebs_data_cfg & PEBS_DATACFG_LBRS)
-		sz += x86_pmu.lbr_nr * sizeof(struct pebs_lbr_entry);
+		sz += x86_pmu.lbr.nr * sizeof(struct pebs_lbr_entry);
 
 	cpuc->pebs_record_size = sz;
 }
@@ -932,7 +932,7 @@ static u64 pebs_update_adaptive_cfg(struct perf_event *event)
 		 * later.
 		 */
 		pebs_data_cfg |= PEBS_DATACFG_LBRS |
-			((x86_pmu.lbr_nr-1) << PEBS_DATACFG_LBR_SHIFT);
+			((x86_pmu.lbr.nr-1) << PEBS_DATACFG_LBR_SHIFT);
 	}
 
 	return pebs_data_cfg;
