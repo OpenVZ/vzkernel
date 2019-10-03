@@ -278,7 +278,6 @@ struct ploop_delta_ops
 	int		(*complete_snapshot)(struct ploop_delta *, struct ploop_snapdata *);
 	int		(*fmt_prepare_merge)(struct ploop_delta *, struct ploop_snapdata *);
 	int		(*start_merge)(struct ploop_delta *, struct ploop_snapdata *);
-	int		(*complete_merge)(struct ploop_delta *);
 	int		(*replace_delta)(struct ploop_delta *);
 	int		(*truncate)(struct ploop_delta *, struct file *, __u32 alloc_head);
 	int		(*prepare_grow)(struct ploop_delta *, u64 *new_size, int *reloc);
