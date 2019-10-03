@@ -696,12 +696,7 @@ struct x86_pmu {
 	/*
 	 * Intel LBR
 	 */
-	unsigned long	lbr_tos, lbr_from, lbr_to; /* MSR base regs       */
-	int		lbr_nr;			   /* hardware stack size */
-	u64		lbr_sel_mask;		   /* LBR_SELECT valid bits */
-	const int	*lbr_sel_map;		   /* lbr_select mappings */
-	bool		lbr_double_abort;	   /* duplicated lbr aborts */
-	bool		lbr_pt_coexist;		   /* (LBR|BTS) may coexist with PT */
+	struct x86_pmu_lbr lbr;
 
 	/*
 	 * Intel PT/LBR/BTS are exclusive
@@ -1022,21 +1017,7 @@ void intel_pmu_lbr_disable_all(void);
 
 void intel_pmu_lbr_read(void);
 
-void intel_pmu_lbr_init_core(void);
-
-void intel_pmu_lbr_init_nhm(void);
-
-void intel_pmu_lbr_init_atom(void);
-
-void intel_pmu_lbr_init_slm(void);
-
-void intel_pmu_lbr_init_snb(void);
-
-void intel_pmu_lbr_init_hsw(void);
-
-void intel_pmu_lbr_init_skl(void);
-
-void intel_pmu_lbr_init_knl(void);
+void intel_pmu_lbr_init(void);
 
 void intel_pmu_pebs_data_source_nhm(void);
 
