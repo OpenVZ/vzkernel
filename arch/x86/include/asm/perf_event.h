@@ -133,6 +133,8 @@ struct x86_pmu_lbr {
 	bool		pt_coexist;	/* (LBR|BTS) may coexist with PT */
 };
 
+void intel_pmu_lbr_fill(struct x86_pmu_lbr *lbr, u8 family, u8 model);
+
 /*
  * Fixed-purpose performance events:
  */
