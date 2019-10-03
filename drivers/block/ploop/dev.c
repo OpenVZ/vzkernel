@@ -3797,21 +3797,14 @@ static void ploop_merge_complete(struct ploop_device * plo,
 				 struct ploop_map * map,
 				 struct ploop_delta * delta, int err)
 {
-	struct ploop_delta *top_delta;
-
 	ploop_quiesce(plo);
 	mutex_lock(&plo->sysfs_mutex);
 	list_del(&delta->list);
 
 	if (err)
 		list_add(&delta->list, &plo->map.delta_list);
-	else {
-		top_delta = ploop_top_delta(plo);
-		if (top_delta->ops->complete_merge)
-			/* FIXME: How should we handle error here? */
-			top_delta->ops->complete_merge(top_delta);
+	else
 		ploop_update_fmt_version(plo);
-	}
 
 	plo->trans_map = NULL;
 	plo->maintenance_type = PLOOP_MNTN_OFF;
