@@ -599,17 +599,26 @@ ploop1_start_merge(struct ploop_delta * delta, struct ploop_snapdata * sd)
 
 	ph->bd_size = get_SizeInSectors_from_le(vh, delta->plo->fmt_version);
 
-	return delta->io.ops->sync(&delta->io);
+	err = delta->io.ops->sync(&delta->io);
+	if (err)
+		return err;
+
+	/*
+	 * Do this as last of operations, which may fail. After this,
+	 * nothing can stop killing current top_delta. Otherwise,
+	 * in case of other operation fail, we will have two deltas
+	 * and holes_bitmap assigned.
+	 */
+	if (delta->level == 0)
+		err = populate_holes_bitmap(delta, ph);
+
+	return err;
 }
 
 static int
 ploop1_complete_merge(struct ploop_delta *delta)
 {
-	struct ploop1_private *ph = delta->priv;
-
-	if (delta->level != 0)
-		return 0;
-	return populate_holes_bitmap(delta, ph);
+	return 0;
 }
 
 static int
