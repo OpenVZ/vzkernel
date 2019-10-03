@@ -616,12 +616,6 @@ ploop1_start_merge(struct ploop_delta * delta, struct ploop_snapdata * sd)
 }
 
 static int
-ploop1_complete_merge(struct ploop_delta *delta)
-{
-	return 0;
-}
-
-static int
 ploop1_replace_delta(struct ploop_delta *delta)
 {
 	struct ploop1_private *ph = delta->priv;
@@ -889,7 +883,6 @@ static struct ploop_delta_ops ploop1_delta_ops =
 	.complete_snapshot =	ploop1_complete_snapshot,
 	.fmt_prepare_merge =	ploop1_prepare_merge,
 	.start_merge	=	ploop1_start_merge,
-	.complete_merge =	ploop1_complete_merge,
 	.replace_delta 	=	ploop1_replace_delta,
 	.truncate	=	ploop1_truncate,
 	.prepare_grow	=	ploop1_prepare_grow,
