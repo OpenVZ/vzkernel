@@ -124,6 +124,15 @@ struct x86_pmu_capability {
 	int		events_mask_len;
 };
 
+struct x86_pmu_lbr {
+	unsigned long	tos, from, to;	/* MSR base regs */
+	int		nr;		/* hardware stack size */
+	u64		sel_mask;	/* LBR_SELECT valid bits */
+	const int	*sel_map;	/* lbr_select mappings */
+	bool		double_abort;	/* duplicated lbr aborts */
+	bool		pt_coexist;	/* (LBR|BTS) may coexist with PT */
+};
+
 /*
  * Fixed-purpose performance events:
  */
