@@ -1,7 +1,11 @@
-Test configuration:
+image: registry.gitlab.com/cki-project/experimental/containers/builder-fedora30
+
+stages:
+  - test
+
+variables:
+  GIT_DEPTH: "5"
+
+test_rh_configs:
   stage: test
-  image: fedora
-  before_script:
-    - dnf install -y dnf-plugins-core
-    - dnf builddep -y kernel
   script: make rh-configs
