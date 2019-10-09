@@ -1,1 +1,1 @@
-CONFIG_MFD_CROS_EC=m
+# CONFIG_MFD_CROS_EC is not set
