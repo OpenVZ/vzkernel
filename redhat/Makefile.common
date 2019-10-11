@@ -138,3 +138,12 @@ else ifeq ("$(IS_FEDORA)", "1")
 else
   RHPRODUCT:=rhel-$(RHEL_MAJOR).$(RHEL_MINOR).0
 endif
+
+ifeq ("$(DIST)", ".elrdy")
+  BUILD_SCRATCH_TARGET ?= temp-ark-rhel-8-test
+else ifeq ("$(IS_FEDORA)", "1")
+  BUILD_SCRATCH_TARGET ?= temp-ark-rhel-8-test
+else
+  BUILD_SCRATCH_TARGET ?= rhel-$(RHEL_MAJOR).$(RHEL_MINOR).0-test-pesign
+endif
+

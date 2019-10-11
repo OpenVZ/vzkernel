@@ -3,14 +3,6 @@ include Makefile.rhpkg
 
 LANG=C
 
-ifeq ("$(DIST)", ".elrdy")
-  BUILD_SCRATCH_TARGET = temp-ark-rhel-8-test
-else ifeq ("$(IS_FEDORA)", "1")
-  BUILD_SCRATCH_TARGET = temp-ark-rhel-8-test
-else
-  BUILD_SCRATCH_TARGET = rhel-$(RHEL_MAJOR).$(RHEL_MINOR).0-test-pesign
-endif
-
 ifeq ("$(ZSTREAM)", "yes")
   __YSTREAM = no
   ifeq ("$(origin RHDISTGIT_BRANCH)", "command line")
