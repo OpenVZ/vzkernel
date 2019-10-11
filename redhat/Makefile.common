@@ -22,7 +22,7 @@ else
   PREBUILD:=
 endif
 
-DIST:=.elrdy
+DIST ?=.elrdy
 IS_FEDORA:=$(shell ! echo $(DIST) | grep -q fc; echo $$?)
 # If VERSION_ON_UPSTREAM is set, the versioning of the rpm package is based
 # on a branch tracking upstream. This allows for generating rpms
@@ -146,4 +146,3 @@ else ifeq ("$(IS_FEDORA)", "1")
 else
   BUILD_SCRATCH_TARGET ?= rhel-$(RHEL_MAJOR).$(RHEL_MINOR).0-test-pesign
 endif
-
