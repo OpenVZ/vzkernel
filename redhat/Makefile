@@ -4,13 +4,10 @@ include Makefile.rhpkg
 LANG=C
 
 ifeq ("$(DIST)", ".elrdy")
-  BUILD_DEFAULT_TARGET = temp-ark-rhel-8-test
   BUILD_SCRATCH_TARGET = temp-ark-rhel-8-test
 else ifeq ("$(IS_FEDORA)", "1")
-  BUILD_DEFAULT_TARGET = temp-ark-rhel-8-test
   BUILD_SCRATCH_TARGET = temp-ark-rhel-8-test
 else
-  BUILD_DEFAULT_TARGET = rhel-$(RHEL_MAJOR).$(RHEL_MINOR).0-test-pesign
   BUILD_SCRATCH_TARGET = rhel-$(RHEL_MAJOR).$(RHEL_MINOR).0-test-pesign
 endif
 
@@ -47,11 +44,7 @@ else
    PROCESS_CONFIGS_OPTS=-n -w -c
 endif
 
-#ifeq ($(shell git diff --quiet HEAD && git describe --exact-match 2>/dev/null && echo ok),)
 BUILD_TARGET ?= --scratch $(BUILD_SCRATCH_TARGET)
-#else
-#BUILD_TARGET ?= $(BUILD_DEFAULT_TARGET)
-#endif
 
 RHGITURL?=$(shell git config rhg.url || git config remote.origin.url)
 RHGITCOMMIT?=$(shell git log -1 --pretty=format:%H)
