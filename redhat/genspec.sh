@@ -13,7 +13,8 @@ SPECRELEASE=${10}
 ZSTREAM_FLAG=${11}
 BUILDOPTS=${12}
 MARKER=${13}
-SINGLE_TARBALL=${14}
+LAST_MARKER=${14}
+SINGLE_TARBALL=${15}
 RPMVERSION=${KVERSION}.${KPATCHLEVEL}.${KSUBLEVEL}
 clogf="$SOURCES/changelog"
 # hide [redhat] entries from changelog
@@ -171,6 +172,19 @@ if [ "x$HIDE_UNSUPPORTED_ARCH" == "x1" ]; then
 	cp $clogf.stripped $clogf
 fi
 
+# If the markers aren't the same then this a rebase.
+# This means we need to zap entries that are already present in the changelog.
+if [ "$MARKER" != "$LAST_MARKER" ]; then
+	# awk trick to get all unique lines
+	awk '!seen[$0]++' $CHANGELOG $clogf > $clogf.unique
+	# sed trick to get the end of the changelog minus the line
+	sed -e '1,/# END OF CHANGELOG/ d' $clogf.unique > $clogf.tmp
+	# Add an explicit entry to indicate a rebase.
+	echo "" > $clogf
+	echo -e "- $MARKER rebase" | cat $clogf.tmp - >> $clogf
+	rm $clogf.tmp $clogf.unique
+fi
+
 LENGTH=$(wc -l $clogf | awk '{print $1}')
 
 #the changelog was created in reverse order
@@ -218,4 +232,3 @@ for opt in $BUILDOPTS; do
 done
 
 rm -f $clogf{,.rev,.stripped};
-
