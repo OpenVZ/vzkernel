@@ -600,10 +600,10 @@ int kmem_cache_shrink(struct kmem_cache *cachep)
 	int ret;
 
 	get_online_cpus();
-	mutex_lock(&slab_mutex);
+	get_online_mems();
 	kasan_cache_shrink(cachep);
 	ret = __kmem_cache_shrink(cachep, false);
-	mutex_unlock(&slab_mutex);
+	put_online_mems();
 	put_online_cpus();
 	return ret;
 }
