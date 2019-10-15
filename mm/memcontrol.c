@@ -3636,6 +3636,7 @@ static void memcg_kmem_cache_create_func(struct work_struct *w)
 
 	memcg_create_kmem_cache(memcg, cachep);
 
+	css_put(&memcg->css);
 	kfree(cw);
 }
 
