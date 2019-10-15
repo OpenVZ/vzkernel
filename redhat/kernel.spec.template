@@ -451,7 +451,13 @@ BuildRequires: xmlto
 BuildRequires: asciidoc
 %endif
 
-Source0: linux-%{rpmversion}-%{pkgrelease}.tar.xz
+# Because this is the kernel, it's hard to get a single upstream URL
+# to represent the base without needing to do a bunch of patching. This
+# tarball is generated from a src-git tree. If you want to see the
+# exact git commit you can run
+#
+# xzcat -qq ${TARBALL} | git get-tar-commit-id
+Source0: linux-%%TARBALL_VERSION%%.tar.xz
 
 Source11: x509.genkey
 
@@ -1038,8 +1044,8 @@ ApplyOptionalPatch()
   fi
 }
 
-%setup -q -n kernel-%{rpmversion}-%{pkgrelease} -c
-mv linux-%{rpmversion}-%{pkgrelease} linux-%{KVERREL}
+%setup -q -n kernel-%%TARBALL_VERSION%% -c
+mv linux-%%TARBALL_VERSION%% linux-%{KVERREL}
 
 cd linux-%{KVERREL}
 

@@ -18,7 +18,13 @@ MARKER:=v$(RPMKVERSION).$(RPMKPATCHLEVEL)$(RPMKEXTRAVERSION)
 ifneq ($(RPMKEXTRAVERSION),)
   KEXTRAVERSION:=$(shell echo $(RPMKEXTRAVERSION) | sed -e s/-/./)
   PREBUILD:=0$(KEXTRAVERSION).
+  UPSTREAM_TARBALL_NAME:=$(RPMKVERSION).$(RPMKPATCHLEVEL)$(RPMKEXTRAVERSION)
 else
+  ifeq ($(RPMKSUBLEVEL),"0")
+    UPSTREAM_TARBALL_NAME:=$(RPMKVERSION).$(RPMKPATCHLEVEL)
+  else
+    UPSTREAM_TARBALL_NAME:=$(RPMKVERSION).$(RPMKPATCHLEVEL).$(RPMKSUBLEVEL)
+  endif
   PREBUILD:=
 endif
 
@@ -64,6 +70,7 @@ ifeq ($(SNAPSHOT),1)
   endif
   # Follow the packaging guidelines to include the date + git snapshot
   PREBUILD:=$(PREBUILD)$(shell date +%Y%m%d)git$(MARKER).
+  UPSTREAM_TARBALL_NAME:=$(shell date +%Y%m%d)git$(MARKER)
 endif
 
 
@@ -120,7 +127,12 @@ endif
 PKGRELEASE:=$(PREBUILD)$(BUILD)$(DIST)$(BUILDID)
 SPECRELEASE:=$(PREBUILD)$(BUILD)%{?dist}$(BUILDID)
 
-TARFILE:=linux-$(KVERSION)-$(PKGRELEASE).tar.xz
+ifeq ("$(SINGLE_TARBALL)", "0")
+  TARFILE_RELEASE:=$(UPSTREAM_TARBALL_NAME)
+else
+  TARFILE_RELEASE:=$(KVERSION)-$(PKGRELEASE)
+endif
+TARFILE:=linux-$(TARFILE_RELEASE).tar.xz
 TARBALL:=$(REDHAT)/$(TARFILE)
 DISTRO_BUILD:=$(PREBUILD)$(shell echo $(BUILD) | sed -e 's|\(^[0-9]\{1,4\}\)\..*|\1|')
 KABI_TARFILE:=kernel-abi-whitelists-$(KVERSION)-$(DISTRO_BUILD).tar.bz2
