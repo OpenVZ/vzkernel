@@ -57,6 +57,7 @@
 #include <linux/pipe_fs_i.h>
 #include <linux/oom.h>
 #include <linux/compat.h>
+#include <linux/ploop/ploop.h>
 
 #include <bc/vmpages.h>
 
@@ -67,6 +68,7 @@
 #include <trace/events/task.h>
 #include "internal.h"
 #include "coredump.h"
+#include "mount.h"
 
 #include <trace/events/sched.h>
 
@@ -109,6 +111,26 @@ bool path_noexec(const struct path *path)
 }
 
 /*
+ * We don't want a VE0-privileged user intentionally or by mistake
+ * to execute files of container, these files are untrusted.
+ */
+bool ve_exec_trusted(struct file *file, struct filename *name)
+{
+	struct block_device *bdev = file->f_inode->i_sb->s_bdev;
+	bool exec_from_ct = !ve_is_super(get_exec_env());
+	bool file_on_ploop = bdev && (bdev->bd_disk->major == PLOOP_DEVICE_MAJOR);
+	bool file_on_ct_mount = !ve_is_super(real_mount(file->f_path.mnt)->ve_owner);
+
+	if (exec_from_ct || (!file_on_ploop && !file_on_ct_mount))
+		return true;
+
+	WARN_ONCE(1, "The process %s from VE0 tried to execute untrusted file "
+		     "%s from VEX\n",
+		     current->comm, name->name);
+	return false;
+}
+
+/*
  * Note that a shared library must be both readable and executable due to
  * security reasons.
  *
@@ -130,10 +152,9 @@ SYSCALL_DEFINE1(uselib, const char __user *, library)
 		goto out;
 
 	file = do_filp_open(AT_FDCWD, tmp, &uselib_flags);
-	putname(tmp);
 	error = PTR_ERR(file);
 	if (IS_ERR(file))
-		goto out;
+		goto put;
 
 	error = -EINVAL;
 	if (!S_ISREG(file_inode(file)->i_mode))
@@ -142,6 +163,12 @@ SYSCALL_DEFINE1(uselib, const char __user *, library)
 	error = -EACCES;
 	if (path_noexec(&file->f_path))
 		goto exit;
+
+	if (!ve_exec_trusted(file, tmp))
+		goto exit;
+
+	putname(tmp);
+	tmp = NULL;
 
 	fsnotify_open(file);
 
@@ -166,6 +193,9 @@ SYSCALL_DEFINE1(uselib, const char __user *, library)
 	}
 exit:
 	fput(file);
+put:
+	if (tmp)
+		putname(tmp);
 out:
   	return error;
 }
@@ -846,6 +876,9 @@ static struct file *do_open_exec(struct filename *name)
 		goto exit;
 
 	if (path_noexec(&file->f_path))
+		goto exit;
+
+	if (!ve_exec_trusted(file, name))
 		goto exit;
 
 	fsnotify_open(file);
