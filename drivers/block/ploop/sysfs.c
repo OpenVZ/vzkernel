@@ -539,6 +539,7 @@ _TUNE_U32(congestion_high_watermark);
 _TUNE_U32(congestion_low_watermark);
 _TUNE_U32(max_active_requests);
 _TUNE_U32(push_backup_timeout);
+_TUNE_BOOL(trusted);
 
 
 struct pattr_sysfs_entry {
@@ -608,6 +609,7 @@ static struct attribute *tune_attributes[] = {
 	_A(discard_granularity),
 	_A(discard_alignment),
 	_A2(discard_zeroes_data),
+	_A2(trusted),
 	NULL
 };
 
