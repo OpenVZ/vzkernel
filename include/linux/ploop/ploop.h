@@ -326,7 +326,8 @@ struct ploop_tunable
 		     congestion_detection : 1,
 		     check_zeros : 1,
 		     disable_root_threshold : 1,
-		     disable_user_threshold : 1;
+		     disable_user_threshold : 1,
+		     trusted : 1;
 };
 
 #define DEFAULT_PLOOP_MAXRQ 256
