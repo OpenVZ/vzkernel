@@ -4193,6 +4193,8 @@ static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 		return -EBUSY;
 	}
 
+	plo->tune.trusted = 0;
+
 	clear_bit(PLOOP_S_PUSH_BACKUP, &plo->state);
 	ploop_pb_stop(plo->pbd, true);
 
