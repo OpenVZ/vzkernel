@@ -124,6 +124,14 @@ bool ve_exec_trusted(struct file *file, struct filename *name)
 	if (exec_from_ct || (!file_on_ploop && !file_on_ct_mount))
 		return true;
 
+	if (file_on_ploop) {
+		struct ploop_device *plo;
+
+		plo = bdev->bd_disk->private_data;
+		if (plo->tune.trusted)
+			return true;
+	}
+
 	WARN_ONCE(1, "The process %s from VE0 tried to execute untrusted file "
 		     "%s from VEX\n",
 		     current->comm, name->name);
