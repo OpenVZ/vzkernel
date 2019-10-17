@@ -542,6 +542,12 @@ config DM_INTEGRITY
 	  To compile this code as a module, choose M here: the module will
 	  be called dm-integrity.
 
+config DM_PLOOP
+	tristate "Ploop target support"
+	depends on BLK_DEV_DM
+	---help---
+          This is ploop1 format interpreter on device-mapper rails.
+
 config DM_ZONED
 	tristate "Drive-managed zoned block device target support"
 	depends on BLK_DEV_DM
