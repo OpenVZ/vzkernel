@@ -295,11 +295,14 @@ static int ve_start_umh(struct ve_struct *ve)
 	struct task_struct *task;
 
 	kthread_init_worker(&ve->umh_worker);
-	task = kthread_run_ve(ve, kthread_worker_fn,
-				      &ve->umh_worker,
+
+	task = kthread_create_on_node_ve_flags(ve, 0, kthread_worker_fn,
+				      &ve->umh_worker, NUMA_NO_NODE,
 				      "khelper");
 	if (IS_ERR(task))
 		return PTR_ERR(task);
+
+	wake_up_process(task);
 
 	ve->umh_task = task;
 	return 0;
