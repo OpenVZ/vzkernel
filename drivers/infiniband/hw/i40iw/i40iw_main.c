@@ -1439,7 +1439,7 @@ static enum i40iw_status_code i40iw_save_msix_info(struct i40iw_device *iwdev,
 	size = sizeof(struct i40iw_msix_vector) * iwdev->msix_count;
 	size += sizeof(struct i40e_qvlist_info);
 	size +=  sizeof(struct i40e_qv_info) * iwdev->msix_count - 1;
-	iwdev->iw_msixtbl = kzalloc(size, GFP_KERNEL);
+	iwdev->iw_msixtbl = kzalloc(size, GFP_KERNEL | __GFP_NOWARN);
 
 	if (!iwdev->iw_msixtbl)
 		return I40IW_ERR_NO_MEMORY;
