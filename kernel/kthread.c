@@ -337,19 +337,6 @@ static void kthread_create_fn(struct kthread_work *w)
 	create_kthread_flags(work->info, work->flags);
 }
 
-static void __kthread_create_ve(struct kthread_create_info *create,
-			        struct ve_struct *ve,
-				unsigned long flags)
-{
-	struct kthread_create_work work = {
-		KTHREAD_WORK_INIT(work.work, kthread_create_fn),
-		.info = create,
-		.flags = flags,
-	};
-
-	kthread_queue_work(ve->kthreadd_worker, &work.work);
-	return;
-}
 #endif
 static void kthread_create_add(struct kthread_create_info *create)
 {
@@ -369,6 +356,9 @@ struct task_struct *__kthread_create_on_node_ve(struct ve_struct *ve,
 						va_list args)
 {
 	DECLARE_COMPLETION_ONSTACK(done);
+	struct kthread_create_work work = {
+		KTHREAD_WORK_INIT(work.work, kthread_create_fn),
+	};
 	struct task_struct *task;
 	struct kthread_create_info *create = kmalloc(sizeof(*create),
 						     GFP_KERNEL);
@@ -382,8 +372,11 @@ struct task_struct *__kthread_create_on_node_ve(struct ve_struct *ve,
 
 #ifdef CONFIG_VE
 	if (!ve_is_super(ve))
-		__kthread_create_ve(create, ve, flags);
-	else
+	{
+		work.info = create;
+		work.flags = flags;
+		kthread_queue_work(ve->kthreadd_worker, &work.work);
+	} else
 #endif
 		kthread_create_add(create);
 	/*
