@@ -568,6 +568,9 @@ struct request_queue {
 	/* Throttle data */
 	struct throtl_data *td;
 #endif
+#ifdef CONFIG_BLK_DEV_CBT
+	struct cbt_info *cbt;
+#endif
 	struct rcu_head		rcu_head;
 	wait_queue_head_t	mq_freeze_wq;
 	struct percpu_ref	q_usage_counter;
@@ -1722,6 +1725,34 @@ static inline struct bio_vec *rq_integrity_vec(struct request *rq)
 }
 
 #endif /* CONFIG_BLK_DEV_INTEGRITY */
+
+#if defined (CONFIG_BLK_DEV_CBT)
+extern void blk_cbt_update_size(struct block_device *bdev);
+extern void blk_cbt_release(struct request_queue *q);
+extern void blk_cbt_bio_queue(struct request_queue *q, struct bio *bio);
+extern int blk_cbt_ioctl(struct block_device *bdev, unsigned cmd, char __user *arg);
+extern int blk_cbt_map_copy_once(struct request_queue *q, __u8 *uuid,
+				 struct page ***map_ptr, blkcnt_t *block_max,
+				 blkcnt_t *block_bits);
+extern int blk_cbt_map_merge(struct request_queue *q, __u8 *uuid,
+			     struct page **map, blkcnt_t block_max,
+			     blkcnt_t block_bits);
+#else /* CONFIG_BLK_DEV_CBT */
+static inline void blk_cbt_update_size(struct block_device *bdev)
+{
+}
+static inline void blk_cbt_release(struct request_queue *q)
+{
+}
+static inline void blk_cbt_bio_queue(struct request_queue *q, struct bio *bio)
+{
+}
+static inline int blk_cbt_ioctl(struct block_device *bdev, unsigned cmd,
+				char __user *arg)
+{
+	return 0;
+}
+#endif /* CONFIG_BLK_DEV_CBT */
 
 struct block_device_operations {
 	int (*open) (struct block_device *, fmode_t);
