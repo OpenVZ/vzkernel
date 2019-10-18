@@ -1519,10 +1519,17 @@ int check_disk_change(struct block_device *bdev)
 
 EXPORT_SYMBOL(check_disk_change);
 
+void bd_write_size(struct block_device *bdev, loff_t size)
+{
+	i_size_write(bdev->bd_inode, size);
+	blk_cbt_update_size(bdev);
+}
+EXPORT_SYMBOL(bd_write_size);
+
 void bd_set_size(struct block_device *bdev, loff_t size)
 {
 	inode_lock(bdev->bd_inode);
-	i_size_write(bdev->bd_inode, size);
+	bd_write_size(bdev, size);
 	inode_unlock(bdev->bd_inode);
 }
 EXPORT_SYMBOL(bd_set_size);

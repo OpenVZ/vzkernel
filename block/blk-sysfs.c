@@ -922,6 +922,7 @@ static void blk_release_queue(struct kobject *kobj)
 		blk_mq_release(q);
 
 	blk_trace_shutdown(q);
+	blk_cbt_release(q);
 
 	if (queue_is_mq(q))
 		blk_mq_debugfs_unregister(q);
