@@ -343,6 +343,15 @@ static inline void track_bio(struct ploop *ploop, struct bio *bio)
 		__track_bio(ploop, bio);
 }
 
+extern struct dm_ploop_endio_hook *find_endio_hook_range(struct ploop *ploop,
+			struct rb_root *root, unsigned int l, unsigned int r);
+
+static inline struct dm_ploop_endio_hook *find_endio_hook(struct ploop *ploop,
+				   struct rb_root *root, unsigned int cluster)
+{
+	return find_endio_hook_range(ploop, root, cluster, cluster);
+}
+
 extern int ploop_add_delta(struct ploop *ploop, const char *arg);
 extern void defer_bio(struct ploop *ploop, struct bio *bio);
 extern void defer_bio_list(struct ploop *ploop, struct bio_list *bio_list);
@@ -354,9 +363,6 @@ extern int ploop_endio(struct dm_target *ti, struct bio *bio, blk_status_t *err)
 extern void ploop_inflight_bios_ref_switch(struct ploop *ploop);
 extern struct dm_ploop_endio_hook *find_lk_of_cluster(struct ploop *ploop,
 						      unsigned int cluster);
-extern struct dm_ploop_endio_hook *find_endio_hook(struct ploop *ploop,
-						   struct rb_root *root,
-						   unsigned int cluster);
 extern void unlink_postponed_backup_endio(struct ploop *ploop,
 					  struct bio_list *bio_list,
 					  struct dm_ploop_endio_hook *h);
