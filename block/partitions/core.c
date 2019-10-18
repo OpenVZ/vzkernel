@@ -588,7 +588,7 @@ int bdev_resize_partition(struct block_device *bdev, int partno,
 		goto out_unlock;
 
 	part_nr_sects_write(part, (sector_t)length);
-	i_size_write(bdevp->bd_inode, length << SECTOR_SHIFT);
+	bd_write_size(bdevp, length << SECTOR_SHIFT);
 
 	ret = 0;
 out_unlock:
