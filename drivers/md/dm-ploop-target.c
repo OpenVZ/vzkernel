@@ -46,8 +46,10 @@ static void ploop_destroy(struct ploop *ploop)
 {
 	int i;
 
-	if (ploop->pb)
+	if (ploop->pb) {
+		cleanup_backup(ploop);
 		ploop_free_pb(ploop->pb);
+	}
 	if (ploop->wq) {
 		ploop_flush_workqueue(ploop);
 		destroy_workqueue(ploop->wq);
