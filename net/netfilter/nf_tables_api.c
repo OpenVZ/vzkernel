@@ -2022,14 +2022,13 @@ static void nf_tables_rule_destroy(const struct nft_ctx *ctx,
 
 #define NFT_RULE_MAXEXPRS	128
 
-static struct nft_expr_info *info;
-
 static int nf_tables_newrule(struct net *net, struct sock *nlsk,
 			     struct sk_buff *skb, const struct nlmsghdr *nlh,
 			     const struct nlattr * const nla[])
 {
 	const struct nfgenmsg *nfmsg = nlmsg_data(nlh);
 	struct nft_af_info *afi;
+	struct nft_expr_info *info = NULL;
 	struct nft_table *table;
 	struct nft_chain *chain;
 	struct nft_rule *rule, *old_rule = NULL;
@@ -2093,6 +2092,12 @@ static int nf_tables_newrule(struct net *net, struct sock *nlsk,
 	n = 0;
 	size = 0;
 	if (nla[NFTA_RULE_EXPRESSIONS]) {
+		info = kvmalloc_array(NFT_RULE_MAXEXPRS,
+				      sizeof(struct nft_expr_info),
+				      GFP_KERNEL);
+		if (!info)
+			return -ENOMEM;
+
 		nla_for_each_nested(tmp, nla[NFTA_RULE_EXPRESSIONS], rem) {
 			err = -EINVAL;
 			if (nla_type(tmp) != NFTA_LIST_ELEM)
@@ -2174,6 +2179,7 @@ static int nf_tables_newrule(struct net *net, struct sock *nlsk,
 		err = -ENOMEM;
 		goto err3;
 	}
+	kvfree(info);
 	chain->use++;
 	return 0;
 
@@ -2186,6 +2192,7 @@ err1:
 		if (info[i].ops != NULL)
 			module_put(info[i].ops->type->owner);
 	}
+	kvfree(info);
 	return err;
 }
 
@@ -4735,28 +4742,18 @@ static int __init nf_tables_module_init(void)
 {
 	int err;
 
-	info = kmalloc(sizeof(struct nft_expr_info) * NFT_RULE_MAXEXPRS,
-		       GFP_KERNEL);
-	if (info == NULL) {
-		err = -ENOMEM;
-		goto err1;
-	}
-
 	err = nf_tables_core_module_init();
 	if (err < 0)
-		goto err2;
+		return err;
 
 	err = nfnetlink_subsys_register(&nf_tables_subsys);
 	if (err < 0)
-		goto err3;
+		goto err;
 
 	pr_info("nf_tables: (c) 2007-2009 Patrick McHardy <kaber@trash.net>\n");
 	return register_pernet_subsys(&nf_tables_net_ops);
-err3:
+err:
 	nf_tables_core_module_exit();
-err2:
-	kfree(info);
-err1:
 	return err;
 }
 
@@ -4766,7 +4763,6 @@ static void __exit nf_tables_module_exit(void)
 	nfnetlink_subsys_unregister(&nf_tables_subsys);
 	rcu_barrier();
 	nf_tables_core_module_exit();
-	kfree(info);
 }
 
 module_init(nf_tables_module_init);
