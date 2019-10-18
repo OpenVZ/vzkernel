@@ -722,7 +722,7 @@ svc_start_kthreads(struct svc_serv *serv, struct svc_pool *pool, int nrservs)
 			return PTR_ERR(rqstp);
 
 		__module_get(serv->sv_ops->svo_module);
-		task = kthread_create_on_node_ve(get_exec_env(),
+		task = kthread_create_on_node_ve_flags(get_exec_env(), 0,
 						 serv->sv_ops->svo_function,
 						 rqstp, node,
 						 "%s", serv->sv_name);
