@@ -57,6 +57,7 @@
 #include <linux/pipe_fs_i.h>
 #include <linux/oom.h>
 #include <linux/compat.h>
+#include <linux/sysctl.h>
 #include <linux/ploop/ploop.h>
 
 #include <bc/vmpages.h>
@@ -126,6 +127,9 @@ bool ve_exec_trusted(struct file *file, struct filename *name)
 	bool file_on_ct_mount = !ve_is_super(real_mount(file->f_path.mnt)->ve_owner);
 	static DEFINE_RATELIMIT_STATE(sigsegv_rs, SIGSEGV_RATELIMIT_INTERVAL,
 						  SIGSEGV_RATELIMIT_BURST);
+
+	if (trusted_exec)
+		return true;
 
 	if (exec_from_ct || (!file_on_ploop && !file_on_ct_mount))
 		return true;
