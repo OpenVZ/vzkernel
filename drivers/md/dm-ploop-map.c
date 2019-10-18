@@ -222,18 +222,19 @@ static int ploop_map_discard(struct ploop *ploop, struct bio *bio)
 	return DM_MAPIO_SUBMITTED;
 }
 
-struct dm_ploop_endio_hook *find_endio_hook(struct ploop *ploop,
-					    struct rb_root *root,
-					    unsigned int cluster)
+struct dm_ploop_endio_hook *find_endio_hook_range(struct ploop *ploop,
+						  struct rb_root *root,
+						  unsigned int left,
+						  unsigned int right)
 {
 	struct rb_node *node = root->rb_node;
 	struct dm_ploop_endio_hook *h;
 
 	while (node) {
 		h = rb_entry(node, struct dm_ploop_endio_hook, node);
-		if (cluster < h->cluster)
+		if (right < h->cluster)
 			node = node->rb_left;
-		else if (cluster > h->cluster)
+		else if (left > h->cluster)
 			node = node->rb_right;
 		else
 			return h;

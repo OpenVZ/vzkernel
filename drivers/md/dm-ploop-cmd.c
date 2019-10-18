@@ -1486,12 +1486,14 @@ static int ploop_push_backup_write(struct ploop *ploop, char *uuid,
 		return -ESTALE;
 
 	spin_lock_irq(&ploop->pb_lock);
-	for (i = cluster; i < cluster + nr; i++) {
+	for (i = cluster; i < cluster + nr; i++)
 		clear_bit(i, pb->ppb_map);
-		/* TODO: optimize by introduction find_endio_hook_after() */
-		h = find_endio_hook(ploop, &pb->rb_root, i);
-		if (h)
-			unlink_postponed_backup_endio(ploop, &bio_list, h);
+	for (i = 0; i < nr; i++) {
+		h = find_endio_hook_range(ploop, &pb->rb_root, cluster,
+					  cluster + nr - 1);
+		if (!h)
+			break;
+		unlink_postponed_backup_endio(ploop, &bio_list, h);
 	}
 
 	has_more = !RB_EMPTY_ROOT(&pb->rb_root);
