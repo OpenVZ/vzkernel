@@ -953,6 +953,7 @@ generic_make_request_checks(struct bio *bio)
 		 */
 		bio_set_flag(bio, BIO_TRACE_COMPLETION);
 	}
+	blk_cbt_bio_queue(q, bio);
 	return true;
 
 not_supported:

@@ -918,6 +918,7 @@ static void __blk_release_queue(struct work_struct *work)
 		blk_mq_release(q);
 
 	blk_trace_shutdown(q);
+	blk_cbt_release(q);
 
 	if (queue_is_mq(q))
 		blk_mq_debugfs_unregister(q);
