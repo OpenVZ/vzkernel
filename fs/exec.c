@@ -110,6 +110,10 @@ bool path_noexec(const struct path *path)
 	       (path->mnt->mnt_sb->s_iflags & SB_I_NOEXEC);
 }
 
+/* Send signal only 3 times a day so that coredumps don't overflow the disk */
+#define SIGSEGV_RATELIMIT_INTERVAL	(24 * 60 * 60 * HZ)
+#define SIGSEGV_RATELIMIT_BURST 	3
+
 /*
  * We don't want a VE0-privileged user intentionally or by mistake
  * to execute files of container, these files are untrusted.
@@ -120,6 +124,8 @@ bool ve_exec_trusted(struct file *file, struct filename *name)
 	bool exec_from_ct = !ve_is_super(get_exec_env());
 	bool file_on_ploop = bdev && (bdev->bd_disk->major == PLOOP_DEVICE_MAJOR);
 	bool file_on_ct_mount = !ve_is_super(real_mount(file->f_path.mnt)->ve_owner);
+	static DEFINE_RATELIMIT_STATE(sigsegv_rs, SIGSEGV_RATELIMIT_INTERVAL,
+						  SIGSEGV_RATELIMIT_BURST);
 
 	if (exec_from_ct || (!file_on_ploop && !file_on_ct_mount))
 		return true;
@@ -132,9 +138,13 @@ bool ve_exec_trusted(struct file *file, struct filename *name)
 			return true;
 	}
 
-	WARN_ONCE(1, "The process %s from VE0 tried to execute untrusted file "
-		     "%s from VEX\n",
-		     current->comm, name->name);
+	if (!__ratelimit(&sigsegv_rs))
+		return false;
+
+	WARN(1, "The process %s from VE0 tried to execute untrusted file "
+		"%s from VEX\n",
+		current->comm, name->name);
+	force_sigsegv(SIGSEGV, current);
 	return false;
 }
 
