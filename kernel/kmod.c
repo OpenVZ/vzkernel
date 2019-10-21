@@ -306,7 +306,7 @@ static struct {
  */
 static bool nft_expr_allowed(const char *name)
 {
-	u64 permitted = get_exec_env()->ipt_mask;
+	u64 permitted = ve_get_ipt_mask(get_exec_env());
 
 	if (!name[0])
 		return false;
@@ -340,7 +340,7 @@ static bool nft_expr_allowed(const char *name)
  */
 static inline int module_payload_iptable_allowed(const char *module)
 {
-	u64 permitted = get_exec_env()->ipt_mask;
+	u64 permitted = ve_get_ipt_mask(get_exec_env());
 	int i;
 
 	/* Look for full module name in ve0_ipt_am table */
