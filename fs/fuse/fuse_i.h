@@ -144,6 +144,13 @@ struct fuse_inode {
 
 	/** Private kdirect io context */
 	void *private;
+
+	/** Direct IO operations */
+	struct {
+		wait_queue_head_t waitq;
+		atomic_t read_count;
+		atomic_t write_count;
+	} dio;
 };
 
 /** FUSE inode state bits */
@@ -1063,6 +1070,56 @@ void fuse_flush_writepages(struct inode *inode);
 
 void fuse_set_nowrite(struct inode *inode);
 void fuse_release_nowrite(struct inode *inode);
+
+static inline void fuse_read_dio_begin(struct fuse_inode *fi)
+{
+	atomic_inc(&fi->dio.read_count);
+}
+
+static inline void fuse_read_dio_end(struct fuse_inode *fi)
+{
+	if (atomic_dec_and_test(&fi->dio.read_count))
+		wake_up(&fi->dio.waitq);
+}
+
+static inline void fuse_read_dio_wait(struct fuse_inode *fi)
+{
+	wait_event(fi->dio.waitq,
+			atomic_read(&fi->dio.read_count) == 0);
+}
+
+static inline int fuse_read_dio_count(struct fuse_inode *fi)
+{
+	return atomic_read(&fi->dio.read_count);
+}
+
+static inline void fuse_write_dio_begin(struct fuse_inode *fi)
+{
+	atomic_inc(&fi->dio.write_count);
+}
+
+static inline void fuse_write_dio_end(struct fuse_inode *fi)
+{
+	if (atomic_dec_and_test(&fi->dio.write_count))
+		wake_up(&fi->dio.waitq);
+}
+
+static inline void fuse_write_dio_wait(struct fuse_inode *fi)
+{
+	wait_event(fi->dio.waitq,
+			atomic_read(&fi->dio.write_count) == 0);
+}
+
+static inline int fuse_write_dio_count(struct fuse_inode *fi)
+{
+	return atomic_read(&fi->dio.write_count);
+}
+
+static inline void fuse_dio_wait(struct fuse_inode *fi)
+{
+	fuse_read_dio_wait(fi);
+	fuse_write_dio_wait(fi);
+}
 
 /**
  * File-system tells the kernel to invalidate cache for the given node id.
