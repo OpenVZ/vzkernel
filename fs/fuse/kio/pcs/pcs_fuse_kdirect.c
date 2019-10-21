@@ -710,6 +710,7 @@ void ireq_destroy(struct pcs_int_request *ireq)
 static int submit_size_grow(struct inode *inode, unsigned long long size)
 {
 	struct fuse_conn *fc = get_fuse_conn(inode);
+	struct fuse_inode *fi = get_fuse_inode(inode);
 	struct fuse_file *ff;
 	struct fuse_setattr_in inarg;
 	struct fuse_attr_out outarg;
@@ -717,9 +718,9 @@ static int submit_size_grow(struct inode *inode, unsigned long long size)
 	int err;
 
 	/* Caller comes here w/o i_mutex, but vfs_truncate is blocked
-	   at inode_dio_wait() see fuse_set_nowrite
+	   at fuse_write_dio_wait see fuse_set_nowrite
 	 */
-	BUG_ON(!atomic_read(&inode->i_dio_count));
+	BUG_ON(!fuse_write_dio_count(fi));
 
 	TRACE("ino:%ld size:%lld \n",inode->i_ino, size);
 
@@ -877,11 +878,14 @@ static inline int req_wait_grow_queue(struct pcs_fuse_req *r,
 				      off_t offset, size_t size)
 {
 	struct pcs_dentry_info *di = get_pcs_inode(r->req.io_inode);
+	struct fuse_inode *fi = get_fuse_inode(r->req.io_inode);
 
 	if (!kqueue_insert(di, ff, &r->req))
 		return -EIO;
 
-	inode_dio_begin(r->req.io_inode);
+	BUG_ON(r->req.in.h.opcode != FUSE_WRITE && r->req.in.h.opcode != FUSE_FALLOCATE);
+	fuse_write_dio_begin(fi);
+
 	wait_grow(r, di, offset + size);
 	return 1;
 }
@@ -898,6 +902,7 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 {
 	struct fuse_req *req = &r->req;
 	struct pcs_dentry_info *di = get_pcs_inode(req->io_inode);
+	struct fuse_inode *fi = get_fuse_inode(req->io_inode);
 	int ret;
 
 	spin_lock(&di->lock);
@@ -1002,7 +1007,10 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 
 	if (!kqueue_insert(di, ff, req))
 		return -EIO;
-	inode_dio_begin(req->io_inode);
+	if (req->in.h.opcode == FUSE_READ)
+		fuse_read_dio_begin(fi);
+	else
+		fuse_write_dio_begin(fi);
 	return 0;
 fail:
 pending:
@@ -1202,7 +1210,7 @@ static void pcs_kio_setattr_handle(struct fuse_inode *fi, struct fuse_req *req)
 	if (di->size.op == PCS_SIZE_SHRINK) {
 		BUG_ON(!mutex_is_locked(&req->io_inode->i_mutex));
 		/* wait for aio reads in flight */
-		inode_dio_wait(req->io_inode);
+		fuse_dio_wait(fi);
 
 		req->end = _pcs_shrink_end;
 	} else
