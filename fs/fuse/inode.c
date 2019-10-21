@@ -94,6 +94,9 @@ static struct inode *fuse_alloc_inode(struct super_block *sb)
 	mutex_init(&fi->mutex);
 	init_rwsem(&fi->i_mmap_sem);
 	spin_lock_init(&fi->lock);
+	init_waitqueue_head(&fi->dio.waitq);
+	atomic_set(&fi->dio.read_count, 0);
+	atomic_set(&fi->dio.write_count, 0);
 	fi->forget = fuse_alloc_forget();
 	if (!fi->forget)
 		goto out_free;
