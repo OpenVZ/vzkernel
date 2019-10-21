@@ -420,11 +420,10 @@ static int fuse_release(struct inode *inode, struct file *file)
 		/*
 		 * Flush pending requests before FUSE_RELEASE makes userspace
 		 * to drop the lease of the file. Otherwise, they never finish.
-		 * Keep in mind, that in kio case fuse_sync_writes() currently
-		 * waits all type of requests (not only write).
 		 */
 		inode_lock(inode);
 		fuse_sync_writes(inode);
+		fuse_read_dio_wait(fi);
 
 		if (fi->num_openers == 0 && ff->fc->kio.op->file_close)
 			ff->fc->kio.op->file_close(ff->fc, file, inode);
@@ -3404,6 +3403,7 @@ static long fuse_file_fallocate(struct file *file, int mode, loff_t offset,
 				goto out;
 
 			fuse_sync_writes(inode);
+			fuse_read_dio_wait(fi);
 		}
 	}
 
@@ -3604,6 +3604,7 @@ int fuse_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 		__u64 start, __u64 len)
 {
 	struct fuse_conn *fc = get_fuse_conn(inode);
+	struct fuse_inode *fi = get_fuse_inode(inode);
 	int err = 0;
 
 	if (is_bad_inode(inode))
@@ -3635,6 +3636,7 @@ int fuse_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 	inode_lock(inode);
 
 	fuse_sync_writes(inode);
+	fuse_read_dio_wait(fi);
 
 	if (fieinfo->fi_extents_max == 0) {
 		err = fuse_request_fiemap(inode, 0, &start, &len, NULL, fieinfo);

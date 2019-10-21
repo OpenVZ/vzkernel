@@ -116,6 +116,9 @@ static struct inode *fuse_alloc_inode(struct super_block *sb)
 	init_waitqueue_head(&fi->page_waitq);
 	mutex_init(&fi->mutex);
 	spin_lock_init(&fi->lock);
+	init_waitqueue_head(&fi->dio.waitq);
+	atomic_set(&fi->dio.read_count, 0);
+	atomic_set(&fi->dio.write_count, 0);
 	fi->forget = fuse_alloc_forget();
 	if (!fi->forget) {
 		kmem_cache_free(fuse_inode_cachep, inode);
