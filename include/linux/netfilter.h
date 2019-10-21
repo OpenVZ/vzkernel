@@ -415,8 +415,15 @@ DECLARE_PER_CPU(bool, nf_skb_duplicated);
 #ifdef CONFIG_VE_IPTABLES
 #include <linux/vziptable_defs.h>
 
+static inline u64 ve_get_ipt_mask(struct ve_struct *ve)
+{
+	if (ve_is_super(ve) || ve->is_pseudosuper)
+		return ve0.ipt_mask;
+	return ve->ipt_mask;
+}
+
 #define ve_ipt_permitted(netns, ipt)					\
-	(mask_ipt_allow(get_exec_env()->ipt_mask, ipt))
+	(mask_ipt_allow(ve_get_ipt_mask(get_exec_env()), ipt))
 
 #define net_ipt_permitted(netns, ipt)					\
 	(mask_ipt_allow((netns)->owner_ve->ipt_mask, ipt))
