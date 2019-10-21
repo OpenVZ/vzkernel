@@ -1638,7 +1638,7 @@ void fuse_set_nowrite(struct inode *inode)
 	BUG_ON(fi->writectr < 0);
 	fi->writectr += FUSE_NOWRITE;
 	spin_unlock(&fi->lock);
-	inode_dio_wait(inode);
+	fuse_write_dio_wait(fi);
 	wait_event(fi->page_waitq, fi->writectr == FUSE_NOWRITE);
 }
 
@@ -1778,6 +1778,7 @@ int fuse_do_setattr(struct inode *inode, struct iattr *attr,
 
 	if (is_truncate) {
 		fuse_set_nowrite(inode);
+		fuse_read_dio_wait(fi);
 		set_bit(FUSE_I_SIZE_UNSTABLE, &fi->state);
 		if (trust_local_cmtime && attr->ia_size != inode->i_size)
 			attr->ia_valid |= ATTR_MTIME | ATTR_CTIME;
