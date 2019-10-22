@@ -2024,9 +2024,6 @@ echo "#define KERNEL_HEADERS_CHECKSUM \"$HEADERS_CHKSUM\"" >> $RPM_BUILD_ROOT/us
 ### clean
 ###
 
-%clean
-rm -rf $RPM_BUILD_ROOT
-
 ###
 ### scripts
 ###
