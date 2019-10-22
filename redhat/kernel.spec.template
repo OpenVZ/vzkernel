@@ -366,10 +366,11 @@ Requires: kernel-modules-uname-r = %{KVERREL}%{?variant}
 #
 # List the packages used during the kernel build
 #
-BuildRequires: kmod, patch, bash, tar, git
+BuildRequires: kmod, patch, bash, tar, git-core
 BuildRequires: bzip2, xz, findutils, gzip, m4, perl-interpreter, perl-Carp, perl-devel, perl-generators, make, diffutils, gawk
-BuildRequires: gcc, binutils, redhat-rpm-config, hmaccalc, python3-devel
-BuildRequires: net-tools, hostname, bc, bison, flex, elfutils-devel
+BuildRequires: gcc, binutils, redhat-rpm-config, hmaccalc, bison, flex
+BuildRequires: net-tools, hostname, bc, elfutils-devel
+BuildRequires: python3-devel
 %if %{with_headers}
 BuildRequires: rsync
 %endif
