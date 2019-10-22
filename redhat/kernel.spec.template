@@ -1080,13 +1080,15 @@ mv COPYING COPYING-%{version}
 # This Prevents scripts/setlocalversion from mucking with our version numbers.
 touch .scmversion
 
-# Do not use "ambiguous" python shebangs. RHEL 8 now has a new script
-# (/usr/lib/rpm/redhat/brp-mangle-shebangs), which forces us to specify a
-# "non-ambiguous" python shebang for scripts we ship in buildroot. This
-# script throws an error like below:
+# Mangle /usr/bin/python shebangs to /usr/bin/python3
+# Mangle all Python shebangs to be Python 3 explicitly
+# -p preserves timestamps
+# -n prevents creating ~backup files
+# -i specifies the interpreter for the shebang
+# This fixes errors such as
 # *** ERROR: ambiguous python shebang in /usr/bin/kvm_stat: #!/usr/bin/python. Change it to python3 (or python2) explicitly.
 # We patch all sources below for which we got a report/error.
-pathfix.py -i %{__python3} -p -n \
+pathfix.py -i "%{__python3} %{py3_shbang_opts}" -p -n \
 	tools/kvm/kvm_stat/kvm_stat \
 	scripts/show_delta \
 	scripts/diffconfig \
