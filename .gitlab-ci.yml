@@ -27,3 +27,18 @@ redhat_export:
       - makefile
       - Makefile.rhelver
       - redhat/
+
+# Bring some commits from a make rh-release back to internal
+update_internal:
+   stage: test
+   before_script:
+     - echo "fastestmirror=true" >> /etc/dnf/dnf.conf
+     - dnf -y install dnf-utils git openssh-clients tar
+     - eval $(ssh-agent -s)
+     - echo "$PRIVATE_KEY" | tr -d '\r' | ssh-add - > /dev/null
+     - mkdir -p ~/.ssh
+     - chmod 700 ~/.ssh
+   script:
+     - redhat/update-internal.sh $GIT_DEPTH
+   only:
+     - master
