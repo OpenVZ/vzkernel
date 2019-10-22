@@ -25,7 +25,7 @@ Summary: The Linux kernel
 
 %global distro_build %%DISTRO_BUILD%%
 
-# Sign the x86_64 kernel for secure boot authentication
+# Signing for secure boot authentication
 %ifarch x86_64 aarch64 s390x ppc64le
 %global signkernel 1
 %else
