@@ -212,6 +212,7 @@ reconnect_path(struct vfsmount *mnt, struct dentry *target_dir, char *nbuf)
 }
 
 struct getdents_callback {
+	struct dir_context ctx;
 	char *name;		/* name that was found. It already points to a
 				   buffer NAME_MAX+1 is size */
 	unsigned long ino;	/* the inum we are looking for */
@@ -271,17 +272,18 @@ static int get_name(const struct path *path, char *name, struct dentry *child)
 		goto out;
 
 	error = -EINVAL;
-	if (!file->f_op->readdir)
+	if (!file->f_op->readdir && !file->f_op->iterate)
 		goto out_close;
 
 	buffer.name = name;
 	buffer.ino = child->d_inode->i_ino;
 	buffer.found = 0;
 	buffer.sequence = 0;
+	buffer.ctx.actor = filldir_one;
 	while (1) {
 		int old_seq = buffer.sequence;
 
-		error = vfs_readdir(file, filldir_one, &buffer);
+		error = iterate_dir(file, &buffer.ctx);
 		if (buffer.found) {
 			error = 0;
 			break;
@@ -393,6 +395,15 @@ struct dentry *exportfs_decode_fh(struct vfsmount *mnt, struct fid *fid,
 	if (!result)
 		result = ERR_PTR(-ESTALE);
 	if (IS_ERR(result))
+		return result;
+
+	/*
+	 * If no acceptance criteria was specified by caller, a disconnected
+	 * dentry is also accepatable. Callers may use this mode to query if
+	 * file handle is stale or to get a reference to an inode without
+	 * risking the high overhead caused by directory reconnect.
+	 */
+	if (!acceptable)
 		return result;
 
 	if (S_ISDIR(result->d_inode->i_mode)) {

@@ -10,21 +10,23 @@ obj-y     = fork.o exec_domain.o panic.o printk.o \
 	    kthread.o wait.o sys_ni.o posix-cpu-timers.o mutex.o \
 	    hrtimer.o rwsem.o nsproxy.o srcu.o semaphore.o \
 	    notifier.o ksysfs.o cred.o \
-	    async.o range.o groups.o lglock.o smpboot.o
+	    async.o range.o groups.o lglock.o smpboot.o ucount.o \
+	    rh_taint.o rh_kabi.o rh_shadowman.o
 
 ifdef CONFIG_FUNCTION_TRACER
 # Do not trace debug files and internal ftrace files
-CFLAGS_REMOVE_lockdep.o = -pg
-CFLAGS_REMOVE_lockdep_proc.o = -pg
-CFLAGS_REMOVE_mutex-debug.o = -pg
-CFLAGS_REMOVE_rtmutex-debug.o = -pg
-CFLAGS_REMOVE_cgroup-debug.o = -pg
-CFLAGS_REMOVE_irq_work.o = -pg
+CFLAGS_REMOVE_lockdep.o = $(CC_FLAGS_FTRACE)
+CFLAGS_REMOVE_lockdep_proc.o = $(CC_FLAGS_FTRACE)
+CFLAGS_REMOVE_mutex-debug.o = $(CC_FLAGS_FTRACE)
+CFLAGS_REMOVE_rtmutex-debug.o = $(CC_FLAGS_FTRACE)
+CFLAGS_REMOVE_cgroup-debug.o = $(CC_FLAGS_FTRACE)
+CFLAGS_REMOVE_irq_work.o = $(CC_FLAGS_FTRACE)
 endif
 
 obj-y += sched/
 obj-y += power/
 obj-y += cpu/
+obj-y += livepatch/
 
 obj-$(CONFIG_CHECKPOINT_RESTORE) += kcmp.o
 obj-$(CONFIG_FREEZER) += freezer.o
@@ -51,27 +53,35 @@ endif
 obj-$(CONFIG_SMP) += spinlock.o
 obj-$(CONFIG_DEBUG_SPINLOCK) += spinlock.o
 obj-$(CONFIG_PROVE_LOCKING) += spinlock.o
+obj-$(CONFIG_QUEUED_SPINLOCKS) += qspinlock.o
+obj-$(CONFIG_QUEUED_RWLOCKS) += qrwlock.o qrwlock_gen.o
+obj-$(CONFIG_LOCK_SPIN_ON_OWNER) += osq_lock.o
 obj-$(CONFIG_UID16) += uid16.o
+obj-$(CONFIG_SYSTEM_TRUSTED_KEYRING) += system_keyring.o system_certificates.o
 obj-$(CONFIG_MODULES) += module.o
-obj-$(CONFIG_MODULE_SIG) += module_signing.o modsign_pubkey.o modsign_certificate.o
+obj-$(CONFIG_MODULE_SIG) += module_signing.o
+obj-$(CONFIG_MODULE_SIG_UEFI) += modsign_uefi.o
 obj-$(CONFIG_KALLSYMS) += kallsyms.o
 obj-$(CONFIG_BSD_PROCESS_ACCT) += acct.o
+obj-$(CONFIG_CRASH_CORE) += crash_core.o
+obj-$(CONFIG_KEXEC_CORE) += kexec_core.o
 obj-$(CONFIG_KEXEC) += kexec.o
+obj-$(CONFIG_KEXEC_FILE) += kexec_file.o
 obj-$(CONFIG_BACKTRACE_SELF_TEST) += backtracetest.o
 obj-$(CONFIG_COMPAT) += compat.o
 obj-$(CONFIG_CGROUPS) += cgroup.o
 obj-$(CONFIG_CGROUP_FREEZER) += cgroup_freezer.o
+obj-$(CONFIG_CGROUP_PIDS) += cgroup_pids.o
 obj-$(CONFIG_CPUSETS) += cpuset.o
 obj-$(CONFIG_UTS_NS) += utsname.o
 obj-$(CONFIG_USER_NS) += user_namespace.o
 obj-$(CONFIG_PID_NS) += pid_namespace.o
 obj-$(CONFIG_IKCONFIG) += configs.o
-obj-$(CONFIG_RESOURCE_COUNTERS) += res_counter.o
 obj-$(CONFIG_SMP) += stop_machine.o
 obj-$(CONFIG_KPROBES_SANITY_TEST) += test_kprobes.o
 obj-$(CONFIG_AUDIT) += audit.o auditfilter.o
 obj-$(CONFIG_AUDITSYSCALL) += auditsc.o
-obj-$(CONFIG_AUDIT_WATCH) += audit_watch.o
+obj-$(CONFIG_AUDIT_WATCH) += audit_watch.o audit_fsnotify.o
 obj-$(CONFIG_AUDIT_TREE) += audit_tree.o
 obj-$(CONFIG_GCOV_KERNEL) += gcov/
 obj-$(CONFIG_KPROBES) += kprobes.o
@@ -102,6 +112,7 @@ obj-$(CONFIG_RING_BUFFER) += trace/
 obj-$(CONFIG_TRACEPOINTS) += trace/
 obj-$(CONFIG_IRQ_WORK) += irq_work.o
 obj-$(CONFIG_CPU_PM) += cpu_pm.o
+obj-$(CONFIG_BPF) += bpf/
 
 obj-$(CONFIG_PERF_EVENTS) += events/
 
@@ -111,7 +122,12 @@ obj-$(CONFIG_CRASH_DUMP) += crash_dump.o
 obj-$(CONFIG_JUMP_LABEL) += jump_label.o
 obj-$(CONFIG_CONTEXT_TRACKING) += context_tracking.o
 
+obj-$(CONFIG_HAS_IOMEM) += iomem.o
+obj-$(CONFIG_ZONE_DEVICE) += memremap.o
+
 $(obj)/configs.o: $(obj)/config_data.h
+
+$(obj)/modsign_uefi.o: KBUILD_CFLAGS += -fshort-wchar
 
 # config_data.h contains the same information as ikconfig.h but gzipped.
 # Info from config_data can be extracted from /proc/config*
@@ -119,7 +135,7 @@ targets += config_data.gz
 $(obj)/config_data.gz: $(KCONFIG_CONFIG) FORCE
 	$(call if_changed,gzip)
 
-      filechk_ikconfiggz = (echo "static const char kernel_config_data[] __used = MAGIC_START"; cat $< | scripts/bin2c; echo "MAGIC_END;")
+      filechk_ikconfiggz = (echo "static const char kernel_config_data[] __used = MAGIC_START"; cat $< | scripts/basic/bin2c; echo "MAGIC_END;")
 targets += config_data.h
 $(obj)/config_data.h: $(obj)/config_data.gz FORCE
 	$(call filechk,ikconfiggz)
@@ -140,19 +156,52 @@ targets += timeconst.h
 $(obj)/timeconst.h: $(obj)/hz.bc $(src)/timeconst.bc FORCE
 	$(call if_changed,bc)
 
+###############################################################################
+#
+# Roll all the X.509 certificates that we can find together and pull them into
+# the kernel so that they get loaded into the system trusted keyring during
+# boot.
+#
+# We look in the source root and the build root for all files whose name ends
+# in ".x509".  Unfortunately, this will generate duplicate filenames, so we
+# have make canonicalise the pathnames and then sort them to discard the
+# duplicates.
+#
+###############################################################################
+ifeq ($(CONFIG_SYSTEM_TRUSTED_KEYRING),y)
+X509_CERTIFICATES-y := $(wildcard *.x509) $(wildcard $(srctree)/*.x509)
+X509_CERTIFICATES-$(CONFIG_MODULE_SIG) += signing_key.x509
+X509_CERTIFICATES := $(sort $(foreach CERT,$(X509_CERTIFICATES-y), \
+				$(or $(realpath $(CERT)),$(CERT))))
+
+ifeq ($(X509_CERTIFICATES),)
+$(warning *** No X.509 certificates found ***)
+endif
+
+ifneq ($(wildcard $(obj)/.x509.list),)
+ifneq ($(shell cat $(obj)/.x509.list),$(X509_CERTIFICATES))
+$(info X.509 certificate list changed)
+$(shell rm $(obj)/.x509.list)
+endif
+endif
+
+kernel/system_certificates.o: $(obj)/x509_certificate_list
+
+quiet_cmd_x509certs  = CERTS   $@
+      cmd_x509certs  = cat $(X509_CERTIFICATES) /dev/null >$@ $(foreach X509,$(X509_CERTIFICATES),; echo "  - Including cert $(X509)")
+
+targets += $(obj)/x509_certificate_list
+$(obj)/x509_certificate_list: $(X509_CERTIFICATES) $(obj)/.x509.list
+	$(call if_changed,x509certs)
+
+targets += $(obj)/.x509.list
+$(obj)/.x509.list:
+	@echo $(X509_CERTIFICATES) >$@
+
+clean-files := x509_certificate_list .x509.list
+endif
+
 ifeq ($(CONFIG_MODULE_SIG),y)
-#
-# Pull the signing certificate and any extra certificates into the kernel
-#
-
-quiet_cmd_touch = TOUCH   $@
-      cmd_touch = touch   $@
-
-extra_certificates:
-	$(call cmd,touch)
-
-kernel/modsign_certificate.o: signing_key.x509 extra_certificates
-
 ###############################################################################
 #
 # If module signing is requested, say by allyesconfig, but a key has not been

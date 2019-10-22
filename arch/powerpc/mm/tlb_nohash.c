@@ -203,7 +203,7 @@ static DEFINE_RAW_SPINLOCK(tlbivax_lock);
 static int mm_is_core_local(struct mm_struct *mm)
 {
 	return cpumask_subset(mm_cpumask(mm),
-			      topology_thread_cpumask(smp_processor_id()));
+			      topology_sibling_cpumask(smp_processor_id()));
 }
 
 struct tlb_flush_param {
@@ -648,7 +648,7 @@ void __init early_init_mmu(void)
 	__early_init_mmu(1);
 }
 
-void __cpuinit early_init_mmu_secondary(void)
+void early_init_mmu_secondary(void)
 {
 	__early_init_mmu(0);
 }

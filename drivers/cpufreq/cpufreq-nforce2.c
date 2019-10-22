@@ -303,9 +303,7 @@ static int nforce2_verify(struct cpufreq_policy *policy)
 	if (policy->min < (fsb_pol_max * fid * 100))
 		policy->max = (fsb_pol_max + 1) * fid * 100;
 
-	cpufreq_verify_within_limits(policy,
-				     policy->cpuinfo.min_freq,
-				     policy->cpuinfo.max_freq);
+	cpufreq_verify_within_cpu_limits(policy);
 	return 0;
 }
 
@@ -383,7 +381,7 @@ static struct cpufreq_driver nforce2_driver = {
 };
 
 #ifdef MODULE
-static DEFINE_PCI_DEVICE_TABLE(nforce2_ids) = {
+static const struct pci_device_id nforce2_ids[] = {
 	{ PCI_VENDOR_ID_NVIDIA, PCI_DEVICE_ID_NVIDIA_NFORCE2 },
 	{}
 };

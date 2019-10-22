@@ -116,7 +116,7 @@ static void iodelay(int udelay)
 	}
 }
 
-static DEFINE_PCI_DEVICE_TABLE(via_pci_tbl) = {
+static const struct pci_device_id via_pci_tbl[] = {
 	{ PCI_VENDOR_ID_VIA, 0x8231, PCI_ANY_ID, PCI_ANY_ID,0,0,0 },
 	{ PCI_VENDOR_ID_VIA, 0x3109, PCI_ANY_ID, PCI_ANY_ID,0,0,1 },
 	{ PCI_VENDOR_ID_VIA, 0x3074, PCI_ANY_ID, PCI_ANY_ID,0,0,2 },
@@ -788,7 +788,7 @@ static netdev_tx_t via_ircc_hard_xmit_sir(struct sk_buff *skb,
 		/* Check for empty frame */
 		if (!skb->len) {
 			via_ircc_change_speed(self, speed);
-			dev->trans_start = jiffies;
+			netif_trans_update(dev);
 			dev_kfree_skb(skb);
 			return NETDEV_TX_OK;
 		} else
@@ -835,7 +835,7 @@ static netdev_tx_t via_ircc_hard_xmit_sir(struct sk_buff *skb,
 	RXStart(iobase, OFF);
 	TXStart(iobase, ON);
 
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 	spin_unlock_irqrestore(&self->lock, flags);
 	dev_kfree_skb(skb);
 	return NETDEV_TX_OK;
@@ -863,7 +863,7 @@ static netdev_tx_t via_ircc_hard_xmit_fir(struct sk_buff *skb,
 	if ((speed != self->io.speed) && (speed != -1)) {
 		if (!skb->len) {
 			via_ircc_change_speed(self, speed);
-			dev->trans_start = jiffies;
+			netif_trans_update(dev);
 			dev_kfree_skb(skb);
 			return NETDEV_TX_OK;
 		} else
@@ -883,7 +883,7 @@ static netdev_tx_t via_ircc_hard_xmit_fir(struct sk_buff *skb,
 	via_ircc_dma_xmit(self, iobase);
 //F01   }
 //F01   if (self->tx_fifo.free < (MAX_TX_WINDOW -1 )) netif_wake_queue(self->netdev);
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 	dev_kfree_skb(skb);
 	spin_unlock_irqrestore(&self->lock, flags);
 	return NETDEV_TX_OK;

@@ -51,6 +51,20 @@ int stsi(void *sysinfo, int fc, int sel1, int sel2)
 }
 EXPORT_SYMBOL(stsi);
 
+static bool convert_ext_name(unsigned char encoding, char *name, size_t len)
+{
+	switch (encoding) {
+	case 1: /* EBCDIC */
+		EBCASC(name, len);
+		break;
+	case 2:	/* UTF-8 */
+		break;
+	default:
+		return false;
+	}
+	return true;
+}
+
 static void stsi_1_1_1(struct seq_file *m, struct sysinfo_1_1_1 *info)
 {
 	int i;
@@ -194,6 +208,36 @@ static void stsi_2_2_2(struct seq_file *m, struct sysinfo_2_2_2 *info)
 	seq_printf(m, "LPAR CPUs Reserved:   %d\n", info->cpus_reserved);
 	seq_printf(m, "LPAR CPUs Dedicated:  %d\n", info->cpus_dedicated);
 	seq_printf(m, "LPAR CPUs Shared:     %d\n", info->cpus_shared);
+	if (info->mt_installed & 0x80) {
+		seq_printf(m, "LPAR CPUs G-MTID:     %d\n",
+			   info->mt_general & 0x1f);
+		seq_printf(m, "LPAR CPUs S-MTID:     %d\n",
+			   info->mt_installed & 0x1f);
+		seq_printf(m, "LPAR CPUs PS-MTID:    %d\n",
+			   info->mt_psmtid & 0x1f);
+	}
+	if (convert_ext_name(info->vsne, info->ext_name, sizeof(info->ext_name))) {
+		seq_printf(m, "LPAR Extended Name:   %-.256s\n", info->ext_name);
+		seq_printf(m, "LPAR UUID:            %pUb\n", &info->uuid);
+	}
+}
+
+static void print_ext_name(struct seq_file *m, int lvl,
+			   struct sysinfo_3_2_2 *info)
+{
+	size_t len = sizeof(info->ext_names[lvl]);
+
+	if (!convert_ext_name(info->vm[lvl].evmne, info->ext_names[lvl], len))
+		return;
+	seq_printf(m, "VM%02d Extended Name:   %-.256s\n", lvl,
+		   info->ext_names[lvl]);
+}
+
+static void print_uuid(struct seq_file *m, int i, struct sysinfo_3_2_2 *info)
+{
+	if (!memcmp(&info->vm[i].uuid, &NULL_UUID_BE, sizeof(uuid_be)))
+		return;
+	seq_printf(m, "VM%02d UUID:            %pUb\n", i, &info->vm[i].uuid);
 }
 
 static void stsi_3_2_2(struct seq_file *m, struct sysinfo_3_2_2 *info)
@@ -213,6 +257,8 @@ static void stsi_3_2_2(struct seq_file *m, struct sysinfo_3_2_2 *info)
 		seq_printf(m, "VM%02d CPUs Configured: %d\n", i, info->vm[i].cpus_configured);
 		seq_printf(m, "VM%02d CPUs Standby:    %d\n", i, info->vm[i].cpus_standby);
 		seq_printf(m, "VM%02d CPUs Reserved:   %d\n", i, info->vm[i].cpus_reserved);
+		print_ext_name(m, i, info);
+		print_uuid(m, i, info);
 	}
 }
 
@@ -418,7 +464,7 @@ void s390_adjust_jiffies(void)
 /*
  * calibrate the delay loop
  */
-void __cpuinit calibrate_delay(void)
+void calibrate_delay(void)
 {
 	s390_adjust_jiffies();
 	/* Print the good old Bogomips line .. */

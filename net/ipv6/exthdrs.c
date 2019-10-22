@@ -162,12 +162,6 @@ static bool ip6_parse_tlv(const struct tlvtype_proc *procs, struct sk_buff *skb)
 		off += optlen;
 		len -= optlen;
 	}
-	/* This case will not be caught by above check since its padding
-	 * length is smaller than 7:
-	 * 1 byte NH + 1 byte Length + 6 bytes Padding
-	 */
-	if ((padlen == 6) && ((off - skb_network_header_len(skb)) == 8))
-		goto bad;
 
 	if (len == 0)
 		return true;
@@ -667,7 +661,7 @@ static void ipv6_push_rthdr(struct sk_buff *skb, u8 *proto,
 
 	ihdr = (struct rt0_hdr *) opt;
 
-	phdr = (struct rt0_hdr *) skb_push(skb, (ihdr->rt_hdr.hdrlen + 1) << 3);
+	phdr = skb_push(skb, (ihdr->rt_hdr.hdrlen + 1) << 3);
 	memcpy(phdr, ihdr, sizeof(struct rt0_hdr));
 
 	hops = ihdr->rt_hdr.hdrlen >> 1;
@@ -685,7 +679,7 @@ static void ipv6_push_rthdr(struct sk_buff *skb, u8 *proto,
 
 static void ipv6_push_exthdr(struct sk_buff *skb, u8 *proto, u8 type, struct ipv6_opt_hdr *opt)
 {
-	struct ipv6_opt_hdr *h = (struct ipv6_opt_hdr *)skb_push(skb, ipv6_optlen(opt));
+	struct ipv6_opt_hdr *h = skb_push(skb, ipv6_optlen(opt));
 
 	memcpy(h, opt, ipv6_optlen(opt));
 	h->nexthdr = *proto;
@@ -733,6 +727,7 @@ ipv6_dup_options(struct sock *sk, struct ipv6_txoptions *opt)
 			*((char **)&opt2->dst1opt) += dif;
 		if (opt2->srcrt)
 			*((char **)&opt2->srcrt) += dif;
+		atomic_set(&opt2->refcnt, 1);
 	}
 	return opt2;
 }
@@ -796,7 +791,7 @@ ipv6_renew_options(struct sock *sk, struct ipv6_txoptions *opt,
 		return ERR_PTR(-ENOBUFS);
 
 	memset(opt2, 0, tot_len);
-
+	atomic_set(&opt2->refcnt, 1);
 	opt2->tot_len = tot_len;
 	p = (char *)(opt2 + 1);
 

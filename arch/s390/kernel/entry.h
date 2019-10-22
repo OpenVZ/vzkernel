@@ -21,9 +21,10 @@ void psw_idle(struct s390_idle_data *, unsigned long);
 asmlinkage long do_syscall_trace_enter(struct pt_regs *regs);
 asmlinkage void do_syscall_trace_exit(struct pt_regs *regs);
 
+int alloc_vector_registers(struct task_struct *tsk);
+
 void do_protection_exception(struct pt_regs *regs);
 void do_dat_exception(struct pt_regs *regs);
-void do_asce_exception(struct pt_regs *regs);
 
 void addressing_exception(struct pt_regs *regs);
 void data_exception(struct pt_regs *regs);
@@ -44,8 +45,10 @@ void special_op_exception(struct pt_regs *regs);
 void specification_exception(struct pt_regs *regs);
 void transaction_exception(struct pt_regs *regs);
 void translation_exception(struct pt_regs *regs);
+void vector_exception(struct pt_regs *regs);
 
 void do_per_trap(struct pt_regs *regs);
+void do_report_trap(struct pt_regs *regs, int si_signo, int si_code, char *str);
 void syscall_trace(struct pt_regs *regs, int entryexit);
 void kernel_stack_overflow(struct pt_regs * regs);
 void do_signal(struct pt_regs *regs);
@@ -78,5 +81,12 @@ long sys_sigreturn(void);
 long sys_rt_sigreturn(void);
 long sys32_sigreturn(void);
 long sys32_rt_sigreturn(void);
+
+long sys_s390_guarded_storage(int command, struct gs_cb __user *);
+long sys_s390_pci_mmio_write(unsigned long, const void __user *, size_t);
+long sys_s390_pci_mmio_read(unsigned long, void __user *, size_t);
+long sys_s390_sthyi(unsigned long function_code, void __user *buffer, u64 __user *return_code, unsigned long flags);
+
+void gs_load_bc_cb(struct pt_regs *regs);
 
 #endif /* _ENTRY_H */

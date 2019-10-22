@@ -87,29 +87,51 @@
 #define ACPI_DBG_TRACK_ALLOCATIONS
 #endif
 
-/* acpi_names configuration. Single threaded with debugger output enabled. */
-
-#ifdef ACPI_NAMES_APP
-#define ACPI_DEBUGGER
-#define ACPI_APPLICATION
-#define ACPI_SINGLE_THREADED
-#endif
-
 /*
- * acpi_bin/acpi_help/acpi_src configuration. All single threaded, with
- * no debug output.
+ * acpi_bin/acpi_dump/acpi_help/acpi_names/acpi_src/acpi_xtract/Example configuration.
+ * All single threaded.
  */
 #if (defined ACPI_BIN_APP)   || \
+	(defined ACPI_DUMP_APP)  || \
+	(defined ACPI_HELP_APP)     || \
+	(defined ACPI_NAMES_APP)    || \
 	(defined ACPI_SRC_APP)   || \
 	(defined ACPI_XTRACT_APP)
 #define ACPI_APPLICATION
 #define ACPI_SINGLE_THREADED
 #endif
 
+/* acpi_help configuration. Error messages disabled. */
+
 #ifdef ACPI_HELP_APP
-#define ACPI_APPLICATION
-#define ACPI_SINGLE_THREADED
 #define ACPI_NO_ERROR_MESSAGES
+#endif
+
+/* acpi_names configuration. Debug output enabled. */
+
+#ifdef ACPI_NAMES_APP
+#define ACPI_DEBUG_OUTPUT
+#endif
+
+/* acpi_exec/acpi_names/Example configuration. Native RSDP used. */
+
+#if (defined ACPI_EXEC_APP)     || \
+	(defined ACPI_EXAMPLE_APP)  || \
+	(defined ACPI_NAMES_APP)
+#define ACPI_USE_NATIVE_RSDP_POINTER
+#endif
+
+/* acpi_dump configuration. Native mapping used if provied by OSPMs */
+
+#ifdef ACPI_DUMP_APP
+#define ACPI_USE_NATIVE_MEMORY_MAPPING
+#endif
+
+/* acpi_names/Example configuration. Hardware disabled */
+
+#if (defined ACPI_EXAMPLE_APP)  || \
+	(defined ACPI_NAMES_APP)
+#define ACPI_REDUCED_HARDWARE 1
 #endif
 
 /* Linkable ACPICA library */
@@ -122,7 +144,6 @@
 /* Common for all ACPICA applications */
 
 #ifdef ACPI_APPLICATION
-#define ACPI_USE_SYSTEM_CLIBRARY
 #define ACPI_USE_LOCAL_CACHE
 #endif
 
@@ -134,6 +155,9 @@
 #define ACPI_DISASSEMBLER
 #endif
 
+#ifdef ACPI_DUMP_APP
+#define USE_NATIVE_ALLOCATE_ZEROED
+#endif
 
 /*! [Begin] no source code translation */
 
@@ -180,8 +204,22 @@
 #elif defined(_AED_EFI)
 #include "acefi.h"
 
+#elif defined(_GNU_EFI)
+#include "acefi.h"
+
 #elif defined(__HAIKU__)
 #include "achaiku.h"
+
+#elif defined(__QNX__)
+#include "acqnx.h"
+
+/*
+ * EFI applications can be built with -nostdlib, in this case, it must be
+ * included after including all other host environmental definitions, in
+ * order to override the definitions.
+ */
+#elif defined(_AED_EFI) || defined(_GNU_EFI)
+#include "acefi.h"
 
 #else
 
@@ -287,7 +325,8 @@
  * ACPI_USE_SYSTEM_CLIBRARY - Define this if linking to an actual C library.
  *      Otherwise, local versions of string/memory functions will be used.
  * ACPI_USE_STANDARD_HEADERS - Define this if linking to a C library and
- *      the standard header files may be used.
+ *      the standard header files may be used. Defining this implies that
+ *      ACPI_USE_SYSTEM_CLIBRARY has been defined.
  *
  * The ACPICA subsystem only uses low level C library functions that do not call
  * operating system services and may therefore be inlined in the code.
@@ -295,7 +334,6 @@
  * It may be necessary to tailor these include files to the target
  * generation environment.
  */
-#ifdef ACPI_USE_SYSTEM_CLIBRARY
 
 /* Use the standard C library headers. We want to keep these to a minimum. */
 
@@ -307,33 +345,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#ifdef ACPI_APPLICATION
+#include <stdio.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <time.h>
+#include <signal.h>
+#endif
 
 #endif				/* ACPI_USE_STANDARD_HEADERS */
 
 /* We will be linking to the standard Clib functions */
-
-#define ACPI_STRSTR(s1,s2)      strstr((s1), (s2))
-#define ACPI_STRCHR(s1,c)       strchr((s1), (c))
-#define ACPI_STRLEN(s)          (acpi_size) strlen((s))
-#define ACPI_STRCPY(d,s)        (void) strcpy((d), (s))
-#define ACPI_STRNCPY(d,s,n)     (void) strncpy((d), (s), (acpi_size)(n))
-#define ACPI_STRNCMP(d,s,n)     strncmp((d), (s), (acpi_size)(n))
-#define ACPI_STRCMP(d,s)        strcmp((d), (s))
-#define ACPI_STRCAT(d,s)        (void) strcat((d), (s))
-#define ACPI_STRNCAT(d,s,n)     strncat((d), (s), (acpi_size)(n))
-#define ACPI_STRTOUL(d,s,n)     strtoul((d), (s), (acpi_size)(n))
-#define ACPI_MEMCMP(s1,s2,n)    memcmp((const char *)(s1), (const char *)(s2), (acpi_size)(n))
-#define ACPI_MEMCPY(d,s,n)      (void) memcpy((d), (s), (acpi_size)(n))
-#define ACPI_MEMSET(d,s,n)      (void) memset((d), (s), (acpi_size)(n))
-
-#define ACPI_TOUPPER(i)         toupper((int) (i))
-#define ACPI_TOLOWER(i)         tolower((int) (i))
-#define ACPI_IS_XDIGIT(i)       isxdigit((int) (i))
-#define ACPI_IS_DIGIT(i)        isdigit((int) (i))
-#define ACPI_IS_SPACE(i)        isspace((int) (i))
-#define ACPI_IS_UPPER(i)        isupper((int) (i))
-#define ACPI_IS_PRINT(i)        isprint((int) (i))
-#define ACPI_IS_ALPHA(i)        isalpha((int) (i))
 
 #else
 
@@ -372,22 +394,17 @@ typedef char *va_list;
 
 /* Use the local (ACPICA) definitions of the clib functions */
 
-#define ACPI_STRSTR(s1,s2)      acpi_ut_strstr ((s1), (s2))
-#define ACPI_STRCHR(s1,c)       acpi_ut_strchr ((s1), (c))
-#define ACPI_STRLEN(s)          (acpi_size) acpi_ut_strlen ((s))
-#define ACPI_STRCPY(d,s)        (void) acpi_ut_strcpy ((d), (s))
-#define ACPI_STRNCPY(d,s,n)     (void) acpi_ut_strncpy ((d), (s), (acpi_size)(n))
-#define ACPI_STRNCMP(d,s,n)     acpi_ut_strncmp ((d), (s), (acpi_size)(n))
-#define ACPI_STRCMP(d,s)        acpi_ut_strcmp ((d), (s))
-#define ACPI_STRCAT(d,s)        (void) acpi_ut_strcat ((d), (s))
-#define ACPI_STRNCAT(d,s,n)     acpi_ut_strncat ((d), (s), (acpi_size)(n))
-#define ACPI_STRTOUL(d,s,n)     acpi_ut_strtoul ((d), (s), (acpi_size)(n))
-#define ACPI_MEMCMP(s1,s2,n)    acpi_ut_memcmp((const char *)(s1), (const char *)(s2), (acpi_size)(n))
-#define ACPI_MEMCPY(d,s,n)      (void) acpi_ut_memcpy ((d), (s), (acpi_size)(n))
-#define ACPI_MEMSET(d,v,n)      (void) acpi_ut_memset ((d), (v), (acpi_size)(n))
-#define ACPI_TOUPPER(c)         acpi_ut_to_upper ((int) (c))
-#define ACPI_TOLOWER(c)         acpi_ut_to_lower ((int) (c))
-
-#endif				/* ACPI_USE_SYSTEM_CLIBRARY */
+#ifndef ACPI_FILE
+#ifdef ACPI_APPLICATION
+#include <stdio.h>
+#define ACPI_FILE              FILE *
+#define ACPI_FILE_OUT          stdout
+#define ACPI_FILE_ERR          stderr
+#else
+#define ACPI_FILE              void *
+#define ACPI_FILE_OUT          NULL
+#define ACPI_FILE_ERR          NULL
+#endif				/* ACPI_APPLICATION */
+#endif				/* ACPI_FILE */
 
 #endif				/* __ACENV_H__ */

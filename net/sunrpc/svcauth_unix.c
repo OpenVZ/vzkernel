@@ -347,13 +347,13 @@ ip_map_cached_get(struct svc_xprt *xprt)
 		spin_lock(&xprt->xpt_lock);
 		ipm = xprt->xpt_auth_cache;
 		if (ipm != NULL) {
-			if (!cache_valid(&ipm->h)) {
+			sn = net_generic(xprt->xpt_net, sunrpc_net_id);
+			if (cache_is_expired(sn->ip_map_cache, &ipm->h)) {
 				/*
 				 * The entry has been invalidated since it was
 				 * remembered, e.g. by a second mount from the
 				 * same IP address.
 				 */
-				sn = net_generic(xprt->xpt_net, sunrpc_net_id);
 				xprt->xpt_auth_cache = NULL;
 				spin_unlock(&xprt->xpt_lock);
 				cache_put(&ipm->h, sn->ip_map_cache);
@@ -493,8 +493,6 @@ static int unix_gid_parse(struct cache_detail *cd,
 	if (rv)
 		return -EINVAL;
 	uid = make_kuid(&init_user_ns, id);
-	if (!uid_valid(uid))
-		return -EINVAL;
 	ug.uid = uid;
 
 	expiry = get_expiry(&mesg);
@@ -522,6 +520,7 @@ static int unix_gid_parse(struct cache_detail *cd,
 		GROUP_AT(ug.gi, i) = kgid;
 	}
 
+	groups_sort(ug.gi);
 	ugp = unix_gid_lookup(cd, uid);
 	if (ugp) {
 		struct cache_head *ch;
@@ -730,10 +729,6 @@ svcauth_null_accept(struct svc_rqst *rqstp, __be32 *authp)
 	struct kvec	*resv = &rqstp->rq_res.head[0];
 	struct svc_cred	*cred = &rqstp->rq_cred;
 
-	cred->cr_group_info = NULL;
-	cred->cr_principal = NULL;
-	rqstp->rq_client = NULL;
-
 	if (argv->iov_len < 3*4)
 		return SVC_GARBAGE;
 
@@ -796,10 +791,6 @@ svcauth_unix_accept(struct svc_rqst *rqstp, __be32 *authp)
 	u32		slen, i;
 	int		len   = argv->iov_len;
 
-	cred->cr_group_info = NULL;
-	cred->cr_principal = NULL;
-	rqstp->rq_client = NULL;
-
 	if ((len -= 3*4) < 0)
 		return SVC_GARBAGE;
 
@@ -829,6 +820,7 @@ svcauth_unix_accept(struct svc_rqst *rqstp, __be32 *authp)
 		kgid_t kgid = make_kgid(&init_user_ns, svc_getnl(argv));
 		GROUP_AT(cred->cr_group_info, i) = kgid;
 	}
+	groups_sort(cred->cr_group_info);
 	if (svc_getu32(argv) != htonl(RPC_AUTH_NULL) || svc_getu32(argv) != 0) {
 		*authp = rpc_autherr_badverf;
 		return SVC_DENIED;

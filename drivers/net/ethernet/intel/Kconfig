@@ -86,6 +86,15 @@ config E1000E
 	  To compile this driver as a module, choose M here. The module
 	  will be called e1000e.
 
+config E1000E_HWTS
+	bool "Support HW cross-timestamp on PCH devices"
+	default y
+	depends on E1000E && X86
+	---help---
+	 Say Y to enable hardware supported cross-timestamping on PCH
+	 devices. The cross-timestamp is available through the PTP clock
+	 driver precise cross-timestamp ioctl (PTP_SYS_OFFSET_PRECISE).
+
 config IGB
 	tristate "Intel(R) 82575/82576 PCI-Express Gigabit Ethernet support"
 	depends on PCI
@@ -177,6 +186,7 @@ config IXGBE
 	tristate "Intel(R) 10GbE PCI Express adapters support"
 	depends on PCI
 	select MDIO
+	select MDIO_DEVICE
 	select PTP_1588_CLOCK
 	---help---
 	  This driver supports Intel(R) 10GbE PCI Express family of
@@ -220,6 +230,15 @@ config IXGBE_DCB
 
 	  If unsure, say N.
 
+config IXGBE_IPSEC
+	bool "IPSec XFRM cryptography-offload acceleration"
+	depends on IXGBE
+	depends on XFRM_OFFLOAD
+	default y
+	select XFRM_ALGO
+	---help---
+	  Enable support for IPSec offload in ixgbe.ko
+
 config IXGBEVF
 	tristate "Intel(R) 82599 Virtual Function Ethernet support"
 	depends on PCI_MSI
@@ -241,5 +260,136 @@ config IXGBEVF
 	  To compile this driver as a module, choose M here. The module
 	  will be called ixgbevf.  MSI-X interrupt support is required
 	  for this driver to work correctly.
+
+config IXGBEVF_IPSEC
+	bool "IPSec XFRM cryptography-offload acceleration"
+	depends on IXGBEVF
+	depends on XFRM_OFFLOAD
+	default y
+	select XFRM_ALGO
+	---help---
+	  Enable support for IPSec offload in ixgbevf.ko
+
+config I40E
+	tristate "Intel(R) Ethernet Controller XL710 Family support"
+	select PTP_1588_CLOCK
+	depends on PCI
+	---help---
+	  This driver supports Intel(R) Ethernet Controller XL710 Family of
+	  devices.  For more information on how to identify your adapter, go
+	  to the Adapter & Driver ID Guide at:
+
+	  <http://support.intel.com/support/network/adapter/pro100/21397.htm>
+
+	  For general information and support, go to the Intel support
+	  website at:
+
+	  <http://support.intel.com>
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called i40e.
+
+config I40E_VXLAN
+	bool "Virtual eXtensible Local Area Network Support"
+	default n
+	depends on I40E && VXLAN && !(I40E=y && VXLAN=m)
+	---help---
+	  This allows one to create VXLAN virtual interfaces that provide
+	  Layer 2 Networks over Layer 3 Networks. VXLAN is often used
+	  to tunnel virtual network infrastructure in virtualized environments.
+	  Say Y here if you want to use Virtual eXtensible Local Area Network
+	  (VXLAN) in the driver.
+
+config I40E_DCB
+	bool "Data Center Bridging (DCB) Support"
+	default n
+	depends on I40E && DCB
+	---help---
+	  Say Y here if you want to use Data Center Bridging (DCB) in the
+	  driver.
+
+	  If unsure, say N.
+
+# this is here to allow seamless migration from I40EVF --> IAVF name
+# so that CONFIG_IAVF symbol will always mirror the state of CONFIG_I40EVF
+config IAVF
+	tristate
+config I40EVF
+	tristate "Intel(R) Ethernet Adaptive Virtual Function support"
+	select IAVF
+	depends on PCI_MSI
+	---help---
+	  This driver supports virtual functions for Intel XL710,
+	  X710, X722, XXV710, and all devices advertising support for
+	  Intel Ethernet Adaptive Virtual Function devices. For more
+	  information on how to identify your adapter, go to the Adapter
+	  & Driver ID Guide that can be located at:
+
+	  <https://support.intel.com>
+
+	  This driver was formerly named i40evf. For compatibility
+	  reasons a module alias is in place for i40evf.
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called iavf.  MSI-X interrupt support is required
+	  for this driver to work correctly.
+
+	  For general information and support, go to the Intel support
+	  website at:
+
+	  <http://support.intel.com>
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called i40evf.  MSI-X interrupt support is required
+	  for this driver to work correctly.
+
+config ICE
+	tristate "Intel(R) Ethernet Connection E800 Series Support"
+	default n
+	depends on PCI_MSI
+	---help---
+	  This driver supports Intel(R) Ethernet Connection E800 Series of
+	  devices.  For more information on how to identify your adapter, go
+	  to the Adapter & Driver ID Guide that can be located at:
+
+	  <http://support.intel.com>
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called ice.
+
+config FM10K
+	tristate "Intel(R) FM10000 Ethernet Switch Host Interface Support"
+	default n
+	depends on PCI_MSI
+	---help---
+	  This driver supports Intel(R) FM10000 Ethernet Switch Host
+	  Interface.  For more information on how to identify your adapter,
+	  go to the Adapter & Driver ID Guide at:
+
+	  <http://support.intel.com/support/network/sb/CS-008441.htm>
+
+	  For general information and support, go to the Intel support
+	  website at:
+
+	  <http://support.intel.com>
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called fm10k.  MSI-X interrupt support is required
+
+config IGC
+	tristate "Intel(R) Ethernet Controller I225-LM/I225-V support"
+	default n
+	depends on PCI
+	---help---
+	  This driver supports Intel(R) Ethernet Controller I225-LM/I225-V
+	  family of adapters.
+
+	  For more information on how to identify your adapter, go
+	  to the Adapter & Driver ID Guide that can be located at:
+
+	  <http://support.intel.com>
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called igc.
 
 endif # NET_VENDOR_INTEL

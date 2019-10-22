@@ -649,7 +649,7 @@ mptfc_slave_alloc(struct scsi_device *sdev)
 }
 
 static int
-mptfc_qcmd_lck(struct scsi_cmnd *SCpnt, void (*done)(struct scsi_cmnd *))
+mptfc_qcmd(struct Scsi_Host *shost, struct scsi_cmnd *SCpnt)
 {
 	struct mptfc_rport_info	*ri;
 	struct fc_rport	*rport = starget_to_rport(scsi_target(SCpnt->device));
@@ -658,14 +658,14 @@ mptfc_qcmd_lck(struct scsi_cmnd *SCpnt, void (*done)(struct scsi_cmnd *))
 
 	if (!vdevice || !vdevice->vtarget) {
 		SCpnt->result = DID_NO_CONNECT << 16;
-		done(SCpnt);
+		SCpnt->scsi_done(SCpnt);
 		return 0;
 	}
 
 	err = fc_remote_port_chkready(rport);
 	if (unlikely(err)) {
 		SCpnt->result = err;
-		done(SCpnt);
+		SCpnt->scsi_done(SCpnt);
 		return 0;
 	}
 
@@ -673,14 +673,12 @@ mptfc_qcmd_lck(struct scsi_cmnd *SCpnt, void (*done)(struct scsi_cmnd *))
 	ri = *((struct mptfc_rport_info **)rport->dd_data);
 	if (unlikely(!ri)) {
 		SCpnt->result = DID_IMM_RETRY << 16;
-		done(SCpnt);
+		SCpnt->scsi_done(SCpnt);
 		return 0;
 	}
 
-	return mptscsih_qcmd(SCpnt,done);
+	return mptscsih_qcmd(SCpnt);
 }
-
-static DEF_SCSI_QCMD(mptfc_qcmd)
 
 /*
  *	mptfc_display_port_link_speed - displaying link speed
@@ -1328,8 +1326,10 @@ mptfc_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		 "mptfc_wq_%d", sh->host_no);
 	ioc->fc_rescan_work_q =
 		create_singlethread_workqueue(ioc->fc_rescan_work_q_name);
-	if (!ioc->fc_rescan_work_q)
-		goto out_mptfc_probe;
+	if (!ioc->fc_rescan_work_q) {
+		error = -ENOMEM;
+		goto out_mptfc_host;
+	}
 
 	/*
 	 *  Pre-fetch FC port WWN and stuff...
@@ -1349,6 +1349,9 @@ mptfc_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	flush_workqueue(ioc->fc_rescan_work_q);
 
 	return 0;
+
+out_mptfc_host:
+	scsi_remove_host(sh);
 
 out_mptfc_probe:
 
@@ -1528,6 +1531,8 @@ static void mptfc_remove(struct pci_dev *pdev)
 			ioc->fc_data.fc_port_page1[ii].data = NULL;
 		}
 	}
+
+	scsi_remove_host(ioc->sh);
 
 	mptscsih_remove(pdev);
 }

@@ -36,6 +36,8 @@
 #include <linux/hardirq.h>
 #include <linux/pstore.h>
 #include <acpi/apei.h>
+#include <linux/vmalloc.h>
+#include <linux/mm.h>
 
 #include "apei-internal.h"
 
@@ -514,7 +516,7 @@ retry:
 	if (i < erst_record_id_cache.len)
 		goto retry;
 	if (erst_record_id_cache.len >= erst_record_id_cache.size) {
-		int new_size, alloc_size;
+		int new_size;
 		u64 *new_entries;
 
 		new_size = erst_record_id_cache.size * 2;
@@ -526,11 +528,7 @@ retry:
 					   "too many record ID!\n");
 			return 0;
 		}
-		alloc_size = new_size * sizeof(entries[0]);
-		if (alloc_size < PAGE_SIZE)
-			new_entries = kmalloc(alloc_size, GFP_KERNEL);
-		else
-			new_entries = vmalloc(alloc_size);
+		new_entries = kvmalloc(new_size * sizeof(entries[0]), GFP_KERNEL);
 		if (!new_entries)
 			return -ENOMEM;
 		memcpy(new_entries, entries,
@@ -611,7 +609,7 @@ static void __erst_record_id_cache_compact(void)
 		if (entries[i] == APEI_ERST_INVALID_RECORD_ID)
 			continue;
 		if (wpos != i)
-			memcpy(&entries[wpos], &entries[i], sizeof(entries[i]));
+			entries[wpos] = entries[i];
 		wpos++;
 	}
 	erst_record_id_cache.len = wpos;
@@ -933,9 +931,9 @@ static int erst_open_pstore(struct pstore_info *psi);
 static int erst_close_pstore(struct pstore_info *psi);
 static ssize_t erst_reader(u64 *id, enum pstore_type_id *type, int *count,
 			   struct timespec *time, char **buf,
-			   struct pstore_info *psi);
+			   bool *compressed, struct pstore_info *psi);
 static int erst_writer(enum pstore_type_id type, enum kmsg_dump_reason reason,
-		       u64 *id, unsigned int part, int count,
+		       u64 *id, unsigned int part, int count, bool compressed,
 		       size_t size, struct pstore_info *psi);
 static int erst_clearer(enum pstore_type_id type, u64 id, int count,
 			struct timespec time, struct pstore_info *psi);
@@ -989,7 +987,7 @@ static int erst_close_pstore(struct pstore_info *psi)
 
 static ssize_t erst_reader(u64 *id, enum pstore_type_id *type, int *count,
 			   struct timespec *time, char **buf,
-			   struct pstore_info *psi)
+			   bool *compressed, struct pstore_info *psi)
 {
 	int rc;
 	ssize_t len = 0;
@@ -1055,7 +1053,7 @@ out:
 }
 
 static int erst_writer(enum pstore_type_id type, enum kmsg_dump_reason reason,
-		       u64 *id, unsigned int part, int count,
+		       u64 *id, unsigned int part, int count, bool compressed,
 		       size_t size, struct pstore_info *psi)
 {
 	struct cper_pstore_record *rcd = (struct cper_pstore_record *)
@@ -1180,20 +1178,31 @@ static int __init erst_init(void)
 	if (!erst_erange.vaddr)
 		goto err_release_erange;
 
+	pr_info(ERST_PFX
+	"Error Record Serialization Table (ERST) support is initialized.\n");
+
 	buf = kmalloc(erst_erange.size, GFP_KERNEL);
 	spin_lock_init(&erst_info.buf_lock);
 	if (buf) {
 		erst_info.buf = buf + sizeof(struct cper_pstore_record);
 		erst_info.bufsize = erst_erange.size -
 				    sizeof(struct cper_pstore_record);
-		if (pstore_register(&erst_info)) {
-			pr_info(ERST_PFX "Could not register with persistent store\n");
+		rc = pstore_register(&erst_info);
+		if (rc) {
+			if (rc != -EPERM)
+				pr_info(ERST_PFX
+				"Could not register with persistent store\n");
+			erst_info.buf = NULL;
+			erst_info.bufsize = 0;
 			kfree(buf);
 		}
-	}
+	} else
+		pr_err(ERST_PFX
+		"Failed to allocate %lld bytes for persistent store error log\n",
+		erst_erange.size);
 
-	pr_info(ERST_PFX
-	"Error Record Serialization Table (ERST) support is initialized.\n");
+	/* Cleanup ERST Resources */
+	apei_resources_fini(&erst_resources);
 
 	return 0;
 

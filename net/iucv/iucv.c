@@ -320,21 +320,29 @@ static union iucv_param *iucv_param_irq[NR_CPUS];
  *
  * Returns the result of the CP IUCV call.
  */
-static inline int iucv_call_b2f0(int command, union iucv_param *parm)
+static inline int __iucv_call_b2f0(int command, union iucv_param *parm)
 {
 	register unsigned long reg0 asm ("0");
 	register unsigned long reg1 asm ("1");
 	int ccode;
 
 	reg0 = command;
-	reg1 = virt_to_phys(parm);
+	reg1 = (unsigned long)parm;
 	asm volatile(
 		"	.long 0xb2f01000\n"
 		"	ipm	%0\n"
 		"	srl	%0,28\n"
 		: "=d" (ccode), "=m" (*parm), "+d" (reg0), "+a" (reg1)
 		:  "m" (*parm) : "cc");
-	return (ccode == 1) ? parm->ctrl.iprcode : ccode;
+	return ccode;
+}
+
+static inline int iucv_call_b2f0(int command, union iucv_param *parm)
+{
+	int ccode;
+
+	ccode = __iucv_call_b2f0(command, parm);
+	return ccode == 1 ? parm->ctrl.iprcode : ccode;
 }
 
 /**
@@ -345,16 +353,12 @@ static inline int iucv_call_b2f0(int command, union iucv_param *parm)
  * Returns the maximum number of connections or -EPERM is IUCV is not
  * available.
  */
-static int iucv_query_maxconn(void)
+static int __iucv_query_maxconn(void *param, unsigned long *max_pathid)
 {
 	register unsigned long reg0 asm ("0");
 	register unsigned long reg1 asm ("1");
-	void *param;
 	int ccode;
 
-	param = kzalloc(sizeof(union iucv_param), GFP_KERNEL|GFP_DMA);
-	if (!param)
-		return -ENOMEM;
 	reg0 = IUCV_QUERY;
 	reg1 = (unsigned long) param;
 	asm volatile (
@@ -362,8 +366,22 @@ static int iucv_query_maxconn(void)
 		"	ipm	%0\n"
 		"	srl	%0,28\n"
 		: "=d" (ccode), "+d" (reg0), "+d" (reg1) : : "cc");
+	*max_pathid = reg1;
+	return ccode;
+}
+
+static int iucv_query_maxconn(void)
+{
+	unsigned long max_pathid;
+	void *param;
+	int ccode;
+
+	param = kzalloc(sizeof(union iucv_param), GFP_KERNEL | GFP_DMA);
+	if (!param)
+		return -ENOMEM;
+	ccode = __iucv_query_maxconn(param, &max_pathid);
 	if (ccode == 0)
-		iucv_max_pathid = reg1;
+		iucv_max_pathid = max_pathid;
 	kfree(param);
 	return ccode ? -EPERM : 0;
 }
@@ -621,7 +639,7 @@ static void iucv_disable(void)
 	put_online_cpus();
 }
 
-static int __cpuinit iucv_cpu_notify(struct notifier_block *self,
+static int iucv_cpu_notify(struct notifier_block *self,
 				     unsigned long action, void *hcpu)
 {
 	cpumask_t cpumask;
@@ -2016,7 +2034,7 @@ static int __init iucv_init(void)
 	rc = iucv_query_maxconn();
 	if (rc)
 		goto out_ctl;
-	rc = register_external_interrupt(0x4000, iucv_external_interrupt);
+	rc = register_external_irq(EXT_IRQ_IUCV, iucv_external_interrupt);
 	if (rc)
 		goto out_ctl;
 	iucv_root = root_device_register("iucv");
@@ -2081,7 +2099,7 @@ out_free:
 	}
 	root_device_unregister(iucv_root);
 out_int:
-	unregister_external_interrupt(0x4000, iucv_external_interrupt);
+	unregister_external_irq(EXT_IRQ_IUCV, iucv_external_interrupt);
 out_ctl:
 	ctl_clear_bit(0, 1);
 out:
@@ -2116,7 +2134,7 @@ static void __exit iucv_exit(void)
 	}
 	root_device_unregister(iucv_root);
 	bus_unregister(&iucv_bus);
-	unregister_external_interrupt(0x4000, iucv_external_interrupt);
+	unregister_external_irq(EXT_IRQ_IUCV, iucv_external_interrupt);
 }
 
 subsys_initcall(iucv_init);

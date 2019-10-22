@@ -133,7 +133,7 @@ static unsigned long str_to_hex(char *p);
 static int bp_device_event(struct notifier_block *unused,
 			   unsigned long event, void *ptr)
 {
-	struct net_device *dev = ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	static bpctl_dev_t *pbpctl_dev = NULL, *pbpctl_dev_m = NULL;
 	int dev_num = 0, ret = 0, ret_d = 0, time_left = 0;
 	/* printk("BP_PROC_SUPPORT event =%d %s %d\n", event,dev->name, dev->ifindex ); */
@@ -6808,7 +6808,7 @@ static int __init bypass_init_module(void)
 		}
 	}
 
-	register_netdevice_notifier(&bp_notifier_block);
+	register_netdevice_notifier_rh(&bp_notifier_block);
 #ifdef BP_PROC_SUPPORT
 	{
 		int i = 0;
@@ -6837,7 +6837,7 @@ static int __init bypass_init_module(void)
 static void __exit bypass_cleanup_module(void)
 {
 	int i;
-	unregister_netdevice_notifier(&bp_notifier_block);
+	unregister_netdevice_notifier_rh(&bp_notifier_block);
 
 	for (i = 0; i < device_num; i++) {
 		/* unsigned long flags; */

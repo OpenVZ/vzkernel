@@ -202,10 +202,10 @@ static void rose_kill_by_device(struct net_device *dev)
 /*
  *	Handle device status changes.
  */
-static int rose_device_event(struct notifier_block *this, unsigned long event,
-	void *ptr)
+static int rose_device_event(struct notifier_block *this,
+			     unsigned long event, void *ptr)
 {
-	struct net_device *dev = (struct net_device *)ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 
 	if (!net_eq(dev_net(dev), &init_net))
 		return NOTIFY_DONE;
@@ -1121,7 +1121,7 @@ static int rose_sendmsg(struct kiocb *iocb, struct socket *sock,
 	skb_reset_transport_header(skb);
 	skb_put(skb, len);
 
-	err = memcpy_fromiovec(skb_transport_header(skb), msg->msg_iov, len);
+	err = memcpy_from_msg(skb_transport_header(skb), msg, len);
 	if (err) {
 		kfree_skb(skb);
 		return err;
@@ -1216,7 +1216,6 @@ static int rose_recvmsg(struct kiocb *iocb, struct socket *sock,
 {
 	struct sock *sk = sock->sk;
 	struct rose_sock *rose = rose_sk(sk);
-	struct sockaddr_rose *srose = (struct sockaddr_rose *)msg->msg_name;
 	size_t copied;
 	unsigned char *asmptr;
 	struct sk_buff *skb;
@@ -1252,8 +1251,11 @@ static int rose_recvmsg(struct kiocb *iocb, struct socket *sock,
 
 	skb_copy_datagram_iovec(skb, 0, msg->msg_iov, copied);
 
-	if (srose != NULL) {
-		memset(srose, 0, msg->msg_namelen);
+	if (msg->msg_name) {
+		struct sockaddr_rose *srose;
+
+		memset(msg->msg_name, 0, sizeof(struct full_sockaddr_rose));
+		srose = msg->msg_name;
 		srose->srose_family = AF_ROSE;
 		srose->srose_addr   = rose->dest_addr;
 		srose->srose_call   = rose->dest_call;
@@ -1560,7 +1562,7 @@ static int __init rose_proto_init(void)
 	}
 
 	sock_register(&rose_family_ops);
-	register_netdevice_notifier(&rose_dev_notifier);
+	register_netdevice_notifier_rh(&rose_dev_notifier);
 
 	ax25_register_pid(&rose_pid);
 	ax25_linkfail_register(&rose_linkfail_notifier);
@@ -1622,7 +1624,7 @@ static void __exit rose_exit(void)
 #ifdef CONFIG_SYSCTL
 	rose_unregister_sysctl();
 #endif
-	unregister_netdevice_notifier(&rose_dev_notifier);
+	unregister_netdevice_notifier_rh(&rose_dev_notifier);
 
 	sock_unregister(PF_ROSE);
 

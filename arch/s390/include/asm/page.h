@@ -21,6 +21,7 @@
 #define HPAGE_SIZE	(1UL << HPAGE_SHIFT)
 #define HPAGE_MASK	(~(HPAGE_SIZE - 1))
 #define HUGETLB_PAGE_ORDER	(HPAGE_SHIFT - PAGE_SHIFT)
+#define HUGE_MAX_HSTATE		2
 
 #define ARCH_HAS_SETCLEAR_HUGE_PTE
 #define ARCH_HAS_HUGE_PTE_TYPE
@@ -30,16 +31,11 @@
 #include <asm/setup.h>
 #ifndef __ASSEMBLY__
 
-void storage_key_init_range(unsigned long start, unsigned long end);
-
-static inline unsigned long pfmf(unsigned long function, unsigned long address)
+static inline void storage_key_init_range(unsigned long start, unsigned long end)
 {
-	asm volatile(
-		"	.insn	rre,0xb9af0000,%[function],%[address]"
-		: [address] "+a" (address)
-		: [function] "d" (function)
-		: "memory");
-	return address;
+#if PAGE_DEFAULT_KEY
+	__storage_key_init_range(start, end);
+#endif
 }
 
 static inline void clear_page(void *page)
@@ -149,15 +145,6 @@ static inline int page_reset_referenced(unsigned long addr)
 #define _PAGE_REFERENCED	0x04	/* HW referenced bit		*/
 #define _PAGE_FP_BIT		0x08	/* HW fetch protection bit	*/
 #define _PAGE_ACC_BITS		0xf0	/* HW access control bits	*/
-
-/*
- * Test and clear referenced bit in storage key.
- */
-#define __HAVE_ARCH_PAGE_TEST_AND_CLEAR_YOUNG
-static inline int page_test_and_clear_young(unsigned long pfn)
-{
-	return page_reset_referenced(pfn << PAGE_SHIFT);
-}
 
 struct page;
 void arch_free_page(struct page *page, int order);

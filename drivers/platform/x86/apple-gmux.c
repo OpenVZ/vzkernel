@@ -344,7 +344,7 @@ gmux_active_client(struct apple_gmux_data *gmux_data)
 	return VGA_SWITCHEROO_DIS;
 }
 
-static struct vga_switcheroo_handler gmux_handler = {
+static const struct vga_switcheroo_handler gmux_handler = {
 	.switchto = gmux_switchto,
 	.power_state = gmux_set_power_state,
 	.get_client_id = gmux_get_client_id,
@@ -515,7 +515,7 @@ static int gmux_probe(struct pnp_dev *pnp, const struct pnp_device_id *id)
 
 	gmux_data->power_state = VGA_SWITCHEROO_ON;
 
-	gmux_data->dhandle = DEVICE_ACPI_HANDLE(&pnp->dev);
+	gmux_data->dhandle = ACPI_HANDLE(&pnp->dev);
 	if (!gmux_data->dhandle) {
 		pr_err("Cannot find acpi handle for pnp device %s\n",
 		       dev_name(&pnp->dev));
@@ -548,7 +548,7 @@ static int gmux_probe(struct pnp_dev *pnp, const struct pnp_device_id *id)
 		gmux_data->gpe = -1;
 	}
 
-	if (vga_switcheroo_register_handler(&gmux_handler)) {
+	if (vga_switcheroo_register_handler(&gmux_handler, VGA_SWITCHEROO_CAN_SWITCH_DDC)) {
 		ret = -ENODEV;
 		goto err_register_handler;
 	}

@@ -11,17 +11,20 @@ static const int pat_enabled;
 #endif
 
 extern void pat_init(void);
+void pat_init_cache_modes(void);
 
 extern int reserve_memtype(u64 start, u64 end,
-		unsigned long req_type, unsigned long *ret_type);
+		enum page_cache_mode req_pcm, enum page_cache_mode *ret_pcm);
 extern int free_memtype(u64 start, u64 end);
 
 extern int kernel_map_sync_memtype(u64 base, unsigned long size,
-		unsigned long flag);
+		enum page_cache_mode pcm);
 
 int io_reserve_memtype(resource_size_t start, resource_size_t end,
-			unsigned long *type);
+			enum page_cache_mode *pcm);
 
 void io_free_memtype(resource_size_t start, resource_size_t end);
+
+bool pat_pfn_immune_to_uc_mtrr(unsigned long pfn);
 
 #endif /* _ASM_X86_PAT_H */

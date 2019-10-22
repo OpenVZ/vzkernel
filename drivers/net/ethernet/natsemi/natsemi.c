@@ -247,7 +247,7 @@ static struct {
 	{ "NatSemi DP8381[56]", 0, 24 },
 };
 
-static DEFINE_PCI_DEVICE_TABLE(natsemi_pci_tbl) = {
+static const struct pci_device_id natsemi_pci_tbl[] = {
 	{ PCI_VENDOR_ID_NS, 0x0020, 0x12d9,     0x000c,     0, 0, 0 },
 	{ PCI_VENDOR_ID_NS, 0x0020, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 1 },
 	{ }	/* terminate list */
@@ -1905,7 +1905,7 @@ static void ns_tx_timeout(struct net_device *dev)
 	spin_unlock_irq(&np->lock);
 	enable_irq(irq);
 
-	dev->trans_start = jiffies; /* prevent tx timeout */
+	netif_trans_update(dev); /* prevent tx timeout */
 	dev->stats.tx_errors++;
 	netif_wake_queue(dev);
 }

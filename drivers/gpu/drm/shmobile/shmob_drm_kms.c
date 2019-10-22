@@ -1,7 +1,7 @@
 /*
  * shmob_drm_kms.c  --  SH Mobile DRM Mode Setting
  *
- * Copyright (C) 2012 Renesas Corporation
+ * Copyright (C) 2012 Renesas Electronics Corporation
  *
  * Laurent Pinchart (laurent.pinchart@ideasonboard.com)
  *
@@ -16,6 +16,7 @@
 #include <drm/drm_crtc_helper.h>
 #include <drm/drm_fb_cma_helper.h>
 #include <drm/drm_gem_cma_helper.h>
+#include <drm/drm_gem_framebuffer_helper.h>
 
 #include <video/sh_mobile_meram.h>
 
@@ -104,7 +105,7 @@ const struct shmob_drm_format_info *shmob_drm_format_info(u32 fourcc)
 
 static struct drm_framebuffer *
 shmob_drm_fb_create(struct drm_device *dev, struct drm_file *file_priv,
-		    struct drm_mode_fb_cmd2 *mode_cmd)
+		    const struct drm_mode_fb_cmd2 *mode_cmd)
 {
 	const struct shmob_drm_format_info *format;
 
@@ -116,7 +117,7 @@ shmob_drm_fb_create(struct drm_device *dev, struct drm_file *file_priv,
 	}
 
 	if (mode_cmd->pitches[0] & 7 || mode_cmd->pitches[0] >= 65536) {
-		dev_dbg(dev->dev, "valid pitch value %u\n",
+		dev_dbg(dev->dev, "invalid pitch value %u\n",
 			mode_cmd->pitches[0]);
 		return ERR_PTR(-EINVAL);
 	}
@@ -131,7 +132,7 @@ shmob_drm_fb_create(struct drm_device *dev, struct drm_file *file_priv,
 		}
 	}
 
-	return drm_fb_cma_create(dev, file_priv, mode_cmd);
+	return drm_gem_fb_create(dev, file_priv, mode_cmd);
 }
 
 static const struct drm_mode_config_funcs shmob_drm_mode_config_funcs = {

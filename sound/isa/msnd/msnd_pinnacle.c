@@ -625,8 +625,7 @@ static int snd_msnd_attach(struct snd_card *card)
 	return 0;
 
 err_release_region:
-	if (chip->mappedbase)
-		iounmap(chip->mappedbase);
+	iounmap(chip->mappedbase);
 	release_mem_region(chip->base, BUFFSIZE);
 	release_region(chip->io, DSP_NUMIO);
 	free_irq(chip->irq, chip);
@@ -755,9 +754,9 @@ static int snd_msnd_pinnacle_cfg_reset(int cfg)
 static int index[SNDRV_CARDS] = SNDRV_DEFAULT_IDX;	/* Index 0-MAX */
 static char *id[SNDRV_CARDS] = SNDRV_DEFAULT_STR;	/* ID for this card */
 
-module_param_array(index, int, NULL, S_IRUGO);
+module_param_array(index, int, NULL, 0444);
 MODULE_PARM_DESC(index, "Index value for msnd_pinnacle soundcard.");
-module_param_array(id, charp, NULL, S_IRUGO);
+module_param_array(id, charp, NULL, 0444);
 MODULE_PARM_DESC(id, "ID string for msnd_pinnacle soundcard.");
 
 static long io[SNDRV_CARDS] = SNDRV_DEFAULT_PORT;
@@ -799,22 +798,22 @@ MODULE_LICENSE("GPL");
 MODULE_FIRMWARE(INITCODEFILE);
 MODULE_FIRMWARE(PERMCODEFILE);
 
-module_param_array(io, long, NULL, S_IRUGO);
+module_param_array(io, long, NULL, 0444);
 MODULE_PARM_DESC(io, "IO port #");
-module_param_array(irq, int, NULL, S_IRUGO);
-module_param_array(mem, long, NULL, S_IRUGO);
-module_param_array(write_ndelay, int, NULL, S_IRUGO);
-module_param(calibrate_signal, int, S_IRUGO);
+module_param_array(irq, int, NULL, 0444);
+module_param_array(mem, long, NULL, 0444);
+module_param_array(write_ndelay, int, NULL, 0444);
+module_param(calibrate_signal, int, 0444);
 #ifndef MSND_CLASSIC
-module_param_array(digital, int, NULL, S_IRUGO);
-module_param_array(cfg, long, NULL, S_IRUGO);
-module_param_array(reset, int, 0, S_IRUGO);
-module_param_array(mpu_io, long, NULL, S_IRUGO);
-module_param_array(mpu_irq, int, NULL, S_IRUGO);
-module_param_array(ide_io0, long, NULL, S_IRUGO);
-module_param_array(ide_io1, long, NULL, S_IRUGO);
-module_param_array(ide_irq, int, NULL, S_IRUGO);
-module_param_array(joystick_io, long, NULL, S_IRUGO);
+module_param_array(digital, int, NULL, 0444);
+module_param_array(cfg, long, NULL, 0444);
+module_param_array(reset, int, 0, 0444);
+module_param_array(mpu_io, long, NULL, 0444);
+module_param_array(mpu_irq, int, NULL, 0444);
+module_param_array(ide_io0, long, NULL, 0444);
+module_param_array(ide_io1, long, NULL, 0444);
+module_param_array(ide_irq, int, NULL, 0444);
+module_param_array(joystick_io, long, NULL, 0444);
 #endif
 
 
@@ -903,12 +902,11 @@ static int snd_msnd_isa_probe(struct device *pdev, unsigned int idx)
 		return -ENODEV;
 	}
 
-	err = snd_card_create(index[idx], id[idx], THIS_MODULE,
-			      sizeof(struct snd_msnd), &card);
+	err = snd_card_new(pdev, index[idx], id[idx], THIS_MODULE,
+			   sizeof(struct snd_msnd), &card);
 	if (err < 0)
 		return err;
 
-	snd_card_set_dev(card, pdev);
 	chip = card->private_data;
 	chip->card = card;
 
@@ -1123,14 +1121,14 @@ static int snd_msnd_pnp_detect(struct pnp_card_link *pcard,
 	 * Create a new ALSA sound card entry, in anticipation
 	 * of detecting our hardware ...
 	 */
-	ret = snd_card_create(index[idx], id[idx], THIS_MODULE,
-			      sizeof(struct snd_msnd), &card);
+	ret = snd_card_new(&pcard->card->dev,
+			   index[idx], id[idx], THIS_MODULE,
+			   sizeof(struct snd_msnd), &card);
 	if (ret < 0)
 		return ret;
 
 	chip = card->private_data;
 	chip->card = card;
-	snd_card_set_dev(card, &pcard->card->dev);
 
 	/*
 	 * Read the correct parameters off the ISA PnP bus ...

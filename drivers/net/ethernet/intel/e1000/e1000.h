@@ -36,7 +36,6 @@
 #include <linux/module.h>
 #include <linux/types.h>
 #include <asm/byteorder.h>
-#include <linux/init.h>
 #include <linux/mm.h>
 #include <linux/errno.h>
 #include <linux/ioport.h>
@@ -82,6 +81,11 @@ struct e1000_adapter;
 #include "e1000_hw.h"
 
 #define E1000_MAX_INTR			10
+
+/*
+ * Count for polling __E1000_RESET condition every 10-20msec.
+ */
+#define E1000_CHECK_RESET_COUNT	50
 
 /* TX/RX descriptor defines */
 #define E1000_DEFAULT_TXD		256
@@ -144,16 +148,23 @@ struct e1000_adapter;
 /* wrapper around a pointer to a socket buffer,
  * so a DMA handle can be stored along with the buffer
  */
-struct e1000_buffer {
+struct e1000_tx_buffer {
 	struct sk_buff *skb;
 	dma_addr_t dma;
-	struct page *page;
 	unsigned long time_stamp;
 	u16 length;
 	u16 next_to_watch;
-	unsigned int segs;
+	bool mapped_as_page;
+	unsigned short segs;
 	unsigned int bytecount;
-	u16 mapped_as_page;
+};
+
+struct e1000_rx_buffer {
+	union {
+		struct page *page; /* jumbo: alloc_page */
+		u8 *data; /* else, netdev_alloc_frag */
+	} rxbuf;
+	dma_addr_t dma;
 };
 
 struct e1000_tx_ring {
@@ -170,7 +181,7 @@ struct e1000_tx_ring {
 	/* next descriptor to check for DD status bit */
 	unsigned int next_to_clean;
 	/* array of buffer information structs */
-	struct e1000_buffer *buffer_info;
+	struct e1000_tx_buffer *buffer_info;
 
 	u16 tdh;
 	u16 tdt;
@@ -191,7 +202,7 @@ struct e1000_rx_ring {
 	/* next descriptor to check for DD status bit */
 	unsigned int next_to_clean;
 	/* array of buffer information structs */
-	struct e1000_buffer *buffer_info;
+	struct e1000_rx_buffer *buffer_info;
 	struct sk_buff *rx_skb_top;
 
 	/* cpu for rx queue */
@@ -202,8 +213,11 @@ struct e1000_rx_ring {
 };
 
 #define E1000_DESC_UNUSED(R)						\
-	((((R)->next_to_clean > (R)->next_to_use)			\
-	  ? 0 : (R)->count) + (R)->next_to_clean - (R)->next_to_use - 1)
+({									\
+	unsigned int clean = smp_load_acquire(&(R)->next_to_clean);	\
+	unsigned int use = READ_ONCE((R)->next_to_use);			\
+	(clean > use ? 0 : (R)->count) + clean - use - 1;		\
+})
 
 #define E1000_RX_DESC_EXT(R, i)						\
 	(&(((union e1000_rx_desc_extended *)((R).desc))[i]))
@@ -312,14 +326,13 @@ struct e1000_adapter {
 	struct delayed_work watchdog_task;
 	struct delayed_work fifo_stall_task;
 	struct delayed_work phy_info_task;
-
-	struct mutex mutex;
 };
 
 enum e1000_state_t {
 	__E1000_TESTING,
 	__E1000_RESETTING,
-	__E1000_DOWN
+	__E1000_DOWN,
+	__E1000_DISABLED
 };
 
 #undef pr_fmt
@@ -346,6 +359,8 @@ extern struct net_device *e1000_get_hw_dev(struct e1000_hw *hw);
 extern char e1000_driver_name[];
 extern const char e1000_driver_version[];
 
+int e1000_open(struct net_device *netdev);
+int e1000_close(struct net_device *netdev);
 extern int e1000_up(struct e1000_adapter *adapter);
 extern void e1000_down(struct e1000_adapter *adapter);
 extern void e1000_reinit_locked(struct e1000_adapter *adapter);
