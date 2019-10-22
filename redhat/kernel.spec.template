@@ -125,10 +125,18 @@ Summary: The Linux kernel
 # check for mismatched config options
 %define with_configchecks %{?_without_configchecks:        0} %{?!_without_configchecks:        1}
 
+#
+# gcov support
+%define with_gcov %{?_with_gcov: 1} %{?!_with_gcov: 0}
+
+#
+# ipa_clone support
+%define with_ipaclones %{?_without_ipaclones: 0} %{?!_without_ipaclones: 1}
+
+
 # The kernel tarball/base version
 %define kversion %%KVERSION%%.%%KPATCHLEVEL%%
 
-%define with_gcov %{?_with_gcov: 1} %{?!_with_gcov: 0}
 
 # turn off debug kernel and kabichk for gcov builds
 %if %{with_gcov}
@@ -145,7 +153,6 @@ Summary: The Linux kernel
 
 # kpatch_kcflags are extra compiler flags applied to base kernel
 # -fdump-ipa-clones is enabled only for base kernels on selected arches
-%define with_ipaclones %{?_without_ipaclones: 0} %{?!_without_ipaclones: 1}
 %if %{with_ipaclones}
 %ifarch x86_64 ppc64le
 %define kpatch_kcflags -fdump-ipa-clones
