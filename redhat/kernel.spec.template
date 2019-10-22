@@ -357,7 +357,7 @@ Summary: The Linux kernel
 
 Name: kernel%{?variant}
 License: GPLv2 and Redistributable, no modification permitted
-URL: http://www.kernel.org/
+URL: https://www.kernel.org/
 Version: %{rpmversion}
 Release: %{pkg_release}
 # DO NOT CHANGE THE 'ExclusiveArch' LINE TO TEMPORARILY EXCLUDE AN ARCHITECTURE BUILD.
