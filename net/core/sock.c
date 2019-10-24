@@ -750,6 +750,7 @@ int sock_setsockopt(struct socket *sock, int level, int optname,
 		sock_valbool_flag(sk, SOCK_BROADCAST, valbool);
 		break;
 	case SO_SNDBUF:
+unpriv_sndbuf:
 		/* Don't error on this BSD doesn't and if you think
 		 * about it this is right. Otherwise apps have to
 		 * play 'guess the biggest size' games. RCVBUF/SNDBUF
@@ -768,10 +769,14 @@ set_sndbuf:
 		break;
 
 	case SO_SNDBUFFORCE:
-		if (!capable(CAP_NET_ADMIN)) {
+		if (!ve_capable(CAP_NET_ADMIN)) {
 			ret = -EPERM;
 			break;
 		}
+
+		/* nft utility uses this sockopt in CentOS 8 env */
+		if (!ve_is_super(get_exec_env()))
+			goto unpriv_sndbuf;
 
 		/* No negative values (to prevent underflow, as val will be
 		 * multiplied by 2).
