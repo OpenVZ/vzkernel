@@ -7,14 +7,6 @@
 #include <linux/rcupdate.h>
 #include <linux/timer.h>
 
-/*
- * Upper 3 bits can be used elsewhere
- */
-#define BLK_STAT_RES_BITS	3
-#define BLK_STAT_SHIFT		(64 - BLK_STAT_RES_BITS)
-#define BLK_STAT_TIME_MASK	((1ULL << BLK_STAT_SHIFT) - 1)
-#define BLK_STAT_MASK		~BLK_STAT_TIME_MASK
-
 /**
  * struct blk_stat_callback - Block statistics callback.
  *
@@ -73,22 +65,6 @@ struct blk_queue_stats *blk_alloc_queue_stats(void);
 void blk_free_queue_stats(struct blk_queue_stats *);
 
 void blk_stat_add(struct request *);
-
-static inline void blk_stat_set_issue_time(struct blk_issue_stat *stat)
-{
-	stat->time = ((stat->time & BLK_STAT_MASK) |
-		      (ktime_to_ns(ktime_get()) & BLK_STAT_TIME_MASK));
-}
-
-static inline u64 __blk_stat_time(u64 time)
-{
-	return time & BLK_STAT_TIME_MASK;
-}
-
-static inline u64 blk_stat_time(struct blk_issue_stat *stat)
-{
-	return __blk_stat_time(stat->time);
-}
 
 /*
  * blk_stat_rq_ddir() - Bucket callback function for the request data direction.
