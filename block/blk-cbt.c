@@ -311,18 +311,62 @@ static void free_map(struct page **map, unsigned long npages)
 	vfree(map);
 }
 
-static int copy_cbt_to_user(struct page **map, unsigned long npages, void *user_addr)
+static unsigned long map_required_size(struct page **map, unsigned long block_max)
 {
-        unsigned long i;
+	unsigned long bit, page, npages = NR_PAGES(block_max);
+
+	for (page = npages; page > 0; page--) {
+		if (map[page-1])
+			break;
+	}
+
+	if (page == 0)
+		return 0;
+
+	bit = find_last_bit(page_address(map[page - 1]), PAGE_SIZE);
+	if (bit >= PAGE_SIZE)
+		bit = 0; /* Not found */
+
+	return DIV_ROUND_UP(bit, 8) + page * PAGE_SIZE;
+}
+
+static int copy_cbt_to_user(struct page **map, unsigned long size,
+			    unsigned long to_size, void *user_addr)
+{
+        unsigned long i, bytes, npages = DIV_ROUND_UP(size, PAGE_SIZE);
+
+	if (size > to_size)
+		return -EFBIG;
 
         for (i = 0; i < npages; i++) {
                 struct page *page = map[i] ? : ZERO_PAGE(0);
 
-                if (copy_to_user(user_addr, page_address(page), PAGE_SIZE))
+		if (i != npages - 1)
+			bytes = PAGE_SIZE;
+		else
+			bytes = size % PAGE_SIZE;
+
+                if (copy_to_user(user_addr, page_address(page), bytes))
                         return -EFAULT;
 
-                user_addr += PAGE_SIZE;
+                user_addr += bytes;
         }
+
+	/* Zero the rest of memory passed by user */
+        npages = DIV_ROUND_UP(to_size, PAGE_SIZE);
+	for (; i < npages; i++) {
+                struct page *page = ZERO_PAGE(0);
+
+		if (i != npages - 1)
+			bytes = PAGE_SIZE;
+		else
+			bytes = to_size % PAGE_SIZE;
+
+                if (copy_to_user(user_addr, page_address(page), bytes))
+                        return -EFAULT;
+
+                user_addr += bytes;
+	}
 
         return 0;
 }
@@ -330,15 +374,16 @@ static int copy_cbt_to_user(struct page **map, unsigned long npages, void *user_
 static int blk_cbt_snap_create(struct request_queue *q, __u8 *uuid,
 			       struct blk_user_cbt_snp_create __user *arg)
 {
+	unsigned long npages, i, size;
+	__u64 to_addr, to_size;
 	struct cbt_info *cbt;
 	struct page **map;
-	unsigned long npages;
-	unsigned long i;
-	__u64 to_addr;
 	int ret;
 
 	if (copy_from_user(&to_addr, &arg->addr, sizeof(to_addr)) ||
-	    (unsigned long)to_addr != to_addr)
+	    copy_from_user(&to_size, &arg->size, sizeof(to_size)) ||
+	    (unsigned long)to_addr != to_addr ||
+	    (unsigned long)to_size != to_size)
 		return -EFAULT;
 
 	mutex_lock(&cbt_mutex);
@@ -360,6 +405,12 @@ static int blk_cbt_snap_create(struct request_queue *q, __u8 *uuid,
 	if (cbt->snp_map) {
 		mutex_unlock(&cbt_mutex);
 		return -EBUSY;
+	}
+
+	size = map_required_size(cbt->map, cbt->block_max);
+	if (to_size < size) {
+		mutex_unlock(&cbt_mutex);
+		return -EFBIG;
 	}
 
 	cbt_flush_cache(cbt);
@@ -391,7 +442,7 @@ static int blk_cbt_snap_create(struct request_queue *q, __u8 *uuid,
 
 	cbt->snp_map = map;
 	cbt->snp_block_max = cbt->block_max;
-	ret = copy_cbt_to_user(map, npages, (void *)to_addr);
+	ret = copy_cbt_to_user(map, size, to_size, (void *)to_addr);
 
 	mutex_unlock(&cbt_mutex);
 	return ret;
