@@ -275,6 +275,7 @@ struct blk_user_cbt_misc_info {
 struct blk_user_cbt_snp_create {
 	struct blk_user_cbt_misc_info cmi;
 	__u64 addr;
+	__u64 size;
 };
 
 #define BLKCBTSTART _IOR(0x12,200, struct blk_user_cbt_info)
