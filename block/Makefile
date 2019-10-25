@@ -25,3 +25,4 @@ obj-$(CONFIG_BLK_DEV_INTEGRITY)	+= blk-integrity.o
 obj-$(CONFIG_BLK_MQ_PCI)	+= blk-mq-pci.o
 obj-$(CONFIG_BLK_DEBUG_FS)	+= blk-mq-debugfs.o
 obj-$(CONFIG_BLK_DEV_CBT)	+= blk-cbt.o
+obj-$(CONFIG_BLK_WBT)		+= blk-wbt.o
