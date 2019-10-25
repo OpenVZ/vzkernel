@@ -1399,7 +1399,7 @@ static int ploop_push_backup_start(struct ploop *ploop, char *uuid,
 }
 
 static int ploop_push_backup_stop(struct ploop *ploop, char *uuid,
-				  char *result, unsigned int maxlen)
+		   int uretval, char *result, unsigned int maxlen)
 {
 	struct ploop_cmd cmd = { {0} };
 	unsigned int sz = 0;
@@ -1574,8 +1574,8 @@ int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 		  char *result, unsigned int maxlen)
 {
 	struct ploop *ploop = ti->private;
+	int ival, ret = -EPERM;
 	bool forward = true;
-	int ret = -EPERM;
 	u64 val, val2;
 
 	if (!capable(CAP_SYS_ADMIN))
@@ -1634,9 +1634,10 @@ int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 			goto unlock;
 		ret = ploop_push_backup_start(ploop, argv[1], (void *)val);
 	} else if (!strcmp(argv[0], "push_backup_stop")) {
-		if (argc != 2)
+		if (argc != 3 || kstrtos32(argv[2], 10, &ival) < 0)
 			goto unlock;
-		ret = ploop_push_backup_stop(ploop, argv[1], result, maxlen);
+		ret = ploop_push_backup_stop(ploop, argv[1], ival,
+					     result, maxlen);
 	} else if (!strcmp(argv[0], "push_backup_get_uuid")) {
 		if (argc != 1)
 			goto unlock;
