@@ -7,6 +7,7 @@
 #include <linux/sched.h>
 #include <linux/workqueue.h>
 #include <linux/fs.h>
+#include <linux/blk_types.h>
 
 #include <linux/rh_kabi.h>
 
@@ -86,6 +87,14 @@ struct writeback_control {
 	RH_KABI_RESERVE(1)
 	RH_KABI_RESERVE(2)
 };
+
+static inline int wbc_to_write_flags(struct writeback_control *wbc)
+{
+	if (wbc->sync_mode == WB_SYNC_ALL)
+		return REQ_SYNC | REQ_NOIDLE;
+
+	return 0;
+}
 
 /*
  * fs/fs-writeback.c
