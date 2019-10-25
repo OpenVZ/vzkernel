@@ -8,6 +8,7 @@
 #include <linux/init.h>
 #include <linux/file.h>
 #include <linux/uio.h>
+#include <linux/ctype.h>
 #include <linux/umh.h>
 #include "dm-ploop.h"
 
@@ -1358,6 +1359,7 @@ static int ploop_push_backup_start(struct ploop *ploop, char *uuid,
 {
 	struct ploop_cmd cmd = { {0} };
 	struct push_backup *pb;
+	char *p = uuid;
 
 	cmd.type = PLOOP_CMD_SET_PUSH_BACKUP;
 	cmd.ploop = ploop;
@@ -1374,7 +1376,13 @@ static int ploop_push_backup_start(struct ploop *ploop, char *uuid,
 	 */
 	if (!dm_suspended(ploop->ti) || ploop->maintaince)
 		return -EBUSY;
-	if (strlen(uuid) > sizeof(pb->uuid) - 1)
+	/* Check UUID */
+	while (*p) {
+		if (!isxdigit(*p))
+			return -EINVAL;
+		p++;
+	}
+	if (p != uuid + sizeof(pb->uuid) - 1)
 		return -EINVAL;
 	pb = ploop_alloc_pb(ploop, uuid);
 	if (!pb)

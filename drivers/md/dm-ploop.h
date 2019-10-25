@@ -142,7 +142,8 @@ struct ploop_index_wb {
 
 struct push_backup {
 	struct ploop *ploop;
-	u8 uuid[17];
+	/* Store uuid as string and avoid convertation on every read/write */
+	u8 uuid[33];
 	bool alive;
 
 	void *ppb_map;
