@@ -1445,13 +1445,16 @@ static int ploop_push_backup_read(struct ploop *ploop, char *uuid,
 		return -EINVAL;
 	if (!pb->alive)
 		return -ESTALE;
+again:
 	if (wait_event_interruptible(pb->wq, !list_empty_careful(&pb->pending)))
 		return -EINTR;
 
 	spin_lock_irq(&ploop->pb_lock);
 	h = orig_h = list_first_entry_or_null(&pb->pending, typeof(*h), list);
-	if (WARN_ON_ONCE(!h))
-		goto unlock;
+	if (unlikely(!h)) {
+		spin_unlock_irq(&ploop->pb_lock);
+		goto again;
+	}
 	list_del_init(&h->list);
 
 	left = right = h->cluster;
@@ -1473,7 +1476,6 @@ static int ploop_push_backup_read(struct ploop *ploop, char *uuid,
 	}
 
 	DMEMIT("%u:%u", left, right - left + 1);
-unlock:
 	spin_unlock_irq(&ploop->pb_lock);
 	return ret;
 }
