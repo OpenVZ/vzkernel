@@ -278,10 +278,8 @@ static int ploop_preresume(struct dm_target *ti)
 	struct ploop *ploop = ti->private;
 	int ret = 0;
 
-	mutex_lock(&ploop->ctl_mutex);
-	if (ploop->noresume)
+	if (READ_ONCE(ploop->noresume))
 		ret = -EAGAIN;
-	mutex_unlock(&ploop->ctl_mutex);
 	return ret;
 }
 
