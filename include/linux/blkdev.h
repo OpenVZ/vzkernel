@@ -43,6 +43,7 @@ struct blk_flush_queue;
 struct pr_ops;
 struct blk_queue_stats;
 struct blk_stat_callback;
+struct rq_wb;
 
 #define BLKDEV_MIN_RQ	4
 #define BLKDEV_MAX_RQ	128	/* Default maximum */
@@ -371,6 +372,8 @@ struct request_queue {
 	struct elevator_queue	*elevator;
 	int			nr_rqs[2];	/* # allocated [a]sync rqs */
 	int			nr_rqs_elvpriv;	/* # allocated rqs w/ elvpriv */
+
+	struct rq_wb		*rq_wb;
 
 	/*
 	 * If blkcg is not used, @q->root_rl serves all requests.  If blkcg
