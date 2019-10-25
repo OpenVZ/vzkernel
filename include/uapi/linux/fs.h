@@ -272,7 +272,7 @@ struct blk_user_cbt_misc_info {
 	__u8 data[0];
 };
 
-struct blk_user_cbt_snp_create {
+struct blk_user_cbt_snap_create {
 	struct blk_user_cbt_misc_info cmi;
 	__u64 addr;
 	__u64 size;
