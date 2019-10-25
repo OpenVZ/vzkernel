@@ -291,10 +291,11 @@ void blk_mq_rq_ctx_init(struct request_queue *q, struct blk_mq_ctx *ctx,
 	rq->rq_disk = NULL;
 	rq->part = NULL;
 	rq->start_time = jiffies;
+	rq->io_start_time_ns = 0;
 #ifdef CONFIG_BLK_CGROUP
 	rq->rl = NULL;
 	set_start_time_ns(rq);
-	rq->io_start_time_ns = 0;
+	rq->cgroup_io_start_time_ns = 0;
 #endif
 	rq->nr_phys_segments = 0;
 #if defined(CONFIG_BLK_DEV_INTEGRITY)
@@ -648,7 +649,7 @@ void blk_mq_start_request(struct request *rq)
 		rq->next_rq->resid_len = blk_rq_bytes(rq->next_rq);
 
 	if (test_bit(QUEUE_FLAG_STATS, &q->queue_flags)) {
-		blk_stat_set_issue_time(&rq_aux(rq)->issue_stat);
+		rq->io_start_time_ns = ktime_get_ns();
 		rq->cmd_flags |= REQ_STATS;
 	}
 
