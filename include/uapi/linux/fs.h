@@ -259,11 +259,30 @@ enum CI_FLAGS
 	CI_FLAG_NEW_UUID = 2 /* BLKCBTSET update uuid */
 };
 
+/* Extension of cbt ioctls:  */
+struct blk_user_cbt_misc_info {
+	__u8 uuid[16]; /* Bitmap UUID */
+/* Allocate and move pending map to CBT snapshot */
+#define CMI_SNP_CREATE		0
+/* Drop CBT snapshot */
+#define CMI_SNP_DROP		1
+/* Merge CBT snapshot bits back and drop CBT snapshot */
+#define CMI_SNP_MERGE_BACK	2
+	__u64 action;
+	__u8 data[0];
+};
+
+struct blk_user_cbt_snp_create {
+	struct blk_user_cbt_misc_info cmi;
+	__u64 addr;
+};
+
 #define BLKCBTSTART _IOR(0x12,200, struct blk_user_cbt_info)
 #define BLKCBTSTOP _IO(0x12,201)
 #define BLKCBTGET _IOWR(0x12,202,struct blk_user_cbt_info)
 #define BLKCBTSET _IOR(0x12,203,struct blk_user_cbt_info)
 #define BLKCBTCLR _IOR(0x12,204,struct blk_user_cbt_info)
+#define BLKCBTMISC _IOWR(0x12,205,struct blk_user_cbt_misc_info)
 
 #define BMAP_IOCTL 1		/* obsolete - kept for compatibility */
 #define FIBMAP	   _IO(0x00,1)	/* bmap access */
