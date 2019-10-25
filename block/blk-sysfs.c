@@ -13,6 +13,7 @@
 #include "blk-cgroup.h"
 #include "blk-mq.h"
 #include "blk-mq-debugfs.h"
+#include "blk-wbt.h"
 
 struct queue_sysfs_entry {
 	struct attribute attr;
@@ -39,6 +40,19 @@ queue_var_store(unsigned long *var, const char *page, size_t count)
 	*var = v;
 
 	return count;
+}
+
+static ssize_t queue_var_store64(u64 *var, const char *page)
+{
+	int err;
+	u64 v;
+
+	err = kstrtou64(page, 10, &v);
+	if (err < 0)
+		return err;
+
+	*var = v;
+	return 0;
 }
 
 static ssize_t queue_requests_show(struct request_queue *q, char *page)
@@ -318,6 +332,31 @@ queue_rq_affinity_store(struct request_queue *q, const char *page, size_t count)
 	return ret;
 }
 
+static ssize_t queue_wb_lat_show(struct request_queue *q, char *page)
+{
+	if (!q->rq_wb)
+		return -EINVAL;
+
+	return sprintf(page, "%llu\n", div_u64(q->rq_wb->min_lat_nsec, 1000));
+}
+
+static ssize_t queue_wb_lat_store(struct request_queue *q, const char *page,
+				  size_t count)
+{
+	ssize_t ret;
+	u64 val;
+
+	if (!q->rq_wb)
+		return -EINVAL;
+
+	ret = queue_var_store64(&val, page);
+	if (ret < 0)
+		return ret;
+
+	q->rq_wb->min_lat_nsec = val * 1000ULL;
+	wbt_update_limits(q->rq_wb);
+	return count;
+}
 static struct queue_sysfs_entry queue_requests_entry = {
 	.attr = {.name = "nr_requests", .mode = S_IRUGO | S_IWUSR },
 	.show = queue_requests_show,
@@ -443,6 +482,12 @@ static struct queue_sysfs_entry queue_random_entry = {
 	.store = queue_store_random,
 };
 
+static struct queue_sysfs_entry queue_wb_lat_entry = {
+	.attr = {.name = "wbt_lat_usec", .mode = S_IRUGO | S_IWUSR },
+	.show = queue_wb_lat_show,
+	.store = queue_wb_lat_store,
+};
+
 static struct attribute *default_attrs[] = {
 	&queue_requests_entry.attr,
 	&queue_ra_entry.attr,
@@ -467,6 +512,7 @@ static struct attribute *default_attrs[] = {
 	&queue_rq_affinity_entry.attr,
 	&queue_iostats_entry.attr,
 	&queue_random_entry.attr,
+	&queue_wb_lat_entry.attr,
 	NULL,
 };
 
@@ -541,6 +587,7 @@ static void blk_release_queue(struct kobject *kobj)
 	struct request_queue *q =
 		container_of(kobj, struct request_queue, kobj);
 
+	wbt_exit(q);
 	if (test_bit(QUEUE_FLAG_POLL_STATS, &q->queue_flags))
 		blk_stat_remove_callback(q, q->poll_cb);
 	blk_stat_free_callback(q->poll_cb);
@@ -582,6 +629,23 @@ struct kobj_type blk_queue_ktype = {
 	.default_attrs	= default_attrs,
 	.release	= blk_release_queue,
 };
+
+static void blk_wb_init(struct request_queue *q)
+{
+#ifndef CONFIG_BLK_WBT_MQ
+	if (q->mq_ops)
+		return;
+#endif
+#ifndef CONFIG_BLK_WBT_SQ
+	if (q->request_fn)
+		return;
+#endif
+
+	/*
+	 * If this fails, we don't get throttling
+	 */
+	wbt_init(q);
+}
 
 /**
  * blk_register_queue - register a block layer queue with sysfs
@@ -639,6 +703,8 @@ int blk_register_queue(struct gendisk *disk)
 	}
 
 	kobject_uevent(&q->kobj, KOBJ_ADD);
+
+	blk_wb_init(q);
 
 	if (q->request_fn || (q->mq_ops && q->elevator)) {
 		ret = elv_register_queue(q);
