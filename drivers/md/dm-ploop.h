@@ -147,6 +147,7 @@ struct push_backup {
 	/* This tree is for looking for delayed bio by cluster */
 	struct rb_root rb_root;
 
+	struct wait_queue_head wq;
 	struct list_head pending;
 };
 
