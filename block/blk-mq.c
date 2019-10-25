@@ -32,6 +32,7 @@
 #include "blk-mq-tag.h"
 #include "blk-mq-sched.h"
 #include "blk-stat.h"
+#include "blk-wbt.h"
 
 static DEFINE_MUTEX(all_q_mutex);
 static LIST_HEAD(all_q_list);
@@ -444,6 +445,8 @@ void __blk_mq_finish_request(struct blk_mq_hw_ctx *hctx, struct blk_mq_ctx *ctx,
 
 	if (rq->cmd_flags & REQ_MQ_INFLIGHT)
 		atomic_dec(&hctx->nr_active);
+
+	wbt_done(q->rq_wb, rq);
 	rq->cmd_flags = 0;
 
 	clear_bit(REQ_ATOM_STARTED, &rq->atomic_flags);
@@ -481,6 +484,7 @@ inline void __blk_mq_end_request(struct request *rq, int error)
 	blk_account_io_done(rq);
 
 	if (rq->end_io) {
+		wbt_done(rq->q->rq_wb, rq);
 		rq->end_io(rq, error);
 	} else {
 		if (unlikely(blk_bidi_rq(rq)))
@@ -651,6 +655,7 @@ void blk_mq_start_request(struct request *rq)
 	if (test_bit(QUEUE_FLAG_STATS, &q->queue_flags)) {
 		rq->io_start_time_ns = ktime_get_ns();
 		rq->cmd_flags |= REQ_STATS;
+		wbt_issue(q->rq_wb, rq);
 	}
 
 	blk_add_timer(rq);
@@ -699,6 +704,7 @@ static void __blk_mq_requeue_request(struct request *rq)
 	blk_mq_put_driver_tag(rq);
 
 	trace_block_rq_requeue(q, rq);
+	wbt_requeue(q->rq_wb, rq);
 
 	if (test_and_clear_bit(REQ_ATOM_STARTED, &rq->atomic_flags)) {
 		if (q->dma_drain_size && blk_rq_bytes(rq))
@@ -1866,6 +1872,7 @@ static void blk_mq_make_request(struct request_queue *q, struct bio *bio)
 	unsigned int request_count = 0;
 	struct blk_plug *plug;
 	struct request *same_queue_rq = NULL;
+	unsigned int wb_acct;
 
 	blk_queue_bounce(q, &bio);
 
@@ -1884,11 +1891,17 @@ static void blk_mq_make_request(struct request_queue *q, struct bio *bio)
 	if (blk_mq_merge_bio(q, bio))
 		return;
 
+	wb_acct = wbt_wait(q->rq_wb, bio, NULL);
+
 	trace_block_getrq(q, bio, bio->bi_rw);
 
 	rq = blk_mq_sched_get_request(q, bio, bio->bi_rw, &data);
-	if (unlikely(!rq))
+	if (unlikely(!rq)) {
+		__wbt_done(q->rq_wb, wb_acct);
 		return;
+	}
+
+	wbt_track(rq, wb_acct);
 
 	plug = current->plug;
 	if (unlikely(is_flush_fua)) {
@@ -2707,6 +2720,8 @@ void blk_mq_free_queue(struct request_queue *q)
 	mutex_lock(&all_q_mutex);
 	list_del_init(&q->all_q_node);
 	mutex_unlock(&all_q_mutex);
+
+	wbt_exit(q);
 
 	blk_mq_del_queue_tag_set(q);
 
