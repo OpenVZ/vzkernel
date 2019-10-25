@@ -2776,7 +2776,7 @@ void blk_start_request(struct request *req)
 	/* blk-stat isn't used on non-mq now, so disable it until it is needed */
 #if 0
 	if (test_bit(QUEUE_FLAG_STATS, &req->q->queue_flags)) {
-		blk_stat_set_issue_time(&req->issue_stat);
+		req->io_start_time_ns = ktime_get_ns();
 		req->cmd_flags |= REQ_STATS;
 	}
 #endif
