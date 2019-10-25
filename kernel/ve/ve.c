@@ -1345,6 +1345,18 @@ static int ve_write_pseudosuper(struct cgroup *cg,
 		return -EBUSY;
 	}
 	ve->is_pseudosuper = value;
+	/*
+	 * In criu we do unset pseudosuper on ve cgroup just before doing
+	 * ptrace(PTRACE_DETACH) to release restored process, what if one of
+	 * them will see pseudosuper flag still set to 1?
+	 *
+	 * To be 100% sure that these will never happen we need to call
+	 * synchronize_sched_expedited(); here to make cross cpu memory
+	 * barrier.
+	 *
+	 * For now we rely on userspace that ptrace from criu will do wake-up
+	 * on CT tasks which should imply memory barrier.
+	 */
 	up_write(&ve->op_sem);
 
 	return 0;
