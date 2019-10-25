@@ -90,11 +90,8 @@ void blk_stat_add(struct request *rq)
 	int bucket;
 	s64 now, value;
 
-	now = __blk_stat_time(ktime_to_ns(ktime_get()));
-	if (now < blk_stat_time(&rq_aux(rq)->issue_stat))
-		return;
-
-	value = now - blk_stat_time(&rq_aux(rq)->issue_stat);
+	now = ktime_get_ns();
+	value = (now >= rq->io_start_time_ns) ? now - rq->io_start_time_ns : 0;
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(cb, &q->stats->callbacks, list) {
