@@ -538,8 +538,7 @@ xfs_submit_ioend(
 		return status;
 	}
 
-	submit_bio(wbc->sync_mode == WB_SYNC_ALL ? WRITE_SYNC : WRITE,
-		   ioend->io_bio);
+	submit_bio(WRITE | wbc_to_write_flags(wbc), ioend->io_bio);
 	return 0;
 }
 
@@ -598,8 +597,7 @@ xfs_chain_bio(
 
 	bio_chain(ioend->io_bio, new);
 	bio_get(ioend->io_bio);		/* for xfs_destroy_ioend */
-	submit_bio(wbc->sync_mode == WB_SYNC_ALL ? WRITE_SYNC : WRITE,
-		   ioend->io_bio);
+	submit_bio(WRITE | wbc_to_write_flags(wbc), ioend->io_bio);
 	ioend->io_bio = new;
 }
 
