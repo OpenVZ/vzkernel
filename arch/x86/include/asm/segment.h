@@ -274,13 +274,6 @@ do {									\
 #endif	/* X86_32_LAZY_GS */
 #endif	/* X86_32 */
 
-static inline unsigned long get_limit(unsigned long segment)
-{
-	unsigned long __limit;
-	asm("lsll %1,%0" : "=r" (__limit) : "r" (segment));
-	return __limit + 1;
-}
-
 #endif /* !__ASSEMBLY__ */
 #endif /* __KERNEL__ */
 
