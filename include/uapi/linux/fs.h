@@ -263,11 +263,11 @@ enum CI_FLAGS
 struct blk_user_cbt_misc_info {
 	__u8 uuid[16]; /* Bitmap UUID */
 /* Allocate and move pending map to CBT snapshot */
-#define CMI_SNP_CREATE		0
+#define CBT_SNAP_CREATE		0
 /* Drop CBT snapshot */
-#define CMI_SNP_DROP		1
+#define CBT_SNAP_DROP		1
 /* Merge CBT snapshot bits back and drop CBT snapshot */
-#define CMI_SNP_MERGE_BACK	2
+#define CBT_SNAP_MERGE_BACK	2
 	__u64 action;
 	__u8 data[0];
 };

@@ -327,8 +327,8 @@ static int copy_cbt_to_user(struct page **map, unsigned long npages, void *user_
         return 0;
 }
 
-static int blk_cbt_snp_create(struct request_queue *q, __u8 *uuid,
-			      struct blk_user_cbt_snp_create __user *arg)
+static int blk_cbt_snap_create(struct request_queue *q, __u8 *uuid,
+			       struct blk_user_cbt_snp_create __user *arg)
 {
 	struct cbt_info *cbt;
 	struct page **map;
@@ -407,7 +407,7 @@ fail:
 	return -ENOMEM;
 }
 
-static int blk_cbt_snp_drop(struct request_queue *q, __u8 *uuid)
+static int blk_cbt_snap_drop(struct request_queue *q, __u8 *uuid)
 {
 	struct cbt_info *cbt;
 	unsigned long npages;
@@ -456,7 +456,7 @@ static void blk_cbt_page_merge(struct page *pg_from, struct page *pg_to)
 	}
 }
 
-static int blk_cbt_snp_merge_back(struct request_queue *q, __u8 *uuid)
+static int blk_cbt_snap_merge_back(struct request_queue *q, __u8 *uuid)
 {
 	struct cbt_info *cbt;
 	blkcnt_t block_max;
@@ -931,12 +931,12 @@ static int cbt_ioc_misc(struct block_device *bdev, void __user *arg)
 		return -EFAULT;
 
 	switch (cmi.action) {
-	case CMI_SNP_CREATE:
-		return blk_cbt_snp_create(q, cmi.uuid, arg);
-	case CMI_SNP_DROP:
-		return blk_cbt_snp_drop(q, cmi.uuid);
-	case CMI_SNP_MERGE_BACK:
-		return blk_cbt_snp_merge_back(q, cmi.uuid);
+	case CBT_SNAP_CREATE:
+		return blk_cbt_snap_create(q, cmi.uuid, arg);
+	case CBT_SNAP_DROP:
+		return blk_cbt_snap_drop(q, cmi.uuid);
+	case CBT_SNAP_MERGE_BACK:
+		return blk_cbt_snap_merge_back(q, cmi.uuid);
 	default:
 		return -ENOTSUPP;
 	}
