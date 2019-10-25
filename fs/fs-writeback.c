@@ -1133,6 +1133,7 @@ static long wb_do_writeback(struct bdi_writeback *wb)
 		trace_writeback_exec(bdi, work);
 
 		wrote += wb_writeback(wb, work);
+		cond_resched();
 
 		/*
 		 * Notify the caller of completion if this is a synchronous
