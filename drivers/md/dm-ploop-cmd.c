@@ -909,11 +909,13 @@ static int ploop_get_delta_name_cmd(struct ploop *ploop, u8 level,
 				char *result, unsigned int maxlen)
 {
 	struct file *file;
-	int len, ret;
+	int len, ret = 1;
 	char *p;
 
-	if (level >= ploop->nr_deltas)
-		return -ENOENT;
+	if (level >= ploop->nr_deltas) {
+		result[0] = '\0';
+		goto out;
+	}
 
 	/*
 	 * Nobody can change deltas in parallel, since
@@ -925,7 +927,6 @@ static int ploop_get_delta_name_cmd(struct ploop *ploop, u8 level,
 	read_unlock_irq(&ploop->bat_rwlock);
 
 	p = file_path(file, result, maxlen);
-	ret = 1;
 	if (p == ERR_PTR(-ENAMETOOLONG)) {
 		/* Notify target_message(), there is not enough space */
 		memset(result, 'x', maxlen - 1);
@@ -940,6 +941,7 @@ static int ploop_get_delta_name_cmd(struct ploop *ploop, u8 level,
 	}
 
 	fput(file);
+out:
 	return ret;
 }
 
@@ -1398,7 +1400,7 @@ static int ploop_push_backup_stop(struct ploop *ploop, char *uuid,
 	cmd.ploop = ploop;
 
 	if (!ploop->pb)
-		return -ENOENT;
+		return -EBADF;
 	if (strcmp(ploop->pb->uuid, uuid))
 		return -EINVAL;
 
@@ -1419,10 +1421,10 @@ static int ploop_push_backup_get_uuid(struct ploop *ploop, char *result,
 	struct push_backup *pb = ploop->pb;
 	unsigned int sz = 0;
 
-	if (!pb)
-		return -EBADF;
-
-	DMEMIT("%s", pb->uuid);
+	if (pb)
+		DMEMIT("%s", pb->uuid);
+	else
+		result[0] = '\0';
 	return 1;
 }
 
@@ -1433,7 +1435,7 @@ static int ploop_push_backup_read(struct ploop *ploop, char *uuid,
 	struct push_backup *pb = ploop->pb;
 	unsigned int left, right, sz = 0;
 	struct rb_node *node;
-	int ret;
+	int ret = 1;
 
 	if (!pb)
 		return -EBADF;
@@ -1443,10 +1445,11 @@ static int ploop_push_backup_read(struct ploop *ploop, char *uuid,
 		return -ESTALE;
 
 	spin_lock_irq(&ploop->pb_lock);
-	ret = -ENOENT;
 	h = orig_h = list_first_entry_or_null(&pb->pending, typeof(*h), list);
-	if (!h)
+	if (!h) {
+		result[0] = '\0';
 		goto unlock;
+	}
 	list_del_init(&h->list);
 
 	left = right = h->cluster;
@@ -1468,7 +1471,6 @@ static int ploop_push_backup_read(struct ploop *ploop, char *uuid,
 	}
 
 	DMEMIT("%u:%u", left, right - left + 1);
-	ret = 1;
 unlock:
 	spin_unlock_irq(&ploop->pb_lock);
 	return ret;
