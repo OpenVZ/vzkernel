@@ -596,7 +596,7 @@ static int f2fs_write_data_pages(struct address_space *mapping,
 	ret = write_cache_pages(mapping, wbc, __f2fs_writepage, mapping);
 	if (locked)
 		mutex_unlock(&sbi->writepages);
-	f2fs_submit_bio(sbi, DATA, (wbc->sync_mode == WB_SYNC_ALL));
+	f2fs_submit_bio(sbi, DATA, wbc_to_write_flags(wbc));
 
 	remove_dirty_dir_inode(inode);
 

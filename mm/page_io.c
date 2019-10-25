@@ -274,8 +274,7 @@ int __swap_writepage(struct page *page, struct writeback_control *wbc,
 		ret = -ENOMEM;
 		goto out;
 	}
-	if (wbc->sync_mode == WB_SYNC_ALL)
-		rw |= REQ_SYNC;
+	rw |= wbc_to_write_flags(wbc) & ~REQ_NOIDLE;
 	count_vm_event(PSWPOUT);
 	set_page_writeback(page);
 	unlock_page(page);
