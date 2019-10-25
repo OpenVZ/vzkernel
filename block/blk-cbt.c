@@ -46,6 +46,10 @@ struct cbt_info {
 	unsigned int count;
 	struct cbt_extent __percpu *cache;
 	struct page **map;
+
+	struct page **snp_map;
+	blkcnt_t snp_block_max;
+
 	spinlock_t lock;
 };
 
@@ -297,14 +301,47 @@ err_cbt:
 	return ERR_PTR(-ENOMEM);
 }
 
-int blk_cbt_map_copy_once(struct request_queue *q, __u8 *uuid,
-			  struct page ***map_ptr, blkcnt_t *block_max,
-			  blkcnt_t *block_bits)
+static void free_map(struct page **map, unsigned long npages)
+{
+	unsigned long i;
+
+	for (i = 0; i < npages; i++)
+		if (map[i])
+			__free_page(map[i]);
+	vfree(map);
+}
+
+static int copy_cbt_to_user(struct page **map, unsigned long npages, void *user_addr)
+{
+        unsigned long i;
+
+        for (i = 0; i < npages; i++) {
+                struct page *page = map[i] ? : ZERO_PAGE(0);
+
+                if (copy_to_user(user_addr, page_address(page), PAGE_SIZE))
+                        return -EFAULT;
+
+                user_addr += PAGE_SIZE;
+        }
+
+        return 0;
+}
+
+static int blk_cbt_snp_create(struct request_queue *q, __u8 *uuid,
+			      struct blk_user_cbt_snp_create __user *arg)
 {
 	struct cbt_info *cbt;
 	struct page **map;
 	unsigned long npages;
 	unsigned long i;
+	__u64 to_addr;
+	int ret;
+
+	if (copy_from_user(&to_addr, &arg->addr, sizeof(to_addr)))
+		return -EFAULT;
+
+	if ((unsigned long)to_addr != to_addr)
+		return -EINVAL;
 
 	mutex_lock(&cbt_mutex);
 	cbt = q->cbt;
@@ -320,6 +357,11 @@ int blk_cbt_map_copy_once(struct request_queue *q, __u8 *uuid,
 	if (!uuid || memcmp(uuid, cbt->uuid, sizeof(cbt->uuid))) {
 		mutex_unlock(&cbt_mutex);
 		return -EINVAL;
+	}
+
+	if (cbt->snp_map) {
+		mutex_unlock(&cbt_mutex);
+		return -EBUSY;
 	}
 
 	cbt_flush_cache(cbt);
@@ -348,12 +390,13 @@ int blk_cbt_map_copy_once(struct request_queue *q, __u8 *uuid,
 			unlock_page(page);
 		}
 	}
-	mutex_unlock(&cbt_mutex);
 
-	*map_ptr = map;
-	*block_max = cbt->block_max;
-	*block_bits = cbt->block_bits;
-	return 0;
+	cbt->snp_map = map;
+	cbt->snp_block_max = cbt->block_max;
+	ret = copy_cbt_to_user(map, npages, (void *)to_addr);
+
+	mutex_unlock(&cbt_mutex);
+	return ret;
 
 fail_pages:
 	while (--i >= 0) {
@@ -365,7 +408,43 @@ fail:
 	mutex_unlock(&cbt_mutex);
 	return -ENOMEM;
 }
-EXPORT_SYMBOL(blk_cbt_map_copy_once);
+
+static int blk_cbt_snp_drop(struct request_queue *q, __u8 *uuid)
+{
+	struct cbt_info *cbt;
+	unsigned long npages;
+	struct page **map;
+
+	mutex_lock(&cbt_mutex);
+	cbt = q->cbt;
+
+	if (!cbt) {
+		mutex_unlock(&cbt_mutex);
+		return -ENOENT;
+	}
+
+	BUG_ON(!cbt->map);
+	BUG_ON(!cbt->block_max);
+
+	if (!uuid || memcmp(uuid, cbt->uuid, sizeof(cbt->uuid))) {
+		mutex_unlock(&cbt_mutex);
+		return -EINVAL;
+	}
+
+	map = cbt->snp_map;
+	if (!map) {
+		mutex_unlock(&cbt_mutex);
+		return -ENOENT;
+	}
+	cbt->snp_map = NULL;
+
+	npages = NR_PAGES(cbt->snp_block_max);
+	cbt->snp_block_max = 0;
+	mutex_unlock(&cbt_mutex);
+
+	free_map(map, npages);
+	return 0;
+}
 
 static void blk_cbt_page_merge(struct page *pg_from, struct page *pg_to)
 {
@@ -380,11 +459,11 @@ static void blk_cbt_page_merge(struct page *pg_from, struct page *pg_to)
 	}
 }
 
-int blk_cbt_map_merge(struct request_queue *q, __u8 *uuid,
-		      struct page **map, blkcnt_t block_max,
-		      blkcnt_t block_bits)
+static int blk_cbt_snp_merge_back(struct request_queue *q, __u8 *uuid)
 {
 	struct cbt_info *cbt;
+	blkcnt_t block_max;
+	struct page **map;
 	unsigned long i;
 
 	mutex_lock(&cbt_mutex);
@@ -398,8 +477,11 @@ int blk_cbt_map_merge(struct request_queue *q, __u8 *uuid,
 	BUG_ON(!cbt->map);
 	BUG_ON(!cbt->block_max);
 
+	map = cbt->snp_map;
+	block_max = cbt->snp_block_max;
+
 	if (!map || !uuid || memcmp(uuid, cbt->uuid, sizeof(cbt->uuid)) ||
-	    block_max != cbt->block_max || block_bits != cbt->block_bits) {
+	    block_max != cbt->block_max) {
 		mutex_unlock(&cbt_mutex);
 		return -EINVAL;
 	}
@@ -429,10 +511,14 @@ int blk_cbt_map_merge(struct request_queue *q, __u8 *uuid,
 		blk_cbt_page_merge(page_addon, page_main);
 		unlock_page(page_main);
 	}
+
+	cbt->snp_map = NULL;
+	cbt->snp_block_max = 0;
 	mutex_unlock(&cbt_mutex);
+
+	free_map(map, NR_PAGES(block_max));
 	return 0;
 }
-EXPORT_SYMBOL(blk_cbt_map_merge);
 
 void blk_cbt_update_size(struct block_device *bdev)
 {
@@ -522,8 +608,13 @@ static void cbt_release_callback(struct rcu_head *head)
 	for (i = 0; i < nr_pages; i++)
 		if (CBT_PAGE(cbt, i))
 			__free_page(CBT_PAGE(cbt, i));
-
 	vfree(cbt->map);
+
+	if (cbt->snp_map) {
+		nr_pages = NR_PAGES(cbt->snp_block_max);
+		free_map(cbt->snp_map, nr_pages);
+	}
+
 	free_percpu(cbt->cache);
 	kfree(cbt);
 }
@@ -829,6 +920,28 @@ ioc_set_failed:
 	return ret;
 }
 
+static int cbt_ioc_misc(struct block_device *bdev, void __user *arg)
+{
+	struct request_queue *q = bdev_get_queue(bdev);
+	struct blk_user_cbt_misc_info cmi;
+
+	if (copy_from_user(&cmi, arg, sizeof(cmi)))
+		return -EFAULT;
+
+	switch (cmi.action) {
+	case CMI_SNP_CREATE:
+		return blk_cbt_snp_create(q, cmi.uuid, arg);
+	case CMI_SNP_DROP:
+		return blk_cbt_snp_drop(q, cmi.uuid);
+	case CMI_SNP_MERGE_BACK:
+		return blk_cbt_snp_merge_back(q, cmi.uuid);
+	default:
+		return -ENOTSUPP;
+	}
+
+	return 0;
+}
+
 int blk_cbt_ioctl(struct block_device *bdev, unsigned cmd, char __user *arg)
 {
 	struct blk_user_cbt_info __user *ucbt_ioc = (struct blk_user_cbt_info __user *) arg;
@@ -855,6 +968,11 @@ int blk_cbt_ioctl(struct block_device *bdev, unsigned cmd, char __user *arg)
 			return -EACCES;
 
 		return cbt_ioc_set(bdev, ucbt_ioc, 0);
+	case BLKCBTMISC:
+		if (!capable(CAP_SYS_ADMIN))
+			return -EACCES;
+
+		return cbt_ioc_misc(bdev, arg);
 	default:
 		BUG();
 	}
