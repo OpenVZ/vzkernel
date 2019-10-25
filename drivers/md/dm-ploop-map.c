@@ -963,8 +963,8 @@ static bool postpone_if_required_for_backup(struct ploop *ploop,
 			  struct bio *bio, unsigned int cluster)
 {
 	struct push_backup *pb = ploop->pb;
+	bool first, queue_timer = false;
 	struct dm_ploop_endio_hook *h;
-	bool queue_timer = false;
 
 	if (likely(!pb || !pb->alive))
 		return false;
@@ -992,8 +992,12 @@ static bool postpone_if_required_for_backup(struct ploop *ploop,
 
 	h = bio_to_endio_hook(bio);
 	link_endio_hook(ploop, h, &pb->rb_root, cluster, true);
+	first = list_empty(&pb->pending);
 	list_add_tail(&h->list, &pb->pending);
 	spin_unlock_irq(&ploop->pb_lock);
+
+	if (first)
+		wake_up_interruptible(&pb->wq);
 
 	if (queue_timer)
 		mod_timer(&pb->deadline_timer, BACKUP_DEADLINE * HZ + 1);
