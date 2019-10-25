@@ -42,6 +42,7 @@
 #include "blk-mq.h"
 #include "blk-mq-tag.h"
 #include "blk-mq-sched.h"
+#include "blk-wbt.h"
 
 #ifdef CONFIG_DEBUG_FS
 struct dentry *blk_debugfs_root;
@@ -1016,6 +1017,7 @@ out_exit_flush_rq:
 out_free_flush_queue:
 	blk_free_flush_queue(q->fq);
 	q->fq = NULL;
+	wbt_exit(q);
 	return -ENOMEM;
 }
 EXPORT_SYMBOL(blk_init_allocated_queue);
@@ -1573,6 +1575,7 @@ void blk_requeue_request(struct request_queue *q, struct request *rq)
 	blk_delete_timer(rq);
 	blk_clear_rq_complete(rq);
 	trace_block_rq_requeue(q, rq);
+	wbt_requeue(q->rq_wb, rq);
 
 	if (rq->cmd_flags & REQ_QUEUED)
 		blk_queue_end_tag(q, rq);
@@ -1676,6 +1679,8 @@ void __blk_put_request(struct request_queue *q, struct request *req)
 
 	/* this is a bio leak */
 	WARN_ON(req->bio != NULL);
+
+	wbt_done(q->rq_wb, req);
 
 	/*
 	 * Request may not have originated from ll_rw_blk. if not,
@@ -1912,6 +1917,7 @@ void blk_queue_bio(struct request_queue *q, struct bio *bio)
 	int el_ret, rw_flags, where = ELEVATOR_INSERT_SORT;
 	struct request *req, *free;
 	unsigned int request_count = 0;
+	unsigned int wb_acct;
 
 	/*
 	 * low level driver can indicate that it wants pages above a
@@ -1967,6 +1973,8 @@ void blk_queue_bio(struct request_queue *q, struct bio *bio)
 	}
 
 get_rq:
+	wb_acct = wbt_wait(q->rq_wb, bio, q->queue_lock);
+
 	/*
 	 * This sync check and mask will be re-done in init_request_from_bio(),
 	 * but we need to set it earlier to expose the sync flag to the
@@ -1983,10 +1991,13 @@ get_rq:
 	blk_queue_enter_live(q);
 	req = get_request(q, rw_flags, bio, 0);
 	if (IS_ERR(req)) {
+		__wbt_done(q->rq_wb, wb_acct);
 		blk_queue_exit(q);
 		bio_endio(bio, PTR_ERR(req));	/* @q is dead */
 		goto out_unlock;
 	}
+
+	wbt_track(req, wb_acct);
 
 	/*
 	 * After dropping the lock and possibly sleeping here, our request
@@ -2773,13 +2784,11 @@ void blk_start_request(struct request *req)
 {
 	blk_dequeue_request(req);
 
-	/* blk-stat isn't used on non-mq now, so disable it until it is needed */
-#if 0
 	if (test_bit(QUEUE_FLAG_STATS, &req->q->queue_flags)) {
 		req->io_start_time_ns = ktime_get_ns();
 		req->cmd_flags |= REQ_STATS;
+		wbt_issue(req->q->rq_wb, req);
 	}
-#endif
 
 	/*
 	 * We are now handing the request to the hardware, initialize
@@ -3020,9 +3029,10 @@ void blk_finish_request(struct request *req, int error)
 
 	blk_account_io_done(req);
 
-	if (req->end_io)
+	if (req->end_io) {
+		wbt_done(req->q->rq_wb, req);
 		req->end_io(req, error);
-	else {
+	} else {
 		if (blk_bidi_rq(req))
 			__blk_put_request(req->next_rq->q, req->next_rq);
 
