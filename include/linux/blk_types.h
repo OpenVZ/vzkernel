@@ -342,10 +342,6 @@ static inline bool blk_path_error(int error)
 	return true;
 }
 
-struct blk_issue_stat {
-	u64 time;
-};
-
 struct blk_rq_stat {
 	s64 mean;
 	u64 min;

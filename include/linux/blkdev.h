@@ -186,10 +186,17 @@ struct request {
 	struct gendisk *rq_disk;
 	struct hd_struct *part;
 	unsigned long start_time;
+	/* Time that I/O was submitted to the device. */
+	u64 io_start_time_ns;
+
+#ifdef CONFIG_BLK_WBT
+	unsigned short wbt_flags;
+#endif
+
 #ifdef CONFIG_BLK_CGROUP
 	struct request_list *rl;		/* rl this rq is alloced from */
-	unsigned long long start_time_ns;
-	unsigned long long io_start_time_ns;    /* when passed to hardware */
+	unsigned long long cgroup_start_time_ns;
+	unsigned long long cgroup_io_start_time_ns;    /* when passed to hardware */
 #endif
 	/* Number of scatter-gather DMA addr+len pairs after
 	 * physical address coalescing is performed.
@@ -1679,25 +1686,25 @@ int kblockd_mod_delayed_work_on(int cpu, struct delayed_work *dwork, unsigned lo
 static inline void set_start_time_ns(struct request *req)
 {
 	preempt_disable();
-	req->start_time_ns = sched_clock();
+	req->cgroup_start_time_ns = sched_clock();
 	preempt_enable();
 }
 
 static inline void set_io_start_time_ns(struct request *req)
 {
 	preempt_disable();
-	req->io_start_time_ns = sched_clock();
+	req->cgroup_io_start_time_ns = sched_clock();
 	preempt_enable();
 }
 
 static inline uint64_t rq_start_time_ns(struct request *req)
 {
-        return req->start_time_ns;
+	return req->cgroup_start_time_ns;
 }
 
 static inline uint64_t rq_io_start_time_ns(struct request *req)
 {
-        return req->io_start_time_ns;
+	return req->cgroup_io_start_time_ns;
 }
 #else
 static inline void set_start_time_ns(struct request *req) {}
