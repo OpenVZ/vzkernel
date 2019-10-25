@@ -197,6 +197,7 @@ enum rq_flag_bits {
 
 	/* bio only flags */
 	__REQ_RAHEAD,		/* read ahead, can fail anytime */
+	__REQ_BACKGROUND,	/* background IO */
 	__REQ_THROTTLED,	/* This bio has already been subjected to
 				 * throttling rules. Don't do it again. */
 
@@ -242,6 +243,7 @@ enum rq_flag_bits {
 #define REQ_DISCARD		(1ULL << __REQ_DISCARD)
 #define REQ_WRITE_SAME		(1ULL << __REQ_WRITE_SAME)
 #define REQ_NOIDLE		(1ULL << __REQ_NOIDLE)
+#define REQ_BACKGROUND		(1ULL << __REQ_BACKGROUND)
 
 #define REQ_FAILFAST_MASK \
 	(REQ_FAILFAST_DEV | REQ_FAILFAST_TRANSPORT | REQ_FAILFAST_DRIVER)
