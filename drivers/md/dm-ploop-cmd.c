@@ -1500,7 +1500,7 @@ static int ploop_push_backup_write(struct ploop *ploop, char *uuid,
 		return -EBADF;
 	if (strcmp(uuid, pb->uuid) || !nr)
 		return -EINVAL;
-	if (cluster >= nr_bat_entries || cluster + nr >= nr_bat_entries)
+	if (cluster >= nr_bat_entries || nr > nr_bat_entries - cluster)
 		return -E2BIG;
 	if (!pb->alive)
 		return -ESTALE;
