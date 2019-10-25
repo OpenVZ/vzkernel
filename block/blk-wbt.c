@@ -227,7 +227,7 @@ static bool calc_wb_limits(struct rq_wb *rwb)
 		if (rwb->scale_step > 0)
 			depth = 1 + ((depth - 1) >> min(31, rwb->scale_step));
 		else if (rwb->scale_step < 0) {
-			unsigned int maxd = 3 * rwb->queue_depth / 4;
+			unsigned int maxd = 8 * rwb->queue_depth;
 
 			depth = 1 + ((depth - 1) << -rwb->scale_step);
 			if (depth > maxd) {
