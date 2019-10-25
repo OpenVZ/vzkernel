@@ -1288,40 +1288,6 @@ static void process_set_push_backup(struct ploop *ploop, struct ploop_cmd *cmd)
 		ploop_free_pb(pb);
 }
 
-static struct push_backup *ploop_alloc_pb(struct ploop *ploop, char *uuid)
-{
-	struct push_backup *pb;
-	unsigned int size;
-	void *map;
-
-	pb = kzalloc(sizeof(*pb), GFP_KERNEL);
-	if (!pb)
-		return NULL;
-	snprintf(pb->uuid, sizeof(pb->uuid), "%s", uuid);
-	init_waitqueue_head(&pb->wq);
-	INIT_LIST_HEAD(&pb->pending);
-	pb->rb_root = RB_ROOT;
-
-	size = DIV_ROUND_UP(ploop->nr_bat_entries, 8);
-	size = round_up(size, sizeof(unsigned long));
-	map = kvzalloc(size, GFP_KERNEL);
-	if (!map)
-		goto out_pb;
-
-	pb->ppb_map = map;
-	return pb;
-out_pb:
-	kfree(pb);
-	return NULL;
-}
-
-void ploop_free_pb(struct push_backup *pb)
-{
-	WARN_ON(!RB_EMPTY_ROOT(&pb->rb_root));
-	kvfree(pb->ppb_map);
-	kfree(pb);
-}
-
 static void ploop_pb_timer(struct timer_list *timer)
 {
 	struct push_backup *pb = from_timer(pb, timer, deadline_timer);
@@ -1339,7 +1305,45 @@ static void ploop_pb_timer(struct timer_list *timer)
 		queue_work(ploop->wq, &ploop->worker);
 }
 
-static void ploop_setup_pb(struct ploop *ploop, struct push_backup *pb)
+static struct push_backup *ploop_alloc_pb(struct ploop *ploop, char *uuid)
+{
+	struct push_backup *pb;
+	unsigned int size;
+	void *map;
+
+	pb = kzalloc(sizeof(*pb), GFP_KERNEL);
+	if (!pb)
+		return NULL;
+	snprintf(pb->uuid, sizeof(pb->uuid), "%s", uuid);
+	pb->ploop = ploop;
+	init_waitqueue_head(&pb->wq);
+	INIT_LIST_HEAD(&pb->pending);
+	pb->rb_root = RB_ROOT;
+
+	pb->deadline_jiffies = S64_MAX;
+	timer_setup(&pb->deadline_timer, ploop_pb_timer, 0);
+
+	size = DIV_ROUND_UP(ploop->nr_bat_entries, 8);
+	size = round_up(size, sizeof(unsigned long));
+	map = kvzalloc(size, GFP_KERNEL);
+	if (!map)
+		goto out_pb;
+	pb->ppb_map = map;
+	pb->alive = true;
+	return pb;
+out_pb:
+	kfree(pb);
+	return NULL;
+}
+
+void ploop_free_pb(struct push_backup *pb)
+{
+	WARN_ON(!RB_EMPTY_ROOT(&pb->rb_root));
+	kvfree(pb->ppb_map);
+	kfree(pb);
+}
+
+static int ploop_setup_pb_map(struct ploop *ploop, struct push_backup *pb)
 {
 	unsigned int i, nr_bat_entries = ploop->nr_bat_entries;
 
@@ -1348,11 +1352,7 @@ static void ploop_setup_pb(struct ploop *ploop, struct push_backup *pb)
 	for (i = round_down(nr_bat_entries, 8); i < nr_bat_entries; i++)
 		set_bit(i, pb->ppb_map);
 
-	pb->deadline_jiffies = S64_MAX;
-	timer_setup(&pb->deadline_timer, ploop_pb_timer, 0);
-
-	pb->ploop = ploop;
-	pb->alive = true;
+	return 0;
 }
 
 static int ploop_push_backup_start(struct ploop *ploop, char *uuid,
@@ -1361,6 +1361,7 @@ static int ploop_push_backup_start(struct ploop *ploop, char *uuid,
 	struct ploop_cmd cmd = { {0} };
 	struct push_backup *pb;
 	char *p = uuid;
+	int ret;
 
 	cmd.type = PLOOP_CMD_SET_PUSH_BACKUP;
 	cmd.ploop = ploop;
@@ -1388,7 +1389,9 @@ static int ploop_push_backup_start(struct ploop *ploop, char *uuid,
 	pb = ploop_alloc_pb(ploop, uuid);
 	if (!pb)
 		return -ENOMEM;
-	ploop_setup_pb(ploop, pb);
+	ret = ploop_setup_pb_map(ploop, pb);
+	if (ret)
+		goto err_free;
 
 	/* Assign pb in work, to make it visible w/o locks (in work) */
 	cmd.set_push_backup.pb = pb;
@@ -1397,6 +1400,9 @@ static int ploop_push_backup_start(struct ploop *ploop, char *uuid,
 	wait_for_completion(&cmd.comp);
 	ploop->maintaince = true;
 	return 0;
+err_free:
+	ploop_free_pb(pb);
+	return ret;
 }
 
 static int ploop_push_backup_stop(struct ploop *ploop, char *uuid,
