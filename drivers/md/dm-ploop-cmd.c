@@ -1573,12 +1573,23 @@ void process_deferred_cmd(struct ploop *ploop, struct ploop_index_wb *piwb)
 	spin_lock_irq(&ploop->deferred_lock);
 }
 
+static bool msg_wants_down_read(const char *cmd)
+{
+	if (!strcmp(cmd, "get_delta_name") ||
+	    !strcmp(cmd, "push_backup_get_uuid") ||
+	    !strcmp(cmd, "push_backup_read") ||
+	    !strcmp(cmd, "push_backup_write"))
+		return true;
+
+	return false;
+}
+
 int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 		  char *result, unsigned int maxlen)
 {
 	struct ploop *ploop = ti->private;
+	bool read, forward = true;
 	int ival, ret = -EPERM;
-	bool forward = true;
 	u64 val, val2;
 
 	if (!capable(CAP_SYS_ADMIN))
@@ -1588,7 +1599,12 @@ int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 	if (argc < 1)
 		goto out;
 
-	mutex_lock(&ploop->ctl_mutex);
+	read = msg_wants_down_read(argv[0]);
+	if (read)
+		down_read(&ploop->ctl_rwsem);
+	else
+		down_write(&ploop->ctl_rwsem);
+
 	if (!strcmp(argv[0], "resize")) {
 		if (argc != 2 || kstrtou64(argv[1], 10, &val) < 0)
 			goto unlock;
@@ -1658,7 +1674,10 @@ int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 	}
 
 unlock:
-	mutex_unlock(&ploop->ctl_mutex);
+	if (read)
+		up_read(&ploop->ctl_rwsem);
+	else
+		up_write(&ploop->ctl_rwsem);
 out:
 	return ret;
 }

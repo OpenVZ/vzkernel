@@ -210,7 +210,7 @@ struct ploop {
 	struct bio_list deferred_bios;
 	struct bio_list discard_bios;
 
-	struct mutex ctl_mutex;
+	struct rw_semaphore ctl_rwsem;
 	struct ploop_cmd *deferred_cmd;
 
 	/*

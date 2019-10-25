@@ -120,7 +120,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	}
 
 	rwlock_init(&ploop->bat_rwlock);
-	mutex_init(&ploop->ctl_mutex);
+	init_rwsem(&ploop->ctl_rwsem);
 	spin_lock_init(&ploop->deferred_lock);
 	spin_lock_init(&ploop->pb_lock);
 
