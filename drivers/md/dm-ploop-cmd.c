@@ -1343,14 +1343,24 @@ void ploop_free_pb(struct push_backup *pb)
 	kfree(pb);
 }
 
-static int ploop_setup_pb_map(struct ploop *ploop, struct push_backup *pb)
+static int ploop_setup_pb_map(struct push_backup *pb, void __user *mask)
 {
-	unsigned int i, nr_bat_entries = ploop->nr_bat_entries;
+	unsigned int i, size, nr_bat_entries;
+	struct ploop *ploop = pb->ploop;
 
-	/* Full backup */
-	memset(pb->ppb_map, 0xff, nr_bat_entries / 8);
-	for (i = round_down(nr_bat_entries, 8); i < nr_bat_entries; i++)
-		set_bit(i, pb->ppb_map);
+	nr_bat_entries = ploop->nr_bat_entries;
+
+	if (!mask) {
+		/* Full backup */
+		memset(pb->ppb_map, 0xff, nr_bat_entries / 8);
+		for (i = round_down(nr_bat_entries, 8); i < nr_bat_entries; i++)
+			set_bit(i, pb->ppb_map);
+	} else {
+		/* Partial backup */
+		size = DIV_ROUND_UP(nr_bat_entries, 8);
+		if (copy_from_user(pb->ppb_map, mask, size))
+			return -EFAULT;
+	}
 
 	return 0;
 }
@@ -1365,9 +1375,6 @@ static int ploop_push_backup_start(struct ploop *ploop, char *uuid,
 
 	cmd.type = PLOOP_CMD_SET_PUSH_BACKUP;
 	cmd.ploop = ploop;
-
-	if (mask)
-		return -ENOPROTOOPT; /* TODO */
 
 	if (ploop->pb)
 		return -EEXIST;
@@ -1389,7 +1396,7 @@ static int ploop_push_backup_start(struct ploop *ploop, char *uuid,
 	pb = ploop_alloc_pb(ploop, uuid);
 	if (!pb)
 		return -ENOMEM;
-	ret = ploop_setup_pb_map(ploop, pb);
+	ret = ploop_setup_pb_map(pb, mask);
 	if (ret)
 		goto err_free;
 
