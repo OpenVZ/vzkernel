@@ -1116,7 +1116,7 @@ continue_unlock:
 	}
 
 	if (wrote)
-		f2fs_submit_bio(sbi, NODE, wbc->sync_mode == WB_SYNC_ALL);
+		f2fs_submit_bio(sbi, NODE, wbc_to_write_flags(wbc));
 
 	return nwritten;
 }
