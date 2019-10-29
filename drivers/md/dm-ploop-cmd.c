@@ -1309,7 +1309,8 @@ static void ploop_pb_timer(struct timer_list *timer)
 		queue_work(ploop->wq, &ploop->worker);
 }
 
-static struct push_backup *ploop_alloc_pb(struct ploop *ploop, char *uuid)
+static struct push_backup *ploop_alloc_pb(struct ploop *ploop,
+					  char *uuid, int timeout)
 {
 	struct push_backup *pb;
 	unsigned int size;
@@ -1325,6 +1326,7 @@ static struct push_backup *ploop_alloc_pb(struct ploop *ploop, char *uuid)
 	pb->rb_root = RB_ROOT;
 
 	pb->deadline_jiffies = S64_MAX;
+	pb->timeout_in_jiffies = timeout * HZ;
 	timer_setup(&pb->deadline_timer, ploop_pb_timer, 0);
 
 	size = DIV_ROUND_UP(ploop->nr_bat_entries, 8);
@@ -1370,7 +1372,7 @@ static int ploop_setup_pb_map(struct push_backup *pb, void __user *mask)
 }
 
 static int ploop_push_backup_start(struct ploop *ploop, char *uuid,
-				   void __user *mask)
+				   void __user *mask, int timeout)
 {
 	struct ploop_cmd cmd = { {0} };
 	struct push_backup *pb;
@@ -1382,6 +1384,8 @@ static int ploop_push_backup_start(struct ploop *ploop, char *uuid,
 
 	if (ploop->pb)
 		return -EEXIST;
+	if (timeout <= 0)
+		return -EINVAL;
 	/*
 	 * There is no a problem in case of not suspended for the device.
 	 * But this means userspace collects wrong backup. Warn it here.
@@ -1397,7 +1401,7 @@ static int ploop_push_backup_start(struct ploop *ploop, char *uuid,
 	}
 	if (p != uuid + sizeof(pb->uuid) - 1)
 		return -EINVAL;
-	pb = ploop_alloc_pb(ploop, uuid);
+	pb = ploop_alloc_pb(ploop, uuid, timeout);
 	if (!pb)
 		return -ENOMEM;
 	ret = ploop_setup_pb_map(pb, mask);
@@ -1535,7 +1539,7 @@ static int ploop_push_backup_write(struct ploop *ploop, char *uuid,
 
 	has_more = !RB_EMPTY_ROOT(&pb->rb_root);
 	if (has_more)
-		pb->deadline_jiffies = get_jiffies_64() + BACKUP_DEADLINE * HZ;
+		pb->deadline_jiffies = get_jiffies_64() + pb->timeout_in_jiffies;
 	else
 		pb->deadline_jiffies = S64_MAX;
 	spin_unlock_irq(&ploop->pb_lock);
@@ -1543,7 +1547,7 @@ static int ploop_push_backup_write(struct ploop *ploop, char *uuid,
 	if (!bio_list_empty(&bio_list)) {
 		defer_bios(ploop, NULL, &bio_list);
 		if (has_more)
-			mod_timer(&pb->deadline_timer, BACKUP_DEADLINE * HZ + 1);
+			mod_timer(&pb->deadline_timer, pb->timeout_in_jiffies + 1);
 	}
 
 	return 0;
@@ -1666,9 +1670,10 @@ int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 			goto unlock;
 		ret = ploop_flip_upper_deltas(ploop, argv[1], argv[2]);
 	} else if (!strcmp(argv[0], "push_backup_start")) {
-		if (argc != 3 || kstrtou64(argv[2], 10, &val) < 0)
+		if (argc != 4 || kstrtou64(argv[2], 10, &val) < 0 ||
+				 kstrtos32(argv[3], 10, &ival) < 0)
 			goto unlock;
-		ret = ploop_push_backup_start(ploop, argv[1], (void *)val);
+		ret = ploop_push_backup_start(ploop, argv[1], (void *)val, ival);
 	} else if (!strcmp(argv[0], "push_backup_stop")) {
 		if (argc != 3 || kstrtos32(argv[2], 10, &ival) < 0)
 			goto unlock;
