@@ -2136,12 +2136,6 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 	struct dentry *dentry;
 	int ret;
 
-#ifdef CONFIG_VE
-	if (!ve_is_super(get_exec_env()) && !(flags & MS_KERNMOUNT)) {
-		if (!get_exec_env()->is_pseudosuper)
-			return ERR_PTR(-EACCES);
-	}
-#endif
 	get_cgroup_ns(ns);
 
 	/* Check if the caller has permission to mount. */
