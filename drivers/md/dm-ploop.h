@@ -114,7 +114,6 @@ struct ploop_cmd {
 
 #define BAT_LEVEL_TOP		U8_MAX
 #define CLEANUP_DELAY		20
-#define BACKUP_DEADLINE		42
 
 #define PLOOP_BIOS_HTABLE_BITS	8
 #define PLOOP_BIOS_HTABLE_SIZE	(1 << PLOOP_BIOS_HTABLE_BITS)
@@ -148,6 +147,7 @@ struct push_backup {
 
 	void *ppb_map;
 
+	u64 timeout_in_jiffies;
 	u64 deadline_jiffies;
 	struct timer_list deadline_timer;
 
