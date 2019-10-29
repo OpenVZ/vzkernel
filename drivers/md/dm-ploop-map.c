@@ -986,7 +986,7 @@ static bool postpone_if_required_for_backup(struct ploop *ploop,
 	}
 
 	if (RB_EMPTY_ROOT(&pb->rb_root)) {
-		pb->deadline_jiffies = get_jiffies_64() + BACKUP_DEADLINE * HZ;
+		pb->deadline_jiffies = get_jiffies_64() + pb->timeout_in_jiffies;
 		queue_timer = true;
 	}
 
@@ -1000,7 +1000,7 @@ static bool postpone_if_required_for_backup(struct ploop *ploop,
 		wake_up_interruptible(&pb->wq);
 
 	if (queue_timer)
-		mod_timer(&pb->deadline_timer, BACKUP_DEADLINE * HZ + 1);
+		mod_timer(&pb->deadline_timer, pb->timeout_in_jiffies + 1);
 
 	return true;
 }
