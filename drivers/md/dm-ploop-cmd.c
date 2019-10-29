@@ -705,7 +705,11 @@ static void process_merge_latest_snapshot_cmd(struct ploop *ploop,
 		/* Check we can submit one more cow in parallel */
 		if (!atomic_add_unless(&cmd->merge.nr_available, -1, 0))
 			return;
-
+		/*
+		 * This adds cluster lk. Further write bios to *cluster will go
+		 * from ploop_map to kwork (because bat_levels[*cluster] is not
+		 * BAT_LEVEL_TOP), so they will see the lk.
+		 */
 		if (submit_cluster_cow(ploop, level, *cluster, dst_cluster,
 				    ploop_queue_deferred_cmd_wrapper, cmd)) {
 			atomic_inc(&cmd->merge.nr_available);
