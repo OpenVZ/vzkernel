@@ -3614,7 +3614,7 @@ static void cfq_init_cfqq(struct cfq_data *cfqd, struct cfq_queue *cfqq,
 }
 
 #ifdef CONFIG_CFQ_GROUP_IOSCHED
-static void check_blkcg_changed(struct cfq_io_cq *cic, struct bio *bio)
+static bool check_blkcg_changed(struct cfq_io_cq *cic, struct bio *bio)
 {
 	struct cfq_data *cfqd = cic_to_cfqd(cic);
 	struct cfq_queue *sync_cfqq;
@@ -3631,15 +3631,7 @@ static void check_blkcg_changed(struct cfq_io_cq *cic, struct bio *bio)
 	 * spuriously on a newly created cic but there's no harm.
 	 */
 	if (unlikely(!cfqd) || likely(cic->blkcg_id == id))
-		return;
-
-	/*
-	 * If we have a non-root cgroup, we can depend on that to
-	 * do proper throttling of writes. Turn off wbt for that
-	 * case, if it was enabled by default.
-	 */
-	if (nonroot_cg)
-		wbt_disable_default(cfqd->queue);
+		return nonroot_cg;
 
 	sync_cfqq = cic_to_cfqq(cic, 1);
 	if (sync_cfqq) {
@@ -3653,9 +3645,13 @@ static void check_blkcg_changed(struct cfq_io_cq *cic, struct bio *bio)
 	}
 
 	cic->blkcg_id = id;
+	return nonroot_cg;
 }
 #else
-static inline void check_blkcg_changed(struct cfq_io_cq *cic, struct bio *bio) { }
+static inline bool check_blkcg_changed(struct cfq_io_cq *cic, struct bio *bio)
+{
+	return false;
+}
 #endif  /* CONFIG_CFQ_GROUP_IOSCHED */
 
 static struct cfq_queue *
@@ -4282,11 +4278,12 @@ cfq_set_request(struct request_queue *q, struct request *rq, struct bio *bio,
 	const int rw = rq_data_dir(rq);
 	const bool is_sync = rq_is_sync(rq);
 	struct cfq_queue *cfqq;
+	bool disable_wbt;
 
 	spin_lock_irq(q->queue_lock);
 
 	check_ioprio_changed(cic, bio);
-	check_blkcg_changed(cic, bio);
+	disable_wbt = check_blkcg_changed(cic, bio);
 new_queue:
 	cfqq = cic_to_cfqq(cic, is_sync);
 	if (!cfqq || cfqq == &cfqd->oom_cfqq) {
@@ -4322,6 +4319,10 @@ new_queue:
 	rq->elv.priv[0] = cfqq;
 	rq->elv.priv[1] = cfqq->cfqg;
 	spin_unlock_irq(q->queue_lock);
+
+	if (disable_wbt)
+		wbt_disable_default(q);
+
 	return 0;
 }
 
