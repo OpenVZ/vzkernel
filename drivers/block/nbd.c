@@ -820,10 +820,6 @@ static void nbd_bdev_reset(struct block_device *bdev)
 		return;
 	set_device_ro(bdev, false);
 	bdev->bd_inode->i_size = 0;
-	if (max_part > 0) {
-		blkdev_reread_part(bdev);
-		bdev->bd_invalidated = 1;
-	}
 }
 
 static void nbd_parse_flags(struct nbd_device *nbd, struct block_device *bdev)
@@ -1102,6 +1098,9 @@ static int nbd_open(struct block_device *bdev, fmode_t mode)
 		}
 		refcount_set(&nbd->config_refs, 1);
 		mutex_unlock(&nbd->config_lock);
+		bdev->bd_invalidated = 1;
+	} else if (nbd_disconnected(nbd->config)) {
+		bdev->bd_invalidated = 1;
 	}
 out:
 	mutex_unlock(&nbd_index_mutex);
