@@ -283,6 +283,7 @@ static struct {
 	{ "nf_conntrack_ipv6",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
 
 	{ "nfnetlink-subsys-10",VE_IP_IPTABLES			}, /* nf_tables */
+	{ "nfnetlink-subsys-11",VE_IP_IPTABLES			}, /* nft_compat */
 	{ "nft-set",		VE_IP_IPTABLES			},
 	{ "nft-afinfo-2",	VE_IP_IPTABLES			}, /* IPV4 */
 	{ "nft-afinfo-3",	VE_IP_IPTABLES			}, /* ARP  */
