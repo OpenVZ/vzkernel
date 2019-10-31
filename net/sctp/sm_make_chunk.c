@@ -1408,7 +1408,7 @@ static struct sctp_chunk *_sctp_make_chunk(const struct sctp_association *asoc,
 		goto nodata;
 
 	/* No need to allocate LL here, as this is only a chunk. */
-	skb = alloc_skb(chunklen, gfp);
+	skb = alloc_skb(chunklen, gfp | __GFP_ORDER_NOWARN);
 	if (!skb)
 		goto nodata;
 
