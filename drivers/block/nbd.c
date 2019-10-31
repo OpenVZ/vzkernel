@@ -333,7 +333,7 @@ static inline int sock_send_bvec(struct nbd_device *nbd, int index,
 	int result;
 	void *kaddr = kmap(bvec->bv_page);
 	result = sock_xmit(nbd, index, 1, kaddr + bvec->bv_offset + skip,
-			   bvec->bv_len - skip, flags, &sent);
+			   bvec->bv_len - skip, flags, sent);
 	kunmap(bvec->bv_page);
 	return result;
 }
