@@ -471,7 +471,7 @@ int sctp_packet_transmit(struct sctp_packet *packet, gfp_t gfp)
 	} else {
 		pkt_size = packet->size;
 	}
-	head = alloc_skb(pkt_size + MAX_HEADER, gfp);
+	head = alloc_skb(pkt_size + MAX_HEADER, gfp | __GFP_ORDER_NOWARN);
 	if (!head)
 		goto err;
 	if (gso) {
