@@ -21,8 +21,8 @@ while (<FILE>) {
 	if (/\# ([\w]+) is not set/) {
 		$configname = $1;
 	} elsif (/^\#/) {
-		# skip comments
-		next;
+		# fall through on comments like 'avoid CONFIG_FOO=y'
+		;
 	} elsif (/([\w]+)=/) {
 		$configname = $1;
 	}
@@ -44,8 +44,8 @@ while (<FILE2>) {
 	if (/\# ([\w]+) is not set/) {
 		$configname = $1;
 	} elsif (/^\#/) {
-		# skip comments
-		next;
+		# fall through on comments like 'avoid CONFIG_FOO=y'
+		;
 	} elsif (/([\w]+)=/) {
 		$configname  = $1;
 	}
