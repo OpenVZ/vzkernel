@@ -143,6 +143,9 @@ Summary: The Linux kernel
 # ipa_clone support
 %define with_ipaclones %{?_without_ipaclones: 0} %{?!_without_ipaclones: 1}
 
+# Want to build a vanilla kernel build without any non-upstream patches?
+%define with_vanilla %{?_with_vanilla: 1} %{?!_with_vanilla: 0}
+
 
 # The kernel tarball/base version
 %define kversion %%KVERSION%%.%%KPATCHLEVEL%%
@@ -199,6 +202,18 @@ Summary: The Linux kernel
 %define KVERREL_RE %(echo %KVERREL | sed 's/+/[+]/g')
 %define hdrarch %_target_cpu
 %define asmarch %_target_cpu
+
+%if 0%{!?nopatches:1}
+%define nopatches 0
+%endif
+
+%if %{with_vanilla}
+%define nopatches 1
+%endif
+
+%if %{nopatches}
+%define variant -vanilla
+%endif
 
 %if !%{with_debuginfo}
 %define _enable_debug_packages 0
@@ -348,6 +363,12 @@ Summary: The Linux kernel
 %define hdrarch arm64
 %define make_target Image.gz
 %define kernel_image arch/arm64/boot/Image.gz
+%endif
+
+# Should make listnewconfig fail if there's config options
+# printed out?
+%if %{nopatches}
+%define with_configchecks 0
 %endif
 
 # To temporarily exclude an architecture from being built, add it to
