@@ -133,7 +133,7 @@ rh-kabi-dw-check: rh-kabi
 	@rm -rf $(KABIDW)/base/$(CURARCH).tmp
 
 rh-configs: rh-configs-prep
-	@cd $(REDHAT)/configs; VERSION=$(KVERSION) ./generate_all_configs.sh; \
+	@cd $(REDHAT)/configs; VERSION=$(KVERSION) ./generate_all_configs.sh rhel 1; \
 	./process_configs.sh $(PROCESS_CONFIGS_OPTS) $(PACKAGE_NAME) $(KVERSION)
 
 rh-configs-check: rh-configs-prep
@@ -226,20 +226,19 @@ sources-rh: $(TARBALL)
 		echo "WARNING: There are uncommitted changes in your tree or the changes are not in sync with linux-kernel-test.patch.  Either commit the changes or run 'make rh-test-patch'"
 	@rm $(TESTPATCH).tmp
 	@cp $(TESTPATCH) $(SOURCES)/linux-kernel-test.patch
-	@if [ $(IS_FEDORA) -eq 1 ]; then \
-		cp fedora_files/* $(SOURCES); \
-	else \
-		cp rhel_files/* $(SOURCES); \
-	fi
+	@cp fedora_files/* $(SOURCES);
+	@cp rhel_files/* $(SOURCES);
 	@cp cpupower.* \
 		keys/rhel*.x509 \
 		kabi/check-kabi \
 		configs/$(PACKAGE_NAME)-*.config \
 		keys/*.cer \
+		update_scripts.sh \
 		mod-extra.* \
 		mod-extra-blacklist.sh \
 		mod-internal.list \
 		mod-sign.sh \
+		configs/flavors \
 		configs/generate_all_configs.sh \
 		configs/process_configs.sh \
 		parallel_xz.sh \

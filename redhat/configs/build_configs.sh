@@ -19,8 +19,6 @@ cd $SCRIPT_DIR
 set errexit
 set nounset
 
-control_file="priority".$TARGET
-
 cleanup()
 {
 	rm -f config-*
@@ -52,7 +50,9 @@ function merge_configs()
 	arch=$(echo "$archvar" | cut -f1 -d"-")
 	configs=$2
 	order=$3
-	name=$OUTPUT_DIR/$PACKAGE_NAME-$archvar.config
+	flavor=$4
+
+	name=$OUTPUT_DIR/$PACKAGE_NAME-$archvar-$flavor.config
 	echo -n "Building $name ... "
 	touch config-merging config-merged
 
@@ -95,45 +95,55 @@ function merge_configs()
 	echo "done"
 }
 
+function build_flavor()
+{
+	flavor=$1
+	control_file="priority".$flavor
+	while read line
+	do
+		if [ $(echo "$line" | grep -c "^#") -ne 0 ]; then
+			continue
+		elif [ $(echo "$line" | grep -c "^$") -ne 0 ]; then
+			continue
+		elif [ $(echo "$line" | grep -c "^EMPTY") -ne 0 ]; then
+			empty=$(echo "$line" | cut -f2 -d"=")
+			for a in $empty
+			do
+				echo "# EMPTY" > $OUTPUT_DIR/$PACKAGE_NAME-$a-$flavor.config
+
+			done
+		elif [ $(echo "$line" | grep -c "^ORDER") -ne 0 ]; then
+			order=$(echo "$line" | cut -f2 -d"=")
+			for o in $order
+			do
+				glist=$(find $o -type d)
+				for d in $glist
+				do
+					combine_config_layer $d
+				done
+			done
+		else
+			arch=$(echo "$line" | cut -f1 -d"=")
+			configs=$(echo "$line" | cut -f2 -d"=")
+
+			if [ -n "$SUBARCH" ]; then
+				case $arch in
+					$SUBARCH*)
+						;;
+					*)
+						continue
+				esac
+			fi
+
+			merge_configs $arch $configs "$order" $flavor
+		fi
+	done < $control_file
+}
+
 while read line
 do
-	if [ $(echo "$line" | grep -c "^#") -ne 0 ]; then
-		continue
-	elif [ $(echo "$line" | grep -c "^$") -ne 0 ]; then
-		continue
-	elif [ $(echo "$line" | grep -c "^EMPTY") -ne 0 ]; then
-		empty=$(echo "$line" | cut -f2 -d"=")
-		for a in $empty
-		do
-			echo "# EMPTY" > $OUTPUT_DIR/$PACKAGE_NAME-$a.config
-
-		done
-	elif [ $(echo "$line" | grep -c "^ORDER") -ne 0 ]; then
-		order=$(echo "$line" | cut -f2 -d"=")
-		for o in $order
-		do
-			glist=$(find $o -type d)
-			for d in $glist
-			do
-				combine_config_layer $d
-			done
-		done
-	else
-		arch=$(echo "$line" | cut -f1 -d"=")
-		configs=$(echo "$line" | cut -f2 -d"=")
-
-		if [ -n "$SUBARCH" ]; then
-			case $arch in
-				$SUBARCH*)
-					;;
-				*)
-					continue
-			esac
-		fi
-
-		merge_configs $arch $configs "$order"
-	fi
-done < $control_file
+	build_flavor $line
+done < flavors
 
 # A passed in kernel version implies copy to final location
 # otherwise defer to another script
