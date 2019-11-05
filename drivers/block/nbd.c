@@ -205,7 +205,6 @@ static void nbd_size_set(struct nbd_device *nbd, loff_t blocksize,
 	struct nbd_config *config = nbd->config;
 	config->blksize = blocksize;
 	config->bytesize = blocksize * nr_blocks;
-	nbd_size_update(nbd);
 }
 
 static void nbd_end_request(struct nbd_cmd *cmd)
@@ -966,6 +965,7 @@ static int nbd_start_device(struct nbd_device *nbd, struct block_device *bdev)
 		args->nbd = nbd;
 		args->index = i;
 		queue_work(recv_workqueue, &args->work);
+		nbd_size_update(nbd);
 	}
 	error = wait_event_interruptible(config->recv_wq,
 					 atomic_read(&config->recv_threads) == 0);
