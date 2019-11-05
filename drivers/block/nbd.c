@@ -84,11 +84,14 @@ struct nbd_config {
 struct nbd_device {
 	struct blk_mq_tag_set tag_set;
 
+	int index;
 	refcount_t config_refs;
+	refcount_t refs;
 	struct nbd_config *config;
 	struct mutex config_lock;
 	struct gendisk *disk;
 
+	struct list_head list;
 	struct task_struct *task_recv;
 	struct task_struct *task_setup;
 };
@@ -146,6 +149,29 @@ static struct device_attribute pid_attr = {
 	.attr = { .name = "pid", .mode = S_IRUGO},
 	.show = pid_show,
 };
+
+
+static void nbd_dev_remove(struct nbd_device *nbd)
+{
+	struct gendisk *disk = nbd->disk;
+	if (disk) {
+		del_gendisk(disk);
+		blk_cleanup_queue(disk->queue);
+		blk_mq_free_tag_set(&nbd->tag_set);
+		put_disk(disk);
+	}
+	kfree(nbd);
+}
+
+static void nbd_put(struct nbd_device *nbd)
+{
+	if (refcount_dec_and_mutex_lock(&nbd->refs,
+					&nbd_index_mutex)) {
+		idr_remove(&nbd_index_idr, nbd->index);
+		mutex_unlock(&nbd_index_mutex);
+		nbd_dev_remove(nbd);
+	}
+}
 
 static void nbd_mark_nsock_dead(struct nbd_sock *nsock)
 {
@@ -884,6 +910,7 @@ static void nbd_config_put(struct nbd_device *nbd)
 		kfree(nbd->config);
 		nbd_reset(nbd);
 		mutex_unlock(&nbd->config_lock);
+		nbd_put(nbd);
 		module_put(THIS_MODULE);
 	}
 }
@@ -1064,6 +1091,10 @@ static int nbd_open(struct block_device *bdev, fmode_t mode)
 		ret = -ENXIO;
 		goto out;
 	}
+	if (!refcount_inc_not_zero(&nbd->refs)) {
+		ret = -ENXIO;
+		goto out;
+	}
 	if (!refcount_inc_not_zero(&nbd->config_refs)) {
 		struct nbd_config *config;
 
@@ -1079,6 +1110,7 @@ static int nbd_open(struct block_device *bdev, fmode_t mode)
 			goto out;
 		}
 		refcount_set(&nbd->config_refs, 1);
+		refcount_inc(&nbd->refs);
 		mutex_unlock(&nbd->config_lock);
 		bdev->bd_invalidated = 1;
 	} else if (nbd_disconnected(nbd->config)) {
@@ -1093,6 +1125,7 @@ static void nbd_release(struct gendisk *disk, fmode_t mode)
 {
 	struct nbd_device *nbd = disk->private_data;
 	nbd_config_put(nbd);
+	nbd_put(nbd);
 }
 
 static const struct block_device_operations nbd_fops =
@@ -1246,18 +1279,6 @@ static struct blk_mq_ops nbd_mq_ops = {
 	.timeout	= nbd_xmit_timeout,
 };
 
-static void nbd_dev_remove(struct nbd_device *nbd)
-{
-	struct gendisk *disk = nbd->disk;
-	if (disk) {
-		del_gendisk(disk);
-		blk_cleanup_queue(disk->queue);
-		blk_mq_free_tag_set(&nbd->tag_set);
-		put_disk(disk);
-	}
-	kfree(nbd);
-}
-
 static int nbd_dev_add(int index)
 {
 	struct nbd_device *nbd;
@@ -1286,6 +1307,7 @@ static int nbd_dev_add(int index)
 	if (err < 0)
 		goto out_free_disk;
 
+	nbd->index = index;
 	nbd->disk = disk;
 	nbd->tag_set.ops = &nbd_mq_ops;
 	nbd->tag_set.nr_hw_queues = 1;
@@ -1320,6 +1342,8 @@ static int nbd_dev_add(int index)
 
 	mutex_init(&nbd->config_lock);
 	refcount_set(&nbd->config_refs, 0);
+	refcount_set(&nbd->refs, 1);
+	INIT_LIST_HEAD(&nbd->list);
 	disk->major = NBD_MAJOR;
 	disk->first_minor = index << part_shift;
 	disk->fops = &nbd_fops;
@@ -1399,16 +1423,32 @@ static int __init nbd_init(void)
 
 static int nbd_exit_cb(int id, void *ptr, void *data)
 {
+	struct list_head *list = (struct list_head *)data;
 	struct nbd_device *nbd = ptr;
-	nbd_dev_remove(nbd);
+
+	refcount_inc(&nbd->refs);
+	list_add_tail(&nbd->list, list);
 	return 0;
 }
 
 static void __exit nbd_cleanup(void)
 {
+	struct nbd_device *nbd;
+	LIST_HEAD(del_list);
+
 	nbd_dbg_close();
 
-	idr_for_each(&nbd_index_idr, &nbd_exit_cb, NULL);
+	mutex_lock(&nbd_index_mutex);
+	idr_for_each(&nbd_index_idr, &nbd_exit_cb, &del_list);
+	mutex_unlock(&nbd_index_mutex);
+
+	list_for_each_entry(nbd, &del_list, list) {
+		if (refcount_read(&nbd->refs) != 2)
+			printk(KERN_ERR "nbd: possibly leaking a device\n");
+		nbd_put(nbd);
+		nbd_put(nbd);
+	}
+
 	idr_destroy(&nbd_index_idr);
 	destroy_workqueue(recv_workqueue);
 	unregister_blkdev(NBD_MAJOR, "nbd");
