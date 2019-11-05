@@ -944,8 +944,6 @@ static int nbd_start_device(struct nbd_device *nbd, struct block_device *bdev)
 		return -EINVAL;
 	}
 
-	if (max_part)
-		bdev->bd_invalidated = 1;
 	blk_mq_update_nr_hw_queues(&nbd->tag_set, config->num_connections);
 	nbd->task_recv = current;
 	mutex_unlock(&nbd->config_lock);
@@ -959,8 +957,6 @@ static int nbd_start_device(struct nbd_device *nbd, struct block_device *bdev)
 	}
 
 	set_bit(NBD_HAS_PID_FILE, &config->runtime_flags);
-	if (max_part)
-		bdev->bd_invalidated = 1;
 
 	nbd_dev_dbg_init(nbd);
 	for (i = 0; i < num_connections; i++) {
@@ -979,6 +975,9 @@ static int nbd_start_device(struct nbd_device *nbd, struct block_device *bdev)
 		args->index = i;
 		queue_work(recv_workqueue, &args->work);
 		nbd_size_update(nbd);
+		if (max_part)
+			bdev->bd_invalidated = 1;
+
 	}
 	error = wait_event_interruptible(config->recv_wq,
 					 atomic_read(&config->recv_threads) == 0);
