@@ -642,7 +642,9 @@ static void nbd_clear_req(struct request *req, void *data, bool reserved)
 
 static void nbd_clear_que(struct nbd_device *nbd)
 {
+	blk_mq_stop_hw_queues(nbd->disk->queue);
 	blk_mq_tagset_busy_iter(&nbd->tag_set, nbd_clear_req, NULL);
+	blk_mq_start_hw_queues(nbd->disk->queue);
 	dev_dbg(disk_to_dev(nbd->disk), "queue cleared\n");
 }
 
@@ -996,7 +998,7 @@ static int nbd_start_device(struct nbd_device *nbd, struct block_device *bdev)
 static void nbd_clear_sock_ioctl(struct nbd_device *nbd,
 				 struct block_device *bdev)
 {
-	nbd_clear_sock(nbd);
+	sock_shutdown(nbd);
 	kill_bdev(bdev);
 	nbd_bdev_reset(bdev);
 }
