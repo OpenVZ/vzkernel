@@ -57,6 +57,7 @@
 #define TUNSETVNETBE _IOW('T', 222, int)
 #define TUNGETVNETBE _IOR('T', 223, int)
 #define TUNSETCARRIER _IOW('T', 226, int)
+#define TUNGETDEVNETNS _IO('T', 227)
 
 /* CONFIG_VE_TUNTAP_ACCOUNTING should be set */
 #define TUNSETACCTID _IOW('T', 300, struct ifreq)
