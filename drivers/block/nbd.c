@@ -974,10 +974,11 @@ static int nbd_start_device(struct nbd_device *nbd, struct block_device *bdev)
 		args->nbd = nbd;
 		args->index = i;
 		queue_work(recv_workqueue, &args->work);
-		if (max_part)
-			bdev->bd_invalidated = 1;
 	}
 	nbd_size_update(nbd);
+	if (max_part)
+		bdev->bd_invalidated = 1;
+
 	error = wait_event_interruptible(config->recv_wq,
 					 atomic_read(&config->recv_threads) == 0);
 	if (error)
