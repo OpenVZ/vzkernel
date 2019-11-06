@@ -2330,6 +2330,7 @@ static long __tun_chr_ioctl(struct file *file, unsigned int cmd,
 	void __user* argp = (void __user*)arg;
 	unsigned int ifindex, carrier;
 	struct ifreq ifr;
+	struct net *net;
 	kuid_t owner;
 	kgid_t group;
 	int sndbuf;
@@ -2406,6 +2407,7 @@ static long __tun_chr_ioctl(struct file *file, unsigned int cmd,
 
 	tun_debug(KERN_INFO, tun, "tun_chr_ioctl cmd %u\n", cmd);
 
+	net = dev_net(tun->dev);
 	ret = 0;
 	switch (cmd) {
 	case TUNGETIFF:
@@ -2621,6 +2623,14 @@ static long __tun_chr_ioctl(struct file *file, unsigned int cmd,
 			goto unlock;
 
 		ret = tun_net_change_carrier(tun->dev, (bool)carrier);
+		break;
+
+	case TUNGETDEVNETNS:
+		ret = -EPERM;
+		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+			goto unlock;
+
+		ret = open_net_ns_fd(net);
 		break;
 
 	default:
