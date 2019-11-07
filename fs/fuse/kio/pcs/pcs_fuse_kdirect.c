@@ -1347,17 +1347,8 @@ static void fuse_trace_free(struct fuse_ktrace *tr)
 	if (tr->prometheus_dentry) {
 		debugfs_remove(tr->prometheus_dentry);
 	}
-	if (tr->prometheus_hist) {
-		int cpu;
-
-		for_each_possible_cpu(cpu) {
-			struct kfuse_histogram ** histp;
-			histp = per_cpu_ptr(tr->prometheus_hist, cpu);
-			if (*histp)
-				free_page((unsigned long)*histp);
-		}
-		free_percpu(tr->prometheus_hist);
-	}
+	if (tr->prometheus_metrics)
+		free_percpu(tr->prometheus_metrics);
 	free_percpu(tr->buf);
 	debugfs_remove(tr->dir);
 	kfree(tr);
@@ -1405,20 +1396,20 @@ static struct rchan_callbacks relay_callbacks = {
 	.remove_buf_file	= remove_buf_file_callback,
 };
 
-void fuse_stat_account(struct fuse_conn * fc, int op, ktime_t val)
+void fuse_stat_observe(struct fuse_conn *fc, int op, ktime_t val)
 {
 	struct fuse_ktrace * tr = fc->ktrace;
 
-	BUG_ON(op >= KFUSE_OP_MAX);
+	BUG_ON(op >= KFUSE_HISTOGRAM_MAX);
 
 	if (tr) {
-		struct kfuse_histogram ** histp;
+		struct kfuse_metrics *metrics;
 		int cpu;
 
 		cpu = get_cpu();
-		histp = per_cpu_ptr(tr->prometheus_hist, cpu);
-		if (histp && *histp) {
-			struct kfuse_stat_rec * rec = (*histp)->metrics + op;
+		metrics = per_cpu_ptr(tr->prometheus_metrics, cpu);
+		if (metrics) {
+			struct kfuse_histogram *rec = &metrics->hists[op];
 			int bucket;
 			unsigned long long lat = ktime_to_ns(val)/1000;
 
@@ -1437,6 +1428,27 @@ void fuse_stat_account(struct fuse_conn * fc, int op, ktime_t val)
 
 			rec->buckets[bucket]++;
 			rec->sum += lat;
+		}
+		put_cpu();
+	}
+}
+
+void fuse_stat_account(struct fuse_conn *fc, int op, u64 val)
+{
+	struct fuse_ktrace *tr = fc->ktrace;
+
+	BUG_ON(op >= KFUSE_OP_MAX);
+
+	if (tr) {
+		struct kfuse_metrics *metrics;
+		int cpu;
+
+		cpu = get_cpu();
+		metrics = per_cpu_ptr(tr->prometheus_metrics, cpu);
+		if (metrics) {
+			struct kfuse_counter *cnt = &metrics->cnts[op];
+			cnt->val_total += val;
+			++cnt->events;
 		}
 		put_cpu();
 	}
@@ -1462,48 +1474,57 @@ static int prometheus_file_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
+/* NOTE: old versions of userspace could read only histograms */
 static ssize_t prometheus_file_read(struct file *filp,
 				    char __user *buffer,
 				    size_t count,
 				    loff_t *ppos)
 {
-	struct fuse_ktrace * tr = filp->private_data;
-	struct kfuse_histogram * hist;
+	struct fuse_ktrace *tr = filp->private_data;
+	struct kfuse_metrics *stats;
 	int cpu;
 
-	if (*ppos >= sizeof(struct kfuse_histogram))
+	if (*ppos >= sizeof(struct kfuse_metrics))
 		return 0;
-	if (*ppos + count > sizeof(struct kfuse_histogram))
-		count = sizeof(struct kfuse_histogram) - *ppos;
+	if (*ppos + count > sizeof(struct kfuse_metrics))
+		count = sizeof(struct kfuse_metrics) - *ppos;
 
-	hist = (void*)get_zeroed_page(GFP_KERNEL);
-	if (!hist)
+	stats = (void *)get_zeroed_page(GFP_KERNEL);
+	BUILD_BUG_ON(sizeof(*stats) > PAGE_SIZE);
+	if (!stats)
 		return -ENOMEM;
 
-	if (!tr->prometheus_hist)
+	if (!tr->prometheus_metrics)
 		return -EINVAL;
 
 	for_each_possible_cpu(cpu) {
-		struct kfuse_histogram ** histp;
+		struct kfuse_metrics *m;
 
-		histp = per_cpu_ptr(tr->prometheus_hist, cpu);
-		if (histp && *histp) {
+		m = per_cpu_ptr(tr->prometheus_metrics, cpu);
+		if (m) {
 			int i, k;
-			for (i = 0; i < KFUSE_OP_MAX; i++) {
+			/* aggregate histograms from each cpu */
+			for (i = 0; i < KFUSE_HISTOGRAM_MAX; i++) {
 				for (k = 0; k < KFUSE_PROM_MAX; k++) {
-					hist->metrics[i].buckets[k] += (*histp)->metrics[i].buckets[k];
+					stats->hists[i].buckets[k] += m->hists[i].buckets[k];
 				}
-				hist->metrics[i].sum += (*histp)->metrics[i].sum;
+				stats->hists[i].sum += m->hists[i].sum;
+			}
+
+			/* aggregate counters from each cpu */
+			for (i = 0; i < KFUSE_OP_MAX; i++) {
+				stats->cnts[i].events += m->cnts[i].events;
+				stats->cnts[i].val_total += m->cnts[i].val_total;
 			}
 		}
 	}
 
-	if (copy_to_user(buffer, (char*)hist + *ppos, count))
+	if (copy_to_user(buffer, (char *)stats + *ppos, count))
 		count = -EFAULT;
 	else
 		*ppos += count;
 
-	free_page((unsigned long)hist);
+	free_page((unsigned long)stats);
 	return count;
 }
 
@@ -1519,7 +1540,8 @@ static int fuse_ktrace_setup(struct fuse_conn * fc)
 	struct fuse_ktrace * tr = NULL;
 	struct fuse_ktrace * old_tr;
 	struct dentry * dir;
-	struct kfuse_histogram * __percpu * hist;
+	struct kfuse_metrics __percpu * metrics;
+	int cpu;
 	char name[16];
 
 	if (!fuse_trace_root)
@@ -1551,19 +1573,18 @@ static int fuse_ktrace_setup(struct fuse_conn * fc)
 
 	tr->prometheus_dentry = debugfs_create_file("prometheus", S_IFREG|0444, dir, tr,
 						    &prometheus_file_operations);
-	hist = (void*)alloc_percpu(void *);
-	if (hist) {
-		int cpu;
 
-		BUILD_BUG_ON(sizeof(struct kfuse_histogram) > PAGE_SIZE);
+	ret = -ENOMEM;
 
-		for_each_possible_cpu(cpu) {
-			struct kfuse_histogram ** histp;
-			histp = per_cpu_ptr(hist, cpu);
-			*histp = (void*)get_zeroed_page(GFP_KERNEL);
-		}
-		tr->prometheus_hist = hist;
+	metrics = alloc_percpu(struct kfuse_metrics);
+	if (!metrics)
+		goto err;
+	for_each_possible_cpu(cpu) {
+		struct kfuse_metrics *m;
+		m = per_cpu_ptr(metrics, cpu);
+		memset(m, 0, sizeof(*m));
 	}
+	tr->prometheus_metrics = metrics;
 
 	tr->buf = __alloc_percpu(KTRACE_LOG_BUF_SIZE, 16);
 
