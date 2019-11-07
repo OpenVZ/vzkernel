@@ -1187,7 +1187,8 @@ struct fuse_req *fuse_generic_request_alloc(struct fuse_conn *fc,
 					    struct kmem_cache *cachep,
 					    unsigned npages, gfp_t flags);
 
-void fuse_stat_account(struct fuse_conn * fc, int op, ktime_t val);
+void fuse_stat_observe(struct fuse_conn *fc, int op, ktime_t val);
+void fuse_stat_account(struct fuse_conn *fc, int op, u64 val);
 
 
 int fuse_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
