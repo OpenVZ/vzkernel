@@ -1451,7 +1451,8 @@ struct posix_acl *fuse_get_acl(struct inode *inode, int type);
 int fuse_set_acl(struct user_namespace *mnt_userns, struct inode *inode,
 		 struct posix_acl *acl, int type);
 
-void fuse_stat_account(struct fuse_conn * fc, int op, ktime_t val);
+void fuse_stat_observe(struct fuse_conn *fc, int op, ktime_t val);
+void fuse_stat_account(struct fuse_conn *fc, int op, u64 val);
 
 int fuse_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 		__u64 start, __u64 len);
