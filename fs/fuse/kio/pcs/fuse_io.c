@@ -54,7 +54,8 @@ static void on_read_done(struct pcs_fuse_req *r, size_t size)
 			clear_highpage(r->exec.io.bvec[i].bv_page);
 		}
 	}
-	fuse_stat_account(pfc->fc, KFUSE_OP_READ, ktime_sub(ktime_get(), r->exec.ireq.ts));
+	fuse_stat_observe(pfc->fc, KFUSE_OP_READ, ktime_sub(ktime_get(), r->exec.ireq.ts));
+	fuse_stat_account(pfc->fc, KFUSE_OP_READ, size);
 	r->req.args->out_args[0].size = size;
 	fuse_read_dio_end(fi);
 	fuse_request_end(pfc->fc, &r->req);
@@ -65,7 +66,8 @@ static void on_sync_done(struct pcs_fuse_req *r)
 	struct pcs_fuse_cluster *pfc = cl_from_req(r);
 
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
-	fuse_stat_account(pfc->fc, KFUSE_OP_FSYNC, ktime_sub(ktime_get(), r->exec.ireq.ts));
+	fuse_stat_observe(pfc->fc, KFUSE_OP_FSYNC, ktime_sub(ktime_get(), r->exec.ireq.ts));
+	fuse_stat_account(pfc->fc, KFUSE_OP_FSYNC, 0);
 	fuse_request_end(pfc->fc, &r->req);
 }
 
@@ -80,7 +82,8 @@ static void on_write_done(struct pcs_fuse_req *r, off_t pos, size_t size)
 	out->size = size;
 
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
-	fuse_stat_account(pfc->fc, KFUSE_OP_WRITE, ktime_sub(ktime_get(), r->exec.ireq.ts));
+	fuse_stat_observe(pfc->fc, KFUSE_OP_WRITE, ktime_sub(ktime_get(), r->exec.ireq.ts));
+	fuse_stat_account(pfc->fc, KFUSE_OP_WRITE, size);
 	fuse_write_dio_end(fi);
 	fuse_request_end(pfc->fc, &r->req);
 }
@@ -91,7 +94,8 @@ static void on_fallocate_done(struct pcs_fuse_req *r, off_t pos, size_t size)
 	struct fuse_inode *fi = get_fuse_inode(r->req.args->io_inode);
 
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
-	fuse_stat_account(pfc->fc, KFUSE_OP_FALLOCATE, ktime_sub(ktime_get(), r->exec.ireq.ts));
+	fuse_stat_observe(pfc->fc, KFUSE_OP_FALLOCATE, ktime_sub(ktime_get(), r->exec.ireq.ts));
+	fuse_stat_account(pfc->fc, KFUSE_OP_FALLOCATE, 0);
 	fuse_write_dio_end(fi);
 
 	fuse_request_end(pfc->fc, &r->req);
@@ -272,7 +276,7 @@ static void falloc_req_complete(struct pcs_int_request *ireq)
 	spin_unlock(&di->kq_lock);
 
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
-	fuse_stat_account(pfc->fc, KFUSE_OP_FALLOCATE, ktime_sub(ktime_get(), ireq->ts));
+	fuse_stat_observe(pfc->fc, KFUSE_OP_FALLOCATE, ktime_sub(ktime_get(), ireq->ts));
 	fuse_write_dio_end(fi);
 
 	fuse_request_end(pfc->fc, &r->req);
