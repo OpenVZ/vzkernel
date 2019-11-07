@@ -289,7 +289,7 @@ void cs_log_io_times(struct pcs_int_request * ireq, struct pcs_msg * resp, unsig
 	struct pcs_cs_iohdr * h = (struct pcs_cs_iohdr *)msg_inline_head(resp);
 	int reqt = h->hdr.type != PCS_CS_SYNC_RESP ? ireq->iochunk.cmd : PCS_REQ_T_SYNC;
 
-	fuse_stat_account(fc, reqt, ktime_sub(ktime_get(), ireq->ts_sent));
+	fuse_stat_observe(fc, reqt, ktime_sub(ktime_get(), ireq->ts_sent));
 	if (fc->ktrace && fc->ktrace_level >= LOG_TRACE) {
 		int n = 1;
 		struct fuse_trace_hdr * t;
