@@ -19,7 +19,7 @@ struct fuse_ktrace
 	struct dentry				*dir;
 	unsigned long __percpu			*ovfl;
 	struct dentry				*prometheus_dentry;
-	struct kfuse_histogram * __percpu	*prometheus_hist;
+	struct kfuse_metrics __percpu	*prometheus_metrics;
 	u8 * __percpu				buf;
 };
 
