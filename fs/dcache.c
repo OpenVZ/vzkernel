@@ -2978,36 +2978,7 @@ struct dentry *d_splice_alias(struct inode *inode, struct dentry *dentry)
 		return ERR_CAST(inode);
 
 	if (inode && S_ISDIR(inode->i_mode)) {
-		spin_lock(&inode->i_lock);
-		new = __d_find_any_alias(inode);
-		if (new) {
-			if (!IS_ROOT(new)) {
-				spin_unlock(&inode->i_lock);
-				dput(new);
-				iput(inode);
-				return ERR_PTR(-EIO);
-			}
-			if (d_ancestor(new, dentry)) {
-				spin_unlock(&inode->i_lock);
-				dput(new);
-				iput(inode);
-				return ERR_PTR(-EIO);
-			}
-			write_seqlock(&rename_lock);
-			__d_materialise_dentry(dentry, new);
-			write_sequnlock(&rename_lock);
-			_d_rehash(new);
-			spin_unlock(&new->d_lock);
-			spin_unlock(&inode->i_lock);
-			security_d_instantiate(new, inode);
-			iput(inode);
-		} else {
-			/* already taking inode->i_lock, so d_add() by hand */
-			__d_instantiate(dentry, inode);
-			spin_unlock(&inode->i_lock);
-			security_d_instantiate(dentry, inode);
-			d_rehash(dentry);
-		}
+		new = d_materialise_unique(dentry, inode);
 	} else {
 		d_instantiate(dentry, inode);
 		if (d_unhashed(dentry))
