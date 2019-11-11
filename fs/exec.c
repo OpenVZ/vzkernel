@@ -128,7 +128,7 @@ bool ve_exec_trusted(struct file *file, struct filename *name)
 	static DEFINE_RATELIMIT_STATE(sigsegv_rs, SIGSEGV_RATELIMIT_INTERVAL,
 						  SIGSEGV_RATELIMIT_BURST);
 
-	if (!trusted_exec)
+	if (trusted_exec)
 		return true;
 
 	if (exec_from_ct || (!file_on_ploop && !file_on_ct_mount))
