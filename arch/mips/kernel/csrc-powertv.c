@@ -55,7 +55,7 @@ unsigned int __init mips_get_pll_freq(void)
 	return fout;
 }
 
-static cycle_t c0_hpt_read(struct clocksource *cs)
+static u64 c0_hpt_read(struct clocksource *cs)
 {
 	return read_c0_count();
 }
@@ -96,7 +96,7 @@ struct tim_c {
 
 static struct tim_c *tim_c;
 
-static cycle_t tim_c_read(struct clocksource *cs)
+static u64 tim_c_read(struct clocksource *cs)
 {
 	unsigned int hi;
 	unsigned int next_hi;

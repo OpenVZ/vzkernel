@@ -338,7 +338,7 @@ static void pppoe_flush_dev(struct net_device *dev)
 static int pppoe_device_event(struct notifier_block *this,
 			      unsigned long event, void *ptr)
 {
-	struct net_device *dev = (struct net_device *)ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 
 	/* Only look at sockets that are using this specific device. */
 	switch (event) {
@@ -455,6 +455,22 @@ out:
 	return NET_RX_DROP;
 }
 
+static void pppoe_unbind_sock_work(struct work_struct *work)
+{
+	struct pppox_sock *po = container_of(work, struct pppox_sock,
+					     proto.pppoe.padt_work);
+	struct sock *sk = sk_pppox(po);
+
+	lock_sock(sk);
+	if (po->pppoe_dev) {
+		dev_put(po->pppoe_dev);
+		po->pppoe_dev = NULL;
+	}
+	pppox_unbind_sock(sk);
+	release_sock(sk);
+	sock_put(sk);
+}
+
 /************************************************************************
  *
  * Receive a PPPoE Discovery frame.
@@ -500,7 +516,8 @@ static int pppoe_disc_rcv(struct sk_buff *skb, struct net_device *dev,
 		}
 
 		bh_unlock_sock(sk);
-		sock_put(sk);
+		if (!schedule_work(&po->proto.pppoe.padt_work))
+			sock_put(sk);
 	}
 
 abort:
@@ -549,6 +566,9 @@ static int pppoe_create(struct net *net, struct socket *sock)
 	sk->sk_family		= PF_PPPOX;
 	sk->sk_protocol		= PX_PROTO_OE;
 
+	INIT_WORK(&pppox_sk(sk)->proto.pppoe.padt_work,
+		  pppoe_unbind_sock_work);
+
 	return 0;
 }
 
@@ -570,7 +590,7 @@ static int pppoe_release(struct socket *sock)
 
 	po = pppox_sk(sk);
 
-	if (sk->sk_state & (PPPOX_CONNECTED | PPPOX_BOUND | PPPOX_ZOMBIE)) {
+	if (po->pppoe_dev) {
 		dev_put(po->pppoe_dev);
 		po->pppoe_dev = NULL;
 	}
@@ -642,8 +662,13 @@ static int pppoe_connect(struct socket *sock, struct sockaddr *uservaddr,
 			po->pppoe_dev = NULL;
 		}
 
-		memset(sk_pppox(po) + 1, 0,
-		       sizeof(struct pppox_sock) - sizeof(struct sock));
+		po->pppoe_ifindex = 0;
+		memset(&po->pppoe_pa, 0, sizeof(po->pppoe_pa));
+		memset(&po->pppoe_relay, 0, sizeof(po->pppoe_relay));
+		memset(&po->chan, 0, sizeof(po->chan));
+		po->next = NULL;
+		po->num = 0;
+
 		sk->sk_state = PPPOX_NONE;
 	}
 
@@ -831,6 +856,7 @@ static int pppoe_sendmsg(struct kiocb *iocb, struct socket *sock,
 	struct pppoe_hdr *ph;
 	struct net_device *dev;
 	char *start;
+	int hlen;
 
 	lock_sock(sk);
 	if (sock_flag(sk, SOCK_DEAD) || !(sk->sk_state & PPPOX_CONNECTED)) {
@@ -849,16 +875,16 @@ static int pppoe_sendmsg(struct kiocb *iocb, struct socket *sock,
 	if (total_len > (dev->mtu + dev->hard_header_len))
 		goto end;
 
-
-	skb = sock_wmalloc(sk, total_len + dev->hard_header_len + 32,
-			   0, GFP_KERNEL);
+	hlen = LL_RESERVED_SPACE(dev);
+	skb = sock_wmalloc(sk, hlen + sizeof(*ph) + total_len +
+			   dev->needed_tailroom, 0, GFP_KERNEL);
 	if (!skb) {
 		error = -ENOMEM;
 		goto end;
 	}
 
 	/* Reserve space for headers. */
-	skb_reserve(skb, dev->hard_header_len);
+	skb_reserve(skb, hlen);
 	skb_reset_network_header(skb);
 
 	skb->dev = dev;
@@ -869,7 +895,7 @@ static int pppoe_sendmsg(struct kiocb *iocb, struct socket *sock,
 	ph = (struct pppoe_hdr *)skb_put(skb, total_len + sizeof(struct pppoe_hdr));
 	start = (char *)&ph->tag[0];
 
-	error = memcpy_fromiovec(start, m->msg_iov, total_len);
+	error = memcpy_from_msg(start, m, total_len);
 	if (error < 0) {
 		kfree_skb(skb);
 		goto end;
@@ -919,7 +945,7 @@ static int __pppoe_xmit(struct sock *sk, struct sk_buff *skb)
 	/* Copy the data if there is no space for the header or if it's
 	 * read-only.
 	 */
-	if (skb_cow_head(skb, sizeof(*ph) + dev->hard_header_len))
+	if (skb_cow_head(skb, LL_RESERVED_SPACE(dev) + sizeof(*ph)))
 		goto abort;
 
 	__skb_push(skb, sizeof(*ph));
@@ -979,11 +1005,9 @@ static int pppoe_recvmsg(struct kiocb *iocb, struct socket *sock,
 	if (error < 0)
 		goto end;
 
-	m->msg_namelen = 0;
-
 	if (skb) {
 		total_len = min_t(size_t, total_len, skb->len);
-		error = skb_copy_datagram_iovec(skb, 0, m->msg_iov, total_len);
+		error = skb_copy_datagram_msg(skb, 0, m, total_len);
 		if (error == 0) {
 			consume_skb(skb);
 			return total_len;
@@ -1173,7 +1197,7 @@ static int __init pppoe_init(void)
 
 	dev_add_pack(&pppoes_ptype);
 	dev_add_pack(&pppoed_ptype);
-	register_netdevice_notifier(&pppoe_notifier);
+	register_netdevice_notifier_rh(&pppoe_notifier);
 
 	return 0;
 
@@ -1187,7 +1211,7 @@ out:
 
 static void __exit pppoe_exit(void)
 {
-	unregister_netdevice_notifier(&pppoe_notifier);
+	unregister_netdevice_notifier_rh(&pppoe_notifier);
 	dev_remove_pack(&pppoed_ptype);
 	dev_remove_pack(&pppoes_ptype);
 	unregister_pppox_proto(PX_PROTO_OE);

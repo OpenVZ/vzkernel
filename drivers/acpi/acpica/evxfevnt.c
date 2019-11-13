@@ -41,7 +41,8 @@
  * POSSIBILITY OF SUCH DAMAGES.
  */
 
-#include <linux/export.h>
+#define EXPORT_ACPI_INTERFACES
+
 #include <acpi/acpi.h>
 #include "accommon.h"
 #include "actables.h"
@@ -355,10 +356,11 @@ acpi_status acpi_get_event_status(u32 event, acpi_event_status * event_status)
 		return_ACPI_STATUS(status);
 
 	if (value)
-		*event_status |= ACPI_EVENT_FLAG_SET;
+		*event_status |=
+			(ACPI_EVENT_FLAG_ENABLED | ACPI_EVENT_FLAG_ENABLE_SET);
 
 	if (acpi_gbl_fixed_event_handlers[event].handler)
-		*event_status |= ACPI_EVENT_FLAG_HANDLE;
+		*event_status |= ACPI_EVENT_FLAG_STATUS_SET;
 
 	return_ACPI_STATUS(status);
 }

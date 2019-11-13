@@ -46,14 +46,14 @@ static inline unsigned get_high_speed_hz(unsigned int usb_rate)
 static void proc_audio_usbbus_read(struct snd_info_entry *entry, struct snd_info_buffer *buffer)
 {
 	struct snd_usb_audio *chip = entry->private_data;
-	if (!chip->shutdown)
+	if (!atomic_read(&chip->shutdown))
 		snd_iprintf(buffer, "%03d/%03d\n", chip->dev->bus->busnum, chip->dev->devnum);
 }
 
 static void proc_audio_usbid_read(struct snd_info_entry *entry, struct snd_info_buffer *buffer)
 {
 	struct snd_usb_audio *chip = entry->private_data;
-	if (!chip->shutdown)
+	if (!atomic_read(&chip->shutdown))
 		snd_iprintf(buffer, "%04x:%04x\n", 
 			    USB_ID_VENDOR(chip->usb_id),
 			    USB_ID_PRODUCT(chip->usb_id));
@@ -110,6 +110,7 @@ static void proc_dump_substream_formats(struct snd_usb_substream *subs, struct s
 		if (subs->speed != USB_SPEED_FULL)
 			snd_iprintf(buffer, "    Data packet interval: %d us\n",
 				    125 * (1 << fp->datainterval));
+		snd_iprintf(buffer, "    Bits: %d\n", fp->fmt_bits);
 		// snd_iprintf(buffer, "    Max Packet Size = %d\n", fp->maxpacksize);
 		// snd_iprintf(buffer, "    EP Attribute = %#x\n", fp->attributes);
 	}

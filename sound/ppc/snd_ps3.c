@@ -564,9 +564,7 @@ static int snd_ps3_pcm_hw_params(struct snd_pcm_substream *substream,
 
 static int snd_ps3_pcm_hw_free(struct snd_pcm_substream *substream)
 {
-	int ret;
-	ret = snd_pcm_lib_free_pages(substream);
-	return ret;
+	return snd_pcm_lib_free_pages(substream);
 };
 
 static int snd_ps3_delay_to_bytes(struct snd_pcm_substream *substream,
@@ -885,7 +883,7 @@ static void snd_ps3_audio_set_base_addr(uint64_t ioaddr_start)
 static void snd_ps3_audio_fixup(struct snd_ps3_card_info *card)
 {
 	/*
-	 * avsetting driver seems to never change the followings
+	 * avsetting driver seems to never change the following
 	 * so, init them here once
 	 */
 
@@ -982,7 +980,8 @@ static int snd_ps3_driver_probe(struct ps3_system_bus_device *dev)
 	}
 
 	/* create card instance */
-	ret = snd_card_create(index, id, THIS_MODULE, 0, &the_card.card);
+	ret = snd_card_new(&dev->core, index, id, THIS_MODULE,
+			   0, &the_card.card);
 	if (ret < 0)
 		goto clean_irq;
 
@@ -1050,7 +1049,6 @@ static int snd_ps3_driver_probe(struct ps3_system_bus_device *dev)
 	snd_ps3_init_avsetting(&the_card);
 
 	/* register the card */
-	snd_card_set_dev(the_card.card, &dev->core);
 	ret = snd_card_register(the_card.card);
 	if (ret < 0)
 		goto clean_dma_map;

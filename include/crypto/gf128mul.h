@@ -174,7 +174,7 @@ struct gf128mul_4k *gf128mul_init_4k_lle(const be128 *g);
 struct gf128mul_4k *gf128mul_init_4k_bbe(const be128 *g);
 void gf128mul_4k_lle(be128 *a, struct gf128mul_4k *t);
 void gf128mul_4k_bbe(be128 *a, struct gf128mul_4k *t);
-
+void gf128mul_x8_ble(le128 *r, const le128 *x);
 static inline void gf128mul_free_4k(struct gf128mul_4k *t)
 {
 	kfree(t);

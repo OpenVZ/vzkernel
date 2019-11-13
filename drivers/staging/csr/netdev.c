@@ -364,7 +364,7 @@ uf_alloc_netdevice(CsrSdioFunction *sdio_dev, int bus_id)
     interfacePriv->netdev_callback_registered = FALSE;
     interfacePriv->wait_netdev_change = FALSE;
     /* Register callback for netdevice state changes */
-    if ((rc = register_netdevice_notifier(&uf_netdev_notifier)) == 0) {
+    if ((rc = register_netdevice_notifier_rh(&uf_netdev_notifier)) == 0) {
         interfacePriv->netdev_callback_registered = TRUE;
     }
     else {
@@ -529,7 +529,7 @@ uf_free_netdevice(unifi_priv_t *priv)
 
 #ifdef CSR_SUPPORT_WEXT
     /* Unregister callback for netdevice state changes */
-    unregister_netdevice_notifier(&uf_netdev_notifier);
+    unregister_netdevice_notifier_rh(&uf_netdev_notifier);
 #endif /* CSR_SUPPORT_WEXT */
 
 #ifdef CSR_SUPPORT_SME
@@ -2891,7 +2891,7 @@ void uf_net_get_name(struct net_device *dev, char *name, int len)
  */
 static int
 uf_netdev_event(struct notifier_block *notif, unsigned long event, void* ptr) {
-    struct net_device *netdev = ptr;
+    struct net_device *netdev = netdev_notifier_info_to_dev(ptr);
     netInterface_priv_t *interfacePriv = (netInterface_priv_t *)netdev_priv(netdev);
     unifi_priv_t *priv = NULL;
     static const CsrWifiMacAddress broadcast_address = {{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}};

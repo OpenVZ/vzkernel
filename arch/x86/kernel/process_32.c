@@ -24,7 +24,6 @@
 #include <linux/interrupt.h>
 #include <linux/delay.h>
 #include <linux/reboot.h>
-#include <linux/init.h>
 #include <linux/mc146818rtc.h>
 #include <linux/module.h>
 #include <linux/kallsyms.h>
@@ -55,6 +54,7 @@
 #include <asm/syscalls.h>
 #include <asm/debugreg.h>
 #include <asm/switch_to.h>
+#include <asm/intel_rdt_sched.h>
 
 asmlinkage void ret_from_fork(void) __asm__("ret_from_fork");
 asmlinkage void ret_from_kernel_thread(void) __asm__("ret_from_kernel_thread");
@@ -110,11 +110,16 @@ void __show_regs(struct pt_regs *regs, int all)
 	get_debugreg(d1, 1);
 	get_debugreg(d2, 2);
 	get_debugreg(d3, 3);
-	printk(KERN_DEFAULT "DR0: %08lx DR1: %08lx DR2: %08lx DR3: %08lx\n",
-			d0, d1, d2, d3);
-
 	get_debugreg(d6, 6);
 	get_debugreg(d7, 7);
+
+	/* Only print out debug registers if they are in their non-default state. */
+	if ((d0 == 0) && (d1 == 0) && (d2 == 0) && (d3 == 0) &&
+	    (d6 == DR6_RESERVED) && (d7 == 0x400))
+		return;
+
+	printk(KERN_DEFAULT "DR0: %08lx DR1: %08lx DR2: %08lx DR3: %08lx\n",
+			d0, d1, d2, d3);
 	printk(KERN_DEFAULT "DR6: %08lx DR7: %08lx\n",
 			d6, d7);
 }
@@ -147,7 +152,7 @@ int copy_thread(unsigned long clone_flags, unsigned long sp,
 		childregs->bp = arg;
 		childregs->orig_ax = -1;
 		childregs->cs = __KERNEL_CS | get_kernel_rpl();
-		childregs->flags = X86_EFLAGS_IF | X86_EFLAGS_BIT1;
+		childregs->flags = X86_EFLAGS_IF | X86_EFLAGS_FIXED;
 		p->fpu_counter = 0;
 		p->thread.io_bitmap_ptr = NULL;
 		memset(p->thread.ptrace_bps, 0, sizeof(p->thread.ptrace_bps));
@@ -311,6 +316,9 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 	switch_fpu_finish(next_p, fpu);
 
 	this_cpu_write(current_task, next_p);
+
+	/* Load the Intel cache allocation PQR MSR. */
+	intel_rdt_sched_in();
 
 	return prev_p;
 }

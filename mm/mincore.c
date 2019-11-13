@@ -70,13 +70,21 @@ static unsigned char mincore_page(struct address_space *mapping, pgoff_t pgoff)
 	 * any other file mapping (ie. marked !present and faulted in with
 	 * tmpfs's .fault). So swapped out tmpfs mappings are tested here.
 	 */
-	page = find_get_page(mapping, pgoff);
 #ifdef CONFIG_SWAP
-	/* shmem/tmpfs may return swap: account for swapcache page too. */
-	if (radix_tree_exceptional_entry(page)) {
-		swp_entry_t swap = radix_to_swp_entry(page);
-		page = find_get_page(swap_address_space(swap), swap.val);
-	}
+	if (shmem_mapping(mapping)) {
+		page = __find_get_page(mapping, pgoff);
+		/*
+		 * shmem/tmpfs may return swap: account for swapcache
+		 * page too.
+		 */
+		if (radix_tree_exceptional_entry(page)) {
+			swp_entry_t swp = radix_to_swp_entry(page);
+			page = find_get_page(swap_address_space(swp), swp.val);
+		}
+	} else
+		page = find_get_page(mapping, pgoff);
+#else
+	page = find_get_page(mapping, pgoff);
 #endif
 	if (page) {
 		present = PageUptodate(page);
@@ -129,8 +137,11 @@ static void mincore_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
 		} else { /* pte is a swap entry */
 			swp_entry_t entry = pte_to_swp_entry(pte);
 
-			if (is_migration_entry(entry)) {
-				/* migration entries are always uptodate */
+			if (non_swap_entry(entry)) {
+				/*
+				 * migration or hwpoison entries are always
+				 * uptodate
+				 */
 				*vec = 1;
 			} else {
 #ifdef CONFIG_SWAP
@@ -158,14 +169,15 @@ static void mincore_pmd_range(struct vm_area_struct *vma, pud_t *pud,
 	pmd = pmd_offset(pud, addr);
 	do {
 		next = pmd_addr_end(addr, end);
-		if (pmd_trans_huge(*pmd)) {
+		if (pmd_trans_huge(*pmd) || pmd_devmap(*pmd)) {
 			if (mincore_huge_pmd(vma, pmd, addr, next, vec)) {
 				vec += (next - addr) >> PAGE_SHIFT;
 				continue;
 			}
 			/* fall through */
 		}
-		if (pmd_none_or_trans_huge_or_clear_bad(pmd))
+		if (pmd_devmap(*pmd) ||
+				pmd_none_or_trans_huge_or_clear_bad(pmd))
 			mincore_unmapped_range(vma, addr, next, vec);
 		else
 			mincore_pte_range(vma, pmd, addr, next, vec);
@@ -209,6 +221,22 @@ static void mincore_page_range(struct vm_area_struct *vma,
 	} while (pgd++, addr = next, addr != end);
 }
 
+static inline bool can_do_mincore(struct vm_area_struct *vma)
+{
+	if (vma_is_anonymous(vma))
+		return true;
+	if (!vma->vm_file)
+		return false;
+	/*
+	 * Reveal pagecache information only for non-anonymous mappings that
+	 * correspond to the files the calling process could (if tried) open
+	 * for writing; otherwise we'd be including shared non-exclusive
+	 * mappings, which opens a side channel.
+	 */
+	return inode_owner_or_capable(file_inode(vma->vm_file)) ||
+		inode_permission(file_inode(vma->vm_file), MAY_WRITE) == 0;
+}
+
 /*
  * Do a chunk of "sys_mincore()". We've already checked
  * all the arguments, we hold the mmap semaphore: we should
@@ -224,6 +252,12 @@ static long do_mincore(unsigned long addr, unsigned long pages, unsigned char *v
 		return -ENOMEM;
 
 	end = min(vma->vm_end, addr + (pages << PAGE_SHIFT));
+
+	if (!can_do_mincore(vma)) {
+		unsigned long pages = DIV_ROUND_UP(end - addr, PAGE_SIZE);
+		memset(vec, 1, pages);
+		return pages;
+	}
 
 	if (is_vm_hugetlb_page(vma)) {
 		mincore_hugetlb_page_range(vma, addr, end, vec);

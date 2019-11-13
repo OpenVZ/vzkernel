@@ -902,12 +902,13 @@ EXPORT_SYMBOL_GPL(kmemleak_alloc);
  * kmemleak_alloc_percpu - register a newly allocated __percpu object
  * @ptr:	__percpu pointer to beginning of the object
  * @size:	size of the object
+ * @gfp:	flags used for kmemleak internal memory allocations
  *
  * This function is called from the kernel percpu allocator when a new object
- * (memory block) is allocated (alloc_percpu). It assumes GFP_KERNEL
- * allocation.
+ * (memory block) is allocated (alloc_percpu).
  */
-void __ref kmemleak_alloc_percpu(const void __percpu *ptr, size_t size)
+void __ref kmemleak_alloc_percpu(const void __percpu *ptr, size_t size,
+				 gfp_t gfp)
 {
 	unsigned int cpu;
 
@@ -920,7 +921,7 @@ void __ref kmemleak_alloc_percpu(const void __percpu *ptr, size_t size)
 	if (atomic_read(&kmemleak_enabled) && ptr && !IS_ERR(ptr))
 		for_each_possible_cpu(cpu)
 			create_object((unsigned long)per_cpu_ptr(ptr, cpu),
-				      size, 0, GFP_KERNEL);
+				      size, 0, gfp);
 	else if (atomic_read(&kmemleak_early_log))
 		log_early(KMEMLEAK_ALLOC_PERCPU, ptr, size, 0);
 }
@@ -1297,7 +1298,7 @@ static void kmemleak_scan(void)
 	/*
 	 * Struct page scanning for each node.
 	 */
-	lock_memory_hotplug();
+	get_online_mems();
 	for_each_online_node(i) {
 		unsigned long start_pfn = node_start_pfn(i);
 		unsigned long end_pfn = node_end_pfn(i);
@@ -1315,7 +1316,7 @@ static void kmemleak_scan(void)
 			scan_block(page, page + 1, NULL, 1);
 		}
 	}
-	unlock_memory_hotplug();
+	put_online_mems();
 
 	/*
 	 * Scanning the task stacks (may introduce false negatives).
@@ -1323,12 +1324,12 @@ static void kmemleak_scan(void)
 	if (kmemleak_stack_scan) {
 		struct task_struct *p, *g;
 
-		read_lock(&tasklist_lock);
+		qread_lock(&tasklist_lock);
 		do_each_thread(g, p) {
 			scan_block(task_stack_page(p), task_stack_page(p) +
 				   THREAD_SIZE, NULL, 0);
 		} while_each_thread(g, p);
-		read_unlock(&tasklist_lock);
+		qread_unlock(&tasklist_lock);
 	}
 
 	/*
