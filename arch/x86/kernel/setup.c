@@ -49,6 +49,7 @@
 #include <asm/unwind.h>
 #include <asm/vsyscall.h>
 #include <linux/vmalloc.h>
+#include <asm/intel-family.h>
 
 /*
  * max_low_pfn_mapped: highest directly mapped pfn < 4 GB
@@ -732,6 +733,131 @@ static void __init early_reserve_memory(void)
 	trim_snb_memory();
 }
 
+static bool valid_amd_processor(__u8 family, const char *model_id)
+{
+	bool valid;
+
+	switch(family) {
+	case 0x15:
+		valid = true;
+		break;
+
+	case 0x17:
+		valid = strstr(model_id, "AMD EPYC 7");
+		break;
+
+	default:
+		valid = false;
+		break;
+	}
+
+	return valid;
+}
+
+static bool valid_intel_processor(__u8 family, __u8 model, __u8 stepping)
+{
+	bool valid;
+
+	if (family != 6)
+		return false;
+
+	switch(model) {
+	case INTEL_FAM6_ATOM_GOLDMONT_D:
+	case INTEL_FAM6_ATOM_GOLDMONT_PLUS:
+
+	case INTEL_FAM6_BROADWELL:
+	case INTEL_FAM6_BROADWELL_G:
+	case INTEL_FAM6_BROADWELL_X:
+	case INTEL_FAM6_BROADWELL_D:
+
+	case INTEL_FAM6_HASWELL:
+	case INTEL_FAM6_HASWELL_G:
+	case INTEL_FAM6_HASWELL_L:
+	case INTEL_FAM6_HASWELL_X:
+		valid = true;
+		break;
+
+	case INTEL_FAM6_KABYLAKE:
+		valid = (stepping <= 10);
+		break;
+
+	case INTEL_FAM6_KABYLAKE_L:
+		valid = (stepping <= 11);
+		break;
+
+	case INTEL_FAM6_SKYLAKE_L:
+	case INTEL_FAM6_SKYLAKE:
+	case INTEL_FAM6_SKYLAKE_X:
+		/* stepping > 4 is Cascade Lake and is not supported */
+		valid = (stepping <= 4);
+		break;
+
+	default:
+		valid = false;
+		break;
+	}
+
+	return valid;
+}
+
+static void rh_check_supported(void)
+{
+	bool guest;
+
+	guest = (x86_hyper_type != X86_HYPER_NATIVE || boot_cpu_has(X86_FEATURE_HYPERVISOR));
+
+	/* RHEL supports single cpu on guests only */
+	if (((boot_cpu_data.x86_max_cores * smp_num_siblings) == 1) &&
+	    !guest && is_kdump_kernel()) {
+		pr_crit("Detected single cpu native boot.\n");
+		pr_crit("Important:  In this kernel, single threaded, single CPU 64-bit physical systems are unsupported.");
+	}
+
+	/*
+	 * If the RHEL kernel does not support this hardware, the kernel will
+	 * attempt to boot, but no support is provided for this hardware
+	 */
+	switch (boot_cpu_data.x86_vendor) {
+	case X86_VENDOR_AMD:
+		if (!valid_amd_processor(boot_cpu_data.x86,
+					 boot_cpu_data.x86_model_id)) {
+			pr_crit("Detected CPU family %xh model %d\n",
+				boot_cpu_data.x86,
+				boot_cpu_data.x86_model);
+			mark_hardware_unsupported("AMD Processor");
+		}
+		break;
+
+	case X86_VENDOR_INTEL:
+		if (!valid_intel_processor(boot_cpu_data.x86,
+					   boot_cpu_data.x86_model,
+					   boot_cpu_data.x86_stepping)) {
+			pr_crit("Detected CPU family %d model %d stepping %d\n",
+				boot_cpu_data.x86,
+				boot_cpu_data.x86_model,
+				boot_cpu_data.x86_stepping);
+			mark_hardware_unsupported("Intel Processor");
+		}
+		break;
+
+	default:
+		pr_crit("Detected processor %s %s\n",
+			boot_cpu_data.x86_vendor_id,
+			boot_cpu_data.x86_model_id);
+		mark_hardware_unsupported("Processor");
+		break;
+	}
+
+	/*
+	 * Due to the complexity of x86 lapic & ioapic enumeration, and PCI IRQ
+	 * routing, ACPI is required for x86.  acpi=off is a valid debug kernel
+	 * parameter, so just print out a loud warning in case something
+	 * goes wrong (which is most of the time).
+	 */
+	if (acpi_disabled && !guest)
+		pr_crit("ACPI has been disabled or is not available on this hardware.  This may result in a single cpu boot, incorrect PCI IRQ routing, or boot failure.\n");
+}
+
 /*
  * Dump out kernel offset information on panic.
  */
@@ -1224,6 +1350,10 @@ void __init setup_arch(char **cmdline_p)
 #ifdef CONFIG_EFI
 	if (efi_enabled(EFI_BOOT))
 		efi_apply_memmap_quirks();
+#endif
+
+#ifdef CONFIG_RH_DISABLE_DEPRECATED
+	rh_check_supported();
 #endif
 
 	unwind_init();
