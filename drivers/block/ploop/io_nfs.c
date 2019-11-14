@@ -595,7 +595,8 @@ out:
 	nfsio_complete_io_request(preq);
 }
 
-static int
+
+static void
 nfsio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 		 struct bio_list * sbl, unsigned int size)
 {
@@ -603,13 +604,12 @@ nfsio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 
 	if (!(io->files.file->f_mode & FMODE_WRITE)) {
 		PLOOP_FAIL_REQUEST(preq, -EBADF);
-		return -1;
+		return;
 	}
 	preq->iblock = iblk;
 	preq->eng_state = PLOOP_E_DATA_WBI;
 
 	nfsio_submit_write_pad(io, preq, sbl, iblk, size);
-	return 1;
 }
 
 static void nfsio_destroy(struct ploop_io * io)
