@@ -278,11 +278,36 @@ static struct {
 				VE_IP_NAT			},
 	{ "nf-nat",		VE_NF_CONNTRACK|VE_IP_CONNTRACK|
 				VE_IP_NAT			},
+	{ "ip_nat_tftp",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "ip_nat_amanda",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "ip_nat_irc",		VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "ip_nat_sip",		VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "ip_nat_ftp",		VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "ip_nat_pptp",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "ip_nat_h323",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "ip_nat_snmp_basic",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "nf-nat-2",		VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			}, /* IPV4 */
+	{ "nf-nat-10",		VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT|VE_IP_IPTABLES6	}, /* IPV6 */
 	{ "nf_conntrack-2",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
 	{ "nf_conntrack_ipv4",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
 	{ "ip_conntrack",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
-	{ "nf_conntrack-10",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
-	{ "nf_conntrack_ipv6",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "nf_conntrack",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "nf_conntrack_proto_gre", VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "nf_conntrack_broadcast", VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "nf_conntrack-10",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_IPTABLES6},
+	{ "nf_conntrack_ipv6",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_IPTABLES6},
 
 	{ "nfnetlink-subsys-10",VE_IP_IPTABLES			}, /* nf_tables */
 	{ "nfnetlink-subsys-11",VE_IP_IPTABLES			}, /* nft_compat */
@@ -290,6 +315,7 @@ static struct {
 	{ "nft-afinfo-1",	VE_IP_IPTABLES			}, /* INET */
 	{ "nft-afinfo-2",	VE_IP_IPTABLES			}, /* IPV4 */
 	{ "nft-afinfo-3",	VE_IP_IPTABLES			}, /* ARP  */
+	{ "nft-afinfo-7",	VE_IP_IPTABLES			}, /* bridge  */
 	{ "nft-afinfo-10",	VE_IP_IPTABLES6			}, /* IPV6 */
 
 	{ "nft-chain-2-nat",	VE_IP_IPTABLES|VE_IP_NAT	},
@@ -298,9 +324,48 @@ static struct {
 	{ "nft-chain-10-nat",	VE_IP_IPTABLES6|VE_IP_NAT	},
 	{ "nft-chain-10-route",	VE_IP_IPTABLES6		},
 
+	{ "nft-expr-1-reject",	VE_IP_IPTABLES			}, /* IPV4 */
+	{ "nf_reject_ipv4",	VE_IP_IPTABLES			},
+	{ "nf_reject",		VE_IP_IPTABLES			},
+	{ "nft-expr-2-dup",	VE_IP_IPTABLES			},
+	{ "nf_dup_ipv4",	VE_IP_IPTABLES			},
 	{ "nft-expr-2-reject",	VE_IP_IPTABLES			},
+	{ "nf_defrag_ipv4",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "nft-expr-2-redir",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "nft-expr-2-masq",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "nf_nat_masquerade_ipv4", VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "nft_masq",		VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "nft_nat",		VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "nft_nat_proto_gre",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "nft_redir",		VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "nft_nf_nat_redirect", VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT			},
+	{ "nft-expr-7-meta",	VE_IP_IPTABLES			}, /* bridge */
+	{ "nft-expr-7-reject",	VE_IP_IPTABLES			},
+	{ "nft-expr-10-dup",	VE_IP_IPTABLES6			}, /* IPV6 */
+	{ "nf_dup_ipv6",	VE_IP_IPTABLES6			},
 	{ "nft-expr-10-reject",	VE_IP_IPTABLES6			},
+	{ "nf_reject_ipv6",	VE_IP_IPTABLES6			},
+	{ "nf_defrag_ipv6",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_IPTABLES6			},
+	{ "nft-expr-10-redir",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT|VE_IP_IPTABLES6	},
+	{ "nft-expr-10-masq",	VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT|VE_IP_IPTABLES6	},
+	{ "nf_nat_masquerade_ipv6", VE_NF_CONNTRACK|VE_IP_CONNTRACK|
+				VE_IP_NAT|VE_IP_IPTABLES6	},
+
+	{ "nf_synproxy_core",	VE_NF_CONNTRACK|VE_IP_CONNTRACK },
+	{ "nf_log_common",	VE_IP_IPTABLES			},
 	{ "nf-logger-2-0",	VE_IP_IPTABLES			},
+	{ "nf-logger-7-0",	VE_IP_IPTABLES			}, /* bridge */
 	{ "nf-logger-10-0",	VE_IP_IPTABLES6			},
 };
 
