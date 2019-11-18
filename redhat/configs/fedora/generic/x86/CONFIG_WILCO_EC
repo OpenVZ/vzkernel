@@ -1,1 +1,1 @@
-# CONFIG_WILCO_EC is not set
+CONFIG_WILCO_EC=m
