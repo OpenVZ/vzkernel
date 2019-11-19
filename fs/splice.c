@@ -347,7 +347,7 @@ __generic_file_splice_read(struct file *in, loff_t *ppos,
 				      req_pages - spd.nr_pages);
 		if (!page)
 			break;
-		pages[spd.nr_pages++] = page;
+		spd.pages[spd.nr_pages++] = page;
 		index++;
 	}
 
