@@ -1,1 +1,1 @@
-CONFIG_USB_WUSB=m
+# CONFIG_USB_WUSB is not set
