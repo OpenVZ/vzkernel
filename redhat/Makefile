@@ -146,7 +146,9 @@ rh-configs-arch: ARCH_MACH = $(MACH)
 rh-configs-arch: rh-configs
 
 rh-clean-configs:
-	cd $(REDHAT)/configs; rm -f kernel-*.config
+	cd $(REDHAT)/configs; rm -f kernel-*.config \
+					kernel-*.config.orig \
+					kernel-*.config.tmp
 
 rh-clean-sources:
 	@rm -f $(RPM)/SPECS/*
