@@ -67,7 +67,7 @@ static int nf_conntrack_helper_init_sysctl(struct net *net)
 	table[0].data = &net->ct.sysctl_auto_assign_helper;
 
 	/* Don't export sysctls to unprivileged users */
-	if (net->user_ns != &init_user_ns)
+	if (ve_net_hide_sysctl(net))
 		table[0].procname = NULL;
 
 	net->ct.helper_sysctl_header =
