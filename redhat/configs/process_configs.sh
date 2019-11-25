@@ -145,7 +145,7 @@ parsenewconfigs()
 	rm fake_*
 	popd &> /dev/null
 	for f in `ls $tmpdir`; do
-		[[ -e "$f" ]] || break
+		[[ -e "$tmpdir/$f" ]] || break
 		cp $tmpdir/$f $SCRIPT_DIR/pending/generic/
 	done
 
