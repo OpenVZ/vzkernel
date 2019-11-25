@@ -132,6 +132,10 @@ rh-kabi-dw-check: rh-kabi
 	@echo "**** End of KABI DWARF-based comparison report ****"
 	@rm -rf $(KABIDW)/base/$(CURARCH).tmp
 
+rh-configs-commit: rh-configs-prep
+	@cd $(REDHAT)/configs; VERSION=$(KVERSION) ./generate_all_configs.sh rhel 1; \
+	./process_configs.sh -z $(PACKAGE_NAME) $(KVERSION)
+
 rh-configs: rh-configs-prep
 	@cd $(REDHAT)/configs; VERSION=$(KVERSION) ./generate_all_configs.sh rhel 1; \
 	./process_configs.sh $(PROCESS_CONFIGS_OPTS) $(PACKAGE_NAME) $(KVERSION)

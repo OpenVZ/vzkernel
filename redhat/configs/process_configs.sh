@@ -14,6 +14,7 @@ usage()
 	echo "     -n: error on unset config options"
 	echo "     -t: test run, do not overwrite original config"
 	echo "     -w: error on misconfigured config options"
+	echo "     -z: commit new configs to pending directory"
 	exit 1
 }
 
@@ -73,6 +74,116 @@ checkoptions()
 		RETURNCODE=1
 		[ "$CONTINUEONERROR" ] || exit 1
 	fi
+}
+
+parsenewconfigs()
+{
+	tmpdir=$(mktemp -d)
+
+	# This awk script reads the output of make listnewconfig
+	# and puts it into CONFIG_FOO files. Using the output of
+	# listnewconfig is much easier to ensure we get the default
+	# output.
+        /usr/bin/awk -v BASE=$tmpdir '
+                /is not set/ {
+                        split ($0, a, "#");
+                        split(a[2], b);
+                        OUT_FILE=BASE"/"b[1];
+                        print $0 >> OUT_FILE;
+                }
+
+                /=/     {
+                        split ($0, a, "=");
+                        OUT_FILE=BASE"/"a[1];
+                        if (a[2] == "n")
+                                print "# " a[1] " is not set" >> OUT_FILE;
+                        else
+                                print $0 >> OUT_FILE;
+                }
+
+        ' .newoptions
+
+	# This awk script parses the output of helpnewconfig.
+	# Each option is separated between ----- markers
+	# The goal is to put all the help text as a comment in
+	# each CONFIG_FOO file. Because of how awk works
+	# there's a lot of moving files around and catting to
+	# get what we need.
+        /usr/bin/awk -v BASE=$tmpdir '
+                BEGIN { inpatch=0;
+			outfile="none";
+                        symbol="none"; }
+                /^CONFIG_.*:$/ {
+                        split($0, a, ":");
+                        symbol=a[1];
+                        outfile=BASE "/fake_"symbol
+                }
+                /-----/ {
+			if (inpatch == 0) {
+				inpatch = 1;
+			}
+                        else {
+                                if (symbol != "none") {
+                                    system("cat " outfile " " BASE "/" symbol " > " BASE "/tmpf");
+                                    system("mv " BASE "/tmpf " BASE "/" symbol);
+                                    symbol="none"
+				}
+                                outfile="none"
+				inpatch = 0;
+                        }
+                }
+                !/-----/ {
+                        if (inpatch == 1 && outfile != "none") {
+                                print "# "$0 >> outfile;
+                        }
+                }
+
+
+        ' .helpnewconfig
+
+	pushd $tmpdir &> /dev/null
+	rm fake_*
+	popd &> /dev/null
+	for f in `ls $tmpdir`; do
+		[[ -e "$f" ]] || break
+		cp $tmpdir/$f $SCRIPT_DIR/pending/generic/
+	done
+
+	rm -rf $tmpdir
+}
+
+function commit_new_configs()
+{
+	# assume we are in $source_tree/configs, need to get to top level
+	pushd $(switch_to_toplevel) &>/dev/null
+
+	for cfg in $SCRIPT_DIR/${PACKAGE_NAME}${KVERREL}${SUBARCH}*.config
+	do
+		arch=$(head -1 $cfg | cut -b 3-)
+		cfgtmp="${cfg}.tmp"
+		cfgorig="${cfg}.orig"
+		cat $cfg > $cfgorig
+
+		if [ "$arch" = "EMPTY" ]
+		then
+			# This arch is intentionally left blank
+			continue
+		fi
+		echo -n "Checking for new configs in $cfg ... "
+
+		make ARCH=$arch KCONFIG_CONFIG=$cfgorig listnewconfig >& .listnewconfig
+		grep -E 'CONFIG_' .listnewconfig > .newoptions
+		if test -s .newoptions
+		then
+			make ARCH=$arch KCONFIG_CONFIG=$cfgorig helpnewconfig >& .helpnewconfig
+			parsenewconfigs
+		fi
+		rm .newoptions
+		echo "done"
+	done
+
+	git add $SCRIPT_DIR/pending
+	git commit -m "[redhat] AUTOMATIC: New configs"
 }
 
 function process_configs()
@@ -178,6 +289,9 @@ do
 		-w)
 			CHECKWARNINGS="x"
 			;;
+		-z)
+			COMMITNEWCONFIGS="x"
+			;;
 		*)
 			break;;
 	esac
@@ -194,5 +308,10 @@ SCRIPT_DIR="$(dirname $SCRIPT)"
 # to handle this script being a symlink
 cd $SCRIPT_DIR
 
-process_configs
+if test -n "$COMMITNEWCONFIGS"; then
+	commit_new_configs
+else
+	process_configs
+fi
+
 exit $RETURNCODE
