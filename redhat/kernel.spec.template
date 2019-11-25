@@ -599,7 +599,7 @@ Source13: redhatsecureboot003.cer
 
 %endif # released_kernel
 
-Source15: mod-extra.list.rhel
+Source22: mod-extra.list.rhel
 Source16: mod-extra.list.fedora
 Source17: mod-extra.sh
 Source18: mod-sign.sh
