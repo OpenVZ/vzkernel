@@ -1,0 +1,23 @@
+# CONFIG_HW_RANDOM_HISI_V2:
+# 
+# This driver provides kernel-side support for the True Random Number
+# Generator V2 hardware found on HiSilicon Hi1620 SoC.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called hisi-trng-v2.
+# 
+# If unsure, say Y.
+# 
+# Symbol: HW_RANDOM_HISI_V2 [=y]
+# Type  : tristate
+# Prompt: HiSilicon True Random Number Generator V2 support
+#   Location:
+#     -> Device Drivers
+#       -> Character devices
+#         -> Hardware Random Number Generator Core support (HW_RANDOM [=y])
+#   Defined at drivers/char/hw_random/Kconfig:311
+#   Depends on: HW_RANDOM [=y] && ARM64 [=y] && ACPI [=y]
+# 
+# 
+# 
+CONFIG_HW_RANDOM_HISI_V2=y

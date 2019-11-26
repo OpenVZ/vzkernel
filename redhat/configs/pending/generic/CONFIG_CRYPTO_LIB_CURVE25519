@@ -1,0 +1,18 @@
+# CONFIG_CRYPTO_LIB_CURVE25519:
+# 
+# Enable the Curve25519 library interface. This interface may be
+# fulfilled by either the generic implementation or an arch-specific
+# one, if one is available and enabled.
+# 
+# Symbol: CRYPTO_LIB_CURVE25519 [=n]
+# Type  : tristate
+# Prompt: Curve25519 scalar multiplication library
+#   Location:
+#     -> Cryptographic API (CRYPTO [=y])
+#   Defined at lib/crypto/Kconfig:78
+#   Depends on: CRYPTO [=y] && (CRYPTO_ARCH_HAVE_LIB_CURVE25519 [=n] || !CRYPTO_ARCH_HAVE_LIB_CURVE25519 [=n])
+#   Selects: CRYPTO_LIB_CURVE25519_GENERIC [=n]
+# 
+# 
+# 
+# CONFIG_CRYPTO_LIB_CURVE25519 is not set

@@ -1,0 +1,20 @@
+# CONFIG_TLS_TOE:
+# 
+# Enable kernel support for legacy HW offload of the TLS protocol,
+# which is incompatible with the Linux networking stack semantics.
+# 
+# If unsure, say N.
+# 
+# Symbol: TLS_TOE [=n]
+# Type  : bool
+# Prompt: Transport Layer Security TCP stack bypass
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> Networking options
+#         -> Transport Layer Security support (TLS [=m])
+#   Defined at net/tls/Kconfig:30
+#   Depends on: NET [=y] && TLS [=m]
+# 
+# 
+# 
+# CONFIG_TLS_TOE is not set

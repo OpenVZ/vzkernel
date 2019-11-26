@@ -1,0 +1,22 @@
+# CONFIG_CRYPTO_DEV_AMLOGIC_GXL:
+# 
+# Select y here to have support for the cryptographic offloader
+# available on Amlogic GXL SoC.
+# This hardware handles AES ciphers in ECB/CBC mode.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called amlogic-gxl-crypto.
+# 
+# Symbol: CRYPTO_DEV_AMLOGIC_GXL [=n]
+# Type  : tristate
+# Prompt: Support for amlogic cryptographic offloader
+#   Location:
+#     -> Cryptographic API (CRYPTO [=y])
+#       -> Hardware crypto devices (CRYPTO_HW [=y])
+#   Defined at drivers/crypto/amlogic/Kconfig:1
+#   Depends on: CRYPTO [=y] && CRYPTO_HW [=y]
+#   Selects: CRYPTO_SKCIPHER [=y] && CRYPTO_ENGINE [=n] && CRYPTO_ECB [=y] && CRYPTO_CBC [=y] && CRYPTO_AES [=y]
+# 
+# 
+# 
+# CONFIG_CRYPTO_DEV_AMLOGIC_GXL is not set

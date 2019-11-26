@@ -1,0 +1,27 @@
+# CONFIG_CRYPTO_BLAKE2B:
+# 
+# Implementation of cryptographic hash function BLAKE2b (or just BLAKE2),
+# optimized for 64bit platforms and can produce digests of any size
+# between 1 to 64.  The keyed hash is also implemented.
+# 
+# This module provides the following algorithms:
+# 
+# - blake2b-160
+# - blake2b-256
+# - blake2b-384
+# - blake2b-512
+# 
+# See https://blake2.net for further information.
+# 
+# Symbol: CRYPTO_BLAKE2B [=n]
+# Type  : tristate
+# Prompt: BLAKE2b digest algorithm
+#   Location:
+#     -> Cryptographic API (CRYPTO [=y])
+#   Defined at crypto/Kconfig:653
+#   Depends on: CRYPTO [=y]
+#   Selects: CRYPTO_HASH [=y]
+# 
+# 
+# 
+# CONFIG_CRYPTO_BLAKE2B is not set

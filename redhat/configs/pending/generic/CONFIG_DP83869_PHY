@@ -1,0 +1,18 @@
+# CONFIG_DP83869_PHY:
+# 
+# Currently supports the DP83869 PHY.  This PHY supports copper and
+# fiber connections.
+# 
+# Symbol: DP83869_PHY [=n]
+# Type  : tristate
+# Prompt: Texas Instruments DP83869 Gigabit PHY
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> PHY Device support and infrastructure (PHYLIB [=y])
+#   Defined at drivers/net/phy/Kconfig:362
+#   Depends on: NETDEVICES [=y] && PHYLIB [=y]
+# 
+# 
+# 
+# CONFIG_DP83869_PHY is not set

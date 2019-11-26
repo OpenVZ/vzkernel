@@ -1,0 +1,18 @@
+# CONFIG_SYMBOLIC_ERRNAME:
+# 
+# If you say Y here, the kernel's printf implementation will
+# be able to print symbolic error names such as ENOSPC instead
+# of the number 28. It makes the kernel image slightly larger
+# (about 3KB), but can make the kernel logs easier to read.
+# 
+# Symbol: SYMBOLIC_ERRNAME [=y]
+# Type  : bool
+# Prompt: Support symbolic error names in printf
+#   Location:
+#     -> Kernel hacking
+#       -> printk and dmesg options
+#   Defined at lib/Kconfig.debug:167
+# 
+# 
+# 
+CONFIG_SYMBOLIC_ERRNAME=y

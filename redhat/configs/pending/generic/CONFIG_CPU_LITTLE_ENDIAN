@@ -1,0 +1,17 @@
+# CONFIG_CPU_LITTLE_ENDIAN:
+# 
+# Say Y if you plan on running a kernel with a little-endian userspace.
+# This is usually the case for distributions targeting arm64.
+# 
+# Symbol: CPU_LITTLE_ENDIAN [=y]
+# Type  : bool
+# Prompt: Build little-endian kernel
+#   Location:
+#     -> Kernel Features
+#       -> Endianness (<choice> [=y])
+#   Defined at arch/arm64/Kconfig:893
+#   Depends on: <choice>
+# 
+# 
+# 
+CONFIG_CPU_LITTLE_ENDIAN=y

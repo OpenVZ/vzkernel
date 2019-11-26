@@ -1,0 +1,20 @@
+# CONFIG_CRYPTO_LIB_POLY1305:
+# 
+# Enable the Poly1305 library interface. This interface may be fulfilled
+# by either the generic implementation or an arch-specific one, if one
+# is available and enabled.
+# 
+# Symbol: CRYPTO_LIB_POLY1305 [=n]
+# Type  : tristate
+# Prompt: Poly1305 library interface
+#   Location:
+#     -> Cryptographic API (CRYPTO [=y])
+#   Defined at lib/crypto/Kconfig:113
+#   Depends on: CRYPTO [=y] && (CRYPTO_ARCH_HAVE_LIB_POLY1305 [=m] || !CRYPTO_ARCH_HAVE_LIB_POLY1305 [=m])
+#   Selects: CRYPTO_LIB_POLY1305_GENERIC [=m]
+#   Selected by [n]:
+#   - CRYPTO_LIB_CHACHA20POLY1305 [=n] && CRYPTO [=y] && (CRYPTO_ARCH_HAVE_LIB_CHACHA [=m] || !CRYPTO_ARCH_HAVE_LIB_CHACHA [=m]) && (CRYPTO_ARCH_HAVE_LIB_POLY1305 [=m] || !CRYPTO_ARCH_HAVE_LIB_POLY1305 [=m])
+# 
+# 
+# 
+# CONFIG_CRYPTO_LIB_POLY1305 is not set
