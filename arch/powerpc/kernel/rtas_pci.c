@@ -80,10 +80,6 @@ int rtas_read_config(struct pci_dn *pdn, int where, int size, u32 *val)
 	if (ret)
 		return PCIBIOS_DEVICE_NOT_FOUND;
 
-	if (returnval == EEH_IO_ERROR_VALUE(size) &&
-	    eeh_dev_check_failure(of_node_to_eeh_dev(pdn->node)))
-		return PCIBIOS_DEVICE_NOT_FOUND;
-
 	return PCIBIOS_SUCCESSFUL;
 }
 
@@ -92,18 +88,39 @@ static int rtas_pci_read_config(struct pci_bus *bus,
 				int where, int size, u32 *val)
 {
 	struct device_node *busdn, *dn;
-
-	busdn = pci_bus_to_OF_node(bus);
+	struct pci_dn *pdn;
+	bool found = false;
+#ifdef CONFIG_EEH
+	struct eeh_dev *edev;
+#endif
+	int ret;
 
 	/* Search only direct children of the bus */
+	*val = 0xFFFFFFFF;
+	busdn = pci_bus_to_OF_node(bus);
 	for (dn = busdn->child; dn; dn = dn->sibling) {
-		struct pci_dn *pdn = PCI_DN(dn);
+		pdn = PCI_DN(dn);
 		if (pdn && pdn->devfn == devfn
-		    && of_device_is_available(dn))
-			return rtas_read_config(pdn, where, size, val);
+		    && of_device_is_available(dn)) {
+			found = true;
+			break;
+		}
 	}
 
-	return PCIBIOS_DEVICE_NOT_FOUND;
+	if (!found)
+		return PCIBIOS_DEVICE_NOT_FOUND;
+#ifdef CONFIG_EEH
+	edev = pdn_to_eeh_dev(pdn);
+	if (edev && edev->pe && edev->pe->state & EEH_PE_CFG_BLOCKED)
+		return PCIBIOS_DEVICE_NOT_FOUND;
+#endif
+
+	ret = rtas_read_config(pdn, where, size, val);
+	if (*val == EEH_IO_ERROR_VALUE(size) &&
+	    eeh_dev_check_failure(pdn_to_eeh_dev(pdn)))
+		return PCIBIOS_DEVICE_NOT_FOUND;
+
+	return ret;
 }
 
 int rtas_write_config(struct pci_dn *pdn, int where, int size, u32 val)
@@ -136,17 +153,34 @@ static int rtas_pci_write_config(struct pci_bus *bus,
 				 int where, int size, u32 val)
 {
 	struct device_node *busdn, *dn;
-
-	busdn = pci_bus_to_OF_node(bus);
+	struct pci_dn *pdn;
+	bool found = false;
+#ifdef CONFIG_EEH
+	struct eeh_dev *edev;
+#endif
+	int ret;
 
 	/* Search only direct children of the bus */
+	busdn = pci_bus_to_OF_node(bus);
 	for (dn = busdn->child; dn; dn = dn->sibling) {
-		struct pci_dn *pdn = PCI_DN(dn);
+		pdn = PCI_DN(dn);
 		if (pdn && pdn->devfn == devfn
-		    && of_device_is_available(dn))
-			return rtas_write_config(pdn, where, size, val);
+		    && of_device_is_available(dn)) {
+			found = true;
+			break;
+		}
 	}
-	return PCIBIOS_DEVICE_NOT_FOUND;
+
+	if (!found)
+		return PCIBIOS_DEVICE_NOT_FOUND;
+#ifdef CONFIG_EEH
+	edev = pdn_to_eeh_dev(pdn);
+	if (edev && edev->pe && (edev->pe->state & EEH_PE_CFG_BLOCKED))
+		return PCIBIOS_DEVICE_NOT_FOUND;
+#endif
+	ret = rtas_write_config(pdn, where, size, val);
+
+	return ret;
 }
 
 static struct pci_ops rtas_pci_ops = {
@@ -223,7 +257,7 @@ unsigned long get_phb_buid(struct device_node *phb)
 static int phb_set_bus_ranges(struct device_node *dev,
 			      struct pci_controller *phb)
 {
-	const int *bus_range;
+	const __be32 *bus_range;
 	unsigned int len;
 
 	bus_range = of_get_property(dev, "bus-range", &len);
@@ -231,8 +265,8 @@ static int phb_set_bus_ranges(struct device_node *dev,
 		return 1;
  	}
 
-	phb->first_busno =  bus_range[0];
-	phb->last_busno  =  bus_range[1];
+	phb->first_busno = be32_to_cpu(bus_range[0]);
+	phb->last_busno  = be32_to_cpu(bus_range[1]);
 
 	return 0;
 }
@@ -251,51 +285,4 @@ int rtas_setup_phb(struct pci_controller *phb)
 	phb->buid = get_phb_buid(dev);
 
 	return 0;
-}
-
-void __init find_and_init_phbs(void)
-{
-	struct device_node *node;
-	struct pci_controller *phb;
-	struct device_node *root = of_find_node_by_path("/");
-
-	for_each_child_of_node(root, node) {
-		if (node->type == NULL || (strcmp(node->type, "pci") != 0 &&
-					   strcmp(node->type, "pciex") != 0))
-			continue;
-
-		phb = pcibios_alloc_controller(node);
-		if (!phb)
-			continue;
-		rtas_setup_phb(phb);
-		pci_process_bridge_OF_ranges(phb, node, 0);
-		isa_bridge_find_early(phb);
-	}
-
-	of_node_put(root);
-	pci_devs_phb_init();
-
-	/*
-	 * PCI_PROBE_ONLY and PCI_REASSIGN_ALL_BUS can be set via properties
-	 * in chosen.
-	 */
-	if (of_chosen) {
-		const int *prop;
-
-		prop = of_get_property(of_chosen,
-				"linux,pci-probe-only", NULL);
-		if (prop) {
-			if (*prop)
-				pci_add_flags(PCI_PROBE_ONLY);
-			else
-				pci_clear_flags(PCI_PROBE_ONLY);
-		}
-
-#ifdef CONFIG_PPC32 /* Will be made generic soon */
-		prop = of_get_property(of_chosen,
-				"linux,pci-assign-all-buses", NULL);
-		if (prop && *prop)
-			pci_add_flags(PCI_REASSIGN_ALL_BUS);
-#endif /* CONFIG_PPC32 */
-	}
 }

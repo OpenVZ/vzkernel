@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 snd-firewire-lib-objs := lib.o iso-resources.o packets-buffer.o \
 			 fcp.o cmp.o amdtp.o
 snd-firewire-speakers-objs := speakers.o

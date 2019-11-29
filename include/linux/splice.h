@@ -63,6 +63,8 @@ typedef int (splice_actor)(struct pipe_inode_info *, struct pipe_buffer *,
 			   struct splice_desc *);
 typedef int (splice_direct_actor)(struct pipe_inode_info *,
 				  struct splice_desc *);
+typedef ssize_t (splice_write_actor)(struct pipe_inode_info *,
+				  struct splice_desc *);
 
 extern ssize_t splice_from_pipe(struct pipe_inode_info *, struct file *,
 				loff_t *, size_t, unsigned int,
@@ -84,6 +86,9 @@ extern ssize_t splice_to_pipe(struct pipe_inode_info *,
 extern ssize_t splice_direct_to_actor(struct file *, struct splice_desc *,
 				      splice_direct_actor *);
 
+extern ssize_t splice_write_to_file(struct pipe_inode_info *, struct file *,
+				    loff_t *, size_t, unsigned int,
+				    splice_write_actor *);
 /*
  * for dynamic pipe sizing
  */

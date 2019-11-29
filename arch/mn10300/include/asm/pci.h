@@ -49,7 +49,6 @@ extern unsigned long pci_mem_start;
 #define PCIBIOS_MIN_MEM		0xB8000000
 
 void pcibios_set_master(struct pci_dev *dev);
-void pcibios_penalize_isa_irq(int irq);
 
 /* Dynamic DMA mapping stuff.
  * i386 has everything mapped statically.
@@ -81,9 +80,6 @@ extern int pci_mmap_page_range(struct pci_dev *dev, struct vm_area_struct *vma,
 			       int write_combine);
 
 #endif /* __KERNEL__ */
-
-/* implement the pci_ DMA API in terms of the generic device dma_ one */
-#include <asm-generic/pci-dma-compat.h>
 
 static inline struct resource *
 pcibios_select_root(struct pci_dev *pdev, struct resource *res)

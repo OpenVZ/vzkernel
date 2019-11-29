@@ -9,7 +9,7 @@
 #include <linux/sched.h>
 #include <linux/vtime.h>
 #include <asm/irq.h>
-#include <asm/cputime.h>
+#include <linux/cputime.h>
 
 /*
  * 'kernel_stat.h' contains the definitions needed for doing
@@ -73,10 +73,16 @@ static inline unsigned int kstat_irqs_cpu(unsigned int irq, int cpu)
 #include <linux/irq.h>
 extern unsigned int kstat_irqs_cpu(unsigned int irq, int cpu);
 
-#define kstat_incr_irqs_this_cpu(irqno, DESC)		\
+#define __kstat_incr_irqs_this_cpu(irqno, DESC)		\
 do {							\
 	__this_cpu_inc(*(DESC)->kstat_irqs);		\
 	__this_cpu_inc(kstat.irqs_sum);			\
+} while (0)
+
+#define kstat_incr_irqs_this_cpu(irqno, DESC)		\
+do {							\
+	__kstat_incr_irqs_this_cpu(irqno, DESC);	\
+	(DESC)->tot_count++;				\
 } while (0)
 
 #endif
@@ -116,11 +122,6 @@ static inline unsigned int kstat_cpu_irqs_sum(unsigned int cpu)
 {
 	return kstat_cpu(cpu).irqs_sum;
 }
-
-/*
- * Lock/unlock the current runqueue - to extract task statistics:
- */
-extern unsigned long long task_delta_exec(struct task_struct *);
 
 extern void account_user_time(struct task_struct *, cputime_t, cputime_t);
 extern void account_system_time(struct task_struct *, int, cputime_t, cputime_t);

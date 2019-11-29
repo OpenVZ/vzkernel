@@ -45,8 +45,8 @@
  *
  * This may be called from interrupt context.
  */
-int ipath_post_srq_receive(struct ib_srq *ibsrq, struct ib_recv_wr *wr,
-			   struct ib_recv_wr **bad_wr)
+int ipath_post_srq_receive(struct ib_srq *ibsrq, const struct ib_recv_wr *wr,
+			   const struct ib_recv_wr **bad_wr)
 {
 	struct ipath_srq *srq = to_isrq(ibsrq);
 	struct ipath_rwq *wq;

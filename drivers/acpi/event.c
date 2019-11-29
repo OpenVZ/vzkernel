@@ -172,15 +172,17 @@ enum {
 #define ACPI_GENL_VERSION		0x01
 #define ACPI_GENL_MCAST_GROUP_NAME 	"acpi_mc_group"
 
+static const struct genl_multicast_group acpi_event_mcgrps[] = {
+	{ .name = ACPI_GENL_MCAST_GROUP_NAME, },
+};
+
 static struct genl_family acpi_event_genl_family = {
-	.id = GENL_ID_GENERATE,
+	.module = THIS_MODULE,
 	.name = ACPI_GENL_FAMILY_NAME,
 	.version = ACPI_GENL_VERSION,
 	.maxattr = ACPI_GENL_ATTR_MAX,
-};
-
-static struct genl_multicast_group acpi_event_mcgrp = {
-	.name = ACPI_GENL_MCAST_GROUP_NAME,
+	.mcgrps = acpi_event_mcgrps,
+	.n_mcgrps = ARRAY_SIZE(acpi_event_mcgrps),
 };
 
 int acpi_bus_generate_netlink_event(const char *device_class,
@@ -192,7 +194,6 @@ int acpi_bus_generate_netlink_event(const char *device_class,
 	struct acpi_genl_event *event;
 	void *msg_header;
 	int size;
-	int result;
 
 	/* allocate memory */
 	size = nla_total_size(sizeof(struct acpi_genl_event)) +
@@ -234,13 +235,9 @@ int acpi_bus_generate_netlink_event(const char *device_class,
 	event->data = data;
 
 	/* send multicast genetlink message */
-	result = genlmsg_end(skb, msg_header);
-	if (result < 0) {
-		nlmsg_free(skb);
-		return result;
-	}
+	genlmsg_end(skb, msg_header);
 
-	genlmsg_multicast(skb, 0, acpi_event_mcgrp.id, GFP_ATOMIC);
+	genlmsg_multicast(&acpi_event_genl_family, skb, 0, 0, GFP_ATOMIC);
 	return 0;
 }
 
@@ -248,18 +245,7 @@ EXPORT_SYMBOL(acpi_bus_generate_netlink_event);
 
 static int acpi_event_genetlink_init(void)
 {
-	int result;
-
-	result = genl_register_family(&acpi_event_genl_family);
-	if (result)
-		return result;
-
-	result = genl_register_mc_group(&acpi_event_genl_family,
-					&acpi_event_mcgrp);
-	if (result)
-		genl_unregister_family(&acpi_event_genl_family);
-
-	return result;
+	return genl_register_family(&acpi_event_genl_family);
 }
 
 #else

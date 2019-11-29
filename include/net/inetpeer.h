@@ -14,11 +14,13 @@
 #include <linux/rtnetlink.h>
 #include <net/ipv6.h>
 #include <linux/atomic.h>
+#include <linux/rh_kabi.h>
 
 struct inetpeer_addr_base {
 	union {
 		__be32			a4;
 		__be32			a6[4];
+		RH_KABI_EXTEND(struct in6_addr in6)
 	};
 };
 
@@ -41,14 +43,14 @@ struct inet_peer {
 		struct rcu_head     gc_rcu;
 	};
 	/*
-	 * Once inet_peer is queued for deletion (refcnt == -1), following fields
-	 * are not available: rid, ip_id_count
+	 * Once inet_peer is queued for deletion (refcnt == -1), following field
+	 * is not available: rid
 	 * We can share memory with rcu_head to help keep inet_peer small.
 	 */
 	union {
 		struct {
 			atomic_t			rid;		/* Frag reception counter */
-			atomic_t			ip_id_count;	/* IP ID for the next packet */
+			RH_KABI_DEPRECATE(atomic_t, ip_id_count)
 		};
 		struct rcu_head         rcu;
 		struct inet_peer	*gc_next;
@@ -120,9 +122,9 @@ static inline void inetpeer_transfer_peer(unsigned long *to, unsigned long *from
 	}
 }
 
-extern void inet_peer_base_init(struct inet_peer_base *);
+void inet_peer_base_init(struct inet_peer_base *);
 
-void			inet_initpeers(void) __init;
+void inet_initpeers(void) __init;
 
 #define INETPEER_METRICS_NEW	(~(u32) 0)
 
@@ -153,41 +155,25 @@ static inline struct inet_peer *inet_getpeer_v6(struct inet_peer_base *base,
 {
 	struct inetpeer_addr daddr;
 
-	*(struct in6_addr *)daddr.addr.a6 = *v6daddr;
+	daddr.addr.in6 = *v6daddr;
 	daddr.family = AF_INET6;
 	return inet_getpeer(base, &daddr, create);
 }
 
 /* can be called from BH context or outside */
-extern void inet_putpeer(struct inet_peer *p);
-extern bool inet_peer_xrlim_allow(struct inet_peer *peer, int timeout);
+void inet_putpeer(struct inet_peer *p);
+bool inet_peer_xrlim_allow(struct inet_peer *peer, int timeout);
 
-extern void inetpeer_invalidate_tree(struct inet_peer_base *);
-extern void inetpeer_invalidate_family(int family);
+void inetpeer_invalidate_tree(struct inet_peer_base *);
+void inetpeer_invalidate_family(int family);
 
 /*
- * temporary check to make sure we dont access rid, ip_id_count, tcp_ts,
+ * temporary check to make sure we dont access rid, tcp_ts,
  * tcp_ts_stamp if no refcount is taken on inet_peer
  */
 static inline void inet_peer_refcheck(const struct inet_peer *p)
 {
 	WARN_ON_ONCE(atomic_read(&p->refcnt) <= 0);
-}
-
-
-/* can be called with or without local BH being disabled */
-static inline int inet_getid(struct inet_peer *p, int more)
-{
-	int old, new;
-	more++;
-	inet_peer_refcheck(p);
-	do {
-		old = atomic_read(&p->ip_id_count);
-		new = old + more;
-		if (!new)
-			new = 1;
-	} while (atomic_cmpxchg(&p->ip_id_count, old, new) != old);
-	return new;
 }
 
 #endif /* _NET_INETPEER_H */

@@ -37,9 +37,11 @@ do {	__asm__ __volatile__("ba,pt	%%xcc, 1f\n\t" \
 #define rmb()	__asm__ __volatile__("":::"memory")
 #define wmb()	__asm__ __volatile__("":::"memory")
 
-#define read_barrier_depends()		do { } while(0)
-#define set_mb(__var, __value) \
-	do { __var = __value; membar_safe("#StoreLoad"); } while(0)
+#define dma_rmb()	rmb()
+#define dma_wmb()	wmb()
+
+#define smp_store_mb(__var, __value) \
+	do { WRITE_ONCE(__var, __value); membar_safe("#StoreLoad"); } while(0)
 
 #ifdef CONFIG_SMP
 #define smp_mb()	mb()
@@ -51,6 +53,7 @@ do {	__asm__ __volatile__("ba,pt	%%xcc, 1f\n\t" \
 #define smp_wmb()	__asm__ __volatile__("":::"memory")
 #endif
 
-#define smp_read_barrier_depends()	do { } while(0)
+#define read_barrier_depends()		do { } while (0)
+#define smp_read_barrier_depends()	do { } while (0)
 
 #endif /* !(__SPARC64_BARRIER_H) */
