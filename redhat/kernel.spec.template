@@ -853,7 +853,7 @@ This package provides debug information for package kernel-tools.
 # symlinks because of the trailing nonmatching alternation and
 # the leading .*, because of find-debuginfo.sh's buggy handling
 # of matching the pattern against the symlinks file.
-%{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%%{_bindir}/centrino-decode(\.debug)?|.*%%{_bindir}/powernow-k8-decode(\.debug)?|.*%%{_bindir}/cpupower(\.debug)?|.*%%{_libdir}/libcpupower.*|.*%%{_bindir}/turbostat(\.debug)?|.*%%{_bindir}/x86_energy_perf_policy(\.debug)?|.*%%{_bindir}/tmon(\.debug)?|.*%%{_bindir}/lsgpio(\.debug)?|.*%%{_bindir}/gpio-hammer(\.debug)?|.*%%{_bindir}/gpio-event-mon(\.debug)?|.*%%{_bindir}/iio_event_monitor(\.debug)?|.*%%{_bindir}/iio_generic_buffer(\.debug)?|.*%%{_bindir}/lsiio(\.debug)?|XXX' -o kernel-tools-debuginfo.list}
+%{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%%{_bindir}/centrino-decode(\.debug)?|.*%%{_bindir}/powernow-k8-decode(\.debug)?|.*%%{_bindir}/cpupower(\.debug)?|.*%%{_libdir}/libcpupower.*|.*%%{_bindir}/turbostat(\.debug)?|.*%%{_bindir}/x86_energy_perf_policy(\.debug)?|.*%%{_bindir}/tmon(\.debug)?|.*%%{_bindir}/lsgpio(\.debug)?|.*%%{_bindir}/gpio-hammer(\.debug)?|.*%%{_bindir}/gpio-event-mon(\.debug)?|.*%%{_bindir}/iio_event_monitor(\.debug)?|.*%%{_bindir}/iio_generic_buffer(\.debug)?|.*%%{_bindir}/lsiio(\.debug)?|.*%%{_bindir}/intel-speed-select(\.debug)?|XXX' -o kernel-tools-debuginfo.list}
 
 %endif # with_tools
 
@@ -1849,7 +1849,10 @@ chmod +x tools/power/cpupower/utils/version-gen.sh
    pushd tools/power/x86/turbostat
    %{make}
    popd
-%endif #turbostat/x86_energy_perf_policy
+   pushd tools/power/x86/intel-speed-select
+   %{make}
+   popd
+%endif
 %endif
 pushd tools/thermal/tmon/
 %{make}
@@ -2070,7 +2073,10 @@ install -m644 %{SOURCE2001} %{buildroot}%{_sysconfdir}/sysconfig/cpupower
    pushd tools/power/x86/turbostat
    make DESTDIR=%{buildroot} install
    popd
-%endif #turbostat/x86_energy_perf_policy
+   pushd tools/power/x86/intel-speed-select
+   make CFLAGS+="-D_GNU_SOURCE -Iinclude" DESTDIR=%{buildroot} install
+   popd
+%endif
 pushd tools/thermal/tmon
 make INSTALL_ROOT=%{buildroot} install
 popd
@@ -2371,6 +2377,7 @@ fi
 %{_mandir}/man8/x86_energy_perf_policy*
 %{_bindir}/turbostat
 %{_mandir}/man8/turbostat*
+%{_bindir}/intel-speed-select
 %endif
 %endif # cpupowerarchs
 %{_bindir}/tmon
