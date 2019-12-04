@@ -1,1 +1,1 @@
-CONFIG_AGP=y
+# CONFIG_AGP is not set
