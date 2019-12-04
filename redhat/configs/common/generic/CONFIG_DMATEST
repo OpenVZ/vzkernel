@@ -1,1 +1,1 @@
-# CONFIG_DMATEST is not set
+CONFIG_DMATEST=m
