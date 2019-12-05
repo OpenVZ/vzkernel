@@ -1831,23 +1831,26 @@ chmod +x tools/perf/check-headers.sh
 %{perf_make} DESTDIR=$RPM_BUILD_ROOT all
 %endif
 
+%global tools_make \
+  %{make} CFLAGS="${RPM_OPT_FLAGS}" LDFLAGS="%{__global_ldflags}" V=1
+
 %if %{with_tools}
 %ifarch %{cpupowerarchs}
 # cpupower
 # make sure version-gen.sh is executable.
 chmod +x tools/power/cpupower/utils/version-gen.sh
-%{make} %{?_smp_mflags} -C tools/power/cpupower CPUFREQ_BENCH=false
+%{tools_make} %{?_smp_mflags} -C tools/power/cpupower CPUFREQ_BENCH=false
 %ifarch x86_64
     pushd tools/power/cpupower/debug/x86_64
-    %{make} %{?_smp_mflags} centrino-decode powernow-k8-decode
+    %{tools_make} %{?_smp_mflags} centrino-decode powernow-k8-decode
     popd
 %endif
 %ifarch x86_64
    pushd tools/power/x86/x86_energy_perf_policy/
-   %{make}
+   %{tools_make}
    popd
    pushd tools/power/x86/turbostat
-   %{make}
+   %{tools_make}
    popd
    pushd tools/power/x86/intel-speed-select
    %{make}
@@ -1855,13 +1858,15 @@ chmod +x tools/power/cpupower/utils/version-gen.sh
 %endif
 %endif
 pushd tools/thermal/tmon/
-%{make}
+%{tools_make}
 popd
 pushd tools/iio/
-%{make}
+# Needs to be fixed to pick up CFLAGS
+make
 popd
 pushd tools/gpio/
-%{make}
+# Needs to be fixed to pick up CFLAGS
+make
 popd
 %endif
 
@@ -2068,17 +2073,17 @@ install -m644 %{SOURCE2001} %{buildroot}%{_sysconfdir}/sysconfig/cpupower
 %ifarch x86_64
    mkdir -p %{buildroot}%{_mandir}/man8
    pushd tools/power/x86/x86_energy_perf_policy
-   make DESTDIR=%{buildroot} install
+   %{tools_make} DESTDIR=%{buildroot} install
    popd
    pushd tools/power/x86/turbostat
-   make DESTDIR=%{buildroot} install
+   %{tools_make} DESTDIR=%{buildroot} install
    popd
    pushd tools/power/x86/intel-speed-select
-   make CFLAGS+="-D_GNU_SOURCE -Iinclude" DESTDIR=%{buildroot} install
+   %{tools_make} CFLAGS+="-D_GNU_SOURCE -Iinclude" DESTDIR=%{buildroot} install
    popd
 %endif
 pushd tools/thermal/tmon
-make INSTALL_ROOT=%{buildroot} install
+%{tools_make} INSTALL_ROOT=%{buildroot} install
 popd
 pushd tools/iio
 make DESTDIR=%{buildroot} install
