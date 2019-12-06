@@ -132,6 +132,18 @@ enum {
 	RTM_GETMDB = 86,
 #define RTM_GETMDB RTM_GETMDB
 
+	RTM_NEWNSID = 88,
+#define RTM_NEWNSID RTM_NEWNSID
+	RTM_DELNSID = 89,
+#define RTM_DELNSID RTM_DELNSID
+	RTM_GETNSID = 90,
+#define RTM_GETNSID RTM_GETNSID
+
+	RTM_NEWSTATS = 92,
+#define RTM_NEWSTATS RTM_NEWSTATS
+	RTM_GETSTATS = 94,
+#define RTM_GETSTATS RTM_GETSTATS
+
 	__RTM_MAX,
 #define RTM_MAX		(((__RTM_MAX + 3) & ~3) - 1)
 };
@@ -297,6 +309,13 @@ enum rtattr_type_t {
 	RTA_TABLE,
 	RTA_MARK,
 	RTA_MFC_STATS,
+	RTA_VIA,
+	__RH_RESERVED_RTA_NEWDST,
+	RTA_PREF,
+	RTA_ENCAP_TYPE,
+	RTA_ENCAP,
+	RTA_EXPIRES,
+	RTA_PAD,
 	__RTA_MAX
 };
 
@@ -326,6 +345,7 @@ struct rtnexthop {
 #define RTNH_F_DEAD		1	/* Nexthop is dead (used by multipath)	*/
 #define RTNH_F_PERVASIVE	2	/* Do recursive gateway lookup	*/
 #define RTNH_F_ONLINK		4	/* Gateway is forced on link	*/
+#define RTNH_F_OFFLOAD		8	/* offloaded route */
 
 /* Macros to handle hexthops */
 
@@ -386,15 +406,29 @@ enum {
 #define RTAX_RTO_MIN RTAX_RTO_MIN
 	RTAX_INITRWND,
 #define RTAX_INITRWND RTAX_INITRWND
+	RTAX_QUICKACK,
+#define RTAX_QUICKACK RTAX_QUICKACK
+	RTAX_CC_ALGO,
+#define RTAX_CC_ALGO RTAX_CC_ALGO
+	RTAX_RESERVED2,
+	RTAX_RESERVED3,
+	RTAX_RESERVED4,
+	RTAX_RESERVED5,
+	RTAX_RESERVED6,
+	RTAX_RESERVED7,
+	RTAX_RESERVED8,
 	__RTAX_MAX
 };
 
 #define RTAX_MAX (__RTAX_MAX - 1)
 
-#define RTAX_FEATURE_ECN	0x00000001
-#define RTAX_FEATURE_SACK	0x00000002
-#define RTAX_FEATURE_TIMESTAMP	0x00000004
-#define RTAX_FEATURE_ALLFRAG	0x00000008
+#define RTAX_FEATURE_ECN	(1 << 0)
+#define RTAX_FEATURE_SACK	(1 << 1)
+#define RTAX_FEATURE_TIMESTAMP	(1 << 2)
+#define RTAX_FEATURE_ALLFRAG	(1 << 3)
+
+#define RTAX_FEATURE_MASK	(RTAX_FEATURE_ECN | RTAX_FEATURE_SACK | \
+				 RTAX_FEATURE_TIMESTAMP | RTAX_FEATURE_ALLFRAG)
 
 struct rta_session {
 	__u8	proto;
@@ -491,8 +525,18 @@ struct tcmsg {
 	int		tcm_ifindex;
 	__u32		tcm_handle;
 	__u32		tcm_parent;
+/* tcm_block_index is used instead of tcm_parent
+ * in case tcm_ifindex == TCM_IFINDEX_MAGIC_BLOCK
+ */
+#define tcm_block_index tcm_parent
 	__u32		tcm_info;
 };
+
+/* For manipulation of filters in shared block, tcm_ifindex is set to
+ * TCM_IFINDEX_MAGIC_BLOCK, and tcm_parent is aliased to tcm_block_index
+ * which is the block index.
+ */
+#define TCM_IFINDEX_MAGIC_BLOCK (0xFFFFFFFFU)
 
 enum {
 	TCA_UNSPEC,
@@ -504,6 +548,12 @@ enum {
 	TCA_FCNT,
 	TCA_STATS2,
 	TCA_STAB,
+	TCA_PAD,
+	TCA_DUMP_INVISIBLE,
+	TCA_CHAIN,
+	TCA_HW_OFFLOAD,
+	TCA_INGRESS_BLOCK,
+	TCA_EGRESS_BLOCK,
 	__TCA_MAX
 };
 
@@ -613,6 +663,9 @@ enum rtnetlink_groups {
 #define RTNLGRP_IPV6_NETCONF	RTNLGRP_IPV6_NETCONF
 	RTNLGRP_MDB,
 #define RTNLGRP_MDB		RTNLGRP_MDB
+	__RH_RESERVED_RTNLGRP_MPLS_ROUTE,
+	RTNLGRP_NSID,
+#define RTNLGRP_NSID		RTNLGRP_NSID
 	__RTNLGRP_MAX
 };
 #define RTNLGRP_MAX	(__RTNLGRP_MAX - 1)
@@ -623,14 +676,34 @@ struct tcamsg {
 	unsigned char	tca__pad1;
 	unsigned short	tca__pad2;
 };
+
+enum {
+	TCA_ROOT_UNSPEC,
+	TCA_ROOT_TAB,
+#define TCA_ACT_TAB TCA_ROOT_TAB
+#define TCAA_MAX TCA_ROOT_TAB
+	TCA_ROOT_FLAGS,
+	TCA_ROOT_COUNT,
+	TCA_ROOT_TIME_DELTA, /* in msecs */
+	__TCA_ROOT_MAX,
+#define	TCA_ROOT_MAX (__TCA_ROOT_MAX - 1)
+};
+
 #define TA_RTA(r)  ((struct rtattr*)(((char*)(r)) + NLMSG_ALIGN(sizeof(struct tcamsg))))
 #define TA_PAYLOAD(n) NLMSG_PAYLOAD(n,sizeof(struct tcamsg))
-#define TCA_ACT_TAB 1 /* attr type must be >=1 */	
-#define TCAA_MAX 1
+/* tcamsg flags stored in attribute TCA_ROOT_FLAGS
+ *
+ * TCA_FLAG_LARGE_DUMP_ON user->kernel to request for larger than TCA_ACT_MAX_PRIO
+ * actions in a dump. All dump responses will contain the number of actions
+ * being dumped stored in for user app's consumption in TCA_ROOT_COUNT
+ *
+ */
+#define TCA_FLAG_LARGE_DUMP_ON		(1 << 0)
 
 /* New extended info filters for IFLA_EXT_MASK */
 #define RTEXT_FILTER_VF		(1 << 0)
 #define RTEXT_FILTER_BRVLAN	(1 << 1)
+#define RTEXT_FILTER_BRVLAN_COMPRESSED	(1 << 2)
 
 /* End of information exported to user level */
 

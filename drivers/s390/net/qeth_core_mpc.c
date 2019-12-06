@@ -158,10 +158,10 @@ unsigned char READ_CCW[] = {
 
 struct ipa_rc_msg {
 	enum qeth_ipa_return_codes rc;
-	char *msg;
+	const char *msg;
 };
 
-static struct ipa_rc_msg qeth_ipa_rc_msg[] = {
+static const struct ipa_rc_msg qeth_ipa_rc_msg[] = {
 	{IPA_RC_SUCCESS,		"success"},
 	{IPA_RC_NOTSUPP,		"Command not supported"},
 	{IPA_RC_IP_TABLE_FULL,		"Add Addr IP Table Full - ipv6"},
@@ -212,23 +212,23 @@ static struct ipa_rc_msg qeth_ipa_rc_msg[] = {
 
 
 
-char *qeth_get_ipa_msg(enum qeth_ipa_return_codes rc)
+const char *qeth_get_ipa_msg(enum qeth_ipa_return_codes rc)
 {
-	int x = 0;
-	qeth_ipa_rc_msg[sizeof(qeth_ipa_rc_msg) /
-			sizeof(struct ipa_rc_msg) - 1].rc = rc;
-	while (qeth_ipa_rc_msg[x].rc != rc)
-		x++;
+	int x;
+
+	for (x = 0; x < ARRAY_SIZE(qeth_ipa_rc_msg) - 1; x++)
+		if (qeth_ipa_rc_msg[x].rc == rc)
+			return qeth_ipa_rc_msg[x].msg;
 	return qeth_ipa_rc_msg[x].msg;
 }
 
 
 struct ipa_cmd_names {
 	enum qeth_ipa_cmds cmd;
-	char *name;
+	const char *name;
 };
 
-static struct ipa_cmd_names qeth_ipa_cmd_names[] = {
+static const struct ipa_cmd_names qeth_ipa_cmd_names[] = {
 	{IPA_CMD_STARTLAN,	"startlan"},
 	{IPA_CMD_STOPLAN,	"stoplan"},
 	{IPA_CMD_SETVMAC,	"setvmac"},
@@ -237,6 +237,7 @@ static struct ipa_cmd_names qeth_ipa_cmd_names[] = {
 	{IPA_CMD_DELGMAC,	"delgmac"},
 	{IPA_CMD_SETVLAN,	"setvlan"},
 	{IPA_CMD_DELVLAN,	"delvlan"},
+	{IPA_CMD_SETBRIDGEPORT_OSA,	"set_bridge_port(osa)"},
 	{IPA_CMD_SETCCID,	"setccid"},
 	{IPA_CMD_DELCCID,	"delccid"},
 	{IPA_CMD_MODCCID,	"modccid"},
@@ -249,20 +250,21 @@ static struct ipa_cmd_names qeth_ipa_cmd_names[] = {
 	{IPA_CMD_DELIP,		"delip"},
 	{IPA_CMD_SETADAPTERPARMS, "setadapterparms"},
 	{IPA_CMD_SET_DIAG_ASS,	"set_diag_ass"},
+	{IPA_CMD_SETBRIDGEPORT_IQD,	"set_bridge_port(hs)"},
 	{IPA_CMD_CREATE_ADDR,	"create_addr"},
 	{IPA_CMD_DESTROY_ADDR,	"destroy_addr"},
 	{IPA_CMD_REGISTER_LOCAL_ADDR,	"register_local_addr"},
 	{IPA_CMD_UNREGISTER_LOCAL_ADDR,	"unregister_local_addr"},
+	{IPA_CMD_ADDRESS_CHANGE_NOTIF, "address_change_notification"},
 	{IPA_CMD_UNKNOWN,	"unknown"},
 };
 
-char *qeth_get_ipa_cmd_name(enum qeth_ipa_cmds cmd)
+const char *qeth_get_ipa_cmd_name(enum qeth_ipa_cmds cmd)
 {
-	int x = 0;
-	qeth_ipa_cmd_names[
-		sizeof(qeth_ipa_cmd_names) /
-			sizeof(struct ipa_cmd_names)-1].cmd = cmd;
-	while (qeth_ipa_cmd_names[x].cmd != cmd)
-		x++;
+	int x;
+
+	for (x = 0; x < ARRAY_SIZE(qeth_ipa_cmd_names) - 1; x++)
+		if (qeth_ipa_cmd_names[x].cmd == cmd)
+			return qeth_ipa_cmd_names[x].name;
 	return qeth_ipa_cmd_names[x].name;
 }

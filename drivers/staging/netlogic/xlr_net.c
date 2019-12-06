@@ -176,7 +176,6 @@ static void xlr_net_fmn_handler(int bkt, int src_stnid, int size,
 		skb_reserve(skb, BYTE_OFFSET);
 		skb_put(skb, length);
 		skb->protocol = eth_type_trans(skb, skb->dev);
-		skb->dev->last_rx = jiffies;
 		netif_rx(skb);
 		/* Fill rx ring */
 		skb_new = xlr_alloc_skb();
@@ -304,7 +303,8 @@ static netdev_tx_t xlr_net_start_xmit(struct sk_buff *skb,
 	return NETDEV_TX_OK;
 }
 
-static u16 xlr_net_select_queue(struct net_device *ndev, struct sk_buff *skb)
+static u16 xlr_net_select_queue(struct net_device *ndev, struct sk_buff *skb,
+				void *accel_priv, select_queue_fallback_t fallback)
 {
 	return (u16)smp_processor_id();
 }

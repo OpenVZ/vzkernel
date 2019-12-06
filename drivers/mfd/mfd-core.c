@@ -14,6 +14,7 @@
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
 #include <linux/acpi.h>
+#include <linux/property.h>
 #include <linux/mfd/core.h>
 #include <linux/pm_runtime.h>
 #include <linux/slab.h>
@@ -63,7 +64,8 @@ int mfd_cell_disable(struct platform_device *pdev)
 EXPORT_SYMBOL(mfd_cell_disable);
 
 static int mfd_platform_add_cell(struct platform_device *pdev,
-				 const struct mfd_cell *cell)
+				 const struct mfd_cell *cell,
+				 atomic_t *usage_count)
 {
 	if (!cell)
 		return 0;
@@ -72,11 +74,50 @@ static int mfd_platform_add_cell(struct platform_device *pdev,
 	if (!pdev->mfd_cell)
 		return -ENOMEM;
 
+	pdev->mfd_cell->usage_count = usage_count;
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_ACPI)
+static void mfd_acpi_add_device(const struct mfd_cell *cell,
+				struct platform_device *pdev)
+{
+	struct acpi_device *parent_adev;
+	struct acpi_device *adev;
+
+	parent_adev = ACPI_COMPANION(pdev->dev.parent);
+	if (!parent_adev)
+		return;
+
+	/*
+	 * MFD child device gets its ACPI handle either from the ACPI
+	 * device directly under the parent that matches the acpi_pnpid or
+	 * it will use the parent handle if is no acpi_pnpid is given.
+	 */
+	adev = parent_adev;
+	if (cell->acpi_pnpid) {
+		struct acpi_device_id ids[2] = {};
+		struct acpi_device *child_adev;
+
+		strlcpy(ids[0].id, cell->acpi_pnpid, sizeof(ids[0].id));
+		list_for_each_entry(child_adev, &parent_adev->children, node)
+			if (acpi_match_device_ids(child_adev, ids)) {
+				adev = child_adev;
+				break;
+			}
+	}
+
+	ACPI_COMPANION_SET(&pdev->dev, adev);
+}
+#else
+static inline void mfd_acpi_add_device(const struct mfd_cell *cell,
+				       struct platform_device *pdev)
+{
+}
+#endif
+
 static int mfd_add_device(struct device *parent, int id,
-			  const struct mfd_cell *cell,
+			  const struct mfd_cell *cell, atomic_t *usage_count,
 			  struct resource *mem_base,
 			  int irq_base, struct irq_domain *domain)
 {
@@ -106,6 +147,8 @@ static int mfd_add_device(struct device *parent, int id,
 		}
 	}
 
+	mfd_acpi_add_device(cell, pdev);
+
 	if (cell->pdata_size) {
 		ret = platform_device_add_data(pdev,
 					cell->platform_data, cell->pdata_size);
@@ -113,7 +156,13 @@ static int mfd_add_device(struct device *parent, int id,
 			goto fail_res;
 	}
 
-	ret = mfd_platform_add_cell(pdev, cell);
+	if (cell->properties) {
+		ret = platform_device_add_properties(pdev, cell->properties);
+		if (ret)
+			goto fail_res;
+	}
+
+	ret = mfd_platform_add_cell(pdev, cell, usage_count);
 	if (ret)
 		goto fail_res;
 
@@ -178,7 +227,7 @@ fail_alloc:
 }
 
 int mfd_add_devices(struct device *parent, int id,
-		    struct mfd_cell *cells, int n_devs,
+		    const struct mfd_cell *cells, int n_devs,
 		    struct resource *mem_base,
 		    int irq_base, struct irq_domain *domain)
 {
@@ -193,8 +242,7 @@ int mfd_add_devices(struct device *parent, int id,
 
 	for (i = 0; i < n_devs; i++) {
 		atomic_set(&cnts[i], 0);
-		cells[i].usage_count = &cnts[i];
-		ret = mfd_add_device(parent, id, cells + i, mem_base,
+		ret = mfd_add_device(parent, id, cells + i, cnts + i, mem_base,
 				     irq_base, domain);
 		if (ret)
 			break;
@@ -231,7 +279,7 @@ void mfd_remove_devices(struct device *parent)
 {
 	atomic_t *cnts = NULL;
 
-	device_for_each_child(parent, &cnts, mfd_remove_devices_fn);
+	device_for_each_child_reverse(parent, &cnts, mfd_remove_devices_fn);
 	kfree(cnts);
 }
 EXPORT_SYMBOL(mfd_remove_devices);
@@ -257,8 +305,8 @@ int mfd_clone_cell(const char *cell, const char **clones, size_t n_clones)
 	for (i = 0; i < n_clones; i++) {
 		cell_entry.name = clones[i];
 		/* don't give up if a single call fails; just report error */
-		if (mfd_add_device(pdev->dev.parent, -1, &cell_entry, NULL, 0,
-				   NULL))
+		if (mfd_add_device(pdev->dev.parent, -1, &cell_entry,
+				   cell_entry.usage_count, NULL, 0, NULL))
 			dev_err(dev, "failed to create platform device '%s'\n",
 					clones[i]);
 	}

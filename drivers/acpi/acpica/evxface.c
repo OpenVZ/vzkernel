@@ -41,7 +41,8 @@
  * POSSIBILITY OF SUCH DAMAGES.
  */
 
-#include <linux/export.h>
+#define EXPORT_ACPI_INTERFACES
+
 #include <acpi/acpi.h>
 #include "accommon.h"
 #include "acnamesp.h"
@@ -238,7 +239,7 @@ acpi_remove_notify_handler(acpi_handle device,
 	union acpi_operand_object *obj_desc;
 	union acpi_operand_object *handler_obj;
 	union acpi_operand_object *previous_handler_obj;
-	acpi_status status;
+	acpi_status status = AE_OK;
 	u32 i;
 
 	ACPI_FUNCTION_TRACE(acpi_remove_notify_handler);
@@ -250,20 +251,17 @@ acpi_remove_notify_handler(acpi_handle device,
 		return_ACPI_STATUS(AE_BAD_PARAMETER);
 	}
 
-	/* Make sure all deferred notify tasks are completed */
-
-	acpi_os_wait_events_complete();
-
-	status = acpi_ut_acquire_mutex(ACPI_MTX_NAMESPACE);
-	if (ACPI_FAILURE(status)) {
-		return_ACPI_STATUS(status);
-	}
-
 	/* Root Object. Global handlers are removed here */
 
 	if (device == ACPI_ROOT_OBJECT) {
 		for (i = 0; i < ACPI_NUM_NOTIFY_TYPES; i++) {
 			if (handler_type & (i + 1)) {
+				status =
+				    acpi_ut_acquire_mutex(ACPI_MTX_NAMESPACE);
+				if (ACPI_FAILURE(status)) {
+					return_ACPI_STATUS(status);
+				}
+
 				if (!acpi_gbl_global_notify[i].handler ||
 				    (acpi_gbl_global_notify[i].handler !=
 				     handler)) {
@@ -276,31 +274,40 @@ acpi_remove_notify_handler(acpi_handle device,
 
 				acpi_gbl_global_notify[i].handler = NULL;
 				acpi_gbl_global_notify[i].context = NULL;
+
+				(void)acpi_ut_release_mutex(ACPI_MTX_NAMESPACE);
+
+				/* Make sure all deferred notify tasks are completed */
+
+				acpi_os_wait_events_complete();
 			}
 		}
 
-		goto unlock_and_exit;
+		return_ACPI_STATUS(AE_OK);
 	}
 
 	/* All other objects: Are Notifies allowed on this object? */
 
 	if (!acpi_ev_is_notify_object(node)) {
-		status = AE_TYPE;
-		goto unlock_and_exit;
+		return_ACPI_STATUS(AE_TYPE);
 	}
 
 	/* Must have an existing internal object */
 
 	obj_desc = acpi_ns_get_attached_object(node);
 	if (!obj_desc) {
-		status = AE_NOT_EXIST;
-		goto unlock_and_exit;
+		return_ACPI_STATUS(AE_NOT_EXIST);
 	}
 
 	/* Internal object exists. Find the handler and remove it */
 
 	for (i = 0; i < ACPI_NUM_NOTIFY_TYPES; i++) {
 		if (handler_type & (i + 1)) {
+			status = acpi_ut_acquire_mutex(ACPI_MTX_NAMESPACE);
+			if (ACPI_FAILURE(status)) {
+				return_ACPI_STATUS(status);
+			}
+
 			handler_obj = obj_desc->common_notify.notify_list[i];
 			previous_handler_obj = NULL;
 
@@ -328,9 +335,16 @@ acpi_remove_notify_handler(acpi_handle device,
 				    handler_obj->notify.next[i];
 			}
 
+			(void)acpi_ut_release_mutex(ACPI_MTX_NAMESPACE);
+
+			/* Make sure all deferred notify tasks are completed */
+
+			acpi_os_wait_events_complete();
 			acpi_ut_remove_reference(handler_obj);
 		}
 	}
+
+	return_ACPI_STATUS(status);
 
 unlock_and_exit:
 	(void)acpi_ut_release_mutex(ACPI_MTX_NAMESPACE);
@@ -620,7 +634,7 @@ acpi_install_gpe_handler(acpi_handle gpe_device,
 
 	/* Make sure that there isn't a handler there already */
 
-	if ((gpe_event_info->flags & ACPI_GPE_DISPATCH_MASK) ==
+	if (ACPI_GPE_DISPATCH_TYPE(gpe_event_info->flags) ==
 	    ACPI_GPE_DISPATCH_HANDLER) {
 		status = AE_ALREADY_EXISTS;
 		goto free_and_exit;
@@ -638,9 +652,10 @@ acpi_install_gpe_handler(acpi_handle gpe_device,
 	 * automatically during initialization, in which case it has to be
 	 * disabled now to avoid spurious execution of the handler.
 	 */
-
-	if ((handler->original_flags & ACPI_GPE_DISPATCH_METHOD)
-	    && gpe_event_info->runtime_count) {
+	if (((ACPI_GPE_DISPATCH_TYPE(handler->original_flags) ==
+	      ACPI_GPE_DISPATCH_METHOD) ||
+	     (ACPI_GPE_DISPATCH_TYPE(handler->original_flags) ==
+	      ACPI_GPE_DISPATCH_NOTIFY)) && handler->originally_enabled) {
 		handler->originally_enabled = 1;
 		(void)acpi_ev_remove_gpe_reference(gpe_event_info);
 	}
@@ -700,10 +715,6 @@ acpi_remove_gpe_handler(acpi_handle gpe_device,
 		return_ACPI_STATUS(AE_BAD_PARAMETER);
 	}
 
-	/* Make sure all deferred GPE tasks are completed */
-
-	acpi_os_wait_events_complete();
-
 	status = acpi_ut_acquire_mutex(ACPI_MTX_EVENTS);
 	if (ACPI_FAILURE(status)) {
 		return_ACPI_STATUS(status);
@@ -721,7 +732,7 @@ acpi_remove_gpe_handler(acpi_handle gpe_device,
 
 	/* Make sure that a handler is indeed installed */
 
-	if ((gpe_event_info->flags & ACPI_GPE_DISPATCH_MASK) !=
+	if (ACPI_GPE_DISPATCH_TYPE(gpe_event_info->flags) !=
 	    ACPI_GPE_DISPATCH_HANDLER) {
 		status = AE_NOT_EXIST;
 		goto unlock_and_exit;
@@ -750,14 +761,24 @@ acpi_remove_gpe_handler(acpi_handle gpe_device,
 	 * enabled, it should be enabled at this point to restore the
 	 * post-initialization configuration.
 	 */
-	if ((handler->original_flags & ACPI_GPE_DISPATCH_METHOD) &&
-	    handler->originally_enabled) {
+	if (((ACPI_GPE_DISPATCH_TYPE(handler->original_flags) ==
+	      ACPI_GPE_DISPATCH_METHOD) ||
+	     (ACPI_GPE_DISPATCH_TYPE(handler->original_flags) ==
+	      ACPI_GPE_DISPATCH_NOTIFY)) && gpe_event_info->runtime_count) {
 		(void)acpi_ev_add_gpe_reference(gpe_event_info);
 	}
+
+	acpi_os_release_lock(acpi_gbl_gpe_lock, flags);
+	(void)acpi_ut_release_mutex(ACPI_MTX_EVENTS);
+
+	/* Make sure all deferred GPE tasks are completed */
+
+	acpi_os_wait_events_complete();
 
 	/* Now we can free the handler object */
 
 	ACPI_FREE(handler);
+	return_ACPI_STATUS(status);
 
 unlock_and_exit:
 	acpi_os_release_lock(acpi_gbl_gpe_lock, flags);

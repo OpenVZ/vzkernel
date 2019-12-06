@@ -48,6 +48,7 @@
 #include <linux/slab.h>
 #include <linux/stat.h>
 #include <linux/module.h>
+#include <linux/user_namespace.h>
 
 #include "fuse_i.h"
 
@@ -95,7 +96,7 @@ static ssize_t cuse_read(struct file *file, char __user *buf, size_t count,
 	struct iovec iov = { .iov_base = buf, .iov_len = count };
 	struct fuse_io_priv io = { .async = 0, .file = file };
 
-	return fuse_direct_io(&io, &iov, 1, count, &pos, 0);
+	return fuse_direct_io(&io, &iov, 1, count, &pos, FUSE_DIO_CUSE);
 }
 
 static ssize_t cuse_write(struct file *file, const char __user *buf,
@@ -109,7 +110,8 @@ static ssize_t cuse_write(struct file *file, const char __user *buf,
 	 * No locking or generic_write_checks(), the server is
 	 * responsible for locking and sanity checks.
 	 */
-	return fuse_direct_io(&io, &iov, 1, count, &pos, 1);
+	return fuse_direct_io(&io, &iov, 1, count, &pos,
+			      FUSE_DIO_WRITE | FUSE_DIO_CUSE);
 }
 
 static int cuse_open(struct inode *inode, struct file *file)
@@ -473,7 +475,7 @@ err:
 static void cuse_fc_release(struct fuse_conn *fc)
 {
 	struct cuse_conn *cc = fc_to_cc(fc);
-	kfree(cc);
+	kfree_rcu(cc, fc.rcu);
 }
 
 /**
@@ -501,7 +503,11 @@ static int cuse_channel_open(struct inode *inode, struct file *file)
 	if (!cc)
 		return -ENOMEM;
 
-	fuse_conn_init(&cc->fc);
+	/*
+	 * Limit the cuse channel to requests that can
+	 * be represented in file->f_cred->user_ns.
+	 */
+	fuse_conn_init(&cc->fc, file->f_cred->user_ns);
 
 	INIT_LIST_HEAD(&cc->list);
 	cc->fc.release = cuse_fc_release;

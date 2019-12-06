@@ -125,10 +125,7 @@ static void tty3270_resize_work(struct work_struct *work);
  */
 static void tty3270_set_timer(struct tty3270 *tp, int expires)
 {
-	if (expires == 0)
-		del_timer(&tp->timer);
-	else
-		mod_timer(&tp->timer, jiffies + expires);
+	mod_timer(&tp->timer, jiffies + expires);
 }
 
 /*
@@ -662,6 +659,10 @@ tty3270_irq(struct tty3270 *tp, struct raw3270_request *rq, struct irb *irb)
 		else
 			/* Normal end. Copy residual count. */
 			rq->rescnt = irb->scsw.cmd.count;
+	} else if (irb->scsw.cmd.dstat & DEV_STAT_DEV_END) {
+		/* Interrupt without an outstanding request -> update all */
+		tp->update_flags = TTY_UPDATE_ALL;
+		tty3270_set_timer(tp, 1);
 	}
 	return RAW3270_IO_DONE;
 }
@@ -744,7 +745,6 @@ tty3270_free_view(struct tty3270 *tp)
 {
 	int pages;
 
-	del_timer_sync(&tp->timer);
 	kbd_free(tp->kbd);
 	raw3270_request_free(tp->kreset);
 	raw3270_request_free(tp->read);
@@ -810,7 +810,7 @@ static void tty3270_resize_work(struct work_struct *work)
 	struct winsize ws;
 
 	screen = tty3270_alloc_screen(tp->n_rows, tp->n_cols);
-	if (!screen)
+	if (IS_ERR(screen))
 		return;
 	/* Switch to new output size */
 	spin_lock_bh(&tp->view.lock);
@@ -877,6 +877,7 @@ tty3270_free(struct raw3270_view *view)
 {
 	struct tty3270 *tp = container_of(view, struct tty3270, view);
 
+	del_timer_sync(&tp->timer);
 	tty3270_free_screen(tp->screen, tp->view.rows);
 	tty3270_free_view(tp);
 }
@@ -942,7 +943,7 @@ static int tty3270_install(struct tty_driver *driver, struct tty_struct *tty)
 		return rc;
 	}
 
-	tp->screen = tty3270_alloc_screen(tp->view.cols, tp->view.rows);
+	tp->screen = tty3270_alloc_screen(tp->view.rows, tp->view.cols);
 	if (IS_ERR(tp->screen)) {
 		rc = PTR_ERR(tp->screen);
 		raw3270_put_view(&tp->view);

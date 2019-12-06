@@ -42,13 +42,13 @@ typedef s32 dma_cookie_t;
 
 /**
  * enum dma_status - DMA transaction status
- * @DMA_SUCCESS: transaction completed successfully
+ * @DMA_COMPLETE: transaction completed
  * @DMA_IN_PROGRESS: transaction not yet processed
  * @DMA_PAUSED: transaction is paused
  * @DMA_ERROR: transaction failed
  */
 enum dma_status {
-	DMA_SUCCESS,
+	DMA_SUCCESS = 0, DMA_COMPLETE = 0,
 	DMA_IN_PROGRESS,
 	DMA_PAUSED,
 	DMA_ERROR,
@@ -371,6 +371,53 @@ struct dma_slave_config {
 	unsigned int slave_id;
 };
 
+/**
+ * enum dma_residue_granularity - Granularity of the reported transfer residue
+ * @DMA_RESIDUE_GRANULARITY_DESCRIPTOR: Residue reporting is not support. The
+ *  DMA channel is only able to tell whether a descriptor has been completed or
+ *  not, which means residue reporting is not supported by this channel. The
+ *  residue field of the dma_tx_state field will always be 0.
+ * @DMA_RESIDUE_GRANULARITY_SEGMENT: Residue is updated after each successfully
+ *  completed segment of the transfer (For cyclic transfers this is after each
+ *  period). This is typically implemented by having the hardware generate an
+ *  interrupt after each transferred segment and then the drivers updates the
+ *  outstanding residue by the size of the segment. Another possibility is if
+ *  the hardware supports scatter-gather and the segment descriptor has a field
+ *  which gets set after the segment has been completed. The driver then counts
+ *  the number of segments without the flag set to compute the residue.
+ * @DMA_RESIDUE_GRANULARITY_BURST: Residue is updated after each transferred
+ *  burst. This is typically only supported if the hardware has a progress
+ *  register of some sort (E.g. a register with the current read/write address
+ *  or a register with the amount of bursts/beats/bytes that have been
+ *  transferred or still need to be transferred).
+ */
+enum dma_residue_granularity {
+	DMA_RESIDUE_GRANULARITY_DESCRIPTOR = 0,
+	DMA_RESIDUE_GRANULARITY_SEGMENT = 1,
+	DMA_RESIDUE_GRANULARITY_BURST = 2,
+};
+
+/* struct dma_slave_caps - expose capabilities of a slave channel only
+ *
+ * @src_addr_widths: bit mask of src addr widths the channel supports
+ * @dst_addr_widths: bit mask of dstn addr widths the channel supports
+ * @directions: bit mask of slave direction the channel supported
+ * 	since the enum dma_transfer_direction is not defined as bits for each
+ * 	type of direction, the dma controller should fill (1 << <TYPE>) and same
+ * 	should be checked by controller as well
+ * @cmd_pause: true, if pause and thereby resume is supported
+ * @cmd_terminate: true, if terminate cmd is supported
+ * @residue_granularity: granularity of the reported transfer residue
+ */
+struct dma_slave_caps {
+	u32 src_addr_widths;
+	u32 dst_addr_widths;
+	u32 directions;
+	bool cmd_pause;
+	bool cmd_terminate;
+	enum dma_residue_granularity residue_granularity;
+};
+
 static inline const char *dma_chan_name(struct dma_chan *chan)
 {
 	return dev_name(&chan->dev->device);
@@ -392,6 +439,32 @@ void dma_chan_cleanup(struct kref *kref);
 typedef bool (*dma_filter_fn)(struct dma_chan *chan, void *filter_param);
 
 typedef void (*dma_async_tx_callback)(void *dma_async_param);
+
+enum dmaengine_tx_result {
+	DMA_TRANS_NOERROR = 0,		/* SUCCESS */
+	DMA_TRANS_READ_FAILED,		/* Source DMA read failed */
+	DMA_TRANS_WRITE_FAILED,		/* Destination DMA write failed */
+	DMA_TRANS_ABORTED,		/* Op never submitted / aborted */
+};
+
+struct dmaengine_result {
+	enum dmaengine_tx_result result;
+	u32 residue;
+};
+
+typedef void (*dma_async_tx_callback_result)(void *dma_async_param,
+				const struct dmaengine_result *result);
+
+struct dmaengine_unmap_data {
+	u8 to_cnt;
+	u8 from_cnt;
+	u8 bidi_cnt;
+	struct device *dev;
+	struct kref kref;
+	size_t len;
+	dma_addr_t addr[0];
+};
+
 /**
  * struct dma_async_tx_descriptor - async transaction descriptor
  * ---dma generic offload fields---
@@ -416,13 +489,49 @@ struct dma_async_tx_descriptor {
 	struct dma_chan *chan;
 	dma_cookie_t (*tx_submit)(struct dma_async_tx_descriptor *tx);
 	dma_async_tx_callback callback;
+	dma_async_tx_callback_result callback_result;
 	void *callback_param;
+	struct dmaengine_unmap_data *unmap;
 #ifdef CONFIG_ASYNC_TX_ENABLE_CHANNEL_SWITCH
 	struct dma_async_tx_descriptor *next;
 	struct dma_async_tx_descriptor *parent;
 	spinlock_t lock;
 #endif
 };
+
+#ifdef CONFIG_DMA_ENGINE
+static inline void dma_set_unmap(struct dma_async_tx_descriptor *tx,
+				 struct dmaengine_unmap_data *unmap)
+{
+	kref_get(&unmap->kref);
+	tx->unmap = unmap;
+}
+
+struct dmaengine_unmap_data *
+dmaengine_get_unmap_data(struct device *dev, int nr, gfp_t flags);
+void dmaengine_unmap_put(struct dmaengine_unmap_data *unmap);
+#else
+static inline void dma_set_unmap(struct dma_async_tx_descriptor *tx,
+				 struct dmaengine_unmap_data *unmap)
+{
+}
+static inline struct dmaengine_unmap_data *
+dmaengine_get_unmap_data(struct device *dev, int nr, gfp_t flags)
+{
+	return NULL;
+}
+static inline void dmaengine_unmap_put(struct dmaengine_unmap_data *unmap)
+{
+}
+#endif
+
+static inline void dma_descriptor_unmap(struct dma_async_tx_descriptor *tx)
+{
+	if (tx->unmap) {
+		dmaengine_unmap_put(tx->unmap);
+		tx->unmap = NULL;
+	}
+}
 
 #ifndef CONFIG_ASYNC_TX_ENABLE_CHANNEL_SWITCH
 static inline void txd_lock(struct dma_async_tx_descriptor *txd)
@@ -512,6 +621,14 @@ struct dma_tx_state {
  * @fill_align: alignment shift for memset operations
  * @dev_id: unique device ID
  * @dev: struct device reference for dma mapping api
+ * @src_addr_widths: bit mask of src addr widths the device supports
+ * @dst_addr_widths: bit mask of dst addr widths the device supports
+ * @directions: bit mask of slave direction the device supports since
+ * 	the enum dma_transfer_direction is not defined as bits for
+ * 	each type of direction, the dma controller should fill (1 <<
+ * 	<TYPE>) and same should be checked by controller as well
+ * @residue_granularity: granularity of the transfer residue reported
+ *	by tx_status
  * @device_alloc_chan_resources: allocate resources and return the
  *	number of allocated descriptors
  * @device_free_chan_resources: release DMA channel's resources
@@ -527,13 +644,22 @@ struct dma_tx_state {
  *	The function takes a buffer of size buf_len. The callback function will
  *	be called after period_len bytes have been transferred.
  * @device_prep_interleaved_dma: Transfer expression in a generic way.
+ * @device_config: Pushes a new configuration to a channel, return 0 or an error
+ *	code
  * @device_control: manipulate all pending operations on a channel, returns
  *	zero or error code
+ * @device_pause: Pauses any transfer happening on a channel. Returns
+ *	0 or an error code
+ * @device_resume: Resumes any transfer on a channel previously
+ *	paused. Returns 0 or an error code
+ * @device_terminate_all: Aborts all transfers on a channel. Returns 0
+ *	or an error code
  * @device_tx_status: poll for transaction completion, the optional
  *	txstate parameter can be supplied with a pointer to get a
  *	struct with auxiliary transfer status information, otherwise the call
  *	will just return a simple status code
  * @device_issue_pending: push pending transactions to hardware
+ * @device_slave_caps: return the slave channel capabilities
  */
 struct dma_device {
 
@@ -553,14 +679,19 @@ struct dma_device {
 	int dev_id;
 	struct device *dev;
 
+	u32 src_addr_widths;
+	u32 dst_addr_widths;
+	u32 directions;
+	enum dma_residue_granularity residue_granularity;
+
 	int (*device_alloc_chan_resources)(struct dma_chan *chan);
 	void (*device_free_chan_resources)(struct dma_chan *chan);
 
 	struct dma_async_tx_descriptor *(*device_prep_dma_memcpy)(
-		struct dma_chan *chan, dma_addr_t dest, dma_addr_t src,
+		struct dma_chan *chan, dma_addr_t dst, dma_addr_t src,
 		size_t len, unsigned long flags);
 	struct dma_async_tx_descriptor *(*device_prep_dma_xor)(
-		struct dma_chan *chan, dma_addr_t dest, dma_addr_t *src,
+		struct dma_chan *chan, dma_addr_t dst, dma_addr_t *src,
 		unsigned int src_cnt, size_t len, unsigned long flags);
 	struct dma_async_tx_descriptor *(*device_prep_dma_xor_val)(
 		struct dma_chan *chan, dma_addr_t *src,	unsigned int src_cnt,
@@ -595,13 +726,20 @@ struct dma_device {
 	struct dma_async_tx_descriptor *(*device_prep_interleaved_dma)(
 		struct dma_chan *chan, struct dma_interleaved_template *xt,
 		unsigned long flags);
+
+	int (*device_config)(struct dma_chan *chan,
+			     struct dma_slave_config *config);
 	int (*device_control)(struct dma_chan *chan, enum dma_ctrl_cmd cmd,
 		unsigned long arg);
+	int (*device_pause)(struct dma_chan *chan);
+	int (*device_resume)(struct dma_chan *chan);
+	int (*device_terminate_all)(struct dma_chan *chan);
 
 	enum dma_status (*device_tx_status)(struct dma_chan *chan,
 					    dma_cookie_t cookie,
 					    struct dma_tx_state *txstate);
 	void (*device_issue_pending)(struct dma_chan *chan);
+	int (*device_slave_caps)(struct dma_chan *chan, struct dma_slave_caps *caps);
 };
 
 static inline int dmaengine_device_control(struct dma_chan *chan,
@@ -617,6 +755,9 @@ static inline int dmaengine_device_control(struct dma_chan *chan,
 static inline int dmaengine_slave_config(struct dma_chan *chan,
 					  struct dma_slave_config *config)
 {
+	if (chan->device->device_config)
+		return chan->device->device_config(chan, config);
+
 	return dmaengine_device_control(chan, DMA_SLAVE_CONFIG,
 			(unsigned long)config);
 }
@@ -675,18 +816,62 @@ static inline struct dma_async_tx_descriptor *dmaengine_prep_interleaved_dma(
 	return chan->device->device_prep_interleaved_dma(chan, xt, flags);
 }
 
+static inline int dma_get_slave_caps(struct dma_chan *chan, struct dma_slave_caps *caps)
+{
+	struct dma_device *device;
+
+	if (!chan || !caps)
+		return -EINVAL;
+
+	device = chan->device;
+
+	/* check if the channel supports slave transactions */
+	if (!test_bit(DMA_SLAVE, device->cap_mask.bits))
+		return -ENXIO;
+
+	if (device->device_slave_caps)
+		return device->device_slave_caps(chan, caps);
+
+	/*
+	 * Check whether it reports it uses the generic slave
+	 * capabilities, if not, that means it doesn't support any
+	 * kind of slave capabilities reporting.
+	 */
+	if (!device->directions)
+		return -ENXIO;
+
+	caps->src_addr_widths = device->src_addr_widths;
+	caps->dst_addr_widths = device->dst_addr_widths;
+	caps->directions = device->directions;
+	caps->residue_granularity = device->residue_granularity;
+
+	caps->cmd_pause = !!device->device_pause;
+	caps->cmd_terminate = !!device->device_terminate_all;
+
+	return 0;
+}
+
 static inline int dmaengine_terminate_all(struct dma_chan *chan)
 {
+	if (chan->device->device_terminate_all)
+		return chan->device->device_terminate_all(chan);
+
 	return dmaengine_device_control(chan, DMA_TERMINATE_ALL, 0);
 }
 
 static inline int dmaengine_pause(struct dma_chan *chan)
 {
+	if (chan->device->device_pause)
+		return chan->device->device_pause(chan);
+
 	return dmaengine_device_control(chan, DMA_PAUSE, 0);
 }
 
 static inline int dmaengine_resume(struct dma_chan *chan)
 {
+	if (chan->device->device_resume)
+		return chan->device->device_resume(chan);
+
 	return dmaengine_device_control(chan, DMA_RESUME, 0);
 }
 
@@ -805,18 +990,6 @@ static inline void dmaengine_put(void)
 }
 #endif
 
-#ifdef CONFIG_NET_DMA
-#define net_dmaengine_get()	dmaengine_get()
-#define net_dmaengine_put()	dmaengine_put()
-#else
-static inline void net_dmaengine_get(void)
-{
-}
-static inline void net_dmaengine_put(void)
-{
-}
-#endif
-
 #ifdef CONFIG_ASYNC_TX_DMA
 #define async_dmaengine_get()	dmaengine_get()
 #define async_dmaengine_put()	dmaengine_put()
@@ -838,16 +1011,8 @@ async_dma_find_channel(enum dma_transaction_type type)
 	return NULL;
 }
 #endif /* CONFIG_ASYNC_TX_DMA */
-
-dma_cookie_t dma_async_memcpy_buf_to_buf(struct dma_chan *chan,
-	void *dest, void *src, size_t len);
-dma_cookie_t dma_async_memcpy_buf_to_pg(struct dma_chan *chan,
-	struct page *page, unsigned int offset, void *kdata, size_t len);
-dma_cookie_t dma_async_memcpy_pg_to_pg(struct dma_chan *chan,
-	struct page *dest_pg, unsigned int dest_off, struct page *src_pg,
-	unsigned int src_off, size_t len);
 void dma_async_tx_descriptor_init(struct dma_async_tx_descriptor *tx,
-	struct dma_chan *chan);
+				  struct dma_chan *chan);
 
 static inline void async_tx_ack(struct dma_async_tx_descriptor *tx)
 {
@@ -945,10 +1110,10 @@ static inline enum dma_status dma_async_is_complete(dma_cookie_t cookie,
 {
 	if (last_complete <= last_used) {
 		if ((cookie <= last_complete) || (cookie > last_used))
-			return DMA_SUCCESS;
+			return DMA_COMPLETE;
 	} else {
 		if ((cookie <= last_complete) && (cookie > last_used))
-			return DMA_SUCCESS;
+			return DMA_COMPLETE;
 	}
 	return DMA_IN_PROGRESS;
 }
@@ -974,7 +1139,7 @@ void dma_release_channel(struct dma_chan *chan);
 #else
 static inline enum dma_status dma_wait_for_async_tx(struct dma_async_tx_descriptor *tx)
 {
-	return DMA_SUCCESS;
+	return DMA_COMPLETE;
 }
 static inline void dma_issue_pending_all(void)
 {

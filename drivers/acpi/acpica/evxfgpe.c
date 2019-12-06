@@ -41,7 +41,8 @@
  * POSSIBILITY OF SUCH DAMAGES.
  */
 
-#include <linux/export.h>
+#define EXPORT_ACPI_INTERFACES
+
 #include <acpi/acpi.h>
 #include "accommon.h"
 #include "acevents.h"
@@ -258,7 +259,7 @@ acpi_setup_gpe_for_wake(acpi_handle wake_device,
 	 * known as an "implicit notify". Note: The GPE is assumed to be
 	 * level-triggered (for windows compatibility).
 	 */
-	if ((gpe_event_info->flags & ACPI_GPE_DISPATCH_MASK) ==
+	if (ACPI_GPE_DISPATCH_TYPE(gpe_event_info->flags) ==
 	    ACPI_GPE_DISPATCH_NONE) {
 		/*
 		 * This is the first device for implicit notify on this GPE.
@@ -266,13 +267,21 @@ acpi_setup_gpe_for_wake(acpi_handle wake_device,
 		 */
 		gpe_event_info->flags =
 		    (ACPI_GPE_DISPATCH_NOTIFY | ACPI_GPE_LEVEL_TRIGGERED);
+	} else if (gpe_event_info->flags & ACPI_GPE_AUTO_ENABLED) {
+		/*
+		 * A reference to this GPE has been added during the GPE block
+		 * initialization, so drop it now to prevent the GPE from being
+		 * permanently enabled and clear its ACPI_GPE_AUTO_ENABLED flag.
+		 */
+		(void)acpi_ev_remove_gpe_reference(gpe_event_info);
+		gpe_event_info->flags &= ~ACPI_GPE_AUTO_ENABLED;
 	}
 
 	/*
 	 * If we already have an implicit notify on this GPE, add
 	 * this device to the notify list.
 	 */
-	if ((gpe_event_info->flags & ACPI_GPE_DISPATCH_MASK) ==
+	if (ACPI_GPE_DISPATCH_TYPE(gpe_event_info->flags) ==
 	    ACPI_GPE_DISPATCH_NOTIFY) {
 
 		/* Ensure that the device is not already in the list */
@@ -310,6 +319,47 @@ unlock_and_exit:
 	return_ACPI_STATUS(status);
 }
 ACPI_EXPORT_SYMBOL(acpi_setup_gpe_for_wake)
+
+/*******************************************************************************
+ *
+ * FUNCTION:    acpi_mask_gpe
+ *
+ * PARAMETERS:  gpe_device          - Parent GPE Device. NULL for GPE0/GPE1
+ *              gpe_number          - GPE level within the GPE block
+ *              is_masked           - Whether the GPE is masked or not
+ *
+ * RETURN:      Status
+ *
+ * DESCRIPTION: Unconditionally mask/unmask the an individual GPE, ex., to
+ *              prevent a GPE flooding.
+ *
+ ******************************************************************************/
+acpi_status acpi_mask_gpe(acpi_handle gpe_device, u32 gpe_number, u8 is_masked)
+{
+	struct acpi_gpe_event_info *gpe_event_info;
+	acpi_status status;
+	acpi_cpu_flags flags;
+
+	ACPI_FUNCTION_TRACE(acpi_mask_gpe);
+
+	flags = acpi_os_acquire_lock(acpi_gbl_gpe_lock);
+
+	/* Ensure that we have a valid GPE number */
+
+	gpe_event_info = acpi_ev_get_gpe_event_info(gpe_device, gpe_number);
+	if (!gpe_event_info) {
+		status = AE_BAD_PARAMETER;
+		goto unlock_and_exit;
+	}
+
+	status = acpi_ev_mask_gpe(gpe_event_info, is_masked);
+
+unlock_and_exit:
+	acpi_os_release_lock(acpi_gbl_gpe_lock, flags);
+	return_ACPI_STATUS(status);
+}
+
+ACPI_EXPORT_SYMBOL(acpi_mask_gpe)
 
 /*******************************************************************************
  *
@@ -366,16 +416,21 @@ acpi_set_gpe_wake_mask(acpi_handle gpe_device, u32 gpe_number, u8 action)
 
 	switch (action) {
 	case ACPI_GPE_ENABLE:
+
 		ACPI_SET_BIT(gpe_register_info->enable_for_wake,
 			     (u8)register_bit);
+		gpe_event_info->disable_for_dispatch = FALSE;
 		break;
 
 	case ACPI_GPE_DISABLE:
+
 		ACPI_CLEAR_BIT(gpe_register_info->enable_for_wake,
 			       (u8)register_bit);
+		gpe_event_info->disable_for_dispatch = TRUE;
 		break;
 
 	default:
+
 		ACPI_ERROR((AE_INFO, "%u, Invalid action", action));
 		status = AE_BAD_PARAMETER;
 		break;
@@ -465,8 +520,8 @@ acpi_get_gpe_status(acpi_handle gpe_device,
 
 	status = acpi_hw_get_gpe_status(gpe_event_info, event_status);
 
-	if (gpe_event_info->flags & ACPI_GPE_DISPATCH_MASK)
-		*event_status |= ACPI_EVENT_FLAG_HANDLE;
+	if (ACPI_GPE_DISPATCH_TYPE(gpe_event_info->flags))
+		*event_status |= ACPI_EVENT_FLAG_ENABLE_SET;
 
       unlock_and_exit:
 	acpi_os_release_lock(acpi_gbl_gpe_lock, flags);

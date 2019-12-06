@@ -244,9 +244,9 @@ static void disable_bearer(struct tipc_bearer *tb_ptr)
  * specified device.
  */
 static int recv_notification(struct notifier_block *nb, unsigned long evt,
-			     void *dv)
+			     void *ptr)
 {
-	struct net_device *dev = (struct net_device *)dv;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct ib_bearer *ib_ptr = &ib_bearers[0];
 	struct ib_bearer *stop = &ib_bearers[MAX_IB_BEARERS];
 
@@ -367,7 +367,7 @@ int tipc_ib_media_start(void)
 	if (res)
 		return res;
 
-	res = register_netdevice_notifier(&notifier);
+	res = register_netdevice_notifier_rh(&notifier);
 	if (!res)
 		ib_started = 1;
 	return res;
@@ -382,6 +382,6 @@ void tipc_ib_media_stop(void)
 		return;
 
 	flush_scheduled_work();
-	unregister_netdevice_notifier(&notifier);
+	unregister_netdevice_notifier_rh(&notifier);
 	ib_started = 0;
 }

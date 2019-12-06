@@ -1,9 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright 2002-2004, Instant802 Networks, Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef TKIP_H
@@ -12,8 +9,6 @@
 #include <linux/types.h>
 #include <linux/crypto.h>
 #include "key.h"
-
-u8 *ieee80211_tkip_add_iv(u8 *pos, struct ieee80211_key *key);
 
 int ieee80211_tkip_encrypt_data(struct crypto_cipher *tfm,
 				struct ieee80211_key *key,

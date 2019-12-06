@@ -807,8 +807,7 @@ ip_vs_conn_fill_param_sync(struct net *net, int af, union ip_vs_sync_conn *sc,
 
 		p->pe_data = kmemdup(pe_data, pe_data_len, GFP_ATOMIC);
 		if (!p->pe_data) {
-			if (p->pe->module)
-				module_put(p->pe->module);
+			module_put(p->pe->module);
 			return -ENOMEM;
 		}
 		p->pe_data_len = pe_data_len;
@@ -833,10 +832,27 @@ static void ip_vs_proc_conn(struct net *net, struct ip_vs_conn_param *param,
 	struct ip_vs_conn *cp;
 	struct netns_ipvs *ipvs = net_ipvs(net);
 
-	if (!(flags & IP_VS_CONN_F_TEMPLATE))
+	if (!(flags & IP_VS_CONN_F_TEMPLATE)) {
 		cp = ip_vs_conn_in_get(param);
-	else
+		if (cp && ((cp->dport != dport) ||
+			   !ip_vs_addr_equal(cp->af, &cp->daddr, daddr))) {
+			if (!(flags & IP_VS_CONN_F_INACTIVE)) {
+				ip_vs_conn_expire_now(cp);
+				__ip_vs_conn_put(cp);
+				cp = NULL;
+			} else {
+				/* This is the expiration message for the
+				 * connection that was already replaced, so we
+				 * just ignore it.
+				 */
+				__ip_vs_conn_put(cp);
+				kfree(param->pe_data);
+				return;
+			}
+		}
+	} else {
 		cp = ip_vs_ct_in_get(param);
+	}
 
 	if (cp) {
 		/* Free pe_data */
@@ -1367,9 +1383,11 @@ join_mcast_group(struct sock *sk, struct in_addr *addr, char *ifname)
 
 	mreq.imr_ifindex = dev->ifindex;
 
+	rtnl_lock();
 	lock_sock(sk);
 	ret = ip_mc_join_group(sk, &mreq);
 	release_sock(sk);
+	rtnl_unlock();
 
 	return ret;
 }

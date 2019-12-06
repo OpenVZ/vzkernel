@@ -39,6 +39,11 @@ enum backlight_type {
 	BACKLIGHT_TYPE_MAX,
 };
 
+enum backlight_notification {
+	BACKLIGHT_REGISTERED,
+	BACKLIGHT_UNREGISTERED,
+};
+
 struct backlight_device;
 struct fb_info;
 
@@ -101,6 +106,16 @@ struct backlight_device {
 	struct notifier_block fb_notif;
 
 	struct device dev;
+
+#ifndef __GENKSYMS__
+	/*
+	 * Currently used only by acpi_video driver through
+	 * backlight_device_registered.
+	 */
+
+	/* list entry of all registered backlight devices */
+	struct list_head entry;
+#endif
 };
 
 static inline void backlight_update_status(struct backlight_device *bd)
@@ -117,6 +132,9 @@ extern struct backlight_device *backlight_device_register(const char *name,
 extern void backlight_device_unregister(struct backlight_device *bd);
 extern void backlight_force_update(struct backlight_device *bd,
 				   enum backlight_update_reason reason);
+extern bool backlight_device_registered(enum backlight_type type);
+extern int backlight_register_notifier(struct notifier_block *nb);
+extern int backlight_unregister_notifier(struct notifier_block *nb);
 
 #define to_backlight_device(obj) container_of(obj, struct backlight_device, dev)
 

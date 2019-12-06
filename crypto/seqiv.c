@@ -100,7 +100,7 @@ static int seqiv_givencrypt(struct skcipher_givcrypt_request *req)
 	struct crypto_ablkcipher *geniv = skcipher_givcrypt_reqtfm(req);
 	struct seqiv_ctx *ctx = crypto_ablkcipher_ctx(geniv);
 	struct ablkcipher_request *subreq = skcipher_givcrypt_reqctx(req);
-	crypto_completion_t complete;
+	crypto_completion_t compl;
 	void *data;
 	u8 *info;
 	unsigned int ivsize;
@@ -108,7 +108,7 @@ static int seqiv_givencrypt(struct skcipher_givcrypt_request *req)
 
 	ablkcipher_request_set_tfm(subreq, skcipher_geniv_cipher(geniv));
 
-	complete = req->creq.base.complete;
+	compl = req->creq.base.complete;
 	data = req->creq.base.data;
 	info = req->creq.info;
 
@@ -122,11 +122,11 @@ static int seqiv_givencrypt(struct skcipher_givcrypt_request *req)
 		if (!info)
 			return -ENOMEM;
 
-		complete = seqiv_complete;
+		compl = seqiv_complete;
 		data = req;
 	}
 
-	ablkcipher_request_set_callback(subreq, req->creq.base.flags, complete,
+	ablkcipher_request_set_callback(subreq, req->creq.base.flags, compl,
 					data);
 	ablkcipher_request_set_crypt(subreq, req->creq.src, req->creq.dst,
 				     req->creq.nbytes, info);
@@ -146,7 +146,7 @@ static int seqiv_aead_givencrypt(struct aead_givcrypt_request *req)
 	struct seqiv_ctx *ctx = crypto_aead_ctx(geniv);
 	struct aead_request *areq = &req->areq;
 	struct aead_request *subreq = aead_givcrypt_reqctx(req);
-	crypto_completion_t complete;
+	crypto_completion_t compl;
 	void *data;
 	u8 *info;
 	unsigned int ivsize;
@@ -154,7 +154,7 @@ static int seqiv_aead_givencrypt(struct aead_givcrypt_request *req)
 
 	aead_request_set_tfm(subreq, aead_geniv_base(geniv));
 
-	complete = areq->base.complete;
+	compl = areq->base.complete;
 	data = areq->base.data;
 	info = areq->iv;
 
@@ -168,11 +168,11 @@ static int seqiv_aead_givencrypt(struct aead_givcrypt_request *req)
 		if (!info)
 			return -ENOMEM;
 
-		complete = seqiv_aead_complete;
+		compl = seqiv_aead_complete;
 		data = req;
 	}
 
-	aead_request_set_callback(subreq, areq->base.flags, complete, data);
+	aead_request_set_callback(subreq, areq->base.flags, compl, data);
 	aead_request_set_crypt(subreq, areq->src, areq->dst, areq->cryptlen,
 			       info);
 	aead_request_set_assoc(subreq, areq->assoc, areq->assoclen);
@@ -186,52 +186,6 @@ static int seqiv_aead_givencrypt(struct aead_givcrypt_request *req)
 	return err;
 }
 
-static int seqiv_givencrypt_first(struct skcipher_givcrypt_request *req)
-{
-	struct crypto_ablkcipher *geniv = skcipher_givcrypt_reqtfm(req);
-	struct seqiv_ctx *ctx = crypto_ablkcipher_ctx(geniv);
-	int err = 0;
-
-	spin_lock_bh(&ctx->lock);
-	if (crypto_ablkcipher_crt(geniv)->givencrypt != seqiv_givencrypt_first)
-		goto unlock;
-
-	crypto_ablkcipher_crt(geniv)->givencrypt = seqiv_givencrypt;
-	err = crypto_rng_get_bytes(crypto_default_rng, ctx->salt,
-				   crypto_ablkcipher_ivsize(geniv));
-
-unlock:
-	spin_unlock_bh(&ctx->lock);
-
-	if (err)
-		return err;
-
-	return seqiv_givencrypt(req);
-}
-
-static int seqiv_aead_givencrypt_first(struct aead_givcrypt_request *req)
-{
-	struct crypto_aead *geniv = aead_givcrypt_reqtfm(req);
-	struct seqiv_ctx *ctx = crypto_aead_ctx(geniv);
-	int err = 0;
-
-	spin_lock_bh(&ctx->lock);
-	if (crypto_aead_crt(geniv)->givencrypt != seqiv_aead_givencrypt_first)
-		goto unlock;
-
-	crypto_aead_crt(geniv)->givencrypt = seqiv_aead_givencrypt;
-	err = crypto_rng_get_bytes(crypto_default_rng, ctx->salt,
-				   crypto_aead_ivsize(geniv));
-
-unlock:
-	spin_unlock_bh(&ctx->lock);
-
-	if (err)
-		return err;
-
-	return seqiv_aead_givencrypt(req);
-}
-
 static int seqiv_init(struct crypto_tfm *tfm)
 {
 	struct crypto_ablkcipher *geniv = __crypto_ablkcipher_cast(tfm);
@@ -241,7 +195,9 @@ static int seqiv_init(struct crypto_tfm *tfm)
 
 	tfm->crt_ablkcipher.reqsize = sizeof(struct ablkcipher_request);
 
-	return skcipher_geniv_init(tfm);
+	return crypto_rng_get_bytes(crypto_default_rng, ctx->salt,
+				    crypto_ablkcipher_ivsize(geniv)) ?:
+	       skcipher_geniv_init(tfm);
 }
 
 static int seqiv_aead_init(struct crypto_tfm *tfm)
@@ -253,7 +209,9 @@ static int seqiv_aead_init(struct crypto_tfm *tfm)
 
 	tfm->crt_aead.reqsize = sizeof(struct aead_request);
 
-	return aead_geniv_init(tfm);
+	return crypto_rng_get_bytes(crypto_default_rng, ctx->salt,
+				    crypto_aead_ivsize(geniv)) ?:
+	       aead_geniv_init(tfm);
 }
 
 static struct crypto_template seqiv_tmpl;
@@ -267,7 +225,7 @@ static struct crypto_instance *seqiv_ablkcipher_alloc(struct rtattr **tb)
 	if (IS_ERR(inst))
 		goto out;
 
-	inst->alg.cra_ablkcipher.givencrypt = seqiv_givencrypt_first;
+	inst->alg.cra_ablkcipher.givencrypt = seqiv_givencrypt;
 
 	inst->alg.cra_init = seqiv_init;
 	inst->alg.cra_exit = skcipher_geniv_exit;
@@ -287,7 +245,7 @@ static struct crypto_instance *seqiv_aead_alloc(struct rtattr **tb)
 	if (IS_ERR(inst))
 		goto out;
 
-	inst->alg.cra_aead.givencrypt = seqiv_aead_givencrypt_first;
+	inst->alg.cra_aead.givencrypt = seqiv_aead_givencrypt;
 
 	inst->alg.cra_init = seqiv_aead_init;
 	inst->alg.cra_exit = aead_geniv_exit;
@@ -362,3 +320,4 @@ module_exit(seqiv_module_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Sequence Number IV Generator");
+MODULE_ALIAS_CRYPTO("seqiv");

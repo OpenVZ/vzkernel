@@ -23,7 +23,8 @@ comment "Crypto core or helper"
 
 config CRYPTO_FIPS
 	bool "FIPS 200 compliance"
-	depends on CRYPTO_ANSI_CPRNG && !CRYPTO_MANAGER_DISABLE_TESTS
+	depends on (CRYPTO_ANSI_CPRNG || CRYPTO_DRBG) && !CRYPTO_MANAGER_DISABLE_TESTS
+	depends on MODULE_SIG
 	help
 	  This options enables the fips boot option which is
 	  required if you want to system to operate in a FIPS 200
@@ -86,6 +87,54 @@ config CRYPTO_PCOMP2
 	tristate
 	select CRYPTO_ALGAPI2
 
+config CRYPTO_AKCIPHER2
+	tristate
+	select CRYPTO_ALGAPI2
+
+config CRYPTO_AKCIPHER
+	tristate
+	select CRYPTO_AKCIPHER2
+	select CRYPTO_ALGAPI
+
+config CRYPTO_KPP2
+	tristate
+	select CRYPTO_ALGAPI2
+
+config CRYPTO_KPP
+	tristate
+	select CRYPTO_ALGAPI
+	select CRYPTO_KPP2
+
+config CRYPTO_ACOMP2
+	tristate
+	select CRYPTO_ALGAPI2
+
+config CRYPTO_ACOMP
+	tristate
+	select CRYPTO_ALGAPI
+	select CRYPTO_ACOMP2
+
+config CRYPTO_RSA
+	tristate "RSA algorithm"
+	select AKCIPHER
+	select MPILIB
+	select ASN1
+	help
+	  Generic implementation of the RSA public key algorithm.
+
+config CRYPTO_DH
+	tristate "Diffie-Hellman algorithm"
+	select CRYPTO_KPP
+	select MPILIB
+	help
+	  Generic implementation of the Diffie-Hellman algorithm.
+
+config CRYPTO_ECDH
+	tristate "ECDH algorithm"
+	select CRYTPO_KPP
+	help
+	  Generic implementation of the ECDH algorithm
+
 config CRYPTO_MANAGER
 	tristate "Cryptographic algorithm manager"
 	select CRYPTO_MANAGER2
@@ -99,6 +148,9 @@ config CRYPTO_MANAGER2
 	select CRYPTO_HASH2
 	select CRYPTO_BLKCIPHER2
 	select CRYPTO_PCOMP2
+	select CRYPTO_AKCIPHER2
+	select CRYPTO_KPP2
+	select CRYPTO_ACOMP2
 
 config CRYPTO_USER
 	tristate "Userspace cryptographic algorithm configuration"
@@ -156,6 +208,20 @@ config CRYPTO_CRYPTD
 	  This is a generic software asynchronous crypto daemon that
 	  converts an arbitrary synchronous software crypto algorithm
 	  into an asynchronous algorithm that executes in a kernel thread.
+
+config CRYPTO_MCRYPTD
+	tristate "Software async multi-buffer crypto daemon"
+	select CRYPTO_BLKCIPHER
+	select CRYPTO_HASH
+	select CRYPTO_MANAGER
+	select CRYPTO_WORKQUEUE
+	help
+	  This is a generic software asynchronous crypto daemon that
+	  provides the kernel thread to assist multi-buffer crypto
+	  algorithms for submitting jobs and flushing jobs in multi-buffer
+	  crypto algorithms.  Multi-buffer crypto algorithms are executed
+	  in the context of this kernel thread and drivers can post
+	  their crypto request asyncrhously and process by this daemon.
 
 config CRYPTO_AUTHENC
 	tristate "Authenc support"
@@ -376,6 +442,25 @@ config CRYPTO_CRC32_PCLMUL
 	  which will enable any routine to use the CRC-32-IEEE 802.3 checksum
 	  and gain better performance as compared with the table implementation.
 
+config CRYPTO_CRCT10DIF
+	tristate "CRCT10DIF algorithm"
+	select CRYPTO_HASH
+	help
+	  CRC T10 Data Integrity Field computation is being cast as
+	  a crypto transform.  This allows for faster crc t10 diff
+	  transforms to be used if they are available.
+
+config CRYPTO_CRCT10DIF_PCLMUL
+	tristate "CRCT10DIF PCLMULQDQ hardware acceleration"
+	depends on X86 && 64BIT && CRC_T10DIF
+	select CRYPTO_HASH
+	help
+	  For x86_64 processors with SSE4.2 and PCLMULQDQ supported,
+	  CRC T10 DIF PCLMULQDQ computation can be hardware
+	  accelerated PCLMULQDQ instruction. This option will create
+	  'crct10dif-plcmul' module, which is faster when computing the
+	  crct10dif checksum as compared with the generic table implementation.
+
 config CRYPTO_GHASH
 	tristate "GHASH digest algorithm"
 	select CRYPTO_GF128MUL
@@ -473,17 +558,18 @@ config CRYPTO_SHA1
 	  SHA-1 secure hash standard (FIPS 180-1/DFIPS 180-2).
 
 config CRYPTO_SHA1_SSSE3
-	tristate "SHA1 digest algorithm (SSSE3/AVX)"
+	tristate "SHA1 digest algorithm (SSSE3/AVX/AVX2/SHA-NI)"
 	depends on X86 && 64BIT
 	select CRYPTO_SHA1
 	select CRYPTO_HASH
 	help
 	  SHA-1 secure hash standard (FIPS 180-1/DFIPS 180-2) implemented
 	  using Supplemental SSE3 (SSSE3) instructions or Advanced Vector
-	  Extensions (AVX), when available.
+	  Extensions (AVX/AVX2) or SHA-NI(SHA Extensions New Instructions),
+	  when available.
 
 config CRYPTO_SHA256_SSSE3
-	tristate "SHA256 digest algorithm (SSSE3/AVX/AVX2)"
+	tristate "SHA256 digest algorithm (SSSE3/AVX/AVX2/SHA-NI)"
 	depends on X86 && 64BIT
 	select CRYPTO_SHA256
 	select CRYPTO_HASH
@@ -491,7 +577,8 @@ config CRYPTO_SHA256_SSSE3
 	  SHA-256 secure hash standard (DFIPS 180-2) implemented
 	  using Supplemental SSE3 (SSSE3) instructions, or Advanced Vector
 	  Extensions version 1 (AVX1), or Advanced Vector Extensions
-	  version 2 (AVX2) instructions, when available.
+	  version 2 (AVX2) instructions, or SHA-NI (SHA Extensions New
+	  Instructions) when available.
 
 config CRYPTO_SHA512_SSSE3
 	tristate "SHA512 digest algorithm (SSSE3/AVX/AVX2)"
@@ -528,6 +615,54 @@ config CRYPTO_SHA1_PPC
 	help
 	  This is the powerpc hardware accelerated implementation of the
 	  SHA-1 secure hash standard (FIPS 180-1/DFIPS 180-2).
+
+config CRYPTO_SHA1_MB
+	tristate "SHA1 digest algorithm (x86_64 Multi-Buffer, Experimental)"
+	depends on X86 && 64BIT
+	select CRYPTO_SHA1
+	select CRYPTO_HASH
+	select CRYPTO_MCRYPTD
+	help
+	  SHA-1 secure hash standard (FIPS 180-1/DFIPS 180-2) implemented
+	  using multi-buffer technique.  This algorithm computes on
+	  multiple data lanes concurrently with SIMD instructions for
+	  better throughput.  It should not be enabled by default but
+	  used when there is significant amount of work to keep the keep
+	  the data lanes filled to get performance benefit.  If the data
+	  lanes remain unfilled, a flush operation will be initiated to
+	  process the crypto jobs, adding a slight latency.
+
+config CRYPTO_SHA256_MB
+	tristate "SHA256 digest algorithm (x86_64 Multi-Buffer, Experimental)"
+	depends on X86 && 64BIT
+	select CRYPTO_SHA256
+	select CRYPTO_HASH
+	select CRYPTO_MCRYPTD
+	help
+	  SHA-256 secure hash standard (FIPS 180-1/DFIPS 180-2) implemented
+	  using multi-buffer technique.  This algorithm computes on
+	  multiple data lanes concurrently with SIMD instructions for
+	  better throughput.  It should not be enabled by default but
+	  used when there is significant amount of work to keep the keep
+	  the data lanes filled to get performance benefit.  If the data
+	  lanes remain unfilled, a flush operation will be initiated to
+	  process the crypto jobs, adding a slight latency.
+
+config CRYPTO_SHA512_MB
+        tristate "SHA512 digest algorithm (x86_64 Multi-Buffer, Experimental)"
+        depends on X86 && 64BIT
+        select CRYPTO_SHA512
+        select CRYPTO_HASH
+        select CRYPTO_MCRYPTD
+        help
+          SHA-512 secure hash standard (FIPS 180-1/DFIPS 180-2) implemented
+          using multi-buffer technique.  This algorithm computes on
+          multiple data lanes concurrently with SIMD instructions for
+          better throughput.  It should not be enabled by default but
+          used when there is significant amount of work to keep the keep
+          the data lanes filled to get performance benefit.  If the data
+          lanes remain unfilled, a flush operation will be initiated to
+          process the crypto jobs, adding a slight latency.
 
 config CRYPTO_SHA256
 	tristate "SHA224 and SHA256 digest algorithm"
@@ -1327,6 +1462,7 @@ comment "Compression"
 config CRYPTO_DEFLATE
 	tristate "Deflate compression algorithm"
 	select CRYPTO_ALGAPI
+	select CRYPTO_ACOMP2
 	select ZLIB_INFLATE
 	select ZLIB_DEFLATE
 	help
@@ -1354,10 +1490,9 @@ config CRYPTO_LZO
 
 config CRYPTO_842
 	tristate "842 compression algorithm"
-	depends on CRYPTO_DEV_NX_COMPRESS
-	# 842 uses lzo if the hardware becomes unavailable
-	select LZO_COMPRESS
-	select LZO_DECOMPRESS
+	select CRYPTO_ALGAPI
+	select 842_COMPRESS
+	select 842_DECOMPRESS
 	help
 	  This is the 842 algorithm.
 
@@ -1373,6 +1508,50 @@ config CRYPTO_ANSI_CPRNG
 	  for cryptographic modules.  Uses the Algorithm specified in
 	  ANSI X9.31 A.2.4. Note that this option must be enabled if
 	  CRYPTO_FIPS is selected
+
+menuconfig CRYPTO_DRBG_MENU
+	tristate "NIST SP800-90A DRBG"
+	help
+	  NIST SP800-90A compliant DRBG. In the following submenu, one or
+	  more of the DRBG types must be selected.
+
+if CRYPTO_DRBG_MENU
+
+config CRYPTO_DRBG_HMAC
+	bool "Enable HMAC DRBG"
+	default y
+	select CRYPTO_HMAC
+	help
+	  Enable the HMAC DRBG variant as defined in NIST SP800-90A.
+
+config CRYPTO_DRBG_HASH
+	bool "Enable Hash DRBG"
+	select CRYPTO_HASH
+	help
+	  Enable the Hash DRBG variant as defined in NIST SP800-90A.
+
+config CRYPTO_DRBG_CTR
+	bool "Enable CTR DRBG"
+	select CRYPTO_AES
+	help
+	  Enable the CTR DRBG variant as defined in NIST SP800-90A.
+
+config CRYPTO_DRBG
+	tristate
+	default CRYPTO_DRBG_MENU if (CRYPTO_DRBG_HMAC || CRYPTO_DRBG_HASH || CRYPTO_DRBG_CTR)
+	select CRYPTO_RNG
+	select CRYPTO_JITTERENTROPY
+
+endif	# if CRYPTO_DRBG_MENU
+
+config CRYPTO_JITTERENTROPY
+	tristate "Jitterentropy Non-Deterministic Random Number Generator"
+	help
+	  The Jitterentropy RNG is a noise that is intended
+	  to provide seed to another RNG. The RNG does not
+	  perform any cryptographic whitening of the generated
+	  random numbers. This Jitterentropy RNG registers with
+	  the kernel crypto API and can be used by any caller.
 
 config CRYPTO_USER_API
 	tristate
@@ -1394,6 +1573,18 @@ config CRYPTO_USER_API_SKCIPHER
 	help
 	  This option enables the user-spaces interface for symmetric
 	  key cipher algorithms.
+
+config CRYPTO_USER_API_RNG
+	tristate "User-space interface for random number generator algorithms"
+	depends on NET
+	select CRYPTO_RNG
+	select CRYPTO_USER_API
+	help
+	  This option enables the user-spaces interface for random
+	  number generator algorithms.
+
+config CRYPTO_HASH_INFO
+	bool
 
 source "drivers/crypto/Kconfig"
 source crypto/asymmetric_keys/Kconfig

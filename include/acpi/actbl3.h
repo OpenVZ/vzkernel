@@ -51,7 +51,8 @@
  * These tables are not consumed directly by the ACPICA subsystem, but are
  * included here to support device drivers and the AML disassembler.
  *
- * The tables in this file are fully defined within the ACPI specification.
+ * In general, the tables in this file are fully defined within the ACPI
+ * specification.
  *
  ******************************************************************************/
 
@@ -68,7 +69,6 @@
 #define ACPI_SIG_PCCT           "PCCT"	/* Platform Communications Channel Table */
 #define ACPI_SIG_PMTT           "PMTT"	/* Platform Memory Topology Table */
 #define ACPI_SIG_RASF           "RASF"	/* RAS Feature table */
-#define ACPI_SIG_TPM2           "TPM2"	/* Trusted Platform Module 2.0 H/W interface table */
 
 #define ACPI_SIG_S3PT           "S3PT"	/* S3 Performance (sub)Table */
 #define ACPI_SIG_PCCS           "PCC"	/* PCC Shared Memory Region */
@@ -374,16 +374,24 @@ struct acpi_mpst_shared {
 struct acpi_table_pcct {
 	struct acpi_table_header header;	/* Common ACPI table header */
 	u32 flags;
-	u32 latency;
-	u32 reserved;
+	u64 reserved;
 };
 
 /* Values for Flags field above */
 
 #define ACPI_PCCT_DOORBELL              1
 
+/* Values for subtable type in struct acpi_subtable_header */
+
+enum acpi_pcct_type {
+	ACPI_PCCT_TYPE_GENERIC_SUBSPACE = 0,
+	ACPI_PCCT_TYPE_HW_REDUCED_SUBSPACE = 1,
+	ACPI_PCCT_TYPE_HW_REDUCED_SUBSPACE_TYPE2 = 2,	/* ACPI 6.1 */
+	ACPI_PCCT_TYPE_RESERVED = 3	/* 3 and greater are reserved */
+};
+
 /*
- * PCCT subtables
+ * PCCT Subtables, correspond to Type in struct acpi_subtable_header
  */
 
 /* 0: Generic Communications Subspace */
@@ -396,7 +404,52 @@ struct acpi_pcct_subspace {
 	struct acpi_generic_address doorbell_register;
 	u64 preserve_mask;
 	u64 write_mask;
+	u32 latency;
+	u32 max_access_rate;
+	u16 min_turnaround_time;
 };
+
+/* 1: HW-reduced Communications Subspace (ACPI 5.1) */
+
+struct acpi_pcct_hw_reduced {
+	struct acpi_subtable_header header;
+	u32 doorbell_interrupt;
+	u8 flags;
+	u8 reserved;
+	u64 base_address;
+	u64 length;
+	struct acpi_generic_address doorbell_register;
+	u64 preserve_mask;
+	u64 write_mask;
+	u32 latency;
+	u32 max_access_rate;
+	u16 min_turnaround_time;
+};
+
+/* 2: HW-reduced Communications Subspace Type 2 (ACPI 6.1) */
+
+struct acpi_pcct_hw_reduced_type2 {
+	struct acpi_subtable_header header;
+	u32 doorbell_interrupt;
+	u8 flags;
+	u8 reserved;
+	u64 base_address;
+	u64 length;
+	struct acpi_generic_address doorbell_register;
+	u64 preserve_mask;
+	u64 write_mask;
+	u32 latency;
+	u32 max_access_rate;
+	u16 min_turnaround_time;
+	struct acpi_generic_address doorbell_ack_register;
+	u64 ack_preserve_mask;
+	u64 ack_write_mask;
+};
+
+/* Values for doorbell flags above */
+
+#define ACPI_PCCT_INTERRUPT_POLARITY    (1)
+#define ACPI_PCCT_INTERRUPT_MODE        (1<<1)
 
 /*
  * PCC memory structures (not part of the ACPI table)
@@ -582,36 +635,6 @@ enum acpi_rasf_status {
 #define ACPI_RASF_SCI_DOORBELL          (1<<1)
 #define ACPI_RASF_ERROR                 (1<<2)
 #define ACPI_RASF_STATUS                (0x1F<<3)
-
-/*******************************************************************************
- *
- * TPM2 - Trusted Platform Module (TPM) 2.0 Hardware Interface Table
- *        Version 3
- *
- * Conforms to "TPM 2.0 Hardware Interface Table (TPM2)" 29 November 2011
- *
- ******************************************************************************/
-
-struct acpi_table_tpm2 {
-	struct acpi_table_header header;	/* Common ACPI table header */
-	u32 flags;
-	u64 control_address;
-	u32 start_method;
-};
-
-/* Control area structure (not part of table, pointed to by control_address) */
-
-struct acpi_tpm2_control {
-	u32 reserved;
-	u32 error;
-	u32 cancel;
-	u32 start;
-	u64 interrupt_control;
-	u32 command_size;
-	u64 command_address;
-	u32 response_size;
-	u64 response_address;
-};
 
 /* Reset to default packing */
 

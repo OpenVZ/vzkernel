@@ -47,7 +47,7 @@ int snd_emux_new(struct snd_emux **remu)
 	mutex_init(&emu->register_mutex);
 
 	emu->client = -1;
-#ifdef CONFIG_SND_SEQUENCER_OSS
+#if IS_ENABLED(CONFIG_SND_SEQUENCER_OSS)
 	emu->oss_synth = NULL;
 #endif
 	emu->max_voices = 0;
@@ -125,14 +125,12 @@ int snd_emux_register(struct snd_emux *emu, struct snd_card *card, int index, ch
 	snd_emux_init_voices(emu);
 
 	snd_emux_init_seq(emu, card, index);
-#ifdef CONFIG_SND_SEQUENCER_OSS
+#if IS_ENABLED(CONFIG_SND_SEQUENCER_OSS)
 	snd_emux_init_seq_oss(emu);
 #endif
 	snd_emux_init_virmidi(emu, card);
 
-#ifdef CONFIG_PROC_FS
 	snd_emux_proc_init(emu, card, index);
-#endif
 	return 0;
 }
 
@@ -152,11 +150,9 @@ int snd_emux_free(struct snd_emux *emu)
 		del_timer(&emu->tlist);
 	spin_unlock_irqrestore(&emu->voice_lock, flags);
 
-#ifdef CONFIG_PROC_FS
 	snd_emux_proc_free(emu);
-#endif
 	snd_emux_delete_virmidi(emu);
-#ifdef CONFIG_SND_SEQUENCER_OSS
+#if IS_ENABLED(CONFIG_SND_SEQUENCER_OSS)
 	snd_emux_detach_seq_oss(emu);
 #endif
 	snd_emux_detach_seq(emu);

@@ -189,7 +189,7 @@ EXPORT_SYMBOL(profile_pc);
 
 /* clock source code */
 
-static cycle_t read_cr16(struct clocksource *cs)
+static u64 read_cr16(struct clocksource *cs)
 {
 	return get_cycles();
 }

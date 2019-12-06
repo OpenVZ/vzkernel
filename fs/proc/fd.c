@@ -8,9 +8,11 @@
 #include <linux/security.h>
 #include <linux/file.h>
 #include <linux/seq_file.h>
+#include <linux/fs.h>
 
 #include <linux/proc_fs.h>
 
+#include "../mount.h"
 #include "internal.h"
 #include "fd.h"
 
@@ -47,15 +49,20 @@ static int seq_show(struct seq_file *m, void *v)
 		put_files_struct(files);
 	}
 
-	if (!ret) {
-                seq_printf(m, "pos:\t%lli\nflags:\t0%o\n",
-			   (long long)file->f_pos, f_flags);
-		if (file->f_op->show_fdinfo)
-			ret = file->f_op->show_fdinfo(m, file);
-		fput(file);
-	}
+	if (ret)
+		return ret;
 
-	return ret;
+	seq_printf(m, "pos:\t%lli\nflags:\t0%o\nmnt_id:\t%i\n",
+		   (long long)file->f_pos, f_flags,
+		   real_mount(file->f_path.mnt)->mnt_id);
+
+	show_fd_locks(m, file, files);
+
+	if (file->f_op->show_fdinfo)
+		ret = file->f_op->show_fdinfo(m, file);
+
+	fput(file);
+	return 0;
 }
 
 static int seq_fdinfo_open(struct inode *inode, struct file *file)
@@ -127,8 +134,6 @@ static int tid_fd_revalidate(struct dentry *dentry, unsigned int flags)
 		}
 		put_task_struct(task);
 	}
-
-	d_drop(dentry);
 	return 0;
 }
 
@@ -176,14 +181,13 @@ proc_fd_instantiate(struct inode *dir, struct dentry *dentry,
 	struct proc_inode *ei;
 	struct inode *inode;
 
-	inode = proc_pid_make_inode(dir->i_sb, task);
+	inode = proc_pid_make_inode(dir->i_sb, task, S_IFLNK);
 	if (!inode)
 		goto out;
 
 	ei = PROC_I(inode);
 	ei->fd = fd;
 
-	inode->i_mode = S_IFLNK;
 	inode->i_op = &proc_pid_link_inode_operations;
 	inode->i_size = 64;
 
@@ -305,7 +309,7 @@ int proc_fd_permission(struct inode *inode, int mask)
 	int rv = generic_permission(inode, mask);
 	if (rv == 0)
 		return 0;
-	if (task_pid(current) == proc_pid(inode))
+	if (task_tgid(current) == proc_pid(inode))
 		rv = 0;
 	return rv;
 }
@@ -325,14 +329,13 @@ proc_fdinfo_instantiate(struct inode *dir, struct dentry *dentry,
 	struct proc_inode *ei;
 	struct inode *inode;
 
-	inode = proc_pid_make_inode(dir->i_sb, task);
+	inode = proc_pid_make_inode(dir->i_sb, task, S_IFREG | S_IRUSR);
 	if (!inode)
 		goto out;
 
 	ei = PROC_I(inode);
 	ei->fd = fd;
 
-	inode->i_mode = S_IFREG | S_IRUSR;
 	inode->i_fop = &proc_fdinfo_file_operations;
 
 	d_set_d_op(dentry, &tid_fd_dentry_operations);

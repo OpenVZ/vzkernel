@@ -33,17 +33,14 @@
 
 #include <linux/log2.h>
 
-static int pcpu_populate_chunk(struct pcpu_chunk *chunk, int off, int size)
+static int pcpu_populate_chunk(struct pcpu_chunk *chunk,
+			       int page_start, int page_end)
 {
-	unsigned int cpu;
-
-	for_each_possible_cpu(cpu)
-		memset((void *)pcpu_chunk_addr(chunk, cpu, 0) + off, 0, size);
-
 	return 0;
 }
 
-static void pcpu_depopulate_chunk(struct pcpu_chunk *chunk, int off, int size)
+static void pcpu_depopulate_chunk(struct pcpu_chunk *chunk,
+				  int page_start, int page_end)
 {
 	/* nada */
 }
@@ -52,6 +49,7 @@ static struct pcpu_chunk *pcpu_create_chunk(void)
 {
 	const int nr_pages = pcpu_group_sizes[0] >> PAGE_SHIFT;
 	struct pcpu_chunk *chunk;
+	unsigned long flags;
 	struct page *pages;
 	int i;
 
@@ -70,6 +68,11 @@ static struct pcpu_chunk *pcpu_create_chunk(void)
 
 	chunk->data = pages;
 	chunk->base_addr = page_address(pages) - pcpu_group_offsets[0];
+
+	spin_lock_irqsave(&pcpu_lock, flags);
+	pcpu_chunk_populated(chunk, 0, nr_pages);
+	spin_unlock_irqrestore(&pcpu_lock, flags);
+
 	return chunk;
 }
 

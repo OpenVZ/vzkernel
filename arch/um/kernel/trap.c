@@ -36,10 +36,10 @@ int handle_page_fault(unsigned long address, unsigned long ip,
 	*code_out = SEGV_MAPERR;
 
 	/*
-	 * If the fault was during atomic operation, don't take the fault, just
+	 * If the fault was with pagefaults disabled, don't take the fault, just
 	 * fail.
 	 */
-	if (in_atomic())
+	if (faulthandler_disabled())
 		goto out_nosemaphore;
 
 retry:
@@ -68,7 +68,7 @@ good_area:
 	do {
 		int fault;
 
-		fault = handle_mm_fault(mm, vma, address, flags);
+		fault = handle_mm_fault(vma, address, flags);
 
 		if ((fault & VM_FAULT_RETRY) && fatal_signal_pending(current))
 			goto out_nosemaphore;

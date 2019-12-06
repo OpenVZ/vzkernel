@@ -268,7 +268,7 @@ static void amdtp_write_s32(struct amdtp_out_stream *s,
 
 	channels = s->pcm_channels;
 	src = (void *)runtime->dma_area +
-			s->pcm_buffer_pointer * (runtime->frame_bits / 8);
+			frames_to_bytes(runtime, s->pcm_buffer_pointer);
 	remaining_frames = runtime->buffer_size - s->pcm_buffer_pointer;
 	frame_step = s->data_block_quadlets - channels;
 
@@ -294,7 +294,7 @@ static void amdtp_write_s16(struct amdtp_out_stream *s,
 
 	channels = s->pcm_channels;
 	src = (void *)runtime->dma_area +
-			s->pcm_buffer_pointer * (runtime->frame_bits / 8);
+			frames_to_bytes(runtime, s->pcm_buffer_pointer);
 	remaining_frames = runtime->buffer_size - s->pcm_buffer_pointer;
 	frame_step = s->data_block_quadlets - channels;
 
@@ -600,11 +600,7 @@ void amdtp_out_stream_pcm_abort(struct amdtp_out_stream *s)
 	struct snd_pcm_substream *pcm;
 
 	pcm = ACCESS_ONCE(s->pcm);
-	if (pcm) {
-		snd_pcm_stream_lock_irq(pcm);
-		if (snd_pcm_running(pcm))
-			snd_pcm_stop(pcm, SNDRV_PCM_STATE_XRUN);
-		snd_pcm_stream_unlock_irq(pcm);
-	}
+	if (pcm)
+		snd_pcm_stop_xrun(pcm);
 }
 EXPORT_SYMBOL(amdtp_out_stream_pcm_abort);

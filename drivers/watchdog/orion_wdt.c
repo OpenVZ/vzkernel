@@ -167,6 +167,7 @@ static int orion_wdt_probe(struct platform_device *pdev)
 
 	orion_wdt.timeout = wdt_max_duration;
 	orion_wdt.max_timeout = wdt_max_duration;
+	orion_wdt.parent = &pdev->dev;
 	watchdog_init_timeout(&orion_wdt, heartbeat, &pdev->dev);
 
 	watchdog_set_nowayout(&orion_wdt, nowayout);

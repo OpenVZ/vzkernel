@@ -154,7 +154,7 @@ static void maple_halt(void)
 }
 
 #ifdef CONFIG_SMP
-struct smp_ops_t maple_smp_ops = {
+static struct smp_ops_t maple_smp_ops = {
 	.probe		= smp_mpic_probe,
 	.message_pass	= smp_mpic_message_pass,
 	.kick_cpu	= smp_generic_kick_cpu,
@@ -174,7 +174,7 @@ static void __init maple_use_rtas_reboot_and_halt_if_present(void)
 	}
 }
 
-void __init maple_setup_arch(void)
+static void __init maple_setup_arch(void)
 {
 	/* init to some ~sane value until calibrate_delay() runs */
 	loops_per_jiffy = 50000000;
@@ -203,7 +203,7 @@ static void __init maple_init_early(void)
 {
 	DBG(" -> maple_init_early\n");
 
-	iommu_init_early_dart();
+	iommu_init_early_dart(&maple_pci_controller_ops);
 
 	DBG(" <- maple_init_early\n");
 }

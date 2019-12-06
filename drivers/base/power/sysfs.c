@@ -206,7 +206,7 @@ static ssize_t autosuspend_delay_ms_store(struct device *dev,
 	if (!dev->power.use_autosuspend)
 		return -EIO;
 
-	if (strict_strtol(buf, 10, &delay) != 0 || delay != (int) delay)
+	if (kstrtol(buf, 10, &delay) != 0 || delay != (int) delay)
 		return -EINVAL;
 
 	device_lock(dev);
@@ -243,6 +243,44 @@ static ssize_t pm_qos_latency_store(struct device *dev,
 
 static DEVICE_ATTR(pm_qos_resume_latency_us, 0644,
 		   pm_qos_latency_show, pm_qos_latency_store);
+
+static ssize_t pm_qos_latency_tolerance_show(struct device *dev,
+					     struct device_attribute *attr,
+					     char *buf)
+{
+	s32 value = dev_pm_qos_get_user_latency_tolerance(dev);
+
+	if (value < 0)
+		return sprintf(buf, "auto\n");
+	else if (value == PM_QOS_LATENCY_ANY)
+		return sprintf(buf, "any\n");
+
+	return sprintf(buf, "%d\n", value);
+}
+
+static ssize_t pm_qos_latency_tolerance_store(struct device *dev,
+					      struct device_attribute *attr,
+					      const char *buf, size_t n)
+{
+	s32 value;
+	int ret;
+
+	if (kstrtos32(buf, 0, &value) == 0) {
+		/* Users can't write negative values directly */
+		if (value < 0)
+			return -EINVAL;
+	} else {
+		if (!strcmp(buf, "auto") || !strcmp(buf, "auto\n"))
+			value = PM_QOS_LATENCY_TOLERANCE_NO_CONSTRAINT;
+		else if (!strcmp(buf, "any") || !strcmp(buf, "any\n"))
+			value = PM_QOS_LATENCY_ANY;
+	}
+	ret = dev_pm_qos_update_user_latency_tolerance(dev, value);
+	return ret < 0 ? ret : n;
+}
+
+static DEVICE_ATTR(pm_qos_latency_tolerance_us, 0644,
+		   pm_qos_latency_tolerance_show, pm_qos_latency_tolerance_store);
 
 static ssize_t pm_qos_no_power_off_show(struct device *dev,
 					struct device_attribute *attr,
@@ -629,6 +667,17 @@ static struct attribute_group pm_qos_latency_attr_group = {
 	.attrs	= pm_qos_latency_attrs,
 };
 
+static struct attribute *pm_qos_latency_tolerance_attrs[] = {
+#ifdef CONFIG_PM_RUNTIME
+	&dev_attr_pm_qos_latency_tolerance_us.attr,
+#endif /* CONFIG_PM_RUNTIME */
+	NULL,
+};
+static struct attribute_group pm_qos_latency_tolerance_attr_group = {
+	.name	= power_group_name,
+	.attrs	= pm_qos_latency_tolerance_attrs,
+};
+
 static struct attribute *pm_qos_flags_attrs[] = {
 #ifdef CONFIG_PM_RUNTIME
 	&dev_attr_pm_qos_no_power_off.attr,
@@ -654,18 +703,23 @@ int dpm_sysfs_add(struct device *dev)
 		if (rc)
 			goto err_out;
 	}
-
 	if (device_can_wakeup(dev)) {
 		rc = sysfs_merge_group(&dev->kobj, &pm_wakeup_attr_group);
-		if (rc) {
-			if (pm_runtime_callbacks_present(dev))
-				sysfs_unmerge_group(&dev->kobj,
-						    &pm_runtime_attr_group);
-			goto err_out;
-		}
+		if (rc)
+			goto err_runtime;
+	}
+	if (dev->device_rh->power.set_latency_tolerance) {
+		rc = sysfs_merge_group(&dev->kobj,
+				       &pm_qos_latency_tolerance_attr_group);
+		if (rc)
+			goto err_wakeup;
 	}
 	return 0;
 
+ err_wakeup:
+	sysfs_unmerge_group(&dev->kobj, &pm_wakeup_attr_group);
+ err_runtime:
+	sysfs_unmerge_group(&dev->kobj, &pm_runtime_attr_group);
  err_out:
 	sysfs_remove_group(&dev->kobj, &pm_attr_group);
 	return rc;
@@ -701,6 +755,17 @@ void pm_qos_sysfs_remove_flags(struct device *dev)
 	sysfs_unmerge_group(&dev->kobj, &pm_qos_flags_attr_group);
 }
 
+int pm_qos_sysfs_add_latency_tolerance(struct device *dev)
+{
+	return sysfs_merge_group(&dev->kobj,
+				 &pm_qos_latency_tolerance_attr_group);
+}
+
+void pm_qos_sysfs_remove_latency_tolerance(struct device *dev)
+{
+	sysfs_unmerge_group(&dev->kobj, &pm_qos_latency_tolerance_attr_group);
+}
+
 void rpm_sysfs_remove(struct device *dev)
 {
 	sysfs_unmerge_group(&dev->kobj, &pm_runtime_attr_group);
@@ -708,6 +773,7 @@ void rpm_sysfs_remove(struct device *dev)
 
 void dpm_sysfs_remove(struct device *dev)
 {
+	sysfs_unmerge_group(&dev->kobj, &pm_qos_latency_tolerance_attr_group);
 	dev_pm_qos_constraints_destroy(dev);
 	rpm_sysfs_remove(dev);
 	sysfs_unmerge_group(&dev->kobj, &pm_wakeup_attr_group);

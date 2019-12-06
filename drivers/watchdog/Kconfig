@@ -45,6 +45,24 @@ config WATCHDOG_NOWAYOUT
 	  get killed. If you say Y here, the watchdog cannot be stopped once
 	  it has been started.
 
+config WATCHDOG_HANDLE_BOOT_ENABLED
+	bool "Update boot-enabled watchdog until userspace takes over"
+	default y
+	help
+	  The default watchdog behaviour (which you get if you say Y here) is
+	  to ping watchdog devices that were enabled before the driver has
+	  been loaded until control is taken over from userspace using the
+	  /dev/watchdog file. If you say N here, the kernel will not update
+	  the watchdog on its own. Thus if your userspace does not start fast
+	  enough your device will reboot.
+
+config WATCHDOG_SYSFS
+	bool "Read different watchdog information through sysfs"
+	default n
+	help
+	  Say Y here if you want to enable watchdog device status read through
+	  sysfs attributes.
+
 #
 # General Watchdog drivers
 #
@@ -86,6 +104,19 @@ config DA9055_WATCHDOG
 
 	  This driver can also be built as a module.  If so, the module
 	  will be called da9055_wdt.
+
+config WDAT_WDT
+	tristate "ACPI Watchdog Action Table (WDAT)"
+	depends on ACPI
+	select ACPI_WATCHDOG
+	help
+	  This driver adds support for systems with ACPI Watchdog Action
+	  Table (WDAT) table. Servers typically have this but it can be
+	  found on some desktop machines as well. This driver will take
+	  over the native iTCO watchdog driver found on many Intel CPUs.
+
+	  To compile this driver as module, choose M here: the module will
+	  be called wdat_wdt.
 
 config WM831X_WATCHDOG
 	tristate "WM831x watchdog"
@@ -619,7 +650,8 @@ config ITCO_WDT
 	tristate "Intel TCO Timer/Watchdog"
 	depends on (X86 || IA64) && PCI
 	select WATCHDOG_CORE
-	select LPC_ICH
+	select LPC_ICH if !EXPERT
+	select I2C_I801 if !EXPERT
 	---help---
 	  Hardware driver for the intel TCO timer based watchdog devices.
 	  These drivers are included in the Intel 82801 I/O Controller
@@ -679,6 +711,7 @@ config IT87_WDT
 
 config HP_WATCHDOG
 	tristate "HP ProLiant iLO2+ Hardware Watchdog Timer"
+	select WATCHDOG_CORE
 	depends on X86 && PCI
 	help
 	  A software monitoring watchdog and NMI sourcing driver. This driver
@@ -961,6 +994,21 @@ config SBC_EPX_C3_WATCHDOG
 	  To compile this driver as a module, choose M here: the
 	  module will be called sbc_epx_c3.
 
+config INTEL_MEI_WDT
+	tristate "Intel MEI iAMT Watchdog"
+	depends on INTEL_MEI && X86
+	select WATCHDOG_CORE
+	---help---
+	  A device driver for the Intel MEI iAMT watchdog.
+
+	  The Intel AMT Watchdog is an OS Health (Hang/Crash) watchdog.
+	  Whenever the OS hangs or crashes, iAMT will send an event
+	  to any subscriber to this event. The watchdog doesn't reset the
+	  the platform.
+
+	  To compile this driver as a module, choose M here:
+	  the module will be called mei_wdt.
+
 # M32R Architecture
 
 # M68K Architecture
@@ -1185,14 +1233,17 @@ config WATCHDOG_RTAS
 
 # S390 Architecture
 
-config ZVM_WATCHDOG
-	tristate "z/VM Watchdog Timer"
+config DIAG288_WATCHDOG
+	tristate "System z diag288 Watchdog"
 	depends on S390
+	select WATCHDOG_CORE
 	help
 	  IBM s/390 and zSeries machines running under z/VM 5.1 or later
 	  provide a virtual watchdog timer to their guest that cause a
 	  user define Control Program command to be executed after a
 	  timeout.
+	  LPAR provides a very similar interface. This driver handles
+	  both.
 
 	  To compile this driver as a module, choose M here. The module
 	  will be called vmwatchdog.
@@ -1367,5 +1418,54 @@ config USBPCWATCHDOG
 	  module will be called pcwd_usb.
 
 	  Most people will say N.
+
+comment "Watchdog Pretimeout Governors"
+
+config WATCHDOG_PRETIMEOUT_GOV
+	bool "Enable watchdog pretimeout governors"
+	help
+	  The option allows to select watchdog pretimeout governors.
+
+if WATCHDOG_PRETIMEOUT_GOV
+
+choice
+	prompt "Default Watchdog Pretimeout Governor"
+	default WATCHDOG_PRETIMEOUT_DEFAULT_GOV_PANIC
+	help
+	  This option selects a default watchdog pretimeout governor.
+	  The governor takes its action, if a watchdog is capable
+	  to report a pretimeout event.
+
+config WATCHDOG_PRETIMEOUT_DEFAULT_GOV_NOOP
+	bool "noop"
+	select WATCHDOG_PRETIMEOUT_GOV_NOOP
+	help
+	  Use noop watchdog pretimeout governor by default. If noop
+	  governor is selected by a user, write a short message to
+	  the kernel log buffer and don't do any system changes.
+
+config WATCHDOG_PRETIMEOUT_DEFAULT_GOV_PANIC
+	bool "panic"
+	select WATCHDOG_PRETIMEOUT_GOV_PANIC
+	help
+	  Use panic watchdog pretimeout governor by default, if
+	  a watchdog pretimeout event happens, consider that
+	  a watchdog feeder is dead and reboot is unavoidable.
+
+endchoice
+
+config WATCHDOG_PRETIMEOUT_GOV_NOOP
+	tristate "Noop watchdog pretimeout governor"
+	help
+	  Noop watchdog pretimeout governor, only an informational
+	  message is added to kernel log buffer.
+
+config WATCHDOG_PRETIMEOUT_GOV_PANIC
+	tristate "Panic watchdog pretimeout governor"
+	help
+	  Panic watchdog pretimeout governor, on watchdog pretimeout
+	  event put the kernel into panic.
+
+endif # WATCHDOG_PRETIMEOUT_GOV
 
 endif # WATCHDOG

@@ -320,6 +320,7 @@ extern unsigned long get_safe_page(gfp_t gfp_mask);
 extern void hibernation_set_ops(const struct platform_hibernation_ops *ops);
 extern int hibernate(void);
 extern bool system_entering_hibernation(void);
+extern bool hibernation_available(void);
 #else /* CONFIG_HIBERNATION */
 static inline void register_nosave_region(unsigned long b, unsigned long e) {}
 static inline void register_nosave_region_late(unsigned long b, unsigned long e) {}
@@ -330,6 +331,7 @@ static inline void swsusp_unset_page_free(struct page *p) {}
 static inline void hibernation_set_ops(const struct platform_hibernation_ops *ops) {}
 static inline int hibernate(void) { return -ENOSYS; }
 static inline bool system_entering_hibernation(void) { return false; }
+static inline bool hibernation_available(void) { return false; }
 #endif /* CONFIG_HIBERNATION */
 
 /* Hibernation and suspend events */
@@ -363,6 +365,7 @@ extern bool pm_wakeup_pending(void);
 extern bool pm_get_wakeup_count(unsigned int *count, bool block);
 extern bool pm_save_wakeup_count(unsigned int count);
 extern void pm_wakep_autosleep_enabled(bool set);
+extern void pm_print_active_wakeup_sources(void);
 
 static inline void lock_system_sleep(void)
 {
