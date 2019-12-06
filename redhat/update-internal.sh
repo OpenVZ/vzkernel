@@ -23,5 +23,6 @@ if [ "${LINES_CHANGED}" != "0" ]; then
                 -o merge_request.target=internal \
                 -o merge_request.title="Changelog Update" \
                 -o merge_request.remove_source_branch \
+                -o merge_request.label="Do Not Email" \
                 gitlab
 fi
