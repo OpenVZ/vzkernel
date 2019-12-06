@@ -1,0 +1,25 @@
+# CONFIG_DEV_DAX_HMEM:
+# 
+# EFI 2.8 platforms, and others, may advertise 'specific purpose'
+# memory. For example, a high bandwidth memory pool. The
+# indication from platform firmware is meant to reserve the
+# memory from typical usage by default. This driver creates
+# device-dax instances for these memory ranges, and that also
+# enables the possibility to assign them to the DEV_DAX_KMEM
+# driver to override the reservation and add them to kernel
+# "System RAM" pool.
+# 
+# Say M if unsure.
+# 
+# Symbol: DEV_DAX_HMEM [=m]
+# Type  : tristate
+# Prompt: HMEM DAX: direct access to 'specific purpose' memory
+#   Location:
+#     -> Device Drivers
+#       -> DAX: direct access to differentiated memory (DAX [=y])
+#   Defined at drivers/dax/Kconfig:35
+#   Depends on: DAX [=y] && EFI_SOFT_RESERVE [=y]
+# 
+# 
+# 
+CONFIG_DEV_DAX_HMEM=m

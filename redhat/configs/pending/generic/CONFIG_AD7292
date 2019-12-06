@@ -1,0 +1,21 @@
+# CONFIG_AD7292:
+# 
+# Say yes here to build support for Analog Devices AD7292
+# 8 Channel ADC with temperature sensor.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called ad7292.
+# 
+# Symbol: AD7292 [=n]
+# Type  : tristate
+# Prompt: Analog Devices AD7292 ADC driver
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> Analog to digital converters
+#   Defined at drivers/iio/adc/Kconfig:58
+#   Depends on: IIO [=m] && SPI [=y]
+# 
+# 
+# 
+# CONFIG_AD7292 is not set

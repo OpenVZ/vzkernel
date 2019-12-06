@@ -1,0 +1,21 @@
+# CONFIG_PPC_UV:
+# 
+# This option paravirtualizes the kernel to run in POWER platforms that
+# supports the Protected Execution Facility (PEF). On such platforms,
+# the ultravisor firmware runs at a privilege level above the
+# hypervisor.
+# 
+# If unsure, say "N".
+# 
+# Symbol: PPC_UV [=n]
+# Type  : bool
+# Prompt: Ultravisor support
+#   Location:
+#     -> Kernel options
+#   Defined at arch/powerpc/Kconfig:455
+#   Depends on: KVM_BOOK3S_HV_POSSIBLE [=y]
+#   Selects: ZONE_DEVICE [=y] && DEV_PAGEMAP_OPS [=y] && DEVICE_PRIVATE [=y] && MEMORY_HOTPLUG [=y] && MEMORY_HOTREMOVE [=y]
+# 
+# 
+# 
+# CONFIG_PPC_UV is not set

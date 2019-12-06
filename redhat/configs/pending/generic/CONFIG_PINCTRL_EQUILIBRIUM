@@ -1,0 +1,21 @@
+# CONFIG_PINCTRL_EQUILIBRIUM:
+# 
+# Equilibrium pinctrl driver is a pinctrl & GPIO driver for Intel Lightning
+# Mountain network processor SoC that supports both the linux GPIO and pin
+# control frameworks. It provides interfaces to setup pinmux, assign desired
+# pin functions, configure GPIO attributes for LGM SoC pins. Pinmux and
+# pinconf settings are retrieved from device tree.
+# 
+# Symbol: PINCTRL_EQUILIBRIUM [=n]
+# Type  : tristate
+# Prompt: Generic pinctrl and GPIO driver for Intel Lightning Mountain SoC
+#   Location:
+#     -> Device Drivers
+#       -> Pin controllers (PINCTRL [=y])
+#   Defined at drivers/pinctrl/Kconfig:423
+#   Depends on: PINCTRL [=y]
+#   Selects: PINMUX [=y] && PINCONF [=y] && GPIOLIB [=y] && GPIO_GENERIC [=m] && GPIOLIB_IRQCHIP [=y] && GENERIC_PINCONF [=y] && GENERIC_PINCTRL_GROUPS [=n] && GENERIC_PINMUX_FUNCTIONS [=n]
+# 
+# 
+# 
+# CONFIG_PINCTRL_EQUILIBRIUM is not set

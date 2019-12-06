@@ -1,0 +1,20 @@
+# CONFIG_SENSORS_TMP513:
+# 
+# If you say yes here you get support for Texas Instruments TMP512,
+# and TMP513 temperature and power supply sensor chips.
+# 
+# This driver can also be built as a module. If so, the module
+# will be called tmp513.
+# 
+# Symbol: SENSORS_TMP513 [=n]
+# Type  : tristate
+# Prompt: Texas Instruments TMP513 and compatibles
+#   Location:
+#     -> Device Drivers
+#       -> Hardware Monitoring support (HWMON [=y])
+#   Defined at drivers/hwmon/Kconfig:1739
+#   Depends on: HWMON [=y] && I2C [=y]
+# 
+# 
+# 
+# CONFIG_SENSORS_TMP513 is not set

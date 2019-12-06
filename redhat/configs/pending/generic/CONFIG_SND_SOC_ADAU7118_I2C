@@ -1,0 +1,26 @@
+# CONFIG_SND_SOC_ADAU7118_I2C:
+# 
+# Enable support for the Analog Devices ADAU7118 8 Channel PDM-to-I2S/TDM
+# Converter over I2C. This gives full support over the device.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called snd-soc-adau7118-i2c.
+# 
+# Symbol: SND_SOC_ADAU7118_I2C [=n]
+# Type  : tristate
+# Prompt: Analog Devices ADAU7118 8 Channel PDM-to-I2S/TDM Converter - I2C
+#   Location:
+#     -> Device Drivers
+#       -> Sound card support (SOUND [=m])
+#         -> Advanced Linux Sound Architecture (SND [=m])
+#           -> ALSA for SoC audio support (SND_SOC [=m])
+#             -> CODEC drivers
+#   Defined at sound/soc/codecs/Kconfig:417
+#   Depends on: SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && I2C [=y]
+#   Selects: SND_SOC_ADAU7118 [=n] && REGMAP_I2C [=y]
+#   Selected by [n]:
+#   - SND_SOC_ALL_CODECS [=n] && SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && COMPILE_TEST [=n] && I2C [=y]
+# 
+# 
+# 
+# CONFIG_SND_SOC_ADAU7118_I2C is not set

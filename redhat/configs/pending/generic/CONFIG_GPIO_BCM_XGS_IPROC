@@ -1,0 +1,18 @@
+# CONFIG_GPIO_BCM_XGS_IPROC:
+# 
+# Say yes here to enable GPIO support for Broadcom XGS iProc SoCs.
+# 
+# Symbol: GPIO_BCM_XGS_IPROC [=y]
+# Type  : tristate
+# Prompt: BRCM XGS iProc GPIO support
+#   Location:
+#     -> Device Drivers
+#       -> GPIO Support (GPIOLIB [=y])
+#         -> Memory mapped GPIO drivers
+#   Defined at drivers/gpio/Kconfig:158
+#   Depends on: GPIOLIB [=y] && HAS_IOMEM [=y] && OF_GPIO [=y] && (ARCH_BCM_IPROC [=y] || COMPILE_TEST [=n])
+#   Selects: GPIO_GENERIC [=y] && GPIOLIB_IRQCHIP [=y]
+# 
+# 
+# 
+CONFIG_GPIO_BCM_XGS_IPROC=y

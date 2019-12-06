@@ -1,0 +1,21 @@
+# CONFIG_SENSORS_LTC2947_SPI:
+# 
+# If you say yes here you get support for Linear Technology LTC2947
+# SPI High Precision Power and Energy Monitor
+# 
+# This driver can also be built as a module. If so, the module will
+# be called ltc2947-spi.
+# 
+# Symbol: SENSORS_LTC2947_SPI [=n]
+# Type  : tristate
+# Prompt: Analog Devices LTC2947 High Precision Power and Energy Monitor over SPI
+#   Location:
+#     -> Device Drivers
+#       -> Hardware Monitoring support (HWMON [=y])
+#   Defined at drivers/hwmon/Kconfig:745
+#   Depends on: HWMON [=y] && SPI_MASTER [=y]
+#   Selects: REGMAP_SPI [=y] && SENSORS_LTC2947 [=n]
+# 
+# 
+# 
+# CONFIG_SENSORS_LTC2947_SPI is not set

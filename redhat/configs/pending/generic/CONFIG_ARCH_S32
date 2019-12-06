@@ -1,0 +1,14 @@
+# CONFIG_ARCH_S32:
+# 
+# This enables support for the NXP S32 family of processors.
+# 
+# Symbol: ARCH_S32 [=n]
+# Type  : bool
+# Prompt: NXP S32 SoC Family
+#   Location:
+#     -> Platform selection
+#   Defined at arch/arm64/Kconfig.platforms:217
+# 
+# 
+# 
+# CONFIG_ARCH_S32 is not set

@@ -1,0 +1,22 @@
+# CONFIG_FXOS8700_I2C:
+# 
+# Say yes here to build support for the NXP FXOS8700 m+g combo
+# sensor on I2C.
+# 
+# This driver can also be built as a module. If so, the module will be
+# called fxos8700_i2c.
+# 
+# Symbol: FXOS8700_I2C [=n]
+# Type  : tristate
+# Prompt: NXP FXOS8700 I2C driver
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> Inertial measurement units
+#   Defined at drivers/iio/imu/Kconfig:46
+#   Depends on: IIO [=m] && I2C [=y]
+#   Selects: FXOS8700 [=n] && REGMAP_I2C [=y]
+# 
+# 
+# 
+# CONFIG_FXOS8700_I2C is not set

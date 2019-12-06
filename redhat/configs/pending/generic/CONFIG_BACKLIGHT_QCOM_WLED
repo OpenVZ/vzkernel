@@ -1,0 +1,20 @@
+# CONFIG_BACKLIGHT_QCOM_WLED:
+# 
+# If you have the Qualcomm PMIC, say Y to enable a driver for the
+# WLED block. Currently it supports PM8941 and PMI8998.
+# 
+# Symbol: BACKLIGHT_QCOM_WLED [=n]
+# Type  : tristate
+# Prompt: Qualcomm PMIC WLED Driver
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Backlight & LCD device support
+#           -> Lowlevel Backlight controls (BACKLIGHT_CLASS_DEVICE [=y])
+#   Defined at drivers/video/backlight/Kconfig:285
+#   Depends on: HAS_IOMEM [=y] && BACKLIGHT_CLASS_DEVICE [=y]
+#   Selects: REGMAP [=y]
+# 
+# 
+# 
+# CONFIG_BACKLIGHT_QCOM_WLED is not set

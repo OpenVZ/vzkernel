@@ -1,0 +1,21 @@
+# CONFIG_TYPEC_HD3SS3220:
+# 
+# Say Y or M here if your system has TI HD3SS3220 Type-C DRP Port
+# controller driver.
+# 
+# If you choose to build this driver as a dynamically linked module, the
+# module will be called hd3ss3220.ko.
+# 
+# Symbol: TYPEC_HD3SS3220 [=n]
+# Type  : tristate
+# Prompt: TI HD3SS3220 Type-C DRP Port controller driver
+#   Location:
+#     -> Device Drivers
+#       -> USB support (USB_SUPPORT [=y])
+#         -> USB Type-C Support (TYPEC [=y])
+#   Defined at drivers/usb/typec/Kconfig:53
+#   Depends on: USB_SUPPORT [=y] && TYPEC [=y] && I2C [=y] && USB_ROLE_SWITCH [=m]
+# 
+# 
+# 
+# CONFIG_TYPEC_HD3SS3220 is not set

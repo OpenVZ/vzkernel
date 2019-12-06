@@ -1,0 +1,23 @@
+# CONFIG_KASAN_VMALLOC:
+# 
+# By default, the shadow region for vmalloc space is the read-only
+# zero page. This means that KASAN cannot detect errors involving
+# vmalloc space.
+# 
+# Enabling this option will hook in to vmap/vmalloc and back those
+# mappings with real shadow memory allocated on demand. This allows
+# for KASAN to detect more sorts of errors (and to support vmapped
+# stacks), but at the cost of higher memory usage.
+# 
+# Symbol: KASAN_VMALLOC [=n]
+# Type  : bool
+# Prompt: Back mappings in vmalloc space with real shadow memory
+#   Location:
+#     -> Kernel hacking
+#       -> Memory Debugging
+#   Defined at lib/Kconfig.kasan:148
+#   Depends on: KASAN [=y] && HAVE_ARCH_KASAN_VMALLOC [=y]
+# 
+# 
+# 
+# CONFIG_KASAN_VMALLOC is not set

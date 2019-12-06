@@ -1,0 +1,18 @@
+# CONFIG_S390_UNWIND_SELFTEST:
+# 
+# This option enables s390 specific stack unwinder testing kernel
+# module. This option is not useful for distributions or general
+# kernels, but only for kernel developers working on architecture code.
+# 
+# Say N if you are unsure.
+# 
+# Symbol: S390_UNWIND_SELFTEST [=n]
+# Type  : tristate
+# Prompt: Test unwind functions
+#   Location:
+#     -> Selftests
+#   Defined at arch/s390/Kconfig:1022
+# 
+# 
+# 
+# CONFIG_S390_UNWIND_SELFTEST is not set

@@ -1,0 +1,21 @@
+# CONFIG_LEDS_EL15203000:
+# 
+# This option enables support for EL15203000 LED Board
+# (aka RED LED board) which is widely used in coffee vending
+# machines produced by Crane Merchandising Systems.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called leds-el15203000.
+# 
+# Symbol: LEDS_EL15203000 [=n]
+# Type  : tristate
+# Prompt: LED Support for Crane EL15203000
+#   Location:
+#     -> Device Drivers
+#       -> LED Support (NEW_LEDS [=y])
+#   Defined at drivers/leds/Kconfig:135
+#   Depends on: NEW_LEDS [=y] && LEDS_CLASS [=y] && SPI [=y] && OF [=y]
+# 
+# 
+# 
+# CONFIG_LEDS_EL15203000 is not set
