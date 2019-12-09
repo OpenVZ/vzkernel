@@ -5585,10 +5585,11 @@ int kvm_inject_realmode_interrupt(struct kvm_vcpu *vcpu, int irq, int inc_eip)
 }
 EXPORT_SYMBOL_GPL(kvm_inject_realmode_interrupt);
 
-static void printk_emulation_data(struct kvm_vcpu *vcpu, int emulation_type)
+static void printk_emulation_data(struct kvm_vcpu *vcpu, int emulation_type,
+				  bool decoding)
 {
 	struct x86_emulate_ctxt *ctx = &vcpu->arch.emulate_ctxt;
-	int i;
+	uint64_t i;
 
 	vcpu_err(vcpu, "=== emulation failure ===\n");
 
@@ -5596,6 +5597,8 @@ static void printk_emulation_data(struct kvm_vcpu *vcpu, int emulation_type)
 
 	vcpu_err(vcpu, "emulation context data (emulation_type: 0x%x)\n",
 		emulation_type);
+	vcpu_err(vcpu, "failed phase: %s\n",
+		decoding ? "decoding" : "emulation");
 	vcpu_err(vcpu, "eflags: 0x%lx start_eip: 0x%lx mode: %d\n",
 		ctx->eflags, ctx->eip, ctx->mode);
 	vcpu_err(vcpu, "opcode_len: %u b: 0x%x op_bytes: %u ad_bytes: %u\n",
@@ -5603,17 +5606,21 @@ static void printk_emulation_data(struct kvm_vcpu *vcpu, int emulation_type)
 	vcpu_err(vcpu, "d: 0x%llx current_eip: 0x%lx\n ", ctx->d, ctx->_eip);
 	vcpu_err(vcpu, "fetch data: data: %p ptr %p pos %p\n",
 		ctx->fetch.data, ctx->fetch.ptr, ctx->fetch.end);
+	vcpu_err(vcpu, "have excpetion: %s\n",
+		ctx->have_exception ? "yes" : "no");
+
 	vcpu_err(vcpu, "fetch data content: ");
 
 	for (i = 0; i < ARRAY_SIZE(ctx->fetch.data); i++) {
 		printk("0x%02x ", ctx->fetch.data[i]);
 	}
-	printk("\n");
+	vcpu_err(vcpu, "\n");
 
 	vcpu_err(vcpu, "=== end of emulation failure ===\n");
 }
 
-static int handle_emulation_failure(struct kvm_vcpu *vcpu, int emulation_type)
+static int handle_emulation_failure(struct kvm_vcpu *vcpu, int emulation_type,
+				    bool decoding)
 {
 	int r = EMULATE_DONE;
 
@@ -5628,7 +5635,7 @@ static int handle_emulation_failure(struct kvm_vcpu *vcpu, int emulation_type)
 		vcpu->run->internal.suberror = KVM_INTERNAL_ERROR_EMULATION;
 		vcpu->run->internal.ndata = 0;
 		r = EMULATE_FAIL;
-		printk_emulation_data(vcpu, emulation_type);
+		printk_emulation_data(vcpu, emulation_type, decoding);
 	}
 
 	kvm_queue_exception(vcpu, UD_VECTOR);
@@ -5967,7 +5974,8 @@ int x86_emulate_instruction(struct kvm_vcpu *vcpu,
 			}
 			if (emulation_type & EMULTYPE_SKIP)
 				return EMULATE_FAIL;
-			return handle_emulation_failure(vcpu, emulation_type);
+			return handle_emulation_failure(vcpu, emulation_type,
+							true);
 		}
 	}
 
@@ -6006,7 +6014,7 @@ restart:
 					emulation_type))
 			return EMULATE_DONE;
 
-		return handle_emulation_failure(vcpu, emulation_type);
+		return handle_emulation_failure(vcpu, emulation_type, false);
 	}
 
 	if (ctxt->have_exception) {
