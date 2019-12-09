@@ -5877,7 +5877,6 @@ mmu_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 		      !kvm_has_zapped_obsolete_pages(kvm))
 			continue;
 
-		kvm_get_kvm(kvm);
 		/*
 		 * If try_get fails, we race with last kvm_put_kvm(),
 		 * so skip the VM, it will die soon anyway.
