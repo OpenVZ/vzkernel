@@ -846,6 +846,21 @@ void memcg_set_shrinker_bit(struct mem_cgroup *memcg, int nid, int shrinker_id)
 	}
 }
 
+void memcg_clear_shrinker_bit(struct mem_cgroup *memcg, int nid, int shrinker_id)
+{
+	struct memcg_shrinker_map *map;
+
+	/*
+	 * The map for refcounted memcg can only be freed in
+	 * memcg_free_shrinker_map_rcu so we can safely protect
+	 * map with rcu_read_lock.
+	 */
+	rcu_read_lock();
+	map = rcu_dereference(memcg->info.nodeinfo[nid]->shrinker_map);
+	clear_bit(shrinker_id, map->map);
+	rcu_read_unlock();
+}
+
 struct memcg_shrinker_map *memcg_nid_shrinker_map(struct mem_cgroup *memcg, int nid)
 {
 	return rcu_dereference_protected(memcg->info.nodeinfo[nid]->shrinker_map,
