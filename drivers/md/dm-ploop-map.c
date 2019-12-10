@@ -851,12 +851,6 @@ static bool ploop_attach_end_action(struct bio *bio, struct ploop_index_wb *piwb
 	return true;
 }
 
-struct ploop_iocb {
-	struct kiocb iocb;
-	struct bio *bio;
-	atomic_t count;
-};
-
 static void ploop_read_aio_do_completion(struct ploop_iocb *piocb)
 {
 	struct bio *bio = piocb->bio;
@@ -864,7 +858,7 @@ static void ploop_read_aio_do_completion(struct ploop_iocb *piocb)
 	if (!atomic_dec_and_test(&piocb->count))
 		return;
 	bio_endio(bio);
-	kfree(piocb);
+	kmem_cache_free(piocb_cache, piocb);
 }
 
 static void ploop_read_aio_complete(struct kiocb *iocb, long ret, long ret2)
@@ -895,7 +889,7 @@ static void submit_delta_read(struct ploop *ploop, unsigned int level,
 	loff_t pos;
 	int ret;
 
-	piocb = kzalloc(sizeof(*piocb), GFP_NOIO); /* This may be improved */
+	piocb = kmem_cache_zalloc(piocb_cache, GFP_NOIO);
 	if (!piocb) {
 		bio->bi_status = BLK_STS_RESOURCE;
 		bio_endio(bio);
