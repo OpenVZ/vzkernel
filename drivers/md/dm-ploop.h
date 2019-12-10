@@ -267,6 +267,18 @@ struct ploop_iocb {
 	atomic_t count;
 };
 
+/* Delta COW private */
+struct ploop_cow {
+	struct ploop *ploop;
+	struct bio *cluster_bio;
+	unsigned int dst_cluster;
+
+	struct dm_ploop_endio_hook hook;
+
+	void (*end_fn)(struct ploop *, int, void *);
+	void *data; /* Second argument of end_fn */
+};
+
 extern struct kmem_cache *piocb_cache;
 
 static inline bool ploop_is_ro(struct ploop *ploop)
