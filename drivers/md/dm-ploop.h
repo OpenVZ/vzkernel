@@ -38,6 +38,10 @@ struct ploop_pvd_header {
 };
 #pragma pack(pop)
 
+struct ploop_delta {
+	struct file *file;
+};
+
 struct ploop_cmd {
 #define PLOOP_CMD_RESIZE		1
 #define PLOOP_CMD_ADD_DELTA		2
@@ -70,7 +74,7 @@ struct ploop_cmd {
 		} resize;
 		struct {
 			struct file *file;
-			struct file **deltas;
+			struct ploop_delta *deltas;
 			void *hdr; /* hdr and bat_entries consequentially */
 			unsigned int raw_clusters;
 			bool is_raw;
@@ -88,7 +92,7 @@ struct ploop_cmd {
 		} notify_delta_merged;
 		struct {
 			struct dm_dev *origin_dev;
-			struct file **deltas;
+			struct ploop_delta *deltas;
 		} switch_top_delta;
 		struct {
 			u8 level;
@@ -165,7 +169,7 @@ struct ploop {
 	struct ploop_pvd_header *hdr;
 	unsigned int *bat_entries;
 	u8 *bat_levels;
-	struct file **deltas;
+	struct ploop_delta *deltas;
 	u8 nr_deltas;
 	unsigned int nr_bat_entries;
 	unsigned int cluster_log; /* In sectors */

@@ -547,7 +547,7 @@ static void process_add_delta_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 	swap(ploop->deltas, cmd->add_delta.deltas);
 	ploop->nr_deltas++;
 	write_unlock_irq(&ploop->bat_rwlock);
-	get_file(ploop->deltas[level]);
+	get_file(ploop->deltas[level].file);
 	cmd->retval = 0;
 out:
 	complete(&cmd->comp); /* Last touch of cmd memory */
@@ -573,7 +573,7 @@ int ploop_add_delta(struct ploop *ploop, const char *arg)
 {
 	unsigned int level = ploop->nr_deltas;
 	struct ploop_cmd cmd = { {0} };
-	struct file **deltas;
+	struct ploop_delta *deltas;
 	bool is_raw = false;
 	unsigned int size;
 	struct file *file;
@@ -603,7 +603,7 @@ int ploop_add_delta(struct ploop *ploop, const char *arg)
 		goto out;
 	size = level * sizeof(*deltas);
 	memcpy(deltas, ploop->deltas, size);
-	deltas[level] = file;
+	deltas[level].file = file;
 	/*
 	 * BAT update in general is driven by the kwork
 	 * (see comment in process_one_deferred_bio()),
@@ -728,7 +728,7 @@ out:
 	if (cmd->retval == 0 && !cmd->merge.do_repeat) {
 		/* Delta merged. Release delta's file */
 		write_lock_irq(&ploop->bat_rwlock);
-		file = ploop->deltas[--ploop->nr_deltas];
+		file = ploop->deltas[--ploop->nr_deltas].file;
 		write_unlock_irq(&ploop->bat_rwlock);
 		ploop_inflight_bios_ref_switch(ploop);
 		fput(file);
@@ -808,11 +808,11 @@ static void process_notify_delta_merged(struct ploop *ploop,
 			bat_levels[i]--;
 	}
 
-	file = ploop->deltas[level];
+	file = ploop->deltas[level].file;
 	/* Renumber deltas above @level */
 	for (i = level + 1; i < ploop->nr_deltas; i++)
 		ploop->deltas[i - 1] = ploop->deltas[i];
-	ploop->deltas[--ploop->nr_deltas] = NULL;
+	ploop->deltas[--ploop->nr_deltas].file = NULL;
 	write_unlock_irq(&ploop->bat_rwlock);
 
 	ploop_inflight_bios_ref_switch(ploop);
@@ -867,7 +867,7 @@ static int ploop_delta_clusters_merged(struct ploop *ploop, u8 level,
 	int ret;
 
 	/* Reread BAT of deltas[@level + 1] (or [@level - 1]) */
-	file = ploop->deltas[level + forward ? 1 : -1];
+	file = ploop->deltas[level + forward ? 1 : -1].file;
 
 	ret = ploop_read_delta_metadata(ploop, file, &d_hdr);
 	if (ret)
@@ -928,7 +928,7 @@ static int ploop_get_delta_name_cmd(struct ploop *ploop, u8 level,
 	 * for uniformity.
 	 */
 	read_lock_irq(&ploop->bat_rwlock);
-	file = get_file(ploop->deltas[level]);
+	file = get_file(ploop->deltas[level].file);
 	read_unlock_irq(&ploop->bat_rwlock);
 
 	p = file_path(file, result, maxlen);
@@ -1031,13 +1031,13 @@ static int ploop_switch_top_delta(struct ploop *ploop, int new_ro_fd,
 	if (ret)
 		goto fput;
 	ret = -ENOMEM;
-	size = (ploop->nr_deltas + 1) * sizeof(struct file *);
+	size = (ploop->nr_deltas + 1) * sizeof(struct ploop_delta);
 	cmd.switch_top_delta.deltas = kmalloc(size, GFP_NOIO);
 	if (!cmd.switch_top_delta.deltas)
 		goto put_dev;
-	size -= sizeof(struct file *);
+	size -= sizeof(struct ploop_delta);
 	memcpy(cmd.switch_top_delta.deltas, ploop->deltas, size);
-	cmd.switch_top_delta.deltas[ploop->nr_deltas] = file;
+	cmd.switch_top_delta.deltas[ploop->nr_deltas].file = file;
 
 	init_completion(&cmd.comp);
 	ploop_queue_deferred_cmd(ploop, &cmd);
@@ -1081,7 +1081,8 @@ static void process_flip_upper_deltas(struct ploop *ploop, struct ploop_cmd *cmd
 		}
 	}
 	swap(ploop->origin_dev, cmd->flip_upper_deltas.origin_dev);
-	swap(ploop->deltas[level], cmd->flip_upper_deltas.file);
+	/* FIXME */
+	swap(ploop->deltas[level].file, cmd->flip_upper_deltas.file);
 	write_unlock_irq(&ploop->bat_rwlock);
 	/* Device is suspended, but anyway... */
 	ploop_inflight_bios_ref_switch(ploop);
