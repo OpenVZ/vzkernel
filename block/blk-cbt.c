@@ -491,7 +491,7 @@ out:
 	mutex_unlock(&cbt_mutex);
 	if (ret == 0)
 		free_map(map, npages);
-	return 0;
+	return ret;
 }
 
 static void blk_cbt_page_merge(struct page *pg_from, struct page *pg_to)
@@ -570,7 +570,7 @@ out:
 	mutex_unlock(&cbt_mutex);
 	if (ret == 0)
 		free_map(map, NR_PAGES(block_max));
-	return 0;
+	return ret;
 }
 
 void blk_cbt_update_size(struct block_device *bdev)
