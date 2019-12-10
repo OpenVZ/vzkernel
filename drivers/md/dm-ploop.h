@@ -280,6 +280,7 @@ struct ploop_cow {
 };
 
 extern struct kmem_cache *piocb_cache;
+extern struct kmem_cache *cow_cache;
 
 static inline bool ploop_is_ro(struct ploop *ploop)
 {

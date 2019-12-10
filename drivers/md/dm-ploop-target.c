@@ -21,6 +21,7 @@
 #define DM_MSG_PREFIX "ploop"
 
 struct kmem_cache *piocb_cache;
+struct kmem_cache *cow_cache;
 
 static void inflight_bios_ref_exit0(struct percpu_ref *ref)
 {
@@ -305,28 +306,33 @@ static struct target_type ploop_target = {
 
 static int __init dm_ploop_init(void)
 {
-	int r;
+	int r = -ENOMEM;
+
+	piocb_cache = kmem_cache_create("ploop-iocb", sizeof(struct ploop_iocb),
+					0, 0, NULL);
+	cow_cache = kmem_cache_create("ploop-cow", sizeof(struct ploop_cow),
+				      0, 0, NULL);
+	if (!piocb_cache || !cow_cache)
+		goto err;
 
 	r = dm_register_target(&ploop_target);
 	if (r) {
 		DMERR("ploop target registration failed: %d", r);
-		return r;
-	}
-
-	piocb_cache = kmem_cache_create("ploop-iocb", sizeof(struct ploop_iocb),
-					0, 0, NULL);
-	if (!piocb_cache) {
-		dm_unregister_target(&ploop_target);
-		return -ENOMEM;
+		goto err;
 	}
 
 	return 0;
+err:
+	kmem_cache_destroy(piocb_cache);
+	kmem_cache_destroy(cow_cache);
+	return r;
 }
 
 static void __exit dm_ploop_exit(void)
 {
-	kmem_cache_destroy(piocb_cache);
 	dm_unregister_target(&ploop_target);
+	kmem_cache_destroy(cow_cache);
+	kmem_cache_destroy(piocb_cache);
 }
 
 module_init(dm_ploop_init);
