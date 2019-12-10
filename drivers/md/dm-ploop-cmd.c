@@ -598,10 +598,10 @@ int ploop_add_delta(struct ploop *ploop, const char *arg)
 		goto out;
 
 	ret = -ENOMEM;
-	deltas = kcalloc(level + 1, sizeof(*file), GFP_KERNEL);
+	deltas = kcalloc(level + 1, sizeof(*deltas), GFP_KERNEL);
 	if (!deltas)
 		goto out;
-	size = level * sizeof(*file);
+	size = level * sizeof(*deltas);
 	memcpy(deltas, ploop->deltas, size);
 	deltas[level] = file;
 	/*
