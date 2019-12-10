@@ -33,6 +33,7 @@ struct ploop_pvd_header {
 
 struct ploop_delta {
 	struct file *file;
+	bool is_raw;
 };
 
 struct ploop_cmd {
@@ -70,7 +71,6 @@ struct ploop_cmd {
 			struct ploop_delta *deltas;
 			void *hdr; /* hdr and bat_entries consequentially */
 			unsigned int raw_clusters;
-			bool is_raw;
 		} add_delta;
 		struct {
 #define NR_MERGE_BIOS			64
