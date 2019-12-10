@@ -71,7 +71,7 @@ static void ploop_destroy(struct ploop *ploop)
 		percpu_ref_exit(&ploop->inflight_bios_ref[i]);
 	/* Nobody uses it after destroy_workqueue() */
 	while (ploop->nr_deltas-- > 0)
-		fput(ploop->deltas[ploop->nr_deltas]);
+		fput(ploop->deltas[ploop->nr_deltas].file);
 	WARN_ON(!RB_EMPTY_ROOT(&ploop->exclusive_bios_rbtree));
 	WARN_ON(!RB_EMPTY_ROOT(&ploop->inflight_bios_rbtree));
 	kfree(ploop->deltas);
