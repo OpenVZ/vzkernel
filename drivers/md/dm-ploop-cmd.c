@@ -1037,6 +1037,7 @@ static int ploop_switch_top_delta(struct ploop *ploop, int new_ro_fd,
 	size -= sizeof(struct ploop_delta);
 	memcpy(cmd.switch_top_delta.deltas, ploop->deltas, size);
 	cmd.switch_top_delta.deltas[ploop->nr_deltas].file = file;
+	cmd.switch_top_delta.deltas[ploop->nr_deltas].is_raw = false;
 
 	init_completion(&cmd.comp);
 	ploop_queue_deferred_cmd(ploop, &cmd);
