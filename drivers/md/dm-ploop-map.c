@@ -913,7 +913,7 @@ static void submit_delta_read(struct ploop *ploop, unsigned int level,
 	iter.iov_offset = offset;
 
 	pos = (bio->bi_iter.bi_sector << SECTOR_SHIFT);
-	file = ploop->deltas[level];
+	file = ploop->deltas[level].file;
 
 	piocb->iocb.ki_pos = pos;
 	piocb->iocb.ki_filp = file;
