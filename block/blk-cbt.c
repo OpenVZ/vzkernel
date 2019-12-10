@@ -326,6 +326,8 @@ static unsigned long map_required_size(struct page **map, unsigned long block_ma
 	bit = find_last_bit(page_address(map[page - 1]), PAGE_SIZE);
 	if (bit >= PAGE_SIZE)
 		bit = 0; /* Not found */
+	else
+		bit++;
 
 	return DIV_ROUND_UP(bit, 8) + page * PAGE_SIZE;
 }
