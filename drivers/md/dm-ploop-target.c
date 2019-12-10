@@ -20,6 +20,8 @@
 
 #define DM_MSG_PREFIX "ploop"
 
+struct kmem_cache *piocb_cache;
+
 static void inflight_bios_ref_exit0(struct percpu_ref *ref)
 {
 	struct ploop *ploop = container_of(ref, struct ploop,
@@ -311,11 +313,19 @@ static int __init dm_ploop_init(void)
 		return r;
 	}
 
+	piocb_cache = kmem_cache_create("ploop-iocb", sizeof(struct ploop_iocb),
+					0, 0, NULL);
+	if (!piocb_cache) {
+		dm_unregister_target(&ploop_target);
+		return -ENOMEM;
+	}
+
 	return 0;
 }
 
 static void __exit dm_ploop_exit(void)
 {
+	kmem_cache_destroy(piocb_cache);
 	dm_unregister_target(&ploop_target);
 }
 
