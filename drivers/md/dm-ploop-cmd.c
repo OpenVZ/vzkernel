@@ -507,6 +507,7 @@ static void process_add_delta_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 	map_index_t *bat_entries, *delta_bat_entries;
 	unsigned int i, level, dst_cluster;
 	u8 *bat_levels;
+	bool is_raw;
 
 	if (unlikely(ploop->force_link_inflight_bios)) {
 		cmd->retval = -EBUSY;
@@ -518,6 +519,7 @@ static void process_add_delta_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 	bat_entries = ploop->bat_entries;
 	bat_levels = ploop->bat_levels;
 	delta_bat_entries = (map_index_t *)cmd->add_delta.hdr + PLOOP_MAP_OFFSET;
+	is_raw = cmd->add_delta.deltas[level].is_raw;
 
 	write_lock_irq(&ploop->bat_rwlock);
 
@@ -525,7 +527,7 @@ static void process_add_delta_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 	for (i = 0; i < ploop->nr_bat_entries; i++) {
 		if (cluster_is_in_top_delta(ploop, i))
 			continue;
-		if (!cmd->add_delta.is_raw)
+		if (!is_raw)
 			dst_cluster = delta_bat_entries[i];
 		else
 			dst_cluster = i < cmd->add_delta.raw_clusters ? i : BAT_ENTRY_NONE;
@@ -604,13 +606,13 @@ int ploop_add_delta(struct ploop *ploop, const char *arg)
 	size = level * sizeof(*deltas);
 	memcpy(deltas, ploop->deltas, size);
 	deltas[level].file = file;
+	deltas[level].is_raw = is_raw;
 	/*
 	 * BAT update in general is driven by the kwork
 	 * (see comment in process_one_deferred_bio()),
 	 * so we delegate the cmd to it.
 	 */
 	cmd.add_delta.deltas = deltas;
-	cmd.add_delta.is_raw = is_raw;
 	cmd.type = PLOOP_CMD_ADD_DELTA;
 	cmd.ploop = ploop;
 
@@ -1038,6 +1040,7 @@ static int ploop_switch_top_delta(struct ploop *ploop, int new_ro_fd,
 	size -= sizeof(struct ploop_delta);
 	memcpy(cmd.switch_top_delta.deltas, ploop->deltas, size);
 	cmd.switch_top_delta.deltas[ploop->nr_deltas].file = file;
+	cmd.switch_top_delta.deltas[ploop->nr_deltas].is_raw = false;
 
 	init_completion(&cmd.comp);
 	ploop_queue_deferred_cmd(ploop, &cmd);
