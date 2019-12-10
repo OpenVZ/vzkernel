@@ -587,6 +587,7 @@ int ploop_add_delta(struct ploop *ploop, const char *arg)
 		is_raw = true;
 		arg += 4;
 	}
+	/* Only ploop->deltas[0] may be raw */
 	if (level == BAT_LEVEL_TOP || (is_raw && level))
 		return -EMFILE;
 	if (kstrtos32(arg, 10, &fd) < 0)
@@ -1251,13 +1252,14 @@ static int ploop_flip_upper_deltas(struct ploop *ploop, char *new_dev,
 	cmd.type = PLOOP_CMD_FLIP_UPPER_DELTAS;
 	cmd.ploop = ploop;
 
-	/* FIXME: prohibit flip on raw delta */
 	if (!dm_suspended(ti) || !ploop->noresume || ploop->maintaince)
 		return -EBUSY;
 	if (ploop_is_ro(ploop))
 		return -EROFS;
 	if (!ploop->nr_deltas)
 		return -ENOENT;
+	if (ploop->deltas[ploop->nr_deltas - 1].is_raw)
+		return -EBADSLT;
 	if (kstrtou32(new_ro_fd, 10, &new_fd) < 0 ||
 	    !(cmd.flip_upper_deltas.file = fget(new_fd)))
 		return -EBADF;
