@@ -514,7 +514,7 @@ static void complete_cow(struct ploop_cow *cow, blk_status_t bi_status)
 
 	queue_work(ploop->wq, &ploop->worker);
 	free_bio_with_pages(ploop, cow->cluster_bio);
-	kfree(cow);
+	kmem_cache_free(cow_cache, cow);
 }
 
 static void piwb_discard_completed(struct ploop *ploop, bool success,
@@ -1012,7 +1012,7 @@ int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 	if (!bio)
 		goto err;
 
-	cow = kmalloc(sizeof(*cow), GFP_NOIO);
+	cow = kmem_cache_alloc(cow_cache, GFP_NOIO);
 	if (!cow)
 		goto err;
 
