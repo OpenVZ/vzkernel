@@ -753,6 +753,28 @@ static void ploop_bat_page_zero_cluster(struct ploop *ploop,
 	kunmap_atomic(to);
 }
 
+static int find_and_clear_dst_cluster_bit(struct ploop *ploop,
+					  unsigned int *ret_dst_cluster)
+{
+	unsigned int dst_cluster;
+
+	WARN_ON_ONCE(!(current->flags & PF_WQ_WORKER));
+
+	/* Find empty cluster */
+	dst_cluster = find_first_bit(ploop->holes_bitmap, ploop->hb_nr);
+	if (dst_cluster >= ploop->hb_nr)
+		return -EIO;
+	/*
+	 * Mark cluster as used. Find & clear bit is unlocked,
+	 * since currently this may be called only from deferred
+	 * kwork. Note, that set_bit may be made from many places.
+	 */
+	ploop_hole_clear_bit(dst_cluster, ploop);
+
+	*ret_dst_cluster = dst_cluster;
+	return 0;
+}
+
 /*
  * This finds a free dst_cluster on origin device, and reflects this
  * in ploop->holes_bitmap and bat_page.
@@ -774,19 +796,10 @@ static int ploop_alloc_cluster(struct ploop *ploop, struct ploop_index_wb *piwb,
 		goto unmap;
 	}
 
-	/* Find empty cluster */
-	*dst_cluster = find_first_bit(ploop->holes_bitmap, ploop->hb_nr);
-	if (*dst_cluster >= ploop->hb_nr) {
+	if (find_and_clear_dst_cluster_bit(ploop, dst_cluster) < 0) {
 		ret = -EIO;
 		goto unmap;
 	}
-
-	/*
-	 * Mark cluster as used. Find & clear bit is unlocked,
-	 * since currently this may be called only from deferred
-	 * kwork. Note, that set_bit may be made from many places.
-	 */
-	ploop_hole_clear_bit(*dst_cluster, ploop);
 
 	to[cluster] = *dst_cluster;
 unmap:
@@ -1073,10 +1086,8 @@ static void submit_cluster_write(struct ploop_cow *cow)
 	struct ploop *ploop = cow->ploop;
 	unsigned int dst_cluster;
 
-	dst_cluster = find_first_bit(ploop->holes_bitmap, ploop->hb_nr);
-	if (dst_cluster >= ploop->hb_nr)
+	if (find_and_clear_dst_cluster_bit(ploop, &dst_cluster) < 0)
 		goto error;
-	ploop_hole_clear_bit(dst_cluster, ploop);
 	cow->dst_cluster = dst_cluster;
 
 	bio_reset(bio);
