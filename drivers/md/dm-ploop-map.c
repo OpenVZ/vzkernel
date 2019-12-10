@@ -55,18 +55,6 @@
 			read_unlock_irqrestore(&ploop->bat_rwlock, flags);	\
 	} while (0)
 
-/* Delta COW private */
-struct ploop_cow {
-	struct ploop *ploop;
-	struct bio *cluster_bio;
-	unsigned int dst_cluster;
-
-	struct dm_ploop_endio_hook hook;
-
-	void (*end_fn)(struct ploop *, int, void *);
-	void *data;
-};
-
 static void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop)
 {
 	piwb->ploop = ploop;
