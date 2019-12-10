@@ -261,6 +261,14 @@ struct dm_ploop_endio_hook {
 	unsigned int ref_index:2;
 };
 
+struct ploop_iocb {
+	struct kiocb iocb;
+	struct bio *bio;
+	atomic_t count;
+};
+
+extern struct kmem_cache *piocb_cache;
+
 static inline bool ploop_is_ro(struct ploop *ploop)
 {
 	return (dm_table_get_mode(ploop->ti->table) & FMODE_WRITE) == 0;
