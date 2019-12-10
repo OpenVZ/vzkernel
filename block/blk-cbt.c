@@ -407,13 +407,13 @@ static int blk_cbt_snap_create(struct request_queue *q, __u8 *uuid,
 		return -EBUSY;
 	}
 
+	cbt_flush_cache(cbt);
+
 	size = map_required_size(cbt->map, cbt->block_max);
 	if (to_size < size) {
 		mutex_unlock(&cbt_mutex);
 		return -EFBIG;
 	}
-
-	cbt_flush_cache(cbt);
 
 	npages = NR_PAGES(cbt->block_max);
 	map = vmalloc(npages * sizeof(void*));
