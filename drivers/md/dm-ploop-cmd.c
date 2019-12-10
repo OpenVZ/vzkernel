@@ -371,7 +371,10 @@ struct bio *alloc_bio_with_pages(struct ploop *ploop)
 	int i, nr_pages = nr_pages_in_cluster(ploop);
 	struct bio *bio;
 
-	bio = bio_alloc(GFP_NOIO, nr_pages);
+	if (nr_pages <= BIO_MAX_PAGES)
+		bio = bio_alloc(GFP_NOIO, nr_pages);
+	else
+		bio = bio_kmalloc(GFP_NOIO, nr_pages);
 	if (!bio)
 		return NULL;
 

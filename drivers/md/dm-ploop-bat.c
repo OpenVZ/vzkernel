@@ -124,10 +124,7 @@ int ploop_read_metadata(struct dm_target *ti, struct ploop *ploop)
 	int ret;
 	void *data;
 
-	/* Hardcode cluster size 1M for now ... FIXME */
 	cluster_log = ploop->cluster_log;
-	if (cluster_log != 11)
-		return -ENOTSUPP;
 
 	bio = alloc_bio_with_pages(ploop);
 	if (!bio)
