@@ -137,11 +137,9 @@ int ploop_read_metadata(struct dm_target *ti, struct ploop *ploop)
 		goto out;
 
 	ret = -ENOLCK;
-#if 0	/* Wait till Igor is implemented PSBM-98203 */
 	if (m_hdr->m_DiskInUse != cpu_to_le32(SIGNATURE_DISK_IN_USE) &&
-	    ploop_is_ro(ploop))
+	    !ploop_is_ro(ploop))
 		goto out;
-#endif
 
 	ret = -EINVAL;
 	if (le32_to_cpu(m_hdr->m_Sectors) != 1 << cluster_log)
