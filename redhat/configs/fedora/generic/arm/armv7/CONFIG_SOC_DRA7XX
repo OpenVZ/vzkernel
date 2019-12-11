@@ -1,1 +1,1 @@
-# CONFIG_SOC_DRA7XX is not set
+CONFIG_SOC_DRA7XX=y
