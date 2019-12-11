@@ -1,0 +1,4 @@
+# Broken in commit 5474080a3a0a ("s390/Kconfig: make use of 'depends on
+# cc-option'"); refer to
+# https://lore.kernel.org/lkml/20191209164155.GA78160@dev.jcline.org/
+CONFIG_TUNE_DEFAULT=y
