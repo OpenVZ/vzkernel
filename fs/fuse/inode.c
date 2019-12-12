@@ -1444,23 +1444,33 @@ static struct dentry *fuse_mount(struct file_system_type *fs_type,
 		       void *raw_data)
 {
 	struct dentry *dentry;
+	struct fuse_conn *fc;
 
 	dentry = mount_nodev(fs_type, flags, raw_data, fuse_fill_super);
+	if (IS_ERR(dentry))
+		return dentry;
 
-	/* Hack to distinguish pcs fuse service and to force synchronous close for it.
-	 * Seems, this is the only place where we have some variable (dev_name), which
-	 * is not confined by fuse API and already defined.
+	fc = dentry->d_sb->s_fs_info;
+
+	/* Hack to distinguish pcs fuse service and to force synchronous
+	 * close for it. Seems, this is the only place where we have some
+	 * variable (dev_name), which is not confined by fuse API and
+	 * already defined.
+	 *
+	 * libfuse is not ready for fiemap autodetection, so disable fiemap
+	 * support check in advance for all FUSE fs except for pStorage.
 	 */
-	if (!IS_ERR(dentry) && dev_name &&
-			(strncmp(dev_name, "pstorage://", 11) == 0 ||
-				strncmp(dev_name, "vstorage://", 11) == 0) ) {
-		struct fuse_conn *fc = dentry->d_sb->s_fs_info;
+	if (dev_name &&
+	    (strncmp(dev_name, "pstorage://", 11) == 0 ||
+	     strncmp(dev_name, "vstorage://", 11) == 0)) {
 
 		if (!(fc->flags & FUSE_DISABLE_CLOSE_WAIT))
 			fc->close_wait = 1;
 
 		fc->compat_inval_files = 1;
-	}
+	} else
+		fc->no_fiemap = 1;
+
 	return dentry;
 }
 
