@@ -1116,6 +1116,13 @@ enum mds_mitigations {
 
 extern enum mds_mitigations mds_mitigation;
 
+enum taa_mitigations {
+	TAA_MITIGATION_OFF,
+	TAA_MITIGATION_UCODE_NEEDED,
+	TAA_MITIGATION_VERW,
+	TAA_MITIGATION_TSX_DISABLED,
+};
+
 extern void (*set_cpuid_faulting_cb)(bool enable);
 extern void set_cpuid_faulting(bool enable);
 
