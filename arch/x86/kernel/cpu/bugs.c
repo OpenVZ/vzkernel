@@ -922,6 +922,9 @@ int arch_prctl_spec_ctrl_get(struct task_struct *task, unsigned long which)
 	}
 }
 
+int itlb_multihit_kvm_mitigation = -1;
+EXPORT_SYMBOL_GPL(itlb_multihit_kvm_mitigation);
+
 #undef pr_fmt
 #define pr_fmt(fmt)	"L1TF: " fmt
 
@@ -1073,10 +1076,26 @@ static ssize_t l1tf_show_state(char *buf)
 		       l1tf_vmx_states[l1tf_vmx_mitigation],
 		       sched_smt_active() ? "vulnerable" : "disabled");
 }
+
+static ssize_t itlb_multihit_show_state(char *buf)
+{
+	if (itlb_multihit_kvm_mitigation == -1)
+		return sprintf(buf, "Processor vulnerable\n");
+
+	if (itlb_multihit_kvm_mitigation)
+		return sprintf(buf, "KVM: Mitigation: Split huge pages\n");
+	else
+		return sprintf(buf, "KVM: Vulnerable\n");
+}
 #else
 static ssize_t l1tf_show_state(char *buf)
 {
 	return sprintf(buf, "%s\n", L1TF_DEFAULT_MSG);
+}
+
+static ssize_t itlb_multihit_show_state(char *buf)
+{
+	return sprintf(buf, "Processor vulnerable\n");
 }
 #endif
 
@@ -1168,6 +1187,9 @@ static ssize_t cpu_show_common(struct device *dev, struct device_attribute *attr
 	case X86_BUG_TAA:
 		return tsx_async_abort_show_state(buf);
 
+	case X86_BUG_ITLB_MULTIHIT:
+		return itlb_multihit_show_state(buf);
+
 	default:
 		break;
 	}
@@ -1213,4 +1235,8 @@ ssize_t cpu_show_tsx_async_abort(struct device *dev, struct device_attribute *at
 	return cpu_show_common(dev, attr, buf, X86_BUG_TAA);
 }
 
+ssize_t cpu_show_itlb_multihit(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return cpu_show_common(dev, attr, buf, X86_BUG_ITLB_MULTIHIT);
+}
 #endif

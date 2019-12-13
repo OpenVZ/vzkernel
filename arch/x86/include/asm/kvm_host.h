@@ -284,6 +284,10 @@ struct kvm_rmap_head {
 struct kvm_mmu_page {
 	struct list_head link;
 	struct hlist_node hash_link;
+	struct list_head lpage_disallowed_link;
+
+	bool unsync;
+	bool lpage_disallowed; /* Can't be replaced by an equiv large page */
 
 	/*
 	 * The following two entries are used to key the shadow page in the
@@ -295,7 +299,6 @@ struct kvm_mmu_page {
 	u64 *spt;
 	/* hold the gfn of each spte inside spt */
 	gfn_t *gfns;
-	bool unsync;
 	int root_count;          /* Currently serving as active root */
 	unsigned int unsync_children;
 	struct kvm_rmap_head parent_ptes; /* rmap pointers to parent sptes */
@@ -782,6 +785,7 @@ struct kvm_arch {
 	 */
 	struct list_head active_mmu_pages;
 	struct list_head zapped_obsolete_pages;
+	struct list_head lpage_disallowed_mmu_pages;
 	struct kvm_page_track_notifier_node mmu_sp_tracker;
 	struct kvm_page_track_notifier_head track_notifier_head;
 
@@ -857,6 +861,8 @@ struct kvm_arch {
 	struct page *avic_logical_id_table_page;
 	struct page *avic_physical_id_table_page;
 	struct hlist_node hnode;
+
+	struct task_struct *nx_lpage_recovery_thread;
 };
 
 struct kvm_vm_stat {
@@ -870,6 +876,7 @@ struct kvm_vm_stat {
 	ulong mmu_unsync;
 	ulong remote_tlb_flush;
 	ulong lpages;
+	ulong nx_lpage_splits;
 };
 
 struct kvm_vcpu_stat {

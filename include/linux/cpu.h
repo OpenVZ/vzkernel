@@ -53,6 +53,8 @@ extern ssize_t cpu_show_mds(struct device *dev,
 extern ssize_t cpu_show_tsx_async_abort(struct device *dev,
 					struct device_attribute *attr,
 					char *buf);
+extern ssize_t cpu_show_itlb_multihit(struct device *dev,
+				      struct device_attribute *attr, char *buf);
 
 #ifdef CONFIG_HOTPLUG_CPU
 extern void unregister_cpu(struct cpu *cpu);
@@ -328,28 +330,7 @@ bool cpu_smt_allowed(unsigned int cpu);
 static inline bool cpu_smt_allowed(unsigned int cpu) { return true; }
 #endif
 
-/*
- * These are used for a global "mitigations=" cmdline option for toggling
- * optional CPU mitigations.
- */
-enum cpu_mitigations {
-	CPU_MITIGATIONS_OFF,
-	CPU_MITIGATIONS_AUTO,
-	CPU_MITIGATIONS_AUTO_NOSMT,
-};
-
-extern enum cpu_mitigations cpu_mitigations;
-
-/* mitigations=off */
-static inline bool cpu_mitigations_off(void)
-{
-	return cpu_mitigations == CPU_MITIGATIONS_OFF;
-}
-
-/* mitigations=auto,nosmt */
-static inline bool cpu_mitigations_auto_nosmt(void)
-{
-	return cpu_mitigations == CPU_MITIGATIONS_AUTO_NOSMT;
-}
+extern bool cpu_mitigations_off(void);
+extern bool cpu_mitigations_auto_nosmt(void);
 
 #endif /* _LINUX_CPU_H_ */
