@@ -8,9 +8,9 @@ stages:
 variables:
   GIT_DEPTH: "5"
 
-test_rh_configs:
+test_rh_srpm:
   stage: test
-  script: make rh-configs
+  script: make rh-srpm
   only:
     refs:
       - merge_requests
