@@ -598,6 +598,8 @@ ploop1_start_merge(struct ploop_delta * delta, struct ploop_snapdata * sd)
 		return err;
 
 	ph->bd_size = get_SizeInSectors_from_le(vh, delta->plo->fmt_version);
+	ph->l1_off = le32_to_cpu(vh->m_FirstBlockOffset);
+	ph->nr_bat_entries = le32_to_cpu(vh->m_Size);
 
 	err = delta->io.ops->sync(&delta->io);
 	if (err)
