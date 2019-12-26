@@ -664,6 +664,16 @@ static int unix_set_peek_off(struct sock *sk, int val)
 	return 0;
 }
 
+static void unix_show_fdinfo(struct seq_file *m, struct socket *sock)
+{
+	struct sock *sk = sock->sk;
+	struct unix_sock *u;
+
+	if (sk) {
+		u = unix_sk(sock->sk);
+		seq_printf(m, "scm_fds: %u\n", READ_ONCE(u->scm_stat.nr_fds));
+	}
+}
 
 static const struct proto_ops unix_stream_ops = {
 	.family =	PF_UNIX,
@@ -686,6 +696,7 @@ static const struct proto_ops unix_stream_ops = {
 	.sendpage =	unix_stream_sendpage,
 	.splice_read =	unix_stream_splice_read,
 	.set_peek_off =	unix_set_peek_off,
+	.show_fdinfo =	unix_show_fdinfo,
 };
 
 static const struct proto_ops unix_dgram_ops = {
@@ -708,6 +719,7 @@ static const struct proto_ops unix_dgram_ops = {
 	.mmap =		sock_no_mmap,
 	.sendpage =	sock_no_sendpage,
 	.set_peek_off =	unix_set_peek_off,
+	.show_fdinfo =	unix_show_fdinfo,
 };
 
 static const struct proto_ops unix_seqpacket_ops = {
@@ -730,6 +742,7 @@ static const struct proto_ops unix_seqpacket_ops = {
 	.mmap =		sock_no_mmap,
 	.sendpage =	sock_no_sendpage,
 	.set_peek_off =	unix_set_peek_off,
+	.show_fdinfo =	unix_show_fdinfo,
 };
 
 static struct proto unix_proto = {
@@ -777,6 +790,7 @@ static struct sock *unix_create1(struct net *net, struct socket *sock)
 	mutex_init(&u->bindlock); /* single task binding lock */
 	init_waitqueue_head(&u->peer_wait);
 	init_waitqueue_func_entry(&u->peer_wake, unix_dgram_peer_wake_relay);
+	memset(&u->scm_stat, 0, sizeof(struct scm_stat));
 	unix_insert_socket(unix_sockets_unbound(sk), sk);
 out:
 	if (sk == NULL)
@@ -1619,6 +1633,28 @@ static bool unix_skb_scm_eq(struct sk_buff *skb,
 	       gid_eq(u->gid, scm->creds.gid);
 }
 
+static void scm_stat_add(struct sock *sk, struct sk_buff *skb)
+{
+	struct scm_fp_list *fp = UNIXCB(skb).fp;
+	struct unix_sock *u = unix_sk(sk);
+
+	lockdep_assert_held(&sk->sk_receive_queue.lock);
+
+	if (unlikely(fp && fp->count))
+		u->scm_stat.nr_fds += fp->count;
+}
+
+static void scm_stat_del(struct sock *sk, struct sk_buff *skb)
+{
+	struct scm_fp_list *fp = UNIXCB(skb).fp;
+	struct unix_sock *u = unix_sk(sk);
+
+	lockdep_assert_held(&sk->sk_receive_queue.lock);
+
+	if (unlikely(fp && fp->count))
+		u->scm_stat.nr_fds -= fp->count;
+}
+
 /*
  *	Send AF_UNIX data.
  */
@@ -1810,7 +1846,10 @@ restart_locked:
 	if (sock_flag(other, SOCK_RCVTSTAMP))
 		__net_timestamp(skb);
 	maybe_add_creds(skb, sock, other);
-	skb_queue_tail(&other->sk_receive_queue, skb);
+	spin_lock(&other->sk_receive_queue.lock);
+	scm_stat_add(other, skb);
+	__skb_queue_tail(&other->sk_receive_queue, skb);
+	spin_unlock(&other->sk_receive_queue.lock);
 	if (max_level > unix_sk(other)->recursion_level)
 		unix_sk(other)->recursion_level = max_level;
 	unix_state_unlock(other);
@@ -1920,7 +1959,10 @@ static int unix_stream_sendmsg(struct kiocb *kiocb, struct socket *sock,
 			goto pipe_err_free;
 
 		maybe_add_creds(skb, sock, other);
-		skb_queue_tail(&other->sk_receive_queue, skb);
+		spin_lock(&other->sk_receive_queue.lock);
+		scm_stat_add(other, skb);
+		__skb_queue_tail(&other->sk_receive_queue, skb);
+		spin_unlock(&other->sk_receive_queue.lock);
 		if (max_level > unix_sk(other)->recursion_level)
 			unix_sk(other)->recursion_level = max_level;
 		unix_state_unlock(other);
@@ -2131,7 +2173,7 @@ static int unix_dgram_recvmsg(struct kiocb *iocb, struct socket *sock,
 
 	skip = sk_peek_offset(sk, flags);
 
-	skb = __skb_recv_datagram(sk, flags, NULL, &peeked, &skip, &err);
+	skb = __skb_recv_datagram(sk, flags, scm_stat_del, &peeked, &skip, &err);
 	if (!skb) {
 		unix_state_lock(sk);
 		/* Signal EOF on disconnected non-blocking SEQPACKET socket. */
@@ -2424,8 +2466,12 @@ unlock:
 
 			sk_peek_offset_bwd(sk, chunk);
 
-			if (UNIXCB(skb).fp)
+			if (UNIXCB(skb).fp) {
+				spin_lock(&sk->sk_receive_queue.lock);
+				scm_stat_del(sk, skb);
+				spin_unlock(&sk->sk_receive_queue.lock);
 				unix_detach_fds(siocb->scm, skb);
+			}
 
 			if (unix_skb_len(skb))
 				break;
