@@ -38,6 +38,10 @@ struct unix_skb_parms {
 	u32			consumed;
 };
 
+struct scm_stat {
+	u32 nr_fds;
+};
+
 #define UNIXCB(skb) 	(*(struct unix_skb_parms *)&((skb)->cb))
 #define UNIXSID(skb)	(&UNIXCB((skb)).secid)
 
@@ -64,6 +68,7 @@ struct unix_sock {
 #define UNIX_GC_MAYBE_CYCLE	1
 	struct socket_wq	peer_wq;
 	wait_queue_t		peer_wake;
+	struct scm_stat		scm_stat;
 };
 #define unix_sk(__sk) ((struct unix_sock *)__sk)
 
