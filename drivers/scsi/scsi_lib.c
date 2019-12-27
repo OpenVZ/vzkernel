@@ -1276,6 +1276,8 @@ static int scsi_setup_cmnd(struct scsi_device *sdev, struct request *req)
 static int
 scsi_prep_state_check(struct scsi_device *sdev, struct request *req)
 {
+	static DEFINE_RATELIMIT_STATE(ratelimit, 5 * HZ, 10);
+
 	int ret = BLKPREP_OK;
 
 	/*
@@ -1291,8 +1293,9 @@ scsi_prep_state_check(struct scsi_device *sdev, struct request *req)
 			 * commands.  The device must be brought online
 			 * before trying any recovery commands.
 			 */
-			sdev_printk(KERN_ERR, sdev,
-				    "rejecting I/O to offline device\n");
+			if (__ratelimit(&ratelimit))
+				sdev_printk(KERN_ERR, sdev,
+					"rejecting I/O to offline device\n");
 			ret = BLKPREP_KILL;
 			break;
 		case SDEV_DEL:
@@ -1300,8 +1303,9 @@ scsi_prep_state_check(struct scsi_device *sdev, struct request *req)
 			 * If the device is fully deleted, we refuse to
 			 * process any commands as well.
 			 */
-			sdev_printk(KERN_ERR, sdev,
-				    "rejecting I/O to dead device\n");
+			if (__ratelimit(&ratelimit))
+				sdev_printk(KERN_ERR, sdev,
+					"rejecting I/O to dead device\n");
 			ret = BLKPREP_KILL;
 			break;
 		case SDEV_QUIESCE:
