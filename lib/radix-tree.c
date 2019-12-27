@@ -167,7 +167,7 @@ static inline int root_tag_get(struct radix_tree_root *root, unsigned int tag)
 
 static inline unsigned root_tags_get(struct radix_tree_root *root)
 {
-	return (__force unsigned)root->gfp_mask >> __GFP_BITS_SHIFT;
+	return (__force unsigned)(root->gfp_mask & RADIX_ROOT_TAG_MASK) >> __GFP_BITS_SHIFT;
 }
 
 static inline void prev_tag_set(struct radix_tree_root *root, unsigned int tag)
