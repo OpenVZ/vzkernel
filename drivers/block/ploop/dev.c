@@ -2474,7 +2474,8 @@ delta_io:
 					spin_unlock_irq(&plo->lock);
 				}
 				preq->iblock = iblk;
-				if (!(preq->req_rw & REQ_DISCARD))
+				if (!(preq->req_rw & REQ_DISCARD) ||
+				    (delta->ops->capability & PLOOP_FMT_CAP_IDENTICAL))
 					preq->eng_state = PLOOP_E_COMPLETE;
 				else
 					preq->eng_state = PLOOP_E_DATA_WBI;
