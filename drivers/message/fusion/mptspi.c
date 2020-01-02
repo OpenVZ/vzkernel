@@ -1238,12 +1238,17 @@ static struct spi_function_template mptspi_transport_functions = {
  */
 
 static struct pci_device_id mptspi_pci_table[] = {
+#ifdef CONFIG_RHEL_DIFFERENCES
+	{ PCI_VENDOR_ID_LSI_LOGIC, MPI_MANUFACTPAGE_DEVID_53C1030,
+	PCI_VENDOR_ID_VMWARE, PCI_ANY_ID },
+#else
 	{ PCI_VENDOR_ID_LSI_LOGIC, MPI_MANUFACTPAGE_DEVID_53C1030,
 		PCI_ANY_ID, PCI_ANY_ID },
 	{ PCI_VENDOR_ID_ATTO, MPI_MANUFACTPAGE_DEVID_53C1030,
 		PCI_ANY_ID, PCI_ANY_ID },
 	{ PCI_VENDOR_ID_LSI_LOGIC, MPI_MANUFACTPAGE_DEVID_53C1035,
 		PCI_ANY_ID, PCI_ANY_ID },
+#endif
 	{0}	/* Terminating entry */
 };
 MODULE_DEVICE_TABLE(pci, mptspi_pci_table);
