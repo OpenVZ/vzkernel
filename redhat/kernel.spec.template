@@ -147,7 +147,7 @@ Summary: The Linux kernel
 
 #
 # gcov support
-%define with_gcov %{?_with_gcov: 1} %{?!_with_gcov: 0}
+%define with_gcov %{?_with_gcov:1}%{?!_with_gcov:0}
 
 #
 # ipa_clone support
