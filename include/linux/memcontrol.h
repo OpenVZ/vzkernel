@@ -51,6 +51,7 @@ struct mem_cgroup_reclaim_cookie {
  */
 struct memcg_shrinker_map {
 	struct rcu_head rcu;
+	int nr_max;
 	unsigned long map[0];
 };
 
