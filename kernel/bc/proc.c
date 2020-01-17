@@ -242,6 +242,7 @@ static void *ub_next(struct seq_file *f, void *v, loff_t *ppos)
 	struct user_beancounter *ub, *ret = NULL;
 	struct user_beancounter *exec_ub;
 
+	(*ppos)++;
 	exec_ub = get_exec_ub();
 	ub = (struct user_beancounter *)v;
 	rcu_read_lock();
@@ -251,7 +252,6 @@ static void *ub_next(struct seq_file *f, void *v, loff_t *ppos)
 			continue;
 		if (!get_beancounter_rcu(ub))
 			continue;
-		(*ppos)++;
 		ret = ub;
 		break;
 	}

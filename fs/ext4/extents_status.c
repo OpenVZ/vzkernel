@@ -1112,6 +1112,7 @@ static void *ext4_es_seq_shrinker_info_start(struct seq_file *seq, loff_t *pos)
 static void *
 ext4_es_seq_shrinker_info_next(struct seq_file *seq, void *v, loff_t *pos)
 {
+	(*pos)++;
 	return NULL;
 }
 

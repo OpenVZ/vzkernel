@@ -91,10 +91,10 @@ static void *bc_iostat_next(struct seq_file *f, void *v, loff_t *ppos)
 {
 	struct user_beancounter *ub = v;
 
-	list_for_each_entry_continue_rcu(ub, &ub_list_head, ub_list) {
-		(*ppos)++;
+	(*ppos)++;
+	list_for_each_entry_continue_rcu(ub, &ub_list_head, ub_list)
 		return ub;
-	}
+
 	return NULL;
 }
 
