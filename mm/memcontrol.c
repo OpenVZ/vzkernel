@@ -754,6 +754,7 @@ static int memcg_expand_one_shrinker_map(struct mem_cgroup *memcg,
 		/* Set all old bits, clear all new bits */
 		memset(new->map, (int)0xff, old_size);
 		memset((void *)new->map + old_size, 0, size - old_size);
+		new->nr_max = size * BITS_PER_BYTE;
 
 		rcu_assign_pointer(memcg->info.nodeinfo[nid]->shrinker_map, new);
 		call_rcu(&old->rcu, memcg_free_shrinker_map_rcu);
@@ -797,6 +798,7 @@ static int memcg_alloc_shrinker_maps(struct mem_cgroup *memcg)
 			ret = -ENOMEM;
 			break;
 		}
+		map->nr_max = size * BITS_PER_BYTE;
 		rcu_assign_pointer(memcg->info.nodeinfo[nid]->shrinker_map, map);
 	}
 	mutex_unlock(&memcg_shrinker_map_mutex);
@@ -841,6 +843,7 @@ void memcg_set_shrinker_bit(struct mem_cgroup *memcg, int nid, int shrinker_id)
 		map = rcu_dereference(memcg->info.nodeinfo[nid]->shrinker_map);
 		/* Pairs with smp mb in shrink_slab() */
 		smp_mb__before_atomic();
+		WARN_ON(shrinker_id >= map->nr_max);
 		set_bit(shrinker_id, map->map);
 		rcu_read_unlock();
 	}
@@ -857,6 +860,7 @@ void memcg_clear_shrinker_bit(struct mem_cgroup *memcg, int nid, int shrinker_id
 	 */
 	rcu_read_lock();
 	map = rcu_dereference(memcg->info.nodeinfo[nid]->shrinker_map);
+	WARN_ON(shrinker_id >= map->nr_max);
 	clear_bit(shrinker_id, map->map);
 	rcu_read_unlock();
 }
