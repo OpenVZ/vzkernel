@@ -842,6 +842,7 @@ static void *veip_seq_next(struct seq_file *m, void *v, loff_t *pos)
 	struct hlist_node *p;
 	int i;
 
+	(*pos)++;
 	if (v == SEQ_START_TOKEN)
 		goto find;
 
@@ -855,7 +856,6 @@ find:
 		if (p != NULL) {
 			m->private = (void *)(long)(i + 1);
 found:
-			(*pos)++;
 			return p;
 		}
 	}

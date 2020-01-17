@@ -1033,10 +1033,10 @@ static void *stat_seq_next(struct seq_file *m, void *v, loff_t *pos)
 	struct venet_stat *ptr = (struct venet_stat *)v;
 	int hash;
 
+	(*pos)++;
 	if (!ve_is_super(get_exec_env()))
 		return NULL;
 	hash = stat_hash(ptr->veid);
-	(*pos)++;
 	return next_stat(&hash, ptr);
 }
 
