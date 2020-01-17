@@ -489,7 +489,7 @@ static unsigned long shrink_slab_memcg(gfp_t gfp_mask, int nid,
 {
 	struct memcg_shrinker_map *map;
 	unsigned long ret, freed = 0;
-	int i;
+	int i, nr_max;
 
 	if (!memcg_kmem_enabled())
 		return 0;
@@ -502,7 +502,9 @@ static unsigned long shrink_slab_memcg(gfp_t gfp_mask, int nid,
 	if (unlikely(!map))
 		goto unlock;
 
-	for_each_set_bit(i, map->map, shrinker_nr_max) {
+	nr_max = min(shrinker_nr_max, map->nr_max);
+
+	for_each_set_bit(i, map->map, nr_max) {
 		struct shrink_control sc = {
 			.gfp_mask = gfp_mask,
 			.nid = nid,
@@ -570,6 +572,7 @@ static unsigned long shrink_slab_memcg(gfp_t gfp_mask, int nid,
 		}
 		put_shrinker(shrinker);
 		map = memcg_nid_shrinker_map(memcg, nid);
+		nr_max = min(shrinker_nr_max, map->nr_max);
 	}
 unlock:
 	up_read(&shrinker_rwsem);
