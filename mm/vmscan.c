@@ -473,7 +473,7 @@ void put_shrinker(struct shrinker *shrinker)
 	 * not freed before wake_up.
 	 */
 	rcu_read_lock();
-	if (!refcount_dec_and_test(&shrinker->refcnt)) {
+	if (refcount_dec_and_test(&shrinker->refcnt)) {
 		/* Pairs with smp_mb in wait_event()->prepare_to_wait() */
 		smp_mb();
 		if (waitqueue_active(&shrinker->wq))
