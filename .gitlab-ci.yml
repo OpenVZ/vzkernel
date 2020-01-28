@@ -1,6 +1,6 @@
 # GitLab CI configuration file
 
-image: registry.gitlab.com/cki-project/experimental/containers/builder-fedora30
+image: registry.gitlab.com/cki-project/containers/builder-fedora31
 
 stages:
   - test
