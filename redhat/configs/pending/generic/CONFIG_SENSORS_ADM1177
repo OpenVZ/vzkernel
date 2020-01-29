@@ -1,0 +1,20 @@
+# CONFIG_SENSORS_ADM1177:
+# 
+# If you say yes here you get support for Analog Devices ADM1177
+# sensor chips.
+# 
+# This driver can also be built as a module.  If so, the module
+# will be called adm1177.
+# 
+# Symbol: SENSORS_ADM1177 [=n]
+# Type  : tristate
+# Prompt: Analog Devices ADM1177 and compatibles
+#   Location:
+#     -> Device Drivers
+#       -> Hardware Monitoring support (HWMON [=y])
+#   Defined at drivers/hwmon/Kconfig:167
+#   Depends on: HWMON [=y] && I2C [=y]
+# 
+# 
+# 
+# CONFIG_SENSORS_ADM1177 is not set

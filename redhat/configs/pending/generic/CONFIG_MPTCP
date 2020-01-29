@@ -1,0 +1,21 @@
+# CONFIG_MPTCP:
+# 
+# Multipath TCP (MPTCP) connections send and receive data over multiple
+# subflows in order to utilize multiple network paths. Each subflow
+# uses the TCP protocol, and TCP options carry header information for
+# MPTCP.
+# 
+# Symbol: MPTCP [=n]
+# Type  : bool
+# Prompt: MPTCP: Multipath TCP
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> Networking options
+#         -> TCP/IP networking (INET [=y])
+#   Defined at net/mptcp/Kconfig:2
+#   Depends on: NET [=y] && INET [=y]
+#   Selects: SKB_EXTENSIONS [=y] && CRYPTO_LIB_SHA256 [=y]
+# 
+# 
+# 
+# CONFIG_MPTCP is not set

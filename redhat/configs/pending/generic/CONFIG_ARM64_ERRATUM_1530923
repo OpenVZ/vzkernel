@@ -1,0 +1,22 @@
+# CONFIG_ARM64_ERRATUM_1530923:
+# 
+# This option adds a workaround for ARM Cortex-A55 erratum 1530923.
+# 
+# Affected Cortex-A55 cores (r0p0, r0p1, r1p0, r2p0) could end-up with
+# corrupted TLBs by speculating an AT instruction during a guest
+# context switch.
+# 
+# If unsure, say Y.
+# 
+# Symbol: ARM64_ERRATUM_1530923 [=y]
+# Type  : bool
+# Prompt: Cortex-A55: Speculative AT instruction using out-of-context translation regime could cause subsequent request to generate an incorrect translation
+#   Location:
+#     -> Kernel Features
+#       -> ARM errata workarounds via the alternatives framework
+#   Defined at arch/arm64/Kconfig:539
+#   Selects: ARM64_WORKAROUND_SPECULATIVE_AT_VHE [=y]
+# 
+# 
+# 
+CONFIG_ARM64_ERRATUM_1530923=y

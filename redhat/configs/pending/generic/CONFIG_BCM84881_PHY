@@ -1,0 +1,17 @@
+# CONFIG_BCM84881_PHY:
+# 
+# Support the Broadcom BCM84881 PHY.
+# 
+# Symbol: BCM84881_PHY [=n]
+# Type  : bool
+# Prompt: Broadcom BCM84881 PHY
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> PHY Device support and infrastructure (PHYLIB [=y])
+#   Defined at drivers/net/phy/Kconfig:328
+#   Depends on: NETDEVICES [=y] && PHYLIB [=y]=y
+# 
+# 
+# 
+# CONFIG_BCM84881_PHY is not set

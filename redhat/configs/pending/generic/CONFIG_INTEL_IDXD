@@ -1,0 +1,22 @@
+# CONFIG_INTEL_IDXD:
+# 
+# Enable support for the Intel(R) data accelerators present
+# in Intel Xeon CPU.
+# 
+# Say Y if you have such a platform.
+# 
+# If unsure, say N.
+# 
+# Symbol: INTEL_IDXD [=n]
+# Type  : tristate
+# Prompt: Intel Data Accelerators support
+#   Location:
+#     -> Device Drivers
+#       -> DMA Engine support (DMADEVICES [=y])
+#   Defined at drivers/dma/Kconfig:284
+#   Depends on: DMADEVICES [=y] && PCI [=y] && X86_64 [=y]
+#   Selects: DMA_ENGINE [=y] && SBITMAP [=y]
+# 
+# 
+# 
+# CONFIG_INTEL_IDXD is not set

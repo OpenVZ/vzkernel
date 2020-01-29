@@ -1,0 +1,29 @@
+# CONFIG_NET_SCH_ETS:
+# 
+# The Enhanced Transmission Selection scheduler is a classful
+# queuing discipline that merges functionality of PRIO and DRR
+# qdiscs in one scheduler. ETS makes it easy to configure a set of
+# strict and bandwidth-sharing bands to implement the transmission
+# selection described in 802.1Qaz.
+# 
+# Say Y here if you want to use the ETS packet scheduling
+# algorithm.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called sch_ets.
+# 
+# If unsure, say N.
+# 
+# Symbol: NET_SCH_ETS [=n]
+# Type  : tristate
+# Prompt: Enhanced transmission selection scheduler (ETS)
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> Networking options
+#         -> QoS and/or fair queueing (NET_SCHED [=y])
+#   Defined at net/sched/Kconfig:425
+#   Depends on: NET [=y] && NET_SCHED [=y]
+# 
+# 
+# 
+# CONFIG_NET_SCH_ETS is not set

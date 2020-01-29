@@ -1,0 +1,20 @@
+# CONFIG_MICROCHIP_PIT64B:
+# 
+# This option enables Microchip PIT64B timer for Atmel
+# based system. It supports the oneshot, the periodic
+# modes and high resolution. It is used as a clocksource
+# and a clockevent.
+# 
+# Symbol: MICROCHIP_PIT64B [=n]
+# Type  : bool
+# Prompt: Microchip PIT64B support
+#   Location:
+#     -> Device Drivers
+#       -> Clock Source drivers
+#   Defined at drivers/clocksource/Kconfig:700
+#   Depends on: GENERIC_CLOCKEVENTS [=y] && (OF [=y] || COMPILE_TEST [=n])
+#   Selects: CLKSRC_MMIO [=n]
+# 
+# 
+# 
+# CONFIG_MICROCHIP_PIT64B is not set

@@ -1,0 +1,21 @@
+# CONFIG_SECURITY_SELINUX_SIDTAB_HASH_BITS:
+# 
+# This option sets the number of buckets used in the sidtab hashtable
+# to 2^SECURITY_SELINUX_SIDTAB_HASH_BITS buckets. The number of hash
+# collisions may be viewed at /sys/fs/selinux/ss/sidtab_hash_stats. If
+# chain lengths are high (e.g. > 20) then selecting a higher value here
+# will ensure that lookups times are short and stable.
+# 
+# Symbol: SECURITY_SELINUX_SIDTAB_HASH_BITS [=9]
+# Type  : integer
+# Range : [8 13]
+# Prompt: NSA SELinux sidtab hashtable size
+#   Location:
+#     -> Security options
+#       -> NSA SELinux Support (SECURITY_SELINUX [=y])
+#   Defined at security/selinux/Kconfig:93
+#   Depends on: SECURITY_SELINUX [=y]
+# 
+# 
+# 
+CONFIG_SECURITY_SELINUX_SIDTAB_HASH_BITS=9

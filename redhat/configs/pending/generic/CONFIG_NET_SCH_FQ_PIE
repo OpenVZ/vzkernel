@@ -1,0 +1,25 @@
+# CONFIG_NET_SCH_FQ_PIE:
+# 
+# Say Y here if you want to use the Flow Queue Proportional Integral
+# controller Enhanced (FQ-PIE) packet scheduling algorithm.
+# For more information, please see https://tools.ietf.org/html/rfc8033
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called sch_fq_pie.
+# 
+# If unsure, say N.
+# 
+# Symbol: NET_SCH_FQ_PIE [=n]
+# Type  : tristate
+# Prompt: Flow Queue Proportional Integral controller Enhanced (FQ-PIE)
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> Networking options
+#         -> QoS and/or fair queueing (NET_SCHED [=y])
+#           -> Proportional Integral controller Enhanced (PIE) scheduler (NET_SCH_PIE [=m])
+#   Defined at net/sched/Kconfig:369
+#   Depends on: NET [=y] && NET_SCHED [=y] && NET_SCH_PIE [=m]
+# 
+# 
+# 
+# CONFIG_NET_SCH_FQ_PIE is not set

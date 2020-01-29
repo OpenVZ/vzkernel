@@ -1,0 +1,21 @@
+# CONFIG_SENSORS_XDPE122:
+# 
+# If you say yes here you get hardware monitoring support for Infineon
+# XDPE12254, XDPE12284, device.
+# 
+# This driver can also be built as a module. If so, the module will
+# be called xdpe12284.
+# 
+# Symbol: SENSORS_XDPE122 [=n]
+# Type  : tristate
+# Prompt: Infineon XDPE122 family
+#   Location:
+#     -> Device Drivers
+#       -> Hardware Monitoring support (HWMON [=y])
+#         -> PMBus support (PMBUS [=m])
+#   Defined at drivers/hwmon/pmbus/Kconfig:240
+#   Depends on: HWMON [=y] && PMBUS [=m]
+# 
+# 
+# 
+# CONFIG_SENSORS_XDPE122 is not set

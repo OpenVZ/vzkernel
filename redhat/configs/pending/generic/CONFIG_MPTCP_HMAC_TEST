@@ -1,0 +1,20 @@
+# CONFIG_MPTCP_HMAC_TEST:
+# 
+# This option enable boot time self-test for the HMAC implementation
+# used by the MPTCP code
+# 
+# Say N if you are unsure.
+# 
+# Symbol: MPTCP_HMAC_TEST [=n]
+# Type  : bool
+# Prompt: Tests for MPTCP HMAC implementation
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> Networking options
+#         -> TCP/IP networking (INET [=y])
+#   Defined at net/mptcp/Kconfig:19
+#   Depends on: NET [=y] && INET [=y]
+# 
+# 
+# 
+# CONFIG_MPTCP_HMAC_TEST is not set

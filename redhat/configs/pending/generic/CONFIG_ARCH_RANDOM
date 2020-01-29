@@ -1,0 +1,17 @@
+# CONFIG_ARCH_RANDOM:
+# 
+# Random number generation (part of the ARMv8.5 Extensions)
+# provides a high bandwidth, cryptographically secure
+# hardware random number generator.
+# 
+# Symbol: ARCH_RANDOM [=y]
+# Type  : bool
+# Prompt: Enable support for random number generation
+#   Location:
+#     -> Kernel Features
+#       -> ARMv8.5 architectural features
+#   Defined at arch/arm64/Kconfig:1533
+# 
+# 
+# 
+CONFIG_ARCH_RANDOM=y

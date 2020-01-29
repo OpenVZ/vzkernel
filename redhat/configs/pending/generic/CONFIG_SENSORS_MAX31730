@@ -1,0 +1,20 @@
+# CONFIG_SENSORS_MAX31730:
+# 
+# Support for the Maxim Integrated MAX31730 3-Channel Remote
+# Temperature Sensor.
+# 
+# This driver can also be built as a module. If so, the module
+# will be called max31730.
+# 
+# Symbol: SENSORS_MAX31730 [=n]
+# Type  : tristate
+# Prompt: MAX31730 temperature sensor
+#   Location:
+#     -> Device Drivers
+#       -> Hardware Monitoring support (HWMON [=y])
+#   Defined at drivers/hwmon/Kconfig:921
+#   Depends on: HWMON [=y] && I2C [=y]
+# 
+# 
+# 
+# CONFIG_SENSORS_MAX31730 is not set

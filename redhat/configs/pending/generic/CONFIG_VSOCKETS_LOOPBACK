@@ -1,0 +1,22 @@
+# CONFIG_VSOCKETS_LOOPBACK:
+# 
+# This module implements a loopback transport for Virtual Sockets,
+# using vmw_vsock_virtio_transport_common.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called vsock_loopback. If unsure, say N.
+# 
+# Symbol: VSOCKETS_LOOPBACK [=m]
+# Type  : tristate
+# Prompt: Virtual Sockets loopback transport
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> Networking options
+#         -> Virtual Socket protocol (VSOCKETS [=m])
+#   Defined at net/vmw_vsock/Kconfig:29
+#   Depends on: NET [=y] && VSOCKETS [=m]
+#   Selects: VIRTIO_VSOCKETS_COMMON [=m]
+# 
+# 
+# 
+CONFIG_VSOCKETS_LOOPBACK=m

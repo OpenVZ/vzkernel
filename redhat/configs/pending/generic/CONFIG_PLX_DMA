@@ -1,0 +1,19 @@
+# CONFIG_PLX_DMA:
+# 
+# Some PLX ExpressLane PCI Switches support additional DMA engines.
+# These are exposed via extra functions on the switch's
+# upstream port. Each function exposes one DMA channel.
+# 
+# Symbol: PLX_DMA [=n]
+# Type  : tristate
+# Prompt: PLX ExpressLane PEX Switch DMA Engine Support
+#   Location:
+#     -> Device Drivers
+#       -> DMA Engine support (DMADEVICES [=y])
+#   Defined at drivers/dma/Kconfig:521
+#   Depends on: DMADEVICES [=y] && PCI [=y]
+#   Selects: DMA_ENGINE [=y]
+# 
+# 
+# 
+# CONFIG_PLX_DMA is not set
