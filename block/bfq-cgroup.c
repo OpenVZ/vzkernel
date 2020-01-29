@@ -1230,7 +1230,8 @@ struct blkcg_policy blkcg_policy_bfq = {
 struct cftype bfq_blkcg_legacy_files[] = {
 	{
 		.name = "bfq.weight",
-		.flags = CFTYPE_NOT_ON_ROOT,
+		.link_name = "weight",
+		.flags = CFTYPE_NOT_ON_ROOT | CFTYPE_SYMLINKED,
 		.seq_show = bfq_io_show_weight_legacy,
 		.write_u64 = bfq_io_set_weight_legacy,
 	},
@@ -1356,7 +1357,8 @@ struct cftype bfq_blkcg_legacy_files[] = {
 struct cftype bfq_blkg_files[] = {
 	{
 		.name = "bfq.weight",
-		.flags = CFTYPE_NOT_ON_ROOT,
+		.link_name = "weight",
+		.flags = CFTYPE_NOT_ON_ROOT | CFTYPE_SYMLINKED,
 		.seq_show = bfq_io_show_weight,
 		.write = bfq_io_set_weight,
 	},
