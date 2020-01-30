@@ -1927,6 +1927,11 @@ struct task_struct {
 	struct wake_q_node wake_q;
 	struct prev_cputime prev_cputime;
 	struct vtime vtime;
+	/*
+	 * this is a container-side copy of 'real_start_time' field
+	 * shown from inside of a container and modified by host.
+	 */
+	struct timespec real_start_time_ct;
 #endif /* __GENKSYMS__ */
 };
 
