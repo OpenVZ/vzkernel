@@ -846,6 +846,8 @@ static void ve_attach(struct cgroup_taskset *tset)
 
 		if (cpuid_override_on())
 			set_tsk_thread_flag(task, TIF_CPUID_OVERRIDE);
+
+		ve_set_task_start_time(ve, task);
 		task->task_ve = ve;
 	}
 }

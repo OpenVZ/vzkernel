@@ -146,6 +146,22 @@ static u64 ve_get_uptime(struct ve_struct *ve)
 	return ktime_get_boot_ns() - ve->real_start_time;
 }
 
+static inline void ve_set_task_start_time(struct ve_struct *ve,
+					  struct task_struct *t)
+{
+	/*
+	 * Mitigate memory access reordering risks by doing double check,
+	 * 'is_running' could be read as 1 before we see
+	 * 'real_start_time' updated here. If it's still 0,
+	 * we know 'is_running' is being modified right NOW in
+	 * parallel so it's safe to say that start time is also 0.
+	 */
+	if (!ve->is_running || !ve->real_start_time)
+		t->real_start_time_ct = 0;
+	else
+		t->real_start_time_ct = ve_get_uptime(ve);
+}
+
 extern void monotonic_abs_to_ve(clockid_t which_clock, struct timespec64 *tp);
 extern void monotonic_ve_to_abs(clockid_t which_clock, struct timespec64 *tp);
 
