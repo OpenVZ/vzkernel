@@ -2457,6 +2457,26 @@ static int prctl_get_tid_address(struct task_struct *me, int __user **tid_addr)
 }
 #endif
 
+static int prctl_set_task_ct_fields(struct task_struct *t, unsigned long arg,
+		unsigned long flags)
+{
+	struct prctl_task_ct_fields params;
+#ifdef CONFIG_VE
+	struct ve_struct *ve = t->task_ve;
+
+	if (!ve_is_super(ve) && !ve->is_pseudosuper)
+		return -EPERM;
+#endif
+
+	if (copy_from_user(&params, (const void __user *)arg, sizeof(params)))
+		return -EFAULT;
+
+	if (flags & PR_TASK_CT_FIELDS_START_TIME)
+		t->real_start_time_ct = ns_to_timespec(params.real_start_time);
+
+	return 0;
+}
+
 int __weak arch_prctl_spec_ctrl_get(struct task_struct *t, unsigned long which)
 {
 	return -EINVAL;
@@ -2683,6 +2703,9 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 		if (arg4 || arg5)
 			return -EINVAL;
 		error = arch_prctl_spec_ctrl_set(me, arg2, arg3);
+		break;
+	case PR_SET_TASK_CT_FIELDS:
+		error = prctl_set_task_ct_fields(me, arg2, arg3);
 		break;
 	default:
 		error = -EINVAL;
