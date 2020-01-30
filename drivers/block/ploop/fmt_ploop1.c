@@ -763,7 +763,7 @@ ploop1_prepare_grow(struct ploop_delta * delta, u64 *new_size, int *reloc)
 		/* Does not use rellocated data clusters during grow. */
 		if (delta->holes_bitmap) {
 			i = delta->io.plo->grow_start;
-			while (i <= delta->io.plo->grow_end)
+			while (i <= n_needed - 1)
 				ploop_clear_holes_bitmap_bit(i++, delta);
 		}
 	}
