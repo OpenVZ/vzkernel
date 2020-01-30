@@ -555,16 +555,10 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 	start_time = task->real_start_time;
 
 #ifdef CONFIG_VE
-	if (!is_super) {
-		u64 offset = get_exec_env()->real_start_time;
-		start_time -= (unsigned long long)offset;
-	}
-	/* tasks inside a CT can have negative start time e.g. if the CT was
-	 * migrated from another hw node, in which case we will report 0 in
-	 * order not to confuse userspace */
-	if ((s64)start_time < 0)
-		start_time = 0;
+	if (!is_super)
+		start_time = task->real_start_time_ct;
 #endif
+
 	/* convert nsec -> ticks */
 	start_time = nsec_to_clock_t(start_time);
 
