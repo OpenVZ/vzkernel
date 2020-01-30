@@ -611,19 +611,11 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 		(unsigned long long)task->real_start_time.tv_sec * NSEC_PER_SEC
 				+ task->real_start_time.tv_nsec;
 #ifdef CONFIG_VE
-	if (!is_super) {
-		struct timespec *ve_start_ts =
-				&get_exec_env()->real_start_timespec;
-		start_time -=
-			(unsigned long long)ve_start_ts->tv_sec * NSEC_PER_SEC
-				+ ve_start_ts->tv_nsec;
-	}
-	/* tasks inside a CT can have negative start time e.g. if the CT was
-	 * migrated from another hw node, in which case we will report 0 in
-	 * order not to confuse userspace */
-	if ((s64)start_time < 0)
-		start_time = 0;
+	if (!is_super)
+		start_time = (unsigned long long)
+			timespec_to_ns(&task->real_start_time_ct);
 #endif
+
 	/* convert nsec -> ticks */
 	start_time = nsec_to_clock_t(start_time);
 
