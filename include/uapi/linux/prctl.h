@@ -232,5 +232,11 @@ struct prctl_mm_map {
 /* Control reclaim behavior when allocating memory */
 #define PR_SET_IO_FLUSHER		57
 #define PR_GET_IO_FLUSHER		58
+/* Set task container related fields */
+#define PR_SET_TASK_CT_FIELDS		1000
+#define PR_TASK_CT_FIELDS_START_TIME	(1UL << 0)
 
+struct prctl_task_ct_fields {
+	__s64 real_start_time;
+};
 #endif /* _LINUX_PRCTL_H */

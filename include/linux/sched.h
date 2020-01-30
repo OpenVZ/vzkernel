@@ -839,7 +839,6 @@ struct task_struct {
 #ifdef CONFIG_VIRT_CPU_ACCOUNTING_GEN
 	struct vtime			vtime;
 #endif
-
 #ifdef CONFIG_NO_HZ_FULL
 	atomic_t			tick_dep_mask;
 #endif
@@ -852,6 +851,12 @@ struct task_struct {
 
 	/* Boot based time in nsecs: */
 	u64				real_start_time;
+
+	/*
+	 * This is a Container-side copy of 'real_start_time' field
+	 * shown from inside of a Container and modified by host.
+	 */
+	u64				real_start_time_ct;
 
 	/* MM fault and swap info: this can arguably be seen as either mm-specific or thread-specific: */
 	unsigned long			min_flt;
