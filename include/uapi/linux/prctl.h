@@ -204,5 +204,12 @@ struct prctl_mm_map {
 # define PR_SPEC_DISABLE		(1UL << 2)
 # define PR_SPEC_FORCE_DISABLE		(1UL << 3)
 # define PR_SPEC_DISABLE_NOEXEC		(1UL << 4)
+/* Set task container related fields */
+#define PR_SET_TASK_CT_FIELDS	1000
+#define PR_TASK_CT_FIELDS_START_TIME	(1ULL << 0)
+
+struct prctl_task_ct_fields {
+	__s64 real_start_time;
+};
 
 #endif /* _LINUX_PRCTL_H */
