@@ -1372,6 +1372,10 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	struct task_struct *p;
 	void *cgrp_ss_priv[CGROUP_CANFORK_COUNT] = {};
 
+#ifdef CONFIG_VE
+	struct ve_struct *ve = get_exec_env();
+#endif
+
 	if ((clone_flags & (CLONE_NEWNS|CLONE_FS)) == (CLONE_NEWNS|CLONE_FS))
 		return ERR_PTR(-EINVAL);
 
@@ -1494,6 +1498,15 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	do_posix_clock_monotonic_gettime(&p->start_time);
 	p->real_start_time = p->start_time;
 	monotonic_to_bootbased(&p->real_start_time);
+
+	p->real_start_time_ct.tv_sec = 0;
+	p->real_start_time_ct.tv_nsec = 0;
+
+#ifdef CONFIG_VE
+	if (!ve_is_super(ve))
+		ve_try_set_task_start_time(ve, p);
+#endif
+
 	p->io_context = NULL;
 	p->audit_context = NULL;
 	if (clone_flags & CLONE_THREAD)

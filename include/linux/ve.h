@@ -199,6 +199,29 @@ static inline struct ve_struct *cgroup_ve(struct cgroup *cgroup)
 			struct ve_struct, css);
 }
 
+static inline void ve_try_set_task_start_time(struct ve_struct *ve,
+	struct task_struct *t)
+{
+	struct timespec host_uptime;
+
+	/*
+	 * mitigate memory access reordering risks by doing double check,
+	 * 'is_running' could be read as 1 before we see
+	 * 'real_start_timespec' updated here. If it's still 0,
+	 * we know 'is_running' is being modified right NOW in
+	 * parallel so it's safe to say that start time is also 0
+	 */
+	if (!ve->is_running || !timespec_to_ns(&ve->real_start_timespec)) {
+		t->real_start_time_ct.tv_sec = 0;
+		t->real_start_time_ct.tv_nsec = 0;
+	} else {
+		do_posix_clock_monotonic_gettime(&host_uptime);
+		monotonic_to_bootbased(&host_uptime);
+		t->real_start_time_ct = timespec_sub(host_uptime,
+			ve->real_start_timespec);
+	}
+}
+
 extern unsigned long long ve_relative_clock(struct timespec * ts);
 extern void monotonic_abs_to_ve(clockid_t which_clock, struct timespec *tp);
 extern void monotonic_ve_to_abs(clockid_t which_clock, struct timespec *tp);
