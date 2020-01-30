@@ -1929,6 +1929,11 @@ struct task_struct {
 	struct vtime vtime;
 	u64	 parent_exec_id;
 	u64	 self_exec_id;
+	/*
+	 * this is a container-side copy of 'real_start_time' field
+	 * shown from inside of a container and modified by host.
+	 */
+	struct timespec real_start_time_ct;
 #endif /* __GENKSYMS__ */
 };
 
