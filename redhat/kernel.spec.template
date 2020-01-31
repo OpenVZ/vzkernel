@@ -588,7 +588,8 @@ Source15: secureboot_ppc.cer
 %define pesign_name redhatsecureboot303
 %endif
 
-%else # released_kernel
+# released_kernel
+%else
 
 Source12: redhatsecurebootca2.cer
 Source13: redhatsecureboot003.cer
@@ -597,7 +598,8 @@ Source13: redhatsecureboot003.cer
 %define secureboot_key %{SOURCE13}
 %define pesign_name redhatsecureboot003
 
-%endif # released_kernel
+# released_kernel
+%endif
 
 Source22: mod-extra.list.rhel
 Source16: mod-extra.list.fedora
@@ -799,8 +801,8 @@ This package provides debug information for the perf python bindings.
 # the python_sitearch macro should already be defined from above
 %{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%%{python3_sitearch}/perf.*so(\.debug)?|XXX' -o python3-perf-debuginfo.list}
 
-
-%endif # with_perf
+# with_perf
+%endif
 
 %if %{with_tools}
 %package -n kernel-tools
@@ -855,7 +857,8 @@ This package provides debug information for package kernel-tools.
 # of matching the pattern against the symlinks file.
 %{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%%{_bindir}/centrino-decode(\.debug)?|.*%%{_bindir}/powernow-k8-decode(\.debug)?|.*%%{_bindir}/cpupower(\.debug)?|.*%%{_libdir}/libcpupower.*|.*%%{_bindir}/turbostat(\.debug)?|.*%%{_bindir}/x86_energy_perf_policy(\.debug)?|.*%%{_bindir}/tmon(\.debug)?|.*%%{_bindir}/lsgpio(\.debug)?|.*%%{_bindir}/gpio-hammer(\.debug)?|.*%%{_bindir}/gpio-event-mon(\.debug)?|.*%%{_bindir}/iio_event_monitor(\.debug)?|.*%%{_bindir}/iio_generic_buffer(\.debug)?|.*%%{_bindir}/lsiio(\.debug)?|.*%%{_bindir}/intel-speed-select(\.debug)?|XXX' -o kernel-tools-debuginfo.list}
 
-%endif # with_tools
+# with_tools
+%endif
 
 %if %{with_bpftool}
 
@@ -876,7 +879,8 @@ This package provides debug information for the bpftool package.
 
 %{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%%{_sbindir}/bpftool(\.debug)?|XXX' -o bpftool-debuginfo.list}
 
-%endif # with_bpftool
+# with_bpftool
+%endif
 
 %if %{with_selftests}
 
@@ -894,7 +898,8 @@ Kernel sample programs and selftests.
 # of matching the pattern against the symlinks file.
 %{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%%{_libexecdir}/(ksamples|kselftests)/.*|XXX' -o selftests-debuginfo.list}
 
-%endif # with_selftests
+# with_selftests
+%endif
 
 %if %{with_gcov}
 %package gcov
@@ -1081,7 +1086,8 @@ Cortex-A15 devices with LPAE and HW virtualisation support
 %description zfcpdump-core
 The kernel package contains the Linux kernel (vmlinuz) for use by the
 zfcpdump infrastructure.
-%endif # with_zfcpdump
+# with_zfcpdump
+%endif
 
 %define variant_summary The Linux kernel compiled with extra debugging enabled
 %kernel_variant_package debug
@@ -1398,7 +1404,8 @@ BuildKernel() {
     if [ "$KernelExtension" == "gz" ]; then
         gzip -f9 $SignImage
     fi
-    %endif # signkernel
+    # signkernel
+    %endif
 
     $CopyKernel $KernelImage \
                 $RPM_BUILD_ROOT/%{image_install_path}/$InstallName-$KernelVer
@@ -1481,7 +1488,8 @@ BuildKernel() {
     if [ -e $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu}$Flavour ]; then
         cp $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu}$Flavour $RPM_BUILD_ROOT/Module.kabi
         $RPM_SOURCE_DIR/check-kabi -k $RPM_BUILD_ROOT/Module.kabi -s Module.symvers || exit 1
-        rm $RPM_BUILD_ROOT/Module.kabi # for now, don't keep it around.
+        # for now, don't keep it around.
+        rm $RPM_BUILD_ROOT/Module.kabi
     else
         echo "**** NOTE: Cannot find reference Module.kabi file. ****"
     fi
@@ -1492,7 +1500,8 @@ BuildKernel() {
     if [ -e $RPM_SOURCE_DIR/Module.kabi_dup_%{_target_cpu}$Flavour ]; then
         cp $RPM_SOURCE_DIR/Module.kabi_dup_%{_target_cpu}$Flavour $RPM_BUILD_ROOT/Module.kabi
         $RPM_SOURCE_DIR/check-kabi -k $RPM_BUILD_ROOT/Module.kabi -s Module.symvers || exit 1
-        rm $RPM_BUILD_ROOT/Module.kabi # for now, don't keep it around.
+        # for now, don't keep it around.
+        rm $RPM_BUILD_ROOT/Module.kabi
     else
         echo "**** NOTE: Cannot find DUP reference Module.kabi file. ****"
     fi
@@ -1979,7 +1988,8 @@ docdir=$RPM_BUILD_ROOT%{_datadir}/doc/kernel-doc-%{rpmversion}
 mkdir -p $docdir
 tar -h -f - --exclude=man --exclude='.*' -c Documentation | tar xf - -C $docdir
 
-%endif # with_doc
+# with_doc
+%endif
 
 # We have to do the headers install before the tools install because the
 # kernel headers_install will remove any header files in /usr/include that
@@ -2024,7 +2034,8 @@ mkdir -p $INSTALL_KABI_PATH
 
 # install kabi releases directories
 tar xjvf %{SOURCE300} -C $INSTALL_KABI_PATH
-%endif  # with_kernel_abi_whitelists
+# with_kernel_abi_whitelists
+%endif
 
 %if %{with_perf}
 # perf tool binary and supporting scripts/binaries
@@ -2362,7 +2373,8 @@ fi
 
 %files -f python3-perf-debuginfo.list -n python3-perf-debuginfo
 %endif
-%endif # with_perf
+# with_perf
+%endif
 
 %if %{with_tools}
 %files -n kernel-tools
@@ -2384,7 +2396,8 @@ fi
 %{_mandir}/man8/turbostat*
 %{_bindir}/intel-speed-select
 %endif
-%endif # cpupowerarchs
+# cpupowerarchs
+%endif
 %{_bindir}/tmon
 %{_bindir}/iio_event_monitor
 %{_bindir}/iio_generic_buffer
@@ -2408,7 +2421,8 @@ fi
 %{_libdir}/libcpupower.so
 %{_includedir}/cpufreq.h
 %endif
-%endif # with_tools
+# with_tools
+%endif
 
 %if %{with_bpftool}
 %files -n bpftool
