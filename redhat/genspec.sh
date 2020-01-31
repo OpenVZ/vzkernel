@@ -111,7 +111,7 @@ BEGIN{TYPE="PATCHJUNK"; }
 	/^Date: / {if (TYPE=="HEADER") {DATELINE=$0; next; } }
 	/^Subject: / { if (TYPE=="HEADER") {SUBJECTLINE=$0; LASTHDR="SUBJ"; next; } }
 	# partially attempt to deal with RFC2822 continuation lines in headers
-	/^\ / { if (TYPE=="HEADER") { if (LASTHDR=="SUBJ") { SUBJECTLINE=(SUBJECTLINE $0); } next; } }
+	/^\s/ { if (TYPE=="HEADER") { if (LASTHDR=="SUBJ") { SUBJECTLINE=(SUBJECTLINE $0); } next; } }
 	/^Bugzilla: / { if (TYPE=="META") {BZ=$0; } }
 	/^Z-Bugzilla: / { if (TYPE=="META") {ZBZ=$0; } }
 	/^CVE: / { if (TYPE=="META") {CVE=$0; } }
