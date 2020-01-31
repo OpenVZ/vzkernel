@@ -38,7 +38,7 @@ fi
 if [ "$zstream_flag" == "no" ]; then
 	bzs=$(cat $tmp |
 		grep ^- |
-		sed -n -e "s/.*\[\([0-9]\+\)[0-9 ]*\].*/\1/p")
+		sed -n -e "s/.*\[\([0-9 ]\+\)\].*/\1/p")
 else
 	bzs=$(awk '/^-/ {
 		if(match($0, /\[([0-9]+ [0-9]+ )*[0-9]+ [0-9]+\]/)) {
