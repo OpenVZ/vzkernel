@@ -576,61 +576,6 @@ static int remove_extent_mapping(struct extent_map_tree *tree, struct extent_map
 	return ret;
 }
 
-static int fallocate_cluster(struct ploop_io *io, struct inode *inode,
-			     loff_t start_off, loff_t len, bool align)
-{
-	struct ploop_device *plo = io->plo;
-	struct file *file = io->files.file;
-	unsigned int clu_sz = cluster_size_in_bytes(plo);
-	struct fiemap_extent_info fieinfo;
-	struct fiemap_extent fi_extent;
-	loff_t start_clu = round_down(start_off, clu_sz);
-	int ret;
-
-	if (start_clu + clu_sz >= i_size_read(inode))
-		return -EINVAL;
-
-	if (test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state)) {
-		pr_err("a hole in image file detected (i_size=%llu off=%llu)",
-		       i_size_read(inode), start_off);
-		return -EINVAL;
-	}
-
-	fieinfo.fi_extents_start = &fi_extent;
-	fieinfo.fi_extents_max = 1;
-	fieinfo.fi_flags = 0;
-	fieinfo.fi_extents_mapped = 0;
-	fi_extent.fe_flags = 0;
-
-	if (!align)
-		goto not_align;
-
-	ret = inode->i_op->fiemap(inode, &fieinfo, start_clu, clu_sz);
-	if (ret)
-		goto out;
-
-	if (fieinfo.fi_extents_mapped == 0) {
-		start_off = start_clu;
-		len = clu_sz;
-	} else {
-not_align:
-		fi_extent.fe_flags = 0;
-		ret = inode->i_op->fiemap(inode, &fieinfo, start_off, len);
-		if (ret)
-			goto out;
-		if (fieinfo.fi_extents_mapped != 0) {
-			WARN_ON_ONCE(fi_extent.fe_logical <= start_off);
-			len = fi_extent.fe_logical - start_off;
-		}
-	}
-
-	ret = file->f_op->fallocate(file, FALLOC_FL_KEEP_SIZE, start_off, len);
-	if (!ret)
-		ret = io->ops->sync(io);
-out:
-	return ret;
-}
-
 static struct extent_map *__map_extent_bmap(struct ploop_io *io,
 				       struct address_space *mapping,
 				       sector_t start, sector_t len, gfp_t gfp_mask)
@@ -708,22 +653,8 @@ again:
 	}
 
 	if (fieinfo.fi_extents_mapped != 1) {
-		struct ploop_device *plo = io->plo;
 		ploop_extent_put(em);
-		/*
-		 * In case of io_direct we may support discards
-		 * in multi-delta case, since all allocated blocks
-		 * are added to extent tree. But we follow generic
-		 * way, and encode discarded blocks by zeroing
-		 * their indexes in maps (ploop1).
-		 */
-		if (!test_bit(PLOOP_MAP_IDENTICAL, &plo->map.flags))
-			return ERR_PTR(-ENOENT);
-
-		ret = fallocate_cluster(io, inode, start_off, len, align_to_clu);
-		if (!ret)
-			goto again;
-		return ERR_PTR(ret);
+		return ERR_PTR(-ENOENT);
 	}
 
 	em->start = fi_extent.fe_logical >> 9;
