@@ -1149,12 +1149,17 @@ out:
 	return err;
 }
 
+/*
+ * @off is offset within first page in bytes.
+ * @len is sum length in bytes.
+ */
 static int
-dio_sync_io(struct ploop_io *io, int rw, struct page *page,
-	    unsigned int len, unsigned int off, sector_t sec)
+dio_sync_io(struct ploop_io *io, int rw, struct page **pages,
+	    int nr_pages, unsigned int len,
+	    unsigned int off, sector_t sec)
 {
+	int i, count, nr_bios = 0, ret = 0;
 	struct dio_comp comp;
-	int nr_bios;
 
 	BUG_ON((len & 511) || (off & 511));
 
@@ -1166,36 +1171,53 @@ dio_sync_io(struct ploop_io *io, int rw, struct page *page,
 	init_completion(&comp.comp);
 	comp.error = 0;
 
-	nr_bios = dio_make_io(io, rw, page, len, off, sec,
-			      dio_endio_sync, &comp);
-	if (nr_bios < 0)
-		return nr_bios;
+	for (i = 0; i < nr_pages; i++) {
+		count = PAGE_SIZE - off;
+		if (count > len)
+			count = len;
 
+		ret = dio_make_io(io, rw, pages[i], count, off, sec,
+				      dio_endio_sync, &comp);
+		if (ret < 0)
+			goto sub_and_wait;
+		nr_bios += ret;
+		sec += (count >> 9);
+		len -= count;
+		off = 0;
+	}
+
+	if (WARN_ON_ONCE(len))
+		ret = -EIO;
+
+sub_and_wait:
 	if (atomic_sub_and_test(INT_MAX - nr_bios, &comp.count))
 		complete(&comp.comp);
 
 	wait_for_completion(&comp.comp);
 
-	return comp.error;
+	return ret < 0 ? ret : comp.error;
 }
 
 static int
 dio_sync_read(struct ploop_io * io, struct page * page, unsigned int len,
 	      unsigned int off, sector_t pos)
 {
-	return dio_sync_io(io, READ_SYNC, page, len, off, pos);
+	struct page *pages[] = { page };
+
+	return dio_sync_io(io, READ_SYNC, pages, 1, len, off, pos);
 }
 
 static int
 dio_sync_write(struct ploop_io * io, struct page * page, unsigned int len,
 	       unsigned int off, sector_t sec)
 {
+	struct page *pages[] = { page };
 	int err;
 
 	if (!(io->files.file->f_mode & FMODE_WRITE))
 		return -EBADF;
 
-	err = dio_sync_io(io, WRITE_SYNC, page, len, off, sec);
+	err = dio_sync_io(io, WRITE_SYNC, pages, 1, len, off, sec);
 
 	if (sec < io->plo->track_end)
 		ploop_tracker_notify(io->plo, sec);
