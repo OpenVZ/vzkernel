@@ -1207,6 +1207,13 @@ dio_sync_read(struct ploop_io * io, struct page * page, unsigned int len,
 	return dio_sync_io(io, READ_SYNC, pages, 1, len, off, pos);
 }
 
+static int dio_sync_read_many(struct ploop_io *io, struct page *pages[],
+			      unsigned int nr_pages, sector_t sec)
+{
+	return dio_sync_io(io, READ_SYNC, pages, nr_pages,
+			   PAGE_SIZE * nr_pages, 0, sec);
+}
+
 static int
 dio_sync_write(struct ploop_io * io, struct page * page, unsigned int len,
 	       unsigned int off, sector_t sec)
@@ -1774,6 +1781,7 @@ static struct ploop_io_ops ploop_io_ops_direct =
 	.write_page	=	dio_write_page,
 	.sync_read	=	dio_sync_read,
 	.sync_write	=	dio_sync_write,
+	.sync_read_many =	dio_sync_read_many,
 
 	.init		=	dio_init,
 	.destroy	=	dio_destroy,
