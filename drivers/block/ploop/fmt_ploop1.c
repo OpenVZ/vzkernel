@@ -140,13 +140,36 @@ ploop1_compose(struct ploop_delta * delta, int nchunks, struct ploop_ctl_chunk *
 	return ploop_io_init(delta, nchunks, pc);
 }
 
+static unsigned int parse_bat_page_for_hb(struct ploop_delta *delta,
+					  struct ploop1_private *ph,
+					  struct page *page,
+					  unsigned int block)
+{
+	unsigned int i, off = block ? 0 : PLOOP_MAP_OFFSET;
+	u32 *index;
+
+	index = page_address(page);
+	for (i = off; i < INDEX_PER_PAGE && block + i - off < ph->nr_bat_entries; i++) {
+		if (index[i] != 0) {
+			unsigned int cluster = index[i] >> ploop_map_log(delta->plo);
+			/*
+			 * On grow cluster above nr_clusters_in_bitmap may
+			 * be assigned. Ignore it.
+			 */
+			if (likely(cluster < ph->nr_clusters_in_bitmap))
+				ploop_clear_holes_bitmap_bit(cluster, delta);
+		}
+	}
+
+	return i - off;
+}
+
 static int populate_holes_bitmap(struct ploop_delta *delta,
 				 struct ploop1_private *ph)
 {
-	unsigned int block, nr_blocks, size, off, md_off;
-	struct page *page;
+	unsigned int block, nr_blocks, md_off, count, nr_all_pages, size, consumed = 0;
+	struct page **pages;
 	sector_t sec;
-	u32 *index;
 	int i, ret;
 
 	if (test_bit(PLOOP_S_NO_FALLOC_DISCARD, &delta->plo->state))
@@ -159,9 +182,17 @@ static int populate_holes_bitmap(struct ploop_delta *delta,
 	}
 
 	ret = -ENOMEM;
-	page = alloc_page(GFP_KERNEL);
-	if (!page)
+	/* Use multiplier 10 for bigger batch and better performance */
+	nr_all_pages = 10 * cluster_size_in_bytes(delta->plo) / PAGE_SIZE;
+	pages = kvzalloc(sizeof(struct page *) * nr_all_pages, GFP_KERNEL);
+	if (!pages)
 		return ret;
+
+	for (i = 0; i < nr_all_pages; i++) {
+		pages[i] = alloc_page(GFP_KERNEL);
+		if (!pages[i])
+			goto out;
+	}
 
 	/*
 	 * Holes bitmap is map of clusters from start of file to maximum
@@ -177,7 +208,7 @@ static int populate_holes_bitmap(struct ploop_delta *delta,
 
 	delta->holes_bitmap = kvmalloc(size, GFP_KERNEL);
 	if (!delta->holes_bitmap)
-		goto put_page;
+		goto out;
 	ph->nr_clusters_in_bitmap = nr_blocks;
 	memset(delta->holes_bitmap, 0xff, size);
 	/* Tail clusters are not available for allocation */
@@ -188,44 +219,37 @@ static int populate_holes_bitmap(struct ploop_delta *delta,
 		clear_bit(i, delta->holes_bitmap);
 
 	block = 0;
-	while (block < nr_blocks) {
+	while (block < ph->nr_bat_entries) {
 		if (!ploop1_map_index(delta, block, &sec)) {
 			/*
 			 * BAT area can address wider region, than disk size.
 			 * This may be a result of shrinking large disk
 			 * to a small size.
 			 */
-			pr_info("ploop%u: bat is bigger than disk size\n",
+			pr_err("ploop%u: bat is bigger than disk size\n",
 				delta->plo->index);
-			goto put_page;
+			goto out;
 		}
-		ret = delta->io.ops->sync_read(&delta->io, page,
-					       4096, 0, sec);
-		if (ret)
-			goto put_page;
-
-		off = block ? 0 : PLOOP_MAP_OFFSET;
-
-		index = page_address(page);
-		for (i = off; i < INDEX_PER_PAGE && block + i - off < nr_blocks; i++) {
-			if (index[i] != 0) {
-				unsigned int cluster = index[i] >> ploop_map_log(delta->plo);
-				/*
-				 * On grow cluster above nr_clusters_in_bitmap may
-				 * be assigned. Ignore it.
-				 */
-				if (likely(cluster < ph->nr_clusters_in_bitmap))
-					ploop_clear_holes_bitmap_bit(cluster, delta);
-			}
+		/* Images with big BAT and small data may be shorter than nr_all_pages */
+		count = min_t(unsigned int, nr_all_pages,
+				(ph->l1_off << 9) / PAGE_SIZE - consumed);
+		ret = delta->io.ops->sync_read_many(&delta->io, pages, count, sec);
+		if (ret) {
+			pr_err("ploop: too short BAT\n");
+			goto out;
 		}
 
-		block += (block ? INDEX_PER_PAGE : INDEX_PER_PAGE - PLOOP_MAP_OFFSET);
+		for (i = 0; i < count && block < ph->nr_bat_entries; i++)
+			block += parse_bat_page_for_hb(delta, ph, pages[i], block);
+		consumed += count;
 	}
 
 	ret = 0;
-
-put_page:
-	put_page(page);
+out:
+	for (i = 0; i < nr_all_pages; i++)
+		if (pages[i])
+			put_page(pages[i]);
+	kvfree(pages);
 	return ret;
 }
 
