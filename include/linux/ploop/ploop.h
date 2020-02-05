@@ -178,6 +178,8 @@ struct ploop_io_ops
 			     unsigned int len, unsigned int off, sector_t sec);
 	int	(*sync_write)(struct ploop_io * io, struct page * page,
 			      unsigned int len, unsigned int off, sector_t sec);
+	int	(*sync_read_many)(struct ploop_io *io, struct page *pages[],
+				  unsigned int nr_pages, sector_t sec);
 
 	int	(*init)(struct ploop_io * io);
 	void	(*destroy)(struct ploop_io * io);
