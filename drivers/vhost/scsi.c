@@ -35,26 +35,29 @@
 #include <linux/compat.h>
 #include <linux/eventfd.h>
 #include <linux/fs.h>
+#include <linux/vmalloc.h>
 #include <linux/miscdevice.h>
 #include <asm/unaligned.h>
 #include <scsi/scsi.h>
 #include <scsi/scsi_tcq.h>
 #include <target/target_core_base.h>
 #include <target/target_core_fabric.h>
-#include <target/target_core_fabric_configfs.h>
-#include <target/target_core_configfs.h>
-#include <target/configfs_macros.h>
 #include <linux/vhost.h>
 #include <linux/virtio_scsi.h>
 #include <linux/llist.h>
 #include <linux/bitmap.h>
 
-#include "vhost.c"
 #include "vhost.h"
 
 #define TCM_VHOST_VERSION  "v0.1"
 #define TCM_VHOST_NAMELEN 256
 #define TCM_VHOST_MAX_CDB_SIZE 32
+
+/* Max number of requests before requeueing the job.
+ * Using this limit prevents one virtqueue from starving others with
+ * request.
+ */
+#define VHOST_SCSI_WEIGHT 256
 
 struct vhost_scsi_inflight {
 	/* Wait for the flush operation to finish */
@@ -203,9 +206,6 @@ struct vhost_scsi {
 	int vs_events_nr; /* num of pending events, protected by vq->mutex */
 };
 
-/* Local pointer to allocated TCM configfs fabric module */
-static struct target_fabric_configfs *tcm_vhost_fabric_configfs;
-
 static struct workqueue_struct *tcm_vhost_workqueue;
 
 /* Global spinlock to protect tcm_vhost TPG list for vhost IOCTL access */
@@ -286,28 +286,6 @@ static char *tcm_vhost_get_fabric_name(void)
 	return "vhost";
 }
 
-static u8 tcm_vhost_get_fabric_proto_ident(struct se_portal_group *se_tpg)
-{
-	struct tcm_vhost_tpg *tpg = container_of(se_tpg,
-				struct tcm_vhost_tpg, se_tpg);
-	struct tcm_vhost_tport *tport = tpg->tport;
-
-	switch (tport->tport_proto_id) {
-	case SCSI_PROTOCOL_SAS:
-		return sas_get_fabric_proto_ident(se_tpg);
-	case SCSI_PROTOCOL_FCP:
-		return fc_get_fabric_proto_ident(se_tpg);
-	case SCSI_PROTOCOL_ISCSI:
-		return iscsi_get_fabric_proto_ident(se_tpg);
-	default:
-		pr_err("Unknown tport_proto_id: 0x%02x, using"
-			" SAS emulation\n", tport->tport_proto_id);
-		break;
-	}
-
-	return sas_get_fabric_proto_ident(se_tpg);
-}
-
 static char *tcm_vhost_get_fabric_wwn(struct se_portal_group *se_tpg)
 {
 	struct tcm_vhost_tpg *tpg = container_of(se_tpg,
@@ -322,70 +300,6 @@ static u16 tcm_vhost_get_tag(struct se_portal_group *se_tpg)
 	struct tcm_vhost_tpg *tpg = container_of(se_tpg,
 				struct tcm_vhost_tpg, se_tpg);
 	return tpg->tport_tpgt;
-}
-
-static u32 tcm_vhost_get_default_depth(struct se_portal_group *se_tpg)
-{
-	return 1;
-}
-
-static u32 tcm_vhost_get_pr_transport_id(struct se_portal_group *se_tpg,
-	struct se_node_acl *se_nacl,
-	struct t10_pr_registration *pr_reg,
-	int *format_code,
-	unsigned char *buf)
-{
-	struct tcm_vhost_tpg *tpg = container_of(se_tpg,
-				struct tcm_vhost_tpg, se_tpg);
-	struct tcm_vhost_tport *tport = tpg->tport;
-
-	switch (tport->tport_proto_id) {
-	case SCSI_PROTOCOL_SAS:
-		return sas_get_pr_transport_id(se_tpg, se_nacl, pr_reg,
-					format_code, buf);
-	case SCSI_PROTOCOL_FCP:
-		return fc_get_pr_transport_id(se_tpg, se_nacl, pr_reg,
-					format_code, buf);
-	case SCSI_PROTOCOL_ISCSI:
-		return iscsi_get_pr_transport_id(se_tpg, se_nacl, pr_reg,
-					format_code, buf);
-	default:
-		pr_err("Unknown tport_proto_id: 0x%02x, using"
-			" SAS emulation\n", tport->tport_proto_id);
-		break;
-	}
-
-	return sas_get_pr_transport_id(se_tpg, se_nacl, pr_reg,
-			format_code, buf);
-}
-
-static u32 tcm_vhost_get_pr_transport_id_len(struct se_portal_group *se_tpg,
-	struct se_node_acl *se_nacl,
-	struct t10_pr_registration *pr_reg,
-	int *format_code)
-{
-	struct tcm_vhost_tpg *tpg = container_of(se_tpg,
-				struct tcm_vhost_tpg, se_tpg);
-	struct tcm_vhost_tport *tport = tpg->tport;
-
-	switch (tport->tport_proto_id) {
-	case SCSI_PROTOCOL_SAS:
-		return sas_get_pr_transport_id_len(se_tpg, se_nacl, pr_reg,
-					format_code);
-	case SCSI_PROTOCOL_FCP:
-		return fc_get_pr_transport_id_len(se_tpg, se_nacl, pr_reg,
-					format_code);
-	case SCSI_PROTOCOL_ISCSI:
-		return iscsi_get_pr_transport_id_len(se_tpg, se_nacl, pr_reg,
-					format_code);
-	default:
-		pr_err("Unknown tport_proto_id: 0x%02x, using"
-			" SAS emulation\n", tport->tport_proto_id);
-		break;
-	}
-
-	return sas_get_pr_transport_id_len(se_tpg, se_nacl, pr_reg,
-			format_code);
 }
 
 static char *tcm_vhost_parse_pr_out_transport_id(struct se_portal_group *se_tpg,
@@ -417,44 +331,12 @@ static char *tcm_vhost_parse_pr_out_transport_id(struct se_portal_group *se_tpg,
 			port_nexus_ptr);
 }
 
-static struct se_node_acl *tcm_vhost_alloc_fabric_acl(
-	struct se_portal_group *se_tpg)
-{
-	struct tcm_vhost_nacl *nacl;
-
-	nacl = kzalloc(sizeof(struct tcm_vhost_nacl), GFP_KERNEL);
-	if (!nacl) {
-		pr_err("Unable to allocate struct tcm_vhost_nacl\n");
-		return NULL;
-	}
-
-	return &nacl->se_node_acl;
-}
-
-static void tcm_vhost_release_fabric_acl(struct se_portal_group *se_tpg,
-	struct se_node_acl *se_nacl)
-{
-	struct tcm_vhost_nacl *nacl = container_of(se_nacl,
-			struct tcm_vhost_nacl, se_node_acl);
-	kfree(nacl);
-}
-
 static u32 tcm_vhost_tpg_get_inst_index(struct se_portal_group *se_tpg)
 {
 	return 1;
 }
 
 static void tcm_vhost_release_cmd(struct se_cmd *se_cmd)
-{
-	return;
-}
-
-static int tcm_vhost_shutdown_session(struct se_session *se_sess)
-{
-	return 0;
-}
-
-static void tcm_vhost_close_session(struct se_session *se_sess)
 {
 	return;
 }
@@ -479,11 +361,6 @@ static int tcm_vhost_write_pending_status(struct se_cmd *se_cmd)
 static void tcm_vhost_set_default_node_attrs(struct se_node_acl *nacl)
 {
 	return;
-}
-
-static u32 tcm_vhost_get_task_tag(struct se_cmd *se_cmd)
-{
-	return 0;
 }
 
 static int tcm_vhost_get_cmd_state(struct se_cmd *se_cmd)
@@ -588,7 +465,7 @@ static void tcm_vhost_do_evt_work(struct vhost_scsi *vs,
 
 again:
 	vhost_disable_notify(&vs->dev, vq);
-	head = vhost_get_vq_desc(&vs->dev, vq, vq->iov,
+	head = vhost_get_vq_desc(vq, vq->iov,
 			ARRAY_SIZE(vq->iov), &out, &in,
 			NULL, NULL);
 	if (head < 0) {
@@ -843,6 +720,7 @@ static void tcm_vhost_submission_work(struct work_struct *work)
 	}
 	tv_nexus = tv_cmd->tvc_nexus;
 
+	se_cmd->tag = 0;
 	rc = target_submit_cmd_map_sgls(se_cmd, tv_nexus->tvn_se_sess,
 			tv_cmd->tvc_cdb, &tv_cmd->tvc_sense_buf[0],
 			tv_cmd->tvc_lun, tv_cmd->tvc_exp_data_len,
@@ -885,23 +763,19 @@ static void vhost_scsi_handle_vq(struct vhost_scsi *vs,
 	int head, ret;
 	u8 target;
 
+	mutex_lock(&vq->mutex);
 	/*
 	 * We can handle the vq only after the endpoint is setup by calling the
 	 * VHOST_SCSI_SET_ENDPOINT ioctl.
-	 *
-	 * TODO: Check that we are running from vhost_worker which acts
-	 * as read-side critical section for vhost kind of RCU.
-	 * See the comments in struct vhost_virtqueue in drivers/vhost/vhost.h
 	 */
-	vs_tpg = rcu_dereference_check(vq->private_data, 1);
+	vs_tpg = vq->private_data;
 	if (!vs_tpg)
-		return;
+		goto out;
 
-	mutex_lock(&vq->mutex);
 	vhost_disable_notify(&vs->dev, vq);
 
 	for (;;) {
-		head = vhost_get_vq_desc(&vs->dev, vq, vq->iov,
+		head = vhost_get_vq_desc(vq, vq->iov,
 					ARRAY_SIZE(vq->iov), &out, &in,
 					NULL, NULL);
 		pr_debug("vhost_get_vq_desc: head: %d, out: %u in: %u\n",
@@ -1017,7 +891,7 @@ static void vhost_scsi_handle_vq(struct vhost_scsi *vs,
 		if (data_direction != DMA_NONE) {
 			ret = vhost_scsi_map_iov_to_sgl(tv_cmd,
 					&vq->iov[data_first], data_num,
-					data_direction == DMA_TO_DEVICE);
+					data_direction == DMA_FROM_DEVICE);
 			if (unlikely(ret)) {
 				vq_err(vq, "Failed to map iov to sgl\n");
 				goto err_free;
@@ -1047,6 +921,7 @@ err_free:
 	vhost_scsi_free_cmd(tv_cmd);
 err_cmd:
 	vhost_scsi_send_bad_target(vs, vq, head, out);
+out:
 	mutex_unlock(&vq->mutex);
 }
 
@@ -1211,9 +1086,8 @@ static int vhost_scsi_set_endpoint(
 		       sizeof(vs->vs_vhost_wwpn));
 		for (i = 0; i < VHOST_SCSI_MAX_VQ; i++) {
 			vq = &vs->vqs[i].vq;
-			/* Flushing the vhost_work acts as synchronize_rcu */
 			mutex_lock(&vq->mutex);
-			rcu_assign_pointer(vq->private_data, vs_tpg);
+			vq->private_data = vs_tpg;
 			vhost_init_used(vq);
 			mutex_unlock(&vq->mutex);
 		}
@@ -1292,9 +1166,8 @@ static int vhost_scsi_clear_endpoint(
 	if (match) {
 		for (i = 0; i < VHOST_SCSI_MAX_VQ; i++) {
 			vq = &vs->vqs[i].vq;
-			/* Flushing the vhost_work acts as synchronize_rcu */
 			mutex_lock(&vq->mutex);
-			rcu_assign_pointer(vq->private_data, NULL);
+			vq->private_data = NULL;
 			mutex_unlock(&vq->mutex);
 		}
 	}
@@ -1320,6 +1193,9 @@ err_dev:
 
 static int vhost_scsi_set_features(struct vhost_scsi *vs, u64 features)
 {
+	struct vhost_virtqueue *vq;
+	int i;
+
 	if (features & ~VHOST_SCSI_FEATURES)
 		return -EOPNOTSUPP;
 
@@ -1329,9 +1205,13 @@ static int vhost_scsi_set_features(struct vhost_scsi *vs, u64 features)
 		mutex_unlock(&vs->dev.mutex);
 		return -EFAULT;
 	}
-	vs->dev.acked_features = features;
-	smp_wmb();
-	vhost_scsi_flush(vs);
+
+	for (i = 0; i < VHOST_SCSI_MAX_VQ; i++) {
+		vq = &vs->vqs[i].vq;
+		mutex_lock(&vq->mutex);
+		vq->acked_features = features;
+		mutex_unlock(&vq->mutex);
+	}
 	mutex_unlock(&vs->dev.mutex);
 	return 0;
 }
@@ -1366,8 +1246,8 @@ static int vhost_scsi_open(struct inode *inode, struct file *f)
 		vqs[i] = &s->vqs[i].vq;
 		s->vqs[i].vq.handle_kick = vhost_scsi_handle_kick;
 	}
-	r = vhost_dev_init(&s->dev, vqs, VHOST_SCSI_MAX_VQ);
-
+	r = vhost_dev_init(&s->dev, vqs, VHOST_SCSI_MAX_VQ, UIO_MAXIOV,
+			   VHOST_SCSI_WEIGHT, 0););
 	tcm_vhost_init_inflight(s, NULL);
 
 	if (r < 0) {
@@ -1527,10 +1407,6 @@ static void tcm_vhost_do_plug(struct tcm_vhost_tpg *tpg,
 		return;
 
 	mutex_lock(&vs->dev.mutex);
-	if (!vhost_has_feature(&vs->dev, VIRTIO_SCSI_F_HOTPLUG)) {
-		mutex_unlock(&vs->dev.mutex);
-		return;
-	}
 
 	if (plug)
 		reason = VIRTIO_SCSI_EVT_RESET_RESCAN;
@@ -1539,8 +1415,9 @@ static void tcm_vhost_do_plug(struct tcm_vhost_tpg *tpg,
 
 	vq = &vs->vqs[VHOST_SCSI_VQ_EVT].vq;
 	mutex_lock(&vq->mutex);
-	tcm_vhost_send_evt(vs, tpg, lun,
-			VIRTIO_SCSI_T_TRANSPORT_RESET, reason);
+	if (vhost_has_feature(vq, VIRTIO_SCSI_F_HOTPLUG))
+		tcm_vhost_send_evt(vs, tpg, lun,
+				   VIRTIO_SCSI_T_TRANSPORT_RESET, reason);
 	mutex_unlock(&vq->mutex);
 	mutex_unlock(&vs->dev.mutex);
 }
@@ -1589,50 +1466,6 @@ static void tcm_vhost_port_unlink(struct se_portal_group *se_tpg,
 	tcm_vhost_hotunplug(tv_tpg, lun);
 
 	mutex_unlock(&tcm_vhost_mutex);
-}
-
-static struct se_node_acl *tcm_vhost_make_nodeacl(
-	struct se_portal_group *se_tpg,
-	struct config_group *group,
-	const char *name)
-{
-	struct se_node_acl *se_nacl, *se_nacl_new;
-	struct tcm_vhost_nacl *nacl;
-	u64 wwpn = 0;
-	u32 nexus_depth;
-
-	/* tcm_vhost_parse_wwn(name, &wwpn, 1) < 0)
-		return ERR_PTR(-EINVAL); */
-	se_nacl_new = tcm_vhost_alloc_fabric_acl(se_tpg);
-	if (!se_nacl_new)
-		return ERR_PTR(-ENOMEM);
-
-	nexus_depth = 1;
-	/*
-	 * se_nacl_new may be released by core_tpg_add_initiator_node_acl()
-	 * when converting a NodeACL from demo mode -> explict
-	 */
-	se_nacl = core_tpg_add_initiator_node_acl(se_tpg, se_nacl_new,
-				name, nexus_depth);
-	if (IS_ERR(se_nacl)) {
-		tcm_vhost_release_fabric_acl(se_tpg, se_nacl_new);
-		return se_nacl;
-	}
-	/*
-	 * Locate our struct tcm_vhost_nacl and set the FC Nport WWPN
-	 */
-	nacl = container_of(se_nacl, struct tcm_vhost_nacl, se_node_acl);
-	nacl->iport_wwpn = wwpn;
-
-	return se_nacl;
-}
-
-static void tcm_vhost_drop_nodeacl(struct se_node_acl *se_acl)
-{
-	struct tcm_vhost_nacl *nacl = container_of(se_acl,
-				struct tcm_vhost_nacl, se_node_acl);
-	core_tpg_del_initiator_node_acl(se_acl->se_tpg, se_acl, 1);
-	kfree(nacl);
 }
 
 static int tcm_vhost_make_nexus(struct tcm_vhost_tpg *tv_tpg,
@@ -1731,7 +1564,7 @@ static int tcm_vhost_drop_nexus(struct tcm_vhost_tpg *tpg)
 	/*
 	 * Release the SCSI I_T Nexus to the emulated vhost Target Port
 	 */
-	transport_deregister_session(tv_nexus->tvn_se_sess);
+	target_remove_session(se_sess);
 	tpg->tpg_nexus = NULL;
 	mutex_unlock(&tpg->tv_tpg_mutex);
 
@@ -1739,9 +1572,9 @@ static int tcm_vhost_drop_nexus(struct tcm_vhost_tpg *tpg)
 	return 0;
 }
 
-static ssize_t tcm_vhost_tpg_show_nexus(struct se_portal_group *se_tpg,
-	char *page)
+static ssize_t tcm_vhost_tpg_nexus_show(struct config_item *item, char *page)
 {
+	struct se_portal_group *se_tpg = to_tpg(item);
 	struct tcm_vhost_tpg *tv_tpg = container_of(se_tpg,
 				struct tcm_vhost_tpg, se_tpg);
 	struct tcm_vhost_nexus *tv_nexus;
@@ -1760,10 +1593,10 @@ static ssize_t tcm_vhost_tpg_show_nexus(struct se_portal_group *se_tpg,
 	return ret;
 }
 
-static ssize_t tcm_vhost_tpg_store_nexus(struct se_portal_group *se_tpg,
-	const char *page,
-	size_t count)
+static ssize_t tcm_vhost_tpg_nexus_store(struct config_item *item,
+		const char *page, size_t count)
 {
+	struct se_portal_group *se_tpg = to_tpg(item);
 	struct tcm_vhost_tpg *tv_tpg = container_of(se_tpg,
 				struct tcm_vhost_tpg, se_tpg);
 	struct tcm_vhost_tport *tport_wwn = tv_tpg->tport;
@@ -1838,10 +1671,10 @@ check_newline:
 	return count;
 }
 
-TF_TPG_BASE_ATTR(tcm_vhost, nexus, S_IRUGO | S_IWUSR);
+CONFIGFS_ATTR(vhost_scsi_tpg_, nexus);
 
 static struct configfs_attribute *tcm_vhost_tpg_attrs[] = {
-	&tcm_vhost_tpg_nexus.attr,
+	&tcm_vhost_tpg_nexus,
 	NULL,
 };
 
@@ -1871,8 +1704,7 @@ static struct se_portal_group *tcm_vhost_make_tpg(struct se_wwn *wwn,
 	tpg->tport = tport;
 	tpg->tport_tpgt = tpgt;
 
-	ret = core_tpg_register(&tcm_vhost_fabric_configfs->tf_ops, wwn,
-				&tpg->se_tpg, tpg, TRANSPORT_TPG_TYPE_NORMAL);
+	ret = core_tpg_register(wwn, &tpg->se_tpg, tport->tport_proto_id);
 	if (ret < 0) {
 		kfree(tpg);
 		return NULL;
@@ -1975,47 +1807,38 @@ static void tcm_vhost_drop_tport(struct se_wwn *wwn)
 	kfree(tport);
 }
 
-static ssize_t tcm_vhost_wwn_show_attr_version(
-	struct target_fabric_configfs *tf,
-	char *page)
+static ssize_t tcm_vhost_wwn_show_attr_version_show(struct config_item *item, char *page)
 {
 	return sprintf(page, "TCM_VHOST fabric module %s on %s/%s"
 		"on "UTS_RELEASE"\n", TCM_VHOST_VERSION, utsname()->sysname,
 		utsname()->machine);
 }
 
-TF_WWN_ATTR_RO(tcm_vhost, version);
+CONFIGFS_ATTR_RO(vhost_scsi_wwn_, version);
 
 static struct configfs_attribute *tcm_vhost_wwn_attrs[] = {
-	&tcm_vhost_wwn_version.attr,
+	&tcm_vhost_wwn_version,
 	NULL,
 };
 
 static struct target_core_fabric_ops tcm_vhost_ops = {
+	.module                         = THIS_MODULE,
+	.name                           = "vhost",
 	.get_fabric_name		= tcm_vhost_get_fabric_name,
-	.get_fabric_proto_ident		= tcm_vhost_get_fabric_proto_ident,
 	.tpg_get_wwn			= tcm_vhost_get_fabric_wwn,
 	.tpg_get_tag			= tcm_vhost_get_tag,
-	.tpg_get_default_depth		= tcm_vhost_get_default_depth,
-	.tpg_get_pr_transport_id	= tcm_vhost_get_pr_transport_id,
-	.tpg_get_pr_transport_id_len	= tcm_vhost_get_pr_transport_id_len,
 	.tpg_parse_pr_out_transport_id	= tcm_vhost_parse_pr_out_transport_id,
 	.tpg_check_demo_mode		= tcm_vhost_check_true,
 	.tpg_check_demo_mode_cache	= tcm_vhost_check_true,
 	.tpg_check_demo_mode_write_protect = tcm_vhost_check_false,
 	.tpg_check_prod_mode_write_protect = tcm_vhost_check_false,
-	.tpg_alloc_fabric_acl		= tcm_vhost_alloc_fabric_acl,
-	.tpg_release_fabric_acl		= tcm_vhost_release_fabric_acl,
 	.tpg_get_inst_index		= tcm_vhost_tpg_get_inst_index,
 	.release_cmd			= tcm_vhost_release_cmd,
-	.shutdown_session		= tcm_vhost_shutdown_session,
-	.close_session			= tcm_vhost_close_session,
 	.sess_get_index			= tcm_vhost_sess_get_index,
 	.sess_get_initiator_sid		= NULL,
 	.write_pending			= tcm_vhost_write_pending,
 	.write_pending_status		= tcm_vhost_write_pending_status,
 	.set_default_node_attributes	= tcm_vhost_set_default_node_attrs,
-	.get_task_tag			= tcm_vhost_get_task_tag,
 	.get_cmd_state			= tcm_vhost_get_cmd_state,
 	.queue_data_in			= tcm_vhost_queue_data_in,
 	.queue_status			= tcm_vhost_queue_status,
@@ -2029,74 +1852,18 @@ static struct target_core_fabric_ops tcm_vhost_ops = {
 	.fabric_drop_tpg		= tcm_vhost_drop_tpg,
 	.fabric_post_link		= tcm_vhost_port_link,
 	.fabric_pre_unlink		= tcm_vhost_port_unlink,
-	.fabric_make_np			= NULL,
-	.fabric_drop_np			= NULL,
-	.fabric_make_nodeacl		= tcm_vhost_make_nodeacl,
-	.fabric_drop_nodeacl		= tcm_vhost_drop_nodeacl,
+
+	.tfc_wwn_attrs                  = tcm_vhost_wwn_attrs,
+	.tfc_tpg_base_attrs             = tcm_vhost_tpg_attrs,
 };
 
-static int tcm_vhost_register_configfs(void)
+static int __init vhost_scsi_init(void)
 {
-	struct target_fabric_configfs *fabric;
-	int ret;
+	int ret = -ENOMEM;
 
 	pr_debug("TCM_VHOST fabric module %s on %s/%s"
 		" on "UTS_RELEASE"\n", TCM_VHOST_VERSION, utsname()->sysname,
 		utsname()->machine);
-	/*
-	 * Register the top level struct config_item_type with TCM core
-	 */
-	fabric = target_fabric_configfs_init(THIS_MODULE, "vhost");
-	if (IS_ERR(fabric)) {
-		pr_err("target_fabric_configfs_init() failed\n");
-		return PTR_ERR(fabric);
-	}
-	/*
-	 * Setup fabric->tf_ops from our local tcm_vhost_ops
-	 */
-	fabric->tf_ops = tcm_vhost_ops;
-	/*
-	 * Setup default attribute lists for various fabric->tf_cit_tmpl
-	 */
-	TF_CIT_TMPL(fabric)->tfc_wwn_cit.ct_attrs = tcm_vhost_wwn_attrs;
-	TF_CIT_TMPL(fabric)->tfc_tpg_base_cit.ct_attrs = tcm_vhost_tpg_attrs;
-	TF_CIT_TMPL(fabric)->tfc_tpg_attrib_cit.ct_attrs = NULL;
-	TF_CIT_TMPL(fabric)->tfc_tpg_param_cit.ct_attrs = NULL;
-	TF_CIT_TMPL(fabric)->tfc_tpg_np_base_cit.ct_attrs = NULL;
-	TF_CIT_TMPL(fabric)->tfc_tpg_nacl_base_cit.ct_attrs = NULL;
-	TF_CIT_TMPL(fabric)->tfc_tpg_nacl_attrib_cit.ct_attrs = NULL;
-	TF_CIT_TMPL(fabric)->tfc_tpg_nacl_auth_cit.ct_attrs = NULL;
-	TF_CIT_TMPL(fabric)->tfc_tpg_nacl_param_cit.ct_attrs = NULL;
-	/*
-	 * Register the fabric for use within TCM
-	 */
-	ret = target_fabric_configfs_register(fabric);
-	if (ret < 0) {
-		pr_err("target_fabric_configfs_register() failed"
-				" for TCM_VHOST\n");
-		return ret;
-	}
-	/*
-	 * Setup our local pointer to *fabric
-	 */
-	tcm_vhost_fabric_configfs = fabric;
-	pr_debug("TCM_VHOST[0] - Set fabric -> tcm_vhost_fabric_configfs\n");
-	return 0;
-};
-
-static void tcm_vhost_deregister_configfs(void)
-{
-	if (!tcm_vhost_fabric_configfs)
-		return;
-
-	target_fabric_configfs_deregister(tcm_vhost_fabric_configfs);
-	tcm_vhost_fabric_configfs = NULL;
-	pr_debug("TCM_VHOST[0] - Cleared tcm_vhost_fabric_configfs\n");
-};
-
-static int __init tcm_vhost_init(void)
-{
-	int ret = -ENOMEM;
 	/*
 	 * Use our own dedicated workqueue for submitting I/O into
 	 * target core to avoid contention within system_wq.
@@ -2109,7 +1876,7 @@ static int __init tcm_vhost_init(void)
 	if (ret < 0)
 		goto out_destroy_workqueue;
 
-	ret = tcm_vhost_register_configfs();
+	ret = target_register_template(&tcm_vhost_ops);
 	if (ret < 0)
 		goto out_vhost_scsi_deregister;
 
@@ -2125,7 +1892,7 @@ out:
 
 static void tcm_vhost_exit(void)
 {
-	tcm_vhost_deregister_configfs();
+	target_unregister_template(&tcm_vhost_ops);
 	vhost_scsi_deregister();
 	destroy_workqueue(tcm_vhost_workqueue);
 };

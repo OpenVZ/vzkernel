@@ -1514,7 +1514,7 @@ rcu_torture_shutdown(void *arg)
  * Execute random CPU-hotplug operations at the interval specified
  * by the onoff_interval.
  */
-static int __cpuinit
+static int
 rcu_torture_onoff(void *arg)
 {
 	int cpu;
@@ -1596,7 +1596,7 @@ rcu_torture_onoff(void *arg)
 	return 0;
 }
 
-static int __cpuinit
+static int
 rcu_torture_onoff_init(void)
 {
 	int ret;
@@ -1639,7 +1639,7 @@ static void rcu_torture_onoff_cleanup(void)
  * CPU-stall kthread.  It waits as specified by stall_cpu_holdoff, then
  * induces a CPU stall for the time specified by stall_cpu.
  */
-static int __cpuinit rcu_torture_stall(void *args)
+static int rcu_torture_stall(void *args)
 {
 	unsigned long stop_at;
 

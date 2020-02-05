@@ -59,7 +59,7 @@ void chroot_fs_refs(const struct path *old_root, const struct path *new_root)
 	struct fs_struct *fs;
 	int count = 0;
 
-	read_lock(&tasklist_lock);
+	qread_lock(&tasklist_lock);
 	do_each_thread(g, p) {
 		task_lock(p);
 		fs = p->fs;
@@ -78,7 +78,7 @@ void chroot_fs_refs(const struct path *old_root, const struct path *new_root)
 		}
 		task_unlock(p);
 	} while_each_thread(g, p);
-	read_unlock(&tasklist_lock);
+	qread_unlock(&tasklist_lock);
 	while (count--)
 		path_put(old_root);
 }
@@ -161,6 +161,6 @@ EXPORT_SYMBOL(current_umask);
 struct fs_struct init_fs = {
 	.users		= 1,
 	.lock		= __SPIN_LOCK_UNLOCKED(init_fs.lock),
-	.seq		= SEQCNT_ZERO,
+	.seq		= SEQCNT_ZERO(init_fs.seq),
 	.umask		= 0022,
 };

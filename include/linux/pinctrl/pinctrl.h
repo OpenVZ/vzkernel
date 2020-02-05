@@ -49,7 +49,8 @@ struct pinctrl_pin_desc {
  * @name: a name for the chip in this range
  * @id: an ID number for the chip in this range
  * @base: base offset of the GPIO range
- * @pin_base: base pin number of the GPIO range
+ * @pin_base: base pin number of the GPIO range if pins != NULL
+ * @pins: enumeration of pins in GPIO range or NULL
  * @npins: number of pins in the GPIO range, including the base number
  * @gc: an optional pointer to a gpio_chip
  */
@@ -59,6 +60,7 @@ struct pinctrl_gpio_range {
 	unsigned int id;
 	unsigned int base;
 	unsigned int pin_base;
+	unsigned const *pins;
 	unsigned int npins;
 	struct gpio_chip *gc;
 };
@@ -128,6 +130,12 @@ struct pinctrl_desc {
 extern struct pinctrl_dev *pinctrl_register(struct pinctrl_desc *pctldesc,
 				struct device *dev, void *driver_data);
 extern void pinctrl_unregister(struct pinctrl_dev *pctldev);
+extern struct pinctrl_dev *devm_pinctrl_register(struct device *dev,
+				struct pinctrl_desc *pctldesc,
+				void *driver_data);
+extern void devm_pinctrl_unregister(struct device *dev,
+				struct pinctrl_dev *pctldev);
+
 extern bool pin_is_valid(struct pinctrl_dev *pctldev, int pin);
 extern void pinctrl_add_gpio_range(struct pinctrl_dev *pctldev,
 				struct pinctrl_gpio_range *range);
@@ -142,6 +150,9 @@ extern struct pinctrl_dev *pinctrl_find_and_add_gpio_range(const char *devname,
 extern struct pinctrl_gpio_range *
 pinctrl_find_gpio_range_from_pin(struct pinctrl_dev *pctldev,
 				 unsigned int pin);
+extern int pinctrl_get_group_pins(struct pinctrl_dev *pctldev,
+				const char *pin_group, const unsigned **pins,
+				unsigned *num_pins);
 
 #ifdef CONFIG_OF
 extern struct pinctrl_dev *of_pinctrl_get(struct device_node *np);

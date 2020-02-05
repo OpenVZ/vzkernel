@@ -1755,19 +1755,19 @@ nv_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *storage)
 
 	/* software stats */
 	do {
-		syncp_start = u64_stats_fetch_begin_bh(&np->swstats_rx_syncp);
+		syncp_start = u64_stats_fetch_begin_irq(&np->swstats_rx_syncp);
 		storage->rx_packets       = np->stat_rx_packets;
 		storage->rx_bytes         = np->stat_rx_bytes;
 		storage->rx_dropped       = np->stat_rx_dropped;
 		storage->rx_missed_errors = np->stat_rx_missed_errors;
-	} while (u64_stats_fetch_retry_bh(&np->swstats_rx_syncp, syncp_start));
+	} while (u64_stats_fetch_retry_irq(&np->swstats_rx_syncp, syncp_start));
 
 	do {
-		syncp_start = u64_stats_fetch_begin_bh(&np->swstats_tx_syncp);
+		syncp_start = u64_stats_fetch_begin_irq(&np->swstats_tx_syncp);
 		storage->tx_packets = np->stat_tx_packets;
 		storage->tx_bytes   = np->stat_tx_bytes;
 		storage->tx_dropped = np->stat_tx_dropped;
-	} while (u64_stats_fetch_retry_bh(&np->swstats_tx_syncp, syncp_start));
+	} while (u64_stats_fetch_retry_irq(&np->swstats_tx_syncp, syncp_start));
 
 	/* If the nic supports hw counters then retrieve latest values */
 	if (np->driver_data & DEV_HAS_STATISTICS_V123) {
@@ -2464,9 +2464,9 @@ static netdev_tx_t nv_start_xmit_optimized(struct sk_buff *skb,
 			 NV_TX2_CHECKSUM_L3 | NV_TX2_CHECKSUM_L4 : 0;
 
 	/* vlan tag */
-	if (vlan_tx_tag_present(skb))
+	if (skb_vlan_tag_present(skb))
 		start_tx->txvlan = cpu_to_le32(NV_TX3_VLAN_TAG_PRESENT |
-					vlan_tx_tag_get(skb));
+					skb_vlan_tag_get(skb));
 	else
 		start_tx->txvlan = 0;
 
@@ -6176,7 +6176,7 @@ static void nv_shutdown(struct pci_dev *pdev)
 #define nv_shutdown NULL
 #endif /* CONFIG_PM */
 
-static DEFINE_PCI_DEVICE_TABLE(pci_tbl) = {
+static const struct pci_device_id pci_tbl[] = {
 	{	/* nForce Ethernet Controller */
 		PCI_DEVICE(0x10DE, 0x01C3),
 		.driver_data = DEV_NEED_TIMERIRQ|DEV_NEED_LINKTIMER,

@@ -652,11 +652,6 @@ static void kvaser_usb_rx_error(const struct kvaser_usb *dev,
 	priv = dev->nets[channel];
 	stats = &priv->netdev->stats;
 
-	if (status & M16C_STATE_BUS_RESET) {
-		kvaser_usb_unlink_tx_urbs(priv);
-		return;
-	}
-
 	skb = alloc_can_err_skb(priv->netdev, &cf);
 	if (!skb) {
 		stats->rx_dropped++;
@@ -667,7 +662,7 @@ static void kvaser_usb_rx_error(const struct kvaser_usb *dev,
 
 	netdev_dbg(priv->netdev, "Error status: 0x%02x\n", status);
 
-	if (status & M16C_STATE_BUS_OFF) {
+	if (status & (M16C_STATE_BUS_OFF | M16C_STATE_BUS_RESET)) {
 		cf->can_id |= CAN_ERR_BUSOFF;
 
 		priv->can.can_stats.bus_off++;
@@ -1236,6 +1231,9 @@ static int kvaser_usb_close(struct net_device *netdev)
 	if (err)
 		netdev_warn(netdev, "Cannot stop device, error %d\n", err);
 
+	/* reset tx contexts */
+	kvaser_usb_unlink_tx_urbs(priv);
+
 	priv->can.state = CAN_STATE_STOPPED;
 	close_candev(priv->netdev);
 
@@ -1284,12 +1282,14 @@ static netdev_tx_t kvaser_usb_start_xmit(struct sk_buff *skb,
 	if (!urb) {
 		netdev_err(netdev, "No memory left for URBs\n");
 		stats->tx_dropped++;
-		goto nourbmem;
+		dev_kfree_skb(skb);
+		return NETDEV_TX_OK;
 	}
 
 	buf = kmalloc(sizeof(struct kvaser_msg), GFP_ATOMIC);
 	if (!buf) {
 		stats->tx_dropped++;
+		dev_kfree_skb(skb);
 		goto nobufmem;
 	}
 
@@ -1324,6 +1324,7 @@ static netdev_tx_t kvaser_usb_start_xmit(struct sk_buff *skb,
 		}
 	}
 
+	/* This should never happen; it implies a flow control bug */
 	if (!context) {
 		netdev_warn(netdev, "cannot find free context\n");
 		ret =  NETDEV_TX_BUSY;
@@ -1354,9 +1355,6 @@ static netdev_tx_t kvaser_usb_start_xmit(struct sk_buff *skb,
 	if (unlikely(err)) {
 		can_free_echo_skb(netdev, context->echo_index);
 
-		skb = NULL; /* set to NULL to avoid double free in
-			     * dev_kfree_skb(skb) */
-
 		atomic_dec(&priv->active_tx_urbs);
 		usb_unanchor_urb(urb);
 
@@ -1378,8 +1376,6 @@ releasebuf:
 	kfree(buf);
 nobufmem:
 	usb_free_urb(urb);
-nourbmem:
-	dev_kfree_skb(skb);
 	return ret;
 }
 
@@ -1544,9 +1540,9 @@ static int kvaser_usb_init_one(struct usb_interface *intf,
 	return 0;
 }
 
-static void kvaser_usb_get_endpoints(const struct usb_interface *intf,
-				     struct usb_endpoint_descriptor **in,
-				     struct usb_endpoint_descriptor **out)
+static int kvaser_usb_get_endpoints(const struct usb_interface *intf,
+				    struct usb_endpoint_descriptor **in,
+				    struct usb_endpoint_descriptor **out)
 {
 	const struct usb_host_interface *iface_desc;
 	struct usb_endpoint_descriptor *endpoint;
@@ -1557,12 +1553,18 @@ static void kvaser_usb_get_endpoints(const struct usb_interface *intf,
 	for (i = 0; i < iface_desc->desc.bNumEndpoints; ++i) {
 		endpoint = &iface_desc->endpoint[i].desc;
 
-		if (usb_endpoint_is_bulk_in(endpoint))
+		if (!*in && usb_endpoint_is_bulk_in(endpoint))
 			*in = endpoint;
 
-		if (usb_endpoint_is_bulk_out(endpoint))
+		if (!*out && usb_endpoint_is_bulk_out(endpoint))
 			*out = endpoint;
+
+		/* use first bulk endpoint for in and out */
+		if (*in && *out)
+			return 0;
 	}
+
+	return -ENODEV;
 }
 
 static int kvaser_usb_probe(struct usb_interface *intf,
@@ -1576,8 +1578,8 @@ static int kvaser_usb_probe(struct usb_interface *intf,
 	if (!dev)
 		return -ENOMEM;
 
-	kvaser_usb_get_endpoints(intf, &dev->bulk_in, &dev->bulk_out);
-	if (!dev->bulk_in || !dev->bulk_out) {
+	err = kvaser_usb_get_endpoints(intf, &dev->bulk_in, &dev->bulk_out);
+	if (err) {
 		dev_err(&intf->dev, "Cannot get usb endpoint(s)");
 		return err;
 	}

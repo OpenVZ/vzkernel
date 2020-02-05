@@ -192,14 +192,13 @@ static size_t eeh_gather_pci_data(struct eeh_dev *edev, char * buf, size_t len)
 	}
 
 	/* If PCI-E capable, dump PCI-E cap 10, and the AER */
-	cap = pci_find_capability(dev, PCI_CAP_ID_EXP);
-	if (cap) {
+	if (pci_is_pcie(dev)) {
 		n += scnprintf(buf+n, len-n, "pci-e cap10:\n");
 		printk(KERN_WARNING
 		       "EEH: PCI-E capabilities and status follow:\n");
 
 		for (i=0; i<=8; i++) {
-			eeh_ops->read_config(dn, cap+4*i, 4, &cfg);
+			eeh_ops->read_config(dn, dev->pcie_cap+4*i, 4, &cfg);
 			n += scnprintf(buf+n, len-n, "%02x:%x\n", 4*i, cfg);
 			printk(KERN_WARNING "EEH: PCI-E %02x: %08x\n", i, cfg);
 		}
@@ -260,10 +259,15 @@ static inline unsigned long eeh_token_to_phys(unsigned long token)
 {
 	pte_t *ptep;
 	unsigned long pa;
+	int hugepage_shift;
 
-	ptep = find_linux_pte(init_mm.pgd, token);
+	/*
+	 * We won't find hugepages here, iomem
+	 */
+	ptep = find_linux_pte_or_hugepte(init_mm.pgd, token, &hugepage_shift);
 	if (!ptep)
 		return token;
+	WARN_ON(hugepage_shift);
 	pa = pte_pfn(*ptep) << PAGE_SHIFT;
 
 	return pa | (token & (PAGE_SIZE-1));
@@ -368,7 +372,7 @@ int eeh_dev_check_failure(struct eeh_dev *edev)
 	}
 
 	eeh_stats.slot_resets++;
- 
+
 	/* Avoid repeated reports of this failure, including problems
 	 * with other functions on this device, and functions under
 	 * bridges.
@@ -525,7 +529,7 @@ static void eeh_reset_pe_once(struct eeh_pe *pe)
 	 * or a fundamental reset (3).
 	 * A fundamental reset required by any device under
 	 * Partitionable Endpoint trumps hot-reset.
-  	 */
+	 */
 	eeh_pe_dev_traverse(pe, eeh_set_dev_freset, &freset);
 
 	if (freset)
@@ -538,8 +542,8 @@ static void eeh_reset_pe_once(struct eeh_pe *pe)
 	 */
 #define PCI_BUS_RST_HOLD_TIME_MSEC 250
 	msleep(PCI_BUS_RST_HOLD_TIME_MSEC);
-	
-	/* We might get hit with another EEH freeze as soon as the 
+
+	/* We might get hit with another EEH freeze as soon as the
 	 * pci slot reset line is dropped. Make sure we don't miss
 	 * these, and clear the flag now.
 	 */
@@ -604,7 +608,7 @@ void eeh_save_bars(struct eeh_dev *edev)
 	if (!edev)
 		return;
 	dn = eeh_dev_to_of_node(edev);
-	
+
 	for (i = 0; i < 16; i++)
 		eeh_ops->read_config(dn, i * 4, 4, &edev->config_space[i]);
 }
@@ -803,12 +807,12 @@ void eeh_add_device_tree_late(struct pci_bus *bus)
 	struct pci_dev *dev;
 
 	list_for_each_entry(dev, &bus->devices, bus_list) {
- 		eeh_add_device_late(dev);
- 		if (dev->hdr_type == PCI_HEADER_TYPE_BRIDGE) {
- 			struct pci_bus *subbus = dev->subordinate;
- 			if (subbus)
- 				eeh_add_device_tree_late(subbus);
- 		}
+		eeh_add_device_late(dev);
+		if (dev->hdr_type == PCI_HEADER_TYPE_BRIDGE) {
+			struct pci_bus *subbus = dev->subordinate;
+			if (subbus)
+				eeh_add_device_tree_late(subbus);
+		}
 	}
 }
 EXPORT_SYMBOL_GPL(eeh_add_device_tree_late);

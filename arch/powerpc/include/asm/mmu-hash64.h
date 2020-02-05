@@ -14,6 +14,7 @@
 
 #include <asm/asm-compat.h>
 #include <asm/page.h>
+#include <asm/bug.h>
 
 /*
  * This is necessary to get the definition of PGTABLE_RANGE which we
@@ -22,6 +23,9 @@
  */
 #include <asm/pgtable-ppc64.h>
 #include <asm/bug.h>
+#include <asm/processor.h>
+
+#include <linux/rh_kabi.h>
 
 /*
  * Segment table
@@ -131,12 +135,14 @@ extern char initial_stab[];
 #define TLBIEL_INVAL_SET_SHIFT	12
 
 #define POWER7_TLB_SETS		128	/* # sets in POWER7 TLB */
+#define POWER8_TLB_SETS		512	/* # sets in POWER8 TLB */
+#define POWER9_TLB_SETS_HASH	256	/* # sets in POWER9 TLB Hash mode */
 
 #ifndef __ASSEMBLY__
 
 struct hash_pte {
-	unsigned long v;
-	unsigned long r;
+	__be64 v;
+	__be64 r;
 };
 
 extern struct hash_pte *htab_address;
@@ -208,6 +214,13 @@ static inline unsigned int mmu_psize_to_shift(unsigned int mmu_psize)
 #define LP_MASK(i)	((0xFF >> (i)) << LP_SHIFT)
 
 #ifndef __ASSEMBLY__
+
+static inline int slb_vsid_shift(int ssize)
+{
+	if (ssize == MMU_SEGSIZE_256M)
+		return SLB_VSID_SHIFT;
+	return SLB_VSID_SHIFT_1T;
+}
 
 static inline int segment_shift(int ssize)
 {
@@ -328,18 +341,39 @@ static inline unsigned long hpt_hash(unsigned long vpn,
 	return hash & 0x7fffffffffUL;
 }
 
+#define HPTE_LOCAL_UPDATE	0x1
+#define HPTE_NOHPTE_UPDATE	0x2
+
 extern int __hash_page_4K(unsigned long ea, unsigned long access,
 			  unsigned long vsid, pte_t *ptep, unsigned long trap,
-			  unsigned int local, int ssize, int subpage_prot);
+			  unsigned long flags, int ssize, int subpage_prot);
 extern int __hash_page_64K(unsigned long ea, unsigned long access,
 			   unsigned long vsid, pte_t *ptep, unsigned long trap,
-			   unsigned int local, int ssize);
+			   unsigned long flags, int ssize);
 struct mm_struct;
 unsigned int hash_page_do_lazy_icache(unsigned int pp, pte_t pte, int trap);
-extern int hash_page(unsigned long ea, unsigned long access, unsigned long trap);
+extern int hash_page_mm(struct mm_struct *mm, unsigned long ea,
+			unsigned long access, unsigned long trap,
+			unsigned long flags);
+extern int hash_page(unsigned long ea, unsigned long access, unsigned long trap,
+		     unsigned long dsisr);
 int __hash_page_huge(unsigned long ea, unsigned long access, unsigned long vsid,
-		     pte_t *ptep, unsigned long trap, int local, int ssize,
-		     unsigned int shift, unsigned int mmu_psize);
+		     pte_t *ptep, unsigned long trap, unsigned long flags,
+		     int ssize, unsigned int shift, unsigned int mmu_psize);
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+extern int __hash_page_thp(unsigned long ea, unsigned long access,
+			   unsigned long vsid, pmd_t *pmdp, unsigned long trap,
+			   unsigned long flags, int ssize, unsigned int psize);
+#else
+static inline int __hash_page_thp(unsigned long ea, unsigned long access,
+				  unsigned long vsid, pmd_t *pmdp,
+				  unsigned long trap, unsigned long flags,
+				  int ssize, unsigned int psize)
+{
+	BUG();
+	return -1;
+}
+#endif
 extern void hash_failure_debug(unsigned long ea, unsigned long access,
 			       unsigned long vsid, unsigned long trap,
 			       int ssize, int psize, int lpsize,
@@ -470,6 +504,18 @@ extern void slb_set_size(u16 size);
 
 #ifdef CONFIG_PPC_SUBPAGE_PROT
 /*
+ * RH KABI restrictions limits protptrs to 2 32-bit pointers, but
+ * powerpc64 needs 8 to support 64TB of memory.  Workaround this
+ * by implementing another level of indirection to jump through
+ * to get to the real protptr.  Unfortunately, this will require
+ * allocating memory dynamically instead of statically like the
+ * original structs were.
+ */
+struct protptrs_kabi {
+	unsigned int **protptrs[(TASK_SIZE_USER64 >> 43)];
+};
+
+/*
  * For the sub-page protection option, we extend the PGD with one of
  * these.  Basically we have a 3-level tree, with the top level being
  * the protptrs array.  To optimize speed and memory consumption when
@@ -482,7 +528,7 @@ extern void slb_set_size(u16 size);
  */
 struct subpage_prot_table {
 	unsigned long maxaddr;	/* only addresses < this are protected */
-	unsigned int **protptrs[2];
+	RH_KABI_REPLACE(unsigned int **protptrs[2], struct protptrs_kabi *rh_kabi)
 	unsigned int *low_prot[4];
 };
 
@@ -525,6 +571,11 @@ typedef struct {
 #ifdef CONFIG_PPC_64K_PAGES
 	/* for 4K PTE fragment support */
 	void *pte_frag;
+#endif
+#if 0 /* RH kABI - moved to mm_struct to avoid kABI breakage */
+#ifdef CONFIG_SPAPR_TCE_IOMMU
+	struct list_head iommu_group_mem_list;
+#endif
 #endif
 } mm_context_t;
 
@@ -593,6 +644,9 @@ static inline unsigned long get_kernel_vsid(unsigned long ea, int ssize)
 	context = (MAX_USER_CONTEXT) + ((ea >> 60) - 0xc) + 1;
 	return get_vsid(context, ea, ssize);
 }
+
+unsigned htab_shift_for_mem_size(unsigned long mem_size);
+
 #endif /* __ASSEMBLY__ */
 
 #endif /* _ASM_POWERPC_MMU_HASH64_H_ */

@@ -485,7 +485,7 @@ static void *vb2_dc_get_userptr(void *alloc_ctx, unsigned long vaddr,
 	struct vb2_dc_buf *buf;
 	unsigned long start;
 	unsigned long end;
-	unsigned long offset;
+	unsigned int offset;
 	struct page **pages;
 	int n_pages;
 	int ret = 0;
@@ -513,7 +513,7 @@ static void *vb2_dc_get_userptr(void *alloc_ctx, unsigned long vaddr,
 	buf->dma_dir = write ? DMA_FROM_DEVICE : DMA_TO_DEVICE;
 
 	start = vaddr & PAGE_MASK;
-	offset = vaddr & ~PAGE_MASK;
+	offset = lower_32_bits(offset_in_page(vaddr));
 	end = PAGE_ALIGN(vaddr + size);
 	n_pages = (end - start) >> PAGE_SHIFT;
 

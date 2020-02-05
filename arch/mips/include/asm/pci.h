@@ -74,11 +74,6 @@ extern unsigned long PCIBIOS_MIN_MEM;
 
 extern void pcibios_set_master(struct pci_dev *dev);
 
-static inline void pcibios_penalize_isa_irq(int irq, int active)
-{
-	/* We don't do dynamic PCI IRQ allocation */
-}
-
 #define HAVE_PCI_MMAP
 
 extern int pci_mmap_page_range(struct pci_dev *dev, struct vm_area_struct *vma,
@@ -94,7 +89,6 @@ extern int pci_mmap_page_range(struct pci_dev *dev, struct vm_area_struct *vma,
 #include <asm/scatterlist.h>
 #include <linux/string.h>
 #include <asm/io.h>
-#include <asm-generic/pci-bridge.h>
 
 struct pci_dev;
 
@@ -124,9 +118,6 @@ static inline int pci_proc_domain(struct pci_bus *bus)
 }
 
 #endif /* __KERNEL__ */
-
-/* implement the pci_ DMA API in terms of the generic device dma_ one */
-#include <asm-generic/pci-dma-compat.h>
 
 /* Do platform specific device initialization at pci_enable_device() time */
 extern int pcibios_plat_dev_init(struct pci_dev *dev);

@@ -150,8 +150,8 @@ static void printk_log_rtas(char *buf, int len)
 		struct rtas_error_log *errlog = (struct rtas_error_log *)buf;
 
 		printk(RTAS_DEBUG "event: %d, Type: %s, Severity: %d\n",
-		       error_log_cnt, rtas_event_type(errlog->type),
-		       errlog->severity);
+		       error_log_cnt, rtas_event_type(rtas_error_type(errlog)),
+		       rtas_error_severity(errlog));
 	}
 }
 
@@ -159,14 +159,16 @@ static int log_rtas_len(char * buf)
 {
 	int len;
 	struct rtas_error_log *err;
+	uint32_t extended_log_length;
 
 	/* rtas fixed header */
 	len = 8;
 	err = (struct rtas_error_log *)buf;
-	if (err->extended && err->extended_log_length) {
+	extended_log_length = rtas_error_extended_log_length(err);
+	if (rtas_error_extended(err) && extended_log_length) {
 
 		/* extended header */
-		len += err->extended_log_length;
+		len += extended_log_length;
 	}
 
 	if (rtas_error_log_max == 0)
@@ -293,15 +295,13 @@ void prrn_schedule_update(u32 scope)
 
 static void handle_rtas_event(const struct rtas_error_log *log)
 {
-	if (log->type == RTAS_TYPE_PRRN) {
-		/* For PRRN Events the extended log length is used to denote
-		 * the scope for calling rtas update-nodes.
-		 */
-		if (prrn_is_enabled())
-			prrn_schedule_update(log->extended_log_length);
-	}
+	if (rtas_error_type(log) != RTAS_TYPE_PRRN || !prrn_is_enabled())
+		return;
 
-	return;
+	/* For PRRN Events the extended log length is used to denote
+	 * the scope for calling rtas update-nodes.
+	 */
+	prrn_schedule_update(rtas_error_extended_log_length(log));
 }
 
 #else
@@ -526,10 +526,8 @@ void rtas_cancel_event_scan(void)
 }
 EXPORT_SYMBOL_GPL(rtas_cancel_event_scan);
 
-static int __init rtas_init(void)
+static int __init rtas_event_scan_init(void)
 {
-	struct proc_dir_entry *entry;
-
 	if (!machine_is(pseries) && !machine_is(chrp))
 		return 0;
 
@@ -562,12 +560,26 @@ static int __init rtas_init(void)
 		return -ENOMEM;
 	}
 
+	start_event_scan();
+
+	return 0;
+}
+arch_initcall(rtas_event_scan_init);
+
+static int __init rtas_init(void)
+{
+	struct proc_dir_entry *entry;
+
+	if (!machine_is(pseries) && !machine_is(chrp))
+		return 0;
+
+	if (!rtas_log_buf)
+		return -ENODEV;
+
 	entry = proc_create("powerpc/rtas/error_log", S_IRUSR, NULL,
 			    &proc_rtas_log_operations);
 	if (!entry)
 		printk(KERN_ERR "Failed to create error_log proc entry\n");
-
-	start_event_scan();
 
 	return 0;
 }

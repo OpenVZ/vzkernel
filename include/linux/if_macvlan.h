@@ -10,12 +10,17 @@
 
 #if defined(CONFIG_MACVTAP) || defined(CONFIG_MACVTAP_MODULE)
 struct socket *macvtap_get_socket(struct file *);
+struct skb_array *macvtap_get_skb_array(struct file *file);
 #else
 #include <linux/err.h>
 #include <linux/errno.h>
 struct file;
 struct socket;
 static inline struct socket *macvtap_get_socket(struct file *f)
+{
+	return ERR_PTR(-EINVAL);
+}
+static inline struct skb_array *macvtap_get_skb_array(struct file *f)
 {
 	return ERR_PTR(-EINVAL);
 }
@@ -61,16 +66,21 @@ struct macvlan_dev {
 	struct hlist_node	hlist;
 	struct macvlan_port	*port;
 	struct net_device	*lowerdev;
+	void			*fwd_priv;
 	struct macvlan_pcpu_stats __percpu *pcpu_stats;
 
 	DECLARE_BITMAP(mc_filter, MACVLAN_MC_FILTER_SZ);
 
+	netdev_features_t	set_features;
 	enum macvlan_mode	mode;
 	u16			flags;
-	int (*receive)(struct sk_buff *skb);
-	int (*forward)(struct net_device *dev, struct sk_buff *skb);
-	struct macvtap_queue	*taps[MAX_MACVTAP_QUEUES];
+	/* This array tracks active taps. */
+	struct macvtap_queue	__rcu *taps[MAX_MACVTAP_QUEUES];
+	/* This list tracks all taps (both enabled and disabled) */
+	struct list_head	queue_list;
 	int			numvtaps;
+	int			numqueues;
+	netdev_features_t	tap_features;
 	int			minor;
 };
 
@@ -96,10 +106,7 @@ static inline void macvlan_count_rx(const struct macvlan_dev *vlan,
 extern void macvlan_common_setup(struct net_device *dev);
 
 extern int macvlan_common_newlink(struct net *src_net, struct net_device *dev,
-				  struct nlattr *tb[], struct nlattr *data[],
-				  int (*receive)(struct sk_buff *skb),
-				  int (*forward)(struct net_device *dev,
-						 struct sk_buff *skb));
+				  struct nlattr *tb[], struct nlattr *data[]);
 
 extern void macvlan_count_rx(const struct macvlan_dev *vlan,
 			     unsigned int len, bool success,
@@ -111,5 +118,22 @@ extern int macvlan_link_register(struct rtnl_link_ops *ops);
 
 extern netdev_tx_t macvlan_start_xmit(struct sk_buff *skb,
 				      struct net_device *dev);
+
+#if IS_ENABLED(CONFIG_MACVLAN)
+static inline struct net_device *
+macvlan_dev_real_dev(const struct net_device *dev)
+{
+	struct macvlan_dev *macvlan = netdev_priv(dev);
+
+	return macvlan->lowerdev;
+}
+#else
+static inline struct net_device *
+macvlan_dev_real_dev(const struct net_device *dev)
+{
+	BUG();
+	return NULL;
+}
+#endif
 
 #endif /* _LINUX_IF_MACVLAN_H */

@@ -168,8 +168,7 @@ static int __init parse_options(struct early_serial8250_device *device,
 		if (mmio32)
 			port->regshift = 2;
 #ifdef CONFIG_FIX_EARLYCON_MEM
-		set_fixmap_nocache(FIX_EARLYCON_MEM_BASE,
-					port->mapbase & PAGE_MASK);
+		set_fixmap_io(FIX_EARLYCON_MEM_BASE, port->mapbase & PAGE_MASK);
 		port->membase =
 			(void __iomem *)__fix_to_virt(FIX_EARLYCON_MEM_BASE);
 		port->membase += port->mapbase & ~PAGE_MASK;

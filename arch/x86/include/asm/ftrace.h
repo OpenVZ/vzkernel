@@ -36,15 +36,18 @@
 
 #ifdef CONFIG_FUNCTION_TRACER
 #ifdef CC_USING_FENTRY
-# define MCOUNT_ADDR		((long)(__fentry__))
+# define MCOUNT_ADDR		((unsigned long)(__fentry__))
 #else
-# define MCOUNT_ADDR		((long)(mcount))
+# define MCOUNT_ADDR		((unsigned long)(mcount))
+# define HAVE_FUNCTION_GRAPH_FP_TEST
 #endif
 #define MCOUNT_INSN_SIZE	5 /* sizeof mcount call */
 
 #ifdef CONFIG_DYNAMIC_FTRACE
 #define ARCH_SUPPORTS_FTRACE_OPS 1
 #endif
+
+#define HAVE_FUNCTION_GRAPH_RET_ADDR_PTR
 
 #ifndef __ASSEMBLY__
 extern void mcount(void);

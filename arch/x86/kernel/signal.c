@@ -23,6 +23,7 @@
 #include <linux/user-return-notifier.h>
 #include <linux/uprobes.h>
 #include <linux/context_tracking.h>
+#include <linux/livepatch.h>
 
 #include <asm/processor.h>
 #include <asm/ucontext.h>
@@ -42,12 +43,6 @@
 #include <asm/syscalls.h>
 
 #include <asm/sigframe.h>
-
-#ifdef CONFIG_X86_32
-# define FIX_EFLAGS	(__FIX_EFLAGS | X86_EFLAGS_RF)
-#else
-# define FIX_EFLAGS	__FIX_EFLAGS
-#endif
 
 #define COPY(x)			do {			\
 	get_user_ex(regs->x, &sc->x);			\
@@ -364,7 +359,7 @@ static int __setup_rt_frame(int sig, struct ksignal *ksig,
 		else
 			put_user_ex(0, &frame->uc.uc_flags);
 		put_user_ex(0, &frame->uc.uc_link);
-		err |= __save_altstack(&frame->uc.uc_stack, regs->sp);
+		save_altstack_ex(&frame->uc.uc_stack, regs->sp);
 
 		/* Set up to return from userspace.  */
 		restorer = VDSO32_SYMBOL(current->mm->context.vdso, rt_sigreturn);
@@ -429,7 +424,7 @@ static int __setup_rt_frame(int sig, struct ksignal *ksig,
 		else
 			put_user_ex(0, &frame->uc.uc_flags);
 		put_user_ex(0, &frame->uc.uc_link);
-		err |= __save_altstack(&frame->uc.uc_stack, regs->sp);
+		save_altstack_ex(&frame->uc.uc_stack, regs->sp);
 
 		/* Set up to return from userspace.  If provided, use a stub
 		   already in userspace.  */
@@ -496,7 +491,7 @@ static int x32_setup_rt_frame(struct ksignal *ksig,
 		else
 			put_user_ex(0, &frame->uc.uc_flags);
 		put_user_ex(0, &frame->uc.uc_link);
-		err |= __compat_save_altstack(&frame->uc.uc_stack, regs->sp);
+		compat_save_altstack_ex(&frame->uc.uc_stack, regs->sp);
 		put_user_ex(0, &frame->uc.uc__pad0);
 
 		if (ksig->ka.sa.sa_flags & SA_RESTORER) {
@@ -668,15 +663,22 @@ handle_signal(struct ksignal *ksig, struct pt_regs *regs)
 	if (!failed) {
 		/*
 		 * Clear the direction flag as per the ABI for function entry.
-		 */
-		regs->flags &= ~X86_EFLAGS_DF;
-		/*
+		 *
+		 * Clear RF when entering the signal handler, because
+		 * it might disable possible debug exception from the
+		 * signal handler.
+		 *
 		 * Clear TF when entering the signal handler, but
 		 * notify any tracer that was single-stepping it.
 		 * The tracer may want to single-step inside the
 		 * handler too.
 		 */
-		regs->flags &= ~X86_EFLAGS_TF;
+		regs->flags &= ~(X86_EFLAGS_DF|X86_EFLAGS_RF|X86_EFLAGS_TF);
+		/*
+		 * Ensure the signal handler starts with the new fpu state.
+		 */
+		if (used_math())
+			drop_init_fpu(current);
 	}
 	signal_setup_done(failed, ksig, test_thread_flag(TIF_SINGLESTEP));
 }
@@ -737,14 +739,11 @@ do_notify_resume(struct pt_regs *regs, void *unused, __u32 thread_info_flags)
 {
 	user_exit();
 
-#ifdef CONFIG_X86_MCE
-	/* notify userspace of pending MCEs */
-	if (thread_info_flags & _TIF_MCE_NOTIFY)
-		mce_notify_process();
-#endif /* CONFIG_X86_64 && CONFIG_X86_MCE */
-
 	if (thread_info_flags & _TIF_UPROBE)
 		uprobe_notify_resume(regs);
+
+	if (thread_info_flags & _TIF_PATCH_PENDING)
+		klp_update_patch_state(current);
 
 	/* deal with pending signal delivery */
 	if (thread_info_flags & _TIF_SIGPENDING)

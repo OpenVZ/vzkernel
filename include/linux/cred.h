@@ -18,6 +18,7 @@
 #include <linux/selinux.h>
 #include <linux/atomic.h>
 #include <linux/uidgid.h>
+#include <linux/rh_kabi.h>
 
 struct user_struct;
 struct cred;
@@ -68,6 +69,8 @@ extern void groups_free(struct group_info *);
 extern int set_current_groups(struct group_info *);
 extern int set_groups(struct cred *, struct group_info *);
 extern int groups_search(const struct group_info *, kgid_t);
+extern bool may_setgroups(void);
+extern void groups_sort(struct group_info *);
 
 /* access the groups "array" with this macro */
 #define GROUP_AT(gi, i) \
@@ -136,6 +139,8 @@ struct cred {
 	struct user_namespace *user_ns; /* user_ns the caps and keyrings are relative to. */
 	struct group_info *group_info;	/* supplementary groups for euid/fsgid */
 	struct rcu_head	rcu;		/* RCU deletion hook */
+
+	RH_KABI_EXTEND(kernel_cap_t cap_ambient)  /* Ambient capability set */
 };
 
 extern void __put_cred(struct cred *);
@@ -195,6 +200,13 @@ static inline void validate_process_creds(void)
 {
 }
 #endif
+
+static inline bool cap_ambient_invariant_ok(const struct cred *cred)
+{
+	return cap_issubset(cred->cap_ambient,
+			    cap_intersect(cred->cap_permitted,
+					  cred->cap_inheritable));
+}
 
 /**
  * get_new_cred - Get a reference on a new set of credentials
@@ -257,6 +269,15 @@ static inline void put_cred(const struct cred *_cred)
  */
 #define current_cred() \
 	rcu_dereference_protected(current->cred, 1)
+
+/**
+ * current_real_cred - Access the current task's objective credentials
+ *
+ * Access the objective credentials of the current task.  RCU-safe,
+ * since nobody else can modify it.
+ */
+#define current_real_cred() \
+	rcu_dereference_protected(current->real_cred, 1)
 
 /**
  * __task_cred - Access a task's objective credentials

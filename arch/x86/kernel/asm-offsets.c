@@ -16,6 +16,7 @@
 #include <asm/sigframe.h>
 #include <asm/bootparam.h>
 #include <asm/suspend.h>
+#include <asm/spec_ctrl.h>
 
 #ifdef CONFIG_XEN
 #include <xen/interface/xen.h>
@@ -67,9 +68,16 @@ void common(void) {
 	OFFSET(BP_hardware_subarch, boot_params, hdr.hardware_subarch);
 	OFFSET(BP_version, boot_params, hdr.version);
 	OFFSET(BP_kernel_alignment, boot_params, hdr.kernel_alignment);
+	OFFSET(BP_init_size, boot_params, hdr.init_size);
 	OFFSET(BP_pref_address, boot_params, hdr.pref_address);
 	OFFSET(BP_code32_start, boot_params, hdr.code32_start);
 
 	BLANK();
 	DEFINE(PTREGS_SIZE, sizeof(struct pt_regs));
+
+	/* Kernel IBRS speculation control structure */
+	OFFSET(KERNEL_IBRS_SPEC_CTRL_enabled, kernel_ibrs_spec_ctrl, enabled);
+	OFFSET(KERNEL_IBRS_SPEC_CTRL_entry, kernel_ibrs_spec_ctrl, entry);
+	OFFSET(KERNEL_IBRS_SPEC_CTRL_exit, kernel_ibrs_spec_ctrl, exit);
+	OFFSET(KERNEL_IBRS_SPEC_CTRL_hi32, kernel_ibrs_spec_ctrl, hi32);
 }

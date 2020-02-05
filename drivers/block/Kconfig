@@ -15,6 +15,9 @@ menuconfig BLK_DEV
 
 if BLK_DEV
 
+config BLK_DEV_NULL_BLK
+	tristate "Null test block driver"
+
 config BLK_DEV_FD
 	tristate "Normal floppy disk support"
 	depends on ARCH_MAY_HAVE_PC_FDC
@@ -104,6 +107,8 @@ config PARIDE
 source "drivers/block/paride/Kconfig"
 
 source "drivers/block/mtip32xx/Kconfig"
+
+source "drivers/block/zram/Kconfig"
 
 config BLK_CPQ_DA
 	tristate "Compaq SMART2 support"
@@ -305,17 +310,6 @@ config BLK_DEV_NBD
 
 	  If unsure, say N.
 
-config BLK_DEV_NVME
-	tristate "NVM Express block device"
-	depends on PCI
-	---help---
-	  The NVM Express driver is for solid state drives directly
-	  connected to the PCI or PCI Express bus.  If you know you
-	  don't have one of these, it is safe to answer N.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called nvme.
-
 config BLK_DEV_OSD
 	tristate "OSD object-as-blkdev support"
 	depends on SCSI_OSD_ULD
@@ -343,6 +337,7 @@ config BLK_DEV_SX8
 
 config BLK_DEV_RAM
 	tristate "RAM block device support"
+	select DAX if BLK_DEV_RAM_DAX
 	---help---
 	  Saying Y here will allow you to use a portion of your RAM memory as
 	  a block device, so that you can make file systems on it, read and
@@ -377,14 +372,15 @@ config BLK_DEV_RAM_SIZE
 	  The default value is 4096 kilobytes. Only change this if you know
 	  what you are doing.
 
-config BLK_DEV_XIP
-	bool "Support XIP filesystems on RAM block device"
-	depends on BLK_DEV_RAM
+config BLK_DEV_RAM_DAX
+	bool "Support Direct Access (DAX) to RAM block devices"
+	depends on BLK_DEV_RAM && FS_DAX
 	default n
 	help
-	  Support XIP filesystems (such as ext2 with XIP support on) on
-	  top of block ram device. This will slightly enlarge the kernel, and
-	  will prevent RAM block device backing store memory from being
+	  Support filesystems using DAX to access RAM block devices.  This
+	  avoids double-buffering data in the page cache before copying it
+	  to the block device.  Answering Y will slightly enlarge the kernel,
+	  and will prevent RAM block device backing store memory from being
 	  allocated from highmem (only a problem for highmem systems).
 
 config CDROM_PKTCDVD
@@ -532,11 +528,11 @@ config BLK_DEV_RBD
 	  If unsure, say N.
 
 config BLK_DEV_RSXX
-	tristate "IBM FlashSystem 70/80 PCIe SSD Device Driver"
+	tristate "IBM Flash Adapter 900GB Full Height PCIe Device Driver"
 	depends on PCI
 	help
 	  Device driver for IBM's high speed PCIe SSD
-	  storage devices: FlashSystem-70 and FlashSystem-80.
+	  storage device: Flash Adapter 900GB Full Height.
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called rsxx.

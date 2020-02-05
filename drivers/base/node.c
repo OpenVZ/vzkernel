@@ -295,8 +295,6 @@ static int register_node(struct node *node, int num, struct node *parent)
 		device_create_file(&node->dev, &dev_attr_distance);
 		device_create_file(&node->dev, &dev_attr_vmstat);
 
-		scan_unevictable_register_node(node);
-
 		hugetlb_register_node(node);
 
 		compaction_register_node(node);
@@ -320,7 +318,6 @@ void unregister_node(struct node *node)
 	device_remove_file(&node->dev, &dev_attr_distance);
 	device_remove_file(&node->dev, &dev_attr_vmstat);
 
-	scan_unevictable_unregister_node(node);
 	hugetlb_unregister_node(node);		/* no-op, if memoryless node */
 
 	device_unregister(&node->dev);
@@ -376,12 +373,16 @@ int unregister_cpu_under_node(unsigned int cpu, unsigned int nid)
 #ifdef CONFIG_MEMORY_HOTPLUG_SPARSE
 #define page_initialized(page)  (page->lru.next)
 
-static int get_nid_for_pfn(unsigned long pfn)
+static int __init_refok get_nid_for_pfn(unsigned long pfn)
 {
 	struct page *page;
 
 	if (!pfn_valid_within(pfn))
 		return -1;
+#ifdef CONFIG_DEFERRED_STRUCT_PAGE_INIT
+	if (system_state == SYSTEM_BOOTING)
+		return early_pfn_to_nid(pfn);
+#endif
 	page = pfn_to_page(pfn);
 	if (!page_initialized(page))
 		return -1;
@@ -404,6 +405,16 @@ int register_mem_sect_under_node(struct memory_block *mem_blk, int nid)
 	sect_end_pfn += PAGES_PER_SECTION - 1;
 	for (pfn = sect_start_pfn; pfn <= sect_end_pfn; pfn++) {
 		int page_nid;
+
+		/*
+		 * memory block could have several absent sections from start.
+		 * skip pfn range from absent section
+		 */
+		if (!pfn_present(pfn)) {
+			pfn = round_down(pfn + PAGES_PER_SECTION,
+					 PAGES_PER_SECTION) - 1;
+			continue;
+		}
 
 		page_nid = get_nid_for_pfn(pfn);
 		if (page_nid < 0)

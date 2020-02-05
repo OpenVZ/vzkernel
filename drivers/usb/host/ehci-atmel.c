@@ -30,22 +30,28 @@ static const char hcd_name[] = "ehci-atmel";
 static struct hc_driver __read_mostly ehci_atmel_hc_driver;
 
 /* interface and function clocks */
-static struct clk *iclk, *fclk;
+static struct clk *iclk, *fclk, *uclk;
 static int clocked;
 
 /*-------------------------------------------------------------------------*/
 
 static void atmel_start_clock(void)
 {
-	clk_enable(iclk);
-	clk_enable(fclk);
+	if (IS_ENABLED(CONFIG_COMMON_CLK)) {
+		clk_set_rate(uclk, 48000000);
+		clk_prepare_enable(uclk);
+	}
+	clk_prepare_enable(iclk);
+	clk_prepare_enable(fclk);
 	clocked = 1;
 }
 
 static void atmel_stop_clock(void)
 {
-	clk_disable(fclk);
-	clk_disable(iclk);
+	clk_disable_unprepare(fclk);
+	clk_disable_unprepare(iclk);
+	if (IS_ENABLED(CONFIG_COMMON_CLK))
+		clk_disable_unprepare(uclk);
 	clocked = 0;
 }
 
@@ -129,6 +135,14 @@ static int ehci_atmel_drv_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Error getting function clock\n");
 		retval = -ENOENT;
 		goto fail_request_resource;
+	}
+	if (IS_ENABLED(CONFIG_COMMON_CLK)) {
+		uclk = devm_clk_get(&pdev->dev, "usb_clk");
+		if (IS_ERR(uclk)) {
+			dev_err(&pdev->dev, "failed to get uclk\n");
+			retval = PTR_ERR(uclk);
+			goto fail_request_resource;
+		}
 	}
 
 	ehci = hcd_to_ehci(hcd);

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * The USB Monitor, inspired by Dave Harding's USBMon.
  *
@@ -18,8 +19,9 @@
 #include <linux/mm.h>
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
+#include <linux/time64.h>
 
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #include "usb_mon.h"
 
@@ -92,8 +94,8 @@ struct mon_bin_hdr {
 	unsigned short busnum;	/* Bus number */
 	char flag_setup;
 	char flag_data;
-	s64 ts_sec;		/* gettimeofday */
-	s32 ts_usec;		/* gettimeofday */
+	s64 ts_sec;		/* ktime_get_real_ts64 */
+	s32 ts_usec;		/* ktime_get_real_ts64 */
 	int status;
 	unsigned int len_urb;	/* Length of data (submitted or actual) */
 	unsigned int len_cap;	/* Delivered length */
@@ -483,7 +485,7 @@ static void mon_bin_event(struct mon_reader_bin *rp, struct urb *urb,
     char ev_type, int status)
 {
 	const struct usb_endpoint_descriptor *epd = &urb->ep->desc;
-	struct timeval ts;
+	struct timespec64 ts;
 	unsigned long flags;
 	unsigned int urb_length;
 	unsigned int offset;
@@ -494,7 +496,7 @@ static void mon_bin_event(struct mon_reader_bin *rp, struct urb *urb,
 	struct mon_bin_hdr *ep;
 	char data_tag = 0;
 
-	do_gettimeofday(&ts);
+	ktime_get_real_ts64(&ts);
 
 	spin_lock_irqsave(&rp->b_lock, flags);
 
@@ -568,7 +570,7 @@ static void mon_bin_event(struct mon_reader_bin *rp, struct urb *urb,
 	ep->busnum = urb->dev->bus->busnum;
 	ep->id = (unsigned long) urb;
 	ep->ts_sec = ts.tv_sec;
-	ep->ts_usec = ts.tv_usec;
+	ep->ts_usec = ts.tv_nsec / NSEC_PER_USEC;
 	ep->status = status;
 	ep->len_urb = urb_length;
 	ep->len_cap = length + lendesc;
@@ -629,12 +631,12 @@ static void mon_bin_complete(void *data, struct urb *urb, int status)
 static void mon_bin_error(void *data, struct urb *urb, int error)
 {
 	struct mon_reader_bin *rp = data;
-	struct timeval ts;
+	struct timespec64 ts;
 	unsigned long flags;
 	unsigned int offset;
 	struct mon_bin_hdr *ep;
 
-	do_gettimeofday(&ts);
+	ktime_get_real_ts64(&ts);
 
 	spin_lock_irqsave(&rp->b_lock, flags);
 
@@ -656,7 +658,7 @@ static void mon_bin_error(void *data, struct urb *urb, int error)
 	ep->busnum = urb->dev->bus->busnum;
 	ep->id = (unsigned long) urb;
 	ep->ts_sec = ts.tv_sec;
-	ep->ts_usec = ts.tv_usec;
+	ep->ts_usec = ts.tv_nsec / NSEC_PER_USEC;
 	ep->status = error;
 
 	ep->flag_setup = '-';
@@ -675,7 +677,8 @@ static int mon_bin_open(struct inode *inode, struct file *file)
 	int rc;
 
 	mutex_lock(&mon_lock);
-	if ((mbus = mon_bus_lookup(iminor(inode))) == NULL) {
+	mbus = mon_bus_lookup(iminor(inode));
+	if (mbus == NULL) {
 		mutex_unlock(&mon_lock);
 		return -ENODEV;
 	}
@@ -1000,7 +1003,9 @@ static long mon_bin_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 		break;
 
 	case MON_IOCQ_RING_SIZE:
+		mutex_lock(&rp->fetch_lock);
 		ret = rp->b_size;
+		mutex_unlock(&rp->fetch_lock);
 		break;
 
 	case MON_IOCT_RING_SIZE:
@@ -1018,8 +1023,8 @@ static long mon_bin_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 			return -EINVAL;
 
 		size = CHUNK_ALIGN(arg);
-		if ((vec = kzalloc(sizeof(struct mon_pgmap) * (size/CHUNK_SIZE),
-		    GFP_KERNEL)) == NULL) {
+		vec = kzalloc(sizeof(struct mon_pgmap) * (size / CHUNK_SIZE), GFP_KERNEL);
+		if (vec == NULL) {
 			ret = -ENOMEM;
 			break;
 		}
@@ -1227,12 +1232,16 @@ static int mon_bin_vma_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	unsigned long offset, chunk_idx;
 	struct page *pageptr;
 
+	mutex_lock(&rp->fetch_lock);
 	offset = vmf->pgoff << PAGE_SHIFT;
-	if (offset >= rp->b_size)
+	if (offset >= rp->b_size) {
+		mutex_unlock(&rp->fetch_lock);
 		return VM_FAULT_SIGBUS;
+	}
 	chunk_idx = offset / CHUNK_SIZE;
 	pageptr = rp->b_vec[chunk_idx].pg;
 	get_page(pageptr);
+	mutex_unlock(&rp->fetch_lock);
 	vmf->page = pageptr;
 	return 0;
 }

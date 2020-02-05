@@ -29,7 +29,7 @@ struct arch_timer_kvm {
 	bool			enabled;
 
 	/* Virtual offset */
-	cycle_t			cntvoff;
+	u64			cntvoff;
 #endif
 };
 
@@ -37,7 +37,7 @@ struct arch_timer_cpu {
 #ifdef CONFIG_KVM_ARM_TIMER
 	/* Registers: control register, timer value */
 	u32				cntv_ctl;	/* Saved/restored */
-	cycle_t				cntv_cval;	/* Saved/restored */
+	u64				cntv_cval;	/* Saved/restored */
 
 	/*
 	 * Anything that is not used directly from assembly code goes

@@ -15,7 +15,7 @@ config XEN
 	  Xen hypervisor.
 
 config XEN_DOM0
-	def_bool y
+	def_bool n
 	depends on XEN && PCI_XEN && SWIOTLB_XEN
 	depends on X86_LOCAL_APIC && X86_IO_APIC && ACPI && PCI
 

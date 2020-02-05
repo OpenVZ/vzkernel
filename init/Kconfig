@@ -272,20 +272,6 @@ config AUDIT_TREE
 	depends on AUDITSYSCALL
 	select FSNOTIFY
 
-config AUDIT_LOGINUID_IMMUTABLE
-	bool "Make audit loginuid immutable"
-	depends on AUDIT
-	help
-	  The config option toggles if a task setting its loginuid requires
-	  CAP_SYS_AUDITCONTROL or if that task should require no special permissions
-	  but should instead only allow setting its loginuid if it was never
-	  previously set.  On systems which use systemd or a similar central
-	  process to restart login services this should be set to true.  On older
-	  systems in which an admin would typically have to directly stop and
-	  start processes this should be set to false.  Setting this to true allows
-	  one to drop potentially dangerous capabilites from the login tasks,
-	  but may not be backwards compatible with older init systems.
-
 source "kernel/irq/Kconfig"
 source "kernel/time/Kconfig"
 
@@ -394,6 +380,7 @@ config TASKSTATS
 config TASK_DELAY_ACCT
 	bool "Enable per-task delay accounting"
 	depends on TASKSTATS
+	select SCHED_INFO
 	help
 	  Collect information on time spent by a task waiting for system
 	  resources like cpu, synchronous block I/O completion and swapping
@@ -506,13 +493,29 @@ config RCU_USER_QS
 config CONTEXT_TRACKING_FORCE
 	bool "Force context tracking"
 	depends on CONTEXT_TRACKING
-	default CONTEXT_TRACKING
+	default y if !NO_HZ_FULL
 	help
-	  Probe on user/kernel boundaries by default in order to
-	  test the features that rely on it such as userspace RCU extended
-	  quiescent states.
-	  This test is there for debugging until we have a real user like the
-	  full dynticks mode.
+	  The major pre-requirement for full dynticks to work is to
+	  support the context tracking subsystem. But there are also
+	  other dependencies to provide in order to make the full
+	  dynticks working.
+
+	  This option stands for testing when an arch implements the
+	  context tracking backend but doesn't yet fullfill all the
+	  requirements to make the full dynticks feature working.
+	  Without the full dynticks, there is no way to test the support
+	  for context tracking and the subsystems that rely on it: RCU
+	  userspace extended quiescent state and tickless cputime
+	  accounting. This option copes with the absence of the full
+	  dynticks subsystem by forcing the context tracking on all
+	  CPUs in the system.
+
+	  Say Y only if you're working on the developpement of an
+	  architecture backend for the context tracking.
+
+	  Say N otherwise, this option brings an overhead that you
+	  don't want in production.
+
 
 config RCU_FANOUT
 	int "Tree-based hierarchical RCU fanout value"
@@ -656,7 +659,7 @@ config RCU_BOOST_DELAY
 	  Accept the default if unsure.
 
 config RCU_NOCB_CPU
-	bool "Offload RCU callback processing from boot-selected CPUs (EXPERIMENTAL"
+	bool "Offload RCU callback processing from boot-selected CPUs"
 	depends on TREE_RCU || TREE_PREEMPT_RCU
 	default n
 	help
@@ -688,7 +691,7 @@ choice
 
 config RCU_NOCB_CPU_NONE
 	bool "No build_forced no-CBs CPUs"
-	depends on RCU_NOCB_CPU && !NO_HZ_FULL
+	depends on RCU_NOCB_CPU
 	help
 	  This option does not force any of the CPUs to be no-CBs CPUs.
 	  Only CPUs designated by the rcu_nocbs= boot parameter will be
@@ -696,7 +699,7 @@ config RCU_NOCB_CPU_NONE
 
 config RCU_NOCB_CPU_ZERO
 	bool "CPU 0 is a build_forced no-CBs CPU"
-	depends on RCU_NOCB_CPU && !NO_HZ_FULL
+	depends on RCU_NOCB_CPU
 	help
 	  This option forces CPU 0 to be a no-CBs CPU.  Additional CPUs
 	  may be designated as no-CBs CPUs using the rcu_nocbs= boot
@@ -719,8 +722,13 @@ endchoice
 
 endmenu # "RCU Subsystem"
 
+config BUILD_BIN2C
+	bool
+	default n
+
 config IKCONFIG
 	tristate "Kernel .config support"
+	select BUILD_BIN2C
 	---help---
 	  This option enables the complete Linux kernel ".config" file
 	  contents to be saved in the kernel. It provides documentation
@@ -763,6 +771,22 @@ config HAVE_UNSTABLE_SCHED_CLOCK
 # balancing logic:
 #
 config ARCH_SUPPORTS_NUMA_BALANCING
+	bool
+
+#
+# For architectures that prefer to flush all TLBs after a number of pages
+# are unmapped instead of sending one IPI per page to flush. The architecture
+# must provide guarantees on what happens if a clean TLB cache entry is
+# written after the unmap. Details are in mm/rmap.c near the check for
+# should_defer_flush. The architecture should also consider if the full flush
+# and the refill costs are offset by the savings of sending fewer IPIs.
+config ARCH_WANT_BATCHED_UNMAP_TLB_FLUSH
+	bool
+
+#
+# For architectures that know their GCC __int128 support is sound
+#
+config ARCH_SUPPORTS_INT128
 	bool
 
 # For architectures that (ab)use NUMA to represent different memory regions
@@ -834,6 +858,22 @@ config CGROUP_FREEZER
 	  Provides a way to freeze and unfreeze all tasks in a
 	  cgroup.
 
+config CGROUP_PIDS
+	bool "PIDs cgroup subsystem"
+	help
+	  Provides enforcement of process number limits in the scope of a
+	  cgroup. Any attempt to fork more processes than is allowed in the
+	  cgroup will fail. PIDs are fundamentally a global resource because it
+	  is fairly trivial to reach PID exhaustion before you reach even a
+	  conservative kmemcg limit. As a result, it is possible to grind a
+	  system to halt without being limited by other cgroup policies. The
+	  PIDs cgroup subsystem is designed to stop this from happening.
+
+	  It should be noted that organisational operations (such as attaching
+	  to a cgroup hierarchy will *not* be blocked by the PIDs subsystem),
+	  since the PIDs limit only affects a process's ability to fork, not to
+	  attach to a cgroup.
+
 config CGROUP_DEVICE
 	bool "Device controller for cgroups"
 	help
@@ -861,15 +901,12 @@ config CGROUP_CPUACCT
 	  Provides a simple Resource Controller for monitoring the
 	  total CPU consumed by the tasks in a cgroup.
 
-config RESOURCE_COUNTERS
-	bool "Resource counters"
-	help
-	  This option enables controller independent resource accounting
-	  infrastructure that works with cgroups.
+config PAGE_COUNTER
+       bool
 
 config MEMCG
 	bool "Memory Resource Controller for Control Groups"
-	depends on RESOURCE_COUNTERS
+	select PAGE_COUNTER
 	select MM_OWNER
 	help
 	  Provides a memory resource controller that manages both anonymous
@@ -934,7 +971,8 @@ config MEMCG_KMEM
 
 config CGROUP_HUGETLB
 	bool "HugeTLB Resource Controller for Control Groups"
-	depends on RESOURCE_COUNTERS && HUGETLB_PAGE
+	depends on HUGETLB_PAGE
+	select PAGE_COUNTER
 	default n
 	help
 	  Provides a cgroup Resource Controller for HugeTLB pages.
@@ -1028,7 +1066,7 @@ config DEBUG_BLK_CGROUP
 endif # CGROUPS
 
 config CHECKPOINT_RESTORE
-	bool "Checkpoint/restore support" if EXPERT
+	bool "Checkpoint/restore support"
 	default n
 	help
 	  Enables additional kernel features in a sake of checkpoint/restore.
@@ -1066,7 +1104,6 @@ config IPC_NS
 
 config USER_NS
 	bool "User namespace"
-	depends on UIDGID_CONVERTED
 	select UIDGID_STRICT_TYPE_CHECKS
 
 	default n
@@ -1100,20 +1137,8 @@ config NET_NS
 
 endif # NAMESPACES
 
-config UIDGID_CONVERTED
-	# True if all of the selected software conmponents are known
-	# to have uid_t and gid_t converted to kuid_t and kgid_t
-	# where appropriate and are otherwise safe to use with
-	# the user namespace.
-	bool
-	default y
-
-	# Filesystems
-	depends on XFS_FS = n
-
 config UIDGID_STRICT_TYPE_CHECKS
 	bool "Require conversions between uid/gids and their internal representation"
-	depends on UIDGID_CONVERTED
 	default n
 	help
 	 While the nececessary conversions are being added to all subsystems this option allows
@@ -1245,10 +1270,11 @@ config SYSCTL_ARCH_UNALIGN_ALLOW
 	  the unaligned access emulation.
 	  see arch/parisc/kernel/unaligned.c for reference
 
-config HOTPLUG
-	def_bool y
-
 config HAVE_PCSPKR_PLATFORM
+	bool
+
+# interpreter that classic socket filters depend on
+config BPF
 	bool
 
 menuconfig EXPERT
@@ -1403,6 +1429,24 @@ config EVENTFD
 
 	  If unsure, say Y.
 
+# syscall, maps, verifier
+config BPF_SYSCALL
+	bool "Enable bpf() system call"
+	select ANON_INODES
+	select BPF
+	select IRQ_WORK
+	default n
+	help
+	  Enable the bpf() system call that allows to manipulate eBPF
+	  programs and maps via file descriptors.
+
+config BPF_JIT_ALWAYS_ON
+	bool "Permanently enable BPF JIT and remove BPF interpreter"
+	depends on BPF_SYSCALL && HAVE_EBPF_JIT && BPF_JIT
+	help
+	  Enables BPF JIT and removes BPF interpreter to avoid
+	  speculative execution of BPF instructions by the interpreter
+
 config SHMEM
 	bool "Use full shmem filesystem" if EXPERT
 	default y
@@ -1422,6 +1466,26 @@ config AIO
 	  by some high performance threaded applications. Disabling
 	  this option saves about 7k.
 
+config USERFAULTFD
+	bool "Enable userfaultfd() system call"
+	select ANON_INODES
+	default y
+	depends on MMU
+	help
+	  Enable the userfaultfd() system call that allows to intercept and
+	  handle page faults in userland.
+
+	  If unsure, say Y.
+
+config ARCH_HAS_MEMBARRIER_CALLBACKS
+	bool
+
+config ARCH_HAS_SYNC_CORE_BEFORE_USERMODE
+	bool
+
+config ARCH_HAS_MEMBARRIER_SYNC_CORE
+	bool
+
 config PCI_QUIRKS
 	default y
 	bool "Enable PCI quirk workarounds" if EXPERT
@@ -1431,8 +1495,21 @@ config PCI_QUIRKS
 	  bugs/quirks. Disable this only if your target machine is
 	  unaffected by PCI quirks.
 
+config MEMBARRIER
+	bool "Enable membarrier() system call" if EXPERT
+	default y
+	help
+	  Enable the membarrier() system call that allows issuing memory
+	  barriers across all running threads, which can be used to distribute
+	  the cost of user-space memory barriers asymmetrically by transforming
+	  pairs of memory barriers into pairs consisting of membarrier() and a
+	  compiler barrier.
+
+	  If unsure, say Y.
+
 config EMBEDDED
 	bool "Embedded system"
+	option allnoconfig_y
 	select EXPERT
 	help
 	  This option should be enabled if compiling the kernel for
@@ -1534,6 +1611,7 @@ choice
 
 config SLAB
 	bool "SLAB"
+	select HAVE_HARDENED_USERCOPY_ALLOCATOR
 	help
 	  The regular slab allocator that is established and known to work
 	  well in all environments. It organizes cache hot objects in
@@ -1541,6 +1619,7 @@ config SLAB
 
 config SLUB
 	bool "SLUB (Unqueued Allocator)"
+	select HAVE_HARDENED_USERCOPY_ALLOCATOR
 	help
 	   SLUB is a slab allocator that minimizes cache line usage
 	   instead of managing queues of cached objects (SLAB approach).
@@ -1616,8 +1695,30 @@ config BASE_SMALL
 	default 0 if BASE_FULL
 	default 1 if !BASE_FULL
 
+config SYSTEM_TRUSTED_KEYRING
+	bool "Provide system-wide ring of trusted keys"
+	depends on KEYS
+	help
+	  Provide a system keyring to which trusted keys can be added.  Keys in
+	  the keyring are considered to be trusted.  Keys may be added at will
+	  by the kernel from compiled-in data and from hardware key stores, but
+	  userspace may only add extra keys if those keys can be verified by
+	  keys already in the keyring.
+
+	  Keys in this keyring are used by module signature checking.
+
+config SYSTEM_BLACKLIST_KEYRING
+	bool "Provide system-wide ring of blacklisted keys"
+	depends on KEYS
+	help
+	  Provide a system keyring to which blacklisted keys can be added.  Keys
+	  in the keyring are considered entirely untrusted.  Keys in this keyring
+	  are used by the module signature checking to reject loading of modules
+	  signed with a blacklisted key.
+
 menuconfig MODULES
 	bool "Enable loadable module support"
+	option modules
 	help
 	  Kernel modules are small pieces of compiled code which can
 	  be inserted in the running kernel, rather than being
@@ -1688,6 +1789,7 @@ config MODULE_SRCVERSION_ALL
 config MODULE_SIG
 	bool "Module signature verification"
 	depends on MODULES
+	select SYSTEM_TRUSTED_KEYRING
 	select KEYS
 	select CRYPTO
 	select ASYMMETRIC_KEY_TYPE
@@ -1723,6 +1825,15 @@ config MODULE_SIG_ALL
 
 comment "Do not forget to sign required modules with scripts/sign-file"
 	depends on MODULE_SIG_FORCE && !MODULE_SIG_ALL
+
+config MODULE_SIG_UEFI
+	bool "Allow modules signed with certs stored in UEFI"
+	depends on MODULE_SIG && SYSTEM_BLACKLIST_KEYRING && EFI
+	select EFI_SIGNATURE_LIST_PARSER
+	help
+	  This will import certificates stored in UEFI and allow modules
+	  signed with those to be loaded.  It will also disallow loading
+	  of modules stored in the UEFI dbx variable.
 
 choice
 	prompt "Which hash algorithm should modules be signed with?"

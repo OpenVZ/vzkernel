@@ -218,8 +218,15 @@ static int bad_inode_mknod (struct inode *dir, struct dentry *dentry,
 	return -EIO;
 }
 
-static int bad_inode_rename (struct inode *old_dir, struct dentry *old_dentry,
-		struct inode *new_dir, struct dentry *new_dentry)
+static int bad_inode_rename(struct inode *old_dir, struct dentry *old_dentry,
+			    struct inode *new_dir, struct dentry *new_dentry)
+{
+	return -EIO;
+}
+
+static int bad_inode_rename2(struct inode *old_dir, struct dentry *old_dentry,
+			     struct inode *new_dir, struct dentry *new_dentry,
+			     unsigned int flags)
 {
 	return -EIO;
 }
@@ -269,8 +276,15 @@ static int bad_inode_removexattr(struct dentry *dentry, const char *name)
 	return -EIO;
 }
 
-static const struct inode_operations bad_inode_ops =
+static int bad_inode_tmpfile(struct inode *inode, struct dentry *dentry,
+			     umode_t mode)
 {
+	return -EIO;
+}
+
+static const struct inode_operations_wrapper bad_inode_ops =
+{
+	.ops = {
 	.create		= bad_inode_create,
 	.lookup		= bad_inode_lookup,
 	.link		= bad_inode_link,
@@ -292,6 +306,9 @@ static const struct inode_operations bad_inode_ops =
 	.getxattr	= bad_inode_getxattr,
 	.listxattr	= bad_inode_listxattr,
 	.removexattr	= bad_inode_removexattr,
+	},
+	.rename2	= bad_inode_rename2,
+	.tmpfile	= bad_inode_tmpfile,
 };
 
 
@@ -320,8 +337,9 @@ void make_bad_inode(struct inode *inode)
 	inode->i_mode = S_IFREG;
 	inode->i_atime = inode->i_mtime = inode->i_ctime =
 		current_fs_time(inode->i_sb);
-	inode->i_op = &bad_inode_ops;	
-	inode->i_fop = &bad_file_ops;	
+	inode->i_op = &bad_inode_ops.ops;
+	inode->i_fop = &bad_file_ops;
+	inode->i_flags |= S_IOPS_WRAPPER;
 }
 EXPORT_SYMBOL(make_bad_inode);
 
@@ -340,7 +358,7 @@ EXPORT_SYMBOL(make_bad_inode);
  
 int is_bad_inode(struct inode *inode)
 {
-	return (inode->i_op == &bad_inode_ops);	
+	return (inode->i_op == &bad_inode_ops.ops);
 }
 
 EXPORT_SYMBOL(is_bad_inode);

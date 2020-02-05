@@ -28,11 +28,13 @@
 static unsigned int master_timeout __read_mostly = 300;
 static char *ts_algo = "kmp";
 
+#define HELPER_NAME "amanda"
+
 MODULE_AUTHOR("Brian J. Murrell <netfilter@interlinx.bc.ca>");
 MODULE_DESCRIPTION("Amanda connection tracking module");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("ip_conntrack_amanda");
-MODULE_ALIAS_NFCT_HELPER("amanda");
+MODULE_ALIAS_NFCT_HELPER(HELPER_NAME);
 
 module_param(master_timeout, uint, 0600);
 MODULE_PARM_DESC(master_timeout, "timeout for the master connection");
@@ -88,7 +90,6 @@ static int amanda_help(struct sk_buff *skb,
 		       struct nf_conn *ct,
 		       enum ip_conntrack_info ctinfo)
 {
-	struct ts_state ts;
 	struct nf_conntrack_expect *exp;
 	struct nf_conntrack_tuple *tuple;
 	unsigned int dataoff, start, stop, off, i;
@@ -113,23 +114,20 @@ static int amanda_help(struct sk_buff *skb,
 		return NF_ACCEPT;
 	}
 
-	memset(&ts, 0, sizeof(ts));
 	start = skb_find_text(skb, dataoff, skb->len,
-			      search[SEARCH_CONNECT].ts, &ts);
+			      search[SEARCH_CONNECT].ts);
 	if (start == UINT_MAX)
 		goto out;
 	start += dataoff + search[SEARCH_CONNECT].len;
 
-	memset(&ts, 0, sizeof(ts));
 	stop = skb_find_text(skb, start, skb->len,
-			     search[SEARCH_NEWLINE].ts, &ts);
+			     search[SEARCH_NEWLINE].ts);
 	if (stop == UINT_MAX)
 		goto out;
 	stop += start;
 
 	for (i = SEARCH_DATA; i <= SEARCH_INDEX; i++) {
-		memset(&ts, 0, sizeof(ts));
-		off = skb_find_text(skb, start, stop, search[i].ts, &ts);
+		off = skb_find_text(skb, start, stop, search[i].ts);
 		if (off == UINT_MAX)
 			continue;
 		off += start + search[i].len;
@@ -178,13 +176,14 @@ static const struct nf_conntrack_expect_policy amanda_exp_policy = {
 
 static struct nf_conntrack_helper amanda_helper[2] __read_mostly = {
 	{
-		.name			= "amanda",
+		.name			= HELPER_NAME,
 		.me			= THIS_MODULE,
 		.help			= amanda_help,
 		.tuple.src.l3num	= AF_INET,
 		.tuple.src.u.udp.port	= cpu_to_be16(10080),
 		.tuple.dst.protonum	= IPPROTO_UDP,
 		.expect_policy		= &amanda_exp_policy,
+		.nat_mod_name		= NF_NAT_HELPER_NAME(HELPER_NAME),
 	},
 	{
 		.name			= "amanda",
@@ -194,6 +193,7 @@ static struct nf_conntrack_helper amanda_helper[2] __read_mostly = {
 		.tuple.src.u.udp.port	= cpu_to_be16(10080),
 		.tuple.dst.protonum	= IPPROTO_UDP,
 		.expect_policy		= &amanda_exp_policy,
+		.nat_mod_name		= NF_NAT_HELPER_NAME(HELPER_NAME),
 	},
 };
 

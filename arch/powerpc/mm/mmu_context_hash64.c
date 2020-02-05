@@ -89,6 +89,9 @@ int init_new_context(struct task_struct *tsk, struct mm_struct *mm)
 #ifdef CONFIG_PPC_64K_PAGES
 	mm->context.pte_frag = NULL;
 #endif
+#ifdef CONFIG_SPAPR_TCE_IOMMU
+	mm_iommu_init(mm);
+#endif
 	return 0;
 }
 
@@ -115,8 +118,7 @@ static void destroy_pagetable_page(struct mm_struct *mm)
 	/* drop all the pending references */
 	count = ((unsigned long)pte_frag & ~PAGE_MASK) >> PTE_FRAG_SIZE_SHIFT;
 	/* We allow PTE_FRAG_NR fragments from a PTE page */
-	count = atomic_sub_return(PTE_FRAG_NR - count, &page->_count);
-	if (!count) {
+	if (page_ref_sub_and_test(page, PTE_FRAG_NR - count)) {
 		pgtable_page_dtor(page);
 		free_hot_cold_page(page, 0);
 	}
@@ -129,10 +131,11 @@ static inline void destroy_pagetable_page(struct mm_struct *mm)
 }
 #endif
 
-
 void destroy_context(struct mm_struct *mm)
 {
-
+#ifdef CONFIG_SPAPR_TCE_IOMMU
+	WARN_ON_ONCE(!list_empty(&mm->iommu_group_mem_list));
+#endif
 #ifdef CONFIG_PPC_ICSWX
 	drop_cop(mm->context.acop, mm);
 	kfree(mm->context.cop_lockp);

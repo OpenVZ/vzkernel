@@ -352,12 +352,14 @@ config LOGITECH_FF
 	  force feedback.
 
 config LOGIRUMBLEPAD2_FF
-	bool "Logitech RumblePad/Rumblepad 2 force feedback support"
+	bool "Logitech force feedback support (variant 2)"
 	depends on HID_LOGITECH
 	select INPUT_FF_MEMLESS
 	help
-	  Say Y here if you want to enable force feedback support for Logitech
-	  RumblePad and Rumblepad 2 devices.
+	  Say Y here if you want to enable force feedback support for:
+	  - Logitech RumblePad
+	  - Logitech Rumblepad 2
+	  - Logitech Formula Vibration Feedback Wheel
 
 config LOGIG940_FF
 	bool "Logitech Flight System G940 force feedback support"
@@ -418,6 +420,7 @@ config HID_MULTITOUCH
 	  - Atmel panels
 	  - Cando dual touch panels
 	  - Chunghwa panels
+	  - CJTouch panels
 	  - CVTouch panels
 	  - Cypress TrueTouch panels
 	  - Elo TouchSystems IntelliTouch Plus panels
@@ -436,9 +439,11 @@ config HID_MULTITOUCH
 	  - Pixcir dual touch panels
 	  - Quanta panels
 	  - eGalax dual-touch panels, including the Joojoo and Wetab tablets
+	  - SiS multitouch panels
 	  - Stantum multitouch panels
 	  - Touch International Panels
 	  - Unitec Panels
+	  - Wistron optical touch panels
 	  - XAT optical touch panels
 	  - Xiroku optical touch panels
 	  - Zytronic touch panels
@@ -554,6 +559,18 @@ config HID_PICOLCD_CIR
 	---help---
 	  Provide access to PicoLCD's CIR interface via remote control (LIRC).
 
+config HID_PLANTRONICS
+	tristate "Plantronics USB HID Driver"
+	default !EXPERT
+	depends on HID
+	---help---
+	  Provides HID support for Plantronics USB audio devices.
+	  Correctly maps vendor unique volume up/down HID usages to
+	  KEY_VOLUMEUP and KEY_VOLUMEDOWN events and prevents core mapping
+	  of other vendor unique HID usages to random mouse events.
+
+	  Say M here if you may ever plug in a Plantronics USB audio device.
+
 config HID_PRIMAX
 	tristate "Primax non-fully HID-compliant devices"
 	depends on HID
@@ -618,6 +635,14 @@ config HID_SUNPLUS
 	depends on HID
 	---help---
 	Support for Sunplus wireless desktop.
+
+config HID_RMI
+	tristate "Synaptics RMI4 device support"
+	depends on HID
+	---help---
+	Support for Synaptics RMI4 touchpads.
+	Say Y here if you have a Synaptics RMI4 touchpads over i2c-hid or usbhid
+	and want support for its special functionalities.
 
 config HID_GREENASIA
 	tristate "GreenAsia (Product ID 0x12) game controller support"
@@ -699,12 +724,17 @@ config THRUSTMASTER_FF
 	  Rumble Force or Force Feedback Wheel.
 
 config HID_WACOM
-	tristate "Wacom Bluetooth devices support"
+	tristate "Wacom Intuos/Graphire tablet support (USB)"
 	depends on HID
-	depends on LEDS_CLASS
 	select POWER_SUPPLY
-	---help---
-	Support for Wacom Graphire Bluetooth and Intuos4 WL tablets.
+	select NEW_LEDS
+	select LEDS_CLASS
+	help
+	  Say Y here if you want to use the USB or BT version of the Wacom Intuos
+	  or Graphire tablet.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called wacom.
 
 config HID_WIIMOTE
 	tristate "Nintendo Wii Remote support"
@@ -758,6 +788,14 @@ config HID_SENSOR_HUB
 	  for events and handle data streams. Each sensor driver can format
 	  data and present to user mode using input or IIO interface.
 
+config HID_ALPS
+	tristate "Alps HID device support"
+	depends on HID
+	---help---
+	Support for Alps I2C HID touchpads and StickPointer.
+	Say Y here if you have a Alps touchpads over i2c-hid or usbhid
+	and want support for its special functionalities.
+
 endmenu
 
 endif # HID
@@ -765,5 +803,22 @@ endif # HID
 source "drivers/hid/usbhid/Kconfig"
 
 source "drivers/hid/i2c-hid/Kconfig"
+
+config HID_SENSOR_CUSTOM_SENSOR
+	tristate "HID Sensors hub custom sensor support"
+	depends on HID_SENSOR_HUB
+	default n
+	---help---
+	  HID Sensor hub specification allows definition of some custom and
+	  generic sensors. Unlike other HID sensors, they can't be exported
+	  via Linux IIO because of custom fields. This is up to the manufacturer
+	  to decide how to interpret these special sensor ids and process in
+	  the user space. Currently some manufacturers are using these ids for
+	  sensor calibration and debugging other sensors. Manufacturers
+	  should't use these special custom sensor ids to export any of the
+	  standard sensors.
+	  Select this config option for custom/generic sensor support.
+
+source "drivers/hid/intel-ish-hid/Kconfig"
 
 endmenu

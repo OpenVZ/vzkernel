@@ -23,13 +23,17 @@
 
 #define MODULE_NAME "pseries-rng"
 
-static int pseries_rng_data_read(struct hwrng *rng, u32 *data)
+static int pseries_rng_read(struct hwrng *rng, void *data, size_t max, bool wait)
 {
-	if (plpar_hcall(H_RANDOM, (unsigned long *)data) != H_SUCCESS) {
+	u64 buffer[PLPAR_HCALL_BUFSIZE];
+	size_t size = max < 8 ? max : 8;
+
+	if (plpar_hcall(H_RANDOM, (unsigned long *)buffer) != H_SUCCESS) {
 		printk(KERN_ERR "pseries rng hcall error\n");
 		return 0;
 	}
-	return 8;
+	memcpy(data, buffer, size);
+	return size;
 }
 
 /**
@@ -48,16 +52,16 @@ static unsigned long pseries_rng_get_desired_dma(struct vio_dev *vdev)
 
 static struct hwrng pseries_rng = {
 	.name		= MODULE_NAME,
-	.data_read	= pseries_rng_data_read,
+	.read		= pseries_rng_read,
 };
 
-static int __init pseries_rng_probe(struct vio_dev *dev,
+static int pseries_rng_probe(struct vio_dev *dev,
 		const struct vio_device_id *id)
 {
 	return hwrng_register(&pseries_rng);
 }
 
-static int __exit pseries_rng_remove(struct vio_dev *dev)
+static int pseries_rng_remove(struct vio_dev *dev)
 {
 	hwrng_unregister(&pseries_rng);
 	return 0;

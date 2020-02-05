@@ -471,7 +471,7 @@ module_param_array(rts_frm_len, uint, NULL, 0);
  * S2IO device table.
  * This table lists all the devices that this driver supports.
  */
-static DEFINE_PCI_DEVICE_TABLE(s2io_tbl) = {
+static const struct pci_device_id s2io_tbl[] = {
 	{PCI_VENDOR_ID_S2IO, PCI_DEVICE_ID_S2IO_WIN,
 	 PCI_ANY_ID, PCI_ANY_ID},
 	{PCI_VENDOR_ID_S2IO, PCI_DEVICE_ID_S2IO_UNI,
@@ -4050,8 +4050,8 @@ static netdev_tx_t s2io_xmit(struct sk_buff *skb, struct net_device *dev)
 	}
 
 	queue = 0;
-	if (vlan_tx_tag_present(skb))
-		vlan_tag = vlan_tx_tag_get(skb);
+	if (skb_vlan_tag_present(skb))
+		vlan_tag = skb_vlan_tag_get(skb);
 	if (sp->config.tx_steering_type == TX_DEFAULT_STEERING) {
 		if (skb->protocol == htons(ETH_P_IP)) {
 			struct iphdr *ip;
@@ -5393,8 +5393,6 @@ static void s2io_ethtool_gdrvinfo(struct net_device *dev,
 	strlcpy(info->driver, s2io_driver_name, sizeof(info->driver));
 	strlcpy(info->version, s2io_driver_version, sizeof(info->version));
 	strlcpy(info->bus_info, pci_name(sp->pdev), sizeof(info->bus_info));
-	info->regdump_len = XENA_REG_SPACE;
-	info->eedump_len = XENA_EEPROM_SPACE;
 }
 
 /**

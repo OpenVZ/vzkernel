@@ -29,6 +29,8 @@
 /* Native ICP */
 #ifdef CONFIG_PPC_ICP_NATIVE
 extern int icp_native_init(void);
+extern void icp_native_flush_interrupt(void);
+extern void icp_native_cause_ipi_rm(int cpu);
 #else
 static inline int icp_native_init(void) { return -ENODEV; }
 #endif
@@ -151,6 +153,8 @@ extern void xics_teardown_cpu(void);
 extern void xics_kexec_teardown_cpu(int secondary);
 extern void xics_migrate_irqs_away(void);
 extern void icp_native_eoi(struct irq_data *d);
+extern int xics_set_irq_type(struct irq_data *d, unsigned int flow_type);
+extern int xics_retrigger(struct irq_data *data);
 #ifdef CONFIG_SMP
 extern int xics_get_irq_server(unsigned int virq, const struct cpumask *cpumask,
 			       unsigned int strict_check);

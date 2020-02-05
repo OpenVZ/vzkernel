@@ -96,12 +96,7 @@ void irq_domain_remove(struct irq_domain *domain)
 		 */
 		break;
 	case IRQ_DOMAIN_MAP_TREE:
-		/*
-		 * radix_tree_delete() takes care of destroying the root
-		 * node when all entries are removed. Shout if there are
-		 * any mappings left.
-		 */
-		WARN_ON(domain->revmap_data.tree.height);
+		WARN_ON(!radix_tree_empty(&domain->revmap_data.tree));
 		break;
 	case IRQ_DOMAIN_MAP_LINEAR:
 		kfree(domain->revmap_data.linear.revmap);
@@ -470,23 +465,15 @@ int irq_domain_associate_many(struct irq_domain *domain, unsigned int irq_base,
 				/*
 				 * If map() returns -EPERM, this interrupt is protected
 				 * by the firmware or some other service and shall not
-				 * be mapped.
-				 *
-				 * Since on some platforms we blindly try to map everything
-				 * we end up with a log full of backtraces.
-				 *
-				 * So instead, we silently fail on -EPERM, it is the
-				 * responsibility of the PIC driver to display a relevant
-				 * message if needed.
+				 * be mapped. Don't bother telling the user about it.
 				 */
 				if (ret != -EPERM) {
-					pr_err("irq-%i==>hwirq-0x%lx mapping failed: %d\n",
-					       virq, hwirq, ret);
-					WARN_ON(1);
+					pr_info("%s didn't like hwirq-0x%lx to VIRQ%i mapping (rc=%d)\n",
+					       of_node_full_name(domain->of_node), hwirq, virq, ret);
 				}
 				irq_data->domain = NULL;
 				irq_data->hwirq = 0;
-				goto err_unmap;
+				continue;
 			}
 		}
 
@@ -507,7 +494,6 @@ int irq_domain_associate_many(struct irq_domain *domain, unsigned int irq_base,
 
 	return 0;
 
- err_unmap:
 	irq_domain_disassociate_many(domain, irq_base, i);
 	return -EINVAL;
 }
