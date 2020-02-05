@@ -877,6 +877,13 @@ kaio_sync_write(struct ploop_io * io, struct page * page, unsigned int len,
 	return ret;
 }
 
+static int kaio_sync_read_many(struct ploop_io *io, struct page *pages[],
+				unsigned int nr_pages, sector_t sec)
+{
+	return kaio_sync_io(io, READ_SYNC, pages, nr_pages,
+			    PAGE_SIZE * nr_pages, 0, sec);
+}
+
 static int kaio_alloc_sync(struct ploop_io * io, loff_t pos, loff_t len)
 {
 	int err = __kaio_truncate(io, io->files.file, pos + len);
@@ -1160,6 +1167,7 @@ static struct ploop_io_ops ploop_io_ops_kaio =
 	.write_page	=	kaio_write_page,
 	.sync_read	=	kaio_sync_read,
 	.sync_write	=	kaio_sync_write,
+	.sync_read_many =	kaio_sync_read_many,
 
 	.init		=	kaio_init,
 	.destroy	=	kaio_destroy,
