@@ -776,16 +776,22 @@ static void kaio_sync_io_complete(u64 data, long err)
 		complete(&comp->comp);
 }
 
+/*
+ * @off is offset within first page in bytes.
+ * @len is sum length in bytes.
+ */
 static int
-kaio_sync_io(struct ploop_io * io, int op, struct page * page,
-	     unsigned int len, unsigned int off, sector_t sec)
+kaio_sync_io(struct ploop_io * io, int op, struct page **pages,
+	     unsigned int nr_pages, unsigned int len,
+	     unsigned int off, sector_t sec)
 {
 	struct kiocb *iocb;
 	struct iov_iter iter;
-	struct bio_vec bvec;
+	struct bio_vec bvec_on_stack, *bvec;
 	loff_t pos = (loff_t) sec << 9;
 	struct file *file = io->files.file;
 	struct kaio_comp comp;
+	unsigned int i, count;
 	int err;
 
 	kaio_comp_init(&comp);
@@ -793,12 +799,27 @@ kaio_sync_io(struct ploop_io * io, int op, struct page * page,
 	iocb = aio_kernel_alloc(GFP_NOIO);
 	if (!iocb)
 		return -ENOMEM;
+	if (nr_pages == 1)
+		bvec = &bvec_on_stack;
+	else
+		bvec = kmalloc(sizeof(*bvec) * nr_pages, GFP_NOIO);
+	if (!bvec) {
+		kfree(iocb);
+		return -ENOMEM;
+	}
 
-	bvec.bv_page = page;
-	bvec.bv_len = len;
-	bvec.bv_offset = off;
+	for (i = 0; i < nr_pages; i++) {
+		bvec->bv_page = pages[i];
+		count = PAGE_SIZE - off;
+		if (count > len)
+			count = len;
+		bvec->bv_len = count;
+		bvec->bv_offset = off;
+		off = 0;
+		len -= count;
+	}
 
-	iov_iter_init_bvec(&iter, &bvec, 1, bvec_length(&bvec, 1), 0);
+	iov_iter_init_bvec(&iter, bvec, nr_pages, bvec_length(bvec, nr_pages), 0);
 	aio_kernel_init_iter(iocb, file, op, &iter, pos);
 	aio_kernel_init_callback(iocb, kaio_sync_io_complete, (u64)&comp);
 
@@ -827,6 +848,9 @@ kaio_sync_io(struct ploop_io * io, int op, struct page * page,
 		       (op == IOCB_CMD_WRITE_ITER) ? "WRITE" : "READ",
 		       pos, len, off);
 
+	if (bvec != &bvec_on_stack)
+		kfree(bvec);
+	/* Not needed to free iocb */
 	return comp.error;
 }
 
@@ -834,16 +858,18 @@ static int
 kaio_sync_read(struct ploop_io * io, struct page * page, unsigned int len,
 		unsigned int off, sector_t sec)
 {
-	return kaio_sync_io(io, IOCB_CMD_READ_ITER, page, len, off, sec);
+	struct page *pages[] = { page };
+	return kaio_sync_io(io, IOCB_CMD_READ_ITER, pages, 1, len, off, sec);
 }
 
 static int
 kaio_sync_write(struct ploop_io * io, struct page * page, unsigned int len,
 		 unsigned int off, sector_t sec)
 {
+	struct page *pages[] = { page };
 	int ret;
 
-	ret = kaio_sync_io(io, IOCB_CMD_WRITE_ITER, page, len, off, sec);
+	ret = kaio_sync_io(io, IOCB_CMD_WRITE_ITER, pages, 1, len, off, sec);
 
 	if (sec < io->plo->track_end)
 		ploop_tracker_notify(io->plo, sec);
