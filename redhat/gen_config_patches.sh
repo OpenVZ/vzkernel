@@ -14,27 +14,53 @@ git diff --name-only HEAD HEAD^ > /tmp/a
 while read -r line; do
 	# Read all the files and split up by file path of each config item.
 	# ethernet and net get handled separately others can be added as needed
+	#
+	# A sample of the input file we're parsing is:
+	# # CONFIG_ARCH_RANDOM:
+	# #
+	# # Random number generation (part of the ARMv8.5 Extensions)
+	# # provides a high bandwidth, cryptographically secure
+	# # hardware random number generator.
+	# #
+	# # Symbol: ARCH_RANDOM [=y]
+	# # Type  : bool
+	# # Prompt: Enable support for random number generation
+	# #   Location:
+	# #	 -> Kernel Features
+	# #	   -> ARMv8.5 architectural features
+	# #   Defined at arch/arm64/Kconfig:1533
+	# #
+	# CONFIG_ARCH_RANDOM=y
 	awk -v BASE=$tmpdir '
+	function strip_kconfig_path(path_with_text)
+	{
+		sub("#.*Defined at ", "", path_with_text)
+		sub(":[0-9]+", "", path_with_text)
+		return path_with_text
+	}
 	/Defined at drivers\/net\/ethernet/ {
-		split($0, a);
-		split(a[4], b, "/");
-		OUT=BASE"/"b[1]"_"b[2]"_"b[3]"_"b[4];
-		print config >> OUT;
+		# For configs in here, bundle configs by vendor
+		kconfig_path=strip_kconfig_path($0);
+		split(kconfig_path, path_parts, "/")
+		# Only use the first component after drivers/net/ethernet
+		subsystem_path=BASE"/drivers:net:ethernet:"path_parts[4]
+		print config >> subsystem_path;
 		next;
 	}
 	/Defined at drivers\/net/ {
-		split($0, a);
-		split(a[4], b, "/");
-		OUT=BASE"/"b[1]"_"b[2]"_"b[3];
-		print config >> OUT;
+		# For configs in here, bundle configs by driver type
+		kconfig_path=strip_kconfig_path($0);
+		split(kconfig_path, path_parts, "/")
+		subsystem_path=BASE"/drivers:net:"path_parts[3];
+		print config >> subsystem_path;
 		next;
 	}
 	/Defined at / {
-		split($0, a);
-		split(a[4], b, "/");
-		split(b[2], c, ":");
-		OUT=BASE"/"b[1]"_"c[1];
-		print config >> OUT;
+		# Bundle all other configuration by the first two components of the path
+		kconfig_path=strip_kconfig_path($0);
+		split(kconfig_path, path_parts, "/")
+		subsystem_path=BASE"/"path_parts[1]":"path_parts[2]
+		print config >> subsystem_path;
 		next;
 	}
 	/^# CONFIG_.*:/ {
@@ -48,8 +74,8 @@ done < /tmp/a
 
 # $tmpdir now contains files containing a list of configs per file path
 for f in `ls $tmpdir`; do
-	# we had to change to _ for the file name so switch it back
-	_f=`echo $f | sed -e 's/_/\//g'`
+	# we had to change to : for the file name so switch it back
+	_f=$(basename "$f" | sed -e 's/:/\//g')
 	# Commit subject
 	echo "[redhat] New configs in $_f" > /tmp/commit
 	echo "" >> /tmp/commit
