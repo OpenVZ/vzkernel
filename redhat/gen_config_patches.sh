@@ -1,15 +1,29 @@
 #!/bin/bash
+#
+# Creates commits that moves all configuration options for a subsystem from the
+# pending configuration directory to the common configuration directory. Each
+# commit is contained on a branch named "configs/<date>/<subsystem path>.
+#
+# The commit message is formed from redhat/commit_template and includes Cc
+# information for the relevant maintainers using get_maintainers.pl. This
+# requires that you have $RHMAINTAINERS pointing to a valid maintainer file.
 
-tmpdir=$(mktemp -d)
-
-git show -s --oneline HEAD | grep -q "AUTOMATIC: New configs"
-if [ ! $? -eq 0 ]; then
+if ! git show -s --oneline HEAD | grep -q "AUTOMATIC: New configs"; then
 	echo "The git HEAD doesn't look like the correct commit"
 	exit 1
 fi
 
+config_bundles_dir=$(mktemp -d)
+tmpdir=$(mktemp -d)
+
+function cleanup {
+	rm -rf "$config_bundles_dir"
+	rm -rf "$tmpdir"
+}
+trap cleanup EXIT
+
 # Easy way to get each of the files to process
-git diff --name-only HEAD HEAD^ > /tmp/a
+git diff --name-only HEAD HEAD^ > "$tmpdir"/new_config_files
 
 while read -r line; do
 	# Read all the files and split up by file path of each config item.
@@ -31,7 +45,7 @@ while read -r line; do
 	# #   Defined at arch/arm64/Kconfig:1533
 	# #
 	# CONFIG_ARCH_RANDOM=y
-	awk -v BASE=$tmpdir '
+	awk -v BASE="$config_bundles_dir" '
 	function strip_kconfig_path(path_with_text)
 	{
 		sub("#.*Defined at ", "", path_with_text)
@@ -69,39 +83,41 @@ while read -r line; do
 		config=b[1];
 		#print config;
 	}
-	' $line
-done < /tmp/a
+	' "$line"
+done < "$tmpdir"/new_config_files
 
-# $tmpdir now contains files containing a list of configs per file path
-for f in `ls $tmpdir`; do
+# $config_bundles_dir now contains files containing a list of configs per file path
+for f in "$config_bundles_dir"/*; do
+	[[ -e "$f" ]] || exit 1  # No files in config_bundles_dir, abort
 	# we had to change to : for the file name so switch it back
 	_f=$(basename "$f" | sed -e 's/:/\//g')
 	# Commit subject
-	echo "[redhat] New configs in $_f" > /tmp/commit
-	echo "" >> /tmp/commit
+	echo "[redhat] New configs in $_f" > "$tmpdir"/commit
+	echo "" >> "$tmpdir"/commit
 	# And the boiler plate
-	cat redhat/commit_template >> /tmp/commit
+	cat redhat/commit_template >> "$tmpdir"/commit
 	# This loop actually grabs the help text to put in the commit
 	while read -r line; do
 		# last line is the actual config we need to put in the dir
-		echo `tail -n 1 redhat/configs/pending-common/generic/$line` > redhat/configs/common/generic/$line
+		tail -n 1 redhat/configs/pending-common/generic/"$line" > redhat/configs/common/generic/"$line"
 		# get everything except the last line for the commit text
-		head -n -1 redhat/configs/pending-common/generic/$line | sed -e 's/^#//g' >> /tmp/commit
+		head -n -1 redhat/configs/pending-common/generic/"$line" | sed -e 's/^#//g' >> "$tmpdir"/commit
 		# add a nice separator that renders in gitlab
-		echo -ne "\n---\n\n" >> /tmp/commit
+		echo -ne "\n---\n\n" >> "$tmpdir"/commit
 		# remove the pending option
-		rm redhat/configs/pending-common/generic/$line
-	done < $tmpdir/$f
-	if [ ! -z $RHMAINTAINERS ] && [ -f ./scripts/get_maintainer.pl ] && [ -f $RHMAINTAINERS ]; then
-		echo "" >> /tmp/commit
-		./scripts/get_maintainer.pl --no-rolestats --mpath $RHMAINTAINERS --no-git --no-git-fallback -f $_f  | sed "s/^/Cc: /" >> /tmp/commit
+		rm redhat/configs/pending-common/generic/"$line"
+	done < "$f"
+	if [ -n "$RHMAINTAINERS" ] && [ -f ./scripts/get_maintainer.pl ] && [ -f "$RHMAINTAINERS" ]; then
+		echo "" >> "$tmpdir"/commit
+		./scripts/get_maintainer.pl --no-rolestats --mpath "$RHMAINTAINERS" --no-git --no-git-fallback -f "$_f"  | sed "s/^/Cc: /" >> "$tmpdir"/commit
 	fi
 	# We do a separate branch per config commit
-	git checkout -b "configs/$(date +%F)/$_f"
+	if ! git checkout -b "configs/$(date +%F)/$_f"; then
+		printf "Unable to check out configs/%s/%s branch!\n" "$(date +%F)" "$_f"
+		exit 1
+	fi
 	# One file path is done, time to commit!
 	git add redhat/configs
-	git commit -F /tmp/commit
-	git checkout -
+	git commit -F "$tmpdir"/commit
+	git checkout internal
 done
-
-rm -rf $tmpdir
