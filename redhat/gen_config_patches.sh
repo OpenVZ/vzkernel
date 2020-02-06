@@ -58,13 +58,13 @@ for f in `ls $tmpdir`; do
 	# This loop actually grabs the help text to put in the commit
 	while read -r line; do
 		# last line is the actual config we need to put in the dir
-		echo `tail -n 1 redhat/configs/pending/generic/$line` > redhat/configs/common/generic/$line
+		echo `tail -n 1 redhat/configs/pending-common/generic/$line` > redhat/configs/common/generic/$line
 		# get everything except the last line for the commit text
-		head -n -1 redhat/configs/pending/generic/$line | sed -e 's/^#//g' >> /tmp/commit
+		head -n -1 redhat/configs/pending-common/generic/$line | sed -e 's/^#//g' >> /tmp/commit
 		# add a nice separator that renders in gitlab
 		echo -ne "\n---\n\n" >> /tmp/commit
 		# remove the pending option
-		rm redhat/configs/pending/generic/$line
+		rm redhat/configs/pending-common/generic/$line
 	done < $tmpdir/$f
 	if [ ! -z $RHMAINTAINERS ] && [ -f ./scripts/get_maintainer.pl ] && [ -f $RHMAINTAINERS ]; then
 		echo "" >> /tmp/commit

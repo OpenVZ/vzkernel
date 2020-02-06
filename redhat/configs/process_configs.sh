@@ -146,7 +146,7 @@ parsenewconfigs()
 	popd &> /dev/null
 	for f in `ls $tmpdir`; do
 		[[ -e "$tmpdir/$f" ]] || break
-		cp $tmpdir/$f $SCRIPT_DIR/pending/generic/
+		cp $tmpdir/$f $SCRIPT_DIR/pending"$FLAVOR"/generic/
 	done
 
 	rm -rf $tmpdir
@@ -182,7 +182,7 @@ function commit_new_configs()
 		echo "done"
 	done
 
-	git add $SCRIPT_DIR/pending
+	git add $SCRIPT_DIR/pending"$FLAVOR"
 	git commit -m "[redhat] AUTOMATIC: New configs"
 }
 
@@ -301,9 +301,17 @@ done
 PACKAGE_NAME="${1:-kernel}" # defines the package name used
 KVERREL="$(test -n "$2" && echo "-$2" || echo "")"
 SUBARCH="$(test -n "$3" && echo "-$3" || echo "")"
+FLAVOR="$(test -n "$4" && echo "-$4" || echo "-common")"
 SCRIPT="$(readlink -f $0)"
 OUTPUT_DIR="$PWD"
 SCRIPT_DIR="$(dirname $SCRIPT)"
+
+# Most RHEL options are options we want in Fedora so RHEL pending settings head
+# to common/
+if [ "$FLAVOR" = "-rhel" ]
+then
+	FLAVOR="-common"
+fi
 
 # to handle this script being a symlink
 cd $SCRIPT_DIR

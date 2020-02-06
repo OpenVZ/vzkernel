@@ -2,7 +2,7 @@
 # kernel.config files are build on the fly based on this config,
 # the first arg is arch and variant, the second is a hierarchy of
 # config options, lowest priority to highest
-ORDER=common ark pending
+ORDER=common ark pending-common
 EMPTY=armv7hl armv7hl-debug armv7hl-lpae armv7hl-lpae-debug i686 i686-debug
 
 # x86_64

@@ -37,6 +37,7 @@ else
 endif
 
 BUILD_TARGET ?= --scratch $(BUILD_SCRATCH_TARGET)
+FLAVOR ?= rhel
 
 RHGITURL?=$(shell git config rhg.url || git config remote.origin.url)
 RHGITCOMMIT?=$(shell git log -1 --pretty=format:%H)
@@ -133,8 +134,8 @@ rh-kabi-dw-check: rh-kabi
 	@rm -rf $(KABIDW)/base/$(CURARCH).tmp
 
 rh-configs-commit: rh-configs-prep
-	@cd $(REDHAT)/configs; VERSION=$(KVERSION) ./generate_all_configs.sh rhel 1; \
-	./process_configs.sh -z $(PACKAGE_NAME) $(KVERSION)
+	@cd $(REDHAT)/configs; VERSION=$(KVERSION) ./generate_all_configs.sh $(FLAVOR) 1; \
+	./process_configs.sh -z $(PACKAGE_NAME) $(KVERSION) "" $(FLAVOR)
 
 rh-configs: rh-configs-prep
 	@cd $(REDHAT)/configs; VERSION=$(KVERSION) ./generate_all_configs.sh rhel 1; \
