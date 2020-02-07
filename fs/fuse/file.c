@@ -3513,7 +3513,9 @@ static ssize_t fuse_direct_IO_bvec(int rw, struct kiocb *iocb,
 
 	/* TODO: File extension is not yet implemented */
 	if (offset + bvec_length(bvec, bvec_len) > i_size) {
-		WARN_ONCE(1, "fuse: file extension is not implemented yet\n");
+		WARN_ONCE(1, "fuse: file extension is not implemented yet: "
+			     "%lld %ld %lld\n",
+			     offset, bvec_length(bvec, bvec_len), i_size);
 		return -EINVAL;
 	}
 
