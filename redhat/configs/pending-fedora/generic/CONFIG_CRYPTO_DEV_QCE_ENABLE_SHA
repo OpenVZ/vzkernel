@@ -1,0 +1,21 @@
+# CONFIG_CRYPTO_DEV_QCE_ENABLE_SHA:
+# 
+# Enable hashes/HMAC algorithms only:
+#       - SHA1, HMAC-SHA1
+#       - SHA256, HMAC-SHA256
+# 
+# Symbol: CRYPTO_DEV_QCE_ENABLE_SHA [=n]
+# Type  : bool
+# Prompt: Hash/HMAC only
+#   Location:
+#     -> Cryptographic API (CRYPTO [=y])
+#       -> Hardware crypto devices (CRYPTO_HW [=y])
+#         -> Qualcomm crypto engine accelerator (CRYPTO_DEV_QCE [=m])
+#           -> Algorithms enabled for QCE acceleration (<choice> [=y])
+#   Defined at drivers/crypto/Kconfig:678
+#   Depends on: <choice>
+#   Selects: CRYPTO_DEV_QCE_SHA [=y]
+# 
+# 
+# 
+# CONFIG_CRYPTO_DEV_QCE_ENABLE_SHA is not set

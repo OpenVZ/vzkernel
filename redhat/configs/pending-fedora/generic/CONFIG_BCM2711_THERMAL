@@ -1,0 +1,17 @@
+# CONFIG_BCM2711_THERMAL:
+# 
+# Support for thermal sensors on Broadcom BCM2711 SoCs.
+# 
+# Symbol: BCM2711_THERMAL [=n]
+# Type  : tristate
+# Prompt: Broadcom AVS RO thermal sensor driver
+#   Location:
+#     -> Device Drivers
+#       -> Generic Thermal sysfs driver (THERMAL [=y])
+#         -> Broadcom thermal drivers
+#   Defined at drivers/thermal/broadcom/Kconfig:2
+#   Depends on: THERMAL [=y] && (ARCH_BCM [=y] || ARCH_BRCMSTB [=n] || ARCH_BCM2835 [=y] || ARCH_BCM_IPROC [=n] || COMPILE_TEST [=n]) && (ARCH_BCM2835 [=y] || COMPILE_TEST [=n]) && THERMAL_OF [=y] && MFD_SYSCON [=y]
+# 
+# 
+# 
+# CONFIG_BCM2711_THERMAL is not set

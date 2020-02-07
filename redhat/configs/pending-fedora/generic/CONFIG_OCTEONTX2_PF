@@ -1,0 +1,19 @@
+# CONFIG_OCTEONTX2_PF:
+# 
+# This driver supports Marvell's OcteonTX2 NIC physical function.
+# 
+# Symbol: OCTEONTX2_PF [=n]
+# Type  : tristate
+# Prompt: Marvell OcteonTX2 NIC Physical Function driver
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> Ethernet driver support (ETHERNET [=y])
+#           -> Marvell devices (NET_VENDOR_MARVELL [=y])
+#   Defined at drivers/net/ethernet/marvell/octeontx2/Kconfig:29
+#   Depends on: NETDEVICES [=y] && ETHERNET [=y] && NET_VENDOR_MARVELL [=y] && (64BIT [=y] && COMPILE_TEST [=n] || ARM64 [=y]) && PCI [=y]
+#   Selects: OCTEONTX2_MBOX [=m]
+# 
+# 
+# 
+# CONFIG_OCTEONTX2_PF is not set

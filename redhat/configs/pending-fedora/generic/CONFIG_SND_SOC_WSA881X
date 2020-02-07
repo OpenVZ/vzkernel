@@ -1,0 +1,23 @@
+# CONFIG_SND_SOC_WSA881X:
+# 
+# This enables support for Qualcomm WSA8810/WSA8815 Class-D
+# Smart Speaker Amplifier.
+# 
+# Symbol: SND_SOC_WSA881X [=n]
+# Type  : tristate
+# Prompt: WSA881X Codec
+#   Location:
+#     -> Device Drivers
+#       -> Sound card support (SOUND [=m])
+#         -> Advanced Linux Sound Architecture (SND [=m])
+#           -> ALSA for SoC audio support (SND_SOC [=m])
+#             -> CODEC drivers
+#   Defined at sound/soc/codecs/Kconfig:1540
+#   Depends on: SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && SOUNDWIRE [=y]
+#   Selects: REGMAP_SOUNDWIRE [=n]
+#   Selected by [n]:
+#   - SND_SOC_ALL_CODECS [=n] && SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && COMPILE_TEST [=n] && SOUNDWIRE [=y]
+# 
+# 
+# 
+# CONFIG_SND_SOC_WSA881X is not set

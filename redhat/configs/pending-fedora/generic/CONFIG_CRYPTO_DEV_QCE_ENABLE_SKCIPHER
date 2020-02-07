@@ -1,0 +1,23 @@
+# CONFIG_CRYPTO_DEV_QCE_ENABLE_SKCIPHER:
+# 
+# Enable symmetric-key ciphers only:
+#       - AES (CBC, CTR, ECB, XTS)
+#       - 3DES (ECB, CBC)
+#       - DES (ECB, CBC)
+# 
+# 
+# Symbol: CRYPTO_DEV_QCE_ENABLE_SKCIPHER [=n]
+# Type  : bool
+# Prompt: Symmetric-key ciphers only
+#   Location:
+#     -> Cryptographic API (CRYPTO [=y])
+#       -> Hardware crypto devices (CRYPTO_HW [=y])
+#         -> Qualcomm crypto engine accelerator (CRYPTO_DEV_QCE [=m])
+#           -> Algorithms enabled for QCE acceleration (<choice> [=y])
+#   Defined at drivers/crypto/Kconfig:669
+#   Depends on: <choice>
+#   Selects: CRYPTO_DEV_QCE_SKCIPHER [=y]
+# 
+# 
+# 
+# CONFIG_CRYPTO_DEV_QCE_ENABLE_SKCIPHER is not set

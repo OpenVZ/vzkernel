@@ -1,0 +1,17 @@
+# CONFIG_REGULATOR_VQMMC_IPQ4019:
+# 
+# This driver provides support for the VQMMC LDO I/0
+# voltage regulator of the IPQ4019 SD/EMMC controller.
+# 
+# Symbol: REGULATOR_VQMMC_IPQ4019 [=n]
+# Type  : tristate
+# Prompt: IPQ4019 VQMMC SD LDO regulator support
+#   Location:
+#     -> Device Drivers
+#       -> Voltage and Current Regulator Support (REGULATOR [=y])
+#   Defined at drivers/regulator/Kconfig:1113
+#   Depends on: REGULATOR [=y] && ARCH_QCOM [=y]
+# 
+# 
+# 
+# CONFIG_REGULATOR_VQMMC_IPQ4019 is not set
