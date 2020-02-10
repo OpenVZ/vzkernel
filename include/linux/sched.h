@@ -1500,7 +1500,6 @@ struct task_struct {
 				 * execve */
 	unsigned in_iowait:1;
 	unsigned no_new_privs:1; /* task may not gain privileges */
-	unsigned may_throttle:1;
 
 	pid_t pid;
 	pid_t tgid;
@@ -3141,13 +3140,6 @@ extern int _cond_resched(void);
 #define cond_resched() ({			\
 	__might_sleep(__FILE__, __LINE__, 0);	\
 	_cond_resched();			\
-})
-
-extern int _cond_resched_may_throttle(void);
-
-#define cond_resched_may_throttle() ({		\
-	__might_sleep(__FILE__, __LINE__, 0);	\
-	_cond_resched_may_throttle();		\
 })
 
 extern int __cond_resched_lock(spinlock_t *lock);
