@@ -1,0 +1,17 @@
+# CONFIG_RESET_BRCMSTB_RESCAL:
+# 
+# This enables the RESCAL reset controller for SATA, PCIe0, or PCIe1 on
+# BCM7216.
+# 
+# Symbol: RESET_BRCMSTB_RESCAL [=n]
+# Type  : bool
+# Defined at drivers/reset/Kconfig:52
+#   Prompt: Broadcom STB RESCAL reset controller
+#   Depends on: RESET_CONTROLLER [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Reset Controller Support (RESET_CONTROLLER [=y])
+# 
+# 
+# 
+# CONFIG_RESET_BRCMSTB_RESCAL is not set

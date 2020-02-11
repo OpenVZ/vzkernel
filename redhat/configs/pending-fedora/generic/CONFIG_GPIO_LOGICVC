@@ -1,0 +1,18 @@
+# CONFIG_GPIO_LOGICVC:
+# 
+# Say yes here to support GPIO functionality of the Xylon LogiCVC
+# programmable logic block.
+# 
+# Symbol: GPIO_LOGICVC [=n]
+# Type  : tristate
+# Defined at drivers/gpio/Kconfig:315
+#   Prompt: Xylon LogiCVC GPIO support
+#   Depends on: GPIOLIB [=y] && HAS_IOMEM [=y] && MFD_SYSCON [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> GPIO Support (GPIOLIB [=y])
+#         -> Memory mapped GPIO drivers
+# 
+# 
+# 
+# CONFIG_GPIO_LOGICVC is not set

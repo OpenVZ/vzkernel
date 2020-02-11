@@ -1,0 +1,19 @@
+# CONFIG_CLK_LS1028A_PLLDIG:
+# 
+# This driver support the Display output interfaces(LCD, DPHY) pixel clocks
+# of the QorIQ Layerscape LS1028A, as implemented TSMC CLN28HPM PLL. Not all
+# features of the PLL are currently supported by the driver. By default,
+# configured bypass mode with this PLL.
+# 
+# Symbol: CLK_LS1028A_PLLDIG [=y]
+# Type  : tristate
+# Defined at drivers/clk/Kconfig:240
+#   Prompt: Clock driver for LS1028A Display output
+#   Depends on: COMMON_CLK [=y] && (ARCH_LAYERSCAPE [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework
+# 
+# 
+# 
+CONFIG_CLK_LS1028A_PLLDIG=y

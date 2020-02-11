@@ -1,0 +1,22 @@
+# CONFIG_VIDEO_ROCKCHIP_ISP1:
+# 
+# Enable this to support the Image Signal Processing (ISP) module
+# present in RK3399 SoCs.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called rockchip-isp1.
+# 
+# Symbol: VIDEO_ROCKCHIP_ISP1 [=n]
+# Type  : tristate
+# Defined at drivers/staging/media/rkisp1/Kconfig:3
+#   Prompt: Rockchip Image Signal Processing v1 Unit driver
+#   Depends on: STAGING [=y] && STAGING_MEDIA [=y] && MEDIA_SUPPORT [=m] && VIDEO_V4L2 [=m] && VIDEO_V4L2_SUBDEV_API [=y] && (ARCH_ROCKCHIP [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Staging drivers (STAGING [=y])
+#         -> Media staging drivers (STAGING_MEDIA [=y])
+# Selects: VIDEOBUF2_DMA_CONTIG [=m] && VIDEOBUF2_VMALLOC [=m] && V4L2_FWNODE [=m] && PHY_ROCKCHIP_DPHY_RX0 [=n]
+# 
+# 
+# 
+# CONFIG_VIDEO_ROCKCHIP_ISP1 is not set

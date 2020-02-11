@@ -1,0 +1,18 @@
+# CONFIG_BOOTTIME_TRACING:
+# 
+# Enable developer to setup ftrace subsystem via supplemental
+# kernel cmdline at boot time for debugging (tracing) driver
+# initialization and boot process.
+# 
+# Symbol: BOOTTIME_TRACING [=y]
+# Type  : bool
+# Defined at kernel/trace/Kconfig:144
+#   Prompt: Boot-time Tracing support
+#   Depends on: TRACING_SUPPORT [=y] && FTRACE [=y] && BOOT_CONFIG [=y] && TRACING [=y]
+#   Location:
+#     -> Kernel hacking
+#       -> Tracers (FTRACE [=y])
+# 
+# 
+# 
+CONFIG_BOOTTIME_TRACING=y

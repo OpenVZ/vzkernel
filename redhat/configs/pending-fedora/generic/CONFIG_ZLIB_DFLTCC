@@ -1,0 +1,15 @@
+# CONFIG_ZLIB_DFLTCC:
+# 
+# Enable s390x hardware support for zlib in the kernel.
+# 
+# Symbol: ZLIB_DFLTCC [=y]
+# Type  : bool
+# Defined at lib/Kconfig:281
+#   Prompt: Enable s390x DEFLATE CONVERSION CALL support for kernel zlib
+#   Depends on: S390 [=y]
+#   Location:
+#     -> Library routines
+# 
+# 
+# 
+CONFIG_ZLIB_DFLTCC=y

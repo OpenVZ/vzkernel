@@ -1,0 +1,16 @@
+# CONFIG_PHY_INTEL_EMMC:
+# 
+# Enable this to support the Intel EMMC PHY
+# 
+# Symbol: PHY_INTEL_EMMC [=n]
+# Type  : tristate
+# Defined at drivers/phy/intel/Kconfig:5
+#   Prompt: Intel EMMC PHY driver
+#   Location:
+#     -> Device Drivers
+#       -> PHY Subsystem
+# Selects: GENERIC_PHY [=y]
+# 
+# 
+# 
+# CONFIG_PHY_INTEL_EMMC is not set

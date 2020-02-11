@@ -1,0 +1,19 @@
+# CONFIG_INTERCONNECT_QCOM_MSM8916:
+# 
+# This is a driver for the Qualcomm Network-on-Chip on msm8916-based
+# platforms.
+# 
+# Symbol: INTERCONNECT_QCOM_MSM8916 [=n]
+# Type  : tristate
+# Defined at drivers/interconnect/qcom/Kconfig:8
+#   Prompt: Qualcomm MSM8916 interconnect driver
+#   Depends on: INTERCONNECT [=m] && INTERCONNECT_QCOM [=y] && QCOM_SMD_RPM [=m]
+#   Location:
+#     -> Device Drivers
+#       -> On-Chip Interconnect management support (INTERCONNECT [=m])
+#         -> Qualcomm Network-on-Chip interconnect drivers (INTERCONNECT_QCOM [=y])
+# Selects: INTERCONNECT_QCOM_SMD_RPM [=n]
+# 
+# 
+# 
+# CONFIG_INTERCONNECT_QCOM_MSM8916 is not set

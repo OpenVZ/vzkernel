@@ -1,0 +1,22 @@
+# CONFIG_KPROBE_EVENT_GEN_TEST:
+# 
+# This option creates a test module to check the base
+# functionality of in-kernel kprobe event definition.
+# 
+# To test, insert the module, and then check the trace buffer
+# for the generated kprobe events.
+# 
+# If unsure, say N.
+# 
+# Symbol: KPROBE_EVENT_GEN_TEST [=n]
+# Type  : tristate
+# Defined at kernel/trace/Kconfig:839
+#   Prompt: Test module for in-kernel kprobe event generation
+#   Depends on: TRACING_SUPPORT [=y] && FTRACE [=y] && KPROBE_EVENTS [=y]
+#   Location:
+#     -> Kernel hacking
+#       -> Tracers (FTRACE [=y])
+# 
+# 
+# 
+# CONFIG_KPROBE_EVENT_GEN_TEST is not set
