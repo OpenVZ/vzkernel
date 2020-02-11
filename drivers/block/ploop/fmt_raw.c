@@ -56,6 +56,11 @@ raw_open(struct ploop_delta * delta)
 	pos += (1 << (cluster_log + 9)) - 1;
 	delta->io.alloc_head = pos >> (cluster_log + 9);
 
+	if (!delta->io.alloc_head) {
+		pr_err("ploop: zero length file\n");
+		return -EINVAL;
+	}
+
 	if (delta->io.ops->id == PLOOP_IO_DIRECT)
 		set_bit(PLOOP_S_NO_FALLOC_DISCARD, &delta->plo->state);
 
