@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_STRICT_KERNEL_RWX is not set
+CONFIG_STRICT_KERNEL_RWX=y
