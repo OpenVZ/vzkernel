@@ -1,0 +1,19 @@
+# CONFIG_DRM_LVDS_CODEC:
+# 
+# Support for transparent LVDS encoders and decoders that don't
+# require any configuration.
+# 
+# Symbol: DRM_LVDS_CODEC [=n]
+# Type  : tristate
+# Defined at drivers/gpu/drm/bridge/Kconfig:38
+#   Prompt: Transparent LVDS encoders and decoders support
+#   Depends on: HAS_IOMEM [=y] && DRM [=m] && DRM_BRIDGE [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Display Interface Bridges
+# Selects: DRM_KMS_HELPER [=m] && DRM_PANEL_BRIDGE [=y]
+# 
+# 
+# 
+# CONFIG_DRM_LVDS_CODEC is not set

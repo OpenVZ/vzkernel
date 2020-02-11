@@ -1,0 +1,23 @@
+# CONFIG_INTEL_IOMMU_SCALABLE_MODE_DEFAULT_ON:
+# 
+# Selecting this option will enable by default the scalable mode if
+# hardware presents the capability. The scalable mode is defined in
+# VT-d 3.0. The scalable mode capability could be checked by reading
+# /sys/devices/virtual/iommu/dmar*/intel-iommu/ecap. If this option
+# is not selected, scalable mode support could also be enabled by
+# passing intel_iommu=sm_on to the kernel. If not sure, please use
+# the default value.
+# 
+# Symbol: INTEL_IOMMU_SCALABLE_MODE_DEFAULT_ON [=n]
+# Type  : bool
+# Defined at drivers/iommu/Kconfig:252
+#   Prompt: Enable Intel IOMMU scalable mode by default
+#   Depends on: IOMMU_SUPPORT [=y] && INTEL_IOMMU [=y]
+#   Location:
+#     -> Device Drivers
+#       -> IOMMU Hardware Support (IOMMU_SUPPORT [=y])
+#         -> Support for Intel IOMMU using DMA Remapping Devices (INTEL_IOMMU [=y])
+# 
+# 
+# 
+# CONFIG_INTEL_IOMMU_SCALABLE_MODE_DEFAULT_ON is not set

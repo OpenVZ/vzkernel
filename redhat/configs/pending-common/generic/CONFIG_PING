@@ -1,0 +1,26 @@
+# CONFIG_PING:
+# 
+# Say Y here to build a driver for GPIO bitbanged ranger sensors
+# with just one GPIO for the trigger and echo. This driver can be
+# used to measure the distance of objects.
+# 
+# Actually supported are:
+# - Parallax PING))) (ultrasonic)
+# - Parallax LaserPING (time-of-flight)
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called ping.
+# 
+# Symbol: PING [=n]
+# Type  : tristate
+# Defined at drivers/iio/proximity/Kconfig:61
+#   Prompt: Parallax GPIO bitbanged ranger sensors
+#   Depends on: IIO [=m] && GPIOLIB [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> Proximity and distance sensors
+# 
+# 
+# 
+# CONFIG_PING is not set

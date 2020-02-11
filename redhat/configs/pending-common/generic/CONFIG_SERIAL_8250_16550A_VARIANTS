@@ -1,0 +1,22 @@
+# CONFIG_SERIAL_8250_16550A_VARIANTS:
+# 
+# The 8250 driver can probe for many variants of the venerable 16550A
+# serial port. Doing so takes additional time at boot.
+# 
+# On modern systems, especially those using serial only for a simple
+# console, you can say N here.
+# 
+# Symbol: SERIAL_8250_16550A_VARIANTS [=n]
+# Type  : bool
+# Defined at drivers/tty/serial/8250/Kconfig:63
+#   Prompt: Support for variants of the 16550A serial port
+#   Depends on: TTY [=y] && HAS_IOMEM [=y] && SERIAL_8250 [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Character devices
+#         -> Serial drivers
+#           -> 8250/16550 and compatible serial support (SERIAL_8250 [=y])
+# 
+# 
+# 
+# CONFIG_SERIAL_8250_16550A_VARIANTS is not set

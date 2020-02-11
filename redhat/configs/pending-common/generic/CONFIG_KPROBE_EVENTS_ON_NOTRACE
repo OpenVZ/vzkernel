@@ -1,0 +1,29 @@
+# CONFIG_KPROBE_EVENTS_ON_NOTRACE:
+# 
+# This is only for the developers who want to debug ftrace itself
+# using kprobe events.
+# 
+# If kprobes can use ftrace instead of breakpoint, ftrace related
+# functions are protected from kprobe-events to prevent an infinit
+# recursion or any unexpected execution path which leads to a kernel
+# crash.
+# 
+# This option disables such protection and allows you to put kprobe
+# events on ftrace functions for debugging ftrace by itself.
+# Note that this might let you shoot yourself in the foot.
+# 
+# If unsure, say N.
+# 
+# Symbol: KPROBE_EVENTS_ON_NOTRACE [=n]
+# Type  : bool
+# Defined at kernel/trace/Kconfig:550
+#   Prompt: Do NOT protect notrace function from kprobe events
+#   Depends on: TRACING_SUPPORT [=y] && FTRACE [=y] && KPROBE_EVENTS [=y] && KPROBES_ON_FTRACE [=y]
+#   Location:
+#     -> Kernel hacking
+#       -> Tracers (FTRACE [=y])
+#         -> Enable kprobes-based dynamic events (KPROBE_EVENTS [=y])
+# 
+# 
+# 
+# CONFIG_KPROBE_EVENTS_ON_NOTRACE is not set

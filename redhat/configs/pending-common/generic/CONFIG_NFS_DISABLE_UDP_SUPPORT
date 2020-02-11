@@ -1,0 +1,18 @@
+# CONFIG_NFS_DISABLE_UDP_SUPPORT:
+# 
+# Choose Y here to disable the use of NFS over UDP. NFS over UDP
+# on modern networks (1Gb+) can lead to data corruption caused by
+# fragmentation during high loads.
+# 
+# Symbol: NFS_DISABLE_UDP_SUPPORT [=y]
+# Type  : bool
+# Defined at fs/nfs/Kconfig:200
+#   Prompt: NFS: Disable NFS UDP protocol support
+#   Depends on: NETWORK_FILESYSTEMS [=y] && NFS_FS [=m]
+#   Location:
+#     -> File systems
+#       -> Network File Systems (NETWORK_FILESYSTEMS [=y])
+# 
+# 
+# 
+CONFIG_NFS_DISABLE_UDP_SUPPORT=y

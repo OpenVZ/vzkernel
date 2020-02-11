@@ -1,0 +1,18 @@
+# CONFIG_AD7091R5:
+# 
+# Say yes here to build support for Analog Devices AD7091R-5 ADC.
+# 
+# Symbol: AD7091R5 [=n]
+# Type  : tristate
+# Defined at drivers/iio/adc/Kconfig:24
+#   Prompt: Analog Devices AD7091R5 ADC Driver
+#   Depends on: IIO [=m] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> Analog to digital converters
+# Selects: REGMAP_I2C [=m]
+# 
+# 
+# 
+# CONFIG_AD7091R5 is not set

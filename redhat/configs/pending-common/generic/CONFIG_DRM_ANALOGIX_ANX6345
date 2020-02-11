@@ -1,0 +1,21 @@
+# CONFIG_DRM_ANALOGIX_ANX6345:
+# 
+# ANX6345 is an ultra-low Full-HD DisplayPort/eDP
+# transmitter designed for portable devices. The
+# ANX6345 transforms the LVTTL RGB output of an
+# application processor to eDP or DisplayPort.
+# 
+# Symbol: DRM_ANALOGIX_ANX6345 [=n]
+# Type  : tristate
+# Defined at drivers/gpu/drm/bridge/analogix/Kconfig:2
+#   Prompt: Analogix ANX6345 bridge
+#   Depends on: HAS_IOMEM [=y] && DRM [=m] && DRM_BRIDGE [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Display Interface Bridges
+# Selects: DRM_ANALOGIX_DP [=n] && DRM_KMS_HELPER [=m] && REGMAP_I2C [=m]
+# 
+# 
+# 
+# CONFIG_DRM_ANALOGIX_ANX6345 is not set

@@ -1,0 +1,22 @@
+# CONFIG_DLHL60D:
+# 
+# Say yes here to build support for the All Sensors DLH series
+# pressure sensors driver.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called dlhl60d.
+# 
+# Symbol: DLHL60D [=n]
+# Type  : tristate
+# Defined at drivers/iio/pressure/Kconfig:56
+#   Prompt: All Sensors DLHL60D and DLHL60G low voltage digital pressure sensors
+#   Depends on: IIO [=m] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> Pressure sensors
+# Selects: IIO_BUFFER [=y] && IIO_TRIGGERED_BUFFER [=m]
+# 
+# 
+# 
+# CONFIG_DLHL60D is not set
