@@ -479,6 +479,7 @@ static int kaio_fsync_thread(void * data)
 {
 	struct ploop_io * io = data;
 	struct ploop_device * plo = io->plo;
+	loff_t isize;
 
 	set_user_nice(current, -20);
 
@@ -512,6 +513,9 @@ static int kaio_fsync_thread(void * data)
 
 		/* trick: preq->prealloc_size is actually new pos of eof */
 		if (preq->prealloc_size) {
+			isize = i_size_read(io->files.inode);
+			if (WARN_ON_ONCE(preq->prealloc_size < isize))
+				goto out;
 			err = kaio_truncate(io, io->files.file,
 					    preq->prealloc_size >> (plo->cluster_log + 9));
 			if (err)
@@ -536,7 +540,7 @@ static int kaio_fsync_thread(void * data)
 				}
 			}
 		}
-
+out:
 		spin_lock_irq(&plo->lock);
 		list_add_tail(&preq->list, &plo->ready_queue);
 
