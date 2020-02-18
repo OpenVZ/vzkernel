@@ -1,1 +1,1 @@
-CONFIG_UIO=m
+# CONFIG_UIO is not set

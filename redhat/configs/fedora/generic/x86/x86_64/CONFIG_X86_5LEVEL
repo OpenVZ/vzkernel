@@ -1,1 +1,1 @@
-# CONFIG_X86_5LEVEL is not set
+CONFIG_X86_5LEVEL=y

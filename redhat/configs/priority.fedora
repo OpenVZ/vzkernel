@@ -2,7 +2,7 @@
 # kernel.config files are build on the fly based on this config,
 # the first arg is arch and variant, the second is a hierarchy of
 # config options, lowest priority to highest
-ORDER=common fedora pending-common pending-fedora
+ORDER=common pending-common fedora pending-fedora
 EMPTY=s390x-zfcpdump
 
 # x86_64
