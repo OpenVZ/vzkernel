@@ -889,6 +889,28 @@ static void ploop_index_wb_proceed_or_delay(struct ploop_request * preq,
 	ploop_index_wb_proceed(preq);
 }
 
+static unsigned long preq_extract_rq_index_update_rw(struct ploop_request *preq,
+						     unsigned long state,
+						     int *do_fsync_if_delayed)
+{
+	unsigned long rw = (preq->req_rw & (REQ_FUA | REQ_FLUSH));
+
+	/* We've just set REQ_FLUSH in rw, ->write_page() below
+	   will do the FLUSH */
+	preq->req_rw &= ~REQ_FLUSH;
+
+	/*
+	 * Relocate and merge require consistent index update.
+	 * FIXME: COW also wants it?
+	 */
+	if (state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL|PLOOP_REQ_MERGE_FL)) {
+		rw |= (REQ_FLUSH | REQ_FUA);
+		*do_fsync_if_delayed = 1;
+	}
+
+	return rw;
+}
+
 /* Data write is commited. Now we need to update index. */
 
 void ploop_index_update(struct ploop_request * preq)
@@ -956,17 +978,8 @@ void ploop_index_update(struct ploop_request * preq)
 	__TRACE("wbi %p %u %p\n", preq, preq->req_cluster, m);
 	plo->st.map_single_writes++;
 
-	preq->req_index_update_rw = (preq->req_rw & (REQ_FUA | REQ_FLUSH));
-
-	/* We've just set REQ_FLUSH in rw, ->write_page() below
-	   will do the FLUSH */
-	preq->req_rw &= ~REQ_FLUSH;
-
-	/* Relocate requires consistent index update */
-	if (state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL|PLOOP_REQ_MERGE_FL)) {
-		preq->req_index_update_rw |= (REQ_FLUSH | REQ_FUA);
-		do_fsync_if_delayed = 1;
-	}
+	preq->req_index_update_rw =
+		preq_extract_rq_index_update_rw(preq, state, &do_fsync_if_delayed);
 
 	ploop_index_wb_proceed_or_delay(preq, do_fsync_if_delayed);
 	return;
@@ -1173,18 +1186,8 @@ static void map_wb_complete(struct map_node * m, int err)
 				break;
 			}
 
-			rw |= (preq->req_rw & (REQ_FLUSH | REQ_FUA));
-
-			/* We've just set REQ_FLUSH in rw, ->write_page() below
-			   will do the FLUSH */
-			preq->req_rw &= ~REQ_FLUSH;
-
 			state = READ_ONCE(preq->state);
-			/* Relocate requires consistent index update */
-			if (state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL|PLOOP_REQ_MERGE_FL)) {
-				rw |= (REQ_FLUSH | REQ_FUA);
-				do_fsync_if_delayed = 1;
-			}
+			rw |= preq_extract_rq_index_update_rw(preq, state, &do_fsync_if_delayed);
 
 			preq->eng_state = PLOOP_E_INDEX_WB;
 			get_page(page);
