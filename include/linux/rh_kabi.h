@@ -186,4 +186,68 @@
 
 #define RH_KABI_EXCLUDE(_elem)		_RH_KABI_EXCLUDE(_elem);
 
+/*
+ * RHEL macros to extend structs.
+ *
+ * base struct: The struct being extended.  For example, pci_dev.
+ * extended struct: The Red Hat struct being added to the base struct.
+ *		    For example, pci_dev_rh.
+ *
+ * These macros should be used to extend structs before KABI freeze.
+ * They can be used post-KABI freeze in the limited case of the base
+ * struct not being embedded in another struct.
+ *
+ * Extended structs cannot be shrunk in size as changes will break
+ * the size & offset comparison.
+ *
+ * Extended struct elements are not guaranteed for access by modules unless
+ * explicitly commented as such in the declaration of the extended struct or
+ * the element in the extended struct.
+ */
+
+/*
+ * RH_KABI_SIZE_AND_EXTEND|_PTR() extends a struct by embedding or adding
+ * a pointer in a base struct.  The name of the new struct is the name
+ * of the base struct appended with _rh.
+ */
+#define RH_KABI_SIZE_AND_EXTEND_PTR(_struct)				\
+	size_t _struct##_size_rh;					\
+	RH_KABI_EXCLUDE(struct _struct##_rh *_struct##_rh)
+
+#define RH_KABI_SIZE_AND_EXTEND(_struct)				\
+	size_t _struct##_size_rh;					\
+	RH_KABI_EXCLUDE(struct _struct##_rh _struct##_rh)
+
+/*
+ * RH_KABI_SET_SIZE calculates and sets the size of the extended struct and
+ * stores it in the size_rh field for structs that are dynamically allocated.
+ * This macro MUST be called when expanding a base struct with
+ * RH_KABI_SIZE_AND_EXTEND, and it MUST be called from the allocation site
+ * regardless of being allocated in the kernel or a module.
+ */
+#define RH_KABI_SET_SIZE(_name, _struct) ({				\
+	_name._struct##_size_rh = sizeof(struct _struct##_rh);		\
+})
+
+/*
+ * RH_KABI_INIT_SIZE calculates and sets the size of the extended struct and
+ * stores it in the size_rh field for structs that are statically allocated.
+ * This macro MUST be called when expanding a base struct with
+ * RH_KABI_SIZE_AND_EXTEND, and it MUST be called from the declaration site
+ * regardless of being allocated in the kernel or a module.
+ */
+#define RH_KABI_INIT_SIZE(_struct)					\
+	._struct##_size_rh = sizeof(struct _struct##_rh),
+
+/*
+ * RH_KABI_CHECK_EXT verifies allocated memory exists.  This MUST be called to
+ * verify that memory in the _rh struct is valid, and can be called
+ * regardless if RH_KABI_SIZE_AND_EXTEND or RH_KABI_SIZE_AND_EXTEND_PTR is
+ * used.
+ */
+#define RH_KABI_CHECK_EXT(_ptr, _struct, _field) ({			\
+	size_t __off = offsetof(struct _struct##_rh, _field);		\
+	_ptr->_struct##_size_rh > __off ? true : false;			\
+})
+
 #endif /* _LINUX_RH_KABI_H */
