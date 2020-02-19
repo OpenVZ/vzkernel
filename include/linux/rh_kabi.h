@@ -2,7 +2,7 @@
  * rh_kabi.h - Red Hat kABI abstraction header
  *
  * Copyright (c) 2014 Don Zickus
- * Copyright (c) 2015-2017 Jiri Benc
+ * Copyright (c) 2015-2018 Jiri Benc
  * Copyright (c) 2015 Sabrina Dubroca, Hannes Frederic Sowa
  * Copyright (c) 2016-2018 Prarit Bhargava
  * Copyright (c) 2017 Paolo Abeni, Larry Woodman
@@ -93,7 +93,16 @@
  *   corrupt memory.  Instead, by changing the symbol checksum, such modules
  *   won't be loaded by the kernel.  This macro should only be used as a
  *   last resort when all other KABI workarounds have failed.
+ *
  * RH_KABI_EXCLUDE
+ *   !!! WARNING: DANGEROUS, DO NOT USE unless you are aware of all the !!!
+ *   !!! implications. This should be used ONLY EXCEPTIONALLY and only  !!!
+ *   !!! under specific circumstances. Very likely, this macro does not !!!
+ *   !!! do what you expect it to do. Note that any usage of this macro !!!
+ *   !!! MUST be paired with a RH_KABI_FORCE_CHANGE annotation of       !!!
+ *   !!! a suitable symbol (or an equivalent safeguard) and the commit  !!!
+ *   !!! log MUST explain why the chosen solution is appropriate.       !!!
+ *
  *   Exclude the element from checksum generation.  Any such element is
  *   considered not to be part of the kABI whitelist and may be changed at
  *   will.  Note however that it's the responsibility of the developer
