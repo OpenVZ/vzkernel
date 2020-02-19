@@ -45,10 +45,23 @@
  * RH_KABI_EXTEND
  *   Simple macro for adding a new element to a struct.
  *
- *   Warning: only use if a hole exists for _all_ arches.  Use pahole to verify.
+ * RH_KABI_EXTEND_WITH_SIZE
+ *   Adds a new element (usually a struct) to a struct and reserves extra
+ *   space for the new element.  The provided 'size' is the total space to
+ *   be added in longs (i.e. it's 8 * 'size' bytes), including the size of
+ *   the added element.  It is automatically checked that the new element
+ *   does not overflow the reserved space, now nor in the future. However,
+ *   no attempt is done to check the content of the added element (struct)
+ *   for kABI conformance - kABI checking inside the added element is
+ *   effectively switched off.
+ *   For any struct being added by RH_KABI_EXTEND_WITH_SIZE, it is
+ *   recommended its content to be documented as not covered by kABI
+ *   guarantee.
  *
  * RH_KABI_FILL_HOLE
  *   Simple macro for filling a hole in a struct.
+ *
+ *   Warning: only use if a hole exists for _all_ arches.  Use pahole to verify.
  *
  * RH_KABI_RENAME
  *   Simple macro for renaming an element without changing its type.  This
@@ -133,8 +146,12 @@
 		_Static_assert(__alignof__(struct{_new;}) <= __alignof__(struct{_orig;}), \
 			       __FILE__ ":" __stringify(__LINE__) ": "  __stringify(_orig) " is not aligned the same as " __stringify(_new) RH_KABI_ALIGN_WARNING); \
 	}
+# define __RH_KABI_CHECK_SIZE(_item, _size)				\
+	_Static_assert(sizeof(struct{_item;}) <= _size,			\
+		       __FILE__ ":" __stringify(__LINE__) ": " __stringify(_item) " is larger than the reserved size (" __stringify(_size) " bytes)" RH_KABI_ALIGN_WARNING)
 #else
 # define __RH_KABI_CHECK_SIZE_ALIGN(_orig, _new)
+# define __RH_KABI_CHECK_SIZE(_item, _size)
 #endif
 
 # define _RH_KABI_DEPRECATE(_type, _orig)	_type rh_reserved_##_orig
@@ -185,6 +202,16 @@
 # define _RH_KABI_RESERVE(n)		unsigned long rh_reserved##n
 
 #define RH_KABI_EXCLUDE(_elem)		_RH_KABI_EXCLUDE(_elem);
+
+/*
+ * Extending a struct while reserving extra space.
+ */
+#define RH_KABI_EXTEND_WITH_SIZE(_new, _size)				\
+	RH_KABI_EXTEND(union {						\
+		_new;							\
+		unsigned long __UNIQUE_ID(rh_kabi_reserved)[_size];	\
+		__RH_KABI_CHECK_SIZE(_new, 8 * (_size));		\
+	})
 
 /*
  * RHEL macros to extend structs.
