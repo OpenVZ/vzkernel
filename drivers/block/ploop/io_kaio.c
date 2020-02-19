@@ -890,10 +890,26 @@ static int kaio_sync_read_many(struct ploop_io *io, struct page *pages[],
 
 static int kaio_alloc_sync(struct ploop_io * io, loff_t pos, loff_t len)
 {
-	int err = __kaio_truncate(io, io->files.file, pos + len);
+	struct ploop_device *plo = io->plo;
+	loff_t size = pos + len;
+	int err = 0;
+	u32 a_h;
 
-	if (!err)
-		io->alloc_head = (pos + len) >> (io->plo->cluster_log + 9);
+	a_h = size >> (plo->cluster_log + 9);
+
+	/* Close race with truncate thread */
+	if (io->prealloc_preq && size < io->prealloc_preq->prealloc_size)
+		size = io->prealloc_preq->prealloc_size;
+	if (size < io->prealloced_size)
+		size = io->prealloced_size;
+
+	if (size > i_size_read(io->files.inode))
+		err = __kaio_truncate(io, io->files.file, size);
+
+	if (!err) {
+		WARN_ON(io->alloc_head > a_h);
+		io->alloc_head = a_h;
+	}
 
 	return err;
 }
