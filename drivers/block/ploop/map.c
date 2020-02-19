@@ -963,7 +963,7 @@ void ploop_index_update(struct ploop_request * preq)
 	preq->req_rw &= ~REQ_FLUSH;
 
 	/* Relocate requires consistent index update */
-	if (state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL)) {
+	if (state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL|PLOOP_REQ_MERGE_FL)) {
 		preq->req_index_update_rw |= (REQ_FLUSH | REQ_FUA);
 		do_fsync_if_delayed = 1;
 	}
@@ -1181,7 +1181,7 @@ static void map_wb_complete(struct map_node * m, int err)
 
 			state = READ_ONCE(preq->state);
 			/* Relocate requires consistent index update */
-			if (state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL)) {
+			if (state & (PLOOP_REQ_RELOC_A_FL|PLOOP_REQ_RELOC_S_FL|PLOOP_REQ_MERGE_FL)) {
 				rw |= (REQ_FLUSH | REQ_FUA);
 				do_fsync_if_delayed = 1;
 			}
