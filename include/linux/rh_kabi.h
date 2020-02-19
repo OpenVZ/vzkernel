@@ -163,6 +163,8 @@
 # define __RH_KABI_CHECK_SIZE(_item, _size)
 #endif
 
+#define RH_KABI_UNIQUE_ID	__PASTE(rh_kabi_hidden_, __LINE__)
+
 # define _RH_KABI_DEPRECATE(_type, _orig)	_type rh_reserved_##_orig
 # define _RH_KABI_DEPRECATE_FN(_type, _orig, _args...)  \
 	_type (* rh_reserved_##_orig)(_args)
@@ -171,7 +173,7 @@
 		_new;					  \
 		struct {				  \
 			_orig;				  \
-		} __UNIQUE_ID(rh_kabi_hide);		  \
+		} RH_KABI_UNIQUE_ID;			  \
 		__RH_KABI_CHECK_SIZE_ALIGN(_orig, _new);  \
 	}
 # define _RH_KABI_REPLACE_UNSAFE(_orig, _new)	_new
@@ -218,7 +220,7 @@
 #define RH_KABI_EXTEND_WITH_SIZE(_new, _size)				\
 	RH_KABI_EXTEND(union {						\
 		_new;							\
-		unsigned long __UNIQUE_ID(rh_kabi_reserved)[_size];	\
+		unsigned long RH_KABI_UNIQUE_ID[_size];			\
 		__RH_KABI_CHECK_SIZE(_new, 8 * (_size));		\
 	})
 
