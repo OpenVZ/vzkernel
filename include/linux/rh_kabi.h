@@ -210,13 +210,17 @@
  * a pointer in a base struct.  The name of the new struct is the name
  * of the base struct appended with _rh.
  */
-#define RH_KABI_SIZE_AND_EXTEND_PTR(_struct)				\
+#define _RH_KABI_SIZE_AND_EXTEND_PTR(_struct)				\
 	size_t _struct##_size_rh;					\
 	RH_KABI_EXCLUDE(struct _struct##_rh *_struct##_rh)
+#define RH_KABI_SIZE_AND_EXTEND_PTR(_struct)				\
+	_RH_KABI_SIZE_AND_EXTEND_PTR(_struct)
 
-#define RH_KABI_SIZE_AND_EXTEND(_struct)				\
+#define _RH_KABI_SIZE_AND_EXTEND(_struct)				\
 	size_t _struct##_size_rh;					\
 	RH_KABI_EXCLUDE(struct _struct##_rh _struct##_rh)
+#define RH_KABI_SIZE_AND_EXTEND(_struct)				\
+	_RH_KABI_SIZE_AND_EXTEND(_struct)
 
 /*
  * RH_KABI_SET_SIZE calculates and sets the size of the extended struct and
