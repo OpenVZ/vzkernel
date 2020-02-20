@@ -865,6 +865,12 @@ static void ploop1_add_free_blk(struct ploop_delta *delta, struct ploop_request 
 	if (!delta->holes_bitmap)
 		return;
 
+	if (!(preq->req_rw & REQ_DISCARD) ||
+	    test_bit(PLOOP_REQ_DISCARD, &preq->state)) {
+		WARN_ON_ONCE(1);
+		return;
+	}
+
 	idx = (preq->req_cluster + PLOOP_MAP_OFFSET) & (INDEX_PER_PAGE - 1);
 	blk = ((map_index_t *)page_address(m->page))[idx];
 
