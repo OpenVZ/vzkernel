@@ -146,9 +146,10 @@ static int hwpoison_filter_task(struct page *p)
 
 	css = mem_cgroup_css(mem);
 	/* root_mem_cgroup has NULL dentries */
-	if (!css->cgroup->dentry)
+	if (!css->cgroup->dentry) {
+		css_put(css);
 		return -EINVAL;
-
+	}
 	ino = css->cgroup->dentry->d_inode->i_ino;
 	css_put(css);
 
