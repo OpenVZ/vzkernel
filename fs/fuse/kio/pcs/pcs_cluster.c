@@ -295,6 +295,8 @@ static void process_ireq_fiemap(struct pcs_int_request *orig_ireq)
 	fiter->ireq.type = PCS_IREQ_API;
 	fiter->ireq.apireq.req = &fiter->apireq;
 	fiter->ireq.completion_data.parent = NULL;
+	fiter->ireq.completion_data.ctx = orig_ireq->completion_data.ctx;
+	fiter->ireq.completion_data.priv = orig_ireq->completion_data.priv;
 	fiter->ireq.complete_cb = fiemap_iter_done;
 	fiter->apireq.datasource = fiter;
 	fiter->apireq.get_iter = fiemap_get_iter;
