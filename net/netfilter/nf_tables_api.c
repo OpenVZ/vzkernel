@@ -4743,25 +4743,32 @@ static int __init nf_tables_module_init(void)
 {
 	int err;
 
-	err = nf_tables_core_module_init();
+	err = register_pernet_subsys(&nf_tables_net_ops);
 	if (err < 0)
 		return err;
 
+	err = nf_tables_core_module_init();
+	if (err < 0)
+		goto err1;
+
+	/* must be last */
 	err = nfnetlink_subsys_register(&nf_tables_subsys);
 	if (err < 0)
-		goto err;
+		goto err2;
 
 	pr_info("nf_tables: (c) 2007-2009 Patrick McHardy <kaber@trash.net>\n");
-	return register_pernet_subsys(&nf_tables_net_ops);
-err:
+	return err;
+err2:
 	nf_tables_core_module_exit();
+err1:
+	unregister_pernet_subsys(&nf_tables_net_ops);
 	return err;
 }
 
 static void __exit nf_tables_module_exit(void)
 {
-	unregister_pernet_subsys(&nf_tables_net_ops);
 	nfnetlink_subsys_unregister(&nf_tables_subsys);
+	unregister_pernet_subsys(&nf_tables_net_ops);
 	rcu_barrier();
 	nf_tables_core_module_exit();
 }
