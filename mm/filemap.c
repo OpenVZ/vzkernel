@@ -2416,11 +2416,11 @@ page_not_uptodate:
 }
 EXPORT_SYMBOL(filemap_fault);
 
-void filemap_map_pages(struct vm_area_struct *vma, struct vm_fault *vmf)
+static void __filemap_map_pages(struct vm_area_struct *vma, struct vm_fault *vmf,
+				struct file *file)
 {
 	struct radix_tree_iter iter;
 	void **slot;
-	struct file *file = vma->vm_file;
 	struct address_space *mapping = file->f_mapping;
 	loff_t size;
 	struct page *page;
@@ -2428,7 +2428,6 @@ void filemap_map_pages(struct vm_area_struct *vma, struct vm_fault *vmf)
 	unsigned long addr;
 	pte_t *pte;
 
-	rcu_read_lock();
 	radix_tree_for_each_slot(slot, &mapping->page_tree, &iter, vmf->pgoff) {
 		if (iter.index > vmf->max_pgoff)
 			break;
@@ -2484,7 +2483,25 @@ next:
 		if (iter.index == vmf->max_pgoff)
 			break;
 	}
+}
+
+void filemap_map_pages(struct vm_area_struct *vma, struct vm_fault *vmf)
+{
+	struct file *file = vma->vm_file;
+	struct file *peer_file;
+
+	rcu_read_lock();
+	__filemap_map_pages(vma, vmf, file);
+
+	peer_file = rcu_dereference(file->f_mapping->i_peer_file);
+	if (peer_file && atomic_long_inc_not_zero(&peer_file->f_count))
+		__filemap_map_pages(vma, vmf, peer_file);
+	else
+		peer_file = NULL;
 	rcu_read_unlock();
+
+	if (peer_file)
+		fput(peer_file);
 }
 EXPORT_SYMBOL(filemap_map_pages);
 
