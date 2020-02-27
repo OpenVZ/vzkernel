@@ -175,7 +175,7 @@ static void ploop_init_request(struct ploop_request *preq)
 }
 
 static struct ploop_request *
-ploop_alloc_request(struct ploop_device * plo)
+ploop_alloc_request(struct ploop_device *plo, bool congest)
 {
 	struct ploop_request * preq;
 
@@ -201,10 +201,12 @@ ploop_alloc_request(struct ploop_device * plo)
 		finish_wait(&plo->req_waitq, &_wait);
 	}
 
+	if (congest)
+		ploop_congest(plo);
+
 	preq = list_entry(plo->free_list.next, struct ploop_request, list);
 	list_del_init(&preq->list);
 	plo->free_qlen--;
-	ploop_congest(plo);
 	ploop_init_request(preq);
 	return preq;
 }
@@ -3456,7 +3458,7 @@ void ploop_quiesce(struct ploop_device * plo)
 		return;
 
 	spin_lock_irq(&plo->lock);
-	preq = ploop_alloc_request(plo);
+	preq = ploop_alloc_request(plo, true);
 	preq->req_rw = 0;
 	preq->state = (1 << PLOOP_REQ_SYNC) | (1 << PLOOP_REQ_BARRIER);
 	preq->preq_ub = get_beancounter(get_exec_ub());
@@ -3747,7 +3749,7 @@ static void ploop_merge_process(struct ploop_device * plo)
 	for (; num_reqs; num_reqs--) {
 		struct ploop_request * preq;
 
-		preq = ploop_alloc_request(plo);
+		preq = ploop_alloc_request(plo, true);
 
 		preq->req_cluster = ~0U;
 		preq->req_rw = WRITE_SYNC;
@@ -4408,7 +4410,7 @@ static void ploop_relocate(struct ploop_device * plo, int grow_stage)
 
 	init_completion(&plo->maintenance_comp);
 
-	preq = ploop_alloc_request(plo);
+	preq = ploop_alloc_request(plo, true);
 
 	preq->req_cluster = 0;
 	preq->req_rw = WRITE_SYNC;
@@ -4768,7 +4770,7 @@ static void ploop_relocblks_process(struct ploop_device *plo)
 	init_completion(&plo->maintenance_comp);
 
 	for (; num_reqs; num_reqs--) {
-		preq = ploop_alloc_request(plo);
+		preq = ploop_alloc_request(plo, true);
 
 		preq->req_cluster = ~0U; /* uninitialized */
 		preq->req_rw = WRITE_SYNC;
