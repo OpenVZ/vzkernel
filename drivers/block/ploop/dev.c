@@ -521,22 +521,17 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 
 	BUG_ON(list_empty(&plo->free_list));
 	BUG_ON(plo->free_qlen <= 0);
-	preq = list_entry(plo->free_list.next, struct ploop_request, list);
-	list_del_init(&preq->list);
-	plo->free_qlen--;
+	/* Never sleeps since free_list is not empty */
+	preq = ploop_alloc_request(plo, false);
 
 	preq->req_cluster = bio->bi_sector >> plo->cluster_log;
 	bio->bi_next = NULL;
 	preq->req_sector = bio->bi_sector;
 	preq->req_size = bio->bi_size >> 9;
 	preq->req_rw = bio->bi_rw;
-	preq->eng_state = PLOOP_E_ENTRY;
 	preq->state = 0;
 	preq->ppb_state = 0;
-	preq->error = 0;
-	preq->tstamp = jiffies;
 	preq->iblock = 0;
-	preq->prealloc_size = 0;
 
 	if (account_blockable && (bio->bi_rw & REQ_WRITE) && bio->bi_size &&
 	    ploop_pb_check_and_clear_bit(plo->pbd, preq->req_cluster))
@@ -575,7 +570,6 @@ ploop_bio_queue(struct ploop_device * plo, struct bio * bio,
 
 		preq->state = (1 << PLOOP_REQ_SYNC) | (1 << PLOOP_REQ_DISCARD);
 		preq->dst_iblock = 0;
-		preq->bl.head = preq->bl.tail = NULL;
 	} else
 		preq->bl.head = preq->bl.tail = bio;
 
