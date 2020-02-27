@@ -164,6 +164,16 @@ static void ploop_uncongest(struct ploop_device *plo)
 	}
 }
 
+static void ploop_init_request(struct ploop_request *preq)
+{
+	preq->eng_state = PLOOP_E_ENTRY;
+	preq->bl.head = preq->bl.tail = NULL;
+	preq->req_size = 0;
+	preq->error = 0;
+	preq->tstamp = jiffies;
+	preq->prealloc_size = 0;
+}
+
 static struct ploop_request *
 ploop_alloc_request(struct ploop_device * plo)
 {
@@ -195,6 +205,7 @@ ploop_alloc_request(struct ploop_device * plo)
 	list_del_init(&preq->list);
 	plo->free_qlen--;
 	ploop_congest(plo);
+	ploop_init_request(preq);
 	return preq;
 }
 
@@ -3446,13 +3457,8 @@ void ploop_quiesce(struct ploop_device * plo)
 
 	spin_lock_irq(&plo->lock);
 	preq = ploop_alloc_request(plo);
-	preq->bl.head = preq->bl.tail = NULL;
-	preq->req_size = 0;
 	preq->req_rw = 0;
-	preq->eng_state = PLOOP_E_ENTRY;
 	preq->state = (1 << PLOOP_REQ_SYNC) | (1 << PLOOP_REQ_BARRIER);
-	preq->error = 0;
-	preq->tstamp = jiffies;
 	preq->preq_ub = get_beancounter(get_exec_ub());
 
 	init_completion(&qcomp);
@@ -3743,16 +3749,10 @@ static void ploop_merge_process(struct ploop_device * plo)
 
 		preq = ploop_alloc_request(plo);
 
-		preq->bl.tail = preq->bl.head = NULL;
 		preq->req_cluster = ~0U;
-		preq->req_size = 0;
 		preq->req_rw = WRITE_SYNC;
-		preq->eng_state = PLOOP_E_ENTRY;
 		preq->state = (1 << PLOOP_REQ_SYNC) | (1 << PLOOP_REQ_MERGE);
-		preq->error = 0;
-		preq->tstamp = jiffies;
 		preq->iblock = 0;
-		preq->prealloc_size = 0;
 		preq->preq_ub = get_beancounter(get_exec_ub());
 
 		atomic_inc(&plo->maintenance_cnt);
@@ -4410,16 +4410,10 @@ static void ploop_relocate(struct ploop_device * plo, int grow_stage)
 
 	preq = ploop_alloc_request(plo);
 
-	preq->bl.tail = preq->bl.head = NULL;
 	preq->req_cluster = 0;
-	preq->req_size = 0;
 	preq->req_rw = WRITE_SYNC;
-	preq->eng_state = PLOOP_E_ENTRY;
 	preq->state = (1 << PLOOP_REQ_SYNC) | (1 << reloc_type);
-	preq->error = 0;
-	preq->tstamp = jiffies;
 	preq->iblock = (reloc_type == PLOOP_REQ_RELOC_A) ? 0 : plo->grow_start;
-	preq->prealloc_size = 0;
 	preq->preq_ub = get_beancounter(get_exec_ub());
 
 	atomic_inc(&plo->maintenance_cnt);
@@ -4776,16 +4770,10 @@ static void ploop_relocblks_process(struct ploop_device *plo)
 	for (; num_reqs; num_reqs--) {
 		preq = ploop_alloc_request(plo);
 
-		preq->bl.tail = preq->bl.head = NULL;
 		preq->req_cluster = ~0U; /* uninitialized */
-		preq->req_size = 0;
 		preq->req_rw = WRITE_SYNC;
-		preq->eng_state = PLOOP_E_ENTRY;
 		preq->state = (1 << PLOOP_REQ_SYNC) | (1 << PLOOP_REQ_RELOC_S);
-		preq->error = 0;
-		preq->tstamp = jiffies;
 		preq->iblock = 0;
-		preq->prealloc_size = 0;
 		preq->preq_ub = get_beancounter(get_exec_ub());
 
 		atomic_inc(&plo->maintenance_cnt);
