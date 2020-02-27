@@ -1346,6 +1346,7 @@ static const struct vm_operations_struct xfs_file_vm_ops = {
 	.huge_fault	= xfs_filemap_huge_fault,
 	.page_mkwrite	= xfs_filemap_page_mkwrite,
 	.pfn_mkwrite	= xfs_filemap_pfn_mkwrite,
+	.map_pages	= filemap_map_pages,
 };
 
 STATIC int
