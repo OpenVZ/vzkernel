@@ -356,6 +356,7 @@ static const struct vm_operations_struct ext4_dax_vm_ops = {
 static const struct vm_operations_struct ext4_file_vm_ops = {
 	.fault		= ext4_filemap_fault,
 	.page_mkwrite   = ext4_page_mkwrite,
+	.map_pages	= filemap_map_pages,
 };
 
 static int ext4_file_mmap(struct file *file, struct vm_area_struct *vma)
