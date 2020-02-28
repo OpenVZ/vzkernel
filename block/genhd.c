@@ -1300,6 +1300,7 @@ EXPORT_SYMBOL(disk_type);
  */
 static int diskstats_show(struct seq_file *seqf, void *v)
 {
+	struct ve_struct *ve = get_exec_env();
 	struct gendisk *gp = v;
 	struct disk_part_iter piter;
 	struct hd_struct *hd;
@@ -1317,6 +1318,10 @@ static int diskstats_show(struct seq_file *seqf, void *v)
 
 	disk_part_iter_init(&piter, gp, DISK_PITER_INCL_EMPTY_PART0);
 	while ((hd = disk_part_iter_next(&piter))) {
+		if (!ve_is_super(ve) &&
+			(devcgroup_device_permission(S_IFBLK, part_devt(hd),
+						     MAY_READ)))
+				continue;
 
 		if (!gp->queue->mq_ops) {
 			cpu = part_stat_lock();
@@ -1368,7 +1373,7 @@ static const struct file_operations proc_diskstats_operations = {
 
 static int __init proc_genhd_init(void)
 {
-	proc_create("diskstats", 0, NULL, &proc_diskstats_operations);
+	proc_create("diskstats", S_ISVTX, NULL, &proc_diskstats_operations);
 	proc_create("partitions", S_ISVTX, NULL, &proc_partitions_operations);
 	return 0;
 }
