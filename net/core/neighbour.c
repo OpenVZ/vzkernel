@@ -3208,8 +3208,8 @@ int neigh_sysctl_register(struct net_device *dev, struct neigh_parms *p,
 			neigh_proc_base_reachable_time;
 	}
 
-	/* Don't export sysctls to unprivileged users */
-	if (neigh_parms_net(p)->user_ns != &init_user_ns)
+	/* Export sysctls only to root userns on the host and inside a Container */
+	if (ve_net_hide_sysctl(neigh_parms_net(p)))
 		t->neigh_vars[0].procname = NULL;
 
 	switch (neigh_parms_family(p)) {
