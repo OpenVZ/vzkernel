@@ -3300,6 +3300,15 @@ out:
 	return error;
 }
 
+static bool is_visible_task_ve(struct pid_namespace *ns, struct task_struct *task)
+{
+	/* Don't show kthreads inside Containers. */
+	if ((task->flags & PF_KTHREAD) && (ns != &init_pid_ns))
+		return false;
+
+	return true;
+}
+
 struct dentry *proc_pid_lookup(struct inode *dir, struct dentry * dentry, unsigned int flags)
 {
 	struct dentry *result = NULL;
@@ -3314,6 +3323,8 @@ struct dentry *proc_pid_lookup(struct inode *dir, struct dentry * dentry, unsign
 	ns = dentry->d_sb->s_fs_info;
 	rcu_read_lock();
 	task = find_task_by_pid_ns(tgid, ns);
+	if (task && !is_visible_task_ve(ns, task))
+		task = NULL;
 	if (task)
 		get_task_struct(task);
 	rcu_read_unlock();
@@ -3410,6 +3421,9 @@ int proc_pid_readdir(struct file * filp, void * dirent, filldir_t filldir)
 	for (iter = next_tgid(ns, iter);
 	     iter.task;
 	     iter.tgid += 1, iter = next_tgid(ns, iter)) {
+		if (!is_visible_task_ve(ns, iter.task))
+			continue;
+
 		if (is_visible_task(ns, iter.task))
 			__filldir = filldir;
 		else
