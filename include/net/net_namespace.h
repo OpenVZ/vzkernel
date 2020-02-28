@@ -20,6 +20,7 @@
 #include <net/netns/sctp.h>
 #include <net/netns/dccp.h>
 #include <net/netns/netfilter.h>
+#include <net/netns/br_netfilter.h>
 #include <net/netns/x_tables.h>
 #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
 #include <net/netns/conntrack.h>
@@ -108,6 +109,9 @@ struct net {
 	struct netns_xt		xt;
 #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
 	struct netns_ct		ct;
+#endif
+#if defined(CONFIG_BRIDGE_NETFILTER) || defined(CONFIG_BRIDGE_NETFILTER_MODULE)
+	struct netns_brnf	brnf;
 #endif
 #if defined(CONFIG_NF_TABLES) || defined(CONFIG_NF_TABLES_MODULE)
 	struct netns_nftables	nft;
