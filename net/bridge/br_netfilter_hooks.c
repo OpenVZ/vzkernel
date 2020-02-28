@@ -45,7 +45,6 @@
 #endif
 
 #ifdef CONFIG_SYSCTL
-static struct ctl_table_header *brnf_sysctl_header;
 static int brnf_call_iptables __read_mostly = 1;
 static int brnf_call_ip6tables __read_mostly = 1;
 static int brnf_call_arptables __read_mostly = 1;
@@ -1004,35 +1003,109 @@ static struct ctl_table brnf_table[] = {
 };
 #endif
 
+#ifdef CONFIG_SYSCTL
+static int br_netfilter_init_sysctl(struct net *net)
+{
+	struct ctl_table *table;
+	int num_entries, i;
+
+	table = kmemdup(brnf_table, sizeof(brnf_table), GFP_KERNEL);
+	if (!table)
+		goto out_kmemdup;
+
+	/*
+	 * Bridge netfilter sysctls are not virtualized, show them in RO mode
+	 * in non-init netns.
+	 */
+	if (!net_eq(net, &init_net)) {
+		num_entries = sizeof(brnf_table) / sizeof(struct ctl_table);
+		for (i = 0; i < num_entries; i++)
+			table[i].mode = 0444;
+	}
+
+	/* Don't export sysctls to unprivileged users */
+	if (ve_net_hide_sysctl(net))
+		table[0].procname = NULL;
+
+	net->brnf.brnf_sysctl_header = register_net_sysctl(net, "net/bridge",
+							   table);
+	if (!net->brnf.brnf_sysctl_header)
+		goto out_unregister_netfilter;
+
+	return 0;
+
+out_unregister_netfilter:
+	kfree(table);
+out_kmemdup:
+	return -ENOMEM;
+}
+
+static void br_netfilter_fini_sysctl(struct net *net)
+{
+	struct ctl_table *table;
+
+	table = net->brnf.brnf_sysctl_header->ctl_table_arg;
+	unregister_net_sysctl_table(net->brnf.brnf_sysctl_header);
+	kfree(table);
+}
+#else
+static int br_netfilter_init_sysctl(struct net *net)
+{
+	return 0;
+}
+
+static void br_netfilter_fini_sysctl(struct net *net)
+{
+}
+#endif /* CONFIG_SYSCTL */
+
+static int br_netfilter_pernet_init(struct net *net)
+{
+	return br_netfilter_init_sysctl(net);
+}
+
+static void br_netfilter_pernet_exit(struct list_head *net_exit_list)
+{
+	struct net *net;
+
+	list_for_each_entry(net, net_exit_list, exit_list)
+		br_netfilter_fini_sysctl(net);
+}
+
+static struct pernet_operations br_netfilter_net_ops = {
+	.init		= br_netfilter_pernet_init,
+	.exit_batch	= br_netfilter_pernet_exit,
+};
+
 static int __init br_netfilter_init(void)
 {
 	int ret;
 
 	ret = nf_register_hooks(br_nf_ops, ARRAY_SIZE(br_nf_ops));
 	if (ret < 0)
-		return ret;
+		goto out_start;
 
-#ifdef CONFIG_SYSCTL
-	brnf_sysctl_header = register_net_sysctl(&init_net, "net/bridge", brnf_table);
-	if (brnf_sysctl_header == NULL) {
-		printk(KERN_WARNING
-		       "br_netfilter: can't register to sysctl.\n");
-		nf_unregister_hooks(br_nf_ops, ARRAY_SIZE(br_nf_ops));
-		return -ENOMEM;
-	}
-#endif
+	ret = register_pernet_subsys(&br_netfilter_net_ops);
+	if (ret < 0)
+		goto out_pernet;
+
 	RCU_INIT_POINTER(nf_br_ops, &br_ops);
 	printk(KERN_NOTICE "Bridge firewalling registered\n");
+
 	return 0;
+
+out_pernet:
+	printk(KERN_WARNING "br_netfilter: can't register to sysctl.\n");
+	nf_unregister_hooks(br_nf_ops, ARRAY_SIZE(br_nf_ops));
+out_start:
+	return ret;
 }
 
 static void __exit br_netfilter_fini(void)
 {
 	RCU_INIT_POINTER(nf_br_ops, NULL);
+	unregister_pernet_subsys(&br_netfilter_net_ops);
 	nf_unregister_hooks(br_nf_ops, ARRAY_SIZE(br_nf_ops));
-#ifdef CONFIG_SYSCTL
-	unregister_net_sysctl_table(brnf_sysctl_header);
-#endif
 }
 
 module_init(br_netfilter_init);
