@@ -221,6 +221,9 @@ int vz_security_family_check(struct net *net, int family, int type)
 				case RTM_NEWNEIGH:
 				case RTM_DELNEIGH:
 				case RTM_GETNEIGH:
+				case RTM_GETLINK:
+				case RTM_DELLINK:
+				case RTM_SETLINK:
 					return 0;
 			}
 	default:
