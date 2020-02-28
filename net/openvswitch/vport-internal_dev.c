@@ -157,7 +157,8 @@ static void do_setup(struct net_device *netdev)
 
 	netdev->features = NETIF_F_LLTX | NETIF_F_SG | NETIF_F_FRAGLIST |
 			   NETIF_F_HIGHDMA | NETIF_F_HW_CSUM |
-			   NETIF_F_GSO_SOFTWARE | NETIF_F_GSO_ENCAP_ALL;
+			   NETIF_F_GSO_SOFTWARE | NETIF_F_GSO_ENCAP_ALL |
+			   NETIF_F_VIRTUAL;
 
 	netdev->vlan_features = netdev->features;
 	netdev->hw_enc_features = netdev->features;
