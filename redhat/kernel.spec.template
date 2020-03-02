@@ -1346,6 +1346,9 @@ BuildKernel() {
     fi
 
     %{make} ARCH=$Arch olddefconfig >/dev/null
+
+    # This ensures build-ids are unique to allow parallel debuginfo
+    perl -p -i -e "s/^CONFIG_BUILD_SALT.*/CONFIG_BUILD_SALT=\"%{KVERREL}\"/" .config
     %{make} ARCH=$Arch KCFLAGS="$KCFLAGS" WITH_GCOV="%{?with_gcov}" %{?_smp_mflags} $MakeTarget %{?sparse_mflags} %{?kernel_mflags}
     if [ $DoModules -eq 1 ]; then
 	%{make} ARCH=$Arch KCFLAGS="$KCFLAGS" WITH_GCOV="%{?with_gcov}" %{?_smp_mflags} modules %{?sparse_mflags} || exit 1
