@@ -1675,8 +1675,8 @@ static int dio_congested(struct ploop_io * io, int bits)
 
 static void dio_queue_settings(struct ploop_io * io, struct request_queue * q)
 {
-	ploop_set_discard_limits(io->plo);
 	blk_queue_stack_limits(q, bdev_get_queue(io->files.bdev));
+	ploop_set_discard_limits(io->plo);
 }
 
 static void dio_issue_flush(struct ploop_io * io, struct ploop_request *preq)
