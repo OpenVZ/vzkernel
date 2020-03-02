@@ -122,7 +122,7 @@ Summary: The Linux kernel
 # Only build the debug kernel (--with dbgonly):
 %define with_dbgonly   %{?_with_dbgonly:      1} %{?!_with_dbgonly:      0}
 # Control whether we perform a compat. check against published ABI.
-#%define with_kabichk   %{?_without_kabichk:   0} %{?!_without_kabichk:   1}
+%define with_kabichk   %{?_without_kabichk:   0} %{?!_without_kabichk:   1}
 # Temporarily disable kabi checks until RC.
 %define with_kabichk 0
 # Control whether we perform a compat. check against DUP ABI.
