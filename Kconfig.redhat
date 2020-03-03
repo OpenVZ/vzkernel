@@ -5,7 +5,7 @@
 
 menu "Red Hat options"
 
-config RH_DISABLE_DEPRECATED
+config RHEL_DIFFERENCES
 	bool "Remove support for deprecated features"
 	help
 	  Red Hat may choose to deprecate certain features in its kernels.

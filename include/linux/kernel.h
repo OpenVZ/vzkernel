@@ -533,7 +533,7 @@ static inline void ftrace_dump(enum ftrace_dump_mode oops_dump_mode) { }
 
 struct module;
 
-#ifdef CONFIG_RH_DISABLE_DEPRECATED
+#ifdef CONFIG_RHEL_DIFFERENCES
 void mark_hardware_unsupported(const char *msg);
 void mark_hardware_deprecated(const char *msg);
 void mark_tech_preview(const char *msg, struct module *mod);

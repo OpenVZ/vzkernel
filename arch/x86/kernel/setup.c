@@ -1348,7 +1348,7 @@ void __init setup_arch(char **cmdline_p)
 		efi_apply_memmap_quirks();
 #endif
 
-#ifdef CONFIG_RH_DISABLE_DEPRECATED
+#ifdef CONFIG_RHEL_DIFFERENCES
 	rh_check_supported();
 #endif
 
