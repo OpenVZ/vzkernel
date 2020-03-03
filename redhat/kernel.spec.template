@@ -163,7 +163,7 @@ Summary: The Linux kernel
 # Set debugbuildsenabled to 1 for production (build separate debug kernels)
 #  and 0 for rawhide (all kernels are debug kernels).
 # See also 'make debug' and 'make release'.
-%define debugbuildsenabled 1
+%define debugbuildsenabled %%DEBUG_BUILDS_ENABLED%%
 
 # The kernel tarball/base version
 %define kversion %%KVERSION%%.%%KPATCHLEVEL%%

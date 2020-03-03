@@ -1,4 +1,8 @@
 #!/bin/sh
+#
+# Arguments
+#    SNAPSHOT: indicates whether or not this is based on an upstream tag. 1
+#	indicates it is not, 0 indicates it is.
 
 SOURCES=$1
 SPECFILE=$2
@@ -16,6 +20,7 @@ MARKER=${13}
 LAST_MARKER=${14}
 SINGLE_TARBALL=${15}
 TARFILE_RELEASE=${16}
+SNAPSHOT=${17}
 RPMVERSION=${KVERSION}.${KPATCHLEVEL}.${KSUBLEVEL}
 clogf="$SOURCES/changelog"
 # hide [redhat] entries from changelog
@@ -205,6 +210,15 @@ fi
 cat $clogf.rev $CHANGELOG > $clogf.full
 mv -f $clogf.full $CHANGELOG
 
+if [ "$SNAPSHOT" = 0 ]; then
+	# This is based off a tag on Linus's tree (e.g. v5.5 or v5.5-rc5).
+	# Two kernels are built, one with debug configuration and one without.
+	DEBUG_BUILDS_ENABLED=1
+else
+	# All kernels are built with debug configurations.
+	DEBUG_BUILDS_ENABLED=0
+fi
+
 test -n "$SPECFILE" &&
         sed -i -e "
 	/%%CHANGELOG%%/r $CHANGELOG
@@ -216,6 +230,7 @@ test -n "$SPECFILE" &&
 	s/%%SPECRELEASE%%/$SPECRELEASE/
 	s/%%DISTRO_BUILD%%/$DISTRO_BUILD/
 	s/%%RELEASED_KERNEL%%/$RELEASED_KERNEL/
+	s/%%DEBUG_BUILDS_ENABLED%%/$DEBUG_BUILDS_ENABLED/
 	s/%%TARBALL_VERSION%%/$TARFILE_RELEASE/" $SPECFILE
 
 
