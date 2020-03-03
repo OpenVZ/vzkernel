@@ -164,6 +164,23 @@ static void ploop_uncongest(struct ploop_device *plo)
 	}
 }
 
+static int fast_path_reqs_count(struct ploop_device *plo)
+{
+	int ret;
+	unsigned long flags;
+
+	spin_lock_irqsave(&plo->lock, flags);
+	ret = plo->fastpath_reqs;
+	spin_unlock_irqrestore(&plo->lock, flags);
+
+	return ret;
+}
+
+static void wait_fast_path_reqs(struct ploop_device *plo)
+{
+	wait_event(plo->fast_path_waitq, fast_path_reqs_count(plo) == 0);
+}
+
 static void ploop_init_request(struct ploop_request *preq)
 {
 	preq->eng_state = PLOOP_E_ENTRY;
@@ -656,6 +673,8 @@ DEFINE_BIO_CB(ploop_fast_end_io)
 	    (test_bit(PLOOP_S_EXITING, &plo->state) ||
 	     !list_empty(&plo->entry_queue)))
 		wake_up_interruptible(&plo->waitq);
+	if (plo->fast_path_disabled_count && !plo->fastpath_reqs)
+		wake_up(&plo->fast_path_waitq);
 	spin_unlock_irqrestore(&plo->lock, flags);
 
 	BIO_ENDIO(plo->queue, orig, err);
@@ -969,7 +988,8 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 
 	/* No fast path, when maintenance is in progress.
 	 * (PLOOP_S_TRACK was checked immediately above) */
-	if (FAST_PATH_DISABLED(plo->maintenance_type))
+	if (FAST_PATH_DISABLED(plo->maintenance_type) ||
+	    plo->fast_path_disabled_count)
 		goto queue;
 
 	/* Attention state, always queue */
@@ -3444,7 +3464,6 @@ out_destroy:
 	return err;
 }
 
-
 void ploop_quiesce(struct ploop_device * plo)
 {
 	struct completion qcomp;
@@ -3454,6 +3473,8 @@ void ploop_quiesce(struct ploop_device * plo)
 		return;
 
 	spin_lock_irq(&plo->lock);
+	plo->fast_path_disabled_count++;
+
 	preq = ploop_alloc_request(plo, true);
 	preq->req_rw = 0;
 	preq->state = (1 << PLOOP_REQ_SYNC) | (1 << PLOOP_REQ_BARRIER);
@@ -3471,6 +3492,7 @@ void ploop_quiesce(struct ploop_device * plo)
 		wake_up_interruptible(&plo->waitq);
 	spin_unlock_irq(&plo->lock);
 
+	wait_fast_path_reqs(plo);
 	wait_for_completion(&qcomp);
 	plo->quiesce_comp = NULL;
 }
@@ -3478,6 +3500,10 @@ EXPORT_SYMBOL(ploop_quiesce);
 
 void ploop_relax(struct ploop_device * plo)
 {
+	spin_lock_irq(&plo->lock);
+	plo->fast_path_disabled_count--;
+	spin_unlock_irq(&plo->lock);
+
 	if (!test_bit(PLOOP_S_RUNNING, &plo->state))
 		return;
 
@@ -5462,6 +5488,7 @@ static struct ploop_device *__ploop_dev_alloc(int index)
 	init_waitqueue_head(&plo->req_waitq);
 	init_waitqueue_head(&plo->freeze_waitq);
 	init_waitqueue_head(&plo->event_waitq);
+	init_waitqueue_head(&plo->fast_path_waitq);
 	plo->tune = DEFAULT_PLOOP_TUNE;
 	map_init(plo, &plo->map);
 	track_init(plo);
