@@ -407,6 +407,7 @@ struct ploop_device
 	wait_queue_head_t	req_waitq;
 	wait_queue_head_t	freeze_waitq;
 	wait_queue_head_t	event_waitq;
+	wait_queue_head_t	fast_path_waitq;
 
 	struct ploop_map	map;
 	struct ploop_map	*trans_map;
@@ -473,6 +474,7 @@ struct ploop_device
 	struct block_device *dm_crypt_bdev;
 
 	unsigned long		locking_state; /* plo locked by userspace */
+	unsigned int		fast_path_disabled_count;
 };
 
 enum
