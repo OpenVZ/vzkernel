@@ -91,7 +91,7 @@ static int dio_discard(struct ploop_io *io, struct ploop_request *preq, sector_t
 	struct file *file = io->files.file;
 	int err;
 
-	if (!dio_may_fallocate(io)) {
+	if (!dio_may_fallocate(io) || WARN_ON(!sec)) {
 		preq->eng_state = PLOOP_E_COMPLETE;
 		preq->error = -EOPNOTSUPP;
 		return 0;
