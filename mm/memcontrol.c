@@ -3967,6 +3967,7 @@ static int mem_cgroup_move_account(struct page *page,
 {
 	unsigned long flags;
 	int ret;
+	bool is_offline;
 
 	VM_BUG_ON(from == to);
 	VM_BUG_ON_PAGE(PageLRU(page), page);
@@ -3980,13 +3981,19 @@ static int mem_cgroup_move_account(struct page *page,
 	if (nr_pages > 1 && !PageTransHuge(page))
 		goto out;
 
-	/*
-	 * Prevent mem_cgroup_migrate() from looking at pc->mem_cgroup
-	 * of its source page while we change it: page migration takes
-	 * both pages off the LRU, but page cache replacement doesn't.
-	 */
-	if (!trylock_page(page))
-		goto out;
+	is_offline = READ_ONCE(from->is_offline);
+	if (!is_offline) {
+		/* Protect us from racing against try_get_mem_cgroup_from_page() */
+		if (!trylock_page(page))
+			goto out;
+	} else {
+		/*
+		 * Prevent mem_cgroup_migrate() from looking at pc->mem_cgroup
+		 * of its source page while we change it: page migration takes
+		 * both pages off the LRU, but page cache replacement doesn't.
+		 */
+		spin_lock_irq(&page_zone(page)->lru_lock);
+	}
 
 	ret = -EINVAL;
 	if (!PageCgroupUsed(pc) || pc->mem_cgroup != from)
@@ -4019,7 +4026,10 @@ static int mem_cgroup_move_account(struct page *page,
 	memcg_check_events(from, page);
 	local_irq_restore(flags);
 out_unlock:
-	unlock_page(page);
+	if (!is_offline)
+		unlock_page(page);
+	else
+		spin_unlock_irq(&page_zone(page)->lru_lock);
 out:
 	return ret;
 }
@@ -7832,6 +7842,7 @@ void mem_cgroup_migrate(struct page *oldpage, struct page *newpage,
 {
 	unsigned int nr_pages = 1;
 	struct page_cgroup *pc;
+	struct mem_cgroup *memcg;
 	int isolated;
 
 	VM_BUG_ON_PAGE(!PageLocked(oldpage), oldpage);
@@ -7865,17 +7876,18 @@ void mem_cgroup_migrate(struct page *oldpage, struct page *newpage,
 	if (lrucare)
 		lock_page_lru(oldpage, &isolated);
 
+	memcg = READ_ONCE(pc->mem_cgroup);
 	pc->flags = 0;
 
 	if (lrucare)
 		unlock_page_lru(oldpage, isolated);
 
 	local_irq_disable();
-	mem_cgroup_charge_statistics(pc->mem_cgroup, oldpage, -nr_pages);
-	memcg_check_events(pc->mem_cgroup, oldpage);
+	mem_cgroup_charge_statistics(memcg, oldpage, -nr_pages);
+	memcg_check_events(memcg, oldpage);
 	local_irq_enable();
 
-	commit_charge(newpage, pc->mem_cgroup, nr_pages, lrucare);
+	commit_charge(newpage, memcg, nr_pages, lrucare);
 }
 
 static int __init cgroup_memory(char *s)
