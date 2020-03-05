@@ -181,6 +181,41 @@ static void wait_fast_path_reqs(struct ploop_device *plo)
 	wait_event(plo->pending_waitq, fast_path_reqs_count(plo) == 0);
 }
 
+static int discard_reqs_count(struct ploop_device *plo)
+{
+	int ret;
+
+	spin_lock_irq(&plo->lock);
+	ret = plo->discard_inflight_reqs;
+	spin_unlock_irq(&plo->lock);
+
+	return ret;
+}
+
+static void enable_discard(struct ploop_device *plo)
+{
+	spin_lock_irq(&plo->lock);
+	WARN_ON_ONCE(plo->discard_disabled_count-- == 0);
+	spin_unlock_irq(&plo->lock);
+}
+
+/* Returns 0 or -EINTR */
+static int disable_and_wait_discard(struct ploop_device *plo)
+{
+	int ret;
+
+	spin_lock_irq(&plo->lock);
+	plo->discard_disabled_count++;
+	spin_unlock_irq(&plo->lock);
+
+	ret = wait_event_interruptible(plo->pending_waitq,
+				       discard_reqs_count(plo) == 0);
+	if (ret)
+		enable_discard(plo);
+
+	return ret;
+}
+
 static void ploop_init_request(struct ploop_request *preq)
 {
 	preq->eng_state = PLOOP_E_ENTRY;
@@ -2233,6 +2268,12 @@ static bool ploop_can_issue_discard(struct ploop_device *plo,
 	if (test_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state))
 		return false;
 
+	if (plo->discard_disabled_count)
+		return false;
+
+	if (plo->maintenance_type != PLOOP_MNTN_OFF)
+		return false;
+
 	if (!list_is_singular(&plo->map.delta_list))
 		return false;
 
@@ -3591,13 +3632,17 @@ static int ploop_snapshot(struct ploop_device * plo, unsigned long arg,
 	if (IS_ERR(delta))
 		return PTR_ERR(delta);
 
-	err = delta->ops->compose(delta, 1, &chunk);
+	err = disable_and_wait_discard(plo);
 	if (err)
 		goto out_destroy;
 
+	err = delta->ops->compose(delta, 1, &chunk);
+	if (err)
+		goto out_enable;
+
 	err = delta->ops->open(delta);
 	if (err)
-		goto out_destroy;
+		goto out_enable;
 
 	err = KOBJECT_ADD(&delta->kobj, kobject_get(&plo->kobj),
 			  "%d", delta->level);
@@ -3650,6 +3695,7 @@ static int ploop_snapshot(struct ploop_device * plo, unsigned long arg,
 	if (err)
 		goto out_close2;
 
+	enable_discard(plo);
 	return 0;
 
 out_close2:
@@ -3657,6 +3703,8 @@ out_close2:
 out_close:
 	kobject_put(&plo->kobj);
 	delta->ops->stop(delta);
+out_enable:
+	enable_discard(plo);
 out_destroy:
 	delta->ops->destroy(delta);
 	kobject_put(&delta->kobj);
@@ -4507,16 +4555,28 @@ static int ploop_grow(struct ploop_device *plo, struct block_device *bdev,
 	if (!delta->ops->prepare_grow)
 		return -EINVAL;
 
+	err = disable_and_wait_discard(plo);
+	if (err)
+		return -EINTR;
+
 	ploop_quiesce(plo);
 	err = delta->ops->prepare_grow(delta, &new_size, &reloc);
-	if (err)
+	if (err) {
+		enable_discard(plo);
 		goto grow_failed;
+	}
 
 	plo->grow_new_size = new_size;
 
 	/* prepare_grow() succeeded, but more actions needed */
 	if (reloc) {
 		plo->maintenance_type = PLOOP_MNTN_GROW;
+		/*
+		 * maintenance_type is changed, so now it prohibits
+		 * discard bios. Below we may leave this function,
+		 * and let's return discard counter back.
+		 */
+		enable_discard(plo);
 		ploop_relax(plo);
 		for (; grow_stage < PLOOP_GROW_MAX; grow_stage++) {
 			ploop_relocate(plo, grow_stage);
@@ -4541,7 +4601,8 @@ already:
 		new_size = plo->grow_new_size;
 		clear_bit(PLOOP_S_NULLIFY, &plo->state);
 		plo->maintenance_type = PLOOP_MNTN_OFF;
-	}
+	} else
+		enable_discard(plo);
 
 	/* Update bdev size and friends */
 	if (delta->ops->complete_grow) {
