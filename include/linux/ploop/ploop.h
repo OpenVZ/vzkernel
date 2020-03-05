@@ -476,6 +476,7 @@ struct ploop_device
 
 	unsigned long		locking_state; /* plo locked by userspace */
 	unsigned int		fast_path_disabled_count;
+	unsigned int		discard_disabled_count;
 };
 
 enum
