@@ -903,6 +903,7 @@ static inline void ext4_quota_off_umount(struct super_block *sb)
 static void ext4_put_super(struct super_block *sb)
 {
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
+	struct buffer_head **group_desc;
 	struct ext4_super_block *es = sbi->s_es;
 	int aborted = 0;
 	struct workqueue_struct * rsv_conversion_wq = sbi->rsv_conversion_wq;
@@ -945,9 +946,12 @@ static void ext4_put_super(struct super_block *sb)
 	}
 	kobject_del(&sbi->s_kobj);
 
+	rcu_read_lock();
+	group_desc = rcu_dereference(sbi->s_group_desc);
 	for (i = 0; i < sbi->s_gdb_count; i++)
-		brelse(sbi->s_group_desc[i]);
-	kvfree(sbi->s_group_desc);
+		brelse(group_desc[i]);
+	kvfree(group_desc);
+	rcu_read_unlock();
 	kvfree(sbi->s_flex_groups);
 	percpu_counter_destroy(&sbi->s_freeclusters_counter);
 	percpu_counter_destroy(&sbi->s_freeinodes_counter);
@@ -2218,13 +2222,14 @@ int ext4_alloc_group_desc_bh_array(struct super_block *sb, ext4_group_t ngroup)
 		return -ENOMEM;
 	}
 
-	o_group_desc = sbi->s_group_desc;
+	rcu_read_lock();
+	o_group_desc = rcu_dereference(EXT4_SB(sb)->s_group_desc);
 	memcpy(n_group_desc, o_group_desc,
 	       sbi->s_gdb_count * sizeof(struct buffer_head *));
-	WRITE_ONCE(sbi->s_group_desc, n_group_desc);
+	rcu_read_unlock();
+	rcu_assign_pointer(EXT4_SB(sb)->s_group_desc, n_group_desc);
 
-	/* FIXME: rcu is needed here. See ms commit 1d0c3924a92e */
-	kvfree(o_group_desc);
+	ext4_kvfree_array_rcu(o_group_desc);
 	return 0;
 }
 
@@ -3864,7 +3869,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 {
 	struct dax_device *dax_dev = fs_dax_get_by_bdev(sb->s_bdev);
 	char *orig_data = kstrdup(data, GFP_KERNEL);
-	struct buffer_head *bh;
+	struct buffer_head *bh, **group_desc;
 	struct ext4_super_block *es = NULL;
 	struct ext4_sb_info *sbi = kzalloc(sizeof(*sbi), GFP_KERNEL);
 	ext4_fsblk_t block;
@@ -4456,9 +4461,10 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 			goto failed_mount;
 		}
 	}
-	sbi->s_group_desc = kvmalloc(db_count *
+	rcu_assign_pointer(sbi->s_group_desc,
+			   kvmalloc(db_count *
 					  sizeof(struct buffer_head *),
-					  GFP_KERNEL);
+					  GFP_KERNEL));
 	if (sbi->s_group_desc == NULL) {
 		ext4_msg(sb, KERN_ERR, "not enough memory");
 		ret = -ENOMEM;
@@ -4475,14 +4481,18 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	bgl_lock_init(sbi->s_blockgroup_lock);
 
 	for (i = 0; i < db_count; i++) {
+		struct buffer_head *tmp_bh;
 		block = descriptor_loc(sb, logical_sb_block, i);
-		sbi->s_group_desc[i] = sb_bread(sb, block);
-		if (!sbi->s_group_desc[i]) {
+		tmp_bh = sb_bread(sb, block);
+		if (!tmp_bh) {
 			ext4_msg(sb, KERN_ERR,
 			       "can't read group descriptor %d", i);
 			db_count = i;
 			goto failed_mount2;
 		}
+		rcu_read_lock();
+		rcu_dereference(sbi->s_group_desc)[i] = tmp_bh;
+		rcu_read_unlock();
 	}
 	sbi->s_gdb_count = db_count;
 	if (!ext4_check_descriptors(sb, logical_sb_block, &first_not_zeroed)) {
@@ -4832,9 +4842,12 @@ failed_mount3:
 	if (sbi->s_mmp_tsk)
 		kthread_stop(sbi->s_mmp_tsk);
 failed_mount2:
+	rcu_read_lock();
+	group_desc = rcu_dereference(sbi->s_group_desc);
 	for (i = 0; i < db_count; i++)
-		brelse(sbi->s_group_desc[i]);
-	kvfree(sbi->s_group_desc);
+		brelse(group_desc[i]);
+	kvfree(group_desc);
+	rcu_read_unlock();
 failed_mount:
 	if (sbi->s_chksum_driver)
 		crypto_free_shash(sbi->s_chksum_driver);
