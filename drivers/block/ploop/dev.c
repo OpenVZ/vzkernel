@@ -178,7 +178,7 @@ static int fast_path_reqs_count(struct ploop_device *plo)
 
 static void wait_fast_path_reqs(struct ploop_device *plo)
 {
-	wait_event(plo->fast_path_waitq, fast_path_reqs_count(plo) == 0);
+	wait_event(plo->pending_waitq, fast_path_reqs_count(plo) == 0);
 }
 
 static void ploop_init_request(struct ploop_request *preq)
@@ -674,8 +674,8 @@ DEFINE_BIO_CB(ploop_fast_end_io)
 	     !list_empty(&plo->entry_queue)))
 		wake_up_interruptible(&plo->waitq);
 	if (!plo->fastpath_reqs &&
-	    waitqueue_active(&plo->fast_path_waitq))
-		wake_up(&plo->fast_path_waitq);
+	    waitqueue_active(&plo->pending_waitq))
+		wake_up(&plo->pending_waitq);
 	spin_unlock_irqrestore(&plo->lock, flags);
 
 	BIO_ENDIO(plo->queue, orig, err);
@@ -5500,7 +5500,7 @@ static struct ploop_device *__ploop_dev_alloc(int index)
 	init_waitqueue_head(&plo->req_waitq);
 	init_waitqueue_head(&plo->freeze_waitq);
 	init_waitqueue_head(&plo->event_waitq);
-	init_waitqueue_head(&plo->fast_path_waitq);
+	init_waitqueue_head(&plo->pending_waitq);
 	plo->tune = DEFAULT_PLOOP_TUNE;
 	map_init(plo, &plo->map);
 	track_init(plo);
