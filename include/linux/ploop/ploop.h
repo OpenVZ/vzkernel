@@ -381,6 +381,7 @@ struct ploop_device
 	struct bio		*bio_sync;
 	struct bio_list		bio_discard_list;
 	int			bio_discard_qlen;
+	int			bio_discard_inflight_reqs;
 	int			bio_qlen;
 	int			bio_total;
 
