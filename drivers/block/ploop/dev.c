@@ -991,7 +991,7 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 	 * (PLOOP_S_TRACK was checked immediately above) */
 	if (FAST_PATH_DISABLED(plo->maintenance_type) ||
 	    plo->fast_path_disabled_count ||
-	    plo->bio_discard_inflight_reqs)
+	    plo->discard_inflight_reqs)
 		goto queue;
 
 	/* Attention state, always queue */
@@ -1381,7 +1381,7 @@ static void ploop_complete_request(struct ploop_request * preq)
 	spin_lock_irq(&plo->lock);
 	plo->active_reqs--;
 	if (preq->req_rw & REQ_DISCARD)
-		plo->bio_discard_inflight_reqs--;
+		plo->discard_inflight_reqs--;
 	spin_unlock_irq(&plo->lock);
 
 	while (preq->bl.head) {
@@ -3165,7 +3165,7 @@ static int ploop_thread(void * data)
 
 			plo->active_reqs++;
 			if ((preq->req_rw & REQ_DISCARD) &&
-			    (plo->bio_discard_inflight_reqs++) == 0)
+			    (plo->discard_inflight_reqs++) == 0)
 				wait_fast_path = true;
 			ploop_entry_qlen_dec(preq);
 
