@@ -673,8 +673,8 @@ DEFINE_BIO_CB(ploop_fast_end_io)
 	    (test_bit(PLOOP_S_EXITING, &plo->state) ||
 	     !list_empty(&plo->entry_queue)))
 		wake_up_interruptible(&plo->waitq);
-	if ((plo->fast_path_disabled_count || plo->bio_discard_inflight_reqs) &&
-	    !plo->fastpath_reqs)
+	if (!plo->fastpath_reqs &&
+	    waitqueue_active(&plo->fast_path_waitq))
 		wake_up(&plo->fast_path_waitq);
 	spin_unlock_irqrestore(&plo->lock, flags);
 
