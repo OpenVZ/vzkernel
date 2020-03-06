@@ -146,7 +146,7 @@ CHANGELOG_PREV:=$(PACKAGE_NAME).changelog-$(RHEL_MAJOR).$(shell expr $(RHEL_MINO
 ifeq ("$(DIST)", ".elrdy")
   RHPRODUCT:=rhel-ready
 else ifeq ("$(IS_FEDORA)", "1")
-  RHPRODUCT:=rhel-ready
+  RHPRODUCT:=master
 else
   RHPRODUCT:=rhel-$(RHEL_MAJOR).$(RHEL_MINOR).0
 endif
