@@ -298,7 +298,7 @@ static u32 show_discard_bios(struct ploop_device * plo)
 
 static u32 show_discard_inflight_bios(struct ploop_device * plo)
 {
-	return plo->bio_discard_inflight_reqs;
+	return plo->discard_inflight_reqs;
 }
 
 static u32 show_active_reqs(struct ploop_device * plo)
