@@ -2,7 +2,11 @@
 #
 
 # Command to invoke rhpkg
-RHPKG_BIN:=rhpkg-sha512
+ifeq ("$(IS_FEDORA)", "1")
+	RHPKG_BIN:=fedpkg
+else
+	RHPKG_BIN:=rhpkg-sha512
+endif
 # Kerberos username for pkgs.devel.redhat.com
 RHDISTGIT_USER:="$(shell whoami)"
 # Local dist-git _clean_ clone. To be used when updating dist-git
