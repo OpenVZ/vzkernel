@@ -2566,13 +2566,14 @@ int ext4_alloc_group_desc_bh_array(struct super_block *sb, ext4_group_t ngroup)
 		return -ENOMEM;
 	}
 
-	o_group_desc = sbi->s_group_desc;
+	rcu_read_lock();
+	o_group_desc = rcu_dereference(EXT4_SB(sb)->s_group_desc);
 	memcpy(n_group_desc, o_group_desc,
 	       sbi->s_gdb_count * sizeof(struct buffer_head *));
-	WRITE_ONCE(sbi->s_group_desc, n_group_desc);
+	rcu_read_unlock();
+	rcu_assign_pointer(EXT4_SB(sb)->s_group_desc, n_group_desc);
 
-	/* FIXME: rcu is needed here. See ms commit 1d0c3924a92e */
-	kvfree(o_group_desc);
+	ext4_kvfree_array_rcu(o_group_desc);
 	return 0;
 }
 
