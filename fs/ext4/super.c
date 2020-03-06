@@ -2196,7 +2196,7 @@ int ext4_alloc_group_desc_bh_array(struct super_block *sb, ext4_group_t ngroup)
 {
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	unsigned long num_desc = DIV_ROUND_UP(ngroup,  EXT4_DESC_PER_BLOCK(sb));
-	struct buffer_head **n_group_desc;
+	struct buffer_head **o_group_desc, **n_group_desc;
 
 	if (num_desc <= sbi->s_gdb_count)
 		return 0;
@@ -2208,11 +2208,13 @@ int ext4_alloc_group_desc_bh_array(struct super_block *sb, ext4_group_t ngroup)
 		return -ENOMEM;
 	}
 
-	memcpy(n_group_desc, sbi->s_group_desc,
+	o_group_desc = sbi->s_group_desc;
+	memcpy(n_group_desc, o_group_desc,
 	       sbi->s_gdb_count * sizeof(struct buffer_head *));
-	kvfree(sbi->s_group_desc);
+	WRITE_ONCE(sbi->s_group_desc, n_group_desc);
 
-	sbi->s_group_desc = n_group_desc;
+	/* FIXME: rcu is needed here. See ms commit 1d0c3924a92e */
+	kvfree(o_group_desc);
 	return 0;
 }
 
