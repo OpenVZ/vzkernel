@@ -673,7 +673,8 @@ DEFINE_BIO_CB(ploop_fast_end_io)
 	    (test_bit(PLOOP_S_EXITING, &plo->state) ||
 	     !list_empty(&plo->entry_queue)))
 		wake_up_interruptible(&plo->waitq);
-	if (plo->fast_path_disabled_count && !plo->fastpath_reqs)
+	if ((plo->fast_path_disabled_count || plo->bio_discard_inflight_reqs) &&
+	    !plo->fastpath_reqs)
 		wake_up(&plo->fast_path_waitq);
 	spin_unlock_irqrestore(&plo->lock, flags);
 
@@ -989,7 +990,8 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 	/* No fast path, when maintenance is in progress.
 	 * (PLOOP_S_TRACK was checked immediately above) */
 	if (FAST_PATH_DISABLED(plo->maintenance_type) ||
-	    plo->fast_path_disabled_count)
+	    plo->fast_path_disabled_count ||
+	    plo->bio_discard_inflight_reqs)
 		goto queue;
 
 	/* Attention state, always queue */
@@ -1378,6 +1380,8 @@ static void ploop_complete_request(struct ploop_request * preq)
 	 */
 	spin_lock_irq(&plo->lock);
 	plo->active_reqs--;
+	if (preq->req_rw & REQ_DISCARD)
+		plo->bio_discard_inflight_reqs--;
 	spin_unlock_irq(&plo->lock);
 
 	while (preq->bl.head) {
@@ -3091,6 +3095,7 @@ static int ploop_thread(void * data)
 	struct ploop_device * plo = data;
 	struct blk_plug plug;
 	LIST_HEAD(drop_list);
+	bool wait_fast_path;
 
 	set_user_nice(current, -20);
 
@@ -3099,6 +3104,7 @@ static int ploop_thread(void * data)
 		/* Convert bios to preqs early (at least before processing
 		 * entry queue) to increase chances of bio merge
 		 */
+		wait_fast_path = false;
 		cond_resched();
 		spin_lock_irq(&plo->lock);
 		BUG_ON (!list_empty(&drop_list));
@@ -3158,6 +3164,9 @@ static int ploop_thread(void * data)
 			}
 
 			plo->active_reqs++;
+			if ((preq->req_rw & REQ_DISCARD) &&
+			    (plo->bio_discard_inflight_reqs++) == 0)
+				wait_fast_path = true;
 			ploop_entry_qlen_dec(preq);
 
 			if (test_bit(PLOOP_REQ_DISCARD, &preq->state)) {
@@ -3171,6 +3180,9 @@ static int ploop_thread(void * data)
 			}
 			preq->eng_state = PLOOP_E_ENTRY;
 			spin_unlock_irq(&plo->lock);
+
+			if (wait_fast_path)
+				wait_fast_path_reqs(plo);
 
 			ploop_req_state_process(preq);
 			continue;
