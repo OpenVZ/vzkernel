@@ -247,6 +247,7 @@ sources-rh: $(TARBALL)
 		mod-sign.sh \
 		configs/flavors \
 		configs/generate_all_configs.sh \
+		configs/merge.pl \
 		configs/process_configs.sh \
 		parallel_xz.sh \
 		generate_bls_conf.sh \

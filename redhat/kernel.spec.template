@@ -689,6 +689,12 @@ Source301: kernel-kabi-dw-%{rpmversion}-%{distro_build}.tar.bz2
 Source2000: cpupower.service
 Source2001: cpupower.config
 
+# Some people enjoy building customized kernels from the dist-git in Fedora and
+# use this to override configuration options. One day they may all use the
+# source tree, but in the mean time we carry this to support the legacy workflow
+Source3000: merge.pl
+Source3001: kernel-local
+
 ## Patches needed for building this package
 
 Patch1: patch-%{rpmversion}-redhat.patch
@@ -1235,7 +1241,21 @@ cd configs
 # Drop some necessary files from the source dir into the buildroot
 cp $RPM_SOURCE_DIR/kernel-*.config .
 cp %{SOURCE51} .
+# merge.pl
+cp %{SOURCE3000} .
+# kernel-local
+cp %{SOURCE3001} .
 VERSION=%{version} ./generate_all_configs.sh %{primary_target} %{debugbuildsenabled}
+
+# Merge in any user-provided local config option changes
+%ifnarch %nobuildarches
+for i in %{all_arch_configs}
+do
+  mv $i $i.tmp
+  ./merge.pl %{SOURCE3001} $i.tmp > $i
+  rm $i.tmp
+done
+%endif
 
 # enable GCOV kernel config options if gcov is on
 %if %{with_gcov}
