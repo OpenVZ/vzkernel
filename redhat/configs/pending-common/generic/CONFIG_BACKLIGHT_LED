@@ -1,0 +1,19 @@
+# CONFIG_BACKLIGHT_LED:
+# 
+# If you have a LCD backlight adjustable by LED class driver, say Y
+# to enable this driver.
+# 
+# Symbol: BACKLIGHT_LED [=n]
+# Type  : tristate
+# Defined at drivers/video/backlight/Kconfig:459
+#   Prompt: Generic LED based Backlight Driver
+#   Depends on: HAS_IOMEM [=y] && BACKLIGHT_CLASS_DEVICE [=y] && LEDS_CLASS [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Backlight & LCD device support
+#           -> Lowlevel Backlight controls (BACKLIGHT_CLASS_DEVICE [=y])
+# 
+# 
+# 
+# CONFIG_BACKLIGHT_LED is not set
