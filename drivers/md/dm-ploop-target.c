@@ -134,6 +134,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	atomic_set(&ploop->nr_discard_bios, 0);
 
 	INIT_WORK(&ploop->worker, do_ploop_work);
+	init_completion(&ploop->inflight_bios_ref_comp);
 
 	for (i = 0; i < 2; i++) {
 		release = i ? inflight_bios_ref_exit1 : inflight_bios_ref_exit0;
