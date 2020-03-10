@@ -824,6 +824,14 @@ static void process_notify_delta_merged(struct ploop *ploop,
 	u8 level = cmd->notify_delta_merged.level;
 	struct file *file;
 	u8 *bat_levels;
+	int ret;
+
+	force_defer_bio_count_inc(ploop);
+	ret = ploop_inflight_bios_ref_switch(ploop, true);
+	if (ret) {
+		cmd->retval = ret;
+		goto out;
+	}
 
 	bat_entries = ploop->bat_entries;
 	bat_levels = ploop->bat_levels;
@@ -860,10 +868,10 @@ static void process_notify_delta_merged(struct ploop *ploop,
 	ploop->deltas[--ploop->nr_deltas].file = NULL;
 	write_unlock_irq(&ploop->bat_rwlock);
 
-	ploop_inflight_bios_ref_switch(ploop, false);
 	fput(file);
-
 	cmd->retval = 0;
+out:
+	force_defer_bio_count_dec(ploop);
 	complete(&cmd->comp); /* Last touch of cmd memory */
 }
 
