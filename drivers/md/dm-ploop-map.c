@@ -437,7 +437,7 @@ static void handle_discard_bio(struct ploop *ploop, struct bio *bio,
 		 */
 		ploop->force_link_inflight_bios = true;
 		force_defer_bio_count_inc(ploop);
-		ploop_inflight_bios_ref_switch(ploop);
+		ploop_inflight_bios_ref_switch(ploop, false);
 	}
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);

@@ -118,6 +118,7 @@ struct ploop_cmd {
 
 #define BAT_LEVEL_TOP		U8_MAX
 #define CLEANUP_DELAY		20
+#define PLOOP_INFLIGHT_TIMEOUT	(60 * HZ)
 
 #define PLOOP_BIOS_HTABLE_BITS	8
 #define PLOOP_BIOS_HTABLE_SIZE	(1 << PLOOP_BIOS_HTABLE_BITS)
@@ -208,6 +209,7 @@ struct ploop {
 
 	struct completion inflight_bios_ref_comp;
 	struct percpu_ref inflight_bios_ref[2];
+	bool inflight_ref_comp_pending;
 	unsigned int inflight_bios_ref_index:1;
 
 	spinlock_t deferred_lock;
@@ -393,7 +395,7 @@ extern void process_deferred_cmd(struct ploop *ploop,
 			struct ploop_index_wb *piwb);
 extern int ploop_map(struct dm_target *ti, struct bio *bio);
 extern int ploop_endio(struct dm_target *ti, struct bio *bio, blk_status_t *err);
-extern void ploop_inflight_bios_ref_switch(struct ploop *ploop);
+extern int ploop_inflight_bios_ref_switch(struct ploop *ploop, bool killable);
 extern struct dm_ploop_endio_hook *find_lk_of_cluster(struct ploop *ploop,
 						      unsigned int cluster);
 extern void unlink_postponed_backup_endio(struct ploop *ploop,

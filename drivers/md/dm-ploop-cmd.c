@@ -71,6 +71,24 @@ static void ploop_advance_bat_and_holes(struct ploop *ploop,
 	write_unlock_irq(&ploop->bat_rwlock);
 }
 
+static int wait_for_completion_maybe_killable(struct completion *comp,
+					      bool killable)
+{
+	int ret = 0;
+
+	if (killable) {
+		ret = wait_for_completion_killable_timeout(comp, PLOOP_INFLIGHT_TIMEOUT);
+		if (!ret)
+			ret = -ETIMEDOUT;
+		else if (ret > 0)
+			ret = 0;
+	} else {
+		wait_for_completion(comp);
+	}
+
+	return ret;
+}
+
 /*
  * Switch index of ploop->inflight_bios_ref[] and wait till inflight
  * bios are completed. This waits for completion of simple submitted
@@ -80,12 +98,24 @@ static void ploop_advance_bat_and_holes(struct ploop *ploop,
  * weaker, than "dmsetup suspend".
  * It is called from kwork only, so this can't be executed in parallel.
  */
-void ploop_inflight_bios_ref_switch(struct ploop *ploop)
+int ploop_inflight_bios_ref_switch(struct ploop *ploop, bool killable)
 {
+	struct completion *comp = &ploop->inflight_bios_ref_comp;
 	unsigned int index = ploop->inflight_bios_ref_index;
+	int ret;
 
 	WARN_ON_ONCE(!(current->flags & PF_WQ_WORKER));
-	init_completion(&ploop->inflight_bios_ref_comp);
+
+	if (ploop->inflight_ref_comp_pending) {
+		/* Previous completion was interrupted */
+		ret = wait_for_completion_maybe_killable(comp, killable);
+		if (ret)
+			return ret;
+		ploop->inflight_ref_comp_pending = false;
+		percpu_ref_reinit(&ploop->inflight_bios_ref[!index]);
+	}
+
+	init_completion(comp);
 
 	write_lock_irq(&ploop->bat_rwlock);
 	ploop->inflight_bios_ref_index = !index;
@@ -93,8 +123,14 @@ void ploop_inflight_bios_ref_switch(struct ploop *ploop)
 
 	percpu_ref_kill(&ploop->inflight_bios_ref[index]);
 
-	wait_for_completion(&ploop->inflight_bios_ref_comp);
+	ret = wait_for_completion_maybe_killable(comp, killable);
+	if (ret) {
+		ploop->inflight_ref_comp_pending = true;
+		return ret;
+	}
+
 	percpu_ref_reinit(&ploop->inflight_bios_ref[index]);
+	return 0;
 }
 
 /* Find existing BAT cluster pointing to dst_cluster */
@@ -223,7 +259,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 
 	/* Redirect bios to kwork and wait inflights, which may use @cluster */
 	force_defer_bio_count_inc(ploop);
-	ploop_inflight_bios_ref_switch(ploop);
+	ploop_inflight_bios_ref_switch(ploop, false);
 
 	/* Read full cluster sync */
 	ret = ploop_read_cluster_sync(ploop, bio, dst_cluster);
@@ -736,7 +772,7 @@ out:
 		write_lock_irq(&ploop->bat_rwlock);
 		file = ploop->deltas[--ploop->nr_deltas].file;
 		write_unlock_irq(&ploop->bat_rwlock);
-		ploop_inflight_bios_ref_switch(ploop);
+		ploop_inflight_bios_ref_switch(ploop, false);
 		fput(file);
 	}
 	complete(&cmd->comp); /* Last touch of cmd memory */
@@ -821,7 +857,7 @@ static void process_notify_delta_merged(struct ploop *ploop,
 	ploop->deltas[--ploop->nr_deltas].file = NULL;
 	write_unlock_irq(&ploop->bat_rwlock);
 
-	ploop_inflight_bios_ref_switch(ploop);
+	ploop_inflight_bios_ref_switch(ploop, false);
 	fput(file);
 
 	cmd->retval = 0;
@@ -858,7 +894,7 @@ static void process_update_delta_index(struct ploop *ploop,
 unlock:
 	write_unlock_irq(&ploop->bat_rwlock);
 	if (!ret)
-		ploop_inflight_bios_ref_switch(ploop);
+		ploop_inflight_bios_ref_switch(ploop, false);
 
 	cmd->retval = ret;
 	complete(&cmd->comp); /* Last touch of cmd memory */
@@ -982,7 +1018,7 @@ static void process_switch_top_delta(struct ploop *ploop, struct ploop_cmd *cmd)
 	unsigned int i, size, bat_clusters, level = ploop->nr_deltas;
 
 	force_defer_bio_count_inc(ploop);
-	ploop_inflight_bios_ref_switch(ploop);
+	ploop_inflight_bios_ref_switch(ploop, false);
 
 	/* If you add more two-stages-actions, you must cancel them here too */
 	cancel_discard_bios(ploop);
@@ -1092,7 +1128,7 @@ static void process_flip_upper_deltas(struct ploop *ploop, struct ploop_cmd *cmd
 	swap(ploop->deltas[level].file, cmd->flip_upper_deltas.file);
 	write_unlock_irq(&ploop->bat_rwlock);
 	/* Device is suspended, but anyway... */
-	ploop_inflight_bios_ref_switch(ploop);
+	ploop_inflight_bios_ref_switch(ploop, false);
 
 	cmd->retval = 0;
 	complete(&cmd->comp); /* Last touch of cmd memory */
@@ -1113,7 +1149,7 @@ static void process_tracking_start(struct ploop *ploop, struct ploop_cmd *cmd)
 	 * Here we care about ploop_map() sees ploop->tracking_bitmap,
 	 * since the rest of submitting are made from *this* kwork.
 	 */
-	ploop_inflight_bios_ref_switch(ploop);
+	ploop_inflight_bios_ref_switch(ploop, false);
 
 	write_lock_irq(&ploop->bat_rwlock);
 	for_each_clear_bit(i, ploop->holes_bitmap, ploop->hb_nr)
