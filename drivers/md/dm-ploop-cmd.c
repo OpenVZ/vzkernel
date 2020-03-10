@@ -1149,7 +1149,9 @@ static void process_tracking_start(struct ploop *ploop, struct ploop_cmd *cmd)
 	 * Here we care about ploop_map() sees ploop->tracking_bitmap,
 	 * since the rest of submitting are made from *this* kwork.
 	 */
-	ploop_inflight_bios_ref_switch(ploop, false);
+	ret = ploop_inflight_bios_ref_switch(ploop, true);
+	if (ret)
+		goto out;
 
 	write_lock_irq(&ploop->bat_rwlock);
 	for_each_clear_bit(i, ploop->holes_bitmap, ploop->hb_nr)
@@ -1166,7 +1168,7 @@ static void process_tracking_start(struct ploop *ploop, struct ploop_cmd *cmd)
 	}
 unlock:
 	write_unlock_irq(&ploop->bat_rwlock);
-
+out:
 	cmd->retval = ret;
 	complete(&cmd->comp); /* Last touch of cmd memory */
 }
@@ -1205,6 +1207,7 @@ static int ploop_tracking_cmd(struct ploop *ploop, const char *suffix,
 	struct ploop_cmd cmd = { {0} };
 	void *tracking_bitmap = NULL;
 	unsigned int i, tb_nr, size;
+	int ret = 0;
 
 	if (ploop_is_ro(ploop))
 		return -EROFS;
@@ -1248,9 +1251,13 @@ static int ploop_tracking_cmd(struct ploop *ploop, const char *suffix,
 		ploop_queue_deferred_cmd(ploop, &cmd);
 		wait_for_completion(&cmd.comp);
 		ploop->maintaince = true;
+		ret = cmd.retval;
+		if (ret)
+			goto stop;
 	} else if (!strcmp(suffix, "stop")) {
 		if (!ploop->tracking_bitmap)
 			return -ENOENT;
+stop:
 		write_lock_irq(&ploop->bat_rwlock);
 		kvfree(ploop->tracking_bitmap);
 		ploop->tracking_bitmap = NULL;
@@ -1260,7 +1267,7 @@ static int ploop_tracking_cmd(struct ploop *ploop, const char *suffix,
 		return -EINVAL;
 	}
 
-	return 0;
+	return ret;
 }
 
 static int ploop_set_noresume(struct ploop *ploop, char *mode)
