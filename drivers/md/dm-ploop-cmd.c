@@ -887,7 +887,12 @@ static void process_update_delta_index(struct ploop *ploop,
 	const char *map = cmd->update_delta_index.map;
 	u8 level = cmd->update_delta_index.level;
 	unsigned int cluster, dst_cluster, n;
-	int ret = -EINVAL;
+	int ret;
+
+	force_defer_bio_count_inc(ploop);
+	ret = ploop_inflight_bios_ref_switch(ploop, true);
+	if (ret)
+		goto out;
 
 	write_lock_irq(&ploop->bat_rwlock);
 	/* Check all */
@@ -898,8 +903,10 @@ static void process_update_delta_index(struct ploop *ploop,
 			break;
 		map += n;
 	}
-	if (map[0] != '\0')
+	if (map[0] != '\0') {
+		ret = -EINVAL;
 		goto unlock;
+	}
 	/* Commit all */
 	map = cmd->update_delta_index.map;
 	while (sscanf(map, "%u:%u;%n", &cluster, &dst_cluster, &n) == 2) {
@@ -910,9 +917,8 @@ static void process_update_delta_index(struct ploop *ploop,
 	ret = 0;
 unlock:
 	write_unlock_irq(&ploop->bat_rwlock);
-	if (!ret)
-		ploop_inflight_bios_ref_switch(ploop, false);
-
+out:
+	force_defer_bio_count_dec(ploop);
 	cmd->retval = ret;
 	complete(&cmd->comp); /* Last touch of cmd memory */
 }
