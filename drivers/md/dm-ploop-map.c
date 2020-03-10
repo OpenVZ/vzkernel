@@ -623,6 +623,18 @@ static void ploop_bat_write_complete(struct bio *bio)
 
 	track_bio(ploop, bio);
 
+	if (!bio->bi_status) {
+		/*
+		 * Success: now update local BAT copy. We could do this
+		 * from our delayed work, but we want to publish new
+		 * mapping in the fastest way. This must be done before
+		 * data bios completion, since right after we complete
+		 * a bio, subsequent read wants to see written data
+		 * (ploop_map() wants to see not zero bat_entries[.]).
+		 */
+		ploop_advance_local_after_bat_wb(ploop, piwb, true);
+	}
+
 	spin_lock_irqsave(&piwb->lock, flags);
 	piwb->completed = true;
 	piwb->bi_status = bio->bi_status;
@@ -642,15 +654,6 @@ static void ploop_bat_write_complete(struct bio *bio)
 	while ((cluster_bio = bio_list_pop(&piwb->cow_list))) {
 		cow = cluster_bio->bi_private;
 		complete_cow(cow, bio->bi_status);
-	}
-
-	if (!piwb->bi_status) {
-		/*
-		 * Success: now update local BAT copy. We could do this
-		 * from our delayed work, but we want to publish new
-		 * mapping in the fastest way.
-		 */
-		ploop_advance_local_after_bat_wb(ploop, piwb, true);
 	}
 
 	/*
