@@ -418,8 +418,10 @@ static void handle_discard_bio(struct ploop *ploop, struct bio *bio,
 	struct dm_ploop_endio_hook *h = bio_to_endio_hook(bio);
 	struct dm_ploop_endio_hook *inflight_h;
 	unsigned long flags;
+	int ret;
 
 	if (!cluster_is_in_top_delta(ploop, cluster) || ploop->nr_deltas) {
+enotsupp:
 		bio->bi_status = BLK_STS_NOTSUPP;
 		bio_endio(bio);
 		return;
@@ -437,7 +439,14 @@ static void handle_discard_bio(struct ploop *ploop, struct bio *bio,
 		 */
 		ploop->force_link_inflight_bios = true;
 		force_defer_bio_count_inc(ploop);
-		ploop_inflight_bios_ref_switch(ploop, false);
+		ret = ploop_inflight_bios_ref_switch(ploop, true);
+		if (ret) {
+			pr_err_ratelimited("ploop: discard ignored by err=%d\n",
+					ret);
+			ploop->force_link_inflight_bios = false;
+			force_defer_bio_count_dec(ploop);
+			goto enotsupp;
+		}
 	}
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
