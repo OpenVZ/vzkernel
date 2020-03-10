@@ -316,6 +316,7 @@ struct mem_cgroup {
 	/* vmpressure notifications */
 	struct vmpressure vmpressure;
 	struct work_struct high_work;
+	struct work_struct offline_reclaim_work;
 
 	/*
 	 * the counter to account for kernel memory usage.
@@ -6557,6 +6558,22 @@ struct mem_cgroup *parent_mem_cgroup(struct mem_cgroup *memcg)
 }
 EXPORT_SYMBOL(parent_mem_cgroup);
 
+static void offline_reclaim_func(struct work_struct *work)
+{
+	struct mem_cgroup *memcg;
+	int nr_retries = 5;
+
+	memcg = container_of(work, struct mem_cgroup, offline_reclaim_work);
+	lru_add_drain_all();
+
+	while (nr_retries && page_counter_read(&memcg->memory))
+		if (!try_to_free_mem_cgroup_pages(memcg, -1UL, GFP_KERNEL,
+						MEM_CGROUP_RECLAIM_NOSWAP))
+			nr_retries--;
+
+	lru_add_drain();
+}
+
 static void __init mem_cgroup_soft_limit_tree_init(void)
 {
 	struct mem_cgroup_tree_per_node *rtpn;
@@ -6606,6 +6623,7 @@ mem_cgroup_css_alloc(struct cgroup *cont)
 	INIT_LIST_HEAD(&memcg->oom_notify);
 	memcg->move_charge_at_immigrate = 0;
 	INIT_WORK(&memcg->high_work, high_work_func);
+	INIT_WORK(&memcg->offline_reclaim_work, offline_reclaim_func);
 	mutex_init(&memcg->thresholds_lock);
 	spin_lock_init(&memcg->move_lock);
 	vmpressure_init(&memcg->vmpressure);
@@ -6700,16 +6718,7 @@ static void mem_cgroup_invalidate_reclaim_iterators(struct mem_cgroup *memcg)
 
 static void mem_cgroup_free_all(struct mem_cgroup *memcg)
 {
-	int nr_retries = 5;
-
-	lru_add_drain_all();
-
-	while (nr_retries && page_counter_read(&memcg->memory))
-		if (!try_to_free_mem_cgroup_pages(memcg, -1UL, GFP_KERNEL,
-						MEM_CGROUP_RECLAIM_NOSWAP))
-			nr_retries--;
-
-	lru_add_drain();
+	schedule_work(&memcg->offline_reclaim_work);
 }
 
 static void mem_cgroup_css_offline(struct cgroup *cont)
@@ -6759,6 +6768,8 @@ static void mem_cgroup_css_offline(struct cgroup *cont)
 static void mem_cgroup_css_free(struct cgroup *cont)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
+
+	flush_work(&memcg->offline_reclaim_work);
 
 	/*
 	 * XXX: css_offline() would be where we should reparent all
