@@ -156,6 +156,7 @@ enum nlmsgerr_attrs {
 #define NETLINK_CAP_ACK			10
 #define NETLINK_EXT_ACK			11
 #define NETLINK_GET_STRICT_CHK		12
+#define NETLINK_REPAIR			127
 #define NETLINK_SETERR			128
 
 struct nl_pktinfo {
