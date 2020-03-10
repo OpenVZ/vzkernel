@@ -234,7 +234,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 {
 	struct bio *bio = cmd->resize.bio;
 	unsigned int new_dst, cluster, dst_cluster;
-	bool is_locked;
+	bool is_locked, defer_bio_count = false;
 	int ret = 0;
 
 	dst_cluster = cmd->resize.dst_cluster;
@@ -259,7 +259,10 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 
 	/* Redirect bios to kwork and wait inflights, which may use @cluster */
 	force_defer_bio_count_inc(ploop);
-	ploop_inflight_bios_ref_switch(ploop, false);
+	defer_bio_count = true;
+	ret = ploop_inflight_bios_ref_switch(ploop, true);
+	if (ret < 0)
+		goto out;
 
 	/* Read full cluster sync */
 	ret = ploop_read_cluster_sync(ploop, bio, dst_cluster);
@@ -301,7 +304,7 @@ not_occupied:
 	/* Zero new BAT entries on disk. */
 	ret = ploop_write_zero_cluster_sync(ploop, bio, dst_cluster);
 out:
-	if (cluster != UINT_MAX)
+	if (defer_bio_count)
 		force_defer_bio_count_dec(ploop);
 
 	return ret;
@@ -1016,9 +1019,12 @@ static int ploop_update_delta_index(struct ploop *ploop, unsigned int level,
 static void process_switch_top_delta(struct ploop *ploop, struct ploop_cmd *cmd)
 {
 	unsigned int i, size, bat_clusters, level = ploop->nr_deltas;
+	int ret;
 
 	force_defer_bio_count_inc(ploop);
-	ploop_inflight_bios_ref_switch(ploop, false);
+	ret = ploop_inflight_bios_ref_switch(ploop, true);
+	if (ret)
+		goto out;
 
 	/* If you add more two-stages-actions, you must cancel them here too */
 	cancel_discard_bios(ploop);
@@ -1043,9 +1049,10 @@ static void process_switch_top_delta(struct ploop *ploop, struct ploop_cmd *cmd)
 
 	ploop->nr_deltas++;
 	write_unlock_irq(&ploop->bat_rwlock);
+out:
 	force_defer_bio_count_dec(ploop);
 
-	cmd->retval = 0;
+	cmd->retval = ret;
 	complete(&cmd->comp); /* Last touch of cmd memory */
 }
 
