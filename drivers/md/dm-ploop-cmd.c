@@ -734,6 +734,7 @@ static void process_merge_latest_snapshot_cmd(struct ploop *ploop,
 	unsigned int *cluster = &cmd->merge.cluster;
 	unsigned int level, dst_cluster;
 	struct file *file;
+	int ret;
 
 	if (cmd->retval)
 		goto out;
@@ -772,12 +773,17 @@ out:
 
 	if (cmd->retval == 0 && !cmd->merge.do_repeat) {
 		/* Delta merged. Release delta's file */
+		ret = ploop_inflight_bios_ref_switch(ploop, true);
+		if (ret) {
+			cmd->retval = ret;
+			goto complete;
+		}
 		write_lock_irq(&ploop->bat_rwlock);
 		file = ploop->deltas[--ploop->nr_deltas].file;
 		write_unlock_irq(&ploop->bat_rwlock);
-		ploop_inflight_bios_ref_switch(ploop, false);
 		fput(file);
 	}
+complete:
 	complete(&cmd->comp); /* Last touch of cmd memory */
 }
 
