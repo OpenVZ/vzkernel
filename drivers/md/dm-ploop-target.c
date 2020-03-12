@@ -37,32 +37,22 @@ static void inflight_bios_ref_exit1(struct percpu_ref *ref)
 	complete(&ploop->inflight_bios_ref_comp);
 }
 
-static bool ploop_has_pending_activity(struct ploop *ploop)
-{
-	bool has;
-
-	spin_lock_irq(&ploop->deferred_lock);
-	has = ploop->deferred_cmd;
-	has |= !bio_list_empty(&ploop->deferred_bios);
-	has |= !bio_list_empty(&ploop->discard_bios);
-	has |= !bio_list_empty(&ploop->delta_cow_action_list);
-	spin_unlock_irq(&ploop->deferred_lock);
-
-	return has;
-}
-
+/* This is called on final device destroy */
 static void ploop_flush_workqueue(struct ploop *ploop)
 {
+	char *argv[1] = {"try_preflush"};
 	bool again = true;
 
 	while (again) {
 		flush_workqueue(ploop->wq);
-		again = ploop_has_pending_activity(ploop);
-		if (again)
-			schedule_timeout(HZ);
+		/*
+		 * Normally, ploop_message("try_preflush") returns 0 or 1.
+		 * In case of underlining bdev is hung, this finishes with
+		 * error by timeout, and our caller (.dtr) never completes.
+		 */
+		again = ploop_message(ploop->ti, 1, argv, NULL, 0);
 	}
 }
-
 
 static void ploop_destroy(struct ploop *ploop)
 {
