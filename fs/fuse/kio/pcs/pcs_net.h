@@ -32,6 +32,12 @@ struct pcs_netio_tops {
 
 	/* get next timeout */
 	unsigned long (*next_timeout)(struct pcs_netio *netio);
+
+	/* synchronous send message */
+	int   (*sync_send)(struct pcs_netio *netio, struct pcs_msg *msg);
+
+	/* synchronous receive message */
+	int   (*sync_recv)(struct pcs_netio *netio, struct pcs_msg **msg);
 };
 
 struct pcs_netio {
