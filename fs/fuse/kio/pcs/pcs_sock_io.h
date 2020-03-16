@@ -5,10 +5,12 @@
 #include <linux/in.h>
 #include <linux/in6.h>
 #include <linux/un.h>
+#include <linux/fs.h>
 
 #include "pcs_types.h"
 ////#include "pcs_process.h"
 #include "pcs_error.h"
+#include "pcs_net.h"
 #include "log.h"
 
 #define PCS_MSG_MAX_CALENDAR	64
@@ -16,6 +18,8 @@
 
 #define PCS_SIO_PREEMPT_LIMIT	16
 #define PCS_SIO_SLICE (5 * HZ / 1000) /* 5ms */
+
+extern struct pcs_netio_tops pcs_sock_netio_tops;
 
 
 struct pcs_api_channel
@@ -37,7 +41,7 @@ __pre_packed struct pcs_msg
 		struct pcs_msg	*response;	/* Consider removing. It can be done passing the second
 						 * argument to done();
 						 */
-		struct pcs_sockio *sio;
+		struct pcs_netio *netio;
 		struct pcs_rpc	*rpc;
 
 		int		size;
@@ -94,12 +98,13 @@ enum
 	PCS_IOCONN_BF_DEAD		= 0,
 	PCS_IOCONN_BF_ERROR		= 1, /* Notify from ->sk_error_report */
 };
-struct pcs_ioconn {
 
-	struct list_head	list;
+struct pcs_sockio
+{
+	struct pcs_netio	netio;
+
 	struct socket		*socket;
-
-	unsigned long		flags;		/* atomic bit ops */
+	unsigned long		io_flags;	/* atomic bit ops */
 	/* Save original socket->sk callbacks */
 	struct {
 		void			*user_data;
@@ -108,18 +113,10 @@ struct pcs_ioconn {
 		void			(*data_ready)(struct sock *sk, int bytes);
 		void			(*write_space)(struct sock *sk);
 	} orig;
-	void(*destruct)(struct pcs_ioconn *);
-
-};
-
-struct pcs_sockio
-{
-	struct pcs_ioconn	ioconn;
 
 	struct list_head	write_queue;
 	int			write_queue_len;
 	spinlock_t		q_lock;
-	struct pcs_rpc		*parent;
 
 	pcs_error_t		error;
 	int			send_timeout;
@@ -136,32 +133,18 @@ struct pcs_sockio
 	struct iov_iter		read_iter;
 	struct iov_iter		write_iter;
 	struct mutex		mutex;
-	struct pcs_msg *	(*get_msg)(struct pcs_sockio *, u32 *);
-	/* eof() handler could be called twice: once on graceful socket shutdown and from sio_abort() */
-	void			(*eof)(struct pcs_sockio *);
 	void			(*write_wakeup)(struct pcs_sockio *);
 	struct rcu_head		rcu;
 
 	char			_inline_buffer[0];
 };
 
-#define sio_from_ioconn(conn) container_of(conn, struct pcs_sockio, ioconn)
-
-void pcs_sockio_start(struct pcs_sockio * sio);
-void pcs_sock_sendmsg(struct pcs_sockio * sio, struct pcs_msg *msg);
-int pcs_sock_cancel_msg(struct pcs_msg * msg);
-void pcs_sockio_xmit(struct pcs_sockio *sio);
-int  pcs_sockio_delayed_seg(struct pcs_sockio *sio);
-int pcs_sock_queuelen(struct pcs_sockio * sio);
-void pcs_sock_abort(struct pcs_sockio * sio);
-void pcs_sock_error(struct pcs_sockio * sio, int error);
-
 void pcs_sk_data_ready(struct sock *sk, int count);
 void pcs_sk_write_space(struct sock *sk);
 void pcs_sk_error_report(struct sock *sk);
 
-void pcs_sock_throttle(struct pcs_sockio * sio);
-void pcs_sock_unthrottle(struct pcs_sockio * sio);
+#define sio_from_netio(nio) container_of(nio, struct pcs_sockio, netio)
+#define sio_from_ioconn(conn) container_of(conn, struct pcs_sockio, netio.ioconn)
 
 struct pcs_msg * pcs_alloc_input_msg(struct pcs_sockio * sio, int datalen);
 struct pcs_msg * pcs_alloc_output_msg(int datalen);
@@ -171,6 +154,7 @@ void pcs_clone_done(struct pcs_msg * msg);
 void pcs_free_msg(struct pcs_msg * msg);
 void pcs_get_iter_inline(struct pcs_msg * msg, int offset, struct iov_iter*it);
 void pcs_sock_ioconn_destruct(struct pcs_ioconn *ioconn);
+void pcs_msg_sent(struct pcs_msg * msg);
 
 static inline void * msg_inline_head(struct pcs_msg * msg)
 {
@@ -224,18 +208,5 @@ static inline void pcs_msg_io_fini(struct pcs_msg * msg)
 {
 	BUG_ON(msg->_iocount != 0);
 }
-
-
-struct bufqueue;
-
-/**
-   Present a portion of @bq as a pcs_msg that may be passed to pcs_sock_sendmsg().
-   Reading data from the pcs_msg will drain @bq.
-
-   \param @bq the buffer queue with the data of a message
-   \param @size the length of the head of @bq that will be presented as a pcs_msg
-   \returns a pcs_msg that reads data from @bq
-*/
-struct pcs_msg* bufqueue_as_pcs_output_msg(struct bufqueue *bq, u32 size);
 
 #endif /* _PCS_SOCK_IO_H_ */

@@ -23,7 +23,6 @@
 
 
 #include "pcs_types.h"
-#include "pcs_sock_io.h"
 #include "pcs_rpc.h"
 #include "pcs_cluster.h"
 #include "log.h"
@@ -202,14 +201,17 @@ void rpc_abort(struct pcs_rpc * ep, int fatal, int error)
 
 	if (ep->conn) {
 		struct pcs_ioconn * ioconn = ep->conn;
-		struct pcs_sockio * sio = sio_from_ioconn(ioconn);
 
 		ep->conn = NULL;
 		if (ep->gc)
 			list_lru_del(&ep->gc->lru, &ep->lru_link);
 
-		sio->eof = NULL;
-		pcs_sock_error(sio, error);
+		/* TODO: Add support of PCS_RPC_CONNECT state */
+		if (state != PCS_RPC_CONNECT) {
+			struct pcs_netio *netio = (struct pcs_netio *)ioconn;
+			netio->tops->abort_io(netio, error);
+		}
+
 		if (ioconn->destruct)
 			ioconn->destruct(ioconn);
 	}
@@ -357,9 +359,9 @@ void __pcs_rpc_put(struct pcs_rpc *ep)
 		queue_work(pcs_cleanup_wq, &rpc_cleanup_work);
 }
 
-void rpc_eof_cb(struct pcs_sockio * sio)
+void rpc_eof_cb(struct pcs_netio * netio)
 {
-	struct pcs_rpc * ep = sio->parent;
+	struct pcs_rpc * ep = netio->parent;
 
 	if (WARN_ON_ONCE(ep == NULL))
 		return;
@@ -367,7 +369,7 @@ void rpc_eof_cb(struct pcs_sockio * sio)
 	/* Dead socket is finally closed, we could already open another one.
 	 * I feel inconvenient about this.
 	 */
-	if (&sio->ioconn != ep->conn)
+	if (&netio->ioconn != ep->conn)
 		return;
 
 	rpc_abort(ep, 0, PCS_ERR_NET_ABORT);
@@ -403,8 +405,8 @@ void pcs_rpc_error_respond(struct pcs_rpc * ep, struct pcs_msg * msg, int err)
 
 	eresp = pcs_rpc_alloc_error_response(ep, h, err, sizeof(struct pcs_rpc_error_resp));
 	if (eresp) {
-		struct pcs_sockio *sio = sio_from_ioconn(ep->conn);
-		pcs_sock_sendmsg(sio, eresp);
+		struct pcs_netio *netio = (struct pcs_netio *)ep->conn;
+		netio->tops->send_msg(netio, eresp);
 	}
 }
 
@@ -555,10 +557,10 @@ drop:
 	pcs_free_msg(msg);
 }
 
-struct pcs_msg *rpc_get_hdr(struct pcs_sockio * sio, u32 *msg_size)
+struct pcs_msg *rpc_get_hdr(struct pcs_netio * netio, char *inline_buffer, u32 *msg_size)
 {
-	struct pcs_rpc * ep = sio->parent;
-	struct pcs_rpc_hdr * h = (struct pcs_rpc_hdr*)sio_inline_buffer(sio);
+	struct pcs_rpc * ep = netio->parent;
+	struct pcs_rpc_hdr * h = (struct pcs_rpc_hdr*)inline_buffer;
 	struct pcs_msg * msg;
 	void (*next_input)(struct pcs_msg *);
 
@@ -594,7 +596,7 @@ struct pcs_msg *rpc_get_hdr(struct pcs_sockio * sio, u32 *msg_size)
 
 	msg = pcs_rpc_alloc_input_msg(ep, h->len);
 	if (!msg) {
-		pcs_sock_throttle(sio);
+		netio->tops->throttle(netio);
 		return NULL;
 	}
 
@@ -628,8 +630,6 @@ void pcs_rpc_connect(struct pcs_rpc * ep)
  */
 static void pcs_rpc_send(struct pcs_rpc * ep, struct pcs_msg * msg, bool requeue)
 {
-	struct pcs_sockio *sio = sio_from_ioconn(ep->conn);
-
 	BUG_ON(!mutex_is_locked(&ep->mutex));
 	BUG_ON(msg->rpc != (requeue ? ep: NULL));
 
@@ -655,9 +655,10 @@ static void pcs_rpc_send(struct pcs_rpc * ep, struct pcs_msg * msg, bool requeue
 
 	if (ep->state == PCS_RPC_WORK) {
 		BUG_ON(ep->conn == NULL);
-		if (msg->size)
-			pcs_sock_sendmsg(sio, msg);
-		else {
+		if (msg->size) {
+			struct pcs_netio *netio = (struct pcs_netio *)ep->conn;
+			netio->tops->send_msg(netio, msg);
+		} else {
 			pcs_msg_del_calendar(msg);
 			msg->done(msg);
 		}
@@ -760,7 +761,7 @@ static void calendar_work(struct work_struct *w)
 		pcs_msg_del_calendar(msg);
 		switch (msg->stage) {
 		case PCS_MSG_STAGE_SEND:
-			if (pcs_sock_cancel_msg(msg)) {
+			if (msg->netio->tops->cancel_msg(msg)) {
 				/* The message is under network IO right now. We cannot kill it
 				 * without destruction of the whole connection. So, we just reschedule
 				 * kill. When IO will complete, it will be killed not even waiting
@@ -809,7 +810,7 @@ static void calendar_work(struct work_struct *w)
 
 static void update_xmit_timeout(struct pcs_rpc *ep)
 {
-	struct pcs_sockio *sio = sio_from_ioconn(ep->conn);
+	struct pcs_netio *netio = (struct pcs_netio *)ep->conn;
 	struct pcs_cluster_core *cc = cc_from_rpc(ep->eng);
 	struct pcs_msg * msg;
 	unsigned long timeout = 0;
@@ -817,7 +818,7 @@ static void update_xmit_timeout(struct pcs_rpc *ep)
 
 	BUG_ON(ep->state != PCS_RPC_WORK);
 
-	if (list_empty(&ep->pending_queue) && list_empty(&sio->write_queue)) {
+	if (list_empty(&ep->pending_queue) && !netio->tops->next_timeout(netio)) {
 		if (timer_pending(&ep->timer_work.timer))
 			cancel_delayed_work(&ep->timer_work);
 		return;
@@ -827,9 +828,8 @@ static void update_xmit_timeout(struct pcs_rpc *ep)
 
 		timeout = msg->start_time + ep->params.response_timeout;
 	}
-	if (!list_empty(&sio->write_queue)) {
-		msg = list_first_entry(&sio->write_queue, struct pcs_msg, list);
-		tx = msg->start_time + sio->send_timeout;
+	if (netio->tops->next_timeout(netio)) {
+		tx = netio->tops->next_timeout(netio);
 		if (time_after(tx, timeout))
 			timeout = tx;
 	}
@@ -839,7 +839,6 @@ static void update_xmit_timeout(struct pcs_rpc *ep)
 		timeout -= jiffies;
 
 	mod_delayed_work(cc->wq, &ep->timer_work, timeout);
-
 }
 
 static void rpc_queue_work(struct work_struct *w)
@@ -861,9 +860,8 @@ again:
 
 	/* Process messages which are already in the sock queue */
 	if (ep->state == PCS_RPC_WORK) {
-		struct pcs_sockio *sio = sio_from_ioconn(ep->conn);
-
-		pcs_sockio_xmit(sio);
+		struct pcs_netio *netio = (struct pcs_netio *)ep->conn;
+		netio->tops->xmit(netio);
 	}
 
 	/* Process delayed ones */
@@ -884,14 +882,16 @@ again:
 		list_del_init(&msg->list);
 		pcs_rpc_send(ep, msg, 1);
 	}
+
 	repeat = 0;
 	if (ep->state == PCS_RPC_WORK) {
-		struct pcs_sockio *sio = sio_from_ioconn(ep->conn);
-
-		if (pcs_sockio_delayed_seg(sio))
+		struct pcs_netio *netio = (struct pcs_netio *)ep->conn;
+		if (netio->tops->flush(netio))
 			repeat = 1;
-		update_xmit_timeout(ep);
 	}
+	if (ep->state == PCS_RPC_WORK)
+		update_xmit_timeout(ep);
+
 	mutex_unlock(&ep->mutex);
 	if (repeat)
 		goto again;
@@ -1100,8 +1100,10 @@ void pcs_rpc_deaccount_msg(struct pcs_msg * msg)
 		if (ep->accounted == 0)
 			ep->eng->accounted_rpcs--;
 		msg->accounted = 0;
-		if (ep->state == PCS_RPC_WORK)
-			pcs_sock_unthrottle((struct pcs_sockio *)ep->conn);
+		if (ep->state == PCS_RPC_WORK) {
+			struct pcs_netio *netio = (struct pcs_netio *)ep->conn;
+			netio->tops->unthrottle(netio);
+		}
 	}
 	pcs_rpc_put(ep);
 }
