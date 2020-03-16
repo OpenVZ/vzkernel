@@ -62,6 +62,27 @@ struct pcs_rpc_error_resp
 /* Application specific payload types */
 #define PCS_RPC_APP_PAYLOAD_BASE	512
 
+/* Auth req/resp flags */
+enum
+{
+	PCS_RPC_AUTH_F_VOID_SENDER	= 1,		/* sender_id is undefined */
+	PCS_RPC_AUTH_F_VOID_RECIPIENT	= 2,		/* recipient_id is undefined */
+	PCS_RPC_AUTH_F_ACQ_SENDER	= 4,		/* sender_id requests for id, recipient must be MDS
+							 * NOTE: it is not clear, should be initializatiton
+							 * part of auth phase. F.e. CS register could be
+							 * with auth phase.
+							 */
+	PCS_RPC_AUTH_F_BOOTSTRAP	= 8,		/* Not a real MDS (f.e. no quorum), can only return
+							 * advices about another MDSs location
+							 */
+	PCS_RPC_AUTH_F_SLAVE		= 16,		/* MDS is authentic, but will not accept requests changing
+							 * state.
+							 */
+	PCS_RPC_AUTH_F_VOID_CLUSTERID	= 32,		/* cluster_id is undefined */
+
+	PCS_RPC_AUTH_F_AUTHORISED	= 64,		/* client was successfully authorised on MDS */
+};
+
 /* Node role */
 enum
 {
