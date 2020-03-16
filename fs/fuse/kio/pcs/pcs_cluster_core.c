@@ -120,9 +120,9 @@ int pcs_cc_init(struct pcs_cluster_core *cc, struct workqueue_struct *wq,
 		const char *cluster_name, struct pcs_cluster_core_attr *attr)
 {
 	int err;
-	/* Ignore this for now, i have cluter_id and node_id*/
-	/* if (cluster_name == NULL) */
-	/*	   return -1; */
+
+	if (!cluster_name)
+		return -EINVAL;
 
 	spin_lock_init(&cc->lock);
 	INIT_LIST_HEAD(&cc->work_queue);
@@ -131,6 +131,7 @@ int pcs_cc_init(struct pcs_cluster_core *cc, struct workqueue_struct *wq,
 	INIT_WORK(&cc->completion_job, cc_completion_handler);
 	INIT_WORK(&cc->fiemap_work, fiemap_work_func);
 	cc->wq = wq;
+	snprintf(cc->cluster_name, sizeof(cc->cluster_name), "%s", cluster_name);
 
 	pcs_csset_init(&cc->css);
 
