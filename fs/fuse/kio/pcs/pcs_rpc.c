@@ -1400,41 +1400,6 @@ void pcs_rpc_set_memlimits(struct pcs_rpc_engine * eng, u64 thresh, u64 limit)
 	eng->mem_limit = limit;
 }
 
-void rpc_connect_done(struct pcs_rpc *ep, struct socket *sock)
-{
-	struct pcs_sockio * sio;
-
-	mutex_lock(&ep->mutex);
-
-	TRACE(PEER_FMT " ->state:%d sock:%p\n", PEER_ARGS(ep), ep->state, sock);
-	cancel_delayed_work(&ep->timer_work);
-
-	if (ep->state != PCS_RPC_CONNECT) {
-		FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR, "Invalid state: %u", ep->state);
-		BUG();
-	}
-
-	sio = pcs_sockio_init(sock, ep->params.alloc_hdr_size,
-			      sizeof(struct pcs_rpc_hdr));
-	if (sio == NULL)
-		BUG();
-
-	ep->conn = &sio->ioconn;
-	sio->parent = pcs_rpc_get(ep);
-	sio->get_msg = rpc_get_hdr;
-	sio->eof = rpc_eof_cb;
-	//pcs_ioconn_register(ep->conn);
-	if (ep->gc)
-		list_lru_add(&ep->gc->lru, &ep->lru_link);
-
-	if (ep->flags & PCS_RPC_F_CLNT_PEER_ID)
-		ep->flags |= PCS_RPC_F_PEER_ID;
-	ep->state = PCS_RPC_APPWAIT;
-	pcs_rpc_enable(ep, 0);
-	mutex_unlock(&ep->mutex);
-
-}
-
 static const char *s_rpc_state_names[] = {
 	[PCS_RPC_UNCONN]	= "UNCONN",	/* Not connected */
 	[PCS_RPC_CONNECT]	= "CONNECT",	/* Connect in progress */
