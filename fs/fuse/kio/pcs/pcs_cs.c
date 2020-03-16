@@ -435,6 +435,8 @@ static void cs_get_read_response_iter(struct pcs_msg *msg, int offset, struct io
 
 static void cs_connect(struct pcs_rpc *ep)
 {
+	void (*connect_start)(struct pcs_rpc *);
+
 	if (ep->flags & PCS_RPC_F_LOCAL) {
 		char path[128];
 
@@ -451,6 +453,7 @@ static void cs_connect(struct pcs_rpc *ep)
 		ep->sh.sun.sun_family = AF_UNIX;
 		ep->sh.sa_len = sizeof(struct sockaddr_un);
 		strcpy(ep->sh.sun.sun_path, path);
+		connect_start = pcs_sockconnect_start;
 	} else {
 		/* TODO: print sock addr using pcs_format_netaddr() */
 		if (ep->addr.type != PCS_ADDRTYPE_RDMA) {
@@ -458,6 +461,7 @@ static void cs_connect(struct pcs_rpc *ep)
 				TRACE("netaddr to sockaddr failed");
 				goto fail;
 			}
+			connect_start = pcs_sockconnect_start;
 		} else {
 			WARN_ON_ONCE(1);
 			/* TODO: rdma connect init */
@@ -465,7 +469,7 @@ static void cs_connect(struct pcs_rpc *ep)
 		}
 	}
 	ep->state = PCS_RPC_CONNECT;
-	pcs_sockconnect_start(ep); /* TODO: rewrite to use pcs_netconnect callback */
+	connect_start(ep); /* TODO: rewrite to use pcs_netconnect callback */
 	return;
 fail:
 	pcs_rpc_reset(ep);
