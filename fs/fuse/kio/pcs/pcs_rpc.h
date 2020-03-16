@@ -7,6 +7,10 @@
 
 struct pcs_msg;
 
+#define PCS_PRODUCT_NAME "vstorage"
+#define PCS_DEV_SHM "/dev/shm"
+#define PCS_SHM_DIR PCS_DEV_SHM"/"PCS_PRODUCT_NAME
+
 #define PCS_RPC_HASH_SIZE	1024
 
 enum
@@ -103,6 +107,15 @@ struct pcs_rpc
 	struct sockaddr_un *	sun;
 #endif
 	struct pcs_ioconn *	conn;		/* Active connection for the peer */
+	struct {
+		int sa_len;
+		union {
+			struct sockaddr sa;
+			struct sockaddr_in saddr4;
+			struct sockaddr_in6 saddr6;
+			struct sockaddr_un sun;
+		};
+	} sh;
 
 	struct pcs_rpc_ops *	ops;
 
@@ -272,6 +285,7 @@ void pcs_rpc_init_response(struct pcs_msg * msg, struct pcs_rpc_hdr * req_hdr, i
 
 /* Allocate message and initialize header */
 struct pcs_msg * pcs_rpc_alloc_msg_w_hdr(int type, int size);
+struct pcs_msg *rpc_get_hdr(struct pcs_sockio * sio, u32 *msg_size);
 
 void pcs_rpc_set_memlimits(struct pcs_rpc_engine * eng, u64 thresh, u64 limit);
 void pcs_rpc_account_adjust(struct pcs_msg * msg, int adjustment);
@@ -286,6 +300,8 @@ void rpc_trace_health(struct pcs_rpc * ep);
 void pcs_rpc_enumerate_rpc(struct pcs_rpc_engine *eng, void (*cb)(struct pcs_rpc *ep, void *arg), void *arg);
 void pcs_rpc_set_sock(struct pcs_rpc *ep, struct pcs_sockio * sio);
 void rpc_connect_done(struct pcs_rpc *ep, struct socket *sock);
+void pcs_rpc_enable(struct pcs_rpc * ep, int error);
+void rpc_eof_cb(struct pcs_sockio *sio);
 
 static inline struct pcs_rpc *pcs_rpc_from_work(struct work_struct *wr)
 {

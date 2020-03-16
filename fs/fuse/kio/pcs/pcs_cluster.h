@@ -2,6 +2,7 @@
 #define _PCS_CLUSTER_H_ 1
 
 #include "pcs_req.h"
+#include "pcs_ioctl.h"
 #include "../../fuse_i.h"
 struct fuse_conn;
 
@@ -54,8 +55,7 @@ struct pcs_fuse_work {
 extern struct workqueue_struct *pcs_cleanup_wq;
 
 int pcs_cluster_init(struct pcs_fuse_cluster *c, struct workqueue_struct *,
-		     struct fuse_conn *fc, PCS_CLUSTER_ID_T *cl_id,
-		     PCS_NODE_ID_T *id);
+		     struct fuse_conn *fc, struct pcs_ioc_init_kdirect *info);
 void pcs_cluster_fini(struct pcs_fuse_cluster *c);
 
 extern void fiemap_work_func(struct work_struct *w);
