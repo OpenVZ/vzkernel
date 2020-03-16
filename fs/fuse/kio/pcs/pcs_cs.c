@@ -13,6 +13,7 @@
 #include "pcs_cs.h"
 #include "pcs_cs_prot.h"
 #include "pcs_cluster.h"
+#include "pcs_sock_conn.h"
 #include "pcs_ioctl.h"
 #include "log.h"
 #include "fuse_ktrace.h"
@@ -34,7 +35,8 @@ static void cs_aborting(struct pcs_rpc *ep, int error);
 static struct pcs_msg *cs_get_hdr(struct pcs_rpc *ep, struct pcs_rpc_hdr *h);
 static int cs_input(struct pcs_rpc *ep, struct pcs_msg *msg);
 static void cs_keep_waiting(struct pcs_rpc *ep, struct pcs_msg *req, struct pcs_msg *msg);
-static void cs_connect(struct pcs_rpc *ep);
+static void cs_user_connect(struct pcs_rpc *ep);
+static void cs_kernel_connect(struct pcs_rpc *ep);
 static void pcs_cs_isolate(struct pcs_cs *cs, struct list_head *dispose);
 static void pcs_cs_destroy(struct pcs_cs *cs);
 
@@ -43,7 +45,7 @@ struct pcs_rpc_ops cn_rpc_ops = {
 	.get_hdr		= cs_get_hdr,
 	.state_change		= cs_aborting,
 	.keep_waiting		= cs_keep_waiting,
-	.connect		= cs_connect,
+	.connect		= cs_kernel_connect,
 };
 
 static int pcs_cs_percpu_stat_alloc(struct pcs_cs *cs)
@@ -432,7 +434,46 @@ static void cs_get_read_response_iter(struct pcs_msg *msg, int offset, struct io
 	}
 }
 
-static void cs_connect(struct pcs_rpc *ep)
+static void cs_kernel_connect(struct pcs_rpc *ep)
+{
+	if (ep->flags & PCS_RPC_F_LOCAL) {
+		char path[128];
+
+		snprintf(path, sizeof(path)-1, PCS_SHM_DIR "/%llu_" CLUSTER_ID_FMT,
+			 (unsigned long long)ep->peer_id.val, CLUSTER_ID_ARGS(ep->eng->cluster_id));
+
+		if ((strlen(path) + 1) > sizeof(((struct sockaddr_un *) 0)->sun_path)) {
+			TRACE("Path to local socket is too long: %s", path);
+
+			ep->flags &= ~PCS_RPC_F_LOCAL;
+			goto fail;
+		}
+		memset(&ep->sh.sun, 0, sizeof(struct sockaddr_un));
+		ep->sh.sun.sun_family = AF_UNIX;
+		ep->sh.sa_len = sizeof(struct sockaddr_un);
+		strcpy(ep->sh.sun.sun_path, path);
+	} else {
+		/* TODO: print sock addr using pcs_format_netaddr() */
+		if (ep->addr.type != PCS_ADDRTYPE_RDMA) {
+			if (pcs_netaddr2sockaddr(&ep->addr, &ep->sh.sa, &ep->sh.sa_len)) {
+				TRACE("netaddr to sockaddr failed");
+				goto fail;
+			}
+		} else {
+			WARN_ON_ONCE(1);
+			/* TODO: rdma connect init */
+			goto fail;
+		}
+	}
+	ep->state = PCS_RPC_CONNECT;
+	pcs_sockconnect_start(ep); /* TODO: rewrite to use pcs_netconnect callback */
+	return;
+fail:
+	pcs_rpc_reset(ep);
+	return;
+}
+
+__maybe_unused static void cs_user_connect(struct pcs_rpc *ep)
 {
 	struct pcs_cluster_core *cc = cc_from_rpc(ep->eng);
 	struct pcs_fuse_cluster *pfc = pcs_cluster_from_cc(cc);

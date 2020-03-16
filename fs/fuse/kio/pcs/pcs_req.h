@@ -236,6 +236,8 @@ struct pcs_cluster_core
 	int (*abort_callback)(struct pcs_cluster_core *cc, struct pcs_int_request *ireq);
 	struct fuse_conn *fc;
 	spinlock_t		lock;
+
+	char cluster_name[NAME_MAX];
 };
 
 static inline struct pcs_cluster_core *cc_from_csset(struct pcs_cs_set * css)
