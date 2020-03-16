@@ -29,6 +29,7 @@
 #include <linux/cgroup.h>
 #include <linux/cred.h>
 #include <linux/ctype.h>
+#include <linux/debugfs.h>
 #include <linux/errno.h>
 #include <linux/init_task.h>
 #include <linux/kernel.h>
@@ -4165,13 +4166,51 @@ static void css_release(struct percpu_ref *ref)
 	queue_work(cgroup_destroy_wq, &css->dput_work);
 }
 
+struct static_key css_stacks_on = STATIC_KEY_INIT_FALSE;
+EXPORT_SYMBOL(css_stacks_on);
+
+#ifdef CONFIG_DEBUG_FS
+static int css_stacks_get(void *data, u64 *val)
+{
+	*val = static_key_false(&css_stacks_on);
+	return 0;
+}
+
+static int css_stacks_set(void *data, u64 val)
+{
+	if (val != 0 && val != 1)
+		return -EINVAL;
+
+	if (static_key_false(&css_stacks_on) && !val)
+		static_key_slow_dec(&css_stacks_on);
+	else if (!static_key_false(&css_stacks_on) && val)
+		static_key_slow_inc(&css_stacks_on);
+
+	return 0;
+}
+DEFINE_SIMPLE_ATTRIBUTE(css_stacks_fops,
+		css_stacks_get, css_stacks_set, "%llu\n");
+
+static int __init css_stacks_debugfs(void)
+{
+	void *ret;
+
+	ret = debugfs_create_file("css_stacks",	0644, NULL, NULL,
+			&css_stacks_fops);
+	if (!ret)
+		pr_warn("Failed to create css_stacks in debugfs");
+	return 0;
+}
+late_initcall(css_stacks_debugfs);
+#endif
+
 static void init_cgroup_css(struct cgroup_subsys_state *css,
 			       struct cgroup_subsys *ss,
 			       struct cgroup *cgrp)
 {
 	css->cgroup = cgrp;
 	css->flags = 0;
-	if (slab_is_available())
+	if (static_key_false(&css_stacks_on) && slab_is_available())
 		css->stacks = (struct css_stacks *)
 			__get_free_pages(GFP_KERNEL|__GFP_NOFAIL|__GFP_ZERO, 1);
 	else
@@ -4204,7 +4243,7 @@ static int online_css(struct cgroup_subsys *ss, struct cgroup *cgrp)
 	return ret;
 }
 
-void save_css_stack(struct cgroup_subsys_state *css)
+void __save_css_stack(struct cgroup_subsys_state *css)
 {
 	unsigned long entries[8];
 	unsigned int offset;
@@ -4229,7 +4268,7 @@ void save_css_stack(struct cgroup_subsys_state *css)
 	save_stack_trace(&trace);
 	memcpy(((char*)css_stacks)+offset, entries, trace.max_entries*8);
 }
-EXPORT_SYMBOL(save_css_stack);
+EXPORT_SYMBOL(__save_css_stack);
 
 /* if the CSS is online, invoke ->pre_destory() on it and mark it offline */
 static void offline_css(struct cgroup_subsys *ss, struct cgroup *cgrp)
