@@ -27,6 +27,7 @@ enum
 	PCS_ADDRTYPE_IP6 = 2,
 	PCS_ADDRTYPE_UNIX = 3,
 	PCS_ADDRTYPE_RDMA = 4,
+	PCS_ADDRTYPE_NETLINK = 5,
 };
 
 /* alignment makes it usable in binary protocols */
