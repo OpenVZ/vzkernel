@@ -2,6 +2,9 @@
 #define _PCS_SOCK_IO_H_ 1
 
 #include <linux/net.h>
+#include <linux/in.h>
+#include <linux/in6.h>
+#include <linux/un.h>
 
 #include "pcs_types.h"
 ////#include "pcs_process.h"
@@ -154,6 +157,10 @@ int pcs_sock_queuelen(struct pcs_sockio * sio);
 void pcs_sock_abort(struct pcs_sockio * sio);
 void pcs_sock_error(struct pcs_sockio * sio, int error);
 
+void pcs_sk_data_ready(struct sock *sk, int count);
+void pcs_sk_write_space(struct sock *sk);
+void pcs_sk_error_report(struct sock *sk);
+
 void pcs_sock_throttle(struct pcs_sockio * sio);
 void pcs_sock_unthrottle(struct pcs_sockio * sio);
 
@@ -164,6 +171,8 @@ struct pcs_msg * pcs_cow_msg(struct pcs_msg * msg, int data_len);
 void pcs_clone_done(struct pcs_msg * msg);
 void pcs_free_msg(struct pcs_msg * msg);
 void pcs_get_iter_inline(struct pcs_msg * msg, int offset, struct iov_iter*it);
+void pcs_sock_internal_ioconn_destruct(struct pcs_ioconn *ioconn);
+void pcs_sock_external_ioconn_destruct(struct pcs_ioconn *ioconn);
 
 static inline void * msg_inline_head(struct pcs_msg * msg)
 {
