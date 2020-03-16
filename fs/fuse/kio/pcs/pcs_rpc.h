@@ -3,6 +3,7 @@
 
 //#include "pcs_defs.h"
 #include "pcs_rpc_prot.h"
+#include "pcs_net.h"
 #include "pcs_sock_io.h"
 
 struct pcs_msg;
@@ -285,7 +286,7 @@ void pcs_rpc_init_response(struct pcs_msg * msg, struct pcs_rpc_hdr * req_hdr, i
 
 /* Allocate message and initialize header */
 struct pcs_msg * pcs_rpc_alloc_msg_w_hdr(int type, int size);
-struct pcs_msg *rpc_get_hdr(struct pcs_sockio * sio, u32 *msg_size);
+struct pcs_msg *rpc_get_hdr(struct pcs_netio * netio, char *inline_buffer, u32 *msg_size);
 
 void pcs_rpc_set_memlimits(struct pcs_rpc_engine * eng, u64 thresh, u64 limit);
 void pcs_rpc_account_adjust(struct pcs_msg * msg, int adjustment);
@@ -298,9 +299,8 @@ int pcs_cluster_id_eq(PCS_CLUSTER_ID_T *id1, PCS_CLUSTER_ID_T *id2);
 
 void rpc_trace_health(struct pcs_rpc * ep);
 void pcs_rpc_enumerate_rpc(struct pcs_rpc_engine *eng, void (*cb)(struct pcs_rpc *ep, void *arg), void *arg);
-void pcs_rpc_set_sock(struct pcs_rpc *ep, struct pcs_sockio * sio);
 void pcs_rpc_enable(struct pcs_rpc * ep, int error);
-void rpc_eof_cb(struct pcs_sockio *sio);
+void rpc_eof_cb(struct pcs_netio *netio);
 
 static inline struct pcs_rpc *pcs_rpc_from_work(struct work_struct *wr)
 {
