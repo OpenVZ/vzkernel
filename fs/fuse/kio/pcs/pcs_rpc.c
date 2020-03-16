@@ -245,6 +245,7 @@ out:
 /* Client close. */
 void pcs_rpc_close(struct pcs_rpc * ep)
 {
+	TRACE("pcs_rpc_close");
 	mutex_lock(&ep->mutex);
 	BUG_ON(ep->flags & PCS_RPC_F_DEAD);
 	BUG_ON(ep->flags & PCS_RPC_F_PASSIVE);
@@ -356,7 +357,7 @@ void __pcs_rpc_put(struct pcs_rpc *ep)
 		queue_work(pcs_cleanup_wq, &rpc_cleanup_work);
 }
 
-static void rpc_eof_cb(struct pcs_sockio * sio)
+void rpc_eof_cb(struct pcs_sockio * sio)
 {
 	struct pcs_rpc * ep = sio->parent;
 
@@ -410,7 +411,7 @@ void pcs_rpc_error_respond(struct pcs_rpc * ep, struct pcs_msg * msg, int err)
 /* After client gets csconn_complete() callback, he makes some actions and completes switch
  * to WORK state calling this function.
  */
-static void pcs_rpc_enable(struct pcs_rpc * ep, int error)
+void pcs_rpc_enable(struct pcs_rpc * ep, int error)
 {
 	struct pcs_cluster_core *cc = cc_from_rpc(ep->eng);
 
@@ -433,6 +434,7 @@ static void pcs_rpc_enable(struct pcs_rpc * ep, int error)
 	}
 	TRACE("ep(%p)->state: WORK\n", ep);
 	ep->state = PCS_RPC_WORK;
+	ep->retries = 0;
 	queue_work(cc->wq, &ep->work);
 }
 
@@ -1406,7 +1408,6 @@ void rpc_connect_done(struct pcs_rpc *ep, struct socket *sock)
 
 	TRACE(PEER_FMT " ->state:%d sock:%p\n", PEER_ARGS(ep), ep->state, sock);
 	cancel_delayed_work(&ep->timer_work);
-	ep->retries++;
 
 	if (ep->state != PCS_RPC_CONNECT) {
 		FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR, "Invalid state: %u", ep->state);
@@ -1423,7 +1424,6 @@ void rpc_connect_done(struct pcs_rpc *ep, struct socket *sock)
 	sio->get_msg = rpc_get_hdr;
 	sio->eof = rpc_eof_cb;
 	//pcs_ioconn_register(ep->conn);
-	ep->retries = 0;
 	if (ep->gc)
 		list_lru_add(&ep->gc->lru, &ep->lru_link);
 
