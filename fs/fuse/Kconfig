@@ -44,7 +44,7 @@ config FUSE_KIO_NULLIO
 
 config FUSE_KIO_PCS
 	tristate "Enable kdirect PCS io engine"
-	depends on FUSE_FS
+	depends on FUSE_FS && INFINIBAND && INFINIBAND_ADDR_TRANS
 	help
 	  This FUSE extension allows to forward io requests directly to PCS
 
