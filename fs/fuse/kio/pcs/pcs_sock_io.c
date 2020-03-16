@@ -12,7 +12,7 @@
 #include "log.h"
 
 
-static void sio_msg_sent(struct pcs_msg * msg)
+void pcs_msg_sent(struct pcs_msg * msg)
 {
 	msg->stage = PCS_MSG_STAGE_SENT;
 	if (msg->timeout) {
@@ -22,13 +22,13 @@ static void sio_msg_sent(struct pcs_msg * msg)
 	}
 }
 
-void sio_push(struct pcs_sockio * sio)
+static void sio_push(struct pcs_sockio * sio)
 {
-	TRACE(PEER_FMT" flush \n", PEER_ARGS(sio->parent));
+	TRACE(PEER_FMT" flush \n", PEER_ARGS(sio->netio.parent));
 	if (sio->flags & PCS_SOCK_F_CORK) {
 		int optval = 1;
 		int ret;
-		ret = kernel_setsockopt(sio->ioconn.socket, SOL_TCP, TCP_NODELAY,
+		ret = kernel_setsockopt(sio->socket, SOL_TCP, TCP_NODELAY,
 					(char *)&optval, sizeof(optval));
 		if (ret)
 			TRACE("kernel_setsockopt(TCP_NODELAY) failed: %d",  ret);
@@ -36,18 +36,18 @@ void sio_push(struct pcs_sockio * sio)
 	}
 }
 
-static void pcs_ioconn_unregister(struct pcs_ioconn *ioconn)
+static void pcs_ioconn_unregister(struct pcs_sockio *sio)
 {
-	if (!test_bit(PCS_IOCONN_BF_DEAD, &ioconn->flags))
-		set_bit(PCS_IOCONN_BF_DEAD, &ioconn->flags);
+	if (!test_bit(PCS_IOCONN_BF_DEAD, &sio->io_flags))
+		set_bit(PCS_IOCONN_BF_DEAD, &sio->io_flags);
 }
 
-static void pcs_ioconn_close(struct pcs_ioconn *ioconn)
+static void pcs_ioconn_close(struct pcs_sockio *sio)
 {
-	kernel_sock_shutdown(ioconn->socket, SHUT_RDWR);
+	kernel_sock_shutdown(sio->socket, SHUT_RDWR);
 }
 
-void sio_abort(struct pcs_sockio * sio, int error)
+static void sio_abort(struct pcs_sockio * sio, int error)
 {
 	if (sio->current_msg) {
 		pcs_free_msg(sio->current_msg);
@@ -59,32 +59,23 @@ void sio_abort(struct pcs_sockio * sio, int error)
 		struct pcs_msg * msg = list_first_entry(&sio->write_queue, struct pcs_msg, list);
 		list_del(&msg->list);
 		sio->write_queue_len -= msg->size;
-		sio_msg_sent(msg);
+		pcs_msg_sent(msg);
 
 		pcs_set_local_error(&msg->error, error);
 		BUG_ON(!hlist_unhashed(&msg->kill_link));
 		msg->done(msg);
 	}
-	pcs_ioconn_unregister(&sio->ioconn);
-	pcs_ioconn_close(&sio->ioconn);
+	pcs_ioconn_unregister(sio);
+	pcs_ioconn_close(sio);
 	pcs_set_local_error(&sio->error, error);
-	if (sio->eof) {
-		void (*eof)(struct pcs_sockio *) = sio->eof;
-		sio->eof = NULL;
-		(*eof)(sio);
+	if (sio->netio.eof) {
+		void (*eof)(struct pcs_netio *) = sio->netio.eof;
+		sio->netio.eof = NULL;
+		(*eof)(&sio->netio);
 	}
 }
 
-
-void pcs_sock_abort(struct pcs_sockio * sio)
-{
-	if (!sio)
-		return;
-
-	sio_abort(sio, PCS_ERR_NET_ABORT);
-}
-
-void pcs_sock_error(struct pcs_sockio * sio, int error)
+static void pcs_sock_error(struct pcs_sockio * sio, int error)
 {
 	sio_abort(sio, error);
 }
@@ -190,7 +181,7 @@ out:
 	rcu_read_lock();
 	sio = rcu_dereference_sk_user_data(sock->sk);
 	if (sio) {
-		TRACE("RET: "PEER_FMT" len:%ld ret:%d\n", PEER_ARGS(sio->parent),
+		TRACE("RET: "PEER_FMT" len:%ld ret:%d\n", PEER_ARGS(sio->netio.parent),
 		      len, ret);
 	}
 	rcu_read_unlock();
@@ -201,20 +192,19 @@ out:
 
 static void pcs_sockio_recv(struct pcs_sockio *sio)
 {
-	struct pcs_ioconn* conn = &sio->ioconn;
 	struct iov_iter *it = &sio->read_iter;
-	struct pcs_rpc *ep = sio->parent;
+	struct pcs_rpc *ep = sio->netio.parent;
 	int count = 0;
 	u32 msg_size;
 	unsigned long loop_timeout = jiffies + PCS_SIO_SLICE;
 
 	TRACE("ENTER:" PEER_FMT " sio:%p cur_msg:%p\n", PEER_ARGS(ep), sio, sio->current_msg);
 
-	while(!test_bit(PCS_IOCONN_BF_DEAD, &conn->flags)) {
+	while(!test_bit(PCS_IOCONN_BF_DEAD, &sio->io_flags)) {
 		int n;
 		struct pcs_msg * msg;
 
-		if (test_bit(PCS_IOCONN_BF_ERROR, &conn->flags)) {
+		if (test_bit(PCS_IOCONN_BF_ERROR, &sio->io_flags)) {
 			sio_abort(sio, PCS_ERR_NET_ABORT);
 			return;
 		}
@@ -227,14 +217,14 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 			n = 0;
 
 			if (copy)
-				n = do_sock_recv(conn->socket, (char *)sio_inline_buffer(sio) + sio->hdr_ptr, copy);
+				n = do_sock_recv(sio->socket, (char *)sio_inline_buffer(sio) + sio->hdr_ptr, copy);
 
 			if (n > 0 || n == copy /* recv return 0 when copy is 0 */) {
 				sio->hdr_ptr += n;
 				if(sio->hdr_ptr != sio->hdr_max)
 					return;
 
-				msg = sio->get_msg(sio, &msg_size);
+				msg = sio->netio.getmsg(&sio->netio, sio_inline_buffer(sio), &msg_size);
 				if (msg == NULL) {
 					if (sio->hdr_ptr < sio->hdr_max)
 						continue;
@@ -280,7 +270,7 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 				page = rcv_iov_iter_kmap(msg, it, &buf, &len);
 				if (len > msg_size - sio->read_offset)
 					len = msg_size - sio->read_offset;
-				n = do_sock_recv(conn->socket, buf, len);
+				n = do_sock_recv(sio->socket, buf, len);
 				if (page)
 					kunmap(page);
 
@@ -311,8 +301,7 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 
 static void pcs_sockio_send(struct pcs_sockio *sio)
 {
-	struct pcs_rpc *ep __maybe_unused = sio->parent;
-	struct pcs_ioconn* conn = &sio->ioconn;
+	struct pcs_rpc *ep __maybe_unused = sio->netio.parent;
 	struct iov_iter *it = &sio->write_iter;
 	unsigned long loop_timeout = jiffies + PCS_SIO_SLICE;
 	struct pcs_msg * msg;
@@ -326,14 +315,14 @@ static void pcs_sockio_send(struct pcs_sockio *sio)
 
 		/* This is original check, but it is not clear how connection can becomes
 		   dead before sio_abort() was called. Let's simplify it with BUG_ON
-		if (conn->dead) {
+		if (sio->dead) {
 			pcs_set_local_error(&msg->error, PCS_ERR_NET_ABORT);
 			goto done;
 		}
 		*/
-		BUG_ON(test_bit(PCS_IOCONN_BF_DEAD, &conn->flags));
+		BUG_ON(test_bit(PCS_IOCONN_BF_DEAD, &sio->io_flags));
 
-		if (test_bit(PCS_IOCONN_BF_ERROR, &conn->flags)) {
+		if (test_bit(PCS_IOCONN_BF_ERROR, &sio->io_flags)) {
 			sio_abort(sio, PCS_ERR_NET_ABORT);
 			return;
 		}
@@ -351,7 +340,7 @@ static void pcs_sockio_send(struct pcs_sockio *sio)
 				msg->get_iter(msg, sio->write_offset, it);
 			}
 			BUG_ON(iov_iter_count(it) > left);
-			n = do_send_one_seg(conn->socket, it, iov_iter_single_seg_count(it) < left);
+			n = do_send_one_seg(sio->socket, it, iov_iter_single_seg_count(it) < left);
 			if (n > 0) {
 				sio->write_offset += n;
 				iov_iter_advance(it, n);
@@ -379,7 +368,7 @@ static void pcs_sockio_send(struct pcs_sockio *sio)
 		}
 		sio->write_offset = 0;
 		iov_iter_init_bad(it);
-		sio_msg_sent(msg);
+		pcs_msg_sent(msg);
 		msg->done(msg);
 		if (++count >= PCS_SIO_PREEMPT_LIMIT ||
 		    time_is_before_jiffies(loop_timeout)) {
@@ -391,9 +380,10 @@ static void pcs_sockio_send(struct pcs_sockio *sio)
 		sio_push(sio);
 }
 
-void pcs_sockio_xmit(struct pcs_sockio *sio)
+static void pcs_sockio_xmit(struct pcs_netio *netio)
 {
-	struct pcs_rpc *ep = sio->parent;
+	struct pcs_sockio *sio = sio_from_netio(netio);
+	struct pcs_rpc *ep = netio->parent;
 
 	BUG_ON(!mutex_is_locked(&ep->mutex));
 
@@ -402,13 +392,15 @@ void pcs_sockio_xmit(struct pcs_sockio *sio)
 	pcs_sockio_send(sio);
 }
 
-int pcs_sockio_delayed_seg(struct pcs_sockio *sio)
+static int pcs_sockio_flush(struct pcs_netio *netio)
 {
+	struct pcs_sockio *sio = sio_from_netio(netio);
 	return sio->flags & (PCS_SOCK_F_POOLOUT|PCS_SOCK_F_POOLIN);
 }
 
-void pcs_sock_sendmsg(struct pcs_sockio * sio, struct pcs_msg *msg)
+static void pcs_sock_sendmsg(struct pcs_netio *netio, struct pcs_msg *msg)
 {
+	struct pcs_sockio *sio = sio_from_netio(netio);
 	int was_idle = list_empty(&sio->write_queue);
 
 	DTRACE("sio(%p) msg:%p\n", sio, msg);
@@ -418,7 +410,7 @@ void pcs_sock_sendmsg(struct pcs_sockio * sio, struct pcs_msg *msg)
 		msg->done(msg);
 		return;
 	}
-	msg->sio = sio;
+	msg->netio = &sio->netio;
 
 	list_add_tail(&msg->list, &sio->write_queue);
 	sio->write_queue_len += msg->size;
@@ -437,11 +429,11 @@ void pcs_sock_sendmsg(struct pcs_sockio * sio, struct pcs_msg *msg)
 /* Try to cancel message send. If it is impossible, because message is in the middle
  * of write, so nothing and return an error.
  */
-int pcs_sock_cancel_msg(struct pcs_msg * msg)
+static int pcs_sock_cancel_msg(struct pcs_msg * msg)
 {
-	struct pcs_sockio * sio = msg->sio;
+	struct pcs_sockio * sio = sio_from_netio(msg->netio);
 
-	BUG_ON(msg->sio == NULL);
+	BUG_ON(msg->netio == NULL);
 
 	if (sio->write_queue.next == &msg->list) {
 		if (sio->write_offset)
@@ -461,21 +453,16 @@ int pcs_sock_cancel_msg(struct pcs_msg * msg)
 	return 0;
 }
 
-int pcs_sock_queuelen(struct pcs_sockio * sio)
+static void pcs_restore_sockets(struct pcs_sockio *sio)
 {
-	return sio->write_queue_len;
-}
-
-void pcs_restore_sockets(struct pcs_ioconn *ioconn)
-{
-	struct sock *sk = ioconn->socket->sk;
+	struct sock *sk = sio->socket->sk;
 
 	write_lock_bh(&sk->sk_callback_lock);
 	if (sk->sk_user_data) {
-		rcu_assign_sk_user_data(sk, ioconn->orig.user_data);
-		sk->sk_data_ready = ioconn->orig.data_ready;
-		sk->sk_write_space = ioconn->orig.write_space;
-		sk->sk_error_report = ioconn->orig.error_report;
+		rcu_assign_sk_user_data(sk, sio->orig.user_data);
+		sk->sk_data_ready = sio->orig.data_ready;
+		sk->sk_write_space = sio->orig.write_space;
+		sk->sk_error_report = sio->orig.error_report;
 		//sock->sk->sk_state_change = pcs_state_chage;
 	}
 	write_unlock_bh(&sk->sk_callback_lock);
@@ -487,7 +474,7 @@ void pcs_restore_sockets(struct pcs_ioconn *ioconn)
 static void sio_destroy_rcu(struct rcu_head *head)
 {
 	struct pcs_sockio *sio = container_of(head, struct pcs_sockio, rcu);
-	struct pcs_rpc *ep = sio->parent;
+	struct pcs_rpc *ep = sio->netio.parent;
 
 	pcs_rpc_put(ep);
 	memset(sio, 0xFF, sizeof(*sio));
@@ -504,10 +491,10 @@ void pcs_sock_ioconn_destruct(struct pcs_ioconn *ioconn)
 	BUG_ON(!list_empty(&sio->write_queue));
 	BUG_ON(sio->write_queue_len);
 
-	if (ioconn->socket) {
-		pcs_restore_sockets(ioconn);
-		sock_release(ioconn->socket);
-		ioconn->socket = NULL;
+	if (sio->socket) {
+		pcs_restore_sockets(sio);
+		sock_release(sio->socket);
+		sio->socket = NULL;
 	}
 
 	/* Wait pending socket callbacks, e.g., sk_data_ready() */
@@ -523,7 +510,7 @@ static void pcs_sk_kick_queue(struct sock *sk)
 	rcu_read_lock();
 	sio = rcu_dereference_sk_user_data(sk);
 	if (sio) {
-		struct pcs_rpc *ep = sio->parent;
+		struct pcs_rpc *ep = sio->netio.parent;
 		TRACE(PEER_FMT" queue\n", PEER_ARGS(ep));
 		pcs_rpc_kick_queue(ep);
 	}
@@ -549,34 +536,27 @@ void pcs_sk_error_report(struct sock *sk)
 	rcu_read_lock();
 	sio = rcu_dereference_sk_user_data(sk);
 	if (sio) {
-		struct pcs_rpc *ep = sio->parent;
+		struct pcs_rpc *ep = sio->netio.parent;
 
-		if (test_bit(PCS_IOCONN_BF_DEAD, &sio->ioconn.flags) ||
-		    test_bit(PCS_IOCONN_BF_ERROR, &sio->ioconn.flags))
+		if (test_bit(PCS_IOCONN_BF_DEAD, &sio->io_flags) ||
+		    test_bit(PCS_IOCONN_BF_ERROR, &sio->io_flags))
 			goto unlock;
 
-		set_bit(PCS_IOCONN_BF_ERROR, &sio->ioconn.flags);
+		set_bit(PCS_IOCONN_BF_ERROR, &sio->io_flags);
 		pcs_rpc_kick_queue(ep);
 	}
 unlock:
 	rcu_read_unlock();
 }
 
-void pcs_sockio_start(struct pcs_sockio * sio)
-{
-	//// TODO: dmonakhov
-	////pcs_ioconn_register(&sio->ioconn);
-}
-
 static void pcs_deaccount_msg(struct pcs_msg * msg)
 {
-	msg->sio = NULL;
+	msg->netio = NULL;
 }
 
 static void pcs_account_msg(struct pcs_sockio * sio, struct pcs_msg * msg)
 {
-	msg->sio = sio;
-
+	msg->netio = &sio->netio;
 }
 
 static void pcs_msg_input_destructor(struct pcs_msg * msg)
@@ -626,7 +606,7 @@ struct pcs_msg * pcs_alloc_output_msg(int datalen)
 	if (msg) {
 		pcs_msg_io_init(msg);
 		msg->rpc = NULL;
-		msg->sio = NULL;
+		msg->netio = NULL;
 		msg->destructor = pcs_io_msg_output_destructor;
 		msg->get_iter = pcs_get_iter_inline;
 	}
@@ -719,24 +699,59 @@ struct pcs_msg * pcs_cow_msg(struct pcs_msg * msg, int copy_len)
 	return clone;
 }
 
-void pcs_sock_throttle(struct pcs_sockio * sio)
+static void pcs_sock_throttle(struct pcs_netio *netio)
 {
+	struct pcs_sockio *sio = sio_from_netio(netio);
+
 	if ((sio->flags & PCS_SOCK_F_THROTTLE) ||
-	    test_bit(PCS_IOCONN_BF_DEAD, &sio->ioconn.flags))
+	    test_bit(PCS_IOCONN_BF_DEAD, &sio->io_flags))
 		return;
 
-	DTRACE("Throttle on socket %p rpc=%p", sio, sio->parent);
+	DTRACE("Throttle on socket %p rpc=%p", sio, sio->netio.parent);
 	sio->flags |= PCS_SOCK_F_THROTTLE;
 }
 
-void pcs_sock_unthrottle(struct pcs_sockio * sio)
+static void pcs_sock_unthrottle(struct pcs_netio *netio)
 {
+	struct pcs_sockio *sio = sio_from_netio(netio);
+
 	if (!(sio->flags & PCS_SOCK_F_THROTTLE) ||
-	    test_bit(PCS_IOCONN_BF_DEAD, &sio->ioconn.flags))
+	    test_bit(PCS_IOCONN_BF_DEAD, &sio->io_flags))
 		return;
 
-	DTRACE("Unthrottle on socket %p rpc=%p", sio, sio->parent);
+	DTRACE("Unthrottle on socket %p rpc=%p", sio, sio->netio.parent);
 	sio->flags &= ~PCS_SOCK_F_THROTTLE;
 	if ((sio->flags & PCS_SOCK_F_EOF))
 		return;
 }
+
+static void pcs_sock_abort_io(struct pcs_netio *netio, int error)
+{
+	struct pcs_sockio *sio = sio_from_netio(netio);
+
+	netio->eof = NULL;
+	pcs_sock_error(sio, error);
+}
+
+static unsigned long pcs_sock_next_timeout(struct pcs_netio *netio)
+{
+	struct pcs_sockio *sio = sio_from_netio(netio);
+	struct pcs_msg *msg;
+
+	if (list_empty(&sio->write_queue))
+		return 0;
+
+	msg = list_first_entry(&sio->write_queue, struct pcs_msg, list);
+	return msg->start_time + sio->send_timeout;
+}
+
+struct pcs_netio_tops pcs_sock_netio_tops = {
+	.throttle		= pcs_sock_throttle,
+	.unthrottle		= pcs_sock_unthrottle,
+	.send_msg		= pcs_sock_sendmsg,
+	.cancel_msg		= pcs_sock_cancel_msg,
+	.abort_io		= pcs_sock_abort_io,
+	.xmit			= pcs_sockio_xmit,
+	.flush			= pcs_sockio_flush,
+	.next_timeout		= pcs_sock_next_timeout,
+};
