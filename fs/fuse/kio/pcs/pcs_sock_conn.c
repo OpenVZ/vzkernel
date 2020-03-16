@@ -622,7 +622,7 @@ void pcs_sockconnect_start(struct pcs_rpc *ep)
 	sio->eof = rpc_eof_cb;
 	sio->send_timeout = PCS_SIO_TIMEOUT;
 	sio->ioconn.socket = sock;
-	sio->ioconn.destruct = pcs_sock_internal_ioconn_destruct;
+	sio->ioconn.destruct = pcs_sock_ioconn_destruct;
 	if (ep->gc)
 		list_lru_add(&ep->gc->lru, &ep->lru_link);
 
