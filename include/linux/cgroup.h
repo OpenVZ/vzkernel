@@ -150,14 +150,22 @@ enum {
 	CSS_ONLINE	= (1 << 1), /* between ->css_online() and ->css_offline() */
 };
 
+
+extern struct static_key css_stacks_on;
+void __save_css_stack(struct cgroup_subsys_state *css);
+
+static inline void save_css_stack(struct cgroup_subsys_state *css)
+{
+	if (static_key_false(&css_stacks_on))
+		__save_css_stack(css);
+}
+
 /*
  * Call css_get() to hold a reference on the css; it can be used
  * for a reference obtained via:
  * - an existing ref-counted reference to the css
  * - task->cgroups for a locked task
  */
-void save_css_stack(struct cgroup_subsys_state *css);
-
 static inline void css_get(struct cgroup_subsys_state *css)
 {
 	/* We don't need to reference count the root state */
