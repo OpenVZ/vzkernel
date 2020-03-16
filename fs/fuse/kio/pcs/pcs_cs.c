@@ -35,8 +35,7 @@ static void cs_aborting(struct pcs_rpc *ep, int error);
 static struct pcs_msg *cs_get_hdr(struct pcs_rpc *ep, struct pcs_rpc_hdr *h);
 static int cs_input(struct pcs_rpc *ep, struct pcs_msg *msg);
 static void cs_keep_waiting(struct pcs_rpc *ep, struct pcs_msg *req, struct pcs_msg *msg);
-static void cs_user_connect(struct pcs_rpc *ep);
-static void cs_kernel_connect(struct pcs_rpc *ep);
+static void cs_connect(struct pcs_rpc *ep);
 static void pcs_cs_isolate(struct pcs_cs *cs, struct list_head *dispose);
 static void pcs_cs_destroy(struct pcs_cs *cs);
 
@@ -45,7 +44,7 @@ struct pcs_rpc_ops cn_rpc_ops = {
 	.get_hdr		= cs_get_hdr,
 	.state_change		= cs_aborting,
 	.keep_waiting		= cs_keep_waiting,
-	.connect		= cs_kernel_connect,
+	.connect		= cs_connect,
 };
 
 static int pcs_cs_percpu_stat_alloc(struct pcs_cs *cs)
@@ -434,7 +433,7 @@ static void cs_get_read_response_iter(struct pcs_msg *msg, int offset, struct io
 	}
 }
 
-static void cs_kernel_connect(struct pcs_rpc *ep)
+static void cs_connect(struct pcs_rpc *ep)
 {
 	if (ep->flags & PCS_RPC_F_LOCAL) {
 		char path[128];
@@ -471,16 +470,6 @@ static void cs_kernel_connect(struct pcs_rpc *ep)
 fail:
 	pcs_rpc_reset(ep);
 	return;
-}
-
-__maybe_unused static void cs_user_connect(struct pcs_rpc *ep)
-{
-	struct pcs_cluster_core *cc = cc_from_rpc(ep->eng);
-	struct pcs_fuse_cluster *pfc = pcs_cluster_from_cc(cc);
-
-	ep->state = PCS_RPC_CONNECT;
-	if (fuse_pcs_csconn_send(pfc->fc, ep, PCS_IOC_CS_OPEN))
-		pcs_rpc_reset(ep);
 }
 
 static struct pcs_msg *cs_get_hdr(struct pcs_rpc *ep, struct pcs_rpc_hdr *h)
