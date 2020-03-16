@@ -39,8 +39,30 @@ unsigned int debugfs_tracing = DEBUGFS_TRACE;
 module_param(debugfs_tracing, uint, 0644);
 MODULE_PARM_DESC(debugfs_tracing, "Enable/Disbale debugfs tracing");
 
+bool rdmaio_use_map_for_mr = false;
+module_param(rdmaio_use_map_for_mr, bool, 0644);
+MODULE_PARM_DESC(rdmaio_use_map_for_mr, "Enable/Disbale usage of map for RDMA MRs");
+
+bool rdmaio_use_dma_mr_for_rdma_rw = true;
+module_param(rdmaio_use_dma_mr_for_rdma_rw, bool, 0644);
+MODULE_PARM_DESC(rdmaio_use_dma_mr_for_rdma_rw,
+		 "Enable/Disbale usage of DMA memory region for RDMA read/write requests");
+
+unsigned int rdmaio_cq_count = 0;
+module_param(rdmaio_cq_count, uint, 0644);
+MODULE_PARM_DESC(rdmaio_cq_count, "RDMA CQ count");
+
+unsigned int rdmaio_cq_period = 0;
+module_param(rdmaio_cq_period, uint, 0644);
+MODULE_PARM_DESC(rdmaio_cq_period, "RDMA CQ period in microsecond");
+
+unsigned int rdmaio_queue_depth = 8;
+module_param(rdmaio_queue_depth, uint, 0644);
+MODULE_PARM_DESC(rdmaio_queue_depth, "RDMA queue depth");
+
 #ifdef CONFIG_DEBUG_KERNEL
-static int set_sockio_fail_percent(const char *val, struct kernel_param *kp)
+
+static int set_io_fail_percent(const char *val, struct kernel_param *kp)
 {
 	unsigned *p;
 	int rv;
@@ -57,10 +79,15 @@ static int set_sockio_fail_percent(const char *val, struct kernel_param *kp)
 }
 
 u32 sockio_fail_percent;
-module_param_call(sockio_fail_percent, set_sockio_fail_percent,
+module_param_call(sockio_fail_percent, set_io_fail_percent,
 		  param_get_uint, &sockio_fail_percent, 0644);
 __MODULE_PARM_TYPE(sockio_fail_percent, "uint");
 MODULE_PARM_DESC(sockio_fail_percent, "Sock io failing rate in percents");
+
+bool rdmaio_io_failing = false;
+module_param(rdmaio_io_failing, bool, 0644);
+MODULE_PARM_DESC(rdmaio_io_failing, "Enable/Disbale RDMA io failing");
+
 #endif
 
 static int fuse_ktrace_setup(struct fuse_conn * fc);
