@@ -41,7 +41,6 @@ void sio_push(struct pcs_sockio * sio)
 //// caseA: userspace close socket and wait for kernelspace
 //// caseB: kernelspace want to close socket and have to somehow
 ////	    notify about this to userspace (NEW API REQUIRED)
-static void pcs_restore_sockets(struct pcs_ioconn *ioconn);
 static void pcs_ioconn_unregister(struct pcs_ioconn *ioconn)
 {
 	if (!test_bit(PCS_IOCONN_BF_DEAD, &ioconn->flags))
@@ -472,19 +471,18 @@ int pcs_sock_queuelen(struct pcs_sockio * sio)
 	return sio->write_queue_len;
 }
 
-static void pcs_restore_sockets(struct pcs_ioconn *ioconn)
+void pcs_restore_sockets(struct pcs_ioconn *ioconn)
 {
-
-	struct sock *sk;
-
-	sk = ioconn->socket->sk;
+	struct sock *sk = ioconn->socket->sk;
 
 	write_lock_bh(&sk->sk_callback_lock);
-	rcu_assign_sk_user_data(sk, ioconn->orig.user_data);
-	sk->sk_data_ready =   ioconn->orig.data_ready;
-	sk->sk_write_space =  ioconn->orig.write_space;
-	sk->sk_error_report = ioconn->orig.error_report;
-	//sock->sk->sk_state_change = pcs_state_chage;
+	if (sk->sk_user_data) {
+		rcu_assign_sk_user_data(sk, ioconn->orig.user_data);
+		sk->sk_data_ready = ioconn->orig.data_ready;
+		sk->sk_write_space = ioconn->orig.write_space;
+		sk->sk_error_report = ioconn->orig.error_report;
+		//sock->sk->sk_state_change = pcs_state_chage;
+	}
 	write_unlock_bh(&sk->sk_callback_lock);
 
 	sk->sk_sndtimeo = MAX_SCHEDULE_TIMEOUT;
@@ -501,9 +499,11 @@ static void sio_destroy_rcu(struct rcu_head *head)
 	kfree(sio);
 }
 
-void pcs_sock_ioconn_destruct(struct pcs_ioconn *ioconn)
+static void pcs_sock_ioconn_destruct(struct pcs_ioconn *ioconn, bool internal)
 {
 	struct pcs_sockio * sio = sio_from_ioconn(ioconn);
+
+	TRACE("Sock destruct_cb, sio: %p, internal: %d", sio, internal);
 
 	BUG_ON(sio->current_msg);
 	BUG_ON(!list_empty(&sio->write_queue));
@@ -511,12 +511,25 @@ void pcs_sock_ioconn_destruct(struct pcs_ioconn *ioconn)
 
 	if (ioconn->socket) {
 		pcs_restore_sockets(ioconn);
-		fput(ioconn->socket->file);
+		if (internal)
+			sock_release(ioconn->socket);
+		else
+			fput(ioconn->socket->file);
 		ioconn->socket = NULL;
 	}
 
 	/* Wait pending socket callbacks, e.g., sk_data_ready() */
 	call_rcu(&sio->rcu, sio_destroy_rcu);
+}
+
+void pcs_sock_internal_ioconn_destruct(struct pcs_ioconn *ioconn)
+{
+	pcs_sock_ioconn_destruct(ioconn, true);
+}
+
+void pcs_sock_external_ioconn_destruct(struct pcs_ioconn *ioconn)
+{
+	pcs_sock_ioconn_destruct(ioconn, false);
 }
 
 static void pcs_sk_kick_queue(struct sock *sk)
@@ -535,17 +548,17 @@ static void pcs_sk_kick_queue(struct sock *sk)
 	rcu_read_unlock();
 }
 
-static void pcs_sk_data_ready(struct sock *sk, int count)
+void pcs_sk_data_ready(struct sock *sk, int count)
 {
 	pcs_sk_kick_queue(sk);
 }
-static void pcs_sk_write_space(struct sock *sk)
+void pcs_sk_write_space(struct sock *sk)
 {
 	pcs_sk_kick_queue(sk);
 }
 
 /* TODO this call back does not look correct, sane locking/error handling is required */
-static void pcs_sk_error_report(struct sock *sk)
+void pcs_sk_error_report(struct sock *sk)
 {
 	struct pcs_sockio *sio;
 
@@ -607,7 +620,7 @@ struct pcs_sockio * pcs_sockio_init(struct socket *sock,
 	sk->sk_allocation = GFP_NOFS;
 	sio->send_timeout = PCS_SIO_TIMEOUT;
 	sio->ioconn.socket = sock;
-	sio->ioconn.destruct = pcs_sock_ioconn_destruct;
+	sio->ioconn.destruct = pcs_sock_external_ioconn_destruct;
 
 	rcu_assign_sk_user_data(sk, sio);
 	smp_wmb(); /* Pairs with smp_rmb() in callbacks */
