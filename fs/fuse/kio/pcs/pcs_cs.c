@@ -7,13 +7,13 @@
 #include "pcs_types.h"
 #include "pcs_sock_io.h"
 #include "pcs_rpc.h"
-#include "pcs_sock_io.h"
 #include "pcs_req.h"
 #include "pcs_map.h"
 #include "pcs_cs.h"
 #include "pcs_cs_prot.h"
 #include "pcs_cluster.h"
 #include "pcs_sock_conn.h"
+#include "pcs_rdma_conn.h"
 #include "pcs_ioctl.h"
 #include "log.h"
 #include "fuse_ktrace.h"
@@ -456,17 +456,12 @@ static void cs_connect(struct pcs_rpc *ep)
 		connect_start = pcs_sockconnect_start;
 	} else {
 		/* TODO: print sock addr using pcs_format_netaddr() */
-		if (ep->addr.type != PCS_ADDRTYPE_RDMA) {
-			if (pcs_netaddr2sockaddr(&ep->addr, &ep->sh.sa, &ep->sh.sa_len)) {
-				TRACE("netaddr to sockaddr failed");
-				goto fail;
-			}
-			connect_start = pcs_sockconnect_start;
-		} else {
-			WARN_ON_ONCE(1);
-			/* TODO: rdma connect init */
+		if (pcs_netaddr2sockaddr(&ep->addr, &ep->sh.sa, &ep->sh.sa_len)) {
+			TRACE("netaddr to sockaddr failed");
 			goto fail;
 		}
+		connect_start = ep->addr.type == PCS_ADDRTYPE_RDMA ?
+			pcs_rdmaconnect_start : pcs_sockconnect_start;
 	}
 	ep->state = PCS_RPC_CONNECT;
 	connect_start(ep); /* TODO: rewrite to use pcs_netconnect callback */
