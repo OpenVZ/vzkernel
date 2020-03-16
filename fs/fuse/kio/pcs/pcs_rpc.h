@@ -299,7 +299,6 @@ int pcs_cluster_id_eq(PCS_CLUSTER_ID_T *id1, PCS_CLUSTER_ID_T *id2);
 void rpc_trace_health(struct pcs_rpc * ep);
 void pcs_rpc_enumerate_rpc(struct pcs_rpc_engine *eng, void (*cb)(struct pcs_rpc *ep, void *arg), void *arg);
 void pcs_rpc_set_sock(struct pcs_rpc *ep, struct pcs_sockio * sio);
-void rpc_connect_done(struct pcs_rpc *ep, struct socket *sock);
 void pcs_rpc_enable(struct pcs_rpc * ep, int error);
 void rpc_eof_cb(struct pcs_sockio *sio);
 
