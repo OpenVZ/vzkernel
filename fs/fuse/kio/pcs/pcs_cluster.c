@@ -592,19 +592,18 @@ static int ireq_check_redo_(struct pcs_int_request *ireq)
 }
 
 int pcs_cluster_init(struct pcs_fuse_cluster *pfc, struct workqueue_struct *wq,
-		     struct fuse_conn *fc, PCS_CLUSTER_ID_T *cl_id,
-		     PCS_NODE_ID_T *id)
+		     struct fuse_conn *fc, struct pcs_ioc_init_kdirect *info)
 {
 	struct pcs_cluster_core_attr attr;
 
-	attr.cluster = *cl_id;
-	attr.node = *id;
+	attr.cluster = info->cluster_id;
+	attr.node = info->node_id;
 	attr.abort_timeout_ms = 0;
 
 	pfc->fc = fc;
 
 	/* core init */
-	if (pcs_cc_init(&pfc->cc, wq, NULL, &attr))
+	if (pcs_cc_init(&pfc->cc, wq, info->cluster_name, &attr))
 		return -1;
 	pfc->cc.fc = fc;
 	pfc->cc.op.ireq_process	   = ireq_process_;
