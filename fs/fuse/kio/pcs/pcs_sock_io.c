@@ -745,6 +745,69 @@ static unsigned long pcs_sock_next_timeout(struct pcs_netio *netio)
 	return msg->start_time + sio->send_timeout;
 }
 
+static int pcs_sock_send_buf(struct socket *sock, void *buf, size_t size)
+{
+	struct msghdr msg = {
+		.msg_flags = MSG_WAITALL | MSG_NOSIGNAL,
+	};
+	struct kvec iov = {
+		.iov_base = buf,
+		.iov_len = size,
+	};
+	int ret = kernel_sendmsg(sock, &msg, &iov, 1, size);
+	return ret < 0 ? ret : 0;
+}
+
+static int pcs_sock_recv_buf(struct socket *sock, void *buf, size_t size)
+{
+	struct msghdr msg = {
+		.msg_flags = MSG_WAITALL | MSG_NOSIGNAL,
+	};
+	struct kvec iov = {
+		.iov_base = buf,
+		.iov_len = size,
+	};
+	int ret = kernel_recvmsg(sock, &msg, &iov, 1, size,
+				 MSG_WAITALL | MSG_NOSIGNAL);
+	if (ret < 0)
+		return ret;
+	return ret != size ? -EPROTO : 0;
+}
+
+static int pcs_sock_sync_send(struct pcs_netio *netio, struct pcs_msg *msg)
+{
+	struct pcs_sockio *sio = sio_from_netio(netio);
+
+	return pcs_sock_send_buf(sio->socket, msg->_inline_buffer, msg->size);
+}
+
+static int pcs_sock_sync_recv(struct pcs_netio *netio, struct pcs_msg **msg)
+{
+	struct pcs_sockio *sio = sio_from_netio(netio);
+	struct pcs_rpc_hdr hdr;
+	int err;
+
+	err = pcs_sock_recv_buf(sio->socket, &hdr, sizeof(hdr));
+	if (err)
+		return err;
+
+	*msg = pcs_rpc_alloc_output_msg(hdr.len);
+	if (!*msg)
+		return -ENOMEM;
+
+	memcpy((*msg)->_inline_buffer, &hdr, sizeof(hdr));
+
+	err = pcs_sock_recv_buf(sio->socket, (*msg)->_inline_buffer +
+				sizeof(hdr), hdr.len - sizeof(hdr));
+	if (err) {
+		pcs_free_msg(*msg);
+		*msg = NULL;
+		return err;
+	}
+
+	return 0;
+}
+
 struct pcs_netio_tops pcs_sock_netio_tops = {
 	.throttle		= pcs_sock_throttle,
 	.unthrottle		= pcs_sock_unthrottle,
@@ -754,4 +817,6 @@ struct pcs_netio_tops pcs_sock_netio_tops = {
 	.xmit			= pcs_sockio_xmit,
 	.flush			= pcs_sockio_flush,
 	.next_timeout		= pcs_sock_next_timeout,
+	.sync_send		= pcs_sock_sync_send,
+	.sync_recv		= pcs_sock_sync_recv,
 };
