@@ -101,7 +101,7 @@ static void process_pcs_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 		goto out;
 	}
 
-	if (pcs_cluster_init(pfc, pcs_wq, fc, &info->cluster_id, &info->node_id)) {
+	if (pcs_cluster_init(pfc, pcs_wq, fc, info)) {
 		fc->conn_error = 1;
 		kvfree(pfc);
 		goto out;
