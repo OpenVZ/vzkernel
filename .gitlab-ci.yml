@@ -8,13 +8,37 @@ stages:
 variables:
   GIT_DEPTH: "5"
 
-test_rh_srpm:
+
+# Ensure that "make rh-srpm" works for merge requests against ark-patches.
+test_patches_rh_srpm:
   stage: test
-  script: make rh-srpm
+  script:
+    - curl -o temp.zip -L "https://gitlab.com/cki-project/kernel-ark/-/jobs/artifacts/internal/download?job=redhat_export"
+    - unzip temp.zip
+    - printf "%s\n%s\n" "include Makefile.rhelver" "$(cat Makefile)" > Makefile
+    - make rh-srpm
   only:
     refs:
       - merge_requests
-      - internal
+    variables:
+      - $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "ark-patches"
+
+
+test_internal_rh_srpm:
+  stage: test
+  script:
+    - git config user.name "CKI@GitLab"
+    - git config user.email "cki-project@redhat.com"
+    - curl -o temp.zip -L "https://gitlab.com/cki-project/kernel-ark/-/jobs/artifacts/ark-patches/download?job=ark_patch_export"
+    - unzip temp.zip
+    - git am redhat_downstream.patch
+    - make rh-srpm
+  only:
+    refs:
+      - merge_requests
+    variables:
+      - $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "internal"
+
 
 # This job exports the packaging-related scripts and files for use with other
 # upstream kernel trees.
@@ -32,6 +56,24 @@ redhat_export:
       - Makefile.rhelver
       - redhat/
 
+
+# Export the latest out-of-tree patch set
+ark_patch_export:
+  stage: test
+  script:
+    - git fetch --depth=250 origin ark-patches:ark-patches
+    - git fetch --depth=20000 origin master:master
+    - git format-patch $(git merge-base master ark-patches)..ark-patches -o redhat_patches/
+    - cat redhat_patches/*patch >redhat_downstream.patch
+  only:
+    refs:
+      - ark-patches
+  artifacts:
+    when: always
+    paths:
+      - redhat_downstream.patch
+
+
 # Bring some commits from a make rh-release back to internal
 update_internal:
    stage: test
@@ -45,4 +87,4 @@ update_internal:
    script:
      - redhat/update-internal.sh $GIT_DEPTH
    only:
-     - master
+     - ark-latest
