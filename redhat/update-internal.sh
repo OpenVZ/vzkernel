@@ -3,12 +3,13 @@
 GIT_DEPTH=$1
 
 set -x
+set -e
 
-git fetch --depth=$GIT_DEPTH origin
+git fetch --depth="$GIT_DEPTH" origin
 git checkout -b new_clog_$RANDOM origin/internal
-git checkout origin/master -- redhat/kernel.changelog-8.99
+git checkout origin/ark-latest -- redhat/kernel.changelog-8.99
 git add redhat/kernel.changelog-8.99
-git checkout origin/master -- redhat/marker
+git checkout origin/ark-latest -- redhat/marker
 git add redhat/marker
 git config user.name "CKI@GitLab"
 git config user.email "cki-project@redhat.com"
