@@ -1230,6 +1230,67 @@ ploop_index_wb_complete(struct ploop_request * preq)
 	map_wb_complete(m, preq->error);
 }
 
+int ploop_map_dump_bat(struct ploop_delta *delta, u32 start_cluster,
+			u32 end_cluster, u32 __user *to_addr)
+{
+	struct ploop_device *plo = delta->plo;
+	struct ploop_map *map = &plo->map;
+	unsigned int i, idx, level, count;
+	struct map_node *m;
+	struct page *page;
+	u32 *bat;
+	int ret;
+
+	page = alloc_page(GFP_KERNEL);
+	if (!page)
+		return -ENOMEM;
+	bat = kmap(page);
+
+	while (start_cluster <= end_cluster) {
+		idx = (start_cluster + PLOOP_MAP_OFFSET) & (INDEX_PER_PAGE - 1);
+		count = INDEX_PER_PAGE - idx;
+		if (count > end_cluster + 1 - start_cluster)
+			count = end_cluster + 1 - start_cluster;
+
+		spin_lock_irq(&plo->lock);
+		m = map_lookup(map, start_cluster);
+		if (!m || !test_bit(PLOOP_MAP_UPTODATE, &m->state)) {
+			BUILD_BUG_ON(PLOOP_DUMP_BAT_UNCACHED_INDEX != 0xFFFFFFFFU);
+			memset(&bat[idx], 0xff, count * sizeof(u32));
+			goto unlock;
+		}
+
+		for (i = idx; i < idx + count; i++) {
+			if (m->levels)
+				level = m->levels[i];
+			else
+				level = MAP_LEVEL(m);
+
+			if (level != delta->level)
+				bat[i] = PLOOP_DUMP_BAT_UNCACHED_INDEX;
+			else
+				bat[i] = ((map_index_t *)page_address(m->page))[i];
+		}
+unlock:
+		spin_unlock_irq(&map->plo->lock);
+
+		if (copy_to_user(to_addr, &bat[idx], count * sizeof(u32))) {
+			ret = -EFAULT;
+			goto out;
+		}
+
+		start_cluster += count;
+		to_addr += count;
+	}
+
+	ret = 0;
+out:
+	kunmap(page);
+	put_page(page);
+	return ret;
+}
+EXPORT_SYMBOL(ploop_map_dump_bat);
+
 void ploop_map_start(struct ploop_map * map, u64 bd_size)
 {
 	struct ploop_device * plo = map->plo;
