@@ -227,6 +227,15 @@ struct ploop_push_backup_stop_ctl
 	__u32	status; /* for sanity: non-zero if pending or active queue is not empty */
 } __attribute__ ((aligned (8)));
 
+struct ploop_dump_bat_ctl
+{
+	__u32	level;
+	__u32	start_cluster;
+	__u32	nr_clusters;
+#define PLOOP_DUMP_BAT_UNCACHED_INDEX	0xFFFFFFFFU
+	__u32	bat[0];
+} __attribute__ ((aligned (8)));
+
 /* maintenance types */
 enum {
 	PLOOP_MNTN_OFF = 0,  /* no maintenance is in progress */
@@ -366,6 +375,9 @@ struct ploop_track_extent
 
 /* Unfreeze FS mounted over ploop */
 #define PLOOP_IOC_THAW		_IO(PLOOPCTLTYPE, 33)
+
+/* Get cached BAT */
+#define PLOOP_IOC_DUMP_CACHED_BAT _IOW(PLOOPCTLTYPE, 34, struct ploop_dump_bat_ctl)
 
 /* Events exposed via /sys/block/ploopN/pstate/event */
 #define PLOOP_EVENT_ABORTED	1
