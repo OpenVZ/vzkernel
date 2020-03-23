@@ -5349,6 +5349,38 @@ static int ploop_thaw(struct ploop_device *plo)
 	return err;
 }
 
+static int ploop_dump_cached_bat(struct ploop_device *plo, unsigned long arg)
+{
+	struct ploop_dump_bat_ctl ctl, __user *uctl;
+	struct ploop_delta *delta;
+	u32 end_cluster;
+
+	uctl = (struct ploop_dump_bat_ctl __user *)arg;
+
+	if (!test_bit(PLOOP_S_RUNNING, &plo->state))
+		return -ENODEV;
+
+	if (plo->maintenance_type != PLOOP_MNTN_OFF)
+		return -EBUSY;
+
+	if (copy_from_user(&ctl, uctl, sizeof(ctl)))
+		return -EFAULT;
+
+	delta = find_delta(plo, ctl.level);
+	if (!delta)
+		return -ENOENT;
+
+	end_cluster = ctl.start_cluster + ctl.nr_clusters - 1;
+	if (end_cluster <= ctl.start_cluster)
+		return -EINVAL;
+
+	if (!delta->ops->dump_bat)
+		return -ENOTSUPP;
+
+	return delta->ops->dump_bat(delta, ctl.start_cluster,
+				    end_cluster, &uctl->bat[0]);
+}
+
 static int ploop_ioctl(struct block_device *bdev, fmode_t fmode, unsigned int cmd,
 		       unsigned long arg)
 {
@@ -5467,6 +5499,9 @@ static int ploop_ioctl(struct block_device *bdev, fmode_t fmode, unsigned int cm
 		break;
 	case PLOOP_IOC_THAW:
 		err = ploop_thaw(plo);
+		break;
+	case PLOOP_IOC_DUMP_CACHED_BAT:
+		err = ploop_dump_cached_bat(plo, arg);
 		break;
 	default:
 		err = -EINVAL;
