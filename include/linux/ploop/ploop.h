@@ -285,6 +285,8 @@ struct ploop_delta_ops
 	int		(*prepare_grow)(struct ploop_delta *, u64 *new_size, int *reloc);
 	int		(*complete_grow)(struct ploop_delta *, u64 new_size);
 	void		(*add_free_blk)(struct ploop_delta *, struct ploop_request *);
+	int		(*dump_bat)(struct ploop_delta *delta, u32 start_cluster,
+				    u32 end_cluster, u32 __user *to_addr);
 };
 
 /* Virtual image. */
@@ -893,6 +895,8 @@ void ploop_index_update(struct ploop_request * preq);
 void ploop_index_wb_complete(struct ploop_request * preq);
 int __init ploop_map_init(void);
 void ploop_map_exit(void);
+int ploop_map_dump_bat(struct ploop_delta *delta, u32 start_cluster,
+			u32 end_cluster, u32 __user *to_addr);
 void ploop_add_req_to_fsync_queue(struct ploop_request * preq);
 int ploop_submit_alloc(struct ploop_delta *delta, struct ploop_request *preq,
 		       struct bio_list *sbl, unsigned int size, iblock_t iblk);
