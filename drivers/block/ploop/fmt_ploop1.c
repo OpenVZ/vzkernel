@@ -920,6 +920,7 @@ static struct ploop_delta_ops ploop1_delta_ops =
 	.prepare_grow	=	ploop1_prepare_grow,
 	.complete_grow	=	ploop1_complete_grow,
 	.add_free_blk	=	ploop1_add_free_blk,
+	.dump_bat	=	ploop_map_dump_bat,
 };
 
 static int __init pfmt_ploop1_mod_init(void)
