@@ -67,6 +67,7 @@ ark_patch_export:
     - git fetch --depth=250 origin ark-patches:ark-patches
     - git fetch --depth=20000 origin master:master
     - git format-patch $(git merge-base master ark-patches)..ark-patches -o redhat_patches/
+    - rm redhat_patches/*gitlab-ci*.patch
     - cat redhat_patches/*patch >redhat_downstream.patch
   only:
     refs:
