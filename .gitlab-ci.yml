@@ -29,9 +29,12 @@ test_internal_rh_srpm:
   script:
     - git config user.name "CKI@GitLab"
     - git config user.email "cki-project@redhat.com"
-    - curl -o temp.zip -L "https://gitlab.com/cki-project/kernel-ark/-/jobs/artifacts/ark-patches/download?job=ark_patch_export"
-    - unzip temp.zip
-    - git am redhat_downstream.patch
+    # Hack alert: We carry a patch that alters the Kconfig for this setting, making it invalid
+    # on vanilla trees. Set it to the pre-patched values as we test the srpm build sans downstream
+    # patches. Ideally, the number of Kconfigs we tweak downstream is minimal so this is easier
+    # than getting all the patches into this branch for testing, which takes a non-trivial amount
+    # of time to download.
+    - sed -i 's/=13/=11/g' redhat/configs/fedora/generic/arm/aarch64/CONFIG_FORCE_MAX_ZONEORDER
     - make rh-srpm
   only:
     refs:
