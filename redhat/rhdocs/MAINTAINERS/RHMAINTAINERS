@@ -1,0 +1,1323 @@
+	List of RHEL maintainers and how to submit kernel changes
+
+	OPTIONAL CC: the maintainers and mailing lists that are generated
+	by redhat/scripts/rh_get_maintainer.pl.	 The results returned by the
+	script will be best if you have git installed and are making
+	your changes in a branch derived from the latest RHEL git tree.
+
+Descriptions of section entries:
+
+	P: Person (obsolete)
+	M: Mail patches to: FullName <address@domain>
+	L: Mailing list that is relevant to this area
+	W: Web-page with status/info
+	T: SCM tree type and location.	Type is one of: git, hg, quilt, stgit.
+	S: Status, one of the following:
+	   Supported:	Someone is actually paid to look after this.
+	   Maintained:	Someone actually looks after it.
+	   Odd Fixes:	It has a maintainer but they don't have time to do
+			much other than throw the odd patch in. See below..
+	   Orphan:	No current maintainer [but maybe you could take the
+			role as you write your new code].
+	   Obsolete:	Old code. Something tagged obsolete generally means
+			it has been replaced by a better system and you
+			should be using that.
+	F: Files and directories with wildcard patterns.
+	   A trailing slash includes all files and subdirectory files.
+	   F:	drivers/net/	all files in and below drivers/net
+	   F:	drivers/net/*	all files in drivers/net, but not below
+	   F:	*/net/*		all files in "any top level directory"/net
+	   One pattern per line.  Multiple F: lines acceptable.
+	X: Files and directories that are NOT maintained, same rules as F:
+	   Files exclusions are tested before file matches.
+	   Can be useful for excluding a specific subdirectory, for instance:
+	   F:	net/
+	   X:	net/ipv6/
+	   matches all files in and below net excluding net/ipv6/
+	K: Keyword perl extended regex pattern to match content in a
+	   patch or file.  For instance:
+	   K: of_get_profile
+	      matches patches or files that contain "of_get_profile"
+	   K: \b(printk|pr_(info|err))\b
+	      matches patches or files that contain one or more of the words
+	      printk, pr_info or pr_err
+	   One regex pattern per line.	Multiple K: lines acceptable.
+	I: Additional subject tag for rhkl patch submission.
+
+Note: For the hard of thinking, this list is meant to remain in alphabetical
+order. If you could add yourselves to it in alphabetical order that would be
+so much easier [Ed]
+
+Red Hat Maintainers List (try to look for most precise areas first)
+
+		-----------------------------------
+
+ARK Kernel Maintainer
+M:	Jeremy Cline <jcline@redhat.com>
+T:	git https://gitlab.com/cki-project/kernel-ark.git
+S:	Maintained
+F:	redhat/
+I:	INTERNAL
+
+RHEL 8.3 Kernel Maintainer
+M:	Frantisek Hrbata <fhrbata@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 8.2 Real Time Kernel Maintainer
+M:	Juri Lelli <jlelli@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 8.1 Kernel Maintainer
+M:	Herton R. Krzesinski <herton@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 8.1 Real Time Kernel Maintainer
+M:	Juri Lelli <jlelli@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 8.0 Kernel Maintainer
+M:	Frantisek Hrbata <fhrbata@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 8.0 Real Time Kernel Maintainer
+M:	Clark Williams <williams@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 7.8 Kernel Maintainer
+M:	Jan Stancek <jstancek@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 7.8 Real Time Kernel Maintainer
+M:	Luis Claudio Goncalves <lgoncalv@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 7.7 Kernel Maintainer
+M:	Rado Vrbovsky <rvrbovsk@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 7.7 Real Time Kernel Maintainer
+M:	Luis Claudio Goncalves <lgoncalv@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 7.6 Kernel Maintainer
+M:	Denys Vlasenko <dvlasenk@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 7.6 Real Time Kernel Maintainer
+M:	Luis Claudio Goncalves <lgoncalv@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 7.5 Kernel Maintainer
+M:	Rado Vrbovsky <rvrbovsk@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 7.4 Kernel Maintainer
+M:	Denys Vlasenko <dvlasenk@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 7.4 (MRG) Real Time Kernel Maintainer
+M:	Clark Williams <williams@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 7.2 Kernel Maintainer
+M:	Rado Vrbovsky <rvrbovsk@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 6.10 Kernel Maintainer
+M:	Denys Vlasenko <dvlasenk@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 6.6 Kernel Maintainer
+M:	Herton R. Krzesinski <herton@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 6.5 Kernel Maintainer
+M:	Frantisek Hrbata <fhrbata@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 5.11 Kernel Maintainer
+M:	Rado Vrbovsky <rvrbovsk@redhat.com>
+S:	Maintained
+F:	redhat/
+
+RHEL 5.9 Kernel Maintainer
+M:	Rado Vrbovsky <rvrbovsk@redhat.com>
+S:	Maintained
+F:	redhat/
+
+3ware 9000 Storage Controller Linux Driver (3w-9xxx)
+M:	Tomas Henzl <thenzl@redhat.com>
+S:	Maintained
+F:	drivers/scsi/3w-9xxx*
+
+8139CP 10/100/1000 GIGABIT ETHERNET DRIVER (8139cp)
+M:	Ivan Vecera <ivecera@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/realtek/8139cp.c
+
+ACPI SUBSYSTEM
+M:	Al Stone <ahs3@redhat.com>
+M:	Lenny Szubowicz <lszubowi@redhat.com>
+M:	Prarit Bhargava <prarit@redhat.com>
+M:	David Arcari <darcari@redhat.com>
+S:	Maintained
+F:	drivers/acpi/
+F:	drivers/pnp/pnpacpi/
+F:	include/linux/acpi.h
+F:	include/acpi/
+F:	arch/x86/kernel/acpi/
+F:	arch/arm64/kernel/acpi*
+
+AIO
+M:	Jeff Moyer <jmoyer@redhat.com>
+S:	Maintained
+F:	fs/aio.c
+F:	include/linux/*aio*.h
+
+ALSA SOUND DRIVER
+M:	Jaroslav Kysela <jkysela@redhat.com>
+S:	Maintained
+F:	sound/
+F:	drivers/soundwire/
+F:	drivers/media/pci/saa7134/saa7134-alsa.c
+F:	drivers/media/pci/cx23885/cx23885-alsa.c
+F:	drivers/media/pci/cx25821/cx25821-alsa.c
+F:	drivers/media/pci/cx18/cx18-alsa*
+F:	drivers/media/pci/cx88/cx88-alsa*
+F:	drivers/media/pci/cobalt/cobalt-alsa*
+F:	drivers/media/pci/ivtv/ivtv-alsa*
+F:	drivers/media/usb/tm6000/tm6000-alsa.c
+
+AMAZON ETHERNET DRIVERS
+M:	John Linville <linville@redhat.com>
+S:	Supported
+F:	Documentation/networking/ena.txt
+F:	drivers/net/ethernet/amazon/
+
+AMD IOMMU (AMD-VI)
+M:	Myron Stowe <myron.stowe@redhat.com>
+M:	Alex Williamson <alex.williamson@redhat.com>
+M:	Don Dutile <ddutile@redhat.com>
+S:	Maintained
+F:	drivers/iommu/amd_iommu*.[ch]
+F:	include/linux/amd-iommu.h
+
+ARECA (ARC11xx/12xx/16xx/1880) SATA/SAS RAID Host Bus Adapter (arcmsr)
+M:	Tomas Henzl <thenzl@redhat.com>
+S:	Maintained
+F:	drivers/scsi/arcmsr/
+
+ARM64 PORT (AARCH64 ARCHITECTURE)
+M:	Mark Salter <msalter@redhat.com>
+S:	Maintained
+F:	arch/arm64/
+
+ARM ARCHITECTED TIMER DRIVER
+M:	Mark Salter <msalter@redhat.com>
+S:	Maintained
+F:	arch/arm64/include/asm/arch_timer.h
+F:	drivers/clocksource/arm_arch_timer.c
+
+ARM INTERRUPT CONTROLLERS (GIC)
+M:	Mark Salter <msalter@redhat.com>
+S:	Maintained
+F:	drivers/irqchip/irq-gic*
+F:	include/linux/irqchip/arm-gic*
+
+ARM PMU PROFILING AND DEBUGGING
+M:	Mark Salter <msalter@redhat.com>
+S:	Maintained
+F:	arch/arm*/kernel/perf_*
+F:	arch/arm/oprofile/common.c
+F:	arch/arm*/kernel/hw_breakpoint.c
+F:	arch/arm*/include/asm/hw_breakpoint.h
+F:	arch/arm*/include/asm/perf_event.h
+F:	drivers/perf/*
+F:	include/linux/perf/arm_pmu.h
+
+ARM SMMU DRIVERS
+M:	Mark Salter <msalter@redhat.com>
+S:	Maintained
+F:	drivers/iommu/arm-smmu.c
+F:	drivers/iommu/arm-smmu-v3.c
+F:	drivers/iommu/io-pgtable-arm.c
+
+ATHEROS WIRELESS LAN DRIVERS
+M:	Jarod Wilson <jarod@redhat.com>
+M:	John Linville <linville@redhat.com>
+S:	Maintained
+F:	drivers/net/wireless/ath5k
+F:	drivers/net/wireless/ath9k
+
+ATHEROS ETHERNET DRIVERS
+M:	Jarod Wilson <jarod@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/atheros/
+
+AUDIT SUBSYSTEM
+M:      Richard Guy Briggs <rbriggs@redhat.com>
+S:      Supported
+F:      include/linux/audit.h
+F:      include/uapi/linux/audit.h
+F:      kernel/audit*
+
+AQUANTIA ATLANTIC ETHERNET DRIVER
+M:	David Arcari <darcari@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/aquantia/
+
+BE2NET ETHERNET DRIVER (be2net)
+M:	Petr Oros <poros@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/emulex/benet/
+
+BIOS ISSUES
+M:	Al Stone <ahs3@redhat.com>
+M:	Lenny Szubowicz <lszubowi@redhat.com>
+M:	Prarit Bhargava <prarit@redhat.com>
+
+BLOCK LAYER
+M:	Ming Lei <minlei@redhat.com>
+M:	Jeff Moyer <jmoyer@redhat.com>
+M:	Vivek Goyal <vgoyal@redhat.com>
+S:	Maintained
+F:	block/
+
+BLUETOOTH SUBSYSTEM
+M:      Gopal Tiwari <gtiwari@redhat.com>
+S:      Maintained
+F:      drivers/bluetooth
+F:      include/net/bluetooth/
+F:      net/bluetooth
+
+BROADCOM BNX2 GIGABIT ETHERNET DRIVER (bnx2)
+M:	Ken Cox <jkc@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/broadcom/bnx2.*
+F:	drivers/net/ethernet/broadcom/bnx2_*
+
+Broadcom NetXtreme II BCM5706/5708/5709/57710/57711/57712/57800/57810/57840 iSCSI Driver
+M:	Maurizio Lombardi <mlombard@redhat.com>
+S:	Maintained
+F:	drivers/scsi/bnx2i/
+
+Broadcom NetXtreme II BCM57710 FCoE Driver
+M:	Maurizio Lombardi <mlombard@redhat.com>
+S:	Maintained
+F:	drivers/scsi/bnx2fc/
+
+Broadcom NetXtreme II CNIC Driver (cnic)
+M:	Maurizio Lombardi <mlombard@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/broadcom/cnic*
+
+BONDING DRIVER
+M:	Jarod Wilson <jarod@redhat.com>
+S:	Maintained
+F:	drivers/net/bonding/
+F:	include/linux/if_bonding.h
+
+CEPH COMMON CODE (LIBCEPH)
+M:	Ilya Dryomov <idryomov@redhat.com>
+M:	Jeff Layton <jlayton@redhat.com>
+S:	Maintained
+F:	net/ceph/
+F:	include/linux/ceph/
+F:	include/linux/crush/
+
+CEPH DISTRIBUTED FILE SYSTEM CLIENT (CEPH)
+M:	Jeff Layton <jlayton@redhat.com>
+S:	Maintained
+F:	Documentation/filesystems/ceph.txt
+F:	fs/ceph/
+
+CISCO FCOE HBA (fnic)
+M:	Chris Leech <cleech@redhat.com>
+S:	Maintained
+F:	drivers/scsi/fnic/
+
+CISCO VIC ETHERNET NIC DRIVER
+M:	Stefan Assmann <sassmann@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/cisco/enic/
+
+CONTROL GROUP (CGROUP)
+M:	Waiman Long <longman@redhat.com>
+S:	Maintained
+F:	Documentation/cgroup*
+F:	include/linux/cgroup*
+F:	include/linux/cpuset.h
+F:	kernel/cgroup*
+F:	mm/memcontrol.c
+F:	mm/swap_cgroup.c
+
+CPU FREQUENCY DRIVERS
+M:	Al Stone <ahs3@redhat.com>
+M:	Lenny Szubowicz <lszubowi@redhat.com>
+M:	Prarit Bhargava <prarit@redhat.com>
+M:	David Arcari <darcari@redhat.com>
+S:	Maintained
+F:	drivers/cpufreq/
+F:	arch/x86/kernel/cpu/cpufreq/
+
+CPU IDLE DRIVERS
+M:	Al Stone <ahs3@redhat.com>
+M:	Prarit Bhargava <prarit@redhat.com>
+M:	David Arcari <darcari@redhat.com>
+S:	Maintained
+F:	drivers/cpuidle/
+
+DEVICE DIRECT ACCESS
+M:	Jeff Moyer <jmoyer@redhat.com>
+S:	Maintained
+F:	drivers/dax
+
+DEVICE MAPPER SUPPORT
+M:	Mike Snitzer <snitzer@redhat.com>
+S:	Maintained
+F:	Documentation/device-mapper/
+F:	drivers/md/dm*
+F:	drivers/md/persistent-data/
+F:	include/linux/device-mapper.h
+F:	include/linux/dm-*.h
+F:	include/uapi/linux/dm-*.h
+
+DEVLINK
+M:	Petr Oros <poros@redhat.com>
+M:	Ivan Vecera <ivecera@redhat.com>
+R:	Petr Oros <poros@redhat.com>
+R:	Ivan Vecera <ivecera@redhat.com>
+S:	Maintained
+F:	net/core/devlink.c
+F:	include/net/devlink.h
+F:	include/uapi/linux/devlink.h
+
+DIRECT IO
+M:	Jeff Moyer <jmoyer@redhat.com>
+S:	Maintained
+F:	fs/direct-io.c
+
+Disk Array driver for HP Smart Array SAS controllers (hpsa)
+M:	Tomas Henzl <thenzl@redhat.com>
+S:	Maintained
+F:	drivers/scsi/hpsa*
+
+DMA MAPPING SUPPORT
+M:	Donald Dutile <ddutile@redhat.com>
+S:	Maintained
+F:	kernel/dma/*
+F:	include/linux/dma*
+
+DM-RAID SUPPORT
+M:	Jonathan Brassow <jbrassow@redhat.com>
+S:	Maintained
+F:	drivers/md/dm-raid*
+
+EDAC/HERM
+M:	Aristeu Rozanski <aris@redhat.com>
+S:	Maintained
+F:	drivers/edac/
+
+ETHERNET BRIDGE
+M:	Ivan Vecera <cera@redhat.com>
+S:	Maintained
+F:	net/bridge/
+F:	include/linux/if_bridge.h
+
+ETHERNET PHY LIBRARY
+M:	Petr Oros <poros@redhat.com>
+S:	Maintained
+F:	Documentation/networking/phy.rst
+F:	drivers/net/phy/
+F:	drivers/of/of_mdio.c
+F:	include/linux/*mdio*.h
+F:	include/linux/phy.h
+F:	include/linux/phy_fixed.h
+F:	include/linux/platform_data/mdio-bcm-unimac.h
+F:	include/linux/platform_data/mdio-gpio.h
+F:	include/trace/events/mdio.h
+F:	include/uapi/linux/mdio.h
+F:	include/uapi/linux/mii.h
+
+FCOE (libfc, libfcoe)
+M:	Chris Leech <cleech@redhat.com>
+M:     Neil Horman <nhorman@redhat.com>
+S:	Maintained
+F:	drivers/scsi/libfc/
+F:	drivers/scsi/fcoe/
+X:	drivers/scsi/fcoe/fcoe.c
+F:	include/scsi/libfc.h
+F:	include/scsi/libfcoe.h
+F:	include/scsi/fcoe_*.h
+F:	include/scsi/fc_*.h
+F:	include/scsi/fc/
+
+FORCEDETH ETHERNET DRIVER (forcedeth)
+M:	Ivan Vecera <ivecera@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/nvidia/forcedeth.c
+
+FILESYSTEM DIRECT ACCESS
+M:	Jeff Moyer <jmoyer@redhat.com>
+M:	Eric Sandeen <esandeen@redhat.com>
+F:	fs/dax.c
+F:	include/linux/dax.h
+F:	include/trace/events/fs_dax.h
+
+FIREWIRE SUBSYSTEM
+M:	Neil Horman <nhorman@redhat.com>
+S:	Maintained
+F:	drivers/firewire/
+F:	include/linux/firewire*.h
+
+Fusion MPT SAS Host driver (mptsas)
+M:	Tomas Henzl <thenzl@redhat.com>
+S:	Maintained
+F:	drivers/message/fusion/
+
+HID CORE LAYER
+M:	Benjamin Tissoires <benjamin.tissoires@redhat.com>
+S:	Maintained
+F:	drivers/hid/
+F:	include/linux/hid*
+F:	include/uapi/linux/hid*
+
+I2C SUBSYSTEM
+M:	Gopal Tiwari <gtiwari@redhat.com>
+M:	David Arcari <darcari@redhat.com>
+S:	Maintained
+F:	Documentation/devicetree/bindings/i2c/
+F:	Documentation/i2c/
+F:	drivers/i2c/
+F:	drivers/i2c/*/
+F:	include/linux/i2c.h
+F:	include/linux/i2c-*.h
+F:	include/uapi/linux/i2c.h
+F:	include/uapi/linux/i2c-*.h
+
+INTEL E1000E ETHERNET DRIVER (e1000e)
+M:	Ken Cox <jkc@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/intel/e1000e/
+
+INTEL I40E ETHERNET DRIVERS (i40e)
+M:	Stefan Assmann <sassmann@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/intel/i40e/
+
+INTEL I40EVF ETHERNET DRIVERS (i40evf)
+M:	Stefan Assmann <sassmann@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/intel/i40evf/
+
+INTEL I40IW IWARP DRIVER (i40iw)
+M:	Stefan Assmann <sassmann@redhat.com>
+S:	Maintained
+F:	drivers/infiniband/hw/i40iw/
+F:	include/uapi/rdma/i40iw-abi.h
+
+INTEL IGB ETHERNET DRIVERS (igb)
+M:	Stefan Assmann <sassmann@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/intel/igb/
+
+INTEL IGBVF ETHERNET DRIVERS (igbvf)
+M:	Stefan Assmann <sassmann@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/intel/igbvf/
+
+INTEL IGC ETHERNET DRIVERS (igc)
+M:	David Arcari <darcari@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/intel/igc/
+
+INTEL IOMMU (VT-d)
+M:	Myron Stowe <myron.stowe@redhat.com>
+M:	Alex Williamson <alex.williamson@redhat.com>
+M:	Don Dutile <ddutile@redhat.com>
+S:	Maintained
+F:	drivers/iommu/intel_iommu.c
+F:	include/linux/intel-iommu.h
+
+INTEL IXGBE ETHERNET DRIVER (ixgbe)
+M:	Ken Cox <jkc@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/intel/ixgbe/
+
+INTEL IXGBEVF ETHERNET DRIVER (ixgbevf)
+M:	Ken Cox <jkc@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/intel/ixgbevf/
+
+INTEL QUICK ASSIST TECHNOLOGY (QAT)
+M:	Neil Horman <nhorman@redhat.com>
+S:	Maintained
+F:	drivers/crypto/qat/*
+
+ISCSI (iscsi_tcp, libiscsi, libiscsi_tcp, scsi_transport_iscsi)
+M:	Chris Leech <cleech@redhat.com>
+S:	Maintained
+F:	drivers/scsi/*iscsi*
+F:	include/scsi/*iscsi*
+
+KERNEL VIRTUAL MACHINE (KVM)
+M:	Paolo Bonzini <pbonzini@redhat.com>
+M:	Bandan Das <bsd@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	Documentation/virtual/kvm/
+F:	include/trace/events/kvm.h
+F:	include/uapi/asm-generic/kvm*
+F:	include/uapi/linux/kvm*
+F:	include/asm-generic/kvm*
+F:	include/linux/kvm*
+F:	include/kvm/iodev.h
+F:	virt/kvm/*
+F:	tools/kvm/
+
+KERNEL VIRTUAL MACHINE FOR AMD-V (KVM/amd)
+M:	Paolo Bonzini <pbonzini@redhat.com>
+M:	Bandan Das <bsd@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	arch/x86/include/asm/svm.h
+F:	arch/x86/kvm/svm.c
+
+KERNEL VIRTUAL MACHINE FOR ARM64 (KVM/arm64)
+M:	Andrew Jones <drjones@redhat.com>
+M:	Eric Auger <eric.auger@redhat.com>
+M:	Gavin Shan <gshan@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	arch/arm64/include/uapi/asm/kvm*
+F:	arch/arm64/include/asm/kvm*
+F:	arch/arm64/kvm/
+F:	virt/kvm/arm/
+F:	include/kvm/arm_*
+
+KERNEL VIRTUAL MACHINE FOR POWERPC (KVM/powerpc)
+M:	David Gibson <dgibson@redhat.com>
+M:	Laurent Vivier <lvivier@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	arch/powerpc/include/uapi/asm/kvm*
+F:	arch/powerpc/include/asm/kvm*
+F:	arch/powerpc/kvm/
+F:	arch/powerpc/kernel/kvm*
+
+KERNEL VIRTUAL MACHINE for s390 (KVM/s390)
+M:	Cornelia Huck <cohuck@redhat.com>
+M:	David Hildenbrand <david@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	arch/s390/include/uapi/asm/kvm*
+F:	arch/s390/include/asm/gmap.h
+F:	arch/s390/include/asm/kvm*
+F:	arch/s390/kvm/
+F:	arch/s390/mm/gmap.c
+
+KERNEL VIRTUAL MACHINE FOR X86 (KVM/x86)
+M:	Paolo Bonzini <pbonzini@redhat.com>
+M:	Bandan Das <bsd@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	arch/x86/kvm/
+F:	arch/x86/include/uapi/asm/kvm*
+F:	arch/x86/include/asm/kvm*
+F:	arch/x86/kernel/kvm.c
+F:	arch/x86/kernel/kvmclock.c
+
+HWMON SUBSYSTEM
+M:	Dean Nelson <dnelson@redhat.com>
+S:	Maintained
+F:	drivers/hwmon/
+
+HWPOISON MEMORY FAILURE HANDLING
+M:	Dean Nelson <dnelson@redhat.com>
+S:	Maintained
+F:	mm/memory-failure.c
+F:	mm/hwpoison-inject.c
+
+Hyper-V CORE AND DRIVERS
+M:	Cathy Avery <cavery@redhat.com>
+M:	Mohammed Gamal <mgamal@redhat.com>
+M:	Vitaly Kuznetsov <vkuznets@redhat.com>
+S:	Maintained
+F:	Documentation/networking/device_drivers/microsoft/netvsc.txt
+F:	arch/x86/include/asm/mshyperv.h
+F:	arch/x86/include/asm/trace/hyperv.h
+F:	arch/x86/include/asm/hyperv-tlfs.h
+F:	arch/x86/kernel/cpu/mshyperv.c
+F:	arch/x86/hyperv
+F:	drivers/clocksource/hyperv_timer.c
+F:	drivers/hid/hid-hyperv.c
+F:	drivers/hv/
+F:	drivers/input/serio/hyperv-keyboard.c
+F:	drivers/pci/controller/pci-hyperv.c
+F:	drivers/pci/controller/pci-hyperv-intf.c
+F:	drivers/net/hyperv/
+F:	drivers/scsi/storvsc_drv.c
+F:	drivers/uio/uio_hv_generic.c
+F:	drivers/video/fbdev/hyperv_fb.c
+F:	drivers/iommu/hyperv-iommu.c
+F:	net/vmw_vsock/hyperv_transport.c
+F:	include/clocksource/hyperv_timer.h
+F:	include/linux/hyperv.h
+F:	include/uapi/linux/hyperv.h
+F:	include/asm-generic/mshyperv.h
+F:	tools/hv/
+F:	Documentation/ABI/stable/sysfs-bus-vmbus
+F:	Documentation/ABI/testing/debugfs-hyperv
+
+INFINIBAND SUBSYSTEM
+M:	Kamal Heib <kheib@redhat.com>
+S:	Maintained
+F:	drivers/infiniband/
+F:	include/rdma/
+F:	include/uapi/rdma/
+F:	include/uapi/linux/if_infiniband.h
+F:	Documentation/infiniband/
+
+IOMMU DRIVERS
+M:	Myron Stowe <myron.stowe@redhat.com>
+M:	Alex Williamson <alex.williamson@redhat.com>
+M:	Don Dutile <ddutile@redhat.com>
+S:	Maintained
+F:	drivers/iommu/
+
+IPMI SUBSYSTEM
+M:	Tony Camuso <tcamuso@redhat.com>
+S:	Maintained
+
+ISMT SMBUS DRIVER
+M:	Neil Horman <nhorman@redhat.com>
+S:	Maintained
+F:	drivers/i2c/busses/i2c-ismt.c
+
+MMC LAYER
+M:      Gopal Tiwari <gtiwari@redhat.com>
+S:      Maintained
+F:      Documentation/mmc/
+F:      include/linux/mmc/
+F:      drivers/mmc/
+
+LIVE PATCHING / KPATCH
+M:	Josh Poimboeuf <jpoimboe@redhat.com>
+M:	Joe Lawrence <joe.lawrence@redhat.com>
+M:	Artem Savkov <asavkov@redhat.com>
+S:	Maintained
+F:	kernel/livepatch/
+F:	include/linux/livepatch.h
+F:	arch/x86/include/asm/livepatch.h
+F:	arch/x86/kernel/livepatch.c
+F:	Documentation/livepatch/
+F:	Documentation/ABI/testing/sysfs-kernel-livepatch
+F:	samples/livepatch/
+F:	tools/testing/selftests/livepatch/
+
+LOCKING PRIMITIVES
+M:	Waiman Long <longman@redhat.com>
+S:	Maintained
+F:	Documentation/locking/
+F:	arch/*/include/asm/mutex*.h
+F:	arch/*/include/asm/spinlock*.h
+F:	include/asm-generic/qrwlock*
+F:	include/asm-generic/qspinlock*
+F:	include/linux/lockdep.h
+F:	include/linux/mutex*.h
+F:	include/linux/rwlock*.h
+F:	include/linux/rwsem*.h
+F:	include/linux/seqlock.h
+F:	include/linux/spinlock*.h
+F:	lib/locking*.[ch]
+F:	kernel/locking/
+
+LSI 3ware SAS/SATA-RAID Linux Drive (3w-sas)
+M:	Tomas Henzl <thenzl@redhat.com>
+S:	Maintained
+F:	drivers/scsi/3w-sas*
+
+LSI MPT Fusion SAS 2.0 Device Driver (mpt2sas)
+M:	Tomas Henzl <thenzl@redhat.com>
+S:	Maintained
+F:	drivers/scsi/mpt2sas/
+
+LSI MPT Fusion SAS 3.0 Device Driver (mpt3sas)
+M:	Tomas Henzl <thenzl@redhat.com>
+S:	Maintained
+F:	drivers/scsi/mpt3sas/
+
+LSI MegaRAID SAS Driver (megaraid_sas)
+M:	Tomas Henzl <thenzl@redhat.com>
+S:	Maintained
+F:	drivers/scsi/megaraid/
+
+MACHINE CHECK ERROR (MCE) SUBSYSTEM
+M:	Prarit Bhargava <prarit@redhat.com>
+S:	Maintained
+F:	arch/x86/kernel/cpu/mcheck/
+
+MELLANOX ETHERNET SWITCH DRIVERS
+M:      Ivan Vecera <ivecera@redhat.com>
+S:      Maintained
+F:      drivers/net/ethernet/mellanox/mlxsw/
+
+MEMORY HOTPLUG
+M:	Prarit Bhargava <prarit@redhat.com>
+S:	Maintained
+
+MICRON PCIe SSD DRIVER (mtip32xx)
+M:	David Milburn <dmilburn@redhat.com>
+S:	Maintained
+F:	drivers/block/mtip32xx/mtip32xx.c
+F:	drivers/block/mtip32xx/mtip32xx.h
+
+NETFILTER
+M:	Florian Westphal <fwestpha@redhat.com>
+S:	Maintained
+F:	net/netfilter
+F:	net/*/netfilter
+F:	net/*/netfilter
+F:	include/linux/netfilter*
+F:	include/net/netfilter
+F:	include/uapi/linux/netfilter
+F:	include/net/netns/conntrack.h
+F:	include/net/netns/netfilter.h
+F:	include/net/netns/nftables.h
+F:	include/net/netns/x_tables.h
+
+NETWORKING [GENERAL]
+I:	net
+M:	Jiri Benc <jbenc@redhat.com>
+M:	Neil Horman <nhorman@redhat.com>
+R:	Davide Caratti <dcaratti@redhat.com>
+R:	Eric Garver <egarver@redhat.com>
+R:	Flavio Leitner <fbl@redhat.com>
+R:	Florian Westphal <fwestpha@redhat.com>
+R:	Guillaume Nault <gnault@redhat.com>
+R:	Hangbin Liu <haliu@redhat.com>
+R:	Ivan Vecera <ivecera@redhat.com>
+R:	Jarod Wilson <jarod@redhat.com>
+R:	Jiri Benc <jbenc@redhat.com>
+R:	Marcelo Leitner <mleitner@redhat.com>
+R:	Matteo Croce <mcroce@redhat.com>
+R:	Neil Horman <nhorman@redhat.com>
+R:	Phil Sutter <psutter@redhat.com>
+R:	Stefano Brivio <sbrivio@redhat.com>
+S:	Maintained
+F:	net/
+F:	Documentation/networking/
+F:	drivers/net/Space.c
+F:	drivers/net/dummy.c
+F:	drivers/net/geneve.c
+F:	drivers/net/ifb.c
+F:	drivers/net/ipvlan/
+F:	drivers/net/loopback.c
+F:	drivers/net/mac*
+F:	drivers/net/netconsole.c
+F:	drivers/net/nlmon.c
+F:	drivers/net/veth.c
+F:	drivers/net/vxlan.c
+F:	include/net/
+F:	include/linux/eth*
+F:	include/linux/filter.h
+F:	include/linux/icmp*
+F:	include/linux/if*
+F:	include/linux/in[.6e]*
+F:	include/linux/ip.h
+F:	include/linux/ipv6*
+F:	include/linux/llc.h
+F:	include/linux/mroute*
+F:	include/linux/net*
+F:	include/linux/*netlink*
+F:	include/linux/openvswitch.h
+F:	include/linux/sctp.h
+F:	include/linux/seg6*
+F:	include/linux/skb*
+F:	include/linux/sock*
+F:	include/linux/tcp.h
+F:	include/linux/tfrc.h
+F:	include/linux/udp.h
+F:	include/uapi/linux/devlink.h
+F:	include/uapi/linux/eth*
+F:	include/uapi/linux/filter.h
+F:	include/uapi/linux/icmp*
+F:	include/uapi/linux/if*
+F:	include/uapi/linux/in[.6e]*
+F:	include/uapi/linux/ip[._sv6]*
+F:	include/uapi/linux/llc.h
+F:	include/uapi/linux/lwtunnel.h
+F:	include/uapi/linux/mroute*
+F:	include/uapi/linux/net*
+F:	include/uapi/linux/*netlink*
+F:	include/uapi/linux/openvswitch.h
+F:	include/uapi/linux/pkt_*
+F:	include/uapi/linux/sctp.h
+F:	include/uapi/linux/seg6*
+F:	include/uapi/linux/sock*
+F:	include/uapi/linux/tc_*/*
+F:	include/uapi/linux/tcp*
+F:	include/uapi/linux/tls.h
+F:	include/uapi/linux/udp.h
+F:	include/uapi/linux/xfrm.h
+F:	tools/testing/selftests/net/
+X:	include/net/*80211*
+X:	include/net/*80215*
+X:	include/net/bluetooth/
+X:	include/net/irda/
+X:	include/net/iucv/
+X:	include/net/iw*
+X:	include/net/regulatory.h
+X:	net/bluetooth/
+X:	net/ieee802154/
+X:	net/irda/
+X:	net/iucv/
+X:	net/mac80211/
+X:	net/rds/
+X:	net/rfkill/
+X:	net/sunrpc/
+X:	net/wimax/
+X:	net/wireless/
+
+NETWORKING [LABELED] (NetLabel, Labeled IPsec, SECMARK)
+M:      Ondrej Mosnacek <omosnace@redhat.com>
+S:      Supported
+F:      Documentation/netlabel/
+F:      include/net/calipso.h
+F:      include/net/cipso_ipv4.h
+F:      include/net/netlabel.h
+F:      include/uapi/linux/netfilter/xt_SECMARK.h
+F:      include/uapi/linux/netfilter/xt_CONNSECMARK.h
+F:      net/netlabel/
+F:      net/ipv4/cipso_ipv4.c
+F:      net/ipv6/calipso.c
+F:      net/netfilter/xt_CONNSECMARK.c
+F:      net/netfilter/xt_SECMARK.c
+
+NETWORKING [NETDEVSIM]
+I:	net
+M:	Hangbin Liu <haliu@redhat.com>
+S:	Maintained
+F:	drivers/net/netdevsim/
+
+NETWORKING [TEAM]
+I:	net
+M:	Hangbin Liu <haliu@redhat.com>
+S:	Maintained
+F:	drivers/net/team/
+F:	include/linux/if_team.h
+F:	include/uapi/linux/if_team.h
+
+NETXEN (1/10) GbE SUPPORT
+M:	Tony Camuso <tcamuso@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/qlogic/netxen/
+
+NON-MASKABLE INTERRUPT (NMI)
+M:	Don Zickus <dzickus@redhat.com>
+S:	Maintained
+
+NVDIMM SUBSYSTEM
+M:	Jeff Moyer <jmoyer@redhat.com>
+S:	Maintained
+F:	drivers/acpi/nfit
+F:	drivers/nvdimm
+F:	include/linux/libnvdimm.h
+F:	include/linux/nd.h
+F:	include/uapi/linux/ndctl.h
+
+NVM EXPRESS BLOCK DRIVER (nvme)
+M:	David Milburn <dmilburn@redhat.com>
+S:	Maintained
+F:	drivers/block/nvme-core.c
+F:	drivers/block/nvme-scsi.c
+F:	include/linux/nvme.h
+F:	include/uapi/linux/nvme.h
+
+OPENVSWITCH (OVS)
+M:	Flavio Leitner <fbl@redhat.com>
+R:	Eelco Chaudron <echaudro@redhat.com>
+S:	Maintained
+F:	net/openvswitch/
+F:	include/linux/openvswitch.h
+F:	include/uapi/linux/openvswitch.h
+
+PCI SUBSYSTEM
+M:	Myron Stowe <myron.stowe@redhat.com>
+M:	Prarit Bhargava <prarit@redhat.com>
+S:	Maintained
+F:	drivers/pci/
+
+PCI HOTPLUG
+M:	Prarit Bhargava <prarit@redhat.com>
+M:	Myron Stowe <myron.stowe@redhat.com>
+S:	Maintained
+F:	drivers/pci/hotplug/
+
+PERFORMANCE EVENTS SUBSYSTEM
+M:	Jiri Olsa <jolsa@redhat.com>
+M:	Don Zickus <dzickus@redhat.com>
+S:	Maintained
+F:	kernel/events/*
+F:	include/linux/perf_event.h
+F:	include/uapi/linux/perf_event.h
+F:	arch/*/kernel/perf_event*.c
+F:	arch/*/kernel/*/perf_event*.c
+F:	arch/*/kernel/*/*/perf_event*.c
+F:	arch/*/include/asm/perf_event.h
+F:	arch/*/kernel/perf_callchain.c
+F:	tools/perf/
+F:	tools/lib/
+
+POWER STATE COORDINATION INTERFACE (PSCI)
+M:	Mark Salter <msalter@redhat.com>
+S:	Maintained
+F:	drivers/firmware/psci*.c
+F:	include/linux/psci.h
+F:	include/uapi/linux/psci.h
+
+PTP HARDWARE CLOCK SUPPORT
+M:	Jiri Benc <jbenc@redhat.com>
+M:	Prarit Bhargava <prarit@redhat.com>
+S:	Maintained
+F:	Documentation/ptp/
+F:	drivers/ptp/
+F:	include/linux/ptp_cl*
+
+QLOGIC QL41xxx ISCSI DRIVER
+M:	Chris Leech <cleech@redhat.com>
+S:	Maintained
+F:	drivers/scsi/qedi/
+
+QLOGIC QL41xxx FCOE DRIVER
+M:	Chris Leech <cleech@redhat.com>
+S:	Maintained
+F:	drivers/scsi/qedf/
+
+RADOS BLOCK DEVICE (RBD)
+M:	Ilya Dryomov <idryomov@redhat.com>
+S:	Maintained
+F:	Documentation/ABI/testing/sysfs-bus-rbd
+F:	drivers/block/rbd.c
+F:	drivers/block/rbd_types.h
+
+RALINK RT2X00 WIRELESS LAN DRIVER
+M:	Jarod Wilson <jarod@redhat.com>
+S:	Maintained
+F:	drivers/net/wireless/rt2x00/
+
+READ-COPY UPDATE (RCU)
+M:	Waiman Long <longman@redhat.com>
+S:	Maintained
+F:	Documentation/RCU/
+F:	include/linux/rcu*
+F:	kernel/rcu/
+
+REALTEK WIRELESS LAN DRIVERS
+M:	Jarod Wilson <jarod@redhat.com>
+M:	John Linville <linville@redhat.com>
+S:	Maintained
+F:	drivers/net/wireless/rtl818x
+
+RFKILL
+M:	John Linville <linville@redhat.com>
+S:	Maintained
+F:	Documentation/rfkill.txt
+F:	net/rfkill/
+
+S390 VFIO-CCW DRIVER
+M:	Cornelia Huck <cohuck@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	drivers/s390/cio/vfio_ccw*
+F:	Documentation/s390/vfio-ccw.txt
+F:	include/uapi/linux/vfio_ccw.h
+
+ROCKER DRIVER
+M:	Ivan Vecera <ivecera@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/rocker/
+
+SCHEDULER
+M:	Phil Auld <pauld@redhat.com>
+S:	Maintained
+F:	kernel/sched/
+F:	include/linux/sched/
+F:	include/linux/sched.h
+F:	include/uapi/linux/sched.h
+F:	include/linux/wait.h
+
+SCSI CORE SUBSYSTEM (NOT INDIVIDUAL DRIVERS)
+M:	Ewan D. Milne <emilne@redhat.com>
+S:	Maintained
+F:	drivers/scsi/
+F:	include/scsi/
+
+SCSI TARGET (LIO)
+M:	Maurizio Lombardi <mlombard@redhat.com>
+S:	Maintained
+F:	drivers/target/
+F:	include/target/
+
+SCTP PROTOCOL
+M:	Marcelo Ricardo Leitner <mleitner@redhat.com>
+M:	Neil Horman <nhorman@redhat.com>
+S:	Maintained
+F:	net/sctp/
+F:	include/linux/sctp.h
+F:	include/net/sctp/
+F:	include/uapi/linux/sctp.h
+
+SELINUX SECURITY MODULE
+M:      Ondrej Mosnacek <omosnace@redhat.com>
+S:      Supported
+F:      include/linux/selinux*
+F:      security/selinux/
+F:      scripts/selinux/
+F:      Documentation/admin-guide/LSM/SELinux.rst
+
+SERIAL ATA (SATA) SUBSYSTEM
+M:	David Milburn <dmilburn@redhat.com>
+S:	Maintained
+F:	drivers/ata/
+F:	include/linux/ata.h
+F:	include/linux/libata.h
+
+SIERRA_NET USB BROADBAND MODEM
+M:	Neil Horman <nhorman@redhat.com>
+S:	Maintained
+F:	drivers/net/usb/sierra_net.c
+
+SFC NETWORK DRIVER
+M:	Jarod Wilson <jarod@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/sfc/
+
+SOFTWARE RAID (Multiple Disks, MD) SUPPORT
+M:	Nigel Croxon <ncroxon@redhat.com>
+S:	Maintained
+F:	drivers/md/
+
+SUSPEND/RESUME
+M:	Al Stone <ahs3@redhat.com>
+M:	Lenny Szubowicz <lszubowi@redhat.com>
+S:	Maintained
+
+SWITCHDEV
+M:	Ivan Vecera <ivecera@redhat.com>
+S:	Maintained
+F:	Documentation/networking/switchdev.txt
+F:	include/net/switchdev.h
+F:	net/switchdev/
+
+TC subsystem
+M:	Ivan Vecera <ivecera@redhat.com>
+S:	Maintained
+F:	include/net/act_api.h
+F:	include/net/pkt_cls.h
+F:	include/net/pkt_sched.h
+F:	include/net/tc_act/
+F:	include/uapi/linux/pkt_cls.h
+F:	include/uapi/linux/pkt_sched.h
+F:	include/uapi/linux/tc_act/
+F:	include/uapi/linux/tc_ematch/
+F:	net/sched/
+
+TIPC PROTOCOL
+M:	Jon Maloy <jmaloy@redhat.com>
+S:	Tech Preview
+F:	net/tipc/
+F:	include/net/tipc.h
+F:	include/uapi/linux/tipc.h
+F:	include/uapi/linux/tipc_netlink.h
+F:	include/uapi/linux/tipc_config.h
+F:	include/uapi/linux/tipc_socket_diag.h
+
+X86 ARCHITECTURE
+M:	David Arcari <darcari@redhat.com>
+M:	Prarit Bhargava <prarit@redhat.com>
+S:	Maintained
+F:	arch/x86/
+
+UNIVERSAL EXTENSIBLE FIRMWARE INTERFACE (UEFI/EFI)
+M:	Al Stone <ahs3@redhat.com>
+M:	Lenny Szubowicz <lszubowi@redhat.com>
+M:	Myron Stowe	<mstowe@redhat.com>
+M:	Prarit Bhargava <prarit@redhat.com>
+S:	Maintained
+F:	arch/x86/kernel/efi*
+F:	include/linux/efi.h
+
+USB SUBSYSTEM
+M:	Torez Smith <torez@redhat.com>
+M:	Don Zickus <dzickus@redhat.com>
+S:	Maintained
+F:	drivers/usb/
+
+UVC WEBCAM DRIVER
+M:	Tony Camuso <tcamuso@redhat.com>
+S:	Maintained
+F:	drivers/media/video/uvc/
+
+VFIO DRIVER
+M:	Alex Williamson <alex.williamson@redhat.com>
+M:	Eric Auger <eric.auger@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	Documentation/vfio.txt
+F:	drivers/vfio/
+F:	include/linux/vfio.h
+F:	include/uapi/linux/vfio.h
+
+VFIO MEDIATED DEVICE DRIVERS
+M:	Alex Williamson <alex.williamson@redhat.com>
+M:	Eric Auger <eric.auger@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	Documentation/vfio-mediated-device.txt
+F:	drivers/vfio/mdev/
+F:	include/linux/mdev.h
+F:	samples/vfio-mdev/
+
+VIDEO DRIVERS
+M:	David Airlie <airlied@redhat.com>
+M:	Adam Jackson <ajax@redhat.com>
+S:	Maintained
+F:	drivers/gpu/
+
+VIRT LIB
+M:	Alex Williamson <alex.williamson@redhat.com>
+M:	Paolo Bonzini <pbonzini@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	virt/lib/
+
+VIRTIO AND VHOST VSOCK DRIVER
+M:	Stefan Hajnoczi <stefanha@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	include/linux/virtio_vsock.h
+F:	include/uapi/linux/virtio_vsock.h
+F:	include/uapi/linux/vsockmon.h
+F:	net/vmw_vsock/af_vsock_tap.c
+F:	net/vmw_vsock/virtio_transport_common.c
+F:	net/vmw_vsock/virtio_transport.c
+F:	drivers/net/vsockmon.c
+F:	drivers/vhost/vsock.c
+F:	drivers/vhost/vsock.h
+
+VIRTIO CONSOLE DRIVER
+M:	"Michael S. Tsirkin" <mst@redhat.com>
+M:	Jason Wang <jasowang@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	drivers/char/virtio_console.c
+F:	include/linux/virtio_console.h
+F:	include/uapi/linux/virtio_console.h
+
+VIRTIO CORE, NET AND BLOCK DRIVERS
+M:	"Michael S. Tsirkin" <mst@redhat.com>
+M:	Jason Wang <jasowang@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	Documentation/devicetree/bindings/virtio/
+F:	drivers/virtio/
+F:	tools/virtio/
+F:	drivers/net/virtio_net.c
+F:	drivers/block/virtio_blk.c
+F:	include/linux/virtio*.h
+F:	include/uapi/linux/virtio_*.h
+F:	drivers/crypto/virtio/
+F:	mm/balloon_compaction.c
+
+VIRTIO CRYPTO DRIVER
+M:	"Michael S. Tsirkin" <mst@redhat.com>
+M:	Jason Wang <jasowang@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	drivers/crypto/virtio/
+F:	include/uapi/linux/virtio_crypto.h
+
+VIRTIO DRIVERS FOR S390
+M:	Cornelia Huck <cohuck@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	drivers/s390/virtio/
+
+VIRTIO GPU DRIVER
+M:	Gerd Hoffmann <kraxel@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	drivers/gpu/drm/virtio/
+F:	include/uapi/linux/virtio_gpu.h
+
+VIRTIO HOST (VHOST)
+M:	"Michael S. Tsirkin" <mst@redhat.com>
+M:	Jason Wang <jasowang@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	drivers/vhost/
+F:	include/uapi/linux/vhost.h
+
+VIRTIO INPUT DRIVER
+M:	Gerd Hoffmann <kraxel@redhat.com>
+L:	rhvirt-patches@redhat.com
+S:	Supported
+F:	drivers/virtio/virtio_input.c
+F:	include/uapi/linux/virtio_input.h
+
+VMWARE VMXNET3 ETHERNET DRIVER (vmxnet3)
+M:	Neil Horman <nhorman@redhat.com>
+S:	Maintained
+F:	drivers/net/vmxnet3/*
+
+WIRELESS DRIVERS AND STACK
+M:	Jarod Wilson <jarod@redhat.com>
+M:	John Linville <linville@redhat.com>
+S:	Maintained
+F:	drivers/net/wireless/
+F:	net/mac80211/
+F:	net/wireless/
+
+XEN
+M:	Vitaly Kuznetsov <vkuznets@redhat.com>
+M:	Igor Mammedov <imammedo@redhat.com>
+M:	Andrew Jones <drjones@redhat.com>
+S:	Maintained
+F:	drivers/block/xen-blkfront.c
+F:	drivers/input/misc/xen-kbdfront.c
+F:	drivers/net/xen-netfront.c
+F:	drivers/tty/hvc/hvc_xen.c
+F:	drivers/watchdog/xen_wdt.c
+F:	drivers/xen/
+F:	include/trace/events/xen.h
+F:	include/uapi/xen/
+F:	include/xen/
+F:	arch/x86/include/asm/xen/
+F:	arch/x86/pci/xen.c
+F:	arch/x86/xen/
+
+ZRAM COMPRESSED RAM BLOCK DEVICE DRVIER
+M:	Jerome Marchand <jmarchan@redhat.com>
+S:	Maintained
+F:	drivers/block/zram/
+F:	Documentation/ABI/testing/sysfs-block-zram
