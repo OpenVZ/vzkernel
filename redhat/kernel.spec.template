@@ -403,7 +403,7 @@ Summary: The Linux kernel
 %if 0%{?fedora}
 %define nobuildarches i386
 %else
-%define nobuildarches i386 i686
+%define nobuildarches i386 i686 %{arm}
 %endif
 
 %ifarch %nobuildarches
