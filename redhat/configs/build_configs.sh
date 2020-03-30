@@ -5,8 +5,7 @@
 # files for building RHEL kernels, based on the contents of a control file
 
 PACKAGE_NAME="${1:-kernel}" # defines the package name used
-KVERREL="${2:-}"
-SUBARCH="${3:-}" # defines a specific arch
+SUBARCH="${2:-}" # defines a specific arch
 SCRIPT="$(readlink -f $0)"
 OUTPUT_DIR="$PWD"
 SCRIPT_DIR="$(dirname $SCRIPT)"
@@ -144,16 +143,5 @@ while read line
 do
 	build_flavor $line
 done < flavors
-
-# A passed in kernel version implies copy to final location
-# otherwise defer to another script
-if test -n "$KVERREL"
-then
-	for i in kernel-*.config
-	do
-		NEW="$(echo $i | sed "s/$PACKAGE_NAME-$SUBARCH/$PACKAGE_NAME-$KVERREL-$SUBARCH/")"
-		mv $i $NEW
-	done
-fi
 
 cleanup
