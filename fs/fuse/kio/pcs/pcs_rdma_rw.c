@@ -177,8 +177,8 @@ void pcs_sgl_buf_destroy(struct pcs_sgl_buf *sbuf)
 	kfree(sbuf->pages);
 }
 
-int ib_mr_pool_init(struct ib_mr_pool *pool, struct ib_pd *pd,
-		    enum ib_mr_type mr_type, u32 max_num_sg, size_t mr_cnt)
+int pcs_ib_mr_pool_init(struct pcs_ib_mr_pool *pool, struct ib_pd *pd,
+			enum ib_mr_type mr_type, u32 max_num_sg, size_t mr_cnt)
 {
 	struct ib_mr *mr;
 	int ret, i;
@@ -205,11 +205,11 @@ int ib_mr_pool_init(struct ib_mr_pool *pool, struct ib_pd *pd,
 	return 0;
 
 fail:
-	ib_mr_pool_destroy(pool);
+	pcs_ib_mr_pool_destroy(pool);
 	return ret;
 }
 
-void ib_mr_pool_destroy(struct ib_mr_pool *pool)
+void pcs_ib_mr_pool_destroy(struct pcs_ib_mr_pool *pool)
 {
 	struct ib_mr *mr, *tmp;
 
@@ -221,7 +221,7 @@ void ib_mr_pool_destroy(struct ib_mr_pool *pool)
 		ib_dereg_mr(mr);
 }
 
-struct ib_mr* ib_mr_pool_get(struct ib_mr_pool *pool)
+struct ib_mr* pcs_ib_mr_pool_get(struct pcs_ib_mr_pool *pool)
 {
 	struct ib_mr *mr;
 	unsigned long flags;
@@ -251,7 +251,7 @@ struct ib_mr* ib_mr_pool_get(struct ib_mr_pool *pool)
 	return mr;
 }
 
-void ib_mr_pool_put(struct ib_mr_pool *pool, struct ib_mr *mr)
+void pcs_ib_mr_pool_put(struct pcs_ib_mr_pool *pool, struct ib_mr *mr)
 {
 	unsigned long flags;
 
@@ -355,7 +355,7 @@ void pcs_rdma_rw_destroy(struct pcs_rdma_rw *rw)
 
 static int pcs_rdma_mr_init_common(struct pcs_rdma_mr *mr, struct ib_device *dev,
 				   struct ib_pd *pd, enum dma_data_direction dir, size_t size,
-				   struct ib_mr_pool *ib_mr_pool)
+				   struct pcs_ib_mr_pool *ib_mr_pool)
 {
 	unsigned long dma_align = dma_get_cache_alignment();
 	struct scatterlist *sg;
@@ -386,7 +386,7 @@ static int pcs_rdma_mr_init_common(struct pcs_rdma_mr *mr, struct ib_device *dev
 	mr->sbuf.sg_cnt = ret;
 
 	if (mr->ib_mr_pool) {
-		mr->mr = RE_NULL(ib_mr_pool_get(mr->ib_mr_pool));
+		mr->mr = RE_NULL(pcs_ib_mr_pool_get(mr->ib_mr_pool));
 		if (!mr->mr) {
 			ret = -ENOMEM;
 			goto fail_dma;
@@ -428,7 +428,7 @@ static int pcs_rdma_mr_init_common(struct pcs_rdma_mr *mr, struct ib_device *dev
 
 fail_mr:
 	if (mr->ib_mr_pool)
-		ib_mr_pool_put(mr->ib_mr_pool, mr->mr);
+		pcs_ib_mr_pool_put(mr->ib_mr_pool, mr->mr);
 	else /* fallback */
 		ib_dereg_mr(mr->mr);
 fail_dma:
@@ -440,7 +440,7 @@ fail_dma:
 int pcs_rdma_mr_init_from_msg(struct pcs_rdma_mr *mr, struct ib_device *dev,
 			      struct ib_pd *pd, enum dma_data_direction dir, struct pcs_msg *msg,
 			      size_t offset, size_t end_offset, gfp_t gfp,
-			      struct ib_mr_pool *ib_mr_pool)
+			      struct pcs_ib_mr_pool *ib_mr_pool)
 {
 	int ret;
 
@@ -459,7 +459,7 @@ int pcs_rdma_mr_init_from_msg(struct pcs_rdma_mr *mr, struct ib_device *dev,
 
 int pcs_rdma_mr_init(struct pcs_rdma_mr *mr, struct ib_device *dev, struct ib_pd *pd,
 		     enum dma_data_direction dir, size_t size, gfp_t gfp,
-		     struct ib_mr_pool *ib_mr_pool)
+		     struct pcs_ib_mr_pool *ib_mr_pool)
 {
 	int ret;
 
@@ -477,7 +477,7 @@ int pcs_rdma_mr_init(struct pcs_rdma_mr *mr, struct ib_device *dev, struct ib_pd
 void pcs_rdma_mr_destroy(struct pcs_rdma_mr *mr)
 {
 	if (mr->ib_mr_pool)
-		ib_mr_pool_put(mr->ib_mr_pool, mr->mr);
+		pcs_ib_mr_pool_put(mr->ib_mr_pool, mr->mr);
 	else /* fallback */
 		ib_dereg_mr(mr->mr);
 	ib_dma_unmap_sg(mr->dev, mr->sbuf.sgl, mr->sbuf.sg_cnt, mr->dir);
@@ -486,7 +486,7 @@ void pcs_rdma_mr_destroy(struct pcs_rdma_mr *mr)
 
 struct pcs_rdma_mr* pcs_rdma_mr_alloc(struct ib_device *dev, struct ib_pd *pd,
 				      enum dma_data_direction dir, size_t size, gfp_t gfp,
-				      struct ib_mr_pool *ib_mr_pool)
+				      struct pcs_ib_mr_pool *ib_mr_pool)
 {
 	struct pcs_rdma_mr *mr;
 	int ret;
@@ -601,7 +601,7 @@ int pcs_rdma_mr_sync_for_msg(struct pcs_rdma_mr *mr, struct pcs_msg *msg,
 
 int pcs_rdma_mr_pool_init(struct pcs_rdma_mr_pool *pool, size_t mr_size,
 			  size_t mr_cnt, struct ib_device *dev, struct ib_pd *pd,
-			  enum dma_data_direction dir, gfp_t gfp, struct ib_mr_pool *ib_mr_pool)
+			  enum dma_data_direction dir, gfp_t gfp, struct pcs_ib_mr_pool *ib_mr_pool)
 {
 	struct pcs_rdma_mr *mr;
 	int ret, i;

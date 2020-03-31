@@ -53,7 +53,7 @@ int pcs_sgl_buf_init_from_msg(struct pcs_sgl_buf *sbuf, struct pcs_msg *msg,
 int pcs_sgl_buf_init(struct pcs_sgl_buf *sbuf, size_t size, gfp_t gfp);
 void pcs_sgl_buf_destroy(struct pcs_sgl_buf *sbuf);
 
-struct ib_mr_pool
+struct pcs_ib_mr_pool
 {
 	struct ib_pd *pd;
 	enum ib_mr_type mr_type;
@@ -66,12 +66,12 @@ struct ib_mr_pool
 	size_t used_mrs;
 };
 
-int ib_mr_pool_init(struct ib_mr_pool *pool, struct ib_pd *pd,
-		    enum ib_mr_type mr_type, u32 max_num_sg, size_t mr_cnt);
-void ib_mr_pool_destroy(struct ib_mr_pool *pool);
+int pcs_ib_mr_pool_init(struct pcs_ib_mr_pool *pool, struct ib_pd *pd,
+			enum ib_mr_type mr_type, u32 max_num_sg, size_t mr_cnt);
+void pcs_ib_mr_pool_destroy(struct pcs_ib_mr_pool *pool);
 
-struct ib_mr* ib_mr_pool_get(struct ib_mr_pool *pool);
-void ib_mr_pool_put(struct ib_mr_pool *pool, struct ib_mr *mr);
+struct ib_mr* pcs_ib_mr_pool_get(struct pcs_ib_mr_pool *pool);
+void pcs_ib_mr_pool_put(struct pcs_ib_mr_pool *pool, struct ib_mr *mr);
 
 struct pcs_rdma_rw
 {
@@ -99,7 +99,7 @@ struct pcs_rdma_mr
 	struct ib_pd *pd;
 	enum dma_data_direction dir;
 	size_t size;
-	struct ib_mr_pool *ib_mr_pool;
+	struct pcs_ib_mr_pool *ib_mr_pool;
 
 	struct pcs_sgl_buf sbuf;
 	struct ib_mr *mr;
@@ -114,15 +114,15 @@ struct pcs_rdma_mr
 int pcs_rdma_mr_init_from_msg(struct pcs_rdma_mr *mr, struct ib_device *dev,
 			      struct ib_pd *pd, enum dma_data_direction dir, struct pcs_msg *msg,
 			      size_t offset, size_t end_offset, gfp_t gfp,
-			      struct ib_mr_pool *ib_mr_pool);
+			      struct pcs_ib_mr_pool *ib_mr_pool);
 int pcs_rdma_mr_init(struct pcs_rdma_mr *mr, struct ib_device *dev,
 		     struct ib_pd *pd, enum dma_data_direction dir, size_t size,
-		     gfp_t gfp, struct ib_mr_pool *ib_mr_pool);
+		     gfp_t gfp, struct pcs_ib_mr_pool *ib_mr_pool);
 void pcs_rdma_mr_destroy(struct pcs_rdma_mr *mr);
 
 struct pcs_rdma_mr* pcs_rdma_mr_alloc(struct ib_device *dev, struct ib_pd *pd,
 				      enum dma_data_direction dir, size_t size, gfp_t gfp,
-				      struct ib_mr_pool *ib_mr_pool);
+				      struct pcs_ib_mr_pool *ib_mr_pool);
 void pcs_rdma_mr_free(struct pcs_rdma_mr *mr);
 
 void pcs_rdma_mr_sync_for_cpu(struct pcs_rdma_mr *mr, size_t size);
@@ -139,7 +139,7 @@ struct pcs_rdma_mr_pool
 	struct ib_pd *pd;
 	enum dma_data_direction dir;
 	gfp_t gfp;
-	struct ib_mr_pool *ib_mr_pool;
+	struct pcs_ib_mr_pool *ib_mr_pool;
 
 	spinlock_t lock;
 
@@ -150,7 +150,7 @@ struct pcs_rdma_mr_pool
 int pcs_rdma_mr_pool_init(struct pcs_rdma_mr_pool *pool, size_t mr_size,
 			  size_t mr_cnt, struct ib_device *dev, struct ib_pd *pd,
 			  enum dma_data_direction dir, gfp_t gfp,
-			  struct ib_mr_pool *ib_mr_pool);
+			  struct pcs_ib_mr_pool *ib_mr_pool);
 void pcs_rdma_mr_pool_destroy(struct pcs_rdma_mr_pool *pool);
 
 struct pcs_rdma_mr* pcs_rdma_mr_pool_get(struct pcs_rdma_mr_pool *pool);
