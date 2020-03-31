@@ -4678,6 +4678,35 @@ void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
 	mi->available += mi->slab_reclaimable;
 }
 
+void mem_cgroup_fill_sysinfo(struct mem_cgroup *memcg, struct sysinfo *si)
+{
+	unsigned long totalram, totalswap;
+	unsigned long swaped, used;
+
+	totalram = si->totalram;
+	totalswap = si->totalswap;
+
+	memset(si, 0, sizeof(*si));
+
+	used = page_counter_read(&memcg->memory);
+	si->totalram = min(totalram, memcg->memory.limit);
+
+	swaped = page_counter_read(&memcg->memsw) - page_counter_read(&memcg->memory);
+	si->totalswap = min(totalswap, memcg->memsw.limit - memcg->memory.limit);
+
+	used = page_counter_read(&memcg->memory);
+
+	if (swaped > si->totalswap) {
+		si->freeswap = 0;
+		used += swaped - si->totalswap;
+	} else {
+		si->freeswap = si->totalswap - swaped;
+	}
+
+	si->freeram = (si->totalram > used ? si->totalram - used : 0);
+	si->mem_unit = PAGE_SIZE;
+}
+
 int mem_cgroup_enough_memory(struct mem_cgroup *memcg, long pages)
 {
 	long free;
