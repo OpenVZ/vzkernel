@@ -1719,7 +1719,7 @@ BuildKernel() {
     popd
 
     # Call the modules-extra script to move things around
-    %{SOURCE17} $RPM_BUILD_ROOT/lib/modules/$KernelVer $RPM_SOURCE_DIR/mod-extra.list
+    %{SOURCE17} $RPM_BUILD_ROOT/lib/modules/$KernelVer $RPM_SOURCE_DIR/mod-extra.list extra
     # Blacklist net autoloadable modules in modules-extra
     %{SOURCE19} $RPM_BUILD_ROOT lib/modules/$KernelVer
     # Call the modules-extra script for internal modules

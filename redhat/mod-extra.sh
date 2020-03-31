@@ -2,10 +2,13 @@
 
 Dir=$1
 List=$2
-Dest="extra"
+Dest="$3"
 
 # Destination was specified on the command line
-test -n "$3" && Dest="$3"
+if test ! -n "$Dest"; then
+	echo "$0: Destination has not been specified."
+	exit 1
+fi
 
 pushd $Dir
 rm -rf modnames
@@ -32,7 +35,7 @@ cat modnames | xargs -r -n1 -P $NPROC sh -c '
   do
     match=$(grep "^$mod.ko" "$ListName")
     [ -z "$match" ] && continue
-    # check if the module we are looking at is in mod-extra too.
+    # check if the module we are looking at is in mod-* too.
     # if so we do not need to mark the dep as required.
     mod2=${dep##*/}  # same as `basename $dep`, but faster
     match2=$(grep "^$mod2" "$ListName")
@@ -59,7 +62,7 @@ done
 
 sort -u dep.list > dep2.list
 
-# now move the modules into the extra/ directory
+# now move the modules into the $Dest directory
 for mod in `cat dep2.list`
 do
   newpath=`dirname $mod | sed -e "s/kernel\\//$Dest\//"`
@@ -72,7 +75,7 @@ popd
 # If we're signing modules, we can't leave the .mod files for the .ko files
 # we've moved in .tmp_versions/.  Remove them so the Kbuild 'modules_sign'
 # target doesn't try to sign a non-existent file.  This is kinda ugly, but
-# so is modules-extra.
+# so are the modules-* packages.
 
 for mod in `cat ${Dir}/dep2.list`
 do
