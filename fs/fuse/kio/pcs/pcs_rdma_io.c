@@ -105,7 +105,7 @@ struct pcs_rdma_device {
 	struct list_head free_txs; /* list head of free TX frames */
 	int free_txs_cnt;
 
-	struct ib_mr_pool ib_mr_pool;
+	struct pcs_ib_mr_pool ib_mr_pool;
 	struct pcs_rdma_mr_pool sd_mr_pool;
 	struct pcs_rdma_mr_pool rd_mr_pool;
 };
@@ -1123,10 +1123,10 @@ static struct pcs_rdma_device *pcs_rdma_device_create(struct rdma_cm_id *cmid,
 		goto free_bufs;
 	}
 
-	if (ib_mr_pool_init(&dev->ib_mr_pool, dev->pd, IB_MR_TYPE_MEM_REG,
+	if (pcs_ib_mr_pool_init(&dev->ib_mr_pool, dev->pd, IB_MR_TYPE_MEM_REG,
 			    max_num_sg,
 			    queue_depth * 2)) {
-		TRACE("ib_mr_pool_init failed: dev: 0x%p\n", dev);
+		TRACE("pcs_ib_mr_pool_init failed: dev: 0x%p\n", dev);
 		goto free_pd;
 	}
 
@@ -1149,7 +1149,7 @@ static struct pcs_rdma_device *pcs_rdma_device_create(struct rdma_cm_id *cmid,
 free_sd_mr:
 	pcs_rdma_mr_pool_destroy(&dev->sd_mr_pool);
 free_ib_mr:
-	ib_mr_pool_destroy(&dev->ib_mr_pool);
+	pcs_ib_mr_pool_destroy(&dev->ib_mr_pool);
 free_pd:
 	ib_dealloc_pd(dev->pd);
 free_bufs:
@@ -1165,7 +1165,7 @@ static void pcs_rdma_device_destroy(struct pcs_rdma_device *dev)
 
 	pcs_rdma_mr_pool_destroy(&dev->rd_mr_pool);
 	pcs_rdma_mr_pool_destroy(&dev->sd_mr_pool);
-	ib_mr_pool_destroy(&dev->ib_mr_pool);
+	pcs_ib_mr_pool_destroy(&dev->ib_mr_pool);
 
 	ib_dealloc_pd(dev->pd);
 
