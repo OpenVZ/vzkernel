@@ -155,42 +155,19 @@ out:
 	return ret;
 }
 
+extern void mem_cgroup_fill_sysinfo(struct mem_cgroup *memcg, struct sysinfo *si);
 static int bc_fill_sysinfo(struct user_beancounter *ub,
 		unsigned long meminfo_val, struct sysinfo *si)
 {
-	unsigned long used, total;
-	unsigned long totalram, totalswap;
+	struct cgroup_subsys_state *css;
 
 	/* No virtualization */
 	if (meminfo_val == VE_MEMINFO_SYSTEM)
 		return NOTIFY_DONE | NOTIFY_STOP_MASK;
 
-	totalram = si->totalram;
-	totalswap = si->totalswap;
-
-	memset(si, 0, sizeof(*si));
-
-	ub_sync_memcg(ub);
-
-	total = ub->ub_parms[UB_PHYSPAGES].limit;
-	used = ub->ub_parms[UB_PHYSPAGES].held;
-
-	if (total == UB_MAXVALUE)
-		total = totalram;
-
-	si->totalram = total;
-	si->freeram = (total > used ? total - used : 0);
-
-	total = ub->ub_parms[UB_SWAPPAGES].limit;
-	used = ub->ub_parms[UB_SWAPPAGES].held;
-
-	if (total == UB_MAXVALUE)
-		total = totalswap;
-
-	si->totalswap = total;
-	si->freeswap = (total > used ? total - used : 0);
-
-	si->mem_unit = PAGE_SIZE;
+	css = ub_get_mem_css(ub);
+	mem_cgroup_fill_sysinfo(mem_cgroup_from_cont(css->cgroup), si);
+	css_put(css);
 
 	return NOTIFY_OK;
 }
