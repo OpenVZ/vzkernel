@@ -3260,8 +3260,6 @@ bool calc_global_load(unsigned long ticks)
 
 	calc_load_update += LOAD_FREQ;
 
-	calc_load_ve();
-
 	/*
 	 * In case we idled for multiple LOAD_FREQ intervals, catch up in bulk.
 	 */
