@@ -2,6 +2,7 @@
 
 buildroot="$1"
 kernel_base="$2"
+filelist="$3"
 
 blacklist()
 {
@@ -18,7 +19,9 @@ __EOF__
 
 check_blacklist()
 {
-	if modinfo "$1" | grep -q '^alias:\s\+net-'; then
+	mod=$(find $buildroot/$kernel_base -name "$1")
+	[ ! "$mod" ] && return 0
+	if modinfo $mod | grep -q '^alias:\s\+net-'; then
 		mod="${1##*/}"
 		mod="${mod%.ko*}"
 		echo "$mod has an alias that allows auto-loading. Blacklisting."
@@ -44,8 +47,7 @@ foreachp()
 }
 
 [ -d "$buildroot/etc/modprobe.d/" ] || mkdir -p "$buildroot/etc/modprobe.d/"
-find "$buildroot/$kernel_base/extra" -name "*.ko*" | \
-	foreachp check_blacklist
+cat $filelist | foreachp check_blacklist
 
 # Many BIOS-es export a PNP-id which causes the floppy driver to autoload
 # even though most modern systems don't have a 3.5" floppy driver anymore

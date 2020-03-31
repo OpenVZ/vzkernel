@@ -1500,8 +1500,6 @@ BuildKernel() {
     mkdir -p $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
     (cd $RPM_BUILD_ROOT/lib/modules/$KernelVer ; ln -s build source)
     # dirs for additional modules per module-init-tools, kbuild/modules.txt
-    mkdir -p $RPM_BUILD_ROOT/lib/modules/$KernelVer/extra
-    mkdir -p $RPM_BUILD_ROOT/lib/modules/$KernelVer/internal
     mkdir -p $RPM_BUILD_ROOT/lib/modules/$KernelVer/updates
     mkdir -p $RPM_BUILD_ROOT/lib/modules/$KernelVer/weak-updates
     # CONFIG_KERNEL_HEADER_TEST generates some extra files in the process of
@@ -1719,11 +1717,11 @@ BuildKernel() {
     popd
 
     # Identify modules in the kernel-modules-extras package
-    %{SOURCE17} $RPM_BUILD_ROOT/lib/modules/$KernelVer $RPM_SOURCE_DIR/mod-extra.list extra
+    %{SOURCE17} $RPM_BUILD_ROOT lib/modules/$KernelVer $RPM_SOURCE_DIR/mod-extra.list
     # Blacklist net autoloadable modules in modules-extra
-    %{SOURCE19} $RPM_BUILD_ROOT lib/modules/$KernelVer
+    %{SOURCE19} $RPM_BUILD_ROOT lib/modules/$KernelVer $RPM_SOURCE_DIR/mod-extra.list
     # Identify modules in the kernel-modules-extras package
-    %{SOURCE17} $RPM_BUILD_ROOT/lib/modules/$KernelVer %{SOURCE54} internal
+    %{SOURCE17} $RPM_BUILD_ROOT lib/modules/$KernelVer %{SOURCE54} internal
 
     #
     # Generate the kernel-core and kernel-modules files lists
@@ -1736,8 +1734,10 @@ BuildKernel() {
     mkdir restore
     cp -r lib/modules/$KernelVer/* restore/.
 
-    # don't include anything going into k-m-e and k-m-i in the file lists
-    rm -rf lib/modules/$KernelVer/{extra,internal}
+    # don't include anything going into kernel-modules-extra in the file lists
+    xargs rm -rf < mod-extra.list
+    # don't include anything going int kernel-modules-internal in the file lists
+    xargs rm -rf < mod-internal.list
 
     if [ $DoModules -eq 1 ]; then
 	# Find all the module files and filter them out into the core and
@@ -1788,11 +1788,15 @@ BuildKernel() {
     sed -e 's/^lib*/\/lib/' %{?zipsed} $RPM_BUILD_ROOT/k-d.list > ../kernel${Flavour:+-${Flavour}}-modules.list
     sed -e 's/^lib*/%dir \/lib/' %{?zipsed} $RPM_BUILD_ROOT/module-dirs.list > ../kernel${Flavour:+-${Flavour}}-core.list
     sed -e 's/^lib*/\/lib/' %{?zipsed} $RPM_BUILD_ROOT/modules.list >> ../kernel${Flavour:+-${Flavour}}-core.list
+    sed -e 's/^lib*/\/lib/' %{?zipsed} $RPM_BUILD_ROOT/mod-extra.list >> ../kernel${Flavour:+-${Flavour}}-modules-extra.list
+    sed -e 's/^lib*/\/lib/' %{?zipsed} $RPM_BUILD_ROOT/mod-internal.list >> ../kernel${Flavour:+-${Flavour}}-modules-internal.list
 
     # Cleanup
     rm -f $RPM_BUILD_ROOT/k-d.list
     rm -f $RPM_BUILD_ROOT/modules.list
     rm -f $RPM_BUILD_ROOT/module-dirs.list
+    rm -f $RPM_BUILD_ROOT/mod-extra.list
+    rm -f $RPM_BUILD_ROOT/mod-internal.list
 
 %if %{signmodules}
     if [ $DoModules -eq 1 ]; then
@@ -2563,11 +2567,9 @@ fi
 %{expand:%%files %{?3:%{3}-}devel}\
 %defverify(not mtime)\
 /usr/src/kernels/%{KVERREL}%{?3:+%{3}}\
-%{expand:%%files %{?3:%{3}-}modules-extra}\
+%{expand:%%files -f kernel-%{?3:%{3}-}modules-extra.list %{?3:%{3}-}modules-extra}\
 %config(noreplace) /etc/modprobe.d/*-blacklist.conf\
-/lib/modules/%{KVERREL}%{?3:+%{3}}/extra\
-%{expand:%%files %{?3:%{3}-}modules-internal}\
-/lib/modules/%{KVERREL}%{?3:+%{3}}/internal\
+%{expand:%%files -f kernel-%{?3:%{3}-}modules-internal.list %{?3:%{3}-}modules-internal}\
 %if %{with_debuginfo}\
 %ifnarch noarch\
 %{expand:%%files -f debuginfo%{?3}.list %{?3:%{3}-}debuginfo}\

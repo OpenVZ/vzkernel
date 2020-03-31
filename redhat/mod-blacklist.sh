@@ -1,16 +1,24 @@
 #! /bin/bash
 
-Dir=$1
-List=$2
-Dest="$3"
+RpmDir=$1
+ModDir=$2
+Dir="$1/$2"
+# Note the list filename must have the format mod-[PACKAGE].list, for example,
+# mod-internal.list or mod-extra.list.  The PACKAGE is used to create a
+# override directory for the modules.
+List=$3
+Dest="$4"
 
 # Destination was specified on the command line
-if test ! -n "$Dest"; then
-	echo "$0: Destination has not been specified."
-	exit 1
-fi
+test -n "$4" && echo "$0: Override Destination $Dest has been specified."
 
 pushd $Dir
+
+OverrideDir=$(basename $List)
+OverrideDir=${OverrideDir%.*}
+OverrideDir=${OverrideDir#*-}
+mkdir -p $OverrideDir
+
 rm -rf modnames
 find . -name "*.ko" -type f > modnames
 # Look through all of the modules, and throw any that have a dependency in
@@ -62,13 +70,16 @@ done
 
 sort -u dep.list > dep2.list
 
-# now move the modules into the $Dest directory
-for mod in `cat dep2.list`
-do
-  newpath=`dirname $mod | sed -e "s/kernel\\//$Dest\//"`
-  mkdir -p $newpath
-  mv $mod $newpath
-done
+if [ -n "$Dest" ]; then
+	# now move the modules into the $Dest directory
+	for mod in `cat dep2.list`
+	do
+	  newpath=`dirname $mod | sed -e "s/kernel\\//$Dest\//"`
+	  mkdir -p $newpath
+	  mv $mod $newpath
+	  echo $mod | sed -e "s/kernel\\//$Dest\//" | sed -e "s|^.|${ModDir}|g" >> $RpmDir/$ListName
+	done
+fi
 
 popd
 
@@ -82,6 +93,16 @@ do
   modfile=`basename $mod | sed -e 's/.ko/.mod/'`
   rm .tmp_versions/$modfile
 done
+
+if [ ! -n "$Dest" ]; then
+	sed -e "s|^.|${ModDir}|g" ${Dir}/dep2.list > $RpmDir/$ListName
+	echo "./$RpmDir/$ListName created."
+	[ -d "$RpmDir/etc/modprobe.d/" ] || mkdir -p "$RpmDir/etc/modprobe.d/"
+	foreachp check_blacklist < $List
+fi
+
+# avoid an empty kernel-extra package
+echo "$ModDir/$OverrideDir" >> $RpmDir/$ListName
 
 pushd $Dir
 rm modnames dep.list dep2.list req.list req2.list
