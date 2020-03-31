@@ -242,6 +242,7 @@ sources-rh: $(TARBALL)
 		keys/*.cer \
 		update_scripts.sh \
 		mod-extra.* \
+		mod-blacklist.sh \
 		mod-extra-blacklist.sh \
 		mod-internal.list \
 		mod-sign.sh \

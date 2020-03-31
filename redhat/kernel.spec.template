@@ -617,7 +617,7 @@ Source13: redhatsecureboot003.cer
 
 Source22: mod-extra.list.rhel
 Source16: mod-extra.list.fedora
-Source17: mod-extra.sh
+Source17: mod-blacklist.sh
 Source18: mod-sign.sh
 Source19: mod-extra-blacklist.sh
 Source79: parallel_xz.sh
@@ -1718,11 +1718,11 @@ BuildKernel() {
         rm -f modules.{alias*,builtin.bin,dep*,*map,symbols*,devname,softdep}
     popd
 
-    # Call the modules-extra script to move things around
+    # Identify modules in the kernel-modules-extras package
     %{SOURCE17} $RPM_BUILD_ROOT/lib/modules/$KernelVer $RPM_SOURCE_DIR/mod-extra.list extra
     # Blacklist net autoloadable modules in modules-extra
     %{SOURCE19} $RPM_BUILD_ROOT lib/modules/$KernelVer
-    # Call the modules-extra script for internal modules
+    # Identify modules in the kernel-modules-extras package
     %{SOURCE17} $RPM_BUILD_ROOT/lib/modules/$KernelVer %{SOURCE54} internal
 
     #
