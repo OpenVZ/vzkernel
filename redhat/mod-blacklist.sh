@@ -9,6 +9,70 @@ Dir="$1/$2"
 List=$3
 Dest="$4"
 
+blacklist()
+{
+	cat > "$RpmDir/etc/modprobe.d/$1-blacklist.conf" <<-__EOF__
+	# This kernel module can be automatically loaded by non-root users. To
+	# enhance system security, the module is blacklisted by default to ensure
+	# system administrators make the module available for use as needed.
+	# See https://access.redhat.com/articles/3760101 for more details.
+	#
+	# Remove the blacklist by adding a comment # at the start of the line.
+	blacklist $1
+__EOF__
+}
+
+check_blacklist()
+{
+	mod=$(find $RpmDir/$ModDir -name "$1")
+	[ ! "$mod" ] && return 0
+	if modinfo $mod | grep -q '^alias:\s\+net-'; then
+		mod="${1##*/}"
+		mod="${mod%.ko*}"
+		echo "$mod has an alias that allows auto-loading. Blacklisting."
+		blacklist "$mod"
+	fi
+}
+
+find_depends()
+{
+	dep=$1
+	depends=`modinfo $dep | sed -n -e "/^depends/ s/^depends:[ \t]*//p"`
+	[ -z "$depends" ] && exit
+	for mod in ${depends//,/ }
+	do
+		match=$(grep "^$mod.ko" "$ListName")
+		[ -z "$match" ] && continue
+		# check if the module we are looking at is in mod-* too.
+		# if so we do not need to mark the dep as required.
+		mod2=${dep##*/}  # same as `basename $dep`, but faster
+		match2=$(grep "^$mod2" "$ListName")
+		if [ -n "$match2" ]
+		then
+			#echo $mod2 >> notreq.list
+			continue
+		fi
+		echo $mod.ko >> req.list
+	done
+}
+
+foreachp()
+{
+	P=$(nproc)
+	bgcount=0
+	while read mod; do
+		$1 "$mod" &
+
+		bgcount=$((bgcount + 1))
+		if [ $bgcount -eq $P ]; then
+			wait -n
+			bgcount=$((bgcount - 1))
+		fi
+	done
+
+	wait
+}
+
 # Destination was specified on the command line
 test -n "$4" && echo "$0: Override Destination $Dest has been specified."
 
@@ -32,29 +96,7 @@ cp "$List" .
 # executed by xargs
 export ListName=$(basename "$List")
 
-# NB: this loop runs 2000+ iterations. Try to be fast.
-NPROC=`nproc`
-[ -z "$NPROC" ] && NPROC=1
-cat modnames | xargs -r -n1 -P $NPROC sh -c '
-  dep=$1
-  depends=`modinfo $dep | sed -n -e "/^depends/ s/^depends:[ \t]*//p"`
-  [ -z "$depends" ] && exit
-  for mod in ${depends//,/ }
-  do
-    match=$(grep "^$mod.ko" "$ListName")
-    [ -z "$match" ] && continue
-    # check if the module we are looking at is in mod-* too.
-    # if so we do not need to mark the dep as required.
-    mod2=${dep##*/}  # same as `basename $dep`, but faster
-    match2=$(grep "^$mod2" "$ListName")
-    if [ -n "$match2" ]
-    then
-      #echo $mod2 >> notreq.list
-      continue
-    fi
-    echo $mod.ko >> req.list
-  done
-' DUMMYARG0   # xargs appends MODNAME, which becomes $dep in the script above
+foreachp find_depends < modnames
 
 sort -u req.list > req2.list
 sort -u "$ListName" > modules2.list

@@ -619,7 +619,6 @@ Source22: mod-extra.list.rhel
 Source16: mod-extra.list.fedora
 Source17: mod-blacklist.sh
 Source18: mod-sign.sh
-Source19: mod-extra-blacklist.sh
 Source79: parallel_xz.sh
 
 Source80: filter-x86_64.sh.fedora
@@ -1718,8 +1717,6 @@ BuildKernel() {
 
     # Identify modules in the kernel-modules-extras package
     %{SOURCE17} $RPM_BUILD_ROOT lib/modules/$KernelVer $RPM_SOURCE_DIR/mod-extra.list
-    # Blacklist net autoloadable modules in modules-extra
-    %{SOURCE19} $RPM_BUILD_ROOT lib/modules/$KernelVer $RPM_SOURCE_DIR/mod-extra.list
     # Identify modules in the kernel-modules-extras package
     %{SOURCE17} $RPM_BUILD_ROOT lib/modules/$KernelVer %{SOURCE54} internal
 
