@@ -729,6 +729,22 @@ static ssize_t ub_cgroup_resource_read(struct cgroup *cg, struct cftype *cft,
 	char str[32];
 
 	res = UB_CGROUP_RES(cft->private);
+
+	switch (res) {
+	case UB_NUMPROC:
+		ub_sync_pids(ub);
+		break;
+	case UB_KMEMSIZE:
+	case UB_DCACHESIZE:
+	case UB_PHYSPAGES:
+	case UB_SWAPPAGES:
+	case UB_OOMGUARPAGES:
+		ub_sync_memcg(ub);
+		break;
+	default:
+		break;
+	}
+
 	attr = UB_CGROUP_ATTR(cft->private);
 
 	ubparm = &ub->ub_parms[res];
