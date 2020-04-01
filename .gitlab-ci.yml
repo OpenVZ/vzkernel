@@ -1,94 +1,10 @@
-# GitLab CI configuration file
-
-image: registry.gitlab.com/cki-project/containers/builder-fedora31
-
-stages:
-  - test
-
-variables:
-  GIT_DEPTH: "5"
-
-
-# Ensure that "make rh-srpm" works for merge requests against ark-patches.
-test_patches_rh_srpm:
-  stage: test
-  script:
-    - curl -o temp.zip -L "https://gitlab.com/cki-project/kernel-ark/-/jobs/artifacts/internal/download?job=redhat_export"
-    - unzip temp.zip
-    - printf "%s\n%s\n" "include Makefile.rhelver" "$(cat Makefile)" > Makefile
-    - make rh-srpm
-  only:
-    refs:
-      - merge_requests
-    variables:
-      - $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "ark-patches"
-
-
-test_internal_rh_srpm:
-  stage: test
-  script:
-    - git config user.name "CKI@GitLab"
-    - git config user.email "cki-project@redhat.com"
-    # Hack alert: We carry a patch that alters the Kconfig for this setting, making it invalid
-    # on vanilla trees. Set it to the pre-patched values as we test the srpm build sans downstream
-    # patches. Ideally, the number of Kconfigs we tweak downstream is minimal so this is easier
-    # than getting all the patches into this branch for testing, which takes a non-trivial amount
-    # of time to download.
-    - sed -i 's/=13/=11/g' redhat/configs/fedora/generic/arm/aarch64/CONFIG_FORCE_MAX_ZONEORDER
-    - make rh-srpm
-  only:
-    refs:
-      - merge_requests
-    variables:
-      - $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "internal"
-
-
-# This job exports the packaging-related scripts and files for use with other
-# upstream kernel trees.
-redhat_export:
-  stage: test
-  script:
-    - git log -1 --pretty=format:%H
-  only:
-    refs:
-      - internal
-  artifacts:
-    when: always
-    paths:
-      - makefile
-      - Makefile.rhelver
-      - redhat/
-
-
-# Export the latest out-of-tree patch set
-ark_patch_export:
-  stage: test
-  script:
-    - git fetch --depth=250 origin ark-patches:ark-patches
-    - git fetch --depth=20000 origin master:master
-    - git format-patch $(git merge-base master ark-patches)..ark-patches -o redhat_patches/
-    - rm redhat_patches/*gitlab-ci*.patch
-    - cat redhat_patches/*patch >redhat_downstream.patch
-  only:
-    refs:
-      - ark-patches
-  artifacts:
-    when: always
-    paths:
-      - redhat_downstream.patch
-
-
-# Bring some commits from a make rh-release back to internal
-update_internal:
-   stage: test
-   before_script:
-     - echo "fastestmirror=true" >> /etc/dnf/dnf.conf
-     - dnf -y install dnf-utils git openssh-clients tar
-     - eval $(ssh-agent -s)
-     - echo "$PRIVATE_KEY" | tr -d '\r' | ssh-add - > /dev/null
-     - mkdir -p ~/.ssh
-     - chmod 700 ~/.ssh
-   script:
-     - redhat/update-internal.sh $GIT_DEPTH
-   only:
-     - ark-latest
+# CI definitions for ark-patches and internal are maintained in a single file
+# outside the main repository because the two branches are regularly merged
+# together in release branches. Rather than trying to keep the two branches in
+# sync or have merge conflicts each time we merge the two branches, the
+# definition is stored externally and included in each branch.
+#
+# To update any CI jobs, please submit any merge requests to
+# https://gitlab.com/cki-project/kernel-ark-ci/.
+include: - remote:
+  'https://gitlab.com/cki-project/kernel-ark-ci/raw/master/gitlab-ci.yml'
