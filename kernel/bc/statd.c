@@ -223,6 +223,16 @@ int ubstat_alloc_store(struct user_beancounter *ub)
 }
 EXPORT_SYMBOL(ubstat_alloc_store);
 
+static bool ubstat_need_pids_sync(long cmd)
+{
+	if (UBSTAT_CMD(cmd) != UBSTAT_READ_ONE)
+		return true;
+
+	if (UBSTAT_PARMID(cmd) == UB_NUMPROC)
+		return true;
+	return false;
+}
+
 static bool ubstat_need_memcg_sync(long cmd)
 {
 	if (UBSTAT_CMD(cmd) != UBSTAT_READ_ONE)
@@ -272,6 +282,8 @@ static int ubstat_get_stat(struct user_beancounter *ub, long cmd,
 
 	if (ubstat_need_memcg_sync(cmd))
 		ub_sync_memcg(ub);
+	if (ubstat_need_pids_sync(cmd))
+		ub_sync_pids(ub);
 
 	spin_lock(&ubs_notify_lock);
 	switch (UBSTAT_CMD(cmd)) {
