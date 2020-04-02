@@ -6,5 +6,5 @@
 #
 # To update any CI jobs, please submit any merge requests to
 # https://gitlab.com/cki-project/kernel-ark-ci/.
-include: - remote:
-  'https://gitlab.com/cki-project/kernel-ark-ci/raw/master/gitlab-ci.yml'
+include:
+  - remote: 'https://gitlab.com/cki-project/kernel-ark-ci/raw/master/gitlab-ci.yml'
