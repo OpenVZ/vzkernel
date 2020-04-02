@@ -2662,31 +2662,22 @@ static bool pgdat_memcg_congested(pg_data_t *pgdat, struct mem_cgroup *memcg)
 		(memcg && memcg_congested(pgdat, memcg));
 }
 
-static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
+static void shrink_node_memcgs(pg_data_t *pgdat, struct scan_control *sc)
 {
-	struct reclaim_state *reclaim_state = current->reclaim_state;
-	struct mem_cgroup *root = sc->target_mem_cgroup;
-	unsigned long nr_reclaimed, nr_scanned;
-	bool reclaimable = false;
+	struct mem_cgroup *target_memcg = sc->target_mem_cgroup;
 	struct mem_cgroup *memcg;
 	struct mem_cgroup_reclaim_cookie reclaim = {
 		.pgdat = pgdat,
 		.priority = sc->priority,
 	};
 
-again:
-	reclaim.generation = 0;
-	memset(&sc->nr, 0, sizeof(sc->nr));
-	nr_reclaimed = sc->nr_reclaimed;
-	nr_scanned = sc->nr_scanned;
-
-	memcg = mem_cgroup_iter(root, NULL, &reclaim);
+	memcg = mem_cgroup_iter(target_memcg, NULL, &reclaim);
 	do {
 		struct lruvec *lruvec = mem_cgroup_lruvec(memcg, pgdat);
 		unsigned long reclaimed;
 		unsigned long scanned;
 
-		switch (mem_cgroup_protected(root, memcg)) {
+		switch (mem_cgroup_protected(target_memcg, memcg)) {
 		case MEMCG_PROT_MIN:
 			/*
 			 * Hard protection.
@@ -2735,10 +2726,26 @@ again:
 		 */
 		if (cgroup_reclaim(sc) &&
 			sc->nr_reclaimed >= sc->nr_to_reclaim) {
-			mem_cgroup_iter_break(root, memcg);
+			mem_cgroup_iter_break(target_memcg, memcg);
 			break;
 		}
-	} while ((memcg = mem_cgroup_iter(root, memcg, &reclaim)));
+	} while ((memcg = mem_cgroup_iter(target_memcg, memcg, &reclaim)));
+}
+
+static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
+{
+	struct reclaim_state *reclaim_state = current->reclaim_state;
+	struct mem_cgroup *target_memcg = sc->target_mem_cgroup;
+	unsigned long nr_reclaimed, nr_scanned;
+	bool reclaimable = false;
+
+again:
+	memset(&sc->nr, 0, sizeof(sc->nr));
+
+	nr_reclaimed = sc->nr_reclaimed;
+	nr_scanned = sc->nr_scanned;
+
+	shrink_node_memcgs(pgdat, sc);
 
 	if (reclaim_state) {
 		sc->nr_reclaimed += reclaim_state->reclaimed_slab;
@@ -2746,9 +2753,9 @@ again:
 	}
 
 	/* Record the subtree's reclaim efficiency */
-	vmpressure(sc->gfp_mask, sc->target_mem_cgroup, true,
-			   sc->nr_scanned - nr_scanned,
-			   sc->nr_reclaimed - nr_reclaimed);
+	vmpressure(sc->gfp_mask, target_memcg, true,
+		   sc->nr_scanned - nr_scanned,
+		   sc->nr_reclaimed - nr_reclaimed);
 
 	if (sc->nr_reclaimed - nr_reclaimed)
 		reclaimable = true;
@@ -2802,7 +2809,7 @@ again:
 	 */
 	if (cgroup_reclaim(sc) && writeback_throttling_sane(sc) &&
 	    sc->nr.dirty && sc->nr.dirty == sc->nr.congested)
-		set_memcg_congestion(pgdat, root, true);
+		set_memcg_congestion(pgdat, target_memcg, true);
 
 	/*
 	 * Stall direct reclaim for IO completions if underlying BDIs
@@ -2811,7 +2818,8 @@ again:
 	 * the LRU too quickly.
 	 */
 	if (!sc->hibernation_mode && !current_is_kswapd() &&
-	    current_may_throttle() && pgdat_memcg_congested(pgdat, root))
+	    current_may_throttle() &&
+	    pgdat_memcg_congested(pgdat, target_memcg))
 		wait_iff_congested(BLK_RW_ASYNC, HZ/10);
 
 	if (should_continue_reclaim(pgdat, sc->nr_reclaimed - nr_reclaimed,
