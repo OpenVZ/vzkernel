@@ -33,10 +33,10 @@ static int ploop_read_bat(struct ploop *ploop, struct bio *bio)
 			if (i + nr_copy > ploop->nr_bat_entries)
 				nr_copy = ploop->nr_bat_entries - i;
 
-			addr = kmap_atomic(bio->bi_io_vec[page].bv_page);
+			addr = kmap(bio->bi_io_vec[page].bv_page);
 			memcpy(&ploop->bat_entries[i], addr + off,
 				nr_copy * sizeof(map_index_t));
-			kunmap_atomic(addr);
+			kunmap(bio->bi_io_vec[page].bv_page);
 			i += nr_copy;
 
 			if (i >= ploop->nr_bat_entries)
@@ -120,6 +120,7 @@ int ploop_read_metadata(struct dm_target *ti, struct ploop *ploop)
 	unsigned int bat_clusters, offset_clusters, cluster_log;
 	struct ploop_pvd_header *m_hdr = NULL;
 	unsigned long size;
+	struct page *page;
 	struct bio *bio;
 	int ret;
 	void *data;
@@ -134,7 +135,8 @@ int ploop_read_metadata(struct dm_target *ti, struct ploop *ploop)
 	if (ret < 0)
 		goto out;
 
-	m_hdr = kmap_atomic(bio->bi_io_vec[0].bv_page);
+	page = bio->bi_io_vec[0].bv_page;
+	m_hdr = kmap(page);
 
 	ret = -ENOTSUPP;
 	if (strncmp(m_hdr->m_Sig, "WithouFreSpacExt", 16))
@@ -176,7 +178,7 @@ int ploop_read_metadata(struct dm_target *ti, struct ploop *ploop)
 	memcpy(data, m_hdr, sizeof(*m_hdr));
 	ploop->hdr = data;
 	ploop->bat_entries = data + sizeof(*m_hdr);
-	kunmap_atomic(m_hdr);
+	kunmap(page);
 	m_hdr = NULL;
 
 	ret = ploop_read_bat(ploop, bio);
@@ -186,7 +188,7 @@ int ploop_read_metadata(struct dm_target *ti, struct ploop *ploop)
 	ret = ploop_assign_hb_and_levels(ploop, bat_clusters);
 out:
 	if (m_hdr)
-		kunmap_atomic(m_hdr);
+		kunmap(page);
 	free_bio_with_pages(ploop, bio);
 	return ret;
 }
@@ -199,7 +201,7 @@ static int ploop_delta_check_header(struct ploop *ploop, struct page *page,
 	u64 size, delta_size;
 	int ret = -EPROTO;
 
-	hdr = kmap_atomic(page);
+	hdr = kmap(page);
 
 	if (memcmp(hdr->m_Sig, ploop->hdr->m_Sig, sizeof(hdr->m_Sig)) ||
 	    hdr->m_Sectors != ploop->hdr->m_Sectors ||
@@ -223,7 +225,7 @@ static int ploop_delta_check_header(struct ploop *ploop, struct page *page,
 	*last_page_len = bytes ? : PAGE_SIZE;
 	ret = 0;
 out:
-	kunmap_atomic(hdr);
+	kunmap(page);
 	return ret;
 }
 
@@ -278,9 +280,9 @@ int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 			len = last_page_len;
 		}
 
-		from = kmap_atomic(page);
+		from = kmap(page);
 		memcpy(*d_hdr + (i << PAGE_SHIFT), from, len);
-		kunmap_atomic(from);
+		kunmap(page);
 	}
 
 	delta_bat_entries = *d_hdr + PLOOP_MAP_OFFSET * sizeof(map_index_t);
