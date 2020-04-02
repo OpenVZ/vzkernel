@@ -180,7 +180,7 @@ static struct tcache_nodeinfo *tcache_nodeinfo;
  */
 
 /* Enable/disable tcache backend (set at boot time) */
-static bool tcache_enabled __read_mostly = true;
+bool tcache_enabled __read_mostly = true;
 module_param_named(enabled, tcache_enabled, bool, 0444);
 
 /* Enable/disable populating the cache */
@@ -1188,7 +1188,7 @@ static struct page *tcache_alloc_page(struct tcache_pool *pool)
 	return page;
 }
 
-static unsigned long tcache_shrink_count(struct shrinker *shrink,
+unsigned long tcache_shrink_count(struct shrinker *shrink,
 					 struct shrink_control *sc)
 {
 	atomic_long_t *nr_pages = &tcache_nodeinfo[sc->nid].nr_pages;
@@ -1202,13 +1202,13 @@ static unsigned long tcache_shrink_count(struct shrinker *shrink,
 #define TCACHE_SCAN_BATCH 128UL
 static DEFINE_PER_CPU(struct page * [TCACHE_SCAN_BATCH], tcache_page_vec);
 
-static unsigned long tcache_shrink_scan(struct shrinker *shrink,
+unsigned long tcache_shrink_scan(struct shrinker *shrink,
 					struct shrink_control *sc)
 {
 	struct page **pages = get_cpu_var(tcache_page_vec);
 	int nr_isolated, nr_reclaimed;
 
-	if (WARN_ON(sc->nr_to_scan > TCACHE_SCAN_BATCH))
+	if (sc->nr_to_scan > TCACHE_SCAN_BATCH)
 		sc->nr_to_scan = TCACHE_SCAN_BATCH;
 
 	nr_isolated = tcache_lru_isolate(sc->nid, pages, sc->nr_to_scan);
