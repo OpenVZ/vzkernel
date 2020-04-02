@@ -6734,6 +6734,35 @@ static void snapshot_refaults(struct mem_cgroup *target_memcg, pg_data_t *pgdat)
 	target_lruvec->refaults[WORKINGSET_FILE] = refaults;
 }
 
+static void shrink_tcache(struct scan_control *scan_ctrl)
+{
+	int nid;
+	unsigned long shrunk;
+	nodemask_t *nodemask = scan_ctrl->nodemask ? : &node_online_map;
+
+	do {
+		shrunk = 0;
+
+		for_each_node_mask(nid, *nodemask) {
+			struct shrink_control sc = {
+				.gfp_mask = scan_ctrl->gfp_mask,
+				.nid = nid,
+				.memcg = NULL,
+				.nr_to_scan = scan_ctrl->nr_to_reclaim -
+					      scan_ctrl->nr_reclaimed,
+			};
+			shrunk = shrink_tcache_node(&sc);
+			scan_ctrl->nr_reclaimed += shrunk;
+			/*
+			 * We scan all nodes even if we reclaim more than
+			 * nr_to_reclaim, we want to make similar memory
+			 * pressure on all nodes and not to trash only the
+			 * first one and stop.
+			 */
+		}
+	} while (shrunk && scan_ctrl->nr_reclaimed < scan_ctrl->nr_to_reclaim);
+}
+
 /*
  * This is the main entry point to direct page reclaim.
  *
@@ -6760,8 +6789,12 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
 retry:
 	delayacct_freepages_start();
 
-	if (!cgroup_reclaim(sc))
+	if (!cgroup_reclaim(sc)) {
 		__count_zid_vm_events(ALLOCSTALL, sc->reclaim_idx, 1);
+		shrink_tcache(sc);
+		if (sc->nr_reclaimed >= sc->nr_to_reclaim)
+			goto out;
+	}
 
 	do {
 		if (!sc->proactive)
@@ -6801,7 +6834,7 @@ retry:
 			clear_bit(LRUVEC_CONGESTED, &lruvec->flags);
 		}
 	}
-
+out:
 	delayacct_freepages_end();
 
 	if (sc->nr_reclaimed)
@@ -7443,6 +7476,12 @@ restart:
 		nr_soft_reclaimed = mem_cgroup_soft_limit_reclaim(pgdat, sc.order,
 						sc.gfp_mask, &nr_soft_scanned);
 		sc.nr_reclaimed += nr_soft_reclaimed;
+
+		shrink_tcache(&sc);
+		if (sc.nr_reclaimed >= sc.nr_to_reclaim &&
+		    pgdat_balanced(pgdat, order, highest_zoneidx))
+			goto out;
+
 
 		/*
 		 * There should be no need to raise the scanning priority if
