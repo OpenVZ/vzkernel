@@ -728,7 +728,7 @@ static void mem_cgroup_charge_statistics(struct mem_cgroup *memcg,
 unsigned long mem_cgroup_node_nr_lru_pages(struct mem_cgroup *memcg,
 					   int nid, unsigned int lru_mask)
 {
-	struct lruvec *lruvec = mem_cgroup_lruvec(NODE_DATA(nid), memcg);
+	struct lruvec *lruvec = mem_cgroup_lruvec(memcg, NODE_DATA(nid));
 	unsigned long nr = 0;
 	enum lru_list lru;
 
@@ -1141,7 +1141,7 @@ struct lruvec *mem_cgroup_page_lruvec(struct page *page, struct pglist_data *pgd
 	struct lruvec *lruvec;
 
 	if (mem_cgroup_disabled()) {
-		lruvec = &pgdat->lruvec;
+		lruvec = &pgdat->__lruvec;
 		goto out;
 	}
 
@@ -3788,7 +3788,7 @@ again:
 			if (node_isset(nid, *target_nodes))
 				continue;
 
-			lruvec = mem_cgroup_lruvec(NODE_DATA(nid), mi);
+			lruvec = mem_cgroup_lruvec(mi, NODE_DATA(nid));
 			/*
 			 * For the sake of simplicity, do not attempt to migrate
 			 * unevictable pages. It should be fine as long as there
