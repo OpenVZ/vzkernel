@@ -141,9 +141,6 @@ static int sca3000_ring_get_bytes_per_datum(struct iio_buffer *r)
 	return 6;
 }
 
-static IIO_BUFFER_ENABLE_ATTR;
-static IIO_BUFFER_LENGTH_ATTR;
-
 /**
  * sca3000_query_ring_int() is the hardware ring status interrupt enabled
  **/
@@ -233,18 +230,11 @@ static IIO_DEVICE_ATTR(in_accel_scale,
  * only apply to the ring buffer.  At all times full rate and accuracy
  * is available via direct reading from registers.
  */
-static struct attribute *sca3000_ring_attributes[] = {
-	&dev_attr_length.attr,
-	&dev_attr_enable.attr,
+static const struct attribute *sca3000_ring_attributes[] = {
 	&iio_dev_attr_50_percent.dev_attr.attr,
 	&iio_dev_attr_75_percent.dev_attr.attr,
 	&iio_dev_attr_in_accel_scale.dev_attr.attr,
 	NULL,
-};
-
-static struct attribute_group sca3000_ring_attr = {
-	.attrs = sca3000_ring_attributes,
-	.name = "buffer",
 };
 
 static struct iio_buffer *sca3000_rb_allocate(struct iio_dev *indio_dev)
@@ -259,13 +249,13 @@ static struct iio_buffer *sca3000_rb_allocate(struct iio_dev *indio_dev)
 	ring->private = indio_dev;
 	buf = &ring->buf;
 	buf->stufftoread = 0;
-	buf->attrs = &sca3000_ring_attr;
+	buf->attrs = sca3000_ring_attributes;
 	iio_buffer_init(buf);
 
 	return buf;
 }
 
-static inline void sca3000_rb_free(struct iio_buffer *r)
+static void sca3000_ring_release(struct iio_buffer *r)
 {
 	kfree(iio_to_hw_buf(r));
 }
@@ -274,23 +264,30 @@ static const struct iio_buffer_access_funcs sca3000_ring_access_funcs = {
 	.read_first_n = &sca3000_read_first_n_hw_rb,
 	.get_length = &sca3000_ring_get_length,
 	.get_bytes_per_datum = &sca3000_ring_get_bytes_per_datum,
+	.release = sca3000_ring_release,
+
+	.modes = INDIO_BUFFER_HARDWARE,
 };
 
 int sca3000_configure_ring(struct iio_dev *indio_dev)
 {
-	indio_dev->buffer = sca3000_rb_allocate(indio_dev);
-	if (indio_dev->buffer == NULL)
+	struct iio_buffer *buffer;
+
+	buffer = sca3000_rb_allocate(indio_dev);
+	if (buffer == NULL)
 		return -ENOMEM;
 	indio_dev->modes |= INDIO_BUFFER_HARDWARE;
 
 	indio_dev->buffer->access = &sca3000_ring_access_funcs;
+
+	iio_device_attach_buffer(indio_dev, buffer);
 
 	return 0;
 }
 
 void sca3000_unconfigure_ring(struct iio_dev *indio_dev)
 {
-	sca3000_rb_free(indio_dev->buffer);
+	iio_buffer_put(indio_dev->buffer);
 }
 
 static inline

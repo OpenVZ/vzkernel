@@ -115,7 +115,7 @@ snd_seq_oss_writeq_sync(struct seq_oss_writeq *q)
 		rec->t.code = SEQ_SYNCTIMER;
 		rec->t.time = time;
 		q->sync_event_put = 1;
-		snd_seq_kernel_client_enqueue_blocking(dp->cseq, &ev, NULL, 0, 0);
+		snd_seq_kernel_client_enqueue(dp->cseq, &ev, NULL, true);
 	}
 
 	wait_event_interruptible_timeout(q->sync_sleep, ! q->sync_event_put, HZ);
@@ -138,9 +138,7 @@ snd_seq_oss_writeq_wakeup(struct seq_oss_writeq *q, abstime_t time)
 	spin_lock_irqsave(&q->sync_lock, flags);
 	q->sync_time = time;
 	q->sync_event_put = 0;
-	if (waitqueue_active(&q->sync_sleep)) {
-		wake_up(&q->sync_sleep);
-	}
+	wake_up(&q->sync_sleep);
 	spin_unlock_irqrestore(&q->sync_lock, flags);
 }
 

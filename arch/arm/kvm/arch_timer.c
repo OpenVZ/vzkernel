@@ -34,7 +34,7 @@ static struct kvm_irq_level timer_irq = {
 	.level	= 1,
 };
 
-static cycle_t kvm_phys_timer_read(void)
+static u64 kvm_phys_timer_read(void)
 {
 	return timecounter->cc->read(timecounter->cc);
 }
@@ -131,7 +131,7 @@ void kvm_timer_flush_hwstate(struct kvm_vcpu *vcpu)
 void kvm_timer_sync_hwstate(struct kvm_vcpu *vcpu)
 {
 	struct arch_timer_cpu *timer = &vcpu->arch.timer_cpu;
-	cycle_t cval, now;
+	u64 cval, now;
 	u64 ns;
 
 	if ((timer->cntv_ctl & ARCH_TIMER_CTRL_IT_MASK) ||

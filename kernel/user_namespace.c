@@ -24,10 +24,22 @@
 #include <linux/fs_struct.h>
 
 static struct kmem_cache *user_ns_cachep __read_mostly;
+static DEFINE_MUTEX(userns_state_mutex);
 
 static bool new_idmap_permitted(const struct file *file,
 				struct user_namespace *ns, int cap_setid,
 				struct uid_gid_map *map);
+static void free_user_ns(struct work_struct *work);
+
+static struct ucounts *inc_user_namespaces(struct user_namespace *ns, kuid_t uid)
+{
+	return inc_ucount(ns, uid, UCOUNT_USER_NAMESPACES);
+}
+
+static void dec_user_namespaces(struct ucounts *ucounts)
+{
+	return dec_ucount(ucounts, UCOUNT_USER_NAMESPACES);
+}
 
 static void set_cred_user_ns(struct cred *cred, struct user_namespace *user_ns)
 {
@@ -38,6 +50,7 @@ static void set_cred_user_ns(struct cred *cred, struct user_namespace *user_ns)
 	cred->cap_inheritable = CAP_EMPTY_SET;
 	cred->cap_permitted = CAP_FULL_SET;
 	cred->cap_effective = CAP_FULL_SET;
+	cred->cap_ambient = CAP_EMPTY_SET;
 	cred->cap_bset = CAP_FULL_SET;
 #ifdef CONFIG_KEYS
 	key_put(cred->request_key_auth);
@@ -60,7 +73,28 @@ int create_user_ns(struct cred *new)
 	struct user_namespace *ns, *parent_ns = new->user_ns;
 	kuid_t owner = new->euid;
 	kgid_t group = new->egid;
-	int ret;
+	struct ucounts *ucounts;
+	int ret, i;
+
+	ret = -ENOSPC;
+	if (parent_ns->level > 32)
+		goto fail;
+
+	ucounts = inc_user_namespaces(parent_ns, owner);
+	if (!ucounts) {
+		/*
+		 * Preserve bug comaptibility with previous versions of RHEL
+		 * and don't change the error code for user namespaces entirely
+		 * disabled.
+		 *
+		 * This allows old version of chrome to start.  Newer versions
+		 * can handle -ENOSPC properly.
+		 */
+		if ((parent_ns == &init_user_ns) &&
+		    (init_user_ns.ucount_max[UCOUNT_USER_NAMESPACES] == 0))
+			ret = -EINVAL;
+		goto fail;
+	}
 
 	/*
 	 * Verify that we can not violate the policy of which files
@@ -68,67 +102,112 @@ int create_user_ns(struct cred *new)
 	 * by verifing that the root directory is at the root of the
 	 * mount namespace which allows all files to be accessed.
 	 */
+	ret = -EPERM;
 	if (current_chrooted())
-		return -EPERM;
+		goto fail_dec;
 
 	/* The creator needs a mapping in the parent user namespace
 	 * or else we won't be able to reasonably tell userspace who
 	 * created a user_namespace.
 	 */
+	ret = -EPERM;
 	if (!kuid_has_mapping(parent_ns, owner) ||
 	    !kgid_has_mapping(parent_ns, group))
-		return -EPERM;
+		goto fail_dec;
 
+	ret = -ENOMEM;
 	ns = kmem_cache_zalloc(user_ns_cachep, GFP_KERNEL);
 	if (!ns)
-		return -ENOMEM;
+		goto fail_dec;
 
 	ret = proc_alloc_inum(&ns->proc_inum);
-	if (ret) {
-		kmem_cache_free(user_ns_cachep, ns);
-		return ret;
-	}
+	if (ret)
+		goto fail_free;
 
 	atomic_set(&ns->count, 1);
 	/* Leave the new->user_ns reference with the new user namespace. */
 	ns->parent = parent_ns;
+	ns->level = parent_ns->level + 1;
 	ns->owner = owner;
 	ns->group = group;
+	INIT_WORK(&ns->work, free_user_ns);
+	for (i = 0; i < UCOUNT_COUNTS; i++) {
+		ns->ucount_max[i] = INT_MAX;
+	}
+	ns->ucounts = ucounts;
+
+	/* Inherit USERNS_SETGROUPS_ALLOWED from our parent */
+	mutex_lock(&userns_state_mutex);
+	ns->flags = parent_ns->flags;
+	mutex_unlock(&userns_state_mutex);
+
+#ifdef CONFIG_PERSISTENT_KEYRINGS
+	init_rwsem(&ns->persistent_keyring_register_sem);
+#endif
+	ret = -ENOMEM;
+	if (!setup_userns_sysctls(ns))
+		goto fail_keyring;
 
 	set_cred_user_ns(new, ns);
 
-	update_mnt_policy(ns);
-
 	return 0;
+fail_keyring:
+#ifdef CONFIG_PERSISTENT_KEYRINGS
+	key_put(ns->persistent_keyring_register);
+#endif
+fail_free:
+	proc_free_inum(ns->proc_inum);
+	kmem_cache_free(user_ns_cachep, ns);
+fail_dec:
+	dec_user_namespaces(ucounts);
+fail:
+	return ret;
 }
 
 int unshare_userns(unsigned long unshare_flags, struct cred **new_cred)
 {
 	struct cred *cred;
+	int err = -ENOMEM;
 
 	if (!(unshare_flags & CLONE_NEWUSER))
 		return 0;
 
 	cred = prepare_creds();
-	if (!cred)
-		return -ENOMEM;
+	if (cred) {
+		err = create_user_ns(cred);
+		if (err)
+			put_cred(cred);
+		else
+			*new_cred = cred;
+	}
 
-	*new_cred = cred;
-	return create_user_ns(cred);
+	return err;
 }
 
-void free_user_ns(struct user_namespace *ns)
+static void free_user_ns(struct work_struct *work)
 {
-	struct user_namespace *parent;
+	struct user_namespace *parent, *ns =
+		container_of(work, struct user_namespace, work);
 
 	do {
+		struct ucounts *ucounts = ns->ucounts;
 		parent = ns->parent;
+		retire_userns_sysctls(ns);
+#ifdef CONFIG_PERSISTENT_KEYRINGS
+		key_put(ns->persistent_keyring_register);
+#endif
 		proc_free_inum(ns->proc_inum);
 		kmem_cache_free(user_ns_cachep, ns);
+		dec_user_namespaces(ucounts);
 		ns = parent;
 	} while (atomic_dec_and_test(&parent->count));
 }
-EXPORT_SYMBOL(free_user_ns);
+
+void __put_user_ns(struct user_namespace *ns)
+{
+	schedule_work(&ns->work);
+}
+EXPORT_SYMBOL(__put_user_ns);
 
 static u32 map_id_range_down(struct uid_gid_map *map, u32 id, u32 count)
 {
@@ -139,7 +218,7 @@ static u32 map_id_range_down(struct uid_gid_map *map, u32 id, u32 count)
 
 	/* Find the matching extent */
 	extents = map->nr_extents;
-	smp_read_barrier_depends();
+	smp_rmb();
 	for (idx = 0; idx < extents; idx++) {
 		first = map->extent[idx].first;
 		last = first + map->extent[idx].count - 1;
@@ -163,7 +242,7 @@ static u32 map_id_down(struct uid_gid_map *map, u32 id)
 
 	/* Find the matching extent */
 	extents = map->nr_extents;
-	smp_read_barrier_depends();
+	smp_rmb();
 	for (idx = 0; idx < extents; idx++) {
 		first = map->extent[idx].first;
 		last = first + map->extent[idx].count - 1;
@@ -186,7 +265,7 @@ static u32 map_id_up(struct uid_gid_map *map, u32 id)
 
 	/* Find the matching extent */
 	extents = map->nr_extents;
-	smp_read_barrier_depends();
+	smp_rmb();
 	for (idx = 0; idx < extents; idx++) {
 		first = map->extent[idx].lower_first;
 		last = first + map->extent[idx].count - 1;
@@ -474,8 +553,10 @@ static void *m_start(struct seq_file *seq, loff_t *ppos, struct uid_gid_map *map
 	struct uid_gid_extent *extent = NULL;
 	loff_t pos = *ppos;
 
-	if (pos < map->nr_extents)
+	if (pos < map->nr_extents) {
+		gmb();
 		extent = &map->extent[pos];
+	}
 
 	return extent;
 }
@@ -568,9 +649,6 @@ static bool mappings_overlap(struct uid_gid_map *new_map, struct uid_gid_extent 
 	return false;
 }
 
-
-static DEFINE_MUTEX(id_map_mutex);
-
 static ssize_t map_write(struct file *file, const char __user *buf,
 			 size_t count, loff_t *ppos,
 			 int cap_setid,
@@ -587,7 +665,7 @@ static ssize_t map_write(struct file *file, const char __user *buf,
 	ssize_t ret = -EINVAL;
 
 	/*
-	 * The id_map_mutex serializes all writes to any given map.
+	 * The userns_state_mutex serializes all writes to any given map.
 	 *
 	 * Any map is only ever written once.
 	 *
@@ -602,11 +680,10 @@ static ssize_t map_write(struct file *file, const char __user *buf,
 	 * were written before the count of the extents.
 	 *
 	 * To achieve this smp_wmb() is used on guarantee the write
-	 * order and smp_read_barrier_depends() is guaranteed that we
-	 * don't have crazy architectures returning stale data.
-	 *
+	 * order and smp_rmb() is guaranteed that we don't have crazy
+	 * architectures returning stale data.
 	 */
-	mutex_lock(&id_map_mutex);
+	mutex_lock(&userns_state_mutex);
 
 	ret = -EPERM;
 	/* Only allow one successful write to the map */
@@ -626,7 +703,7 @@ static ssize_t map_write(struct file *file, const char __user *buf,
 	if (!page)
 		goto out;
 
-	/* Only allow <= page size writes at the beginning of the file */
+	/* Only allow < page size writes at the beginning of the file */
 	ret = -EINVAL;
 	if ((*ppos != 0) || (count >= PAGE_SIZE))
 		goto out;
@@ -733,7 +810,7 @@ static ssize_t map_write(struct file *file, const char __user *buf,
 	*ppos = count;
 	ret = count;
 out:
-	mutex_unlock(&id_map_mutex);
+	mutex_unlock(&userns_state_mutex);
 	if (page)
 		free_page(page);
 	return ret;
@@ -792,17 +869,21 @@ static bool new_idmap_permitted(const struct file *file,
 				struct user_namespace *ns, int cap_setid,
 				struct uid_gid_map *new_map)
 {
-	/* Allow mapping to your own filesystem ids */
-	if ((new_map->nr_extents == 1) && (new_map->extent[0].count == 1)) {
+	const struct cred *cred = file->f_cred;
+	/* Don't allow mappings that would allow anything that wouldn't
+	 * be allowed without the establishment of unprivileged mappings.
+	 */
+	if ((new_map->nr_extents == 1) && (new_map->extent[0].count == 1) &&
+	    uid_eq(ns->owner, cred->euid)) {
 		u32 id = new_map->extent[0].lower_first;
 		if (cap_setid == CAP_SETUID) {
 			kuid_t uid = make_kuid(ns->parent, id);
-			if (uid_eq(uid, file->f_cred->fsuid))
+			if (uid_eq(uid, cred->euid))
 				return true;
-		}
-		else if (cap_setid == CAP_SETGID) {
+		} else if (cap_setid == CAP_SETGID) {
 			kgid_t gid = make_kgid(ns->parent, id);
-			if (gid_eq(gid, file->f_cred->fsgid))
+			if (!(ns->flags & USERNS_SETGROUPS_ALLOWED) &&
+			    gid_eq(gid, cred->egid))
 				return true;
 		}
 	}
@@ -819,6 +900,114 @@ static bool new_idmap_permitted(const struct file *file,
 	    file_ns_capable(file, ns->parent, cap_setid))
 		return true;
 
+	return false;
+}
+
+int proc_setgroups_show(struct seq_file *seq, void *v)
+{
+	struct user_namespace *ns = seq->private;
+	unsigned long userns_flags = ACCESS_ONCE(ns->flags);
+
+	seq_printf(seq, "%s\n",
+		   (userns_flags & USERNS_SETGROUPS_ALLOWED) ?
+		   "allow" : "deny");
+	return 0;
+}
+
+ssize_t proc_setgroups_write(struct file *file, const char __user *buf,
+			     size_t count, loff_t *ppos)
+{
+	struct seq_file *seq = file->private_data;
+	struct user_namespace *ns = seq->private;
+	char kbuf[8], *pos;
+	bool setgroups_allowed;
+	ssize_t ret;
+
+	/* Only allow a very narrow range of strings to be written */
+	ret = -EINVAL;
+	if ((*ppos != 0) || (count >= sizeof(kbuf)))
+		goto out;
+
+	/* What was written? */
+	ret = -EFAULT;
+	if (copy_from_user(kbuf, buf, count))
+		goto out;
+	kbuf[count] = '\0';
+	pos = kbuf;
+
+	/* What is being requested? */
+	ret = -EINVAL;
+	if (strncmp(pos, "allow", 5) == 0) {
+		pos += 5;
+		setgroups_allowed = true;
+	}
+	else if (strncmp(pos, "deny", 4) == 0) {
+		pos += 4;
+		setgroups_allowed = false;
+	}
+	else
+		goto out;
+
+	/* Verify there is not trailing junk on the line */
+	pos = skip_spaces(pos);
+	if (*pos != '\0')
+		goto out;
+
+	ret = -EPERM;
+	mutex_lock(&userns_state_mutex);
+	if (setgroups_allowed) {
+		/* Enabling setgroups after setgroups has been disabled
+		 * is not allowed.
+		 */
+		if (!(ns->flags & USERNS_SETGROUPS_ALLOWED))
+			goto out_unlock;
+	} else {
+		/* Permanently disabling setgroups after setgroups has
+		 * been enabled by writing the gid_map is not allowed.
+		 */
+		if (ns->gid_map.nr_extents != 0)
+			goto out_unlock;
+		ns->flags &= ~USERNS_SETGROUPS_ALLOWED;
+	}
+	mutex_unlock(&userns_state_mutex);
+
+	/* Report a successful write */
+	*ppos = count;
+	ret = count;
+out:
+	return ret;
+out_unlock:
+	mutex_unlock(&userns_state_mutex);
+	goto out;
+}
+
+bool userns_may_setgroups(const struct user_namespace *ns)
+{
+	bool allowed;
+
+	mutex_lock(&userns_state_mutex);
+	/* It is not safe to use setgroups until a gid mapping in
+	 * the user namespace has been established.
+	 */
+	allowed = ns->gid_map.nr_extents != 0;
+	/* Is setgroups allowed? */
+	allowed = allowed && (ns->flags & USERNS_SETGROUPS_ALLOWED);
+	mutex_unlock(&userns_state_mutex);
+
+	return allowed;
+}
+
+/*
+ * Returns true if @ns is the same namespace as or a descendant of
+ * @target_ns.
+ */
+bool current_in_userns(const struct user_namespace *target_ns)
+{
+	struct user_namespace *ns;
+	for (ns = current_user_ns(); ns; ns = ns->parent) {
+		if (ns == target_ns)
+			return true;
+	}
 	return false;
 }
 
@@ -874,6 +1063,7 @@ static unsigned int userns_inum(void *ns)
 	struct user_namespace *user_ns = ns;
 	return user_ns->proc_inum;
 }
+EXPORT_SYMBOL(current_in_userns);
 
 const struct proc_ns_operations userns_operations = {
 	.name		= "user",
@@ -887,6 +1077,10 @@ const struct proc_ns_operations userns_operations = {
 static __init int user_namespaces_init(void)
 {
 	user_ns_cachep = KMEM_CACHE(user_namespace, SLAB_PANIC);
+	/* To make user namespaces something to opt in to for existing
+	 * RHEL users default ucount_max to 0.
+	 */
+	init_user_ns.ucount_max[UCOUNT_USER_NAMESPACES] = 0;
 	return 0;
 }
-module_init(user_namespaces_init);
+subsys_initcall(user_namespaces_init);

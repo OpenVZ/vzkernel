@@ -31,11 +31,6 @@
 
 struct workqueue_struct *gfs2_control_wq;
 
-static struct shrinker qd_shrinker = {
-	.shrink = gfs2_shrink_qd_memory,
-	.seeks = DEFAULT_SEEKS,
-};
-
 static void gfs2_init_inode_once(void *foo)
 {
 	struct gfs2_inode *ip = foo;
@@ -43,8 +38,11 @@ static void gfs2_init_inode_once(void *foo)
 	inode_init_once(&ip->i_inode);
 	init_rwsem(&ip->i_rw_mutex);
 	INIT_LIST_HEAD(&ip->i_trunc_list);
-	ip->i_res = NULL;
+	ip->i_qadata = NULL;
+	memset(&ip->i_res, 0, sizeof(ip->i_res));
+	RB_CLEAR_NODE(&ip->i_res.rs_node);
 	ip->i_hash_cache = NULL;
+	gfs2_holder_mark_uninitialized(&ip->i_iopen_gh);
 }
 
 static void gfs2_init_glock_once(void *foo)
@@ -52,7 +50,7 @@ static void gfs2_init_glock_once(void *foo)
 	struct gfs2_glock *gl = foo;
 
 	INIT_HLIST_BL_NODE(&gl->gl_list);
-	spin_lock_init(&gl->gl_spin);
+	spin_lock_init(&gl->gl_lockref.lock);
 	INIT_LIST_HEAD(&gl->gl_holders);
 	INIT_LIST_HEAD(&gl->gl_lru);
 	INIT_LIST_HEAD(&gl->gl_ail_list);
@@ -81,10 +79,15 @@ static int __init init_gfs2_fs(void)
 
 	gfs2_str2qstr(&gfs2_qdot, ".");
 	gfs2_str2qstr(&gfs2_qdotdot, "..");
+	gfs2_quota_hash_init();
 
 	error = gfs2_sys_init();
 	if (error)
 		return error;
+
+	error = list_lru_init(&gfs2_qd_lru);
+	if (error)
+		goto fail_lru;
 
 	error = gfs2_glock_init();
 	if (error)
@@ -109,7 +112,8 @@ static int __init init_gfs2_fs(void)
 	gfs2_inode_cachep = kmem_cache_create("gfs2_inode",
 					      sizeof(struct gfs2_inode),
 					      0,  SLAB_RECLAIM_ACCOUNT|
-					          SLAB_MEM_SPREAD,
+						  SLAB_MEM_SPREAD|
+						  SLAB_ACCOUNT,
 					      gfs2_init_inode_once);
 	if (!gfs2_inode_cachep)
 		goto fail;
@@ -132,13 +136,13 @@ static int __init init_gfs2_fs(void)
 	if (!gfs2_quotad_cachep)
 		goto fail;
 
-	gfs2_rsrv_cachep = kmem_cache_create("gfs2_mblk",
-					     sizeof(struct gfs2_blkreserv),
+	gfs2_qadata_cachep = kmem_cache_create("gfs2_qadata",
+					       sizeof(struct gfs2_qadata),
 					       0, 0, NULL);
-	if (!gfs2_rsrv_cachep)
+	if (!gfs2_qadata_cachep)
 		goto fail;
 
-	register_shrinker(&qd_shrinker);
+	register_shrinker(&gfs2_qd_shrinker);
 
 	error = register_filesystem(&gfs2_fs_type);
 	if (error)
@@ -178,11 +182,13 @@ fail_wq:
 fail_unregister:
 	unregister_filesystem(&gfs2_fs_type);
 fail:
-	unregister_shrinker(&qd_shrinker);
+	list_lru_destroy(&gfs2_qd_lru);
+fail_lru:
+	unregister_shrinker(&gfs2_qd_shrinker);
 	gfs2_glock_exit();
 
-	if (gfs2_rsrv_cachep)
-		kmem_cache_destroy(gfs2_rsrv_cachep);
+	if (gfs2_qadata_cachep)
+		kmem_cache_destroy(gfs2_qadata_cachep);
 
 	if (gfs2_quotad_cachep)
 		kmem_cache_destroy(gfs2_quotad_cachep);
@@ -213,18 +219,19 @@ fail:
 
 static void __exit exit_gfs2_fs(void)
 {
-	unregister_shrinker(&qd_shrinker);
+	unregister_shrinker(&gfs2_qd_shrinker);
 	gfs2_glock_exit();
 	gfs2_unregister_debugfs();
 	unregister_filesystem(&gfs2_fs_type);
 	unregister_filesystem(&gfs2meta_fs_type);
 	destroy_workqueue(gfs_recovery_wq);
 	destroy_workqueue(gfs2_control_wq);
+	list_lru_destroy(&gfs2_qd_lru);
 
 	rcu_barrier();
 
 	mempool_destroy(gfs2_page_pool);
-	kmem_cache_destroy(gfs2_rsrv_cachep);
+	kmem_cache_destroy(gfs2_qadata_cachep);
 	kmem_cache_destroy(gfs2_quotad_cachep);
 	kmem_cache_destroy(gfs2_rgrpd_cachep);
 	kmem_cache_destroy(gfs2_bufdata_cachep);

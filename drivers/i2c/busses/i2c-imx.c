@@ -11,11 +11,6 @@
  *	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *	GNU General Public License for more details.
  *
- *	You should have received a copy of the GNU General Public License
- *	along with this program; if not, write to the Free Software
- *	Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
- *	USA.
- *
  * Author:
  *	Darius Augulis, Teltonika Inc.
  *
@@ -50,7 +45,6 @@
 #include <linux/slab.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
-#include <linux/of_i2c.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/platform_data/i2c-imx.h>
 
@@ -500,17 +494,13 @@ static int __init i2c_imx_probe(struct platform_device *pdev)
 
 	dev_dbg(&pdev->dev, "<%s>\n", __func__);
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res) {
-		dev_err(&pdev->dev, "can't get device resources\n");
-		return -ENOENT;
-	}
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
 		dev_err(&pdev->dev, "can't get irq number\n");
 		return -ENOENT;
 	}
 
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	base = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(base))
 		return PTR_ERR(base);
@@ -580,8 +570,6 @@ static int __init i2c_imx_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "registration failed\n");
 		return ret;
 	}
-
-	of_i2c_register_devices(&i2c_imx->adapter);
 
 	/* Set up platform driver data */
 	platform_set_drvdata(pdev, i2c_imx);

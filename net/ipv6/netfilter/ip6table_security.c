@@ -36,14 +36,15 @@ static const struct xt_table security_table = {
 };
 
 static unsigned int
-ip6table_security_hook(unsigned int hook, struct sk_buff *skb,
+ip6table_security_hook(const struct nf_hook_ops *ops, struct sk_buff *skb,
 		       const struct net_device *in,
 		       const struct net_device *out,
-		       int (*okfn)(struct sk_buff *))
+		       const struct nf_hook_state *state)
 {
-	const struct net *net = dev_net((in != NULL) ? in : out);
+	const struct net *net = dev_net(state->in ? state->in : state->out);
 
-	return ip6t_do_table(skb, hook, in, out, net->ipv6.ip6table_security);
+	return ip6t_do_table(skb, ops->hooknum, state,
+			     net->ipv6.ip6table_security);
 }
 
 static struct nf_hook_ops *sectbl_ops __read_mostly;

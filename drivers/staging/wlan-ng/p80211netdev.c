@@ -278,7 +278,6 @@ static void p80211netdev_rx_bh(unsigned long arg)
 				skb->ip_summed = CHECKSUM_NONE;
 				skb->pkt_type = PACKET_OTHERHOST;
 				skb->protocol = htons(ETH_P_80211_RAW);
-				dev->last_rx = jiffies;
 
 				wlandev->linux_stats.rx_packets++;
 				wlandev->linux_stats.rx_bytes += skb->len;
@@ -419,7 +418,7 @@ static int p80211knetdev_hard_start_xmit(struct sk_buff *skb,
 		goto failed;
 	}
 
-	netdev->trans_start = jiffies;
+	netif_trans_update(netdev);
 
 	wlandev->linux_stats.tx_packets++;
 	/* count only the packet payload */

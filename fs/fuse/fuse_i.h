@@ -22,6 +22,8 @@
 #include <linux/rbtree.h>
 #include <linux/poll.h>
 #include <linux/workqueue.h>
+#include <linux/pid_namespace.h>
+#include <linux/user_namespace.h>
 
 /** Max number of pages that can be used in a single read request */
 #define FUSE_MAX_PAGES_PER_REQ 32
@@ -81,6 +83,9 @@ struct fuse_inode {
 	/** Time in jiffies until the file attributes are valid */
 	u64 i_time;
 
+	/* Is atime invalid? */
+	int inval_atime;
+
 	/** The sticky bit in inode->i_mode may have been removed, so
 	    preserve the original mode */
 	umode_t orig_i_mode;
@@ -115,6 +120,10 @@ struct fuse_inode {
 enum {
 	/** Advise readdirplus  */
 	FUSE_I_ADVISE_RDPLUS,
+	/** Initialized with readdirplus */
+	FUSE_I_INIT_RDPLUS,
+	/** An operation changing file size is in progress  */
+	FUSE_I_SIZE_UNSTABLE,
 };
 
 struct fuse_conn;
@@ -317,6 +326,7 @@ struct fuse_req {
 		struct {
 			struct fuse_write_in in;
 			struct fuse_write_out out;
+			struct fuse_req *next;
 		} write;
 		struct fuse_notify_retrieve_in retrieve_in;
 		struct fuse_lk_in lk_in;
@@ -370,11 +380,10 @@ struct fuse_conn {
 	/** Lock protecting accessess to  members of this structure */
 	spinlock_t lock;
 
-	/** Mutex protecting against directory alias creation */
-	struct mutex inst_mutex;
-
 	/** Refcount */
 	atomic_t count;
+
+	struct rcu_head rcu;
 
 	/** The user id for this mount */
 	kuid_t user_id;
@@ -384,6 +393,9 @@ struct fuse_conn {
 
 	/** The fuse mount flags for this mount */
 	unsigned flags;
+
+	/** The pid namespace for this mount */
+	struct pid_namespace *pid_ns;
 
 	/** Maximum read size */
 	unsigned max_read;
@@ -476,10 +488,16 @@ struct fuse_conn {
 	/** Set if bdi is valid */
 	unsigned bdi_initialized:1;
 
+	/** write-back cache policy (default is write-through) */
+	unsigned writeback_cache:1;
+
 	/*
 	 * The following bitfields are only for optimization purposes
 	 * and hence races in setting them will not cause malfunction
 	 */
+
+	/** Is open/release not implemented by fs? */
+	unsigned no_open:1;
 
 	/** Is fsync not implemented by fs? */
 	unsigned no_fsync:1;
@@ -532,6 +550,9 @@ struct fuse_conn {
 	/** Is fallocate not implemented by fs? */
 	unsigned no_fallocate:1;
 
+	/** Is rename with flags implemented by fs? */
+	unsigned no_rename2:1;
+
 	/** Use enhanced/automatic page cache invalidation. */
 	unsigned auto_inval_data:1;
 
@@ -543,6 +564,9 @@ struct fuse_conn {
 
 	/** Does the filesystem support asynchronous direct-IO submission? */
 	unsigned async_dio:1;
+
+	/** Is lseek not implemented by fs? */
+	unsigned no_lseek:1;
 
 	/** The number of requests waiting for completion */
 	atomic_t num_waiting;
@@ -585,6 +609,9 @@ struct fuse_conn {
 
 	/** Read/write semaphore to hold when accessing sb. */
 	struct rw_semaphore killsb;
+
+	/** The user namespace for this mount */
+	struct user_namespace *user_ns;
 };
 
 static inline struct fuse_conn *get_fuse_conn_super(struct super_block *sb)
@@ -659,7 +686,7 @@ void fuse_sync_release(struct fuse_file *ff, int flags);
 /**
  * Send RELEASE or RELEASEDIR request
  */
-void fuse_release_common(struct file *file, int opcode);
+void fuse_release_common(struct file *file, bool isdir);
 
 /**
  * Send FSYNC or FSYNCDIR request
@@ -713,7 +740,7 @@ int fuse_dev_init(void);
 void fuse_dev_cleanup(void);
 
 int fuse_ctl_init(void);
-void fuse_ctl_cleanup(void);
+void __exit fuse_ctl_cleanup(void);
 
 /**
  * Allocate a request
@@ -784,6 +811,8 @@ void fuse_invalidate_attr(struct inode *inode);
 
 void fuse_invalidate_entry_cache(struct dentry *entry);
 
+void fuse_invalidate_atime(struct inode *inode);
+
 /**
  * Acquire reference to fuse_conn
  */
@@ -794,7 +823,7 @@ void fuse_conn_kill(struct fuse_conn *fc);
 /**
  * Initialize fuse_conn
  */
-void fuse_conn_init(struct fuse_conn *fc);
+void fuse_conn_init(struct fuse_conn *fc, struct user_namespace *user_ns);
 
 /**
  * Release reference to fuse_conn
@@ -854,9 +883,20 @@ int fuse_reverse_inval_entry(struct super_block *sb, u64 parent_nodeid,
 
 int fuse_do_open(struct fuse_conn *fc, u64 nodeid, struct file *file,
 		 bool isdir);
+
+/**
+ * fuse_direct_io() flags
+ */
+
+/** If set, it is WRITE; otherwise - READ */
+#define FUSE_DIO_WRITE (1 << 0)
+
+/** CUSE pass fuse_direct_io() a file which f_mapping->host is not from FUSE */
+#define FUSE_DIO_CUSE  (1 << 1)
+
 ssize_t fuse_direct_io(struct fuse_io_priv *io, const struct iovec *iov,
 		       unsigned long nr_segs, size_t count, loff_t *ppos,
-		       int write);
+		       int flags);
 long fuse_do_ioctl(struct file *file, unsigned int cmd, unsigned long arg,
 		   unsigned int flags);
 long fuse_ioctl_common(struct file *file, unsigned int cmd,
@@ -864,7 +904,10 @@ long fuse_ioctl_common(struct file *file, unsigned int cmd,
 unsigned fuse_file_poll(struct file *file, poll_table *wait);
 int fuse_dev_release(struct inode *inode, struct file *file);
 
-void fuse_write_update_size(struct inode *inode, loff_t pos);
+bool fuse_write_update_size(struct inode *inode, loff_t pos);
+
+int fuse_flush_times(struct inode *inode, struct fuse_file *ff);
+int fuse_write_inode(struct inode *inode, struct writeback_control *wbc);
 
 int fuse_do_setattr(struct inode *inode, struct iattr *attr,
 		    struct file *file);

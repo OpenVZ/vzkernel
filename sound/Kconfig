@@ -76,6 +76,8 @@ source "sound/isa/Kconfig"
 
 source "sound/pci/Kconfig"
 
+source "sound/hda/Kconfig"
+
 source "sound/ppc/Kconfig"
 
 source "sound/aoa/Kconfig"
@@ -105,6 +107,10 @@ source "sound/sparc/Kconfig"
 source "sound/parisc/Kconfig"
 
 source "sound/soc/Kconfig"
+
+source "sound/x86/Kconfig"
+
+source "sound/synth/Kconfig"
 
 endif # SND
 
