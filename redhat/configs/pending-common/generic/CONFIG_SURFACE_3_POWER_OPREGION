@@ -1,0 +1,17 @@
+# CONFIG_SURFACE_3_POWER_OPREGION:
+# 
+# This driver provides support for ACPI operation
+# region of the Surface 3 battery platform driver.
+# 
+# Symbol: SURFACE_3_POWER_OPREGION [=n]
+# Type  : tristate
+# Defined at drivers/platform/x86/Kconfig:858
+#   Prompt: Surface 3 battery platform operation region support
+#   Depends on: X86 [=y] && X86_PLATFORM_DEVICES [=y] && ACPI [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> X86 Platform Specific Device Drivers (X86_PLATFORM_DEVICES [=y])
+# 
+# 
+# 
+# CONFIG_SURFACE_3_POWER_OPREGION is not set

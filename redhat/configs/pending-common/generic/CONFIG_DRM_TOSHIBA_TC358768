@@ -1,0 +1,18 @@
+# CONFIG_DRM_TOSHIBA_TC358768:
+# 
+# Toshiba TC358768AXBG/TC358778XBG DSI bridge chip driver.
+# 
+# Symbol: DRM_TOSHIBA_TC358768 [=n]
+# Type  : tristate
+# Defined at drivers/gpu/drm/bridge/Kconfig:148
+#   Prompt: Toshiba TC358768 MIPI DSI bridge
+#   Depends on: HAS_IOMEM [=y] && DRM [=m] && DRM_BRIDGE [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Display Interface Bridges
+# Selects: DRM_KMS_HELPER [=m] && REGMAP_I2C [=m] && DRM_PANEL [=y] && DRM_MIPI_DSI [=n]
+# 
+# 
+# 
+# CONFIG_DRM_TOSHIBA_TC358768 is not set

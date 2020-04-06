@@ -1,0 +1,18 @@
+# CONFIG_MHI_BUS:
+# 
+# Bus driver for MHI protocol. Modem Host Interface (MHI) is a
+# communication protocol used by the host processors to control
+# and communicate with modem devices over a high speed peripheral
+# bus or shared memory.
+# 
+# Symbol: MHI_BUS [=n]
+# Type  : tristate
+# Defined at drivers/bus/mhi/Kconfig:8
+#   Prompt: Modem Host Interface (MHI) bus
+#   Location:
+#     -> Device Drivers
+#       -> Bus devices
+# 
+# 
+# 
+# CONFIG_MHI_BUS is not set

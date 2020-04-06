@@ -1,0 +1,18 @@
+# CONFIG_MDIO_IPQ8064:
+# 
+# This driver supports the MDIO interface found in the network
+# interface units of the IPQ8064 SoC
+# 
+# Symbol: MDIO_IPQ8064 [=n]
+# Type  : tristate
+# Defined at drivers/net/phy/Kconfig:160
+#   Prompt: Qualcomm IPQ8064 MDIO interface support
+#   Depends on: NETDEVICES [=y] && MDIO_DEVICE [=y] && MDIO_BUS [=y] && HAS_IOMEM [=y] && OF_MDIO [=y] && MFD_SYSCON [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> MDIO bus device drivers (MDIO_DEVICE [=y])
+# 
+# 
+# 
+# CONFIG_MDIO_IPQ8064 is not set

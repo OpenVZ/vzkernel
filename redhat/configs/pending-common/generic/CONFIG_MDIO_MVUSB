@@ -1,0 +1,18 @@
+# CONFIG_MDIO_MVUSB:
+# 
+# A USB to MDIO converter present on development boards for
+# Marvell's Link Street family of Ethernet switches.
+# 
+# Symbol: MDIO_MVUSB [=n]
+# Type  : tristate
+# Defined at drivers/net/phy/Kconfig:182
+#   Prompt: Marvell USB to MDIO Adapter
+#   Depends on: NETDEVICES [=y] && MDIO_DEVICE [=y] && MDIO_BUS [=y] && USB [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> MDIO bus device drivers (MDIO_DEVICE [=y])
+# 
+# 
+# 
+# CONFIG_MDIO_MVUSB is not set

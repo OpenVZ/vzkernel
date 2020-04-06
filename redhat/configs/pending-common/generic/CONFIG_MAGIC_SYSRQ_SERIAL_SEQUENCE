@@ -1,0 +1,21 @@
+# CONFIG_MAGIC_SYSRQ_SERIAL_SEQUENCE:
+# 
+# Specifies a sequence of characters that can follow BREAK to enable
+# SysRq on a serial console.
+# 
+# If unsure, leave an empty string and the option will not be enabled.
+# 
+# Symbol: MAGIC_SYSRQ_SERIAL_SEQUENCE [=]
+# Type  : string
+# Defined at lib/Kconfig.debug:434
+#   Prompt: Char sequence that enables magic SysRq over serial
+#   Depends on: MAGIC_SYSRQ_SERIAL [=y]
+#   Location:
+#     -> Kernel hacking
+#       -> Generic Kernel Debugging Instruments
+#         -> Magic SysRq key (MAGIC_SYSRQ [=y])
+#           -> Enable magic SysRq key over serial (MAGIC_SYSRQ_SERIAL [=y])
+# 
+# 
+# 
+CONFIG_MAGIC_SYSRQ_SERIAL_SEQUENCE=""

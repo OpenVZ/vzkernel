@@ -1,0 +1,19 @@
+# CONFIG_DRM_SIMPLE_BRIDGE:
+# 
+# Support for non-programmable DRM bridges, such as ADI ADV7123, TI
+# THS8134 and THS8135 or passive resistor ladder DACs.
+# 
+# Symbol: DRM_SIMPLE_BRIDGE [=n]
+# Type  : tristate
+# Defined at drivers/gpu/drm/bridge/Kconfig:116
+#   Prompt: Simple DRM bridge support
+#   Depends on: HAS_IOMEM [=y] && DRM [=m] && DRM_BRIDGE [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Display Interface Bridges
+# Selects: DRM_KMS_HELPER [=m]
+# 
+# 
+# 
+# CONFIG_DRM_SIMPLE_BRIDGE is not set

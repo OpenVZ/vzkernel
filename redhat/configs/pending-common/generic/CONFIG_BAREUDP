@@ -1,0 +1,22 @@
+# CONFIG_BAREUDP:
+# 
+# This adds a bare UDP tunnel module for tunnelling different
+# kinds of traffic like MPLS, IP, etc. inside a UDP tunnel.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called bareudp.
+# 
+# Symbol: BAREUDP [=n]
+# Type  : tristate
+# Defined at drivers/net/Kconfig:262
+#   Prompt: Bare UDP Encapsulation
+#   Depends on: NETDEVICES [=y] && NET_CORE [=y] && INET [=y] && (IPV6 [=y] || !IPV6 [=y])
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> Network core driver support (NET_CORE [=y])
+# Selects: NET_UDP_TUNNEL [=m] && GRO_CELLS [=y]
+# 
+# 
+# 
+# CONFIG_BAREUDP is not set

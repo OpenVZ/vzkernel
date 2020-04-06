@@ -1,0 +1,21 @@
+# CONFIG_APPLE_MFI_FASTCHARGE:
+# 
+# Say Y here if you want to control whether iOS devices will
+# fast charge from the USB interface, as implemented in "MFi"
+# chargers.
+# 
+# It is safe to say M here.
+# 
+# Symbol: APPLE_MFI_FASTCHARGE [=n]
+# Type  : tristate
+# Defined at drivers/usb/misc/Kconfig:140
+#   Prompt: Fast charge control for iOS devices
+#   Depends on: USB_SUPPORT [=y] && USB [=y]
+#   Location:
+#     -> Device Drivers
+#       -> USB support (USB_SUPPORT [=y])
+# Selects: POWER_SUPPLY [=y]
+# 
+# 
+# 
+# CONFIG_APPLE_MFI_FASTCHARGE is not set

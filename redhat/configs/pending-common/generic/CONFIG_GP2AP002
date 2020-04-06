@@ -1,0 +1,22 @@
+# CONFIG_GP2AP002:
+# 
+# Say Y here if you have a Sharp GP2AP002 proximity/ALS combo-chip
+# hooked to an I2C bus.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called gp2ap002.
+# 
+# Symbol: GP2AP002 [=n]
+# Type  : tristate
+# Defined at drivers/iio/light/Kconfig:172
+#   Prompt: Sharp GP2AP002 Proximity/ALS sensor
+#   Depends on: IIO [=m] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> Light sensors
+# Selects: REGMAP [=y]
+# 
+# 
+# 
+# CONFIG_GP2AP002 is not set

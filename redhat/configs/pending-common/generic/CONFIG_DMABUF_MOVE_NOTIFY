@@ -1,0 +1,19 @@
+# CONFIG_DMABUF_MOVE_NOTIFY:
+# 
+# Don''t pin buffers if the dynamic DMA-buf interface is available on both the
+# exporter as well as the importer. This fixes a security problem where
+# userspace is able to pin unrestricted amounts of memory through DMA-buf.
+# But marked experimental because we don''t jet have a consistent execution
+# context and memory management between drivers.
+# 
+# Symbol: DMABUF_MOVE_NOTIFY [=n]
+# Type  : bool
+# Defined at drivers/dma-buf/Kconfig:42
+#   Prompt: Move notify between drivers (EXPERIMENTAL)
+#   Location:
+#     -> Device Drivers
+#       -> DMABUF options
+# 
+# 
+# 
+# CONFIG_DMABUF_MOVE_NOTIFY is not set

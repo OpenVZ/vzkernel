@@ -1,0 +1,18 @@
+# CONFIG_GPIO_MLXBF2:
+# 
+# Say Y here if you want GPIO support on Mellanox BlueField 2 SoC.
+# 
+# Symbol: GPIO_MLXBF2 [=n]
+# Type  : tristate
+# Defined at drivers/gpio/Kconfig:1402
+#   Prompt: Mellanox BlueField 2 SoC GPIO
+#   Depends on: GPIOLIB [=y] && PCI [=y] && (MELLANOX_PLATFORM [=y] && ARM64 [=y] && ACPI [=y] || 64BIT [=y] && COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> GPIO Support (GPIOLIB [=y])
+#         -> PCI GPIO expanders
+# Selects: GPIO_GENERIC [=m]
+# 
+# 
+# 
+# CONFIG_GPIO_MLXBF2 is not set

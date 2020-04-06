@@ -1,0 +1,24 @@
+# CONFIG_UACCE:
+# 
+# UACCE provides interface for the user process to access the hardware
+# without interaction with the kernel space in data path.
+# 
+# The user-space interface is described in
+# include/uapi/misc/uacce/uacce.h
+# 
+# See Documentation/misc-devices/uacce.rst for more details.
+# 
+# If you don't know what to do here, say N.
+# 
+# Symbol: UACCE [=n]
+# Type  : tristate
+# Defined at drivers/misc/uacce/Kconfig:1
+#   Prompt: Accelerator Framework for User Land
+#   Depends on: IOMMU_API [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Misc devices
+# 
+# 
+# 
+# CONFIG_UACCE is not set

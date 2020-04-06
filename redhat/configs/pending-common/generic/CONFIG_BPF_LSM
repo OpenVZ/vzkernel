@@ -1,0 +1,18 @@
+# CONFIG_BPF_LSM:
+# 
+# Enables instrumentation of the security hooks with eBPF programs for
+# implementing dynamic MAC and Audit Policies.
+# 
+# If you are unsure how to answer this question, answer N.
+# 
+# Symbol: BPF_LSM [=n]
+# Type  : bool
+# Defined at init/Kconfig:1623
+#   Prompt: LSM Instrumentation with BPF
+#   Depends on: BPF_EVENTS [=y] && BPF_SYSCALL [=y] && SECURITY [=y] && BPF_JIT [=y]
+#   Location:
+#     -> General setup
+# 
+# 
+# 
+# CONFIG_BPF_LSM is not set

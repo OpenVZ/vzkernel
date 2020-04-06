@@ -1,0 +1,22 @@
+# CONFIG_SND_BCM63XX_I2S_WHISTLER:
+# 
+# Say Y if you want to add support for ASoC audio on Broadcom
+# DSL/PON chips (bcm63158, bcm63178)
+# 
+# If you don't know what to do here, say N
+# 
+# Symbol: SND_BCM63XX_I2S_WHISTLER [=n]
+# Type  : tristate
+# Defined at sound/soc/bcm/Kconfig:21
+#   Prompt: SoC Audio support for the Broadcom BCM63XX I2S module
+#   Depends on: SOUND [=m] && !UML && SND [=m] && SND_SOC [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Sound card support (SOUND [=m])
+#         -> Advanced Linux Sound Architecture (SND [=m])
+#           -> ALSA for SoC audio support (SND_SOC [=m])
+# Selects: REGMAP_MMIO [=n]
+# 
+# 
+# 
+# CONFIG_SND_BCM63XX_I2S_WHISTLER is not set

@@ -1,0 +1,24 @@
+# CONFIG_MMC_HSQ:
+# 
+# This selects the MMC Host Software Queue support. This may increase
+# performance, if the host controller and its driver supports it.
+# 
+# If you have a controller/driver supporting this interface, say Y or M
+# here.
+# 
+# If unsure, say N.
+# 
+# Symbol: MMC_HSQ [=n]
+# Type  : tristate
+# Defined at drivers/mmc/host/Kconfig:953
+#   Prompt: MMC Host Software Queue support
+#   Depends on: MMC [=m]
+#   Location:
+#     -> Device Drivers
+#       -> MMC/SD/SDIO card support (MMC [=m])
+# Selected by [n]:
+#   - MMC_SDHCI_SPRD [=n] && MMC [=m] && ARCH_SPRD && MMC_SDHCI_PLTFM [=m]
+# 
+# 
+# 
+# CONFIG_MMC_HSQ is not set

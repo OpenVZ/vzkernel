@@ -1,0 +1,23 @@
+# CONFIG_SND_SOC_SOF_DEBUG_PROBES:
+# 
+# This option enables the data probing feature that can be used to
+# gather data directly from specific points of the audio pipeline.
+# Say Y if you want to enable probes.
+# If unsure, select "N".
+# 
+# Symbol: SND_SOC_SOF_DEBUG_PROBES [=n]
+# Type  : bool
+# Defined at sound/soc/sof/Kconfig:44
+#   Prompt: SOF enable data probing
+#   Depends on: SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && SND_SOC_SOF_TOPLEVEL [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Sound card support (SOUND [=m])
+#         -> Advanced Linux Sound Architecture (SND [=m])
+#           -> ALSA for SoC audio support (SND_SOC [=m])
+#             -> Sound Open Firmware Support (SND_SOC_SOF_TOPLEVEL [=y])
+# Selects: SND_SOC_COMPRESS [=y]
+# 
+# 
+# 
+# CONFIG_SND_SOC_SOF_DEBUG_PROBES is not set

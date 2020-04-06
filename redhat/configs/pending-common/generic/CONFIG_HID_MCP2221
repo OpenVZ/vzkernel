@@ -1,0 +1,22 @@
+# CONFIG_HID_MCP2221:
+# 
+# Provides I2C and SMBUS host adapter functionality over USB-HID
+# through MCP2221 device.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called hid-mcp2221.ko.
+# 
+# Symbol: HID_MCP2221 [=n]
+# Type  : tristate
+# Defined at drivers/hid/Kconfig:1155
+#   Prompt: Microchip MCP2221 HID USB-to-I2C/SMbus host support
+#   Depends on: INPUT [=y] && HID [=y] && USB_HID [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> HID support
+#         -> HID bus support (HID [=y])
+#           -> Special HID drivers
+# 
+# 
+# 
+# CONFIG_HID_MCP2221 is not set

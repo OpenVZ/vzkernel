@@ -1,0 +1,20 @@
+# CONFIG_SENSORS_AXI_FAN_CONTROL:
+# 
+# If you say yes here you get support for the Analog Devices
+# AXI HDL FAN monitoring core.
+# 
+# This driver can also be built as a module. If so, the module
+# will be called axi-fan-control
+# 
+# Symbol: SENSORS_AXI_FAN_CONTROL [=n]
+# Type  : tristate
+# Defined at drivers/hwmon/Kconfig:283
+#   Prompt: Analog Devices FAN Control HDL Core driver
+#   Depends on: HWMON [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Hardware Monitoring support (HWMON [=y])
+# 
+# 
+# 
+# CONFIG_SENSORS_AXI_FAN_CONTROL is not set

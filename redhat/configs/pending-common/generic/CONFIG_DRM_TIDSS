@@ -1,0 +1,22 @@
+# CONFIG_DRM_TIDSS:
+# 
+# The TI Keystone family SoCs introduced a new generation of
+# Display SubSystem. There is currently three Keystone family
+# SoCs released with DSS. Each with somewhat different version
+# of it. The SoCs are 66AK2Gx, AM65x, and J721E. Set this to Y
+# or M to add display support for TI Keystone family
+# platforms.
+# 
+# Symbol: DRM_TIDSS [=n]
+# Type  : tristate
+# Defined at drivers/gpu/drm/tidss/Kconfig:1
+#   Prompt: DRM Support for TI Keystone
+#   Depends on: HAS_IOMEM [=y] && DRM [=m] && OF [=y] && (ARM || ARM64 [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+# Selects: DRM_KMS_HELPER [=m] && DRM_KMS_CMA_HELPER [=n] && DRM_GEM_CMA_HELPER [=n]
+# 
+# 
+# 
+# CONFIG_DRM_TIDSS is not set

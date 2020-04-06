@@ -1,0 +1,19 @@
+# CONFIG_CHELSIO_TLS_DEVICE:
+# 
+# This flag enables support for kernel tls offload over Chelsio T6
+# crypto accelerator. CONFIG_CHELSIO_TLS_DEVICE flag can be enabled
+# only if CONFIG_TLS and CONFIG_TLS_DEVICE flags are enabled.
+# 
+# Symbol: CHELSIO_TLS_DEVICE [=y]
+# Type  : bool
+# Defined at drivers/crypto/chelsio/Kconfig:46
+#   Prompt: Chelsio Inline KTLS Offload
+#   Depends on: CRYPTO [=y] && CRYPTO_HW [=y] && CHELSIO_T4 [=m] && TLS_DEVICE [=y]
+#   Location:
+#     -> Cryptographic API (CRYPTO [=y])
+#       -> Hardware crypto devices (CRYPTO_HW [=y])
+# Selects: CRYPTO_DEV_CHELSIO [=m]
+# 
+# 
+# 
+CONFIG_CHELSIO_TLS_DEVICE=y

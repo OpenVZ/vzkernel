@@ -1,0 +1,19 @@
+# CONFIG_QETH_OSX:
+# 
+# This enables the qeth driver to support devices in OSX mode.
+# If unsure, choose N.
+# 
+# Symbol: QETH_OSX [=y]
+# Type  : bool
+# Defined at drivers/s390/net/Kconfig:103
+#   Prompt: qeth OSX device support
+#   Depends on: NETDEVICES [=y] && S390 [=y] && QETH [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> S/390 network device drivers
+#           -> Gigabit Ethernet device support (QETH [=m])
+# 
+# 
+# 
+CONFIG_QETH_OSX=y
