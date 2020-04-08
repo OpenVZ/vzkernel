@@ -124,7 +124,7 @@ else
   $(info BUILDID is "$(BUILDID)".)
 endif
 
-PKGRELEASE:=$(PREBUILD)$(BUILD)$(BUILDID)$(DIST)
+PKGRELEASE:=$(PREBUILD)$(BUILD)$(BUILDID)
 SPECRELEASE:=$(PREBUILD)$(BUILD)%{?buildid}%{?dist}
 
 ifeq ("$(SINGLE_TARBALL)", "0")
