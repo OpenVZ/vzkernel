@@ -538,7 +538,7 @@ enum
 	PLOOP_E_FSYNC_PENDED,   /* INDEX_WB needs io->ops->sync() to proceed */
 };
 
-#define BIO_BDEV_REUSED	14	/* io_context is stored in bi_bdev */
+#define BIO_BDEV_REUSED	15	/* io_context is stored in bi_bdev */
 
 struct ploop_request
 {
