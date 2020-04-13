@@ -1,0 +1,18 @@
+# CONFIG_ZSWAP_COMPRESSOR_DEFAULT_LZO:
+# 
+# Use the LZO algorithm as the default compression algorithm.
+# 
+# Symbol: ZSWAP_COMPRESSOR_DEFAULT_LZO [=y]
+# Type  : bool
+# Defined at mm/Kconfig:580
+#   Prompt: LZO
+#   Depends on: <choice>
+#   Location:
+#     -> Memory Management options
+#       -> Compressed cache for swap pages (EXPERIMENTAL) (ZSWAP [=y])
+#         -> Compressed cache for swap pages default compressor (<choice> [=y])
+# Selects: CRYPTO_LZO [=y]
+# 
+# 
+# 
+CONFIG_ZSWAP_COMPRESSOR_DEFAULT_LZO=y

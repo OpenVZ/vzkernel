@@ -1,0 +1,18 @@
+# CONFIG_ZSWAP_COMPRESSOR_DEFAULT_DEFLATE:
+# 
+# Use the Deflate algorithm as the default compression algorithm.
+# 
+# Symbol: ZSWAP_COMPRESSOR_DEFAULT_DEFLATE [=n]
+# Type  : bool
+# Defined at mm/Kconfig:574
+#   Prompt: Deflate
+#   Depends on: <choice>
+#   Location:
+#     -> Memory Management options
+#       -> Compressed cache for swap pages (EXPERIMENTAL) (ZSWAP [=y])
+#         -> Compressed cache for swap pages default compressor (<choice> [=y])
+# Selects: CRYPTO_DEFLATE [=y]
+# 
+# 
+# 
+# CONFIG_ZSWAP_COMPRESSOR_DEFAULT_DEFLATE is not set

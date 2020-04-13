@@ -1,0 +1,12 @@
+# CONFIG_COMPAT:
+#
+# Enable support for 32bit binaries
+#
+# Symbol: COMPAT [=n]
+# Type	: bool
+# Defined at arch/powerpc/Kconfig:268
+#	Depends on: PPC64
+#   Default: y if !CPU_LITTLE_ENDIAN
+#   Selects: COMPAT_BINFMT_ELF, ARCH_WANT_OLD_COMPAT_IPC, COMPAT_OLD_SIGACTION
+#
+# CONFIG_COMPAT is not set

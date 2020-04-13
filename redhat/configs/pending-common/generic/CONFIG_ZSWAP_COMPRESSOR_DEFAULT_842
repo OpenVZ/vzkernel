@@ -1,0 +1,18 @@
+# CONFIG_ZSWAP_COMPRESSOR_DEFAULT_842:
+# 
+# Use the 842 algorithm as the default compression algorithm.
+# 
+# Symbol: ZSWAP_COMPRESSOR_DEFAULT_842 [=n]
+# Type  : bool
+# Defined at mm/Kconfig:586
+#   Prompt: 842
+#   Depends on: <choice>
+#   Location:
+#     -> Memory Management options
+#       -> Compressed cache for swap pages (EXPERIMENTAL) (ZSWAP [=y])
+#         -> Compressed cache for swap pages default compressor (<choice> [=y])
+# Selects: CRYPTO_842 [=n]
+# 
+# 
+# 
+# CONFIG_ZSWAP_COMPRESSOR_DEFAULT_842 is not set

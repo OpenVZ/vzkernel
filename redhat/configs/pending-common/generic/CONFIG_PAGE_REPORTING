@@ -1,0 +1,19 @@
+# CONFIG_PAGE_REPORTING:
+# 
+# Free page reporting allows for the incremental acquisition of
+# free pages from the buddy allocator for the purpose of reporting
+# those pages to another entity, such as a hypervisor, so that the
+# memory can be freed within the host for other uses.
+# 
+# Symbol: PAGE_REPORTING [=n]
+# Type  : bool
+# Defined at mm/Kconfig:246
+#   Prompt: Free page reporting
+#   Location:
+#     -> Memory Management options
+# Selected by [n]:
+#   - VIRTIO_BALLOON [=n] && VIRTIO_MENU [=y] && VIRTIO [=n]
+# 
+# 
+# 
+CONFIG_PAGE_REPORTING=y

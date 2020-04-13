@@ -1,0 +1,22 @@
+# CONFIG_TEST_LOCKUP:
+# 
+# This builds the "test_lockup" module that helps to make sure
+# that watchdogs and lockup detectors are working properly.
+# 
+# Depending on module parameters it could emulate soft or hard
+# lockup, "hung task", or locking arbitrary lock for a long time.
+# Also it could generate series of lockups with cooling-down periods.
+# 
+# If unsure, say N.
+# 
+# Symbol: TEST_LOCKUP [=n]
+# Type  : tristate
+# Defined at lib/Kconfig.debug:979
+#   Prompt: Test module to generate lockups
+#   Location:
+#     -> Kernel hacking
+#       -> Debug Oops, Lockups and Hangs
+# 
+# 
+# 
+# CONFIG_TEST_LOCKUP is not set

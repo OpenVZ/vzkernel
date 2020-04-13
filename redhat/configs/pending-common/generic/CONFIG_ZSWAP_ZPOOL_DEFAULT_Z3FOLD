@@ -1,0 +1,18 @@
+# CONFIG_ZSWAP_ZPOOL_DEFAULT_Z3FOLD:
+# 
+# Use the z3fold allocator as the default allocator.
+# 
+# Symbol: ZSWAP_ZPOOL_DEFAULT_Z3FOLD [=n]
+# Type  : bool
+# Defined at mm/Kconfig:642
+#   Prompt: z3fold
+#   Depends on: <choice>
+#   Location:
+#     -> Memory Management options
+#       -> Compressed cache for swap pages (EXPERIMENTAL) (ZSWAP [=y])
+#         -> Compressed cache for swap pages default allocator (<choice> [=y])
+# Selects: Z3FOLD [=n]
+# 
+# 
+# 
+# CONFIG_ZSWAP_ZPOOL_DEFAULT_Z3FOLD is not set
