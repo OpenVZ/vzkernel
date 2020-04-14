@@ -1,1 +1,1 @@
-CONFIG_QCOM_CLK_RPM=m
+# CONFIG_QCOM_CLK_RPM is not set
