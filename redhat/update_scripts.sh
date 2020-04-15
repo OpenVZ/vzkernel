@@ -8,5 +8,5 @@ TARGET=$1
 
 for i in $RPM_SOURCE_DIR/*.$TARGET; do
 	NEW=`echo $i | sed s/.$TARGET//`
-	mv $i $NEW
+	cp $i $NEW
 done
