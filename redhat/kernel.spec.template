@@ -59,7 +59,7 @@ Summary: The Linux kernel
 %global zipsed -e 's/\.ko$/\.ko.xz/'
 %endif
 
-# define buildid .local
+%%BUILDID%%
 
 
 %if 0%{?fedora}
@@ -74,7 +74,7 @@ Summary: The Linux kernel
 # allow pkg_release to have configurable %%{?dist} tag
 %define specrelease %%SPECRELEASE%%
 
-%define pkg_release %{specrelease}%{?buildid}
+%define pkg_release %{specrelease}
 
 # What parts do we want to build?  We must build at least one kernel.
 # These are the kernels that are built IF the architecture allows it.

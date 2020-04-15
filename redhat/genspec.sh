@@ -21,6 +21,7 @@ LAST_MARKER=${14}
 SINGLE_TARBALL=${15}
 TARFILE_RELEASE=${16}
 SNAPSHOT=${17}
+BUILDID=${18}
 RPMVERSION=${KVERSION}.${KPATCHLEVEL}.${KSUBLEVEL}
 clogf="$SOURCES/changelog"
 # hide [redhat] entries from changelog
@@ -219,10 +220,17 @@ else
 	DEBUG_BUILDS_ENABLED=0
 fi
 
+if [ -n "$BUILDID" ]; then
+	BUILDID_DEFINE=$(printf "%%define buildid %s" "$BUILDID")
+else
+	BUILDID_DEFINE="# define buildid .local"
+fi
+
 test -n "$SPECFILE" &&
         sed -i -e "
 	/%%CHANGELOG%%/r $CHANGELOG
 	/%%CHANGELOG%%/d
+	s/%%BUILDID%%/$BUILDID_DEFINE/
 	s/%%KVERSION%%/$KVERSION/
 	s/%%KPATCHLEVEL%%/$KPATCHLEVEL/
 	s/%%KSUBLEVEL%%/$KSUBLEVEL/
