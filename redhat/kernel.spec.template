@@ -698,6 +698,8 @@ Source2001: cpupower.config
 Source3000: merge.pl
 Source3001: kernel-local
 
+Source4000: README.rst
+
 ## Patches needed for building this package
 
 Patch1: patch-%{rpmversion}-redhat.patch
