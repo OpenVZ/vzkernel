@@ -242,11 +242,35 @@ test -n "$SPECFILE" &&
 	s/%%TARBALL_VERSION%%/$TARFILE_RELEASE/" $SPECFILE
 
 
+# Need an empty file for dist-git compatibility
+touch "$SOURCES/patch-$RPMVERSION-redhat.patch"
+truncate -s 0 "$SOURCES/patch-$RPMVERSION-redhat.patch"
 if [ "$SINGLE_TARBALL" = 0 ]; then
-	git diff -p --no-renames --stat $MARKER.. ":(exclude,top)redhat" ":(exclude,top)makefile" ":(exclude,top)configs" ":(exclude,top).gitattributes" ":(exclude,top).gitignore"> $SOURCES/patch-${RPMVERSION}-redhat.patch
-else
-	# Need an empty file for dist-git compatibility
-	touch $SOURCES/patch-${RPMVERSION}-redhat.patch
+	# We want the current state of this file, not all its history
+	RHELVER=$(git diff -p --stat master HEAD -- ../Makefile.rhelver)
+	printf "From 8474ffe83a89d7b5d2c6515875a308ff682df6f9 Mon Sep 17 00:00:00 2001
+From: Kernel Team <kernel-team@fedoraproject.org>
+Date: %s
+Subject: [PATCH] Include Makefile.rhelver
+
+Used to set the RHEL version.
+---
+%s
+--
+2.26.0\n
+" "$(date "+%a, %d %b %Y %R:%S %z")" "$RHELVER" > "$SOURCES/patch-$RPMVERSION-redhat.patch"
+
+	COMMITS=$(git log --reverse --pretty=format:"%h" --no-merges "$MARKER".. \
+		":(exclude,top).get_maintainer.conf" \
+		":(exclude,top).gitattributes" \
+		":(exclude,top).gitignore" \
+		":(exclude,top).gitlab-ci.yml" \
+		":(exclude,top)makefile" \
+		":(exclude,top)Makefile.rhelver" \
+		":(exclude,top)redhat")
+	for c in $COMMITS; do
+		git format-patch --stdout -1 "$c" >> "$SOURCES/patch-$RPMVERSION-redhat.patch"
+	done
 fi
 
 for opt in $BUILDOPTS; do
