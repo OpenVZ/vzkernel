@@ -3,64 +3,197 @@
 #include <linux/mm.h>
 #include "dm-ploop.h"
 
+struct md_page * md_page_find(struct ploop *ploop, unsigned int id)
+{
+	struct rb_node *node;
+	struct md_page *md;
+
+	node = ploop->bat_entries.rb_node;
+
+	while (node) {
+		md = rb_entry(node, struct md_page, node);
+		if (id < md->id)
+			node = node->rb_left;
+		else if (id > md->id)
+			node = node->rb_right;
+		else
+			return md;
+	}
+
+	return NULL;
+}
+
+void md_page_insert(struct ploop *ploop, struct md_page *new_md)
+{
+	struct rb_root *root = &ploop->bat_entries;
+	unsigned int new_id = new_md->id;
+	struct rb_node *parent, **node;
+	struct md_page *md;
+
+	node = &root->rb_node;
+	parent = NULL;
+
+	while (*node) {
+		parent = *node;
+		md = rb_entry(*node, struct md_page, node);
+		if (new_id < md->id)
+			node = &parent->rb_left;
+		else if (new_id > md->id)
+			node = &parent->rb_right;
+		else
+			BUG();
+	}
+
+	rb_link_node(&new_md->node, parent, node);
+	rb_insert_color(&new_md->node, root);
+}
+
+struct md_page * alloc_md_page(unsigned int id)
+{
+	struct md_page *md;
+	struct page *page;
+	unsigned int size;
+	u8 *levels;
+
+	md = kmalloc(sizeof(*md), GFP_KERNEL); /* FIXME: memcache */
+	if (!md)
+		return NULL;
+	size = sizeof(u8) * PAGE_SIZE / sizeof(map_index_t);
+	levels = kzalloc(size, GFP_KERNEL);
+	if (!levels)
+		goto err_levels;
+
+	page = alloc_page(GFP_KERNEL);
+	if (!page)
+		goto err_page;
+
+	md->bat_levels = levels;
+	md->page = page;
+	md->id = id;
+	return md;
+err_page:
+	kfree(levels);
+err_levels:
+	kfree(md);
+	return NULL;
+}
+
+void free_md_page(struct md_page *md)
+{
+	put_page(md->page);
+	kfree(md->bat_levels);
+	kfree(md);
+}
+
+bool try_update_bat_entry(struct ploop *ploop, unsigned int cluster,
+			  u8 level, unsigned int dst_cluster)
+{
+	unsigned int *bat_entries, id = bat_clu_to_page_nr(cluster);
+	struct md_page *md = md_page_find(ploop, id);
+
+	lockdep_assert_held(&ploop->bat_rwlock);
+
+	if (!md)
+		return false;
+
+	cluster = bat_clu_idx_in_page(cluster); /* relative offset */
+
+	if (md->bat_levels[cluster] == level) {
+		bat_entries = kmap_atomic(md->page);
+		bat_entries[cluster] = dst_cluster;
+		kunmap_atomic(bat_entries);
+		return true;
+	}
+	return false;
+}
+
 /*
- * Read from disk and fill bat_entries[]. Note, that on enter here, cluster #0
+ * Clear all clusters, which are referred to in BAT, from holes_bitmap.
+ * Set bat_levels[] to top delta's level. Mark unmapped clusters as
+ * BAT_ENTRY_NONE.
+ */
+static int parse_bat_entries(struct ploop *ploop, map_index_t *bat_entries,
+		     u8 *bat_levels, unsigned int nr, unsigned int page_id)
+{
+	int i = 0;
+
+	if (page_id == 0)
+		i = PLOOP_MAP_OFFSET;
+
+	for (; i < nr; i++) {
+		if (bat_entries[i] == BAT_ENTRY_NONE)
+			return -EINVAL;
+		if (bat_entries[i]) {
+			bat_levels[i] = BAT_LEVEL_TOP;
+			/* Cluster may refer out holes_bitmap after shrinking */
+			if (bat_entries[i] < ploop->hb_nr)
+				ploop_hole_clear_bit(bat_entries[i], ploop);
+		} else {
+			bat_entries[i] = BAT_ENTRY_NONE;
+		}
+	}
+
+	return 0;
+}
+
+/*
+ * Read from disk and fill bat_entries. Note, that on enter here, cluster #0
  * is already read from disk (with header) -- just parse bio pages content.
  */
 static int ploop_read_bat(struct ploop *ploop, struct bio *bio)
 {
-	unsigned int entries_per_page, nr_copy, page, i = 0;
-	map_index_t *addr, off, cluster = 0;
+	unsigned int id, entries_per_page, nr_copy, nr_all, page, i = 0;
+	map_index_t *from, *to, cluster = 0;
+	struct md_page *md;
 	int ret = 0;
 
 	entries_per_page = PAGE_SIZE / sizeof(map_index_t);
+	nr_all = ploop->nr_bat_entries + PLOOP_MAP_OFFSET;
 
 	do {
 		for (page = 0; page < nr_pages_in_cluster(ploop); page++) {
-			if (i == 0)
-				off = PLOOP_MAP_OFFSET;
-			else
-				off = 0;
+			id = i * sizeof(map_index_t) / PAGE_SIZE;
+			md = alloc_md_page(id);
+			if (!md) {
+				ret = -ENOMEM;
+				goto out;
+			}
+			md_page_insert(ploop, md);
 
-			nr_copy = entries_per_page - off;
-			if (i + nr_copy > ploop->nr_bat_entries)
-				nr_copy = ploop->nr_bat_entries - i;
+			nr_copy = entries_per_page;
+			if (i + nr_copy > nr_all)
+				nr_copy = nr_all - i;
 
-			addr = kmap(bio->bi_io_vec[page].bv_page);
-			memcpy(&ploop->bat_entries[i], addr + off,
-				nr_copy * sizeof(map_index_t));
+			to = kmap(md->page);
+			from = kmap(bio->bi_io_vec[page].bv_page);
+			memcpy(to, from, nr_copy * sizeof(map_index_t));
 			kunmap(bio->bi_io_vec[page].bv_page);
-			i += nr_copy;
+			ret = parse_bat_entries(ploop, to, md->bat_levels,
+						nr_copy, id);
+			kunmap(md->page);
+			if (ret)
+				goto out;
 
-			if (i >= ploop->nr_bat_entries)
+			i += nr_copy;
+			if (i >= nr_all)
 				goto out;
 		}
 
 		ret = ploop_read_cluster_sync(ploop, bio, ++cluster);
 		if (ret)
-			goto err;
+			goto out;
 
 	} while (1);
 
 out:
-	for (i = 0; i < ploop->nr_bat_entries; i++) {
-		if (ploop->bat_entries[i] == BAT_ENTRY_NONE) {
-			ret = -EINVAL;
-			goto err;
-		}
-		if (!ploop->bat_entries[i])
-			ploop->bat_entries[i] = BAT_ENTRY_NONE;
-	}
-
-err:
 	return ret;
 }
 
 /* Alloc holes_bitmap and set bits of free clusters */
-static int ploop_assign_hb_and_levels(struct ploop *ploop,
-				      unsigned int bat_clusters)
+static int ploop_setup_holes_bitmap(struct ploop *ploop,
+				    unsigned int bat_clusters)
 {
-	unsigned int i, size, dst_cluster;
+	unsigned int i, size;
 
 	/*
 	 * + number of data clusters.
@@ -78,28 +211,9 @@ static int ploop_assign_hb_and_levels(struct ploop *ploop,
 		return -ENOMEM;
 	memset(ploop->holes_bitmap, 0xff, size);
 
-	size = ploop->nr_bat_entries * sizeof(ploop->bat_levels[0]);
-	ploop->bat_levels = kvzalloc(size, GFP_KERNEL);
-	if (!ploop->bat_levels)
-		return -ENOMEM;
-
 	/* Mark all BAT clusters as occupied. */
 	for (i = 0; i < bat_clusters; i++)
 		ploop_hole_clear_bit(i, ploop);
-
-	/*
-	 * Clear all clusters, which are referred to in BAT, from holes_bitmap.
-	 * Set bat_levels[] to top delta's level.
-	 */
-	for (i = 0; i < ploop->nr_bat_entries; i++) {
-		dst_cluster = ploop->bat_entries[i];
-		if (dst_cluster != BAT_ENTRY_NONE) {
-			ploop->bat_levels[i] = BAT_LEVEL_TOP;
-			/* Cluster may refer out holes_bitmap after shrinking */
-			if (dst_cluster < ploop->hb_nr)
-				ploop_hole_clear_bit(dst_cluster, ploop);
-		}
-	}
 
 	return 0;
 }
@@ -116,7 +230,6 @@ int ploop_read_metadata(struct dm_target *ti, struct ploop *ploop)
 	struct page *page;
 	struct bio *bio;
 	int ret;
-	void *data;
 
 	cluster_log = ploop->cluster_log;
 
@@ -156,29 +269,14 @@ int ploop_read_metadata(struct dm_target *ti, struct ploop *ploop)
 		pr_err("ploop: custom FirstBlockOffset\n");
 		goto out;
 	}
-
-	ret = -ENOMEM;
-	/*
-	 * Memory for hdr and array of BAT mapping. We keep them
-	 * neighbours like they are stored on disk to simplify
-	 * BAT update code.
-	 */
-	data = vmalloc(size);
-	if (!data)
-		goto out;
-	BUG_ON((unsigned long)data & ~PAGE_MASK);
-
-	memcpy(data, m_hdr, sizeof(*m_hdr));
-	ploop->hdr = data;
-	ploop->bat_entries = data + sizeof(*m_hdr);
 	kunmap(page);
 	m_hdr = NULL;
 
-	ret = ploop_read_bat(ploop, bio);
+	ret = ploop_setup_holes_bitmap(ploop, bat_clusters);
 	if (ret)
 		goto out;
 
-	ret = ploop_assign_hb_and_levels(ploop, bat_clusters);
+	ret = ploop_read_bat(ploop, bio);
 out:
 	if (m_hdr)
 		kunmap(page);
@@ -190,22 +288,28 @@ static int ploop_delta_check_header(struct ploop *ploop, struct page *page,
 		       unsigned int *nr_pages, unsigned int *last_page_len)
 {
 	unsigned int bytes, delta_nr_be, offset_clusters, bat_clusters, cluster_log;
-	struct ploop_pvd_header *hdr;
+	struct ploop_pvd_header *d_hdr, *hdr;
 	u64 size, delta_size;
+	struct md_page *md;
 	int ret = -EPROTO;
 
-	hdr = kmap(page);
+	md = md_page_find(ploop, 0);
+	if (!md)
+		return -ENXIO;
 
-	if (memcmp(hdr->m_Sig, ploop->hdr->m_Sig, sizeof(hdr->m_Sig)) ||
-	    hdr->m_Sectors != ploop->hdr->m_Sectors ||
-	    hdr->m_Type != ploop->hdr->m_Type)
+	hdr = kmap(md->page);
+	d_hdr = kmap(page);
+
+	if (memcmp(d_hdr->m_Sig, hdr->m_Sig, sizeof(d_hdr->m_Sig)) ||
+	    d_hdr->m_Sectors != hdr->m_Sectors ||
+	    d_hdr->m_Type != hdr->m_Type)
 		goto out;
 
-	delta_size = le64_to_cpu(hdr->m_SizeInSectors_v2);
-	delta_nr_be = le32_to_cpu(hdr->m_Size);
-	size = ploop->hdr->m_SizeInSectors_v2;
+	delta_size = le64_to_cpu(d_hdr->m_SizeInSectors_v2);
+	delta_nr_be = le32_to_cpu(d_hdr->m_Size);
+	size = hdr->m_SizeInSectors_v2;
 	cluster_log = ploop->cluster_log;
-	offset_clusters = le32_to_cpu(hdr->m_FirstBlockOffset) >> cluster_log;
+	offset_clusters = le32_to_cpu(d_hdr->m_FirstBlockOffset) >> cluster_log;
 	bytes = (PLOOP_MAP_OFFSET + delta_nr_be) * sizeof(map_index_t);
 	bat_clusters = DIV_ROUND_UP(bytes, 1 << (cluster_log + 9));
 
@@ -218,6 +322,7 @@ static int ploop_delta_check_header(struct ploop *ploop, struct page *page,
 	*last_page_len = bytes ? : PAGE_SIZE;
 	ret = 0;
 out:
+	kunmap(md->page);
 	kunmap(page);
 	return ret;
 }

@@ -90,14 +90,6 @@ static void ploop_init_end_io(struct ploop *ploop, struct bio *bio)
 	__ploop_init_end_io(ploop, h);
 }
 
-static unsigned int bat_clu_to_page_nr(unsigned int cluster)
-{
-	unsigned int byte;
-
-	byte = (cluster + PLOOP_MAP_OFFSET) * sizeof(map_index_t);
-	return byte >> PAGE_SHIFT;
-}
-
 /* Get cluster related to bio sectors */
 static int ploop_bio_cluster(struct ploop *ploop, struct bio *bio,
 			     unsigned int *ret_cluster)
@@ -526,22 +518,39 @@ static void complete_cow(struct ploop_cow *cow, blk_status_t bi_status)
 	kmem_cache_free(cow_cache, cow);
 }
 
+static void ploop_release_cluster(struct ploop *ploop,
+				  unsigned int cluster)
+{
+	unsigned int id, *bat_entries, dst_cluster;
+	struct md_page *md;
+
+	lockdep_assert_held(&ploop->bat_rwlock);
+
+	id = bat_clu_to_page_nr(cluster);
+        md = md_page_find(ploop, id);
+        BUG_ON(!md);
+
+	cluster = bat_clu_idx_in_page(cluster); /* relative to page */
+
+	bat_entries = kmap_atomic(md->page);
+	dst_cluster = bat_entries[cluster];
+	bat_entries[cluster] = BAT_ENTRY_NONE;
+	md->bat_levels[cluster] = 0;
+	kunmap_atomic(bat_entries);
+
+	ploop_hole_set_bit(dst_cluster, ploop);
+}
+
 static void piwb_discard_completed(struct ploop *ploop, bool success,
 		  unsigned int cluster, unsigned int new_dst_cluster)
 {
-	unsigned int dst_cluster;
-
 	if (new_dst_cluster)
 		return;
 
 	if (cluster_is_in_top_delta(ploop, cluster)) {
 		WARN_ON_ONCE(ploop->nr_deltas);
-		if (success) {
-			dst_cluster = ploop->bat_entries[cluster];
-			ploop->bat_entries[cluster] = BAT_ENTRY_NONE;
-			ploop->bat_levels[cluster] = 0;
-			ploop_hole_set_bit(dst_cluster, ploop);
-		}
+		if (success)
+			ploop_release_cluster(ploop, cluster);
 	}
 }
 
@@ -555,9 +564,13 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 					     struct ploop_index_wb *piwb,
 					     bool success)
 {
+	struct md_page *md = md_page_find(ploop, piwb->page_nr);
+	unsigned int i, last, *bat_entries;
 	map_index_t *dst_cluster, off;
-	unsigned int i, last;
 	unsigned long flags;
+
+	BUG_ON(!md);
+	bat_entries = kmap_atomic(md->page);
 
 	/* Absolute number of first index in page (negative for page#0) */
 	off = piwb->page_nr * PAGE_SIZE / sizeof(map_index_t);
@@ -584,13 +597,13 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 			continue;
 
 		if (cluster_is_in_top_delta(ploop, i + off) && piwb->type == PIWB_TYPE_ALLOC) {
-			WARN_ON(ploop->bat_entries[i + off] != dst_cluster[i]);
+			WARN_ON(bat_entries[i] != dst_cluster[i]);
 			continue;
 		}
 
 		if (success) {
-			ploop->bat_entries[i + off] = dst_cluster[i];
-			ploop->bat_levels[i + off] = BAT_LEVEL_TOP;
+			bat_entries[i] = dst_cluster[i];
+			md->bat_levels[i] = BAT_LEVEL_TOP;
 		} else {
 			/*
 			 * Despite set_bit() is atomic, we take read_lock()
@@ -604,6 +617,7 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 
 	ploop_bat_unlock(ploop, success, flags);
 	kunmap_atomic(dst_cluster);
+	kunmap_atomic(bat_entries);
 }
 
 static void put_piwb(struct ploop_index_wb *piwb)
@@ -675,7 +689,8 @@ static void ploop_bat_write_complete(struct bio *bio)
 static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_nr,
 				    struct ploop_index_wb *piwb)
 {
-	unsigned int i, off, last;
+	unsigned int i, off, last, *bat_entries;
+	struct md_page *md;
 	struct page *page;
 	struct bio *bio;
 	map_index_t *to;
@@ -691,9 +706,13 @@ static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_nr,
 		return -ENOMEM;
 	}
 
+	md = md_page_find(ploop, page_nr);
+	BUG_ON(!md);
+	bat_entries = kmap_atomic(md->page);
+
 	piwb->page_nr = page_nr;
 	to = kmap_atomic(page);
-	memset((void *)to, 0, PAGE_SIZE);
+	memcpy((void *)to, bat_entries, PAGE_SIZE);
 
 	/* Absolute number of first index in page (negative for page#0) */
 	off = page_nr * PAGE_SIZE / sizeof(map_index_t);
@@ -704,19 +723,18 @@ static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_nr,
 	if (last > PAGE_SIZE / sizeof(map_index_t))
 		last = PAGE_SIZE / sizeof(map_index_t);
 	i = 0;
-	if (!page_nr) {
+	if (!page_nr)
 		i = PLOOP_MAP_OFFSET;
-		memcpy(to, ploop->hdr, sizeof(*ploop->hdr));
-	}
 
 	/* Copy BAT (BAT goes right after hdr, see .ctr) */
 	for (; i < last; i++) {
-		if (!cluster_is_in_top_delta(ploop, i + off))
+		if (cluster_is_in_top_delta(ploop, i + off))
 			continue;
-		to[i] = ploop->bat_entries[i + off];
+		to[i] = 0;
 	}
 
 	kunmap_atomic(to);
+	kunmap_atomic(bat_entries);
 
 	sector = (page_nr * PAGE_SIZE) >> SECTOR_SHIFT;
 	bio->bi_iter.bi_sector = sector;
@@ -746,7 +764,7 @@ static void ploop_bat_page_zero_cluster(struct ploop *ploop,
 	map_index_t *to;
 
 	/* Cluster index related to the page[page_nr] start */
-	cluster -= piwb->page_nr * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
+	cluster = bat_clu_idx_in_page(cluster);
 
 	to = kmap_atomic(piwb->bat_page);
 	to[cluster] = 0;
@@ -1270,8 +1288,9 @@ error:
 static int process_one_deferred_bio(struct ploop *ploop, struct bio *bio,
 				    struct ploop_index_wb *piwb)
 {
-	unsigned int cluster, dst_cluster, level;
 	sector_t sector = bio->bi_iter.bi_sector;
+	unsigned int cluster, dst_cluster;
+	u8 level;
 	bool ret;
 
 	/*
@@ -1281,8 +1300,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct bio *bio,
 	 * and wait synchronously from *this* kwork.
 	 */
 	cluster = sector >> ploop->cluster_log;
-	dst_cluster = ploop->bat_entries[cluster];
-	level = ploop->bat_levels[cluster];
+	dst_cluster = ploop_bat_entries(ploop, cluster, &level);
 
 	if (postpone_if_cluster_locked(ploop, bio, cluster))
 		goto out;
@@ -1618,7 +1636,7 @@ int ploop_map(struct dm_target *ti, struct bio *bio)
 
 		/* map it */
 		read_lock_irqsave(&ploop->bat_rwlock, flags);
-		dst_cluster = ploop->bat_entries[cluster];
+		dst_cluster = ploop_bat_entries(ploop, cluster, NULL);
 		in_top_delta = cluster_is_in_top_delta(ploop, cluster);
 		if (unlikely(should_defer_bio(ploop, bio, cluster))) {
 			/* defer all bios */
