@@ -2,13 +2,15 @@
 #
 # Automatically rebase the kernel patches in ark-patches.
 #
-# Any patches that do not apply cleanly during the rebase are dropped, and an
-# issue is filed to track rebasing that patch.
+# If the REPORT_BUGS environment variable is set, any patches that do not apply
+# cleanly during the rebase are dropped, and an issue is filed to track rebasing
+# that patch.
 #
-# This assumes you have python3-gitlab installed and a configuration file set
-# up in ~/.python-gitlab.cfg or /etc/python-gitlab.cfg. An example configuration
-# can be found at https://python-gitlab.readthedocs.io/en/stable/cli.html. If
-# the configuration is not in one of the above locations, the path can be set
+# If run with REPORT_BUGS, you must have python3-gitlab installed and a
+# configuration file set up in ~/.python-gitlab.cfg or /etc/python-gitlab.cfg.
+# An example configuration can be found at
+# https://python-gitlab.readthedocs.io/en/stable/cli.html. If the configuration
+# is not in one of the above locations, the path can be set
 # with the PYTHON_GITLAB_CONFIG environment variable.
 #
 # Arguments:
@@ -61,7 +63,7 @@ fi
 CLEAN_REBASE=true
 if git rebase "$UPSTREAM_REF" ark-patches; then
 	printf "Cleanly rebased all patches\n"
-else
+elif [ -n "$REPORT_BUGS" ]; then
 	while true; do
 		CLEAN_REBASE=false
 		CONFLICT=$(git am --show-current-patch)
@@ -87,6 +89,9 @@ else
 			exit 1
 		fi
 	done
+else
+	printf "A conflict occurred while rebase patches, please resolve manually.\n"
+	exit 2
 fi
 
 if $CLEAN_REBASE; then
