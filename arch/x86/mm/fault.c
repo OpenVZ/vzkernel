@@ -1225,7 +1225,7 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	struct task_struct *tsk;
 	struct mm_struct *mm;
 	int fault, major = 0;
-	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
+	unsigned int flags = FAULT_FLAG_DEFAULT;
 	u32 pkey;
 
 	tsk = current;

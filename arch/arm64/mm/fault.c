@@ -429,7 +429,7 @@ static int __kprobes do_page_fault(unsigned long addr, unsigned int esr,
 	struct siginfo si;
 	int fault, major = 0;
 	unsigned long vm_flags = VM_READ | VM_WRITE;
-	unsigned int mm_flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
+	unsigned int mm_flags = FAULT_FLAG_DEFAULT;
 
 	if (notify_page_fault(regs, esr))
 		return 0;
