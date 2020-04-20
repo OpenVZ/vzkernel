@@ -22,10 +22,12 @@ static void ploop_queue_deferred_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
  * Assign newly allocated memory for BAT array and holes_bitmap
  * before grow.
  */
-static void ploop_advance_bat_and_holes(struct ploop *ploop,
-					struct ploop_cmd *cmd)
+static void ploop_advance_holes_bitmap(struct ploop *ploop,
+				       struct ploop_cmd *cmd)
 {
-	unsigned int i, size, dst_cluster;
+	unsigned int i, end, size, dst_cluster, *bat_entries;
+	struct rb_node *node;
+	struct md_page *md;
 
 	/* This is called only once */
 	if (cmd->resize.stage != PLOOP_GROW_STAGE_INITIAL)
@@ -40,27 +42,21 @@ static void ploop_advance_bat_and_holes(struct ploop *ploop,
 	for (i = ploop->hb_nr; i < size * 8; i++)
 		set_bit(i, ploop->holes_bitmap);
 	swap(cmd->resize.hb_nr, ploop->hb_nr);
-	for (i = 0; i < ploop->nr_bat_entries; i++) {
-		if (!cluster_is_in_top_delta(ploop, i))
-			continue;
-		dst_cluster = ploop->bat_entries[i];
-		if (dst_cluster < ploop->hb_nr &&
-		    test_bit(dst_cluster, ploop->holes_bitmap)) {
+	ploop_for_each_md_page(ploop, md, node) {
+		init_bat_entries_iter(ploop, md->id, &i, &end);
+		bat_entries = kmap_atomic(md->page);
+		for (; i <= end; i++) {
+			if (!md_page_cluster_is_in_top_delta(md, i))
+				continue;
+			dst_cluster = bat_entries[i];
 			/* This may happen after grow->shrink->(now) grow */
-			ploop_hole_clear_bit(dst_cluster, ploop);
+			if (dst_cluster < ploop->hb_nr &&
+			    test_bit(dst_cluster, ploop->holes_bitmap)) {
+				ploop_hole_clear_bit(dst_cluster, ploop);
+			}
 		}
+		kunmap_atomic(bat_entries);
 	}
-
-	/* Copy and swap bat_entries */
-	size = (PLOOP_MAP_OFFSET + ploop->nr_bat_entries) * sizeof(map_index_t);
-	memcpy(cmd->resize.hdr, ploop->hdr, size);
-	swap(cmd->resize.hdr, ploop->hdr);
-	ploop->bat_entries = (void *)ploop->hdr + sizeof(*ploop->hdr);
-
-	/* Copy and swap bat_levels */
-	size = ploop->nr_bat_entries * sizeof(ploop->bat_levels[0]);
-	memcpy(cmd->resize.bat_levels, ploop->bat_levels, size);
-	swap(cmd->resize.bat_levels, ploop->bat_levels);
 	write_unlock_irq(&ploop->bat_rwlock);
 }
 
@@ -131,16 +127,25 @@ static unsigned int ploop_find_bat_entry(struct ploop *ploop,
 					 unsigned int dst_cluster,
 					 bool *is_locked)
 {
-	unsigned int i, cluster = UINT_MAX;
+	unsigned int i, end, *bat_entries, cluster = UINT_MAX;
+	struct rb_node *node;
+	struct md_page *md;
 
 	read_lock_irq(&ploop->bat_rwlock);
-	for (i = 0; i < ploop->nr_bat_entries; i++) {
-		if (ploop->bat_entries[i] != dst_cluster)
-			continue;
-		if (cluster_is_in_top_delta(ploop, i)) {
-			cluster = i;
-			break;
+	ploop_for_each_md_page(ploop, md, node) {
+		init_bat_entries_iter(ploop, md->id, &i, &end);
+		bat_entries = kmap_atomic(md->page);
+		for (; i <= end; i++) {
+			if (bat_entries[i] != dst_cluster)
+				continue;
+			if (md_page_cluster_is_in_top_delta(md, i)) {
+				cluster = page_clu_idx_to_bat_clu(md->id, i);
+				break;
+			}
 		}
+		kunmap_atomic(bat_entries);
+		if (cluster != UINT_MAX)
+			break;
 	}
 	read_unlock_irq(&ploop->bat_rwlock);
 
@@ -283,8 +288,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 
 	/* Update local BAT copy */
 	write_lock_irq(&ploop->bat_rwlock);
-	ploop->bat_entries[cluster] = new_dst;
-	WARN_ON(!cluster_is_in_top_delta(ploop, cluster));
+	WARN_ON(!try_update_bat_entry(ploop, cluster, BAT_LEVEL_TOP, new_dst));
 	write_unlock_irq(&ploop->bat_rwlock);
 not_occupied:
 	/*
@@ -330,20 +334,22 @@ static int ploop_grow_update_header(struct ploop *ploop,
 
 	ploop_submit_index_wb_sync(ploop, piwb);
 	ret = blk_status_to_errno(piwb->bi_status);
-	if (ret)
-		goto out;
 
-	/* Update header local copy */
-	hdr = kmap_atomic(piwb->bat_page);
-	write_lock_irq(&ploop->bat_rwlock);
-	memcpy(ploop->hdr, hdr, sizeof(*hdr));
-	write_unlock_irq(&ploop->bat_rwlock);
-	kunmap_atomic(hdr);
-out:
 	ploop_reset_bat_update(piwb);
 	return ret;
 }
 
+static void ploop_add_md_pages(struct ploop *ploop, struct rb_root *from)
+{
+	struct rb_node *node;
+        struct md_page *md;
+
+        while ((node = from->rb_node) != NULL) {
+		md = rb_entry(node, struct md_page, node);
+		rb_erase(node, from);
+		md_page_insert(ploop, md);
+	}
+}
 /*
  * Here we relocate data clusters, which may intersect with BAT area
  * of disk after resize. For user they look as already written to disk,
@@ -363,7 +369,7 @@ static void process_resize_cmd(struct ploop *ploop, struct ploop_index_wb *piwb,
 	 *  Update memory arrays and hb_nr, but do not update nr_bat_entries.
 	 *  This is noop except first enter to this function.
 	 */
-	ploop_advance_bat_and_holes(ploop, cmd);
+	ploop_advance_holes_bitmap(ploop, cmd);
 
 	if (cmd->resize.dst_cluster <= cmd->resize.end_dst_cluster) {
 		ret = ploop_grow_relocate_cluster(ploop, piwb, cmd);
@@ -389,8 +395,10 @@ out:
 			dst_cluster--;
 		}
 		swap(ploop->hb_nr, cmd->resize.hb_nr);
-	} else
+	} else {
+		ploop_add_md_pages(ploop, &cmd->resize.md_pages_root);
 		swap(ploop->nr_bat_entries, cmd->resize.nr_bat_entries);
+	}
 	write_unlock_irq(&ploop->bat_rwlock);
 
 	cmd->retval = ret;
@@ -448,13 +456,40 @@ void free_bio_with_pages(struct ploop *ploop, struct bio *bio)
 	bio_put(bio);
 }
 
+static int prealloc_md_pages(struct rb_root *root, unsigned int nr_bat_entries,
+			     unsigned int new_nr_bat_entries)
+{
+	unsigned int i, nr_pages, new_nr_pages;
+	struct md_page *md;
+	void *addr;
+
+	new_nr_pages = bat_clu_to_page_nr(new_nr_bat_entries - 1) + 1;
+	nr_pages = bat_clu_to_page_nr(nr_bat_entries - 1) + 1;
+
+	for (i = nr_pages; i < new_nr_pages; i++) {
+		md = alloc_md_page(i); /* Any id is OK */
+		if (!md)
+			return -ENOMEM;
+		addr = kmap_atomic(md->page);
+		memset(addr, 0, PAGE_SIZE);
+		kunmap_atomic(addr);
+
+		/* No order */
+		rb_link_node(&md->node, NULL, &root->rb_node);
+		rb_insert_color(&md->node, root);
+	}
+
+	return 0;
+}
+
 /* @new_size is in sectors */
 static int ploop_resize(struct ploop *ploop, u64 new_size)
 {
 	unsigned int nr_bat_entries, nr_old_bat_clusters, nr_bat_clusters;
 	unsigned int hb_nr, size, cluster_log = ploop->cluster_log;
-	struct ploop_pvd_header *hdr = ploop->hdr;
-	struct ploop_cmd cmd = { {0} };
+	struct ploop_cmd cmd = { .resize.md_pages_root = RB_ROOT };
+	struct ploop_pvd_header *hdr;
+	struct md_page *md;
 	int ret = -ENOMEM;
 	u64 old_size;
 
@@ -462,7 +497,14 @@ static int ploop_resize(struct ploop *ploop, u64 new_size)
 		return -EBUSY;
 	if (ploop_is_ro(ploop))
 		return -EROFS;
+
+	md = md_page_find(ploop, 0);
+	if (WARN_ON(!md))
+		return -EIO;
+	hdr = kmap(md->page);
 	old_size = le64_to_cpu(hdr->m_SizeInSectors_v2);
+	kunmap(md->page);
+
 	if (old_size == new_size)
 		return 0;
 	if (old_size > new_size) {
@@ -478,18 +520,12 @@ static int ploop_resize(struct ploop *ploop, u64 new_size)
 
 	nr_bat_entries = (new_size >> cluster_log);
 
-	size = nr_bat_entries * sizeof(ploop->bat_levels[0]);
-	cmd.resize.bat_levels = kvzalloc(size, GFP_KERNEL);
-	if (!cmd.resize.bat_levels)
+	/* Memory for new md pages */
+	if (prealloc_md_pages(&cmd.resize.md_pages_root,
+			      ploop->nr_bat_entries, nr_bat_entries) < 0)
 		goto err;
 
 	size = (PLOOP_MAP_OFFSET + nr_bat_entries) * sizeof(map_index_t);
-
-	/* Memory for hdr + bat_entries */
-	cmd.resize.hdr = vzalloc(size);
-	if (!cmd.resize.hdr)
-		goto err;
-
 	nr_bat_clusters = DIV_ROUND_UP(size, 1 << (cluster_log + 9));
 	hb_nr = nr_bat_clusters + nr_bat_entries;
 	size = round_up(DIV_ROUND_UP(hb_nr, 8), sizeof(unsigned long));
@@ -530,9 +566,8 @@ static int ploop_resize(struct ploop *ploop, u64 new_size)
 err:
 	if (cmd.resize.bio)
 		free_bio_with_pages(ploop, cmd.resize.bio);
-	kvfree(cmd.resize.bat_levels);
 	kvfree(cmd.resize.holes_bitmap);
-	vfree(cmd.resize.hdr);
+	free_md_pages_tree(&cmd.resize.md_pages_root);
 	return ret;
 }
 
@@ -540,8 +575,9 @@ err:
 static void process_add_delta_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 {
 	map_index_t *bat_entries, *delta_bat_entries;
-	unsigned int i, level, dst_cluster;
-	u8 *bat_levels;
+	unsigned int i, end, level, dst_cluster;
+	struct rb_node *node;
+	struct md_page *md;
 	bool is_raw;
 
 	if (unlikely(ploop->force_link_inflight_bios)) {
@@ -551,34 +587,43 @@ static void process_add_delta_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 	}
 
 	level = ploop->nr_deltas;
-	bat_entries = ploop->bat_entries;
-	bat_levels = ploop->bat_levels;
-	delta_bat_entries = (map_index_t *)cmd->add_delta.hdr + PLOOP_MAP_OFFSET;
+	/* Points to hdr since md_page[0] also contains hdr. */
+	delta_bat_entries = (map_index_t *)cmd->add_delta.hdr;
 	is_raw = cmd->add_delta.deltas[level].is_raw;
 
 	write_lock_irq(&ploop->bat_rwlock);
 
 	/* FIXME: Stop on old delta's nr_bat_entries */
-	for (i = 0; i < ploop->nr_bat_entries; i++) {
-		if (cluster_is_in_top_delta(ploop, i))
-			continue;
-		if (!is_raw)
-			dst_cluster = delta_bat_entries[i];
-		else
-			dst_cluster = i < cmd->add_delta.raw_clusters ? i : BAT_ENTRY_NONE;
-		if (dst_cluster == BAT_ENTRY_NONE)
-			continue;
-		/*
-		 * Prefer last added delta, since the order is:
-		 * 1)add top device
-		 * 2)add oldest delta
-		 * ...
-		 * n)add newest delta
-		 * Keep in mind, top device is current image, and
-		 * it is added first in contrary the "age" order.
-		 */
-		bat_levels[i] = level;
-		bat_entries[i] = dst_cluster;
+	ploop_for_each_md_page(ploop, md, node) {
+		init_bat_entries_iter(ploop, md->id, &i, &end);
+		bat_entries = kmap_atomic(md->page);
+		for (; i <= end; i++) {
+			if (md_page_cluster_is_in_top_delta(md, i))
+				continue;
+			if (!is_raw)
+				dst_cluster = delta_bat_entries[i];
+			else {
+				dst_cluster = page_clu_idx_to_bat_clu(md->id, i);
+				if (dst_cluster >= cmd->add_delta.raw_clusters)
+					dst_cluster = BAT_ENTRY_NONE;
+			}
+			if (dst_cluster == BAT_ENTRY_NONE)
+				continue;
+			/*
+			 * Prefer last added delta, since the order is:
+			 * 1)add top device
+			 * 2)add oldest delta
+			 * ...
+			 * n)add newest delta
+			 * Keep in mind, top device is current image, and
+			 * it is added first in contrary the "age" order.
+			 */
+			md->bat_levels[i] = level;
+			bat_entries[i] = dst_cluster;
+
+		}
+		kunmap_atomic(bat_entries);
+		delta_bat_entries += PAGE_SIZE / sizeof(map_index_t);
 	}
 
 	swap(ploop->deltas, cmd->add_delta.deltas);
@@ -686,8 +731,8 @@ static void ploop_queue_deferred_cmd_wrapper(struct ploop *ploop,
 /* Find mergeable cluster and return it in cmd->merge.cluster */
 static bool iter_delta_clusters(struct ploop *ploop, struct ploop_cmd *cmd)
 {
-	unsigned int *cluster = &cmd->merge.cluster;
-	unsigned int level;
+	unsigned int dst_cluster, *cluster = &cmd->merge.cluster;
+	u8 level;
 	bool skip;
 
 	BUG_ON(cmd->type != PLOOP_CMD_MERGE_SNAPSHOT);
@@ -698,8 +743,9 @@ static bool iter_delta_clusters(struct ploop *ploop, struct ploop_cmd *cmd)
 		 * We are in kwork, so bat_rwlock is not needed
 		 * (see comment in process_one_deferred_bio()).
 		 */
-		level = ploop->bat_levels[*cluster];
-		if (ploop->bat_entries[*cluster] == BAT_ENTRY_NONE ||
+		/* FIXME: Optimize this. ploop_bat_entries() is overkill */
+		dst_cluster = ploop_bat_entries(ploop, *cluster, &level);
+		if (dst_cluster == BAT_ENTRY_NONE ||
 		    level != ploop->nr_deltas - 1)
 			continue;
 
@@ -724,8 +770,8 @@ static bool iter_delta_clusters(struct ploop *ploop, struct ploop_cmd *cmd)
 static void process_merge_latest_snapshot_cmd(struct ploop *ploop,
 					      struct ploop_cmd *cmd)
 {
-	unsigned int *cluster = &cmd->merge.cluster;
-	unsigned int level, dst_cluster;
+	unsigned int dst_cluster, *cluster = &cmd->merge.cluster;
+	u8 level;
 	struct file *file;
 	int ret;
 
@@ -738,8 +784,8 @@ static void process_merge_latest_snapshot_cmd(struct ploop *ploop,
 		 * (we can't race with changing BAT, since cmds
 		 *  are processed before bios and piwb is sync).
 		 */
-		dst_cluster = ploop->bat_entries[*cluster];
-		level = ploop->bat_levels[*cluster];
+		/* FIXME: Optimize this: ploop_bat_entries() is overkill */
+		dst_cluster = ploop_bat_entries(ploop, *cluster, &level);
 
 		/* Check we can submit one more cow in parallel */
 		if (!atomic_add_unless(&cmd->merge.nr_available, -1, 0))
@@ -818,11 +864,12 @@ again:
 static void process_notify_delta_merged(struct ploop *ploop,
 					struct ploop_cmd *cmd)
 {
-	unsigned int i, *bat_entries, *delta_bat_entries;
+	unsigned int i, end, *bat_entries, *delta_bat_entries;
 	void *hdr = cmd->notify_delta_merged.hdr;
 	u8 level = cmd->notify_delta_merged.level;
+	struct rb_node *node;
+	struct md_page *md;
 	struct file *file;
-	u8 *bat_levels;
 	int ret;
 
 	force_defer_bio_count_inc(ploop);
@@ -832,32 +879,37 @@ static void process_notify_delta_merged(struct ploop *ploop,
 		goto out;
 	}
 
-	bat_entries = ploop->bat_entries;
-	bat_levels = ploop->bat_levels;
-	delta_bat_entries = (map_index_t *)hdr + PLOOP_MAP_OFFSET;
+	/* Points to hdr since md_page[0] also contains hdr. */
+	delta_bat_entries = (map_index_t *)hdr;
 
 	write_lock_irq(&ploop->bat_rwlock);
-	for (i = 0; i < ploop->nr_bat_entries; i++) {
-		if (cluster_is_in_top_delta(ploop, i) ||
-		    delta_bat_entries[i] == BAT_ENTRY_NONE ||
-		    bat_levels[i] < level) {
-			continue;
-		}
+	ploop_for_each_md_page(ploop, md, node) {
+		init_bat_entries_iter(ploop, md->id, &i, &end);
+		bat_entries = kmap_atomic(md->page);
+		for (; i <= end; i++) {
+			if (md_page_cluster_is_in_top_delta(md, i) ||
+			    delta_bat_entries[i] == BAT_ENTRY_NONE ||
+			    md->bat_levels[i] < level)
+				continue;
 
-		/* deltas above @level become renumbered */
-		if (bat_levels[i] > level) {
-			bat_levels[i]--;
-			continue;
-		}
+			/* deltas above @level become renumbered */
+			if (md->bat_levels[i] > level) {
+				md->bat_levels[i]--;
+				continue;
+			}
 
-		/*
-		 * clusters from deltas of @level become pointing to next delta
-		 * (which became renumbered) or prev delta (if !@forward).
-		 */
-		bat_entries[i] = delta_bat_entries[i];
-		WARN_ON(bat_entries[i] == BAT_ENTRY_NONE);
-		if (!cmd->notify_delta_merged.forward)
-			bat_levels[i]--;
+			/*
+			 * clusters from deltas of @level become pointing to
+			 * 1)next delta (which became renumbered) or
+			 * 2)prev delta (if !@forward).
+			 */
+			bat_entries[i] = delta_bat_entries[i];
+			WARN_ON(bat_entries[i] == BAT_ENTRY_NONE);
+			if (!cmd->notify_delta_merged.forward)
+				md->bat_levels[i]--;
+		}
+		kunmap_atomic(bat_entries);
+		delta_bat_entries += PAGE_SIZE / sizeof(map_index_t);
 	}
 
 	file = ploop->deltas[level].file;
@@ -866,7 +918,6 @@ static void process_notify_delta_merged(struct ploop *ploop,
 		ploop->deltas[i - 1] = ploop->deltas[i];
 	ploop->deltas[--ploop->nr_deltas].file = NULL;
 	write_unlock_irq(&ploop->bat_rwlock);
-
 	fput(file);
 	cmd->retval = 0;
 out:
@@ -890,9 +941,9 @@ static void process_update_delta_index(struct ploop *ploop,
 	write_lock_irq(&ploop->bat_rwlock);
 	/* Check all */
 	while (sscanf(map, "%u:%u;%n", &cluster, &dst_cluster, &n) == 2) {
-		if (ploop->bat_entries[cluster] == BAT_ENTRY_NONE)
-			break;
 		if (cluster >= ploop->nr_bat_entries)
+			break;
+		if (ploop_bat_entries(ploop, cluster, NULL) == BAT_ENTRY_NONE)
 			break;
 		map += n;
 	}
@@ -903,8 +954,7 @@ static void process_update_delta_index(struct ploop *ploop,
 	/* Commit all */
 	map = cmd->update_delta_index.map;
 	while (sscanf(map, "%u:%u;%n", &cluster, &dst_cluster, &n) == 2) {
-		if (ploop->bat_levels[cluster] == level)
-			ploop->bat_entries[cluster] = dst_cluster;
+		try_update_bat_entry(ploop, cluster, level, dst_cluster);
 		map += n;
 	}
 	ret = 0;
@@ -1031,7 +1081,9 @@ static int ploop_update_delta_index(struct ploop *ploop, unsigned int level,
 
 static void process_switch_top_delta(struct ploop *ploop, struct ploop_cmd *cmd)
 {
-	unsigned int i, size, bat_clusters, level = ploop->nr_deltas;
+	unsigned int i, end, size, bat_clusters, *bat_entries, level = ploop->nr_deltas;
+	struct rb_node *node;
+	struct md_page *md;
 	int ret;
 
 	force_defer_bio_count_inc(ploop);
@@ -1046,9 +1098,14 @@ static void process_switch_top_delta(struct ploop *ploop, struct ploop_cmd *cmd)
 	write_lock_irq(&ploop->bat_rwlock);
 	swap(ploop->origin_dev, cmd->switch_top_delta.origin_dev);
 	swap(ploop->deltas, cmd->switch_top_delta.deltas);
-	for (i = 0; i < ploop->nr_bat_entries; i++)
-		if (ploop->bat_levels[i] == BAT_LEVEL_TOP)
-			ploop->bat_levels[i] = level;
+	ploop_for_each_md_page(ploop, md, node) {
+		init_bat_entries_iter(ploop, md->id, &i, &end);
+		bat_entries = kmap_atomic(md->page);
+		for (; i <= end; i++) {
+			if (md->bat_levels[i] == BAT_LEVEL_TOP)
+				md->bat_levels[i] = level;
+		}
+	}
 
 	/* Header and BAT-occupied clusters at start of file */
 	size = (PLOOP_MAP_OFFSET + ploop->nr_bat_entries) * sizeof(map_index_t);
@@ -1117,12 +1174,15 @@ fput:
 
 static void process_flip_upper_deltas(struct ploop *ploop, struct ploop_cmd *cmd)
 {
-	unsigned int i, size, bat_clusters, hb_nr = ploop->hb_nr;
+	unsigned int i, size, end, bat_clusters, hb_nr, *bat_entries;
 	void *holes_bitmap = ploop->holes_bitmap;
 	u8 level = ploop->nr_deltas - 1;
+	struct rb_node *node;
+	struct md_page *md;
 
 	size = (PLOOP_MAP_OFFSET + ploop->nr_bat_entries) * sizeof(map_index_t);
         bat_clusters = DIV_ROUND_UP(size, 1 << (ploop->cluster_log + 9));
+	hb_nr = ploop->hb_nr;
 
 	write_lock_irq(&ploop->bat_rwlock);
 	/* Prepare holes_bitmap */
@@ -1133,16 +1193,22 @@ static void process_flip_upper_deltas(struct ploop *ploop, struct ploop_cmd *cmd
 		clear_bit(i, holes_bitmap);
 
 	/* Flip bat entries */
-	for (i = 0; i < ploop->nr_bat_entries; i++) {
-		if (ploop->bat_entries[i] == BAT_ENTRY_NONE)
-			continue;
-		if (ploop->bat_levels[i] == level) {
-			ploop->bat_levels[i] = BAT_LEVEL_TOP;
-			clear_bit(ploop->bat_entries[i], holes_bitmap);
-		} else if (ploop->bat_levels[i] == BAT_LEVEL_TOP) {
-			ploop->bat_levels[i] = level;
+	ploop_for_each_md_page(ploop, md, node) {
+		init_bat_entries_iter(ploop, md->id, &i, &end);
+		bat_entries = kmap_atomic(md->page);
+		for (; i <= end; i++) {
+			if (bat_entries[i] == BAT_ENTRY_NONE)
+				continue;
+			if (md->bat_levels[i] == level) {
+				md->bat_levels[i] = BAT_LEVEL_TOP;
+				clear_bit(bat_entries[i], holes_bitmap);
+			} else if (md->bat_levels[i] == BAT_LEVEL_TOP) {
+				md->bat_levels[i] = level;
+			}
 		}
+		kunmap_atomic(bat_entries);
 	}
+
 	swap(ploop->origin_dev, cmd->flip_upper_deltas.origin_dev);
 	/* FIXME */
 	swap(ploop->deltas[level].file, cmd->flip_upper_deltas.file);
@@ -1156,9 +1222,13 @@ static void process_flip_upper_deltas(struct ploop *ploop, struct ploop_cmd *cmd
 
 static void process_tracking_start(struct ploop *ploop, struct ploop_cmd *cmd)
 {
-	unsigned int i, dst_cluster, tb_nr = cmd->tracking_start.tb_nr;
+	unsigned int i, nr_pages, end, *bat_entries, dst_cluster, tb_nr, nr;
 	void *tracking_bitmap = cmd->tracking_start.tracking_bitmap;
+	struct rb_node *node;
+	struct md_page *md;
 	int ret = 0;
+
+	tb_nr = cmd->tracking_start.tb_nr;
 
 	write_lock_irq(&ploop->bat_rwlock);
 	ploop->tracking_bitmap = tracking_bitmap;
@@ -1176,18 +1246,30 @@ static void process_tracking_start(struct ploop *ploop, struct ploop_cmd *cmd)
 	write_lock_irq(&ploop->bat_rwlock);
 	for_each_clear_bit(i, ploop->holes_bitmap, ploop->hb_nr)
 		set_bit(i, tracking_bitmap);
-	for (i = 0; i < ploop->nr_bat_entries; i++) {
-		if (!cluster_is_in_top_delta(ploop, i))
-			continue;
-		dst_cluster = ploop->bat_entries[i];
-		if (WARN_ON(dst_cluster >= tb_nr)) {
-			ret = -EIO;
-			goto unlock;
+	nr_pages = bat_clu_to_page_nr(ploop->nr_bat_entries - 1) + 1;
+	nr = 0;
+
+	ploop_for_each_md_page(ploop, md, node) {
+		init_bat_entries_iter(ploop, md->id, &i, &end);
+		bat_entries = kmap_atomic(md->page);
+		for (; i <= end; i++) {
+			dst_cluster = bat_entries[i];
+			if (dst_cluster == BAT_ENTRY_NONE ||
+			    md->bat_levels[i] != BAT_LEVEL_TOP)
+				continue;
+			if (WARN_ON(dst_cluster >= tb_nr)) {
+				ret = -EIO;
+				break;
+			}
+			set_bit(dst_cluster, tracking_bitmap);
 		}
-		set_bit(dst_cluster, tracking_bitmap);
+		kunmap_atomic(bat_entries);
+		if (ret)
+			break;
+		nr++;
 	}
-unlock:
 	write_unlock_irq(&ploop->bat_rwlock);
+	BUG_ON(ret == 0 && nr != nr_pages);
 out:
 	cmd->retval = ret;
 	complete(&cmd->comp); /* Last touch of cmd memory */
@@ -1221,12 +1303,38 @@ unlock:
 	return ret;
 }
 
+static unsigned int max_dst_cluster_in_top_delta(struct ploop *ploop)
+{
+	unsigned int i, nr_pages, nr = 0, end, *bat_entries, dst_cluster = 0;
+	struct rb_node *node;
+	struct md_page *md;
+
+	nr_pages = bat_clu_to_page_nr(ploop->nr_bat_entries - 1) + 1;
+
+	read_lock_irq(&ploop->bat_rwlock);
+	ploop_for_each_md_page(ploop, md, node) {
+		init_bat_entries_iter(ploop, md->id, &i, &end);
+		bat_entries = kmap_atomic(md->page);
+		for (; i <= end; i++) {
+			if (dst_cluster < bat_entries[i] &&
+			    md->bat_levels[i] == BAT_LEVEL_TOP)
+				dst_cluster = bat_entries[i];
+		}
+		kunmap_atomic(bat_entries);
+		nr++;
+	}
+	read_unlock_irq(&ploop->bat_rwlock);
+
+	BUG_ON(nr != nr_pages);
+	return dst_cluster;
+}
+
 static int ploop_tracking_cmd(struct ploop *ploop, const char *suffix,
 			      char *result, unsigned int maxlen)
 {
 	struct ploop_cmd cmd = { {0} };
 	void *tracking_bitmap = NULL;
-	unsigned int i, tb_nr, size;
+	unsigned int tb_nr, size;
 	int ret = 0;
 
 	if (ploop_is_ro(ploop))
@@ -1243,17 +1351,14 @@ static int ploop_tracking_cmd(struct ploop *ploop, const char *suffix,
 			return -EEXIST;
 		if (ploop->maintaince)
 			return -EBUSY;
-		tb_nr = ploop->hb_nr;
-		read_lock_irq(&ploop->bat_rwlock);
-		for (i = 0; i < ploop->nr_bat_entries; i++)
-			if (cluster_is_in_top_delta(ploop, i) &&
-			    ploop->bat_entries[i] >= tb_nr)
-				tb_nr = ploop->bat_entries[i] + 1;
-		read_unlock_irq(&ploop->bat_rwlock);
+		/* max_dst_cluster_in_top_delta() may be above hb_nr */
+		tb_nr = max_dst_cluster_in_top_delta(ploop) + 1;
+		if (tb_nr < ploop->hb_nr)
+			tb_nr = ploop->hb_nr;
 		/*
-		 * After unlock new entries above tb_nr can't
-		 * occur, since we always alloc clusters from
-		 * holes_bitmap (and they nr < hb_nr).
+		 * After max_dst_cluster_in_top_delta() unlocks the lock,
+		 * new entries above tb_nr can't occur, since we always
+		 * alloc clusters from holes_bitmap (and they nr < hb_nr).
 		 */
 		size = DIV_ROUND_UP(tb_nr, 8 * sizeof(unsigned long));
 		size *= sizeof(unsigned long);

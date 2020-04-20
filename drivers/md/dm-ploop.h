@@ -55,8 +55,7 @@ struct ploop_cmd {
 		struct {
 			u64 new_size;
 			/* Preallocated data */
-			void *hdr; /* hdr and bat_entries consequentially */
-			void *bat_levels;
+			struct rb_root md_pages_root;
 			void *holes_bitmap;
 #define PLOOP_GROW_STAGE_INITIAL	0
 			unsigned int stage;
@@ -157,13 +156,19 @@ struct push_backup {
 	struct list_head pending;
 };
 
+/* Metadata page */
+struct md_page {
+	struct rb_node node;
+	unsigned int id; /* Number of this page starting from hdr */
+	struct page *page;
+	u8 *bat_levels;
+};
+
 struct ploop {
 	struct dm_target *ti;
 
 	struct dm_dev *origin_dev;
-	struct ploop_pvd_header *hdr;
-	unsigned int *bat_entries;
-	u8 *bat_levels;
+	struct rb_root bat_entries;
 	struct ploop_delta *deltas;
 	u8 nr_deltas;
 	unsigned int nr_bat_entries;
@@ -278,6 +283,13 @@ struct ploop_cow {
 extern struct kmem_cache *piocb_cache;
 extern struct kmem_cache *cow_cache;
 
+#define ploop_for_each_md_page(ploop, md, node)		\
+	for (node = rb_first(&ploop->bat_entries),	\
+	     md = rb_entry(node, struct md_page, node); \
+	     node != NULL;				\
+	     node = rb_next(node),			\
+	     md = rb_entry(node, struct md_page, node))
+
 static inline bool ploop_is_ro(struct ploop *ploop)
 {
 	return (dm_table_get_mode(ploop->ti->table) & FMODE_WRITE) == 0;
@@ -335,15 +347,106 @@ static inline unsigned int ploop_nr_bat_clusters(struct ploop *ploop,
 	return bat_clusters;
 }
 
+static inline unsigned int bat_clu_to_page_nr(unsigned int cluster)
+{
+	unsigned int byte;
+
+	byte = (cluster + PLOOP_MAP_OFFSET) * sizeof(map_index_t);
+	return byte >> PAGE_SHIFT;
+}
+
+static inline unsigned int bat_clu_idx_in_page(unsigned int cluster)
+{
+	return (cluster + PLOOP_MAP_OFFSET) % (PAGE_SIZE / sizeof(map_index_t));
+}
+
+static inline unsigned int page_clu_idx_to_bat_clu(unsigned int page_id,
+						   unsigned int cluster_rel)
+{
+	unsigned int off;
+	off = page_id * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
+	return off + cluster_rel;
+}
+
+extern struct md_page * md_page_find(struct ploop *ploop, unsigned int id);
+
+/*
+ * This should be called in very rare cases. Avoid this function
+ * in cycles by cluster, use ploop_for_each_md_page()-based
+ * iterations instead.
+ */
+static inline unsigned int ploop_bat_entries(struct ploop *ploop,
+					     unsigned int cluster,
+					     u8 *bat_level)
+{
+	unsigned int *bat_entries, dst_cluster, id;
+	struct md_page *md;
+
+	id = bat_clu_to_page_nr(cluster);
+	md = md_page_find(ploop, id);
+	BUG_ON(!md);
+
+	/* Cluster index related to the page[page_nr] start */
+	cluster = bat_clu_idx_in_page(cluster);
+
+	if (bat_level)
+		*bat_level = md->bat_levels[cluster];
+
+	bat_entries = kmap_atomic(md->page);
+	dst_cluster = bat_entries[cluster];
+	kunmap_atomic(bat_entries);
+	return dst_cluster;
+}
+
 static inline bool cluster_is_in_top_delta(struct ploop *ploop,
 					   unsigned int cluster)
 {
+	unsigned int dst_cluster;
+	u8 level;
+
 	if (WARN_ON(cluster >= ploop->nr_bat_entries))
 		return false;
-	if (ploop->bat_entries[cluster] == BAT_ENTRY_NONE ||
-	    ploop->bat_levels[cluster] < BAT_LEVEL_TOP)
+	dst_cluster = ploop_bat_entries(ploop, cluster, &level);
+
+	if (dst_cluster == BAT_ENTRY_NONE || level < BAT_LEVEL_TOP)
 		return false;
 	return true;
+}
+
+static inline bool md_page_cluster_is_in_top_delta(struct md_page *md,
+						   unsigned int cluster)
+{
+	unsigned int count, *bat_entries;
+	bool ret = true;
+
+	count = PAGE_SIZE / sizeof(map_index_t);
+	if ((cluster + 1) * sizeof(u8) > ksize(md->bat_levels) ||
+	    cluster >= count) {
+		WARN_ONCE(1, "cluster=%u count=%u\n", cluster, count);
+		return false;
+	}
+
+	bat_entries = kmap_atomic(md->page);
+	if (bat_entries[cluster] == BAT_ENTRY_NONE ||
+	    md->bat_levels[cluster] < BAT_LEVEL_TOP)
+		ret = false;
+	kunmap_atomic(bat_entries);
+	return ret;
+}
+
+static inline void init_bat_entries_iter(struct ploop *ploop, unsigned int page_id,
+					 unsigned int *start, unsigned int *end)
+{
+	unsigned int last_page = bat_clu_to_page_nr(ploop->nr_bat_entries - 1);
+	unsigned int count = PAGE_SIZE / sizeof(map_index_t);
+
+	*start = 0;
+	if (page_id == 0)
+		*start = PLOOP_MAP_OFFSET;
+
+	*end = count - 1;
+	if (page_id == last_page)
+		*end = ((ploop->nr_bat_entries + PLOOP_MAP_OFFSET) % count) - 1;
 }
 
 static inline void force_defer_bio_count_inc(struct ploop *ploop)
@@ -381,6 +484,13 @@ static inline struct dm_ploop_endio_hook *find_endio_hook(struct ploop *ploop,
 {
 	return find_endio_hook_range(ploop, root, cluster, cluster);
 }
+
+extern struct md_page * alloc_md_page(unsigned int id);
+extern void md_page_insert(struct ploop *ploop, struct md_page *md);
+extern void free_md_page(struct md_page *md);
+extern void free_md_pages_tree(struct rb_root *root);
+extern bool try_update_bat_entry(struct ploop *ploop, unsigned int cluster,
+				 u8 level, unsigned int dst_cluster);
 
 extern int ploop_add_delta(struct ploop *ploop, const char *arg);
 extern void defer_bio(struct ploop *ploop, struct bio *bio);
