@@ -699,6 +699,15 @@ static long __get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
 				i = follow_hugetlb_page(mm, vma, pages, vmas,
 						&start, &nr_pages, i,
 						gup_flags, locked);
+				if (locked && *locked == 0) {
+					/*
+					 * We've got a VM_FAULT_RETRY
+					 * and we've lost mmap_sem.
+					 * We must stop here.
+					 */
+					BUG_ON(gup_flags & FOLL_NOWAIT);
+					goto out;
+				}
 				continue;
 			}
 		}
@@ -755,6 +764,7 @@ next_page:
 		start += page_increm * PAGE_SIZE;
 		nr_pages -= page_increm;
 	} while (nr_pages);
+out:
 	return i;
 }
 
