@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include "dm.h"
 #include <linux/buffer_head.h>
+#include <linux/rbtree.h>
 #include <linux/dm-io.h>
 #include <linux/dm-kcopyd.h>
 #include <linux/init.h>
@@ -27,6 +28,18 @@ static void inflight_bios_ref_exit1(struct percpu_ref *ref)
 	struct ploop *ploop = container_of(ref, struct ploop,
 					   inflight_bios_ref[1]);
 	complete(&ploop->inflight_bios_ref_comp);
+}
+
+void free_md_pages_tree(struct rb_root *root)
+{
+	struct rb_node *node;
+	struct md_page *md;
+
+	while ((node = root->rb_node) != NULL) {
+		md = rb_entry(node, struct md_page, node);
+		rb_erase(node, root);
+		free_md_page(md);
+	}
 }
 
 /* This is called on final device destroy */
@@ -71,10 +84,9 @@ static void ploop_destroy(struct ploop *ploop)
 	WARN_ON(!RB_EMPTY_ROOT(&ploop->exclusive_bios_rbtree));
 	WARN_ON(!RB_EMPTY_ROOT(&ploop->inflight_bios_rbtree));
 	kfree(ploop->deltas);
-	kvfree(ploop->bat_levels);
 	kvfree(ploop->holes_bitmap);
 	kvfree(ploop->tracking_bitmap);
-	vfree(ploop->hdr);
+	free_md_pages_tree(&ploop->bat_entries);
 	kfree(ploop);
 }
 
@@ -125,6 +137,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	INIT_LIST_HEAD(&ploop->cluster_lk_list);
 	bio_list_init(&ploop->delta_cow_action_list);
 	atomic_set(&ploop->nr_discard_bios, 0);
+	ploop->bat_entries = RB_ROOT;
 
 	INIT_WORK(&ploop->worker, do_ploop_work);
 	init_completion(&ploop->inflight_bios_ref_comp);
@@ -183,7 +196,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	ploop->inflight_bios_rbtree = RB_ROOT;
 	ret = -EINVAL;
 	for (i = 2; i < argc; i++) {
-                ret = ploop_add_delta(ploop, argv[i]);
+		ret = ploop_add_delta(ploop, argv[i]);
 		if (ret < 0)
 			goto err;
 	}
