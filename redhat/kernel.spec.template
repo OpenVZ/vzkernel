@@ -2457,6 +2457,7 @@ fi
 %{_bindir}/lsgpio
 %{_bindir}/gpio-hammer
 %{_bindir}/gpio-event-mon
+%{_bindir}/gpio-watch
 %{_mandir}/man1/kvm_stat*
 %{_bindir}/kvm_stat
 
