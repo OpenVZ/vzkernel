@@ -20,8 +20,8 @@
 #      is project ID 13604247
 set -e
 
-UPSTREAM_REF=$1
-PROJECT_ID=$2
+UPSTREAM_REF=${1:-master}
+PROJECT_ID=${2:-13604247}
 
 ISSUE_TEMPLATE="During an automated rebase of ark-patches, commit %s failed to rebase.
 
