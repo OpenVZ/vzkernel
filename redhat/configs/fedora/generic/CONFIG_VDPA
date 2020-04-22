@@ -13,4 +13,4 @@
 # 
 # 
 # 
-# CONFIG_VDPA is not set
+CONFIG_VDPA=m
