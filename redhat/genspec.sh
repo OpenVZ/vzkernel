@@ -276,12 +276,12 @@ Used to set the RHEL version.
 		patch=$(git format-patch -1 "$c")
 		echo "$patch" >> $plistf
 		mv $patch $SOURCES/
-		sed -i "s/PATCHLIST/Patch$pnum: $patch\nPATCHLIST/" $SPECFILE
-		sed -i "s/APPLYPATCH/ApplyOptionalPatch $patch\nAPPLYPATCH/" $SPECFILE
+		sed -i "s/%%PATCHLIST%%/Patch$pnum: $patch\n%%PATCHLIST%%/" $SPECFILE
+		sed -i "s/%%APPLYPATCH%%/ApplyOptionalPatch $patch\n%%APPLYPATCH%%/" $SPECFILE
 		((pnum++))
 	done
-	sed -i "s/PATCHLIST//" $SPECFILE
-	sed -i "s/APPLYPATCH//" $SPECFILE
+	sed -i "s/%%PATCHLIST%%//" $SPECFILE
+	sed -i "s/%%APPLYPATCH%%//" $SPECFILE
 fi
 
 for opt in $BUILDOPTS; do

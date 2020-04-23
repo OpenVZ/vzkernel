@@ -703,7 +703,7 @@ Patch1: patch-%{rpmversion}-redhat.patch
 
 %if !%{nopatches}
 
-PATCHLIST
+%%PATCHLIST%%
 %endif
 
 # empty final patch to facilitate testing of kernel patches
@@ -1207,7 +1207,7 @@ ApplyOptionalPatch patch-%{rpmversion}-redhat.patch
 
 %if !%{nopatches}
 
-APPLYPATCH
+%%APPLYPATCH%%
 %endif
 
 ApplyOptionalPatch linux-kernel-test.patch
