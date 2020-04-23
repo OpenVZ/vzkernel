@@ -483,24 +483,6 @@ static inline void uncharge_beancounter_fast(struct user_beancounter *ub,
 	local_irq_restore(flags);
 }
 
-/*
- * For a particular beancounter param return real 'held' value with
- * respect to precharge.
- */
-static inline unsigned long get_beancounter_held_real(struct ubparm *ubparm,
-               int precharge)
-{
-       unsigned long val = ubparm->held;
-
-       /*
-        * We want to catch cases where precharge might be greater
-        * than held.
-        */
-       WARN_ON_ONCE(val < precharge);
-
-       return (val > precharge) ? (val - precharge) : 0;
-}
-
 unsigned long __get_beancounter_usage_percpu(struct user_beancounter *ub,
 		int resource);
 

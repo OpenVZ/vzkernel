@@ -52,7 +52,8 @@ static void ub_show_res(struct seq_file *f, struct user_beancounter *ub,
 	unsigned long held;
 
 	p = &ub->ub_parms[r];
-	held = get_beancounter_held_real(p, precharge);
+	held = p->held;
+	held = (held > precharge) ? (held - precharge) : 0;
 
 	seq_printf(f, res_fmt,
 			show_uid && r == 0 ? ub->ub_name : "",
