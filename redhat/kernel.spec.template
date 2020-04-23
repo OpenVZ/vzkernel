@@ -693,12 +693,18 @@ Source2001: cpupower.config
 # source tree, but in the mean time we carry this to support the legacy workflow
 Source3000: merge.pl
 Source3001: kernel-local
+Source3002: Patchlist
 
 Source4000: README.rst
 
 ## Patches needed for building this package
 
 Patch1: patch-%{rpmversion}-redhat.patch
+
+%if !%{nopatches}
+
+PATCHLIST
+%endif
 
 # empty final patch to facilitate testing of kernel patches
 Patch999999: linux-kernel-test.patch
@@ -1198,6 +1204,12 @@ mv linux-%%TARBALL_VERSION%% linux-%{KVERREL}
 cd linux-%{KVERREL}
 
 ApplyOptionalPatch patch-%{rpmversion}-redhat.patch
+
+%if !%{nopatches}
+
+APPLYPATCH
+%endif
+
 ApplyOptionalPatch linux-kernel-test.patch
 
 # END OF PATCH APPLICATIONS

@@ -28,6 +28,9 @@ clogf="$SOURCES/changelog"
 HIDE_REDHAT=1;
 # hide entries for unsupported arches
 HIDE_UNSUPPORTED_ARCH=1;
+# Set up for broken out patches
+plistf="$SOURCES/Patchlist"
+pnum=2
 # override LC_TIME to avoid date conflicts when building the srpm
 LC_TIME=
 STAMP=$(echo $MARKER | cut -f 1 -d '-' | sed -e "s/v//");
@@ -260,6 +263,7 @@ Used to set the RHEL version.
 2.26.0\n
 " "$(date "+%a, %d %b %Y %R:%S %z")" "$RHELVER" > "$SOURCES/patch-$RPMVERSION-redhat.patch"
 
+	truncate -s 0 $plistf
 	COMMITS=$(git log --reverse --pretty=format:"%h" --no-merges "$MARKER".. \
 		":(exclude,top).get_maintainer.conf" \
 		":(exclude,top).gitattributes" \
@@ -269,8 +273,15 @@ Used to set the RHEL version.
 		":(exclude,top)Makefile.rhelver" \
 		":(exclude,top)redhat")
 	for c in $COMMITS; do
-		git format-patch --stdout -1 "$c" >> "$SOURCES/patch-$RPMVERSION-redhat.patch"
+		patch=$(git format-patch -1 "$c")
+		echo "$patch" >> $plistf
+		mv $patch $SOURCES/
+		sed -i "s/PATCHLIST/Patch$pnum: $patch\nPATCHLIST/" $SPECFILE
+		sed -i "s/APPLYPATCH/ApplyOptionalPatch $patch\nAPPLYPATCH/" $SPECFILE
+		((pnum++))
 	done
+	sed -i "s/PATCHLIST//" $SPECFILE
+	sed -i "s/APPLYPATCH//" $SPECFILE
 fi
 
 for opt in $BUILDOPTS; do
