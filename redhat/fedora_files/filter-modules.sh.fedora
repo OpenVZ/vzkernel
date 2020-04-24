@@ -14,7 +14,7 @@
 # listed here.
 
 # Overrides is individual modules which need to remain in kernel-core due to deps.
-overrides=""
+overrides="cec"
 
 # Set the default dirs/modules to filter out
 driverdirs="atm auxdisplay bcma bluetooth firewire fmc fpga infiniband isdn leds media memstick mfd mmc mtd nfc ntb pcmcia platform power ssb soundwire staging tty uio uwb w1"
