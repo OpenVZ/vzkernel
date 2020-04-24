@@ -13,6 +13,9 @@
 # subsys should be in kernel-modules on all arches, please change the defaults
 # listed here.
 
+# Overrides is individual modules which need to remain in kernel-core due to deps.
+overrides=""
+
 # Set the default dirs/modules to filter out
 driverdirs="atm auxdisplay bcma bluetooth firewire fmc iio infiniband isdn leds media memstick mfd mmc mtd nfc ntb pcmcia platform power ssb staging tty uio uwb w1"
 
@@ -141,6 +144,20 @@ filter_dir $1 kernel/sound
 for mod in ${singlemods}
 do
         filter_ko $1 ${mod}
+done
+
+# Now process the override list to bring those modules back into core
+for mod in ${overrides}
+do
+	grep -v -e "/${mod}.ko" k-d.list > k-d.list.tmp
+	if [ $? -ne 0 ]
+        then
+                echo "Couldn't save ${mod}.ko  Skipping."
+        else
+                grep -e "/${mod}.ko" k-d.list >> $filelist
+                mv k-d.list.tmp k-d.list
+        fi
+
 done
 
 # Go through our generated drivers list and remove the .ko files.  We'll
