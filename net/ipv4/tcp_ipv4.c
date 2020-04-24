@@ -1980,7 +1980,7 @@ get_req:
 	}
 get_sk:
 	sk_nulls_for_each_from(sk, node) {
-		if (!net_eq(sock_net(sk), net))
+		if (!net_access_allowed(sock_net(sk), net))
 			continue;
 		if (sk->sk_family == st->family) {
 			cur = sk;
@@ -2055,7 +2055,7 @@ static void *established_get_first(struct seq_file *seq)
 		spin_lock_bh(lock);
 		sk_nulls_for_each(sk, node, &tcp_hashinfo.ehash[st->bucket].chain) {
 			if (sk->sk_family != st->family ||
-			    !net_eq(sock_net(sk), net)) {
+			    !net_access_allowed(sock_net(sk), net)) {
 				continue;
 			}
 			rc = sk;
@@ -2081,7 +2081,7 @@ static void *established_get_next(struct seq_file *seq, void *cur)
 
 	sk_nulls_for_each_from(sk, node) {
 		if (sk->sk_family == st->family &&
-		    net_eq(sock_net(sk), net))
+		    net_access_allowed(sock_net(sk), net))
 			return sk;
 	}
 
