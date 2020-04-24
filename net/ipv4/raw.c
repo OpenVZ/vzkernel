@@ -922,7 +922,7 @@ static struct sock *raw_get_first(struct seq_file *seq)
 	for (state->bucket = 0; state->bucket < RAW_HTABLE_SIZE;
 			++state->bucket) {
 		sk_for_each(sk, &state->h->ht[state->bucket])
-			if (net_access_allowed(sock_net(sk), seq_file_net(seq)))
+			if (sock_net(sk) == seq_file_net(seq))
 				goto found;
 	}
 	sk = NULL;
@@ -938,7 +938,7 @@ static struct sock *raw_get_next(struct seq_file *seq, struct sock *sk)
 		sk = sk_next(sk);
 try_again:
 		;
-	} while (sk && !net_access_allowed(sock_net(sk), seq_file_net(seq)));
+	} while (sk && sock_net(sk) != seq_file_net(seq));
 
 	if (!sk && ++state->bucket < RAW_HTABLE_SIZE) {
 		sk = sk_head(&state->h->ht[state->bucket]);
