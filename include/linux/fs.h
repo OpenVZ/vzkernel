@@ -1203,10 +1203,6 @@ struct file_lock {
 	fl_owner_t fl_owner;
 	unsigned int fl_flags;
 	unsigned char fl_type;
-#ifdef CONFIG_BEANCOUNTERS
-	unsigned char fl_charged;
-	struct user_beancounter *fl_ub;
-#endif
 	unsigned int fl_pid;
 	int fl_link_cpu;		/* what cpu's list is this on? */
 	struct pid *fl_nspid;
@@ -1283,7 +1279,7 @@ extern int fcntl_getlease(struct file *filp);
 /* fs/locks.c */
 void locks_free_lock(struct file_lock *fl);
 extern void locks_init_lock(struct file_lock *);
-extern struct file_lock * locks_alloc_lock(int charge);
+extern struct file_lock * locks_alloc_lock(void);
 extern void locks_copy_lock(struct file_lock *, struct file_lock *);
 extern void locks_copy_conflock(struct file_lock *, struct file_lock *);
 extern void __locks_copy_lock(struct file_lock *, const struct file_lock *);
