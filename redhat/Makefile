@@ -250,6 +250,7 @@ sources-rh: $(TARBALL)
 		configs/process_configs.sh \
 		parallel_xz.sh \
 		generate_bls_conf.sh \
+		../Makefile.rhelver \
 		README.rst \
 		$(SOURCES)/
 	@for KABIARCH in $(ARCH_LIST); do \
