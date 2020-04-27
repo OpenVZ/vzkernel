@@ -30,14 +30,4 @@ UB_DECLARE_VOID_FUNC(ub_task_put(struct task_struct *task))
 UB_DECLARE_FUNC(int, ub_pty_charge(struct tty_struct *tty))
 UB_DECLARE_VOID_FUNC(ub_pty_uncharge(struct tty_struct *tty))
 
-#ifdef CONFIG_BEANCOUNTERS
-#define set_flock_charged(fl)	do { (fl)->fl_charged = 1; } while (0)
-#define unset_flock_charged(fl)	do {		\
-		WARN_ON((fl)->fl_charged == 0);	\
-		(fl)->fl_charged = 0;		\
-	} while (0)
-#else
-#define set_flock_charged(fl)	do { } while (0)
-#define unset_flock_charged(fl)	do { } while (0)
-#endif
 #endif
