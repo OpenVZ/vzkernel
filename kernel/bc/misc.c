@@ -69,33 +69,6 @@ void ub_file_uncharge(struct file *f)
 	put_beancounter(ub);
 }
 
-int ub_flock_charge(struct file_lock *fl, int hard)
-{
-	struct user_beancounter *ub;
-	int err;
-
-	ub = fl->fl_ub;
-	if (ub == NULL)
-		return 0;
-
-	err = charge_beancounter(ub, UB_NUMFLOCK, 1, hard ? UB_HARD : UB_SOFT);
-	if (!err)
-		fl->fl_charged = 1;
-	return err;
-}
-
-void ub_flock_uncharge(struct file_lock *fl)
-{
-	struct user_beancounter *ub;
-
-	ub = fl->fl_ub;
-	if (ub == NULL || !fl->fl_charged)
-		return;
-
-	uncharge_beancounter(ub, UB_NUMFLOCK, 1);
-	fl->fl_charged = 0;
-}
-
 /*
  * Signal handling
  */
