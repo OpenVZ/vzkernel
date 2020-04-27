@@ -29,7 +29,7 @@ if [ -n "$BASE_RELEASE" ]; then
 		to create a new release check out that tag, apply any commits you \
 		want, and then run \"touch localversion && make rh-release && make \
 		rh-release-tag\".\n" "$UPSTREAM_REF" "$BASE_RELEASE"
-	exit 0
+	exit 3
 fi
 
 git checkout internal
