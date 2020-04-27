@@ -156,7 +156,7 @@ static struct file *lock_key_file(char *cluster_name)
 	if (IS_ERR(f))
 		return f;
 
-	lock = locks_alloc_lock(1);
+	lock = locks_alloc_lock();
 	if (!lock) {
 		filp_close(f, NULL);
 		return ERR_PTR(-ENOMEM);
