@@ -280,9 +280,10 @@ Used to set the RHEL version.
 		sed -i "s/%%APPLYPATCH%%/ApplyOptionalPatch $patch\n%%APPLYPATCH%%/" $SPECFILE
 		((pnum++))
 	done
-	sed -i "s/%%PATCHLIST%%//" $SPECFILE
-	sed -i "s/%%APPLYPATCH%%//" $SPECFILE
 fi
+
+sed -i "s/%%PATCHLIST%%//" $SPECFILE
+sed -i "s/%%APPLYPATCH%%//" $SPECFILE
 
 for opt in $BUILDOPTS; do
 	add_opt=
