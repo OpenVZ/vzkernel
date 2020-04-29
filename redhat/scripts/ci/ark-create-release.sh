@@ -48,7 +48,7 @@ fi
 git merge -m "Merge configuration and build scripts" internal
 
 MR_PATCHES=$(gitlab project-merge-request list --project-id=13604247 \
-	--labels="Include in Releases" | grep -v "^$" | sort | \
+	--labels="Include in Releases" --state=opened | grep -v "^$" | sort | \
 	awk '{ print "https://gitlab.com/cki-project/kernel-ark/-/merge_requests/" $2 ".patch" }')
 for patch_url in $MR_PATCHES; do
 	curl -sL "$patch_url" | git am
