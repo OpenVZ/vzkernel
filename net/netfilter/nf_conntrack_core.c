@@ -75,9 +75,6 @@ EXPORT_SYMBOL_GPL(nf_conntrack_locks);
 __cacheline_aligned_in_smp DEFINE_SPINLOCK(nf_conntrack_expect_lock);
 EXPORT_SYMBOL_GPL(nf_conntrack_expect_lock);
 
-/* RHEL: local copy of init_net.ct.hash */
-static struct hlist_nulls_head *nf_conntrack_hash;
-
 static __read_mostly seqcount_t nf_conntrack_generation;
 
 static void nf_conntrack_double_unlock(unsigned int h1, unsigned int h2)
@@ -1594,10 +1591,6 @@ static int kill_all(struct nf_conn *i, void *data)
 
 void nf_ct_free_hashtable(void *hash, unsigned int size)
 {
-	/* RHEL: disallow resizing */
-	if (hash == nf_conntrack_hash)
-		nf_conntrack_hash = NULL;
-
 	if (is_vmalloc_addr(hash))
 		vfree(hash);
 	else
@@ -1742,7 +1735,7 @@ int nf_conntrack_set_hashsize(const char *val, struct kernel_param *kp)
 		return -EOPNOTSUPP;
 
 	/* On boot, we can set this without any fancy locking. */
-	if (!nf_conntrack_hash)
+	if (!nf_conntrack_htable_size)
 		return param_set_uint(val, kp);
 
 	rc = kstrtouint(val, 0, &hashsize);
@@ -1788,8 +1781,6 @@ int nf_conntrack_set_hashsize(const char *val, struct kernel_param *kp)
 
 	synchronize_net();
 	nf_ct_free_hashtable(old_hash, old_size);
-	/* RHEL: re-allow resizing */
-	nf_conntrack_hash = hash;
 	return 0;
 }
 EXPORT_SYMBOL_GPL(nf_conntrack_set_hashsize);
@@ -1979,9 +1970,6 @@ int nf_conntrack_init_net(struct net *net)
 	ret = nf_conntrack_proto_pernet_init(net);
 	if (ret < 0)
 		goto err_proto;
-	/* RHEL: allow resizing */
-	if (net == &init_net)
-		nf_conntrack_hash = net->ct.hash;
 	return 0;
 
 err_proto:
