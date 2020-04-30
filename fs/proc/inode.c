@@ -23,6 +23,7 @@
 #include <linux/slab.h>
 #include <linux/mount.h>
 #include <linux/magic.h>
+#include <linux/proc_ns.h>
 
 #include <asm/uaccess.h>
 
@@ -124,6 +125,21 @@ static int proc_show_options(struct seq_file *seq, struct dentry *root)
 	return 0;
 }
 
+static int proc_show_path(struct seq_file *seq, struct dentry *dentry)
+{
+	struct inode *inode = d_inode(dentry);
+	struct proc_ns *ei;
+
+	if (proc_ns_inode(inode)) {
+		ei = get_proc_ns(inode);
+		seq_printf(seq, "%s:[%lu]", ei->ns_ops->name, inode->i_ino);
+		return 0;
+	}
+
+	seq_dentry(seq, dentry, " \t\n\\");
+	return 0;
+}
+
 static const struct super_operations proc_sops = {
 	.alloc_inode	= proc_alloc_inode,
 	.destroy_inode	= proc_destroy_inode,
@@ -132,6 +148,7 @@ static const struct super_operations proc_sops = {
 	.statfs		= simple_statfs,
 	.remount_fs	= proc_remount,
 	.show_options	= proc_show_options,
+	.show_path	= proc_show_path,
 };
 
 enum {BIAS = -1U<<31};
