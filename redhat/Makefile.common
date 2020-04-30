@@ -41,17 +41,11 @@ else
   VERSION_ON_UPSTREAM:=0
 endif
 ifeq ($(VERSION_ON_UPSTREAM),1)
-  # In order to do a snapshot properly, we need to have a remote set up
-  # to track upstream.
-  _HAVE_UPSTREAM_REMOTE:=$(shell git remote | grep -wc linus)
-  ifeq ($(_HAVE_UPSTREAM_REMOTE),1)
-    MERGE_BASE:=$(shell git merge-base HEAD linus/master)
-    TAG:=$(shell git describe $(MERGE_BASE))
-    # a snapshot off of a tagged git is of the form [tag]-[cnt]-g[hash]
-    SNAPSHOT:=$(shell echo $(TAG) | grep -c '\-g')
-  else
-    SNAPSHOT:=0
-  endif
+  # master is expected to track mainline.
+  MERGE_BASE:=$(shell git merge-base HEAD master)
+  TAG:=$(shell git describe $(MERGE_BASE))
+  # a snapshot off of a tagged git is of the form [tag]-[cnt]-g[hash]
+  SNAPSHOT:=$(shell echo $(TAG) | grep -c '\-g')
 else
   SNAPSHOT:=0
 endif
