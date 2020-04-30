@@ -31,6 +31,7 @@
 #include <linux/moduleloader.h>
 #include <linux/completion.h>
 #include <linux/memory.h>
+#include <linux/debugfs.h>
 #include <asm/cacheflush.h>
 #include "core.h"
 #include "patch.h"
@@ -54,6 +55,13 @@ DEFINE_MUTEX(klp_mutex);
 LIST_HEAD(klp_patches);
 
 static struct kobject *klp_root_kobj;
+
+/*
+ * Can be set via livepatch/fail_apply file in debugfs.
+ * If set, livepatch will fail with -EBUSY when requested to apply a patch.
+ * Might be useful for testing and debugging livepatch.
+ */
+static bool fail_apply;
 
 static bool klp_is_module(struct klp_object *obj)
 {
@@ -929,6 +937,9 @@ static int __klp_enable_patch(struct klp_patch *patch)
 	if (klp_transition_patch)
 		return -EBUSY;
 
+	if (fail_apply)
+		return -EBUSY;
+
 	if (WARN_ON(patch->enabled))
 		return -EINVAL;
 
@@ -1227,6 +1238,7 @@ void klp_module_going(struct module *mod)
 static int __init klp_init(void)
 {
 	int ret;
+	struct dentry *d;
 
 	ret = klp_check_compiler_support();
 	if (ret) {
@@ -1237,6 +1249,10 @@ static int __init klp_init(void)
 	klp_root_kobj = kobject_create_and_add("livepatch", kernel_kobj);
 	if (!klp_root_kobj)
 		return -ENOMEM;
+
+	d = debugfs_create_dir("livepatch", NULL);
+	if (d)
+		debugfs_create_bool("fail_apply", 0644, d, &fail_apply);
 
 	return 0;
 }
