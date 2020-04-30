@@ -119,5 +119,5 @@ for f in "$config_bundles_dir"/*; do
 	# One file path is done, time to commit!
 	git add redhat/configs
 	git commit -F "$tmpdir"/commit
-	git checkout internal
+	git checkout os-build
 done

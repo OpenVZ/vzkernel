@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Update the changelog in the current branch to match the changelog in
-# ark-latest.  CI runs this against the internal branch so the change log
+# ark-latest.  CI runs this against the os-build branch so the change log
 # entries from the new release are pulled in and used to figure out what's
 # changed in the *next* release.
 

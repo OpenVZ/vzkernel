@@ -2,7 +2,7 @@
 #
 # Generate a release tag and, if based on a tagged upstream release, a set
 # of release branches. This script will rebase the ark-patches branch, update
-# internal with the latest configurations, and apply any merge requests labeled
+# os-build with the latest configurations, and apply any merge requests labeled
 # with "Include in Releases".
 
 set -e
@@ -32,9 +32,9 @@ if [ -n "$BASE_RELEASE" ]; then
 	exit 3
 fi
 
-git checkout internal
+git checkout os-build
 ./redhat/scripts/ci/ark-rebase-patches.sh "$UPSTREAM_REF" "$PROJECT_ID"
-git checkout internal
+git checkout os-build
 ./redhat/scripts/ci/ark-update-configs.sh "$UPSTREAM_REF" "$PROJECT_ID"
 
 if git tag -v "$UPSTREAM_REF" > /dev/null 2>&1; then
@@ -45,7 +45,7 @@ else
 	git checkout --detach ark-patches && git describe
 	RELEASE_BRANCHES=""
 fi
-git merge -m "Merge configuration and build scripts" internal
+git merge -m "Merge configuration and build scripts" os-build
 
 MR_PATCHES=$(gitlab project-merge-request list --project-id=13604247 \
 	--labels="Include in Releases" --state=opened | grep -v "^$" | sort | \
@@ -65,9 +65,9 @@ printf "All done!
 
 To push all the release artifacts, run:
 
-git push internal
+git push os-build
 for branch in \$(git branch | grep configs/\"\$(date +%%F)\"); do
-\tgit push -o merge_request.create -o merge_request.target=internal \
+\tgit push -o merge_request.create -o merge_request.target=os-build\
  -o merge_request.remove_source_branch upstream \"\$branch\"
 done
 git push upstream %s%s
