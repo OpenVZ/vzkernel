@@ -22,38 +22,21 @@ static const char *ve_get_name(struct ve_struct *ve)
 
 void ub_remove_proc(struct ve_struct *ve)
 {
-	ub_proc_ve_resources_remove(ve);
 	remove_proc_entry(ve_get_name(ve), bc_proc_root);
 	ve->ub_proc = NULL;
 }
 
 int ub_create_proc(struct ve_struct *ve)
 {
-	int err;
-
 	ve->ub_proc = proc_mkdir(ve_get_name(ve), bc_proc_root);
 	if (!ve->ub_proc)
 		return -ENOMEM;
 
-	err = ub_proc_ve_resources_create(ve);
-	if (err)
-		goto remove_ub_proc;
-
 	return 0;
-
-remove_ub_proc:
-	remove_proc_entry(ve_get_name(ve), bc_proc_root);
-	return err;
 }
 
 static int __init ub_init_proc(void)
 {
-	int err;
-
-	err = ub_proc_all_resources_create();
-	if (err)
-		return err;
-
 	return ub_create_proc(get_ve0());
 }
 core_initcall(ub_init_proc);

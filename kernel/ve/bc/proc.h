@@ -17,9 +17,4 @@ extern struct proc_dir_entry *bc_proc_root;
 void ub_remove_proc(struct ve_struct *ve);
 int ub_create_proc(struct ve_struct *ve);
 
-int ub_proc_ve_resources_create(struct ve_struct *ve);
-void ub_proc_ve_resources_remove(struct ve_struct *ve);
-
-int ub_proc_all_resources_create(void);
-
 #endif

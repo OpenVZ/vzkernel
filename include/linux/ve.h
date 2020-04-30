@@ -16,8 +16,6 @@
 #include <linux/kthread.h>
 #include <linux/binfmts.h>
 
-#include <uapi/linux/beancounter.h>
-
 struct nsproxy;
 struct veip_struct;
 struct user_namespace;
@@ -97,7 +95,6 @@ struct ve_struct {
 #endif
 
 	struct proc_dir_entry	*ub_proc;
-	struct ubparm		ub_parms[UB_RESOURCES];
 };
 
 #define VE_MEMINFO_DEFAULT	1	/* default behaviour */
@@ -109,8 +106,6 @@ extern int nr_ve;
 
 #define capable_setveid() \
 	(ve_is_super(get_exec_env()) && capable(CAP_SYS_ADMIN))
-
-#define UB_MAXVALUE	((1UL << (sizeof(unsigned long ) * 8 - 1)) - 1)
 
 #ifdef CONFIG_VE
 extern struct ve_struct *get_ve(struct ve_struct *ve);
