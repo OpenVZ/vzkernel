@@ -25,8 +25,6 @@
 #include <linux/vziptable_defs.h>
 #include <uapi/linux/vzcalluser.h>
 
-#include "bc/proc.h"
-
 #include "../cgroup/cgroup-internal.h" /* For cgroup_task_count() */
 
 extern struct kmapset_set sysfs_ve_perms_set;
@@ -414,10 +412,6 @@ static int ve_start_container(struct ve_struct *ve)
 	if (err)
 		goto err_list;
 
-	err = ub_create_proc(ve);
-	if (err)
-		goto err_ub;
-
 	err = ve_start_kthreadd(ve);
 	if (err)
 		goto err_kthreadd;
@@ -445,8 +439,6 @@ err_iterate:
 err_umh:
 	ve_stop_kthreadd(ve);
 err_kthreadd:
-	ub_remove_proc(ve);
-err_ub:
 	ve_list_del(ve);
 err_list:
 	ve_drop_context(ve);
@@ -509,7 +501,6 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 	 * At this point all userspace tasks in container are dead.
 	 */
 	ve_hook_iterate_fini(VE_SS_CHAIN, ve);
-	ub_remove_proc(ve);
 	ve_list_del(ve);
 	ve_drop_context(ve);
 	printk(KERN_INFO "CT: %s: stopped\n", ve_name(ve));

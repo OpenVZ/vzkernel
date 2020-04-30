@@ -13,5 +13,3 @@ obj-$(CONFIG_VE_CALLS) += vzmon.o
 vzmon-objs = vecalls.o
 
 obj-$(CONFIG_VE_CALLS) += vzstat.o
-
-obj-y += bc/

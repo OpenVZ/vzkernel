@@ -23,7 +23,6 @@ struct super_block;
 struct tty_driver;
 struct tty_struct;
 struct cn_private;
-struct proc_dir_entry;
 
 struct ve_struct {
 	struct cgroup_subsys_state	css;
@@ -93,8 +92,6 @@ struct ve_struct {
 #ifdef CONFIG_CONNECTOR
 	struct cn_private	*cn;
 #endif
-
-	struct proc_dir_entry	*ub_proc;
 };
 
 #define VE_MEMINFO_DEFAULT	1	/* default behaviour */
