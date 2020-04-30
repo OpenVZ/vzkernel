@@ -7111,29 +7111,4 @@ static int __init mem_cgroup_swap_init(void)
 }
 subsys_initcall(mem_cgroup_swap_init);
 
-#ifdef CONFIG_VE
-
-#include <uapi/linux/beancounter.h>
-#include <linux/ve.h>
-
-void memcg_sync_ub(struct css_set *cset, struct ubparm *ub_parms)
-{
-	struct mem_cgroup *memcg = mem_cgroup_from_css(cset->subsys[memory_cgrp_id]);
-	unsigned long lim;
-	volatile struct ubparm *k;
-
-	k = &ub_parms[UB_KMEMSIZE];
-
-	//todo: check odd code - counting in bytes instead of pages. wtf???
-	k->held = page_counter_read(&memcg->kmem) << PAGE_SHIFT;
-	k->maxheld = memcg->kmem.watermark << PAGE_SHIFT;
-	k->failcnt = memcg->kmem.failcnt << PAGE_SHIFT;
-	lim = memcg->kmem.max << PAGE_SHIFT;
-	lim = lim >= (PAGE_COUNTER_MAX << PAGE_SHIFT) ? UB_MAXVALUE :
-		min_t(unsigned long long, lim, UB_MAXVALUE);
-	k->barrier = k->limit = lim;
-}
-
-#endif /* CONFIG_VE */
-
 #endif /* CONFIG_MEMCG_SWAP */

@@ -16,7 +16,6 @@
 #include "proc.h"
 
 extern void pids_sync_ub(struct css_set *cset, struct ubparm *ub_parms);
-extern void memcg_sync_ub(struct css_set *cset, struct ubparm *ub_parms);
 
 /* Generic output formats */
 const char *bc_proc_lu_fmt = "\t%-20s %21lu\n";
@@ -114,7 +113,6 @@ static void ub_show_res(struct seq_file *f, struct ubparm *p, const char *name,
 static void cgroups_sync_ub(struct css_set *cset, struct ubparm *ub_parms)
 {
 	pids_sync_ub(cset, &ub_parms[UB_NUMPROC]);
-	memcg_sync_ub(cset, ub_parms);
 }
 
 static void __show_resources(struct seq_file *f, struct ve_struct *ve,
