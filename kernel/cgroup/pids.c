@@ -347,36 +347,3 @@ struct cgroup_subsys pids_cgrp_subsys = {
 	.dfl_cftypes	= pids_files,
 	.threaded	= true,
 };
-
-#ifdef CONFIG_VE
-#include <uapi/linux/beancounter.h>
-
-void pids_sync_ub(struct css_set *cset, struct ubparm *p)
-{
-	struct cgroup_subsys_state *css = cset->subsys[pids_cgrp_id];
-	struct pids_cgroup *pids = css_pids(css);
-
-	p->barrier = pids->limit;
-	p->limit = pids->limit;
-
-	if (cset != &init_css_set) {
-		p->held = atomic64_read(&pids->counter);
-		p->failcnt = atomic64_read(&pids->events_limit);
-	} else {
-		struct cgroup_subsys_state *child;
-
-		p->held = 0;
-		p->failcnt = 0;
-
-		rcu_read_lock();
-		css_for_each_child(child, css) {
-			pids = css_pids(child);
-
-			p->held += atomic64_read(&pids->counter);
-			p->failcnt += atomic64_read(&pids->events_limit);
-		}
-		rcu_read_unlock();
-	}
-}
-
-#endif
