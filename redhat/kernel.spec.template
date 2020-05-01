@@ -1312,7 +1312,7 @@ cp_vmlinux()
 %define build_hostldflags %{?build_ldflags}
 %endif
 
-%define make make %{?cross_opts} %{?make_opts} HOSTCFLAGS="%{?build_hostcflags}" HOSTLDFLAGS="%{?build_hostldflags}"
+%define make %{__make} %{?cross_opts} %{?make_opts} HOSTCFLAGS="%{?build_hostcflags}" HOSTLDFLAGS="%{?build_hostldflags}"
 
 BuildKernel() {
     MakeTarget=$1
@@ -1882,7 +1882,7 @@ BuildKernel %make_target %kernel_image %{_use_vdso}
 %endif
 
 %global perf_make \
-  make -s EXTRA_CFLAGS="${RPM_OPT_FLAGS}" LDFLAGS="%{__global_ldflags}" %{?cross_opts} -C tools/perf V=1 NO_PERF_READ_VDSO32=1 NO_PERF_READ_VDSOX32=1 WERROR=0 NO_LIBUNWIND=1 HAVE_CPLUS_DEMANGLE=1 NO_GTK2=1 NO_STRLCPY=1 NO_BIONIC=1 prefix=%{_prefix} PYTHON=%{__python3}
+  %{__make} -s EXTRA_CFLAGS="${RPM_OPT_FLAGS}" LDFLAGS="%{__global_ldflags}" %{?cross_opts} -C tools/perf V=1 NO_PERF_READ_VDSO32=1 NO_PERF_READ_VDSOX32=1 WERROR=0 NO_LIBUNWIND=1 HAVE_CPLUS_DEMANGLE=1 NO_GTK2=1 NO_STRLCPY=1 NO_BIONIC=1 prefix=%{_prefix} PYTHON=%{__python3}
 %if %{with_perf}
 # perf
 # make sure check-headers.sh is executable
@@ -1921,16 +1921,16 @@ pushd tools/thermal/tmon/
 popd
 pushd tools/iio/
 # Needs to be fixed to pick up CFLAGS
-make
+%{__make}
 popd
 pushd tools/gpio/
 # Needs to be fixed to pick up CFLAGS
-make
+%{__make}
 popd
 %endif
 
 %global bpftool_make \
-  make EXTRA_CFLAGS="${RPM_OPT_FLAGS}" EXTRA_LDFLAGS="%{__global_ldflags}" DESTDIR=$RPM_BUILD_ROOT V=1
+  %{__make} EXTRA_CFLAGS="${RPM_OPT_FLAGS}" EXTRA_LDFLAGS="%{__global_ldflags}" DESTDIR=$RPM_BUILD_ROOT V=1
 %if %{with_bpftool}
 pushd tools/bpf/bpftool
 %{bpftool_make}
@@ -1948,7 +1948,7 @@ popd
 
 %if %{with_doc}
 # Make the HTML pages.
-make PYTHON=/usr/bin/python3 htmldocs || %{doc_build_fail}
+%{__make} PYTHON=/usr/bin/python3 htmldocs || %{doc_build_fail}
 
 # sometimes non-world-readable files sneak into the kernel source tree
 chmod -R a=rX Documentation
@@ -2049,7 +2049,7 @@ tar -h -f - --exclude=man --exclude='.*' -c Documentation | tar xf - -C $docdir
 
 %if %{with_headers}
 # Install kernel headers
-make ARCH=%{hdrarch} INSTALL_HDR_PATH=$RPM_BUILD_ROOT/usr headers_install
+%{__make} ARCH=%{hdrarch} INSTALL_HDR_PATH=$RPM_BUILD_ROOT/usr headers_install
 
 find $RPM_BUILD_ROOT/usr/include \
      \( -name .install -o -name .check -o \
@@ -2067,7 +2067,7 @@ mkdir -p $RPM_BUILD_ROOT/usr/tmp-headers
 
 for arch in $HDR_ARCH_LIST; do
 	mkdir $RPM_BUILD_ROOT/usr/tmp-headers/arch-${arch}
-	make ARCH=${arch} INSTALL_HDR_PATH=$RPM_BUILD_ROOT/usr/tmp-headers/arch-${arch} headers_install
+	%{__make} ARCH=${arch} INSTALL_HDR_PATH=$RPM_BUILD_ROOT/usr/tmp-headers/arch-${arch} headers_install
 done
 
 find $RPM_BUILD_ROOT/usr/tmp-headers \
@@ -2153,14 +2153,14 @@ pushd tools/thermal/tmon
 %{tools_make} INSTALL_ROOT=%{buildroot} install
 popd
 pushd tools/iio
-make DESTDIR=%{buildroot} install
+%{__make} DESTDIR=%{buildroot} install
 popd
 pushd tools/gpio
-make DESTDIR=%{buildroot} install
+%{__make} DESTDIR=%{buildroot} install
 popd
 pushd tools/kvm/kvm_stat
-make INSTALL_ROOT=%{buildroot} install-tools
-make INSTALL_ROOT=%{buildroot} install-man
+%{__make} INSTALL_ROOT=%{buildroot} install-tools
+%{__make} INSTALL_ROOT=%{buildroot} install-man
 popd
 %endif
 
