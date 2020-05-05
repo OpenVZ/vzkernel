@@ -237,6 +237,7 @@ static u64 __read_mostly shadow_accessed_mask;
 static u64 __read_mostly shadow_dirty_mask;
 static u64 __read_mostly shadow_mmio_mask;
 static u64 __read_mostly shadow_mmio_value;
+static u64 __read_mostly shadow_mmio_access_mask;
 static u64 __read_mostly shadow_present_mask;
 static u64 __read_mostly shadow_me_mask;
 
@@ -266,12 +267,13 @@ kvm_mmu_calc_root_page_role(struct kvm_vcpu *vcpu);
 #define CREATE_TRACE_POINTS
 #include "mmutrace.h"
 
-
-void kvm_mmu_set_mmio_spte_mask(u64 mmio_mask, u64 mmio_value)
+void kvm_mmu_set_mmio_spte_mask(u64 mmio_mask, u64 mmio_value, u64 access_mask)
 {
+	BUG_ON((u64)(unsigned int)access_mask != access_mask);
 	BUG_ON((mmio_mask & mmio_value) != mmio_value);
-	shadow_mmio_value = mmio_value | SPTE_SPECIAL_MASK;
+	shadow_mmio_value = mmio_value | SPTE_MMIO_MASK;
 	shadow_mmio_mask = mmio_mask | SPTE_SPECIAL_MASK;
+	shadow_mmio_access_mask = access_mask;
 }
 EXPORT_SYMBOL_GPL(kvm_mmu_set_mmio_spte_mask);
 
@@ -358,6 +360,7 @@ static void mark_mmio_spte(struct kvm_vcpu *vcpu, u64 *sptep, u64 gfn,
 	unsigned int gen = kvm_current_mmio_generation(vcpu);
 	u64 mask = generation_mmio_spte_mask(gen);
 
+	access &= shadow_mmio_access_mask;
 	access &= ACC_WRITE_MASK | ACC_USER_MASK;
 	mask |= shadow_mmio_value | access | gfn << PAGE_SHIFT;
 
@@ -379,7 +382,7 @@ static gfn_t get_mmio_spte_gfn(u64 spte)
 static unsigned get_mmio_spte_access(u64 spte)
 {
 	u64 mask = generation_mmio_spte_mask(MMIO_GEN_MASK) | shadow_mmio_mask;
-	return (spte & ~mask) & ~PAGE_MASK;
+	return (spte & ~mask) & ~PAGE_MASK & shadow_mmio_access_mask;
 }
 
 static bool set_mmio_spte(struct kvm_vcpu *vcpu, u64 *sptep, gfn_t gfn,
@@ -3259,7 +3262,7 @@ static bool handle_abnormal_pfn(struct kvm_vcpu *vcpu, gva_t gva, gfn_t gfn,
 	}
 
 	if (unlikely(is_noslot_pfn(pfn)))
-		vcpu_cache_mmio_info(vcpu, gva, gfn, access);
+		vcpu_cache_mmio_info(vcpu, gva, gfn, access & shadow_mmio_access_mask);
 
 	ret = false;
 exit:

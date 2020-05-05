@@ -1412,6 +1412,11 @@ static inline bool cpu_has_vmx_ept(void)
 		SECONDARY_EXEC_ENABLE_EPT;
 }
 
+static inline bool vmx_pku_supported(void)
+{
+	return boot_cpu_has(X86_FEATURE_PKU);
+}
+
 static inline bool cpu_has_vmx_unrestricted_guest(void)
 {
 	return vmcs_config.cpu_based_2nd_exec_ctrl &
@@ -5507,7 +5512,7 @@ static void ept_set_mmio_spte_mask(void)
 	 * of an EPT paging-structure entry is 110b (write/execute).
 	 */
 	kvm_mmu_set_mmio_spte_mask(VMX_EPT_RWX_MASK,
-				   VMX_EPT_MISCONFIG_WX_VALUE);
+				   VMX_EPT_MISCONFIG_WX_VALUE, 0);
 }
 
 /*
