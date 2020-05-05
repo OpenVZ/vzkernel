@@ -252,6 +252,11 @@ nf_nat_ipv4_fn(const struct nf_hook_ops *ops, struct sk_buff *skb,
 	/* maniptype == SRC for postrouting. */
 	enum nf_nat_manip_type maniptype = HOOK2MANIP(ops->hooknum);
 
+	const struct nft_chain *chain = ops->priv;
+	const struct net *chain_net =
+		read_pnet(&nft_base_chain(chain)->pnet);
+	const struct net *net;
+
 	/* We never see fragments: conntrack defrags on pre-routing
 	 * and local-out, and nf_nat_out protects post-routing.
 	 */
@@ -264,6 +269,11 @@ nf_nat_ipv4_fn(const struct nf_hook_ops *ops, struct sk_buff *skb,
 	 * protocol. 8) --RR
 	 */
 	if (!ct)
+		return NF_ACCEPT;
+
+	/* Ignore chains that are not for the current network namespace */
+	net = nf_ct_net(ct);
+	if (!net_eq(net, chain_net))
 		return NF_ACCEPT;
 
 	/* Don't try to NAT if this packet is not conntracked */
@@ -290,18 +300,7 @@ nf_nat_ipv4_fn(const struct nf_hook_ops *ops, struct sk_buff *skb,
 		 * or local packets.
 		 */
 		if (!nf_nat_initialized(ct, maniptype)) {
-			const struct nft_chain *chain = ops->priv;
-			const struct net *chain_net =
-				read_pnet(&nft_base_chain(chain)->pnet);
-			const struct net *net;
 			unsigned int ret;
-
-			/* Ignore chains that are not for the current network
-			 * namespace
-			 */
-			net = nf_ct_net(ct);
-			if (!net_eq(net, chain_net))
-				return NF_ACCEPT;
 
 			ret = do_chain(ops, skb, state, ct);
 			if (ret != NF_ACCEPT)

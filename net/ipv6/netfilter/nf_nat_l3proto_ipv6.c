@@ -265,6 +265,11 @@ nf_nat_ipv6_fn(const struct nf_hook_ops *ops, struct sk_buff *skb,
 	int hdrlen;
 	u8 nexthdr;
 
+	const struct nft_chain *chain = ops->priv;
+	const struct net *chain_net =
+		read_pnet(&nft_base_chain(chain)->pnet);
+	const struct net *net;
+
 	ct = nf_ct_get(skb, &ctinfo);
 	/* Can't track?  It's not due to stress, or conntrack would
 	 * have dropped it.  Hence it's the user's responsibilty to
@@ -272,6 +277,11 @@ nf_nat_ipv6_fn(const struct nf_hook_ops *ops, struct sk_buff *skb,
 	 * protocol. 8) --RR
 	 */
 	if (!ct)
+		return NF_ACCEPT;
+
+	/* Ignore chains that are not for the current network namespace */
+	net = nf_ct_net(ct);
+	if (!net_eq(net, chain_net))
 		return NF_ACCEPT;
 
 	/* Don't try to NAT if this packet is not conntracked */
@@ -303,18 +313,7 @@ nf_nat_ipv6_fn(const struct nf_hook_ops *ops, struct sk_buff *skb,
 		 * or local packets.
 		 */
 		if (!nf_nat_initialized(ct, maniptype)) {
-			const struct nft_chain *chain = ops->priv;
-			const struct net *chain_net =
-				read_pnet(&nft_base_chain(chain)->pnet);
-			const struct net *net;
 			unsigned int ret;
-
-			/* Ignore chains that are not for the current network
-			 * namespace
-			 */
-			net = nf_ct_net(ct);
-			if (!net_eq(net, chain_net))
-				return NF_ACCEPT;
 
 			ret = do_chain(ops, skb, state, ct);
 			if (ret != NF_ACCEPT)
