@@ -3552,7 +3552,13 @@ void memcg_uncharge_kmem(struct mem_cgroup *memcg,
 	 *
 	 * The memory barrier imposed by test&clear is paired with the
 	 * explicit one in memcg_kmem_mark_dead().
+	 *
+	 * We take RCU to remain memcg memory stable for parent dereferencing.
+	 * Parent's memory is stable even in case of page_counter_uncharge()
+	 * has decremented its last charged memory, because child dentry owns
+	 * parents's dentry refcnt.
 	 */
+	rcu_read_lock();
 	if (memcg_kmem_test_and_clear_dead(memcg))
 		css_put(&memcg->css);
 
@@ -3568,6 +3574,7 @@ void memcg_uncharge_kmem(struct mem_cgroup *memcg,
 		else
 			break;
 	}
+	rcu_read_unlock();
 }
 
 int __memcg_charge_slab(struct kmem_cache *s, gfp_t gfp, unsigned int nr_pages)
