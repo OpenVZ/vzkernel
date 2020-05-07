@@ -3601,7 +3601,6 @@ void __memcg_uncharge_slab(struct kmem_cache *s, unsigned int nr_pages)
 	VM_BUG_ON(is_root_cache(s));
 	memcg = s->memcg_params.memcg;
 
-	memcg_uncharge_kmem(memcg, nr_pages);
 	if (s->flags & SLAB_RECLAIM_ACCOUNT) {
 		page_counter_uncharge(&memcg->dcache, nr_pages);
 		idx = MEM_CGROUP_STAT_SLAB_RECLAIMABLE;
@@ -3610,6 +3609,7 @@ void __memcg_uncharge_slab(struct kmem_cache *s, unsigned int nr_pages)
 		idx = MEM_CGROUP_STAT_SLAB_UNRECLAIMABLE;
 		this_cpu_sub(memcg->stat->count[idx], nr_pages);
 	}
+	memcg_uncharge_kmem(memcg, nr_pages);
 }
 
 /*
