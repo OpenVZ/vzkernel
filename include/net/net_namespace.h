@@ -246,11 +246,6 @@ static inline int check_net(const struct net *net)
 
 void net_drop_ns(void *);
 
-/* Returns whether curr can mess with net's objects */
-static inline int net_access_allowed(const struct net *net, const struct net *curr)
-{
-	return net_eq(curr, &init_net) || net_eq(curr, net);
-}
 #else
 
 static inline struct net *get_net(struct net *net)
@@ -279,11 +274,6 @@ static inline int check_net(const struct net *net)
 }
 
 #define net_drop_ns NULL
-
-static inline int net_access_allowed(const struct net *net, const struct net *curr)
-{
-	return 1;
-}
 #endif
 
 
