@@ -6751,19 +6751,22 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	size_t size;
 	int i, ret;
 	int node;
+	long error = -ENOMEM;
 
 	size = sizeof(struct mem_cgroup);
 	size += nr_node_ids * sizeof(struct mem_cgroup_per_node *);
 
 	memcg = kzalloc(size, GFP_KERNEL);
 	if (!memcg)
-		return NULL;
+		return ERR_PTR(error);
 
 	memcg->id.id = idr_alloc(&mem_cgroup_idr, NULL,
 		       1, MEM_CGROUP_ID_MAX,
 		       GFP_KERNEL);
-	if (memcg->id.id < 0)
+	if (memcg->id.id < 0) {
+		error = memcg->id.id;
 		goto fail;
+	}
 
 	memcg->stat = alloc_percpu(struct mem_cgroup_stat_cpu);
 	if (!memcg->stat)
@@ -6794,7 +6797,7 @@ out_free:
 	mem_cgroup_id_remove(memcg);
 fail:
 	kfree(memcg);
-	return NULL;
+	return ERR_PTR(error);
 }
 
 /*
@@ -6892,11 +6895,10 @@ static struct cgroup_subsys_state * __ref
 mem_cgroup_css_alloc(struct cgroup *cont)
 {
 	struct mem_cgroup *memcg;
-	long error = -ENOMEM;
 
 	memcg = mem_cgroup_alloc();
-	if (!memcg)
-		return ERR_PTR(error);
+	if (IS_ERR(memcg))
+		return ERR_CAST(memcg);
 
 	/* root ? */
 	if (cont->parent == NULL) {
