@@ -2694,6 +2694,62 @@ static inline int tree_contains_unbindable(struct mount *mnt)
 	return 0;
 }
 
+static int do_set_group(struct path *path, const char *sibling_name)
+{
+	struct ve_struct *ve = get_exec_env();
+	struct mount *sibling, *mnt;
+	struct path sibling_path;
+	int err;
+
+	if (!ve_is_super(ve) && !ve->is_pseudosuper)
+		return -EPERM;
+
+	if (!sibling_name || !*sibling_name)
+		return -EINVAL;
+
+	if (path->dentry != path->mnt->mnt_root)
+		return -EINVAL;
+
+	err = kern_path(sibling_name, LOOKUP_FOLLOW, &sibling_path);
+	if (err)
+		return err;
+
+	err = -EINVAL;
+	sibling = real_mount(sibling_path.mnt);
+	mnt = real_mount(path->mnt);
+
+	namespace_lock();
+
+	err = -EPERM;
+	if (!sibling->mnt_ns ||
+	    !ns_capable(sibling->mnt_ns->user_ns, CAP_SYS_ADMIN))
+		goto out_unlock;
+
+	err = -EINVAL;
+	if (sibling->mnt.mnt_sb != mnt->mnt.mnt_sb)
+		goto out_unlock;
+
+	if (IS_MNT_SHARED(mnt) || IS_MNT_SLAVE(mnt))
+		goto out_unlock;
+
+	if (IS_MNT_SLAVE(sibling)) {
+		list_add(&mnt->mnt_slave, &sibling->mnt_slave);
+		mnt->mnt_master = sibling->mnt_master;
+	}
+
+	if (IS_MNT_SHARED(sibling)) {
+		mnt->mnt_group_id = sibling->mnt_group_id;
+		list_add(&mnt->mnt_share, &sibling->mnt_share);
+		set_mnt_shared(mnt);
+	}
+
+	err = 0;
+out_unlock:
+	namespace_unlock();
+	path_put(&sibling_path);
+	return err;
+}
+
 static int do_move_mount(struct path *path, const char *old_name)
 {
 	struct path old_path, parent_path;
@@ -3108,6 +3164,7 @@ long do_mount(const char *dev_name, const char __user *dir_name,
 	struct path path;
 	int retval = 0;
 	int mnt_flags = 0;
+	unsigned long cmd;
 
 	/* Discard magic */
 	if ((flags & MS_MGC_MSK) == MS_MGC_VAL)
@@ -3159,19 +3216,25 @@ long do_mount(const char *dev_name, const char __user *dir_name,
 		mnt_flags |= path.mnt->mnt_flags & MNT_ATIME_MASK;
 	}
 
+	cmd = flags & (MS_REMOUNT | MS_BIND |
+		       MS_SHARED | MS_PRIVATE | MS_SLAVE | MS_UNBINDABLE |
+		       MS_MOVE | MS_SET_GROUP);
+
 	flags &= ~(MS_NOSUID | MS_NOEXEC | MS_NODEV | MS_ACTIVE | MS_BORN |
 		   MS_NOATIME | MS_NODIRATIME | MS_RELATIME| MS_KERNMOUNT |
 		   MS_STRICTATIME | MS_NOREMOTELOCK | MS_SUBMOUNT);
 
-	if (flags & MS_REMOUNT)
+	if (cmd & MS_REMOUNT)
 		retval = do_remount(&path, flags & ~MS_REMOUNT, mnt_flags,
 				    data_page);
-	else if (flags & MS_BIND)
+	else if (cmd & MS_BIND)
 		retval = do_loopback(&path, dev_name, flags & MS_REC);
-	else if (flags & (MS_SHARED | MS_PRIVATE | MS_SLAVE | MS_UNBINDABLE))
+	else if (cmd & (MS_SHARED | MS_PRIVATE | MS_SLAVE | MS_UNBINDABLE))
 		retval = do_change_type(&path, flags);
-	else if (flags & MS_MOVE)
+	else if (cmd & MS_MOVE)
 		retval = do_move_mount(&path, dev_name);
+	else if (cmd & MS_SET_GROUP)
+		retval = do_set_group(&path, dev_name);
 	else
 		retval = do_new_mount(&path, type_page, flags, mnt_flags,
 				      dev_name, data_page);
