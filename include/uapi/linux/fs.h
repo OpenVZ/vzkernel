@@ -99,6 +99,12 @@ struct inodes_stat_t {
 #define MS_STRICTATIME	(1<<24) /* Always perform atime updates */
 #define MS_LAZYTIME	(1<<25) /* Update the on-disk [acm]times lazily */
 
+/*
+ * Here are commands and flags. Commands are handled in do_mount()
+ * and can intersect with kernel internal flags.
+ */
+#define MS_SET_GROUP	(1<<26) /* Add a mount into a shared group */
+
 /* These sb flags are internal to the kernel */
 #define MS_SUBMOUNT     (1<<26)
 #define MS_NOREMOTELOCK	(1<<27)
