@@ -256,7 +256,7 @@ if [ "$SINGLE_TARBALL" = 0 ]; then
 		":(exclude,top)Makefile.rhelver" \
 		":(exclude,top)redhat")
 	for c in $COMMITS; do
-		patch=$(git format-patch -1 "$c")
+		patch=$(git format-patch --zero-commit -1 "$c")
 		echo "$patch" >> $plistf
 		mv $patch $SOURCES/
 		sed -i "s/%%PATCHLIST%%/Patch$pnum: $patch\n%%PATCHLIST%%/" $SPECFILE
