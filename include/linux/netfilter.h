@@ -109,7 +109,7 @@ struct nf_hook_ops {
 	unsigned long	__rht_reserved2;
 	unsigned long	__rht_reserved3;
 	unsigned long	__rht_reserved4;
-	unsigned long	__rht_reserved5;
+	unsigned long	is_nft_ops;
 };
 
 struct nf_sockopt_ops {
