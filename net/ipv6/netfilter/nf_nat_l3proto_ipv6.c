@@ -24,6 +24,7 @@
 #include <net/netfilter/nf_nat_core.h>
 #include <net/netfilter/nf_nat_l3proto.h>
 #include <net/netfilter/nf_nat_l4proto.h>
+#include <net/netfilter/nf_tables.h>
 
 static const struct nf_nat_l3proto nf_nat_l3proto_ipv6;
 
@@ -303,6 +304,10 @@ nf_nat_ipv6_fn(const struct nf_hook_ops *ops, struct sk_buff *skb,
 		 */
 		if (!nf_nat_initialized(ct, maniptype)) {
 			unsigned int ret;
+
+			/* Ignore nft chains with wrong netns. */
+			if (!is_valid_netns(ops, ct))
+				return NF_ACCEPT;
 
 			ret = do_chain(ops, skb, state, ct);
 			if (ret != NF_ACCEPT)
