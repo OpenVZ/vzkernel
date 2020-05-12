@@ -78,4 +78,24 @@ static inline bool nf_nat_oif_changed(unsigned int hooknum,
 #endif
 }
 
+/*
+ * Check if nft chain's netns fits conntrack netns.
+ * Uses ops->is_nft_ops flag to detect nft ops.
+ * If ops is not nft-related, the check is considered passed.
+ */
+#define is_valid_netns(ops, ct) ({					\
+	const struct nft_chain *__chain;				\
+	const struct net *__chain_net;					\
+	const struct net *__net;					\
+	bool __ret;							\
+									\
+	if (ops->is_nft_ops) {						\
+		__chain = ops->priv;					\
+		__chain_net = read_pnet(&nft_base_chain(__chain)->pnet);\
+		__net = nf_ct_net(ct);					\
+		__ret = net_eq(__net, __chain_net);			\
+	} else								\
+		__ret = true;						\
+	__ret;								\
+})
 #endif
