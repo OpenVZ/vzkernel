@@ -1457,6 +1457,7 @@ static int nf_tables_newchain(struct net *net, struct sock *nlsk,
 			ops->hooknum	= hook.num;
 			ops->priority	= hook.priority;
 			ops->priv	= chain;
+			ops->is_nft_ops = 1;
 			ops->hook	= afi->hooks[ops->hooknum];
 			if (hookfn)
 				ops->hook = hookfn;
