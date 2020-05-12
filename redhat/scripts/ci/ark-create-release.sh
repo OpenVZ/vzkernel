@@ -27,8 +27,8 @@ fi
 if [ -n "$BASE_RELEASE" ]; then
 	printf "There's already a release for %s (tagged as %s); if you're trying \
 		to create a new release check out that tag, apply any commits you \
-		want, and then run \"touch localversion && make rh-release && make \
-		rh-release-tag\".\n" "$UPSTREAM_REF" "$BASE_RELEASE"
+		want, and then run \"touch localversion && make dist-release && make \
+		dist-release-tag\".\n" "$UPSTREAM_REF" "$BASE_RELEASE"
 	exit 3
 fi
 
@@ -55,8 +55,8 @@ for patch_url in $MR_PATCHES; do
 done
 
 touch localversion
-make rh-release
-make rh-release-tag
+make dist-release
+make dist-release-tag
 RELEASE=$(git describe)
 git checkout ark-latest
 git reset --hard "$RELEASE"

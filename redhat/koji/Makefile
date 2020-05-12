@@ -27,7 +27,7 @@ buildid: notes
 
 sources: buildid 
 	echo $(BUILDID) > ../../localversion
-	$(MAKE) -C ../ rh-sources
+	$(MAKE) -C ../ dist-sources
 	mv -f ../rpm/SOURCES/* .
 	rm -f ./$(PACKAGE_NAME).spec
 	mv ../rpm/SPECS/$(PACKAGE_NAME).spec .

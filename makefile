@@ -1,4 +1,4 @@
-ifeq ($(filter rh-% rhg-%,$(MAKECMDGOALS)),)
+ifeq ($(filter dist-% distg-%,$(MAKECMDGOALS)),)
 	include Makefile
 endif
 
@@ -8,9 +8,9 @@ ifeq ("$(origin O)", "command line")
   _OUTPUT := "$(abspath $(O))"
   _EXTRA_ARGS := O=$(_OUTPUT)
 endif
-rh-%::
+dist-%::
 	$(MAKE) -C redhat $(@) $(_EXTRA_ARGS)
 
-rhg-%::
+distg-%::
 	$(MAKE) -C redhat $(@) $(_EXTRA_ARGS)
 

@@ -156,8 +156,8 @@ Snapshot Release
    git merge -m "Merge configuration and build scripts" os-build
    # If there's a temporary fix you want in just this build, you can run git-cherry-pick here.
    touch localversion
-   make rh-release
-   make rh-release-tag
+   make dist-release
+   make dist-release-tag
    git push upstream $(git describe)
    git branch -D build-branch
 
@@ -170,8 +170,8 @@ Upstream Release
    git checkout -b ark/"$UPSTREAM_REF" ark/patches/"$UPSTREAM_REF"
    git merge -m "Merge configuration and build scripts" os-build
    touch localversion
-   make rh-release
-   make rh-release-tag
+   make dist-release
+   make dist-release-tag
    git push $(git describe) ark/"$UPSTREAM_REF" ark/patches/"$UPSTREAM_REF"
    git checkout ark-latest && git reset --hard ark/"$UPSTREAM_REF" && git push -f upstream ark-latest
 
@@ -200,7 +200,7 @@ From the release branch/tag, run:
    # localversion sets the buildid, releases should have an empty build id
    rm localversion
    touch localversion
-   make rh-dist-git
+   make dist-dist-git
 
    cd /tmp/RHEL*/kernel
    git commit -a -s -F ../changelog
@@ -219,7 +219,7 @@ From the release branch/tag, run:
    # localversion sets the buildid, releases should have an empty build id
    rm localversion
    touch localversion
-   make DIST=.elrdy rh-dist-git
+   make DIST=.elrdy dist-dist-git
    cd /tmp/RHEL-8*/kernel
    git commit -a -s -F ../changelog
    git push

@@ -47,8 +47,8 @@ if ! git merge -m "Merge '$UPSTREAM_REF' into 'os-build'" "$UPSTREAM_REF"; then
 	exit 1
 fi
 
-make FLAVOR=fedora rh-configs-commit
-make FLAVOR=rhel rh-configs-commit
+make FLAVOR=fedora dist-configs-commit
+make FLAVOR=rhel dist-configs-commit
 
 if git show -s --oneline HEAD | grep -q "AUTOMATIC: New configs"; then
 	./redhat/gen_config_patches.sh

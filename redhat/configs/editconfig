@@ -4,7 +4,7 @@
 #
 # For help, run ./editconfig -h
 #
-# TODO: Is there a way to verify the output?  Maybe run 'make rh-configs' &
+# TODO: Is there a way to verify the output?  Maybe run 'make dist-configs' &
 # 	the process_configs.sh -c tool on the modified CONFIG?  This would
 #	require a modification to process_configs.sh to take a single
 #	CONFIG option but is do-able.

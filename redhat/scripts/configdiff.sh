@@ -18,7 +18,7 @@ get_configarch()
     # to the srcarch used in the $RHCP_RHEL/pending-common/generic path.
     file=$1
 
-    # make rh-configs-prep uses <package-name>-<arch>-<variant>.config
+    # make dist-configs-prep uses <package-name>-<arch>-<variant>.config
     # the trick is to get the <package-name> and filter it out
     arch="$(echo "$file" | sed "s/$PACKAGE_NAME-\([^-]*\).*.config/\1/")"
 
@@ -159,5 +159,5 @@ generate_rh_config()
     rm -rf $WORK
 }
 
-make rh-configs-prep > /dev/null || die "Failed make rh-prep"
+make dist-configs-prep > /dev/null || die "Failed make dist-prep"
 generate_rh_config

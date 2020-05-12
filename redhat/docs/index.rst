@@ -40,7 +40,7 @@ Once GitLab finishes forking the repository (this can take a while):
    git checkout upstream/ark-latest
    # If you're on Fedora, you need to run:
    # ln -s /usr/bin/python3 /usr/libexec/platform-python
-   make rh-srpm
+   make dist-srpm
    sudo dnf builddep -y redhat/rpm/SPECS/kernel.spec
 
 
@@ -60,8 +60,8 @@ patches) , a sub-system maintainer's tree, or your own creation.
    git merge -m "Merge branch 'os-build'"  os-build
    # Fedora carries a patch to alter this setting, so we need to change the configuration to build a vanilla tree.
    sed -i 's/=13/=11/g' redhat/configs/fedora/generic/arm/aarch64/CONFIG_FORCE_MAX_ZONEORDER
-   # If you're targeting RHEL and have brew/rhpkg installed, use "make DIST=.elrdy rh-srpm" instead
-   make rh-srpm
+   # If you're targeting RHEL and have brew/rhpkg installed, use "make DIST=.elrdy dist-srpm" instead
+   make dist-srpm
 
 You can now build the SRPM however you like:
 
@@ -73,7 +73,7 @@ You can now build the SRPM however you like:
    koji build --scratch rawhide redhat/rpm/SRPMS/kernel*src.rpm
 
 Want to add a patch? Just git-cherry-pick it or apply it with git-am and
-re-run ``make rh-srpm``. Change configurations in ``redhat/configs/``
+re-run ``make dist-srpm``. Change configurations in ``redhat/configs/``
 (consult the repository layout for details on this).
 
 

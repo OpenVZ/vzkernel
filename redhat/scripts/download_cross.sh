@@ -26,7 +26,7 @@ fi
 
 # if we're not root, all we can do now is see what's installed
 if [ "$(whoami)" != "root" ]; then
-	echo "Checking for RHEL7 cross compile packages.  If this fails, run \"make rh-cross-download\" as root."
+	echo "Checking for RHEL7 cross compile packages.  If this fails, run \"make dist-cross-download\" as root."
 	rpm -q $@
 	if [ $? == 0 ]; then
 		echo "Compilers found."

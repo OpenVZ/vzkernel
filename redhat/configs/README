@@ -39,7 +39,7 @@ been reviewed by Fedora kernel maintainers. Since the Fedora kernel turns on
 more configuration options than ARK, there are often settings that are not set
 to default in pending-common. These settings are moved to the fedora/
 configuration directory after community review. Options are populated with
-"make FLAVOR=fedora rh-commit-configs".
+"make FLAVOR=fedora dist-commit-configs".
 
 
 All the configuration options for each arch and variant can be found

@@ -499,7 +499,7 @@ fi
 # Find configs that are requested but do not exist in the final .configs
 #
 if [ "$FINDDEAD" ]; then
-	(cd ..; make rh-configs)
+	(cd ..; make dist-configs)
 
 	awk '
 		/is not set/ {

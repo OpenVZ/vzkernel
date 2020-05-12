@@ -57,9 +57,9 @@ KABIDW := $(REDHAT)/kabi-dwarf
 
 include Makefile.cross
 
-default: rh-help
+default: dist-help
 
-rh-python-check:
+dist-python-check:
 	@if [ ! -f /usr/libexec/platform-python ]; then \
 		if ! which python3 > /dev/null 2>&1; then \
 			echo "ERROR: Python 3 is needed." ; \
@@ -71,7 +71,7 @@ rh-python-check:
 		exit 1; \
 	fi
 
-rh-kabi: rh-python-check
+dist-kabi: dist-python-check
 	@for KABIARCH in $(ARCH_LIST); do \
 		$(REDHAT)/kabi/show-kabi -k $(REDHAT)/kabi/kabi-module/ -m \
 			-a $$KABIARCH -r $(RHEL_MAJOR).$(RHEL_MINOR) > $(REDHAT)/kabi/Module.kabi_$$KABIARCH;\
@@ -83,7 +83,7 @@ rh-kabi: rh-python-check
 	done;
 	@(cd $(REDHAT)/kabi/ && ln -Tsf kabi-rhel$(RHEL_MAJOR)$(RHEL_MINOR) kabi-current)
 
-rh-kabi-dup: rh-python-check
+dist-kabi-dup: dist-python-check
 	@for KABIARCH in $(ARCH_LIST); do \
 		touch $(REDHAT)/kabi/Module.kabi_dup_$$KABIARCH;\
 		if [ -d $(REDHAT)/kabi/kabi-dup-module/kabi_$$KABIARCH ]; then \
@@ -93,7 +93,7 @@ rh-kabi-dup: rh-python-check
 		fi \
 	done;
 
-rh-check-kabi: rh-kabi
+dist-check-kabi: dist-kabi
 	@if [ ! -e $(_OUTPUT)/Module.symvers ]; then \
 		echo "ERROR: You must compile the kernel and modules first";\
 		exit 1;\
@@ -101,7 +101,7 @@ rh-check-kabi: rh-kabi
 	@$(REDHAT)/kabi/check-kabi -k $(REDHAT)/kabi/Module.kabi_$(MACH) \
 	 -s $(_OUTPUT)/Module.symvers
 
-rh-check-kabi-dup: rh-kabi-dup
+dist-check-kabi-dup: dist-kabi-dup
 	@if [ ! -e $(_OUTPUT)/Module.symvers ]; then \
 		echo "ERROR: You must compile the kernel and modules first";\
 		exit 1;\
@@ -109,18 +109,18 @@ rh-check-kabi-dup: rh-kabi-dup
 	@$(REDHAT)/kabi/check-kabi -k $(REDHAT)/kabi/Module.kabi_dup_$(MACH) \
 	-s $(_OUTPUT)/Module.symvers
 
-rh-kabi-dw-base: rh-kabi
+dist-kabi-dw-base: dist-kabi
 	@echo "Generating baseline dataset for KABI DWARF-based comparison..."
 	@echo "**** GENERATING DWARF-based kABI baseline dataset ****"
 	@$(KABIDW)/run_kabi-dw.sh generate \
 		$(REDHAT)/kabi/kabi-current/kabi_whitelist_$(CURARCH) \
 		$(_OUTPUT) $(KABIDW)/base/$(CURARCH)/
 
-rh-kabi-dw-check: rh-kabi
+dist-kabi-dw-check: dist-kabi
 	@if [ ! -d $(KABIDW)/base/$(CURARCH) ]; then \
 		echo "**** ERROR: ****"; \
 		echo "Comparison base not found in $(KABIDW)/base/$(CURARCH)."; \
-		echo "Please run \"make rh-kabi-dw-base\" first!"; \
+		echo "Please run \"make dist-kabi-dw-base\" first!"; \
 		exit 1; \
 	fi
 	@echo "**** GENERATING DWARF-based kABI dataset ****"
@@ -133,42 +133,42 @@ rh-kabi-dw-check: rh-kabi
 	@echo "**** End of KABI DWARF-based comparison report ****"
 	@rm -rf $(KABIDW)/base/$(CURARCH).tmp
 
-rh-configs-commit: rh-configs-prep
+dist-configs-commit: dist-configs-prep
 	@cd $(REDHAT)/configs; VERSION=$(KVERSION) ./generate_all_configs.sh $(FLAVOR) 1; \
 	./process_configs.sh -z $(PACKAGE_NAME) $(KVERSION) "" $(FLAVOR)
 
-rh-configs: rh-configs-prep
+dist-configs: dist-configs-prep
 	@cd $(REDHAT)/configs; VERSION=$(KVERSION) ./generate_all_configs.sh rhel 1; \
 	./process_configs.sh $(PROCESS_CONFIGS_OPTS) $(PACKAGE_NAME) $(KVERSION)
 
-rh-configs-check: rh-configs-prep
+dist-configs-check: dist-configs-prep
 	cd $(REDHAT)/configs; ./process_configs.sh $(PROCESS_CONFIGS_CHECK_OPTS) $(PACKAGE_NAME)
 
-rh-configs-prep: rh-clean-configs
+dist-configs-prep: dist-clean-configs
 	cd $(REDHAT)/configs; TARGET=$(DIST_TARGET) ./build_configs.sh $(PACKAGE_NAME) $(ARCH_MACH)
 
-rh-configs-arch: ARCH_MACH = $(MACH)
-rh-configs-arch: rh-configs
+dist-configs-arch: ARCH_MACH = $(MACH)
+dist-configs-arch: dist-configs
 
-rh-clean-configs:
+dist-clean-configs:
 	cd $(REDHAT)/configs; rm -f kernel-*.config \
 					kernel-*.config.orig \
 					kernel-*.config.tmp
 
-rh-clean-sources:
+dist-clean-sources:
 	@rm -f $(RPM)/SPECS/*
 	@for i in $(SOURCES)/*; do \
 		rm -f $$i; \
 	done;
 
-rh-clean-rpmdirs:
+dist-clean-rpmdirs:
 	@for i in $(RPM)/{BUILD,SRPMS,RPMS,SPECS}/*; do \
 		rm -rf $$i; \
 	done;
 
-rh-clean: rh-clean-sources rh-clean-configs rh-clean-rpmdirs
+dist-clean: dist-clean-sources dist-clean-configs dist-clean-rpmdirs
 
-rh-stub-key:
+dist-stub-key:
 	@echo "Copying pre-generated keys";
 	@echo "*** THIS IS NOT RECOMMENDED ***";
 	@echo "To be safe, keys should be created once for every build";
@@ -197,7 +197,7 @@ $(KABIDW_TARBALL):
 	@(cd kabi-dwarf && tar cjvf $(SOURCES)/$(KABIDW_TARFILE) base run_kabi-dw.sh)
 
 
-rh-git-version-check:
+dist-git-version-check:
 	@# genspec.sh uses pathspec magic that wasn't introduced until version 2.13
 	@IFS=" ."; \
 	set -- $$(git --version); \
@@ -207,7 +207,7 @@ rh-git-version-check:
 		exit 1; \
 	fi
 
-setup-source: rh-git-version-check rh-clean-sources
+setup-source: dist-git-version-check dist-clean-sources
 	@cp $(REDHAT)/$(SPECFILE).template $(SOURCES)/$(SPECFILE)
 	@if [ ! -e  $(REDHAT)/$(CHANGELOG) ]; then \
 		echo "Creating $(CHANGELOG) as copy of $(CHANGELOG_PREV)"; \
@@ -230,7 +230,7 @@ sources-rh: $(TARBALL)
 	@($(FILTERDIFF) $(TESTPATCH).tmp | egrep -v "^index|^diff" >$(TESTPATCH).tmp2; true)
 	@mv $(TESTPATCH).tmp2 $(TESTPATCH).tmp
 	@diff $(TESTPATCH).tmp $(TESTPATCH) > /dev/null || \
-		echo "WARNING: There are uncommitted changes in your tree or the changes are not in sync with linux-kernel-test.patch.  Either commit the changes or run 'make rh-test-patch'"
+		echo "WARNING: There are uncommitted changes in your tree or the changes are not in sync with linux-kernel-test.patch.  Either commit the changes or run 'make dist-test-patch'"
 	@rm $(TESTPATCH).tmp
 	@cp $(TESTPATCH) $(SOURCES)/linux-kernel-test.patch
 	@cp fedora_files/* $(SOURCES);
@@ -262,197 +262,208 @@ sources-rh: $(TARBALL)
 	fi
 	@(cd kabi-dwarf && tar cjvf $(SOURCES)/$(KABIDW_TARFILE) base run_kabi-dw.sh)
 
-rh-sources: setup-source rh-configs-check rh-kabi rh-kabi-dup sources-rh
+dist-sources: setup-source dist-configs-check dist-kabi dist-kabi-dup sources-rh
 
-rh-test-patch:
+dist-test-patch:
 	@git diff --no-renames HEAD > $(TESTPATCH);
 	@($(FILTERDIFF) $(TESTPATCH) | egrep -v "^index|^diff" >$(TESTPATCH).tmp; true)
 	@mv $(TESTPATCH).tmp $(TESTPATCH);
 
-rh-all-rpms: rh-sources
+dist-all-rpms: dist-sources
 	$(RPMBUILD) --define "_sourcedir $(SOURCES)" --define "_builddir $(RPM)/BUILD" --define "_srcrpmdir $(RPM)/SRPMS" --define "_rpmdir $(RPM)/RPMS" --define "_specdir $(RPM)/SPECS" --define "dist $(DIST)" --target $(MACH) -ba $(RPM)/SOURCES/$(PACKAGE_NAME).spec
 
-rh-srpm: rh-sources
+dist-srpm: dist-sources
 	$(RPMBUILD) --define "_sourcedir $(SOURCES)" --define "_builddir $(RPM)/BUILD" --define "_srcrpmdir $(RPM)/SRPMS" --define "_rpmdir $(RPM)/RPMS" --define "_specdir $(RPM)/SPECS" --define "dist $(DIST)" --nodeps -bs $(RPM)/SOURCES/$(PACKAGE_NAME).spec
 
-rh-srpm-gcov:
-	make rh-sources BUILDID=".gcov" BUILDOPTS="+gcov"
+dist-srpm-gcov:
+	make dist-sources BUILDID=".gcov" BUILDOPTS="+gcov"
 	$(RPMBUILD) --define "_sourcedir $(SOURCES)" --define "_builddir $(RPM)/BUILD" --define "_srcrpmdir $(RPM)/SRPMS" --define "_rpmdir $(RPM)/RPMS" --define "_specdir $(RPM)/SPECS" --define "dist $(DIST)" --nodeps -bs $(RPM)/SOURCES/$(PACKAGE_NAME).spec
 
-rh-rpms: rh-sources
+dist-rpms: dist-sources
 	$(RPMBUILD) --define "_sourcedir $(SOURCES)" --define "_builddir $(RPM)/BUILD" --define "_srcrpmdir $(RPM)/SRPMS" --define "_rpmdir $(RPM)/RPMS" --define "_specdir $(RPM)/SPECS" --define "dist $(DIST)" --target $(MACH) -bb $(RPM)/SOURCES/$(PACKAGE_NAME).spec
 
-rh-kernel-%: rh-sources
+dist-kernel-%: dist-sources
 	$(RPMBUILD) --define "_sourcedir $(SOURCES)" --define "_builddir $(RPM)/BUILD" --define "_srcrpmdir $(RPM)/SRPMS" --define "_rpmdir $(RPM)/RPMS" --define "_specdir $(RPM)/SPECS" --define "dist $(DIST)" --target $(MACH) --with $* --without vdso_install --without perf --without tools -bb $(RPM)/SOURCES/$(PACKAGE_NAME).spec
 
-rh-prep: rh-sources
+dist-prep: dist-sources
 	$(RPMBUILD) --define "_sourcedir $(SOURCES)" --define "_builddir $(RPM)/BUILD" --define "_srcrpmdir $(RPM)/SRPMS" --define "_rpmdir $(RPM)/RPMS" --define "_specdir $(RPM)/SPECS" --define "dist $(DIST)" --nodeps --target noarch -bp $(RPM)/SOURCES/$(PACKAGE_NAME).spec
 
-rh-perf: rh-sources
+dist-perf: dist-sources
 	$(RPMBUILD) --define "_sourcedir $(SOURCES)" --define "_builddir $(RPM)/BUILD" --define "_srcrpmdir $(RPM)/SRPMS" --define "_rpmdir $(RPM)/RPMS" --define "_specdir $(RPM)/SPECS" --define "dist $(DIST)" --without up --without smp --without zfcpdump --without debug --without doc --without headers --without  --without doc --without debuginfo --target $(MACH) -bb $(RPM)/SOURCES/$(PACKAGE_NAME).spec
 
-rh-rpm-baseonly: rh-sources
+dist-rpm-baseonly: dist-sources
 	$(RPMBUILD) --define "_sourcedir $(SOURCES)" --define "_builddir $(RPM)/BUILD" --define "_srcrpmdir $(RPM)/SRPMS" --define "_rpmdir $(RPM)/RPMS" --define "_specdir $(RPM)/SPECS" --define "dist $(DIST)" --target $(MACH) --without debug --without debuginfo --without vdso_install --without bpftool --without perf --without tools -bb $(RPM)/SOURCES/$(PACKAGE_NAME).spec
 
 
 # unless you know what you're doing, you don't want to use the next three ones
-rh-release-finish: setup-source
+dist-release-finish: setup-source
 	@cp $(SOURCES)/$(CHANGELOG) $(REDHAT)/$(CHANGELOG)
 	@git add $(REDHAT)/$(CHANGELOG)
 	@echo $(MARKER) > $(REDHAT)/marker
 	@git add $(REDHAT)/marker
 	@git commit -s ../Makefile.rhelver $(REDHAT)/marker $(REDHAT)/$(CHANGELOG) $(PACKAGE_NAME).spec.template -m "[redhat] $(PACKAGE_NAME)-$(STAMP_VERSION)-$(PREBUILD)$(BUILD)$(BUILDID)"
-	@$(MAKE) rh-configs
-	@$(MAKE) rh-kabi
-	@$(MAKE) rh-kabi-dup
+	@$(MAKE) dist-configs
+	@$(MAKE) dist-kabi
+	@$(MAKE) dist-kabi-dup
 	@$(MAKE) sources-rh
-rh-release: rh-clean-sources
+dist-release: dist-clean-sources
 	@$(REDHAT)/scripts/new_release.sh $(REDHAT) $(__YSTREAM) $(__ZSTREAM)
-	@$(MAKE) rh-release-finish
-rh-release-tag:
+	@$(MAKE) dist-release-finish
+dist-release-tag:
 	@git tag -a -m "$(PACKAGE_NAME)-$(STAMP_VERSION)-$(PKGRELEASE)" $(PACKAGE_NAME)-$(STAMP_VERSION)-$(PKGRELEASE)
 
-.PHONY: rh-brew rh-koji
-rh-brew : BUILD_FLAGS ?= $(BREW_FLAGS) $(TEST_FLAGS)
-rh-koji : BUILD_FLAGS ?= $(KOJI_FLAGS) $(TEST_FLAGS)
-rhg-brew: BUILD_FLAGS ?= $(BREW_FLAGS) $(TEST_FLAGS)
-rhg-koji: BUILD_FLAGS ?= $(KOJI_FLAGS) $(TEST_FLAGS)
+.PHONY: dist-brew dist-koji
+dist-brew : BUILD_FLAGS ?= $(BREW_FLAGS) $(TEST_FLAGS)
+dist-koji : BUILD_FLAGS ?= $(KOJI_FLAGS) $(TEST_FLAGS)
+distg-brew: BUILD_FLAGS ?= $(BREW_FLAGS) $(TEST_FLAGS)
+distg-koji: BUILD_FLAGS ?= $(KOJI_FLAGS) $(TEST_FLAGS)
 
-rh-brew rh-koji: rh-%: rh-srpm
+dist-brew dist-koji: dist-%: dist-srpm
 	$* build $(BUILD_FLAGS) $(BUILD_TARGET) $(SRPMS)/$(PACKAGE_NAME)-$(KVERSION)-$(PKGRELEASE)$(DIST).src.rpm $(OUTPUT_FILE)
 
-rhg-brew rhg-koji: rhg-%:
+distg-brew distg-koji: distg-%:
 	$* build $(BUILD_FLAGS) $(BUILD_TARGET) "$(RHGITURL)?redhat/koji#$(RHGITCOMMIT)"
 
 .PHONY: $(REDHAT)/rpm/SOURCES/$(PACKAGE_NAME).spec
 $(REDHAT)/rpm/SOURCES/$(PACKAGE_NAME).spec:
-	@echo "rh-sources"
-	@$(MAKE) rh-sources
+	@echo "dist-sources"
+	@$(MAKE) dist-sources
 
-rh-dist-git-test: export RH_DIST_GIT_TEST="1"
-rh-dist-git-test: rh-dist-git
+dist-git-test: export RH_DIST_GIT_TEST="1"
+dist-git-test: dist-git
 
-rh-dist-git: rh-srpm $(TARBALL) $(KABI_TARBALL) $(KABIDW_TARBALL)
+dist-git: dist-srpm $(TARBALL) $(KABI_TARBALL) $(KABIDW_TARBALL)
 ifeq ("$(RHDISTGIT_BRANCH)", "")
  $(error RHDISTGIT_BRANCH unset)
 endif
 	$(REDHAT)/scripts/rh-dist-git.sh "$(RHDISTGIT_BRANCH)" "$(RHDISTGIT_CACHE)" "$(RHDISTGIT_TMP)" "$(RHDISTGIT)" "$(TARBALL)" "$(KABI_TARBALL)" "$(KABIDW_TARBALL)" "$(__ZSTREAM)" "$(PACKAGE_NAME)" "$(RHEL_MAJOR)" "$(RHPKG_BIN)" "$(SRPMS)/$(PACKAGE_NAME)-$(KVERSION)-$(PKGRELEASE)$(DIST).src.rpm"
 
-rh-rtg: rh-release
-	@$(MAKE) rh-release-tag
-	@$(MAKE) rh-dist-git
+dist-rtg: dist-release
+	@$(MAKE) dist-release-tag
+	@$(MAKE) dist-git
 
 # RH_LATEST returns the value of the latest "known good" kernel from brew.
 # This should not be confused with the latest top-of-tree development tag.
-rh-get-latest:
+dist-get-latest:
 	$(eval RH_LATEST:=$(shell brew latest-pkg --quiet rhel-${RHEL_MAJOR}.${RHEL_MINOR}.0-candidate kernel | awk ' { print $$1 } '))
 	@echo "The latest kernel package tag is ${RH_LATEST}."
 
-rh-os-version:
+dist-os-version:
 	@echo "OSVERSION: $(RHEL_MAJOR).$(RHEL_MINOR)"
 
-rh-help:
+dist-help:
 	@echo  'Cleaning targets:'
-	@echo  '  rh-clean          - Clean redhat/configs/ and redhat/rpm/ directories.'
+	@echo  '  dist-clean          - Clean redhat/configs/ and redhat/rpm/ directories.'
 	@echo  ''
 	@echo  'Building targets:'
-	@echo  '  rh-srpm           - Create a source RPM.'
-	@echo  '  rh-all-rpms       - Create a source RPM and build binary RPMs locally.'
-	@echo  '  rh-brew           - Create a source RPM and call brew to build binary RPMs.'
-	@echo  '  rhg-brew          - Build RPMs using a remote git repo. [Configuration needed.]'
-	@echo  '  rh-cross-all-rpms - Build RPMs for all supported archs using a cross compiler.'
+	@echo  '  dist-srpm           - Create a source RPM.'
+	@echo  '  dist-all-rpms       - Create a source RPM and build binary RPMs locally.'
+	@echo  '  dist-brew           - Create a source RPM and call brew to build binary RPMs.'
+	@echo  '  distg-brew          - Build RPMs using a remote git repo.'
+	@echo  '                        [Configuration needed.]'
+	@echo  '  dist-cross-all-rpms - Build RPMs for all supported archs using a cross'
+	@echo  '                        compiler.'
 	@echo  ''
 	@echo  'Configuration targets:'
-	@echo  '  rh-configs        - Create RHEL config files in redhat/config/.'
+	@echo  '  dist-configs        - Create RHEL config files in redhat/config/.'
 	@echo  ''
-	@echo  'For detailed description and full list of targets, run `make rh-full-help`.'
+	@echo  'For detailed description and full list of targets, run `make dist-full-help`.'
 	@echo  ''
 
-rh-full-help:
+dist-full-help:
 	@echo  'Cleaning targets:'
-	@echo  '  rh-clean            - Do rh-clean-sources, rh-clean-configs, & rh-clean-rpmdirs.'
-	@echo  '  rh-clean-sources    - Clean the redhat/rpm/SOURCES/ directory.'
-	@echo  '  rh-clean-configs    - Clean the redhat/configs/ directory.'
-	@echo  '  rh-clean-rpmdirs    - Clean the redhat/rpm/{BUILD,SRPMS,RPMS,SPECS}/ directories.'
+	@echo  '  dist-clean            - Do dist-clean-sources, dist-clean-configs, &'
+	@echo  '                          dist-clean-rpmdirs.'
+	@echo  '  dist-clean-sources    - Clean the redhat/rpm/SOURCES/ directory.'
+	@echo  '  dist-clean-configs    - Clean the redhat/configs/ directory.'
+	@echo  '  dist-clean-rpmdirs    - Clean the redhat/rpm/{BUILD,SRPMS,RPMS,SPECS}/'
+	@echo  '                          directories.'
 	@echo  ''
 	@echo  'Building targets:'
 	@echo  ' All RPM/SRPM files will be put under the redhat/rpm/ directory.'
 	@echo  ''
-	@echo  '  rh-srpm       - Create a source RPM and put it into the redhat/rpm/SRPMS/ directory.'
-	@echo  '                  See the rh-brew target for available options.'
-	@echo  '  rh-srpm-gcov  - Create a source RPM with gcov enabled and put it into the'
-	@echo  '                  redhat/rpm/SRPMS/ directory.'
-	@echo  '  rh-brew       - Create a kernel SRPM and then call brew to build the created SRPM.'
-	@echo  '                  Add BUILDOPTS="+<opt> -<opt> [...]" to enable/disable build options.'
-	@echo  '                  Available <opt>s and their default values:' \
+	@echo  '  dist-srpm       - Create a source RPM and put it into the redhat/rpm/SRPMS/'
+	@echo  '                    directory.  See the dist-brew target for available options.'
+	@echo  '  dist-srpm-gcov  - Create a source RPM with gcov enabled and put it into the'
+	@echo  '                    redhat/rpm/SRPMS/ directory.'
+	@echo  '  dist-brew       - Create a kernel SRPM and then call brew to build the'
+	@echo  '                    created SRPM.  Add BUILDOPTS="+<opt> -<opt> [...]" to'
+	@echo  '                    enable/disable build options.'
+	@echo  '                    Available <opt>s and their default values:' \
 		$$(sed -n -e 's/^%define with_\([^ \t]*\).*\?_without_.*/+\1/p' \
 		          -e 's/^%define with_\([^ \t]*\).*\?_with_.*/-\1/p' kernel.spec.template | \
-		grep -v 'only$$') | fmt -90
-	@echo  '  rh-koji       - Create a kernel SRPM and then call koji to build the created SRPM.'
-	@echo  '                  See the rh-brew target for available options.'
-	@echo  '  rhg-brew      - Pass HEAD of the current git branch to brew to build an RPM set.'
-	@echo  '                  Do not forget to push to the remote repository first.'
-	@echo  '                  Preceed make command by RHGITCOMMIT=<commitID> to specify commit ID'
-	@echo  '                  to use.'
-	@echo  '                  To set the remote repo, invoke: git config rhg.url git://<repo_path>'
-	@echo  '  rhg-koji      - Pass HEAD of the current git branch to koji to build an RPM set.'
-	@echo  '                  Do not forget to push to the remote repository first.'
-	@echo  '                  See the rhg-brew target for options and configuration.'
-	@echo  '  rh-rpms       - Create the binary RPMS for the kernel.'
-	@echo  '                  See the rh-brew target for available options.'
-	@echo  '  rh-rpm-baseonly  - Create the binary RPMS for the kernel and modules only (no'
-	@echo  '                     userspace tools or debuginfo).'
-	@echo  '  rh-kernel-<type> - Create  binary RPMS for a particular kernel type.'
-	@echo  '                     Available <type>s:'\
+		grep -v 'only$$') | fmt -80
+	@echo  '  dist-koji       - Create a kernel SRPM and then call koji to build the'
+	@echo  '                    created SRPM.  See the dist-brew target for available'
+	@echo  '                    options.'
+	@echo  '  distg-brew      - Pass HEAD of the current git branch to brew to build an'
+	@echo  '                    RPM set.  Do not forget to push to the remote repository'
+	@echo  '                    first.  Preceed make command by RHGITCOMMIT=<commitID>'
+	@echo  '                    specify commit ID to use.'
+	@echo  '                    To set the remote repo, invoke:'
+	@echo  '                         git config rhg.url git://<repo_path>'
+	@echo  '  distg-koji      - Pass HEAD of the current git branch to koji to build an'
+	@echo  '                    RPM set.  Do not forget to push to the remote repository'
+	@echo  '                    first.  See the distg-brew target for options and'
+	@echo  '                    configuration.'
+	@echo  '  dist-rpms       - Create the binary RPMS for the kernel.'
+	@echo  '                    See the dist-brew target for available options.'
+	@echo  '  dist-rpm-baseonly  - Create the binary RPMS for the kernel and modules'
+	@echo  '                       (no userspace tools or debuginfo).'
+	@echo  '  dist-kernel-<type> - Create  binary RPMS for a particular kernel type.'
+	@echo  '                       Available <type>s:'\
 		$$(sed -n 's/^%define with_\([^ ]*only\).*/\1/p' kernel.spec.template)
 
-	@echo  '  rh-all-rpms   - Create the binary RPMS and the SRPM for the kernel.'
-	@echo  '                  See the rh-brew target for available options.'
-	@echo  '  rh-prep       - Setup the redhat/rpm/BUILD/ directory with the kernel source.'
-	@echo  '                  See the rh-brew target for available options.'
-	@echo  '  rh-test-patch - Create a diff against HEAD and put it in linux-kernel-test.patch.'
-	@echo  '                  Then linux-kernel-test.patch will be added to the kernel build.'
-	@echo  '  rh-stub-key   - Use pre generated keys to speed local test builds.'
-	@echo  '  rh-cross-download     - [x86_64 only] download cross compiler rpms.'
-	@echo  '  rh-cross-all-builds   - [x86_64 only] execute "rpmbuild -bc" for all supported'
-	@echo  '                          archs using RHEL cross compiler.'
-	@echo  '  rh-cross-<arch>-build - [x86_64 only] execute "rpmbuild -bc" for specified'
-	@echo  '                          <arch> using RHEL cross compiler.'
-	@echo  '                          Supported <arch>s: x86_64'\
+	@echo  '  dist-all-rpms   - Create the binary RPMS and the SRPM for the kernel.'
+	@echo  '                    See the dist-brew target for available options.'
+	@echo  '  dist-prep       - Setup the redhat/rpm/BUILD/ directory with the kernel'
+	@echo  '                    source.  See the dist-brew target for available options.'
+	@echo  '  dist-test-patch - Create a diff against HEAD and put it in'
+	@echo  '                    linux-kernel-test.patch.  This patch will'
+	@echo  '                    be added to the kernel build.'
+	@echo  '  dist-stub-key   - Use pre generated keys to speed local test builds.'
+	@echo  '  dist-cross-download     - [x86_64 only] download cross compiler rpms.'
+	@echo  '  dist-cross-all-builds   - [x86_64 only] execute "rpmbuild -bc" for all'
+	@echo  '                            supported archs using RHEL cross compiler.'
+	@echo  '  dist-cross-<arch>-build - [x86_64 only] execute "rpmbuild -bc" for specified'
+	@echo  '                            <arch> using RHEL cross compiler.'
+	@echo  '                            Supported <arch>s: x86_64'\
 		$$(sed -n 's/.*--target \([^ ]*\).*/\1/p' Makefile.cross | sort -u)
-	@echo  '  rh-cross-all-rpms     - [x86_64 only] execute rpm builds for all supported'
-	@echo  '                          archs using RHEL cross compiler.'
-	@echo  '  rh-cross-<arch>-rpm   - [x86_64 only] execute rpm builds for specified'
-	@echo  '                          <arch> using RHEL cross compiler.'
-	@echo  '                          See rh-cross-<arch>-build for the supported archs.'
+	@echo  '  dist-cross-all-rpms     - [x86_64 only] execute rpm builds for all supported'
+	@echo  '                            archs using RHEL cross compiler.'
+	@echo  '  dist-cross-<arch>-rpm   - [x86_64 only] execute rpm builds for specified'
+	@echo  '                            <arch> using RHEL cross compiler.'
+	@echo  '                            See dist-cross-<arch>-build for the supported archs.'
 
 	@echo  ''
 	@echo  'kABI targets:'
-	@echo  '  rh-kabi           - Create kABI whitelist files in redhat/kabi/kabi-rhel*/ and'
-	@echo  '                      merge kABI checksums into redhat/kabi/Module.kabi_*.'
-	@echo  '  rh-kabi-dup       - Merge kABI checksums for Driver Update Program (DUP) whitelist'
-	@echo  '                      into redhat/kabi/Module.kabi_dup_*.'
-	@echo  '  rh-check-kabi     - Check for changes in kABI whitelisted symbols.'
-	@echo  '                      Requires a pre-compiled tree: run `make rh-configs`, copy the'
-	@echo  '                      relevant config file from redhat/configs/ to .config, run `make`.'
-	@echo  '  rh-check-kabi-dup - Like rh-check-kabi but uses a DUP kABI whitelist.'
-	@echo  '  rh-kabi-dw-base   - Generate the base dataset for kABI DWARF-based check.'
-	@echo  '  rh-kabi-dw-check  - Run DWARF-based kABI comparison of current binaries with the base'
-	@echo  '                      dataset.'
+	@echo  '  dist-kabi           - Create kABI whitelist files in redhat/kabi/kabi-rhel*/'
+	@echo  '                        and merge kABI checksums into redhat/kabi/Module.kabi_*.'
+	@echo  '  dist-kabi-dup       - Merge kABI checksums for Driver Update Program (DUP)'
+	@echo  '                        into redhat/kabi/Module.kabi_dup_*.'
+	@echo  '  dist-check-kabi     - Check for changes in kABI whitelisted symbols.'
+	@echo  '                        Requires a pre-compiled tree: run `make dist-configs`,'
+	@echo  '                        copy the relevant config file from redhat/configs/ to'
+	@echo  '                       .config, and run `make`.'
+	@echo  '  dist-check-kabi-dup - Like dist-check-kabi but uses a DUP kABI whitelist.'
+	@echo  '  dist-kabi-dw-base   - Generate the base dataset for kABI DWARF-based check.'
+	@echo  '  dist-kabi-dw-check  - Run DWARF-based kABI comparison of current binaries'
+	@echo  '                        with the base dataset.'
 
 	@echo  ''
 	@echo  'Configuration targets:'
-	@echo  '  rh-configs  - Creates config files for RHEL $(RHEL_MAJOR) architectures, cleans them'
-	@echo  '                by running make nonint_oldconfig, and copies them to'
-	@echo  '                redhat/configs/ directory. This is the target to use for a config!'
-	@echo  '                Copy the config file you want from the redhat/configs/ directory'
-	@echo  '                to .config.'
-	@echo  '  rh-configs-arch  - Same as rh-configs but for single architecture only.'
+	@echo  '  dist-configs  - Creates config files for RHEL $(RHEL_MAJOR) architectures,'
+	@echo  '                  cleans them by running make nonint_oldconfig, and copies'
+	@echo  '                  them to redhat/configs/ directory. This is the target to use'
+	@echo  '                  for a config!  Copy the config file you want from the'
+	@echo  '                  redhat/configs/ directory to .config'
+	@echo  '  dist-configs-arch  - Same as dist-configs but for single architecture only.'
 
 	@echo  ''
 	@echo  'Misc targets:'
-	@echo  '  rh-get-latest - Returns the latest "known good" kernel from brew. This should not'
-	@echo  '                  be confused with the latest top-of-tree development tag.'
-	@echo  '  rh-os-version - Displays the current Red Hat Enterprise Linux version target used'
-	@echo  '                  by the current branch/tree.'
+	@echo  '  dist-get-latest - Returns the latest "known good" kernel from brew. This'
+	@echo  '                    should not be confused with the latest top-of-tree'
+	@echo  '                    development tag.'
+	@echo  '  dist-os-version - Displays the current Red Hat Enterprise Linux versioni'
+	@echo  '                    target used by the current branch/tree.'
 	@echo  ''
