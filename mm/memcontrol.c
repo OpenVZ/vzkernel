@@ -4880,6 +4880,43 @@ static int __memcg_activate_kmem(struct mem_cgroup *memcg,
 	memcg->kmemcg_id = memcg_id;
 	set_bit(KMEM_ACCOUNTED_ACTIVE, &memcg->kmem_account_flags);
 	set_bit(KMEM_ACCOUNTED_ACTIVATED, &memcg->kmem_account_flags);
+
+	/*
+	 * Fake charge to keep kmem > 0 while cgroup is online. This prevents
+	 * premature cgroup destruction due to the following race:
+	 * CPU0:
+	 *       charge_kmem(1); //kmem = 1
+	 *       memcg_uncharge_kmem()
+	 *       {
+	 *       ...
+	 *            kmem = page_counter_uncharge(&memcg->kmem, nr_pages); //kmem = 0
+	 *
+	 *    ----------------------------------------------------------------------
+	 *
+	 *                 CPU1:
+	 *
+	 *        charge_kmem(1); //kmem=1 again
+	 *        ....
+	 *        mem_cgroup_css_offline();
+	 *           memcg_deactivate_kmem() {
+	 *               ...
+	 *               css_get();
+	 *               memcg_kmem_mark_dead(memcg);
+	 *               if (page_counter_read(&memcg->kmem)) //kmem=1, thus return
+	 *                       return;
+	 *           }
+	 *    ----------------------------------------------------------------------
+	 *
+	 *                   CPU0:
+	 *
+	 *            if (kmem)
+	 *                    return;
+	 *            if (memcg_kmem_test_and_clear_dead(memcg))
+	 *                    css_put(&memcg->css);              //kill memcg with kmem != 0
+	 *
+	 *       }
+	 */
+	page_counter_charge(&memcg->kmem, 1);
 out:
 	return err;
 }
@@ -6197,7 +6234,8 @@ static void memcg_deactivate_kmem(struct mem_cgroup *memcg)
 
 	memcg_kmem_mark_dead(memcg);
 
-	if (page_counter_read(&memcg->kmem))
+	/* Uncharge fake charge from __memcg_activate_kmem() */
+	if (page_counter_uncharge(&memcg->kmem, 1))
 		return;
 
 	/*
