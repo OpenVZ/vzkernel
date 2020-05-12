@@ -1618,6 +1618,8 @@ struct nf_hook_ops *xt_hook_link(const struct xt_table *table, nf_hookfn *fn)
 		ops[i].pf       = table->af;
 		ops[i].hooknum  = hooknum;
 		ops[i].priority = table->priority;
+		ops[i].priv	= NULL;
+		ops[i].is_nft_ops = 0;
 		++i;
 	}
 
