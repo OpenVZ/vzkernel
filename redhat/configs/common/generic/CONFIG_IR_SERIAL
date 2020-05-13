@@ -1,1 +1,1 @@
-CONFIG_IR_SERIAL=m
+# CONFIG_IR_SERIAL is not set
