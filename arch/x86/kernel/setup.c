@@ -734,6 +734,7 @@ static void __init early_reserve_memory(void)
 	trim_snb_memory();
 }
 
+#ifdef CONFIG_RHEL_DIFFERENCES
 static bool valid_amd_processor(__u8 family, const char *model_id)
 {
 	bool valid;
@@ -858,6 +859,9 @@ static void rh_check_supported(void)
 	if (acpi_disabled && !guest)
 		pr_crit("ACPI has been disabled or is not available on this hardware.  This may result in a single cpu boot, incorrect PCI IRQ routing, or boot failure.\n");
 }
+#else
+#define rh_check_supported()
+#endif
 
 /*
  * Dump out kernel offset information on panic.
@@ -1348,9 +1352,7 @@ void __init setup_arch(char **cmdline_p)
 		efi_apply_memmap_quirks();
 #endif
 
-#ifdef CONFIG_RHEL_DIFFERENCES
 	rh_check_supported();
-#endif
 
 	unwind_init();
 }
