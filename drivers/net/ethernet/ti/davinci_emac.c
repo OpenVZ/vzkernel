@@ -723,14 +723,14 @@ static u32 hash_get(u8 *addr)
 }
 
 /**
- * hash_add - Hash function to add mac addr from hash table
+ * emac_hash_add - Hash function to add mac addr from hash table
  * @priv: The DaVinci EMAC private adapter structure
  * @mac_addr: mac address to delete from hash table
  *
  * Adds mac address to the internal hash table
  *
  */
-static int hash_add(struct emac_priv *priv, u8 *mac_addr)
+static int emac_hash_add(struct emac_priv *priv, u8 *mac_addr)
 {
 	struct device *emac_dev = &priv->ndev->dev;
 	u32 rc = 0;
@@ -739,7 +739,7 @@ static int hash_add(struct emac_priv *priv, u8 *mac_addr)
 
 	if (hash_value >= EMAC_NUM_MULTICAST_BITS) {
 		if (netif_msg_drv(priv)) {
-			dev_err(emac_dev, "DaVinci EMAC: hash_add(): Invalid "\
+			dev_err(emac_dev, "DaVinci EMAC: emac_hash_add(): Invalid "\
 				"Hash %08x, should not be greater than %08x",
 				hash_value, (EMAC_NUM_MULTICAST_BITS - 1));
 		}
@@ -765,14 +765,14 @@ static int hash_add(struct emac_priv *priv, u8 *mac_addr)
 }
 
 /**
- * hash_del - Hash function to delete mac addr from hash table
+ * emac_hash_del - Hash function to delete mac addr from hash table
  * @priv: The DaVinci EMAC private adapter structure
  * @mac_addr: mac address to delete from hash table
  *
  * Removes mac address from the internal hash table
  *
  */
-static int hash_del(struct emac_priv *priv, u8 *mac_addr)
+static int emac_hash_del(struct emac_priv *priv, u8 *mac_addr)
 {
 	u32 hash_value;
 	u32 hash_bit;
@@ -822,10 +822,10 @@ static void emac_add_mcast(struct emac_priv *priv, u32 action, u8 *mac_addr)
 
 	switch (action) {
 	case EMAC_MULTICAST_ADD:
-		update = hash_add(priv, mac_addr);
+		update = emac_hash_add(priv, mac_addr);
 		break;
 	case EMAC_MULTICAST_DEL:
-		update = hash_del(priv, mac_addr);
+		update = emac_hash_del(priv, mac_addr);
 		break;
 	case EMAC_ALL_MULTI_SET:
 		update = 1;
@@ -876,8 +876,7 @@ static void emac_dev_mcast_set(struct net_device *ndev)
 		    netdev_mc_count(ndev) > EMAC_DEF_MAX_MULTICAST_ADDRESSES) {
 			mbp_enable = (mbp_enable | EMAC_MBP_RXMCAST);
 			emac_add_mcast(priv, EMAC_ALL_MULTI_SET, NULL);
-		}
-		if (!netdev_mc_empty(ndev)) {
+		} else if (!netdev_mc_empty(ndev)) {
 			struct netdev_hw_addr *ha;
 
 			mbp_enable = (mbp_enable | EMAC_MBP_RXMCAST);
@@ -1894,7 +1893,7 @@ static int davinci_emac_probe(struct platform_device *pdev)
 	}
 
 	/* MAC addr and PHY mask , RMII enable info from platform_data */
-	memcpy(priv->mac_addr, pdata->mac_addr, 6);
+	memcpy(priv->mac_addr, pdata->mac_addr, ETH_ALEN);
 	priv->phy_id = pdata->phy_id;
 	priv->rmii_en = pdata->rmii_en;
 	priv->version = pdata->version;

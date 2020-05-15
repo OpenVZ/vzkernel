@@ -180,17 +180,17 @@ static __init void microblaze_clockevent_init(void)
 	clockevents_register_device(&clockevent_microblaze_timer);
 }
 
-static cycle_t microblaze_read(struct clocksource *cs)
+static u64 microblaze_read(struct clocksource *cs)
 {
 	/* reading actual value of timer 1 */
-	return (cycle_t) (in_be32(TIMER_BASE + TCR1));
+	return (u64) (in_be32(TIMER_BASE + TCR1));
 }
 
 static struct timecounter microblaze_tc = {
 	.cc = NULL,
 };
 
-static cycle_t microblaze_cc_read(const struct cyclecounter *cc)
+static u64 microblaze_cc_read(const struct cyclecounter *cc)
 {
 	return microblaze_read(NULL);
 }
@@ -307,7 +307,7 @@ unsigned long long notrace sched_clock(void)
 	if (timer_initialized) {
 		struct clocksource *cs = &clocksource_microblaze;
 
-		cycle_t cyc = cnt32_to_63(cs->read(NULL)) & LLONG_MAX;
+		u64 cyc = cnt32_to_63(cs->read(NULL)) & LLONG_MAX;
 		return clocksource_cyc2ns(cyc, cs->mult, cs->shift);
 	}
 	return 0;

@@ -60,7 +60,6 @@ struct pt_regs {
 
 #endif /* !__i386__ */
 
-#include <linux/init.h>
 #ifdef CONFIG_PARAVIRT
 #include <asm/paravirt_types.h>
 #endif
@@ -82,6 +81,11 @@ extern void syscall_trace_leave(struct pt_regs *);
 static inline unsigned long regs_return_value(struct pt_regs *regs)
 {
 	return regs->ax;
+}
+
+static inline void regs_set_return_value(struct pt_regs *regs, unsigned long rc)
+{
+	regs->ax = rc;
 }
 
 /*
@@ -119,9 +123,9 @@ static inline int v8086_mode(struct pt_regs *regs)
 #endif
 }
 
-#ifdef CONFIG_X86_64
 static inline bool user_64bit_mode(struct pt_regs *regs)
 {
+#ifdef CONFIG_X86_64
 #ifndef CONFIG_PARAVIRT
 	/*
 	 * On non-paravirt systems, this is the only long mode CPL 3
@@ -132,8 +136,12 @@ static inline bool user_64bit_mode(struct pt_regs *regs)
 	/* Headers are too twisted for this to go in paravirt.h. */
 	return regs->cs == __USER_CS || regs->cs == pv_info.extra_user_64bit_cs;
 #endif
+#else /* !CONFIG_X86_64 */
+	return false;
+#endif
 }
 
+#ifdef CONFIG_X86_64
 #define current_user_stack_pointer()	this_cpu_read(old_rsp)
 /* ia32 vs. x32 difference */
 #define compat_user_stack_pointer()	\
@@ -231,6 +239,22 @@ static inline unsigned long regs_get_kernel_stack_nth(struct pt_regs *regs,
 #endif
 
 #define ARCH_HAS_USER_SINGLE_STEP_INFO
+
+/*
+ * When hitting ptrace_stop(), we cannot return using SYSRET because
+ * that does not restore the full CPU state, only a minimal set.  The
+ * ptracer can change arbitrary register values, which is usually okay
+ * because the usual ptrace stops run off the signal delivery path which
+ * forces IRET; however, ptrace_event() stops happen in arbitrary places
+ * in the kernel and don't force IRET path.
+ *
+ * So force IRET path after a ptrace stop.
+ */
+#define arch_ptrace_stop_needed(code, info)				\
+({									\
+	set_thread_flag(TIF_NOTIFY_RESUME);				\
+	false;								\
+})
 
 struct user_desc;
 extern int do_get_thread_area(struct task_struct *p, int idx,

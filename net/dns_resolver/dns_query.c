@@ -32,8 +32,7 @@
  *   the GNU Lesser General Public License for more details.
  *
  *   You should have received a copy of the GNU Lesser General Public License
- *   along with this library; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ *   along with this library; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/module.h>
@@ -130,6 +129,7 @@ int dns_query(const char *type, const char *name, size_t namelen,
 	}
 
 	down_read(&rkey->sem);
+	set_bit(KEY_FLAG_ROOT_CAN_INVAL, &rkey->flags);
 	rkey->perm |= KEY_USR_VIEW;
 
 	ret = key_validate(rkey);
@@ -141,8 +141,7 @@ int dns_query(const char *type, const char *name, size_t namelen,
 	if (ret)
 		goto put;
 
-	upayload = rcu_dereference_protected(rkey->payload.data,
-					     lockdep_is_held(&rkey->sem));
+	upayload = user_key_payload_locked(rkey);
 	len = upayload->datalen;
 
 	ret = -ENOMEM;

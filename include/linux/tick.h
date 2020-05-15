@@ -10,6 +10,15 @@
 #include <linux/irqflags.h>
 #include <linux/percpu.h>
 #include <linux/hrtimer.h>
+#include <linux/context_tracking_state.h>
+#include <linux/cpumask.h>
+#include <linux/sched.h>
+
+#if defined(CONFIG_GENERIC_CLOCKEVENTS_BROADCAST) && defined(CONFIG_TICK_ONESHOT)
+extern void hotplug_cpu__broadcast_tick_pull(int dead_cpu);
+#else
+static inline void hotplug_cpu__broadcast_tick_pull(int dead_cpu) { }
+#endif
 
 #ifdef CONFIG_GENERIC_CLOCKEVENTS
 
@@ -37,6 +46,7 @@ enum tick_nohz_mode {
  *			timer is modified for nohz sleeps. This is necessary
  *			to resume the tick timer operation in the timeline
  *			when the CPU returns from nohz sleep.
+ * @next_tick:		Next tick to be fired when in dynticks mode.
  * @tick_stopped:	Indicator that the idle tick has been stopped
  * @idle_jiffies:	jiffies at the entry to idle for idle time accounting
  * @idle_calls:		Total number of idle calls
@@ -54,6 +64,7 @@ struct tick_sched {
 	unsigned long			check_clocks;
 	enum tick_nohz_mode		nohz_mode;
 	ktime_t				last_tick;
+	ktime_t				next_tick;
 	int				inidle;
 	int				tick_stopped;
 	unsigned long			idle_jiffies;
@@ -67,7 +78,7 @@ struct tick_sched {
 	ktime_t				iowait_sleeptime;
 	ktime_t				sleep_length;
 	unsigned long			last_jiffies;
-	unsigned long			next_jiffies;
+	u64				next_timer;
 	ktime_t				idle_expires;
 	int				do_timer_last;
 };
@@ -102,7 +113,7 @@ extern struct cpumask *tick_get_broadcast_oneshot_mask(void);
 extern void tick_clock_notify(void);
 extern int tick_check_oneshot_change(int allow_nohz);
 extern struct tick_sched *tick_get_tick_sched(int cpu);
-extern void tick_check_idle(int cpu);
+extern void tick_check_idle(void);
 extern int tick_oneshot_mode_active(void);
 #  ifndef arch_needs_cpu
 #   define arch_needs_cpu(cpu) (0)
@@ -110,7 +121,7 @@ extern int tick_oneshot_mode_active(void);
 # else
 static inline void tick_clock_notify(void) { }
 static inline int tick_check_oneshot_change(int allow_nohz) { return 0; }
-static inline void tick_check_idle(int cpu) { }
+static inline void tick_check_idle(void) { }
 static inline int tick_oneshot_mode_active(void) { return 0; }
 # endif
 
@@ -119,7 +130,7 @@ static inline void tick_init(void) { }
 static inline void tick_cancel_sched_timer(int cpu) { }
 static inline void tick_clock_notify(void) { }
 static inline int tick_check_oneshot_change(int allow_nohz) { return 0; }
-static inline void tick_check_idle(int cpu) { }
+static inline void tick_check_idle(void) { }
 static inline int tick_oneshot_mode_active(void) { return 0; }
 #endif /* !CONFIG_GENERIC_CLOCKEVENTS */
 
@@ -158,26 +169,73 @@ static inline u64 get_cpu_iowait_time_us(int cpu, u64 *unused) { return -1; }
 # endif /* !CONFIG_NO_HZ_COMMON */
 
 #ifdef CONFIG_NO_HZ_FULL
+extern bool tick_nohz_full_running;
+extern cpumask_var_t tick_nohz_full_mask;
+extern cpumask_var_t housekeeping_mask;
+
+static inline bool tick_nohz_full_enabled(void)
+{
+	if (!context_tracking_is_enabled())
+		return false;
+
+	return tick_nohz_full_running;
+}
+
+static inline bool tick_nohz_full_cpu(int cpu)
+{
+	if (!tick_nohz_full_enabled())
+		return false;
+
+	return cpumask_test_cpu(cpu, tick_nohz_full_mask);
+}
+
+static inline int housekeeping_any_cpu(void)
+{
+	return cpumask_any_and(housekeeping_mask, cpu_online_mask);
+}
+
 extern void tick_nohz_init(void);
-extern int tick_nohz_full_cpu(int cpu);
-extern void tick_nohz_full_check(void);
+extern void __tick_nohz_full_check(void);
 extern void tick_nohz_full_kick(void);
+extern void tick_nohz_full_kick_cpu(int cpu);
 extern void tick_nohz_full_kick_all(void);
-extern void tick_nohz_task_switch(struct task_struct *tsk);
+extern void __tick_nohz_task_switch(struct task_struct *tsk);
 #else
+static inline int housekeeping_any_cpu(void)
+{
+	return smp_processor_id();
+}
+
 static inline void tick_nohz_init(void) { }
-static inline int tick_nohz_full_cpu(int cpu) { return 0; }
-static inline void tick_nohz_full_check(void) { }
+static inline bool tick_nohz_full_enabled(void) { return false; }
+static inline bool tick_nohz_full_cpu(int cpu) { return false; }
+static inline void __tick_nohz_full_check(void) { }
+static inline void tick_nohz_full_kick_cpu(int cpu) { }
 static inline void tick_nohz_full_kick(void) { }
 static inline void tick_nohz_full_kick_all(void) { }
-static inline void tick_nohz_task_switch(struct task_struct *tsk) { }
+static inline void __tick_nohz_task_switch(struct task_struct *tsk) { }
 #endif
 
+static inline bool is_housekeeping_cpu(int cpu)
+{
+#ifdef CONFIG_NO_HZ_FULL
+	if (tick_nohz_full_enabled())
+		return cpumask_test_cpu(cpu, housekeeping_mask);
+#endif
+	return true;
+}
 
-# ifdef CONFIG_CPU_IDLE_GOV_MENU
-extern void menu_hrtimer_cancel(void);
-# else
-static inline void menu_hrtimer_cancel(void) {}
-# endif /* CONFIG_CPU_IDLE_GOV_MENU */
+static inline void tick_nohz_full_check(void)
+{
+	if (tick_nohz_full_enabled())
+		__tick_nohz_full_check();
+}
+
+static inline void tick_nohz_task_switch(struct task_struct *tsk)
+{
+	if (tick_nohz_full_enabled())
+		__tick_nohz_task_switch(tsk);
+}
+
 
 #endif

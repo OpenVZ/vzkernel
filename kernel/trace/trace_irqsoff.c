@@ -160,7 +160,8 @@ static struct ftrace_ops trace_ops __read_mostly =
 #endif /* CONFIG_FUNCTION_TRACER */
 
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
-static int irqsoff_set_flag(u32 old_flags, u32 bit, int set)
+static int
+irqsoff_set_flag(struct trace_array *tr, u32 old_flags, u32 bit, int set)
 {
 	int cpu;
 
@@ -175,7 +176,7 @@ static int irqsoff_set_flag(u32 old_flags, u32 bit, int set)
 	for_each_possible_cpu(cpu)
 		per_cpu(tracing_cpu, cpu) = 0;
 
-	tracing_max_latency = 0;
+	tr->max_latency = 0;
 	tracing_reset_online_cpus(&irqsoff_trace->trace_buffer);
 
 	return start_irqsoff_tracer(irqsoff_trace, set);
@@ -266,7 +267,8 @@ __trace_function(struct trace_array *tr,
 #else
 #define __trace_function trace_function
 
-static int irqsoff_set_flag(u32 old_flags, u32 bit, int set)
+static int
+irqsoff_set_flag(struct trace_array *tr, u32 old_flags, u32 bit, int set)
 {
 	return -EINVAL;
 }
@@ -301,13 +303,13 @@ static void irqsoff_print_header(struct seq_file *s)
 /*
  * Should this new latency be reported/recorded?
  */
-static int report_latency(cycle_t delta)
+static int report_latency(struct trace_array *tr, u64 delta)
 {
 	if (tracing_thresh) {
 		if (delta < tracing_thresh)
 			return 0;
 	} else {
-		if (delta <= tracing_max_latency)
+		if (delta <= tr->max_latency)
 			return 0;
 	}
 	return 1;
@@ -319,7 +321,7 @@ check_critical_timing(struct trace_array *tr,
 		      unsigned long parent_ip,
 		      int cpu)
 {
-	cycle_t T0, T1, delta;
+	u64 T0, T1, delta;
 	unsigned long flags;
 	int pc;
 
@@ -331,13 +333,13 @@ check_critical_timing(struct trace_array *tr,
 
 	pc = preempt_count();
 
-	if (!report_latency(delta))
+	if (!report_latency(tr, delta))
 		goto out;
 
 	raw_spin_lock_irqsave(&max_trace_lock, flags);
 
 	/* check if we are still the max latency */
-	if (!report_latency(delta))
+	if (!report_latency(tr, delta))
 		goto out_unlock;
 
 	__trace_function(tr, CALLER_ADDR0, parent_ip, flags, pc);
@@ -350,7 +352,7 @@ check_critical_timing(struct trace_array *tr,
 	data->critical_end = parent_ip;
 
 	if (likely(!is_tracing_stopped())) {
-		tracing_max_latency = delta;
+		tr->max_latency = delta;
 		update_max_tr_single(tr, current, cpu);
 	}
 
@@ -373,7 +375,7 @@ start_critical_timing(unsigned long ip, unsigned long parent_ip)
 	struct trace_array_cpu *data;
 	unsigned long flags;
 
-	if (likely(!tracer_enabled))
+	if (!tracer_enabled || !tracing_is_enabled())
 		return;
 
 	cpu = raw_smp_processor_id();
@@ -416,7 +418,7 @@ stop_critical_timing(unsigned long ip, unsigned long parent_ip)
 	else
 		return;
 
-	if (!tracer_enabled)
+	if (!tracer_enabled || !tracing_is_enabled())
 		return;
 
 	data = per_cpu_ptr(tr->trace_buffer.data, cpu);
@@ -570,8 +572,10 @@ static void irqsoff_function_set(int set)
 		unregister_irqsoff_function(is_graph());
 }
 
-static int irqsoff_flag_changed(struct tracer *tracer, u32 mask, int set)
+static int irqsoff_flag_changed(struct trace_array *tr, u32 mask, int set)
 {
+	struct tracer *tracer = tr->current_trace;
+
 	if (mask & TRACE_ITER_FUNCTION)
 		irqsoff_function_set(set);
 
@@ -607,7 +611,7 @@ static void __irqsoff_tracer_init(struct trace_array *tr)
 	set_tracer_flag(tr, TRACE_ITER_OVERWRITE, 1);
 	set_tracer_flag(tr, TRACE_ITER_LATENCY_FMT, 1);
 
-	tracing_max_latency = 0;
+	tr->max_latency = 0;
 	irqsoff_trace = tr;
 	/* make sure that the tracer is visible */
 	smp_wmb();

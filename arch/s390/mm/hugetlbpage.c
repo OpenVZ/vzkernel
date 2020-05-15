@@ -1,28 +1,146 @@
 /*
  *  IBM System z Huge TLB Page Support for Kernel.
  *
- *    Copyright IBM Corp. 2007
+ *    Copyright IBM Corp. 2007,2016
  *    Author(s): Gerald Schaefer <gerald.schaefer@de.ibm.com>
  */
 
 #include <linux/mm.h>
 #include <linux/hugetlb.h>
 
+static inline unsigned long __pte_to_rste(pte_t pte)
+{
+	unsigned long rste;
+
+	/*
+	 * Convert encoding		  pte bits	   pmd bits
+	 *				.IR...wrdytp	dy..R...I...wr
+	 * empty			.10...000000 -> 00..0...1...00
+	 * prot-none, clean, old	.11...000001 -> 00..1...1...00
+	 * prot-none, clean, young	.11...000101 -> 01..1...1...00
+	 * prot-none, dirty, old	.10...001001 -> 10..1...1...00
+	 * prot-none, dirty, young	.10...001101 -> 11..1...1...00
+	 * read-only, clean, old	.11...010001 -> 00..1...1...01
+	 * read-only, clean, young	.01...010101 -> 01..1...0...01
+	 * read-only, dirty, old	.11...011001 -> 10..1...1...01
+	 * read-only, dirty, young	.01...011101 -> 11..1...0...01
+	 * read-write, clean, old	.11...110001 -> 00..0...1...11
+	 * read-write, clean, young	.01...110101 -> 01..0...0...11
+	 * read-write, dirty, old	.10...111001 -> 10..0...1...11
+	 * read-write, dirty, young	.00...111101 -> 11..0...0...11
+	 */
+	if (pte_present(pte)) {
+		rste = pte_val(pte) & PAGE_MASK;
+		rste |= (pte_val(pte) & _PAGE_READ) >> 4;
+		rste |= (pte_val(pte) & _PAGE_WRITE) >> 4;
+		rste |=	(pte_val(pte) & _PAGE_INVALID) >> 5;
+		rste |= (pte_val(pte) & _PAGE_PROTECT);
+		rste |= (pte_val(pte) & _PAGE_DIRTY) << 10;
+		rste |= (pte_val(pte) & _PAGE_YOUNG) << 10;
+		rste |= (pte_val(pte) & _PAGE_NOEXEC);
+	} else
+		rste = _SEGMENT_ENTRY_INVALID;
+	return rste;
+}
+
+static inline pte_t __rste_to_pte(unsigned long rste)
+{
+	int present;
+	pte_t pte;
+
+	if ((rste & _REGION_ENTRY_TYPE_MASK) == _REGION_ENTRY_TYPE_R3)
+		present = pud_present(__pud(rste));
+	else
+		present = pmd_present(__pmd(rste));
+
+	/*
+	 * Convert encoding		   pmd bits	    pte bits
+	 *				dy..R...I...wr	  .IR...wrdytp
+	 * empty			00..0...1...00 -> .10...001100
+	 * prot-none, clean, old	00..0...1...00 -> .10...000001
+	 * prot-none, clean, young	01..0...1...00 -> .10...000101
+	 * prot-none, dirty, old	10..0...1...00 -> .10...001001
+	 * prot-none, dirty, young	11..0...1...00 -> .10...001101
+	 * read-only, clean, old	00..1...1...01 -> .11...010001
+	 * read-only, clean, young	01..1...1...01 -> .11...010101
+	 * read-only, dirty, old	10..1...1...01 -> .11...011001
+	 * read-only, dirty, young	11..1...1...01 -> .11...011101
+	 * read-write, clean, old	00..0...1...11 -> .10...110001
+	 * read-write, clean, young	01..0...1...11 -> .10...110101
+	 * read-write, dirty, old	10..0...1...11 -> .10...111001
+	 * read-write, dirty, young	11..0...1...11 -> .10...111101
+	 */
+	if (present) {
+		pte_val(pte) = rste & _SEGMENT_ENTRY_ORIGIN_LARGE;
+		pte_val(pte) |= _PAGE_LARGE | _PAGE_PRESENT;
+		pte_val(pte) |= (rste & _SEGMENT_ENTRY_READ) << 4;
+		pte_val(pte) |= (rste & _SEGMENT_ENTRY_WRITE) << 4;
+		pte_val(pte) |= (rste & _SEGMENT_ENTRY_INVALID) << 5;
+		pte_val(pte) |= (rste & _SEGMENT_ENTRY_PROTECT);
+		pte_val(pte) |= (rste & _SEGMENT_ENTRY_DIRTY) >> 10;
+		pte_val(pte) |= (rste & _SEGMENT_ENTRY_YOUNG) >> 10;
+		pte_val(pte) |= (rste & _SEGMENT_ENTRY_NOEXEC);
+	} else
+		pte_val(pte) = _PAGE_INVALID;
+	return pte;
+}
 
 void set_huge_pte_at(struct mm_struct *mm, unsigned long addr,
-				   pte_t *pteptr, pte_t pteval)
+		     pte_t *ptep, pte_t pte)
 {
-	pmd_t *pmdp = (pmd_t *) pteptr;
-	unsigned long mask;
+	unsigned long rste;
 
-	if (!MACHINE_HAS_HPAGE) {
-		pteptr = (pte_t *) pte_page(pteval)[1].index;
-		mask = pte_val(pteval) &
-				(_SEGMENT_ENTRY_INV | _SEGMENT_ENTRY_RO);
-		pte_val(pteval) = (_SEGMENT_ENTRY + __pa(pteptr)) | mask;
+	rste = __pte_to_rste(pte);
+	if (!MACHINE_HAS_NX)
+		rste &= ~_SEGMENT_ENTRY_NOEXEC;
+
+	/* Set correct table type for 2G hugepages */
+	if ((pte_val(*ptep) & _REGION_ENTRY_TYPE_MASK) == _REGION_ENTRY_TYPE_R3)
+		rste |= _REGION_ENTRY_TYPE_R3 | _REGION3_ENTRY_LARGE;
+	else {
+		if (!MACHINE_HAS_HPAGE) {
+			rste &= ~_SEGMENT_ENTRY_ORIGIN;
+			rste |= pte_page(pte)[1].index;
+		} else
+			rste |= _SEGMENT_ENTRY_LARGE;
 	}
+	pte_val(*ptep) = rste;
+}
 
-	pmd_val(*pmdp) = pte_val(pteval);
+pte_t huge_ptep_get(pte_t *ptep)
+{
+	unsigned long origin, rste;
+
+	rste = pte_val(*ptep);
+	if ((pte_val(*ptep) & _REGION_ENTRY_TYPE_MASK) < _REGION_ENTRY_TYPE_R3)
+		if (!MACHINE_HAS_HPAGE && pmd_present(__pmd(rste))) {
+			origin = rste & _SEGMENT_ENTRY_ORIGIN;
+			rste &= ~_SEGMENT_ENTRY_ORIGIN;
+			rste |= *(unsigned long *) origin;
+			/* Emulated huge ptes are young and dirty by definition */
+			rste |= _SEGMENT_ENTRY_YOUNG | _SEGMENT_ENTRY_DIRTY;
+		}
+	return __rste_to_pte(rste);
+}
+
+pte_t huge_ptep_get_and_clear(struct mm_struct *mm,
+			      unsigned long addr, pte_t *ptep)
+{
+	pte_t pte = huge_ptep_get(ptep);
+	pmd_t *pmdp = (pmd_t *) ptep;
+	pud_t *pudp = (pud_t *) ptep;
+
+	if ((pte_val(*ptep) & _REGION_ENTRY_TYPE_MASK) == _REGION_ENTRY_TYPE_R3) {
+		__pudp_idte(addr, pudp);
+		pud_val(*pudp) = _REGION3_ENTRY_EMPTY;
+	} else {
+		if (MACHINE_HAS_IDTE)
+			__pmd_idte(addr, pmdp);
+		else
+			__pmd_csp(pmdp);
+		pmd_val(*pmdp) = _SEGMENT_ENTRY_EMPTY;
+	}
+	return pte;
 }
 
 int arch_prepare_hugepage(struct page *page)
@@ -58,7 +176,7 @@ void arch_release_hugepage(struct page *page)
 	ptep = (pte_t *) page[1].index;
 	if (!ptep)
 		return;
-	clear_table((unsigned long *) ptep, _PAGE_TYPE_EMPTY,
+	clear_table((unsigned long *) ptep, _PAGE_INVALID,
 		    PTRS_PER_PTE * sizeof(pte_t));
 	page_table_free(&init_mm, (unsigned long *) ptep);
 	page[1].index = 0;
@@ -73,8 +191,12 @@ pte_t *huge_pte_alloc(struct mm_struct *mm,
 
 	pgdp = pgd_offset(mm, addr);
 	pudp = pud_alloc(mm, pgdp, addr);
-	if (pudp)
-		pmdp = pmd_alloc(mm, pudp, addr);
+	if (pudp) {
+		if (sz == PUD_SIZE)
+			return (pte_t *) pudp;
+		else if (sz == PMD_SIZE)
+			pmdp = pmd_alloc(mm, pudp, addr);
+	}
 	return (pte_t *) pmdp;
 }
 
@@ -87,8 +209,11 @@ pte_t *huge_pte_offset(struct mm_struct *mm, unsigned long addr)
 	pgdp = pgd_offset(mm, addr);
 	if (pgd_present(*pgdp)) {
 		pudp = pud_offset(pgdp, addr);
-		if (pud_present(*pudp))
+		if (pud_present(*pudp)) {
+			if (pud_large(*pudp))
+				return (pte_t *) pudp;
 			pmdp = pmd_offset(pudp, addr);
+		}
 	}
 	return (pte_t *) pmdp;
 }
@@ -96,12 +221,6 @@ pte_t *huge_pte_offset(struct mm_struct *mm, unsigned long addr)
 int huge_pmd_unshare(struct mm_struct *mm, unsigned long *addr, pte_t *ptep)
 {
 	return 0;
-}
-
-struct page *follow_huge_addr(struct mm_struct *mm, unsigned long address,
-			      int write)
-{
-	return ERR_PTR(-EINVAL);
 }
 
 int pmd_huge(pmd_t pmd)
@@ -114,19 +233,34 @@ int pmd_huge(pmd_t pmd)
 
 int pud_huge(pud_t pud)
 {
-	return 0;
+	return pud_large(pud);
 }
 
-struct page *follow_huge_pmd(struct mm_struct *mm, unsigned long address,
-			     pmd_t *pmdp, int write)
+struct page *
+follow_huge_pud(struct mm_struct *mm, unsigned long address,
+		pud_t *pud, int flags)
 {
-	struct page *page;
-
-	if (!MACHINE_HAS_HPAGE)
+	if (flags & FOLL_GET)
 		return NULL;
 
-	page = pmd_page(*pmdp);
-	if (page)
-		page += ((address & ~HPAGE_MASK) >> PAGE_SHIFT);
-	return page;
+	return pud_page(*pud) + ((address & ~PUD_MASK) >> PAGE_SHIFT);
 }
+
+static __init int setup_hugepagesz(char *opt)
+{
+	unsigned long size;
+	char *string = opt;
+
+	size = memparse(opt, &opt);
+	if (MACHINE_HAS_EDAT1 && size == PMD_SIZE) {
+		hugetlb_add_hstate(PMD_SHIFT - PAGE_SHIFT);
+	} else if (MACHINE_HAS_EDAT2 && size == PUD_SIZE) {
+		hugetlb_add_hstate(PUD_SHIFT - PAGE_SHIFT);
+	} else {
+		pr_err("hugepagesz= specifies an unsupported page size %s\n",
+			string);
+		return 0;
+	}
+	return 1;
+}
+__setup("hugepagesz=", setup_hugepagesz);

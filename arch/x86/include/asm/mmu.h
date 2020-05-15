@@ -9,8 +9,8 @@
  * we put the segment information here.
  */
 typedef struct {
-	void *ldt;
-	int size;
+	RH_KABI_REPLACE(void* ldt, struct ldt_struct *ldt)
+	RH_KABI_DEPRECATE(int, size)
 
 #ifdef CONFIG_X86_64
 	/* True if mm supports a task running in 32 bit compatibility mode. */
