@@ -3513,6 +3513,9 @@ void memcg_uncharge_kmem(struct mem_cgroup *memcg,
 {
 	u64 kmem;
 
+	if (WARN_ON_ONCE(!nr_pages))
+		return;
+
 	kmem = page_counter_uncharge(&memcg->kmem, nr_pages);
 
 	page_counter_uncharge(&memcg->memory, nr_pages);
