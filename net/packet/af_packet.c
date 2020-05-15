@@ -2547,7 +2547,14 @@ struct packet_sk_charge {
 static struct cg_proto *packet_sk_charge(void)
 {
 	struct packet_sk_charge *psc;
+	unsigned int nr_pages;
 	int err = -ENOMEM;
+
+	nr_pages = DIV_ROUND_UP(ACCESS_ONCE(sysctl_rmem_max), PAGE_SIZE);
+	if (!nr_pages) {
+		/* Caller will assign NULL memcg to socket */
+		return NULL;
+	}
 
 	psc = kmalloc(sizeof(*psc), GFP_KERNEL);
 	if (!psc)
@@ -2565,7 +2572,7 @@ static struct cg_proto *packet_sk_charge(void)
 	 * It's typically not huge and packet sockets are rare guests in
 	 * containers, so we don't disturb the memory consumption much.
 	 */
-	psc->nr_pages = ACCESS_ONCE(sysctl_rmem_max)/PAGE_SIZE;
+	psc->nr_pages = nr_pages;
 
 	err = memcg_charge_kmem(psc->memcg, GFP_KERNEL, psc->nr_pages);
 	if (!err)
