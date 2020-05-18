@@ -1169,7 +1169,10 @@ static struct sk_buff *netlink_trim(struct sk_buff *skb, gfp_t allocation)
 		skb = nskb;
 	}
 
-	pskb_expand_head(skb, 0, -delta, allocation);
+	pskb_expand_head(skb, 0, -delta,
+			 (allocation & ~__GFP_WAIT) |
+			 __GFP_NOWARN | __GFP_NORETRY);
+
 	return skb;
 }
 
