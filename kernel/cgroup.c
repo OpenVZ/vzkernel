@@ -1422,6 +1422,7 @@ static void init_cgroup_root(struct cgroupfs_root *root)
 	INIT_LIST_HEAD(&root->subsys_list);
 	INIT_LIST_HEAD(&root->root_list);
 	INIT_LIST_HEAD(&root->allcg_list);
+	refcount_set(&cgrp->online_cnt, 1);
 	root->number_of_cgroups = 1;
 	cgrp->root = root;
 	cgrp->name = &root_cgroup_name;
@@ -4248,8 +4249,13 @@ static int online_css(struct cgroup_subsys *ss, struct cgroup *cgrp)
 
 	if (ss->css_online)
 		ret = ss->css_online(cgrp);
-	if (!ret)
+	if (!ret) {
 		cgrp->subsys[ss->subsys_id]->flags |= CSS_ONLINE;
+
+		refcount_inc(&cgrp->online_cnt);
+		if (cgrp->parent)
+			refcount_inc(&cgrp->parent->online_cnt);
+	}
 	return ret;
 }
 
@@ -4522,9 +4528,11 @@ static void cgroup_css_killed(struct cgroup *cgrp)
 	if (!atomic_dec_and_test(&cgrp->css_kill_cnt))
 		return;
 
-	/* percpu ref's of all css's are killed, kick off the next step */
-	INIT_WORK(&cgrp->destroy_work, cgroup_offline_fn);
-	queue_work(cgroup_destroy_wq, &cgrp->destroy_work);
+	if (refcount_dec_and_test(&cgrp->online_cnt)) {
+		/* percpu ref's of all css's are killed, kick off the next step */
+		INIT_WORK(&cgrp->destroy_work, cgroup_offline_fn);
+		queue_work(cgroup_destroy_wq, &cgrp->destroy_work);
+	}
 }
 
 static void css_ref_killed_fn(struct percpu_ref *ref)
@@ -4662,37 +4670,41 @@ static int cgroup_destroy_locked(struct cgroup *cgrp)
 static void cgroup_offline_fn(struct work_struct *work)
 {
 	struct cgroup *cgrp = container_of(work, struct cgroup, destroy_work);
-	struct cgroup *parent = cgrp->parent;
-	struct dentry *d = cgrp->dentry;
 	struct cgroup_subsys *ss;
 
 	mutex_lock(&cgroup_mutex);
 
-	/*
-	 * css_tryget() is guaranteed to fail now.  Tell subsystems to
-	 * initate destruction.
-	 */
-	for_each_subsys(cgrp->root, ss)
-		offline_css(ss, cgrp);
+	do {
+		struct cgroup *parent = cgrp->parent;
+		struct dentry *d = cgrp->dentry;
 
-	/*
-	 * Put the css refs from cgroup_destroy_locked().  Each css holds
-	 * an extra reference to the cgroup's dentry and cgroup removal
-	 * proceeds regardless of css refs.  On the last put of each css,
-	 * whenever that may be, the extra dentry ref is put so that dentry
-	 * destruction happens only after all css's are released.
-	 */
-	for_each_subsys(cgrp->root, ss)
-		css_put(cgrp->subsys[ss->subsys_id]);
+		/*
+		 * css_tryget() is guaranteed to fail now.  Tell subsystems to
+		 * initate destruction.
+		 */
+		for_each_subsys(cgrp->root, ss)
+			offline_css(ss, cgrp);
 
-	/* delete this cgroup from parent->children */
-	list_del_rcu(&cgrp->sibling);
-	list_del_init(&cgrp->allcg_node);
+		/*
+		 * Put the css refs from cgroup_destroy_locked().  Each css holds
+		 * an extra reference to the cgroup's dentry and cgroup removal
+		 * proceeds regardless of css refs.  On the last put of each css,
+		 * whenever that may be, the extra dentry ref is put so that dentry
+		 * destruction happens only after all css's are released.
+		 */
+		for_each_subsys(cgrp->root, ss)
+			css_put(cgrp->subsys[ss->subsys_id]);
 
-	dput(d);
+		/* delete this cgroup from parent->children */
+		list_del_rcu(&cgrp->sibling);
+		list_del_init(&cgrp->allcg_node);
 
-	set_bit(CGRP_RELEASABLE, &parent->flags);
-	check_for_release(parent);
+		dput(d);
+
+		set_bit(CGRP_RELEASABLE, &parent->flags);
+		check_for_release(parent);
+		cgrp = parent;
+	} while (cgrp && refcount_dec_and_test(&cgrp->online_cnt));
 
 	mutex_unlock(&cgroup_mutex);
 }
