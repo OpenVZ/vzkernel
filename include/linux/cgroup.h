@@ -248,6 +248,12 @@ struct cgroup {
 	 */
 	atomic_t count;
 
+	/*
+	 * Incremented by online self and children.  Used to guarantee that
+	 * parents are not offlined before their children.
+	 */
+	refcount_t online_cnt;
+
 	int id;				/* ida allocated in-hierarchy ID */
 
 	/*
