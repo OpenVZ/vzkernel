@@ -3002,17 +3002,19 @@ void memcg_css_release_check_kmem(struct cgroup_subsys_state *css)
 
 		css_stacks = css->stacks;
 		if (css_stacks) {
-			pr_err("css_relese: css_stacks offset %d\n",
-			       atomic_read(&css_stacks->offset));
-			for (i = 0; i < PAGE_SIZE*2/8 - 1; i++) {
-				if (css_stacks->stacks[i])
-					pr_err("\t%pS\n",
-					       (void *)css_stacks->stacks[i]);
+			pr_err("css_relese: css_get/put ips\n");
+			for (i = 0; i < CSS_IPS_COUNT; i++) {
+				if (css_stacks->ips[i])
+					pr_err("\t%d, [%lx] %pS\n",
+						atomic_read(&css_stacks->count[i]),
+						css_stacks->ips[i],
+						(void *)css_stacks->ips[i]);
 				else
-					continue;
+					break;
 			}
+			BUG();
 		}
-		BUG();
+
 	}
 
 }
