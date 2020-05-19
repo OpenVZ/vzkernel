@@ -92,58 +92,6 @@ static struct vfsmount *ub_bound_cgroup_mnt[NR_UB_BOUND_CGROUPS];
 #define blkio_cgroup_mnt	(ub_bound_cgroup_mnt[UB_BLKIO_CGROUP])
 #define pids_cgroup_mnt		(ub_bound_cgroup_mnt[UB_PIDS_CGROUP])
 
-static void __ub_set_css(struct user_beancounter *ub, int idx,
-			 struct cgroup_subsys_state *css)
-{
-	struct cgroup_subsys_state *old_css;
-	unsigned long flags;
-
-	if (css)
-		css_get(css);
-
-	spin_lock_irqsave(&ub->ub_lock, flags);
-	old_css = ub->ub_bound_css[idx];
-	ACCESS_ONCE(ub->ub_bound_css[idx]) = css;
-	spin_unlock_irqrestore(&ub->ub_lock, flags);
-
-	if (old_css)
-		css_put(old_css);
-}
-
-struct cgroup_subsys_state *__ub_get_css(struct user_beancounter *ub, int idx)
-{
-	struct cgroup_subsys_state *css, *root_css;
-	unsigned long flags;
-
-	rcu_read_lock();
-retry:
-	css = ACCESS_ONCE(ub->ub_bound_css[idx]);
-	if (likely(css && css_tryget(css))) {
-		rcu_read_unlock();
-		return css;
-	}
-
-	root_css = ub0.ub_bound_css[idx];
-
-	/* cgroup was removed, fall back to the root */
-	spin_lock_irqsave(&ub->ub_lock, flags);
-	if (unlikely(ub->ub_bound_css[idx] != css)) {
-		/* someone did it for us, retry */
-		spin_unlock_irqrestore(&ub->ub_lock, flags);
-		goto retry;
-	}
-	ACCESS_ONCE(ub->ub_bound_css[idx]) = root_css;
-	spin_unlock_irqrestore(&ub->ub_lock, flags);
-
-	rcu_read_unlock();
-
-	if (css)
-		css_put(css);
-
-	css_get(root_css);
-	return root_css;
-}
-
 static void ub_set_mem_css(struct user_beancounter *ub,
 				  struct cgroup_subsys_state *css)
 {
