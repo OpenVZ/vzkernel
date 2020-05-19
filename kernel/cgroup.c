@@ -4150,7 +4150,7 @@ static void css_dput_fn(struct work_struct *work)
 
 	css_stacks = css->stacks;
 	if (css_stacks)
-		free_pages((unsigned long)css_stacks, 1);
+		kfree(css_stacks);
 
 	percpu_ref_exit(&css->refcnt);
 	cgroup_dput(css->cgroup);
@@ -4221,9 +4221,9 @@ static void init_cgroup_css(struct cgroup_subsys_state *css,
 {
 	css->cgroup = cgrp;
 	css->flags = 0;
-	if (static_key_false(&css_stacks_on) && slab_is_available())
-		css->stacks = (struct css_stacks *)
-			__get_free_pages(GFP_KERNEL|__GFP_NOFAIL|__GFP_ZERO, 1);
+	if (static_key_false(&css_stacks_on) && slab_is_available() &&
+	    ss == &mem_cgroup_subsys)
+		css->stacks = kzalloc(sizeof(*css->stacks), GFP_KERNEL);
 	else
 		css->stacks = 0;
 	if (cgrp == dummytop)
@@ -4261,28 +4261,31 @@ static int online_css(struct cgroup_subsys *ss, struct cgroup *cgrp)
 
 void __save_css_stack(struct cgroup_subsys_state *css)
 {
-	unsigned long entries[8];
-	unsigned int offset;
+	int i;
 	struct css_stacks *css_stacks;
-	struct stack_trace trace = {
-		.nr_entries = 0,
-		.entries = entries,
-		.max_entries = 8,
-		.skip = 0
-	};
+	unsigned long ip = _RET_IP_;
 
 	css_stacks = css->stacks;
 	if (!css_stacks)
 		return;
 
-	memset(entries, 0, sizeof(entries));
-	offset = atomic_add_return(8*8, &css_stacks->offset) % (PAGE_SIZE*2);
-	if (offset == 0) {
-		offset += 8;
-		trace.max_entries = 7;
+	for (i = 0; i < CSS_IPS_COUNT; i++) {
+		if (css_stacks->ips[i] == 0) {
+			unsigned long old_ip;
+
+			old_ip = cmpxchg(&css_stacks->ips[i], 0, ip);
+			if (old_ip != 0 && old_ip != ip)
+				continue;
+
+			atomic_inc(&css_stacks->count[i]);
+			break;
+		}
+		if (css_stacks->ips[i] == ip) {
+			atomic_inc(&css_stacks->count[i]);
+			break;
+		}
 	}
-	save_stack_trace(&trace);
-	memcpy(((char*)css_stacks)+offset, entries, trace.max_entries*8);
+	WARN(i == CSS_IPS_COUNT, "css_ips overflow %p %pS\n", css, (void *)ip);
 }
 EXPORT_SYMBOL(__save_css_stack);
 
