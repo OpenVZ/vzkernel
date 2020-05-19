@@ -2,3 +2,4 @@
 config-*
 kernel*config
 *.old
+*.tmp
