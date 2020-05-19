@@ -4192,6 +4192,7 @@ static int css_stacks_set(void *data, u64 val)
 DEFINE_SIMPLE_ATTRIBUTE(css_stacks_fops,
 		css_stacks_get, css_stacks_set, "%llu\n");
 
+int setup_css_stacks_cmd;
 static int __init css_stacks_debugfs(void)
 {
 	void *ret;
@@ -4200,9 +4201,18 @@ static int __init css_stacks_debugfs(void)
 			&css_stacks_fops);
 	if (!ret)
 		pr_warn("Failed to create css_stacks in debugfs");
+	if (setup_css_stacks_cmd)
+		static_key_slow_inc(&css_stacks_on);
 	return 0;
 }
 late_initcall(css_stacks_debugfs);
+
+static int __init setup_css_stacks(char *str)
+{
+	setup_css_stacks_cmd = 1;
+	return 1;
+}
+__setup("css_stacks", setup_css_stacks);
 #endif
 
 static void init_cgroup_css(struct cgroup_subsys_state *css,
