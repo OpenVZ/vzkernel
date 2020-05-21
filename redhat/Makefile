@@ -65,7 +65,7 @@ dist-python-check:
 			echo "ERROR: Python 3 is needed." ; \
 			exit 1; \
 		fi; \
-		echo "ERROR: your build environment is not compatible with RHEL8."; \
+		echo "ERROR: your build environment is not compatible with this distribution."; \
 		echo "To fix this, run:"; \
 		echo "ln -s `which python3` /usr/libexec/platform-python"; \
 		exit 1; \
