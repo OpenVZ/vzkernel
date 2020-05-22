@@ -900,6 +900,7 @@ static noinline int early_drop(struct net *net, unsigned int hash)
 	bool ret = false;
 
 	i = 0;
+	bucket = 0; /* compiler false-positive warning workaround */
 
 	local_bh_disable();
 restart:
