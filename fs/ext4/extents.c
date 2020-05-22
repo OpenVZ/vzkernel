@@ -5090,8 +5090,10 @@ int ext4_convert_unwritten_extents(handle_t *handle, struct inode *inode,
 	if (handle) {
 		handle = ext4_journal_start_reserved(handle,
 						     EXT4_HT_EXT_CONVERT);
-		if (IS_ERR(handle))
+		if (IS_ERR(handle)) {
+			sb_end_intwrite(inode->i_sb);
 			return PTR_ERR(handle);
+		}
 		credits = 0;
 	} else {
 		/*
