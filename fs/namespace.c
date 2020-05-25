@@ -2345,14 +2345,8 @@ static int do_set_group(struct path *path, const char *sibling_name)
 		return err;
 
 	err = -EINVAL;
-	if (sibling_path.dentry != sibling_path.mnt->mnt_root)
-		goto out_put;
-
 	sibling = real_mount(sibling_path.mnt);
 	mnt = real_mount(path->mnt);
-
-	if (!check_mnt(mnt))
-		goto out_put;
 
 	namespace_lock();
 
@@ -2382,7 +2376,6 @@ static int do_set_group(struct path *path, const char *sibling_name)
 	err = 0;
 out_unlock:
 	namespace_unlock();
-out_put:
 	path_put(&sibling_path);
 	return err;
 }
