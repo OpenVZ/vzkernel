@@ -249,32 +249,39 @@ out:
 #endif
 
 static ssize_t
-ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
-		unsigned long nr_segs, loff_t pos)
+ext4_file_write_iter(struct kiocb *iocb, struct iov_iter *iter, loff_t pos)
 {
 	struct inode *inode = file_inode(iocb->ki_filp);
 	ssize_t ret;
 	int overwrite = 0;
-	struct iov_iter iter;
 
-	iov_iter_init(&iter, iov, nr_segs, iov_length(iov, nr_segs), 0);
-
-	ret = ext4_write_checks(iocb, &iter, &pos);
+	ret = ext4_write_checks(iocb, iter, &pos);
 	if (ret <= 0)
 		return ret;
 
 #ifdef CONFIG_FS_DAX
 	if (IS_DAX(inode))
-		return ext4_file_dax_write(iocb, &iter, pos);
+		return ext4_file_dax_write(iocb, iter, pos);
 #endif
 
 	iocb->private = &overwrite; /* RHEL7 only - prevent DIO race */
 	if (unlikely(io_is_direct(iocb->ki_filp)))
-		ret = ext4_file_dio_write(iocb, &iter, pos);
+		ret = ext4_file_dio_write(iocb, iter, pos);
 	else
-		ret = generic_file_write_iter(iocb, &iter, pos);
+		ret = generic_file_write_iter(iocb, iter, pos);
 
 	return ret;
+}
+
+static ssize_t
+ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
+		unsigned long nr_segs, loff_t pos)
+{
+	struct iov_iter iter;
+
+	iov_iter_init(&iter, iov, nr_segs, iov_length(iov, nr_segs), 0);
+
+	return ext4_file_write_iter(iocb, &iter, pos);
 }
 
 #ifdef CONFIG_FS_DAX
