@@ -911,3 +911,30 @@ unsigned long iov_iter_alignment(struct iov_iter *i)
 		return alignment_iovec(i);
 }
 EXPORT_SYMBOL(iov_iter_alignment);
+
+ssize_t iov_iter_get_pages(struct iov_iter *i,
+		   struct page **pages, size_t maxsize,
+		   size_t *start, int rw)
+{
+	size_t offset = i->iov_offset;
+	const struct iovec *iov = iov_iter_iovec(i);
+	size_t len;
+	unsigned long addr;
+	int n;
+	int res;
+
+	len = iov->iov_len - offset;
+	if (len > i->count)
+		len = i->count;
+	if (len > maxsize)
+		len = maxsize;
+	addr = (unsigned long)iov->iov_base + offset;
+	len += *start = addr & (PAGE_SIZE - 1);
+	addr &= ~(PAGE_SIZE - 1);
+	n = (len + PAGE_SIZE - 1) / PAGE_SIZE;
+	res = get_user_pages_fast(addr, n, (rw & WRITE) != WRITE, pages);
+	if (unlikely(res < 0))
+		return res;
+	return (res == n ? len : res * PAGE_SIZE) - *start;
+}
+EXPORT_SYMBOL(iov_iter_get_pages);
