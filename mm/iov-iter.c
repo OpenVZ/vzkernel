@@ -912,9 +912,26 @@ unsigned long iov_iter_alignment(struct iov_iter *i)
 }
 EXPORT_SYMBOL(iov_iter_alignment);
 
-ssize_t iov_iter_get_pages(struct iov_iter *i,
-		   struct page **pages, size_t maxsize,
-		   size_t *start, int rw)
+static ssize_t get_pages_bvec(struct iov_iter *i,
+		struct page **pages, size_t maxsize,
+		size_t *start)
+{
+	struct bio_vec *bvec = iov_iter_bvec(i);
+	size_t len = bvec->bv_len - i->iov_offset;
+	if (len > i->count)
+		len = i->count;
+	if (len > maxsize)
+		len = maxsize;
+	*start = bvec->bv_offset + i->iov_offset;
+
+	get_page(*pages = bvec->bv_page);
+
+	return len;
+}
+
+static ssize_t get_pages_iovec(struct iov_iter *i,
+		struct page **pages, size_t maxsize,
+		size_t *start, int rw)
 {
 	size_t offset = i->iov_offset;
 	const struct iovec *iov = iov_iter_iovec(i);
@@ -937,9 +954,43 @@ ssize_t iov_iter_get_pages(struct iov_iter *i,
 		return res;
 	return (res == n ? len : res * PAGE_SIZE) - *start;
 }
+
+ssize_t iov_iter_get_pages(struct iov_iter *i,
+			   struct page **pages, size_t maxsize,
+			   size_t *start, int rw)
+{
+	if (iov_iter_has_bvec(i))
+		return get_pages_bvec(i, pages, maxsize, start);
+	else
+		return get_pages_iovec(i, pages, maxsize, start, rw);
+}
 EXPORT_SYMBOL(iov_iter_get_pages);
 
-int iov_iter_npages(const struct iov_iter *i, int maxpages)
+static int iov_iter_npages_bvec(struct iov_iter *i, int maxpages)
+{
+	size_t offset = i->iov_offset;
+	size_t size = i->count;
+	struct bio_vec *bvec = iov_iter_bvec(i);
+	int npages = 0;
+	int n;
+
+	for (n = 0; size && n < i->nr_segs; n++, bvec++) {
+		size_t len = bvec->bv_len - offset;
+		offset = 0;
+		if (unlikely(!len))	/* empty segment */
+			continue;
+		if (len > size)
+			len = size;
+		npages++;
+		if (npages >= maxpages)	/* don't bother going further */
+			return maxpages;
+		size -= len;
+		offset = 0;
+	}
+	return min(npages, maxpages);
+}
+
+static int iov_iter_npages_iovec(const struct iov_iter *i, int maxpages)
 {
 	size_t offset = i->iov_offset;
 	size_t size = i->count;
@@ -963,5 +1014,13 @@ int iov_iter_npages(const struct iov_iter *i, int maxpages)
 		offset = 0;
 	}
 	return min(npages, maxpages);
+}
+
+int iov_iter_npages(struct iov_iter *i, int maxpages)
+{
+	if (iov_iter_has_bvec(i))
+		return iov_iter_npages_bvec(i, maxpages);
+	else
+		return iov_iter_npages_iovec(i, maxpages);
 }
 EXPORT_SYMBOL(iov_iter_npages);
