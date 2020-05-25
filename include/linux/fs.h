@@ -578,8 +578,6 @@ struct address_space_operations {
 			loff_t offset, unsigned long nr_segs);
 	ssize_t (*direct_IO_bvec)(int, struct kiocb *, struct bio_vec *bvec,
 			loff_t offset, unsigned long bvec_len);
-	ssize_t (*direct_IO_page)(int, struct kiocb *, struct page *page,
-			loff_t offset);
 	int (*get_xip_mem)(struct address_space *, pgoff_t, int,
 						void **, unsigned long *);
 	RH_KABI_DEPRECATE_FN(int, get_xip_mem, struct address_space *, pgoff_t,
