@@ -1366,25 +1366,22 @@ dax_iomap_actor_write(struct inode *inode, loff_t pos, loff_t length, void *data
  * and evicting any page cache pages in the region under I/O.
  */
 ssize_t
-dax_iomap_rw(int rw, struct kiocb *iocb, const struct iovec *iov,
-                unsigned long nr_segs, loff_t pos,
+dax_iomap_rw(int rw, struct kiocb *iocb, struct iov_iter *iter,
+                loff_t pos,
                 size_t count, const struct iomap_ops *ops)
 {
 	struct address_space *mapping = iocb->ki_filp->f_mapping;
 	struct inode *inode = mapping->host;
 	loff_t ret = 0, done = 0;
 	unsigned flags = 0;
-	struct iov_iter iter;
-
-	iov_iter_init(&iter, iov, nr_segs, count, 0);
 
 	if (rw & WRITE)
 		flags |= IOMAP_WRITE;
 
 
-	while (iov_iter_count(&iter)) {
-		ret = iomap_apply(inode, pos, iov_iter_count(&iter), flags, ops,
-				&iter,
+	while (iov_iter_count(iter)) {
+		ret = iomap_apply(inode, pos, iov_iter_count(iter), flags, ops,
+				iter,
 				(rw & WRITE) ?
 				  dax_iomap_actor_write : dax_iomap_actor_read);
 		if (ret <= 0)
