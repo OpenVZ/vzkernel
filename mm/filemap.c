@@ -1987,21 +1987,6 @@ success:
 	return size;
 }
 
-static ssize_t mapping_direct_IO(struct address_space *mapping, int rw,
-			         struct kiocb *iocb, struct iov_iter *iter,
-			         loff_t pos)
-{
-	if (iov_iter_has_iovec(iter))
-		return mapping->a_ops->direct_IO(rw, iocb, iov_iter_iovec(iter),
-						 pos, iter->nr_segs);
-	else if (iov_iter_has_bvec(iter))
-		return mapping->a_ops->direct_IO_bvec(rw, iocb,
-						      iov_iter_bvec(iter), pos,
-						      iter->nr_segs);
-	else
-		BUG();
-}
-
 static int file_read_iter_actor(read_descriptor_t *desc, struct page *page,
 				unsigned long offset, unsigned long size)
 {
