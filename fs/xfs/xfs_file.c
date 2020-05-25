@@ -318,6 +318,7 @@ xfs_file_dax_read(
 	struct xfs_inode	*ip = XFS_I(iocb->ki_filp->f_mapping->host);
 	size_t			size = 0;
 	ssize_t			ret = 0;
+	struct iov_iter iter;
 
 	size = iov_length(iovp, nr_segs);
 
@@ -326,8 +327,10 @@ xfs_file_dax_read(
 	if (!size)
 		return 0; /* skip atime */
 
+	iov_iter_init(&iter, iovp, nr_segs, size, 0);
+
 	xfs_rw_ilock(ip, XFS_IOLOCK_SHARED);
-	ret = dax_iomap_rw(READ, iocb, iovp, nr_segs, pos,
+	ret = dax_iomap_rw(READ, iocb, &iter, pos,
 			   size, &xfs_iomap_ops);
 	xfs_rw_iunlock(ip, XFS_IOLOCK_SHARED);
 
@@ -776,6 +779,7 @@ xfs_file_dax_write(
 	size_t			count = ocount;
 	int			iolock = XFS_IOLOCK_EXCL;
 	ssize_t			ret, error = 0;
+	struct iov_iter iter;
 
 	xfs_rw_ilock(ip, iolock);
 	ret = xfs_file_aio_write_checks(file, &pos, &count, &iolock);
@@ -787,7 +791,9 @@ xfs_file_dax_write(
 
 	trace_xfs_file_dax_write(ip, count, pos);
 
-	ret = dax_iomap_rw(WRITE, iocb, iovp, nr_segs, pos,
+	iov_iter_init(&iter, iovp, nr_segs, count, 0);
+
+	ret = dax_iomap_rw(WRITE, iocb, &iter, pos,
 			   count, &xfs_iomap_ops);
 	if (ret > 0 && iocb->ki_pos > i_size_read(inode)) {
 		i_size_write(inode, iocb->ki_pos);
