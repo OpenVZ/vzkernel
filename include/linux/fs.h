@@ -3659,13 +3659,6 @@ static inline iop_dentry_open_t get_dentry_open_iop(struct inode *inode)
 	return wrapper ? wrapper->dentry_open : NULL;
 }
 
-static inline ssize_t mapping_direct_IO(struct address_space *mapping, int rw,
-			         struct kiocb *iocb, struct iov_iter *iter,
-			         loff_t pos)
-{
-	return mapping->a_ops->direct_IO(rw, iocb, iter, pos);
-}
-
 extern bool path_noexec(const struct path *path);
 
 #endif /* _LINUX_FS_H */
