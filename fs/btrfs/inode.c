@@ -8646,13 +8646,14 @@ out:
 }
 
 static ssize_t btrfs_direct_IO(int rw, struct kiocb *iocb,
-			const struct iovec *iov, loff_t offset,
-			unsigned long nr_segs)
+			struct iov_iter *iter, loff_t offset)
 {
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	struct btrfs_dio_data dio_data = { 0 };
+	const struct iovec *iov = iov_iter_iovec(iter);
+	unsigned long nr_segs = iter->nr_segs;
 	size_t count = 0;
 	int flags = 0;
 	bool wakeup = true;
