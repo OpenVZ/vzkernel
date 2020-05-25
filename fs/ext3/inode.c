@@ -1871,10 +1871,10 @@ static ssize_t ext3_direct_IO(int rw, struct kiocb *iocb,
 	handle_t *handle;
 	ssize_t ret;
 	int orphan = 0;
-	size_t count = iov_length(iov, nr_segs);
+	size_t count = iov_iter_count(iter);
 	int retries = 0;
 
-	trace_ext3_direct_IO_enter(inode, offset, iov_length(iov, nr_segs), rw);
+	trace_ext3_direct_IO_enter(inode, offset, iov_iter_count(iter), rw);
 
 	if (rw == WRITE) {
 		loff_t final_size = offset + count;
@@ -1906,7 +1906,7 @@ retry:
 	 */
 	if (unlikely((rw & WRITE) && ret < 0)) {
 		loff_t isize = i_size_read(inode);
-		loff_t end = offset + iov_length(iov, nr_segs);
+		loff_t end = offset + iov_iter_count(iter);
 
 		if (end > isize)
 			ext3_truncate_failed_direct_write(inode);
@@ -1950,7 +1950,7 @@ retry:
 	}
 out:
 	trace_ext3_direct_IO_exit(inode, offset,
-				iov_length(iov, nr_segs), rw, ret);
+				iov_iter_count(iter), rw, ret);
 	return ret;
 }
 
