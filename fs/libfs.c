@@ -1074,8 +1074,8 @@ void noop_invalidatepage_range(struct page *page, unsigned int offset,
 }
 EXPORT_SYMBOL_GPL(noop_invalidatepage_range);
 
-ssize_t noop_direct_IO(int rw, struct kiocb *kiocb, const struct iovec *iov,
-			loff_t offset, unsigned long nr_segs)
+ssize_t noop_direct_IO(int rw, struct kiocb *kiocb, struct iov_iter *iter,
+			loff_t offset)
 {
 	/*
 	 * iomap based filesystems support direct I/O without need for
