@@ -1866,8 +1866,6 @@ static ssize_t ext3_direct_IO(int rw, struct kiocb *iocb,
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
 	struct ext3_inode_info *ei = EXT3_I(inode);
-	const struct iovec *iov = iov_iter_iovec(iter);
-	unsigned long nr_segs = iter->nr_segs;
 	handle_t *handle;
 	ssize_t ret;
 	int orphan = 0;
@@ -1898,7 +1896,7 @@ static ssize_t ext3_direct_IO(int rw, struct kiocb *iocb,
 	}
 
 retry:
-	ret = blockdev_direct_IO(rw, iocb, inode, iov, offset, nr_segs,
+	ret = blockdev_direct_IO(rw, iocb, inode, iter, offset,
 				 ext3_get_block);
 	/*
 	 * In case of error extending write may have instantiated a few
