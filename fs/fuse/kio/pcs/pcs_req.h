@@ -238,6 +238,7 @@ struct pcs_cluster_core
 	spinlock_t		lock;
 
 	char cluster_name[NAME_MAX];
+	atomic_t storage_version;
 };
 
 static inline struct pcs_cluster_core *cc_from_csset(struct pcs_cs_set * css)
@@ -257,6 +258,7 @@ static inline struct pcs_cluster_core *cc_from_maps(struct pcs_map_set *maps)
 
 void pcs_cc_submit(struct pcs_cluster_core *cc, struct pcs_int_request* ireq);
 void pcs_cc_requeue(struct pcs_cluster_core *cc, struct list_head * q);
+void pcs_cc_update_storage_versions(struct pcs_cluster_core *cc, int version);
 ////// FROM pcs_cluster.h
 static inline void pcs_sreq_attach(struct pcs_int_request * sreq, struct pcs_int_request * parent)
 {

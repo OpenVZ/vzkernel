@@ -116,6 +116,18 @@ static void cc_completion_handler(struct work_struct *w)
 	}
 }
 
+void pcs_cc_update_storage_versions(struct pcs_cluster_core *cc, int version)
+{
+	int old;
+
+	do {
+		old = atomic_read(&cc->storage_version);
+		if (old >= version)
+			break;
+		TRACE("storage version up %d -> %d", old, version);
+	} while (atomic_cmpxchg(&cc->storage_version, old, version) != old);
+}
+
 int pcs_cc_init(struct pcs_cluster_core *cc, struct workqueue_struct *wq,
 		const char *cluster_name, struct pcs_cluster_core_attr *attr)
 {
@@ -132,6 +144,7 @@ int pcs_cc_init(struct pcs_cluster_core *cc, struct workqueue_struct *wq,
 	INIT_WORK(&cc->fiemap_work, fiemap_work_func);
 	cc->wq = wq;
 	snprintf(cc->cluster_name, sizeof(cc->cluster_name), "%s", cluster_name);
+	atomic_set(&cc->storage_version, PCS_VERSION_UNKNOWN);
 
 	pcs_csset_init(&cc->css);
 
