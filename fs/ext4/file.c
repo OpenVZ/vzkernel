@@ -583,6 +583,8 @@ const struct file_operations_extend  ext4_file_operations = {
 		.splice_read	= generic_file_splice_read,
 		.splice_write	= generic_file_splice_write,
 		.fallocate	= ext4_fallocate,
+		.read_iter	= generic_file_read_iter,
+		.write_iter	= ext4_file_write_iter,
 	},
 	.mmap_supported_flags = MAP_SYNC,
 };
