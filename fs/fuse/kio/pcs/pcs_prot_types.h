@@ -15,6 +15,7 @@
 #define PCS_VERSION_UNKNOWN 0
 
 #define PCS_VZ7_VERSION 100
+#define PCS_CS_MSG_ALIGNED_VERSION 134
 
 /* milliseconds since Jan 1970 */
 typedef u64 PCS_FILETIME_T;
