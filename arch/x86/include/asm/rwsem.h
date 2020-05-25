@@ -63,14 +63,14 @@
 static inline void __down_read(struct rw_semaphore *sem)
 {
 	asm volatile("# beginning down_read\n\t"
-		     LOCK_PREFIX _ASM_INC "(%1)\n\t"
+		     LOCK_PREFIX _ASM_INC "(%[sem])\n\t"
 		     /* adds 0x00000001 */
 		     "  jns        1f\n"
 		     "  call call_rwsem_down_read_failed\n"
 		     "1:\n\t"
 		     "# ending down_read\n\t"
 		     : "+m" (sem->count)
-		     : "a" (sem)
+		     : [sem] "a" (sem)
 		     : "memory", "cc");
 }
 
