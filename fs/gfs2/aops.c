@@ -1075,8 +1075,6 @@ static ssize_t gfs2_direct_IO(int rw, struct kiocb *iocb,
 	struct inode *inode = file->f_mapping->host;
 	struct address_space *mapping = inode->i_mapping;
 	struct gfs2_inode *ip = GFS2_I(inode);
-	const struct iovec *iov = iov_iter_iovec(iter);
-	unsigned long nr_segs = iter->nr_segs;
 	struct gfs2_holder gh;
 	int rv;
 
@@ -1126,8 +1124,8 @@ static ssize_t gfs2_direct_IO(int rw, struct kiocb *iocb,
 			truncate_inode_pages_range(mapping, lstart, end);
 	}
 
-	rv = __blockdev_direct_IO(rw, iocb, inode, inode->i_sb->s_bdev, iov,
-				  offset, nr_segs, gfs2_get_block_direct,
+	rv = __blockdev_direct_IO(rw, iocb, inode, inode->i_sb->s_bdev, iter,
+				  offset, gfs2_get_block_direct,
 				  NULL, NULL, 0);
 out:
 	gfs2_glock_dq(&gh);
