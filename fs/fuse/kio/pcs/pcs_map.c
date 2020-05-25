@@ -2575,6 +2575,7 @@ static int commit_cs_record(struct pcs_map_entry * m, struct pcs_cs_record * rec
 	BUG_ON(srec->dirty_integrity && srec->dirty_integrity != sync->integrity_seq);
 
 	dirtify = (op_type == PCS_CS_WRITE_SYNC_RESP || op_type == PCS_CS_WRITE_RESP ||
+		   op_type == PCS_CS_WRITE_AL_RESP ||
 		   op_type == PCS_CS_WRITE_HOLE_RESP || op_type == PCS_CS_WRITE_ZERO_RESP);
 	/* The following looks scary, could be more clear.
 	 * The goal is to update sync seq numbers:
@@ -2926,17 +2927,15 @@ static void prepare_map_flush_msg(struct pcs_map_entry * m, struct pcs_int_reque
 {
 	struct pcs_cs_iohdr * ioh;
 	struct pcs_cs_sync_resp * arr;
+	unsigned varsize = 0;
 
 	assert_spin_locked(&m->lock);
 
 	ioh = (struct pcs_cs_iohdr *)msg->_inline_buffer;
 	arr = (struct pcs_cs_sync_resp *)(ioh + 1);
 
-	ioh->hdr.len = sizeof(struct pcs_cs_iohdr);
-	ioh->hdr.type = PCS_CS_SYNC_REQ;
 	memset(&ioh->sync, 0, sizeof(ioh->sync));
 	ioh->offset = 0;
-	ioh->size = 0;
 	ioh->_reserved = 0;
 	ioh->sync.misc = PCS_CS_IO_SEQ;
 
@@ -2959,7 +2958,7 @@ static void prepare_map_flush_msg(struct pcs_map_entry * m, struct pcs_int_reque
 				arr->sync.ts_io = 0;
 				arr->sync.ts_net = 0;
 				arr->sync._reserved = 0;
-				ioh->hdr.len += sizeof(struct pcs_cs_sync_resp);
+				varsize += sizeof(struct pcs_cs_sync_resp);
 				FUSE_KLOG(cc_from_maps(m->maps)->fc, LOG_DEBUG5, "fill sync "NODE_FMT" [%d,%d,%d,%d]", NODE_ARGS(arr->cs_id),
 					arr->sync.integrity_seq, arr->sync.sync_epoch,
 					arr->sync.sync_dirty, arr->sync.sync_current);
@@ -2967,6 +2966,9 @@ static void prepare_map_flush_msg(struct pcs_map_entry * m, struct pcs_int_reque
 			}
 		}
 	}
+	ioh->size = varsize;
+	ioh->hdr.len = pcs_cs_msg_size(sizeof(struct pcs_cs_iohdr) + varsize,
+				       atomic_read(&cc_from_map(m)->storage_version));
 	msg->size = ioh->hdr.len;
 	msg->private = sreq;
 	msg->done = sync_done;
@@ -3019,8 +3021,9 @@ retry:
 	if (!sreq)
 		goto err_cslist;
 
-	msg = pcs_rpc_alloc_output_msg(sizeof(struct pcs_cs_iohdr) +
-				       cslist->nsrv * sizeof(struct pcs_cs_sync_resp));
+	msg = pcs_alloc_cs_msg(PCS_CS_SYNC_REQ, sizeof(struct pcs_cs_iohdr) +
+			       cslist->nsrv * sizeof(struct pcs_cs_sync_resp),
+			       atomic_read(&cc_from_map(m)->storage_version));
 	if (!msg)
 		goto err_ireq;
 
