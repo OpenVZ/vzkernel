@@ -400,6 +400,72 @@ static const struct file_operations pcs_fuse_cs_stats_ops = {
 	.release = single_release,
 };
 
+static ssize_t pcs_fuse_storage_version_read(struct file *file,
+					     char __user *buf, size_t len,
+					     loff_t *ppos)
+{
+	struct pcs_fuse_stat *stat;
+	struct pcs_cluster_core *cc;
+	char ver[32];
+	size_t size;
+	ssize_t ret = 0;
+
+	mutex_lock(&fuse_mutex);
+
+	stat = file_inode(file)->i_private;
+	if (!stat)
+		goto out;
+	cc = container_of(stat, struct pcs_cluster_core, stat);
+
+	size = snprintf(ver, sizeof(ver), "%d\n",
+			atomic_read(&cc->storage_version));
+	ret = simple_read_from_buffer(buf, len, ppos, ver, size);
+
+out:
+	mutex_unlock(&fuse_mutex);
+
+	return ret;
+}
+
+static ssize_t pcs_fuse_storage_version_write(struct file *file,
+					      const char __user *buf,
+					      size_t count, loff_t *ppos)
+{
+	struct pcs_fuse_stat *stat;
+	struct pcs_cluster_core *cc;
+	unsigned int ver;
+	int err;
+
+	if (*ppos)
+		return -EINVAL;
+
+	err = kstrtouint_from_user(buf, count, 0, &ver);
+	if (err)
+		return err;
+
+	mutex_lock(&fuse_mutex);
+
+	stat = file_inode(file)->i_private;
+	if (!stat)
+		goto out;
+	cc = container_of(stat, struct pcs_cluster_core, stat);
+
+	pcs_cc_update_storage_versions(cc, ver);
+
+out:
+	mutex_unlock(&fuse_mutex);
+
+	return count;
+}
+
+static const struct file_operations pcs_fuse_storage_version_ops = {
+	.owner   = THIS_MODULE,
+	.open    = nonseekable_open,
+	.read    = pcs_fuse_storage_version_read,
+	.write   = pcs_fuse_storage_version_write,
+	.llseek  = no_llseek,
+};
+
 static void fuse_kio_fstat_lat_itr(struct fuse_file *ff,
 				   struct pcs_dentry_info *di, void *ctx)
 {
@@ -847,6 +913,11 @@ void pcs_fuse_stat_init(struct pcs_fuse_stat *stat)
 	stat->cs_stats = fuse_kio_add_dentry(stat->kio_stat, fc, "cs_stats",
 					     S_IFREG | S_IRUSR, 1, NULL,
 					     &pcs_fuse_cs_stats_ops, stat);
+	stat->storage_version = fuse_kio_add_dentry(stat->kio_stat, fc,
+						    "storage_version",
+						    S_IFREG | S_IRUSR | S_IWUSR, 1, NULL,
+						    &pcs_fuse_storage_version_ops,
+						    stat);
 	mutex_unlock(&fuse_mutex);
 	return;
 
@@ -876,6 +947,8 @@ void pcs_fuse_stat_fini(struct pcs_fuse_stat *stat)
 			fuse_kio_rm_dentry(stat->fstat_lat);
 		if (stat->cs_stats)
 			fuse_kio_rm_dentry(stat->cs_stats);
+		if (stat->storage_version)
+			fuse_kio_rm_dentry(stat->storage_version);
 		fuse_kio_rm_dentry(stat->kio_stat);
 	}
 	mutex_unlock(&fuse_mutex);
