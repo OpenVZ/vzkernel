@@ -12,6 +12,8 @@
 /* Current version */
 #define PCS_VERSION 121
 
+#define PCS_VERSION_UNKNOWN 0
+
 #define PCS_VZ7_VERSION 100
 
 /* milliseconds since Jan 1970 */
