@@ -1198,19 +1198,18 @@ do_blockdev_direct_IO(int rw, struct kiocb *iocb, struct inode *inode,
 	dio_submit_t submit_io,	int flags)
 {
 	int seg;
-	size_t size;
-	unsigned long addr;
 	unsigned i_blkbits = ACCESS_ONCE(inode->i_blkbits);
 	unsigned blkbits = i_blkbits;
 	unsigned blocksize_mask = (1 << blkbits) - 1;
 	ssize_t retval = -EINVAL;
-	loff_t end = offset;
+	loff_t end = offset + iov_iter_count(iter);
 	struct dio *dio;
 	struct dio_submit sdio = { 0, };
 	unsigned long user_addr;
 	size_t bytes;
 	struct buffer_head map_bh = { 0, };
 	struct blk_plug plug;
+	unsigned long align = offset | iov_iter_alignment(iter);
 
 	const struct iovec *iov = iov_iter_iovec(iter);
 	unsigned long nr_segs = iter->nr_segs;
@@ -1223,32 +1222,16 @@ do_blockdev_direct_IO(int rw, struct kiocb *iocb, struct inode *inode,
 	 * the early prefetch in the caller enough time.
 	 */
 
-	if (offset & blocksize_mask) {
+	if (align & blocksize_mask) {
 		if (bdev)
 			blkbits = blksize_bits(bdev_logical_block_size(bdev));
 		blocksize_mask = (1 << blkbits) - 1;
-		if (offset & blocksize_mask)
+		if (align & blocksize_mask)
 			goto out;
 	}
 
-	/* Check the memory alignment.  Blocks cannot straddle pages */
-	for (seg = 0; seg < nr_segs; seg++) {
-		addr = (unsigned long)iov[seg].iov_base;
-		size = iov[seg].iov_len;
-		end += size;
-		if (unlikely((addr & blocksize_mask) ||
-			     (size & blocksize_mask))) {
-			if (bdev)
-				blkbits = blksize_bits(
-					 bdev_logical_block_size(bdev));
-			blocksize_mask = (1 << blkbits) - 1;
-			if ((addr & blocksize_mask) || (size & blocksize_mask))
-				goto out;
-		}
-	}
-
 	/* watch out for a 0 len io from a tricksy fs */
-	if (rw == READ && end == offset)
+	if (rw == READ && !iov_iter_count(iter))
 		return 0;
 
 	dio = kmem_cache_alloc(dio_cache, GFP_KERNEL);
