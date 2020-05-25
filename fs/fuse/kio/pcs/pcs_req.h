@@ -239,6 +239,8 @@ struct pcs_cluster_core
 
 	char cluster_name[NAME_MAX];
 	atomic_t storage_version;
+
+	char nilbuffer[PCS_CS_MSG_ALIGNMENT];
 };
 
 static inline struct pcs_cluster_core *cc_from_csset(struct pcs_cs_set * css)
