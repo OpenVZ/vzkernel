@@ -4110,8 +4110,7 @@ void cifs_oplock_break(struct work_struct *work)
  * Direct IO is not yet supported in the cached mode. 
  */
 static ssize_t
-cifs_direct_io(int rw, struct kiocb *iocb, const struct iovec *iov,
-               loff_t pos, unsigned long nr_segs)
+cifs_direct_io(int rw, struct kiocb *iocb, struct iov_iter *iter, loff_t pos)
 {
         /*
          * FIXME
