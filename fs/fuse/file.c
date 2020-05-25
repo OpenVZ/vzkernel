@@ -3597,9 +3597,9 @@ static inline loff_t fuse_round_up(loff_t off)
 	return round_up(off, FUSE_MAX_PAGES_PER_REQ << PAGE_SHIFT);
 }
 
-static ssize_t
-fuse_direct_IO(int rw, struct kiocb *iocb, struct iov_iter *iter,
-			loff_t offset)
+static inline ssize_t
+__fuse_direct_IO(int rw, struct kiocb *iocb, struct iov_iter *iter,
+		 loff_t offset)
 {
 	ssize_t ret = 0;
 	struct file *file = iocb->ki_filp;
@@ -3687,6 +3687,15 @@ fuse_direct_IO(int rw, struct kiocb *iocb, struct iov_iter *iter,
 	}
 
 	return ret;
+}
+
+static ssize_t
+fuse_direct_IO(int rw, struct kiocb *iocb, struct iov_iter *iter, loff_t offset)
+{
+	if (iov_iter_has_bvec(iter))
+		return fuse_direct_IO_bvec(rw, iocb, iov_iter_bvec(iter),
+					   offset, iter->nr_segs);
+	return __fuse_direct_IO(rw, iocb, iter, offset);
 }
 
 static long fuse_file_fallocate(struct file *file, int mode, loff_t offset,
@@ -4056,7 +4065,6 @@ static const struct address_space_operations fuse_file_aops  = {
 	.set_page_dirty	= __set_page_dirty_nobuffers,
 	.bmap		= fuse_bmap,
 	.direct_IO	= fuse_direct_IO,
-	.direct_IO_bvec	= fuse_direct_IO_bvec,
 	.write_begin	= fuse_write_begin,
 	.write_end	= fuse_write_end,
 };
