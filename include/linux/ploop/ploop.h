@@ -935,6 +935,7 @@ void ploop_queue_zero_request(struct ploop_device *plo, struct ploop_request *or
 int ploop_maintenance_wait(struct ploop_device * plo);
 
 extern int max_map_pages;
+extern int kaio_backed_ext4;
 
 extern void ploop_msg_once(struct ploop_device *plo, const char *, ...)
 	__attribute__ ((format (printf, 2, 3)));
