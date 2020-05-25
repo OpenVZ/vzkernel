@@ -627,8 +627,6 @@ static ssize_t ocfs2_direct_IO(int rw,
 {
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file_inode(file)->i_mapping->host;
-	const struct iovec *iov = iov_iter_iovec(iter);
-	unsigned long nr_segs = iter->nr_segs;
 
 	/*
 	 * Fallback to buffered I/O if we see an inode without
@@ -642,7 +640,7 @@ static ssize_t ocfs2_direct_IO(int rw,
 		return 0;
 
 	return __blockdev_direct_IO(rw, iocb, inode, inode->i_sb->s_bdev,
-				    iov, offset, nr_segs,
+				    iter, offset,
 				    ocfs2_direct_IO_get_blocks,
 				    ocfs2_dio_end_io, NULL, 0);
 }
