@@ -3224,8 +3224,8 @@ extern ssize_t __generic_file_aio_write(struct kiocb *, const struct iovec *, un
 extern ssize_t __generic_file_write_iter(struct kiocb *, struct iov_iter *, loff_t *);
 extern ssize_t generic_file_aio_write(struct kiocb *, const struct iovec *, unsigned long, loff_t);
 extern ssize_t generic_file_write_iter(struct kiocb *, struct iov_iter *, loff_t);
-extern ssize_t generic_file_direct_write(struct kiocb *, const struct iovec *,
-		unsigned long *, loff_t, loff_t *, size_t, size_t);
+extern ssize_t generic_file_direct_write(struct kiocb *iocb, struct iov_iter *iter,
+		loff_t pos, loff_t *ppos, size_t count);
 extern ssize_t generic_file_direct_write_iter(struct kiocb *, struct iov_iter *,
 		loff_t, loff_t *, size_t);
 extern ssize_t generic_file_buffered_write(struct kiocb *, const struct iovec *,
