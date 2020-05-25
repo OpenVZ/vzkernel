@@ -144,8 +144,8 @@ int dax_memcpy_toiovecend(struct dax_device *dax_dev, pgoff_t pgoff,
 		const struct iovec *iov, void *addr, int offset, int len);
 void dax_flush(struct dax_device *dax_dev, void *addr, size_t size);
 
-ssize_t dax_iomap_rw(int rw, struct kiocb *iocb, const struct iovec *iov,
-		unsigned long nr_segs, loff_t pos,
+ssize_t dax_iomap_rw(int rw, struct kiocb *iocb, struct iov_iter *iter,
+		loff_t pos,
 		size_t count, const struct iomap_ops *ops);
 int dax_iomap_fault(struct vm_fault *vmf, enum page_entry_size pe_size,
 		pfn_t *pfnp, int *errp, const struct iomap_ops *ops);
