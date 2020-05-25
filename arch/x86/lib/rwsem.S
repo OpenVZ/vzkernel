@@ -101,6 +101,21 @@ ENTRY(call_rwsem_down_read_failed)
 	CFI_ENDPROC
 ENDPROC(call_rwsem_down_read_failed)
 
+ENTRY(call_rwsem_down_read_failed_killable)
+	CFI_STARTPROC
+	FRAME_BEGIN
+	save_common_regs
+	__ASM_SIZE(push,_cfi) %__ASM_REG(dx)
+	movq %rax,%rdi
+	call rwsem_down_read_failed_killable
+	__ASM_SIZE(pop,_cfi) %__ASM_REG(dx)
+	CFI_RESTORE __ASM_REG(dx)
+	restore_common_regs
+	FRAME_END
+	ret
+	CFI_ENDPROC
+ENDPROC(call_rwsem_down_read_failed_killable)
+
 ENTRY(call_rwsem_down_write_failed)
 	CFI_STARTPROC
 	FRAME_BEGIN
