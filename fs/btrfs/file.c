@@ -1744,26 +1744,24 @@ again:
 }
 
 static ssize_t __btrfs_direct_write(struct kiocb *iocb,
-				    const struct iovec *iov,
-				    unsigned long nr_segs, loff_t pos,
+				    struct iov_iter *from,
+				    loff_t pos,
 				    loff_t *ppos, size_t count, size_t ocount)
 {
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file_inode(file);
-	struct iov_iter i;
 	ssize_t written;
 	ssize_t written_buffered;
 	loff_t endbyte;
 	int err;
 
-	iov_iter_init(&i, iov, nr_segs, count, 0);
-	written = generic_file_direct_write(iocb, &i, pos, ppos, ocount);
+	written = generic_file_direct_write(iocb, from, pos, ppos, ocount);
 
 	if (written < 0 || written == count)
 		return written;
 
 	pos += written;
-	written_buffered = __btrfs_buffered_write(file, &i, pos);
+	written_buffered = __btrfs_buffered_write(file, from, pos);
 	if (written_buffered < 0) {
 		err = written_buffered;
 		goto out;
@@ -1819,6 +1817,7 @@ static ssize_t btrfs_file_aio_write(struct kiocb *iocb,
 	ssize_t err = 0;
 	size_t count, ocount;
 	bool sync = (file->f_flags & O_DSYNC) || IS_SYNC(file->f_mapping->host);
+	struct iov_iter i;
 
 	mutex_lock(&inode->i_mutex);
 
@@ -1881,14 +1880,12 @@ static ssize_t btrfs_file_aio_write(struct kiocb *iocb,
 	if (sync)
 		atomic_inc(&BTRFS_I(inode)->sync_writers);
 
+	iov_iter_init(&i, iov, nr_segs, count, 0);
+
 	if (file->f_flags & O_DIRECT) {
-		num_written = __btrfs_direct_write(iocb, iov, nr_segs,
+		num_written = __btrfs_direct_write(iocb, &i,
 						   pos, ppos, count, ocount);
 	} else {
-		struct iov_iter i;
-
-		iov_iter_init(&i, iov, nr_segs, count, num_written);
-
 		num_written = __btrfs_buffered_write(file, &i, pos);
 		if (num_written > 0)
 			*ppos = pos + num_written;
