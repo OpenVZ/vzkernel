@@ -3662,6 +3662,7 @@ static inline iop_dentry_open_t get_dentry_open_iop(struct inode *inode)
 extern unsigned long iov_iter_alignment(struct iov_iter *i);
 ssize_t iov_iter_get_pages(struct iov_iter *i, struct page **pages,
 			size_t maxsize, size_t *start, int rw);
+int iov_iter_npages(struct iov_iter *i, int maxpages);
 extern bool path_noexec(const struct path *path);
 
 #endif /* _LINUX_FS_H */
