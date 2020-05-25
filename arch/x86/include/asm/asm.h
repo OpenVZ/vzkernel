@@ -83,4 +83,9 @@
 	" .popsection\n"
 #endif
 
+#ifndef __ASSEMBLY__
+register unsigned long current_stack_pointer asm(_ASM_SP);
+#define ASM_CALL_CONSTRAINT "+r" (current_stack_pointer)
+#endif
+
 #endif /* _ASM_X86_ASM_H */
