@@ -741,10 +741,7 @@ static ssize_t gfs2_file_aio_write(struct kiocb *iocb, const struct iovec *iov,
 		goto out;
 	}
 
-	ocount = 0;
-	ret = generic_segment_checks(iov, &nr_segs, &ocount, VERIFY_READ);
-	if (ret)
-		goto out;
+	ocount = iov_length(iov, nr_segs);
 
 	count = ocount;
 
