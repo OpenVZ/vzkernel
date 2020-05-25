@@ -574,8 +574,8 @@ struct address_space_operations {
 	void (*invalidatepage) (struct page *, unsigned long);
 	int (*releasepage) (struct page *, gfp_t);
 	void (*freepage)(struct page *);
-	ssize_t (*direct_IO)(int, struct kiocb *, const struct iovec *iov,
-			loff_t offset, unsigned long nr_segs);
+	ssize_t (*direct_IO)(int, struct kiocb *, struct iov_iter *iter,
+			loff_t offset);
 	ssize_t (*direct_IO_bvec)(int, struct kiocb *, struct bio_vec *bvec,
 			loff_t offset, unsigned long bvec_len);
 	int (*get_xip_mem)(struct address_space *, pgoff_t, int,
@@ -3407,7 +3407,7 @@ extern int noop_set_page_dirty(struct page *page);
 extern void noop_invalidatepage_range(struct page *page, unsigned int offset,
 		unsigned int length);
 extern ssize_t noop_direct_IO(int rw, struct kiocb *kiocb,
-		const struct iovec *iov, loff_t offset, unsigned long nr_segs);
+		struct iov_iter *iter, loff_t offset);
 extern int simple_empty(struct dentry *);
 extern int simple_readpage(struct file *file, struct page *page);
 extern int simple_write_begin(struct file *file, struct address_space *mapping,
@@ -3666,8 +3666,7 @@ static inline ssize_t mapping_direct_IO(struct address_space *mapping, int rw,
 			         loff_t pos)
 {
 	if (iov_iter_has_iovec(iter))
-		return mapping->a_ops->direct_IO(rw, iocb, iov_iter_iovec(iter),
-						 pos, iter->nr_segs);
+		return mapping->a_ops->direct_IO(rw, iocb, iter, pos);
 	else if (iov_iter_has_bvec(iter))
 		return mapping->a_ops->direct_IO_bvec(rw, iocb,
 						      iov_iter_bvec(iter), pos,
