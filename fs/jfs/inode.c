@@ -336,11 +336,9 @@ static ssize_t jfs_direct_IO(int rw, struct kiocb *iocb,
 	struct file *file = iocb->ki_filp;
 	struct address_space *mapping = file->f_mapping;
 	struct inode *inode = file->f_mapping->host;
-	const struct iovec *iov = iov_iter_iovec(iter);
-	unsigned long nr_segs = iter->nr_segs;
 	ssize_t ret;
 
-	ret = blockdev_direct_IO(rw, iocb, inode, iov, offset, nr_segs,
+	ret = blockdev_direct_IO(rw, iocb, inode, iter, offset,
 				 jfs_get_block);
 
 	/*
