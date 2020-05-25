@@ -1953,14 +1953,9 @@ static ssize_t shmem_file_aio_read(struct kiocb *iocb,
 		const struct iovec *iov, unsigned long nr_segs, loff_t pos)
 {
 	struct file *filp = iocb->ki_filp;
-	ssize_t retval;
+	ssize_t retval = 0;
 	unsigned long seg;
-	size_t count;
 	loff_t *ppos = &iocb->ki_pos;
-
-	retval = generic_segment_checks(iov, &nr_segs, &count, VERIFY_WRITE);
-	if (retval)
-		return retval;
 
 	for (seg = 0; seg < nr_segs; seg++) {
 		read_descriptor_t desc;
