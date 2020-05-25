@@ -1987,45 +1987,6 @@ success:
 	return size;
 }
 
-/*
- * Performs necessary checks before doing a write
- * @iov:	io vector request
- * @nr_segs:	number of segments in the iovec
- * @count:	number of bytes to write
- * @access_flags: type of access: %VERIFY_READ or %VERIFY_WRITE
- *
- * Adjust number of segments and amount of bytes to write (nr_segs should be
- * properly initialized first). Returns appropriate error code that caller
- * should return or zero in case that write should be allowed.
- */
-int generic_segment_checks(const struct iovec *iov,
-			unsigned long *nr_segs, size_t *count, int access_flags)
-{
-	unsigned long   seg;
-	size_t cnt = 0;
-	for (seg = 0; seg < *nr_segs; seg++) {
-		const struct iovec *iv = &iov[seg];
-
-		/*
-		 * If any segment has a negative length, or the cumulative
-		 * length ever wraps negative then return -EINVAL.
-		 */
-		cnt += iv->iov_len;
-		if (unlikely((ssize_t)(cnt|iv->iov_len) < 0))
-			return -EINVAL;
-		if (access_ok(access_flags, iv->iov_base, iv->iov_len))
-			continue;
-		if (seg == 0)
-			return -EFAULT;
-		*nr_segs = seg;
-		cnt -= iv->iov_len;	/* This segment is no good */
-		break;
-	}
-	*count = cnt;
-	return 0;
-}
-EXPORT_SYMBOL(generic_segment_checks);
-
 static ssize_t mapping_direct_IO(struct address_space *mapping, int rw,
 			         struct kiocb *iocb, struct iov_iter *iter,
 			         loff_t pos)
@@ -2155,13 +2116,7 @@ generic_file_aio_read(struct kiocb *iocb, const struct iovec *iov,
 		unsigned long nr_segs, loff_t pos)
 {
 	struct iov_iter iter;
-	int ret;
-	size_t count;
-
-	count = 0;
-	ret = generic_segment_checks(iov, &nr_segs, &count, VERIFY_WRITE);
-	if (ret)
-		return ret;
+	size_t count = iov_length(iov, nr_segs);
 
 	iov_iter_init(&iter, iov, nr_segs, count, 0);
 
@@ -3191,19 +3146,11 @@ __generic_file_aio_write(struct kiocb *iocb, const struct iovec *iov,
 			 unsigned long nr_segs, loff_t *ppos)
 {
 	struct iov_iter iter;
-	size_t count;
-	int ret;
-
-	count = 0;
-	ret = generic_segment_checks(iov, &nr_segs, &count, VERIFY_READ);
-	if (ret)
-		goto out;
+	size_t count = iov_length(iov, nr_segs);
 
 	iov_iter_init(&iter, iov, nr_segs, count, 0);
 
-	ret = __generic_file_write_iter(iocb, &iter, ppos);
-out:
-	return ret;
+	return __generic_file_write_iter(iocb, &iter, ppos);
 }
 EXPORT_SYMBOL(__generic_file_aio_write);
 
