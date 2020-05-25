@@ -255,10 +255,7 @@ xfs_file_dio_aio_read(
 	ssize_t			ret = 0;
 	loff_t			end;
 
-
-	ret = generic_segment_checks(iovp, &nr_segs, &size, VERIFY_WRITE);
-	if (ret < 0)
-		return ret;
+	size = iov_length(iovp, nr_segs);
 	end = iocb->ki_pos + size - 1;
 
 	trace_xfs_file_direct_read(ip, size, iocb->ki_pos);
@@ -318,9 +315,7 @@ xfs_file_dax_read(
 	size_t			size = 0;
 	ssize_t			ret = 0;
 
-	ret = generic_segment_checks(iovp, &nr_segs, &size, VERIFY_WRITE);
-	if (ret < 0)
-		return ret;
+	size = iov_length(iovp, nr_segs);
 
 	trace_xfs_file_dax_read(ip, size, iocb->ki_pos);
 
@@ -344,12 +339,8 @@ xfs_file_buffered_aio_read(
 	loff_t			pos)
 {
 	struct xfs_inode	*ip = XFS_I(file_inode(iocb->ki_filp));
-	size_t			size = 0;
+	size_t			size = iov_length(iovp, nr_segs);
 	ssize_t			ret;
-
-	ret = generic_segment_checks(iovp, &nr_segs, &size, VERIFY_WRITE);
-	if (ret < 0)
-		return ret;
 
 	trace_xfs_file_buffered_read(ip, size, iocb->ki_pos);
 	xfs_rw_ilock(ip, XFS_IOLOCK_SHARED);
@@ -885,10 +876,7 @@ xfs_file_aio_write(
 
 	BUG_ON(iocb->ki_pos != pos);
 
-	ret = generic_segment_checks(iovp, &nr_segs, &ocount, VERIFY_READ);
-	if (ret)
-		return ret;
-
+	ocount = iov_length(iovp, nr_segs);
 	if (ocount == 0)
 		return 0;
 
