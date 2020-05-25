@@ -854,3 +854,60 @@ struct iov_iter_ops ii_bad_ops = {
 	.ii_get_page = ii_bad_get_page,
 };
 EXPORT_SYMBOL(ii_bad_ops);
+
+static unsigned long alignment_bvec(struct iov_iter *i)
+{
+	struct bio_vec *bvec = iov_iter_bvec(i);
+	unsigned long res;
+	size_t size = i->count;
+	size_t n;
+
+	if (!size)
+		return 0;
+
+	res = bvec->bv_offset + i->iov_offset;
+	n = bvec->bv_len - i->iov_offset;
+	if (n >= size)
+		return res | size;
+	size -= n;
+	res |= n;
+	while (size > (++bvec)->bv_len) {
+		res |= bvec->bv_offset | bvec->bv_len;
+		size -= bvec->bv_len;
+	}
+	res |= bvec->bv_offset | size;
+	return res;
+}
+
+static unsigned long alignment_iovec(const struct iov_iter *i)
+{
+	const struct iovec *iov = iov_iter_iovec(i);
+	unsigned long res;
+	size_t size = i->count;
+	size_t n;
+
+	if (!size)
+		return 0;
+
+	res = (unsigned long)iov->iov_base + i->iov_offset;
+	n = iov->iov_len - i->iov_offset;
+	if (n >= size)
+		return res | size;
+	size -= n;
+	res |= n;
+	while (size > (++iov)->iov_len) {
+		res |= (unsigned long)iov->iov_base | iov->iov_len;
+		size -= iov->iov_len;
+	}
+	res |= (unsigned long)iov->iov_base | size;
+	return res;
+}
+
+unsigned long iov_iter_alignment(struct iov_iter *i)
+{
+	if (iov_iter_has_bvec(i))
+		return alignment_bvec(i);
+	else
+		return alignment_iovec(i);
+}
+EXPORT_SYMBOL(iov_iter_alignment);
