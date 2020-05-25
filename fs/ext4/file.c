@@ -273,14 +273,10 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
 #endif
 
 	iocb->private = &overwrite; /* RHEL7 only - prevent DIO race */
-	if (unlikely(io_is_direct(iocb->ki_filp))) {
-		struct iov_iter iter;
-
-		iov_iter_init(&iter, iov, nr_segs, iov_length(iov, nr_segs), 0);
-
+	if (unlikely(io_is_direct(iocb->ki_filp)))
 		ret = ext4_file_dio_write(iocb, &iter, pos);
-	} else
-		ret = generic_file_aio_write(iocb, iov, nr_segs, pos);
+	else
+		ret = generic_file_write_iter(iocb, &iter, pos);
 
 	return ret;
 }
