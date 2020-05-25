@@ -333,7 +333,7 @@ ploop1_open(struct ploop_delta * delta)
 	    ((u64)ph->bd_size + ph->l1_off) << 9)
 		delta->flags |= PLOOP_FMT_PREALLOCATED;
 
-	if (delta->io.ops->id != PLOOP_IO_DIRECT)
+	if (delta->io.ops->id != PLOOP_IO_DIRECT || kaio_backed_ext4)
 		set_bit(PLOOP_S_NO_FALLOC_DISCARD, &delta->plo->state);
 
 	return 0;

@@ -61,6 +61,8 @@ static long user_threshold __read_mostly = 4L * 1024 * 1024; /* 4GB in KB */
 
 static int large_disk_support __read_mostly = 1; /* true */
 static int native_discard_support __read_mostly = 1;
+int kaio_backed_ext4 __read_mostly = 0;
+EXPORT_SYMBOL(kaio_backed_ext4);
 
 static struct rb_root ploop_devices_tree = RB_ROOT;
 static DEFINE_MUTEX(ploop_devices_mutex);
@@ -5835,6 +5837,8 @@ module_param(large_disk_support, int, 0444);
 MODULE_PARM_DESC(ploop_large_disk_support, "Support of large disks (>2TB)");
 module_param(native_discard_support, int, 0644);
 MODULE_PARM_DESC(native_discard_support, "Native discard support");
+module_param(kaio_backed_ext4, int, 0644);
+MODULE_PARM_DESC(kaio_backed_ext4, "kaio-backed ext4");
 
 static int __init ploop_mod_init(void)
 {
