@@ -79,12 +79,10 @@ static void ext4_unwritten_wait(struct inode *inode)
  * or one thread will zero the other's data, causing corruption.
  */
 static int
-ext4_unaligned_aio(struct inode *inode, const struct iovec *iov,
-		   unsigned long nr_segs, loff_t pos)
+ext4_unaligned_aio(struct inode *inode, size_t count, loff_t pos)
 {
 	struct super_block *sb = inode->i_sb;
 	int blockmask = sb->s_blocksize - 1;
-	size_t count = iov_length(iov, nr_segs);
 	loff_t final_size = pos + count;
 
 	if (pos >= ALIGN(i_size_read(inode), sb->s_blocksize))
@@ -154,8 +152,7 @@ static ssize_t ext4_write_checks(struct kiocb *iocb, const struct iovec *iov,
 }
 
 static ssize_t
-ext4_file_dio_write(struct kiocb *iocb, const struct iovec *iov,
-		    unsigned long nr_segs, loff_t pos)
+ext4_file_dio_write(struct kiocb *iocb, struct iov_iter *iter, loff_t pos)
 {
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
@@ -163,10 +160,11 @@ ext4_file_dio_write(struct kiocb *iocb, const struct iovec *iov,
 	int unaligned_aio = 0;
 	ssize_t ret;
 	int overwrite = 0;
+	size_t count = iov_iter_count(iter);
 
 	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS) &&
 	    !is_sync_kiocb(iocb))
-		unaligned_aio = ext4_unaligned_aio(inode, iov, nr_segs, pos);
+		unaligned_aio = ext4_unaligned_aio(inode, count, pos);
 
 	/* Unaligned direct AIO must be serialized; see comment above */
 	if (unaligned_aio) {
@@ -183,10 +181,10 @@ ext4_file_dio_write(struct kiocb *iocb, const struct iovec *iov,
 
 	/* Check whether we do a DIO overwrite or not */
 	if (ext4_should_dioread_nolock(inode) && !unaligned_aio &&
-	    ext4_overwrite_io(inode, iocb->ki_pos, iov_length(iov, nr_segs)))
+	    ext4_overwrite_io(inode, iocb->ki_pos, count))
 		overwrite = 1;
 
-	ret = __generic_file_aio_write(iocb, iov, nr_segs, &iocb->ki_pos);
+	ret = __generic_file_write_iter(iocb, iter, &iocb->ki_pos);
 	/*
 	 * Unaligned direct AIO must be the only IO in flight. Otherwise
 	 * overlapping aligned IO after unaligned might result in data
@@ -267,9 +265,13 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
 #endif
 
 	iocb->private = &overwrite; /* RHEL7 only - prevent DIO race */
-	if (unlikely(io_is_direct(iocb->ki_filp)))
-		ret = ext4_file_dio_write(iocb, iov, nr_segs, pos);
-	else
+	if (unlikely(io_is_direct(iocb->ki_filp))) {
+		struct iov_iter iter;
+
+		iov_iter_init(&iter, iov, nr_segs, iov_length(iov, nr_segs), 0);
+
+		ret = ext4_file_dio_write(iocb, &iter, pos);
+	} else
 		ret = generic_file_aio_write(iocb, iov, nr_segs, pos);
 
 	return ret;
