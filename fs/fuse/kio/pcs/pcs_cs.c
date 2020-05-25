@@ -82,6 +82,31 @@ fail1:
 	return -ENOMEM;
 }
 
+u32 pcs_cs_msg_size(u32 size, u32 storage_version)
+{
+	if (pcs_cs_use_aligned_io(storage_version))
+		size = ALIGN(size, PCS_CS_MSG_ALIGNMENT);
+
+	return size;
+}
+
+struct pcs_msg* pcs_alloc_cs_msg(u32 type, u32 size, u32 storage_version)
+{
+	struct pcs_msg* msg;
+	struct pcs_rpc_hdr* h;
+
+	msg = pcs_rpc_alloc_output_msg(pcs_cs_msg_size(size, storage_version));
+	if (!msg)
+		return NULL;
+
+	h = (struct pcs_rpc_hdr*)msg_inline_head(msg);
+	memset(h, 0, msg->size);
+	h->len = msg->size;
+	h->type = type;
+
+	return msg;
+}
+
 static void pcs_cs_percpu_stat_free(struct pcs_cs *cs)
 {
 	free_percpu(cs->stat.sync_ops_rate);
@@ -354,6 +379,7 @@ void pcs_cs_update_stat(struct pcs_cs *cs, u32 iolat, u32 netlat, int op_type)
 	switch (op_type) {
 	case PCS_CS_WRITE_SYNC_RESP:
 	case PCS_CS_WRITE_RESP:
+	case PCS_CS_WRITE_AL_RESP:
 		this_cpu_inc(cs->stat.write_ops_rate->total);
 		break;
 	case PCS_CS_READ_RESP:
@@ -549,6 +575,40 @@ static void cs_get_data(struct pcs_msg *msg, int offset, struct iov_iter *it)
 	}
 }
 
+static void cs_get_data_aligned(struct pcs_msg *msg, int offset, struct iov_iter *it)
+{
+	struct pcs_int_request * ireq = ireq_from_msg(msg);
+	int storage_version = atomic_read(&ireq->cc->storage_version);
+	unsigned hdrsize = pcs_cs_msg_size(sizeof(struct pcs_cs_iohdr),
+					   storage_version);
+	unsigned padding;
+
+	if (offset < sizeof(struct pcs_cs_iohdr)) {
+		cs_get_data(msg, offset, it);
+		return;
+	}
+
+	if (offset < hdrsize) {
+		BUILD_BUG_ON(sizeof(ireq->cc->nilbuffer) < PCS_CS_MSG_ALIGNMENT);
+		iov_iter_init_plain(it, ireq->cc->nilbuffer, hdrsize - offset, 0);
+		return;
+	}
+
+	if (offset < hdrsize + ireq->iochunk.size) {
+		/* cs_get_data() does not know about header padding, so fixup the offset */
+		offset -= hdrsize - sizeof(struct pcs_cs_iohdr);
+		cs_get_data(msg, offset, it);
+		return;
+	}
+
+	padding = pcs_cs_msg_size(ireq->iochunk.size, storage_version) -
+		  ireq->iochunk.size;
+	BUG_ON(offset >= hdrsize + ireq->iochunk.size + padding);
+
+	iov_iter_init_plain(it, ireq->cc->nilbuffer,
+			    hdrsize + ireq->iochunk.size + padding - offset, 0);
+}
+
 static void cs_sent(struct pcs_msg *msg)
 {
 	msg->done = cs_response_done;
@@ -565,6 +625,8 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 	struct pcs_cs_iohdr *ioh;
 	struct pcs_cs_list *csl = ireq->iochunk.csl;
 	struct pcs_map_entry *map = ireq->iochunk.map; /* ireq keeps reference to map */
+	int storage_version = atomic_read(&ireq->cc->storage_version);
+	int aligned_msg;
 
 	msg->private = cs;
 
@@ -572,15 +634,21 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 	msg->private2 = ireq;
 
 	ioh = &ireq->iochunk.hbuf;
-	ioh->hdr.len = sizeof(struct pcs_cs_iohdr);
+	ioh->hdr.len = pcs_cs_msg_size(sizeof(struct pcs_cs_iohdr),
+				       storage_version);
+	aligned_msg = pcs_cs_use_aligned_io(storage_version);
 	switch (ireq->iochunk.cmd) {
 	case PCS_REQ_T_READ:
 		ioh->hdr.type = PCS_CS_READ_REQ;
 		break;
 	case PCS_REQ_T_WRITE:
-		ioh->hdr.type = (ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE) ?
-				PCS_CS_WRITE_SYNC_REQ : PCS_CS_WRITE_REQ;
-		ioh->hdr.len += ireq->iochunk.size;
+		if (aligned_msg)
+			ioh->hdr.type = PCS_CS_WRITE_AL_REQ;
+		else
+			ioh->hdr.type = (ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE) ?
+					PCS_CS_WRITE_SYNC_REQ : PCS_CS_WRITE_REQ;
+		ioh->hdr.len = pcs_cs_msg_size(ioh->hdr.len + ireq->iochunk.size,
+					       storage_version);
 		break;
 	case PCS_REQ_T_WRITE_HOLE:
 		ioh->hdr.type = PCS_CS_WRITE_HOLE_REQ;
@@ -611,7 +679,7 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 	msg->rpc = NULL;
 	pcs_clear_error(&msg->error);
 	msg->done = cs_sent;
-	msg->get_iter = cs_get_data;
+	msg->get_iter = aligned_msg ? cs_get_data_aligned : cs_get_data;
 
 	if ((map->state & PCS_MAP_DEAD) || (map->cs_list != csl)) {
 		ireq->error.value = PCS_ERR_CSD_STALE_MAP;
@@ -1085,17 +1153,13 @@ static struct pcs_msg *cs_prep_probe(struct pcs_cs *cs)
 	struct pcs_msg *msg;
 	struct pcs_cs_map_prop *m;
 	unsigned int msg_sz = offsetof(struct pcs_cs_map_prop, nodes) + sizeof(struct pcs_cs_node_desc);
+	int storage_version = atomic_read(&cc_from_csset(cs->css)->storage_version);
 
-
-	msg = pcs_rpc_alloc_output_msg(msg_sz);
+	msg = pcs_alloc_cs_msg(PCS_CS_MAP_PROP_REQ, msg_sz, storage_version);
 	if (!msg)
 		return NULL;
 
 	m = (struct pcs_cs_map_prop *)msg_inline_head(msg);
-	memset(m, 0, msg_sz);
-
-	m->hdr.h.type = PCS_CS_MAP_PROP_REQ;
-	m->hdr.h.len = msg_sz;
 
 	m->flags = CS_MAPF_PING;
 	m->nnodes = 1;
