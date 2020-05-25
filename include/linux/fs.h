@@ -137,11 +137,11 @@ typedef void (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
 /* Write access to underlying fs */
 #define FMODE_WRITER		((__force fmode_t)0x10000)
 
-/* File is a block device opened by mount(2)  */
-#define FMODE_MOUNT		((__force fmode_t)0x10000)
-
 /* File was opened by fanotify and shouldn't generate fanotify events */
 #define FMODE_NONOTIFY		((__force fmode_t)0x1000000)
+
+/* File is a block device opened by mount(2)  */
+#define FMODE_MOUNT		((__force fmode_t)0x40000000)
 
 /* The extended KABI iterate method in struct file_operations is present */
 #define FMODE_KABI_ITERATE	((__force fmode_t)0x80000000)
