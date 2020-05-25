@@ -118,12 +118,11 @@ static bool ext4_overwrite_io(struct inode *inode, loff_t pos, loff_t len)
 	return err == blklen && (map.m_flags & EXT4_MAP_MAPPED);
 }
 
-static ssize_t ext4_write_checks(struct kiocb *iocb, const struct iovec *iov,
-				 unsigned long nr_segs, loff_t *pos)
+static ssize_t ext4_write_checks(struct kiocb *iocb, struct iov_iter *iter, loff_t *pos)
 {
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file_inode(iocb->ki_filp);
-	size_t length = iov_length(iov, nr_segs);
+	size_t length = iov_iter_count(iter);
 	ssize_t ret;
 
 	ret = generic_write_checks(file, pos, &length, S_ISBLK(inode->i_mode));
@@ -144,11 +143,15 @@ static ssize_t ext4_write_checks(struct kiocb *iocb, const struct iovec *iov,
 			return -EFBIG;
 
 		if (*pos + length > sbi->s_bitmap_maxbytes) {
-			nr_segs = iov_shorten((struct iovec *)iov, nr_segs,
+			int err;
+
+			err = iov_iter_shorten(iter,
 					      sbi->s_bitmap_maxbytes - *pos);
+			if (WARN_ON_ONCE(err))
+				return err;
 		}
 	}
-	return iov_length(iov, nr_segs);
+	return iov_iter_count(iter);
 }
 
 static ssize_t
@@ -222,8 +225,10 @@ ext4_file_dax_write(
 	size_t			size = iov_length(iovp, nr_segs);
 	struct iov_iter iter;
 
+	iov_iter_init(&iter, iovp, nr_segs, size, 0);
+
 	inode_lock(inode);
-	ret = ext4_write_checks(iocb, iovp, nr_segs, &pos);
+	ret = ext4_write_checks(iocb, &iter, &pos);
 	if (ret < 0)
 		goto out;
 	ret = file_remove_privs(iocb->ki_filp);
@@ -232,9 +237,6 @@ ext4_file_dax_write(
 	ret = file_update_time(iocb->ki_filp);
 	if (ret)
 		goto out;
-
-	iov_iter_init(&iter, iovp, nr_segs, size, 0);
-
 	ret = dax_iomap_rw(WRITE, iocb, &iter, pos,
 					size, &ext4_iomap_ops);
 out:
@@ -257,8 +259,11 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
 	struct inode *inode = file_inode(iocb->ki_filp);
 	ssize_t ret;
 	int overwrite = 0;
+	struct iov_iter iter;
 
-	ret = ext4_write_checks(iocb, iov, nr_segs, &pos);
+	iov_iter_init(&iter, iov, nr_segs, iov_length(iov, nr_segs), 0);
+
+	ret = ext4_write_checks(iocb, &iter, &pos);
 	if (ret <= 0)
 		return ret;
 
