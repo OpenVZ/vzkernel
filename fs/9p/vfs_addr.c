@@ -256,9 +256,9 @@ static int v9fs_launder_page(struct page *page)
  *
  */
 static ssize_t
-v9fs_direct_IO(int rw, struct kiocb *iocb, const struct iovec *iov,
-	       loff_t pos, unsigned long nr_segs)
+v9fs_direct_IO(int rw, struct kiocb *iocb, struct iov_iter *iter, loff_t pos)
 {
+	unsigned long nr_segs = iter->nr_segs;
 	/*
 	 * FIXME
 	 * Now that we do caching with cache mode enabled, We need
