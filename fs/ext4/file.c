@@ -221,12 +221,9 @@ ext4_file_dax_write(
 {
 	struct inode *inode = file_inode(iocb->ki_filp);
 	ssize_t			ret;
-	size_t			size = 0;
+	size_t			size = iov_length(iovp, nr_segs);
 
 	inode_lock(inode);
-	ret = generic_segment_checks(iovp, &nr_segs, &size, VERIFY_WRITE);
-	if (ret < 0)
-		return ret;
 	ret = ext4_write_checks(iocb, iovp, nr_segs, &pos);
 	if (ret < 0)
 		goto out;
@@ -514,14 +511,9 @@ ext4_file_dax_read(
 	unsigned long		nr_segs,
 	loff_t			pos)
 {
-	size_t			size = 0;
+	size_t			size = iov_length(iovp, nr_segs);
 	ssize_t			ret = 0;
 	struct inode *inode = file_inode(iocb->ki_filp);
-
-	ret = generic_segment_checks(iovp, &nr_segs, &size, VERIFY_WRITE);
-	if (ret < 0)
-		return ret;
-
 	if (!size)
 		return 0; /* skip atime */
 
