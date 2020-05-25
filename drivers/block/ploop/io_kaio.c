@@ -185,9 +185,11 @@ static int kaio_kernel_submit(struct file *file, struct kaio_req *kreq,
 	if (!iocb)
 		return -ENOMEM;
 
-	if (rw & REQ_DISCARD)
+	if (rw & REQ_DISCARD) {
 		op = IOCB_CMD_UNMAP_ITER;
-	else if (rw & REQ_WRITE)
+		if (file_inode(file)->i_sb->s_magic == EXT4_SUPER_MAGIC)
+			return -ENOTSUPP;
+	} else if (rw & REQ_WRITE)
 		op = IOCB_CMD_WRITE_ITER;
 	else
 		op = IOCB_CMD_READ_ITER;
@@ -1155,7 +1157,8 @@ static int kaio_autodetect(struct ploop_io * io)
 	struct file  * file  = io->files.file;
 	struct inode * inode = file->f_mapping->host;
 
-	if (inode->i_sb->s_magic != FUSE_SUPER_MAGIC)
+	if (inode->i_sb->s_magic != FUSE_SUPER_MAGIC &&
+	    (inode->i_sb->s_magic != EXT4_SUPER_MAGIC || !kaio_backed_ext4))
 		return -1; /* not mine */
 
 	if (!(file->f_flags & O_DIRECT)) {
