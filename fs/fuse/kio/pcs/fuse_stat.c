@@ -725,6 +725,7 @@ struct fuse_val_stat *req_stat_entry(struct pcs_fuse_io_stat *io, u32 type)
 			return &io->read_bytes;
 		case PCS_CS_WRITE_SYNC_RESP:
 		case PCS_CS_WRITE_RESP:
+		case PCS_CS_WRITE_AL_RESP:
 			return &io->write_bytes;
 		case PCS_CS_SYNC_RESP:
 			return &io->flush_cnt;
