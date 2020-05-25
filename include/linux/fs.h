@@ -3661,6 +3661,21 @@ static inline iop_dentry_open_t get_dentry_open_iop(struct inode *inode)
 	return wrapper ? wrapper->dentry_open : NULL;
 }
 
+static inline ssize_t mapping_direct_IO(struct address_space *mapping, int rw,
+			         struct kiocb *iocb, struct iov_iter *iter,
+			         loff_t pos)
+{
+	if (iov_iter_has_iovec(iter))
+		return mapping->a_ops->direct_IO(rw, iocb, iov_iter_iovec(iter),
+						 pos, iter->nr_segs);
+	else if (iov_iter_has_bvec(iter))
+		return mapping->a_ops->direct_IO_bvec(rw, iocb,
+						      iov_iter_bvec(iter), pos,
+						      iter->nr_segs);
+	else
+		BUG();
+}
+
 extern bool path_noexec(const struct path *path);
 
 #endif /* _LINUX_FS_H */
