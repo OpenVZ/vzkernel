@@ -576,8 +576,6 @@ struct address_space_operations {
 	void (*freepage)(struct page *);
 	ssize_t (*direct_IO)(int, struct kiocb *, struct iov_iter *iter,
 			loff_t offset);
-	ssize_t (*direct_IO_bvec)(int, struct kiocb *, struct bio_vec *bvec,
-			loff_t offset, unsigned long bvec_len);
 	int (*get_xip_mem)(struct address_space *, pgoff_t, int,
 						void **, unsigned long *);
 	RH_KABI_DEPRECATE_FN(int, get_xip_mem, struct address_space *, pgoff_t,
@@ -3665,14 +3663,7 @@ static inline ssize_t mapping_direct_IO(struct address_space *mapping, int rw,
 			         struct kiocb *iocb, struct iov_iter *iter,
 			         loff_t pos)
 {
-	if (iov_iter_has_iovec(iter))
-		return mapping->a_ops->direct_IO(rw, iocb, iter, pos);
-	else if (iov_iter_has_bvec(iter))
-		return mapping->a_ops->direct_IO_bvec(rw, iocb,
-						      iov_iter_bvec(iter), pos,
-						      iter->nr_segs);
-	else
-		BUG();
+	return mapping->a_ops->direct_IO(rw, iocb, iter, pos);
 }
 
 extern bool path_noexec(const struct path *path);
