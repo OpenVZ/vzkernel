@@ -321,7 +321,7 @@ nilfs_direct_IO(int rw, struct kiocb *iocb, struct iov_iter *iter,
 	 */
 	if (unlikely((rw & WRITE) && size < 0)) {
 		loff_t isize = i_size_read(inode);
-		loff_t end = offset + iov_length(iov, nr_segs);
+		loff_t end = offset + iov_iter_count(iter);
 
 		if (end > isize)
 			nilfs_write_failed(mapping, end);
