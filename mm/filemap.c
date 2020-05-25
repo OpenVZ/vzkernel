@@ -2825,7 +2825,7 @@ int pagecache_write_end(struct file *file, struct address_space *mapping,
 EXPORT_SYMBOL(pagecache_write_end);
 
 ssize_t
-generic_file_direct_write_iter(struct kiocb *iocb, struct iov_iter *iter,
+generic_file_direct_write(struct kiocb *iocb, struct iov_iter *iter,
 		loff_t pos, loff_t *ppos, size_t count)
 {
 	struct file	*file = iocb->ki_filp;
@@ -2881,6 +2881,7 @@ generic_file_direct_write_iter(struct kiocb *iocb, struct iov_iter *iter,
 
 	if (written > 0) {
 		pos += written;
+		iov_iter_advance(iter, written);
 		if (pos > i_size_read(inode) && !S_ISBLK(inode->i_mode)) {
 			i_size_write(inode, pos);
 			mark_inode_dirty(inode);
@@ -2889,23 +2890,6 @@ generic_file_direct_write_iter(struct kiocb *iocb, struct iov_iter *iter,
 	}
 out:
 	return written;
-}
-EXPORT_SYMBOL(generic_file_direct_write_iter);
-
-ssize_t
-generic_file_direct_write(struct kiocb *iocb, const struct iovec *iov,
-		unsigned long *nr_segs, loff_t pos, loff_t *ppos,
-		size_t count, size_t ocount)
-{
-	struct iov_iter iter;
-	ssize_t ret;
-
-	iov_iter_init(&iter, iov, *nr_segs, ocount, 0);
-	ret = generic_file_direct_write_iter(iocb, &iter, pos, ppos, count);
-	/* generic_file_direct_write_iter() might have shortened the vec */
-	if (*nr_segs != iter.nr_segs)
-		*nr_segs = iter.nr_segs;
-	return ret;
 }
 EXPORT_SYMBOL(generic_file_direct_write);
 
@@ -3124,8 +3108,7 @@ ssize_t __generic_file_write_iter(struct kiocb *iocb, struct iov_iter *iter,
 		loff_t endbyte;
 		ssize_t written_buffered;
 
-		written = generic_file_direct_write_iter(iocb, iter, pos,
-							 ppos, count);
+		written = generic_file_direct_write(iocb, iter, pos, ppos, count);
 		/*
 		 * If the write stopped short of completing, fall back to
 		 * buffered writes.  Some filesystems do this for writes to
@@ -3138,7 +3121,6 @@ ssize_t __generic_file_write_iter(struct kiocb *iocb, struct iov_iter *iter,
 
 		pos += written;
 		count -= written;
-		iov_iter_advance(iter, written);
 		written_buffered = generic_file_buffered_write_iter(iocb, iter,
 						pos, ppos, written);
 		/*
