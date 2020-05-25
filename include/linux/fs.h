@@ -3659,6 +3659,8 @@ static inline iop_dentry_open_t get_dentry_open_iop(struct inode *inode)
 	return wrapper ? wrapper->dentry_open : NULL;
 }
 
+extern unsigned long iov_iter_alignment(struct iov_iter *i);
+
 extern bool path_noexec(const struct path *path);
 
 #endif /* _LINUX_FS_H */
