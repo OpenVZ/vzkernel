@@ -2036,8 +2036,7 @@ generic_file_read_iter(struct kiocb *iocb, struct iov_iter *iter, loff_t pos)
 		retval = filemap_write_and_wait_range(mapping, pos,
 				pos + count - 1);
 		if (!retval) {
-			retval = mapping_direct_IO(mapping, READ,
-						   iocb, iter, pos);
+			retval = mapping->a_ops->direct_IO(READ, iocb, &data, pos);
 		}
 		if (retval > 0) {
 			*ppos = pos + retval;
@@ -2803,7 +2802,7 @@ generic_file_direct_write(struct kiocb *iocb, struct iov_iter *iter,
 		goto out;
 	}
 
-	written = mapping_direct_IO(mapping, WRITE, iocb, iter, pos);
+	written = mapping->a_ops->direct_IO(WRITE, iocb, &data, pos);
 
 	/*
 	 * Finally, try again to invalidate clean pages which might have been
