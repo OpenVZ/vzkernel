@@ -220,6 +220,7 @@ ext4_file_dax_write(
 	struct inode *inode = file_inode(iocb->ki_filp);
 	ssize_t			ret;
 	size_t			size = iov_length(iovp, nr_segs);
+	struct iov_iter iter;
 
 	inode_lock(inode);
 	ret = ext4_write_checks(iocb, iovp, nr_segs, &pos);
@@ -232,7 +233,9 @@ ext4_file_dax_write(
 	if (ret)
 		goto out;
 
-	ret = dax_iomap_rw(WRITE, iocb, iovp, nr_segs, pos,
+	iov_iter_init(&iter, iovp, nr_segs, size, 0);
+
+	ret = dax_iomap_rw(WRITE, iocb, &iter, pos,
 					size, &ext4_iomap_ops);
 out:
 	inode_unlock(inode);
@@ -516,6 +519,8 @@ ext4_file_dax_read(
 	size_t			size = iov_length(iovp, nr_segs);
 	ssize_t			ret = 0;
 	struct inode *inode = file_inode(iocb->ki_filp);
+	struct iov_iter iter;
+
 	if (!size)
 		return 0; /* skip atime */
 
@@ -529,7 +534,10 @@ ext4_file_dax_read(
 		/* Fallback to buffered IO in case we cannot support DAX */
 		return generic_file_aio_read(iocb, iovp, nr_segs, pos);
 	}
-	ret = dax_iomap_rw(READ, iocb, iovp, nr_segs, pos,
+
+	iov_iter_init(&iter, iovp, nr_segs, size, 0);
+
+	ret = dax_iomap_rw(READ, iocb, &iter, pos,
 					size, &ext4_iomap_ops);
 	inode_unlock(inode);
 
