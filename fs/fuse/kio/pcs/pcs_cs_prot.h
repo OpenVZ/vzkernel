@@ -6,6 +6,8 @@
 #define PCS_CS_FLUSH_WEIGHT	(128*1024)
 #define PCS_CS_HOLE_WEIGHT	(4096)
 
+#define PCS_CS_MSG_ALIGNMENT	(512ULL)
+
 struct pcs_cs_sync_data
 {
 	PCS_INTEGRITY_SEQ_T	integrity_seq;	/* Invariant. Changed only on CS host crash */
@@ -67,6 +69,10 @@ struct pcs_cs_iohdr {
 	struct pcs_cs_sync_resp sync_resp[0];	/* Used only in response to write/sync */
 } __attribute__((aligned(8)));
 
+static inline int pcs_cs_use_aligned_io(u32 storage_version)
+{
+	return (storage_version >= PCS_CS_MSG_ALIGNED_VERSION);
+}
 
 /* Maximal message size. Actually, random */
 #define PCS_CS_MSG_MAX_SIZE	(1024*1024 + sizeof(struct pcs_cs_iohdr))
@@ -85,6 +91,9 @@ struct pcs_cs_iohdr {
 
 #define PCS_CS_WRITE_SYNC_REQ	(PCS_RPC_CS_CLIENT_BASE + 8)
 #define PCS_CS_WRITE_SYNC_RESP	(PCS_CS_WRITE_SYNC_REQ|PCS_RPC_DIRECTION)
+
+#define PCS_CS_WRITE_AL_REQ	(PCS_RPC_CS_CLIENT_BASE + 20)
+#define PCS_CS_WRITE_AL_RESP	(PCS_CS_WRITE_AL_REQ|PCS_RPC_DIRECTION)
 
 struct pcs_cs_cong_notification {
 	struct pcs_rpc_hdr	hdr;
