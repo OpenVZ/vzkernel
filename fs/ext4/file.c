@@ -216,19 +216,15 @@ ext4_file_dio_write(struct kiocb *iocb, struct iov_iter *iter, loff_t pos)
 static ssize_t
 ext4_file_dax_write(
 	struct kiocb		*iocb,
-	const struct iovec	*iovp,
-	unsigned long		nr_segs,
+	struct iov_iter		*iter,
 	loff_t			pos)
 {
 	struct inode *inode = file_inode(iocb->ki_filp);
 	ssize_t			ret;
-	size_t			size = iov_length(iovp, nr_segs);
-	struct iov_iter iter;
-
-	iov_iter_init(&iter, iovp, nr_segs, size, 0);
+	size_t			size = iov_iter_count(iter);
 
 	inode_lock(inode);
-	ret = ext4_write_checks(iocb, &iter, &pos);
+	ret = ext4_write_checks(iocb, iter, &pos);
 	if (ret < 0)
 		goto out;
 	ret = file_remove_privs(iocb->ki_filp);
@@ -237,7 +233,7 @@ ext4_file_dax_write(
 	ret = file_update_time(iocb->ki_filp);
 	if (ret)
 		goto out;
-	ret = dax_iomap_rw(WRITE, iocb, &iter, pos,
+	ret = dax_iomap_rw(WRITE, iocb, iter, pos,
 					size, &ext4_iomap_ops);
 out:
 	inode_unlock(inode);
@@ -269,7 +265,7 @@ ext4_file_write(struct kiocb *iocb, const struct iovec *iov,
 
 #ifdef CONFIG_FS_DAX
 	if (IS_DAX(inode))
-		return ext4_file_dax_write(iocb, iov, nr_segs, pos);
+		return ext4_file_dax_write(iocb, &iter, pos);
 #endif
 
 	iocb->private = &overwrite; /* RHEL7 only - prevent DIO race */
