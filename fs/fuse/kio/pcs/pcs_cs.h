@@ -201,4 +201,7 @@ static inline bool cs_is_blacklisted(struct pcs_cs *cs)
 
 void pcs_cs_set_stat_up(struct pcs_cs_set *set);
 
+u32 pcs_cs_msg_size(u32 size, u32 storage_version);
+struct pcs_msg* pcs_alloc_cs_msg(u32 type, u32 size, u32 storage_version);
+
 #endif /* _PCS_CS_H_ */
