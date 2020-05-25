@@ -235,7 +235,7 @@ int __swap_writepage(struct page *page, struct writeback_control *wbc,
 
 		set_page_writeback(page);
 		unlock_page(page);
-		ret = mapping_direct_IO(mapping, KERNEL_WRITE,
+		ret = mapping->a_ops->direct_IO(KERNEL_WRITE,
 					&kiocb, &iter, kiocb.ki_pos);
 		kunmap(page);
 		if (ret == PAGE_SIZE) {
