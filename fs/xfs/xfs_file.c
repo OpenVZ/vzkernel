@@ -254,6 +254,7 @@ xfs_file_dio_aio_read(
 	struct xfs_buftarg	*target;
 	ssize_t			ret = 0;
 	loff_t			end;
+	struct iov_iter iter;
 
 	size = iov_length(iovp, nr_segs);
 	end = iocb->ki_pos + size - 1;
@@ -293,8 +294,11 @@ xfs_file_dio_aio_read(
 		WARN_ON_ONCE(ret);
 		ret = 0;
 	}
+
+	iov_iter_init(&iter, iovp, nr_segs, size, 0);
+
 	ret = __blockdev_direct_IO(READ, iocb, inode, target->bt_bdev,
-			iovp, pos, nr_segs, xfs_get_blocks_direct, NULL, NULL, 0);
+			&iter, pos, xfs_get_blocks_direct, NULL, NULL, 0);
 	if (ret > 0) {
 		iocb->ki_pos = pos + ret;
 	}
@@ -659,6 +663,7 @@ xfs_file_dio_aio_write(
 	loff_t			end;
 	struct xfs_buftarg	*target = XFS_IS_REALTIME_INODE(ip) ?
 					mp->m_rtdev_targp : mp->m_ddev_targp;
+	struct iov_iter iter;
 
 	/* DIO must be aligned to device logical sector size */
 	if ((pos | count) & target->bt_logical_sectormask)
@@ -721,8 +726,10 @@ xfs_file_dio_aio_write(
 	if (count != ocount)
 		nr_segs = iov_shorten((struct iovec *)iovp, nr_segs, count);
 
-	ret = __blockdev_direct_IO(WRITE, iocb, inode, target->bt_bdev, iovp,
-			pos, nr_segs, xfs_get_blocks_direct, xfs_end_io_direct_write,
+	iov_iter_init(&iter, iovp, nr_segs, count, 0);
+
+	ret = __blockdev_direct_IO(WRITE, iocb, inode, target->bt_bdev, &iter,
+			pos, xfs_get_blocks_direct, xfs_end_io_direct_write,
 			NULL, DIO_ASYNC_EXTEND);
 
 	/* see generic_file_direct_write() for why this is necessary */
