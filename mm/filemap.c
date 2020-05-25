@@ -1998,9 +1998,6 @@ static ssize_t mapping_direct_IO(struct address_space *mapping, int rw,
 		return mapping->a_ops->direct_IO_bvec(rw, iocb,
 						      iov_iter_bvec(iter), pos,
 						      iter->nr_segs);
-	else if (iov_iter_has_page(iter))
-		return mapping->a_ops->direct_IO_page(rw, iocb,
-						      iov_iter_page(iter), pos);
 	else
 		BUG();
 }
