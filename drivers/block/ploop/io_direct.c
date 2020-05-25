@@ -1720,7 +1720,9 @@ static int dio_autodetect(struct ploop_io * io)
 	int err;
 	mm_segment_t fs;
 	unsigned int flags;
-	
+
+	if (kaio_backed_ext4)
+		return -1;
 	if (inode->i_sb->s_magic != EXT4_SUPER_MAGIC)
 		return -1; /* not mine */
 
