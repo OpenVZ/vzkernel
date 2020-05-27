@@ -324,6 +324,9 @@ static __net_init int setup_net(struct net *net, struct user_namespace *user_ns)
 		if (error < 0)
 			goto out_undo;
 	}
+	rtnl_lock();
+	list_add_tail_rcu(&net->list, &net_namespace_list);
+	rtnl_unlock();
 out:
 	return error;
 
@@ -419,11 +422,6 @@ struct net *copy_net_ns(unsigned long flags,
 	mutex_lock(&net_mutex);
 	net->ucounts = ucounts;
 	rv = setup_net(net, user_ns);
-	if (rv == 0) {
-		rtnl_lock();
-		list_add_tail_rcu(&net->list, &net_namespace_list);
-		rtnl_unlock();
-	}
 	mutex_unlock(&net_mutex);
 	if (rv < 0) {
 		dec_net_namespaces(ucounts);
@@ -836,10 +834,6 @@ static int __init net_ns_init(void)
 	mutex_lock(&net_mutex);
 	if (setup_net(&init_net, &init_user_ns))
 		panic("Could not setup the initial network namespace");
-
-	rtnl_lock();
-	list_add_tail_rcu(&init_net.list, &net_namespace_list);
-	rtnl_unlock();
 
 	mutex_unlock(&net_mutex);
 
