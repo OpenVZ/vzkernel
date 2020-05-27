@@ -406,28 +406,35 @@ struct net *copy_net_ns(unsigned long flags,
 		return ERR_PTR(-ENOSPC);
 
 	if (atomic_dec_if_positive(&ve->netns_avail_nr) < 0) {
-		dec_net_namespaces(ucounts);
-		return ERR_PTR(-ENOMEM);
+		rv = -ENOMEM;
+		goto dec_ucounts;
+
 	}
 
 	net = net_alloc();
 	if (!net) {
-		dec_net_namespaces(ucounts);
-		atomic_inc(&ve->netns_avail_nr);
-		return ERR_PTR(-ENOMEM);
+		rv = -ENOMEM;
+		goto inc_avail_nr;
 	}
 
+	atomic_set(&net->passive, 1);
+	net->ucounts = ucounts;
 	get_user_ns(user_ns);
 
-	mutex_lock(&net_mutex);
-	net->ucounts = ucounts;
+	rv = mutex_lock_killable(&net_mutex);
+	if (rv < 0)
+		goto put_userns;
+
 	rv = setup_net(net, user_ns);
 	mutex_unlock(&net_mutex);
 	if (rv < 0) {
-		dec_net_namespaces(ucounts);
+put_userns:
 		put_user_ns(user_ns);
 		net_drop_ns(net);
+inc_avail_nr:
 		atomic_inc(&ve->netns_avail_nr);
+dec_ucounts:
+		dec_net_namespaces(ucounts);
 		return ERR_PTR(rv);
 	}
 	return net;
