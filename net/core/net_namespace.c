@@ -224,16 +224,25 @@ static void rtnl_net_notifyid(struct net *net, int cmd, int id);
  */
 int peernet2id_alloc(struct net *net, struct net *peer)
 {
+	bool alloc = false, alive = false;
 	unsigned long flags;
-	bool alloc;
 	int id;
 
 	spin_lock_irqsave(&net->nsid_lock, flags);
-	alloc = atomic_read(&peer->count) == 0 ? false : true;
+	/*
+	 * When peer is obtained from RCU lists, we may race with
+	 * its cleanup. Check whether it's alive, and this guarantees
+	 * we never hash a peer back to net->netns_ids, after it has
+	 * just been idr_remove()'d from there in cleanup_net().
+	 */
+	if (maybe_get_net(peer))
+		alive = alloc = true;
 	id = __peernet2id_alloc(net, peer, &alloc);
 	spin_unlock_irqrestore(&net->nsid_lock, flags);
 	if (alloc && id >= 0)
 		rtnl_net_notifyid(net, RTM_NEWNSID, id);
+	if (alive)
+		put_net(peer);
 	return id;
 }
 EXPORT_SYMBOL_GPL(peernet2id_alloc);
