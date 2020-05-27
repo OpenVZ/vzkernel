@@ -462,8 +462,10 @@ static void ve_grab_context(struct ve_struct *ve)
 static void ve_drop_context(struct ve_struct *ve)
 {
 	struct nsproxy *ve_ns = ve->ve_ns;
-	put_net(ve->ve_netns);
+	struct net *net = ve->ve_netns;
+
 	ve->ve_netns = NULL;
+	put_net(net);
 
 	/* Allows to dereference init_cred and init_task if ve_ns is set */
 	rcu_assign_pointer(ve->ve_ns, NULL);
