@@ -485,8 +485,6 @@ static void cleanup_net(struct work_struct *work)
 		struct ve_struct *ve = net->owner_ve;
 
 		atomic_inc(&ve->netns_avail_nr);
-		if (ve->ve_netns == net)
-			ve->ve_netns = NULL;
 		put_ve(ve);
 	}
 
