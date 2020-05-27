@@ -1083,29 +1083,39 @@ static struct file_operations proc_venetstat_v6_operations = {
         .release	= seq_release,
 };
 
+/* TODO: Use tc_lock? */
+static DEFINE_MUTEX(ve_stat_mutex);
+
 static int __net_init net_init_acct(struct net *net)
 {
 	struct ve_struct *ve = net->owner_ve;
+	int ret = 0;
 
+	mutex_lock(&ve_stat_mutex);
 	if (!ve->stat) {
 		ve->stat = venet_acct_find_create_stat(ve->veid);
-		if (!ve->stat)
-			return -ENOMEM;
+		if (!ve->stat) {
+			ret = -ENOMEM;
+			goto out;
+		}
 	} else
 		venet_acct_get_stat(ve->stat);
-
-	return 0;
+	mutex_unlock(&ve_stat_mutex);
+out:
+	return ret;
 }
 
 static void __net_exit net_exit_acct(struct net *net)
 {
 	struct ve_struct *ve = net->owner_ve;
 
+	mutex_lock(&ve_stat_mutex);
 	if (ve->stat) {
 		venet_acct_put_stat(ve->stat);
 		if (ve->ve_netns == net)
 			ve->stat = NULL;
 	}
+	mutex_unlock(&ve_stat_mutex);
 }
 
 static struct pernet_operations __net_initdata net_acct_ops = {
