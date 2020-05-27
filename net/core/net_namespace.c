@@ -529,11 +529,12 @@ static void cleanup_net(struct work_struct *work)
 	list_for_each_entry_reverse(ops, &pernet_list, list)
 		ops_exit_list(ops, &net_exit_list);
 
+	mutex_unlock(&net_mutex);
+
 	/* Free the net generic variables */
 	list_for_each_entry_reverse(ops, &pernet_list, list)
 		ops_free_list(ops, &net_exit_list);
 
-	mutex_unlock(&net_mutex);
 	up_read(&net_sem);
 
 	list_for_each_entry(net, &net_kill_list, cleanup_list) {
