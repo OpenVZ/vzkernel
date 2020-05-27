@@ -31,7 +31,6 @@
 
 static LIST_HEAD(pernet_list);
 static struct list_head *first_device = &pernet_list;
-DEFINE_MUTEX(net_mutex);
 /*
  * net_sem: protects: pernet_list, net_generic_ids,
  * init_net_initialized and first_device pointer.
@@ -72,11 +71,10 @@ int net_assign_generic(struct net *net, int id, void *data)
 {
 	struct net_generic *ng, *old_ng;
 
-	BUG_ON(!mutex_is_locked(&net_mutex));
 	BUG_ON(id == 0);
 
 	old_ng = rcu_dereference_protected(net->gen,
-					   lockdep_is_held(&net_mutex));
+					   lockdep_is_held(&net_sem));
 	ng = old_ng;
 	if (old_ng->len >= id)
 		goto assign;
@@ -430,13 +428,7 @@ struct net *copy_net_ns(unsigned long flags,
 	if (rv < 0)
 		goto put_userns;
 
-	rv = mutex_lock_killable(&net_mutex);
-	if (rv < 0)
-		goto up_read;
-
 	rv = setup_net(net, user_ns);
-	mutex_unlock(&net_mutex);
-up_read:
 	up_read(&net_sem);
 	if (rv < 0) {
 put_userns:
@@ -494,7 +486,6 @@ static void cleanup_net(struct work_struct *work)
 	spin_unlock_irq(&cleanup_list_lock);
 
 	down_read(&net_sem);
-	mutex_lock(&net_mutex);
 
 	/* Don't let anyone else find us. */
 	rtnl_lock();
