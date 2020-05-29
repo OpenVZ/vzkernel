@@ -1064,7 +1064,7 @@ int vz_security_protocol_check(struct net *net, int protocol)
 	case  IPPROTO_SCTP:
 		return 0;
 	default:
-		return -EAFNOSUPPORT;
+		return -EPROTONOSUPPORT;
 	}
 }
 EXPORT_SYMBOL_GPL(vz_security_protocol_check);
