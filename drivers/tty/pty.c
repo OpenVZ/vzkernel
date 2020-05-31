@@ -1294,10 +1294,17 @@ int vtty_open_master(envid_t veid, int idx)
 	vtty_set_context(veid);
 
 	tty = vtty_lookup(vttym_driver, NULL, idx);
+	if (IS_ERR(tty)) {
+		ret = PTR_ERR(tty);
+		goto err_install;
+	}
+
 	if (!tty) {
 		tty = tty_init_dev(vttys_driver, idx);
-		if (IS_ERR(tty))
+		if (IS_ERR(tty)) {
+			ret = PTR_ERR(tty);
 			goto err_install;
+		}
 		tty->count--;
 		tty_unlock(tty);
 		tty_set_lock_subclass(tty);
