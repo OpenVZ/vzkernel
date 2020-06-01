@@ -464,11 +464,12 @@ int ploop_fb_get_reloc_block(struct ploop_freeblks_desc *fbd,
 	cluster_t from_clu, to_clu;
 	iblock_t  from_iblk, to_iblk;
 	u32 free;
-	struct ploop_relocblks_extent *r_extent = fbd->fbd_lrb.ext;
+	struct ploop_relocblks_extent *r_extent;
 
 	if (!fbd)
 		return -1;
 
+	r_extent = fbd->fbd_lrb.ext;
 	/* whole range is drained? */
 	if (r_extent == NULL)
 		return -1;
