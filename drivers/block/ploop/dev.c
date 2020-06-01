@@ -5317,7 +5317,7 @@ static int ploop_freeze(struct ploop_device *plo, struct block_device *bdev)
 static int ploop_thaw(struct ploop_device *plo)
 {
 	struct block_device *bdev = plo->frozen_bdev;
-	struct super_block *sb = bdev ? bdev->bd_super : NULL;
+	struct super_block *sb;
 	int err;
 
 	if (!test_bit(PLOOP_S_RUNNING, &plo->state))
@@ -5328,6 +5328,10 @@ static int ploop_thaw(struct ploop_device *plo)
 
 	if (plo->freeze_state == PLOOP_F_THAWING)
 		return -EBUSY;
+
+	if (!bdev)
+		return -EINVAL;
+	sb = bdev->bd_super;
 
 	plo->frozen_bdev = NULL;
 	plo->freeze_state = PLOOP_F_THAWING;
