@@ -81,9 +81,9 @@ int ploop_pb_get_uuid(struct ploop_pushbackup_desc *pbd, __u8 *uuid)
 
 static struct page **ploop_pb_map_alloc(unsigned long block_max)
 {
-	unsigned long npages = NR_PAGES(block_max);
+	long npages = NR_PAGES(block_max);
 	struct page **map = vmalloc(npages * sizeof(void *));
-	unsigned long i;
+	long i;
 
 	if (!map)
 		return NULL;
@@ -106,7 +106,7 @@ static struct page **ploop_pb_map_alloc(unsigned long block_max)
 static void ploop_pb_map_free(struct page **map, unsigned long block_max)
 {
 	if (map) {
-		unsigned long i;
+		long i;
 		for (i = 0; i < NR_PAGES(block_max); i++)
 			if (map[i])
 				__free_page(map[i]);
