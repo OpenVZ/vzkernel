@@ -123,6 +123,15 @@ bool kernfs_d_visible(struct kernfs_node *kn, struct kernfs_super_info *info)
 	if (kernfs_type(kn) == KERNFS_LINK)
 		kn = kn->symlink.target_kn;
 
+	/*
+	 * Some systems that are built on top of kernfs might
+	 * not want to use ve_perms_map (cgroup is an example)
+	 * so they leave ve_perms_map uninitialized.
+	 * For them we just true.
+	 */
+	if (!kn->ve_perms_map)
+		return true;
+
 	return !!kmapset_get_value(kn->ve_perms_map,
 				   kernfs_info_perms_key(info));
 }
