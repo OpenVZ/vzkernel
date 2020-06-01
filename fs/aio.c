@@ -1547,7 +1547,9 @@ rw_common:
  */
 struct kiocb *aio_kernel_alloc(gfp_t gfp)
 {
-	struct kiocb *iocb = kzalloc(sizeof(struct kiocb), gfp);
+	struct kiocb *iocb;
+
+	iocb = kmem_cache_alloc(kiocb_cachep, gfp);
 	if (iocb)
 		iocb->ki_ctx = (void *)-1;
 	return iocb;
@@ -1556,7 +1558,7 @@ EXPORT_SYMBOL_GPL(aio_kernel_alloc);
 
 void aio_kernel_free(struct kiocb *iocb)
 {
-	kfree(iocb);
+	kmem_cache_free(kiocb_cachep, iocb);
 }
 EXPORT_SYMBOL_GPL(aio_kernel_free);
 
