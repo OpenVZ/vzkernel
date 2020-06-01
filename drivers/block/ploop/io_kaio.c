@@ -810,7 +810,7 @@ kaio_sync_io(struct ploop_io * io, int op, struct page **pages,
 	else
 		bvec = kmalloc(sizeof(*bvec) * nr_pages, GFP_NOIO);
 	if (!bvec) {
-		kfree(iocb);
+		aio_kernel_free(iocb);
 		return -ENOMEM;
 	}
 
