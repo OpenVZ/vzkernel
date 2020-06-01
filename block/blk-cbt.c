@@ -303,8 +303,7 @@ int blk_cbt_map_copy_once(struct request_queue *q, __u8 *uuid,
 {
 	struct cbt_info *cbt;
 	struct page **map;
-	unsigned long npages;
-	unsigned long i;
+	long npages, i;
 
 	mutex_lock(&cbt_mutex);
 	cbt = q->cbt;
