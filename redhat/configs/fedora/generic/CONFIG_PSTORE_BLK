@@ -20,4 +20,4 @@
 # 
 # 
 # 
-# CONFIG_PSTORE_BLK is not set
+CONFIG_PSTORE_BLK=m
