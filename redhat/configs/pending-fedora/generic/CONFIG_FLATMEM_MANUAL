@@ -1,0 +1,25 @@
+# CONFIG_FLATMEM_MANUAL:
+# 
+# This option is best suited for non-NUMA systems with
+# flat address space. The FLATMEM is the most efficient
+# system in terms of performance and resource consumption
+# and it is the best option for smaller systems.
+# 
+# For systems that have holes in their physical address
+# spaces and for features like NUMA and memory hotplug,
+# choose "Sparse Memory".
+# 
+# If unsure, choose this option (Flat Memory) over any other.
+# 
+# Symbol: FLATMEM_MANUAL [=n]
+# Type  : bool
+# Defined at mm/Kconfig:21
+#   Prompt: Flat Memory
+#   Depends on: <choice> && (!ARCH_DISCONTIGMEM_ENABLE && !ARCH_SPARSEMEM_ENABLE [=y] || ARCH_FLATMEM_ENABLE [=y])
+#   Location:
+#     -> Memory Management options
+#       -> Memory model (<choice> [=y])
+# 
+# 
+# 
+# CONFIG_FLATMEM_MANUAL is not set
