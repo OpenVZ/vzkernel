@@ -1,0 +1,21 @@
+# CONFIG_EFI_GENERIC_STUB_INITRD_CMDLINE_LOADER:
+# 
+# Select this config option to add support for the initrd= command
+# line parameter, allowing an initrd that resides on the same volume
+# as the kernel image to be loaded into memory.
+# 
+# This method is deprecated.
+# 
+# Symbol: EFI_GENERIC_STUB_INITRD_CMDLINE_LOADER [=y]
+# Type  : bool
+# Defined at drivers/firmware/efi/Kconfig:127
+#   Prompt: Enable the command line initrd loader
+#   Depends on: EFI [=y] && EFI_STUB [=y] && (EFI_GENERIC_STUB [=y] || X86)
+#   Visible if: EFI [=y] && EFI_STUB [=y] && (EFI_GENERIC_STUB [=y] || X86) && !X86
+#   Location:
+#     -> Firmware Drivers
+#       -> EFI (Extensible Firmware Interface) Support
+# 
+# 
+# 
+CONFIG_EFI_GENERIC_STUB_INITRD_CMDLINE_LOADER=y
