@@ -44,7 +44,7 @@ enum {
 	PLOOP_S_EXITING,	/* Exiting */
 	PLOOP_S_ABORT,		/* Device is aborted due to unrecoverable
 				 * error. Reads are still allowed. */
-	PLOOP_S_SYNC,		/* Unplug was requested */
+	PLOOP_S_UNUSED4,
 	PLOOP_S_CHANGED,	/* Media changed */
 	PLOOP_S_WRITE_CONG,	/* Write direction was congested */
 	PLOOP_S_READ_CONG,	/* Read direction was congested */
