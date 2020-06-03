@@ -855,14 +855,19 @@ void ploop_index_wb_proceed(struct ploop_request * preq)
 	struct page * page = preq->sinfo.wi.tpage;
 	unsigned long rw = preq->req_index_update_rw;
 	sector_t sec;
+	int ret;
 
 	preq->eng_state = PLOOP_E_INDEX_WB;
 
-	top_delta->ops->map_index(top_delta, m->mn_start, &sec);
+	ret = top_delta->ops->map_index(top_delta, m->mn_start, &sec);
+	if (ret == 0) {
+		PLOOP_FAIL_REQUEST(preq, -EINVAL);
+		goto out;
+	}
 
 	__TRACE("wbi-proceed %p %u %p\n", preq, preq->req_cluster, m);
 	top_delta->io.ops->write_page(&top_delta->io, preq, page, sec, rw);
-
+out:
 	put_page(page);
 }
 
