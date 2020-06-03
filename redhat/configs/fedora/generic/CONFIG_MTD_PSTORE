@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_MTD_PSTORE is not set
+CONFIG_MTD_PSTORE=m

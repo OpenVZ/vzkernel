@@ -15,4 +15,4 @@
 # 
 # 
 # 
-# CONFIG_ARM_IMX_BUS_DEVFREQ is not set
+CONFIG_ARM_IMX_BUS_DEVFREQ=m

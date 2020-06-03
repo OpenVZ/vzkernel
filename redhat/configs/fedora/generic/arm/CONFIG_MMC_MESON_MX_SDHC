@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_MMC_MESON_MX_SDHC is not set
+CONFIG_MMC_MESON_MX_SDHC=m

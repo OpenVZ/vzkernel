@@ -24,4 +24,4 @@
 # 
 # 
 # 
-# CONFIG_INTEL_SCU_PCI is not set
+CONFIG_INTEL_SCU_PCI=y

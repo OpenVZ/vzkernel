@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_MFD_INTEL_PMC_BXT is not set
+CONFIG_MFD_INTEL_PMC_BXT=m
