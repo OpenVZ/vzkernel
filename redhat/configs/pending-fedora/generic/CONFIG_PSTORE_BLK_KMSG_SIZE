@@ -1,0 +1,22 @@
+# CONFIG_PSTORE_BLK_KMSG_SIZE:
+# 
+# This just sets size of kmsg dump (oops, panic, etc) log for
+# pstore/blk. The size is in KB and must be a multiple of 4.
+# 
+# NOTE that, both Kconfig and module parameters can configure
+# pstore/blk, but module parameters have priority over Kconfig.
+# 
+# Symbol: PSTORE_BLK_KMSG_SIZE [=64]
+# Type  : integer
+# Defined at fs/pstore/Kconfig:207
+#   Prompt: Size in Kbytes of kmsg dump log to store
+#   Depends on: MISC_FILESYSTEMS [=y] && PSTORE_BLK [=m]
+#   Location:
+#     -> File systems
+#       -> Miscellaneous filesystems (MISC_FILESYSTEMS [=y])
+#         -> Persistent store support (PSTORE [=y])
+#           -> Log panic/oops to a block device (PSTORE_BLK [=m])
+# 
+# 
+# 
+CONFIG_PSTORE_BLK_KMSG_SIZE=64

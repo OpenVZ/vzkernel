@@ -1,0 +1,19 @@
+# CONFIG_DRM_PANEL_ASUS_Z00T_TM5P5_NT35596:
+# 
+# Say Y here if you want to enable support for the ASUS TMP5P5
+# NT35596 1080x1920 video mode panel as found in some Asus
+# Zenfone 2 Laser Z00T devices.
+# 
+# Symbol: DRM_PANEL_ASUS_Z00T_TM5P5_NT35596 [=n]
+# Type  : tristate
+# Defined at drivers/gpu/drm/panel/Kconfig:21
+#   Prompt: ASUS Z00T TM5P5 NT35596 panel
+#   Depends on: HAS_IOMEM [=y] && DRM [=m] && DRM_PANEL [=y] && GPIOLIB [=y] && OF [=y] && DRM_MIPI_DSI [=y] && BACKLIGHT_CLASS_DEVICE [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Display Panels
+# 
+# 
+# 
+# CONFIG_DRM_PANEL_ASUS_Z00T_TM5P5_NT35596 is not set

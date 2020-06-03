@@ -1,0 +1,18 @@
+# CONFIG_ARM_IMX_BUS_DEVFREQ:
+# 
+# This adds the generic DEVFREQ driver for i.MX interconnects. It
+# allows adjusting NIC/NOC frequency.
+# 
+# Symbol: ARM_IMX_BUS_DEVFREQ [=n]
+# Type  : tristate
+# Defined at drivers/devfreq/Kconfig:94
+#   Prompt: i.MX Generic Bus DEVFREQ Driver
+#   Depends on: PM_DEVFREQ [=y] && (ARCH_MXC [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Generic Dynamic Voltage and Frequency Scaling (DVFS) support (PM_DEVFREQ [=y])
+# Selects: DEVFREQ_GOV_USERSPACE [=m]
+# 
+# 
+# 
+# CONFIG_ARM_IMX_BUS_DEVFREQ is not set

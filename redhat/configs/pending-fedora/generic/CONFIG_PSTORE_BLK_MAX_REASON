@@ -1,0 +1,23 @@
+# CONFIG_PSTORE_BLK_MAX_REASON:
+# 
+# The maximum reason for kmsg dumps to store. The default is
+# 2 (KMSG_DUMP_OOPS), see include/linux/kmsg_dump.h's
+# enum kmsg_dump_reason for more details.
+# 
+# NOTE that, both Kconfig and module parameters can configure
+# pstore/blk, but module parameters have priority over Kconfig.
+# 
+# Symbol: PSTORE_BLK_MAX_REASON [=2]
+# Type  : integer
+# Defined at fs/pstore/Kconfig:218
+#   Prompt: Maximum kmsg dump reason to store
+#   Depends on: MISC_FILESYSTEMS [=y] && PSTORE_BLK [=m]
+#   Location:
+#     -> File systems
+#       -> Miscellaneous filesystems (MISC_FILESYSTEMS [=y])
+#         -> Persistent store support (PSTORE [=y])
+#           -> Log panic/oops to a block device (PSTORE_BLK [=m])
+# 
+# 
+# 
+CONFIG_PSTORE_BLK_MAX_REASON=2

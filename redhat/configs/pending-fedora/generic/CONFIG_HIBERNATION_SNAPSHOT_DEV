@@ -1,0 +1,21 @@
+# CONFIG_HIBERNATION_SNAPSHOT_DEV:
+# 
+# Device used by the uswsusp tools.
+# 
+# Say N if no snapshotting from userspace is needed, this also
+# reduces the attack surface of the kernel.
+# 
+# If in doubt, say Y.
+# 
+# Symbol: HIBERNATION_SNAPSHOT_DEV [=y]
+# Type  : bool
+# Defined at kernel/power/Kconfig:83
+#   Prompt: Userspace snapshot device
+#   Depends on: HIBERNATION [=y]
+#   Location:
+#     -> Power management and ACPI options
+#       -> Hibernation (aka 'suspend to disk') (HIBERNATION [=y])
+# 
+# 
+# 
+CONFIG_HIBERNATION_SNAPSHOT_DEV=y
