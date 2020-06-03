@@ -861,8 +861,6 @@ static void ploop_unplug(struct blk_plug_cb *cb, bool from_schedule)
 {
 	struct ploop_device *plo = cb->data;
 
-	clear_bit(PLOOP_S_SYNC, &plo->state);
-
 	/* And kick our "soft" queue too in case mitigation timer is in effect */
 	spin_lock_irq(&plo->lock);
 	if (plo->bio_head) {
@@ -2678,10 +2676,6 @@ static void ploop_req_state_process(struct ploop_request * preq)
 		saved_ub = set_exec_ub(preq->preq_ub);
 	}
 #endif
-
-	if (preq->eng_state != PLOOP_E_COMPLETE &&
-	    test_bit(PLOOP_REQ_SYNC, &preq->state))
-		set_bit(PLOOP_S_SYNC, &plo->state);
 
 	if (test_bit(PLOOP_REQ_TRACK, &preq->state)) {
 		sector_t sec;
