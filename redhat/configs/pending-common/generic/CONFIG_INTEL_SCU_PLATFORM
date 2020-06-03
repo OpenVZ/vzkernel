@@ -1,0 +1,19 @@
+# CONFIG_INTEL_SCU_PLATFORM:
+# 
+# This driver is used to bridge the communications between kernel
+# and SCU (sometimes called PMC as well). The driver currently
+# supports Intel Elkhart Lake and compatible platforms.
+# 
+# Symbol: INTEL_SCU_PLATFORM [=n]
+# Type  : tristate
+# Defined at drivers/platform/x86/Kconfig:1369
+#   Prompt: Intel SCU platform driver
+#   Depends on: X86 [=y] && X86_PLATFORM_DEVICES [=y] && ACPI [=y]
+#   Location:
+#     -> Device Drivers
+#       -> X86 Platform Specific Device Drivers (X86_PLATFORM_DEVICES [=y])
+# Selects: INTEL_SCU [=n]
+# 
+# 
+# 
+# CONFIG_INTEL_SCU_PLATFORM is not set
