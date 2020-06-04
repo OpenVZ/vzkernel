@@ -134,3 +134,29 @@ config OVERLAY_FS_DYNAMIC_RESOLVE_PATH_OPTIONS
 	  For more information, see Documentation/filesystems/overlayfs.txt
 
 	  If unsure, say N.
+
+config OVERLAY_FS_PATH_OPTIONS_MNT_ID
+	bool "Overlayfs: show mnt_id for all mount paths options"
+	default y
+	depends on OVERLAY_FS
+	help
+	  This option helps checkpoint/restore of overlayfs mounts.
+	  If N selected, old behavior is saved.
+
+	  If this config option is enabled then in overlay filesystems mount
+	  options you will be able to see additional parameters
+	  lowerdir_mnt_id/upperdir_mnt_id with corresponding mnt_ids.
+
+	  It's also possible to change this behavior on overlayfs module
+	  loading or through sysfs (mnt_id_path_opts parameter).
+
+	  Disable this to get a backward compatible with previous kernels
+	  configuration, but in this case checkpoint/restore functionality
+	  for overlayfs mounts may not fully work.
+
+	  If backward compatibility is not an issue, then it is safe and
+	  recommended to say Y here.
+
+	  For more information, see Documentation/filesystems/overlayfs.txt
+
+	  If unsure, say N.
