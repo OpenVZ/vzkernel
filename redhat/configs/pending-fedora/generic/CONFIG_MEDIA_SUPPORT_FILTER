@@ -1,0 +1,25 @@
+# CONFIG_MEDIA_SUPPORT_FILTER:
+# 
+# Configuring the media subsystem can be complex, as there are
+# hundreds of drivers and other config options.
+# 
+# This menu offers option that will help the Kernel's config
+# system to hide drivers that are out of the scope of the
+# user needs, and disabling core support for unused APIs.
+# 
+# If not selected, all non-optional media core functionality
+# needed to support media drivers will be enabled. Also, all
+# media device drivers should be shown.
+# 
+# Symbol: MEDIA_SUPPORT_FILTER [=y]
+# Type  : bool
+# Defined at drivers/media/Kconfig:25
+#   Prompt: Filter media drivers
+#   Depends on: MEDIA_SUPPORT [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+# 
+# 
+# 
+CONFIG_MEDIA_SUPPORT_FILTER=y

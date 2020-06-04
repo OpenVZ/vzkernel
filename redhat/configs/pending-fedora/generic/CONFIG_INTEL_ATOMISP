@@ -1,0 +1,19 @@
+# CONFIG_INTEL_ATOMISP:
+# 
+# Enable support for the Intel ISP2 camera interfaces and MIPI
+# sensor drivers.
+# 
+# Symbol: INTEL_ATOMISP [=n]
+# Type  : bool
+# Defined at drivers/staging/media/atomisp/Kconfig:1
+#   Prompt: Enable support to Intel Atom ISP camera drivers
+#   Depends on: STAGING [=y] && STAGING_MEDIA [=y] && MEDIA_SUPPORT [=m] && X86 [=y] && EFI [=y] && PCI [=y] && ACPI [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Staging drivers (STAGING [=y])
+#         -> Media staging drivers (STAGING_MEDIA [=y])
+# Selects: IOSF_MBI [=y] && MEDIA_CONTROLLER [=y] && COMMON_CLK [=y]
+# 
+# 
+# 
+# CONFIG_INTEL_ATOMISP is not set

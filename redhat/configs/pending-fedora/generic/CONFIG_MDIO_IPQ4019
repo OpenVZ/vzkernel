@@ -1,0 +1,18 @@
+# CONFIG_MDIO_IPQ4019:
+# 
+# This driver supports the MDIO interface found in Qualcomm
+# IPQ40xx series Soc-s.
+# 
+# Symbol: MDIO_IPQ4019 [=n]
+# Type  : tristate
+# Defined at drivers/net/phy/Kconfig:160
+#   Prompt: Qualcomm IPQ4019 MDIO interface support
+#   Depends on: NETDEVICES [=y] && MDIO_DEVICE [=y] && MDIO_BUS [=y] && HAS_IOMEM [=y] && OF_MDIO [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> MDIO bus device drivers (MDIO_DEVICE [=y])
+# 
+# 
+# 
+# CONFIG_MDIO_IPQ4019 is not set

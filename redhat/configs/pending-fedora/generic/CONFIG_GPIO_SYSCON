@@ -1,0 +1,19 @@
+# CONFIG_GPIO_SYSCON:
+# 
+# Say yes here to support GPIO functionality though SYSCON driver.
+# 
+# Symbol: GPIO_SYSCON [=n]
+# Type  : tristate
+# Defined at drivers/gpio/Kconfig:541
+#   Prompt: GPIO based on SYSCON
+#   Depends on: GPIOLIB [=y] && HAS_IOMEM [=y] && MFD_SYSCON [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> GPIO Support (GPIOLIB [=y])
+#         -> Memory mapped GPIO drivers
+# Selected by [n]:
+#   - GPIO_SAMA5D2_PIOBU [=n] && GPIOLIB [=y] && HAS_IOMEM [=y] && MFD_SYSCON [=y] && OF_GPIO [=y]
+# 
+# 
+# 
+# CONFIG_GPIO_SYSCON is not set

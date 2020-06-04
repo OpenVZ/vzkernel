@@ -1,0 +1,21 @@
+# CONFIG_QRTR:
+# 
+# Say Y if you intend to use Qualcomm IPC router protocol.  The
+# protocol is used to communicate with services provided by other
+# hardware blocks in the system.
+# 
+# In order to do service lookups, a userspace daemon is required to
+# maintain a service listing.
+# 
+# Symbol: QRTR [=n]
+# Type  : tristate
+# Defined at net/qrtr/Kconfig:5
+#   Prompt: Qualcomm IPC Router support
+#   Depends on: NET [=y]
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> Networking options
+# 
+# 
+# 
+# CONFIG_QRTR is not set
