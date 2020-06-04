@@ -1,0 +1,24 @@
+# CONFIG_MT7915E:
+# 
+# This adds support for MT7915-based wireless PCIe devices,
+# which support concurrent dual-band operation at both 5GHz
+# and 2.4GHz IEEE 802.11ax 4x4:4SS 1024-QAM, 160MHz channels,
+# OFDMA, spatial reuse and dual carrier modulation.
+# 
+# To compile this driver as a module, choose M here.
+# 
+# Symbol: MT7915E [=n]
+# Type  : tristate
+# Defined at drivers/net/wireless/mediatek/mt76/mt7915/Kconfig:2
+#   Prompt: MediaTek MT7915E (PCIe) support
+#   Depends on: NETDEVICES [=y] && WLAN [=y] && WLAN_VENDOR_MEDIATEK [=y] && MAC80211 [=m] && PCI [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> Wireless LAN (WLAN [=y])
+#           -> MediaTek devices (WLAN_VENDOR_MEDIATEK [=y])
+# Selects: MT76_CORE [=m]
+# 
+# 
+# 
+CONFIG_MT7915E=m

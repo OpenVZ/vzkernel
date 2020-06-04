@@ -1,0 +1,24 @@
+# CONFIG_VIDEO_OV8856:
+# 
+# This is a Video4Linux2 sensor driver for the OmniVision
+# OV8856 camera sensor.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called ov8856.
+# 
+# Symbol: VIDEO_OV8856 [=n]
+# Type  : tristate
+# Defined at drivers/media/i2c/Kconfig:1009
+#   Prompt: OmniVision OV8856 sensor support
+#   Depends on: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m]
+#   Visible if: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m] && MEDIA_CAMERA_SUPPORT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media ancillary drivers
+#           -> Camera sensor devices
+# Selects: MEDIA_CONTROLLER [=y] && VIDEO_V4L2_SUBDEV_API [=y] && V4L2_FWNODE [=m]
+# 
+# 
+# 
+CONFIG_VIDEO_OV8856=m

@@ -1,0 +1,25 @@
+# CONFIG_MEDIA_PLATFORM_SUPPORT:
+# 
+# Enable support for complex cameras, codecs, and other hardware
+# that are integrated at the CPU, GPU or on Image Signalling Processor
+# and don't use PCI, USB or Firewire buses.
+# 
+# This is found on Embedded hardware (SoC), on V4L2 codecs and
+# on some GPU and newer CPU chipsets.
+# 
+# Say Y when you want to be able so see such devices.
+# 
+# Symbol: MEDIA_PLATFORM_SUPPORT [=n]
+# Type  : bool
+# Defined at drivers/media/Kconfig:126
+#   Prompt: Platform-specific devices
+#   Depends on: MEDIA_SUPPORT [=m]
+#   Visible if: MEDIA_SUPPORT [=m] && MEDIA_SUPPORT_FILTER [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media device types
+# 
+# 
+# 
+CONFIG_MEDIA_PLATFORM_SUPPORT=y

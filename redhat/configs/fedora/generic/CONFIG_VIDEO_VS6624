@@ -1,0 +1,23 @@
+# CONFIG_VIDEO_VS6624:
+# 
+# This is a Video4Linux2 sensor driver for the ST VS6624
+# camera.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called vs6624.
+# 
+# Symbol: VIDEO_VS6624 [=n]
+# Type  : tristate
+# Defined at drivers/media/i2c/Kconfig:1049
+#   Prompt: ST VS6624 sensor support
+#   Depends on: MEDIA_SUPPORT [=m] && VIDEO_V4L2 [=m] && I2C [=y]
+#   Visible if: MEDIA_SUPPORT [=m] && VIDEO_V4L2 [=m] && I2C [=y] && MEDIA_CAMERA_SUPPORT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media ancillary drivers
+#           -> Camera sensor devices
+# 
+# 
+# 
+CONFIG_VIDEO_VS6624=m

@@ -1,0 +1,21 @@
+# CONFIG_VIDEO_OV5640:
+# 
+# This is a Video4Linux2 sensor driver for the Omnivision
+# OV5640 camera sensor with a MIPI CSI-2 interface.
+# 
+# Symbol: VIDEO_OV5640 [=n]
+# Type  : tristate
+# Defined at drivers/media/i2c/Kconfig:873
+#   Prompt: OmniVision OV5640 sensor support
+#   Depends on: MEDIA_SUPPORT [=m] && OF [=y] && GPIOLIB [=y] && VIDEO_V4L2 [=m] && I2C [=m]
+#   Visible if: MEDIA_SUPPORT [=m] && OF [=y] && GPIOLIB [=y] && VIDEO_V4L2 [=m] && I2C [=m] && MEDIA_CAMERA_SUPPORT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media ancillary drivers
+#           -> Camera sensor devices
+# Selects: MEDIA_CONTROLLER [=y] && VIDEO_V4L2_SUBDEV_API [=y] && V4L2_FWNODE [=m]
+# 
+# 
+# 
+CONFIG_VIDEO_OV5640=m

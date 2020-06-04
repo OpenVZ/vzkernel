@@ -1,0 +1,24 @@
+# CONFIG_VIDEO_OV2659:
+# 
+# This is a Video4Linux2 sensor driver for the OmniVision
+# OV2659 camera.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called ov2659.
+# 
+# Symbol: VIDEO_OV2659 [=n]
+# Type  : tristate
+# Defined at drivers/media/i2c/Kconfig:825
+#   Prompt: OmniVision OV2659 sensor support
+#   Depends on: MEDIA_SUPPORT [=m] && VIDEO_V4L2 [=m] && I2C [=y] && GPIOLIB [=y]
+#   Visible if: MEDIA_SUPPORT [=m] && VIDEO_V4L2 [=m] && I2C [=y] && GPIOLIB [=y] && MEDIA_CAMERA_SUPPORT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media ancillary drivers
+#           -> Camera sensor devices
+# Selects: V4L2_FWNODE [=m]
+# 
+# 
+# 
+CONFIG_VIDEO_OV2659=m

@@ -1,0 +1,20 @@
+# CONFIG_VIDEO_OV9640:
+# 
+# This is a Video4Linux2 sensor driver for the OmniVision
+# OV9640 camera sensor.
+# 
+# Symbol: VIDEO_OV9640 [=n]
+# Type  : tristate
+# Defined at drivers/media/i2c/Kconfig:1022
+#   Prompt: OmniVision OV9640 sensor support
+#   Depends on: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m]
+#   Visible if: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m] && MEDIA_CAMERA_SUPPORT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media ancillary drivers
+#           -> Camera sensor devices
+# 
+# 
+# 
+CONFIG_VIDEO_OV9640=m

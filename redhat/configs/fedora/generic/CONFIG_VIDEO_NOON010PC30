@@ -1,0 +1,20 @@
+# CONFIG_VIDEO_NOON010PC30:
+# 
+# This driver supports NOON010PC30 CIF camera from Siliconfile
+# 
+# Symbol: VIDEO_NOON010PC30 [=n]
+# Type  : tristate
+# Defined at drivers/media/i2c/Kconfig:1150
+#   Prompt: Siliconfile NOON010PC30 sensor support
+#   Depends on: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m]
+#   Visible if: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m] && MEDIA_CAMERA_SUPPORT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media ancillary drivers
+#           -> Camera sensor devices
+# Selects: MEDIA_CONTROLLER [=y] && VIDEO_V4L2_SUBDEV_API [=y]
+# 
+# 
+# 
+CONFIG_VIDEO_NOON010PC30=m

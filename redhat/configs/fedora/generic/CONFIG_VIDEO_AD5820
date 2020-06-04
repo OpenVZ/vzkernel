@@ -1,0 +1,21 @@
+# CONFIG_VIDEO_AD5820:
+# 
+# This is a driver for the AD5820 camera lens voice coil.
+# It is used for example in Nokia N900 (RX-51).
+# 
+# Symbol: VIDEO_AD5820 [=n]
+# Type  : tristate
+# Defined at drivers/media/i2c/Kconfig:1226
+#   Prompt: AD5820 lens voice coil support
+#   Depends on: MEDIA_SUPPORT [=m] && GPIOLIB [=y] && I2C [=y] && VIDEO_V4L2 [=m]
+#   Visible if: MEDIA_SUPPORT [=m] && GPIOLIB [=y] && I2C [=y] && VIDEO_V4L2 [=m] && MEDIA_CAMERA_SUPPORT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media ancillary drivers
+#           -> Lens drivers
+# Selects: MEDIA_CONTROLLER [=y]
+# 
+# 
+# 
+CONFIG_VIDEO_AD5820=m

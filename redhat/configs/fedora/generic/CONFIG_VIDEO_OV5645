@@ -1,0 +1,24 @@
+# CONFIG_VIDEO_OV5645:
+# 
+# This is a Video4Linux2 sensor driver for the OmniVision
+# OV5645 camera.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called ov5645.
+# 
+# Symbol: VIDEO_OV5645 [=n]
+# Type  : tristate
+# Defined at drivers/media/i2c/Kconfig:884
+#   Prompt: OmniVision OV5645 sensor support
+#   Depends on: MEDIA_SUPPORT [=m] && OF [=y] && I2C [=m] && VIDEO_V4L2 [=m]
+#   Visible if: MEDIA_SUPPORT [=m] && OF [=y] && I2C [=m] && VIDEO_V4L2 [=m] && MEDIA_CAMERA_SUPPORT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media ancillary drivers
+#           -> Camera sensor devices
+# Selects: MEDIA_CONTROLLER [=y] && VIDEO_V4L2_SUBDEV_API [=y] && V4L2_FWNODE [=m]
+# 
+# 
+# 
+CONFIG_VIDEO_OV5645=m

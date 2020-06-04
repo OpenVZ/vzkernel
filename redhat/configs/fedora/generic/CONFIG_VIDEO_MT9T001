@@ -1,0 +1,21 @@
+# CONFIG_VIDEO_MT9T001:
+# 
+# This is a Video4Linux2 sensor driver for the Aptina
+# (Micron) mt0t001 3 Mpixel camera.
+# 
+# Symbol: VIDEO_MT9T001 [=n]
+# Type  : tristate
+# Defined at drivers/media/i2c/Kconfig:1096
+#   Prompt: Aptina MT9T001 support
+#   Depends on: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m]
+#   Visible if: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m] && MEDIA_CAMERA_SUPPORT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media ancillary drivers
+#           -> Camera sensor devices
+# Selects: MEDIA_CONTROLLER [=y] && VIDEO_V4L2_SUBDEV_API [=y]
+# 
+# 
+# 
+CONFIG_VIDEO_MT9T001=m

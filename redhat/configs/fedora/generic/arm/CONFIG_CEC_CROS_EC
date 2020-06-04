@@ -1,0 +1,20 @@
+# CONFIG_CEC_CROS_EC:
+# 
+# If you say yes here you will get support for the
+# ChromeOS Embedded Controller's CEC.
+# The CEC bus is present in the HDMI connector and enables communication
+# between compatible devices.
+# 
+# Symbol: CEC_CROS_EC [=n]
+# Type  : tristate
+# Defined at drivers/media/cec/platform/Kconfig:5
+#   Prompt: ChromeOS EC CEC driver
+#   Depends on: MEDIA_CEC_SUPPORT [=y] && CROS_EC [=m]
+#   Location:
+#     -> Device Drivers
+#       -> HDMI CEC drivers (MEDIA_CEC_SUPPORT [=y])
+# Selects: CEC_CORE [=m] && CEC_NOTIFIER [=y] && CROS_EC_PROTO [=y]
+# 
+# 
+# 
+CONFIG_CEC_CROS_EC=m

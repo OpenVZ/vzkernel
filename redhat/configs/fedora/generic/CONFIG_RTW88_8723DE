@@ -1,0 +1,22 @@
+# CONFIG_RTW88_8723DE:
+# 
+# Select this option will enable support for 8723DE chipset
+# 
+# 802.11n PCIe wireless network adapter
+# 
+# Symbol: RTW88_8723DE [=n]
+# Type  : tristate
+# Defined at drivers/net/wireless/realtek/rtw88/Kconfig:50
+#   Prompt: Realtek 8723DE PCI wireless network adapter
+#   Depends on: NETDEVICES [=y] && WLAN [=y] && WLAN_VENDOR_REALTEK [=y] && RTW88 [=m] && PCI [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> Wireless LAN (WLAN [=y])
+#           -> Realtek devices (WLAN_VENDOR_REALTEK [=y])
+#             -> Realtek 802.11ac wireless chips support (RTW88 [=m])
+# Selects: RTW88_CORE [=m] && RTW88_PCI [=m] && RTW88_8723D [=n]
+# 
+# 
+# 
+CONFIG_RTW88_8723DE=m

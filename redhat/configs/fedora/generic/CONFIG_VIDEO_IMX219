@@ -1,0 +1,24 @@
+# CONFIG_VIDEO_IMX219:
+# 
+# This is a Video4Linux2 sensor driver for the Sony
+# IMX219 camera.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called imx219.
+# 
+# Symbol: VIDEO_IMX219 [=n]
+# Type  : tristate
+# Defined at drivers/media/i2c/Kconfig:742
+#   Prompt: Sony IMX219 sensor support
+#   Depends on: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m]
+#   Visible if: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m] && MEDIA_CAMERA_SUPPORT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media ancillary drivers
+#           -> Camera sensor devices
+# Selects: MEDIA_CONTROLLER [=y] && VIDEO_V4L2_SUBDEV_API [=y] && V4L2_FWNODE [=m]
+# 
+# 
+# 
+CONFIG_VIDEO_IMX219=m

@@ -1,0 +1,24 @@
+# CONFIG_VIDEO_OV772X:
+# 
+# This is a Video4Linux2 sensor driver for the OmniVision
+# OV772x camera.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called ov772x.
+# 
+# Symbol: VIDEO_OV772X [=n]
+# Type  : tristate
+# Defined at drivers/media/i2c/Kconfig:971
+#   Prompt: OmniVision OV772x sensor support
+#   Depends on: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m]
+#   Visible if: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m] && MEDIA_CAMERA_SUPPORT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media ancillary drivers
+#           -> Camera sensor devices
+# Selects: REGMAP_SCCB [=n]
+# 
+# 
+# 
+CONFIG_VIDEO_OV772X=m

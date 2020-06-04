@@ -1,0 +1,21 @@
+# CONFIG_VIDEO_ADP1653:
+# 
+# This is a driver for the ADP1653 flash controller. It is used for
+# example in Nokia N900.
+# 
+# Symbol: VIDEO_ADP1653 [=n]
+# Type  : tristate
+# Defined at drivers/media/i2c/Kconfig:1272
+#   Prompt: ADP1653 flash support
+#   Depends on: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m]
+#   Visible if: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m] && MEDIA_CAMERA_SUPPORT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media ancillary drivers
+#           -> Flash devices
+# Selects: MEDIA_CONTROLLER [=y]
+# 
+# 
+# 
+CONFIG_VIDEO_ADP1653=m

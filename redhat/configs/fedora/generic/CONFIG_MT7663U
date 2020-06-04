@@ -1,0 +1,21 @@
+# CONFIG_MT7663U:
+# 
+# This adds support for MT7663U 802.11ax 2x2:2 wireless devices.
+# 
+# To compile this driver as a module, choose M here.
+# 
+# Symbol: MT7663U [=n]
+# Type  : tristate
+# Defined at drivers/net/wireless/mediatek/mt76/mt7615/Kconfig:31
+#   Prompt: MediaTek MT7663U (USB) support
+#   Depends on: NETDEVICES [=y] && WLAN [=y] && WLAN_VENDOR_MEDIATEK [=y] && MAC80211 [=m] && USB [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> Wireless LAN (WLAN [=y])
+#           -> MediaTek devices (WLAN_VENDOR_MEDIATEK [=y])
+# Selects: MT76_USB [=m] && MT7615_COMMON [=m]
+# 
+# 
+# 
+CONFIG_MT7663U=m

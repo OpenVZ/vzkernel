@@ -1,0 +1,21 @@
+# CONFIG_MFD_INTEL_MSIC:
+# 
+# Select this option to enable access to Intel MSIC (Avatele
+# Passage) chip. This chip embeds audio, battery, GPIO, etc.
+# devices used in Intel Medfield platforms.
+# 
+# Symbol: MFD_INTEL_MSIC [=n]
+# Type  : bool
+# Defined at drivers/mfd/Kconfig:641
+#   Prompt: Intel MSIC
+#   Depends on: HAS_IOMEM [=y] && INTEL_SCU [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multifunction device drivers
+# Selects: MFD_CORE [=y]
+# Selected by [n]:
+#   - X86_INTEL_MID [=n] && X86_EXTENDED_PLATFORM [=y] && X86_PLATFORM_DEVICES [=y] && PCI [=y] && (X86_64 [=y] || PCI_GOANY [=n] && X86_32 [=n]) && X86_IO_APIC [=y]
+# 
+# 
+# 
+CONFIG_MFD_INTEL_MSIC=y

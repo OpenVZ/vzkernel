@@ -1,0 +1,19 @@
+# CONFIG_VIDEO_SR030PC30:
+# 
+# This driver supports SR030PC30 VGA camera from Siliconfile
+# 
+# Symbol: VIDEO_SR030PC30 [=n]
+# Type  : tristate
+# Defined at drivers/media/i2c/Kconfig:1144
+#   Prompt: Siliconfile SR030PC30 sensor support
+#   Depends on: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m]
+#   Visible if: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m] && MEDIA_CAMERA_SUPPORT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media ancillary drivers
+#           -> Camera sensor devices
+# 
+# 
+# 
+CONFIG_VIDEO_SR030PC30=m

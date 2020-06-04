@@ -1,0 +1,22 @@
+# CONFIG_BRIDGE_MRP:
+# 
+# If you say Y here, then the Ethernet bridge will be able to run MRP
+# protocol to detect loops
+# 
+# Say N to exclude this support and reduce the binary size.
+# 
+# If unsure, say N.
+# 
+# Symbol: BRIDGE_MRP [=n]
+# Type  : bool
+# Defined at net/bridge/Kconfig:65
+#   Prompt: MRP protocol
+#   Depends on: NET [=y] && BRIDGE [=m]
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> Networking options
+#         -> 802.1d Ethernet Bridging (BRIDGE [=m])
+# 
+# 
+# 
+CONFIG_BRIDGE_MRP=y

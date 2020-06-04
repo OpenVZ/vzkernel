@@ -1,0 +1,18 @@
+# CONFIG_QRTR_MHI:
+# 
+# Say Y here to support MHI based ipcrouter channels. MHI is the
+# transport used for communicating to external modems.
+# 
+# Symbol: QRTR_MHI [=n]
+# Type  : tristate
+# Defined at net/qrtr/Kconfig:31
+#   Prompt: MHI IPC Router channels
+#   Depends on: NET [=y] && QRTR [=m] && MHI_BUS [=m]
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> Networking options
+#         -> Qualcomm IPC Router support (QRTR [=m])
+# 
+# 
+# 
+CONFIG_QRTR_MHI=m
