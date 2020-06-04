@@ -1,0 +1,28 @@
+# CONFIG_MLX5_CLS_ACT:
+# 
+# mlx5 ConnectX offloads support for TC classifier action (NET_CLS_ACT),
+# works in both native NIC mode and Switchdev SRIOV mode.
+# Actions get attached to a Hardware offloaded classifiers and are
+# invoked after a successful classification. Actions are used to
+# overwrite the classification result, instantly drop or redirect and/or
+# reformat packets in wire speeds without involving the host cpu.
+# 
+# If set to N, TC offloads in both NIC and switchdev modes will be disabled.
+# If unsure, set to Y
+# 
+# Symbol: MLX5_CLS_ACT [=y]
+# Type  : bool
+# Defined at drivers/net/ethernet/mellanox/mlx5/core/Kconfig:81
+#   Prompt: MLX5 TC classifier action support
+#   Depends on: NETDEVICES [=y] && ETHERNET [=y] && NET_VENDOR_MELLANOX [=y] && MLX5_ESWITCH [=y] && NET_CLS_ACT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> Ethernet driver support (ETHERNET [=y])
+#           -> Mellanox devices (NET_VENDOR_MELLANOX [=y])
+#             -> Mellanox 5th generation network adapters (ConnectX series) Ethernet support (MLX5_CORE_EN [=y])
+#               -> Mellanox Technologies MLX5 SRIOV E-Switch support (MLX5_ESWITCH [=y])
+# 
+# 
+# 
+CONFIG_MLX5_CLS_ACT=y
