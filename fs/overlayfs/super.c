@@ -56,12 +56,20 @@ module_param_named(xino_auto, ovl_xino_auto_def, bool, 0644);
 MODULE_PARM_DESC(xino_auto,
 		 "Auto enable xino feature");
 
+static bool ovl_dyn_path_opts = IS_ENABLED(CONFIG_OVERLAY_FS_DYNAMIC_RESOLVE_PATH_OPTIONS);
+module_param_named(dyn_path_opts, ovl_dyn_path_opts, bool, 0644);
+MODULE_PARM_DESC(dyn_path_opts, "dyn_path_opts feature enabled");
+
 static void ovl_entry_stack_free(struct ovl_entry *oe)
 {
 	unsigned int i;
 
-	for (i = 0; i < oe->numlower; i++)
+	for (i = 0; i < oe->numlower; i++) {
 		dput(oe->lowerstack[i].dentry);
+		if (oe->lowerpaths)
+			path_put(&oe->lowerpaths[i]);
+	}
+	kfree(oe->lowerpaths);
 }
 
 static bool ovl_metacopy_def = IS_ENABLED(CONFIG_OVERLAY_FS_METACOPY);
@@ -225,11 +233,12 @@ static void ovl_free_fs(struct ovl_fs *ofs)
 	dput(ofs->indexdir);
 	dput(ofs->workdir);
 	if (ofs->workdir_locked)
-		ovl_inuse_unlock(ofs->workbasedir);
-	dput(ofs->workbasedir);
+		ovl_inuse_unlock(ofs->workbasepath.dentry);
+	path_put(&ofs->workbasepath);
 	if (ofs->upperdir_locked)
 		ovl_inuse_unlock(ofs->upper_mnt->mnt_root);
 	mntput(ofs->upper_mnt);
+	path_put(&ofs->upperpath);
 	for (i = 1; i < ofs->numlayer; i++) {
 		iput(ofs->layers[i].trap);
 		mntput(ofs->layers[i].mnt);
@@ -343,11 +352,20 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 {
 	struct super_block *sb = dentry->d_sb;
 	struct ovl_fs *ofs = sb->s_fs_info;
+	struct ovl_entry *oe = OVL_E(sb->s_root);
 
-	seq_show_option(m, "lowerdir", ofs->config.lowerdir);
-	if (ofs->config.upperdir) {
-		seq_show_option(m, "upperdir", ofs->config.upperdir);
-		seq_show_option(m, "workdir", ofs->config.workdir);
+	if (ovl_dyn_path_opts) {
+		print_paths_option(m, "lowerdir", oe->lowerpaths, oe->numlower);
+		if (ofs->config.upperdir) {
+			print_path_option(m, "upperdir", &ofs->upperpath);
+			print_path_option(m, "workdir", &ofs->workbasepath);
+		}
+	} else {
+		seq_show_option(m, "lowerdir", ofs->config.lowerdir);
+		if (ofs->config.upperdir) {
+			seq_show_option(m, "upperdir", ofs->config.upperdir);
+			seq_show_option(m, "workdir", ofs->config.workdir);
+		}
 	}
 	if (ofs->config.default_permissions)
 		seq_puts(m, ",default_permissions");
@@ -671,7 +689,7 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 static struct dentry *ovl_workdir_create(struct ovl_fs *ofs,
 					 const char *name, bool persist)
 {
-	struct inode *dir =  ofs->workbasedir->d_inode;
+	struct inode *dir =  ofs->workbasepath.dentry->d_inode;
 	struct vfsmount *mnt = ofs->upper_mnt;
 	struct dentry *work;
 	int err;
@@ -682,7 +700,7 @@ static struct dentry *ovl_workdir_create(struct ovl_fs *ofs,
 	locked = true;
 
 retry:
-	work = lookup_one_len(name, ofs->workbasedir, strlen(name));
+	work = lookup_one_len(name, ofs->workbasepath.dentry, strlen(name));
 
 	if (!IS_ERR(work)) {
 		struct iattr attr = {
@@ -1187,7 +1205,7 @@ out_unlock:
 }
 
 static int ovl_make_workdir(struct super_block *sb, struct ovl_fs *ofs,
-			    struct path *workpath)
+			    struct path *workbasepath)
 {
 	struct vfsmount *mnt = ofs->upper_mnt;
 	struct dentry *temp;
@@ -1214,7 +1232,7 @@ static int ovl_make_workdir(struct super_block *sb, struct ovl_fs *ofs,
 	 * workdir. This check requires successful creation of workdir in
 	 * previous step.
 	 */
-	err = ovl_check_d_type_supported(workpath);
+	err = ovl_check_d_type_supported(workbasepath);
 	if (err < 0)
 		goto out;
 
@@ -1291,25 +1309,22 @@ static int ovl_get_workdir(struct super_block *sb, struct ovl_fs *ofs,
 			   struct path *upperpath)
 {
 	int err;
-	struct path workpath = { };
 
-	err = ovl_mount_dir(ofs->config.workdir, &workpath);
+	err = ovl_mount_dir(ofs->config.workdir, &ofs->workbasepath);
 	if (err)
 		goto out;
 
 	err = -EINVAL;
-	if (upperpath->mnt != workpath.mnt) {
+	if (upperpath->mnt != ofs->workbasepath.mnt) {
 		pr_err("workdir and upperdir must reside under the same mount\n");
 		goto out;
 	}
-	if (!ovl_workdir_ok(workpath.dentry, upperpath->dentry)) {
+	if (!ovl_workdir_ok(ofs->workbasepath.dentry, upperpath->dentry)) {
 		pr_err("workdir and upperdir must be separate subtrees\n");
 		goto out;
 	}
 
-	ofs->workbasedir = dget(workpath.dentry);
-
-	if (ovl_inuse_trylock(ofs->workbasedir)) {
+	if (ovl_inuse_trylock(ofs->workbasepath.dentry)) {
 		ofs->workdir_locked = true;
 	} else {
 		err = ovl_report_in_use(ofs, "workdir");
@@ -1317,15 +1332,14 @@ static int ovl_get_workdir(struct super_block *sb, struct ovl_fs *ofs,
 			goto out;
 	}
 
-	err = ovl_setup_trap(sb, ofs->workbasedir, &ofs->workbasedir_trap,
+	err = ovl_setup_trap(sb, ofs->workbasepath.dentry, &ofs->workbasedir_trap,
 			     "workdir");
 	if (err)
 		goto out;
 
-	err = ovl_make_workdir(sb, ofs, &workpath);
+	err = ovl_make_workdir(sb, ofs, &ofs->workbasepath);
 
 out:
-	path_put(&workpath);
 
 	return err;
 }
@@ -1574,8 +1588,8 @@ static struct ovl_entry *ovl_get_lowerstack(struct super_block *sb,
 {
 	int err;
 	char *lowertmp, *lower;
-	struct path *stack = NULL;
 	unsigned int stacklen, numlower = 0, i;
+	struct path *stack = NULL;
 	struct ovl_entry *oe;
 
 	err = -ENOMEM;
@@ -1634,16 +1648,19 @@ static struct ovl_entry *ovl_get_lowerstack(struct super_block *sb,
 		oe->lowerstack[i].dentry = dget(stack[i].dentry);
 		oe->lowerstack[i].layer = &ofs->layers[i+1];
 	}
+	oe->lowerpaths = stack;
 
 out:
-	for (i = 0; i < numlower; i++)
-		path_put(&stack[i]);
-	kfree(stack);
 	kfree(lowertmp);
 
 	return oe;
 
 out_err:
+	if (stack) {
+		for (i = 0; i < numlower; i++)
+			path_put(&stack[i]);
+		kfree(stack);
+	}
 	oe = ERR_PTR(err);
 	goto out;
 }
@@ -1703,7 +1720,7 @@ static int ovl_check_overlapping_layers(struct super_block *sb,
 		 * workbasedir.  In that case, we already have their traps in
 		 * inode cache and we will catch that case on lookup.
 		 */
-		err = ovl_check_layer(sb, ofs, ofs->workbasedir, "workdir");
+		err = ovl_check_layer(sb, ofs, ofs->workbasepath.dentry, "workdir");
 		if (err)
 			return err;
 	}
@@ -1728,7 +1745,7 @@ static struct dentry *ovl_get_root(struct super_block *sb,
 	unsigned long ino = d_inode(lowerpath->dentry)->i_ino;
 	int fsid = lowerpath->layer->fsid;
 	struct ovl_inode_params oip = {
-		.upperdentry = upperdentry,
+		.upperdentry = dget(upperdentry),
 		.lowerpath = lowerpath,
 	};
 
@@ -1759,7 +1776,6 @@ static struct dentry *ovl_get_root(struct super_block *sb,
 
 static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 {
-	struct path upperpath = { };
 	struct dentry *root_dentry;
 	struct ovl_entry *oe;
 	struct ovl_fs *ofs;
@@ -1813,11 +1829,11 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			goto out_err;
 		}
 
-		err = ovl_get_upper(sb, ofs, &upperpath);
+		err = ovl_get_upper(sb, ofs, &ofs->upperpath);
 		if (err)
 			goto out_err;
 
-		err = ovl_get_workdir(sb, ofs, &upperpath);
+		err = ovl_get_workdir(sb, ofs, &ofs->upperpath);
 		if (err)
 			goto out_err;
 
@@ -1838,7 +1854,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		sb->s_flags |= SB_RDONLY;
 
 	if (!(ovl_force_readonly(ofs)) && ofs->config.index) {
-		err = ovl_get_indexdir(sb, ofs, oe, &upperpath);
+		err = ovl_get_indexdir(sb, ofs, oe, &ofs->upperpath);
 		if (err)
 			goto out_free_oe;
 
@@ -1881,11 +1897,9 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	sb->s_flags |= SB_POSIXACL;
 
 	err = -ENOMEM;
-	root_dentry = ovl_get_root(sb, upperpath.dentry, oe);
+	root_dentry = ovl_get_root(sb, ofs->upperpath.dentry, oe);
 	if (!root_dentry)
 		goto out_free_oe;
-
-	mntput(upperpath.mnt);
 
 	sb->s_root = root_dentry;
 
@@ -1895,7 +1909,6 @@ out_free_oe:
 	ovl_entry_stack_free(oe);
 	kfree(oe);
 out_err:
-	path_put(&upperpath);
 	ovl_free_fs(ofs);
 out:
 	return err;
