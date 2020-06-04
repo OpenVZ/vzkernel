@@ -253,6 +253,10 @@ int ovl_nlink_start(struct dentry *dentry, bool *locked);
 void ovl_nlink_end(struct dentry *dentry, bool locked);
 int ovl_lock_rename_workdir(struct dentry *workdir, struct dentry *upperdir);
 
+void print_path_option(struct seq_file *m, const char *name, struct path *path);
+void print_paths_option(struct seq_file *m, const char *name,
+			struct path *paths, unsigned int num);
+
 static inline bool ovl_is_impuredir(struct dentry *dentry)
 {
 	return ovl_check_dir_xattr(dentry, OVL_XATTR_IMPURE);
