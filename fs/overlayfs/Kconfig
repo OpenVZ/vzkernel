@@ -103,3 +103,34 @@ config OVERLAY_FS_XINO_AUTO
 	  For more information, see Documentation/filesystems/overlayfs.txt
 
 	  If unsure, say N.
+
+config OVERLAY_FS_DYNAMIC_RESOLVE_PATH_OPTIONS
+	bool "Overlayfs: all mount paths options resolved dynamically on options show"
+	default y
+	depends on OVERLAY_FS
+	help
+	  This option helps checkpoint/restore of overlayfs mounts.
+	  If N selected, old behavior is saved. In this case lowerdir,
+	  upperdir, workdir options shows in /proc/fd/mountinfo, /proc/mounts
+	  as it given by user on mount. User may specify relative paths in
+	  these options, then we couldn't determine from options which full
+	  paths correspond these relative paths. Also, after pivot_root syscall
+	  these paths (even full) will not rebuild according to root change.
+
+	  If this config option is enabled then overlay filesystems lowerdir,
+	  upperdir, workdir options paths will dynamically recalculated as full
+	  paths in corresponding mount namespaces by default.
+
+	  It's also possible to change this behavior on overlayfs module
+	  loading or through sysfs (dyn_path_opts parameter).
+
+	  Disable this to get a backward compatible with previous kernels
+	  configuration, but in this case checkpoint/restore functionality for
+	  overlayfs mounts will not work.
+
+	  If backward compatibility is not an issue, then it is safe and
+	  recommended to say Y here.
+
+	  For more information, see Documentation/filesystems/overlayfs.txt
+
+	  If unsure, say N.
