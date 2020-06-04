@@ -256,6 +256,10 @@ int ovl_lock_rename_workdir(struct dentry *workdir, struct dentry *upperdir);
 void print_path_option(struct seq_file *m, const char *name, struct path *path);
 void print_paths_option(struct seq_file *m, const char *name,
 			struct path *paths, unsigned int num);
+void print_mnt_id_option(struct seq_file *m, const char *name,
+			 struct path *path);
+void print_mnt_ids_option(struct seq_file *m, const char *name,
+			  struct path *paths, unsigned int num);
 
 static inline bool ovl_is_impuredir(struct dentry *dentry)
 {
