@@ -1,0 +1,19 @@
+# CONFIG_MFD_MP2629:
+# 
+# Select this option to enable support for Monolithic Power Systems
+# battery charger. This provides ADC, thermal and battery charger power
+# management functions.
+# 
+# Symbol: MFD_MP2629 [=n]
+# Type  : tristate
+# Defined at drivers/mfd/Kconfig:452
+#   Prompt: Monolithic Power Systems MP2629 ADC and Battery charger
+#   Depends on: HAS_IOMEM [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multifunction device drivers
+# Selects: REGMAP_I2C [=m]
+# 
+# 
+# 
+# CONFIG_MFD_MP2629 is not set

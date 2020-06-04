@@ -1,0 +1,20 @@
+# CONFIG_MFD_MT6360:
+# 
+# Say Y here to enable MT6360 PMU/PMIC/LDO functional support.
+# PMU part includes Charger, Flashlight, RGB LED
+# PMIC part includes 2-channel BUCKs and 2-channel LDOs
+# LDO part includes 4-channel LDOs
+# 
+# Symbol: MFD_MT6360 [=n]
+# Type  : tristate
+# Defined at drivers/mfd/Kconfig:911
+#   Prompt: Mediatek MT6360 SubPMIC
+#   Depends on: HAS_IOMEM [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multifunction device drivers
+# Selects: MFD_CORE [=y] && REGMAP_I2C [=m] && REGMAP_IRQ [=y]
+# 
+# 
+# 
+# CONFIG_MFD_MT6360 is not set
