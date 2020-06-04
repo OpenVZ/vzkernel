@@ -57,6 +57,11 @@ module_param_named(xino_auto, ovl_xino_auto_def, bool, 0644);
 MODULE_PARM_DESC(ovl_xino_auto_def,
 		 "Auto enable xino feature");
 
+static bool ovl_dyn_path_opts =
+	IS_ENABLED(CONFIG_OVERLAY_FS_DYNAMIC_RESOLVE_PATH_OPTIONS);
+module_param_named(dyn_path_opts, ovl_dyn_path_opts, bool, 0644);
+MODULE_PARM_DESC(dyn_path_opts, "dyn_path_opts feature enabled");
+
 static void ovl_entry_stack_free(struct ovl_entry *oe)
 {
 	unsigned int i;
@@ -245,11 +250,17 @@ static void ovl_free_fs(struct ovl_fs *ofs)
 	dput(ofs->indexdir);
 	dput(ofs->workdir);
 	if (ofs->workdir_locked)
-		ovl_inuse_unlock(ofs->workbasedir);
-	dput(ofs->workbasedir);
+		ovl_inuse_unlock(ofs->workbasepath.dentry);
+	path_put(&ofs->workbasepath);
 	if (ofs->upperdir_locked)
 		ovl_inuse_unlock(ofs->upper_mnt->mnt_root);
 	mntput(ofs->upper_mnt);
+	path_put(&ofs->upperpath);
+	if (ofs->lowerpaths) {
+		for (i = 0; i < ofs->numlower; i++)
+			path_put(&ofs->lowerpaths[i]);
+		kfree(ofs->lowerpaths);
+	}
 	for (i = 0; i < ofs->numlower; i++)
 		mntput(ofs->lower_layers[i].mnt);
 	for (i = 0; i < ofs->numlowerfs; i++)
@@ -368,11 +379,21 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 	struct super_block *sb = dentry->d_sb;
 	struct ovl_fs *ofs = sb->s_fs_info;
 
-	seq_show_option(m, "lowerdir", ofs->config.lowerdir);
-	if (ofs->config.upperdir) {
-		seq_show_option(m, "upperdir", ofs->config.upperdir);
-		seq_show_option(m, "workdir", ofs->config.workdir);
+	if (ovl_dyn_path_opts) {
+		print_paths_option(m, "lowerdir", ofs->lowerpaths,
+				   ofs->numlower);
+		if (ofs->config.upperdir) {
+			print_path_option(m, "upperdir", &ofs->upperpath);
+			print_path_option(m, "workdir", &ofs->workbasepath);
+		}
+	} else {
+		seq_show_option(m, "lowerdir", ofs->config.lowerdir);
+		if (ofs->config.upperdir) {
+			seq_show_option(m, "upperdir", ofs->config.upperdir);
+			seq_show_option(m, "workdir", ofs->config.workdir);
+		}
 	}
+
 	if (ofs->config.default_permissions)
 		seq_puts(m, ",default_permissions");
 	if (strcmp(ofs->config.redirect_mode, ovl_redirect_mode_def()) != 0)
@@ -586,7 +607,7 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 static struct dentry *ovl_workdir_create(struct ovl_fs *ofs,
 					 const char *name, bool persist)
 {
-	struct inode *dir =  ofs->workbasedir->d_inode;
+	struct inode *dir =  ofs->workbasepath.dentry->d_inode;
 	struct vfsmount *mnt = ofs->upper_mnt;
 	struct dentry *work;
 	int err;
@@ -597,7 +618,7 @@ static struct dentry *ovl_workdir_create(struct ovl_fs *ofs,
 	locked = true;
 
 retry:
-	work = lookup_one_len(name, ofs->workbasedir, strlen(name));
+	work = lookup_one_len(name, ofs->workbasepath.dentry, strlen(name));
 
 	if (!IS_ERR(work)) {
 		struct iattr attr = {
@@ -1009,7 +1030,7 @@ out:
 	return err;
 }
 
-static int ovl_make_workdir(struct ovl_fs *ofs, struct path *workpath)
+static int ovl_make_workdir(struct ovl_fs *ofs, struct path *workbasepath)
 {
 	struct vfsmount *mnt = ofs->upper_mnt;
 	struct dentry *temp;
@@ -1030,7 +1051,7 @@ static int ovl_make_workdir(struct ovl_fs *ofs, struct path *workpath)
 	 * workdir. This check requires successful creation of workdir in
 	 * previous step.
 	 */
-	err = ovl_check_d_type_supported(workpath);
+	err = ovl_check_d_type_supported(workbasepath);
 	if (err < 0)
 		goto out;
 
@@ -1087,26 +1108,23 @@ out:
 static int ovl_get_workdir(struct ovl_fs *ofs, struct path *upperpath)
 {
 	int err;
-	struct path workpath = { };
 
-	err = ovl_mount_dir(ofs->config.workdir, &workpath);
+	err = ovl_mount_dir(ofs->config.workdir, &ofs->workbasepath);
 	if (err)
 		goto out;
 
 	err = -EINVAL;
-	if (upperpath->mnt != workpath.mnt) {
+	if (upperpath->mnt != ofs->workbasepath.mnt) {
 		pr_err("overlayfs: workdir and upperdir must reside under the same mount\n");
 		goto out;
 	}
-	if (!ovl_workdir_ok(workpath.dentry, upperpath->dentry)) {
+	if (!ovl_workdir_ok(ofs->workbasepath.dentry, upperpath->dentry)) {
 		pr_err("overlayfs: workdir and upperdir must be separate subtrees\n");
 		goto out;
 	}
 
-	ofs->workbasedir = dget(workpath.dentry);
-
 	err = -EBUSY;
-	if (ovl_inuse_trylock(ofs->workbasedir)) {
+	if (ovl_inuse_trylock(ofs->workbasepath.dentry)) {
 		ofs->workdir_locked = true;
 	} else if (ofs->config.index) {
 		pr_err("overlayfs: workdir is in-use by another mount, mount with '-o index=off' to override exclusive workdir protection.\n");
@@ -1115,14 +1133,12 @@ static int ovl_get_workdir(struct ovl_fs *ofs, struct path *upperpath)
 		pr_warn("overlayfs: workdir is in-use by another mount, accessing files from both mounts will result in undefined behavior.\n");
 	}
 
-	err = ovl_make_workdir(ofs, &workpath);
+	err = ovl_make_workdir(ofs, &ofs->workbasepath);
 	if (err)
 		goto out;
 
 	err = 0;
 out:
-	path_put(&workpath);
-
 	return err;
 }
 
@@ -1290,7 +1306,6 @@ static struct ovl_entry *ovl_get_lowerstack(struct super_block *sb,
 {
 	int err;
 	char *lowertmp, *lower;
-	struct path *stack = NULL;
 	unsigned int stacklen, numlower = 0, i;
 	bool remote = false;
 	struct ovl_entry *oe;
@@ -1316,14 +1331,14 @@ static struct ovl_entry *ovl_get_lowerstack(struct super_block *sb,
 	}
 
 	err = -ENOMEM;
-	stack = kcalloc(stacklen, sizeof(struct path), GFP_KERNEL);
-	if (!stack)
+	ofs->lowerpaths = kcalloc(stacklen, sizeof(struct path), GFP_KERNEL);
+	if (!ofs->lowerpaths)
 		goto out_err;
 
 	err = -EINVAL;
 	lower = lowertmp;
 	for (numlower = 0; numlower < stacklen; numlower++) {
-		err = ovl_lower_dir(lower, &stack[numlower], ofs,
+		err = ovl_lower_dir(lower, &ofs->lowerpaths[numlower], ofs,
 				    overlay_stack_depth, &remote);
 		if (err)
 			goto out_err;
@@ -1338,7 +1353,7 @@ static struct ovl_entry *ovl_get_lowerstack(struct super_block *sb,
 		goto out_err;
 	}
 
-	err = ovl_get_lower_layers(ofs, stack, numlower);
+	err = ovl_get_lower_layers(ofs, ofs->lowerpaths, numlower);
 	if (err)
 		goto out_err;
 
@@ -1348,7 +1363,7 @@ static struct ovl_entry *ovl_get_lowerstack(struct super_block *sb,
 		goto out_err;
 
 	for (i = 0; i < numlower; i++) {
-		oe->lowerstack[i].dentry = dget(stack[i].dentry);
+		oe->lowerstack[i].dentry = dget(ofs->lowerpaths[i].dentry);
 		oe->lowerstack[i].layer = &ofs->lower_layers[i];
 	}
 
@@ -1358,21 +1373,21 @@ static struct ovl_entry *ovl_get_lowerstack(struct super_block *sb,
 		sb->s_d_op = &ovl_dentry_operations.ops;
 
 out:
-	for (i = 0; i < numlower; i++)
-		path_put(&stack[i]);
-	kfree(stack);
 	kfree(lowertmp);
 
 	return oe;
 
 out_err:
+	for (i = 0; i < numlower; i++)
+		path_put_init(&ofs->lowerpaths[i]);
+	kfree(ofs->lowerpaths);
+	ofs->lowerpaths = NULL;
 	oe = ERR_PTR(err);
 	goto out;
 }
 
 static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 {
-	struct path upperpath = { };
 	struct dentry *root_dentry;
 	struct ovl_entry *oe;
 	struct ovl_fs *ofs;
@@ -1423,11 +1438,11 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			goto out_err;
 		}
 
-		err = ovl_get_upper(ofs, &upperpath);
+		err = ovl_get_upper(ofs, &ofs->upperpath);
 		if (err)
 			goto out_err;
 
-		err = ovl_get_workdir(ofs, &upperpath);
+		err = ovl_get_workdir(ofs, &ofs->upperpath);
 		if (err)
 			goto out_err;
 
@@ -1454,7 +1469,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		sb->s_flags |= MS_RDONLY;
 
 	if (!(ovl_force_readonly(ofs)) && ofs->config.index) {
-		err = ovl_get_indexdir(ofs, oe, &upperpath);
+		err = ovl_get_indexdir(ofs, oe, &ofs->upperpath);
 		if (err)
 			goto out_free_oe;
 
@@ -1495,17 +1510,16 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 
 	root_dentry->d_fsdata = oe;
 
-	mntput(upperpath.mnt);
-	if (upperpath.dentry) {
+	if (ofs->upperpath.dentry) {
 		ovl_dentry_set_upper_alias(root_dentry);
-		if (ovl_is_impuredir(upperpath.dentry))
+		if (ovl_is_impuredir(ofs->upperpath.dentry))
 			ovl_set_flag(OVL_IMPURE, d_inode(root_dentry));
 	}
 
 	/* Root is always merge -> can have whiteouts */
 	ovl_set_flag(OVL_WHITEOUTS, d_inode(root_dentry));
 	ovl_dentry_set_flag(OVL_E_CONNECTED, root_dentry);
-	ovl_inode_init(d_inode(root_dentry), upperpath.dentry,
+	ovl_inode_init(d_inode(root_dentry), dget(ofs->upperpath.dentry),
 		       ovl_dentry_lower(root_dentry));
 
 	sb->s_root = root_dentry;
@@ -1516,7 +1530,6 @@ out_free_oe:
 	ovl_entry_stack_free(oe);
 	kfree(oe);
 out_err:
-	path_put(&upperpath);
 	ovl_free_fs(ofs);
 out:
 	return err;
