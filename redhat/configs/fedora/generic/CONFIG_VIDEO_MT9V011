@@ -1,0 +1,23 @@
+# CONFIG_VIDEO_MT9V011:
+# 
+# This is a Video4Linux2 sensor driver for the Micron
+# mt0v011 1.3 Mpixel camera.  It currently only works with the
+# em28xx driver.
+# 
+# Symbol: VIDEO_MT9V011 [=n]
+# Type  : tristate
+# Defined at drivers/media/i2c/Kconfig:1115
+#   Prompt: Micron mt9v011 sensor support
+#   Depends on: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m]
+#   Visible if: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m] && MEDIA_CAMERA_SUPPORT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media ancillary drivers
+#           -> Camera sensor devices
+# Selected by [n]:
+#   - VIDEO_EM28XX_V4L2 [=n] && USB [=y] && MEDIA_SUPPORT [=m] && MEDIA_USB_SUPPORT [=y] && (MEDIA_CAMERA_SUPPORT [=y] || MEDIA_ANALOG_TV_SUPPORT [=y] || MEDIA_DIGITAL_TV_SUPPORT [=y]) && VIDEO_EM28XX [=m] && MEDIA_SUBDRV_AUTOSELECT [=y] && MEDIA_CAMERA_SUPPORT [=y]
+# 
+# 
+# 
+CONFIG_VIDEO_MT9V011=m

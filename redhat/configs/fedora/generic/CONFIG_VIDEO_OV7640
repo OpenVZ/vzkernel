@@ -1,0 +1,25 @@
+# CONFIG_VIDEO_OV7640:
+# 
+# This is a Video4Linux2 sensor driver for the OmniVision
+# OV7640 camera.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called ov7640.
+# 
+# Symbol: VIDEO_OV7640 [=n]
+# Type  : tristate
+# Defined at drivers/media/i2c/Kconfig:982
+#   Prompt: OmniVision OV7640 sensor support
+#   Depends on: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m]
+#   Visible if: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m] && MEDIA_CAMERA_SUPPORT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media ancillary drivers
+#           -> Camera sensor devices
+# Selected by [n]:
+#   - VIDEO_GO7007 [=n] && MEDIA_SUPPORT [=m] && MEDIA_USB_SUPPORT [=y] && MEDIA_ANALOG_TV_SUPPORT [=y] && VIDEO_DEV [=m] && I2C [=y] && SND [=m] && USB [=y] && MEDIA_SUBDRV_AUTOSELECT [=y] && MEDIA_CAMERA_SUPPORT [=y]
+# 
+# 
+# 
+CONFIG_VIDEO_OV7640=m
