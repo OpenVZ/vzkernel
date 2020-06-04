@@ -278,6 +278,10 @@ int ovl_check_metacopy_xattr(struct dentry *dentry);
 bool ovl_is_metacopy_dentry(struct dentry *dentry);
 char *ovl_get_redirect_xattr(struct dentry *dentry, int padding);
 
+void print_path_option(struct seq_file *m, const char *name, struct path *path);
+void print_paths_option(struct seq_file *m, const char *name,
+			struct path *paths, unsigned int num);
+
 static inline bool ovl_is_impuredir(struct dentry *dentry)
 {
 	return ovl_check_dir_xattr(dentry, OVL_XATTR_IMPURE);
