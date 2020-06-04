@@ -53,12 +53,12 @@ static const struct rpc_call_ops nlmsvc_grant_ops;
 static LIST_HEAD(nlm_blocked);
 static DEFINE_SPINLOCK(nlm_blocked_lock);
 
-#ifdef LOCKD_DEBUG
+#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
 static const char *nlmdbg_cookie2a(const struct nlm_cookie *cookie)
 {
 	/*
-	 * We can get away with a static buffer because we're only
-	 * called with BKL held.
+	 * We can get away with a static buffer because this is only called
+	 * from lockd, which is single-threaded.
 	 */
 	static char buf[2*NLM_MAXCOOKIELEN+1];
 	unsigned int i, len = sizeof(buf);
@@ -276,7 +276,7 @@ static int nlmsvc_unlink_block(struct nlm_block *block)
 	dprintk("lockd: unlinking block %p...\n", block);
 
 	/* Remove block from list */
-	status = posix_unblock_lock(block->b_file->f_file, &block->b_call->a_args.lock.fl);
+	status = posix_unblock_lock(&block->b_call->a_args.lock.fl);
 	nlmsvc_remove_block(block);
 	return status;
 }
@@ -406,8 +406,8 @@ nlmsvc_lock(struct svc_rqst *rqstp, struct nlm_file *file,
 	__be32			ret;
 
 	dprintk("lockd: nlmsvc_lock(%s/%ld, ty=%d, pi=%d, %Ld-%Ld, bl=%d)\n",
-				file_inode(file->f_file)->i_sb->s_id,
-				file_inode(file->f_file)->i_ino,
+				locks_inode(file->f_file)->i_sb->s_id,
+				locks_inode(file->f_file)->i_ino,
 				lock->fl.fl_type, lock->fl.fl_pid,
 				(long long)lock->fl.fl_start,
 				(long long)lock->fl.fl_end,
@@ -513,8 +513,8 @@ nlmsvc_testlock(struct svc_rqst *rqstp, struct nlm_file *file,
 	__be32			ret;
 
 	dprintk("lockd: nlmsvc_testlock(%s/%ld, ty=%d, %Ld-%Ld)\n",
-				file_inode(file->f_file)->i_sb->s_id,
-				file_inode(file->f_file)->i_ino,
+				locks_inode(file->f_file)->i_sb->s_id,
+				locks_inode(file->f_file)->i_ino,
 				lock->fl.fl_type,
 				(long long)lock->fl.fl_start,
 				(long long)lock->fl.fl_end);
@@ -586,6 +586,7 @@ conf_lock:
 	conflock->fl.fl_type = lock->fl.fl_type;
 	conflock->fl.fl_start = lock->fl.fl_start;
 	conflock->fl.fl_end = lock->fl.fl_end;
+	locks_release_private(&lock->fl);
 	ret = nlm_lck_denied;
 out:
 	if (block)
@@ -606,8 +607,8 @@ nlmsvc_unlock(struct net *net, struct nlm_file *file, struct nlm_lock *lock)
 	int	error;
 
 	dprintk("lockd: nlmsvc_unlock(%s/%ld, pi=%d, %Ld-%Ld)\n",
-				file_inode(file->f_file)->i_sb->s_id,
-				file_inode(file->f_file)->i_ino,
+				locks_inode(file->f_file)->i_sb->s_id,
+				locks_inode(file->f_file)->i_ino,
 				lock->fl.fl_pid,
 				(long long)lock->fl.fl_start,
 				(long long)lock->fl.fl_end);
@@ -635,8 +636,8 @@ nlmsvc_cancel_blocked(struct net *net, struct nlm_file *file, struct nlm_lock *l
 	int status = 0;
 
 	dprintk("lockd: nlmsvc_cancel(%s/%ld, pi=%d, %Ld-%Ld)\n",
-				file_inode(file->f_file)->i_sb->s_id,
-				file_inode(file->f_file)->i_ino,
+				locks_inode(file->f_file)->i_sb->s_id,
+				locks_inode(file->f_file)->i_ino,
 				lock->fl.fl_pid,
 				(long long)lock->fl.fl_start,
 				(long long)lock->fl.fl_end);
@@ -677,7 +678,7 @@ nlmsvc_update_deferred_block(struct nlm_block *block, struct file_lock *conf,
 		block->b_flags |= B_TIMED_OUT;
 	if (conf) {
 		if (block->b_fl)
-			__locks_copy_lock(block->b_fl, conf);
+			locks_copy_conflock(block->b_fl, conf);
 	}
 }
 
@@ -744,8 +745,20 @@ static int nlmsvc_same_owner(struct file_lock *fl1, struct file_lock *fl2)
 	return fl1->fl_owner == fl2->fl_owner && fl1->fl_pid == fl2->fl_pid;
 }
 
+/*
+ * Since NLM uses two "keys" for tracking locks, we need to hash them down
+ * to one for the blocked_hash. Here, we're just xor'ing the host address
+ * with the pid in order to create a key value for picking a hash bucket.
+ */
+static unsigned long
+nlmsvc_owner_key(struct file_lock *fl)
+{
+	return (unsigned long)fl->fl_owner ^ (unsigned long)fl->fl_pid;
+}
+
 const struct lock_manager_operations nlmsvc_lock_operations = {
 	.lm_compare_owner = nlmsvc_same_owner,
+	.lm_owner_key = nlmsvc_owner_key,
 	.lm_notify = nlmsvc_notify_blocked,
 	.lm_grant = nlmsvc_grant_deferred,
 };
@@ -939,6 +952,7 @@ nlmsvc_retry_blocked(void)
 	unsigned long	timeout = MAX_SCHEDULE_TIMEOUT;
 	struct nlm_block *block;
 
+	spin_lock(&nlm_blocked_lock);
 	while (!list_empty(&nlm_blocked) && !kthread_should_stop()) {
 		block = list_entry(nlm_blocked.next, struct nlm_block, b_list);
 
@@ -948,6 +962,7 @@ nlmsvc_retry_blocked(void)
 			timeout = block->b_when - jiffies;
 			break;
 		}
+		spin_unlock(&nlm_blocked_lock);
 
 		dprintk("nlmsvc_retry_blocked(%p, when=%ld)\n",
 			block, block->b_when);
@@ -957,7 +972,9 @@ nlmsvc_retry_blocked(void)
 			retry_deferred_block(block);
 		} else
 			nlmsvc_grant_blocked(block);
+		spin_lock(&nlm_blocked_lock);
 	}
+	spin_unlock(&nlm_blocked_lock);
 
 	return timeout;
 }

@@ -39,7 +39,7 @@
 
 /* This is used to register protocols. */
 struct net_protocol {
-	void			(*early_demux)(struct sk_buff *skb);
+	int			(*early_demux)(struct sk_buff *skb);
 	int			(*handler)(struct sk_buff *skb);
 	void			(*err_handler)(struct sk_buff *skb, u32 info);
 	unsigned int		no_policy:1,
@@ -81,7 +81,6 @@ struct inet_protosw {
 	struct proto	 *prot;
 	const struct proto_ops *ops;
   
-	char             no_check;   /* checksum on rcv/xmit/none? */
 	unsigned char	 flags;      /* See INET_PROTOSW_* below.  */
 };
 #define INET_PROTOSW_REUSE 0x01	     /* Are ports automatically reusable? */

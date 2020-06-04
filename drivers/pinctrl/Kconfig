@@ -108,6 +108,21 @@ config PINCTRL_IMX6SL
 	help
 	  Say Y here to enable the imx6sl pinctrl driver
 
+config PINCTRL_AMD
+	tristate "AMD GPIO pin control"
+	depends on GPIOLIB
+	select GPIOLIB_IRQCHIP
+	select PINCONF
+	select GENERIC_PINCONF
+	help
+	  driver for memory mapped GPIO functionality on AMD platforms
+	  (x86 or arm).Most pins are usually muxed to some other
+	  functionality by firmware,so only a small amount is available
+	  for gpio use.
+
+	  Requires ACPI/FDT device enumeration code to set up a platform
+	  device.
+
 config PINCTRL_LANTIQ
 	bool
 	depends on LANTIQ
@@ -225,6 +240,7 @@ source "drivers/pinctrl/mvebu/Kconfig"
 source "drivers/pinctrl/sh-pfc/Kconfig"
 source "drivers/pinctrl/spear/Kconfig"
 source "drivers/pinctrl/vt8500/Kconfig"
+source "drivers/pinctrl/intel/Kconfig"
 
 config PINCTRL_XWAY
 	bool

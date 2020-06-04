@@ -2,7 +2,7 @@
 #define __NETNS_NETFILTER_H
 
 #include <linux/proc_fs.h>
-#include <linux/netfilter.h>
+#include <linux/netfilter_defs.h>
 
 struct nf_logger;
 

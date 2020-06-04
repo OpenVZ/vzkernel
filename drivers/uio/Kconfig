@@ -128,4 +128,13 @@ config UIO_PRUSS
 	  To compile this driver as a module, choose M here: the module
 	  will be called uio_pruss.
 
+config UIO_HV_GENERIC
+	tristate "Generic driver for Hyper-V VMBus"
+	depends on HYPERV
+	help
+	  Generic driver that you can bind, dynamically, to any
+	  Hyper-V VMBus device. It is useful to provide direct access
+	  to network and storage devices from userspace.
+
+	  If you compile this as a module, it will be called uio_hv_generic.
 endif

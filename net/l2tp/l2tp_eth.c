@@ -67,7 +67,6 @@ static inline struct l2tp_eth_net *l2tp_eth_pernet(struct net *net)
 	return net_generic(net, l2tp_eth_net_id);
 }
 
-static struct lock_class_key l2tp_eth_tx_busylock;
 static int l2tp_eth_dev_init(struct net_device *dev)
 {
 	struct l2tp_eth *priv = netdev_priv(dev);
@@ -75,7 +74,8 @@ static int l2tp_eth_dev_init(struct net_device *dev)
 	priv->dev = dev;
 	eth_hw_addr_random(dev);
 	memset(&dev->broadcast[0], 0xff, 6);
-	dev->qdisc_tx_busylock = &l2tp_eth_tx_busylock;
+	netdev_lockdep_set_classes(dev);
+
 	return 0;
 }
 
@@ -106,18 +106,18 @@ static int l2tp_eth_dev_xmit(struct sk_buff *skb, struct net_device *dev)
 	return NETDEV_TX_OK;
 }
 
-static struct rtnl_link_stats64 *l2tp_eth_get_stats64(struct net_device *dev,
-						      struct rtnl_link_stats64 *stats)
+static void l2tp_eth_get_stats64(struct net_device *dev,
+				 struct rtnl_link_stats64 *stats)
 {
 	struct l2tp_eth *priv = netdev_priv(dev);
 
-	stats->tx_bytes   = atomic_long_read(&priv->tx_bytes);
-	stats->tx_packets = atomic_long_read(&priv->tx_packets);
-	stats->tx_dropped = atomic_long_read(&priv->tx_dropped);
-	stats->rx_bytes   = atomic_long_read(&priv->rx_bytes);
-	stats->rx_packets = atomic_long_read(&priv->rx_packets);
-	stats->rx_errors  = atomic_long_read(&priv->rx_errors);
-	return stats;
+	stats->tx_bytes   = (unsigned long) atomic_long_read(&priv->tx_bytes);
+	stats->tx_packets = (unsigned long) atomic_long_read(&priv->tx_packets);
+	stats->tx_dropped = (unsigned long) atomic_long_read(&priv->tx_dropped);
+	stats->rx_bytes   = (unsigned long) atomic_long_read(&priv->rx_bytes);
+	stats->rx_packets = (unsigned long) atomic_long_read(&priv->rx_packets);
+	stats->rx_errors  = (unsigned long) atomic_long_read(&priv->rx_errors);
+
 }
 
 
@@ -134,7 +134,7 @@ static void l2tp_eth_dev_setup(struct net_device *dev)
 	dev->priv_flags		&= ~IFF_TX_SKB_SHARING;
 	dev->features		|= NETIF_F_LLTX;
 	dev->netdev_ops		= &l2tp_eth_netdev_ops;
-	dev->destructor		= free_netdev;
+	dev->extended->needs_free_netdev	= true;
 }
 
 static void l2tp_eth_dev_recv(struct l2tp_session *session, struct sk_buff *skb, int data_len)
@@ -205,28 +205,17 @@ static void l2tp_eth_show(struct seq_file *m, void *arg)
 }
 #endif
 
-static int l2tp_eth_create(struct net *net, u32 tunnel_id, u32 session_id, u32 peer_session_id, struct l2tp_session_cfg *cfg)
+static int l2tp_eth_create(struct net *net, struct l2tp_tunnel *tunnel,
+			   u32 session_id, u32 peer_session_id,
+			   struct l2tp_session_cfg *cfg)
 {
 	struct net_device *dev;
 	char name[IFNAMSIZ];
-	struct l2tp_tunnel *tunnel;
 	struct l2tp_session *session;
 	struct l2tp_eth *priv;
 	struct l2tp_eth_sess *spriv;
 	int rc;
 	struct l2tp_eth_net *pn;
-
-	tunnel = l2tp_tunnel_find(net, tunnel_id);
-	if (!tunnel) {
-		rc = -ENODEV;
-		goto out;
-	}
-
-	session = l2tp_session_find(net, tunnel, session_id);
-	if (session) {
-		rc = -EEXIST;
-		goto out;
-	}
 
 	if (cfg->ifname) {
 		dev = dev_get_by_name(net, cfg->ifname);
@@ -241,8 +230,8 @@ static int l2tp_eth_create(struct net *net, u32 tunnel_id, u32 session_id, u32 p
 
 	session = l2tp_session_create(sizeof(*spriv), tunnel, session_id,
 				      peer_session_id, cfg);
-	if (!session) {
-		rc = -ENOMEM;
+	if (IS_ERR(session)) {
+		rc = PTR_ERR(session);
 		goto out;
 	}
 
@@ -257,6 +246,8 @@ static int l2tp_eth_create(struct net *net, u32 tunnel_id, u32 session_id, u32 p
 		session->mtu = dev->mtu - session->hdr_len;
 	dev->mtu = session->mtu;
 	dev->needed_headroom += session->hdr_len;
+	dev->extended->min_mtu = 0;
+	dev->extended->max_mtu = ETH_MAX_MTU;
 
 	priv = netdev_priv(dev);
 	priv->dev = dev;

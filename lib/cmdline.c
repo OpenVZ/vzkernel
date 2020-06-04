@@ -15,6 +15,7 @@
 #include <linux/export.h>
 #include <linux/kernel.h>
 #include <linux/string.h>
+#include <linux/ctype.h>
 
 /*
  *	If a hyphen was found in get_option, this will handle the
@@ -119,11 +120,7 @@ char *get_options(const char *str, int nints, int *ints)
  *	@retptr: (output) Optional pointer to next char after parse completes
  *
  *	Parses a string into a number.  The number stored at @ptr is
- *	potentially suffixed with %K (for kilobytes, or 1024 bytes),
- *	%M (for megabytes, or 1048576 bytes), or %G (for gigabytes, or
- *	1073741824).  If the number is suffixed with K, M, or G, then
- *	the return value is the number multiplied by one kilobyte, one
- *	megabyte, or one gigabyte, respectively.
+ *	potentially suffixed with K, M, G, T, P, E.
  */
 
 unsigned long long memparse(const char *ptr, char **retptr)
@@ -133,6 +130,15 @@ unsigned long long memparse(const char *ptr, char **retptr)
 	unsigned long long ret = simple_strtoull(ptr, &endptr, 0);
 
 	switch (*endptr) {
+	case 'E':
+	case 'e':
+		ret <<= 10;
+	case 'P':
+	case 'p':
+		ret <<= 10;
+	case 'T':
+	case 't':
+		ret <<= 10;
 	case 'G':
 	case 'g':
 		ret <<= 10;
@@ -157,3 +163,88 @@ unsigned long long memparse(const char *ptr, char **retptr)
 EXPORT_SYMBOL(memparse);
 EXPORT_SYMBOL(get_option);
 EXPORT_SYMBOL(get_options);
+
+/**
+ *	parse_option_str - Parse a string and check an option is set or not
+ *	@str: String to be parsed
+ *	@option: option name
+ *
+ *	This function parses a string containing a comma-separated list of
+ *	strings like a=b,c.
+ *
+ *	Return true if there's such option in the string, or return false.
+ */
+bool parse_option_str(const char *str, const char *option)
+{
+	while (*str) {
+		if (!strncmp(str, option, strlen(option))) {
+			str += strlen(option);
+			if (!*str || *str == ',')
+				return true;
+		}
+
+		while (*str && *str != ',')
+			str++;
+
+		if (*str == ',')
+			str++;
+	}
+
+	return false;
+}
+
+/*
+ * Parse a string to get a param value pair.
+ * You can use " around spaces, but can't escape ".
+ * Hyphens and underscores equivalent in parameter names.
+ */
+char *next_arg(char *args, char **param, char **val)
+{
+	unsigned int i, equals = 0;
+	int in_quote = 0, quoted = 0;
+	char *next;
+
+	if (*args == '"') {
+		args++;
+		in_quote = 1;
+		quoted = 1;
+	}
+
+	for (i = 0; args[i]; i++) {
+		if (isspace(args[i]) && !in_quote)
+			break;
+		if (equals == 0) {
+			if (args[i] == '=')
+				equals = i;
+		}
+		if (args[i] == '"')
+			in_quote = !in_quote;
+	}
+
+	*param = args;
+	if (!equals)
+		*val = NULL;
+	else {
+		args[equals] = '\0';
+		*val = args + equals + 1;
+
+		/* Don't include quotes in value. */
+		if (**val == '"') {
+			(*val)++;
+			if (args[i-1] == '"')
+				args[i-1] = '\0';
+		}
+	}
+	if (quoted && args[i-1] == '"')
+		args[i-1] = '\0';
+
+	if (args[i]) {
+		args[i] = '\0';
+		next = args + i + 1;
+	} else
+		next = args + i;
+
+	/* Chew up trailing spaces. */
+	return skip_spaces(next);
+	//return next;
+}

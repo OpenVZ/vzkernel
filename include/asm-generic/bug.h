@@ -3,6 +3,8 @@
 
 #include <linux/compiler.h>
 
+#define CUT_HERE		"------------[ cut here ]------------\n"
+
 #ifdef CONFIG_GENERIC_BUG
 #define BUGFLAG_WARNING		(1 << 0)
 #define BUGFLAG_TAINT(taint)	(BUGFLAG_WARNING | ((taint) << 8))
@@ -80,6 +82,12 @@ extern void warn_slowpath_null(const char *file, const int line);
 #define __WARN_printf_taint(taint, arg...)				\
 	do { printk(arg); __WARN_TAINT(taint); } while (0)
 #endif
+
+/* used internally by panic.c */
+struct warn_args;
+
+void __warn(const char *file, int line, void *caller, unsigned taint,
+	    struct pt_regs *regs, struct warn_args *args);
 
 #ifndef WARN_ON
 #define WARN_ON(condition) ({						\

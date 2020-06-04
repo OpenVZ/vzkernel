@@ -158,11 +158,11 @@ static int max_t3[] = { 8191 }; /* Must fit in 16 bits when multiplied by BCT3MU
 static int min_priority[1];
 static int max_priority[] = { 127 }; /* From DECnet spec */
 
-static int dn_forwarding_proc(ctl_table *, int,
+static int dn_forwarding_proc(struct ctl_table *, int,
 			void __user *, size_t *, loff_t *);
 static struct dn_dev_sysctl_table {
 	struct ctl_table_header *sysctl_header;
-	ctl_table dn_dev_vars[5];
+	struct ctl_table dn_dev_vars[5];
 } dn_dev_sysctl = {
 	NULL,
 	{
@@ -242,7 +242,7 @@ static void dn_dev_sysctl_unregister(struct dn_dev_parms *parms)
 	}
 }
 
-static int dn_forwarding_proc(ctl_table *table, int write,
+static int dn_forwarding_proc(struct ctl_table *table, int write,
 				void __user *buffer,
 				size_t *lenp, loff_t *ppos)
 {
@@ -573,7 +573,7 @@ static int dn_nl_deladdr(struct sk_buff *skb, struct nlmsghdr *nlh)
 	struct dn_ifaddr __rcu **ifap;
 	int err = -EINVAL;
 
-	if (!capable(CAP_NET_ADMIN))
+	if (!netlink_capable(skb, CAP_NET_ADMIN))
 		return -EPERM;
 
 	if (!net_eq(net, &init_net))
@@ -617,7 +617,7 @@ static int dn_nl_newaddr(struct sk_buff *skb, struct nlmsghdr *nlh)
 	struct dn_ifaddr *ifa;
 	int err;
 
-	if (!capable(CAP_NET_ADMIN))
+	if (!netlink_capable(skb, CAP_NET_ADMIN))
 		return -EPERM;
 
 	if (!net_eq(net, &init_net))
@@ -696,7 +696,8 @@ static int dn_nl_fill_ifaddr(struct sk_buff *skb, struct dn_ifaddr *ifa,
 	    (ifa->ifa_label[0] &&
 	     nla_put_string(skb, IFA_LABEL, ifa->ifa_label)))
 		goto nla_put_failure;
-	return nlmsg_end(skb, nlh);
+	nlmsg_end(skb, nlh);
+	return 0;
 
 nla_put_failure:
 	nlmsg_cancel(skb, nlh);

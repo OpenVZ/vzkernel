@@ -43,6 +43,7 @@ void *kmap_atomic(struct page *page)
 	void *kmap;
 	int type;
 
+	preempt_disable();
 	pagefault_disable();
 	if (!PageHighMem(page))
 		return page_address(page);
@@ -105,6 +106,7 @@ void __kunmap_atomic(void *kvaddr)
 		kunmap_high(pte_page(pkmap_page_table[PKMAP_NR(vaddr)]));
 	}
 	pagefault_enable();
+	preempt_enable();
 }
 EXPORT_SYMBOL(__kunmap_atomic);
 
@@ -113,6 +115,7 @@ void *kmap_atomic_pfn(unsigned long pfn)
 	unsigned long vaddr;
 	int idx, type;
 
+	preempt_disable();
 	pagefault_disable();
 
 	type = kmap_atomic_idx_push();

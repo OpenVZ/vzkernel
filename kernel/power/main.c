@@ -15,6 +15,7 @@
 #include <linux/workqueue.h>
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
+#include <linux/security.h>
 
 #include "power.h"
 
@@ -300,13 +301,11 @@ static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 			s += sprintf(s,"%s ", pm_states[i]);
 	}
 #endif
-#ifdef CONFIG_HIBERNATION
-	s += sprintf(s, "%s\n", "disk");
-#else
+	if (get_securelevel() <= 0 && hibernation_available())
+		s += sprintf(s, "disk ");
 	if (s != buf)
 		/* convert the last space to a newline */
 		*(s-1) = '\n';
-#endif
 	return (s - buf);
 }
 
@@ -424,6 +423,8 @@ static ssize_t wakeup_count_store(struct kobject *kobj,
 	if (sscanf(buf, "%u", &val) == 1) {
 		if (pm_save_wakeup_count(val))
 			error = n;
+		else
+			pm_print_active_wakeup_sources();
 	}
 
  out:
@@ -528,6 +529,10 @@ pm_trace_store(struct kobject *kobj, struct kobj_attribute *attr,
 
 	if (sscanf(buf, "%d", &val) == 1) {
 		pm_trace_enabled = !!val;
+		if (pm_trace_enabled) {
+			pr_warn("PM: Enabling pm_trace changes system date and time during resume.\n"
+				"PM: Correct system time has to be restored manually after resume.\n");
+		}
 		return n;
 	}
 	return -EINVAL;
@@ -610,7 +615,6 @@ static struct attribute_group attr_group = {
 	.attrs = g,
 };
 
-#ifdef CONFIG_PM_RUNTIME
 struct workqueue_struct *pm_wq;
 EXPORT_SYMBOL_GPL(pm_wq);
 
@@ -620,9 +624,6 @@ static int __init pm_start_workqueue(void)
 
 	return pm_wq ? 0 : -ENOMEM;
 }
-#else
-static inline int pm_start_workqueue(void) { return 0; }
-#endif
 
 static int __init pm_init(void)
 {

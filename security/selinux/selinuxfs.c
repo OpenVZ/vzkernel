@@ -44,7 +44,11 @@
 /* Policy capability filenames */
 static char *policycap_names[] = {
 	"network_peer_controls",
-	"open_perms"
+	"open_perms",
+	"reserved_1", /* extended_socket_class */
+	"reserved_2", /* always_check_network */
+	"cgroup_seclabel",
+	"nnp_nosuid_transition"
 };
 
 unsigned int selinux_checkreqprot = CONFIG_SECURITY_SELINUX_CHECKREQPROT_VALUE;
@@ -181,6 +185,8 @@ static ssize_t sel_write_enforce(struct file *file, const char __user *buf,
 			avc_ss_reset(0);
 		selnl_notify_setenforce(selinux_enforcing);
 		selinux_status_update_setenforce(selinux_enforcing);
+		if (!selinux_enforcing)
+			call_lsm_notifier(LSM_POLICY_CHANGE, NULL);
 	}
 	length = count;
 out:
@@ -1185,30 +1191,8 @@ static const struct file_operations sel_commit_bools_ops = {
 
 static void sel_remove_entries(struct dentry *de)
 {
-	struct list_head *node;
-
-	spin_lock(&de->d_lock);
-	node = de->d_subdirs.next;
-	while (node != &de->d_subdirs) {
-		struct dentry *d = list_entry(node, struct dentry, d_u.d_child);
-
-		spin_lock_nested(&d->d_lock, DENTRY_D_LOCK_NESTED);
-		list_del_init(node);
-
-		if (d->d_inode) {
-			dget_dlock(d);
-			spin_unlock(&de->d_lock);
-			spin_unlock(&d->d_lock);
-			d_delete(d);
-			simple_unlink(de->d_inode, d);
-			dput(d);
-			spin_lock(&de->d_lock);
-		} else
-			spin_unlock(&d->d_lock);
-		node = de->d_subdirs.next;
-	}
-
-	spin_unlock(&de->d_lock);
+	d_genocide(de);
+	shrink_dcache_parent(de);
 }
 
 #define BOOL_DIR_NAME "booleans"
@@ -1268,7 +1252,7 @@ static int sel_make_bools(void)
 			goto out;
 
 		isec->sid = sid;
-		isec->initialized = 1;
+		isec->initialized = LABEL_INITIALIZED;
 		inode->i_fop = &sel_bool_ops;
 		inode->i_ino = i|SEL_BOOL_INO_OFFSET;
 		d_add(dentry, inode);
@@ -1658,37 +1642,13 @@ static int sel_make_class_dir_entries(char *classname, int index,
 	return rc;
 }
 
-static void sel_remove_classes(void)
-{
-	struct list_head *class_node;
-
-	list_for_each(class_node, &class_dir->d_subdirs) {
-		struct dentry *class_subdir = list_entry(class_node,
-					struct dentry, d_u.d_child);
-		struct list_head *class_subdir_node;
-
-		list_for_each(class_subdir_node, &class_subdir->d_subdirs) {
-			struct dentry *d = list_entry(class_subdir_node,
-						struct dentry, d_u.d_child);
-
-			if (d->d_inode)
-				if (d->d_inode->i_mode & S_IFDIR)
-					sel_remove_entries(d);
-		}
-
-		sel_remove_entries(class_subdir);
-	}
-
-	sel_remove_entries(class_dir);
-}
-
 static int sel_make_classes(void)
 {
 	int rc, nclasses, i;
 	char **classes;
 
 	/* delete any existing entries */
-	sel_remove_classes();
+	sel_remove_entries(class_dir);
 
 	rc = security_get_classes(&classes, &nclasses);
 	if (rc)
@@ -1830,7 +1790,7 @@ static int sel_fill_super(struct super_block *sb, void *data, int silent)
 	isec = (struct inode_security_struct *)inode->i_security;
 	isec->sid = SECINITSID_DEVNULL;
 	isec->sclass = SECCLASS_CHR_FILE;
-	isec->initialized = 1;
+	isec->initialized = LABEL_INITIALIZED;
 
 	init_special_inode(inode, S_IFCHR | S_IRUGO | S_IWUGO, MKDEV(MEM_MAJOR, 3));
 	d_add(dentry, inode);
@@ -1889,7 +1849,6 @@ static struct file_system_type sel_fs_type = {
 };
 
 struct vfsmount *selinuxfs_mount;
-static struct kobject *selinuxfs_kobj;
 
 static int __init init_sel_fs(void)
 {
@@ -1898,13 +1857,13 @@ static int __init init_sel_fs(void)
 	if (!selinux_enabled)
 		return 0;
 
-	selinuxfs_kobj = kobject_create_and_add("selinux", fs_kobj);
-	if (!selinuxfs_kobj)
-		return -ENOMEM;
+	err = sysfs_create_mount_point(fs_kobj, "selinux");
+	if (err)
+		return err;
 
 	err = register_filesystem(&sel_fs_type);
 	if (err) {
-		kobject_put(selinuxfs_kobj);
+		sysfs_remove_mount_point(fs_kobj, "selinux");
 		return err;
 	}
 
@@ -1923,7 +1882,7 @@ __initcall(init_sel_fs);
 #ifdef CONFIG_SECURITY_SELINUX_DISABLE
 void exit_sel_fs(void)
 {
-	kobject_put(selinuxfs_kobj);
+	sysfs_remove_mount_point(fs_kobj, "selinux");
 	kern_unmount(selinuxfs_mount);
 	unregister_filesystem(&sel_fs_type);
 }

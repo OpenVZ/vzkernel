@@ -34,6 +34,7 @@
  * exception handlers (including pSeries LPAR) and iSeries LPAR
  * implementations as possible.
  */
+#include <asm/bug.h>
 
 #define EX_R9		0
 #define EX_R10		8
@@ -41,24 +42,120 @@
 #define EX_R12		24
 #define EX_R13		32
 #define EX_SRR0		40
-#define EX_DAR		48
+#define EX_DAR		48 /* kABI: Don't change this without changing paca.h */
 #define EX_DSISR	56
 #define EX_CCR		60
 #define EX_R3		64
 #define EX_LR		72
 #define EX_CFAR		80
 #define EX_PPR		88	/* SMT thread status register (priority) */
+#define EX_CTR		96
+
+#define STF_ENTRY_BARRIER_SLOT						\
+	STF_ENTRY_BARRIER_FIXUP_SECTION;				\
+	nop;								\
+	nop;								\
+	nop
+
+#define STF_EXIT_BARRIER_SLOT						\
+	STF_EXIT_BARRIER_FIXUP_SECTION;					\
+	nop;								\
+	nop;								\
+	nop;								\
+	nop;								\
+	nop;								\
+	nop
+
+/*
+ * r10 must be free to use, r13 must be paca
+ */
+#define INTERRUPT_TO_KERNEL						\
+	STF_ENTRY_BARRIER_SLOT
+
+/*
+ * The nop instructions allow us to insert one or more instructions to flush the
+ * L1-D cache when return to userspace or a guest.
+ */
+#define RFI_FLUSH_SLOT							\
+	RFI_FLUSH_FIXUP_SECTION;					\
+	nop;								\
+	nop;								\
+	nop
+
+#ifdef CONFIG_PPC_DEBUG_RFI
+#define CHECK_TARGET_MSR_PR(srr_reg, expected_pr)			\
+	SET_SCRATCH0(r3);						\
+	mfspr	r3,srr_reg;						\
+	extrdi	r3,r3,1,63-MSR_PR_LG;					\
+666:	tdnei	r3,expected_pr;						\
+	EMIT_BUG_ENTRY 666b,__FILE__,__LINE__,0;			\
+	GET_SCRATCH0(r3);
+#else
+#define CHECK_TARGET_MSR_PR(srr_reg, expected_pr)
+#endif
+
+#define RFI_TO_KERNEL							\
+	CHECK_TARGET_MSR_PR(SPRN_SRR1, 0);				\
+	rfid
+
+#define RFI_TO_USER							\
+	CHECK_TARGET_MSR_PR(SPRN_SRR1, 1);				\
+	STF_EXIT_BARRIER_SLOT;						\
+	RFI_FLUSH_SLOT;							\
+	rfid;								\
+	b	rfi_flush_fallback
+
+#define RFI_TO_USER_OR_KERNEL						\
+	STF_EXIT_BARRIER_SLOT;						\
+	RFI_FLUSH_SLOT;							\
+	rfid;								\
+	b	rfi_flush_fallback
+
+#define RFI_TO_GUEST							\
+	STF_EXIT_BARRIER_SLOT;						\
+	RFI_FLUSH_SLOT;							\
+	rfid;								\
+	b	rfi_flush_fallback
+
+#define HRFI_TO_KERNEL							\
+	CHECK_TARGET_MSR_PR(SPRN_HSRR1, 0);				\
+	hrfid
+
+#define HRFI_TO_USER							\
+	CHECK_TARGET_MSR_PR(SPRN_HSRR1, 1);				\
+	STF_EXIT_BARRIER_SLOT;						\
+	RFI_FLUSH_SLOT;							\
+	hrfid;								\
+	b	hrfi_flush_fallback
+
+#define HRFI_TO_USER_OR_KERNEL						\
+	STF_EXIT_BARRIER_SLOT;						\
+	RFI_FLUSH_SLOT;							\
+	hrfid;								\
+	b	hrfi_flush_fallback
+
+#define HRFI_TO_GUEST							\
+	STF_EXIT_BARRIER_SLOT;						\
+	RFI_FLUSH_SLOT;							\
+	hrfid;								\
+	b	hrfi_flush_fallback
+
+#define HRFI_TO_UNKNOWN							\
+	STF_EXIT_BARRIER_SLOT;						\
+	RFI_FLUSH_SLOT;							\
+	hrfid;								\
+	b	hrfi_flush_fallback
 
 #ifdef CONFIG_RELOCATABLE
 #define __EXCEPTION_RELON_PROLOG_PSERIES_1(label, h)			\
 	ld	r12,PACAKBASE(r13);	/* get high part of &label */	\
 	mfspr	r11,SPRN_##h##SRR0;	/* save SRR0 */			\
 	LOAD_HANDLER(r12,label);					\
-	mtlr	r12;							\
+	mtctr	r12;							\
 	mfspr	r12,SPRN_##h##SRR1;	/* and SRR1 */			\
 	li	r10,MSR_RI;						\
 	mtmsrd 	r10,1;			/* Set RI (EE=0) */		\
-	blr;
+	bctr;
 #else
 /* If not relocatable, we can jump directly -- and save messing with LR */
 #define __EXCEPTION_RELON_PROLOG_PSERIES_1(label, h)			\
@@ -97,18 +194,18 @@
 
 #if defined(CONFIG_RELOCATABLE)
 /*
- * If we support interrupts with relocation on AND we're a relocatable
- * kernel, we need to use LR to get to the 2nd level handler.  So, save/restore
- * it when required.
+ * If we support interrupts with relocation on AND we're a relocatable kernel,
+ * we need to use CTR to get to the 2nd level handler.  So, save/restore it
+ * when required.
  */
-#define SAVE_LR(reg, area)	mflr	reg ; 	std	reg,area+EX_LR(r13)
-#define GET_LR(reg, area) 			ld	reg,area+EX_LR(r13)
-#define RESTORE_LR(reg, area)	ld	reg,area+EX_LR(r13) ; mtlr reg
+#define SAVE_CTR(reg, area)	mfctr	reg ; 	std	reg,area+EX_CTR(r13)
+#define GET_CTR(reg, area) 			ld	reg,area+EX_CTR(r13)
+#define RESTORE_CTR(reg, area)	ld	reg,area+EX_CTR(r13) ; mtctr reg
 #else
-/* ...else LR is unused and in register. */
-#define SAVE_LR(reg, area)
-#define GET_LR(reg, area) 	mflr	reg
-#define RESTORE_LR(reg, area)
+/* ...else CTR is unused and in register. */
+#define SAVE_CTR(reg, area)
+#define GET_CTR(reg, area) 	mfctr	reg
+#define RESTORE_CTR(reg, area)
 #endif
 
 /*
@@ -146,6 +243,14 @@ BEGIN_FTR_SECTION_NESTED(943)						\
 END_FTR_SECTION_NESTED(ftr,ftr,943)
 
 /*
+ * Set an SPR from a register if the CPU has the given feature
+ */
+#define OPT_SET_SPR(ra, spr, ftr)					\
+BEGIN_FTR_SECTION_NESTED(943)						\
+	mtspr	spr,ra;							\
+END_FTR_SECTION_NESTED(ftr,ftr,943)
+
+/*
  * Save a register to the PACA if the CPU has the given feature
  */
 #define OPT_SAVE_REG_TO_PACA(offset, ra, ftr)				\
@@ -164,7 +269,8 @@ END_FTR_SECTION_NESTED(ftr,ftr,943)
 #define __EXCEPTION_PROLOG_1(area, extra, vec)				\
 	OPT_SAVE_REG_TO_PACA(area+EX_PPR, r9, CPU_FTR_HAS_PPR);		\
 	OPT_SAVE_REG_TO_PACA(area+EX_CFAR, r10, CPU_FTR_CFAR);		\
-	SAVE_LR(r10, area);						\
+	INTERRUPT_TO_KERNEL;						\
+	SAVE_CTR(r10, area);						\
 	mfcr	r9;							\
 	extra(vec);							\
 	std	r11,area+EX_R11(r13);					\
@@ -182,7 +288,7 @@ END_FTR_SECTION_NESTED(ftr,ftr,943)
 	mtspr	SPRN_##h##SRR0,r12;					\
 	mfspr	r12,SPRN_##h##SRR1;	/* and SRR1 */			\
 	mtspr	SPRN_##h##SRR1,r10;					\
-	h##rfid;							\
+	h##RFI_TO_KERNEL;						\
 	b	.	/* prevent speculative execution */
 #define EXCEPTION_PROLOG_PSERIES_1(label, h)				\
 	__EXCEPTION_PROLOG_PSERIES_1(label, h)
@@ -192,10 +298,25 @@ END_FTR_SECTION_NESTED(ftr,ftr,943)
 	EXCEPTION_PROLOG_1(area, extra, vec);				\
 	EXCEPTION_PROLOG_PSERIES_1(label, h);
 
+#define EXCEPTION_PROLOG_PSERIES_OOL(area, label, h, extra, vec)	\
+	EXCEPTION_PROLOG_1(area, extra, vec);				\
+	EXCEPTION_PROLOG_PSERIES_1(label, h);
+
 #define __KVMTEST(n)							\
 	lbz	r10,HSTATE_IN_GUEST(r13);			\
 	cmpwi	r10,0;							\
 	bne	do_kvm_##n
+
+#ifdef CONFIG_KVM_BOOK3S_HV_POSSIBLE
+/*
+ * If hv is possible, interrupts come into to the hv version
+ * of the kvmppc_interrupt code, which then jumps to the PR handler,
+ * kvmppc_interrupt_pr, if the guest is a PR guest.
+ */
+#define kvmppc_interrupt kvmppc_interrupt_hv
+#else
+#define kvmppc_interrupt kvmppc_interrupt_pr
+#endif
 
 #define __KVM_HANDLER(area, h, n)					\
 do_kvm_##n:								\
@@ -203,6 +324,10 @@ do_kvm_##n:								\
 	ld	r10,area+EX_CFAR(r13);					\
 	std	r10,HSTATE_CFAR(r13);					\
 	END_FTR_SECTION_NESTED(CPU_FTR_CFAR,CPU_FTR_CFAR,947);		\
+	BEGIN_FTR_SECTION_NESTED(948)					\
+	ld	r10,area+EX_PPR(r13);					\
+	std	r10,HSTATE_PPR(r13);					\
+	END_FTR_SECTION_NESTED(CPU_FTR_HAS_PPR,CPU_FTR_HAS_PPR,948);	\
 	ld	r10,area+EX_R10(r13);					\
 	stw	r9,HSTATE_SCRATCH1(r13);				\
 	ld	r9,area+EX_R9(r13);					\
@@ -216,6 +341,10 @@ do_kvm_##n:								\
 	ld	r10,area+EX_R10(r13);					\
 	beq	89f;							\
 	stw	r9,HSTATE_SCRATCH1(r13);			\
+	BEGIN_FTR_SECTION_NESTED(948)					\
+	ld	r9,area+EX_PPR(r13);					\
+	std	r9,HSTATE_PPR(r13);					\
+	END_FTR_SECTION_NESTED(CPU_FTR_HAS_PPR,CPU_FTR_HAS_PPR,948);	\
 	ld	r9,area+EX_R9(r13);					\
 	std	r12,HSTATE_SCRATCH0(r13);			\
 	li	r12,n;							\
@@ -235,7 +364,7 @@ do_kvm_##n:								\
 #define KVM_HANDLER_SKIP(area, h, n)
 #endif
 
-#ifdef CONFIG_KVM_BOOK3S_PR
+#ifdef CONFIG_KVM_BOOK3S_PR_POSSIBLE
 #define KVMTEST_PR(n)			__KVMTEST(n)
 #define KVM_HANDLER_PR(area, h, n)	__KVM_HANDLER(area, h, n)
 #define KVM_HANDLER_PR_SKIP(area, h, n)	__KVM_HANDLER_SKIP(area, h, n)
@@ -264,13 +393,13 @@ do_kvm_##n:								\
 	subi	r1,r1,INT_FRAME_SIZE;	/* alloc frame on kernel stack	*/ \
 	beq-	1f;							   \
 	ld	r1,PACAKSAVE(r13);	/* kernel stack to use		*/ \
-1:	cmpdi	cr1,r1,0;		/* check if r1 is in userspace	*/ \
+1:	cmpdi	cr1,r1,-INT_FRAME_SIZE;	/* check if r1 is in userspace	*/ \
 	blt+	cr1,3f;			/* abort if it is		*/ \
 	li	r1,(n);			/* will be reloaded later	*/ \
 	sth	r1,PACA_TRAP_SAVE(r13);					   \
 	std	r3,area+EX_R3(r13);					   \
 	addi	r3,r13,area;		/* r3 -> where regs are saved*/	   \
-	RESTORE_LR(r1, area);						   \
+	RESTORE_CTR(r1, area);						   \
 	b	bad_stack;						   \
 3:	std	r9,_CCR(r1);		/* save CR in stackframe	*/ \
 	std	r11,_NIP(r1);		/* save SRR0 in stackframe	*/ \
@@ -281,9 +410,12 @@ do_kvm_##n:								\
 	beq	4f;			/* if from kernel mode		*/ \
 	ACCOUNT_CPU_USER_ENTRY(r9, r10);				   \
 	SAVE_PPR(area, r9, r10);					   \
-4:	std	r2,GPR2(r1);		/* save r2 in stackframe	*/ \
-	SAVE_4GPRS(3, r1);		/* save r3 - r6 in stackframe	*/ \
-	SAVE_2GPRS(7, r1);		/* save r7, r8 in stackframe	*/ \
+4:	EXCEPTION_PROLOG_COMMON_2(area)					   \
+	EXCEPTION_PROLOG_COMMON_3(n)					   \
+	ACCOUNT_STOLEN_TIME
+
+/* Save original regs values from save area to stack frame. */
+#define EXCEPTION_PROLOG_COMMON_2(area)					   \
 	ld	r9,area+EX_R9(r13);	/* move r9, r10 to stackframe	*/ \
 	ld	r10,area+EX_R10(r13);					   \
 	std	r9,GPR9(r1);						   \
@@ -298,11 +430,16 @@ do_kvm_##n:								\
 	ld	r10,area+EX_CFAR(r13);					   \
 	std	r10,ORIG_GPR3(r1);					   \
 	END_FTR_SECTION_NESTED(CPU_FTR_CFAR, CPU_FTR_CFAR, 66);		   \
-	GET_LR(r9,area);		/* Get LR, later save to stack	*/ \
+	GET_CTR(r10, area);						   \
+	std	r10,_CTR(r1);
+
+#define EXCEPTION_PROLOG_COMMON_3(n)					   \
+	std	r2,GPR2(r1);		/* save r2 in stackframe	*/ \
+	SAVE_4GPRS(3, r1);		/* save r3 - r6 in stackframe   */ \
+	SAVE_2GPRS(7, r1);		/* save r7, r8 in stackframe	*/ \
+	mflr	r9;			/* Get LR, later save to stack	*/ \
 	ld	r2,PACATOC(r13);	/* get kernel TOC into r2	*/ \
 	std	r9,_LINK(r1);						   \
-	mfctr	r10;			/* save CTR in stackframe	*/ \
-	std	r10,_CTR(r1);						   \
 	lbz	r10,PACASOFTIRQEN(r13);				   \
 	mfspr	r11,SPRN_XER;		/* save XER in stackframe	*/ \
 	std	r10,SOFTE(r1);						   \
@@ -312,8 +449,7 @@ do_kvm_##n:								\
 	li	r10,0;							   \
 	ld	r11,exception_marker@toc(r2);				   \
 	std	r10,RESULT(r1);		/* clear regs->result		*/ \
-	std	r11,STACK_FRAME_OVERHEAD-16(r1); /* mark the frame	*/ \
-	ACCOUNT_STOLEN_TIME
+	std	r11,STACK_FRAME_OVERHEAD-16(r1); /* mark the frame	*/
 
 /*
  * Exception vectors.
@@ -358,12 +494,12 @@ label##_relon_pSeries:					\
 	/* No guest interrupts come through here */	\
 	SET_SCRATCH0(r13);		/* save r13 */	\
 	EXCEPTION_RELON_PROLOG_PSERIES(PACA_EXGEN, label##_common, \
-				       EXC_STD, KVMTEST_PR, vec)
+				       EXC_STD, NOTEST, vec)
 
 #define STD_RELON_EXCEPTION_PSERIES_OOL(vec, label)		\
 	.globl label##_relon_pSeries;				\
 label##_relon_pSeries:						\
-	EXCEPTION_PROLOG_1(PACA_EXGEN, KVMTEST_PR, vec);	\
+	EXCEPTION_PROLOG_1(PACA_EXGEN, NOTEST, vec);		\
 	EXCEPTION_RELON_PROLOG_PSERIES_1(label##_common, EXC_STD)
 
 #define STD_RELON_EXCEPTION_HV(loc, vec, label)		\
@@ -374,12 +510,12 @@ label##_relon_hv:					\
 	/* No guest interrupts come through here */	\
 	SET_SCRATCH0(r13);	/* save r13 */		\
 	EXCEPTION_RELON_PROLOG_PSERIES(PACA_EXGEN, label##_common, \
-				       EXC_HV, KVMTEST, vec)
+				       EXC_HV, NOTEST, vec)
 
 #define STD_RELON_EXCEPTION_HV_OOL(vec, label)			\
 	.globl label##_relon_hv;				\
 label##_relon_hv:						\
-	EXCEPTION_PROLOG_1(PACA_EXGEN, KVMTEST, vec);		\
+	EXCEPTION_PROLOG_1(PACA_EXGEN, NOTEST, vec);		\
 	EXCEPTION_RELON_PROLOG_PSERIES_1(label##_common, EXC_HV)
 
 /* This associate vector numbers with bits in paca->irq_happened */
@@ -390,6 +526,8 @@ label##_relon_hv:						\
 #define SOFTEN_VALUE_0xa00	PACA_IRQ_DBELL
 #define SOFTEN_VALUE_0xe80	PACA_IRQ_DBELL
 #define SOFTEN_VALUE_0xe82	PACA_IRQ_DBELL
+#define SOFTEN_VALUE_0xe60	PACA_IRQ_HMI
+#define SOFTEN_VALUE_0xe62	PACA_IRQ_HMI
 
 #define __SOFTEN_TEST(h, vec)						\
 	lbz	r10,PACASOFTIRQEN(r13);					\
@@ -412,6 +550,13 @@ label##_relon_hv:						\
 
 #define SOFTEN_NOTEST_PR(vec)		_SOFTEN_TEST(EXC_STD, vec)
 #define SOFTEN_NOTEST_HV(vec)		_SOFTEN_TEST(EXC_HV, vec)
+
+#define __MASKABLE_EXCEPTION_PSERIES_OOL(vec, label, h, extra)		\
+	__EXCEPTION_PROLOG_1(PACA_EXGEN, extra, vec);			\
+	EXCEPTION_PROLOG_PSERIES_1(label##_common, h);
+
+#define _MASKABLE_EXCEPTION_PSERIES_OOL(vec, label, h, extra)		\
+	__MASKABLE_EXCEPTION_PSERIES_OOL(vec, label, h, extra)
 
 #define __MASKABLE_EXCEPTION_PSERIES(vec, label, h, extra)		\
 	SET_SCRATCH0(r13);    /* save r13 */				\
@@ -479,10 +624,10 @@ label##_relon_hv:							\
  */
 
 /* Exception addition: Hard disable interrupts */
-#define DISABLE_INTS	SOFT_DISABLE_INTS(r10,r11)
+#define DISABLE_INTS	RECONCILE_IRQ_STATE(r10,r11)
 
 #define ADD_NVGPRS				\
-	bl	.save_nvgprs
+	bl	save_nvgprs
 
 #define RUNLATCH_ON				\
 BEGIN_FTR_SECTION				\

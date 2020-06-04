@@ -44,6 +44,9 @@ struct clp_fh_list_entry {
 #define CLP_SET_DISABLE_PCI_FN	1	/* Yes, 1 disables it */
 
 #define CLP_UTIL_STR_LEN	64
+#define CLP_PFIP_NR_SEGMENTS	4
+
+extern bool zpci_unique_uid;
 
 /* List PCI functions request */
 struct clp_req_list_pci {
@@ -64,7 +67,8 @@ struct clp_rsp_list_pci {
 	u64 resume_token;
 	u32 reserved2;
 	u16 max_fn;
-	u8 reserved3;
+	u8			: 7;
+	u8 uid_checking		: 1;
 	u8 entry_size;
 	struct clp_fh_list_entry fh_list[CLP_FH_LIST_NR_ENTRIES];
 } __packed;
@@ -85,7 +89,7 @@ struct clp_rsp_query_pci {
 	struct clp_rsp_hdr hdr;
 	u32 fmt			:  4;	/* cmd request block format */
 	u32			: 28;
-	u64 reserved1;
+	u64			: 64;
 	u16 vfn;			/* virtual fn number */
 	u16			:  7;
 	u16 util_str_avail	:  1;	/* utility string available? */
@@ -94,10 +98,14 @@ struct clp_rsp_query_pci {
 	u8 bar_size[PCI_BAR_COUNT];
 	u16 pchid;
 	u32 bar[PCI_BAR_COUNT];
-	u64 reserved2;
+	u8 pfip[CLP_PFIP_NR_SEGMENTS];	/* pci function internal path */
+	u32			: 16;
+	u8 fmb_len;
+	u8 pft;				/* pci function type */
 	u64 sdma;			/* start dma as */
 	u64 edma;			/* end dma as */
-	u64 reserved3[6];
+	u32 reserved[11];
+	u32 uid;			/* user defined id */
 	u8 util_str[CLP_UTIL_STR_LEN];	/* utility string */
 } __packed;
 

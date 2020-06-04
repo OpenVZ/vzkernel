@@ -11,25 +11,94 @@
 #include <linux/vmalloc.h>
 #include <linux/init.h>
 #include <linux/mm.h>
+#include <linux/cpu.h>
+#include <linux/slab.h>
+
+#include <asm/pgtable.h>
+#include <asm/tlbflush.h>
 #include <asm/page.h>
 #include <asm/code-patching.h>
+#include <asm/setup.h>
 #include <asm/uaccess.h>
+#include <asm/kprobes.h>
+#include <asm/sections.h>
 
-
-int patch_instruction(unsigned int *addr, unsigned int instr)
+static int __patch_instruction(unsigned int *exec_addr, unsigned int instr,
+			       unsigned int *patch_addr)
 {
 	int err;
 
-	__put_user_size(instr, addr, 4, err);
+	__put_user_size(instr, patch_addr, 4, err);
 	if (err)
 		return err;
-	asm ("dcbst 0, %0; sync; icbi 0,%0; sync; isync" : : "r" (addr));
+
+	asm ("dcbst 0, %0; sync; icbi 0,%1; sync; isync" :: "r" (patch_addr),
+							    "r" (exec_addr));
+
 	return 0;
+}
+
+int raw_patch_instruction(unsigned int *addr, unsigned int instr)
+{
+	return __patch_instruction(addr, instr, addr);
+}
+
+static int do_patch_instruction(unsigned int *addr, unsigned int instr)
+{
+	return raw_patch_instruction(addr, instr);
+}
+
+int __kprobes patch_instruction(unsigned int *addr, unsigned int instr)
+{
+	/* Make sure we aren't patching a freed init section */
+	if (init_mem_is_free && init_section_contains(addr, 4)) {
+		pr_debug("Skipping init section patching addr: 0x%px\n", addr);
+		return 0;
+	}
+	return do_patch_instruction(addr, instr);
 }
 
 int patch_branch(unsigned int *addr, unsigned long target, int flags)
 {
 	return patch_instruction(addr, create_branch(addr, target, flags));
+}
+
+int patch_branch_site(s32 *site, unsigned long target, int flags)
+{
+	unsigned int *addr;
+
+	addr = (unsigned int *)((unsigned long)site + *site);
+	return patch_instruction(addr, create_branch(addr, target, flags));
+}
+
+int patch_instruction_site(s32 *site, unsigned int instr)
+{
+	unsigned int *addr;
+
+	addr = (unsigned int *)((unsigned long)site + *site);
+	return patch_instruction(addr, instr);
+}
+
+bool is_offset_in_branch_range(long offset)
+{
+	/*
+	 * Powerpc branch instruction is :
+	 *
+	 *  0         6                 30   31
+	 *  +---------+----------------+---+---+
+	 *  | opcode  |     LI         |AA |LK |
+	 *  +---------+----------------+---+---+
+	 *  Where AA = 0 and LK = 0
+	 *
+	 * LI is a signed 24 bits integer. The real branch offset is computed
+	 * by: imm32 = SignExtend(LI:'0b00', 32);
+	 *
+	 * So the maximum forward branch should be:
+	 *   (0x007fffff << 2) = 0x01fffffc =  0x1fffffc
+	 * The maximum backward branch should be:
+	 *   (0xff800000 << 2) = 0xfe000000 = -0x2000000
+	 */
+	return (offset >= -0x2000000 && offset <= 0x1fffffc && !(offset & 0x3));
 }
 
 unsigned int create_branch(const unsigned int *addr,
@@ -43,7 +112,7 @@ unsigned int create_branch(const unsigned int *addr,
 		offset = offset - (unsigned long)addr;
 
 	/* Check we can represent the target in the instruction format */
-	if (offset < -0x2000000 || offset > 0x1fffffc || offset & 0x3)
+	if (!is_offset_in_branch_range(offset))
 		return 0;
 
 	/* Mask out the flags and target, so they don't step on each other. */
@@ -93,6 +162,11 @@ int instr_is_relative_branch(unsigned int instr)
 		return 0;
 
 	return instr_is_branch_iform(instr) || instr_is_branch_bform(instr);
+}
+
+int instr_is_relative_link_branch(unsigned int instr)
+{
+	return instr_is_relative_branch(instr) && (instr & BRANCH_SET_LINK);
 }
 
 static unsigned long branch_iform_target(const unsigned int *instr)

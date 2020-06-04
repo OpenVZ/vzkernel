@@ -245,11 +245,14 @@ static void quirk_system_pci_resources(struct pnp_dev *dev)
 	 */
 	for_each_pci_dev(pdev) {
 		for (i = 0; i < DEVICE_COUNT_RESOURCE; i++) {
-			unsigned long type;
+			unsigned long flags, type;
 
-			type = pci_resource_flags(pdev, i) &
-					(IORESOURCE_IO | IORESOURCE_MEM);
+			flags = pci_resource_flags(pdev, i);
+			type = flags & (IORESOURCE_IO | IORESOURCE_MEM);
 			if (!type || pci_resource_len(pdev, i) == 0)
+				continue;
+
+			if (flags & IORESOURCE_UNSET)
 				continue;
 
 			pci_start = pci_resource_start(pdev, i);
@@ -320,6 +323,7 @@ static void quirk_amd_mmconfig_area(struct pnp_dev *dev)
 			 "%pR covers only part of AMD MMCONFIG area %pR; adding more reservations\n",
 			 res, mmconfig);
 		if (mmconfig->start < res->start) {
+			gmb();
 			start = mmconfig->start;
 			end = res->start - 1;
 			pnp_add_mem_resource(dev, start, end, 0);

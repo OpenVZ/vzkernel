@@ -166,6 +166,7 @@ struct irq_data {
  * IRQD_IRQ_DISABLED		- Disabled state of the interrupt
  * IRQD_IRQ_MASKED		- Masked state of the interrupt
  * IRQD_IRQ_INPROGRESS		- In progress state of the interrupt
+ * IRQD_AFFINITY_MANAGED	- Affinity is auto-managed by the kernel
  */
 enum {
 	IRQD_TRIGGER_MASK		= 0xf,
@@ -179,6 +180,7 @@ enum {
 	IRQD_IRQ_DISABLED		= (1 << 16),
 	IRQD_IRQ_MASKED			= (1 << 17),
 	IRQD_IRQ_INPROGRESS		= (1 << 18),
+	IRQD_AFFINITY_MANAGED		= (1 << 21),
 };
 
 static inline bool irqd_is_setaffinity_pending(struct irq_data *d)
@@ -265,6 +267,11 @@ static inline void irqd_clr_chained_irq_inprogress(struct irq_data *d)
 	d->state_use_accessors &= ~IRQD_IRQ_INPROGRESS;
 }
 
+static inline bool irqd_affinity_is_managed(struct irq_data *d)
+{
+	return d->state_use_accessors & IRQD_AFFINITY_MANAGED;
+}
+
 static inline irq_hw_number_t irqd_to_hwirq(struct irq_data *d)
 {
 	return d->hwirq;
@@ -295,6 +302,10 @@ static inline irq_hw_number_t irqd_to_hwirq(struct irq_data *d)
  * @irq_resume:		function called from core code on resume once per chip
  * @irq_pm_shutdown:	function called from core code on shutdown once per chip
  * @irq_print_chip:	optional to print special chip info in show_interrupts
+ * @irq_request_resources:	optional to request resources before calling
+ *				any other callback related to this irq
+ * @irq_release_resources:	optional to release resources acquired with
+ *				irq_request_resources
  * @flags:		chip specific flags
  */
 struct irq_chip {
@@ -326,6 +337,8 @@ struct irq_chip {
 	void		(*irq_pm_shutdown)(struct irq_data *data);
 
 	void		(*irq_print_chip)(struct irq_data *data, struct seq_file *p);
+	int		(*irq_request_resources)(struct irq_data *data);
+	void		(*irq_release_resources)(struct irq_data *data);
 
 	unsigned long	flags;
 };
@@ -375,7 +388,8 @@ extern void remove_percpu_irq(unsigned int irq, struct irqaction *act);
 
 extern void irq_cpu_online(void);
 extern void irq_cpu_offline(void);
-extern int __irq_set_affinity_locked(struct irq_data *data,  const struct cpumask *cpumask);
+extern int irq_set_affinity_locked(struct irq_data *data,
+				   const struct cpumask *cpumask, bool force);
 
 #ifdef CONFIG_GENERIC_HARDIRQS
 
@@ -407,6 +421,7 @@ extern void handle_fasteoi_irq(unsigned int irq, struct irq_desc *desc);
 extern void handle_edge_irq(unsigned int irq, struct irq_desc *desc);
 extern void handle_edge_eoi_irq(unsigned int irq, struct irq_desc *desc);
 extern void handle_simple_irq(unsigned int irq, struct irq_desc *desc);
+extern void handle_untracked_irq(unsigned int irq, struct irq_desc *desc);
 extern void handle_percpu_irq(unsigned int irq, struct irq_desc *desc);
 extern void handle_percpu_devid_irq(unsigned int irq, struct irq_desc *desc);
 extern void handle_bad_irq(unsigned int irq, struct irq_desc *desc);
@@ -508,12 +523,8 @@ static inline void irq_set_percpu_devid_flags(unsigned int irq)
 }
 
 /* Handle dynamic irq creation and destruction */
-extern unsigned int create_irq_nr(unsigned int irq_want, int node);
-extern unsigned int __create_irqs(unsigned int from, unsigned int count,
-				  int node);
 extern int create_irq(void);
 extern void destroy_irq(unsigned int irq);
-extern void destroy_irqs(unsigned int irq, unsigned int count);
 
 /*
  * Dynamic irq helper functions. Obsolete. Use irq_alloc_desc* and
@@ -579,12 +590,32 @@ static inline struct msi_desc *irq_data_get_msi(struct irq_data *d)
 	return d->msi_desc;
 }
 
+static inline u32 irq_get_trigger_type(unsigned int irq)
+{
+	struct irq_data *d = irq_get_irq_data(irq);
+	return d ? irqd_get_trigger_type(d) : 0;
+}
+
+static inline struct cpumask *irq_get_affinity_mask(int irq)
+{
+	struct irq_data *d = irq_get_irq_data(irq);
+
+	return d ? d->affinity : NULL;
+}
+
+static inline struct cpumask *irq_data_get_affinity_mask(struct irq_data *d)
+{
+	return d->affinity;
+}
+
+unsigned int arch_dynirq_lower_bound(unsigned int from);
+
 int __irq_alloc_descs(int irq, unsigned int from, unsigned int cnt, int node,
-		struct module *owner);
+		      struct module *owner, const struct cpumask *affinity);
 
 /* use macros to avoid needing export.h for THIS_MODULE */
 #define irq_alloc_descs(irq, from, cnt, node)	\
-	__irq_alloc_descs(irq, from, cnt, node, THIS_MODULE)
+	__irq_alloc_descs(irq, from, cnt, node, THIS_MODULE, NULL)
 
 #define irq_alloc_desc(node)			\
 	irq_alloc_descs(-1, 0, 1, node)
@@ -610,6 +641,34 @@ static inline int irq_reserve_irq(unsigned int irq)
 {
 	return irq_reserve_irqs(irq, 1);
 }
+
+#ifdef CONFIG_GENERIC_IRQ_LEGACY_ALLOC_HWIRQ
+unsigned int __irq_alloc_hwirqs(int cnt, int node, const struct cpumask *affinity);
+static inline unsigned int irq_alloc_hwirqs(int cnt, int node)
+{
+	return __irq_alloc_hwirqs(cnt, node, NULL);
+}
+static inline unsigned int irq_alloc_hwirq(int node)
+{
+	return irq_alloc_hwirqs(1, node);
+}
+static inline unsigned int irq_alloc_hwirq_affinity(int node, const struct cpumask *affinity)
+{
+	return __irq_alloc_hwirqs(1, node, affinity);
+}
+static inline unsigned int irq_alloc_hwirqs_affinity(int cnt, int node,
+		const struct cpumask *affinity)
+{
+	return __irq_alloc_hwirqs(cnt, node, affinity);
+}
+void irq_free_hwirqs(unsigned int from, int cnt);
+static inline void irq_free_hwirq(unsigned int irq)
+{
+	return irq_free_hwirqs(irq, 1);
+}
+int arch_setup_hwirq(unsigned int irq, int node);
+void arch_teardown_hwirq(unsigned int irq);
+#endif
 
 #ifndef irq_reg_writel
 # define irq_reg_writel(val, addr)	writel(val, addr)

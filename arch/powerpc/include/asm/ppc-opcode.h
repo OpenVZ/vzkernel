@@ -81,6 +81,53 @@
 #define	__REGA0_R30	30
 #define	__REGA0_R31	31
 
+/* opcode and xopcode for instructions */
+#define OP_TRAP 3
+#define OP_TRAP_64 2
+
+#define OP_31_XOP_TRAP      4
+#define OP_31_XOP_LWZX      23
+#define OP_31_XOP_DCBST     54
+#define OP_31_XOP_LWZUX     55
+#define OP_31_XOP_TRAP_64   68
+#define OP_31_XOP_DCBF      86
+#define OP_31_XOP_LBZX      87
+#define OP_31_XOP_STWX      151
+#define OP_31_XOP_STBX      215
+#define OP_31_XOP_LBZUX     119
+#define OP_31_XOP_STBUX     247
+#define OP_31_XOP_LHZX      279
+#define OP_31_XOP_LHZUX     311
+#define OP_31_XOP_MFSPR     339
+#define OP_31_XOP_LHAX      343
+#define OP_31_XOP_LHAUX     375
+#define OP_31_XOP_STHX      407
+#define OP_31_XOP_STHUX     439
+#define OP_31_XOP_MTSPR     467
+#define OP_31_XOP_DCBI      470
+#define OP_31_XOP_LWBRX     534
+#define OP_31_XOP_TLBSYNC   566
+#define OP_31_XOP_STWBRX    662
+#define OP_31_XOP_LHBRX     790
+#define OP_31_XOP_STHBRX    918
+
+#define OP_LWZ  32
+#define OP_LD   58
+#define OP_LWZU 33
+#define OP_LBZ  34
+#define OP_LBZU 35
+#define OP_STW  36
+#define OP_STWU 37
+#define OP_STD  62
+#define OP_STB  38
+#define OP_STBU 39
+#define OP_LHZ  40
+#define OP_LHZU 41
+#define OP_LHA  42
+#define OP_LHAU 43
+#define OP_STH  44
+#define OP_STHU 45
+
 /* sorted alphabetically */
 #define PPC_INST_BHRBE			0x7c00025c
 #define PPC_INST_CLRBHRB		0x7c00035c
@@ -89,19 +136,26 @@
 #define PPC_INST_DCBAL			0x7c2005ec
 #define PPC_INST_DCBZL			0x7c2007ec
 #define PPC_INST_ICBT			0x7c00002c
+#define PPC_INST_ICSWX			0x7c00032d
+#define PPC_INST_ICSWEPX		0x7c00076d
 #define PPC_INST_ISEL			0x7c00001e
 #define PPC_INST_ISEL_MASK		0xfc00003e
 #define PPC_INST_LDARX			0x7c0000a8
+#define PPC_INST_STDCX			0x7c0001ad
 #define PPC_INST_LSWI			0x7c0004aa
 #define PPC_INST_LSWX			0x7c00042a
 #define PPC_INST_LWARX			0x7c000028
+#define PPC_INST_STWCX			0x7c00012d
 #define PPC_INST_LWSYNC			0x7c2004ac
+#define PPC_INST_SYNC			0x7c0004ac
+#define PPC_INST_SYNC_MASK		0xfc0007fe
 #define PPC_INST_LXVD2X			0x7c000698
 #define PPC_INST_MCRXR			0x7c000400
 #define PPC_INST_MCRXR_MASK		0xfc0007fe
 #define PPC_INST_MFSPR_PVR		0x7c1f42a6
 #define PPC_INST_MFSPR_PVR_MASK		0xfc1fffff
 #define PPC_INST_MSGSND			0x7c00019c
+#define PPC_INST_MSGCLR			0x7c0001dc
 #define PPC_INST_MSGSNDP		0x7c00011c
 #define PPC_INST_NOP			0x60000000
 #define PPC_INST_POPCNTB		0x7c0000f4
@@ -134,6 +188,7 @@
 #define PPC_INST_TLBIVAX		0x7c000624
 #define PPC_INST_TLBSRX_DOT		0x7c0006a5
 #define PPC_INST_XXLOR			0xf0000510
+#define PPC_INST_XXSWAPD		0xf0000250
 #define PPC_INST_XVCPSGNDP		0xf0000780
 #define PPC_INST_TRECHKPT		0x7c0007dd
 #define PPC_INST_TRECLAIM		0x7c00075d
@@ -141,6 +196,7 @@
 
 #define PPC_INST_NAP			0x4c000364
 #define PPC_INST_SLEEP			0x4c0003a4
+#define PPC_INST_WINKLE			0x4c0003e4
 
 /* A2 specific instructions */
 #define PPC_INST_ERATWE			0x7c0001a6
@@ -151,31 +207,54 @@
 #define PPC_INST_ERATSX_DOT		0x7c000127
 
 /* Misc instructions for BPF compiler */
+#define PPC_INST_LBZ			0x88000000
 #define PPC_INST_LD			0xe8000000
+#define PPC_INST_LDX			0x7c00002a
 #define PPC_INST_LHZ			0xa0000000
 #define PPC_INST_LWZ			0x80000000
+#define PPC_INST_LHBRX			0x7c00062c
+#define PPC_INST_LDBRX			0x7c000428
+#define PPC_INST_STB			0x98000000
+#define PPC_INST_STH			0xb0000000
 #define PPC_INST_STD			0xf8000000
+#define PPC_INST_STDX			0x7c00012a
 #define PPC_INST_STDU			0xf8000001
+#define PPC_INST_STW			0x90000000
+#define PPC_INST_STWU			0x94000000
 #define PPC_INST_MFLR			0x7c0802a6
 #define PPC_INST_MTLR			0x7c0803a6
+#define PPC_INST_MTCTR			0x7c0903a6
 #define PPC_INST_CMPWI			0x2c000000
 #define PPC_INST_CMPDI			0x2c200000
+#define PPC_INST_CMPW			0x7c000000
+#define PPC_INST_CMPD			0x7c200000
 #define PPC_INST_CMPLW			0x7c000040
+#define PPC_INST_CMPLD			0x7c200040
 #define PPC_INST_CMPLWI			0x28000000
+#define PPC_INST_CMPLDI			0x28200000
 #define PPC_INST_ADDI			0x38000000
 #define PPC_INST_ADDIS			0x3c000000
 #define PPC_INST_ADD			0x7c000214
 #define PPC_INST_SUB			0x7c000050
 #define PPC_INST_BLR			0x4e800020
 #define PPC_INST_BLRL			0x4e800021
+#define PPC_INST_BCTR			0x4e800420
+#define PPC_INST_MULLD			0x7c0001d2
 #define PPC_INST_MULLW			0x7c0001d6
 #define PPC_INST_MULHWU			0x7c000016
 #define PPC_INST_MULLI			0x1c000000
-#define PPC_INST_DIVWU			0x7c0003d6
+#define PPC_INST_DIVWU			0x7c000396
+#define PPC_INST_DIVD			0x7c0003d2
 #define PPC_INST_RLWINM			0x54000000
+#define PPC_INST_RLWIMI			0x50000000
+#define PPC_INST_RLDICL			0x78000000
 #define PPC_INST_RLDICR			0x78000004
 #define PPC_INST_SLW			0x7c000030
+#define PPC_INST_SLD			0x7c000036
 #define PPC_INST_SRW			0x7c000430
+#define PPC_INST_SRD			0x7c000436
+#define PPC_INST_SRAD			0x7c000634
+#define PPC_INST_SRADI			0x7c000674
 #define PPC_INST_AND			0x7c000038
 #define PPC_INST_ANDDOT			0x7c000039
 #define PPC_INST_OR			0x7c000378
@@ -186,6 +265,7 @@
 #define PPC_INST_XORI			0x68000000
 #define PPC_INST_XORIS			0x6c000000
 #define PPC_INST_NEG			0x7c0000d0
+#define PPC_INST_EXTSW			0x7c0007b4
 #define PPC_INST_BRANCH			0x48000000
 #define PPC_INST_BRANCH_COND		0x40800000
 #define PPC_INST_LBZCIX			0x7c0006aa
@@ -209,8 +289,11 @@
 #define __PPC_WC(w)	(((w) & 0x3) << 21)
 #define __PPC_WS(w)	(((w) & 0x1f) << 11)
 #define __PPC_SH(s)	__PPC_WS(s)
+#define __PPC_SH64(s)	(__PPC_SH(s) | (((s) & 0x20) >> 4))
 #define __PPC_MB(s)	(((s) & 0x1f) << 6)
 #define __PPC_ME(s)	(((s) & 0x1f) << 1)
+#define __PPC_MB64(s)	(__PPC_MB(s) | ((s) & 0x20))
+#define __PPC_ME64(s)	__PPC_MB64(s)
 #define __PPC_BI(s)	(((s) & 0x1f) << 16)
 #define __PPC_CT(t)	(((t) & 0x0f) << 21)
 
@@ -236,6 +319,8 @@
 					___PPC_RT(t) | ___PPC_RA(a) | \
 					___PPC_RB(b) | __PPC_EH(eh))
 #define PPC_MSGSND(b)		stringify_in_c(.long PPC_INST_MSGSND | \
+					___PPC_RB(b))
+#define PPC_MSGCLR(b)		stringify_in_c(.long PPC_INST_MSGCLR | \
 					___PPC_RB(b))
 #define PPC_MSGSNDP(b)		stringify_in_c(.long PPC_INST_MSGSNDP | \
 					___PPC_RB(b))
@@ -297,11 +382,14 @@
 					       VSX_XX1((s), a, b))
 #define XXLOR(t, a, b)		stringify_in_c(.long PPC_INST_XXLOR | \
 					       VSX_XX3((t), a, b))
+#define XXSWAPD(t, a)		stringify_in_c(.long PPC_INST_XXSWAPD | \
+					       VSX_XX3((t), a, a))
 #define XVCPSGNDP(t, a, b)	stringify_in_c(.long (PPC_INST_XVCPSGNDP | \
 					       VSX_XX3((t), (a), (b))))
 
 #define PPC_NAP			stringify_in_c(.long PPC_INST_NAP)
 #define PPC_SLEEP		stringify_in_c(.long PPC_INST_SLEEP)
+#define PPC_WINKLE		stringify_in_c(.long PPC_INST_WINKLE)
 
 /* BHRB instructions */
 #define PPC_CLRBHRB		stringify_in_c(.long PPC_INST_CLRBHRB)
@@ -315,5 +403,16 @@
 					       | __PPC_RA(r))
 #define TABORT(r)		stringify_in_c(.long PPC_INST_TABORT \
 					       | __PPC_RA(r))
+
+/* Coprocessor instructions */
+#define PPC_ICSWX(s, a, b)	stringify_in_c(.long PPC_INST_ICSWX |	\
+					       ___PPC_RS(s) |		\
+					       ___PPC_RA(a) |		\
+					       ___PPC_RB(b))
+#define PPC_ICSWEPX(s, a, b)	stringify_in_c(.long PPC_INST_ICSWEPX | \
+					       ___PPC_RS(s) |		\
+					       ___PPC_RA(a) |		\
+					       ___PPC_RB(b))
+
 
 #endif /* _ASM_POWERPC_PPC_OPCODE_H */

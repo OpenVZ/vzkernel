@@ -149,10 +149,13 @@ static int ip_vs_wrr_dest_changed(struct ip_vs_service *svc,
 	mark->cl = list_entry(&svc->destinations, struct ip_vs_dest, n_list);
 	mark->di = ip_vs_wrr_gcd_weight(svc);
 	mark->mw = ip_vs_wrr_max_weight(svc) - (mark->di - 1);
-	if (mark->cw > mark->mw || !mark->cw)
+	if (mark->cw > mark->mw || !mark->cw) {
+		gmb();
 		mark->cw = mark->mw;
-	else if (mark->di > 1)
+	} else if (mark->di > 1) {
+		gmb();
 		mark->cw = (mark->cw / mark->di) * mark->di + 1;
+	}
 	spin_unlock_bh(&svc->sched_lock);
 	return 0;
 }
@@ -162,7 +165,8 @@ static int ip_vs_wrr_dest_changed(struct ip_vs_service *svc,
  *    Weighted Round-Robin Scheduling
  */
 static struct ip_vs_dest *
-ip_vs_wrr_schedule(struct ip_vs_service *svc, const struct sk_buff *skb)
+ip_vs_wrr_schedule(struct ip_vs_service *svc, const struct sk_buff *skb,
+		   struct ip_vs_iphdr *iph)
 {
 	struct ip_vs_dest *dest, *last, *stop = NULL;
 	struct ip_vs_wrr_mark *mark = svc->sched_data;

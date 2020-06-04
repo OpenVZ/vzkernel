@@ -45,8 +45,6 @@
 
 extern int max_threads;
 
-static struct workqueue_struct *khelper_wq;
-
 /*
  * kmod_thread_locker is used for deadlock avoidance.  There is no explicit
  * locking to protect this global - it is private to the singleton khelper
@@ -206,9 +204,6 @@ static int ____call_usermodehelper(void *data)
 	flush_signal_handlers(current, 1);
 	spin_unlock_irq(&current->sighand->siglock);
 
-	/* We can run anywhere, unlike our parent keventd(). */
-	set_cpus_allowed_ptr(current, cpu_all_mask);
-
 	/*
 	 * Our parent is keventd, which runs with elevated scheduling priority.
 	 * Avoid propagating that into the userspace child.
@@ -236,7 +231,7 @@ static int ____call_usermodehelper(void *data)
 
 	commit_creds(new);
 
-	retval = do_execve(sub_info->path,
+	retval = do_execve(getname_kernel(sub_info->path),
 			   (const char __user *const __user *)sub_info->argv,
 			   (const char __user *const __user *)sub_info->envp);
 	if (!retval)
@@ -577,7 +572,7 @@ int call_usermodehelper_exec(struct subprocess_info *sub_info, int wait)
 	if (sub_info->path[0] == '\0')
 		goto out;
 
-	if (!khelper_wq || usermodehelper_disabled) {
+	if (usermodehelper_disabled) {
 		retval = -EBUSY;
 		goto out;
 	}
@@ -595,7 +590,7 @@ int call_usermodehelper_exec(struct subprocess_info *sub_info, int wait)
 	sub_info->complete = &done;
 	sub_info->wait = wait;
 
-	queue_work(khelper_wq, &sub_info->work);
+	queue_work(system_unbound_wq, &sub_info->work);
 	if (wait == UMH_NO_WAIT)	/* task has freed sub_info */
 		goto unlock;
 
@@ -725,9 +720,3 @@ struct ctl_table usermodehelper_table[] = {
 	},
 	{ }
 };
-
-void __init usermodehelper_init(void)
-{
-	khelper_wq = create_singlethread_workqueue("khelper");
-	BUG_ON(!khelper_wq);
-}

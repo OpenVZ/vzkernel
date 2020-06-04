@@ -7,6 +7,7 @@
 #ifndef _ASM_S390_IPL_H
 #define _ASM_S390_IPL_H
 
+#include <asm/lowcore.h>
 #include <asm/types.h>
 #include <asm/cio.h>
 #include <asm/setup.h>
@@ -63,7 +64,8 @@ struct ipl_block_fcp {
 struct ipl_block_ccw {
 	u8  load_parm[8];
 	u8  reserved1[84];
-	u8  reserved2[2];
+	u16 reserved2 : 13;
+	u8  ssid : 3;
 	u16 devno;
 	u8  vm_flags;
 	u8  reserved3[3];
@@ -87,6 +89,14 @@ struct ipl_parameter_block {
 extern u32 ipl_flags;
 extern u32 dump_prefix_page;
 extern unsigned int zfcpdump_prefix_array[];
+
+struct dump_save_areas {
+	struct save_area_ext **areas;
+	int count;
+};
+
+extern struct dump_save_areas dump_save_areas;
+struct save_area_ext *dump_save_area_create(int cpu);
 
 extern void do_reipl(void);
 extern void do_halt(void);

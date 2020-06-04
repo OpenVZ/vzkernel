@@ -6,7 +6,7 @@
  */
 
 #define INTEL_PMC_MAX_GENERIC				       32
-#define INTEL_PMC_MAX_FIXED					3
+#define INTEL_PMC_MAX_FIXED					4
 #define INTEL_PMC_IDX_FIXED				       32
 
 #define X86_PMC_IDX_MAX					       64
@@ -29,6 +29,11 @@
 #define ARCH_PERFMON_EVENTSEL_INV			(1ULL << 23)
 #define ARCH_PERFMON_EVENTSEL_CMASK			0xFF000000ULL
 
+#define HSW_IN_TX					(1ULL << 32)
+#define HSW_IN_TX_CHECKPOINTED				(1ULL << 33)
+#define ICL_EVENTSEL_ADAPTIVE				(1ULL << 34)
+#define ICL_FIXED_0_ADAPTIVE				(1ULL << 32)
+
 #define AMD64_EVENTSEL_INT_CORE_ENABLE			(1ULL << 36)
 #define AMD64_EVENTSEL_GUESTONLY			(1ULL << 40)
 #define AMD64_EVENTSEL_HOSTONLY				(1ULL << 41)
@@ -48,6 +53,14 @@
 	 ARCH_PERFMON_EVENTSEL_EDGE  |	\
 	 ARCH_PERFMON_EVENTSEL_INV   |	\
 	 ARCH_PERFMON_EVENTSEL_CMASK)
+#define X86_ALL_EVENT_FLAGS  			\
+	(ARCH_PERFMON_EVENTSEL_EDGE |  		\
+	 ARCH_PERFMON_EVENTSEL_INV | 		\
+	 ARCH_PERFMON_EVENTSEL_CMASK | 		\
+	 ARCH_PERFMON_EVENTSEL_ANY | 		\
+	 ARCH_PERFMON_EVENTSEL_PIN_CONTROL | 	\
+	 HSW_IN_TX | 				\
+	 HSW_IN_TX_CHECKPOINTED)
 #define AMD64_RAW_EVENT_MASK		\
 	(X86_RAW_EVENT_MASK          |  \
 	 AMD64_EVENTSEL_EVENT)
@@ -66,6 +79,12 @@
 
 #define ARCH_PERFMON_BRANCH_MISSES_RETIRED		6
 #define ARCH_PERFMON_EVENTS_COUNT			7
+
+#define PEBS_DATACFG_MEMINFO	BIT_ULL(0)
+#define PEBS_DATACFG_GP	BIT_ULL(1)
+#define PEBS_DATACFG_XMMS	BIT_ULL(2)
+#define PEBS_DATACFG_LBRS	BIT_ULL(3)
+#define PEBS_DATACFG_LBR_SHIFT	24
 
 /*
  * Intel "Architectural Performance Monitoring" CPUID
@@ -148,6 +167,49 @@ struct x86_pmu_capability {
  */
 #define INTEL_PMC_IDX_FIXED_BTS				(INTEL_PMC_IDX_FIXED + 16)
 
+#define GLOBAL_STATUS_COND_CHG				BIT_ULL(63)
+#define GLOBAL_STATUS_BUFFER_OVF			BIT_ULL(62)
+#define GLOBAL_STATUS_UNC_OVF				BIT_ULL(61)
+#define GLOBAL_STATUS_ASIF				BIT_ULL(60)
+#define GLOBAL_STATUS_COUNTERS_FROZEN			BIT_ULL(59)
+#define GLOBAL_STATUS_LBRS_FROZEN			BIT_ULL(58)
+#define GLOBAL_STATUS_TRACE_TOPAPMI			BIT_ULL(55)
+
+/*
+ * Adaptive PEBS v4
+ */
+
+struct pebs_basic {
+	u64 format_size;
+	u64 ip;
+	u64 applicable_counters;
+	u64 tsc;
+};
+
+struct pebs_meminfo {
+	u64 address;
+	u64 aux;
+	u64 latency;
+	u64 tsx_tuning;
+};
+
+struct pebs_gprs {
+	u64 flags, ip, ax, cx, dx, bx, sp, bp, si, di;
+	u64 r8, r9, r10, r11, r12, r13, r14, r15;
+};
+
+struct pebs_xmm {
+	u64 xmm[16*2];	/* two entries for each register */
+};
+
+struct pebs_lbr_entry {
+	u64 from, to, info;
+};
+
+struct pebs_lbr {
+	struct pebs_lbr_entry lbr[0]; /* Variable length */
+};
+
 /*
  * IBS cpuid feature detection
  */
@@ -166,6 +228,9 @@ struct x86_pmu_capability {
 #define IBS_CAPS_BRNTRGT		(1U<<5)
 #define IBS_CAPS_OPCNTEXT		(1U<<6)
 #define IBS_CAPS_RIPINVALIDCHK		(1U<<7)
+#define IBS_CAPS_OPBRNFUSE		(1U<<8)
+#define IBS_CAPS_FETCHCTLEXTD		(1U<<9)
+#define IBS_CAPS_OPDATA4		(1U<<10)
 
 #define IBS_CAPS_DEFAULT		(IBS_CAPS_AVAIL		\
 					 | IBS_CAPS_FETCHSAM	\
@@ -217,6 +282,11 @@ extern void perf_events_lapic_init(void);
 #define PERF_EFLAGS_VM		(1UL << 5)
 
 struct pt_regs;
+struct x86_perf_regs {
+	struct pt_regs	regs;
+	u64		*xmm_regs;
+};
+
 extern unsigned long perf_instruction_pointer(struct pt_regs *regs);
 extern unsigned long perf_misc_flags(struct pt_regs *regs);
 #define perf_misc_flags(regs)	perf_misc_flags(regs)
@@ -261,6 +331,10 @@ static inline void perf_get_x86_pmu_capability(struct x86_pmu_capability *cap)
 
 static inline void perf_events_lapic_init(void)	{ }
 static inline void perf_check_microcode(void) { }
+#endif
+
+#ifdef CONFIG_CPU_SUP_INTEL
+ extern void intel_pt_handle_vmx(int on);
 #endif
 
 #if defined(CONFIG_PERF_EVENTS) && defined(CONFIG_CPU_SUP_AMD)

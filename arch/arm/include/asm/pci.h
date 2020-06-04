@@ -2,9 +2,6 @@
 #define ASMARM_PCI_H
 
 #ifdef __KERNEL__
-#include <asm-generic/pci-dma-compat.h>
-#include <asm-generic/pci-bridge.h>
-
 #include <asm/mach/pci.h> /* for pci_sys_data */
 
 extern unsigned long pcibios_min_io;
@@ -30,11 +27,6 @@ static inline int pci_proc_domain(struct pci_bus *bus)
 	return pci_domain_nr(bus);
 }
 #endif /* CONFIG_PCI_DOMAINS */
-
-static inline void pcibios_penalize_isa_irq(int irq, int active)
-{
-	/* We don't do dynamic PCI IRQ allocation */
-}
 
 /*
  * The PCI address space does equal the physical memory address space.
@@ -66,5 +58,4 @@ static inline int pci_get_legacy_ide_irq(struct pci_dev *dev, int channel)
 }
 
 #endif /* __KERNEL__ */
- 
 #endif

@@ -113,6 +113,34 @@ applicable everywhere (see syntax).
 	That will limit the usefulness but on the other hand avoid
 	the illegal configurations all over.
 
+- weak reverse dependencies: "imply" <symbol> ["if" <expr>]
+  This is similar to "select" as it enforces a lower limit on another
+  symbol except that the "implied" symbol's value may still be set to n
+  from a direct dependency or with a visible prompt.
+
+  Given the following example:
+
+  config FOO
+	tristate
+	imply BAZ
+
+  config BAZ
+	tristate
+	depends on BAR
+
+  The following values are possible:
+
+	FOO		BAR		BAZ's default	choice for BAZ
+	---		---		-------------	--------------
+	n		y		n		N/m/y
+	m		y		m		M/y/n
+	y		y		y		Y/n
+	y		n		*		N
+
+  This is useful e.g. with multiple drivers that want to indicate their
+  ability to hook into a secondary subsystem while allowing the user to
+  configure that subsystem out without also having to unset these drivers.
+
 - limiting menu display: "visible if" <expr>
   This attribute is only applicable to menu blocks, if the condition is
   false, the menu block is not displayed to the user (the symbols
@@ -155,6 +183,10 @@ applicable everywhere (see syntax).
     undefined at this point. The symbol is currently not exported back
     to the build environment (if this is desired, it can be done via
     another symbol).
+
+  - "allnoconfig_y"
+    This declares the symbol as one that should have the value y when
+    using "allnoconfig". Used for symbols that hide other symbols.
 
 Menu dependencies
 -----------------

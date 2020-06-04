@@ -11,6 +11,7 @@
 #include <linux/memory.h>
 #include <linux/stop_machine.h>
 #include <linux/slab.h>
+#include <linux/kdebug.h>
 #include <asm/alternative.h>
 #include <asm/sections.h>
 #include <asm/pgtable.h>
@@ -40,17 +41,6 @@ static int __init setup_noreplace_smp(char *str)
 	return 1;
 }
 __setup("noreplace-smp", setup_noreplace_smp);
-
-#ifdef CONFIG_PARAVIRT
-static int __initdata_or_module noreplace_paravirt = 0;
-
-static int __init setup_noreplace_paravirt(char *str)
-{
-	noreplace_paravirt = 1;
-	return 1;
-}
-__setup("noreplace-paravirt", setup_noreplace_paravirt);
-#endif
 
 #define DPRINTK(fmt, ...)				\
 do {							\
@@ -460,9 +450,6 @@ void __init_or_module apply_paravirt(struct paravirt_patch_site *start,
 	struct paravirt_patch_site *p;
 	char insnbuf[MAX_PATCH_LEN];
 
-	if (noreplace_paravirt)
-		return;
-
 	for (p = start; p < end; p++) {
 		unsigned int used;
 
@@ -593,6 +580,96 @@ void *__kprobes text_poke(void *addr, const void *opcode, size_t len)
 	for (i = 0; i < len; i++)
 		BUG_ON(((char *)addr)[i] != ((char *)opcode)[i]);
 	local_irq_restore(flags);
+	return addr;
+}
+
+static void do_sync_core(void *info)
+{
+	sync_core();
+}
+
+static bool bp_patching_in_progress;
+static void *bp_int3_handler, *bp_int3_addr;
+
+int poke_int3_handler(struct pt_regs *regs)
+{
+	/* bp_patching_in_progress */
+	smp_rmb();
+
+	if (likely(!bp_patching_in_progress))
+		return 0;
+
+	if (user_mode_vm(regs) || regs->ip != (unsigned long)bp_int3_addr)
+		return 0;
+
+	/* set up the specified breakpoint handler */
+	regs->ip = (unsigned long) bp_int3_handler;
+
+	return 1;
+
+}
+
+/**
+ * text_poke_bp() -- update instructions on live kernel on SMP
+ * @addr:	address to patch
+ * @opcode:	opcode of new instruction
+ * @len:	length to copy
+ * @handler:	address to jump to when the temporary breakpoint is hit
+ *
+ * Modify multi-byte instruction by using int3 breakpoint on SMP.
+ * In contrary to text_poke_smp(), we completely avoid stop_machine() here,
+ * and achieve the synchronization using int3 breakpoint.
+ *
+ * The way it is done:
+ *	- add a int3 trap to the address that will be patched
+ *	- sync cores
+ *	- update all but the first byte of the patched range
+ *	- sync cores
+ *	- replace the first byte (int3) by the first byte of
+ *	  replacing opcode
+ *	- sync cores
+ *
+ * Note: must be called under text_mutex.
+ */
+void *text_poke_bp(void *addr, const void *opcode, size_t len, void *handler)
+{
+	unsigned char int3 = 0xcc;
+
+	bp_int3_handler = handler;
+	bp_int3_addr = (u8 *)addr + sizeof(int3);
+	bp_patching_in_progress = true;
+	/*
+	 * Corresponding read barrier in int3 notifier for
+	 * making sure the in_progress flags is correctly ordered wrt.
+	 * patching
+	 */
+	smp_wmb();
+
+	text_poke(addr, &int3, sizeof(int3));
+
+	on_each_cpu(do_sync_core, NULL, 1);
+
+	if (len - sizeof(int3) > 0) {
+		/* patch all but the first byte */
+		text_poke((char *)addr + sizeof(int3),
+			  (const char *) opcode + sizeof(int3),
+			  len - sizeof(int3));
+		/*
+		 * According to Intel, this core syncing is very likely
+		 * not necessary and we'd be safe even without it. But
+		 * better safe than sorry (plus there's not only Intel).
+		 */
+		on_each_cpu(do_sync_core, NULL, 1);
+	}
+
+	/* patch the first byte */
+	text_poke(addr, opcode, sizeof(int3));
+
+	on_each_cpu(do_sync_core, NULL, 1);
+
+	bp_patching_in_progress = false;
+	smp_wmb();
+
 	return addr;
 }
 

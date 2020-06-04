@@ -94,6 +94,7 @@ void nilfs_forget_buffer(struct buffer_head *bh)
 	clear_buffer_nilfs_volatile(bh);
 	clear_buffer_nilfs_checked(bh);
 	clear_buffer_nilfs_redirected(bh);
+	clear_buffer_async_write(bh);
 	clear_buffer_dirty(bh);
 	if (nilfs_page_buffers_clean(page))
 		__nilfs_clear_page_dirty(page);
@@ -181,7 +182,7 @@ void nilfs_page_bug(struct page *page)
 
 	printk(KERN_CRIT "NILFS_PAGE_BUG(%p): cnt=%d index#=%llu flags=0x%lx "
 	       "mapping=%p ino=%lu\n",
-	       page, atomic_read(&page->_count),
+	       page, page_ref_count(page),
 	       (unsigned long long)page->index, page->flags, m, ino);
 
 	if (page_has_buffers(page)) {
@@ -429,6 +430,7 @@ void nilfs_clear_dirty_page(struct page *page, bool silent)
 					"discard block %llu, size %zu",
 					(u64)bh->b_blocknr, bh->b_size);
 			}
+			clear_buffer_async_write(bh);
 			clear_buffer_dirty(bh);
 			clear_buffer_nilfs_volatile(bh);
 			clear_buffer_nilfs_checked(bh);

@@ -355,6 +355,7 @@ static int wanxl_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 			ifr->ifr_settings.size = size; /* data size wanted */
 			return -ENOBUFS;
 		}
+		memset(&line, 0, sizeof(line));
 		line.clock_type = get_status(port)->clocking;
 		line.clock_rate = 0;
 		line.loopback = 0;
@@ -807,7 +808,7 @@ static int wanxl_pci_init_one(struct pci_dev *pdev,
 	return 0;
 }
 
-static DEFINE_PCI_DEVICE_TABLE(wanxl_pci_tbl) = {
+static const struct pci_device_id wanxl_pci_tbl[] = {
 	{ PCI_VENDOR_ID_SBE, PCI_DEVICE_ID_SBE_WANXL100, PCI_ANY_ID,
 	  PCI_ANY_ID, 0, 0, 0 },
 	{ PCI_VENDOR_ID_SBE, PCI_DEVICE_ID_SBE_WANXL200, PCI_ANY_ID,

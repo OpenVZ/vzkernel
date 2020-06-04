@@ -14,6 +14,9 @@
 #else
 #define __IGNORE_time
 #endif
+#define __IGNORE_pkey_mprotect
+#define __IGNORE_pkey_alloc
+#define __IGNORE_pkey_free
 
 /* Ignore NUMA system calls. Not wired up on s390. */
 #define __IGNORE_mbind

@@ -125,7 +125,7 @@ static void *proc_ns_follow_link(struct dentry *dentry, struct nameidata *nd)
 	if (!task)
 		goto out;
 
-	if (!ptrace_may_access(task, PTRACE_MODE_READ))
+	if (!ptrace_may_access(task, PTRACE_MODE_READ_FSCREDS))
 		goto out_put_task;
 
 	ns_path.dentry = proc_ns_get_dentry(sb, task, ei->ns.ns_ops);
@@ -158,7 +158,7 @@ static int proc_ns_readlink(struct dentry *dentry, char __user *buffer, int bufl
 	if (!task)
 		goto out;
 
-	if (!ptrace_may_access(task, PTRACE_MODE_READ))
+	if (!ptrace_may_access(task, PTRACE_MODE_READ_FSCREDS))
 		goto out_put_task;
 
 	len = -ENOENT;
@@ -195,12 +195,11 @@ static struct dentry *proc_ns_instantiate(struct inode *dir,
 	struct proc_inode *ei;
 	struct dentry *error = ERR_PTR(-ENOENT);
 
-	inode = proc_pid_make_inode(dir->i_sb, task);
+	inode = proc_pid_make_inode(dir->i_sb, task, S_IFLNK|S_IRWXUGO);
 	if (!inode)
 		goto out;
 
 	ei = PROC_I(inode);
-	inode->i_mode = S_IFLNK|S_IRWXUGO;
 	inode->i_op = &proc_ns_link_inode_operations;
 	ei->ns.ns_ops = ns_ops;
 

@@ -377,7 +377,8 @@ int batadv_hardif_enable_interface(struct batadv_hard_iface *hard_iface,
 	hard_iface->soft_iface = soft_iface;
 	bat_priv = netdev_priv(hard_iface->soft_iface);
 
-	ret = netdev_master_upper_dev_link(hard_iface->net_dev, soft_iface);
+	ret = netdev_master_upper_dev_link(hard_iface->net_dev,
+					   soft_iface, NULL, NULL);
 	if (ret)
 		goto err_dev;
 
@@ -595,7 +596,7 @@ void batadv_hardif_remove_interfaces(void)
 static int batadv_hard_if_event(struct notifier_block *this,
 				unsigned long event, void *ptr)
 {
-	struct net_device *net_dev = ptr;
+	struct net_device *net_dev = netdev_notifier_info_to_dev(ptr);
 	struct batadv_hard_iface *hard_iface;
 	struct batadv_hard_iface *primary_if = NULL;
 	struct batadv_priv *bat_priv;
