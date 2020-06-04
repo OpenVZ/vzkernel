@@ -43,13 +43,15 @@ struct ovl_path {
 /* private information held for overlayfs's superblock */
 struct ovl_fs {
 	struct vfsmount *upper_mnt;
+	struct path upperpath;
 	unsigned int numlower;
 	/* Number of unique lower sb that differ from upper sb */
 	unsigned int numlowerfs;
+	struct path *lowerpaths;
 	struct ovl_layer *lower_layers;
 	struct ovl_sb *lower_fs;
-	/* workbasedir is the path at workdir= mount option */
-	struct dentry *workbasedir;
+	/* workbasepath is the path at workdir= mount option */
+	struct path workbasepath;
 	/* workdir is the 'work' directory under workbasedir */
 	struct dentry *workdir;
 	/* index directory listing overlay inodes by origin file handle */
