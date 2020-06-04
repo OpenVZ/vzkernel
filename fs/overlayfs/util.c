@@ -18,6 +18,7 @@
 #include <linux/namei.h>
 #include <linux/ratelimit.h>
 #include <linux/seq_file.h>
+#include "../mount.h"
 #include "overlayfs.h"
 
 int ovl_want_write(struct dentry *dentry)
@@ -697,5 +698,26 @@ void print_paths_option(struct seq_file *m, const char *name,
 		if (i)
 			seq_putc(m, ':');
 		seq_path(m, &paths[i], ", \t\n\\");
+	}
+}
+
+void print_mnt_id_option(struct seq_file *m, const char *name,
+			 struct path *path)
+{
+	seq_show_option(m, name, "");
+	seq_printf(m, "%i", real_mount(path->mnt)->mnt_id);
+}
+
+void print_mnt_ids_option(struct seq_file *m, const char *name,
+			struct path *paths, unsigned int num)
+{
+	int i;
+
+	seq_show_option(m, name, "");
+
+	for (i = 0; i < num; i++) {
+		if (i)
+			seq_putc(m, ':');
+		seq_printf(m, "%i", real_mount(paths[i].mnt)->mnt_id);
 	}
 }
