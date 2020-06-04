@@ -16,6 +16,7 @@
 #include <linux/uuid.h>
 #include <linux/namei.h>
 #include <linux/ratelimit.h>
+#include <linux/seq_file.h>
 #include "overlayfs.h"
 
 int ovl_want_write(struct dentry *dentry)
@@ -922,4 +923,24 @@ invalid:
 	res = -EINVAL;
 	kfree(buf);
 	return ERR_PTR(res);
+}
+
+void print_path_option(struct seq_file *m, const char *name, struct path *path)
+{
+	seq_show_option(m, name, "");
+	seq_path(m, path, ", \t\n\\");
+}
+
+void print_paths_option(struct seq_file *m, const char *name,
+			struct path *paths, unsigned int num)
+{
+	int i;
+
+	seq_show_option(m, name, "");
+
+	for (i = 0; i < num; i++) {
+		if (i)
+			seq_putc(m, ':');
+		seq_path(m, &paths[i], ", \t\n\\");
+	}
 }
