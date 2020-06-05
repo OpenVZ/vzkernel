@@ -1,0 +1,20 @@
+# CONFIG_ICST:
+# 
+# Supports clocking on ARM Reference designs:
+# - Integrator/AP and Integrator/CP
+# - RealView PB1176, EB, PB11MP and PBX
+# 
+# Symbol: ICST [=n]
+# Type  : bool
+# Defined at drivers/clk/versatile/Kconfig:7
+#   Prompt: Clock driver for ARM Reference designs ICST
+#   Depends on: COMMON_CLK [=y] && (ARCH_INTEGRATOR || ARCH_REALVIEW || ARCH_VERSATILE || ARCH_VEXPRESS [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework
+#         -> Clock driver for ARM Reference designs
+# Selects: REGMAP_MMIO [=y]
+# 
+# 
+# 
+# CONFIG_ICST is not set

@@ -1,0 +1,18 @@
+# CONFIG_VEXPRESS_CONFIG:
+# 
+# Platform configuration infrastructure for the ARM Ltd.
+# Versatile Express.
+# 
+# Symbol: VEXPRESS_CONFIG [=y]
+# Type  : tristate
+# Defined at drivers/bus/Kconfig:224
+#   Prompt: Versatile Express configuration bus
+#   Depends on: (ARM || ARM64 [=y]) && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Bus devices
+# Selects: REGMAP [=y]
+# 
+# 
+# 
+CONFIG_VEXPRESS_CONFIG=y
