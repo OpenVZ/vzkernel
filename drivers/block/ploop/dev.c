@@ -5283,6 +5283,7 @@ static int ploop_push_backup_stop(struct ploop_device *plo, unsigned long arg)
 static int ploop_freeze(struct ploop_device *plo, struct block_device *bdev)
 {
 	struct super_block *sb;
+	int ret;
 
 	if (!test_bit(PLOOP_S_RUNNING, &plo->state))
 		return -EINVAL;
@@ -5293,6 +5294,14 @@ static int ploop_freeze(struct ploop_device *plo, struct block_device *bdev)
 	if (plo->freeze_state == PLOOP_F_THAWING)
 		return -EBUSY;
 
+	/*
+	 * Disable discard, since below freeze_bdev()
+	 * does not affect FITRIM.
+	 */
+	ret = disable_and_wait_discard(plo);
+	if (ret)
+		return ret;
+
 	if (plo->dm_crypt_bdev)
 		bdev = plo->dm_crypt_bdev;
 
@@ -5300,6 +5309,7 @@ static int ploop_freeze(struct ploop_device *plo, struct block_device *bdev)
 	sb = freeze_bdev(bdev);
 	if (sb && IS_ERR(sb)) {
 		bdput(bdev);
+		enable_discard(plo);
 		return PTR_ERR(sb);
 	}
 
@@ -5337,10 +5347,12 @@ static int ploop_thaw(struct ploop_device *plo)
 
 	BUG_ON(plo->freeze_state != PLOOP_F_THAWING);
 
-	if (!err)
+	if (!err) {
+		enable_discard(plo);
 		plo->freeze_state = PLOOP_F_NORMAL;
-	else
+	} else {
 		plo->freeze_state = PLOOP_F_FROZEN;
+	}
 
 	return err;
 }
