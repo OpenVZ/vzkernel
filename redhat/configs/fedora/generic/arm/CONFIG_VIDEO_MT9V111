@@ -1,0 +1,23 @@
+# CONFIG_VIDEO_MT9V111:
+# 
+# This is a Video4Linux2 sensor driver for the Aptina/Micron
+# MT9V111 sensor.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called mt9v111.
+# 
+# Symbol: VIDEO_MT9V111 [=n]
+# Type  : tristate
+# Defined at drivers/media/i2c/Kconfig:1134
+#   Prompt: Aptina MT9V111 sensor support
+#   Depends on: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m]
+#   Visible if: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m] && MEDIA_CAMERA_SUPPORT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media ancillary drivers
+#           -> Camera sensor devices
+# 
+# 
+# 
+CONFIG_VIDEO_MT9V111=m

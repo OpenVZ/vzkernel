@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_CEC_SECO_RC is not set
+CONFIG_CEC_SECO_RC=y

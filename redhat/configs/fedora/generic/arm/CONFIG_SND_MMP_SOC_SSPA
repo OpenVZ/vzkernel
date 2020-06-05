@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_SND_MMP_SOC_SSPA is not set
+CONFIG_SND_MMP_SOC_SSPA=m

@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_ARM_SMC_WATCHDOG is not set
+CONFIG_ARM_SMC_WATCHDOG=m

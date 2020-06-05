@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_ICST is not set
+CONFIG_ICST=y

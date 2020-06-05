@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_INTEL_MRFLD_ADC is not set
+CONFIG_INTEL_MRFLD_ADC=m

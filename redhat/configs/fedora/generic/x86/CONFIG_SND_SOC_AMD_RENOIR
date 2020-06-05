@@ -15,4 +15,4 @@
 # 
 # 
 # 
-# CONFIG_SND_SOC_AMD_RENOIR is not set
+CONFIG_SND_SOC_AMD_RENOIR=m

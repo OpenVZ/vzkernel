@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_VIDEO_TEGRA is not set
+CONFIG_VIDEO_TEGRA=m
