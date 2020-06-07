@@ -1,0 +1,25 @@
+# CONFIG_DEBUG_INFO_COMPRESSED:
+# 
+# Compress the debug information using zlib.  Requires GCC 5.0+ or Clang
+# 5.0+, binutils 2.26+, and zlib.
+# 
+# Users of dpkg-deb via scripts/package/builddeb may find an increase in
+# size of their debug .deb packages with this config set, due to the
+# debug info being compressed with zlib, then the object files being
+# recompressed with a different compression scheme. But this is still
+# preferable to setting $KDEB_COMPRESS to "none" which would be even
+# larger.
+# 
+# Symbol: DEBUG_INFO_COMPRESSED [=n]
+# Type  : bool
+# Defined at lib/Kconfig.debug:216
+#   Prompt: Compressed debugging information
+#   Depends on: DEBUG_INFO [=y]
+#   Location:
+#     -> Kernel hacking
+#       -> Compile-time checks and compiler options
+#         -> Compile the kernel with debug info (DEBUG_INFO [=y])
+# 
+# 
+# 
+# CONFIG_DEBUG_INFO_COMPRESSED is not set
