@@ -1,0 +1,22 @@
+# CONFIG_ATLAS_EZO_SENSOR:
+# 
+# Say Y here to build I2C interface support for the following
+# Atlas Scientific EZO sensors
+#   * CO2 EZO Sensor
+# 
+# To compile this driver as module, choose M here: the
+# module will be called atlas-ezo-sensor.
+# 
+# Symbol: ATLAS_EZO_SENSOR [=n]
+# Type  : tristate
+# Defined at drivers/iio/chemical/Kconfig:25
+#   Prompt: Atlas Scientific EZO sensors
+#   Depends on: IIO [=m] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> Chemical Sensors
+# 
+# 
+# 
+# CONFIG_ATLAS_EZO_SENSOR is not set
