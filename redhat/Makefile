@@ -187,14 +187,14 @@ $(TARBALL):
 
 .PHONY: $(KABI_TARBALL)
 $(KABI_TARBALL):
-	@(cd kabi && tar cjvf $(SOURCES)/$(KABI_TARFILE) kabi-rhel$(RHEL_MAJOR)* kabi-current)
+	@(cd kabi && tar cjf $(SOURCES)/$(KABI_TARFILE) kabi-rhel$(RHEL_MAJOR)* kabi-current)
 
 .PHONY: $(KABIDW_TARBALL)
 $(KABIDW_TARBALL):
 	@if [ ! -d $(KABIDW)/base ]; then \
 		mkdir -p $(KABIDW)/base; \
 	fi
-	@(cd kabi-dwarf && tar cjvf $(SOURCES)/$(KABIDW_TARFILE) base run_kabi-dw.sh)
+	@(cd kabi-dwarf && tar cjf $(SOURCES)/$(KABIDW_TARFILE) base run_kabi-dw.sh)
 
 
 dist-git-version-check:
@@ -257,11 +257,11 @@ sources-rh: $(TARBALL)
 		cp kabi/Module.kabi_$$KABIARCH $(SOURCES)/; \
 		cp kabi/Module.kabi_dup_$$KABIARCH $(SOURCES)/; \
 	done
-	@(cd kabi && tar cjvf $(SOURCES)/$(KABI_TARFILE) kabi-rhel$(RHEL_MAJOR)* kabi-current)
+	@(cd kabi && tar cjf $(SOURCES)/$(KABI_TARFILE) kabi-rhel$(RHEL_MAJOR)* kabi-current)
 	@if [ ! -d $(KABIDW)/base ]; then \
 		mkdir -p $(KABIDW)/base; \
 	fi
-	@(cd kabi-dwarf && tar cjvf $(SOURCES)/$(KABIDW_TARFILE) base run_kabi-dw.sh)
+	@(cd kabi-dwarf && tar cjf $(SOURCES)/$(KABIDW_TARFILE) base run_kabi-dw.sh)
 
 dist-sources: setup-source dist-configs-check dist-kabi dist-kabi-dup sources-rh
 
