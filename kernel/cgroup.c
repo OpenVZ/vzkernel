@@ -4249,13 +4249,9 @@ static int online_css(struct cgroup_subsys *ss, struct cgroup *cgrp)
 
 	if (ss->css_online)
 		ret = ss->css_online(cgrp);
-	if (!ret) {
+	if (!ret)
 		cgrp->subsys[ss->subsys_id]->flags |= CSS_ONLINE;
 
-		refcount_inc(&cgrp->online_cnt);
-		if (cgrp->parent)
-			refcount_inc(&cgrp->parent->online_cnt);
-	}
 	return ret;
 }
 
@@ -4482,6 +4478,9 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 	err = cgroup_populate_dir(cgrp, true, root->subsys_mask);
 	if (err)
 		goto err_destroy;
+
+	refcount_inc(&cgrp->online_cnt);
+	refcount_inc(&parent->online_cnt);
 
 	mutex_unlock(&cgroup_mutex);
 	mutex_unlock(&cgrp->dentry->d_inode->i_mutex);
