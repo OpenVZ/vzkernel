@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_VCNL3020 is not set
+CONFIG_VCNL3020=m

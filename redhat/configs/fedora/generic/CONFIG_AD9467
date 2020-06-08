@@ -23,4 +23,4 @@
 # 
 # 
 # 
-# CONFIG_AD9467 is not set
+CONFIG_AD9467=m

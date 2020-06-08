@@ -20,4 +20,4 @@
 # 
 # 
 # 
-# CONFIG_ADIS16475 is not set
+CONFIG_ADIS16475=m

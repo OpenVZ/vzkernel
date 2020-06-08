@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_PHY_CADENCE_SALVO is not set
+CONFIG_PHY_CADENCE_SALVO=m

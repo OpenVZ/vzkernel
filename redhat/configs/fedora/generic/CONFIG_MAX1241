@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_MAX1241 is not set
+CONFIG_MAX1241=m

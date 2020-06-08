@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_USB4_NET is not set
+CONFIG_USB4_NET=m

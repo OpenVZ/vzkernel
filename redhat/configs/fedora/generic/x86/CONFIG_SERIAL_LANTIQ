@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_SERIAL_LANTIQ is not set
+CONFIG_SERIAL_LANTIQ=m

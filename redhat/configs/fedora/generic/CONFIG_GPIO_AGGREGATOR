@@ -20,4 +20,4 @@
 # 
 # 
 # 
-# CONFIG_GPIO_AGGREGATOR is not set
+CONFIG_GPIO_AGGREGATOR=m

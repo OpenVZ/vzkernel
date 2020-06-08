@@ -20,4 +20,4 @@
 # 
 # 
 # 
-# CONFIG_DM_MULTIPATH_HST is not set
+CONFIG_DM_MULTIPATH_HST=m

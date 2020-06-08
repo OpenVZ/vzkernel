@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_INTERCONNECT is not set
+CONFIG_INTERCONNECT=y

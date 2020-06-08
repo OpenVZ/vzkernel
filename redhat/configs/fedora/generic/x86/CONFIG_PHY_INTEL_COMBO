@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_PHY_INTEL_COMBO is not set
+CONFIG_PHY_INTEL_COMBO=y

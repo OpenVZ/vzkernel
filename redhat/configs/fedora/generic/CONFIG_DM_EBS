@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_DM_EBS is not set
+CONFIG_DM_EBS=m

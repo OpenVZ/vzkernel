@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_SX9310 is not set
+CONFIG_SX9310=m
