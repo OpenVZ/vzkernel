@@ -1,0 +1,22 @@
+# CONFIG_USB4_NET:
+# 
+# Select this if you want to create network between two computers
+# over a USB4 and Thunderbolt cables. The driver supports Apple
+# ThunderboltIP protocol and allows communication with any host
+# supporting the same protocol including Windows and macOS.
+# 
+# To compile this driver a module, choose M here. The module will be
+# called thunderbolt-net.
+# 
+# Symbol: USB4_NET [=n]
+# Type  : tristate
+# Defined at drivers/net/Kconfig:551
+#   Prompt: Networking over USB4 and Thunderbolt cables
+#   Depends on: NETDEVICES [=y] && USB4 [=y] && INET [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+# 
+# 
+# 
+# CONFIG_USB4_NET is not set

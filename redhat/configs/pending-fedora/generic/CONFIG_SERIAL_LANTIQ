@@ -1,0 +1,21 @@
+# CONFIG_SERIAL_LANTIQ:
+# 
+# Support for UART on Lantiq and Intel SoCs.
+# To compile this driver as a module, select M here. The
+# module will be called lantiq.
+# 
+# Symbol: SERIAL_LANTIQ [=n]
+# Type  : tristate
+# Defined at drivers/tty/serial/Kconfig:1036
+#   Prompt: Lantiq serial driver
+#   Depends on: TTY [=y] && HAS_IOMEM [=y] && (LANTIQ || X86 [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Character devices
+#         -> Enable TTY (TTY [=y])
+#           -> Serial drivers
+# Selects: SERIAL_CORE [=y]
+# 
+# 
+# 
+# CONFIG_SERIAL_LANTIQ is not set

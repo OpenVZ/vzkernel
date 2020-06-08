@@ -1,0 +1,17 @@
+# CONFIG_PINCTRL_IMX8DXL:
+# 
+# Say Y here to enable the imx8dxl pinctrl driver
+# 
+# Symbol: PINCTRL_IMX8DXL [=n]
+# Type  : bool
+# Defined at drivers/pinctrl/freescale/Kconfig:168
+#   Prompt: IMX8DXL pinctrl driver
+#   Depends on: PINCTRL [=y] && IMX_SCU [=y] && ARCH_MXC [=y] && ARM64 [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Pin controllers (PINCTRL [=y])
+# Selects: PINCTRL_IMX_SCU [=y]
+# 
+# 
+# 
+# CONFIG_PINCTRL_IMX8DXL is not set
