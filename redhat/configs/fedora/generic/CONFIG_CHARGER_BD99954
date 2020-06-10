@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_CHARGER_BD99954 is not set
+CONFIG_CHARGER_BD99954=m

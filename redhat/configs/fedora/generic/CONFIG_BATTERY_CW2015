@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_BATTERY_CW2015 is not set
+CONFIG_BATTERY_CW2015=m
