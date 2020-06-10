@@ -1,0 +1,18 @@
+# CONFIG_F2FS_FS_LZORLE:
+# 
+# Support LZO-RLE compress algorithm, if unsure, say Y.
+# 
+# Symbol: F2FS_FS_LZORLE [=y]
+# Type  : bool
+# Defined at fs/f2fs/Kconfig:131
+#   Prompt: LZO-RLE compression support
+#   Depends on: BLOCK [=y] && F2FS_FS_COMPRESSION [=y] && F2FS_FS_LZO [=y]
+#   Location:
+#     -> File systems
+#       -> F2FS filesystem support (F2FS_FS [=m])
+#         -> F2FS compression feature (F2FS_FS_COMPRESSION [=y])
+# Selects: LZO_COMPRESS [=y] && LZO_DECOMPRESS [=y]
+# 
+# 
+# 
+CONFIG_F2FS_FS_LZORLE=y
