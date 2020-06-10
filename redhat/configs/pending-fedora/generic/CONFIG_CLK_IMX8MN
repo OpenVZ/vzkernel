@@ -1,0 +1,16 @@
+# CONFIG_CLK_IMX8MN:
+# 
+# Build the driver for i.MX8MN CCM Clock Driver
+# 
+# Symbol: CLK_IMX8MN [=n]
+# Type  : bool
+# Defined at drivers/clk/imx/Kconfig:17
+#   Prompt: IMX8MN CCM Clock Driver
+#   Depends on: COMMON_CLK [=y] && ARCH_MXC [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+# 
+# 
+# 
+# CONFIG_CLK_IMX8MN is not set

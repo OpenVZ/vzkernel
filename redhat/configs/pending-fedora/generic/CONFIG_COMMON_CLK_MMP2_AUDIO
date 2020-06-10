@@ -1,0 +1,16 @@
+# CONFIG_COMMON_CLK_MMP2_AUDIO:
+# 
+# This driver supports clocks for Audio subsystem on MMP2 SoC.
+# 
+# Symbol: COMMON_CLK_MMP2_AUDIO [=n]
+# Type  : tristate
+# Defined at drivers/clk/Kconfig:344
+#   Prompt: Clock driver for MMP2 Audio subsystem
+#   Depends on: COMMON_CLK [=y] && (COMMON_CLK_MMP2 [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+# 
+# 
+# 
+# CONFIG_COMMON_CLK_MMP2_AUDIO is not set
