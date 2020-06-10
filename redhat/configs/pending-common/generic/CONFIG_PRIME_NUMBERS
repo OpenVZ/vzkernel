@@ -1,0 +1,20 @@
+# CONFIG_PRIME_NUMBERS:
+# 
+# This option provides a simple prime number generator for test
+# modules.
+# 
+# If unsure, say N.
+# 
+# Symbol: PRIME_NUMBERS [=n]
+# Type  : tristate
+# Defined at lib/math/Kconfig:8
+#   Prompt: Simple prime number generator for testing
+#   Location:
+#     -> Library routines
+# Selected by [n]:
+#   - DRM_DEBUG_SELFTEST [=n] && HAS_IOMEM [=y] && DRM [=m] && DEBUG_KERNEL [=y]
+#   - DRM_I915_SELFTEST [=n] && HAS_IOMEM [=y] && EXPERT [=n] && DRM_I915 [=m]
+# 
+# 
+# 
+# CONFIG_PRIME_NUMBERS is not set
