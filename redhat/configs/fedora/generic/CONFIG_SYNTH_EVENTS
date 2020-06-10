@@ -25,4 +25,4 @@
 # 
 # 
 # 
-# CONFIG_SYNTH_EVENTS is not set
+CONFIG_SYNTH_EVENTS=y
