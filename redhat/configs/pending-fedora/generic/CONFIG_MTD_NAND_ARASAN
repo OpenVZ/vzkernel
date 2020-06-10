@@ -1,0 +1,19 @@
+# CONFIG_MTD_NAND_ARASAN:
+# 
+# Enables the driver for the Arasan NAND flash controller on
+# Zynq Ultrascale+ MPSoC.
+# 
+# Symbol: MTD_NAND_ARASAN [=n]
+# Type  : tristate
+# Defined at drivers/mtd/nand/raw/Kconfig:456
+#   Prompt: Support for Arasan NAND flash controller
+#   Depends on: MTD [=m] && MTD_RAW_NAND [=m] && HAS_IOMEM [=y] && HAS_DMA [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Memory Technology Device (MTD) support (MTD [=m])
+#         -> Raw/Parallel NAND Device Support (MTD_RAW_NAND [=m])
+# Selects: BCH [=n]
+# 
+# 
+# 
+# CONFIG_MTD_NAND_ARASAN is not set
