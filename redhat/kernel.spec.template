@@ -71,6 +71,9 @@ Summary: The Linux kernel
 %define rpmversion %%KVERSION%%.%%KPATCHLEVEL%%.%%KSUBLEVEL%%
 %define pkgrelease %%PKGRELEASE%%
 
+# This is needed to do merge window version magic
+%define patchlevel %%KPATCHLEVEL%%
+
 # allow pkg_release to have configurable %%{?dist} tag
 %define specrelease %%SPECRELEASE%%
 
@@ -1358,6 +1361,10 @@ BuildKernel() {
     # Trim the release if this is a CI build, since KERNELVERSION is limited to 64 characters
     ShortRel=$(perl -e "print \"%{release}\" =~ s/\.pr\.[0-9A-Fa-f]{32}//r")
     perl -p -i -e "s/^EXTRAVERSION.*/EXTRAVERSION = -${ShortRel}.%{_target_cpu}${Flav}/" Makefile
+
+    # if pre-rc1 devel kernel, must fix up PATCHLEVEL for our versioning scheme
+    # if we are post rc1 this should match anyway so this won't matter
+    perl -p -i -e 's/^PATCHLEVEL.*/PATCHLEVEL = %{patchlevel}/' Makefile
 
     # and now to start the build process
 
