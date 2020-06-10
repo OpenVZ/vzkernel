@@ -223,9 +223,6 @@ static int ve_configure(envid_t veid, unsigned int key,
 	if (!ve)
 		return -EINVAL;
 
-	switch(key) {
-	}
-
 	put_ve(ve);
 	return err;
 }
