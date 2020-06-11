@@ -1024,6 +1024,7 @@ bool current_in_userns(const struct user_namespace *target_ns)
 	}
 	return false;
 }
+EXPORT_SYMBOL(current_in_userns);
 
 static void *userns_get(struct task_struct *task)
 {
@@ -1077,7 +1078,6 @@ static unsigned int userns_inum(void *ns)
 	struct user_namespace *user_ns = ns;
 	return user_ns->proc_inum;
 }
-EXPORT_SYMBOL(current_in_userns);
 
 const struct proc_ns_operations userns_operations = {
 	.name		= "user",
