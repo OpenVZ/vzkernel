@@ -43,7 +43,7 @@ static struct ipc_namespace *create_ipc_ns(struct user_namespace *user_ns,
 	if (ns == NULL)
 		goto fail_dec;
 
-	err = proc_alloc_inum(&ns->proc_inum);
+	err = proc_alloc_inum(&ns->ns.inum);
 	if (err)
 		goto fail_free;
 
@@ -64,7 +64,7 @@ static struct ipc_namespace *create_ipc_ns(struct user_namespace *user_ns,
 
 fail_put:
 	put_user_ns(ns->user_ns);
-	proc_free_inum(ns->proc_inum);
+	proc_free_inum(ns->ns.inum);
 fail_free:
 	kfree(ns);
 fail_dec:
@@ -121,7 +121,7 @@ static void free_ipc_ns(struct ipc_namespace *ns)
 
 	dec_ipc_namespaces(ns->ucounts);
 	put_user_ns(ns->user_ns);
-	proc_free_inum(ns->proc_inum);
+	proc_free_inum(ns->ns.inum);
 	kfree(ns);
 }
 
@@ -188,7 +188,7 @@ static unsigned int ipcns_inum(void *vp)
 {
 	struct ipc_namespace *ns = vp;
 
-	return ns->proc_inum;
+	return ns->ns.inum;
 }
 
 const struct proc_ns_operations ipcns_operations = {
