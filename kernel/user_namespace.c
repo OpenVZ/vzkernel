@@ -134,6 +134,7 @@ int create_user_ns(struct cred *new)
 		kmem_cache_free(user_ns_cachep, ns);
 		return -ENOMEM;
 	}
+	ns->ns.ops = &userns_operations;
 
 	free_uid(new->user);
 	new->user = new_user;
