@@ -75,6 +75,8 @@ static struct uts_namespace *clone_uts_ns(struct user_namespace *user_ns,
 
 	ns->ucounts = ucounts;
 
+	ns->ns.ops = &utsns_operations;
+
 	down_read(&uts_sem);
 	memcpy(&ns->name, &old_ns->name, sizeof(ns->name));
 	ns->user_ns = get_user_ns(user_ns);
