@@ -6,6 +6,7 @@
 #include <linux/rwsem.h>
 #include <linux/notifier.h>
 #include <linux/nsproxy.h>
+#include <linux/ns_common.h>
 
 struct user_namespace;
 
@@ -62,7 +63,7 @@ struct ipc_namespace {
 	/* user_ns which owns the ipc ns */
 	struct user_namespace *user_ns;
 
-	unsigned int	proc_inum;
+	struct ns_common ns;
 	RH_KABI_EXTEND(struct ucounts *ucounts)
 };
 

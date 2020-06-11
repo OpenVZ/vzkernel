@@ -1262,7 +1262,7 @@ nfsd4_umh_cltrack_init(struct net *net)
 	if (!net_eq(net, get_exec_env()->ve_netns)) {
 		pr_warn("NFSD: attempt to initialize umh client tracking "
 			"in Container %s netns %u ignored.\n",
-			get_exec_env()->ve_name, net->proc_inum);
+			get_exec_env()->ve_name, net->ns.inum);
 		kfree(grace_start);
 		return -EINVAL;
 	}
