@@ -10,7 +10,6 @@ struct nsproxy;
 
 struct proc_ns_operations {
 	const char *name;
-	const char *real_ns_name;
 	int type;
 	void *(*get)(struct task_struct *task);
 	void (*put)(void *ns);

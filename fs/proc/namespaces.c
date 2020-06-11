@@ -150,7 +150,6 @@ static int proc_ns_readlink(struct dentry *dentry, char __user *buffer, int bufl
 	struct proc_inode *ei = PROC_I(inode);
 	const struct proc_ns_operations *ns_ops = ei->ns.ns_ops;
 	struct task_struct *task;
-	const char *link_name;
 	void *ns;
 	char name[50];
 	int len = -EACCES;
@@ -167,8 +166,7 @@ static int proc_ns_readlink(struct dentry *dentry, char __user *buffer, int bufl
 	if (!ns)
 		goto out_put_task;
 
-	link_name = ns_ops->real_ns_name ? : ns_ops->name;
-	snprintf(name, sizeof(name), "%s:[%u]", link_name, ns_ops->inum(ns));
+	snprintf(name, sizeof(name), "%s:[%u]", ns_ops->name, ns_ops->inum(ns));
 	len = strlen(name);
 
 	if (len > buflen)
