@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_KEYBOARD_BCM is not set
+CONFIG_KEYBOARD_BCM=m
