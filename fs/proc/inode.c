@@ -32,7 +32,6 @@ static void proc_evict_inode(struct inode *inode)
 {
 	struct proc_dir_entry *de;
 	struct ctl_table_header *head;
-	const struct proc_ns_operations *ns_ops;
 	struct ns_common *ns;
 
 	truncate_inode_pages_final(&inode->i_data);
@@ -52,10 +51,9 @@ static void proc_evict_inode(struct inode *inode)
 		proc_sys_evict_inode(inode, head);
 	}
 	/* Release any associated namespace */
-	ns_ops = PROC_I(inode)->ns.ns_ops;
 	ns = PROC_I(inode)->ns.ns;
-	if (ns_ops && ns)
-		ns_ops->put(ns);
+	if (ns && ns->ops)
+		ns->ops->put(ns);
 }
 
 static struct kmem_cache * proc_inode_cachep;
