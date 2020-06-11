@@ -361,6 +361,29 @@ static struct ns_common *pidns_get(struct task_struct *task)
 	return ns ? &ns->ns : NULL;
 }
 
+static struct ns_common *pidns_for_children_get(struct task_struct *task)
+{
+	struct pid_namespace *ns = NULL;
+
+	task_lock(task);
+	if (task->nsproxy) {
+		ns = task->nsproxy->pid_ns;
+		get_pid_ns(ns);
+	}
+	task_unlock(task);
+
+	if (ns) {
+		qread_lock(&tasklist_lock);
+		if (!ns->child_reaper) {
+			put_pid_ns(ns);
+			ns = NULL;
+		}
+		qread_unlock(&tasklist_lock);
+	}
+
+	return ns ? &ns->ns : NULL;
+}
+
 static void pidns_put(struct ns_common *ns)
 {
 	put_pid_ns(to_pid_ns(ns));
@@ -424,6 +447,17 @@ const struct proc_ns_operations pidns_operations = {
 	.name		= "pid",
 	.type		= CLONE_NEWPID,
 	.get		= pidns_get,
+	.put		= pidns_put,
+	.install	= pidns_install,
+	.owner		= pidns_owner,
+	.get_parent	= pidns_get_parent,
+};
+
+const struct proc_ns_operations pidns_for_children_operations = {
+	.name		= "pid_for_children",
+	.real_ns_name	= "pid",
+	.type		= CLONE_NEWPID,
+	.get		= pidns_for_children_get,
 	.put		= pidns_put,
 	.install	= pidns_install,
 	.owner		= pidns_owner,
