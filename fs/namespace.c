@@ -3301,6 +3301,7 @@ static struct mnt_namespace *alloc_mnt_ns(struct user_namespace *user_ns)
 		dec_mnt_namespaces(ucounts);
 		return ERR_PTR(ret);
 	}
+	new_ns->ns.ops = &mntns_operations;
 	new_ns->seq = atomic64_add_return(1, &mnt_ns_seq);
 	atomic_set(&new_ns->count, 1);
 	new_ns->root = NULL;
