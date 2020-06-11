@@ -124,7 +124,7 @@ static struct pid_namespace *create_pid_namespace(struct user_namespace *user_ns
 	if (ns->pid_cachep == NULL)
 		goto out_free_map;
 
-	err = proc_alloc_inum(&ns->ns.inum);
+	err = ns_alloc_inum(&ns->ns);
 	if (err)
 		goto out_free_map;
 
@@ -165,7 +165,7 @@ static void destroy_pid_namespace(struct pid_namespace *ns)
 {
 	int i;
 
-	proc_free_inum(ns->ns.inum);
+	ns_free_inum(&ns->ns);
 	for (i = 0; i < PIDMAP_ENTRIES; i++)
 		kfree(ns->pidmap[i].page);
 	dec_pid_namespaces(ns->ucounts);
