@@ -120,4 +120,8 @@ static inline struct proc_dir_entry *proc_net_mkdir(
 	return proc_mkdir_data(name, S_ISVTX|S_IRUGO|S_IXUGO, parent, net);
 }
 
+struct ns_common;
+int open_related_ns(struct ns_common *ns,
+		   struct ns_common *(*get_ns)(struct ns_common *ns));
+
 #endif /* _LINUX_PROC_FS_H */
