@@ -3,6 +3,7 @@
 
 #include <linux/kref.h>
 #include <linux/nsproxy.h>
+#include <linux/ns_common.h>
 #include <linux/sched.h>
 #include <linux/err.h>
 #include <linux/rh_kabi.h>
@@ -56,7 +57,7 @@ struct user_namespace {
 	struct user_namespace	*parent;
 	kuid_t			owner;
 	kgid_t			group;
-	unsigned int		proc_inum;
+	struct ns_common	ns;
 	RH_KABI_DEPRECATE(bool,	may_mount_sysfs)
 	RH_KABI_DEPRECATE(bool, may_mount_proc)
 
