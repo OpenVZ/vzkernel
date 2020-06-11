@@ -46,6 +46,7 @@ static struct ipc_namespace *create_ipc_ns(struct user_namespace *user_ns,
 	err = ns_alloc_inum(&ns->ns);
 	if (err)
 		goto fail_free;
+	ns->ns.ops = &ipcns_operations;
 
 	atomic_set(&ns->count, 1);
 	ns->user_ns = get_user_ns(user_ns);
