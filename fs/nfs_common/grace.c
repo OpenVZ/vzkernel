@@ -34,7 +34,7 @@ locks_start_grace(struct net *net, struct lock_manager *lm)
 		list_add(&lm->list, grace_list);
 	else
 		WARN(1, "double list_add attempt detected in net %x %s\n",
-		     net->proc_inum, (net == &init_net) ? "(init_net)" : "");
+		     net->ns.inum, (net == &init_net) ? "(init_net)" : "");
 	spin_unlock(&grace_lock);
 }
 EXPORT_SYMBOL_GPL(locks_start_grace);
