@@ -121,7 +121,7 @@ int create_user_ns(struct cred *new)
 	if (!ns)
 		goto fail_dec;
 
-	ret = proc_alloc_inum(&ns->ns.inum);
+	ret = ns_alloc_inum(&ns->ns);
 	if (ret)
 		goto fail_free;
 
@@ -130,7 +130,7 @@ int create_user_ns(struct cred *new)
 
 	new_user = alloc_uid_ns(ns, owner);
 	if (!new_user) {
-		proc_free_inum(ns->ns.inum);
+		ns_free_inum(&ns->ns);
 		kmem_cache_free(user_ns_cachep, ns);
 		return -ENOMEM;
 	}
@@ -170,7 +170,7 @@ fail_keyring:
 	key_put(ns->persistent_keyring_register);
 #endif
 fail_free:
-	proc_free_inum(ns->ns.inum);
+	ns_free_inum(&ns->ns);
 	kmem_cache_free(user_ns_cachep, ns);
 fail_dec:
 	dec_user_namespaces(ucounts);
@@ -210,7 +210,7 @@ static void free_user_ns(struct work_struct *work)
 #ifdef CONFIG_PERSISTENT_KEYRINGS
 		key_put(ns->persistent_keyring_register);
 #endif
-		proc_free_inum(ns->ns.inum);
+		ns_free_inum(&ns->ns);
 		kmem_cache_free(user_ns_cachep, ns);
 		dec_user_namespaces(ucounts);
 		ns = parent;
