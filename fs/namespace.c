@@ -3255,7 +3255,7 @@ static void dec_mnt_namespaces(struct ucounts *ucounts)
 
 static void free_mnt_ns(struct mnt_namespace *ns)
 {
-	proc_free_inum(ns->proc_inum);
+	proc_free_inum(ns->ns.inum);
 	dec_mnt_namespaces(ns->ucounts);
 	put_user_ns(ns->user_ns);
 
@@ -3290,7 +3290,7 @@ static struct mnt_namespace *alloc_mnt_ns(struct user_namespace *user_ns)
 		dec_mnt_namespaces(ucounts);
 		return ERR_PTR(-ENOMEM);
 	}
-	ret = proc_alloc_inum(&new_ns->proc_inum);
+	ret = proc_alloc_inum(&new_ns->ns.inum);
 	if (ret) {
 		kfree(new_ns);
 		dec_mnt_namespaces(ucounts);
@@ -3921,7 +3921,7 @@ static int mntns_install(struct nsproxy *nsproxy, void *ns)
 static unsigned int mntns_inum(void *ns)
 {
 	struct mnt_namespace *mnt_ns = ns;
-	return mnt_ns->proc_inum;
+	return mnt_ns->ns.inum;
 }
 
 const struct proc_ns_operations mntns_operations = {
