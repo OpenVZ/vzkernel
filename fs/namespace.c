@@ -3914,12 +3914,6 @@ static unsigned int mntns_inum(void *ns)
 	return mnt_ns->proc_inum;
 }
 
-static struct user_namespace *mntns_owner(void *ns)
-{
-	struct mnt_namespace *mnt_ns = ns;
-	return mnt_ns->user_ns;
-}
-
 const struct proc_ns_operations mntns_operations = {
 	.name		= "mnt",
 	.type		= CLONE_NEWNS,
@@ -3927,5 +3921,4 @@ const struct proc_ns_operations mntns_operations = {
 	.put		= mntns_put,
 	.install	= mntns_install,
 	.inum		= mntns_inum,
-	.owner		= mntns_owner,
 };

@@ -184,12 +184,6 @@ static unsigned int utsns_inum(void *vp)
 	return ns->proc_inum;
 }
 
-static struct user_namespace *utsns_owner(void *ns)
-{
-	struct uts_namespace *uts_ns = ns;
-	return uts_ns->user_ns;
-}
-
 const struct proc_ns_operations utsns_operations = {
 	.name		= "uts",
 	.type		= CLONE_NEWUTS,
@@ -197,5 +191,4 @@ const struct proc_ns_operations utsns_operations = {
 	.put		= utsns_put,
 	.install	= utsns_install,
 	.inum		= utsns_inum,
-	.owner		= utsns_owner,
 };
