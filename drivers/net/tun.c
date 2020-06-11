@@ -71,6 +71,7 @@
 #include <net/sock.h>
 #include <linux/skb_array.h>
 #include <linux/seq_file.h>
+#include <linux/socket.h>
 
 #include <asm/uaccess.h>
 
@@ -2329,6 +2330,7 @@ static long __tun_chr_ioctl(struct file *file, unsigned int cmd,
 	void __user* argp = (void __user*)arg;
 	unsigned int ifindex, carrier;
 	struct ifreq ifr;
+	struct net *net;
 	kuid_t owner;
 	kgid_t group;
 	int sndbuf;
@@ -2338,7 +2340,7 @@ static long __tun_chr_ioctl(struct file *file, unsigned int cmd,
 	bool do_notify = false;
 
 	if (cmd == TUNSETIFF || cmd == TUNSETQUEUE || cmd == TUNSETACCTID ||
-			_IOC_TYPE(cmd) == 0x89) {
+	    (_IOC_TYPE(cmd) == 0x89 && cmd != SIOCGSKNS)) {
 		if (copy_from_user(&ifr, argp, ifreq_len))
 			return -EFAULT;
 	} else {
@@ -2365,7 +2367,11 @@ static long __tun_chr_ioctl(struct file *file, unsigned int cmd,
 #endif /* CONFIG_VE_TUNTAP_ACCOUNTING */
 
 	tun = __tun_get(tfile);
-	if (cmd == TUNSETIFF && !tun) {
+	net = sock_net(&tfile->sk);
+	if (cmd == TUNSETIFF) {
+		ret = -EEXIST;
+		if (tun)
+			goto unlock;
 		ifr.ifr_name[IFNAMSIZ-1] = '\0';
 
 		ret = tun_set_iff(tfile->net, file, &ifr);
@@ -2388,6 +2394,14 @@ static long __tun_chr_ioctl(struct file *file, unsigned int cmd,
 
 		ret = 0;
 		tfile->ifindex = ifindex;
+		goto unlock;
+	}
+	if (cmd == SIOCGSKNS) {
+		ret = -EPERM;
+		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+			goto unlock;
+
+		ret = open_related_ns(&net->ns, get_net_ns);
 		goto unlock;
 	}
 
