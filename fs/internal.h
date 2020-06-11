@@ -170,3 +170,8 @@ loff_t iomap_apply(struct inode *inode, loff_t pos, loff_t length,
  */
 extern void group_pin_kill(struct hlist_head *p);
 extern void mnt_pin_kill(struct mount *m);
+
+/*
+ * fs/nsfs.c
+ */
+extern struct dentry_operations ns_dentry_operations;
