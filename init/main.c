@@ -77,6 +77,7 @@
 #include <linux/random.h>
 #include <linux/context_tracking.h>
 #include <linux/list.h>
+#include <linux/proc_ns.h>
 #include <linux/io.h>
 #include <linux/jump_label.h>
 #include <linux/ve.h>
@@ -671,6 +672,7 @@ asmlinkage void __init start_kernel(void)
 #ifdef CONFIG_PROC_FS
 	proc_root_init();
 #endif
+	nsfs_init();
 	cgroup_init();
 	ub_init_late();
 	cpuset_init();
