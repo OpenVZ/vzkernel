@@ -735,72 +735,6 @@ static void __init early_reserve_memory(void)
 }
 
 #ifdef CONFIG_RHEL_DIFFERENCES
-static bool valid_amd_processor(__u8 family, const char *model_id)
-{
-	bool valid;
-
-	switch(family) {
-	case 0x15:
-		valid = true;
-		break;
-
-	case 0x17:
-		valid = strstr(model_id, "AMD EPYC 7");
-		break;
-
-	default:
-		valid = false;
-		break;
-	}
-
-	return valid;
-}
-
-static bool valid_intel_processor(__u8 family, __u8 model, __u8 stepping)
-{
-	bool valid;
-
-	if (family != 6)
-		return false;
-
-	switch(model) {
-	case INTEL_FAM6_ATOM_GOLDMONT_D:
-	case INTEL_FAM6_ATOM_GOLDMONT_PLUS:
-
-	case INTEL_FAM6_BROADWELL:
-	case INTEL_FAM6_BROADWELL_G:
-	case INTEL_FAM6_BROADWELL_X:
-	case INTEL_FAM6_BROADWELL_D:
-
-	case INTEL_FAM6_HASWELL:
-	case INTEL_FAM6_HASWELL_G:
-	case INTEL_FAM6_HASWELL_L:
-	case INTEL_FAM6_HASWELL_X:
-		valid = true;
-		break;
-
-	case INTEL_FAM6_KABYLAKE:
-		valid = (stepping <= 10);
-		break;
-
-	case INTEL_FAM6_KABYLAKE_L:
-		valid = (stepping <= 11);
-		break;
-
-	case INTEL_FAM6_SKYLAKE_L:
-	case INTEL_FAM6_SKYLAKE:
-	case INTEL_FAM6_SKYLAKE_X:
-		/* stepping > 4 is Cascade Lake and is not supported */
-		valid = (stepping <= 4);
-		break;
-
-	default:
-		valid = false;
-		break;
-	}
-
-	return valid;
-}
 
 static void rh_check_supported(void)
 {
@@ -821,27 +755,8 @@ static void rh_check_supported(void)
 	 */
 	switch (boot_cpu_data.x86_vendor) {
 	case X86_VENDOR_AMD:
-		if (!valid_amd_processor(boot_cpu_data.x86,
-					 boot_cpu_data.x86_model_id)) {
-			pr_crit("Detected CPU family %xh model %d\n",
-				boot_cpu_data.x86,
-				boot_cpu_data.x86_model);
-			mark_hardware_unsupported("AMD Processor");
-		}
-		break;
-
 	case X86_VENDOR_INTEL:
-		if (!valid_intel_processor(boot_cpu_data.x86,
-					   boot_cpu_data.x86_model,
-					   boot_cpu_data.x86_stepping)) {
-			pr_crit("Detected CPU family %d model %d stepping %d\n",
-				boot_cpu_data.x86,
-				boot_cpu_data.x86_model,
-				boot_cpu_data.x86_stepping);
-			mark_hardware_unsupported("Intel Processor");
-		}
 		break;
-
 	default:
 		pr_crit("Detected processor %s %s\n",
 			boot_cpu_data.x86_vendor_id,
