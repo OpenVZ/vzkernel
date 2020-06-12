@@ -1,0 +1,20 @@
+# CONFIG_QCOM_IPCC:
+# 
+# Qualcomm Technologies, Inc. Inter-Processor Communication Controller
+# (IPCC) driver for MSM devices. The driver provides mailbox support for
+# sending interrupts to the clients. On the other hand, the driver also
+# acts as an interrupt controller for receiving interrupts from clients.
+# Say Y here if you want to build this driver.
+# 
+# Symbol: QCOM_IPCC [=n]
+# Type  : bool
+# Defined at drivers/mailbox/Kconfig:247
+#   Prompt: Qualcomm Technologies, Inc. IPCC driver
+#   Depends on: MAILBOX [=y] && (ARCH_QCOM [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Mailbox Hardware Support (MAILBOX [=y])
+# 
+# 
+# 
+# CONFIG_QCOM_IPCC is not set
