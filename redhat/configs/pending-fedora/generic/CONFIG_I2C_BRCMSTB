@@ -1,0 +1,21 @@
+# CONFIG_I2C_BRCMSTB:
+# 
+# If you say yes to this option, support will be included for the
+# I2C interface on the Broadcom Settop/DSL SoCs.
+# 
+# If you do not need I2C interface, say N.
+# 
+# Symbol: I2C_BRCMSTB [=y]
+# Type  : tristate
+# Defined at drivers/i2c/busses/Kconfig:476
+#   Prompt: BRCM Settop/DSL I2C controller
+#   Depends on: I2C [=y] && HAS_IOMEM [=y] && (ARCH_BCM2835 [=y] || ARCH_BRCMSTB [=n] || BMIPS_GENERIC || ARCH_BCM_63XX [=n] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> I2C support
+#         -> I2C support (I2C [=y])
+#           -> I2C Hardware Bus support
+# 
+# 
+# 
+CONFIG_I2C_BRCMSTB=y

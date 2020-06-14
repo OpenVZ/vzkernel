@@ -1,0 +1,22 @@
+# CONFIG_I2C_QCOM_CCI:
+# 
+# If you say yes to this option, support will be included for the
+# built-in camera control interface on the Qualcomm SoCs.
+# 
+# This driver can also be built as a module.  If so, the module
+# will be called i2c-qcom-cci.
+# 
+# Symbol: I2C_QCOM_CCI [=n]
+# Type  : tristate
+# Defined at drivers/i2c/busses/Kconfig:900
+#   Prompt: Qualcomm Camera Control Interface
+#   Depends on: I2C [=y] && HAS_IOMEM [=y] && (ARCH_QCOM [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> I2C support
+#         -> I2C support (I2C [=y])
+#           -> I2C Hardware Bus support
+# 
+# 
+# 
+# CONFIG_I2C_QCOM_CCI is not set
