@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_WATCH_QUEUE is not set
+CONFIG_WATCH_QUEUE=y
