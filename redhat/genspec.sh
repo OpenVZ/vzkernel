@@ -244,7 +244,7 @@ test -n "$SPECFILE" &&
 	s/%%DEBUG_BUILDS_ENABLED%%/$DEBUG_BUILDS_ENABLED/
 	s/%%TARBALL_VERSION%%/$TARFILE_RELEASE/" $SPECFILE
 
-
+touch $plistf
 if [ "$SINGLE_TARBALL" = 0 ]; then
 	truncate -s 0 $plistf
 	COMMITS=$(git log --reverse --pretty=format:"%h" --no-merges "$MARKER".. \
