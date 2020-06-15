@@ -109,6 +109,9 @@ particular day. The git commit hash included in the release is the
 commit in Linus's tree the build is based on, *not* the commit in the
 Fedora source tree.
 
+Fedora RPM tagging in the ARK kernel began in May 2020 for fc33.  Previous
+RPM tags are not available in the ARK kernel tree.
+
 Configuration
 -------------
 
