@@ -141,6 +141,12 @@ dist-configs: dist-configs-prep
 	@cd $(REDHAT)/configs; VERSION=$(KVERSION) ./generate_all_configs.sh rhel 1; \
 	./process_configs.sh $(PROCESS_CONFIGS_OPTS) $(PACKAGE_NAME) $(KVERSION)
 
+fedora-configs: DIST_TARGET=fedora
+fedora-configs: dist-configs
+
+rh-configs: DIST_TARGET=rhel
+rh-configs: dist-configs
+
 dist-configs-check: dist-configs-prep
 	cd $(REDHAT)/configs; ./process_configs.sh $(PROCESS_CONFIGS_CHECK_OPTS) $(PACKAGE_NAME)
 
@@ -435,6 +441,8 @@ dist-full-help:
 	@echo  '  dist-cross-<arch>-rpms  - [x86_64 only] execute rpm builds for specified'
 	@echo  '                            <arch> using RHEL cross compiler.'
 	@echo  '                            See dist-cross-<arch>-build for the supported archs.'
+	@echo  '  rh-configs       - build ELN configs'
+	@echo  '  fedora-configs   - build Fedora configs'
 
 	@echo  ''
 	@echo  'kABI targets:'
