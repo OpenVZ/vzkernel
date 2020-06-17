@@ -61,6 +61,7 @@ struct ve_struct {
 #define VE_LOG_BUF_LEN		4096
 
 	int			_randomize_va_space;
+	int			odirect_enable;
 
 	u64			_uevent_seqnum;
 
