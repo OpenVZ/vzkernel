@@ -63,6 +63,7 @@ struct ve_struct {
 #ifdef CONFIG_VE_IPTABLES
 	__u64			ipt_mask;
 #endif
+	int			odirect_enable;
 
 	u64			_uevent_seqnum;
 

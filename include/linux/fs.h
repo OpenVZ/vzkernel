@@ -177,6 +177,8 @@ typedef int (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
  */
 #define CHECK_IOVEC_ONLY -1
 
+extern int may_use_odirect(void);
+
 /*
  * Attribute flags.  These should be or-ed together to figure out what
  * has been changed!

@@ -567,6 +567,8 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 	ve->features = VE_FEATURES_DEF;
 	ve->_randomize_va_space = ve0._randomize_va_space;
 
+	ve->odirect_enable = 2;
+
 #ifdef CONFIG_VE_IPTABLES
 	ve->ipt_mask = ve_setup_iptables_mask(VE_IP_DEFAULT);
 #endif
