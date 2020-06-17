@@ -6720,7 +6720,8 @@ int kvm_arch_init(void *opaque)
 
 	/* RHEL-only: running as a nested hypervisor is TechPreview */
 	if (boot_cpu_has(X86_FEATURE_HYPERVISOR))
-		mark_tech_preview("Running as a nested hypervisor", THIS_MODULE);
+		/* Don't taint kernel if nested detected. */
+		printk("Running as a nested hypervisor");
 
 	return 0;
 
