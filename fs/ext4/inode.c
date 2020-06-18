@@ -524,6 +524,9 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 		goto found;
 	}
 
+	if (flags & EXT4_GET_BLOCKS_EXTENT_TREE_ONLY)
+		return -ENOENT;
+
 	/*
 	 * Try to see if we can get the block without requesting a new
 	 * file system block.
