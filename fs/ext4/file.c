@@ -125,6 +125,26 @@ static bool ext4_overwrite_io(struct inode *inode, loff_t pos, loff_t len)
 	return __ext4_overwrite_io(inode, pos, len, &map, 0);
 }
 
+static int ext4_fastmap(struct inode *inode, sector_t lblk_sec,
+			unsigned int len, sector_t *pblk_sec)
+{
+	struct ext4_map_blocks map;
+	loff_t pos = lblk_sec << 9;
+	bool unaligned_aio, found;
+
+	unaligned_aio = ext4_unaligned_aio(inode, len, pos);
+	if (unaligned_aio)
+		return -ENOENT;
+
+	found = __ext4_overwrite_io(inode, lblk_sec << 9, len, &map,
+				    EXT4_GET_BLOCKS_EXTENT_TREE_ONLY);
+	if (!found)
+		return -ENOENT;
+
+	*pblk_sec = map.m_pblk << (inode->i_blkbits - 9);
+	return 0;
+}
+
 static ssize_t ext4_write_checks(struct kiocb *iocb, struct iov_iter *iter, loff_t *pos)
 {
 	struct file *file = iocb->ki_filp;
@@ -605,5 +625,6 @@ const struct inode_operations ext4_file_inode_operations = {
 	.removexattr	= generic_removexattr,
 	.get_acl	= ext4_get_acl,
 	.fiemap		= ext4_fiemap,
+	.fastmap	= ext4_fastmap,
 };
 
