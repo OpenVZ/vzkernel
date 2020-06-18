@@ -14,11 +14,6 @@
 
 #define RESOLVE_TIMEOUT_MS 5000
 
-enum {
-    RDMA_MAX_RESP_RES = 0xFF,
-    RDMA_MAX_INIT_DEPTH = 0xFF
-};
-
 struct pcs_rdmaconnect
 {
 	struct pcs_rpc *ep;
@@ -35,7 +30,8 @@ struct pcs_rdmaconnect
 extern unsigned int rdmaio_queue_depth;
 
 static void
-conn_param_init(struct rdma_conn_param *cp, struct pcs_rdmaio_conn_req *cr)
+conn_param_init(struct rdma_conn_param *cp, struct pcs_rdmaio_conn_req *cr,
+		struct rdma_cm_id *cmid)
 {
 	memset(cp, 0, sizeof(*cp));
 
@@ -44,9 +40,8 @@ conn_param_init(struct rdma_conn_param *cp, struct pcs_rdmaio_conn_req *cr)
 		cp->private_data_len = sizeof(*cr);
 	}
 
-	/* these two guys are about RDMA reads: see man rdma_connect(3) */
-	cp->responder_resources = RDMA_MAX_RESP_RES;
-	cp->initiator_depth     = RDMA_MAX_INIT_DEPTH;
+	cp->responder_resources = min_t(int, U8_MAX, cmid->device->attrs.max_qp_rd_atom);
+	cp->initiator_depth     = min_t(int, U8_MAX, cmid->device->attrs.max_qp_init_rd_atom);
 
 	cp->flow_control        = 1; /* does not matter */
 	cp->retry_count         = 0; /* # retransmissions when no ACK received */
@@ -77,7 +72,7 @@ static int pcs_rdma_cm_event_handler(struct rdma_cm_id *cmid,
 			}
 			rc->cmid = NULL;
 
-			conn_param_init(&conn_param, &rc->rio->conn_req);
+			conn_param_init(&conn_param, &rc->rio->conn_req, cmid);
 			if (rdma_connect(cmid, &conn_param)) {
 				TRACE("rdma_connect failed: rio: 0x%p\n", rc->rio);
 				complete(&rc->cm_done);
