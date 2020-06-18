@@ -720,8 +720,11 @@ static inline void ploop_req_set_error(struct ploop_request * preq, int err)
 #define PLOOP_REQ_TRACE_ERROR(preq, err)					\
 	do {									\
 		if ((err)) {							\
-			printk("%s() %d ploop%d set error %d\n",		\
-			__FUNCTION__, __LINE__, (preq)->plo->index, (int)(err));\
+			printk("%s() %d ploop%d set error %d: clu=%u, sec=%lu, "\
+				"size=%u, rw=0x%x, iblock=%u\n",		\
+			__FUNCTION__, __LINE__, (preq)->plo->index, (int)(err),	\
+			(preq)->req_cluster, (preq)->req_sector,		\
+			(preq)->req_size, (preq)->req_rw, (preq)->iblock);	\
 			PLOOP_TRACE_ERROR_DUMP_STACK();				\
 		}								\
 	} while (0);
