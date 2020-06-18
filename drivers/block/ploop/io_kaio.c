@@ -1169,6 +1169,78 @@ static int kaio_autodetect(struct ploop_io * io)
 	return 0;
 }
 
+static int
+kaio_fastmap(struct ploop_io *io, struct bio *orig_bio,
+	     struct bio *bio, sector_t isec)
+{
+	struct inode *inode = io->files.inode;
+	struct request_queue * q;
+	sector_t phys_sec;
+	int i, ret;
+
+	if (!inode->i_op->fastmap)
+		return 1;
+
+	if (unlikely((orig_bio->bi_rw & (REQ_FLUSH | REQ_FUA)) &&
+		     test_bit(PLOOP_IO_FSYNC_DELAYED, &io->io_state)))
+		return 1;
+
+	if (orig_bio->bi_size == 0) {
+		bio->bi_vcnt   = 0;
+		bio->bi_sector = 0;
+		bio->bi_size   = 0;
+		bio->bi_idx    = 0;
+
+		bio->bi_rw   = orig_bio->bi_rw;
+		bio->bi_bdev = io->files.bdev;
+		return 0;
+	}
+
+	ret = inode->i_op->fastmap(inode, isec, orig_bio->bi_size, &phys_sec);
+	if (ret < 0) {
+		io->plo->st.fast_neg_noem++;
+		return 1;
+	}
+
+	BUG_ON(bio->bi_max_vecs < orig_bio->bi_vcnt);
+
+	memcpy(bio->bi_io_vec, orig_bio->bi_io_vec,
+	       orig_bio->bi_vcnt * sizeof(struct bio_vec));
+
+	bio->bi_sector = phys_sec;
+
+	bio->bi_bdev = io->files.bdev;
+	bio->bi_rw = orig_bio->bi_rw;
+	bio->bi_vcnt = orig_bio->bi_vcnt;
+	bio->bi_size = orig_bio->bi_size;
+	bio->bi_idx = orig_bio->bi_idx;
+
+	q = bdev_get_queue(bio->bi_bdev);
+
+	if (q->merge_bvec_fn == NULL)
+		return 0;
+
+	bio->bi_size = 0;
+	bio->bi_vcnt = 0;
+
+	for (i = 0; i < orig_bio->bi_vcnt; i++) {
+		struct bio_vec * bv = &bio->bi_io_vec[i];
+		struct bvec_merge_data bm_data = {
+			.bi_bdev = bio->bi_bdev,
+			.bi_sector = bio->bi_sector,
+			.bi_size = bio->bi_size,
+			.bi_rw = bio->bi_rw,
+		};
+		if (q->merge_bvec_fn(q, &bm_data, bv) < bv->bv_len) {
+			io->plo->st.fast_neg_backing++;
+			return 1;
+		}
+		bio->bi_size += bv->bv_len;
+		bio->bi_vcnt++;
+	}
+	return 0;
+}
+
 static struct ploop_io_ops ploop_io_ops_kaio =
 {
 	.id		=	PLOOP_IO_KAIO,
@@ -1204,6 +1276,7 @@ static struct ploop_io_ops ploop_io_ops_kaio =
 	.f_mode		=	generic_f_mode,
 
 	.autodetect     =       kaio_autodetect,
+	.fastmap	=	kaio_fastmap,
 };
 
 static int __init pio_kaio_mod_init(void)
