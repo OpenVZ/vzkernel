@@ -95,27 +95,34 @@ ext4_unaligned_aio(struct inode *inode, size_t count, loff_t pos)
 }
 
 /* Is IO overwriting allocated and initialized blocks? */
-static bool ext4_overwrite_io(struct inode *inode, loff_t pos, loff_t len)
+static bool __ext4_overwrite_io(struct inode *inode, loff_t pos, loff_t len,
+				struct ext4_map_blocks *map, int flags)
 {
-	struct ext4_map_blocks map;
 	unsigned int blkbits = inode->i_blkbits;
 	int err, blklen;
 
 	if (pos + len > i_size_read(inode))
 		return false;
 
-	map.m_lblk = pos >> blkbits;
-	map.m_len = (EXT4_BLOCK_ALIGN(pos + len, blkbits) >> blkbits)
-		- map.m_lblk;
-	blklen = map.m_len;
+	map->m_lblk = pos >> blkbits;
+	map->m_len = (EXT4_BLOCK_ALIGN(pos + len, blkbits) >> blkbits)
+		- map->m_lblk;
+	blklen = map->m_len;
 
-	err = ext4_map_blocks(NULL, inode, &map, 0);
+	err = ext4_map_blocks(NULL, inode, map, flags);
 	/*
 	 * 'err==len' means that all of the blocks have been preallocated,
 	 * regardless of whether they have been initialized or not. To exclude
 	 * unwritten extents, we need to check m_flags.
 	 */
-	return err == blklen && (map.m_flags & EXT4_MAP_MAPPED);
+	return err == blklen && (map->m_flags & EXT4_MAP_MAPPED);
+}
+
+static bool ext4_overwrite_io(struct inode *inode, loff_t pos, loff_t len)
+{
+	struct ext4_map_blocks map;
+
+	return __ext4_overwrite_io(inode, pos, len, &map, 0);
 }
 
 static ssize_t ext4_write_checks(struct kiocb *iocb, struct iov_iter *iter, loff_t *pos)
