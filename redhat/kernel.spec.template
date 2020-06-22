@@ -2507,6 +2507,8 @@ fi
 %{_sysconfdir}/bash_completion.d/bpftool
 %{_mandir}/man8/bpftool-cgroup.8.gz
 %{_mandir}/man8/bpftool-gen.8.gz
+%{_mandir}/man8/bpftool-iter.8.gz
+%{_mandir}/man8/bpftool-link.8.gz
 %{_mandir}/man8/bpftool-map.8.gz
 %{_mandir}/man8/bpftool-prog.8.gz
 %{_mandir}/man8/bpftool-perf.8.gz
