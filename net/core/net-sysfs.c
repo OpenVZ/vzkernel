@@ -12,7 +12,6 @@
 #include <linux/capability.h>
 #include <linux/kernel.h>
 #include <linux/netdevice.h>
-#include <net/switchdev.h>
 #include <linux/if_arp.h>
 #include <linux/slab.h>
 #include <linux/sched/signal.h>
@@ -26,6 +25,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/of.h>
 #include <linux/of_net.h>
+#include <linux/cpu.h>
 
 #include "net-sysfs.h"
 
@@ -336,7 +336,7 @@ NETDEVICE_SHOW_RW(mtu, fmt_dec);
 
 static int change_flags(struct net_device *dev, unsigned long new_flags)
 {
-	return dev_change_flags(dev, (unsigned int)new_flags);
+	return dev_change_flags(dev, (unsigned int)new_flags, NULL);
 }
 
 static ssize_t flags_store(struct device *dev, struct device_attribute *attr,
@@ -500,16 +500,11 @@ static ssize_t phys_switch_id_show(struct device *dev,
 		return restart_syscall();
 
 	if (dev_isalive(netdev)) {
-		struct switchdev_attr attr = {
-			.orig_dev = netdev,
-			.id = SWITCHDEV_ATTR_ID_PORT_PARENT_ID,
-			.flags = SWITCHDEV_F_NO_RECURSE,
-		};
+		struct netdev_phys_item_id ppid = { };
 
-		ret = switchdev_port_attr_get(netdev, &attr);
+		ret = dev_get_port_parent_id(netdev, &ppid, false);
 		if (!ret)
-			ret = sprintf(buf, "%*phN\n", attr.u.ppid.id_len,
-				      attr.u.ppid.id);
+			ret = sprintf(buf, "%*phN\n", ppid.id_len, ppid.id);
 	}
 	rtnl_unlock();
 
@@ -559,7 +554,7 @@ static ssize_t netstat_show(const struct device *d,
 	struct net_device *dev = to_net_dev(d);
 	ssize_t ret = -EINVAL;
 
-	WARN_ON(offset > sizeof(struct rtnl_link_stats64) ||
+	WARN_ON(offset > sizeof_rtnl_link_stats64 ||
 		offset % sizeof(u64) != 0);
 
 	read_lock(&dev_base_lock);
@@ -759,9 +754,9 @@ static ssize_t store_rps_map(struct netdev_rx_queue *queue,
 	rcu_assign_pointer(queue->rps_map, map);
 
 	if (map)
-		static_key_slow_inc(&rps_needed);
+		static_branch_inc(&rps_needed);
 	if (old_map)
-		static_key_slow_dec(&rps_needed);
+		static_branch_dec(&rps_needed);
 
 	mutex_unlock(&rps_map_mutex);
 
@@ -924,6 +919,8 @@ static int rx_queue_add_kobject(struct net_device *dev, int index)
 	if (error)
 		return error;
 
+	dev_hold(queue->dev);
+
 	if (dev->sysfs_rx_queue_group) {
 		error = sysfs_create_group(kobj, dev->sysfs_rx_queue_group);
 		if (error) {
@@ -933,7 +930,6 @@ static int rx_queue_add_kobject(struct net_device *dev, int index)
 	}
 
 	kobject_uevent(kobj, KOBJ_ADD);
-	dev_hold(queue->dev);
 
 	return error;
 }
@@ -1047,13 +1043,30 @@ static ssize_t traffic_class_show(struct netdev_queue *queue,
 				  char *buf)
 {
 	struct net_device *dev = queue->dev;
-	int index = get_netdev_queue_index(queue);
-	int tc = netdev_txq_to_tc(dev, index);
+	int index;
+	int tc;
 
+	if (!netif_is_multiqueue(dev))
+		return -ENOENT;
+
+	index = get_netdev_queue_index(queue);
+
+	/* If queue belongs to subordinate dev use its TC mapping */
+	dev = netdev_get_tx_queue(dev, index)->sb_dev ? : dev;
+
+	tc = netdev_txq_to_tc(dev, index);
 	if (tc < 0)
 		return -EINVAL;
 
-	return sprintf(buf, "%u\n", tc);
+	/* We can report the traffic class one of two ways:
+	 * Subordinate device traffic classes are reported with the traffic
+	 * class first, and then the subordinate class so for example TC0 on
+	 * subordinate device 2 will be reported as "0-2". If the queue
+	 * belongs to the root device it will be reported with just the
+	 * traffic class, so just "0" for TC 0 for example.
+	 */
+	return dev->num_tc < 0 ? sprintf(buf, "%u%d\n", tc, dev->num_tc) :
+				 sprintf(buf, "%u\n", tc);
 }
 
 #ifdef CONFIG_XPS
@@ -1214,10 +1227,20 @@ static ssize_t xps_cpus_show(struct netdev_queue *queue,
 	cpumask_var_t mask;
 	unsigned long index;
 
+	if (!netif_is_multiqueue(dev))
+		return -ENOENT;
+
 	index = get_netdev_queue_index(queue);
 
 	if (dev->num_tc) {
+		/* Do not allow XPS on subordinate device directly */
 		num_tc = dev->num_tc;
+		if (num_tc < 0)
+			return -EINVAL;
+
+		/* If queue belongs to subordinate dev use its map */
+		dev = netdev_get_tx_queue(dev, index)->sb_dev ? : dev;
+
 		tc = netdev_txq_to_tc(dev, index);
 		if (tc < 0)
 			return -EINVAL;
@@ -1227,13 +1250,13 @@ static ssize_t xps_cpus_show(struct netdev_queue *queue,
 		return -ENOMEM;
 
 	rcu_read_lock();
-	dev_maps = rcu_dereference(dev->xps_maps);
+	dev_maps = rcu_dereference(dev->xps_cpus_map);
 	if (dev_maps) {
 		for_each_possible_cpu(cpu) {
 			int i, tci = cpu * num_tc + tc;
 			struct xps_map *map;
 
-			map = rcu_dereference(dev_maps->cpu_map[tci]);
+			map = rcu_dereference(dev_maps->attr_map[tci]);
 			if (!map)
 				continue;
 
@@ -1260,6 +1283,9 @@ static ssize_t xps_cpus_store(struct netdev_queue *queue,
 	cpumask_var_t mask;
 	int err;
 
+	if (!netif_is_multiqueue(dev))
+		return -ENOENT;
+
 	if (!capable(CAP_NET_ADMIN))
 		return -EPERM;
 
@@ -1283,6 +1309,91 @@ static ssize_t xps_cpus_store(struct netdev_queue *queue,
 
 static struct netdev_queue_attribute xps_cpus_attribute __ro_after_init
 	= __ATTR_RW(xps_cpus);
+
+static ssize_t xps_rxqs_show(struct netdev_queue *queue, char *buf)
+{
+	struct net_device *dev = queue->dev;
+	struct xps_dev_maps *dev_maps;
+	unsigned long *mask, index;
+	int j, len, num_tc = 1, tc = 0;
+
+	index = get_netdev_queue_index(queue);
+
+	if (dev->num_tc) {
+		num_tc = dev->num_tc;
+		tc = netdev_txq_to_tc(dev, index);
+		if (tc < 0)
+			return -EINVAL;
+	}
+	mask = kcalloc(BITS_TO_LONGS(dev->num_rx_queues), sizeof(long),
+		       GFP_KERNEL);
+	if (!mask)
+		return -ENOMEM;
+
+	rcu_read_lock();
+	dev_maps = rcu_dereference(dev->xps_rxqs_map);
+	if (!dev_maps)
+		goto out_no_maps;
+
+	for (j = -1; j = netif_attrmask_next(j, NULL, dev->num_rx_queues),
+	     j < dev->num_rx_queues;) {
+		int i, tci = j * num_tc + tc;
+		struct xps_map *map;
+
+		map = rcu_dereference(dev_maps->attr_map[tci]);
+		if (!map)
+			continue;
+
+		for (i = map->len; i--;) {
+			if (map->queues[i] == index) {
+				set_bit(j, mask);
+				break;
+			}
+		}
+	}
+out_no_maps:
+	rcu_read_unlock();
+
+	len = bitmap_print_to_pagebuf(false, buf, mask, dev->num_rx_queues);
+	kfree(mask);
+
+	return len < PAGE_SIZE ? len : -EINVAL;
+}
+
+static ssize_t xps_rxqs_store(struct netdev_queue *queue, const char *buf,
+			      size_t len)
+{
+	struct net_device *dev = queue->dev;
+	struct net *net = dev_net(dev);
+	unsigned long *mask, index;
+	int err;
+
+	if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+		return -EPERM;
+
+	mask = kcalloc(BITS_TO_LONGS(dev->num_rx_queues), sizeof(long),
+		       GFP_KERNEL);
+	if (!mask)
+		return -ENOMEM;
+
+	index = get_netdev_queue_index(queue);
+
+	err = bitmap_parse(buf, len, mask, dev->num_rx_queues);
+	if (err) {
+		kfree(mask);
+		return err;
+	}
+
+	cpus_read_lock();
+	err = __netif_set_xps_queue(dev, mask, index, true);
+	cpus_read_unlock();
+
+	kfree(mask);
+	return err ? : len;
+}
+
+static struct netdev_queue_attribute xps_rxqs_attribute __ro_after_init
+	= __ATTR_RW(xps_rxqs);
 #endif /* CONFIG_XPS */
 
 static struct attribute *netdev_queue_default_attrs[] __ro_after_init = {
@@ -1290,6 +1401,7 @@ static struct attribute *netdev_queue_default_attrs[] __ro_after_init = {
 	&queue_traffic_class.attr,
 #ifdef CONFIG_XPS
 	&xps_cpus_attribute.attr,
+	&xps_rxqs_attribute.attr,
 	&queue_tx_maxrate.attr,
 #endif
 	NULL
@@ -1334,6 +1446,8 @@ static int netdev_queue_add_kobject(struct net_device *dev, int index)
 	if (error)
 		return error;
 
+	dev_hold(queue->dev);
+
 #ifdef CONFIG_BQL
 	error = sysfs_create_group(kobj, &dql_group);
 	if (error) {
@@ -1343,7 +1457,6 @@ static int netdev_queue_add_kobject(struct net_device *dev, int index)
 #endif
 
 	kobject_uevent(kobj, KOBJ_ADD);
-	dev_hold(queue->dev);
 
 	return 0;
 }
@@ -1409,6 +1522,9 @@ static int register_queue_kobjects(struct net_device *dev)
 error:
 	netdev_queue_update_kobjects(dev, txq, 0);
 	net_rx_queue_update_kobjects(dev, rxq, 0);
+#ifdef CONFIG_SYSFS
+	kset_unregister(dev->queues_kset);
+#endif
 	return error;
 }
 

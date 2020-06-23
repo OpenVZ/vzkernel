@@ -28,6 +28,12 @@ static int __patch_instruction(unsigned int *exec_addr, unsigned int instr,
 {
 	int err;
 
+	/* Make sure we aren't patching a freed init section */
+	if (init_mem_is_free && init_section_contains(exec_addr, 4)) {
+		pr_debug("Skipping init section patching addr: 0x%px\n", exec_addr);
+		return 0;
+	}
+
 	__put_user_size(instr, patch_addr, 4, err);
 	if (err)
 		return err;
@@ -193,6 +199,22 @@ NOKPROBE_SYMBOL(patch_instruction);
 int patch_branch(unsigned int *addr, unsigned long target, int flags)
 {
 	return patch_instruction(addr, create_branch(addr, target, flags));
+}
+
+int patch_branch_site(s32 *site, unsigned long target, int flags)
+{
+	unsigned int *addr;
+
+	addr = (unsigned int *)((unsigned long)site + *site);
+	return patch_instruction(addr, create_branch(addr, target, flags));
+}
+
+int patch_instruction_site(s32 *site, unsigned int instr)
+{
+	unsigned int *addr;
+
+	addr = (unsigned int *)((unsigned long)site + *site);
+	return patch_instruction(addr, instr);
 }
 
 bool is_offset_in_branch_range(long offset)

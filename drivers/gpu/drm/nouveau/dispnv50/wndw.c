@@ -127,7 +127,7 @@ void
 nv50_wndw_flush_set(struct nv50_wndw *wndw, u32 *interlock,
 		    struct nv50_wndw_atom *asyw)
 {
-	if (interlock) {
+	if (interlock[NV50_DISP_INTERLOCK_CORE]) {
 		asyw->image.mode = 0;
 		asyw->image.interval = 1;
 	}
@@ -139,10 +139,8 @@ nv50_wndw_flush_set(struct nv50_wndw *wndw, u32 *interlock,
 	if (asyw->set.xlut ) {
 		if (asyw->ilut) {
 			asyw->xlut.i.offset =
-				nv50_lut_load(&wndw->ilut,
-					      asyw->xlut.i.mode <= 1,
-					      asyw->xlut.i.buffer,
-					      asyw->ilut);
+				nv50_lut_load(&wndw->ilut, asyw->xlut.i.buffer,
+					      asyw->ilut, asyw->xlut.i.load);
 		}
 		wndw->func->xlut_set(wndw, asyw);
 	}
@@ -151,7 +149,7 @@ nv50_wndw_flush_set(struct nv50_wndw *wndw, u32 *interlock,
 	if (asyw->set.point) {
 		if (asyw->set.point = false, asyw->set.mask)
 			interlock[wndw->interlock.type] |= wndw->interlock.data;
-		interlock[NV50_DISP_INTERLOCK_WIMM] |= wndw->interlock.data;
+		interlock[NV50_DISP_INTERLOCK_WIMM] |= wndw->interlock.wimm;
 
 		wndw->immd->point(wndw, asyw);
 		wndw->immd->update(wndw, interlock);
@@ -322,6 +320,13 @@ nv50_wndw_atomic_check_lut(struct nv50_wndw *wndw,
 		asyh->wndw.olut &= ~BIT(wndw->id);
 	}
 
+	if (!ilut && wndw->func->ilut_identity &&
+	    asyw->state.fb->format->format != DRM_FORMAT_XBGR16161616F &&
+	    asyw->state.fb->format->format != DRM_FORMAT_ABGR16161616F) {
+		static struct drm_property_blob dummy = {};
+		ilut = &dummy;
+	}
+
 	/* Recalculate LUT state. */
 	memset(&asyw->xlut, 0x00, sizeof(asyw->xlut));
 	if ((asyw->ilut = wndw->func->ilut ? ilut : NULL)) {
@@ -405,6 +410,8 @@ nv50_wndw_atomic_check(struct drm_plane *plane, struct drm_plane_state *state)
 		asyw->clr.ntfy = armw->ntfy.handle != 0;
 		asyw->clr.sema = armw->sema.handle != 0;
 		asyw->clr.xlut = armw->xlut.handle != 0;
+		if (asyw->clr.xlut && asyw->visible)
+			asyw->set.xlut = asyw->xlut.handle != 0;
 		if (wndw->func->image_clr)
 			asyw->clr.image = armw->image.handle[0] != 0;
 	}
@@ -586,7 +593,6 @@ nv50_wndw_new_(const struct nv50_wndw_func *func, struct drm_device *dev,
 	wndw->id = index;
 	wndw->interlock.type = interlock_type;
 	wndw->interlock.data = interlock_data;
-	wndw->ctxdma.parent = &wndw->wndw.base.user;
 
 	wndw->ctxdma.parent = &wndw->wndw.base.user;
 	INIT_LIST_HEAD(&wndw->ctxdma.list);
@@ -624,6 +630,7 @@ nv50_wndw_new(struct nouveau_drm *drm, enum drm_plane_type type, int index,
 		int (*new)(struct nouveau_drm *, enum drm_plane_type,
 			   int, s32, struct nv50_wndw **);
 	} wndws[] = {
+		{ TU102_DISP_WINDOW_CHANNEL_DMA, 0, wndwc57e_new },
 		{ GV100_DISP_WINDOW_CHANNEL_DMA, 0, wndwc37e_new },
 		{}
 	};

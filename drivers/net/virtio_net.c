@@ -1456,7 +1456,7 @@ static netdev_tx_t start_xmit(struct sk_buff *skb, struct net_device *dev)
 	struct send_queue *sq = &vi->sq[qnum];
 	int err;
 	struct netdev_queue *txq = netdev_get_tx_queue(dev, qnum);
-	bool kick = !skb->xmit_more;
+	bool kick = !netdev_xmit_more();
 	bool use_napi = sq->napi.weight;
 
 	/* Free up any pending old buffers before queueing new ones. */
@@ -1849,9 +1849,11 @@ static void virtnet_set_affinity(struct virtnet_info *vi)
 
 	i = 0;
 	for_each_online_cpu(cpu) {
+		const unsigned long *mask = cpumask_bits(cpumask_of(cpu));
+
 		virtqueue_set_affinity(vi->rq[i].vq, cpu);
 		virtqueue_set_affinity(vi->sq[i].vq, cpu);
-		netif_set_xps_queue(vi->dev, cpumask_of(cpu), i);
+		__netif_set_xps_queue(vi->dev, mask, i, false);
 		i++;
 	}
 
@@ -2348,7 +2350,6 @@ static int virtnet_xdp(struct net_device *dev, struct netdev_bpf *xdp)
 		return virtnet_xdp_set(dev, xdp->prog, xdp->extack);
 	case XDP_QUERY_PROG:
 		xdp->prog_id = virtnet_xdp_query(dev);
-		xdp->prog_attached = !!xdp->prog_id;
 		return 0;
 	default:
 		return -EINVAL;

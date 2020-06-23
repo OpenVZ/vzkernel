@@ -24,7 +24,7 @@
 
 #include <linux/idr.h>
 #include <linux/dma-fence-array.h>
-#include <drm/drmP.h>
+
 
 #include "amdgpu.h"
 #include "amdgpu_trace.h"
@@ -364,8 +364,11 @@ static int amdgpu_vmid_grab_used(struct amdgpu_vm *vm,
 		if (updates && (!flushed || dma_fence_is_later(updates, flushed)))
 			needs_flush = true;
 
-		/* Concurrent flushes are only possible starting with Vega10 */
-		if (adev->asic_type < CHIP_VEGA10 && needs_flush)
+		/* Concurrent flushes are only possible starting with Vega10 and
+		 * are broken on Navi10 and Navi14.
+		 */
+		if (needs_flush && (adev->asic_type < CHIP_VEGA10 ||
+				    adev->asic_type == CHIP_NAVI10))
 			continue;
 
 		/* Good, we can use this VMID. Remember this submission as
@@ -574,15 +577,10 @@ void amdgpu_vmid_mgr_init(struct amdgpu_device *adev)
 		/* skip over VMID 0, since it is the system VM */
 		for (j = 1; j < id_mgr->num_ids; ++j) {
 			amdgpu_vmid_reset(adev, i, j);
-			amdgpu_sync_create(&id_mgr->ids[i].active);
+			amdgpu_sync_create(&id_mgr->ids[j].active);
 			list_add_tail(&id_mgr->ids[j].list, &id_mgr->ids_lru);
 		}
 	}
-
-	adev->vm_manager.fence_context =
-		dma_fence_context_alloc(AMDGPU_MAX_RINGS);
-	for (i = 0; i < AMDGPU_MAX_RINGS; ++i)
-		adev->vm_manager.seqno[i] = 0;
 }
 
 /**

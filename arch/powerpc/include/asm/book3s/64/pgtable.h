@@ -44,6 +44,16 @@
 
 #define _PAGE_PTE		0x4000000000000000UL	/* distinguishes PTEs from pointers */
 #define _PAGE_PRESENT		0x8000000000000000UL	/* pte contains a translation */
+/*
+ * We need to mark a pmd pte invalid while splitting. We can do that by clearing
+ * the _PAGE_PRESENT bit. But then that will be taken as a swap pte. In order to
+ * differentiate between two use a SW field when invalidating.
+ *
+ * We do that temporary invalidate for regular pte entry in ptep_set_access_flags
+ *
+ * This is used only when _PAGE_PRESENT is cleared.
+ */
+#define _PAGE_INVALID		_RPAGE_SW0
 
 /*
  * Top and bottom bits of RPN which can be used by hash
@@ -104,7 +114,7 @@
  */
 #define _HPAGE_CHG_MASK (PTE_RPN_MASK | _PAGE_HPTEFLAGS | _PAGE_DIRTY | \
 			 _PAGE_ACCESSED | H_PAGE_THP_HUGE | _PAGE_PTE | \
-			 _PAGE_SOFT_DIRTY)
+			 _PAGE_SOFT_DIRTY | _PAGE_DEVMAP)
 /*
  * user access blocked by key
  */
@@ -122,7 +132,7 @@
  */
 #define _PAGE_CHG_MASK	(PTE_RPN_MASK | _PAGE_HPTEFLAGS | _PAGE_DIRTY | \
 			 _PAGE_ACCESSED | _PAGE_SPECIAL | _PAGE_PTE |	\
-			 _PAGE_SOFT_DIRTY)
+			 _PAGE_SOFT_DIRTY | _PAGE_DEVMAP)
 
 #define H_PTE_PKEY  (H_PTE_PKEY_BIT0 | H_PTE_PKEY_BIT1 | H_PTE_PKEY_BIT2 | \
 		     H_PTE_PKEY_BIT3 | H_PTE_PKEY_BIT4)
@@ -479,9 +489,8 @@ static inline pte_t ptep_get_and_clear_full(struct mm_struct *mm,
 {
 	if (full && radix_enabled()) {
 		/*
-		 * Let's skip the DD1 style pte update here. We know that
-		 * this is a full mm pte clear and hence can be sure there is
-		 * no parallel set_pte.
+		 * We know that this is a full mm pte clear and
+		 * hence can be sure there is no parallel set_pte.
 		 */
 		return radix__ptep_get_and_clear_full(mm, addr, ptep, full);
 	}
@@ -569,7 +578,13 @@ static inline pte_t pte_clear_savedwrite(pte_t pte)
 
 static inline int pte_present(pte_t pte)
 {
-	return !!(pte_raw(pte) & cpu_to_be64(_PAGE_PRESENT));
+	/*
+	 * A pte is considerent present if _PAGE_PRESENT is set.
+	 * We also need to consider the pte present which is marked
+	 * invalid during ptep_set_access_flags. Hence we look for _PAGE_INVALID
+	 * if we find _PAGE_PRESENT cleared.
+	 */
+	return !!(pte_raw(pte) & cpu_to_be64(_PAGE_PRESENT | _PAGE_INVALID));
 }
 
 #ifdef CONFIG_PPC_MEM_KEYS
@@ -708,9 +723,7 @@ static inline bool pte_user(pte_t pte)
 	BUILD_BUG_ON(_PAGE_HPTEFLAGS & (0x1f << _PAGE_BIT_SWAP_TYPE)); \
 	BUILD_BUG_ON(_PAGE_HPTEFLAGS & _PAGE_SWP_SOFT_DIRTY);	\
 	} while (0)
-/*
- * on pte we don't need handle RADIX_TREE_EXCEPTIONAL_SHIFT;
- */
+
 #define SWP_TYPE_BITS 5
 #define __swp_type(x)		(((x).val >> _PAGE_BIT_SWAP_TYPE) \
 				& ((1UL << SWP_TYPE_BITS) - 1))
@@ -1036,7 +1049,6 @@ static inline void vmemmap_remove_mapping(unsigned long start,
 	return hash__vmemmap_remove_mapping(start, page_size);
 }
 #endif
-struct page *realmode_pfn_to_page(unsigned long pfn);
 
 static inline pte_t pmd_pte(pmd_t pmd)
 {
@@ -1220,21 +1232,13 @@ extern pmd_t pmdp_invalidate(struct vm_area_struct *vma, unsigned long address,
 
 #define pmd_move_must_withdraw pmd_move_must_withdraw
 struct spinlock;
-static inline int pmd_move_must_withdraw(struct spinlock *new_pmd_ptl,
-					 struct spinlock *old_pmd_ptl,
-					 struct vm_area_struct *vma)
-{
-	if (radix_enabled())
-		return false;
-	/*
-	 * Archs like ppc64 use pgtable to store per pmd
-	 * specific information. So when we switch the pmd,
-	 * we should also withdraw and deposit the pgtable
-	 */
-	return true;
-}
-
-
+extern int pmd_move_must_withdraw(struct spinlock *new_pmd_ptl,
+				  struct spinlock *old_pmd_ptl,
+				  struct vm_area_struct *vma);
+/*
+ * Hash translation mode use the deposited table to store hash pte
+ * slot information.
+ */
 #define arch_needs_pgtable_deposit arch_needs_pgtable_deposit
 static inline bool arch_needs_pgtable_deposit(void)
 {

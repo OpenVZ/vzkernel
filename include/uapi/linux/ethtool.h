@@ -256,9 +256,17 @@ struct ethtool_tunable {
 #define DOWNSHIFT_DEV_DEFAULT_COUNT	0xff
 #define DOWNSHIFT_DEV_DISABLE		0
 
+/* Time in msecs after which link is reported as down
+ * 0 = lowest time supported by the PHY
+ * 0xff = off, link down detection according to standard
+ */
+#define ETHTOOL_PHY_FAST_LINK_DOWN_ON	0
+#define ETHTOOL_PHY_FAST_LINK_DOWN_OFF	0xff
+
 enum phy_tunable_id {
 	ETHTOOL_PHY_ID_UNSPEC,
 	ETHTOOL_PHY_DOWNSHIFT,
+	ETHTOOL_PHY_FAST_LINK_DOWN,
 	/*
 	 * Add your fresh new phy tunable attribute above and remember to update
 	 * phy_tunable_strings[] in net/core/ethtool.c
@@ -870,7 +878,8 @@ struct ethtool_flow_ext {
  *	includes the %FLOW_EXT or %FLOW_MAC_EXT flag
  *	(see &struct ethtool_flow_ext description).
  * @ring_cookie: RX ring/queue index to deliver to, or %RX_CLS_FLOW_DISC
- *	if packets should be discarded
+ *	if packets should be discarded, or %RX_CLS_FLOW_WAKE if the
+ *	packets should be used for Wake-on-LAN with %WAKE_FILTER
  * @location: Location of rule in the table.  Locations must be
  *	numbered such that a flow matching multiple rules will be
  *	classified according to the first (lowest numbered) rule.
@@ -1456,6 +1465,21 @@ enum ethtool_link_mode_bit_indices {
 	ETHTOOL_LINK_MODE_FEC_NONE_BIT	= 49,
 	ETHTOOL_LINK_MODE_FEC_RS_BIT	= 50,
 	ETHTOOL_LINK_MODE_FEC_BASER_BIT	= 51,
+	ETHTOOL_LINK_MODE_50000baseKR_Full_BIT		 = 52,
+	ETHTOOL_LINK_MODE_50000baseSR_Full_BIT		 = 53,
+	ETHTOOL_LINK_MODE_50000baseCR_Full_BIT		 = 54,
+	ETHTOOL_LINK_MODE_50000baseLR_ER_FR_Full_BIT	 = 55,
+	ETHTOOL_LINK_MODE_50000baseDR_Full_BIT		 = 56,
+	ETHTOOL_LINK_MODE_100000baseKR2_Full_BIT	 = 57,
+	ETHTOOL_LINK_MODE_100000baseSR2_Full_BIT	 = 58,
+	ETHTOOL_LINK_MODE_100000baseCR2_Full_BIT	 = 59,
+	ETHTOOL_LINK_MODE_100000baseLR2_ER2_FR2_Full_BIT = 60,
+	ETHTOOL_LINK_MODE_100000baseDR2_Full_BIT	 = 61,
+	ETHTOOL_LINK_MODE_200000baseKR4_Full_BIT	 = 62,
+	ETHTOOL_LINK_MODE_200000baseSR4_Full_BIT	 = 63,
+	ETHTOOL_LINK_MODE_200000baseLR4_ER4_FR4_Full_BIT = 64,
+	ETHTOOL_LINK_MODE_200000baseDR4_Full_BIT	 = 65,
+	ETHTOOL_LINK_MODE_200000baseCR4_Full_BIT	 = 66,
 
 	/* Last allowed bit for __ETHTOOL_LINK_MODE_LEGACY_MASK is bit
 	 * 31. Please do NOT define any SUPPORTED_* or ADVERTISED_*
@@ -1463,8 +1487,16 @@ enum ethtool_link_mode_bit_indices {
 	 * use the new ETHTOOL_GLINKSETTINGS/ETHTOOL_SLINKSETTINGS API.
 	 */
 
-	__ETHTOOL_LINK_MODE_LAST
+	/* RHEL */
+	__ETHTOOL_LINK_MODE_LAST_RH80
 	  = ETHTOOL_LINK_MODE_FEC_BASER_BIT,
+
+	__ETHTOOL_LINK_MODE_LAST
+#ifndef __GENKSYMS__
+	  = ETHTOOL_LINK_MODE_200000baseCR4_Full_BIT,
+#else
+	  = __ETHTOOL_LINK_MODE_LAST_RH80,
+#endif
 };
 
 #define __ETHTOOL_LINK_MODE_LEGACY_MASK(base_name)	\
@@ -1572,6 +1604,7 @@ enum ethtool_link_mode_bit_indices {
 #define SPEED_50000		50000
 #define SPEED_56000		56000
 #define SPEED_100000		100000
+#define SPEED_200000		200000
 
 #define SPEED_UNKNOWN		-1
 
@@ -1634,6 +1667,7 @@ static inline int ethtool_validate_duplex(__u8 duplex)
 #define WAKE_ARP		(1 << 4)
 #define WAKE_MAGIC		(1 << 5)
 #define WAKE_MAGICSECURE	(1 << 6) /* only meaningful if WAKE_MAGIC */
+#define WAKE_FILTER		(1 << 7)
 
 /* L2-L4 network traffic flow types */
 #define	TCP_V4_FLOW	0x01	/* hash or spec (tcp_ip4_spec) */
@@ -1671,6 +1705,7 @@ static inline int ethtool_validate_duplex(__u8 duplex)
 #define	RXH_DISCARD	(1 << 31)
 
 #define	RX_CLS_FLOW_DISC	0xffffffffffffffffULL
+#define RX_CLS_FLOW_WAKE	0xfffffffffffffffeULL
 
 /* Special RX classification rule insert location values */
 #define RX_CLS_LOC_SPECIAL	0x80000000	/* flag */
@@ -1687,6 +1722,9 @@ static inline int ethtool_validate_duplex(__u8 duplex)
 #define ETH_MODULE_SFF_8636_LEN		256
 #define ETH_MODULE_SFF_8436		0x4
 #define ETH_MODULE_SFF_8436_LEN		256
+
+#define ETH_MODULE_SFF_8636_MAX_LEN     640
+#define ETH_MODULE_SFF_8436_MAX_LEN     640
 
 /* Reset flags */
 /* The reset() operation must clear the flags for the components which

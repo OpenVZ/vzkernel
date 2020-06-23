@@ -58,16 +58,17 @@ static bool initialize(struct kernel_queue *kq, struct kfd_dev *dev,
 	kq->nop_packet = nop.u32all;
 	switch (type) {
 	case KFD_QUEUE_TYPE_DIQ:
+		kq->mqd_mgr = dev->dqm->mqd_mgrs[KFD_MQD_TYPE_DIQ];
+		break;
 	case KFD_QUEUE_TYPE_HIQ:
-		kq->mqd = dev->dqm->ops.get_mqd_manager(dev->dqm,
-						KFD_MQD_TYPE_HIQ);
+		kq->mqd_mgr = dev->dqm->mqd_mgrs[KFD_MQD_TYPE_HIQ];
 		break;
 	default:
 		pr_err("Invalid queue type %d\n", type);
 		return false;
 	}
 
-	if (!kq->mqd)
+	if (!kq->mqd_mgr)
 		return false;
 
 	prop.doorbell_ptr = kfd_get_kernel_doorbell(dev, &prop.doorbell_off);
@@ -123,6 +124,7 @@ static bool initialize(struct kernel_queue *kq, struct kfd_dev *dev,
 	prop.write_ptr = (uint32_t *) kq->wptr_gpu_addr;
 	prop.eop_ring_buffer_address = kq->eop_gpu_addr;
 	prop.eop_ring_buffer_size = PAGE_SIZE;
+	prop.cu_mask = NULL;
 
 	if (init_queue(&kq->queue, &prop) != 0)
 		goto err_init_queue;
@@ -130,21 +132,22 @@ static bool initialize(struct kernel_queue *kq, struct kfd_dev *dev,
 	kq->queue->device = dev;
 	kq->queue->process = kfd_get_process(current);
 
-	retval = kq->mqd->init_mqd(kq->mqd, &kq->queue->mqd,
-					&kq->queue->mqd_mem_obj,
+	kq->queue->mqd_mem_obj = kq->mqd_mgr->allocate_mqd(kq->mqd_mgr->dev,
+					&kq->queue->properties);
+	if (!kq->queue->mqd_mem_obj)
+		goto err_allocate_mqd;
+	kq->mqd_mgr->init_mqd(kq->mqd_mgr, &kq->queue->mqd,
+					kq->queue->mqd_mem_obj,
 					&kq->queue->gart_mqd_addr,
 					&kq->queue->properties);
-	if (retval != 0)
-		goto err_init_mqd;
-
 	/* assign HIQ to HQD */
 	if (type == KFD_QUEUE_TYPE_HIQ) {
 		pr_debug("Assigning hiq to hqd\n");
 		kq->queue->pipe = KFD_CIK_HIQ_PIPE;
 		kq->queue->queue = KFD_CIK_HIQ_QUEUE;
-		kq->mqd->load_mqd(kq->mqd, kq->queue->mqd, kq->queue->pipe,
-				  kq->queue->queue, &kq->queue->properties,
-				  NULL);
+		kq->mqd_mgr->load_mqd(kq->mqd_mgr, kq->queue->mqd,
+				kq->queue->pipe, kq->queue->queue,
+				&kq->queue->properties, NULL);
 	} else {
 		/* allocate fence for DIQ */
 
@@ -162,7 +165,8 @@ static bool initialize(struct kernel_queue *kq, struct kfd_dev *dev,
 
 	return true;
 err_alloc_fence:
-err_init_mqd:
+	kq->mqd_mgr->free_mqd(kq->mqd_mgr, kq->queue->mqd, kq->queue->mqd_mem_obj);
+err_allocate_mqd:
 	uninit_queue(kq->queue);
 err_init_queue:
 	kfd_gtt_sa_free(dev, kq->wptr_mem);
@@ -182,7 +186,7 @@ err_get_kernel_doorbell:
 static void uninitialize(struct kernel_queue *kq)
 {
 	if (kq->queue->properties.type == KFD_QUEUE_TYPE_HIQ)
-		kq->mqd->destroy_mqd(kq->mqd,
+		kq->mqd_mgr->destroy_mqd(kq->mqd_mgr,
 					kq->queue->mqd,
 					KFD_PREEMPT_TYPE_WAVEFRONT_RESET,
 					KFD_UNMAP_LATENCY_MS,
@@ -191,7 +195,8 @@ static void uninitialize(struct kernel_queue *kq)
 	else if (kq->queue->properties.type == KFD_QUEUE_TYPE_DIQ)
 		kfd_gtt_sa_free(kq->dev, kq->fence_mem_obj);
 
-	kq->mqd->uninit_mqd(kq->mqd, kq->queue->mqd, kq->queue->mqd_mem_obj);
+	kq->mqd_mgr->free_mqd(kq->mqd_mgr, kq->queue->mqd,
+				kq->queue->mqd_mem_obj);
 
 	kfd_gtt_sa_free(kq->dev, kq->rptr_mem);
 	kfd_gtt_sa_free(kq->dev, kq->wptr_mem);
@@ -311,6 +316,8 @@ struct kernel_queue *kernel_queue_init(struct kfd_dev *dev,
 	case CHIP_FIJI:
 	case CHIP_POLARIS10:
 	case CHIP_POLARIS11:
+	case CHIP_POLARIS12:
+	case CHIP_VEGAM:
 		kernel_queue_init_vi(&kq->ops_asic_specific);
 		break;
 
@@ -320,8 +327,13 @@ struct kernel_queue *kernel_queue_init(struct kfd_dev *dev,
 		break;
 
 	case CHIP_VEGA10:
+	case CHIP_VEGA12:
+	case CHIP_VEGA20:
 	case CHIP_RAVEN:
 		kernel_queue_init_v9(&kq->ops_asic_specific);
+		break;
+	case CHIP_NAVI10:
+		kernel_queue_init_v10(&kq->ops_asic_specific);
 		break;
 	default:
 		WARN(1, "Unexpected ASIC family %u",

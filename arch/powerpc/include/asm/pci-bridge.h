@@ -129,6 +129,7 @@ struct pci_controller {
 #endif	/* CONFIG_PPC64 */
 
 	void *private_data;
+	RH_KABI_EXTEND(struct npu *npu)
 };
 
 /* These are used for config access before all the PCI probing
@@ -185,6 +186,7 @@ struct iommu_table;
 struct pci_dn {
 	int     flags;
 #define PCI_DN_FLAG_IOV_VF	0x01
+#define PCI_DN_FLAG_DEAD	0x02    /* Device has been hot-removed */
 
 	int	busno;			/* pci bus number */
 	int	devfn;			/* pci device and function number */

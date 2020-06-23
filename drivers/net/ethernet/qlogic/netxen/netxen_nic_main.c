@@ -1790,11 +1790,6 @@ static pci_ers_result_t netxen_io_slot_reset(struct pci_dev *pdev)
 	return err ? PCI_ERS_RESULT_DISCONNECT : PCI_ERS_RESULT_RECOVERED;
 }
 
-static void netxen_io_resume(struct pci_dev *pdev)
-{
-	pci_cleanup_aer_uncorrect_error_status(pdev);
-}
-
 static void netxen_nic_shutdown(struct pci_dev *pdev)
 {
 	struct netxen_adapter *adapter = pci_get_drvdata(pdev);
@@ -3294,6 +3289,7 @@ netxen_config_indev_addr(struct netxen_adapter *adapter,
 		struct net_device *dev, unsigned long event)
 {
 	struct in_device *indev;
+	struct in_ifaddr *ifa;
 
 	if (!netxen_destip_supported(adapter))
 		return;
@@ -3302,7 +3298,8 @@ netxen_config_indev_addr(struct netxen_adapter *adapter,
 	if (!indev)
 		return;
 
-	for_ifa(indev) {
+	rcu_read_lock();
+	in_dev_for_each_ifa_rcu(ifa, indev) {
 		switch (event) {
 		case NETDEV_UP:
 			netxen_list_config_ip(adapter, ifa, NX_IP_UP);
@@ -3313,8 +3310,8 @@ netxen_config_indev_addr(struct netxen_adapter *adapter,
 		default:
 			break;
 		}
-	} endfor_ifa(indev);
-
+	}
+	rcu_read_unlock();
 	in_dev_put(indev);
 }
 
@@ -3490,7 +3487,6 @@ netxen_free_ip_list(struct netxen_adapter *adapter, bool master)
 static const struct pci_error_handlers netxen_err_handler = {
 	.error_detected = netxen_io_error_detected,
 	.slot_reset = netxen_io_slot_reset,
-	.resume = netxen_io_resume,
 };
 
 static struct pci_driver netxen_driver = {
@@ -3509,6 +3505,7 @@ static struct pci_driver netxen_driver = {
 static int __init netxen_init_module(void)
 {
 	printk(KERN_INFO "%s\n", netxen_nic_driver_string);
+	mark_hardware_unsupported(netxen_nic_driver_name);
 
 #ifdef CONFIG_INET
 	register_netdevice_notifier(&netxen_netdev_cb);

@@ -1095,6 +1095,13 @@ static int gic_init_bases(struct gic_chip_data *gic, int irq_start,
 	irq_hw_number_t hwirq_base;
 	int gic_irqs, irq_base, ret;
 
+	/* RHEL8 in theory expects GICv3 or newer IRQ chips, despite the fact
+	 * that Red Hat still carries lots of GICv2 machines at this moment.
+	 * Calling mark_hardware_removed() to print a warning and mark kernel
+	 * tainted with TAINT_SUPPORT_REMOVED flag.
+	 */
+	mark_hardware_removed("GICv2");
+
 	if (IS_ENABLED(CONFIG_GIC_NON_BANKED) && gic->percpu_offset) {
 		/* Frankein-GIC without banked registers... */
 		unsigned int cpu;
@@ -1508,7 +1515,7 @@ static struct
 } acpi_data __initdata;
 
 static int __init
-gic_acpi_parse_madt_cpu(struct acpi_subtable_header *header,
+gic_acpi_parse_madt_cpu(union acpi_subtable_headers *header,
 			const unsigned long end)
 {
 	struct acpi_madt_generic_interrupt *processor;
@@ -1540,7 +1547,7 @@ gic_acpi_parse_madt_cpu(struct acpi_subtable_header *header,
 }
 
 /* The things you have to do to just *count* something... */
-static int __init acpi_dummy_func(struct acpi_subtable_header *header,
+static int __init acpi_dummy_func(union acpi_subtable_headers *header,
 				  const unsigned long end)
 {
 	return 0;

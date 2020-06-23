@@ -25,7 +25,9 @@ static inline unsigned long long rdclock(void)
 	return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 }
 
-#define MAX_NR_CPUS			1024
+#ifndef MAX_NR_CPUS
+#define MAX_NR_CPUS			2048
+#endif
 
 extern const char *input_name;
 extern bool perf_host, perf_guest;
@@ -59,11 +61,14 @@ struct record_opts {
 	bool	     record_switch_events;
 	bool	     all_kernel;
 	bool	     all_user;
+	bool	     kernel_callchains;
+	bool	     user_callchains;
 	bool	     tail_synthesize;
 	bool	     overwrite;
 	bool	     ignore_missing_thread;
 	bool	     strict_freq;
 	bool	     sample_id;
+	bool	     no_bpf_event;
 	unsigned int freq;
 	unsigned int mmap_pages;
 	unsigned int auxtrace_mmap_pages;
@@ -79,7 +84,18 @@ struct record_opts {
 	unsigned     initial_delay;
 	bool         use_clockid;
 	clockid_t    clockid;
-	unsigned int proc_map_timeout;
+	u64          clockid_res_ns;
+	int	     nr_cblocks;
+	int	     affinity;
+	int	     mmap_flush;
+	unsigned int comp_level;
+};
+
+enum perf_affinity {
+	PERF_AFFINITY_SYS = 0,
+	PERF_AFFINITY_NODE,
+	PERF_AFFINITY_CPU,
+	PERF_AFFINITY_MAX
 };
 
 struct option;

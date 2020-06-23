@@ -179,6 +179,11 @@ struct static_key;
 extern struct static_key paravirt_steal_enabled;
 extern struct static_key paravirt_steal_rq_enabled;
 
+__visible void __native_queued_spin_unlock(struct qspinlock *lock);
+bool pv_is_native_spin_unlock(void);
+__visible bool __native_vcpu_is_preempted(long cpu);
+bool pv_is_native_vcpu_is_preempted(void);
+
 static inline u64 paravirt_steal_clock(int cpu)
 {
 	return PVOP_CALL1(u64, pv_time_ops.steal_clock, cpu);
@@ -307,6 +312,11 @@ static inline void flush_tlb_others(const struct cpumask *cpumask,
 				    const struct flush_tlb_info *info)
 {
 	PVOP_VCALL2(pv_mmu_ops.flush_tlb_others, cpumask, info);
+}
+
+static inline void paravirt_tlb_remove_table(struct mmu_gather *tlb, void *table)
+{
+	PVOP_VCALL2(pv_mmu_ops.tlb_remove_table, tlb, table);
 }
 
 static inline int paravirt_pgd_alloc(struct mm_struct *mm)
@@ -763,6 +773,7 @@ static __always_inline bool pv_vcpu_is_preempted(long cpu)
 	    PV_RESTORE_ALL_CALLER_REGS					\
 	    FRAME_END							\
 	    "ret;"							\
+	    ".size " PV_THUNK_NAME(func) ", .-" PV_THUNK_NAME(func) ";"	\
 	    ".popsection")
 
 /* Get a reference to a callee-save function */

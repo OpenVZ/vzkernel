@@ -277,7 +277,8 @@ xfs_dquot_set_prealloc_limits(struct xfs_dquot *dqp)
 
 /*
  * Ensure that the given in-core dquot has a buffer on disk backing it, and
- * return the buffer. This is called when the bmapi finds a hole.
+ * return the buffer locked and held. This is called when the bmapi finds a
+ * hole.
  */
 STATIC int
 xfs_dquot_disk_alloc(
@@ -286,17 +287,15 @@ xfs_dquot_disk_alloc(
 	struct xfs_buf		**bpp)
 {
 	struct xfs_bmbt_irec	map;
-	struct xfs_defer_ops	dfops;
-	struct xfs_mount	*mp = (*tpp)->t_mountp;
+	struct xfs_trans	*tp = *tpp;
+	struct xfs_mount	*mp = tp->t_mountp;
 	struct xfs_buf		*bp;
 	struct xfs_inode	*quotip = xfs_quota_inode(mp, dqp->dq_flags);
-	xfs_fsblock_t		firstblock;
 	int			nmaps = 1;
 	int			error;
 
 	trace_xfs_dqalloc(dqp);
 
-	xfs_defer_init(&dfops, &firstblock);
 	xfs_ilock(quotip, XFS_ILOCK_EXCL);
 	if (!xfs_this_quota_on(dqp->q_mount, dqp->dq_flags)) {
 		/*
@@ -308,13 +307,12 @@ xfs_dquot_disk_alloc(
 	}
 
 	/* Create the block mapping. */
-	xfs_trans_ijoin(*tpp, quotip, XFS_ILOCK_EXCL);
-	error = xfs_bmapi_write(*tpp, quotip, dqp->q_fileoffset,
+	xfs_trans_ijoin(tp, quotip, XFS_ILOCK_EXCL);
+	error = xfs_bmapi_write(tp, quotip, dqp->q_fileoffset,
 			XFS_DQUOT_CLUSTER_SIZE_FSB, XFS_BMAPI_METADATA,
-			&firstblock, XFS_QM_DQALLOC_SPACE_RES(mp),
-			&map, &nmaps, &dfops);
+			XFS_QM_DQALLOC_SPACE_RES(mp), &map, &nmaps);
 	if (error)
-		goto error0;
+		return error;
 	ASSERT(map.br_blockcount == XFS_DQUOT_CLUSTER_SIZE_FSB);
 	ASSERT(nmaps == 1);
 	ASSERT((map.br_startblock != DELAYSTARTBLOCK) &&
@@ -326,19 +324,17 @@ xfs_dquot_disk_alloc(
 	dqp->q_blkno = XFS_FSB_TO_DADDR(mp, map.br_startblock);
 
 	/* now we can just get the buffer (there's nothing to read yet) */
-	bp = xfs_trans_get_buf(*tpp, mp->m_ddev_targp, dqp->q_blkno,
+	bp = xfs_trans_get_buf(tp, mp->m_ddev_targp, dqp->q_blkno,
 			mp->m_quotainfo->qi_dqchunklen, 0);
-	if (!bp) {
-		error = -ENOMEM;
-		goto error1;
-	}
+	if (!bp)
+		return -ENOMEM;
 	bp->b_ops = &xfs_dquot_buf_ops;
 
 	/*
 	 * Make a chunk of dquots out of this buffer and log
 	 * the entire thing.
 	 */
-	xfs_qm_init_dquot_blk(*tpp, mp, be32_to_cpu(dqp->q_core.d_id),
+	xfs_qm_init_dquot_blk(tp, mp, be32_to_cpu(dqp->q_core.d_id),
 			      dqp->dq_flags & XFS_DQ_ALLTYPES, bp);
 	xfs_buf_set_ref(bp, XFS_DQUOT_REF);
 
@@ -352,37 +348,26 @@ xfs_dquot_disk_alloc(
 	 * the buffer locked across the _defer_finish call.  We can now do
 	 * this correctly with xfs_defer_bjoin.
 	 *
-	 * Above, we allocated a disk block for the dquot information and
-	 * used get_buf to initialize the dquot.  If the _defer_bjoin fails,
-	 * the buffer is still locked to *tpp, so we must _bhold_release and
-	 * then _trans_brelse the buffer.  If the _defer_finish fails, the old
+	 * Above, we allocated a disk block for the dquot information and used
+	 * get_buf to initialize the dquot. If the _defer_finish fails, the old
 	 * transaction is gone but the new buffer is not joined or held to any
 	 * transaction, so we must _buf_relse it.
 	 *
 	 * If everything succeeds, the caller of this function is returned a
 	 * buffer that is locked and held to the transaction.  The caller
 	 * is responsible for unlocking any buffer passed back, either
-	 * manually or by committing the transaction.
+	 * manually or by committing the transaction.  On error, the buffer is
+	 * released and not passed back.
 	 */
-	xfs_trans_bhold(*tpp, bp);
-	error = xfs_defer_bjoin(&dfops, bp);
+	xfs_trans_bhold(tp, bp);
+	error = xfs_defer_finish(tpp);
 	if (error) {
 		xfs_trans_bhold_release(*tpp, bp);
 		xfs_trans_brelse(*tpp, bp);
-		goto error1;
-	}
-	error = xfs_defer_finish(tpp, &dfops);
-	if (error) {
-		xfs_buf_relse(bp);
-		goto error1;
+		return error;
 	}
 	*bpp = bp;
 	return 0;
-
-error1:
-	xfs_defer_cancel(&dfops);
-error0:
-	return error;
 }
 
 /*
@@ -538,7 +523,6 @@ xfs_qm_dqread_alloc(
 	struct xfs_buf		**bpp)
 {
 	struct xfs_trans	*tp;
-	struct xfs_buf		*bp;
 	int			error;
 
 	error = xfs_trans_alloc(mp, &M_RES(mp)->tr_qm_dqalloc,
@@ -546,7 +530,7 @@ xfs_qm_dqread_alloc(
 	if (error)
 		goto err;
 
-	error = xfs_dquot_disk_alloc(&tp, dqp, &bp);
+	error = xfs_dquot_disk_alloc(&tp, dqp, bpp);
 	if (error)
 		goto err_cancel;
 
@@ -556,10 +540,10 @@ xfs_qm_dqread_alloc(
 		 * Buffer was held to the transaction, so we have to unlock it
 		 * manually here because we're not passing it back.
 		 */
-		xfs_buf_relse(bp);
+		xfs_buf_relse(*bpp);
+		*bpp = NULL;
 		goto err;
 	}
-	*bpp = bp;
 	return 0;
 
 err_cancel:

@@ -1860,7 +1860,6 @@ static void ql_update_small_bufq_prod_index(struct ql3_adapter *qdev)
 		wmb();
 		writel_relaxed(qdev->small_buf_q_producer_index,
 			       &port_regs->CommonRegs.rxSmallQProducerIndex);
-		mmiowb();
 	}
 }
 
@@ -3772,6 +3771,8 @@ static int ql3xxx_probe(struct pci_dev *pdev,
 	struct ql3_adapter *qdev = NULL;
 	static int cards_found;
 	int uninitialized_var(pci_using_dac), err;
+
+	mark_hardware_unsupported("QLogic ISP3XXX Network Driver");
 
 	err = pci_enable_device(pdev);
 	if (err) {

@@ -52,6 +52,18 @@ struct mcfg_fixup {
 static struct mcfg_fixup mcfg_quirks[] = {
 /*	{ OEM_ID, OEM_TABLE_ID, REV, SEGMENT, BUS_RANGE, ops, cfgres }, */
 
+#define AL_ECAM(table_id, rev, seg, ops) \
+	{ "AMAZON", table_id, rev, seg, MCFG_BUS_ANY, ops }
+
+	AL_ECAM("GRAVITON", 0, 0, &al_pcie_ops),
+	AL_ECAM("GRAVITON", 0, 1, &al_pcie_ops),
+	AL_ECAM("GRAVITON", 0, 2, &al_pcie_ops),
+	AL_ECAM("GRAVITON", 0, 3, &al_pcie_ops),
+	AL_ECAM("GRAVITON", 0, 4, &al_pcie_ops),
+	AL_ECAM("GRAVITON", 0, 5, &al_pcie_ops),
+	AL_ECAM("GRAVITON", 0, 6, &al_pcie_ops),
+	AL_ECAM("GRAVITON", 0, 7, &al_pcie_ops),
+
 #define QCOM_ECAM32(seg) \
 	{ "QCOM  ", "QDF2432 ", 1, seg, MCFG_BUS_ANY, &pci_32b_ops }
 
@@ -141,6 +153,11 @@ static struct mcfg_fixup mcfg_quirks[] = {
 	XGENE_V2_ECAM_MCFG(4, 0),
 	XGENE_V2_ECAM_MCFG(4, 1),
 	XGENE_V2_ECAM_MCFG(4, 2),
+
+#define BCM_ECAM_MCFG(rev, seg) \
+	{"BRCM  ", "BRCM-SRX", rev, seg, MCFG_BUS_ANY, \
+		&iproc_pcie_paxcv2_ecam_ops }
+	BCM_ECAM_MCFG(1, 8),
 };
 
 static char mcfg_oem_id[ACPI_OEM_ID_SIZE];

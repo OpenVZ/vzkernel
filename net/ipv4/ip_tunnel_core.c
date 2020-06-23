@@ -80,7 +80,7 @@ void iptunnel_xmit(struct sock *sk, struct rtable *rt, struct sk_buff *skb,
 
 	iph->version	=	4;
 	iph->ihl	=	sizeof(struct iphdr) >> 2;
-	iph->frag_off	=	df;
+	iph->frag_off	=	ip_mtu_locked(&rt->dst) ? 0 : df;
 	iph->protocol	=	proto;
 	iph->tos	=	tos;
 	iph->daddr	=	dst;
@@ -89,9 +89,12 @@ void iptunnel_xmit(struct sock *sk, struct rtable *rt, struct sk_buff *skb,
 	__ip_select_ident(net, iph, skb_shinfo(skb)->gso_segs ?: 1);
 
 	err = ip_local_out(net, sk, skb);
-	if (unlikely(net_xmit_eval(err)))
-		pkt_len = 0;
-	iptunnel_xmit_stats(dev, pkt_len);
+
+	if (dev) {
+		if (unlikely(net_xmit_eval(err)))
+			pkt_len = 0;
+		iptunnel_xmit_stats(dev, pkt_len);
+	}
 }
 EXPORT_SYMBOL_GPL(iptunnel_xmit);
 
@@ -151,6 +154,7 @@ struct metadata_dst *iptunnel_metadata_reply(struct metadata_dst *md,
 		       sizeof(struct in6_addr));
 	else
 		dst->key.u.ipv4.dst = src->key.u.ipv4.src;
+	dst->key.tun_flags = src->key.tun_flags;
 	dst->mode = src->mode | IP_TUNNEL_INFO_TX;
 
 	return res;
@@ -238,8 +242,8 @@ static int ip_tun_build_state(struct nlattr *attr,
 	struct nlattr *tb[LWTUNNEL_IP_MAX + 1];
 	int err;
 
-	err = nla_parse_nested(tb, LWTUNNEL_IP_MAX, attr, ip_tun_policy,
-			       extack);
+	err = nla_parse_nested_deprecated(tb, LWTUNNEL_IP_MAX, attr,
+					  ip_tun_policy, extack);
 	if (err < 0)
 		return err;
 
@@ -337,8 +341,8 @@ static int ip6_tun_build_state(struct nlattr *attr,
 	struct nlattr *tb[LWTUNNEL_IP6_MAX + 1];
 	int err;
 
-	err = nla_parse_nested(tb, LWTUNNEL_IP6_MAX, attr, ip6_tun_policy,
-			       extack);
+	err = nla_parse_nested_deprecated(tb, LWTUNNEL_IP6_MAX, attr,
+					  ip6_tun_policy, extack);
 	if (err < 0)
 		return err;
 

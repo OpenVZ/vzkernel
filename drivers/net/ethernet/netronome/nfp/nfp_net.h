@@ -1,35 +1,5 @@
-/*
- * Copyright (C) 2015-2017 Netronome Systems, Inc.
- *
- * This software is dual licensed under the GNU General License Version 2,
- * June 1991 as shown in the file COPYING in the top-level directory of this
- * source tree or the BSD 2-Clause License provided below.  You have the
- * option to license this software under the complete terms of either license.
- *
- * The BSD 2-Clause License:
- *
- *     Redistribution and use in source and binary forms, with or
- *     without modification, are permitted provided that the following
- *     conditions are met:
- *
- *      1. Redistributions of source code must retain the above
- *         copyright notice, this list of conditions and the following
- *         disclaimer.
- *
- *      2. Redistributions in binary form must reproduce the above
- *         copyright notice, this list of conditions and the following
- *         disclaimer in the documentation and/or other materials
- *         provided with the distribution.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
+/* SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause) */
+/* Copyright (C) 2015-2018 Netronome Systems, Inc. */
 
 /*
  * nfp_net.h
@@ -47,6 +17,7 @@
 #include <linux/netdevice.h>
 #include <linux/pci.h>
 #include <linux/io-64-nonatomic-hi-lo.h>
+#include <linux/semaphore.h>
 #include <net/xdp.h>
 
 #include "nfp_net_ctrl.h"
@@ -188,6 +159,7 @@ struct nfp_net_tx_desc {
 			__le16 data_len; /* Length of frame + meta data */
 		} __packed;
 		__le32 vals[4];
+		__le64 vals8[2];
 	};
 };
 
@@ -250,7 +222,7 @@ struct nfp_net_tx_ring {
 	struct nfp_net_tx_desc *txds;
 
 	dma_addr_t dma;
-	unsigned int size;
+	size_t size;
 	bool is_xdp;
 } ____cacheline_aligned;
 
@@ -350,9 +322,9 @@ struct nfp_net_rx_buf {
  * @qcp_fl:     Pointer to base of the QCP freelist queue
  * @rxbufs:     Array of transmitted FL/RX buffers
  * @rxds:       Virtual address of FL/RX ring in host memory
+ * @xdp_rxq:    RX-ring info avail for XDP
  * @dma:        DMA address of the FL/RX ring
  * @size:       Size, in bytes, of the FL/RX ring (needed to free)
- * @xdp_rxq:    RX-ring info avail for XDP
  */
 struct nfp_net_rx_ring {
 	struct nfp_net_r_vector *r_vec;
@@ -364,14 +336,15 @@ struct nfp_net_rx_ring {
 	u32 idx;
 
 	int fl_qcidx;
-	unsigned int size;
 	u8 __iomem *qcp_fl;
 
 	struct nfp_net_rx_buf *rxbufs;
 	struct nfp_net_rx_desc *rxds;
 
-	dma_addr_t dma;
 	struct xdp_rxq_info xdp_rxq;
+
+	dma_addr_t dma;
+	size_t size;
 } ____cacheline_aligned;
 
 /**
@@ -420,7 +393,7 @@ struct nfp_net_r_vector {
 		struct {
 			struct tasklet_struct tasklet;
 			struct sk_buff_head queue;
-			struct spinlock lock;
+			spinlock_t lock;
 		};
 	};
 
@@ -485,7 +458,6 @@ struct nfp_stat_pair {
  * @dev:		Backpointer to struct device
  * @netdev:		Backpointer to net_device structure
  * @is_vf:		Is the driver attached to a VF?
- * @bpf_offload_xdp:	Offloaded BPF program is XDP
  * @chained_metadata_format:  Firemware will use new metadata format
  * @rx_dma_dir:		Mapping direction for RX buffers
  * @rx_dma_off:		Offset at which DMA packets (for XDP headroom)
@@ -510,7 +482,6 @@ struct nfp_net_dp {
 	struct net_device *netdev;
 
 	u8 is_vf:1;
-	u8 bpf_offload_xdp:1;
 	u8 chained_metadata_format:1;
 
 	u8 rx_dma_dir;
@@ -553,8 +524,8 @@ struct nfp_net_dp {
  * @rss_cfg:            RSS configuration
  * @rss_key:            RSS secret key
  * @rss_itbl:           RSS indirection table
- * @xdp_flags:		Flags with which XDP prog was loaded
- * @xdp_prog:		XDP prog (for ctrl path, both DRV and HW modes)
+ * @xdp:		Information about the driver XDP program
+ * @xdp_hw:		Information about the HW XDP program
  * @max_r_vecs:		Number of allocated interrupt vectors for RX/TX
  * @max_tx_rings:       Maximum number of TX rings supported by the Firmware
  * @max_rx_rings:       Maximum number of RX rings supported by the Firmware
@@ -569,11 +540,17 @@ struct nfp_net_dp {
  * @shared_handler:     Handler for shared interrupts
  * @shared_name:        Name for shared interrupt
  * @me_freq_mhz:        ME clock_freq (MHz)
- * @reconfig_lock:	Protects HW reconfiguration request regs/machinery
+ * @reconfig_lock:	Protects @reconfig_posted, @reconfig_timer_active,
+ *			@reconfig_sync_present and HW reconfiguration request
+ *			regs/machinery from async requests (sync must take
+ *			@bar_lock)
  * @reconfig_posted:	Pending reconfig bits coming from async sources
  * @reconfig_timer_active:  Timer for reading reconfiguration results is pending
  * @reconfig_sync_present:  Some thread is performing synchronous reconfig
  * @reconfig_timer:	Timer for async reading of reconfig results
+ * @reconfig_in_progress_update:	Update FW is processing now (debug only)
+ * @bar_lock:		vNIC config BAR access lock, protects: update,
+ *			mailbox area
  * @link_up:            Is the link up?
  * @link_status_lock:	Protects @link_* and ensures atomicity with BAR reading
  * @rx_coalesce_usecs:      RX interrupt moderation usecs delay parameter
@@ -586,6 +563,10 @@ struct nfp_net_dp {
  * @tx_bar:             Pointer to mapped TX queues
  * @rx_bar:             Pointer to mapped FL/RX queues
  * @tlv_caps:		Parsed TLV capabilities
+ * @mbox_cmsg:		Common Control Message via vNIC mailbox state
+ * @mbox_cmsg.queue:	CCM mbox queue of pending messages
+ * @mbox_cmsg.wq:	CCM mbox wait queue of waiting processes
+ * @mbox_cmsg.tag:	CCM mbox message tag allocator
  * @debugfs_dir:	Device directory in debugfs
  * @vnic_list:		Entry on device vNIC list
  * @pdev:		Backpointer to PCI device
@@ -610,8 +591,8 @@ struct nfp_net {
 	u8 rss_key[NFP_NET_CFG_RSS_KEY_SZ];
 	u8 rss_itbl[NFP_NET_CFG_RSS_ITBL_SZ];
 
-	u32 xdp_flags;
-	struct bpf_prog *xdp_prog;
+	struct xdp_attachment_info xdp;
+	struct xdp_attachment_info xdp_hw;
 
 	unsigned int max_tx_rings;
 	unsigned int max_rx_rings;
@@ -642,6 +623,9 @@ struct nfp_net {
 	bool reconfig_timer_active;
 	bool reconfig_sync_present;
 	struct timer_list reconfig_timer;
+	u32 reconfig_in_progress_update;
+
+	struct semaphore bar_lock;
 
 	u32 rx_coalesce_usecs;
 	u32 rx_coalesce_max_frames;
@@ -657,6 +641,12 @@ struct nfp_net {
 	u8 __iomem *rx_bar;
 
 	struct nfp_net_tlv_caps tlv_caps;
+
+	struct {
+		struct sk_buff_head queue;
+		wait_queue_head_t wq;
+		u16 tag;
+	} mbox_cmsg;
 
 	struct dentry *debugfs_dir;
 
@@ -867,6 +857,16 @@ static inline void nfp_ctrl_unlock(struct nfp_net *nn)
 	spin_unlock_bh(&nn->r_vecs[0].lock);
 }
 
+static inline void nn_ctrl_bar_lock(struct nfp_net *nn)
+{
+	down(&nn->bar_lock);
+}
+
+static inline void nn_ctrl_bar_unlock(struct nfp_net *nn)
+{
+	up(&nn->bar_lock);
+}
+
 /* Globals */
 extern const char nfp_driver_version[];
 
@@ -882,7 +882,7 @@ void nfp_net_get_fw_version(struct nfp_net_fw_version *fw_ver,
 			    void __iomem *ctrl_bar);
 
 struct nfp_net *
-nfp_net_alloc(struct pci_dev *pdev, bool needs_netdev,
+nfp_net_alloc(struct pci_dev *pdev, void __iomem *ctrl_bar, bool needs_netdev,
 	      unsigned int max_tx_rings, unsigned int max_rx_rings);
 void nfp_net_free(struct nfp_net *nn);
 
@@ -894,11 +894,15 @@ void nfp_ctrl_close(struct nfp_net *nn);
 
 void nfp_net_set_ethtool_ops(struct net_device *netdev);
 void nfp_net_info(struct nfp_net *nn);
+int __nfp_net_reconfig(struct nfp_net *nn, u32 update);
 int nfp_net_reconfig(struct nfp_net *nn, u32 update);
 unsigned int nfp_net_rss_key_sz(struct nfp_net *nn);
 void nfp_net_rss_write_itbl(struct nfp_net *nn);
 void nfp_net_rss_write_key(struct nfp_net *nn);
 void nfp_net_coalesce_write_cfg(struct nfp_net *nn);
+int nfp_net_mbox_lock(struct nfp_net *nn, unsigned int data_size);
+int nfp_net_mbox_reconfig(struct nfp_net *nn, u32 mbox_cmd);
+int nfp_net_mbox_reconfig_and_unlock(struct nfp_net *nn, u32 mbox_cmd);
 
 unsigned int
 nfp_net_irqs_alloc(struct pci_dev *pdev, struct msix_entry *irq_entries,

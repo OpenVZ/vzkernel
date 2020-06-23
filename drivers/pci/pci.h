@@ -2,11 +2,14 @@
 #ifndef DRIVERS_PCI_H
 #define DRIVERS_PCI_H
 
+#include <linux/pci.h>
+
 #define PCI_FIND_CAP_TTL	48
 
 #define PCI_VSEC_ID_INTEL_TBT	0x1234	/* Thunderbolt */
 
 extern const unsigned char pcie_link_speed[];
+extern bool pci_early_dump;
 
 bool pcie_cap_has_lnkctl(const struct pci_dev *dev);
 
@@ -33,9 +36,13 @@ int pci_mmap_fits(struct pci_dev *pdev, int resno, struct vm_area_struct *vmai,
 		  enum pci_mmap_api mmap_api);
 
 int pci_probe_reset_function(struct pci_dev *dev);
+int pci_bridge_secondary_bus_reset(struct pci_dev *dev);
+int pci_bus_error_reset(struct pci_dev *dev);
 
 /**
  * struct pci_platform_pm_ops - Firmware PM callbacks
+ *
+ * @bridge_d3: Does the bridge allow entering into D3
  *
  * @is_manageable: returns 'true' if given device is power manageable by the
  *		   platform firmware
@@ -43,6 +50,8 @@ int pci_probe_reset_function(struct pci_dev *dev);
  * @set_state: invokes the platform firmware to set the device's power state
  *
  * @get_state: queries the platform firmware for a device's current power state
+ *
+ * @refresh_state: asks the platform to refresh the device's power state data
  *
  * @choose_state: returns PCI power state of given device preferred by the
  *		  platform; to be used during system-wide transitions from a
@@ -58,9 +67,11 @@ int pci_probe_reset_function(struct pci_dev *dev);
  * these callbacks are mandatory.
  */
 struct pci_platform_pm_ops {
+	bool (*bridge_d3)(struct pci_dev *dev);
 	bool (*is_manageable)(struct pci_dev *dev);
 	int (*set_state)(struct pci_dev *dev, pci_power_t state);
 	pci_power_t (*get_state)(struct pci_dev *dev);
+	void (*refresh_state)(struct pci_dev *dev);
 	pci_power_t (*choose_state)(struct pci_dev *dev);
 	int (*set_wakeup)(struct pci_dev *dev, bool enable);
 	bool (*need_resume)(struct pci_dev *dev);
@@ -68,13 +79,15 @@ struct pci_platform_pm_ops {
 
 int pci_set_platform_pm(const struct pci_platform_pm_ops *ops);
 void pci_update_current_state(struct pci_dev *dev, pci_power_t state);
-void pci_power_up(struct pci_dev *dev);
+void pci_refresh_power_state(struct pci_dev *dev);
+int pci_power_up(struct pci_dev *dev);
 void pci_disable_enabled_device(struct pci_dev *dev);
 int pci_finish_runtime_suspend(struct pci_dev *dev);
 void pcie_clear_root_pme_status(struct pci_dev *dev);
 int __pci_pme_wakeup(struct pci_dev *dev, void *ign);
 void pci_pme_restore(struct pci_dev *dev);
-bool pci_dev_keep_suspended(struct pci_dev *dev);
+bool pci_dev_need_resume(struct pci_dev *dev);
+void pci_dev_adjust_pme(struct pci_dev *dev);
 void pci_dev_complete_resume(struct pci_dev *pci_dev);
 void pci_config_pm_runtime_get(struct pci_dev *dev);
 void pci_config_pm_runtime_put(struct pci_dev *dev);
@@ -84,6 +97,7 @@ void pci_allocate_cap_save_buffers(struct pci_dev *dev);
 void pci_free_cap_save_buffers(struct pci_dev *dev);
 bool pci_bridge_d3_possible(struct pci_dev *dev);
 void pci_bridge_d3_update(struct pci_dev *dev);
+void pci_bridge_wait_for_secondary_bus(struct pci_dev *dev);
 
 static inline void pci_wakeup_event(struct pci_dev *dev)
 {
@@ -103,6 +117,15 @@ static inline bool pci_power_manageable(struct pci_dev *pci_dev)
 	 * into D3 if their bridge_d3 is set.
 	 */
 	return !pci_has_subordinate(pci_dev) || pci_dev->bridge_d3;
+}
+
+static inline bool pcie_downstream_port(const struct pci_dev *dev)
+{
+	int type = pci_pcie_type(dev);
+
+	return type == PCI_EXP_TYPE_ROOT_PORT ||
+	       type == PCI_EXP_TYPE_DOWNSTREAM ||
+	       type == PCI_EXP_TYPE_PCIE_BRIDGE;
 }
 
 int pci_vpd_init(struct pci_dev *dev);
@@ -134,6 +157,7 @@ static inline void pci_remove_legacy_files(struct pci_bus *bus) { return; }
 
 /* Lock for read/write access to pci device and bus lists */
 extern struct rw_semaphore pci_bus_sem;
+extern struct mutex pci_slot_mutex;
 
 extern raw_spinlock_t pci_lock;
 
@@ -225,6 +249,10 @@ enum pci_bar_type {
 int pci_configure_extended_tags(struct pci_dev *dev, void *ign);
 bool pci_bus_read_dev_vendor_id(struct pci_bus *bus, int devfn, u32 *pl,
 				int crs_timeout);
+bool pci_bus_generic_read_dev_vendor_id(struct pci_bus *bus, int devfn, u32 *pl,
+					int crs_timeout);
+int pci_idt_bus_quirk(struct pci_bus *bus, int devfn, u32 *pl, int crs_timeout);
+
 int pci_setup_device(struct pci_dev *dev);
 int __pci_read_base(struct pci_dev *dev, enum pci_bar_type type,
 		    struct resource *res, unsigned int reg);
@@ -259,6 +287,8 @@ enum pci_bus_speed pcie_get_speed_cap(struct pci_dev *dev);
 enum pcie_link_width pcie_get_width_cap(struct pci_dev *dev);
 u32 pcie_bandwidth_capable(struct pci_dev *dev, enum pci_bus_speed *speed,
 			   enum pcie_link_width *width);
+void __pcie_print_link_status(struct pci_dev *dev, bool verbose);
+void pcie_report_downtraining(struct pci_dev *dev);
 
 /* Single Root I/O Virtualization */
 struct pci_sriov {
@@ -284,22 +314,81 @@ struct pci_sriov {
 	u16		subsystem_device; /* VF subsystem device */
 	resource_size_t	barsz[PCI_SRIOV_NUM_BARS];	/* VF BAR size */
 	bool		drivers_autoprobe; /* Auto probing of VFs by driver */
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+	RH_KABI_RESERVE(5)
+	RH_KABI_RESERVE(6)
+	RH_KABI_RESERVE(7)
+	RH_KABI_RESERVE(8)
 };
 
-/* pci_dev priv_flags */
-#define PCI_DEV_DISCONNECTED 0
-#define PCI_DEV_ADDED 1
+/**
+ * pci_dev_set_io_state - Set the new error state if possible.
+ *
+ * @dev - pci device to set new error_state
+ * @new - the state we want dev to be in
+ *
+ * Must be called with device_lock held.
+ *
+ * Returns true if state has been changed to the requested state.
+ */
+static inline bool pci_dev_set_io_state(struct pci_dev *dev,
+					pci_channel_state_t new)
+{
+	bool changed = false;
+
+	device_lock_assert(&dev->dev);
+	switch (new) {
+	case pci_channel_io_perm_failure:
+		switch (dev->error_state) {
+		case pci_channel_io_frozen:
+		case pci_channel_io_normal:
+		case pci_channel_io_perm_failure:
+			changed = true;
+			break;
+		}
+		break;
+	case pci_channel_io_frozen:
+		switch (dev->error_state) {
+		case pci_channel_io_frozen:
+		case pci_channel_io_normal:
+			changed = true;
+			break;
+		}
+		break;
+	case pci_channel_io_normal:
+		switch (dev->error_state) {
+		case pci_channel_io_frozen:
+		case pci_channel_io_normal:
+			changed = true;
+			break;
+		}
+		break;
+	}
+	if (changed)
+		dev->error_state = new;
+	return changed;
+}
 
 static inline int pci_dev_set_disconnected(struct pci_dev *dev, void *unused)
 {
-	set_bit(PCI_DEV_DISCONNECTED, &dev->priv_flags);
+	device_lock(&dev->dev);
+	pci_dev_set_io_state(dev, pci_channel_io_perm_failure);
+	device_unlock(&dev->dev);
+
 	return 0;
 }
 
 static inline bool pci_dev_is_disconnected(const struct pci_dev *dev)
 {
-	return test_bit(PCI_DEV_DISCONNECTED, &dev->priv_flags);
+	return dev->error_state == pci_channel_io_perm_failure;
 }
+
+/* pci_dev priv_flags */
+#define PCI_DEV_ADDED 0
 
 static inline void pci_dev_assign_added(struct pci_dev *dev, bool added)
 {
@@ -310,6 +399,42 @@ static inline bool pci_dev_is_added(const struct pci_dev *dev)
 {
 	return test_bit(PCI_DEV_ADDED, &dev->priv_flags);
 }
+
+#ifdef CONFIG_PCIEAER
+#include <linux/aer.h>
+
+#define AER_MAX_MULTI_ERR_DEVICES	5	/* Not likely to have more */
+
+struct aer_err_info {
+	struct pci_dev *dev[AER_MAX_MULTI_ERR_DEVICES];
+	int error_dev_num;
+
+	unsigned int id:16;
+
+	unsigned int severity:2;	/* 0:NONFATAL | 1:FATAL | 2:COR */
+	unsigned int __pad1:5;
+	unsigned int multi_error_valid:1;
+
+	unsigned int first_error:5;
+	unsigned int __pad2:2;
+	unsigned int tlp_header_valid:1;
+
+	unsigned int status;		/* COR/UNCOR Error Status */
+	unsigned int mask;		/* COR/UNCOR Error Mask */
+	struct aer_header_log_regs tlp;	/* TLP Header */
+};
+
+int aer_get_device_error_info(struct pci_dev *dev, struct aer_err_info *info);
+void aer_print_error(struct pci_dev *dev, struct aer_err_info *info);
+#endif	/* CONFIG_PCIEAER */
+
+#ifdef CONFIG_PCIE_DPC
+void pci_save_dpc_state(struct pci_dev *dev);
+void pci_restore_dpc_state(struct pci_dev *dev);
+#else
+static inline void pci_save_dpc_state(struct pci_dev *dev) {}
+static inline void pci_restore_dpc_state(struct pci_dev *dev) {}
+#endif
 
 #ifdef CONFIG_PCI_ATS
 void pci_restore_ats_state(struct pci_dev *dev);
@@ -367,10 +492,29 @@ static inline resource_size_t pci_resource_alignment(struct pci_dev *dev,
 }
 
 void pci_enable_acs(struct pci_dev *dev);
+#ifdef CONFIG_PCI_QUIRKS
+int pci_dev_specific_acs_enabled(struct pci_dev *dev, u16 acs_flags);
+int pci_dev_specific_enable_acs(struct pci_dev *dev);
+int pci_dev_specific_disable_acs_redir(struct pci_dev *dev);
+#else
+static inline int pci_dev_specific_acs_enabled(struct pci_dev *dev,
+					       u16 acs_flags)
+{
+	return -ENOTTY;
+}
+static inline int pci_dev_specific_enable_acs(struct pci_dev *dev)
+{
+	return -ENOTTY;
+}
+static inline int pci_dev_specific_disable_acs_redir(struct pci_dev *dev)
+{
+	return -ENOTTY;
+}
+#endif
 
 /* PCI error reporting and recovery */
-void pcie_do_fatal_recovery(struct pci_dev *dev, u32 service);
-void pcie_do_nonfatal_recovery(struct pci_dev *dev);
+void pcie_do_recovery(struct pci_dev *dev, enum pci_channel_state state,
+		      u32 service);
 
 bool pcie_wait_for_link(struct pci_dev *pdev, bool active);
 #ifdef CONFIG_PCIEASPM
@@ -465,6 +609,21 @@ static inline int devm_of_pci_get_host_bridge_resources(struct device *dev,
 {
 	return -EINVAL;
 }
+#endif
+
+#ifdef CONFIG_PCIEAER
+void pci_no_aer(void);
+void pci_aer_init(struct pci_dev *dev);
+void pci_aer_exit(struct pci_dev *dev);
+extern const struct attribute_group aer_stats_attr_group;
+void pci_aer_clear_fatal_status(struct pci_dev *dev);
+void pci_aer_clear_device_status(struct pci_dev *dev);
+#else
+static inline void pci_no_aer(void) { }
+static inline void pci_aer_init(struct pci_dev *d) { }
+static inline void pci_aer_exit(struct pci_dev *d) { }
+static inline void pci_aer_clear_fatal_status(struct pci_dev *dev) { }
+static inline void pci_aer_clear_device_status(struct pci_dev *dev) { }
 #endif
 
 #endif /* DRIVERS_PCI_H */

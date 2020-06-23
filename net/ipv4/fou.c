@@ -120,6 +120,7 @@ static int gue_udp_recv(struct sock *sk, struct sk_buff *skb)
 	struct guehdr *guehdr;
 	void *data;
 	u16 doffset = 0;
+	u8 proto_ctype;
 
 	if (!fou)
 		return 1;
@@ -211,13 +212,14 @@ static int gue_udp_recv(struct sock *sk, struct sk_buff *skb)
 	if (unlikely(guehdr->control))
 		return gue_control_message(skb, guehdr);
 
+	proto_ctype = guehdr->proto_ctype;
 	__skb_pull(skb, sizeof(struct udphdr) + hdrlen);
 	skb_reset_transport_header(skb);
 
 	if (iptunnel_pull_offloads(skb))
 		goto drop;
 
-	return -guehdr->proto_ctype;
+	return -proto_ctype;
 
 drop:
 	kfree_skb(skb);
@@ -806,21 +808,21 @@ static int fou_nl_dump(struct sk_buff *skb, struct netlink_callback *cb)
 static const struct genl_ops fou_nl_ops[] = {
 	{
 		.cmd = FOU_CMD_ADD,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit = fou_nl_cmd_add_port,
-		.policy = fou_nl_policy,
 		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = FOU_CMD_DEL,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit = fou_nl_cmd_rm_port,
-		.policy = fou_nl_policy,
 		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = FOU_CMD_GET,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit = fou_nl_cmd_get_port,
 		.dumpit = fou_nl_dump,
-		.policy = fou_nl_policy,
 	},
 };
 
@@ -829,6 +831,7 @@ static struct genl_family fou_nl_family __ro_after_init = {
 	.name		= FOU_GENL_NAME,
 	.version	= FOU_GENL_VERSION,
 	.maxattr	= FOU_ATTR_MAX,
+	.policy = fou_nl_policy,
 	.netnsok	= true,
 	.module		= THIS_MODULE,
 	.ops		= fou_nl_ops,

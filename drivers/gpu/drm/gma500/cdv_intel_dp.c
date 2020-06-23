@@ -26,16 +26,17 @@
  */
 
 #include <linux/i2c.h>
-#include <linux/slab.h>
 #include <linux/module.h>
-#include <drm/drmP.h>
+#include <linux/slab.h>
+
 #include <drm/drm_crtc.h>
 #include <drm/drm_crtc_helper.h>
+#include <drm/drm_dp_helper.h>
+
+#include "gma_display.h"
 #include "psb_drv.h"
 #include "psb_intel_drv.h"
 #include "psb_intel_reg.h"
-#include "gma_display.h"
-#include <drm/drm_dp_helper.h>
 
 /**
  * struct i2c_algo_dp_aux_data - driver interface structure for i2c over dp
@@ -1770,7 +1771,7 @@ static int cdv_intel_dp_get_modes(struct drm_connector *connector)
 
 	edid = drm_get_edid(connector, &intel_dp->adapter);
 	if (edid) {
-		drm_mode_connector_update_edid_property(connector, edid);
+		drm_connector_update_edid_property(connector, edid);
 		ret = drm_add_edid_modes(connector, edid);
 		kfree(edid);
 	}

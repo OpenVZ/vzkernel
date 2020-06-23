@@ -227,6 +227,9 @@ static int __init e1000_init_module(void)
 
 	pr_info("%s\n", e1000_copyright);
 
+	add_taint(TAINT_SUPPORT_REMOVED, LOCKDEP_STILL_OK);
+	pr_warn("E1000 MODULE IS NOT SUPPORTED\n");
+
 	ret = pci_register_driver(&e1000_driver);
 	if (copybreak != COPYBREAK_DEFAULT) {
 		if (copybreak == 0)
@@ -3270,14 +3273,9 @@ static netdev_tx_t e1000_xmit_frame(struct sk_buff *skb,
 		/* Make sure there is space in the ring for the next send. */
 		e1000_maybe_stop_tx(netdev, tx_ring, desc_needed);
 
-		if (!skb->xmit_more ||
+		if (!netdev_xmit_more() ||
 		    netif_xmit_stopped(netdev_get_tx_queue(netdev, 0))) {
 			writel(tx_ring->next_to_use, hw->hw_addr + tx_ring->tdt);
-			/* we need this if more than one processor can write to
-			 * our tail at a time, it synchronizes IO on IA64/Altix
-			 * systems
-			 */
-			mmiowb();
 		}
 	} else {
 		dev_kfree_skb_any(skb);

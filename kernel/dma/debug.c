@@ -48,7 +48,6 @@
 
 enum {
 	dma_debug_single,
-	dma_debug_page,
 	dma_debug_sg,
 	dma_debug_coherent,
 	dma_debug_resource,
@@ -89,8 +88,8 @@ struct dma_debug_entry {
 	int		 sg_mapped_ents;
 	enum map_err_types  map_err_type;
 #ifdef CONFIG_STACKTRACE
-	struct		 stack_trace stacktrace;
-	unsigned long	 st_entries[DMA_DEBUG_STACKTRACE_ENTRIES];
+	unsigned int	stack_len;
+	unsigned long	stack_entries[DMA_DEBUG_STACKTRACE_ENTRIES];
 #endif
 };
 
@@ -184,7 +183,7 @@ static inline void dump_entry_trace(struct dma_debug_entry *entry)
 #ifdef CONFIG_STACKTRACE
 	if (entry) {
 		pr_warning("Mapped at:\n");
-		print_stack_trace(&entry->stacktrace, 0);
+		stack_trace_print(entry->stack_entries, entry->stack_len, 0);
 	}
 #endif
 }
@@ -682,12 +681,10 @@ static struct dma_debug_entry *dma_entry_alloc(void)
 	spin_unlock_irqrestore(&free_entries_lock, flags);
 
 #ifdef CONFIG_STACKTRACE
-	entry->stacktrace.max_entries = DMA_DEBUG_STACKTRACE_ENTRIES;
-	entry->stacktrace.entries = entry->st_entries;
-	entry->stacktrace.skip = 2;
-	save_stack_trace(&entry->stacktrace);
+	entry->stack_len = stack_trace_save(entry->stack_entries,
+					    ARRAY_SIZE(entry->stack_entries),
+					    1);
 #endif
-
 	return entry;
 }
 
@@ -1312,9 +1309,24 @@ static void check_sg_segment(struct device *dev, struct scatterlist *sg)
 #endif
 }
 
+void debug_dma_map_single(struct device *dev, const void *addr,
+			    unsigned long len)
+{
+	if (unlikely(dma_debug_disabled()))
+		return;
+
+	if (!virt_addr_valid(addr))
+		err_printk(dev, NULL, "DMA-API: device driver maps memory from invalid area [addr=%p] [len=%lu]\n",
+			   addr, len);
+
+	if (is_vmalloc_addr(addr))
+		err_printk(dev, NULL, "DMA-API: device driver maps memory from vmalloc area [addr=%p] [len=%lu]\n",
+			   addr, len);
+}
+EXPORT_SYMBOL(debug_dma_map_single);
+
 void debug_dma_map_page(struct device *dev, struct page *page, size_t offset,
-			size_t size, int direction, dma_addr_t dma_addr,
-			bool map_single)
+			size_t size, int direction, dma_addr_t dma_addr)
 {
 	struct dma_debug_entry *entry;
 
@@ -1329,16 +1341,13 @@ void debug_dma_map_page(struct device *dev, struct page *page, size_t offset,
 		return;
 
 	entry->dev       = dev;
-	entry->type      = dma_debug_page;
+	entry->type      = dma_debug_single;
 	entry->pfn	 = page_to_pfn(page);
 	entry->offset	 = offset,
 	entry->dev_addr  = dma_addr;
 	entry->size      = size;
 	entry->direction = direction;
 	entry->map_err_type = MAP_ERR_NOT_CHECKED;
-
-	if (map_single)
-		entry->type = dma_debug_single;
 
 	check_for_stack(dev, page, offset);
 
@@ -1391,10 +1400,10 @@ void debug_dma_mapping_error(struct device *dev, dma_addr_t dma_addr)
 EXPORT_SYMBOL(debug_dma_mapping_error);
 
 void debug_dma_unmap_page(struct device *dev, dma_addr_t addr,
-			  size_t size, int direction, bool map_single)
+			  size_t size, int direction)
 {
 	struct dma_debug_entry ref = {
-		.type           = dma_debug_page,
+		.type           = dma_debug_single,
 		.dev            = dev,
 		.dev_addr       = addr,
 		.size           = size,
@@ -1403,10 +1412,6 @@ void debug_dma_unmap_page(struct device *dev, dma_addr_t addr,
 
 	if (unlikely(dma_debug_disabled()))
 		return;
-
-	if (map_single)
-		ref.type = dma_debug_single;
-
 	check_unmap(&ref);
 }
 EXPORT_SYMBOL(debug_dma_unmap_page);
@@ -1534,7 +1539,6 @@ void debug_dma_alloc_coherent(struct device *dev, size_t size,
 
 	add_dma_entry(entry);
 }
-EXPORT_SYMBOL(debug_dma_alloc_coherent);
 
 void debug_dma_free_coherent(struct device *dev, size_t size,
 			 void *virt, dma_addr_t addr)
@@ -1562,7 +1566,6 @@ void debug_dma_free_coherent(struct device *dev, size_t size,
 
 	check_unmap(&ref);
 }
-EXPORT_SYMBOL(debug_dma_free_coherent);
 
 void debug_dma_map_resource(struct device *dev, phys_addr_t addr, size_t size,
 			    int direction, dma_addr_t dma_addr)
@@ -1645,48 +1648,6 @@ void debug_dma_sync_single_for_device(struct device *dev,
 	check_sync(dev, &ref, false);
 }
 EXPORT_SYMBOL(debug_dma_sync_single_for_device);
-
-void debug_dma_sync_single_range_for_cpu(struct device *dev,
-					 dma_addr_t dma_handle,
-					 unsigned long offset, size_t size,
-					 int direction)
-{
-	struct dma_debug_entry ref;
-
-	if (unlikely(dma_debug_disabled()))
-		return;
-
-	ref.type         = dma_debug_single;
-	ref.dev          = dev;
-	ref.dev_addr     = dma_handle;
-	ref.size         = offset + size;
-	ref.direction    = direction;
-	ref.sg_call_ents = 0;
-
-	check_sync(dev, &ref, true);
-}
-EXPORT_SYMBOL(debug_dma_sync_single_range_for_cpu);
-
-void debug_dma_sync_single_range_for_device(struct device *dev,
-					    dma_addr_t dma_handle,
-					    unsigned long offset,
-					    size_t size, int direction)
-{
-	struct dma_debug_entry ref;
-
-	if (unlikely(dma_debug_disabled()))
-		return;
-
-	ref.type         = dma_debug_single;
-	ref.dev          = dev;
-	ref.dev_addr     = dma_handle;
-	ref.size         = offset + size;
-	ref.direction    = direction;
-	ref.sg_call_ents = 0;
-
-	check_sync(dev, &ref, false);
-}
-EXPORT_SYMBOL(debug_dma_sync_single_range_for_device);
 
 void debug_dma_sync_sg_for_cpu(struct device *dev, struct scatterlist *sg,
 			       int nelems, int direction)

@@ -237,13 +237,13 @@ static int vmci_host_setup_notify(struct vmci_ctx *context,
 	 * about the size.
 	 */
 	BUILD_BUG_ON(sizeof(bool) != sizeof(u8));
-	if (!access_ok(VERIFY_WRITE, (void __user *)uva, sizeof(u8)))
+	if (!access_ok((void __user *)uva, sizeof(u8)))
 		return VMCI_ERROR_GENERIC;
 
 	/*
 	 * Lock physical page backing a given user VA.
 	 */
-	retval = get_user_pages_fast(uva, 1, 1, &context->notify_page);
+	retval = get_user_pages_fast(uva, 1, FOLL_WRITE, &context->notify_page);
 	if (retval != 1) {
 		context->notify_page = NULL;
 		return VMCI_ERROR_GENERIC;

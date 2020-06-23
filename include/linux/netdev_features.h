@@ -59,6 +59,23 @@ enum {
 	/**/NETIF_F_GSO_LAST =		/* last bit, see GSO_MASK */
 		NETIF_F_GSO_UDP_L4_BIT,
 
+	/* RHEL only: bits reserved for future features.
+	 * GSO-related bit must be allocated from the top of this list, and
+	 * moved before NETIF_F_GSO_LAST, other features must be allocated
+	 * from the bottom of the list.
+	 * The reserved space is limited: we need good reasons to use each
+	 * bit.
+	 */
+	__NETIF_F_RH_KABI_PLACEHOLDER_1,
+	__NETIF_F_RH_KABI_PLACEHOLDER_2,
+	__NETIF_F_RH_KABI_PLACEHOLDER_3,
+	__NETIF_F_RH_KABI_PLACEHOLDER_4,
+	__NETIF_F_RH_KABI_PLACEHOLDER_5,
+	__NETIF_F_RH_KABI_PLACEHOLDER_6,
+	__NETIF_F_RH_KABI_PLACEHOLDER_7,
+	__NETIF_F_RH_KABI_PLACEHOLDER_8,
+	NETIF_F_HW_TLS_RX_BIT,		/* Hardware TLS RX offload */
+
 	NETIF_F_FCOE_CRC_BIT,		/* FCoE CRC32 */
 	NETIF_F_SCTP_CRC_BIT,		/* SCTP checksum offload */
 	NETIF_F_FCOE_MTU_BIT,		/* Supports max FCoE MTU, 2158 bytes*/
@@ -151,6 +168,7 @@ enum {
 #define NETIF_F_HW_TLS_RECORD	__NETIF_F(HW_TLS_RECORD)
 #define NETIF_F_GSO_UDP_L4	__NETIF_F(GSO_UDP_L4)
 #define NETIF_F_HW_TLS_TX	__NETIF_F(HW_TLS_TX)
+#define NETIF_F_HW_TLS_RX	__NETIF_F(HW_TLS_RX)
 
 #define for_each_netdev_feature(mask_addr, bit)	\
 	for_each_set_bit(bit, (unsigned long *)mask_addr, NETDEV_FEATURE_COUNT)

@@ -65,13 +65,34 @@ struct gfs2_log_operations {
 
 #define GBF_FULL 1
 
+/**
+ * Clone bitmaps (bi_clone):
+ *
+ * - When a block is freed, we remember the previous state of the block in the
+ *   clone bitmap, and only mark the block as free in the real bitmap.
+ *
+ * - When looking for a block to allocate, we check for a free block in the
+ *   clone bitmap, and if no clone bitmap exists, in the real bitmap.
+ *
+ * - For allocating a block, we mark it as allocated in the real bitmap, and if
+ *   a clone bitmap exists, also in the clone bitmap.
+ *
+ * - At the end of a log_flush, we copy the real bitmap into the clone bitmap
+ *   to make the clone bitmap reflect the current allocation state.
+ *   (Alternatively, we could remove the clone bitmap.)
+ *
+ * The clone bitmaps are in-core only, and is never written to disk.
+ *
+ * These steps ensure that blocks which have been freed in a transaction cannot
+ * be reallocated in that same transaction.
+ */
 struct gfs2_bitmap {
 	struct buffer_head *bi_bh;
 	char *bi_clone;
 	unsigned long bi_flags;
 	u32 bi_offset;
 	u32 bi_start;
-	u32 bi_len;
+	u32 bi_bytes;
 	u32 bi_blocks;
 };
 
@@ -295,7 +316,6 @@ struct gfs2_blkreserv {
 	struct rb_node rs_node;       /* link to other block reservations */
 	struct gfs2_rbm rs_rbm;       /* Start of reservation */
 	u32 rs_free;                  /* how many blocks are still free */
-	u64 rs_inum;                  /* Inode number for reservation */
 };
 
 /*
@@ -398,7 +418,6 @@ struct gfs2_inode {
 	struct gfs2_holder i_gh; /* for prepare/commit_write only */
 	struct gfs2_qadata *i_qadata; /* quota allocation data */
 	struct gfs2_blkreserv i_res; /* rgrp multi-block reservation */
-	struct gfs2_rgrpd *i_rgd;
 	u64 i_goal;	/* goal block for allocations */
 	struct rw_semaphore i_rw_mutex;
 	struct list_head i_ordered;
@@ -519,7 +538,7 @@ struct gfs2_jdesc {
 	unsigned long jd_flags;
 #define JDF_RECOVERY 1
 	unsigned int jd_jid;
-	unsigned int jd_blocks;
+	u32 jd_blocks;
 	int jd_recover_error;
 	/* Replay stuff */
 
@@ -604,6 +623,8 @@ enum {
 	SDF_RORECOVERY		= 7, /* read only recovery */
 	SDF_SKIP_DLM_UNLOCK	= 8,
 	SDF_FORCE_AIL_FLUSH     = 9,
+	SDF_AIL1_IO_ERROR	= 10,
+	SDF_FS_FROZEN           = 11,
 };
 
 enum gfs2_freeze_state {
@@ -710,6 +731,7 @@ struct gfs2_sbd {
 	struct gfs2_glock *sd_freeze_gl;
 	struct work_struct sd_freeze_work;
 	wait_queue_head_t sd_glock_wait;
+	wait_queue_head_t sd_async_glock_wait;
 	atomic_t sd_glock_disposal;
 	struct completion sd_locking_init;
 	struct completion sd_wdack;

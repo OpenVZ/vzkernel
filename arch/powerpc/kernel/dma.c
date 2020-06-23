@@ -50,7 +50,8 @@ static int dma_nommu_dma_supported(struct device *dev, u64 mask)
 		return 1;
 
 #ifdef CONFIG_FSL_SOC
-	/* Freescale gets another chance via ZONE_DMA/ZONE_DMA32, however
+	/*
+	 * Freescale gets another chance via ZONE_DMA, however
 	 * that will have to be refined if/when they support iommus
 	 */
 	return 1;
@@ -94,12 +95,9 @@ void *__dma_nommu_alloc_coherent(struct device *dev, size_t size,
 	}
 
 	switch (zone) {
+#ifdef CONFIG_ZONE_DMA
 	case ZONE_DMA:
 		flag |= GFP_DMA;
-		break;
-#ifdef CONFIG_ZONE_DMA32
-	case ZONE_DMA32:
-		flag |= GFP_DMA32;
 		break;
 #endif
 	};
@@ -357,9 +355,6 @@ EXPORT_SYMBOL_GPL(dma_get_required_mask);
 
 static int __init dma_init(void)
 {
-#ifdef CONFIG_PCI
-	dma_debug_add_bus(&pci_bus_type);
-#endif
 #ifdef CONFIG_IBMVIO
 	dma_debug_add_bus(&vio_bus_type);
 #endif

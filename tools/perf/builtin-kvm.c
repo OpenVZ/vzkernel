@@ -5,7 +5,6 @@
 #include "util/evsel.h"
 #include "util/evlist.h"
 #include "util/term.h"
-#include "util/util.h"
 #include "util/cache.h"
 #include "util/symbol.h"
 #include "util/thread.h"
@@ -30,8 +29,10 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include <linux/err.h>
 #include <linux/kernel.h>
 #include <linux/time64.h>
+#include <linux/zalloc.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <poll.h>
@@ -1080,18 +1081,16 @@ static int read_events(struct perf_kvm_stat *kvm)
 		.ordered_events		= true,
 	};
 	struct perf_data file = {
-		.file      = {
-			.path = kvm->file_name,
-		},
-		.mode      = PERF_DATA_MODE_READ,
-		.force     = kvm->force,
+		.path  = kvm->file_name,
+		.mode  = PERF_DATA_MODE_READ,
+		.force = kvm->force,
 	};
 
 	kvm->tool = eops;
 	kvm->session = perf_session__new(&file, false, &kvm->tool);
-	if (!kvm->session) {
+	if (IS_ERR(kvm->session)) {
 		pr_err("Initializing perf session failed\n");
-		return -1;
+		return PTR_ERR(kvm->session);
 	}
 
 	symbol__init(&kvm->session->header.env);
@@ -1364,7 +1363,7 @@ static int kvm_events_live(struct perf_kvm_stat *kvm,
 			"show events other than"
 			" HLT (x86 only) or Wait state (s390 only)"
 			" that take longer than duration usecs"),
-		OPT_UINTEGER(0, "proc-map-timeout", &kvm->opts.proc_map_timeout,
+		OPT_UINTEGER(0, "proc-map-timeout", &proc_map_timeout,
 				"per thread proc mmap processing timeout in ms"),
 		OPT_END()
 	};
@@ -1394,7 +1393,6 @@ static int kvm_events_live(struct perf_kvm_stat *kvm,
 	kvm->opts.target.uses_mmap = false;
 	kvm->opts.target.uid_str = NULL;
 	kvm->opts.target.uid = UINT_MAX;
-	kvm->opts.proc_map_timeout = 500;
 
 	symbol__init(NULL);
 	disable_buildid_cache();
@@ -1445,16 +1443,15 @@ static int kvm_events_live(struct perf_kvm_stat *kvm,
 	 * perf session
 	 */
 	kvm->session = perf_session__new(&data, false, &kvm->tool);
-	if (kvm->session == NULL) {
-		err = -1;
+	if (IS_ERR(kvm->session)) {
+		err = PTR_ERR(kvm->session);
 		goto out;
 	}
 	kvm->session->evlist = kvm->evlist;
 	perf_session__set_id_hdr_size(kvm->session);
 	ordered_events__set_copy_on_queue(&kvm->session->ordered_events, true);
 	machine__synthesize_threads(&kvm->session->machines.host, &kvm->opts.target,
-				    kvm->evlist->threads, false,
-				    kvm->opts.proc_map_timeout, 1);
+				    kvm->evlist->threads, false, 1);
 	err = kvm_live_open_events(kvm);
 	if (err)
 		goto out;

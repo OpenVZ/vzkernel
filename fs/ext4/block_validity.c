@@ -155,6 +155,7 @@ int ext4_setup_system_zone(struct super_block *sb)
 		return 0;
 
 	for (i=0; i < ngroups; i++) {
+		cond_resched();
 		if (ext4_bg_has_super(sb, i) &&
 		    ((i < 5) || ((i % flex_size) == 0)))
 			add_system_zone(sbi, ext4_group_first_block_no(sb, i),
@@ -226,6 +227,11 @@ int ext4_check_blockref(const char *function, unsigned int line,
 	struct ext4_super_block *es = EXT4_SB(inode->i_sb)->s_es;
 	__le32 *bref = p;
 	unsigned int blk;
+
+	if (ext4_has_feature_journal(inode->i_sb) &&
+	    (inode->i_ino ==
+	     le32_to_cpu(EXT4_SB(inode->i_sb)->s_es->s_journal_inum)))
+		return 0;
 
 	while (bref < p+max) {
 		blk = le32_to_cpu(*bref++);

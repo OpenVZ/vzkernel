@@ -73,6 +73,17 @@ config ZCRYPT
 	  + Crypto Express 2,3,4 or 5 Accelerator (CEXxA)
 	  + Crypto Express 4 or 5 EP11 Coprocessor (CEXxP)
 
+config ZCRYPT_MULTIDEVNODES
+	bool "Support for multiple zcrypt device nodes"
+	default y
+	depends on S390
+	depends on ZCRYPT
+	help
+	  With this option enabled the zcrypt device driver can
+	  provide multiple devices nodes in /dev. Each device
+	  node can get customized to limit access and narrow
+	  down the use of the available crypto hardware.
+
 config PKEY
 	tristate "Kernel API for protected key handling"
 	depends on S390
@@ -132,6 +143,26 @@ config CRYPTO_SHA512_S390
 	  SHA512 secure hash standard.
 
 	  It is available as of z10.
+
+config CRYPTO_SHA3_256_S390
+	tristate "SHA3_224 and SHA3_256 digest algorithm"
+	depends on S390
+	select CRYPTO_HASH
+	help
+	  This is the s390 hardware accelerated implementation of the
+	  SHA3_256 secure hash standard.
+
+	  It is available as of z14.
+
+config CRYPTO_SHA3_512_S390
+	tristate "SHA3_384 and SHA3_512 digest algorithm"
+	depends on S390
+	select CRYPTO_HASH
+	help
+	  This is the s390 hardware accelerated implementation of the
+	  SHA3_512 secure hash standard.
+
+	  It is available as of z14.
 
 config CRYPTO_DES_S390
 	tristate "DES and Triple DES cipher algorithms"
@@ -392,15 +423,6 @@ config CRYPTO_DEV_SAHARA
 	help
 	  This option enables support for the SAHARA HW crypto accelerator
 	  found in some Freescale i.MX chips.
-
-config CRYPTO_DEV_MXC_SCC
-	tristate "Support for Freescale Security Controller (SCC)"
-	depends on ARCH_MXC && OF
-	select CRYPTO_BLKCIPHER
-	select CRYPTO_DES
-	help
-	  This option enables support for the Security Controller (SCC)
-	  found in Freescale i.MX25 chips.
 
 config CRYPTO_DEV_EXYNOS_RNG
 	tristate "EXYNOS HW pseudo random number generator support"

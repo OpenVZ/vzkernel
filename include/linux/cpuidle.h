@@ -14,6 +14,7 @@
 #include <linux/percpu.h>
 #include <linux/list.h>
 #include <linux/hrtimer.h>
+#include <linux/rh_kabi.h>
 
 #define CPUIDLE_STATE_MAX	10
 #define CPUIDLE_NAME_LEN	16
@@ -37,6 +38,39 @@ struct cpuidle_state_usage {
 	unsigned long long	s2idle_usage;
 	unsigned long long	s2idle_time; /* in US */
 #endif
+};
+
+/*
+ * RHEL8 specific 'struct rh_cpuidle_state_usage': this a struct meant to
+ * shadow any usage of 'struct cpuidle_state_usage'.  Under normal conditions,
+ * there would be a pointer to this shadow struct in the original.  However,
+ * the struct cpuidle_device was placed under kABI before it was known that
+ * cpuidle_state_usage needed to be extended, and is unfortunately used as
+ * an array of structs, vs an array of pointers to the struct.  As a result,
+ * the pointer to a shadow structure now needs to be carried in struct
+ * cpuidle_device in order to be sure it is attached to the proper device.
+ *
+ * NB: most of the fields in this struct -- so far -- are unsigned long long.
+ * Be careful when using the reserved fields since they are currently making
+ * the assumption that sizeof(unsigned long) == sizeof(unsigned long long).
+ */
+struct rh_cpuidle_state_usage {
+	unsigned long long above; /* Number of times it's been too deep */
+	unsigned long long below; /* Number of times it's been too shallow */
+};
+
+/*
+ * RHEL8 specific 'struct rh_cpuidle_device' has been created as a shadow
+ * struct to cpuidle_device since we know that this struct has changed
+ * several times since RHEL8 started, breaking kABI each time.  By using
+ * this struct, we can isolate changes to the RHEL8 specific shadow structs
+ * and preclude breaking kABI every time we need to add an element.
+ */
+struct rh_cpuidle_device {
+	u64 poll_limit_ns;
+	ktime_t next_hrtimer;
+	int last_state_idx;
+	struct rh_cpuidle_state_usage rh_states_usage[CPUIDLE_STATE_MAX];
 };
 
 struct cpuidle_state {
@@ -67,11 +101,9 @@ struct cpuidle_state {
 
 /* Idle State Flags */
 #define CPUIDLE_FLAG_NONE       (0x00)
-#define CPUIDLE_FLAG_POLLING	(0x01) /* polling state */
-#define CPUIDLE_FLAG_COUPLED	(0x02) /* state applies to multiple cpus */
-#define CPUIDLE_FLAG_TIMER_STOP (0x04)  /* timer is stopped on this state */
-
-#define CPUIDLE_DRIVER_FLAGS_MASK (0xFFFF0000)
+#define CPUIDLE_FLAG_POLLING	BIT(0) /* polling state */
+#define CPUIDLE_FLAG_COUPLED	BIT(1) /* state applies to multiple cpus */
+#define CPUIDLE_FLAG_TIMER_STOP BIT(2) /* timer is stopped on this state */
 
 struct cpuidle_device_kobj;
 struct cpuidle_state_kobj;
@@ -81,9 +113,11 @@ struct cpuidle_device {
 	unsigned int		registered:1;
 	unsigned int		enabled:1;
 	unsigned int		use_deepest_state:1;
+	RH_KABI_FILL_HOLE(unsigned int             poll_time_limit:1)
 	unsigned int		cpu;
 
 	int			last_residency;
+	RH_KABI_FILL_HOLE(int			last_state_idx)
 	struct cpuidle_state_usage	states_usage[CPUIDLE_STATE_MAX];
 	struct cpuidle_state_kobj *kobjs[CPUIDLE_STATE_MAX];
 	struct cpuidle_driver_kobj *kobj_driver;
@@ -94,20 +128,13 @@ struct cpuidle_device {
 	cpumask_t		coupled_cpus;
 	struct cpuidle_coupled	*coupled;
 #endif
+
+	/* RHEL8 only: add in a shadow struct to contain new fields */
+	RH_KABI_EXTEND(struct rh_cpuidle_device rh_cpuidle_dev)
 };
 
 DECLARE_PER_CPU(struct cpuidle_device *, cpuidle_devices);
 DECLARE_PER_CPU(struct cpuidle_device, cpuidle_dev);
-
-/**
- * cpuidle_get_last_residency - retrieves the last state's residency time
- * @dev: the target CPU
- */
-static inline int cpuidle_get_last_residency(struct cpuidle_device *dev)
-{
-	return dev->last_residency;
-}
-
 
 /****************************
  * CPUIDLE DRIVER INTERFACE *
@@ -140,8 +167,11 @@ extern int cpuidle_select(struct cpuidle_driver *drv,
 extern int cpuidle_enter(struct cpuidle_driver *drv,
 			 struct cpuidle_device *dev, int index);
 extern void cpuidle_reflect(struct cpuidle_device *dev, int index);
+extern u64 cpuidle_poll_time(struct cpuidle_driver *drv,
+			     struct cpuidle_device *dev);
 
 extern int cpuidle_register_driver(struct cpuidle_driver *drv);
+extern int rhel_cpuidle_register_driver_hpoll(struct cpuidle_driver *drv);
 extern struct cpuidle_driver *cpuidle_get_driver(void);
 extern struct cpuidle_driver *cpuidle_driver_ref(void);
 extern void cpuidle_driver_unref(void);
@@ -174,6 +204,9 @@ static inline int cpuidle_enter(struct cpuidle_driver *drv,
 				struct cpuidle_device *dev, int index)
 {return -ENODEV; }
 static inline void cpuidle_reflect(struct cpuidle_device *dev, int index) { }
+static inline u64 cpuidle_poll_time(struct cpuidle_driver *drv,
+			    	    struct cpuidle_device *dev)
+{return 0; }
 static inline int cpuidle_register_driver(struct cpuidle_driver *drv)
 {return -ENODEV; }
 static inline struct cpuidle_driver *cpuidle_get_driver(void) {return NULL; }

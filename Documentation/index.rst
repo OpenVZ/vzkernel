@@ -90,6 +90,7 @@ needed).
    crypto/index
    filesystems/index
    vm/index
+   bpf/index
 
 Architecture-specific documentation
 -----------------------------------
@@ -101,6 +102,7 @@ implementation.
    :maxdepth: 2
 
    sh/index
+   x86/index
 
 Korean translations
 -------------------

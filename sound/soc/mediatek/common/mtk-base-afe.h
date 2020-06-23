@@ -24,7 +24,9 @@ struct mtk_base_memif_data {
 	int enable_reg;
 	int enable_shift;
 	int hd_reg;
+	int hd_align_reg;
 	int hd_shift;
+	int hd_align_mshift;
 	int msb_reg;
 	int msb_shift;
 	int agent_disable_reg;
@@ -46,6 +48,7 @@ struct mtk_base_irq_data {
 };
 
 struct device;
+struct list_head;
 struct mtk_base_afe_memif;
 struct mtk_base_afe_irq;
 struct mtk_base_afe_dai;
@@ -72,8 +75,7 @@ struct mtk_base_afe {
 	struct mtk_base_afe_irq *irqs;
 	int irqs_size;
 
-	struct mtk_base_afe_dai *sub_dais;
-	int num_sub_dais;
+	struct list_head sub_dais;
 	struct snd_soc_dai_driver *dai_drivers;
 	unsigned int num_dai_drivers;
 
@@ -110,6 +112,8 @@ struct mtk_base_afe_dai {
 	unsigned int num_dapm_widgets;
 	const struct snd_soc_dapm_route *dapm_routes;
 	unsigned int num_dapm_routes;
+
+	struct list_head list;
 };
 
 #endif

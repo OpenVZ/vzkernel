@@ -18,9 +18,9 @@
 #include <linux/compiler.h>
 
 #ifdef HAVE_SYSCALL_TABLE_SUPPORT
+#include <linux/zalloc.h>
 #include <string.h>
 #include "string2.h"
-#include "util.h"
 
 #if defined(__x86_64__)
 #include <asm/syscalls_64.c>
@@ -38,6 +38,10 @@ static const char **syscalltbl_native = syscalltbl_powerpc_64;
 #include <asm/syscalls_32.c>
 const int syscalltbl_native_max_id = SYSCALLTBL_POWERPC_32_MAX_ID;
 static const char **syscalltbl_native = syscalltbl_powerpc_32;
+#elif defined(__aarch64__)
+#include <asm/syscalls.c>
+const int syscalltbl_native_max_id = SYSCALLTBL_ARM64_MAX_ID;
+static const char **syscalltbl_native = syscalltbl_arm64;
 #endif
 
 struct syscall {

@@ -15,6 +15,10 @@
 #include <linux/refcount.h>
 #include <linux/types.h>
 
+#ifndef HAVE_SETNS_SUPPORT
+int setns(int fd, int nstype);
+#endif
+
 struct namespaces_event;
 
 struct namespaces {
@@ -38,6 +42,7 @@ struct nsinfo {
 struct nscookie {
 	int			oldns;
 	int			newns;
+	char			*oldcwd;
 };
 
 int nsinfo__init(struct nsinfo *nsi);

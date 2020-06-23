@@ -136,12 +136,12 @@ isert_create_qp(struct isert_conn *isert_conn,
 	attr.cap.max_send_wr = ISERT_QP_MAX_REQ_DTOS + 1;
 	attr.cap.max_recv_wr = ISERT_QP_MAX_RECV_DTOS + 1;
 	attr.cap.max_rdma_ctxs = ISCSI_DEF_XMIT_CMDS_MAX;
-	attr.cap.max_send_sge = device->ib_device->attrs.max_sge;
+	attr.cap.max_send_sge = device->ib_device->attrs.max_send_sge;
 	attr.cap.max_recv_sge = 1;
 	attr.sq_sig_type = IB_SIGNAL_REQ_WR;
 	attr.qp_type = IB_QPT_RC;
 	if (device->pi_capable)
-		attr.create_flags |= IB_QP_CREATE_SIGNATURE_EN;
+		attr.create_flags |= IB_QP_CREATE_INTEGRITY_EN;
 
 	ret = rdma_create_qp(cma_id, device->pd, &attr);
 	if (ret) {
@@ -262,7 +262,7 @@ isert_alloc_comps(struct isert_device *device)
 
 	isert_info("Using %d CQs, %s supports %d vectors support "
 		   "pi_capable %d\n",
-		   device->comps_used, device->ib_device->name,
+		   device->comps_used, dev_name(&device->ib_device->dev),
 		   device->ib_device->num_comp_vectors,
 		   device->pi_capable);
 
@@ -299,7 +299,8 @@ isert_create_device_ib_res(struct isert_device *device)
 	struct ib_device *ib_dev = device->ib_device;
 	int ret;
 
-	isert_dbg("devattr->max_sge: %d\n", ib_dev->attrs.max_sge);
+	isert_dbg("devattr->max_send_sge: %d devattr->max_recv_sge %d\n",
+		  ib_dev->attrs.max_send_sge, ib_dev->attrs.max_recv_sge);
 	isert_dbg("devattr->max_sge_rd: %d\n", ib_dev->attrs.max_sge_rd);
 
 	ret = isert_alloc_comps(device);
@@ -316,7 +317,7 @@ isert_create_device_ib_res(struct isert_device *device)
 
 	/* Check signature cap */
 	device->pi_capable = ib_dev->attrs.device_cap_flags &
-			     IB_DEVICE_SIGNATURE_HANDOVER ? true : false;
+			     IB_DEVICE_INTEGRITY_HANDOVER ? true : false;
 
 	return 0;
 
@@ -809,7 +810,7 @@ isert_cma_handler(struct rdma_cm_id *cma_id, struct rdma_cm_event *event)
 static int
 isert_post_recvm(struct isert_conn *isert_conn, u32 count)
 {
-	struct ib_recv_wr *rx_wr, *rx_wr_failed;
+	struct ib_recv_wr *rx_wr;
 	int i, ret;
 	struct iser_rx_desc *rx_desc;
 
@@ -825,8 +826,7 @@ isert_post_recvm(struct isert_conn *isert_conn, u32 count)
 	rx_wr--;
 	rx_wr->next = NULL; /* mark end of work requests list */
 
-	ret = ib_post_recv(isert_conn->qp, isert_conn->rx_wr,
-			   &rx_wr_failed);
+	ret = ib_post_recv(isert_conn->qp, isert_conn->rx_wr, NULL);
 	if (ret)
 		isert_err("ib_post_recv() failed with ret: %d\n", ret);
 
@@ -836,7 +836,7 @@ isert_post_recvm(struct isert_conn *isert_conn, u32 count)
 static int
 isert_post_recv(struct isert_conn *isert_conn, struct iser_rx_desc *rx_desc)
 {
-	struct ib_recv_wr *rx_wr_failed, rx_wr;
+	struct ib_recv_wr rx_wr;
 	int ret;
 
 	if (!rx_desc->in_use) {
@@ -853,7 +853,7 @@ isert_post_recv(struct isert_conn *isert_conn, struct iser_rx_desc *rx_desc)
 	rx_wr.num_sge = 1;
 	rx_wr.next = NULL;
 
-	ret = ib_post_recv(isert_conn->qp, &rx_wr, &rx_wr_failed);
+	ret = ib_post_recv(isert_conn->qp, &rx_wr, NULL);
 	if (ret)
 		isert_err("ib_post_recv() failed with ret: %d\n", ret);
 
@@ -864,7 +864,7 @@ static int
 isert_login_post_send(struct isert_conn *isert_conn, struct iser_tx_desc *tx_desc)
 {
 	struct ib_device *ib_dev = isert_conn->cm_id->device;
-	struct ib_send_wr send_wr, *send_wr_failed;
+	struct ib_send_wr send_wr;
 	int ret;
 
 	ib_dma_sync_single_for_device(ib_dev, tx_desc->dma_addr,
@@ -879,7 +879,7 @@ isert_login_post_send(struct isert_conn *isert_conn, struct iser_tx_desc *tx_des
 	send_wr.opcode	= IB_WR_SEND;
 	send_wr.send_flags = IB_SEND_SIGNALED;
 
-	ret = ib_post_send(isert_conn->qp, &send_wr, &send_wr_failed);
+	ret = ib_post_send(isert_conn->qp, &send_wr, NULL);
 	if (ret)
 		isert_err("ib_post_send() failed, ret: %d\n", ret);
 
@@ -967,7 +967,7 @@ isert_init_send_wr(struct isert_conn *isert_conn, struct isert_cmd *isert_cmd,
 static int
 isert_login_post_recv(struct isert_conn *isert_conn)
 {
-	struct ib_recv_wr rx_wr, *rx_wr_fail;
+	struct ib_recv_wr rx_wr;
 	struct ib_sge sge;
 	int ret;
 
@@ -986,7 +986,7 @@ isert_login_post_recv(struct isert_conn *isert_conn)
 	rx_wr.sg_list = &sge;
 	rx_wr.num_sge = 1;
 
-	ret = ib_post_recv(isert_conn->qp, &rx_wr, &rx_wr_fail);
+	ret = ib_post_recv(isert_conn->qp, &rx_wr, NULL);
 	if (ret)
 		isert_err("ib_post_recv() failed: %d\n", ret);
 
@@ -1186,7 +1186,7 @@ sequence_cmd:
 	rc = iscsit_sequence_cmd(conn, cmd, buf, hdr->cmdsn);
 
 	if (!rc && dump_payload == false && unsol_data)
-		iscsit_set_unsoliticed_dataout(cmd);
+		iscsit_set_unsolicited_dataout(cmd);
 	else if (dump_payload && imm_data)
 		target_put_sess_cmd(&cmd->se_cmd);
 
@@ -1677,7 +1677,7 @@ isert_rdma_write_done(struct ib_cq *cq, struct ib_wc *wc)
 
 	isert_dbg("Cmd %p\n", isert_cmd);
 
-	ret = isert_check_pi_status(cmd, isert_cmd->rw.sig->sig_mr);
+	ret = isert_check_pi_status(cmd, isert_cmd->rw.reg->mr);
 	isert_rdma_rw_ctx_destroy(isert_cmd, isert_conn);
 
 	if (ret) {
@@ -1723,7 +1723,7 @@ isert_rdma_read_done(struct ib_cq *cq, struct ib_wc *wc)
 	iscsit_stop_dataout_timer(cmd);
 
 	if (isert_prot_cmd(isert_conn, se_cmd))
-		ret = isert_check_pi_status(se_cmd, isert_cmd->rw.sig->sig_mr);
+		ret = isert_check_pi_status(se_cmd, isert_cmd->rw.reg->mr);
 	isert_rdma_rw_ctx_destroy(isert_cmd, isert_conn);
 	cmd->write_data_done = 0;
 
@@ -1829,7 +1829,6 @@ isert_send_done(struct ib_cq *cq, struct ib_wc *wc)
 static int
 isert_post_response(struct isert_conn *isert_conn, struct isert_cmd *isert_cmd)
 {
-	struct ib_send_wr *wr_failed;
 	int ret;
 
 	ret = isert_post_recv(isert_conn, isert_cmd->rx_desc);
@@ -1838,8 +1837,7 @@ isert_post_response(struct isert_conn *isert_conn, struct isert_cmd *isert_cmd)
 		return ret;
 	}
 
-	ret = ib_post_send(isert_conn->qp, &isert_cmd->tx_desc.send_wr,
-			   &wr_failed);
+	ret = ib_post_send(isert_conn->qp, &isert_cmd->tx_desc.send_wr, NULL);
 	if (ret) {
 		isert_err("ib_post_send failed with %d\n", ret);
 		return ret;
@@ -2069,8 +2067,7 @@ isert_put_text_rsp(struct iscsi_cmd *cmd, struct iscsi_conn *conn)
 }
 
 static inline void
-isert_set_dif_domain(struct se_cmd *se_cmd, struct ib_sig_attrs *sig_attrs,
-		     struct ib_sig_domain *domain)
+isert_set_dif_domain(struct se_cmd *se_cmd, struct ib_sig_domain *domain)
 {
 	domain->sig_type = IB_SIG_TYPE_T10_DIF;
 	domain->sig.dif.bg_type = IB_T10DIF_CRC;
@@ -2098,17 +2095,17 @@ isert_set_sig_attrs(struct se_cmd *se_cmd, struct ib_sig_attrs *sig_attrs)
 	case TARGET_PROT_DIN_INSERT:
 	case TARGET_PROT_DOUT_STRIP:
 		sig_attrs->mem.sig_type = IB_SIG_TYPE_NONE;
-		isert_set_dif_domain(se_cmd, sig_attrs, &sig_attrs->wire);
+		isert_set_dif_domain(se_cmd, &sig_attrs->wire);
 		break;
 	case TARGET_PROT_DOUT_INSERT:
 	case TARGET_PROT_DIN_STRIP:
 		sig_attrs->wire.sig_type = IB_SIG_TYPE_NONE;
-		isert_set_dif_domain(se_cmd, sig_attrs, &sig_attrs->mem);
+		isert_set_dif_domain(se_cmd, &sig_attrs->mem);
 		break;
 	case TARGET_PROT_DIN_PASS:
 	case TARGET_PROT_DOUT_PASS:
-		isert_set_dif_domain(se_cmd, sig_attrs, &sig_attrs->wire);
-		isert_set_dif_domain(se_cmd, sig_attrs, &sig_attrs->mem);
+		isert_set_dif_domain(se_cmd, &sig_attrs->wire);
+		isert_set_dif_domain(se_cmd, &sig_attrs->mem);
 		break;
 	default:
 		isert_err("Unsupported PI operation %d\n", se_cmd->prot_op);

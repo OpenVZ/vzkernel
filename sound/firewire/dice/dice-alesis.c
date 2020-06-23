@@ -15,7 +15,7 @@ alesis_io14_tx_pcm_chs[MAX_STREAMS][SND_DICE_RATE_MODE_COUNT] = {
 
 static const unsigned int
 alesis_io26_tx_pcm_chs[MAX_STREAMS][SND_DICE_RATE_MODE_COUNT] = {
-	{10, 10, 8},	/* Tx0 = Analog + S/PDIF. */
+	{10, 10, 4},	/* Tx0 = Analog + S/PDIF. */
 	{16, 8, 0},	/* Tx1 = ADAT1 + ADAT2. */
 };
 
@@ -37,7 +37,7 @@ int snd_dice_detect_alesis_formats(struct snd_dice *dice)
 				MAX_STREAMS * SND_DICE_RATE_MODE_COUNT *
 				sizeof(unsigned int));
 	} else {
-		memcpy(dice->rx_pcm_chs, alesis_io26_tx_pcm_chs,
+		memcpy(dice->tx_pcm_chs, alesis_io26_tx_pcm_chs,
 				MAX_STREAMS * SND_DICE_RATE_MODE_COUNT *
 				sizeof(unsigned int));
 	}

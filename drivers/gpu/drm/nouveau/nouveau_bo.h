@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0 */
+/* SPDX-License-Identifier: MIT */
 #ifndef __NOUVEAU_BO_H__
 #define __NOUVEAU_BO_H__
 
@@ -61,12 +61,14 @@ nouveau_bo_ref(struct nouveau_bo *ref, struct nouveau_bo **pnvbo)
 		return -EINVAL;
 	prev = *pnvbo;
 
-	*pnvbo = ref ? nouveau_bo(ttm_bo_reference(&ref->bo)) : NULL;
-	if (prev) {
-		struct ttm_buffer_object *bo = &prev->bo;
-
-		ttm_bo_unref(&bo);
+	if (ref) {
+		ttm_bo_get(&ref->bo);
+		*pnvbo = nouveau_bo(&ref->bo);
+	} else {
+		*pnvbo = NULL;
 	}
+	if (prev)
+		ttm_bo_put(&prev->bo);
 
 	return 0;
 }

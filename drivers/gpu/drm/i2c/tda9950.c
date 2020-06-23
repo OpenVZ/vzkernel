@@ -1,9 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  TDA9950 Consumer Electronics Control driver
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  * The NXP TDA9950 implements the HDMI Consumer Electronics Control
  * interface.  The host interface is similar to a mailbox: the data
@@ -76,8 +73,11 @@ struct tda9950_priv {
 static int tda9950_write_range(struct i2c_client *client, u8 addr, u8 *p, int cnt)
 {
 	struct i2c_msg msg;
-	u8 buf[cnt + 1];
+	u8 buf[CEC_MAX_MSG_SIZE + 3];
 	int ret;
+
+	if (WARN_ON(cnt > sizeof(buf) - 1))
+		return -EINVAL;
 
 	buf[0] = addr;
 	memcpy(buf + 1, p, cnt);
@@ -188,7 +188,8 @@ static irqreturn_t tda9950_irq(int irq, void *data)
 			break;
 		}
 		/* TDA9950 executes all retries for us */
-		tx_status |= CEC_TX_STATUS_MAX_RETRIES;
+		if (tx_status != CEC_TX_STATUS_OK)
+			tx_status |= CEC_TX_STATUS_MAX_RETRIES;
 		cec_transmit_done(priv->adap, tx_status, arb_lost_cnt,
 				  nack_cnt, 0, err_cnt);
 		break;
@@ -307,7 +308,7 @@ static void tda9950_release(struct tda9950_priv *priv)
 	/* Wait up to .5s for it to signal non-busy */
 	do {
 		csr = tda9950_read(client, REG_CSR);
-		if (!(csr & CSR_BUSY) || --timeout)
+		if (!(csr & CSR_BUSY) || !--timeout)
 			break;
 		msleep(10);
 	} while (1);

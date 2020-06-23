@@ -389,7 +389,7 @@ EXPORT_SYMBOL_GPL(devm_acpi_dev_remove_driver_gpios);
 
 static bool acpi_get_driver_gpio_data(struct acpi_device *adev,
 				      const char *name, int index,
-				      struct acpi_reference_args *args,
+				      struct fwnode_reference_args *args,
 				      unsigned int *quirks)
 {
 	const struct acpi_gpio_mapping *gm;
@@ -401,7 +401,7 @@ static bool acpi_get_driver_gpio_data(struct acpi_device *adev,
 		if (!strcmp(name, gm->name) && gm->data && index < gm->size) {
 			const struct acpi_gpio_params *par = gm->data + index;
 
-			args->adev = adev;
+			args->fwnode = acpi_fwnode_handle(adev);
 			args->args[0] = par->crs_entry_index;
 			args->args[1] = par->line_index;
 			args->args[2] = par->active_low;
@@ -503,17 +503,24 @@ static int acpi_populate_gpio_lookup(struct acpi_resource *ares, void *data)
 	if (ares->type != ACPI_RESOURCE_TYPE_GPIO)
 		return 1;
 
-	if (lookup->n++ == lookup->index && !lookup->desc) {
+	if (!lookup->desc) {
 		const struct acpi_resource_gpio *agpio = &ares->data.gpio;
-		int pin_index = lookup->pin_index;
+		bool gpioint = agpio->connection_type == ACPI_RESOURCE_GPIO_TYPE_INT;
+		int pin_index;
 
+		if (lookup->info.quirks & ACPI_GPIO_QUIRK_ONLY_GPIOIO && gpioint)
+			lookup->index++;
+
+		if (lookup->n++ != lookup->index)
+			return 1;
+
+		pin_index = lookup->pin_index;
 		if (pin_index >= agpio->pin_table_length)
 			return 1;
 
 		lookup->desc = acpi_get_gpiod(agpio->resource_source.string_ptr,
 					      agpio->pin_table[pin_index]);
-		lookup->info.gpioint =
-			agpio->connection_type == ACPI_RESOURCE_GPIO_TYPE_INT;
+		lookup->info.gpioint = gpioint;
 
 		/*
 		 * Polarity and triggering are only specified for GpioInt
@@ -564,7 +571,7 @@ static int acpi_gpio_property_lookup(struct fwnode_handle *fwnode,
 				     const char *propname, int index,
 				     struct acpi_gpio_lookup *lookup)
 {
-	struct acpi_reference_args args;
+	struct fwnode_reference_args args;
 	unsigned int quirks = 0;
 	int ret;
 
@@ -585,6 +592,8 @@ static int acpi_gpio_property_lookup(struct fwnode_handle *fwnode,
 	 * The property was found and resolved, so need to lookup the GPIO based
 	 * on returned args.
 	 */
+	if (!to_acpi_device_node(args.fwnode))
+		return -EINVAL;
 	if (args.nargs != 3)
 		return -EPROTO;
 
@@ -592,8 +601,9 @@ static int acpi_gpio_property_lookup(struct fwnode_handle *fwnode,
 	lookup->pin_index = args.args[1];
 	lookup->active_low = !!args.args[2];
 
-	lookup->info.adev = args.adev;
+	lookup->info.adev = to_acpi_device_node(args.fwnode);
 	lookup->info.quirks = quirks;
+
 	return 0;
 }
 
@@ -862,7 +872,7 @@ acpi_gpio_adr_space_handler(u32 function, acpi_physical_address address,
 		 * event but only if the access here is ACPI_READ. In that
 		 * case we "borrow" the event GPIO instead.
 		 */
-		if (!found && agpio->sharable == ACPI_SHARED &&
+		if (!found && agpio->shareable == ACPI_SHARED &&
 		     function == ACPI_READ) {
 			struct acpi_gpio_event *event;
 
@@ -1189,7 +1199,7 @@ int acpi_gpio_count(struct device *dev, const char *con_id)
 bool acpi_can_fallback_to_crs(struct acpi_device *adev, const char *con_id)
 {
 	/* Never allow fallback if the device has properties */
-	if (adev->data.properties || adev->driver_gpios)
+	if (acpi_dev_has_props(adev) || adev->driver_gpios)
 		return false;
 
 	return con_id == NULL;

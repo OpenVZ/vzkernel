@@ -24,6 +24,7 @@
 
 #include <linux/kvm_host.h>
 
+#include <asm/debug-monitors.h>
 #include <asm/esr.h>
 #include <asm/kvm_arm.h>
 #include <asm/kvm_hyp.h>
@@ -63,6 +64,8 @@ static inline void vcpu_reset_hcr(struct kvm_vcpu *vcpu)
 		/* trap error record accesses */
 		vcpu->arch.hcr_el2 |= HCR_TERR;
 	}
+	if (cpus_have_const_cap(ARM64_HAS_STAGE2_FWB))
+		vcpu->arch.hcr_el2 |= HCR_FWB;
 
 	if (test_bit(KVM_ARM_VCPU_EL1_32BIT, vcpu->arch.features))
 		vcpu->arch.hcr_el2 &= ~HCR_RW;
@@ -74,11 +77,30 @@ static inline void vcpu_reset_hcr(struct kvm_vcpu *vcpu)
 	 */
 	if (!vcpu_el1_is_32bit(vcpu))
 		vcpu->arch.hcr_el2 |= HCR_TID3;
+
+	if (cpus_have_const_cap(ARM64_MISMATCHED_CACHE_TYPE) ||
+	    vcpu_el1_is_32bit(vcpu))
+		vcpu->arch.hcr_el2 |= HCR_TID2;
 }
 
 static inline unsigned long *vcpu_hcr(struct kvm_vcpu *vcpu)
 {
 	return (unsigned long *)&vcpu->arch.hcr_el2;
+}
+
+static inline void vcpu_clear_wfe_traps(struct kvm_vcpu *vcpu)
+{
+	vcpu->arch.hcr_el2 &= ~HCR_TWE;
+}
+
+static inline void vcpu_set_wfe_traps(struct kvm_vcpu *vcpu)
+{
+	vcpu->arch.hcr_el2 |= HCR_TWE;
+}
+
+static inline unsigned long vcpu_get_vsesr(struct kvm_vcpu *vcpu)
+{
+	return vcpu->arch.vsesr_el2;
 }
 
 static inline void vcpu_set_vsesr(struct kvm_vcpu *vcpu, u64 vsesr)
@@ -99,7 +121,7 @@ static inline unsigned long *__vcpu_elr_el1(const struct kvm_vcpu *vcpu)
 static inline unsigned long vcpu_read_elr_el1(const struct kvm_vcpu *vcpu)
 {
 	if (vcpu->arch.sysregs_loaded_on_cpu)
-		return read_sysreg_el1(elr);
+		return read_sysreg_el1(SYS_ELR);
 	else
 		return *__vcpu_elr_el1(vcpu);
 }
@@ -107,7 +129,7 @@ static inline unsigned long vcpu_read_elr_el1(const struct kvm_vcpu *vcpu)
 static inline void vcpu_write_elr_el1(const struct kvm_vcpu *vcpu, unsigned long v)
 {
 	if (vcpu->arch.sysregs_loaded_on_cpu)
-		write_sysreg_el1(v, elr);
+		write_sysreg_el1(v, SYS_ELR);
 	else
 		*__vcpu_elr_el1(vcpu) = v;
 }
@@ -130,17 +152,9 @@ static inline bool kvm_condition_valid(const struct kvm_vcpu *vcpu)
 	return true;
 }
 
-static inline void kvm_skip_instr(struct kvm_vcpu *vcpu, bool is_wide_instr)
-{
-	if (vcpu_mode_is_32bit(vcpu))
-		kvm_skip_instr32(vcpu, is_wide_instr);
-	else
-		*vcpu_pc(vcpu) += 4;
-}
-
 static inline void vcpu_set_thumb(struct kvm_vcpu *vcpu)
 {
-	*vcpu_cpsr(vcpu) |= COMPAT_PSR_T_BIT;
+	*vcpu_cpsr(vcpu) |= PSR_AA32_T_BIT;
 }
 
 /*
@@ -167,7 +181,7 @@ static inline unsigned long vcpu_read_spsr(const struct kvm_vcpu *vcpu)
 		return vcpu_read_spsr32(vcpu);
 
 	if (vcpu->arch.sysregs_loaded_on_cpu)
-		return read_sysreg_el1(spsr);
+		return read_sysreg_el1(SYS_SPSR);
 	else
 		return vcpu_gp_regs(vcpu)->spsr[KVM_SPSR_EL1];
 }
@@ -180,7 +194,7 @@ static inline void vcpu_write_spsr(struct kvm_vcpu *vcpu, unsigned long v)
 	}
 
 	if (vcpu->arch.sysregs_loaded_on_cpu)
-		write_sysreg_el1(v, spsr);
+		write_sysreg_el1(v, SYS_SPSR);
 	else
 		vcpu_gp_regs(vcpu)->spsr[KVM_SPSR_EL1] = v;
 }
@@ -190,8 +204,8 @@ static inline bool vcpu_mode_priv(const struct kvm_vcpu *vcpu)
 	u32 mode;
 
 	if (vcpu_mode_is_32bit(vcpu)) {
-		mode = *vcpu_cpsr(vcpu) & COMPAT_PSR_MODE_MASK;
-		return mode > COMPAT_PSR_MODE_USR;
+		mode = *vcpu_cpsr(vcpu) & PSR_AA32_MODE_MASK;
+		return mode > PSR_AA32_MODE_USR;
 	}
 
 	mode = *vcpu_cpsr(vcpu) & PSR_MODE_MASK;
@@ -318,7 +332,15 @@ static inline bool kvm_vcpu_dabt_isextabt(const struct kvm_vcpu *vcpu)
 static inline int kvm_vcpu_sys_get_rt(struct kvm_vcpu *vcpu)
 {
 	u32 esr = kvm_vcpu_get_hsr(vcpu);
-	return (esr & ESR_ELx_SYS64_ISS_RT_MASK) >> ESR_ELx_SYS64_ISS_RT_SHIFT;
+	return ESR_ELx_SYS64_ISS_RT(esr);
+}
+
+static inline bool kvm_is_write_fault(struct kvm_vcpu *vcpu)
+{
+	if (kvm_vcpu_trap_is_iabt(vcpu))
+		return false;
+
+	return kvm_vcpu_dabt_iswrite(vcpu);
 }
 
 static inline unsigned long kvm_vcpu_get_mpidr_aff(struct kvm_vcpu *vcpu)
@@ -326,10 +348,24 @@ static inline unsigned long kvm_vcpu_get_mpidr_aff(struct kvm_vcpu *vcpu)
 	return vcpu_read_sys_reg(vcpu, MPIDR_EL1) & MPIDR_HWID_BITMASK;
 }
 
+static inline bool kvm_arm_get_vcpu_workaround_2_flag(struct kvm_vcpu *vcpu)
+{
+	return vcpu->arch.workaround_flags & VCPU_WORKAROUND_2_FLAG;
+}
+
+static inline void kvm_arm_set_vcpu_workaround_2_flag(struct kvm_vcpu *vcpu,
+						      bool flag)
+{
+	if (flag)
+		vcpu->arch.workaround_flags |= VCPU_WORKAROUND_2_FLAG;
+	else
+		vcpu->arch.workaround_flags &= ~VCPU_WORKAROUND_2_FLAG;
+}
+
 static inline void kvm_vcpu_set_be(struct kvm_vcpu *vcpu)
 {
 	if (vcpu_mode_is_32bit(vcpu)) {
-		*vcpu_cpsr(vcpu) |= COMPAT_PSR_E_BIT;
+		*vcpu_cpsr(vcpu) |= PSR_AA32_E_BIT;
 	} else {
 		u64 sctlr = vcpu_read_sys_reg(vcpu, SCTLR_EL1);
 		sctlr |= (1 << 25);
@@ -340,7 +376,7 @@ static inline void kvm_vcpu_set_be(struct kvm_vcpu *vcpu)
 static inline bool kvm_vcpu_is_be(struct kvm_vcpu *vcpu)
 {
 	if (vcpu_mode_is_32bit(vcpu))
-		return !!(*vcpu_cpsr(vcpu) & COMPAT_PSR_E_BIT);
+		return !!(*vcpu_cpsr(vcpu) & PSR_AA32_E_BIT);
 
 	return !!(vcpu_read_sys_reg(vcpu, SCTLR_EL1) & (1 << 25));
 }
@@ -405,6 +441,32 @@ static inline unsigned long vcpu_data_host_to_guest(struct kvm_vcpu *vcpu,
 	}
 
 	return data;		/* Leave LE untouched */
+}
+
+static inline void kvm_skip_instr(struct kvm_vcpu *vcpu, bool is_wide_instr)
+{
+	if (vcpu_mode_is_32bit(vcpu))
+		kvm_skip_instr32(vcpu, is_wide_instr);
+	else
+		*vcpu_pc(vcpu) += 4;
+
+	/* advance the singlestep state machine */
+	*vcpu_cpsr(vcpu) &= ~DBG_SPSR_SS;
+}
+
+/*
+ * Skip an instruction which has been emulated at hyp while most guest sysregs
+ * are live.
+ */
+static inline void __hyp_text __kvm_skip_instr(struct kvm_vcpu *vcpu)
+{
+	*vcpu_pc(vcpu) = read_sysreg_el2(SYS_ELR);
+	vcpu->arch.ctxt.gp_regs.regs.pstate = read_sysreg_el2(SYS_SPSR);
+
+	kvm_skip_instr(vcpu, kvm_vcpu_trap_il_is32bit(vcpu));
+
+	write_sysreg_el2(vcpu->arch.ctxt.gp_regs.regs.pstate, SYS_SPSR);
+	write_sysreg_el2(*vcpu_pc(vcpu), SYS_ELR);
 }
 
 #endif /* __ARM64_KVM_EMULATE_H__ */

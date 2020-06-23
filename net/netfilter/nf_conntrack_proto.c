@@ -74,7 +74,7 @@ void nf_l4proto_log_invalid(const struct sk_buff *skb,
 	struct va_format vaf;
 	va_list args;
 
-	if (net->ct.sysctl_log_invalid != protonum ||
+	if (net->ct.sysctl_log_invalid != protonum &&
 	    net->ct.sysctl_log_invalid != IPPROTO_RAW)
 		return;
 
@@ -482,7 +482,9 @@ void nf_ct_l4proto_unregister_one(const struct nf_conntrack_l4proto *l4proto)
 	__nf_ct_l4proto_unregister_one(l4proto);
 	mutex_unlock(&nf_ct_proto_mutex);
 
-	synchronize_rcu();
+	synchronize_net();
+	/* Remove all contrack entries for this protocol */
+	nf_ct_iterate_destroy(kill_l4proto, (void *)l4proto);
 }
 EXPORT_SYMBOL_GPL(nf_ct_l4proto_unregister_one);
 
@@ -545,14 +547,17 @@ EXPORT_SYMBOL_GPL(nf_ct_l4proto_pernet_register);
 void nf_ct_l4proto_unregister(const struct nf_conntrack_l4proto * const l4proto[],
 			      unsigned int num_proto)
 {
+	int i;
+
 	mutex_lock(&nf_ct_proto_mutex);
-	while (num_proto-- != 0)
-		__nf_ct_l4proto_unregister_one(l4proto[num_proto]);
+	for (i = 0; i < num_proto; i++)
+		__nf_ct_l4proto_unregister_one(l4proto[i]);
 	mutex_unlock(&nf_ct_proto_mutex);
 
 	synchronize_net();
-	/* Remove all contrack entries for this protocol */
-	nf_ct_iterate_destroy(kill_l4proto, (void *)l4proto);
+
+	for (i = 0; i < num_proto; i++)
+		nf_ct_iterate_destroy(kill_l4proto, (void *)l4proto[i]);
 }
 EXPORT_SYMBOL_GPL(nf_ct_l4proto_unregister);
 

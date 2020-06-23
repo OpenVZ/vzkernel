@@ -60,13 +60,15 @@
 #include <linux/netfilter_ipv4.h>
 #include <linux/compat.h>
 #include <linux/export.h>
+#include <linux/rhashtable.h>
 #include <net/ip_tunnels.h>
 #include <net/checksum.h>
 #include <net/netlink.h>
 #include <net/fib_rules.h>
 #include <linux/netconf.h>
 #include <net/nexthop.h>
-#include <net/switchdev.h>
+
+#include <linux/nospec.h>
 
 struct ipmr_rule {
 	struct fib_rule		common;
@@ -505,7 +507,7 @@ static struct net_device *ipmr_new_tunnel(struct net *net, struct vifctl *v)
 			dev->flags |= IFF_MULTICAST;
 			if (!ipmr_init_vif_indev(dev))
 				goto failure;
-			if (dev_open(dev))
+			if (dev_open(dev, NULL))
 				goto failure;
 			dev_hold(dev);
 		}
@@ -588,7 +590,7 @@ static struct net_device *ipmr_reg_vif(struct net *net, struct mr_table *mrt)
 
 	if (!ipmr_init_vif_indev(dev))
 		goto failure;
-	if (dev_open(dev))
+	if (dev_open(dev, NULL))
 		goto failure;
 
 	dev_hold(dev);
@@ -834,10 +836,8 @@ static void ipmr_update_thresholds(struct mr_table *mrt, struct mr_mfc *cache,
 static int vif_add(struct net *net, struct mr_table *mrt,
 		   struct vifctl *vifc, int mrtsock)
 {
+	struct netdev_phys_item_id ppid = { };
 	int vifi = vifc->vifc_vifi;
-	struct switchdev_attr attr = {
-		.id = SWITCHDEV_ATTR_ID_PORT_PARENT_ID,
-	};
 	struct vif_device *v = &mrt->vif_table[vifi];
 	struct net_device *dev;
 	struct in_device *in_dev;
@@ -916,10 +916,10 @@ static int vif_add(struct net *net, struct mr_table *mrt,
 			vifc->vifc_flags | (!mrtsock ? VIFF_STATIC : 0),
 			(VIFF_TUNNEL | VIFF_REGISTER));
 
-	attr.orig_dev = dev;
-	if (!switchdev_port_attr_get(dev, &attr)) {
-		memcpy(v->dev_parent_id.id, attr.u.ppid.id, attr.u.ppid.id_len);
-		v->dev_parent_id.id_len = attr.u.ppid.id_len;
+	err = dev_get_port_parent_id(dev, &ppid, true);
+	if (err == 0) {
+		memcpy(v->dev_parent_id.id, ppid.id, ppid.id_len);
+		v->dev_parent_id.id_len = ppid.id_len;
 	} else {
 		v->dev_parent_id.id_len = 0;
 	}
@@ -1136,8 +1136,8 @@ static int ipmr_cache_unresolved(struct mr_table *mrt, vifi_t vifi,
 
 	if (!found) {
 		/* Create a new entry if allowable */
-		if (atomic_read(&mrt->cache_resolve_queue_len) >= 10 ||
-		    (c = ipmr_cache_alloc_unres()) == NULL) {
+		c = ipmr_cache_alloc_unres();
+		if (!c) {
 			spin_unlock_bh(&mfc_unres_lock);
 
 			kfree_skb(skb);
@@ -1605,6 +1605,7 @@ int ipmr_ioctl(struct sock *sk, int cmd, void __user *arg)
 			return -EFAULT;
 		if (vr.vifi >= mrt->maxvif)
 			return -EINVAL;
+		vr.vifi = array_index_nospec(vr.vifi, mrt->maxvif);
 		read_lock(&mrt_lock);
 		vif = &mrt->vif_table[vr.vifi];
 		if (VIF_EXISTS(mrt, vr.vifi)) {
@@ -1679,6 +1680,7 @@ int ipmr_compat_ioctl(struct sock *sk, unsigned int cmd, void __user *arg)
 			return -EFAULT;
 		if (vr.vifi >= mrt->maxvif)
 			return -EINVAL;
+		vr.vifi = array_index_nospec(vr.vifi, mrt->maxvif);
 		read_lock(&mrt_lock);
 		vif = &mrt->vif_table[vr.vifi];
 		if (VIF_EXISTS(mrt, vr.vifi)) {
@@ -1795,7 +1797,7 @@ static bool ipmr_forward_offloaded(struct sk_buff *skb, struct mr_table *mrt,
 	struct vif_device *out_vif = &mrt->vif_table[out_vifi];
 	struct vif_device *in_vif = &mrt->vif_table[in_vifi];
 
-	if (!skb->offload_mr_fwd_mark)
+	if (!skb->offload_l3_fwd_mark)
 		return false;
 	if (!out_vif->dev_parent_id.id_len || !in_vif->dev_parent_id.id_len)
 		return false;
@@ -2264,7 +2266,8 @@ int ipmr_get_route(struct net *net, struct sk_buff *skb,
 			rcu_read_unlock();
 			return -ENODEV;
 		}
-		skb2 = skb_clone(skb, GFP_ATOMIC);
+
+		skb2 = skb_realloc_headroom(skb, sizeof(struct iphdr));
 		if (!skb2) {
 			read_unlock(&mrt_lock);
 			rcu_read_unlock();
@@ -2454,6 +2457,61 @@ errout:
 	rtnl_set_sk_err(net, RTNLGRP_IPV4_MROUTE_R, -ENOBUFS);
 }
 
+static int ipmr_rtm_valid_getroute_req(struct sk_buff *skb,
+				       const struct nlmsghdr *nlh,
+				       struct nlattr **tb,
+				       struct netlink_ext_ack *extack)
+{
+	struct rtmsg *rtm;
+	int i, err;
+
+	if (nlh->nlmsg_len < nlmsg_msg_size(sizeof(*rtm))) {
+		NL_SET_ERR_MSG(extack, "ipv4: Invalid header for multicast route get request");
+		return -EINVAL;
+	}
+
+	if (!netlink_strict_get_check(skb))
+		return nlmsg_parse_deprecated(nlh, sizeof(*rtm), tb, RTA_MAX,
+					      rtm_ipv4_policy, extack);
+
+	rtm = nlmsg_data(nlh);
+	if ((rtm->rtm_src_len && rtm->rtm_src_len != 32) ||
+	    (rtm->rtm_dst_len && rtm->rtm_dst_len != 32) ||
+	    rtm->rtm_tos || rtm->rtm_table || rtm->rtm_protocol ||
+	    rtm->rtm_scope || rtm->rtm_type || rtm->rtm_flags) {
+		NL_SET_ERR_MSG(extack, "ipv4: Invalid values in header for multicast route get request");
+		return -EINVAL;
+	}
+
+	err = nlmsg_parse_deprecated_strict(nlh, sizeof(*rtm), tb, RTA_MAX,
+					    rtm_ipv4_policy, extack);
+	if (err)
+		return err;
+
+	if ((tb[RTA_SRC] && !rtm->rtm_src_len) ||
+	    (tb[RTA_DST] && !rtm->rtm_dst_len)) {
+		NL_SET_ERR_MSG(extack, "ipv4: rtm_src_len and rtm_dst_len must be 32 for IPv4");
+		return -EINVAL;
+	}
+
+	for (i = 0; i <= RTA_MAX; i++) {
+		if (!tb[i])
+			continue;
+
+		switch (i) {
+		case RTA_SRC:
+		case RTA_DST:
+		case RTA_TABLE:
+			break;
+		default:
+			NL_SET_ERR_MSG(extack, "ipv4: Unsupported attribute in multicast route get request");
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
 static int ipmr_rtm_getroute(struct sk_buff *in_skb, struct nlmsghdr *nlh,
 			     struct netlink_ext_ack *extack)
 {
@@ -2462,17 +2520,13 @@ static int ipmr_rtm_getroute(struct sk_buff *in_skb, struct nlmsghdr *nlh,
 	struct sk_buff *skb = NULL;
 	struct mfc_cache *cache;
 	struct mr_table *mrt;
-	struct rtmsg *rtm;
 	__be32 src, grp;
 	u32 tableid;
 	int err;
 
-	err = nlmsg_parse(nlh, sizeof(*rtm), tb, RTA_MAX,
-			  rtm_ipv4_policy, extack);
+	err = ipmr_rtm_valid_getroute_req(in_skb, nlh, tb, extack);
 	if (err < 0)
 		goto errout;
-
-	rtm = nlmsg_data(nlh);
 
 	src = tb[RTA_SRC] ? nla_get_in_addr(tb[RTA_SRC]) : 0;
 	grp = tb[RTA_DST] ? nla_get_in_addr(tb[RTA_DST]) : 0;
@@ -2517,8 +2571,34 @@ errout_free:
 
 static int ipmr_rtm_dumproute(struct sk_buff *skb, struct netlink_callback *cb)
 {
+	struct fib_dump_filter filter = {};
+	int err;
+
+	if (cb->strict_check) {
+		err = ip_valid_fib_dump_req(sock_net(skb->sk), cb->nlh,
+					    &filter, cb);
+		if (err < 0)
+			return err;
+	}
+
+	if (filter.table_id) {
+		struct mr_table *mrt;
+
+		mrt = ipmr_get_table(sock_net(skb->sk), filter.table_id);
+		if (!mrt) {
+			if (filter.dump_all_families)
+				return skb->len;
+
+			NL_SET_ERR_MSG(cb->extack, "ipv4: MR table does not exist");
+			return -ENOENT;
+		}
+		err = mr_table_dump(mrt, skb, cb, _ipmr_fill_mroute,
+				    &mfc_unres_lock, &filter);
+		return skb->len ? : err;
+	}
+
 	return mr_rtm_dumproute(skb, cb, ipmr_mr_table_iter,
-				_ipmr_fill_mroute, &mfc_unres_lock);
+				_ipmr_fill_mroute, &mfc_unres_lock, &filter);
 }
 
 static const struct nla_policy rtm_ipmr_policy[RTA_MAX + 1] = {
@@ -2567,8 +2647,8 @@ static int rtm_to_ipmr_mfcc(struct net *net, struct nlmsghdr *nlh,
 	struct rtmsg *rtm;
 	int ret, rem;
 
-	ret = nlmsg_validate(nlh, sizeof(*rtm), RTA_MAX, rtm_ipmr_policy,
-			     extack);
+	ret = nlmsg_validate_deprecated(nlh, sizeof(*rtm), RTA_MAX,
+					rtm_ipmr_policy, extack);
 	if (ret < 0)
 		goto out;
 	rtm = nlmsg_data(nlh);
@@ -2674,7 +2754,7 @@ static bool ipmr_fill_vif(struct mr_table *mrt, u32 vifid, struct sk_buff *skb)
 		return true;
 
 	vif = &mrt->vif_table[vifid];
-	vif_nest = nla_nest_start(skb, IPMRA_VIF);
+	vif_nest = nla_nest_start_noflag(skb, IPMRA_VIF);
 	if (!vif_nest)
 		return false;
 	if (nla_put_u32(skb, IPMRA_VIFA_IFINDEX, vif->dev->ifindex) ||
@@ -2698,6 +2778,31 @@ static bool ipmr_fill_vif(struct mr_table *mrt, u32 vifid, struct sk_buff *skb)
 	return true;
 }
 
+static int ipmr_valid_dumplink(const struct nlmsghdr *nlh,
+			       struct netlink_ext_ack *extack)
+{
+	struct ifinfomsg *ifm;
+
+	if (nlh->nlmsg_len < nlmsg_msg_size(sizeof(*ifm))) {
+		NL_SET_ERR_MSG(extack, "ipv4: Invalid header for ipmr link dump");
+		return -EINVAL;
+	}
+
+	if (nlmsg_attrlen(nlh, sizeof(*ifm))) {
+		NL_SET_ERR_MSG(extack, "Invalid data after header in ipmr link dump");
+		return -EINVAL;
+	}
+
+	ifm = nlmsg_data(nlh);
+	if (ifm->__ifi_pad || ifm->ifi_type || ifm->ifi_flags ||
+	    ifm->ifi_change || ifm->ifi_index) {
+		NL_SET_ERR_MSG(extack, "Invalid values in header for ipmr link dump request");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int ipmr_rtm_dumplink(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct net *net = sock_net(skb->sk);
@@ -2705,6 +2810,13 @@ static int ipmr_rtm_dumplink(struct sk_buff *skb, struct netlink_callback *cb)
 	unsigned int t = 0, s_t;
 	unsigned int e = 0, s_e;
 	struct mr_table *mrt;
+
+	if (cb->strict_check) {
+		int err = ipmr_valid_dumplink(cb->nlh, cb->extack);
+
+		if (err < 0)
+			return err;
+	}
 
 	s_t = cb->args[0];
 	s_e = cb->args[1];
@@ -2726,7 +2838,7 @@ static int ipmr_rtm_dumplink(struct sk_buff *skb, struct netlink_callback *cb)
 		memset(hdr, 0, sizeof(*hdr));
 		hdr->ifi_family = RTNL_FAMILY_IPMR;
 
-		af = nla_nest_start(skb, IFLA_AF_SPEC);
+		af = nla_nest_start_noflag(skb, IFLA_AF_SPEC);
 		if (!af) {
 			nlmsg_cancel(skb, nlh);
 			goto out;
@@ -2737,7 +2849,7 @@ static int ipmr_rtm_dumplink(struct sk_buff *skb, struct netlink_callback *cb)
 			goto out;
 		}
 
-		vifs = nla_nest_start(skb, IPMRA_TABLE_VIFS);
+		vifs = nla_nest_start_noflag(skb, IPMRA_TABLE_VIFS);
 		if (!vifs) {
 			nla_nest_end(skb, af);
 			nlmsg_end(skb, nlh);

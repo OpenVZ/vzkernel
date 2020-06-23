@@ -62,6 +62,9 @@ int kfd_iommu_device_init(struct kfd_dev *kfd)
 	struct amd_iommu_device_info iommu_info;
 	unsigned int pasid_limit;
 	int err;
+	struct kfd_topology_device *top_dev;
+
+	top_dev = kfd_topology_device_by_id(kfd->id);
 
 	if (!kfd->device_info->needs_iommu_device)
 		return 0;
@@ -190,7 +193,7 @@ static int iommu_invalid_ppr_cb(struct pci_dev *pdev, int pasid,
 {
 	struct kfd_dev *dev;
 
-	dev_warn(kfd_device,
+	dev_warn_ratelimited(kfd_device,
 			"Invalid PPR device %x:%x.%x pasid %d address 0x%lX flags 0x%X",
 			PCI_BUS_NUM(pdev->devfn),
 			PCI_SLOT(pdev->devfn),

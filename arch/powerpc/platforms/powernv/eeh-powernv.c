@@ -40,6 +40,7 @@
 
 #include "powernv.h"
 #include "pci.h"
+#include "../../../../drivers/pci/pci.h"
 
 static int eeh_event_irq = -EINVAL;
 
@@ -383,10 +384,6 @@ static void *pnv_eeh_probe(struct pci_dn *pdn, void *data)
 	if ((pdn->class_code >> 8) == PCI_CLASS_BRIDGE_ISA)
 		return NULL;
 
-	/* Skip if we haven't probed yet */
-	if (phb->ioda.pe_rmap[config_addr] == IODA_INVALID_PE)
-		return NULL;
-
 	/* Initialize eeh device */
 	edev->class_code = pdn->class_code;
 	edev->mode	&= 0xFFFFFF00;
@@ -594,7 +591,7 @@ static int pnv_eeh_get_phb_state(struct eeh_pe *pe)
 			  EEH_STATE_MMIO_ENABLED |
 			  EEH_STATE_DMA_ENABLED);
 	} else if (!(pe->state & EEH_PE_ISOLATED)) {
-		eeh_pe_state_mark(pe, EEH_PE_ISOLATED);
+		eeh_pe_mark_isolated(pe);
 		pnv_eeh_get_phb_diag(pe);
 
 		if (eeh_has_flag(EEH_EARLY_DUMP_LOG))
@@ -696,7 +693,7 @@ static int pnv_eeh_get_pe_state(struct eeh_pe *pe)
 		if (phb->freeze_pe)
 			phb->freeze_pe(phb, pe->addr);
 
-		eeh_pe_state_mark(pe, EEH_PE_ISOLATED);
+		eeh_pe_mark_isolated(pe);
 		pnv_eeh_get_phb_diag(pe);
 
 		if (eeh_has_flag(EEH_EARLY_DUMP_LOG))
@@ -847,7 +844,7 @@ static int __pnv_eeh_bridge_reset(struct pci_dev *dev, int option)
 	int aer = edev ? edev->aer_cap : 0;
 	u32 ctrl;
 
-	pr_debug("%s: Reset PCI bus %04x:%02x with option %d\n",
+	pr_debug("%s: Secondary Reset PCI bus %04x:%02x with option %d\n",
 		 __func__, pci_domain_nr(dev->bus),
 		 dev->bus->number, option);
 
@@ -904,6 +901,10 @@ static int pnv_eeh_bridge_reset(struct pci_dev *pdev, int option)
 	/* Hot reset to the bus if firmware cannot handle */
 	if (!dn || !of_get_property(dn, "ibm,reset-by-firmware", NULL))
 		return __pnv_eeh_bridge_reset(pdev, option);
+
+	pr_debug("%s: FW reset PCI bus %04x:%02x with option %d\n",
+		 __func__, pci_domain_nr(pdev->bus),
+		 pdev->bus->number, option);
 
 	switch (option) {
 	case EEH_RESET_FUNDAMENTAL:
@@ -1044,7 +1045,7 @@ static int pnv_eeh_reset_vf_pe(struct eeh_pe *pe, int option)
 	int ret;
 
 	/* The VF PE should have only one child device */
-	edev = list_first_entry_or_null(&pe->edevs, struct eeh_dev, list);
+	edev = list_first_entry_or_null(&pe->edevs, struct eeh_dev, entry);
 	pdn = eeh_dev_to_pdn(edev);
 	if (!pdn)
 		return -ENXIO;
@@ -1123,55 +1124,38 @@ static int pnv_eeh_reset(struct eeh_pe *pe, int option)
 		return -EIO;
 	}
 
-	/*
-	 * If dealing with the root bus (or the bus underneath the
-	 * root port), we reset the bus underneath the root port.
-	 *
-	 * The cxl driver depends on this behaviour for bi-modal card
-	 * switching.
-	 */
-	if (pci_is_root_bus(bus) ||
-	    pci_is_root_bus(bus->parent))
+	if (pci_is_root_bus(bus))
 		return pnv_eeh_root_reset(hose, option);
 
-	return pnv_eeh_bridge_reset(bus->self, option);
-}
-
-/**
- * pnv_eeh_wait_state - Wait for PE state
- * @pe: EEH PE
- * @max_wait: maximal period in millisecond
- *
- * Wait for the state of associated PE. It might take some time
- * to retrieve the PE's state.
- */
-static int pnv_eeh_wait_state(struct eeh_pe *pe, int max_wait)
-{
-	int ret;
-	int mwait;
-
-	while (1) {
-		ret = pnv_eeh_get_state(pe, &mwait);
-
+	/*
+	 * For hot resets try use the generic PCI error recovery reset
+	 * functions. These correctly handles the case where the secondary
+	 * bus is behind a hotplug slot and it will use the slot provided
+	 * reset methods to prevent spurious hotplug events during the reset.
+	 *
+	 * Fundemental resets need to be handled internally to EEH since the
+	 * PCI core doesn't really have a concept of a fundemental reset,
+	 * mainly because there's no standard way to generate one. Only a
+	 * few devices require an FRESET so it should be fine.
+	 */
+	if (option != EEH_RESET_FUNDAMENTAL) {
 		/*
-		 * If the PE's state is temporarily unavailable,
-		 * we have to wait for the specified time. Otherwise,
-		 * the PE's state will be returned immediately.
+		 * NB: Skiboot and pnv_eeh_bridge_reset() also no-op the
+		 *     de-assert step. It's like the OPAL reset API was
+		 *     poorly designed or something...
 		 */
-		if (ret != EEH_STATE_UNAVAILABLE)
-			return ret;
+		if (option == EEH_RESET_DEACTIVATE)
+			return 0;
 
-		if (max_wait <= 0) {
-			pr_warn("%s: Timeout getting PE#%x's state (%d)\n",
-				__func__, pe->addr, max_wait);
-			return EEH_STATE_NOT_SUPPORT;
-		}
-
-		max_wait -= mwait;
-		msleep(mwait);
+		rc = pci_bus_error_reset(bus->self);
+		if (!rc)
+			return 0;
 	}
 
-	return EEH_STATE_NOT_SUPPORT;
+	/* otherwise, use the generic bridge reset. this might call into FW */
+	if (pci_is_root_bus(bus->parent))
+		return pnv_eeh_root_reset(hose, option);
+	return pnv_eeh_bridge_reset(bus->self, option);
 }
 
 /**
@@ -1601,7 +1585,7 @@ static int pnv_eeh_next_error(struct eeh_pe **pe)
 		if ((ret == EEH_NEXT_ERR_FROZEN_PE  ||
 		    ret == EEH_NEXT_ERR_FENCED_PHB) &&
 		    !((*pe)->state & EEH_PE_ISOLATED)) {
-			eeh_pe_state_mark(*pe, EEH_PE_ISOLATED);
+			eeh_pe_mark_isolated(*pe);
 			pnv_eeh_get_phb_diag(*pe);
 
 			if (eeh_has_flag(EEH_EARLY_DUMP_LOG))
@@ -1630,7 +1614,7 @@ static int pnv_eeh_next_error(struct eeh_pe **pe)
 			}
 
 			/* We possibly migrate to another PE */
-			eeh_pe_state_mark(*pe, EEH_PE_ISOLATED);
+			eeh_pe_mark_isolated(*pe);
 		}
 
 		/*
@@ -1692,7 +1676,6 @@ static struct eeh_ops pnv_eeh_ops = {
 	.get_pe_addr            = pnv_eeh_get_pe_addr,
 	.get_state              = pnv_eeh_get_state,
 	.reset                  = pnv_eeh_reset,
-	.wait_state             = pnv_eeh_wait_state,
 	.get_log                = pnv_eeh_get_log,
 	.configure_bridge       = pnv_eeh_configure_bridge,
 	.err_inject		= pnv_eeh_err_inject,

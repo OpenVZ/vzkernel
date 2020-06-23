@@ -2,7 +2,7 @@
  * This file is part of the Emulex Linux Device Driver for         *
  * Fibre Channel Host Bus Adapters.                                *
  * Copyright (C) 2017-2018 Broadcom. All Rights Reserved. The term *
- * “Broadcom” refers to Broadcom Limited and/or its subsidiaries.  *
+ * “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.     *
  * Copyright (C) 2004-2016 Emulex.  All rights reserved.           *
  * EMULEX and SLI are trademarks of Emulex.                        *
  * www.broadcom.com                                                *
@@ -115,6 +115,7 @@ struct lpfc_sli_ct_request {
 		uint32_t PortID;
 		struct gid {
 			uint8_t PortType;	/* for GID_PT requests */
+#define GID_PT_N_PORT	1
 			uint8_t DomainScope;
 			uint8_t AreaScope;
 			uint8_t Fc4Type;	/* for GID_FT requests */
@@ -524,6 +525,7 @@ struct serv_parm {	/* Structure is in Big Endian format */
 		struct {
 			uint32_t vid;
 #define LPFC_VV_EMLX_ID	0x454d4c58	/* EMLX */
+#define LPFC_VV_BRCD_ID	0x42524344	/* BRCD */
 			uint32_t flags;
 #define LPFC_VV_SUPPRESS_RSP	1
 		} vv;
@@ -558,6 +560,8 @@ struct fc_vft_header {
 #define fc_vft_hdr_hopct_MASK		0xFF
 #define fc_vft_hdr_hopct_WORD		word1
 };
+
+#include <uapi/scsi/fc/fc_els.h>
 
 /*
  *  Extended Link Service LS_COMMAND codes (Payload Word 0)
@@ -598,10 +602,12 @@ struct fc_vft_header {
 #define ELS_CMD_RPL       0x57000000
 #define ELS_CMD_FAN       0x60000000
 #define ELS_CMD_RSCN      0x61040000
+#define ELS_CMD_RSCN_XMT  0x61040008
 #define ELS_CMD_SCR       0x62000000
 #define ELS_CMD_RNID      0x78000000
 #define ELS_CMD_LIRR      0x7A000000
 #define ELS_CMD_LCB	  0x81000000
+#define ELS_CMD_FPIN	  0x16000000
 #else	/*  __LITTLE_ENDIAN_BITFIELD */
 #define ELS_CMD_MASK      0xffff
 #define ELS_RSP_MASK      0xff
@@ -638,10 +644,12 @@ struct fc_vft_header {
 #define ELS_CMD_RPL       0x57
 #define ELS_CMD_FAN       0x60
 #define ELS_CMD_RSCN      0x0461
+#define ELS_CMD_RSCN_XMT  0x08000461
 #define ELS_CMD_SCR       0x62
 #define ELS_CMD_RNID      0x78
 #define ELS_CMD_LIRR      0x7A
 #define ELS_CMD_LCB	  0x81
+#define ELS_CMD_FPIN	  ELS_FPIN
 #endif
 
 /*
@@ -836,7 +844,7 @@ typedef struct _ADISC {		/* Structure is in Big Endian format */
 	struct lpfc_name portName;
 	struct lpfc_name nodeName;
 	uint32_t DID;
-} ADISC;
+} __packed ADISC;
 
 typedef struct _FARP {		/* Structure is in Big Endian format */
 	uint32_t Mflags:8;
@@ -866,7 +874,7 @@ typedef struct _FAN {		/* Structure is in Big Endian format */
 	uint32_t Fdid;
 	struct lpfc_name FportName;
 	struct lpfc_name FnodeName;
-} FAN;
+} __packed FAN;
 
 typedef struct _SCR {		/* Structure is in Big Endian format */
 	uint8_t resvd1;
@@ -910,7 +918,7 @@ typedef struct _RNID {		/* Structure is in Big Endian format */
 	union {
 		RNID_TOP_DISC topologyDisc;	/* topology disc (0xdf) */
 	} un;
-} RNID;
+} __packed RNID;
 
 typedef struct  _RPS {		/* Structure is in Big Endian format */
 	union {
@@ -1065,14 +1073,17 @@ typedef struct _ELS_PKT {	/* Structure is in Big Endian format */
 struct fc_lcb_request_frame {
 	uint32_t      lcb_command;      /* ELS command opcode (0x81)     */
 	uint8_t       lcb_sub_command;/* LCB Payload Word 1, bit 24:31 */
-#define LPFC_LCB_ON    0x1
-#define LPFC_LCB_OFF   0x2
-	uint8_t       reserved[3];
-
+#define LPFC_LCB_ON		0x1
+#define LPFC_LCB_OFF		0x2
+	uint8_t       reserved[2];
+	uint8_t	      capability;	/* LCB Payload Word 1, bit 0:7 */
 	uint8_t       lcb_type; /* LCB Payload Word 2, bit 24:31 */
-#define LPFC_LCB_GREEN 0x1
-#define LPFC_LCB_AMBER 0x2
+#define LPFC_LCB_GREEN		0x1
+#define LPFC_LCB_AMBER		0x2
 	uint8_t       lcb_frequency;    /* LCB Payload Word 2, bit 16:23 */
+#define LCB_CAPABILITY_DURATION	1
+#define BEACON_VERSION_V1	1
+#define BEACON_VERSION_V0	0
 	uint16_t      lcb_duration;     /* LCB Payload Word 2, bit 15:0  */
 };
 
@@ -1082,7 +1093,8 @@ struct fc_lcb_request_frame {
 struct fc_lcb_res_frame {
 	uint32_t      lcb_ls_acc;       /* Acceptance of LCB request (0x02) */
 	uint8_t       lcb_sub_command;/* LCB Payload Word 1, bit 24:31 */
-	uint8_t       reserved[3];
+	uint8_t       reserved[2];
+	uint8_t	      capability;	/* LCB Payload Word 1, bit 0:7 */
 	uint8_t       lcb_type; /* LCB Payload Word 2, bit 24:31 */
 	uint8_t       lcb_frequency;    /* LCB Payload Word 2, bit 16:23 */
 	uint16_t      lcb_duration;     /* LCB Payload Word 2, bit 15:0  */
@@ -1574,54 +1586,24 @@ struct lpfc_fdmi_reg_portattr {
 
 /* Start FireFly Register definitions */
 #define PCI_VENDOR_ID_EMULEX        0x10df
-#define PCI_DEVICE_ID_FIREFLY       0x1ae5
-#define PCI_DEVICE_ID_PROTEUS_VF    0xe100
-#define PCI_DEVICE_ID_BALIUS        0xe131
-#define PCI_DEVICE_ID_PROTEUS_PF    0xe180
 #define PCI_DEVICE_ID_LANCER_FC     0xe200
-#define PCI_DEVICE_ID_LANCER_FC_VF  0xe208
 #define PCI_DEVICE_ID_LANCER_FCOE   0xe260
-#define PCI_DEVICE_ID_LANCER_FCOE_VF 0xe268
 #define PCI_DEVICE_ID_LANCER_G6_FC  0xe300
 #define PCI_DEVICE_ID_LANCER_G7_FC  0xf400
 #define PCI_DEVICE_ID_SAT_SMB       0xf011
 #define PCI_DEVICE_ID_SAT_MID       0xf015
-#define PCI_DEVICE_ID_RFLY          0xf095
-#define PCI_DEVICE_ID_PFLY          0xf098
-#define PCI_DEVICE_ID_LP101         0xf0a1
-#define PCI_DEVICE_ID_TFLY          0xf0a5
-#define PCI_DEVICE_ID_BSMB          0xf0d1
 #define PCI_DEVICE_ID_BMID          0xf0d5
 #define PCI_DEVICE_ID_ZSMB          0xf0e1
 #define PCI_DEVICE_ID_ZMID          0xf0e5
-#define PCI_DEVICE_ID_NEPTUNE       0xf0f5
-#define PCI_DEVICE_ID_NEPTUNE_SCSP  0xf0f6
-#define PCI_DEVICE_ID_NEPTUNE_DCSP  0xf0f7
 #define PCI_DEVICE_ID_SAT           0xf100
 #define PCI_DEVICE_ID_SAT_SCSP      0xf111
 #define PCI_DEVICE_ID_SAT_DCSP      0xf112
 #define PCI_DEVICE_ID_FALCON        0xf180
-#define PCI_DEVICE_ID_SUPERFLY      0xf700
-#define PCI_DEVICE_ID_DRAGONFLY     0xf800
-#define PCI_DEVICE_ID_CENTAUR       0xf900
-#define PCI_DEVICE_ID_PEGASUS       0xf980
-#define PCI_DEVICE_ID_THOR          0xfa00
-#define PCI_DEVICE_ID_VIPER         0xfb00
-#define PCI_DEVICE_ID_LP10000S      0xfc00
-#define PCI_DEVICE_ID_LP11000S      0xfc10
-#define PCI_DEVICE_ID_LPE11000S     0xfc20
 #define PCI_DEVICE_ID_SAT_S         0xfc40
-#define PCI_DEVICE_ID_PROTEUS_S     0xfc50
-#define PCI_DEVICE_ID_HELIOS        0xfd00
-#define PCI_DEVICE_ID_HELIOS_SCSP   0xfd11
-#define PCI_DEVICE_ID_HELIOS_DCSP   0xfd12
 #define PCI_DEVICE_ID_ZEPHYR        0xfe00
-#define PCI_DEVICE_ID_HORNET        0xfe05
 #define PCI_DEVICE_ID_ZEPHYR_SCSP   0xfe11
 #define PCI_DEVICE_ID_ZEPHYR_DCSP   0xfe12
 #define PCI_VENDOR_ID_SERVERENGINE  0x19a2
-#define PCI_DEVICE_ID_TIGERSHARK    0x0704
-#define PCI_DEVICE_ID_TOMCAT        0x0714
 #define PCI_DEVICE_ID_SKYHAWK       0x0724
 #define PCI_DEVICE_ID_SKYHAWK_VF    0x072c
 
@@ -4248,16 +4230,11 @@ struct lpfc_sli2_slim {
 static inline int
 lpfc_is_LC_HBA(unsigned short device)
 {
-	if ((device == PCI_DEVICE_ID_TFLY) ||
-	    (device == PCI_DEVICE_ID_PFLY) ||
-	    (device == PCI_DEVICE_ID_LP101) ||
-	    (device == PCI_DEVICE_ID_BMID) ||
-	    (device == PCI_DEVICE_ID_BSMB) ||
+	if ((device == PCI_DEVICE_ID_BMID) ||
 	    (device == PCI_DEVICE_ID_ZMID) ||
 	    (device == PCI_DEVICE_ID_ZSMB) ||
 	    (device == PCI_DEVICE_ID_SAT_MID) ||
-	    (device == PCI_DEVICE_ID_SAT_SMB) ||
-	    (device == PCI_DEVICE_ID_RFLY))
+	    (device == PCI_DEVICE_ID_SAT_SMB))
 		return 1;
 	else
 		return 0;

@@ -299,7 +299,7 @@ u32 i2c_acpi_find_bus_speed(struct device *dev)
 }
 EXPORT_SYMBOL_GPL(i2c_acpi_find_bus_speed);
 
-static int i2c_acpi_find_match_adapter(struct device *dev, void *data)
+static int i2c_acpi_find_match_adapter(struct device *dev, const void *data)
 {
 	struct i2c_adapter *adapter = i2c_verify_adapter(dev);
 
@@ -309,7 +309,7 @@ static int i2c_acpi_find_match_adapter(struct device *dev, void *data)
 	return ACPI_HANDLE(dev) == (acpi_handle)data;
 }
 
-static int i2c_acpi_find_match_device(struct device *dev, void *data)
+static int i2c_acpi_find_match_device(struct device *dev, const void *data)
 {
 	return ACPI_COMPANION(dev) == data;
 }
@@ -453,8 +453,12 @@ static int acpi_gsb_i2c_read_bytes(struct i2c_client *client,
 		else
 			dev_err(&client->adapter->dev, "i2c read %d bytes from client@%#x starting at reg %#x failed, error: %d\n",
 				data_len, client->addr, cmd, ret);
-	} else {
+	/* 2 transfers must have completed successfully */
+	} else if (ret == 2) {
 		memcpy(data, buffer, data_len);
+		ret = 0;
+	} else {
+		ret = -EIO;
 	}
 
 	kfree(buffer);
@@ -482,11 +486,16 @@ static int acpi_gsb_i2c_write_bytes(struct i2c_client *client,
 	msgs[0].buf = buffer;
 
 	ret = i2c_transfer(client->adapter, msgs, ARRAY_SIZE(msgs));
-	if (ret < 0)
-		dev_err(&client->adapter->dev, "i2c write failed\n");
 
 	kfree(buffer);
-	return ret;
+
+	if (ret < 0) {
+		dev_err(&client->adapter->dev, "i2c write failed: %d\n", ret);
+		return ret;
+	}
+
+	/* 1 transfer must have completed successfully */
+	return (ret == 1) ? 0 : -EIO;
 }
 
 static acpi_status
@@ -590,8 +599,6 @@ i2c_acpi_space_handler(u32 function, acpi_physical_address command,
 		if (action == ACPI_READ) {
 			status = acpi_gsb_i2c_read_bytes(client, command,
 					gsb->data, info->access_length);
-			if (status > 0)
-				status = 0;
 		} else {
 			status = acpi_gsb_i2c_write_bytes(client, command,
 					gsb->data, info->access_length);

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/compiler.h>
 #include <linux/types.h>
+#include <linux/zalloc.h>
 #include <inttypes.h>
 #include <unistd.h>
 #include "tests.h"
@@ -10,6 +11,7 @@
 #include "../util/unwind.h"
 #include "perf_regs.h"
 #include "map.h"
+#include "symbol.h"
 #include "thread.h"
 #include "callchain.h"
 
@@ -34,7 +36,7 @@ static int init_live_machine(struct machine *machine)
 	pid_t pid = getpid();
 
 	return perf_event__synthesize_mmap_events(NULL, &event, pid, pid,
-						  mmap_handler, machine, true, 500);
+						  mmap_handler, machine, true);
 }
 
 /*
@@ -114,8 +116,8 @@ noinline int test_dwarf_unwind__thread(struct thread *thread)
 	}
 
  out:
-	free(sample.user_stack.data);
-	free(sample.user_regs.regs);
+	zfree(&sample.user_stack.data);
+	zfree(&sample.user_regs.regs);
 	return err;
 }
 

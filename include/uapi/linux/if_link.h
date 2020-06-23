@@ -38,6 +38,20 @@ struct rtnl_link_stats {
 	__u32	tx_compressed;
 
 	__u32	rx_nohandler;		/* dropped, no handler found	*/
+
+#ifdef __KERNEL__
+#ifndef __GENKSYMS__
+	/*
+	 * RHEL: when used, reserved fields must be moved before __KERNEL__
+	 * and must be under a #ifndef __GENKSYMS__ conditional
+	 */
+	char __rh_tail[0];
+	__u32	__rh_reserved_1;
+	__u32	__rh_reserved_2;
+	__u32	__rh_reserved_3;
+	__u32	__rh_reserved_4;
+#endif
+#endif
 };
 
 /* The main device statistics structure */
@@ -73,7 +87,22 @@ struct rtnl_link_stats64 {
 	__u64	tx_compressed;
 
 	__u64	rx_nohandler;		/* dropped, no handler found	*/
+
+#ifdef __KERNEL__
+#ifndef __GENKSYMS__
+	char __rh_tail[0];
+	__u64	__rh_reserved_1;
+	__u64	__rh_reserved_2;
+	__u64	__rh_reserved_3;
+	__u64	__rh_reserved_4;
+#endif
+#endif
 };
+
+#ifdef __KERNEL__
+#define sizeof_rtnl_link_stats offsetof(struct rtnl_link_stats, __rh_tail)
+#define sizeof_rtnl_link_stats64 offsetof(struct rtnl_link_stats64, __rh_tail)
+#endif
 
 /* The struct should be in sync with struct ifmap */
 struct rtnl_link_ifmap {
@@ -161,9 +190,12 @@ enum {
 	IFLA_EVENT,
 	IFLA_NEW_NETNSID,
 	IFLA_IF_NETNSID,
+	IFLA_TARGET_NETNSID = IFLA_IF_NETNSID, /* new alias */
 	IFLA_CARRIER_UP_COUNT,
 	IFLA_CARRIER_DOWN_COUNT,
 	IFLA_NEW_IFINDEX,
+	IFLA_MIN_MTU,
+	IFLA_MAX_MTU,
 	__IFLA_MAX
 };
 
@@ -284,6 +316,7 @@ enum {
 	IFLA_BR_MCAST_STATS_ENABLED,
 	IFLA_BR_MCAST_IGMP_VERSION,
 	IFLA_BR_MCAST_MLD_VERSION,
+	IFLA_BR_VLAN_STATS_PER_PORT,
 	__IFLA_BR_MAX,
 };
 
@@ -459,6 +492,16 @@ enum {
 
 #define IFLA_MACSEC_MAX (__IFLA_MACSEC_MAX - 1)
 
+/* XFRM section */
+enum {
+	IFLA_XFRM_UNSPEC,
+	IFLA_XFRM_LINK,
+	IFLA_XFRM_IF_ID,
+	__IFLA_XFRM_MAX
+};
+
+#define IFLA_XFRM_MAX (__IFLA_XFRM_MAX - 1)
+
 enum macsec_validation_type {
 	MACSEC_VALIDATE_DISABLED = 0,
 	MACSEC_VALIDATE_CHECK = 1,
@@ -541,6 +584,7 @@ enum {
 	IFLA_GENEVE_UDP_ZERO_CSUM6_TX,
 	IFLA_GENEVE_UDP_ZERO_CSUM6_RX,
 	IFLA_GENEVE_LABEL,
+	IFLA_GENEVE_TTL_INHERIT,
 	__IFLA_GENEVE_MAX
 };
 #define IFLA_GENEVE_MAX	(__IFLA_GENEVE_MAX - 1)
@@ -601,6 +645,7 @@ enum {
 	IFLA_BOND_AD_USER_PORT_KEY,
 	IFLA_BOND_AD_ACTOR_SYSTEM,
 	IFLA_BOND_TLB_DYNAMIC_LB,
+	IFLA_BOND_PEER_NOTIF_DELAY,
 	__IFLA_BOND_MAX,
 };
 
@@ -659,6 +704,7 @@ enum {
 	IFLA_VF_IB_NODE_GUID,	/* VF Infiniband node GUID */
 	IFLA_VF_IB_PORT_GUID,	/* VF Infiniband port GUID */
 	IFLA_VF_VLAN_LIST,	/* nested list of vlans, option for QinQ */
+	IFLA_VF_BROADCAST,	/* VF broadcast */
 	__IFLA_VF_MAX,
 };
 
@@ -667,6 +713,10 @@ enum {
 struct ifla_vf_mac {
 	__u32 vf;
 	__u8 mac[32]; /* MAX_ADDR_LEN */
+};
+
+struct ifla_vf_broadcast {
+	__u8 broadcast[32];
 };
 
 struct ifla_vf_vlan {
@@ -890,6 +940,7 @@ enum {
 enum {
 	LINK_XSTATS_TYPE_UNSPEC,
 	LINK_XSTATS_TYPE_BRIDGE,
+	LINK_XSTATS_TYPE_BOND,
 	__LINK_XSTATS_TYPE_MAX
 };
 #define LINK_XSTATS_TYPE_MAX (__LINK_XSTATS_TYPE_MAX - 1)
@@ -920,6 +971,7 @@ enum {
 	XDP_ATTACHED_DRV,
 	XDP_ATTACHED_SKB,
 	XDP_ATTACHED_HW,
+	XDP_ATTACHED_MULTI,
 };
 
 enum {
@@ -928,6 +980,9 @@ enum {
 	IFLA_XDP_ATTACHED,
 	IFLA_XDP_FLAGS,
 	IFLA_XDP_PROG_ID,
+	IFLA_XDP_DRV_PROG_ID,
+	IFLA_XDP_SKB_PROG_ID,
+	IFLA_XDP_HW_PROG_ID,
 	__IFLA_XDP_MAX,
 };
 

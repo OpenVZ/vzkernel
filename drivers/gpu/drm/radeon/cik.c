@@ -21,18 +21,22 @@
  *
  * Authors: Alex Deucher
  */
+
 #include <linux/firmware.h>
 #include <linux/slab.h>
 #include <linux/module.h>
-#include <drm/drmP.h>
+
+#include <drm/drm_pci.h>
+#include <drm/drm_vblank.h>
+
+#include "atom.h"
+#include "cik_blit_shaders.h"
+#include "cikd.h"
+#include "clearstate_ci.h"
 #include "radeon.h"
 #include "radeon_asic.h"
 #include "radeon_audio.h"
-#include "cikd.h"
-#include "atom.h"
-#include "cik_blit_shaders.h"
 #include "radeon_ucode.h"
-#include "clearstate_ci.h"
 
 #define SH_MEM_CONFIG_GFX_DEFAULT \
 	ALIGNMENT_MODE(SH_MEM_ALIGNMENT_MODE_UNALIGNED)
@@ -3480,7 +3484,7 @@ int cik_ring_test(struct radeon_device *rdev, struct radeon_ring *ring)
 		tmp = RREG32(scratch);
 		if (tmp == 0xDEADBEEF)
 			break;
-		DRM_UDELAY(1);
+		udelay(1);
 	}
 	if (i < rdev->usec_timeout) {
 		DRM_INFO("ring test on %d succeeded in %d usecs\n", ring->idx, i);
@@ -3825,7 +3829,7 @@ int cik_ib_test(struct radeon_device *rdev, struct radeon_ring *ring)
 		tmp = RREG32(scratch);
 		if (tmp == 0xDEADBEEF)
 			break;
-		DRM_UDELAY(1);
+		udelay(1);
 	}
 	if (i < rdev->usec_timeout) {
 		DRM_INFO("ib test on ring %d succeeded in %u usecs\n", ib.fence->ring, i);
@@ -6965,8 +6969,8 @@ static int cik_irq_init(struct radeon_device *rdev)
 	}
 
 	/* setup interrupt control */
-	/* XXX this should actually be a bus address, not an MC address. same on older asics */
-	WREG32(INTERRUPT_CNTL2, rdev->ih.gpu_addr >> 8);
+	/* set dummy read address to dummy page address */
+	WREG32(INTERRUPT_CNTL2, rdev->dummy_page.addr >> 8);
 	interrupt_cntl = RREG32(INTERRUPT_CNTL);
 	/* IH_DUMMY_RD_OVERRIDE=0 - dummy read disabled with msi, enabled without msi
 	 * IH_DUMMY_RD_OVERRIDE=1 - dummy read controlled by IH_DUMMY_RD_EN
@@ -9499,9 +9503,10 @@ int cik_set_vce_clocks(struct radeon_device *rdev, u32 evclk, u32 ecclk)
 static void cik_pcie_gen3_enable(struct radeon_device *rdev)
 {
 	struct pci_dev *root = rdev->pdev->bus->self;
+	enum pci_bus_speed speed_cap;
 	int bridge_pos, gpu_pos;
-	u32 speed_cntl, mask, current_data_rate;
-	int ret, i;
+	u32 speed_cntl, current_data_rate;
+	int i;
 	u16 tmp16;
 
 	if (pci_is_root_bus(rdev->pdev->bus))
@@ -9516,23 +9521,24 @@ static void cik_pcie_gen3_enable(struct radeon_device *rdev)
 	if (!(rdev->flags & RADEON_IS_PCIE))
 		return;
 
-	ret = drm_pcie_get_speed_cap_mask(rdev->ddev, &mask);
-	if (ret != 0)
+	speed_cap = pcie_get_speed_cap(root);
+	if (speed_cap == PCI_SPEED_UNKNOWN)
 		return;
 
-	if (!(mask & (DRM_PCIE_SPEED_50 | DRM_PCIE_SPEED_80)))
+	if ((speed_cap != PCIE_SPEED_8_0GT) &&
+	    (speed_cap != PCIE_SPEED_5_0GT))
 		return;
 
 	speed_cntl = RREG32_PCIE_PORT(PCIE_LC_SPEED_CNTL);
 	current_data_rate = (speed_cntl & LC_CURRENT_DATA_RATE_MASK) >>
 		LC_CURRENT_DATA_RATE_SHIFT;
-	if (mask & DRM_PCIE_SPEED_80) {
+	if (speed_cap == PCIE_SPEED_8_0GT) {
 		if (current_data_rate == 2) {
 			DRM_INFO("PCIE gen 3 link speeds already enabled\n");
 			return;
 		}
 		DRM_INFO("enabling PCIE gen 3 link speeds, disable with radeon.pcie_gen2=0\n");
-	} else if (mask & DRM_PCIE_SPEED_50) {
+	} else if (speed_cap == PCIE_SPEED_5_0GT) {
 		if (current_data_rate == 1) {
 			DRM_INFO("PCIE gen 2 link speeds already enabled\n");
 			return;
@@ -9548,7 +9554,7 @@ static void cik_pcie_gen3_enable(struct radeon_device *rdev)
 	if (!gpu_pos)
 		return;
 
-	if (mask & DRM_PCIE_SPEED_80) {
+	if (speed_cap == PCIE_SPEED_8_0GT) {
 		/* re-try equalization if gen3 is not already enabled */
 		if (current_data_rate != 2) {
 			u16 bridge_cfg, gpu_cfg;
@@ -9598,7 +9604,7 @@ static void cik_pcie_gen3_enable(struct radeon_device *rdev)
 				tmp |= LC_REDO_EQ;
 				WREG32_PCIE_PORT(PCIE_LC_CNTL4, tmp);
 
-				mdelay(100);
+				msleep(100);
 
 				/* linkctl */
 				pci_read_config_word(root, bridge_pos + PCI_EXP_LNKCTL, &tmp16);
@@ -9636,9 +9642,9 @@ static void cik_pcie_gen3_enable(struct radeon_device *rdev)
 
 	pci_read_config_word(rdev->pdev, gpu_pos + PCI_EXP_LNKCTL2, &tmp16);
 	tmp16 &= ~0xf;
-	if (mask & DRM_PCIE_SPEED_80)
+	if (speed_cap == PCIE_SPEED_8_0GT)
 		tmp16 |= 3; /* gen3 */
-	else if (mask & DRM_PCIE_SPEED_50)
+	else if (speed_cap == PCIE_SPEED_5_0GT)
 		tmp16 |= 2; /* gen2 */
 	else
 		tmp16 |= 1; /* gen1 */

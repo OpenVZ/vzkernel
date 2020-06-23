@@ -33,7 +33,7 @@ xfs_xattr_get(const struct xattr_handler *handler, struct dentry *unused,
 		value = NULL;
 	}
 
-	error = xfs_attr_get(ip, (unsigned char *)name, value, &asize, xflags);
+	error = xfs_attr_get(ip, name, (unsigned char **)&value, &asize, xflags);
 	if (error)
 		return error;
 	return asize;
@@ -128,6 +128,9 @@ __xfs_xattr_put_listent(
 {
 	char *offset;
 	int arraytop;
+
+	if (context->count < 0 || context->seen_enough)
+		return;
 
 	if (!context->alist)
 		goto compute_size;

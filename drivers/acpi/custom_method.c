@@ -29,6 +29,9 @@ static ssize_t cm_write(struct file *file, const char __user * user_buf,
 	struct acpi_table_header table;
 	acpi_status status;
 
+	if (kernel_is_locked_down("ACPI custom methods"))
+		return -EPERM;
+
 	if (!(*ppos)) {
 		/* parse the table header to get the table length */
 		if (count <= sizeof(struct acpi_table_header))
@@ -79,21 +82,14 @@ static const struct file_operations cm_fops = {
 
 static int __init acpi_custom_method_init(void)
 {
-	if (acpi_debugfs_dir == NULL)
-		return -ENOENT;
-
 	cm_dentry = debugfs_create_file("custom_method", S_IWUSR,
 					acpi_debugfs_dir, NULL, &cm_fops);
-	if (cm_dentry == NULL)
-		return -ENODEV;
-
 	return 0;
 }
 
 static void __exit acpi_custom_method_exit(void)
 {
-	if (cm_dentry)
-		debugfs_remove(cm_dentry);
+	debugfs_remove(cm_dentry);
 }
 
 module_init(acpi_custom_method_init);

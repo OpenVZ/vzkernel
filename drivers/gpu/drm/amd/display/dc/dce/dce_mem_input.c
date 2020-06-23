@@ -148,7 +148,7 @@ static void dce_mi_program_pte_vm(
 			pte->min_pte_before_flip_horiz_scan;
 
 	REG_UPDATE(GRPH_PIPE_OUTSTANDING_REQUEST_LIMIT,
-			GRPH_PIPE_OUTSTANDING_REQUEST_LIMIT, 0xff);
+			GRPH_PIPE_OUTSTANDING_REQUEST_LIMIT, 0x7f);
 
 	REG_UPDATE_3(DVMM_PTE_CONTROL,
 			DVMM_PAGE_WIDTH, page_width,
@@ -157,7 +157,7 @@ static void dce_mi_program_pte_vm(
 
 	REG_UPDATE_2(DVMM_PTE_ARB_CONTROL,
 			DVMM_PTE_REQ_PER_CHUNK, pte->pte_req_per_chunk,
-			DVMM_MAX_PTE_REQ_OUTSTANDING, 0xff);
+			DVMM_MAX_PTE_REQ_OUTSTANDING, 0x7f);
 }
 
 static void program_urgency_watermark(
@@ -479,7 +479,7 @@ static void program_grph_pixel_format(
 	case SURFACE_PIXEL_FORMAT_GRPH_ABGR16161616F:
 		sign = 1;
 		floating = 1;
-		/* no break */
+		/* fall through */
 	case SURFACE_PIXEL_FORMAT_GRPH_ARGB16161616F: /* shouldn't this get float too? */
 	case SURFACE_PIXEL_FORMAT_GRPH_ARGB16161616:
 		grph_depth = 3;
@@ -729,7 +729,7 @@ static bool dce_mi_program_surface_flip_and_addr(
 	return true;
 }
 
-static struct mem_input_funcs dce_mi_funcs = {
+static const struct mem_input_funcs dce_mi_funcs = {
 	.mem_input_program_display_marks = dce_mi_program_display_marks,
 	.allocate_mem_input = dce_mi_allocate_dmif,
 	.free_mem_input = dce_mi_free_dmif,
@@ -741,7 +741,7 @@ static struct mem_input_funcs dce_mi_funcs = {
 	.mem_input_is_flip_pending = dce_mi_is_flip_pending
 };
 
-static struct mem_input_funcs dce112_mi_funcs = {
+static const struct mem_input_funcs dce112_mi_funcs = {
 	.mem_input_program_display_marks = dce112_mi_program_display_marks,
 	.allocate_mem_input = dce_mi_allocate_dmif,
 	.free_mem_input = dce_mi_free_dmif,
@@ -753,7 +753,7 @@ static struct mem_input_funcs dce112_mi_funcs = {
 	.mem_input_is_flip_pending = dce_mi_is_flip_pending
 };
 
-static struct mem_input_funcs dce120_mi_funcs = {
+static const struct mem_input_funcs dce120_mi_funcs = {
 	.mem_input_program_display_marks = dce120_mi_program_display_marks,
 	.allocate_mem_input = dce_mi_allocate_dmif,
 	.free_mem_input = dce_mi_free_dmif,

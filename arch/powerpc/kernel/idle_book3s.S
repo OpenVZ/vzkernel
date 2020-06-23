@@ -168,6 +168,12 @@ core_idle_lock_held:
 	bne-	core_idle_lock_held
 	blr
 
+/* Reuse some unused pt_regs slots for AMR/IAMR/UAMOR/UAMOR */
+#define PNV_POWERSAVE_AMR	_TRAP
+#define PNV_POWERSAVE_IAMR	_DAR
+#define PNV_POWERSAVE_UAMOR	_DSISR
+#define PNV_POWERSAVE_AMOR	RESULT
+
 /*
  * Pass requested state in r3:
  *	r3 - PNV_THREAD_NAP/SLEEP/WINKLE in POWER8
@@ -198,6 +204,20 @@ pnv_powersave_common:
 	/* Continue saving state */
 	SAVE_GPR(2, r1)
 	SAVE_NVGPRS(r1)
+
+BEGIN_FTR_SECTION
+	mfspr	r4, SPRN_AMR
+	mfspr	r5, SPRN_IAMR
+	mfspr	r6, SPRN_UAMOR
+	std	r4, PNV_POWERSAVE_AMR(r1)
+	std	r5, PNV_POWERSAVE_IAMR(r1)
+	std	r6, PNV_POWERSAVE_UAMOR(r1)
+BEGIN_FTR_SECTION_NESTED(42)
+	mfspr	r7, SPRN_AMOR
+	std	r7, PNV_POWERSAVE_AMOR(r1)
+END_FTR_SECTION_NESTED_IFSET(CPU_FTR_HVMODE, 42)
+END_FTR_SECTION_IFSET(CPU_FTR_ARCH_207S)
+
 	mfcr	r5
 	std	r5,_CCR(r1)
 	std	r1,PACAR1(r13)
@@ -469,43 +489,6 @@ END_FTR_SECTION_IFSET(CPU_FTR_P9_TM_XER_SO_BUG)
 #endif
 
 /*
- * On waking up from stop 0,1,2 with ESL=1 on POWER9 DD1,
- * HSPRG0 will be set to the HSPRG0 value of one of the
- * threads in this core. Thus the value we have in r13
- * may not be this thread's paca pointer.
- *
- * Fortunately, the TIR remains invariant. Since this thread's
- * paca pointer is recorded in all its sibling's paca, we can
- * correctly recover this thread's paca pointer if we
- * know the index of this thread in the core.
- *
- * This index can be obtained from the TIR.
- *
- * i.e, thread's position in the core = TIR.
- * If this value is i, then this thread's paca is
- * paca->thread_sibling_pacas[i].
- */
-power9_dd1_recover_paca:
-	mfspr	r4, SPRN_TIR
-	/*
-	 * Since each entry in thread_sibling_pacas is 8 bytes
-	 * we need to left-shift by 3 bits. Thus r4 = i * 8
-	 */
-	sldi	r4, r4, 3
-	/* Get &paca->thread_sibling_pacas[0] in r5 */
-	ld	r5, PACA_SIBLING_PACA_PTRS(r13)
-	/* Load paca->thread_sibling_pacas[i] into r13 */
-	ldx	r13, r4, r5
-	SET_PACA(r13)
-	/*
-	 * Indicate that we have lost NVGPR state
-	 * which needs to be restored from the stack.
-	 */
-	li	r3, 1
-	stb	r3,PACA_NAPSTATELOST(r13)
-	blr
-
-/*
  * Called from machine check handler for powersave wakeups.
  * Low level machine check processing has already been done. Now just
  * go through the wake up path to get everything in order.
@@ -539,9 +522,6 @@ pnv_powersave_wakeup:
 	ld	r2, PACATOC(r13)
 
 BEGIN_FTR_SECTION
-BEGIN_FTR_SECTION_NESTED(70)
-	bl	power9_dd1_recover_paca
-END_FTR_SECTION_NESTED_IFSET(CPU_FTR_POWER9_DD1, 70)
 	bl	pnv_restore_hyp_resource_arch300
 FTR_SECTION_ELSE
 	bl	pnv_restore_hyp_resource_arch207
@@ -604,22 +584,12 @@ END_FTR_SECTION_IFCLR(CPU_FTR_POWER9_DD2_1)
 	LOAD_REG_ADDRBASE(r5,pnv_first_deep_stop_state)
 	ld	r4,ADDROFF(pnv_first_deep_stop_state)(r5)
 
-BEGIN_FTR_SECTION_NESTED(71)
-	/*
-	 * Assume that we are waking up from the state
-	 * same as the Requested Level (RL) in the PSSCR
-	 * which are Bits 60-63
-	 */
-	ld	r5,PACA_REQ_PSSCR(r13)
-	rldicl  r5,r5,0,60
-FTR_SECTION_ELSE_NESTED(71)
 	/*
 	 * 0-3 bits correspond to Power-Saving Level Status
 	 * which indicates the idle state we are waking up from
 	 */
 	mfspr	r5, SPRN_PSSCR
 	rldicl  r5,r5,4,60
-ALT_FTR_SECTION_END_NESTED_IFSET(CPU_FTR_POWER9_DD1, 71)
 	li	r0, 0		/* clear requested_psscr to say we're awake */
 	std	r0, PACA_REQ_PSSCR(r13)
 	cmpd	cr4,r5,r4
@@ -972,6 +942,25 @@ BEGIN_FTR_SECTION
 END_FTR_SECTION_IFSET(CPU_FTR_HVMODE)
 	REST_NVGPRS(r1)
 	REST_GPR(2, r1)
+
+BEGIN_FTR_SECTION
+	/* These regs were saved in pnv_powersave_common() */
+	ld	r4, PNV_POWERSAVE_AMR(r1)
+	ld	r5, PNV_POWERSAVE_IAMR(r1)
+	ld	r6, PNV_POWERSAVE_UAMOR(r1)
+	mtspr	SPRN_AMR, r4
+	mtspr	SPRN_IAMR, r5
+	mtspr	SPRN_UAMOR, r6
+BEGIN_FTR_SECTION_NESTED(42)
+	ld	r7, PNV_POWERSAVE_AMOR(r1)
+	mtspr	SPRN_AMOR, r7
+END_FTR_SECTION_NESTED_IFSET(CPU_FTR_HVMODE, 42)
+	/*
+	 * We don't need an isync here after restoring IAMR because the upcoming
+	 * mtmsrd is execution synchronizing.
+	 */
+END_FTR_SECTION_IFSET(CPU_FTR_ARCH_207S)
+
 	ld	r4,PACAKMSR(r13)
 	ld	r5,_LINK(r1)
 	ld	r6,_CCR(r1)

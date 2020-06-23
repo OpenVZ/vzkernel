@@ -302,6 +302,7 @@ config SYN_COOKIES
 
 config NET_IPVTI
 	tristate "Virtual (secure) IP: tunneling"
+	depends on IPV6 || IPV6=n
 	select INET_TUNNEL
 	select NET_IP_TUNNEL
 	depends on INET_XFRM_MODE_TUNNEL
@@ -518,8 +519,8 @@ config TCP_CONG_WESTWOOD
 	wired networks and throughput over wireless links.
 
 config TCP_CONG_HTCP
-        tristate "H-TCP"
-        default m
+	tristate "H-TCP"
+	default m
 	---help---
 	H-TCP is a send-side only modifications of the TCP Reno
 	protocol stack that optimizes the performance of TCP

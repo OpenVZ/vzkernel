@@ -25,6 +25,10 @@ struct usb_mixer_interface {
 	u8 rc_buffer[6];
 
 	bool disconnected;
+
+	void *private_data;
+	void (*private_free)(struct usb_mixer_interface *mixer);
+	void (*private_suspend)(struct usb_mixer_interface *mixer);
 };
 
 #define MAX_CHANNELS	16	/* max logical channels */
@@ -108,5 +112,7 @@ int snd_usb_get_cur_mix_value(struct usb_mixer_elem_info *cval,
                              int channel, int index, int *value);
 
 extern void snd_usb_mixer_elem_free(struct snd_kcontrol *kctl);
+
+extern struct snd_kcontrol_new *snd_usb_feature_unit_ctl;
 
 #endif /* __USBMIXER_H */

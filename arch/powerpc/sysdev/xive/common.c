@@ -230,26 +230,61 @@ static notrace void xive_dump_eq(const char *name, struct xive_q *q)
 	i0 = be32_to_cpup(q->qpage + idx);
 	idx = (idx + 1) & q->msk;
 	i1 = be32_to_cpup(q->qpage + idx);
-	xmon_printf("  %s Q T=%d %08x %08x ...\n", name,
-		    q->toggle, i0, i1);
+	xmon_printf("%s idx=%d T=%d %08x %08x ...", name,
+		     q->idx, q->toggle, i0, i1);
 }
 
 notrace void xmon_xive_do_dump(int cpu)
 {
 	struct xive_cpu *xc = per_cpu(xive_cpu, cpu);
 
-	xmon_printf("XIVE state for CPU %d:\n", cpu);
-	xmon_printf("  pp=%02x cppr=%02x\n", xc->pending_prio, xc->cppr);
-	xive_dump_eq("IRQ", &xc->queue[xive_irq_priority]);
+	xmon_printf("CPU %d:", cpu);
+	if (xc) {
+		xmon_printf("pp=%02x CPPR=%02x ", xc->pending_prio, xc->cppr);
+
 #ifdef CONFIG_SMP
-	{
-		u64 val = xive_esb_read(&xc->ipi_data, XIVE_ESB_GET);
-		xmon_printf("  IPI state: %x:%c%c\n", xc->hw_ipi,
-			val & XIVE_ESB_VAL_P ? 'P' : 'p',
-			val & XIVE_ESB_VAL_Q ? 'Q' : 'q');
-	}
+		{
+			u64 val = xive_esb_read(&xc->ipi_data, XIVE_ESB_GET);
+
+			xmon_printf("IPI=0x%08x PQ=%c%c ", xc->hw_ipi,
+				    val & XIVE_ESB_VAL_P ? 'P' : '-',
+				    val & XIVE_ESB_VAL_Q ? 'Q' : '-');
+		}
 #endif
+		xive_dump_eq("EQ", &xc->queue[xive_irq_priority]);
+	}
+	xmon_printf("\n");
 }
+
+int xmon_xive_get_irq_config(u32 hw_irq, struct irq_data *d)
+{
+	int rc;
+	u32 target;
+	u8 prio;
+	u32 lirq;
+
+	rc = xive_ops->get_irq_config(hw_irq, &target, &prio, &lirq);
+	if (rc) {
+		xmon_printf("IRQ 0x%08x : no config rc=%d\n", hw_irq, rc);
+		return rc;
+	}
+
+	xmon_printf("IRQ 0x%08x : target=0x%x prio=%02x lirq=0x%x ",
+		    hw_irq, target, prio, lirq);
+
+	if (d) {
+		struct xive_irq_data *xd = irq_data_get_irq_handler_data(d);
+		u64 val = xive_esb_read(xd, XIVE_ESB_GET);
+
+		xmon_printf("PQ=%c%c",
+			    val & XIVE_ESB_VAL_P ? 'P' : '-',
+			    val & XIVE_ESB_VAL_Q ? 'Q' : '-');
+	}
+
+	xmon_printf("\n");
+	return 0;
+}
+
 #endif /* CONFIG_XMON */
 
 static unsigned int xive_get_irq(void)
@@ -266,7 +301,7 @@ static unsigned int xive_get_irq(void)
 	 * of pending priorities. This will also have the effect of
 	 * updating the CPPR to the most favored pending interrupts.
 	 *
-	 * In the future, if we have a way to differenciate a first
+	 * In the future, if we have a way to differentiate a first
 	 * entry (on HW interrupt) from a replay triggered by EOI,
 	 * we could skip this on replays unless we soft-mask tells us
 	 * that a new HW interrupt occurred.
@@ -319,7 +354,7 @@ void xive_do_source_eoi(u32 hw_irq, struct xive_irq_data *xd)
 		 * The FW told us to call it. This happens for some
 		 * interrupt sources that need additional HW whacking
 		 * beyond the ESB manipulation. For example LPC interrupts
-		 * on P9 DD1.0 need a latch to be clared in the LPC bridge
+		 * on P9 DD1.0 needed a latch to be clared in the LPC bridge
 		 * itself. The Firmware will take care of it.
 		 */
 		if (WARN_ON_ONCE(!xive_ops->eoi))
@@ -337,9 +372,9 @@ void xive_do_source_eoi(u32 hw_irq, struct xive_irq_data *xd)
 		 * This allows us to then do a re-trigger if Q was set
 		 * rather than synthesizing an interrupt in software
 		 *
-		 * For LSIs, using the HW EOI cycle works around a problem
-		 * on P9 DD1 PHBs where the other ESB accesses don't work
-		 * properly.
+		 * For LSIs the HW EOI cycle is used rather than PQ bits,
+		 * as they are automatically re-triggred in HW when still
+		 * pending.
 		 */
 		if (xd->flags & XIVE_IRQ_FLAG_LSI)
 			xive_esb_read(xd, XIVE_ESB_LOAD_EOI);
@@ -483,7 +518,7 @@ static int xive_find_target_in_mask(const struct cpumask *mask,
 	 * Now go through the entire mask until we find a valid
 	 * target.
 	 */
-	for (;;) {
+	do {
 		/*
 		 * We re-check online as the fallback case passes us
 		 * an untested affinity mask
@@ -491,12 +526,11 @@ static int xive_find_target_in_mask(const struct cpumask *mask,
 		if (cpu_online(cpu) && xive_try_pick_target(cpu))
 			return cpu;
 		cpu = cpumask_next(cpu, mask);
-		if (cpu == first)
-			break;
 		/* Wrap around */
 		if (cpu >= nr_cpu_ids)
 			cpu = cpumask_first(mask);
-	}
+	} while (cpu != first);
+
 	return -1;
 }
 
@@ -968,6 +1002,15 @@ static int xive_irq_alloc_data(unsigned int virq, irq_hw_number_t hw)
 	}
 	xd->target = XIVE_INVALID_TARGET;
 	irq_set_handler_data(virq, xd);
+
+	/*
+	 * Turn OFF by default the interrupt being mapped. A side
+	 * effect of this check is the mapping the ESB page of the
+	 * interrupt in the Linux address space. This prevents page
+	 * fault issues in the crash handler which masks all
+	 * interrupts.
+	 */
+	xive_esb_read(xd, XIVE_ESB_SET_PQ_01);
 
 	return 0;
 }

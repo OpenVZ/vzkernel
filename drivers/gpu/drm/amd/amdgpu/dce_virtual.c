@@ -20,7 +20,9 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  *
  */
-#include <drm/drmP.h>
+
+#include <drm/drm_vblank.h>
+
 #include "amdgpu.h"
 #include "amdgpu_pm.h"
 #include "amdgpu_i2c.h"
@@ -36,6 +38,7 @@
 #include "dce_v10_0.h"
 #include "dce_v11_0.h"
 #include "dce_virtual.h"
+#include "ivsrcid/ivsrcid_vislands30.h"
 
 #define DCE_VIRTUAL_VBLANK_PERIOD 16666666
 
@@ -166,19 +169,6 @@ static void dce_virtual_crtc_disable(struct drm_crtc *crtc)
 	struct amdgpu_crtc *amdgpu_crtc = to_amdgpu_crtc(crtc);
 
 	dce_virtual_crtc_dpms(crtc, DRM_MODE_DPMS_OFF);
-	if (crtc->primary->fb) {
-		int r;
-		struct amdgpu_bo *abo;
-
-		abo = gem_to_amdgpu_bo(crtc->primary->fb->obj[0]);
-		r = amdgpu_bo_reserve(abo, true);
-		if (unlikely(r))
-			DRM_ERROR("failed to reserve abo before unpin\n");
-		else {
-			amdgpu_bo_unpin(abo);
-			amdgpu_bo_unreserve(abo);
-		}
-	}
 
 	amdgpu_crtc->pll_id = ATOM_PPLL_INVALID;
 	amdgpu_crtc->encoder = NULL;
@@ -269,25 +259,18 @@ static int dce_virtual_early_init(void *handle)
 static struct drm_encoder *
 dce_virtual_encoder(struct drm_connector *connector)
 {
-	int enc_id = connector->encoder_ids[0];
 	struct drm_encoder *encoder;
 	int i;
 
-	for (i = 0; i < DRM_CONNECTOR_MAX_ENCODER; i++) {
-		if (connector->encoder_ids[i] == 0)
-			break;
-
-		encoder = drm_encoder_find(connector->dev, NULL, connector->encoder_ids[i]);
-		if (!encoder)
-			continue;
-
+	drm_connector_for_each_possible_encoder(connector, encoder, i) {
 		if (encoder->encoder_type == DRM_MODE_ENCODER_VIRTUAL)
 			return encoder;
 	}
 
 	/* pick the first one */
-	if (enc_id)
-		return drm_encoder_find(connector->dev, NULL, enc_id);
+	drm_connector_for_each_possible_encoder(connector, encoder, i)
+		return encoder;
+
 	return NULL;
 }
 
@@ -378,7 +361,7 @@ static int dce_virtual_sw_init(void *handle)
 	int r, i;
 	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
 
-	r = amdgpu_irq_add_id(adev, AMDGPU_IH_CLIENTID_LEGACY, 229, &adev->crtc_irq);
+	r = amdgpu_irq_add_id(adev, AMDGPU_IRQ_CLIENTID_LEGACY, VISLANDS30_IV_SRCID_SMU_DISP_TIMER2_TRIGGER, &adev->crtc_irq);
 	if (r)
 		return r;
 
@@ -474,6 +457,7 @@ static int dce_virtual_hw_init(void *handle)
 	case CHIP_VEGA10:
 	case CHIP_VEGA12:
 	case CHIP_VEGA20:
+	case CHIP_NAVI10:
 		break;
 	default:
 		DRM_ERROR("Virtual display unsupported ASIC type: 0x%X\n", adev->asic_type);
@@ -634,7 +618,7 @@ static int dce_virtual_connector_encoder_init(struct amdgpu_device *adev,
 	drm_connector_register(connector);
 
 	/* link them */
-	drm_mode_connector_attach_encoder(connector, encoder);
+	drm_connector_attach_encoder(connector, encoder);
 
 	return 0;
 }
@@ -655,8 +639,7 @@ static const struct amdgpu_display_funcs dce_virtual_display_funcs = {
 
 static void dce_virtual_set_display_funcs(struct amdgpu_device *adev)
 {
-	if (adev->mode_info.funcs == NULL)
-		adev->mode_info.funcs = &dce_virtual_display_funcs;
+	adev->mode_info.funcs = &dce_virtual_display_funcs;
 }
 
 static int dce_virtual_pageflip(struct amdgpu_device *adev,
@@ -699,7 +682,9 @@ static int dce_virtual_pageflip(struct amdgpu_device *adev,
 	spin_unlock_irqrestore(&adev->ddev->event_lock, flags);
 
 	drm_crtc_vblank_put(&amdgpu_crtc->base);
-	schedule_work(&works->unpin_work);
+	amdgpu_bo_unref(&works->old_abo);
+	kfree(works->shared);
+	kfree(works);
 
 	return 0;
 }

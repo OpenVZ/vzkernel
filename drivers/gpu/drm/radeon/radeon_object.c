@@ -29,14 +29,17 @@
  *    Thomas Hellstrom <thomas-at-tungstengraphics-dot-com>
  *    Dave Airlie
  */
+
+#include <linux/io.h>
 #include <linux/list.h>
 #include <linux/slab.h>
-#include <drm/drmP.h>
-#include <drm/radeon_drm.h>
+
 #include <drm/drm_cache.h>
+#include <drm/drm_prime.h>
+#include <drm/radeon_drm.h>
+
 #include "radeon.h"
 #include "radeon_trace.h"
-
 
 int radeon_ttm_init(struct radeon_device *rdev);
 void radeon_ttm_fini(struct radeon_device *rdev);
@@ -307,22 +310,19 @@ struct radeon_bo *radeon_bo_ref(struct radeon_bo *bo)
 	if (bo == NULL)
 		return NULL;
 
-	ttm_bo_reference(&bo->tbo);
+	ttm_bo_get(&bo->tbo);
 	return bo;
 }
 
 void radeon_bo_unref(struct radeon_bo **bo)
 {
 	struct ttm_buffer_object *tbo;
-	struct radeon_device *rdev;
 
 	if ((*bo) == NULL)
 		return;
-	rdev = (*bo)->rdev;
 	tbo = &((*bo)->tbo);
-	ttm_bo_unref(&tbo);
-	if (tbo == NULL)
-		*bo = NULL;
+	ttm_bo_put(tbo);
+	*bo = NULL;
 }
 
 int radeon_bo_pin_restricted(struct radeon_bo *bo, u32 domain, u64 max_offset,
@@ -422,11 +422,13 @@ int radeon_bo_unpin(struct radeon_bo *bo)
 int radeon_bo_evict_vram(struct radeon_device *rdev)
 {
 	/* late 2.6.33 fix IGP hibernate - we need pm ops to do this correct */
-	if (0 && (rdev->flags & RADEON_IS_IGP)) {
+#ifndef CONFIG_HIBERNATION
+	if (rdev->flags & RADEON_IS_IGP) {
 		if (rdev->mc.igp_sideport_enabled == false)
 			/* Useless to evict on IGP chips */
 			return 0;
 	}
+#endif
 	return ttm_bo_evict_mm(&rdev->mman.bdev, TTM_PL_VRAM);
 }
 
@@ -540,7 +542,7 @@ int radeon_bo_list_validate(struct radeon_device *rdev,
 	u64 bytes_moved_threshold = radeon_bo_get_threshold_for_moves(rdev);
 
 	INIT_LIST_HEAD(&duplicates);
-	r = ttm_eu_reserve_buffers(ticket, head, true, &duplicates);
+	r = ttm_eu_reserve_buffers(ticket, head, true, &duplicates, true);
 	if (unlikely(r != 0)) {
 		return r;
 	}

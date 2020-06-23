@@ -24,6 +24,7 @@
 
 #include <linux/types.h>
 #include <linux/ptrace.h>
+#include <linux/extable.h>
 #include <asm/mmu.h>
 #include <asm/mce.h>
 #include <asm/machdep.h>
@@ -31,15 +32,17 @@
 #include <asm/pte-walk.h>
 #include <asm/sstep.h>
 #include <asm/exception-64s.h>
+#include <asm/extable.h>
 
 /*
  * Convert an address related to an mm to a PFN. NOTE: we are in real
  * mode, we could potentially race with page table updates.
  */
-static unsigned long addr_to_pfn(struct pt_regs *regs, unsigned long addr)
+unsigned long addr_to_pfn(struct pt_regs *regs, unsigned long addr)
 {
 	pte_t *ptep;
-	unsigned long flags;
+	unsigned int shift;
+	unsigned long pfn, flags;
 	struct mm_struct *mm;
 
 	if (user_mode(regs))
@@ -48,25 +51,31 @@ static unsigned long addr_to_pfn(struct pt_regs *regs, unsigned long addr)
 		mm = &init_mm;
 
 	local_irq_save(flags);
-	if (mm == current->mm)
-		ptep = find_current_mm_pte(mm->pgd, addr, NULL, NULL);
-	else
-		ptep = find_init_mm_pte(addr, NULL);
+	ptep = __find_linux_pte(mm->pgd, addr, NULL, &shift);
+
+	if (!ptep || pte_special(*ptep)) {
+		pfn = ULONG_MAX;
+		goto out;
+	}
+
+	if (shift <= PAGE_SHIFT)
+		pfn = pte_pfn(*ptep);
+	else {
+		unsigned long rpnmask = (1ul << shift) - PAGE_SIZE;
+		pfn = pte_pfn(__pte(pte_val(*ptep) | (addr & rpnmask)));
+	}
+
+out:
 	local_irq_restore(flags);
-	if (!ptep || pte_special(*ptep))
-		return ULONG_MAX;
-	return pte_pfn(*ptep);
+	return pfn;
 }
 
 /* flush SLBs and reload */
 #ifdef CONFIG_PPC_BOOK3S_64
-static void flush_and_reload_slb(void)
+void flush_and_reload_slb(void)
 {
-	struct slb_shadow *slb;
-	unsigned long i, n;
-
 	/* Invalidate all SLBs */
-	asm volatile("slbmte %0,%0; slbia" : : "r" (0));
+	slb_flush_all_realmode();
 
 #ifdef CONFIG_KVM_BOOK3S_HANDLER
 	/*
@@ -76,22 +85,17 @@ static void flush_and_reload_slb(void)
 	if (get_paca()->kvm_hstate.in_guest)
 		return;
 #endif
-
-	/* For host kernel, reload the SLBs from shadow SLB buffer. */
-	slb = get_slb_shadow();
-	if (!slb)
+	if (early_radix_enabled())
 		return;
 
-	n = min_t(u32, be32_to_cpu(slb->persistent), SLB_MIN_SIZE);
+	/*
+	 * This probably shouldn't happen, but it may be possible it's
+	 * called in early boot before SLB shadows are allocated.
+	 */
+	if (!get_slb_shadow())
+		return;
 
-	/* Load up the SLB entries from shadow SLB */
-	for (i = 0; i < n; i++) {
-		unsigned long rb = be64_to_cpu(slb->save_area[i].esid);
-		unsigned long rs = be64_to_cpu(slb->save_area[i].vsid);
-
-		rb = (rb & ~0xFFFul) | i;
-		asm volatile("slbmte %0,%1" : : "r" (rs), "r" (rb));
-	}
+	slb_restore_bolted_realmode();
 }
 #endif
 
@@ -340,7 +344,7 @@ static const struct mce_derror_table mce_p9_derror_table[] = {
   MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0, false, 0, 0, 0, 0 } };
 
-static int mce_find_instr_ea_and_pfn(struct pt_regs *regs, uint64_t *addr,
+static int mce_find_instr_ea_and_phys(struct pt_regs *regs, uint64_t *addr,
 					uint64_t *phys_addr)
 {
 	/*
@@ -531,7 +535,8 @@ static int mce_handle_derror(struct pt_regs *regs,
 			 * kernel/exception-64s.h
 			 */
 			if (get_paca()->in_mce < MAX_MCE_DEPTH)
-				mce_find_instr_ea_and_pfn(regs, addr, phys_addr);
+				mce_find_instr_ea_and_phys(regs, addr,
+							   phys_addr);
 		}
 		found = 1;
 	}
@@ -546,9 +551,18 @@ static int mce_handle_derror(struct pt_regs *regs,
 	return 0;
 }
 
-static long mce_handle_ue_error(struct pt_regs *regs)
+static long mce_handle_ue_error(struct pt_regs *regs,
+				struct mce_error_info *mce_err)
 {
 	long handled = 0;
+	const struct exception_table_entry *entry;
+
+	entry = search_kernel_exception_table(regs->nip);
+	if (entry) {
+		mce_err->ignore_event = true;
+		regs->nip = extable_fixup(entry);
+		return 1;
+	}
 
 	/*
 	 * On specific SCOM read via MMIO we may get a machine check
@@ -581,7 +595,7 @@ static long mce_handle_error(struct pt_regs *regs,
 				&phys_addr);
 
 	if (!handled && mce_err.error_type == MCE_ERROR_TYPE_UE)
-		handled = mce_handle_ue_error(regs);
+		handled = mce_handle_ue_error(regs, &mce_err);
 
 	save_mce_event(regs, handled, &mce_err, regs->nip, addr, phys_addr);
 

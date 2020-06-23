@@ -428,7 +428,7 @@ void mpc1_read_mpcc_state(
 			MPCC_BUSY, &s->busy);
 }
 
-const struct mpc_funcs dcn10_mpc_funcs = {
+static const struct mpc_funcs dcn10_mpc_funcs = {
 	.read_mpcc_state = mpc1_read_mpcc_state,
 	.insert_plane = mpc1_insert_plane,
 	.remove_mpcc = mpc1_remove_mpcc,
@@ -438,6 +438,12 @@ const struct mpc_funcs dcn10_mpc_funcs = {
 	.assert_mpcc_idle_before_connect = mpc1_assert_mpcc_idle_before_connect,
 	.init_mpcc_list_from_hw = mpc1_init_mpcc_list_from_hw,
 	.update_blending = mpc1_update_blending,
+#if defined(CONFIG_DRM_AMD_DC_DCN2_0)
+	.set_denorm = NULL,
+	.set_denorm_clamp = NULL,
+	.set_output_csc = NULL,
+	.set_output_gamma = NULL,
+#endif
 };
 
 void dcn10_mpc_construct(struct dcn10_mpc *mpc10,

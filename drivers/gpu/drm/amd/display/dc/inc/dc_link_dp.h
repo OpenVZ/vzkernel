@@ -33,9 +33,10 @@ struct dc_link;
 struct dc_stream_state;
 struct dc_link_settings;
 
-bool dp_hbr_verify_link_cap(
+bool dp_verify_link_cap(
 	struct dc_link *link,
-	struct dc_link_settings *known_limit_link_setting);
+	struct dc_link_settings *known_limit_link_setting,
+	int *fail_count);
 
 bool dp_validate_mode_timing(
 	struct dc_link *link,
@@ -60,5 +61,12 @@ void detect_edp_sink_caps(struct dc_link *link);
 bool is_dp_active_dongle(const struct dc_link *link);
 
 void dp_enable_mst_on_sink(struct dc_link *link, bool enable);
+
+#ifdef CONFIG_DRM_AMD_DC_DSC_SUPPORT
+void dp_set_fec_ready(struct dc_link *link, bool ready);
+void dp_set_fec_enable(struct dc_link *link, bool enable);
+bool dp_set_dsc_enable(struct pipe_ctx *pipe_ctx, bool enable);
+bool dp_update_dsc_config(struct pipe_ctx *pipe_ctx);
+#endif
 
 #endif /* __DC_LINK_DP_H__ */

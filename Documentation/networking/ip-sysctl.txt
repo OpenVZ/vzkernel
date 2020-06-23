@@ -81,6 +81,15 @@ fib_multipath_hash_policy - INTEGER
 	0 - Layer 3
 	1 - Layer 4
 
+ip_forward_update_priority - INTEGER
+	Whether to update SKB priority from "TOS" field in IPv4 header after it
+	is forwarded. The new SKB priority is mapped from TOS field value
+	according to an rt_tos2priority table (see e.g. man tc-prio).
+	Default: 1 (Update priority.)
+	Possible values:
+	0 - Do not update priority.
+	1 - Update priority.
+
 route/max_size - INTEGER
 	Maximum number of routes allowed in the kernel.  Increase
 	this when using large numbers of interfaces and/or routes.
@@ -240,6 +249,14 @@ tcp_base_mss - INTEGER
 	The initial value of search_low to be used by the packetization layer
 	Path MTU discovery (MTU probing).  If MTU probing is enabled,
 	this is the initial MSS used by the connection.
+
+tcp_min_snd_mss - INTEGER
+	TCP SYN and SYNACK messages usually advertise an ADVMSS option,
+	as described in RFC 1122 and RFC 6691.
+	If this ADVMSS option is smaller than tcp_min_snd_mss,
+	it is silently capped to tcp_min_snd_mss.
+
+	Default : 48 (at least 8 bytes of payload per segment)
 
 tcp_congestion_control - STRING
 	Set the congestion control algorithm to be used for new
@@ -401,6 +418,7 @@ tcp_min_rtt_wlen - INTEGER
 	minimum RTT when it is moved to a longer path (e.g., due to traffic
 	engineering). A longer window makes the filter more resistant to RTT
 	inflations such as transient congestion. The unit is seconds.
+	Possible values: 0 - 86400 (1 day)
 	Default: 300
 
 tcp_moderate_rcvbuf - BOOLEAN
@@ -416,7 +434,7 @@ tcp_mtu_probing - INTEGER
 	  1 - Disabled by default, enabled when an ICMP black hole detected
 	  2 - Always enabled, use initial MSS of tcp_base_mss.
 
-tcp_probe_interval - INTEGER
+tcp_probe_interval - UNSIGNED INTEGER
 	Controls how often to start TCP Packetization-Layer Path MTU
 	Discovery reprobe. The default is reprobing every 10 minutes as
 	per RFC4821.
@@ -733,11 +751,11 @@ tcp_limit_output_bytes - INTEGER
 	Controls TCP Small Queue limit per tcp socket.
 	TCP bulk sender tends to increase packets in flight until it
 	gets losses notifications. With SNDBUF autotuning, this can
-	result in a large amount of packets queued in qdisc/device
-	on the local machine, hurting latency of other flows, for
-	typical pfifo_fast qdiscs.
-	tcp_limit_output_bytes limits the number of bytes on qdisc
-	or device to reduce artificial RTT/cwnd and reduce bufferbloat.
+	result in a large amount of packets queued on the local machine
+	(e.g.: qdiscs, CPU backlog, or device) hurting latency of other
+	flows, for typical pfifo_fast qdiscs.  tcp_limit_output_bytes
+	limits the number of bytes on qdisc or device to reduce artificial
+	RTT/cwnd and reduce bufferbloat.
 	Default: 262144
 
 tcp_challenge_ack_limit - INTEGER

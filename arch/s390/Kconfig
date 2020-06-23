@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
+config ARCH_HAS_MEM_ENCRYPT
+        def_bool y
+
 config MMU
 	def_bool y
 
@@ -12,12 +15,6 @@ config LOCKDEP_SUPPORT
 	def_bool y
 
 config STACKTRACE_SUPPORT
-	def_bool y
-
-config RWSEM_GENERIC_SPINLOCK
-	bool
-
-config RWSEM_XCHGADD_ALGORITHM
 	def_bool y
 
 config ARCH_HAS_ILOG2_U32
@@ -55,6 +52,12 @@ config PCI_QUIRKS
 
 config ARCH_SUPPORTS_UPROBES
 	def_bool y
+
+config KASAN_SHADOW_OFFSET
+	hex
+	depends on KASAN
+	default 0x18000000000000 if KASAN_S390_4_LEVEL_PAGING
+	default 0x30000000000
 
 config S390
 	def_bool y
@@ -120,6 +123,7 @@ config S390
 	select HAVE_ALIGNED_STRUCT_PAGE if SLUB
 	select HAVE_ARCH_AUDITSYSCALL
 	select HAVE_ARCH_JUMP_LABEL
+	select HAVE_ARCH_KASAN
 	select CPU_NO_EFFICIENT_FFS if !HAVE_MARCH_Z9_109_FEATURES
 	select HAVE_ARCH_SECCOMP_FILTER
 	select HAVE_ARCH_SOFT_DIRTY
@@ -131,7 +135,6 @@ config S390
 	select HAVE_COPY_THREAD_TLS
 	select HAVE_DEBUG_KMEMLEAK
 	select HAVE_DMA_CONTIGUOUS
-	select DMA_DIRECT_OPS
 	select HAVE_DYNAMIC_FTRACE
 	select HAVE_DYNAMIC_FTRACE_WITH_REGS
 	select HAVE_EFFICIENT_UNALIGNED_ACCESS
@@ -140,11 +143,13 @@ config S390
 	select HAVE_FUNCTION_TRACER
 	select HAVE_FUTEX_CMPXCHG if FUTEX
 	select HAVE_GCC_PLUGINS if BROKEN
+	select HAVE_GENERIC_GUP
 	select HAVE_KERNEL_BZIP2
 	select HAVE_KERNEL_GZIP
 	select HAVE_KERNEL_LZ4
 	select HAVE_KERNEL_LZMA
 	select HAVE_KERNEL_LZO
+	select HAVE_KERNEL_UNCOMPRESSED
 	select HAVE_KERNEL_XZ
 	select HAVE_KPROBES
 	select HAVE_KRETPROBES
@@ -174,6 +179,9 @@ config S390
 	select ARCH_HAS_SCALED_CPUTIME
 	select VIRT_TO_BUS
 	select HAVE_NMI
+	select ARCH_HAS_FORCE_DMA_UNENCRYPTED
+	select SWIOTLB
+	select GENERIC_ALLOCATOR
 
 
 config SCHED_OMIT_FRAME_POINTER
@@ -221,6 +229,10 @@ config HAVE_MARCH_Z13_FEATURES
 config HAVE_MARCH_Z14_FEATURES
 	def_bool n
 	select HAVE_MARCH_Z13_FEATURES
+
+config HAVE_MARCH_Z15_FEATURES
+	def_bool n
+	select HAVE_MARCH_Z14_FEATURES
 
 choice
 	prompt "Processor type"
@@ -290,6 +302,14 @@ config MARCH_Z14
 	  and 3906 series). The kernel will be slightly faster but will not
 	  work on older machines.
 
+config MARCH_Z15
+	bool "IBM z15"
+	select HAVE_MARCH_Z15_FEATURES
+	help
+	  Select this to enable optimizations for IBM z15 (8562
+	  and 8561 series). The kernel will be slightly faster but will not
+	  work on older machines.
+
 endchoice
 
 config MARCH_Z900_TUNE
@@ -315,6 +335,9 @@ config MARCH_Z13_TUNE
 
 config MARCH_Z14_TUNE
 	def_bool TUNE_Z14 || MARCH_Z14 && TUNE_DEFAULT
+
+config MARCH_Z15_TUNE
+	def_bool TUNE_Z15 || MARCH_Z15 && TUNE_DEFAULT
 
 choice
 	prompt "Tune code generation"
@@ -356,6 +379,9 @@ config TUNE_Z13
 
 config TUNE_Z14
 	bool "IBM z14"
+
+config TUNE_Z15
+	bool "IBM z15"
 
 endchoice
 
@@ -538,6 +564,17 @@ config ARCH_HAS_KEXEC_PURGATORY
 	def_bool y
 	depends on KEXEC_FILE
 
+config KEXEC_VERIFY_SIG
+	bool "Verify kernel signature during kexec_file_load() syscall"
+	depends on KEXEC_FILE && SYSTEM_DATA_VERIFICATION
+	help
+	  This option makes kernel signature verification mandatory for
+	  the kexec_file_load() syscall.
+
+	  In addition to that option, you need to enable signature
+	  verification for the corresponding kernel image type being
+	  loaded in order for this to work.
+
 config ARCH_RANDOM
 	def_bool y
 	prompt "s390 architectural random number generation API"
@@ -597,6 +634,29 @@ config EXPOLINE_FULL
 	bool "spectre_v2=on"
 
 endchoice
+
+config RELOCATABLE
+	bool "Build a relocatable kernel"
+	select MODULE_REL_CRCS if MODVERSIONS
+	default y
+	help
+	  This builds a kernel image that retains relocation information
+	  so it can be loaded at an arbitrary address.
+	  The kernel is linked as a position-independent executable (PIE)
+	  and contains dynamic relocations which are processed early in the
+	  bootup process.
+	  The relocations make the kernel image about 15% larger (compressed
+	  10%), but are discarded at runtime.
+
+config RANDOMIZE_BASE
+	bool "Randomize the address of the kernel image (KASLR)"
+	depends on RELOCATABLE
+	default y
+	help
+	  In support of Kernel Address Space Layout Randomization (KASLR),
+	  this randomizes the address at which the kernel image is loaded,
+	  as a security feature that deters exploit attempts relying on
+	  knowledge of the location of kernel internals.
 
 endmenu
 
@@ -778,6 +838,17 @@ config VFIO_CCW
 	  To compile this driver as a module, choose M here: the
 	  module will be called vfio_ccw.
 
+config VFIO_AP
+	def_tristate n
+	prompt "VFIO support for AP devices"
+	depends on S390_AP_IOMMU && VFIO_MDEV_DEVICE && KVM
+	help
+		This driver grants access to Adjunct Processor (AP) devices
+		via the VFIO mediated device interface.
+
+		To compile this driver as a module, choose M here: the module
+		will be called vfio_ap.
+
 endmenu
 
 menu "Dump support"
@@ -854,6 +925,17 @@ source "crypto/Kconfig"
 source "lib/Kconfig"
 
 menu "Virtualization"
+
+config PROTECTED_VIRTUALIZATION_GUEST
+	def_bool n
+	prompt "Protected virtualization guest support"
+	help
+	  Select this option, if you want to be able to run this
+	  kernel as a protected virtualization KVM guest.
+	  Protected virtualization capable machines have a mini hypervisor
+	  located at machine level (an ultravisor). With help of the
+	  Ultravisor, KVM will be able to run "protected" VMs, special
+	  VMs whose memory and management data are unavailable to KVM.
 
 config PFAULT
 	def_bool y

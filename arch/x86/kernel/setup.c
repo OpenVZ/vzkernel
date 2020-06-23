@@ -65,12 +65,14 @@
 #include <linux/dma-mapping.h>
 #include <linux/ctype.h>
 #include <linux/uaccess.h>
+#include <linux/security.h>
 
 #include <linux/percpu.h>
 #include <linux/crash_dump.h>
 #include <linux/tboot.h>
 #include <linux/jiffies.h>
 #include <linux/mem_encrypt.h>
+#include <linux/sizes.h>
 
 #include <linux/usb/xhci-dbgp.h>
 #include <video/edid.h>
@@ -117,6 +119,7 @@
 #include <asm/microcode.h>
 #include <asm/kaslr.h>
 #include <asm/unwind.h>
+#include <asm/intel-family.h>
 
 /*
  * max_low_pfn_mapped: highest direct mapped pfn under 4GB
@@ -448,19 +451,27 @@ static void __init memblock_x86_reserve_range_setup_data(void)
 #ifdef CONFIG_KEXEC_CORE
 
 /* 16M alignment for crash kernel regions */
-#define CRASH_ALIGN		(16 << 20)
+#define CRASH_ALIGN		SZ_16M
 
 /*
- * Keep the crash kernel below this limit.  On 32 bits earlier kernels
- * would limit the kernel to the low 512 MiB due to mapping restrictions.
- * On 64bit, old kexec-tools need to under 896MiB.
+ * Keep the crash kernel below this limit.
+ *
+ * On 32 bits earlier kernels would limit the kernel to the low 512 MiB
+ * due to mapping restrictions.
+ *
+ * On 64bit, kdump kernel need be restricted to be under 64TB, which is
+ * the upper limit of system RAM in 4-level paing mode. Since the kdump
+ * jumping could be from 5-level to 4-level, the jumping will fail if
+ * kernel is put above 64TB, and there's no way to detect the paging mode
+ * of the kernel which will be loaded for dumping during the 1st kernel
+ * bootup.
  */
 #ifdef CONFIG_X86_32
-# define CRASH_ADDR_LOW_MAX	(512 << 20)
-# define CRASH_ADDR_HIGH_MAX	(512 << 20)
+# define CRASH_ADDR_LOW_MAX	SZ_512M
+# define CRASH_ADDR_HIGH_MAX	SZ_512M
 #else
-# define CRASH_ADDR_LOW_MAX	(896UL << 20)
-# define CRASH_ADDR_HIGH_MAX	MAXMEM
+# define CRASH_ADDR_LOW_MAX	SZ_4G
+# define CRASH_ADDR_HIGH_MAX	SZ_64T
 #endif
 
 static int __init reserve_crashkernel_low(void)
@@ -518,7 +529,7 @@ static int __init reserve_crashkernel_low(void)
 
 static void __init reserve_crashkernel(void)
 {
-	unsigned long long crash_size, crash_base, total_mem;
+	unsigned long long crash_size, crash_base, total_mem, mem_enc_req;
 	bool high = false;
 	int ret;
 
@@ -540,25 +551,49 @@ static void __init reserve_crashkernel(void)
 		return;
 	}
 
+	/*
+	 * When SME/SEV is active, it will always required an extra SWIOTLB
+	 * region.
+	 */
+	if (mem_encrypt_active())
+		mem_enc_req = ALIGN(swiotlb_size_or_default(), SZ_1M);
+	else
+		mem_enc_req = 0;
+
 	/* 0 means: find the address automatically */
-	if (crash_base <= 0) {
+	if (!crash_base) {
 		/*
 		 * Set CRASH_ADDR_LOW_MAX upper bound for crash memory,
-		 * as old kexec-tools loads bzImage below that, unless
-		 * "crashkernel=size[KMG],high" is specified.
+		 * crashkernel=x,high reserves memory over 4G, also allocates
+		 * 256M extra low memory for DMA buffers and swiotlb.
+		 * But the extra memory is not required for all machines.
+		 * So try low memory first and fall back to high memory
+		 * unless "crashkernel=size[KMG],high" is specified.
 		 */
-		crash_base = memblock_find_in_range(CRASH_ALIGN,
-						    high ? CRASH_ADDR_HIGH_MAX
-							 : CRASH_ADDR_LOW_MAX,
-						    crash_size, CRASH_ALIGN);
+		if (!high)
+			crash_base = memblock_find_in_range(CRASH_ALIGN,
+						CRASH_ADDR_LOW_MAX,
+						crash_size + mem_enc_req,
+						CRASH_ALIGN);
+		/*
+		 * For high reservation, an extra low memory for SWIOTLB will
+		 * always be reserved later, so no need to reserve extra
+		 * memory for memory encryption case here.
+		 */
+		if (!crash_base) {
+			mem_enc_req = 0;
+			crash_base = memblock_find_in_range(CRASH_ALIGN,
+						CRASH_ADDR_HIGH_MAX,
+						crash_size, CRASH_ALIGN);
+		}
 		if (!crash_base) {
 			pr_info("crashkernel reservation failed - No suitable area found.\n");
 			return;
 		}
-
 	} else {
 		unsigned long long start;
 
+		mem_enc_req = 0;
 		start = memblock_find_in_range(crash_base,
 					       crash_base + crash_size,
 					       crash_size, 1 << 20);
@@ -567,6 +602,13 @@ static void __init reserve_crashkernel(void)
 			return;
 		}
 	}
+
+	if (mem_enc_req) {
+		pr_info("Memory encryption is active, crashkernel needs %ldMB extra memory\n",
+			(unsigned long)(mem_enc_req >> 20));
+		crash_size += mem_enc_req;
+	}
+
 	ret = memblock_reserve(crash_base, crash_size);
 	if (ret) {
 		pr_err("%s: Error reserving crashkernel memblock.\n", __func__);
@@ -785,7 +827,185 @@ static void __init trim_low_memory_range(void)
 {
 	memblock_reserve(0, ALIGN(reserve_low, PAGE_SIZE));
 }
-	
+
+static bool valid_amd_epyc(const char *model_id)
+{
+	int len;
+
+	len = strlen("AMD EPYC 7");
+
+	if (!strncmp(model_id, "AMD EPYC 7", len)) {
+		len += 3;
+		/*
+		 * AMD EPYC 7xx1 == NAPLES (8.0)
+		 * AMD EPYC 7xx2 == ROME   (8.1/8.0z)
+		 */
+		if (strlen(model_id) >= len) {
+			if (model_id[len-1] == '1' ||
+			    model_id[len-1] == '2')
+				return true;
+		}
+	}
+
+	return false;
+}
+
+static bool valid_amd_ryzen(const char *model_id)
+{
+	const char *ryzen5 = "AMD Ryzen 5";
+	const char *ryzen7 = "AMD Ryzen 7";
+
+	if (!strncmp(model_id, ryzen5, strlen(ryzen5)))
+		return true;
+	else if (!strncmp(model_id, ryzen7, strlen(ryzen7)))
+		return true;
+
+	return false;
+}
+
+static bool valid_amd_processor(__u8 family, const char *model_id, bool guest)
+{
+	bool valid = false;
+
+	switch(family) {
+	case 0x15:
+		valid = true;
+		break;
+
+	case 0x17:
+		if (!guest) {
+			if (!strncmp(model_id, "AMD EPYC", 8))
+				valid = valid_amd_epyc(model_id);
+			else if (!strncmp(model_id, "AMD Ryzen", 9))
+				valid = valid_amd_ryzen(model_id);
+		}
+		else {
+			/* guest names do not conform to bare metal */
+			if (!strncmp(model_id, "AMD EPYC", 8))
+				valid = true;
+		}
+		break;
+
+	default:
+		break;
+	}
+
+	return valid;
+}
+
+static bool valid_intel_processor(__u8 family, __u8 model, __u8 stepping)
+{
+	bool valid;
+
+	if (family != 6)
+		return false;
+
+	switch(model) {
+	case INTEL_FAM6_KABYLAKE: /* 8.0, 8.1 CFL(s13) */
+		valid = (stepping <= 13);
+		break;
+
+	case INTEL_FAM6_KABYLAKE_L: /* 8.0, 8.1 WHL(s12) */
+		valid = (stepping <= 12);
+		break;
+
+	case INTEL_FAM6_COMETLAKE: /* 8.2 CML-H/CML-S */
+		valid = (stepping <= 5);
+		break;
+
+	case INTEL_FAM6_COMETLAKE_L: /* 8.2 CML-U(v1) */
+		valid = (stepping == 0);
+		break;
+
+	case INTEL_FAM6_XEON_PHI_KNM: /* 8.0 */
+	case INTEL_FAM6_ATOM_GOLDMONT: /* 8.0 */
+	case INTEL_FAM6_ATOM_GOLDMONT_PLUS: /* 8.0 */
+	case INTEL_FAM6_ATOM_GOLDMONT_D: /* 8.0 */
+	case INTEL_FAM6_XEON_PHI_KNL: /* 8.0 */
+	case INTEL_FAM6_BROADWELL_D: /* 8.0 */
+	case INTEL_FAM6_BROADWELL_X: /* 8.0 */
+	case INTEL_FAM6_ATOM_SILVERMONT_D: /* 8.0 */
+	case INTEL_FAM6_BROADWELL_G: /* 8.0 */
+	case INTEL_FAM6_HASWELL_G: /* 8.0 */
+	case INTEL_FAM6_HASWELL_L: /* 8.0 */
+		valid = true;
+		break;
+
+	case INTEL_FAM6_SKYLAKE_L: /* 8.0 */
+	case INTEL_FAM6_SKYLAKE: /* 8.0 */
+		valid = (stepping <= 4);
+		break;
+
+	case INTEL_FAM6_SKYLAKE_X: /* 8.0:SKX,CLX  8.2:CPX */
+		valid = (stepping <= 11);
+		break;
+
+	default:
+		valid = (model <= INTEL_FAM6_HASWELL_X); /* 8.0 */
+		break;
+	}
+
+	return valid;
+}
+
+static void rh_check_supported(void)
+{
+	bool guest;
+
+	guest = (x86_hyper_type != X86_HYPER_NATIVE || boot_cpu_has(X86_FEATURE_HYPERVISOR));
+
+	/* RHEL supports single cpu on guests only */
+	if (((boot_cpu_data.x86_max_cores * smp_num_siblings) == 1) &&
+	    !guest && is_kdump_kernel()) {
+		pr_crit("Detected single cpu native boot.\n");
+		pr_crit("Important:  In Red Hat Enterprise Linux 8, single threaded, single CPU 64-bit physical systems are unsupported by Red Hat. Please contact your Red Hat support representative for a list of certified and supported systems.");
+	}
+
+	/*
+	 * If the RHEL kernel does not support this hardware, the kernel will
+	 * attempt to boot, but no support is provided for this hardware
+	 */
+	switch (boot_cpu_data.x86_vendor) {
+	case X86_VENDOR_AMD:
+		if (!valid_amd_processor(boot_cpu_data.x86,
+					 boot_cpu_data.x86_model_id, guest)) {
+			pr_crit("Detected CPU family %xh model %d\n",
+				boot_cpu_data.x86,
+				boot_cpu_data.x86_model);
+			mark_hardware_unsupported("AMD Processor");
+		}
+		break;
+
+	case X86_VENDOR_INTEL:
+		if (!valid_intel_processor(boot_cpu_data.x86,
+					   boot_cpu_data.x86_model,
+					   boot_cpu_data.x86_stepping)) {
+			pr_crit("Detected CPU family %d model %d stepping %d\n",
+				boot_cpu_data.x86,
+				boot_cpu_data.x86_model,
+				boot_cpu_data.x86_stepping);
+			mark_hardware_unsupported("Intel Processor");
+		}
+		break;
+
+	default:
+		pr_crit("Detected processor %s %s\n",
+			boot_cpu_data.x86_vendor_id,
+			boot_cpu_data.x86_model_id);
+		mark_hardware_unsupported("Processor");
+		break;
+	}
+
+	/*
+	 * Due to the complexity of x86 lapic & ioapic enumeration, and PCI IRQ
+	 * routing, ACPI is required for x86.  acpi=off is a valid debug kernel
+	 * parameter, so just print out a loud warning in case something
+	 * goes wrong (which is most of the time).
+	 */
+	if (acpi_disabled && !guest)
+		pr_crit("ACPI has been disabled or is not available on this hardware.  This may result in a single cpu boot, incorrect PCI IRQ routing, or boot failure.\n");
+}
+
 /*
  * Dump out kernel offset information on panic.
  */
@@ -820,8 +1040,20 @@ dump_kernel_offset(struct notifier_block *self, unsigned long v, void *p)
 
 void __init setup_arch(char **cmdline_p)
 {
+	/*
+	 * Reserve the memory occupied by the kernel between _text and
+	 * __end_of_kernel_reserve symbols. Any kernel sections after the
+	 * __end_of_kernel_reserve symbol must be explicitly reserved with a
+	 * separate memblock_reserve() or they will be discarded.
+	 */
 	memblock_reserve(__pa_symbol(_text),
-			 (unsigned long)__bss_stop - (unsigned long)_text);
+			 (unsigned long)__end_of_kernel_reserve - (unsigned long)_text);
+
+	/*
+	 * Make sure page 0 is always reserved because on systems with
+	 * L1TF its contents can be leaked to user processes.
+	 */
+	memblock_reserve(0, PAGE_SIZE);
 
 	early_reserve_initrd();
 
@@ -866,6 +1098,8 @@ void __init setup_arch(char **cmdline_p)
 
 	idt_setup_early_traps();
 	early_cpu_init();
+	arch_init_ideal_nops();
+	jump_label_init();
 	early_ioremap_init();
 
 	setup_olpc_ofw_pgd();
@@ -991,16 +1225,15 @@ void __init setup_arch(char **cmdline_p)
 		setup_clear_cpu_cap(X86_FEATURE_APIC);
 	}
 
-#ifdef CONFIG_PCI
-	if (pci_early_dump_regs)
-		early_dump_pci_devices();
-#endif
-
 	e820__reserve_setup_data();
 	e820__finish_early_params();
 
 	if (efi_enabled(EFI_BOOT))
 		efi_init();
+
+	efi_set_secure_boot(boot_params.secure_boot);
+
+	init_lockdown();
 
 	dmi_scan_machine();
 	dmi_memdev_walk();
@@ -1012,6 +1245,7 @@ void __init setup_arch(char **cmdline_p)
 	 */
 	init_hypervisor_platform();
 
+	tsc_early_init();
 	x86_init.resources.probe_roms();
 
 	/* after parse_early_param, so could debug it */
@@ -1155,20 +1389,6 @@ void __init setup_arch(char **cmdline_p)
 	/* Allocate bigger log buffer */
 	setup_log_buf(1);
 
-	if (efi_enabled(EFI_BOOT)) {
-		switch (boot_params.secure_boot) {
-		case efi_secureboot_mode_disabled:
-			pr_info("Secure boot disabled\n");
-			break;
-		case efi_secureboot_mode_enabled:
-			pr_info("Secure boot enabled\n");
-			break;
-		default:
-			pr_info("Secure boot could not be determined\n");
-			break;
-		}
-	}
-
 	reserve_initrd();
 
 	acpi_table_upgrade();
@@ -1197,11 +1417,6 @@ void __init setup_arch(char **cmdline_p)
 
 	memblock_find_dma_reserve();
 
-#ifdef CONFIG_KVM_GUEST
-	kvmclock_init();
-#endif
-
-	tsc_early_delay_calibrate();
 	if (!early_xdbc_setup_hardware())
 		early_xdbc_register_console();
 
@@ -1272,14 +1487,14 @@ void __init setup_arch(char **cmdline_p)
 
 	mcheck_init();
 
-	arch_init_ideal_nops();
-
 	register_refined_jiffies(CLOCK_TICK_RATE);
 
 #ifdef CONFIG_EFI
 	if (efi_enabled(EFI_BOOT))
 		efi_apply_memmap_quirks();
 #endif
+
+	rh_check_supported();
 
 	unwind_init();
 }

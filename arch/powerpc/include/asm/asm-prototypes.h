@@ -37,13 +37,11 @@ void kexec_copy_flush(struct kimage *image);
 extern struct static_key hcall_tracepoint_key;
 void __trace_hcall_entry(unsigned long opcode, unsigned long *args);
 void __trace_hcall_exit(long opcode, long retval, unsigned long *retbuf);
-/* OPAL tracing */
-#ifdef HAVE_JUMP_LABEL
-extern struct static_key opal_tracepoint_key;
-#endif
 
-void __trace_opal_entry(unsigned long opcode, unsigned long *args);
-void __trace_opal_exit(long opcode, unsigned long retval);
+/* OPAL */
+int64_t __opal_call(int64_t a0, int64_t a1, int64_t a2, int64_t a3,
+		    int64_t a4, int64_t a5, int64_t a6, int64_t a7,
+		    int64_t opcode, uint64_t msr);
 
 /* VMX copying */
 int enter_vmx_usercopy(void);
@@ -142,5 +140,35 @@ void tm_abort(uint8_t cause);
 struct kvm_vcpu;
 void _kvmppc_restore_tm_pr(struct kvm_vcpu *vcpu, u64 guest_msr);
 void _kvmppc_save_tm_pr(struct kvm_vcpu *vcpu, u64 guest_msr);
+
+#ifdef CONFIG_PPC_TRANSACTIONAL_MEM
+void kvmppc_save_tm_hv(struct kvm_vcpu *vcpu, u64 msr, bool preserve_nv);
+void kvmppc_restore_tm_hv(struct kvm_vcpu *vcpu, u64 msr, bool preserve_nv);
+#else
+static inline void kvmppc_save_tm_hv(struct kvm_vcpu *vcpu, u64 msr,
+				     bool preserve_nv) { }
+static inline void kvmppc_restore_tm_hv(struct kvm_vcpu *vcpu, u64 msr,
+					bool preserve_nv) { }
+#endif /* CONFIG_PPC_TRANSACTIONAL_MEM */
+
+void kvmhv_save_host_pmu(void);
+void kvmhv_load_host_pmu(void);
+void kvmhv_save_guest_pmu(struct kvm_vcpu *vcpu, bool pmu_in_use);
+void kvmhv_load_guest_pmu(struct kvm_vcpu *vcpu);
+
+int __kvmhv_vcpu_entry_p9(struct kvm_vcpu *vcpu);
+
+long kvmppc_h_set_dabr(struct kvm_vcpu *vcpu, unsigned long dabr);
+long kvmppc_h_set_xdabr(struct kvm_vcpu *vcpu, unsigned long dabr,
+			unsigned long dabrx);
+
+/* Patch sites */
+extern s32 patch__call_flush_count_cache;
+extern s32 patch__flush_count_cache_return;
+extern s32 patch__flush_link_stack_return;
+extern s32 patch__call_kvm_flush_link_stack;
+
+extern long flush_count_cache;
+extern long kvm_flush_link_stack;
 
 #endif /* _ASM_POWERPC_ASM_PROTOTYPES_H */

@@ -15,6 +15,7 @@
 #include <linux/build_bug.h>
 #include <asm/byteorder.h>
 #include <uapi/linux/kernel.h>
+#include <asm/div64.h>
 
 #define USHRT_MAX	((u16)(~0U))
 #define SHRT_MAX	((s16)(USHRT_MAX>>1))
@@ -170,19 +171,7 @@
 #define _RET_IP_		(unsigned long)__builtin_return_address(0)
 #define _THIS_IP_  ({ __label__ __here; __here: (unsigned long)&&__here; })
 
-#ifdef CONFIG_LBDAF
-# include <asm/div64.h>
 # define sector_div(a, b) do_div(a, b)
-#else
-# define sector_div(n, b)( \
-{ \
-	int _res; \
-	_res = (n) % (b); \
-	(n) /= (b); \
-	_res; \
-} \
-)
-#endif
 
 /**
  * upper_32_bits - return bits 32-63 of a number
@@ -212,8 +201,10 @@ extern int _cond_resched(void);
 #endif
 
 #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
-  void ___might_sleep(const char *file, int line, int preempt_offset);
-  void __might_sleep(const char *file, int line, int preempt_offset);
+extern void ___might_sleep(const char *file, int line, int preempt_offset);
+extern void __might_sleep(const char *file, int line, int preempt_offset);
+extern void __cant_sleep(const char *file, int line, int preempt_offset);
+
 /**
  * might_sleep - annotation for functions that can sleep
  *
@@ -226,6 +217,13 @@ extern int _cond_resched(void);
  */
 # define might_sleep() \
 	do { __might_sleep(__FILE__, __LINE__, 0); might_resched(); } while (0)
+/**
+ * cant_sleep - annotation for functions that cannot sleep
+ *
+ * this macro will print a stack trace if it is executed with preemption enabled
+ */
+# define cant_sleep() \
+	do { __cant_sleep(__FILE__, __LINE__, 0); } while (0)
 # define sched_annotate_sleep()	(current->task_state_change = 0)
 #else
   static inline void ___might_sleep(const char *file, int line,
@@ -233,6 +231,7 @@ extern int _cond_resched(void);
   static inline void __might_sleep(const char *file, int line,
 				   int preempt_offset) { }
 # define might_sleep() do { might_resched(); } while (0)
+# define cant_sleep() do { } while (0)
 # define sched_annotate_sleep() do { } while (0)
 #endif
 
@@ -305,6 +304,38 @@ void refcount_error_report(struct pt_regs *regs, const char *err);
 #else
 static inline void refcount_error_report(struct pt_regs *regs, const char *err)
 { }
+#endif
+
+#ifdef CONFIG_LOCK_DOWN_KERNEL
+extern void __init init_lockdown(void);
+extern bool __kernel_is_locked_down(const char *what, bool first);
+
+#ifndef CONFIG_LOCK_DOWN_MANDATORY
+#define kernel_is_locked_down(what)					\
+	({								\
+		static bool message_given;				\
+		bool locked_down = __kernel_is_locked_down(what, !message_given); \
+		message_given = true;					\
+		locked_down;						\
+	})
+#else
+#define kernel_is_locked_down(what)					\
+	({								\
+		static bool message_given;				\
+		__kernel_is_locked_down(what, !message_given);		\
+		message_given = true;					\
+		true;							\
+	})
+#endif
+#else
+static inline void __init init_lockdown(void)
+{
+}
+static inline bool __kernel_is_locked_down(const char *what, bool first)
+{
+	return false;
+}
+#define kernel_is_locked_down(what) ({ false; })
 #endif
 
 /* Internal, do not use. */
@@ -494,6 +525,7 @@ static inline u32 int_sqrt64(u64 x)
 extern void bust_spinlocks(int yes);
 extern int oops_in_progress;		/* If set, an oops, panic(), BUG() or die() is in progress */
 extern int panic_timeout;
+extern unsigned long panic_print;
 extern int panic_on_oops;
 extern int panic_on_unrecovered_nmi;
 extern int panic_on_io_nmi;
@@ -565,7 +597,23 @@ extern enum system_states {
 #define TAINT_LIVEPATCH			15
 #define TAINT_AUX			16
 #define TAINT_RANDSTRUCT		17
-#define TAINT_FLAGS_COUNT		18
+#define TAINT_18			18
+#define TAINT_19			19
+#define TAINT_20			20
+#define TAINT_21			21
+#define TAINT_22			22
+#define TAINT_23			23
+#define TAINT_24			24
+#define TAINT_25			25
+#define TAINT_26			26
+/* Start of Red Hat-specific taint flags */
+#define TAINT_SUPPORT_REMOVED		27
+#define TAINT_28			28
+#define TAINT_TECH_PREVIEW		29
+#define TAINT_UNPRIVILEGED_BPF		30
+#define TAINT_31			31
+/* End of Red Hat-specific taint flags */
+#define TAINT_FLAGS_COUNT		32
 
 struct taint_flag {
 	char c_true;	/* character printed when tainted */
@@ -999,4 +1047,13 @@ static inline void ftrace_dump(enum ftrace_dump_mode oops_dump_mode) { }
 	 /* OTHER_WRITABLE?  Generally considered a bad idea. */		\
 	 BUILD_BUG_ON_ZERO((perms) & 2) +					\
 	 (perms))
+
+struct module;
+
+void mark_hardware_unsupported(const char *msg);
+void mark_hardware_deprecated(const char *msg);
+void mark_tech_preview(const char *msg, struct module *mod);
+void mark_driver_unsupported(const char *name);
+void mark_hardware_removed(const char *name);
+
 #endif

@@ -133,13 +133,11 @@ int crashing_cpu = -1;
 /* also used by kexec */
 void machine_shutdown(void)
 {
-#ifdef CONFIG_FA_DUMP
 	/*
 	 * if fadump is active, cleanup the fadump registration before we
 	 * shutdown.
 	 */
 	fadump_cleanup();
-#endif
 
 	if (ppc_md.machine_shutdown)
 		ppc_md.machine_shutdown();
@@ -971,6 +969,8 @@ void __init setup_arch(char **cmdline_p)
 #endif
 	if (ppc_md.setup_arch)
 		ppc_md.setup_arch();
+
+	setup_barrier_nospec();
 
 	paging_init();
 

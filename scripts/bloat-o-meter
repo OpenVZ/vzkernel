@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#! /usr/libexec/platform-python
 #
 # Copyright 2004 Matt Mackall <mpm@selenic.com>
 #
