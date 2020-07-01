@@ -1122,6 +1122,16 @@ static void kaio_unplug(struct ploop_io * io)
 
 static void kaio_queue_settings(struct ploop_io * io, struct request_queue * q)
 {
+	struct file  *file  = io->files.file;
+	struct inode *inode = file->f_mapping->host;
+
+	if (inode->i_sb->s_magic == EXT4_SUPER_MAGIC) {
+		WARN_ON(!kaio_backed_ext4);
+		blk_queue_stack_limits(q, bdev_get_queue(io->files.bdev));
+		ploop_set_discard_limits(io->plo);
+		return;
+	}
+
 	blk_set_stacking_limits(&q->limits);
 	/*
 	 * Maintaince mode based discard splits a big bio itself,
