@@ -375,7 +375,9 @@ static inline void purge_lru_warn(struct extent_map_tree *tree)
 		sizeof(struct extent_map);
 
 	loff_t ratio = i_size_read(tree->mapping->host) * 100;
-	do_div(ratio, atomic_long_read(&ploop_io_images_size));
+	long images_size = atomic_long_read(&ploop_io_images_size) ? : 1;
+
+	do_div(ratio, images_size);
 
 	printk(KERN_WARNING "Purging lru entry from extent tree for inode %ld "
 	       "(map_size=%d ratio=%lld%%)\n",
