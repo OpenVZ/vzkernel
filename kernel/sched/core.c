@@ -2955,7 +2955,6 @@ static DEFINE_SPINLOCK(load_ve_lock);
 
 void calc_load_ve(void)
 {
-	static DEFINE_SPINLOCK(load_ve_lock);
 	unsigned long nr_unint, nr_active;
 	struct task_group *tg;
 	int i;
