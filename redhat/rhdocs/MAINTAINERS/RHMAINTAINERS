@@ -503,6 +503,7 @@ S:	Maintained
 F:	drivers/scsi/hpsa*
 
 DMA MAPPING SUPPORT
+M:	Jerry Snitselaar <jsnitsel@redhat.com>
 M:	Donald Dutile <ddutile@redhat.com>
 S:	Maintained
 F:	kernel/dma/*
