@@ -251,5 +251,5 @@ static inline u64 nsec_to_cycles(struct kvm_vcpu *vcpu, u64 nsec)
 		vcpu->arch.virtual_tsc_shift);
 }
 
-u64 kvm_spec_ctrl_valid_bits(struct kvm_vcpu *vcpu);
+int kvm_spec_ctrl_test_value(u64 value);
 #endif
