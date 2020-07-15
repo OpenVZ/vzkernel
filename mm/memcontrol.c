@@ -4698,8 +4698,6 @@ void mem_cgroup_fill_sysinfo(struct mem_cgroup *memcg, struct sysinfo *si)
 	swaped = page_counter_read(&memcg->memsw) - page_counter_read(&memcg->memory);
 	si->totalswap = min(totalswap, memcg->memsw.limit - memcg->memory.limit);
 
-	used = page_counter_read(&memcg->memory);
-
 	if (swaped > si->totalswap) {
 		si->freeswap = 0;
 		used += swaped - si->totalswap;
