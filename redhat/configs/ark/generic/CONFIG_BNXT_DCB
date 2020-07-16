@@ -1,2 +1,0 @@
-# Notes: align with rhel7 driver featureset
-CONFIG_BNXT_DCB=y

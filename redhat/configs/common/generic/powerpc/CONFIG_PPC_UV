@@ -1,1 +1,1 @@
-# CONFIG_PPC_UV is not set
+CONFIG_PPC_UV=y
