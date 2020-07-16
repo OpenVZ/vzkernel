@@ -607,6 +607,11 @@ F:	include/linux/i2c-*.h
 F:	include/uapi/linux/i2c.h
 F:	include/uapi/linux/i2c-*.h
 
+INTEGRITY SUBSYSTEM
+M:	Bruno Meneguele <bmeneg@redhat.com>
+S:	Maintained
+F:	security/integrity/
+
 INTEL E1000E ETHERNET DRIVER (e1000e)
 M:	Ken Cox <jkc@redhat.com>
 S:	Maintained
