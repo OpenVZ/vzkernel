@@ -1,4 +1,18 @@
-# config-variant=config:config:config
+# Entries must be ordered as base and debug (if the debug variant exists)
+# ie) config-variant-arch
+#     config-variant-arch-debug (if the -debug variant exists)
+
+# Individual entries must be ordered as
+# config-variant=config-1:config-2:config-3 in a descending order through
+# the hierarchy
+
+# -debug variants must include the entirety of the base variant
+# For example,
+#
+# config-foo: generic:generic-foo:generic-foo-bar
+# config-foo-debug: generic:generic-foo:debug:debug-foo
+# is not a valid -debug variant
+
 # kernel.config files are build on the fly based on this config,
 # the first arg is arch and variant, the second is a hierarchy of
 # config options, lowest priority to highest
