@@ -82,8 +82,14 @@ extern int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
 extern void ext4_es_find_delayed_extent_range(struct inode *inode,
 					ext4_lblk_t lblk, ext4_lblk_t end,
 					struct extent_status *es);
-extern int ext4_es_lookup_extent(struct inode *inode, ext4_lblk_t lblk,
-				 struct extent_status *es);
+extern int __ext4_es_lookup_extent(struct inode *inode, ext4_lblk_t lblk,
+				 struct extent_status *es, int flags);
+
+static inline int ext4_es_lookup_extent(struct inode *inode, ext4_lblk_t lblk,
+					struct extent_status *es)
+{
+	return __ext4_es_lookup_extent(inode, lblk, es, 0);
+}
 
 static inline unsigned int ext4_es_status(struct extent_status *es)
 {
