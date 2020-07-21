@@ -770,8 +770,8 @@ void ext4_es_cache_extent(struct inode *inode, ext4_lblk_t lblk,
  *
  * Return: 1 on found, 0 on not
  */
-int ext4_es_lookup_extent(struct inode *inode, ext4_lblk_t lblk,
-			  struct extent_status *es)
+int __ext4_es_lookup_extent(struct inode *inode, ext4_lblk_t lblk,
+			  struct extent_status *es, int flags)
 {
 	struct ext4_es_tree *tree;
 	struct extent_status *es1 = NULL;
