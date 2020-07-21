@@ -356,4 +356,5 @@ extern int __sys_sendmmsg(int fd, struct mmsghdr __user *mmsg,
 			  unsigned int vlen, unsigned int flags);
 
 extern struct ns_common *get_net_ns(struct ns_common *ns);
+extern struct ns_common *maybe_get_net_ns(struct ns_common *ns);
 #endif /* _LINUX_SOCKET_H */
