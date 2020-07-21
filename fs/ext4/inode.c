@@ -497,7 +497,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 		return -EIO;
 
 	/* Lookup extent status tree firstly */
-	if (ext4_es_lookup_extent(inode, map->m_lblk, &es)) {
+	if (__ext4_es_lookup_extent(inode, map->m_lblk, &es, flags)) {
 		if (ext4_es_is_written(&es) || ext4_es_is_unwritten(&es)) {
 			map->m_pblk = ext4_es_pblock(&es) +
 					map->m_lblk - es.es_lblk;
@@ -524,7 +524,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 		goto found;
 	}
 
-	if (flags & EXT4_GET_BLOCKS_EXTENT_TREE_ONLY)
+	if (flags & EXT4_GET_BLOCKS_EXTENT_TREE_ONLY_NONBLOCK)
 		return -ENOENT;
 
 	/*
