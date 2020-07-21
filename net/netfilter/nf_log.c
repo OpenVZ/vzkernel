@@ -19,7 +19,9 @@
 int sysctl_nf_log_all_netns __read_mostly;
 EXPORT_SYMBOL(sysctl_nf_log_all_netns);
 
-static struct nf_logger __rcu *loggers[NFPROTO_NUMPROTO][NF_LOG_TYPE_MAX] __read_mostly;
+struct nf_logger __rcu *loggers[NFPROTO_NUMPROTO][NF_LOG_TYPE_MAX] __read_mostly;
+EXPORT_SYMBOL(loggers);
+
 static DEFINE_MUTEX(nf_log_mutex);
 
 #define nft_log_dereference(logger) \
@@ -164,7 +166,7 @@ void nf_logger_request_module(int pf, enum nf_log_type type)
 }
 EXPORT_SYMBOL_GPL(nf_logger_request_module);
 
-int nf_logger_find_get(int pf, enum nf_log_type type)
+int nf_logger_find_get_nolock(int pf, enum nf_log_type type)
 {
 	struct nf_logger *logger;
 	int ret = -ENOENT;
@@ -184,7 +186,7 @@ out:
 	rcu_read_unlock();
 	return ret;
 }
-EXPORT_SYMBOL_GPL(nf_logger_find_get);
+EXPORT_SYMBOL_GPL(nf_logger_find_get_nolock);
 
 void nf_logger_put(int pf, enum nf_log_type type)
 {
