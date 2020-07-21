@@ -29,4 +29,9 @@ static inline void __tlb_remove_table(void *table)
 	free_page_and_swap_cache(table);
 }
 
+static inline void __tlb_remove_tables(void **tables, int nr)
+{
+	free_pages_and_swap_cache_nodrain((struct page **)tables, nr);
+}
+
 #endif /* _ASM_X86_TLB_H */
