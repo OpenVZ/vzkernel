@@ -62,7 +62,7 @@ static bool ovl_dyn_path_opts =
 module_param_named(dyn_path_opts, ovl_dyn_path_opts, bool, 0644);
 MODULE_PARM_DESC(dyn_path_opts, "dyn_path_opts feature enabled");
 
-static bool ovl_mnt_id_path_opts = IS_ENABLED(OVERLAY_FS_PATH_OPTIONS_MNT_ID);
+static bool ovl_mnt_id_path_opts = IS_ENABLED(CONFIG_OVERLAY_FS_PATH_OPTIONS_MNT_ID);
 module_param_named(mnt_id_path_opts, ovl_mnt_id_path_opts, bool, 0644);
 MODULE_PARM_DESC(mnt_id_path_opts, "mnt_id_path_opts feature enabled");
 
