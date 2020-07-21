@@ -137,7 +137,7 @@ static int ext4_fastmap(struct inode *inode, sector_t lblk_sec,
 		return -ENOENT;
 
 	found = __ext4_overwrite_io(inode, lblk_sec << 9, len, &map,
-				    EXT4_GET_BLOCKS_EXTENT_TREE_ONLY);
+				    EXT4_GET_BLOCKS_EXTENT_TREE_ONLY_NONBLOCK);
 	if (!found)
 		return -ENOENT;
 
