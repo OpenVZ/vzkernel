@@ -27,6 +27,7 @@
 #include <linux/fdtable.h>
 #include <linux/mm.h>
 #include <linux/virtinfo.h>
+#include <linux/vmacache.h>
 #include <linux/stat.h>
 #include <linux/fcntl.h>
 #include <linux/swap.h>
@@ -988,6 +989,8 @@ static int exec_mmap(struct linux_binprm *bprm)
 	tsk->mm = mm;
 	tsk->active_mm = mm;
 	activate_mm(active_mm, mm);
+	tsk->mm->vmacache_seqnum = 0;
+	vmacache_flush(tsk);
 	task_unlock(tsk);
 	arch_pick_mmap_layout(mm);
 	bprm->mm = NULL;		/* We're using it now */
