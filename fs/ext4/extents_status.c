@@ -782,7 +782,12 @@ int __ext4_es_lookup_extent(struct inode *inode, ext4_lblk_t lblk,
 	es_debug("lookup extent in block %u\n", lblk);
 
 	tree = &EXT4_I(inode)->i_es_tree;
-	read_lock(&EXT4_I(inode)->i_es_lock);
+
+	if (flags & EXT4_GET_BLOCKS_EXTENT_TREE_ONLY_NONBLOCK) {
+		if (!read_trylock(&EXT4_I(inode)->i_es_lock))
+			return 0;
+	} else
+		read_lock(&EXT4_I(inode)->i_es_lock);
 
 	/* find extent in cache firstly */
 	es->es_lblk = es->es_len = es->es_pblk = 0;
