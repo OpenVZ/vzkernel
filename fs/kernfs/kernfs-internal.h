@@ -119,6 +119,7 @@ struct kernfs_node *kernfs_new_node(struct kernfs_node *parent,
 extern const struct file_operations kernfs_file_fops;
 
 void kernfs_unmap_bin_file(struct kernfs_node *kn);
+long kernfs_ioctl(struct file *file, unsigned int ioctl, unsigned long arg);
 
 /*
  * symlink.c
