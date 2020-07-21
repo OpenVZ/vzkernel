@@ -440,7 +440,16 @@ done:
 	} else if (status == NFNL_BATCH_DONE) {
 		ss->commit(oskb);
 	} else {
-		ss->abort(oskb);
+		const struct nfnetlink_subsystem *ss2;
+
+		/* nf_logger_find_get_lock() can return -ENOENT after
+		 * nfnl_unlock drop/reacquire, so need to reread ss like in
+		 * -EGAIN case
+		 */
+		ss2 = rcu_dereference_protected(table[subsys_id].subsys,
+			lockdep_is_held(&table[subsys_id].mutex));
+		if (ss2 == ss)
+			ss->abort(oskb);
 	}
 
 	nfnl_err_deliver(&err_list, oskb);

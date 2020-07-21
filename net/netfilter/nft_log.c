@@ -15,6 +15,7 @@
 #include <linux/netlink.h>
 #include <linux/netfilter.h>
 #include <linux/netfilter/nf_tables.h>
+#include <linux/netfilter/nfnetlink.h>
 #include <net/netfilter/nf_tables.h>
 #include <net/netfilter/nf_log.h>
 #include <linux/netdevice.h>
@@ -45,6 +46,48 @@ static const struct nla_policy nft_log_policy[NFTA_LOG_MAX + 1] = {
 	[NFTA_LOG_LEVEL]	= { .type = NLA_U32 },
 	[NFTA_LOG_FLAGS]	= { .type = NLA_U32 },
 };
+
+extern struct nf_logger __rcu *loggers[NFPROTO_NUMPROTO][NF_LOG_TYPE_MAX] __read_mostly;
+
+/*
+ * In "nft_log" module we need to drop nfnl lock while performing
+ * request_module(), calls to nf_logger_find_get() in other
+ * modules are done without nfnl_lock taken.
+ *
+ * nf_logger_find_get
+ *  nft_log_init
+ *   nf_tables_newexpr
+ *    nf_tables_newrule		// nc->call_batch
+ *				// called with nfnl_lock taken
+ *
+ *     nfnetlink_rcv_batch	// takes nfnl_lock(NFNL_SUBSYS_NFTABLES)
+ *      nfnetlink_rcv
+ *       netlink_unicast
+ *        netlink_sendmsg
+ */
+static int nf_logger_find_get_lock(int pf, enum nf_log_type type)
+{
+	struct nf_logger *logger;
+	int ret = 0;
+
+	logger = loggers[pf][type];
+	if (logger == NULL) {
+		nfnl_unlock(NFNL_SUBSYS_NFTABLES);
+		request_module("nf-logger-%u-%u", pf, type);
+		nfnl_lock(NFNL_SUBSYS_NFTABLES);
+		ret = -EAGAIN;
+	}
+
+	rcu_read_lock();
+	logger = rcu_dereference(loggers[pf][type]);
+
+	if ((logger == NULL) ||
+	    ((ret == 0) && !try_module_get(logger->me))) {
+		ret = -ENOENT;
+	}
+	rcu_read_unlock();
+	return ret;
+}
 
 static int nft_log_init(const struct nft_ctx *ctx,
 			const struct nft_expr *expr,
@@ -99,11 +142,11 @@ static int nft_log_init(const struct nft_ctx *ctx,
 	}
 
 	if (ctx->afi->family == NFPROTO_INET) {
-		ret = nf_logger_find_get(NFPROTO_IPV4, li->type);
+		ret = nf_logger_find_get_lock(NFPROTO_IPV4, li->type);
 		if (ret < 0)
 			return ret;
 
-		ret = nf_logger_find_get(NFPROTO_IPV6, li->type);
+		ret = nf_logger_find_get_lock(NFPROTO_IPV6, li->type);
 		if (ret < 0) {
 			nf_logger_put(NFPROTO_IPV4, li->type);
 			return ret;
@@ -111,7 +154,7 @@ static int nft_log_init(const struct nft_ctx *ctx,
 		return 0;
 	}
 
-	return nf_logger_find_get(ctx->afi->family, li->type);
+	return nf_logger_find_get_lock(ctx->afi->family, li->type);
 }
 
 static void nft_log_destroy(const struct nft_ctx *ctx,
