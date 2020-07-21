@@ -518,8 +518,9 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 			BUG_ON(1);
 		}
 #ifdef ES_AGGRESSIVE_TEST
-		ext4_map_blocks_es_recheck(handle, inode, map,
-					   &orig_map, flags);
+		if (!(flags & EXT4_GET_BLOCKS_EXTENT_TREE_ONLY_NONBLOCK))
+			ext4_map_blocks_es_recheck(handle, inode, map,
+						   &orig_map, flags);
 #endif
 		goto found;
 	}
