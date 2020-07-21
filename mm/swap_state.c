@@ -295,11 +295,13 @@ void free_page_and_swap_cache(struct page *page)
  * Passed an array of pages, drop them all from swapcache and then release
  * them.  They are removed from the LRU and freed if this is their last use.
  */
-void free_pages_and_swap_cache(struct page **pages, int nr)
+static void __free_pages_and_swap_cache(struct page **pages, int nr, bool drain)
 {
 	struct page **pagep = pages;
 
-	lru_add_drain();
+	if (drain)
+		lru_add_drain();
+
 	while (nr) {
 		int todo = min(nr, PAGEVEC_SIZE);
 		int i;
@@ -317,6 +319,16 @@ void free_pages_and_swap_cache(struct page **pages, int nr)
 		pagep += todo;
 		nr -= todo;
 	}
+}
+
+void free_pages_and_swap_cache(struct page **pages, int nr)
+{
+	__free_pages_and_swap_cache(pages, nr, true);
+}
+
+void free_pages_and_swap_cache_nodrain(struct page **pages, int nr)
+{
+	__free_pages_and_swap_cache(pages, nr, false);
 }
 
 /*
