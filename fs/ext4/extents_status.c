@@ -785,8 +785,8 @@ static inline void ext4_es_stats_inc(struct percpu_counter *fbc)
  *
  * Return: 1 on found, 0 on not
  */
-int ext4_es_lookup_extent(struct inode *inode, ext4_lblk_t lblk,
-			  struct extent_status *es)
+int __ext4_es_lookup_extent(struct inode *inode, ext4_lblk_t lblk,
+			  struct extent_status *es, int flags)
 {
 	struct ext4_es_tree *tree;
 	struct ext4_es_stats *stats;
