@@ -15,6 +15,10 @@
 #include <linux/pagemap.h>
 #include <linux/sched.h>
 #include <linux/fsnotify.h>
+#include <linux/proc_ns.h>
+#include <linux/magic.h>
+#include <linux/socket.h>
+#include <net/net_namespace.h>
 
 #include "kernfs-internal.h"
 
@@ -891,6 +895,24 @@ void kernfs_notify(struct kernfs_node *kn)
 }
 EXPORT_SYMBOL_GPL(kernfs_notify);
 
+long kernfs_ioctl(struct file *file, unsigned int ioctl,
+		  unsigned long arg)
+{
+	struct dentry *dentry = file->f_path.dentry;
+	const void *ns = kernfs_info(dentry->d_sb)->ns;
+	struct net *net;
+
+	switch (ioctl) {
+	case KERNFS_GET_NS:
+		if (dentry->d_sb->s_magic != SYSFS_MAGIC || !ns)
+			return -ENOTTY;
+		net = (struct net *)ns;
+		return open_related_ns(&net->ns, maybe_get_net_ns);
+	default:
+		return -ENOTTY;
+	}
+}
+
 const struct file_operations kernfs_file_fops = {
 	.read		= kernfs_fop_read,
 	.write		= kernfs_fop_write,
@@ -899,6 +921,7 @@ const struct file_operations kernfs_file_fops = {
 	.open		= kernfs_fop_open,
 	.release	= kernfs_fop_release,
 	.poll		= kernfs_fop_poll,
+	.unlocked_ioctl = kernfs_ioctl,
 };
 
 /**
