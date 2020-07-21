@@ -578,8 +578,8 @@ enum {
 	 * allows jbd2 to avoid submitting data before commit. */
 #define EXT4_GET_BLOCKS_IO_SUBMIT		0x0400
 
-	/* Search in extent tree only */
-#define EXT4_GET_BLOCKS_EXTENT_TREE_ONLY	0x8000
+	/* Search in extent tree only and do not block */
+#define EXT4_GET_BLOCKS_EXTENT_TREE_ONLY_NONBLOCK	0x8000
 
 /*
  * The bit position of these flags must not overlap with any of the
