@@ -414,4 +414,5 @@ extern int __sys_socketpair(int family, int type, int protocol,
 extern int __sys_shutdown(int fd, int how);
 
 extern struct ns_common *get_net_ns(struct ns_common *ns);
+extern struct ns_common *maybe_get_net_ns(struct ns_common *ns);
 #endif /* _LINUX_SOCKET_H */
