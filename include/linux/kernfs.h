@@ -17,6 +17,7 @@
 #include <linux/atomic.h>
 #include <linux/uidgid.h>
 #include <linux/wait.h>
+#include <linux/ioctl.h>
 
 #include <linux/rh_kabi.h>
 
@@ -584,5 +585,9 @@ kernfs_mount(struct file_system_type *fs_type, int flags,
 	return kernfs_mount_ns(fs_type, flags, root,
 				magic, new_sb_created, NULL);
 }
+
+#define KERNIO 0xb8
+
+#define KERNFS_GET_NS _IO(KERNIO, 0x1)
 
 #endif	/* __LINUX_KERNFS_H */
