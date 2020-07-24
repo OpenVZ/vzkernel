@@ -544,23 +544,23 @@ static char *log_dict(const struct printk_log *msg)
 }
 
 /* get record by index; idx must point to valid msg */
-static struct printk_log *log_from_idx(u32 idx)
+static struct printk_log *log_from_idx(struct log_state *log, u32 idx)
 {
-	struct printk_log *msg = (struct printk_log *)(log_buf + idx);
+	struct printk_log *msg = (struct printk_log *)(log->buf + idx);
 
 	/*
 	 * A length == 0 record is the end of buffer marker. Wrap around and
 	 * read the message at the start of the buffer.
 	 */
 	if (!msg->len)
-		return (struct printk_log *)log_buf;
+		return (struct printk_log *)log->buf;
 	return msg;
 }
 
 /* get next record; idx must point to valid msg */
-static u32 log_next(u32 idx)
+static u32 log_next(struct log_state *log, u32 idx)
 {
-	struct printk_log *msg = (struct printk_log *)(log_buf + idx);
+	struct printk_log *msg = (struct printk_log *)(log->buf + idx);
 
 	/* length == 0 indicates the end of the buffer; wrap */
 	/*
@@ -569,7 +569,7 @@ static u32 log_next(u32 idx)
 	 * return the one after that.
 	 */
 	if (!msg->len) {
-		msg = (struct printk_log *)log_buf;
+		msg = (struct printk_log *)log->buf;
 		return msg->len;
 	}
 	return idx + msg->len;
@@ -607,7 +607,7 @@ static int log_make_free_space(struct log_state *log,
 	while (log->first_seq < log->next_seq &&
 	       !logbuf_has_space(log, msg_size, false)) {
 		/* drop old messages until we have enough contiguous space */
-		log->first_idx = log_next(log->first_idx);
+		log->first_idx = log_next(log, log->first_idx);
 		log->first_seq++;
 	}
 
@@ -691,12 +691,12 @@ static int log_store(struct log_state *log,
 		 * at the end of the buffer. Add an empty header with len == 0
 		 * to signify a wrap around.
 		 */
-		memset(log_buf + log->next_idx, 0, sizeof(struct printk_log));
+		memset(log->buf + log->next_idx, 0, sizeof(struct printk_log));
 		log->next_idx = 0;
 	}
 
 	/* fill message */
-	msg = (struct printk_log *)(log_buf + log->next_idx);
+	msg = (struct printk_log *)(log->buf + log->next_idx);
 	memcpy(log_text(msg), text, text_len);
 	msg->text_len = text_len;
 	if (trunc_msg_len) {
@@ -969,14 +969,14 @@ static ssize_t devkmsg_read(struct file *file, char __user *buf,
 		goto out;
 	}
 
-	msg = log_from_idx(user->idx);
+	msg = log_from_idx(log, user->idx);
 	len = msg_print_ext_header(user->buf, sizeof(user->buf),
 				   msg, user->seq);
 	len += msg_print_ext_body(user->buf + len, sizeof(user->buf) - len,
 				  log_dict(msg), msg->dict_len,
 				  log_text(msg), msg->text_len);
 
-	user->idx = log_next(user->idx);
+	user->idx = log_next(log, user->idx);
 	user->seq++;
 	logbuf_unlock_irq();
 
@@ -1457,12 +1457,12 @@ static int syslog_print(struct log_state *log,
 			log->syslog_time = printk_time;
 
 		skip = log->syslog_partial;
-		msg = log_from_idx(log->syslog_idx);
+		msg = log_from_idx(log, log->syslog_idx);
 		n = msg_print_text(msg, true, log->syslog_time, text,
 				   LOG_LINE_MAX + PREFIX_MAX);
 		if (n - log->syslog_partial <= size) {
 			/* message fits into buffer, move forward */
-			log->syslog_idx = log_next(log->syslog_idx);
+			log->syslog_idx = log_next(log, log->syslog_idx);
 			log->syslog_seq++;
 			n -= log->syslog_partial;
 			log->syslog_partial = 0;
@@ -1515,10 +1515,10 @@ static int syslog_print_all(struct log_state *log,
 	seq = log->clear_seq;
 	idx = log->clear_idx;
 	while (seq < log->next_seq) {
-		struct printk_log *msg = log_from_idx(idx);
+		struct printk_log *msg = log_from_idx(log, idx);
 
 		len += msg_print_text(msg, true, time, NULL, 0);
-		idx = log_next(idx);
+		idx = log_next(log, idx);
 		seq++;
 	}
 
@@ -1526,10 +1526,10 @@ static int syslog_print_all(struct log_state *log,
 	seq = log->clear_seq;
 	idx = log->clear_idx;
 	while (len > size && seq < log->next_seq) {
-		struct printk_log *msg = log_from_idx(idx);
+		struct printk_log *msg = log_from_idx(log, idx);
 
 		len -= msg_print_text(msg, true, time, NULL, 0);
-		idx = log_next(idx);
+		idx = log_next(log, idx);
 		seq++;
 	}
 
@@ -1538,11 +1538,11 @@ static int syslog_print_all(struct log_state *log,
 
 	len = 0;
 	while (len >= 0 && seq < next_seq) {
-		struct printk_log *msg = log_from_idx(idx);
+		struct printk_log *msg = log_from_idx(log, idx);
 		int textlen = msg_print_text(msg, true, time, text,
 					     LOG_LINE_MAX + PREFIX_MAX);
 
-		idx = log_next(idx);
+		idx = log_next(log, idx);
 		seq++;
 
 		logbuf_unlock_irq();
@@ -1670,12 +1670,12 @@ int do_syslog(int type, char __user *buf, int len, int source)
 				    log->syslog_time : printk_time;
 
 			while (seq < log->next_seq) {
-				struct printk_log *msg = log_from_idx(idx);
+				struct printk_log *msg = log_from_idx(log, idx);
 
 				error += msg_print_text(msg, true, time, NULL,
 							0);
 				time = printk_time;
-				idx = log_next(idx);
+				idx = log_next(log, idx);
 				seq++;
 			}
 			error -= log->syslog_partial;
@@ -1970,6 +1970,7 @@ static size_t log_output(struct log_state *log,
 int vprintk_store_log(struct log_state *log, int facility, int level,
 		      const char *dict, size_t dictlen,
 		      const char *fmt, va_list args)
+
 {
 	static char textbuf[LOG_LINE_MAX];
 	char *text = textbuf;
@@ -2034,6 +2035,7 @@ asmlinkage int vprintk_emit_log(struct log_state *log,
 	bool in_sched = false, pending_output;
 	unsigned long flags;
 	u64 curr_log_seq;
+	bool need_wake = false;
 
 	/* Suppress unimportant messages after panic happens */
 	if (unlikely(suppress_printk))
@@ -2068,9 +2070,19 @@ asmlinkage int vprintk_emit_log(struct log_state *log,
 		 * semaphore.  The release will print out buffers and wake up
 		 * /dev/kmsg and syslog() users.
 		 */
-		if (console_trylock_spinning())
+		if (log != &init_log_state) {
+			logbuf_lock_irqsave(flags);
+			if (log->seen_seq != log->next_seq && !oops_in_progress) {
+				log->seen_seq = log->next_seq;
+				need_wake = true;
+			}
+			logbuf_unlock_irqrestore(flags);
+		} else if (console_trylock_spinning())
 			console_unlock();
 		preempt_enable();
+
+		if (need_wake)
+			wake_up_interruptible(&log->wait);
 	}
 
 	if (pending_output)
@@ -2546,14 +2558,14 @@ skip:
 		if (log->console_seq == log->next_seq)
 			break;
 
-		msg = log_from_idx(log->console_idx);
+		msg = log_from_idx(log, log->console_idx);
 		if (suppress_message_printing(msg->level)) {
 			/*
 			 * Skip record we have buffered and already printed
 			 * directly to the console when we received it, and
 			 * record that has level above the console loglevel.
 			 */
-			log->console_idx = log_next(log->console_idx);
+			log->console_idx = log_next(log, log->console_idx);
 			log->console_seq++;
 			goto skip;
 		}
@@ -2577,7 +2589,7 @@ skip:
 						log_dict(msg), msg->dict_len,
 						log_text(msg), msg->text_len);
 		}
-		log->console_idx = log_next(log->console_idx);
+		log->console_idx = log_next(log, log->console_idx);
 		log->console_seq++;
 		raw_spin_unlock(&logbuf_lock);
 
@@ -3305,10 +3317,11 @@ bool kmsg_dump_get_line_nolock(struct kmsg_dumper *dumper, bool syslog,
 	if (dumper->cur_seq >= log->next_seq)
 		goto out;
 
-	msg = log_from_idx(dumper->cur_idx);
+
+	msg = log_from_idx(log, dumper->cur_idx);
 	l = msg_print_text(msg, syslog, printk_time, line, size);
 
-	dumper->cur_idx = log_next(dumper->cur_idx);
+	dumper->cur_idx = log_next(log, dumper->cur_idx);
 	dumper->cur_seq++;
 	ret = true;
 out:
@@ -3400,10 +3413,10 @@ bool kmsg_dump_get_buffer(struct kmsg_dumper *dumper, bool syslog,
 	seq = dumper->cur_seq;
 	idx = dumper->cur_idx;
 	while (seq < dumper->next_seq) {
-		struct printk_log *msg = log_from_idx(idx);
+		struct printk_log *msg = log_from_idx(log, idx);
 
 		l += msg_print_text(msg, true, time, NULL, 0);
-		idx = log_next(idx);
+		idx = log_next(log, idx);
 		seq++;
 	}
 
@@ -3411,10 +3424,10 @@ bool kmsg_dump_get_buffer(struct kmsg_dumper *dumper, bool syslog,
 	seq = dumper->cur_seq;
 	idx = dumper->cur_idx;
 	while (l > size && seq < dumper->next_seq) {
-		struct printk_log *msg = log_from_idx(idx);
+		struct printk_log *msg = log_from_idx(log, idx);
 
 		l -= msg_print_text(msg, true, time, NULL, 0);
-		idx = log_next(idx);
+		idx = log_next(log, idx);
 		seq++;
 	}
 
@@ -3424,10 +3437,10 @@ bool kmsg_dump_get_buffer(struct kmsg_dumper *dumper, bool syslog,
 
 	l = 0;
 	while (seq < dumper->next_seq) {
-		struct printk_log *msg = log_from_idx(idx);
+		struct printk_log *msg = log_from_idx(log, idx);
 
 		l += msg_print_text(msg, syslog, time, buf + l, size - l);
-		idx = log_next(idx);
+		idx = log_next(log, idx);
 		seq++;
 	}
 
@@ -3491,7 +3504,12 @@ int ve_log_init(struct ve_struct *ve)
 
 	init_waitqueue_head(&log->wait);
 	log->buf_len = VE_LOG_BUF_LEN;
-	/* buf will be initialized later by log_state_init() */
+
+	log->buf = kzalloc(log->buf_len, GFP_KERNEL);
+	if (!log->buf) {
+		kfree(log);
+		return -ENOMEM;
+	}
 
 	ve->log_state = log;
 	return 0;
