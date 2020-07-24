@@ -49,12 +49,6 @@ int kernfs_ve_allowed(struct kernfs_node *kn)
 	return !kn->ve_perms_map || ve_is_super(get_exec_env());
 }
 
-int kernfs_test_ve(struct kernfs_super_info *sb_info,
-		   struct kernfs_super_info *info)
-{
-	return sb_info->ve == info->ve;
-}
-
 static struct kmapset_key *kernfs_info_perms_key(struct kernfs_super_info *info)
 {
 	return (void *)get_exec_env() + info->ve_perms_off;

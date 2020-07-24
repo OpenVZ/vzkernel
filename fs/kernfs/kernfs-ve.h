@@ -16,9 +16,6 @@ struct kmapset;
 
 #ifdef CONFIG_VE
 
-int kernfs_test_ve(struct kernfs_super_info *sb_info,
-		   struct kernfs_super_info *info);
-
 void kernfs_get_ve_perms(struct kernfs_node *kn);
 void kernfs_put_ve_perms(struct kernfs_node *kn);
 
@@ -30,12 +27,6 @@ int kernfs_ve_allowed(struct kernfs_node *kn);
 bool kernfs_d_visible(struct kernfs_node *kn, struct kernfs_super_info *info);
 
 #else // CONFIG_VE
-
-static inline int kernfs_test_ve(struct kernfs_super_info *sb_info,
-				 struct kernfs_super_info *info)
-{
-	return 0;
-}
 
 void kernfs_get_ve_perms(struct kernfs_node *kn) { }
 void kernfs_put_ve_perms(struct kernfs_node *kn) { }
