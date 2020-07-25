@@ -4814,14 +4814,24 @@ static ssize_t mem_cgroup_read(struct cgroup *cont, struct cftype *cft,
 			val = (u64)mem_cgroup_usage(memcg, false) * PAGE_SIZE;
 		else if (counter == &memcg->memsw)
 			val = (u64)mem_cgroup_usage(memcg, true) * PAGE_SIZE;
+		else if (counter == &memcg->kmem)
+			 /* remove fake charge, see __memcg_activate_kmem() */
+			val = (u64)(page_counter_read(counter) - 1) * PAGE_SIZE;
 		else
 			val = (u64)page_counter_read(counter) * PAGE_SIZE;
 		break;
 	case RES_LIMIT:
-		val = (u64)counter->limit * PAGE_SIZE;
+		if (counter == &memcg->kmem)
+			/* remove fake charge from kmem limit, see __memcg_activate_kmem() */
+			val = (u64)(counter->limit - 1) * PAGE_SIZE;
+		else
+			val = (u64)counter->limit * PAGE_SIZE;
 		break;
 	case RES_MAX_USAGE:
 		val = (u64)counter->watermark * PAGE_SIZE;
+		 if (counter == &memcg->kmem)
+			 /* remove fake charge, see __memcg_activate_kmem() */
+			 val -= PAGE_SIZE;
 		break;
 	case RES_FAILCNT:
 		val = (u64)counter->failcnt;
@@ -4953,6 +4963,9 @@ static int memcg_update_kmem_limit(struct mem_cgroup *memcg,
 				   unsigned long nr_pages)
 {
 	int ret;
+
+	/* add fake charge to kmem limit, see __memcg_activate_kmem() */
+	nr_pages++;
 
 	mutex_lock(&memcg_limit_mutex);
 	if (!memcg_kmem_is_active(memcg))
