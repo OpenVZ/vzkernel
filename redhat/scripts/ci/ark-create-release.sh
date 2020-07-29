@@ -47,7 +47,7 @@ else
 fi
 git merge -m "Merge configuration and build scripts" os-build
 
-MR_PATCHES=$(gitlab project-merge-request list --project-id=13604247 \
+MR_PATCHES=$(gitlab project-merge-request list --project-id=${PROJECT_ID} \
 	--labels="Include in Releases" --state=opened | grep -v "^$" | sort | \
 	awk '{ print "https://gitlab.com/cki-project/kernel-ark/-/merge_requests/" $2 ".patch" }')
 for patch_url in $MR_PATCHES; do
