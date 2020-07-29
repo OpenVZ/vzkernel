@@ -21,7 +21,7 @@
 set -e
 
 UPSTREAM_REF=${1:-master}
-PROJECT_ID=${2:-13604247}
+test -n "$PROJECT_ID" || PROJECT_ID="${2:-13604247}"
 
 ISSUE_TEMPLATE="During an automated rebase of ark-patches, commit %s failed to rebase.
 
@@ -98,7 +98,12 @@ else
 fi
 
 if $CLEAN_REBASE; then
-	printf "You can safely update ark-patches with 'git push -f <remote> ark-patches'\n"
+	if test -n "$DIST_PUSH"; then
+		echo "Pushing branch ark-patches to $(get remote get-url gitlab)"
+		git push -f gitlab ark-patches
+	else
+		printf "You can safely update ark-patches with 'git push -f <remote> ark-patches'\n"
+	fi
 else
 	printf "Some patches could not be rebased, fix up ark-patches as necessary"
 	printf " before pushing the branch."
@@ -108,5 +113,10 @@ fi
 if git tag -v "$UPSTREAM_REF" > /dev/null 2>&1; then
 	printf "Creating branch \"ark/patches/%s\"\n" "$UPSTREAM_REF"
 	git branch ark/patches/"$UPSTREAM_REF"
-	printf "Don't forget to run 'git push <remote> ark/patches/%s'\n" "$UPSTREAM_REF"
+	if test -n "$DIST_PUSH"; then
+		echo "Pushing branch ark/patches to $(get remote get-url gitlab)"
+		git push gitlab ark/patches/"$UPSTREAM_REF"
+	else
+		printf "Don't forget to run 'git push <remote> ark/patches/%s'\n" "$UPSTREAM_REF"
+	fi
 fi

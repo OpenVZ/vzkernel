@@ -319,6 +319,28 @@ dist-release: dist-clean-sources
 dist-release-tag:
 	@git tag -a -m "$(PACKAGE_NAME)-$(STAMP_VERSION)-$(PKGRELEASE)" $(PACKAGE_NAME)-$(STAMP_VERSION)-$(PKGRELEASE)
 
+DIST_BRANCH ?= "os-build"
+dist-merge-upstream:
+	@if test -n "$(DIST_PUSH)" && test -z "$(shell git remote get-url gitlab 2>/dev/null)"; then \
+		echo -e "Please run 'git remote add gitlab <url>' to enable git-push.\n"; \
+		exit 1; \
+	fi
+	@if test "$(shell git branch --show-current)" != "$(DIST_BRANCH)"; then \
+		echo -e "Please checkout $(DIST_BRANCH) branch before merging.\n"; \
+		exit 1; \
+		fi;
+	@(shell git --no-optional-locks status -uno --porcelain 2>/dev/null || \
+		{ echo -e "Dirty tree, please clean before merging.\n"; exit 1; })
+
+	@# If TAG is empty, script defaults to master:HEAD
+	@$(REDHAT)/scripts/ci/ark-rebase-patches.sh $(TAG) || exit 1
+	@$(REDHAT)/scripts/ci/ark-update-configs.sh $(TAG)
+
+dist-merge-upstream-push: DIST_PUSH="1"
+dist-merge-upstream-push: dist-merge-upstream
+
+
+
 .PHONY: dist-brew dist-koji
 dist-brew : BUILD_FLAGS ?= $(BREW_FLAGS) $(TEST_FLAGS)
 dist-koji : BUILD_FLAGS ?= $(KOJI_FLAGS) $(TEST_FLAGS)

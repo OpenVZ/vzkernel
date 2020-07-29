@@ -19,7 +19,7 @@
 set -e
 
 UPSTREAM_REF=${1:-master}
-PROJECT_ID=${2:-13604247}
+test -n "$PROJECT_ID" || PROJECT_ID="${2:-13604247}"
 
 ISSUE_DESCRIPTION="A merge conflict has occurred and must be resolved manually.
 
@@ -65,3 +65,28 @@ if git show -s --oneline HEAD | grep -q "AUTOMATIC: New configs"; then
 else
 	printf "No new configuration values exposed from merging %s into $BRANCH\n" "$UPSTREAM_REF"
 fi
+
+if test -n "$DIST_PUSH"; then
+	echo "Pushing branch $(git branch --show-current) to $(get remote get-url gitlab)"
+	git push gitlab HEAD
+
+	echo "Pushing config update branches"
+	for branch in $(git branch | grep configs/"$(date +%F)"); do
+		git push \
+ 			-o merge_request.create \
+			-o merge_request.target="$BRANCH" \
+			-o merge_request.remove_source_branch \
+			gitlab "$branch"
+	done
+else
+	printf "
+To push all the release artifacts, run:
+
+git push gitlab HEAD
+for branch in \$(git branch | grep configs/\"\$(date +%%F)\"); do
+\tgit push -o merge_request.create -o merge_request.target=$BRANCH\
+ -o merge_request.remove_source_branch upstream gitlab \"\$branch\"
+done\n"
+
+fi
+
