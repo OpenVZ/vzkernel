@@ -125,8 +125,8 @@ int mlx5_frag_buf_alloc_node(struct mlx5_core_dev *dev, int size,
 	buf->size = size;
 	buf->npages = DIV_ROUND_UP(size, PAGE_SIZE);
 	buf->page_shift = PAGE_SHIFT;
-	buf->frags = kcalloc(buf->npages, sizeof(struct mlx5_buf_list),
-			     GFP_KERNEL);
+	buf->frags = kvcalloc(buf->npages, sizeof(struct mlx5_buf_list),
+			      GFP_KERNEL);
 	if (!buf->frags)
 		goto err_out;
 
@@ -154,7 +154,7 @@ err_free_buf:
 	while (i--)
 		dma_free_coherent(&dev->pdev->dev, PAGE_SIZE, buf->frags[i].buf,
 				  buf->frags[i].map);
-	kfree(buf->frags);
+	kvfree(buf->frags);
 err_out:
 	return -ENOMEM;
 }
@@ -172,7 +172,7 @@ void mlx5_frag_buf_free(struct mlx5_core_dev *dev, struct mlx5_frag_buf *buf)
 				  buf->frags[i].map);
 		size -= frag_sz;
 	}
-	kfree(buf->frags);
+	kvfree(buf->frags);
 }
 EXPORT_SYMBOL_GPL(mlx5_frag_buf_free);
 
