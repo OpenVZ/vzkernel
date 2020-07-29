@@ -46,6 +46,9 @@ else
 	GITLAB_CONFIG_OPT="-c $PYTHON_GITLAB_CONFIG"
 fi
 
+# Check if ark-patches is already rebased to $UPSTREAM_REF
+test -n "$(git branch os-build --contains "$UPSTREAM_REF")" && exit 0
+
 if git show "$UPSTREAM_REF" > /dev/null 2>&1; then
 	printf "Rebasing ark-patches onto %s...\n" "$UPSTREAM_REF"
 else
