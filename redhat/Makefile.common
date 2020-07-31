@@ -52,7 +52,7 @@ endif
 
 ifeq ($(SNAPSHOT),1)
   # The base for generating tags is the snapshot commit
-  MARKER:=$(shell echo $(TAG) | cut -d "g" -f 2)
+  MARKER:=$(shell echo $(TAG) | awk -F "-g" '{ print $$2 }')
   # The merge window is weird because the actual versioning hasn't
   # been updated but we still need something that works for
   # packaging. Fix this by bumping the patch level and marking
