@@ -1,4 +1,5 @@
 # We technically want this to be 13 for Fedora with 4K pages but that's only
 # an option with an out of tree patch. Keep this 11 for compatibility until
-# we figure out what we want here
+# we figure out what we want here.
+# process_configs_known_broken
 CONFIG_FORCE_MAX_ZONEORDER=13
