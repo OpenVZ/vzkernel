@@ -10,6 +10,12 @@ SCRIPT="$(readlink -f $0)"
 OUTPUT_DIR="$PWD"
 SCRIPT_DIR="$(dirname $SCRIPT)"
 
+if [ -z "$3" ]; then
+	cat flavors > .flavors
+else
+	echo "$3" > .flavors
+fi
+
 LANG=en_US.UTF-8
 
 # to handle this script being a symlink
@@ -21,6 +27,7 @@ set nounset
 cleanup()
 {
 	rm -f config-*
+	rm -f .flavors
 }
 
 die()
@@ -142,6 +149,6 @@ function build_flavor()
 while read line
 do
 	build_flavor $line
-done < flavors
+done < .flavors
 
 cleanup

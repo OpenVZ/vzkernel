@@ -13,7 +13,11 @@ if [ -z $2 ]; then
 	exit 1
 fi
 
-if [ $PRIMARY == "fedora" ]; then
+if [ -z "$PRIMARY" ]; then
+	PRIMARY=rhel
+fi
+
+if [ "$PRIMARY" == "fedora" ]; then
 	SECONDARY=rhel
 else
 	SECONDARY=fedora
@@ -25,7 +29,7 @@ for i in kernel-*-$PRIMARY.config; do
 	mv $i $NEW
 done
 
-rm kernel-*-$SECONDARY.config
+rm -f kernel-*-$SECONDARY.config
 
 if [ $DEBUGBUILDSENABLED -eq 0 ]; then
 	for i in kernel-*debug*.config; do
