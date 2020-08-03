@@ -187,6 +187,7 @@ function commit_new_configs()
 		if [ "$arch" = "EMPTY" ]
 		then
 			# This arch is intentionally left blank
+			rm -f "${cfg}.orig"
 			continue
 		fi
 		echo -n "Checking for new configs in $cfg ... "
@@ -221,6 +222,7 @@ function process_configs()
 		if [ "$arch" = "EMPTY" ]
 		then
 			# This arch is intentionally left blank
+			rm -f "${cfg}.orig"
 			continue
 		fi
 		echo -n "Processing $cfg ... "
@@ -264,7 +266,7 @@ function process_configs()
 		else
 			mv ${cfgtmp} ${cfg}
 		fi
-		rm ${cfgorig}
+		rm -f ${cfgorig}
 		echo "done"
 	done
 	rm "$SCRIPT_DIR"/*.config*.old
