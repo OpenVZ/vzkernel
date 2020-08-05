@@ -1,0 +1,17 @@
+# CONFIG_ARM_SMCCC_SOC_ID:
+# 
+# Include support for the SoC bus on the ARM SMCCC firmware based
+# platforms providing some sysfs information about the SoC variant.
+# 
+# Symbol: ARM_SMCCC_SOC_ID [=y]
+# Type  : bool
+# Defined at drivers/firmware/smccc/Kconfig:18
+#   Prompt: SoC bus device for the ARM SMCCC SOC_ID
+#   Depends on: HAVE_ARM_SMCCC_DISCOVERY [=y]
+#   Location:
+#     -> Firmware Drivers
+# Selects: SOC_BUS [=y]
+# 
+# 
+# 
+CONFIG_ARM_SMCCC_SOC_ID=y

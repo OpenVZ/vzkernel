@@ -1,0 +1,14 @@
+# CONFIG_ARCH_KEEMBAY:
+# 
+# This enables support for Intel Movidius SoC code-named Keem Bay.
+# 
+# Symbol: ARCH_KEEMBAY [=n]
+# Type  : bool
+# Defined at arch/arm64/Kconfig.platforms:139
+#   Prompt: Keem Bay SoC
+#   Location:
+#     -> Platform selection
+# 
+# 
+# 
+# CONFIG_ARCH_KEEMBAY is not set

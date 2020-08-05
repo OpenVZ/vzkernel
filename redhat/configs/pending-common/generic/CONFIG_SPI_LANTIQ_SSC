@@ -1,0 +1,18 @@
+# CONFIG_SPI_LANTIQ_SSC:
+# 
+# This driver supports the Lantiq SSC SPI controller in master
+# mode. This controller is found on Intel (former Lantiq) SoCs like
+# the Danube, Falcon, xRX200, xRX300, Lightning Mountain.
+# 
+# Symbol: SPI_LANTIQ_SSC [=n]
+# Type  : tristate
+# Defined at drivers/spi/Kconfig:502
+#   Prompt: Lantiq SSC SPI controller
+#   Depends on: SPI [=y] && SPI_MASTER [=y] && (LANTIQ || X86 [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> SPI support (SPI [=y])
+# 
+# 
+# 
+# CONFIG_SPI_LANTIQ_SSC is not set

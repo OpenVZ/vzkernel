@@ -1,0 +1,20 @@
+# CONFIG_KERNEL_ZSTD:
+# 
+# ZSTD is a compression algorithm targeting intermediate compression
+# with fast decompression speed. It will compress better than GZIP and
+# decompress around the same speed as LZO, but slower than LZ4. You
+# will need at least 192 KB RAM or more for booting. The zstd command
+# line tool is required for compression.
+# 
+# Symbol: KERNEL_ZSTD [=n]
+# Type  : bool
+# Defined at init/Kconfig:282
+#   Prompt: ZSTD
+#   Depends on: <choice> && HAVE_KERNEL_ZSTD [=y]
+#   Location:
+#     -> General setup
+#       -> Kernel compression mode (<choice> [=y])
+# 
+# 
+# 
+# CONFIG_KERNEL_ZSTD is not set

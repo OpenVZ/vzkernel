@@ -1,0 +1,21 @@
+# CONFIG_HW_RANDOM_BA431:
+# 
+# This driver provides kernel-side support for the Random Number
+# Generator hardware based on Silex Insight BA431 IP.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called ba431-rng.
+# 
+# Symbol: HW_RANDOM_BA431 [=n]
+# Type  : tristate
+# Defined at drivers/char/hw_random/Kconfig:77
+#   Prompt: Silex Insight BA431 Random Number Generator support
+#   Depends on: HW_RANDOM [=y] && HAS_IOMEM [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Character devices
+#         -> Hardware Random Number Generator Core support (HW_RANDOM [=y])
+# 
+# 
+# 
+# CONFIG_HW_RANDOM_BA431 is not set

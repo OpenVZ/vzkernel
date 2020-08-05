@@ -1,0 +1,21 @@
+# CONFIG_SPI_CADENCE_QUADSPI:
+# 
+# Enable support for the Cadence Quad SPI Flash controller.
+# 
+# Cadence QSPI is a specialized controller for connecting an SPI
+# Flash over 1/2/4-bit wide bus. Enable this option if you have a
+# device with a Cadence QSPI controller and want to access the
+# Flash as an MTD device.
+# 
+# Symbol: SPI_CADENCE_QUADSPI [=n]
+# Type  : tristate
+# Defined at drivers/spi/Kconfig:204
+#   Prompt: Cadence Quad SPI controller
+#   Depends on: SPI [=y] && SPI_MASTER [=y] && OF [=y] && (ARM || ARM64 [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> SPI support (SPI [=y])
+# 
+# 
+# 
+# CONFIG_SPI_CADENCE_QUADSPI is not set
