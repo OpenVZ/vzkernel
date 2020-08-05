@@ -2684,8 +2684,12 @@ static int commit_sync_info(struct pcs_int_request *req,
 	struct pcs_cs_iohdr *h = (struct pcs_cs_iohdr *)resp->_inline_buffer;
 	int err = 0;
 	unsigned int max_iolat, lat = calc_latency(req->ts_sent);
+	unsigned int net_lat;
+	u32 max_lat;
 
 	err |= commit_one_record(m, resp->rpc->peer_id, &h->sync, lat, h->hdr.type);
+	max_lat = max_t(u32, h->sync.ts_net, h->sync.ts_io);
+	net_lat = lat < max_lat ? 0 : lat - max_lat;
 
 	/* Network latency is updated only for the first CS in chain.
 	 * The results for anothers are ignored, which looks sad, because we lose
@@ -2707,12 +2711,14 @@ static int commit_sync_info(struct pcs_int_request *req,
 		     (void*)(srec + 1) <= (void*)h + h->hdr.len;
 		     srec++) {
 			err |= commit_one_record(m, srec->cs_id, &srec->sync, lat, h->hdr.type);
+			max_lat = max_t(u32, srec->sync.ts_net, srec->sync.ts_io);
+			net_lat += lat < max_lat ? 0 : lat - max_lat;
 			lat  = srec->sync.ts_net;
 			if (max_iolat < srec->sync.ts_io)
 				max_iolat = srec->sync.ts_io;
 		}
 	}
-	pcs_fuse_stat_io_count(req, resp, max_iolat, lat - max_iolat);
+	pcs_fuse_stat_io_count(req, resp, max_iolat, net_lat);
 	cs_log_io_times(req, resp, max_iolat);
 
 	evaluate_dirty_status(m);
