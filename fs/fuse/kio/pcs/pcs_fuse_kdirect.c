@@ -515,8 +515,8 @@ static void fuse_complete_map_work(struct work_struct *w)
 
 int fuse_map_resolve(struct pcs_map_entry *m, int direction)
 {
-	struct pcs_dentry_info *di = pcs_dentry_from_mapping(m->mapping);
-	struct fuse_conn *fc = pcs_cluster_from_cc(di->cluster)->fc;
+	struct pcs_dentry_info *di;
+	struct fuse_conn *fc;
 	struct fuse_req *req;
 	struct fuse_ioctl_in *inarg;
 	struct fuse_ioctl_out *outarg;
@@ -524,9 +524,21 @@ int fuse_map_resolve(struct pcs_map_entry *m, int direction)
 	struct pcs_fuse_work *reply_work;
 	size_t map_sz;
 
+	spin_lock(&m->lock);
+
+	if (m->state & PCS_MAP_DEAD) {
+		spin_unlock(&m->lock);
+		pcs_map_put(m);
+		return 0;
+	}
+	di = pcs_dentry_from_mapping(m->mapping);
+	fc = pcs_cluster_from_cc(di->cluster)->fc;
+
 	DTRACE("enter m: " MAP_FMT ", dir:%d \n", MAP_ARGS(m),	direction);
 
 	BUG_ON(!(m->state & PCS_MAP_RESOLVING));
+
+	spin_unlock(&m->lock);
 
 	map_sz = sizeof(*map_ioc) + MAX_CS_CNT * sizeof(struct pcs_cs_info);
 	map_ioc = kzalloc(map_sz, GFP_NOIO);
