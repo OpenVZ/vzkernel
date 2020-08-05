@@ -1,0 +1,20 @@
+# CONFIG_REGULATOR_QCOM_LABIBB:
+# 
+# This driver supports Qualcomm's LAB/IBB regulators present on the
+# Qualcomm's PMIC chip pmi8998. QCOM LAB and IBB are SPMI
+# based PMIC implementations. LAB can be used as positive
+# boost regulator and IBB can be used as a negative boost regulator
+# for LCD display panel.
+# 
+# Symbol: REGULATOR_QCOM_LABIBB [=n]
+# Type  : tristate
+# Defined at drivers/regulator/Kconfig:1226
+#   Prompt: QCOM LAB/IBB regulator support
+#   Depends on: REGULATOR [=y] && (SPMI [=m] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Voltage and Current Regulator Support (REGULATOR [=y])
+# 
+# 
+# 
+# CONFIG_REGULATOR_QCOM_LABIBB is not set

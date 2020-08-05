@@ -1,0 +1,21 @@
+# CONFIG_ARM_PSCI_CPUIDLE_DOMAIN:
+# 
+# Select this to enable the PSCI based CPUidle driver to use PM domains,
+# which is needed to support the hierarchical DT based layout of the
+# idle states.
+# 
+# Symbol: ARM_PSCI_CPUIDLE_DOMAIN [=y]
+# Type  : bool
+# Defined at drivers/cpuidle/Kconfig.arm:26
+#   Prompt: PSCI CPU idle Domain
+#   Depends on: CPU_IDLE [=y] && (ARM [=y] || ARM64) && ARM_PSCI_CPUIDLE [=y] && PM_GENERIC_DOMAINS_OF [=y]
+#   Location:
+#     -> CPU Power Management
+#       -> CPU Idle
+#         -> CPU idle PM support (CPU_IDLE [=y])
+#           -> ARM CPU Idle Drivers
+#             -> PSCI CPU idle Driver (ARM_PSCI_CPUIDLE [=y])
+# 
+# 
+# 
+CONFIG_ARM_PSCI_CPUIDLE_DOMAIN=y
