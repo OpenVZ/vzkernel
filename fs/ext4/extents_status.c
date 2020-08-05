@@ -1059,7 +1059,7 @@ static unsigned long ext4_es_scan(struct shrinker *shrink,
 	return nr_shrunk;
 }
 
-void ext4_es_register_shrinker(struct ext4_sb_info *sbi)
+int ext4_es_register_shrinker(struct ext4_sb_info *sbi)
 {
 	/* Make sure we have enough bits for physical block number */
 	BUILD_BUG_ON(ES_SHIFT < 48);
@@ -1069,7 +1069,7 @@ void ext4_es_register_shrinker(struct ext4_sb_info *sbi)
 	sbi->s_es_shrinker.scan_objects = ext4_es_scan;
 	sbi->s_es_shrinker.count_objects = ext4_es_count;
 	sbi->s_es_shrinker.seeks = DEFAULT_SEEKS;
-	register_shrinker(&sbi->s_es_shrinker);
+	return register_shrinker(&sbi->s_es_shrinker);
 }
 
 void ext4_es_unregister_shrinker(struct ext4_sb_info *sbi)
