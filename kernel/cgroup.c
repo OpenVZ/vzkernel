@@ -62,6 +62,8 @@
 #include <linux/kthread.h>
 #include <linux/ve.h>
 #include <linux/stacktrace.h>
+#include <linux/exportfs.h>
+#include <linux/random.h>
 
 #include <linux/atomic.h>
 
@@ -765,6 +767,7 @@ static struct inode *cgroup_new_inode(umode_t mode, struct super_block *sb)
 
 	if (inode) {
 		inode->i_ino = get_next_ino();
+		inode->i_generation = prandom_u32();
 		inode->i_mode = mode;
 		inode->i_uid = current_fsuid();
 		inode->i_gid = current_fsgid();
@@ -1390,9 +1393,171 @@ out:
 }
 #endif
 
+/*
+ * hashtable for inodes that have exported fhandles.
+ * When we export fhandle, we add it's inode into
+ * hashtable so we can find it fast
+ */
+
+#define CGROUP_INODE_HASH_BITS 10
+static DEFINE_HASHTABLE(cgroup_inode_table, CGROUP_INODE_HASH_BITS);
+static DEFINE_SPINLOCK(cgroup_inode_table_lock);
+
+struct cg_inode_hitem {
+	struct inode *inode;
+	struct hlist_node hlist;
+};
+
+static inline unsigned long cgroup_inode_get_hash(unsigned int i_ino)
+{
+	return hash_32(i_ino, CGROUP_INODE_HASH_BITS);
+}
+
+static struct cg_inode_hitem *cgroup_find_item_no_lock(unsigned long fh[2])
+{
+	struct cg_inode_hitem *i;
+	struct hlist_head *head = cgroup_inode_table
+		+ cgroup_inode_get_hash(fh[1]);
+	struct cg_inode_hitem *found = NULL;
+
+	hlist_for_each_entry(i, head, hlist) {
+		if (i->inode->i_generation == fh[0] &&
+		    i->inode->i_ino == fh[1]) {
+			found = i;
+			break;
+		}
+	}
+
+	return found;
+}
+
+static struct inode *cgroup_find_inode(unsigned long fh[2], char take_ref)
+{
+	struct cg_inode_hitem *item;
+	struct inode *ret = NULL;
+
+	spin_lock(&cgroup_inode_table_lock);
+	item = cgroup_find_item_no_lock(fh);
+
+	/*
+	 * If we need to increase refcount, we should be aware of possible
+	 * deadlock. Another thread may have started deleting this inode:
+	 * iput->iput_final->cgroup_delete_inode->cgroup_hash_del
+	 * If we just call igrab, it will try to take i_lock and this will
+	 * result in deadlock, because deleting thread has already taken it
+	 * and waits on cgroup_inode_table_lock to find inode in hashtable.
+	 *
+	 * If i_count is zero, someone is deleting it -> skip.
+	 */
+	if (take_ref && item)
+		if (!atomic_inc_not_zero(&item->inode->i_count))
+			item = NULL;
+
+	spin_unlock(&cgroup_inode_table_lock);
+
+	if (item)
+		ret = item->inode;
+
+	return ret;
+}
+
+static int cgroup_hash_add(struct inode *inode)
+{
+	unsigned long fh[2] = {inode->i_generation, inode->i_ino};
+
+	if (!cgroup_find_inode(fh, 0)) {
+		struct cg_inode_hitem *item;
+		struct cg_inode_hitem *existing_item = 0;
+		struct hlist_head *head = cgroup_inode_table
+			+ cgroup_inode_get_hash(inode->i_ino);
+
+		item = kmalloc(sizeof(struct cg_inode_hitem), GFP_KERNEL);
+		if (!item)
+			return -ENOMEM;
+		item->inode = inode;
+
+		spin_lock(&cgroup_inode_table_lock);
+		existing_item = cgroup_find_item_no_lock(fh);
+		if (!existing_item)
+			hlist_add_head(&item->hlist, head);
+		spin_unlock(&cgroup_inode_table_lock);
+
+		if (existing_item)
+			kfree(item);
+	}
+
+	return 0;
+}
+
+static void cgroup_hash_del(struct inode *inode)
+{
+	struct cg_inode_hitem *item;
+	unsigned long fh[2] = {inode->i_generation, inode->i_ino};
+
+	spin_lock(&cgroup_inode_table_lock);
+	item = cgroup_find_item_no_lock(fh);
+	if (item)
+		hlist_del(&item->hlist);
+	spin_unlock(&cgroup_inode_table_lock);
+
+	kfree(item);
+	return;
+}
+
+static struct dentry *cgroup_fh_to_dentry(struct super_block *sb,
+		struct fid *fid, int fh_len, int fh_type)
+{
+	struct inode *inode;
+	struct dentry *dentry = ERR_PTR(-ENOENT);
+	unsigned long fhandle[2] = {fid->raw[0], fid->raw[1]};
+
+	if (fh_len < 2)
+		return NULL;
+
+	inode = cgroup_find_inode(fhandle, 1);
+	if (inode) {
+		dentry = d_find_alias(inode);
+		iput(inode);
+	}
+	return dentry;
+}
+
+static int cgroup_encode_fh(struct inode *inode, __u32 *fh, int *len,
+				struct inode *parent)
+{
+	if (*len < 2) {
+		*len = 2;
+		return FILEID_INVALID;
+	}
+
+	/*
+	 * encode_fh is expected to return 255 (FILEID_INVALID)
+	 * in case of failure. We can't return ENOMEM, so
+	 * return FILEID_INVALID at least.
+	 */
+	if (cgroup_hash_add(inode))
+		return FILEID_INVALID;
+
+	fh[0] = inode->i_generation;
+	fh[1] = inode->i_ino;
+	*len = 2;
+	return 1;
+}
+
+static const struct export_operations cgroup_export_ops = {
+	.encode_fh      = cgroup_encode_fh,
+	.fh_to_dentry	= cgroup_fh_to_dentry,
+};
+
+static int cgroup_delete_inode(struct inode *inode)
+{
+	cgroup_hash_del(inode);
+	return generic_delete_inode(inode);
+}
+
 static const struct super_operations cgroup_ops = {
 	.statfs = simple_statfs,
-	.drop_inode = generic_delete_inode,
+	.drop_inode = cgroup_delete_inode,
 	.show_options = cgroup_show_options,
 #ifdef CONFIG_VE
 	.show_path = cgroup_show_path,
@@ -1539,6 +1704,7 @@ static int cgroup_set_super(struct super_block *sb, void *data)
 	sb->s_blocksize_bits = PAGE_CACHE_SHIFT;
 	sb->s_magic = CGROUP_SUPER_MAGIC;
 	sb->s_op = &cgroup_ops;
+	sb->s_export_op = &cgroup_export_ops;
 
 	return 0;
 }
